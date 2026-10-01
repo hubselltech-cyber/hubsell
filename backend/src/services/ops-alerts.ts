@@ -35,6 +35,8 @@ import {
   computeChannelAdsInsights,
 } from "../integrations/shopee/ads-insights";
 import { DEFERRED_STATUS as ADS_DEFERRED_STATUS } from "../integrations/shopee/ads-auto-execute";
+import { vnDateKey, vnDayStart } from "../lib/ads-dates";
+import { vndText as vnd } from "../lib/ads-format";
 import {
   normalizeAssistantConfig,
   type AssistantTrigger,
@@ -85,8 +87,6 @@ const SYNC_STALL_THRESHOLD = 3;
 const ADS_WALLET_LOW_HOURS = ADS_CADENCE.WALLET_LOW_HOURS;
 
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
-
-const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
 
 /** Nhãn sàn hiển thị trong câu cảnh báo. */
 const CHANNEL_LABEL: Record<string, string> = {
@@ -832,7 +832,7 @@ function hoursElapsedTodayVN(): number {
 }
 
 /** Liệt kê tối đa 3 tên campaign, phần dư gộp thành "+N chiến dịch khác". */
-function campaignListText(list: ShopeeAdsCampaignSignal[]): string {
+function campaignListText(list: Array<{ name: string; campaignId: string }>): string {
   const names = list
     .slice(0, 3)
     .map((c) => `"${c.name || `#${c.campaignId}`}"`)
@@ -852,7 +852,7 @@ const ADS_ALERT_LAZADA: AdsAlertPlatform = { label: "Lazada", path: "/ads/lazada
 function adsDeepLink(
   path: string,
   channelId: string,
-  list: ShopeeAdsCampaignSignal[]
+  list: Array<{ campaignId: string }>
 ): string {
   return list.length === 1
     ? `${path}?channelId=${channelId}&campaign_id=${encodeURIComponent(list[0].campaignId)}`
@@ -1178,12 +1178,6 @@ async function detectDeliveryFailed(ownerId: string): Promise<DetectedAlert[]> {
 // nguồn từ CỜ Hubsell + SỔ HÀNH ĐỘNG hôm nay (không phải verdict) nên thẻ sống
 // đúng bằng thời gian máy đang giữ tắt / hành động còn trong ngày, rồi tự đóng.
 
-/** Mốc 00:00 hôm nay theo giờ VN. */
-function startOfVnToday(): Date {
-  const key = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-  return new Date(`${key}T00:00:00+07:00`);
-}
-
 function vnTimeText(d: Date): string {
   return d.toLocaleString("vi-VN", {
     hour: "2-digit",
@@ -1256,18 +1250,10 @@ export interface AdsAutoGroupRow {
   createdAt: Date;
 }
 
-/** `"A", "B", "C" +2` — tên chiến dịch không trùng, tối đa 3 tên. */
-function adsNameList(rows: AdsAutoGroupRow[]): string {
-  const names = [...new Set(rows.map((r) => r.campaignName || `#${r.campaignId}`))];
-  return names.slice(0, 3).map((n) => `"${n}"`).join(", ") + (names.length > 3 ? ` +${names.length - 3}` : "");
-}
-
-/** Một chiến dịch → mở thẳng chiến dịch đó; nhiều → bộ lọc "cần xử lý" của trang quảng cáo. */
-function adsGroupHref(shop: AdsAutoGroupShop, rows: AdsAutoGroupRow[]): string {
-  const ids = [...new Set(rows.map((r) => r.campaignId))];
-  return ids.length === 1
-    ? `${shop.platform.path}?channelId=${shop.channelId}&campaign_id=${encodeURIComponent(ids[0])}`
-    : `${shop.platform.path}?channelId=${shop.channelId}&needs_action=1`;
+/** Các chiến dịch KHÔNG TRÙNG trong một nhóm dòng sổ (một chiến dịch có thể có nhiều dòng). */
+function distinctCampaigns(rows: AdsAutoGroupRow[]): Array<{ name: string; campaignId: string }> {
+  const byRow = new Map(rows.map((r) => [r.campaignRowId, { name: r.campaignName, campaignId: r.campaignId }]));
+  return [...byRow.values()];
 }
 
 /**
@@ -1286,7 +1272,8 @@ export function buildAdsPlannedGroupAlert(
   const campaigns = (action: string) => new Set(rows.filter((r) => r.action === action).map((r) => r.campaignRowId)).size;
   const paused = campaigns("pause");
   const cut = campaigns("cut_budget");
-  const total = new Set(rows.map((r) => r.campaignRowId)).size;
+  const list = distinctCampaigns(rows);
+  const total = list.length;
   const tail =
     "Chế độ diễn tập không gọi sàn — thấy Trợ lý phán đúng thì gạt sang chế độ Thật trong tab Cấu hình để Trợ lý tự làm.";
   const base = {
@@ -1296,7 +1283,7 @@ export function buildAdsPlannedGroupAlert(
     severity: "medium" as const,
     payload: {
       kind: "navigate" as const,
-      href: adsGroupHref(shop, rows),
+      href: adsDeepLink(shop.platform.path, shop.channelId, list),
       label: "Xem căn cứ",
       source: shop.platform.label,
     },
@@ -1317,7 +1304,7 @@ export function buildAdsPlannedGroupAlert(
   return {
     ...base,
     title: `Diễn tập: Trợ lý ĐỊNH xử lý ${total} chiến dịch — gian "${shop.shopName}"`,
-    summary: `Hôm nay: ${parts.join(", ")} (${adsNameList(rows)}). Căn cứ từng chiến dịch nằm trong Sổ hành động. ${tail}`,
+    summary: `Hôm nay: ${parts.join(", ")} (${campaignListText(list)}). Căn cứ từng chiến dịch nằm trong Sổ hành động. ${tail}`,
   };
 }
 
@@ -1328,7 +1315,8 @@ export function buildAdsPlannedGroupAlert(
  */
 export function buildAdsDeferredAlert(shop: AdsAutoGroupShop, rows: AdsAutoGroupRow[]): DetectedAlert | null {
   if (rows.length === 0) return null;
-  const total = new Set(rows.map((r) => r.campaignRowId)).size;
+  const list = distinctCampaigns(rows);
+  const total = list.length;
   return {
     type: "ads-auto-deferred",
     dedupeKey: shop.channelId,
@@ -1336,11 +1324,11 @@ export function buildAdsDeferredAlert(shop: AdsAutoGroupShop, rows: AdsAutoGroup
     severity: "high",
     title: `${shop.platform.label} đang giới hạn nhịp gọi — ${total} lệnh của Trợ lý chưa gửi được — gian "${shop.shopName}"`,
     summary:
-      `Chiến dịch: ${adsNameList(rows)}. Trợ lý tự thử lại ở lượt kiểm tra kế tiếp; các chiến dịch vi phạm khác của gian cũng được xử lý ở lượt đó. ` +
+      `Chiến dịch: ${campaignListText(list)}. Trợ lý tự thử lại ở lượt kiểm tra kế tiếp; các chiến dịch vi phạm khác của gian cũng được xử lý ở lượt đó. ` +
       `Cần dừng ngay thì bấm Tạm dừng trong trang Trợ lý quảng cáo.`,
     payload: {
       kind: "navigate",
-      href: adsGroupHref(shop, rows),
+      href: adsDeepLink(shop.platform.path, shop.channelId, list),
       label: "Mở Trợ lý quảng cáo",
       source: shop.platform.label,
     },
@@ -1451,10 +1439,11 @@ async function detectAdsAutoActions(ownerId: string): Promise<DetectedAlert[]> {
     }
   }
 
+  const todayKey = vnDateKey(0);
   const logsToday = await prisma.adsActionLog.findMany({
     where: {
       channel: { userId: ownerId },
-      createdAt: { gte: startOfVnToday() },
+      createdAt: { gte: vnDayStart(todayKey) },
       OR: [
         { status: "PLANNED" },
         { status: "FAILED" },
@@ -1497,9 +1486,8 @@ async function detectAdsAutoActions(ownerId: string): Promise<DetectedAlert[]> {
       createdAt: l.createdAt,
     });
   }
-  const dayKey = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   for (const g of groups.values()) {
-    const planned = buildAdsPlannedGroupAlert(g.shop, g.planned, dayKey);
+    const planned = buildAdsPlannedGroupAlert(g.shop, g.planned, todayKey);
     if (planned) alerts.push(planned);
     const deferred = buildAdsDeferredAlert(g.shop, g.deferred);
     if (deferred) alerts.push(deferred);

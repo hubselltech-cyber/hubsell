@@ -22,22 +22,11 @@
 // detectShopeeAdsAssistant lo, không báo đúp).
 // ============================================================
 
+import { dateKeyToDbDate, vnDateKey } from "../../lib/ads-dates";
 import { prisma } from "../../lib/prisma";
 
 /** Nhìn lại bao nhiêu ngày sao kê để kết luận gian trả tiền ads qua doanh thu. */
 export const LAZADA_ADS_POSTPAID_LOOKBACK_DAYS = 90;
-
-/** "YYYY-MM-DD" của N ngày trước theo GIỜ VN (bản sao nhỏ của ads-campaigns.ts
- *  để tránh import vòng — hai file gọi nhau). */
-function vnDateStr(daysAgo: number): string {
-  return new Date(Date.now() + 7 * 3600_000 - daysAgo * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-}
-
-function dateFromStr(s: string): Date {
-  return new Date(`${s}T00:00:00.000Z`);
-}
 
 export interface LazadaAdSpendDay {
   /** 00:00 UTC — cùng quy ước cột @db.Date với AdsCampaignDailyPerf. */
@@ -66,7 +55,7 @@ export function lazadaAdSpendByDay(
     }
   }
   return dayKeys.map((key) => ({
-    date: dateFromStr(key),
+    date: dateKeyToDbDate(key),
     amount: Math.round((sum.get(key) ?? 0) * 100) / 100,
   }));
 }
@@ -105,13 +94,13 @@ export async function syncLazadaAdsSpendFromPerf(
   const postpaid = postpaidRow != null;
 
   const dayKeys: string[] = [];
-  for (let ago = daysBack - 1; ago >= 0; ago--) dayKeys.push(vnDateStr(ago));
+  for (let ago = daysBack - 1; ago >= 0; ago--) dayKeys.push(vnDateKey(ago));
   const rows = postpaid
     ? []
     : await prisma.adsCampaignDailyPerf.findMany({
         where: {
           adsCampaign: { channelId },
-          date: { gte: dateFromStr(dayKeys[0]) },
+          date: { gte: dateKeyToDbDate(dayKeys[0]) },
         },
         select: { date: true, expense: true },
       });

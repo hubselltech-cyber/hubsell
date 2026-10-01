@@ -11,6 +11,7 @@
 // THUẦN — vitest đánh thẳng; route chỉ nạp log + insights rồi gọi vào đây.
 // ============================================================
 
+import { vnDateKeyOf } from "../../lib/ads-dates";
 import type { CampaignInsight } from "./ads-insights";
 import type { ShopeeAssistantConfig } from "./ads-assistant-rules";
 
@@ -62,11 +63,6 @@ export interface AssistantScorecard {
   };
 }
 
-/** "YYYY-MM-DD" theo giờ VN của một mốc thời gian. */
-function vnDayOf(d: Date): string {
-  return new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
-}
-
 export function buildAssistantScorecard(
   logs: ScorecardLog[],
   items: CampaignInsight[],
@@ -88,7 +84,7 @@ export function buildAssistantScorecard(
   for (const [rowId, l] of firstPlanned) {
     const it = byRow.get(rowId);
     if (!it) continue;
-    const dayKey = vnDayOf(l.createdAt);
+    const dayKey = vnDateKeyOf(l.createdAt);
     let spendAfter = 0;
     let gmvAfter = 0;
     let ordersAfter = 0;

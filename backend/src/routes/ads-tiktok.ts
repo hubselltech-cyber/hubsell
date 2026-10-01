@@ -36,8 +36,7 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
-import { dateKey } from "../lib/ads-dates";
-import { vnDateStr } from "../integrations/lazada/ads-campaigns";
+import { dateKey, vnDateKey, vnDateKeyOf } from "../lib/ads-dates";
 import {
   GMV_MAX_CREATIVE_BATCH,
   getTiktokAdsLinkStatus,
@@ -176,8 +175,8 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
     const requestedId = typeof req.query.channelId === "string" ? req.query.channelId : "";
     const selected = channels.find((c) => c.id === requestedId) ?? channels[0] ?? null;
     const scope = selected ? await getTiktokAdsScope(selected.id) : null;
-    const from = vnDateStr(PRODUCT_ADS_DAYS - 1);
-    const to = vnDateStr(0);
+    const from = vnDateKey(PRODUCT_ADS_DAYS - 1);
+    const to = vnDateKey(0);
     if (!selected || !scope) {
       res.json({ linked: false, from, to, campaigns: 0, products: {} });
       return;
@@ -258,7 +257,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     // Khoảng ngày theo lịch VN (?from=&to= của bộ lọc chuẩn; ?days= là đường cũ).
     const period = clampGmvMaxRange(
       { from: req.query.from, to: req.query.to, fallbackDays: parseDays(req.query.days) },
-      vnDateStr(0)
+      vnDateKey(0)
     );
     // Bảng "gian ↔ tài khoản quảng cáo": mỗi gian có thể nối một tài khoản khác nhau.
     const links = await prisma.tiktokAdsStoreLink.findMany({
@@ -415,7 +414,7 @@ adsTiktokRouter.get("/campaigns/:id/videos/outside", async (req: AuthRequest, re
     }
     const period = clampGmvMaxRange(
       { from: req.query.from, to: req.query.to, fallbackDays: parseDays(req.query.days) },
-      vnDateStr(0)
+      vnDateKey(0)
     );
     const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, ...period };
     try {
@@ -493,7 +492,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
     }
     const period = clampGmvMaxRange(
       { from: req.query.from, to: req.query.to, fallbackDays: parseDays(req.query.days) },
-      vnDateStr(0)
+      vnDateKey(0)
     );
     const range = {
       accessToken: scope.accessToken,
@@ -506,7 +505,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       const products = await fetchGmvMaxCampaignProducts(range, campaign.campaignId);
       const spuIds = products.map((p) => p.spuId).filter(Boolean);
       // Ghi lại sản phẩm của chiến dịch (nguồn nối chiến dịch → SKU) rồi mới tính hòa vốn cho đúng SKU.
-      if (period.endDate === vnDateStr(0)) await saveCampaignProductIds(campaign.id, campaign.itemIds, spuIds).catch(() => {});
+      if (period.endDate === vnDateKey(0)) await saveCampaignProductIds(campaign.id, campaign.itemIds, spuIds).catch(() => {});
       const breakeven = await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null);
       const campaignBreakeven = breakeven?.byCampaignRowId.get(campaign.id);
       // Chi tiêu từng ngày của chiến dịch trong khoảng xem (đã có trong DB từ lượt đồng bộ) → % ngân sách ngày đang dùng.
@@ -590,7 +589,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
             gmv: products.reduce((s, x) => s + x.gmv, 0),
             avgDailySpend: avgDailySpendOf(
               perfDays.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
-              vnDateStr(0)
+              vnDateKey(0)
             ),
           }),
         },
@@ -710,7 +709,7 @@ adsTiktokRouter.post("/campaigns/:id/videos/action", requireAdmin, async (req: A
             adsCampaignId: campaign.id,
             videoId,
             spuId: [...v.spuIds][0] ?? "",
-            firstSeenOn: vnDateStr(0),
+            firstSeenOn: vnDateKey(0),
             restoredByUserAt: now,
           },
         });
@@ -831,7 +830,7 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
     // Cùng khuôn "chỉ cảnh báo": BẬT thật (đang không chạy thật) mà lượt diễn tập gần nhất đã quá cũ so với cửa sổ soi.
     const staleDays =
       mode === "live" && campaign.tiktokAutoRule?.mode !== "live"
-        ? staleRehearsalDays(campaign.tiktokAutoRule?.lastRunOn ?? "", vnDateStr(0), cfg.windowDays)
+        ? staleRehearsalDays(campaign.tiktokAutoRule?.lastRunOn ?? "", vnDateKey(0), cfg.windowDays)
         : null;
     if (mode === "live" && (unrehearsedFields(rehearsed, cfg).length > 0 || staleDays != null) && body.skipRehearsal !== true) {
       res.status(409).json({
@@ -897,7 +896,7 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/preview", async (req: AuthRequest
     const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
     const base = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
     const cfg = sanitizeAutoRuleConfig((req.body ?? {}) as Record<string, unknown>, base);
-    const today = vnDateStr(0);
+    const today = vnDateKey(0);
     try {
       const track = await trackCampaignVideos(scope, campaign, today);
       const breakeven =
@@ -971,7 +970,7 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/run-now", requireAdmin, async (re
       });
       return;
     }
-    const today = vnDateStr(0);
+    const today = vnDateKey(0);
     if (await prisma.adsActionLog.findUnique({ where: { referenceId: autoCommandReferenceId(campaign.id, today, "live") }, select: { id: true } })) {
       res.status(409).json({ error: "Hôm nay Trợ lý đã gửi một lệnh loại thật cho chiến dịch này. Lượt kế tiếp là trưa mai." });
       return;
@@ -1043,7 +1042,7 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
         : null
     );
     const marks = { roiTarget: cfg.roiTarget, hardRoi: hard.hardRoi, hardBasis: hard.basis, minSpend: cfg.minSpend };
-    const today = vnDateStr(0);
+    const today = vnDateKey(0);
 
     // Khách ĐỔI BỘ SỐ giữa chừng (anh Trung duyệt 18/09 khuya) → chỉ đối chiếu các lượt diễn tập SAU lần đổi gần nhất: lượt cũ
     // chấm bằng bộ luật khác, cộng chung thì câu kết luận "máy đúng hay sai" lẫn hai bộ luật. Mốc lấy từ nhật ký đổi thông số
@@ -1064,14 +1063,14 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
     });
     const since = {
       /** Ngày VN khách đổi bộ số gần nhất — bảng chỉ tính lượt diễn tập sau mốc này; null = chưa đổi lần nào (có nhật ký). */
-      configChangedOn: changedAt ? new Date(changedAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10) : null,
+      configChangedOn: changedAt ? vnDateKeyOf(changedAt) : null,
       /** Số lượt diễn tập chạy bằng bộ số CŨ, không đưa vào bảng. */
       plansBeforeChange: changedAt ? await prisma.adsActionLog.count({ where: { ...planWhere, createdAt: { lte: changedAt } } }) : 0,
     };
     const plans: DryRunPlan[] = logs.map((l) => {
       // referenceId "ttauto-{rowId}-{YYYY-MM-DD}" mang ngày VN của lượt; thiếu thì suy từ giờ ghi sổ.
       const tail = (l.referenceId ?? "").slice(-10);
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(tail) ? tail : new Date(l.createdAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(tail) ? tail : vnDateKeyOf(l.createdAt);
       return { date, videos: parseVideoActionReasons(l.reasons).videos };
     });
 

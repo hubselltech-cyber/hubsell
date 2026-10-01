@@ -5,6 +5,10 @@
 // UTC); server Render chạy UTC. Các hàm ở đây đổi qua lại giữa "YYYY-MM-DD"
 // ngày sàn, Date của cột @db.Date và bộ lọc ?from=&to= của trang Trợ lý quảng
 // cáo. Thuần — không gọi database.
+//
+// NGUỒN DUY NHẤT (01/10/2026): mọi module quảng cáo (Shopee, Lazada, TikTok,
+// thẻ điều hành) lấy "hôm nay của sàn" và mốc đầu/cuối ngày VN từ đây — không
+// tự cộng 7 giờ, không chép lại hàm.
 // ============================================================
 
 /** 00:00 (giờ máy chủ) của ngày đầu một cửa sổ `days` ngày tính cả hôm nay. */
@@ -20,12 +24,25 @@ export function dateKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** "YYYY-MM-DD" của N ngày trước theo GIỜ VN — ngày trong AdsCampaignDailyPerf
- *  là ngày của SÀN (múi giờ VN), server Render chạy UTC nên phải cộng 7h. */
+/** "YYYY-MM-DD" theo GIỜ VN của một mốc thời gian — ngày của SÀN (múi giờ VN);
+ *  server Render chạy UTC nên phải cộng 7h. */
+export function vnDateKeyOf(d: Date): string {
+  return new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+/** "YYYY-MM-DD" của N ngày trước theo GIỜ VN (0 = hôm nay của sàn). */
 export function vnDateKey(daysAgo: number): string {
-  return new Date(Date.now() + 7 * 3600_000 - daysAgo * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+  return vnDateKeyOf(new Date(Date.now() - daysAgo * 86_400_000));
+}
+
+/** 00:00:00 giờ VN của ngày sàn `key` — mốc cắt cột timestamp (sổ hành động…) theo ngày VN. */
+export function vnDayStart(key: string): Date {
+  return new Date(`${key}T00:00:00+07:00`);
+}
+
+/** 23:59:59.999 giờ VN của ngày sàn `key`. */
+export function vnDayEnd(key: string): Date {
+  return new Date(`${key}T23:59:59.999+07:00`);
 }
 
 /**

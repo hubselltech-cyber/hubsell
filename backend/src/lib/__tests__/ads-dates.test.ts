@@ -13,8 +13,13 @@ import {
   resolveAdsDateRange,
   shiftDateKey,
   shopeeDateParam,
+  vnDateKey,
+  vnDateKeyOf,
+  vnDayEnd,
+  vnDayStart,
   vnDayWindow,
 } from "../ads-dates";
+import { roasText, vndText } from "../ads-format";
 
 const TODAY = "2026-09-24";
 
@@ -135,5 +140,37 @@ describe("vnDayWindow / shopeeDateParam — ngày sàn theo giờ VN, không the
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-09T17:30:00Z"));
     expect(vnDayWindow(0)).toEqual({ startKey: "2026-10-10", endKey: "2026-10-10" });
+  });
+});
+
+describe("vnDateKeyOf / vnDayStart / vnDayEnd — một nguồn cho ngày VN của mọi module quảng cáo", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("mốc thời gian → ngày VN: 16:59 UTC còn hôm đó, 17:00 UTC đã sang ngày", () => {
+    expect(vnDateKeyOf(new Date("2026-10-01T16:59:59Z"))).toBe("2026-10-01");
+    expect(vnDateKeyOf(new Date("2026-10-01T17:00:00Z"))).toBe("2026-10-02");
+  });
+
+  it("vnDateKey(n) = ngày VN của n ngày trước", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T17:30:00Z")); // 00:30 ngày 02/10 giờ VN
+    expect(vnDateKey(0)).toBe("2026-10-02");
+    expect(vnDateKey(1)).toBe("2026-10-01");
+    expect(vnDateKey(2)).toBe("2026-09-30");
+  });
+
+  it("đầu / cuối ngày VN đổi ra đúng giờ UTC", () => {
+    expect(vnDayStart("2026-10-02").toISOString()).toBe("2026-10-01T17:00:00.000Z");
+    expect(vnDayEnd("2026-10-02").toISOString()).toBe("2026-10-02T16:59:59.999Z");
+  });
+});
+
+describe("ads-format — câu chữ tiền và ROAS", () => {
+  it("tiền làm tròn đồng, ROAS tối đa 2 số lẻ", () => {
+    expect(vndText(336_000.4)).toBe("336.000₫");
+    expect(roasText(6.634)).toBe("6,63x");
+    expect(roasText(5)).toBe("5x");
   });
 });

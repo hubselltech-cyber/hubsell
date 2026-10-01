@@ -23,6 +23,7 @@
 // ============================================================
 
 import type { Channel } from "@prisma/client";
+import { dateKeyToDbDate, vnDateKey } from "../../lib/ads-dates";
 import { prisma } from "../../lib/prisma";
 import {
   getAdsAdgroupList,
@@ -45,18 +46,6 @@ export interface SyncLazadaAdsCampaignsResult {
   campaignsUpserted: number;
   adgroupCampaigns: number; // số campaign được quét itemIds lượt này
   perfDaysUpserted: number;
-}
-
-/** "YYYY-MM-DD" của N ngày trước theo GIỜ VN (ngày của sàn; server chạy UTC). */
-export function vnDateStr(daysAgo: number): string {
-  return new Date(Date.now() + 7 * 3600_000 - daysAgo * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-}
-
-/** "YYYY-MM-DD" → Date 00:00 UTC — cùng quy ước cột @db.Date với Shopee. */
-export function dateFromStr(s: string): Date {
-  return new Date(`${s}T00:00:00.000Z`);
 }
 
 /**
@@ -85,11 +74,11 @@ export function lazadaCampaignData(c: LazadaAdsCampaign, todayVn: string) {
     status: deriveStatus(c, todayVn),
     // -1 = không giới hạn → 0 theo quy ước cột budget (0 = không giới hạn).
     budget: dailyBudget > 0 ? dailyBudget : 0,
-    startTime: /^\d{4}-\d{2}-\d{2}$/.test(start) ? dateFromStr(start) : null,
+    startTime: /^\d{4}-\d{2}-\d{2}$/.test(start) ? dateKeyToDbDate(start) : null,
     // Năm ≥ 3000 là "không hẹn ngày tắt" của Lazada → NULL cùng nghĩa Shopee.
     endTime:
       /^\d{4}-\d{2}-\d{2}$/.test(end) && end < "3000-01-01"
-        ? dateFromStr(end)
+        ? dateKeyToDbDate(end)
         : null,
   };
 }
@@ -100,7 +89,7 @@ export async function syncLazadaAdsCampaigns(
 ): Promise<SyncLazadaAdsCampaignsResult> {
   const accessToken = await getValidLazadaAccessToken(channel);
   const daysBack = Math.min(30, Math.max(1, opts.daysBack ?? 30));
-  const todayVn = vnDateStr(0);
+  const todayVn = vnDateKey(0);
 
   const result: SyncLazadaAdsCampaignsResult = {
     campaignsFound: 0,
@@ -112,7 +101,7 @@ export async function syncLazadaAdsCampaigns(
   // ---- 1. Toàn bộ campaign (kể cả đã tắt từ lâu — filter ngày của sàn rất
   // lỏng, cứ hỏi cửa sổ 10 năm cho khỏi sót) → upsert AdsCampaign ----
   const campaigns: LazadaAdsCampaign[] = [];
-  const startWide = vnDateStr(3650);
+  const startWide = vnDateKey(3650);
   for (let pageNo = 1; pageNo <= 30; pageNo++) {
     const page = await getAdsCampaignList({
       accessToken,
@@ -166,8 +155,8 @@ export async function syncLazadaAdsCampaigns(
   // adType/placement không có trong searchCampaignList — lấy từ dòng report.
   const metaByCampaignId = new Map<string, { adType: string; placement: string }>();
   for (let ago = daysBack - 1; ago >= 0; ago--) {
-    const dayStr = vnDateStr(ago);
-    const date = dateFromStr(dayStr);
+    const dayStr = vnDateKey(ago);
+    const date = dateKeyToDbDate(dayStr);
     for (let pageNo = 1; pageNo <= 10; pageNo++) {
       const page = await getAdsCampaignReport({
         accessToken,
@@ -267,7 +256,7 @@ export async function syncLazadaAdsCampaigns(
       const page = await getAdsAdgroupList({
         accessToken,
         campaignId: row.campaignId,
-        startDate: vnDateStr(daysBack - 1),
+        startDate: vnDateKey(daysBack - 1),
         endDate: todayVn,
         pageNo,
         pageSize: 100,

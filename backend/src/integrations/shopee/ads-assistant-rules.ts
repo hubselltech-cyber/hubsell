@@ -21,6 +21,8 @@
 // ============================================================
 
 /** Cửa sổ đánh giá — lát cắt ngắn bắt campaign BÃO HÒA (tổng đẹp, gần đây lỗ). */
+import { roasText as roasTxt, vndText as vnd } from "../../lib/ads-format";
+
 export type AssistantWindowKey = "today" | "3d" | "7d" | "30d";
 
 export const ASSISTANT_WINDOWS: AssistantWindowKey[] = ["today", "3d", "7d", "30d"];
@@ -195,14 +197,6 @@ export function normalizeAssistantConfig(raw: unknown): ShopeeAssistantConfig {
 }
 
 // ---------- Format helpers cho reasons ----------
-
-function vnd(n: number): string {
-  return `${Math.round(n).toLocaleString("vi-VN")}₫`;
-}
-
-function roasTxt(n: number): string {
-  return `${n.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
-}
 
 function windowRoas(w: AssistantWindowMetrics): number | null {
   return w.spend > 0 ? w.broadGmv / w.spend : null;

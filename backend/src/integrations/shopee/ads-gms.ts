@@ -46,9 +46,6 @@ export const GMS_WINDOWS: Array<{ key: GmsWindowKey; days: number }> = [
 ];
 export const GMS_STATUS_ACTIVE = "active";
 
-/** "YYYY-MM-DD" (ngày VN) → "DD-MM-YYYY" của sàn. */
-const toShopeeDay = shopeeDateParam;
-
 /** Probe prod ANO 24/09: 4 call GMS liên tiếp → cú thứ 4 dính ads_rate_limit_shop_api → giãn giữa các call. */
 const GMS_CALL_GAP_MS = 1500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -136,7 +133,7 @@ export async function syncShopeeGms(channel: Channel, access?: ShopeeAdsAccess):
     await sleep(GMS_CALL_GAP_MS);
     const { startKey, endKey } = gmsWindowKeys(w.days, todayKey);
     const r = await getGmsCampaignPerformance(
-      { ...base, startDate: toShopeeDay(startKey), endDate: toShopeeDay(endKey) },
+      { ...base, startDate: shopeeDateParam(startKey), endDate: shopeeDateParam(endKey) },
       a.cfg
     );
     const nums = gmsReportNumbers(r.response?.report);
@@ -157,7 +154,7 @@ export async function syncShopeeGms(channel: Channel, access?: ShopeeAdsAccess):
   for (let page = 0; page < 3; page++) {
     await sleep(GMS_CALL_GAP_MS);
     const r = await getGmsItemPerformance(
-      { ...base, startDate: toShopeeDay(startKey), endDate: toShopeeDay(endKey), offset: page * 100, limit: 100 },
+      { ...base, startDate: shopeeDateParam(startKey), endDate: shopeeDateParam(endKey), offset: page * 100, limit: 100 },
       a.cfg
     );
     for (const it of r.response?.result_list ?? []) {
@@ -335,8 +332,8 @@ export async function probeShopeeGms(channel: Channel): Promise<Record<string, u
   const base = { accessToken: a.accessToken, shopId: a.shopId };
 
   const { startKey, endKey } = gmsWindowKeys(7);
-  const startDate = toShopeeDay(startKey);
-  const endDate = toShopeeDay(endKey);
+  const startDate = shopeeDateParam(startKey);
+  const endDate = shopeeDateParam(endKey);
   out.window = { startKey, endKey, startDate, endDate };
 
   await safe("eligibility", () => checkGmsEligibility(base, a.cfg));
@@ -354,7 +351,7 @@ export async function probeShopeeGms(channel: Channel): Promise<Record<string, u
   });
   await sleep(GMS_CALL_GAP_MS);
   await safe("campaign_perf_2d", () =>
-    getGmsCampaignPerformance({ ...base, startDate: toShopeeDay(vnDateKey(1)), endDate: toShopeeDay(vnDateKey(0)) }, a.cfg)
+    getGmsCampaignPerformance({ ...base, startDate: shopeeDateParam(vnDateKey(1)), endDate: shopeeDateParam(vnDateKey(0)) }, a.cfg)
   );
   await safe("compare_7d", async () => {
     const gte = dateKeyToDbDate(startKey);
@@ -433,7 +430,7 @@ export function buildGmsCreatePayload(
     dailyBudget,
     roasTarget,
     payload: {
-      start_date: toShopeeDay(todayKey),
+      start_date: shopeeDateParam(todayKey),
       daily_budget: dailyBudget,
       ...(roasTarget > 0 ? { roas_target: roasTarget } : {}),
     },

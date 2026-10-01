@@ -15,7 +15,8 @@ import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { getAdsCampaignList, getAdsCampaignReport, lazAdsNum, type LazadaAdsCampaign } from "./client";
 import { getValidLazadaAccessToken } from "./service";
-import { dateFromStr, deriveStatus, lazadaCampaignData, vnDateStr } from "./ads-campaigns";
+import { dateKeyToDbDate, vnDateKey } from "../../lib/ads-dates";
+import { deriveStatus, lazadaCampaignData } from "./ads-campaigns";
 import { syncLazadaAdsSpendFromPerf } from "./ads-spend";
 import { reconcileHubsellPauseFlags, recordMarketplaceStatusChange } from "../shopee/ads-pause-flag";
 
@@ -28,11 +29,11 @@ export interface LazadaAdsPulseResult {
 
 export async function pulseLazadaAds(channel: Channel): Promise<LazadaAdsPulseResult> {
   const accessToken = await getValidLazadaAccessToken(channel);
-  const todayVn = vnDateStr(0);
+  const todayVn = vnDateKey(0);
 
   // 1. Danh sách campaign (cửa sổ rộng như tầng B để không sót campaign cũ bật lại).
   const campaigns: LazadaAdsCampaign[] = [];
-  const startWide = vnDateStr(3650);
+  const startWide = vnDateKey(3650);
   for (let pageNo = 1; pageNo <= 30; pageNo++) {
     const page = await getAdsCampaignList({
       accessToken,
@@ -99,7 +100,7 @@ export async function pulseLazadaAds(channel: Channel): Promise<LazadaAdsPulseRe
 
   // 2. Report hôm nay (bảng realtime) → dòng today.
   if (rowIdByCampaignId.size > 0) {
-    const date = dateFromStr(todayVn);
+    const date = dateKeyToDbDate(todayVn);
     for (let pageNo = 1; pageNo <= 10; pageNo++) {
       const page = await getAdsCampaignReport({
         accessToken,

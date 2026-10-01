@@ -166,26 +166,27 @@ export function classifyShopeeAdsRateLimit(err: unknown): "partner" | "shop" | n
   return null;
 }
 
+/** Đọc thân phản hồi HTTP 429: envelope nếu thân là JSON, kèm nguyên văn. Không bao giờ ném. */
+async function readRateLimitBody(res: Response): Promise<{ envelope: ShopeeEnvelope | null; text: string }> {
+  const text = await res.text().catch(() => "");
+  try {
+    const j: unknown = JSON.parse(text);
+    return { envelope: j && typeof j === "object" ? (j as ShopeeEnvelope) : null, text };
+  } catch {
+    return { envelope: null, text };
+  }
+}
+
 /**
  * Lỗi HTTP 429 kèm THÂN phản hồi (mã error / message / request_id) — Shopee đòi
  * "complete and specific API call logs" khi hỏi trần (ticket 15/09), và mã
  * `ads.rate_limit.exceed_*` trong thân là thứ phân biệt tầng app/shop.
  */
 async function rateLimitError(ctx: string, res: Response): Promise<Error> {
-  let detail = "";
-  try {
-    const text = await res.text();
-    try {
-      const j = JSON.parse(text) as ShopeeEnvelope;
-      detail = [j.error, j.message, j.request_id ? `request_id=${j.request_id}` : ""]
-        .filter(Boolean)
-        .join(" ");
-    } catch {
-      detail = text.slice(0, 200);
-    }
-  } catch {
-    /* không đọc được thân — vẫn ném 429 */
-  }
+  const { envelope: j, text } = await readRateLimitBody(res);
+  const detail = j
+    ? [j.error, j.message, j.request_id ? `request_id=${j.request_id}` : ""].filter(Boolean).join(" ")
+    : text.slice(0, 200);
   return new Error(
     `Shopee ${ctx} lỗi: HTTP 429 — vượt trần gọi API${detail ? ` (${detail})` : ""}`
   );
@@ -1834,14 +1835,8 @@ export async function editManualProductAdsRaw(
   // "gọi quá nhịp" (thử lại ở xung kế) thay vì vỡ ở res.json(). Thân có mã
   // ads.rate_limit.* thì giữ nguyên văn mã đó.
   if (res.status === 429) {
-    const text = await res.text().catch(() => "");
-    try {
-      const j = JSON.parse(text) as ShopeeEnvelope;
-      if (j.error) return j;
-    } catch {
-      /* thân không phải JSON */
-    }
-    return { error: "HTTP 429", message: text.slice(0, 200) };
+    const { envelope, text } = await readRateLimitBody(res);
+    return envelope?.error ? envelope : { error: "HTTP 429", message: text.slice(0, 200) };
   }
   return (await res.json()) as ShopeeEnvelope & { response?: unknown };
 }

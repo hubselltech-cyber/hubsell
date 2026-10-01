@@ -23,7 +23,7 @@
 
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { dateFromStr, vnDateStr } from "../lazada/ads-campaigns";
+import { dateKeyToDbDate, vnDateKey } from "../../lib/ads-dates";
 import { TiktokAdsApiError, getGmvMaxStores, type GmvMaxStore } from "./client";
 import { fetchGmvMaxCampaignDaily } from "./report";
 
@@ -185,8 +185,8 @@ export async function syncTiktokAdsCampaigns(
       accessToken: scope.accessToken,
       advertiserId: scope.advertiserId,
       storeId: scope.storeId,
-      startDate: vnDateStr(daysBack - 1),
-      endDate: vnDateStr(0),
+      startDate: vnDateKey(daysBack - 1),
+      endDate: vnDateKey(0),
     });
   } catch (err) {
     await recordTiktokAdsFailure(scope.linkId, err);
@@ -221,7 +221,7 @@ export async function syncTiktokAdsCampaigns(
     if (data.status === "ongoing") result.liveCampaigns++;
   }
 
-  const recentFrom = vnDateStr(1);
+  const recentFrom = vnDateKey(1);
   for (const r of rows) {
     const rowId = rowIdByCampaignId.get(r.campaignId);
     if (!rowId || !r.date) continue;
@@ -235,9 +235,9 @@ export async function syncTiktokAdsCampaigns(
       directGmv: r.gmv,
     };
     await prisma.adsCampaignDailyPerf.upsert({
-      where: { adsCampaignId_date: { adsCampaignId: rowId, date: dateFromStr(r.date) } },
+      where: { adsCampaignId_date: { adsCampaignId: rowId, date: dateKeyToDbDate(r.date) } },
       update: data,
-      create: { adsCampaignId: rowId, date: dateFromStr(r.date), ...data },
+      create: { adsCampaignId: rowId, date: dateKeyToDbDate(r.date), ...data },
     });
     result.perfDaysUpserted++;
     if (r.cost > 0 && r.date >= recentFrom) result.spentRecently = true;
@@ -247,9 +247,9 @@ export async function syncTiktokAdsCampaigns(
   // lại cost trong ngày), ngày không có dòng nào thì để nguyên.
   for (const [date, amount] of gmvMaxDailyTotals(rows)) {
     await prisma.adSpend.upsert({
-      where: { channelId_date: { channelId: channel.id, date: dateFromStr(date) } },
+      where: { channelId_date: { channelId: channel.id, date: dateKeyToDbDate(date) } },
       update: { amount },
-      create: { channelId: channel.id, date: dateFromStr(date), amount },
+      create: { channelId: channel.id, date: dateKeyToDbDate(date), amount },
     });
     result.adSpendDaysUpserted++;
   }

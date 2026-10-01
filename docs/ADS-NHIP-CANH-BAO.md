@@ -295,7 +295,18 @@ Mỗi bước một commit, không gộp.
 
 ---
 
-## 12. Sửa 01/10/2026 — ba việc treo của nhóm quảng cáo
+## 12. Sửa 01/10/2026 — nhóm quảng cáo: ba việc treo + ba việc phát sinh + dọn dẹp
+
+| Mục | Việc | Commit |
+|---|---|---|
+| 12.1 | Bảng điểm Trợ lý xem 90 ngày nạp đủ hiệu suất | `0c765e9` |
+| 12.2 | Ngày gửi lên Shopee Ads tính theo ngày VN | `596c490` |
+| 12.3 | Bỏ trần lệnh mỗi ngày + thứ tự lệnh | `ce7a1d2` |
+| 12.4 | Sàn báo quá nhịp thì xung kế thử lại; thẻ diễn tập gom theo gian | `2f6b95b` |
+| 12.5 | Máy tự trả ngân sách gốc khi chiến dịch hết lỗ | `cbd5901` |
+| 12.6 | Dọn dẹp: mỗi khái niệm một nguồn, cây module | commit dọn dẹp cùng ngày |
+
+Còn treo duy nhất: kiểm số thật mục 12.2 trên prod trong khung 0h–7h VN.
 
 ### 12.1 Bảng điểm Trợ lý xem 90 ngày nạp đủ hiệu suất
 
@@ -453,3 +464,55 @@ hoặc nút "Trả lại ngân sách". Hai lỗ:
 **Test:** `ads-auto-restore-budget-db.test.ts` (tự hồi → trả; ba trường hợp chưa đủ điều
 kiện; lệnh trả quá nhịp → xung kế gửi lại; quá nhịp ngay sau khi máy bật lại; sàn từ
 chối nghiệp vụ), `ads-budget-cut.test.ts` (điều kiện thuần).
+
+### 12.6 Dọn dẹp — mỗi khái niệm một nguồn, cây module (anh Trung 01/10: "dọn code thừa, đảm bảo mô hình tree xuyên suốt")
+
+Không đổi hành vi. 956 test giữ nguyên kết quả, `tsc` + `--noUnusedLocals` sạch trên các
+tệp đã đụng.
+
+**Cây phụ thuộc của nhóm quảng cáo — tầng dưới không biết tầng trên, cùng tầng không chép
+của nhau:**
+
+```
+lib/ads-dates.ts      ngày sàn (giờ VN): vnDateKey, vnDateKeyOf, vnDayWindow, vnDayStart/End,
+                      shopeeDateParam, dateKeyToDbDate, bộ lọc from/to            ← THUẦN
+lib/ads-format.ts     vndText, roasText (câu chữ ghi sổ, thẻ, nhật ký)            ← THUẦN
+lib/ads-margin.ts     luật biên lãi + nhóm SKU                                    ← THUẦN
+        │
+integrations/shopee/  client.ts (gọi sàn, nhận diện lỗi quá nhịp, đọc thân 429)
+integrations/lazada/  client.ts
+        │
+integrations/shopee/  ads-assistant-rules.ts   luật chấm + mức hạ ngân sách       ← THUẦN
+                      ads-scorecard.ts         luật bảng điểm                     ← THUẦN
+                      ads-recommend.ts         luật gợi ý chạy ads                ← THUẦN
+        │
+                      ads-insights.ts          ghép số thành kết luận (đọc DB)
+                      ads-scorecard-data.ts    nạp bảng điểm (đọc DB)
+                      ads-campaigns / ads-spend / ads-pulse / ads-gms   kéo số từ sàn
+                      ads-pause-flag.ts        cờ nguồn dừng / cờ hạ ngân sách
+                      ads-auto-execute.ts      executor: lệnh của máy + lệnh chủ shop bấm
+        │
+services/ops-alerts.ts        thẻ Trung tâm điều hành + chuông (đọc sổ, cờ, insights)
+routes/ads.ts, ads-tiktok.ts  API cho giao diện
+workers/order-auto-sync.ts    nhịp xung / lịch sử gọi các tầng trên
+```
+
+**Bản chép đã gỡ:**
+
+- *Ngày theo giờ VN* có 3 bản (`vnDateKey` ở lib, `vnDateStr` ở `lazada/ads-campaigns.ts`,
+  bản sao trong `lazada/ads-spend.ts` "để tránh import vòng") + 4 chỗ tự cộng 7 giờ
+  (`ads-scorecard.ts`, `ops-alerts.ts` ×2, `routes/ads-tiktok.ts` ×2). Nay chỉ còn
+  `lib/ads-dates.ts`. TikTok không còn mượn hàm ngày từ module Lazada. `dateFromStr` (2 bản)
+  → `dateKeyToDbDate`. Bí danh `toShopeeDay` ở GMS → gọi thẳng `shopeeDateParam`.
+- *Định dạng tiền / ROAS* có 4 bản (`ads-assistant-rules`, `ads-auto-execute`,
+  `ads-recommend`, `ops-alerts`) → `lib/ads-format.ts`.
+- *Lệnh trả ngân sách gốc* có 2 bản (đường chủ shop và đường của máy) → một lõi
+  `sendBudgetRestore` + `budgetRestoreReason`; đường chủ shop là `restoreBudgetManual`
+  (lấy token trước khi ghi sổ để lỗi token không để lại dòng treo).
+- *Deep-link + danh sách tên chiến dịch trên thẻ* có 2 bản trong `ops-alerts.ts` → dùng
+  chung `adsDeepLink` + `campaignListText`.
+- *Đọc thân phản hồi HTTP 429 của Shopee* có 2 bản → `readRateLimitBody`.
+
+**Chưa đụng (ngoài phạm vi nhóm quảng cáo hôm nay):** tham số `scope` không dùng ở
+`tiktok-ads/auto-run.ts` `applyAutoPlan`; các hàm định dạng tiền riêng của mail / thanh
+toán / trợ lý hỏi đáp.

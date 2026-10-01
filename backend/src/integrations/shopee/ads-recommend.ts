@@ -16,6 +16,8 @@
 // chú "chưa có số", điểm lấy mức trung tính — không bịa số.
 // ============================================================
 
+import { roasText as x, vndText as vnd } from "../../lib/ads-format";
+
 export type RecommendTier = "run_now" | "test_small" | "not_yet" | "running";
 
 export interface RecommendSignal {
@@ -117,9 +119,7 @@ export const RECOMMEND_THRESHOLDS = {
 
 const T = RECOMMEND_THRESHOLDS;
 
-const x = (v: number) => `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
 const pct = (v: number) => `${(v * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
-const vnd = (v: number) => `${Math.round(v).toLocaleString("vi-VN")}₫`;
 const ceil1 = (v: number) => Math.ceil(v * 10 - 1e-9) / 10;
 const round1 = (v: number) => Math.round(v * 10) / 10;
 const roundK = (v: number) => Math.max(0, Math.round(v / 1000) * 1000);

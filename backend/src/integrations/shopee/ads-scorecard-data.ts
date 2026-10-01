@@ -8,7 +8,7 @@
 // từ đúng ngày đầu của khoảng đang xem.
 // ============================================================
 
-import type { AdsDateRange } from "../../lib/ads-dates";
+import { vnDayEnd, vnDayStart, type AdsDateRange } from "../../lib/ads-dates";
 import type { AdsInsightChannel } from "../../lib/ads-margin";
 import { prisma } from "../../lib/prisma";
 import type { ShopeeAssistantConfig } from "./ads-assistant-rules";
@@ -26,8 +26,8 @@ export async function loadAssistantScorecard(
     where: {
       channelId: channel.id,
       createdAt: {
-        gte: new Date(`${fromKey}T00:00:00+07:00`),
-        lte: new Date(`${toKey}T23:59:59.999+07:00`),
+        gte: vnDayStart(fromKey),
+        lte: vnDayEnd(toKey),
       },
     },
     select: {

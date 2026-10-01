@@ -31,7 +31,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { notify } from "../../services/notifications";
-import { vnDateStr } from "../lazada/ads-campaigns";
+import { vnDateKey } from "../../lib/ads-dates";
 import { GMV_MAX_CREATIVE_BATCH, updateGmvMaxCreatives } from "./client";
 import {
   buildVideoActionReasons,
@@ -140,12 +140,12 @@ export interface WatchLite {
  * 2 call (sản phẩm + video). Trả về những gì bước xét luật cần để khỏi gọi lại.
  */
 export async function trackCampaignVideos(scope: TiktokAdsScope, campaign: CampaignLite, today: string): Promise<TrackResult> {
-  const yesterday = vnDateStr(1);
+  const yesterday = vnDateKey(1);
   const range30 = {
     accessToken: scope.accessToken,
     advertiserId: scope.advertiserId,
     storeId: scope.storeId,
-    startDate: vnDateStr(GRACE_LOOKBACK_DAYS),
+    startDate: vnDateKey(GRACE_LOOKBACK_DAYS),
     endDate: yesterday,
   };
   const products = await fetchGmvMaxCampaignProducts(range30, campaign.campaignId);
@@ -301,8 +301,8 @@ export async function buildAutoPlan(
   /** ROI hòa vốn của chiến dịch — chỉ cần khi cfg.hardBasis = "breakeven" (thiếu thì luật tự rơi về % mục tiêu). */
   breakeven: BreakevenInput | null = null
 ): Promise<AutoPlanBundle> {
-  const windowTo = vnDateStr(1);
-  const windowFrom = vnDateStr(cfg.windowDays);
+  const windowTo = vnDateKey(1);
+  const windowFrom = vnDateKey(cfg.windowDays);
   const base = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId };
 
   const rowsWindow =
@@ -408,14 +408,14 @@ export function vnMinuteOfDayNow(): number {
 }
 
 /** Đã tới giờ (12:00 + độ lệch của gian) và hôm nay chưa chạy? */
-export function autoRunDue(lastVideoTrackOn: string, today = vnDateStr(0), minuteOfDay = vnMinuteOfDayNow(), offsetMin = 0): boolean {
+export function autoRunDue(lastVideoTrackOn: string, today = vnDateKey(0), minuteOfDay = vnMinuteOfDayNow(), offsetMin = 0): boolean {
   return minuteOfDay >= AUTO_RUN_EARLIEST_HOUR * 60 + offsetMin && lastVideoTrackOn !== today;
 }
 
 export async function runTiktokAdsDaily(channel: { id: string; shopName: string; userId: string }): Promise<AutoRunResult | null> {
   const scope = await getTiktokAdsScope(channel.id);
   if (!scope) return null;
-  const today = vnDateStr(0);
+  const today = vnDateKey(0);
   const result: AutoRunResult = { campaigns: 0, tracked: 0, evaluated: 0, planned: 0, executed: 0, failed: 0 };
 
   const ongoing = await prisma.adsCampaign.findMany({
@@ -433,7 +433,7 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
   if (unruled.length > TRACK_UNRULED_MAX) {
     const spend = await prisma.adsCampaignDailyPerf.groupBy({
       by: ["adsCampaignId"],
-      where: { adsCampaignId: { in: unruled.map((c) => c.id) }, date: { gte: new Date(`${vnDateStr(7)}T00:00:00Z`) } },
+      where: { adsCampaignId: { in: unruled.map((c) => c.id) }, date: { gte: new Date(`${vnDateKey(7)}T00:00:00Z`) } },
       _sum: { expense: true },
     });
     const spendOf = new Map(spend.map((s) => [s.adsCampaignId, Number(s._sum.expense ?? 0)]));
@@ -460,7 +460,7 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
       // thêm MỘT lần và lấy HỢP hai lần đọc: video chỉ được coi là "không còn phân phối" khi vắng ở cả hai.
       if (track.spuIds.length > 0 && (await hasCommandsToCheck(c.id).catch(() => false))) {
         const again = await fetchGmvMaxCampaignVideos(
-          { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: vnDateStr(GRACE_LOOKBACK_DAYS), endDate: vnDateStr(1) },
+          { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: vnDateKey(GRACE_LOOKBACK_DAYS), endDate: vnDateKey(1) },
           c.campaignId,
           track.spuIds,
           GMV_MAX_LIVE_VIDEO_STATUSES

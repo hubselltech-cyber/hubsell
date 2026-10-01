@@ -72,7 +72,8 @@ import {
   updateAdsCampaignSwitchRaw,
 } from "../lazada/client";
 import { getValidLazadaAccessToken } from "../lazada/service";
-import { vnDateKey } from "../../lib/ads-dates";
+import { vnDateKey, vnDayStart } from "../../lib/ads-dates";
+import { roasText as roasTxt, vndText as vndTxt } from "../../lib/ads-format";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -146,8 +147,6 @@ export function planAutoAction(
   }
   return { it, kind: "pause", cut: null };
 }
-
-const roasTxt = (n: number) => `${n.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
 
 /**
  * LỌC + XẾP HÀNG hành động PAUSE — logic thuần tách riêng cho vitest:
@@ -338,49 +337,70 @@ export function budgetWriteSupportedFor(channel: Pick<Channel, "channelName">): 
   return channel.channelName === ChannelName.SHOPEE;
 }
 
-const vndTxt = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
+// ---------- ĐỢT B — TRẢ NGÂN SÁCH GỐC: một chỗ cho cả máy lẫn chủ shop ----------
+// Ba đường gọi: máy (vòng bật lại + vòng "đã hết lỗ" trong runAdsAutoExecute, sổ
+// có khóa ngày), chủ shop bấm Bật lại, chủ shop bấm "Trả lại ngân sách" (hai
+// đường sau qua restoreBudgetManual, sổ mode manual). Sàn từ chối thì GIỮ cờ.
 
-/**
- * ĐỢT B — TRẢ NGÂN SÁCH GỐC cho campaign có cờ hạ (sau khi bật lại thành công,
- * hoặc chủ shop bấm "Trả lại ngân sách"). Ghi sổ riêng action restore_budget;
- * sàn từ chối thì GIỮ cờ (lần bật lại sau / người bấm lại vẫn trả được).
- */
-async function restoreBudgetWithActor(input: {
-  channel: Channel;
-  actor: AdsActor;
-  row: { id: string; campaignId: string; name: string; hubsellBudgetBefore: Prisma.Decimal | null; hubsellBudgetCut: Prisma.Decimal | null };
-  mode: string;
-  referenceId: string;
-  reason: string;
-}): Promise<ActOutcome> {
-  const { channel, actor, row } = input;
-  if (row.hubsellBudgetBefore == null) return { ok: true, error: null };
+/** Phần của dòng AdsCampaign mà lệnh trả ngân sách cần. */
+type BudgetFlagRow = {
+  id: string;
+  campaignId: string;
+  name: string;
+  hubsellBudgetBefore: Prisma.Decimal | null;
+  hubsellBudgetCut: Prisma.Decimal | null;
+};
+
+/** Ngân sách ngày dạng chữ — 0 là "không giới hạn" (quy ước của Shopee). */
+const budgetTxt = (n: number) => (n > 0 ? vndTxt(n) : "không giới hạn");
+
+/** "336.000₫ → 500.000₫": mức Trợ lý đã hạ → số gốc. */
+function budgetRestoreMove(row: BudgetFlagRow): string {
+  const cut = row.hubsellBudgetCut != null ? vndTxt(Number(row.hubsellBudgetCut)) : "—";
+  return `${cut} → ${budgetTxt(Number(row.hubsellBudgetBefore))}`;
+}
+
+/** Căn cứ ghi sổ của một lệnh trả ngân sách gốc. */
+function budgetRestoreReason(reason: string, row: BudgetFlagRow): string {
+  return `${reason} Trả ngân sách ngày ${budgetRestoreMove(row)} (số trước khi Trợ lý hạ).`;
+}
+
+/** Gọi sàn trả số gốc; thành công thì xóa cờ hạ + ghi số mới vào bảng chiến dịch. */
+async function sendBudgetRestore(actor: AdsActor, row: BudgetFlagRow, sendRef: string): Promise<ActOutcome> {
   const before = Number(row.hubsellBudgetBefore);
-  const cut = row.hubsellBudgetCut != null ? Number(row.hubsellBudgetCut) : null;
+  let outcome: ActOutcome;
+  try {
+    // Shopee: ngân sách 0 = không giới hạn theo docs (campaign_budget 0) — gửi đúng số gốc.
+    outcome = await actor.changeBudget(row.campaignId, before, sendRef);
+  } catch (err) {
+    outcome = { ok: false, error: String((err as Error).message).slice(0, 1000) };
+  }
+  if (outcome.ok) await clearHubsellBudgetFlag(row.id, { budget: before });
+  return outcome;
+}
+
+/** Chủ shop kích lệnh trả (bấm Bật lại / Trả lại ngân sách): lệnh thật ngay, sổ mode manual. */
+async function restoreBudgetManual(channel: Channel, row: BudgetFlagRow, reason: string): Promise<ActOutcome> {
+  if (row.hubsellBudgetBefore == null) return { ok: true, error: null };
+  const actor = await makeActor(channel); // lấy token TRƯỚC khi ghi sổ — lỗi token không để lại dòng treo
+  const referenceId = `restore-${row.id}-manual-${Date.now()}`;
   const log = await prisma.adsActionLog.create({
     data: {
       channelId: channel.id,
       adsCampaignId: row.id,
       action: "restore_budget",
-      mode: input.mode,
+      mode: "manual",
       verdict: "",
-      reasons: `${input.reason} Trả ngân sách ngày ${cut != null ? vndTxt(cut) : "—"} → ${before > 0 ? vndTxt(before) : "không giới hạn"} (số trước khi Trợ lý hạ).`,
-      referenceId: input.referenceId,
+      reasons: budgetRestoreReason(reason, row),
+      referenceId,
       status: "PENDING",
     },
   });
-  let outcome: ActOutcome;
-  try {
-    // Shopee: ngân sách 0 = không giới hạn theo docs (campaign_budget 0) — gửi đúng số gốc.
-    outcome = await actor.changeBudget(row.campaignId, before, input.referenceId);
-  } catch (err) {
-    outcome = { ok: false, error: String((err as Error).message).slice(0, 1000) };
-  }
+  const outcome = await sendBudgetRestore(actor, row, referenceId);
   await prisma.adsActionLog.update({
     where: { id: log.id },
     data: { status: outcome.ok ? "SUCCESS" : "FAILED", error: outcome.error?.slice(0, 1000) ?? null },
   });
-  if (outcome.ok) await clearHubsellBudgetFlag(row.id, { budget: before });
   return outcome;
 }
 
@@ -402,15 +422,7 @@ export async function restoreBudgetByOwner(
   }
   let outcome: ActOutcome;
   try {
-    const actor = await makeActor(channel);
-    outcome = await restoreBudgetWithActor({
-      channel,
-      actor,
-      row,
-      mode: "manual",
-      referenceId: `restore-${row.id}-manual-${Date.now()}`,
-      reason: "Chủ shop bấm Trả lại ngân sách trong Hubsell.",
-    });
+    outcome = await restoreBudgetManual(channel, row, "Chủ shop bấm Trả lại ngân sách trong Hubsell.");
   } catch (err) {
     outcome = { ok: false, error: String((err as Error).message).slice(0, 1000) };
   }
@@ -419,7 +431,7 @@ export async function restoreBudgetByOwner(
       data: {
         ownerId: channel.userId,
         tag: "ads",
-        message: `💰 Chủ shop trả lại ngân sách chiến dịch "${row.name || `#${row.campaignId}`}" (gian "${channel.shopName}") về ${Number(row.hubsellBudgetBefore) > 0 ? vndTxt(Number(row.hubsellBudgetBefore)) : "không giới hạn"} ngay trong Hubsell.`,
+        message: `💰 Chủ shop trả lại ngân sách chiến dịch "${row.name || `#${row.campaignId}`}" (gian "${channel.shopName}") về ${budgetTxt(Number(row.hubsellBudgetBefore))} ngay trong Hubsell.`,
       },
     });
   }
@@ -537,15 +549,7 @@ export async function resumeCampaignByOwner(
     // ĐỢT B: bật lại thì trả ngân sách gốc (nếu Trợ lý từng hạ). Lỗi giữ cờ, sổ có dòng FAILED.
     if (row.hubsellBudgetBefore != null) {
       try {
-        const actor = await makeActor(channel);
-        await restoreBudgetWithActor({
-          channel,
-          actor,
-          row,
-          mode: "manual",
-          referenceId: `restore-${row.id}-manual-${Date.now()}`,
-          reason: "Chủ shop bật lại chiến dịch trong Hubsell.",
-        });
+        await restoreBudgetManual(channel, row, "Chủ shop bật lại chiến dịch trong Hubsell.");
       } catch (err) {
         console.warn(`[Ads] Trả ngân sách sau khi bật lại lỗi "${row.name}":`, (err as Error).message);
       }
@@ -596,7 +600,7 @@ export async function runAdsAutoExecute(
 
   const todayKey = vnDateKey(0);
   const budgetWriteSupported = budgetWriteSupportedFor(channel);
-  const startOfVnToday = new Date(`${todayKey}T00:00:00+07:00`);
+  const startOfVnToday = vnDayStart(todayKey);
 
   /**
    * ĐỢT B — nấc hạ ngân sách đã qua chưa trong ván này? Live: đọc cờ trên campaign
@@ -734,34 +738,25 @@ export async function runAdsAutoExecute(
    * (hôm sau thử lại, chủ shop vẫn có nút Trả lại ngân sách).
    */
   const restoreBudget = async (it: CampaignInsight, reason: string, standalone: boolean): Promise<boolean> => {
-    const before = Number(it.row.hubsellBudgetBefore);
-    const cut = it.row.hubsellBudgetCut != null ? Number(it.row.hubsellBudgetCut) : null;
-    const move = `${cut != null ? vndTxt(cut) : "—"} → ${before > 0 ? vndTxt(before) : "không giới hạn"}`;
     const log = await openLog({
       rowId: it.row.id,
       action: "restore_budget",
       verdict: "",
-      reasons: [`${reason} Trả ngân sách ngày ${move} (số trước khi Trợ lý hạ).`],
+      reasons: [budgetRestoreReason(reason, it.row)],
       referenceId: restoreRefOf(it.row.id),
     });
     if (!log) return false;
-    let outcome: ActOutcome;
-    try {
-      // Shopee: ngân sách 0 = không giới hạn theo docs (campaign_budget 0) — gửi đúng số gốc.
-      outcome = await actor!.changeBudget(it.row.campaignId, before, log.sendRef);
-    } catch (err) {
-      outcome = { ok: false, error: String((err as Error).message) };
-    }
+    const outcome = await sendBudgetRestore(actor!, it.row, log.sendRef);
     const stop = await closeLog(log.id, outcome);
     if (outcome.ok) {
       result.budgetRestored++;
-      await clearHubsellBudgetFlag(it.row.id, { budget: before });
+      // Trả kèm lệnh bật lại thì thẻ "đã bật lại" đã nói; trả riêng thì ghi nhật ký vận hành.
       if (standalone) {
         await prisma.opsActivity.create({
           data: {
             ownerId: channel.userId,
             tag: "ads",
-            message: `💰 Trợ lý trả ngân sách ngày chiến dịch "${it.row.name || `#${it.row.campaignId}`}" (gian "${channel.shopName}") ${move} — chiến dịch đã hết lỗ.`,
+            message: `💰 Trợ lý trả ngân sách ngày chiến dịch "${it.row.name || `#${it.row.campaignId}`}" (gian "${channel.shopName}") ${budgetRestoreMove(it.row)}. ${reason}`,
           },
         });
       }
@@ -833,7 +828,7 @@ export async function runAdsAutoExecute(
           data: {
             ownerId: channel.userId,
             tag: "ads",
-            message: `✂️ Trợ lý hạ ngân sách ngày chiến dịch "${it.row.name || `#${it.row.campaignId}`}" (gian "${channel.shopName}") ${Number(it.row.budget) > 0 ? vndTxt(Number(it.row.budget)) : "không giới hạn"} → ${vndTxt(planned.cut!.newBudget)} vì đang lỗ — ngày mai vẫn lỗ mới tạm dừng; hết lỗ hoặc bật lại thì Trợ lý trả số cũ.`,
+            message: `✂️ Trợ lý hạ ngân sách ngày chiến dịch "${it.row.name || `#${it.row.campaignId}`}" (gian "${channel.shopName}") ${budgetTxt(Number(it.row.budget))} → ${vndTxt(planned.cut!.newBudget)} vì đang lỗ — ngày mai vẫn lỗ mới tạm dừng; hết lỗ hoặc bật lại thì Trợ lý trả số cũ.`,
           },
         });
       } else {
