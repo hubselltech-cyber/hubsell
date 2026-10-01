@@ -274,6 +274,17 @@ const INCOME_COMPONENTS: IncomeComponent[] = [
     note: "Hoa hồng affiliate chỉ chốt lúc quyết toán — chi phí thuê KOC/affiliate của shop, không phải sàn trả thiếu.",
   },
   {
+    // Shopee thêm 29/09/2026 (thư "Significant OpenAPI Updates of Payment").
+    // Trị tuyệt đối: thư ghi khoản này là số âm trong Fees & Charges, dấu của
+    // trường chưa kiểm trên đơn thật.
+    key: "pay_per_sale",
+    label: "Phí quảng cáo tính theo đơn (Pay Per Sale)",
+    read: (i) => Math.abs(gv(i, "pay_per_sale")),
+    direction: "fee",
+    accusable: false,
+    note: "Phí quảng cáo CPS shop tự bật, sàn chỉ tính sau khi đơn hoàn tất — chi phí quảng cáo của shop, không phải sàn trả thiếu.",
+  },
+  {
     key: "campaign_fee",
     label: "Phí chương trình khuyến mãi",
     read: (i) => gv(i, "campaign_fee"),

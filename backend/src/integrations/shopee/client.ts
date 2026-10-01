@@ -1417,6 +1417,11 @@ export interface ShopeeOrderIncome {
   /** Phí "dịch vụ PiShip" (bảo hiểm giao hàng) — Seller Center VN tách dòng riêng. */
   shipping_seller_protection_fee_amount?: number;
   order_ams_commission_fee?: number; // hoa hồng quảng cáo affiliate (AMS)
+  /** Phí quảng cáo tính theo đơn (Pay Per Sale / CPS) — Shopee thêm 29/09/2026:
+   * doanh số quy cho quảng cáo / Target ROI, chỉ tính SAU khi đơn hoàn tất, đã
+   * trừ sẵn trong escrow_amount. Thư báo ghi "số âm trong Fees & Charges", dấu
+   * của trường chưa kiểm trên đơn thật → nơi đọc lấy trị tuyệt đối. */
+  pay_per_sale?: number;
   // Voucher / xu
   voucher_from_seller?: number;
   seller_coin_cash_back?: number;

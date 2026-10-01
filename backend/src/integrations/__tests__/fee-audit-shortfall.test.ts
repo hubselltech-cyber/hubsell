@@ -104,6 +104,38 @@ describe("computePayoutShortfall", () => {
     expect(r.shortfall).toBe(3_000);
   });
 
+  it("phí quảng cáo tính theo đơn (pay_per_sale) → có dòng tên riêng, không buộc tội, dấu nào cũng đọc được", () => {
+    for (const fee of [6_000, -6_000]) {
+      const r = computePayoutShortfall(
+        snapshotIncome({ ...EST_26082480, pay_per_sale: 0 }),
+        snapshotIncome({ ...EST_26082480, pay_per_sale: fee, escrow_amount: 184_531 })
+      );
+      expect(r.shortfall).toBe(0);
+      expect(r.detail).toHaveLength(1); // không còn rơi vào "chưa bóc tách được"
+      expect(r.detail?.[0]).toMatchObject({
+        key: "pay_per_sale",
+        expected: 0,
+        actual: 6_000,
+        lost: 6_000,
+        accused: false,
+      });
+    }
+  });
+
+  it("phí quảng cáo theo đơn đi cùng phí thu vượt: chỉ buộc tội phần thu vượt", () => {
+    const r = computePayoutShortfall(
+      snapshotIncome(EST_26082480),
+      snapshotIncome({
+        ...EST_26082480,
+        pay_per_sale: 6_000,
+        commission_fee: 60_199, // thu vượt 5.000
+        escrow_amount: 179_531,
+      })
+    );
+    expect(r.shortfall).toBe(5_000);
+    expect(r.detail?.find((d) => d.key === "unexplained")).toBeUndefined();
+  });
+
   it("trường LẠ ngoài danh mục (sàn đẻ phí mới) → ghi nhận, không buộc tội", () => {
     const final = snapshotIncome({
       ...EST_26082480,
