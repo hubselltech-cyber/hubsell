@@ -26,7 +26,7 @@ import {
   releaseStockHoldTx,
   restoreStockTx,
 } from "../order-stock";
-import { enqueueStockPush } from "../inventory-push";
+import { finishStockPush, stageStockPush } from "../inventory-push";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import {
   createToken,
@@ -550,23 +550,26 @@ export async function syncLazadaOrders(
       if (!result.sample) {
         result.sample = { order, item: items[0] ?? null };
       }
-      const outcome = await prisma.$transaction((tx) =>
-        upsertLazadaOrderTx(tx, channel, order, items)
-      );
+      // Kho biến động → dòng "tồn chờ đẩy" + việc stock.channel ghi CHUNG giao
+      // dịch đơn (giai đoạn 2 bước 4); chốt phiếu sau commit ở dưới.
+      const { outcome, stockTicket } = await prisma.$transaction(async (tx) => {
+        const r = await upsertLazadaOrderTx(tx, channel, order, items);
+        const ticket = r.stockSync
+          ? await stageStockPush(tx, r.stockSync.productIds, {
+              source: `đồng bộ Lazada đơn ${order.order_number ?? order.order_id}`,
+              oldAvailable: r.stockSync.oldAvailable,
+            })
+          : null;
+        return { outcome: r, stockTicket: ticket };
+      });
       if (outcome.created) {
         result.created++;
         result.itemsCreated += outcome.itemsCreated;
       } else {
         result.updated++;
       }
-      // Kho biến động → xếp job đẩy tồn khả dụng mới lên MỌI gian đã liên kết
-      // (SAU commit; enqueue chỉ ghi DB, không gọi API sàn — không chậm vòng quét).
-      if (outcome.stockSync) {
-        await enqueueStockPush(outcome.stockSync.productIds, {
-          source: `đồng bộ Lazada đơn ${order.order_number ?? order.order_id}`,
-          oldAvailable: outcome.stockSync.oldAvailable,
-        });
-      }
+      // Chốt phiếu đẩy tồn SAU commit (chỉ ghi DB, không gọi API sàn — không chậm vòng quét).
+      await finishStockPush(stockTicket);
       // Sàn báo giao không thành công → chuông Cứu đơn giao thất bại (SAU
       // commit; check thuần trước nên đơn thường không tốn query, tự nuốt lỗi).
       await noticeLazadaDeliveryFail(channel, order);

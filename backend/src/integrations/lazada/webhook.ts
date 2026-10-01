@@ -20,7 +20,7 @@ import { getLazadaConfig, type LazadaConfig } from "./config";
 import { getMultipleOrderItems, getOrder } from "./client";
 import { getValidLazadaAccessToken, upsertLazadaOrderTx } from "./service";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
-import { enqueueStockPush } from "../inventory-push";
+import { finishStockPush, stageStockPush } from "../inventory-push";
 import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
 
@@ -100,15 +100,19 @@ export async function processLazadaOrderPush(
     (await getMultipleOrderItems(accessToken, [tradeOrderId])).get(
       String(tradeOrderId)
     ) ?? [];
-  const outcome = await prisma.$transaction((tx) =>
-    upsertLazadaOrderTx(tx, channel, order, items)
-  );
-  if (outcome.stockSync) {
-    await enqueueStockPush(outcome.stockSync.productIds, {
-      source: `webhook Lazada đơn ${order.order_number ?? tradeOrderId}`,
-      oldAvailable: outcome.stockSync.oldAvailable,
-    });
-  }
+  // Kho biến động → dòng "tồn chờ đẩy" + việc stock.channel ghi CHUNG giao dịch
+  // đơn (giai đoạn 2 bước 4); chốt phiếu sau commit.
+  const { outcome, stockTicket } = await prisma.$transaction(async (tx) => {
+    const r = await upsertLazadaOrderTx(tx, channel, order, items);
+    const ticket = r.stockSync
+      ? await stageStockPush(tx, r.stockSync.productIds, {
+          source: `webhook Lazada đơn ${order.order_number ?? tradeOrderId}`,
+          oldAvailable: r.stockSync.oldAvailable,
+        })
+      : null;
+    return { outcome: r, stockTicket: ticket };
+  });
+  await finishStockPush(stockTicket);
   // Sàn báo giao không thành công → chuông Cứu đơn giao thất bại ngay theo
   // nhịp webhook (real-time hơn vòng quét 10'). Tự nuốt lỗi, không chặn ack.
   await noticeLazadaDeliveryFail(channel, order);

@@ -5,11 +5,17 @@ import {
   ALL_QUEUES,
   DEAD_QUEUES,
   DEFAULT_EVT_ORDER_CONCURRENCY,
+  DEFAULT_STOCK_CHANNEL_CONCURRENCY,
+  DEFAULT_STOCK_PUSH_MODE,
+  DEFAULT_STOCK_SWEEP_SECONDS,
   DEFAULT_WORKER_POOL_MAX,
   EVT_ORDER_MAX_ATTEMPTS,
   evtOrderConcurrency,
   queueOptionsForRole,
   resolveQueueConnection,
+  stockChannelConcurrency,
+  stockPushMode,
+  stockSweepSeconds,
 } from "../queue-config";
 
 const SUPABASE =
@@ -79,6 +85,29 @@ describe("evtOrderConcurrency", () => {
     expect(evtOrderConcurrency({ QUEUE_EVT_ORDER_CONCURRENCY: "8" })).toBe(8);
     expect(evtOrderConcurrency({ QUEUE_EVT_ORDER_CONCURRENCY: "0" })).toBe(DEFAULT_EVT_ORDER_CONCURRENCY);
     expect(evtOrderConcurrency({ QUEUE_EVT_ORDER_CONCURRENCY: "abc" })).toBe(DEFAULT_EVT_ORDER_CONCURRENCY);
+  });
+});
+
+describe("đẩy tồn (bước 4)", () => {
+  it("STOCK_PUSH_MODE: chỉ nhận queue / legacy, còn lại về mặc định", () => {
+    expect(stockPushMode({})).toBe(DEFAULT_STOCK_PUSH_MODE);
+    expect(stockPushMode({ STOCK_PUSH_MODE: "queue" })).toBe("queue");
+    expect(stockPushMode({ STOCK_PUSH_MODE: " Legacy " })).toBe("legacy");
+    expect(stockPushMode({ STOCK_PUSH_MODE: "inline" })).toBe(DEFAULT_STOCK_PUSH_MODE);
+  });
+
+  it("đọc QUEUE_STOCK_CHANNEL_CONCURRENCY, sai thì về mặc định", () => {
+    expect(stockChannelConcurrency({})).toBe(DEFAULT_STOCK_CHANNEL_CONCURRENCY);
+    expect(stockChannelConcurrency({ QUEUE_STOCK_CHANNEL_CONCURRENCY: "10" })).toBe(10);
+    expect(stockChannelConcurrency({ QUEUE_STOCK_CHANNEL_CONCURRENCY: "0" })).toBe(DEFAULT_STOCK_CHANNEL_CONCURRENCY);
+    expect(stockChannelConcurrency({ QUEUE_STOCK_CHANNEL_CONCURRENCY: "x" })).toBe(DEFAULT_STOCK_CHANNEL_CONCURRENCY);
+  });
+
+  it("đọc STOCK_SWEEP_SECONDS, sai thì về mặc định", () => {
+    expect(stockSweepSeconds({})).toBe(DEFAULT_STOCK_SWEEP_SECONDS);
+    expect(stockSweepSeconds({ STOCK_SWEEP_SECONDS: "30" })).toBe(30);
+    expect(stockSweepSeconds({ STOCK_SWEEP_SECONDS: "0" })).toBe(DEFAULT_STOCK_SWEEP_SECONDS);
+    expect(stockSweepSeconds({ STOCK_SWEEP_SECONDS: "x" })).toBe(DEFAULT_STOCK_SWEEP_SECONDS);
   });
 });
 

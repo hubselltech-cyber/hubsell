@@ -24,6 +24,7 @@ import {
   restoreStockTx,
   type StockOutcome,
 } from "../order-stock";
+import { stageStockPush, type StockPushTicket } from "../inventory-push";
 import type { StockSyncRequest } from "./inventory-sync";
 import { SHOPEE_PUSH_CODE, type ShopeePushPayload } from "./webhook";
 import {
@@ -727,6 +728,11 @@ export interface ShopeeOrderEventResult {
    * không được nằm trong transaction kẻo giữ khoá DB suốt các lần chờ retry).
    */
   stockSync?: StockSyncRequest;
+  /**
+   * Phiếu "tồn chờ đẩy" đã ghi CHUNG giao dịch đơn (giai đoạn 2 bước 4). Nơi gọi
+   * đưa cho finishStockPush sau khi hàm này trả về (giao dịch đã commit).
+   */
+  stockTicket?: StockPushTicket;
 }
 
 /**
@@ -765,7 +771,7 @@ export async function processShopeeOrderEvent(
       ? Number(channel.feeRate)
       : PLATFORM_FEE_RATE[ChannelName.SHOPEE];
 
-  const result = await prisma.$transaction(async (tx) => {
+  const applyOrder = async (tx: Prisma.TransactionClient): Promise<ShopeeOrderEventResult> => {
     const up = await upsertShopeeOrderTx(tx, channel, order, feeRate);
     const orderRow = await tx.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
@@ -819,6 +825,18 @@ export async function processShopeeOrderEvent(
     }
 
     return { ...base, inventory: "none" as StockOutcome };
+  };
+
+  // Kho biến động → dòng "tồn chờ đẩy" + việc stock.channel ghi CHUNG giao dịch
+  // đơn: đơn đã commit thì việc đẩy tồn chắc chắn tồn tại.
+  const result = await prisma.$transaction(async (tx) => {
+    const r = await applyOrder(tx);
+    if (!r.stockSync) return r;
+    const stockTicket = await stageStockPush(tx, r.stockSync.productIds, {
+      source: `webhook Shopee đơn ${orderSn}`,
+      oldAvailable: r.stockSync.oldAvailable,
+    });
+    return { ...r, stockTicket };
   });
 
   // LƯU MÃ VẬN ĐƠN CHIỀU ĐI (ngoài transaction — best-effort, lỗi không được
@@ -912,7 +930,7 @@ export async function processShopeeAuthorizationEvent(
  */
 export async function dispatchShopeeWebhookEvent(
   payload: ShopeePushPayload
-): Promise<StockSyncRequest | null> {
+): Promise<StockPushTicket | null> {
   const code = Number(payload.code);
   const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
   if (!shopId) return null;
@@ -940,9 +958,9 @@ export async function dispatchShopeeWebhookEvent(
     });
     console.log(
       `[Webhook Shopee] code=${code} đơn ${orderSn} (shop ${shopId}) →`,
-      JSON.stringify({ ...result, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
+      JSON.stringify({ ...result, stockTicket: undefined, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
     );
-    return result.stockSync ?? null;
+    return result.stockTicket ?? null;
   }
 
   return null;

@@ -14,6 +14,7 @@ import { carrierFromName } from "../../services/shipping";
 import { backfillOrderItemImagesTx } from "../order-item-images";
 import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
+import { stageStockPush, type StockPushTicket } from "../inventory-push";
 import { expireToDate } from "./config";
 import {
   fetchOrders,
@@ -956,6 +957,11 @@ export interface OrderEventResult {
   restored?: number;
   /** SKU kho vừa biến động — route webhook đẩy tồn mới lên các sàn khác + kiểm tra ngưỡng. */
   productIds?: string[];
+  /**
+   * Phiếu "tồn chờ đẩy" đã ghi CHUNG giao dịch đơn (giai đoạn 2 bước 4). Nơi gọi
+   * đưa cho finishStockPush sau khi hàm này trả về (giao dịch đã commit).
+   */
+  stockTicket?: StockPushTicket;
 }
 
 /**
@@ -981,7 +987,7 @@ export async function processTiktokOrderEvent(
       : PLATFORM_FEE_RATE[ChannelName.TIKTOK];
 
   const status = tiktokOrderStatus(order);
-  return prisma.$transaction(async (tx) => {
+  const applyOrder = async (tx: Prisma.TransactionClient): Promise<OrderEventResult> => {
     const up = await upsertOrderTx(tx, channel, order, feeRate);
 
     // Quyết định tác động tồn kho theo trạng thái TikTok.
@@ -1016,6 +1022,15 @@ export async function processTiktokOrderEvent(
       orderStatus: status,
       inventory: "none",
     };
+  };
+
+  // Kho biến động → dòng "tồn chờ đẩy" + việc stock.channel ghi CHUNG giao dịch
+  // đơn: đơn đã commit thì việc đẩy tồn chắc chắn tồn tại.
+  return prisma.$transaction(async (tx) => {
+    const r = await applyOrder(tx);
+    if (!r.productIds?.length) return r;
+    const stockTicket = await stageStockPush(tx, r.productIds, { source: `webhook TikTok đơn ${orderId}` });
+    return { ...r, stockTicket };
   });
 }
 

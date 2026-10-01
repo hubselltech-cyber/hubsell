@@ -6,11 +6,13 @@ import { syncShopeeStockForProducts } from "../integrations/shopee/inventory-syn
 import {
   availableToPush,
   countPendingJobs,
-  enqueueStockPush,
   enqueueStockPushForChannel,
   enqueueStockPushForOwner,
+  finishStockPush,
   getSafetyStockDefault,
   PUSHABLE_CHANNELS,
+  stageStockPush,
+  type StockPushTicket,
 } from "../integrations/inventory-push";
 import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
@@ -57,6 +59,8 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
       // Khoá dòng sản phẩm để tránh 2 người điều chỉnh cùng lúc gây sai số
       const rows = await tx.$queryRaw<
@@ -88,14 +92,15 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
       });
       const updated = await tx.product.findUniqueOrThrow({ where: { id: productId } });
       const log = await tx.inventoryLog.findUniqueOrThrow({ where: { id: written.logs[0]!.id } });
+      // Kho vừa biến động tay → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
+      stockTicket = await stageStockPush(tx, [productId], {
+        source: type === "IMPORT" ? "nhập kho thủ công" : "xuất kho thủ công",
+      });
       return { product: updated, log };
     });
 
-    // Kho vừa biến động tay → xếp job đẩy tồn khả dụng mới lên các sàn đã liên
-    // kết (sau commit, best-effort — không chặn response).
-    await enqueueStockPush([productId], {
-      source: type === "IMPORT" ? "nhập kho thủ công" : "xuất kho thủ công",
-    });
+    // Chốt phiếu đẩy tồn sau commit (best-effort — không chặn response).
+    await finishStockPush(stockTicket);
 
     res.json(result);
   } catch (err) {
@@ -130,6 +135,8 @@ router.post("/set", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
         { id: string; quantityInStock: number }[]
@@ -157,12 +164,11 @@ router.post("/set", async (req: AuthRequest, res, next) => {
       const log = written.logs[0]
         ? await tx.inventoryLog.findUniqueOrThrow({ where: { id: written.logs[0].id } })
         : null;
+      stockTicket = await stageStockPush(tx, [productId], { source: "sửa tồn trực tiếp trên bảng" });
       return { product: updated, log, delta };
     });
 
-    if (result.delta !== 0) {
-      await enqueueStockPush([productId], { source: "sửa tồn trực tiếp trên bảng" });
-    }
+    await finishStockPush(stockTicket);
     res.json(result);
   } catch (err) {
     const e = err as Error & { statusCode?: number };
@@ -210,6 +216,8 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
           : "Xuất kho theo phiếu nhiều mã";
     const ids = parsed.items.map((it) => it.productId);
 
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
       // Khoá theo thứ tự id để hai phiếu chạy song song không deadlock nhau.
       const rows = await tx.$queryRaw<
@@ -255,12 +263,13 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
           quantityInStock: p.quantityInStock,
         });
       }
+      stockTicket = await stageStockPush(tx, ids, {
+        source: isImport ? "phiếu nhập nhiều mã" : "phiếu xuất nhiều mã",
+      });
       return updated;
     });
 
-    await enqueueStockPush(ids, {
-      source: isImport ? "phiếu nhập nhiều mã" : "phiếu xuất nhiều mã",
-    });
+    await finishStockPush(stockTicket);
 
     res.json({
       type,
@@ -398,6 +407,8 @@ router.post("/stocktake", async (req: AuthRequest, res, next) => {
     }).format(new Date());
     const suffix = typeof note === "string" && note.trim() ? ` · ${note.trim()}` : "";
 
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const lines = await prisma.$transaction(async (tx) => {
       const out: { productId: string; skuCode: string; before: number; after: number; delta: number }[] = [];
       for (const it of parsed) {
@@ -434,13 +445,14 @@ router.post("/stocktake", async (req: AuthRequest, res, next) => {
           out.push({ productId: it.productId, skuCode: skuById.get(it.productId)!, before: r.previous, after: it.counted, delta: r.delta });
         }
       }
+      const changed = out.filter((l) => l.delta !== 0).map((l) => l.productId);
+      if (changed.length) {
+        stockTicket = await stageStockPush(tx, changed, { source: locName ? `kiểm kê tại ${locName}` : "kiểm kê" });
+      }
       return out;
     });
 
-    const changed = lines.filter((l) => l.delta !== 0).map((l) => l.productId);
-    if (changed.length) {
-      await enqueueStockPush(changed, { source: locName ? `kiểm kê tại ${locName}` : "kiểm kê" });
-    }
+    await finishStockPush(stockTicket);
     res.json({ counted: parsed.length, adjusted: lines.length, unchanged: parsed.length - lines.length, lines });
   } catch (err) {
     const e = err as Error & { statusCode?: number };

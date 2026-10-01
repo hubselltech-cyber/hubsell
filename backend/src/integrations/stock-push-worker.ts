@@ -18,11 +18,21 @@
 //     InventorySyncAlert (banner Kho + Trung tâm điều hành) rồi xóa job.
 //   · Đẩy Shopee thành công còn hẹn job ĐỐI SOÁT double-check (sàn 200 nhưng
 //     ghi trễ) — tái dùng nguyên cơ chế verify sẵn có của shopee/inventory-sync.
+//
+// Giai đoạn 2 bước 4 (docs/HANG-DOI-BEN.md mục 4.5): phần "ai nhặt dòng nào,
+// khi nào" có HAI đường, chọn bằng STOCK_PUSH_MODE:
+//   · legacy — vòng quét drain() dưới đây: một luồng, đi tuần tự từng gian.
+//   · queue  — workers/stock-queue.ts: bộ chạy theo gian, các gian chạy song
+//     song; nhận lô bằng claimChannelBatch nên một gian không bao giờ có hai
+//     tiến trình cùng đẩy.
+// Phần ĐẨY các dòng đã nhận của một gian (processClaimedJobs) dùng chung cho cả hai.
 // ============================================================
 
 import { ChannelName, StockPushStatus, StockSyncStatus } from "@prisma/client";
 import type { StockPushJob } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { withDbLock } from "../lib/db-lock";
+import { STOCK_PUSH_LEASE_SECONDS } from "../lib/queue-config";
 import { availableToPush, registerStockPushKick } from "./inventory-push";
 import {
   createSyncAlert,
@@ -44,6 +54,7 @@ import { getWarehouses, updateTiktokInventory } from "./tiktok/client";
 import { getValidAccessToken as getValidTiktokAccessToken } from "./tiktok/service";
 
 const POLL_INTERVAL_MS = 5_000;
+/** Số dòng lấy mỗi lô — dùng chung cho đường cũ và bộ chạy theo gian của đường mới. */
 const BATCH_SIZE = 30;
 /** Số lần thử một job (1 lần đầu + 2 retry) — khớp thông điệp cảnh báo. */
 const MAX_ATTEMPTS = 3;
@@ -138,10 +149,10 @@ async function recoverStaleRunning(): Promise<void> {
   }
 }
 
-async function processChannelJobs(
-  channelId: string,
-  jobs: StockPushJob[]
-): Promise<void> {
+/**
+ * ĐƯỜNG CŨ: nhận từng dòng của lô bằng UPDATE có điều kiện rồi đẩy.
+ */
+async function processChannelJobs(channelId: string, jobs: StockPushJob[]): Promise<void> {
   // Nhận từng job bằng UPDATE có điều kiện — job đã bị tiến trình khác cầm
   // (hoặc enqueue mới vừa reset) thì bỏ qua lượt này.
   const claimed: StockPushJob[] = [];
@@ -153,7 +164,105 @@ async function processChannelJobs(
     if (r.count > 0) claimed.push(job);
   }
   if (claimed.length === 0) return;
+  await processClaimedJobs(channelId, claimed);
+}
 
+/**
+ * ĐƯỜNG HÀNG ĐỢI BỀN: nhận MỘT LÔ dòng tới hạn của một gian, và chỉ nhận khi
+ * không tiến trình nào khác đang đẩy gian đó.
+ *
+ * "Đang có người đẩy" = gian còn dòng ở RUNNING chưa quá hạn thuê. Chính các
+ * dòng RUNNING làm vé giữ gian, không cần cột hay bảng riêng. Việc xét + nhận
+ * nằm trong một giao dịch ngắn dưới khóa theo gian (advisory lock cấp giao dịch)
+ * nên hai tiến trình không thể cùng lúc thấy gian trống rồi cùng nhận.
+ *
+ * Dòng RUNNING quá hạn thuê = tiến trình cầm nó đã chết giữa lô → trả về hàng
+ * chờ ngay tại đây (giữ nguyên attempts). Trả mảng rỗng khi gian đang có người
+ * đẩy hoặc không có dòng nào tới hạn.
+ */
+export async function claimChannelBatch(channelId: string): Promise<StockPushJob[]> {
+  return withDbLock(`stock-push:${channelId}`, async (tx) => {
+    const now = new Date();
+    const orphaned = await tx.stockPushJob.updateMany({
+      where: {
+        channelId,
+        status: StockPushStatus.RUNNING,
+        updatedAt: { lt: new Date(now.getTime() - STOCK_PUSH_LEASE_SECONDS * 1000) },
+      },
+      data: { status: StockPushStatus.PENDING, nextRetryAt: now },
+    });
+    if (orphaned.count > 0) {
+      console.warn(
+        `[Stock-push] Gian ${channelId}: trả ${orphaned.count} dòng kẹt RUNNING quá ${STOCK_PUSH_LEASE_SECONDS} giây về hàng chờ`
+      );
+    }
+    const busy = await tx.stockPushJob.findFirst({
+      where: { channelId, status: StockPushStatus.RUNNING },
+      select: { id: true },
+    });
+    if (busy) return [];
+
+    const due = await tx.stockPushJob.findMany({
+      where: { channelId, status: StockPushStatus.PENDING, nextRetryAt: { lte: now } },
+      // Dòng chờ lâu nhất đi trước — SKU đổi liên tục không chen mãi lên đầu.
+      orderBy: { updatedAt: "asc" },
+      take: BATCH_SIZE,
+    });
+    if (due.length === 0) return [];
+    await tx.stockPushJob.updateMany({
+      where: { id: { in: due.map((j) => j.id) } },
+      data: { status: StockPushStatus.RUNNING },
+    });
+    return due;
+  });
+}
+
+/**
+ * Đẩy các dòng ĐÃ NHẬN (đang RUNNING) của MỘT gian. Dùng chung cho vòng quét
+ * đường cũ và bộ chạy theo gian của đường hàng đợi bền (workers/stock-queue.ts).
+ *
+ * `shouldStop`: hỏi trước mỗi dòng; trả true thì dừng lô (worker đang tắt lúc
+ * deploy), các dòng chưa đụng tới được trả về PENDING cho lượt sau. Lô bị lỗi
+ * ngoài dự kiến (database) cũng trả các dòng còn lại về PENDING trước khi ném tiếp.
+ */
+export async function processClaimedJobs(
+  channelId: string,
+  claimed: StockPushJob[],
+  shouldStop?: () => boolean
+): Promise<void> {
+  // Dòng đã nhận mà chưa xử lý xong (dừng giữa lô / lỗi ngoài dự kiến) phải về
+  // lại PENDING — để nằm ở RUNNING thì phải chờ hết hạn mới có người gỡ.
+  let next = 0;
+  const releaseRest = async (): Promise<void> => {
+    const ids = claimed.slice(next).map((j) => j.id);
+    if (ids.length === 0) return;
+    await prisma.stockPushJob
+      .updateMany({
+        where: { id: { in: ids }, status: StockPushStatus.RUNNING },
+        data: { status: StockPushStatus.PENDING },
+      })
+      .catch((err) => console.error("[Stock-push] Không trả được dòng dở về hàng chờ:", (err as Error).message));
+  };
+  try {
+    const stoppedEarly = await pushClaimedJobs(channelId, claimed, {
+      shouldStop,
+      onJobStart: (i) => {
+        next = i;
+      },
+    });
+    if (stoppedEarly) await releaseRest();
+  } catch (err) {
+    await releaseRest();
+    throw err;
+  }
+}
+
+/** Trả true khi dừng giữa lô theo `shouldStop` (các dòng từ dòng đang đứng trở đi chưa xử lý). */
+async function pushClaimedJobs(
+  channelId: string,
+  claimed: StockPushJob[],
+  hooks: { shouldStop?: () => boolean; onJobStart: (index: number) => void }
+): Promise<boolean> {
   const channel = await prisma.channel.findFirst({
     where: { id: channelId, status: "ACTIVE", refreshToken: { not: null } },
   });
@@ -162,7 +271,7 @@ async function processChannelJobs(
     await prisma.stockPushJob.deleteMany({
       where: { id: { in: claimed.map((j) => j.id) } },
     });
-    return;
+    return false;
   }
 
   // Không lấy nổi token = không đẩy được SKU nào của gian này → chốt FAILED cả
@@ -185,7 +294,7 @@ async function processChannelJobs(
       await prisma.stockPushJob.deleteMany({
         where: { id: { in: claimed.map((j) => j.id) } },
       });
-      return;
+      return false;
     }
   } catch (err) {
     const msg = (err as Error).message;
@@ -198,7 +307,7 @@ async function processChannelJobs(
     await createSyncAlert(channel.id, {
       message: describeChannelFailure(channel.shopName, msg),
     });
-    return;
+    return false;
   }
 
   // Tồn an toàn mặc định của CHỦ gian — một lần cho cả loạt.
@@ -209,7 +318,9 @@ async function processChannelJobs(
   const safetyDefault = setting?.safetyStockDefault ?? 0;
 
   let first = true;
-  for (const job of claimed) {
+  for (const [index, job] of claimed.entries()) {
+    hooks.onJobStart(index);
+    if (hooks.shouldStop?.()) return true;
     // Giãn nhịp giữa các call trong cùng gian (call đầu không cần chờ).
     if (!first) await sleep(PACE_MS);
     first = false;
@@ -365,6 +476,7 @@ async function processChannelJobs(
       await handleJobFailure(job, channel.shopName, pushValue, (err as Error).message);
     }
   }
+  return false;
 }
 
 /** Lỗi một lượt đẩy: còn lượt thì hẹn retry (backoff), hết lượt thì log FAILED

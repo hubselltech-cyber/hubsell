@@ -13,7 +13,7 @@ import { Router } from "express";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
-import { enqueueStockPush } from "../integrations/inventory-push";
+import { finishStockPush, stageStockPush, type StockPushTicket } from "../integrations/inventory-push";
 import {
   createRootLocationTx,
   setLevelAbsolute,
@@ -475,6 +475,8 @@ router.post("/transfer", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const results = await prisma.$transaction(async (tx) => {
       const out: { productId: string; from: number; to: number; totalChanged: boolean }[] = [];
       for (const it of items as { productId: string; quantity: unknown }[]) {
@@ -488,13 +490,14 @@ router.post("/transfer", async (req: AuthRequest, res, next) => {
         });
         out.push({ productId: it.productId, from: r.from, to: r.to, totalChanged: r.totalChanged });
       }
+      // Qua / ra khỏi ô "không bán" thì tồn bán đổi → đẩy Có thể bán mới lên sàn.
+      const changed = out.filter((r) => r.totalChanged).map((r) => r.productId);
+      if (changed.length) {
+        stockTicket = await stageStockPush(tx, changed, { source: `chuyển vị trí ${from.name} → ${to.name}` });
+      }
       return out;
     });
-    // Qua / ra khỏi ô "không bán" thì tồn bán đổi → đẩy Có thể bán mới lên sàn.
-    const changed = results.filter((r) => r.totalChanged).map((r) => r.productId);
-    if (changed.length) {
-      await enqueueStockPush(changed, { source: `chuyển vị trí ${from.name} → ${to.name}` });
-    }
+    await finishStockPush(stockTicket);
     res.json({ moved: results.length, results });
   } catch (err) {
     const e = err as Error & { statusCode?: number };
@@ -646,6 +649,8 @@ router.post("/putaway", async (req: AuthRequest, res, next) => {
     const nameOf = new Map(locs.map((l) => [l.id, l.name]));
     const note = typeof reason === "string" && reason.trim() ? reason.trim() : "Cất hàng lên kệ";
 
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const results = await prisma.$transaction(async (tx) => {
       const out: { productId: string; toLocationId: string; from: number; to: number; totalChanged: boolean }[] = [];
       for (const l of parsed) {
@@ -659,10 +664,13 @@ router.post("/putaway", async (req: AuthRequest, res, next) => {
         });
         out.push({ productId: l.productId, toLocationId: l.toLocationId, from: r.from, to: r.to, totalChanged: r.totalChanged });
       }
+      const changed = [...new Set(out.filter((r) => r.totalChanged).map((r) => r.productId))];
+      if (changed.length) {
+        stockTicket = await stageStockPush(tx, changed, { source: "cất hàng lên kệ (qua ô không bán)" });
+      }
       return out;
     });
-    const changed = [...new Set(results.filter((r) => r.totalChanged).map((r) => r.productId))];
-    if (changed.length) await enqueueStockPush(changed, { source: "cất hàng lên kệ (qua ô không bán)" });
+    await finishStockPush(stockTicket);
     res.json({ moved: results.length, totalQuantity: parsed.reduce((a, p) => a + p.quantity, 0), results });
   } catch (err) {
     const e = err as Error & { statusCode?: number };
@@ -700,8 +708,10 @@ router.post("/set-level", async (req: AuthRequest, res, next) => {
       res.status(404).json({ error: "Không tìm thấy sản phẩm hoặc vị trí" });
       return;
     }
-    const written = await prisma.$transaction((tx) =>
-      setLevelAbsolute(tx, {
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
+    const written = await prisma.$transaction(async (tx) => {
+      const w = await setLevelAbsolute(tx, {
         productId,
         locationId,
         quantity: target,
@@ -710,11 +720,13 @@ router.post("/set-level", async (req: AuthRequest, res, next) => {
             ? reason.trim()
             : `Sửa số tại ${loc.name}`,
         actorId: req.userId ?? null,
-      })
-    );
-    if (written.delta !== 0) {
-      await enqueueStockPush([productId], { source: `sửa số tại vị trí ${loc.name}` });
-    }
+      });
+      if (w.delta !== 0) {
+        stockTicket = await stageStockPush(tx, [productId], { source: `sửa số tại vị trí ${loc.name}` });
+      }
+      return w;
+    });
+    await finishStockPush(stockTicket);
     res.json({
       productId,
       locationId,

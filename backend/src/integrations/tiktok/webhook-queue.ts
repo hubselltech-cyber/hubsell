@@ -30,7 +30,7 @@ import {
   processTiktokAuthorizationEvent,
   processTiktokOrderEvent,
 } from "./service";
-import { enqueueStockPush } from "../inventory-push";
+import { finishStockPush } from "../inventory-push";
 import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
 
@@ -307,16 +307,16 @@ export async function handleTiktokOrderJob(
   const result = await processTiktokOrderEvent(channel, orderId);
   console.log(
     `[Webhook TikTok] ${eventType != null ? `type=${eventType} ` : ""}đơn ${orderId} (shop ${shopId}) →`,
-    JSON.stringify({ ...result, productIds: result.productIds?.length })
+    JSON.stringify({ ...result, stockTicket: undefined, productIds: result.productIds?.length })
   );
   if (!result.found) return "sàn không trả chi tiết đơn";
 
   // Kho biến động → đẩy "có thể bán" mới lên các gian khác đã nối cùng SKU
-  // + kiểm tra ngưỡng sắp hết hàng. Chạy SAU khi transaction đơn đã commit —
-  // lỗi đẩy sàn có retry + cảnh báo riêng, không kéo job đơn chạy lại.
-  if (result.productIds?.length) {
-    await enqueueStockPush(result.productIds, { source: `webhook TikTok đơn ${orderId}` });
-  }
+  // + kiểm tra ngưỡng sắp hết hàng. Dòng chờ đẩy do processTiktokOrderEvent lập
+  // phiếu ngay trong giao dịch đơn; ở đây chốt phiếu SAU khi giao dịch đã commit
+  // (đường cũ: xếp job tại đây như trước). Lỗi đẩy sàn có retry + cảnh báo
+  // riêng, không kéo job đơn chạy lại.
+  await finishStockPush(result.stockTicket);
   return null;
 }
 

@@ -10,6 +10,7 @@ import { checkSecretBoxAtBoot, secretBoxEnabled } from "./lib/secret-box";
 import { startNotificationSseBridge } from "./services/notifications";
 import { resolveHubsellRole, startAllWorkers } from "./workers";
 import { registerEventQueueWorkers } from "./workers/event-queue";
+import { registerStockQueueWorkers, stopStockRunners } from "./workers/stock-queue";
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -54,8 +55,15 @@ if (secretBoxEnabled()) {
 // Bước 1 (webhook Lazada): sẵn sàng rồi mới đăng ký worker nhận việc; ở vai web
 // việc đăng ký tự bỏ qua.
 // ============================================================
+// Bước 4 (đẩy tồn): đăng ký thêm worker stock.channel (tín hiệu "gian có dòng
+// mới") và stock.verify. Việc đẩy tồn tự nó KHÔNG phụ thuộc hàng đợi này lên hay
+// không: bộ chạy theo gian + lưới quét khởi động ở startAllWorkers (workers/stock-queue.ts).
 void startQueue(role)
-  .then((ok) => (ok ? registerEventQueueWorkers() : undefined))
+  .then(async (ok) => {
+    if (!ok) return;
+    await registerEventQueueWorkers();
+    await registerStockQueueWorkers();
+  })
   .catch((err) => console.error("[Queue] Không đăng ký được worker:", (err as Error).message));
 
 if (role === "worker" || role === "all") {
@@ -76,9 +84,12 @@ if (role === "worker") {
     console.log(`[Role] Worker nhận ${sig} — dừng`);
     clearInterval(anchor);
     // Chờ việc của hàng đợi bền đang chạy xong rồi mới thoát; việc chưa xong
-    // không mất (hết hạn giữ thì được trả lại hàng chờ). Chốt cứng phòng treo.
+    // không mất (hết hạn giữ thì được trả lại hàng chờ). Bộ chạy đẩy tồn dừng sau
+    // dòng đang đẩy và trả các dòng chưa đụng tới về hàng chờ. Chốt cứng phòng treo.
     setTimeout(() => process.exit(0), QUEUE_STOP_TIMEOUT_MS + 2_000).unref();
-    void stopQueue(QUEUE_STOP_TIMEOUT_MS).finally(() => process.exit(0));
+    void Promise.allSettled([stopQueue(QUEUE_STOP_TIMEOUT_MS), stopStockRunners(QUEUE_STOP_TIMEOUT_MS)]).finally(() =>
+      process.exit(0)
+    );
   };
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));

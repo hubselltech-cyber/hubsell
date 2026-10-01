@@ -38,7 +38,12 @@ import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { syncTiktokOrders } from "../integrations/tiktok/service";
-import { enqueueStockPush } from "../integrations/inventory-push";
+import {
+  finishStockPush,
+  finishStockPushes,
+  stageStockPush,
+  type StockPushTicket,
+} from "../integrations/inventory-push";
 
 const router = Router();
 
@@ -464,6 +469,8 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
     }
 
     // Trường hợp HỦY ĐƠN: hoàn kho trong 1 transaction
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
       // Tìm các log TRỪ kho gắn với đơn này (changeQuantity < 0)
       const deductions = await tx.inventoryLog.findMany({
@@ -520,14 +527,16 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
         include: { channel: { select: { channelName: true, shopName: true } } },
       });
 
+      // Hủy đơn vừa hoàn kho → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
+      stockTicket = await stageStockPush(
+        tx,
+        restored.map((l) => l.productId),
+        { source: `hủy đơn ${order.orderCode}` }
+      );
       return { order: updatedOrder, restored };
     });
 
-    // Hủy đơn vừa hoàn kho → đẩy tồn khả dụng mới lên các sàn đã liên kết.
-    await enqueueStockPush(
-      result.restored.map((l) => l.productId),
-      { source: `hủy đơn ${order.orderCode}` }
-    );
+    await finishStockPush(stockTicket);
 
     res.json(result);
   } catch (err) {
@@ -1380,6 +1389,9 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
       }[];
     }[] = [];
     const failed: { orderCode: string; error: string }[] = [];
+    // Mỗi đơn một giao dịch → mỗi đơn một phiếu "tồn chờ đẩy" lập trong giao dịch
+    // của nó (giai đoạn 2 bước 4), chốt cả loạt sau vòng lặp.
+    const stockTickets: StockPushTicket[] = [];
 
     for (const order of orders) {
       try {
@@ -1401,9 +1413,16 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
               ...(lines.length > 0 ? { stockRestoredAt: new Date() } : {}),
             },
           });
-          return lines;
+          // Hàng hoàn vừa nhập lại kho → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
+          const ticket = await stageStockPush(
+            tx,
+            lines.map((l) => l.productId),
+            { source: "nhập kho hàng hoàn (nhập kho tất cả)" }
+          );
+          return { lines, ticket };
         });
-        results.push({ orderCode: order.orderCode, restored });
+        stockTickets.push(restored.ticket);
+        results.push({ orderCode: order.orderCode, restored: restored.lines });
       } catch (err) {
         failed.push({
           orderCode: order.orderCode,
@@ -1412,11 +1431,8 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
       }
     }
 
-    // Hàng hoàn vừa nhập lại kho → đẩy tồn khả dụng mới lên các sàn đã liên kết.
-    await enqueueStockPush(
-      results.flatMap((r) => r.restored.map((l) => l.productId)),
-      { source: "nhập kho hàng hoàn (nhập kho tất cả)" }
-    );
+    // Hàng hoàn vừa nhập lại kho → chốt các phiếu đẩy tồn một lượt.
+    await finishStockPushes(stockTickets);
 
     res.json({
       processed: results.length,
@@ -1494,6 +1510,8 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
       // Chỉ cộng kho khi hàng nguyên vẹn VÀ đơn này chưa từng được cộng
       const shouldRestore =
@@ -1531,14 +1549,16 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
         include: { channel: { select: { channelName: true, shopName: true } } },
       });
 
+      // Hàng hoàn nguyên vẹn vừa cộng kho → dòng chờ đẩy tồn mới lên các sàn đã liên kết.
+      stockTicket = await stageStockPush(
+        tx,
+        restored.map((l) => l.productId),
+        { source: `nhận hàng hoàn — đơn ${order.orderCode}` }
+      );
       return { order: updatedOrder, restored, shouldRestore };
     });
 
-    // Hàng hoàn nguyên vẹn vừa cộng kho → đẩy tồn mới lên các sàn đã liên kết.
-    await enqueueStockPush(
-      result.restored.map((l) => l.productId),
-      { source: `nhận hàng hoàn — đơn ${order.orderCode}` }
-    );
+    await finishStockPush(stockTicket);
 
     // LƯU Ý (25/08): KHÔNG cắm hook hóa đơn điều chỉnh vào đây — anh Trung chốt
     // luồng thuế THUẦN THEO API SÀN, kho vật lý chỉ kiểm soát nội bộ (xem

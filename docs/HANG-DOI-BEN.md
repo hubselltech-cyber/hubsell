@@ -1,6 +1,6 @@
 # Giai đoạn 2: hàng đợi việc bền và webhook 3 sàn
 
-Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; đã soạn migration bước nền (chưa đẩy, chờ anh duyệt SQL); chưa viết mã nghiệp vụ** (ngoài tệp thử `backend/scripts/pgboss-pooler-probe.mjs`). Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
+Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; bước nền và webhook ba sàn (bước 0–3) đã chạy trên prod 01/10; bước 4 (đẩy tồn) xem mục 4.5; bước 5 (hóa đơn) và 6 (dọn) chưa làm.** Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
 
 ---
 
@@ -44,6 +44,7 @@ Sau hai lượt: schema thử đã xóa (`schemaLeft: 0`), thư mục tạm trê
 5. **pg-boss là gói ESM**, backend là CommonJS. Node trên Render là v24.21.0 nên `require()` được; đã biên dịch thử với đúng `tsconfig` của backend (TypeScript 5.9.3), kiểu đầy đủ.
 6. **pg-boss không giữ câu lệnh chuẩn bị sẵn** trên kết nối (0 câu) — không lặp lại kiểu sự cố bộ nhớ database 30/09. Phía Prisma chỉ giữ 2 câu cho việc gửi.
 7. **Tạo hàng đợi được ngay trong SQL** (`SELECT pgboss.create_queue(...)`), kể cả hàng đợi có bảng riêng. → Toàn bộ thay đổi database nằm trong một tệp migration trình trước, lúc chạy không có lệnh tạo bảng nào. Điều kiện: không bật `persistQueueStats` (bật thì thư viện tự tạo mỗi ngày một mảnh bảng thống kê).
+8. **Hàng đợi "gộp theo khóa" có hai điểm yếu khi việc chạy lâu** (đo tối 01/10, sau khi bước 1–3 đã lên prod): việc chờ của một khóa đang chạy chặn cả hàng đợi tới khi việc đang chạy xong; và khóa bị phần giám sát chụp đúng lúc đang chạy thì việc mới của khóa đó bị bỏ qua tới khoảng 2 phút. Số đo và ảnh hưởng ở cuối mục 4.5.
 
 ### 1.3. Chưa kiểm
 
@@ -125,6 +126,8 @@ Hết lượt thử → việc sang evt.dead → ghi cảnh báo cho chủ shop 
 - Lazada: thêm một lần ghi database trước khi trả 200. Hạn của Lazada là 500 ms; số đo ghi trong giao dịch là 10 ms (p95 10–45 ms). Database lỗi thì trả 500, Lazada tự gửi lại mỗi 30 phút tối đa 12 lần, tốt hơn là mất.
 
 ### 3.4. Đẩy tồn
+
+> Ghi chú 01/10 tối: khi làm bước 4, gạch đầu dòng thứ ba dưới đây đổi cách thực hiện (việc đẩy không chạy bên trong việc của pg-boss). Xem mục 4.5.
 
 - `stock_push_jobs` giữ nguyên vai trò và khóa (gian + SKU), nên các trang đang đọc bảng này không phải sửa.
 - Dòng "tồn chờ đẩy" được ghi **trong chính giao dịch ghi đơn / sửa kho**, cùng lúc xếp một việc `stock.channel` cho gian đó. Đơn đã ghi thì việc đẩy tồn chắc chắn tồn tại.
@@ -368,6 +371,94 @@ Khác với trước:
 Đường lui: `SHOPEE_WEBHOOK_MODE=legacy`. Hàng đợi bền chưa sẵn sàng thì route tự về bảng cũ.
 
 Đã kiểm: `shopee-webhook-inbox.test.ts` (5 tình huống: đường lui, đơn trừ kho đúng + gửi trùng, ủy quyền shop chưa nối, sàn lỗi → hỏng hẳn + cảnh báo, mã vận đơn bị gộp vẫn tới handler mà không phải hỏi sàn).
+
+### 4.5. Bước 4 (đẩy tồn) — lần một làm 01/10/2026
+
+| Lần | Nội dung |
+|---|---|
+| Một | Worker biết xử lý tín hiệu `stock.channel` và việc `stock.verify`; mọi nơi ghi đơn / sửa kho đã lập "phiếu đẩy tồn" trong giao dịch của mình. Mặc định VẪN là đường cũ (`STOCK_PUSH_MODE` chưa đặt = `legacy`): chưa ai gửi tín hiệu, vòng quét cũ vẫn chạy |
+| Hai | Đổi mặc định sang `queue`, sau khi đã thấy worker bản lần một chạy trên prod |
+
+**Khác với mục 3.4 ở một điểm chính: việc đẩy KHÔNG chạy bên trong việc của pg-boss.** Lý do là một hạn chế của thư viện, đo được tối 01/10 (xem "Hai điều đo được về hàng đợi gộp theo khóa" bên dưới). Ba điều mục 3.4 hứa vẫn giữ nguyên: dòng chờ đẩy ghi chung giao dịch đơn, các gian đẩy song song, một gian không bao giờ có hai worker cùng đẩy. Không đổi database.
+
+| Việc | Tệp |
+|---|---|
+| Cửa xếp việc: ghi dòng `stock_push_jobs` cả lô bằng một câu lệnh (một tham số JSON), gửi tín hiệu `stock.channel` cho từng gian; cặp `stageStockPush` (trong giao dịch) + `finishStockPush` (sau commit) | `backend/src/integrations/inventory-push.ts` |
+| Bộ chạy theo gian, lưới quét, dừng êm; hàm xử lý tín hiệu | `backend/src/workers/stock-queue.ts` |
+| Nhận một lô của một gian có khóa theo gian (`claimChannelBatch`); phần đẩy các dòng đã nhận dùng chung cho đường cũ và mới (`processClaimedJobs`), thêm dừng giữa lô và trả dòng dở về hàng chờ | `backend/src/integrations/stock-push-worker.ts` |
+| Đối soát tồn Shopee sau khi đẩy sang `stock.verify` | `backend/src/integrations/shopee/inventory-sync.ts` |
+| Ghi dòng chờ đẩy chung giao dịch đơn của ba sàn | `integrations/shopee/service.ts`, `tiktok/service.ts`, `lazada/webhook.ts`, `lazada/service.ts` |
+| Ghi dòng chờ đẩy chung giao dịch sửa kho bằng tay: nhập / xuất, sửa tồn trên bảng, phiếu nhiều mã, kiểm kê, chuyển vị trí, cất hàng, sửa số tại vị trí, nhập Excel, hủy đơn, nhận hàng hoàn | `routes/inventory.ts`, `stock-locations.ts`, `products.ts`, `orders.ts` |
+| Khởi động theo chế độ; worker nhận lệnh dừng thì dừng êm bộ chạy | `backend/src/index.ts`, `workers/index.ts` |
+
+**Đường mới chạy thế nào**
+
+```
+Giao dịch ghi đơn / sửa kho:  đổi tồn + ghi dòng stock_push_jobs + gửi tín hiệu stock.channel(gian)   ← cùng commit
+Worker nhận tín hiệu:         ghi tên gian vào hàng chờ trong tiến trình, trả về ngay (vài mili-giây)
+Bộ chạy, mỗi lượt một gian:   khóa gian ở database → gian đang có người đẩy thì nhường
+                              → nhận một lô 30 dòng tới hạn → đẩy từng dòng (giãn 0,4 giây)
+                              → gian còn dòng thì quay lại cuối hàng
+Lưới quét mỗi 5 giây:         gian nào có dòng tới hạn (kể cả dòng tới giờ thử lại, dòng kẹt) → gọi bộ chạy
+Đẩy Shopee xong:              xếp / dời việc stock.verify của SKU đó, hẹn 3 phút
+```
+
+- **Bảng `stock_push_jobs` là nguồn sự thật.** Dòng đã ghi thì lượt đẩy chắc chắn diễn ra, vì lưới quét đọc thẳng bảng. Tín hiệu qua pg-boss chỉ để worker chạy NGAY (khoảng nửa giây) thay vì chờ lưới quét. pg-boss trục trặc thì đẩy tồn vẫn chạy, chậm nhất bằng đường cũ (5 giây).
+- **Các gian chạy song song**, mặc định 4 gian cùng lúc mỗi worker. Mỗi lượt chỉ một lô rồi quay lại cuối hàng, nên gian bật lần đầu vài nghìn SKU không chiếm chỗ của gian khác.
+- **Một gian không bao giờ có hai tiến trình cùng đẩy.** Việc nhận lô nằm trong một giao dịch ngắn có khóa theo gian, và chỉ nhận khi gian không còn dòng nào ở trạng thái "đang đẩy". Chính các dòng đang đẩy làm vé giữ gian, không cần cột hay bảng mới.
+- **Lỗi của từng dòng** (sàn từ chối, quá nhịp) xử lý như đường cũ: dòng tự đếm lượt và hẹn giờ thử lại (3 lượt, 30 rồi 60 giây), hết lượt thì cảnh báo. Lưới quét gọi lại gian khi dòng tới giờ.
+- **Deploy:** worker nhận lệnh dừng thì đẩy xong dòng đang dở, trả các dòng chưa đụng tới về hàng chờ rồi mới thoát. Worker bản mới lên, lưới quét nhặt tiếp.
+
+**Ba điều thêm vào khi viết mã**
+
+| Điều | Vì sao |
+|---|---|
+| Phần ghi trong giao dịch nằm trong savepoint | Ghi dòng chờ đẩy lỗi thì lùi về savepoint, giao dịch đơn vẫn commit, phiếu được ghi lại sau commit. Gửi tín hiệu lỗi thì dòng vẫn giữ. Việc đẩy tồn trục trặc không được chặn việc ghi đơn |
+| Tín hiệu trong giao dịch bị gộp vào tín hiệu đang chờ thì gửi lại một tín hiệu sau commit | Tín hiệu đang chờ có thể được xử lý xong trước khi giao dịch kịp commit, lúc đó bộ chạy chưa thấy dòng mới. Không gửi lại thì dòng đó chờ tới lượt lưới quét (5 giây) |
+| Ghi cả lô dòng bằng một câu lệnh, một tham số JSON | Trước là mỗi SKU × gian một câu ghi nối tiếp nhau (bật một gian 5.000 SKU là 5.000 câu ngay trong request). Một tham số JSON là theo bài học 30/09 về câu lệnh hàng nghìn tham số |
+
+**Các con số**
+
+| Tham số | Giá trị | Căn cứ |
+|---|---|---|
+| Số gian đẩy cùng lúc mỗi worker | 4 (`QUEUE_STOCK_CHANNEL_CONCURRENCY`) | **Em tự chọn**, lấy bằng số của `evt.order`. Trước bước 4 là 1 |
+| Nhịp lưới quét | 5 giây (`STOCK_SWEEP_SECONDS`) | Bằng nhịp vòng quét của đường cũ |
+| Hạn thuê gian (dòng "đang đẩy" quá lâu thì coi là mồ côi) | 300 giây | **Em tự chọn.** Một lô 30 dòng bình thường xong trong 1–2 phút; lệnh gọi sàn chưa có thời hạn chờ nên phải chừa. Đường cũ dùng 15 phút |
+| Lô 30 dòng, giãn 0,4 giây, 3 lượt thử, 30 rồi 60 giây | giữ nguyên | Số của đường cũ |
+| Đối soát Shopee: hẹn 3 phút, 3 lượt, 1 việc một lúc | giữ nguyên | Số của đường cũ. Giữ 1 việc một lúc vì mỗi việc là một lệnh đọc tồn Shopee, chưa có giãn nhịp theo shop |
+
+**Đường lui:** đặt `STOCK_PUSH_MODE=legacy` ở CẢ web lẫn worker. Đặt lệch một bên vẫn không mất dòng: web ghi dòng theo kiểu nào thì worker (vòng quét cũ hay lưới quét mới) cũng đọc cùng một bảng.
+
+**Lúc chuyển bản (lần hai):** worker bản lần một còn sống vài phút chạy vòng quét cũ, worker bản mới chạy bộ chạy theo gian. Bên nào nhận dòng cũng đánh dấu "đang đẩy" trước, và bộ chạy mới nhường gian đang có dòng "đang đẩy", nên không đẩy chồng. Việc đối soát đang nằm ở bảng `shopee_webhook_logs` do worker cũ của bảng đó xử lý nốt.
+
+**Đã kiểm:** `stock-queue.test.ts`, 15 tình huống trên database dev (múi giờ phiên là Asia/Bangkok, khác prod): đẩy trọn đường; rollback mất cả dòng lẫn tín hiệu, commit có cả hai; lỗi SQL trong savepoint mà giao dịch gốc vẫn commit (cả hai savepoint); sàn từ chối đủ 3 lượt ra cảnh báo; biến động mới giữa lúc dòng chờ thử lại vẫn đẩy ngay; lưới quét nhặt dòng sót và dòng kẹt; gian đang có tiến trình khác đẩy thì nhường; bốn lượt cùng lúc xin nhận lô của một gian thì đúng một lượt được; gian đang chờ sàn trả lời không chặn gian khác; dừng êm trả dòng chưa đụng tới về hàng chờ; đơn Lazada về thì tín hiệu được gửi qua chính giao dịch đơn; tắt hẳn pg-boss vẫn đẩy được nhờ lưới quét; đối soát Shopee gộp một việc, lệch thì đẩy lại, hết lượt thì cảnh báo; đường lui. Test đường cũ (`stock-push.test.ts`, `inventory-reconcile.test.ts`) giữ nguyên và vẫn đạt.
+
+**Chưa làm / chưa kiểm ở bước này**
+
+- Chưa chạy với gian thật. Test giả lập lệnh gọi sàn của cả ba sàn (database dev có token thật nên cố ý không chạm sàn).
+- Chưa thử với hai tiến trình worker thật chạy cùng lúc; phần "không đẩy chồng" mới kiểm trong một tiến trình (nhiều lượt cùng lúc + dòng "đang đẩy" giả lập).
+- Hai chỗ còn ghi dòng SAU commit vì không có giao dịch bao quanh: đổi tồn an toàn / ngưỡng cảnh báo của một SKU (`routes/products.ts`), và các nút đẩy cả gian / cả shop (bật gian, Sync toàn bộ, đổi tồn an toàn mặc định). Đối soát 6 giờ cũng ghi ngoài giao dịch (nó không đổi tồn).
+- Nút "Cập nhật tồn" trên thẻ cảnh báo vẫn đẩy thẳng lên Shopee trong request (`syncShopeeStockForProducts`), không qua hàng đợi. Giữ nguyên.
+- Bật gian vài nghìn SKU: lượt đối soát Shopee sau đó vẫn là từng lệnh đọc một, không giãn nhịp theo shop (như đường cũ).
+- Tiến trình worker chết đột ngột (không phải deploy) giữa một lô: gian đó chờ tối đa 5 phút (hạn thuê) mới được đẩy tiếp. Đường cũ: dòng kẹt 15 phút, các dòng khác vẫn chạy.
+- Enqueue mới đặt lại một dòng đang ở giữa lô về "chờ" (hành vi có từ trước). Nếu mọi dòng còn lại của lô đều bị đặt lại, một tiến trình khác có thể nhận gian trong lúc tiến trình đầu chưa xong lô. Hậu quả chỉ là hai bên cùng gọi sàn cho một gian trong vài giây; số đẩy lên vẫn là số mới nhất.
+- Lưới quét mỗi 5 giây đọc mọi dòng tới hạn để lấy danh sách gian. Hàng đợi dồn vài trăm nghìn dòng thì câu này nặng dần (vòng quét cũ cũng vậy). Cần chỉ mục riêng khi tới quy mô đó; chưa làm vì bước này không đổi database.
+
+**Hai điều đo được về hàng đợi "gộp theo khóa" của pg-boss 12.35.1 (tối 01/10, database dev)**
+
+| Bài đo | Kết quả |
+|---|---|
+| Khóa A có việc đang chạy 5 giây và một việc chờ cùng khóa; gửi việc cho khóa B lúc 1,3 giây | Việc của B chỉ bắt đầu lúc 5,5 giây, tức sau khi việc đang chạy của A xong. Không có lỗi nào được ghi ra |
+| Khóa A có việc chạy 135 giây (qua hai lượt chụp số liệu của phần giám sát); việc đó xong lúc 136 giây; gửi việc mới cho A lúc 137 giây | Việc mới chỉ bắt đầu lúc 240 giây, chậm 103 giây |
+
+Nguyên nhân đọc từ mã thư viện: câu lấy việc không tự kiểm "khóa này đang có việc chạy"; nó dựa vào một danh sách khóa đang chạy do phần giám sát chụp mỗi 60 giây, mỗi worker đọc lại danh sách mỗi 60 giây. Hai hệ quả:
+
+1. Việc chờ của một khóa đang chạy, khi đứng đầu hàng, làm câu lấy việc đụng chỉ mục duy nhất; thư viện coi đó là "lượt lấy rỗng". Cả hàng đợi đứng lại tới khi việc đang chạy xong.
+2. Khóa bị chụp đúng lúc đang chạy thì việc mới của khóa đó bị bỏ qua tới lượt làm mới danh sách kế tiếp, kể cả khi việc cũ đã xong.
+
+Với đẩy tồn (một lượt kéo dài hàng chục giây) hệ quả 1 đi ngược mục tiêu "gian chậm không chặn gian khác", nên bước 4 đổi cách làm như trên: hàm xử lý của `stock.channel` chỉ dài vài mili-giây.
+
+**Ảnh hưởng tới `evt.order` đang chạy trên prod (bước 1–3):** cùng loại hàng đợi nên cùng hai hệ quả, mức độ khác. Việc `evt.order` dài khoảng nửa giây, nên hệ quả 1 chỉ làm cả hàng đứng lại trong phần còn lại của nửa giây đó; chỉ đáng kể khi một lệnh gọi sàn treo lâu (lệnh gọi sàn chưa có thời hạn chờ). Hệ quả 2: đơn nào có việc đang chạy đúng lúc phần giám sát chụp thì sự kiện kế tiếp của đơn đó có thể chậm tới khoảng 2 phút. Không mất sự kiện, không sai dữ liệu, chỉ trễ. **Chưa đo trên prod.** Cách đo: trên `webhook_events` lấy khoảng cách từ lúc nhận tới lúc xong, xem giá trị lớn nhất và số dòng trễ trên 30 giây. Hướng xử lý em sẽ trình riêng sau khi có số.
 
 ## 5. Rủi ro và điều em không cam kết
 

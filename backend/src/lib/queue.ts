@@ -174,10 +174,20 @@ export async function upsertQueued<T extends object>(
   name: QueueName,
   data: T,
   key: string,
-  tx?: Prisma.TransactionClient
+  tx?: Prisma.TransactionClient,
+  /**
+   * Hẹn giờ lại: việc đang chờ (hoặc việc mới tạo) chỉ được nhận sau ngần này
+   * giây kể từ BÂY GIỜ. Dùng cho việc "làm sau lần đổi cuối cùng N giây" (đối
+   * soát tồn sau khi đẩy): mỗi lần đổi dời giờ hẹn, vẫn chỉ một việc mỗi khóa.
+   */
+  startAfterSeconds?: number
 ): Promise<void> {
   if (!boss || !ready) throw new QueueUnavailableError(lastStartError ?? "chưa khởi động");
-  await boss.upsert(name, data, { singletonKey: key, db: fromPrisma(tx ?? prisma) });
+  await boss.upsert(name, data, {
+    singletonKey: key,
+    db: fromPrisma(tx ?? prisma),
+    ...(startAfterSeconds ? { startAfter: startAfterSeconds } : {}),
+  });
 }
 
 /**

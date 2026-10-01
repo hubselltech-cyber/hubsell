@@ -34,7 +34,7 @@ import {
   verifyStockPush,
   type StockVerifyPayload,
 } from "./inventory-sync";
-import { enqueueStockPush } from "../inventory-push";
+import { finishStockPush } from "../inventory-push";
 import {
   describeChannelFailure,
   describeStockPushFailure,
@@ -155,7 +155,7 @@ async function drain(): Promise<void> {
 
       try {
         const payload = JSON.parse(job.payload) as ShopeePushPayload;
-        const stockSync = await dispatchShopeeWebhookEvent(payload);
+        const stockTicket = await dispatchShopeeWebhookEvent(payload);
 
         await prisma.shopeeWebhookLog.update({
           where: { id: job.id },
@@ -166,18 +166,12 @@ async function drain(): Promise<void> {
           },
         });
 
-        // Kho biến động → xếp job đẩy tồn khả dụng mới lên MỌI gian đã liên
-        // kết (Shopee lẫn Lazada) vào hàng đợi đa sàn. Chỉ 1 upsert/SKU-gian,
-        // worker stock-push-worker tự đẩy + retry + log + cảnh báo; switch
-        // stockSyncEnabled của TỪNG GIAN được tôn trọng ngay ở cửa enqueue.
-        if (stockSync) {
-          await enqueueStockPush(stockSync.productIds, {
-            source: stockSync.orderSn
-              ? `webhook Shopee đơn ${stockSync.orderSn}`
-              : "webhook Shopee",
-            oldAvailable: stockSync.oldAvailable,
-          });
-        }
+        // Kho biến động → job đẩy tồn khả dụng mới lên MỌI gian đã liên kết
+        // (Shopee lẫn Lazada, TikTok). Dòng chờ đẩy do processShopeeOrderEvent
+        // lập phiếu ngay trong giao dịch đơn; ở đây chốt phiếu sau commit
+        // (đường cũ: xếp job tại đây như trước). Switch stockSyncEnabled của
+        // TỪNG GIAN được tôn trọng ngay ở cửa enqueue.
+        await finishStockPush(stockTicket);
 
         // PHÍ TẠM TÍNH REAL-TIME: đơn vừa có sự kiện → kéo luôn số ước tính
         // escrow để P&L hiện phí ngay, không chờ vòng quét. Best-effort: lỗi
@@ -363,15 +357,11 @@ export async function handleShopeeOrderJob(
   const result = await processShopeeOrderEvent(channel, orderSn, { trackingNo: trackingNo || undefined });
   console.log(
     `[Webhook Shopee] đơn ${orderSn} (shop ${shopId}) →`,
-    JSON.stringify({ ...result, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
+    JSON.stringify({ ...result, stockTicket: undefined, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
   );
 
-  if (result.stockSync) {
-    await enqueueStockPush(result.stockSync.productIds, {
-      source: result.stockSync.orderSn ? `webhook Shopee đơn ${result.stockSync.orderSn}` : "webhook Shopee",
-      oldAvailable: result.stockSync.oldAvailable,
-    });
-  }
+  // Dòng chờ đẩy đã lập phiếu trong giao dịch đơn — chốt phiếu sau commit.
+  await finishStockPush(result.stockTicket);
 
   // PHÍ TẠM TÍNH REAL-TIME — best-effort như hàng đợi cũ: lỗi chỉ ghi log, vòng
   // quét ước tính sẽ vét lại, KHÔNG làm hỏng việc đã xử lý xong đơn.

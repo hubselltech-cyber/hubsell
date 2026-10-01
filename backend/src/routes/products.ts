@@ -7,8 +7,11 @@ import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import {
   availableToPush,
   enqueueStockPush,
+  finishStockPush,
   getSafetyStockDefault,
   PUSHABLE_CHANNELS,
+  stageStockPush,
+  type StockPushTicket,
 } from "../integrations/inventory-push";
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
@@ -925,8 +928,10 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
 
     // Bước 2: upsert hàng loạt trong MỘT transaction
     const ownerId = req.ownerId!;
-    // Các sản phẩm CÓ đổi số tồn trong lần import — sau commit đẩy tồn mới lên sàn.
+    // Các sản phẩm CÓ đổi số tồn trong lần import — đẩy tồn mới lên sàn.
     const stockChangedIds: string[] = [];
+    // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
+    let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
       let created = 0;
       let updated = 0;
@@ -983,11 +988,12 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
         }
       }
 
+      // Tồn vừa đổi qua Excel → dòng chờ đẩy tồn khả dụng mới lên các sàn đã liên kết.
+      stockTicket = await stageStockPush(tx, stockChangedIds, { source: "nhập tồn kho từ Excel" });
       return { created, updated };
     });
 
-    // Tồn vừa đổi qua Excel → đẩy tồn khả dụng mới lên các sàn đã liên kết.
-    await enqueueStockPush(stockChangedIds, { source: "nhập tồn kho từ Excel" });
+    await finishStockPush(stockTicket);
 
     res.json({
       created: result.created,

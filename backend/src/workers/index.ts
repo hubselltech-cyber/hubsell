@@ -26,6 +26,7 @@ import { startInvoiceStatusSyncWorker } from "./invoice-status-sync";
 import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
 import { startStockPushWorker } from "../integrations/stock-push-worker";
+import { stockPushMode } from "../lib/queue-config";
 import { startStockReconcileWorker } from "./stock-reconcile";
 import { startTokenRefreshWorker } from "./token-refresh";
 import { startWeeklyReportWorker } from "./weekly-report";
@@ -40,6 +41,7 @@ import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-que
 import { startHealthWatchWorker } from "./health-watch";
 import { startProductCatalogSyncWorker } from "./product-catalog-sync";
 import { startOrderLedgerWorker } from "./order-ledger";
+import { startStockPushScheduler } from "./stock-queue";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -71,8 +73,14 @@ export function startAllWorkers(): void {
   startTokenRefreshWorker();
   // Dọn log kỹ thuật xoay vòng 7/30 ngày.
   startLogCleanupWorker();
-  // Đẩy tồn khả dụng đa sàn — tiêu thụ hàng đợi bền stock_push_jobs.
-  startStockPushWorker();
+  // Đẩy tồn khả dụng đa sàn — tiêu thụ bảng stock_push_jobs. Hai đường, chọn
+  // bằng STOCK_PUSH_MODE (giai đoạn 2 bước 4): vòng quét một luồng của đường cũ,
+  // hoặc bộ chạy theo gian + lưới quét của đường hàng đợi bền (workers/stock-queue.ts).
+  if (stockPushMode() === "legacy") {
+    startStockPushWorker();
+  } else {
+    startStockPushScheduler();
+  }
   // Đối soát tồn sàn ↔ Hubsell mỗi 6h cho gian đang bật đồng bộ.
   startStockReconcileWorker();
   // Sáng thứ 2 đẩy báo cáo tuần qua chuông cho từng chủ shop.
