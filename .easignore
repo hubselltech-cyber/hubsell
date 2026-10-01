@@ -1,0 +1,35 @@
+# EAS Build đóng gói TỪ GỐC kho git rồi gửi lên máy build của Expo. Kho này chứa cả
+# backend / frontend / landing / docs, nên chỉ cho đi đúng thư mục app di động.
+# Lưu ý: khi có tệp này, EAS KHÔNG đọc .gitignore nữa, nên các mục bỏ qua của
+# hubsell-mobile/.gitignore phải chép lại bên dưới.
+# Kiểm thứ sẽ được gửi đi (không build):
+#   cd hubsell-mobile
+#   npx eas-cli build:inspect -p android --profile preview --stage archive --output ../.eas-inspect --force
+
+/*
+!/hubsell-mobile
+
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+/hubsell-mobile/ios
+/hubsell-mobile/android
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.tsbuildinfo
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+.env*.local
+google-play-service-account.json
+asc-api-key*.p8
