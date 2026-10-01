@@ -25,7 +25,7 @@ import {
   resumeCampaignByOwner,
   setRoasTargetByOwner,
 } from "../integrations/shopee/ads-auto-execute";
-import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
+import { loadAssistantScorecard } from "../integrations/shopee/ads-scorecard-data";
 import { getCampaignKeywordSuggestions, parseManualBidding } from "../integrations/shopee/ads-keywords";
 import {
   createShopeeGmsCampaign,
@@ -802,36 +802,14 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         res.status(404).json({ error: `Không tìm thấy gian ${label}` });
         return;
       }
-      // Cùng khoảng ngày với bộ lọc trang (?from=&to=, ngày sàn); lệnh ghi sổ
-      // là timestamp nên cắt từ 00:00 ngày đầu tới 23:59:59 ngày cuối giờ VN.
-      const { fromKey, toKey, days } = resolveAdsDateRange(req.query);
-      const insights = await computeChannelAdsInsights({
-        id: channel.id,
-        userId: req.ownerId!,
-        channelName,
-      });
-      const logs = await prisma.adsActionLog.findMany({
-        where: {
-          channelId: channel.id,
-          createdAt: {
-            gte: new Date(`${fromKey}T00:00:00+07:00`),
-            lte: new Date(`${toKey}T23:59:59.999+07:00`),
-          },
-        },
-        select: {
-          id: true,
-          adsCampaignId: true,
-          action: true,
-          mode: true,
-          status: true,
-          reasons: true,
-          createdAt: true,
-        },
-      });
-      res.json({
-        mode: insights.config.autoExecute.mode,
-        ...buildAssistantScorecard(logs, insights.items, insights.config, days),
-      });
+      // Cùng khoảng ngày với bộ lọc trang (?from=&to=, ngày sàn) — hiệu suất nạp
+      // từ đúng ngày đầu khoảng đó (xem ads-scorecard-data.ts).
+      res.json(
+        await loadAssistantScorecard(
+          { id: channel.id, userId: req.ownerId!, channelName },
+          resolveAdsDateRange(req.query)
+        )
+      );
     } catch (err) {
       next(err);
     }

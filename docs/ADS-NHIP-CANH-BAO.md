@@ -292,3 +292,17 @@ Mỗi bước một commit, không gộp.
 > app for sponsor/solutions/campaign/searchCampaignList,
 > report/getDiscoveryReportCampaign and adgroup/searchAdgroupList, whether the
 > quota is per app or per seller, and how an ISV can request a higher quota.
+
+---
+
+## 12. Sửa 01/10/2026 — ba việc treo của nhóm quảng cáo
+
+### 12.1 Bảng điểm Trợ lý xem 90 ngày nạp đủ hiệu suất
+
+Route `assistant-scorecard` gọi lõi insights không kèm `perfFromKey` nên chỉ có 30
+ngày hiệu suất, trong khi bộ lọc trang cho xem tới 90 ngày (`ADS_RANGE_MAX_DAYS`).
+Lần diễn tập cũ hơn 30 ngày vì thế luôn ra "chưa đủ số" (prod 30/09: một gian có 2
+dòng diễn tập từ 15/08). Nay phần nạp tách ra `ads-scorecard-data.ts`
+(`loadAssistantScorecard`), hiệu suất nạp từ đúng ngày đầu khoảng đang xem. Chỉ đổi
+số hiển thị trên bảng điểm; luật và lệnh của Trợ lý không đổi. Test trên DB:
+`ads-scorecard-db.test.ts`.
