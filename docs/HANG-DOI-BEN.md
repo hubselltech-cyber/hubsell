@@ -344,6 +344,31 @@ Hai lỗ hổng, đều là của thiết kế, không phải riêng lần deplo
 
 **Quy tắc cho các bước sau (Shopee, đẩy tồn, hóa đơn):** đưa lên theo hai lần. Lần một chỉ có worker biết xử lý loại việc mới, web vẫn đi đường cũ (công tắc mặc định TẮT). Thấy worker bản mới chạy rồi mới bật công tắc ở web. Bước TikTok em đẩy cả hai trong một lần, đó là nguyên nhân trực tiếp của sự việc trên.
 
+### 4.4. Bước 3 (webhook Shopee) — đã làm 01/10/2026, đưa lên hai lần
+
+| Lần | Bản | Nội dung |
+|---|---|---|
+| Một | `0e9c86d` | Worker biết xử lý việc Shopee (đơn, ủy quyền, cảnh báo khi hỏng hẳn). Web MẶC ĐỊNH vẫn đi hàng đợi cũ |
+| Hai | bản kế | Đổi mặc định ở web sang hàng đợi bền, sau khi đã thấy worker bản `0e9c86d` chạy trên prod |
+
+| Việc | Tệp |
+|---|---|
+| Route Shopee: sự kiện đơn (code 3, 4) → `recordOrderEvent`; sự kiện ủy quyền (code 1, 2) → `recordAuthEvent` | `backend/src/routes/webhooks.ts` |
+| Mã vận đơn của push code 4 đi kèm việc; bị gộp vào việc đang chờ thì ghi đè vào việc đó, chung giao dịch | `backend/src/services/webhook-inbox.ts` |
+| `handleShopeeOrderJob` làm đúng các bước của hàng đợi cũ: kéo đơn, ghi đơn + kho, xếp việc đẩy tồn, kéo phí tạm tính (best-effort) | `backend/src/integrations/shopee/webhook-queue.ts` |
+| Hàng đợi cũ không còn tự chạy ở tiến trình web | cùng tệp |
+| HQ: trang nhật ký + số đếm webhook Shopee nối hai nguồn như TikTok | `backend/src/routes/admin.ts` |
+
+Khác với trước:
+
+- Hàng đợi cũ của Shopee chạy MỘT luồng; nay sự kiện đơn của Shopee chạy song song trong `evt.order` (chung với TikTok và Lazada, 4 việc cùng lúc mỗi worker).
+- Web không còn tự xử lý webhook Shopee.
+- Việc đối soát tồn sau khi đẩy (`STOCK_VERIFY`) CHƯA chuyển: vẫn nằm trong bảng `shopee_webhook_logs` và do worker cũ xử lý. Em dời sang bước 4 (đẩy tồn), vì nó thuộc luồng đẩy tồn chứ không phải webhook.
+
+Đường lui: `SHOPEE_WEBHOOK_MODE=legacy`. Hàng đợi bền chưa sẵn sàng thì route tự về bảng cũ.
+
+Đã kiểm: `shopee-webhook-inbox.test.ts` (5 tình huống: đường lui, đơn trừ kho đúng + gửi trùng, ủy quyền shop chưa nối, sàn lỗi → hỏng hẳn + cảnh báo, mã vận đơn bị gộp vẫn tới handler mà không phải hỏi sàn).
+
 ## 5. Rủi ro và điều em không cam kết
 
 - **pg-boss do một người duy trì**, ra bản rất dày (35 bản nhỏ của dòng 12). Ghim đúng bản, lên bản là một việc có chủ đích kèm migration riêng. Mã nghiệp vụ đứng sau `lib/queue`.

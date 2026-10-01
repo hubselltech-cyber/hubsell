@@ -59,13 +59,13 @@ function tiktokWebhookMode(): "queue" | "legacy" {
 }
 
 /**
- * Đường xử lý webhook Shopee. ĐƯA LÊN HAI LẦN (bài học lúc chuyển TikTok, docs
- * mục 4.3): bản này worker đã biết xử lý việc Shopee nhưng web MẶC ĐỊNH vẫn đi
- * hàng đợi cũ; chỉ khi SHOPEE_WEBHOOK_MODE=queue mới đi hàng đợi bền pg-boss.
- * Lần hai đổi mặc định sang "queue" sau khi worker bản này đã chạy trên prod.
+ * Đường xử lý webhook Shopee: "queue" (mặc định từ giai đoạn 2 bước 3) = hộp thư
+ * đến + hàng đợi bền pg-boss; "legacy" = hàng đợi cũ trên bảng shopee_webhook_logs.
+ * Đã đưa lên hai lần (bài học lúc chuyển TikTok, docs mục 4.3): bản 0e9c86d cho
+ * worker biết xử lý việc Shopee trước, bản này mới đổi mặc định ở web.
  */
 function shopeeWebhookMode(): "queue" | "legacy" {
-  return (process.env.SHOPEE_WEBHOOK_MODE ?? "").trim().toLowerCase() === "queue" ? "queue" : "legacy";
+  return (process.env.SHOPEE_WEBHOOK_MODE ?? "").trim().toLowerCase() === "legacy" ? "legacy" : "queue";
 }
 
 function lazadaWebhookMode(): "queue" | "inline" {
@@ -449,9 +449,9 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
   //    vào evt.order — gộp theo khóa sàn:shop:đơn, nhiều việc chạy song song
   //    (hàng đợi cũ chỉ 1 luồng); mã vận đơn của push code 4 đi kèm việc. Sự kiện
   //    ủy quyền (code 1, 2) vào evt.auth. Ghi lỗi → 500 để Shopee gửi lại.
-  //    Hàng đợi chưa sẵn sàng, hoặc SHOPEE_WEBHOOK_MODE khác "queue" → hàng đợi
-  //    cũ (shopee_webhook_logs) bên dưới; worker cũ vẫn chạy để vét bảng cũ và
-  //    xử lý việc đối soát tồn.
+  //    Hàng đợi chưa sẵn sàng, hoặc SHOPEE_WEBHOOK_MODE=legacy → hàng đợi cũ
+  //    (shopee_webhook_logs) bên dưới; worker cũ vẫn chạy để vét bảng cũ và xử
+  //    lý việc đối soát tồn.
   if (shopeeWebhookMode() === "queue" && isQueueReady()) {
     const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
     const isOrderEvent = code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.TRACKING_NO;
