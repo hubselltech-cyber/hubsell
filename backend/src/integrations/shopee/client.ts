@@ -19,6 +19,7 @@ import {
   SHOPEE_PATHS,
   type ShopeeConfig,
 } from "./config";
+import { platformFetch } from "../../lib/platform-http";
 
 // ---------- Ký request ----------
 
@@ -236,7 +237,7 @@ async function callPublicPost<T extends ShopeeEnvelope>(
     timestamp: String(timestamp),
     sign,
   }).toString();
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+  const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -303,7 +304,7 @@ async function callShopGet<T extends ShopeeEnvelope>(
   const qs = new URLSearchParams(params).toString();
   const call = () =>
     withRateLimitRetry(ctx, async () => {
-      const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
+      const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, { method: "GET" });
       if (res.status === 429) throw await rateLimitError(ctx, res);
       return ensureOk((await res.json()) as T, ctx);
     });
@@ -333,7 +334,7 @@ async function callShopPost<T extends ShopeeEnvelope>(
   }).toString();
   const call = () =>
     withRateLimitRetry(ctx, async () => {
-      const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+      const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -1238,7 +1239,7 @@ export async function uploadChatImage(
     new Blob([new Uint8Array(params.buffer)], { type: params.mime }),
     params.filename
   );
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+  const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, {
     method: "POST",
     body: form,
   });
@@ -1820,7 +1821,7 @@ export async function editManualProductAdsRaw(
     shop_id: params.shopId,
     sign,
   }).toString();
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+  const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1988,7 +1989,7 @@ export async function createManualProductAdsRaw(
     shop_id: params.shopId,
     sign,
   }).toString();
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+  const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -2154,7 +2155,7 @@ async function postShopRaw(
     shop_id: shopId,
     sign,
   }).toString();
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+  const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -2505,7 +2506,7 @@ export async function downloadShippingDocument(
     shop_id: shopId,
     sign,
   }).toString();
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+  const res = await platformFetch("SHOPEE", `${cfg.apiBase}${path}?${qs}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ shipping_document_type: documentType, order_list: orders }),

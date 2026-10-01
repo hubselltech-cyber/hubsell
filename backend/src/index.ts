@@ -5,6 +5,7 @@ import https from "https";
 import { createApp } from "./app";
 import { backfillInvoiceSecrets } from "./integrations/invoice/config-secrets";
 import { startMemoryWatch } from "./lib/memory-watch";
+import { startQueue, stopQueue } from "./lib/queue";
 import { checkSecretBoxAtBoot, secretBoxEnabled } from "./lib/secret-box";
 import { startNotificationSseBridge } from "./services/notifications";
 import { resolveHubsellRole, startAllWorkers } from "./workers";
@@ -43,18 +44,36 @@ if (secretBoxEnabled()) {
     .catch((err) => console.error(`[SecretBox] Chuyển đổi lỗi: ${(err as Error).message}`));
 }
 
+// ============================================================
+// HÀNG ĐỢI BỀN (giai đoạn 2 — lib/queue.ts, docs/HANG-DOI-BEN.md). Khởi động ở
+// MỌI vai: web chỉ gửi việc, worker / all nhận việc + giám sát. Không chờ và
+// không ném: hàng đợi hỏng (vd migration chưa áp) chỉ ghi log "[Queue] KHÔNG
+// khởi động được", ứng dụng vẫn lên. Bước nền (01/10/2026) chưa có đường nào
+// gửi hay nhận việc — đây mới là mở kết nối và kiểm đủ hàng đợi.
+// ============================================================
+void startQueue(role);
+
 if (role === "worker" || role === "all") {
   startAllWorkers();
 }
+
+/** Render cho 30 giây từ SIGTERM tới SIGKILL — dành 20 giây cho việc đang chạy xong. */
+const QUEUE_STOP_TIMEOUT_MS = 20_000;
 
 if (role === "worker") {
   // Không có HTTP — giữ tiến trình sống bằng chính các timer worker (timer đã
   // unref nên cần một mỏ neo); thoát êm khi Render gửi SIGTERM lúc deploy.
   const anchor = setInterval(() => {}, 60 * 60 * 1000);
+  let stopping = false;
   const shutdown = (sig: string) => {
+    if (stopping) return;
+    stopping = true;
     console.log(`[Role] Worker nhận ${sig} — dừng`);
     clearInterval(anchor);
-    process.exit(0);
+    // Chờ việc của hàng đợi bền đang chạy xong rồi mới thoát; việc chưa xong
+    // không mất (hết hạn giữ thì được trả lại hàng chờ). Chốt cứng phòng treo.
+    setTimeout(() => process.exit(0), QUEUE_STOP_TIMEOUT_MS + 2_000).unref();
+    void stopQueue(QUEUE_STOP_TIMEOUT_MS).finally(() => process.exit(0));
   };
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));

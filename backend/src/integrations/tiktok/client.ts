@@ -13,6 +13,7 @@
 
 import crypto from "crypto";
 import { getTikTokConfig, TIKTOK_ENDPOINTS, type TikTokConfig } from "./config";
+import { platformFetch } from "../../lib/platform-http";
 
 // ---------- Kiểu dữ liệu TikTok trả về ----------
 
@@ -115,7 +116,7 @@ async function callAuth<T>(
 ): Promise<T> {
   const qs = new URLSearchParams(params).toString();
   const url = `${TIKTOK_ENDPOINTS.auth}${path}?${qs}`;
-  const res = await fetch(url, { method: "GET" });
+  const res = await platformFetch("TIKTOK", url, { method: "GET" });
   const json = (await res.json()) as TikTokEnvelope<T>;
   if (json.code !== 0) {
     throw new Error(
@@ -192,7 +193,7 @@ export async function callApi<T>(
   ).toString();
   const url = `${TIKTOK_ENDPOINTS.api}${opts.path}?${qs}`;
 
-  const res = await fetch(url, {
+  const res = await platformFetch("TIKTOK", url, {
     method,
     headers: {
       "content-type": "application/json",

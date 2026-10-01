@@ -20,6 +20,7 @@ import {
   LAZADA_PATHS,
   type LazadaConfig,
 } from "./config";
+import { platformFetch } from "../../lib/platform-http";
 
 // ---------- Ký request ----------
 
@@ -122,7 +123,7 @@ async function callLazada<T extends LazadaEnvelope>(
   const sign = signLazada(cfg.appSecret, path, all);
   const qs = new URLSearchParams({ ...all, sign }).toString();
   const call = async () => {
-    const res = await fetch(`${host}${path}?${qs}`, { method: "GET" });
+    const res = await platformFetch("LAZADA", `${host}${path}?${qs}`, { method: "GET" });
     if (res.status === 429) throw new Error(`Lazada ${ctx} lỗi: HTTP 429 — vượt trần gọi API`);
     return ensureOk((await res.json()) as T, ctx);
   };
@@ -172,7 +173,7 @@ async function callLazadaPost<T extends LazadaEnvelope>(
   };
   const sign = signLazada(cfg.appSecret, path, all);
   const body = new URLSearchParams({ ...all, sign }).toString();
-  const res = await fetch(`${host}${path}`, {
+  const res = await platformFetch("LAZADA", `${host}${path}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
@@ -1227,7 +1228,7 @@ export async function updateAdsCampaignSwitchRaw(
   };
   const sign = signLazada(cfg.appSecret, path, all);
   const body = new URLSearchParams({ ...all, sign }).toString();
-  const res = await fetch(`${LAZADA_ENDPOINTS.api}${path}`, {
+  const res = await platformFetch("LAZADA", `${LAZADA_ENDPOINTS.api}${path}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,

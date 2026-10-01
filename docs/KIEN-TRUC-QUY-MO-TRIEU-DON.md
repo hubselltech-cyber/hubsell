@@ -8,7 +8,7 @@ Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **anh
 |---|---|
 | 0. Cầm máu | Xong phần đã chốt, đã lên prod (bản `ce65553`) |
 | 1. Sổ cái đơn | **Đang làm.** Bước 1 (30/09) đã viết xong và chạy thử đạt trên DB local (7.570 đơn khớp từng đồng, ~960 đơn/giây), CHƯA push: bảng phân mảnh theo tháng + trigger đánh dấu + worker tính lại + đối soát đêm + công cụ so khớp trên HQ; công thức Lãi/Lỗ tách sang `lib/pnl-formula.ts`. Chưa báo cáo nào đọc từ sổ. Việc kế: push để migrate lên prod, so khớp trên dữ liệu thật, rồi chuyển từng báo cáo. Chi tiết `docs/SO-CAI-DON.md` |
-| 2. Hàng đợi và webhook | Chưa bắt đầu. Cần thử pg-boss với bộ gộp kết nối Supabase trước |
+| 2. Hàng đợi và webhook | **Bắt đầu 01/10/2026.** Đã thử pg-boss 12.35.1 với bộ gộp kết nối Supabase: chạy được ở cả chế độ phiên lẫn chế độ giao dịch. Bản thiết kế + thứ tự chuyển ở `docs/HANG-DOI-BEN.md`, đang chờ anh Trung duyệt; chưa viết mã |
 | 3. Đồng bộ và các worker còn lại | Chưa bắt đầu |
 | 4. Vòng đời dữ liệu và quan sát | Chưa bắt đầu (riêng chỉ mục `Order(channelId, deliveredAt)` đã tạo) |
 
@@ -180,7 +180,7 @@ Hệ quả nguy hiểm nhất của C1: cửa sổ quét (2 ngày với đơn, 7
 - Mọi lệnh gọi sàn có thời hạn chờ. Hiện không lệnh nào có.
 - Các việc chạy trong request (so sánh tồn, đồng bộ tay, nối nhanh, nhập Excel, xác nhận hàng loạt) chuyển thành việc nền có thanh tiến độ.
 
-**Điểm em chưa kiểm**: pg-boss có chạy ổn qua bộ gộp kết nối của Supabase không. Phải thử trước khi chốt.
+**Đã kiểm 01/10/2026**: pg-boss chạy được qua bộ gộp kết nối của Supabase (kết quả và phần chưa kiểm ở `docs/HANG-DOI-BEN.md` mục 1).
 
 ### 6.3. Đồng bộ có cam kết đầy đủ
 

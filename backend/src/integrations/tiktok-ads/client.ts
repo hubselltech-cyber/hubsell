@@ -13,6 +13,7 @@
 
 import { acquireApiToken } from "../../services/api-budget";
 import { TIKTOK_ADS_API_BASE, getTiktokAdsConfig, type TiktokAdsConfig } from "./config";
+import { platformFetch } from "../../lib/platform-http";
 
 interface TiktokAdsEnvelope<T> {
   code: number;
@@ -97,7 +98,7 @@ async function adsGet<T>(
   params: Record<string, QueryValue>
 ): Promise<T> {
   return throttled<T>(path, () =>
-    fetch(`${TIKTOK_ADS_API_BASE}${path}?${toQuery(params)}`, {
+    platformFetch("TIKTOK_ADS", `${TIKTOK_ADS_API_BASE}${path}?${toQuery(params)}`, {
       method: "GET",
       headers: { "Access-Token": accessToken },
     })
@@ -120,7 +121,7 @@ export async function exchangeTiktokAdsAuthCode(
   cfg: TiktokAdsConfig = getTiktokAdsConfig()
 ): Promise<TiktokAdsTokenResult> {
   const path = "/oauth2/access_token/";
-  const res = await fetch(`${TIKTOK_ADS_API_BASE}${path}`, {
+  const res = await platformFetch("TIKTOK_ADS", `${TIKTOK_ADS_API_BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ app_id: cfg.appId, secret: cfg.secret, auth_code: authCode }),
@@ -242,7 +243,7 @@ export async function updateGmvMaxCreatives(
   const path = "/campaign/gmv_max/creative/update/";
   // Lệnh GHI cũng qua van; sàn báo quá tải = lệnh CHƯA được nhận nên gọi lại là an toàn (lỗi khác thì không gọi lại).
   await throttled<Record<string, never>>(path, () =>
-    fetch(`${TIKTOK_ADS_API_BASE}${path}`, {
+    platformFetch("TIKTOK_ADS", `${TIKTOK_ADS_API_BASE}${path}`, {
       method: "POST",
       headers: { "Access-Token": accessToken, "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -1853,6 +1853,41 @@ model TiktokWebhookLog {
   @@map("tiktok_webhook_logs")
 }
 
+/// HỘP THƯ ĐẾN CHUNG (giai đoạn 2 kiến trúc quy mô, docs/HANG-DOI-BEN.md): mỗi
+/// sự kiện sàn / nhà cung cấp hóa đơn gửi tới = MỘT dòng, ghi CHUNG GIAO DỊCH
+/// với việc xếp hàng đợi pg-boss. Bảng này giữ trạng thái cho HQ đọc (nhật ký,
+/// dòng chờ lâu nhất); nhận việc, hạn giữ, thử lại do pg-boss lo (schema
+/// "pgboss", không khai trong Prisma). Thay dần shopee_webhook_logs,
+/// tiktok_webhook_logs, misa_webhook_logs.
+model WebhookEvent {
+  id          String           @id @default(cuid())
+  /// SHOPEE | LAZADA | TIKTOK | mã nhà cung cấp hóa đơn (MISA, HUBTAX...).
+  source      String
+  /// Loại sự kiện theo cách gọi của nguồn (Shopee/TikTok là số, lưu dạng chữ).
+  eventType   String
+  /// Mã shop phía nguồn (shop_id / seller_id); rỗng khi sự kiện không gắn shop.
+  shopId      String           @default("")
+  /// Mã đơn (sự kiện đơn) hoặc mã giao dịch hóa đơn — tra soát + gộp việc theo khóa.
+  entityId    String?
+  /// SHA-256 của RAW body — gửi lại y nguyên bị chặn bởi khóa duy nhất (source, bodyHash).
+  bodyHash    String
+  /// Payload nguyên văn.
+  payload     String
+  status      WebhookJobStatus @default(PENDING)
+  attempts    Int              @default(0)
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@unique([source, bodyHash])
+  @@index([source, createdAt])
+  @@index([entityId])
+  // Hai chỉ mục RIÊNG PHẦN chỉ có trong SQL migration (Prisma không khai được):
+  //   webhook_events_pending_entity_idx (source, shopId, entityId) WHERE status = 'PENDING'
+  //   webhook_events_open_idx (status, createdAt) WHERE status IN ('PENDING','FAILED')
+  @@map("webhook_events")
+}
+
 /// AUDIT LOG hóa đơn điện tử — mỗi dòng = MỘT lần trạng thái hóa đơn thay đổi
 /// (từ webhook MISA hay thao tác trong Hubsell). Giai đoạn test Sandbox soi
 /// bảng này để chứng minh sự kiện đã chạy đúng thứ tự; về sau là chứng cứ đối

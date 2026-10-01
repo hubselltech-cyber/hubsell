@@ -10,6 +10,8 @@
 import v8 from "v8";
 import { ChannelName, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
+import { DEAD_QUEUES } from "../lib/queue-config";
 import {
   CAPACITY_MILESTONES,
   CURRENT_INFRA,
@@ -76,6 +78,12 @@ export interface WorkerLayer {
   breakerTrips24h: number;
   syncStalled: number; // syncFailCount >= 3
   adsAuthDisconnected: number;
+  /** Hàng đợi bền pg-boss (giai đoạn 2). null = chưa khởi động / không đọc được. */
+  durableQueues: QueueStat[] | null;
+  durableQueueError: string | null;
+  /** Hộp thư đến chung webhook_events: dòng đang chờ + dòng chờ lâu nhất (phút). */
+  inboxPending: number;
+  inboxOldestMin: number | null;
 }
 
 export interface InfraLayer {
@@ -189,7 +197,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     refreshToken: { not: null },
     channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
-  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest] =
+  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox] =
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
@@ -213,6 +221,15 @@ export async function collectWorker(): Promise<WorkerLayer> {
         orderBy: { createdAt: "asc" },
         select: { createdAt: true },
       }), null),
+      queueStats(),
+      // Hai câu dưới đi theo chỉ mục riêng phần webhook_events_open_idx (chỉ chứa dòng chờ / hỏng).
+      safe(
+        "webhook_events.pending",
+        prisma.$queryRaw<{ n: bigint; oldest: Date | null }[]>`
+        SELECT COUNT(*)::bigint AS n, MIN("createdAt") AS oldest
+        FROM "webhook_events" WHERE "status" = 'PENDING'`,
+        [{ n: 0n, oldest: null }]
+      ),
     ]);
   const d24 = now - DAY_MS;
   // Hàng đợi webhook sàn = Shopee + TikTok gộp (cùng khuôn, cùng SLA).
@@ -233,6 +250,10 @@ export async function collectWorker(): Promise<WorkerLayer> {
     breakerTrips24h: breakers.filter((b) => b.updatedAt.getTime() > d24).reduce((s, b) => s + (b.level + 1), 0),
     syncStalled,
     adsAuthDisconnected,
+    durableQueues,
+    durableQueueError: durableQueues ? null : queueStartError(),
+    inboxPending: Number(inbox[0]?.n ?? 0),
+    inboxOldestMin: inbox[0]?.oldest ? Math.round((now - inbox[0].oldest.getTime()) / 60000) : null,
   };
 }
 
@@ -414,6 +435,7 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     w.webhookPending >= T.webhookPending || (w.webhookOldestMin ?? 0) >= T.webhookOldestMin ? "crit" : w.webhookPending > 50 ? "warn" : "ok",
     "Đơn real-time đang chậm — worker quá tải hoặc DB chậm"
   );
+  push("worker.durableQueue", "Hàng đợi bền", ...durableQueueSignal(w));
   push(
     "worker.breaker",
     "Cầu dao API sàn",
@@ -462,6 +484,47 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     "Đặt connection_limit trong DATABASE_URL, dùng pooler"
   );
   return out;
+}
+
+/**
+ * Dấu hiệu của hàng đợi bền pg-boss + hộp thư đến webhook_events. Ngưỡng dùng
+ * lại hai số của hàng đợi webhook cũ (T.webhookPending, T.webhookOldestMin) —
+ * cùng một loại việc, chưa có căn cứ để đặt số khác. Việc nằm trong hàng đợi
+ * lỗi là việc đã hết lượt thử, cần người xem.
+ */
+export function durableQueueSignal(
+  w: Pick<WorkerLayer, "durableQueues" | "durableQueueError" | "inboxPending" | "inboxOldestMin">
+): [value: string, level: SignalLevel, hint: string] {
+  if (!w.durableQueues) {
+    return [
+      `không đọc được${w.durableQueueError ? ` (${w.durableQueueError})` : ""}`,
+      "warn",
+      "pg-boss chưa khởi động ở tiến trình web — xem log [Queue] trên Render; migration queue_foundation đã áp chưa?",
+    ];
+  }
+  const dead = new Set<string>(DEAD_QUEUES);
+  const work = w.durableQueues.filter((q) => !dead.has(q.name));
+  const waiting = work.reduce((s, q) => s + q.ready, 0);
+  const active = work.reduce((s, q) => s + q.active, 0);
+  const deadCount = w.durableQueues.filter((q) => dead.has(q.name)).reduce((s, q) => s + q.ready + q.active, 0);
+  const busiest = [...work].sort((a, b) => b.ready - a.ready)[0];
+  const value =
+    `${waiting} việc chờ, ${active} đang chạy, ${deadCount} trong hàng đợi lỗi` +
+    (waiting > 0 && busiest ? ` (đông nhất ${busiest.name}: ${busiest.ready})` : "") +
+    ` · hộp thư đến ${w.inboxPending} chờ${w.inboxOldestMin != null ? `, cũ nhất ${w.inboxOldestMin}'` : ""}`;
+  const level: SignalLevel =
+    waiting >= T.webhookPending || (w.inboxOldestMin ?? 0) >= T.webhookOldestMin
+      ? "crit"
+      : deadCount > 0 || waiting > 50
+        ? "warn"
+        : "ok";
+  return [
+    value,
+    level,
+    deadCount > 0
+      ? "Có việc hết lượt thử nằm trong hàng đợi lỗi — xem log [Queue] trên worker"
+      : "Việc dồn = worker quá tải hoặc sàn / database chậm",
+  ];
 }
 
 /** Tối đa 3 việc nên làm hôm nay: từ dấu hiệu đỏ/vàng rồi tới mốc kế tiếp. */
