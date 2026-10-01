@@ -4,6 +4,24 @@ Cập nhật 01/10/2026 (D-U-N-S đã cấp 25/09; nội dung trang kho, tờ kh
 
 ---
 
+## Trạng thái 01/10/2026 (đã làm thật, khác vài chỗ so với hướng dẫn ở mục 3 và 4)
+
+| Kho | Đã xong | Còn lại |
+|---|---|---|
+| Google Play | Tài khoản nhà phát triển loại tổ chức đã tạo, đã trả 25 USD; tên nhà phát triển `Hubsell Technology`; D-U-N-S Google tra ra ngay; website `hubsell.vn` đã xác minh | Mục Xác minh danh tính: tải giấy tờ tổ chức (chờ giấy đăng ký có tên tiếng Anh, hồ sơ OD-0967282/26), rồi CCCD người đại diện, rồi OTP hai số điện thoại. Chưa xong thì nút Tạo ứng dụng còn khóa |
+| App Store | Đã nộp đơn Apple Developer Program loại Company / Organization trên **web**, Enrollment ID `NC89XMUT6N`, trạng thái đang xét | Chờ Apple xác minh quyền ký (email về `dev@hubsell.vn`, có thể gọi +84 965863292) → đồng ý thỏa thuận + trả 99 USD |
+
+Những điểm làm khác hướng dẫn cũ, **lấy theo bảng này**:
+
+- **Cả hai tài khoản đứng trên `dev@hubsell.vn`, không phải `hubselltech@gmail.com`.** Google cảnh báo Gmail cá nhân bị xác minh nhiều vòng hơn và chủ sở hữu tài khoản nhà phát triển không đổi được sau khi tạo, nên đã lập một Tài khoản Google mới bằng `dev@hubsell.vn` (tạo theo đường "sử dụng email hiện tại", không phải Gmail). Apple đòi email công việc thuộc tên miền tổ chức, nên Apple ID công ty đã đổi email chính từ `hubselltech@gmail.com` sang `dev@hubsell.vn` (mật khẩu và xác thực hai yếu tố giữ nguyên, Gmail bị gỡ khỏi tài khoản).
+- **Play Console bắt bật Xác minh 2 bước** cho Tài khoản Google trước khi cho tạo tài khoản nhà phát triển (đã bật bằng số +84 965863292).
+- **Xác minh website đi qua Google Search Console**: thêm `hubsell.vn` dạng Miền dưới `dev@hubsell.vn`, thêm giá trị TXT `google-site-verification=…` vào bản ghi TXT `@` ở Mắt Bão (cạnh SPF và mã Zoho, **không xóa** kẻo mất xác minh), bấm Xác minh, rồi trong Play Console → Tài khoản nhà phát triển → Chi tiết tài khoản bấm Gửi yêu cầu xác minh.
+- **Giấy tờ tổ chức**: Google so tài liệu với tên trong D&B là tên tiếng Anh. Giấy đăng ký bản 09/09 chỉ có tên tiếng Việt nên chưa nộp, chờ bản có tên nước ngoài.
+- **Thanh toán Google báo "Không thể gửi mã"** là do thẻ lưu trong Trung tâm thanh toán bị ghi hạn 09/26 (đã hết hạn), không phải ngân hàng chặn. Xem thẻ ở payments.google.com trước khi nghi nguyên nhân khác.
+- **Apple đăng ký được trên web** (developer.apple.com/enroll → "Continue enrollment on the web"), không cần iPhone. Apple tự kéo từ D&B cả tên tiếng Anh lẫn tên tiếng Việt (ô Local Business Name).
+
+---
+
 ## 0. Quyết định cần chốt trước khi bắt tay
 
 | Việc | Đề xuất | Lý do |
@@ -174,8 +192,8 @@ Availability: chỉ Việt Nam đợt đầu (tránh khai trader EU).
 |---|---|---|
 | Xin D-U-N-S | ✅ cấp 25/09 (32-013-1497), 2 ngày kể từ submit | Anh |
 | Trang hỗ trợ, trang xóa tài khoản, tài khoản demo ✅ 23/09; nội dung listing + tờ khai dữ liệu + ảnh bìa + icon 512 ✅ 01/10; còn ảnh màn hình (chờ bản build) | song song | Claude |
-| Đăng ký Google Play tổ chức + xác minh | bắt đầu từ 29/09, 1–7 ngày (01/10: chưa bắt đầu) | Anh |
-| Đăng ký Apple tổ chức | bắt đầu từ 29/09, 2–7 ngày (01/10: chưa bắt đầu) | Anh |
+| Đăng ký Google Play tổ chức + xác minh | ✅ tạo 01/10; còn xác minh tổ chức + danh tính + số điện thoại | Anh |
+| Đăng ký Apple tổ chức | ✅ nộp 01/10 (NC89XMUT6N), chờ Apple duyệt | Anh |
 | Sửa code + build + nộp | 1–2 ngày | Claude |
 | Duyệt Google | tới 7 ngày | |
 | Duyệt Apple | 1–3 ngày, có thể trả về 1–2 vòng | |
