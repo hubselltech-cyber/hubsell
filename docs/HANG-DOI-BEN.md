@@ -837,7 +837,9 @@ Giao diện: trang Lịch sử, dòng "đang chờ" đang được kiểm lại 
 
 Kiểm: test `invoice-unknown-recheck-db.test.ts` 12 ca trên database dev với nhà cung cấp giả có "sổ" riêng (lệnh tới nơi, tờ đã lập, mất câu trả lời); cả bộ 1.178 test qua. Sandbox MISA 03/10 (`scripts/misa-unknown-recheck-probe.ts`, lập 1 tờ 00000141) với adapter MISA thật và database dev: lệnh phát hành bị cắt vì quá hạn 150 ms, dòng "đang chờ" được tra lại và NỐI đúng số + mã tra cứu của tờ MISA đã lập; dòng mang mã chưa từng gửi ra "không có tờ nào" và về "hỏng"; tra lại lần hai trên dòng đã có kết luận thì bỏ qua.
 
-Chưa kiểm: câu đọc của vòng quét có đi đúng chỉ mục không (công cụ chặn em áp migration vào database dev, chờ anh chạy rồi em xem kế hoạch chạy của câu); vòng quét chạy theo nhịp thật trong worker (mới gọi trực tiếp từng lượt); hai tiến trình worker thật; nhãn mới trên trình duyệt.
+Câu đọc của vòng quét trên database dev sau khi áp migration (03/10 00:23, 892 dòng nhật ký, 0 dòng đang chờ chưa có mã tra cứu): `Index Scan using "InvoiceLog_unknown_pending_idx"`, đọc 1 khối, 0,02 ms; kế hoạch giữ nguyên ở lượt chạy thứ 7 (sau khi Postgres hết giai đoạn lập kế hoạch riêng từng lượt). Prod trước khi đưa lên: bảng nhật ký 2 dòng, 0 dòng đang chờ chưa có mã tra cứu, không migration dở.
+
+Chưa kiểm: vòng quét chạy theo nhịp thật trong worker (mới gọi trực tiếp từng lượt); hai tiến trình worker thật; nhãn mới trên trình duyệt.
 
 ### 4.7. Bước 6 (dọn) — kiểm kê 02/10/2026
 
