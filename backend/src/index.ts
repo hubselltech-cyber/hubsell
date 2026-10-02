@@ -50,14 +50,13 @@ if (secretBoxEnabled()) {
 // HÀNG ĐỢI BỀN (giai đoạn 2 — lib/queue.ts, docs/HANG-DOI-BEN.md). Khởi động ở
 // MỌI vai: web chỉ gửi việc, worker / all nhận việc + giám sát. Không chờ và
 // không ném: hàng đợi hỏng (vd migration chưa áp) chỉ ghi log "[Queue] KHÔNG
-// khởi động được", ứng dụng vẫn lên. Bước nền (01/10/2026) chưa có đường nào
-// gửi hay nhận việc — đây mới là mở kết nối và kiểm đủ hàng đợi.
-// Bước 1 (webhook Lazada): sẵn sàng rồi mới đăng ký worker nhận việc; ở vai web
-// việc đăng ký tự bỏ qua.
+// khởi động được", ứng dụng vẫn lên.
+// Sẵn sàng rồi mới đăng ký worker nhận việc; ở vai web việc đăng ký tự bỏ qua:
+//   · sự kiện từ sàn (evt.order / evt.auth / evt.dead) — workers/event-queue.ts
+//   · đẩy tồn (tín hiệu stock.channel + đối soát stock.verify) — workers/stock-queue.ts
+// Việc đẩy tồn tự nó KHÔNG phụ thuộc hàng đợi này lên hay không: bộ chạy theo
+// gian + lưới quét khởi động ở startAllWorkers và đọc thẳng bảng stock_push_jobs.
 // ============================================================
-// Bước 4 (đẩy tồn): đăng ký thêm worker stock.channel (tín hiệu "gian có dòng
-// mới") và stock.verify. Việc đẩy tồn tự nó KHÔNG phụ thuộc hàng đợi này lên hay
-// không: bộ chạy theo gian + lưới quét khởi động ở startAllWorkers (workers/stock-queue.ts).
 void startQueue(role)
   .then(async (ok) => {
     if (!ok) return;

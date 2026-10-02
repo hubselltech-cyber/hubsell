@@ -1,6 +1,6 @@
 # Giai đoạn 2: hàng đợi việc bền và webhook 3 sàn
 
-Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; bước nền và webhook ba sàn (bước 0–3) đã chạy trên prod 01/10; bước 4 (đẩy tồn) xem mục 4.5; bước 5 (hóa đơn) và 6 (dọn) chưa làm.** Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
+Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; bước nền và webhook ba sàn (bước 0–3) chạy trên prod từ 01/10; bước 4 (đẩy tồn) chạy trên prod từ 02/10 (mục 4.5); bước 5 (hóa đơn) và 6 (dọn) chưa làm; việc ghi sổ làm sau ở mục 7.** Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
 
 ---
 
@@ -44,7 +44,7 @@ Sau hai lượt: schema thử đã xóa (`schemaLeft: 0`), thư mục tạm trê
 5. **pg-boss là gói ESM**, backend là CommonJS. Node trên Render là v24.21.0 nên `require()` được; đã biên dịch thử với đúng `tsconfig` của backend (TypeScript 5.9.3), kiểu đầy đủ.
 6. **pg-boss không giữ câu lệnh chuẩn bị sẵn** trên kết nối (0 câu) — không lặp lại kiểu sự cố bộ nhớ database 30/09. Phía Prisma chỉ giữ 2 câu cho việc gửi.
 7. **Tạo hàng đợi được ngay trong SQL** (`SELECT pgboss.create_queue(...)`), kể cả hàng đợi có bảng riêng. → Toàn bộ thay đổi database nằm trong một tệp migration trình trước, lúc chạy không có lệnh tạo bảng nào. Điều kiện: không bật `persistQueueStats` (bật thì thư viện tự tạo mỗi ngày một mảnh bảng thống kê).
-8. **Hàng đợi "gộp theo khóa" có hai điểm yếu khi việc chạy lâu** (đo tối 01/10, sau khi bước 1–3 đã lên prod): việc chờ của một khóa đang chạy chặn cả hàng đợi tới khi việc đang chạy xong; và khóa bị phần giám sát chụp đúng lúc đang chạy thì việc mới của khóa đó bị bỏ qua tới khoảng 2 phút. Số đo và ảnh hưởng ở cuối mục 4.5.
+8. **Hàng đợi "gộp theo khóa" có hai điểm yếu khi việc chạy lâu** (đo tối 01/10, sau khi bước 1–3 đã lên prod): việc chờ của một khóa đang chạy chặn cả hàng đợi tới khi việc đang chạy xong; và khóa bị phần giám sát chụp đúng lúc đang chạy thì việc mới của khóa đó bị bỏ qua tới khoảng 2 phút. Đo tải 02/10 cho thấy với việc ngắn (webhook) ảnh hưởng nhỏ; với việc chạy lâu (đẩy tồn, hóa đơn) thì không dùng được. Số đo ở cuối mục 4.5.
 
 ### 1.3. Chưa kiểm
 
@@ -372,14 +372,24 @@ Khác với trước:
 
 Đã kiểm: `shopee-webhook-inbox.test.ts` (5 tình huống: đường lui, đơn trừ kho đúng + gửi trùng, ủy quyền shop chưa nối, sàn lỗi → hỏng hẳn + cảnh báo, mã vận đơn bị gộp vẫn tới handler mà không phải hỏi sàn).
 
-### 4.5. Bước 4 (đẩy tồn) — lần một 01/10/2026, lần hai anh Trung gật 02/10/2026
+### 4.5. Bước 4 (đẩy tồn) — đã làm, đưa lên hai lần (01/10 và 02/10/2026)
 
 | Lần | Bản | Nội dung |
 |---|---|---|
 | Một | `e44c58f`, lên prod 01/10 23:57 | Worker biết xử lý tín hiệu `stock.channel` và việc `stock.verify`; mọi nơi ghi đơn / sửa kho đã lập "phiếu đẩy tồn" trong giao dịch của mình. Mặc định VẪN là đường cũ (`legacy`): chưa ai gửi tín hiệu, vòng quét cũ vẫn chạy |
-| Hai | bản kế | Đổi mặc định sang `queue`. Anh Trung gật 02/10 rạng sáng, kèm nhận hai con số tự chọn (4 gian cùng lúc, hạn thuê 300 giây) làm mặc định; đẩy lên vào ban ngày, lúc có đơn về đều |
+| Hai | `5ec2982`, lên prod 02/10 08:50 | Đổi mặc định sang `queue`. Anh Trung gật 02/10, kèm nhận hai con số tự chọn (4 gian cùng lúc, hạn thuê 300 giây) làm mặc định; đẩy lên ban ngày, lúc có đơn về đều |
 
 Lần một đã thấy chạy thật trên prod: 00:05:53 ngày 02/10 một đơn Shopee giữ 1 sản phẩm, 00:05:54 tồn 69 → 68 đẩy thành công (dòng chờ đẩy ghi bằng câu lệnh cả lô mới); lượt đối soát 00:08 xếp 99 dòng, vòng quét cũ xử lý hết. Worker ghi log đã nhận `stock.channel` (2 vòng × lô 2) và `stock.verify` (1 vòng × lô 1).
+
+Lần hai trên prod, sáng 02/10:
+
+| Giờ | Việc thấy được |
+|---|---|
+| 08:50:59 | Worker bản mới ghi "[Stock-queue] BẬT — đẩy tồn theo gian: tối đa 4 gian cùng lúc, lưới quét mỗi 5 giây"; không còn dòng bật vòng quét cũ |
+| 08:54:14 | Đơn Shopee `261002HKCTP621` trừ 1 sản phẩm → cùng giây đó tồn SKU `LT122` đẩy lên gian Shopee thành công (352) |
+| 08:55:49 | Gian TikTok của cùng SKU hỏng sau 3 lượt (lỗi 105005, app chưa có quyền sửa sản phẩm) — đúng nhịp thử lại 30 rồi 60 giây do lưới quét gọi |
+| 08:57:16 | Đối soát Shopee qua `stock.verify`: sàn = Hubsell = 352, đúng 3 phút sau lượt đẩy |
+| 08:59 | Đọc database: `stock_push_jobs` 0 dòng; `stock.channel` 2 việc xong, `stock.verify` 1 việc xong; không việc nào hỏng, chờ thử lại hay nằm trong `stock.dead` |
 
 **Khác với mục 3.4 ở một điểm chính: việc đẩy KHÔNG chạy bên trong việc của pg-boss.** Lý do là một hạn chế của thư viện, đo được tối 01/10 (xem "Hai điều đo được về hàng đợi gộp theo khóa" bên dưới). Ba điều mục 3.4 hứa vẫn giữ nguyên: dòng chờ đẩy ghi chung giao dịch đơn, các gian đẩy song song, một gian không bao giờ có hai worker cùng đẩy. Không đổi database.
 
@@ -437,7 +447,7 @@ Lưới quét mỗi 5 giây:         gian nào có dòng tới hạn (kể cả 
 
 **Chưa làm / chưa kiểm ở bước này**
 
-- Chưa chạy với gian thật. Test giả lập lệnh gọi sàn của cả ba sàn (database dev có token thật nên cố ý không chạm sàn).
+- Gian thật: trên prod mới thấy đường mới chạy với Shopee (đẩy + đối soát) và TikTok (chỉ nhánh hỏng do thiếu quyền). Chưa thấy lượt đẩy nào lên gian Lazada. Test tự động thì giả lập lệnh gọi sàn của cả ba sàn (database dev có token thật nên cố ý không chạm sàn).
 - Chưa thử với hai tiến trình worker thật chạy cùng lúc; phần "không đẩy chồng" mới kiểm trong một tiến trình (nhiều lượt cùng lúc + dòng "đang đẩy" giả lập).
 - Hai chỗ còn ghi dòng SAU commit vì không có giao dịch bao quanh: đổi tồn an toàn / ngưỡng cảnh báo của một SKU (`routes/products.ts`), và các nút đẩy cả gian / cả shop (bật gian, Sync toàn bộ, đổi tồn an toàn mặc định). Đối soát 6 giờ cũng ghi ngoài giao dịch (nó không đổi tồn).
 - Nút "Cập nhật tồn" trên thẻ cảnh báo vẫn đẩy thẳng lên Shopee trong request (`syncShopeeStockForProducts`), không qua hàng đợi. Giữ nguyên.
@@ -460,7 +470,39 @@ Nguyên nhân đọc từ mã thư viện: câu lấy việc không tự kiểm 
 
 Với đẩy tồn (một lượt kéo dài hàng chục giây) hệ quả 1 đi ngược mục tiêu "gian chậm không chặn gian khác", nên bước 4 đổi cách làm như trên: hàm xử lý của `stock.channel` chỉ dài vài mili-giây.
 
-**Ảnh hưởng tới `evt.order` đang chạy trên prod (bước 1–3):** cùng loại hàng đợi nên cùng hai hệ quả, mức độ khác. Việc `evt.order` dài khoảng nửa giây, nên hệ quả 1 chỉ làm cả hàng đứng lại trong phần còn lại của nửa giây đó; chỉ đáng kể khi một lệnh gọi sàn treo lâu (lệnh gọi sàn chưa có thời hạn chờ). Hệ quả 2: đơn nào có việc đang chạy đúng lúc phần giám sát chụp thì sự kiện kế tiếp của đơn đó có thể chậm tới khoảng 2 phút. Không mất sự kiện, không sai dữ liệu, chỉ trễ. **Chưa đo trên prod.** Cách đo: trên `webhook_events` lấy khoảng cách từ lúc nhận tới lúc xong, xem giá trị lớn nhất và số dòng trễ trên 30 giây. Hướng xử lý em sẽ trình riêng sau khi có số.
+**Ảnh hưởng tới `evt.order` đang chạy trên prod (bước 1–3)**
+
+Cùng loại hàng đợi nên cùng hai hệ quả, nhưng việc `evt.order` chỉ dài khoảng nửa giây nên mức độ khác hẳn đẩy tồn. Không mất sự kiện, không sai dữ liệu, chỉ trễ.
+
+Số trên prod sau một đêm (đọc `webhook_events` lúc 09:00 ngày 02/10, từ 21:18 ngày 01/10):
+
+| Sàn | Sự kiện xong | Hỏng / còn chờ | Trễ giữa | Trễ lớn nhất |
+|---|---|---|---|---|
+| Shopee | 175 | 0 | 0,5 giây | 1 giây |
+| TikTok | 520 | 0 | 0,5 giây | 4 giây (một loạt khoảng 10 sự kiện cùng lúc) |
+| Lazada | 0 | — | — | — |
+
+Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10 (mục 4.3), không tính. Chưa dòng nào dính hệ quả 2.
+
+Đo tải trên database dev ngày 02/10 (một tiến trình worker, hàm xử lý giả mất 0,5 giây như một lượt kéo đơn):
+
+| Bài đo | Không có đơn trùng | 30% đơn có hai sự kiện sát nhau |
+|---|---|---|
+| 4 việc cùng lúc, khoảng 6 việc/giây (75% sức xử lý) | trễ p95 495 ms, lớn nhất 543 ms | p95 605 ms, lớn nhất 937 ms |
+| 16 việc cùng lúc, khoảng 24 việc/giây | p95 484 ms, lớn nhất 526 ms | p95 606 ms, lớn nhất 805 ms |
+| 16 việc cùng lúc, sàn trả lời chậm 3 giây mỗi lượt | p95 2,4 giây, lớn nhất 2,5 giây | p95 3,0 giây, lớn nhất 3,7 giây |
+
+| Bài đo hệ quả 2 | Kết quả |
+|---|---|
+| 1.685 đơn, 9 đơn/giây, mỗi đơn có sự kiện thứ hai sau 10–150 giây (ngẫu nhiên), gửi liên tục 200 giây | 4 sự kiện thứ hai trễ trên 5 giây (khoảng 0,24%), trong đó 3 cái trên 30 giây, lớn nhất 58 giây; p99 vẫn 0,5 giây |
+
+Đọc số:
+
+- Hệ quả 1 (chặn cả hàng) dài tối đa bằng MỘT lượt gọi sàn, nên bình thường chỉ thêm vài phần mười giây. Ca xấu là lệnh gọi sàn treo: sàn treo bao lâu thì cả hàng đứng bấy lâu, tới khi danh sách khóa đang chạy được làm mới (tối đa khoảng 2 phút). Thuốc là thời hạn chờ gọi sàn (mục 3.6, chờ số đo).
+- Hệ quả 2 chỉ đụng sự kiện THỨ HAI trở đi của một đơn; sự kiện đầu của đơn mới không bao giờ dính. Tỷ lệ gần như không đổi theo lưu lượng: thêm lưu lượng thì thêm luồng xử lý, số khóa bị chụp mỗi phút tăng cùng nhịp (suy từ cơ chế, mới đo ở một mức tải). Với TikTok, kho trừ ở sự kiện "đã thanh toán" (thường là sự kiện thứ hai), nên đơn dính thì tồn lên các sàn khác trễ khoảng một phút.
+- Bài đo mới chạy một worker với hàm xử lý giả; chưa thử nhiều worker cùng lúc.
+
+**Anh Trung chốt 02/10:** chưa làm lại phần webhook. Bật thời hạn chờ gọi sàn theo lịch; bước hóa đơn không dùng loại hàng đợi này cho việc chạy lâu; đo lại trên prod khi có vài nghìn sự kiện. Các việc này ghi ở mục 7.
 
 ## 5. Rủi ro và điều em không cam kết
 
@@ -468,6 +510,7 @@ Với đẩy tồn (một lượt kéo dài hàng chục giây) hệ quả 1 đi
 - **Lên bản pg-boss có thể đổi schema của nó.** Vì chạy `migrate: false`, mỗi lần lên bản phải xuất SQL chuyển đổi và đưa vào migration.
 - **Bảng việc bị ghi và xóa liên tục**, phụ thuộc autovacuum. pg-boss có cảnh báo khi vacuum không theo kịp; em đưa cảnh báo đó lên HQ.
 - **Ở 1 triệu đơn/ngày**, `webhook_events` cần chia bảng theo ngày và xóa theo mảnh. Việc này đã nằm trong giai đoạn 4.
+- **Hàng đợi "gộp theo khóa" của pg-boss không hợp với việc chạy lâu** (số đo ở cuối mục 4.5). Đẩy tồn đã tránh; webhook chịu được vì việc ngắn; hóa đơn phải thiết kế theo khuôn đẩy tồn. Lên bản pg-boss thì đo lại hai bài ở mục 4.5 trước khi tin.
 - **Bộ giới hạn tốc độ gọi sàn vẫn nằm trong RAM từng tiến trình** (cầu dao thì đã ở database). Việc "mỗi gian một worker" của `stock.channel` che được phần đẩy tồn, phần còn lại thuộc giai đoạn 3.
 
 ---
@@ -483,3 +526,22 @@ Với đẩy tồn (một lượt kéo dài hàng chục giây) hệ quả 1 đi
 5. Hai con số em tự chọn ở mục 3.6 (hạn giữ 5 phút, 4 việc cùng lúc): anh nhận làm mặc định hay muốn số khác.
 6. Ba con số của phần hóa đơn ở mục 3.8 (lượt kế sau 1 phút khi còn tồn; hỏi trạng thái chạy tiếp khi còn tồn; theo tới khi có kết luận thay vì 30 ngày).
 7. Nút phát hành hàng loạt đổi sang chạy nền có tiến độ (bấm xong không chờ kết quả ngay trên nút nữa).
+
+---
+
+## 7. Sổ việc làm sau
+
+Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả vào mục tương ứng.
+
+| Việc | Khi nào làm | Lúc đó làm gì |
+|---|---|---|
+| Kiểm webhook Lazada và đẩy tồn Lazada bằng số liệu thật | **Khi có khách ủy quyền gian Lazada có đơn thật** (anh Trung chốt 02/10). Hiện `webhook_events` nguồn LAZADA là 0 dòng kể từ bước 1 | Đếm sự kiện Lazada trong `webhook_events`. Gian có đơn mới mà không có sự kiện thì kiểm cấu hình đẩy sự kiện của app ISV 142085 trên Lazada Open Platform. Theo một đơn đi trọn đường: nhận → ghi đơn → trừ kho → tồn lên các gian khác. Xem một lượt đẩy tồn lên chính gian Lazada |
+| Đo lại độ trễ `evt.order` trên prod | Khi `webhook_events` có vài nghìn sự kiện | Lấy trễ lớn nhất và số dòng trễ trên 30 giây (bỏ hai dòng sửa tay 01/10). Tỷ lệ cao hơn hẳn số đo ở mục 4.5 thì trình phương án sửa |
+| Thời hạn chờ lệnh gọi sàn | 04–06/10, sau khi có 3–5 ngày số đo `[SanHTTP]` | Trình con số kèm phân bố thật, rồi bật `PLATFORM_HTTP_TIMEOUT_MS` |
+| Bước 5 (hóa đơn): thiết kế lại phần hàng đợi | Trước khi viết mã bước 5 | `invoice.issue` và `invoice.status` chạy lâu theo từng shop nên không để trong việc "gộp theo khóa"; làm theo khuôn đẩy tồn (bảng giữ trạng thái + bộ chạy theo shop + khóa ở database). Trình thiết kế trước |
+| Bước 6 (dọn) phần đẩy tồn | Khoảng 09/10, sau một tuần đường mới chạy ổn | Gỡ vòng quét cũ trong `stock-push-worker.ts`, công tắc `STOCK_PUSH_MODE`, nhánh đối soát trong bảng `shopee_webhook_logs` |
+| Thử hai tiến trình worker chạy cùng lúc | Trước khi thêm worker thứ hai trên prod | Kiểm "một gian không hai tiến trình cùng đẩy" và độ trễ `evt.order` với hai worker thật |
+| Chỉ mục cho lưới quét đẩy tồn | Khi `stock_push_jobs` thường xuyên dồn hàng chục nghìn dòng | Thêm chỉ mục để lấy danh sách gian có dòng tới hạn mà không đọc mọi dòng (đổi database, trình SQL trước) |
+| Rút nhịp 60 giây của pg-boss (`monitorIntervalSeconds`, `queueCacheIntervalSeconds`) | Chỉ khi số đo prod cho thấy hệ quả 2 đáng kể | Đo chi phí của phần giám sát trên database trước; chưa đo |
+| Gian TikTok bật đồng bộ tồn nhưng app chưa có quyền sửa sản phẩm | Khi TikTok duyệt quyền, hoặc anh Trung chốt tắt đồng bộ gian đó | Hiện mỗi lượt đẩy lên gian này hỏng sau 3 lượt và ra cảnh báo; đối soát 6 giờ xếp lại 99 SKU mỗi lượt (thấy trên prod 02/10) |
+| Hai chỗ còn ghi dòng chờ đẩy sau commit | Khi đụng lại các route đó | Đổi tồn an toàn / ngưỡng của một SKU, các nút đẩy cả gian / cả shop (mục 4.5, "Chưa làm") |
