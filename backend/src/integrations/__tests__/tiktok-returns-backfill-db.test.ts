@@ -174,28 +174,14 @@ describe.skipIf(!columnReady)("TikTok — quét bù yêu cầu hoàn theo mã đ
     expect(api.calls).toHaveLength(0);
   });
 
-  it("đơn bản cũ đã ghi 'trả hàng, kiện đã về' mà sàn cho khách giữ hàng → hỏi lại một lần, gỡ mốc kiện về", async () => {
-    const o = await createRefundedOrder({
-      returnSolution: ReturnSolution.RETURN_REFUND,
-      platformReturnStatus: "RETURN_OR_REFUND_REQUEST_COMPLETE",
-      platformRefundAmount: 224_100,
-      returnDeliveredAt: new Date(1_757_500_000 * 1000),
-    });
-    expect((await pnlOf(o.id)).profitAfterTax).toBe(-4_620); // bản cũ: thu hồi vốn nhầm
-
-    api.respond = (ids) => ids.map((c) => completedReturn(c, { can_buyer_keep_item: true }));
-    const r = await backfillTiktokReturnsByOrder(await channel());
-
-    expect(r).toMatchObject({ looked: 1, keptByBuyer: 1 });
-    const after = await prisma.order.findUniqueOrThrow({ where: { id: o.id } });
-    expect(after.returnSolution).toBe(ReturnSolution.REFUND_ONLY);
-    expect(after.returnDeliveredAt).toBeNull();
-    expect((await pnlOf(o.id)).profitAfterTax).toBe(-144_620);
-  });
-
-  it("đơn HỦY có tiền hoàn và đơn không có tiền hoàn → không hỏi sàn", async () => {
+  it("đơn HỦY có tiền hoàn, đơn không có tiền hoàn, đơn đã có giải pháp hoàn → không hỏi sàn", async () => {
     await createRefundedOrder({ shippingStatus: "CANCELLED" });
     await createRefundedOrder({ refundedAmount: 0 });
+    await createRefundedOrder({
+      returnSolution: ReturnSolution.RETURN_REFUND,
+      platformReturnStatus: "RETURN_OR_REFUND_REQUEST_COMPLETE",
+      returnDeliveredAt: new Date(1_757_500_000 * 1000),
+    });
     const r = await backfillTiktokReturnsByOrder(await channel());
     expect(r.candidates).toBe(0);
     expect(api.calls).toHaveLength(0);

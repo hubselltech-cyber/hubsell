@@ -1344,9 +1344,9 @@ model Order {
   /// kho đánh DAMAGED/WRITTEN_OFF sau đó thì mới tính mất.
   returnDeliveredAt    DateTime?
   /// Mốc Hubsell ĐÃ ĐỌC yêu cầu hoàn của sàn cho đơn này (02/10/2026). Null =
-  /// chưa đọc lần nào → lượt quét bù theo mã đơn (TikTok
-  /// backfillTiktokReturnsByOrder) sẽ hỏi sàn nếu đơn có tiền hoàn trên bản kê;
-  /// mỗi đơn chỉ hỏi một lần. Tìm đơn chờ hỏi qua chỉ mục một phần
+  /// chưa đọc lần nào → lượt quét bù theo mã đơn của TikTok / Shopee sẽ hỏi sàn
+  /// nếu đơn có tiền hoàn trên sao kê; mỗi đơn chỉ hỏi một lần (cơ chế:
+  /// src/integrations/return-lookup.ts). Tìm đơn chờ hỏi qua chỉ mục một phần
   /// "Order_return_lookup_pending_idx" (tạo bằng SQL trong migration, Prisma
   /// không mô tả được chỉ mục có điều kiện). Sổ cái đơn không đọc cột này.
   returnLookupAt       DateTime?

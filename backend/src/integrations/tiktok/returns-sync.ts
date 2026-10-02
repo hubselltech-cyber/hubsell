@@ -17,14 +17,15 @@
 // KHÁCH GIỮ HÀNG (02/10/2026, anh Trung: "khách được giữ hàng thì coi như mất cả
 // giá vốn"): docs 202309 có cờ can_buyer_keep_item — sàn cho khách giữ hàng dù
 // yêu cầu là trả hàng / đổi hàng. Cờ bật → coi như CHỈ HOÀN TIỀN: không cắm
-// AWAITING, không ghi mốc kiện về, Lãi/Lỗ tính mất nguyên giá vốn.
+// AWAITING, không ghi mốc kiện về, Lãi/Lỗ tính mất nguyên giá vốn. Dữ liệu thật
+// 02/10/2026 (khoảng 360 đơn hoàn của 3 gian) CHƯA đơn nào mang cờ này và mẫu
+// log hình dạng không có trường đó → nhánh này mới chỉ được kiểm bằng test.
 //
-// QUÉT BÙ THEO MÃ ĐƠN (02/10/2026): lượt quét thường chỉ nhìn 2 / 7 ngày theo
-// update_time, nên yêu cầu hoàn đã xong TRƯỚC ngày nối gian không bao giờ được
-// đọc; bản kê thì kéo cả lịch sử → đơn có tiền hoàn mà không có bản ghi hoàn bị
-// coi là khách giữ hàng (đơn 585860564513293743 gian Giày Dép Đức Khải: lỗ
-// 144.620 thay vì 4.620). backfillTiktokReturnsByOrder hỏi sàn theo order_ids
-// cho đúng các đơn đó, mỗi đơn MỘT lần (mốc Order.returnLookupAt).
+// QUÉT BÙ THEO MÃ ĐƠN (02/10/2026, cơ chế chung ở ../return-lookup.ts): yêu
+// cầu hoàn đã xong TRƯỚC ngày nối gian không bao giờ lọt vào lượt quét 2 / 7
+// ngày → đơn có tiền hoàn trên bản kê bị coi là khách giữ hàng (đơn
+// 585860564513293743 gian Giày Dép Đức Khải: lỗ 144.620 thay vì 4.620).
+// backfillTiktokReturnsByOrder hỏi returns/search theo order_ids cho các đơn đó.
 //
 // An toàn dữ liệu: trục returnStatus CHỈ đổi NONE ↔ AWAITING; đơn kho đã xử
 // lý (RECEIVED trở đi) tuyệt đối không đụng. Hủy đơn (cancellations) nằm trên
@@ -39,6 +40,7 @@ import {
   maybeAutoAdjustOnPlatformReturn,
   PLATFORM_RETURN_DONE_STATUSES,
 } from "../invoice/adjust-order";
+import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-lookup";
 import { searchReturns, type TikTokReturnOrder } from "./client";
 import { getValidAccessToken } from "./service";
 
@@ -444,8 +446,9 @@ export async function syncTiktokReturns(
 
 /**
  * Số đơn hỏi sàn mỗi lượt gọi. Docs returns/search 202309 KHÔNG ghi trần độ dài
- * order_ids → 20 là mức tự chọn (không có căn cứ tài liệu), chỉnh bằng env
- * TIKTOK_RETURN_LOOKUP_BATCH. Kết quả vẫn đọc hết trang nên đúng với mọi cỡ lô.
+ * order_ids → 20 là mức tự chọn, sàn nhận được trên prod 02/10/2026 (3 gian,
+ * 360 đơn); chỉnh bằng env TIKTOK_RETURN_LOOKUP_BATCH. Kết quả vẫn đọc hết
+ * trang nên đúng với mọi cỡ lô.
  */
 const LOOKUP_BATCH_DEFAULT = 20;
 /**
@@ -474,16 +477,9 @@ function lookupBatchSize(): number {
 }
 
 /**
- * Hỏi sàn THEO MÃ ĐƠN cho các đơn chưa từng đọc yêu cầu hoàn (returnLookupAt
- * trống) thuộc một trong hai nhóm:
- *   1. Có tiền hoàn trên bản kê mà không có giải pháp hoàn — yêu cầu hoàn xong
- *      trước ngày nối gian, lượt quét theo thời gian không với tới.
- *   2. Đã ghi "trả hàng, kiện đã về" bằng bản chưa đọc cờ khách giữ hàng — hỏi
- *      lại một lần để sửa các đơn sàn cho khách giữ hàng. Nhóm này chỉ gồm đơn
- *      có từ trước 02/10/2026; đơn mới đi qua applyTiktokReturnGroups đã đóng mốc.
- * Mỗi đơn chỉ hỏi MỘT lần (đóng mốc kể cả khi sàn không có yêu cầu nào — đơn đó
- * giữ cách tính cũ: khách giữ hàng, mất giá vốn). Lô nào sàn lỗi thì không đóng
- * mốc, lượt sau hỏi lại.
+ * Hỏi sàn THEO MÃ ĐƠN cho các đơn có tiền hoàn trên bản kê mà chưa từng đọc yêu
+ * cầu hoàn (findOrdersPendingReturnLookup) rồi ghi vào đơn bằng đúng bộ quyết
+ * định của lượt quét thường. Lô nào sàn lỗi thì không đóng mốc, lượt sau hỏi lại.
  */
 export async function backfillTiktokReturnsByOrder(
   channel: Channel
@@ -496,22 +492,7 @@ export async function backfillTiktokReturnsByOrder(
     more: false,
   };
 
-  // Điều kiện viết THẲNG trong câu (không qua tham số) để khớp nguyên văn chỉ
-  // mục một phần "Order_return_lookup_pending_idx" — qua tham số thì Postgres
-  // không chứng minh được và dò cả đơn của gian.
-  const rows = await prisma.$queryRaw<{ id: string; orderCode: string }[]>`
-    SELECT "id", "orderCode"
-    FROM "Order"
-    WHERE "channelId" = ${channel.id}
-      AND "returnLookupAt" IS NULL
-      AND "shippingStatus" <> 'CANCELLED'
-      AND ("refundedAmount" > 0 OR "returnDeliveredAt" IS NOT NULL)
-      AND (
-        "returnSolution" IS NULL
-        OR ("returnSolution" = 'RETURN_REFUND' AND "returnDeliveredAt" IS NOT NULL)
-      )
-    ORDER BY "createdAt" DESC
-    LIMIT ${LOOKUP_ORDERS_PER_SWEEP + 1}`;
+  const rows = await findOrdersPendingReturnLookup(channel.id, LOOKUP_ORDERS_PER_SWEEP + 1);
   result.more = rows.length > LOOKUP_ORDERS_PER_SWEEP;
   const candidates = rows.slice(0, LOOKUP_ORDERS_PER_SWEEP);
   result.candidates = candidates.length;
@@ -564,10 +545,7 @@ export async function backfillTiktokReturnsByOrder(
     await applyTiktokReturnGroups(channel, byOrder, result, { historical: true });
 
     // Đóng mốc cả lô: đơn sàn không có yêu cầu hoàn nào cũng không hỏi lại.
-    await prisma.order.updateMany({
-      where: { id: { in: batch.map((o) => o.id) }, returnLookupAt: null },
-      data: { returnLookupAt: new Date() },
-    });
+    await markReturnLookupDone(batch.map((o) => o.id));
     result.looked += batch.length;
   }
 

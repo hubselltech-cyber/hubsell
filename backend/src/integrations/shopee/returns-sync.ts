@@ -17,14 +17,13 @@
 // An toàn dữ liệu: CHỈ đổi qua lại NONE ↔ AWAITING. Đơn kho đã xử lý
 // (RECEIVED trở đi) tuyệt đối không đụng — không regress tiến độ nhập kho.
 //
-// QUÉT BÙ THEO MÃ ĐƠN (02/10/2026, cùng bệnh với TikTok — xem
-// tiktok/returns-sync.ts): lượt quét trên chỉ nhìn 2 / 7 ngày, yêu cầu hoàn đã
-// xong TRƯỚC ngày nối gian không bao giờ được đọc, trong khi sao kê kéo cả lịch
-// sử → đơn có tiền hoàn mà không có bản ghi hoàn bị Lãi/Lỗ coi là khách giữ
-// hàng, trừ nguyên giá vốn (prod 02/10: 237 đơn / 10 gian). get_return_list
-// KHÔNG lọc được theo order_sn (docs: chỉ có khoảng ngày tạo / cập nhật tối đa
-// 15 ngày + trạng thái), nên backfillShopeeReturnsByOrder đi hai bước:
-// get_escrow_detail (order_sn) → return_order_sn_list → get_return_detail.
+// QUÉT BÙ THEO MÃ ĐƠN (02/10/2026, cơ chế chung ở ../return-lookup.ts): yêu
+// cầu hoàn đã xong TRƯỚC ngày nối gian không bao giờ lọt vào lượt quét 2 / 7
+// ngày → đơn có tiền hoàn trên sao kê bị Lãi/Lỗ coi là khách giữ hàng (prod
+// 02/10: 237 đơn / 10 gian). get_return_list KHÔNG lọc được theo order_sn (docs:
+// chỉ có khoảng ngày tạo / cập nhật tối đa 15 ngày + trạng thái), nên
+// backfillShopeeReturnsByOrder đi hai bước: get_escrow_detail (order_sn) →
+// return_order_sn_list → get_return_detail.
 // ============================================================
 
 import type { Channel, Prisma } from "@prisma/client";
@@ -48,6 +47,7 @@ import {
 } from "./client";
 import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
 import { mapShopeeEscrowFields } from "./settlements";
+import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-lookup";
 
 /** Chốt chặn phân trang vô tận (50 yêu cầu/trang → 2500 yêu cầu/lượt là quá đủ). */
 const MAX_RETURN_PAGES = 50;
@@ -475,7 +475,7 @@ async function applyShopeeReturnGroup(
       }
     } catch (err) {
       console.warn(
-        `[Shopee Returns] Không đọc lại được escrow đơn :`,
+        `[Shopee Returns] Không đọc lại được escrow đơn ${orderSn}:`,
         (err as Error).message
       );
     }
@@ -624,11 +624,9 @@ export interface BackfillShopeeReturnsResult extends SyncShopeeReturnsResult {
 
 /**
  * Hỏi sàn THEO MÃ ĐƠN cho các đơn có tiền hoàn trên sao kê mà chưa từng đọc yêu
- * cầu hoàn (returnLookupAt trống, chưa có giải pháp hoàn): get_escrow_detail trả
+ * cầu hoàn (findOrdersPendingReturnLookup): get_escrow_detail trả
  * return_order_sn_list → get_return_detail từng yêu cầu → ghi vào đơn bằng đúng
- * bộ quyết định của lượt quét thường. Mỗi đơn chỉ hỏi MỘT lần — đóng mốc kể cả
- * khi sàn không có yêu cầu nào (đơn đó giữ cách tính cũ: khách giữ hàng, mất giá
- * vốn). Đơn nào sàn lỗi thì không đóng mốc.
+ * bộ quyết định của lượt quét thường. Đơn nào sàn lỗi thì không đóng mốc.
  */
 export async function backfillShopeeReturnsByOrder(
   channel: Channel
@@ -642,20 +640,8 @@ export async function backfillShopeeReturnsByOrder(
     more: false,
   };
 
-  // Điều kiện viết THẲNG trong câu (không qua tham số) để khớp nguyên văn chỉ
-  // mục một phần "Order_return_lookup_pending_idx" (migration 20261002200100).
   // Nhặt dư gấp 3 để trừ hao đơn đang nghỉ sau lỗi.
-  const rows = await prisma.$queryRaw<{ id: string; orderCode: string }[]>`
-    SELECT "id", "orderCode"
-    FROM "Order"
-    WHERE "channelId" = ${channel.id}
-      AND "returnLookupAt" IS NULL
-      AND "shippingStatus" <> 'CANCELLED'
-      AND ("refundedAmount" > 0 OR "returnDeliveredAt" IS NOT NULL)
-      AND "refundedAmount" > 0
-      AND "returnSolution" IS NULL
-    ORDER BY "createdAt" DESC
-    LIMIT ${LOOKUP_ORDERS_PER_SWEEP * 3 + 1}`;
+  const rows = await findOrdersPendingReturnLookup(channel.id, LOOKUP_ORDERS_PER_SWEEP * 3 + 1);
   const now = Date.now();
   const rested = rows.filter((o) => now - (lookupFailedAt.get(o.id) ?? 0) > LOOKUP_RETRY_COOLDOWN_MS);
   const candidates = rested.slice(0, LOOKUP_ORDERS_PER_SWEEP);
@@ -708,10 +694,7 @@ export async function backfillShopeeReturnsByOrder(
         await applyShopeeReturnGroup(ctx, o.orderCode, group);
       }
       // Đóng mốc: đơn sàn không có yêu cầu hoàn nào cũng không hỏi lại.
-      await prisma.order.updateMany({
-        where: { id: o.id, returnLookupAt: null },
-        data: { returnLookupAt: new Date() },
-      });
+      await markReturnLookupDone([o.id]);
       result.looked++;
     } catch (err) {
       lookupFailedAt.set(o.id, now);
