@@ -28,6 +28,7 @@ vi.mock("../../services/order-ledger", async (importOriginal) => {
   };
 });
 
+import { vnDateKey } from "../../lib/ads-dates";
 import { invalidateCostCaches } from "../../lib/cost-cache-invalidation";
 import { ensureLedgerFresh } from "../../services/order-ledger";
 import { BREAKEVEN_MIN_COVERAGE_PCT } from "../tiktok-ads/auto-rules";
@@ -97,7 +98,10 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — lưới đỡ và bộ đ
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     sqlMode.fail = true;
     sqlMode.calls = 0;
-    const t0 = Date.now();
+    // Đồng hồ giả neo ở 12:00 trưa giờ VN của hôm nay. Trước 03/10/2026 lấy giờ thật:
+    // chạy sau 23:25 thì mốc "sát 30 phút" bên dưới (t0 + 35 phút) nhảy sang ngày VN
+    // mới, khoảng tự kiểm đổi → digest đổi → gom lại ĐÚNG THIẾT KẾ, và test hỏng oan.
+    const t0 = new Date(`${vnDateKey(0)}T12:00:00+07:00`).getTime();
     const now = vi.spyOn(Date, "now").mockReturnValue(t0);
 
     const campaigns = await computeTiktokAdsBreakevenUncached(channel());
