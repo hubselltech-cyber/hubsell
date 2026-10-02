@@ -35,6 +35,21 @@ Rule Zoho "Cần xử lý" gắn cờ đỏ cho cảnh báo hạ tầng và gi�
 
 Mã thoát: `0` bình thường, `2` có hộp không đọc được (thiếu cấu hình / sai mật khẩu), `1` lỗi khác.
 
+## Bỏ cờ hàng loạt (`unflag.js`)
+
+Khi các việc ở mục "⏳ Còn treo" đã xử lý xong mà không muốn mở từng thư để bỏ cờ:
+
+| Lệnh | Tác dụng |
+|---|---|
+| `node unflag.js --dry` | Chỉ liệt kê các thư đang gắn cờ trong Hộp thư đến Zoho, không đổi gì |
+| `node unflag.js` | Liệt kê rồi bỏ cờ tất cả các thư đó |
+
+Đây là script DUY NHẤT trong thư mục này có sửa hộp thư, và chỉ sửa đúng một thứ: gỡ cờ. Không xóa, không chuyển thư mục, không đánh dấu đã đọc. Chỉ chạm Hộp thư đến của Zoho; thư gắn cờ bên Gmail phải bỏ cờ tay. Nên chạy `--dry` trước để xem danh sách.
+
+## Thư mục `hoa-don/`
+
+Nơi để tệp hóa đơn / biên nhận của nhà cung cấp tải về từ thư, xếp theo tháng (`hoa-don/2026-10/2026-10-02_Render_Invoice-….pdf`). Thư mục này nằm trong `.gitignore`, không đưa lên git.
+
 ## Mức ưu tiên (sửa trong `rules.js`)
 
 | Mức | Nhóm | Nguồn |
