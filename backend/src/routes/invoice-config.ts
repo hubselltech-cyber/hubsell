@@ -28,6 +28,10 @@ import {
   listPosMachines,
   testPosConnection,
 } from "../integrations/invoice/misa-pos";
+import {
+  isComingSoonProvider,
+  isListedProvider,
+} from "../integrations/invoice/provider-registry";
 
 /**
  * HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ — Multi-Vendor Adapter (module đóng gói độc lập).
@@ -52,16 +56,8 @@ import {
 
 const router = Router();
 
-// 25/08: thêm 3 NCC từ khảo sát thương mại (EasyInvoice/M-Invoice/Mắt Bão).
-const PROVIDERS = ["MISA", "EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "VNPT", "BKAV", "CUSTOM"];
-// NCC chưa nối API — UI cho xem trước giao diện nhưng KHÔNG cho lưu (25/08 anh
-// Trung đổi từ "lưu cấu hình trước" sang khóa cứng). MISA/CUSTOM nằm ngoài.
-// ⏳ Các NCC này TÍCH HỢP SAU KHI THƯƠNG MẠI HÓA HUBSELL (chiến lược 25/08:
-// MISA tiếp thị lấy khách trước, có data mới đàm phán hoa hồng từng bên —
-// EasyInvoice là đích nhắm chính). Mở bên nào = rút khỏi đây + bỏ cờ `soon`
-// trong frontend/src/lib/invoice-vendors.ts + thêm adapter vào
-// PROVIDER_FACTORIES (integrations/invoice/index.ts).
-const COMING_SOON_PROVIDERS = ["EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "VNPT", "BKAV"];
+// Danh sách NCC hợp lệ và NCC "sắp ra mắt" đọc từ sổ đăng ký
+// (integrations/invoice/provider-registry.ts) — mở một NCC là sửa ở đó.
 const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
 const INVOICE_TYPES = ["STANDARD", "POS"];
 
@@ -292,14 +288,14 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       defaultUnitName,
     } = req.body ?? {};
 
-    if (typeof provider !== "string" || !PROVIDERS.includes(provider)) {
+    if (typeof provider !== "string" || !isListedProvider(provider)) {
       res.status(400).json({ error: "Nhà cung cấp không hợp lệ" });
       return;
     }
     // 25/08 (anh Trung): NCC "Sắp ra mắt" chỉ XEM TRƯỚC trên UI — chặn lưu cả
     // ở đây (phòng gọi API thẳng), tránh provider trong DB trỏ sang NCC chưa có
-    // adapter làm auto-issue chết lặng. Mở NCC nào = rút khỏi danh sách này.
-    if (COMING_SOON_PROVIDERS.includes(provider)) {
+    // adapter làm auto-issue chết lặng. Mở NCC nào = đổi trạng thái ở sổ đăng ký.
+    if (isComingSoonProvider(provider)) {
       res.status(400).json({
         error: "Nhà cung cấp này đang Sắp ra mắt — chưa thể chọn làm NCC phát hành.",
       });
@@ -314,7 +310,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
     if (
       posProvider !== undefined &&
       (typeof posProvider !== "string" ||
-        !PROVIDERS.includes(posProvider) ||
+        !isListedProvider(posProvider) ||
         posProvider === "CUSTOM")
     ) {
       res.status(400).json({ error: "NCC máy tính tiền không hợp lệ (MISA | VIETTEL | VNPT | BKAV)" });

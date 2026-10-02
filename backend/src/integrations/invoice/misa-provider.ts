@@ -19,12 +19,15 @@ import {
   getInvoiceStatuses,
   publishStandardInvoice,
   standardConfigMissing,
+  type MisaInvoiceStatusItem,
   type StandardInvoiceConfig,
 } from "./misa-einvoice";
 import type {
   CreateInvoiceInput,
   InvoiceProvider,
   InvoiceResult,
+  ProviderCapabilities,
+  ReferenceLookup,
 } from "./types";
 
 /**
@@ -35,8 +38,42 @@ export interface MisaProviderConfig extends StandardInvoiceConfig {
   defaultInvoiceType: string; // STANDARD | POS
 }
 
+/**
+ * BẢNG KHẢ NĂNG của meInvoice. Nguồn từng dòng:
+ *   [doc]        tài liệu meInvoice (doc.meinvoice.vn / portal developer.misa.vn)
+ *   [thử 02/10]  bài thử scripts/misa-refid-probe.ts chạy trên sandbox 02/10/2026
+ *                (kết quả chép ở docs/HANG-DOI-BEN.md mục 4.6)
+ */
+export const MISA_CAPABILITIES: ProviderCapabilities = {
+  // [doc] "Lưu ý khi bắt đầu": số hóa đơn cấp liên tục theo ký hiệu, lệnh chen
+  // ngang bị từ chối với InvoiceNumberNotCotinuous.
+  sequentialIssue: true,
+  // [thử 02/10] gửi lại mã đã lập → DuplicateInvoiceRefID (cả hóa đơn bán lẫn điều
+  // chỉnh); hai lệnh CÙNG LÚC cùng một mã → đúng một tờ được lập, lệnh kia báo trùng.
+  dedupesByReference: true,
+  // [thử 02/10] một mã bị từ chối hai kiểu (ký hiệu không tồn tại, thuế suất sai)
+  // rồi gửi lại hợp lệ thì được nhận. Mới thử với hóa đơn bán; hóa đơn điều chỉnh
+  // đi cùng endpoint nhưng chưa tạo được ca bị từ chối để thử.
+  referenceReusableAfterReject: true,
+  // [thử 02/10] /invoice/status?inputType=2 tra theo RefID. Mã chưa từng gửi trả
+  // danh sách rỗng. Hóa đơn bán thấy ngay (3/3 lượt); hóa đơn điều chỉnh có 2/2
+  // lượt tra ngay sau khi lập trả RỖNG, 140 ms sau thì thấy. 60 giây là mức TỰ
+  // CHỌN, gấp vài trăm lần độ trễ đã thấy.
+  findByReference: { supported: true, settleSeconds: 60 },
+  // Cỡ lô worker hỏi trạng thái đang chạy từ 03/09/2026 (body là mảng mã tra cứu).
+  statusBatchSize: 50,
+  // [doc] chỉ có /invoice/status để hỏi; không có webhook.
+  webhook: false,
+  // [doc] portal đọc 23/08/2026 không có endpoint hủy. (doc.meinvoice.vn/itg có
+  // nhắc POST /cancel — CHƯA kiểm, nên khai mức an toàn.)
+  cancelViaApi: false,
+  // [thử 02/10] sandbox nhận và lập cả tờ điều chỉnh trỏ vào số hóa đơn gốc không tồn tại.
+  validatesAdjustmentOriginal: false,
+};
+
 export class MisaInvoiceProvider implements InvoiceProvider {
   readonly name = "MISA";
+  readonly capabilities = MISA_CAPABILITIES;
 
   constructor(private cfg: MisaProviderConfig) {}
 
@@ -106,19 +143,41 @@ export class MisaInvoiceProvider implements InvoiceProvider {
   ): Promise<InvoiceResult | null> {
     const code = explainInvoiceError(err).code;
     if (code !== "InvoiceDuplicated" && code !== "DuplicateInvoiceRefID") return null;
+    // Tra không được / không thấy / tờ đã bị xóa thì rơi về thông điệp lỗi trùng như cũ.
+    const found = await this.findByReference(input.orderCode);
+    if (found.state !== "FOUND" || found.deleted || !found.issued) return null;
+    if (!found.transactionId || !found.invoiceNo) return null;
+    return {
+      status: InvoiceLogStatus.ISSUED,
+      invoiceNo: found.invoiceNo,
+      transactionId: found.transactionId,
+      vatAmount: input.lines.reduce((s, l) => s + l.vatAmount, 0),
+    };
+  }
+
+  /**
+   * Tra ngược theo mã tham chiếu (RefID) đã gửi lúc phát hành. MISA trả danh sách
+   * rỗng cho mã chưa có hóa đơn. Nhiều tờ cùng mã (không mong đợi — MISA chặn
+   * trùng) thì ưu tiên tờ còn hiệu lực và báo số tờ ở `matches`.
+   */
+  async findByReference(reference: string): Promise<ReferenceLookup> {
+    let items: MisaInvoiceStatusItem[];
     try {
-      const [found] = await getInvoiceStatuses([input.orderCode], this.cfg, "refId");
-      if (!found || found.isDeleted || found.publishStatus !== 1) return null;
-      if (!found.transactionId || !found.invoiceNo) return null;
-      return {
-        status: InvoiceLogStatus.ISSUED,
-        invoiceNo: found.invoiceNo,
-        transactionId: found.transactionId,
-        vatAmount: input.lines.reduce((s, l) => s + l.vatAmount, 0),
-      };
-    } catch {
-      return null; // tra không được thì rơi về thông điệp lỗi trùng như cũ
+      items = await getInvoiceStatuses([reference], this.cfg, "refId");
+    } catch (err) {
+      return { state: "LOOKUP_FAILED", message: (err as Error).message };
     }
+    if (items.length === 0) return { state: "NOT_FOUND" };
+    const live = items.find((it) => !it.isDeleted && it.publishStatus === 1);
+    const chosen = live ?? items[0];
+    return {
+      state: "FOUND",
+      invoiceNo: chosen.invoiceNo,
+      transactionId: chosen.transactionId,
+      issued: chosen.publishStatus === 1,
+      deleted: chosen.isDeleted,
+      matches: items.length,
+    };
   }
 
   /**

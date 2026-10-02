@@ -25,10 +25,14 @@
  * hóa đơn đầu vào) KHÔNG đi qua chốt này — chúng không sinh chứng từ.
  */
 
-/** Bật cờ cho phép phát hành? (env "1" | "true", không phân biệt hoa thường) */
+import { isProviderPublishAllowed } from "./publish-switch";
+
+/**
+ * Bật cờ cho phép phát hành? (env MISA_ALLOW_PUBLISH "1" | "true", không phân
+ * biệt hoa thường). Luật đọc cờ dùng chung mọi NCC nằm ở publish-switch.ts.
+ */
 export function isPublishAllowed(): boolean {
-  const flag = process.env.MISA_ALLOW_PUBLISH?.trim().toLowerCase();
-  return flag === "1" || flag === "true";
+  return isProviderPublishAllowed("MISA");
 }
 
 /**

@@ -123,15 +123,85 @@ export interface ProviderCredentials {
 }
 
 /**
+ * BẢNG KHẢ NĂNG của một NCC (02/10/2026 — giai đoạn 2 bước 5, docs/HANG-DOI-BEN.md
+ * mục 4.6). Phần lõi (phát hành, tra lại tờ chưa rõ kết quả, hỏi trạng thái) CHỈ
+ * đọc bảng này để quyết định cách làm, không giả định NCC nào cũng giống MISA.
+ *
+ * Hóa đơn đã gửi cơ quan thuế thì không xóa được, nên mỗi giá trị khai ở adapter
+ * phải ghi NGUỒN: tài liệu của NCC, hoặc kết quả chạy bài thử trên sandbox của
+ * chính NCC đó (khuôn bài thử: scripts/misa-refid-probe.ts). Chưa kiểm được thì
+ * khai giá trị AN TOÀN (false / không hỗ trợ) — lõi khi đó tự chọn đường thận
+ * trọng: không tự gửi lại, chờ người xác nhận.
+ */
+export interface ProviderCapabilities {
+  /**
+   * Trong MỘT shop phải phát hành lần lượt từng tờ (NCC cấp số liên tục theo ký
+   * hiệu, bắn song song bị từ chối). false = NCC nhận nhiều lệnh cùng lúc.
+   */
+  sequentialIssue: boolean;
+  /**
+   * NCC chặn trùng theo MÃ THAM CHIẾU Hubsell gửi kèm: gửi lại đúng mã của một
+   * tờ đã lập thì bị từ chối, không lập tờ thứ hai. Đây là chốt cuối chống phát
+   * hành trùng khi Hubsell không biết lượt trước đã lập hay chưa.
+   */
+  dedupesByReference: boolean;
+  /**
+   * Mã tham chiếu của một lượt bị TỪ CHỐI (không tờ nào được lập) gửi lại được.
+   * false = lượt bị từ chối cũng "đốt" mã, lượt sau phải dùng mã mới.
+   */
+  referenceReusableAfterReject: boolean;
+  /**
+   * Tra ngược "mã tham chiếu này đã có hóa đơn chưa". `settleSeconds`: sau khi
+   * NCC lập xong, tối đa bao lâu thì lượt tra chắc chắn thấy — kết quả "không
+   * thấy" trước mốc đó KHÔNG được coi là kết luận.
+   */
+  findByReference: { supported: false } | { supported: true; settleSeconds: number };
+  /** Số tờ tối đa trong một lệnh hỏi trạng thái (1 = NCC chỉ hỏi được từng tờ). */
+  statusBatchSize: number;
+  /** NCC tự đẩy sự kiện đổi trạng thái về (webhook). */
+  webhook: boolean;
+  /** Hủy hóa đơn qua API được (false = chủ shop phải hủy trên trang của NCC). */
+  cancelViaApi: boolean;
+  /**
+   * Khi nhận hóa đơn ĐIỀU CHỈNH, NCC có kiểm hóa đơn gốc tồn tại không. false =
+   * NCC lập cả tờ điều chỉnh trỏ vào số hóa đơn gốc sai, Hubsell phải tự bảo đảm.
+   */
+  validatesAdjustmentOriginal: boolean;
+}
+
+/**
+ * Kết quả tra ngược theo mã tham chiếu. Ba trạng thái tách bạch vì hậu quả khác
+ * hẳn nhau: "không thấy" cho phép gửi lại, còn "không tra được" thì CHƯA biết gì
+ * và không được làm gì tiếp.
+ */
+export type ReferenceLookup =
+  | {
+      state: "FOUND";
+      invoiceNo: string | null;
+      transactionId: string | null;
+      /** NCC đã phát hành xong tờ này (có hiệu lực). */
+      issued: boolean;
+      /** Tờ này đã bị xóa bỏ / hủy phía NCC. */
+      deleted: boolean;
+      /** Số tờ NCC trả về cho mã này — lớn hơn 1 là NCC đang có hóa đơn trùng mã. */
+      matches: number;
+    }
+  | { state: "NOT_FOUND" }
+  | { state: "LOOKUP_FAILED"; message: string };
+
+/**
  * Interface mọi adapter NCC hóa đơn phải cài đủ.
  *
- * Cả 3 phương thức đều KHÔNG được ném lỗi vì sự cố nghiệp vụ (NCC từ chối,
+ * Các phương thức đều KHÔNG được ném lỗi vì sự cố nghiệp vụ (NCC từ chối,
  * sai MST…) — trả `status: FAILED` + errorMessage để nơi gọi ghi log và hiển
  * thị; chỉ ném khi lỗi lập trình thật sự (thiếu tham số bắt buộc).
  */
 export interface InvoiceProvider {
   /** Tên định danh khớp cột InvoiceConfig.provider: "MISA" | "BKAV" | … */
   readonly name: string;
+
+  /** Bảng khả năng của NCC này — xem ProviderCapabilities. */
+  readonly capabilities: ProviderCapabilities;
 
   /** Gửi yêu cầu phát hành hóa đơn cho một đơn hàng. */
   createInvoice(input: CreateInvoiceInput): Promise<InvoiceResult>;
@@ -141,4 +211,10 @@ export interface InvoiceProvider {
 
   /** Tra trạng thái hiện tại của một hóa đơn phía NCC. */
   checkStatus(transactionId: string): Promise<InvoiceResult>;
+
+  /**
+   * Tra ngược theo mã tham chiếu đã gửi lúc phát hành (CreateInvoiceInput.orderCode).
+   * Bắt buộc có khi capabilities.findByReference.supported = true.
+   */
+  findByReference?(reference: string): Promise<ReferenceLookup>;
 }
