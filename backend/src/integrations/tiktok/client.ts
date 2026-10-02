@@ -788,6 +788,8 @@ export interface TikTokReturnOrder {
   return_provider_name?: string;
   return_provider_id?: string;
   shipment_type?: string;
+  /** Sàn cho khách GIỮ HÀNG dù yêu cầu là trả hàng / đổi hàng (docs 202309). */
+  can_buyer_keep_item?: boolean;
   [k: string]: unknown;
 }
 

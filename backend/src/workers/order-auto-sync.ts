@@ -73,7 +73,7 @@ import {
   syncTiktokSettlements,
   syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
-import { syncTiktokReturns } from "../integrations/tiktok/returns-sync";
+import { backfillTiktokReturnsByOrder, syncTiktokReturns } from "../integrations/tiktok/returns-sync";
 import { processTiktokDeliveryTracking } from "../integrations/tiktok/delivery-fail";
 import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
 import {
@@ -698,6 +698,20 @@ async function runHourlyTier(
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi ước tính unsettled TikTok "${channel.shopName}":`, (err as Error).message);
+    }
+    // QUÉT BÙ YÊU CẦU HOÀN THEO MÃ ĐƠN (02/10/2026) — chạy SAU bản kê: đơn vừa
+    // nhận tiền hoàn từ bản kê mà chưa từng đọc yêu cầu hoàn (hoàn xong trước
+    // ngày nối gian) được hỏi sàn theo order_ids, mỗi đơn một lần. Không có đơn
+    // chờ thì chỉ tốn một câu đọc chỉ mục, không gọi sàn.
+    try {
+      const b = await backfillTiktokReturnsByOrder(channel);
+      if (b.looked > 0 || b.more) {
+        console.log(
+          `[Auto-sync] Quét bù đơn hoàn TikTok "${channel.shopName}": hỏi sàn ${b.looked} đơn, ${b.withReturns} đơn có yêu cầu hoàn (${b.scanned} yêu cầu) — ${b.delivered} ghi kiện đã về, ${b.keptByBuyer} sàn cho khách giữ hàng, ${b.unflagged} hạ cờ, ${b.itemsUpdated} dòng SKU trả${b.more ? "; còn đơn chờ lượt sau" : ""}`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi quét bù đơn hoàn TikTok "${channel.shopName}":`, (err as Error).message);
     }
     // Đợt CHI TIỀN về bank (payments) → WalletWithdrawal, cùng cột với Lazada payout.
     try {

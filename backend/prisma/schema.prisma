@@ -1343,6 +1343,13 @@ model Order {
   /// = LOGISTICS_DELIVERY_DONE) → Lãi/Lỗ thu hồi giá vốn dù kho chưa quét;
   /// kho đánh DAMAGED/WRITTEN_OFF sau đó thì mới tính mất.
   returnDeliveredAt    DateTime?
+  /// Mốc Hubsell ĐÃ ĐỌC yêu cầu hoàn của sàn cho đơn này (02/10/2026). Null =
+  /// chưa đọc lần nào → lượt quét bù theo mã đơn (TikTok
+  /// backfillTiktokReturnsByOrder) sẽ hỏi sàn nếu đơn có tiền hoàn trên bản kê;
+  /// mỗi đơn chỉ hỏi một lần. Tìm đơn chờ hỏi qua chỉ mục một phần
+  /// "Order_return_lookup_pending_idx" (tạo bằng SQL trong migration, Prisma
+  /// không mô tả được chỉ mục có điều kiện). Sổ cái đơn không đọc cột này.
+  returnLookupAt       DateTime?
 
   /// Số tiền bưu cục/sàn đã đền cho kiện hàng hỏng hoặc mất.
   ///
