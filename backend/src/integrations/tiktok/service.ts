@@ -42,6 +42,35 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const MAX_PAGES = 50;
 const PAGE_SIZE = 50;
 
+/**
+ * Nghỉ rồi thử lại khi sàn báo QUÁ TẢI TẠM THỜI (code 36009002 "Too many
+ * requests. A dependent service is temporarily rate limited"). Prod 02/10/2026
+ * 20:40: ba gian cùng dựng lại sao kê, lượt đọc bản kê của LUMI SOLAR / Hi.Bé /
+ * Samba bị sàn chặn giữa chừng → cả lượt hỏng, 10 phút sau chạy lại từ đầu rồi
+ * lại bị chặn. Các mức nghỉ là tự chọn (sàn không công bố hạn mức của API bản
+ * kê); hết lượt thử thì ném lỗi như cũ để lượt quét sau làm lại.
+ */
+const RATE_LIMIT_WAITS_MS = [2_000, 5_000, 10_000, 20_000];
+
+export function isTiktokRateLimited(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return message.includes("36009002") || /too many requests/i.test(message);
+}
+
+export async function withTiktokRateLimitRetry<T>(
+  call: () => Promise<T>,
+  waitsMs: number[] = RATE_LIMIT_WAITS_MS
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      if (!isTiktokRateLimited(err) || attempt >= waitsMs.length) throw err;
+      await new Promise((r) => setTimeout(r, waitsMs[attempt]));
+    }
+  }
+}
+
 export interface AccessContext {
   accessToken: string;
   shopCipher: string;
@@ -606,18 +635,20 @@ export async function syncTiktokSettlements(
     let stPageToken: string | undefined;
     let stPages = 0;
     do {
-      const list = await fetchSettlements({
-        accessToken,
-        shopCipher,
-        statementTimeGe: w.ge,
-        // ĐỐI CHIẾU THẬT 16/09: statement_time_lt = now làm sàn BỎ bản kê mới
-        // nhất (sinh 00:00 UTC hôm nay, đã SETTLED) — sàn so mốc với CUỐI kỳ
-        // của bản kê (docs: "lt = any time on Oct 11" cho bản kê tới Oct 10).
-        // Nới thêm 2 ngày; trùng lặp giữa cửa sổ đã có seenStatements chặn.
-        statementTimeLt: w.lt + 2 * 86_400,
-        pageSize: PAGE_SIZE,
-        pageToken: stPageToken,
-      });
+      const list = await withTiktokRateLimitRetry(() =>
+        fetchSettlements({
+          accessToken,
+          shopCipher,
+          statementTimeGe: w.ge,
+          // ĐỐI CHIẾU THẬT 16/09: statement_time_lt = now làm sàn BỎ bản kê mới
+          // nhất (sinh 00:00 UTC hôm nay, đã SETTLED) — sàn so mốc với CUỐI kỳ
+          // của bản kê (docs: "lt = any time on Oct 11" cho bản kê tới Oct 10).
+          // Nới thêm 2 ngày; trùng lặp giữa cửa sổ đã có seenStatements chặn.
+          statementTimeLt: w.lt + 2 * 86_400,
+          pageSize: PAGE_SIZE,
+          pageToken: stPageToken,
+        })
+      );
       result.pages++;
       stPages++;
 
@@ -633,13 +664,15 @@ export async function syncTiktokSettlements(
         let txPageToken: string | undefined;
         let txPages = 0;
         do {
-          const txData = await fetchStatementTransactionsV2({
-            accessToken,
-            shopCipher,
-            statementId: st.id,
-            pageSize: 100,
-            pageToken: txPageToken,
-          });
+          const txData = await withTiktokRateLimitRetry(() =>
+            fetchStatementTransactionsV2({
+              accessToken,
+              shopCipher,
+              statementId: st.id,
+              pageSize: 100,
+              pageToken: txPageToken,
+            })
+          );
           txPages++;
           const lines = txData.transactions ?? [];
           if (!txShapeLogged && lines[0]) {
@@ -781,12 +814,14 @@ async function fetchOrderLinesFromStatements(
       let pageToken: string | undefined;
       let pages = 0;
       do {
-        const data = await fetchStatementTransactionsV2({
-          ...auth,
-          statementId,
-          pageSize: 100,
-          pageToken,
-        });
+        const data = await withTiktokRateLimitRetry(() =>
+          fetchStatementTransactionsV2({
+            ...auth,
+            statementId,
+            pageSize: 100,
+            pageToken,
+          })
+        );
         pages++;
         for (const t of data.transactions ?? []) {
           const code = t.order_id || t.adjustment_order_id;

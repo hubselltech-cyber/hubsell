@@ -47,7 +47,12 @@ vi.mock("../tiktok/client", async (importOriginal) => {
   };
 });
 
-import { planTiktokSettlementWrite, syncTiktokSettlements } from "../tiktok/service";
+import {
+  isTiktokRateLimited,
+  planTiktokSettlementWrite,
+  syncTiktokSettlements,
+  withTiktokRateLimitRetry,
+} from "../tiktok/service";
 
 const DAY = 86_400;
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -70,6 +75,57 @@ describe("planTiktokSettlementWrite — quyết định ghi sao kê của một 
 
   it("không có bản kê mới, lượt này chỉ thấy một phần → không ghi (ghi là mất dòng)", () => {
     expect(planTiktokSettlementWrite(["S1", "S2"], ["S2"])).toMatchObject({ action: "skip", missing: ["S1"] });
+  });
+});
+
+describe("withTiktokRateLimitRetry — sàn báo quá tải tạm thời", () => {
+  const rateLimited = () =>
+    new Error("TikTok API lỗi (code 36009002): Too many requests. A dependent service is temporarily rate limited.");
+
+  it("nhận diện đúng lỗi quá tải, không nhầm lỗi khác", () => {
+    expect(isTiktokRateLimited(rateLimited())).toBe(true);
+    expect(isTiktokRateLimited(new Error("TikTok API lỗi (code 105005): no access scope"))).toBe(false);
+    expect(isTiktokRateLimited(undefined)).toBe(false);
+  });
+
+  it("bị chặn hai lần rồi qua → trả kết quả, đã nghỉ đúng hai nhịp", async () => {
+    let calls = 0;
+    const r = await withTiktokRateLimitRetry(
+      async () => {
+        calls += 1;
+        if (calls <= 2) throw rateLimited();
+        return "ok";
+      },
+      [1, 1, 1]
+    );
+    expect(r).toBe("ok");
+    expect(calls).toBe(3);
+  });
+
+  it("hết lượt thử vẫn bị chặn → ném lỗi; lỗi khác thì ném ngay không thử lại", async () => {
+    let calls = 0;
+    await expect(
+      withTiktokRateLimitRetry(
+        async () => {
+          calls += 1;
+          throw rateLimited();
+        },
+        [1, 1]
+      )
+    ).rejects.toThrow("36009002");
+    expect(calls).toBe(3); // 1 lượt đầu + 2 lượt thử lại
+
+    calls = 0;
+    await expect(
+      withTiktokRateLimitRetry(
+        async () => {
+          calls += 1;
+          throw new Error("lỗi khác");
+        },
+        [1, 1]
+      )
+    ).rejects.toThrow("lỗi khác");
+    expect(calls).toBe(1);
   });
 });
 
