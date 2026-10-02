@@ -511,9 +511,9 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 **Đã kiểm và chưa kiểm**
 
 - Đã đọc mã hôm nay: `workers/invoice-auto-issue.ts`, `invoice-status-sync.ts`, `integrations/invoice/` (`issue-order`, `adjust-order`, `misa-provider`, `misa-einvoice`, `misa-webhook-queue`, `misa-webhook-service`, `auto-issue-policy`, `cqt-status`, `types`, `index`), `routes/tax.ts`, ba tệp `returns-sync.ts`, `components/settings/invoice-issue-card.tsx`.
-- Chưa đọc được database prod hôm nay (công cụ chặn em mở Render Shell). Số về hóa đơn trên prod vẫn là số ngày 01/10: 0 shop có cấu hình hóa đơn, `misa_webhook_logs` 0 dòng. Câu đọc soạn sẵn ở cuối mục, phải chạy trước khi đưa migration lên.
+- Database prod: lúc khảo sát (trưa 02/10) chưa đọc được vì công cụ chặn em mở Render Shell; chiều 02/10 đã đọc qua Supabase SQL Editor, kết quả ở cuối mục C (0 shop có cấu hình hóa đơn, bảng nhật ký hóa đơn 2 dòng thử cũ). Bảng `misa_webhook_logs` chưa đếm lại, vẫn là số 01/10 (0 dòng).
 - `MISA_ALLOW_PUBLISH` trên prod: theo ghi chép 24/08 đã đặt `1`; hôm nay chưa kiểm lại.
-- Mọi thứ về hành vi của MISA trong mục này (mã tham chiếu, tra ngược theo mã đơn) là theo kết quả thử sandbox các ngày 24/08 và 19/09; hôm nay chưa thử lại.
+- Hành vi của MISA (mã tham chiếu, tra ngược theo mã đơn): lúc khảo sát dựa vào kết quả thử sandbox các ngày 24/08 và 19/09; chiều 02/10 đã thử lại và thử thêm, kết quả ở mục I.
 
 **A. Điều tìm thêm khi đọc mã (ngoài bảng hiện trạng ở mục 3.8)**
 
@@ -555,7 +555,9 @@ Làn của một shop, mỗi lượt:                 →  thuê làn ở databa
 - **Webhook nhà cung cấp** (`invoice.event`): việc chỉ ghi database, dài vài mili-giây, nên để trong pg-boss được. Đi qua `webhook_events` như webhook sàn; việc hỏng hết lượt rơi về `evt.dead` có sẵn (không thêm hàng đợi lỗi mới). Hiện không nhà cung cấp nào có webhook, nên phần này chỉ kiểm được bằng test.
 - **Số hàng đợi pg-boss thêm mới: 2** (`invoice.issue` làm tín hiệu, `invoice.event`). Không có `invoice.status`: lưới quét và làn đã đủ.
 
-**C. Đổi database (bản nháp để trình; tệp migration chỉ tạo sau khi anh duyệt)**
+**C. Đổi database (bản nháp lúc trình; khi làm tách thành các migration nhỏ theo lát)**
+
+Trạng thái: phần `providerRef` + hai chỉ mục duy nhất (đoạn 1 và 2 dưới đây, trừ cột `cqtNextCheckAt` và chỉ mục của nó) ĐÃ ÁP lên prod 02/10 trong migration `20261002150000_invoice_provider_ref` (lát 2). Phần còn lại chưa áp: `cqtNextCheckAt` (lát 12), `invoice_requests` + hàng đợi tín hiệu (lát 9), `invoice_lanes` (lát 8), hàng đợi `invoice.event` (lát 13).
 
 ```sql
 -- 1. Nhật ký hóa đơn: mã tham chiếu đã gửi nhà cung cấp + giờ hỏi trạng thái kế tiếp
