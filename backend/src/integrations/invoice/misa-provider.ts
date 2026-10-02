@@ -52,8 +52,8 @@ export const MISA_CAPABILITIES: ProviderCapabilities = {
   // chỉnh); hai lệnh CÙNG LÚC cùng một mã → đúng một tờ được lập, lệnh kia báo trùng.
   dedupesByReference: true,
   // [thử 02/10] một mã bị từ chối hai kiểu (ký hiệu không tồn tại, thuế suất sai)
-  // rồi gửi lại hợp lệ thì được nhận. Mới thử với hóa đơn bán; hóa đơn điều chỉnh
-  // đi cùng endpoint nhưng chưa tạo được ca bị từ chối để thử.
+  // rồi gửi lại hợp lệ thì được nhận (hóa đơn bán). Hóa đơn điều chỉnh: bị từ chối
+  // vì thuế suất sai rồi gửi lại đúng mã đó thì được nhận (tờ sandbox 00000137).
   referenceReusableAfterReject: true,
   // [thử 02/10] /invoice/status?inputType=2 tra theo RefID. Mã chưa từng gửi trả
   // danh sách rỗng. Hóa đơn bán thấy ngay (3/3 lượt); hóa đơn điều chỉnh có 2/2

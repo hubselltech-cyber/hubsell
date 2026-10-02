@@ -130,6 +130,36 @@ async function measureLookupLag(refId: string, input: CreateInvoiceInput): Promi
     return;
   }
 
+  // npx tsx scripts/misa-refid-probe.ts adj-reuse <số HĐ gốc> — mã tham chiếu của tờ ĐIỀU CHỈNH
+  // bị từ chối (thuế suất sai) rồi gửi lại hợp lệ có được nhận không. Lập 1 tờ điều chỉnh sandbox.
+  if (process.argv[2] === "adj-reuse") {
+    const orgInvNo = process.argv[3];
+    if (!orgInvNo) throw new Error("Thiếu số hóa đơn gốc");
+    const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    const ref = `${prefix}-R-DC1`;
+    const adj = (vatRate: number): CreateInvoiceInput => ({
+      orderCode: ref,
+      buyerName: "Bán cho người tiêu dùng",
+      lines: saleInput("x", vatRate).lines.map((l) => ({
+        ...l,
+        quantity: -l.quantity,
+        amountWithoutVat: -l.amountWithoutVat,
+        vatAmount: -l.vatAmount,
+      })),
+      totalAmount: -11000,
+      adjustment: { orgInvNo, orgInvSeries: SERIES, orgInvDate: today, reason: "Thử dùng lại mã tham chiếu điều chỉnh bị từ chối" },
+    });
+    await timed("R1 điều chỉnh với thuế suất 7% (mong bị từ chối)", () => publishStandardInvoice(adj(7), cfg));
+    const r2 = await timed("R2 tra mã sau lượt bị từ chối", () => lookup(ref));
+    if (r2.ok) show(brief(r2.value));
+    const r3 = await timed("R3 điều chỉnh hợp lệ, DÙNG LẠI mã", () => publishStandardInvoice(adj(10), cfg));
+    if (r3.ok) show({ invoiceNo: r3.value.invoiceNo, transactionId: r3.value.transactionId });
+    await new Promise((r) => setTimeout(r, 1000));
+    const r4 = await timed("R4 tra mã 1 giây sau khi lập", () => lookup(ref));
+    if (r4.ok) show(brief(r4.value));
+    return;
+  }
+
   // ---- E1: tra mã chưa từng gửi ----
   const e1 = await timed("E1 tra mã chưa từng gửi", () => lookup(`${prefix}-NEVER`));
   if (e1.ok) show({ soDong: e1.value.length, raw: e1.value.map((i) => i.raw) });

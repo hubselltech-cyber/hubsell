@@ -710,12 +710,12 @@ Anh Trung 02/10: "Trước mắt làm như em đề xuất", kèm hai yêu cầu
 
 Còn chờ: câu đọc trên prod ở mục C (trước lát 2); mỗi tệp migration em trình riêng trước khi đẩy.
 
-**I. Kết quả thử trên sandbox MISA ngày 02/10/2026** (`backend/scripts/misa-refid-probe.ts`; đã lập 6 hóa đơn sandbox số 00000131–00000136, ký hiệu 1K26TYY)
+**I. Kết quả thử trên sandbox MISA ngày 02/10/2026** (`backend/scripts/misa-refid-probe.ts`; đã lập 7 hóa đơn sandbox số 00000131–00000137, ký hiệu 1K26TYY)
 
 | Câu hỏi | Kết quả |
 |---|---|
 | Tra theo mã tham chiếu chưa từng gửi | Trả danh sách rỗng, không báo lỗi |
-| Một mã tham chiếu bị từ chối rồi gửi lại hợp lệ | Được nhận. Thử hai kiểu từ chối: ký hiệu không tồn tại (`InvoiceTemplateNotExist`), thuế suất sai (`Invalid_[InvoiceDetail.VATRateName]`). Mới thử với hóa đơn bán |
+| Một mã tham chiếu bị từ chối rồi gửi lại hợp lệ | Được nhận. Hóa đơn bán: thử hai kiểu từ chối, ký hiệu không tồn tại (`InvoiceTemplateNotExist`) và thuế suất sai (`Invalid_[InvoiceDetail.VATRateName]`). Hóa đơn điều chỉnh: thử thêm chiều 02/10 với thuế suất sai rồi gửi lại đúng mã, được nhận (tờ sandbox 00000137, điều chỉnh cho 00000134) |
 | Gửi lại mã tham chiếu của tờ đã lập | Bị từ chối `DuplicateInvoiceRefID`, cả hóa đơn bán lẫn điều chỉnh |
 | Hai lệnh CÙNG LÚC cùng một mã tham chiếu | Đúng một tờ được lập, lệnh kia `DuplicateInvoiceRefID` (thử một lần) |
 | Tra ngược ngay sau khi lập | Hóa đơn bán: thấy ngay (3/3 lượt). **Hóa đơn điều chỉnh: lượt tra ngay sau khi lập trả RỖNG (2/2 lượt), 140 ms sau thì thấy** |
