@@ -2102,6 +2102,11 @@ model LazadaOrderSettlement {
   actualPayout Decimal   @default(0) @db.Decimal(12, 2)
   /// Ngày giao dịch MỚI NHẤT trên sao kê — mốc ghi nhận vào Báo cáo dòng tiền.
   settledAt    DateTime?
+  /// Các NGÀY giao dịch đã cộng vào sao kê này, dạng "ngày của sàn#số dòng" (02/10/2026). Lượt
+  /// quét 7 ngày so danh sách này với các dòng nó thấy để biết đơn còn dòng ở ngày nằm ngoài cửa
+  /// sổ không; có thì đọc trọn giao dịch của đơn rồi mới ghi (integrations/settlement-merge.ts).
+  /// Rỗng = dòng ghi trước 02/10/2026.
+  lineDayKeys  String[]  @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2126,7 +2131,7 @@ model TiktokOrderSettlement {
   statementId           String?
   /// MỌI bản kê có dòng của đơn đã cộng vào sao kê này. Dòng bán và dòng hoàn / điều chỉnh có thể
   /// nằm ở hai bản kê cách nhau nhiều tuần; lượt quét 7 ngày dựa vào danh sách này để biết phải
-  /// đọc lại bản kê cũ nào trước khi ghi (planTiktokSettlementWrite). Rỗng = dòng ghi trước
+  /// đọc lại bản kê cũ nào trước khi ghi (integrations/settlement-merge.ts). Rỗng = dòng ghi trước
   /// 02/10/2026 hoặc số ước tính.
   statementIds          String[]  @default([])
   /// Unsettled: mốc quyết toán dự kiến sàn báo (chỉ khi sàn trả unix time).

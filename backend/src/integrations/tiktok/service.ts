@@ -27,6 +27,7 @@ import {
   type TikTokOrder,
   type TikTokTxBreakdown,
 } from "./client";
+import { planSettlementWrite, type SettlementWritePlan } from "../settlement-merge";
 import {
   describeTiktokFeeTax,
   groupTiktokLinesByOrder,
@@ -41,35 +42,6 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 // Chặn phân trang chạy vô tận (đề phòng next_page_token luôn có do lỗi phía sàn).
 const MAX_PAGES = 50;
 const PAGE_SIZE = 50;
-
-/**
- * Nghỉ rồi thử lại khi sàn báo QUÁ TẢI TẠM THỜI (code 36009002 "Too many
- * requests. A dependent service is temporarily rate limited"). Prod 02/10/2026
- * 20:40: ba gian cùng dựng lại sao kê, lượt đọc bản kê của LUMI SOLAR / Hi.Bé /
- * Samba bị sàn chặn giữa chừng → cả lượt hỏng, 10 phút sau chạy lại từ đầu rồi
- * lại bị chặn. Các mức nghỉ là tự chọn (sàn không công bố hạn mức của API bản
- * kê); hết lượt thử thì ném lỗi như cũ để lượt quét sau làm lại.
- */
-const RATE_LIMIT_WAITS_MS = [2_000, 5_000, 10_000, 20_000];
-
-export function isTiktokRateLimited(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  return message.includes("36009002") || /too many requests/i.test(message);
-}
-
-export async function withTiktokRateLimitRetry<T>(
-  call: () => Promise<T>,
-  waitsMs: number[] = RATE_LIMIT_WAITS_MS
-): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await call();
-    } catch (err) {
-      if (!isTiktokRateLimited(err) || attempt >= waitsMs.length) throw err;
-      await new Promise((r) => setTimeout(r, waitsMs[attempt]));
-    }
-  }
-}
 
 export interface AccessContext {
   accessToken: string;
@@ -526,36 +498,6 @@ export interface SyncSettlementsResult {
 const SETTLE_WINDOW_DAYS = 30;
 const SETTLE_BACKFILL_FLOOR = Date.UTC(2025, 0, 1) / 1000; // API 202501/202507 chỉ có dữ liệu từ đây
 
-/**
- * QUYẾT ĐỊNH ghi sao kê của MỘT đơn khi lượt quét thấy dòng của đơn ở các bản kê
- * `seen`, trong khi sao kê đang lưu được dựng từ các bản kê `known`. Hàm thuần.
- *
- * Sao kê của đơn = TỔNG mọi dòng ở MỌI bản kê có đơn đó (dòng bán một ngày, dòng
- * hoàn / điều chỉnh có thể nằm ở bản kê nhiều tuần sau). Lượt quét theo nhịp chỉ
- * đọc bản kê 7 ngày gần nhất nên KHÔNG được ghi đè bằng riêng phần nó thấy:
- *   - "write": lượt này thấy đủ mọi bản kê đã biết → ghi từ các dòng đang có.
- *   - "merge": có bản kê MỚI, và có bản kê đã biết nằm ngoài lượt này (`missing`)
- *     → phải đọc lại dòng của đơn ở các bản kê `missing` rồi cộng chung mới ghi.
- *   - "skip": không có bản kê mới, lượt này chỉ thấy một phần → sao kê đang lưu
- *     đã gồm phần đó, không ghi (ghi là mất các dòng ở bản kê nằm ngoài lượt).
- *
- * SỰ CỐ 02/10/2026: trước đó lượt quét luôn ghi đè → 43 đơn / 5 gian prod chỉ
- * còn dòng HOÀN, mất dòng BÁN, tiền quyết toán âm gần bằng giá bán (lỗ ảo
- * khoảng 11,55 triệu; ví dụ đơn 586047642877461564 gian LUMI SOLAR: −688.636).
- */
-export function planTiktokSettlementWrite(
-  known: Iterable<string>,
-  seen: Iterable<string>
-): { action: "write" | "merge" | "skip"; missing: string[]; all: string[] } {
-  const seenSet = new Set(seen);
-  const knownSet = new Set(known);
-  const missing = [...knownSet].filter((id) => !seenSet.has(id));
-  const all = [...new Set([...knownSet, ...seenSet])].sort();
-  if (missing.length === 0) return { action: "write", missing, all };
-  const hasNew = [...seenSet].some((id) => !knownSet.has(id));
-  return { action: hasNew ? "merge" : "skip", missing, all };
-}
-
 /** Các bản kê mà sao kê ĐANG LƯU của đơn được dựng từ đó (số ước tính → chưa có). */
 function storedStatementIds(
   row: { estimated: boolean; statementId: string | null; statementIds: string[] } | null
@@ -570,7 +512,7 @@ function storedStatementIds(
  * Kéo bản kê giải ngân THẬT (Finance API 202501, có breakdown đặt tên) và ghi
  * cho từng Order: sao kê chi tiết TiktokOrderSettlement (số có dấu) + cột gộp
  * GĐ2 (isSettled/actualPayout/phí…). Sao kê của đơn luôn là TỔNG mọi dòng ở mọi
- * bản kê có đơn đó (xem planTiktokSettlementWrite) — chạy lại, chạy cửa sổ hẹp
+ * bản kê có đơn đó (quy tắc ở ../settlement-merge.ts) — chạy lại, chạy cửa sổ hẹp
  * hay rộng đều ra đúng một kết quả.
  */
 export async function syncTiktokSettlements(
@@ -635,20 +577,18 @@ export async function syncTiktokSettlements(
     let stPageToken: string | undefined;
     let stPages = 0;
     do {
-      const list = await withTiktokRateLimitRetry(() =>
-        fetchSettlements({
-          accessToken,
-          shopCipher,
-          statementTimeGe: w.ge,
-          // ĐỐI CHIẾU THẬT 16/09: statement_time_lt = now làm sàn BỎ bản kê mới
-          // nhất (sinh 00:00 UTC hôm nay, đã SETTLED) — sàn so mốc với CUỐI kỳ
-          // của bản kê (docs: "lt = any time on Oct 11" cho bản kê tới Oct 10).
-          // Nới thêm 2 ngày; trùng lặp giữa cửa sổ đã có seenStatements chặn.
-          statementTimeLt: w.lt + 2 * 86_400,
-          pageSize: PAGE_SIZE,
-          pageToken: stPageToken,
-        })
-      );
+      const list = await fetchSettlements({
+        accessToken,
+        shopCipher,
+        statementTimeGe: w.ge,
+        // ĐỐI CHIẾU THẬT 16/09: statement_time_lt = now làm sàn BỎ bản kê mới
+        // nhất (sinh 00:00 UTC hôm nay, đã SETTLED) — sàn so mốc với CUỐI kỳ
+        // của bản kê (docs: "lt = any time on Oct 11" cho bản kê tới Oct 10).
+        // Nới thêm 2 ngày; trùng lặp giữa cửa sổ đã có seenStatements chặn.
+        statementTimeLt: w.lt + 2 * 86_400,
+        pageSize: PAGE_SIZE,
+        pageToken: stPageToken,
+      });
       result.pages++;
       stPages++;
 
@@ -664,15 +604,13 @@ export async function syncTiktokSettlements(
         let txPageToken: string | undefined;
         let txPages = 0;
         do {
-          const txData = await withTiktokRateLimitRetry(() =>
-            fetchStatementTransactionsV2({
-              accessToken,
-              shopCipher,
-              statementId: st.id,
-              pageSize: 100,
-              pageToken: txPageToken,
-            })
-          );
+          const txData = await fetchStatementTransactionsV2({
+            accessToken,
+            shopCipher,
+            statementId: st.id,
+            pageSize: 100,
+            pageToken: txPageToken,
+          });
           txPages++;
           const lines = txData.transactions ?? [];
           if (!txShapeLogged && lines[0]) {
@@ -710,7 +648,7 @@ export async function syncTiktokSettlements(
       orderCode: string;
       order: { id: string; shippingDisputeStatus: ShippingDisputeStatus };
       acc: { lines: TikTokTxBreakdown[]; time?: number; statementId?: string };
-      plan: ReturnType<typeof planTiktokSettlementWrite>;
+      plan: SettlementWritePlan;
     }[] = [];
     const wantedByStatement = new Map<string, Set<string>>(); // bản kê cũ → các mã đơn cần đọc lại
     for (const [orderCode, acc] of byOrder) {
@@ -727,7 +665,7 @@ export async function syncTiktokSettlements(
         continue;
       }
       const known = writtenIn.get(orderCode) ?? storedStatementIds(order.tiktokSettlement);
-      const plan = planTiktokSettlementWrite(known, acc.statementIds);
+      const plan = planSettlementWrite(known, acc.statementIds);
       if (plan.action === "skip") continue;
       if (plan.action === "merge") {
         for (const id of plan.missing) {
@@ -814,14 +752,12 @@ async function fetchOrderLinesFromStatements(
       let pageToken: string | undefined;
       let pages = 0;
       do {
-        const data = await withTiktokRateLimitRetry(() =>
-          fetchStatementTransactionsV2({
-            ...auth,
-            statementId,
-            pageSize: 100,
-            pageToken,
-          })
-        );
+        const data = await fetchStatementTransactionsV2({
+          ...auth,
+          statementId,
+          pageSize: 100,
+          pageToken,
+        });
         pages++;
         for (const t of data.transactions ?? []) {
           const code = t.order_id || t.adjustment_order_id;

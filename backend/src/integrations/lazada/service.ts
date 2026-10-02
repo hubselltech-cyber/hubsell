@@ -27,6 +27,7 @@ import {
   restoreStockTx,
 } from "../order-stock";
 import { finishStockPush, stageStockPush } from "../inventory-push";
+import { planSettlementWrite } from "../settlement-merge";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import {
   createToken,
@@ -39,6 +40,7 @@ import {
   type LazadaOrder,
   type LazadaOrderItem,
   type LazadaTokenData,
+  type LazadaTransaction,
 } from "./client";
 
 // Refresh khi access_token còn <30 phút là hết hạn. Token Lazada sống 7 ngày
@@ -910,6 +912,8 @@ type LazadaDetailAcc = Record<LazadaFeeBucket, number> & {
   total: number;
   lines: number;
   lastDate?: Date;
+  /** Số dòng theo NGÀY giao dịch (chuỗi ngày nguyên văn của sàn) — xem lazadaLineDayKeys. */
+  days: Map<string, number>;
 };
 
 function emptyDetailAcc(): LazadaDetailAcc {
@@ -922,8 +926,102 @@ function emptyDetailAcc(): LazadaDetailAcc {
     feeLazadaBonus: 0, bonusLzdCofund: 0, feeBuyerReview: 0, feeLazpick: 0,
     feeCampaign: 0, feeAffiliate: 0, feeInfrastructure: 0,
     sellerVoucher: 0, vatFee: 0, incomeTaxFee: 0, feeOther: 0, subsidyOther: 0,
-    total: 0, lines: 0,
+    total: 0, lines: 0, days: new Map<string, number>(),
   };
+}
+
+/** Một dòng sao kê đã đọc về dạng chuẩn. */
+interface LazadaLine {
+  orderNo: string;
+  feeName: string;
+  amount: number;
+  bucket: LazadaFeeBucket;
+  /** Ngày giao dịch NGUYÊN VĂN của sàn (không đổi múi giờ) — khóa "mảnh" của sao kê. */
+  day: string;
+  date: Date | null;
+}
+
+function readLazadaLine(trx: LazadaTransaction): LazadaLine {
+  const feeName = String(trx.fee_name ?? trx.feeName ?? "?");
+  const amount = parseLazadaAmount(trx.amount);
+  const day = String(trx.transaction_date ?? trx.transactionDate ?? "").trim();
+  const d = new Date(day);
+  return {
+    orderNo: String(trx.order_no ?? trx.orderNo ?? "").trim(),
+    feeName,
+    amount,
+    bucket: classifyLazadaFee(feeName, Math.sign(amount)),
+    day: day || "?",
+    date: Number.isNaN(d.getTime()) ? null : d,
+  };
+}
+
+/** Cộng MỘT dòng vào bộ gom của đơn — dùng chung lượt quét cửa sổ và lượt đọc trọn theo đơn. */
+function addLazadaLine(acc: LazadaDetailAcc, line: LazadaLine): void {
+  acc[line.bucket] += line.amount;
+  acc.total += line.amount;
+  acc.lines++;
+  acc.days.set(line.day, (acc.days.get(line.day) ?? 0) + 1);
+  if (line.date && (!acc.lastDate || line.date > acc.lastDate)) acc.lastDate = line.date;
+}
+
+/**
+ * Khóa các NGÀY đã cộng vào một sao kê: "ngày#số dòng". Ngày là "mảnh" (xem
+ * ../settlement-merge.ts): cùng ngày mà số dòng đổi nghĩa là sàn vừa ghi thêm.
+ */
+export function lazadaLineDayKeys(days: Map<string, number>): string[] {
+  return [...days].map(([day, count]) => `${day}#${count}`).sort();
+}
+
+/** Khóa "ngày#số dòng" → ngày. */
+export function lazadaDayOfKey(key: string): string {
+  const i = key.lastIndexOf("#");
+  return i < 0 ? key : key.slice(0, i);
+}
+
+/** Docs: khoảng start_time–end_time của một lần gọi phải dưới 180 ngày → cắt lát 170 ngày. */
+const ORDER_LINES_SLICE_DAYS = 170;
+/** Chốt chặn số trang khi đọc trọn giao dịch của MỘT đơn (500 dòng/trang — một đơn không thể tới mức này). */
+const ORDER_LINES_MAX_PAGES = 10;
+
+/**
+ * MỌI dòng sao kê của một đơn, từ ngày tạo đơn tới nay (lọc trade_order_id).
+ * Trả null khi không đọc trọn được (chạm chốt chặn trang) — nơi gọi không được
+ * ghi nửa chừng.
+ */
+async function fetchLazadaOrderLines(
+  accessToken: string,
+  orderNo: string,
+  orderCreatedAt: Date,
+  now: Date
+): Promise<LazadaDetailAcc | null> {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const acc = emptyDetailAcc();
+  const sliceMs = ORDER_LINES_SLICE_DAYS * 24 * 60 * 60 * 1000;
+  let pages = 0;
+  // Lùi 1 ngày phòng lệch múi giờ giữa mốc tạo đơn và ngày giao dịch của sàn.
+  for (let start = new Date(orderCreatedAt.getTime() - 24 * 60 * 60 * 1000); start < now; start = new Date(start.getTime() + sliceMs)) {
+    const end = new Date(Math.min(start.getTime() + sliceMs, now.getTime()));
+    for (let offset = 0; ; offset += SETTLE_PAGE_SIZE) {
+      if (pages >= ORDER_LINES_MAX_PAGES) return null;
+      pages++;
+      const rows = await getTransactionDetails({
+        accessToken,
+        startTime: fmt(start),
+        endTime: fmt(end),
+        offset,
+        limit: SETTLE_PAGE_SIZE,
+        tradeOrderId: orderNo,
+      });
+      for (const trx of rows) {
+        const line = readLazadaLine(trx);
+        // Phòng khi sàn bỏ qua bộ lọc trade_order_id: chỉ nhận dòng đúng đơn.
+        if (line.orderNo === orderNo) addLazadaLine(acc, line);
+      }
+      if (rows.length < SETTLE_PAGE_SIZE) break;
+    }
+  }
+  return acc;
 }
 
 /**
@@ -1033,8 +1131,9 @@ export interface SyncLazadaSettlementsResult {
 
 /**
  * Kéo sao kê tài chính thật của một gian Lazada, bóc tách chi tiết từng loại
- * phí rồi ghi vào LazadaOrderSettlement + cột gộp GĐ2 của Order. Idempotent:
- * sao kê là nguồn sự thật, chạy lặp ghi đè cùng bộ số.
+ * phí rồi ghi vào LazadaOrderSettlement + cột gộp GĐ2 của Order. Sao kê của đơn
+ * luôn là TỔNG mọi dòng ở mọi ngày — chạy lặp, cửa sổ hẹp hay rộng đều ra một
+ * kết quả (trước 02/10/2026 lượt 7 ngày ghi đè bằng riêng phần nó thấy).
  */
 export async function syncLazadaSettlements(
   channel: Channel,
@@ -1079,28 +1178,19 @@ export async function syncLazadaSettlements(
         limit: SETTLE_PAGE_SIZE,
       });
       for (const trx of rows) {
-        const feeName = String(trx.fee_name ?? trx.feeName ?? "?");
-        const amount = parseLazadaAmount(trx.amount);
-        const bucket = classifyLazadaFee(feeName, Math.sign(amount));
+        const line = readLazadaLine(trx);
 
-        const stat = byFeeName.get(feeName) ?? { count: 0, sum: 0, bucket };
+        const stat = byFeeName.get(line.feeName) ?? { count: 0, sum: 0, bucket: line.bucket };
         stat.count++;
-        stat.sum += amount;
-        byFeeName.set(feeName, stat);
+        stat.sum += line.amount;
+        byFeeName.set(line.feeName, stat);
 
-        const orderNo = String(trx.order_no ?? trx.orderNo ?? "").trim();
-        if (!orderNo) continue; // dòng không gắn đơn (phí thuê bao, nạp ví...) — ngoài phạm vi đơn
+        if (!line.orderNo) continue; // dòng không gắn đơn (phí thuê bao, nạp ví...) — ngoài phạm vi đơn
         result.transactions++;
 
-        const acc = byOrder.get(orderNo) ?? emptyDetailAcc();
-        acc[bucket] += amount;
-        acc.total += amount;
-        acc.lines++;
-        const d = new Date(String(trx.transaction_date ?? trx.transactionDate ?? ""));
-        if (!Number.isNaN(d.getTime()) && (!acc.lastDate || d > acc.lastDate)) {
-          acc.lastDate = d;
-        }
-        byOrder.set(orderNo, acc);
+        const acc = byOrder.get(line.orderNo) ?? emptyDetailAcc();
+        addLazadaLine(acc, line);
+        byOrder.set(line.orderNo, acc);
       }
       if (rows.length < SETTLE_PAGE_SIZE) break; // hết trang của cửa sổ này
     }
@@ -1115,15 +1205,50 @@ export async function syncLazadaSettlements(
     );
   }
 
-  // Ghi số quyết toán vào từng đơn theo (channelId, orderCode).
-  for (const [orderNo, acc] of byOrder) {
+  // Ghi số quyết toán vào từng đơn theo (channelId, orderCode). Sao kê của đơn
+  // là TỔNG mọi dòng ở mọi ngày (quy tắc ở ../settlement-merge.ts): lượt quét
+  // hẹp thấy dòng mới mà đơn còn dòng ở ngày nằm ngoài cửa sổ thì đọc trọn giao
+  // dịch của đơn (trade_order_id) rồi mới ghi; không có gì mới thì không ghi.
+  let merged = 0;
+  let incomplete = 0;
+  for (const [orderNo, windowAcc] of byOrder) {
     const order = await prisma.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode: orderNo } },
-      select: { id: true },
+      select: { id: true, createdAt: true, lazadaSettlement: { select: { lineDayKeys: true } } },
     });
     if (!order) {
       result.ordersNotFound++;
       continue;
+    }
+
+    const stored = order.lazadaSettlement;
+    // Sao kê ghi trước 02/10/2026 chưa có danh sách ngày → không biết nó gồm
+    // những dòng nào → đọc trọn theo đơn một lần rồi ghi lại kèm danh sách.
+    const legacy = stored != null && stored.lineDayKeys.length === 0;
+    const action = legacy
+      ? "merge"
+      : planSettlementWrite(stored?.lineDayKeys ?? [], lazadaLineDayKeys(windowAcc.days), lazadaDayOfKey).action;
+    if (action === "skip") continue;
+
+    let acc = windowAcc;
+    if (action === "merge") {
+      let full: LazadaDetailAcc | null = null;
+      try {
+        full = await fetchLazadaOrderLines(accessToken, orderNo, order.createdAt, now);
+      } catch (err) {
+        console.warn(`[Lazada Settle] Không đọc trọn được giao dịch đơn ${orderNo}:`, (err as Error).message);
+      }
+      // Đọc trọn phải thấy ít nhất các dòng cửa sổ vừa thấy; thiếu thì KHÔNG ghi
+      // nửa chừng (giữ sao kê đang lưu), lượt sau thử lại.
+      if (!full || full.lines < windowAcc.lines) {
+        incomplete++;
+        console.warn(
+          `[Lazada Settle] Gian "${channel.shopName}": đơn ${orderNo} có dòng mới nhưng chưa đọc trọn được giao dịch của đơn — giữ sao kê đang lưu`
+        );
+        continue;
+      }
+      acc = full;
+      merged++;
     }
 
     const settledAt = acc.lastDate ?? new Date();
@@ -1169,6 +1294,7 @@ export async function syncLazadaSettlements(
       incomeTaxFee: acc.incomeTaxFee,
       actualPayout: acc.total,
       settledAt,
+      lineDayKeys: lazadaLineDayKeys(acc.days),
     };
     await prisma.lazadaOrderSettlement.upsert({
       where: { orderId: order.id },
@@ -1229,6 +1355,12 @@ export async function syncLazadaSettlements(
       },
     });
     result.ordersUpdated++;
+  }
+  if (merged > 0 || incomplete > 0) {
+    console.log(
+      `[Lazada Settle] Gian "${channel.shopName}": ${merged} đơn cộng thêm dòng ở ngày ngoài cửa sổ` +
+        `${incomplete > 0 ? `, ${incomplete} đơn CHƯA đọc trọn được` : ""}`
+    );
   }
 
   return result;

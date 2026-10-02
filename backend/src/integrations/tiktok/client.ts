@@ -14,6 +14,18 @@
 import crypto from "crypto";
 import { getTikTokConfig, TIKTOK_ENDPOINTS, type TikTokConfig } from "./config";
 import { platformFetch } from "../../lib/platform-http";
+import {
+  acquireTiktokSlot,
+  isTiktokThrottleSignal,
+  noteTiktokThrottled,
+  parseRetryAfterMs,
+  TIKTOK_RATE_LIMIT,
+  tiktokBackoffMs,
+  tiktokCallKind,
+  TiktokRateLimitError,
+  tiktokRateLimitDeps,
+  type TiktokCallKind,
+} from "./rate-limit";
 
 // ---------- Kiểu dữ liệu TikTok trả về ----------
 
@@ -163,52 +175,104 @@ interface ApiCallOptions {
   query?: Record<string, string | number>;
   /** Payload body cho POST/PUT — sẽ được JSON.stringify và ký kèm. */
   body?: unknown;
+  /** Lệnh đọc hay ghi (giới hạn nhịp riêng). Bỏ trống → suy từ method + path (tiktokCallKind). */
+  kind?: TiktokCallKind;
+  /**
+   * Có tự nghỉ rồi thử lại khi sàn báo quá tải không. Mặc định: lệnh đọc CÓ,
+   * lệnh ghi KHÔNG (thử lại lệnh ghi có thể ghi trùng — chỉ bật khi lệnh đó gọi
+   * lặp vẫn ra một kết quả).
+   */
+  retryWhenThrottled?: boolean;
 }
 
 /**
  * Gọi một endpoint API nghiệp vụ của TikTok Shop: tự ghép app_key, timestamp,
  * shop_cipher, ký chữ ký, gắn header access_token rồi bóc lớp bao chuẩn.
+ *
+ * MỌI lời gọi đi qua lớp giới hạn ở ./rate-limit.ts: chờ tới lượt của gian (làm
+ * mượt), nhận diện quá tải (HTTP 429 hoặc mã 36009002), giảm nhịp gian đó rồi
+ * nghỉ-thử-lại đúng công thức sàn hướng dẫn. Hết lượt thử → TiktokRateLimitError.
  */
 export async function callApi<T>(
   opts: ApiCallOptions,
   cfg: TikTokConfig = getTikTokConfig()
 ): Promise<T> {
   const method = opts.method ?? "GET";
-  const timestamp = Math.floor(Date.now() / 1000);
-
-  const query: Record<string, string | number> = {
-    app_key: cfg.appKey,
-    timestamp,
-    ...(opts.shopCipher ? { shop_cipher: opts.shopCipher } : {}),
-    ...(opts.query ?? {}),
-  };
-
+  const kind = opts.kind ?? tiktokCallKind(method, opts.path);
+  const laneKey = opts.shopCipher ?? "(app)";
+  const maxRetries = (opts.retryWhenThrottled ?? kind === "read") ? TIKTOK_RATE_LIMIT.MAX_RETRIES : 0;
   const bodyStr =
     opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
 
-  query.sign = signRequest(cfg.appSecret, opts.path, query, bodyStr);
+  for (let attempt = 0; ; attempt++) {
+    await acquireTiktokSlot(laneKey, kind);
 
-  const qs = new URLSearchParams(
-    Object.entries(query).map(([k, v]) => [k, String(v)] as [string, string])
-  ).toString();
-  const url = `${TIKTOK_ENDPOINTS.api}${opts.path}?${qs}`;
+    // Ký lại mỗi lượt: chữ ký gắn với timestamp lúc gửi.
+    const query: Record<string, string | number> = {
+      app_key: cfg.appKey,
+      timestamp: Math.floor(Date.now() / 1000),
+      ...(opts.shopCipher ? { shop_cipher: opts.shopCipher } : {}),
+      ...(opts.query ?? {}),
+    };
+    query.sign = signRequest(cfg.appSecret, opts.path, query, bodyStr);
+    const qs = new URLSearchParams(
+      Object.entries(query).map(([k, v]) => [k, String(v)] as [string, string])
+    ).toString();
+    const url = `${TIKTOK_ENDPOINTS.api}${opts.path}?${qs}`;
 
-  const res = await platformFetch("TIKTOK", url, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      "x-tts-access-token": opts.accessToken,
-    },
-    body: bodyStr,
-  });
+    const res = await platformFetch("TIKTOK", url, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        "x-tts-access-token": opts.accessToken,
+      },
+      body: bodyStr,
+    });
 
-  const json = (await res.json()) as TikTokEnvelope<T>;
-  if (json.code !== 0) {
-    throw new Error(
-      `TikTok API lỗi (code ${json.code}): ${json.message || "không rõ"}`
-    );
+    let json: TikTokEnvelope<T> | null;
+    try {
+      json = (await res.json()) as TikTokEnvelope<T>;
+    } catch (err) {
+      // 429 có thể không kèm thân JSON; lỗi đọc thân ở phản hồi khác thì giữ nguyên như cũ.
+      if (res.status !== 429) throw err;
+      json = null;
+    }
+
+    if (isTiktokThrottleSignal(res.status, json?.code)) {
+      const rps = noteTiktokThrottled(laneKey, kind);
+      const retryAfterMs = parseRetryAfterMs(res.headers?.get?.("retry-after"), tiktokRateLimitDeps.now());
+      const giveUp = attempt >= maxRetries;
+      const waitMs = giveUp ? 0 : tiktokBackoffMs(attempt, retryAfterMs, tiktokRateLimitDeps.random());
+      // Ghi cả HTTP status lẫn mã nghiệp vụ + request_id (sàn đòi khi mở ticket).
+      console.warn(
+        `[TikTok] QUA TAI ${opts.path} (${kind}) HTTP ${res.status} code ${json?.code ?? "-"} request_id ${json?.request_id ?? "-"} retry-after ${retryAfterMs ?? "-"} — nhịp gian còn ${rps.toFixed(2)}/s, ` +
+          (giveUp ? `dừng sau ${attempt} lượt thử lại` : `thử lại lần ${attempt + 1} sau ${waitMs} ms`)
+      );
+      if (giveUp) {
+        throw new TiktokRateLimitError(
+          {
+            path: opts.path,
+            kind,
+            httpStatus: res.status,
+            code: json?.code ?? null,
+            requestId: json?.request_id ?? null,
+            retryAfterMs,
+            attempts: attempt + 1,
+          },
+          `TikTok API lỗi (code ${json?.code ?? res.status}): ${json?.message || "Too many requests"} — sàn báo quá tải, đã thử lại ${attempt} lần`
+        );
+      }
+      await tiktokRateLimitDeps.sleep(waitMs);
+      continue;
+    }
+
+    if (!json || json.code !== 0) {
+      throw new Error(
+        `TikTok API lỗi (code ${json?.code ?? "?"}): ${json?.message || "không rõ"}`
+      );
+    }
+    return json.data;
   }
-  return json.data;
 }
 
 // ---------- Sau uỷ quyền: lấy gian hàng + shop_cipher ----------
