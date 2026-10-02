@@ -254,6 +254,36 @@ export function secretUnreadableResult(ownerId: string, err: unknown): IssueOrde
   };
 }
 
+/** Database từ chối vì đụng chỉ mục duy nhất (Prisma P2002)? */
+export function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+}
+
+/**
+ * Đơn này đã có hóa đơn đang chờ / đã phát hành chưa? Có thì trả kết quả 409
+ * kèm lời nhắn; chưa thì null. Dùng ở hai chỗ: kiểm sớm trước khi dựng hóa đơn,
+ * và dựng lời nhắn khi database từ chối dòng PENDING thứ hai.
+ */
+async function openInvoiceConflict(ownerId: string, orderCode: string): Promise<IssueOrderResult | null> {
+  const existing = await prisma.invoiceLog.findFirst({
+    where: {
+      ownerId,
+      orderCode,
+      status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
+    },
+    select: { status: true, invoiceNo: true },
+  });
+  if (!existing) return null;
+  return {
+    ok: false,
+    httpStatus: 409,
+    error:
+      existing.status === InvoiceLogStatus.ISSUED
+        ? `Đơn này đã có hóa đơn số ${existing.invoiceNo ?? "?"} — muốn phát hành lại phải hủy/thay thế trước.`
+        : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
+  };
+}
+
 /**
  * @param channelWhere Phạm vi gian hàng của người gọi — route truyền
  *        channelScope(req) (đã gồm giới hạn nhân viên), worker truyền
@@ -288,26 +318,11 @@ export async function issueInvoiceForOrder(
     return { ok: false, httpStatus: 400, error: "Đơn không có dòng hàng nào để lên hóa đơn" };
   }
 
-  // Chống phát hành trùng: đơn đã có hóa đơn đang chờ/đã phát hành thì dừng
-  // (RefID phía MISA cũng chặn trùng, nhưng chặn sớm cho thông điệp rõ hơn).
-  const existing = await prisma.invoiceLog.findFirst({
-    where: {
-      ownerId,
-      orderCode,
-      status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
-    },
-    select: { status: true, invoiceNo: true },
-  });
-  if (existing) {
-    return {
-      ok: false,
-      httpStatus: 409,
-      error:
-        existing.status === InvoiceLogStatus.ISSUED
-          ? `Đơn này đã có hóa đơn số ${existing.invoiceNo ?? "?"} — muốn phát hành lại phải hủy/thay thế trước.`
-          : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
-    };
-  }
+  // Chống phát hành trùng, lớp 1: đơn đã có hóa đơn đang chờ/đã phát hành thì
+  // dừng sớm với thông điệp rõ. Lớp 2 (chốt thật) là chỉ mục duy nhất ở database,
+  // bắt ở chỗ ghi dòng PENDING bên dưới.
+  const conflict = await openInvoiceConflict(ownerId, orderCode);
+  if (conflict) return conflict;
 
   let provider: Awaited<ReturnType<typeof getInvoiceProvider>>;
   try {
@@ -371,25 +386,43 @@ export async function issueInvoiceForOrder(
     }
   }
 
-  const log = await prisma.invoiceLog.create({
-    data: {
-      ownerId,
-      orderId: order.id,
-      orderCode,
-      provider: provider.name,
-      status: InvoiceLogStatus.PENDING,
-      totalAmount,
-      vatAmount: vatTotal,
-      // Ký hiệu + snapshot dòng hàng LÚC PHÁT HÀNH — hóa đơn điều chỉnh sau
-      // này (khách trả hàng) ghi ÂM đúng số đã xuất, không dựng lại từ đơn.
-      invoiceSeries: cfg?.invoiceSeries ?? null,
-      lines: lines as unknown as Prisma.InputJsonValue,
-      // Snapshot người mua — bảng kê bán ra tự đủ dữ liệu sau khi cron BVDLCN
-      // xóa Order.buyerInvoiceInfo.
-      buyerName: buyer.buyerName,
-      buyerTaxCode: buyer.buyerTaxCode ?? null,
-    },
-  });
+  // Dòng PENDING là VÉ của đơn này: database chỉ cho MỘT hóa đơn gốc đang chờ /
+  // đã phát hành cho mỗi (shop, mã đơn) — chỉ mục InvoiceLog_open_original_key.
+  // Hai luồng cùng qua được lớp kiểm ở trên thì luồng ghi sau bị từ chối ở đây,
+  // TRƯỚC khi gọi nhà cung cấp.
+  let log: Awaited<ReturnType<typeof prisma.invoiceLog.create>>;
+  try {
+    log = await prisma.invoiceLog.create({
+      data: {
+        ownerId,
+        orderId: order.id,
+        orderCode,
+        provider: provider.name,
+        // Mã tham chiếu gửi NCC của hóa đơn gốc luôn là mã đơn (xem createInvoice bên dưới).
+        providerRef: orderCode,
+        status: InvoiceLogStatus.PENDING,
+        totalAmount,
+        vatAmount: vatTotal,
+        // Ký hiệu + snapshot dòng hàng LÚC PHÁT HÀNH — hóa đơn điều chỉnh sau
+        // này (khách trả hàng) ghi ÂM đúng số đã xuất, không dựng lại từ đơn.
+        invoiceSeries: cfg?.invoiceSeries ?? null,
+        lines: lines as unknown as Prisma.InputJsonValue,
+        // Snapshot người mua — bảng kê bán ra tự đủ dữ liệu sau khi cron BVDLCN
+        // xóa Order.buyerInvoiceInfo.
+        buyerName: buyer.buyerName,
+        buyerTaxCode: buyer.buyerTaxCode ?? null,
+      },
+    });
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    return (
+      (await openInvoiceConflict(ownerId, orderCode)) ?? {
+        ok: false,
+        httpStatus: 409,
+        error: "Đơn này đang có yêu cầu phát hành chờ xử lý.",
+      }
+    );
+  }
 
   // MST người mua sai dạng → KHÔNG gọi NCC (khỏi đốt số hóa đơn cho một tờ chắc
   // chắn bị từ chối) nhưng vẫn ghi sổ FAILED: seller thấy lý do ở Lịch sử, và

@@ -27,6 +27,7 @@ import { prisma } from "../../lib/prisma";
 import { getInvoiceProvider } from "./index";
 import {
   allocateOrderDiscount,
+  isUniqueViolation,
   resolveInvoiceBuyer,
   secretUnreadableResult,
   type IssueOrderResult,
@@ -269,22 +270,37 @@ export async function issueAdjustmentForOrder(
     if (original.buyerTaxCode) buyer.buyerTaxCode = original.buyerTaxCode;
   }
 
-  const log = await prisma.invoiceLog.create({
-    data: {
-      ownerId,
-      orderId: original.orderId,
-      orderCode: original.orderCode,
-      provider: provider.name,
-      status: InvoiceLogStatus.PENDING,
-      totalAmount, // số ÂM — báo cáo cộng dồn tự trừ phần đã hoàn
-      vatAmount: vatTotal,
-      invoiceSeries: cfg?.invoiceSeries ?? orgSeries,
-      lines: lines as unknown as Prisma.InputJsonValue,
-      adjustmentForLogId: original.id,
-      buyerName: buyer.buyerName,
-      buyerTaxCode: buyer.buyerTaxCode ?? null,
-    },
-  });
+  // Dòng PENDING là VÉ của hóa đơn gốc này: database chỉ cho MỘT hóa đơn điều
+  // chỉnh đang chờ / đã phát hành cho mỗi hóa đơn gốc — chỉ mục
+  // InvoiceLog_open_adjustment_key. Hai luồng cùng qua được lớp kiểm ở trên thì
+  // luồng ghi sau bị từ chối ở đây, TRƯỚC khi gọi nhà cung cấp.
+  let log: Awaited<ReturnType<typeof prisma.invoiceLog.create>>;
+  try {
+    log = await prisma.invoiceLog.create({
+      data: {
+        ownerId,
+        orderId: original.orderId,
+        orderCode: original.orderCode,
+        provider: provider.name,
+        providerRef: refId,
+        status: InvoiceLogStatus.PENDING,
+        totalAmount, // số ÂM — báo cáo cộng dồn tự trừ phần đã hoàn
+        vatAmount: vatTotal,
+        invoiceSeries: cfg?.invoiceSeries ?? orgSeries,
+        lines: lines as unknown as Prisma.InputJsonValue,
+        adjustmentForLogId: original.id,
+        buyerName: buyer.buyerName,
+        buyerTaxCode: buyer.buyerTaxCode ?? null,
+      },
+    });
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    return {
+      ok: false,
+      httpStatus: 409,
+      error: "Đang có yêu cầu điều chỉnh chờ xử lý cho hóa đơn này.",
+    };
+  }
 
   const result = await provider.createInvoice({
     orderCode: refId,

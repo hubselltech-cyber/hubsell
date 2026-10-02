@@ -1103,6 +1103,12 @@ model InvoiceLog {
   invoiceNo          String?
   /// Mã giao dịch phía NCC — dùng để checkStatus/cancelInvoice sau này.
   transactionId      String?
+  /// MÃ THAM CHIẾU Hubsell đã gửi NCC cho lượt phát hành này (MISA: RefID) —
+  /// hóa đơn gốc = mã đơn, hóa đơn điều chỉnh = "<mã đơn>-DC<n>". Là khóa để tra
+  /// ngược "NCC đã lập tờ này chưa" khi không nhận được kết quả, và để lượt gửi
+  /// lại dùng ĐÚNG mã cũ (NCC chặn trùng theo mã). NULL = dòng do webhook tự tạo
+  /// cho hóa đơn lập ngoài Hubsell.
+  providerRef        String?
   /// Ký hiệu hóa đơn LÚC PHÁT HÀNH (VD "1K26TYY") — cần để tham chiếu hóa đơn
   /// gốc khi lập hóa đơn điều chỉnh (shop có thể đổi ký hiệu trong config sau).
   invoiceSeries      String?
@@ -1153,6 +1159,13 @@ model InvoiceLog {
   @@index([transactionId])
   // Tra "hóa đơn gốc này đã có điều chỉnh chưa" khi lập/hiển thị.
   @@index([adjustmentForLogId])
+  // CHỐNG PHÁT HÀNH TRÙNG ở database — hai chỉ mục DUY NHẤT RIÊNG PHẦN chỉ có
+  // trong SQL migration 20261002150000_invoice_provider_ref (Prisma không khai được):
+  //   InvoiceLog_open_original_key   (ownerId, orderCode)  WHERE adjustmentForLogId IS NULL
+  //                                                        AND status IN ('PENDING','ISSUED')
+  //   InvoiceLog_open_adjustment_key (adjustmentForLogId)  WHERE adjustmentForLogId IS NOT NULL
+  //                                                        AND status IN ('PENDING','ISSUED')
+  // Luồng thứ hai ghi dòng "đang chờ" cho cùng đơn / cùng hóa đơn gốc bị từ chối (P2002).
 }
 
 /// HÓA ĐƠN ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ "Xử lý hóa đơn đầu vào"

@@ -636,6 +636,23 @@ UNION ALL SELECT 'shop_co_cau_hinh', count(*) FROM "InvoiceConfig" WHERE "channe
 UNION ALL SELECT 'shop_bat_tu_phat_hanh', count(*) FROM "InvoiceConfig" WHERE "channelId" IS NULL AND "autoIssueEnabled";
 ```
 
+Kết quả chạy câu đọc trên prod ngày 02/10/2026 khoảng 14:50 (anh Trung bảo chạy; chạy ở Supabase SQL Editor, chỉ đọc):
+
+| Việc đếm | Kết quả |
+|---|---|
+| Hóa đơn gốc trùng | 0 |
+| Điều chỉnh trùng | 0 |
+| Dòng "đang chờ" không có mã giao dịch | 0 |
+| Tổng dòng nhật ký hóa đơn | 2 |
+| Shop có cấu hình hóa đơn | 0 |
+| Shop bật tự phát hành | 0 |
+
+Hai dòng nhật ký đều tạo ngày 28/07/2026 (thời còn thử bằng webhook giả lập, trước khi nối API thật 23/08): một dòng ISSUED, một dòng FAILED vì lệch thuế; cả hai là hóa đơn gốc của MISA, có mã tra cứu, chưa từng được hỏi trạng thái. Migration lát 2 sẽ gán cho hai dòng này mã tham chiếu = mã đơn; không ảnh hưởng gì khác.
+
+Database dev (892 dòng nhật ký) cũng 0 dòng trùng; migration lát 2 áp lên dev ngày 02/10 chạy sạch, 892/892 dòng được gán mã tham chiếu.
+
+Một hệ quả của hai chỉ mục duy nhất cần biết: đường webhook MISA (chưa từng có sự kiện thật) có thể đẩy một dòng HỎNG về "đã phát hành" hoặc tạo dòng mới cho đơn đã có hóa đơn; nay database từ chối, sự kiện đó sẽ báo lỗi và nằm ở nhật ký webhook cho người xem, thay vì âm thầm tạo hai hóa đơn "đã phát hành" cho một đơn.
+
 **D. Các con số**
 
 | Tham số | Giá trị | Căn cứ |
@@ -665,9 +682,9 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | Lát | Nội dung | Đổi database | Đổi hành vi | Trạng thái |
 |---|---|---|---|---|
 | 1 | Hợp đồng chung cho mọi nhà cung cấp: bảng khả năng, tra ngược theo mã tham chiếu, sổ đăng ký nhà cung cấp (giữ chỗ Hubtax), công tắc phát hành riêng từng bên | Không | Không | ✅ Trên prod từ 02/10 14:28 (`84455f2`): worker và web lên bình thường, hàng đợi sẵn sàng, không dòng lỗi |
-| 2 | Lưu mã tham chiếu đã gửi; database từ chối hóa đơn gốc trùng và điều chỉnh trùng | Có (1 cột, 2 chỉ mục duy nhất) | Chỉ ở ca hai luồng cùng lúc | Chờ câu đọc prod |
+| 2 | Lưu mã tham chiếu đã gửi; database từ chối hóa đơn gốc trùng và điều chỉnh trùng | Có (1 cột, 2 chỉ mục duy nhất): `prisma/migrations/20261002150000_invoice_provider_ref` | Chỉ ở ca hai luồng cùng lúc: luồng ghi sau nhận "đang có yêu cầu phát hành" TRƯỚC khi gọi nhà cung cấp | Viết xong 02/10 trên nhánh `hoa-don-buoc-5`, đã áp migration lên database dev và chạy test; CHỜ anh Trung duyệt tệp migration rồi mới đẩy |
 | 3 | Luật mã tham chiếu của điều chỉnh (lượt hỏng dùng lại mã cũ); kiểm hóa đơn gốc còn hiệu lực bên nhà cung cấp trước khi điều chỉnh | Không | Hết ca điều chỉnh hai lần | |
-| 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh (`integrations/invoice/provider-http.ts`; bốn lệnh MISA của luồng hóa đơn đầu ra: lấy token, phát hành, hỏi trạng thái / tải tệp, lấy ký hiệu). Mỗi 15 phút in dòng `[NccHTTP] MISA <loại lệnh> ...` | Không | Không | Viết xong 02/10 trên nhánh `hoa-don-buoc-5`, chưa đẩy. Làm trước lát 2 và 3 vì không phụ thuộc và không đổi hành vi. Chưa đi qua cửa: eSign, máy tính tiền, hóa đơn đầu vào (không nằm trong luồng phát hành hiện nay) |
+| 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh (`integrations/invoice/provider-http.ts`; bốn lệnh MISA của luồng hóa đơn đầu ra: lấy token, phát hành, hỏi trạng thái / tải tệp, lấy ký hiệu). Mỗi 15 phút in dòng `[NccHTTP] MISA <loại lệnh> ...` | Không | Không | ✅ Trên prod từ 02/10 14:38 (`6d8bc4d`): worker và web lên bình thường. Prod chưa shop nào dùng hóa đơn nên chưa có dòng `[NccHTTP]` nào; dòng đầu tiên sẽ có khi có shop phát hành. Làm trước lát 2 và 3 vì không phụ thuộc và không đổi hành vi. Chưa đi qua cửa: eSign, máy tính tiền, hóa đơn đầu vào (không nằm trong luồng phát hành hiện nay) |
 | 5 | Adapter báo rõ "chưa rõ kết quả"; nhà cung cấp trả lời thành công mà không kèm số lẫn mã tra cứu thì không còn ghi là đã phát hành | Không | Chỉ ở ca lỗi | |
 | 6 | Tờ chưa rõ kết quả giữ "đang chờ" rồi tra lại theo bảng khả năng; đặt thời hạn chờ gọi nhà cung cấp | Không | Chỉ ở ca lỗi | |
 | 7 | Đơn lỗi vĩnh viễn: dừng tự thử sau 3 lượt | Không | Có | |

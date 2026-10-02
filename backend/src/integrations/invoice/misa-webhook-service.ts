@@ -229,6 +229,8 @@ async function createLogFromOrder(
       orderId: order.id,
       orderCode: order.orderCode,
       provider: "MISA",
+      // MISA gửi RefID = mã tham chiếu của tờ này (đã dùng để tìm đơn ở trên).
+      providerRef: refOrderCode,
       transactionId,
       status: InvoiceLogStatus.PENDING, // trạng thái thật do sự kiện quyết định
     },
