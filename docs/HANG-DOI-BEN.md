@@ -1,6 +1,6 @@
 # Giai đoạn 2: hàng đợi việc bền và webhook 3 sàn
 
-Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; bước nền và webhook ba sàn (bước 0–3) chạy trên prod từ 01/10; bước 4 (đẩy tồn) chạy trên prod từ 02/10 (mục 4.5); bước 5 (hóa đơn) và 6 (dọn) chưa làm; việc ghi sổ làm sau ở mục 7.** Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
+Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; bước nền và webhook ba sàn (bước 0–3) chạy trên prod từ 01/10; bước 4 (đẩy tồn) chạy trên prod từ 02/10 (mục 4.5); bước 5 (hóa đơn): thiết kế lại ở mục 4.6, anh Trung duyệt 02/10, làm theo 14 lát nhỏ, lát 1 viết xong chưa đẩy; bước 6 (dọn): kiểm kê ở mục 4.7, chưa tới ngày làm; việc ghi sổ làm sau ở mục 7.** Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
 
 ---
 
@@ -504,6 +504,315 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 
 **Anh Trung chốt 02/10:** chưa làm lại phần webhook. Bật thời hạn chờ gọi sàn theo lịch; bước hóa đơn không dùng loại hàng đợi này cho việc chạy lâu; đo lại trên prod khi có vài nghìn sự kiện. Các việc này ghi ở mục 7.
 
+### 4.6. Bước 5 (hóa đơn) — khảo sát 02/10/2026 và thiết kế lại phần hàng đợi
+
+**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1 viết xong trên nhánh `hoa-don-buoc-5`, chưa commit; chưa có migration nào.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
+
+**Đã kiểm và chưa kiểm**
+
+- Đã đọc mã hôm nay: `workers/invoice-auto-issue.ts`, `invoice-status-sync.ts`, `integrations/invoice/` (`issue-order`, `adjust-order`, `misa-provider`, `misa-einvoice`, `misa-webhook-queue`, `misa-webhook-service`, `auto-issue-policy`, `cqt-status`, `types`, `index`), `routes/tax.ts`, ba tệp `returns-sync.ts`, `components/settings/invoice-issue-card.tsx`.
+- Chưa đọc được database prod hôm nay (công cụ chặn em mở Render Shell). Số về hóa đơn trên prod vẫn là số ngày 01/10: 0 shop có cấu hình hóa đơn, `misa_webhook_logs` 0 dòng. Câu đọc soạn sẵn ở cuối mục, phải chạy trước khi đưa migration lên.
+- `MISA_ALLOW_PUBLISH` trên prod: theo ghi chép 24/08 đã đặt `1`; hôm nay chưa kiểm lại.
+- Mọi thứ về hành vi của MISA trong mục này (mã tham chiếu, tra ngược theo mã đơn) là theo kết quả thử sandbox các ngày 24/08 và 19/09; hôm nay chưa thử lại.
+
+**A. Điều tìm thêm khi đọc mã (ngoài bảng hiện trạng ở mục 3.8)**
+
+| # | Điều | Chỗ trong mã | Hậu quả | Xử lý ở bước 5 |
+|---|---|---|---|---|
+| 1 | Lệnh gọi MISA không đặt thời hạn chờ, và vòng tự phát hành dùng MỘT cờ `running` cho mọi shop | `misa-einvoice.ts` (3 chỗ `fetch`), `misa-auth.ts`, `invoice-auto-issue.ts` | Một lệnh treo là tự phát hành của MỌI shop đứng lại tới khi lệnh đó hỏng. Vòng hỏi trạng thái cũng vậy | Mỗi shop một làn riêng; lệnh gọi nhà cung cấp đi qua một cửa có đo thời gian và có thời hạn chờ |
+| 2 | Hóa đơn điều chỉnh lấy mã tham chiếu MỚI cho mỗi lượt, kể cả khi lượt trước hỏng (`-DC1`, `-DC2`...) | `adjust-order.ts`, chỗ đếm `priorAttempts` | Lượt đầu đứt mạng sau khi MISA đã lập xong thì lượt hai lập thêm một tờ điều chỉnh nữa cho cùng hóa đơn gốc: giảm doanh thu hai lần. Hóa đơn gốc không dính vì mã tham chiếu luôn là mã đơn, MISA chặn trùng và `recoverDuplicate` nối lại | Lưu mã tham chiếu đã gửi vào dòng nhật ký. Lượt hỏng hoặc chưa rõ kết quả dùng LẠI đúng mã đó; chỉ sang mã mới khi tờ trước đã lập thật (đã phát hành hoặc đã bị xóa bên nhà cung cấp). Đã thử sandbox 02/10: MISA nhận lại mã của lượt bị từ chối (mục I) |
+| 3 | Tự điều chỉnh chỉ được gọi ĐÚNG MỘT LẦN, lúc trạng thái hoàn của sàn chuyển vào nhóm "đã chốt" | ba tệp `returns-sync.ts` của Shopee, TikTok, Lazada | Lúc đó sàn chưa báo số tiền hoàn, MISA lỗi, hoặc worker đang deploy thì không bao giờ được thử lại. Còn một lưới: nhãn "Cần điều chỉnh" ở trang Lịch sử | Ghi một dòng yêu cầu ngay trong lượt cập nhật đơn; làn của shop thử lại tới khi có kết luận |
+| 4 | Dòng nhật ký kẹt ở "đang chờ" làm đơn biến mất khỏi Hàng chờ xuất hóa đơn | `routes/tax.ts`, điều kiện của `/invoice-queue` | Chủ shop không còn thấy đơn đó ở đâu để xuất lại | Làn của shop tra lại dòng chưa rõ kết quả (mục B) |
+| 5 | Chống điều chỉnh trùng cũng là "kiểm rồi mới ghi" | `adjust-order.ts`, chỗ tìm `existing` | Hai luồng cùng lúc đều lọt | Thêm ràng buộc thứ hai: một hóa đơn gốc chỉ có một tờ điều chỉnh đang chờ hoặc đã phát hành |
+| 6 | Cờ `running` chỉ đúng trong một tiến trình | hai worker hóa đơn | Lúc deploy (bản cũ và mới cùng sống) hoặc khi có hai worker, một shop bị hai tiến trình cùng phát hành; MISA cấp số liên tục nên một bên bị từ chối | Khóa theo shop ở database (hạn thuê) |
+| 7 | Bỏ cửa sổ 30 ngày của vòng hỏi trạng thái (đã chốt ở mục 3.8) thì câu chọn "tờ nào cần hỏi" phải đọc cả lịch sử hóa đơn của shop | `invoice-status-sync.ts` | Shop lớn: mỗi lượt quét lại mọi tờ đã có kết luận | Thêm cột "giờ hỏi kế tiếp" (trống = đã có kết luận) và chỉ mục chỉ chứa tờ còn phải hỏi |
+| 8 | Câu tìm đơn đủ điều kiện tự xuất sắp theo ngày tạo đơn rồi lọc "chưa có hóa đơn" | `invoice-auto-issue.ts` | Shop lớn: mỗi lượt đi lại qua mọi đơn đã giao kể từ ngày bật. Lượt chạy dày hơn (1 phút khi còn tồn) thì nặng hơn | Bước 5 đổi sang sắp theo ngày giao, đi theo chỉ mục `(channelId, deliveredAt)` có sẵn. Mốc "đã xét tới ngày nào" cho từng shop: ghi sổ làm sau, chưa làm |
+| 9 | Đơn lỗi vĩnh viễn (ví dụ mã số thuế người mua sai) được tự thử lại mỗi ngày, không có điểm dừng, mỗi ngày thêm một dòng lỗi | `invoice-auto-issue.ts`, cửa sổ 24 giờ | Rác tăng dần theo ngày | KHÔNG đổi ở bước 5. Ghi sổ, cần anh chốt số lượt |
+| 10 | Đường webhook MISA tìm đơn theo mã đơn mà không kèm chủ shop, và chưa từng nhận sự kiện thật (meInvoice không có webhook) | `misa-webhook-service.ts` | Chưa gây hại vì không có lưu lượng | Khi chuyển sang đường nhận chung thì tìm theo mã giao dịch trước, mã đơn phải kèm chủ shop |
+
+Điểm 1 cần nói rõ mức độ: "không đặt thời hạn chờ" không phải là treo vô hạn. Em đo trên máy local ngày 02/10 (Node 24.16; Render chạy 24.21): máy chủ nhận kết nối rồi im lặng thì `fetch` tự hỏng sau 303 giây (lỗi `HeadersTimeoutError`, mức mặc định 300 giây của thư viện). Vậy một lệnh MISA treo làm tự phát hành của mọi shop đứng khoảng 5 phút cho mỗi lệnh treo, không phải mãi mãi. Chưa đo trường hợp máy chủ trả lời nhỏ giọt từng chút.
+
+**B. Phần hàng đợi: theo khuôn đẩy tồn, không chạy việc dài trong pg-boss**
+
+```
+Bấm tay (một đơn, hàng loạt, điều chỉnh)   →  MỘT giao dịch: ghi dòng invoice_requests + gửi tín hiệu invoice.issue(shop)  →  trả lời ngay
+Sàn chốt hoàn (returns-sync, shop bật tự điều chỉnh)  →  ghi dòng invoice_requests chung lượt cập nhật đơn
+Worker nhận tín hiệu                        →  ghi tên shop vào hàng chờ trong tiến trình, trả về ngay (vài mili-giây)
+Lưới quét                                   →  shop có yêu cầu tới hạn (mỗi 5 giây); shop bật tự phát hành (mỗi 15 phút); shop có tờ tới giờ hỏi trạng thái (mỗi 12 giờ)
+Làn của một shop, mỗi lượt:                 →  thuê làn ở database (shop đang có tiến trình khác giữ thì nhường)
+                                               1. tra lại các tờ "chưa rõ kết quả" của shop
+                                               2. yêu cầu bấm tay và điều chỉnh, cũ trước
+                                               3. đơn đủ điều kiện tự phát hành
+                                               từng tờ một, nghỉ 1 giây, tối đa 20 tờ; còn tồn thì 1 phút sau chạy lượt kế
+```
+
+- **Nguồn sự thật là bảng**, như đẩy tồn: yêu cầu bấm tay và điều chỉnh nằm ở `invoice_requests`; đơn tự phát hành thì chính trạng thái đơn là nguồn (không ghi dòng yêu cầu, tránh mỗi hóa đơn thêm một dòng nữa). pg-boss chỉ chở tín hiệu để worker chạy ngay sau khi chủ shop bấm; pg-boss trục trặc thì lưới quét vẫn nhặt, chậm nhất 5 giây.
+- **Một shop không bao giờ có hai tiến trình cùng phát hành.** Bảng nhỏ `invoice_lanes` giữ "ai đang thuê làn của shop này, tới mấy giờ". Thuê bằng một câu lệnh có điều kiện; tiến trình đang chạy gia hạn theo nhịp; tiến trình chết thì hết hạn là tiến trình khác nhận. Trước MỖI tờ, tiến trình kiểm lại làn còn là của mình; mất làn thì dừng ngay, không gọi nhà cung cấp.
+- **Chống trùng nằm ở database**: dòng nhật ký "đang chờ" chính là vé của đơn đó (hai chỉ mục duy nhất ở mục C). Luồng thứ hai ghi vào bị database từ chối, trả "đơn này đang có yêu cầu phát hành".
+- **Tờ "chưa rõ kết quả"** (đứt mạng, quá thời hạn chờ, máy chủ nhà cung cấp lỗi 5xx, tiến trình chết giữa lúc gọi): giữ ở "đang chờ" kèm mã tham chiếu đã gửi, KHÔNG đánh hỏng ngay. Lượt kế của shop tra ngược theo mã tham chiếu (`findByReference`; MISA đã có sẵn cách tra theo mã đơn): thấy tờ đã lập thì nối số hóa đơn vào; không thấy thì đánh hỏng loại "tạm thời" để được thử lại. Nhà cung cấp không tra ngược được (khai trong bảng khả năng) thì đánh hỏng kèm lời nhắn kiểm bên nhà cung cấp trước khi xuất lại.
+- **Mọi lệnh bấm tay đi qua làn**, kể cả xuất một đơn và điều chỉnh một tờ, không có đường gọi nhà cung cấp ngay trong request. Lý do: xuất tay chen ngang lúc làn đang chạy là hai luồng cùng xin số trên một ký hiệu. Tín hiệu tới worker khoảng nửa giây nên xuất một đơn vẫn có kết quả sau vài giây.
+- **Hỏi trạng thái** chạy trong cùng làn (không chồng với phát hành của shop đó), gọi qua adapter, mỗi lượt 200 tờ, còn tồn thì chạy tiếp. Áp kết quả bằng một hàm dùng chung với đường webhook.
+- **Webhook nhà cung cấp** (`invoice.event`): việc chỉ ghi database, dài vài mili-giây, nên để trong pg-boss được. Đi qua `webhook_events` như webhook sàn; việc hỏng hết lượt rơi về `evt.dead` có sẵn (không thêm hàng đợi lỗi mới). Hiện không nhà cung cấp nào có webhook, nên phần này chỉ kiểm được bằng test.
+- **Số hàng đợi pg-boss thêm mới: 2** (`invoice.issue` làm tín hiệu, `invoice.event`). Không có `invoice.status`: lưới quét và làn đã đủ.
+
+**C. Đổi database (bản nháp để trình; tệp migration chỉ tạo sau khi anh duyệt)**
+
+```sql
+-- 1. Nhật ký hóa đơn: mã tham chiếu đã gửi nhà cung cấp + giờ hỏi trạng thái kế tiếp
+ALTER TABLE "InvoiceLog" ADD COLUMN "providerRef" TEXT, ADD COLUMN "cqtNextCheckAt" TIMESTAMP(3);
+
+UPDATE "InvoiceLog" SET "providerRef" = "orderCode" WHERE "adjustmentForLogId" IS NULL;
+UPDATE "InvoiceLog" l SET "providerRef" = l."orderCode" || '-DC' || r.rn
+FROM (SELECT id, row_number() OVER (PARTITION BY "adjustmentForLogId" ORDER BY "createdAt", id) AS rn
+      FROM "InvoiceLog" WHERE "adjustmentForLogId" IS NOT NULL) r
+WHERE r.id = l.id;
+
+UPDATE "InvoiceLog" SET "cqtNextCheckAt" = CURRENT_TIMESTAMP
+WHERE "transactionId" IS NOT NULL AND "status" IN ('PENDING', 'ISSUED')
+  AND NOT ("cqtStatus" = 'ACCEPTED' AND "createdAt" < CURRENT_TIMESTAMP - INTERVAL '7 days');
+
+-- 2. Chống trùng ở database
+CREATE UNIQUE INDEX "InvoiceLog_open_original_key" ON "InvoiceLog" ("ownerId", "orderCode")
+  WHERE "adjustmentForLogId" IS NULL AND "status" IN ('PENDING', 'ISSUED');
+CREATE UNIQUE INDEX "InvoiceLog_open_adjustment_key" ON "InvoiceLog" ("adjustmentForLogId")
+  WHERE "adjustmentForLogId" IS NOT NULL AND "status" IN ('PENDING', 'ISSUED');
+CREATE INDEX "InvoiceLog_cqt_due_idx" ON "InvoiceLog" ("ownerId", "cqtNextCheckAt")
+  WHERE "cqtNextCheckAt" IS NOT NULL;
+
+-- 3. Yêu cầu bấm tay / điều chỉnh tự động
+CREATE TABLE "invoice_requests" (
+  "id"            TEXT PRIMARY KEY,
+  "ownerId"       TEXT NOT NULL,
+  "kind"          TEXT NOT NULL,                 -- ISSUE | ADJUST
+  "source"        TEXT NOT NULL,                 -- MANUAL | AUTO_RETURN
+  "targetKey"     TEXT NOT NULL,                 -- ISSUE: mã đơn; ADJUST: mã dòng nhật ký của hóa đơn gốc
+  "params"        JSONB,                         -- phạm vi + lý do điều chỉnh
+  "batchId"       TEXT,                          -- một lần bấm = một lô, để hiện tiến độ
+  "requestedById" TEXT,
+  "status"        TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING | RUNNING | DONE | FAILED
+  "attempts"      INTEGER NOT NULL DEFAULT 0,
+  "nextRetryAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "resultLogId"   TEXT,
+  "errorCode"     TEXT,
+  "error"         TEXT,
+  "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "finishedAt"    TIMESTAMP(3)
+);
+CREATE UNIQUE INDEX "invoice_requests_open_key" ON "invoice_requests" ("ownerId", "kind", "targetKey")
+  WHERE "status" IN ('PENDING', 'RUNNING');
+CREATE INDEX "invoice_requests_due_idx" ON "invoice_requests" ("ownerId", "nextRetryAt") WHERE "status" = 'PENDING';
+CREATE INDEX "invoice_requests_batch_idx" ON "invoice_requests" ("ownerId", "batchId");
+ALTER TABLE "invoice_requests" ENABLE ROW LEVEL SECURITY;
+
+-- 4. Làn theo shop (ai đang giữ, tới mấy giờ)
+CREATE TABLE "invoice_lanes" (
+  "ownerId"    TEXT PRIMARY KEY,
+  "leaseOwner" TEXT,
+  "leaseUntil" TIMESTAMP(3),
+  "updatedAt"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE "invoice_lanes" ENABLE ROW LEVEL SECURITY;
+
+-- 5. Hai hàng đợi pg-boss (dùng bảng chung, không sinh bảng mới)
+SELECT pgboss.create_queue('invoice.issue', '{"policy":"stately","retryLimit":2,"retryDelay":30,"retryBackoff":true,"expireInSeconds":300}'::jsonb);
+SELECT pgboss.create_queue('invoice.event', '{"policy":"standard","retryLimit":2,"retryDelay":30,"retryBackoff":true,"expireInSeconds":300,"deadLetter":"evt.dead"}'::jsonb);
+```
+
+Ghi chú về bản nháp:
+
+- Hai bảng mới cố ý KHÔNG có khóa ngoại sang bảng người dùng hay bảng đơn, để migration không phải lấy khóa trên bảng đang được ghi liên tục (bài học 30/09). Dọn dòng mồ côi do tác vụ dọn nhật ký lo.
+- Migration chỉ đụng một bảng có sẵn là `InvoiceLog`, bảng này chỉ worker hóa đơn ghi.
+- Hai chỉ mục duy nhất sẽ làm migration HỎNG nếu prod đang có dòng vi phạm, mà migration hỏng trên Render là mọi lượt deploy sau đứng lại tới khi gỡ tay. Nên bắt buộc chạy câu đọc dưới đây trước, ra 0 ở hai dòng đầu mới được đẩy.
+
+Câu đọc cần chạy trên prod (chỉ đọc):
+
+```sql
+SELECT 'hoa_don_goc_trung' AS viec, count(*) FROM (SELECT 1 FROM "InvoiceLog" WHERE "adjustmentForLogId" IS NULL AND "status" IN ('PENDING','ISSUED') GROUP BY "ownerId", "orderCode" HAVING count(*) > 1) t
+UNION ALL SELECT 'dieu_chinh_trung', count(*) FROM (SELECT 1 FROM "InvoiceLog" WHERE "adjustmentForLogId" IS NOT NULL AND "status" IN ('PENDING','ISSUED') GROUP BY "adjustmentForLogId" HAVING count(*) > 1) t
+UNION ALL SELECT 'dang_cho_khong_ma_giao_dich', count(*) FROM "InvoiceLog" WHERE "status" = 'PENDING' AND "transactionId" IS NULL
+UNION ALL SELECT 'tong_dong_nhat_ky', count(*) FROM "InvoiceLog"
+UNION ALL SELECT 'shop_co_cau_hinh', count(*) FROM "InvoiceConfig" WHERE "channelId" IS NULL
+UNION ALL SELECT 'shop_bat_tu_phat_hanh', count(*) FROM "InvoiceConfig" WHERE "channelId" IS NULL AND "autoIssueEnabled";
+```
+
+**D. Các con số**
+
+| Tham số | Giá trị | Căn cứ |
+|---|---|---|
+| Nghỉ giữa hai tờ, cỡ lô, nghỉ giữa hai lượt, số shop cùng lúc mỗi worker | 1 giây, 20 tờ, 1 phút, 2 shop | Đã chốt 01/10 (mục 3.8), ba số sau là em tự chọn |
+| Thời hạn chờ một lệnh gọi nhà cung cấp hóa đơn | 60 giây (`INVOICE_HTTP_TIMEOUT_MS`) | **Em tự chọn.** Chưa có số đo nào về MISA và prod chưa có shop nào phát hành để đo. Cửa gọi mới sẽ ghi thời gian từng lệnh như `[SanHTTP]`; có số thật thì chỉnh |
+| Hạn thuê làn | 120 giây, gia hạn mỗi 30 giây | **Em tự chọn.** Ý nghĩa: worker chết đột ngột thì shop đó chờ tối đa 2 phút |
+| Tuổi tối thiểu của tờ "chưa rõ kết quả" trước khi tra lại | 5 phút | **Em tự chọn**, lớn hơn tổng thời gian dài nhất của một lượt gọi (gọi, thử lại một lần, tra ngược) |
+| Yêu cầu bấm tay gặp lỗi tạm thời | 3 lượt, cách 1 phút | Số lượt lấy bằng các hàng đợi khác; lỗi cấp tài khoản thì đánh hỏng cả lô ngay với cùng lý do, không đốt từng tờ |
+| Điều chỉnh tự động khi sàn chưa báo số tiền hoàn | thử lại mỗi 60 phút, tối đa 7 ngày | **Em tự chọn.** Hiện nay là không thử lại lần nào. Hết 7 ngày thì đánh hỏng, nhãn "Cần điều chỉnh" vẫn còn cho chủ shop làm tay |
+| Hỏi trạng thái tờ chưa có kết luận quá 30 ngày | 24 giờ một lần, không có điểm dừng | **Em tự chọn.** Thay cho "bỏ hẳn sau 30 ngày". Tờ dưới 30 ngày giữ nhịp như hiện nay |
+| Giữ dòng `invoice_requests` | xong 7 ngày, còn lại 30 ngày | Bằng chính sách dọn nhật ký kỹ thuật |
+
+Giới hạn đã biết: 2 shop cùng lúc mỗi worker, mỗi lượt khoảng 20 tờ trong 40–60 giây, tức một worker phục vụ cỡ 2–3 lượt shop mỗi phút. Vài trăm shop cùng có tồn thì phải tăng số này hoặc thêm worker, mà tăng tới đâu tùy hạn mức gọi API của nhà cung cấp (chưa có bằng văn bản).
+
+**E. Giao diện (đổi nhỏ, làm cùng lát 3)**
+
+- Nút "Xuất hóa đơn" (một đơn, hàng loạt) và nút "Điều chỉnh": bấm xong hiện tiến độ ngay tại chỗ ("Đang xuất 3/20"), xong thì ra đúng thông báo kết quả như hiện nay. Rời trang thì việc vẫn chạy; quay lại vẫn thấy tiến độ. Vẫn một nút, không thêm bước.
+- Bỏ trần 50 đơn mỗi lần gọi (giao diện đang tự chia lô 50 và gọi nối tiếp).
+- Giao diện lên Vercel riêng với backend, nên backend báo cờ "đường mới đã bật" trong `/invoice-queue`; giao diện bản mới đọc cờ đó để chọn gọi đường nào. Đẩy giao diện lúc nào cũng được.
+- HQ Sức khỏe thêm dấu hiệu "Hóa đơn": số yêu cầu chờ, yêu cầu chờ lâu nhất, số shop đang ngắt mạch.
+
+**F. Thứ tự làm và đưa lên — chia nhỏ nhất có thể (anh Trung 02/10: "không cần nhanh, cần chuẩn nhất cho seller")**
+
+Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; commit riêng; đẩy riêng; xem prod rồi mới sang lát kế. Lát nào đổi database thì trình tệp migration trước và mỗi migration chỉ mang đúng thứ lát đó cần. Thứ tự xếp sao cho không lát nào làm rủi ro TĂNG lên trong lúc chờ lát sau (ví dụ: sửa luật mã tham chiếu của điều chỉnh phải lên TRƯỚC khi đặt thời hạn chờ, vì thời hạn chờ ngắn hơn làm ca "chưa rõ kết quả" xảy ra nhiều hơn).
+
+| Lát | Nội dung | Đổi database | Đổi hành vi | Trạng thái |
+|---|---|---|---|---|
+| 1 | Hợp đồng chung cho mọi nhà cung cấp: bảng khả năng, tra ngược theo mã tham chiếu, sổ đăng ký nhà cung cấp (giữ chỗ Hubtax), công tắc phát hành riêng từng bên | Không | Không | Viết xong 02/10 trên nhánh `hoa-don-buoc-5`, chưa commit |
+| 2 | Lưu mã tham chiếu đã gửi; database từ chối hóa đơn gốc trùng và điều chỉnh trùng | Có (1 cột, 2 chỉ mục duy nhất) | Chỉ ở ca hai luồng cùng lúc | Chờ câu đọc prod |
+| 3 | Luật mã tham chiếu của điều chỉnh (lượt hỏng dùng lại mã cũ); kiểm hóa đơn gốc còn hiệu lực bên nhà cung cấp trước khi điều chỉnh | Không | Hết ca điều chỉnh hai lần | |
+| 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh | Không | Không | |
+| 5 | Adapter báo rõ "chưa rõ kết quả"; nhà cung cấp trả lời thành công mà không kèm số lẫn mã tra cứu thì không còn ghi là đã phát hành | Không | Chỉ ở ca lỗi | |
+| 6 | Tờ chưa rõ kết quả giữ "đang chờ" rồi tra lại theo bảng khả năng; đặt thời hạn chờ gọi nhà cung cấp | Không | Chỉ ở ca lỗi | |
+| 7 | Đơn lỗi vĩnh viễn: dừng tự thử sau 3 lượt | Không | Có | |
+| 8 | Làn theo shop cho TỰ PHÁT HÀNH (thay vòng chung một cờ), công tắc `INVOICE_MODE` | Có (bảng `invoice_lanes`) | Có: các shop chạy song song | Đưa lên hai lần |
+| 9 | Xuất HÀNG LOẠT qua làn + giao diện tiến độ | Có (bảng `invoice_requests`, hàng đợi tín hiệu) | Có | Đưa lên hai lần |
+| 10 | Xuất MỘT đơn và điều chỉnh tay qua làn | Không | Có | |
+| 11 | Điều chỉnh tự động thành yêu cầu bền, có thử lại | Không | Có | |
+| 12 | Hỏi trạng thái qua adapter, theo tới khi có kết luận | Có (cột `cqtNextCheckAt`) | Có | |
+| 13 | Webhook nhà cung cấp qua đường nhận chung; địa chỉ giữ chỗ cho Hubtax | Có (1 hàng đợi) | Không có lưu lượng thật | |
+| 14 | Dấu hiệu "Hóa đơn" trên HQ Sức khỏe | Không | Không | |
+
+Bản nháp SQL ở mục C vì thế tách thành bốn migration nhỏ (lát 2, 8, 9, 12), mỗi cái trình riêng.
+
+**G. Kiểm bằng gì, và điều không kiểm được**
+
+- Test tự động trên database dev theo khuôn `stock-queue.test.ts`: hai lượt cùng xin làn của một shop chỉ một lượt được; hai luồng cùng phát hành một đơn chỉ một dòng "đang chờ"; rollback mất cả dòng yêu cầu lẫn tín hiệu; nhà cung cấp treo quá thời hạn → tờ giữ "đang chờ" → lượt sau tra ngược nối lại; tiến trình "chết" giữa lô (hạn thuê hết) → tiến trình khác làm tiếp, không tờ nào lập hai lần; lỗi cấp tài khoản ngắt mạch như cũ; tắt hẳn pg-boss vẫn chạy nhờ lưới quét; đường lui `legacy`.
+- Chạy thật với MST thử của MISA trên máy local: xuất một đơn, hàng loạt, điều chỉnh, và ca cố ý cắt mạng giữa lúc gọi.
+- Không kiểm được: shop thật (prod chưa shop nào dùng hóa đơn); webhook nhà cung cấp (chưa bên nào có); hai tiến trình worker thật chạy cùng lúc; hạn mức gọi API của MISA.
+
+**H. Việc đã chốt và còn chờ**
+
+Anh Trung 02/10: "Trước mắt làm như em đề xuất", kèm hai yêu cầu: tách phần hóa đơn nhỏ nhất có thể (cần chuẩn, không cần nhanh), và luôn giữ cổng chờ cho nhà cung cấp khác vì Hubsell không chỉ làm việc với MISA. Em hiểu là đã chốt: thiết kế mục B; xuất một đơn và điều chỉnh tay cũng đi qua làn; các số tự chọn ở mục D làm mặc định; đơn lỗi vĩnh viễn dừng tự thử sau 3 lượt.
+
+Còn chờ: câu đọc trên prod ở mục C (trước lát 2); mỗi tệp migration em trình riêng trước khi đẩy.
+
+**I. Kết quả thử trên sandbox MISA ngày 02/10/2026** (`backend/scripts/misa-refid-probe.ts`; đã lập 6 hóa đơn sandbox số 00000131–00000136, ký hiệu 1K26TYY)
+
+| Câu hỏi | Kết quả |
+|---|---|
+| Tra theo mã tham chiếu chưa từng gửi | Trả danh sách rỗng, không báo lỗi |
+| Một mã tham chiếu bị từ chối rồi gửi lại hợp lệ | Được nhận. Thử hai kiểu từ chối: ký hiệu không tồn tại (`InvoiceTemplateNotExist`), thuế suất sai (`Invalid_[InvoiceDetail.VATRateName]`). Mới thử với hóa đơn bán |
+| Gửi lại mã tham chiếu của tờ đã lập | Bị từ chối `DuplicateInvoiceRefID`, cả hóa đơn bán lẫn điều chỉnh |
+| Hai lệnh CÙNG LÚC cùng một mã tham chiếu | Đúng một tờ được lập, lệnh kia `DuplicateInvoiceRefID` (thử một lần) |
+| Tra ngược ngay sau khi lập | Hóa đơn bán: thấy ngay (3/3 lượt). **Hóa đơn điều chỉnh: lượt tra ngay sau khi lập trả RỖNG (2/2 lượt), 140 ms sau thì thấy** |
+| Điều chỉnh trỏ vào số hóa đơn gốc không tồn tại (`99999999`) | **MISA KHÔNG từ chối, lập luôn** (tờ 00000133). Em tưởng sẽ bị từ chối nên tờ này là ngoài ý muốn; nó nằm lại sandbox |
+| Thời gian một lệnh trên sandbox | Phát hành 350–580 ms; tra ngược khoảng 35 ms; lệnh bị từ chối 20–60 ms |
+
+Ba hệ quả cho thiết kế:
+
+1. Kết quả tra ngược "không thấy" ngay sau khi gửi KHÔNG phải là kết luận. Lõi chỉ tin "không thấy" sau một khoảng chờ (mỗi nhà cung cấp tự khai, MISA khai 60 giây; lõi dùng mức lớn hơn giữa số đó và 5 phút). Và "không thấy" chỉ dẫn tới gửi lại ĐÚNG mã cũ, không bao giờ dẫn tới đổi sang mã mới, để chốt chặn trùng của nhà cung cấp vẫn còn tác dụng.
+2. Nhà cung cấp không kiểm hóa đơn gốc thì Hubsell phải tự kiểm trước khi lập điều chỉnh (lát 3).
+3. Thời hạn chờ 60 giây gấp khoảng 100 lần thời gian một lệnh trên sandbox. Số thật trên prod chưa có.
+
+Chưa thử được: mã tham chiếu của tờ đã bị XÓA bên MISA có dùng lại được không (sandbox không xóa được qua API). Nếu không dùng lại được thì ngay hôm nay, chủ shop xóa một hóa đơn trên meInvoice rồi xuất lại từ Hubsell sẽ bị báo trùng mãi. Cần một lần anh xóa thử một tờ trên trang sandbox của MISA, hoặc hỏi MISA.
+
+**J. Cổng chờ cho nhà cung cấp khác: lõi đọc bảng khả năng, không giả định ai cũng giống MISA**
+
+Mỗi adapter khai một bảng khả năng (`ProviderCapabilities` trong `integrations/invoice/types.ts`), mỗi dòng phải ghi nguồn: tài liệu của nhà cung cấp, hoặc kết quả chạy bộ bài thử ở mục I trên sandbox của chính họ. Chưa kiểm được thì khai mức an toàn.
+
+| Khả năng | MISA (nguồn) | Lõi dùng để làm gì |
+|---|---|---|
+| Phải phát hành lần lượt trong một shop | Có (tài liệu) | Làn theo shop chạy từng tờ hay song song |
+| Chặn trùng theo mã tham chiếu | Có (thử 02/10) | Có được gửi lại khi chưa rõ kết quả không |
+| Mã của lượt bị từ chối dùng lại được | Có (thử 02/10, hóa đơn bán) | Lượt sau dùng lại mã hay phải mã mới |
+| Tra ngược theo mã tham chiếu, và sau bao lâu thì chắc chắn thấy | Có, khai 60 giây (thử 02/10) | Giải tờ "chưa rõ kết quả" |
+| Cỡ lô hỏi trạng thái | 50 | Vòng hỏi trạng thái |
+| Có webhook | Không (tài liệu) | Có mở đường nhận sự kiện không |
+| Hủy qua API | Không (chưa kiểm endpoint `/cancel`) | |
+| Tự kiểm hóa đơn gốc khi điều chỉnh | Không (thử 02/10) | Hubsell có phải tự kiểm trước không |
+
+Cách lõi xử lý một lượt "chưa rõ kết quả" theo hai khả năng chính:
+
+| Chặn trùng theo mã | Tra ngược được | Lõi làm gì |
+|---|---|---|
+| Có | Có | Giữ "đang chờ", hết khoảng chờ thì tra ngược: thấy → nối số hóa đơn; không thấy → cho gửi lại đúng mã cũ |
+| Có | Không | Hết khoảng chờ thì gửi lại đúng mã cũ; nhà cung cấp báo trùng nghĩa là tờ đã lập mà Hubsell không lấy được số → đánh dấu để chủ shop đối chiếu |
+| Không | Có | Tra ngược sau khoảng chờ; không thấy → cho gửi lại |
+| Không | Không | KHÔNG tự gửi lại. Đánh dấu cần chủ shop kiểm bên nhà cung cấp rồi xác nhận |
+
+Sổ đăng ký (`integrations/invoice/provider-registry.ts`) là nơi duy nhất khai nhà cung cấp, với bốn trạng thái: đang chạy (MISA), lưu được nhưng chưa có adapter (Tùy biến), sắp ra mắt (EasyInvoice, M-Invoice, Mắt Bão, Viettel, VNPT, BKAV), giữ chỗ (Hubtax). Mỗi bên một công tắc phát hành riêng `<MÃ>_ALLOW_PUBLISH`; MISA giữ nguyên biến đang đặt trên prod.
+
+Quy trình mở một nhà cung cấp mới: viết adapter → chạy bộ bài thử trên sandbox của họ để điền bảng khả năng → đổi trạng thái trong sổ đăng ký → bỏ cờ "sắp ra mắt" ở giao diện → đặt công tắc phát hành. Lõi, hàng đợi, worker không sửa. Khi làm tới adapter thứ hai, em chuyển bộ bài thử sang gọi qua hợp đồng adapter để dùng chung.
+
+### 4.7. Bước 6 (dọn) — kiểm kê 02/10/2026
+
+**Trạng thái: mới kiểm kê. Chưa việc nào của bước 6 tới ngày làm.** Ba mốc đang giữ: đường lui webhook giữ khoảng một tuần kể từ 01/10; đường lui đẩy tồn tới khoảng 09/10; thời hạn chờ gọi sàn trình số ngày 04–06/10. Đường lui của bước 5 thì chỉ gỡ được một tuần sau lần đưa lên thứ hai của bước 5.
+
+Vì vậy bước 6 tách ba đợt:
+
+| Đợt | Nội dung | Sớm nhất |
+|---|---|---|
+| 6a | Bật thời hạn chờ gọi sàn; tính lại hạn giữ việc (5 phút) và hạn thuê gian (300 giây) theo số đó | 04–06/10, khi đủ 3–5 ngày số đo |
+| 6b | Gỡ đường cũ của webhook ba sàn và đẩy tồn; xóa hai bảng `shopee_webhook_logs`, `tiktok_webhook_logs` | 09/10 |
+| 6c | Gỡ hai vòng hóa đơn cũ, hàng đợi webhook MISA cũ, công tắc `INVOICE_MODE`; xóa bảng `misa_webhook_logs` | Một tuần sau lần hai của bước 5 |
+
+**Số đo thời gian gọi sàn tới trưa 02/10 (đọc log Render, chưa đủ ngày để chốt số)**
+
+| Tiến trình | Khoảng đọc được | Sàn | Số lệnh | p99 cao nhất trong các nhịp 15 phút | Lệnh lâu nhất |
+|---|---|---|---|---|---|
+| worker | 02/10, 07:27–13:11 | Shopee | 34.111 | 2,6 giây | 9,3 giây |
+| worker | như trên | TikTok | 6.826 | 2,1 giây | 4,4 giây |
+| worker | như trên | TikTok Ads | 8 | 0,6 giây | 0,6 giây |
+| web | 01/10 20:52 – 02/10 12:41 (30 dòng trang log hiện) | Shopee | 698 | 1,6 giây | 3,6 giây |
+| web | như trên | TikTok | 209 | 2,2 giây | 2,2 giây |
+| web | như trên | TikTok Ads | 15 | 0,4 giây | 0,4 giây |
+
+- Không dòng nào báo lỗi mạng hay quá hạn (`loi=0`, `qua_han=0` ở mọi dòng đọc được).
+- Tìm chữ `CHAM` (lệnh trên 10 giây) trong 7 ngày ở cả worker lẫn web: không có dòng nào. Số đo mới có từ 01/10 20:36, và em chưa chắc ô tìm của Render tìm đủ.
+- **Lazada: không có dòng `[SanHTTP] LAZADA` nào trong 24 giờ ở worker** (tìm chữ LAZADA chỉ ra các dòng khởi động). Tức worker không gọi Lazada lần nào đi qua cửa đo. Hệ quả cho bước 6: không có căn cứ đặt thời hạn chờ riêng cho Lazada; em chưa tìm nguyên nhân (thuộc việc kiểm Lazada đã hoãn ở mục 7).
+- Trang log chỉ hiện một đoạn (50 dòng với worker), nên bảng trên là một lát cắt, không phải toàn bộ.
+
+Một số đo thêm ở máy local ngày 02/10 (Node 24.16): lệnh `fetch` không đặt thời hạn, gặp máy chủ nhận kết nối rồi im lặng, tự hỏng sau 303 giây. Tức hiện nay một lệnh gọi sàn treo kéo dài khoảng 5 phút chứ không vô hạn, và con số đó trùng đúng hạn giữ việc 5 phút của `evt.order` và hạn thuê gian 300 giây của đẩy tồn: lệnh treo và hạn giữ hết cùng lúc. Đặt thời hạn chờ ngắn hơn hẳn 300 giây là gỡ được chỗ trùng này. Dòng "sàn treo là luồng việc treo theo" ở mục 2 nên hiểu theo số này.
+
+Điều phải làm trước khi bật thời hạn chờ:
+
+- Biến `PLATFORM_HTTP_TIMEOUT_MS` là MỘT số cho mọi sàn và mọi API. Số đó phải lớn hơn API chậm hợp lệ nhất, nên cần danh sách lệnh chậm theo tên API (log `CHAM` in tên đường dẫn; hiện chưa có dòng nào).
+- Lệnh bị cắt vì quá hạn thì nơi gọi thấy như lỗi mạng và có thể gọi lại. Phải rà các lệnh gọi lại lần hai là có hại (sắp xếp vận chuyển, đổi ngân sách quảng cáo) trước khi bật.
+- Hai chỗ tải tệp vận đơn (`services/fulfillment/tiktok.ts`, `lazada.ts`) chưa đi qua cửa đo.
+
+**Kiểm kê phần phải gỡ ở đợt 6b và 6c (dò mã hôm nay)**
+
+| Nhóm | Chỗ | Ghi chú |
+|---|---|---|
+| Hàng đợi cũ Shopee | `integrations/shopee/webhook-queue.ts`: `enqueueShopeeWebhook`, vòng `drain`, `startShopeeWebhookWorker`, nhánh đối soát tồn | Giữ lại `handleShopeeOrderJob`, `handleShopeeAuthJob`, `alertShopeeJobFailed` (đường mới đang dùng) |
+| Hàng đợi cũ TikTok | `integrations/tiktok/webhook-queue.ts`: phần ghi và quét bảng cũ | Giữ ba hàm lõi dùng chung |
+| Hàng đợi cũ MISA | `integrations/invoice/misa-webhook-queue.ts`, `scripts/simulate-misa-webhook.ts` | Sau lát 4 của bước 5 |
+| Route webhook | `routes/webhooks.ts`: ba hàm chọn chế độ và ba nhánh đường cũ | Xem điểm cần chốt 1 bên dưới |
+| Khởi động worker | `workers/index.ts`: ba lệnh khởi động hàng đợi cũ, nhánh `legacy` của đẩy tồn | |
+| Đẩy tồn đường cũ | `integrations/stock-push-worker.ts` (vòng quét, `processChannelJobs`), `inventory-push.ts` (các nhánh `legacy`), `shopee/inventory-sync.ts` (đối soát ghi vào bảng webhook Shopee), `lib/queue-config.ts` (`stockPushMode`) | |
+| Hóa đơn đường cũ | `workers/invoice-auto-issue.ts`, `invoice-status-sync.ts` (phần vòng lặp), route `/invoices/bulk` kiểu cũ, `maybeAutoAdjustOnPlatformReturn` | Đợt 6c |
+| Dọn nhật ký | `workers/log-cleanup.ts`: ba khối dọn bảng cũ | |
+| HQ | `services/platform-health.ts` (đếm việc chờ và webhook mỗi ngày từ bảng cũ), `routes/admin.ts` (số đếm và ba trang nhật ký đang nối hai nguồn) | Chuyển hẳn sang `webhook_events` |
+| Prisma | Ba model `ShopeeWebhookLog`, `TiktokWebhookLog`, `MisaWebhookLog` | Kiểu `WebhookJobStatus` giữ lại, `WebhookEvent` đang dùng |
+| Biến môi trường | `LAZADA_WEBHOOK_MODE`, `TIKTOK_WEBHOOK_MODE`, `SHOPEE_WEBHOOK_MODE`, `STOCK_PUSH_MODE`, sau đó `INVOICE_MODE` | Kiểm trên Render cả web lẫn worker không đặt biến nào trước khi gỡ |
+| Test | `tiktok-webhook-queue.test.ts`, `misa-webhook-queue.test.ts`, `stock-push.test.ts`, ca đường lui trong ba tệp `*-webhook-inbox.test.ts` / `lazada-webhook-queue.test.ts` / `stock-queue.test.ts`, `log-cleanup.test.ts`, `inventory-reconcile.test.ts`, `inventory-idempotency.test.ts`, `queue-config.test.ts` | Ca nào kiểm lõi dùng chung thì chuyển sang đường mới, không xóa |
+| Tài liệu | `.env.example`, `prisma/supabase-schema.sql` | |
+
+**Cách đưa đợt 6b lên: hai lần, như các bước trước.** Lần một chỉ gỡ mã (bảng còn nguyên). Lần hai mới chạy migration xóa bảng. Lý do: lúc deploy bản cũ còn sống vài phút và worker bản cũ quét bảng cũ mỗi vài giây; xóa bảng ngay trong lượt deploy đó là bản cũ báo lỗi liên tục, và lệnh xóa bảng phải chờ khóa.
+
+Điều kiện trước khi xóa bảng (đọc trên prod ngay trước lúc làm):
+
+```sql
+SELECT 'shopee' AS bang, "status"::text, count(*), max("createdAt") FROM "shopee_webhook_logs" GROUP BY 2
+UNION ALL SELECT 'tiktok', "status"::text, count(*), max("createdAt") FROM "tiktok_webhook_logs" GROUP BY 2
+UNION ALL SELECT 'misa', "status"::text, count(*), max("createdAt") FROM "misa_webhook_logs" GROUP BY 2;
+```
+
+Phải thấy: không dòng nào đang chờ hay đang xử lý; dòng mới nhất của Shopee không sau 02/10 08:50 (lúc đối soát tồn rời bảng này), của TikTok không sau 01/10 21:17.
+
+**Việc cần anh Trung chốt cho bước 6**
+
+1. Khi hàng đợi bền chưa sẵn sàng, route webhook hiện tự lùi về đường cũ. Gỡ đường cũ rồi thì trả lỗi 5xx cho sàn (sàn tự gửi lại; đường quét định kỳ vẫn là lưới). Em chưa đọc lại tài liệu Shopee và TikTok về số lần và nhịp gửi lại; sẽ đọc trước khi làm 6b.
+2. Xóa bảng cũ là mất các dòng nhật ký HỎNG trước ngày chuyển (dòng xong đã tự dọn sau 7 ngày, dòng hỏng giữ 30 ngày). Trang nhật ký HQ khi đó chỉ còn sự kiện từ 01/10. Nếu anh muốn giữ đủ 30 ngày thì lùi lần xóa bảng tới sau 31/10.
+3. Số thời hạn chờ gọi sàn: em trình ngày 04–06/10 theo lịch đã hẹn, không chốt bằng số của một buổi sáng.
+
 ## 5. Rủi ro và điều em không cam kết
 
 - **pg-boss do một người duy trì**, ra bản rất dày (35 bản nhỏ của dòng 12). Ghim đúng bản, lên bản là một việc có chủ đích kèm migration riêng. Mã nghiệp vụ đứng sau `lib/queue`.
@@ -538,8 +847,12 @@ Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả
 | Kiểm webhook Lazada và đẩy tồn Lazada bằng số liệu thật | **Khi có khách ủy quyền gian Lazada có đơn thật** (anh Trung chốt 02/10). Hiện `webhook_events` nguồn LAZADA là 0 dòng kể từ bước 1 | Đếm sự kiện Lazada trong `webhook_events`. Gian có đơn mới mà không có sự kiện thì kiểm cấu hình đẩy sự kiện của app ISV 142085 trên Lazada Open Platform. Theo một đơn đi trọn đường: nhận → ghi đơn → trừ kho → tồn lên các gian khác. Xem một lượt đẩy tồn lên chính gian Lazada |
 | Đo lại độ trễ `evt.order` trên prod | Khi `webhook_events` có vài nghìn sự kiện | Lấy trễ lớn nhất và số dòng trễ trên 30 giây (bỏ hai dòng sửa tay 01/10). Tỷ lệ cao hơn hẳn số đo ở mục 4.5 thì trình phương án sửa |
 | Thời hạn chờ lệnh gọi sàn | 04–06/10, sau khi có 3–5 ngày số đo `[SanHTTP]` | Trình con số kèm phân bố thật, rồi bật `PLATFORM_HTTP_TIMEOUT_MS` |
-| Bước 5 (hóa đơn): thiết kế lại phần hàng đợi | Trước khi viết mã bước 5 | `invoice.issue` và `invoice.status` chạy lâu theo từng shop nên không để trong việc "gộp theo khóa"; làm theo khuôn đẩy tồn (bảng giữ trạng thái + bộ chạy theo shop + khóa ở database). Trình thiết kế trước |
-| Bước 6 (dọn) phần đẩy tồn | Khoảng 09/10, sau một tuần đường mới chạy ổn | Gỡ vòng quét cũ trong `stock-push-worker.ts`, công tắc `STOCK_PUSH_MODE`, nhánh đối soát trong bảng `shopee_webhook_logs` |
+| Bước 5 (hóa đơn) | Anh Trung duyệt 02/10; làm theo 14 lát ở mục 4.6 F, mỗi lát commit và đẩy riêng | Lát 2 chờ câu đọc trên prod (mục 4.6 C) và trình migration |
+| Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không | Khi anh Trung xóa thử được một tờ trên trang sandbox của MISA, hoặc hỏi MISA | Không dùng lại được thì chủ shop xóa hóa đơn rồi xuất lại từ Hubsell sẽ bị báo trùng mãi (mục 4.6 I) |
+| Bước 6 (dọn) | Ba đợt, mốc ở mục 4.7: 6a thời hạn chờ 04–06/10; 6b webhook và đẩy tồn từ 09/10; 6c hóa đơn sau bước 5 một tuần | Danh sách tệp phải gỡ, câu đọc điều kiện và 3 điểm cần chốt ở mục 4.7 |
+| Tự phát hành: mốc "đã xét tới ngày nào" cho từng shop | Khi có shop phát hành hàng nghìn hóa đơn mỗi ngày | Hiện mỗi lượt đi lại qua mọi đơn đã giao kể từ ngày bật (mục 4.6, bảng A điểm 8) |
+| Tự phát hành: đơn lỗi vĩnh viễn được thử lại mỗi ngày không dừng | Lát 7 của bước 5 (anh Trung nhận đề xuất 02/10) | Dừng tự thử sau 3 lượt, để chủ shop xuất tay |
+| Trang Hàng chờ xuất hóa đơn đếm ba lần trên mọi đơn đã giao của shop | Khi đụng lại trang đó | Ba câu đếm kèm điều kiện "chưa có hóa đơn" nặng dần theo số đơn (thấy khi đọc `routes/tax.ts` 02/10, chưa đo) |
 | Thử hai tiến trình worker chạy cùng lúc | Trước khi thêm worker thứ hai trên prod | Kiểm "một gian không hai tiến trình cùng đẩy" và độ trễ `evt.order` với hai worker thật |
 | Chỉ mục cho lưới quét đẩy tồn | Khi `stock_push_jobs` thường xuyên dồn hàng chục nghìn dòng | Thêm chỉ mục để lấy danh sách gian có dòng tới hạn mà không đọc mọi dòng (đổi database, trình SQL trước) |
 | Rút nhịp 60 giây của pg-boss (`monitorIntervalSeconds`, `queueCacheIntervalSeconds`) | Chỉ khi số đo prod cho thấy hệ quả 2 đáng kể | Đo chi phí của phần giám sát trên database trước; chưa đo |
