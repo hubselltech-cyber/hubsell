@@ -1,6 +1,6 @@
 # Giai đoạn 2: hàng đợi việc bền và webhook 3 sàn
 
-Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; bước nền và webhook ba sàn (bước 0–3) chạy trên prod từ 01/10; bước 4 (đẩy tồn) chạy trên prod từ 02/10 (mục 4.5); bước 5 (hóa đơn): thiết kế lại ở mục 4.6, anh Trung duyệt 02/10, làm theo 14 lát nhỏ, lát 1 viết xong chưa đẩy; bước 6 (dọn): kiểm kê ở mục 4.7, chưa tới ngày làm; việc ghi sổ làm sau ở mục 7.** Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
+Ngày lập: 01/10/2026. Người lập: Claude (Lead Dev). Trạng thái: **thiết kế anh Trung duyệt 01/10 tối; bước nền và webhook ba sàn (bước 0–3) chạy trên prod từ 01/10; bước 4 (đẩy tồn) chạy trên prod từ 02/10 (mục 4.5); bước 5 (hóa đơn): thiết kế lại ở mục 4.6, anh Trung duyệt 02/10, làm theo 14 lát nhỏ, lát 1 trên prod từ 02/10 14:28; bước 6 (dọn): kiểm kê ở mục 4.7, chưa tới ngày làm; việc ghi sổ làm sau ở mục 7.** Thuộc chương trình `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, mục 6.2.
 
 ---
 
@@ -506,7 +506,7 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 
 ### 4.6. Bước 5 (hóa đơn) — khảo sát 02/10/2026 và thiết kế lại phần hàng đợi
 
-**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1 viết xong trên nhánh `hoa-don-buoc-5`, chưa commit; chưa có migration nào.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
+**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1 trên prod từ 02/10 14:28 (`84455f2`); chưa có migration nào.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
 
 **Đã kiểm và chưa kiểm**
 
@@ -664,7 +664,7 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 
 | Lát | Nội dung | Đổi database | Đổi hành vi | Trạng thái |
 |---|---|---|---|---|
-| 1 | Hợp đồng chung cho mọi nhà cung cấp: bảng khả năng, tra ngược theo mã tham chiếu, sổ đăng ký nhà cung cấp (giữ chỗ Hubtax), công tắc phát hành riêng từng bên | Không | Không | Viết xong 02/10 trên nhánh `hoa-don-buoc-5`, chưa commit |
+| 1 | Hợp đồng chung cho mọi nhà cung cấp: bảng khả năng, tra ngược theo mã tham chiếu, sổ đăng ký nhà cung cấp (giữ chỗ Hubtax), công tắc phát hành riêng từng bên | Không | Không | ✅ Trên prod từ 02/10 14:28 (`84455f2`): worker và web lên bình thường, hàng đợi sẵn sàng, không dòng lỗi |
 | 2 | Lưu mã tham chiếu đã gửi; database từ chối hóa đơn gốc trùng và điều chỉnh trùng | Có (1 cột, 2 chỉ mục duy nhất) | Chỉ ở ca hai luồng cùng lúc | Chờ câu đọc prod |
 | 3 | Luật mã tham chiếu của điều chỉnh (lượt hỏng dùng lại mã cũ); kiểm hóa đơn gốc còn hiệu lực bên nhà cung cấp trước khi điều chỉnh | Không | Hết ca điều chỉnh hai lần | |
 | 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh | Không | Không | |
@@ -848,7 +848,7 @@ Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả
 | Đo lại độ trễ `evt.order` trên prod | Khi `webhook_events` có vài nghìn sự kiện | Lấy trễ lớn nhất và số dòng trễ trên 30 giây (bỏ hai dòng sửa tay 01/10). Tỷ lệ cao hơn hẳn số đo ở mục 4.5 thì trình phương án sửa |
 | Thời hạn chờ lệnh gọi sàn | 04–06/10, sau khi có 3–5 ngày số đo `[SanHTTP]` | Trình con số kèm phân bố thật, rồi bật `PLATFORM_HTTP_TIMEOUT_MS` |
 | Bước 5 (hóa đơn) | Anh Trung duyệt 02/10; làm theo 14 lát ở mục 4.6 F, mỗi lát commit và đẩy riêng | Lát 2 chờ câu đọc trên prod (mục 4.6 C) và trình migration |
-| Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không | Khi anh Trung xóa thử được một tờ trên trang sandbox của MISA, hoặc hỏi MISA | Không dùng lại được thì chủ shop xóa hóa đơn rồi xuất lại từ Hubsell sẽ bị báo trùng mãi (mục 4.6 I) |
+| Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không | Đã gửi ticket MISA 02/10 kèm 5 câu khác (`docs/MISA-TICKET-MA-THAM-CHIEU-HOA-DON-DA-XOA.md`); chờ trả lời | Không dùng lại được thì chủ shop xóa hóa đơn rồi xuất lại từ Hubsell sẽ bị báo trùng mãi (mục 4.6 I) |
 | Bước 6 (dọn) | Ba đợt, mốc ở mục 4.7: 6a thời hạn chờ 04–06/10; 6b webhook và đẩy tồn từ 09/10; 6c hóa đơn sau bước 5 một tuần | Danh sách tệp phải gỡ, câu đọc điều kiện và 3 điểm cần chốt ở mục 4.7 |
 | Tự phát hành: mốc "đã xét tới ngày nào" cho từng shop | Khi có shop phát hành hàng nghìn hóa đơn mỗi ngày | Hiện mỗi lượt đi lại qua mọi đơn đã giao kể từ ngày bật (mục 4.6, bảng A điểm 8) |
 | Tự phát hành: đơn lỗi vĩnh viễn được thử lại mỗi ngày không dừng | Lát 7 của bước 5 (anh Trung nhận đề xuất 02/10) | Dừng tự thử sau 3 lượt, để chủ shop xuất tay |
