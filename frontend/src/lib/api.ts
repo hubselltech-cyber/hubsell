@@ -44,6 +44,13 @@ export function getStoredUser(): AuthUser | null {
 export class ApiError extends Error {
   status: number;
   code?: string;
+  /**
+   * Khi backend CHỦ ĐỘNG KHÔNG LÀM một việc (vd không lập hóa đơn điều chỉnh vì
+   * không xác nhận được hóa đơn gốc): chuyện gì đang xảy ra + việc nên làm, tách
+   * riêng để giao diện trình bày thành hộp giải thích. `message` vẫn mang cả hai.
+   */
+  reason?: string;
+  suggestion?: string;
   constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
@@ -132,10 +139,13 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   if (!res.ok) {
     let message = `Máy chủ trả về lỗi ${res.status}`;
     let code: string | undefined;
+    const detail: { reason?: unknown; suggestion?: unknown } = {};
     try {
       const body = await res.json();
       if (body?.error) message = body.error;
       if (body?.code) code = body.code;
+      detail.reason = body?.reason;
+      detail.suggestion = body?.suggestion;
     } catch {
       // giữ thông báo mặc định
     }
@@ -149,7 +159,10 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     ) {
       window.dispatchEvent(new CustomEvent("hubsell:permission-denied"));
     }
-    throw new ApiError(res.status, message, code);
+    const apiError = new ApiError(res.status, message, code);
+    if (typeof detail.reason === "string") apiError.reason = detail.reason;
+    if (typeof detail.suggestion === "string") apiError.suggestion = detail.suggestion;
+    throw apiError;
   }
 
   return res.json();

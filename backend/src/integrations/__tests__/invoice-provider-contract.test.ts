@@ -206,7 +206,17 @@ describe("Tra ngược theo mã tham chiếu (MISA)", () => {
     expect(await new MisaInvoiceProvider(CFG).findByReference("DH-001")).toEqual({
       state: "LOOKUP_FAILED",
       message: "Không gọi được MISA",
+      accountProblem: false,
     });
+  });
+
+  it("không tra được vì SAI TÀI KHOẢN của shop → nói rõ là lỗi tài khoản, kèm câu chỉ chỗ sửa", async () => {
+    statusMock.mockRejectedValue(
+      new InvoiceProviderError("MISA từ chối cấp token", { code: "UnAuthorize", subCodes: ["MisaIdError"], httpStatus: 400 })
+    );
+    const r = await new MisaInvoiceProvider(CFG).findByReference("DH-001");
+    expect(r).toMatchObject({ state: "LOOKUP_FAILED", accountProblem: true });
+    expect(r.state === "LOOKUP_FAILED" && r.message).toContain("mật khẩu meInvoice");
   });
 });
 

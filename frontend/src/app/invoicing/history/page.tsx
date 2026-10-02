@@ -238,6 +238,16 @@ export default function TaxHistoryPage() {
   // xác), FULL = giảm toàn bộ — mặc định theo sàn khi có dữ liệu.
   const [adjustMode, setAdjustMode] = useState<"PLATFORM" | "FULL">("FULL");
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  // Hubsell CHỦ ĐỘNG KHÔNG LẬP hóa đơn điều chỉnh (02/10 — anh Trung: chặn hẳn kèm
+  // lý do và đề xuất cho seller): hiện hộp ở lại tới khi bấm, không dùng toast vì
+  // chủ shop cần đọc kỹ lý do và việc nên làm.
+  const [adjustBlocked, setAdjustBlocked] = useState<{
+    invoiceNo: string | null;
+    reason: string;
+    suggestion: string;
+  } | null>(null);
+  // Cờ mở tách khỏi nội dung: lúc hộp đang mờ dần để đóng, chữ vẫn giữ nguyên.
+  const [adjustBlockedOpen, setAdjustBlockedOpen] = useState(false);
   const openAdjustDialog = (l: {
     id: string;
     invoiceNo: string | null;
@@ -258,11 +268,16 @@ export default function TaxHistoryPage() {
       );
       void load(range);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError && err.message
-          ? err.message
-          : "Không lập được hóa đơn điều chỉnh — thử lại sau"
-      );
+      if (err instanceof ApiError && err.reason && err.suggestion) {
+        setAdjustBlocked({ invoiceNo, reason: err.reason, suggestion: err.suggestion });
+        setAdjustBlockedOpen(true);
+      } else {
+        toast.error(
+          err instanceof ApiError && err.message
+            ? err.message
+            : "Không lập được hóa đơn điều chỉnh — thử lại sau"
+        );
+      }
     } finally {
       setAdjustingId(null);
     }
@@ -885,6 +900,46 @@ export default function TaxHistoryPage() {
             <Button onClick={() => void performAdjust()}>
               <Undo2 className="size-4" />
               Lập hóa đơn điều chỉnh
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hubsell KHÔNG lập hóa đơn điều chỉnh — nêu lý do và việc nên làm. */}
+      <Dialog
+        open={adjustBlockedOpen}
+        onOpenChange={setAdjustBlockedOpen}
+      >
+        {/* Chữ dài + màn hình thấp (điện thoại xoay ngang): hộp tự cuộn, nút luôn với tới được. */}
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            {/* pr-6: chừa chỗ cho nút đóng ở màn hình 320px */}
+            <DialogTitle className="flex items-center gap-2 pr-6">
+              <AlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              Chưa lập hóa đơn điều chỉnh
+            </DialogTitle>
+            <DialogDescription>
+              Hóa đơn số <b>{adjustBlocked?.invoiceNo ?? "?"}</b> — Hubsell chưa
+              gửi lệnh lập hóa đơn nào sang nhà cung cấp.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 text-sm">
+            <div>
+              <p className="font-semibold">Lý do</p>
+              <p className="mt-1 break-words text-muted-foreground">
+                {adjustBlocked?.reason}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/50 p-3">
+              <p className="font-semibold">Việc nên làm</p>
+              <p className="mt-1 break-words">{adjustBlocked?.suggestion}</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button className="h-10 sm:h-8" onClick={() => setAdjustBlockedOpen(false)}>
+              Đã hiểu
             </Button>
           </DialogFooter>
         </DialogContent>

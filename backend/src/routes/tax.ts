@@ -872,7 +872,15 @@ router.post("/invoices/:id/adjust", async (req: AuthRequest, res, next) => {
       finalReason,
       scope
     );
-    res.status(r.httpStatus).json({ log: r.log, error: r.error });
+    // `code` + `reason` + `suggestion` có mặt khi Hubsell chủ động KHÔNG lập (không
+    // xác nhận được hóa đơn gốc...) — giao diện hiện hộp giải thích thay vì toast.
+    res.status(r.httpStatus).json({
+      log: r.log,
+      error: r.error,
+      code: r.errorCode,
+      reason: r.reason,
+      suggestion: r.suggestion,
+    });
   } catch (err) {
     next(err);
   }

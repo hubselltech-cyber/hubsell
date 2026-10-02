@@ -24,6 +24,12 @@
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
+import {
+  planAdjustmentReference,
+  verifyOriginalAtProvider,
+  type AdjustBlock,
+  type AdjustmentReferencePlan,
+} from "./adjust-precheck";
 import { getInvoiceProvider } from "./index";
 import {
   allocateOrderDiscount,
@@ -126,6 +132,73 @@ export function buildAdjustmentLines(
     });
   }
   return out;
+}
+
+/** Kết quả "không lập": lý do + việc nên làm đi riêng từng trường cho giao diện, và gộp vào `error` cho log / toast. */
+function blockedResult(orderCode: string, block: AdjustBlock): IssueOrderResult {
+  console.warn(`[Adjust] Đơn ${orderCode}: KHÔNG lập hóa đơn điều chỉnh (${block.code}) — ${block.reason}`);
+  return {
+    ok: false,
+    httpStatus: block.httpStatus,
+    error: `${block.reason} Việc nên làm: ${block.suggestion}`,
+    errorCode: block.code,
+    errorScope: block.scope,
+    reason: block.reason,
+    suggestion: block.suggestion,
+  };
+}
+
+/**
+ * Một lượt điều chỉnh trước ghi HỎNG nhưng nhà cung cấp thực ra đã lập xong (mất
+ * kết nối lúc nhận kết quả): nối số hóa đơn vào đúng dòng nhật ký của lượt đó,
+ * KHÔNG gọi nhà cung cấp lập thêm. Ngày phát hành lấy theo lúc gửi lượt đó (nhà
+ * cung cấp lập hóa đơn ngay trong lượt gọi).
+ */
+async function recoverIssuedAdjustment(
+  original: { id: string; orderCode: string; invoiceNo: string | null },
+  plan: Extract<AdjustmentReferencePlan, { kind: "RECOVER" }>
+): Promise<IssueOrderResult> {
+  const log = await prisma.invoiceLog.findUniqueOrThrow({ where: { id: plan.logId } });
+  try {
+    const [updated] = await prisma.$transaction([
+      prisma.invoiceLog.update({
+        where: { id: log.id },
+        data: {
+          status: InvoiceLogStatus.ISSUED,
+          invoiceNo: plan.invoiceNo,
+          transactionId: plan.transactionId,
+          errorMessage: null,
+          issuedAt: log.createdAt,
+        },
+      }),
+      prisma.invoiceStatusHistory.create({
+        data: {
+          invoiceLogId: log.id,
+          orderCode: original.orderCode,
+          fromStatus: log.status,
+          toStatus: InvoiceLogStatus.ISSUED,
+          source: "HUBSELL",
+          note: `Nối lại hóa đơn điều chỉnh ĐÃ LẬP ở lượt trước cho HĐ ${original.invoiceNo ?? "?"} (tra theo mã tham chiếu ${plan.refId}): số ${plan.invoiceNo}, mã tra cứu ${plan.transactionId}. Không lập thêm tờ mới.`,
+        },
+      }),
+    ]);
+    console.log(
+      `[Adjust] Đơn ${original.orderCode}: nối lại hóa đơn điều chỉnh số ${plan.invoiceNo} đã lập ở lượt trước (mã ${plan.refId})`
+    );
+    return {
+      ok: true,
+      httpStatus: 201,
+      log: {
+        ...updated,
+        totalAmount: Number(updated.totalAmount),
+        vatAmount: Number(updated.vatAmount),
+        platformTaxWithheld: Number(updated.platformTaxWithheld),
+      },
+    };
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    return { ok: false, httpStatus: 409, error: "Đang có yêu cầu điều chỉnh chờ xử lý cho hóa đơn này." };
+  }
 }
 
 /**
@@ -251,12 +324,28 @@ export async function issueAdjustmentForOrder(
   const vatTotal = lines.reduce((s, l) => s + l.vatAmount, 0);
   const totalAmount = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);
 
-  // RefID mới cho mỗi lượt điều chỉnh (kể cả lượt trước FAILED) — RefID là
-  // khóa chống trùng phía MISA, dùng lại là bị chặn.
-  const priorAttempts = await prisma.invoiceLog.count({
-    where: { adjustmentForLogId: original.id },
+  // ---- Hai bước kiểm với nhà cung cấp TRƯỚC khi ghi sổ (adjust-precheck.ts) ----
+  // 1. Hóa đơn gốc còn hiệu lực bên nhà cung cấp? Không xác nhận được thì CHẶN,
+  //    kèm lý do + việc nên làm (nhà cung cấp có thể không tự kiểm hóa đơn gốc).
+  const originalBlock = await verifyOriginalAtProvider(provider, {
+    invoiceNo: original.invoiceNo,
+    orderCode: original.orderCode,
+    providerRef: original.providerRef,
   });
-  const refId = `${original.orderCode}-DC${priorAttempts + 1}`;
+  if (originalBlock) return blockedResult(original.orderCode, originalBlock);
+
+  // 2. Mã tham chiếu của lượt này. Lượt trước hỏng mà nhà cung cấp thực ra ĐÃ lập
+  //    thì nối lại tờ đó, không lập thêm; lượt hỏng thật thì dùng LẠI mã cũ để
+  //    chốt chặn trùng của nhà cung cấp còn tác dụng.
+  const prior = await prisma.invoiceLog.findMany({
+    where: { adjustmentForLogId: original.id },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, status: true, providerRef: true },
+  });
+  const plan = await planAdjustmentReference(provider, original.orderCode, prior);
+  if (plan.kind === "BLOCK") return blockedResult(original.orderCode, plan.block);
+  if (plan.kind === "RECOVER") return recoverIssuedAdjustment(original, plan);
+  const refId = plan.refId;
 
   // Người mua in lại đúng như hóa đơn gốc: ưu tiên snapshot trên log gốc, rơi
   // về đơn (thông tin khách yêu cầu xuất HĐ có thể đã bị cron BVDLCN xóa sau

@@ -31,6 +31,13 @@ export interface IssueOrderResult {
   /** Mã lỗi NCC + tầm ảnh hưởng (invoice-errors.ts) — worker tự động dùng để ngắt mạch. */
   errorCode?: string;
   errorScope?: InvoiceErrorScope;
+  /**
+   * Khi Hubsell CHỦ ĐỘNG KHÔNG LẬP (vd không xác nhận được hóa đơn gốc trước khi
+   * điều chỉnh): chuyện gì đang xảy ra + việc chủ shop nên làm, tách riêng để giao
+   * diện trình bày. `error` vẫn mang cả hai, gộp thành một câu.
+   */
+  reason?: string;
+  suggestion?: string;
   /** Row InvoiceLog sau cùng (đã cập nhật kết quả) — null khi chặn trước khi ghi sổ. */
   log?: {
     id: string;

@@ -187,7 +187,16 @@ export type ReferenceLookup =
       matches: number;
     }
   | { state: "NOT_FOUND" }
-  | { state: "LOOKUP_FAILED"; message: string };
+  | {
+      state: "LOOKUP_FAILED";
+      /** Vì sao không tra được — câu đã viết cho chủ shop đọc khi adapter dịch được lỗi. */
+      message: string;
+      /**
+       * true = hỏng ở tài khoản / cấu hình của shop (sai mật khẩu, sai mã số thuế...):
+       * thử lại không tự hết, chủ shop phải sửa kết nối. false = sự cố tạm (mạng, NCC bận).
+       */
+      accountProblem: boolean;
+    };
 
 /**
  * Interface mọi adapter NCC hóa đơn phải cài đủ.

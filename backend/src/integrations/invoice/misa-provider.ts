@@ -12,7 +12,7 @@
  */
 
 import { InvoiceLogStatus } from "@prisma/client";
-import { explainInvoiceError } from "./invoice-errors";
+import { explainInvoiceError, InvoiceProviderError } from "./invoice-errors";
 import { clearMisaTokenCache } from "./misa-auth";
 import {
   downloadInvoiceFiles,
@@ -165,7 +165,13 @@ export class MisaInvoiceProvider implements InvoiceProvider {
     try {
       items = await getInvoiceStatuses([reference], this.cfg, "refId");
     } catch (err) {
-      return { state: "LOOKUP_FAILED", message: (err as Error).message };
+      // Lỗi có mã của MISA (đăng nhập sai, tài khoản chưa phân quyền...) thì dịch ra
+      // việc cần làm như lúc phát hành; lỗi mạng / lỗi lạ coi là sự cố tạm.
+      if (err instanceof InvoiceProviderError) {
+        const explained = explainInvoiceError(err);
+        return { state: "LOOKUP_FAILED", message: explained.message, accountProblem: explained.scope === "ACCOUNT" };
+      }
+      return { state: "LOOKUP_FAILED", message: (err as Error).message, accountProblem: false };
     }
     if (items.length === 0) return { state: "NOT_FOUND" };
     const live = items.find((it) => !it.isDeleted && it.publishStatus === 1);
