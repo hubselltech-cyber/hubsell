@@ -824,7 +824,9 @@ router.get("/shopee/callback", async (req, res) => {
     // targetChannelId (luồng Kết nối lại) → callback đối chiếu shop_id với gian
     // đích, tránh ghi token nhầm gian khi trình duyệt đăng nhập sai tài khoản.
     const saved = await handleShopeeCallback(st.ownerId, code, shopId, st.targetChannelId);
-    done({ shopee: "connected", shop: saved.shopName });
+    // isNew LUÔN gửi ("1" gian vừa tạo / "0" gian đã có): FE chỉ nói câu "đang kéo
+    // 3 tháng dữ liệu" với gian mới; thiếu tham số = backend bản cũ, FE giữ cách cũ.
+    done({ shopee: "connected", shop: saved.shopName, isNew: saved.isNew ? "1" : "0" });
   } catch (err) {
     // Ghi log server-side để truy vết — redirect về FE chỉ mang được message ngắn.
     console.error("[shopee/callback] Lỗi xử lý callback:", err);
@@ -898,7 +900,8 @@ router.get("/lazada/callback", async (req, res) => {
     // targetChannelId (luồng Kết nối lại) → callback đối chiếu seller_id với
     // gian đích, tránh ghi token nhầm gian khi đăng nhập sai tài khoản Lazada.
     const saved = await handleLazadaCallback(st.ownerId, code, st.targetChannelId);
-    done({ lazada: "connected", shop: saved.shopName });
+    // isNew: cùng quy ước với callback Shopee ở trên.
+    done({ lazada: "connected", shop: saved.shopName, isNew: saved.isNew ? "1" : "0" });
   } catch (err) {
     // Ghi log server-side để truy vết — redirect về FE chỉ mang được message ngắn.
     console.error("[lazada/callback] Lỗi xử lý callback:", err);

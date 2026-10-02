@@ -36,11 +36,13 @@ import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   ApiError,
   backfillCostPricesToOrders,
+  fetchCatalogPending,
   fetchSkuProducts,
   fillSuggestedCosts,
   getStoredUser,
   getToken,
   updateSkuCostPrice,
+  type CatalogPendingChannel,
   type CostSiblings,
   type SkuChannelFilter,
   type SkuProduct,
@@ -86,6 +88,10 @@ const BANNER_HIDE_KEY = "hubsell_cost_missing_banner_hidden";
 const PAGE_SIZES = [20, 50] as const;
 const PAGE_SIZE_KEY = "hubsell_cost_prices_page_size";
 
+// Nhịp hỏi "danh mục gian mới về chưa" — chỉ là nhịp làm tươi màn hình (câu hỏi
+// nhẹ, một truy vấn theo chủ shop), không phải giới hạn của sàn hay của worker.
+const CATALOG_POLL_MS = 15_000;
+
 // Các tab lọc theo sàn
 const TABS: { key: SkuChannelFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
@@ -101,6 +107,8 @@ export default function CostPricesPage() {
   const [channel, setChannel] = useState<SkuChannelFilter>("all");
   const [items, setItems] = useState<SkuProduct[]>([]);
   const [missingCount, setMissingCount] = useState(0);
+  // Gian vừa nối, danh mục chưa kéo xong lần đầu (worker đang kéo nền).
+  const [catalogPending, setCatalogPending] = useState<CatalogPendingChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
 
@@ -235,6 +243,7 @@ export default function CostPricesPage() {
       const res = await fetchSkuProducts(channel);
       setItems(res.items);
       setMissingCount(res.missingCostCount);
+      setCatalogPending(res.catalogPending ?? []);
       // Nạp giá vốn hiện tại vào ô nhập. Chưa có giá thì để TRỐNG chứ không
       // điền số 0 — để placeholder "Nhập giá vốn" hiện ra, nhìn là biết còn
       // thiếu, thay vì tưởng đã nhập giá vốn bằng 0.
@@ -243,7 +252,15 @@ export default function CostPricesPage() {
         const cost = Number(i.costPrice);
         next[i.skuId] = cost > 0 ? String(cost) : "";
       }
-      setDrafts(next);
+      // Giữ ô đang gõ dở: lượt nạp lại tự động khi danh mục gian mới về có thể
+      // rơi đúng lúc khách đang nhập giá cho gian khác.
+      const focused =
+        document.activeElement instanceof HTMLInputElement
+          ? document.activeElement.dataset.skuId
+          : undefined;
+      setDrafts((prev) =>
+        focused && focused in prev ? { ...next, [focused]: prev[focused] } : next
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -272,6 +289,39 @@ export default function CostPricesPage() {
     }
     load();
   }, [load, router]);
+
+  // Khách bấm "Nhập giá vốn ngay" ở hộp chào sau khi nối gian thường tới đây
+  // TRƯỚC khi worker kéo xong danh mục (nhịp quét 5'). Trong lúc chờ: hỏi bản
+  // nhẹ theo nhịp, gian nào kéo xong (hoặc lỗi / quá hạn chờ) thì nạp lại bảng.
+  useEffect(() => {
+    if (catalogPending.length === 0) return;
+    const waiting = catalogPending.map((p) => p.id).join(",");
+    const timer = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const r = await fetchCatalogPending();
+        if (r.pending.map((p) => p.id).join(",") !== waiting) load();
+      } catch {
+        // lỗi mạng thoáng qua — lượt sau hỏi lại
+      }
+    }, CATALOG_POLL_MS);
+    return () => clearInterval(timer);
+  }, [catalogPending, load]);
+
+  // Gian đang chờ danh mục thuộc tab sàn đang xem.
+  const pendingShops = useMemo(
+    () =>
+      catalogPending.filter(
+        (p) => channel === "all" || p.channelName.toLowerCase() === channel
+      ),
+    [catalogPending, channel]
+  );
+  const pendingNote =
+    pendingShops.length > 0
+      ? `Đang kéo danh mục sản phẩm của gian ${pendingShops
+          .map((p) => p.shopName)
+          .join(", ")} từ sàn, thường xong trong vài phút. Trang tự cập nhật khi xong.`
+      : null;
 
   /**
    * Vừa lưu giá cho một mã mà mã đó còn nằm ở gian khác → gợi ý áp luôn TẠI CHỖ,
@@ -501,6 +551,15 @@ export default function CostPricesPage() {
             </div>
           )}
 
+          {/* Gian vừa nối đang kéo danh mục — bảng đã có SKU của gian khác nên báo
+              bằng một dải gọn; bảng còn trống thì báo ngay trong thân bảng. */}
+          {pendingNote && items.length > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-1.5 text-xs text-sky-800">
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-sky-600 motion-reduce:animate-none" />
+              <p className="min-w-0 flex-1">{pendingNote}</p>
+            </div>
+          )}
+
           {/* ===== THANH BỘ LỌC NÂNG CAO ===== */}
           {!loading && items.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
@@ -580,6 +639,11 @@ export default function CostPricesPage() {
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   Đang tải danh sách SKU…
                 </p>
+              ) : items.length === 0 && pendingNote ? (
+                <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  <Loader2 className="mx-auto mb-2 size-8 animate-spin motion-reduce:animate-none" />
+                  {pendingNote}
+                </div>
               ) : items.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
                   <PackageSearch className="mx-auto mb-2 size-8" />

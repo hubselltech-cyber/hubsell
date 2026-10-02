@@ -2232,13 +2232,29 @@ export interface SkuProduct {
   modelId: string | null;
 }
 
+/** Gian vừa nối, danh mục sản phẩm chưa kéo xong lần đầu (worker đang kéo nền). */
+export interface CatalogPendingChannel {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+}
+
 export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
   return apiFetch<{
     channel: string;
     total: number;
     missingCostCount: number;
+    /** Thiếu = backend bản cũ chưa trả trường này. */
+    catalogPending?: CatalogPendingChannel[];
     items: SkuProduct[];
   }>(`/api/finance/sku-products?channel=${channel}`);
+}
+
+/** Bản nhẹ để hỏi theo nhịp trong lúc chờ danh mục gian mới về. */
+export function fetchCatalogPending() {
+  return apiFetch<{ pending: CatalogPendingChannel[] }>(
+    "/api/finance/sku-products/catalog-pending"
+  );
 }
 
 // Chủ động quét sản phẩm từ các sàn đã kết nối về hệ thống (upsert)
@@ -2664,6 +2680,8 @@ export interface ShopeeConnectedChannel {
   shopName: string;
   externalShopId: string | null;
   status: string;
+  /** true = gian vừa tạo; false = gian đã có. Thiếu = backend bản cũ. */
+  isNew?: boolean;
 }
 
 /**
@@ -3307,6 +3325,8 @@ export interface LazadaConnectedChannel {
   shopName: string;
   externalShopId: string | null;
   status: string;
+  /** true = gian vừa tạo; false = gian đã có. Thiếu = backend bản cũ. */
+  isNew?: boolean;
 }
 
 /**

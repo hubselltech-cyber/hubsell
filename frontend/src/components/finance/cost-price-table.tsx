@@ -486,6 +486,8 @@ function CostCell({
         )}
         placeholder="Nhập giá vốn"
         aria-label={`Giá vốn của ${item.sku}`}
+        // Trang dùng để nhận ra ô đang gõ dở khi tự nạp lại danh sách.
+        data-sku-id={item.skuId}
         value={drafts[item.skuId] ?? ""}
         onValueChange={(d) => onDraftChange(item.skuId, d)}
         onBlur={() => onVariantBlur(item)}

@@ -17,7 +17,10 @@ import {
 import { prisma } from "../lib/prisma";
 import { requirePermission, type AuthRequest } from "../middleware/auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
-import { scheduleAfterProductSync } from "../workers/product-catalog-sync";
+import {
+  findChannelsPendingFirstCatalog,
+  scheduleAfterProductSync,
+} from "../workers/product-catalog-sync";
 import {
   applyChannelCostPrice,
   applyChannelCostPriceIn,
@@ -1235,8 +1238,21 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       missingCostCount: rows.filter(
         (r) => r.status === ChannelProductStatus.ACTIVE && Number(r.costPrice) <= 0
       ).length,
+      // Gian vừa nối, danh mục chưa kéo xong lần đầu → trang báo "đang kéo" thay
+      // vì bảng trống, rồi hỏi nhịp endpoint nhẹ bên dưới để tự nạp lại.
+      catalogPending: await findChannelsPendingFirstCatalog(req.ownerId!),
       items: rows,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/finance/sku-products/catalog-pending — bản NHẸ để trang Giá vốn hỏi
+// theo nhịp trong lúc chờ danh mục gian mới về (không kéo lại cả danh sách SKU).
+router.get("/sku-products/catalog-pending", async (req: AuthRequest, res, next) => {
+  try {
+    res.json({ pending: await findChannelsPendingFirstCatalog(req.ownerId!) });
   } catch (err) {
     next(err);
   }

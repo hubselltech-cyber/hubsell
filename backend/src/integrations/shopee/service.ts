@@ -218,6 +218,8 @@ export interface ShopeeConnectResult {
   shopName: string;
   externalShopId: string | null;
   status: string;
+  /** true = gian vừa được TẠO ở lượt này; false = gian đã có, chỉ cập nhật token. */
+  isNew: boolean;
 }
 
 /**
@@ -331,16 +333,17 @@ export async function handleShopeeCallback(
       ...tokenData,
     },
   });
-  return toResult(saved);
+  return toResult(saved, !existedBefore);
 }
 
-function toResult(c: Channel): ShopeeConnectResult {
+function toResult(c: Channel, isNew: boolean): ShopeeConnectResult {
   return {
     id: c.id,
     channelName: c.channelName,
     shopName: c.shopName,
     externalShopId: c.externalShopId,
     status: c.status,
+    isNew,
   };
 }
 

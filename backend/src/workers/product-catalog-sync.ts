@@ -72,6 +72,33 @@ export async function scheduleAfterProductSync(
     .catch(() => {});
 }
 
+/**
+ * Gian VỪA NỐI mà danh mục chưa kéo xong lần đầu — trang Giá vốn dùng để báo
+ * "đang kéo danh mục" thay vì bảng trống (khách bấm "Nhập giá vốn ngay" ở hộp
+ * chào sau ủy quyền thường tới trước lượt poll 5' của worker).
+ * Chỉ tính trong CLAIM_MS kể từ lúc tạo gian: quá mốc đó worker đã coi lượt kéo
+ * là treo, trang quay về dòng trống cũ (có nút "Đồng bộ từ sàn"). Lượt đầu LỖI
+ * (productSyncError) cũng không tính — đừng bắt khách ngồi chờ thứ không tới.
+ */
+export async function findChannelsPendingFirstCatalog(
+  ownerId: string
+): Promise<{ id: string; channelName: ChannelName; shopName: string }[]> {
+  return prisma.channel.findMany({
+    where: {
+      userId: ownerId,
+      status: "ACTIVE",
+      refreshToken: { not: null },
+      channelName: { in: ONLINE },
+      lastProductSyncAt: null,
+      productSyncError: null,
+      nextProductSyncAt: { not: null },
+      createdAt: { gte: new Date(Date.now() - CLAIM_MS) },
+    },
+    select: { id: true, channelName: true, shopName: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 let started = false;
 let running = false;
 

@@ -194,6 +194,8 @@ export interface LazadaConnectResult {
   shopName: string;
   externalShopId: string | null;
   status: string;
+  /** true = gian vừa được TẠO ở lượt này; false = gian đã có, chỉ cập nhật token. */
+  isNew: boolean;
 }
 
 /**
@@ -268,7 +270,7 @@ export async function handleLazadaCallback(
       where: { id: target.id },
       data: { ...tokenData, externalShopId: shopId },
     });
-    return toResult(updated);
+    return toResult(updated, false);
   }
 
   const existing = await prisma.channel.findFirst({
@@ -284,7 +286,7 @@ export async function handleLazadaCallback(
       where: { id: existing.id },
       data: tokenData,
     });
-    return toResult(updated);
+    return toResult(updated, false);
   }
 
   // Tên gian mặc định = tên phía Lazada, tránh trùng tên gian đã có trong cùng sàn.
@@ -313,16 +315,17 @@ export async function handleLazadaCallback(
       ...tokenData,
     },
   });
-  return toResult(created);
+  return toResult(created, true);
 }
 
-function toResult(c: Channel): LazadaConnectResult {
+function toResult(c: Channel, isNew: boolean): LazadaConnectResult {
   return {
     id: c.id,
     channelName: c.channelName,
     shopName: c.shopName,
     externalShopId: c.externalShopId,
     status: c.status,
+    isNew,
   };
 }
 

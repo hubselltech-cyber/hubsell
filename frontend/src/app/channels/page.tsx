@@ -85,6 +85,31 @@ const RECONNECT_SHOPEE_KEY = "shopee_reconnect_channel_id";
 const RECONNECT_LAZADA_KEY = "lazada_reconnect_channel_id";
 
 /**
+ * Báo kết quả nối gian Shopee / Lazada. Gian MỚI kèm câu nói rõ Hubsell đang kéo
+ * 3 tháng dữ liệu; gian đã có (kết nối lại / ủy quyền lại) thì không kéo lại nên
+ * không nói câu đó.
+ */
+function announceConnected(channelName: ChannelName, shopName: string, isNew: boolean) {
+  const label = CHANNEL_META[channelName].label;
+  toast.success(
+    isNew
+      ? `Đã kết nối ${label}: ${shopName}. ${HISTORY_BACKFILL_NOTICE}`
+      : `Đã kết nối lại ${label}: ${shopName}`,
+    { duration: 12_000 }
+  );
+}
+
+/**
+ * Gian mới hay gian đã có: tin cờ backend ("1"/"0", true/false). Thiếu cờ =
+ * backend bản cũ → suy như trước đây (không phải luồng "Kết nối lại" thì là mới).
+ */
+function resolveIsNew(flag: string | boolean | null | undefined, wasReconnect: boolean) {
+  if (flag === "1" || flag === true) return true;
+  if (flag === "0" || flag === false) return false;
+  return !wasReconnect;
+}
+
+/**
  * Tour hướng dẫn kết nối theo sàn (14/09/2026, anh Trung yêu cầu sau khi tự
  * lạc ở luồng gói Lazada): nút kín đáo trên đầu khối sàn + link trong hộp
  * Kết nối gian hàng mở TourDialog ngay tại chỗ. Sàn chưa có tour thì không hiện.
@@ -235,11 +260,10 @@ function ConnectDialog({
         const reconnectId = sessionStorage.getItem(RECONNECT_LAZADA_KEY) ?? undefined;
         const r = await connectLazadaCode(code, reconnectId);
         sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
-        toast.success(
-          reconnectId
-            ? `Đã kết nối lại Lazada: ${r.channel.shopName}`
-            : `Đã kết nối Lazada: ${r.channel.shopName}. ${HISTORY_BACKFILL_NOTICE}`,
-          { duration: 12_000 }
+        announceConnected(
+          "LAZADA",
+          r.channel.shopName,
+          resolveIsNew(r.channel.isNew, Boolean(reconnectId))
         );
         onOpenChange(false);
         onDone();
@@ -748,79 +772,87 @@ export default function ChannelsPage() {
     const shopee = params.get("shopee");
     const lazada = params.get("lazada");
     if (!shopee && !lazada) return;
-    if (shopee === "connected") {
-      const wasReconnect = sessionStorage.getItem(RECONNECT_SHOPEE_KEY) !== null;
-      sessionStorage.removeItem(RECONNECT_SHOPEE_KEY); // luồng deploy đã xong qua state
-      toast.success(
-        wasReconnect
-          ? `Đã kết nối lại Shopee: ${params.get("shop") || "gian hàng"}`
-          : `Đã kết nối Shopee: ${params.get("shop") || "gian hàng"}. ${HISTORY_BACKFILL_NOTICE}`,
-        { duration: 12_000 }
-      );
-    } else if (shopee === "error") {
-      sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
-      toast.error(`Kết nối Shopee thất bại: ${params.get("msg") || "lỗi không rõ"}`);
-    } else if (shopee === "code" && params.get("code") && params.get("shop_id")) {
-      // Callback Render bật code+shop_id về máy dev — Shopee trả đủ cả hai nên
-      // đổi token luôn, không cần bước dán tay như Lazada. Kèm gian đích nếu
-      // đây là luồng "Kết nối lại" (backend đối chiếu shop_id trước khi ghi).
-      const reconnectId = sessionStorage.getItem(RECONNECT_SHOPEE_KEY) ?? undefined;
-      sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
-      toast.info("Đã nhận code uỷ quyền Shopee — đang đổi token…");
-      connectShopeeCode(params.get("code")!, params.get("shop_id")!, reconnectId)
-        .then(async (r) => {
-          toast.success(reconnectId ? r.message : `${r.message}. ${HISTORY_BACKFILL_NOTICE}`, {
-            duration: 12_000,
-          });
-          setChannels(await fetchChannels());
-        })
-        .catch((err) =>
-          toast.error(
-            `Kết nối Shopee thất bại: ${err instanceof Error ? err.message : "lỗi không rõ"}`
-          )
-        );
-    }
-    if (lazada === "connected") {
-      const wasReconnect = sessionStorage.getItem(RECONNECT_LAZADA_KEY) !== null;
-      sessionStorage.removeItem(RECONNECT_LAZADA_KEY); // luồng deploy đã xong qua state
-      toast.success(
-        wasReconnect
-          ? `Đã kết nối lại Lazada: ${params.get("shop") || "gian hàng"}`
-          : `Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}. ${HISTORY_BACKFILL_NOTICE}`,
-        { duration: 12_000 }
-      );
-    } else if (lazada === "error") {
-      sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
-      toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`, {
-        duration: 10_000,
-      });
-      // App ISV: nguyên nhân hay gặp nhất là gian chưa đăng ký gói — nhắc kèm
-      // hướng dẫn (chỉ khi backend thật sự chạy app ISV).
-      fetchLazadaConnectInfo()
-        .then((i) => {
-          if (!i.subscribeUrl) return;
-          toast.info("Gian Lazada cần có gói Hubsell Miễn phí trên Service Marketplace để ủy quyền", {
-            description:
-              "Bấm Kết nối gian hàng → Lazada; nếu Lazada đưa sang trang gói thì bấm Sử dụng được phép → Xác nhận rồi ủy quyền tiếp.",
-            duration: 12_000,
-          });
-        })
-        .catch(() => {});
-    } else if (lazada === "code" && params.get("code")) {
-      // Callback bật code uỷ quyền về đây thay vì tự đổi token: (a) dev local —
-      // callback Render không verify được state ký ở local; (b) ủy quyền khởi
-      // phát từ phía Lazada (nút "use service" trên Service Marketplace) không
-      // có state → backend không biết chủ shop. Cả hai: mở dialog với code điền
-      // sẵn, người dùng bấm hoàn tất → đổi token bằng JWT của chính họ.
-      setLazadaPrefill(params.get("code"));
-      setConnectOpen(true);
-      toast.info(
-        params.get("via") === "marketplace"
-          ? "Lazada đã ủy quyền xong — bấm “Đổi code lấy token” để gắn gian vào tài khoản Hubsell này."
-          : "Đã nhận code uỷ quyền Lazada — bấm “Đổi code lấy token” để hoàn tất."
-      );
-    }
     window.history.replaceState({}, "", "/channels");
+    // LÙI MỘT NHỊP rồi mới báo: sàn đưa về bằng một lượt tải nguyên trang, lúc
+    // effect này chạy thì <Toaster> (đứng sau trang trong layout) chưa đăng ký
+    // nhận thông báo — toast bắn ngay sẽ rơi mất, khách không thấy cả câu báo
+    // lỗi (đo local 02/10/2026). Cố ý không hủy hẹn giờ khi dọn effect: bản dev
+    // chạy effect hai lần, lần hai query đã dọn nên sẽ không báo lại.
+    setTimeout(() => announce(), 0);
+    function announce() {
+      if (shopee === "connected") {
+        const wasReconnect = sessionStorage.getItem(RECONNECT_SHOPEE_KEY) !== null;
+        sessionStorage.removeItem(RECONNECT_SHOPEE_KEY); // luồng deploy đã xong qua state
+        announceConnected(
+          "SHOPEE",
+          params.get("shop") || "gian hàng",
+          resolveIsNew(params.get("isNew"), wasReconnect)
+        );
+      } else if (shopee === "error") {
+        sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
+        toast.error(`Kết nối Shopee thất bại: ${params.get("msg") || "lỗi không rõ"}`);
+      } else if (shopee === "code" && params.get("code") && params.get("shop_id")) {
+        // Callback Render bật code+shop_id về máy dev — Shopee trả đủ cả hai nên
+        // đổi token luôn, không cần bước dán tay như Lazada. Kèm gian đích nếu
+        // đây là luồng "Kết nối lại" (backend đối chiếu shop_id trước khi ghi).
+        const reconnectId = sessionStorage.getItem(RECONNECT_SHOPEE_KEY) ?? undefined;
+        sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
+        toast.info("Đã nhận code uỷ quyền Shopee — đang đổi token…");
+        connectShopeeCode(params.get("code")!, params.get("shop_id")!, reconnectId)
+          .then(async (r) => {
+            announceConnected(
+              "SHOPEE",
+              r.channel.shopName,
+              resolveIsNew(r.channel.isNew, Boolean(reconnectId))
+            );
+            setChannels(await fetchChannels());
+          })
+          .catch((err) =>
+            toast.error(
+              `Kết nối Shopee thất bại: ${err instanceof Error ? err.message : "lỗi không rõ"}`
+            )
+          );
+      }
+      if (lazada === "connected") {
+        const wasReconnect = sessionStorage.getItem(RECONNECT_LAZADA_KEY) !== null;
+        sessionStorage.removeItem(RECONNECT_LAZADA_KEY); // luồng deploy đã xong qua state
+        announceConnected(
+          "LAZADA",
+          params.get("shop") || "gian hàng",
+          resolveIsNew(params.get("isNew"), wasReconnect)
+        );
+      } else if (lazada === "error") {
+        sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
+        toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`, {
+          duration: 10_000,
+        });
+        // App ISV: nguyên nhân hay gặp nhất là gian chưa đăng ký gói — nhắc kèm
+        // hướng dẫn (chỉ khi backend thật sự chạy app ISV).
+        fetchLazadaConnectInfo()
+          .then((i) => {
+            if (!i.subscribeUrl) return;
+            toast.info("Gian Lazada cần có gói Hubsell Miễn phí trên Service Marketplace để ủy quyền", {
+              description:
+                "Bấm Kết nối gian hàng → Lazada; nếu Lazada đưa sang trang gói thì bấm Sử dụng được phép → Xác nhận rồi ủy quyền tiếp.",
+              duration: 12_000,
+            });
+          })
+          .catch(() => {});
+      } else if (lazada === "code" && params.get("code")) {
+        // Callback bật code uỷ quyền về đây thay vì tự đổi token: (a) dev local —
+        // callback Render không verify được state ký ở local; (b) ủy quyền khởi
+        // phát từ phía Lazada (nút "use service" trên Service Marketplace) không
+        // có state → backend không biết chủ shop. Cả hai: mở dialog với code điền
+        // sẵn, người dùng bấm hoàn tất → đổi token bằng JWT của chính họ.
+        setLazadaPrefill(params.get("code"));
+        setConnectOpen(true);
+        toast.info(
+          params.get("via") === "marketplace"
+            ? "Lazada đã ủy quyền xong — bấm “Đổi code lấy token” để gắn gian vào tài khoản Hubsell này."
+            : "Đã nhận code uỷ quyền Lazada — bấm “Đổi code lấy token” để hoàn tất."
+        );
+      }
+    }
   }, []);
 
   if (denied) {

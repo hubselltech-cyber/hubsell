@@ -39,6 +39,7 @@ import {
 import { BreakdownCard } from "@/components/finance/breakdown-card";
 import { CashFlowTable } from "@/components/finance/cash-flow-table";
 import { MissingCostNote } from "@/components/finance/missing-cost-note";
+import { MissingCostPrompt } from "@/components/finance/missing-cost-prompt";
 import { LedgerPendingNotice, TruncatedNotice } from "@/components/finance/truncated-notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -320,6 +321,8 @@ export default function FinanceAnalyticsPage() {
           Hubsell Finance · Báo cáo dòng tiền
         </p>
       </div>
+      {/* Hộp nhắc nhập giá vốn — theo đúng số "đơn chưa có giá vốn" của kỳ đang xem. */}
+      <MissingCostPrompt summary={data?.breakdown.profit.missingCost} />
     </AppShell>
   );
 }
