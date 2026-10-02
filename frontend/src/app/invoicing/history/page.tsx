@@ -731,7 +731,11 @@ export default function TaxHistoryPage() {
                                   )}
                                   title={l.errorMessage ?? undefined}
                                 >
-                                  {meta.label}
+                                  {/* Tờ gửi đi chưa rõ kết quả: Hubsell đang tự tra lại với nhà
+                                      cung cấp, vài phút là có kết luận — lý do nằm ở tooltip. */}
+                                  {l.status === "PENDING" && !l.transactionId && l.errorMessage
+                                    ? "Đang kiểm lại"
+                                    : meta.label}
                                 </span>
                               </TableCell>
                               <TableCell>

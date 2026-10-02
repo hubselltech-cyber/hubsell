@@ -22,6 +22,7 @@ import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
 import type { InvoiceLine, InvoiceResult } from "./types";
+import { canRecheckLater, keptPendingMessage, OUTCOME_UNKNOWN_CODE, recheckInProgressMessage } from "./unknown-outcome";
 
 export interface IssueOrderResult {
   ok: boolean;
@@ -283,16 +284,22 @@ async function openInvoiceConflict(ownerId: string, orderCode: string): Promise<
       orderCode,
       status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
     },
-    select: { status: true, invoiceNo: true },
+    select: { status: true, invoiceNo: true, transactionId: true, errorMessage: true, provider: true },
   });
   if (!existing) return null;
+  // Dòng đang chờ, chưa có mã tra cứu mà đã mang lời nhắn = lượt trước chưa rõ kết quả,
+  // vòng quét đang kiểm lại (unknown-outcome.ts).
+  const rechecking =
+    existing.status === InvoiceLogStatus.PENDING && !existing.transactionId && !!existing.errorMessage;
   return {
     ok: false,
     httpStatus: 409,
     error:
       existing.status === InvoiceLogStatus.ISSUED
         ? `Đơn này đã có hóa đơn số ${existing.invoiceNo ?? "?"} — muốn phát hành lại phải hủy/thay thế trước.`
-        : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
+        : rechecking
+          ? recheckInProgressMessage(existing.provider)
+          : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
   };
 }
 
@@ -454,15 +461,22 @@ export async function issueInvoiceForOrder(
       });
 
   const issued = result.status === InvoiceLogStatus.ISSUED;
+  // CHƯA RÕ KẾT QUẢ mà nhà cung cấp tra ngược được (lát 6b): GIỮ dòng đang chờ. Dòng
+  // vẫn là vé của đơn nên không ai xuất trùng được; vòng quét invoice-unknown-recheck
+  // tra lại rồi nối số / trả đơn về hàng chờ. Nhà cung cấp không tra ngược được thì
+  // ghi hỏng như lát 5, lời nhắn của adapter bảo chủ shop tự kiểm.
+  const keepPending = !issued && result.outcomeUnknown === true && canRecheckLater(provider);
+  const finalStatus = keepPending ? InvoiceLogStatus.PENDING : result.status;
+  const errorMessage = keepPending ? keptPendingMessage(provider.name) : (result.errorMessage ?? null);
   const [updated] = await prisma.$transaction([
     prisma.invoiceLog.update({
       where: { id: log.id },
       data: {
-        status: result.status,
+        status: finalStatus,
         invoiceNo: result.invoiceNo ?? null,
         transactionId: result.transactionId ?? null,
         vatAmount: result.vatAmount ?? vatTotal,
-        errorMessage: result.errorMessage ?? null,
+        errorMessage,
         issuedAt: issued ? new Date() : null,
       },
     }),
@@ -471,24 +485,26 @@ export async function issueInvoiceForOrder(
         invoiceLogId: log.id,
         orderCode,
         fromStatus: InvoiceLogStatus.PENDING,
-        toStatus: result.status,
+        toStatus: finalStatus,
         source: "HUBSELL",
         note: issued
           ? `Phát hành qua ${provider.name}: số ${result.invoiceNo ?? "?"}, mã tra cứu ${result.transactionId ?? "?"}`
-          : (result.errorMessage ?? null),
+          : keepPending
+            ? `Chưa rõ kết quả, giữ đang chờ để tự kiểm lại theo mã tham chiếu ${orderCode}. Nhà cung cấp báo: ${result.errorMessage ?? "?"}`
+            : (result.errorMessage ?? null),
       },
     }),
     prisma.order.update({
       where: { id: order.id },
-      data: { einvoiceStatus: result.status },
+      data: { einvoiceStatus: finalStatus },
     }),
   ]);
 
   return {
     ok: issued,
     httpStatus: issued ? 201 : 502,
-    error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành"),
-    errorCode: issued ? undefined : result.errorCode,
+    error: issued ? undefined : (errorMessage ?? "NCC từ chối phát hành"),
+    errorCode: issued ? undefined : keepPending ? OUTCOME_UNKNOWN_CODE : result.errorCode,
     errorScope: issued ? undefined : (result.errorScope ?? "ORDER"),
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
     log: {

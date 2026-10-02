@@ -41,6 +41,7 @@ import {
 } from "./issue-order";
 import { isPublishAllowed } from "./misa-safety";
 import type { InvoiceLine } from "./types";
+import { canRecheckLater, keptPendingMessage, OUTCOME_UNKNOWN_CODE, recheckInProgressMessage } from "./unknown-outcome";
 
 /** Ngày yyyy-MM-dd theo giờ VN — định dạng OrgInvDate meInvoice yêu cầu. */
 function vnDate(d: Date): string {
@@ -263,16 +264,21 @@ export async function issueAdjustmentForOrder(
       adjustmentForLogId: original.id,
       status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
     },
-    select: { invoiceNo: true, status: true },
+    select: { invoiceNo: true, status: true, transactionId: true, errorMessage: true, provider: true },
   });
   if (existing) {
+    // Đang chờ, chưa có mã tra cứu mà đã mang lời nhắn = lượt trước chưa rõ kết quả, đang được kiểm lại.
+    const rechecking =
+      existing.status === InvoiceLogStatus.PENDING && !existing.transactionId && !!existing.errorMessage;
     return {
       ok: false,
       httpStatus: 409,
       error:
         existing.status === InvoiceLogStatus.ISSUED
           ? `Hóa đơn gốc đã được điều chỉnh bởi hóa đơn số ${existing.invoiceNo ?? "?"}.`
-          : "Đang có yêu cầu điều chỉnh chờ xử lý cho hóa đơn này.",
+          : rechecking
+            ? recheckInProgressMessage(existing.provider)
+            : "Đang có yêu cầu điều chỉnh chờ xử lý cho hóa đơn này.",
     };
   }
 
@@ -405,15 +411,20 @@ export async function issueAdjustmentForOrder(
   });
 
   const issued = result.status === InvoiceLogStatus.ISSUED;
+  // Chưa rõ kết quả mà nhà cung cấp tra ngược được (lát 6b): giữ dòng đang chờ cho
+  // vòng quét kiểm lại — xem issue-order.ts cùng chỗ.
+  const keepPending = !issued && result.outcomeUnknown === true && canRecheckLater(provider);
+  const finalStatus = keepPending ? InvoiceLogStatus.PENDING : result.status;
+  const errorMessage = keepPending ? keptPendingMessage(provider.name) : (result.errorMessage ?? null);
   const [updated] = await prisma.$transaction([
     prisma.invoiceLog.update({
       where: { id: log.id },
       data: {
-        status: result.status,
+        status: finalStatus,
         invoiceNo: result.invoiceNo ?? null,
         transactionId: result.transactionId ?? null,
         vatAmount: result.vatAmount ?? vatTotal,
-        errorMessage: result.errorMessage ?? null,
+        errorMessage,
         issuedAt: issued ? new Date() : null,
       },
     }),
@@ -422,11 +433,13 @@ export async function issueAdjustmentForOrder(
         invoiceLogId: log.id,
         orderCode: original.orderCode,
         fromStatus: InvoiceLogStatus.PENDING,
-        toStatus: result.status,
+        toStatus: finalStatus,
         source: "HUBSELL",
         note: issued
           ? `Điều chỉnh GIẢM cho HĐ ${original.invoiceNo} (${reason}): số ${result.invoiceNo ?? "?"}, mã tra cứu ${result.transactionId ?? "?"}`
-          : (result.errorMessage ?? null),
+          : keepPending
+            ? `Chưa rõ kết quả, giữ đang chờ để tự kiểm lại theo mã tham chiếu ${refId}. Nhà cung cấp báo: ${result.errorMessage ?? "?"}`
+            : (result.errorMessage ?? null),
       },
     }),
   ]);
@@ -434,7 +447,8 @@ export async function issueAdjustmentForOrder(
   return {
     ok: issued,
     httpStatus: issued ? 201 : 502,
-    error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành hóa đơn điều chỉnh"),
+    error: issued ? undefined : (errorMessage ?? "NCC từ chối phát hành hóa đơn điều chỉnh"),
+    errorCode: keepPending ? OUTCOME_UNKNOWN_CODE : undefined,
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
     log: {
       ...updated,

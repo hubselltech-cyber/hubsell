@@ -506,7 +506,7 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 
 ### 4.6. Bước 5 (hóa đơn) — khảo sát 02/10/2026 và thiết kế lại phần hàng đợi
 
-**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a viết xong, chờ anh gật mới đẩy (mục L); việc kế là 6b.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
+**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a trên prod từ 03/10 00:09 (`ca31b33`, mục L); 6b viết xong 03/10 rạng sáng, chờ anh duyệt migration rồi mới đẩy (mục M); việc kế là lát 7.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
 
 **Đã kiểm và chưa kiểm**
 
@@ -688,8 +688,8 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | 3 | Hai bước kiểm trước khi lập điều chỉnh (`integrations/invoice/adjust-precheck.ts`). (a) Hóa đơn gốc còn hiệu lực bên nhà cung cấp: đã xóa / không thấy / lệch số / chưa phát hành xong thì CHẶN HẲN, kèm lý do và việc nên làm cho chủ shop (anh Trung chốt 02/10); không tra được thì dừng, báo thử lại. (b) Tra lại mọi mã tham chiếu của các lượt hỏng trước: thấy tờ đã lập thì NỐI LẠI số hóa đơn vào đúng dòng của lượt đó, không lập thêm; lượt mới dùng LẠI mã của lượt hỏng gần nhất, chỉ sang số mới khi tờ trước đã lập thật. Giao diện: trang Lịch sử hiện hộp "Chưa lập hóa đơn điều chỉnh" với Lý do + Việc nên làm, ở lại tới khi bấm | Không | Hết ca điều chỉnh hai lần; thêm ca chặn. Nhà cung cấp không tra ngược được thì giữ cách cũ tới lát 5–6 | ✅ Trên prod từ 02/10 15:30 (`5d7c560`): worker 15:30, web 15:31 (không còn migration chờ, hàng đợi sẵn sàng, không lỗi mới), giao diện trên app.hubsell.tech đã có hộp chặn. Prod chưa shop nào dùng hóa đơn nên chưa có lượt điều chỉnh thật nào đi qua. Đã kiểm trước khi đẩy: test `invoice-adjust-precheck.test.ts` 21 ca (adapter giả + database dev); gọi thật sandbox MISA (chỉ tra, không lập): hóa đơn gốc đúng số cho qua, lệch số / không thấy bị chặn, lượt trước đã lập được nhận ra để nối lại; hộp chặn soi trên trình duyệt local ở 320 / 375 / 667×375 / 768 / 1366 / 1920 và giao diện tối. Không tra được vì tài khoản nhà cung cấp của shop sai thì hộp chỉ chỗ sửa kết nối, không bảo "thử lại sau" |
 | 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh (`integrations/invoice/provider-http.ts`; bốn lệnh MISA của luồng hóa đơn đầu ra: lấy token, phát hành, hỏi trạng thái / tải tệp, lấy ký hiệu). Mỗi 15 phút in dòng `[NccHTTP] MISA <loại lệnh> ...` | Không | Không | ✅ Trên prod từ 02/10 14:38 (`6d8bc4d`): worker và web lên bình thường. Prod chưa shop nào dùng hóa đơn nên chưa có dòng `[NccHTTP]` nào; dòng đầu tiên sẽ có khi có shop phát hành. Làm trước lát 2 và 3 vì không phụ thuộc và không đổi hành vi. Chưa đi qua cửa: eSign, máy tính tiền, hóa đơn đầu vào (không nằm trong luồng phát hành hiện nay) |
 | 5 | Adapter báo rõ "chưa rõ kết quả" (`InvoiceResult.outcomeUnknown`); nhà cung cấp trả lời thành công mà không kèm số lẫn mã tra cứu thì không còn ghi là đã phát hành. Chi tiết ở mục K | Không | Chỉ ở ca lỗi: dòng nhật ký vẫn ghi "hỏng" nhưng câu báo nói rõ là chưa rõ đã lập hay chưa và bảo làm lại thao tác; ca "thành công không có số" từ "đã phát hành" thành "hỏng, chưa rõ" | ✅ Trên prod từ 02/10 23:22 (`c73fe59`): web đổi bản 23:22:21, không migration; 23:26 các gian vẫn đồng bộ bình thường sau khi worker lên lại. Prod chưa shop nào phát hành nên chưa có lượt thật. Test `invoice-outcome-unknown.test.ts` 31 ca + 1 ca database trong `invoice-duplicate-guard.test.ts`; đã thử sandbox MISA (mục K) |
-| 6a | Thời hạn chờ cho mọi lệnh đi qua cửa gọi nhà cung cấp (`INVOICE_HTTP_TIMEOUT_MS`, mặc định 60 giây, `0` = tắt). Quá hạn ở lệnh phát hành = chưa rõ kết quả; quá hạn ở bước lấy token = chưa gửi. Chi tiết ở mục L | Không | Lệnh treo bị cắt sau 60 giây thay vì khoảng 300 giây | Viết xong 02/10 đêm trên nhánh `hoa-don-buoc-5`, CHƯA đẩy (chờ anh Trung gật). Tách khỏi 6b và làm TRƯỚC vì 6b cần biết một lệnh đang chạy kéo dài tối đa bao lâu |
-| 6b | Tờ chưa rõ kết quả giữ "đang chờ"; vòng quét trong worker tra lại theo bảng khả năng (thấy tờ → nối số; đã xóa → đã hủy; không thấy → hỏng, đơn quay lại hàng chờ; không tra được → giữ, thử lại sau). Dọn luôn dòng "đang chờ" mồ côi do tiến trình chết | Có: MỘT chỉ mục riêng phần trên `InvoiceLog` cho dòng "đang chờ" chưa có mã tra cứu (bảng lát cũ ghi "không"; khi đọc mã thấy không chỉ mục nào tìm được các dòng này mà không quét qua mọi dòng đã phát hành) | Chỉ ở ca lỗi | Chưa làm. Anh Trung duyệt 02/10 đêm: thêm chỉ mục (SQL trình riêng), tra ra "không có tờ nào" thì KHÔNG tự gửi lại từ vòng quét (để lát 8) |
+| 6a | Thời hạn chờ cho mọi lệnh đi qua cửa gọi nhà cung cấp (`INVOICE_HTTP_TIMEOUT_MS`, mặc định 60 giây, `0` = tắt). Quá hạn ở lệnh phát hành = chưa rõ kết quả; quá hạn ở bước lấy token = chưa gửi. Chi tiết ở mục L | Không | Lệnh treo bị cắt sau 60 giây thay vì khoảng 300 giây | ✅ Trên prod từ 03/10 00:09 (`ca31b33`): web đổi bản 00:09:39, không migration, 00:11 các gian vẫn đồng bộ, 0 gian lỗi liên tiếp. Tách khỏi 6b và làm TRƯỚC vì 6b cần biết một lệnh đang chạy kéo dài tối đa bao lâu |
+| 6b | Tờ chưa rõ kết quả giữ "đang chờ"; vòng quét trong worker tra lại theo bảng khả năng (thấy tờ → nối số; đã xóa → đã hủy; không thấy → hỏng, đơn quay lại hàng chờ; không tra được → giữ, thử lại sau). Dọn luôn dòng "đang chờ" mồ côi do tiến trình chết | Có: MỘT chỉ mục riêng phần trên `InvoiceLog` cho dòng "đang chờ" chưa có mã tra cứu (bảng lát cũ ghi "không"; khi đọc mã thấy không chỉ mục nào tìm được các dòng này mà không quét qua mọi dòng đã phát hành) | Chỉ ở ca lỗi | Viết xong 03/10 rạng sáng trên nhánh `hoa-don-buoc-5`, CHƯA đẩy: chờ anh Trung duyệt migration `20261003001000_invoice_unknown_pending_idx`. Anh duyệt 02/10 đêm: thêm chỉ mục (SQL trình riêng), tra ra "không có tờ nào" thì KHÔNG tự gửi lại từ vòng quét (để lát 8). Chi tiết ở mục M |
 | 7 | Đơn lỗi vĩnh viễn: dừng tự thử sau 3 lượt | Không | Có | |
 | 8 | Làn theo shop cho TỰ PHÁT HÀNH (thay vòng chung một cờ), công tắc `INVOICE_MODE` | Có (bảng `invoice_lanes`) | Có: các shop chạy song song | Đưa lên hai lần |
 | 9 | Xuất HÀNG LOẠT qua làn + giao diện tiến độ | Có (bảng `invoice_requests`, hàng đợi tín hiệu) | Có | Đưa lên hai lần |
@@ -806,6 +806,38 @@ Thời gian tệ nhất của một lượt phát hành sau lát này: lấy tok
 Kiểm: test `invoice-provider-timeout.test.ts` 11 ca chạy với MỘT MÁY CHỦ HTTP THẬT trên máy (nhận lệnh rồi im lặng; trả tiêu đề rồi ngừng giữa thân), không giả `fetch`. Sandbox MISA 02/10 đêm (`scripts/misa-outcome-unknown-probe.ts timeout 150`, lập 1 tờ sandbox 00000140): đặt thời hạn 150 ms, ngắn hơn thời gian MISA xử lý; lệnh bị cắt sau 165 ms, adapter báo chưa rõ. **Tra ngược 3 giây sau: MISA ĐÃ LẬP tờ đó dù Hubsell đã cắt lệnh.** Làm lại với đúng mã cũ thì nối đúng số, MISA chỉ có một tờ. Đây là bằng chứng thật cho quy tắc "quá hạn là chưa rõ, không phải chưa lập".
 
 Chưa kiểm: MISA thật im lặng tới 60 giây (không tạo được trên sandbox); thời hạn 60 giây so với thời gian phát hành thật trên prod (chưa có số đo).
+
+**M. Lát 6b: tờ chưa rõ kết quả giữ "đang chờ" rồi tự tra lại (viết 03/10/2026 rạng sáng)**
+
+Hai chỗ đổi:
+
+1. `issue-order.ts` và `adjust-order.ts`: adapter báo chưa rõ kết quả VÀ nhà cung cấp tra ngược được (bảng khả năng) thì dòng nhật ký GIỮ "đang chờ" kèm lời nhắn, không ghi "hỏng". Dòng đang chờ vẫn là vé của đơn (chỉ mục duy nhất của lát 2) nên bấm lại bị chặn trước khi gọi nhà cung cấp, với câu "đang kiểm lại, vài phút nữa xem kết quả". Người gọi vẫn nhận lỗi (HTTP 502, mã `HUBSELL_OUTCOME_UNKNOWN`). Nhà cung cấp không tra ngược được thì ghi "hỏng" như lát 5.
+2. Vòng quét `workers/invoice-unknown-recheck.ts` (chỉ chạy ở vai worker, mỗi 60 giây; `INVOICE_UNKNOWN_RECHECK_SECONDS=0` tắt): tìm dòng "đang chờ" chưa có mã tra cứu đã quá 5 phút, tra ngược theo mã tham chiếu đã gửi, ghi kết luận. Luật nằm ở `integrations/invoice/unknown-outcome.ts`, chỉ đọc bảng khả năng, không biết gì về MISA.
+
+| Kết quả tra | Dòng nhật ký | Đơn (chỉ với hóa đơn gốc) |
+|---|---|---|
+| Thấy tờ đã phát hành | Đã phát hành, nối số + mã tra cứu, ngày phát hành = lúc gửi lượt đó | Đã phát hành |
+| Tờ đã bị xóa bên nhà cung cấp | Đã hủy | Đã hủy |
+| Không có tờ nào | Hỏng, lời nhắn nói đơn đã quay lại hàng chờ; báo chuông một lần | Hỏng (quay lại Hàng chờ xuất) |
+| Có tờ nhưng chưa phát hành xong | Giữ đang chờ; có mã tra cứu thì ghi mã, vòng hỏi trạng thái theo tiếp | Đang chờ |
+| Không tra được (mạng, sai tài khoản, shop đã gỡ cấu hình) | Giữ đang chờ, ghi lý do, 15 phút sau thử lại | Đang chờ |
+| Nhà cung cấp không tra ngược được (dòng mồ côi) | Hỏng, lời nhắn bảo tự kiểm bên nhà cung cấp trước khi làm lại; báo chuông | Hỏng |
+
+Dòng "đang chờ" mồ côi do tiến trình chết giữa lúc gọi (trước đây kẹt vĩnh viễn, làm đơn biến khỏi Hàng chờ xuất — điểm A.4) đi cùng đường này.
+
+Quy mô và an toàn:
+
+- Một câu đọc cho mọi shop, đi theo chỉ mục riêng phần `InvoiceLog_unknown_pending_idx` (migration `20261003001000_invoice_unknown_pending_idx`), mỗi lượt tối đa 50 dòng, 4 shop cùng lúc, trong một shop thì lần lượt. Shop nào hỏi không được thì bỏ phần còn lại của shop đó trong lượt và hoãn 15 phút.
+- Mốc "đã hỏi lúc nào" dùng lại cột `cqtCheckedAt` có sẵn (không thêm cột). Khi nối được số thì đặt lại về trống để vòng hỏi trạng thái cơ quan thuế xét tờ đó ngay lượt kế.
+- Mọi lượt ghi có điều kiện "dòng còn đang chờ và chưa có mã tra cứu": hai worker (hoặc bản cũ và bản mới lúc đưa lên) cùng xử lý một dòng thì chỉ một bên ghi được. Không dùng khóa trong bộ nhớ.
+- Vòng quét chỉ ĐỌC phía nhà cung cấp, không bao giờ gửi lệnh phát hành. Tra ra "không có tờ nào" thì chỉ trả đơn về hàng chờ (anh Trung chốt 02/10); tự phát hành nhặt lại theo luật cũ (một lần mỗi 24 giờ) cho tới lát 8.
+- Hai số tự chọn mới: nhịp quét 60 giây, hỏi lại sau 15 phút. Mốc 5 phút đã chốt ở mục D.
+
+Giao diện: trang Lịch sử, dòng "đang chờ" đang được kiểm lại hiện nhãn "Đang kiểm lại" thay cho "Chờ phát hành"; lý do nằm ở chú thích khi rê chuột (có sẵn). Chưa soi trên trình duyệt (chỉ đổi chữ trong một nhãn có sẵn, cùng độ dài).
+
+Kiểm: test `invoice-unknown-recheck-db.test.ts` 12 ca trên database dev với nhà cung cấp giả có "sổ" riêng (lệnh tới nơi, tờ đã lập, mất câu trả lời); cả bộ 1.178 test qua. Sandbox MISA 03/10 (`scripts/misa-unknown-recheck-probe.ts`, lập 1 tờ 00000141) với adapter MISA thật và database dev: lệnh phát hành bị cắt vì quá hạn 150 ms, dòng "đang chờ" được tra lại và NỐI đúng số + mã tra cứu của tờ MISA đã lập; dòng mang mã chưa từng gửi ra "không có tờ nào" và về "hỏng"; tra lại lần hai trên dòng đã có kết luận thì bỏ qua.
+
+Chưa kiểm: câu đọc của vòng quét có đi đúng chỉ mục không (công cụ chặn em áp migration vào database dev, chờ anh chạy rồi em xem kế hoạch chạy của câu); vòng quét chạy theo nhịp thật trong worker (mới gọi trực tiếp từng lượt); hai tiến trình worker thật; nhãn mới trên trình duyệt.
 
 ### 4.7. Bước 6 (dọn) — kiểm kê 02/10/2026
 

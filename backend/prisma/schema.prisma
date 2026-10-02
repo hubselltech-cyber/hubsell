@@ -1170,6 +1170,10 @@ model InvoiceLog {
   //   InvoiceLog_open_adjustment_key (adjustmentForLogId)  WHERE adjustmentForLogId IS NOT NULL
   //                                                        AND status IN ('PENDING','ISSUED')
   // Luồng thứ hai ghi dòng "đang chờ" cho cùng đơn / cùng hóa đơn gốc bị từ chối (P2002).
+  //
+  // Chỉ mục RIÊNG PHẦN cho vòng quét tờ chưa rõ kết quả (workers/invoice-unknown-recheck.ts),
+  // cũng chỉ có trong SQL migration 20261003001000_invoice_unknown_pending_idx:
+  //   InvoiceLog_unknown_pending_idx (createdAt) WHERE status = 'PENDING' AND transactionId IS NULL
 }
 
 /// HÓA ĐƠN ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ "Xử lý hóa đơn đầu vào"

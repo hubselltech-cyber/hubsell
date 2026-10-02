@@ -23,6 +23,7 @@
 
 import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";
 import { startInvoiceStatusSyncWorker } from "./invoice-status-sync";
+import { startInvoiceUnknownRecheckWorker } from "./invoice-unknown-recheck";
 import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
 import { startStockPushWorker } from "../integrations/stock-push-worker";
@@ -91,6 +92,8 @@ export function startAllWorkers(): void {
   startInvoiceAutoIssueWorker();
   // Đồng bộ trạng thái CQT của hóa đơn (meInvoice không có webhook).
   startInvoiceStatusSyncWorker();
+  // Tra lại các tờ hóa đơn gửi đi mà chưa rõ kết quả (bước 5 lát 6b).
+  startInvoiceUnknownRecheckWorker();
   // Nhắc hạn kê khai thuế quý qua chuông.
   startTaxDeadlineReminderWorker();
   // Nhắc gia hạn kỳ dịch vụ Lazada (app ISV: token sống theo kỳ đăng ký 6 tháng).
