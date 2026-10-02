@@ -667,7 +667,7 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | 1 | Hợp đồng chung cho mọi nhà cung cấp: bảng khả năng, tra ngược theo mã tham chiếu, sổ đăng ký nhà cung cấp (giữ chỗ Hubtax), công tắc phát hành riêng từng bên | Không | Không | ✅ Trên prod từ 02/10 14:28 (`84455f2`): worker và web lên bình thường, hàng đợi sẵn sàng, không dòng lỗi |
 | 2 | Lưu mã tham chiếu đã gửi; database từ chối hóa đơn gốc trùng và điều chỉnh trùng | Có (1 cột, 2 chỉ mục duy nhất) | Chỉ ở ca hai luồng cùng lúc | Chờ câu đọc prod |
 | 3 | Luật mã tham chiếu của điều chỉnh (lượt hỏng dùng lại mã cũ); kiểm hóa đơn gốc còn hiệu lực bên nhà cung cấp trước khi điều chỉnh | Không | Hết ca điều chỉnh hai lần | |
-| 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh | Không | Không | |
+| 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh (`integrations/invoice/provider-http.ts`; bốn lệnh MISA của luồng hóa đơn đầu ra: lấy token, phát hành, hỏi trạng thái / tải tệp, lấy ký hiệu). Mỗi 15 phút in dòng `[NccHTTP] MISA <loại lệnh> ...` | Không | Không | Viết xong 02/10 trên nhánh `hoa-don-buoc-5`, chưa đẩy. Làm trước lát 2 và 3 vì không phụ thuộc và không đổi hành vi. Chưa đi qua cửa: eSign, máy tính tiền, hóa đơn đầu vào (không nằm trong luồng phát hành hiện nay) |
 | 5 | Adapter báo rõ "chưa rõ kết quả"; nhà cung cấp trả lời thành công mà không kèm số lẫn mã tra cứu thì không còn ghi là đã phát hành | Không | Chỉ ở ca lỗi | |
 | 6 | Tờ chưa rõ kết quả giữ "đang chờ" rồi tra lại theo bảng khả năng; đặt thời hạn chờ gọi nhà cung cấp | Không | Chỉ ở ca lỗi | |
 | 7 | Đơn lỗi vĩnh viễn: dừng tự thử sau 3 lượt | Không | Có | |

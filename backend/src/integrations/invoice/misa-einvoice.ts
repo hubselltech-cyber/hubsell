@@ -29,6 +29,7 @@ import { esignLogin } from "./misa-esign";
 import { InvoiceProviderError, providerErrorFromBody } from "./invoice-errors";
 import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" dùng chung
 import { assertPublishAllowed } from "./misa-safety";
+import { providerFetch } from "./provider-http";
 import type { CreateInvoiceInput } from "./types";
 
 /**
@@ -390,7 +391,7 @@ export async function publishStandardInvoice(
   const url = `${misaApiBase()}${ENDPOINTS.publish}`;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await providerFetch("MISA", "publishing", url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -483,7 +484,8 @@ async function misaPost(
   const url = `${misaApiBase()}${path}${qs ? `?${qs}` : ""}`;
   let res: Response;
   try {
-    res = await fetch(url, {
+    // Loại lệnh = đoạn cuối của path ("/invoice/status" → "status", "/invoice/Download" → "download").
+    res = await providerFetch("MISA", (path.split("/").pop() ?? path).toLowerCase(), url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -533,7 +535,7 @@ export async function listInvoiceTemplates(
   const url = `${misaApiBase()}${ENDPOINTS.templates}`;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await providerFetch("MISA", "templates", url, {
       headers: {
         "Content-Type": "application/json",
         ClientID: clientId,

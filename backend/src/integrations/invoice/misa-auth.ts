@@ -18,6 +18,7 @@
  */
 
 import { InvoiceProviderError, providerErrorFromBody } from "./invoice-errors";
+import { providerFetch } from "./provider-http";
 
 const TOKEN_SAFETY_MS = 60 * 1000; // làm mới sớm 60s trước khi token hết hạn
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000; // MISA không trả expires_in thì coi như 30 phút
@@ -127,7 +128,7 @@ export async function getMisaAccessToken(
   const url = `${misaApiBase()}/invoice/token`;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await providerFetch("MISA", "token", url, {
       method: "POST",
       headers: misaAuthHeaders(effective),
       body: JSON.stringify(buildAuthBody(effective)),
