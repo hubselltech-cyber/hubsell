@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 import { ReturnSolution, ReturnStatus } from "@prisma/client";
 import {
   isDeadReturn,
+  isShopeeReturnParcelDelivered,
+  latestAliveReturn,
   planReturnUpdate,
   returnSolutionOf,
   type ReturnFlagState,
@@ -309,5 +311,57 @@ describe("planReturnUpdate — số của sàn", () => {
       NOW_SEC
     );
     expect(plan.data).toEqual({});
+  });
+});
+
+// ---- 02/10/2026: quét bù lịch sử theo mã đơn ----
+describe("planReturnUpdate — quét bù (skipAwaiting)", () => {
+  const done = {
+    return_sn: "R9",
+    status: "ACCEPTED",
+    return_solution: 0,
+    refund_amount: 249000,
+    create_time: NOW_SEC - 30 * 86400,
+    update_time: NOW_SEC - 25 * 86400,
+    tracking_number: "SPXVN9",
+    item: [{ item_id: 1, model_id: 2, amount: 1 }],
+  };
+
+  it("skipAwaiting: vẫn ghi giải pháp / tiền hoàn / trạng thái / SKU trả, KHÔNG cắm AWAITING", () => {
+    const plan = planReturnUpdate([done], noneOrder, NOW_SEC, { skipAwaiting: true });
+    expect(plan.flagged).toBe(false);
+    expect(plan.data.returnStatus).toBeUndefined();
+    expect(plan.data.returnRequestedAt).toBeUndefined();
+    expect(plan.data.returnSolution).toBe(ReturnSolution.RETURN_REFUND);
+    expect(plan.data.platformRefundAmount).toBe(249000);
+    expect(plan.data.platformReturnStatus).toBe("ACCEPTED");
+    expect(plan.itemReturns?.size).toBe(1);
+    expect(plan.latestAlive?.return_sn).toBe("R9");
+  });
+
+  it("không có skipAwaiting → hành vi cũ: cắm AWAITING", () => {
+    const plan = planReturnUpdate([done], noneOrder, NOW_SEC);
+    expect(plan.flagged).toBe(true);
+    expect(plan.data.returnStatus).toBe(ReturnStatus.AWAITING);
+  });
+
+  it("latestAliveReturn bỏ yêu cầu chết, lấy cái cập nhật mới nhất", () => {
+    expect(
+      latestAliveReturn([
+        { return_sn: "A", status: "CANCELLED", update_time: 30 },
+        { return_sn: "B", status: "ACCEPTED", update_time: 10 },
+        { return_sn: "C", status: "PROCESSING", update_time: 20 },
+      ])?.return_sn
+    ).toBe("C");
+    expect(latestAliveReturn([{ status: "CLOSED" }])).toBeNull();
+  });
+
+  it("isShopeeReturnParcelDelivered: nhận cả ba tên trường, chỉ DELIVERY_DONE / Delivered là đã về", () => {
+    expect(isShopeeReturnParcelDelivered({ reverse_logistics_status: "LOGISTICS_DELIVERY_DONE" })).toBe(true);
+    expect(isShopeeReturnParcelDelivered({ reverse_logistic_status: "Delivered" })).toBe(true);
+    expect(isShopeeReturnParcelDelivered({ logistics_status: "LOGISTICS_DELIVERY_DONE" })).toBe(true);
+    expect(isShopeeReturnParcelDelivered({ reverse_logistics_status: "LOGISTICS_LOST" })).toBe(false);
+    expect(isShopeeReturnParcelDelivered({})).toBe(false);
+    expect(isShopeeReturnParcelDelivered(null)).toBe(false);
   });
 });

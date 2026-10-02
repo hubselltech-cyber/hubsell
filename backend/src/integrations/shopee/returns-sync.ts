@@ -16,9 +16,18 @@
 //
 // An toàn dữ liệu: CHỈ đổi qua lại NONE ↔ AWAITING. Đơn kho đã xử lý
 // (RECEIVED trở đi) tuyệt đối không đụng — không regress tiến độ nhập kho.
+//
+// QUÉT BÙ THEO MÃ ĐƠN (02/10/2026, cùng bệnh với TikTok — xem
+// tiktok/returns-sync.ts): lượt quét trên chỉ nhìn 2 / 7 ngày, yêu cầu hoàn đã
+// xong TRƯỚC ngày nối gian không bao giờ được đọc, trong khi sao kê kéo cả lịch
+// sử → đơn có tiền hoàn mà không có bản ghi hoàn bị Lãi/Lỗ coi là khách giữ
+// hàng, trừ nguyên giá vốn (prod 02/10: 237 đơn / 10 gian). get_return_list
+// KHÔNG lọc được theo order_sn (docs: chỉ có khoảng ngày tạo / cập nhật tối đa
+// 15 ngày + trạng thái), nên backfillShopeeReturnsByOrder đi hai bước:
+// get_escrow_detail (order_sn) → return_order_sn_list → get_return_detail.
 // ============================================================
 
-import type { Channel } from "@prisma/client";
+import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnSolution, ReturnStatus } from "@prisma/client";
 import { notify } from "../../services/notifications";
 import { prisma } from "../../lib/prisma";
@@ -34,6 +43,7 @@ import {
   getEscrowDetail,
   shopeeChannelSku,
   getTrackingNumber,
+  type ShopeeReturnDetail,
   type ShopeeReturnEntry,
 } from "./client";
 import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
@@ -98,6 +108,33 @@ export function returnSolutionOf(e: ShopeeReturnEntry): ReturnSolution | null {
   return null;
 }
 
+export interface PlanReturnOptions {
+  /**
+   * Lượt QUÉT BÙ lịch sử (02/10/2026): yêu cầu trả hàng đã xong VÀ sàn báo kiện
+   * đã về tay từ trước khi Hubsell đọc được → vẫn ghi giải pháp / tiền hoàn /
+   * SKU trả, nhưng KHÔNG cắm AWAITING (kho không còn kiện nào để quét, cắm vào
+   * là sinh cảnh báo "quá hạn chưa về tay" oan cho đơn đã xong cả tháng).
+   */
+  skipAwaiting?: boolean;
+}
+
+/** Yêu cầu hoàn CÒN SỐNG mới nhất của một đơn (theo update_time) — null nếu chết hết. */
+export function latestAliveReturn<T extends ShopeeReturnEntry>(group: T[]): T | null {
+  return (
+    group
+      .filter((e) => !isDeadReturn(e.status))
+      .sort((a, b) => (b.update_time ?? 0) - (a.update_time ?? 0))[0] ?? null
+  );
+}
+
+/** Sàn báo KIỆN HOÀN ĐÃ VỀ TAY (get_return_detail) — Normal RR lẫn In-transit / Return-on-the-Spot. */
+export function isShopeeReturnParcelDelivered(d: ShopeeReturnDetail | null | undefined): boolean {
+  const rl = String(
+    d?.reverse_logistics_status ?? d?.reverse_logistic_status ?? d?.logistics_status ?? ""
+  ).toUpperCase();
+  return rl === "LOGISTICS_DELIVERY_DONE" || rl === "DELIVERED";
+}
+
 /**
  * QUYẾT ĐỊNH thuần (không API, không DB) cho một đơn từ nhóm yêu cầu hoàn của
  * nó: gắn cờ AWAITING, hạ cờ khi mọi yêu cầu đã hủy, lưu mã vận đơn chiều hoàn,
@@ -111,7 +148,8 @@ export function returnSolutionOf(e: ShopeeReturnEntry): ReturnSolution | null {
 export function planReturnUpdate(
   group: ShopeeReturnEntry[],
   order: ReturnFlagState,
-  nowSec: number
+  nowSec: number,
+  opts: PlanReturnOptions = {}
 ): ReturnUpdatePlan {
   const alive = group.filter((e) => !isDeadReturn(e.status));
   const aliveNewestFirst = [...alive].sort(
@@ -141,7 +179,7 @@ export function planReturnUpdate(
   const refundOnly = solution === ReturnSolution.REFUND_ONLY;
 
   if (alive.length > 0) {
-    if (order.returnStatus === ReturnStatus.NONE && !refundOnly) {
+    if (order.returnStatus === ReturnStatus.NONE && !refundOnly && !opts.skipAwaiting) {
       plan.data.returnStatus = ReturnStatus.AWAITING;
       plan.data.returnRequestedAt = new Date((requestedSec ?? nowSec) * 1000);
       plan.flagged = true;
@@ -235,6 +273,246 @@ export interface SyncShopeeReturnsOptions {
   daysBack?: number;
 }
 
+function emptyReturnsResult(): SyncShopeeReturnsResult {
+  return {
+    scanned: 0,
+    flagged: 0,
+    unflagged: 0,
+    trackingSaved: 0,
+    ordersFetched: 0,
+    delivered: 0,
+    itemsUpdated: 0,
+    escrowRefreshed: 0,
+  };
+}
+
+const RETURN_ORDER_SELECT = {
+  id: true,
+  returnStatus: true,
+  returnRequestedAt: true,
+  returnTrackingCode: true,
+  returnSolution: true,
+  platformRefundAmount: true,
+  platformReturnStatus: true,
+  returnDeliveredAt: true,
+  returnLookupAt: true,
+  isSettled: true,
+  refundedAmount: true,
+  items: { select: { id: true, channelSku: true, returnedQuantity: true } },
+} as const;
+
+/** Ngữ cảnh một lượt ghi yêu cầu hoàn vào đơn — dùng chung lượt quét thường và lượt quét bù. */
+interface ShopeeReturnApplyCtx {
+  channel: Channel;
+  accessToken: string;
+  shopId: string;
+  nowSec: number;
+  feeRate: number;
+  result: SyncShopeeReturnsResult;
+  /** Bộ đếm lượt gọi sàn của cả lượt quét (trần MAX_DETAIL_CALLS_PER_SWEEP mỗi loại). */
+  calls: { detail: number; escrowRefresh: number };
+  /** Chi tiết yêu cầu hoàn ĐÃ đọc sẵn theo return_sn (lượt quét bù) — khỏi gọi get_return_detail lần hai. */
+  details?: Map<string, ShopeeReturnDetail>;
+  /** Lượt quét bù lịch sử: không kéo đơn thiếu, không rung chuông, xem PlanReturnOptions.skipAwaiting. */
+  historical?: boolean;
+}
+
+/**
+ * Phản ánh các yêu cầu hoàn của MỘT đơn vào Order — phần GHI dùng chung cho
+ * lượt quét theo thời gian và lượt quét bù theo mã đơn. Đơn nào đi qua đây cũng
+ * được đóng mốc returnLookupAt (đã đọc yêu cầu hoàn của sàn một lần).
+ */
+async function applyShopeeReturnGroup(
+  ctx: ShopeeReturnApplyCtx,
+  orderSn: string,
+  group: ShopeeReturnEntry[]
+): Promise<void> {
+  const { channel, accessToken, shopId, nowSec, result } = ctx;
+  const alive = group.filter((e) => !isDeadReturn(e.status));
+
+  let order = await prisma.order.findUnique({
+    where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
+    select: RETURN_ORDER_SELECT,
+  });
+
+  // Đơn chưa có trong DB (tạo từ lâu, ngoài mọi cửa sổ đồng bộ) → kéo về đã.
+  if (!order && alive.length > 0 && !ctx.historical) {
+    try {
+      const details = await getOrderDetail(accessToken, shopId, [orderSn]);
+      if (details[0]) {
+        await prisma.$transaction((tx) =>
+          upsertShopeeOrderTx(tx, channel, details[0], ctx.feeRate)
+        );
+        result.ordersFetched++;
+        order = await prisma.order.findUnique({
+          where: {
+            channelId_orderCode: { channelId: channel.id, orderCode: orderSn },
+          },
+          select: RETURN_ORDER_SELECT,
+        });
+      }
+    } catch (err) {
+      // Một đơn kéo hỏng không được chặn các đơn còn lại của lượt quét.
+      console.error(
+        `[Shopee Returns] Không kéo được đơn ${orderSn} của yêu cầu hoàn:`,
+        (err as Error).message
+      );
+    }
+  }
+  if (!order) return;
+
+  // Quét bù: yêu cầu trả hàng sàn đã chốt hoàn VÀ kiện đã về tay từ trước →
+  // không cắm "chờ nhận hàng hoàn". Sàn CHƯA báo kiện về thì vẫn cắm như thường
+  // để kho xác nhận (hàng có thể thất lạc chiều về).
+  const latestSeen = latestAliveReturn(group);
+  const seenDetail = latestSeen?.return_sn ? ctx.details?.get(latestSeen.return_sn) : undefined;
+  const finishedBeforeSeen =
+    ctx.historical === true &&
+    latestSeen != null &&
+    PLATFORM_RETURN_DONE_STATUSES.has((latestSeen.status ?? "").toUpperCase()) &&
+    isShopeeReturnParcelDelivered(seenDetail);
+
+  const plan = planReturnUpdate(
+    group,
+    {
+      returnStatus: order.returnStatus,
+      returnRequestedAt: order.returnRequestedAt,
+      returnTrackingCode: order.returnTrackingCode,
+      returnSolution: order.returnSolution,
+      platformRefundAmount: Number(order.platformRefundAmount),
+      platformReturnStatus: order.platformReturnStatus,
+    },
+    nowSec,
+    { skipAwaiting: finishedBeforeSeen }
+  );
+  if (plan.flagged) result.flagged++;
+  if (plan.unflagged) result.unflagged++;
+  if (plan.trackingSaved) result.trackingSaved++;
+
+  // KIỆN HOÀN ĐÃ VỀ TAY? Chỉ hỏi get_return_detail khi: hàng phải về
+  // (RETURN_REFUND), chưa ghi mốc về, yêu cầu đã qua bước khách gửi
+  // (PROCESSING trở đi) — REQUESTED thì khách còn chưa gửi, hỏi phí call.
+  // Kho đã quét (RECEIVED trở đi) = chắc chắn về tay → ghi mốc luôn, khỏi hỏi.
+  let deliveredAt: Date | null = null;
+  const latest = plan.latestAlive;
+  const solution =
+    plan.data.returnSolution !== undefined ? plan.data.returnSolution : order.returnSolution;
+  if (latest && solution === ReturnSolution.RETURN_REFUND && !order.returnDeliveredAt) {
+    const st = (latest.status ?? "").toUpperCase();
+    const kept =
+      order.returnStatus !== ReturnStatus.NONE && order.returnStatus !== ReturnStatus.AWAITING;
+    if (kept) {
+      deliveredAt = new Date();
+    } else if (latest.return_sn && st !== "REQUESTED") {
+      let d: ShopeeReturnDetail | null = ctx.details?.get(latest.return_sn) ?? null;
+      if (!d && ctx.calls.detail < MAX_DETAIL_CALLS_PER_SWEEP) {
+        ctx.calls.detail++;
+        try {
+          d = await getReturnDetail(accessToken, shopId, latest.return_sn);
+        } catch (err) {
+          console.warn(
+            `[Shopee Returns] Không đọc được chi tiết yêu cầu ${latest.return_sn}:`,
+            (err as Error).message
+          );
+        }
+      }
+      if (isShopeeReturnParcelDelivered(d)) {
+        deliveredAt = new Date((d?.update_time ?? latest.update_time ?? nowSec) * 1000);
+      }
+    }
+  }
+  if (deliveredAt) {
+    plan.data.returnDeliveredAt = deliveredAt;
+    result.delivered++;
+  }
+
+  const data: Prisma.OrderUpdateInput = { ...plan.data };
+  if (!order.returnLookupAt) data.returnLookupAt = new Date(nowSec * 1000);
+  if (Object.keys(data).length > 0) {
+    await prisma.order.update({ where: { id: order.id }, data });
+  }
+
+  // TỰ ĐỘNG LẬP HÓA ĐƠN ĐIỀU CHỈNH THEO SÀN (25/08 — anh Trung chốt: mốc là
+  // sàn xác nhận hoàn, không chờ hàng về kho): bắn đúng lần trạng thái yêu
+  // cầu CHUYỂN VÀO tập "hoàn đã chốt". Fire-and-forget, hook tự kiểm công
+  // tắc + chống trùng — không chặn vòng sync.
+  {
+    const prevStatus = order.platformReturnStatus ?? "";
+    const nextStatus =
+      (plan.data.platformReturnStatus !== undefined
+        ? plan.data.platformReturnStatus
+        : prevStatus) ?? "";
+    if (
+      PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
+      !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
+    ) {
+      maybeAutoAdjustOnPlatformReturn(channel.userId, order.id);
+    }
+  }
+
+  // TỰ CHỮA SỐ HOÀN SAO KÊ: đơn ĐÃ đối soát, yêu cầu hoàn đã ACCEPTED mà DB
+  // chưa có refundedAmount (đối soát hồi trước 05/08 khi chưa map
+  // seller_return_refund, hoặc hoàn sau khi giải ngân) → đọc lại escrow của
+  // đúng đơn này (escrow thật 2607194YFVJ17J có seller_return_refund -230.000
+  // nhưng DB = 0, 20/08). Cap theo lượt để không đốt quota.
+  const stNow = (latest?.status ?? "").toUpperCase();
+  if (
+    order.isSettled &&
+    Number(order.refundedAmount) === 0 &&
+    stNow === "ACCEPTED" &&
+    ctx.calls.escrowRefresh < MAX_DETAIL_CALLS_PER_SWEEP
+  ) {
+    ctx.calls.escrowRefresh++;
+    try {
+      const detail = await getEscrowDetail({ accessToken, shopId, orderSn });
+      const income = detail.response?.order_income;
+      if (income) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: mapShopeeEscrowFields(income),
+        });
+        result.escrowRefreshed++;
+      }
+    } catch (err) {
+      console.warn(
+        `[Shopee Returns] Không đọc lại được escrow đơn :`,
+        (err as Error).message
+      );
+    }
+  }
+
+  // Số lượng trả theo dòng SKU (chỉ ghi dòng có thay đổi — idempotent).
+  if (plan.itemReturns) {
+    for (const it of order.items) {
+      const qty = plan.itemReturns.get(it.channelSku) ?? 0;
+      if (qty !== it.returnedQuantity) {
+        await prisma.orderItem.update({
+          where: { id: it.id },
+          data: { returnedQuantity: qty },
+        });
+        result.itemsUpdated++;
+      }
+    }
+  }
+
+  // CHUÔNG THÔNG BÁO (Tầng 3): sàn vừa báo hoàn một đơn MỚI (NONE→AWAITING)
+  // — kho cần biết ngay để đón kiện. notify tự chống trùng + nuốt lỗi. Lượt
+  // quét bù không rung chuông: yêu cầu hoàn cũ cả tháng, đơn vẫn hiện ở danh
+  // sách "Chờ nhận hàng hoàn" nếu sàn chưa báo kiện về.
+  if (plan.flagged && !ctx.historical) {
+    await notify(channel.userId, {
+      type: "return",
+      title: `Shopee báo hoàn đơn ${orderSn}`,
+      body: `Gian ${channel.shopName} — đơn chuyển sang "Chờ nhận hàng hoàn". Kho quét mã khi kiện về tay.`,
+      link: "/warehouse/returns",
+    });
+  }
+}
+
+function shopeeFeeRate(channel: Channel): number {
+  return Number(channel.feeRate) > 0 ? Number(channel.feeRate) : PLATFORM_FEE_RATE[ChannelName.SHOPEE];
+}
+
 /**
  * Quét yêu cầu Trả hàng/Hoàn tiền rồi phản ánh vào trục returnStatus của đơn.
  * Idempotent hoàn toàn — chạy lặp bao nhiêu lần cũng ra cùng trạng thái.
@@ -247,16 +525,7 @@ export async function syncShopeeReturns(
   const nowSec = Math.floor(Date.now() / 1000);
   const daysBack = opts.daysBack ?? 7;
 
-  const result: SyncShopeeReturnsResult = {
-    scanned: 0,
-    flagged: 0,
-    unflagged: 0,
-    trackingSaved: 0,
-    ordersFetched: 0,
-    delivered: 0,
-    itemsUpdated: 0,
-    escrowRefreshed: 0,
-  };
+  const result = emptyReturnsResult();
 
   // (1) Gom toàn bộ yêu cầu hoàn trong cửa sổ biến động — CẮT LÁT tối đa
   // 15 ngày/lần gọi (Shopee giới hạn khoảng update_time như get_order_list;
@@ -303,200 +572,159 @@ export async function syncShopeeReturns(
     else byOrder.set(sn, [e]);
   }
 
-  const feeRate =
-    Number(channel.feeRate) > 0
-      ? Number(channel.feeRate)
-      : PLATFORM_FEE_RATE[ChannelName.SHOPEE];
-
-  const orderSelect = {
-    id: true,
-    returnStatus: true,
-    returnRequestedAt: true,
-    returnTrackingCode: true,
-    returnSolution: true,
-    platformRefundAmount: true,
-    platformReturnStatus: true,
-    returnDeliveredAt: true,
-    isSettled: true,
-    refundedAmount: true,
-    items: { select: { id: true, channelSku: true, returnedQuantity: true } },
-  } as const;
-  let detailCalls = 0;
-  let escrowRefreshCalls = 0;
-
+  const ctx: ShopeeReturnApplyCtx = {
+    channel,
+    accessToken,
+    shopId,
+    nowSec,
+    feeRate: shopeeFeeRate(channel),
+    result,
+    calls: { detail: 0, escrowRefresh: 0 },
+  };
   for (const [orderSn, group] of byOrder) {
-    const alive = group.filter((e) => !isDeadReturn(e.status));
-
-    let order = await prisma.order.findUnique({
-      where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
-      select: orderSelect,
-    });
-
-    // Đơn chưa có trong DB (tạo từ lâu, ngoài mọi cửa sổ đồng bộ) → kéo về đã.
-    if (!order && alive.length > 0) {
-      try {
-        const details = await getOrderDetail(accessToken, shopId, [orderSn]);
-        if (details[0]) {
-          await prisma.$transaction((tx) =>
-            upsertShopeeOrderTx(tx, channel, details[0], feeRate)
-          );
-          result.ordersFetched++;
-          order = await prisma.order.findUnique({
-            where: {
-              channelId_orderCode: { channelId: channel.id, orderCode: orderSn },
-            },
-            select: orderSelect,
-          });
-        }
-      } catch (err) {
-        // Một đơn kéo hỏng không được chặn các đơn còn lại của lượt quét.
-        console.error(
-          `[Shopee Returns] Không kéo được đơn ${orderSn} của yêu cầu hoàn:`,
-          (err as Error).message
-        );
-      }
-    }
-    if (!order) continue;
-
-    const plan = planReturnUpdate(
-      group,
-      {
-        returnStatus: order.returnStatus,
-        returnRequestedAt: order.returnRequestedAt,
-        returnTrackingCode: order.returnTrackingCode,
-        returnSolution: order.returnSolution,
-        platformRefundAmount: Number(order.platformRefundAmount),
-        platformReturnStatus: order.platformReturnStatus,
-      },
-      nowSec
-    );
-    if (plan.flagged) result.flagged++;
-    if (plan.unflagged) result.unflagged++;
-    if (plan.trackingSaved) result.trackingSaved++;
-
-    // KIỆN HOÀN ĐÃ VỀ TAY? Chỉ hỏi get_return_detail khi: hàng phải về
-    // (RETURN_REFUND), chưa ghi mốc về, yêu cầu đã qua bước khách gửi
-    // (PROCESSING trở đi) — REQUESTED thì khách còn chưa gửi, hỏi phí call.
-    // Kho đã quét (RECEIVED trở đi) = chắc chắn về tay → ghi mốc luôn, khỏi hỏi.
-    let deliveredAt: Date | null = null;
-    const latest = plan.latestAlive;
-    const solution =
-      plan.data.returnSolution !== undefined ? plan.data.returnSolution : order.returnSolution;
-    if (latest && solution === ReturnSolution.RETURN_REFUND && !order.returnDeliveredAt) {
-      const st = (latest.status ?? "").toUpperCase();
-      const kept =
-        order.returnStatus !== ReturnStatus.NONE && order.returnStatus !== ReturnStatus.AWAITING;
-      if (kept) {
-        deliveredAt = new Date();
-      } else if (
-        latest.return_sn &&
-        st !== "REQUESTED" &&
-        detailCalls < MAX_DETAIL_CALLS_PER_SWEEP
-      ) {
-        detailCalls++;
-        try {
-          const d = await getReturnDetail(accessToken, shopId, latest.return_sn);
-          const rl = String(
-            d?.reverse_logistics_status ?? d?.reverse_logistic_status ?? d?.logistics_status ?? ""
-          ).toUpperCase();
-          if (rl === "LOGISTICS_DELIVERY_DONE" || rl === "DELIVERED") {
-            deliveredAt = new Date((d?.update_time ?? latest.update_time ?? nowSec) * 1000);
-          }
-        } catch (err) {
-          console.warn(
-            `[Shopee Returns] Không đọc được chi tiết yêu cầu ${latest.return_sn}:`,
-            (err as Error).message
-          );
-        }
-      }
-    }
-    if (deliveredAt) {
-      plan.data.returnDeliveredAt = deliveredAt;
-      result.delivered++;
-    }
-
-    if (Object.keys(plan.data).length > 0) {
-      await prisma.order.update({ where: { id: order.id }, data: plan.data });
-    }
-
-    // TỰ ĐỘNG LẬP HÓA ĐƠN ĐIỀU CHỈNH THEO SÀN (25/08 — anh Trung chốt: mốc là
-    // sàn xác nhận hoàn, không chờ hàng về kho): bắn đúng lần trạng thái yêu
-    // cầu CHUYỂN VÀO tập "hoàn đã chốt". Fire-and-forget, hook tự kiểm công
-    // tắc + chống trùng — không chặn vòng sync.
-    {
-      const prevStatus = order.platformReturnStatus ?? "";
-      const nextStatus =
-        (plan.data.platformReturnStatus !== undefined
-          ? plan.data.platformReturnStatus
-          : prevStatus) ?? "";
-      if (
-        PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
-        !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
-      ) {
-        maybeAutoAdjustOnPlatformReturn(channel.userId, order.id);
-      }
-    }
-
-    // TỰ CHỮA SỐ HOÀN SAO KÊ: đơn ĐÃ đối soát, yêu cầu hoàn đã ACCEPTED mà DB
-    // chưa có refundedAmount (đối soát hồi trước 05/08 khi chưa map
-    // seller_return_refund, hoặc hoàn sau khi giải ngân) → đọc lại escrow của
-    // đúng đơn này (escrow thật 2607194YFVJ17J có seller_return_refund -230.000
-    // nhưng DB = 0, 20/08). Cap theo lượt để không đốt quota.
-    const stNow = (latest?.status ?? "").toUpperCase();
-    if (
-      order.isSettled &&
-      Number(order.refundedAmount) === 0 &&
-      stNow === "ACCEPTED" &&
-      escrowRefreshCalls < MAX_DETAIL_CALLS_PER_SWEEP
-    ) {
-      escrowRefreshCalls++;
-      try {
-        const detail = await getEscrowDetail({ accessToken, shopId, orderSn });
-        const income = detail.response?.order_income;
-        if (income) {
-          await prisma.order.update({
-            where: { id: order.id },
-            data: mapShopeeEscrowFields(income),
-          });
-          result.escrowRefreshed++;
-        }
-      } catch (err) {
-        console.warn(
-          `[Shopee Returns] Không đọc lại được escrow đơn :`,
-          (err as Error).message
-        );
-      }
-    }
-
-    // Số lượng trả theo dòng SKU (chỉ ghi dòng có thay đổi — idempotent).
-    if (plan.itemReturns) {
-      for (const it of order.items) {
-        const qty = plan.itemReturns.get(it.channelSku) ?? 0;
-        if (qty !== it.returnedQuantity) {
-          await prisma.orderItem.update({
-            where: { id: it.id },
-            data: { returnedQuantity: qty },
-          });
-          result.itemsUpdated++;
-        }
-      }
-    }
-
-    // CHUÔNG THÔNG BÁO (Tầng 3): sàn vừa báo hoàn một đơn MỚI (NONE→AWAITING)
-    // — kho cần biết ngay để đón kiện. notify tự chống trùng + nuốt lỗi.
-    if (plan.flagged) {
-      await notify(channel.userId, {
-        type: "return",
-        title: `Shopee báo hoàn đơn ${orderSn}`,
-        body: `Gian ${channel.shopName} — đơn chuyển sang "Chờ nhận hàng hoàn". Kho quét mã khi kiện về tay.`,
-        link: "/warehouse/returns",
-      });
-    }
+    await applyShopeeReturnGroup(ctx, orderSn, group);
   }
 
   return result;
 }
 
+// ============================================================
+// QUÉT BÙ THEO MÃ ĐƠN — đơn có tiền hoàn mà chưa từng đọc yêu cầu hoàn
+// ============================================================
+
+/**
+ * Mỗi lượt xử lý tối đa N đơn của một gian — lấy đúng trần MAX_DETAIL_CALLS_PER_SWEEP
+ * (40 lượt hỏi chi tiết / lượt quét) đang dùng cho lượt quét thường. Mỗi đơn tốn
+ * 1 lượt get_escrow_detail + 1 lượt get_return_detail cho mỗi yêu cầu hoàn.
+ */
+const LOOKUP_ORDERS_PER_SWEEP = MAX_DETAIL_CALLS_PER_SWEEP;
+/** Nghỉ giữa hai đơn (ms) — việc nền phải có nhịp nghỉ. Mức tự chọn. */
+const LOOKUP_PAUSE_MS = 200;
+/**
+ * Đơn hỏi sàn bị lỗi thì nghỉ 6 giờ mới hỏi lại (cùng mức với backfill mã vận
+ * đơn bên dưới) — không để vài đơn lỗi hoài chiếm hết suất của lượt, đơn khác
+ * không bao giờ tới lượt. Nhớ trong RAM: mất khi restart, vô hại.
+ */
+const LOOKUP_RETRY_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const lookupFailedAt = new Map<string, number>();
+let lookupShapeLogged = false;
+
+export interface BackfillShopeeReturnsResult extends SyncShopeeReturnsResult {
+  /** Đơn chờ hỏi nhặt được ở lượt này (đã bỏ đơn đang nghỉ sau lỗi). */
+  candidates: number;
+  /** Đơn đã hỏi sàn xong và đóng mốc returnLookupAt. */
+  looked: number;
+  /** Trong số đã hỏi, đơn mà sàn có ít nhất một yêu cầu hoàn. */
+  withReturns: number;
+  /** Đơn hỏi sàn bị lỗi — chưa đóng mốc, nghỉ rồi hỏi lại. */
+  failed: number;
+  /** Còn đơn chờ lượt sau. */
+  more: boolean;
+}
+
+/**
+ * Hỏi sàn THEO MÃ ĐƠN cho các đơn có tiền hoàn trên sao kê mà chưa từng đọc yêu
+ * cầu hoàn (returnLookupAt trống, chưa có giải pháp hoàn): get_escrow_detail trả
+ * return_order_sn_list → get_return_detail từng yêu cầu → ghi vào đơn bằng đúng
+ * bộ quyết định của lượt quét thường. Mỗi đơn chỉ hỏi MỘT lần — đóng mốc kể cả
+ * khi sàn không có yêu cầu nào (đơn đó giữ cách tính cũ: khách giữ hàng, mất giá
+ * vốn). Đơn nào sàn lỗi thì không đóng mốc.
+ */
+export async function backfillShopeeReturnsByOrder(
+  channel: Channel
+): Promise<BackfillShopeeReturnsResult> {
+  const result: BackfillShopeeReturnsResult = {
+    ...emptyReturnsResult(),
+    candidates: 0,
+    looked: 0,
+    withReturns: 0,
+    failed: 0,
+    more: false,
+  };
+
+  // Điều kiện viết THẲNG trong câu (không qua tham số) để khớp nguyên văn chỉ
+  // mục một phần "Order_return_lookup_pending_idx" (migration 20261002200100).
+  // Nhặt dư gấp 3 để trừ hao đơn đang nghỉ sau lỗi.
+  const rows = await prisma.$queryRaw<{ id: string; orderCode: string }[]>`
+    SELECT "id", "orderCode"
+    FROM "Order"
+    WHERE "channelId" = ${channel.id}
+      AND "returnLookupAt" IS NULL
+      AND "shippingStatus" <> 'CANCELLED'
+      AND ("refundedAmount" > 0 OR "returnDeliveredAt" IS NOT NULL)
+      AND "refundedAmount" > 0
+      AND "returnSolution" IS NULL
+    ORDER BY "createdAt" DESC
+    LIMIT ${LOOKUP_ORDERS_PER_SWEEP * 3 + 1}`;
+  const now = Date.now();
+  const rested = rows.filter((o) => now - (lookupFailedAt.get(o.id) ?? 0) > LOOKUP_RETRY_COOLDOWN_MS);
+  const candidates = rested.slice(0, LOOKUP_ORDERS_PER_SWEEP);
+  result.candidates = candidates.length;
+  result.more = rested.length > candidates.length;
+  if (candidates.length === 0) return result;
+
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  const nowSec = Math.floor(now / 1000);
+  const ctx: ShopeeReturnApplyCtx = {
+    channel,
+    accessToken,
+    shopId,
+    nowSec,
+    feeRate: shopeeFeeRate(channel),
+    result,
+    calls: { detail: 0, escrowRefresh: 0 },
+    details: new Map(),
+    historical: true,
+  };
+
+  for (let i = 0; i < candidates.length; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, LOOKUP_PAUSE_MS));
+    const o = candidates[i];
+    try {
+      const escrow = await getEscrowDetail({ accessToken, shopId, orderSn: o.orderCode });
+      const returnSns = (escrow.response?.return_order_sn_list ?? [])
+        .map((sn) => String(sn ?? "").trim())
+        .filter(Boolean);
+
+      const group: ShopeeReturnDetail[] = [];
+      for (const sn of returnSns) {
+        const d = await getReturnDetail(accessToken, shopId, sn);
+        if (!d) throw new Error(`get_return_detail ${sn} trả rỗng`);
+        // Chi tiết có thể không lặp lại return_sn / order_sn → điền từ lời hỏi.
+        const entry: ShopeeReturnDetail = { ...d, return_sn: d.return_sn ?? sn, order_sn: o.orderCode };
+        group.push(entry);
+        ctx.details!.set(entry.return_sn!, entry);
+        if (!lookupShapeLogged) {
+          lookupShapeLogged = true;
+          console.log(
+            `[Shopee Returns] Hình dạng quét bù: escrow keys=[${Object.keys(escrow.response ?? {}).join(",")}] return_order_sn_list=${returnSns.length} | detail keys=[${Object.keys(d).join(",")}] status=${JSON.stringify(d.status)} return_solution=${JSON.stringify(d.return_solution)} reverse_logistics_status=${JSON.stringify(d.reverse_logistics_status ?? d.reverse_logistic_status)} logistics_status=${JSON.stringify(d.logistics_status)}`
+          );
+        }
+      }
+
+      if (group.length > 0) {
+        result.scanned += group.length;
+        result.withReturns++;
+        await applyShopeeReturnGroup(ctx, o.orderCode, group);
+      }
+      // Đóng mốc: đơn sàn không có yêu cầu hoàn nào cũng không hỏi lại.
+      await prisma.order.updateMany({
+        where: { id: o.id, returnLookupAt: null },
+        data: { returnLookupAt: new Date() },
+      });
+      result.looked++;
+    } catch (err) {
+      lookupFailedAt.set(o.id, now);
+      result.failed++;
+      console.warn(
+        `[Shopee Returns] Quét bù đơn ${o.orderCode} gian "${channel.shopName}" lỗi, nghỉ 6 giờ rồi hỏi lại:`,
+        (err as Error).message
+      );
+    }
+  }
+
+  return result;
+}
 
 // ============================================================
 // BACKFILL MÃ VẬN ĐƠN CHIỀU ĐI — get_tracking_number (1 call / 1 đơn)

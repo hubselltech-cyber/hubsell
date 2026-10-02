@@ -61,6 +61,7 @@ import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubse
 import { adsItemSignalsDue, syncShopeeAdsItemSignals } from "../integrations/shopee/ads-item-signals";
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
+  backfillShopeeReturnsByOrder,
   backfillShopeeTrackingCodes,
   syncShopeeReturns,
 } from "../integrations/shopee/returns-sync";
@@ -736,6 +737,21 @@ async function runHourlyTier(
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi đối soát Shopee "${channel.shopName}":`, (err as Error).message);
+    }
+    // QUÉT BÙ YÊU CẦU HOÀN THEO MÃ ĐƠN (02/10/2026, cùng khuôn TikTok) — chạy SAU
+    // đối soát: đơn có tiền hoàn trên sao kê mà chưa từng đọc yêu cầu hoàn (hoàn
+    // xong trước ngày nối gian) được hỏi sàn qua get_escrow_detail →
+    // get_return_detail, mỗi đơn một lần. Không có đơn chờ thì chỉ tốn một câu
+    // đọc chỉ mục, không gọi sàn.
+    try {
+      const b = await backfillShopeeReturnsByOrder(channel);
+      if (b.candidates > 0) {
+        console.log(
+          `[Auto-sync] Quét bù đơn hoàn Shopee "${channel.shopName}": hỏi sàn ${b.looked} đơn, ${b.withReturns} đơn có yêu cầu hoàn (${b.scanned} yêu cầu) — ${b.delivered} ghi kiện đã về, ${b.flagged} cắm chờ kho xác nhận, ${b.itemsUpdated} dòng SKU trả, ${b.failed} đơn lỗi${b.more ? "; còn đơn chờ lượt sau" : ""}`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi quét bù đơn hoàn Shopee "${channel.shopName}":`, (err as Error).message);
     }
     // Lệnh RÚT VÍ về bank (get_wallet_transaction_list, read-only) → WalletWithdrawal.
     try {
