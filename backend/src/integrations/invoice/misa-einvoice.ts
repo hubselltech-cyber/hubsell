@@ -29,7 +29,7 @@ import { esignLogin } from "./misa-esign";
 import { InvoiceProviderError, providerErrorFromBody } from "./invoice-errors";
 import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" dùng chung
 import { assertPublishAllowed } from "./misa-safety";
-import { providerFetch } from "./provider-http";
+import { isProviderTimeout, providerFetch, readProviderBody } from "./provider-http";
 import type { CreateInvoiceInput } from "./types";
 
 /**
@@ -406,16 +406,17 @@ export async function publishStandardInvoice(
     throw new InvoiceProviderError(`Không gọi được ${url}: ${(err as Error).message}`, {
       network: true,
       publishSent: true,
+      timedOut: isProviderTimeout(err),
     });
   }
   let text: string;
   try {
-    text = await res.text();
+    text = await readProviderBody(res);
   } catch (err) {
     // Đứt giữa lúc đọc câu trả lời: MISA đã xử lý xong lệnh, Hubsell không đọc được kết quả.
     throw new InvoiceProviderError(
       `Mất kết nối khi đang đọc câu trả lời của ${url}: ${(err as Error).message}`,
-      { network: true, httpStatus: res.status, publishSent: true }
+      { network: true, httpStatus: res.status, publishSent: true, timedOut: isProviderTimeout(err) }
     );
   }
   if (!res.ok) {
@@ -510,7 +511,12 @@ async function misaPost(
   } catch (err) {
     throw new Error(`Không gọi được ${url}: ${(err as Error).message}`);
   }
-  const text = await res.text();
+  let text: string;
+  try {
+    text = await readProviderBody(res);
+  } catch (err) {
+    throw new Error(`Không đọc được câu trả lời của ${url}: ${(err as Error).message}`);
+  }
   if (!res.ok) {
     throw new Error(`meInvoice trả HTTP ${res.status} cho ${path}: ${text.slice(0, 300)}`);
   }
@@ -558,7 +564,12 @@ export async function listInvoiceTemplates(
   } catch (err) {
     throw new Error(`Không gọi được ${url}: ${(err as Error).message}`);
   }
-  const text = await res.text();
+  let text: string;
+  try {
+    text = await readProviderBody(res);
+  } catch (err) {
+    throw new Error(`Không đọc được câu trả lời của ${url}: ${(err as Error).message}`);
+  }
   if (!res.ok) {
     throw new Error(`meInvoice trả HTTP ${res.status} khi lấy mẫu hóa đơn: ${text.slice(0, 300)}`);
   }

@@ -151,8 +151,11 @@ export class MisaInvoiceProvider implements InvoiceProvider {
       // Lệnh đã gửi mà không có câu trả lời rõ (đứt mạng, MISA lỗi máy chủ, mã lỗi
       // "không rõ nguyên nhân") → báo CHƯA RÕ, không báo "hỏng" trơn.
       if (isPublishOutcomeUnknown(err)) {
-        const { network, httpStatus } = err instanceof InvoiceProviderError ? err.detail : {};
-        return unknownOutcome(explained.code ?? (!network && httpStatus ? `HTTP ${httpStatus}` : "mất kết nối"));
+        const { network, httpStatus, timedOut } = err instanceof InvoiceProviderError ? err.detail : {};
+        return unknownOutcome(
+          explained.code ??
+            (timedOut ? "không trả lời trong thời hạn chờ" : !network && httpStatus ? `HTTP ${httpStatus}` : "mất kết nối")
+        );
       }
       return {
         status: InvoiceLogStatus.FAILED,

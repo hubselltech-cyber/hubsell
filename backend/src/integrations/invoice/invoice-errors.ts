@@ -39,6 +39,8 @@ export class InvoiceProviderError extends Error {
       httpStatus?: number;
       /** true = không tới được máy chủ NCC (DNS, timeout, reset). */
       network?: boolean;
+      /** true = lệnh vượt thời hạn chờ của Hubsell (provider-http.ts), NCC chưa trả lời kịp. */
+      timedOut?: boolean;
       /**
        * true = lỗi xảy ra SAU KHI lệnh phát hành đã rời Hubsell, NCC có thể đã nhận
        * và lập hóa đơn. Lỗi ở bước trước đó (lấy token, thiếu cấu hình) không mang
@@ -96,7 +98,8 @@ const UNKNOWN_OUTCOME_CODES = new Set(["Exception", "CreateInvoiceDataError"]);
 /**
  * CHƯA RÕ KẾT QUẢ (bước 5 lát 5, docs/HANG-DOI-BEN.md mục 4.6): lệnh phát hành đã
  * gửi mà không có câu trả lời rõ "đã lập" hay "từ chối". Gồm: đứt mạng / đứt giữa
- * lúc đọc câu trả lời, HTTP 5xx, HTTP 408, và các mã ở UNKNOWN_OUTCOME_CODES.
+ * lúc đọc câu trả lời, quá thời hạn chờ, HTTP 5xx, HTTP 408, và các mã ở
+ * UNKNOWN_OUTCOME_CODES.
  * NCC từ chối có mã rõ (4xx, sai ký hiệu, sai thuế suất...) là đã có kết luận.
  */
 export function isPublishOutcomeUnknown(err: unknown): boolean {

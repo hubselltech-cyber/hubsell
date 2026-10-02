@@ -19,13 +19,28 @@ afterEach(() => {
 });
 
 describe("providerFetch", () => {
-  it("gọi fetch với đúng url + init, không thêm gì, trả nguyên Response", async () => {
+  it("gọi fetch với đúng url + init, chỉ thêm tín hiệu hết giờ (lát 6a), trả nguyên Response", async () => {
     const res = new Response("{}", { status: 200 });
     const spy = vi.fn().mockResolvedValue(res);
     vi.stubGlobal("fetch", spy);
     const init = { method: "POST", body: "x" };
     expect(await providerFetch("MISA", "publishing", "https://ncc.example/invoice/publishing", init)).toBe(res);
-    expect(spy).toHaveBeenCalledWith("https://ncc.example/invoice/publishing", init);
+    expect(spy).toHaveBeenCalledWith("https://ncc.example/invoice/publishing", { ...init, signal: expect.any(AbortSignal) });
+  });
+
+  it("tắt thời hạn chờ (INVOICE_HTTP_TIMEOUT_MS=0) → gọi fetch với đúng init, không thêm gì", async () => {
+    const saved = process.env.INVOICE_HTTP_TIMEOUT_MS;
+    process.env.INVOICE_HTTP_TIMEOUT_MS = "0";
+    try {
+      const spy = vi.fn().mockResolvedValue(new Response("{}"));
+      vi.stubGlobal("fetch", spy);
+      const init = { method: "POST", body: "x" };
+      await providerFetch("MISA", "publishing", "https://ncc.example/invoice/publishing", init);
+      expect(spy).toHaveBeenCalledWith("https://ncc.example/invoice/publishing", init);
+    } finally {
+      if (saved === undefined) delete process.env.INVOICE_HTTP_TIMEOUT_MS;
+      else process.env.INVOICE_HTTP_TIMEOUT_MS = saved;
+    }
   });
 
   it("fetch ném lỗi: ném lại ĐÚNG lỗi đó; log chỉ có NCC + loại lệnh", async () => {

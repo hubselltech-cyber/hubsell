@@ -18,7 +18,7 @@
  */
 
 import { InvoiceProviderError, providerErrorFromBody } from "./invoice-errors";
-import { providerFetch } from "./provider-http";
+import { isProviderTimeout, providerFetch, readProviderBody } from "./provider-http";
 
 const TOKEN_SAFETY_MS = 60 * 1000; // làm mới sớm 60s trước khi token hết hạn
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000; // MISA không trả expires_in thì coi như 30 phút
@@ -136,11 +136,20 @@ export async function getMisaAccessToken(
   } catch (err) {
     throw new InvoiceProviderError(
       `Không gọi được endpoint auth của MISA (${url}): ${(err as Error).message}`,
-      { network: true }
+      { network: true, timedOut: isProviderTimeout(err) }
     );
   }
 
-  const text = await res.text();
+  let text: string;
+  try {
+    text = await readProviderBody(res);
+  } catch (err) {
+    // Trước 03/10/2026 lỗi đọc thân ở bước này lọt ra dạng lỗi thường, bị xếp nhầm là lỗi của riêng đơn.
+    throw new InvoiceProviderError(
+      `Không đọc được câu trả lời của endpoint auth MISA (${url}): ${(err as Error).message}`,
+      { network: true, timedOut: isProviderTimeout(err) }
+    );
+  }
   if (!res.ok) {
     // Sai mật khẩu/MST/tài khoản đều về HTTP 400 + ErrorCode=UnAuthorize, mã con
     // trong Errors[] (MisaIdError / TaxCodeNotExist / UserNotExist — dò 19/09).
