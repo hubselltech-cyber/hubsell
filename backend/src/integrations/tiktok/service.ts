@@ -27,6 +27,7 @@ import {
   type TikTokOrder,
   type TikTokTxBreakdown,
 } from "./client";
+import { planSettlementWrite, type SettlementWritePlan } from "../settlement-merge";
 import {
   describeTiktokFeeTax,
   groupTiktokLinesByOrder,
@@ -497,11 +498,22 @@ export interface SyncSettlementsResult {
 const SETTLE_WINDOW_DAYS = 30;
 const SETTLE_BACKFILL_FLOOR = Date.UTC(2025, 0, 1) / 1000; // API 202501/202507 chỉ có dữ liệu từ đây
 
+/** Các bản kê mà sao kê ĐANG LƯU của đơn được dựng từ đó (số ước tính → chưa có). */
+function storedStatementIds(
+  row: { estimated: boolean; statementId: string | null; statementIds: string[] } | null
+): string[] {
+  if (!row || row.estimated) return [];
+  // Dòng ghi trước 02/10/2026 chưa có danh sách — chỉ biết bản kê ghi sau cùng.
+  if (row.statementIds.length > 0) return row.statementIds;
+  return row.statementId ? [row.statementId] : [];
+}
+
 /**
  * Kéo bản kê giải ngân THẬT (Finance API 202501, có breakdown đặt tên) và ghi
  * cho từng Order: sao kê chi tiết TiktokOrderSettlement (số có dấu) + cột gộp
- * GĐ2 (isSettled/actualPayout/phí…). Gom MỌI dòng của cùng đơn trong lượt chạy
- * rồi GHI ĐÈ — chạy lại vẫn ra đúng một kết quả.
+ * GĐ2 (isSettled/actualPayout/phí…). Sao kê của đơn luôn là TỔNG mọi dòng ở mọi
+ * bản kê có đơn đó (quy tắc ở ../settlement-merge.ts) — chạy lại, chạy cửa sổ hẹp
+ * hay rộng đều ra đúng một kết quả.
  */
 export async function syncTiktokSettlements(
   channel: Channel,
@@ -547,13 +559,13 @@ export async function syncTiktokSettlements(
   // gắn đơn cộng lại; hai bản kê khác ngày trong cùng cửa sổ vẫn về một chỗ)
   // rồi GHI hết sau mỗi cửa sổ — KHÔNG giữ cả lượt backfill 9+ cửa sổ trong RAM
   // (22/09/2026: gian ~185 đơn/ngày × từ 01/2025 là hàng chục nghìn đơn kèm
-  // breakdown, đủ làm Render hết heap). Đơn có thêm dòng ở cửa sổ SAU (hoàn /
-  // điều chỉnh muộn hơn 30 ngày) → kéo lại đúng những bản kê đã ghi cho đơn đó
-  // trong lượt này (writtenIn) rồi cộng chung, nên kết quả y hệt cách gom toàn
-  // lượt; chạy lại vẫn ra đúng một kết quả.
-  const writtenIn = new Map<string, Set<string>>(); // orderId → bản kê đã ghi trong lượt này
+  // breakdown, đủ làm Render hết heap). Đơn có dòng ở bản kê NGOÀI cửa sổ đang
+  // xử lý (bản kê đã ghi từ lượt trước, hoặc ở cửa sổ trước của chính lượt này)
+  // → đọc lại dòng của đơn ở các bản kê đó rồi cộng chung mới ghi.
+  const writtenIn = new Map<string, Set<string>>(); // mã đơn → bản kê đã ghi trong lượt này
   const notFound = new Set<string>();
   let merged = 0;
+  let incomplete = 0;
   // Cửa sổ nới mốc cuối 2 ngày nên có thể chồng lấn → mỗi bản kê chỉ bóc MỘT lần.
   const seenStatements = new Set<string>();
 
@@ -631,51 +643,88 @@ export async function syncTiktokSettlements(
     } while (stPageToken && stPages < maxPages);
 
     // Áp số quyết toán của CỬA SỔ NÀY vào từng Order đã đồng bộ về trước đó.
-    for (const [orderId, acc] of byOrder) {
+    // (a) Đọc đơn + các bản kê sao kê đang lưu được dựng từ đó → quyết định ghi.
+    const pending: {
+      orderCode: string;
+      order: { id: string; shippingDisputeStatus: ShippingDisputeStatus };
+      acc: { lines: TikTokTxBreakdown[]; time?: number; statementId?: string };
+      plan: SettlementWritePlan;
+    }[] = [];
+    const wantedByStatement = new Map<string, Set<string>>(); // bản kê cũ → các mã đơn cần đọc lại
+    for (const [orderCode, acc] of byOrder) {
       const order = await prisma.order.findUnique({
-        where: { channelId_orderCode: { channelId: channel.id, orderCode: orderId } },
-        select: { id: true, shippingDisputeStatus: true },
+        where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+        select: {
+          id: true,
+          shippingDisputeStatus: true,
+          tiktokSettlement: { select: { estimated: true, statementId: true, statementIds: true } },
+        },
       });
       if (!order) {
-        notFound.add(orderId);
+        notFound.add(orderCode);
         continue;
       }
-      let lines = acc.lines;
-      const earlier = writtenIn.get(orderId);
-      if (earlier) {
-        // Đã ghi ở cửa sổ trước trong lượt này → ghi đè bằng TỔNG mọi dòng: kéo
-        // lại dòng của đơn ở các bản kê cũ (thường 1 bản kê, vài trang) + dòng mới.
-        const prevStatements = [...earlier].filter((id) => !acc.statementIds.has(id));
-        if (prevStatements.length > 0) {
-          const prevLines = await fetchOrderLinesFromStatements(
-            { accessToken, shopCipher },
-            prevStatements,
-            orderId,
-            maxPages
-          );
-          lines = [...prevLines, ...lines];
-          merged++;
+      const known = writtenIn.get(orderCode) ?? storedStatementIds(order.tiktokSettlement);
+      const plan = planSettlementWrite(known, acc.statementIds);
+      if (plan.action === "skip") continue;
+      if (plan.action === "merge") {
+        for (const id of plan.missing) {
+          const set = wantedByStatement.get(id);
+          if (set) set.add(orderCode);
+          else wantedByStatement.set(id, new Set([orderCode]));
         }
+      }
+      pending.push({ orderCode, order, acc, plan });
+    }
+
+    // (b) Đọc lại các bản kê cũ MỘT lượt cho mọi đơn cần cộng (mỗi bản kê một lần).
+    const older =
+      wantedByStatement.size > 0
+        ? await fetchOrderLinesFromStatements({ accessToken, shopCipher }, wantedByStatement, maxPages)
+        : null;
+
+    // (c) Ghi.
+    for (const { orderCode, order, acc, plan } of pending) {
+      let lines = acc.lines;
+      if (plan.action === "merge") {
+        const prevLines: TikTokTxBreakdown[] = [];
+        let complete = true;
+        for (const id of plan.missing) {
+          const found = older?.lines.get(id)?.get(orderCode) ?? [];
+          // Bản kê cũ đọc không trọn, hoặc không còn dòng nào của đơn → KHÔNG ghi
+          // nửa chừng (thà giữ sao kê cũ còn hơn mất dòng); lượt sau thử lại.
+          if (older?.unavailable.has(id) || found.length === 0) complete = false;
+          prevLines.push(...found);
+        }
+        if (!complete) {
+          incomplete++;
+          console.warn(
+            `[TikTok] Đối soát "${channel.shopName}": đơn ${orderCode} có dòng ở bản kê mới nhưng không đọc lại đủ bản kê cũ [${plan.missing.join(",")}] — giữ sao kê đang lưu`
+          );
+          continue;
+        }
+        lines = [...prevLines, ...lines];
+        merged++;
       }
       const settledAt = acc.time ? new Date(acc.time * 1000) : new Date();
       await writeTiktokSettlement(order, lines, {
         estimated: false,
         settledAt,
         statementId: acc.statementId,
+        statementIds: plan.all,
       });
-      if (!earlier) result.ordersUpdated++;
-      const written = earlier ?? new Set<string>();
-      for (const id of acc.statementIds) written.add(id);
-      writtenIn.set(orderId, written);
+      if (!writtenIn.has(orderCode)) result.ordersUpdated++;
+      writtenIn.set(orderCode, new Set(plan.all));
     }
     byOrder.clear();
   }
   result.ordersNotFound = notFound.size;
 
-  if (result.ordersNotFound > 0 || result.unlinked > 0 || merged > 0) {
+  if (result.ordersNotFound > 0 || result.unlinked > 0 || merged > 0 || incomplete > 0) {
     console.log(
       `[TikTok] Đối soát "${channel.shopName}": ${result.ordersUpdated} đơn ghi số thật, ${result.ordersNotFound} mã đơn trên bản kê chưa có trong Hubsell, ${result.unlinked} dòng cấp shop không gắn đơn (${result.statements} bản kê / ${result.windows} cửa sổ` +
-        `${merged > 0 ? `, ${merged} đơn cộng thêm dòng từ cửa sổ trước` : ""})`
+        `${merged > 0 ? `, ${merged} đơn cộng thêm dòng từ bản kê ngoài cửa sổ` : ""}` +
+        `${incomplete > 0 ? `, ${incomplete} đơn CHƯA cộng được bản kê cũ` : ""})`
     );
   }
 
@@ -683,36 +732,50 @@ export async function syncTiktokSettlements(
 }
 
 /**
- * Dòng giao dịch của MỘT đơn nằm trong các bản kê cho trước — dùng khi backfill
- * nhiều cửa sổ gặp lại đơn đã ghi ở cửa sổ trước (xem syncTiktokSettlements).
- * Đọc lại bản kê qua API thay vì giữ dòng cũ trong RAM: trường hợp này hiếm
- * (hoàn / điều chỉnh muộn hơn 30 ngày) nên tốn vài call, còn RAM thì bằng 0.
+ * Dòng giao dịch của các đơn cho trước nằm trong các bản kê CŨ (ngoài cửa sổ
+ * đang quét) — mỗi bản kê đọc MỘT lần cho mọi đơn cần nó. Đọc lại qua API thay
+ * vì giữ dòng cũ trong RAM / database: ca này hiếm (hoàn / điều chỉnh rơi vào
+ * bản kê khác với dòng bán) nên tốn vài call, còn dung lượng thì bằng 0.
+ * Bản kê lỗi hoặc đọc chưa hết trang → nằm trong `unavailable`, nơi gọi không
+ * được ghi các đơn phụ thuộc vào nó.
  */
 async function fetchOrderLinesFromStatements(
   auth: { accessToken: string; shopCipher: string },
-  statementIds: string[],
-  orderId: string,
+  wantedByStatement: Map<string, Set<string>>,
   maxPages: number
-): Promise<TikTokTxBreakdown[]> {
-  const out: TikTokTxBreakdown[] = [];
-  for (const statementId of statementIds) {
-    let pageToken: string | undefined;
-    let pages = 0;
-    do {
-      const data = await fetchStatementTransactionsV2({
-        ...auth,
-        statementId,
-        pageSize: 100,
-        pageToken,
-      });
-      pages++;
-      for (const t of data.transactions ?? []) {
-        if ((t.order_id || t.adjustment_order_id) === orderId) out.push(t);
-      }
-      pageToken = data.next_page_token || undefined;
-    } while (pageToken && pages < maxPages);
+): Promise<{ lines: Map<string, Map<string, TikTokTxBreakdown[]>>; unavailable: Set<string> }> {
+  const lines = new Map<string, Map<string, TikTokTxBreakdown[]>>();
+  const unavailable = new Set<string>();
+  for (const [statementId, wanted] of wantedByStatement) {
+    const byOrder = new Map<string, TikTokTxBreakdown[]>();
+    try {
+      let pageToken: string | undefined;
+      let pages = 0;
+      do {
+        const data = await fetchStatementTransactionsV2({
+          ...auth,
+          statementId,
+          pageSize: 100,
+          pageToken,
+        });
+        pages++;
+        for (const t of data.transactions ?? []) {
+          const code = t.order_id || t.adjustment_order_id;
+          if (!code || !wanted.has(code)) continue;
+          const list = byOrder.get(code);
+          if (list) list.push(t);
+          else byOrder.set(code, [t]);
+        }
+        pageToken = data.next_page_token || undefined;
+      } while (pageToken && pages < maxPages);
+      if (pageToken) unavailable.add(statementId);
+    } catch (err) {
+      unavailable.add(statementId);
+      console.warn(`[TikTok] Không đọc lại được bản kê ${statementId}:`, (err as Error).message);
+    }
+    lines.set(statementId, byOrder);
   }
-  return out;
+  return { lines, unavailable };
 }
 
 /**
@@ -728,6 +791,8 @@ async function writeTiktokSettlement(
     estimated: boolean;
     settledAt?: Date;
     statementId?: string;
+    /** MỌI bản kê có dòng của đơn đã cộng vào sao kê này (bản kê thật). */
+    statementIds?: string[];
     estimatedSettlementAt?: Date | null;
     unsettledReason?: string | null;
   }
@@ -737,6 +802,7 @@ async function writeTiktokSettlement(
     ...detail,
     estimated: meta.estimated,
     statementId: meta.statementId ?? null,
+    statementIds: meta.estimated ? [] : meta.statementIds ?? (meta.statementId ? [meta.statementId] : []),
     estimatedSettlementAt: meta.estimatedSettlementAt ?? null,
     unsettledReason: meta.unsettledReason ?? null,
     settledAt: meta.estimated ? null : meta.settledAt ?? null,

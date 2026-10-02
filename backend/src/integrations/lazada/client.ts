@@ -634,6 +634,12 @@ export interface LazadaTransactionParams {
   offset?: number;
   /** Tối đa 500 dòng/trang theo giới hạn Lazada. */
   limit?: number;
+  /**
+   * Chỉ lấy giao dịch của MỘT đơn (tham số trade_order_id — docs
+   * /finance/transaction/details/get, đọc 02/10/2026). Docs ghi khoảng
+   * start_time–end_time phải dưới 180 ngày.
+   */
+  tradeOrderId?: string;
 }
 
 /** Lấy một trang sao kê giao dịch tài chính (mọi loại — trans_type=-1). */
@@ -651,6 +657,7 @@ export async function getTransactionDetails(
       end_time: params.endTime,
       offset: String(params.offset ?? 0),
       limit: String(params.limit ?? 500),
+      ...(params.tradeOrderId ? { trade_order_id: params.tradeOrderId } : {}),
     },
     "finance/transaction/details/get",
     cfg

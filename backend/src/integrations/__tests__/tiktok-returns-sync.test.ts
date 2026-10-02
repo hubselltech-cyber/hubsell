@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { ReturnSolution, ReturnStatus } from "@prisma/client";
 import {
   isDeadTiktokReturn,
+  isTiktokBuyerKeepsItem,
   planTiktokReturnUpdate,
   tiktokReturnSolutionOf,
 } from "../tiktok/returns-sync";
@@ -140,6 +141,112 @@ describe("planTiktokReturnUpdate", () => {
       NOW
     );
     expect(refundOnly.delivered).toBe(false);
+  });
+
+  // ---- 02/10/2026: sàn cho khách GIỮ HÀNG (can_buyer_keep_item) ----
+  it("trả hàng nhưng sàn cho khách giữ hàng → coi như chỉ hoàn tiền: không AWAITING, không mốc kiện về", () => {
+    expect(tiktokReturnSolutionOf({ return_type: "RETURN_AND_REFUND", can_buyer_keep_item: true })).toBe(
+      ReturnSolution.REFUND_ONLY
+    );
+    expect(tiktokReturnSolutionOf({ return_type: "REPLACEMENT", can_buyer_keep_item: true })).toBe(
+      ReturnSolution.REFUND_ONLY
+    );
+    // Cờ tắt / không có → giữ nguyên là hàng về
+    expect(tiktokReturnSolutionOf({ return_type: "RETURN_AND_REFUND", can_buyer_keep_item: false })).toBe(
+      ReturnSolution.RETURN_REFUND
+    );
+    expect(isTiktokBuyerKeepsItem({ return_type: "REFUND", can_buyer_keep_item: true })).toBe(false);
+
+    const plan = planTiktokReturnUpdate(
+      [ro({ return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE", can_buyer_keep_item: true })],
+      NONE,
+      NOW
+    );
+    expect(plan.keptByBuyer).toBe(true);
+    expect(plan.flagged).toBe(false);
+    expect(plan.delivered).toBe(false);
+    expect(plan.data.returnStatus).toBeUndefined();
+    expect(plan.data.returnDeliveredAt).toBeUndefined();
+    expect(plan.data.returnSolution).toBe(ReturnSolution.REFUND_ONLY);
+    expect(plan.data.platformRefundAmount).toBe(150000);
+    expect(plan.itemReturns?.size).toBe(0);
+  });
+
+  it("khách giữ hàng mà bản cũ đã ghi 'trả hàng, kiện đã về' → gỡ mốc kiện về, hạ cờ chờ hàng", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE", can_buyer_keep_item: true })],
+      {
+        ...NONE,
+        returnStatus: ReturnStatus.AWAITING,
+        returnRequestedAt: new Date(1_759_990_000 * 1000),
+        returnTrackingCode: "RT123",
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        platformRefundAmount: 150000,
+        platformReturnStatus: "RETURN_OR_REFUND_REQUEST_COMPLETE",
+        returnDeliveredAt: new Date(1_759_999_000 * 1000),
+      },
+      NOW
+    );
+    expect(plan.data.returnSolution).toBe(ReturnSolution.REFUND_ONLY);
+    expect(plan.data.returnDeliveredAt).toBeNull();
+    expect(plan.unflagged).toBe(true);
+    expect(plan.data.returnStatus).toBe(ReturnStatus.NONE);
+  });
+
+  it("một yêu cầu khách giữ hàng + một yêu cầu trả hàng thật → vẫn là hàng về", () => {
+    const plan = planTiktokReturnUpdate(
+      [
+        ro({ return_id: "R1", can_buyer_keep_item: true, return_line_items: [{ seller_sku: "SKU-A" }] }),
+        ro({ return_id: "R2", return_line_items: [{ seller_sku: "SKU-B" }] }),
+      ],
+      NONE,
+      NOW
+    );
+    expect(plan.keptByBuyer).toBe(true);
+    expect(plan.data.returnSolution).toBe(ReturnSolution.RETURN_REFUND);
+    expect(plan.flagged).toBe(true);
+    // Chỉ đếm SKU của yêu cầu có hàng về
+    expect(plan.itemReturns?.get("SKU-B")).toBe(1);
+    expect(plan.itemReturns?.has("SKU-A")).toBe(false);
+  });
+
+  // ---- 02/10/2026: quét bù lịch sử theo mã đơn ----
+  it("quét bù: trả hàng ĐÃ XONG từ trước → ghi giải pháp + mốc kiện về + SKU trả, KHÔNG cắm AWAITING", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE", update_time: 1_759_999_000 })],
+      NONE,
+      NOW,
+      { historical: true }
+    );
+    expect(plan.flagged).toBe(false);
+    expect(plan.data.returnStatus).toBeUndefined();
+    expect(plan.data.returnRequestedAt).toBeUndefined();
+    expect(plan.data.returnSolution).toBe(ReturnSolution.RETURN_REFUND);
+    expect(plan.delivered).toBe(true);
+    expect(plan.data.returnDeliveredAt?.getTime()).toBe(1_759_999_000 * 1000);
+    expect(plan.data.platformRefundAmount).toBe(150000);
+    expect(plan.itemReturns?.get("SKU-A")).toBe(2);
+  });
+
+  it("quét bù: trả hàng CÒN ĐANG ĐI → vẫn cắm AWAITING để kho đón kiện", () => {
+    const plan = planTiktokReturnUpdate([ro({ return_status: "BUYER_SHIPPED_ITEM" })], NONE, NOW, {
+      historical: true,
+    });
+    expect(plan.flagged).toBe(true);
+    expect(plan.data.returnStatus).toBe(ReturnStatus.AWAITING);
+    expect(plan.delivered).toBe(false);
+  });
+
+  it("quét bù: chỉ hoàn tiền → giải pháp REFUND_ONLY, không mốc kiện về (mất giá vốn như cũ)", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ return_type: "REFUND", return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE" })],
+      NONE,
+      NOW,
+      { historical: true }
+    );
+    expect(plan.data.returnSolution).toBe(ReturnSolution.REFUND_ONLY);
+    expect(plan.delivered).toBe(false);
+    expect(plan.flagged).toBe(false);
   });
 
   it("idempotent: trạng thái đã khớp → không ghi gì", () => {

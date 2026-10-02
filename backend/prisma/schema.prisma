@@ -455,6 +455,10 @@ model Channel {
   /// ngày đơn + đối soát phí thật thay vì 2 ngày / 7 ngày, xong cả hai mới hạ cờ (23/09/2026:
   /// ANO Official nối xong, 44 đơn T7 sàn đã trả nhưng Kiểm toán báo oan vì bản kê chỉ quét 7 ngày).
   historyBackfillPending Boolean   @default(false)
+  /// DỰNG LẠI SAO KÊ (02/10/2026): bật = lượt worker kế đọc lại TOÀN BỘ bản kê của gian từ đơn cũ
+  /// nhất rồi ghi lại sao kê từng đơn, xong không lỗi mới hạ cờ. Bật khi cách dựng sao kê đổi hoặc
+  /// phát hiện sao kê đã ghi sai (sự cố lượt quét 7 ngày ghi đè làm đơn TikTok mất dòng bán).
+  settlementRebuildPending Boolean @default(false)
   /// DANH MỤC SẢN PHẨM TỰ KÉO (anh Trung 28/09/2026: nối gian xong vào Giá vốn trống, phải bấm
   /// "Đồng bộ từ sàn"): gian vừa nối đặt = now → worker product-catalog-sync kéo ngay; xong → đêm
   /// sau (03:00–05:00 VN, rải ngẫu nhiên); lỗi → +30'. null = không tự kéo (gian Offline/mock).
@@ -1343,6 +1347,13 @@ model Order {
   /// = LOGISTICS_DELIVERY_DONE) → Lãi/Lỗ thu hồi giá vốn dù kho chưa quét;
   /// kho đánh DAMAGED/WRITTEN_OFF sau đó thì mới tính mất.
   returnDeliveredAt    DateTime?
+  /// Mốc Hubsell ĐÃ ĐỌC yêu cầu hoàn của sàn cho đơn này (02/10/2026). Null =
+  /// chưa đọc lần nào → lượt quét bù theo mã đơn của TikTok / Shopee sẽ hỏi sàn
+  /// nếu đơn có tiền hoàn trên sao kê; mỗi đơn chỉ hỏi một lần (cơ chế:
+  /// src/integrations/return-lookup.ts). Tìm đơn chờ hỏi qua chỉ mục một phần
+  /// "Order_return_lookup_pending_idx" (tạo bằng SQL trong migration, Prisma
+  /// không mô tả được chỉ mục có điều kiện). Sổ cái đơn không đọc cột này.
+  returnLookupAt       DateTime?
 
   /// Số tiền bưu cục/sàn đã đền cho kiện hàng hỏng hoặc mất.
   ///
@@ -2091,6 +2102,11 @@ model LazadaOrderSettlement {
   actualPayout Decimal   @default(0) @db.Decimal(12, 2)
   /// Ngày giao dịch MỚI NHẤT trên sao kê — mốc ghi nhận vào Báo cáo dòng tiền.
   settledAt    DateTime?
+  /// Các NGÀY giao dịch đã cộng vào sao kê này, dạng "ngày của sàn#số dòng" (02/10/2026). Lượt
+  /// quét 7 ngày so danh sách này với các dòng nó thấy để biết đơn còn dòng ở ngày nằm ngoài cửa
+  /// sổ không; có thì đọc trọn giao dịch của đơn rồi mới ghi (integrations/settlement-merge.ts).
+  /// Rỗng = dòng ghi trước 02/10/2026.
+  lineDayKeys  String[]  @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2111,7 +2127,13 @@ model TiktokOrderSettlement {
 
   /// true = số ước tính (đơn chưa quyết toán), false = bản kê đã quyết toán.
   estimated             Boolean   @default(false)
+  /// Bản kê ghi sau cùng (mốc settledAt lấy theo bản kê này).
   statementId           String?
+  /// MỌI bản kê có dòng của đơn đã cộng vào sao kê này. Dòng bán và dòng hoàn / điều chỉnh có thể
+  /// nằm ở hai bản kê cách nhau nhiều tuần; lượt quét 7 ngày dựa vào danh sách này để biết phải
+  /// đọc lại bản kê cũ nào trước khi ghi (integrations/settlement-merge.ts). Rỗng = dòng ghi trước
+  /// 02/10/2026 hoặc số ước tính.
+  statementIds          String[]  @default([])
   /// Unsettled: mốc quyết toán dự kiến sàn báo (chỉ khi sàn trả unix time).
   estimatedSettlementAt DateTime?
   unsettledReason       String?

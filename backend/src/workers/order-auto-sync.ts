@@ -61,6 +61,7 @@ import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubse
 import { adsItemSignalsDue, syncShopeeAdsItemSignals } from "../integrations/shopee/ads-item-signals";
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
+  backfillShopeeReturnsByOrder,
   backfillShopeeTrackingCodes,
   syncShopeeReturns,
 } from "../integrations/shopee/returns-sync";
@@ -73,7 +74,7 @@ import {
   syncTiktokSettlements,
   syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
-import { syncTiktokReturns } from "../integrations/tiktok/returns-sync";
+import { backfillTiktokReturnsByOrder, syncTiktokReturns } from "../integrations/tiktok/returns-sync";
 import { processTiktokDeliveryTracking } from "../integrations/tiktok/delivery-fail";
 import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
 import {
@@ -329,7 +330,11 @@ async function processChannel(channel: Channel): Promise<void> {
   // sàn chập chờn → lượt sau thử lại). Sự cố 23/09: ANO Official nối xong, đơn
   // T7 sàn đã trả nhưng bản kê chỉ quét 7 ngày → Kiểm toán báo oan 44 đơn.
   const backfill = channel.historyBackfillPending;
-  if (backfill) tiers.hourly = true;
+  // DỰNG LẠI SAO KÊ (02/10/2026): cờ bật → tầng giờ đọc lại TOÀN BỘ bản kê của gian
+  // thay cho cửa sổ 7 ngày, ép chạy ngay; hạ cờ khi lượt đó xong không lỗi. Hiện
+  // chỉ TikTok có đường dựng lại (lượt quét 7 ngày từng ghi đè làm đơn mất dòng bán).
+  const rebuild = channel.settlementRebuildPending && channel.channelName === ChannelName.TIKTOK;
+  if (backfill || rebuild) tiers.hourly = true;
   let changed = false;
   let ordersOk = false;
   let settlementsOk = false;
@@ -351,7 +356,7 @@ async function processChannel(channel: Channel): Promise<void> {
     if (tiers.pulse) {
       pulse = isTiktok ? await runTiktokAdsPulse(channel) : await runAdsPulseTier(channel);
     }
-    if (tiers.hourly) settlementsOk = await runHourlyTier(channel, { backfill });
+    if (tiers.hourly) settlementsOk = await runHourlyTier(channel, { backfill, rebuild });
     if (tiers.ads) adsSynced = isTiktok ? await runTiktokAdsTier(channel) : await runAdsTier(channel);
   } catch (err) {
     console.error(`[Auto-sync] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
@@ -360,6 +365,10 @@ async function processChannel(channel: Channel): Promise<void> {
     const fast = nextFastSchedule(channel.syncBackoffLevel, changed, cadence);
     const adsFresh = adsSynced || pulse?.synced === true;
     const backfillDone = backfill && ordersOk && settlementsOk;
+    const rebuildDone = rebuild && settlementsOk;
+    if (rebuildDone) {
+      console.log(`[Auto-sync] Gian "${channel.shopName}": đã dựng lại sao kê từ toàn bộ bản kê, hạ cờ`);
+    }
     if (backfillDone) {
       console.log(
         `[Auto-sync] Gian mới "${channel.shopName}": đã kéo trọn ${HISTORY_BACKFILL_DAYS} ngày đơn + đối soát, hạ cờ backfill`
@@ -384,6 +393,7 @@ async function processChannel(channel: Channel): Promise<void> {
           ...(adsFresh ? { lastAdsSyncAt: new Date(now) } : {}),
           ...(adsSynced ? { adsBackfillPending: false } : {}),
           ...(backfillDone ? { historyBackfillPending: false } : {}),
+          ...(rebuildDone ? { settlementRebuildPending: false } : {}),
         },
       })
       .catch((err) =>
@@ -637,7 +647,7 @@ async function runFastTier(
 // ============================================================
 async function runHourlyTier(
   channel: Channel,
-  opts: { backfill?: boolean } = {}
+  opts: { backfill?: boolean; rebuild?: boolean } = {}
 ): Promise<boolean> {
   // Cửa sổ đối soát: gian mới = HISTORY_BACKFILL_DAYS, nhịp thường = SETTLE_DAYS_BACK.
   // Trả true khi lượt đối soát phí thật KHÔNG lỗi (processChannel dùng để hạ cờ backfill).
@@ -670,12 +680,15 @@ async function runHourlyTier(
   } else if (channel.channelName === ChannelName.TIKTOK) {
     // Bản kê giải ngân TikTok 7 ngày gần nhất → số phí/tiền về thật cho từng đơn.
     try {
+      // Dựng lại: không truyền mốc → đọc từ đơn cũ nhất của gian, cắt lát 30 ngày.
       // Backfill: chế độ since → cắt lát 30 ngày như nút tay (?full), không dồn 90 ngày một cửa sổ.
-      const s = opts.backfill
-        ? await syncTiktokSettlements(channel, {
-            since: new Date(Date.now() - HISTORY_BACKFILL_DAYS * 86_400_000),
-          })
-        : await syncTiktokSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      const s = opts.rebuild
+        ? await syncTiktokSettlements(channel)
+        : opts.backfill
+          ? await syncTiktokSettlements(channel, {
+              since: new Date(Date.now() - HISTORY_BACKFILL_DAYS * 86_400_000),
+            })
+          : await syncTiktokSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
       settlementsOk = true;
       if (s.ordersUpdated > 0) {
         console.log(
@@ -698,6 +711,20 @@ async function runHourlyTier(
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi ước tính unsettled TikTok "${channel.shopName}":`, (err as Error).message);
+    }
+    // QUÉT BÙ YÊU CẦU HOÀN THEO MÃ ĐƠN (02/10/2026) — chạy SAU bản kê: đơn vừa
+    // nhận tiền hoàn từ bản kê mà chưa từng đọc yêu cầu hoàn (hoàn xong trước
+    // ngày nối gian) được hỏi sàn theo order_ids, mỗi đơn một lần. Không có đơn
+    // chờ thì chỉ tốn một câu đọc chỉ mục, không gọi sàn.
+    try {
+      const b = await backfillTiktokReturnsByOrder(channel);
+      if (b.looked > 0 || b.more) {
+        console.log(
+          `[Auto-sync] Quét bù đơn hoàn TikTok "${channel.shopName}": hỏi sàn ${b.looked} đơn, ${b.withReturns} đơn có yêu cầu hoàn (${b.scanned} yêu cầu) — ${b.delivered} ghi kiện đã về, ${b.keptByBuyer} sàn cho khách giữ hàng, ${b.unflagged} hạ cờ, ${b.itemsUpdated} dòng SKU trả${b.more ? "; còn đơn chờ lượt sau" : ""}`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi quét bù đơn hoàn TikTok "${channel.shopName}":`, (err as Error).message);
     }
     // Đợt CHI TIỀN về bank (payments) → WalletWithdrawal, cùng cột với Lazada payout.
     try {
@@ -722,6 +749,21 @@ async function runHourlyTier(
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi đối soát Shopee "${channel.shopName}":`, (err as Error).message);
+    }
+    // QUÉT BÙ YÊU CẦU HOÀN THEO MÃ ĐƠN (02/10/2026, cùng khuôn TikTok) — chạy SAU
+    // đối soát: đơn có tiền hoàn trên sao kê mà chưa từng đọc yêu cầu hoàn (hoàn
+    // xong trước ngày nối gian) được hỏi sàn qua get_escrow_detail →
+    // get_return_detail, mỗi đơn một lần. Không có đơn chờ thì chỉ tốn một câu
+    // đọc chỉ mục, không gọi sàn.
+    try {
+      const b = await backfillShopeeReturnsByOrder(channel);
+      if (b.candidates > 0) {
+        console.log(
+          `[Auto-sync] Quét bù đơn hoàn Shopee "${channel.shopName}": hỏi sàn ${b.looked} đơn, ${b.withReturns} đơn có yêu cầu hoàn (${b.scanned} yêu cầu) — ${b.delivered} ghi kiện đã về, ${b.flagged} cắm chờ kho xác nhận, ${b.itemsUpdated} dòng SKU trả, ${b.failed} đơn lỗi${b.more ? "; còn đơn chờ lượt sau" : ""}`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi quét bù đơn hoàn Shopee "${channel.shopName}":`, (err as Error).message);
     }
     // Lệnh RÚT VÍ về bank (get_wallet_transaction_list, read-only) → WalletWithdrawal.
     try {
