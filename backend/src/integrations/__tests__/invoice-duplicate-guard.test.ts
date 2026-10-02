@@ -155,6 +155,36 @@ describe("Hóa đơn gốc: một đơn một hóa đơn đang chờ / đã phá
     expect(logs.map((l) => l.providerRef)).toEqual([orderCode, orderCode]);
   });
 
+  it("lượt trước CHƯA RÕ kết quả (lát 5): ghi hỏng kèm cờ cho người gọi, đơn không mang nhãn đã có hóa đơn, lượt sau gửi đúng mã cũ", async () => {
+    const orderCode = await newOrderCode();
+    nextResult = () => ({
+      status: InvoiceLogStatus.FAILED,
+      outcomeUnknown: true,
+      errorScope: "TRANSIENT",
+      errorCode: "HUBSELL_OUTCOME_UNKNOWN",
+      errorMessage: "Chưa rõ hóa đơn này đã lập hay chưa",
+    });
+    const unknown = await issueInvoiceForOrder(fx.userId, { userId: fx.userId }, orderCode);
+    expect(unknown).toMatchObject({ ok: false, outcomeUnknown: true, errorScope: "TRANSIENT", errorCode: "HUBSELL_OUTCOME_UNKNOWN" });
+    const order = await prisma.order.findFirstOrThrow({ where: { orderCode, channel: { userId: fx.userId } } });
+    expect(order.einvoiceStatus).toBe(InvoiceLogStatus.FAILED);
+
+    // Lượt hỏng thường không mang cờ.
+    const plainCode = await newOrderCode();
+    nextResult = () => ({ status: InvoiceLogStatus.FAILED, errorMessage: "NCC từ chối", errorScope: "ORDER" });
+    const plain = await issueInvoiceForOrder(fx.userId, { userId: fx.userId }, plainCode);
+    expect(plain.outcomeUnknown).toBeUndefined();
+
+    nextResult = issued;
+    const retry = await issueInvoiceForOrder(fx.userId, { userId: fx.userId }, orderCode);
+    expect(retry.ok).toBe(true);
+    expect(retry.outcomeUnknown).toBeUndefined();
+    expect(calls.filter((c) => c.orderCode === orderCode)).toHaveLength(2);
+    const logs = await prisma.invoiceLog.findMany({ where: { ownerId: fx.userId, orderCode }, orderBy: { createdAt: "asc" } });
+    expect(logs.map((l) => l.status)).toEqual([InvoiceLogStatus.FAILED, InvoiceLogStatus.ISSUED]);
+    expect(logs[0].errorMessage).toContain("Chưa rõ");
+  });
+
   it("database tự từ chối dòng 'đang chờ' thứ hai cho cùng shop + mã đơn", async () => {
     const orderCode = await newOrderCode();
     const data = { ownerId: fx.userId, orderCode, provider: "MISA", status: InvoiceLogStatus.PENDING };

@@ -435,6 +435,7 @@ export async function issueAdjustmentForOrder(
     ok: issued,
     httpStatus: issued ? 201 : 502,
     error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành hóa đơn điều chỉnh"),
+    outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
     log: {
       ...updated,
       totalAmount: Number(updated.totalAmount),

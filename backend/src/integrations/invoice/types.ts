@@ -108,6 +108,16 @@ export interface InvoiceResult {
    * sự cố tạm (mạng, NCC bận) — lượt sau thử lại.
    */
   errorScope?: "ACCOUNT" | "ORDER" | "TRANSIENT";
+  /**
+   * CHƯA RÕ KẾT QUẢ (chỉ có nghĩa khi status = FAILED): lệnh phát hành đã gửi sang
+   * NCC nhưng không có câu trả lời rõ "đã lập" hay "từ chối" (đứt mạng sau khi gửi,
+   * NCC lỗi máy chủ, trả lời thành công mà không kèm số lẫn mã tra cứu, báo trùng
+   * mã mà tra ngược không ra). Tờ hóa đơn CÓ THỂ đã tồn tại bên NCC. Nơi gọi không
+   * được coi đây là "chắc chắn chưa lập": chỉ được gửi lại ĐÚNG mã tham chiếu cũ
+   * (khi NCC chặn trùng theo mã) hoặc tra ngược trước, theo bảng khả năng của NCC.
+   * Vắng mặt / false = NCC đã trả lời rõ, hoặc lệnh chưa hề được gửi.
+   */
+  outcomeUnknown?: boolean;
 }
 
 /** Thông tin kết nối đọc từ bảng InvoiceConfig của shop. */

@@ -12,7 +12,7 @@
  */
 
 import { InvoiceLogStatus } from "@prisma/client";
-import { explainInvoiceError, InvoiceProviderError } from "./invoice-errors";
+import { explainInvoiceError, InvoiceProviderError, isPublishOutcomeUnknown } from "./invoice-errors";
 import { clearMisaTokenCache } from "./misa-auth";
 import {
   downloadInvoiceFiles,
@@ -71,6 +71,25 @@ export const MISA_CAPABILITIES: ProviderCapabilities = {
   validatesAdjustmentOriginal: false,
 };
 
+/**
+ * Kết quả "CHƯA RÕ" của một lệnh phát hành (bước 5 lát 5). Vẫn là FAILED để đơn
+ * không mang nhãn đã có hóa đơn, kèm cờ outcomeUnknown cho lõi. Câu báo đúng với
+ * MISA vì MISA chặn trùng theo mã tham chiếu (bảng khả năng): lượt làm lại gửi
+ * đúng mã cũ, MISA báo trùng, recoverDuplicate nối lại số của tờ đã lập.
+ */
+function unknownOutcome(detail: string): InvoiceResult {
+  return {
+    status: InvoiceLogStatus.FAILED,
+    outcomeUnknown: true,
+    errorScope: "TRANSIENT",
+    errorCode: "HUBSELL_OUTCOME_UNKNOWN",
+    errorMessage:
+      "Chưa rõ hóa đơn này đã lập hay chưa: lệnh đã gửi sang meInvoice nhưng không nhận được câu trả lời rõ ràng. " +
+      "ĐỪNG lập tay trên meInvoice. Làm lại thao tác này: nếu tờ trước đã lập, Hubsell tự nhận lại đúng số hóa đơn đó, không lập thêm tờ nào. " +
+      `(meInvoice: ${detail})`,
+  };
+}
+
 export class MisaInvoiceProvider implements InvoiceProvider {
   readonly name = "MISA";
   readonly capabilities = MISA_CAPABILITIES;
@@ -99,6 +118,15 @@ export class MisaInvoiceProvider implements InvoiceProvider {
 
     try {
       const result = await this.publishWithRetry(input);
+      // MISA trả lời thành công mà không kèm số hóa đơn lẫn mã tra cứu: không có gì
+      // để chứng minh tờ đã lập và cũng không có gì để hỏi trạng thái về sau, nên
+      // KHÔNG ghi "đã phát hành" (trước 02/10/2026 ca này ghi ISSUED với số để
+      // trống). Mã tra cứu trùng đúng mã tham chiếu Hubsell gửi đi là MISA chỉ
+      // nhắc lại RefID, không phải mã của họ cấp.
+      const trackingCode = result.transactionId !== input.orderCode ? result.transactionId : null;
+      if (!result.invoiceNo && !trackingCode) {
+        return unknownOutcome("trả lời thành công nhưng không kèm số hóa đơn và mã tra cứu");
+      }
       // Tiền thuế lấy THẲNG từ InvoiceLine.vatAmount (đã bóc ngược, đúng số
       // in trên hóa đơn) — KHÔNG nhân lại unitPrice × SL × % (lệch 1đ làm tròn
       // so với chứng từ, đã dính ở HĐ 00000060: log 14.298 vs PDF 14.299).
@@ -120,6 +148,12 @@ export class MisaInvoiceProvider implements InvoiceProvider {
       if (explained.code === "TokenExpiredCode" || explained.code === "InvalidTokenCode") {
         clearMisaTokenCache();
       }
+      // Lệnh đã gửi mà không có câu trả lời rõ (đứt mạng, MISA lỗi máy chủ, mã lỗi
+      // "không rõ nguyên nhân") → báo CHƯA RÕ, không báo "hỏng" trơn.
+      if (isPublishOutcomeUnknown(err)) {
+        const { network, httpStatus } = err instanceof InvoiceProviderError ? err.detail : {};
+        return unknownOutcome(explained.code ?? (!network && httpStatus ? `HTTP ${httpStatus}` : "mất kết nối"));
+      }
       return {
         status: InvoiceLogStatus.FAILED,
         errorMessage: explained.message,
@@ -134,24 +168,34 @@ export class MisaInvoiceProvider implements InvoiceProvider {
    * nhận được kết quả (đứt mạng / server restart giữa chừng) → log kẹt FAILED,
    * ngày nào worker cũng thử lại và ngày nào cũng trùng, còn seller không thấy số
    * hóa đơn nên dễ lập tay thêm một tờ. Tra ngược theo RefID: tờ đó còn sống thì
-   * NỐI LẠI vào log như một lần phát hành thành công; đã bị xóa/hủy bên MISA hoặc
-   * tra không ra thì để nguyên lỗi cho seller tự quyết.
+   * NỐI LẠI vào log như một lần phát hành thành công; đã bị xóa/hủy bên MISA thì
+   * để nguyên lỗi cho seller tự quyết. MISA báo trùng mà Hubsell chưa lấy được số
+   * (tra không được, chưa thấy, tờ chưa phát hành xong) thì giữ thông điệp lỗi
+   * trùng nhưng gắn cờ CHƯA RÕ: tờ đó có thật bên MISA, chỉ là chưa nối được.
    */
   private async recoverDuplicate(
     input: CreateInvoiceInput,
     err: unknown
   ): Promise<InvoiceResult | null> {
-    const code = explainInvoiceError(err).code;
-    if (code !== "InvoiceDuplicated" && code !== "DuplicateInvoiceRefID") return null;
-    // Tra không được / không thấy / tờ đã bị xóa thì rơi về thông điệp lỗi trùng như cũ.
+    const explained = explainInvoiceError(err);
+    if (explained.code !== "InvoiceDuplicated" && explained.code !== "DuplicateInvoiceRefID") return null;
     const found = await this.findByReference(input.orderCode);
-    if (found.state !== "FOUND" || found.deleted || !found.issued) return null;
-    if (!found.transactionId || !found.invoiceNo) return null;
+    // Tờ đã bị xóa bên MISA: đã có kết luận, rơi về thông điệp lỗi trùng như cũ.
+    if (found.state === "FOUND" && found.deleted) return null;
+    if (found.state === "FOUND" && found.issued && found.transactionId && found.invoiceNo) {
+      return {
+        status: InvoiceLogStatus.ISSUED,
+        invoiceNo: found.invoiceNo,
+        transactionId: found.transactionId,
+        vatAmount: input.lines.reduce((s, l) => s + l.vatAmount, 0),
+      };
+    }
     return {
-      status: InvoiceLogStatus.ISSUED,
-      invoiceNo: found.invoiceNo,
-      transactionId: found.transactionId,
-      vatAmount: input.lines.reduce((s, l) => s + l.vatAmount, 0),
+      status: InvoiceLogStatus.FAILED,
+      errorMessage: explained.message,
+      errorCode: explained.code ?? undefined,
+      errorScope: explained.scope,
+      outcomeUnknown: true,
     };
   }
 

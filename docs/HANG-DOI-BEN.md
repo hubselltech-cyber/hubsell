@@ -506,7 +506,7 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 
 ### 4.6. Bước 5 (hóa đơn) — khảo sát 02/10/2026 và thiết kế lại phần hàng đợi
 
-**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (bản mới nhất `5d7c560`); việc kế là lát 5.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
+**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 viết xong 02/10 tối, chờ anh Trung gật mới đẩy (mục K); việc kế là lát 6.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
 
 **Đã kiểm và chưa kiểm**
 
@@ -687,7 +687,7 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | 2 | Lưu mã tham chiếu đã gửi; database từ chối hóa đơn gốc trùng và điều chỉnh trùng | Có (1 cột, 2 chỉ mục duy nhất): `prisma/migrations/20261002150000_invoice_provider_ref` | Chỉ ở ca hai luồng cùng lúc: luồng ghi sau nhận "đang có yêu cầu phát hành" TRƯỚC khi gọi nhà cung cấp | ✅ Trên prod từ 02/10 14:59 (`6d03c9d`, anh Trung duyệt migration: "đẩy lát 2 đi, làm cẩn thận"). Trước khi đẩy: chạy nguyên tệp migration một khối trên dev trong giao dịch rồi hoàn tác (28 ms, 892 dòng), đếm lại prod (0 trùng, không migration dở). Sau khi đẩy, đọc prod: migration xong 14:59:54, có cột `providerRef`, đủ hai chỉ mục, hai dòng cũ đã mang mã tham chiếu = mã đơn, 0 migration hỏng; web báo "No pending migrations", worker và web chạy bình thường |
 | 3 | Hai bước kiểm trước khi lập điều chỉnh (`integrations/invoice/adjust-precheck.ts`). (a) Hóa đơn gốc còn hiệu lực bên nhà cung cấp: đã xóa / không thấy / lệch số / chưa phát hành xong thì CHẶN HẲN, kèm lý do và việc nên làm cho chủ shop (anh Trung chốt 02/10); không tra được thì dừng, báo thử lại. (b) Tra lại mọi mã tham chiếu của các lượt hỏng trước: thấy tờ đã lập thì NỐI LẠI số hóa đơn vào đúng dòng của lượt đó, không lập thêm; lượt mới dùng LẠI mã của lượt hỏng gần nhất, chỉ sang số mới khi tờ trước đã lập thật. Giao diện: trang Lịch sử hiện hộp "Chưa lập hóa đơn điều chỉnh" với Lý do + Việc nên làm, ở lại tới khi bấm | Không | Hết ca điều chỉnh hai lần; thêm ca chặn. Nhà cung cấp không tra ngược được thì giữ cách cũ tới lát 5–6 | ✅ Trên prod từ 02/10 15:30 (`5d7c560`): worker 15:30, web 15:31 (không còn migration chờ, hàng đợi sẵn sàng, không lỗi mới), giao diện trên app.hubsell.tech đã có hộp chặn. Prod chưa shop nào dùng hóa đơn nên chưa có lượt điều chỉnh thật nào đi qua. Đã kiểm trước khi đẩy: test `invoice-adjust-precheck.test.ts` 21 ca (adapter giả + database dev); gọi thật sandbox MISA (chỉ tra, không lập): hóa đơn gốc đúng số cho qua, lệch số / không thấy bị chặn, lượt trước đã lập được nhận ra để nối lại; hộp chặn soi trên trình duyệt local ở 320 / 375 / 667×375 / 768 / 1366 / 1920 và giao diện tối. Không tra được vì tài khoản nhà cung cấp của shop sai thì hộp chỉ chỗ sửa kết nối, không bảo "thử lại sau" |
 | 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh (`integrations/invoice/provider-http.ts`; bốn lệnh MISA của luồng hóa đơn đầu ra: lấy token, phát hành, hỏi trạng thái / tải tệp, lấy ký hiệu). Mỗi 15 phút in dòng `[NccHTTP] MISA <loại lệnh> ...` | Không | Không | ✅ Trên prod từ 02/10 14:38 (`6d8bc4d`): worker và web lên bình thường. Prod chưa shop nào dùng hóa đơn nên chưa có dòng `[NccHTTP]` nào; dòng đầu tiên sẽ có khi có shop phát hành. Làm trước lát 2 và 3 vì không phụ thuộc và không đổi hành vi. Chưa đi qua cửa: eSign, máy tính tiền, hóa đơn đầu vào (không nằm trong luồng phát hành hiện nay) |
-| 5 | Adapter báo rõ "chưa rõ kết quả"; nhà cung cấp trả lời thành công mà không kèm số lẫn mã tra cứu thì không còn ghi là đã phát hành | Không | Chỉ ở ca lỗi | |
+| 5 | Adapter báo rõ "chưa rõ kết quả" (`InvoiceResult.outcomeUnknown`); nhà cung cấp trả lời thành công mà không kèm số lẫn mã tra cứu thì không còn ghi là đã phát hành. Chi tiết ở mục K | Không | Chỉ ở ca lỗi: dòng nhật ký vẫn ghi "hỏng" nhưng câu báo nói rõ là chưa rõ đã lập hay chưa và bảo làm lại thao tác; ca "thành công không có số" từ "đã phát hành" thành "hỏng, chưa rõ" | Viết xong 02/10 tối trên nhánh `hoa-don-buoc-5`, CHƯA đẩy (chờ anh Trung gật). Test `invoice-outcome-unknown.test.ts` 31 ca + 1 ca database trong `invoice-duplicate-guard.test.ts`; cả bộ 1.154 test qua; đã thử sandbox MISA (mục K) |
 | 6 | Tờ chưa rõ kết quả giữ "đang chờ" rồi tra lại theo bảng khả năng; đặt thời hạn chờ gọi nhà cung cấp | Không | Chỉ ở ca lỗi | |
 | 7 | Đơn lỗi vĩnh viễn: dừng tự thử sau 3 lượt | Không | Có | |
 | 8 | Làn theo shop cho TỰ PHÁT HÀNH (thay vòng chung một cờ), công tắc `INVOICE_MODE` | Có (bảng `invoice_lanes`) | Có: các shop chạy song song | Đưa lên hai lần |
@@ -732,6 +732,8 @@ Ba hệ quả cho thiết kế:
 
 Chưa thử được: mã tham chiếu của tờ đã bị XÓA bên MISA có dùng lại được không (sandbox không xóa được qua API). Nếu không dùng lại được thì ngay hôm nay, chủ shop xóa một hóa đơn trên meInvoice rồi xuất lại từ Hubsell sẽ bị báo trùng mãi. Cần một lần anh xóa thử một tờ trên trang sandbox của MISA, hoặc hỏi MISA.
 
+Thân câu trả lời thật của lệnh phát hành (sandbox 02/10 tối, HTTP 200): `Success: true`, `PublishInvoiceResult` là một CHUỖI JSON lồng, mỗi phần tử có `RefID` (nhắc lại mã tham chiếu Hubsell gửi), `TransactionID` (mã tra cứu MISA cấp), `InvNo`, `InvSeries`, `InvDate`, `ErrorCode` rỗng. Vì `RefID` luôn được nhắc lại, mã đọc phần tử này không được coi `RefID` là mã tra cứu.
+
 **J. Cổng chờ cho nhà cung cấp khác: lõi đọc bảng khả năng, không giả định ai cũng giống MISA**
 
 Mỗi adapter khai một bảng khả năng (`ProviderCapabilities` trong `integrations/invoice/types.ts`), mỗi dòng phải ghi nguồn: tài liệu của nhà cung cấp, hoặc kết quả chạy bộ bài thử ở mục I trên sandbox của chính họ. Chưa kiểm được thì khai mức an toàn.
@@ -759,6 +761,31 @@ Cách lõi xử lý một lượt "chưa rõ kết quả" theo hai khả năng c
 Sổ đăng ký (`integrations/invoice/provider-registry.ts`) là nơi duy nhất khai nhà cung cấp, với bốn trạng thái: đang chạy (MISA), lưu được nhưng chưa có adapter (Tùy biến), sắp ra mắt (EasyInvoice, M-Invoice, Mắt Bão, Viettel, VNPT, BKAV), giữ chỗ (Hubtax). Mỗi bên một công tắc phát hành riêng `<MÃ>_ALLOW_PUBLISH`; MISA giữ nguyên biến đang đặt trên prod.
 
 Quy trình mở một nhà cung cấp mới: viết adapter → chạy bộ bài thử trên sandbox của họ để điền bảng khả năng → đổi trạng thái trong sổ đăng ký → bỏ cờ "sắp ra mắt" ở giao diện → đặt công tắc phát hành. Lõi, hàng đợi, worker không sửa. Khi làm tới adapter thứ hai, em chuyển bộ bài thử sang gọi qua hợp đồng adapter để dùng chung.
+
+**K. Lát 5: adapter báo rõ "chưa rõ kết quả" (viết 02/10/2026 tối)**
+
+Hợp đồng: `InvoiceResult.outcomeUnknown = true` (đi kèm `status = FAILED`) nghĩa là lệnh phát hành ĐÃ gửi sang nhà cung cấp mà không có câu trả lời rõ, tờ hóa đơn có thể đã tồn tại bên họ. Nơi gọi không được coi là "chắc chắn chưa lập". Adapter nào cũng phải tự phân biệt hai chặng: trước khi gửi lệnh (lỗi là "chưa lập") và sau khi gửi (lỗi không có kết luận là "chưa rõ").
+
+Adapter MISA gắn cờ ở các ca sau (`invoice-errors.ts` hàm `isPublishOutcomeUnknown`, `misa-provider.ts`):
+
+| Ca | Trước lát 5 | Từ lát 5 |
+|---|---|---|
+| Đứt mạng ngay lúc gửi lệnh phát hành | Hỏng, lỗi tạm | Hỏng + chưa rõ |
+| HTTP 5xx hoặc 408 | Hỏng, lỗi tạm (408: lỗi riêng đơn) | Hỏng + chưa rõ |
+| Đứt giữa lúc đọc câu trả lời | Hỏng, xếp nhầm là lỗi riêng đơn | Hỏng + chưa rõ, lỗi tạm |
+| Trả lời thành công mà không có số hóa đơn lẫn mã tra cứu (kể cả khi chỉ nhắc lại `RefID`) | **Đã phát hành**, số để trống | Hỏng + chưa rõ |
+| Mã `Exception`, `CreateInvoiceDataError` (tài liệu MISA: không rõ nguyên nhân) | Hỏng, lỗi tạm | Hỏng + chưa rõ. Anh Trung chốt 02/10: coi là chưa rõ; có trả lời câu 3 của ticket MISA thì chỉnh |
+| Báo trùng mã mà tra ngược chưa ra số (không tra được, chưa thấy, tờ chưa phát hành xong) | Hỏng | Hỏng + chưa rõ, giữ câu báo lỗi trùng |
+
+Không gắn cờ: lỗi ở bước lấy token (lệnh chưa gửi), thiếu cấu hình, công tắc phát hành tắt, MISA từ chối có mã rõ (HTTP 4xx, sai ký hiệu, sai thuế suất...), tờ trùng đã bị xóa bên MISA. Có một trong hai (số hóa đơn hoặc mã tra cứu) vẫn ghi đã phát hành như trước.
+
+Lõi ở lát này: `issue-order` và `adjust-order` vẫn ghi dòng nhật ký "hỏng" và chuyển cờ ra cho người gọi (`IssueOrderResult.outcomeUnknown`). Không đổi database, không đổi giao diện. Câu báo cho chủ shop: chưa rõ hóa đơn đã lập hay chưa, đừng lập tay trên meInvoice, làm lại thao tác thì Hubsell tự nhận lại đúng tờ đã lập. Câu này đúng với MISA vì MISA chặn trùng theo mã tham chiếu; adapter khác phải viết câu theo bảng khả năng của mình.
+
+Vì sao rủi ro không tăng trong lúc chờ lát 6: dòng "hỏng" nhả chỉ mục duy nhất, lượt làm lại gửi đúng mã cũ, MISA báo trùng, `recoverDuplicate` nối lại số. Giới hạn còn lại: tự phát hành chỉ thử lại đơn hỏng tối đa một lần mỗi 24 giờ, nên tờ chưa rõ được nối lại vào hôm sau hoặc khi chủ shop bấm tay; lát 6 rút xuống 5 phút.
+
+Thử sandbox MISA 02/10 tối (`backend/scripts/misa-outcome-unknown-probe.ts`, lập 2 tờ sandbox 00000138 và 00000139): lệnh phát hành gửi thật, MISA lập xong, câu trả lời bị vứt theo hai kiểu (ném lỗi mạng; trả tiêu đề rồi đứt lúc đọc thân). Cả hai kiểu: adapter trả hỏng + chưa rõ; tra ngược thấy tờ đã lập; gọi lại với đúng mã cũ ra "đã phát hành" đúng số của tờ đó; MISA chỉ có một tờ cho mỗi mã.
+
+Chưa kiểm: MISA trả HTTP 5xx thật hay mã `Exception` thật (chỉ giả lập trong test); hóa đơn điều chỉnh ở ca chưa rõ trên sandbox (đường nối lại của điều chỉnh đã thử ở lát 3). Không đụng: đường xuất hóa đơn của chính Hubsell trên HQ (`routes/admin.ts` gọi thẳng `publishStandardInvoice`, có cách xử lý riêng khi chưa có số), ghi sổ mục 7.
 
 ### 4.7. Bước 6 (dọn) — kiểm kê 02/10/2026
 
@@ -869,6 +896,7 @@ Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả
 | Bước 5 (hóa đơn) | Anh Trung duyệt 02/10; làm theo 14 lát ở mục 4.6 F, mỗi lát commit và đẩy riêng | Lát 2 chờ câu đọc trên prod (mục 4.6 C) và trình migration |
 | Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không | Đã gửi ticket MISA 02/10 kèm 5 câu khác (`docs/MISA-TICKET-MA-THAM-CHIEU-HOA-DON-DA-XOA.md`); chờ trả lời | Không dùng lại được thì chủ shop xóa hóa đơn rồi xuất lại từ Hubsell sẽ bị báo trùng mãi (mục 4.6 I) |
 | Bước 6 (dọn) | Ba đợt, mốc ở mục 4.7: 6a thời hạn chờ 04–06/10; 6b webhook và đẩy tồn từ 09/10; 6c hóa đơn sau bước 5 một tuần | Danh sách tệp phải gỡ, câu đọc điều kiện và 3 điểm cần chốt ở mục 4.7 |
+| Hóa đơn của chính Hubsell trên HQ: chưa có xử lý "chưa rõ kết quả" | Khi Hubsell bắt đầu xuất hóa đơn cho khách qua HQ | `routes/admin.ts` gọi thẳng `publishStandardInvoice`, không qua adapter: đứt mạng sau khi gửi thì báo lỗi, bấm lại sẽ gặp lỗi trùng mã mà không tự nối số (mục 4.6 K). Cho đi qua adapter hoặc thêm bước tra ngược |
 | Tự phát hành: mốc "đã xét tới ngày nào" cho từng shop | Khi có shop phát hành hàng nghìn hóa đơn mỗi ngày | Hiện mỗi lượt đi lại qua mọi đơn đã giao kể từ ngày bật (mục 4.6, bảng A điểm 8) |
 | Tự phát hành: đơn lỗi vĩnh viễn được thử lại mỗi ngày không dừng | Lát 7 của bước 5 (anh Trung nhận đề xuất 02/10) | Dừng tự thử sau 3 lượt, để chủ shop xuất tay |
 | Trang Hàng chờ xuất hóa đơn đếm ba lần trên mọi đơn đã giao của shop | Khi đụng lại trang đó | Ba câu đếm kèm điều kiện "chưa có hóa đơn" nặng dần theo số đơn (thấy khi đọc `routes/tax.ts` 02/10, chưa đo) |

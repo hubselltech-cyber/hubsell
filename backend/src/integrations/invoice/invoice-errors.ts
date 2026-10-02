@@ -39,6 +39,12 @@ export class InvoiceProviderError extends Error {
       httpStatus?: number;
       /** true = không tới được máy chủ NCC (DNS, timeout, reset). */
       network?: boolean;
+      /**
+       * true = lỗi xảy ra SAU KHI lệnh phát hành đã rời Hubsell, NCC có thể đã nhận
+       * và lập hóa đơn. Lỗi ở bước trước đó (lấy token, thiếu cấu hình) không mang
+       * cờ này: khi ấy chắc chắn chưa có tờ nào. Xem isPublishOutcomeUnknown.
+       */
+      publishSent?: boolean;
     } = {}
   ) {
     super(message);
@@ -54,7 +60,8 @@ export class InvoiceProviderError extends Error {
 export function providerErrorFromBody(
   prefix: string,
   text: string,
-  httpStatus?: number
+  httpStatus?: number,
+  extra: { publishSent?: boolean } = {}
 ): InvoiceProviderError {
   let json: Record<string, unknown> | null = null;
   try {
@@ -72,8 +79,32 @@ export function providerErrorFromBody(
     : [];
   return new InvoiceProviderError(
     `${prefix}${httpStatus ? ` (HTTP ${httpStatus})` : ""}: ${code ? `ErrorCode=${code}` : text.slice(0, 300)}`,
-    { code, subCodes, description, httpStatus }
+    { code, subCodes, description, httpStatus, ...extra }
   );
+}
+
+/**
+ * Mã lỗi meInvoice trả về mà KHÔNG nói được hóa đơn đã lập hay chưa. [doc] bảng
+ * "Mã lỗi thường gặp" ghi Exception = "Không rõ nguyên nhân", CreateInvoiceDataError
+ * = lỗi tạo hóa đơn không xác định. Xếp vào "chưa rõ kết quả" là mức AN TOÀN (anh
+ * Trung chốt 02/10/2026): coi nhầm một tờ đã lập là "hỏng hẳn" thì nặng hơn nhiều
+ * so với tra lại thừa một lần. Câu 3 của ticket MISA 02/10 hỏi đúng chuyện này,
+ * có trả lời thì sửa danh sách.
+ */
+const UNKNOWN_OUTCOME_CODES = new Set(["Exception", "CreateInvoiceDataError"]);
+
+/**
+ * CHƯA RÕ KẾT QUẢ (bước 5 lát 5, docs/HANG-DOI-BEN.md mục 4.6): lệnh phát hành đã
+ * gửi mà không có câu trả lời rõ "đã lập" hay "từ chối". Gồm: đứt mạng / đứt giữa
+ * lúc đọc câu trả lời, HTTP 5xx, HTTP 408, và các mã ở UNKNOWN_OUTCOME_CODES.
+ * NCC từ chối có mã rõ (4xx, sai ký hiệu, sai thuế suất...) là đã có kết luận.
+ */
+export function isPublishOutcomeUnknown(err: unknown): boolean {
+  if (!(err instanceof InvoiceProviderError) || !err.detail.publishSent) return false;
+  const { network, httpStatus, code } = err.detail;
+  if (network) return true;
+  if (httpStatus !== undefined && (httpStatus >= 500 || httpStatus === 408)) return true;
+  return code != null && UNKNOWN_OUTCOME_CODES.has(code);
 }
 
 export interface ExplainedInvoiceError {

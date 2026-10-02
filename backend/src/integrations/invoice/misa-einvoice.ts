@@ -401,13 +401,25 @@ export async function publishStandardInvoice(
       body: JSON.stringify(buildStandardInvoicePayload(input, cfg)),
     });
   } catch (err) {
+    // Từ đây trở xuống lệnh phát hành ĐÃ rời Hubsell: mọi lỗi mang publishSent để
+    // adapter phân biệt "chưa rõ kết quả" với "chắc chắn chưa lập" (lỗi lấy token ở trên).
     throw new InvoiceProviderError(`Không gọi được ${url}: ${(err as Error).message}`, {
       network: true,
+      publishSent: true,
     });
   }
-  const text = await res.text();
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (err) {
+    // Đứt giữa lúc đọc câu trả lời: MISA đã xử lý xong lệnh, Hubsell không đọc được kết quả.
+    throw new InvoiceProviderError(
+      `Mất kết nối khi đang đọc câu trả lời của ${url}: ${(err as Error).message}`,
+      { network: true, httpStatus: res.status, publishSent: true }
+    );
+  }
   if (!res.ok) {
-    throw providerErrorFromBody("meInvoice từ chối phát hành", text, res.status);
+    throw providerErrorFromBody("meInvoice từ chối phát hành", text, res.status, { publishSent: true });
   }
 
   let raw: unknown;
@@ -417,7 +429,7 @@ export async function publishStandardInvoice(
     raw = text;
   }
   if (pick(raw, "Success", "success") === false) {
-    throw providerErrorFromBody("meInvoice từ chối phát hành", text);
+    throw providerErrorFromBody("meInvoice từ chối phát hành", text, undefined, { publishSent: true });
   }
 
   // Kết quả nằm ở publishInvoiceResult[] — MỖI hóa đơn một phần tử, thành công
@@ -441,6 +453,7 @@ export async function publishStandardInvoice(
       {
         code: String(perInvoiceError),
         description: typeof desc === "string" ? desc : null,
+        publishSent: true,
       }
     );
   }

@@ -32,6 +32,11 @@ export interface IssueOrderResult {
   errorCode?: string;
   errorScope?: InvoiceErrorScope;
   /**
+   * true = NCC CHƯA trả lời rõ tờ này đã lập hay chưa (InvoiceResult.outcomeUnknown).
+   * Dòng nhật ký vẫn ghi FAILED; người gọi không được coi là "chắc chắn chưa lập".
+   */
+  outcomeUnknown?: boolean;
+  /**
    * Khi Hubsell CHỦ ĐỘNG KHÔNG LẬP (vd không xác nhận được hóa đơn gốc trước khi
    * điều chỉnh): chuyện gì đang xảy ra + việc chủ shop nên làm, tách riêng để giao
    * diện trình bày. `error` vẫn mang cả hai, gộp thành một câu.
@@ -485,6 +490,7 @@ export async function issueInvoiceForOrder(
     error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành"),
     errorCode: issued ? undefined : result.errorCode,
     errorScope: issued ? undefined : (result.errorScope ?? "ORDER"),
+    outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
     log: {
       ...updated,
       totalAmount: Number(updated.totalAmount),
