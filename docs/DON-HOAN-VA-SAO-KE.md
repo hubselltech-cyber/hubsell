@@ -118,6 +118,8 @@ Làm mượt chạy trong từng tiến trình (web và worker mỗi bên một 
 | 7 | Việc dài (dựng lại sao kê, nạp lịch sử) hỏng giữa chừng thì chạy lại từ đầu | Cần con trỏ tiến độ theo gian (xem `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md` mục 6.3) |
 | 8 | Cầu dao chung và làn ưu tiên cho TikTok | `services/api-budget.ts` đã có cho quảng cáo; chưa nối cho API đơn / tài chính TikTok |
 | 9 | 6 đơn mất dòng bán của gian Dao Em Liên 68 | Gian đã ngắt kết nối từ 01/10/2026; cờ dựng lại vẫn bật, nối lại là tự sửa |
+| 10 | Phần Lazada của mục 3 chưa chạy thật lần nào | Prod 02/10/2026 không còn gian Lazada thật nào đang nối (Hi.Bé hết hạn ủy quyền, DarkMan đã ngắt, chỉ còn gian demo). Mới kiểm bằng test. Khi có gian Lazada nối lại: xem log `[Lazada Settle]` có dòng "Không đọc trọn được" / "CHƯA đọc trọn được" không, và đếm sao kê Lazada đã có `lineDayKeys` |
+| 11 | Chưa biết TikTok có trả tiêu đề `Retry-After` khi báo quá tải không | Chỉ log worker trả lời được: dòng `[TikTok] QUA TAI ...` in sẵn `retry-after <số hoặc ->`. Tới 22:50 ngày 02/10/2026 chưa đọc log sau lần đưa lên (xem mục 7) |
 
 ---
 
@@ -145,3 +147,31 @@ Gian còn bật cờ dựng lại sao kê:
 ```sql
 select "channelName", "shopName", status from "Channel" where "settlementRebuildPending";
 ```
+
+Sao kê TikTok ghi sau một mốc, theo gian (xem lượt giờ có chạy và chạy trong bao lâu; thay mốc giờ UTC):
+
+```sql
+select c."shopName", count(*), min(s."updatedAt"), max(s."updatedAt"),
+       count(*) filter (where s.estimated = false and s."grossSales" = 0 and s."refundGross" < 0) as mat_dong_ban
+from tiktok_order_settlements s
+join "Order" o on o.id = s."orderId"
+join "Channel" c on c.id = o."channelId"
+where s."updatedAt" > timestamp '2026-10-02 14:54:08'
+group by 1 order by 1;
+```
+
+---
+
+## 7. Đưa lên prod 02/10/2026 và kết quả kiểm
+
+Bản `356ef42` (mục 3 phần Lazada, mục 4, tệp này) lên prod lúc 21:54 ngày 02/10/2026. Kiểm bằng các câu ở mục 6 trên Supabase (chỉ đọc), lúc 22:50:
+
+| Điểm kiểm | Kết quả |
+|---|---|
+| Migration `20261002220000_lazada_settlement_line_day_keys` | Áp xong 21:54:08, không bị hoàn tác; cột `lineDayKeys` có trên prod |
+| Lượt giờ của 11 gian TikTok đang nối | Cả 11 gian chạy xong lượt đầu trên bản mới, 0 lỗi liên tiếp. Từ lúc đến hạn tới lúc ghi xong sao kê: 9 giây đến 1 phút 37 giây (gian nhiều nhất LUMI SOLAR 993 sao kê) |
+| Nhịp quét nhanh | Vẫn 9–11 phút như trước khi đưa lên |
+| Đơn mất dòng bán | 0 trong 2.212 sao kê ghi sau khi đưa lên; toàn hệ thống vẫn 6 (gian Dao Em Liên 68, mục 5 điểm 9) |
+| Cờ dựng lại sao kê | Chỉ còn gian Dao Em Liên 68 |
+
+Chưa kiểm được: thời gian lượt giờ TRƯỚC khi đưa lên (không có số để so, chỉ biết sau khi đưa lên không nghẽn); có lần nào bị sàn báo quá tải rồi thử lại thành công không (database không để dấu, xem mục 5 điểm 11); phần Lazada (mục 5 điểm 10).
