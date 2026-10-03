@@ -272,7 +272,12 @@ export function invoiceBulkMode(env: NodeJS.ProcessEnv = process.env): InvoiceBu
  * đổi mặc định sang lane. Đường lui: INVOICE_SINGLE_MODE=inline ở web.
  */
 export type InvoiceSingleMode = "lane" | "inline";
-export const DEFAULT_INVOICE_SINGLE_MODE: InvoiceSingleMode = "inline";
+/**
+ * Lần một (49b109d, 03/10/2026 13:38) mặc định inline — worker biết xử lý loại ADJUST
+ * và ghi kết quả chi tiết lên trước, đã kiểm prod 13:40. Lần hai đổi mặc định sang
+ * lane. Đường lui: INVOICE_SINGLE_MODE=inline ở web.
+ */
+export const DEFAULT_INVOICE_SINGLE_MODE: InvoiceSingleMode = "lane";
 
 export function invoiceSingleMode(env: NodeJS.ProcessEnv = process.env): InvoiceSingleMode {
   const raw = (env.INVOICE_SINGLE_MODE ?? "").trim().toLowerCase();
