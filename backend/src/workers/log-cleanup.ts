@@ -130,6 +130,19 @@ export async function runOnce(): Promise<void> {
         prisma.webhookEvent.findMany({ where: webhookWhere, select: { id: true }, take }),
       (ids) => prisma.webhookEvent.deleteMany({ where: { id: { in: ids } } })
     );
+    // Yêu cầu xuất hóa đơn bấm tay (bước 5 lát 9): dòng đã có kết cục giữ 7 ngày,
+    // còn lại 30 ngày (docs/HANG-DOI-BEN.md 4.6 D). Đi theo chỉ mục createdAt.
+    const requestWhere = {
+      OR: [
+        { status: { not: "PENDING" }, createdAt: { lt: doneBefore } },
+        { createdAt: { lt: maxBefore } },
+      ],
+    };
+    await deleteInBatches(
+      "invoice_requests",
+      (take) => prisma.invoiceRequest.findMany({ where: requestWhere, select: { id: true }, take }),
+      (ids) => prisma.invoiceRequest.deleteMany({ where: { id: { in: ids } } })
+    );
     await deleteInBatches(
       "misa_webhook_logs",
       (take) =>

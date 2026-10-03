@@ -25,6 +25,12 @@ export const QUEUES = {
   stockVerify: "stock.verify",
   /** Việc đẩy tồn hỏng sau khi hết lượt thử. */
   stockDead: "stock.dead",
+  /**
+   * Tín hiệu "shop này vừa có yêu cầu phát hành hóa đơn" — khóa mã chủ shop, gộp
+   * theo khóa. Việc chỉ gọi làn của shop rồi trả về (bước 5 lát 9); không có hàng
+   * đợi lỗi vì mất tín hiệu thì lưới quét invoice_requests nhặt.
+   */
+  invoiceIssue: "invoice.issue",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
@@ -230,4 +236,35 @@ export const DEFAULT_INVOICE_LANE_CONCURRENCY = 2;
 export function invoiceLaneConcurrency(env: NodeJS.ProcessEnv = process.env): number {
   const n = Number(env.INVOICE_LANE_CONCURRENCY);
   return Number.isInteger(n) && n >= 1 && n <= 50 ? n : DEFAULT_INVOICE_LANE_CONCURRENCY;
+}
+
+/**
+ * ĐƯỜNG XUẤT HÓA ĐƠN HÀNG LOẠT BẤM TAY (bước 5 lát 9, 03/10/2026):
+ *   · inline — web gọi nhà cung cấp ngay trong request, tối đa 50 đơn (trước lát 9).
+ *   · lane   — web chỉ ghi dòng invoice_requests + gửi tín hiệu rồi trả lời ngay;
+ *     làn của shop ở worker phát hành lần lượt, giao diện hỏi tiến độ theo lô.
+ * Lát 9 ĐƯA LÊN HAI LẦN: lần một mặc định inline (bảng + worker biết xử lý yêu cầu
+ * lên trước, chưa ai gửi), lần hai đổi mặc định sang lane. Giao diện đọc cờ
+ * `bulkViaLane` trong /invoice-queue để chọn đường nên lên Vercel lúc nào cũng được.
+ * Đường lui: INVOICE_BULK_MODE=inline ở web.
+ */
+export type InvoiceBulkMode = "lane" | "inline";
+export const DEFAULT_INVOICE_BULK_MODE: InvoiceBulkMode = "inline";
+
+export function invoiceBulkMode(env: NodeJS.ProcessEnv = process.env): InvoiceBulkMode {
+  const raw = (env.INVOICE_BULK_MODE ?? "").trim().toLowerCase();
+  return raw === "lane" || raw === "inline" ? raw : DEFAULT_INVOICE_BULK_MODE;
+}
+
+/**
+ * Nhịp lưới quét yêu cầu bấm tay tới hạn, giây. Mặc định 5 (docs 4.6 B — bằng lưới
+ * quét đẩy tồn): tín hiệu pg-boss không tới thì chủ shop chờ thêm nhiều nhất chừng
+ * này. Câu quét đi theo chỉ mục riêng phần chỉ chứa dòng chờ. Đổi bằng
+ * INVOICE_REQUEST_SWEEP_SECONDS.
+ */
+export const DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS = 5;
+
+export function invoiceRequestSweepSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.INVOICE_REQUEST_SWEEP_SECONDS);
+  return Number.isFinite(n) && n >= 1 && n <= 3600 ? n : DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS;
 }

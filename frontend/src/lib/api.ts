@@ -4364,6 +4364,8 @@ export interface InvoiceQueueRowDTO {
    * bằng nút Xuất hóa đơn như thường. null = máy vẫn tự thử (hoặc chưa lỗi).
    */
   autoStopped: { attempts: number; lastError: string | null; lastAt: string } | null;
+  /** Đơn đang nằm trong một lượt xuất chạy nền (lát 9) — không tick lại được. */
+  issuing?: boolean;
 }
 
 /** Tab lọc hàng chờ: theo đối soát, hoặc chỉ đơn máy đã ngừng tự thử (lát 7). */
@@ -4385,6 +4387,15 @@ export interface InvoiceAutoIssueState {
 }
 
 export interface InvoiceQueueResponse extends InvoiceAutoIssueState {
+  /**
+   * Backend đã bật đường xuất hàng loạt CHẠY NỀN (hóa đơn bước 5 lát 9): bấm Xuất là
+   * ghi yêu cầu rồi hỏi tiến độ theo lô. Vắng mặt / false = đường cũ (chờ ngay trên nút).
+   */
+  bulkViaLane?: boolean;
+  /** Số đơn tối đa một lần bấm ở đường chạy nền. */
+  bulkMaxOrders?: number;
+  /** Lô đang chạy của shop — quay lại trang vẫn thấy tiến độ. */
+  activeBatchId?: string | null;
   /** Tự động lập hóa đơn ĐIỀU CHỈNH giảm khi đơn hoàn nhập kho. */
   autoAdjustEnabled: boolean;
   /** Đã đủ cấu hình tối thiểu để phát hành (ký hiệu + tài khoản meInvoice). */
@@ -4427,6 +4438,45 @@ export function issueInvoicesBulk(orderCodes: string[]) {
     method: "POST",
     body: JSON.stringify({ orderCodes }),
   });
+}
+
+/** Tiến độ một lượt xuất hóa đơn chạy nền (lát 9). */
+export interface InvoiceBatchProgress {
+  batchId: string;
+  total: number;
+  /** Chưa tới lượt. */
+  pending: number;
+  issued: number;
+  failed: number;
+  /** Chưa rõ kết quả — hệ thống đang tự kiểm lại với nhà cung cấp. */
+  checking: number;
+  cancelled: number;
+  active: boolean;
+  errors: Array<{ orderCode: string; error: string }>;
+}
+
+/** Bấm Xuất ở đường chạy nền: backend nhận yêu cầu rồi trả lời ngay. */
+export function startInvoiceBatch(orderCodes: string[]) {
+  return apiFetch<{
+    batchId: string;
+    queued: number;
+    skipped: Array<{ orderCode: string; reason: string }>;
+  }>("/api/tax/invoices/batches", {
+    method: "POST",
+    body: JSON.stringify({ orderCodes }),
+  });
+}
+
+export function fetchInvoiceBatch(batchId: string) {
+  return apiFetch<InvoiceBatchProgress>(`/api/tax/invoices/batches/${encodeURIComponent(batchId)}`);
+}
+
+/** "Dừng phần còn lại": đơn chưa tới lượt không xuất nữa; tờ đang xuất dở vẫn hoàn tất. */
+export function cancelInvoiceBatch(batchId: string) {
+  return apiFetch<{ cancelled: number; progress: InvoiceBatchProgress }>(
+    `/api/tax/invoices/batches/${encodeURIComponent(batchId)}/cancel`,
+    { method: "POST" }
+  );
 }
 
 /** Công tắc tự động phát hành — gửi gì đổi nấy: bật/tắt, đổi mốc xuất, hoặc

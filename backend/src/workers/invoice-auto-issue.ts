@@ -59,7 +59,7 @@ import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
 
 const DEFAULT_INTERVAL_MINUTES = 15;
 /** Trần hóa đơn mỗi shop mỗi lượt quét — chống xả hàng loạt khi cấu hình sai. */
-const MAX_PER_OWNER_PER_RUN = 20;
+export const MAX_PER_OWNER_PER_RUN = 20;
 /** Đơn có bản ghi hóa đơn (kể cả FAILED) mới hơn cửa sổ này thì chưa thử lại. */
 const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -204,6 +204,11 @@ export interface AutoIssueRunOptions {
   shouldStop?: () => boolean | Promise<boolean>;
   /** Xem AutoIssueCandidateOptions. Đường cũ: true. Làn theo shop: false. */
   transientBlocks?: boolean;
+  /**
+   * Số tờ tối đa của lượt này (mặc định MAX_PER_OWNER_PER_RUN). Làn theo shop truyền
+   * phần còn lại của lượt sau khi đã làm các yêu cầu bấm tay (lát 9).
+   */
+  take?: number;
 }
 
 /**
@@ -217,11 +222,12 @@ export async function runAutoIssueForShop(
   opts: AutoIssueRunOptions = {}
 ): Promise<AutoIssueRunResult> {
   const transientBlocks = opts.transientBlocks ?? true;
+  const take = Math.max(1, Math.min(opts.take ?? MAX_PER_OWNER_PER_RUN, MAX_PER_OWNER_PER_RUN));
   const trigger = normalizeAutoIssueTrigger(cfg.autoIssueTrigger);
   const orders = await findAutoIssueCandidates(
     { ownerId: cfg.ownerId, trigger, autoIssueEnabledAt: cfg.autoIssueEnabledAt },
     new Date(),
-    MAX_PER_OWNER_PER_RUN,
+    take,
     { transientBlocks }
   );
   if (orders.length === 0) {
@@ -281,7 +287,7 @@ export async function runAutoIssueForShop(
     ? "PAUSED"
     : transient
       ? "TRANSIENT"
-      : interrupted || orders.length >= MAX_PER_OWNER_PER_RUN
+      : interrupted || orders.length >= take
         ? "BACKLOG"
         : "DONE";
   console.log(

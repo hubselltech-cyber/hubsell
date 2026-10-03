@@ -23,17 +23,37 @@
 //
 // Cấu hình: INVOICE_LANE_CONCURRENCY (2), INVOICE_LANE_SWEEP_SECONDS (30),
 // INVOICE_AUTO_ISSUE_MINUTES (15, nhịp khi shop hết đơn; "0" = tắt).
+//
+// LÁT 9 (03/10/2026) — YÊU CẦU BẤM TAY đi chung làn:
+//   Mỗi lượt của một shop:  1. yêu cầu bấm tay tới hạn (invoice_requests), cũ trước
+//                           2. phần còn lại của 20 tờ cho tự phát hành — chỉ khi làn
+//                              tới giờ theo lịch (nextRunAt), shop bật công tắc,
+//                              INVOICE_MODE=lanes.
+//   Ai gọi lượt:            tín hiệu pg-boss invoice.issue (ngay sau khi chủ shop bấm)
+//                           + lưới quét yêu cầu mỗi 5 giây (mất tín hiệu vẫn chạy).
+//                           Hai đường này thuê làn KHÔNG xét nextRunAt: nextRunAt là
+//                           lịch của tự phát hành; yêu cầu tới hạn theo nextRetryAt của nó.
+//   Lưới quét yêu cầu chạy ở MỌI INVOICE_MODE (đường lui legacy của tự phát hành
+//   không làm chết nút bấm tay). Ngắt mạch chỉ chặn phần tự động.
+// Cấu hình thêm: INVOICE_REQUEST_SWEEP_SECONDS (5).
 // ============================================================
 
 import { hostname } from "node:os";
 import { randomBytes } from "node:crypto";
 
-import { invoiceLaneConcurrency } from "../lib/queue-config";
+import { invoiceLaneConcurrency, invoiceMode, invoiceRequestSweepSeconds } from "../lib/queue-config";
 import { prisma } from "../lib/prisma";
+import { QUEUES, registerWorker } from "../lib/queue";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
+import {
+  runIssueRequestsForShop,
+  type InvoiceIssueSignal,
+  type RequestRunOutcome,
+} from "../services/invoice-requests";
 import {
   AUTO_ISSUE_CONFIG_SELECT,
   autoIssueSkipReason,
+  MAX_PER_OWNER_PER_RUN,
   runAutoIssueForShop,
   type AutoIssueOutcome,
 } from "./invoice-auto-issue";
@@ -61,6 +81,7 @@ export function invoiceLaneWorkerId(): string {
 let stopping = false;
 const running = new Map<string, Promise<void>>();
 let sweepTimer: NodeJS.Timeout | null = null;
+let requestSweepTimer: NodeJS.Timeout | null = null;
 
 /** Nhịp khi shop hết đơn — dùng lại INVOICE_AUTO_ISSUE_MINUTES của đường cũ. */
 export function idleDelayMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -113,11 +134,17 @@ export async function ensureInvoiceLanes(opts: SweepOptions = {}): Promise<numbe
  * Thuê làn của một shop cho tiến trình `by`. Một câu UPDATE có điều kiện: chỉ
  * thành công khi làn rảnh (hoặc hạn thuê cũ đã qua) và đã tới giờ. Trả true = của mình.
  */
-export async function claimInvoiceLane(ownerId: string, by: string = workerId, now = new Date()): Promise<boolean> {
+export async function claimInvoiceLane(
+  ownerId: string,
+  by: string = workerId,
+  now = new Date(),
+  /** ignoreSchedule = thuê cho YÊU CẦU BẤM TAY (lát 9): không xét lịch tự phát hành. */
+  opts: { ignoreSchedule?: boolean } = {}
+): Promise<boolean> {
   const r = await prisma.invoiceLane.updateMany({
     where: {
       ownerId,
-      nextRunAt: { lte: now },
+      ...(opts.ignoreSchedule ? {} : { nextRunAt: { lte: now } }),
       OR: [{ leasedUntil: null }, { leasedUntil: { lt: now } }],
     },
     data: { leasedBy: by, leasedUntil: new Date(now.getTime() + LANE_LEASE_MS) },
@@ -173,64 +200,98 @@ export function scheduleAfter(
 }
 
 /**
- * MỘT LƯỢT của một shop qua làn: thuê → chạy → hẹn → trả. Trả về kết cục, hoặc
- * null khi không thuê được (shop đang có tiến trình khác, hoặc chưa tới giờ).
+ * Gộp kết cục phần yêu cầu bấm tay và phần tự phát hành thành kết cục của lượt —
+ * hàm thuần, có test. Lỗi tạm / ngắt mạch thắng; rồi tới còn tồn; rồi đã làm; rồi rỗng.
  */
-export async function runInvoiceLaneOnce(ownerId: string): Promise<AutoIssueOutcome | null> {
-  if (!(await claimInvoiceLane(ownerId))) return null;
+export function mergeLaneOutcome(req: RequestRunOutcome, auto: AutoIssueOutcome | null): AutoIssueOutcome {
+  if (req === "TRANSIENT" || auto === "TRANSIENT") return "TRANSIENT";
+  if (auto === "PAUSED") return "PAUSED";
+  if (req === "BACKLOG" || auto === "BACKLOG") return "BACKLOG";
+  if (req === "DONE" || req === "ABORTED" || auto === "DONE") return "DONE";
+  return "IDLE";
+}
+
+export interface LaneRunOptions {
+  /**
+   * true = lượt do YÊU CẦU BẤM TAY gọi (tín hiệu invoice.issue / lưới quét yêu cầu):
+   * thuê làn không xét nextRunAt. Phần tự phát hành chỉ chạy kèm khi làn cũng đã tới
+   * giờ theo lịch; chưa tới giờ thì lịch tự phát hành giữ nguyên.
+   */
+  forRequests?: boolean;
+}
+
+/**
+ * MỘT LƯỢT của một shop qua làn: thuê → yêu cầu bấm tay → tự phát hành → hẹn → trả.
+ * Trả về kết cục, hoặc null khi không thuê được (shop đang có tiến trình khác, hoặc
+ * chưa tới giờ).
+ */
+export async function runInvoiceLaneOnce(ownerId: string, opts: LaneRunOptions = {}): Promise<AutoIssueOutcome | null> {
+  const claimedAt = new Date();
+  if (!(await claimInvoiceLane(ownerId, workerId, claimedAt, { ignoreSchedule: opts.forRequests }))) return null;
   const lane = await prisma.invoiceLane.findUnique({
     where: { ownerId },
-    select: { transientStreak: true },
+    select: { transientStreak: true, nextRunAt: true },
   });
   const prevStreak = lane?.transientStreak ?? 0;
+  // Thuê thường (không forRequests) chỉ thành công khi đã tới giờ.
+  const autoDue = lane ? lane.nextRunAt.getTime() <= claimedAt.getTime() : false;
   let interrupted = false;
   let outcome: AutoIssueOutcome = "IDLE";
-  try {
-    const cfg = await prisma.invoiceConfig.findFirst({
-      where: { ownerId, ...ACTIVE_CONFIG },
-      select: AUTO_ISSUE_CONFIG_SELECT,
-    });
-    const skip = cfg ? autoIssueSkipReason(cfg) : "shop không còn bật tự phát hành";
-    if (!cfg || skip) {
-      // Không gọi nhà cung cấp; hẹn như lượt rỗng. Lưới quét vốn không nhận shop tắt /
-      // ngắt mạch, nhánh này chỉ gặp khi cấu hình đổi giữa lúc quét và lúc thuê.
-      outcome = "IDLE";
-      return outcome;
+  let lastRenew = Date.now();
+  const shouldStop = async (): Promise<boolean> => {
+    if (stopping) {
+      interrupted = true;
+      return true;
     }
-    let lastRenew = Date.now();
-    const result = await runAutoIssueForShop(cfg, {
-      transientBlocks: false,
-      shouldStop: async () => {
-        if (stopping) {
-          interrupted = true;
-          return true;
-        }
-        if (Date.now() - lastRenew >= LANE_RENEW_EVERY_MS) {
-          const ok = await renewInvoiceLane(ownerId);
-          lastRenew = Date.now();
-          if (!ok) {
-            console.warn(`[Invoice-lanes] Shop ${ownerId}: làn không còn là của tiến trình này — dừng lượt`);
-            interrupted = true;
-            return true;
-          }
-        }
-        return false;
-      },
-    });
-    outcome = result.outcome;
+    if (Date.now() - lastRenew >= LANE_RENEW_EVERY_MS) {
+      const ok = await renewInvoiceLane(ownerId);
+      lastRenew = Date.now();
+      if (!ok) {
+        console.warn(`[Invoice-lanes] Shop ${ownerId}: làn không còn là của tiến trình này — dừng lượt`);
+        interrupted = true;
+        return true;
+      }
+    }
+    return false;
+  };
+  try {
+    // 1. Yêu cầu bấm tay, cũ trước (lát 9). Không xét công tắc tự phát hành lẫn ngắt
+    //    mạch: chủ shop bấm tay là có chủ đích; nhà cung cấp tự chặn nếu chưa được phép.
+    const req = await runIssueRequestsForShop(ownerId, { budget: MAX_PER_OWNER_PER_RUN, shouldStop });
+    // 2. Phần còn lại của lượt cho tự phát hành. Bỏ qua khi phần trên vừa dừng vì nhà
+    //    cung cấp lỗi tạm / lỗi tài khoản (gọi tiếp chỉ lặp lại đúng lỗi đó).
+    let auto: AutoIssueOutcome | null = null;
+    const remaining = MAX_PER_OWNER_PER_RUN - req.processed;
+    const reqStopped = req.outcome === "TRANSIENT" || req.outcome === "ABORTED" || req.interrupted;
+    if (!reqStopped && autoDue && remaining > 0 && invoiceMode() === "lanes" && isPublishAllowed()) {
+      const cfg = await prisma.invoiceConfig.findFirst({
+        where: { ownerId, ...ACTIVE_CONFIG },
+        select: AUTO_ISSUE_CONFIG_SELECT,
+      });
+      // Shop tắt công tắc / ngắt mạch / thiếu tài khoản: không gọi nhà cung cấp, coi như lượt rỗng.
+      if (cfg && !autoIssueSkipReason(cfg)) {
+        const result = await runAutoIssueForShop(cfg, { transientBlocks: false, take: remaining, shouldStop });
+        auto = result.outcome;
+      }
+    }
+    outcome = mergeLaneOutcome(req.outcome, auto);
     return outcome;
   } finally {
-    const next = scheduleAfter(outcome, prevStreak, new Date(), { interrupted });
+    // Lượt chỉ vì yêu cầu bấm tay mà làn chưa tới giờ: lịch tự phát hành giữ nguyên.
+    const next =
+      autoDue || !lane
+        ? scheduleAfter(outcome, prevStreak, new Date(), { interrupted })
+        : { nextRunAt: lane.nextRunAt, transientStreak: prevStreak };
     await releaseInvoiceLane(ownerId, next);
   }
 }
 
-function pump(due: string[]): void {
+function pump(due: string[], opts: LaneRunOptions = {}): void {
   const max = invoiceLaneConcurrency();
   for (const ownerId of due) {
     if (stopping || running.size >= max) return;
     if (running.has(ownerId)) continue;
-    const turn = runInvoiceLaneOnce(ownerId)
+    const turn = runInvoiceLaneOnce(ownerId, opts)
       .catch((err) => {
         // Lỗi ngoài dự kiến (database): làn hết hạn sau 300 giây rồi lưới quét gọi lại.
         console.error(`[Invoice-lanes] Shop ${ownerId}: lượt lỗi —`, (err as Error).message);
@@ -270,6 +331,78 @@ export async function sweepInvoiceLanes(now = new Date(), opts: SweepOptions = {
   return running.size - before;
 }
 
+/**
+ * Lưới quét YÊU CẦU BẤM TAY (lát 9): shop có dòng invoice_requests chờ đã tới hạn →
+ * gọi làn của shop đó. Câu đọc đi theo chỉ mục riêng phần chỉ chứa dòng chờ
+ * (invoice_requests_due_idx), bình thường rỗng. Trả về số shop vừa được gọi.
+ */
+export async function sweepInvoiceRequests(now = new Date(), opts: SweepOptions = {}): Promise<number> {
+  if (stopping) return 0;
+  const free = invoiceLaneConcurrency() - running.size;
+  if (free <= 0) return 0;
+  const nowIso = now.toISOString();
+  // Lấy dư để còn chọn được sau khi bỏ shop đang chạy ở tiến trình này.
+  const limit = (free + running.size) * 4;
+  const rows = await prisma.$queryRaw<{ ownerId: string }[]>`
+    SELECT "ownerId" FROM "invoice_requests"
+    WHERE "status" = 'PENDING' AND "nextRetryAt" <= (${nowIso}::timestamptz AT TIME ZONE 'UTC')
+    GROUP BY "ownerId"
+    ORDER BY min("nextRetryAt")
+    LIMIT ${limit}`;
+  const owners = rows
+    .map((r) => r.ownerId)
+    .filter((id) => !running.has(id) && (!opts.onlyOwnerIds || opts.onlyOwnerIds.includes(id)));
+  const before = running.size;
+  pump(owners, { forRequests: true });
+  return running.size - before;
+}
+
+/** Việc invoice.issue: chỉ là tín hiệu → gọi làn của shop rồi trả về ngay (việc phải ngắn). */
+export async function runInvoiceIssueSignal(job: InvoiceIssueSignal): Promise<void> {
+  // Hết chỗ chạy thì thôi: lưới quét yêu cầu nhặt ở nhịp kế.
+  pump([job.ownerId], { forRequests: true });
+}
+
+/**
+ * Đăng ký worker nhận tín hiệu invoice.issue. Gọi SAU khi startQueue() sẵn sàng; ở
+ * vai web tự bỏ qua. Đăng ký ở mọi chế độ: worker bản này nhận tín hiệu dù web chưa
+ * gửi (quy tắc đưa lên hai lần).
+ */
+export async function registerInvoiceQueueWorkers(): Promise<void> {
+  await registerWorker<InvoiceIssueSignal>(
+    QUEUES.invoiceIssue,
+    { concurrency: 2, pollSeconds: 0.5 },
+    (job) => runInvoiceIssueSignal(job.data)
+  );
+}
+
+/**
+ * Khởi động lưới quét yêu cầu bấm tay — gọi một lần từ workers/index.ts, ở MỌI
+ * INVOICE_MODE. KHÔNG phụ thuộc pg-boss đã lên hay chưa.
+ */
+export function startInvoiceRequestScheduler(): void {
+  if (requestSweepTimer) return;
+  const seconds = invoiceRequestSweepSeconds();
+  let sweeping = false;
+  const tick = async () => {
+    if (sweeping || stopping) return;
+    sweeping = true;
+    try {
+      await sweepInvoiceRequests();
+    } catch (err) {
+      console.error("[Invoice-requests] Lỗi lưới quét:", (err as Error).message);
+    } finally {
+      sweeping = false;
+    }
+  };
+  requestSweepTimer = setInterval(() => void tick(), seconds * 1000);
+  requestSweepTimer.unref();
+  console.log(
+    `[Invoice-requests] BẬT — yêu cầu xuất hóa đơn bấm tay chạy qua làn của shop: lưới quét mỗi ${seconds} giây, ` +
+      `mỗi lượt tối đa ${MAX_PER_OWNER_PER_RUN} tờ, tối đa ${invoiceLaneConcurrency()} shop cùng lúc`
+  );
+}
+
 /** Cho test: chờ tới khi không còn shop nào đang chạy. */
 export async function whenInvoiceLanesIdle(): Promise<void> {
   while (running.size > 0) await Promise.allSettled([...running.values()]);
@@ -289,6 +422,8 @@ export async function stopInvoiceLanes(timeoutMs: number): Promise<void> {
   stopping = true;
   if (sweepTimer) clearInterval(sweepTimer);
   sweepTimer = null;
+  if (requestSweepTimer) clearInterval(requestSweepTimer);
+  requestSweepTimer = null;
   if (running.size === 0) return;
   await Promise.race([
     Promise.allSettled([...running.values()]),

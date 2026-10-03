@@ -5,12 +5,16 @@ import {
   ALL_QUEUES,
   DEAD_QUEUES,
   DEFAULT_EVT_ORDER_CONCURRENCY,
+  DEFAULT_INVOICE_BULK_MODE,
+  DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS,
   DEFAULT_STOCK_CHANNEL_CONCURRENCY,
   DEFAULT_STOCK_PUSH_MODE,
   DEFAULT_STOCK_SWEEP_SECONDS,
   DEFAULT_WORKER_POOL_MAX,
   EVT_ORDER_MAX_ATTEMPTS,
   evtOrderConcurrency,
+  invoiceBulkMode,
+  invoiceRequestSweepSeconds,
   queueOptionsForRole,
   resolveQueueConnection,
   stockChannelConcurrency,
@@ -135,5 +139,21 @@ describe("tên hàng đợi khớp migration", () => {
   it("hàng đợi lỗi mà migration trỏ tới đều được khai là hàng đợi lỗi trong mã", () => {
     const deadTargets = new Set([...sql.matchAll(/"deadLetter":"([^"]+)"/g)].map((m) => m[1]));
     expect([...deadTargets].sort()).toEqual([...DEAD_QUEUES].sort());
+  });
+});
+
+describe("xuất hóa đơn hàng loạt chạy nền (bước 5 lát 9)", () => {
+  it("INVOICE_BULK_MODE: chỉ nhận lane | inline, sai thì về mặc định", () => {
+    expect(invoiceBulkMode({})).toBe(DEFAULT_INVOICE_BULK_MODE);
+    expect(invoiceBulkMode({ INVOICE_BULK_MODE: " Lane " })).toBe("lane");
+    expect(invoiceBulkMode({ INVOICE_BULK_MODE: "inline" })).toBe("inline");
+    expect(invoiceBulkMode({ INVOICE_BULK_MODE: "x" })).toBe(DEFAULT_INVOICE_BULK_MODE);
+  });
+
+  it("INVOICE_REQUEST_SWEEP_SECONDS: mặc định 5, ngoài khoảng thì về mặc định", () => {
+    expect(invoiceRequestSweepSeconds({})).toBe(DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS);
+    expect(invoiceRequestSweepSeconds({ INVOICE_REQUEST_SWEEP_SECONDS: "2" })).toBe(2);
+    expect(invoiceRequestSweepSeconds({ INVOICE_REQUEST_SWEEP_SECONDS: "0" })).toBe(DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS);
+    expect(invoiceRequestSweepSeconds({ INVOICE_REQUEST_SWEEP_SECONDS: "x" })).toBe(DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS);
   });
 });

@@ -11,7 +11,7 @@ import { startNotificationSseBridge } from "./services/notifications";
 import { resolveHubsellRole, startAllWorkers } from "./workers";
 import { registerEventQueueWorkers } from "./workers/event-queue";
 import { registerStockQueueWorkers, stopStockRunners } from "./workers/stock-queue";
-import { stopInvoiceLanes } from "./workers/invoice-lanes";
+import { registerInvoiceQueueWorkers, stopInvoiceLanes } from "./workers/invoice-lanes";
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -55,6 +55,7 @@ if (secretBoxEnabled()) {
 // Sẵn sàng rồi mới đăng ký worker nhận việc; ở vai web việc đăng ký tự bỏ qua:
 //   · sự kiện từ sàn (evt.order / evt.auth / evt.dead) — workers/event-queue.ts
 //   · đẩy tồn (tín hiệu stock.channel + đối soát stock.verify) — workers/stock-queue.ts
+//   · hóa đơn bấm tay (tín hiệu invoice.issue) — workers/invoice-lanes.ts
 // Việc đẩy tồn tự nó KHÔNG phụ thuộc hàng đợi này lên hay không: bộ chạy theo
 // gian + lưới quét khởi động ở startAllWorkers và đọc thẳng bảng stock_push_jobs.
 // ============================================================
@@ -63,6 +64,7 @@ void startQueue(role)
     if (!ok) return;
     await registerEventQueueWorkers();
     await registerStockQueueWorkers();
+    await registerInvoiceQueueWorkers();
   })
   .catch((err) => console.error("[Queue] Không đăng ký được worker:", (err as Error).message));
 

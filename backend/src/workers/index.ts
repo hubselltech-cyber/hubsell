@@ -22,7 +22,7 @@
 // ============================================================
 
 import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";
-import { startInvoiceLaneScheduler } from "./invoice-lanes";
+import { startInvoiceLaneScheduler, startInvoiceRequestScheduler } from "./invoice-lanes";
 import { startInvoiceStatusSyncWorker } from "./invoice-status-sync";
 import { startInvoiceUnknownRecheckWorker } from "./invoice-unknown-recheck";
 import { startLogCleanupWorker } from "./log-cleanup";
@@ -97,6 +97,9 @@ export function startAllWorkers(): void {
   } else {
     startInvoiceLaneScheduler();
   }
+  // Yêu cầu xuất hóa đơn bấm tay (bước 5 lát 9): lưới quét invoice_requests gọi làn
+  // của shop. Chạy ở mọi INVOICE_MODE — đường lui của tự phát hành không tắt nút bấm tay.
+  startInvoiceRequestScheduler();
   // Đồng bộ trạng thái CQT của hóa đơn (meInvoice không có webhook).
   startInvoiceStatusSyncWorker();
   // Tra lại các tờ hóa đơn gửi đi mà chưa rõ kết quả (bước 5 lát 6b).

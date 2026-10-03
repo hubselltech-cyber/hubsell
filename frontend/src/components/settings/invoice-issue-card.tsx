@@ -21,9 +21,16 @@
  *   · TỰ ĐỘNG (kiểu Salework): công tắc worker 15 phút, đơn ĐÃ GIAO + ĐÃ ĐỐI
  *     SOÁT. Backend xử lý tuần tự (MISA cấp số liên tục), tối đa 50 đơn/lần.
  *   · Vẫn giữ ô nhập mã đơn cho trường hợp xuất một đơn ngoài danh sách.
+ *   · XUẤT CHẠY NỀN (hóa đơn bước 5 lát 9, 03/10/2026): khi backend báo cờ
+ *     `bulkViaLane`, bấm Xuất chỉ GHI YÊU CẦU rồi hiện thanh tiến độ "Đang xuất
+ *     7/40" — rời trang việc vẫn chạy, quay lại vẫn thấy. Vẫn một nút. Cờ tắt thì
+ *     chạy đường cũ (chờ ngay trên nút, lô 50).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+/** Nhịp hỏi tiến độ lô đang chạy. */
+const BATCH_POLL_MS = 2000;
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -56,9 +63,13 @@ import { formatDateTime } from "@/lib/format";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ApiError,
+  cancelInvoiceBatch,
+  fetchInvoiceBatch,
   fetchInvoiceQueue,
   issueInvoice,
   issueInvoicesBulk,
+  startInvoiceBatch,
+  type InvoiceBatchProgress,
   setInvoiceAutoAdjust,
   setInvoiceAutoIssue,
   type InvoiceAutoIssueTrigger,
@@ -191,6 +202,12 @@ export function InvoiceIssueCard({
   const [savingAuto, setSavingAuto] = useState(false);
   const [savingAutoAdjust, setSavingAutoAdjust] = useState(false);
   const [issueCode, setIssueCode] = useState("");
+  // Lượt xuất chạy nền (lát 9): mã lô đang theo dõi + tiến độ mới nhất. Lô xong mà
+  // có đơn lỗi / đang kiểm lại / đã dừng thì giữ bảng tổng kết tới khi bấm Đóng.
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<InvoiceBatchProgress | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const dismissedBatch = useRef<string | null>(null);
 
   const loadQueue = useCallback(
     async (f: InvoiceQueueFilter, p: number, ps: InvoiceQueuePageSize) => {
@@ -232,6 +249,80 @@ export function InvoiceIssueCard({
   useEffect(() => {
     void loadQueue(filter, page, pageSize);
   }, [loadQueue, filter, page, pageSize]);
+
+  // Quay lại trang giữa lúc một lô đang chạy → theo dõi tiếp lô đó.
+  const activeBatchId = queue?.activeBatchId ?? null;
+  useEffect(() => {
+    if (activeBatchId && !batchId && dismissedBatch.current !== activeBatchId) setBatchId(activeBatchId);
+  }, [activeBatchId, batchId]);
+
+  // Hỏi tiến độ lô đang theo dõi; lô xong thì báo kết quả + nạp lại hàng chờ.
+  useEffect(() => {
+    if (!batchId) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        const p = await fetchInvoiceBatch(batchId);
+        if (!alive) return;
+        setProgress(p);
+        if (p.active) {
+          timer = setTimeout(() => void tick(), BATCH_POLL_MS);
+          return;
+        }
+        const clean = p.failed === 0 && p.checking === 0 && p.cancelled === 0;
+        if (clean) {
+          toast.success(`Đã phát hành ${p.issued} hóa đơn — xem và tải PDF tại Lịch sử & Báo cáo thuế.`);
+          setBatchId(null);
+          setProgress(null);
+        }
+        void loadQueue(filter, page, pageSize);
+      } catch (err) {
+        if (!alive) return;
+        if (err instanceof ApiError && err.status === 404) {
+          setBatchId(null);
+          setProgress(null);
+          return;
+        }
+        // Mạng chập chờn: việc vẫn chạy ở máy chủ, hỏi lại ở nhịp sau.
+        timer = setTimeout(() => void tick(), BATCH_POLL_MS * 2);
+      }
+    };
+    void tick();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+    // Chỉ khởi động lại khi đổi lô — đổi tab / trang không được làm đứt nhịp hỏi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchId]);
+
+  const batchRunning = batchId !== null && (progress === null || progress.active);
+
+  function closeBatchSummary() {
+    dismissedBatch.current = batchId;
+    setBatchId(null);
+    setProgress(null);
+  }
+
+  async function handleStopBatch() {
+    if (!batchId || stopping) return;
+    setStopping(true);
+    try {
+      const r = await cancelInvoiceBatch(batchId);
+      setProgress(r.progress);
+      toast.success(
+        r.cancelled > 0
+          ? `Đã dừng ${r.cancelled} đơn chưa tới lượt. Tờ đang xuất dở vẫn hoàn tất.`
+          : "Không còn đơn nào chờ để dừng."
+      );
+      void loadQueue(filter, page, pageSize);
+    } catch (err) {
+      toast.error(err instanceof ApiError && err.message ? err.message : "Không dừng được lượt xuất");
+    } finally {
+      setStopping(false);
+    }
+  }
 
   /** Công tắc / mốc xuất / "Chạy lại" đi chung một endpoint — gửi gì đổi nấy. */
   async function saveAutoIssue(
@@ -294,9 +385,24 @@ export function InvoiceIssueCard({
    *  Backend nhận tối đa 50 đơn/lần — trang 100 đơn tick hết thì chia lô 50
    *  gọi tuần tự (MISA cấp số hóa đơn liên tục nên vẫn phải lần lượt). */
   async function issueMany(orderCodes: string[]) {
-    if (orderCodes.length === 0 || busy) return;
+    if (orderCodes.length === 0 || busy || batchRunning) return;
     setBusy(true);
     try {
+      if (queue?.bulkViaLane) {
+        // Đường chạy nền: backend ghi yêu cầu rồi trả lời ngay; thanh tiến độ lo phần còn lại.
+        const r = await startInvoiceBatch(orderCodes);
+        if (r.skipped.length > 0) {
+          toast.warning(
+            `${r.skipped.length} đơn không đưa vào lượt xuất (${r.skipped[0].reason}${r.skipped.length > 1 ? "…" : ""}).`
+          );
+        }
+        dismissedBatch.current = null;
+        setProgress(null);
+        setBatchId(r.batchId);
+        setSelected(new Set());
+        void loadQueue(filter, page, pageSize);
+        return;
+      }
       let issued = 0;
       let failed = 0;
       let firstErr: string | undefined;
@@ -359,7 +465,9 @@ export function InvoiceIssueCard({
     return allRows.filter((r) => r.orderCode.toUpperCase().includes(q));
   }, [allRows, search]);
 
-  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.orderCode));
+  /** Đơn đang nằm trong lượt xuất chạy nền không tick được. */
+  const selectableRows = rows.filter((r) => !r.issuing);
+  const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selected.has(r.orderCode));
   const selectedRows = allRows.filter((r) => selected.has(r.orderCode));
   const selectedSum = selectedRows.reduce((s, r) => s + r.totalAmount, 0);
 
@@ -665,6 +773,86 @@ export function InvoiceIssueCard({
           </Button>
         </div>
 
+        {/* ---- Lượt xuất CHẠY NỀN (lát 9): tiến độ khi đang chạy, tổng kết khi xong
+            mà có đơn cần xem. Một việc chính (đang tới đâu), một nút phụ (dừng). ---- */}
+        {batchId !== null && batchRunning && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-3 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2.5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Loader2 className="size-4 shrink-0 animate-spin text-blue-600" />
+                {progress
+                  ? `Đang xuất ${progress.total - progress.pending}/${progress.total} hóa đơn`
+                  : "Đang bắt đầu xuất hóa đơn…"}
+                {progress !== null && progress.failed > 0 && (
+                  <span className="font-normal text-red-700">{`· ${progress.failed} đơn lỗi`}</span>
+                )}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="max-sm:h-10"
+                onClick={() => void handleStopBatch()}
+                disabled={stopping || progress === null}
+              >
+                {stopping ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
+                Dừng phần còn lại
+              </Button>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-[width] duration-500"
+                style={{
+                  width: `${progress && progress.total > 0 ? Math.round(((progress.total - progress.pending) / progress.total) * 100) : 0}%`,
+                }}
+              />
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Hóa đơn xuất lần lượt từng tờ. Bạn có thể rời trang — việc vẫn chạy, xong sẽ có thông báo ở chuông.
+            </p>
+          </div>
+        )}
+        {batchId !== null && !batchRunning && progress !== null && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <span className="font-medium">
+                {`Đã xuất ${progress.issued}/${progress.total} hóa đơn`}
+                {progress.failed > 0 && ` · ${progress.failed} đơn lỗi`}
+                {progress.checking > 0 && ` · ${progress.checking} tờ đang kiểm lại với nhà cung cấp`}
+                {progress.cancelled > 0 && ` · ${progress.cancelled} đơn đã dừng`}
+              </span>
+              <Button size="sm" variant="outline" className="max-sm:h-10" onClick={closeBatchSummary}>
+                Đóng
+              </Button>
+            </div>
+            {/* Mọi đơn lỗi cùng một lý do (thường là lỗi tài khoản) → nói một lần. */}
+            {progress.errors.length > 1 && progress.errors.every((e) => e.error === progress.errors[0].error) ? (
+              <p className="mt-1.5 break-words">{`Cùng một lý do: ${progress.errors[0].error}`}</p>
+            ) : progress.errors.length > 0 && (
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+                {progress.errors.map((e) => (
+                  <li key={e.orderCode} className="break-words">
+                    <b>{e.orderCode}</b>
+                    {`: ${e.error}`}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-1.5 text-xs opacity-80">
+              {progress.failed > progress.errors.length
+                ? "Lý do của các đơn còn lại xem tại Lịch sử hóa đơn. "
+                : ""}
+              {progress.checking > 0
+                ? "Tờ đang kiểm lại sẽ tự có kết quả sau vài phút — đừng xuất lại đơn đó. "
+                : ""}
+              Đơn lỗi và đơn đã dừng vẫn nằm ở hàng chờ để xuất lại.
+            </p>
+          </div>
+        )}
+
         {/* ---- Thanh hành động hàng loạt — chỉ hiện khi đã tick ---- */}
         {selected.size > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
@@ -672,7 +860,12 @@ export function InvoiceIssueCard({
               Đã chọn {selected.size} đơn ·{" "}
               <Money value={selectedSum} className="font-semibold" />
             </span>
-            <Button size="sm" onClick={() => void issueMany([...selected])} disabled={busy}>
+            <Button
+              size="sm"
+              onClick={() => void issueMany([...selected])}
+              disabled={busy || batchRunning}
+              title={batchRunning ? "Đang có một lượt xuất chạy — chờ xong rồi xuất tiếp" : undefined}
+            >
               {busy ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
@@ -724,7 +917,7 @@ export function InvoiceIssueCard({
                         onChange={(e) =>
                           setSelected((prev) => {
                             const next = new Set(prev);
-                            for (const r of rows) {
+                            for (const r of selectableRows) {
                               if (e.target.checked) next.add(r.orderCode);
                               else next.delete(r.orderCode);
                             }
@@ -757,6 +950,7 @@ export function InvoiceIssueCard({
                             type="checkbox"
                             aria-label={`Chọn đơn ${r.orderCode}`}
                             className="size-3.5 accent-blue-600"
+                            disabled={r.issuing}
                             checked={checked}
                             onChange={(e) =>
                               setSelected((prev) => {
@@ -771,6 +965,12 @@ export function InvoiceIssueCard({
                         <TableCell>
                           <span className="flex items-center gap-1.5">
                             {r.orderCode}
+                            {r.issuing && (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                                <Loader2 className="size-2.5 animate-spin" />
+                                Đang xuất
+                              </span>
+                            )}
                             {r.overdue && <OverdueBadge hours={queue?.overdueHours ?? 48} />}
                             {r.autoStopped && (
                               <AutoStoppedBadge info={r.autoStopped} maxAttempts={maxAttempts} />
@@ -814,7 +1014,7 @@ export function InvoiceIssueCard({
                             size="sm"
                             variant="outline"
                             onClick={() => void issueMany([r.orderCode])}
-                            disabled={busy}
+                            disabled={busy || batchRunning || r.issuing}
                           >
                             Xuất
                           </Button>

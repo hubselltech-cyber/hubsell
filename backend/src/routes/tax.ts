@@ -26,6 +26,15 @@ import {
 } from "../integrations/invoice/auto-issue-policy";
 import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
+import { invoiceBulkMode } from "../lib/queue-config";
+import {
+  acceptBulkIssue,
+  BULK_MAX_ORDERS,
+  cancelBatch,
+  findActiveBatchId,
+  getBatchProgress,
+  openIssueRequestCodes,
+} from "../services/invoice-requests";
 import {
   downloadInvoiceFiles,
   type StandardInvoiceConfig,
@@ -630,6 +639,80 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
   }
 });
 
+// ---------- XUẤT HÀNG LOẠT CHẠY NỀN (bước 5 lát 9, 03/10/2026) ----------
+// POST /api/tax/invoices/batches — NHẬN một lần bấm Xuất: ghi dòng invoice_requests
+// rồi trả lời ngay { batchId, queued, skipped }; làn của shop ở worker phát hành lần
+// lượt. Đường cũ /invoices/bulk giữ nguyên cho giao diện bản cũ và làm đường lui.
+// Body: { orderCodes: string[] } (tối đa BULK_MAX_ORDERS = cỡ trang lớn nhất của hàng chờ).
+router.post("/invoices/batches", async (req: AuthRequest, res, next) => {
+  try {
+    if (invoiceBulkMode() !== "lane") {
+      res.status(409).json({ error: "Xuất hàng loạt chạy nền chưa bật — tải lại trang rồi thử lại." });
+      return;
+    }
+    const raw = req.body?.orderCodes;
+    const orderCodes: string[] = Array.isArray(raw)
+      ? [...new Set(raw.map((c) => String(c).trim()).filter((c) => c !== ""))]
+      : [];
+    if (orderCodes.length === 0) {
+      res.status(400).json({ error: "Thiếu danh sách mã đơn (orderCodes)" });
+      return;
+    }
+    if (orderCodes.length > BULK_MAX_ORDERS) {
+      res.status(400).json({ error: `Tối đa ${BULK_MAX_ORDERS} đơn mỗi lần xuất — chia thành nhiều lần bấm.` });
+      return;
+    }
+    const blocked = await sandboxTaxCodeBlocked(req);
+    if (blocked) {
+      res.status(400).json({ error: blocked });
+      return;
+    }
+    const r = await acceptBulkIssue({
+      ownerId: req.ownerId!,
+      channelWhere: channelScope(req),
+      orderCodes,
+      requestedById: req.userId ?? null,
+    });
+    res.status(r.batchId ? 202 : 409).json({
+      ...r,
+      ...(r.batchId ? {} : { error: r.skipped[0]?.reason ?? "Không đơn nào xuất được" }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/tax/invoices/batches/:batchId — tiến độ một lô (giao diện hỏi mỗi 2 giây).
+router.get("/invoices/batches/:batchId", async (req: AuthRequest, res, next) => {
+  try {
+    const p = await getBatchProgress(req.ownerId!, String(req.params.batchId));
+    if (!p) {
+      res.status(404).json({ error: "Không tìm thấy lượt xuất này" });
+      return;
+    }
+    res.json(p);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/tax/invoices/batches/:batchId/cancel — "Dừng phần còn lại": yêu cầu chưa
+// chạy chuyển CANCELLED; tờ đang gọi dở nhà cung cấp vẫn hoàn tất.
+router.post("/invoices/batches/:batchId/cancel", async (req: AuthRequest, res, next) => {
+  try {
+    const batchId = String(req.params.batchId);
+    const cancelled = await cancelBatch(req.ownerId!, batchId);
+    const p = await getBatchProgress(req.ownerId!, batchId);
+    if (!p) {
+      res.status(404).json({ error: "Không tìm thấy lượt xuất này" });
+      return;
+    }
+    res.json({ cancelled, progress: p });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/tax/invoice-queue — HÀNG CHỜ XUẤT HÓA ĐƠN (học BigSeller): đơn ĐÃ
 // GIAO THÀNH CÔNG, chưa hủy, chưa có hóa đơn PENDING/ISSUED — tự nạp, seller
 // chỉ việc tick và bấm. Kèm cờ cấu hình tự động xuất để UI vẽ công tắc.
@@ -741,7 +824,21 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
         });
       }
     }
+    // Lát 9: đường chạy nền đang bật không (giao diện đọc cờ để chọn đường), lô đang
+    // chạy của shop (quay lại trang vẫn thấy tiến độ), đơn nào trong trang đang có yêu
+    // cầu chờ (nhãn "Đang xuất", không tick lại được). Ba câu nhỏ theo chỉ mục.
+    const bulkViaLane = invoiceBulkMode() === "lane";
+    const [activeBatchId, issuingCodes] = await Promise.all([
+      findActiveBatchId(ownerId),
+      openIssueRequestCodes(
+        ownerId,
+        orders.map((o) => o.orderCode)
+      ),
+    ]);
     res.json({
+      bulkViaLane,
+      bulkMaxOrders: BULK_MAX_ORDERS,
+      activeBatchId,
       autoIssueEnabled: cfg?.autoIssueEnabled ?? false,
       // Mốc xuất tự động + trạng thái NGẮT MẠCH (19/09) — UI vẽ ô chọn mốc và
       // dải đỏ "đã tạm ngừng vì … / Chạy lại".
@@ -782,6 +879,8 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
           overdue: o.deliveredAt !== null && o.deliveredAt < overdueCutoff,
           // Lát 7: máy đã ngừng tự thử đơn này — nhãn + ô lý do; null = chưa.
           autoStopped: stoppedByOrder.get(o.id) ?? null,
+          // Lát 9: đơn đang nằm trong một lượt xuất chạy nền.
+          issuing: issuingCodes.has(o.orderCode),
           isSettled: o.isSettled,
           channelName: o.channel.channelName,
           shopName: o.channel.shopName,

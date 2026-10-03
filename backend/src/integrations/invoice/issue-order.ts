@@ -68,6 +68,12 @@ export interface IssueOrderResult {
    */
   reason?: string;
   suggestion?: string;
+  /**
+   * Có mặt khi bị chặn vì đơn ĐÃ có hóa đơn gốc đang mở (409): ISSUED = đã phát hành;
+   * PENDING = đang có lượt chờ kết quả (đang gọi dở, hoặc vòng quét đang kiểm lại).
+   * Làn xử lý yêu cầu bấm tay (lát 9) dùng để đóng yêu cầu đúng nghĩa.
+   */
+  conflict?: "ISSUED" | "PENDING";
   /** Row InvoiceLog sau cùng (đã cập nhật kết quả) — null khi chặn trước khi ghi sổ. */
   log?: {
     id: string;
@@ -318,6 +324,7 @@ async function openInvoiceConflict(ownerId: string, orderCode: string): Promise<
   return {
     ok: false,
     httpStatus: 409,
+    conflict: existing.status === InvoiceLogStatus.ISSUED ? "ISSUED" : "PENDING",
     error:
       existing.status === InvoiceLogStatus.ISSUED
         ? `Đơn này đã có hóa đơn số ${existing.invoiceNo ?? "?"} — muốn phát hành lại phải hủy/thay thế trước.`
@@ -462,6 +469,7 @@ export async function issueInvoiceForOrder(
       (await openInvoiceConflict(ownerId, orderCode)) ?? {
         ok: false,
         httpStatus: 409,
+        conflict: "PENDING",
         error: "Đơn này đang có yêu cầu phát hành chờ xử lý.",
       }
     );

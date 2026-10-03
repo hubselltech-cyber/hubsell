@@ -1213,6 +1213,40 @@ model InvoiceLane {
   @@map("invoice_lanes")
 }
 
+/// YÊU CẦU PHÁT HÀNH HÓA ĐƠN BẤM TAY (bước 5 lát 9, 03/10/2026): mỗi đơn chủ shop
+/// tick rồi bấm Xuất là một dòng, một lần bấm = một `batchId`. Làn của shop
+/// (InvoiceLane) làm lần lượt các dòng PENDING. Không có khóa ngoại (xem migration
+/// 20261003160000_invoice_requests). Hai chỉ mục riêng phần (một yêu cầu chờ mỗi
+/// đơn; dòng chờ theo giờ tới hạn) chỉ khai ở migration vì Prisma không tả được.
+/// Xem services/invoice-requests.ts, docs/HANG-DOI-BEN.md 4.6 Q.
+model InvoiceRequest {
+  id            String    @id @default(cuid())
+  ownerId       String
+  /// ISSUE (lát 10–11 thêm ADJUST).
+  kind          String
+  /// MANUAL (lát 11 thêm AUTO_RETURN).
+  source        String
+  /// ISSUE: mã đơn.
+  targetKey     String
+  params        Json?
+  batchId       String?
+  requestedById String?
+  /// PENDING | DONE | FAILED | CANCELLED.
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextRetryAt   DateTime  @default(now())
+  resultLogId   String?
+  errorCode     String?
+  error         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  finishedAt    DateTime?
+
+  @@index([ownerId, batchId])
+  @@index([createdAt])
+  @@map("invoice_requests")
+}
+
 /// HÓA ĐƠN ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ "Xử lý hóa đơn đầu vào"
 /// — nội bộ MISA gọi là Inbot). Mỗi dòng = một hóa đơn nhà cung cấp xuất CHO
 /// shop, kéo về bằng POLLING API `/invoices/v2/modified` (Inbot không có
