@@ -332,7 +332,12 @@ export function invoiceAutoAdjustMode(env: NodeJS.ProcessEnv = process.env): Inv
  * định sang follow. Đường lui: INVOICE_CQT_MODE=legacy ở worker.
  */
 export type InvoiceCqtMode = "follow" | "legacy";
-export const DEFAULT_INVOICE_CQT_MODE: InvoiceCqtMode = "legacy";
+/**
+ * Lần một (d93fb5b, 03/10/2026 21:47) mặc định legacy — cột cqtNextCheckAt, chỉ mục và
+ * các chỗ đặt giờ hỏi lên trước, đã kiểm prod 21:49. Lần hai (anh Trung 03/10: "Tiếp
+ * tục làm luôn lần 2") đổi mặc định sang follow. Đường lui: INVOICE_CQT_MODE=legacy ở worker.
+ */
+export const DEFAULT_INVOICE_CQT_MODE: InvoiceCqtMode = "follow";
 
 export function invoiceCqtMode(env: NodeJS.ProcessEnv = process.env): InvoiceCqtMode {
   const raw = (env.INVOICE_CQT_MODE ?? "").trim().toLowerCase();
