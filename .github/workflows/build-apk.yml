@@ -1,0 +1,75 @@
+# Build APK Android cho hubsell-mobile trên máy chạy của GitHub Actions
+# (dùng khi không gọi được EAS). Kết quả nằm ở tab Actions → run → Artifacts.
+#
+# Chạy tay: Actions → "Build Android APK" → Run workflow → chọn nhánh.
+# Ký bằng debug keystore do `expo prebuild` sinh ra → chữ ký KHÁC bản EAS,
+# nên máy đang cài bản EAS phải gỡ app cũ rồi mới cài được bản này.
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Backend URL (EXPO_PUBLIC_API_URL)"
+        required: false
+        default: "https://hubsell-backend-sg.onrender.com"
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android APK (release, debug-signed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: hubsell-mobile
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      EXPO_PUBLIC_API_URL: ${{ github.event.inputs.api_url || 'https://hubsell-backend-sg.onrender.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hubsell-mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # ubuntu-latest đã cài sẵn Android SDK (ANDROID_HOME); AGP tự tải
+      # platform / build-tools / NDK còn thiếu khi build.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install JS dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Generate native Android project (expo prebuild)
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Build release APK
+        working-directory: hubsell-mobile/android
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p ../dist-apk
+          cp android/app/build/outputs/apk/release/app-release.apk "../dist-apk/hubsell-${GITHUB_SHA::7}.apk"
+          ls -la ../dist-apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hubsell-apk-${{ github.sha }}
+          path: dist-apk/*.apk
+          if-no-files-found: error
+          retention-days: 30
