@@ -381,12 +381,24 @@ export interface OrderStatsRow {
  * GET /api/orders/stats — PHIẾU BỐC HÀNG. Backend CỐ ĐỊNH phạm vi trạng
  * thái = Chờ xử lý + Đã xử lý (đè mọi lựa chọn từ query); days=0 = toàn bộ.
  */
+/** Một hãng vận chuyển trong phiếu bốc hàng — carrier = "EXPRESS" | mã enum Carrier. */
+export interface OrderStatsCarrierRow {
+  carrier: string;
+  qty: number;
+  expressQty: number;
+  revenue: number;
+  orders: number;
+  sku: string | null;
+}
+
 export interface OrderStatsResponse {
   days: number;
   /** Dòng tổng cho kho: cần bốc tổng bao nhiêu món, thuộc mấy đơn. */
   totals: { qty: number; expressQty: number; orders: number; revenue: number };
   byProduct: OrderStatsRow[];
   bySku: OrderStatsRow[];
+  /** Theo hãng VC — Hỏa tốc đứng đầu, còn lại theo số đơn. Vắng với backend cũ. */
+  byCarrier?: OrderStatsCarrierRow[];
 }
 
 /** GET /api/channels — chỉ lấy các trường màn lọc cần. */

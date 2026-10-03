@@ -252,10 +252,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
 // ============================================================
 // GET /api/orders/stats — PHIẾU BỐC HÀNG: thống kê SẢN PHẨM / SKU cần nhặt.
 //
-// CỐ ĐỊNH phạm vi trạng thái = Chờ xử lý + Đã xử lý (chốt với anh Trung
-// 13/08: mục đích duy nhất là nhân viên nhìn vào để bốc hàng — đơn đã giao
-// đi không còn gì để nhặt). Các bộ lọc còn lại (sàn/shop/hãng VC/tìm kiếm)
-// + ?days= (0 = không giới hạn ngày) vẫn nhận nguyên từ query danh sách.
+// CỐ ĐỊNH phạm vi trạng thái = CHỜ XỬ LÝ (anh Trung đổi 03/10, trước đó là
+// Chờ xử lý + Đã xử lý từ 13/08): mục đích duy nhất là nhân viên kho nhìn
+// vào biết có bao nhiêu sản phẩm VỪA VỀ để bốc — đơn đã xử lý là đã bốc
+// xong, đơn đã giao đi không còn gì để nhặt. Các bộ lọc còn lại (sàn/shop/
+// hãng VC/tìm kiếm) + ?days= (0 = không giới hạn ngày) vẫn nhận nguyên từ
+// query danh sách. Trả 3 bảng: theo sản phẩm, theo SKU, theo HÃNG VẬN CHUYỂN
+// (kho xếp hàng theo từng hãng đến lấy; Hỏa tốc tách nhóm riêng đứng đầu).
 // Gộp bằng JS sau MỘT lượt findMany: cần doanh số = SUM(price×quantity) mà
 // groupBy Prisma không nhân được 2 cột; cỡ vài nghìn dòng là nhẹ.
 // ============================================================
@@ -272,10 +275,8 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
         order: {
           ...ordersWhere(req),
           // Đè MỌI lựa chọn trạng thái từ query — phiếu bốc hàng chỉ có
-          // nghĩa với đơn chưa bàn giao vận chuyển
-          shippingStatus: {
-            in: [ShippingStatus.PENDING, ShippingStatus.PROCESSED],
-          },
+          // nghĩa với đơn vừa về, chưa xử lý
+          shippingStatus: ShippingStatus.PENDING,
           ...(since ? { createdAt: { gte: since } } : {}),
         },
       },
@@ -285,8 +286,9 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
         channelSku: true,
         quantity: true,
         price: true,
-        // Cờ hỏa tốc tính từ tên hãng nguyên văn của ĐƠN chứa dòng hàng
-        order: { select: { shippingCarrierName: true } },
+        // Cờ hỏa tốc tính từ tên hãng nguyên văn của ĐƠN chứa dòng hàng;
+        // carrier (enum) để gộp bảng theo hãng vận chuyển
+        order: { select: { shippingCarrierName: true, carrier: true } },
       },
       // Trần an toàn — đơn đang chờ xử lý hiếm khi vượt nổi con số này
       take: 20000,
@@ -311,6 +313,9 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
     });
     const byProduct = new Map<string, Agg>();
     const bySku = new Map<string, Agg>();
+    // Theo hãng VC: khóa "EXPRESS" (hỏa tốc mọi sàn, cùng khóa với bộ lọc
+    // ?carrier=EXPRESS) hoặc mã enum Carrier; không có hãng → KHAC.
+    const byCarrier = new Map<string, Agg>();
     const allOrderIds = new Set<string>();
     let totalQty = 0;
     let totalExpressQty = 0;
@@ -336,6 +341,14 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
       s.orderIds.add(r.orderId);
       bySku.set(skuKey, s);
 
+      const carrierKey = express ? "EXPRESS" : (r.order.carrier ?? "KHAC");
+      const c = byCarrier.get(carrierKey) ?? blank(carrierKey, null);
+      c.qty += r.quantity;
+      if (express) c.expressQty += r.quantity;
+      c.revenue += revenue;
+      c.orderIds.add(r.orderId);
+      byCarrier.set(carrierKey, c);
+
       allOrderIds.add(r.orderId);
       totalQty += r.quantity;
       if (express) totalExpressQty += r.quantity;
@@ -350,6 +363,18 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
         .map(({ orderIds, ...rest }) => ({ ...rest, orders: orderIds.size }));
     const topProducts = top(byProduct);
     const topSkus = top(bySku);
+    // Hãng VC: Hỏa tốc đứng đầu, còn lại theo SỐ ĐƠN (kho đếm kiện theo hãng)
+    const carriers = [...byCarrier.values()]
+      .sort(
+        (a, b) =>
+          Number(b.name === "EXPRESS") - Number(a.name === "EXPRESS") ||
+          b.orderIds.size - a.orderIds.size
+      )
+      .map(({ orderIds, name, ...rest }) => ({
+        ...rest,
+        carrier: name,
+        orders: orderIds.size,
+      }));
 
     // Ảnh cho từng dòng: tra ChannelProduct theo sku (ưu tiên ảnh sàn — cùng
     // luật với danh sách đơn); một lượt query cho cả hai bảng xếp hạng
@@ -386,6 +411,7 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
       },
       byProduct: topProducts.map(withImage),
       bySku: topSkus.map(withImage),
+      byCarrier: carriers,
     });
   } catch (err) {
     next(err);

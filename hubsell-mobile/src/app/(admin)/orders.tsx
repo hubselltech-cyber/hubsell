@@ -616,7 +616,7 @@ function StatsSheet({
   filter: OrdersFilter;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<"product" | "sku">("product");
+  const [mode, setMode] = useState<"product" | "sku" | "carrier">("product");
   const [data, setData] = useState<OrderStatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -626,7 +626,7 @@ function StatsSheet({
     setLoading(true);
     setError("");
     // days=0: phiếu bốc hàng đếm TRỌN đơn đang chờ, backend đã cố định
-    // trạng thái Chờ xử lý + Đã xử lý nên không cần chọn kỳ
+    // trạng thái Chờ xử lý nên không cần chọn kỳ
     fetchOrderStats({ ...filter, days: 0 })
       .then(setData)
       .catch((err) =>
@@ -638,6 +638,7 @@ function StatsSheet({
   }, [visible]);
 
   const rows = mode === "product" ? (data?.byProduct ?? []) : (data?.bySku ?? []);
+  const carrierRows = data?.byCarrier ?? [];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -656,10 +657,10 @@ function StatsSheet({
             </Pressable>
           </View>
           <Text className="mb-2 text-[11px] text-slate-400 dark:text-slate-500">
-            Chỉ tính đơn Chờ xử lý + Đã xử lý (chưa bàn giao) — hỏa tốc đỏ,
-            nhặt trước
+            Chỉ tính đơn CHỜ XỬ LÝ (vừa về, chưa bốc) — hỏa tốc đỏ, nhặt trước
           </Text>
 
+          {/* 3 cách xem (anh Trung 03/10): sản phẩm · SKU · hãng vận chuyển */}
           <View className="mb-2 flex-row gap-2">
             <PickChip
               label="Theo sản phẩm"
@@ -670,6 +671,11 @@ function StatsSheet({
               label="Theo SKU"
               active={mode === "sku"}
               onPress={() => setMode("sku")}
+            />
+            <PickChip
+              label="Theo ĐVVC"
+              active={mode === "carrier"}
+              onPress={() => setMode("carrier")}
             />
           </View>
 
@@ -699,6 +705,54 @@ function StatsSheet({
             </View>
           ) : error ? (
             <Text className="py-10 text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
+          ) : mode === "carrier" ? (
+            /* THEO HÃNG VẬN CHUYỂN — mỗi hãng: số đơn (kiện) + số món + doanh số;
+               Hỏa tốc đứng đầu, đỏ. Kho xếp hàng theo từng hãng đến lấy. */
+            <FlatList
+              data={carrierRows}
+              keyExtractor={(r) => r.carrier}
+              ListEmptyComponent={
+                <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                  {data?.byCarrier ? "Không có đơn chờ xử lý" : "Backend chưa hỗ trợ bảng này"}
+                </Text>
+              }
+              renderItem={({ item, index }) => {
+                const express = item.carrier === "EXPRESS";
+                return (
+                  <View className="flex-row items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 py-3">
+                    <Text className="w-5 text-center text-xs font-bold text-slate-400 dark:text-slate-500">
+                      {index + 1}
+                    </Text>
+                    <View
+                      className={`h-10 w-10 items-center justify-center rounded-lg ${
+                        express ? "bg-red-100 dark:bg-red-500/15" : "bg-slate-100 dark:bg-slate-800"
+                      }`}
+                    >
+                      <Ionicons
+                        name={express ? "flash" : "car-outline"}
+                        size={18}
+                        color={express ? "#ef4444" : "#64748b"}
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <Text
+                        className={`text-sm font-semibold ${
+                          express ? "text-red-500 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
+                        }`}
+                      >
+                        {CARRIER_LABEL[item.carrier] ?? item.carrier}
+                      </Text>
+                      <Text className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {item.orders} đơn · {item.qty} sản phẩm
+                      </Text>
+                    </View>
+                    <Text className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                      {compactMoney(item.revenue)}
+                    </Text>
+                  </View>
+                );
+              }}
+            />
           ) : (
             <FlatList
               data={rows}
@@ -725,8 +779,20 @@ function StatsSheet({
                     )}
                   </View>
                   <View className="flex-1">
-                    <Text className="text-xs text-slate-800 dark:text-slate-200" numberOfLines={2}>
-                      {mode === "sku" && item.sku ? item.sku : item.name}
+                    {/* SỐ LƯỢNG đứng NGAY CẠNH phân loại: "TC025-DEN × 3"
+                        (anh Trung 03/10) — kho đọc một dòng là biết nhặt mấy */}
+                    <Text className="text-[13px] text-slate-800 dark:text-slate-200" numberOfLines={2}>
+                      <Text className="font-semibold">
+                        {mode === "sku" && item.sku ? item.sku : item.name}
+                      </Text>
+                      <Text
+                        className={`font-bold ${
+                          item.expressQty > 0 ? "text-red-500 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
+                        }`}
+                      >
+                        {"  × "}
+                        {item.qty}
+                      </Text>
                     </Text>
                     <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
                       {mode === "sku" ? item.name + " · " : ""}
@@ -738,18 +804,9 @@ function StatsSheet({
                       </Text>
                     ) : null}
                   </View>
-                  <View className="items-end">
-                    <Text
-                      className={`text-xs font-bold ${
-                        item.expressQty > 0 ? "text-red-500 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
-                      }`}
-                    >
-                      {item.qty} sp
-                    </Text>
-                    <Text className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                      {compactMoney(item.revenue)}
-                    </Text>
-                  </View>
+                  <Text className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                    {compactMoney(item.revenue)}
+                  </Text>
                 </View>
               )}
             />
