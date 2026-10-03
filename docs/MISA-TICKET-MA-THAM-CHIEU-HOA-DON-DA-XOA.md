@@ -136,7 +136,7 @@ Trân trọng, Phòng Tích hợp hệ thống.
 
 ## Nhật ký
 
-- 03/10/2026 sáng: đọc trả lời (thư báo của MISA tới 02/10 15:34, anh Trung thấy 03/10 00:30, em đọc 03/10 ~08:00 qua IMAP). Chép nguyên văn + đối chiếu ở trên; sửa mã theo đó = lát 6c (`HANG-DOI-BEN.md` mục 4.6 N), chưa đẩy, chờ anh gật.
+- 03/10/2026 sáng: đọc trả lời (thư báo của MISA tới 02/10 15:34, anh Trung thấy 03/10 00:30, em đọc 03/10 ~08:00 qua IMAP). Chép nguyên văn + đối chiếu ở trên; sửa mã theo đó = lát 6c (`HANG-DOI-BEN.md` mục 4.6 N); anh Trung đẩy, trên prod từ 03/10 08:41 (`6ae0653`), đã kiểm web + worker + database.
 - 02/10/2026: soạn ticket theo yêu cầu của anh Trung ("phần xóa thì viết ticket gửi MISA").
 - 02/10/2026 ~14:35: ĐÃ GỬI qua developer.misa.vn → Quản lý ứng dụng → Quản lý danh sách yêu cầu hỗ trợ (ứng dụng Hubsell, sản phẩm Hóa đơn điện tử). Trạng thái "Chờ xử lý", "Chưa phản hồi". ĐỪNG gửi lại; có trả lời (kể cả "không có") thì chép nguyên văn vào đây và cập nhật bảng khả năng của MISA (`MISA_CAPABILITIES`). Ticket trước (19/09) MISA trả lời sau 2 ngày.
 - Tự kiểm thêm trước khi gửi: mục Câu hỏi thường gặp trên developer.misa.vn chỉ ghi "MISA áp dụng giới hạn số lượng request theo phút/giờ tùy theo gói dịch vụ", không có con số.
