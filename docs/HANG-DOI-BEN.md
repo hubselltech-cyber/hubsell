@@ -506,7 +506,7 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 
 ### 4.6. Bước 5 (hóa đơn) — khảo sát 02/10/2026 và thiết kế lại phần hàng đợi
 
-**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a trên prod từ 03/10 00:09 (`ca31b33`, mục L); 6b viết xong 03/10 rạng sáng, chờ anh duyệt migration rồi mới đẩy (mục M); việc kế là lát 7.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
+**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a trên prod từ 03/10 00:09 (`ca31b33`, mục L); 6b trên prod từ 03/10 00:26 (`6d90bfa`, mục M); 6c (bổ sung theo trả lời ticket MISA 02/10, mục N) viết xong 03/10 sáng, CHƯA đẩy, chờ anh gật; việc kế là lát 7.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
 
 **Đã kiểm và chưa kiểm**
 
@@ -659,7 +659,8 @@ Một hệ quả của hai chỉ mục duy nhất cần biết: đường webhoo
 
 | Tham số | Giá trị | Căn cứ |
 |---|---|---|
-| Nghỉ giữa hai tờ, cỡ lô, nghỉ giữa hai lượt, số shop cùng lúc mỗi worker | 1 giây, 20 tờ, 1 phút, 2 shop | Đã chốt 01/10 (mục 3.8), ba số sau là em tự chọn |
+| Nghỉ giữa hai tờ, cỡ lô, nghỉ giữa hai lượt, số shop cùng lúc mỗi worker | 1 giây, 20 tờ, 1 phút, 2 shop | Đã chốt 01/10 (mục 3.8). **Nghỉ 1 giây từ 03/10 có căn cứ của MISA** (trả lời ticket 02/10: "mỗi request nên cách nhau 1-3s", lấy mức thấp nhất; khai ở bảng khả năng `publishGapMs`, lát 6c mục N). Ba số sau vẫn là em tự chọn |
+| Hạn mức gọi API của MISA | Chưa có số | MISA (ticket 02/10): hạn mức "hiện đang tắt, sẽ bật lại sớm", tài liệu sẽ ghi số theo từng API. Lát 6c coi HTTP 429 là lỗi tạm và in `[NccHTTP] QUA TAI` để thấy số thật khi MISA bật |
 | Thời hạn chờ một lệnh gọi nhà cung cấp hóa đơn | 60 giây (`INVOICE_HTTP_TIMEOUT_MS`), tính cho cả lượt trao đổi: gửi, chờ tiêu đề, đọc thân | **Em tự chọn.** Chưa có số đo nào về MISA trên prod (chưa shop nào phát hành); sandbox phát hành mất 0,35–0,6 giây. Cửa gọi ghi thời gian từng lệnh ở dòng `[NccHTTP]`; có số thật thì chỉnh |
 | Hạn thuê làn | 120 giây, gia hạn mỗi 30 giây | **Em tự chọn.** Ý nghĩa: worker chết đột ngột thì shop đó chờ tối đa 2 phút |
 | Tuổi tối thiểu của tờ "chưa rõ kết quả" trước khi tra lại | 5 phút | **Em tự chọn**, lớn hơn tổng thời gian dài nhất của một lượt gọi (gọi, thử lại một lần, tra ngược) |
@@ -689,7 +690,8 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | 4 | Cửa gọi nhà cung cấp: chỉ ĐO thời gian từng lệnh (`integrations/invoice/provider-http.ts`; bốn lệnh MISA của luồng hóa đơn đầu ra: lấy token, phát hành, hỏi trạng thái / tải tệp, lấy ký hiệu). Mỗi 15 phút in dòng `[NccHTTP] MISA <loại lệnh> ...` | Không | Không | ✅ Trên prod từ 02/10 14:38 (`6d8bc4d`): worker và web lên bình thường. Prod chưa shop nào dùng hóa đơn nên chưa có dòng `[NccHTTP]` nào; dòng đầu tiên sẽ có khi có shop phát hành. Làm trước lát 2 và 3 vì không phụ thuộc và không đổi hành vi. Chưa đi qua cửa: eSign, máy tính tiền, hóa đơn đầu vào (không nằm trong luồng phát hành hiện nay) |
 | 5 | Adapter báo rõ "chưa rõ kết quả" (`InvoiceResult.outcomeUnknown`); nhà cung cấp trả lời thành công mà không kèm số lẫn mã tra cứu thì không còn ghi là đã phát hành. Chi tiết ở mục K | Không | Chỉ ở ca lỗi: dòng nhật ký vẫn ghi "hỏng" nhưng câu báo nói rõ là chưa rõ đã lập hay chưa và bảo làm lại thao tác; ca "thành công không có số" từ "đã phát hành" thành "hỏng, chưa rõ" | ✅ Trên prod từ 02/10 23:22 (`c73fe59`): web đổi bản 23:22:21, không migration; 23:26 các gian vẫn đồng bộ bình thường sau khi worker lên lại. Prod chưa shop nào phát hành nên chưa có lượt thật. Test `invoice-outcome-unknown.test.ts` 31 ca + 1 ca database trong `invoice-duplicate-guard.test.ts`; đã thử sandbox MISA (mục K) |
 | 6a | Thời hạn chờ cho mọi lệnh đi qua cửa gọi nhà cung cấp (`INVOICE_HTTP_TIMEOUT_MS`, mặc định 60 giây, `0` = tắt). Quá hạn ở lệnh phát hành = chưa rõ kết quả; quá hạn ở bước lấy token = chưa gửi. Chi tiết ở mục L | Không | Lệnh treo bị cắt sau 60 giây thay vì khoảng 300 giây | ✅ Trên prod từ 03/10 00:09 (`ca31b33`): web đổi bản 00:09:39, không migration, 00:11 các gian vẫn đồng bộ, 0 gian lỗi liên tiếp. Tách khỏi 6b và làm TRƯỚC vì 6b cần biết một lệnh đang chạy kéo dài tối đa bao lâu |
-| 6b | Tờ chưa rõ kết quả giữ "đang chờ"; vòng quét trong worker tra lại theo bảng khả năng (thấy tờ → nối số; đã xóa → đã hủy; không thấy → hỏng, đơn quay lại hàng chờ; không tra được → giữ, thử lại sau). Dọn luôn dòng "đang chờ" mồ côi do tiến trình chết | Có: MỘT chỉ mục riêng phần trên `InvoiceLog` cho dòng "đang chờ" chưa có mã tra cứu (bảng lát cũ ghi "không"; khi đọc mã thấy không chỉ mục nào tìm được các dòng này mà không quét qua mọi dòng đã phát hành) | Chỉ ở ca lỗi | Viết xong 03/10 rạng sáng trên nhánh `hoa-don-buoc-5`, CHƯA đẩy: chờ anh Trung duyệt migration `20261003001000_invoice_unknown_pending_idx`. Anh duyệt 02/10 đêm: thêm chỉ mục (SQL trình riêng), tra ra "không có tờ nào" thì KHÔNG tự gửi lại từ vòng quét (để lát 8). Chi tiết ở mục M |
+| 6b | Tờ chưa rõ kết quả giữ "đang chờ"; vòng quét trong worker tra lại theo bảng khả năng (thấy tờ → nối số; đã xóa → đã hủy; không thấy → hỏng, đơn quay lại hàng chờ; không tra được → giữ, thử lại sau). Dọn luôn dòng "đang chờ" mồ côi do tiến trình chết | Có: MỘT chỉ mục riêng phần trên `InvoiceLog` cho dòng "đang chờ" chưa có mã tra cứu (bảng lát cũ ghi "không"; khi đọc mã thấy không chỉ mục nào tìm được các dòng này mà không quét qua mọi dòng đã phát hành) | Chỉ ở ca lỗi | ✅ Trên prod từ 03/10 00:26 (`6d90bfa`; anh Trung duyệt migration `20261003001000_invoice_unknown_pending_idx` 03/10 rạng sáng). Đã kiểm prod sau khi đẩy: migration xong, có chỉ mục, các gian vẫn đồng bộ, nhãn mới lên Vercel; CHƯA đọc được dòng log `Invoice-recheck` của worker (công cụ chặn em đọc log Render). Anh duyệt 02/10 đêm: thêm chỉ mục (SQL trình riêng), tra ra "không có tờ nào" thì KHÔNG tự gửi lại từ vòng quét (để lát 8). Chi tiết ở mục M |
+| 6c | Bổ sung theo trả lời ticket MISA 02/10 (mục N): bảng khả năng thêm `publishGapMs` (MISA = 1 giây), worker tự phát hành và nút phát hành hàng loạt nghỉ đủ khoảng đó giữa hai tờ; HTTP 429 = lỗi TẠM (không ngắt mạch, không "chưa rõ"), cửa gọi in `[NccHTTP] QUA TAI`; ghi nguồn MISA vào từng dòng bảng khả năng | Không | Có, nhỏ: mỗi lượt tự phát hành 20 tờ dài thêm 19 giây; nút hàng loạt 50 tờ dài thêm 49 giây (lát 9 sẽ đưa nút này về chạy nền) | Viết xong 03/10 sáng trên nhánh `hoa-don-buoc-5`, tsc sạch, 185 test hóa đơn + cả bộ qua; CHƯA đẩy, chờ anh gật |
 | 7 | Đơn lỗi vĩnh viễn: dừng tự thử sau 3 lượt | Không | Có | |
 | 8 | Làn theo shop cho TỰ PHÁT HÀNH (thay vòng chung một cờ), công tắc `INVOICE_MODE` | Có (bảng `invoice_lanes`) | Có: các shop chạy song song | Đưa lên hai lần |
 | 9 | Xuất HÀNG LOẠT qua làn + giao diện tiến độ | Có (bảng `invoice_requests`, hàng đợi tín hiệu) | Có | Đưa lên hai lần |
@@ -731,7 +733,7 @@ Ba hệ quả cho thiết kế:
 2. Nhà cung cấp không kiểm hóa đơn gốc thì Hubsell phải tự kiểm trước khi lập điều chỉnh (lát 3).
 3. Thời hạn chờ 60 giây gấp khoảng 100 lần thời gian một lệnh trên sandbox. Số thật trên prod chưa có.
 
-Chưa thử được: mã tham chiếu của tờ đã bị XÓA bên MISA có dùng lại được không (sandbox không xóa được qua API). Nếu không dùng lại được thì ngay hôm nay, chủ shop xóa một hóa đơn trên meInvoice rồi xuất lại từ Hubsell sẽ bị báo trùng mãi. Cần một lần anh xóa thử một tờ trên trang sandbox của MISA, hoặc hỏi MISA.
+Chưa thử được trên sandbox: mã tham chiếu của tờ đã bị XÓA bên MISA có dùng lại được không (sandbox không xóa được qua API). **Đã hỏi MISA, trả lời 02/10 15:34 (mục N): hóa đơn đã phát hành KHÔNG xóa được, sai thì phải xử lý sai sót** — ca "chủ shop xóa tờ đã phát hành rồi xuất lại từ Hubsell" không tồn tại trên production, luật mã tham chiếu = mã đơn giữ nguyên.
 
 Thân câu trả lời thật của lệnh phát hành (sandbox 02/10 tối, HTTP 200): `Success: true`, `PublishInvoiceResult` là một CHUỖI JSON lồng, mỗi phần tử có `RefID` (nhắc lại mã tham chiếu Hubsell gửi), `TransactionID` (mã tra cứu MISA cấp), `InvNo`, `InvSeries`, `InvDate`, `ErrorCode` rỗng. Vì `RefID` luôn được nhắc lại, mã đọc phần tử này không được coi `RefID` là mã tra cứu.
 
@@ -741,14 +743,15 @@ Mỗi adapter khai một bảng khả năng (`ProviderCapabilities` trong `integ
 
 | Khả năng | MISA (nguồn) | Lõi dùng để làm gì |
 |---|---|---|
-| Phải phát hành lần lượt trong một shop | Có (tài liệu) | Làn theo shop chạy từng tờ hay song song |
-| Chặn trùng theo mã tham chiếu | Có (thử 02/10) | Có được gửi lại khi chưa rõ kết quả không |
+| Phải phát hành lần lượt trong một shop | Có (tài liệu; MISA xác nhận trong trả lời ticket 02/10: tuần tự theo ký hiệu, đồng thời là "sai quy tắc") | Làn theo shop chạy từng tờ hay song song |
+| Nghỉ tối thiểu giữa hai lệnh phát hành (`publishGapMs`) | 1 giây (MISA 02/10: "mỗi request nên cách nhau 1-3s") | Worker và nút hàng loạt chờ bao lâu trước tờ kế |
+| Chặn trùng theo mã tham chiếu | Có (thử 02/10; MISA 02/10: "RefID là Key để check trùng", nhưng chỉ nói "gần như" nên Hubsell vẫn giữ chỉ mục duy nhất) | Có được gửi lại khi chưa rõ kết quả không |
 | Mã của lượt bị từ chối dùng lại được | Có (thử 02/10, hóa đơn bán) | Lượt sau dùng lại mã hay phải mã mới |
 | Tra ngược theo mã tham chiếu, và sau bao lâu thì chắc chắn thấy | Có, khai 60 giây (thử 02/10) | Giải tờ "chưa rõ kết quả" |
 | Cỡ lô hỏi trạng thái | 50 | Vòng hỏi trạng thái |
 | Có webhook | Không (tài liệu) | Có mở đường nhận sự kiện không |
-| Hủy qua API | Không (chưa kiểm endpoint `/cancel`) | |
-| Tự kiểm hóa đơn gốc khi điều chỉnh | Không (thử 02/10) | Hubsell có phải tự kiểm trước không |
+| Hủy qua API | Không (chưa kiểm endpoint `/cancel`; MISA 02/10 không trả lời câu này, chỉ nói tờ đã phát hành không xóa được) | |
+| Tự kiểm hóa đơn gốc khi điều chỉnh | Không (thử 02/10; MISA 02/10 xác nhận cả production: "thông tin của hóa đơn gốc sẽ không validate") | Hubsell có phải tự kiểm trước không |
 
 Cách lõi xử lý một lượt "chưa rõ kết quả" theo hai khả năng chính:
 
@@ -775,7 +778,7 @@ Adapter MISA gắn cờ ở các ca sau (`invoice-errors.ts` hàm `isPublishOutc
 | HTTP 5xx hoặc 408 | Hỏng, lỗi tạm (408: lỗi riêng đơn) | Hỏng + chưa rõ |
 | Đứt giữa lúc đọc câu trả lời | Hỏng, xếp nhầm là lỗi riêng đơn | Hỏng + chưa rõ, lỗi tạm |
 | Trả lời thành công mà không có số hóa đơn lẫn mã tra cứu (kể cả khi chỉ nhắc lại `RefID`) | **Đã phát hành**, số để trống | Hỏng + chưa rõ |
-| Mã `Exception`, `CreateInvoiceDataError` (tài liệu MISA: không rõ nguyên nhân) | Hỏng, lỗi tạm | Hỏng + chưa rõ. Anh Trung chốt 02/10: coi là chưa rõ; có trả lời câu 3 của ticket MISA thì chỉnh |
+| Mã `Exception`, `CreateInvoiceDataError` (tài liệu MISA: không rõ nguyên nhân) | Hỏng, lỗi tạm | Hỏng + chưa rõ. Anh Trung chốt 02/10: coi là chưa rõ. MISA trả lời câu 3 ngày 02/10 (mục N) không nói gì về hai mã này, chỉ xác nhận RefID chặn trùng → GIỮ "chưa rõ": gửi lại đúng mã cũ luôn an toàn |
 | Báo trùng mã mà tra ngược chưa ra số (không tra được, chưa thấy, tờ chưa phát hành xong) | Hỏng | Hỏng + chưa rõ, giữ câu báo lỗi trùng |
 
 Không gắn cờ: lỗi ở bước lấy token (lệnh chưa gửi), thiếu cấu hình, công tắc phát hành tắt, MISA từ chối có mã rõ (HTTP 4xx, sai ký hiệu, sai thuế suất...), tờ trùng đã bị xóa bên MISA. Có một trong hai (số hóa đơn hoặc mã tra cứu) vẫn ghi đã phát hành như trước.
@@ -840,6 +843,25 @@ Kiểm: test `invoice-unknown-recheck-db.test.ts` 12 ca trên database dev với
 Câu đọc của vòng quét trên database dev sau khi áp migration (03/10 00:23, 892 dòng nhật ký, 0 dòng đang chờ chưa có mã tra cứu): `Index Scan using "InvoiceLog_unknown_pending_idx"`, đọc 1 khối, 0,02 ms; kế hoạch giữ nguyên ở lượt chạy thứ 7 (sau khi Postgres hết giai đoạn lập kế hoạch riêng từng lượt). Prod trước khi đưa lên: bảng nhật ký 2 dòng, 0 dòng đang chờ chưa có mã tra cứu, không migration dở.
 
 Chưa kiểm: vòng quét chạy theo nhịp thật trong worker (mới gọi trực tiếp từng lượt); hai tiến trình worker thật; nhãn mới trên trình duyệt.
+
+**N. Trả lời ticket MISA 02/10 và lát 6c: bổ sung vào lát 5–6 (đọc trả lời 03/10/2026 sáng)**
+
+Ticket gửi 02/10 ~14:35 (6 câu, `docs/MISA-TICKET-MA-THAM-CHIEU-HOA-DON-DA-XOA.md`), MISA trả lời 02/10 15:34; nguyên văn và bảng đối chiếu từng câu nằm ở tệp đó. Tóm lại điều MISA nói và điều đổi trong mã:
+
+| MISA nói | Khớp thiết kế lát 1–6 không | Đổi gì ở lát 6c |
+|---|---|---|
+| Hóa đơn đã phát hành không xóa được; sai thì xử lý sai sót | Khớp: ca "xóa rồi xuất lại" không có trên prod, luật mã tham chiếu = mã đơn đúng | Không đổi mã; ghi nguồn |
+| Phát hành xong không cần tra trạng thái ngay | Khớp: `createInvoice` đọc số từ câu trả lời, chỉ tra ngược khi báo trùng / chưa rõ | Không đổi |
+| Tuần tự theo ký hiệu, mỗi lệnh cách 1–3 giây; RefID là khóa chống trùng, "gần như" không trùng | Khớp một nửa: worker đã tuần tự, nhưng nhịp nghỉ 1 giây chốt 01/10 CHƯA có trong mã (worker và nút hàng loạt gọi liền tờ này sang tờ kế); MISA không cam kết tuyệt đối nên chỉ mục duy nhất lát 2 vẫn cần | Bảng khả năng thêm `publishGapMs` (`types.ts`, MISA = 1000); `issue-order` / `adjust-order` trả `pauseBeforeNextMs` khi lệnh đã tới nhà cung cấp; worker `invoice-auto-issue.ts` và route `POST /api/tax/invoices/bulk` chờ đủ khoảng đó trước tờ kế (tờ cuối không chờ, bị chặn trước khi gọi nhà cung cấp thì không chờ) |
+| Production không kiểm hóa đơn gốc khi điều chỉnh | Khớp: lát 3 tự kiểm | Không đổi; ghi nguồn |
+| Lý tưởng 20–30 tờ một lệnh, tối đa 50 | KHÔNG khớp cách làm hiện nay (một tờ một lệnh). Không sai, chỉ chậm: một ký hiệu cỡ 20–40 tờ một phút | Chưa đổi — cần hợp đồng adapter nhận lô, thuộc lát 8–9. Ghi sổ việc mục 7 |
+| Hạn mức gọi API đang TẮT, sẽ bật lại, chưa có số | Mã chưa có xử lý HTTP 429: hiện rơi vào "lỗi riêng đơn", 3 đơn liên tiếp là NGẮT MẠCH shop và bảo chủ shop sửa (sai: chủ shop không sửa được gì) | `invoice-errors.ts`: HTTP 429 → lỗi TẠM (`STOP_RUN`: dừng lượt của shop, lượt sau thử lại), không gắn cờ chưa rõ (MISA từ chối trước khi xử lý); `provider-http.ts` in `[NccHTTP] QUA TAI <NCC> <lệnh> HTTP 429 Retry-After=...` |
+
+Điều còn là số tự chọn sau trả lời này: thời hạn chờ 60 giây, `settleSeconds` 60 giây, tuổi 5 phút trước khi tra lại, 2 shop cùng lúc. MISA không cho con số nào trong bốn thứ đó.
+
+Ảnh hưởng thời gian của khoảng nghỉ: lượt tự phát hành 20 tờ dài thêm 19 giây (nhịp 15 phút, không đáng kể); nút phát hành hàng loạt 50 tờ dài thêm 49 giây ngay trong một request HTTP (từ ~25–30 giây lên ~75–80 giây). Em để nguyên vì MISA yêu cầu và lát 9 sẽ đưa nút này về chạy nền có tiến độ; nếu anh thấy 80 giây một request là quá dài thì hạ trần 50 đơn của nút xuống 20 (một dòng trong `routes/tax.ts`) tới khi có lát 9.
+
+Kiểm: `npx tsc --noEmit` sạch; `vitest run invoice misa` 14 tệp 185 test qua (thêm 3 ca: bảng khả năng khóa `publishGapMs`, HTTP 429 là lỗi tạm và giữ mã riêng của MISA nếu có, 429 không phải chưa rõ; ca database `issueInvoiceForOrder` trả `pauseBeforeNextMs = 1000` khi lệnh đã tới nhà cung cấp). Chưa kiểm: MISA thật trả 429 (hạn mức đang tắt, không tạo được); khoảng nghỉ trên prod (chưa shop nào phát hành).
 
 ### 4.7. Bước 6 (dọn) — kiểm kê 02/10/2026
 
@@ -948,7 +970,9 @@ Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả
 | Đo lại độ trễ `evt.order` trên prod | Khi `webhook_events` có vài nghìn sự kiện | Lấy trễ lớn nhất và số dòng trễ trên 30 giây (bỏ hai dòng sửa tay 01/10). Tỷ lệ cao hơn hẳn số đo ở mục 4.5 thì trình phương án sửa |
 | Thời hạn chờ lệnh gọi sàn | 04–06/10, sau khi có 3–5 ngày số đo `[SanHTTP]` | Trình con số kèm phân bố thật, rồi bật `PLATFORM_HTTP_TIMEOUT_MS` |
 | Bước 5 (hóa đơn) | Anh Trung duyệt 02/10; làm theo 14 lát ở mục 4.6 F, mỗi lát commit và đẩy riêng | Lát 2 chờ câu đọc trên prod (mục 4.6 C) và trình migration |
-| Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không | Đã gửi ticket MISA 02/10 kèm 5 câu khác (`docs/MISA-TICKET-MA-THAM-CHIEU-HOA-DON-DA-XOA.md`); chờ trả lời | Không dùng lại được thì chủ shop xóa hóa đơn rồi xuất lại từ Hubsell sẽ bị báo trùng mãi (mục 4.6 I) |
+| ~~Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không~~ | ✅ MISA trả lời 02/10 15:34, đọc 03/10 (mục 4.6 N) | Tờ đã phát hành không xóa được → ca này không có trên prod. Phần còn lại của trả lời đã thành lát 6c |
+| Gom 20–30 tờ một lệnh phát hành (MISA 02/10: "lý tưởng", tối đa 50) | Lát 8–9 của bước 5 (làn theo shop, hàng loạt chạy nền) | Hợp đồng adapter thêm `createInvoices(lô)` tùy bảng khả năng; một tờ một lệnh vẫn đúng, chỉ chậm (20–40 tờ/phút/ký hiệu). Trình anh số đo thật trước khi làm |
+| Hạn mức gọi API của MISA | Khi MISA bật lại (ticket 02/10: "sẽ bật lại sớm", tài liệu sẽ ghi số theo từng API) | Dòng `[NccHTTP] QUA TAI` xuất hiện là lúc có số thật; đọc tài liệu MISA, điền vào mục D, cân lại 2 shop cùng lúc |
 | Bước 6 (dọn) | Ba đợt, mốc ở mục 4.7: 6a thời hạn chờ 04–06/10; 6b webhook và đẩy tồn từ 09/10; 6c hóa đơn sau bước 5 một tuần | Danh sách tệp phải gỡ, câu đọc điều kiện và 3 điểm cần chốt ở mục 4.7 |
 | Hóa đơn của chính Hubsell trên HQ: chưa có xử lý "chưa rõ kết quả" | Khi Hubsell bắt đầu xuất hóa đơn cho khách qua HQ | `routes/admin.ts` gọi thẳng `publishStandardInvoice`, không qua adapter: đứt mạng sau khi gửi thì báo lỗi, bấm lại sẽ gặp lỗi trùng mã mà không tự nối số (mục 4.6 K). Cho đi qua adapter hoặc thêm bước tra ngược |
 | Tự phát hành: mốc "đã xét tới ngày nào" cho từng shop | Khi có shop phát hành hàng nghìn hóa đơn mỗi ngày | Hiện mỗi lượt đi lại qua mọi đơn đã giao kể từ ngày bật (mục 4.6, bảng A điểm 8) |

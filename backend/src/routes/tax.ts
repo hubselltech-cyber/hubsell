@@ -595,7 +595,7 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
       invoiceNo?: string | null;
       error?: string;
     }> = [];
-    for (const orderCode of orderCodes) {
+    for (const [i, orderCode] of orderCodes.entries()) {
       const r = await issueInvoiceForOrder(req.ownerId!, scope, orderCode);
       results.push({
         orderCode,
@@ -603,6 +603,12 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
         invoiceNo: r.log?.invoiceNo ?? null,
         error: r.error,
       });
+      // Nghỉ giữa hai lệnh phát hành theo bảng khả năng của nhà cung cấp (MISA trả lời
+      // ticket 02/10/2026: cùng ký hiệu phải tuần tự, mỗi lệnh cách nhau 1–3 giây).
+      // Bấm tay hàng loạt không có đường tắt bắn dồn. Tờ cuối không nghỉ.
+      if (i < orderCodes.length - 1 && r.pauseBeforeNextMs) {
+        await new Promise<void>((resolve) => setTimeout(resolve, r.pauseBeforeNextMs));
+      }
     }
     const issued = results.filter((r) => r.ok).length;
     res.json({ issued, failed: results.length - issued, results });

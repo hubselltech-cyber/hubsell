@@ -150,6 +150,14 @@ export interface ProviderCapabilities {
    */
   sequentialIssue: boolean;
   /**
+   * Nghỉ TỐI THIỂU (ms) giữa hai lệnh phát hành liên tiếp của một shop; 0 = NCC
+   * không yêu cầu. Người gọi lặp qua nhiều tờ (worker tự phát hành, phát hành hàng
+   * loạt) phải chờ đủ khoảng này trước tờ kế — lõi đưa số ra qua
+   * IssueOrderResult.pauseBeforeNextMs. MISA (trả lời ticket 02/10/2026): mỗi
+   * lệnh cách nhau 1–3 giây, cùng ký hiệu phải tuần tự.
+   */
+  publishGapMs: number;
+  /**
    * NCC chặn trùng theo MÃ THAM CHIẾU Hubsell gửi kèm: gửi lại đúng mã của một
    * tờ đã lập thì bị từ chối, không lập tờ thứ hai. Đây là chốt cuối chống phát
    * hành trùng khi Hubsell không biết lượt trước đã lập hay chưa.

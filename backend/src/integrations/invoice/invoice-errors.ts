@@ -305,6 +305,18 @@ export function explainInvoiceError(err: unknown): ExplainedInvoiceError {
   }
   const { code = null, subCodes = [], description, httpStatus, network } = err.detail;
 
+  // HTTP 429: NCC giới hạn số lệnh gọi, từ chối TRƯỚC khi xử lý nên không có tờ nào
+  // được lập (không phải "chưa rõ kết quả"). Lỗi tạm: worker dừng lượt của shop,
+  // lượt sau thử lại; không ngắt mạch, không bắt chủ shop sửa gì. MISA (ticket
+  // 02/10/2026): hạn mức "hiện đang tắt, sẽ bật lại sớm", chưa công bố con số.
+  if (httpStatus === 429) {
+    return {
+      code: code ?? "HTTP_429",
+      scope: "TRANSIENT",
+      message: `meInvoice đang giới hạn số lệnh gọi (HTTP 429) — hệ thống sẽ tự thử lại ở lượt sau, không cần làm gì.${suffix(code, description)}`,
+    };
+  }
+
   if (network || (httpStatus !== undefined && httpStatus >= 500)) {
     return {
       code,

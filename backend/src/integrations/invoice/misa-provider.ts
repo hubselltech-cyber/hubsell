@@ -43,13 +43,22 @@ export interface MisaProviderConfig extends StandardInvoiceConfig {
  *   [doc]        tài liệu meInvoice (doc.meinvoice.vn / portal developer.misa.vn)
  *   [thử 02/10]  bài thử scripts/misa-refid-probe.ts chạy trên sandbox 02/10/2026
  *                (kết quả chép ở docs/HANG-DOI-BEN.md mục 4.6)
+ *   [MISA 02/10] Phòng Tích hợp hệ thống MISA trả lời ticket hỗ trợ ngày 02/10/2026
+ *                15:34 (nguyên văn ở docs/MISA-TICKET-MA-THAM-CHIEU-HOA-DON-DA-XOA.md)
  */
 export const MISA_CAPABILITIES: ProviderCapabilities = {
   // [doc] "Lưu ý khi bắt đầu": số hóa đơn cấp liên tục theo ký hiệu, lệnh chen
-  // ngang bị từ chối với InvoiceNumberNotCotinuous.
+  // ngang bị từ chối với InvoiceNumberNotCotinuous. [MISA 02/10] xác nhận: "yêu cầu
+  // phát hành tuần tự với 1 ký hiệu hóa đơn (InvSeries)", phát hành đồng thời là
+  // "làm sai quy tắc mà sản phẩm đặt ra".
   sequentialIssue: true,
+  // [MISA 02/10] "mỗi request nên cách nhau 1-3s". Lấy mức thấp nhất MISA nêu; số
+  // 1 giây cũng là nhịp đã chốt 01/10 (docs/HANG-DOI-BEN.md mục 3.8).
+  publishGapMs: 1000,
   // [thử 02/10] gửi lại mã đã lập → DuplicateInvoiceRefID (cả hóa đơn bán lẫn điều
   // chỉnh); hai lệnh CÙNG LÚC cùng một mã → đúng một tờ được lập, lệnh kia báo trùng.
+  // [MISA 02/10] "RefID là Key để check trùng hóa đơn", trùng "gần như sẽ không xảy
+  // ra" — MISA không cam kết tuyệt đối, nên vẫn giữ chỉ mục duy nhất phía Hubsell.
   dedupesByReference: true,
   // [thử 02/10] một mã bị từ chối hai kiểu (ký hiệu không tồn tại, thuế suất sai)
   // rồi gửi lại hợp lệ thì được nhận (hóa đơn bán). Hóa đơn điều chỉnh: bị từ chối
@@ -58,16 +67,23 @@ export const MISA_CAPABILITIES: ProviderCapabilities = {
   // [thử 02/10] /invoice/status?inputType=2 tra theo RefID. Mã chưa từng gửi trả
   // danh sách rỗng. Hóa đơn bán thấy ngay (3/3 lượt); hóa đơn điều chỉnh có 2/2
   // lượt tra ngay sau khi lập trả RỖNG, 140 ms sau thì thấy. 60 giây là mức TỰ
-  // CHỌN, gấp vài trăm lần độ trễ đã thấy.
+  // CHỌN, gấp vài trăm lần độ trễ đã thấy. [MISA 02/10] không cho con số; chỉ nói
+  // phát hành xong không cần tra lại ngay vì câu trả lời đã có đủ thông tin (đúng
+  // với mã: createInvoice chỉ tra ngược khi báo trùng hoặc chưa rõ kết quả).
   findByReference: { supported: true, settleSeconds: 60 },
   // Cỡ lô worker hỏi trạng thái đang chạy từ 03/09/2026 (body là mảng mã tra cứu).
   statusBatchSize: 50,
   // [doc] chỉ có /invoice/status để hỏi; không có webhook.
   webhook: false,
   // [doc] portal đọc 23/08/2026 không có endpoint hủy. (doc.meinvoice.vn/itg có
-  // nhắc POST /cancel — CHƯA kiểm, nên khai mức an toàn.)
+  // nhắc POST /cancel — CHƯA kiểm, nên khai mức an toàn.) [MISA 02/10] không trả
+  // lời câu hủy qua API; chỉ nói hóa đơn đã phát hành KHÔNG xóa được, sai thì phải
+  // xử lý sai sót (điều chỉnh / thay thế).
   cancelViaApi: false,
   // [thử 02/10] sandbox nhận và lập cả tờ điều chỉnh trỏ vào số hóa đơn gốc không tồn tại.
+  // [MISA 02/10] xác nhận cả production: "vẫn cho phép điều chỉnh/thay thế hóa đơn của
+  // hệ thống khác, nên thông tin của hóa đơn gốc sẽ không validate"; gốc không có thì
+  // cơ quan thuế từ chối. Hubsell tự kiểm trước (adjust-precheck.ts, lát 3).
   validatesAdjustmentOriginal: false,
 };
 

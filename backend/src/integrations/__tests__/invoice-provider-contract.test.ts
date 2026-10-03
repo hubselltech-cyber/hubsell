@@ -150,10 +150,12 @@ describe("Công tắc phát hành riêng từng NCC", () => {
   });
 });
 
-describe("Bảng khả năng của MISA (kết quả thử sandbox 02/10/2026)", () => {
+describe("Bảng khả năng của MISA (thử sandbox 02/10/2026 + MISA trả lời ticket 02/10/2026)", () => {
   it("đổi một dòng là phải có lý do: test này khóa bảng", () => {
     expect(MISA_CAPABILITIES).toEqual({
       sequentialIssue: true,
+      // MISA 02/10: "mỗi request nên cách nhau 1-3s"
+      publishGapMs: 1000,
       dedupesByReference: true,
       referenceReusableAfterReject: true,
       findByReference: { supported: true, settleSeconds: 60 },

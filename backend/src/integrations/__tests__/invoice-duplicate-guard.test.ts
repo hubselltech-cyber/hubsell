@@ -128,6 +128,8 @@ describe("Hóa đơn gốc: một đơn một hóa đơn đang chờ / đã phá
     const r = await issueInvoiceForOrder(fx.userId, { userId: fx.userId }, orderCode);
     expect(r.ok).toBe(true);
     expect(calls[0].orderCode).toBe(orderCode);
+    // Lệnh đã tới nhà cung cấp → người gọi lặp nhiều tờ phải nghỉ theo bảng khả năng (MISA 02/10: 1–3 giây).
+    expect(r.pauseBeforeNextMs).toBe(1000);
     const log = await prisma.invoiceLog.findFirstOrThrow({ where: { ownerId: fx.userId, orderCode } });
     expect(log.providerRef).toBe(orderCode);
   });

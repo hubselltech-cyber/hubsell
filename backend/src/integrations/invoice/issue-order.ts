@@ -21,8 +21,14 @@ import { SecretBoxError } from "../../lib/secret-box";
 import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
-import type { InvoiceLine, InvoiceResult } from "./types";
+import type { InvoiceLine, InvoiceProvider, InvoiceResult } from "./types";
 import { canRecheckLater, keptPendingMessage, OUTCOME_UNKNOWN_CODE, recheckInProgressMessage } from "./unknown-outcome";
+
+/** Khoảng nghỉ nhà cung cấp yêu cầu giữa hai lệnh phát hành; undefined khi không yêu cầu. */
+export function publishGapOf(provider: InvoiceProvider): number | undefined {
+  const ms = provider.capabilities.publishGapMs;
+  return ms > 0 ? ms : undefined;
+}
 
 export interface IssueOrderResult {
   ok: boolean;
@@ -37,6 +43,12 @@ export interface IssueOrderResult {
    * Dòng nhật ký vẫn ghi FAILED; người gọi không được coi là "chắc chắn chưa lập".
    */
   outcomeUnknown?: boolean;
+  /**
+   * Có mặt khi lệnh đã đi tới nhà cung cấp: người gọi đang lặp qua nhiều tờ phải
+   * chờ đủ số ms này trước tờ kế (ProviderCapabilities.publishGapMs — MISA 02/10:
+   * mỗi lệnh cách nhau 1–3 giây). Không có = chưa gọi nhà cung cấp, không cần nghỉ.
+   */
+  pauseBeforeNextMs?: number;
   /**
    * Khi Hubsell CHỦ ĐỘNG KHÔNG LẬP (vd không xác nhận được hóa đơn gốc trước khi
    * điều chỉnh): chuyện gì đang xảy ra + việc chủ shop nên làm, tách riêng để giao
@@ -507,6 +519,7 @@ export async function issueInvoiceForOrder(
     errorCode: issued ? undefined : keepPending ? OUTCOME_UNKNOWN_CODE : result.errorCode,
     errorScope: issued ? undefined : (result.errorScope ?? "ORDER"),
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
+    pauseBeforeNextMs: buyerTaxCodeError ? undefined : publishGapOf(provider),
     log: {
       ...updated,
       totalAmount: Number(updated.totalAmount),

@@ -53,6 +53,8 @@ const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 let running = false;
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export async function runInvoiceAutoIssueOnce(): Promise<void> {
   if (running) return; // lượt trước chưa xong (NCC chậm) — bỏ lượt này
   running = true;
@@ -127,17 +129,21 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
       let streakCode: string | null = null;
       let streak = 0;
       let pauseReason: string | null = null;
-      for (const o of orders) {
+      for (const [i, o] of orders.entries()) {
         // TUẦN TỰ — MISA cấp số hóa đơn liên tục theo ký hiệu.
         const r = await issueInvoiceForOrder(
           cfg.ownerId,
           { userId: cfg.ownerId },
           o.orderCode
         );
+        // Nghỉ giữa hai lệnh phát hành theo bảng khả năng của nhà cung cấp (MISA trả
+        // lời ticket 02/10/2026: mỗi lệnh cách nhau 1–3 giây). Tờ cuối không nghỉ.
+        const pauseMs = i < orders.length - 1 ? (r.pauseBeforeNextMs ?? 0) : 0;
         if (r.ok) {
           issued += 1;
           streakCode = null;
           streak = 0;
+          if (pauseMs > 0) await sleep(pauseMs);
           continue;
         }
         failed += 1;
@@ -150,6 +156,7 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
           break;
         }
         if (decision === "STOP_RUN") break;
+        if (pauseMs > 0) await sleep(pauseMs);
       }
 
       if (pauseReason) {

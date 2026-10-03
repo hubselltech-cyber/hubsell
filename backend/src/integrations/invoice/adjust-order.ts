@@ -34,6 +34,7 @@ import { getInvoiceProvider } from "./index";
 import {
   allocateOrderDiscount,
   isUniqueViolation,
+  publishGapOf,
   resolveInvoiceBuyer,
   secretUnreadableResult,
   type IssueOrderResult,
@@ -450,6 +451,7 @@ export async function issueAdjustmentForOrder(
     error: issued ? undefined : (errorMessage ?? "NCC từ chối phát hành hóa đơn điều chỉnh"),
     errorCode: keepPending ? OUTCOME_UNKNOWN_CODE : undefined,
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
+    pauseBeforeNextMs: publishGapOf(provider),
     log: {
       ...updated,
       totalAmount: Number(updated.totalAmount),

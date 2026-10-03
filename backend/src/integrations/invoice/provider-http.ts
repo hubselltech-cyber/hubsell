@@ -148,6 +148,13 @@ export async function providerFetch(
     const ms = Date.now() - started;
     record(key, ms, false);
     if (ms >= SLOW_LOG_MS) console.warn(`[NccHTTP] CHAM ${key} ${ms}ms HTTP ${res.status}`);
+    // NCC báo quá tải (hạn mức gọi API). MISA 02/10/2026: hạn mức đang tắt, sẽ bật
+    // lại và công bố số theo từng API — dòng này là chỗ thấy số thật đầu tiên.
+    if (res.status === 429) {
+      // Response giả trong test có thể không mang headers — không để dòng log làm hỏng lệnh.
+      const retryAfter = typeof res.headers?.get === "function" ? res.headers.get("retry-after") : null;
+      console.warn(`[NccHTTP] QUA TAI ${key} HTTP 429${retryAfter ? ` Retry-After=${retryAfter}` : ""}`);
+    }
     return res;
   } catch (err) {
     const ms = Date.now() - started;

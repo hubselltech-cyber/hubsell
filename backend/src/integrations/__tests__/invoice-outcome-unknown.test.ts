@@ -260,6 +260,8 @@ describe("isPublishOutcomeUnknown", () => {
     expect(isPublishOutcomeUnknown(new InvoiceProviderError("x", { network: true, publishSent: true }))).toBe(true);
     expect(isPublishOutcomeUnknown(new InvoiceProviderError("x", { httpStatus: 502, publishSent: true }))).toBe(true);
     expect(isPublishOutcomeUnknown(new InvoiceProviderError("x", { httpStatus: 400, publishSent: true }))).toBe(false);
+    // 429: NCC từ chối trước khi xử lý, chắc chắn chưa lập tờ nào.
+    expect(isPublishOutcomeUnknown(new InvoiceProviderError("x", { httpStatus: 429, publishSent: true }))).toBe(false);
     expect(isPublishOutcomeUnknown(new InvoiceProviderError("x", { code: "Exception", publishSent: true }))).toBe(true);
     expect(isPublishOutcomeUnknown(new InvoiceProviderError("x", { code: "InvoiceDuplicated", publishSent: true }))).toBe(false);
   });

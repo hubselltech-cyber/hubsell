@@ -143,6 +143,17 @@ describe("Dịch lỗi NCC → việc cần làm", () => {
     expect(explainInvoiceError(providerErrorFromBody("x", "<html>502</html>", 502)).scope).toBe("TRANSIENT");
   });
 
+  it("HTTP 429 (MISA giới hạn số lệnh, sẽ bật lại theo ticket 02/10) → TẠM THỜI, câu báo nói tự thử lại", () => {
+    const e = explainInvoiceError(providerErrorFromBody("x", "Too Many Requests", 429, { publishSent: true }));
+    expect(e.scope).toBe("TRANSIENT");
+    expect(e.code).toBe("HTTP_429");
+    expect(e.message).toContain("tự thử lại");
+    // Có mã lỗi riêng của MISA thì giữ mã đó.
+    expect(
+      explainInvoiceError(new InvoiceProviderError("x", { code: "RateLimitExceeded", httpStatus: 429 })).code
+    ).toBe("RateLimitExceeded");
+  });
+
   it("số hóa đơn không liên tục → TẠM THỜI; trùng mã đơn → riêng ĐƠN + dặn đừng lập tay thêm", () => {
     expect(
       explainInvoiceError(new InvoiceProviderError("x", { code: "InvoiceNumberNotCotinuous" })).scope
