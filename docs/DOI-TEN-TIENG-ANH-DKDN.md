@@ -2,6 +2,19 @@
 
 Soạn 25/09/2026. Lý do: GCN cấp 09/09/2026 để trống "Tên công ty viết bằng tiếng nước ngoài" và "Tên viết tắt"; D&B (D-U-N-S 32-013-1497), tài khoản Cổng DVC Bộ Công Thương và landing đều đang dùng `HUBSELL TECHNOLOGY CO., LTD.` là bản dịch. Có tên trên GCN thì Apple, Google, ngân hàng, đối tác nước ngoài không phải giải thích.
 
+## 0. Cập nhật 02/10/2026: Phòng ĐKKD yêu cầu sửa đổi, bổ sung
+
+Hồ sơ OD-0967282/26 (biên nhận H26.13.5-260929-4238, nộp 29/09) bị trả lúc 21:59 ngày 02/10 với lý do nguyên văn: căn cứ Điều 39 Luật DN 2020, tên bằng tiếng nước ngoài là tên được DỊCH từ tên tiếng Việt; "đề nghị doanh nghiệp lựa chọn tên doanh nghiệp bằng tiếng nước ngoài theo quy định trên". Thông báo không chỉ rõ chữ nào sai. Em đọc là `CO., LTD.` bị coi là viết tắt chứ không phải bản dịch của "Công ty TNHH" (phần còn lại dịch sát từng chữ); chưa gọi Phòng ĐKKD xác nhận.
+
+Bản nộp lại:
+
+| Ô | Bản 29/09 (bị trả) | Bản nộp lại |
+|---|---|---|
+| Tên nước ngoài | HUBSELL TECHNOLOGY CO., LTD. | `HUBSELL TECHNOLOGY COMPANY LIMITED` |
+| Tên viết tắt | HUBSELL | `HUBSELL TECHNOLOGY CO., LTD.` (khoản 3 Điều 39: viết tắt từ tên nước ngoài; giữ nguyên chuỗi đang dùng ở D&B, Apple, Google, Cổng BCT) |
+
+Hai tờ mới nằm ở `Downloads\Doi-ten-bo-sung-COMPANY-LIMITED\`: Mẫu 12 và Quyết định **số 02/2026/QĐ-CSH** (thay thế QĐ 01/2026 ngày 26/09, ngày ký để trống "tháng 10 năm 2026"). Ký tay cùng một ngày, scan, vào Danh sách hồ sơ trên cổng → mở hồ sơ bị trả → sửa hai ô tên → thay 2 tệp đính kèm → ký xác thực → gửi lại. Các mục dưới đây là bản soạn 25/09, tên ở mục 1 đã được thay bằng bảng trên.
+
 ## 1. Căn cứ và kết luận
 
 | Mục | Nội dung |

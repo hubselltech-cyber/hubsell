@@ -12,7 +12,9 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
 from reportlab.lib import colors
 import os
 
-OUT = r"C:\Users\trung\Downloads"
+# Thư mục riêng cho bản nộp bổ sung 10/2026, không ghi đè bản CO., LTD. đã ký 26/09.
+OUT = r"C:\Users\trung\Downloads\Doi-ten-bo-sung-COMPANY-LIMITED"
+os.makedirs(OUT, exist_ok=True)
 pdfmetrics.registerFont(TTFont("Arial", r"C:\Windows\Fonts\arial.ttf"))
 pdfmetrics.registerFont(TTFont("Arial-Bold", r"C:\Windows\Fonts\arialbd.ttf"))
 pdfmetrics.registerFont(TTFont("Arial-Italic", r"C:\Windows\Fonts\ariali.ttf"))
@@ -23,14 +25,16 @@ CB1 = '<font name="Sym">\u2612</font>'
 
 CO = "CÔNG TY TNHH CÔNG NGHỆ HUBSELL"
 MST = "0111626360"
-NAME_EN = "HUBSELL TECHNOLOGY CO., LTD."
-NAME_SHORT = "HUBSELL"
+# 02/10/2026: Phòng ĐKKD trả hồ sơ OD-0967282/26 (Điều 39 Luật DN: tên nước ngoài phải là bản DỊCH
+# từ tên tiếng Việt) → loại hình viết đủ COMPANY LIMITED, bản CO., LTD. chuyển sang tên viết tắt.
+NAME_EN = "HUBSELL TECHNOLOGY COMPANY LIMITED"
+NAME_SHORT = "HUBSELL TECHNOLOGY CO., LTD."
 ADDR = "5K1, Ngõ 5, TT75, Tổng Cục II, BQP, Tổ Dân Phố Kim Chung, Xã Hoài Đức, Thành phố Hà Nội, Việt Nam"
 OWNER = "NGUYỄN TRUNG HIẾU"
 OWNER_DOB = "27/02/1993"
 OWNER_ID = "026093012010"
 AGENCY = "Phòng Đăng ký kinh doanh và Tài chính doanh nghiệp – Sở Tài chính Thành phố Hà Nội"
-DATE_LINE = "Hà Nội, ngày ....... tháng 09 năm 2026"
+DATE_LINE = "Hà Nội, ngày ....... tháng 10 năm 2026"
 
 base = ParagraphStyle("b", fontName="Arial", fontSize=12, leading=17, alignment=TA_JUSTIFY)
 left = ParagraphStyle("l", parent=base, alignment=TA_LEFT)
@@ -111,7 +115,7 @@ def quyet_dinh():
                             leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=18 * mm,
                             title="Quyết định của Chủ sở hữu về việc thay đổi tên doanh nghiệp - HUBSELL")
     s = []
-    header(s, so="Số: 01/2026/QĐ-CSH")
+    header(s, so="Số: 02/2026/QĐ-CSH")
     s += [Paragraph("QUYẾT ĐỊNH CỦA CHỦ SỞ HỮU CÔNG TY", title),
           Paragraph("Về việc thay đổi tên doanh nghiệp: bổ sung tên viết bằng tiếng nước ngoài và tên viết tắt", bold_c),
           Spacer(1, 6 * mm),
@@ -129,11 +133,11 @@ def quyet_dinh():
           Paragraph(f"2. Tên công ty viết bằng tiếng nước ngoài: <b>{NAME_EN}</b>", base),
           Paragraph(f"3. Tên công ty viết tắt: <b>{NAME_SHORT}</b>", base),
           Paragraph("<b>Điều 2.</b> Sửa đổi khoản 2 Điều 1 Điều lệ công ty thành:", base),
-          Paragraph(f"“2. Tên công ty viết bằng tiếng Việt: {CO}. Tên công ty viết bằng tiếng nước ngoài: {NAME_EN} Tên công ty viết tắt: {NAME_SHORT}.”", base),
+          Paragraph(f"“2. Tên công ty viết bằng tiếng Việt: {CO}. Tên công ty viết bằng tiếng nước ngoài: {NAME_EN}. Tên công ty viết tắt: {NAME_SHORT}”", base),
           Paragraph("Các nội dung khác của Điều lệ giữ nguyên.", base),
           Paragraph("<b>Điều 3.</b> Đồng thời cập nhật thông tin liên hệ của doanh nghiệp: website hubsell.vn, thư điện tử support@hubsell.vn.", base),
           Paragraph(f"<b>Điều 4.</b> Giao ông {OWNER.title()}, Giám đốc kiêm người đại diện theo pháp luật, thực hiện thủ tục đăng ký thay đổi nội dung Giấy chứng nhận đăng ký doanh nghiệp tại cơ quan đăng ký kinh doanh và công bố theo quy định.", base),
-          Paragraph("<b>Điều 5.</b> Quyết định này có hiệu lực kể từ ngày ký.", base),
+          Paragraph("<b>Điều 5.</b> Quyết định này có hiệu lực kể từ ngày ký và thay thế Quyết định số 01/2026/QĐ-CSH ngày 26/09/2026 của Chủ sở hữu công ty.", base),
           Spacer(1, 4 * mm),
           Paragraph("<b>Thông tin chủ sở hữu:</b>", left),
           Paragraph(f"Họ và tên: {OWNER} — Ngày sinh: {OWNER_DOB} — Quốc tịch: Việt Nam", left),
