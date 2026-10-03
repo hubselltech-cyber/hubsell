@@ -1132,6 +1132,17 @@ model InvoiceLog {
   platformTaxWithheld Decimal @default(0) @db.Decimal(12, 2)
 
   errorMessage String? // lý do khi status = FAILED
+  /// TẦM của lỗi khi status = FAILED (invoice-errors.ts: ACCOUNT | ORDER | TRANSIENT) —
+  /// hóa đơn bước 5 lát 7 (03/10/2026). Là sự thật gốc để tính lại orderErrorCount.
+  /// NULL = dòng đời trước lát 7, hoặc dòng không phải FAILED.
+  errorScope   String?
+  /// SỐ LƯỢT LỖI RIÊNG ĐƠN (tầm ORDER) của hóa đơn gốc này tính TỚI dòng này — ghi khi
+  /// issue-order.ts ghi FAILED (lỗi tầm khác chép lại số cũ, không cộng). Worker tự
+  /// phát hành bỏ qua đơn có dòng FAILED mang số ≥ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS
+  /// (mặc định 3): đơn lỗi vì dữ liệu của chính nó không bị thử lại mỗi ngày mãi mãi.
+  /// Bấm tay vẫn được. NULL = chưa đếm (dòng đời trước, dòng điều chỉnh, dòng vòng
+  /// quét tờ chưa rõ ghi).
+  orderErrorCount Int?
   issuedAt     DateTime? // thời điểm NCC phát hành thành công
 
   /// Trạng thái phía CƠ QUAN THUẾ do worker invoice-status-sync kéo từ NCC

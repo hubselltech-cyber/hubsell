@@ -4,6 +4,9 @@ import {
   decideAfterFailure,
   normalizeAutoIssueTrigger,
   vnStartOfDay,
+  autoRetryExhausted,
+  maxAutoIssueAttempts,
+  nextOrderErrorCount,
 } from "../invoice/auto-issue-policy";
 import {
   explainInvoiceError,
@@ -195,6 +198,28 @@ describe("Ngắt mạch worker tự động phát hành", () => {
     expect(decideAfterFailure("ORDER", 2)).toBe("CONTINUE");
     expect(decideAfterFailure("ORDER", 3)).toBe("PAUSE");
     expect(decideAfterFailure(undefined, 3)).toBe("PAUSE");
+  });
+  it("lát 7 — chỉ lỗi RIÊNG ĐƠN cộng lượt; lỗi tạm / tài khoản chép lại số cũ", () => {
+    expect(nextOrderErrorCount(null, "ORDER")).toBe(1);
+    expect(nextOrderErrorCount(2, "ORDER")).toBe(3);
+    expect(nextOrderErrorCount(2, "TRANSIENT")).toBe(2);
+    expect(nextOrderErrorCount(2, "ACCOUNT")).toBe(2);
+    expect(nextOrderErrorCount(null, "TRANSIENT")).toBe(0);
+    // Không có tầm (adapter cũ) → coi là lỗi riêng đơn, như issue-order.ts mặc định.
+    expect(nextOrderErrorCount(null, undefined)).toBe(0);
+  });
+  it("lát 7 — mức dừng mặc định 3; env hợp lệ thì theo env; 0 = không bao giờ dừng; rác → 3", () => {
+    expect(maxAutoIssueAttempts({})).toBe(3);
+    expect(maxAutoIssueAttempts({ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS: "5" })).toBe(5);
+    expect(maxAutoIssueAttempts({ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS: "0" })).toBe(0);
+    expect(maxAutoIssueAttempts({ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS: "abc" })).toBe(3);
+    expect(maxAutoIssueAttempts({ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS: "-1" })).toBe(3);
+    expect(maxAutoIssueAttempts({ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS: "2.5" })).toBe(3);
+    expect(autoRetryExhausted(2, 3)).toBe(false);
+    expect(autoRetryExhausted(3, 3)).toBe(true);
+    expect(autoRetryExhausted(7, 3)).toBe(true);
+    expect(autoRetryExhausted(null, 3)).toBe(false);
+    expect(autoRetryExhausted(99, 0)).toBe(false);
   });
   it("mốc xuất: giá trị lạ/thiếu → DELIVERED (mốc đúng luật)", () => {
     expect(normalizeAutoIssueTrigger("SETTLED")).toBe("SETTLED");

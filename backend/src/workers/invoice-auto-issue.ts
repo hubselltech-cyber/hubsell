@@ -18,6 +18,11 @@
 //   • KHÔNG có hóa đơn CANCELLED (03/09): seller đã chủ động hủy/xóa trên NCC
 //     (worker invoice-status-sync phát hiện) — xuất lại hay không là quyết
 //     định của seller (làm tay ở hàng chờ), máy không tự xuất đè.
+//   • KHÔNG có dòng FAILED mang orderErrorCount ≥ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS
+//     (bước 5 lát 7, 03/10): đơn bị từ chối vì dữ liệu của chính nó 3 lượt thì
+//     máy dừng, đơn ở lại Hàng chờ với nhãn "Máy đã ngừng thử" cho chủ shop xuất
+//     tay. Luật ở auto-issue-policy.ts (autoRetryExhausted), số đếm ghi ở
+//     issue-order.ts.
 //
 // AN TOÀN nhiều lớp (hóa đơn là chứng từ CQT, không xóa được):
 //   • MISA_ALLOW_PUBLISH chưa bật → worker NGỦ HOÀN TOÀN (không tạo log FAILED).
@@ -32,10 +37,12 @@
 // Cấu hình: INVOICE_AUTO_ISSUE_MINUTES (mặc định 15; "0" = tắt worker).
 // ============================================================
 
-import { InvoiceLogStatus, ShippingStatus } from "@prisma/client";
+import { InvoiceLogStatus, type Prisma, ShippingStatus } from "@prisma/client";
 
 import {
+  type AutoIssueTrigger,
   decideAfterFailure,
+  maxAutoIssueAttempts,
   normalizeAutoIssueTrigger,
   vnStartOfDay,
 } from "../integrations/invoice/auto-issue-policy";
@@ -54,6 +61,69 @@ const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
 let running = false;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+export interface AutoIssueCandidateInput {
+  ownerId: string;
+  trigger: AutoIssueTrigger;
+  /** Mốc bật công tắc — chỉ xét đơn giao từ 0h giờ VN của ngày này. null = không giới hạn. */
+  autoIssueEnabledAt: Date | null;
+}
+
+/**
+ * Điều kiện "đơn đủ điều kiện tự phát hành" — tách riêng để test được trên database
+ * và để lát 8 (làn theo shop) dùng lại. Mọi điều kiện về hóa đơn nằm trong MỘT
+ * `invoiceLogs.none` (Prisma sinh một NOT EXISTS theo chỉ mục orderId):
+ *   · đã có hóa đơn đang chờ / đã phát hành / đã hủy → không;
+ *   · có dòng nhật ký (kể cả FAILED) mới hơn 24 giờ → chưa (thử lại 1 lần/ngày);
+ *   · có dòng FAILED mang orderErrorCount ≥ mức dừng → KHÔNG BAO GIỜ nữa (lát 7),
+ *     trừ khi mức dừng = 0 (tắt).
+ */
+export function autoIssueCandidateWhere(
+  cfg: AutoIssueCandidateInput,
+  now: Date,
+  maxAttempts: number = maxAutoIssueAttempts()
+): Prisma.OrderWhereInput {
+  const retryCutoff = new Date(now.getTime() - RETRY_WINDOW_MS);
+  const blockingLogs: Prisma.InvoiceLogWhereInput[] = [
+    {
+      status: {
+        in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED, InvoiceLogStatus.CANCELLED],
+      },
+    },
+    { createdAt: { gt: retryCutoff } },
+  ];
+  if (maxAttempts > 0) {
+    blockingLogs.push({
+      status: InvoiceLogStatus.FAILED,
+      orderErrorCount: { gte: maxAttempts },
+    });
+  }
+  return {
+    channel: { userId: cfg.ownerId },
+    shippingStatus: ShippingStatus.DELIVERED,
+    ...(cfg.trigger === "SETTLED" ? { isSettled: true } : {}),
+    ...(cfg.autoIssueEnabledAt
+      ? { deliveredAt: { gte: vnStartOfDay(cfg.autoIssueEnabledAt) } }
+      : {}),
+    items: { some: {} },
+    invoiceLogs: { none: { OR: blockingLogs } },
+  };
+}
+
+/** Mã các đơn một shop sẽ tự phát hành ở lượt này — đơn cũ trước, tối đa `take`. */
+export async function findAutoIssueCandidates(
+  cfg: AutoIssueCandidateInput,
+  now: Date = new Date(),
+  take: number = MAX_PER_OWNER_PER_RUN
+): Promise<string[]> {
+  const orders = await prisma.order.findMany({
+    where: autoIssueCandidateWhere(cfg, now),
+    orderBy: { createdAt: "asc" }, // đơn cũ trước — đơn giao lâu nhất trễ mốc luật nhất
+    take,
+    select: { orderCode: true },
+  });
+  return orders.map((o) => o.orderCode);
+}
 
 export async function runInvoiceAutoIssueOnce(): Promise<void> {
   if (running) return; // lượt trước chưa xong (NCC chậm) — bỏ lượt này
@@ -91,51 +161,23 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
       }
 
       const trigger = normalizeAutoIssueTrigger(cfg.autoIssueTrigger);
-      const retryCutoff = new Date(Date.now() - RETRY_WINDOW_MS);
-      const orders = await prisma.order.findMany({
-        where: {
-          channel: { userId: cfg.ownerId },
-          shippingStatus: ShippingStatus.DELIVERED,
-          ...(trigger === "SETTLED" ? { isSettled: true } : {}),
-          ...(cfg.autoIssueEnabledAt
-            ? { deliveredAt: { gte: vnStartOfDay(cfg.autoIssueEnabledAt) } }
-            : {}),
-          items: { some: {} },
-          invoiceLogs: {
-            none: {
-              OR: [
-                {
-                  status: {
-                    in: [
-                      InvoiceLogStatus.PENDING,
-                      InvoiceLogStatus.ISSUED,
-                      InvoiceLogStatus.CANCELLED,
-                    ],
-                  },
-                },
-                { createdAt: { gt: retryCutoff } },
-              ],
-            },
-          },
-        },
-        orderBy: { createdAt: "asc" }, // đơn cũ trước — đơn giao lâu nhất trễ mốc luật nhất
-        take: MAX_PER_OWNER_PER_RUN,
-        select: { orderCode: true },
+      const orders = await findAutoIssueCandidates({
+        ownerId: cfg.ownerId,
+        trigger,
+        autoIssueEnabledAt: cfg.autoIssueEnabledAt,
       });
       if (orders.length === 0) continue;
 
       let issued = 0;
       let failed = 0;
+      /** Đơn vừa chạm mức dừng tự thử ở lượt này — một chuông gom cho cả lượt. */
+      const stopped: string[] = [];
       let streakCode: string | null = null;
       let streak = 0;
       let pauseReason: string | null = null;
-      for (const [i, o] of orders.entries()) {
+      for (const [i, orderCode] of orders.entries()) {
         // TUẦN TỰ — MISA cấp số hóa đơn liên tục theo ký hiệu.
-        const r = await issueInvoiceForOrder(
-          cfg.ownerId,
-          { userId: cfg.ownerId },
-          o.orderCode
-        );
+        const r = await issueInvoiceForOrder(cfg.ownerId, { userId: cfg.ownerId }, orderCode);
         // Nghỉ giữa hai lệnh phát hành theo bảng khả năng của nhà cung cấp (MISA trả
         // lời ticket 02/10/2026: mỗi lệnh cách nhau 1–3 giây). Tờ cuối không nghỉ.
         const pauseMs = i < orders.length - 1 ? (r.pauseBeforeNextMs ?? 0) : 0;
@@ -147,6 +189,7 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
           continue;
         }
         failed += 1;
+        if (r.autoRetryJustStopped) stopped.push(orderCode);
         const code = r.errorCode ?? r.error ?? "?";
         streak = code === streakCode ? streak + 1 : 1;
         streakCode = code;
@@ -168,8 +211,24 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
       console.log(
         `[Auto-issue] Shop ${cfg.ownerId} (${trigger}): phát hành ${issued} hóa đơn` +
           (failed > 0 ? `, ${failed} lỗi (xem Nhật ký hóa đơn)` : "") +
+          (stopped.length > 0
+            ? `, ${stopped.length} đơn máy ngừng tự thử sau ${maxAutoIssueAttempts()} lượt: ${stopped.join(", ")}`
+            : "") +
           (pauseReason ? ` — NGẮT MẠCH: ${pauseReason}` : "")
       );
+      if (stopped.length > 0) {
+        // Chuông reo ĐÚNG MỘT LẦN cho mỗi đơn (lúc nó chạm mức), gom theo lượt chạy.
+        // Chuông "n đơn lỗi" bên dưới sẽ tự im khi các đơn này không còn được chọn.
+        const max = maxAutoIssueAttempts();
+        await notify(cfg.ownerId, {
+          type: "INVOICE_AUTO_ISSUE_STOPPED",
+          title: `${stopped.length} đơn máy đã ngừng tự thử xuất hóa đơn`,
+          body:
+            `Nhà cung cấp từ chối ${max} lượt vì dữ liệu của chính đơn (${stopped.slice(0, 3).join(", ")}${stopped.length > 3 ? "…" : ""}). ` +
+            `Sửa dữ liệu rồi tick đơn bấm Xuất hóa đơn ở Hàng chờ, hoặc lập trực tiếp trên nhà cung cấp.`,
+          link: "/invoicing/connect?queue=stopped",
+        });
+      }
       if (pauseReason) {
         // MỘT chuông nói rõ việc cần làm, thay vì chuông "n đơn lỗi" mỗi 15 phút.
         await notify(cfg.ownerId, {

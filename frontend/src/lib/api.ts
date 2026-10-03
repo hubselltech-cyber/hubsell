@@ -4139,6 +4139,13 @@ export interface InvoiceLogDTO {
   vatAmount: number;
   platformTaxWithheld: number;
   errorMessage: string | null;
+  /** Tầm lỗi của dòng FAILED (ACCOUNT | ORDER | TRANSIENT) — null với dòng đời trước lát 7. */
+  errorScope: string | null;
+  /** Số lượt lỗi riêng đơn (tầm ORDER) của hóa đơn gốc tính tới dòng này — null = chưa đếm. */
+  orderErrorCount: number | null;
+  /** Dòng FAILED này đã tới mức máy ngừng tự thử (lát 7) → nhãn "lượt n/n, máy đã ngừng thử". */
+  autoRetryStopped: boolean;
+  autoRetryMaxAttempts: number;
   issuedAt: string | null;
   createdAt: string;
   /** ≠ null = đây là HÓA ĐƠN ĐIỀU CHỈNH (tiền âm) cho InvoiceLog gốc có id này. */
@@ -4351,10 +4358,16 @@ export interface InvoiceQueueRowDTO {
   shopName: string;
   /** Khách yêu cầu xuất hóa đơn khi đặt (Shopee) — null = không yêu cầu. */
   invoiceRequest: { type: string; hint: string | null } | null;
+  /**
+   * Máy đã NGỪNG TỰ THỬ đơn này (hóa đơn bước 5 lát 7): nhà cung cấp từ chối
+   * `attempts` lượt vì dữ liệu của chính đơn. Chủ shop sửa dữ liệu rồi xuất tay
+   * bằng nút Xuất hóa đơn như thường. null = máy vẫn tự thử (hoặc chưa lỗi).
+   */
+  autoStopped: { attempts: number; lastError: string | null; lastAt: string } | null;
 }
 
-/** Tab lọc hàng chờ theo trạng thái đối soát. */
-export type InvoiceQueueFilter = "all" | "yes" | "no";
+/** Tab lọc hàng chờ: theo đối soát, hoặc chỉ đơn máy đã ngừng tự thử (lát 7). */
+export type InvoiceQueueFilter = "all" | "yes" | "no" | "stopped";
 
 /** Cỡ trang hàng chờ backend chấp nhận — 20 là mặc định. */
 export type InvoiceQueuePageSize = 20 | 50 | 100;
@@ -4383,6 +4396,10 @@ export interface InvoiceQueueResponse extends InvoiceAutoIssueState {
   /** Số đơn trong hàng chờ đã giao quá `overdueHours` giờ (quá hạn lập hóa đơn). */
   overdueTotal: number;
   overdueHours: number;
+  /** Số đơn trong hàng chờ máy đã ngừng tự thử (lát 7) — chip lọc "stopped". */
+  stoppedTotal: number;
+  /** Mức dừng tự thử (INVOICE_AUTO_ISSUE_MAX_ATTEMPTS, mặc định 3; 0 = tắt) — để ghi "3/3". */
+  autoRetryMaxAttempts: number;
   /** Trang đang trả (từ 1) + cỡ trang backend đã áp. */
   page: number;
   pageSize: number;
@@ -4395,7 +4412,8 @@ export function fetchInvoiceQueue(
   pageSize: InvoiceQueuePageSize = 20
 ) {
   const qs = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-  if (settled !== "all") qs.set("settled", settled);
+  if (settled === "stopped") qs.set("stopped", "yes");
+  else if (settled !== "all") qs.set("settled", settled);
   return apiFetch<InvoiceQueueResponse>(`/api/tax/invoice-queue?${qs}`);
 }
 

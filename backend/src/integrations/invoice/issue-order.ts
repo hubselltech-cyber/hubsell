@@ -18,6 +18,7 @@ import { InvoiceLogStatus, Prisma, ShippingStatus } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
 import { SecretBoxError } from "../../lib/secret-box";
+import { autoRetryExhausted, nextOrderErrorCount } from "./auto-issue-policy";
 import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
@@ -49,6 +50,17 @@ export interface IssueOrderResult {
    * mỗi lệnh cách nhau 1–3 giây). Không có = chưa gọi nhà cung cấp, không cần nghỉ.
    */
   pauseBeforeNextMs?: number;
+  /**
+   * Số lượt lỗi RIÊNG ĐƠN (tầm ORDER) của hóa đơn gốc này tính cả lượt vừa rồi
+   * (InvoiceLog.orderErrorCount — bước 5 lát 7). Chỉ có khi lượt này ghi FAILED.
+   */
+  orderErrorCount?: number;
+  /**
+   * true = lượt này vừa đưa đơn tới mức dừng tự thử (orderErrorCount vừa chạm
+   * INVOICE_AUTO_ISSUE_MAX_ATTEMPTS): worker dùng để reo chuông đúng một lần cho
+   * đơn đó. Lượt sau đó (bấm tay rồi vẫn hỏng) không mang cờ này nữa.
+   */
+  autoRetryJustStopped?: boolean;
   /**
    * Khi Hubsell CHỦ ĐỘNG KHÔNG LẬP (vd không xác nhận được hóa đơn gốc trước khi
    * điều chỉnh): chuyện gì đang xảy ra + việc chủ shop nên làm, tách riêng để giao
@@ -480,6 +492,30 @@ export async function issueInvoiceForOrder(
   const keepPending = !issued && result.outcomeUnknown === true && canRecheckLater(provider);
   const finalStatus = keepPending ? InvoiceLogStatus.PENDING : result.status;
   const errorMessage = keepPending ? keptPendingMessage(provider.name) : (result.errorMessage ?? null);
+
+  // LƯỢT LỖI RIÊNG ĐƠN (bước 5 lát 7): dòng FAILED ghi tầm lỗi + số lượt lỗi tầm
+  // ORDER của hóa đơn gốc này tính tới giờ. Số cũ đọc từ các dòng FAILED trước của
+  // cùng đơn (chỉ mục orderId, vài dòng). Lỗi tầm ACCOUNT / TRANSIENT chép lại số
+  // cũ, không cộng — xem auto-issue-policy.ts. Dòng giữ "đang chờ" không đếm.
+  const failedNow = !issued && !keepPending;
+  const failScope: InvoiceErrorScope | undefined = failedNow ? (result.errorScope ?? "ORDER") : undefined;
+  let orderErrorCount: number | undefined;
+  let autoRetryJustStopped = false;
+  if (failedNow) {
+    const prev = await prisma.invoiceLog.aggregate({
+      where: {
+        orderId: order.id,
+        adjustmentForLogId: null,
+        status: InvoiceLogStatus.FAILED,
+        id: { not: log.id },
+      },
+      _max: { orderErrorCount: true },
+    });
+    const previous = prev._max.orderErrorCount;
+    orderErrorCount = nextOrderErrorCount(previous, failScope);
+    autoRetryJustStopped = autoRetryExhausted(orderErrorCount) && !autoRetryExhausted(previous);
+  }
+
   const [updated] = await prisma.$transaction([
     prisma.invoiceLog.update({
       where: { id: log.id },
@@ -489,6 +525,8 @@ export async function issueInvoiceForOrder(
         transactionId: result.transactionId ?? null,
         vatAmount: result.vatAmount ?? vatTotal,
         errorMessage,
+        errorScope: failScope ?? null,
+        orderErrorCount: orderErrorCount ?? null,
         issuedAt: issued ? new Date() : null,
       },
     }),
@@ -520,6 +558,8 @@ export async function issueInvoiceForOrder(
     errorScope: issued ? undefined : (result.errorScope ?? "ORDER"),
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
     pauseBeforeNextMs: buyerTaxCodeError ? undefined : publishGapOf(provider),
+    orderErrorCount,
+    autoRetryJustStopped: autoRetryJustStopped ? true : undefined,
     log: {
       ...updated,
       totalAmount: Number(updated.totalAmount),

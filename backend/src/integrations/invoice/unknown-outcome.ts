@@ -109,7 +109,14 @@ const stillUnknown = (id: string) => ({ id, status: InvoiceLogStatus.PENDING, tr
 async function conclude(
   log: UnknownLog,
   to: InvoiceLogStatus,
-  data: { invoiceNo?: string | null; transactionId?: string | null; errorMessage: string | null; issuedAt?: Date | null },
+  data: {
+    invoiceNo?: string | null;
+    transactionId?: string | null;
+    errorMessage: string | null;
+    issuedAt?: Date | null;
+    /** Tầm lỗi khi kết luận là hỏng (lát 7): kết luận của vòng quét là lỗi TẠM, không đếm lượt lỗi riêng đơn. */
+    errorScope?: string;
+  },
   note: string
 ): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
@@ -160,6 +167,7 @@ export async function recheckUnknownLog(log: UnknownLog, provider: InvoiceProvid
       InvoiceLogStatus.FAILED,
       {
         errorMessage: `Chưa rõ ${what} này đã lập hay chưa và Hubsell không tra lại được trên ${l}. Mở ${l} tìm theo mã đơn ${log.orderCode} TRƯỚC khi làm lại, để không lập hai tờ.`,
+        errorScope: "TRANSIENT",
       },
       `Lượt gửi không rõ kết quả; ${l} không hỗ trợ tra ngược theo mã tham chiếu — trả về "hỏng" để chủ shop tự kiểm.`
     );
@@ -182,6 +190,7 @@ export async function recheckUnknownLog(log: UnknownLog, provider: InvoiceProvid
         errorMessage: log.adjustmentForLogId
           ? `Đã kiểm lại với ${l}: chưa có hóa đơn điều chỉnh nào được lập cho lượt này. Bấm Điều chỉnh để làm lại.`
           : `Đã kiểm lại với ${l}: chưa có hóa đơn nào được lập cho đơn này. Đơn đã quay lại Hàng chờ xuất hóa đơn.`,
+        errorScope: "TRANSIENT",
       },
       `Kiểm lại theo mã tham chiếu ${log.providerRef}: ${l} không có tờ nào → lượt gửi này không lập hóa đơn.`
     );

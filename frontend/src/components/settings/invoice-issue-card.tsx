@@ -52,6 +52,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { NativeSelect } from "@/components/ui/native-select";
+import { formatDateTime } from "@/lib/format";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ApiError,
   fetchInvoiceQueue,
@@ -133,6 +135,45 @@ function OverdueBadge({ hours }: { hours: number }) {
   );
 }
 
+/**
+ * Nhãn "Máy đã ngừng thử n/n" (hóa đơn bước 5 lát 7, 03/10/2026): nhà cung cấp từ
+ * chối đủ số lượt vì dữ liệu của chính đơn nên worker tự phát hành không chọn đơn
+ * này nữa. Trỏ chuột / bấm mở ô lý do (mỗi dữ kiện một dòng, kết luận bên dưới);
+ * không thêm nút riêng — nút Xuất hóa đơn sẵn có chính là lượt thử lại.
+ */
+function AutoStoppedBadge({
+  info,
+  maxAttempts,
+}: {
+  info: { attempts: number; lastError: string | null; lastAt: string };
+  maxAttempts: number;
+}) {
+  const label = maxAttempts > 0 ? `Máy đã ngừng thử ${info.attempts}/${maxAttempts}` : "Máy đã ngừng thử";
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={80}
+        render={<button type="button" className="shrink-0 cursor-pointer rounded-full" aria-label={label} />}
+      >
+        <span className="inline-flex items-center rounded-full border border-orange-300 bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 underline decoration-dotted underline-offset-2 dark:bg-orange-950/40 dark:text-orange-300">
+          {label}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 gap-1.5 p-3 text-sm">
+        <p className="font-semibold text-foreground">{label}</p>
+        <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+          <li>Lỗi lần cuối: {formatDateTime(info.lastAt)}</li>
+          <li>{info.lastError ?? "Nhà cung cấp từ chối vì dữ liệu của đơn."}</li>
+        </ul>
+        <p className="border-t pt-1.5 text-foreground">
+          Sửa dữ liệu rồi tick đơn này bấm <b>Xuất hóa đơn</b> như thường, hoặc lập trực tiếp trên nhà cung cấp.
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function InvoiceIssueCard({
   /** Mở tab Cấu hình kết nối (callout khi chưa cấu hình xong). */
   onOpenConfig,
@@ -178,6 +219,15 @@ export function InvoiceIssueCard({
     },
     []
   );
+
+  // Chuông "máy đã ngừng tự thử" dẫn tới ?queue=stopped → mở sẵn chip đó. Đọc từ
+  // window thay vì useSearchParams để trang không cần ranh giới Suspense.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("queue") === "stopped") {
+      setFilter("stopped");
+    }
+  }, []);
 
   useEffect(() => {
     void loadQueue(filter, page, pageSize);
@@ -315,17 +365,29 @@ export function InvoiceIssueCard({
 
   const total = queue?.total ?? 0;
   const settledTotal = queue?.settledTotal ?? 0;
+  const stoppedTotal = queue?.stoppedTotal ?? 0;
+  const maxAttempts = queue?.autoRetryMaxAttempts ?? 0;
   const TABS: Array<{ key: InvoiceQueueFilter; label: string; count: number }> = [
     { key: "all", label: "Tất cả", count: total },
     { key: "yes", label: "Đã đối soát", count: settledTotal },
     { key: "no", label: "Chờ đối soát", count: total - settledTotal },
+    // Chip theo VIỆC CẦN LÀM (lát 7): chỉ hiện khi có đơn máy đã ngừng thử, hoặc đang xem nó.
+    ...(stoppedTotal > 0 || filter === "stopped"
+      ? [{ key: "stopped" as const, label: "Máy đã ngừng thử", count: stoppedTotal }]
+      : []),
   ];
 
   // Phân trang: tổng của TAB đang xem (suy từ total/settledTotal, không cần
   // backend đếm thêm) → số trang; khoảng "từ–đến" hiển thị theo trang server
   // trả (queue.page/pageSize) để không lệch lúc đang chuyển trang.
   const filteredTotal =
-    filter === "all" ? total : filter === "yes" ? settledTotal : total - settledTotal;
+    filter === "all"
+      ? total
+      : filter === "yes"
+        ? settledTotal
+        : filter === "stopped"
+          ? stoppedTotal
+          : total - settledTotal;
   const pageCount = Math.max(1, Math.ceil(filteredTotal / pageSize));
   const rangeFrom = queue ? (queue.page - 1) * queue.pageSize + 1 : 0;
   const rangeTo = queue ? (queue.page - 1) * queue.pageSize + allRows.length : 0;
@@ -710,6 +772,9 @@ export function InvoiceIssueCard({
                           <span className="flex items-center gap-1.5">
                             {r.orderCode}
                             {r.overdue && <OverdueBadge hours={queue?.overdueHours ?? 48} />}
+                            {r.autoStopped && (
+                              <AutoStoppedBadge info={r.autoStopped} maxAttempts={maxAttempts} />
+                            )}
                           </span>
                         </TableCell>
                         <TableCell>

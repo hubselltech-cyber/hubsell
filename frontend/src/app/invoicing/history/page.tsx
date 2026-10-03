@@ -735,7 +735,11 @@ export default function TaxHistoryPage() {
                                       cung cấp, vài phút là có kết luận — lý do nằm ở tooltip. */}
                                   {l.status === "PENDING" && !l.transactionId && l.errorMessage
                                     ? "Đang kiểm lại"
-                                    : meta.label}
+                                    : l.status === "FAILED" && l.orderErrorCount
+                                      ? /* Lát 7: lỗi vì dữ liệu của chính đơn — ghi lượt thứ mấy; tới mức
+                                           thì máy ngừng tự thử, chủ shop xuất tay ở Hàng chờ. */
+                                        `Lỗi · lượt ${l.orderErrorCount}${l.autoRetryMaxAttempts > 0 ? `/${l.autoRetryMaxAttempts}` : ""}${l.autoRetryStopped ? " · máy ngừng thử" : ""}`
+                                      : meta.label}
                                 </span>
                               </TableCell>
                               <TableCell>

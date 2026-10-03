@@ -506,7 +506,7 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 
 ### 4.6. Bước 5 (hóa đơn) — khảo sát 02/10/2026 và thiết kế lại phần hàng đợi
 
-**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a trên prod từ 03/10 00:09 (`ca31b33`, mục L); 6b trên prod từ 03/10 00:26 (`6d90bfa`, mục M); 6c (bổ sung theo trả lời ticket MISA 02/10, mục N) trên prod từ 03/10 08:41 (`6ae0653`); việc kế là lát 7.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
+**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a trên prod từ 03/10 00:09 (`ca31b33`, mục L); 6b trên prod từ 03/10 00:26 (`6d90bfa`, mục M); 6c (bổ sung theo trả lời ticket MISA 02/10, mục N) trên prod từ 03/10 08:41 (`6ae0653`); lát 7 viết xong 03/10 sáng (mục O), chờ anh Trung duyệt migration rồi đẩy.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
 
 **Đã kiểm và chưa kiểm**
 
@@ -692,7 +692,7 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | 6a | Thời hạn chờ cho mọi lệnh đi qua cửa gọi nhà cung cấp (`INVOICE_HTTP_TIMEOUT_MS`, mặc định 60 giây, `0` = tắt). Quá hạn ở lệnh phát hành = chưa rõ kết quả; quá hạn ở bước lấy token = chưa gửi. Chi tiết ở mục L | Không | Lệnh treo bị cắt sau 60 giây thay vì khoảng 300 giây | ✅ Trên prod từ 03/10 00:09 (`ca31b33`): web đổi bản 00:09:39, không migration, 00:11 các gian vẫn đồng bộ, 0 gian lỗi liên tiếp. Tách khỏi 6b và làm TRƯỚC vì 6b cần biết một lệnh đang chạy kéo dài tối đa bao lâu |
 | 6b | Tờ chưa rõ kết quả giữ "đang chờ"; vòng quét trong worker tra lại theo bảng khả năng (thấy tờ → nối số; đã xóa → đã hủy; không thấy → hỏng, đơn quay lại hàng chờ; không tra được → giữ, thử lại sau). Dọn luôn dòng "đang chờ" mồ côi do tiến trình chết | Có: MỘT chỉ mục riêng phần trên `InvoiceLog` cho dòng "đang chờ" chưa có mã tra cứu (bảng lát cũ ghi "không"; khi đọc mã thấy không chỉ mục nào tìm được các dòng này mà không quét qua mọi dòng đã phát hành) | Chỉ ở ca lỗi | ✅ Trên prod từ 03/10 00:26 (`6d90bfa`; anh Trung duyệt migration `20261003001000_invoice_unknown_pending_idx` 03/10 rạng sáng). Đã kiểm prod sau khi đẩy: migration xong, có chỉ mục, các gian vẫn đồng bộ, nhãn mới lên Vercel; CHƯA đọc được dòng log `Invoice-recheck` của worker (công cụ chặn em đọc log Render). Anh duyệt 02/10 đêm: thêm chỉ mục (SQL trình riêng), tra ra "không có tờ nào" thì KHÔNG tự gửi lại từ vòng quét (để lát 8). Chi tiết ở mục M |
 | 6c | Bổ sung theo trả lời ticket MISA 02/10 (mục N): bảng khả năng thêm `publishGapMs` (MISA = 1 giây), worker tự phát hành và nút phát hành hàng loạt nghỉ đủ khoảng đó giữa hai tờ; HTTP 429 = lỗi TẠM (không ngắt mạch, không "chưa rõ"), cửa gọi in `[NccHTTP] QUA TAI`; ghi nguồn MISA vào từng dòng bảng khả năng | Không | Có, nhỏ: mỗi lượt tự phát hành 20 tờ dài thêm 19 giây; nút hàng loạt 50 tờ dài thêm 49 giây (lát 9 sẽ đưa nút này về chạy nền) | ✅ Trên prod từ 03/10 08:41 (`6ae0653`, anh Trung đẩy). Đã kiểm 08:43 qua `/health` + Supabase SQL: web đổi bản 08:41; worker đổi bản (ảnh chụp sức khỏe 08:41 ghi `6ae0653`, RAM 196 MB, 0 vé trễ); không migration mới (migration cuối vẫn `20261003001000_invoice_unknown_pending_idx`, 2 dòng rolled back là vết cũ 06/08 và 30/09); 33/37 gian đồng bộ trong 15 phút, lần cuối 08:43, gian lỗi liên tiếp duy nhất là Shopee 321947895 KYC đã biết; InvoiceLog 2 dòng, 0 tờ chưa rõ. Chưa có shop nào phát hành nên khoảng nghỉ và 429 chưa chạy thật |
-| 7 | Đơn lỗi vĩnh viễn: dừng tự thử sau 3 lượt | Không | Có | |
+| 7 | Đơn lỗi vì dữ liệu của chính nó: máy dừng tự thử sau 3 lượt, đơn ở lại Hàng chờ với nhãn "Máy đã ngừng thử" cho chủ shop xuất tay. Chi tiết ở mục O | Có (2 cột NULL trên `InvoiceLog`: `errorScope`, `orderErrorCount`; migration `20261003120000_invoice_order_error_count`). Bảng cũ ghi "không": khi đọc mã thấy tầm lỗi không được lưu ở đâu nên không đếm được | Chỉ ở đường tự phát hành: đơn 3 lượt lỗi riêng đơn không được chọn nữa. Bấm tay không đổi | Viết xong 03/10 sáng (anh Trung duyệt phương án 03/10: "Ok làm vậy đi em"); test 30 + 7 ca; chờ anh duyệt migration rồi đẩy |
 | 8 | Làn theo shop cho TỰ PHÁT HÀNH (thay vòng chung một cờ), công tắc `INVOICE_MODE` | Có (bảng `invoice_lanes`) | Có: các shop chạy song song | Đưa lên hai lần |
 | 9 | Xuất HÀNG LOẠT qua làn + giao diện tiến độ | Có (bảng `invoice_requests`, hàng đợi tín hiệu) | Có | Đưa lên hai lần |
 | 10 | Xuất MỘT đơn và điều chỉnh tay qua làn | Không | Có | |
@@ -935,6 +935,43 @@ Phải thấy: không dòng nào đang chờ hay đang xử lý; dòng mới nh�
 2. Xóa bảng cũ là mất các dòng nhật ký HỎNG trước ngày chuyển (dòng xong đã tự dọn sau 7 ngày, dòng hỏng giữ 30 ngày). Trang nhật ký HQ khi đó chỉ còn sự kiện từ 01/10. Nếu anh muốn giữ đủ 30 ngày thì lùi lần xóa bảng tới sau 31/10.
 3. Số thời hạn chờ gọi sàn: em trình ngày 04–06/10 theo lịch đã hẹn, không chốt bằng số của một buổi sáng.
 
+**O. Lát 7: đơn lỗi vì dữ liệu của chính nó dừng tự thử sau 3 lượt (viết 03/10/2026 sáng)**
+
+Anh Trung duyệt phương án 03/10 ("Ok làm vậy đi em") với bốn điểm: chỉ đếm lỗi riêng đơn; thêm hai cột vào `InvoiceLog`; lỗi do bấm tay đếm chung; không thêm nút thử lại riêng.
+
+*Hiện trạng trước lát 7 (đọc mã).* Worker tự phát hành chọn đơn bằng một điều kiện duy nhất về lỗi: không có dòng nhật ký nào mới hơn 24 giờ. Đơn bị nhà cung cấp từ chối vì dữ liệu của chính nó (mã số thuế người mua sai dạng, tên thuế suất lạ, XML quá dài) vì thế được thử lại mỗi ngày một lần không có điểm dừng, mỗi ngày thêm một dòng FAILED và một chuông "n đơn lỗi". Tầm lỗi (ACCOUNT / ORDER / TRANSIENT, `invoice-errors.ts`) chỉ sống trong RAM của lượt chạy; `InvoiceLog` không lưu tầm lẫn mã lỗi, nên không hỏi được database "đơn này đã bị từ chối vì dữ liệu mấy lần". Hàng chờ xuất không cho chủ shop biết đơn nào đã hỏng, mấy lần, vì sao.
+
+*Định nghĩa một lượt lỗi.* Chỉ lỗi tầm ORDER tính một lượt. Lỗi ACCOUNT đã có ngắt mạch cả shop; lỗi TRANSIENT là của nhà cung cấp hay đường mạng, không đếm — đếm thì một đơn tốt gặp ba ngày MISA trục trặc sẽ bị máy bỏ rơi. Lỗi do bấm tay cũng đếm vì sự thật "đơn này bị từ chối vì dữ liệu n lần" không phụ thuộc ai bấm; mọi lần đếm nằm ở một chỗ là `issueInvoiceForOrder`.
+
+*Lưu ở đâu.* Hai cột NULL, không chỉ mục, không chép lại dữ liệu cũ, trên `InvoiceLog` (migration `20261003120000_invoice_order_error_count`, lấy khóa ACCESS EXCLUSIVE có thử lại theo khuôn `order_ledger`; prod lúc viết có 2 dòng):
+
+| Cột | Nghĩa |
+|---|---|
+| `errorScope` | tầm lỗi của dòng FAILED — sự thật gốc, để tính lại cột dưới khi cần |
+| `orderErrorCount` | số lượt lỗi riêng đơn của hóa đơn gốc tính TỚI dòng này; lỗi tầm khác chép lại số cũ nên dòng FAILED mới nhất luôn mang số hiện hành |
+
+Khi ghi FAILED, lõi đọc số lớn nhất của các dòng FAILED trước của cùng đơn (chỉ mục `orderId`, vài dòng) rồi cộng 1 nếu tầm ORDER. Dòng giữ "đang chờ" (chưa rõ kết quả) không đếm. Hai kết luận "hỏng" của vòng quét tờ chưa rõ (`unknown-outcome.ts`) ghi tầm TRANSIENT, không số lượt. Cách lưu trên `Order` đã cân nhắc và bỏ: bảng nóng, migration đụng nó từng kẹt khóa, còn `InvoiceLog` chính là sổ của việc phát hành.
+
+*Câu chọn đơn của worker* tách thành `findAutoIssueCandidates` / `autoIssueCandidateWhere` (`workers/invoice-auto-issue.ts`) để test và để lát 8 dùng lại; thêm đúng một nhánh vào `invoiceLogs.none`: dòng FAILED có `orderErrorCount ≥ mức dừng`. Prisma vẫn sinh một NOT EXISTS theo `orderId` như trước, không lấy dư rồi lọc trong RAM.
+
+*Luật* ở `auto-issue-policy.ts`: `maxAutoIssueAttempts()` (env `INVOICE_AUTO_ISSUE_MAX_ATTEMPTS`, mặc định 3, `0` = tắt = đường lui không cần đưa lên lại), `autoRetryExhausted(count)`, `nextOrderErrorCount(previous, scope)`. `IssueOrderResult` thêm `orderErrorCount` và `autoRetryJustStopped` (chỉ true ở đúng lượt chạm mức, để chuông reo một lần).
+
+*Giao diện.* Hàng chờ xuất: mỗi dòng đơn máy đã ngừng thử có nhãn "Máy đã ngừng thử 3/3" cạnh mã đơn (kiểu nhãn "Quá hạn"); trỏ chuột hoặc bấm mở ô nhỏ: lần lỗi cuối lúc nào, nhà cung cấp báo gì, kết luận "sửa dữ liệu rồi tick đơn bấm Xuất hóa đơn, hoặc lập trên nhà cung cấp". Thêm chip lọc có số đếm "Máy đã ngừng thử (n)" cạnh các tab, chỉ hiện khi n > 0 hoặc đang xem nó (`?stopped=yes`; route trả `stoppedTotal`, `autoRetryMaxAttempts`, mỗi dòng `autoStopped`). Không thêm khối nào phía trên bảng, không thêm nút thử lại: nút Xuất hóa đơn sẵn có chính là lượt thử lại. Trang Lịch sử: dòng FAILED ghi "Lỗi · lượt 2/3" và "· máy ngừng thử" khi tới mức.
+
+*Chuông.* Một chuông mỗi lượt chạy, gom các đơn vừa chạm mức ở lượt đó (`INVOICE_AUTO_ISSUE_STOPPED`, link `/invoicing/connect?queue=stopped` mở sẵn chip). Chuông "n đơn lỗi" cũ tự im sau ba ngày vì đơn hỏng không còn được chọn.
+
+*Các con số.*
+
+| Tham số | Giá trị | Căn cứ |
+|---|---|---|
+| Số lượt rồi dừng | 3 | Anh Trung chốt 02/10; bằng số lượt của mọi hàng đợi khác |
+| Cửa sổ giữa hai lượt | 24 giờ, giữ nguyên | Em tự chọn 23/08; một đơn hỏng được thử ba ngày khác nhau rồi dừng |
+| Đường lui | `INVOICE_AUTO_ISSUE_MAX_ATTEMPTS=0` | Quay về hành vi trước lát 7 |
+
+*Đã kiểm.* `invoice-hardening.test.ts` thêm 2 ca thuần (30/30). `invoice-auto-issue-stop.test.ts` 7 ca trên database dev với nhà cung cấp giả: ORDER đếm 1 → 2 → 3 → 4 và cờ dừng chỉ ở lượt 3; TRANSIENT / ACCOUNT ghi tầm không cộng; mã số thuế người mua sai dạng (chặn trước khi gọi NCC) cũng đếm; đơn 2 lượt (quá 24 giờ) vẫn được chọn, 3 lượt thì không, mức 0 thì lại được chọn; 3 lỗi tạm không làm máy dừng; bấm tay trên đơn đã dừng vẫn gọi NCC và thành công thì rời hàng chờ; dòng FAILED của vòng quét không chặn, không đổi số. Cả bộ 1188 / 1188 qua (03/10 09:24), tsc backend + frontend sạch. Giao diện soi local (dữ liệu demo 4 đơn, đã dọn): chip "Máy đã ngừng thử 2" mở sẵn từ `?queue=stopped`, nhãn 3/3 cạnh mã đơn, ô lý do mở bằng bấm ở 1366 và 375 (bảng cuộn ngang trong hộp, ô rộng 320 px không tràn), nền tối nhãn đổi màu đúng; Lịch sử ghi "Lỗi · lượt 1/3" và "Lỗi · lượt 3/3 · máy ngừng thử". Không cần sandbox MISA: lát này không đổi cách gọi nhà cung cấp. Prod chưa shop nào phát hành nên sau khi đẩy chỉ kiểm được migration + hai cột + worker báo nhịp + các gian đồng bộ.
+
+*Không đổi ở lát này, ghi sổ (mục 7).* Lỗi TRANSIENT vẫn làm đơn nghỉ 24 giờ, lát 8 rút xuống thử lại sau 1 phút. Luật "cùng mã lạ lặp 3 đơn liên tiếp thì ngắt mạch" giữ nguyên; lát 7 làm nó hết lặp sau ba ngày. Hóa đơn điều chỉnh thuộc lát 11.
+
 ## 5. Rủi ro và điều em không cam kết
 
 - **pg-boss do một người duy trì**, ra bản rất dày (35 bản nhỏ của dòng 12). Ghim đúng bản, lên bản là một việc có chủ đích kèm migration riêng. Mã nghiệp vụ đứng sau `lib/queue`.
@@ -976,7 +1013,8 @@ Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả
 | Bước 6 (dọn) | Ba đợt, mốc ở mục 4.7: 6a thời hạn chờ 04–06/10; 6b webhook và đẩy tồn từ 09/10; 6c hóa đơn sau bước 5 một tuần | Danh sách tệp phải gỡ, câu đọc điều kiện và 3 điểm cần chốt ở mục 4.7 |
 | Hóa đơn của chính Hubsell trên HQ: chưa có xử lý "chưa rõ kết quả" | Khi Hubsell bắt đầu xuất hóa đơn cho khách qua HQ | `routes/admin.ts` gọi thẳng `publishStandardInvoice`, không qua adapter: đứt mạng sau khi gửi thì báo lỗi, bấm lại sẽ gặp lỗi trùng mã mà không tự nối số (mục 4.6 K). Cho đi qua adapter hoặc thêm bước tra ngược |
 | Tự phát hành: mốc "đã xét tới ngày nào" cho từng shop | Khi có shop phát hành hàng nghìn hóa đơn mỗi ngày | Hiện mỗi lượt đi lại qua mọi đơn đã giao kể từ ngày bật (mục 4.6, bảng A điểm 8) |
-| Tự phát hành: đơn lỗi vĩnh viễn được thử lại mỗi ngày không dừng | Lát 7 của bước 5 (anh Trung nhận đề xuất 02/10) | Dừng tự thử sau 3 lượt, để chủ shop xuất tay |
+| Tự phát hành: đơn lỗi vĩnh viễn được thử lại mỗi ngày không dừng | ✅ Lát 7 của bước 5 (mục 4.6 O, 03/10) | Dừng tự thử sau 3 lượt lỗi riêng đơn, để chủ shop xuất tay |
+| Tự phát hành: lỗi TẠM (NCC bận, 429, đứt mạng) vẫn làm đơn nghỉ 24 giờ như lỗi riêng đơn | Lát 8 (làn theo shop: thử lại sau 1 phút, 3 lượt) | Lát 7 chỉ không ĐẾM lỗi tạm; cửa sổ 24 giờ của đường cũ giữ nguyên |
 | Trang Hàng chờ xuất hóa đơn đếm ba lần trên mọi đơn đã giao của shop | Khi đụng lại trang đó | Ba câu đếm kèm điều kiện "chưa có hóa đơn" nặng dần theo số đơn (thấy khi đọc `routes/tax.ts` 02/10, chưa đo) |
 | Thử hai tiến trình worker chạy cùng lúc | Trước khi thêm worker thứ hai trên prod | Kiểm "một gian không hai tiến trình cùng đẩy" và độ trễ `evt.order` với hai worker thật |
 | Chỉ mục cho lưới quét đẩy tồn | Khi `stock_push_jobs` thường xuyên dồn hàng chục nghìn dòng | Thêm chỉ mục để lấy danh sách gian có dòng tới hạn mà không đọc mọi dòng (đổi database, trình SQL trước) |

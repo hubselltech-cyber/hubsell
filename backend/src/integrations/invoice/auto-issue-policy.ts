@@ -62,3 +62,52 @@ export function decideAfterFailure(
   if (scope === "TRANSIENT") return "STOP_RUN";
   return sameCodeStreak >= SAME_ERROR_STREAK_TO_PAUSE ? "PAUSE" : "CONTINUE";
 }
+
+/**
+ * ĐƠN LỖI VÌ DỮ LIỆU CỦA CHÍNH NÓ DỪNG TỰ THỬ (bước 5 lát 7, 03/10/2026; anh Trung
+ * chốt số 3 ngày 02/10 — bằng số lượt của mọi hàng đợi khác).
+ *
+ * Chỉ lỗi tầm ORDER (mã số thuế người mua sai dạng, tên thuế suất lạ, XML quá
+ * dài...) mới tính một lượt: `InvoiceLog.orderErrorCount` cộng 1 mỗi lần
+ * issue-order.ts ghi FAILED tầm ORDER cho hóa đơn gốc của đơn đó, bất kể ai bấm
+ * (máy hay tay). Lỗi tầm ACCOUNT đã có ngắt mạch cả shop, lỗi TRANSIENT là lỗi
+ * của nhà cung cấp / đường mạng — không đếm, vì đếm thì một đơn tốt gặp ba ngày
+ * MISA trục trặc sẽ bị máy bỏ rơi.
+ *
+ * Worker tự phát hành bỏ qua đơn có dòng FAILED mang số ≥ mức này; đơn vẫn nằm
+ * ở Hàng chờ xuất với nhãn "Máy đã ngừng thử" để chủ shop sửa dữ liệu rồi bấm
+ * Xuất hóa đơn như thường. Không có nút thử lại riêng: nút Xuất là lượt thử lại.
+ *
+ * `INVOICE_AUTO_ISSUE_MAX_ATTEMPTS`: mặc định 3; `0` = tắt (đường lui: quay về
+ * hành vi trước lát 7, không cần đưa lên lại).
+ */
+const DEFAULT_MAX_AUTO_ATTEMPTS = 3;
+
+export function maxAutoIssueAttempts(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.INVOICE_AUTO_ISSUE_MAX_ATTEMPTS;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_MAX_AUTO_ATTEMPTS;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) return DEFAULT_MAX_AUTO_ATTEMPTS;
+  return n;
+}
+
+/** Số lượt lỗi riêng đơn đã tới mức dừng chưa (0 = không bao giờ dừng). */
+export function autoRetryExhausted(
+  orderErrorCount: number | null | undefined,
+  maxAttempts: number = maxAutoIssueAttempts()
+): boolean {
+  if (maxAttempts <= 0) return false;
+  return (orderErrorCount ?? 0) >= maxAttempts;
+}
+
+/**
+ * Số lượt lỗi riêng đơn ghi lên dòng FAILED mới: cộng 1 khi tầm ORDER, chép lại
+ * số cũ khi tầm khác (dòng FAILED mới nhất luôn mang số hiện hành).
+ */
+export function nextOrderErrorCount(
+  previous: number | null | undefined,
+  scope: InvoiceErrorScope | undefined
+): number {
+  const base = previous ?? 0;
+  return scope === "ORDER" ? base + 1 : base;
+}

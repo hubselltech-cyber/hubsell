@@ -19,7 +19,11 @@ import {
   PLATFORM_RETURN_DONE_STATUSES,
   type AdjustmentScope,
 } from "../integrations/invoice/adjust-order";
-import { normalizeAutoIssueTrigger } from "../integrations/invoice/auto-issue-policy";
+import {
+  autoRetryExhausted,
+  maxAutoIssueAttempts,
+  normalizeAutoIssueTrigger,
+} from "../integrations/invoice/auto-issue-policy";
 import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import {
@@ -213,6 +217,8 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           vatAmount: true,
           platformTaxWithheld: true,
           errorMessage: true,
+          errorScope: true, // tầm lỗi của dòng FAILED (lát 7)
+          orderErrorCount: true, // số lượt lỗi riêng đơn tính tới dòng này (lát 7)
           issuedAt: true,
           createdAt: true,
           adjustmentForLogId: true, // ≠ null = hóa đơn ĐIỀU CHỈNH (tiền âm)
@@ -473,6 +479,13 @@ router.get("/report", async (req: AuthRequest, res, next) => {
             vatAmount: Number(l.vatAmount),
             platformTaxWithheld: Number(l.platformTaxWithheld),
             hasAdjustment,
+            // Lát 7: dòng FAILED của hóa đơn gốc đã tới mức máy ngừng tự thử → giao
+            // diện ghi "lượt n/n, máy đã ngừng thử" thay cho "Lỗi" trống nghĩa.
+            autoRetryStopped:
+              l.status === InvoiceLogStatus.FAILED &&
+              !l.adjustmentForLogId &&
+              autoRetryExhausted(l.orderErrorCount),
+            autoRetryMaxAttempts: maxAutoIssueAttempts(),
             // Sàn đã chốt hoàn mà hóa đơn bán chưa có điều chỉnh → seller phải xử lý.
             needsAdjustment:
               l.status === InvoiceLogStatus.ISSUED &&
@@ -645,18 +658,34 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
     };
     const settledParam =
       req.query.settled === "yes" ? true : req.query.settled === "no" ? false : undefined;
+    // LÁT 7 (03/10): đơn MÁY ĐÃ NGỪNG TỰ THỬ = có dòng FAILED của hóa đơn gốc mang
+    // orderErrorCount ≥ mức dừng. Chip lọc riêng (?stopped=yes) + nhãn trên từng dòng
+    // để chủ shop thấy đơn nào phải tự xuất tay và vì sao. Mức dừng 0 = tắt lát 7.
+    const maxAttempts = maxAutoIssueAttempts();
+    const stoppedLogs = {
+      status: InvoiceLogStatus.FAILED,
+      adjustmentForLogId: null,
+      orderErrorCount: { gte: maxAttempts },
+    };
+    const stoppedWhere = { AND: [where, { invoiceLogs: { some: stoppedLogs } }] };
+    const stoppedParam = maxAttempts > 0 && req.query.stopped === "yes";
     const pageSizeRaw = Number(req.query.pageSize);
     const pageSize = QUEUE_PAGE_SIZES.has(pageSizeRaw) ? pageSizeRaw : 20;
     const pageRaw = Number(req.query.page);
     const page = Number.isInteger(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
     const overdueCutoff = new Date(Date.now() - INVOICE_OVERDUE_MS);
-    const [total, settledTotal, overdueTotal, orders, cfg] = await Promise.all([
+    const [total, settledTotal, overdueTotal, stoppedTotal, orders, cfg] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.count({ where: { ...where, isSettled: true } }),
       // Đã giao quá 48h mà chưa có hóa đơn — vi phạm mốc lập hóa đơn (03/09).
       prisma.order.count({ where: { ...where, deliveredAt: { lt: overdueCutoff } } }),
+      maxAttempts > 0 ? prisma.order.count({ where: stoppedWhere }) : Promise.resolve(0),
       prisma.order.findMany({
-        where: settledParam === undefined ? where : { ...where, isSettled: settledParam },
+        where: stoppedParam
+          ? stoppedWhere
+          : settledParam === undefined
+            ? where
+            : { ...where, isSettled: settledParam },
         // Đơn KHÁCH YÊU CẦU HÓA ĐƠN nổi lên đầu (khách đang chờ, hạn "ngày làm
         // việc tiếp theo"), trong nhóm thì đơn mới trước.
         orderBy: [
@@ -666,6 +695,7 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: {
+          id: true,
           orderCode: true,
           customerName: true,
           totalAmount: true,
@@ -690,6 +720,27 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
         },
       }),
     ]);
+    // Lý do + số lượt của các đơn máy đã ngừng thử TRONG TRANG này (dòng FAILED mới
+    // nhất của mỗi đơn): một câu theo chỉ mục orderId, tối đa pageSize đơn.
+    const stoppedByOrder = new Map<
+      string,
+      { attempts: number; lastError: string | null; lastAt: Date }
+    >();
+    if (maxAttempts > 0 && orders.length > 0) {
+      const logs = await prisma.invoiceLog.findMany({
+        where: { orderId: { in: orders.map((o) => o.id) }, ...stoppedLogs },
+        orderBy: { createdAt: "desc" },
+        select: { orderId: true, orderErrorCount: true, errorMessage: true, createdAt: true },
+      });
+      for (const l of logs) {
+        if (!l.orderId || stoppedByOrder.has(l.orderId)) continue;
+        stoppedByOrder.set(l.orderId, {
+          attempts: l.orderErrorCount ?? maxAttempts,
+          lastError: l.errorMessage,
+          lastAt: l.createdAt,
+        });
+      }
+    }
     res.json({
       autoIssueEnabled: cfg?.autoIssueEnabled ?? false,
       // Mốc xuất tự động + trạng thái NGẮT MẠCH (19/09) — UI vẽ ô chọn mốc và
@@ -704,6 +755,9 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
       settledTotal,
       overdueTotal,
       overdueHours: INVOICE_OVERDUE_MS / 3_600_000,
+      // Lát 7: số đơn máy đã ngừng tự thử (chip lọc) + mức dừng để UI ghi "3/3".
+      stoppedTotal,
+      autoRetryMaxAttempts: maxAttempts,
       page,
       pageSize,
       rows: orders.map((o) => {
@@ -726,6 +780,8 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
           deliveredAt: o.deliveredAt,
           // Giao xong quá 48h chưa có hóa đơn → badge đỏ "Quá hạn".
           overdue: o.deliveredAt !== null && o.deliveredAt < overdueCutoff,
+          // Lát 7: máy đã ngừng tự thử đơn này — nhãn + ô lý do; null = chưa.
+          autoStopped: stoppedByOrder.get(o.id) ?? null,
           isSettled: o.isSettled,
           channelName: o.channel.channelName,
           shopName: o.channel.shopName,
