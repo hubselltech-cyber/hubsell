@@ -207,7 +207,12 @@ export function queueOptionsForRole(
  * worker đã có mã làn), lần hai đổi mặc định sang lanes. Đường lui: INVOICE_MODE=legacy.
  */
 export type InvoiceMode = "lanes" | "legacy";
-export const DEFAULT_INVOICE_MODE: InvoiceMode = "legacy";
+/**
+ * Lần một (359f1cf, 03/10/2026 10:09) mặc định legacy — bảng invoice_lanes + mã làn
+ * lên trước, prod không đổi hành vi. Lần hai (anh Trung đã duyệt kế hoạch hai lần
+ * 03/10) đổi mặc định sang lanes. Đường lui: INVOICE_MODE=legacy ở worker.
+ */
+export const DEFAULT_INVOICE_MODE: InvoiceMode = "lanes";
 
 export function invoiceMode(env: NodeJS.ProcessEnv = process.env): InvoiceMode {
   const raw = (env.INVOICE_MODE ?? "").trim().toLowerCase();
