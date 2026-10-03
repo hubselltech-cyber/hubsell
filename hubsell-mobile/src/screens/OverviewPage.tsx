@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useRouter, type Href } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import Svg, {
@@ -22,7 +21,6 @@ import Svg, {
 } from "react-native-svg";
 import { hapticTap } from "@/lib/haptics";
 import { fetchOverview } from "@/api/finance";
-import { fetchOrders } from "@/api/orders";
 import { fetchReturnsSummary } from "@/api/warehouse";
 import { ApiError } from "@/api/client";
 import type { ChannelName, OverviewAnalytics, ReturnsSummaryResponse } from "@/types/api";
@@ -40,9 +38,10 @@ import { RAISED_SHADOW, TABULAR } from "@/theme/tokens";
 
 /**
  * Vị trí sàn FIX CỨNG (chốt 13/08): sàn không có đơn vẫn đứng nguyên chỗ với
- * số 0 — chỉ con số và donut thay đổi, layout không bao giờ nhảy.
+ * số 0 — chỉ con số và donut thay đổi, layout không bao giờ nhảy. Thứ tự
+ * ĐÚNG như legend Tỷ trọng kênh trên web (ChannelShareCard).
  */
-const FIXED_CHANNELS: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK"];
+const FIXED_CHANNELS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA"];
 
 /** Trang Kênh bán trên web app — nơi duy nhất uỷ quyền gian hàng (OAuth sàn). */
 const CONNECT_CHANNEL_URL = "https://app.hubsell.tech/channels";
@@ -63,11 +62,20 @@ const CONNECT_CHANNEL_URL = "https://app.hubsell.tech/channels";
  * orb Trợ lý và band tối landing (chốt 21/08), giữ nguyên ở cả hai theme.
  */
 
-const STATUS_TILES: { key: string; label: string; color: string; dot: string }[] = [
-  { key: "PENDING", label: "Chờ xử lý", color: "text-amber-600 dark:text-amber-400", dot: "#f59e0b" },
+/**
+ * PHỄU VẬN HÀNH HÔM NAY — đúng 6 bước, đúng nhãn của PipelineStrip trên web
+ * (frontend/src/app/page.tsx): đơn phát sinh trong ngày đang ở bước nào.
+ * Σ 4 bước giao + Hoàn/Trả + Đơn hủy = tổng đơn trong ngày (phân hoạch loại
+ * trừ nhau, backend/src/routes/analytics.ts).
+ */
+type PipelineKey = keyof OverviewAnalytics["pipeline"];
+const PIPELINE_STAGES: { key: PipelineKey; label: string; color: string; dot: string }[] = [
+  { key: "PENDING", label: "Chờ xác nhận", color: "text-amber-600 dark:text-amber-400", dot: "#f59e0b" },
+  { key: "PROCESSED", label: "Đang xử lý", color: "text-sky-600 dark:text-sky-400", dot: "#0ea5e9" },
   { key: "SHIPPING", label: "Đang giao", color: "text-indigo-600 dark:text-indigo-400", dot: "#6366f1" },
-  { key: "DELIVERED", label: "Đã giao", color: "text-emerald-600 dark:text-emerald-400", dot: "#10b981" },
-  { key: "CANCELLED", label: "Hủy/Hoàn", color: "text-red-500 dark:text-red-400", dot: "#ef4444" },
+  { key: "DELIVERED", label: "Thành công", color: "text-emerald-600 dark:text-emerald-400", dot: "#10b981" },
+  { key: "RETURNING", label: "Hoàn / Trả", color: "text-amber-700 dark:text-amber-300", dot: "#d97706" },
+  { key: "CANCELLED", label: "Đơn hủy", color: "text-red-500 dark:text-red-400", dot: "#ef4444" },
 ];
 
 /**
@@ -98,10 +106,8 @@ function HeroBackdrop({ width, height }: { width: number; height: number }) {
 export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const { user } = useAuth();
   const channelColors = useChannelColors();
-  const router = useRouter();
   const { width } = useWindowDimensions();
   const [analytics, setAnalytics] = useState<OverviewAnalytics | null>(null);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [returns, setReturns] = useState<ReturnsSummaryResponse["summary"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -121,15 +127,13 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
     if (mode !== "silent") setError("");
     try {
       const { from, to } = rangeFor("today");
-      const [ana, orders, ret] = await Promise.all([
+      const [ana, ret] = await Promise.all([
         // Một lượt lấy đủ: số hôm nay + kỳ trước (hôm qua) để tính ▲/▼ +
-        // trend 14 ngày cho sparkline + đơn theo sàn cho donut.
+        // trend 14 ngày cho sparkline + phễu + đơn theo sàn cho donut.
         fetchOverview(from, to),
-        fetchOrders({ page: 1, pageSize: 1 }),
         fetchReturnsSummary(),
       ]);
       setAnalytics(ana);
-      setCounts(orders.counts);
       setReturns(ret.summary);
       setError("");
       setNoChannel(false);
@@ -183,17 +187,28 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const returningTotal = (returns?.AWAITING ?? 0) + (returns?.RECEIVED ?? 0);
   const revenue = analytics?.totalRevenue ?? 0;
   const netProfit = analytics?.netProfit ?? 0;
+  const orderCount = analytics?.activeOrderCount ?? 0;
+  const itemQuantity = analytics?.itemQuantity ?? 0;
   const prevRevenue = analytics?.previous?.totalRevenue ?? 0;
+  const prevOrders = analytics?.previous?.activeOrderCount ?? 0;
+  // TOÀN BỘ tiền đi ra trong kỳ: giá vốn + phí sàn + chi phí vận hành — cùng
+  // công thức thẻ "Tổng chi phí" web.
+  const totalExpense =
+    (analytics?.totalCost ?? 0) +
+    (analytics?.totalPlatformFee ?? 0) +
+    (analytics?.totalOperatingExpense ?? 0);
+  const pct1 = (part: number) =>
+    revenue > 0 ? String(Math.round((part / revenue) * 1000) / 10).replace(".", ",") : null;
+  const costRatio = pct1(totalExpense);
   // Biên lợi nhuận — kỳ trước không trả netProfit nên thẻ lãi hiện biên thay
   // vì ▲/▼ (đúng như thẻ "Lợi nhuận dự kiến" trên web).
-  const margin = revenue > 0 ? Math.round((netProfit / revenue) * 1000) / 10 : null;
+  const margin = pct1(netProfit);
   const missingCostOrders = analytics?.missingCost?.orderCount ?? 0;
-  // Sparkline lãi/ngày = doanh thu − chi phí trên trend 14 ngày (cùng công
-  // thức sparkline dưới thẻ KPI web); lấy 7 ngày cuối cho nhịp dễ đọc trên
-  // màn hẹp.
-  const weekProfits = (analytics?.trend ?? [])
-    .slice(-7)
-    .map((d) => d.revenue - (d.cost ?? 0));
+  // Sparkline lãi/ngày = doanh thu − chi phí trên trend 14 NGÀY — cùng dữ liệu
+  // và cùng công thức với đường sóng dưới thẻ "Lợi nhuận dự kiến" web.
+  const trendProfits = (analytics?.trend ?? []).map((d) => d.revenue - (d.cost ?? 0));
+  const channelTotalRevenue = channelRows.reduce((sum, r) => sum + r.revenue, 0);
+  const pipeline = analytics?.pipeline;
   const [heroSize, setHeroSize] = useState({ w: 0, h: 0 });
   // Bề rộng sparkline = màn hình − padding trang (16×2) − padding hero (20×2)
   const sparkW = Math.min(width, 480) - 72;
@@ -275,13 +290,13 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 </Text>
                 <View className="rounded-full bg-white/10 px-2.5 py-1">
                   <Text className="text-[11px] font-semibold text-emerald-300" style={TABULAR}>
-                    {analytics?.activeOrderCount ?? 0} đơn
+                    {orderCount} đơn{itemQuantity > 0 ? ` · ${itemQuantity} SP` : ""}
                   </Text>
                 </View>
               </View>
               <View className="mt-5 flex-row">
                 <View className="flex-1">
-                  <Text className="text-xs text-slate-400">Doanh thu</Text>
+                  <Text className="text-xs text-slate-400">Doanh thu hôm nay</Text>
                   <Text className="mt-1 text-[28px] font-bold text-white" style={TABULAR}>
                     {compactMoney(revenue)}
                   </Text>
@@ -304,23 +319,23 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                     {missingCostOrders > 0
                       ? `${missingCostOrders} đơn chưa có giá vốn`
                       : margin !== null
-                        ? `Biên lợi nhuận ${String(margin).replace(".", ",")}%`
+                        ? `Biên lợi nhuận ${margin}%`
                         : "Sau giá vốn, phí sàn & chi phí"}
                   </Text>
                 </View>
               </View>
-              {weekProfits.length >= 2 ? (
+              {trendProfits.length >= 2 ? (
                 <View className="mt-4 border-t border-white/10 pt-3">
                   <View className="mb-1 flex-row items-center justify-between">
                     <Text className="text-[10px] text-slate-400">
-                      Nhịp lãi 7 ngày gần nhất
+                      Nhịp lãi 14 ngày gần nhất
                     </Text>
                     <Text className="text-[10px] font-semibold text-emerald-300" style={TABULAR}>
-                      {compactMoney(weekProfits.reduce((s, v) => s + v, 0))}
+                      {compactMoney(trendProfits.reduce((s, v) => s + v, 0))}
                     </Text>
                   </View>
                   <Sparkline
-                    data={weekProfits}
+                    data={trendProfits}
                     width={sparkW}
                     height={40}
                     color="#34d399"
@@ -331,33 +346,69 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             </View>
           </Animated.View>
 
-          {/* Đếm đơn theo trạng thái — TOÀN BỘ đơn đang ở từng bước (không
-              theo ngày), khớp số đếm tab Đơn hàng; bấm vào nhảy sang tab đã lọc */}
+          {/* Hai thẻ KPI còn lại của hàng 4 thẻ web: Đơn hàng (+ số món, ▲/▼
+              so hôm qua) và Tổng chi phí (chiếm % doanh thu) */}
           <Animated.View
             entering={FadeInDown.duration(280).delay(60)}
             className="mb-3 flex-row gap-2"
           >
-            {STATUS_TILES.map((t) => (
-              <Card
-                key={t.key}
-                className="flex-1 items-center py-3"
-                onPress={() => {
-                  hapticTap();
-                  router.push(`/(admin)/orders?status=${t.key}` as Href);
-                }}
-              >
-                <View className="flex-row items-center gap-1.5">
-                  <View
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: t.dot }}
-                  />
-                  <Text className={`text-lg font-bold ${t.color}`} style={TABULAR}>
-                    {counts[t.key] ?? 0}
+            <Card className="flex-1 p-3.5">
+              <Text className="text-[11px] text-slate-500 dark:text-slate-400">Đơn hàng</Text>
+              <View className="mt-1 flex-row flex-wrap items-baseline gap-x-1.5">
+                <Text className="text-xl font-bold text-slate-900 dark:text-slate-100" style={TABULAR}>
+                  {orderCount}
+                </Text>
+                {itemQuantity > 0 ? (
+                  <Text className="text-[11px] text-slate-400 dark:text-slate-500" style={TABULAR}>
+                    · {itemQuantity} sản phẩm
                   </Text>
-                </View>
-                <Text className="text-[10px] text-slate-500 dark:text-slate-400">{t.label}</Text>
-              </Card>
-            ))}
+                ) : null}
+              </View>
+              <View className="mt-1.5 flex-row">
+                <DeltaPill current={orderCount} previous={prevOrders} />
+              </View>
+            </Card>
+            <Card className="flex-1 p-3.5">
+              <Text className="text-[11px] text-slate-500 dark:text-slate-400">Tổng chi phí</Text>
+              <Text
+                className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100"
+                style={TABULAR}
+              >
+                {compactMoney(totalExpense)}
+              </Text>
+              <Text className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
+                {costRatio !== null
+                  ? `Chiếm ${costRatio}% doanh thu`
+                  : "Giá vốn + phí sàn + vận hành"}
+              </Text>
+            </Card>
+          </Animated.View>
+
+          {/* PHỄU VẬN HÀNH HÔM NAY — đơn phát sinh trong ngày đang ở bước nào,
+              6 bước đúng như PipelineStrip web (đổi từ 4 ô đếm TOÀN BỘ đơn
+              trước đây — số đó lệch web nên seller thắc mắc, anh Trung 03/10) */}
+          <Animated.View entering={FadeInDown.duration(280).delay(90)}>
+            <Card className="mb-3 p-4">
+              <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Phễu vận hành hôm nay
+              </Text>
+              <View className="flex-row flex-wrap">
+                {PIPELINE_STAGES.map((st, i) => (
+                  <View
+                    key={st.key}
+                    className={`w-1/3 items-center py-2 ${i < 3 ? "border-b border-slate-100 dark:border-slate-800" : ""}`}
+                  >
+                    <View className="flex-row items-center gap-1.5">
+                      <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: st.dot }} />
+                      <Text className={`text-lg font-bold ${st.color}`} style={TABULAR}>
+                        {pipeline?.[st.key] ?? 0}
+                      </Text>
+                    </View>
+                    <Text className="text-[10px] text-slate-500 dark:text-slate-400">{st.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </Card>
           </Animated.View>
 
           {/* Tỷ trọng kênh hôm nay — vị trí sàn CỐ ĐỊNH, chỉ số nhảy */}
@@ -366,47 +417,64 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Tỷ trọng kênh hôm nay
               </Text>
+              {/* Lát = DOANH THU từng sàn (như bán nguyệt web), không phải số đơn */}
               <DonutChart
                 size={150}
-                centerLabel={String(analytics?.activeOrderCount ?? 0)}
-                centerSub="đơn hôm nay"
+                centerLabel={compactMoney(channelTotalRevenue)}
+                centerSub="doanh thu hôm nay"
                 slices={channelRows.map((r) => ({
                   label: CHANNEL_LABEL[r.channel],
-                  value: r.count,
+                  value: r.revenue,
                   color: channelColors[r.channel] ?? "#94a3b8",
                 }))}
               />
               <View className="mt-4">
                 {/* Cụm số đứng NGAY CẠNH tên sàn — không kéo giãn hai đầu màn
                     hình bắt mắt người dùng nhảy qua nhảy lại (góp ý 13/08) */}
-                {channelRows.map((r) => (
-                  <View
-                    key={r.channel}
-                    className="flex-row items-center gap-3 border-t border-slate-100 dark:border-slate-800 py-2.5"
-                  >
+                {channelRows.map((r) => {
+                  const idle = r.revenue <= 0;
+                  const share =
+                    channelTotalRevenue > 0
+                      ? Math.round((r.revenue / channelTotalRevenue) * 100)
+                      : 0;
+                  // Cùng 3 dòng với LegendTile web: doanh thu · %, số đơn · TB/đơn
+                  return (
                     <View
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: channelColors[r.channel] ?? "#94a3b8" }}
-                    />
-                    <Text className="w-16 text-[13px] font-medium text-slate-700 dark:text-slate-300">
-                      {CHANNEL_LABEL[r.channel]}
-                    </Text>
-                    <Text
-                      className={`w-14 text-[13px] font-bold ${
-                        r.count > 0 ? "text-slate-900 dark:text-slate-100" : "text-slate-300 dark:text-slate-600"
-                      }`}
-                      style={TABULAR}
+                      key={r.channel}
+                      className="flex-row items-center gap-3 border-t border-slate-100 dark:border-slate-800 py-2.5"
                     >
-                      {r.count} đơn
-                    </Text>
-                    <Text
-                      className="flex-1 text-right text-[12px] text-slate-500 dark:text-slate-400"
-                      style={TABULAR}
-                    >
-                      {r.count > 0 ? compactMoney(r.revenue) : ""}
-                    </Text>
-                  </View>
-                ))}
+                      <View
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{
+                          backgroundColor: channelColors[r.channel] ?? "#94a3b8",
+                          opacity: idle ? 0.4 : 1,
+                        }}
+                      />
+                      <Text
+                        className={`w-16 text-[13px] font-medium ${
+                          idle ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-300"
+                        }`}
+                      >
+                        {CHANNEL_LABEL[r.channel]}
+                      </Text>
+                      <View className="flex-1 items-end">
+                        <Text
+                          className={`text-[13px] font-bold ${
+                            idle ? "text-slate-300 dark:text-slate-600" : "text-slate-900 dark:text-slate-100"
+                          }`}
+                          style={TABULAR}
+                        >
+                          {compactMoney(r.revenue)}
+                        </Text>
+                        <Text className="text-[11px] text-slate-500 dark:text-slate-400" style={TABULAR}>
+                          {idle
+                            ? "Chưa có đơn"
+                            : `${share}% · ${r.count} đơn · TB ${compactMoney(Math.round(r.revenue / r.count))}/đơn`}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             </Card>
           </Animated.View>

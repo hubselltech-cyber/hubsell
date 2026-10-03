@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -9,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
@@ -18,6 +21,7 @@ import { ApiError } from "@/api/client";
 import { checkUsernameAvailable } from "@/api/auth";
 import { toAsciiUsername, USERNAME_REGEX } from "@/lib/username";
 import { PRIVACY_URL, TERMS_URL } from "@/lib/legal";
+import { COUNTRIES, findCountry, type Country } from "@/lib/countries";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\d{6,15}$/;
@@ -27,8 +31,8 @@ type UsernameStatus = "idle" | "checking" | "free" | "taken";
 /**
  * ĐĂNG KÝ CHỦ SHOP — cùng bộ trường và cùng luật với form web
  * (frontend/src/app/login/page.tsx, RegisterForm): họ tên, email, tên đăng
- * nhập (kiểm trùng ngay khi gõ), SĐT, mật khẩu ×2, tick Điều khoản.
- * App tiếng Việt → quốc gia cố định VN (backend ghép mã vùng +84).
+ * nhập (kiểm trùng ngay khi gõ), mã vùng + SĐT (cùng danh mục quốc gia với
+ * PhoneInput web, mặc định VN), mật khẩu ×2, tick Điều khoản.
  * Thành công là backend trả token → vào thẳng Trang chủ, không đăng nhập lại.
  */
 export default function RegisterScreen() {
@@ -40,7 +44,10 @@ export default function RegisterScreen() {
   const [username, setUsername] = useState("");
   // Tên đăng nhập tự gợi ý từ họ tên cho tới khi người dùng tự sửa ô này.
   const usernameTouched = useRef(false);
+  const [countryCode, setCountryCode] = useState("VN");
+  const [countryPicker, setCountryPicker] = useState(false);
   const [phone, setPhone] = useState("");
+  const country = findCountry(countryCode);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [referralCode, setReferralCode] = useState("");
@@ -110,7 +117,7 @@ export default function RegisterScreen() {
         password,
         fullName: fullName.trim(),
         username,
-        country: "VN",
+        country: countryCode,
         phoneNumber: phone,
         ...(referralCode.trim() ? { referralCode: referralCode.trim() } : {}),
         acceptTerms: true,
@@ -214,10 +221,19 @@ export default function RegisterScreen() {
 
           <Text className={labelClass}>Số điện thoại</Text>
           <View className={`mb-3 flex-row items-center ${inputClass} py-0`}>
-            <Text className="mr-2 text-sm text-slate-500 dark:text-slate-400">🇻🇳 +84</Text>
+            {/* Ô ghép Mã vùng + SĐT như PhoneInput web: bấm cờ để đổi nước */}
+            <Pressable
+              className="mr-2 flex-row items-center gap-1 border-r border-slate-200 dark:border-slate-700 py-3 pr-2"
+              onPress={() => setCountryPicker(true)}
+              accessibilityLabel={`Mã vùng: ${country.nameEn} (${country.dial})`}
+            >
+              <Text className="text-base">{country.flag}</Text>
+              <Text className="text-sm text-slate-700 dark:text-slate-300">{country.dial}</Text>
+              <Ionicons name="chevron-down" size={14} color="#94a3b8" />
+            </Pressable>
             <TextInput
               className="flex-1 py-3 text-sm text-slate-900 dark:text-slate-100"
-              placeholder="0912345678"
+              placeholder={countryCode === "VN" ? "0912345678" : "Số trong nước"}
               placeholderTextColor="#94a3b8"
               keyboardType="number-pad"
               value={phone}
@@ -325,6 +341,98 @@ export default function RegisterScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <CountryPickerModal
+        visible={countryPicker}
+        selected={countryCode}
+        onClose={() => setCountryPicker(false)}
+        onPick={(c) => {
+          setCountryCode(c.code);
+          setCountryPicker(false);
+        }}
+      />
     </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * Danh sách quốc gia (cờ · tên · mã vùng) có ô tìm — tìm theo tên Việt/Anh
+ * hoặc mã vùng, như dropdown PhoneInput web. Việt Nam luôn đứng đầu.
+ */
+function CountryPickerModal({
+  visible,
+  selected,
+  onClose,
+  onPick,
+}: {
+  visible: boolean;
+  selected: string;
+  onClose: () => void;
+  onPick: (c: Country) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const rows = needle
+    ? COUNTRIES.filter(
+        (c) =>
+          c.name.toLowerCase().includes(needle) ||
+          c.nameEn.toLowerCase().includes(needle) ||
+          c.dial.includes(needle) ||
+          c.code.toLowerCase() === needle
+      )
+    : COUNTRIES;
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View
+        className="flex-1 bg-slate-50 dark:bg-slate-950"
+        style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom }}
+      >
+        <View className="flex-row items-center gap-2 px-4 pb-2">
+          <Text className="flex-1 text-base font-semibold text-slate-900 dark:text-slate-100">
+            Chọn mã vùng
+          </Text>
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Ionicons name="close" size={22} color="#64748b" />
+          </Pressable>
+        </View>
+        <View className="mx-4 mb-2 flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
+          <Ionicons name="search" size={16} color="#94a3b8" />
+          <TextInput
+            className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
+            placeholder="Tìm nước hoặc mã vùng"
+            placeholderTextColor="#94a3b8"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={q}
+            onChangeText={setQ}
+          />
+        </View>
+        <FlatList
+          data={rows}
+          keyExtractor={(c) => c.code}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item: c }) => (
+            <Pressable
+              className="flex-row items-center gap-3 border-b border-slate-100 dark:border-slate-800 px-4 py-3 active:bg-slate-100 dark:active:bg-slate-900"
+              onPress={() => onPick(c)}
+            >
+              <Text className="text-xl">{c.flag}</Text>
+              <View className="flex-1">
+                <Text className="text-sm text-slate-900 dark:text-slate-100">{c.name}</Text>
+                <Text className="text-[11px] text-slate-400 dark:text-slate-500">{c.nameEn}</Text>
+              </View>
+              <Text className="text-sm text-slate-500 dark:text-slate-400">{c.dial}</Text>
+              {c.code === selected ? (
+                <Ionicons name="checkmark" size={18} color="#10b981" />
+              ) : null}
+            </Pressable>
+          )}
+          ListEmptyComponent={
+            <Text className="px-4 py-6 text-center text-sm text-slate-400">Không thấy nước nào</Text>
+          }
+        />
+      </View>
+    </Modal>
   );
 }
