@@ -967,8 +967,11 @@ export default function ProductsHubPage() {
 
             {/* ===== TẦNG 2: BẢNG LÀM VIỆC — thanh công cụ + cảnh báo + bảng ===== */}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <form onSubmit={handleSearch} className="flex w-full max-w-md gap-2">
-                <div className="relative flex-1">
+              {/* Ô tìm kiếm đứng form RIÊNG có bề rộng tối thiểu; chip lọc nằm ngoài form —
+                  trước đây chip chung form max-w-md nên ô nhập bị ép còn mỗi biểu tượng kính lúp. */}
+              <div className="flex min-w-0 flex-[1_1_20rem] flex-wrap items-center gap-2">
+              <form onSubmit={handleSearch} className="flex min-w-64 max-w-md flex-1 gap-2">
+                <div className="relative min-w-0 flex-1">
                   <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     className="pl-9"
@@ -980,6 +983,7 @@ export default function ProductsHubPage() {
                 <Button type="submit" variant="secondary">
                   Tìm kiếm
                 </Button>
+              </form>
                 {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
                 {locationsEnabled && (
                   <LocationSelect
@@ -1024,7 +1028,7 @@ export default function ProductsHubPage() {
                     ))}
                   </div>
                 )}
-              </form>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 {isAdmin && (
                   <Button
