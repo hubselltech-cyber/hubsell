@@ -966,10 +966,10 @@ export default function ProductsHubPage() {
             </div>
 
             {/* ===== TẦNG 2: BẢNG LÀM VIỆC — thanh công cụ + cảnh báo + bảng ===== */}
+            {/* Hai hàng CÓ CHỦ Ý (anh Trung 03/10: lệch hàng xấu): hàng 1 = tìm kiếm (trái) + thao tác (phải);
+                hàng 2 = bộ lọc. Trước đây chip lọc chen cùng hàng, tự rớt dòng làm cụm nút phải lệch. */}
+            <div className="space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              {/* Ô tìm kiếm đứng form RIÊNG có bề rộng tối thiểu; chip lọc nằm ngoài form —
-                  trước đây chip chung form max-w-md nên ô nhập bị ép còn mỗi biểu tượng kính lúp. */}
-              <div className="flex min-w-0 flex-[1_1_20rem] flex-wrap items-center gap-2">
               <form onSubmit={handleSearch} className="flex min-w-64 max-w-md flex-1 gap-2">
                 <div className="relative min-w-0 flex-1">
                   <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -984,51 +984,6 @@ export default function ProductsHubPage() {
                   Tìm kiếm
                 </Button>
               </form>
-                {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
-                {locationsEnabled && (
-                  <LocationSelect
-                    ariaLabel="Lọc theo vị trí chứa hàng"
-                    className={cn("w-56 [&>select]:rounded-full [&>select]:text-xs", locationFilter && "[&>select]:border-primary [&>select]:font-medium")}
-                    locations={locations}
-                    value={locationFilter}
-                    onChange={(v) => {
-                      setLocationFilter(v);
-                      setPage(1);
-                    }}
-                    placeholder="Tại vị trí: tất cả"
-                    suffix={(l) => (l.skuCount ? ` · ${l.skuCount} SKU` : "")}
-                  />
-                )}
-                {/* Chip Ngừng bán chỉ hiện khi có SKU ngừng bán (ẩn bằng vắng mặt). */}
-                {(inactiveCount > 0 || status !== "active") && (
-                  <div className="flex items-center gap-1.5">
-                    {(
-                      [
-                        { key: "active", label: "Đang bán" },
-                        { key: "inactive", label: `Ngừng bán ${formatNumber(inactiveCount)}` },
-                      ] as { key: ProductStatusFilter; label: string }[]
-                    ).map((c) => (
-                      <button
-                        key={c.key}
-                        type="button"
-                        aria-pressed={status === c.key}
-                        onClick={() => {
-                          setStatus(c.key);
-                          setPage(1);
-                        }}
-                        className={cn(
-                          "whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                          status === c.key
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-                        )}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
               <div className="flex flex-wrap items-center gap-2">
                 {isAdmin && (
                   <Button
@@ -1079,6 +1034,55 @@ export default function ProductsHubPage() {
                 </Button>
                 <ProductFormDialog onCreated={load} />
               </div>
+            </div>
+            {(locationsEnabled || inactiveCount > 0 || status !== "active") && (
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
+                {locationsEnabled && (
+                  <LocationSelect
+                    ariaLabel="Lọc theo vị trí chứa hàng"
+                    className={cn("w-56 [&>select]:rounded-full [&>select]:text-xs", locationFilter && "[&>select]:border-primary [&>select]:font-medium")}
+                    locations={locations}
+                    value={locationFilter}
+                    onChange={(v) => {
+                      setLocationFilter(v);
+                      setPage(1);
+                    }}
+                    placeholder="Tại vị trí: tất cả"
+                    suffix={(l) => (l.skuCount ? ` · ${l.skuCount} SKU` : "")}
+                  />
+                )}
+                {/* Chip Ngừng bán chỉ hiện khi có SKU ngừng bán (ẩn bằng vắng mặt). */}
+                {(inactiveCount > 0 || status !== "active") && (
+                  <div className="flex items-center gap-1.5">
+                    {(
+                      [
+                        { key: "active", label: "Đang bán" },
+                        { key: "inactive", label: `Ngừng bán ${formatNumber(inactiveCount)}` },
+                      ] as { key: ProductStatusFilter; label: string }[]
+                    ).map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        aria-pressed={status === c.key}
+                        onClick={() => {
+                          setStatus(c.key);
+                          setPage(1);
+                        }}
+                        className={cn(
+                          "whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          status === c.key
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                        )}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             </div>
 
             {/* Cảnh báo lệch tồn với sàn — việc vận hành, chỉ hiện khi có lỗi chưa xử lý */}
