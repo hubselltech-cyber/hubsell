@@ -156,11 +156,53 @@ export async function getValidShopeeAccessToken(
   const inFlight = refreshInFlight.get(channel.id);
   if (inFlight) return inFlight;
 
-  const job = refreshShopeeTokenLocked(channel.id, minTtlMs).finally(() => {
-    refreshInFlight.delete(channel.id);
-  });
+  const job = refreshShopeeTokenLocked(channel.id, minTtlMs)
+    .catch(async (err) => {
+      // Ghi dấu hạ NGOÀI giao dịch của khóa: ném trong giao dịch là rollback mất dấu
+      // (cùng lý do với markDisconnected ở hubsell-ads/token.ts).
+      if (isShopeeAccessExpiredError(err)) await markShopeeAccessExpired(channel);
+      throw err;
+    })
+    .finally(() => {
+      refreshInFlight.delete(channel.id);
+    });
   refreshInFlight.set(channel.id, job);
   return job;
+}
+
+/**
+ * Shopee TỪ CHỐI làm mới token vì quyền của shop với app đã hết hạn
+ * (`shop_access_expired — Your access to shop has expired`): làm mới lại bao nhiêu lần
+ * cũng vô ích, chỉ chủ shop ủy quyền lại mới hết. CHỈ nhận đúng mã này — không gộp
+ * `invalid_refresh_token`, mã đó còn có thể do hai luồng đua nhau làm mới (xem
+ * refreshInFlight), hạ nhầm là ngắt một gian đang tốt.
+ * Căn cứ: gian 1758390206 trên prod 03/10/2026 — Shopee trả mã này từ 14:09, gian vẫn
+ * ACTIVE, 53 lượt thử lại trong 8 giờ, chủ shop không có nút Kết nối lại.
+ */
+export function isShopeeAccessExpiredError(err: unknown): boolean {
+  return /\bshop_access_expired\b/i.test((err as Error)?.message ?? "");
+}
+
+/**
+ * Hạ gian xuống DISCONNECTED để dải "gian mất kết nối" + nút Kết nối lại hiện ra và
+ * các worker thôi gọi Shopee cho gian này. Không xoá token (như cron token-refresh).
+ * Ghi có điều kiện: chỉ khi gian còn ACTIVE và vẫn cầm đúng refresh_token vừa bị từ
+ * chối — chủ shop vừa ủy quyền lại (token mới) thì không bị hạ oan.
+ */
+async function markShopeeAccessExpired(channel: Channel): Promise<void> {
+  try {
+    const updated = await prisma.channel.updateMany({
+      where: { id: channel.id, status: "ACTIVE", refreshToken: channel.refreshToken },
+      data: { status: "DISCONNECTED", disconnectedAt: new Date() },
+    });
+    if (updated.count > 0) {
+      console.warn(
+        `[Shopee] Gian "${channel.shopName}" (shop ${channel.externalShopId}): Shopee báo quyền của shop với app đã hết hạn (shop_access_expired) → DISCONNECTED, cần kết nối lại`
+      );
+    }
+  } catch (e) {
+    console.error(`[Shopee] Không ghi được trạng thái mất kết nối cho gian ${channel.id}:`, (e as Error).message);
+  }
 }
 
 /**
