@@ -196,3 +196,33 @@ export function queueOptionsForRole(
   const max = Number.isInteger(n) && n >= 1 && n <= 10 ? n : DEFAULT_WORKER_POOL_MAX;
   return { max, supervise: true, consumes: true };
 }
+
+/**
+ * ĐƯỜNG TỰ PHÁT HÀNH HÓA ĐƠN (bước 5 lát 8, 03/10/2026):
+ *   · legacy — vòng chung đi tuần tự qua mọi shop mỗi 15 phút, cờ `running` trong
+ *     RAM (workers/invoice-auto-issue.ts).
+ *   · lanes  — làn riêng từng shop thuê ở bảng invoice_lanes, các shop chạy song
+ *     song, lưới quét 30 giây (workers/invoice-lanes.ts).
+ * Lát 8 ĐƯA LÊN HAI LẦN: lần một mặc định còn legacy (migration + bảng lên trước,
+ * worker đã có mã làn), lần hai đổi mặc định sang lanes. Đường lui: INVOICE_MODE=legacy.
+ */
+export type InvoiceMode = "lanes" | "legacy";
+export const DEFAULT_INVOICE_MODE: InvoiceMode = "legacy";
+
+export function invoiceMode(env: NodeJS.ProcessEnv = process.env): InvoiceMode {
+  const raw = (env.INVOICE_MODE ?? "").trim().toLowerCase();
+  return raw === "lanes" || raw === "legacy" ? raw : DEFAULT_INVOICE_MODE;
+}
+
+/**
+ * Số SHOP được tự phát hành cùng lúc ở MỘT tiến trình worker. MẶC ĐỊNH TỰ CHỌN 2
+ * (anh Trung chốt 01/10/2026, mục 3.8): khóa ứng dụng với nhà cung cấp là khóa
+ * chung của Hubsell, nhiều shop bắn cùng lúc là dồn vào một hạn mức chưa có số.
+ * Đổi bằng INVOICE_LANE_CONCURRENCY.
+ */
+export const DEFAULT_INVOICE_LANE_CONCURRENCY = 2;
+
+export function invoiceLaneConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.INVOICE_LANE_CONCURRENCY);
+  return Number.isInteger(n) && n >= 1 && n <= 50 ? n : DEFAULT_INVOICE_LANE_CONCURRENCY;
+}

@@ -11,6 +11,7 @@ import { startNotificationSseBridge } from "./services/notifications";
 import { resolveHubsellRole, startAllWorkers } from "./workers";
 import { registerEventQueueWorkers } from "./workers/event-queue";
 import { registerStockQueueWorkers, stopStockRunners } from "./workers/stock-queue";
+import { stopInvoiceLanes } from "./workers/invoice-lanes";
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -86,7 +87,12 @@ if (role === "worker") {
     // không mất (hết hạn giữ thì được trả lại hàng chờ). Bộ chạy đẩy tồn dừng sau
     // dòng đang đẩy và trả các dòng chưa đụng tới về hàng chờ. Chốt cứng phòng treo.
     setTimeout(() => process.exit(0), QUEUE_STOP_TIMEOUT_MS + 2_000).unref();
-    void Promise.allSettled([stopQueue(QUEUE_STOP_TIMEOUT_MS), stopStockRunners(QUEUE_STOP_TIMEOUT_MS)]).finally(() =>
+    void Promise.allSettled([
+      stopQueue(QUEUE_STOP_TIMEOUT_MS),
+      stopStockRunners(QUEUE_STOP_TIMEOUT_MS),
+      // Làn hóa đơn (lát 8): dừng sau tờ đang dở, hẹn lại ngay, trả làn.
+      stopInvoiceLanes(QUEUE_STOP_TIMEOUT_MS),
+    ]).finally(() =>
       process.exit(0)
     );
   };

@@ -22,12 +22,13 @@
 // ============================================================
 
 import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";
+import { startInvoiceLaneScheduler } from "./invoice-lanes";
 import { startInvoiceStatusSyncWorker } from "./invoice-status-sync";
 import { startInvoiceUnknownRecheckWorker } from "./invoice-unknown-recheck";
 import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
 import { startStockPushWorker } from "../integrations/stock-push-worker";
-import { stockPushMode } from "../lib/queue-config";
+import { stockPushMode, invoiceMode } from "../lib/queue-config";
 import { startStockReconcileWorker } from "./stock-reconcile";
 import { startTokenRefreshWorker } from "./token-refresh";
 import { startWeeklyReportWorker } from "./weekly-report";
@@ -88,8 +89,14 @@ export function startAllWorkers(): void {
   startWeeklyReportWorker();
   // Tóm tắt cuối ngày Trợ lý quảng cáo (bước 6 sự cố 14/09) — chuông 20h VN.
   startAdsDailySummaryWorker();
-  // Tự phát hành hóa đơn cho đơn ĐÃ GIAO + ĐÃ ĐỐI SOÁT (ngủ khi chưa bật MISA).
-  startInvoiceAutoIssueWorker();
+  // Tự phát hành hóa đơn cho đơn ĐÃ GIAO (ngủ khi chưa bật MISA). Hai đường, chọn
+  // bằng INVOICE_MODE (bước 5 lát 8): vòng chung một cờ của đường cũ, hoặc làn
+  // theo shop thuê ở database + lưới quét (workers/invoice-lanes.ts).
+  if (invoiceMode() === "legacy") {
+    startInvoiceAutoIssueWorker();
+  } else {
+    startInvoiceLaneScheduler();
+  }
   // Đồng bộ trạng thái CQT của hóa đơn (meInvoice không có webhook).
   startInvoiceStatusSyncWorker();
   // Tra lại các tờ hóa đơn gửi đi mà chưa rõ kết quả (bước 5 lát 6b).

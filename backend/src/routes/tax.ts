@@ -846,6 +846,20 @@ router.put("/auto-issue", async (req: AuthRequest, res, next) => {
         autoIssuePauseReason: true,
       },
     });
+    // Lát 8: bật công tắc hay bấm Chạy lại → làn của shop tới giờ NGAY, lượt đầu
+    // chạy trong một nhịp lưới quét (30 giây) thay vì chờ tới 15 phút. Không được
+    // làm hỏng request nếu bảng làn trục trặc (đường cũ không cần nó).
+    if (turningOn || body.resume === true) {
+      try {
+        await prisma.invoiceLane.upsert({
+          where: { ownerId },
+          create: { ownerId, nextRunAt: new Date() },
+          update: { nextRunAt: new Date(), transientStreak: 0 },
+        });
+      } catch (err) {
+        console.warn("[Invoice-lanes] Không đặt được giờ chạy ngay cho shop:", (err as Error).message);
+      }
+    }
     res.json({
       autoIssueEnabled: saved.autoIssueEnabled,
       autoIssueTrigger: normalizeAutoIssueTrigger(saved.autoIssueTrigger),

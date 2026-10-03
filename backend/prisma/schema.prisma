@@ -282,6 +282,7 @@ model User {
   // Module Hóa đơn & Thuế: cấu hình thuế bổ sung + lịch sử phát hành hóa đơn.
   taxSetting  ShopTaxSetting?
   invoiceLogs InvoiceLog[]
+  invoiceLane InvoiceLane? // làn tự phát hành hóa đơn của shop (bước 5 lát 8)
 
   // Hóa đơn ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ Xử lý hóa đơn đầu vào).
   inputInvoices InputInvoice[]
@@ -1185,6 +1186,31 @@ model InvoiceLog {
   // Chỉ mục RIÊNG PHẦN cho vòng quét tờ chưa rõ kết quả (workers/invoice-unknown-recheck.ts),
   // cũng chỉ có trong SQL migration 20261003001000_invoice_unknown_pending_idx:
   //   InvoiceLog_unknown_pending_idx (createdAt) WHERE status = 'PENDING' AND transactionId IS NULL
+}
+
+/// LÀN TỰ PHÁT HÀNH HÓA ĐƠN THEO SHOP (hóa đơn bước 5 lát 8, 03/10/2026) — một dòng
+/// mỗi shop bật tự phát hành. Thay cờ `running` chung trong RAM: worker THUÊ làn
+/// bằng một UPDATE có điều kiện (hạn thuê 300 giây, gia hạn giữa hai tờ), tiến
+/// trình chết thì hết hạn là tiến trình khác nhận; các shop chạy song song, một
+/// shop không bao giờ có hai tiến trình cùng phát hành. `nextRunAt` là lịch của
+/// shop: còn tồn → 1 phút, hết → 15 phút, lỗi tạm → lùi 1/5/15 phút; bật công tắc
+/// hay bấm Chạy lại đặt về ngay. Xem workers/invoice-lanes.ts, docs/HANG-DOI-BEN.md 4.6 P.
+model InvoiceLane {
+  ownerId         String    @id
+  /// Định danh tiến trình đang thuê (host:pid:ngẫu nhiên). NULL = rảnh.
+  leasedBy        String?
+  leasedUntil     DateTime?
+  /// Giờ sớm nhất lưới quét được nhận shop này.
+  nextRunAt       DateTime  @default(now())
+  lastRunAt       DateTime?
+  /// Số lượt liên tiếp dừng vì lỗi TẠM của nhà cung cấp — quyết định nấc lùi 1/5/15 phút.
+  transientStreak Int       @default(0)
+  updatedAt       DateTime  @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([nextRunAt])
+  @@map("invoice_lanes")
 }
 
 /// HÓA ĐƠN ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ "Xử lý hóa đơn đầu vào"
