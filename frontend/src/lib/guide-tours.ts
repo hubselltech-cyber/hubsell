@@ -343,7 +343,7 @@ export const INVOICE_TOUR: GuideTour = {
     {
       img: `${GT}/hd-history-table.png`,
       title: "Nhật ký hóa đơn: trạng thái CQT & tải PDF",
-      desc: "Mỗi tờ hóa đơn ghi số, trạng thái phát hành, kết quả Cơ quan Thuế (đã cấp mã / chờ / từ chối — kiểm lại mỗi 12 giờ), tổng tiền, thuế. Lọc “Cần điều chỉnh” cho đơn sàn đã chốt hoàn; bấm “Tải” lấy PDF đã ký kèm mã tra cứu công khai trên meinvoice.vn.",
+      desc: "Mỗi tờ hóa đơn ghi số, trạng thái phát hành, kết quả Cơ quan Thuế (đã cấp mã / chờ / từ chối — Hubsell tự kiểm lại định kỳ), tổng tiền, thuế. Lọc “Cần điều chỉnh” cho đơn sàn đã chốt hoàn; bấm “Tải” lấy PDF đã ký kèm mã tra cứu công khai trên meinvoice.vn.",
       target: { x: 85.43, y: 90.74, w: 4.09, h: 2.92 },
       zoom: 1.9,
     },

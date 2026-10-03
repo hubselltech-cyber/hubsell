@@ -584,7 +584,7 @@ export default function TaxHistoryPage() {
                           <span className="text-sm font-normal text-slate-500"> / {unchecked}</span>
                         </p>
                         <p className={TEXT_SUB}>
-                          {cancelled > 0 ? `${cancelled} tờ đã hủy trong kỳ` : "đối chiếu với NCC mỗi 12 giờ"}
+                          {cancelled > 0 ? `${cancelled} tờ đã hủy trong kỳ` : "Hubsell tự đối chiếu với NCC"}
                         </p>
                       </div>
                     </div>
@@ -766,7 +766,7 @@ export default function TaxHistoryPage() {
                                   ) : (
                                     <span
                                       className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500"
-                                      title="Hubsell đối chiếu trạng thái với NCC mỗi 12 giờ"
+                                      title="Hubsell sẽ tự đối chiếu trạng thái với NCC"
                                     >
                                       Chưa kiểm
                                     </span>

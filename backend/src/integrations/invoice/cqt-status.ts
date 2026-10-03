@@ -62,7 +62,9 @@ export function mapCqtStatus(
 
 /** Ký hiệu hóa đơn có mã CQT? (TT 78: ký tự 2 — C = có mã, K = không mã.) */
 export function seriesHasTaxCode(invoiceSeries: string | null | undefined): boolean {
-  return invoiceSeries?.charAt(1) === "C";
+  // Ký hiệu đủ 7 ký tự mở đầu bằng số mẫu ("1K26TYY"); nhà cung cấp có khi trả dạng 6
+  // ký tự không kèm số mẫu ("K26TYY", MISA /invoice/status 03/10/2026) — bỏ số mẫu rồi xét.
+  return invoiceSeries?.replace(/^\d/, "").charAt(0) === "C";
 }
 
 /**

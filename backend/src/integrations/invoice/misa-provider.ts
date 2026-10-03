@@ -12,6 +12,7 @@
  */
 
 import { InvoiceLogStatus } from "@prisma/client";
+import { mapCqtStatus, seriesHasTaxCode } from "./cqt-status";
 import { explainInvoiceError, InvoiceProviderError, isPublishOutcomeUnknown } from "./invoice-errors";
 import { clearMisaTokenCache } from "./misa-auth";
 import {
@@ -27,7 +28,10 @@ import type {
   InvoiceProvider,
   InvoiceResult,
   ProviderCapabilities,
+  ProviderInvoiceStatus,
   ReferenceLookup,
+  StatusBatchResult,
+  StatusQuery,
 } from "./types";
 
 /**
@@ -72,6 +76,8 @@ export const MISA_CAPABILITIES: ProviderCapabilities = {
   // với mã: createInvoice chỉ tra ngược khi báo trùng hoặc chưa rõ kết quả).
   findByReference: { supported: true, settleSeconds: 60 },
   // Cỡ lô worker hỏi trạng thái đang chạy từ 03/09/2026 (body là mảng mã tra cứu).
+  // [thử 03/10] scripts/misa-status-batch-probe.ts: lô 50 mã được nhận, lô 80 mã bị
+  // từ chối HTTP 400 InvoiceQuantityTooLarge. Chưa dò mức chính xác giữa 51 và 80.
   statusBatchSize: 50,
   // [doc] chỉ có /invoice/status để hỏi; không có webhook.
   webhook: false,
@@ -247,6 +253,54 @@ export class MisaInvoiceProvider implements InvoiceProvider {
       deleted: chosen.isDeleted,
       matches: items.length,
     };
+  }
+
+  /**
+   * Hỏi trạng thái một lô theo mã tra cứu (bước 5 lát 12). meInvoice bắt khai loại ký
+   * hiệu (có mã / không mã) cho CẢ lệnh, và [thử 03/10] khai lệch loại thì trả 0 dòng,
+   * không báo lỗi; mã không tồn tại cũng bị bỏ qua im lặng. Nên: tách lô theo ký hiệu
+   * lúc phát hành của từng tờ (thiếu thì theo ký hiệu đang cấu hình), tờ nào không có
+   * dòng trả về thì hỏi lại MỘT lần với loại ngược lại. Bảng mã SendTaxStatus đọc theo
+   * loại đã hỏi ra dòng đó (cqt-status.ts).
+   */
+  async checkStatuses(items: StatusQuery[]): Promise<StatusBatchResult> {
+    const found = new Map<string, ProviderInvoiceStatus>();
+    const ask = async (ids: string[], withCode: boolean) => {
+      if (ids.length === 0) return;
+      const rows = await getInvoiceStatuses(ids, this.cfg, "transactionId", withCode);
+      for (const row of rows) {
+        if (!row.transactionId || found.has(row.transactionId)) continue;
+        found.set(row.transactionId, {
+          transactionId: row.transactionId,
+          issued: row.publishStatus === 1,
+          deleted: row.isDeleted,
+          invoiceNo: row.invoiceNo,
+          taxStatus: mapCqtStatus(row.sendTaxStatus, withCode),
+        });
+      }
+    };
+    const idsOf = (withCode: boolean) => [
+      ...new Set(
+        items
+          .filter((it) => seriesHasTaxCode(it.invoiceSeries ?? this.cfg.invoiceSeries) === withCode)
+          .map((it) => it.transactionId)
+      ),
+    ];
+    try {
+      for (const withCode of [true, false]) {
+        const ids = idsOf(withCode);
+        await ask(ids, withCode);
+        await ask(ids.filter((id) => !found.has(id)), !withCode);
+      }
+      return { ok: true, found };
+    } catch (err) {
+      if (err instanceof InvoiceProviderError) {
+        const explained = explainInvoiceError(err);
+        if (explained.code === "TokenExpiredCode" || explained.code === "InvalidTokenCode") clearMisaTokenCache();
+        return { ok: false, message: explained.message, accountProblem: explained.scope === "ACCOUNT" };
+      }
+      return { ok: false, message: (err as Error).message, accountProblem: false };
+    }
   }
 
   /**

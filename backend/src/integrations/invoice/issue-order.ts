@@ -19,6 +19,7 @@ import { InvoiceLogStatus, Prisma, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { SecretBoxError } from "../../lib/secret-box";
 import { autoRetryExhausted, nextOrderErrorCount } from "./auto-issue-policy";
+import { cqtNextOnWrite } from "./cqt-follow";
 import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
@@ -536,6 +537,8 @@ export async function issueInvoiceForOrder(
         errorScope: failScope ?? null,
         orderErrorCount: orderErrorCount ?? null,
         issuedAt: issued ? new Date() : null,
+        // Tờ có mã tra cứu: hẹn giờ hỏi trạng thái cơ quan thuế (lát 12).
+        cqtNextCheckAt: cqtNextOnWrite(finalStatus, result.transactionId, new Date()),
       },
     }),
     prisma.invoiceStatusHistory.create({

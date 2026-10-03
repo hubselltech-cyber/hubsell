@@ -697,7 +697,7 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | 9 | Xuất HÀNG LOẠT qua làn + giao diện tiến độ. Chi tiết ở mục Q | Có (bảng `invoice_requests` + hàng đợi tín hiệu `invoice.issue`, migration `20261003160000_invoice_requests`) | Có ở lần hai: nút Xuất trả lời ngay, làn của shop phát hành nền, có tiến độ + nút Dừng phần còn lại; trần một lần bấm 100 đơn | ✅ LẦN MỘT trên prod từ 03/10 13:09 (`564ff27`, anh Trung duyệt kế hoạch 5 điểm "Ok em. Làm đi" rồi tự đẩy; mặc định `INVOICE_BULK_MODE=inline`, prod không đổi hành vi). Đã kiểm prod 03/10 13:11 qua `/health` + Supabase SQL: migration `20261003160000_invoice_requests` xong 13:09:20 không rollback, 0 migration dở; bảng `invoice_requests` có, RLS bật, đủ 5 chỉ mục (pkey, open_key, due_idx, ownerId_batchId, createdAt), 0 dòng; hàng đợi `invoice.issue` (stately) có, 0 việc; web đổi bản 13:09:49; ảnh chụp sức khỏe worker 13:10:53 mang `564ff27`; 30/37 gian đồng bộ trong 15 phút, lần cuối 13:11:25, gian lỗi liên tiếp duy nhất vẫn Shopee KYC đã biết; giao diện trên app.hubsell.tech đã có chuỗi "Dừng phần còn lại" trong bundle. CHƯA đọc được log worker dòng `Invoice-requests` / `invoice.issue` (em không đọc được log Render, nhờ anh chụp). ✅ LẦN HAI trên prod từ 03/10 13:16 (`f227713`, mặc định `lane`, anh Trung tự đẩy). Đã kiểm 13:18 qua `/health` + Supabase SQL: web đổi bản 13:16:20; ảnh chụp sức khỏe worker 13:17:26 mang `f227713`; không migration mới (cuối vẫn `20261003160000_invoice_requests`), 0 migration dở; `invoice_requests` 0 dòng (đúng, prod chưa shop nào có cấu hình hóa đơn); 32/37 gian đồng bộ trong 15 phút, lần cuối 13:18:39, gian lỗi liên tiếp duy nhất vẫn Shopee KYC. CHƯA kiểm được trên prod: cờ `bulkViaLane: true` của `/invoice-queue` (cần phiên đăng nhập của một shop), log worker dòng `Invoice-requests` / `invoice.issue`, và một lượt bấm Xuất thật |
 | 10 | Xuất MỘT đơn theo mã và điều chỉnh tay qua làn: web ghi một yêu cầu, làn của shop phát hành, web chờ kết quả rồi trả lời đúng hình dạng cũ. Chi tiết ở mục R | Không | Có ở lần hai: hai nút này hết gọi nhà cung cấp ngay trong request; shop đang có lượt xuất dài thì nhận câu "đã nhận" + chuông khi xong | ✅ LẦN MỘT trên prod từ 03/10 13:38 (`49b109d`, anh Trung 03/10: "Làm luôn", tự đẩy; mặc định `INVOICE_SINGLE_MODE=inline`, prod không đổi hành vi). Đã kiểm 13:40 qua `/health` + Supabase SQL: web đổi bản 13:38:35; ảnh chụp sức khỏe worker 13:39:42 mang `49b109d`; không migration mới, 0 migration dở; `invoice_requests` 0 dòng; 30/37 gian đồng bộ trong 15 phút, lần cuối 13:39:53, gian lỗi liên tiếp duy nhất vẫn Shopee KYC. ✅ LẦN HAI trên prod từ 03/10 13:52 (`69b8544`, mặc định `lane`, anh Trung tự đẩy). Đã kiểm 13:54: web đổi bản 13:52:57; ảnh chụp sức khỏe worker 13:53:57 mang `69b8544`; không migration mới, 0 migration dở; `invoice_requests` 0 dòng; 33/37 gian đồng bộ trong 15 phút, lần cuối 13:54:10, gian lỗi liên tiếp duy nhất vẫn Shopee KYC. CHƯA có lượt bấm thật trên prod (chưa shop nào có cấu hình hóa đơn). Đường lui `INVOICE_SINGLE_MODE=inline` ở web |
 | 11 | Điều chỉnh tự động khi sàn chốt hoàn thành yêu cầu bền: ghi dòng `invoice_requests` TRƯỚC lượt ghi đơn, làn quyết phạm vi lúc chạy, thử lại 60 phút tới 7 ngày, hỏng hẳn thì một chuông. Chi tiết ở mục S | Không | Có ở lần hai: hết mất việc điều chỉnh khi sàn chưa báo số / nhà cung cấp lỗi / worker deploy | ✅ LẦN MỘT trên prod từ 03/10 14:18 (`78de0e5`, anh Trung duyệt 4 điểm "Làm theo hướng này đi" rồi tự đẩy; mặc định `INVOICE_AUTO_ADJUST_MODE=legacy`, prod không đổi hành vi). Đã kiểm 14:19 qua `/health` + Supabase SQL: web đổi bản 14:18:13; ảnh chụp sức khỏe worker 14:18:57 mang `78de0e5`; không migration mới, 0 migration dở; `invoice_requests` 0 dòng; 29/37 gian đồng bộ trong 15 phút, lần cuối 14:19:31, gian lỗi liên tiếp duy nhất vẫn Shopee KYC. ✅ LẦN HAI trên prod từ 03/10 14:25 (`217d52a`, mặc định `queue`, anh Trung tự đẩy). Đã kiểm 14:26: web đổi bản 14:25:23; ảnh chụp sức khỏe worker 14:26:27 mang `217d52a`; không migration mới, 0 migration dở; `invoice_requests` 0 dòng (0 dòng tự động — prod 0 shop bật tự điều chỉnh); 32/37 gian đồng bộ trong 15 phút, gian lỗi liên tiếp duy nhất vẫn Shopee KYC. CHƯA có lượt thật. Đường lui `INVOICE_AUTO_ADJUST_MODE=legacy` |
-| 12 | Hỏi trạng thái qua adapter, theo tới khi có kết luận | Có (cột `cqtNextCheckAt`) | Có | |
+| 12 | Hỏi trạng thái qua adapter, theo tới khi có kết luận. Chi tiết ở mục T | Có (cột `cqtNextCheckAt` + một chỉ mục riêng phần, migration `20261003190000_invoice_cqt_next_check`) | Có ở lần hai: tờ mới được hỏi sau 1 giờ thay vì tới 12 giờ; hết trần 200 tờ/shop/lượt; tờ quá 30 ngày chưa kết luận vẫn được theo | ⏳ LẦN MỘT đã viết 03/10 tối trên nhánh, CHƯA đẩy: chờ anh Trung áp migration lên database dev để chạy test database, rồi duyệt migration |
 | 13 | Webhook nhà cung cấp qua đường nhận chung; địa chỉ giữ chỗ cho Hubtax | Có (1 hàng đợi) | Không có lưu lượng thật | |
 | 14 | Dấu hiệu "Hóa đơn" trên HQ Sức khỏe | Không | Không | |
 
@@ -1146,6 +1146,89 @@ Làn của shop, tới lượt dòng tự động:
 - Sandbox MISA thật (`scripts/misa-auto-adjust-lane-probe.ts`): hóa đơn gốc 00000155 (200.000 đ); sàn chốt hoàn chưa có số → yêu cầu hẹn lại 60 phút, không gọi MISA; sàn báo hoàn 100.000 đ → làn lập tờ điều chỉnh 00000156 giảm đúng 100.000 đ, mã `...-DC1`, 0,56 giây; lượt đồng bộ sau thấy lại → không ghi thêm, không lập thêm.
 
 *Chưa kiểm.* Một lượt đồng bộ hoàn THẬT của sàn đi qua đường mới (test gọi thẳng điểm vào với đơn dựng sẵn; ba tệp `returns-sync` chỉ đổi chỗ gọi); shop thật trên prod.
+
+**T. Lát 12: hỏi trạng thái cơ quan thuế qua adapter, theo tới khi có kết luận (viết 03/10/2026 tối)**
+
+Anh Trung duyệt 03/10 tối ("Khá tốt rồi. Làm như vậy đi em") bảy điểm: (1) vòng quét riêng, không chạy trong làn; (2) lần hỏi đầu 1 giờ sau khi lập, quét 30 phút một lượt; (3) theo tới khi có kết luận; (4) migration cột + chỉ mục, đưa lên hai lần; (5) tờ nhà cung cấp không trả dòng thì adapter hỏi lại một lần với loại ký hiệu ngược lại, vẫn không thấy thì không kết luận; (6) sửa lỗi tờ điều chỉnh ghi đè trạng thái đơn, mọi lượt ghi có điều kiện; (7) lỗi tài khoản nhà cung cấp thì hoãn shop trong lượt, chưa thêm chuông (để lát 14).
+
+*Vấn đề trước lát 12* (`workers/invoice-status-sync.ts`, đọc lại 03/10):
+
+| Điều | Hậu quả |
+|---|---|
+| Worker lọc cứng `provider: "MISA"`, tự đọc bảng mã `SendTaxStatus`; hợp đồng chỉ có `checkStatus` từng tờ, không ai gọi | Nhà cung cấp thứ hai không có đường hỏi trạng thái |
+| 200 tờ mỗi shop mỗi 12 giờ | Trần im lặng 400 tờ/ngày mỗi shop |
+| Tờ mới lập chờ tới 12 giờ mới được hỏi | Trang Lịch sử hiện "Chưa kiểm" nửa ngày |
+| Tờ quá 30 ngày chưa có kết luận bị bỏ hẳn | Tờ đó vẫn nằm trong VAT đầu ra (báo cáo chỉ loại tờ bị từ chối) |
+| Một cờ `running` trong RAM, lượt ghi không điều kiện | Hai worker cùng sống thì hỏi trùng, reo chuông đôi, có thể ghi đè bằng số cũ |
+| Tờ ĐIỀU CHỈNH bị xóa / phát hành muộn cũng ghi `Order.einvoiceStatus` | Đơn mang trạng thái hóa đơn của tờ điều chỉnh |
+| Không có test nào cho worker | |
+
+*Thử sandbox MISA 03/10, chỉ đọc* (`backend/scripts/misa-status-batch-probe.ts`, lệnh `/invoice/status`):
+
+| Câu hỏi | Kết quả |
+|---|---|
+| Lô 50 mã | Nhận, khoảng 30 ms |
+| Lô 80 mã | HTTP 400 `InvoiceQuantityTooLarge` ("Hệ thống vượt quá số lượng hóa đơn cho phép") |
+| Lô lẫn mã không tồn tại | Lô không hỏng; mã đó không có dòng trả về, không báo lỗi |
+| Khai `invoiceWithCode` lệch loại ký hiệu của tờ | Trả 0 dòng, không báo lỗi |
+| Mã lặp trong lô | Trả một dòng |
+| Tra ngược 40 mã tham chiếu trong một lệnh (`inputType=2`) | Được |
+| Tờ 00000050 (RefID `HUBSELL-TEST-003`, lập 23/08, ký hiệu không mã) | `PublishStatus` 1, `SendTaxStatus` 2 |
+
+Dòng MISA trả còn có: `MessageCode`, `RefID`, `InvoiceSeries` (dạng 6 ký tự `K26TYY`, không kèm số mẫu), `InvDate`, `GrantCodeStatus`, `EInvoiceStatus`, `ReceivedStatus`, `DeletedDate`, `DeletedReason`, `OrgTransactionID`. Lát 12 chưa dùng các trường này.
+
+Chưa thử được: tờ mới lập đổi trạng thái theo thời gian ra sao (chỉ tìm lại được một tờ cũ theo mã tham chiếu); ký hiệu có mã; tờ bị từ chối; tờ bị xóa; mức chính xác giữa 51 và 80 mã; hạn mức gọi trên production.
+
+*Cách chạy mới* (bật bằng `INVOICE_CQT_MODE=follow` ở worker):
+
+```
+Tờ có mã tra cứu (phát hành xong, nối lại số, webhook)  →  cqtNextCheckAt = lúc lập + 1 giờ
+Vòng quét mỗi 30 phút (workers/invoice-cqt-follow.ts):
+  NHẬN tối đa 200 dòng tới hạn của mọi shop bằng MỘT câu UPDATE
+      (dời cqtNextCheckAt sang +15 phút, FOR UPDATE SKIP LOCKED)       → hai worker không nhận trùng
+  gom theo shop (4 shop cùng lúc) → dựng adapter của shop
+      shop gỡ cấu hình / đổi nhà cung cấp / adapter không hỏi được theo lô → không hỏi, hẹn theo nhịp thường
+  hỏi adapter theo lô (cỡ lô = statusBatchSize của bảng khả năng; MISA 50)
+      hỏi không được   → bỏ phần còn lại của shop trong lượt; dòng đã nhận tự tới hạn lại sau 15 phút
+      không trả dòng   → không suy diễn; ghi mốc đã hỏi, hẹn theo nhịp thường
+      đã xóa           → CANCELLED, thôi hỏi; chuông
+      đang chờ mà đã phát hành → ISSUED
+      trạng thái cơ quan thuế  → cqtStatus; mới bị từ chối → dòng lịch sử + chuông
+  còn dòng tới hạn → nhận tiếp, tới khi hết hoặc hết quỹ giờ (= nhịp quét; in "CÒN TỒN")
+  cuối lượt: MỘT chuông cho mỗi shop có tờ bị từ chối / bị xóa
+```
+
+Giờ hỏi kế tiếp sau một lượt hỏi (`nextCqtCheckAt` ở `integrations/invoice/cqt-follow.ts`):
+
+| Tờ | Hỏi lại sau | Căn cứ |
+|---|---|---|
+| Chưa có kết luận (chưa có trạng thái, chờ, gửi lỗi, bị từ chối, còn đang chờ phát hành), lập dưới 30 ngày | 12 giờ | Nhịp có từ 03/09 (anh Trung chốt), giữ nguyên |
+| Như trên, lập quá 30 ngày | 24 giờ, không điểm dừng | Em tự chọn, anh Trung nhận ở mục D |
+| Đã phát hành + cơ quan thuế đã tiếp nhận, trong 7 ngày đầu | 24 giờ | Có từ 03/09 |
+| Đã phát hành + đã tiếp nhận, quá 7 ngày | Thôi (cột về trống) | Có từ 03/09 |
+| Hỏng / đã hủy | Thôi | |
+
+Lần hỏi đầu 1 giờ, nhịp quét 30 phút, hạn nhận 15 phút, 200 dòng mỗi câu nhận, 4 shop cùng lúc: em tự chọn (hai số đầu anh Trung duyệt 03/10). Chưa có số đo cơ quan thuế trả lời sau bao lâu trên production.
+
+- **Không chạy trong làn** (khác mục B): lệnh hỏi chỉ đọc, không xin số hóa đơn, nên không cần xếp hàng với phát hành. Thứ phải chống là hỏi trùng và chuông đôi; bước NHẬN lo việc đó.
+- **Hợp đồng adapter** thêm `checkStatuses(lô)` trả `ProviderInvoiceStatus` đã chuẩn hóa (đã phát hành, đã xóa, số hóa đơn, trạng thái cơ quan thuế). Việc tách lô có mã / không mã, đọc bảng mã `SendTaxStatus`, và hỏi lại với loại ngược lại nằm trong adapter MISA. Lõi và vòng quét không còn chữ nào riêng của MISA.
+- **Mọi lượt ghi có điều kiện** (dòng còn đúng trạng thái + trạng thái cơ quan thuế lúc đọc); dòng bị tiến trình khác đổi thì bỏ, không ghi đè. **Trạng thái hóa đơn của đơn chỉ đi theo hóa đơn gốc**, không theo tờ điều chỉnh.
+- **Chỗ đặt giờ hỏi** (`cqtNextOnWrite`), 6 lệnh ghi ở 4 tệp (lúc khảo sát em đếm 8 chỗ ở 5 tệp vì tính cả ba nơi gọi chung một hàm ghi): `issue-order.ts`, `adjust-order.ts` (lập mới + nối lại), `unknown-outcome.ts` (kết luận + ghi mã tra cứu khi tờ chưa phát hành xong), `misa-webhook-service.ts`. Tệp `adjust-precheck.ts` chỉ trả kế hoạch nối lại, lượt ghi nằm ở `adjust-order.ts`. Sót một chỗ là tờ đó không bao giờ được hỏi.
+- **Migration** `20261003190000_invoice_cqt_next_check`: cột `cqtNextCheckAt` (NULL được), gán giờ hỏi = ngay cho tờ đang phải theo, chỉ mục riêng phần `InvoiceLog_cqt_due_idx (cqtNextCheckAt) WHERE cqtNextCheckAt IS NOT NULL`. Hai chỗ khác bản nháp mục C: điều kiện gán dùng `IS DISTINCT FROM` (bản nháp dùng `NOT (cqtStatus = 'ACCEPTED' AND ...)` sẽ bỏ sót tờ chưa hỏi lần nào vì `cqtStatus` trống); chỉ mục xếp theo giờ hỏi chứ không theo `(ownerId, cqtNextCheckAt)` vì vòng quét lấy dòng tới hạn của mọi shop.
+- **Giao diện**: ba chỗ ghi "mỗi 12 giờ" (trang Lịch sử hai chỗ, tour hướng dẫn một chỗ) đổi sang câu không nêu nhịp.
+- **Giới hạn đã biết.** Shop đã gỡ cấu hình nhưng còn tờ chưa có kết luận: mỗi tờ vẫn được nhận rồi hẹn lại theo nhịp thường, mãi mãi (một lệnh ghi mỗi 12 / 24 giờ, không gọi nhà cung cấp). Một lượt xử lý khoảng một câu nhận 200 dòng mỗi giây; quá quỹ giờ thì dồn sang lượt sau và in "CÒN TỒN". Lỗi tài khoản nhà cung cấp chỉ in log, chưa báo chủ shop (lát 14).
+
+*Đưa lên hai lần.* Lần một: migration + mã, mặc định `legacy` (vòng cũ vẫn chạy; mọi chỗ ghi mã tra cứu bắt đầu đặt giờ hỏi; vòng cũ không dọn cột này, vòng mới gặp dòng hỏng / đã hủy còn sót giờ hỏi thì tự gỡ). Lần hai: đổi `DEFAULT_INVOICE_CQT_MODE` sang `follow`. Đường lui: `INVOICE_CQT_MODE=legacy` ở worker.
+
+*Đã kiểm (03/10 tối).*
+- `invoice-cqt-follow.test.ts` 22 ca không cần database: luật giờ hỏi, kế hoạch áp kết quả, công tắc, adapter MISA theo lô với hàm gọi MISA giả đúng hành vi sandbox (tách lô theo ký hiệu từng tờ, hỏi lại loại ngược lại, mã không tồn tại, tờ đã xóa, lỗi mạng).
+- tsc backend + frontend sạch.
+- Adapter MISA `checkStatuses` gọi sandbox thật (bài S7 của `misa-status-batch-probe.ts`): tờ 00000050 khai đúng ký hiệu, khai LỆCH ký hiệu (có mã) và khai thiếu ký hiệu đều ra đúng một dòng "đã phát hành, cơ quan thuế tiếp nhận"; mã không tồn tại không có dòng; 86–118 ms mỗi lượt.
+
+*Chưa kiểm.*
+- `invoice-cqt-follow-db.test.ts` (17 ca trên database dev) ĐÃ VIẾT nhưng CHƯA CHẠY: công cụ chặn em áp migration lên database dev, chờ anh Trung chạy lệnh. Cả bộ test cũng chưa chạy lại vì cùng lý do (client Prisma đã sinh lại có cột mới, database dev chưa có).
+- Ba chỗ đổi chữ trên giao diện chưa soi trình duyệt.
+- Shop thật trên prod (chưa shop nào có cấu hình hóa đơn).
 
 ## 5. Rủi ro và điều em không cam kết
 

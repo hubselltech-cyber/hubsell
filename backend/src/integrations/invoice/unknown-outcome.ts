@@ -29,6 +29,7 @@
 
 import { InvoiceLogStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { cqtNextOnWrite } from "./cqt-follow";
 import { getProviderEntry } from "./provider-registry";
 import type { InvoiceProvider, ReferenceLookup } from "./types";
 
@@ -123,7 +124,13 @@ async function conclude(
     const updated = await tx.invoiceLog.updateMany({
       where: stillUnknown(log.id),
       // cqtCheckedAt về null: tờ vừa nối số được vòng hỏi trạng thái cơ quan thuế xét ngay lượt kế.
-      data: { status: to, ...data, cqtCheckedAt: null },
+      // cqtNextCheckAt (lát 12): giờ hỏi tính từ lúc gửi lượt đó, tức thường là đã tới hạn.
+      data: {
+        status: to,
+        ...data,
+        cqtCheckedAt: null,
+        cqtNextCheckAt: cqtNextOnWrite(to, data.transactionId, log.createdAt),
+      },
     });
     if (updated.count === 0) return false;
     await tx.invoiceStatusHistory.create({
@@ -227,7 +234,12 @@ export async function recheckUnknownLog(log: UnknownLog, provider: InvoiceProvid
     // Ghi mã tra cứu: dòng rời vòng quét này, vòng hỏi trạng thái (invoice-status-sync) theo tiếp.
     await prisma.invoiceLog.updateMany({
       where: stillUnknown(log.id),
-      data: { transactionId: found.transactionId, invoiceNo: found.invoiceNo, cqtCheckedAt: null },
+      data: {
+        transactionId: found.transactionId,
+        invoiceNo: found.invoiceNo,
+        cqtCheckedAt: null,
+        cqtNextCheckAt: cqtNextOnWrite(InvoiceLogStatus.PENDING, found.transactionId, log.createdAt),
+      },
     });
     return { kind: "KEPT", lookupFailed: false, accountProblem: false, reason: `${l} đang giữ tờ này nhưng chưa phát hành xong` };
   }

@@ -1153,6 +1153,12 @@ model InvoiceLog {
   /// NULL = chưa kiểm lần nào.
   cqtStatus    String?
   cqtCheckedAt DateTime? // lần cuối worker hỏi NCC — nhịp kiểm lại tính từ đây
+  /// GIỜ HỎI TRẠNG THÁI KẾ TIẾP (hóa đơn bước 5 lát 12, 03/10/2026). NULL = không cần
+  /// hỏi nữa (đã có kết luận, tờ hỏng / đã hủy, hoặc chưa có mã tra cứu). Mọi chỗ ghi
+  /// mã tra cứu vào dòng phải đặt cột này qua cqtNextOnWrite (integrations/invoice/
+  /// cqt-follow.ts); vòng quét workers/invoice-cqt-follow.ts NHẬN dòng bằng cách dời
+  /// cột này về sau trước khi hỏi, nên hai worker không hỏi trùng một tờ.
+  cqtNextCheckAt DateTime?
 
   /// Snapshot NGƯỜI MUA lúc phát hành — bảng kê bán ra phải tự đủ dữ liệu
   /// (Order.buyerInvoiceInfo bị cron BVDLCN xóa sau 30/90 ngày).
@@ -1186,6 +1192,10 @@ model InvoiceLog {
   // Chỉ mục RIÊNG PHẦN cho vòng quét tờ chưa rõ kết quả (workers/invoice-unknown-recheck.ts),
   // cũng chỉ có trong SQL migration 20261003001000_invoice_unknown_pending_idx:
   //   InvoiceLog_unknown_pending_idx (createdAt) WHERE status = 'PENDING' AND transactionId IS NULL
+  //
+  // Chỉ mục RIÊNG PHẦN cho vòng hỏi trạng thái cơ quan thuế (workers/invoice-cqt-follow.ts),
+  // chỉ có trong SQL migration 20261003190000_invoice_cqt_next_check:
+  //   InvoiceLog_cqt_due_idx (cqtNextCheckAt) WHERE cqtNextCheckAt IS NOT NULL
 }
 
 /// LÀN TỰ PHÁT HÀNH HÓA ĐƠN THEO SHOP (hóa đơn bước 5 lát 8, 03/10/2026) — một dòng

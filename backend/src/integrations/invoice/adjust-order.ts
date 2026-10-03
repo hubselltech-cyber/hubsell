@@ -30,6 +30,7 @@ import {
   type AdjustBlock,
   type AdjustmentReferencePlan,
 } from "./adjust-precheck";
+import { cqtNextOnWrite } from "./cqt-follow";
 import { getInvoiceProvider } from "./index";
 import {
   allocateOrderDiscount,
@@ -171,6 +172,7 @@ async function recoverIssuedAdjustment(
           transactionId: plan.transactionId,
           errorMessage: null,
           issuedAt: log.createdAt,
+          cqtNextCheckAt: cqtNextOnWrite(InvoiceLogStatus.ISSUED, plan.transactionId, log.createdAt),
         },
       }),
       prisma.invoiceStatusHistory.create({
@@ -427,6 +429,7 @@ export async function issueAdjustmentForOrder(
         vatAmount: result.vatAmount ?? vatTotal,
         errorMessage,
         issuedAt: issued ? new Date() : null,
+        cqtNextCheckAt: cqtNextOnWrite(finalStatus, result.transactionId, new Date()),
       },
     }),
     prisma.invoiceStatusHistory.create({

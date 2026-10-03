@@ -24,6 +24,7 @@
 
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { cqtNextOnWrite } from "./cqt-follow";
 import { buildInvoiceLines } from "./issue-order";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
 import {
@@ -147,6 +148,8 @@ export async function processMisaWebhookEvent(
       data: {
         status: finalStatus,
         transactionId,
+        // Hẹn giờ hỏi trạng thái cơ quan thuế (lát 12); tờ hỏng / đã hủy thì thôi hỏi.
+        cqtNextCheckAt: cqtNextOnWrite(finalStatus, transactionId, new Date()),
         // Số hóa đơn ghi khi MISA gửi kèm (kể cả case TAX_MISMATCH — vẫn là số
         // NCC đã cấp, giữ để tra soát); sự kiện hủy có thể không gửi.
         ...(invoiceNo ? { invoiceNo } : {}),

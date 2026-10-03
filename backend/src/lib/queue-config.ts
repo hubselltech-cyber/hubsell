@@ -322,6 +322,24 @@ export function invoiceAutoAdjustMode(env: NodeJS.ProcessEnv = process.env): Inv
 }
 
 /**
+ * ĐƯỜNG HỎI TRẠNG THÁI HÓA ĐƠN VỚI NHÀ CUNG CẤP / CƠ QUAN THUẾ (bước 5 lát 12, 03/10/2026):
+ *   · legacy — vòng 12 giờ gọi thẳng MISA, 200 tờ mỗi shop, bỏ tờ quá 30 ngày
+ *     (workers/invoice-status-sync.ts).
+ *   · follow — vòng quét theo cột cqtNextCheckAt, hỏi qua adapter, theo tới khi có kết
+ *     luận (workers/invoice-cqt-follow.ts).
+ * Đưa lên HAI LẦN: lần một mặc định legacy (cột + chỉ mục lên trước, mọi chỗ ghi mã tra
+ * cứu bắt đầu đặt giờ hỏi — bản cũ đang chạy lúc deploy chưa biết đặt), lần hai đổi mặc
+ * định sang follow. Đường lui: INVOICE_CQT_MODE=legacy ở worker.
+ */
+export type InvoiceCqtMode = "follow" | "legacy";
+export const DEFAULT_INVOICE_CQT_MODE: InvoiceCqtMode = "legacy";
+
+export function invoiceCqtMode(env: NodeJS.ProcessEnv = process.env): InvoiceCqtMode {
+  const raw = (env.INVOICE_CQT_MODE ?? "").trim().toLowerCase();
+  return raw === "follow" || raw === "legacy" ? raw : DEFAULT_INVOICE_CQT_MODE;
+}
+
+/**
  * Nhịp lưới quét yêu cầu bấm tay tới hạn, giây. Mặc định 5 (docs 4.6 B — bằng lưới
  * quét đẩy tồn): tín hiệu pg-boss không tới thì chủ shop chờ thêm nhiều nhất chừng
  * này. Câu quét đi theo chỉ mục riêng phần chỉ chứa dòng chờ. Đổi bằng

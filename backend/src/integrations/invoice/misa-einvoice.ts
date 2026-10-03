@@ -622,10 +622,12 @@ export interface MisaInvoiceStatusItem {
 export async function getInvoiceStatuses(
   transactionIds: string[],
   cfg?: StandardInvoiceConfig,
-  by: "transactionId" | "refId" = "transactionId"
+  by: "transactionId" | "refId" = "transactionId",
+  /** Khai thẳng loại ký hiệu (có mã / không mã) thay vì suy từ cfg — vòng hỏi trạng thái theo lô dùng. */
+  withCodeOverride?: boolean
 ): Promise<MisaInvoiceStatusItem[]> {
   // Ký hiệu ký tự 2 = C → hóa đơn CÓ MÃ CQT (đổi cách đọc SendTaxStatus).
-  const withCode = cfg?.invoiceSeries?.charAt(1) === "C";
+  const withCode = withCodeOverride ?? cfg?.invoiceSeries?.charAt(1) === "C";
   const raw = await misaPost(
     ENDPOINTS.status,
     {

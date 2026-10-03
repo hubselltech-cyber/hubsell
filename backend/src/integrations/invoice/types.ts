@@ -12,6 +12,8 @@
 
 import type { InvoiceLogStatus } from "@prisma/client";
 
+import type { CqtStatus } from "./cqt-status";
+
 /**
  * Một dòng hàng hóa trên hóa đơn.
  *
@@ -216,6 +218,40 @@ export type ReferenceLookup =
       accountProblem: boolean;
     };
 
+/** Một tờ cần hỏi trạng thái: mã tra cứu NCC cấp + ký hiệu lúc phát hành (nếu Hubsell có lưu). */
+export interface StatusQuery {
+  transactionId: string;
+  invoiceSeries: string | null;
+}
+
+/** Trạng thái ĐÃ CHUẨN HÓA của một tờ phía NCC — lõi không đọc bảng mã riêng của NCC nào. */
+export interface ProviderInvoiceStatus {
+  transactionId: string;
+  /** NCC đã phát hành xong tờ này. */
+  issued: boolean;
+  /** Tờ đã bị xóa bỏ / hủy phía NCC. */
+  deleted: boolean;
+  /** Số hóa đơn NCC trả kèm (nếu có). */
+  invoiceNo: string | null;
+  /** Kết quả phía cơ quan thuế; null = NCC không trả hoặc trả mã lạ (giữ giá trị cũ). */
+  taxStatus: CqtStatus | null;
+}
+
+/**
+ * Kết quả hỏi trạng thái MỘT LÔ. Tờ không có mặt trong `found` là NCC KHÔNG TRẢ DÒNG
+ * cho mã đó — chưa phải kết luận (MISA sandbox 03/10/2026: mã không tồn tại và mã bị
+ * hỏi sai loại ký hiệu đều bị bỏ qua im lặng), lõi chỉ ghi nhận đã hỏi rồi hỏi lại sau.
+ */
+export type StatusBatchResult =
+  | { ok: true; found: Map<string, ProviderInvoiceStatus> }
+  | {
+      ok: false;
+      /** Vì sao không hỏi được — câu đã viết cho người đọc khi adapter dịch được lỗi. */
+      message: string;
+      /** true = hỏng ở tài khoản / cấu hình của shop; false = sự cố tạm. */
+      accountProblem: boolean;
+    };
+
 /**
  * Interface mọi adapter NCC hóa đơn phải cài đủ.
  *
@@ -244,4 +280,12 @@ export interface InvoiceProvider {
    * Bắt buộc có khi capabilities.findByReference.supported = true.
    */
   findByReference?(reference: string): Promise<ReferenceLookup>;
+
+  /**
+   * Hỏi trạng thái một lô tờ (phát hành xong chưa, đã xóa chưa, cơ quan thuế nói gì).
+   * Nơi gọi bảo đảm lô không quá capabilities.statusBatchSize. CHỈ ĐỌC phía NCC. Không
+   * ném lỗi: hỏi không được trả `ok: false`. Adapter không có phương thức này thì vòng
+   * hỏi trạng thái bỏ qua tờ của NCC đó (không có cách hỏi).
+   */
+  checkStatuses?(items: StatusQuery[]): Promise<StatusBatchResult>;
 }
