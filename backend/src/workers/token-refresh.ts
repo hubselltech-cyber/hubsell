@@ -23,6 +23,7 @@ import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { getValidAccessToken as getValidTiktokAccessToken } from "../integrations/tiktok/service";
 import { refreshExpiringHubsellAdsTokens } from "../integrations/hubsell-ads";
+import { refreshShopeeAuthExpiry } from "../integrations/shopee/auth-expiry";
 
 const DEFAULT_INTERVAL_MIN = 30;
 /** Coi là "sắp hết hạn" khi access_token còn dưới ngưỡng này. */
@@ -67,6 +68,9 @@ export async function runOnce(): Promise<void> {
       expiringSoonMs: EXPIRING_SOON_MS,
       staggerMs: () => STAGGER_BASE_MS + Math.random() * STAGGER_JITTER_MS,
     });
+    // Ngày hết hạn ủy quyền Shopee (hiện trên thẻ gian) — mỗi gian hỏi một lần mỗi ngày,
+    // sau lượt làm mới để dùng luôn token vừa mới.
+    await refreshShopeeAuthExpiry();
   } catch (err) {
     console.error("[Token-refresh] Lỗi vòng quét:", err);
   } finally {

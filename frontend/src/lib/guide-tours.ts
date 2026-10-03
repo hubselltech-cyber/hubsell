@@ -84,7 +84,7 @@ export const CHANNELS_TOUR: GuideTour = {
     {
       img: `${OB}/onboard-shopee-confirm.png`,
       title: "Xác nhận uỷ quyền cho Hubsell",
-      desc: "Shopee liệt kê các quyền Hubsell cần (sản phẩm, đơn hàng, thanh toán, khuyến mãi) — bấm “Confirm Authorization” để hoàn tất kết nối.",
+      desc: "Shopee liệt kê các quyền Hubsell cần (sản phẩm, đơn hàng, thanh toán, khuyến mãi) — nếu Shopee cho chọn thời hạn ủy quyền thì chọn mức dài nhất (hết hạn là Shopee ngừng đồng bộ, phải ủy quyền lại), rồi bấm “Confirm Authorization” để hoàn tất kết nối.",
       target: { x: 24.86, y: 53.13, w: 23.33, h: 4.79 },
       zoom: 1.8,
     },

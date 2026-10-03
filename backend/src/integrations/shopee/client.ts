@@ -122,6 +122,19 @@ export interface ShopeeShopInfo extends ShopeeEnvelope {
   shop_name?: string;
   region?: string;
   status?: string;
+  /** Thời điểm shop ủy quyền cho app (giây Unix). */
+  auth_time?: number;
+  /** Thời điểm quyền của shop với app HẾT HẠN (giây Unix) — do chủ shop đặt lúc ủy quyền. */
+  expire_time?: number;
+}
+
+/**
+ * Ngày hết hạn ủy quyền từ get_shop_info. null khi Shopee không trả trường này hoặc
+ * trả giá trị không dùng được — nơi gọi khi đó coi là "chưa biết", không đoán.
+ */
+export function shopAuthExpireAt(info: Pick<ShopeeShopInfo, "expire_time">): Date | null {
+  const sec = Number(info.expire_time);
+  return Number.isFinite(sec) && sec > 0 ? new Date(sec * 1000) : null;
 }
 
 function ensureOk<T extends ShopeeEnvelope>(json: T, ctx: string): T {

@@ -143,6 +143,9 @@ export async function handleHubsellAdsCallback(
     // Number(): expire_in là GIÂY, phòng API trả chuỗi.
     accessTokenExpireAt: new Date(now + Number(token.expire_in ?? 0) * 1000),
     refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
+    // Ủy quyền mới = thời hạn mới: xóa ngày cũ, lượt hỏi hằng ngày (shopee/auth-expiry.ts) lấy lại.
+    authExpireAt: null,
+    authExpireCheckedAt: null,
     status: "ACTIVE",
     disconnectedAt: null,
   };

@@ -371,6 +371,14 @@ model Channel {
   accessTokenExpireAt  DateTime?
   /// Thời điểm refresh_token hết hạn — quá hạn thì buộc chủ shop uỷ quyền lại
   refreshTokenExpireAt DateTime?
+  /// NGÀY HẾT HẠN ỦY QUYỀN phía sàn (03/10/2026, Shopee: expire_time của get_shop_info) —
+  /// thời hạn chủ shop đặt trên trang ủy quyền của Shopee; tới ngày này Shopee từ chối
+  /// làm mới token (shop_access_expired) dù refresh_token còn hạn. Thẻ gian ở trang
+  /// Kênh bán hiện ngày này. NULL = chưa hỏi được / sàn không trả.
+  authExpireAt         DateTime?
+  /// Lần cuối hỏi sàn ngày hết hạn ủy quyền — mỗi gian hỏi lại mỗi ngày một lần
+  /// (integrations/shopee/auth-expiry.ts). Nối lại gian thì đặt về NULL.
+  authExpireCheckedAt  DateTime?
   /// shop_cipher của TikTok Shop — BẮT BUỘC gửi kèm mọi request API 202309 trở đi
   shopCipher           String?
   status               String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
@@ -3318,6 +3326,9 @@ model ChannelAppAuth {
   accessTokenExpireAt  DateTime
   /// refresh_token Shopee sống 30 ngày kể từ lần rotate gần nhất.
   refreshTokenExpireAt DateTime
+  /// Ngày hết hạn ủy quyền của shop với app này (xem Channel.authExpireAt) + lần hỏi cuối.
+  authExpireAt         DateTime?
+  authExpireCheckedAt  DateTime?
   /// ACTIVE | DISCONNECTED (refresh_token chết / sàn thu hồi → cần ủy quyền lại)
   status               String         @default("ACTIVE")
   disconnectedAt       DateTime?

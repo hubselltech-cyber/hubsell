@@ -32,6 +32,7 @@ import {
   getOrderDetail,
   getOrderList,
   getShopInfo,
+  shopAuthExpireAt,
   getTrackingNumber,
   refreshAccessToken,
   shopeeChannelSku,
@@ -305,9 +306,15 @@ export async function handleShopeeCallback(
 
   // Lấy tên gian để hiển thị — lỗi ở bước này không được làm hỏng cả kết nối.
   let externalShopName: string | null = null;
+  // Ngày hết hạn ủy quyền đi cùng câu trả lời đó; không lấy được thì để trống, lượt hỏi
+  // hằng ngày (auth-expiry.ts) lấy sau.
+  let authExpireAt: Date | null = null;
+  let authExpireCheckedAt: Date | null = null;
   try {
     const info = await getShopInfo(token.access_token, shopId);
     externalShopName = info.shop_name?.trim() || null;
+    authExpireAt = shopAuthExpireAt(info);
+    authExpireCheckedAt = new Date();
   } catch {
     externalShopName = null;
   }
@@ -320,6 +327,8 @@ export async function handleShopeeCallback(
     accessTokenExpireAt: new Date(now + Number(token.expire_in ?? 0) * 1000),
     refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
     externalShopName,
+    authExpireAt,
+    authExpireCheckedAt,
     status: "ACTIVE",
     disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
   };

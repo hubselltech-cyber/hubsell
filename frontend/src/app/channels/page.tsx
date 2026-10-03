@@ -158,6 +158,20 @@ function lazadaCycleEnd(c: Channel): Date | null {
 /** Trong vòng này thì tô vàng + hiện nút Gia hạn trên thẻ gian Lazada. */
 const LAZADA_RENEW_SOON_DAYS = 30;
 
+/** Còn từ chừng này ngày trở xuống thì dòng "Ủy quyền Shopee đến…" tô vàng + hiện nút Ủy quyền lại (mức tự chọn). */
+const SHOPEE_AUTH_SOON_DAYS = 7;
+
+/**
+ * Gian Shopee đã ngắt VÌ HẾT HẠN ỦY QUYỀN phía Shopee (không phải Hubsell lỗi, không
+ * phải chủ shop bấm ngắt): Shopee trả mã shop_access_expired ở lượt đồng bộ cuối, hoặc
+ * ngày hết hạn Shopee báo đã qua.
+ */
+function shopeeAuthExpired(c: Channel): boolean {
+  if (c.channelName !== "SHOPEE" || c.status === "ACTIVE") return false;
+  if (c.lastSyncError?.includes("shop_access_expired")) return true;
+  return Boolean(c.authExpireAt && new Date(c.authExpireAt).getTime() < Date.now());
+}
+
 // ---------- Dialog: Kết nối gian hàng ----------
 
 function ConnectDialog({
@@ -1099,7 +1113,11 @@ export default function ChannelsPage() {
                                     active ? "bg-emerald-500" : "bg-zinc-300"
                                   )}
                                 />
-                                {active ? "Đang hoạt động" : "Đã ngắt kết nối"}
+                                {active
+                                  ? "Đang hoạt động"
+                                  : shopeeAuthExpired(c)
+                                    ? "Hết hạn ủy quyền"
+                                    : "Đã ngắt kết nối"}
                               </span>
                               {/* Gian vừa nối: worker đang kéo trọn 3 tháng (BE hạ cờ khi xong) */}
                               {c.historyBackfillPending && (
@@ -1169,6 +1187,52 @@ export default function ChannelsPage() {
                                       >
                                         Gia hạn <ExternalLink className="size-3" />
                                       </a>
+                                    )}
+                                  </p>
+                                );
+                              })()}
+                            {/* Shopee: quyền của shop với app có THỜI HẠN do chủ shop đặt trên
+                                trang ủy quyền của Shopee. Hiện ngày hết hạn để chủ shop biết
+                                trước; gian đã ngắt vì hết hạn thì nói rõ lý do (không phải
+                                Hubsell lỗi) — nút Kết nối lại nằm ngay bên phải. */}
+                            {c.channelName === "SHOPEE" &&
+                              c.apiConnected &&
+                              (() => {
+                                const end = c.authExpireAt ? new Date(c.authExpireAt) : null;
+                                const endText = end?.toLocaleDateString("vi-VN");
+                                if (!active) {
+                                  if (!shopeeAuthExpired(c)) return null;
+                                  return (
+                                    <p className={cn(TEXT_SUB, "flex items-center gap-x-1.5 text-amber-600")}>
+                                      <CalendarClock className="size-3 shrink-0" />
+                                      {endText
+                                        ? `Shopee báo hết hạn ủy quyền ${endText}, bấm Kết nối lại`
+                                        : "Shopee báo hết hạn ủy quyền, bấm Kết nối lại"}
+                                    </p>
+                                  );
+                                }
+                                if (!end) return null;
+                                const daysLeft = Math.ceil((end.getTime() - Date.now()) / 86_400_000);
+                                const soon = daysLeft <= SHOPEE_AUTH_SOON_DAYS;
+                                return (
+                                  <p
+                                    className={cn(
+                                      TEXT_SUB,
+                                      "flex flex-wrap items-center gap-x-1.5",
+                                      soon && "text-amber-600"
+                                    )}
+                                    title="Mỗi lần ủy quyền trên Shopee có một thời hạn. Hết hạn thì Shopee ngừng cho Hubsell đồng bộ gian này cho tới khi ủy quyền lại."
+                                  >
+                                    <CalendarClock className="size-3 shrink-0" />
+                                    {`Ủy quyền Shopee đến ${endText}`}
+                                    {soon && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleReconnect(c)}
+                                        className="font-medium underline underline-offset-2"
+                                      >
+                                        Ủy quyền lại
+                                      </button>
                                     )}
                                   </p>
                                 );

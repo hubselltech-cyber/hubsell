@@ -2617,6 +2617,13 @@ export interface Channel {
   matchedProductCount?: number;
   /** true = gian vừa nối, worker đang kéo trọn 3 tháng đơn + đối soát (BE hạ cờ khi xong). */
   historyBackfillPending?: boolean;
+  /**
+   * Ngày HẾT HẠN ỦY QUYỀN phía sàn (ISO; Shopee: thời hạn chủ shop đặt trên trang ủy
+   * quyền). null = chưa hỏi được / sàn không trả.
+   */
+  authExpireAt?: string | null;
+  /** Lỗi của lần đồng bộ đơn gần nhất (null = lần gần nhất thành công). */
+  lastSyncError?: string | null;
 }
 
 /** TẦNG 2 — một sản phẩm thô kéo từ gian hàng về. */
