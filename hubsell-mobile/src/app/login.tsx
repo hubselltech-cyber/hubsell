@@ -143,6 +143,19 @@ export default function LoginScreen() {
               <Text className="text-sm font-semibold text-white">Đăng nhập</Text>
             )}
           </Pressable>
+
+          {/* Khu đăng ký — chủ shop mới tải app về phải tạo được tài khoản
+              ngay trên điện thoại, không bắt mở web (anh Trung 03/10). */}
+          <View className="mt-4 flex-row items-center justify-center gap-1">
+            <Text className="text-xs text-slate-500 dark:text-slate-400">
+              Chưa có tài khoản?
+            </Text>
+            <Pressable onPress={() => router.push("/register")} hitSlop={8}>
+              <Text className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                Đăng ký miễn phí
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -5,6 +5,17 @@
 
 ---
 
+## Phiên 03/10/2026 (chiều – tối) — MOBILE sau khi anh Trung dùng thử APK: đăng ký, Tổng quan khớp web + tự làm mới, nút kho rõ, Thống kê bốc hàng theo ý kho (anh Trung: "Ok làm đi em" — code trên nhánh `claude/friendly-carson-blmjwx`, ⏳ CHỜ ANH gộp vào master để Render deploy backend rồi build lại APK bằng EAS)
+
+Chạy mô phỏng trên cloud: backend prod (Render) bị chặn mạng nên dựng Postgres + backend local, seed "Sunny Closet" (`scripts/seed-landing-demo.ts`); `prisma/seed.ts` đã lệch schema (productMapping, thiếu shopName) — chưa sửa, đã ghi thẻ việc riêng. Proxy dev giả lập web nay chọn http/https theo `HUBSELL_API`.
+- **Đăng ký trên app** (trước chỉ có đăng nhập): `src/app/register.tsx` cùng bộ trường + luật với form web (họ tên, email, tên đăng nhập tự gợi ý + kiểm trùng khi gõ, mã vùng chọn từ `lib/countries.ts` chép từ web, SĐT, mật khẩu ×2, mã giới thiệu, tick Điều khoản mở trình duyệt trong app) → POST /api/auth/register, vào thẳng Trang chủ. Shop mới chưa có gian → thẻ "Chưa có gian hàng nào" + nút mở Kênh bán trên web (thay câu lỗi 409).
+- **Tổng quan lệch web + không real-time:** mobile đọc `/api/finance/realized-pnl` (lãi/lỗ THỰC HIỆN) trong khi Tổng quan web đọc `/api/analytics` → đổi sang `fetchOverview` → `/api/analytics` cùng kỳ hôm nay; chuẩn hóa y web: 4 thẻ KPI (Doanh thu hôm nay ▲/▼, Đơn hàng + SP ▲/▼, Tổng chi phí % doanh thu, Lợi nhuận dự kiến + biên), phễu vận hành 6 bước đúng nhãn PipelineStrip, tỷ trọng kênh theo DOANH THU (Shopee/TikTok/Lazada, 3 dòng như LegendTile), sparkline lãi 14 ngày. `lib/useAutoRefresh.ts`: tải nền khi app quay lại foreground / tab focus / mỗi 60s (Tổng quan + Tài chính). Đối chiếu từng số với API trên demo: khớp.
+- **Nút kho mờ:** class `bg-emerald-50 dark:bg-emerald-500/100` (thay thế hàng loạt hỏng — xanh nhạt + chữ trắng ở chế độ sáng) ở Quét nhận, Cấp quyền Camera, badge/nút gửi Tin nhắn, nhãn Hỏa tốc. `components/ActionButton.tsx` (primary/danger/neutral, ≥56px, tương phản cao 2 theme); bảng kết quả quét: icon to trong vòng màu, cảnh báo hộp vàng, nút "Quét đơn tiếp theo" full-width. Sửa hook sau return sớm ở `(warehouse)/_layout.tsx` (React cảnh "order of Hooks").
+- **Thống kê bốc hàng:** backend `/api/orders/stats` chỉ đếm CHỜ XỬ LÝ (đổi từ PENDING+PROCESSED chốt 13/08 — kho cần biết hàng VỪA VỀ) + bảng `byCarrier` (EXPRESS đứng đầu, rồi theo enum Carrier); mobile: "AO-SOMI-XL × 9" (số lượng cạnh mã), chip thứ ba "Theo ĐVVC". Endpoint chỉ mobile dùng.
+- Kiểm: tsc BE + mobile sạch, lint không thêm lỗi (các `set-state-in-effect` có sẵn), bộ test backend chạy trước khi bàn giao. Commit `c373b3e → 9c5beb2` + commit docs này. **Thứ tự lên prod:** gộp master (Render tự deploy backend) → `eas build -p android --profile preview` → cài APK. App cũ gọi backend mới vẫn chạy; app mới gọi backend cũ thì tab ĐVVC báo "Backend chưa hỗ trợ".
+
+---
+
 ## Phiên 24/09/2026 (đêm, 6) — XÁC MINH SỐNG 3 lệnh ghi Ads Shopee + GMS dời ra TAB riêng (anh Trung: "Em cứ xác minh đi. GMS đặt ở đâu? Tính kỹ không rối")
 
 - **Xác minh sống trên ANO (chỉ đọc Sổ + bắn lệnh nhỏ đảo lại):** tạo chiến dịch = chính anh bấm 21:58 (campaign 201358573 chạy thật, sổ SUCCESS); change_roas_target 12,2 → 12,3 → 12,2 OK; change_budget 100.000 → 101.000 → 100.000 OK trên campaign đang chạy, campaign đã tạm dừng cũ trả error_server (chỉ đổi ngân sách campaign đang chạy — khớp executor). write-probe nhận thêm budget/roasTarget.

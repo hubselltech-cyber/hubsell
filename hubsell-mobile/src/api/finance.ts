@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   AnalyticsResponse,
   CashFlowResponse,
+  OverviewAnalytics,
   RealizedPnlResponse,
 } from "../types/api";
 
@@ -20,6 +21,15 @@ export function fetchPnlSummary(from: string, to: string, channelName?: string) 
   return api<RealizedPnlResponse>(
     `/api/finance/realized-pnl?page=1&pageSize=20&${reportQuery(from, to, channelName)}`
   );
+}
+
+/**
+ * TỔNG QUAN — đúng endpoint của Tổng quan web (frontend fetchAnalytics →
+ * /api/analytics): doanh thu, số đơn phát sinh, lợi nhuận dự kiến, kỳ trước,
+ * trend 14 ngày, đơn theo gian. Backend đòi shop đã có gian hàng (409 nếu chưa).
+ */
+export function fetchOverview(from: string, to: string, channelName?: string) {
+  return api<OverviewAnalytics>(`/api/analytics?${reportQuery(from, to, channelName)}`);
 }
 
 /** Thác nước 4 cột: Giá trị SP → Khấu trừ sàn → Doanh thu → Chi phí → LN. */

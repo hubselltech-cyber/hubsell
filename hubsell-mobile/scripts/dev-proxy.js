@@ -13,6 +13,8 @@ const https = require("https");
 
 const TARGET = process.env.HUBSELL_API ?? "https://hubsell-backend-sg.onrender.com";
 const PORT = 8099;
+// Đích http:// (backend local, HUBSELL_API=http://localhost:4000) thì dùng module http.
+const upstream = TARGET.startsWith("http://") ? http : https;
 
 http
   .createServer((req, res) => {
@@ -30,7 +32,7 @@ http
     const headers = {};
     if (req.headers["content-type"]) headers["content-type"] = req.headers["content-type"];
     if (req.headers.authorization) headers.authorization = req.headers.authorization;
-    const proxyReq = https.request(
+    const proxyReq = upstream.request(
       url,
       { method: req.method, headers },
       (proxyRes) => {

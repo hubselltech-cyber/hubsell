@@ -151,7 +151,7 @@ export default function MessagesScreen() {
             {item.lastMessage || "…"}
           </Text>
           {item.unread ? (
-            <View className="min-w-[18px] items-center rounded-full bg-emerald-50 dark:bg-emerald-500/100 px-1.5 py-0.5">
+            <View className="min-w-[18px] items-center rounded-full bg-emerald-500 px-1.5 py-0.5">
               <Text className="text-[10px] font-bold text-white">
                 {item.unread > 99 ? "99+" : item.unread}
               </Text>
@@ -198,7 +198,7 @@ export default function MessagesScreen() {
                 {CHANNEL_LABEL[ch]}
               </Text>
               {unread ? (
-                <View className="min-w-[16px] items-center rounded-full bg-emerald-50 dark:bg-emerald-500/100 px-1">
+                <View className="min-w-[16px] items-center rounded-full bg-emerald-500 px-1">
                   <Text className="text-[9px] font-bold text-white">
                     {unread > 99 ? "99+" : unread}
                   </Text>
@@ -569,7 +569,7 @@ function ChatView({
         />
         <Pressable
           className={`h-10 w-10 items-center justify-center rounded-full ${
-            text.trim() && !sending ? "bg-emerald-50 dark:bg-emerald-500/100" : "bg-slate-200 dark:bg-slate-700"
+            text.trim() && !sending ? "bg-emerald-600 dark:bg-emerald-500" : "bg-slate-200 dark:bg-slate-700"
           }`}
           onPress={() => void onSend()}
           disabled={!text.trim() || sending}

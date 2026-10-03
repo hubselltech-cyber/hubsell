@@ -17,6 +17,7 @@ import type {
   PnlSummary,
 } from "@/types/api";
 import { RANGE_OPTIONS, rangeFor, type RangeKey } from "@/lib/dates";
+import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { compactMoney, formatMoney } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { StatCard } from "@/components/StatCard";
@@ -81,11 +82,12 @@ export function FinancePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
+  // asRefresh: true = kéo xuống (vòng xoay) · "silent" = tải nền giữ số cũ.
   const load = useCallback(
-    async (rangeKey: RangeKey, channelName: string, asRefresh = false) => {
-      if (asRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError("");
+    async (rangeKey: RangeKey, channelName: string, asRefresh: boolean | "silent" = false) => {
+      if (asRefresh === true) setRefreshing(true);
+      else if (!asRefresh) setLoading(true);
+      if (asRefresh !== "silent") setError("");
       try {
         const { from, to } = rangeFor(rangeKey);
         const [pnl, ana, cash] = await Promise.all([
@@ -97,6 +99,7 @@ export function FinancePage() {
         setAnalytics(ana.breakdown);
         setCashRows(cash.rows);
       } catch (err) {
+        if (asRefresh === "silent") return; // tải nền hỏng thì giữ số cũ
         setError(
           err instanceof ApiError ? err.message : "Có lỗi xảy ra, kéo xuống thử lại"
         );
@@ -111,6 +114,9 @@ export function FinancePage() {
   useEffect(() => {
     void load(range, channel);
   }, [range, channel, load]);
+
+  // Cùng nhịp làm mới nền với Tổng quan (foreground / focus / 60s).
+  useAutoRefresh(() => void load(range, channel, "silent"));
 
   // CƠ CẤU CHI PHÍ GỘP ĐỦ LOẠI (anh Trung 22/08: chỉ giá vốn + ads là chưa đủ
   // để seller thấy loại nào ăn nhiều): trộn các loại SÀN KHẤU TRỪ (phí nền
