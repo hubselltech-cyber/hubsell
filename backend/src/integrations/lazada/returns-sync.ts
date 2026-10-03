@@ -21,10 +21,8 @@ import type { Channel } from "@prisma/client";
 import { ReturnSolution, ReturnStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { notify } from "../../services/notifications";
-import {
-  maybeAutoAdjustOnPlatformReturn,
-  PLATFORM_RETURN_DONE_STATUSES,
-} from "../invoice/adjust-order";
+import { PLATFORM_RETURN_DONE_STATUSES } from "../invoice/adjust-order";
+import { autoAdjustOnPlatformReturn } from "../../services/invoice-requests";
 import {
   getReverseOrders,
   lazadaChannelSku,
@@ -323,6 +321,14 @@ export async function syncLazadaReturns(
     if (plan.unflagged) result.unflagged++;
     if (plan.trackingSaved) result.trackingSaved++;
 
+    // Lát 11 (03/10/2026): trạng thái hoàn sắp CHUYỂN VÀO nhóm đã chốt → ghi yêu cầu điều
+    // chỉnh tự động TRƯỚC khi ghi đơn (ghi-trước + chỉ mục duy nhất: tiến trình chết giữa
+    // chừng thì lượt đồng bộ sau thấy lại đúng lần chuyển này, không mất và không trùng).
+    const returnJustDone =
+      PLATFORM_RETURN_DONE_STATUSES.has(
+        (plan.data.platformReturnStatus !== undefined ? plan.data.platformReturnStatus : order.platformReturnStatus) ?? ""
+      ) && !PLATFORM_RETURN_DONE_STATUSES.has(order.platformReturnStatus ?? "");
+    if (returnJustDone) await autoAdjustOnPlatformReturn(channel.userId, order.id, "before");
     if (Object.keys(plan.data).length > 0) {
       await prisma.order.update({ where: { id: order.id }, data: plan.data });
     }
@@ -354,7 +360,7 @@ export async function syncLazadaReturns(
         PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
         !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
       ) {
-        maybeAutoAdjustOnPlatformReturn(channel.userId, order.id);
+        await autoAdjustOnPlatformReturn(channel.userId, order.id, "after");
       }
     }
 

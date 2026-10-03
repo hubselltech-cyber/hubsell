@@ -449,7 +449,10 @@ export async function issueAdjustmentForOrder(
     ok: issued,
     httpStatus: issued ? 201 : 502,
     error: issued ? undefined : (errorMessage ?? "NCC từ chối phát hành hóa đơn điều chỉnh"),
-    errorCode: keepPending ? OUTCOME_UNKNOWN_CODE : undefined,
+    // Mã lỗi + tầm lỗi của nhà cung cấp (lát 11): làn dùng để biết lỗi nào đáng thử lại
+    // (TRANSIENT) và lỗi nào là của tài khoản. Trước lát 11 hai trường này bị bỏ rơi.
+    errorCode: issued ? undefined : keepPending ? OUTCOME_UNKNOWN_CODE : result.errorCode,
+    errorScope: issued ? undefined : result.errorScope,
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
     pauseBeforeNextMs: publishGapOf(provider),
     log: {

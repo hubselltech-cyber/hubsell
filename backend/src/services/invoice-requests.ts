@@ -27,11 +27,19 @@ import { randomUUID } from "node:crypto";
 
 import { InvoiceLogStatus, Prisma, ShippingStatus } from "@prisma/client";
 
-import { issueAdjustmentForOrder, type AdjustmentScope } from "../integrations/invoice/adjust-order";
+import {
+  decideScopeFromPlatformReturn,
+  issueAdjustmentForOrder,
+  maybeAutoAdjustOnPlatformReturn,
+  PLATFORM_RETURN_DONE_STATUSES,
+  type AdjustmentScope,
+} from "../integrations/invoice/adjust-order";
+import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import { issueInvoiceForOrder, type IssueOrderResult } from "../integrations/invoice/issue-order";
 import { OUTCOME_UNKNOWN_CODE } from "../integrations/invoice/unknown-outcome";
 import { prisma } from "../lib/prisma";
 import { enqueue, isQueueReady, QUEUES } from "../lib/queue";
+import { invoiceAutoAdjustMode } from "../lib/queue-config";
 import { notify } from "./notifications";
 
 /**
@@ -67,6 +75,24 @@ export const REQUEST_KIND_ISSUE = "ISSUE";
 /** Điều chỉnh giảm một hóa đơn đã phát hành (lát 10): targetKey = mã dòng nhật ký hóa đơn gốc. */
 export const REQUEST_KIND_ADJUST = "ADJUST";
 export const REQUEST_SOURCE_MANUAL = "MANUAL";
+/** Điều chỉnh TỰ ĐỘNG khi sàn chốt hoàn (lát 11). */
+export const REQUEST_SOURCE_AUTO_RETURN = "AUTO_RETURN";
+/**
+ * Điều chỉnh tự động chưa làm được vì sàn CHƯA báo số tiền / dòng hàng hoàn, hoặc nhà
+ * cung cấp lỗi tạm: thử lại sau chừng này, tối đa AUTO_ADJUST_MAX_AGE_MS kể từ lúc sàn
+ * chốt hoàn (hai số anh Trung nhận ở mục 4.6 D: 60 phút, 7 ngày).
+ */
+export const AUTO_ADJUST_RETRY_MS = 60 * 60_000;
+export const AUTO_ADJUST_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+/**
+ * Yêu cầu tự động được ghi TRƯỚC lượt cập nhật đơn và GIỮ CHỖ chừng này; đồng bộ hoàn
+ * ghi xong đơn + số lượng trả thì thả cho chạy ngay. Tiến trình chết giữa chừng thì
+ * yêu cầu tự tới hạn sau mốc này — đủ lâu để lượt đồng bộ kế ghi nốt số lượng trả
+ * (em tự chọn 10 phút).
+ */
+export const AUTO_ADJUST_HOLD_MS = 10 * 60_000;
+/** Làn chạy tới mà đơn chưa mang trạng thái "hoàn đã chốt" (lượt ghi đơn chưa xong) → xem lại sau 1 phút. */
+export const AUTO_ADJUST_NOT_READY_MS = 60_000;
 export const REQUEST_CODE_UNKNOWN = "OUTCOME_UNKNOWN";
 export const REQUEST_CODE_ALREADY_ISSUED = "ALREADY_ISSUED";
 
@@ -312,6 +338,21 @@ export interface SingleRequestInput {
 export async function submitSingleRequest(input: SingleRequestInput): Promise<{ id: string } | null> {
   try {
     const row = await prisma.$transaction(async (tx) => {
+      if (input.kind === REQUEST_KIND_ADJUST) {
+        // Chủ shop bấm điều chỉnh TAY trong lúc yêu cầu TỰ ĐỘNG của chính hóa đơn này còn
+        // chờ (sàn chưa báo số, có thể chờ tới 7 ngày): bấm tay thắng, yêu cầu tự động
+        // nhường chỗ — không thì chỉ mục duy nhất chặn người bấm suốt thời gian đó.
+        await tx.invoiceRequest.updateMany({
+          where: {
+            ownerId: input.ownerId,
+            kind: REQUEST_KIND_ADJUST,
+            source: REQUEST_SOURCE_AUTO_RETURN,
+            targetKey: input.targetKey,
+            status: "PENDING",
+          },
+          data: { status: "CANCELLED", finishedAt: new Date(), error: "Chủ shop lập điều chỉnh tay." },
+        });
+      }
       const created = await tx.invoiceRequest.create({
         data: {
           ownerId: input.ownerId,
@@ -374,6 +415,112 @@ export async function awaitRequest(ownerId: string, id: string, timeoutMs: numbe
     SET "params" = coalesce("params", '{}'::jsonb) || '{"notify":true}'::jsonb, "updatedAt" = (now() AT TIME ZONE 'UTC')
     WHERE "id" = ${id} AND "ownerId" = ${ownerId} AND "status" = 'PENDING'`;
   return marked === 0 ? read() : null;
+}
+
+// ---------- Điều chỉnh TỰ ĐỘNG khi sàn chốt hoàn (lát 11) ----------
+
+/**
+ * Điểm vào DUY NHẤT của tự điều chỉnh — ba tệp returns-sync gọi hai lần quanh lượt
+ * ghi đơn, đúng lần trạng thái hoàn CHUYỂN VÀO nhóm đã chốt:
+ *   · "before" (TRƯỚC khi ghi đơn): chế độ queue ghi một dòng yêu cầu giữ chỗ. Ghi
+ *     trước + chỉ mục duy nhất = tiến trình chết giữa chừng thì lượt đồng bộ sau thấy
+ *     lại đúng lần chuyển trạng thái đó và ghi lại, không mất và không trùng.
+ *   · "after" (SAU khi đã ghi đơn + số lượng trả): chế độ queue thả yêu cầu cho chạy
+ *     ngay; chế độ legacy bắn lệnh trong RAM như trước lát 11.
+ * KHÔNG ném: tự điều chỉnh không được làm hỏng vòng đồng bộ hoàn.
+ */
+export async function autoAdjustOnPlatformReturn(ownerId: string, orderId: string, phase: "before" | "after"): Promise<void> {
+  if (invoiceAutoAdjustMode() === "legacy") {
+    if (phase === "after") maybeAutoAdjustOnPlatformReturn(ownerId, orderId);
+    return;
+  }
+  try {
+    if (phase === "after") {
+      // Chỉ thả dòng CHƯA chạy lượt nào (dòng đang chờ thử lại giữ nguyên lịch của nó).
+      await prisma.$executeRaw`
+        UPDATE "invoice_requests"
+        SET "nextRetryAt" = (now() AT TIME ZONE 'UTC') - interval '30 seconds', "updatedAt" = (now() AT TIME ZONE 'UTC')
+        WHERE "ownerId" = ${ownerId} AND "kind" = ${REQUEST_KIND_ADJUST} AND "source" = ${REQUEST_SOURCE_AUTO_RETURN}
+          AND "status" = 'PENDING' AND "attempts" = 0 AND "params"->>'orderId' = ${orderId}`;
+      return;
+    }
+    if (!isPublishAllowed()) return;
+    const cfg = await prisma.invoiceConfig.findFirst({
+      where: { ownerId, channelId: null },
+      select: { autoAdjustEnabled: true },
+    });
+    if (!cfg?.autoAdjustEnabled) return;
+    const original = await prisma.invoiceLog.findFirst({
+      where: { ownerId, orderId, status: InvoiceLogStatus.ISSUED, adjustmentForLogId: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (!original) return; // đơn chưa từng xuất hóa đơn
+    const adjusted = await prisma.invoiceLog.findFirst({
+      where: { adjustmentForLogId: original.id, status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] } },
+      select: { id: true },
+    });
+    if (adjusted) return; // đã có điều chỉnh đang chờ / đã phát hành
+    await prisma.$transaction(async (tx) => {
+      await tx.invoiceRequest.create({
+        data: {
+          ownerId,
+          kind: REQUEST_KIND_ADJUST,
+          source: REQUEST_SOURCE_AUTO_RETURN,
+          targetKey: original.id,
+          // Phạm vi KHÔNG ghi ở đây: làn quyết lúc chạy theo số sàn báo mới nhất.
+          params: { auto: true, orderId },
+          nextRetryAt: new Date(Date.now() + AUTO_ADJUST_HOLD_MS),
+        },
+      });
+      await tx.invoiceLane.upsert({ where: { ownerId }, create: { ownerId }, update: {} });
+    });
+  } catch (err) {
+    // Trùng chỉ mục duy nhất = yêu cầu cho hóa đơn này đang chờ sẵn (bấm tay, hoặc lượt đồng bộ trước).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return;
+    console.error(`[auto-adjust/sàn] Đơn ${orderId}: không ghi được yêu cầu điều chỉnh (${phase}) —`, (err as Error).message);
+  }
+}
+
+type AutoAdjustStep =
+  | { kind: "RESULT"; r: IssueOrderResult; orderCode: string }
+  /** Chưa làm được, xem lại sau `ms`. */
+  | { kind: "WAIT"; ms: number; note: string; orderCode: string }
+  /** Không còn việc để làm (shop tắt công tắc, hóa đơn gốc không còn hiệu lực). */
+  | { kind: "DROP"; note: string };
+
+/** Một lượt của yêu cầu điều chỉnh tự động: kiểm lại điều kiện, quyết phạm vi theo số sàn báo, rồi lập. */
+async function runAutoAdjust(ownerId: string, reqRow: { targetKey: string }): Promise<AutoAdjustStep> {
+  const cfg = await prisma.invoiceConfig.findFirst({
+    where: { ownerId, channelId: null },
+    select: { autoAdjustEnabled: true },
+  });
+  if (!cfg?.autoAdjustEnabled) return { kind: "DROP", note: "Shop đã tắt tự động điều chỉnh khi hoàn." };
+  const original = await prisma.invoiceLog.findFirst({
+    where: { id: reqRow.targetKey, ownerId, status: InvoiceLogStatus.ISSUED, adjustmentForLogId: null },
+    select: { id: true, orderId: true, orderCode: true, totalAmount: true },
+  });
+  if (!original?.orderId) return { kind: "DROP", note: "Hóa đơn gốc không còn ở trạng thái đã phát hành." };
+  const order = await prisma.order.findUnique({ where: { id: original.orderId }, select: { platformReturnStatus: true } });
+  if (!PLATFORM_RETURN_DONE_STATUSES.has(order?.platformReturnStatus ?? "")) {
+    return { kind: "WAIT", ms: AUTO_ADJUST_NOT_READY_MS, note: "Chờ đồng bộ hoàn ghi xong trạng thái của đơn.", orderCode: original.orderCode };
+  }
+  const decided = await decideScopeFromPlatformReturn(original.orderId, Number(original.totalAmount));
+  if (!decided) {
+    return { kind: "WAIT", ms: AUTO_ADJUST_RETRY_MS, note: "Sàn chưa báo số tiền hoàn / dòng hàng trả.", orderCode: original.orderCode };
+  }
+  const r = await issueAdjustmentForOrder(ownerId, { userId: ownerId }, original.id, decided.reason, decided.scope);
+  return { kind: "RESULT", r, orderCode: original.orderCode };
+}
+
+/** Tự điều chỉnh hỏng hẳn → MỘT chuông bảo chủ shop làm tay (nhãn "Cần điều chỉnh" vẫn còn ở Lịch sử). */
+async function notifyAutoAdjustFailed(ownerId: string, orderCode: string, why: string): Promise<void> {
+  await notify(ownerId, {
+    type: "INVOICE_AUTO_ADJUST_FAILED",
+    title: `Chưa tự lập được hóa đơn điều chỉnh cho đơn ${orderCode}`,
+    body: `${why} Lập tay tại Lịch sử hóa đơn (dòng mang nhãn "Cần điều chỉnh").`,
+    link: "/invoicing/history",
+  });
 }
 
 // ---------- Phía worker ----------
@@ -472,7 +619,7 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
     where: { ownerId, status: "PENDING", nextRetryAt: { lte: now } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: opts.budget,
-    select: { id: true, kind: true, targetKey: true, batchId: true, params: true },
+    select: { id: true, kind: true, source: true, targetKey: true, batchId: true, params: true, createdAt: true },
   });
   const result: RequestRunResult = { outcome: "IDLE", processed: 0, issued: 0, failed: 0, interrupted: false };
   if (due.length === 0) return result;
@@ -492,6 +639,66 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
     if (reqRow.batchId) batches.add(reqRow.batchId);
 
     // TUẦN TỰ — nhà cung cấp cấp số hóa đơn liên tục theo ký hiệu.
+    // ĐIỀU CHỈNH TỰ ĐỘNG (lát 11): luật riêng — chưa đủ dữ kiện hay nhà cung cấp lỗi
+    // tạm thì hẹn lại 60 phút tới tối đa 7 ngày; hỏng hẳn thì một chuông. Không kéo
+    // theo yêu cầu bấm tay, và không bị yêu cầu bấm tay kéo theo.
+    if (reqRow.source === REQUEST_SOURCE_AUTO_RETURN) {
+      const step = await runAutoAdjust(ownerId, reqRow);
+      if (step.kind === "DROP") {
+        await prisma.invoiceRequest.updateMany({
+          where: { id: reqRow.id, status: "PENDING" },
+          data: { status: "CANCELLED", finishedAt: new Date(), error: step.note },
+        });
+        continue;
+      }
+      const tooOld = Date.now() - reqRow.createdAt.getTime() >= AUTO_ADJUST_MAX_AGE_MS;
+      const retry = async (note: string, ms: number, errorCode: string | null): Promise<void> => {
+        if (tooOld) {
+          result.failed += 1;
+          const why = `${note} Đã thử lại suốt 7 ngày kể từ khi sàn chốt hoàn.`;
+          await prisma.invoiceRequest.updateMany({
+            where: { id: reqRow.id, status: "PENDING" },
+            data: { status: "FAILED", finishedAt: new Date(), attempts: { increment: 1 }, errorCode, error: why },
+          });
+          await notifyAutoAdjustFailed(ownerId, step.orderCode, why);
+          return;
+        }
+        await prisma.invoiceRequest.updateMany({
+          where: { id: reqRow.id, status: "PENDING" },
+          data: { attempts: { increment: 1 }, nextRetryAt: new Date(Date.now() + ms), errorCode, error: note },
+        });
+      };
+      if (step.kind === "WAIT") {
+        await retry(step.note, step.ms, null);
+        continue;
+      }
+      const ar = step.r;
+      const gap = i < due.length - 1 ? (ar.pauseBeforeNextMs ?? 0) : 0;
+      if (ar.ok) {
+        result.issued += 1;
+        await finishRequest(reqRow.id, { status: "DONE", resultLogId: ar.log?.id ?? null }, ar);
+        console.log(`[auto-adjust/sàn] Đơn ${step.orderCode}: đã lập hóa đơn điều chỉnh số ${ar.log?.invoiceNo ?? "?"}`);
+      } else if (ar.errorCode === OUTCOME_UNKNOWN_CODE) {
+        await finishRequest(reqRow.id, { status: "DONE", resultLogId: ar.log?.id ?? null, errorCode: REQUEST_CODE_UNKNOWN, error: ar.error ?? null }, ar);
+      } else if (ar.httpStatus === 409 && !ar.errorCode) {
+        // Hóa đơn gốc đã có điều chỉnh (chủ shop vừa làm tay) → việc này coi như xong.
+        await finishRequest(reqRow.id, { status: "DONE", errorCode: REQUEST_CODE_ALREADY_ISSUED, error: ar.error ?? null }, ar);
+      } else if (ar.errorScope === "TRANSIENT") {
+        await retry(ar.error ?? "Nhà cung cấp hóa đơn đang trục trặc.", AUTO_ADJUST_RETRY_MS, ar.errorCode ?? null);
+        // Nhà cung cấp đang trục trặc: dừng lượt, các yêu cầu khác để lượt sau.
+        transient = true;
+        break;
+      } else {
+        result.failed += 1;
+        const why = ar.error ?? "Nhà cung cấp từ chối lập hóa đơn điều chỉnh.";
+        await finishRequest(reqRow.id, { status: "FAILED", resultLogId: ar.log?.id ?? null, errorCode: ar.errorCode ?? null, error: why }, ar);
+        console.error(`[auto-adjust/sàn] Đơn ${step.orderCode}: ${why}`);
+        await notifyAutoAdjustFailed(ownerId, step.orderCode, why);
+      }
+      if (gap > 0) await sleep(gap);
+      continue;
+    }
+
     const r = await runOneRequest(ownerId, reqRow);
     const pauseMs = i < due.length - 1 ? (r.pauseBeforeNextMs ?? 0) : 0;
     /** Đơn lẻ = có người đang chờ câu trả lời ngay trên màn hình (lát 10). */
@@ -528,7 +735,8 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
         data: { attempts: { increment: 1 }, nextRetryAt: new Date(Date.now() + REQUEST_RETRY_MS), errorCode: r.errorCode ?? null, error: reason },
       });
       const exhausted = await prisma.invoiceRequest.findMany({
-        where: { ownerId, status: "PENDING", attempts: { gte: REQUEST_MAX_ATTEMPTS } },
+        // Chỉ yêu cầu của các lô: yêu cầu tự động có nhịp thử lại riêng (60 phút, 7 ngày).
+        where: { ownerId, batchId: { not: null }, status: "PENDING", attempts: { gte: REQUEST_MAX_ATTEMPTS } },
         select: { id: true, batchId: true },
       });
       if (exhausted.length > 0) {
@@ -555,7 +763,8 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
         aborted = true;
         if (bell) await notifySingleFinished(ownerId, reqRow, r);
         const rest = await prisma.invoiceRequest.findMany({
-          where: { ownerId, status: "PENDING" },
+          // Yêu cầu tự động không bị đánh hỏng theo: nó tự thử lại theo nhịp của nó.
+          where: { ownerId, status: "PENDING", source: { not: REQUEST_SOURCE_AUTO_RETURN } },
           select: { id: true, batchId: true },
         });
         if (rest.length > 0) {
@@ -588,7 +797,7 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
     });
   }
   console.log(
-    `[Invoice-requests] Shop ${ownerId}: ${result.processed} yêu cầu bấm tay — phát hành ${result.issued}` +
+    `[Invoice-requests] Shop ${ownerId}: ${result.processed} yêu cầu — phát hành ${result.issued}` +
       (result.failed > 0 ? `, ${result.failed} lỗi` : "") +
       (transient ? " — nhà cung cấp lỗi tạm, hẹn thử lại" : "") +
       (aborted ? " — lỗi tài khoản, phần còn lại đánh hỏng cùng lý do" : "") +

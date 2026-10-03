@@ -5,6 +5,7 @@ import {
   ALL_QUEUES,
   DEAD_QUEUES,
   DEFAULT_EVT_ORDER_CONCURRENCY,
+  DEFAULT_INVOICE_AUTO_ADJUST_MODE,
   DEFAULT_INVOICE_BULK_MODE,
   DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS,
   DEFAULT_INVOICE_SINGLE_MODE,
@@ -15,6 +16,7 @@ import {
   DEFAULT_WORKER_POOL_MAX,
   EVT_ORDER_MAX_ATTEMPTS,
   evtOrderConcurrency,
+  invoiceAutoAdjustMode,
   invoiceBulkMode,
   invoiceRequestSweepSeconds,
   invoiceSingleMode,
@@ -175,5 +177,14 @@ describe("xuất một đơn + điều chỉnh tay qua làn (bước 5 lát 10)"
     expect(invoiceSingleWaitMs({ INVOICE_SINGLE_WAIT_SECONDS: "3" })).toBe(3000);
     expect(invoiceSingleWaitMs({ INVOICE_SINGLE_WAIT_SECONDS: "0" })).toBe(DEFAULT_INVOICE_SINGLE_WAIT_SECONDS * 1000);
     expect(invoiceSingleWaitMs({ INVOICE_SINGLE_WAIT_SECONDS: "999" })).toBe(DEFAULT_INVOICE_SINGLE_WAIT_SECONDS * 1000);
+  });
+});
+
+describe("điều chỉnh tự động thành yêu cầu bền (bước 5 lát 11)", () => {
+  it("INVOICE_AUTO_ADJUST_MODE: chỉ nhận queue | legacy, sai thì về mặc định", () => {
+    expect(invoiceAutoAdjustMode({})).toBe(DEFAULT_INVOICE_AUTO_ADJUST_MODE);
+    expect(invoiceAutoAdjustMode({ INVOICE_AUTO_ADJUST_MODE: " Queue " })).toBe("queue");
+    expect(invoiceAutoAdjustMode({ INVOICE_AUTO_ADJUST_MODE: "legacy" })).toBe("legacy");
+    expect(invoiceAutoAdjustMode({ INVOICE_AUTO_ADJUST_MODE: "x" })).toBe(DEFAULT_INVOICE_AUTO_ADJUST_MODE);
   });
 });

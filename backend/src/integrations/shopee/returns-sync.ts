@@ -31,10 +31,8 @@ import { ChannelName, ReturnSolution, ReturnStatus } from "@prisma/client";
 import { notify } from "../../services/notifications";
 import { prisma } from "../../lib/prisma";
 import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
-import {
-  maybeAutoAdjustOnPlatformReturn,
-  PLATFORM_RETURN_DONE_STATUSES,
-} from "../invoice/adjust-order";
+import { PLATFORM_RETURN_DONE_STATUSES } from "../invoice/adjust-order";
+import { autoAdjustOnPlatformReturn } from "../../services/invoice-requests";
 import {
   getOrderDetail,
   getReturnDetail,
@@ -426,6 +424,14 @@ async function applyShopeeReturnGroup(
     result.delivered++;
   }
 
+  // Lát 11 (03/10/2026): trạng thái hoàn sắp CHUYỂN VÀO nhóm đã chốt → ghi yêu cầu điều
+  // chỉnh tự động TRƯỚC khi ghi đơn (ghi-trước + chỉ mục duy nhất: tiến trình chết giữa
+  // chừng thì lượt đồng bộ sau thấy lại đúng lần chuyển này, không mất và không trùng).
+  const returnJustDone =
+    PLATFORM_RETURN_DONE_STATUSES.has(
+      (plan.data.platformReturnStatus !== undefined ? plan.data.platformReturnStatus : order.platformReturnStatus) ?? ""
+    ) && !PLATFORM_RETURN_DONE_STATUSES.has(order.platformReturnStatus ?? "");
+  if (returnJustDone) await autoAdjustOnPlatformReturn(channel.userId, order.id, "before");
   const data: Prisma.OrderUpdateInput = { ...plan.data };
   if (!order.returnLookupAt) data.returnLookupAt = new Date(nowSec * 1000);
   if (Object.keys(data).length > 0) {
@@ -446,7 +452,7 @@ async function applyShopeeReturnGroup(
       PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
       !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
     ) {
-      maybeAutoAdjustOnPlatformReturn(channel.userId, order.id);
+      await autoAdjustOnPlatformReturn(channel.userId, order.id, "after");
     }
   }
 
