@@ -44,7 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { AccountingPeriodPicker } from "@/components/shared/accounting-period-picker";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import {
   ApiError,
@@ -643,7 +643,7 @@ export function InputInvoicesSection() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <DateRangePicker allowAll value={range} onChange={setRange} disabled={loading} />
+          <AccountingPeriodPicker allowAll value={range} onChange={setRange} disabled={loading} />
           <Button variant="outline" onClick={() => setExporting(true)} disabled={loading || exportRows.length === 0}>
             <Download className="size-4" />
             Xuất bộ chứng từ{selected.size > 0 ? ` (${selected.size} đã chọn)` : ""}

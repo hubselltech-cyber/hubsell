@@ -40,13 +40,28 @@ import { cn } from "@/lib/utils";
  *  - Tùy chỉnh: gõ hai mốc ngày hoặc bấm trên lịch, rồi bấm "Áp dụng" — chưa
  *    bấm thì sổ phía dưới chưa tải lại.
  * Cho chọn cả kỳ tương lai: checklist chi cố định cần xem trước tháng sau.
+ *
+ * `allowAll`: trang lưu chứng từ (Hóa đơn đầu vào) cần xem được TOÀN BỘ — bật
+ * cờ này thì value nhận thêm `null` = không lọc ngày và hộp chọn có thêm tab
+ * "Tất cả". Sổ quỹ không truyền cờ, kiểu dữ liệu giữ nguyên DateRange.
  */
-interface AccountingPeriodPickerProps {
-  value: DateRange;
-  onChange: (range: DateRange) => void;
+type AccountingPeriodPickerProps = {
   disabled?: boolean;
   className?: string;
-}
+} & (
+  | {
+      allowAll?: false;
+      value: DateRange;
+      onChange: (range: DateRange) => void;
+    }
+  | {
+      allowAll: true;
+      value: DateRange | null;
+      onChange: (range: DateRange | null) => void;
+    }
+);
+
+const ALL_TIME_LABEL = "Toàn bộ thời gian";
 
 const KIND_TABS: [AccountingPeriodKind, string][] = [
   ["month", "Tháng"],
@@ -55,42 +70,52 @@ const KIND_TABS: [AccountingPeriodKind, string][] = [
   ["custom", "Tùy chỉnh"],
 ];
 
+const TAB_CLASS =
+  "h-7 flex-1 rounded-[5px] px-2.5 text-[0.8rem] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+const TAB_ON = "bg-background font-medium text-foreground shadow-sm";
+const TAB_OFF = "text-muted-foreground hover:text-foreground";
+
 /** Số năm trên một trang của tab Năm. */
 const YEARS_PER_PAGE = 6;
 
-export function AccountingPeriodPicker({
-  value,
-  onChange,
-  disabled,
-  className,
-}: AccountingPeriodPickerProps) {
+export function AccountingPeriodPicker(props: AccountingPeriodPickerProps) {
+  const { disabled, className } = props;
+  const value = props.value;
+  const allowAll = props.allowAll === true;
+  // Đang xem toàn bộ thì lưới tháng/quý/năm và lịch neo vào hôm nay.
+  const anchor = value?.to ?? new Date();
   const [open, setOpen] = React.useState(false);
   const [kind, setKind] = React.useState<AccountingPeriodKind>("month");
   // Năm đang lật tới trong lưới tháng/quý (và năm cuối trang của tab Năm).
-  const [viewYear, setViewYear] = React.useState(() => value.to.getFullYear());
+  const [viewYear, setViewYear] = React.useState(() => anchor.getFullYear());
   // Khoảng đang chọn dở ở tab Tùy chỉnh — tách khỏi `value` để chưa bấm Áp
   // dụng thì sổ phía dưới chưa tải lại.
   const [draft, setDraft] = React.useState<DayPickerRange | undefined>();
   // Tháng đang hiện ở khung trái của lịch — gõ mốc ngày thì lịch lật theo.
-  const [calMonth, setCalMonth] = React.useState(() => value.from);
+  const [calMonth, setCalMonth] = React.useState(() => value?.from ?? anchor);
 
-  const active = detectPeriod(value);
+  const active = value ? detectPeriod(value) : null;
   const today = new Date();
 
   // Mở hộp thì đứng đúng tab + năm của kỳ đang xem.
   function handleOpenChange(next: boolean) {
     if (next) {
-      setKind(active.kind);
-      setViewYear(value.to.getFullYear());
-      setDraft({ from: value.from, to: value.to });
+      setKind(active?.kind ?? "month");
+      setViewYear(anchor.getFullYear());
+      setDraft(value ? { from: value.from, to: value.to } : undefined);
       // Lùi 1 tháng để tháng chứa ngày kết thúc nằm ở khung bên phải
-      setCalMonth(new Date(value.to.getFullYear(), value.to.getMonth() - 1, 1));
+      setCalMonth(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1));
     }
     setOpen(next);
   }
 
-  function apply(range: DateRange) {
-    onChange(range);
+  function emit(range: DateRange | null) {
+    if (props.allowAll === true) props.onChange(range);
+    else if (range) props.onChange(range);
+  }
+
+  function apply(range: DateRange | null) {
+    emit(range);
     setOpen(false);
   }
 
@@ -133,10 +158,10 @@ export function AccountingPeriodPicker({
       <Button
         variant="outline"
         size="icon"
-        disabled={disabled}
+        disabled={disabled || !value}
         title="Kỳ trước"
         aria-label="Kỳ trước"
-        onClick={() => onChange(shiftPeriod(value, -1))}
+        onClick={() => value && emit(shiftPeriod(value, -1))}
       >
         <ChevronLeft className="size-4" />
       </Button>
@@ -147,7 +172,7 @@ export function AccountingPeriodPicker({
           render={
             <Button variant="outline" className="gap-2 font-normal">
               <CalendarDays className="size-4 text-muted-foreground" />
-              <span className="whitespace-nowrap">{formatPeriodLabel(value)}</span>
+              <span className="whitespace-nowrap">{value ? formatPeriodLabel(value) : ALL_TIME_LABEL}</span>
               <ChevronDown className="size-3.5 text-muted-foreground" />
             </Button>
           }
@@ -165,17 +190,23 @@ export function AccountingPeriodPicker({
                   key={key}
                   type="button"
                   aria-pressed={kind === key}
-                  className={cn(
-                    "h-7 flex-1 rounded-[5px] px-2.5 text-[0.8rem] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                    kind === key
-                      ? "bg-background font-medium text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+                  className={cn(TAB_CLASS, kind === key ? TAB_ON : TAB_OFF)}
                   onClick={() => setKind(key)}
                 >
                   {label}
                 </button>
               ))}
+              {/* Không phải tab — bấm là bỏ lọc ngày ngay và đóng hộp. */}
+              {allowAll && (
+                <button
+                  type="button"
+                  title={ALL_TIME_LABEL}
+                  className={cn(TAB_CLASS, TAB_OFF)}
+                  onClick={() => apply(null)}
+                >
+                  Tất cả
+                </button>
+              )}
             </div>
           </div>
 
@@ -212,7 +243,7 @@ export function AccountingPeriodPicker({
                 <div className="grid grid-cols-3 gap-1">
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
                     const selected =
-                      active.kind === "month" &&
+                      active?.kind === "month" &&
                       active.year === viewYear &&
                       active.month === m;
                     const isNow =
@@ -240,7 +271,7 @@ export function AccountingPeriodPicker({
                 <div className="grid grid-cols-2 gap-1">
                   {[1, 2, 3, 4].map((q) => {
                     const selected =
-                      active.kind === "quarter" &&
+                      active?.kind === "quarter" &&
                       active.year === viewYear &&
                       active.quarter === q;
                     const isNow =
@@ -275,7 +306,7 @@ export function AccountingPeriodPicker({
                 <div className="grid grid-cols-3 gap-1">
                   {Array.from({ length: YEARS_PER_PAGE }, (_, i) => yearPageStart + i).map(
                     (y) => {
-                      const selected = active.kind === "year" && active.year === y;
+                      const selected = active?.kind === "year" && active.year === y;
                       const isNow = today.getFullYear() === y;
                       return (
                         <Button
@@ -350,10 +381,10 @@ export function AccountingPeriodPicker({
       <Button
         variant="outline"
         size="icon"
-        disabled={disabled}
+        disabled={disabled || !value}
         title="Kỳ sau"
         aria-label="Kỳ sau"
-        onClick={() => onChange(shiftPeriod(value, 1))}
+        onClick={() => value && emit(shiftPeriod(value, 1))}
       >
         <ChevronRight className="size-4" />
       </Button>
