@@ -310,7 +310,11 @@ export function invoiceSingleWaitMs(env: NodeJS.ProcessEnv = process.env): numbe
  * trình chạy đồng bộ hoàn (worker, và web nếu có nút đồng bộ tay).
  */
 export type InvoiceAutoAdjustMode = "queue" | "legacy";
-export const DEFAULT_INVOICE_AUTO_ADJUST_MODE: InvoiceAutoAdjustMode = "legacy";
+/**
+ * Lần một (78de0e5, 03/10/2026 14:18) mặc định legacy — worker biết xử lý dòng
+ * AUTO_RETURN lên trước, đã kiểm prod 14:19. Lần hai đổi mặc định sang queue.
+ */
+export const DEFAULT_INVOICE_AUTO_ADJUST_MODE: InvoiceAutoAdjustMode = "queue";
 
 export function invoiceAutoAdjustMode(env: NodeJS.ProcessEnv = process.env): InvoiceAutoAdjustMode {
   const raw = (env.INVOICE_AUTO_ADJUST_MODE ?? "").trim().toLowerCase();
