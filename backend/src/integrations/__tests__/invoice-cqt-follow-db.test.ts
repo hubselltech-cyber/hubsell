@@ -51,7 +51,7 @@ let seq = 0;
 const book = new Map<string, Omit<ProviderInvoiceStatus, "transactionId">>();
 /** Tờ đã lập theo mã tham chiếu (cho đường tra ngược của vòng quét tờ chưa rõ). */
 const refs = new Map<string, { invoiceNo: string; transactionId: string }>();
-let statusMode: "ok" | "fail" = "ok";
+let statusMode: "ok" | "fail" | "account-fail" = "ok";
 let publishMode: "ok" | "reject" | "lost-after-issue" = "ok";
 let statusCalls: string[][] = [];
 
@@ -81,7 +81,9 @@ const fake: InvoiceProvider = {
   },
   async checkStatuses(items: StatusQuery[]): Promise<StatusBatchResult> {
     statusCalls.push(items.map((i) => i.transactionId));
-    if (statusMode === "fail") return { ok: false, message: "nhà cung cấp giả đang bận.", accountProblem: false };
+    if (statusMode !== "ok") {
+      return { ok: false, message: "nhà cung cấp giả từ chối.", accountProblem: statusMode === "account-fail" };
+    }
     const found = new Map<string, ProviderInvoiceStatus>();
     for (const { transactionId } of items) {
       const entry = book.get(transactionId);
@@ -338,6 +340,26 @@ describe("Vòng quét hỏi trạng thái", () => {
     const retry = await sweep(new Date(now.getTime() + CQT_CLAIM_MS + 1000));
     expect(retry).toMatchObject({ claimed: 60, asked: 60, noRow: 60 });
     expect(statusCalls.slice(1).map((c) => c.length)).toEqual([50, 10]);
+  });
+
+  it("lỗi TÀI KHOẢN nhà cung cấp → một chuông cho chủ shop, lượt sau không reo thêm; lỗi tạm thì không chuông", async () => {
+    const blocked = () => prisma.notification.count({ where: { ownerId: fx.userId, type: "INVOICE_STATUS_CHECK_BLOCKED" } });
+    await mkLog();
+    statusMode = "fail";
+    const now = at(0);
+    await sweep(now);
+    expect(await blocked()).toBe(0);
+
+    statusMode = "account-fail";
+    const second = await sweep(new Date(now.getTime() + CQT_CLAIM_MS + 1000));
+    expect(second).toMatchObject({ claimed: 1, failedOwners: 1 });
+    expect(await blocked()).toBe(1);
+    const bell = await prisma.notification.findFirstOrThrow({ where: { ownerId: fx.userId, type: "INVOICE_STATUS_CHECK_BLOCKED" } });
+    expect(bell.title).toContain("MISA meInvoice");
+    expect(bell.link).toBe("/invoicing/connect");
+
+    await sweep(new Date(now.getTime() + 2 * CQT_CLAIM_MS + 2000));
+    expect(await blocked()).toBe(1); // chuông trước chưa đọc → không reo thêm
   });
 
   it("một lượt nhận hết dòng tới hạn dù nhiều hơn một câu nhận (không trần theo shop)", async () => {

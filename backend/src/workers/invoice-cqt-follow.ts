@@ -154,6 +154,18 @@ async function followOwner(
       console.error(
         `[CQT-follow] Shop ${ownerId}: hỏi ${provider.name} không được${res.accountProblem ? " (lỗi tài khoản / cấu hình)" : ""} — ${res.message}`
       );
+      // Lỗi ở tài khoản / cấu hình của shop (sai mật khẩu, mất quyền): thử lại không tự
+      // hết, người sửa được là chủ shop → một chuông (lát 14). notify tự bỏ qua khi
+      // chuông cùng loại còn chưa đọc trong 24 giờ. Lỗi tạm (mạng, NCC bận) không báo.
+      if (res.accountProblem) {
+        const l = getProviderEntry(provider.name)?.label ?? provider.name;
+        await notify(ownerId, {
+          type: "INVOICE_STATUS_CHECK_BLOCKED",
+          title: `Hubsell không kiểm tra được trạng thái hóa đơn với ${l}`,
+          body: `${res.message} Trong lúc này Hubsell không biết hóa đơn nào bị Cơ quan Thuế từ chối. Kiểm tra lại kết nối ở trang Kết nối & Xuất hóa đơn; sửa xong Hubsell tự kiểm lại.`,
+          link: "/invoicing/connect",
+        });
+      }
       return false;
     }
     const unchanged: { log: FollowLog; next: Date | null }[] = [];

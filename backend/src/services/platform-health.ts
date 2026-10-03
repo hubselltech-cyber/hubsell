@@ -12,6 +12,7 @@ import { ChannelName, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
 import { DEAD_QUEUES } from "../lib/queue-config";
+import { collectInvoiceHealth, invoiceSignal, type InvoiceHealth } from "./invoice-health";
 import {
   CAPACITY_MILESTONES,
   CURRENT_INFRA,
@@ -84,6 +85,8 @@ export interface WorkerLayer {
   /** Hộp thư đến chung webhook_events: dòng đang chờ + dòng chờ lâu nhất (phút). */
   inboxPending: number;
   inboxOldestMin: number | null;
+  /** Đường hóa đơn (bước 5 lát 14). null = không đọc được; vắng mặt ở ảnh chụp đời trước 03/10/2026. */
+  invoice?: InvoiceHealth | null;
 }
 
 export interface InfraLayer {
@@ -201,7 +204,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     refreshToken: { not: null },
     channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
-  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox] =
+  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox, invoice] =
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
@@ -234,6 +237,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
         FROM "webhook_events" WHERE "status" = 'PENDING'`,
         [{ n: 0n, oldest: null }]
       ),
+      safe<InvoiceHealth | null>("invoice.health", collectInvoiceHealth(new Date(now)), null),
     ]);
   const d24 = now - DAY_MS;
   // Hàng đợi webhook sàn = Shopee + TikTok gộp (cùng khuôn, cùng SLA).
@@ -258,6 +262,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     durableQueueError: durableQueues ? null : queueStartError(),
     inboxPending: Number(inbox[0]?.n ?? 0),
     inboxOldestMin: inbox[0]?.oldest ? Math.round((now - inbox[0].oldest.getTime()) / 60000) : null,
+    invoice,
   };
 }
 
@@ -440,6 +445,7 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     "Đơn real-time đang chậm — worker quá tải hoặc DB chậm"
   );
   push("worker.durableQueue", "Hàng đợi bền", ...durableQueueSignal(w));
+  push("worker.invoice", "Hóa đơn", ...invoiceSignal(w.invoice ?? null));
   push(
     "worker.breaker",
     "Cầu dao API sàn",
