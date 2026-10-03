@@ -506,7 +506,7 @@ Hai dòng TikTok trễ trên 30 giây chính là hai dòng sửa tay tối 01/10
 
 ### 4.6. Bước 5 (hóa đơn) — khảo sát 02/10/2026 và thiết kế lại phần hàng đợi
 
-**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a trên prod từ 03/10 00:09 (`ca31b33`, mục L); 6b trên prod từ 03/10 00:26 (`6d90bfa`, mục M); 6c (bổ sung theo trả lời ticket MISA 02/10, mục N) trên prod từ 03/10 08:41 (`6ae0653`); lát 7 trên prod từ 03/10 09:33 (`a4bfecb`, mục O); lát 8 trên prod từ 03/10 10:19 (`4e9ab1b`, mục P); lát 9 trên prod trọn hai lần từ 03/10 13:16 (`f227713`, mục Q); việc kế là lát 10.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
+**Trạng thái: anh Trung duyệt 02/10 ("trước mắt làm như em đề xuất", tách nhỏ nhất có thể, giữ cổng chờ cho nhà cung cấp khác). Làm theo 14 lát ở mục F; lát 1, 2, 3, 4 đã trên prod ngày 02/10 (`5d7c560`); lát 5 trên prod từ 02/10 23:22 (`c73fe59`, mục K); lát 6 tách thành 6a và 6b (anh Trung duyệt 02/10 đêm): 6a trên prod từ 03/10 00:09 (`ca31b33`, mục L); 6b trên prod từ 03/10 00:26 (`6d90bfa`, mục M); 6c (bổ sung theo trả lời ticket MISA 02/10, mục N) trên prod từ 03/10 08:41 (`6ae0653`); lát 7 trên prod từ 03/10 09:33 (`a4bfecb`, mục O); lát 8 trên prod từ 03/10 10:19 (`4e9ab1b`, mục P); lát 9 trên prod trọn hai lần từ 03/10 13:16 (`f227713`, mục Q); lát 10 LẦN MỘT viết xong 03/10 chiều (mục R), CHƯA đẩy.** Phần hợp đồng adapter, sổ đăng ký nhà cung cấp, cổng Hubtax, nhịp phát hành ở mục 3.8 giữ nguyên; mục này thay phần "ba hàng đợi" của 3.8 và bổ sung những điều tìm thêm khi đọc mã.
 
 **Đã kiểm và chưa kiểm**
 
@@ -695,7 +695,7 @@ Luật của mọi lát: một lát chỉ làm MỘT việc; có test riêng; co
 | 7 | Đơn lỗi vì dữ liệu của chính nó: máy dừng tự thử sau 3 lượt, đơn ở lại Hàng chờ với nhãn "Máy đã ngừng thử" cho chủ shop xuất tay. Chi tiết ở mục O | Có (2 cột NULL trên `InvoiceLog`: `errorScope`, `orderErrorCount`; migration `20261003120000_invoice_order_error_count`). Bảng cũ ghi "không": khi đọc mã thấy tầm lỗi không được lưu ở đâu nên không đếm được | Chỉ ở đường tự phát hành: đơn 3 lượt lỗi riêng đơn không được chọn nữa. Bấm tay không đổi | ✅ Trên prod từ 03/10 09:33 (`a4bfecb`, anh Trung duyệt phương án + migration rồi tự đẩy). Đã kiểm prod 09:35 qua `/health` + Supabase SQL: migration `20261003120000` xong 09:32:58 không rollback, 0 migration dở, hai cột `errorScope` (text) + `orderErrorCount` (integer) đều NULL được; web đổi bản 09:33:24; ảnh chụp sức khỏe của worker 09:34:31 mang `a4bfecb` (RAM 210 MB); 30/37 gian đồng bộ trong 15 phút, lần cuối 09:33:42, gian lỗi liên tiếp duy nhất vẫn là Shopee 321947895 KYC đã biết; InvoiceLog 2 dòng. Chưa shop nào phát hành nên chưa có lượt thật |
 | 8 | Làn theo shop cho TỰ PHÁT HÀNH (thay vòng chung một cờ), công tắc `INVOICE_MODE`. Chi tiết ở mục P | Có (bảng `invoice_lanes`, migration `20261003140000_invoice_lanes`) | Có: các shop chạy song song; lỗi tạm hết chặn đơn 24 giờ; bật công tắc / Chạy lại chạy trong 30 giây | ✅ LẦN MỘT trên prod từ 03/10 10:09 (`359f1cf`, anh Trung duyệt migration + tự đẩy; mặc định `legacy`, prod không đổi hành vi). Đã kiểm prod 10:12 qua `/health` + Supabase SQL: migration `20261003140000_invoice_lanes` xong 10:09:09 không rollback, 0 migration dở; bảng `invoice_lanes` có, RLS bật, 2 chỉ mục (pkey + nextRunAt), 0 dòng; web đổi bản 10:09:47; ảnh chụp sức khỏe worker 10:10:42 mang `359f1cf` (RAM 217 MB); 33/37 gian đồng bộ, lần cuối 10:11:19, gian lỗi duy nhất vẫn Shopee 321947895 KYC. ✅ LẦN HAI trên prod từ 03/10 10:19 (`4e9ab1b`, mặc định `lanes`). Đã kiểm 10:21: web đổi bản 10:18:59; ảnh chụp sức khỏe worker 10:19:51 mang `4e9ab1b` (RAM 193 MB); `invoice_lanes` 0 dòng (đúng, prod chưa shop nào bật tự phát hành); 0 migration dở; 30/37 gian đồng bộ, lần cuối 10:20:22, gian lỗi duy nhất vẫn Shopee 321947895 KYC. Ảnh log Render của worker `hubsell-worker-sg` anh Trung chụp 03/10 ~10:35: `10:09:09 AM [j6gc2] Applying migration 20261003140000_invoice_lanes` (lần một) và `10:18:21 AM [snpwl] [Invoice-lanes] BẬT — tự phát hành theo làn từng shop: tối đa 2 shop cùng lúc, lưới quét mỗi 30 giây, hết đơn nghỉ 15 phút, còn tồn 1 phút, hạn thuê 300 giây` (lần hai) — đúng số. LÁT 8 ĐÓNG |
 | 9 | Xuất HÀNG LOẠT qua làn + giao diện tiến độ. Chi tiết ở mục Q | Có (bảng `invoice_requests` + hàng đợi tín hiệu `invoice.issue`, migration `20261003160000_invoice_requests`) | Có ở lần hai: nút Xuất trả lời ngay, làn của shop phát hành nền, có tiến độ + nút Dừng phần còn lại; trần một lần bấm 100 đơn | ✅ LẦN MỘT trên prod từ 03/10 13:09 (`564ff27`, anh Trung duyệt kế hoạch 5 điểm "Ok em. Làm đi" rồi tự đẩy; mặc định `INVOICE_BULK_MODE=inline`, prod không đổi hành vi). Đã kiểm prod 03/10 13:11 qua `/health` + Supabase SQL: migration `20261003160000_invoice_requests` xong 13:09:20 không rollback, 0 migration dở; bảng `invoice_requests` có, RLS bật, đủ 5 chỉ mục (pkey, open_key, due_idx, ownerId_batchId, createdAt), 0 dòng; hàng đợi `invoice.issue` (stately) có, 0 việc; web đổi bản 13:09:49; ảnh chụp sức khỏe worker 13:10:53 mang `564ff27`; 30/37 gian đồng bộ trong 15 phút, lần cuối 13:11:25, gian lỗi liên tiếp duy nhất vẫn Shopee KYC đã biết; giao diện trên app.hubsell.tech đã có chuỗi "Dừng phần còn lại" trong bundle. CHƯA đọc được log worker dòng `Invoice-requests` / `invoice.issue` (em không đọc được log Render, nhờ anh chụp). ✅ LẦN HAI trên prod từ 03/10 13:16 (`f227713`, mặc định `lane`, anh Trung tự đẩy). Đã kiểm 13:18 qua `/health` + Supabase SQL: web đổi bản 13:16:20; ảnh chụp sức khỏe worker 13:17:26 mang `f227713`; không migration mới (cuối vẫn `20261003160000_invoice_requests`), 0 migration dở; `invoice_requests` 0 dòng (đúng, prod chưa shop nào có cấu hình hóa đơn); 32/37 gian đồng bộ trong 15 phút, lần cuối 13:18:39, gian lỗi liên tiếp duy nhất vẫn Shopee KYC. CHƯA kiểm được trên prod: cờ `bulkViaLane: true` của `/invoice-queue` (cần phiên đăng nhập của một shop), log worker dòng `Invoice-requests` / `invoice.issue`, và một lượt bấm Xuất thật |
-| 10 | Xuất MỘT đơn và điều chỉnh tay qua làn | Không | Có | |
+| 10 | Xuất MỘT đơn theo mã và điều chỉnh tay qua làn: web ghi một yêu cầu, làn của shop phát hành, web chờ kết quả rồi trả lời đúng hình dạng cũ. Chi tiết ở mục R | Không | Có ở lần hai: hai nút này hết gọi nhà cung cấp ngay trong request; shop đang có lượt xuất dài thì nhận câu "đã nhận" + chuông khi xong | ⏳ LẦN MỘT viết xong 03/10 chiều (anh Trung 03/10: "Làm luôn"), CHƯA đẩy. Mặc định `INVOICE_SINGLE_MODE=inline`: prod chưa đổi hành vi. Lần hai = đổi mặc định sang `lane` |
 | 11 | Điều chỉnh tự động thành yêu cầu bền, có thử lại | Không | Có | |
 | 12 | Hỏi trạng thái qua adapter, theo tới khi có kết luận | Có (cột `cqtNextCheckAt`) | Có | |
 | 13 | Webhook nhà cung cấp qua đường nhận chung; địa chỉ giữ chỗ cho Hubtax | Có (1 hàng đợi) | Không có lưu lượng thật | |
@@ -1057,6 +1057,49 @@ Giao diện             →  GET /api/tax/invoices/batches/:id mỗi 2 giây: "�
 *Chưa kiểm.* Hai tiến trình worker thật chạy song song; shop thật trên prod (chưa shop nào dùng hóa đơn); lô lớn hàng trăm tờ với MISA thật (sandbox mới thử 3 tờ).
 
 *Không đổi ở lát này.* Ô "Xuất theo mã đơn" (một đơn ngoài danh sách) và nút Điều chỉnh vẫn gọi ngay trong request: lát 10. Điều chỉnh tự động: lát 11. HQ Sức khỏe: lát 14.
+
+**R. Lát 10: xuất một đơn theo mã + điều chỉnh tay qua làn (viết 03/10/2026)**
+
+Anh Trung 03/10: "Làm luôn" (không trình kế hoạch riêng; các quyết định em tự chọn ghi ở cuối mục để anh đổi nếu muốn).
+
+*Vấn đề trước lát 10.* Ô "Xuất theo mã đơn" (`POST /api/tax/invoices`) và nút Điều chỉnh (`POST /api/tax/invoices/:id/adjust`) gọi nhà cung cấp ngay trong request của web, chen ngang được lúc làn của cùng shop đang xin số trên cùng ký hiệu — đúng ca mục B nói phải tránh.
+
+*Cách chạy mới* (bật bằng `INVOICE_SINGLE_MODE=lane` ở web):
+
+```
+Bấm Phát hành / Điều chỉnh → web kiểm phạm vi gian của người bấm → ghi MỘT dòng invoice_requests (không batchId,
+                             tới hạn ngay) + tín hiệu invoice.issue(shop)
+                           → web CHỜ dòng đó có kết cục, hỏi lại mỗi 0,4 giây, tối đa 25 giây
+Làn của shop               → làm yêu cầu như lát 9 (ISSUE gọi issueInvoiceForOrder, ADJUST gọi issueAdjustmentForOrder),
+                             ghi kết quả chi tiết (mã HTTP, lỗi, mã chặn, lý do, việc nên làm) vào params.result
+Web trả lời                → đúng hình dạng cũ { log, error, code, reason, suggestion } + mã HTTP của lõi
+Quá 25 giây chưa xong      → web đánh dấu "báo chuông khi xong" rồi trả 202 { pending, message }; làn làm xong thì
+                             reo MỘT chuông INVOICE_SINGLE_DONE
+```
+
+- **Loại yêu cầu mới `ADJUST`**: `targetKey` = mã dòng nhật ký của hóa đơn gốc, `params` = { reason, scope } (phạm vi ITEMS đổi Map ↔ object khi ghi / đọc). Chỉ mục duy nhất của lát 9 cho luôn "một hóa đơn gốc chỉ một yêu cầu điều chỉnh đang chờ"; bấm trùng trả 409.
+- **Một hàng chung**: làn lấy mọi loại yêu cầu tới hạn, cũ trước. Yêu cầu đơn lẻ tới hạn NGAY, không xếp sau mốc nghỉ 1 phút của lô (có người đang chờ trên màn hình).
+- **Lỗi tạm với yêu cầu đơn lẻ**: hỏng ngay kèm lý do, không tự thử lại — người bấm nhận lỗi và tự bấm lại như trước lát 10. Lượt của làn vẫn dừng; yêu cầu của các lô vẫn hẹn lại theo luật lát 9.
+- **Không đè nhau giữa web và worker**: kết quả gộp vào `params` bằng một câu `UPDATE ... params || json` có điều kiện `status = 'PENDING'`, cờ "báo chuông" cũng ghi bằng một câu UPDATE có điều kiện. Yêu cầu xong đúng lúc web hết kiên nhẫn thì web đọc lại và trả kết quả như thường (không chuông); web đánh dấu trước thì worker thấy cờ và reo chuông. Không có ca bị bỏ rơi.
+- **Phạm vi gian**: làn chạy với quyền toàn shop nên phạm vi của nhân viên được kiểm ở route TRƯỚC khi ghi yêu cầu (đơn / hóa đơn gốc ngoài phạm vi → 404 như cũ).
+- **Giao diện**: chỉ thêm xử lý câu trả lời 202 (hiện `message` bằng thông báo thường thay cho câu báo thành công) ở ô xuất theo mã và nút Điều chỉnh. Hộp "Chưa lập hóa đơn điều chỉnh" của lát 3 chạy như cũ vì web vẫn trả đủ `code` + `reason` + `suggestion`.
+- **Không đổi database.** Công tắc RIÊNG `INVOICE_SINGLE_MODE` (không dùng chung `INVOICE_BULK_MODE`) vì worker bản lát 9 chưa biết loại `ADJUST`: nó sẽ coi mã dòng nhật ký là mã đơn và báo "không tìm thấy đơn".
+
+*Các con số (em tự chọn).* Chờ tối đa 25 giây (`INVOICE_SINGLE_WAIT_SECONDS`): một tờ bình thường xong trong 1–4 giây, 25 giây đủ cho một tờ gặp nhà cung cấp chậm mà vẫn dưới mức proxy cắt request. Hỏi lại mỗi 0,4 giây: một câu theo khóa chính.
+
+*Đưa lên hai lần.* Lần một: mã, `INVOICE_SINGLE_MODE` mặc định `inline` — worker biết xử lý `ADJUST` + ghi kết quả lên trước. Lần hai: đổi mặc định sang `lane`. Đường lui: `INVOICE_SINGLE_MODE=inline` ở web. Giao diện bản mới chạy được với cả hai chế độ.
+
+*Đã kiểm (03/10 ~13:50).*
+- `invoice-single-requests.test.ts` 9 ca trên database dev với nhà cung cấp giả: phạm vi điều chỉnh ghi / đọc JSON; xuất một đơn (nơi chờ nhận 201 + dòng nhật ký, không chuông); bấm trùng không ghi yêu cầu thứ hai (đơn lẻ lẫn đơn đang ở trong lô); lỗi tạm thì đơn lẻ hỏng ngay còn yêu cầu của lô hẹn lại; đơn lẻ không xếp sau mốc nghỉ của lô; điều chỉnh tay lập đúng mã `<mã đơn>-DC1` trỏ đúng hóa đơn gốc; điều chỉnh bị chặn trả đủ mã + lý do + việc nên làm, không lập gì; hết thời gian chờ → "đã nhận" → làm xong có một chuông và kết quả vẫn được ghi; xong đúng lúc hết thời gian chờ → vẫn trả kết quả, không chuông.
+- Cả bộ 1225 / 1225, tsc backend + frontend sạch, eslint hai tệp giao diện sạch.
+- Sandbox MISA thật (`scripts/misa-single-lane-probe.ts`): xuất một đơn qua làn 0,84 giây ra tờ 00000152; điều chỉnh giảm toàn bộ qua làn 0,85 giây ra tờ 00000153 mang mã `...-DC1`; bấm điều chỉnh lần nữa bị từ chối "đã được điều chỉnh bởi hóa đơn số 00000153", vẫn một tờ.
+- Chạy thật trên máy local (backend vai all, `INVOICE_SINGLE_MODE=lane`, tài khoản demo có MST giả): `POST /invoices` trả 502 kèm lỗi MST sau 0,86 giây (đi qua tín hiệu pg-boss + làn + chờ); `POST /invoices/:id/adjust` trả 409 kèm `HUBSELL_ADJUST_ORIGINAL_UNCHECKED` + lý do + việc nên làm sau 0,42 giây; mã đơn không có → 404. Giả lập làn đang bận (chờ 3 giây): giao diện hiện thông báo "Đã nhận yêu cầu xuất hóa đơn cho đơn … xong sẽ có thông báo ở chuông"; thả làn → 5 giây sau yêu cầu chạy và có chuông "Chưa lập được hóa đơn cho đơn …" kèm lý do. Dữ liệu thử đã dọn, hai tệp env đã trả lại.
+
+*Chưa kiểm.* Nút Điều chỉnh bấm trên giao diện ở chế độ `lane` (đã kiểm bằng lệnh gọi HTTP, chưa bấm trên trình duyệt); shop thật trên prod.
+
+*Quyết định em tự chọn, anh đổi được.* (1) Web chờ kết quả thay vì trả ngay rồi để giao diện tự hỏi: giữ nguyên hợp đồng API và trải nghiệm một nút, hộp chặn của lát 3 không phải làm lại. (2) Đơn lẻ không tự thử lại khi lỗi tạm. (3) Đơn lẻ chen trước mốc nghỉ của lô. (4) 25 giây.
+
+*Không đổi ở lát này.* Điều chỉnh TỰ ĐỘNG khi sàn chốt hoàn vẫn là `void async` trong RAM: lát 11.
 
 ## 5. Rủi ro và điều em không cam kết
 

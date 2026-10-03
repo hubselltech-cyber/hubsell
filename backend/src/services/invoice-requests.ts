@@ -25,9 +25,10 @@
 
 import { randomUUID } from "node:crypto";
 
-import { InvoiceLogStatus, type Prisma, ShippingStatus } from "@prisma/client";
+import { InvoiceLogStatus, Prisma, ShippingStatus } from "@prisma/client";
 
-import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
+import { issueAdjustmentForOrder, type AdjustmentScope } from "../integrations/invoice/adjust-order";
+import { issueInvoiceForOrder, type IssueOrderResult } from "../integrations/invoice/issue-order";
 import { OUTCOME_UNKNOWN_CODE } from "../integrations/invoice/unknown-outcome";
 import { prisma } from "../lib/prisma";
 import { enqueue, isQueueReady, QUEUES } from "../lib/queue";
@@ -63,6 +64,8 @@ export function requestBacklogDelayMs(env: NodeJS.ProcessEnv = process.env): num
 export const DUE_NOW_SKEW_MS = 30_000;
 
 export const REQUEST_KIND_ISSUE = "ISSUE";
+/** Điều chỉnh giảm một hóa đơn đã phát hành (lát 10): targetKey = mã dòng nhật ký hóa đơn gốc. */
+export const REQUEST_KIND_ADJUST = "ADJUST";
 export const REQUEST_SOURCE_MANUAL = "MANUAL";
 export const REQUEST_CODE_UNKNOWN = "OUTCOME_UNKNOWN";
 export const REQUEST_CODE_ALREADY_ISSUED = "ALREADY_ISSUED";
@@ -268,6 +271,111 @@ export async function cancelBatch(ownerId: string, batchId: string): Promise<num
   return r.count;
 }
 
+// ---------- Yêu cầu ĐƠN LẺ: xuất một đơn theo mã, điều chỉnh tay (lát 10) ----------
+
+/** Phạm vi điều chỉnh ở dạng ghi được vào cột JSON (Map → object thường). */
+type StoredAdjustScope = { kind: "FULL" } | { kind: "AMOUNT"; amount: number } | { kind: "ITEMS"; bySku: Record<string, number> };
+
+export function encodeAdjustScope(scope: AdjustmentScope): StoredAdjustScope {
+  return scope.kind === "ITEMS" ? { kind: "ITEMS", bySku: Object.fromEntries(scope.bySku) } : scope;
+}
+export function decodeAdjustScope(raw: unknown): AdjustmentScope {
+  const s = (raw ?? {}) as Partial<StoredAdjustScope> & { bySku?: Record<string, number>; amount?: number };
+  if (s.kind === "ITEMS" && s.bySku) return { kind: "ITEMS", bySku: new Map(Object.entries(s.bySku).map(([k, v]) => [k, Number(v)])) };
+  if (s.kind === "AMOUNT" && typeof s.amount === "number") return { kind: "AMOUNT", amount: s.amount };
+  return { kind: "FULL" };
+}
+
+/** Kết quả chi tiết làn ghi lại cho nơi đang chờ (cột params, khóa `result`). */
+export interface StoredRequestResult {
+  httpStatus: number;
+  error?: string;
+  code?: string;
+  reason?: string;
+  suggestion?: string;
+}
+
+export interface SingleRequestInput {
+  ownerId: string;
+  kind: typeof REQUEST_KIND_ISSUE | typeof REQUEST_KIND_ADJUST;
+  /** ISSUE: mã đơn. ADJUST: mã dòng nhật ký của hóa đơn gốc. */
+  targetKey: string;
+  /** ADJUST: { reason, scope } (scope đã qua encodeAdjustScope). */
+  params?: Prisma.InputJsonObject;
+  requestedById?: string | null;
+}
+
+/**
+ * Ghi MỘT yêu cầu đơn lẻ (không thuộc lô nào) rồi gọi làn của shop. Trả null khi
+ * đơn / hóa đơn đó đang có yêu cầu chờ (chỉ mục duy nhất riêng phần).
+ */
+export async function submitSingleRequest(input: SingleRequestInput): Promise<{ id: string } | null> {
+  try {
+    const row = await prisma.$transaction(async (tx) => {
+      const created = await tx.invoiceRequest.create({
+        data: {
+          ownerId: input.ownerId,
+          kind: input.kind,
+          source: REQUEST_SOURCE_MANUAL,
+          targetKey: input.targetKey,
+          params: input.params,
+          requestedById: input.requestedById ?? null,
+          // Đơn lẻ là việc có người đang chờ ngay: tới hạn ngay, không xếp sau mốc nghỉ của lô.
+          nextRetryAt: new Date(Date.now() - DUE_NOW_SKEW_MS),
+        },
+        select: { id: true },
+      });
+      await tx.invoiceLane.upsert({ where: { ownerId: input.ownerId }, create: { ownerId: input.ownerId }, update: {} });
+      return created;
+    });
+    await signalInvoiceLane(input.ownerId);
+    return row;
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return null;
+    throw err;
+  }
+}
+
+export interface FinishedRequest {
+  status: string;
+  resultLogId: string | null;
+  errorCode: string | null;
+  error: string | null;
+  result: StoredRequestResult | null;
+}
+
+const WAIT_POLL_MS = 400;
+
+/**
+ * CHỜ một yêu cầu đơn lẻ có kết cục, hỏi lại mỗi 0,4 giây (một câu theo khóa chính).
+ * Hết `timeoutMs` mà chưa xong: đánh dấu "báo chuông khi xong" rồi trả null — nơi gọi
+ * trả lời "đã nhận". Đánh dấu là một UPDATE có điều kiện: yêu cầu vừa xong đúng lúc
+ * đó thì đọc lại và trả kết quả như thường, không ai bị bỏ rơi.
+ */
+export async function awaitRequest(ownerId: string, id: string, timeoutMs: number): Promise<FinishedRequest | null> {
+  const read = async (): Promise<FinishedRequest | null> => {
+    const row = await prisma.invoiceRequest.findFirst({
+      where: { id, ownerId },
+      select: { status: true, resultLogId: true, errorCode: true, error: true, params: true },
+    });
+    if (!row || row.status === "PENDING") return null;
+    const result = ((row.params ?? {}) as { result?: StoredRequestResult }).result ?? null;
+    return { status: row.status, resultLogId: row.resultLogId, errorCode: row.errorCode, error: row.error, result };
+  };
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const done = await read();
+    if (done) return done;
+    if (Date.now() >= deadline) break;
+    await sleep(WAIT_POLL_MS);
+  }
+  const marked = await prisma.$executeRaw`
+    UPDATE "invoice_requests"
+    SET "params" = coalesce("params", '{}'::jsonb) || '{"notify":true}'::jsonb, "updatedAt" = (now() AT TIME ZONE 'UTC')
+    WHERE "id" = ${id} AND "ownerId" = ${ownerId} AND "status" = 'PENDING'`;
+  return marked === 0 ? read() : null;
+}
+
 // ---------- Phía worker ----------
 
 export type RequestRunOutcome = "IDLE" | "DONE" | "BACKLOG" | "TRANSIENT" | "ABORTED";
@@ -298,15 +406,59 @@ export interface RequestRunOptions {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** Đóng một yêu cầu — chỉ khi nó còn PENDING (khách vừa bấm Dừng thì thôi). */
+/**
+ * Đóng một yêu cầu — chỉ khi nó còn PENDING (khách vừa bấm Dừng thì thôi). Kết quả
+ * chi tiết GỘP vào cột params bằng một câu UPDATE (jsonb ||) để không đè cờ "báo
+ * chuông" mà nơi đang chờ có thể vừa ghi. Trả true = có người hết kiên nhẫn chờ,
+ * cần báo chuông.
+ */
 async function finishRequest(
   id: string,
-  data: { status: "DONE" | "FAILED"; resultLogId?: string | null; errorCode?: string | null; error?: string | null }
+  data: { status: "DONE" | "FAILED"; resultLogId?: string | null; errorCode?: string | null; error?: string | null },
+  r?: IssueOrderResult
+): Promise<boolean> {
+  const stored: StoredRequestResult | null = r
+    ? { httpStatus: r.httpStatus, error: r.error, code: r.errorCode, reason: r.reason, suggestion: r.suggestion }
+    : null;
+  const patch = JSON.stringify(stored ? { result: stored } : {});
+  const rows = await prisma.$queryRaw<{ notify: boolean | null }[]>`
+    UPDATE "invoice_requests"
+    SET "status" = ${data.status},
+        "resultLogId" = ${data.resultLogId ?? null},
+        "errorCode" = ${data.errorCode ?? null},
+        "error" = ${data.error ?? null},
+        "attempts" = "attempts" + 1,
+        "finishedAt" = (now() AT TIME ZONE 'UTC'),
+        "updatedAt" = (now() AT TIME ZONE 'UTC'),
+        "params" = coalesce("params", '{}'::jsonb) || ${patch}::jsonb
+    WHERE "id" = ${id} AND "status" = 'PENDING'
+    RETURNING ("params"->>'notify')::boolean AS "notify"`;
+  return rows[0]?.notify === true;
+}
+
+/** Chuông cho yêu cầu đơn lẻ mà nơi chờ đã trả lời "đã nhận" trước khi có kết quả. */
+async function notifySingleFinished(
+  ownerId: string,
+  reqRow: { kind: string; targetKey: string },
+  r: IssueOrderResult
 ): Promise<void> {
-  await prisma.invoiceRequest.updateMany({
-    where: { id, status: "PENDING" },
-    data: { ...data, attempts: { increment: 1 }, finishedAt: new Date() },
+  const adjust = reqRow.kind === REQUEST_KIND_ADJUST;
+  const what = adjust ? "hóa đơn điều chỉnh" : `hóa đơn cho đơn ${reqRow.targetKey}`;
+  await notify(ownerId, {
+    type: "INVOICE_SINGLE_DONE",
+    title: r.ok ? `Đã lập ${what}${r.log?.invoiceNo ? ` số ${r.log.invoiceNo}` : ""}` : `Chưa lập được ${what}`,
+    body: r.ok ? "Xem và tải PDF tại Lịch sử & Báo cáo thuế." : (r.error ?? "Nhà cung cấp từ chối phát hành"),
+    link: "/invoicing/history",
   });
+}
+
+/** Gọi đúng lõi theo loại yêu cầu. */
+function runOneRequest(ownerId: string, reqRow: { kind: string; targetKey: string; params: unknown }): Promise<IssueOrderResult> {
+  if (reqRow.kind === REQUEST_KIND_ADJUST) {
+    const p = (reqRow.params ?? {}) as { reason?: string; scope?: unknown };
+    return issueAdjustmentForOrder(ownerId, { userId: ownerId }, reqRow.targetKey, p.reason ?? "Khách trả hàng hoàn tiền", decodeAdjustScope(p.scope));
+  }
+  return issueInvoiceForOrder(ownerId, { userId: ownerId }, reqRow.targetKey);
 }
 
 /**
@@ -316,10 +468,11 @@ async function finishRequest(
 export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunOptions): Promise<RequestRunResult> {
   const now = opts.now ?? new Date();
   const due = await prisma.invoiceRequest.findMany({
-    where: { ownerId, kind: REQUEST_KIND_ISSUE, status: "PENDING", nextRetryAt: { lte: now } },
+    // Mọi loại yêu cầu (xuất, điều chỉnh) chung một hàng, cũ trước.
+    where: { ownerId, status: "PENDING", nextRetryAt: { lte: now } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: opts.budget,
-    select: { id: true, targetKey: true, batchId: true },
+    select: { id: true, kind: true, targetKey: true, batchId: true, params: true },
   });
   const result: RequestRunResult = { outcome: "IDLE", processed: 0, issued: 0, failed: 0, interrupted: false };
   if (due.length === 0) return result;
@@ -339,34 +492,43 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
     if (reqRow.batchId) batches.add(reqRow.batchId);
 
     // TUẦN TỰ — nhà cung cấp cấp số hóa đơn liên tục theo ký hiệu.
-    const r = await issueInvoiceForOrder(ownerId, { userId: ownerId }, reqRow.targetKey);
+    const r = await runOneRequest(ownerId, reqRow);
     const pauseMs = i < due.length - 1 ? (r.pauseBeforeNextMs ?? 0) : 0;
+    /** Đơn lẻ = có người đang chờ câu trả lời ngay trên màn hình (lát 10). */
+    const single = reqRow.batchId === null;
+    let bell = false;
 
     if (r.ok) {
       result.issued += 1;
-      await finishRequest(reqRow.id, { status: "DONE", resultLogId: r.log?.id ?? null });
+      bell = await finishRequest(reqRow.id, { status: "DONE", resultLogId: r.log?.id ?? null }, r);
     } else if (r.conflict === "ISSUED") {
       result.issued += 1;
-      await finishRequest(reqRow.id, { status: "DONE", errorCode: REQUEST_CODE_ALREADY_ISSUED, error: r.error ?? null });
+      bell = await finishRequest(reqRow.id, { status: "DONE", errorCode: REQUEST_CODE_ALREADY_ISSUED, error: r.error ?? null }, r);
     } else if (r.conflict === "PENDING" || r.errorCode === OUTCOME_UNKNOWN_CODE) {
       // Dòng InvoiceLog đang chờ là vé của đơn; vòng quét lát 6b tra lại rồi nối số
       // hoặc trả đơn về Hàng chờ. Yêu cầu này xong phần của nó.
-      await finishRequest(reqRow.id, {
-        status: "DONE",
-        resultLogId: r.log?.id ?? null,
-        errorCode: REQUEST_CODE_UNKNOWN,
-        error: r.error ?? null,
-      });
+      bell = await finishRequest(
+        reqRow.id,
+        { status: "DONE", resultLogId: r.log?.id ?? null, errorCode: REQUEST_CODE_UNKNOWN, error: r.error ?? null },
+        r
+      );
     } else if (r.errorScope === "TRANSIENT") {
       transient = true;
       const reason = r.error ?? "Nhà cung cấp hóa đơn đang trục trặc";
-      // Nhà cung cấp đang trục trặc thì đơn nào cũng vậy: cả phần đang chờ tính một lượt.
+      if (single) {
+        // Đơn lẻ không tự thử lại: người bấm đang chờ, nhận lỗi ngay và tự bấm lại
+        // (đúng hành vi trước lát 10). Lượt vẫn dừng vì nhà cung cấp đang trục trặc.
+        result.failed += 1;
+        bell = await finishRequest(reqRow.id, { status: "FAILED", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: reason }, r);
+        if (bell) await notifySingleFinished(ownerId, reqRow, r);
+      }
+      // Nhà cung cấp đang trục trặc thì đơn nào cũng vậy: cả phần đang chờ CỦA CÁC LÔ tính một lượt.
       await prisma.invoiceRequest.updateMany({
-        where: { ownerId, kind: REQUEST_KIND_ISSUE, status: "PENDING", nextRetryAt: { lte: now } },
+        where: { ownerId, batchId: { not: null }, status: "PENDING", nextRetryAt: { lte: now } },
         data: { attempts: { increment: 1 }, nextRetryAt: new Date(Date.now() + REQUEST_RETRY_MS), errorCode: r.errorCode ?? null, error: reason },
       });
       const exhausted = await prisma.invoiceRequest.findMany({
-        where: { ownerId, kind: REQUEST_KIND_ISSUE, status: "PENDING", attempts: { gte: REQUEST_MAX_ATTEMPTS } },
+        where: { ownerId, status: "PENDING", attempts: { gte: REQUEST_MAX_ATTEMPTS } },
         select: { id: true, batchId: true },
       });
       if (exhausted.length > 0) {
@@ -384,11 +546,16 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
       break;
     } else {
       result.failed += 1;
-      await finishRequest(reqRow.id, { status: "FAILED", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: r.error ?? "Nhà cung cấp từ chối phát hành" });
+      bell = await finishRequest(
+        reqRow.id,
+        { status: "FAILED", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: r.error ?? "Nhà cung cấp từ chối phát hành" },
+        r
+      );
       if (r.errorScope === "ACCOUNT") {
         aborted = true;
+        if (bell) await notifySingleFinished(ownerId, reqRow, r);
         const rest = await prisma.invoiceRequest.findMany({
-          where: { ownerId, kind: REQUEST_KIND_ISSUE, status: "PENDING" },
+          where: { ownerId, status: "PENDING" },
           select: { id: true, batchId: true },
         });
         if (rest.length > 0) {
@@ -402,6 +569,7 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
         break;
       }
     }
+    if (bell) await notifySingleFinished(ownerId, reqRow, r);
     if (pauseMs > 0) await sleep(pauseMs);
   }
 
@@ -415,7 +583,7 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
   if (result.outcome === "BACKLOG" && !result.interrupted) {
     // Còn yêu cầu: cả phần còn lại nghỉ rồi mới tới lượt kế.
     await prisma.invoiceRequest.updateMany({
-      where: { ownerId, kind: REQUEST_KIND_ISSUE, status: "PENDING", nextRetryAt: { lte: new Date() } },
+      where: { ownerId, status: "PENDING", nextRetryAt: { lte: new Date() } },
       data: { nextRetryAt: new Date(Date.now() + requestBacklogDelayMs()) },
     });
   }

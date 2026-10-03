@@ -7,6 +7,8 @@ import {
   DEFAULT_EVT_ORDER_CONCURRENCY,
   DEFAULT_INVOICE_BULK_MODE,
   DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS,
+  DEFAULT_INVOICE_SINGLE_MODE,
+  DEFAULT_INVOICE_SINGLE_WAIT_SECONDS,
   DEFAULT_STOCK_CHANNEL_CONCURRENCY,
   DEFAULT_STOCK_PUSH_MODE,
   DEFAULT_STOCK_SWEEP_SECONDS,
@@ -15,6 +17,8 @@ import {
   evtOrderConcurrency,
   invoiceBulkMode,
   invoiceRequestSweepSeconds,
+  invoiceSingleMode,
+  invoiceSingleWaitMs,
   queueOptionsForRole,
   resolveQueueConnection,
   stockChannelConcurrency,
@@ -155,5 +159,21 @@ describe("xuất hóa đơn hàng loạt chạy nền (bước 5 lát 9)", () =>
     expect(invoiceRequestSweepSeconds({ INVOICE_REQUEST_SWEEP_SECONDS: "2" })).toBe(2);
     expect(invoiceRequestSweepSeconds({ INVOICE_REQUEST_SWEEP_SECONDS: "0" })).toBe(DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS);
     expect(invoiceRequestSweepSeconds({ INVOICE_REQUEST_SWEEP_SECONDS: "x" })).toBe(DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS);
+  });
+});
+
+describe("xuất một đơn + điều chỉnh tay qua làn (bước 5 lát 10)", () => {
+  it("INVOICE_SINGLE_MODE: chỉ nhận lane | inline, sai thì về mặc định", () => {
+    expect(invoiceSingleMode({})).toBe(DEFAULT_INVOICE_SINGLE_MODE);
+    expect(invoiceSingleMode({ INVOICE_SINGLE_MODE: "LANE" })).toBe("lane");
+    expect(invoiceSingleMode({ INVOICE_SINGLE_MODE: "inline" })).toBe("inline");
+    expect(invoiceSingleMode({ INVOICE_SINGLE_MODE: "x" })).toBe(DEFAULT_INVOICE_SINGLE_MODE);
+  });
+
+  it("INVOICE_SINGLE_WAIT_SECONDS: mặc định 25 giây, ngoài khoảng 1–120 thì về mặc định", () => {
+    expect(invoiceSingleWaitMs({})).toBe(DEFAULT_INVOICE_SINGLE_WAIT_SECONDS * 1000);
+    expect(invoiceSingleWaitMs({ INVOICE_SINGLE_WAIT_SECONDS: "3" })).toBe(3000);
+    expect(invoiceSingleWaitMs({ INVOICE_SINGLE_WAIT_SECONDS: "0" })).toBe(DEFAULT_INVOICE_SINGLE_WAIT_SECONDS * 1000);
+    expect(invoiceSingleWaitMs({ INVOICE_SINGLE_WAIT_SECONDS: "999" })).toBe(DEFAULT_INVOICE_SINGLE_WAIT_SECONDS * 1000);
   });
 });

@@ -262,6 +262,37 @@ export function invoiceBulkMode(env: NodeJS.ProcessEnv = process.env): InvoiceBu
 }
 
 /**
+ * ĐƯỜNG XUẤT MỘT ĐƠN THEO MÃ + ĐIỀU CHỈNH TAY (bước 5 lát 10, 03/10/2026):
+ *   · inline — web gọi nhà cung cấp ngay trong request (trước lát 10).
+ *   · lane   — web ghi MỘT dòng invoice_requests, gọi làn của shop rồi CHỜ kết quả
+ *     tối đa INVOICE_SINGLE_WAIT_SECONDS; câu trả lời giữ nguyên hình dạng cũ. Quá
+ *     thời gian chờ (làn đang bận một lượt dài) thì trả 202 "đã nhận", kết quả về chuông.
+ * Công tắc RIÊNG với INVOICE_BULK_MODE vì worker bản lát 9 chưa biết loại yêu cầu
+ * ADJUST: lần một (mặc định inline) đưa worker biết xử lý lên trước, lần hai mới
+ * đổi mặc định sang lane. Đường lui: INVOICE_SINGLE_MODE=inline ở web.
+ */
+export type InvoiceSingleMode = "lane" | "inline";
+export const DEFAULT_INVOICE_SINGLE_MODE: InvoiceSingleMode = "inline";
+
+export function invoiceSingleMode(env: NodeJS.ProcessEnv = process.env): InvoiceSingleMode {
+  const raw = (env.INVOICE_SINGLE_MODE ?? "").trim().toLowerCase();
+  return raw === "lane" || raw === "inline" ? raw : DEFAULT_INVOICE_SINGLE_MODE;
+}
+
+/**
+ * Web chờ kết quả một yêu cầu đơn lẻ tối đa chừng này giây. MẶC ĐỊNH TỰ CHỌN 25:
+ * một tờ bình thường xong trong 1–4 giây (tín hiệu ~0,5 giây + một lệnh phát hành
+ * 0,35–0,6 giây trên sandbox); 25 giây đủ cho một tờ gặp nhà cung cấp chậm mà vẫn
+ * dưới mức trình duyệt / proxy cắt request. Đổi bằng INVOICE_SINGLE_WAIT_SECONDS.
+ */
+export const DEFAULT_INVOICE_SINGLE_WAIT_SECONDS = 25;
+
+export function invoiceSingleWaitMs(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.INVOICE_SINGLE_WAIT_SECONDS);
+  return (Number.isFinite(n) && n >= 1 && n <= 120 ? n : DEFAULT_INVOICE_SINGLE_WAIT_SECONDS) * 1000;
+}
+
+/**
  * Nhịp lưới quét yêu cầu bấm tay tới hạn, giây. Mặc định 5 (docs 4.6 B — bằng lưới
  * quét đẩy tồn): tín hiệu pg-boss không tới thì chủ shop chờ thêm nhiều nhất chừng
  * này. Câu quét đi theo chỉ mục riêng phần chỉ chứa dòng chờ. Đổi bằng

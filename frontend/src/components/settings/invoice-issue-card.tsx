@@ -440,9 +440,12 @@ export function InvoiceIssueCard({
     setBusy(true);
     try {
       const res = await issueInvoice(orderCode);
-      toast.success(
-        `Đã phát hành hóa đơn số ${res.log.invoiceNo ?? "?"} cho đơn ${orderCode}.`
-      );
+      // Lát 10: shop đang có lượt xuất dài → máy chủ nhận yêu cầu, kết quả về chuông.
+      if (res.pending) toast.info(res.message ?? "Đã nhận yêu cầu xuất hóa đơn — xong sẽ có thông báo ở chuông.");
+      else
+        toast.success(
+          `Đã phát hành hóa đơn số ${res.log?.invoiceNo ?? "?"} cho đơn ${orderCode}.`
+        );
       setIssueCode("");
       void loadQueue(filter, page, pageSize);
     } catch (err) {

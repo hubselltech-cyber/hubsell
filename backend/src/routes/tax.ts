@@ -26,14 +26,19 @@ import {
 } from "../integrations/invoice/auto-issue-policy";
 import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
-import { invoiceBulkMode } from "../lib/queue-config";
+import { invoiceBulkMode, invoiceSingleMode, invoiceSingleWaitMs } from "../lib/queue-config";
 import {
   acceptBulkIssue,
+  awaitRequest,
   BULK_MAX_ORDERS,
   cancelBatch,
+  encodeAdjustScope,
   findActiveBatchId,
   getBatchProgress,
   openIssueRequestCodes,
+  REQUEST_KIND_ADJUST,
+  REQUEST_KIND_ISSUE,
+  submitSingleRequest,
 } from "../services/invoice-requests";
 import {
   downloadInvoiceFiles,
@@ -566,6 +571,45 @@ async function sandboxTaxCodeBlocked(req: AuthRequest): Promise<string | null> {
   return null;
 }
 
+/**
+ * Lát 10: CHỜ kết quả một yêu cầu đơn lẻ đã gửi cho làn rồi trả lời đúng hình dạng
+ * của đường cũ ({ log, error, code, reason, suggestion } + mã HTTP của lõi). Quá
+ * thời gian chờ → 202 { pending: true, message }: việc vẫn chạy, kết quả về chuông.
+ */
+async function respondSingleRequest(
+  res: import("express").Response,
+  ownerId: string,
+  requestId: string,
+  what: string
+): Promise<void> {
+  const done = await awaitRequest(ownerId, requestId, invoiceSingleWaitMs());
+  if (!done) {
+    res.status(202).json({
+      pending: true,
+      message: `Đã nhận yêu cầu ${what}. Shop đang có một lượt xuất hóa đơn chạy nên yêu cầu này xếp sau — xong sẽ có thông báo ở chuông, kết quả xem tại Lịch sử hóa đơn.`,
+    });
+    return;
+  }
+  const row = done.resultLogId
+    ? await prisma.invoiceLog.findFirst({ where: { id: done.resultLogId, ownerId } })
+    : null;
+  const log = row
+    ? {
+        ...row,
+        totalAmount: Number(row.totalAmount),
+        vatAmount: Number(row.vatAmount),
+        platformTaxWithheld: Number(row.platformTaxWithheld),
+      }
+    : undefined;
+  // Yêu cầu bị đóng hàng loạt (lỗi tài khoản ở tờ trước nó) không có kết quả chi tiết.
+  const r = done.result ?? {
+    httpStatus: done.status === "DONE" ? 201 : 502,
+    error: done.error ?? undefined,
+    code: done.errorCode ?? undefined,
+  };
+  res.status(r.httpStatus).json({ log, error: r.error, code: r.code, reason: r.reason, suggestion: r.suggestion });
+}
+
 // POST /api/tax/invoices — PHÁT HÀNH hóa đơn cho MỘT đơn (lõi ở issue-order.ts).
 router.post("/invoices", async (req: AuthRequest, res, next) => {
   try {
@@ -577,6 +621,31 @@ router.post("/invoices", async (req: AuthRequest, res, next) => {
     const blocked = await sandboxTaxCodeBlocked(req);
     if (blocked) {
       res.status(400).json({ error: blocked });
+      return;
+    }
+    if (invoiceSingleMode() === "lane") {
+      // Lát 10: không gọi nhà cung cấp trong request — ghi một yêu cầu, làn của shop
+      // phát hành (không chen ngang lượt đang xin số trên cùng ký hiệu), web chờ kết quả.
+      // Phạm vi gian của người bấm kiểm NGAY ở đây vì làn chạy với quyền toàn shop.
+      const inScope = await prisma.order.findFirst({
+        where: { orderCode, channel: channelScope(req) },
+        select: { id: true },
+      });
+      if (!inScope) {
+        res.status(404).json({ error: `Không tìm thấy đơn ${orderCode} trong phạm vi của bạn` });
+        return;
+      }
+      const submitted = await submitSingleRequest({
+        ownerId: req.ownerId!,
+        kind: REQUEST_KIND_ISSUE,
+        targetKey: orderCode,
+        requestedById: req.userId ?? null,
+      });
+      if (!submitted) {
+        res.status(409).json({ error: "Đơn này đang nằm trong một lượt xuất hóa đơn — chờ lượt đó xong." });
+        return;
+      }
+      await respondSingleRequest(res, req.ownerId!, submitted.id, `xuất hóa đơn cho đơn ${orderCode}`);
       return;
     }
     const r = await issueInvoiceForOrder(req.ownerId!, channelScope(req), orderCode);
@@ -1040,6 +1109,37 @@ router.post("/invoices/:id/adjust", async (req: AuthRequest, res, next) => {
       finalReason = decided.reason;
     }
 
+    if (invoiceSingleMode() === "lane") {
+      // Lát 10: điều chỉnh tay cũng đi qua làn của shop (xem POST /invoices).
+      const original = await prisma.invoiceLog.findFirst({
+        where: { id: req.params.id, ownerId: req.ownerId! },
+        select: { orderId: true },
+      });
+      const inScope =
+        original &&
+        (!original.orderId ||
+          (await prisma.order.findFirst({
+            where: { id: original.orderId, channel: channelScope(req) },
+            select: { id: true },
+          })));
+      if (!inScope) {
+        res.status(404).json({ error: "Không tìm thấy hóa đơn gốc" });
+        return;
+      }
+      const submitted = await submitSingleRequest({
+        ownerId: req.ownerId!,
+        kind: REQUEST_KIND_ADJUST,
+        targetKey: req.params.id,
+        params: { reason: finalReason, scope: encodeAdjustScope(scope) },
+        requestedById: req.userId ?? null,
+      });
+      if (!submitted) {
+        res.status(409).json({ error: "Đang có yêu cầu điều chỉnh chờ xử lý cho hóa đơn này." });
+        return;
+      }
+      await respondSingleRequest(res, req.ownerId!, submitted.id, "lập hóa đơn điều chỉnh");
+      return;
+    }
     const r = await issueAdjustmentForOrder(
       req.ownerId!,
       channelScope(req),

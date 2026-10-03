@@ -263,9 +263,12 @@ export default function TaxHistoryPage() {
     setAdjustingId(id);
     try {
       const r = await adjustInvoice(id, adjustMode, "Khách trả hàng hoàn tiền");
-      toast.success(
-        `Đã lập hóa đơn điều chỉnh số ${r.log?.invoiceNo ?? "?"} cho hóa đơn ${invoiceNo ?? ""}.`
-      );
+      // Lát 10: shop đang có lượt xuất dài → máy chủ nhận yêu cầu, kết quả về chuông.
+      if (r.pending) toast.info(r.message ?? "Đã nhận yêu cầu lập hóa đơn điều chỉnh — xong sẽ có thông báo ở chuông.");
+      else
+        toast.success(
+          `Đã lập hóa đơn điều chỉnh số ${r.log?.invoiceNo ?? "?"} cho hóa đơn ${invoiceNo ?? ""}.`
+        );
       void load(range);
     } catch (err) {
       if (err instanceof ApiError && err.reason && err.suggestion) {

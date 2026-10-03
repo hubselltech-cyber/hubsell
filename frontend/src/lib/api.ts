@@ -4325,12 +4325,25 @@ export function fetchTaxDeclaration(params: { year: number; quarter: number | nu
 }
 
 /**
+ * Câu trả lời của xuất MỘT đơn / điều chỉnh tay. Từ hóa đơn bước 5 lát 10 việc đi
+ * qua làn của shop và máy chủ chờ kết quả giúp: bình thường có `log`; khi shop đang
+ * có một lượt xuất dài thì máy chủ trả 202 `pending` + `message` (việc vẫn chạy,
+ * kết quả về chuông) — nơi gọi hiện `message` thay cho câu báo thành công.
+ */
+export interface InvoiceSingleResult {
+  log?: InvoiceLogDTO;
+  error?: string;
+  pending?: boolean;
+  message?: string;
+}
+
+/**
  * PHÁT HÀNH hóa đơn điện tử cho một đơn hàng (thí điểm MISA 23/08). Backend
  * trả 201 khi NCC phát hành thành công, 502 kèm error khi NCC từ chối —
  * apiFetch ném ApiError cho case sau, nơi gọi hiển thị message.
  */
 export function issueInvoice(orderCode: string) {
-  return apiFetch<{ log: InvoiceLogDTO; error?: string }>("/api/tax/invoices", {
+  return apiFetch<InvoiceSingleResult>("/api/tax/invoices", {
     method: "POST",
     body: JSON.stringify({ orderCode }),
   });
@@ -4511,7 +4524,7 @@ export function adjustInvoice(
   mode: "PLATFORM" | "FULL",
   reason?: string
 ) {
-  return apiFetch<{ log: InvoiceLogDTO; error?: string }>(
+  return apiFetch<InvoiceSingleResult>(
     `/api/tax/invoices/${logId}/adjust`,
     { method: "POST", body: JSON.stringify({ mode, reason }) }
   );
