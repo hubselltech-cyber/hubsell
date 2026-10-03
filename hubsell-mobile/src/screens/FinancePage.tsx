@@ -12,7 +12,6 @@ import {
   fetchAnalytics,
   fetchCashFlow,
   fetchOverview,
-  fetchPnlSummary,
 } from "@/api/finance";
 import { ApiError } from "@/api/client";
 import type {
@@ -20,7 +19,6 @@ import type {
   BreakdownItem,
   CashFlowRow,
   OverviewAnalytics,
-  PnlSummary,
 } from "@/types/api";
 import { RANGE_OPTIONS, previousRange, rangeFor, type RangeKey } from "@/lib/dates";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
@@ -28,7 +26,6 @@ import { compactMoney, formatMoney } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
-import { ProfitBarChart } from "@/components/ProfitBarChart";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
 import { BreakdownTile } from "@/components/BreakdownTile";
@@ -45,7 +42,7 @@ import { TABULAR } from "@/theme/tokens";
  *      Doanh thu → Giá vốn → Chi phí sàn → Thuế sàn → Ads → Vận hành → Lãi ròng.
  *   3. CƠ CẤU CHI PHÍ — donut 12 khoản đúng nhãn/màu Tổng quan web, donut
  *      TRÊN, chú thích DƯỚI.
- *   4. Lãi/Lỗ theo ngày · 5. Tiền theo gian hàng (giữ nguyên).
+ *   4. Tiền theo gian hàng (giữ nguyên). Lãi/Lỗ theo ngày đã bỏ (03/10).
  * Mọi bề rộng đo theo màn hình thật (flex + onLayout), không px cố định.
  */
 
@@ -87,7 +84,7 @@ function costSegments(a: OverviewAnalytics) {
     { key: "adWallet", label: "Nạp ví quảng cáo sàn", amount: fee?.adWallet ?? 0, color: "#6366f1" },
     { key: "feeOther", label: "Khấu trừ khác của sàn", amount: fee?.other ?? 0, color: "#94a3b8" },
     { key: "cogs", label: "Giá vốn hàng bán (COGS)", amount: a.totalCost ?? 0, color: "#3b82f6" },
-    { key: "ads", label: "Quảng cáo Ads (nhập tay)", amount: adsExpense, color: "#8b5cf6" },
+    { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense, color: "#8b5cf6" },
     { key: "varops", label: "Chi phí Biến đổi Vận hành", amount: a.operatingVariableExpense ?? 0, color: "#10b981" },
     { key: "fixops", label: "Chi phí Cố định Vận hành", amount: a.operatingFixedExpense ?? 0, color: "#a16207" },
   ].filter((s) => s.amount !== 0);
@@ -177,7 +174,6 @@ export function FinancePage() {
   const channelColors = useChannelColors();
   const [range, setRange] = useState<RangeKey>("30d");
   const [channel, setChannel] = useState("");
-  const [summary, setSummary] = useState<PnlSummary | null>(null);
   const [breakdown, setBreakdown] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [prevBreakdown, setPrevBreakdown] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [overview, setOverview] = useState<OverviewAnalytics | null>(null);
@@ -197,8 +193,7 @@ export function FinancePage() {
         const { from, to } = rangeFor(rangeKey);
         const prev = previousRange(from, to);
         const ch = channelName || undefined;
-        const [pnl, ana, prevAna, ov, cash] = await Promise.all([
-          fetchPnlSummary(from, to, ch),
+        const [ana, prevAna, ov, cash] = await Promise.all([
           // 4 thẻ = Báo cáo dòng tiền web; kỳ trước cho pill ▲/▼
           fetchAnalytics(from, to, ch),
           fetchAnalytics(prev.from, prev.to, ch).catch(() => null),
@@ -206,7 +201,6 @@ export function FinancePage() {
           fetchOverview(from, to, ch),
           fetchCashFlow(),
         ]);
-        setSummary(pnl.summary);
         setBreakdown(ana.breakdown);
         setPrevBreakdown(prevAna?.breakdown ?? null);
         setOverview(ov);
@@ -509,15 +503,7 @@ export function FinancePage() {
             </Card>
           ) : null}
 
-          {/* ===== 4. Lãi/Lỗ theo ngày ===== */}
-          <Card className="mb-4 p-4">
-            <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Lãi/Lỗ theo ngày
-            </Text>
-            <ProfitBarChart data={summary?.daily ?? []} />
-          </Card>
-
-          {/* ===== 5. Tiền theo gian hàng ===== */}
+          {/* ===== 4. Tiền theo gian hàng ===== */}
           <Card className="p-4">
             <Text className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Tiền theo gian hàng
