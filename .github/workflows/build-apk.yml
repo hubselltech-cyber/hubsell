@@ -1,12 +1,17 @@
 # Build APK Android cho hubsell-mobile trên máy chạy của GitHub Actions
 # (dùng khi không gọi được EAS). Kết quả nằm ở tab Actions → run → Artifacts.
 #
-# Chạy tay: Actions → "Build Android APK" → Run workflow → chọn nhánh.
+# Tự chạy khi push có sửa hubsell-mobile/ (mọi nhánh); hoặc chạy tay:
+# Actions → "Build Android APK" → Run workflow → chọn nhánh.
 # Ký bằng debug keystore do `expo prebuild` sinh ra → chữ ký KHÁC bản EAS,
 # nên máy đang cài bản EAS phải gỡ app cũ rồi mới cài được bản này.
 name: Build Android APK
 
 on:
+  push:
+    paths:
+      - "hubsell-mobile/**"
+      - ".github/workflows/build-apk.yml"
   workflow_dispatch:
     inputs:
       api_url:
