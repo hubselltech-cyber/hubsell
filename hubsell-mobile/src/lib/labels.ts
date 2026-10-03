@@ -26,7 +26,7 @@ export const SHIPPING_STATUS: Record<
     text: "text-emerald-700 dark:text-emerald-300",
   },
   CANCELLED: {
-    label: "Hủy/Hoàn",
+    label: "Đã hủy", // = STATUS_META web; hoàn/trả có nhãn riêng ở RETURN_STATUS
     bg: "bg-red-100 dark:bg-red-500/15",
     text: "text-red-600 dark:text-red-300",
   },

@@ -283,7 +283,7 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "feeOther", label: "Khấu trừ khác của sàn", amount: fee.other, color: "#94a3b8" },
     // ---- Ngoài sàn ----
     { key: "cogs", label: "Giá vốn hàng bán (COGS)", amount: analytics.totalCost, color: "#3b82f6" },
-    { key: "ads", label: "Quảng cáo Ads (nhập tay)", amount: adsExpense, color: "#8b5cf6" },
+    { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense, color: "#8b5cf6" },
     { key: "varops", label: "Chi phí Biến đổi Vận hành", amount: analytics.operatingVariableExpense, color: "#10b981" },
     { key: "fixops", label: "Chi phí Cố định Vận hành", amount: analytics.operatingFixedExpense, color: "#a16207" },
   ].filter((s) => s.amount !== 0);

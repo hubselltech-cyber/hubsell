@@ -35,3 +35,16 @@ export function rangeFor(key: RangeKey): { from: string; to: string } {
   const start = new Date(now.getTime() - days * 86_400_000);
   return { from: toKey(start), to };
 }
+
+/**
+ * KỲ TRƯỚC liền kề, cùng độ dài — mốc so sánh ▲/▼ cho 4 thẻ Báo cáo dòng tiền
+ * (web: deltaOf(cur, prev) trên cùng bộ lọc với kỳ trước).
+ */
+export function previousRange(from: string, to: string): { from: string; to: string } {
+  const start = new Date(`${from}T00:00:00`);
+  const end = new Date(`${to}T00:00:00`);
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const prevEnd = new Date(start.getTime() - 86_400_000);
+  const prevStart = new Date(prevEnd.getTime() - (days - 1) * 86_400_000);
+  return { from: toKey(prevStart), to: toKey(prevEnd) };
+}

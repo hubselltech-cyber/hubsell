@@ -1,35 +1,26 @@
 import React from "react";
-import { Redirect } from "expo-router";
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import { useAuth } from "@/auth/AuthContext";
 import { hapticSelect } from "@/lib/haptics";
-import {
-  ConversationsProvider,
-  useConversations,
-} from "@/chat/ConversationsContext";
 
-/** Khu CHỦ SHOP — nhân viên lạc vào đây bị đá về cổng phân vai. */
+/**
+ * Khu CHỦ SHOP — nhân viên lạc vào đây bị đá về cổng phân vai.
+ * Thanh tab 03/10 (anh Trung): Trang chủ · Đơn hàng · Quét đơn hoàn · Cấu hình.
+ * Tab Tin nhắn đã bỏ (inbox sàn không dùng được nữa); nút quét từ góc trang
+ * Đơn hàng dời xuống đây, cùng màu với các tab còn lại.
+ */
 export default function AdminLayout() {
   const { status, user } = useAuth();
+  // Tab bar là component native — không ăn class dark: nên đổi màu bằng JS.
+  // Hook đứng trước các return sớm để thứ tự hook không đổi giữa các lần render.
+  const { colorScheme } = useColorScheme();
+  const dark = colorScheme === "dark";
+
   if (status === "loading") return null;
   if (status === "signedOut" || !user) return <Redirect href="/login" />;
   if (user.role !== "ADMIN") return <Redirect href="/" />;
-
-  return (
-    <ConversationsProvider>
-      <AdminTabs />
-    </ConversationsProvider>
-  );
-}
-
-function AdminTabs() {
-  // Đếm tin chưa đọc cho badge tab — provider poll sẵn nên vào app là có số
-  const { totalUnread } = useConversations();
-  // Tab bar là component native — không ăn class dark: nên đổi màu bằng JS
-  const { colorScheme } = useColorScheme();
-  const dark = colorScheme === "dark";
 
   return (
     <Tabs
@@ -64,23 +55,12 @@ function AdminTabs() {
         }}
       />
       <Tabs.Screen
-        name="messages"
+        name="scan"
         options={{
-          title: "Tin nhắn",
+          title: "Quét mã", // ngắn để 4 tab không bị cắt chữ trên màn hẹp
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles-outline" size={size - 2} color={color} />
+            <Ionicons name="scan" size={size - 2} color={color} />
           ),
-          tabBarBadge: totalUnread
-            ? totalUnread > 99
-              ? "99+"
-              : totalUnread
-            : undefined,
-          tabBarBadgeStyle: {
-            backgroundColor: "#10b981",
-            color: "#fff",
-            fontSize: 10,
-            fontWeight: "700",
-          },
         }}
       />
       <Tabs.Screen

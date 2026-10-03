@@ -218,7 +218,26 @@ export interface OverviewAnalytics {
   totalRevenue: number;
   totalCost?: number;
   totalPlatformFee?: number;
+  /** Riêng THUẾ SÀN (TNCN + VAT thu hộ) đã nằm trong totalPlatformFee. */
+  totalPlatformTax?: number;
+  /** Bóc tách totalPlatformFee theo đúng các dòng khấu trừ (Σ = totalPlatformFee). */
+  platformFeeBreakdown?: {
+    service: number;
+    affiliate: number;
+    tax: number;
+    voucher: number;
+    shippingDiff: number;
+    adWallet: number;
+    refund: number;
+    other: number;
+  };
   totalOperatingExpense?: number;
+  /** Chi phí vận hành BIẾN ĐỔI ngoài quảng cáo (bao bì, phí hoàn…). */
+  operatingVariableExpense?: number;
+  /** Chi phí vận hành CỐ ĐỊNH ngoài quảng cáo (thuê kho, lương…). */
+  operatingFixedExpense?: number;
+  /** Chi phí nhập tay theo danh mục — ADS = quảng cáo (gồm cả sàn tự đồng bộ). */
+  expensesByCategory?: { category: string; amount: number }[];
   /** Lợi nhuận DỰ KIẾN sau giá vốn, phí sàn & chi phí vận hành. */
   netProfit?: number;
   /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
@@ -264,7 +283,12 @@ export interface AnalyticsResponse {
     };
     revenue: { total: number; items: BreakdownItem[] };
     costs: { total: number; items: BreakdownItem[] };
-    profit: { total: number; items: BreakdownItem[] };
+    profit: {
+      total: number;
+      items: BreakdownItem[];
+      /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận. Backend cũ có thể vắng. */
+      missingCost?: { orderCount: number; excludedProfit: number };
+    };
   };
 }
 
@@ -341,27 +365,6 @@ export interface OpsChannelErrorDto {
   message: string;
 }
 
-/** GET /api/operations/conversations */
-export interface OpsConversationsResponse {
-  conversations: OpsConversationDto[];
-  errors: OpsChannelErrorDto[];
-  channelStats: {
-    channelId: string;
-    shopName: string;
-    channelName: string;
-    count: number;
-  }[];
-  channelCount: number;
-}
-
-/** GET /api/operations/conversations/messages */
-export interface OpsMessagesResponse {
-  messages: OpsMessageDto[];
-}
-
-// ============================================================
-// Thống kê SP/SKU + danh sách gian — chép tay từ backend
-// (routes/orders.ts GET /stats, routes/channels.ts GET /)
 // ============================================================
 
 export interface OrderStatsRow {
