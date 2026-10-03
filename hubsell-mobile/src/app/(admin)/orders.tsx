@@ -238,7 +238,7 @@ export default function OrdersScreen() {
           </Text>
           {/* HỎA TỐC đỏ rực — anh Trung chốt 13/08: loại đơn quan trọng nhất */}
           {express ? (
-            <View className="rounded-full bg-red-50 dark:bg-red-500/100 px-2 py-0.5">
+            <View className="rounded-full bg-red-500 px-2 py-0.5">
               <Text className="text-[10px] font-bold text-white">⚡ Hỏa tốc</Text>
             </View>
           ) : null}

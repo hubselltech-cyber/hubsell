@@ -23,6 +23,7 @@ import type { LookupAmbiguousBody, OrderDto } from "@/types/api";
 import { CHANNEL_LABEL, RETURN_STATUS } from "@/lib/labels";
 import { playScanSound } from "@/lib/scan-sounds";
 import { Badge } from "@/components/Badge";
+import { ActionButton } from "@/components/ActionButton";
 
 /**
  * QUÉT XỬ LÝ ĐƠN HOÀN — màn hình mặc định của nhân viên kho.
@@ -207,12 +208,12 @@ export default function ScanReturnsScreen() {
           <Text className="mt-2 text-center text-sm text-slate-400 dark:text-slate-500">
             Hubsell chỉ dùng camera để đọc mã trên tem kiện hàng hoàn.
           </Text>
-          <Pressable
-            className="mt-6 rounded-xl bg-emerald-50 dark:bg-emerald-500/100 px-6 py-3 active:opacity-80"
+          <ActionButton
+            label="Cấp quyền Camera"
+            icon="camera"
+            className="mt-6 min-w-[220px]"
             onPress={() => void requestPermission()}
-          >
-            <Text className="text-sm font-semibold text-white">Cấp quyền Camera</Text>
-          </Pressable>
+          />
         </View>
       );
     }
@@ -261,32 +262,61 @@ export default function ScanReturnsScreen() {
                 ) : null}
               </Pressable>
             ))}
-            <CloseButton onPress={reset} label="Quét lại" />
+            <ActionButton
+              label="Quét lại"
+              icon="scan-outline"
+              variant="neutral"
+              className="mt-1"
+              onPress={reset}
+            />
           </View>
         ) : null}
 
+        {/* KẾT QUẢ (lỗi / xong): biểu tượng to trong vòng màu, chữ 17px, cảnh
+            báo trong hộp vàng riêng, nút Quét tiếp FULL-WIDTH xanh đặc — thứ
+            duy nhất cần bấm nên phải là thứ nổi nhất (trước là viên xám nhỏ). */}
         {panel?.type === "error" ? (
-          <View className="items-center py-2">
-            <Ionicons name="alert-circle-outline" size={36} color="#ef4444" />
-            <Text className="mt-2 mb-4 text-center text-sm text-slate-700 dark:text-slate-300">
+          <View className="items-center pt-2">
+            <View className="h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-500/20">
+              <Ionicons name="alert" size={34} color="#ef4444" />
+            </View>
+            <Text className="mt-3 text-center text-[17px] font-bold text-slate-900 dark:text-slate-100">
+              Không quét được
+            </Text>
+            <Text className="mt-1 mb-4 text-center text-sm text-slate-600 dark:text-slate-300">
               {panel.message}
             </Text>
-            <CloseButton onPress={reset} label="Quét tiếp" />
+            <ActionButton
+              label="Quét lại"
+              icon="scan-outline"
+              className="w-full"
+              onPress={reset}
+            />
           </View>
         ) : null}
 
         {panel?.type === "done" ? (
-          <View className="items-center py-2">
-            <Ionicons name="checkmark-circle" size={40} color="#10b981" />
-            <Text className="mt-2 text-center text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <View className="items-center pt-2">
+            <View className="h-16 w-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20">
+              <Ionicons name="checkmark" size={36} color="#059669" />
+            </View>
+            <Text className="mt-3 text-center text-[17px] font-bold text-slate-900 dark:text-slate-100">
               {panel.message}
             </Text>
             {panel.warn ? (
-              <Text className="mt-1 text-center text-xs text-amber-600 dark:text-amber-400">
-                ⚠️ {panel.warn}
-              </Text>
+              <View className="mt-3 w-full flex-row items-start gap-2 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2.5">
+                <Ionicons name="warning" size={18} color="#d97706" />
+                <Text className="flex-1 text-[13px] font-medium leading-5 text-amber-800 dark:text-amber-300">
+                  {panel.warn}
+                </Text>
+              </View>
             ) : null}
-            <CloseButton onPress={reset} label="Quét tiếp" />
+            <ActionButton
+              label="Quét đơn tiếp theo"
+              icon="scan-outline"
+              className="mt-4 w-full"
+              onPress={reset}
+            />
           </View>
         ) : null}
       </View>
@@ -353,43 +383,41 @@ export default function ScanReturnsScreen() {
           </Text>
         )}
 
+        {/* Cụm thao tác: Quét nhận = primary xanh đặc, Hàng hỏng = danger đỏ
+            (vẫn rõ, không giành tay với nút chính), hai nút bằng nhau để nhãn
+            không gãy dòng; Bỏ qua = neutral full-width phía dưới. Cao 64px —
+            kho đeo găng. */}
         <View className="flex-row gap-3">
           {canReceive ? (
-            <Pressable
-              className="flex-1 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-500/100 py-4 active:opacity-80"
+            <ActionButton
+              label="Quét nhận"
+              sublabel="chờ nhập kho trên web"
+              icon="checkmark-circle"
+              className="flex-1 min-h-[64px]"
               onPress={() => void doReceive(order)}
-              disabled={busy}
-            >
-              {busy ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark" size={22} color="#fff" />
-                  <Text className="mt-0.5 text-sm font-bold text-white">
-                    Quét nhận
-                  </Text>
-                  <Text className="text-[10px] text-emerald-100">
-                    chờ nhập kho trên web
-                  </Text>
-                </>
-              )}
-            </Pressable>
+              loading={busy}
+            />
           ) : null}
           {canDamage ? (
-            <Pressable
-              className="flex-1 items-center justify-center rounded-2xl border-2 border-red-500 bg-white dark:bg-slate-900 py-4 active:opacity-80"
+            <ActionButton
+              label="Hàng hỏng"
+              sublabel="chờ khiếu nại"
+              icon="close-circle"
+              variant="danger"
+              className="flex-1 min-h-[64px]"
               onPress={() => void doDamage(order)}
               disabled={busy}
-            >
-              <Ionicons name="close" size={22} color="#ef4444" />
-              <Text className="mt-0.5 text-sm font-bold text-red-500 dark:text-red-400">
-                Hàng hỏng
-              </Text>
-              <Text className="text-[10px] text-red-300">chờ khiếu nại</Text>
-            </Pressable>
+            />
           ) : null}
         </View>
-        <CloseButton onPress={reset} label={canReceive || canDamage ? "Bỏ qua — quét tiếp" : "Quét tiếp"} />
+        <ActionButton
+          label={canReceive || canDamage ? "Bỏ qua — quét tiếp" : "Quét đơn tiếp theo"}
+          icon="scan-outline"
+          variant={canReceive || canDamage ? "neutral" : "primary"}
+          className="mt-3"
+          onPress={reset}
+          disabled={busy}
+        />
       </ScrollView>
     );
   };
@@ -542,16 +570,5 @@ export default function ScanReturnsScreen() {
 
       {renderPanel()}
     </KeyboardAvoidingView>
-  );
-}
-
-function CloseButton({ onPress, label }: { onPress: () => void; label: string }) {
-  return (
-    <Pressable
-      className="mt-3 items-center rounded-xl bg-slate-100 dark:bg-slate-800 py-3 active:opacity-80"
-      onPress={onPress}
-    >
-      <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">{label}</Text>
-    </Pressable>
   );
 }

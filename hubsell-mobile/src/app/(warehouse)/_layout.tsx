@@ -12,15 +12,17 @@ import { hasPermission } from "@/lib/permissions";
  */
 export default function WarehouseLayout() {
   const { status, user } = useAuth();
+  // Tab bar là component native — không ăn class dark: nên đổi màu bằng JS.
+  // Hook phải đứng TRƯỚC các return sớm bên dưới (React cảnh "change in the
+  // order of Hooks" khi status đổi loading → signedIn).
+  const { colorScheme } = useColorScheme();
+  const dark = colorScheme === "dark";
+
   if (status === "loading") return null;
   if (status === "signedOut" || !user) return <Redirect href="/login" />;
   const allowed =
     user.role === "ADMIN" || hasPermission(user.permissions, "warehouse.returns");
   if (!allowed) return <Redirect href="/no-access" />;
-
-  // Tab bar là component native — không ăn class dark: nên đổi màu bằng JS
-  const { colorScheme } = useColorScheme();
-  const dark = colorScheme === "dark";
 
   return (
     <Tabs
