@@ -48,8 +48,9 @@ const STATUS_TABS: { key: "" | ShippingStatus; label: string }[] = [
   { key: "PENDING", label: "Chờ xử lý" },
   { key: "PROCESSED", label: "Đã xử lý" },
   { key: "SHIPPING", label: "Đang giao" },
-  { key: "DELIVERED", label: "Đã giao" },
-  { key: "CANCELLED", label: "Hủy/Hoàn" },
+  // Nhãn tab = đúng nhãn tab trang Đơn hàng web (frontend/src/app/orders/page.tsx TABS)
+  { key: "DELIVERED", label: "Đã giao thành công" },
+  { key: "CANCELLED", label: "Đơn hủy / Hoàn trả" },
 ];
 
 const CARRIER_KEYS = Object.keys(CARRIER_SHORT);
