@@ -3,7 +3,7 @@
 // ============================================================
 // KẾ TOÁN NỘI BỘ (/admin/finance — lá hq.finance): khu làm việc của KẾ TOÁN
 // công ty Hubsell, ba tab:
-//  1. SỔ QUỸ (GĐ5)      — tiền vào/ra theo tháng + nghĩa vụ hóa đơn + xuất Excel
+//  1. SỔ QUỸ (GĐ5)      — tiền vào/ra theo kỳ (tháng/quý/năm/tùy chọn) + nghĩa vụ hóa đơn + xuất Excel
 //  2. VÍ & LỆNH RÚT (GĐ3) — tổng quan Ví Hubsell + duyệt/từ chối lệnh rút
 //  3. HÓA ĐƠN ĐẦU VÀO   — thả tệp → máy đọc → sổ quỹ; xuất bộ chứng từ + tích đã khai
 //  4. LỊCH THUẾ          — lịch khai/nộp thuế + báo cáo 2026–2027 (dữ liệu tĩnh)
@@ -20,6 +20,8 @@ import {
   type PlatformFinanceResponse,
   type PlatformLedgerResponse,
 } from "@/lib/api";
+import { currentMonthPeriod } from "@/lib/accounting-period";
+import type { DateRange } from "@/lib/date-range";
 import { cn } from "@/lib/utils";
 import { FinanceTab } from "../finance-tab";
 import { InputInvoicesSection } from "../input-invoices-section";
@@ -32,24 +34,20 @@ interface FinanceData {
   ledger: PlatformLedgerResponse;
 }
 
-function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 type Tab = "ledger" | "invoices" | "wallet" | "taxcal";
 
 export default function PlatformFinancePage() {
   const [tab, setTab] = useState<Tab>("ledger");
-  const [month, setMonth] = useState(currentMonth);
+  // Kỳ xem sổ quỹ — mặc định trọn tháng hiện tại (kế toán chốt sổ theo tháng).
+  const [period, setPeriod] = useState<DateRange>(() => currentMonthPeriod());
 
   const fetcher = useCallback(async (): Promise<FinanceData> => {
     const [finance, ledger] = await Promise.all([
       fetchPlatformFinance(),
-      fetchPlatformLedger(month),
+      fetchPlatformLedger(period),
     ]);
     return { finance, ledger };
-  }, [month]);
+  }, [period]);
   const { data, loading, denied, error, reload } = useAdminPage(fetcher);
 
   if (denied) {
@@ -100,10 +98,8 @@ export default function PlatformFinancePage() {
           <LedgerSection
             data={data?.ledger ?? null}
             loading={loading}
-            month={month}
-            onMonthChange={(m) => {
-              if (m) setMonth(m);
-            }}
+            period={period}
+            onPeriodChange={setPeriod}
             onChanged={reload}
           />
         )}

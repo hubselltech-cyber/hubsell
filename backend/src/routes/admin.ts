@@ -9,6 +9,7 @@ import {
   Prisma,
   WebhookJobStatus,
 } from "@prisma/client";
+import { parseLedgerPeriod } from "../lib/ledger-period";
 import { prisma } from "../lib/prisma";
 import {
   requirePlatformAdmin,
@@ -1311,32 +1312,27 @@ function ledgerExpenseCategory(e: { expenseCategory: string | null; source: Ledg
 
 const HQ_PAYMENT_METHODS = ["BANK", "CASH"] as const;
 
-/** Khoảng thời gian [đầu tháng, đầu tháng sau) từ chuỗi "YYYY-MM". */
-function monthRange(raw: unknown): { month: string; start: Date; end: Date } {
-  const now = new Date();
-  const fallback = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const month = typeof raw === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(raw) ? raw : fallback;
-  const [y, m] = month.split("-").map(Number);
-  return { month, start: new Date(y, m - 1, 1), end: new Date(y, m, 1) };
-}
-
-// GET /api/admin/finance/ledger?month=YYYY-MM — sổ quỹ một tháng + tổng kết.
+// GET /api/admin/finance/ledger?from=yyyy-mm-dd&to=yyyy-mm-dd — sổ quỹ một kỳ
+// (tháng / quý / năm / khoảng tùy chọn) + tổng kết. `?month=YYYY-MM` đời đầu
+// vẫn nhận. Checklist chi cố định chỉ trả khi kỳ là TRỌN một tháng.
 router.get(
   "/finance/ledger",
   requirePlatformPermission("hq.finance"),
   async (req, res, next) => {
     try {
-      const { month, start, end } = monthRange(req.query.month);
+      const { from, to, month, range } = parseLedgerPeriod(req.query);
       const [entries, recurringList] = await Promise.all([
         prisma.platformLedgerEntry.findMany({
-          where: { occurredAt: { gte: start, lt: end } },
+          where: { occurredAt: range },
           orderBy: { occurredAt: "desc" },
           select: LEDGER_SELECT,
         }),
-        prisma.platformRecurringExpense.findMany({
-          where: { active: true },
-          orderBy: [{ dayOfMonth: "asc" }, { createdAt: "asc" }],
-        }),
+        month
+          ? prisma.platformRecurringExpense.findMany({
+              where: { active: true },
+              orderBy: [{ dayOfMonth: "asc" }, { createdAt: "asc" }],
+            })
+          : Promise.resolve([]),
       ]);
       let totalIn = 0;
       let totalOut = 0;
@@ -1377,6 +1373,8 @@ router.get(
         };
       });
       res.json({
+        from,
+        to,
         month,
         totals: { in: totalIn, out: totalOut, net: totalIn - totalOut, pendingInvoices },
         byCategory: [...byCategory.entries()]

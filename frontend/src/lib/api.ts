@@ -4982,18 +4982,22 @@ export interface HqRecurringStatusRow {
 }
 
 export interface PlatformLedgerResponse {
-  month: string;
+  /** Ngày đầu / ngày cuối kỳ đang xem ("yyyy-mm-dd", tính cả hai đầu). */
+  from: string;
+  to: string;
+  /** "YYYY-MM" khi kỳ là TRỌN một tháng; quý/năm/khoảng tùy chọn = null. */
+  month: string | null;
   totals: { in: number; out: number; net: number; pendingInvoices: number };
-  /** Cơ cấu CHI theo khoản mục trong tháng, giảm dần theo tiền. */
+  /** Cơ cấu CHI theo khoản mục trong kỳ, giảm dần theo tiền. */
   byCategory: { key: string; out: number }[];
-  /** Checklist chi phí cố định của tháng đang xem (chỉ danh mục active). */
+  /** Checklist chi phí cố định — chỉ có khi kỳ là trọn một tháng (chỉ danh mục active). */
   recurring: HqRecurringStatusRow[];
   entries: PlatformLedgerEntry[];
 }
 
-export function fetchPlatformLedger(month?: string) {
-  const suffix = month ? `?month=${month}` : "";
-  return apiFetch<PlatformLedgerResponse>(`/api/admin/finance/ledger${suffix}`);
+export function fetchPlatformLedger(range: { from: Date; to: Date }) {
+  const qs = new URLSearchParams(rangeToQuery(range)).toString();
+  return apiFetch<PlatformLedgerResponse>(`/api/admin/finance/ledger?${qs}`);
 }
 
 export function createLedgerEntry(data: {

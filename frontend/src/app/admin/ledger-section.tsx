@@ -1,7 +1,7 @@
 "use client";
 
 // SỔ QUỸ NỘI BỘ (GĐ5) — khối trung tâm của trang Kế toán: mỗi dòng một khoản
-// tiền vào/ra của CHÍNH công ty Hubsell theo tháng. Chi hoa hồng tự sinh từ
+// tiền vào/ra của CHÍNH công ty Hubsell theo kỳ (tháng/quý/năm/tùy chọn). Chi hoa hồng tự sinh từ
 // duyệt lệnh rút; thu phí gói/khoản khác kế toán ghi tay. Mỗi khoản THU mang
 // nghĩa vụ hóa đơn (Chưa xuất → Đã xuất kèm số HĐ). Mỗi khoản CHI mang KHOẢN
 // MỤC (thuê VP/lương/bảo hiểm/phần mềm...) + chứng từ đầu vào (NCC, MST, số
@@ -60,6 +60,9 @@ import {
   type PlatformLedgerEntry,
   type PlatformLedgerResponse,
 } from "@/lib/api";
+import { AccountingPeriodPicker } from "@/components/shared/accounting-period-picker";
+import { formatPeriodPhrase, parseDateKey, periodSlug } from "@/lib/accounting-period";
+import type { DateRange } from "@/lib/date-range";
 import { exportLedgerToExcel } from "@/lib/excel";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -578,24 +581,25 @@ function RecurringPanel({
 function CategoryBreakdown({
   byCategory,
   totalOut,
-  month,
+  phrase,
 }: {
   byCategory: { key: string; out: number }[];
   totalOut: number;
-  month: string;
+  /** Cụm chỉ kỳ ghép sau tiêu đề: "tháng 10/2026", "quý 4/2026"… */
+  phrase: string;
 }) {
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
         <div>
-          <p className="text-sm font-semibold">Cơ cấu chi tháng {month.slice(5)}</p>
+          <p className="text-sm font-semibold">Cơ cấu chi {phrase}</p>
           <p className="text-xs text-muted-foreground">
             Tiền ra gom theo khoản mục — đúng nhóm kế toán cần khi kê khai.
           </p>
         </div>
         {byCategory.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Tháng này chưa có khoản chi nào.
+            Kỳ này chưa có khoản chi nào.
           </p>
         ) : (
           <div className="space-y-2">
@@ -901,16 +905,23 @@ function RecurringManageDialog({
 export function LedgerSection({
   data,
   loading,
-  month,
-  onMonthChange,
+  period,
+  onPeriodChange,
   onChanged,
 }: {
   data: PlatformLedgerResponse | null;
   loading: boolean;
-  month: string;
-  onMonthChange: (m: string) => void;
+  /** Kỳ đang CHỌN trên bộ lọc (tháng/quý/năm/khoảng tùy chọn). */
+  period: DateRange;
+  onPeriodChange: (p: DateRange) => void;
   onChanged: () => void;
 }) {
+  // Nhãn các thẻ số liệu đi theo kỳ của DỮ LIỆU đang hiện — lúc vừa đổi kỳ mà
+  // số mới chưa về thì nhãn và số vẫn khớp nhau.
+  const shownPeriod: DateRange = data
+    ? { from: parseDateKey(data.from), to: parseDateKey(data.to) }
+    : period;
+  const phrase = formatPeriodPhrase(shownPeriod);
   const [dialog, setDialog] = useState<
     | { mode: "create"; preset?: LedgerEntryPreset }
     | { mode: "edit"; entry: PlatformLedgerEntry }
@@ -936,11 +947,11 @@ export function LedgerSection({
 
   function handleExport() {
     if (!data || data.entries.length === 0) {
-      toast.info("Sổ quỹ tháng này chưa có bút toán nào để xuất");
+      toast.info("Sổ quỹ kỳ này chưa có bút toán nào để xuất");
       return;
     }
-    exportLedgerToExcel(data.entries, data.month);
-    toast.success(`Đã xuất sổ quỹ tháng ${data.month} ra Excel`);
+    exportLedgerToExcel(data.entries, periodSlug(shownPeriod));
+    toast.success(`Đã xuất sổ quỹ ${phrase} ra Excel`);
   }
 
   return (
@@ -954,12 +965,7 @@ export function LedgerSection({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Input
-            type="month"
-            className="w-40"
-            value={month}
-            onChange={(e) => onMonthChange(e.target.value)}
-          />
+          <AccountingPeriodPicker value={period} onChange={onPeriodChange} />
           <Button variant="outline" onClick={handleExport} disabled={loading}>
             <FileSpreadsheet className="size-4" />
             Xuất Excel
@@ -982,14 +988,14 @@ export function LedgerSection({
       {data && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label={`Tổng THU tháng ${data.month.slice(5)}`}
+            label={`Tổng THU ${phrase}`}
             value={formatMoney(data.totals.in)}
-            hint="Tiền vào trong tháng"
+            hint="Tiền vào trong kỳ"
           />
           <StatCard
-            label={`Tổng CHI tháng ${data.month.slice(5)}`}
+            label={`Tổng CHI ${phrase}`}
             value={formatMoney(data.totals.out)}
-            hint="Tiền ra trong tháng"
+            hint="Tiền ra trong kỳ"
           />
           <StatCard
             label="Chênh lệch thu − chi"
@@ -999,23 +1005,27 @@ export function LedgerSection({
           <StatCard
             label="Khoản thu CHƯA xuất hóa đơn"
             value={formatCount(data.totals.pendingInvoices)}
-            hint="Phải bằng 0 trước khi chốt sổ tháng"
+            hint="Phải bằng 0 trước khi chốt sổ"
           />
         </div>
       )}
 
+      {/* Checklist chi cố định chỉ có nghĩa theo THÁNG — xem quý/năm/khoảng
+          tùy chọn thì ẩn, cơ cấu chi giãn hết hàng. */}
       {data && (
-        <div className="grid items-start gap-4 xl:grid-cols-2">
-          <RecurringPanel
-            rows={data.recurring}
-            month={data.month}
-            onLog={(preset) => setDialog({ mode: "create", preset })}
-            onManage={() => setRecurringOpen(true)}
-          />
+        <div className={cn("grid items-start gap-4", data.month && "xl:grid-cols-2")}>
+          {data.month && (
+            <RecurringPanel
+              rows={data.recurring}
+              month={data.month}
+              onLog={(preset) => setDialog({ mode: "create", preset })}
+              onManage={() => setRecurringOpen(true)}
+            />
+          )}
           <CategoryBreakdown
             byCategory={data.byCategory}
             totalOut={data.totals.out}
-            month={data.month}
+            phrase={phrase}
           />
         </div>
       )}
@@ -1028,7 +1038,7 @@ export function LedgerSection({
             </p>
           ) : data && data.entries.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              Tháng này chưa có bút toán nào — bấm &ldquo;Ghi phiếu thu/chi&rdquo; để
+              Kỳ này chưa có bút toán nào — bấm &ldquo;Ghi phiếu thu/chi&rdquo; để
               ghi khoản đầu tiên.
             </p>
           ) : data ? (
