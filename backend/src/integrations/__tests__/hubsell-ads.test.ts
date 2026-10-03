@@ -191,6 +191,29 @@ describe("Hubsell Ads đã cấu hình", () => {
     expect(row?.accessTokenExpireAt.getTime()).toBeGreaterThan(Date.now() + 3 * 3600 * 1000);
   });
 
+  it("Shopee báo shop_access_expired khi làm mới → DISCONNECTED ngay, lỗi expired; lỗi mạng thì giữ ACTIVE", async () => {
+    configureHubsellAds(true);
+    const key = { channelId_app: { channelId: fx.channelId, app: ChannelAppKind.HUBSELL_ADS } };
+    await prisma.channelAppAuth.update({ where: key, data: { accessTokenExpireAt: new Date(Date.now() - 1000) } });
+
+    vi.mocked(refreshAccessToken).mockRejectedValueOnce(new Error("fetch failed"));
+    await expect(getValidHubsellAdsAccessToken(fx.channelId)).rejects.toThrow("fetch failed");
+    expect((await authRow())?.status).toBe("ACTIVE");
+
+    vi.mocked(refreshAccessToken).mockRejectedValueOnce(
+      new Error("Shopee refresh token lỗi: shop_access_expired — Your access to shop has expired.")
+    );
+    await expect(getValidHubsellAdsAccessToken(fx.channelId)).rejects.toMatchObject({
+      code: "HUBSELL_ADS_NOT_LINKED",
+      reason: "expired",
+    });
+    expect((await authRow())?.status).toBe("DISCONNECTED");
+    expect((await getHubsellAdsLinkStatus(fx.channelId)).status).toBe("DISCONNECTED");
+
+    // Trả về trạng thái đang nối cho ca kế tiếp.
+    await prisma.channelAppAuth.update({ where: key, data: { status: "ACTIVE", disconnectedAt: null } });
+  });
+
   it("refresh_token hết hạn 30 ngày → DISCONNECTED, lỗi expired, worker bỏ qua", async () => {
     configureHubsellAds(true);
     await prisma.channelAppAuth.update({

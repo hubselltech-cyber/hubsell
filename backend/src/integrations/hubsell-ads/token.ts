@@ -146,7 +146,10 @@ async function refreshLocked(authId: string, minTtlMs: number): Promise<AccessCt
       } catch (err) {
         // refresh_token bị sàn từ chối (đã rotate mất / seller thu hồi) → refresh
         // lại cũng vô ích: đánh dấu cần ủy quyền lại để UI nhắc đúng chỗ.
-        if (/invalid_refresh_token|error_auth|invalid_token/i.test((err as Error).message)) {
+        // shop_access_expired (03/10/2026): Shopee báo quyền của shop với app đã hết hạn —
+        // gian "Farm Nuts" trên prod lặp lỗi này mỗi lượt mà không bị hạ, chủ shop không
+        // được nhắc kết nối lại. Cùng luật với app chính (shopee/service.ts).
+        if (/invalid_refresh_token|error_auth|invalid_token|shop_access_expired/i.test((err as Error).message)) {
           disconnect = auth;
           throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
         }
