@@ -249,7 +249,12 @@ export function invoiceLaneConcurrency(env: NodeJS.ProcessEnv = process.env): nu
  * Đường lui: INVOICE_BULK_MODE=inline ở web.
  */
 export type InvoiceBulkMode = "lane" | "inline";
-export const DEFAULT_INVOICE_BULK_MODE: InvoiceBulkMode = "inline";
+/**
+ * Lần một (564ff27, 03/10/2026 13:09) mặc định inline — bảng invoice_requests, hàng
+ * đợi invoice.issue và worker biết xử lý yêu cầu lên trước, đã kiểm prod 13:11. Lần
+ * hai đổi mặc định sang lane. Đường lui: INVOICE_BULK_MODE=inline ở web.
+ */
+export const DEFAULT_INVOICE_BULK_MODE: InvoiceBulkMode = "lane";
 
 export function invoiceBulkMode(env: NodeJS.ProcessEnv = process.env): InvoiceBulkMode {
   const raw = (env.INVOICE_BULK_MODE ?? "").trim().toLowerCase();
