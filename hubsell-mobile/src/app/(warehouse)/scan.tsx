@@ -85,7 +85,8 @@ function CircleControl({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function ScanReturnsScreen() {
+/** embedded = đang nằm trong một TAB (khu chủ shop) → không có mũi tên quay lại. */
+export default function ScanReturnsScreen({ embedded = false }: { embedded?: boolean }) {
   useKeepAwake(); // kho quét cả ca — không để màn hình tự tắt
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -454,9 +455,9 @@ export default function ScanReturnsScreen() {
       >
         <View className="flex-row items-center justify-between px-4">
           <View className="flex-row items-center gap-2.5">
-            {/* Chủ shop push từ trang Kho vào — cần lối về; nhân viên kho
-                vào thẳng (màn gốc, canGoBack false) thì không hiện. */}
-            {router.canGoBack() ? (
+            {/* Chỉ hiện lối về khi được push vào (không phải tab) và có chỗ
+                để về; nhân viên kho vào thẳng (màn gốc) thì không hiện. */}
+            {!embedded && router.canGoBack() ? (
               <Pressable
                 className="active:opacity-70"
                 onPress={() => router.back()}

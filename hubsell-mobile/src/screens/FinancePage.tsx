@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -182,10 +182,13 @@ export function FinancePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // Số thứ tự lượt tải — đổi kỳ/sàn liên tiếp thì chỉ lượt MỚI NHẤT được ghi.
+  const reqSeq = useRef(0);
 
   // asRefresh: true = kéo xuống (vòng xoay) · "silent" = tải nền giữ số cũ.
   const load = useCallback(
     async (rangeKey: RangeKey, channelName: string, asRefresh: boolean | "silent" = false) => {
+      const seq = ++reqSeq.current;
       if (asRefresh === true) setRefreshing(true);
       else if (!asRefresh) setLoading(true);
       if (asRefresh !== "silent") setError("");
@@ -201,18 +204,22 @@ export function FinancePage() {
           fetchOverview(from, to, ch),
           fetchCashFlow(),
         ]);
+        if (seq !== reqSeq.current) return; // đã có lượt tải mới hơn
         setBreakdown(ana.breakdown);
         setPrevBreakdown(prevAna?.breakdown ?? null);
         setOverview(ov);
         setCashRows(cash.rows);
       } catch (err) {
+        if (seq !== reqSeq.current) return;
         if (asRefresh === "silent") return; // tải nền hỏng thì giữ số cũ
         setError(
           err instanceof ApiError ? err.message : "Có lỗi xảy ra, kéo xuống thử lại"
         );
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (seq === reqSeq.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     []

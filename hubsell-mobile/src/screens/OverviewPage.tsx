@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -121,7 +121,9 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
    * xoay RefreshControl) · "silent" = tải NỀN (giữ nguyên số cũ trên màn, chỉ
    * thay khi có số mới — như web refetch ngầm, không nháy).
    */
+  const reqSeq = useRef(0); // lượt tải cũ về muộn không được ghi đè lượt mới
   const load = useCallback(async (mode: "first" | "pull" | "silent" = "first") => {
+    const seq = ++reqSeq.current;
     if (mode === "pull") setRefreshing(true);
     else if (mode === "first") setLoading(true);
     if (mode !== "silent") setError("");
@@ -133,11 +135,13 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         fetchOverview(from, to),
         fetchReturnsSummary(),
       ]);
+      if (seq !== reqSeq.current) return;
       setAnalytics(ana);
       setReturns(ret.summary);
       setError("");
       setNoChannel(false);
     } catch (err) {
+      if (seq !== reqSeq.current) return;
       if (
         err instanceof ApiError &&
         err.status === 409 &&
@@ -153,8 +157,10 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         );
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (seq === reqSeq.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 

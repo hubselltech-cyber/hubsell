@@ -365,27 +365,6 @@ export interface OpsChannelErrorDto {
   message: string;
 }
 
-/** GET /api/operations/conversations */
-export interface OpsConversationsResponse {
-  conversations: OpsConversationDto[];
-  errors: OpsChannelErrorDto[];
-  channelStats: {
-    channelId: string;
-    shopName: string;
-    channelName: string;
-    count: number;
-  }[];
-  channelCount: number;
-}
-
-/** GET /api/operations/conversations/messages */
-export interface OpsMessagesResponse {
-  messages: OpsMessageDto[];
-}
-
-// ============================================================
-// Thống kê SP/SKU + danh sách gian — chép tay từ backend
-// (routes/orders.ts GET /stats, routes/channels.ts GET /)
 // ============================================================
 
 export interface OrderStatsRow {

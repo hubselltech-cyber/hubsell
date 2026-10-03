@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
 import { fetchOrders, fetchOrderStats, type OrdersFilter } from "@/api/orders";
 import { fetchChannels } from "@/api/channels";
@@ -35,6 +35,7 @@ import { useChannelColors } from "@/theme/channel-colors";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
+import { TABULAR } from "@/theme/tokens";
 
 /** Số dòng hàng hiện sẵn trên card — đơn dài hơn thì bấm "Xem thêm". */
 const ITEMS_PREVIEW = 2;
@@ -65,10 +66,16 @@ interface FilterValue {
 export default function OrdersScreen() {
   const channelColors = useChannelColors();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const [orders, setOrders] = useState<OrderDto[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [status, setStatus] = useState<"" | ShippingStatus>("");
+  // Thẻ/phễu ở Tổng quan đẩy sang kèm ?status= → khởi tạo NGAY từ param
+  // (trước đây set trong effect → lượt tải "tất cả" và lượt tải đã lọc chạy
+  // song song, lượt nào về sau thắng → chip "Đang giao" mà list đủ mọi trạng
+  // thái; anh Trung bắt được 03/10). Kèm reqSeq bên dưới chặn mọi ca đua khác.
+  const { status: statusParam } = useLocalSearchParams<{ status?: string }>();
+  const statusFromParam = (p: unknown): "" | ShippingStatus =>
+    typeof p === "string" && STATUS_TABS.some((t) => t.key === p) ? (p as ShippingStatus) : "";
+  const [status, setStatus] = useState<"" | ShippingStatus>(() => statusFromParam(statusParam));
   const [carrier, setCarrier] = useState("");
   const [shopId, setShopId] = useState("");
   const [channel, setChannel] = useState<ChannelFilter>("");
@@ -90,15 +97,14 @@ export default function OrdersScreen() {
     shopId: "",
   });
 
-  // Thẻ đếm trạng thái ở trang Tổng quan đẩy sang đây kèm ?status= để mở
-  // đúng bộ lọc — đổi param là đổi lọc, kể cả khi màn này đã mount sẵn.
-  const { status: statusParam } = useLocalSearchParams<{ status?: string }>();
+  // Đổi param khi màn này đã mount sẵn (bấm ô khác ở Tổng quan) → đổi lọc.
   useEffect(() => {
     if (typeof statusParam !== "string") return;
-    if (STATUS_TABS.some((t) => t.key === statusParam)) {
-      setStatus(statusParam as ShippingStatus);
-    }
+    const next = statusFromParam(statusParam);
+    if (next) setStatus(next);
   }, [statusParam]);
+  // Số thứ tự lượt tải — phản hồi của lượt CŨ về muộn thì bỏ, không ghi đè.
+  const reqSeq = useRef(0);
 
   // DS gian hàng cho mục "Lọc theo shop" — đổi rất hiếm, nạp 1 lần là đủ
   useEffect(() => {
@@ -110,6 +116,7 @@ export default function OrdersScreen() {
   const load = useCallback(
     async (nextPage: number, append: boolean) => {
       const q = queryRef.current;
+      const seq = ++reqSeq.current;
       if (append) setLoadingMore(true);
       else setLoading(true);
       setError("");
@@ -122,15 +129,19 @@ export default function OrdersScreen() {
           carrier: q.carrier || undefined,
           channelId: q.shopId || undefined,
         });
+        if (seq !== reqSeq.current) return; // đã có lượt tải mới hơn
         setOrders((prev) => (append ? [...prev, ...res.items] : res.items));
         setCounts(res.counts);
         setPage(res.page);
         setPageCount(res.pageCount);
       } catch (err) {
+        if (seq !== reqSeq.current) return;
         setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra");
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (seq === reqSeq.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
     []
@@ -209,8 +220,9 @@ export default function OrdersScreen() {
             </Text>
           ) : null}
         </View>
-        <Text className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-          x{it.quantity}
+        {/* Số lượng đỏ đậm — kho liếc là thấy nhặt mấy (anh Trung 03/10) */}
+        <Text className="text-[13px] font-bold text-red-600 dark:text-red-400" style={TABULAR}>
+          ×{it.quantity}
         </Text>
       </View>
     );
@@ -297,9 +309,10 @@ export default function OrdersScreen() {
               {item.trackingCode ? ` · ${item.trackingCode}` : ""}
             </Text>
           </View>
+          {/* Tiền đơn xanh dịu — tách khỏi số lượng đỏ (anh Trung 03/10) */}
           <Text
-            className="text-[13px] font-bold text-slate-900 dark:text-slate-100"
-            style={{ fontVariant: ["tabular-nums"] }}
+            className="text-[13px] font-bold text-emerald-600 dark:text-emerald-400"
+            style={TABULAR}
           >
             {formatMoney(item.totalAmount)}
           </Text>
@@ -320,13 +333,7 @@ export default function OrdersScreen() {
           <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">Đơn hàng</Text>
           <Text className="text-xs text-slate-500 dark:text-slate-400">{counts.ALL ?? 0} đơn</Text>
         </View>
-        {/* Lối tắt cho chủ shop tự quét thử luồng kho */}
-        <Pressable
-          className="h-10 w-10 items-center justify-center rounded-xl bg-slate-900 active:opacity-80 dark:bg-slate-700"
-          onPress={() => router.push("/(warehouse)/scan" as Href)}
-        >
-          <Ionicons name="scan-outline" size={18} color="#fff" />
-        </Pressable>
+        {/* Nút quét đã dời xuống thanh tab dưới (tab "Quét đơn hoàn", 03/10) */}
       </View>
 
       <View className="mx-4 mb-2.5 flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
