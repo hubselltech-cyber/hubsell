@@ -60,6 +60,10 @@ const ABOUT_LINKS: { key: string; label: string; hint: string; url: string; icon
 ];
 
 const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
+/** Mã bản dựng (số run + commit + giờ) do workflow GitHub Actions gắn vào lúc
+ *  đóng gói — để phân biệt APK thử với nhau vì version trong app.json không đổi.
+ *  Bản EAS không có biến này → chỉ hiện version. */
+const BUILD_ID = process.env.EXPO_PUBLIC_BUILD_ID?.trim() || "";
 
 const THEME_OPTIONS: { key: ThemePref; label: string }[] = [
   { key: "light", label: "Sáng" },
@@ -307,6 +311,7 @@ export function SettingsScreen() {
 
         <Text className="mt-6 text-center text-[11px] text-slate-400">
           Hubsell Mobile · v{APP_VERSION}
+          {BUILD_ID ? ` · ${BUILD_ID}` : ""}
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

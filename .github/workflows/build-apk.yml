@@ -62,6 +62,9 @@ jobs:
       - name: Generate native Android project (expo prebuild)
         run: npx expo prebuild --platform android --no-install --clean
 
+      - name: Stamp build id (shown in Settings footer)
+        run: echo "EXPO_PUBLIC_BUILD_ID=build #${GITHUB_RUN_NUMBER} · ${GITHUB_SHA::7} · $(TZ=Asia/Ho_Chi_Minh date +%d/%m\ %H:%M)" >> "$GITHUB_ENV"
+
       - name: Build release APK
         working-directory: hubsell-mobile/android
         run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
