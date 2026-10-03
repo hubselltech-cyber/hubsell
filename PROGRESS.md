@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 03/10/2026 (tối) — BUILD APK bằng GitHub Actions (anh Trung: "build APK" → máy cloud không gọi được EAS; "commit bản này, hôm nào anh bảo thì đẩy lên Expo sau")
+
+- Máy cloud bị chặn mạng tới `api.expo.dev` + `dl.google.com` và chưa đăng nhập Expo → không chạy `eas build` tại chỗ. Thay bằng workflow **`.github/workflows/build-apk.yml`**: push sửa `hubsell-mobile/**` (mọi nhánh) hoặc Run workflow tay → `npm ci` → `tsc` → `expo prebuild android` → `gradlew assembleRelease` → APK ở Artifacts của run (giữ 30 ngày, cần đăng nhập GitHub để tải). `EXPO_PUBLIC_API_URL` = backend Render (input đổi được khi chạy tay).
+- Run đầu #1 thành công sau 25 phút (JDK 17, Gradle 9.3.1, AGP 8.12): https://github.com/hubselltech-cyber/hubsell/actions/runs/37146273866 — `hubsell-5c33895.apk` 64 MB. **APK ký bằng debug keystore của prebuild → khác chữ ký bản EAS, máy đang cài bản EAS phải gỡ app rồi cài.** Chỉ để cài thử; nộp Google Play / iOS vẫn qua EAS (khóa upload + chứng chỉ Apple do EAS giữ).
+- Kiểm trước ở cloud: `npm ci`, `tsc` sạch, `expo prebuild --clean` OK (prebuild tự sửa script `android`/`ios` trong package.json → đã revert, không commit).
+- ⏳ **CHỜ ANH**: gộp nhánh `claude/elegant-allen-90dyzc` vào master; khi anh bảo thì chạy EAS trên máy anh (`eas build -p android --profile preview` / `-p ios`), hoặc mở mạng `api.expo.dev` + `EXPO_TOKEN` cho môi trường cloud để Claude tự chạy.
+
+---
+
 ## Phiên 03/10/2026 (chiều – tối) — MOBILE sau khi anh Trung dùng thử APK: đăng ký, Tổng quan khớp web + tự làm mới, nút kho rõ, Thống kê bốc hàng theo ý kho (anh Trung: "Ok làm đi em" — code trên nhánh `claude/friendly-carson-blmjwx`, ⏳ CHỜ ANH gộp vào master để Render deploy backend rồi build lại APK bằng EAS)
 
 Chạy mô phỏng trên cloud: backend prod (Render) bị chặn mạng nên dựng Postgres + backend local, seed "Sunny Closet" (`scripts/seed-landing-demo.ts`); `prisma/seed.ts` đã lệch schema (productMapping, thiếu shopName) — chưa sửa, đã ghi thẻ việc riêng. Proxy dev giả lập web nay chọn http/https theo `HUBSELL_API`.
