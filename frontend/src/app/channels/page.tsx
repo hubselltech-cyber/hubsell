@@ -158,7 +158,7 @@ function lazadaCycleEnd(c: Channel): Date | null {
 /** Trong vòng này thì tô vàng + hiện nút Gia hạn trên thẻ gian Lazada. */
 const LAZADA_RENEW_SOON_DAYS = 30;
 
-/** Còn từ chừng này ngày trở xuống thì dòng "Ủy quyền Shopee đến…" tô vàng + hiện nút Ủy quyền lại (mức tự chọn). */
+/** Còn từ chừng này ngày trở xuống thì dòng "Ủy quyền … đến…" hiện thêm nút Ủy quyền lại (mức tự chọn). */
 const SHOPEE_AUTH_SOON_DAYS = 7;
 
 /**
@@ -170,6 +170,40 @@ function shopeeAuthExpired(c: Channel): boolean {
   if (c.channelName !== "SHOPEE" || c.status === "ACTIVE") return false;
   if (c.lastSyncError?.includes("shop_access_expired")) return true;
   return Boolean(c.authExpireAt && new Date(c.authExpireAt).getTime() < Date.now());
+}
+
+/**
+ * TikTok trả thẳng ngày hết hạn ủy quyền trong token (refresh_token_expire_in → cột
+ * refreshTokenExpireAt): chủ shop để "Không giới hạn" thì ngày rơi vào khoảng 100 năm
+ * sau, chọn có thời hạn thì là ngày thật (prod 03/10/2026: một gian hết sau 9 ngày).
+ * Xa hơn mốc này coi là không giới hạn.
+ */
+const TIKTOK_AUTH_UNLIMITED_MS = 20 * 365 * 86_400_000;
+
+/** Ngày hết hạn ủy quyền phía sàn của gian (Shopee / TikTok); null = chưa biết hoặc không giới hạn. */
+function platformAuthEnd(c: Channel): Date | null {
+  if (c.channelName === "SHOPEE") return c.authExpireAt ? new Date(c.authExpireAt) : null;
+  if (c.channelName === "TIKTOK" && c.refreshTokenExpireAt) {
+    const end = new Date(c.refreshTokenExpireAt);
+    return end.getTime() - Date.now() > TIKTOK_AUTH_UNLIMITED_MS ? null : end;
+  }
+  return null;
+}
+
+/**
+ * Gian TikTok đã ngắt VÌ HẾT HẠN ỦY QUYỀN: ngày hết hạn TikTok báo đến TRƯỚC lúc gian bị
+ * ngắt. Chủ shop tự bấm ngắt khi quyền còn hạn thì không tính.
+ */
+function tiktokAuthExpired(c: Channel): boolean {
+  if (c.channelName !== "TIKTOK" || c.status === "ACTIVE" || !c.refreshTokenExpireAt) return false;
+  const end = new Date(c.refreshTokenExpireAt).getTime();
+  const cut = c.disconnectedAt ? new Date(c.disconnectedAt).getTime() : Date.now();
+  return end <= cut;
+}
+
+/** Gian (Shopee / TikTok) đã ngắt vì hết hạn ủy quyền phía sàn — không phải Hubsell lỗi. */
+function platformAuthExpired(c: Channel): boolean {
+  return shopeeAuthExpired(c) || tiktokAuthExpired(c);
 }
 
 // ---------- Dialog: Kết nối gian hàng ----------
@@ -1115,7 +1149,7 @@ export default function ChannelsPage() {
                                 />
                                 {active
                                   ? "Đang hoạt động"
-                                  : shopeeAuthExpired(c)
+                                  : platformAuthExpired(c)
                                     ? "Hết hạn ủy quyền"
                                     : "Đã ngắt kết nối"}
                               </span>
@@ -1191,23 +1225,25 @@ export default function ChannelsPage() {
                                   </p>
                                 );
                               })()}
-                            {/* Shopee: quyền của shop với app có THỜI HẠN do chủ shop đặt trên
-                                trang ủy quyền của Shopee. Hiện ngày hết hạn để chủ shop biết
-                                trước; gian đã ngắt vì hết hạn thì nói rõ lý do (không phải
-                                Hubsell lỗi) — nút Kết nối lại nằm ngay bên phải. */}
-                            {c.channelName === "SHOPEE" &&
+                            {/* Shopee / TikTok: quyền của shop với app có THỜI HẠN đặt lúc ủy quyền
+                                trên sàn. Hiện ngày hết hạn (chữ đỏ, anh Trung 03/10/2026) để chủ
+                                shop biết trước; gian đã ngắt vì hết hạn thì nói rõ lý do (không
+                                phải Hubsell lỗi) — nút Kết nối lại nằm ngay bên phải. TikTok để
+                                "Không giới hạn" thì không có ngày để hiện. */}
+                            {(c.channelName === "SHOPEE" || c.channelName === "TIKTOK") &&
                               c.apiConnected &&
                               (() => {
-                                const end = c.authExpireAt ? new Date(c.authExpireAt) : null;
+                                const platform = CHANNEL_META[c.channelName].label;
+                                const end = platformAuthEnd(c);
                                 const endText = end?.toLocaleDateString("vi-VN");
                                 if (!active) {
-                                  if (!shopeeAuthExpired(c)) return null;
+                                  if (!platformAuthExpired(c)) return null;
                                   return (
-                                    <p className={cn(TEXT_SUB, "flex items-center gap-x-1.5 text-amber-600")}>
+                                    <p className={cn(TEXT_SUB, "flex items-center gap-x-1.5 text-red-600")}>
                                       <CalendarClock className="size-3 shrink-0" />
                                       {endText
-                                        ? `Shopee báo hết hạn ủy quyền ${endText}, bấm Kết nối lại`
-                                        : "Shopee báo hết hạn ủy quyền, bấm Kết nối lại"}
+                                        ? `${platform} báo hết hạn ủy quyền ${endText}, bấm Kết nối lại`
+                                        : `${platform} báo hết hạn ủy quyền, bấm Kết nối lại`}
                                     </p>
                                   );
                                 }
@@ -1216,15 +1252,11 @@ export default function ChannelsPage() {
                                 const soon = daysLeft <= SHOPEE_AUTH_SOON_DAYS;
                                 return (
                                   <p
-                                    className={cn(
-                                      TEXT_SUB,
-                                      "flex flex-wrap items-center gap-x-1.5",
-                                      soon && "text-amber-600"
-                                    )}
-                                    title="Mỗi lần ủy quyền trên Shopee có một thời hạn. Hết hạn thì Shopee ngừng cho Hubsell đồng bộ gian này cho tới khi ủy quyền lại."
+                                    className={cn(TEXT_SUB, "flex flex-wrap items-center gap-x-1.5 text-red-600")}
+                                    title={`Mỗi lần ủy quyền trên ${platform} có một thời hạn. Hết hạn thì ${platform} ngừng cho Hubsell đồng bộ gian này cho tới khi ủy quyền lại.`}
                                   >
                                     <CalendarClock className="size-3 shrink-0" />
-                                    {`Ủy quyền Shopee đến ${endText}`}
+                                    {`Ủy quyền ${platform} đến ${endText}`}
                                     {soon && (
                                       <button
                                         type="button"

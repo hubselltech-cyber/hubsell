@@ -2624,6 +2624,8 @@ export interface Channel {
   authExpireAt?: string | null;
   /** Lỗi của lần đồng bộ đơn gần nhất (null = lần gần nhất thành công). */
   lastSyncError?: string | null;
+  /** Thời điểm gian chuyển sang ngắt kết nối (ISO); null khi đang nối. */
+  disconnectedAt?: string | null;
 }
 
 /** TẦNG 2 — một sản phẩm thô kéo từ gian hàng về. */
