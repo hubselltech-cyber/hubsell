@@ -7,8 +7,13 @@ import React, {
   useState,
 } from "react";
 import { setAuthToken, setOnUnauthorized } from "../api/client";
-import { login as apiLogin, fetchMe } from "../api/auth";
-import type { AuthUser } from "../types/api";
+import {
+  login as apiLogin,
+  register as apiRegister,
+  fetchMe,
+  type RegisterPayload,
+} from "../api/auth";
+import type { AuthUser, LoginResponse } from "../types/api";
 import * as storage from "./storage";
 
 const TOKEN_KEY = "hubsell.token";
@@ -20,6 +25,8 @@ interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
   signIn: (identifier: string, password: string) => Promise<AuthUser>;
+  /** Đăng ký chủ shop mới — backend trả token ngay, vào app không cần đăng nhập lại. */
+  signUp: (data: RegisterPayload) => Promise<AuthUser>;
   signOut: () => Promise<void>;
 }
 
@@ -82,8 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signIn = useCallback(async (identifier: string, password: string) => {
-    const res = await apiLogin(identifier, password);
+  // Đăng nhập và đăng ký cùng nhận {token, user} → một chỗ lưu phiên.
+  const persistSession = useCallback(async (res: LoginResponse) => {
     setAuthToken(res.token);
     setUser(res.user);
     setStatus("signedIn");
@@ -94,9 +101,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return res.user;
   }, []);
 
+  const signIn = useCallback(
+    (identifier: string, password: string) =>
+      apiLogin(identifier, password).then(persistSession),
+    [persistSession]
+  );
+
+  const signUp = useCallback(
+    (data: RegisterPayload) => apiRegister(data).then(persistSession),
+    [persistSession]
+  );
+
   const value = useMemo(
-    () => ({ status, user, signIn, signOut }),
-    [status, user, signIn, signOut]
+    () => ({ status, user, signIn, signUp, signOut }),
+    [status, user, signIn, signUp, signOut]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

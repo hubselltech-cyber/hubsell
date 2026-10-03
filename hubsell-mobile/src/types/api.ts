@@ -192,10 +192,67 @@ export interface BreakdownItem {
   items?: { key: string; label: string; amount: number; percent: number }[];
 }
 
+/** Một ngày trong chuỗi trend 14 ngày của GET /api/analytics. */
+export interface AnalyticsTrendPoint {
+  date: string;
+  label: string;
+  revenue: number;
+  /** Số đơn trong ngày — mọi trạng thái. */
+  orders: number;
+  /** Giá vốn + chi phí vận hành trong ngày — vắng với SALES. */
+  cost?: number;
+}
+
 /**
- * GET /api/finance/analytics — chỉ chép phần app dùng (thác nước 4 cột).
- * Đẳng thức: Giá trị SP − Khấu trừ = Doanh thu; Doanh thu − Chi phí
- * + Thu khác − Thuế dự phòng = Lợi nhuận ròng.
+ * GET /api/analytics (backend/src/routes/analytics.ts) — CÙNG nguồn số với
+ * Tổng quan web (frontend/src/app/page.tsx: Doanh thu / Đơn hàng / Tổng chi
+ * phí / Lợi nhuận dự kiến). KHÁC với /api/finance/analytics (Báo cáo dòng
+ * tiền, AnalyticsResponse bên dưới). Chỉ chép các trường mobile dùng; đủ
+ * trường xem frontend/src/lib/api.ts AnalyticsResponse.
+ */
+export interface OverviewAnalytics {
+  /** Số đơn PHÁT SINH trong kỳ đang tính doanh thu (không gồm hủy & hoàn/trả). */
+  activeOrderCount: number;
+  /** Số MÓN bán ra trên cùng rổ activeOrderCount. */
+  itemQuantity: number;
+  totalRevenue: number;
+  totalCost?: number;
+  totalPlatformFee?: number;
+  totalOperatingExpense?: number;
+  /** Lợi nhuận DỰ KIẾN sau giá vốn, phí sàn & chi phí vận hành. */
+  netProfit?: number;
+  /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+  missingCost?: { orderCount: number; excludedProfit: number };
+  /** 14 ngày liền trước tính đến cuối kỳ — xem "Hôm nay" vẫn có đường sóng. */
+  trend: AnalyticsTrendPoint[];
+  ordersByChannel: {
+    channelId: string;
+    channelName: ChannelName | string;
+    shopName: string;
+    count: number;
+    revenue: number;
+  }[];
+  /** Tổng số đơn phát sinh trong kỳ (mọi trạng thái). */
+  orderCount: number;
+  /** Phễu vận hành: số đơn theo từng trạng thái trong kỳ. */
+  pipeline: {
+    PENDING: number;
+    PROCESSED: number;
+    SHIPPING: number;
+    DELIVERED: number;
+    CANCELLED: number;
+    RETURNING: number;
+  };
+  /** Kỳ trước liền kề (cùng độ dài) để tính tăng/giảm. null khi không lọc ngày. */
+  previous: { totalRevenue: number; orderCount: number; activeOrderCount: number } | null;
+  /** Backend cắt trường tiền với SALES — mobile chỉ ADMIN xem trang này. */
+  financialsHidden?: boolean;
+}
+
+/**
+ * GET /api/finance/analytics — Báo cáo dòng tiền, chỉ chép phần app dùng
+ * (thác nước 4 cột). Đẳng thức: Giá trị SP − Khấu trừ = Doanh thu; Doanh thu
+ * − Chi phí + Thu khác − Thuế dự phòng = Lợi nhuận ròng.
  */
 export interface AnalyticsResponse {
   breakdown: {

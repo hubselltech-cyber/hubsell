@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter, type Href } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import Svg, {
   Defs,
@@ -20,13 +21,14 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 import { hapticTap } from "@/lib/haptics";
-import { fetchPnlSummary } from "@/api/finance";
+import { fetchOverview } from "@/api/finance";
 import { fetchOrders } from "@/api/orders";
 import { fetchReturnsSummary } from "@/api/warehouse";
 import { ApiError } from "@/api/client";
-import type { PnlSummary, ReturnsSummaryResponse } from "@/types/api";
-import { rangeFor, yesterdayRange } from "@/lib/dates";
+import type { ChannelName, OverviewAnalytics, ReturnsSummaryResponse } from "@/types/api";
+import { rangeFor } from "@/lib/dates";
 import { compactMoney } from "@/lib/format";
+import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { useAuth } from "@/auth/AuthContext";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
@@ -35,7 +37,6 @@ import { Card } from "@/components/Card";
 import { Sparkline } from "@/components/Sparkline";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { RAISED_SHADOW, TABULAR } from "@/theme/tokens";
-import type { ChannelName } from "@/types/api";
 
 /**
  * Vị trí sàn FIX CỨNG (chốt 13/08): sàn không có đơn vẫn đứng nguyên chỗ với
@@ -43,10 +44,20 @@ import type { ChannelName } from "@/types/api";
  */
 const FIXED_CHANNELS: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK"];
 
+/** Trang Kênh bán trên web app — nơi duy nhất uỷ quyền gian hàng (OAuth sàn). */
+const CONNECT_CHANNEL_URL = "https://app.hubsell.tech/channels";
+
 /**
  * TỔNG QUAN HÔM NAY — trang đầu tiên chủ shop nhìn thấy khi mở app.
  * Trả lời 3 câu hỏi buổi sáng: hôm nay bán được bao nhiêu? bao nhiêu đơn đang
  * ở đâu? kênh nào đang gánh? (+ đơn hoàn nào cần để mắt)
+ *
+ * NGUỒN SỐ = GET /api/analytics?from=hôm nay&to=hôm nay — ĐÚNG endpoint
+ * và đúng kỳ của Tổng quan web (frontend/src/app/page.tsx), nên Doanh thu /
+ * số đơn / Lợi nhuận dự kiến khớp web từng đồng. Trước 03/10 trang này đọc
+ * /realized-pnl (Lãi/Lỗ THỰC HIỆN — chỉ đơn đã giao/đã quyết toán) nên số
+ * luôn thấp hơn web và không có đơn mới trong ngày (anh Trung phát hiện khi
+ * dùng thử APK).
  *
  * Hero "Kết quả hôm nay" là BAND TỐI navy + glow mint — cùng bộ nhận diện với
  * orb Trợ lý và band tối landing (chốt 21/08), giữ nguyên ở cả hai theme.
@@ -89,41 +100,54 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const channelColors = useChannelColors();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const [summary, setSummary] = useState<PnlSummary | null>(null);
-  const [prevSummary, setPrevSummary] = useState<PnlSummary | null>(null);
-  const [weekSummary, setWeekSummary] = useState<PnlSummary | null>(null);
+  const [analytics, setAnalytics] = useState<OverviewAnalytics | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [returns, setReturns] = useState<ReturnsSummaryResponse["summary"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // Shop vừa đăng ký, chưa uỷ quyền gian nào → backend trả 409 NO_CHANNEL cho
+  // mọi API số liệu. Hiện thẻ hướng dẫn thay vì câu lỗi thô.
+  const [noChannel, setNoChannel] = useState(false);
 
-  const load = useCallback(async (asRefresh = false) => {
-    if (asRefresh) setRefreshing(true);
-    else setLoading(true);
-    setError("");
+  /**
+   * mode: "first" = lần đầu (spinner thay nội dung) · "pull" = kéo xuống (vòng
+   * xoay RefreshControl) · "silent" = tải NỀN (giữ nguyên số cũ trên màn, chỉ
+   * thay khi có số mới — như web refetch ngầm, không nháy).
+   */
+  const load = useCallback(async (mode: "first" | "pull" | "silent" = "first") => {
+    if (mode === "pull") setRefreshing(true);
+    else if (mode === "first") setLoading(true);
+    if (mode !== "silent") setError("");
     try {
       const { from, to } = rangeFor("today");
-      const y = yesterdayRange();
-      const w = rangeFor("7d");
-      const [pnl, prevPnl, weekPnl, orders, ret] = await Promise.all([
-        fetchPnlSummary(from, to),
-        // Hôm qua — mốc so sánh cho pill ▲/▼ %
-        fetchPnlSummary(y.from, y.to),
-        // 7 ngày — sparkline nhịp lãi dưới hero
-        fetchPnlSummary(w.from, w.to),
+      const [ana, orders, ret] = await Promise.all([
+        // Một lượt lấy đủ: số hôm nay + kỳ trước (hôm qua) để tính ▲/▼ +
+        // trend 14 ngày cho sparkline + đơn theo sàn cho donut.
+        fetchOverview(from, to),
         fetchOrders({ page: 1, pageSize: 1 }),
         fetchReturnsSummary(),
       ]);
-      setSummary(pnl.summary);
-      setPrevSummary(prevPnl.summary);
-      setWeekSummary(weekPnl.summary);
+      setAnalytics(ana);
       setCounts(orders.counts);
       setReturns(ret.summary);
+      setError("");
+      setNoChannel(false);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Có lỗi xảy ra, kéo xuống thử lại"
-      );
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        (err.body as { code?: string } | null)?.code === "NO_CHANNEL"
+      ) {
+        setNoChannel(true);
+        return;
+      }
+      // Tải nền hỏng (mất mạng chốc lát) thì giữ số cũ, không đẩy lỗi che màn.
+      if (mode !== "silent") {
+        setError(
+          err instanceof ApiError ? err.message : "Có lỗi xảy ra, kéo xuống thử lại"
+        );
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -131,20 +155,45 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   }, []);
 
   useEffect(() => {
-    void load();
+    void load("first");
   }, [load]);
+
+  // Số tươi như web: tải lại nền khi app quay lại foreground, khi tab được
+  // focus lại và định kỳ mỗi 60s (web: staleTime 30s + refetch on focus).
+  useAutoRefresh(() => void load("silent"));
 
   const today = new Date();
   const WEEKDAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
   const dateLabel = `${WEEKDAYS[today.getDay()]}, ${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
-  // Số đơn hôm nay + hôm qua theo từng sàn, trên danh sách sàn CỐ ĐỊNH
+  // Số đơn + doanh thu hôm nay theo từng SÀN (gộp các gian cùng sàn — như
+  // ChannelShareCard web), trên danh sách sàn CỐ ĐỊNH
+  const byPlatform = new Map<string, { count: number; revenue: number }>();
+  for (const r of analytics?.ordersByChannel ?? []) {
+    const cur = byPlatform.get(r.channelName) ?? { count: 0, revenue: 0 };
+    byPlatform.set(r.channelName, {
+      count: cur.count + r.count,
+      revenue: cur.revenue + r.revenue,
+    });
+  }
   const channelRows = FIXED_CHANNELS.map((ch) => ({
     channel: ch,
-    count: summary?.byPlatform?.[ch]?.count ?? 0,
-    prevCount: prevSummary?.byPlatform?.[ch]?.count ?? 0,
+    count: byPlatform.get(ch)?.count ?? 0,
+    revenue: byPlatform.get(ch)?.revenue ?? 0,
   }));
   const returningTotal = (returns?.AWAITING ?? 0) + (returns?.RECEIVED ?? 0);
-  const weekProfits = (weekSummary?.daily ?? []).map((d) => d.profit);
+  const revenue = analytics?.totalRevenue ?? 0;
+  const netProfit = analytics?.netProfit ?? 0;
+  const prevRevenue = analytics?.previous?.totalRevenue ?? 0;
+  // Biên lợi nhuận — kỳ trước không trả netProfit nên thẻ lãi hiện biên thay
+  // vì ▲/▼ (đúng như thẻ "Lợi nhuận dự kiến" trên web).
+  const margin = revenue > 0 ? Math.round((netProfit / revenue) * 1000) / 10 : null;
+  const missingCostOrders = analytics?.missingCost?.orderCount ?? 0;
+  // Sparkline lãi/ngày = doanh thu − chi phí trên trend 14 ngày (cùng công
+  // thức sparkline dưới thẻ KPI web); lấy 7 ngày cuối cho nhịp dễ đọc trên
+  // màn hẹp.
+  const weekProfits = (analytics?.trend ?? [])
+    .slice(-7)
+    .map((d) => d.revenue - (d.cost ?? 0));
   const [heroSize, setHeroSize] = useState({ w: 0, h: 0 });
   // Bề rộng sparkline = màn hình − padding trang (16×2) − padding hero (20×2)
   const sparkW = Math.min(width, 480) - 72;
@@ -154,7 +203,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
       className="flex-1 bg-slate-50 dark:bg-slate-950"
       contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />
+        <RefreshControl refreshing={refreshing} onRefresh={() => load("pull")} />
       }
     >
       <Text className="text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -166,6 +215,33 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         <View className="items-center py-16">
           <ActivityIndicator size="large" color="#64748b" />
         </View>
+      ) : noChannel ? (
+        <Card className="items-center p-6">
+          <View className="mb-3 h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-500/15">
+            <Ionicons name="storefront-outline" size={28} color="#059669" />
+          </View>
+          <Text className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            Chưa có gian hàng nào
+          </Text>
+          <Text className="mt-1.5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Kết nối Shopee, Lazada hoặc TikTok Shop trên bản web (mục Kênh bán) —
+            đơn hàng và số liệu sẽ tự về app, không cần cài gì thêm.
+          </Text>
+          <Pressable
+            className="mt-4 rounded-xl bg-slate-900 px-5 py-3 active:opacity-80 dark:bg-slate-700"
+            onPress={() => {
+              hapticTap();
+              void WebBrowser.openBrowserAsync(CONNECT_CHANNEL_URL);
+            }}
+          >
+            <Text className="text-sm font-semibold text-white">Kết nối gian hàng trên web</Text>
+          </Pressable>
+          <Pressable className="mt-3" onPress={() => void load("first")} hitSlop={8}>
+            <Text className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              Đã kết nối xong, tải lại
+            </Text>
+          </Pressable>
+        </Card>
       ) : error ? (
         <Card className="items-center p-6">
           <Text className="text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
@@ -199,7 +275,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 </Text>
                 <View className="rounded-full bg-white/10 px-2.5 py-1">
                   <Text className="text-[11px] font-semibold text-emerald-300" style={TABULAR}>
-                    {summary?.count ?? 0} đơn
+                    {analytics?.activeOrderCount ?? 0} đơn
                   </Text>
                 </View>
               </View>
@@ -207,36 +283,30 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 <View className="flex-1">
                   <Text className="text-xs text-slate-400">Doanh thu</Text>
                   <Text className="mt-1 text-[28px] font-bold text-white" style={TABULAR}>
-                    {compactMoney(summary?.totalNetRevenue ?? 0)}
+                    {compactMoney(revenue)}
                   </Text>
                   <View className="mt-2 flex-row">
-                    <DeltaPill
-                      onDark
-                      current={summary?.totalNetRevenue ?? 0}
-                      previous={prevSummary?.totalNetRevenue ?? 0}
-                    />
+                    <DeltaPill onDark current={revenue} previous={prevRevenue} />
                   </View>
                 </View>
                 <View className="mx-4 w-px bg-white/10" />
                 <View className="flex-1">
-                  <Text className="text-xs text-slate-400">Lợi nhuận ròng</Text>
+                  <Text className="text-xs text-slate-400">Lợi nhuận dự kiến</Text>
                   <Text
                     className={`mt-1 text-[28px] font-bold ${
-                      (summary?.totalProfitAfterTax ?? 0) < 0
-                        ? "text-red-400"
-                        : "text-emerald-300"
+                      netProfit < 0 ? "text-red-400" : "text-emerald-300"
                     }`}
                     style={TABULAR}
                   >
-                    {compactMoney(summary?.totalProfitAfterTax ?? 0)}
+                    {compactMoney(netProfit)}
                   </Text>
-                  <View className="mt-2 flex-row">
-                    <DeltaPill
-                      onDark
-                      current={summary?.totalProfitAfterTax ?? 0}
-                      previous={prevSummary?.totalProfitAfterTax ?? 0}
-                    />
-                  </View>
+                  <Text className="mt-2 text-[10px] text-slate-400" style={TABULAR}>
+                    {missingCostOrders > 0
+                      ? `${missingCostOrders} đơn chưa có giá vốn`
+                      : margin !== null
+                        ? `Biên lợi nhuận ${String(margin).replace(".", ",")}%`
+                        : "Sau giá vốn, phí sàn & chi phí"}
+                  </Text>
                 </View>
               </View>
               {weekProfits.length >= 2 ? (
@@ -261,7 +331,8 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             </View>
           </Animated.View>
 
-          {/* Đếm đơn theo trạng thái — bấm vào nhảy sang tab Đơn hàng đã lọc */}
+          {/* Đếm đơn theo trạng thái — TOÀN BỘ đơn đang ở từng bước (không
+              theo ngày), khớp số đếm tab Đơn hàng; bấm vào nhảy sang tab đã lọc */}
           <Animated.View
             entering={FadeInDown.duration(280).delay(60)}
             className="mb-3 flex-row gap-2"
@@ -297,7 +368,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               </Text>
               <DonutChart
                 size={150}
-                centerLabel={String(summary?.count ?? 0)}
+                centerLabel={String(analytics?.activeOrderCount ?? 0)}
                 centerSub="đơn hôm nay"
                 slices={channelRows.map((r) => ({
                   label: CHANNEL_LABEL[r.channel],
@@ -328,7 +399,12 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                     >
                       {r.count} đơn
                     </Text>
-                    <DeltaPill current={r.count} previous={r.prevCount} suffix="" />
+                    <Text
+                      className="flex-1 text-right text-[12px] text-slate-500 dark:text-slate-400"
+                      style={TABULAR}
+                    >
+                      {r.count > 0 ? compactMoney(r.revenue) : ""}
+                    </Text>
                   </View>
                 ))}
               </View>
