@@ -5,6 +5,17 @@
 
 ---
 
+## Phiên 04/10/2026 (sáng) — MOBILE: thanh tab mới (QR giữa = Chi tiết đơn hàng), tab Kho với Tồn kho là chính (anh Trung chốt; đã commit + đẩy master, CHƯA build Expo — anh: "chiều sửa vài chỗ nữa rồi mới đẩy lên Expo")
+
+- **Thanh tab chủ shop:** Trang chủ · Đơn hàng · [QR giữa] · Kho · Cấu hình (`components/QrTabButton.tsx`). Trang chủ còn hai trang vuốt: Tổng quan + Tài chính. Khu nhân viên cùng bố cục, bớt tài chính: Kho · [QR] · Cấu hình; vào được khi có quyền `orders` hoặc `warehouse.*`, nút QR cần `orders` (API tra đơn gác bằng quyền đó). Tab "Quét đơn hoàn" riêng của nhân viên đã bỏ.
+- **Nút QR giữa = Chi tiết đơn hàng** (không phải quét đơn hoàn): quét / gõ mã vận đơn hoặc mã đơn bất kỳ → `components/OrderDetailPanel.tsx`, khung theo Salework + dòng tiền theo trang chi tiết đơn Shopee: shop, mã đơn, trạng thái, tên đơn vị vận chuyển, khách, sản phẩm + SKU, Phí vận chuyển / Phụ phí / Thuế / Doanh thu đơn hàng (ước tính). ★ Anh chốt KHÔNG hiện giá vốn / lãi lỗ ở màn này; chi tiết đơn không cần giấu nhân viên (họ xem được trên sàn).
+- **Backend:** `GET /api/orders/lookup?detail=1` trả thêm `payment` (`lib/order-payment-detail.ts` + 4 test, lấy đúng số đơn Shopee 261003NBDUYU8T làm mẫu: 269.000 − 85.314 − 4.035 = 179.651). Shopee đọc cột phí của Order (có số ước tính khi chưa quyết toán, thuế chỉ có tổng); TikTok đọc bản kê (kể cả ước tính); Lazada chỉ có khi đã có sao kê. Sàn chưa báo thì app ghi "Sàn chưa báo phí và doanh thu của đơn này", không tự ước. Lượt quét đơn hoàn không xin `detail` nên không tốn thêm truy vấn.
+- **Tab Kho** (`screens/KhoScreen.tsx`): tab con Tồn kho (chính) + Đơn hoàn (phụ, màn cũ `WarehouseHubPage`; nút quét nhận mở route gốc `/scan-returns`). Màn quét dùng chung dời về `screens/ScanScreen.tsx`, prop `mode` "returns" | "detail".
+- **Tồn kho** (`screens/StockPage.tsx`, `api/inventory.ts`): tìm SKU / tên, chạm dòng → hộp Nhập thêm / Xuất bớt theo SỐ LƯỢNG (`POST /api/inventory/adjust`, không gõ đè tồn), xem trước "482 → 512 (+30)", lý do chọn nhanh, ô vị trí chỉ hiện khi shop có vị trí chứa hàng. Shop chưa liên kết: app CHỈ thông báo (kho rỗng → hộp hướng dẫn lên web trang Hàng hóa; SKU chưa nối gian / chưa bật đồng bộ → dòng vàng + hộp nhắc số tồn không đẩy lên sàn), không làm liên kết trên app.
+- **Co giãn:** đã soi 320 / 375 / 430 + nền tối trên giả lập web (backend + DB local, cấu hình chạy `mobile-web-local` trong `.claude/launch.json`); hộp nhập / xuất cao tối đa 92% màn, nút lưu ghim ở chân để màn thấp mở bàn phím vẫn thấy. CHƯA thử máy thật. Còn treo: dòng danh sách Đơn hoàn trên giả lập web ảnh nằm trên chữ (chưa rõ máy thật có bị không); chưa có quét SKU bằng camera và bộ lọc Sắp hết / Hết hàng ở Tồn kho.
+
+---
+
 ## Phiên 03/10/2026 (chiều – tối) — MOBILE sau khi anh Trung dùng thử APK: đăng ký, Tổng quan khớp web + tự làm mới, nút kho rõ, Thống kê bốc hàng theo ý kho (anh Trung: "Ok làm đi em" — code trên nhánh `claude/friendly-carson-blmjwx`, ⏳ CHỜ ANH gộp vào master để Render deploy backend rồi build lại APK bằng EAS)
 
 Chạy mô phỏng trên cloud: backend prod (Render) bị chặn mạng nên dựng Postgres + backend local, seed "Sunny Closet" (`scripts/seed-landing-demo.ts`); `prisma/seed.ts` đã lệch schema (productMapping, thiếu shopName) — chưa sửa, đã ghi thẻ việc riêng. Proxy dev giả lập web nay chọn http/https theo `HUBSELL_API`.

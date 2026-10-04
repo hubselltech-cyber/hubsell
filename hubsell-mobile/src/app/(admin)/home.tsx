@@ -1,23 +1,23 @@
 import React, { useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { AssistantOrb } from "@/components/AssistantOrb";
 import { OverviewPage } from "@/screens/OverviewPage";
 import { FinancePage } from "@/screens/FinancePage";
-import { WarehouseHubPage } from "@/screens/WarehouseHubPage";
 
 // react-native-pager-view KHÔNG có bản web — giả lập web chuyển trang bằng tap.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PagerView = Platform.OS === "web" ? null : require("react-native-pager-view").default;
 
-const SECTIONS = ["Tổng quan", "Tài chính", "Kho"];
+const SECTIONS = ["Tổng quan", "Tài chính"];
 
 /**
- * TRANG CHỦ chủ shop = 3 trang VUỐT NGANG: Tổng quan → Tài chính → Kho
- * (chốt thiết kế 13/08 — học bố cục "hôm nay" của Salework nhưng giữ nguyên
- * nguyên tắc tách vai: nhân viên kho không bao giờ thấy trang này).
+ * TRANG CHỦ chủ shop = 2 trang VUỐT NGANG: Tổng quan → Tài chính — nơi XEM số
+ * (chốt thiết kế 13/08, học bố cục "hôm nay" của Salework). Kho là nơi LÀM
+ * VIỆC nên 04/10 đã dời xuống thanh tab dưới; nhân viên kho không bao giờ
+ * thấy trang này.
  */
 export default function AdminHome() {
   const insets = useSafeAreaInsets();
@@ -32,9 +32,11 @@ export default function AdminHome() {
   };
 
   const pages = [
-    <OverviewPage key="overview" goWarehouse={() => go(2)} />,
+    <OverviewPage
+      key="overview"
+      goWarehouse={() => router.navigate("/(admin)/warehouse?tab=returns" as Href)}
+    />,
     <FinancePage key="finance" />,
-    <WarehouseHubPage key="warehouse" />,
   ];
 
   return (

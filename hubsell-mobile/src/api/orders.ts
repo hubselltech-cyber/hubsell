@@ -50,9 +50,10 @@ export function fetchOrderStats(params: OrdersFilter & { days?: number }) {
  * nhanh với sàn rồi tra lại — nên lượt gọi này có thể mất vài giây, UI phải
  * có trạng thái chờ. 409 = mã khớp nhiều đơn (body kèm candidates).
  */
-export function lookupOrder(code: string) {
+export function lookupOrder(code: string, opts: { detail?: boolean } = {}) {
+  // detail = xin kèm khối thông tin thanh toán của đơn (nút QR "Chi tiết đơn hàng").
   return api<LookupResponse>(
-    `/api/orders/lookup?code=${encodeURIComponent(code)}`
+    `/api/orders/lookup?code=${encodeURIComponent(code)}${opts.detail ? "&detail=1" : ""}`
   );
 }
 

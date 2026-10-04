@@ -7,8 +7,8 @@ import { homePathFor } from "@/lib/permissions";
 /**
  * CỔNG ĐIỀU HƯỚNG THEO VAI — điểm vào duy nhất của app:
  *   ADMIN                     → (admin)/finance   (Tài chính & Dòng tiền)
- *   Nhân viên có quyền kho    → (warehouse)/scan  (Quét đơn hoàn)
- *   Nhân viên không quyền kho → /no-access
+ *   Nhân viên có quyền Đơn hàng / Kho → (warehouse)/stock (Kho + nút QR giữa)
+ *   Nhân viên không có quyền nào trong đó → /no-access
  */
 export default function Gate() {
   const { status, user } = useAuth();

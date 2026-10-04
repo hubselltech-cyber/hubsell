@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
+import { ORDER_PAYMENT_INCLUDE, orderPaymentDetail } from "../lib/order-payment-detail";
 import { applyStockDelta } from "../services/stock-ledger";
 import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
@@ -1325,7 +1326,23 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    res.json({ order: (await attachItemImages([order]))[0] });
+    // ?detail=1 (app mobile, nút QR "Chi tiết đơn hàng" — anh Trung 04/10): kèm
+    // khối THÔNG TIN THANH TOÁN theo số của sàn (phí, thuế, tiền sàn trả về).
+    // Cố ý KHÔNG có giá vốn / lợi nhuận — màn quét ai cầm máy cũng xem được.
+    // Lượt quét đơn hoàn của kho không xin nên không tốn thêm câu truy vấn.
+    let payment: ReturnType<typeof orderPaymentDetail> | null = null;
+    if (req.query.detail === "1") {
+      const full = await prisma.order.findFirst({
+        where: { id: order.id, ...scope },
+        include: ORDER_PAYMENT_INCLUDE,
+      });
+      if (full) payment = orderPaymentDetail(full);
+    }
+
+    res.json({
+      order: (await attachItemImages([order]))[0],
+      ...(payment ? { payment } : {}),
+    });
   } catch (err) {
     next(err);
   }

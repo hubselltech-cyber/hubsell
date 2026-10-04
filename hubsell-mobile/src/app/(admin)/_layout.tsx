@@ -4,12 +4,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import { useAuth } from "@/auth/AuthContext";
 import { hapticSelect } from "@/lib/haptics";
+import { QrTabButton } from "@/components/QrTabButton";
 
 /**
  * Khu CHỦ SHOP — nhân viên lạc vào đây bị đá về cổng phân vai.
- * Thanh tab 03/10 (anh Trung): Trang chủ · Đơn hàng · Quét đơn hoàn · Cấu hình.
- * Tab Tin nhắn đã bỏ (inbox sàn không dùng được nữa); nút quét từ góc trang
- * Đơn hàng dời xuống đây, cùng màu với các tab còn lại.
+ * Thanh tab 04/10 (anh Trung): Trang chủ · Đơn hàng · [QR] · Kho · Cấu hình.
+ * Nút QR nằm CHÍNH GIỮA, quét bất kỳ đơn nào để xem chi tiết đơn hàng (shop,
+ * trạng thái, sản phẩm, tiền sàn trả — KHÔNG có lãi/lỗ). Kho rời khỏi dãy vuốt ngang của Trang chủ xuống
+ * đây: Tồn kho là tab con chính, Đơn hoàn là tab con phụ (nút quét nhận đơn
+ * hoàn nằm trong đó).
  */
 export default function AdminLayout() {
   const { status, user } = useAuth();
@@ -57,9 +60,16 @@ export default function AdminLayout() {
       <Tabs.Screen
         name="scan"
         options={{
-          title: "Quét mã", // ngắn để 4 tab không bị cắt chữ trên màn hẹp
+          title: "Quét mã",
+          tabBarButton: (p) => <QrTabButton onPress={p.onPress} onLongPress={p.onLongPress} />,
+        }}
+      />
+      <Tabs.Screen
+        name="warehouse"
+        options={{
+          title: "Kho",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="scan" size={size - 2} color={color} />
+            <Ionicons name="cube-outline" size={size - 2} color={color} />
           ),
         }}
       />

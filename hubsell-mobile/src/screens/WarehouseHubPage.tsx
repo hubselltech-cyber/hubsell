@@ -51,7 +51,7 @@ const SCANNED_DETAIL_KEYS = [
 type ScannedDetail = "" | (typeof SCANNED_DETAIL_KEYS)[number];
 
 /**
- * Trang KHO — trang 3 của pager Trang chủ (chủ shop).
+ * ĐƠN HOÀN — tab con phụ của màn Kho (trước 04/10 là trang 3 của Trang chủ).
  * Số liệu đơn hoàn + nút mở camera + Ô TÌM KIẾM + DANH SÁCH đơn hoàn
  * (đơn chờ lâu nhất lên đầu — backend sắp sẵn). Nhập kho hàng loạt vẫn trên web.
  */
@@ -145,7 +145,7 @@ export function WarehouseHubPage() {
   return (
     <ScrollView
       className="flex-1 bg-slate-50 dark:bg-slate-950"
-      contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={() => load(1, false, true)} />
@@ -238,7 +238,7 @@ export function WarehouseHubPage() {
             }}
             onPress={() => {
               hapticTap();
-              router.push("/(warehouse)/scan" as Href);
+              router.push("/scan-returns" as Href);
             }}
           >
             <Ionicons name="scan" size={20} color="#fff" />

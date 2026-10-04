@@ -5,10 +5,13 @@ import { useColorScheme } from "nativewind";
 import { useAuth } from "@/auth/AuthContext";
 import { hapticSelect } from "@/lib/haptics";
 import { hasPermission } from "@/lib/permissions";
+import { QrTabButton } from "@/components/QrTabButton";
 
 /**
- * Khu KHO — cho nhân viên có quyền "warehouse.returns".
- * ADMIN cũng vào được (nút quét trên tab Đơn hàng) để chủ shop tự thử luồng.
+ * Khu NHÂN VIÊN — cùng bố cục với chủ shop, bớt phần tài chính (anh Trung
+ * 04/10): Kho · [QR] · Cấu hình. Vào được khi có quyền Đơn hàng hoặc quyền Kho.
+ * Nút QR giữa (xem chi tiết đơn hàng) cần quyền Đơn hàng vì API tra đơn gác
+ * bằng quyền đó; không có thì nút ẩn. Quét nhận đơn hoàn nằm trong Kho → Đơn hoàn.
  */
 export default function WarehouseLayout() {
   const { status, user } = useAuth();
@@ -20,9 +23,13 @@ export default function WarehouseLayout() {
 
   if (status === "loading") return null;
   if (status === "signedOut" || !user) return <Redirect href="/login" />;
-  const allowed =
-    user.role === "ADMIN" || hasPermission(user.permissions, "warehouse.returns");
-  if (!allowed) return <Redirect href="/no-access" />;
+  const admin = user.role === "ADMIN";
+  const canOrders = admin || hasPermission(user.permissions, "orders");
+  const canWarehouse =
+    admin ||
+    hasPermission(user.permissions, "warehouse.returns") ||
+    hasPermission(user.permissions, "warehouse.products");
+  if (!canOrders && !canWarehouse) return <Redirect href="/no-access" />;
 
   return (
     <Tabs
@@ -39,13 +46,27 @@ export default function WarehouseLayout() {
       screenListeners={{ tabPress: () => hapticSelect() }}
     >
       <Tabs.Screen
-        name="scan"
+        name="stock"
         options={{
-          title: "Quét đơn hoàn",
+          title: "Kho",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="scan" size={size - 2} color={color} />
+            <Ionicons name="cube-outline" size={size - 2} color={color} />
           ),
         }}
+      />
+      <Tabs.Screen
+        name="scan"
+        // expo-router không cho đặt href cùng tabBarButton → tách hai nhánh.
+        options={
+          canOrders
+            ? {
+                title: "Quét mã",
+                tabBarButton: (p) => (
+                  <QrTabButton onPress={p.onPress} onLongPress={p.onLongPress} />
+                ),
+              }
+            : { href: null }
+        }
       />
       <Tabs.Screen
         name="settings"

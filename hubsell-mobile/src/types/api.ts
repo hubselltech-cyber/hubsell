@@ -98,8 +98,30 @@ export interface OrdersListResponse {
   counts: Record<string, number>;
 }
 
+/**
+ * THÔNG TIN THANH TOÁN của một đơn theo số của sàn (backend
+ * lib/order-payment-detail.ts) — không có giá vốn / lợi nhuận. Chỉ có khi gọi
+ * lookup kèm detail=1.
+ */
+export interface OrderPaymentGroup {
+  label: string;
+  /** null = nhóm chỉ để tham chiếu, không cộng tổng. */
+  total: number | null;
+  /** Số CÓ DẤU: âm = sàn trừ, dương = shop được cộng. */
+  lines: { label: string; amount: number }[];
+}
+
+export interface OrderPaymentDto {
+  /** settled = đã quyết toán; estimated = sàn ước tính; none = sàn chưa báo phí. */
+  status: "settled" | "estimated" | "none";
+  productTotal: number;
+  groups: OrderPaymentGroup[];
+  payout: number | null;
+}
+
 export interface LookupResponse {
   order: OrderDto;
+  payment?: OrderPaymentDto;
 }
 
 /** Body lỗi 409 của GET /api/orders/lookup khi mã khớp nhiều đơn. */
@@ -434,4 +456,47 @@ export interface AssistantReply {
   suggestions?: string[];
   /** Biểu đồ cột mini (báo cáo tuần/tháng) — doanh thu theo ngày. */
   chart?: { caption: string; points: { label: string; value: number }[] };
+}
+
+// ───────────────────────── Tồn kho (tab Kho) ─────────────────────────
+
+/** Một SKU kho trong GET /api/products — chỉ chép trường app dùng. */
+export interface ProductDto {
+  id: string;
+  skuCode: string;
+  productName: string;
+  imageUrl: string | null;
+  quantityInStock: number;
+  holdQuantity: number;
+  /** Số Hubsell đẩy lên mọi gian = max(0, tồn − giữ − tồn an toàn). */
+  availableToSell: number;
+  isLowStock: boolean;
+  /** Các gian đã nối với SKU này — rỗng = chưa nối gian nào (nối trên web). */
+  channelLinks?: { shopName: string; channelName: string; stockSyncEnabled: boolean }[];
+}
+
+export interface ProductsListResponse {
+  items: ProductDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+/** GET /api/stock-locations — rỗng (enabled=false) khi shop chưa dùng vị trí. */
+export interface StockLocationDto {
+  id: string;
+  /** Đường dẫn theo cây, vd "Kho 2 › Kệ A1". */
+  path: string;
+  sellable: boolean;
+}
+
+export interface StockLocationsResponse {
+  items: StockLocationDto[];
+  enabled: boolean;
+}
+
+/** POST /api/inventory/adjust — nhập / xuất theo SỐ LƯỢNG (không gõ đè tồn). */
+export interface AdjustStockResponse {
+  product: { id: string; quantityInStock: number };
 }

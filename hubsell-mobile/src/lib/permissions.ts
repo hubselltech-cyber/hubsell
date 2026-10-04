@@ -14,8 +14,14 @@ import type { AuthUser } from "../types/api";
 /** Màn hình mặc định theo vai — trái tim của điều hướng Role-Based. */
 export function homePathFor(user: AuthUser): string {
   if (user.role === "ADMIN") return "/(admin)/home";
-  if (hasPermission(user.permissions, "warehouse.returns")) {
-    return "/(warehouse)/scan";
+  // Nhân viên (04/10): có quyền Đơn hàng hoặc quyền Kho là vào màn Kho; tab con
+  // và nút QR giữa hiện theo từng quyền.
+  if (
+    hasPermission(user.permissions, "orders") ||
+    hasPermission(user.permissions, "warehouse.returns") ||
+    hasPermission(user.permissions, "warehouse.products")
+  ) {
+    return "/(warehouse)/stock";
   }
   return "/no-access";
 }
