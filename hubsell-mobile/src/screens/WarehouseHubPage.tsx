@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, type Href } from "expo-router";
 import { Image } from "expo-image";
 import { fetchReturns } from "@/api/warehouse";
@@ -442,6 +443,7 @@ function ReturnsFilterSheet({
 }) {
   const [draftChannel, setDraftChannel] = useState<ChannelFilter>(channel);
   const [draftStatus, setDraftStatus] = useState<ScannedDetail>(statusDetail);
+  const insets = useSafeAreaInsets();
   useEffect(() => {
     if (visible) {
       setDraftChannel(channel);
@@ -451,10 +453,13 @@ function ReturnsFilterSheet({
   }, [visible]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
         <Pressable className="flex-1" onPress={onClose} />
-        <View className="rounded-t-3xl bg-white px-4 pb-6 pt-3 dark:bg-slate-900">
+        <View
+          className="rounded-t-3xl bg-white px-4 pt-3 dark:bg-slate-900"
+          style={{ paddingBottom: 20 + insets.bottom }}
+        >
           <View className="mb-1 items-center">
             <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
           </View>

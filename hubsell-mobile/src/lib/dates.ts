@@ -125,8 +125,9 @@ export const RANGE_PRESETS: RangePreset[] = [
   },
 ];
 
+/** Kỳ mặc định khi mở trang: HÔM NAY (anh Trung 04/10 — web mặc định 30 ngày, app thì xem trong ngày). */
 export function defaultRange(): DateRange {
-  return RANGE_PRESETS.find((p) => p.key === "last30")!.resolve();
+  return RANGE_PRESETS.find((p) => p.key === "today")!.resolve();
 }
 
 /** Khoảng trùng khít một mốc thì trả mốc đó (để hiện nhãn đẹp). */

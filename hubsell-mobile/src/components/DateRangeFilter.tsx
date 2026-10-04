@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   RANGE_PRESETS,
   dateToKey,
@@ -87,6 +88,7 @@ function DateRangeSheet({
   const [to, setTo] = useState<string | null>(value.to);
   const [cursor, setCursor] = useState(() => monthStart(keyToDate(value.to)));
   const todayKey = dateToKey(new Date());
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
@@ -126,12 +128,15 @@ function DateRangeSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
         <Pressable className="flex-1" onPress={onClose} />
         <View
-          className="rounded-t-3xl bg-white px-4 pb-6 pt-3 dark:bg-slate-900"
-          style={{ maxHeight: "92%" }}
+          className="rounded-t-3xl bg-white px-4 pt-3 dark:bg-slate-900"
+          // Đáy chừa thêm phần nút điều hướng / vạch vuốt của máy — không thì nút Áp dụng bị che.
+          // Modal đặt statusBarTranslucent + navigationBarTranslucent để LUÔN vẽ tràn viền: có
+          // máy tự dừng trên nút điều hướng, có máy vẽ đè lên — ép một kiểu thì phần chừa mới đúng.
+          style={{ maxHeight: "92%", paddingBottom: 20 + insets.bottom }}
         >
           <View className="mb-1 items-center">
             <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />

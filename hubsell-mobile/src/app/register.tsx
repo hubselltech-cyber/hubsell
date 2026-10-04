@@ -382,7 +382,7 @@ function CountryPickerModal({
       )
     : COUNTRIES;
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
       <View
         className="flex-1 bg-slate-50 dark:bg-slate-950"
         style={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom }}

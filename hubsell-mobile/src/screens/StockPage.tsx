@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { adjustStock, fetchProducts, fetchStockLocations } from "@/api/inventory";
@@ -294,6 +295,7 @@ function AdjustSheet({
   const [locOpen, setLocOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (product) {
@@ -344,15 +346,16 @@ function AdjustSheet({
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView className="flex-1 justify-end bg-black/40" behavior="padding">
         <Pressable className="flex-1" onPress={onClose} />
         {/* Co giãn: hộp cao tối đa 92% phần màn còn lại (đã trừ bàn phím), phần
             thân cuộn bên trong, nút lưu GHIM ở chân — màn 320×640 mở bàn phím
             vẫn thấy nút mà không phải cuộn. */}
         <View
-          className="rounded-t-3xl bg-white px-4 pb-6 pt-3 dark:bg-slate-900"
-          style={{ maxHeight: "92%" }}
+          className="rounded-t-3xl bg-white px-4 pt-3 dark:bg-slate-900"
+          // Đáy chừa thêm phần nút điều hướng / vạch vuốt của máy — không thì nút lưu bị che.
+          style={{ maxHeight: "92%", paddingBottom: 20 + insets.bottom }}
         >
           <View className="mb-2 items-center">
             <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />

@@ -131,8 +131,12 @@ export function ScanScreen({
   // KeyboardAvoidingView không đẩy được chúng. Tự đo: phần đáy màn quét nằm dưới
   // mép trên bàn phím bao nhiêu thì nâng các lớp nổi lên bấy nhiêu. Đo theo vị
   // trí thật trên màn nên đúng cả khi màn quét nằm trên thanh tab lẫn khi phủ kín.
+  // Mở phủ kín màn (Kho → Đơn hoàn → quét) thì đáy màn quét chạm nút điều hướng của
+  // máy → chừa thêm; nằm trong tab thì thanh tab đã chừa rồi. Bàn phím đang mở thì
+  // nút điều hướng nằm dưới bàn phím, không cần chừa.
   const rootRef = useRef<View>(null);
   const [kbLift, setKbLift] = useState(0);
+  const navInset = embedded || kbLift > 0 ? 0 : insets.bottom;
   useEffect(() => {
     if (isWeb) return;
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -332,7 +336,7 @@ export function ScanScreen({
         // bottom = kbLift: bàn phím mở (ô ghi chú hàng hỏng) thì panel nổi lên trên nó.
         style={{
           bottom: kbLift,
-          paddingBottom: 16,
+          paddingBottom: 16 + navInset,
           maxHeight: detail ? Math.round(winHeight * 0.8) : 460,
         }}
       >
@@ -649,7 +653,7 @@ export function ScanScreen({
       {!panel && !busy ? (
         <View
           className="absolute inset-x-0 px-4"
-          style={{ bottom: kbLift, paddingBottom: 12 }}
+          style={{ bottom: kbLift, paddingBottom: 12 + navInset }}
         >
           {(() => {
             const inner = (onGlass: boolean) => (

@@ -501,6 +501,8 @@ function FilterSheet({
   onClose: () => void;
   onApply: (v: FilterValue) => void;
 }) {
+  // Đáy hộp chừa phần nút điều hướng / vạch vuốt của máy.
+  const sheetInsets = useSafeAreaInsets();
   // Nháp trong panel — bấm Áp dụng mới đổ ra ngoài, đóng ngang thì bỏ
   const [draft, setDraft] = useState<FilterValue>(value);
   useEffect(() => {
@@ -514,10 +516,13 @@ function FilterSheet({
     : channels;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
         <Pressable className="flex-1" onPress={onClose} />
-        <View className="max-h-[85%] rounded-t-3xl bg-white dark:bg-slate-900 px-4 pb-6 pt-3">
+        <View
+          className="max-h-[85%] rounded-t-3xl bg-white dark:bg-slate-900 px-4 pt-3"
+          style={{ paddingBottom: 20 + sheetInsets.bottom }}
+        >
           <View className="mb-1 items-center">
             <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
           </View>
@@ -624,6 +629,8 @@ function StatsSheet({
   filter: OrdersFilter;
   onClose: () => void;
 }) {
+  // Đáy hộp chừa phần nút điều hướng / vạch vuốt của máy.
+  const sheetInsets = useSafeAreaInsets();
   const [mode, setMode] = useState<"product" | "sku" | "carrier">("product");
   const [data, setData] = useState<OrderStatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -649,10 +656,13 @@ function StatsSheet({
   const carrierRows = data?.byCarrier ?? [];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
         <Pressable className="flex-1" onPress={onClose} />
-        <View className="h-[75%] rounded-t-3xl bg-white dark:bg-slate-900 px-4 pb-6 pt-3">
+        <View
+          className="h-[75%] rounded-t-3xl bg-white dark:bg-slate-900 px-4 pt-3"
+          style={{ paddingBottom: 20 + sheetInsets.bottom }}
+        >
           <View className="mb-1 items-center">
             <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
           </View>
