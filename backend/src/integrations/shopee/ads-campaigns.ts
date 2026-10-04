@@ -104,7 +104,7 @@ export async function upsertShopeeCampaignSettings(
   // Trạng thái TRƯỚC khi đồng bộ — để ghi sổ "Tắt/Bật trên sàn" (thao tác ngoài Hubsell).
   const prevRows = await prisma.adsCampaign.findMany({
     where: { channelId: channel.id, campaignId: { in: ids } },
-    select: { campaignId: true, status: true, hubsellPausedAt: true },
+    select: { campaignId: true, status: true, hubsellPausedAt: true, roasTarget: true },
   });
   const prevByCampaignId = new Map(prevRows.map((r) => [r.campaignId, r] as const));
   for (const batch of chunk(ids, 100)) {
@@ -145,15 +145,20 @@ export async function upsertShopeeCampaignSettings(
         endTime: endTime ? new Date(endTime * 1000) : null,
         itemIds: (common?.item_id_list ?? []).join(","),
       };
+      const prev = prevByCampaignId.get(campaignId);
+      // Mục tiêu ROAS trên sàn khác số đang lưu = có người vừa đổi (Seller Center hoặc
+      // Hubsell) → ghi mốc để gợi ý hạ mục tiêu khóa 48 giờ. Campaign mới thấy lần đầu
+      // thì không tính là "đổi".
+      const prevTarget = prev?.roasTarget != null ? Number(prev.roasTarget) : null;
+      const targetChanged = prev != null && prevTarget !== data.roasTarget;
       const row = await prisma.adsCampaign.upsert({
         where: {
           channelId_campaignId: { channelId: channel.id, campaignId },
         },
-        update: data,
+        update: targetChanged ? { ...data, roasTargetChangedAt: new Date() } : data,
         create: { channelId: channel.id, campaignId, ...data },
       });
       rowIdByCampaignId.set(campaignId, row.id);
-      const prev = prevByCampaignId.get(campaignId);
       await recordMarketplaceStatusChange({
         channelId: channel.id,
         rowId: row.id,

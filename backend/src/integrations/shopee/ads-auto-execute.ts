@@ -989,7 +989,10 @@ export async function setRoasTargetByOwner(
   });
   if (outcome.ok) {
     // Ghi ngay để bảng đổi màu tức thì; xung 30' kế sẽ đọc lại từ sàn xác nhận.
-    await prisma.adsCampaign.update({ where: { id: row.id }, data: { roasTarget: target } });
+    await prisma.adsCampaign.update({
+      where: { id: row.id },
+      data: { roasTarget: target, ...(prev !== target ? { roasTargetChangedAt: new Date() } : {}) },
+    });
     await prisma.opsActivity.create({
       data: {
         ownerId: channel.userId,

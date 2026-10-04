@@ -140,7 +140,7 @@ export function deliveryAdviceText(
   );
   return {
     points,
-    conclusion: `${platformLabel} chỉ đấu thầu tới mức đạt mục tiêu nên đang phân phối dè dặt. Muốn thêm đơn thì hạ mục tiêu ROAS trên Seller Center, nhưng đừng xuống dưới ${x(d.safeTarget)} (hòa vốn × hệ số an toàn) — lãi mỗi đơn sẽ mỏng đi. Hubsell không tự hạ mục tiêu.`,
+    conclusion: `${platformLabel} chỉ đấu thầu tới mức đạt mục tiêu nên đang phân phối dè dặt. Muốn thêm đơn thì hạ mục tiêu ROAS trên Seller Center TỪNG NẤC${d.nextTarget != null ? `: lần này xuống ${x(d.nextTarget)}` : ""}, theo dõi 48 giờ rồi mới hạ tiếp (mỗi lần đổi mục tiêu sàn phải học lại). Đừng xuống dưới ${x(d.safeTarget)} (hòa vốn × hệ số an toàn) — lãi mỗi đơn sẽ mỏng đi. Hubsell không tự hạ mục tiêu.`,
   };
 }
 

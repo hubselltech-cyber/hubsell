@@ -11,6 +11,7 @@ import {
   DEFAULT_SHOPEE_ASSISTANT_CONFIG,
   assessRoasTarget,
   recommendAction,
+  nextRoasTargetStep,
   evaluateShopeeCampaign,
   normalizeAssistantConfig,
   type AssistantCampaignInput,
@@ -324,14 +325,27 @@ describe("recommendAction", () => {
   it("đang lãi: bị ngân sách chặn → tăng ngân sách; mục tiêu bó → giảm mục tiêu; còn lại giữ nguyên", () => {
     const delivery = {
       roas: 9, breakevenRoas: 6.63, safeTarget: 7.3, budget: 100000,
-      avgDailySpend: 95000, budgetUsedPct: 95, roasTarget: 12, fullDays: 5,
+      avgDailySpend: 95000, budgetUsedPct: 95, roasTarget: 12.5, nextTarget: 11.3, fullDays: 5,
     };
     expect(recommendAction({ ...base, verdict: "healthy", delivery: { ...delivery, status: "budget_capped" } })).toMatch(/^Tăng ngân sách ngày/);
-    expect(recommendAction({ ...base, verdict: "healthy", delivery: { ...delivery, status: "target_binding" } })).toMatch(/^Giảm mục tiêu ROAS về gần 7,3x/);
+    expect(recommendAction({ ...base, verdict: "healthy", delivery: { ...delivery, status: "target_binding" } })).toBe(
+      "Giảm mục tiêu ROAS một nấc, từ 12,5x xuống 11,3x, rồi theo dõi 48 giờ mới giảm tiếp. Không xuống dưới 7,3x."
+    );
     expect(recommendAction({ ...base, verdict: "healthy" })).toMatch(/^Giữ nguyên/);
   });
   it("Hubsell đã tạm dừng → nhắc điều kiện bật lại; campaign không đánh giá → null", () => {
     expect(recommendAction({ ...base, verdict: null, hubsellPaused: true })).toMatch(/^Hubsell đã tạm dừng/);
     expect(recommendAction({ ...base, verdict: null })).toBeNull();
+  });
+});
+
+describe("nextRoasTargetStep", () => {
+  it("mỗi nấc giảm 10%, làm tròn 1 số lẻ", () => {
+    expect(nextRoasTargetStep(12.5, 7.5)).toBe(11.3);
+    expect(nextRoasTargetStep(11.3, 7.5)).toBe(10.2);
+  });
+  it("không thủng sàn an toàn; đã ở sàn thì null", () => {
+    expect(nextRoasTargetStep(8, 7.5)).toBe(7.5);
+    expect(nextRoasTargetStep(7.5, 7.5)).toBeNull();
   });
 });

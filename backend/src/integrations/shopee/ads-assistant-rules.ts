@@ -425,6 +425,29 @@ export function assessRoasTarget(input: {
 export const BUDGET_CAP_PCT = 90;
 export const DELIVERY_MIN_FULL_DAYS = 3;
 
+// HẠ MỤC TIÊU ROAS THEO NẤC (04/10/2026, anh Trung: "12,5 giảm một phát về 7,5
+// có sâu quá không"). safeTarget là SÀN không được thủng, KHÔNG phải đích một
+// lần. Căn cứ:
+//   - Shopee, GMV Max FAQ (ads.shopee.ph/learn/faq/478/1829, mục chỉnh ROAS):
+//     mỗi lần tăng / giảm KHÔNG QUÁ 20%; đổi mục tiêu là vào lại giai đoạn học
+//     ít nhất 7 ngày; nên nhìn 7–14 ngày, bỏ qua dao động từng ngày.
+//   - Google Ads (support.google.com/google-ads/answer/10433846): tránh đổi
+//     mục tiêu nhiều lần trong một chu kỳ chuyển đổi, chờ 1–2 chu kỳ rồi đánh giá.
+// ANH TRUNG CHỐT 04/10: mỗi nấc 10% (nửa trần 20% của Shopee) và KHÓA CỨNG 48 GIỜ
+// giữa hai nấc — trong 48 giờ sau khi mục tiêu đổi, không gợi ý hạ tiếp. (Shopee
+// nói giai đoạn học ít nhất 7 ngày; 48 giờ là mức anh chọn để gợi ý không quá chậm.)
+// Mốc đổi = AdsCampaign.roasTargetChangedAt, chính xác tới nhịp đồng bộ quảng cáo.
+export const TARGET_STEP_PCT = 0.1;
+export const TARGET_STEP_WAIT_HOURS = 48;
+
+/** Nấc hạ kế tiếp của mục tiêu ROAS: giảm TARGET_STEP_PCT, 1 số lẻ, không thủng sàn.
+ *  null = đã sát sàn, không còn nấc nào để hạ. */
+export function nextRoasTargetStep(target: number, safeTarget: number): number | null {
+  const stepped = Math.round(target * (1 - TARGET_STEP_PCT) * 10) / 10;
+  const next = Math.max(stepped, safeTarget);
+  return next < target ? next : null;
+}
+
 export type DeliveryStatus = "budget_capped" | "target_binding";
 
 export interface DeliveryCheck {
@@ -441,6 +464,8 @@ export interface DeliveryCheck {
   /** % ngân sách ngày đang dùng; null khi không giới hạn. */
   budgetUsedPct: number | null;
   roasTarget: number | null;
+  /** target_binding: mục tiêu nên hạ xuống ở NẤC NÀY (xem nextRoasTargetStep). */
+  nextTarget: number | null;
   /** Số ngày trọn có tiêu tiền trong 7 ngày (cỡ mẫu). */
   fullDays: number;
 }
@@ -455,6 +480,9 @@ export function assessDelivery(input: {
   /** 7 ngày trọn trước hôm nay: tổng chi, tổng GMV broad, số ngày có tiêu tiền. */
   prev7: { spend: number; gmv: number; daysWithSpend: number };
   dangerFactor: number;
+  /** Mốc mục tiêu ROAS đổi gần nhất — còn trong TARGET_STEP_WAIT_HOURS thì không gợi ý hạ tiếp. */
+  roasTargetChangedAt?: Date | null;
+  now?: Date;
 }): DeliveryCheck | null {
   if (input.status !== "ongoing" || input.verdict !== "healthy") return null;
   const be = Number(input.breakevenRoas);
@@ -480,13 +508,23 @@ export function assessDelivery(input: {
     avgDailySpend,
     budgetUsedPct,
     roasTarget,
+    nextTarget: null,
     fullDays: daysWithSpend,
   };
   if (budgetUsedPct != null && budgetUsedPct >= BUDGET_CAP_PCT) {
     return { status: "budget_capped", ...base };
   }
   if (roasTarget != null && roas < roasTarget) {
-    return { status: "target_binding", ...base };
+    // Khóa cứng giữa hai nấc: mục tiêu vừa đổi thì để sàn chạy đủ TARGET_STEP_WAIT_HOURS.
+    const changedAt = input.roasTargetChangedAt;
+    const now = input.now ?? new Date();
+    if (changedAt && now.getTime() - changedAt.getTime() < TARGET_STEP_WAIT_HOURS * 3_600_000) {
+      return null;
+    }
+    // Mục tiêu đã sát sàn an toàn thì không còn gì để khuyên hạ.
+    const nextTarget = nextRoasTargetStep(roasTarget, safeTarget);
+    if (nextTarget == null) return null;
+    return { status: "target_binding", ...base, nextTarget };
   }
   return null;
 }
@@ -613,8 +651,11 @@ export function recommendAction(input: {
   if (delivery?.status === "budget_capped") {
     return "Tăng ngân sách ngày: chiến dịch đang lãi và ngày nào cũng tiêu gần hết ngân sách.";
   }
-  if (delivery?.status === "target_binding") {
-    return `Giảm mục tiêu ROAS về gần ${roasText(delivery.safeTarget)} để sàn phân phối nhiều hơn mà vẫn trên hòa vốn.`;
+  if (delivery?.status === "target_binding" && delivery.roasTarget != null && delivery.nextTarget != null) {
+    return (
+      `Giảm mục tiêu ROAS một nấc, từ ${roasText(delivery.roasTarget)} xuống ${roasText(delivery.nextTarget)}, ` +
+      `rồi theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới giảm tiếp. Không xuống dưới ${roasText(delivery.safeTarget)}.`
+    );
   }
   return "Giữ nguyên, chiến dịch đang ổn.";
 }

@@ -7217,6 +7217,8 @@ export interface DeliveryCheck {
   avgDailySpend: number;
   budgetUsedPct: number | null;
   roasTarget: number | null;
+  /** target_binding: mục tiêu nên hạ xuống ở nấc này (mỗi nấc 10%, không thủng safeTarget). */
+  nextTarget?: number | null;
   fullDays: number;
 }
 

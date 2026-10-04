@@ -215,6 +215,7 @@ export async function computeChannelAdsInsights(
       roasTarget,
       prev7: { spend: prev7Spend, gmv: prev7Gmv, daysWithSpend: prev7DaysWithSpend },
       dangerFactor: config.review.dangerFactor,
+      roasTargetChangedAt: c.roasTargetChangedAt,
     });
 
     return {

@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUDGET_CAP_PCT,
   DELIVERY_MIN_FULL_DAYS,
+  TARGET_STEP_WAIT_HOURS,
   assessDelivery,
   assessRoasTarget,
 } from "../shopee/ads-assistant-rules";
@@ -104,6 +105,31 @@ describe("assessDelivery — target_binding (ca thật ANO 24/09)", () => {
     expect(r?.roasTarget).toBe(12.2);
     expect(r?.budgetUsedPct).toBeNull();
     expect(r?.safeTarget).toBe(7.6); // 6,9 × 1,1 = 7,59 → 7,6
+    expect(r?.nextTarget).toBe(11); // một nấc 10%: 12,2 → 10,98 → 11,0 (không nhảy thẳng về 7,6)
+  });
+
+  it("khóa cứng 48 giờ sau khi mục tiêu đổi: trong khóa → null, hết khóa → gợi ý lại", () => {
+    const ok = assessRoasTarget({ roasTarget: 12.2, breakevenRoas: BE, dangerFactor: FACTOR });
+    const now = new Date("2026-10-04T12:00:00Z");
+    const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
+    const at = (h: number) =>
+      assessDelivery(base({ roasTarget: 12.2, roasTargetCheck: ok, roasTargetChangedAt: hoursAgo(h), now }));
+    expect(at(1)).toBeNull();
+    expect(at(TARGET_STEP_WAIT_HOURS - 1)).toBeNull();
+    expect(at(TARGET_STEP_WAIT_HOURS)?.status).toBe("target_binding");
+  });
+
+  it("khóa 48 giờ không chặn gợi ý tăng ngân sách", () => {
+    const now = new Date("2026-10-04T12:00:00Z");
+    const r = assessDelivery(
+      base({ budget: 250_000, roasTargetChangedAt: new Date(now.getTime() - 3_600_000), now })
+    );
+    expect(r?.status).toBe("budget_capped");
+  });
+
+  it("mục tiêu đã sát sàn an toàn → không khuyên hạ nữa (null)", () => {
+    const ok = assessRoasTarget({ roasTarget: 7.6, breakevenRoas: BE, dangerFactor: FACTOR });
+    expect(assessDelivery(base({ roasTarget: 7.6, roasTargetCheck: ok, prev7: { spend: 1_000_000, gmv: 7_595_000, daysWithSpend: 7 } }))).toBeNull();
   });
 
   it("ROAS thực đã đạt mục tiêu → null", () => {
