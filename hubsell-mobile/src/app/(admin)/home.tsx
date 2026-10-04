@@ -1,20 +1,22 @@
 import React, { useRef, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { AssistantOrb } from "@/components/AssistantOrb";
 import { OverviewPage } from "@/screens/OverviewPage";
 import { FinancePage } from "@/screens/FinancePage";
+import { AdsPage } from "@/screens/AdsPage";
 
 // react-native-pager-view KHÔNG có bản web — giả lập web chuyển trang bằng tap.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PagerView = Platform.OS === "web" ? null : require("react-native-pager-view").default;
 
-const SECTIONS = ["Tổng quan", "Tài chính"];
+const SECTIONS = ["Tổng quan", "Tài chính", "Quảng cáo"];
 
 /**
- * TRANG CHỦ chủ shop = 2 trang VUỐT NGANG: Tổng quan → Tài chính — nơi XEM số
+ * TRANG CHỦ chủ shop = 3 trang VUỐT NGANG: Tổng quan → Tài chính → Quảng cáo
+ * (Trợ lý quảng cáo, thêm 04/10) — nơi XEM số
  * (chốt thiết kế 13/08, học bố cục "hôm nay" của Salework). Kho là nơi LÀM
  * VIỆC nên 04/10 đã dời xuống thanh tab dưới; nhân viên kho không bao giờ
  * thấy trang này.
@@ -23,6 +25,8 @@ export default function AdminHome() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [page, setPage] = useState(0);
+  // Ba mục + dãy chấm không vừa màn hẹp (320) — mục đang chọn đã tô đậm nên bỏ chấm.
+  const showDots = useWindowDimensions().width >= 360;
   const pagerRef = useRef<{ setPage: (i: number) => void } | null>(null);
 
   const go = (i: number) => {
@@ -37,6 +41,7 @@ export default function AdminHome() {
       goWarehouse={() => router.navigate("/(admin)/warehouse?tab=returns" as Href)}
     />,
     <FinancePage key="finance" />,
+    <AdsPage key="ads" />,
   ];
 
   return (
@@ -46,7 +51,7 @@ export default function AdminHome() {
         {SECTIONS.map((label, i) => (
           <Pressable
             key={label}
-            className={`rounded-full px-3.5 py-1.5 ${
+            className={`rounded-full px-3 py-1.5 ${
               page === i ? "bg-slate-900 dark:bg-slate-100" : ""
             }`}
             onPress={() => go(i)}
@@ -61,16 +66,18 @@ export default function AdminHome() {
           </Pressable>
         ))}
         <View className="flex-1" />
-        <View className="flex-row gap-1.5 pr-1">
-          {SECTIONS.map((_, i) => (
-            <View
-              key={i}
-              className={`h-1.5 rounded-full ${
-                page === i ? "w-4 bg-slate-900 dark:bg-slate-100" : "w-1.5 bg-slate-300 dark:bg-slate-700"
-              }`}
-            />
-          ))}
-        </View>
+        {showDots ? (
+          <View className="flex-row gap-1.5 pr-1">
+            {SECTIONS.map((_, i) => (
+              <View
+                key={i}
+                className={`h-1.5 rounded-full ${
+                  page === i ? "w-4 bg-slate-900 dark:bg-slate-100" : "w-1.5 bg-slate-300 dark:bg-slate-700"
+                }`}
+              />
+            ))}
+          </View>
+        ) : null}
       </View>
 
       {PagerView ? (

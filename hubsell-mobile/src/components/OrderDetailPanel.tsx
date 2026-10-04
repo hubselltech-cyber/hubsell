@@ -12,6 +12,7 @@ import {
 import { formatDateTime, formatMoney, groupVN } from "@/lib/format";
 import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
+import { useChannelColors } from "@/theme/channel-colors";
 import { TABULAR } from "@/theme/tokens";
 
 /**
@@ -34,12 +35,15 @@ export function OrderDetailPanel({
     order.shippingCarrierName ??
     (order.carrier ? (CARRIER_LABEL[order.carrier] ?? order.carrier) : null);
   const channel = CHANNEL_LABEL[order.channel.channelName] ?? order.channel.channelName;
+  const channelColors = useChannelColors();
+  const channelColor = channelColors[order.channel.channelName] ?? channelColors.OFFLINE;
 
   return (
     <View>
-      <View className="flex-row items-center justify-between">
-        <Text className="text-base font-bold text-slate-900 dark:text-slate-100">
-          Đơn hàng {channel}
+      {/* Tên sàn tô màu nhận diện của sàn — liếc là biết đơn sàn nào (anh Trung 04/10) */}
+      <View className="flex-row items-center gap-2">
+        <Text className="flex-1 text-base font-bold text-slate-900 dark:text-slate-100">
+          Đơn hàng <Text style={{ color: channelColor }}>{channel}</Text>
         </Text>
         <Text className="text-xs text-slate-400 dark:text-slate-500" style={TABULAR}>
           {formatDateTime(order.createdAt)}

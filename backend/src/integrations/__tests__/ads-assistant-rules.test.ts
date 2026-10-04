@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHOPEE_ASSISTANT_CONFIG,
   assessRoasTarget,
+  recommendAction,
   evaluateShopeeCampaign,
   normalizeAssistantConfig,
   type AssistantCampaignInput,
@@ -286,5 +287,51 @@ describe("assessRoasTarget", () => {
   });
   it("làm tròn không bị lỗi số thực: 5 × 1,1 = 5,5 đúng 5,5 chứ không 5,6", () => {
     expect(assessRoasTarget({ roasTarget: 5.5, breakevenRoas: 5, dangerFactor: 1.1 })?.safeTarget).toBe(5.5);
+  });
+});
+
+describe("recommendAction", () => {
+  const base = {
+    triggers: undefined,
+    lossBeforeAds: false,
+    roasTargetCheck: null,
+    delivery: null,
+    hubsellPaused: false,
+    hubsellBudgetCut: false,
+  };
+  const target = (status: "below" | "tight" | "ok") => ({
+    status,
+    target: 4,
+    breakevenRoas: 6.63,
+    safeTarget: 7.3,
+  });
+
+  it("lỗ trước ads thắng mọi nhánh khác: tạm dừng + tăng giá bán", () => {
+    const r = recommendAction({ ...base, verdict: "pause_now", lossBeforeAds: true, roasTargetCheck: target("below") });
+    expect(r).toMatch(/^Tạm dừng\./);
+    expect(r).toContain("tăng giá bán");
+  });
+  it("vọt chi → tạm dừng ngay", () => {
+    expect(recommendAction({ ...base, verdict: "spike" })).toMatch(/^Tạm dừng ngay/);
+  });
+  it("0 đơn → tạm dừng; dưới hòa vốn có mục tiêu thấp → nâng mục tiêu ROAS", () => {
+    expect(recommendAction({ ...base, verdict: "pause_now", triggers: ["zero_order"] })).toMatch(/^Tạm dừng\./);
+    expect(
+      recommendAction({ ...base, verdict: "pause_now", triggers: ["below_breakeven"], roasTargetCheck: target("below") })
+    ).toMatch(/^Nâng mục tiêu ROAS từ 4x lên 7,3x/);
+    expect(recommendAction({ ...base, verdict: "pause_now", triggers: ["below_breakeven"] })).toMatch(/^Tạm dừng, hoặc hạ ngân sách/);
+  });
+  it("đang lãi: bị ngân sách chặn → tăng ngân sách; mục tiêu bó → giảm mục tiêu; còn lại giữ nguyên", () => {
+    const delivery = {
+      roas: 9, breakevenRoas: 6.63, safeTarget: 7.3, budget: 100000,
+      avgDailySpend: 95000, budgetUsedPct: 95, roasTarget: 12, fullDays: 5,
+    };
+    expect(recommendAction({ ...base, verdict: "healthy", delivery: { ...delivery, status: "budget_capped" } })).toMatch(/^Tăng ngân sách ngày/);
+    expect(recommendAction({ ...base, verdict: "healthy", delivery: { ...delivery, status: "target_binding" } })).toMatch(/^Giảm mục tiêu ROAS về gần 7,3x/);
+    expect(recommendAction({ ...base, verdict: "healthy" })).toMatch(/^Giữ nguyên/);
+  });
+  it("Hubsell đã tạm dừng → nhắc điều kiện bật lại; campaign không đánh giá → null", () => {
+    expect(recommendAction({ ...base, verdict: null, hubsellPaused: true })).toMatch(/^Hubsell đã tạm dừng/);
+    expect(recommendAction({ ...base, verdict: null })).toBeNull();
   });
 });

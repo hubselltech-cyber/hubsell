@@ -546,3 +546,75 @@ export function planBudgetCut(input: { budget: number; avgDailySpend7d: number }
       : `Hạ ngân sách ngày ${vnd(budget)} → ${vnd(newBudget)} = ${Math.round(CUT_KEEP_RATIO * 100)}% ngân sách hiện tại (chi tiêu trung bình ngày ${vnd(avg)} thấp hơn mức này).`;
   return { newBudget, budget, avgDailySpend7d: avg, basis };
 }
+
+// ============================================================
+// KẾT LUẬN ĐỀ XUẤT (04/10/2026, anh Trung: "Căn cứ" phải chốt bằng một dòng
+// nên làm gì). Một câu duy nhất, rút từ CHÍNH các nhận định đã có (verdict,
+// nhánh Q1, mục tiêu ROAS so hòa vốn, rổ bị chặn phân phối, biên lãi trước
+// ads) — không thêm ngưỡng mới. Thứ tự ưu tiên: lỗ trước ads → cháy tiền →
+// dưới hòa vốn → vùng vàng → đang lãi bị chặn → ổn.
+// null = không có gì để khuyên (campaign không chạy và Hubsell không đụng tới).
+// ============================================================
+
+const roasText = (v: number) => `${String(Math.round(v * 10) / 10).replace(".", ",")}x`;
+
+export function recommendAction(input: {
+  verdict: AssistantVerdict | null;
+  triggers?: AssistantTrigger[];
+  /** Biên lãi ≤ 0: sản phẩm lỗ ngay cả khi chưa tính quảng cáo. */
+  lossBeforeAds: boolean;
+  roasTargetCheck: RoasTargetCheck | null;
+  delivery: DeliveryCheck | null;
+  /** Trợ lý đã tự ra tay với campaign này. */
+  hubsellPaused: boolean;
+  hubsellBudgetCut: boolean;
+}): string | null {
+  const { verdict, roasTargetCheck: target, delivery } = input;
+  if (input.hubsellPaused) {
+    return "Hubsell đã tạm dừng. Chỉ bật lại sau khi đã chỉnh giá bán hoặc mục tiêu ROAS.";
+  }
+  if (!verdict) return null;
+  const flagged = verdict === "spike" || verdict === "pause_now" || verdict === "review";
+  const raiseTarget =
+    target && target.status !== "ok"
+      ? `Nâng mục tiêu ROAS từ ${roasText(target.target)} lên ${roasText(target.safeTarget)}`
+      : null;
+
+  if (input.lossBeforeAds && (flagged || verdict === "grace")) {
+    return "Tạm dừng. Sản phẩm đang lỗ ngay cả khi chưa tính quảng cáo, cần tăng giá bán hoặc giảm giá vốn trước khi chạy lại.";
+  }
+  if (verdict === "spike") {
+    return "Tạm dừng ngay để chặn tiền, kiểm tra xong mới bật lại.";
+  }
+  if (verdict === "pause_now") {
+    if (input.triggers?.includes("zero_order")) {
+      return "Tạm dừng. Tiêu tiền mà không ra đơn, xem lại sản phẩm, hình ảnh và giá trước khi chạy lại.";
+    }
+    if (raiseTarget) return `${raiseTarget}. Vài ngày sau vẫn dưới hòa vốn thì tạm dừng.`;
+    return input.hubsellBudgetCut
+      ? "Hubsell đã hạ ngân sách ngày. Ngày mai vẫn dưới hòa vốn thì tạm dừng."
+      : "Tạm dừng, hoặc hạ ngân sách ngày nếu muốn giữ chiến dịch.";
+  }
+  if (verdict === "review") {
+    return raiseTarget
+      ? `${raiseTarget} để có lãi an toàn.`
+      : "Theo dõi thêm, chưa tăng ngân sách. Lãi đang mỏng, tăng giá bán sẽ hạ được mức hòa vốn.";
+  }
+  if (verdict === "grace") {
+    return "Theo dõi sát, chưa dừng: chiến dịch này từng mang về nhiều đơn.";
+  }
+  if (verdict === "insufficient_data") {
+    return "Chờ thêm dữ liệu, chưa đủ để kết luận.";
+  }
+  // healthy
+  if (target?.status === "below") {
+    return `${raiseTarget}: mục tiêu đang đặt thấp hơn hòa vốn ${roasText(target.breakevenRoas)}.`;
+  }
+  if (delivery?.status === "budget_capped") {
+    return "Tăng ngân sách ngày: chiến dịch đang lãi và ngày nào cũng tiêu gần hết ngân sách.";
+  }
+  if (delivery?.status === "target_binding") {
+    return `Giảm mục tiêu ROAS về gần ${roasText(delivery.safeTarget)} để sàn phân phối nhiều hơn mà vẫn trên hòa vốn.`;
+  }
+  return "Giữ nguyên, chiến dịch đang ổn.";
+}

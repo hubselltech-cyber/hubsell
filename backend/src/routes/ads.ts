@@ -5,7 +5,7 @@ import { requirePermission, type AuthRequest } from "../middleware/auth";
 import { editManualProductAdsRaw } from "../integrations/shopee/client";
 import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
-import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
+import { normalizeAssistantConfig, recommendAction } from "../integrations/shopee/ads-assistant-rules";
 import { ADS_RANGE_MAX_DAYS, dateKey, dateKeyToDbDate, resolveAdsDateRange } from "../lib/ads-dates";
 import { MARGIN_WINDOW_DAYS } from "../lib/ads-margin";
 import {
@@ -194,6 +194,16 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           assistant: {
             verdict: assessment.verdict,
             reasons: assessment.reasons,
+            // Dòng kết luận "nên làm gì" — app + web hiện nguyên văn sau các căn cứ.
+            recommendation: recommendAction({
+              verdict: assessment.verdict,
+              triggers: assessment.triggers,
+              lossBeforeAds: it.margin != null && it.margin <= 0,
+              roasTargetCheck: it.roasTargetCheck,
+              delivery: it.deliveryCheck,
+              hubsellPaused: c.hubsellPausedAt != null,
+              hubsellBudgetCut: c.hubsellBudgetCutAt != null && c.hubsellBudgetBefore != null,
+            }),
             window: assessment.window ?? null,
             decision: c.assistantDecision,
             // Quyết định cũ hết hiệu lực khi verdict ĐỔI LOẠI → cảnh báo hiện lại.

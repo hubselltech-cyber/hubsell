@@ -519,3 +519,74 @@ export interface StockLocationsResponse {
 export interface AdjustStockResponse {
   product: { id: string; quantityInStock: number };
 }
+
+// ============================================================
+// TRỢ LÝ QUẢNG CÁO — GET /api/quang-cao/{shopee|lazada} (backend routes/ads.ts),
+// chỉ chép phần màn Quảng cáo của app dùng.
+// ============================================================
+export type AdsPlatform = "shopee" | "lazada";
+
+export type AdsVerdict =
+  | "spike"
+  | "pause_now"
+  | "grace"
+  | "review"
+  | "healthy"
+  | "insufficient_data";
+
+export interface AdsCampaignDto {
+  id: string;
+  campaignId: string;
+  name: string;
+  /** ongoing | scheduled | paused | ended | closed | deleted */
+  status: string;
+  budget: number;
+  roasTarget: number | null;
+  spend: number;
+  broadOrder: number;
+  broadGmv: number;
+  roasBroad: number | null;
+  breakevenRoas: number | null;
+  /** Lãi ước tính sau quảng cáo — null khi chưa đủ dữ liệu biên lãi. */
+  estProfit: number | null;
+  assistant: {
+    verdict: AdsVerdict;
+    reasons: string[];
+    /** Dòng kết luận nên làm gì — máy chủ cũ chưa có trường này. */
+    recommendation?: string | null;
+    decision: string;
+    /** Chủ shop đã quyết (Theo dõi / Bỏ qua / Đã xử lý) và cảnh báo chưa đổi loại. */
+    decisionActive: boolean;
+  };
+  /** Khác null = chính Trợ lý Hubsell đã tạm dừng chiến dịch này. */
+  hubsellPause: { at: string; reasons: string[] } | null;
+  /** Khác null = Trợ lý đã hạ ngân sách ngày, còn giữ số gốc. */
+  hubsellBudgetCut: { at: string; before: number; cut: number } | null;
+}
+
+export interface AdsOverviewResponse {
+  channels: { id: string; shopName: string }[];
+  selectedChannelId: string | null;
+  wallet: { balance: number; syncedAt: string | null } | null;
+  walletEmpty?: boolean;
+  /**
+   * Shopee: gian phải ủy quyền THÊM cho app Hubsell Ads mới có số quảng cáo.
+   * required = false (hoặc null) → không cần, vd Lazada.
+   */
+  adsApp?: { required: boolean; status: "ACTIVE" | "NOT_LINKED" | "DISCONNECTED" } | null;
+  adsSyncedAt?: string | null;
+  assistant?: {
+    config: { autoExecute: { mode: "off" | "dry_run" | "live" } };
+    needsAction: number;
+  };
+  summary: {
+    spend: number;
+    broadGmv: number;
+    broadOrder: number;
+    /** Tổng lãi ước tính của các chiến dịch có đủ dữ liệu biên lãi. */
+    estProfit: number;
+    roasBroad: number | null;
+    shopBreakevenRoas: number | null;
+  } | null;
+  campaigns: AdsCampaignDto[];
+}
