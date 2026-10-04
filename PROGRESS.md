@@ -5,6 +5,17 @@
 
 ---
 
+## Phiên 04/10/2026 (tối) — MOBILE: trang Tài khoản, chi tiết đơn khi bấm thẻ đơn, TRANG QUẢNG CÁO (Trợ lý quảng cáo Shopee + Lazada) trên app (anh Trung duyệt bố cục sau khảo sát; đã đẩy master, build APK cuối phiên)
+
+- **Cấu hình → Tài khoản:** dòng tên mở trang con `/account` (`components/AccountScreen.tsx`): SĐT, email, gói đang dùng (`GET /api/subscription/me`), đổi mật khẩu, đăng xuất. Anh chê dạng xổ xuống: mục con phải vào hẳn trang riêng. Ảnh đại diện lấy từ `/me`; bản lưu SecureStore bỏ ảnh.
+- **Đơn hàng:** bấm thẻ đơn mở `OrderDetailSheet` (cùng `OrderDetailPanel` với màn quét QR); tên sàn tô màu nhận diện, không dùng biểu tượng sàn (anh bỏ).
+- **Tài chính:** ô Chi phí dùng hình biên lai có ký hiệu tiền như web (`ReceiptIcon`).
+- **Quảng cáo (trang 3 dãy vuốt Trang chủ, `screens/AdsPage.tsx`):** Cần xử lý (trên chỉ số; thẻ chỉ nhãn + tên + Đề xuất) → 4 số (ô ROAS không tô màu) → thẻ chiến dịch (tên tối đa 2 dòng, 3 số) → hộp chi tiết (số của kỳ + CPA, căn cứ, Đề xuất, Tạm dừng / Bật lại là LỆNH THẬT có bước xác nhận, Theo dõi thêm / Bỏ qua). Có dải báo gian chưa ủy quyền Hubsell Ads, dải ví hết tiền, hàng chip chọn gian. Khảo sát + lý do bố cục: `docs/KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md`.
+- **Backend:** `recommendAction` (thuần, có test) trả `assistant.recommendation` trong `GET /api/quang-cao/{sàn}` — một câu "nên làm gì", không thêm ngưỡng mới; để web và thông báo đẩy dùng chung sau này.
+- **Sửa lỗi tìm ra khi thử máy ảo Android:** lượt gọi API bắn đi lúc CHƯA có token (màn dựng trước khi khôi phục phiên xong) mà trả 401 thì trước đây làm app tự đăng xuất phiên vừa khôi phục. `api/client.ts` nay chỉ đăng xuất khi 401 thuộc về chính token đang dùng.
+- **Chưa làm / chưa kiểm:** bấm Tạm dừng / Bật lại trên chiến dịch thật (gian mẫu local không nối sàn); nâng cấp gói trong app (ngược chốt 23/09, chờ anh chọn hướng); dòng Đề xuất trên web; nút làm ngay cho "nâng mục tiêu ROAS / đổi ngân sách"; thông báo đẩy.
+- **TIKTOK trên trang Quảng cáo của app: ĐỂ SAU, làm kỹ (anh chốt 04/10).** Lý do: TikTok đi đường API riêng (`/api/quang-cao/tiktok`, `routes/ads-tiktok.ts`) và mô hình khác (GMV Max, quy tắc theo video), nên bộ Đề xuất phải viết thêm trường hợp riêng. Trước khi làm: đọc lại phần TikTok hiện có, đưa dòng Đề xuất lên web và soát câu chữ trên chiến dịch thật.
+
 ## Phiên 04/10/2026 (sáng) — MOBILE: thanh tab mới (QR giữa = Chi tiết đơn hàng), tab Kho với Tồn kho là chính (anh Trung chốt; đã commit + đẩy master, CHƯA build Expo — anh: "chiều sửa vài chỗ nữa rồi mới đẩy lên Expo")
 
 - **Thanh tab chủ shop:** Trang chủ · Đơn hàng · [QR giữa] · Kho · Cấu hình (`components/QrTabButton.tsx`). Trang chủ còn hai trang vuốt: Tổng quan + Tài chính. Khu nhân viên cùng bố cục, bớt tài chính: Kho · [QR] · Cấu hình; vào được khi có quyền `orders` hoặc `warehouse.*`, nút QR cần `orders` (API tra đơn gác bằng quyền đó). Tab "Quét đơn hoàn" riêng của nhân viên đã bỏ.

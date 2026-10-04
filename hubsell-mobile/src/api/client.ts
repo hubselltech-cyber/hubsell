@@ -52,15 +52,15 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   // FormData (upload ảnh chat): để fetch TỰ đặt Content-Type multipart kèm
   // boundary — set tay là server không parse được phần file.
   const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
+  // Token GỬI KÈM lượt gọi này — so lại lúc nhận 401 (xem dưới).
+  const sentToken = opts.anonymous ? null : authToken;
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method: opts.method ?? "GET",
       headers: {
         ...(isForm ? {} : { "Content-Type": "application/json" }),
-        ...(authToken && !opts.anonymous
-          ? { Authorization: `Bearer ${authToken}` }
-          : {}),
+        ...(sentToken ? { Authorization: `Bearer ${sentToken}` } : {}),
       },
       body: isForm
         ? (opts.body as FormData)
@@ -84,7 +84,10 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
     // body rỗng/không phải JSON — giữ null
   }
 
-  if (res.status === 401 && authToken && !opts.anonymous) {
+  // Chỉ coi là "phiên hết hạn" khi 401 thuộc về CHÍNH token đang dùng. Lượt gọi
+  // bắn đi lúc chưa có token (màn dựng trước khi khôi phục phiên xong) hoặc bằng
+  // token cũ mà trả 401 thì không được đăng xuất phiên hiện tại.
+  if (res.status === 401 && sentToken && sentToken === authToken) {
     onUnauthorized?.();
   }
 
