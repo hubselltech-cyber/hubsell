@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, PauseCircle, PlayCircle, ShieldCheck, SlidersHorizontal, Target, TrendingUp } from "lucide-react";
+import { ExternalLink, Lightbulb, PauseCircle, PlayCircle, ShieldCheck, SlidersHorizontal, Target, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,33 +114,51 @@ export const DELIVERY_META: Record<
   },
 };
 
-/** Câu chữ của khối gợi ý đợt E trong modal — dữ kiện từng dòng rồi mới kết luận (khẩu vị anh Trung 19/09). */
+/**
+ * Câu chữ của khối gợi ý đợt E trong modal. Tách HAI phần như bản app (anh Trung
+ * 04/10: một cục chữ thì seller không thấy được ý chính): NHẬN XÉT = các dữ kiện,
+ * mỗi ý một dòng; ĐỀ XUẤT = một câu việc cần làm + các lưu ý kèm theo.
+ */
 export function deliveryAdviceText(
   d: DeliveryCheck,
   platformLabel: string
-): { points: string[]; conclusion: string } {
+): { points: string[]; recommendation: string; notes: string[] } {
   const x = (v: number) => `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
   const points = [
-    `ROAS ${d.fullDays} ngày trọn gần nhất (bỏ hôm nay) ${x(d.roas)} · hòa vốn ${x(d.breakevenRoas)} — đang lãi.`,
+    `ROAS ${d.fullDays} ngày trọn gần nhất (bỏ hôm nay) ${x(d.roas)}, hòa vốn ${x(d.breakevenRoas)}: đang lãi.`,
   ];
   if (d.status === "budget_capped") {
     points.push(
-      `Mỗi ngày tiêu khoảng ${d.budgetUsedPct}% ngân sách ngày (${formatVND(d.avgDailySpend)} / ${formatVND(d.budget)}).`
+      `Mỗi ngày tiêu khoảng ${d.budgetUsedPct}% ngân sách ngày (${formatVND(d.avgDailySpend)} / ${formatVND(d.budget)}).`,
+      `${platformLabel} ngừng hiển thị khi tiêu hết ngân sách ngày, nên ngân sách đang là thứ chặn đơn.`
     );
     return {
       points,
-      conclusion: `Ngân sách ngày đang là thứ chặn đơn: ${platformLabel} ngừng hiển thị khi tiêu hết ngân sách. Nâng ngân sách ngày trên Seller Center thì có thêm đơn ở cùng mức lãi. Hubsell không tự tăng ngân sách.`,
+      recommendation: "Tăng ngân sách ngày.",
+      notes: [
+        "Có thêm đơn ở cùng mức lãi.",
+        "Chỉnh trên Seller Center. Hubsell không tự tăng ngân sách.",
+      ],
     };
   }
   points.push(
-    `Mục tiêu ROAS đang đặt ${x(d.roasTarget ?? 0)} — cao hơn ROAS thực, chưa đạt.`,
+    `Mục tiêu ROAS đang đặt ${x(d.roasTarget ?? 0)}, cao hơn ROAS thực nên chưa đạt.`,
     d.budget > 0
-      ? `Ngân sách ngày ${formatVND(d.budget)}, mới dùng khoảng ${d.budgetUsedPct}%.`
-      : "Ngân sách không giới hạn — không phải thứ chặn."
+      ? `Ngân sách ngày ${formatVND(d.budget)}, mới dùng khoảng ${d.budgetUsedPct}%: không phải thứ chặn.`
+      : "Ngân sách không giới hạn: không phải thứ chặn.",
+    `${platformLabel} chỉ đấu thầu tới mức đạt mục tiêu nên đang phân phối dè dặt.`
   );
   return {
     points,
-    conclusion: `${platformLabel} chỉ đấu thầu tới mức đạt mục tiêu nên đang phân phối dè dặt. Muốn thêm đơn thì hạ mục tiêu ROAS trên Seller Center TỪNG NẤC${d.nextTarget != null ? `: lần này xuống ${x(d.nextTarget)}` : ""}, theo dõi 48 giờ rồi mới hạ tiếp (mỗi lần đổi mục tiêu sàn phải học lại). Đừng xuống dưới ${x(d.safeTarget)} (hòa vốn × hệ số an toàn) — lãi mỗi đơn sẽ mỏng đi. Hubsell không tự hạ mục tiêu.`,
+    recommendation:
+      d.nextTarget != null
+        ? `Hạ mục tiêu ROAS một nấc, từ ${x(d.roasTarget ?? 0)} xuống ${x(d.nextTarget)}.`
+        : "Hạ mục tiêu ROAS từng nấc nhỏ.",
+    notes: [
+      "Theo dõi 48 giờ rồi mới hạ tiếp, vì mỗi lần đổi mục tiêu sàn phải học lại.",
+      `Không xuống dưới ${x(d.safeTarget)} (hòa vốn × hệ số an toàn), dưới mức này lãi mỗi đơn quá mỏng.`,
+      "Chỉnh trên Seller Center. Hubsell không tự hạ mục tiêu.",
+    ],
   };
 }
 
@@ -362,12 +380,35 @@ export function ShopeeAssistantModal({
                 <TrendingUp className="mt-0.5 size-5 shrink-0 text-sky-600" />
                 <div className="min-w-0 flex-1 space-y-1">
                   <p className="font-semibold">{DELIVERY_META[campaign.delivery.status].title}</p>
-                  {deliveryAdviceText(campaign.delivery, PLATFORM_LABEL[platform]).points.map((p, i) => (
-                    <p key={i}>{p}</p>
-                  ))}
-                  <p className="font-medium">
-                    {deliveryAdviceText(campaign.delivery, PLATFORM_LABEL[platform]).conclusion}
-                  </p>
+                  {(() => {
+                    const advice = deliveryAdviceText(campaign.delivery, PLATFORM_LABEL[platform]);
+                    return (
+                      <>
+                        <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-sky-700">
+                          Nhận xét
+                        </p>
+                        <ul className="list-disc space-y-0.5 pl-5">
+                          {advice.points.map((p, i) => (
+                            <li key={i}>{p}</li>
+                          ))}
+                        </ul>
+                        <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-amber-950">
+                          <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p>
+                              <span className="font-semibold">Đề xuất: </span>
+                              <span className="font-medium">{advice.recommendation}</span>
+                            </p>
+                            <ul className="list-disc space-y-0.5 pl-5">
+                              {advice.notes.map((n, i) => (
+                                <li key={i}>{n}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}
