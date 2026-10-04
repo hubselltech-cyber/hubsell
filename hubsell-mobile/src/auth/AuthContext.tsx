@@ -19,6 +19,16 @@ import * as storage from "./storage";
 const TOKEN_KEY = "hubsell.token";
 const USER_KEY = "hubsell.user";
 
+/**
+ * Bản lưu xuống máy KHÔNG kèm ảnh đại diện: ảnh là data URL vài chục KB, trong
+ * khi SecureStore chỉ hợp với giá trị nhỏ (~2 KB). Ảnh lấy lại từ /me mỗi lần
+ * mở app.
+ */
+function serializeUser(user: AuthUser): string {
+  const { avatar: _avatar, ...rest } = user;
+  return JSON.stringify(rest);
+}
+
 type AuthStatus = "loading" | "signedOut" | "signedIn";
 
 interface AuthContextValue {
@@ -77,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const me = await fetchMe();
         if (!cancelled) {
           setUser(me.user);
-          await storage.setItem(USER_KEY, JSON.stringify(me.user));
+          await storage.setItem(USER_KEY, serializeUser(me.user));
         }
       } catch {
         // offline hoặc 401 — 401 đã được onUnauthorized xử lý, offline thì
@@ -96,8 +106,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("signedIn");
     await Promise.all([
       storage.setItem(TOKEN_KEY, res.token),
-      storage.setItem(USER_KEY, JSON.stringify(res.user)),
+      storage.setItem(USER_KEY, serializeUser(res.user)),
     ]);
+    // Phản hồi đăng nhập không kèm ảnh đại diện — lấy nền từ /me, lỗi thì thôi.
+    fetchMe()
+      .then((me) => setUser((cur) => (cur && cur.id === me.user.id ? me.user : cur)))
+      .catch(() => {});
     return res.user;
   }, []);
 

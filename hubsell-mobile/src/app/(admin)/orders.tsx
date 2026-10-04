@@ -35,6 +35,7 @@ import { useChannelColors } from "@/theme/channel-colors";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
+import { OrderDetailSheet } from "@/components/OrderDetailSheet";
 import { TABULAR } from "@/theme/tokens";
 
 /** Số dòng hàng hiện sẵn trên card — đơn dài hơn thì bấm "Xem thêm". */
@@ -187,6 +188,9 @@ export default function OrdersScreen() {
 
   // Đơn đang MỞ RỘNG danh sách sản phẩm (mặc định chỉ hiện ITEMS_PREVIEW dòng)
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Đơn đang mở hộp Chi tiết đơn hàng (bấm vào thẻ đơn).
+  const [detailOrder, setDetailOrder] = useState<OrderDto | null>(null);
+
   const toggleExpand = (id: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -238,9 +242,12 @@ export default function OrdersScreen() {
       : item.items.slice(0, ITEMS_PREVIEW);
     const hiddenCount = item.items.length - ITEMS_PREVIEW;
     return (
-      <View
-        className="mb-2.5 rounded-2xl border border-slate-900/5 bg-white p-3 dark:border-white/5 dark:bg-slate-900"
+      <Pressable
+        className="mb-2.5 rounded-2xl border border-slate-900/5 bg-white p-3 active:opacity-80 dark:border-white/5 dark:bg-slate-900"
         style={{ elevation: 1 }}
+        onPress={() => setDetailOrder(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`Xem chi tiết đơn ${item.orderCode}`}
       >
         <View className="flex-row items-center justify-between gap-2">
           <Text
@@ -322,7 +329,7 @@ export default function OrdersScreen() {
             <Badge label={ret.label} bg={ret.bg} text={ret.text} />
           </View>
         ) : null}
-      </View>
+      </Pressable>
     );
   };
 
@@ -476,6 +483,7 @@ export default function OrdersScreen() {
         filter={currentFilter}
         onClose={() => setStatsOpen(false)}
       />
+      <OrderDetailSheet order={detailOrder} onClose={() => setDetailOrder(null)} />
     </View>
   );
 }

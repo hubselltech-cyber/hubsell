@@ -41,6 +41,10 @@ export interface AuthUser {
   /** Nhân viên "chủ/nhânviên" — null với chủ shop. */
   staffUsername: string | null;
   fullName: string;
+  /** Dạng quốc tế ("+84912345678") — phiên cache cũ có thể chưa có trường này. */
+  phone?: string | null;
+  /** Ảnh đại diện đặt trên web — data URL base64; chỉ có sau khi gọi /me. */
+  avatar?: string | null;
   role: Role;
   /** Khóa LÁ phân quyền (vd "warehouse.returns") — rỗng với ADMIN (toàn quyền). */
   permissions: string[];
@@ -56,6 +60,21 @@ export interface LoginResponse {
 export interface MeResponse {
   user: AuthUser;
   hasChannels: boolean;
+}
+
+/** GET /api/subscription/me — chỉ chép phần màn Cấu hình dùng. */
+export interface MyPlanResponse {
+  /** Tài khoản điều hành nền tảng — không thuộc gói nào. */
+  exempt: boolean;
+  hasSubscription: boolean;
+  plan: { id: string; code: string; name: string } | null;
+  subscription: {
+    status: "ACTIVE" | "EXPIRED" | "CANCELLED";
+    isTrial: boolean;
+    /** ISO — null = vô thời hạn. */
+    currentPeriodEnd: string | null;
+    daysLeft: number | null;
+  } | null;
 }
 
 export interface OrderItemDto {

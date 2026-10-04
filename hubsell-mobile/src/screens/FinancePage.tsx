@@ -28,6 +28,7 @@ import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
+import { ReceiptIcon } from "@/components/ReceiptIcon";
 import { BreakdownTile } from "@/components/BreakdownTile";
 import { WaterfallChart, type WaterfallStep } from "@/components/WaterfallChart";
 import { Card } from "@/components/Card";
@@ -346,6 +347,7 @@ export function FinancePage() {
                   deltaInverted
                   negative
                   icon="receipt-outline"
+                  renderIcon={(color, size) => <ReceiptIcon size={size} color={color} />}
                   tint="red"
                   open={openTile === "costs"}
                   onPress={() => toggleTile("costs")}

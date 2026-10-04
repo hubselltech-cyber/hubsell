@@ -19,6 +19,7 @@ export function BreakdownTile({
   delta,
   deltaInverted = false,
   icon,
+  renderIcon,
   tint,
   colorBySign = false,
   featured = false,
@@ -35,6 +36,8 @@ export function BreakdownTile({
   /** Chi phí tăng là XẤU → đảo màu mũi tên. */
   deltaInverted?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
+  /** Vẽ icon riêng (hình Ionicons không có) — nhận màu + cỡ của ô icon. */
+  renderIcon?: (color: string, size: number) => React.ReactNode;
   tint: IconTint;
   colorBySign?: boolean;
   featured?: boolean;
@@ -78,7 +81,11 @@ export function BreakdownTile({
           className="h-7 w-7 items-center justify-center rounded-lg"
           style={{ backgroundColor: dark ? t.dark : t.light }}
         >
-          <Ionicons name={icon} size={15} color={t.icon} />
+          {renderIcon ? (
+            renderIcon(t.icon, 15)
+          ) : (
+            <Ionicons name={icon} size={15} color={t.icon} />
+          )}
         </View>
         <Ionicons name={open ? "chevron-up" : "chevron-down"} size={13} color="#cbd5e1" />
       </View>

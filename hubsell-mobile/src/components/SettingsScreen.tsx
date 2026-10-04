@@ -1,25 +1,15 @@
-import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Pressable,
-  ScrollView,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import React from "react";
+import { Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import Constants from "expo-constants";
 import { useAuth } from "../auth/AuthContext";
-import { changePassword } from "../api/auth";
-import { ApiError } from "../api/client";
 import { useThemePref, type ThemePref } from "../theme/ThemeContext";
 import { useBiometricLock } from "../auth/BiometricGate";
 import { SegmentedTabs } from "./SegmentedTabs";
+import { UserAvatar } from "./UserAvatar";
 
 /**
  * Trang công khai trên landing (hubsell.vn) — cả App Store lẫn Google Play đều
@@ -66,19 +56,13 @@ const THEME_OPTIONS: { key: ThemePref; label: string }[] = [
   { key: "system", label: "Hệ thống" },
 ];
 
-/** Tài khoản + đổi mật khẩu + đăng xuất — dùng chung cho cả 2 vai. */
+/** Màn Cấu hình — dùng chung cho cả 2 vai. Dòng tên mở trang Tài khoản. */
 export function SettingsScreen() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { pref, setPref } = useThemePref();
   const bio = useBiometricLock();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (!user) return null;
 
@@ -88,67 +72,35 @@ export function SettingsScreen() {
       : (user.username ?? user.email ?? "");
   const roleLabel = user.role === "ADMIN" ? "Chủ shop" : "Nhân viên";
 
-  const submit = async () => {
-    setMessage(null);
-    if (!current || !next) {
-      setMessage({ ok: false, text: "Điền đủ mật khẩu hiện tại và mật khẩu mới" });
-      return;
-    }
-    if (next !== confirm) {
-      setMessage({ ok: false, text: "Mật khẩu nhập lại không khớp" });
-      return;
-    }
-    setBusy(true);
-    try {
-      await changePassword(current, next);
-      setMessage({ ok: true, text: "Đã đổi mật khẩu thành công" });
-      setCurrent("");
-      setNext("");
-      setConfirm("");
-    } catch (err) {
-      setMessage({
-        ok: false,
-        text: err instanceof ApiError ? err.message : "Có lỗi xảy ra, thử lại sau",
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-slate-50 dark:bg-slate-950"
-      behavior="padding"
-    >
+    <View className="flex-1 bg-slate-50 dark:bg-slate-950">
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ padding: 16, paddingTop: insets.top + 16 }}
-        keyboardShouldPersistTaps="handled"
       >
         <Text className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100">
           Cấu hình
         </Text>
 
-        <View
-          className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
+        {/* Tài khoản — liên hệ, gói, đổi mật khẩu, đăng xuất nằm trong trang con */}
+        <Pressable
+          className="mb-4 flex-row items-center gap-3 rounded-2xl bg-white p-4 active:opacity-70 dark:bg-slate-900"
           style={{ elevation: 2 }}
+          onPress={() => router.push("/account")}
+          accessibilityRole="button"
+          accessibilityLabel="Mở trang Tài khoản"
         >
-          <View className="flex-row items-center gap-3">
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-slate-900 dark:bg-slate-700">
-              <Text className="text-lg font-bold text-white">
-                {(user.fullName || "?").charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View className="flex-1">
-              <Text className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                {user.fullName}
-              </Text>
-              <Text className="text-xs text-slate-500 dark:text-slate-400">
-                {identity} · {roleLabel}
-              </Text>
-            </View>
+          <UserAvatar user={user} />
+          <View className="flex-1">
+            <Text className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              {user.fullName}
+            </Text>
+            <Text className="text-xs text-slate-500 dark:text-slate-400">
+              {identity} · {roleLabel}
+            </Text>
           </View>
-        </View>
+          <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+        </Pressable>
 
         {/* Giao diện Sáng/Tối — mặc định theo lịch sáng↔tối của hệ điều hành */}
         <View
@@ -190,57 +142,6 @@ export function SettingsScreen() {
             </View>
           </View>
         ) : null}
-
-        <View
-          className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
-          style={{ elevation: 2 }}
-        >
-          <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
-            Đổi mật khẩu
-          </Text>
-          <TextInput
-            className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-            placeholder="Mật khẩu hiện tại"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            value={current}
-            onChangeText={setCurrent}
-          />
-          <TextInput
-            className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-            placeholder="Mật khẩu mới (tối thiểu 6 ký tự)"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            value={next}
-            onChangeText={setNext}
-          />
-          <TextInput
-            className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-            placeholder="Nhập lại mật khẩu mới"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            value={confirm}
-            onChangeText={setConfirm}
-          />
-          {message ? (
-            <Text
-              className={`mb-2 text-xs ${message.ok ? "text-emerald-600" : "text-red-500"}`}
-            >
-              {message.text}
-            </Text>
-          ) : null}
-          <Pressable
-            className="items-center rounded-xl bg-slate-900 py-3 active:opacity-80 dark:bg-slate-700"
-            onPress={submit}
-            disabled={busy}
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text className="text-sm font-semibold text-white">Đổi mật khẩu</Text>
-            )}
-          </Pressable>
-        </View>
 
         {/* Về Hubsell — link pháp lý + hỗ trợ (bắt buộc để lên App Store / Google Play) */}
         <View
@@ -293,21 +194,10 @@ export function SettingsScreen() {
           ))}
         </View>
 
-        <Pressable
-          className="flex-row items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white py-3.5 active:opacity-80 dark:border-red-900 dark:bg-slate-900"
-          onPress={async () => {
-            await signOut();
-            router.replace("/login");
-          }}
-        >
-          <Ionicons name="log-out-outline" size={18} color="#ef4444" />
-          <Text className="text-sm font-semibold text-red-500">Đăng xuất</Text>
-        </Pressable>
-
         <Text className="mt-6 text-center text-[11px] text-slate-400">
           Hubsell Mobile · v{APP_VERSION}
         </Text>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
