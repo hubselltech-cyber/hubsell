@@ -426,7 +426,7 @@ export default function ScanReturnsScreen({ embedded = false }: { embedded?: boo
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-slate-950"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
     >
       {/* Nền: camera thật trên máy — placeholder trên web (giả lập) */}
       {!isWeb ? (

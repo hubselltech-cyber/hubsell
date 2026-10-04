@@ -60,7 +60,10 @@ export function BreakdownTile({
     <Pressable
       className={`flex-1 rounded-2xl border p-3.5 active:opacity-80 ${
         featured
-          ? "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/60 dark:bg-emerald-500/10"
+          ? // Nền phải ĐẶC: nền trong suốt + elevation trên Android lộ bóng đổ
+            // xuyên qua thẻ thành mảng xám loang (anh Trung 04/10). Hai mã màu =
+            // emerald-50/60 trên trắng và emerald-500/10 trên slate-900.
+            "border-emerald-300 dark:border-emerald-500/40 bg-[#f4fef9] dark:bg-[#102c33]"
           : "border-slate-900/5 dark:border-white/5 bg-white dark:bg-slate-900"
       } ${open ? "border-slate-900 dark:border-slate-100" : ""}`}
       style={CARD_SHADOW}

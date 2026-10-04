@@ -174,7 +174,7 @@ export default function AssistantScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-slate-50 dark:bg-slate-950"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
     >
       {/* ── Header — band navy LUÔN TỐI (nhận diện trợ lý, như web) ── */}
       <View

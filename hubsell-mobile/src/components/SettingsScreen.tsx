@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Switch,
@@ -119,7 +118,7 @@ export function SettingsScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-slate-50 dark:bg-slate-950"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
     >
       <ScrollView
         className="flex-1"

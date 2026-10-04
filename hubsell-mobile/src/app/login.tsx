@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -46,9 +45,12 @@ export default function LoginScreen() {
   };
 
   return (
+    // behavior="padding" cho CẢ Android: app chạy tràn viền (edge-to-edge) nên
+    // Android không tự co màn khi bàn phím mở — để undefined là bàn phím che
+    // ô Mật khẩu (anh Trung 04/10). Bàn phím đóng thì form tự về giữa màn.
     <KeyboardAvoidingView
       className="flex-1 bg-slate-50 dark:bg-slate-950"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior="padding"
     >
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
