@@ -20,11 +20,11 @@ import type {
   CashFlowRow,
   OverviewAnalytics,
 } from "@/types/api";
-import { RANGE_OPTIONS, previousRange, rangeFor, type RangeKey } from "@/lib/dates";
+import { defaultRange, previousRange, type DateRange } from "@/lib/dates";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { compactMoney, formatMoney } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
-import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
@@ -172,7 +172,7 @@ function BreakdownItems({
 
 export function FinancePage() {
   const channelColors = useChannelColors();
-  const [range, setRange] = useState<RangeKey>("30d");
+  const [range, setRange] = useState<DateRange>(defaultRange);
   const [channel, setChannel] = useState("");
   const [breakdown, setBreakdown] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [prevBreakdown, setPrevBreakdown] = useState<AnalyticsResponse["breakdown"] | null>(null);
@@ -187,13 +187,12 @@ export function FinancePage() {
 
   // asRefresh: true = kéo xuống (vòng xoay) · "silent" = tải nền giữ số cũ.
   const load = useCallback(
-    async (rangeKey: RangeKey, channelName: string, asRefresh: boolean | "silent" = false) => {
+    async ({ from, to }: DateRange, channelName: string, asRefresh: boolean | "silent" = false) => {
       const seq = ++reqSeq.current;
       if (asRefresh === true) setRefreshing(true);
       else if (!asRefresh) setLoading(true);
       if (asRefresh !== "silent") setError("");
       try {
-        const { from, to } = rangeFor(rangeKey);
         const prev = previousRange(from, to);
         const ch = channelName || undefined;
         const [ana, prevAna, ov, cash] = await Promise.all([
@@ -267,13 +266,8 @@ export function FinancePage() {
         />
       }
     >
-      {/* Bộ chọn khoảng thời gian */}
-      <SegmentedTabs
-        className="mb-2"
-        options={RANGE_OPTIONS}
-        value={range}
-        onChange={setRange}
-      />
+      {/* Bộ lọc ngày chuẩn: mốc nhanh như web + lịch tự chọn, xem được năm cũ */}
+      <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
 
       {/* Lọc theo sàn */}
       <View className="mb-4 flex-row flex-wrap gap-2">

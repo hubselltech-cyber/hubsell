@@ -112,6 +112,8 @@ function ordersWhere(req: AuthRequest): Prisma.OrderWhereInput {
               { customerName: { contains: search, mode: "insensitive" as const } },
               { customerPhone: { contains: search.replace(/[\s.-]/g, "") } },
               { trackingCode: { contains: search, mode: "insensitive" as const } },
+              // Mã vận đơn chiều HOÀN — kho gõ vài số cuối trên tem hoàn cũng ra (04/10).
+              { returnTrackingCode: { contains: search, mode: "insensitive" as const } },
             ],
           }
         : {}),

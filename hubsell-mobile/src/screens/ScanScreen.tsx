@@ -1,7 +1,7 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -18,10 +18,10 @@ import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { lookupOrder, markDamaged, receiveReturn } from "@/api/orders";
+import { fetchOrders, lookupOrder, markDamaged, receiveReturn } from "@/api/orders";
 import { ApiError } from "@/api/client";
 import type { LookupAmbiguousBody, OrderDto, OrderPaymentDto } from "@/types/api";
-import { CHANNEL_LABEL, RETURN_STATUS } from "@/lib/labels";
+import { CHANNEL_LABEL, RETURN_STATUS, SHIPPING_STATUS } from "@/lib/labels";
 import { playScanSound } from "@/lib/scan-sounds";
 import { Badge } from "@/components/Badge";
 import { ActionButton } from "@/components/ActionButton";
@@ -47,9 +47,21 @@ import { OrderDetailPanel } from "@/components/OrderDetailPanel";
 
 type Panel =
   | { type: "order"; order: OrderDto; payment?: OrderPaymentDto }
-  | { type: "candidates"; code: string; list: LookupAmbiguousBody["candidates"] }
+  | { type: "candidates"; code: string; total: number; list: Candidate[] }
   | { type: "error"; message: string }
   | { type: "done"; message: string; warn?: string };
+
+/** Một đơn trong danh sách "mã khớp nhiều đơn" — từ lượt tìm theo vài ký tự hoặc 409 của lookup. */
+type Candidate = {
+  orderCode: string;
+  trackingCode: string | null;
+  shopName?: string;
+  statusLabel?: string;
+};
+
+/** Gõ tay từ chừng này ký tự mới tìm — ít hơn thì ra quá nhiều đơn, vô nghĩa. Mặc định tự chọn. */
+const MIN_SEARCH_CHARS = 3;
+const SEARCH_PAGE = 20;
 
 const SCANNABLE = [
   "qr",
@@ -114,11 +126,79 @@ export function ScanScreen({
   const scanLock = useRef(false);
   const isWeb = Platform.OS === "web";
 
+  // BÀN PHÍM CHE Ô NHẬP (anh Trung 04/10, máy Android thật): ô nhập và panel kết
+  // quả đều là lớp NỔI bám đáy (absolute bottom 0) nên padding của
+  // KeyboardAvoidingView không đẩy được chúng. Tự đo: phần đáy màn quét nằm dưới
+  // mép trên bàn phím bao nhiêu thì nâng các lớp nổi lên bấy nhiêu. Đo theo vị
+  // trí thật trên màn nên đúng cả khi màn quét nằm trên thanh tab lẫn khi phủ kín.
+  const rootRef = useRef<View>(null);
+  const [kbLift, setKbLift] = useState(0);
+  useEffect(() => {
+    if (isWeb) return;
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvt, (e) => {
+      const kbTop = e.endCoordinates.screenY;
+      rootRef.current?.measureInWindow((_x, y, _w, h) => {
+        setKbLift(Math.max(0, Math.round(y + h - kbTop)));
+      });
+    });
+    const hide = Keyboard.addListener(hideEvt, () => setKbLift(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [isWeb]);
+
   const reset = useCallback(() => {
     setPanel(null);
     setDamageNote("");
     scanLock.current = false;
   }, []);
+
+  /**
+   * GÕ TAY vài ký tự (anh Trung 04/10: người ta hay gõ mấy số CUỐI của mã, không
+   * ai gõ cả dãy): tìm mọi đơn CHỨA chuỗi đó qua ô tìm kiếm đa năng của danh
+   * sách đơn (mã đơn, mã vận đơn đi / hoàn, tên khách, SĐT). Một đơn → mở luôn;
+   * nhiều đơn → danh sách để chọn; không có → rơi về lượt tra chính xác (có tự
+   * hỏi lại sàn) như khi quét camera.
+   */
+  const handleManual = async (text: string) => {
+    const q = text.trim();
+    if (!q) return;
+    Keyboard.dismiss();
+    if (q.length < MIN_SEARCH_CHARS) {
+      setPanel({ type: "error", message: `Nhập ít nhất ${MIN_SEARCH_CHARS} ký tự của mã đơn hoặc mã vận đơn` });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetchOrders({ search: q, pageSize: SEARCH_PAGE });
+      if (res.items.length === 1) {
+        await handleCode(res.items[0].orderCode);
+        return;
+      }
+      if (res.items.length > 1) {
+        playScanSound("duplicate");
+        setPanel({
+          type: "candidates",
+          code: q,
+          total: res.total,
+          list: res.items.map((o) => ({
+            orderCode: o.orderCode,
+            trackingCode: o.trackingCode,
+            shopName: o.channel.shopName,
+            statusLabel: SHIPPING_STATUS[o.shippingStatus]?.label,
+          })),
+        });
+        setBusy(false);
+        return;
+      }
+    } catch {
+      // Lượt tìm hỏng (mất mạng, thiếu quyền) → vẫn thử tra chính xác bên dưới.
+    }
+    await handleCode(q);
+  };
 
   const handleCode = useCallback(async (code: string) => {
     const trimmed = code.trim();
@@ -146,7 +226,12 @@ export function ScanScreen({
       if (err instanceof ApiError && err.status === 409 && err.body) {
         const body = err.body as LookupAmbiguousBody;
         if (Array.isArray(body.candidates) && body.candidates.length > 0) {
-          setPanel({ type: "candidates", code: trimmed, list: body.candidates });
+          setPanel({
+            type: "candidates",
+            code: trimmed,
+            total: body.candidates.length,
+            list: body.candidates,
+          });
           return;
         }
       }
@@ -242,9 +327,14 @@ export function ScanScreen({
     if (!panel && !busy) return null;
     return (
       <View
-        className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white dark:bg-slate-900 px-4 pt-4"
+        className="absolute inset-x-0 rounded-t-3xl bg-white dark:bg-slate-900 px-4 pt-4"
         // Chi tiết đơn dài hơn panel quét hoàn → cho chiếm gần hết màn, cuộn bên trong.
-        style={{ paddingBottom: 16, maxHeight: detail ? Math.round(winHeight * 0.8) : 460 }}
+        // bottom = kbLift: bàn phím mở (ô ghi chú hàng hỏng) thì panel nổi lên trên nó.
+        style={{
+          bottom: kbLift,
+          paddingBottom: 16,
+          maxHeight: detail ? Math.round(winHeight * 0.8) : 460,
+        }}
       >
         {busy && !panel ? (
           <View className="items-center py-8">
@@ -272,30 +362,45 @@ export function ScanScreen({
         ) : null}
 
         {panel?.type === "candidates" ? (
-          <View>
+          <View style={{ flexShrink: 1 }}>
             <Text className="mb-1 text-base font-bold text-slate-900 dark:text-slate-100">
-              Mã khớp {panel.list.length} đơn
+              "{panel.code}" khớp {panel.total} đơn
             </Text>
             <Text className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-              Chọn đúng đơn theo mã trên tem:
+              {panel.total > panel.list.length
+                ? `Đang hiện ${panel.list.length} đơn mới nhất. Gõ thêm ký tự để thu hẹp, hoặc chọn đơn:`
+                : "Chọn đúng đơn:"}
             </Text>
-            {panel.list.map((c) => (
-              <Pressable
-                key={c.orderCode}
-                className="mb-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 active:bg-slate-100 dark:active:bg-slate-800"
-                onPress={() => {
-                  setPanel(null);
-                  void handleCode(c.orderCode);
-                }}
-              >
-                <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {c.orderCode}
-                </Text>
-                {c.trackingCode ? (
-                  <Text className="text-xs text-slate-500 dark:text-slate-400">VĐ: {c.trackingCode}</Text>
-                ) : null}
-              </Pressable>
-            ))}
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+              {panel.list.map((c) => (
+                <Pressable
+                  key={c.orderCode}
+                  className="mb-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 active:bg-slate-100 dark:active:bg-slate-800"
+                  onPress={() => {
+                    setPanel(null);
+                    void handleCode(c.orderCode);
+                  }}
+                >
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Text
+                      className="flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100"
+                      numberOfLines={1}
+                    >
+                      {c.orderCode}
+                    </Text>
+                    {c.statusLabel ? (
+                      <Text className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                        {c.statusLabel}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text className="text-xs text-slate-500 dark:text-slate-400" numberOfLines={1}>
+                    {c.trackingCode ? `VĐ: ${c.trackingCode}` : "Chưa có mã vận đơn"}
+                    {c.shopName ? ` · ${c.shopName}` : ""}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
             <ActionButton
               label="Quét lại"
               icon="scan-outline"
@@ -457,10 +562,7 @@ export function ScanScreen({
   };
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-slate-950"
-      behavior="padding"
-    >
+    <View ref={rootRef} collapsable={false} className="flex-1 bg-slate-950">
       {/* Nền: camera thật trên máy — placeholder trên web (giả lập) */}
       {!isWeb ? (
         <CameraView
@@ -546,8 +648,8 @@ export function ScanScreen({
           Liquid Glass thì thanh nhập trong mờ nổi trên camera. */}
       {!panel && !busy ? (
         <View
-          className="absolute inset-x-0 bottom-0 px-4"
-          style={{ paddingBottom: 12 }}
+          className="absolute inset-x-0 px-4"
+          style={{ bottom: kbLift, paddingBottom: 12 }}
         >
           {(() => {
             const inner = (onGlass: boolean) => (
@@ -560,16 +662,17 @@ export function ScanScreen({
                   className={`flex-1 px-3 py-2 text-sm ${
                     onGlass ? "text-white" : "text-slate-900 dark:text-slate-100"
                   }`}
-                  placeholder="Hoặc nhập mã vận đơn / mã đơn…"
+                  placeholder="Gõ vài số cuối mã vận đơn / mã đơn…"
                   placeholderTextColor={onGlass ? "#e2e8f0" : "#94a3b8"}
                   autoCapitalize="characters"
                   autoCorrect={false}
+                  returnKeyType="search"
                   value={manual}
                   onChangeText={setManual}
                   onSubmitEditing={() => {
                     if (manual.trim()) {
                       scanLock.current = true;
-                      void handleCode(manual);
+                      void handleManual(manual);
                       setManual("");
                     }
                   }}
@@ -581,7 +684,7 @@ export function ScanScreen({
                   onPress={() => {
                     if (manual.trim()) {
                       scanLock.current = true;
-                      void handleCode(manual);
+                      void handleManual(manual);
                       setManual("");
                     }
                   }}
@@ -605,6 +708,6 @@ export function ScanScreen({
       ) : null}
 
       {renderPanel()}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
