@@ -309,7 +309,8 @@ router.get("/mine", async (req: AuthRequest, res, next) => {
       select: PUBLIC_SELECT,
     });
     await prisma.supportRequest.updateMany({
-      where: { userId: req.ownerId! },
+      // Chỉ dòng chưa xem — khỏi ghi lại (và bơm updatedAt) cả shop mỗi lần mở hộp.
+      where: { userId: req.ownerId!, customerSeenAt: null },
       data: { customerSeenAt: new Date() },
     });
     res.json({

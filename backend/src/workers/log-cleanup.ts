@@ -276,7 +276,9 @@ export async function runOnce(): Promise<void> {
       const rows = await prisma.supportRequest.findMany({
         where: {
           status: "DONE",
-          updatedAt: { lt: daysAgo(SUPPORT_ATTACHMENT_DAYS) },
+          // doneAt chứ không phải updatedAt: updatedAt bị bơm mỗi lần khách mở
+          // hộp hỗ trợ nên không bao giờ đủ 7 ngày (phát hiện 05/10).
+          doneAt: { lt: daysAgo(SUPPORT_ATTACHMENT_DAYS) },
           attachments: { isEmpty: false },
         },
         select: { id: true, attachments: true },

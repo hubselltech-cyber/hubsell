@@ -2586,6 +2586,9 @@ model SupportRequest {
   /// Đường dẫn ảnh trong Supabase Storage (bucket private) — tối đa 3, khách
   /// nén trên trình duyệt. Cron dọn xóa ảnh của yêu cầu DONE quá 7 ngày.
   attachments         String[]             @default([])
+  /// Lúc chuyển DONE (mở lại thì về null) — cron xóa ảnh đếm 7 ngày từ mốc
+  /// này, KHÔNG từ updatedAt (bị bơm mỗi lần khách mở hộp hỗ trợ).
+  doneAt              DateTime?
   /// Đã xóa ảnh theo chính sách 7 ngày (giữ chữ) — FE hiện "ảnh đã xóa".
   attachmentsPurgedAt DateTime?
   createdAt           DateTime             @default(now())
@@ -2593,6 +2596,7 @@ model SupportRequest {
 
   @@index([status, createdAt])
   @@index([userId, createdAt])
+  @@index([status, doneAt])
   @@map("support_requests")
 }
 

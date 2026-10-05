@@ -835,6 +835,8 @@ router.patch(
       // mốc "đã xem" để chấm đỏ trên avatar khách bật lại (cờ, không so giờ).
       const replyChanged = typeof replyValue === "string" && replyValue !== request.reply;
       const justDone = status === "DONE" && request.status !== "DONE";
+      // Mốc đếm 7 ngày xóa ảnh: đặt khi vừa chuyển DONE, mở lại thì bỏ.
+      const reopened = status !== undefined && status !== "DONE" && request.status === "DONE";
 
       const updated = await prisma.supportRequest.update({
         where: { id: request.id },
@@ -844,6 +846,7 @@ router.patch(
           ...(replyValue !== undefined ? { reply: replyValue } : {}),
           ...(noteValue !== undefined ? { note: noteValue } : {}),
           ...(replyChanged || justDone ? { customerSeenAt: null } : {}),
+          ...(justDone ? { doneAt: new Date() } : reopened ? { doneAt: null } : {}),
         },
         include: { assignee: { select: { id: true, fullName: true } } },
       });
