@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 05/10/2026 (sáng, 2) — BƯỚC 6 giai đoạn 2: thời hạn chờ gọi sàn 30 giây (6a) + gỡ mã đường cũ webhook / đẩy tồn (6b lần một) — đã commit trên nhánh, CHƯA ĐẨY (anh Trung: "Làm luôn 2 việc em nhé")
+
+- **Ba việc nhắc tới hạn đã làm:** (1) số đo `[SanHTTP]` 02–05/10 → trình 30 giây, anh duyệt; (2) Supabase Observability sau bản sửa 652e8ec: swap đi ngang 340–470 MB, bộ nhớ cam kết 1,30–1,39 GB / trần 1,46 GB, không lần nào vọt như 30/09 → chưa có căn cứ nâng Small; (3) phí Pay Per Sale Shopee: 1.245 đơn đã có trường, 0 đơn khác 0, 427 đơn đã quyết toán đều về đúng số ước tính → chưa gian nào bị thu.
+- **6a (`67dacb1`, nhánh `buoc-6-don`):** `lib/platform-http.ts` mặc định 30 giây, `PLATFORM_HTTP_TIMEOUT_MS=0` để tắt; tải tệp vận đơn TikTok / Lazada đi qua cửa đo (`TIKTOK_FILE` / `LAZADA_FILE`). Đã rà mọi lệnh ghi: không client nào tự gọi lại khi lỗi mạng. Cả bộ 1.319 test qua.
+- **6b lần một (`bb82b25`, nhánh `buoc-6b-go-duong-cu`, chồng lên 6a):** route webhook ba sàn còn một đường, hàng đợi chưa sẵn sàng trả 503; gỡ hàng đợi cũ Shopee / TikTok, vòng quét đẩy tồn một luồng, các công tắc `*_WEBHOOK_MODE` / `STOCK_PUSH_MODE`. GIỮ hai bảng nhật ký cũ + trang HQ đọc hai nguồn + dọn log tới sau 31/10 (anh chốt). Prod 05/10: đường cũ không nhận sự kiện nào từ 01/10. Cả bộ 1.310 test qua, tsc sạch.
+- **Chi tiết, số đo, bảng rà lệnh ghi:** `docs/HANG-DOI-BEN.md` mục 4.7 ("Đợt 6a", "Đợt 6b lần một").
+- **Còn lại:** anh đẩy 6a (đẩy được ngay) rồi xem dòng `[SanHTTP] QUA HAN` 2–3 ngày; 6b mốc hẹn từ 09/10; lần hai của 6b (xóa hai bảng) sau 31/10; 6c (hóa đơn) quanh 10/10. Chưa đọc được tài liệu chính thức của Shopee / TikTok về nhịp gửi lại webhook.
+
+---
+
 ## Phiên 05/10/2026 (sáng) — RENDER VƯỢT BĂNG THÔNG 5 GB: tìm gốc, CHƯA sửa (anh Trung: để sau 07/10)
 
 - **Hiện tượng:** thư Render 04/10 19:13 "Reached the Bandwidth Limit". Dashboard sáng 05/10: 9,47 GB / 5 GB gói Hobby, trong đó 9,36 GB là "Service-Initiated" (dịch vụ tự gọi ra ngoài), riêng `hubsell-worker-sg` 9,13 GB; web chỉ ~0,34 GB. Phần vượt 15 USD / 100 GB tính theo tỷ lệ; Render dự phóng hóa đơn tháng 10 là 14,75 USD.
