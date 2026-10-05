@@ -15,10 +15,10 @@
 // hàng đợi đều bền trong DB + claim bằng UPDATE có điều kiện nên chạy 2 worker
 // song song vẫn an toàn (không job nào bị xử lý đôi).
 //
-// Webhook Lazada: từ 01/10/2026 đi qua hàng đợi bền pg-boss (web ghi
+// Webhook Shopee / TikTok / Lazada đi qua hàng đợi bền pg-boss (web ghi
 // webhook_events + xếp việc, worker xử lý ở workers/event-queue.ts — đăng ký ở
-// index.ts sau khi hàng đợi sẵn sàng). Đường cũ xử lý inline sau ack chỉ còn là
-// đường lui (LAZADA_WEBHOOK_MODE=inline / hàng đợi chưa sẵn sàng).
+// index.ts sau khi hàng đợi sẵn sàng). Đường cũ của ba sàn và vòng quét đẩy tồn
+// một luồng đã gỡ ở bước 6b (05/10/2026).
 // ============================================================
 
 import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";
@@ -28,8 +28,7 @@ import { startInvoiceStatusSyncWorker } from "./invoice-status-sync";
 import { startInvoiceUnknownRecheckWorker } from "./invoice-unknown-recheck";
 import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
-import { startStockPushWorker } from "../integrations/stock-push-worker";
-import { stockPushMode, invoiceCqtMode, invoiceMode } from "../lib/queue-config";
+import { invoiceCqtMode, invoiceMode } from "../lib/queue-config";
 import { startStockReconcileWorker } from "./stock-reconcile";
 import { startTokenRefreshWorker } from "./token-refresh";
 import { startWeeklyReportWorker } from "./weekly-report";
@@ -38,8 +37,6 @@ import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
 import { startSubscriptionReminderWorker } from "./subscription-reminder";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
-import { startShopeeWebhookWorker } from "../integrations/shopee/webhook-queue";
-import { startTiktokWebhookWorker } from "../integrations/tiktok/webhook-queue";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
 import { startHealthWatchWorker } from "./health-watch";
 import { startProductCatalogSyncWorker } from "./product-catalog-sync";
@@ -63,10 +60,8 @@ export function startAllWorkers(): void {
   if (started) return;
   started = true;
 
-  // Hàng đợi webhook Shopee + TikTok + MISA: nhặt lại job dở dang sau restart,
-  // quét job đến hạn retry theo nhịp. Web chỉ enqueue — tiêu thụ ở đây.
-  startShopeeWebhookWorker();
-  startTiktokWebhookWorker();
+  // Hàng đợi webhook MISA (bảng misa_webhook_logs, gỡ ở bước 6c): nhặt lại job dở
+  // dang sau restart, quét job đến hạn retry theo nhịp.
   startMisaWebhookWorker();
   // Worker quét sàn theo LỊCH TỪNG GIAN (đơn, đối soát, ads) — claim vé theo
   // gian, song song có trần, giãn nhịp gian im ắng.
@@ -76,14 +71,9 @@ export function startAllWorkers(): void {
   startTokenRefreshWorker();
   // Dọn log kỹ thuật xoay vòng 7/30 ngày.
   startLogCleanupWorker();
-  // Đẩy tồn khả dụng đa sàn — tiêu thụ bảng stock_push_jobs. Hai đường, chọn
-  // bằng STOCK_PUSH_MODE (giai đoạn 2 bước 4): vòng quét một luồng của đường cũ,
-  // hoặc bộ chạy theo gian + lưới quét của đường hàng đợi bền (workers/stock-queue.ts).
-  if (stockPushMode() === "legacy") {
-    startStockPushWorker();
-  } else {
-    startStockPushScheduler();
-  }
+  // Đẩy tồn khả dụng đa sàn — tiêu thụ bảng stock_push_jobs: bộ chạy theo gian +
+  // lưới quét (workers/stock-queue.ts).
+  startStockPushScheduler();
   // Đối soát tồn sàn ↔ Hubsell mỗi 6h cho gian đang bật đồng bộ.
   startStockReconcileWorker();
   // Sáng thứ 2 đẩy báo cáo tuần qua chuông cho từng chủ shop.

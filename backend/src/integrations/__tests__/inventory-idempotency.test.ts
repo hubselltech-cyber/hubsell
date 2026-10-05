@@ -3,10 +3,10 @@
 //
 // Hệ thống chống trùng 2 tầng, test cả hai:
 //
-//   TẦNG 1 — HÀNG ĐỢI BỀN (route thật + chữ ký thật): mạng lag làm Shopee
+//   TẦNG 1 — HỘP THƯ ĐẾN (route thật + chữ ký thật): mạng lag làm Shopee
 //   bắn lại Y NGUYÊN một sự kiện → bản sau đụng unique bodyHash trong
-//   shopee_webhook_logs, bị nhận diện duplicate ngay tại route nhưng VẪN
-//   ACK 200 (trả lỗi là Shopee retry mãi / block push). Hàng đợi chỉ có
+//   webhook_events, bị nhận diện duplicate ngay tại route nhưng VẪN
+//   ACK 200 (trả lỗi là Shopee retry mãi / block push). Hộp thư chỉ có
 //   đúng 1 bản ghi và worker chỉ xử lý đúng 1 lần.
 //
 //   TẦNG 2 — MỐC KHO (webhook bắn lại với body KHÁC nhưng cùng order_sn,
@@ -21,6 +21,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { createApp } from "../../app";
+import { startQueue, stopQueue } from "../../lib/queue";
+import { registerEventQueueWorkers } from "../../workers/event-queue";
 import { getShopeeWebhookUrl } from "../shopee/webhook";
 import {
   deductStockTx,
@@ -30,6 +32,8 @@ import {
 import { createStockFixture, type StockFixture } from "./fixtures";
 
 const ORDER_SN_PREFIX = "TEST-IDEMP-";
+/** shop_id không tồn tại trong DB → worker xử lý kiểu no-op, không gọi API Shopee thật. */
+const UNKNOWN_SHOP_ID = "999999998";
 
 let server: Server;
 let baseUrl: string;
@@ -38,6 +42,8 @@ let fx: StockFixture;
 beforeAll(async () => {
   fx = await createStockFixture("idemp");
   // Dựng app THẬT (route + verify chữ ký + hàng đợi + worker) trên cổng ngẫu nhiên.
+  expect(await startQueue("all"), "hàng đợi không khởi động — DB dev đã áp migration queue_foundation chưa?").toBe(true);
+  await registerEventQueueWorkers();
   await new Promise<void>((resolve) => {
     server = createApp().listen(0, "127.0.0.1", () => resolve());
   });
@@ -48,9 +54,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await prisma.shopeeWebhookLog.deleteMany({
-    where: { orderSn: { startsWith: ORDER_SN_PREFIX } },
+  await stopQueue(5000);
+  await prisma.webhookEvent.deleteMany({
+    where: { source: "SHOPEE", shopId: UNKNOWN_SHOP_ID, entityId: { startsWith: ORDER_SN_PREFIX } },
   });
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM pgboss.job WHERE name IN ('evt.order', 'evt.dead') AND data->>'shopId' = $1`,
+    UNKNOWN_SHOP_ID
+  );
   await fx.cleanup();
 });
 
@@ -84,13 +95,11 @@ async function waitFor<T>(
 }
 
 describe("Idempotency — Shopee gửi trùng webhook cùng order_sn", () => {
-  it("bắn lại Y NGUYÊN body 2 lần → cả 2 đều ACK 200, hàng đợi chỉ nhận 1 bản ghi, worker xử lý đúng 1 lần", async () => {
+  it("bắn lại Y NGUYÊN body 2 lần → cả 2 đều ACK 200, hộp thư chỉ nhận 1 bản ghi, worker xử lý đúng 1 lần", async () => {
     const orderSn = `${ORDER_SN_PREFIX}${Date.now()}`;
-    // shop_id không tồn tại trong DB → worker xử lý kiểu no-op an toàn,
-    // không gọi API Shopee thật nào trong test.
     const body = JSON.stringify({
       code: 4,
-      shop_id: 999999998,
+      shop_id: Number(UNKNOWN_SHOP_ID),
       timestamp: Math.floor(Date.now() / 1000),
       data: { ordersn: orderSn, status: "READY_TO_SHIP" },
     });
@@ -109,19 +118,18 @@ describe("Idempotency — Shopee gửi trùng webhook cùng order_sn", () => {
     expect(json2.queued).toBe(false);
     expect(json2.duplicate).toBe(true);
 
-    // Hàng đợi bền chỉ có ĐÚNG MỘT bản ghi cho sự kiện này.
-    const rows = await prisma.shopeeWebhookLog.findMany({ where: { orderSn } });
-    expect(rows).toHaveLength(1);
+    // Hộp thư đến chỉ có ĐÚNG MỘT bản ghi cho sự kiện này.
+    const where = { source: "SHOPEE" as const, shopId: UNKNOWN_SHOP_ID, entityId: orderSn };
+    expect(await prisma.webhookEvent.count({ where })).toBe(1);
 
-    // Worker nền xử lý xong đúng 1 lần (attempts = 1, không lỗi).
+    // Worker nền xử lý xong đúng 1 lần (attempts = 1; shop lạ nên kết thúc êm kèm ghi chú).
     const done = await waitFor(async () => {
-      const row = await prisma.shopeeWebhookLog.findFirst({
-        where: { orderSn, status: WebhookJobStatus.SUCCESS },
-      });
+      const row = await prisma.webhookEvent.findFirst({ where: { ...where, status: WebhookJobStatus.SUCCESS } });
       return row ?? null;
     });
     expect(done.attempts).toBe(1);
-    expect(done.lastError).toBeNull();
+    expect(done.lastError).toBe("shop chưa kết nối Hubsell");
+    expect(await prisma.webhookEvent.count({ where })).toBe(1);
   });
 
   it("webhook bắn lại với BODY KHÁC nhưng cùng order_sn → mốc kho chặn hold/trừ/hoàn lần 2, số liệu bất biến", async () => {

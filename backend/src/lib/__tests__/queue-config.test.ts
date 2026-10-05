@@ -11,7 +11,6 @@ import {
   DEFAULT_INVOICE_SINGLE_MODE,
   DEFAULT_INVOICE_SINGLE_WAIT_SECONDS,
   DEFAULT_STOCK_CHANNEL_CONCURRENCY,
-  DEFAULT_STOCK_PUSH_MODE,
   DEFAULT_STOCK_SWEEP_SECONDS,
   DEFAULT_WORKER_POOL_MAX,
   EVT_ORDER_MAX_ATTEMPTS,
@@ -24,7 +23,6 @@ import {
   queueOptionsForRole,
   resolveQueueConnection,
   stockChannelConcurrency,
-  stockPushMode,
   stockSweepSeconds,
 } from "../queue-config";
 
@@ -99,13 +97,6 @@ describe("evtOrderConcurrency", () => {
 });
 
 describe("đẩy tồn (bước 4)", () => {
-  it("STOCK_PUSH_MODE: chỉ nhận queue / legacy, còn lại về mặc định", () => {
-    expect(stockPushMode({})).toBe(DEFAULT_STOCK_PUSH_MODE);
-    expect(stockPushMode({ STOCK_PUSH_MODE: "queue" })).toBe("queue");
-    expect(stockPushMode({ STOCK_PUSH_MODE: " Legacy " })).toBe("legacy");
-    expect(stockPushMode({ STOCK_PUSH_MODE: "inline" })).toBe(DEFAULT_STOCK_PUSH_MODE);
-  });
-
   it("đọc QUEUE_STOCK_CHANNEL_CONCURRENCY, sai thì về mặc định", () => {
     expect(stockChannelConcurrency({})).toBe(DEFAULT_STOCK_CHANNEL_CONCURRENCY);
     expect(stockChannelConcurrency({ QUEUE_STOCK_CHANNEL_CONCURRENCY: "10" })).toBe(10);

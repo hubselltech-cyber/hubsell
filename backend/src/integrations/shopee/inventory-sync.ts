@@ -16,11 +16,10 @@
 //     [thời gian] − [SKU] − [số cũ] − [số mới] − [trạng thái] để đối soát.
 // ============================================================
 
-import { ChannelName, StockSyncStatus, WebhookJobStatus } from "@prisma/client";
+import { ChannelName, StockSyncStatus } from "@prisma/client";
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { isQueueReady, QUEUES, upsertQueued } from "../../lib/queue";
-import { stockPushMode } from "../../lib/queue-config";
 import { availableToPush } from "../inventory-push";
 import {
   getItemBaseInfo,
@@ -44,20 +43,15 @@ const SYNC_BASE_DELAY_MS = 2000;
 //
 // update_stock của Shopee có thể trả 200 OK nhưng dữ liệu trên sàn GHI TRỄ.
 // Vì vậy mỗi lượt đẩy thành công cho một (gian × SKU) không được tin ngay:
-// ta ghi một JOB ĐỐI SOÁT vào chính hàng đợi bền shopee_webhook_logs (status
-// VERIFYING, hẹn giờ VERIFY_DELAY_MS). Worker đến giờ sẽ gọi API đọc lại tồn
-// thực tế trên sàn (get_item_base_info / get_model_list) và so khớp — xem
-// verifyStockPush() bên dưới + nhánh xử lý trong webhook-queue.ts.
-//
-// Giai đoạn 2 bước 4: ở đường hàng đợi bền (STOCK_PUSH_MODE=queue) việc đối soát
-// là một việc hẹn giờ của hàng đợi stock.verify (scheduleStockVerifyJob /
-// runStockVerifyJob bên dưới), không còn nhét chung vào bảng webhook Shopee.
+// ta xếp một VIỆC ĐỐI SOÁT hẹn giờ VERIFY_DELAY_MS vào hàng đợi stock.verify
+// (scheduleStockVerifyJob / runStockVerifyJob bên dưới). Tới giờ worker gọi API
+// đọc lại tồn thực tế trên sàn (get_item_base_info / get_model_list) và so khớp
+// — xem verifyStockPush(). (Trước bước 6b việc này từng nhét chung vào bảng
+// shopee_webhook_logs.)
 
-/** eventCode NỘI BỘ đánh dấu job đối soát tồn (Shopee chỉ dùng 3/4/5). */
-export const STOCK_VERIFY_EVENT_CODE = 100;
 /** Chờ bao lâu sau khi đẩy tồn mới kiểm tra chéo (cho sàn kịp ghi). */
 export const VERIFY_DELAY_MS = 3 * 60 * 1000;
-/** Số lượt đối soát tối đa cho một lần đẩy (cùng số với hàng đợi cũ ở webhook-queue.ts). */
+/** Số lượt đối soát tối đa cho một lần đẩy. */
 export const VERIFY_MAX_ATTEMPTS = 3;
 
 /** Nội dung một job đối soát, lưu JSON trong cột payload. */
@@ -317,55 +311,28 @@ function source(req: StockSyncRequest): string {
 }
 
 /**
- * Ghi/làm mới JOB ĐỐI SOÁT cho một (gian × SKU) vào hàng đợi bền.
- *
- * Khoá `bodyHash` là chuỗi ổn định "stock-verify:{channelId}:{channelSku}" →
- * upsert: nhiều lượt đẩy liên tiếp cho cùng SKU GỘP về một job đối soát duy
- * nhất, tự dời giờ hẹn và reset số lần thử — worker chỉ đối soát trạng thái
- * MỚI NHẤT thay vì rượt đuổi từng lượt đẩy cũ. Best-effort: lỗi DB chỉ log.
- * Export cho worker đẩy tồn đa sàn (stock-push-worker) hẹn đối soát sau khi đẩy.
+ * Hẹn VIỆC ĐỐI SOÁT cho một (gian × SKU) sau khi đẩy tồn thành công. Nhiều lượt
+ * đẩy liên tiếp cho cùng SKU gộp về một việc (xem scheduleStockVerifyJob).
+ * Best-effort, không ném: hàng đợi chưa sẵn sàng hoặc xếp lỗi thì chỉ ghi log —
+ * lượt đẩy đã xong, đối soát tồn 6 giờ (workers/stock-reconcile.ts) là lưới.
  */
 export async function scheduleStockVerification(
   channel: Channel,
   payload: StockVerifyPayload
 ): Promise<void> {
-  // Đường hàng đợi bền (giai đoạn 2 bước 4): việc hẹn giờ ở stock.verify, không
-  // còn nhét chung vào bảng webhook Shopee. Xếp không được thì rơi xuống đường
-  // cũ bên dưới — worker cũ của bảng shopee_webhook_logs vẫn chạy tới bước dọn.
-  if (stockPushMode() === "queue" && isQueueReady()) {
-    try {
-      await scheduleStockVerifyJob({ ...payload, attempt: 1 });
-      return;
-    } catch (err) {
-      console.error(
-        "[Inventory Sync] Không xếp được việc đối soát vào stock.verify — dùng bảng cũ:",
-        (err as Error).message
-      );
-    }
+  if (!isQueueReady()) {
+    console.warn(
+      `[Inventory Sync] Hàng đợi bền chưa sẵn sàng — bỏ lượt đối soát SKU ${payload.channelSku} của gian "${channel.shopName}" (đối soát 6 giờ sẽ soát lại)`
+    );
+    return;
   }
   try {
-    const bodyHash = `stock-verify:${payload.channelId}:${payload.channelSku}`;
-    const data = {
-      status: WebhookJobStatus.VERIFYING,
-      attempts: 0,
-      nextRetryAt: new Date(Date.now() + VERIFY_DELAY_MS),
-      lastError: null,
-      processedAt: null,
-      orderSn: payload.orderSn ?? null,
-      payload: JSON.stringify(payload),
-    };
-    await prisma.shopeeWebhookLog.upsert({
-      where: { bodyHash },
-      update: data,
-      create: {
-        eventCode: STOCK_VERIFY_EVENT_CODE,
-        shopId: channel.externalShopId ?? "",
-        bodyHash,
-        ...data,
-      },
-    });
+    await scheduleStockVerifyJob({ ...payload, attempt: 1 });
   } catch (err) {
-    console.error("[Inventory Sync] Không lên lịch được job đối soát:", err);
+    console.error(
+      `[Inventory Sync] Không xếp được việc đối soát SKU ${payload.channelSku} vào stock.verify (đối soát 6 giờ sẽ soát lại):`,
+      (err as Error).message
+    );
   }
 }
 

@@ -1,7 +1,7 @@
 // ============================================================
 // ĐẨY TỒN — ĐƯỜNG HÀNG ĐỢI BỀN (giai đoạn 2 bước 4 — docs/HANG-DOI-BEN.md mục 4.5)
 //
-// Chạy với STOCK_PUSH_MODE=queue. Tầng gọi sàn (đẩy tồn, đọc tồn, lấy token) của
+// Tầng gọi sàn (đẩy tồn, đọc tồn, lấy token) của
 // CẢ BA sàn được mock — database dev có token thật, test không được chạm sàn.
 // Bảng stock_push_jobs, hàng đợi stock.channel / stock.verify, bộ chạy theo gian
 // là đồ thật (cần migration queue_foundation trên DB dev). Lưới quét được gọi tay
@@ -18,8 +18,8 @@
 //   8. Dừng êm: xong dòng đang đẩy, dòng chưa đụng tới trả về hàng chờ.
 //   9. Đơn sàn về: dòng chờ đẩy + tín hiệu đi chung giao dịch đơn.
 //  10. Đối soát Shopee đi stock.verify: nhiều lượt đẩy gộp MỘT việc hẹn giờ; lệch thì
-//      đẩy lại + hẹn lượt kế; hết 3 lượt → cảnh báo; bảng webhook cũ không có dòng mới.
-//  11. STOCK_PUSH_MODE=legacy: ghi dòng sau commit, không gửi tín hiệu.
+//      đẩy lại + hẹn lượt kế; hết 3 lượt → cảnh báo.
+// (Bước 6b, 05/10/2026: đường lui STOCK_PUSH_MODE=legacy đã gỡ.)
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -166,7 +166,6 @@ beforeAll(async () => {
   shopeeProductId = await fx.createProduct(5);
   shopeeSku = await fx.createMapping(shopeeProductId, String(SHOPEE_ITEM_ID));
 
-  process.env.STOCK_PUSH_MODE = "queue";
   expect(await queue.startQueue("all"), "hàng đợi không khởi động — DB dev đã áp migration queue_foundation chưa?").toBe(true);
   await registerStockQueueWorkers();
 });
@@ -174,13 +173,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await stopStockRunners(5000);
   await queue.stopQueue(5000);
-  delete process.env.STOCK_PUSH_MODE;
   await prisma.$executeRawUnsafe(
     `DELETE FROM pgboss.job WHERE name IN ('stock.channel', 'stock.verify', 'stock.dead') AND data->>'channelId' IN ($1, $2)`,
     lzdChannelId,
     shopeeChannelId
   );
-  await prisma.shopeeWebhookLog.deleteMany({ where: { bodyHash: { startsWith: `stock-verify:${shopeeChannelId}:` } } });
   await fx.cleanup();
 });
 
@@ -529,8 +526,6 @@ describe("Đối soát tồn Shopee qua stock.verify", () => {
     await waitFor("dòng Shopee lần 2 được đẩy", () => rowsOf(shopeeChannelId), (r) => r.length === 0);
     const jobs = await waitFor("việc đối soát được dời", () => jobsOf("stock.verify", verifyKey()), (j) => j.length === 1 && j[0].dueInS > 170);
     expect(jobs).toHaveLength(1);
-    // Không còn ghi vào bảng webhook Shopee.
-    expect(await prisma.shopeeWebhookLog.count({ where: { bodyHash: `stock-verify:${shopeeChannelId}:${shopeeSku}` } })).toBe(0);
     await whenStockRunnersIdle();
   });
 
@@ -566,27 +561,5 @@ describe("Đối soát tồn Shopee qua stock.verify", () => {
     const [plain, detail] = alert!.message.split("\n");
     expect(plain).toContain("Đẩy lại");
     expect(detail).toContain("đối soát 3 lượt vẫn chưa khớp");
-  });
-});
-
-describe("Đường lui STOCK_PUSH_MODE=legacy", () => {
-  it("ghi trong giao dịch không làm gì; phần chốt sau commit ghi dòng như trước, không gửi tín hiệu", async () => {
-    await restartQueue("web");
-    await prisma.$executeRawUnsafe(`DELETE FROM pgboss.job WHERE name = 'stock.channel' AND data->>'channelId' = $1`, lzdChannelId);
-    process.env.STOCK_PUSH_MODE = "legacy";
-    try {
-      // Không truyền nguồn: cột source để trống (câu ghi cả lô nhận tham số null).
-      const ticket = await prisma.$transaction((tx) => stageStockPush(tx, [lzdProductId]));
-      expect(ticket.staged).toBe(false);
-      expect(await rowsOf(lzdChannelId)).toHaveLength(0);
-      expect(await finishStockPush(ticket)).toEqual({ queued: 1 });
-      const rows = await rowsOf(lzdChannelId);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ source: null, forced: false, status: StockPushStatus.PENDING });
-      expect(await jobsOf("stock.channel", lzdChannelId)).toHaveLength(0);
-    } finally {
-      process.env.STOCK_PUSH_MODE = "queue";
-      await prisma.stockPushJob.deleteMany({ where: { channelId: lzdChannelId } });
-    }
   });
 });

@@ -1,30 +1,22 @@
 // ============================================================
-// HÀNG ĐỢI BỀN CHO WEBHOOK TIKTOK SHOP (bảng tiktok_webhook_logs) + WORKER NỀN
+// VIỆC SỰ KIỆN TIKTOK SHOP của hàng đợi bền pg-boss (workers/event-queue.ts,
+// docs/HANG-DOI-BEN.md mục 4.3) + phần đọc payload webhook.
 //
-// Cùng khuôn shopee/webhook-queue.ts (anh Trung chốt 05/09/2026: nối shop TikTok
-// thật BẮT BUỘC có queue trước). Route routes/webhooks.ts CHỈ verify chữ ký +
-// INSERT một dòng rồi ack 200; worker ở đây xử lý sau:
+// Route (routes/webhooks.ts) kiểm chữ ký, phân loại sự kiện, ghi webhook_events
+// + xếp việc evt.order / evt.auth trong một giao dịch rồi ack; worker gọi các
+// hàm handle* dưới đây. Mỗi việc KÉO LẠI chi tiết đơn từ sàn (không tin trạng
+// thái trong payload) + upsert theo (channelId, orderCode) nên thứ tự sự kiện
+// không quan trọng.
 //
-//   · Chống trùng 2 tầng: (1) unique bodyHash — TikTok gửi lại y nguyên thì
-//     insert bị chặn ngay; (2) nghiệp vụ idempotent: mỗi job KÉO LẠI chi tiết
-//     đơn từ sàn (không tin trạng thái trong payload) + upsert theo
-//     (channelId, orderCode) + mốc stockDeductedAt/stockRestoredAt.
-//   · NHIỀU LÀN song song (TIKTOK_WEBHOOK_LANES) — sự kiện của CÙNG một đơn
-//     không chạy song song trong cùng tiến trình (Set mã đơn đang xử lý); giữa
-//     các tiến trình worker khác nhau thì claim bằng UPDATE có điều kiện + mỗi
-//     job kéo trạng thái MỚI NHẤT từ sàn nên thứ tự sự kiện không còn quan trọng.
-//   · Lỗi tạm thời (API sàn, DB): thử lại tối đa MAX_ATTEMPTS lần, giãn cách
-//     nhân đôi qua nextRetryAt. Hết lượt → FAILED + InventorySyncAlert lên UI.
-//   · Restart giữa chừng: job PROCESSING mồ côi được trả về PENDING lúc boot.
+// Trước 05/10/2026 tệp này còn chứa hàng đợi cũ trên bảng tiktok_webhook_logs
+// (nhiều làn trong RAM). Đường đó đã gỡ ở bước 6b; bảng còn giữ tới sau
+// 31/10/2026 chỉ để HQ tra nhật ký cũ.
 //
 // Tên trường payload theo docs Webhook 202309 (type / tts_notification_id /
 // shop_id / timestamp / data.order_id / data.order_status). Parser đọc phòng
-// thủ cả kiểu đặt tên khác; ĐỐI CHIẾU LẠI khi nối shop thật (kế hoạch 16/09).
+// thủ cả kiểu đặt tên khác.
 // ============================================================
 
-import crypto from "crypto";
-import { WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../../lib/prisma";
 import {
   findTiktokChannelByShopId,
   processTiktokAuthorizationEvent,
@@ -81,15 +73,6 @@ export interface TiktokWebhookPayload {
   };
 }
 
-/** Tổng số lần thử một job (1 lần đầu + 2 lần retry). */
-const MAX_ATTEMPTS = 3;
-/** Giãn cách trước lần retry đầu; các lần sau nhân đôi (30s → 60s). */
-const BASE_RETRY_MS = 30 * 1000;
-/** Nhịp worker tự quét job đến hạn retry / job tồn sau restart. */
-const POLL_INTERVAL_MS = 15 * 1000;
-/** Số làn xử lý song song trong một tiến trình worker (env TIKTOK_WEBHOOK_LANES). */
-const LANES = Math.max(1, Math.min(8, Number(process.env.TIKTOK_WEBHOOK_LANES) || 3));
-
 /** Đọc mã đơn trong payload — phòng thủ cả hai kiểu đặt tên. */
 export function tiktokPayloadOrderId(payload: TiktokWebhookPayload): string {
   const raw = payload.data?.order_id ?? payload.data?.orderId;
@@ -109,188 +92,7 @@ export function classifyTiktokEvent(
   return null;
 }
 
-/**
- * Ghi một sự kiện ĐÃ QUA verify chữ ký vào hàng đợi bền. Chỉ một INSERT —
- * route ack 200 ngay sau đó. `duplicate=true` = bản gửi lại y nguyên (đụng
- * unique bodyHash), bỏ qua êm.
- */
-export async function enqueueTiktokWebhook(
-  rawBody: Buffer | string,
-  payload: TiktokWebhookPayload
-): Promise<{ queued: boolean; duplicate: boolean }> {
-  const bodyHash = crypto.createHash("sha256").update(rawBody).digest("hex");
-  const orderId = tiktokPayloadOrderId(payload);
-  try {
-    await prisma.tiktokWebhookLog.create({
-      data: {
-        eventType: Number(payload.type) || 0,
-        shopId: payload.shop_id != null ? String(payload.shop_id) : "",
-        orderId: orderId || null,
-        bodyHash,
-        payload: JSON.stringify(payload),
-      },
-    });
-  } catch (err) {
-    if ((err as { code?: string }).code === "P2002") {
-      return { queued: false, duplicate: true };
-    }
-    throw err; // lỗi DB thật — route trả 500 cho TikTok gửi lại sau
-  }
-  // Đánh thức worker trong cùng tiến trình (vai all/worker). Tiến trình vai
-  // "web" chỉ enqueue — worker riêng tự nhặt theo nhịp POLL_INTERVAL_MS.
-  if ((process.env.HUBSELL_ROLE ?? "all").trim().toLowerCase() !== "web") {
-    void drain();
-  }
-  return { queued: true, duplicate: false };
-}
-
-// ---------- Worker ----------
-
-let started = false;
-let activeLanes = 0;
-/** Mã đơn đang có job chạy dở trong tiến trình này — làn khác không cầm cùng đơn. */
-const inFlightOrders = new Set<string>();
-
-/**
- * Khởi động worker (gọi 1 lần từ workers/index.ts). Trả job PROCESSING mồ côi
- * (backend chết giữa chừng ở lần chạy trước) về PENDING rồi quét theo nhịp.
- */
-export function startTiktokWebhookWorker(): void {
-  if (started) return;
-  started = true;
-
-  void (async () => {
-    const orphaned = await prisma.tiktokWebhookLog.updateMany({
-      where: { status: WebhookJobStatus.PROCESSING },
-      data: { status: WebhookJobStatus.PENDING },
-    });
-    if (orphaned.count > 0) {
-      console.log(`[Webhook TikTok] Khôi phục ${orphaned.count} job dở dang sau restart`);
-    }
-    void drain();
-  })().catch((err) => console.error("[Webhook TikTok] Lỗi khởi động worker:", err));
-
-  setInterval(() => void drain(), POLL_INTERVAL_MS).unref();
-}
-
-/** Mở thêm làn cho tới trần LANES; mỗi làn tự chạy tới khi hết job đến hạn. */
-async function drain(): Promise<void> {
-  const lanes: Promise<void>[] = [];
-  while (activeLanes < LANES) {
-    activeLanes++;
-    lanes.push(
-      runLane().finally(() => {
-        activeLanes--;
-      })
-    );
-  }
-  await Promise.all(lanes);
-}
-
-/**
- * MỘT LÀN: nhặt job đến hạn theo FIFO, bỏ qua đơn đang có làn khác cầm, claim
- * bằng UPDATE có điều kiện (nhiều tiến trình không xử lý đôi), xử lý, lặp.
- */
-async function runLane(): Promise<void> {
-  try {
-    for (;;) {
-      const busy = [...inFlightOrders];
-      const job = await prisma.tiktokWebhookLog.findFirst({
-        where: {
-          status: WebhookJobStatus.PENDING,
-          OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: new Date() } }],
-          ...(busy.length ? { NOT: { orderId: { in: busy } } } : {}),
-        },
-        orderBy: { createdAt: "asc" },
-      });
-      if (!job) break;
-
-      const claimed = await prisma.tiktokWebhookLog.updateMany({
-        where: { id: job.id, status: WebhookJobStatus.PENDING },
-        data: { status: WebhookJobStatus.PROCESSING, attempts: { increment: 1 } },
-      });
-      if (claimed.count === 0) continue;
-
-      if (job.orderId) inFlightOrders.add(job.orderId);
-      try {
-        await processJob(job.id, job.eventType, job.shopId, job.orderId, job.payload, job.attempts + 1);
-      } finally {
-        if (job.orderId) inFlightOrders.delete(job.orderId);
-      }
-    }
-  } catch (err) {
-    console.error("[Webhook TikTok] Lỗi vòng xử lý hàng đợi:", err);
-  }
-}
-
-/** Xử lý một job đã claim: thành công → SUCCESS; lỗi → hẹn retry hoặc FAILED + cảnh báo. */
-async function processJob(
-  jobId: string,
-  eventType: number,
-  shopId: string,
-  orderId: string | null,
-  rawPayload: string,
-  attempt: number
-): Promise<void> {
-  try {
-    const note = await dispatchTiktokWebhookEvent(
-      JSON.parse(rawPayload) as TiktokWebhookPayload
-    );
-    await prisma.tiktokWebhookLog.update({
-      where: { id: jobId },
-      data: { status: WebhookJobStatus.SUCCESS, processedAt: new Date(), lastError: note },
-    });
-  } catch (err) {
-    const message = (err as Error).message;
-    console.error(
-      `[Webhook TikTok] Job ${jobId} (type=${eventType}, đơn ${orderId ?? "?"}) lỗi lần ${attempt}/${MAX_ATTEMPTS}:`,
-      err
-    );
-    if (attempt < MAX_ATTEMPTS) {
-      await prisma.tiktokWebhookLog.update({
-        where: { id: jobId },
-        data: {
-          status: WebhookJobStatus.PENDING,
-          lastError: message,
-          nextRetryAt: new Date(Date.now() + BASE_RETRY_MS * 2 ** (attempt - 1)),
-        },
-      });
-    } else {
-      await prisma.tiktokWebhookLog.update({
-        where: { id: jobId },
-        data: { status: WebhookJobStatus.FAILED, lastError: message },
-      });
-      await alertJobFailed(shopId, orderId, message);
-    }
-  }
-}
-
-/**
- * Bộ chia sự kiện cho worker. Ném lỗi = báo hàng đợi retry (lỗi tạm thời);
- * "không có gì để làm" (shop chưa nối, sàn không trả đơn) thì trả ghi chú và
- * kết thúc êm — retry cũng vô ích. Trả về ghi chú (lưu vào lastError để tra
- * soát) hoặc null khi xử lý trọn vẹn.
- */
-export async function dispatchTiktokWebhookEvent(
-  payload: TiktokWebhookPayload
-): Promise<string | null> {
-  const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
-  if (!shopId) return "thiếu shop_id";
-  const kind = classifyTiktokEvent(payload);
-
-  if (kind === "auth") return handleTiktokAuthJob(shopId);
-
-  if (kind === "order") {
-    const orderId = tiktokPayloadOrderId(payload);
-    if (!orderId) return "thiếu order_id";
-    return handleTiktokOrderJob(shopId, orderId, payload.type);
-  }
-
-  return `bỏ qua type=${payload.type}`;
-}
-
-// ---------- Phần lõi dùng chung cho hàng đợi cũ (tiktok_webhook_logs) và hàng
-// ---------- đợi bền pg-boss (giai đoạn 2 — workers/event-queue.ts) ----------
+// ---------- Việc của hàng đợi bền pg-boss (workers/event-queue.ts) ----------
 
 /**
  * Kéo lại MỘT đơn từ sàn rồi upsert + tác động kho. Ném lỗi = hỏng lượt này
@@ -313,9 +115,8 @@ export async function handleTiktokOrderJob(
 
   // Kho biến động → đẩy "có thể bán" mới lên các gian khác đã nối cùng SKU
   // + kiểm tra ngưỡng sắp hết hàng. Dòng chờ đẩy do processTiktokOrderEvent lập
-  // phiếu ngay trong giao dịch đơn; ở đây chốt phiếu SAU khi giao dịch đã commit
-  // (đường cũ: xếp job tại đây như trước). Lỗi đẩy sàn có retry + cảnh báo
-  // riêng, không kéo job đơn chạy lại.
+  // phiếu ngay trong giao dịch đơn; ở đây chốt phiếu SAU khi giao dịch đã commit.
+  // Lỗi đẩy sàn có retry + cảnh báo riêng, không kéo việc đơn chạy lại.
   await finishStockPush(result.stockTicket);
   return null;
 }
@@ -327,7 +128,7 @@ export async function handleTiktokAuthJob(shopId: string): Promise<string | null
   return r ? null : "shop chưa kết nối Hubsell";
 }
 
-/** Việc của hàng đợi bền hỏng hẳn sau khi hết lượt thử — cảnh báo lên UI như hàng đợi cũ. */
+/** Việc của hàng đợi bền hỏng hẳn sau khi hết lượt thử — cảnh báo lên UI cho chủ shop xử lý tay. */
 export async function alertTiktokJobFailed(
   shopId: string,
   orderId: string | null,
@@ -343,33 +144,4 @@ export async function alertTiktokJobFailed(
       `sự kiện TikTok${orderId ? ` đơn ${orderId}` : ""} xử lý thất bại sau ${attempts} lần: ${message}`
     ),
   });
-}
-
-/** Job hỏng hẳn sau MAX_ATTEMPTS lần — bắn cảnh báo lên UI cho chủ shop xử lý tay. */
-async function alertJobFailed(
-  shopId: string,
-  orderId: string | null,
-  message: string
-): Promise<void> {
-  const channel = await findTiktokChannelByShopId(shopId).catch(() => null);
-  if (!channel) return;
-  await createSyncAlert(channel.id, {
-    orderSn: orderId ?? undefined,
-    message: describeChannelFailure(
-      channel.shopName,
-      `sự kiện TikTok${orderId ? ` đơn ${orderId}` : ""} xử lý thất bại sau ${MAX_ATTEMPTS} lần: ${message}`
-    ),
-  });
-}
-
-/** Cho test/giám sát: số job đang chờ hoặc đang xử lý. */
-export async function tiktokWebhookQueueSize(): Promise<number> {
-  return prisma.tiktokWebhookLog.count({
-    where: { status: { in: [WebhookJobStatus.PENDING, WebhookJobStatus.PROCESSING] } },
-  });
-}
-
-/** Cho integration test: chạy MỘT lượt drain và đợi xong. Không dùng ở luồng thật. */
-export async function drainTiktokWebhookQueueOnce(): Promise<void> {
-  await drain();
 }

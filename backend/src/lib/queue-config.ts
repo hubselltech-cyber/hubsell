@@ -76,27 +76,6 @@ export const EVT_ORDER_MAX_ATTEMPTS = 3;
 
 // ---------- Đẩy tồn (giai đoạn 2 bước 4 — docs/HANG-DOI-BEN.md mục 4.5) ----------
 
-export type StockPushMode = "queue" | "legacy";
-
-/**
- * Đường đi của việc đẩy tồn:
- *   · legacy — bảng stock_push_jobs + một vòng quét một luồng trong worker (trước giai đoạn 2).
- *   · queue  — vẫn bảng stock_push_jobs giữ trạng thái; dòng chờ đẩy được ghi
- *     chung giao dịch với biến động kho, các gian chạy song song (mỗi gian một
- *     bộ chạy, không hai tiến trình cùng đẩy một gian), hàng đợi stock.channel
- *     chỉ làm tín hiệu "gian X có dòng mới" (workers/stock-queue.ts).
- * Bước 4 ĐƯA LÊN HAI LẦN: lần một (e44c58f, 01/10/2026) mặc định còn là legacy
- * — worker đã biết xử lý việc mới nhưng chưa ai gửi; lần hai (anh Trung gật
- * 02/10/2026) đổi mặc định sang queue. Đường lui: STOCK_PUSH_MODE=legacy đặt ở
- * CẢ web lẫn worker.
- */
-export const DEFAULT_STOCK_PUSH_MODE: StockPushMode = "queue";
-
-export function stockPushMode(env: NodeJS.ProcessEnv = process.env): StockPushMode {
-  const raw = (env.STOCK_PUSH_MODE ?? "").trim().toLowerCase();
-  return raw === "queue" || raw === "legacy" ? raw : DEFAULT_STOCK_PUSH_MODE;
-}
-
 /**
  * Số GIAN được đẩy tồn cùng lúc ở MỘT tiến trình worker (trước bước 4: 1 gian
  * một lúc). MẶC ĐỊNH TỰ CHỌN 4 (anh Trung nhận làm mặc định 02/10/2026), lấy
@@ -115,15 +94,16 @@ export function stockChannelConcurrency(env: NodeJS.ProcessEnv = process.env): n
  * các dòng stock_push_jobs ở RUNNING của lô nó đã nhận; dòng RUNNING lâu hơn
  * hạn này coi là mồ côi (tiến trình cầm nó đã chết) và được trả về hàng chờ.
  * MẶC ĐỊNH TỰ CHỌN 300 giây (anh Trung nhận làm mặc định 02/10/2026): một lô 30 dòng bình thường xong trong 1–2 phút
- * (giãn 0,4 giây + một lệnh gọi sàn mỗi dòng), và lệnh gọi sàn chưa có thời hạn
- * chờ nên phải chừa chỗ cho sàn treo. Đường cũ dùng 15 phút (cũng tự chọn).
+ * (giãn 0,4 giây + một lệnh gọi sàn mỗi dòng). Số này đặt lúc lệnh gọi sàn chưa
+ * có thời hạn chờ; từ bước 6a mỗi lệnh có hạn 30 giây, hạn thuê giữ nguyên tới khi
+ * đo thời gian trọn một lô (docs/HANG-DOI-BEN.md mục 4.7).
  */
 export const STOCK_PUSH_LEASE_SECONDS = 300;
 
 /**
- * Nhịp lưới quét dòng tới hạn của đường hàng đợi bền, giây. Mặc định 5 — bằng
- * nhịp vòng quét của đường cũ, nên trường hợp xấu nhất (tín hiệu qua hàng đợi
- * không tới) vẫn không chậm hơn trước. Đổi bằng STOCK_SWEEP_SECONDS.
+ * Nhịp lưới quét dòng tới hạn, giây. Mặc định 5 — bằng nhịp vòng quét trước giai
+ * đoạn 2, nên trường hợp xấu nhất (tín hiệu qua hàng đợi không tới) vẫn không
+ * chậm hơn trước. Đổi bằng STOCK_SWEEP_SECONDS.
  */
 export const DEFAULT_STOCK_SWEEP_SECONDS = 5;
 

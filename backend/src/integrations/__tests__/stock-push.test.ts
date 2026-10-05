@@ -70,6 +70,14 @@ describe("enqueueStockPush — switch autoSync + gộp job", () => {
     await prisma.stockPushJob.deleteMany({ where: { channelId: fx.channelId } });
   });
 
+  it("không truyền nguồn: cột source để trống (câu ghi cả lô nhận tham số null)", async () => {
+    expect((await enqueueStockPush([productId], { force: true })).queued).toBe(1);
+    const jobs = await prisma.stockPushJob.findMany({ where: { channelId: fx.channelId } });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ source: null, forced: true, status: StockPushStatus.PENDING });
+    await prisma.stockPushJob.deleteMany({ where: { channelId: fx.channelId } });
+  });
+
   it("bật đồng bộ GIAN: sinh job; nhiều biến động GỘP còn một job, giữ oldAvailable đầu", async () => {
     await prisma.channel.update({
       where: { id: fx.channelId },

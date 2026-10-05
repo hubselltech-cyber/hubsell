@@ -4,13 +4,14 @@
 // Mọi biến động kho (đơn sàn, nhập/xuất tay, nhập hàng hoàn, sửa tồn, import)
 // đều đi qua MỘT cửa: enqueueStockPush(productIds) — ghi job vào hàng đợi bền
 // stock_push_jobs rồi trả về NGAY (một câu ghi cho cả lô, không gọi API sàn,
-// không làm chậm request). Worker stock-push-worker.ts nhặt job và đẩy thật.
+// không làm chậm request). Bộ chạy theo gian ở workers/stock-queue.ts nhặt dòng
+// và đẩy thật (phần đẩy: stock-push-worker.ts).
 //
-// Giai đoạn 2 bước 4 (docs/HANG-DOI-BEN.md mục 4.5): bảng stock_push_jobs vẫn
-// giữ trạng thái và là nguồn sự thật. Ở đường hàng đợi bền (STOCK_PUSH_MODE=
-// queue) nơi ghi đơn / sửa kho ghi dòng chờ đẩy NGAY TRONG giao dịch của mình
+// docs/HANG-DOI-BEN.md mục 4.5: bảng stock_push_jobs giữ trạng thái và là nguồn
+// sự thật. Nơi ghi đơn / sửa kho ghi dòng chờ đẩy NGAY TRONG giao dịch của mình
 // (stageStockPush + finishStockPush), kèm một tín hiệu stock.channel cho từng
-// gian để worker chạy ngay; bộ chạy theo gian nằm ở workers/stock-queue.ts.
+// gian để worker chạy ngay. (Vòng quét một luồng trước giai đoạn 2 đã gỡ ở bước
+// 6b, 05/10/2026.)
 //
 // Công thức tồn khả dụng ("CÓ THỂ BÁN" — số ĐẨY LÊN SÀN):
 //   available = max(0, quantityInStock − holdQuantity − safetyStock)
@@ -33,7 +34,6 @@ import { ChannelName } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { enqueue, isQueueReady, QUEUES } from "../lib/queue";
-import { stockPushMode } from "../lib/queue-config";
 
 /** Các sàn đã có chiều ĐẨY tồn. TikTok chưa có product-sync (ChannelProduct
  *  không có externalId) nên chưa đẩy được — bổ sung khi làm product pull TikTok. */
@@ -80,15 +80,6 @@ export interface EnqueueOptions {
    * nhật ký sync; số đẩy lên sàn luôn được worker đọc lại mới nhất lúc đẩy.
    */
   oldAvailable?: Record<string, number>;
-}
-
-// Worker ĐƯỜNG CŨ đăng ký hàm "đánh thức" để nhặt job NGAY sau khi enqueue thay
-// vì chờ nhịp poll. Đăng ký qua callback (không import worker) để tránh import
-// vòng. Ở đường hàng đợi bền (STOCK_PUSH_MODE=queue) không có hàm này: mỗi gian
-// có dòng mới được gửi một tín hiệu qua hàng đợi stock.channel.
-let kickWorker: (() => void) | null = null;
-export function registerStockPushKick(fn: () => void): void {
-  kickWorker = fn;
 }
 
 // ---------- Hàng đợi bền: tín hiệu theo GIAN (giai đoạn 2 bước 4) ----------
@@ -279,13 +270,9 @@ export async function enqueueStockPush(
     result.queued = written.queued;
     if (written.queued === 0) return result;
 
-    if (stockPushMode() === "queue") {
-      // Dòng đã ghi là đủ để lượt đẩy chắc chắn diễn ra (lưới quét của worker đọc
-      // bảng mỗi vài giây). Tín hiệu qua hàng đợi chỉ để worker chạy NGAY.
-      if (isQueueReady()) await signalChannels(written.channelIds);
-    } else if (kickWorker) {
-      kickWorker();
-    }
+    // Dòng đã ghi là đủ để lượt đẩy chắc chắn diễn ra (lưới quét của worker đọc
+    // bảng mỗi vài giây). Tín hiệu qua hàng đợi chỉ để worker chạy NGAY.
+    await signalChannels(written.channelIds);
   } catch (err) {
     console.error("[Stock-push] Không enqueue được job đẩy tồn:", err);
   }
@@ -327,8 +314,6 @@ const SIGNAL_SAVEPOINT = "stock_push_signal";
  * lỗi thì lùi về savepoint, ghi log, finishStockPush sẽ ghi lại ngoài giao dịch.
  * Gửi tín hiệu lỗi (hoặc hàng đợi chưa sẵn sàng) thì dòng VẪN được giữ — lưới
  * quét của worker đọc bảng mỗi vài giây — và finishStockPush thử gửi lại.
- * Ở đường cũ (STOCK_PUSH_MODE=legacy) hàm này không ghi gì — finishStockPush làm
- * đúng việc enqueueStockPush vẫn làm.
  */
 export async function stageStockPush(
   tx: Prisma.TransactionClient,
@@ -337,7 +322,7 @@ export async function stageStockPush(
 ): Promise<StockPushTicket> {
   const ids = [...new Set(productIds)].filter(Boolean);
   const ticket: StockPushTicket = { productIds: ids, opts, staged: false, queued: 0, mergedChannelIds: [] };
-  if (ids.length === 0 || stockPushMode() !== "queue") return ticket;
+  if (ids.length === 0) return ticket;
 
   let channelIds: string[];
   await tx.$executeRawUnsafe(`SAVEPOINT ${ROWS_SAVEPOINT}`);
@@ -379,7 +364,7 @@ export async function stageStockPush(
 /**
  * Gọi SAU khi giao dịch của stageStockPush đã commit (giao dịch rollback thì
  * đừng gọi). Kiểm ngưỡng sắp hết hàng; phiếu chưa được ghi trong giao dịch
- * (đường cũ hoặc ghi lỗi) thì ghi + xếp việc ở đây. Không ném.
+ * (ghi lỗi) thì ghi + xếp việc ở đây. Không ném.
  */
 export async function finishStockPush(ticket?: StockPushTicket | null): Promise<{ queued: number }> {
   if (!ticket || ticket.productIds.length === 0) return { queued: 0 };

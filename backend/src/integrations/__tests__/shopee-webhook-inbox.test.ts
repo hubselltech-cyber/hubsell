@@ -6,12 +6,12 @@
 // kéo phí tạm tính được mock; route, hộp thư đến, hàng đợi, worker, upsert đơn,
 // trừ kho chạy thật trên DB dev (cần migration queue_foundation).
 //
-//   1. SHOPEE_WEBHOOK_MODE=legacy → hàng đợi cũ (shopee_webhook_logs).
-//   2. Các mục dưới chạy với SHOPEE_WEBHOOK_MODE=queue (hàng đợi bền).
-//   3. Đơn READY_TO_SHIP: dòng sự kiện SUCCESS, Order tạo, kho trừ đúng; gửi lại y nguyên không trừ đôi.
-//   4. Sự kiện ủy quyền của shop chưa nối → evt.auth xử lý, dòng SUCCESS kèm ghi chú.
-//   5. Sàn lỗi: dòng giữ PENDING + ghi lỗi; hết lượt → FAILED + cảnh báo chủ shop.
-//   6. Mã vận đơn của push code 4 bị gộp vào việc đang chờ vẫn tới được handler.
+//   1. Đơn READY_TO_SHIP: dòng sự kiện SUCCESS, Order tạo, kho trừ đúng; gửi lại y nguyên không trừ đôi.
+//   2. Sự kiện ủy quyền của shop chưa nối → evt.auth xử lý, dòng SUCCESS kèm ghi chú.
+//   3. Sàn lỗi: dòng giữ PENDING + ghi lỗi; hết lượt → FAILED + cảnh báo chủ shop.
+//   4. Mã vận đơn của push code 4 bị gộp vào việc đang chờ vẫn tới được handler.
+//   5. Hàng đợi bền chưa sẵn sàng → 503 (Shopee gửi lại), không ghi gì.
+// (Bước 6b, 05/10/2026: đường cũ trên bảng shopee_webhook_logs đã gỡ.)
 // ============================================================
 import "./load-env";
 import crypto from "crypto";
@@ -125,8 +125,6 @@ beforeAll(async () => {
     data: { channelId, productId, channelSku: SKU, productName: "SP test Shopee", status: "ACTIVE" },
   });
 
-  // Đặt rõ đường hàng đợi bền cho cả tệp (không phụ thuộc mặc định của bản đang chạy).
-  process.env.SHOPEE_WEBHOOK_MODE = "queue";
   expect(await startQueue("all"), "hàng đợi không khởi động — DB dev đã áp migration queue_foundation chưa?").toBe(true);
   await registerEventQueueWorkers();
 
@@ -140,9 +138,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await stopQueue(5000);
-  delete process.env.SHOPEE_WEBHOOK_MODE;
   await prisma.webhookEvent.deleteMany({ where: { source: "SHOPEE", shopId: { in: [SHOP_ID, UNKNOWN_SHOP_ID] } } });
-  await prisma.shopeeWebhookLog.deleteMany({ where: { shopId: SHOP_ID } });
   await prisma.$executeRawUnsafe(
     `DELETE FROM pgboss.job WHERE name IN ('evt.order', 'evt.auth', 'evt.dead') AND data->>'shopId' IN ($1, $2)`,
     SHOP_ID,
@@ -153,15 +149,6 @@ afterAll(async () => {
 });
 
 describe("Webhook Shopee — hộp thư đến + hàng đợi bền pg-boss", () => {
-  it("SHOPEE_WEBHOOK_MODE=legacy → hàng đợi cũ shopee_webhook_logs, không ghi hộp thư đến", async () => {
-    process.env.SHOPEE_WEBHOOK_MODE = "legacy";
-    const res = await postWebhook(orderEvent("SPEQ-LEGACY", "UNPAID", 1_700_000_000));
-    process.env.SHOPEE_WEBHOOK_MODE = "queue";
-    expect(res.json).toMatchObject({ ok: true, code: 3, queued: true, duplicate: false });
-    expect(await prisma.shopeeWebhookLog.count({ where: { shopId: SHOP_ID, orderSn: "SPEQ-LEGACY" } })).toBe(1);
-    expect(await eventsOf({ shopId: SHOP_ID, entityId: "SPEQ-LEGACY" })).toHaveLength(0);
-  });
-
   it("đơn READY_TO_SHIP: sự kiện SUCCESS, Order tạo mới, kho trừ đúng; gửi lại y nguyên không trừ đôi", async () => {
     const orderSn = "SPEQ-1001";
     mockOrder(orderSn, "READY_TO_SHIP", 2);
@@ -175,7 +162,6 @@ describe("Webhook Shopee — hộp thư đến + hàng đợi bền pg-boss", ()
     expect(row.attempts).toBe(1);
     expect(await prisma.order.findFirst({ where: { channelId, orderCode: orderSn } })).not.toBeNull();
     expect(await stockNow()).toBe(8);
-    expect(await prisma.shopeeWebhookLog.count({ where: { shopId: SHOP_ID, orderSn } })).toBe(0);
 
     const again = await postWebhook(body);
     expect(again.json).toMatchObject({ queued: false, duplicate: true });
@@ -237,5 +223,20 @@ describe("Webhook Shopee — hộp thư đến + hàng đợi bền pg-boss", ()
     const order = await prisma.order.findFirstOrThrow({ where: { channelId, orderCode: orderSn }, select: { trackingCode: true } });
     expect(order.trackingCode).toBe("SPXVN0123456789");
     expect(vi.mocked(getTrackingNumber)).not.toHaveBeenCalled();
+  });
+
+  it("hàng đợi bền chưa sẵn sàng → 503 để Shopee gửi lại, không ghi sự kiện; ping code 0 vẫn 200", async () => {
+    // Ca cuối của tệp: tắt hẳn hàng đợi (như vài giây đầu lúc tiến trình khởi động).
+    await stopQueue(5000);
+    const orderSn = "SPEQ-NOTREADY";
+    const res = await postWebhook(orderEvent(orderSn, "UNPAID", 1_700_009_000));
+    expect(res.status).toBe(503);
+    expect(await eventsOf({ shopId: SHOP_ID, entityId: orderSn })).toHaveLength(0);
+    const ping = await fetch(`${baseUrl}/api/webhook/shopee`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: 0, data: { verify_info: "x" } }),
+    });
+    expect(ping.status).toBe(200);
   });
 });

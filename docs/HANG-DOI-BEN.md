@@ -975,6 +975,31 @@ Kết luận: bật thời hạn không sinh loại hỏng mới; nó chỉ đ�
 
 *Sau khi đưa lên phải xem:* dòng `[SanHTTP] QUA HAN` (tên sàn + đường dẫn) và cột `qua_han` của dòng tổng hợp trong 2–3 ngày; có lệnh hợp lệ bị cắt thì nâng số bằng biến môi trường.
 
+**Đợt 6b lần một — gỡ MÃ đường cũ của webhook ba sàn và đẩy tồn (viết 05/10/2026, nhánh `buoc-6b-go-duong-cu`, chồng lên 6a)**
+
+*Điều kiện đã đọc trên prod 05/10 ~09:50 (Supabase, chỉ đọc).* `shopee_webhook_logs`: 4.441 dòng SUCCESS (mới nhất 01/10 22:21 giờ VN), 7 dòng FAILED (mới nhất 25/09); `tiktok_webhook_logs`: 6.150 dòng SUCCESS (mới nhất 01/10 21:16). Không dòng nào đang chờ hay đang xử lý. Cùng lúc `webhook_events` có 4.552 sự kiện Shopee (2 hỏng, 03/10) và 5.044 sự kiện TikTok, mới nhất 05/10 09:48. Tức từ lúc chuyển (01/10) đường cũ không nhận sự kiện nào, kể cả qua nhánh "hàng đợi chưa sẵn sàng thì lùi về đường cũ", dù đã qua hơn chục lần deploy. Trang Environment của Render (05/10 ~10:05, chỉ đọc TÊN biến): web và worker mỗi bên hiện 50 tên, không có `*_WEBHOOK_MODE`, `STOCK_PUSH_MODE`, `TIKTOK_WEBHOOK_LANES` hay `PLATFORM_HTTP_TIMEOUT_MS`. Hai bên cùng ra đúng 50 nên em chưa chắc trang đã hiện hết danh sách; số đếm bảng ở trên là bằng chứng độc lập rằng prod không chạy đường cũ.
+
+*Đổi gì.*
+
+| Chỗ | Trước | Sau |
+|---|---|---|
+| `routes/webhooks.ts` | Ba hàm chọn chế độ; hàng đợi chưa sẵn sàng thì lùi về đường cũ | Một đường. Hàng đợi chưa sẵn sàng → **503** + log `[Webhook <sàn>] Hàng đợi bền chưa sẵn sàng`; ghi lỗi → 500 như cũ. Sự kiện ngoài phạm vi / ping vẫn 200 |
+| `shopee/webhook-queue.ts`, `tiktok/webhook-queue.ts` | Hàng đợi cũ trên bảng + worker + phần lõi | Chỉ còn phần lõi đường mới đang dùng (`handle*Job`, `alert*JobFailed`, đọc payload TikTok) |
+| `shopee/service.ts` | `dispatchShopeeWebhookEvent` | Gỡ (chỉ worker cũ gọi) |
+| `workers/index.ts` | Khởi động hai worker webhook cũ; chọn đường đẩy tồn theo `STOCK_PUSH_MODE` | Chỉ còn `startStockPushScheduler`; worker webhook MISA giữ tới 6c |
+| `stock-push-worker.ts` | Vòng quét một luồng + phần nhận lô / đẩy dùng chung | Chỉ còn `claimChannelBatch` + `processClaimedJobs` |
+| `inventory-push.ts` | Nhánh `legacy`, `registerStockPushKick` | Gỡ; `stageStockPush` luôn ghi trong giao dịch |
+| `shopee/inventory-sync.ts` | Xếp đối soát vào `stock.verify`, không được thì ghi bảng webhook cũ | Chỉ `stock.verify`; không xếp được thì ghi log và bỏ lượt đối soát đó (đối soát 6 giờ là lưới) |
+| `lib/queue-config.ts`, `.env.example` | `stockPushMode`, ba biến `*_WEBHOOK_MODE`, `STOCK_PUSH_MODE`, `TIKTOK_WEBHOOK_LANES` | Gỡ |
+
+*Cố ý CHƯA đổi (để tới lần hai, sau 31/10 — anh Trung chốt giữ nhật ký hỏng đủ 30 ngày).* Hai bảng `shopee_webhook_logs`, `tiktok_webhook_logs` và hai model Prisma; ba khối dọn bảng cũ ở `workers/log-cleanup.ts` (để dòng cũ tự hết hạn: SUCCESS sau 7 ngày, FAILED sau 30 ngày — dòng FAILED cuối cùng là 25/09 nên tới ~25/10 hai bảng tự trống); `services/platform-health.ts` và `routes/admin.ts` vẫn đọc hai nguồn để HQ còn tra được dòng cũ. Lần hai = gỡ các chỗ đọc đó + migration xóa hai bảng (lấy khóa có thử lại), trình SQL trước.
+
+*Trả 5xx khi hàng đợi chưa sẵn sàng — sàn gửi lại thế nào.* Lazada: mỗi 30 phút, tối đa 12 lần (đã ghi từ bước 1). TikTok Shop: bài tổng hợp của Hookdeck ghi 4 lượt gửi lại (khoảng 2 phút, 30 phút, 3 giờ, 12 giờ) — nguồn bên thứ ba, em CHƯA đọc được trang chính thức trong Partner Center. Shopee: CHƯA tìm được tài liệu công khai về số lần và nhịp gửi lại (trang Push Mechanism cần đăng nhập Console). Vì hai chỗ chưa kiểm này, thiết kế không dựa vào việc sàn gửi lại: vòng quét đơn định kỳ theo gian (10–60 phút) vẫn là lưới như khi database lỗi (đường cũ cũng trả 500 lúc đó). Cửa sổ thật của 503 là vài giây đầu khi tiến trình web khởi động trước khi pg-boss lên, hoặc khi pg-boss không lên được; 4 ngày qua không có lần nào rơi vào cửa sổ này (số đếm ở trên).
+
+*Test.* Xóa `tiktok-webhook-queue.test.ts` và `inventory-reconcile.test.ts` (kiểm đường cũ); các ca còn giá trị chuyển sang đường mới: chữ ký sai / sự kiện ngoài phạm vi / đơn hủy hoàn kho (TikTok) vào `tiktok-webhook-inbox.test.ts`, chống trùng Shopee (`inventory-idempotency.test.ts`) nay chạy trên `webhook_events`; đối soát tồn đã có ở `stock-queue.test.ts` mục 10. Ba tệp webhook thêm ca "hàng đợi chưa sẵn sàng → 503, không ghi gì". Cả bộ 1.310 / 1.310 qua (135 tệp), tsc sạch.
+
+*Đưa lên.* Một lần, không migration. KHÔNG có đường lui bằng biến môi trường nữa — lui = đưa lại bản trước. Mốc đã hẹn cho đợt này là từ 09/10 (đường lui đẩy tồn bật 02/10, giữ một tuần); đưa sớm hơn là anh Trung quyết. Sau khi đưa lên xem: `webhook_events` vẫn nhận sự kiện Shopee + TikTok, `stock_push_jobs` không dồn, log web không có dòng `Hàng đợi bền chưa sẵn sàng` ngoài lúc khởi động, log worker có `[Stock-queue] BẬT`.
+
 **O. Lát 7: đơn lỗi vì dữ liệu của chính nó dừng tự thử sau 3 lượt (viết 03/10/2026 sáng)**
 
 Anh Trung duyệt phương án 03/10 ("Ok làm vậy đi em") với bốn điểm: chỉ đếm lỗi riêng đơn; thêm hai cột vào `InvoiceLog`; lỗi do bấm tay đếm chung; không thêm nút thử lại riêng.

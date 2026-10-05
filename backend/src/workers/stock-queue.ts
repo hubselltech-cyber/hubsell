@@ -163,8 +163,7 @@ let sweepTimer: NodeJS.Timeout | null = null;
 
 /**
  * Bật đường hàng đợi bền của việc đẩy tồn ở tiến trình worker: lưới quét + bộ
- * chạy theo gian. Gọi 1 lần lúc khởi động khi STOCK_PUSH_MODE=queue (thay cho
- * vòng quét đường cũ). KHÔNG phụ thuộc pg-boss đã lên hay chưa.
+ * chạy theo gian. Gọi 1 lần lúc khởi động. KHÔNG phụ thuộc pg-boss đã lên hay chưa.
  */
 export function startStockPushScheduler(): void {
   if (sweepTimer) return;

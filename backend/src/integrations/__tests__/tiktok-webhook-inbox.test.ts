@@ -1,17 +1,20 @@
 // ============================================================
 // WEBHOOK TIKTOK QUA HÀNG ĐỢI BỀN pg-boss (giai đoạn 2 bước 2 — docs/HANG-DOI-BEN.md)
 //
-// Cùng cách dựng với tiktok-webhook-queue.test.ts (test đó giữ nguyên, kiểm
-// đường CŨ — chạy khi hàng đợi bền chưa khởi động). Ở đây hàng đợi bền được bật
-// nên route đi đường MỚI: webhook_events + evt.order / evt.auth. Tầng gọi sàn
-// (getOrderDetail) được mock, mọi thứ còn lại chạy thật trên DB dev.
+// Dựng app THẬT trên cổng ngẫu nhiên, bắn payload có CHỮ KÝ THẬT vào
+// /api/webhooks/tiktok với hàng đợi bền đang bật: webhook_events + evt.order /
+// evt.auth. Tầng gọi sàn (getOrderDetail) được mock, mọi thứ còn lại chạy thật
+// trên DB dev. (Bước 6b, 05/10/2026: đường cũ trên bảng tiktok_webhook_logs đã
+// gỡ; các ca của tiktok-webhook-queue.test.ts chuyển về đây.)
 //
-//   1. Đơn AWAITING_SHIPMENT: ack 200, dòng sự kiện SUCCESS, Order tạo, kho trừ đúng.
-//   2. Gửi lại Y NGUYÊN → duplicate, kho không trừ đôi.
-//   3. Sự kiện ủy quyền của shop chưa nối → evt.auth xử lý, dòng SUCCESS kèm ghi chú.
-//   4. Sàn lỗi: dòng giữ PENDING + ghi lỗi; hết lượt → FAILED + cảnh báo chủ shop.
-//   5. Việc ủy quyền hết lượt → dòng FAILED + cảnh báo cấp gian.
-//   6. TIKTOK_WEBHOOK_MODE=legacy → về hàng đợi cũ (tiktok_webhook_logs).
+//   1. Chữ ký sai → 401, không ghi gì. Sự kiện ngoài phạm vi (type 5) → 200 ignored.
+//   2. Đơn AWAITING_SHIPMENT: ack 200, dòng sự kiện SUCCESS, Order tạo, kho trừ đúng.
+//   3. Gửi lại Y NGUYÊN → duplicate, kho không trừ đôi.
+//   4. Đơn CANCELLED (type 11) → hoàn kho một lần.
+//   5. Sự kiện ủy quyền của shop chưa nối → evt.auth xử lý, dòng SUCCESS kèm ghi chú.
+//   6. Sàn lỗi: dòng giữ PENDING + ghi lỗi; hết lượt → FAILED + cảnh báo chủ shop.
+//   7. Việc ủy quyền hết lượt → dòng FAILED + cảnh báo cấp gian.
+//   8. Hàng đợi bền chưa sẵn sàng → 503 (TikTok gửi lại), không ghi gì.
 // ============================================================
 import "./load-env";
 import crypto from "crypto";
@@ -51,11 +54,11 @@ function sign(raw: string): string {
     .digest("hex");
 }
 
-async function postWebhook(body: unknown) {
+async function postWebhook(body: unknown, opts: { badSignature?: boolean } = {}) {
   const raw = JSON.stringify(body);
   const res = await fetch(`${baseUrl}/api/webhooks/tiktok`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: sign(raw) },
+    headers: { "Content-Type": "application/json", Authorization: opts.badSignature ? "deadbeef" : sign(raw) },
     body: raw,
   });
   return { status: res.status, json: (await res.json()) as Record<string, unknown> };
@@ -145,9 +148,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await stopQueue(5000);
-  delete process.env.TIKTOK_WEBHOOK_MODE;
   await prisma.webhookEvent.deleteMany({ where: { source: "TIKTOK", shopId: { in: [SHOP_ID, UNKNOWN_SHOP_ID] } } });
-  await prisma.tiktokWebhookLog.deleteMany({ where: { shopId: SHOP_ID } });
   await prisma.$executeRawUnsafe(
     `DELETE FROM pgboss.job WHERE name IN ('evt.order', 'evt.auth', 'evt.dead') AND data->>'shopId' IN ($1, $2)`,
     SHOP_ID,
@@ -158,6 +159,15 @@ afterAll(async () => {
 });
 
 describe("Webhook TikTok — hộp thư đến + hàng đợi bền pg-boss", () => {
+  it("chữ ký sai → 401; sự kiện ngoài phạm vi (type 5 sản phẩm) → 200 ignored; cả hai không ghi gì", async () => {
+    const bad = await postWebhook(orderEvent("BAD-SIG", "AWAITING_SHIPMENT", 1_699_999_000_000), { badSignature: true });
+    expect(bad.status).toBe(401);
+    const ignored = await postWebhook({ type: 5, shop_id: SHOP_ID, timestamp: 1, data: { product_id: "p1", status: "ACTIVATE" } });
+    expect(ignored.status).toBe(200);
+    expect(ignored.json.ignored).toBe(true);
+    expect(await eventsOf({ shopId: SHOP_ID })).toHaveLength(0);
+  });
+
   it("đơn AWAITING_SHIPMENT: sự kiện SUCCESS, Order tạo mới, kho trừ đúng; gửi lại y nguyên không trừ đôi", async () => {
     const orderId = "TTKQ-1001";
     mockOrder(orderId, "AWAITING_SHIPMENT", 2);
@@ -169,16 +179,41 @@ describe("Webhook TikTok — hộp thư đến + hàng đợi bền pg-boss", ()
     const [row] = await waitForEvents({ shopId: SHOP_ID, entityId: orderId }, (rows) => rows.length === 1 && rows[0].status === WebhookJobStatus.SUCCESS);
     expect(row.eventType).toBe("1");
     expect(row.attempts).toBe(1);
-    expect(await prisma.order.findFirst({ where: { channelId, orderCode: orderId } })).not.toBeNull();
+    const order = await prisma.order.findFirst({ where: { channelId, orderCode: orderId }, include: { items: true } });
+    expect(order).not.toBeNull();
+    expect(order!.shippingStatus).toBe("PENDING");
+    expect(Number(order!.totalAmount)).toBe(300000);
+    // 2 line_items cùng SKU gộp thành 1 dòng qty 2 (202309 tách theo đơn vị).
+    expect(order!.items).toHaveLength(1);
+    expect(order!.items[0].quantity).toBe(2);
+    expect(order!.stockDeductedAt).not.toBeNull();
     expect(await stockNow()).toBe(8);
-    // Đường mới không ghi gì vào bảng hàng đợi cũ.
-    expect(await prisma.tiktokWebhookLog.count({ where: { shopId: SHOP_ID } })).toBe(0);
 
     const again = await postWebhook(body);
     expect(again.json).toMatchObject({ queued: false, duplicate: true });
     await sleep(800);
     expect(await eventsOf({ shopId: SHOP_ID, entityId: orderId })).toHaveLength(1);
     expect(await stockNow()).toBe(8);
+  });
+
+  it("đơn CANCELLED (type 11) → hoàn kho một lần", async () => {
+    const orderId = "TTKQ-1001";
+    mockOrder(orderId, "CANCELLED", 2);
+    const res = await postWebhook({
+      type: 11,
+      shop_id: SHOP_ID,
+      timestamp: 2,
+      data: { order_id: orderId, cancel_id: "c1", cancel_status: "CANCELLATION_REQUEST_SUCCESS" },
+    });
+    expect(res.status).toBe(200);
+    const rows = await waitForEvents(
+      { shopId: SHOP_ID, entityId: orderId },
+      (r) => r.length === 2 && r.every((x) => x.status === WebhookJobStatus.SUCCESS)
+    );
+    expect(rows[1].eventType).toBe("11");
+    const order = await prisma.order.findFirstOrThrow({ where: { channelId, orderCode: orderId } });
+    expect(order.shippingStatus).toBe("CANCELLED");
+    expect(await stockNow()).toBe(10);
   });
 
   it("sự kiện ủy quyền của shop chưa nối: evt.auth xử lý, dòng SUCCESS kèm ghi chú", async () => {
@@ -238,13 +273,15 @@ describe("Webhook TikTok — hộp thư đến + hàng đợi bền pg-boss", ()
     expect(await prisma.inventorySyncAlert.count({ where: { channelId, orderSn: null } })).toBe(1);
   });
 
-  it("TIKTOK_WEBHOOK_MODE=legacy → về hàng đợi cũ tiktok_webhook_logs, không ghi hộp thư đến", async () => {
+  it("hàng đợi bền chưa sẵn sàng → 503 để TikTok gửi lại, không ghi sự kiện", async () => {
+    // Ca cuối của tệp: tắt hẳn hàng đợi (như vài giây đầu lúc tiến trình khởi động).
+    await stopQueue(5000);
     const orderId = "TTKQ-1003";
-    process.env.TIKTOK_WEBHOOK_MODE = "legacy";
     const res = await postWebhook(orderEvent(orderId, "AWAITING_SHIPMENT", 1_700_000_200_000));
-    delete process.env.TIKTOK_WEBHOOK_MODE;
-    expect(res.json).toMatchObject({ ok: true, queued: true, duplicate: false });
-    expect(await prisma.tiktokWebhookLog.count({ where: { shopId: SHOP_ID, orderId } })).toBe(1);
+    expect(res.status).toBe(503);
     expect(await eventsOf({ shopId: SHOP_ID, entityId: orderId })).toHaveLength(0);
+    // Sự kiện ngoài phạm vi vẫn được ack 200 dù hàng đợi chưa lên.
+    const ignored = await postWebhook({ type: 5, shop_id: SHOP_ID, timestamp: 3, data: {} });
+    expect(ignored.status).toBe(200);
   });
 });

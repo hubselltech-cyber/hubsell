@@ -26,7 +26,6 @@ import {
 } from "../order-stock";
 import { stageStockPush, type StockPushTicket } from "../inventory-push";
 import type { StockSyncRequest } from "./inventory-sync";
-import { SHOPEE_PUSH_CODE, type ShopeePushPayload } from "./webhook";
 import {
   getAccessToken,
   getOrderDetail,
@@ -971,51 +970,4 @@ export async function processShopeeAuthorizationEvent(
     });
   }
   return { status };
-}
-
-/**
- * Bộ chia sự kiện cho HÀNG ĐỢI BỀN webhook (worker gọi từng job FIFO).
- * Ném lỗi = báo hàng đợi retry (lỗi tạm thời); các trường hợp "không có gì để
- * làm" (shop chưa nối, thiếu order_sn...) thì nuốt êm — retry cũng vô ích.
- *
- * Trả về yêu cầu đồng bộ tồn (nếu kho có biến động) để worker đẩy tồn mới lên
- * sàn SAU khi transaction đơn hàng đã commit — tách bạch: lỗi đẩy sàn có retry
- * + cảnh báo riêng, không làm job đơn hàng chạy lại.
- */
-export async function dispatchShopeeWebhookEvent(
-  payload: ShopeePushPayload
-): Promise<StockPushTicket | null> {
-  const code = Number(payload.code);
-  const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
-  if (!shopId) return null;
-
-  if (
-    code === SHOPEE_PUSH_CODE.AUTHORIZATION ||
-    code === SHOPEE_PUSH_CODE.DEAUTHORIZATION
-  ) {
-    const r = await processShopeeAuthorizationEvent(shopId);
-    console.log(`[Webhook Shopee] Uỷ quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
-    return null;
-  }
-
-  if (code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.TRACKING_NO) {
-    const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "");
-    if (!orderSn) return null;
-    const channel = await findShopeeChannelByShopId(shopId);
-    if (!channel) return null;
-    // Push code 4 mang sẵn mã vận đơn — đọc phòng thủ cả hai kiểu đặt tên.
-    const trackingNo = String(
-      payload.data?.trackingno ?? payload.data?.tracking_no ?? ""
-    ).trim();
-    const result = await processShopeeOrderEvent(channel, orderSn, {
-      trackingNo: trackingNo || undefined,
-    });
-    console.log(
-      `[Webhook Shopee] code=${code} đơn ${orderSn} (shop ${shopId}) →`,
-      JSON.stringify({ ...result, stockTicket: undefined, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
-    );
-    return result.stockTicket ?? null;
-  }
-
-  return null;
 }

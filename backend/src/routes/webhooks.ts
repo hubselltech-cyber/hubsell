@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
 import { InventoryLogType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { applyStockDelta } from "../services/stock-ledger";
@@ -12,7 +12,6 @@ import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { verifyWebhookSignature } from "../integrations/tiktok/client";
 import {
   classifyTiktokEvent,
-  enqueueTiktokWebhook,
   tiktokPayloadOrderId,
   type TiktokWebhookPayload,
 } from "../integrations/tiktok/webhook-queue";
@@ -22,12 +21,9 @@ import {
   verifyShopeeWebhookSignature,
   type ShopeePushPayload,
 } from "../integrations/shopee/webhook";
-import { enqueueShopeeWebhook } from "../integrations/shopee/webhook-queue";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import {
-  findLazadaChannelsBySellerId,
   LAZADA_MSG_ORDER,
-  processLazadaOrderPush,
   verifyLazadaWebhookSignature,
   type LazadaPushPayload,
 } from "../integrations/lazada/webhook";
@@ -47,34 +43,21 @@ import { recordAuthEvent, recordOrderEvent } from "../services/webhook-inbox";
 const router = Router();
 
 /**
- * Đường xử lý webhook Lazada: "queue" (mặc định từ giai đoạn 2) = ghi hộp thư
- * đến + hàng đợi bền; "inline" = đường cũ, ack rồi xử lý trong RAM của web.
+ * Webhook ba sàn CHỈ có một đường: ghi webhook_events + xếp việc pg-boss trong
+ * một giao dịch rồi ack (docs/HANG-DOI-BEN.md). Hàng đợi bền chưa sẵn sàng (vài
+ * giây đầu lúc tiến trình khởi động, hoặc pg-boss không lên được) thì trả 503 để
+ * sàn tự gửi lại; vòng quét đơn định kỳ vẫn là lưới. Đường cũ (bảng
+ * shopee_webhook_logs / tiktok_webhook_logs, Lazada xử lý trong RAM sau ack) đã
+ * gỡ ở bước 6b — anh Trung chốt 05/10/2026; từ 01/10 tới lúc gỡ nó không nhận sự
+ * kiện nào trên prod.
  */
-/**
- * Đường xử lý webhook TikTok: "queue" (mặc định từ giai đoạn 2 bước 2) = hộp thư
- * đến + hàng đợi bền pg-boss; "legacy" = hàng đợi cũ trên bảng tiktok_webhook_logs.
- */
-function tiktokWebhookMode(): "queue" | "legacy" {
-  return (process.env.TIKTOK_WEBHOOK_MODE ?? "").trim().toLowerCase() === "legacy" ? "legacy" : "queue";
+function queueNotReady(res: Response, platform: string): void {
+  console.error(`[Webhook ${platform}] Hàng đợi bền chưa sẵn sàng — trả 503 để sàn gửi lại`);
+  res.status(503).json({ error: "Máy chủ chưa sẵn sàng nhận sự kiện, hãy gửi lại" });
 }
 
-/**
- * Đường xử lý webhook Shopee: "queue" (mặc định từ giai đoạn 2 bước 3) = hộp thư
- * đến + hàng đợi bền pg-boss; "legacy" = hàng đợi cũ trên bảng shopee_webhook_logs.
- * Đã đưa lên hai lần (bài học lúc chuyển TikTok, docs mục 4.3): bản 0e9c86d cho
- * worker biết xử lý việc Shopee trước, bản này mới đổi mặc định ở web.
- */
-function shopeeWebhookMode(): "queue" | "legacy" {
-  return (process.env.SHOPEE_WEBHOOK_MODE ?? "").trim().toLowerCase() === "legacy" ? "legacy" : "queue";
-}
-
-function lazadaWebhookMode(): "queue" | "inline" {
-  return (process.env.LAZADA_WEBHOOK_MODE ?? "").trim().toLowerCase() === "inline" ? "inline" : "queue";
-}
-
-// Route này CHỈ ENQUEUE vào hàng đợi bền (DB). Worker tiêu thụ hàng đợi
-// (Shopee + TikTok + MISA) khởi động ở workers/index.ts theo vai HUBSELL_ROLE
-// (12/09) — tiến trình web thuần không chạy worker nữa.
+// Route này CHỈ ghi nhận sự kiện; worker (workers/event-queue.ts) xử lý. Webhook
+// MISA còn đi hàng đợi riêng trên bảng misa_webhook_logs (gỡ ở bước 6c).
 
 interface MockOrderItem {
   channelSku: string;
@@ -308,10 +291,8 @@ router.post("/mock-order", async (req, res, next) => {
 // ủy quyền. Endpoint CÔNG KHAI (không JWT) — an toàn dựa vào CHỮ KÝ trên body
 // thô (Authorization = HMAC-SHA256(app_secret, app_key + raw body)).
 //
-// Từ 16/09/2026 route CHỈ verify chữ ký + ghi vào HÀNG ĐỢI BỀN (một INSERT)
-// rồi ack 200; worker tiktok/webhook-queue.ts kéo chi tiết đơn, upsert,
-// trừ/hoàn kho, retry khi lỗi tạm thời. Trước đó xử lý đồng bộ trong request:
-// restart giữa chừng là mất sự kiện, sàn gửi lại thì trùng.
+// Route CHỈ verify chữ ký + ghi vào hàng đợi bền rồi ack 200; worker kéo chi
+// tiết đơn, upsert, trừ/hoàn kho, thử lại khi lỗi tạm thời.
 //
 // Payload (rút gọn): { type, tts_notification_id, shop_id, timestamp,
 //                      data: { order_id, order_status, ... } }
@@ -345,45 +326,32 @@ router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
   //    docs/HANG-DOI-BEN.md): ghi webhook_events + xếp việc trong một giao dịch
   //    rồi ack. Sự kiện đơn vào evt.order (gộp theo khóa sàn:shop:đơn — khóa
   //    theo đơn giờ đúng trên nhiều tiến trình, trước là Set trong RAM); sự kiện
-  //    ủy quyền vào evt.auth. Ghi lỗi → 500 để TikTok gửi lại.
-  //    Hàng đợi chưa sẵn sàng, hoặc TIKTOK_WEBHOOK_MODE=legacy → hàng đợi cũ
-  //    (tiktok_webhook_logs) bên dưới; worker cũ vẫn chạy để vét bảng cũ.
-  if (tiktokWebhookMode() === "queue" && isQueueReady()) {
-    try {
-      const r =
-        kind === "order"
-          ? await recordOrderEvent({
-              source: "TIKTOK",
-              eventType: String(payload.type),
-              shopId,
-              orderId: tiktokPayloadOrderId(payload),
-              rawBody: raw,
-              payload,
-            })
-          : await recordAuthEvent({
-              source: "TIKTOK",
-              eventType: String(payload.type),
-              shopId,
-              rawBody: raw,
-              payload,
-            });
-      res.status(200).json({ ok: true, type: payload.type, queued: r.queued, duplicate: r.duplicate });
-    } catch (err) {
-      console.error("[Webhook TikTok] Không ghi được vào hàng đợi bền:", err);
-      res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
-    }
+  //    ủy quyền vào evt.auth. Ghi lỗi → 500, hàng đợi chưa sẵn sàng → 503: TikTok gửi lại.
+  if (!isQueueReady()) {
+    queueNotReady(res, "TikTok");
     return;
   }
-
-  // 3') HÀNG ĐỢI CŨ: ghi tiktok_webhook_logs rồi ack 200; worker cũ xử lý sau.
-  //    Dedup bền theo hash raw body chặn bản gửi lại y nguyên; sự kiện lọt lưới
-  //    vẫn an toàn nhờ mỗi job kéo lại trạng thái mới nhất từ sàn + upsert idempotent.
   try {
-    const { queued, duplicate } = await enqueueTiktokWebhook(raw, payload);
-    res.status(200).json({ ok: true, type: payload.type, queued, duplicate });
+    const r =
+      kind === "order"
+        ? await recordOrderEvent({
+            source: "TIKTOK",
+            eventType: String(payload.type),
+            shopId,
+            orderId: tiktokPayloadOrderId(payload),
+            rawBody: raw,
+            payload,
+          })
+        : await recordAuthEvent({
+            source: "TIKTOK",
+            eventType: String(payload.type),
+            shopId,
+            rawBody: raw,
+            payload,
+          });
+    res.status(200).json({ ok: true, type: payload.type, queued: r.queued, duplicate: r.duplicate });
   } catch (err) {
-    // Không ghi nổi vào hàng đợi (DB sự cố) → 500 để TikTok tự gửi lại sau.
-    console.error("[Webhook TikTok] Không ghi được vào hàng đợi:", err);
+    console.error("[Webhook TikTok] Không ghi được vào hàng đợi bền:", err);
     res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
   }
 });
@@ -395,7 +363,7 @@ router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
 // 5 (thay đổi uỷ quyền). Yêu cầu khắt khe của Shopee: ack 200 trong <3 GIÂY,
 // chậm nhiều lần sẽ bị block push. Vì vậy route này CHỈ verify chữ ký rồi ack
 // ngay; toàn bộ xử lý DB/API (kéo chi tiết đơn, upsert, trừ/hoàn kho) chạy ở
-// hàng đợi nền trong integrations/shopee/webhook.ts.
+// worker của hàng đợi bền (workers/event-queue.ts).
 //
 // Chữ ký: header `Authorization` = HMAC-SHA256(partner_key, url + "|" + RAW
 // body). Bắt buộc kiểm trên req.rawBody (đã giữ ở app.ts) — body qua JSON.parse
@@ -448,49 +416,36 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
   //    (~10 ms, hạn ack của Shopee là 3 giây) rồi ack. Sự kiện đơn (code 3, 4)
   //    vào evt.order — gộp theo khóa sàn:shop:đơn, nhiều việc chạy song song
   //    (hàng đợi cũ chỉ 1 luồng); mã vận đơn của push code 4 đi kèm việc. Sự kiện
-  //    ủy quyền (code 1, 2) vào evt.auth. Ghi lỗi → 500 để Shopee gửi lại.
-  //    Hàng đợi chưa sẵn sàng, hoặc SHOPEE_WEBHOOK_MODE=legacy → hàng đợi cũ
-  //    (shopee_webhook_logs) bên dưới; worker cũ vẫn chạy để vét bảng cũ và xử
-  //    lý việc đối soát tồn.
-  if (shopeeWebhookMode() === "queue" && isQueueReady()) {
-    const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
-    const isOrderEvent = code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.TRACKING_NO;
-    const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "").trim();
-    // Thiếu định danh thì không có gì để làm (hàng đợi cũ cũng bỏ qua êm) → ack luôn.
-    if (!shopId || (isOrderEvent && !orderSn)) {
-      res.status(200).json({ ok: true, ignored: true, code });
-      return;
-    }
-    try {
-      const trackingNo = String(payload.data?.trackingno ?? payload.data?.tracking_no ?? "").trim();
-      const r = isOrderEvent
-        ? await recordOrderEvent({
-            source: "SHOPEE",
-            eventType: String(code),
-            shopId,
-            orderId: orderSn,
-            ...(trackingNo ? { trackingNo } : {}),
-            rawBody: raw,
-            payload,
-          })
-        : await recordAuthEvent({ source: "SHOPEE", eventType: String(code), shopId, rawBody: raw, payload });
-      res.status(200).json({ ok: true, code, queued: r.queued, duplicate: r.duplicate });
-    } catch (err) {
-      console.error("[Webhook Shopee] Không ghi được vào hàng đợi bền:", err);
-      res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
-    }
+  //    ủy quyền (code 1, 2) vào evt.auth. Ghi lỗi → 500, hàng đợi chưa sẵn sàng
+  //    → 503: Shopee gửi lại.
+  if (!isQueueReady()) {
+    queueNotReady(res, "Shopee");
     return;
   }
-
-  // 3') HÀNG ĐỢI CŨ: ghi shopee_webhook_logs (một INSERT) rồi ack 200; worker cũ
-  //    xử lý sau. Dedup bền theo hash raw body chặn bản retry y nguyên; sự kiện
-  //    lọt lưới vẫn an toàn nhờ upsert + mốc kho idempotent.
+  const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
+  const isOrderEvent = code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.TRACKING_NO;
+  const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "").trim();
+  // Thiếu định danh thì không có gì để làm → ack luôn.
+  if (!shopId || (isOrderEvent && !orderSn)) {
+    res.status(200).json({ ok: true, ignored: true, code });
+    return;
+  }
   try {
-    const { queued, duplicate } = await enqueueShopeeWebhook(raw, payload);
-    res.status(200).json({ ok: true, code, queued, duplicate });
+    const trackingNo = String(payload.data?.trackingno ?? payload.data?.tracking_no ?? "").trim();
+    const r = isOrderEvent
+      ? await recordOrderEvent({
+          source: "SHOPEE",
+          eventType: String(code),
+          shopId,
+          orderId: orderSn,
+          ...(trackingNo ? { trackingNo } : {}),
+          rawBody: raw,
+          payload,
+        })
+      : await recordAuthEvent({ source: "SHOPEE", eventType: String(code), shopId, rawBody: raw, payload });
+    res.status(200).json({ ok: true, code, queued: r.queued, duplicate: r.duplicate });
   } catch (err) {
-    // Không ghi nổi vào hàng đợi (DB sự cố) → 500 để Shopee tự gửi lại sau.
-    console.error("[Webhook Shopee] Không ghi được vào hàng đợi:", err);
+    console.error("[Webhook Shopee] Không ghi được vào hàng đợi bền:", err);
     res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
   }
 });
@@ -505,10 +460,7 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
 // Từ 01/10/2026 (giai đoạn 2 kiến trúc quy mô, docs/HANG-DOI-BEN.md): route
 // verify chữ ký, GHI sự kiện vào webhook_events + xếp việc evt.order trong một
 // giao dịch (đo ~10 ms), rồi mới ack; worker (workers/event-queue.ts) gọi API +
-// upsert DB. Trước đó route ack rồi xử lý fire-and-forget trong RAM của web:
-// deploy / sập giữa chừng là mất sự kiện, chỉ còn vòng quét định kỳ vét lại.
-// Đường cũ còn giữ làm đường lui (LAZADA_WEBHOOK_MODE=inline) và khi hàng đợi
-// chưa sẵn sàng.
+// upsert DB.
 //
 // Chữ ký: header `Authorization` = hex HMAC-SHA256(app_secret, app_key + RAW
 // body) — kiểm trên req.rawBody. Sai chữ ký → 401, không xử lý gì.
@@ -542,56 +494,31 @@ router.post("/lazada", async (req: Request & { rawBody?: Buffer }, res) => {
   //    sự kiện + xếp việc trong MỘT giao dịch rồi mới ack; worker xử lý sau.
   //    Deploy / sập giữa chừng không còn làm mất sự kiện. Đo trên Supabase: ghi
   //    trong giao dịch ~10 ms, nằm gọn trong hạn 500 ms của Lazada.
-  //    · Hàng đợi chưa sẵn sàng → rơi về đường cũ bên dưới (ack rồi xử lý trong RAM).
-  //    · Hàng đợi sẵn sàng mà ghi lỗi (database sự cố) → 500 để Lazada tự gửi lại
-  //      (mỗi 30 phút, tối đa 12 lần) thay vì ack rồi mất.
-  //    Đường lui: LAZADA_WEBHOOK_MODE=inline (giữ tới khi dọn giai đoạn 2).
-  if (lazadaWebhookMode() === "queue" && isQueueReady()) {
-    const started = Date.now();
-    try {
-      const r = await recordOrderEvent({
-        source: "LAZADA",
-        eventType: String(payload.message_type),
-        shopId: sellerId,
-        orderId,
-        rawBody: raw,
-        payload,
-      });
-      res.status(200).json({ ok: true, orderId, queued: r.queued, duplicate: r.duplicate });
-      console.log(
-        `[Webhook Lazada] đơn ${orderId} (${payload.data?.order_status ?? "?"}) → hàng đợi: ` +
-          `${r.duplicate ? "gửi trùng, bỏ qua" : r.queued ? "việc mới" : "gộp vào việc đang chờ"} (${Date.now() - started} ms)`
-      );
-    } catch (err) {
-      console.error(`[Webhook Lazada] Không ghi được đơn ${orderId} vào hàng đợi:`, err);
-      res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
-    }
+  //    · Hàng đợi chưa sẵn sàng → 503; ghi lỗi (database sự cố) → 500. Cả hai để
+  //      Lazada tự gửi lại (mỗi 30 phút, tối đa 12 lần) thay vì ack rồi mất.
+  if (!isQueueReady()) {
+    queueNotReady(res, "Lazada");
     return;
   }
-
-  // 3') ĐƯỜNG CŨ: ACK NGAY trong hạn 500ms — mọi việc còn lại chạy nền sau phản hồi.
-  res.status(200).json({ ok: true, orderId });
-
-  setImmediate(async () => {
-    try {
-      const channels = await findLazadaChannelsBySellerId(sellerId);
-      if (channels.length === 0) {
-        console.warn(`[Webhook Lazada] seller ${sellerId} chưa nối gian nào — bỏ qua đơn ${orderId}`);
-        return;
-      }
-      for (const channel of channels) {
-        const result = await processLazadaOrderPush(channel, orderId);
-        console.log(
-          `[Webhook Lazada] Gian "${channel.shopName}" đơn ${orderId} (${payload.data?.order_status ?? "?"}):`,
-          JSON.stringify(result)
-        );
-      }
-    } catch (err) {
-      // Đã ack nên không còn đường trả lỗi cho Lazada — ghi log để truy vết;
-      // đơn này sẽ được cron auto-sync 10 phút vét lại.
-      console.error(`[Webhook Lazada] Lỗi xử lý nền đơn ${orderId}:`, err);
-    }
-  });
+  const started = Date.now();
+  try {
+    const r = await recordOrderEvent({
+      source: "LAZADA",
+      eventType: String(payload.message_type),
+      shopId: sellerId,
+      orderId,
+      rawBody: raw,
+      payload,
+    });
+    res.status(200).json({ ok: true, orderId, queued: r.queued, duplicate: r.duplicate });
+    console.log(
+      `[Webhook Lazada] đơn ${orderId} (${payload.data?.order_status ?? "?"}) → hàng đợi: ` +
+        `${r.duplicate ? "gửi trùng, bỏ qua" : r.queued ? "việc mới" : "gộp vào việc đang chờ"} (${Date.now() - started} ms)`
+    );
+  } catch (err) {
+    console.error(`[Webhook Lazada] Không ghi được đơn ${orderId} vào hàng đợi:`, err);
+    res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
+  }
 });
 
 // ============================================================

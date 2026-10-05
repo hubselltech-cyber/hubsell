@@ -12,7 +12,8 @@
 //   4. Gửi lại Y NGUYÊN → duplicate, vẫn một dòng, kho không trừ đôi.
 //   5. Ba sự kiện dồn dập của một đơn → mọi dòng SUCCESS, số lượt kéo đơn ít hơn số sự kiện.
 //   6. Sàn lỗi: dòng giữ PENDING + ghi lỗi, việc chờ thử lại; hết lượt → FAILED + cảnh báo.
-//   7. LAZADA_WEBHOOK_MODE=inline hoặc hàng đợi chưa sẵn sàng → đường cũ, không ghi hộp thư đến.
+//   7. Hàng đợi bền chưa sẵn sàng → 503 (Lazada gửi lại), không ghi gì. (Đường cũ xử lý
+//      trong RAM sau ack đã gỡ ở bước 6b, 05/10/2026.)
 // ============================================================
 import "./load-env";
 import crypto from "crypto";
@@ -146,7 +147,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await stopQueue(5000);
-  delete process.env.LAZADA_WEBHOOK_MODE;
   await prisma.webhookEvent.deleteMany({ where: { source: "LAZADA", shopId: SELLER_ID } });
   // Việc test để lại trong pg-boss (kể cả việc đang chờ thử lại) — dọn theo tiền tố khóa.
   await prisma.$executeRawUnsafe(
@@ -285,22 +285,15 @@ describe("Webhook Lazada — hộp thư đến + hàng đợi bền", () => {
     await prisma.$executeRawUnsafe(`DELETE FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`, `SAN_LA:${SELLER_ID}:900008`);
   });
 
-  it("LAZADA_WEBHOOK_MODE=inline hoặc hàng đợi chưa sẵn sàng → đường cũ, không ghi hộp thư đến", async () => {
-    mockOrder("900006", "pending");
-    process.env.LAZADA_WEBHOOK_MODE = "inline";
-    const inline = await postWebhook(orderEvent("900006", "pending", 1_700_000_300_000));
-    expect(inline.status).toBe(200);
-    expect(inline.json).toEqual({ ok: true, orderId: "900006" });
-    delete process.env.LAZADA_WEBHOOK_MODE;
-
+  it("hàng đợi bền chưa sẵn sàng → 503 để Lazada gửi lại, không ghi sự kiện, không tạo đơn", async () => {
+    // Ca cuối của tệp: tắt hẳn hàng đợi (như vài giây đầu lúc tiến trình khởi động).
     await stopQueue(5000);
     mockOrder("900007", "pending");
     const noQueue = await postWebhook(orderEvent("900007", "pending", 1_700_000_400_000));
-    expect(noQueue.json).toEqual({ ok: true, orderId: "900007" });
+    expect(noQueue.status).toBe(503);
 
-    await sleep(800); // đường cũ xử lý nền sau khi ack
-    expect(await eventsOf("900006")).toHaveLength(0);
+    await sleep(500);
     expect(await eventsOf("900007")).toHaveLength(0);
-    expect(await prisma.order.count({ where: { channelId, orderCode: { in: ["900006", "900007"] } } })).toBe(2);
+    expect(await prisma.order.count({ where: { channelId, orderCode: "900007" } })).toBe(0);
   });
 });
