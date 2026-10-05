@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 05/10/2026 (chiều) — MOBILE: Tổng quan đọc Doanh thu đúng ô Tài chính (web sửa theo) + GỢI Ý CHẠY ADS thành tab riêng trên trang Quảng cáo Shopee (anh Trung chốt từng bước qua bản mô phỏng; nhánh `claude/determined-carson-9yjicg`, CHƯA build APK)
+
+- **Tổng quan sai "Doanh thu hôm nay" (anh phát hiện trên app):** hero đọc `totalRevenue` của `/api/analytics` = Σ giá trị đơn gốc (`analytics.ts:172`) = thẻ "Tổng giá trị sản phẩm" bên Tài chính. Sửa `OverviewPage.tsx`: 3 số tiền (Doanh thu · Chi phí · Lợi nhuận) đọc `breakdown` của `/api/finance/analytics` hôm nay (+ hôm qua cho ▲/▼) — đúng 4 thẻ Tài chính; đơn / phễu / donut / trend vẫn `/api/analytics`. Tâm donut ghi "giá trị đơn hôm nay". **Web Tổng quan sửa cùng cách** (`frontend/src/app/page.tsx`, chủ shop; SALES giữ giá trị gốc vì không có quyền finance). Lưu ý: `/api/finance` có `requirePlanUnlocked` → shop hết hạn gói giờ thấy lỗi ngay Tổng quan app (Tài chính vốn đã vậy).
+- **Gợi ý chạy Ads trên app** (`components/AdsRecommendSection.tsx`, cùng backend `recommendations` / `refresh-item` / `recommendations/create` của web): là **TAB thứ 4** "Gợi ý (N)" cạnh Đang chạy / Cần xử lý / Tất cả — 4 tab `flex-1` luôn một hàng kể cả 360px (nhãn ngắn vì 4 cột chỉ ~77px). Khối tải nền khi ở tab khác để đếm số; không theo nhịp 60s. Chỉ liệt kê Nên chạy ngay / Thử nhỏ, 3 dòng + Xem thêm; Chưa nên / Đang chạy chỉ đếm. Thẻ: nhãn + điểm, tên SP 3 dòng, 3 số (Cần đạt · Sàn đang chạy · Ngân sách/ngày) — KHÔNG câu lý do, KHÔNG vạch viền trái (anh bỏ cả hai). Hộp trượt lên: kết luận → việc cần làm trước → Điều kiện → Chấm điểm → mục tiêu ROAS → ngân sách → xác nhận có số → tạo (lệnh thật lên Shopee). Không đưa lên app: nút "Lấy số của sàn" (lượt nền 1–2'), tìm kiếm, phân trang. Lazada không có tab này. Bản mô phỏng HTML anh duyệt: claude.ai/artifact/WSihN4k83YgJZsAjk4aHk7.
+- **Kiểm:** tsc mobile + frontend sạch; `expo lint` = 30 lỗi `set-state-in-effect` có sẵn, file mới 0 lỗi; eslint `page.tsx` sạch. (`npm ci` frontend trong môi trường cloud bị chặn gói `xlsx` từ cdn.sheetjs.com — cài tạm bản registry để typecheck, không đổi lockfile.)
+- **Còn lại:** gộp nhánh vào master → `eas build -p android --profile preview` (EAS chưa đăng nhập trong phiên cloud) → anh thử: Tổng quan ↔ Tài chính "Hôm nay" khớp số; tab Gợi ý bấm tới bước xác nhận.
+
+---
+
 ## Phiên 05/10/2026 (sáng, 2) — BƯỚC 6 giai đoạn 2: thời hạn chờ gọi sàn 30 giây (6a) + gỡ mã đường cũ webhook / đẩy tồn (6b lần một) — đã commit trên nhánh, CHƯA ĐẨY (anh Trung: "Làm luôn 2 việc em nhé")
 
 - **Ba việc nhắc tới hạn đã làm:** (1) số đo `[SanHTTP]` 02–05/10 → trình 30 giây, anh duyệt; (2) Supabase Observability sau bản sửa 652e8ec: swap đi ngang 340–470 MB, bộ nhớ cam kết 1,30–1,39 GB / trần 1,46 GB, không lần nào vọt như 30/09 → chưa có căn cứ nâng Small; (3) phí Pay Per Sale Shopee: 1.245 đơn đã có trường, 0 đơn khác 0, 427 đơn đã quyết toán đều về đúng số ước tính → chưa gian nào bị thu.
