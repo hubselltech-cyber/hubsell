@@ -590,3 +590,82 @@ export interface AdsOverviewResponse {
   } | null;
   campaigns: AdsCampaignDto[];
 }
+
+// ---------- GỢI Ý CHẠY ADS theo sản phẩm (Shopee) — chép từ frontend/src/lib/api.ts ----------
+
+/** run_now = nên chạy ngay · test_small = thử nhỏ · not_yet = chưa nên · running = đang chạy ads. */
+export type AdsRecommendTier = "run_now" | "test_small" | "not_yet" | "running";
+
+export interface AdsRecommendGate {
+  key: "margin" | "feasible" | "stock" | "allowed" | "social";
+  ok: boolean;
+  text: string;
+  /** Trượt cổng thì làm gì trước. */
+  todo?: string;
+}
+
+export interface AdsRecommendFactor {
+  key: "headroom" | "cvr" | "demand" | "cpc" | "momentum" | "history";
+  label: string;
+  points: number;
+  max: number;
+  text: string;
+}
+
+export interface AdsRecommendProposal {
+  /** Đẩy số = mức an toàn · Cân bằng = giữa · Giữ lãi = ROAS thị trường. */
+  targets: { push: number; balanced: number; keep: number };
+  recommended: "push" | "balanced" | "keep";
+  dailyBudget: number;
+  budgetNote: string;
+  maxTestSpend7d: number;
+}
+
+export interface AdsRecommendationRow {
+  itemId: string;
+  productName: string;
+  itemSku: string | null;
+  imageUrl: string | null;
+  price: number;
+  tier: AdsRecommendTier;
+  score: number;
+  margin: number | null;
+  breakevenRoas: number | null;
+  /** Hòa vốn × hệ số an toàn — chạy từ mức này trở lên mới có lãi thật. */
+  safeRoas: number | null;
+  /** ROAS thị trường của sàn ÷ hòa vốn của SP. */
+  headroom: number | null;
+  organicCvr: number | null;
+  daysOfCover: number | null;
+  orders30d: number;
+  revenue30d: number;
+  units30d: number;
+  stockAvailable: number | null;
+  /** Một câu lý do cho dòng. */
+  headline: string;
+  gates: AdsRecommendGate[];
+  factors: AdsRecommendFactor[];
+  /** null = trượt cổng / đang chạy — không có gì để tạo. */
+  proposal: AdsRecommendProposal | null;
+  /** Lát tín hiệu sàn (null = gian chưa đồng bộ tín hiệu cho SP này). */
+  market: {
+    ratingStar: number | null;
+    commentCount: number | null;
+    tags: string[];
+    roiLower: number | null;
+    roiExact: number | null;
+    roiUpper: number | null;
+    kwSearchVolume: number | null;
+  } | null;
+}
+
+/** GET /api/quang-cao/shopee/recommendations?channelId= */
+export interface AdsRecommendationsResponse {
+  rows: AdsRecommendationRow[];
+  counts: Record<AdsRecommendTier, number>;
+  /** Lần đồng bộ tín hiệu sàn gần nhất; null = chưa từng. */
+  signalsSyncedAt: string | null;
+  /** Số SP đang bán bị loại chỉ vì thiếu giá vốn. */
+  missingCostCount?: number;
+  safeRoasFactor: number;
+}

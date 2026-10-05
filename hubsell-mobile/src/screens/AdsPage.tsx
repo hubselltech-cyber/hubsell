@@ -30,6 +30,7 @@ import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { Card } from "@/components/Card";
+import { AdsRecommendSection } from "@/components/AdsRecommendSection";
 import { TABULAR } from "@/theme/tokens";
 
 /**
@@ -37,8 +38,11 @@ import { TABULAR } from "@/theme/tokens";
  * duyệt 04/10 sau khảo sát (docs/KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md): app chỉ
  * trả lời "có chiến dịch nào đang đốt tiền không, và xử lý ngay":
  *   ngữ cảnh + chế độ Trợ lý → dải ví → CẦN XỬ LÝ (trên chỉ số) → 4 số của kỳ
- *   → thẻ chiến dịch → hộp chi tiết có Tạm dừng / Bật lại.
- * Cấu hình quy tắc, tạo chiến dịch, từ khóa, GMV Max cấp shop ở lại web.
+ *   → GỢI Ý CHẠY ADS (Shopee, thêm 05/10) → thẻ chiến dịch → hộp chi tiết có
+ *   Tạm dừng / Bật lại.
+ * Gợi ý chạy Ads là chỗ duy nhất app TẠO chiến dịch (1 SP, từ đề xuất đã tính
+ * sẵn — AdsRecommendSection). Cấu hình quy tắc, tạo chiến dịch tự do, từ khóa,
+ * GMV Max cấp shop ở lại web.
  */
 
 const PLATFORMS: { key: AdsPlatform; label: string; channelName: string }[] = [
@@ -111,6 +115,9 @@ export function AdsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // Tăng mỗi lần kéo xuống làm mới → khối Gợi ý chạy Ads tải lại theo
+  // (khối đó không theo nhịp 60s vì mỗi lần gọi là chấm cả kho SP).
+  const [recoToken, setRecoToken] = useState(0);
   // Số thứ tự lượt tải — đổi sàn/kỳ liên tiếp thì chỉ lượt MỚI NHẤT được ghi.
   const reqSeq = useRef(0);
 
@@ -164,6 +171,8 @@ export function AdsPage() {
   );
   const s = data?.summary ?? null;
   const mode = data?.assistant?.config.autoExecute.mode;
+  // Gian đã nối Hubsell Ads (hoặc sàn không cần) — như shopee-ads-page web.
+  const adsLinked = !data?.adsApp?.required || data.adsApp.status === "ACTIVE";
 
   return (
     <View className="flex-1">
@@ -173,7 +182,10 @@ export function AdsPage() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => load(platform, range, channelId, true)}
+            onRefresh={() => {
+              setRecoToken((t) => t + 1);
+              void load(platform, range, channelId, true);
+            }}
           />
         }
       >
@@ -349,6 +361,16 @@ export function AdsPage() {
                   />
                 </View>
               </>
+            ) : null}
+
+            {/* ===== GỢI Ý CHẠY ADS — chỉ Shopee (backend mới có lệnh tạo cho Shopee) ===== */}
+            {platform === "shopee" && data.selectedChannelId ? (
+              <AdsRecommendSection
+                channelId={data.selectedChannelId}
+                adsLinked={adsLinked}
+                reloadToken={recoToken}
+                onCreated={() => void load(platform, range, channelId, "silent")}
+              />
             ) : null}
 
             {/* ===== DANH SÁCH CHIẾN DỊCH ===== */}

@@ -20,11 +20,16 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 import { hapticTap } from "@/lib/haptics";
-import { fetchOverview } from "@/api/finance";
+import { fetchAnalytics, fetchOverview } from "@/api/finance";
 import { fetchReturnsSummary } from "@/api/warehouse";
 import { ApiError } from "@/api/client";
-import type { ChannelName, OverviewAnalytics, ReturnsSummaryResponse } from "@/types/api";
-import { rangeFor } from "@/lib/dates";
+import type {
+  AnalyticsResponse,
+  ChannelName,
+  OverviewAnalytics,
+  ReturnsSummaryResponse,
+} from "@/types/api";
+import { rangeFor, yesterdayRange } from "@/lib/dates";
 import { compactMoney } from "@/lib/format";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { useAuth } from "@/auth/AuthContext";
@@ -51,12 +56,17 @@ const CONNECT_CHANNEL_URL = "https://app.hubsell.tech/channels";
  * Trả lời 3 câu hỏi buổi sáng: hôm nay bán được bao nhiêu? bao nhiêu đơn đang
  * ở đâu? kênh nào đang gánh? (+ đơn hoàn nào cần để mắt)
  *
- * NGUỒN SỐ = GET /api/analytics?from=hôm nay&to=hôm nay — ĐÚNG endpoint
- * và đúng kỳ của Tổng quan web (frontend/src/app/page.tsx), nên Doanh thu /
- * số đơn / Lợi nhuận dự kiến khớp web từng đồng. Trước 03/10 trang này đọc
- * /realized-pnl (Lãi/Lỗ THỰC HIỆN — chỉ đơn đã giao/đã quyết toán) nên số
- * luôn thấp hơn web và không có đơn mới trong ngày (anh Trung phát hiện khi
- * dùng thử APK).
+ * NGUỒN SỐ — hai endpoint, cùng kỳ "hôm nay":
+ *   · TIỀN (Doanh thu · Tổng chi phí · Lợi nhuận) = GET /api/finance/analytics
+ *     — ĐÚNG 4 thẻ Báo cáo dòng tiền của trang Tài chính (FinancePage), nên
+ *     mở Tài chính chọn "Hôm nay" là khớp từng đồng. Trước 05/10 hero đọc
+ *     totalRevenue của /api/analytics — số đó là GIÁ TRỊ ĐƠN GỐC (= thẻ "Tổng
+ *     giá trị sản phẩm", chưa trừ sàn khấu trừ) nên "Doanh thu hôm nay" cao
+ *     hơn ô Doanh thu bên Tài chính (anh Trung phát hiện 05/10).
+ *   · ĐƠN (số đơn, số món, phễu, đơn theo sàn, trend 14 ngày) = GET
+ *     /api/analytics — như Tổng quan web (frontend/src/app/page.tsx).
+ * Trước 03/10 trang này đọc /realized-pnl (Lãi/Lỗ THỰC HIỆN — chỉ đơn đã
+ * giao/đã quyết toán) nên số luôn thấp hơn web và không có đơn mới trong ngày.
  *
  * Hero "Kết quả hôm nay" là BAND TỐI navy + glow mint — cùng bộ nhận diện với
  * orb Trợ lý và band tối landing (chốt 21/08), giữ nguyên ở cả hai theme.
@@ -108,6 +118,9 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const channelColors = useChannelColors();
   const { width } = useWindowDimensions();
   const [analytics, setAnalytics] = useState<OverviewAnalytics | null>(null);
+  // 4 thẻ Báo cáo dòng tiền hôm nay + hôm qua (để tính ▲/▼ doanh thu)
+  const [money, setMoney] = useState<AnalyticsResponse["breakdown"] | null>(null);
+  const [prevMoney, setPrevMoney] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [returns, setReturns] = useState<ReturnsSummaryResponse["summary"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -129,14 +142,21 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
     if (mode !== "silent") setError("");
     try {
       const { from, to } = rangeFor("today");
-      const [ana, ret] = await Promise.all([
-        // Một lượt lấy đủ: số hôm nay + kỳ trước (hôm qua) để tính ▲/▼ +
-        // trend 14 ngày cho sparkline + phễu + đơn theo sàn cho donut.
+      const yd = yesterdayRange();
+      const [ana, fin, prevFin, ret] = await Promise.all([
+        // Số ĐƠN hôm nay + kỳ trước (hôm qua) để tính ▲/▼ số đơn + trend 14
+        // ngày cho sparkline + phễu + đơn theo sàn cho donut.
         fetchOverview(from, to),
+        // Số TIỀN hôm nay = 4 thẻ Báo cáo dòng tiền (cùng nguồn trang Tài chính).
+        fetchAnalytics(from, to),
+        // Hôm qua chỉ để so ▲/▼ doanh thu — hỏng thì bỏ pill, không che màn.
+        fetchAnalytics(yd.from, yd.to).catch(() => null),
         fetchReturnsSummary(),
       ]);
       if (seq !== reqSeq.current) return;
       setAnalytics(ana);
+      setMoney(fin.breakdown);
+      setPrevMoney(prevFin?.breakdown ?? null);
       setReturns(ret.summary);
       setError("");
       setNoChannel(false);
@@ -191,25 +211,23 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
     revenue: byPlatform.get(ch)?.revenue ?? 0,
   }));
   const returningTotal = (returns?.AWAITING ?? 0) + (returns?.RECEIVED ?? 0);
-  const revenue = analytics?.totalRevenue ?? 0;
-  const netProfit = analytics?.netProfit ?? 0;
+  // Ba số TIỀN đọc từ CÙNG một nguồn với 4 thẻ Tài chính (hôm nay):
+  //   Doanh thu = thẻ "Doanh thu" (giá trị đơn − sàn khấu trừ), KHÔNG phải
+  //   "Tổng giá trị sản phẩm"; Chi phí = thẻ "Chi phí"; Lợi nhuận = thẻ "Lợi
+  //   nhuận ròng tạm tính". Lấy lẻ một số từ nguồn khác là % chiếm / biên lệch.
+  const revenue = money?.revenue.total ?? 0;
+  const netProfit = money?.profit.total ?? 0;
+  const totalExpense = money?.costs.total ?? 0;
+  const prevRevenue = prevMoney?.revenue.total ?? 0;
   const orderCount = analytics?.activeOrderCount ?? 0;
   const itemQuantity = analytics?.itemQuantity ?? 0;
-  const prevRevenue = analytics?.previous?.totalRevenue ?? 0;
   const prevOrders = analytics?.previous?.activeOrderCount ?? 0;
-  // TOÀN BỘ tiền đi ra trong kỳ: giá vốn + phí sàn + chi phí vận hành — cùng
-  // công thức thẻ "Tổng chi phí" web.
-  const totalExpense =
-    (analytics?.totalCost ?? 0) +
-    (analytics?.totalPlatformFee ?? 0) +
-    (analytics?.totalOperatingExpense ?? 0);
   const pct1 = (part: number) =>
     revenue > 0 ? String(Math.round((part / revenue) * 1000) / 10).replace(".", ",") : null;
+  // "Chiếm X% doanh thu" / "biên ròng" — cùng mẫu số với BreakdownTile Tài chính.
   const costRatio = pct1(totalExpense);
-  // Biên lợi nhuận — kỳ trước không trả netProfit nên thẻ lãi hiện biên thay
-  // vì ▲/▼ (đúng như thẻ "Lợi nhuận dự kiến" trên web).
   const margin = pct1(netProfit);
-  const missingCostOrders = analytics?.missingCost?.orderCount ?? 0;
+  const missingCostOrders = money?.profit.missingCost?.orderCount ?? 0;
   // Sparkline lãi/ngày = doanh thu − chi phí trên trend 14 NGÀY — cùng dữ liệu
   // và cùng công thức với đường sóng dưới thẻ "Lợi nhuận dự kiến" web.
   const trendProfits = (analytics?.trend ?? []).map((d) => d.revenue - (d.cost ?? 0));
@@ -326,7 +344,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                       ? `${missingCostOrders} đơn chưa có giá vốn`
                       : margin !== null
                         ? `Biên lợi nhuận ${margin}%`
-                        : "Sau giá vốn, phí sàn & chi phí"}
+                        : "Sau giá vốn & chi phí"}
                   </Text>
                 </View>
               </View>
@@ -352,8 +370,8 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             </View>
           </Animated.View>
 
-          {/* Hai thẻ KPI còn lại của hàng 4 thẻ web: Đơn hàng (+ số món, ▲/▼
-              so hôm qua) và Tổng chi phí (chiếm % doanh thu) */}
+          {/* Hai thẻ KPI: Đơn hàng (+ số món, ▲/▼ so hôm qua — /api/analytics)
+              và Chi phí (= thẻ "Chi phí" Tài chính, chiếm % doanh thu) */}
           <Animated.View
             entering={FadeInDown.duration(280).delay(60)}
             className="mb-3 flex-row gap-2"
@@ -375,7 +393,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               </View>
             </Card>
             <Card className="flex-1 p-3.5">
-              <Text className="text-[11px] text-slate-500 dark:text-slate-400">Tổng chi phí</Text>
+              <Text className="text-[11px] text-slate-500 dark:text-slate-400">Chi phí</Text>
               <Text
                 className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100"
                 style={TABULAR}
@@ -385,7 +403,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               <Text className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
                 {costRatio !== null
                   ? `Chiếm ${costRatio}% doanh thu`
-                  : "Giá vốn + phí sàn + vận hành"}
+                  : "Giá vốn + vận hành + quảng cáo"}
               </Text>
             </Card>
           </Animated.View>
@@ -423,11 +441,14 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Tỷ trọng kênh hôm nay
               </Text>
-              {/* Lát = DOANH THU từng sàn (như bán nguyệt web), không phải số đơn */}
+              {/* Lát = GIÁ TRỊ ĐƠN từng sàn (như bán nguyệt web), không phải số
+                  đơn. Là giá trị gốc chưa trừ sàn khấu trừ (ordersByChannel của
+                  /api/analytics) nên ghi "giá trị đơn", không ghi "doanh thu" để
+                  khỏi lệch với hero phía trên. */}
               <DonutChart
                 size={150}
                 centerLabel={compactMoney(channelTotalRevenue)}
-                centerSub="doanh thu hôm nay"
+                centerSub="giá trị đơn hôm nay"
                 slices={channelRows.map((r) => ({
                   label: CHANNEL_LABEL[r.channel],
                   value: r.revenue,
