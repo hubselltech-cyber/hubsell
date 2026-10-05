@@ -935,6 +935,46 @@ Phải thấy: không dòng nào đang chờ hay đang xử lý; dòng mới nh�
 2. Xóa bảng cũ là mất các dòng nhật ký HỎNG trước ngày chuyển (dòng xong đã tự dọn sau 7 ngày, dòng hỏng giữ 30 ngày). Trang nhật ký HQ khi đó chỉ còn sự kiện từ 01/10. Nếu anh muốn giữ đủ 30 ngày thì lùi lần xóa bảng tới sau 31/10.
 3. Số thời hạn chờ gọi sàn: em trình ngày 04–06/10 theo lịch đã hẹn, không chốt bằng số của một buổi sáng.
 
+**Anh Trung chốt 05/10/2026 ("Làm luôn 2 việc em nhé"):** (1) đồng ý trả 5xx cho sàn khi hàng đợi bền chưa sẵn sàng; (2) lùi lần XÓA hai bảng nhật ký webhook cũ tới sau 31/10 (giữ đủ 30 ngày dòng hỏng), phần gỡ mã làm trước; (3) thời hạn chờ 30 giây.
+
+**Đợt 6a — thời hạn chờ gọi sàn 30 giây (viết 05/10/2026)**
+
+*Số đo (đọc log Render 05/10 09:20, lọc bằng regex trong ô tìm; worker 02/10 02:27 → 05/10 09:20, web 7 ngày).*
+
+| Tiến trình | Sàn | p99 từng nhịp 15 phút | Lệnh lâu nhất | Ghi chú |
+|---|---|---|---|---|
+| worker | Shopee | 1,5–1,9 giây, không nhịp nào tới 3 giây | 15,0 giây | 7 lệnh từ 10 giây trở lên, đều HTTP 200: 6 lần `get_escrow_detail` (10,3 · 12,9 · 13,4 · 15,0 · 15,0 · 15,0 giây), 1 lần `get_tracking_info` 10,0 giây. 51 nhịp có lệnh 3–10 giây |
+| worker | TikTok | 1–2 giây (hai nhịp vọt lên vì lệnh lỗi kết nối) | 10,5 giây, là lệnh LỖI | 11 dòng `LOI ... fetch failed`, 8 dòng dừng ở 10,0–10,5 giây (em hiểu là hạn kết nối 10 giây của Node, chưa kiểm). 20 nhịp có lệnh 3–10 giây |
+| worker | TikTok Ads | rất ít lệnh | 7,1 giây | |
+| worker | Lazada | không có dòng nào | | Không gian Lazada nào đang nối có lưu lượng |
+| web | Shopee | cao nhất 3,8 giây | 4,7 giây | 5 nhịp có lệnh từ 3 giây; không dòng `CHAM` / `LOI` nào |
+| web | TikTok | cao nhất 1,5 giây (50 dòng mới nhất) | 1,5 giây | |
+
+Không cộng được tổng số lệnh (trang log tải 50 dòng mỗi lần); các nhịp đọc được có 1.400–3.300 lệnh Shopee và 150–600 lệnh TikTok mỗi 15 phút ở worker. `qua_han=0` ở mọi dòng.
+
+*Con số.* 30 giây = gấp đôi lệnh hợp lệ chậm nhất (15,0 giây). Hệ số 2 là mặc định em tự chọn, không tài liệu sàn nào cho số này. Ba lần `get_escrow_detail` dừng đúng khoảng 15,01 giây, có thể là trần phía Shopee (chưa kiểm).
+
+*Rà lệnh gọi lại có hại (đọc mã 05/10).* Không client nào tự gọi lại khi lỗi mạng: `withRateLimitRetry` (Shopee), vòng lặp của `callApi` (TikTok) và `throttled` (TikTok Ads) chỉ gọi lại khi sàn báo QUÁ TẢI, tức lệnh chưa được nhận. Lệnh bị cắt ở 30 giây vì thế đi lên nơi gọi như một lỗi mạng thường — loại lỗi nơi gọi đã gặp từ trước (TikTok đang có ~3 lần/ngày). Từng lệnh ghi:
+
+| Lệnh ghi | Ai gọi lại | Gọi lại có hại không |
+|---|---|---|
+| Đẩy tồn (Shopee `update_stock`, TikTok inventory, Lazada sellable) | hàng đợi `stock.channel`, 3 lượt | Không: ghi số tuyệt đối |
+| Sắp xếp vận chuyển (Shopee `ship_order`, TikTok `shipPackage`, Lazada pack + RTS) | chỉ chủ shop bấm lại | Không tự gọi lại; trả lỗi cho chủ shop. Bấm lại khi lệnh trước thật ra đã ăn thì sàn từ chối (Lazada đã có nhánh "đã đóng gói trước đó") |
+| Quảng cáo Shopee: tạm dừng / bật / đổi ngân sách / đổi mục tiêu ROAS | xung kế của Trợ lý | Không: đều đặt trạng thái hay số tuyệt đối, kèm `reference_id` |
+| Quảng cáo Lazada bật / tắt, TikTok GMV Max loại video | xung kế | Không: đặt trạng thái |
+| Tạo chiến dịch (Shopee thủ công, GMS) | chỉ chủ shop bấm lại | Có thể ra hai chiến dịch nếu lệnh đầu đã ăn mà bị cắt; rủi ro này có sẵn từ trước (đứt mạng), chưa thấy lệnh tạo nào chậm |
+| Tin nhắn tự động cứu đơn giao thất bại | không ai | Lỗi thì ghi FAILED một lần, không gửi lại |
+| Chat / trả lời đánh giá | chỉ chủ shop bấm lại | Có thể gửi trùng một tin; có sẵn từ trước |
+| Làm mới token | cron ~9 phút | Shopee đổi refresh token mỗi lần: lệnh đã ăn mà bị cắt thì mất token mới → gian phải nối lại. Có sẵn từ trước; lệnh token chưa lần nào vào danh sách chậm |
+
+Kết luận: bật thời hạn không sinh loại hỏng mới; nó chỉ đổi "treo ~300 giây rồi lỗi" thành "lỗi sau 30 giây", và cắt các lệnh mất 30–300 giây mà đáng ra thành công (4 ngày đo không có lệnh nào như vậy).
+
+*Mã (nhánh `buoc-6-don`).* `lib/platform-http.ts`: `DEFAULT_PLATFORM_HTTP_TIMEOUT_MS = 30_000`; `PLATFORM_HTTP_TIMEOUT_MS` không đặt hoặc đặt sai → mặc định, số dương → số đó, `0` → tắt hẳn (đường lui, đổi ở Render cả web lẫn worker, không cần đưa lên lại). Hai chỗ tải tệp vận đơn (`services/fulfillment/tiktok.ts`, `lazada.ts`) nay đi qua cửa đo dưới tên riêng `TIKTOK_FILE` / `LAZADA_FILE` để không lẫn vào phân bố của API. Vẫn là MỘT số cho mọi sàn và mọi API.
+
+*Hạn giữ việc 5 phút và hạn thuê gian 300 giây: giữ nguyên.* Một việc gọi nhiều lệnh nối tiếp nên hạn của việc không suy thẳng từ hạn một lệnh; chỗ trùng "lệnh treo 303 giây = hạn giữ 300 giây" đã hết vì lệnh treo giờ hỏng sau 30 giây. Muốn rút hai hạn này phải đo thời gian trọn một việc, chưa đo.
+
+*Sau khi đưa lên phải xem:* dòng `[SanHTTP] QUA HAN` (tên sàn + đường dẫn) và cột `qua_han` của dòng tổng hợp trong 2–3 ngày; có lệnh hợp lệ bị cắt thì nâng số bằng biến môi trường.
+
 **O. Lát 7: đơn lỗi vì dữ liệu của chính nó dừng tự thử sau 3 lượt (viết 03/10/2026 sáng)**
 
 Anh Trung duyệt phương án 03/10 ("Ok làm vậy đi em") với bốn điểm: chỉ đếm lỗi riêng đơn; thêm hai cột vào `InvoiceLog`; lỗi do bấm tay đếm chung; không thêm nút thử lại riêng.
@@ -1294,7 +1334,7 @@ Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả
 |---|---|---|
 | Kiểm webhook Lazada và đẩy tồn Lazada bằng số liệu thật | **Khi có khách ủy quyền gian Lazada có đơn thật** (anh Trung chốt 02/10). Hiện `webhook_events` nguồn LAZADA là 0 dòng kể từ bước 1 | Đếm sự kiện Lazada trong `webhook_events`. Gian có đơn mới mà không có sự kiện thì kiểm cấu hình đẩy sự kiện của app ISV 142085 trên Lazada Open Platform. Theo một đơn đi trọn đường: nhận → ghi đơn → trừ kho → tồn lên các gian khác. Xem một lượt đẩy tồn lên chính gian Lazada |
 | Đo lại độ trễ `evt.order` trên prod | Khi `webhook_events` có vài nghìn sự kiện | Lấy trễ lớn nhất và số dòng trễ trên 30 giây (bỏ hai dòng sửa tay 01/10). Tỷ lệ cao hơn hẳn số đo ở mục 4.5 thì trình phương án sửa |
-| Thời hạn chờ lệnh gọi sàn | 04–06/10, sau khi có 3–5 ngày số đo `[SanHTTP]` | Trình con số kèm phân bố thật, rồi bật `PLATFORM_HTTP_TIMEOUT_MS` |
+| ~~Thời hạn chờ lệnh gọi sàn~~ | ✅ 05/10: anh Trung duyệt 30 giây, mã ở mục 4.7 "Đợt 6a" | Sau khi đưa lên: theo dõi dòng `[SanHTTP] QUA HAN` 2–3 ngày |
 | Bước 5 (hóa đơn) | Anh Trung duyệt 02/10; làm theo 14 lát ở mục 4.6 F, mỗi lát commit và đẩy riêng | Lát 2 chờ câu đọc trên prod (mục 4.6 C) và trình migration |
 | ~~Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không~~ | ✅ MISA trả lời 02/10 15:34, đọc 03/10 (mục 4.6 N) | Tờ đã phát hành không xóa được → ca này không có trên prod. Phần còn lại của trả lời đã thành lát 6c |
 | Gom 20–30 tờ một lệnh phát hành (MISA 02/10: "lý tưởng", tối đa 50) | Sau lát 11 của bước 5 (anh Trung chốt 03/10: không làm trong lát 9 — gom lô thì "chưa rõ kết quả" thành chưa rõ cho cả 20–30 tờ, cần đo sandbox riêng) | Hợp đồng adapter thêm `createInvoices(lô)` tùy bảng khả năng; một tờ một lệnh vẫn đúng, chỉ chậm (20–40 tờ/phút/ký hiệu). Trình anh số đo thật trước khi làm |

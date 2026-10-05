@@ -7,8 +7,9 @@
 // lệnh gọi sàn mất bao lâu. Nên làm hai nấc:
 //   1. (bước nền) ĐO: mọi lệnh gọi đi qua platformFetch, ghi thời gian chờ sàn
 //      trả lời; mỗi 15 phút in một dòng tổng hợp cho từng sàn vào log.
-//   2. (sau 3–5 ngày có số) đặt PLATFORM_HTTP_TIMEOUT_MS theo phân bố thật.
-// Chưa đặt biến đó thì KHÔNG có thời hạn chờ — hành vi y như gọi fetch thẳng.
+//   2. (05/10/2026, bước 6a) BẬT thời hạn chờ mặc định 30 giây, theo số đo
+//      02–05/10 (docs/HANG-DOI-BEN.md mục 4.7). PLATFORM_HTTP_TIMEOUT_MS đổi số;
+//      đặt 0 là tắt hẳn — hành vi y như gọi fetch thẳng (đường lui).
 //
 // Thời gian đo là tới lúc sàn trả tiêu đề phản hồi (fetch xong); phần đọc thân
 // do nơi gọi làm sau đó nên không nằm trong số đo. Thời hạn chờ (khi bật) thì
@@ -18,7 +19,15 @@
 // access_token và chữ ký.
 // ============================================================
 
-export type PlatformName = "SHOPEE" | "LAZADA" | "TIKTOK" | "TIKTOK_ADS";
+export type PlatformName =
+  | "SHOPEE"
+  | "LAZADA"
+  | "TIKTOK"
+  | "TIKTOK_ADS"
+  // Tải tệp vận đơn từ đường dẫn sàn cấp (máy chủ tệp, không phải API) — đo riêng
+  // để không lẫn vào phân bố của lệnh gọi API.
+  | "LAZADA_FILE"
+  | "TIKTOK_FILE";
 
 /** Nhịp in dòng tổng hợp. */
 const SUMMARY_INTERVAL_MS = 15 * 60 * 1000;
@@ -94,10 +103,24 @@ function ensureTimer(): void {
   timer.unref(); // không giữ tiến trình sống
 }
 
-/** Thời hạn chờ đang bật (ms), hoặc null khi chưa đặt PLATFORM_HTTP_TIMEOUT_MS. */
+/**
+ * Thời hạn chờ mặc định. CĂN CỨ: log [SanHTTP] của worker + web 02–05/10/2026 —
+ * lệnh hợp lệ chậm nhất 15,0 giây (Shopee get_escrow_detail, HTTP 200), không
+ * lệnh thành công nào khác quá 10,1 giây. 30 giây = gấp đôi số đó; hệ số 2 là
+ * MẶC ĐỊNH TỰ CHỌN (anh Trung duyệt 05/10), không có tài liệu sàn nào cho số này.
+ */
+export const DEFAULT_PLATFORM_HTTP_TIMEOUT_MS = 30_000;
+
+/**
+ * Thời hạn chờ đang áp dụng (ms), hoặc null khi đã tắt. PLATFORM_HTTP_TIMEOUT_MS:
+ * không đặt / đặt sai → mặc định; số nguyên dương → số đó; 0 → tắt.
+ */
 export function platformTimeoutMs(env: NodeJS.ProcessEnv = process.env): number | null {
-  const n = Number(env.PLATFORM_HTTP_TIMEOUT_MS);
-  return Number.isInteger(n) && n > 0 ? n : null;
+  const raw = env.PLATFORM_HTTP_TIMEOUT_MS;
+  if (raw == null || raw.trim() === "") return DEFAULT_PLATFORM_HTTP_TIMEOUT_MS;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) return DEFAULT_PLATFORM_HTTP_TIMEOUT_MS;
+  return n === 0 ? null : n;
 }
 
 function pathOf(url: string): string {

@@ -33,6 +33,7 @@ import {
 } from "../../integrations/tiktok/client";
 import { getValidAccessToken } from "../../integrations/tiktok/service";
 import { isTikTokConfigured } from "../../integrations/tiktok/config";
+import { platformFetch } from "../../lib/platform-http";
 import {
   errMessage,
   humanizeArrangeError,
@@ -134,7 +135,7 @@ export async function fetchTikTokLabelPdf(auth: Auth, packageId: string): Promis
 /** Tải một URL, trả Buffer nếu đúng là PDF; null nếu lỗi/không phải PDF. */
 async function fetchPdf(url: string): Promise<Buffer | null> {
   try {
-    const res = await fetch(url);
+    const res = await platformFetch("TIKTOK_FILE", url);
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     return buf.subarray(0, 4).toString("latin1") === "%PDF" ? buf : null;

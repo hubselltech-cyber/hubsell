@@ -25,16 +25,19 @@ describe("percentile + summaryLine", () => {
 });
 
 describe("platformTimeoutMs", () => {
-  it("chưa đặt / đặt sai → null (không có thời hạn chờ)", () => {
-    expect(platformTimeoutMs({})).toBeNull();
+  it("chưa đặt / đặt sai → mặc định 30 giây; 0 → tắt; số dương → số đó", () => {
+    expect(platformTimeoutMs({})).toBe(30000);
+    expect(platformTimeoutMs({ PLATFORM_HTTP_TIMEOUT_MS: "" })).toBe(30000);
+    expect(platformTimeoutMs({ PLATFORM_HTTP_TIMEOUT_MS: "abc" })).toBe(30000);
+    expect(platformTimeoutMs({ PLATFORM_HTTP_TIMEOUT_MS: "-5" })).toBe(30000);
     expect(platformTimeoutMs({ PLATFORM_HTTP_TIMEOUT_MS: "0" })).toBeNull();
-    expect(platformTimeoutMs({ PLATFORM_HTTP_TIMEOUT_MS: "abc" })).toBeNull();
     expect(platformTimeoutMs({ PLATFORM_HTTP_TIMEOUT_MS: "15000" })).toBe(15000);
   });
 });
 
 describe("platformFetch", () => {
-  it("chưa bật thời hạn: gọi fetch với đúng url + init, không thêm signal, trả nguyên Response", async () => {
+  it("tắt thời hạn (0): gọi fetch với đúng url + init, không thêm signal, trả nguyên Response", async () => {
+    process.env.PLATFORM_HTTP_TIMEOUT_MS = "0";
     const res = new Response("{}", { status: 200 });
     const spy = vi.fn().mockResolvedValue(res);
     vi.stubGlobal("fetch", spy);
@@ -73,8 +76,7 @@ describe("platformFetch", () => {
     );
   });
 
-  it("đã bật thời hạn mà sàn trả lời kịp thì kết quả như thường", async () => {
-    process.env.PLATFORM_HTTP_TIMEOUT_MS = "5000";
+  it("không đặt biến: vẫn có thời hạn (mặc định), sàn trả lời kịp thì kết quả như thường", async () => {
     const res = new Response("ok");
     const spy = vi.fn().mockResolvedValue(res);
     vi.stubGlobal("fetch", spy);
