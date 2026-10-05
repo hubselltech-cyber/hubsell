@@ -253,12 +253,12 @@ export function AdsRecommendSection({
   );
 }
 
-/** Một dòng gợi ý: nhãn + tên + ba số quyết định. */
+/** Một dòng gợi ý: nhãn + tên + ba số quyết định. Không vạch viền trái (đã nằm trong tab riêng — anh Trung 05/10). */
 function RecommendCard({ row, onPress }: { row: AdsRecommendationRow; onPress: () => void }) {
   const t = TIER[row.tier];
   const p = row.proposal;
   return (
-    <Card className={`border-l-4 p-3 ${row.tier === "run_now" ? "border-l-emerald-500" : "border-l-amber-500"}`} onPress={onPress}>
+    <Card className="p-3" onPress={onPress}>
       <View className="flex-row items-center gap-2">
         <View className={`rounded-full px-2 py-0.5 ${t.bg}`}>
           <Text className={`text-[10px] font-bold ${t.text}`}>{t.label}</Text>
