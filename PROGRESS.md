@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 05/10/2026 (sáng) — RENDER VƯỢT BĂNG THÔNG 5 GB: tìm gốc, CHƯA sửa (anh Trung: để sau 07/10)
+
+- **Hiện tượng:** thư Render 04/10 19:13 "Reached the Bandwidth Limit". Dashboard sáng 05/10: 9,47 GB / 5 GB gói Hobby, trong đó 9,36 GB là "Service-Initiated" (dịch vụ tự gọi ra ngoài), riêng `hubsell-worker-sg` 9,13 GB; web chỉ ~0,34 GB. Phần vượt 15 USD / 100 GB tính theo tỷ lệ; Render dự phóng hóa đơn tháng 10 là 14,75 USD.
+- **Biểu đồ worker theo giờ:** ~30 MB (trước 30/09) → ~50 MB (30/09) → ~100 MB (02/10) → 110–120 MB đi ngang cả ngày lẫn đêm (từ 03/10). Ba nấc trùng lúc ba hàng đợi pg-boss nhịp 0,5 giây lên prod (sự kiện đơn, đẩy tồn, hóa đơn).
+- **ĐÃ ĐO (database local, `backend/scripts/pgboss-egress-probe.ts`):** 6 hàng đợi trống vẫn gửi ~17 câu hỏi việc/giây, mỗi câu ~1,1 KB nguyên văn → 15,5 KB/giây = **57 MB/giờ**, khoảng một nửa mức hiện tại. Phần này cố định theo tiến trình worker, không theo số gian / số đơn.
+- **CHƯA TÁCH:** ~50 MB/giờ còn lại (vòng quét qua Prisma + gọi sàn). Phần này tăng theo số gian và số đơn; socket của Prisma không đếm được từ Node. Cách tách: thống kê câu lệnh bên Supabase (pg_stat_statements, chỉ đọc) + bảng đếm lượt gọi sàn trong log worker.
+- **Phương án đã trình, anh CHƯA chốt (xem lại sau 07/10):** giãn nhịp hỏi sự kiện đơn + đẩy tồn 0,5 → 1 giây, ủy quyền / hàng đợi lỗi / đối soát tồn 2 → 5 giây, GIỮ hóa đơn bấm tay 0,5 giây (chỗ duy nhất khách ngồi chờ vòng xoay). Ước tính phần pg-boss 57 → ~36 MB/giờ (chưa đo), tiết kiệm ~2–3 USD/tháng; các số 1 giây / 5 giây là tự chọn. Không cần nâng gói Render.
+
+---
+
 ## Phiên 04/10/2026 (tối) — MOBILE: trang Tài khoản, chi tiết đơn khi bấm thẻ đơn, TRANG QUẢNG CÁO (Trợ lý quảng cáo Shopee + Lazada) trên app (anh Trung duyệt bố cục sau khảo sát; đã đẩy master, build APK cuối phiên)
 
 - **Cấu hình → Tài khoản:** dòng tên mở trang con `/account` (`components/AccountScreen.tsx`): SĐT, email, gói đang dùng (`GET /api/subscription/me`), đổi mật khẩu, đăng xuất. Anh chê dạng xổ xuống: mục con phải vào hẳn trang riêng. Ảnh đại diện lấy từ `/me`; bản lưu SecureStore bỏ ảnh.
