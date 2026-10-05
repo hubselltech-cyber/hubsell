@@ -253,7 +253,7 @@ export function AdsRecommendSection({
   );
 }
 
-/** Một dòng gợi ý: nhãn + tên + một câu lý do + ba số quyết định. */
+/** Một dòng gợi ý: nhãn + tên + ba số quyết định. */
 function RecommendCard({ row, onPress }: { row: AdsRecommendationRow; onPress: () => void }) {
   const t = TIER[row.tier];
   const p = row.proposal;
@@ -269,11 +269,10 @@ function RecommendCard({ row, onPress }: { row: AdsRecommendationRow; onPress: (
         <View className="flex-1" />
         <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
       </View>
-      <Text className="mt-1.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100" numberOfLines={2}>
+      {/* Tên SP được tới 3 dòng; câu lý do (headline) KHÔNG in trên thẻ — anh
+          Trung 05/10: nhường chỗ cho tên, lý do đọc trong hộp chi tiết. */}
+      <Text className="mt-1.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100" numberOfLines={3}>
         {row.productName}
-      </Text>
-      <Text className="mt-1 text-xs text-slate-600 dark:text-slate-300" numberOfLines={2}>
-        {row.headline}
       </Text>
       <View className="mt-2.5 flex-row border-t border-slate-100 pt-2 dark:border-slate-800">
         <Mini label="Cần đạt" value={roas1(row.safeRoas)} />
