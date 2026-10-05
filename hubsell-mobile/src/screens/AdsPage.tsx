@@ -88,8 +88,10 @@ const LIST_FILTERS: { key: ListFilter; label: string }[] = [
   { key: "ongoing", label: "Đang chạy" },
   { key: "flagged", label: "Cần xử lý" },
   { key: "all", label: "Tất cả" },
-  // Tab Gợi ý chỉ có trên Shopee (backend mới có lệnh tạo cho Shopee).
-  { key: "reco", label: "Gợi ý chạy Ads" },
+  // Tab Gợi ý chỉ có trên Shopee (backend mới có lệnh tạo cho Shopee). Nhãn
+  // ngắn "Gợi ý" (không phải "Gợi ý chạy Ads"): 4 tab chia đều một hàng trên
+  // màn 360px chỉ còn ~77px mỗi tab — nhãn dài là rớt dòng (anh Trung 05/10).
+  { key: "reco", label: "Gợi ý" },
 ];
 
 const roas = (v: number | null) =>
@@ -374,10 +376,10 @@ export function AdsPage() {
               </>
             ) : null}
 
-            {/* ===== HÀNG TAB: Đang chạy / Cần xử lý / Tất cả / Gợi ý chạy Ads =====
-                flex-wrap: 4 tab + số đếm không vừa một hàng trên màn 360px thì
-                tab cuối rớt nguyên xuống dòng dưới, không bị cắt. */}
-            <View className="mb-2 flex-row flex-wrap items-center gap-2">
+            {/* ===== HÀNG TAB: Đang chạy / Cần xử lý / Tất cả / Gợi ý =====
+                LUÔN MỘT HÀNG: mỗi tab flex-1 chia đều bề rộng màn hình, chữ
+                canh giữa, không rớt dòng ở mọi cỡ máy (anh Trung 05/10). */}
+            <View className="mb-2 flex-row items-center gap-1.5">
               {LIST_FILTERS.filter((f) => f.key !== "reco" || platform === "shopee").map((f) => {
                 const active = filter === f.key;
                 const label =
@@ -387,7 +389,7 @@ export function AdsPage() {
                 return (
                   <Pressable
                     key={f.key}
-                    className={`rounded-full px-3 py-1.5 ${
+                    className={`flex-1 items-center rounded-full px-1 py-1.5 ${
                       active
                         ? "bg-slate-900 dark:bg-slate-100"
                         : "border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
@@ -401,6 +403,7 @@ export function AdsPage() {
                       className={`text-xs font-semibold ${
                         active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
                       }`}
+                      numberOfLines={1}
                     >
                       {label}
                     </Text>
