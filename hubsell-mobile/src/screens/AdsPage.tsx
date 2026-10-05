@@ -38,11 +38,14 @@ import { TABULAR } from "@/theme/tokens";
  * duyệt 04/10 sau khảo sát (docs/KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md): app chỉ
  * trả lời "có chiến dịch nào đang đốt tiền không, và xử lý ngay":
  *   ngữ cảnh + chế độ Trợ lý → dải ví → CẦN XỬ LÝ (trên chỉ số) → 4 số của kỳ
- *   → GỢI Ý CHẠY ADS (Shopee, thêm 05/10) → thẻ chiến dịch → hộp chi tiết có
- *   Tạm dừng / Bật lại.
- * Gợi ý chạy Ads là chỗ duy nhất app TẠO chiến dịch (1 SP, từ đề xuất đã tính
- * sẵn — AdsRecommendSection). Cấu hình quy tắc, tạo chiến dịch tự do, từ khóa,
- * GMV Max cấp shop ở lại web.
+ *   → hàng tab Đang chạy / Cần xử lý / Tất cả / GỢI Ý CHẠY ADS → danh sách của
+ *   tab đó → hộp chi tiết có Tạm dừng / Bật lại.
+ * Gợi ý chạy Ads (Shopee, thêm 05/10) là TAB thứ 4 của hàng tab, không phải
+ * khối riêng chen giữa trang (anh Trung chốt 05/10 sau khi xem bản mô phỏng):
+ * người chỉ muốn canh tiền không bị khối gợi ý đẩy danh sách xuống; số đếm
+ * trên tab để gợi ý không bị "giấu". Đó là chỗ duy nhất app TẠO chiến dịch
+ * (1 SP, từ đề xuất đã tính sẵn — AdsRecommendSection). Cấu hình quy tắc, tạo
+ * chiến dịch tự do, từ khóa, GMV Max cấp shop ở lại web.
  */
 
 const PLATFORMS: { key: AdsPlatform; label: string; channelName: string }[] = [
@@ -80,11 +83,13 @@ const STATUS_LABEL: Record<string, string> = {
 
 const MODE_LABEL = { off: "Trợ lý: chỉ đề xuất", dry_run: "Trợ lý: diễn tập", live: "Trợ lý: tự xử lý" };
 
-type ListFilter = "ongoing" | "flagged" | "all";
+type ListFilter = "ongoing" | "flagged" | "all" | "reco";
 const LIST_FILTERS: { key: ListFilter; label: string }[] = [
   { key: "ongoing", label: "Đang chạy" },
   { key: "flagged", label: "Cần xử lý" },
   { key: "all", label: "Tất cả" },
+  // Tab Gợi ý chỉ có trên Shopee (backend mới có lệnh tạo cho Shopee).
+  { key: "reco", label: "Gợi ý chạy Ads" },
 ];
 
 const roas = (v: number | null) =>
@@ -118,6 +123,9 @@ export function AdsPage() {
   // Tăng mỗi lần kéo xuống làm mới → khối Gợi ý chạy Ads tải lại theo
   // (khối đó không theo nhịp 60s vì mỗi lần gọi là chấm cả kho SP).
   const [recoToken, setRecoToken] = useState(0);
+  // Số SP có việc để làm — khối gợi ý báo lên để in trên tab (tải nền cả khi
+  // tab khác đang mở, nên số có sẵn trước khi bấm).
+  const [recoCount, setRecoCount] = useState<number | null>(null);
   // Số thứ tự lượt tải — đổi sàn/kỳ liên tiếp thì chỉ lượt MỚI NHẤT được ghi.
   const reqSeq = useRef(0);
 
@@ -208,6 +216,9 @@ export function AdsPage() {
                   hapticSelect();
                   setChannelId("");
                   setData(null);
+                  setRecoCount(null);
+                  // Lazada không có tab Gợi ý — đang đứng ở đó thì về Đang chạy.
+                  if (p.key !== "shopee") setFilter((f) => (f === "reco" ? "ongoing" : f));
                   setPlatform(p.key);
                 }}
               >
@@ -363,20 +374,16 @@ export function AdsPage() {
               </>
             ) : null}
 
-            {/* ===== GỢI Ý CHẠY ADS — chỉ Shopee (backend mới có lệnh tạo cho Shopee) ===== */}
-            {platform === "shopee" && data.selectedChannelId ? (
-              <AdsRecommendSection
-                channelId={data.selectedChannelId}
-                adsLinked={adsLinked}
-                reloadToken={recoToken}
-                onCreated={() => void load(platform, range, channelId, "silent")}
-              />
-            ) : null}
-
-            {/* ===== DANH SÁCH CHIẾN DỊCH ===== */}
-            <View className="mb-2 flex-row items-center gap-2">
-              {LIST_FILTERS.map((f) => {
+            {/* ===== HÀNG TAB: Đang chạy / Cần xử lý / Tất cả / Gợi ý chạy Ads =====
+                flex-wrap: 4 tab + số đếm không vừa một hàng trên màn 360px thì
+                tab cuối rớt nguyên xuống dòng dưới, không bị cắt. */}
+            <View className="mb-2 flex-row flex-wrap items-center gap-2">
+              {LIST_FILTERS.filter((f) => f.key !== "reco" || platform === "shopee").map((f) => {
                 const active = filter === f.key;
+                const label =
+                  f.key === "reco" && recoCount != null && recoCount > 0
+                    ? `${f.label} (${recoCount})`
+                    : f.label;
                 return (
                   <Pressable
                     key={f.key}
@@ -395,13 +402,25 @@ export function AdsPage() {
                         active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
                       }`}
                     >
-                      {f.label}
+                      {label}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
-            {listed.length === 0 ? (
+            {/* Khối gợi ý LUÔN mount khi có gian Shopee (để tải nền + đếm số cho
+                tab), chỉ vẽ nội dung khi tab Gợi ý đang mở. */}
+            {platform === "shopee" && data.selectedChannelId ? (
+              <AdsRecommendSection
+                channelId={data.selectedChannelId}
+                adsLinked={adsLinked}
+                reloadToken={recoToken}
+                visible={filter === "reco"}
+                onCount={setRecoCount}
+                onCreated={() => void load(platform, range, channelId, "silent")}
+              />
+            ) : null}
+            {filter === "reco" ? null : listed.length === 0 ? (
               <Text className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
                 Không có chiến dịch nào trong mục này.
               </Text>

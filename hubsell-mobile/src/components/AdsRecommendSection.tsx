@@ -29,9 +29,9 @@ import { Card } from "@/components/Card";
 import { TABULAR } from "@/theme/tokens";
 
 /**
- * GỢI Ý CHẠY ADS trên app (05/10) — khối thứ 4 của trang Quảng cáo Shopee, đặt
- * SAU "Cần xử lý" + 4 số của kỳ và TRƯỚC danh sách chiến dịch: việc gấp (đang
- * đốt tiền) đứng trước cơ hội (nên đổ tiền vào đâu), danh sách để tra cứu sau.
+ * GỢI Ý CHẠY ADS trên app (05/10) — nội dung của TAB thứ 4 (Đang chạy / Cần xử
+ * lý / Tất cả / Gợi ý chạy Ads) trên trang Quảng cáo Shopee. Luôn mount khi có
+ * gian Shopee để tải nền + báo số đếm lên tab (onCount); chỉ vẽ khi `visible`.
  *
  * Cùng backend với tab "Gợi ý chạy Ads" web (ads-recommend-tab.tsx): backend
  * chấm 3 tầng (cổng loại → điểm → đề xuất mục tiêu + ngân sách), app CHỈ hiển
@@ -79,6 +79,8 @@ export function AdsRecommendSection({
   channelId,
   adsLinked,
   reloadToken,
+  visible,
+  onCount,
   onCreated,
 }: {
   channelId: string;
@@ -86,6 +88,10 @@ export function AdsRecommendSection({
   adsLinked: boolean;
   /** Đổi giá trị = tải lại bảng (kéo xuống làm mới ở trang cha). */
   reloadToken: number;
+  /** Tab Gợi ý đang mở — false thì không vẽ gì nhưng vẫn tải nền. */
+  visible: boolean;
+  /** Báo số SP có việc để làm (Nên chạy ngay + Thử nhỏ) để in trên tab. */
+  onCount: (n: number) => void;
   /** Tạo chiến dịch xong — trang cha nạp lại danh sách chiến dịch. */
   onCreated: () => void;
 }) {
@@ -101,6 +107,14 @@ export function AdsRecommendSection({
   const [itemLoadingId, setItemLoadingId] = useState<string | null>(null);
   const [createdMsg, setCreatedMsg] = useState("");
   const reqSeq = useRef(0);
+  // Giữ callback mới nhất trong ref (cùng cách useAutoRefresh) — effect tải
+  // không phải phụ thuộc vào onCount.
+  const onCountRef = useRef(onCount);
+  useEffect(() => {
+    onCountRef.current = onCount;
+  });
+  const countOf = (res: AdsRecommendationsResponse) =>
+    res.rows.filter((r) => r.tier === "run_now" || r.tier === "test_small").length;
 
   // Chấm cả kho SP mỗi lần gọi — chỉ tải khi đổi gian / kéo làm mới / vừa tạo
   // xong, KHÔNG theo nhịp 60s của trang cha.
@@ -110,6 +124,7 @@ export function AdsRecommendSection({
       .then((res) => {
         if (seq !== reqSeq.current) return;
         setData(res);
+        onCountRef.current(countOf(res));
         setLoaded({ key: loadKey, error: "" });
       })
       .catch((err) => {
@@ -143,18 +158,15 @@ export function AdsRecommendSection({
   const counts = data?.counts;
   const detail = rows.find((r) => r.itemId === detailId) ?? null;
 
+  if (!visible) return null;
+
   return (
     <View className="mb-4">
-      <View className="mb-2 flex-row items-center gap-2">
-        <Text className="flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-          Gợi ý chạy Ads{actionable.length > 0 ? ` (${actionable.length})` : ""}
+      {counts ? (
+        <Text className="mb-2 text-[11px] text-slate-400 dark:text-slate-500" style={TABULAR}>
+          {actionable.length} sản phẩm nên chạy · {counts.not_yet} chưa nên · {counts.running} đang chạy ads
         </Text>
-        {counts ? (
-          <Text className="text-[11px] text-slate-400 dark:text-slate-500" style={TABULAR}>
-            {counts.not_yet} chưa nên · {counts.running} đang chạy
-          </Text>
-        ) : null}
-      </View>
+      ) : null}
 
       {createdMsg ? (
         <View className="mb-2.5 flex-row items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 dark:bg-emerald-500/10">
@@ -229,7 +241,12 @@ export function AdsRecommendSection({
           setCreatedMsg(msg);
           onCreated();
           // Chấm lại: SP vừa tạo chuyển sang "Đang chạy ads", khỏi gợi ý trùng.
-          fetchAdsRecommendations(channelId).then(setData).catch(() => undefined);
+          fetchAdsRecommendations(channelId)
+            .then((res) => {
+              setData(res);
+              onCountRef.current(countOf(res));
+            })
+            .catch(() => undefined);
         }}
       />
     </View>
