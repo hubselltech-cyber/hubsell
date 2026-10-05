@@ -252,18 +252,20 @@ Dòng xin quyền hiện trên iPhone (đều tiếng Việt, nêu rõ mục đ�
 | Icon App Store | 1024×1024, không alpha | Có: `hubsell-mobile/assets/images/icon-1024.png` (EAS tự gắn vào bản build) |
 | Icon Google Play | 512×512 | Có: [icon-512.png](icon-512.png) |
 | Ảnh bìa Google Play | 1024×500, không alpha | Có: [feature-graphic-1024x500.png](feature-graphic-1024x500.png). Sửa chữ ở [feature-graphic.html](feature-graphic.html) rồi chạy `node docs/store/render.mjs` và `python docs/store/finish.py` |
-| Ảnh màn hình iPhone 6,9" | 1290×2796, 3 đến 10 ảnh | **Chưa có**, chụp từ bản build thật |
-| Ảnh màn hình Android | cạnh dài không quá 2 lần cạnh ngắn, ví dụ 1080×2160, 2 đến 8 ảnh | **Chưa có**. Không dùng lại ảnh iPhone: 2796/1290 = 2,17 vượt tỷ lệ 2:1, Play Console từ chối |
+| Ảnh màn hình iPhone 6,9" | 1290×2796, 3 đến 10 ảnh | Có (05/10): 6 ảnh ở [screenshots/iphone/](screenshots/iphone/). Dựng từ ảnh chụp app thật trên máy ảo Android (bản `25817e81`), đã cắt thanh trạng thái + thanh điều hướng Android. Có bản TestFlight thì chụp lại trên iPhone thật để thay |
+| Ảnh màn hình Android | cạnh dài không quá 2 lần cạnh ngắn, 2 đến 8 ảnh | Có (05/10): 6 ảnh 1080×2160 ở [screenshots/android/](screenshots/android/) |
 
-Bộ ảnh màn hình đề xuất, 6 ảnh theo thứ tự, mỗi ảnh một dòng chú thích phía trên:
+Ảnh gốc (đã cắt) ở `screenshots/raw/`. Sửa chú thích trong `screenshots/render-shots.mjs` rồi chạy `node docs/store/screenshots/render-shots.mjs` và `python docs/store/screenshots/finish-shots.py`. Xem nhanh cả bộ: [screenshots/xem-nhanh.png](screenshots/xem-nhanh.png).
+
+Bộ 6 ảnh theo app bản 04/10 (đã bỏ tab Tin nhắn; trang Quảng cáo không chụp vì gian mẫu chưa ủy quyền quảng cáo nên màn trống), giao diện Sáng:
 
 | # | Màn | Chú thích |
 |---|---|---|
 | 1 | Trang chủ → Tổng quan | Mở máy là thấy lãi ròng hôm nay |
 | 2 | Trang chủ → Tài chính | Tiền đi đâu, còn lại bao nhiêu |
 | 3 | Đơn hàng | Đơn mọi sàn trong một danh sách |
-| 4 | Kho → màn quét | Quét mã, nhận hàng hoàn |
-| 5 | Tin nhắn | Trả lời khách ngay trên máy |
+| 4 | Kho → Đơn hoàn | Quét mã, nhận hàng hoàn |
+| 5 | Kho → Tồn kho | Tồn kho từng mã, biết hàng sắp hết |
 | 6 | Trợ lý Hubsell | Hỏi bằng tiếng Việt, đáp bằng số thật |
 
 Ảnh phải là màn hình thật của app (Apple 2.3.3) và không lộ tên, số điện thoại khách thật: chụp bằng tài khoản `reviewer@hubsell.vn` (dữ liệu mẫu), không chụp bằng shop thật.
@@ -279,7 +281,7 @@ Bộ ảnh màn hình đề xuất, 6 ảnh theo thứ tự, mỗi ảnh một d
 | 3 | Lấy 3 mã vận đơn hoàn của tài khoản reviewer điền vào ghi chú mục 4 | Claude | Chưa làm, làm cùng việc 2 |
 | 4 | Chính sách bảo mật chưa có đoạn nào nói về app di động (camera, ảnh, giọng nói). Kho đối chiếu chính sách với tờ khai dữ liệu. Đoạn đề xuất ở mục 9, chờ anh duyệt câu chữ | Anh duyệt → Claude sửa landing | Chờ anh |
 | 5 | Dải thông báo trên web app và khối #mobile trên landing đang ghi "trả lời tin nhắn khách Shopee, TikTok Shop, Lazada", trong khi thẻ TikTok trên app di động là màn "chưa nối chat" | Anh chốt: nối chat TikTok cho mobile, hay sửa câu chữ | Chờ anh |
-| 6 | Chụp ảnh màn hình (mục 7) | Claude | Chờ bản build |
+| 6 | Chụp ảnh màn hình (mục 7) | Claude | Xong 05/10 (ảnh từ máy ảo Android), chờ anh duyệt |
 | 7 | Build thử Android (APK) để bắt lỗi native trước khi tài khoản kho được duyệt | Anh `npx eas-cli login` → Claude | Chờ anh đăng nhập Expo |
 
 ---

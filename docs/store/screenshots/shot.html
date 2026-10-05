@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Kích thước do render-shots.mjs truyền qua biến CSS: --w --h --cap --pw */
+  html, body { margin: 0; }
+  body {
+    width: var(--w); height: var(--h); overflow: hidden;
+    font-family: "Be Vietnam Pro", sans-serif;
+    background:
+      radial-gradient(120% 60% at 50% 0%, rgba(52, 211, 153, .28), transparent 60%),
+      linear-gradient(180deg, #071226 0%, #050816 100%);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .cap {
+    height: var(--cap); box-sizing: border-box; padding: 0 6%;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; color: #fff;
+  }
+  .cap h1 { margin: 0; font-weight: 800; font-size: calc(var(--w) * .066); line-height: 1.18; letter-spacing: -.01em; text-wrap: balance; }
+  .cap p { margin: calc(var(--w) * .02) 0 0; font-weight: 500; font-size: calc(var(--w) * .034); color: #6ee7b7; }
+  .phone {
+    width: var(--pw); border-radius: calc(var(--w) * .055); overflow: hidden;
+    border: calc(var(--w) * .006) solid rgba(255, 255, 255, .16);
+    box-shadow: 0 calc(var(--w) * .03) calc(var(--w) * .09) rgba(0, 0, 0, .55);
+  }
+  .phone img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+  <div class="cap"><h1 id="t"></h1><p id="s"></p></div>
+  <div class="phone"><img id="i"></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  for (const k of ["w", "h", "cap", "pw"]) document.documentElement.style.setProperty("--" + k, q.get(k) + "px");
+  document.getElementById("t").textContent = q.get("t");
+  document.getElementById("s").textContent = q.get("s");
+  document.getElementById("i").src = "raw/" + q.get("img") + ".png";
+</script>
+</body>
+</html>
