@@ -28,6 +28,7 @@ import { Refreshing } from "@/components/shared/refreshing";
 import {
   formatRangeLabel,
   matchPreset,
+  previousRange,
   RANGE_PRESETS,
   type DateRange,
 } from "@/lib/date-range";
@@ -51,6 +52,7 @@ import {
 import {
   fetchAnalytics,
   fetchDashboardSummary,
+  fetchFinanceAnalytics,
   getStoredUser,
   getToken,
   type AnalyticsResponse,
@@ -413,18 +415,45 @@ export default function DashboardPage() {
     enabled: allowed,
   });
 
+  // 3 THẺ TIỀN (Doanh thu · Chi phí · Lợi nhuận) đọc từ Báo cáo dòng tiền
+  // (/api/finance/analytics) — cùng nguồn, cùng kỳ, cùng cache với 4 thẻ của
+  // trang /finance/analytics nên khớp từng đồng. Trước 05/10 thẻ Doanh thu lấy
+  // totalRevenue của /api/analytics = Σ GIÁ TRỊ ĐƠN GỐC (chưa trừ sàn khấu
+  // trừ) = thẻ "Tổng giá trị sản phẩm" bên Tài chính — chủ shop thấy hai
+  // trang hai "doanh thu" khác nhau (anh Trung phát hiện 05/10 trên app).
+  // SALES không có quyền finance → giữ thẻ Doanh thu theo /api/analytics.
+  const financeQ = useApiQuery({
+    queryKey: qk.financeAnalytics(range, channel),
+    queryFn: () => fetchFinanceAnalytics(range, channel),
+    enabled: allowed && seesFinancials,
+  });
+  // Kỳ trước chỉ để vẽ ▲/▼ — nạp lỗi thì ẩn mũi tên, trang vẫn chạy.
+  const prevFinanceQ = useApiQuery({
+    queryKey: qk.financeAnalytics(previousRange(range), channel),
+    queryFn: () =>
+      fetchFinanceAnalytics(previousRange(range), channel).catch(() => null),
+    enabled: allowed && seesFinancials,
+  });
+
   const data = summaryQ.data ?? null;
   const analytics = analyticsQ.data ?? null;
+  const money = seesFinancials ? (financeQ.data?.breakdown ?? null) : null;
+  const prevMoney = seesFinancials ? (prevFinanceQ.data?.breakdown ?? null) : null;
   // loading nghĩa "đang tính lại" (lần đầu LẪN nền) — điều khiển Refreshing,
   // nút Làm mới và icon xoay, giữ nguyên ngữ nghĩa cũ của trang.
-  const loading = summaryQ.refreshing || analyticsQ.refreshing;
-  const error = analyticsQ.error ?? summaryQ.error;
+  const loading =
+    summaryQ.refreshing || analyticsQ.refreshing || (seesFinancials && financeQ.refreshing);
+  const error = analyticsQ.error ?? summaryQ.error ?? (seesFinancials ? financeQ.error : null);
   const denied = !allowed || summaryQ.denied || analyticsQ.denied;
 
   // Chỉ dùng cho nút "Làm mới" — không cần useCallback vì không effect nào phụ thuộc.
   const load = () => {
     summaryQ.refetch();
     analyticsQ.refetch();
+    if (seesFinancials) {
+      financeQ.refetch();
+      prevFinanceQ.refetch();
+    }
   };
 
   if (denied) {
@@ -435,24 +464,28 @@ export default function DashboardPage() {
     );
   }
 
-  // Tỷ trọng so với doanh thu — dùng vẽ thanh tiến trình trên các thẻ chỉ số.
-  // undefined khi chưa có doanh thu để không vẽ thanh rỗng gây hiểu nhầm.
-  const ratioOfRevenue = (part: number | undefined) =>
-    analytics && analytics.totalRevenue > 0 && part !== undefined
-      ? Math.round((part / analytics.totalRevenue) * 1000) / 10
-      : undefined;
+  // Doanh thu của thẻ: chủ shop = thẻ "Doanh thu" Báo cáo dòng tiền (giá trị
+  // đơn − sàn khấu trừ); SALES = giá trị đơn gốc của /api/analytics (không có
+  // quyền finance). Có số khi nguồn tương ứng đã về.
+  const revenue = seesFinancials ? (money ? money.revenue.total : null) : (analytics?.totalRevenue ?? null);
+  const prevRevenue = seesFinancials
+    ? (prevMoney?.revenue.total ?? null)
+    : (analytics?.previous?.totalRevenue ?? null);
+  // Chi phí + Lợi nhuận = thẻ "Chi phí" + "Lợi nhuận ròng tạm tính" của Báo cáo
+  // dòng tiền — cùng mẫu số doanh thu với thẻ trên nên "% doanh thu" / biên
+  // không lệch. Lấy lẻ một số từ /api/analytics là phí sàn bị tính hai lần.
+  const totalExpense = money?.costs.total ?? 0;
+  const netProfit = money?.profit.total ?? 0;
+  const missingCostOrders = money?.profit.missingCost?.orderCount ?? 0;
 
-  // TOÀN BỘ tiền đi ra trong kỳ: giá vốn + phí sàn + chi phí vận hành
-  const totalExpense = analytics
-    ? analytics.totalCost +
-      analytics.totalPlatformFee +
-      analytics.totalOperatingExpense
-    : 0;
+  // Tỷ trọng so với doanh thu — undefined khi chưa có doanh thu để không vẽ
+  // thanh rỗng gây hiểu nhầm.
+  const ratioOfRevenue = (part: number | undefined) =>
+    revenue != null && revenue > 0 && part !== undefined
+      ? Math.round((part / revenue) * 1000) / 10
+      : undefined;
   // Tỷ trọng chi phí trên doanh thu — doanh thu bằng 0 thì tỷ lệ vô nghĩa → null
-  const costRatio =
-    analytics && seesFinancials && analytics.totalRevenue > 0
-      ? Math.round((totalExpense / analytics.totalRevenue) * 1000) / 10
-      : null;
+  const costRatio = money ? (ratioOfRevenue(totalExpense) ?? null) : null;
 
   // Nhãn động theo phím nhanh đang chọn: xem "Hôm nay" thì thẻ ghi đúng như
   // vậy và mốc so sánh là "hôm qua" — chủ shop khỏi phải tự luận ra kỳ trước
@@ -588,27 +621,19 @@ export default function DashboardPage() {
         >
           <StatCard
             label={revenueLabel}
-            value={analytics ? <Money value={analytics.totalRevenue} /> : "—"}
+            value={revenue != null ? <Money value={revenue} /> : "—"}
             icon={TrendingUp}
             valueClassName={HERO_SIZE}
+            // Sóng 14 ngày vẫn là chuỗi trend của /api/analytics (giá trị đơn
+            // theo ngày) — chỉ để thấy nhịp, màu theo ▲/▼ của số trên thẻ.
             sparkline={
-              analytics
-                ? {
-                    data: sparkRevenue,
-                    tone: deltaTone(
-                      analytics.totalRevenue,
-                      analytics.previous?.totalRevenue
-                    ),
-                  }
+              analytics && revenue != null
+                ? { data: sparkRevenue, tone: deltaTone(revenue, prevRevenue) }
                 : undefined
             }
             subtitle={
-              analytics && (
-                <DeltaChip
-                  current={analytics.totalRevenue}
-                  previous={analytics.previous?.totalRevenue ?? null}
-                  compareLabel={compareLabel}
-                />
+              revenue != null && (
+                <DeltaChip current={revenue} previous={prevRevenue} compareLabel={compareLabel} />
               )
             }
           />
@@ -664,41 +689,40 @@ export default function DashboardPage() {
           {seesFinancials && (
             <>
               <StatCard
-                label="Tổng Chi phí"
-                value={analytics ? <Money value={totalExpense} /> : "—"}
+                label="Chi phí"
+                value={money ? <Money value={totalExpense} /> : "—"}
                 icon={Receipt}
                 valueClassName={HERO_SIZE}
                 sparkline={
-                  analytics ? { data: sparkCost, tone: "warning" } : undefined
+                  analytics && money ? { data: sparkCost, tone: "warning" } : undefined
                 }
                 subtitle={
                   costRatio === null
-                    ? "Giá vốn + phí sàn + chi phí vận hành"
+                    ? "Giá vốn + vận hành + quảng cáo"
                     : `Chiếm ${costRatio}% doanh thu`
                 }
               />
               {(() => {
-                const net = analytics?.netProfit ?? 0;
-                const margin = ratioOfRevenue(net);
+                const margin = ratioOfRevenue(netProfit);
                 return (
                   <StatCard
                     label="Lợi nhuận dự kiến"
-                    value={analytics ? <Money value={net} /> : "—"}
+                    value={money ? <Money value={netProfit} /> : "—"}
                     icon={Scale}
-                    tone={toneBySign(net)}
+                    tone={toneBySign(netProfit)}
                     featured
                     valueClassName={HERO_SIZE}
                     sparkline={
-                      analytics
-                        ? { data: sparkProfit, tone: deltaTone(net, 0) }
+                      analytics && money
+                        ? { data: sparkProfit, tone: deltaTone(netProfit, 0) }
                         : undefined
                     }
                     subtitle={
-                      analytics?.missingCost && analytics.missingCost.orderCount > 0
-                        ? `${formatNumber(analytics.missingCost.orderCount)} đơn chưa có giá vốn nên không được tính vào lợi nhuận`
+                      missingCostOrders > 0
+                        ? `${formatNumber(missingCostOrders)} đơn chưa có giá vốn nên không được tính vào lợi nhuận`
                         : margin !== undefined
                           ? `Biên lợi nhuận ${margin}%`
-                          : "Sau giá vốn, phí sàn & chi phí"
+                          : "Sau giá vốn & chi phí"
                     }
                   />
                 );
