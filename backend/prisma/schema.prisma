@@ -298,6 +298,13 @@ model User {
   // Gói dịch vụ & thuê bao Hubsell (GĐ1 thương mại hóa) — chỉ chủ shop có.
   subscription        Subscription?
   packagePayments     PackagePayment[]
+  /// THÔNG TIN XUẤT HÓA ĐƠN khi khách mua gói Hubsell (06/10/2026) — khách tự
+  /// khai ở /settings/plan. Trống = hóa đơn ghi tên tài khoản + email đăng nhập
+  /// (khách lẻ không MST); có MST = xuất theo đơn vị (tên + địa chỉ bắt buộc).
+  billingName    String?
+  billingTaxCode String?
+  billingAddress String?
+  billingEmail   String?
   planUpgradeRequests PlanUpgradeRequest[]
   gatewayOrders       GatewayPaymentOrder[]
 
@@ -2690,6 +2697,20 @@ model PlatformLedgerEntry {
   /// TransactionID meInvoice khi khoản thu này được xuất HĐĐT qua API (tab Sổ
   /// quỹ HQ) — giữ để tải PDF/tra trạng thái; null với hóa đơn đánh dấu tay.
   einvoiceTransactionId String?
+  /// ---- TỰ ĐỘNG XUẤT + GỬI EMAIL HÓA ĐƠN BÁN GÓI (integrations/invoice/hq-auto-invoice.ts, 06/10/2026) ----
+  /// Người mua ĐÃ IN lên hóa đơn (snapshot lúc phát hành — hồ sơ khách đổi sau không ảnh hưởng chứng từ).
+  invoiceBuyerName      String?
+  invoiceBuyerTaxCode   String?
+  /// Số lượt máy đã thử phát hành / lấy số / gửi mail; lỗi lượt gần nhất (null = lượt gần nhất OK).
+  einvoiceAutoAttempts  Int                       @default(0)
+  einvoiceAutoError     String?
+  einvoiceAutoTriedAt   DateTime?
+  /// Khóa xử lý: lượt đang chạy ghi mốc này, lượt khác bỏ qua trong 10 phút (web + worker cùng chạm một bút toán).
+  einvoiceAutoLockedAt  DateTime?
+  /// Email hóa đơn gửi khách: địa chỉ nhận + mốc gửi xong (null = chưa gửi) + lỗi gửi gần nhất.
+  invoiceEmailTo        String?
+  invoiceEmailSentAt    DateTime?
+  invoiceEmailError     String?
   /// Ngày PHÁT SINH nghiệp vụ (kế toán chọn khi ghi tay — khác ngày nhập máy).
   occurredAt            DateTime                  @default(now())
   /// Ai ghi bút toán — snapshot tên để sổ còn đọc được khi tài khoản bị xoá.
@@ -2701,6 +2722,7 @@ model PlatformLedgerEntry {
 
   @@index([occurredAt])
   @@index([recurringExpenseId])
+  @@index([invoiceStatus, packagePaymentId])
   @@map("platform_ledger_entries")
 }
 
@@ -2759,6 +2781,16 @@ model PlatformInvoiceConfig {
   /// Mặc định KCT — dịch vụ phần mềm thuộc đối tượng KHÔNG chịu thuế GTGT
   /// (chờ kế toán dịch vụ xác nhận khi thương mại hóa).
   vatMode           String   @default("KCT")
+  /// TỰ ĐỘNG XUẤT HĐĐT khi ghi nhận thanh toán gói (06/10/2026 — anh Trung chốt
+  /// đầu tư eSign ký nền): payOS báo tiền về / kế toán ghi nhận chuyển khoản →
+  /// bút toán THU sinh ra là phát hành luôn, không ai phải bấm. Chỉ áp cho bút
+  /// toán phát sinh TỪ LÚC BẬT (autoIssueEnabledAt) — khoản cũ có thể đã lập
+  /// tay trên meInvoice, tự xuất đè là trùng hóa đơn (học luật autoIssueEnabledAt
+  /// của tenant, 19/09).
+  autoIssueEnabled    Boolean   @default(false)
+  autoIssueEnabledAt  DateTime?
+  /// Tự gửi email bản PDF hóa đơn cho khách ngay khi có số hóa đơn.
+  autoEmailEnabled    Boolean   @default(true)
   updatedAt         DateTime @updatedAt
 
   @@map("platform_invoice_config")

@@ -5,6 +5,7 @@
 //   Khách đăng ký mới           noreply     support@   (+ báo HQ)
 //   Mật khẩu vừa được đổi       noreply     support@
 //   Kích hoạt / gia hạn gói     billing     billing@
+//   Hóa đơn điện tử đã phát hành billing    billing@   (kèm PDF — hq-auto-invoice.ts)
 //   Sắp hết hạn (7 ngày, 1 ngày) billing    billing@   (worker subscription-reminder)
 //
 // File này chỉ lo NỘI DUNG + hàm gửi an toàn. Mọi hàm send* đều fire-and-forget:
@@ -15,7 +16,7 @@
 // ============================================================
 
 import { BUSINESS_TZ_OFFSET_MS } from "../lib/date-range";
-import { isMailerConfigured, sendMail, type MailRole } from "../lib/mailer";
+import { isMailerConfigured, sendMail, type MailAttachment, type MailRole } from "../lib/mailer";
 import { mailHq } from "./hq-mail";
 
 const FRONTEND_URL = (process.env.APP_FRONTEND_URL ?? "http://localhost:3000").replace(/\/+$/, "");
@@ -190,6 +191,78 @@ export function sendPlanActivatedMail(to: string | null, input: PlanActivatedMai
   });
 }
 
+// ---------------- 3b. Hóa đơn điện tử đã phát hành (kèm PDF) ----------------
+
+export interface InvoiceIssuedMailInput {
+  /** Tên người nhận thư (tên tài khoản) — KHÁC tên in trên hóa đơn (buyerName). */
+  fullName: string;
+  buyerName: string;
+  buyerTaxCode: string | null;
+  invoiceNo: string;
+  /** Ký hiệu hóa đơn (VD "1C26THB") — khách cần khi tra cứu trên cổng CQT. */
+  invoiceSeries: string | null;
+  /** Mã tra cứu meInvoice (TransactionID) — tra bản gốc tại cổng meInvoice. */
+  lookupCode: string | null;
+  itemName: string;
+  amount: number;
+  /** Ngày phát hành / ngày thu tiền. */
+  issuedAt: Date;
+  /** Có PDF đính kèm hay không — không có thì thư chỉ hướng dẫn tra cứu. */
+  hasPdf: boolean;
+}
+
+export const MEINVOICE_LOOKUP_URL = "https://www.meinvoice.vn/tra-cuu/";
+
+export function invoiceIssuedSubject(input: { invoiceNo: string; itemName: string }): string {
+  return `Hubsell — Hóa đơn điện tử số ${input.invoiceNo} (${input.itemName})`;
+}
+
+export function invoiceIssuedEmailHtml(input: InvoiceIssuedMailInput): string {
+  return shell({
+    heading: `Hóa đơn điện tử số ${escapeHtml(input.invoiceNo)}`,
+    bodyHtml: [
+      p(`Xin chào ${escapeHtml(input.fullName)},`),
+      p(
+        input.hasPdf
+          ? "Hubsell đã phát hành hóa đơn điện tử cho khoản thanh toán của bạn. Bản thể hiện (PDF, đã ký số) đính kèm thư này."
+          : "Hubsell đã phát hành hóa đơn điện tử cho khoản thanh toán của bạn. Bạn tra bản thể hiện bằng mã tra cứu bên dưới."
+      ),
+      `<table style="border-collapse:collapse;margin:0 0 12px">
+        ${row("Số hóa đơn", escapeHtml(input.invoiceNo))}
+        ${input.invoiceSeries ? row("Ký hiệu", escapeHtml(input.invoiceSeries)) : ""}
+        ${row("Người mua", escapeHtml(input.buyerName))}
+        ${input.buyerTaxCode ? row("Mã số thuế", escapeHtml(input.buyerTaxCode)) : ""}
+        ${row("Nội dung", escapeHtml(input.itemName))}
+        ${row("Tổng tiền", money(input.amount))}
+        ${row("Ngày", vnDateLabel(input.issuedAt))}
+        ${input.lookupCode ? row("Mã tra cứu", escapeHtml(input.lookupCode)) : ""}
+      </table>`,
+      input.lookupCode
+        ? p(
+            `Tra cứu bản gốc tại <a href="${MEINVOICE_LOOKUP_URL}" style="color:#555">${MEINVOICE_LOOKUP_URL}</a> bằng mã tra cứu ở trên.`
+          )
+        : "",
+    ].join("\n"),
+    cta: { label: "Xem gói của tôi", url: `${FRONTEND_URL}/settings/plan` },
+    footnote:
+      "Thông tin trên hóa đơn chưa đúng (tên đơn vị, mã số thuế, địa chỉ)? Trả lời thẳng email này trong 3 ngày để Hubsell lập hóa đơn điều chỉnh. Cập nhật thông tin xuất hóa đơn cho lần sau tại Cấu hình → Gói dịch vụ.",
+  });
+}
+
+/** Trả về true khi đã gửi — luồng tự động dựa vào đây để ghi mốc gửi / lỗi. */
+export async function sendInvoiceIssuedMail(
+  to: string,
+  input: InvoiceIssuedMailInput,
+  attachments?: MailAttachment[]
+): Promise<boolean> {
+  return safeSend("invoice-issued", to, {
+    role: "billing",
+    subject: invoiceIssuedSubject(input),
+    html: invoiceIssuedEmailHtml(input),
+    attachments,
+  });
+}
+
 // ---------------- 4. Sắp hết hạn ----------------
 
 export interface RenewalReminderMailInput {
@@ -245,7 +318,7 @@ export async function sendRenewalReminderMail(
 async function safeSend(
   kind: string,
   to: string | null | undefined,
-  message: { role: MailRole; subject: string; html: string }
+  message: { role: MailRole; subject: string; html: string; attachments?: MailAttachment[] }
 ): Promise<boolean> {
   try {
     if (!to || !isMailerConfigured()) return false;

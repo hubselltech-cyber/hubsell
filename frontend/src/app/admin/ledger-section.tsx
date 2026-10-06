@@ -73,7 +73,9 @@ import {
   displayExpenseCategory,
 } from "./hq-expense-categories";
 import {
+  HqInvoiceAutoRetryButton,
   HqInvoiceConfigDialog,
+  HqInvoiceEmailButton,
   HqInvoicePdfButton,
   HqIssueInvoiceDialog,
 } from "./hq-invoice";
@@ -1123,30 +1125,91 @@ export function LedgerSection({
                       {e.invoiceStatus === "NONE" ? (
                         <span className="text-sm text-muted-foreground">—</span>
                       ) : e.invoiceStatus === "PENDING" ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                            Chưa xuất
-                          </span>
-                          {e.direction === "IN" && (
-                            <Button
-                              variant="outline"
-                              size="icon-sm"
-                              title="Xuất hóa đơn điện tử qua meInvoice"
-                              onClick={() => setIssueEntry(e)}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            {e.einvoiceTransactionId ? (
+                              <span
+                                className="inline-flex items-center rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700"
+                                title={`meInvoice đã nhận lệnh, chưa cấp số · mã tra cứu ${e.einvoiceTransactionId}`}
+                              >
+                                Chờ cấp số
+                              </span>
+                            ) : e.einvoiceAutoError ? (
+                              <span
+                                className="inline-flex items-center rounded-full border border-rose-300 bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700"
+                                title={e.einvoiceAutoError}
+                              >
+                                Tự xuất lỗi · lượt {e.einvoiceAutoAttempts}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                                Chưa xuất
+                              </span>
+                            )}
+                            {e.direction === "IN" && (e.packagePaymentId || e.einvoiceTransactionId) && (
+                              <HqInvoiceAutoRetryButton entry={e} onDone={onChanged} />
+                            )}
+                            {e.direction === "IN" && !e.einvoiceTransactionId && (
+                              <Button
+                                variant="outline"
+                                size="icon-sm"
+                                title="Xuất hóa đơn điện tử qua meInvoice (nhập người mua tay)"
+                                onClick={() => setIssueEntry(e)}
+                              >
+                                <ReceiptText className="size-4" />
+                              </Button>
+                            )}
+                          </div>
+                          {e.einvoiceAutoError && (
+                            <p
+                              className="max-w-[260px] truncate text-xs text-rose-600"
+                              title={e.einvoiceAutoError}
                             >
-                              <ReceiptText className="size-4" />
-                            </Button>
+                              {e.einvoiceAutoError}
+                            </p>
                           )}
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"
-                            title={e.invoiceNo ?? undefined}
-                          >
-                            Đã xuất{e.invoiceNo ? ` · ${e.invoiceNo}` : ""}
-                          </span>
-                          {e.einvoiceTransactionId && <HqInvoicePdfButton entry={e} />}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"
+                              title={
+                                [
+                                  e.invoiceNo,
+                                  e.invoiceBuyerName ? `Người mua: ${e.invoiceBuyerName}` : null,
+                                  e.invoiceBuyerTaxCode ? `MST ${e.invoiceBuyerTaxCode}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ") || undefined
+                              }
+                            >
+                              Đã xuất{e.invoiceNo ? ` · ${e.invoiceNo}` : ""}
+                            </span>
+                            {e.einvoiceTransactionId && <HqInvoicePdfButton entry={e} />}
+                            {e.einvoiceTransactionId && e.invoiceNo && (
+                              <HqInvoiceEmailButton entry={e} onDone={onChanged} />
+                            )}
+                          </div>
+                          {e.einvoiceTransactionId && e.invoiceNo && (
+                            <p
+                              className={cn(
+                                "max-w-[260px] truncate text-xs",
+                                e.invoiceEmailSentAt
+                                  ? "text-muted-foreground"
+                                  : e.invoiceEmailError
+                                    ? "text-rose-600"
+                                    : "text-amber-600"
+                              )}
+                              title={e.invoiceEmailError ?? undefined}
+                            >
+                              {e.invoiceEmailSentAt
+                                ? `Đã gửi ${e.invoiceEmailTo ?? ""} · ${new Date(e.invoiceEmailSentAt).toLocaleDateString("vi-VN")}`
+                                : e.invoiceEmailError
+                                  ? e.invoiceEmailError
+                                  : "Chưa gửi email cho khách"}
+                            </p>
+                          )}
                         </div>
                       )}
                     </TableCell>

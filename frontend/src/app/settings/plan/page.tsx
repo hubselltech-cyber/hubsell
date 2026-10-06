@@ -13,6 +13,9 @@
 //   3) Lịch sử thanh toán.
 // Khi có STK (env PLAN_PAYMENT_BANK_*), khối yêu-cầu-đã-gửi tự hiện hướng
 // dẫn chuyển khoản — không cần sửa code.
+//   5) 06/10: THÔNG TIN XUẤT HÓA ĐƠN — khách khai một lần (tên đơn vị, MST,
+//      địa chỉ, email nhận); mỗi lần thanh toán Hubsell tự phát hành HĐĐT theo
+//      hồ sơ này và gửi PDF về email (hq-auto-invoice.ts phía backend).
 //   4) 09/09: CỔNG payOS — backend có PAYOS_* thì /me trả gateway ≠ null →
 //      nút chính đổi thành "Thanh toán ngay" (17/09: popup nhúng trang thanh toán payOS, gói mở khi tiền về);
 //      "Đăng ký mua" lùi xuống làm đường phụ cho khách cần người hỗ trợ.
@@ -26,6 +29,7 @@ import {
   Clock,
   Gauge,
   QrCode,
+  ReceiptText,
   ShoppingCart,
   Wallet,
   X,
@@ -50,10 +54,13 @@ import {
   cancelMyPlanUpgradeRequest,
   createPlanCheckout,
   fetchPlanCheckout,
+  getStoredUser,
   renewPackageWithWallet,
   requestPlanUpgrade,
+  updateMyBillingProfile,
   type BillingCycle,
   type GatewayCheckout,
+  type MyBillingProfile,
   type MyUpgradePlan,
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
@@ -136,6 +143,136 @@ function UsageBar({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Thẻ THÔNG TIN XUẤT HÓA ĐƠN (06/10) — khách lẻ để trống (hóa đơn ghi tên tài
+ * khoản + email đăng nhập); đơn vị điền tên + MST + địa chỉ để hóa đơn điện tử
+ * về đúng pháp nhân. Lưu là áp cho các lần thanh toán sau; hóa đơn đã phát hành
+ * không đổi (muốn sửa thì trả lời email hóa đơn trong 3 ngày).
+ */
+function BillingProfileCard({
+  profile,
+  accountEmail,
+  onSaved,
+}: {
+  profile: MyBillingProfile | null;
+  accountEmail: string | null;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: profile?.name ?? "",
+    taxCode: profile?.taxCode ?? "",
+    address: profile?.address ?? "",
+    email: profile?.email ?? "",
+  });
+  const [dirty, setDirty] = useState(false);
+  // Hồ sơ nạp sau khi thẻ đã render (query về muộn) → đổ lại ô, trừ khi khách đang gõ.
+  useEffect(() => {
+    if (dirty) return;
+    setForm({
+      name: profile?.name ?? "",
+      taxCode: profile?.taxCode ?? "",
+      address: profile?.address ?? "",
+      email: profile?.email ?? "",
+    });
+  }, [profile, dirty]);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDirty(true);
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: () => updateMyBillingProfile(form),
+    onSuccess: () => {
+      setDirty(false);
+      onSaved();
+      toast.success("Đã lưu thông tin xuất hóa đơn — áp dụng cho các lần thanh toán sau.");
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được — thử lại sau."),
+  });
+
+  const isCompany = form.taxCode.trim() !== "";
+  const summary =
+    profile?.taxCode
+      ? `Hóa đơn xuất theo đơn vị: ${profile.name} · MST ${profile.taxCode}`
+      : profile?.name
+        ? `Hóa đơn ghi tên: ${profile.name}`
+        : "Chưa khai — hóa đơn sẽ ghi tên tài khoản (khách lẻ, không MST).";
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="border-b pb-3">
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          <ReceiptText className="size-5 text-slate-500" />
+          Thông tin xuất hóa đơn
+        </CardTitle>
+        <p className={TEXT_SUB}>
+          Mỗi lần thanh toán, Hubsell tự phát hành hóa đơn điện tử theo thông tin này và
+          gửi bản PDF về email nhận hóa đơn{accountEmail ? ` (mặc định ${accountEmail})` : ""}.
+          {" "}
+          {summary}
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1.5">
+            <Label htmlFor="billing-name">Tên đơn vị / người mua</Label>
+            <Input
+              id="billing-name"
+              placeholder="VD: CÔNG TY TNHH ABC (trống = tên tài khoản)"
+              value={form.name}
+              onChange={set("name")}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="billing-tax">Mã số thuế (nếu xuất theo đơn vị)</Label>
+            <Input
+              id="billing-tax"
+              placeholder="10 số hoặc 10-3 số chi nhánh"
+              value={form.taxCode}
+              onChange={set("taxCode")}
+            />
+          </div>
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="billing-address">
+            Địa chỉ{isCompany ? " (bắt buộc khi có MST)" : ""}
+          </Label>
+          <Input
+            id="billing-address"
+            placeholder="Địa chỉ trụ sở theo đăng ký kinh doanh"
+            value={form.address}
+            onChange={set("address")}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="billing-email">Email nhận hóa đơn</Label>
+          <Input
+            id="billing-email"
+            type="email"
+            placeholder={accountEmail ?? "ketoan@congty.vn"}
+            value={form.email}
+            onChange={set("email")}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Hóa đơn đã phát hành không tự đổi theo hồ sơ mới — sai thông tin thì trả lời email
+            hóa đơn trong 3 ngày để Hubsell lập hóa đơn điều chỉnh.
+          </p>
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !dirty || (isCompany && (!form.name.trim() || !form.address.trim()))}
+          >
+            {saveMutation.isPending ? "Đang lưu…" : "Lưu"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -250,6 +387,8 @@ export default function SettingsPlanPage() {
   });
 
   const sub = data?.subscription ?? null;
+  // Email đăng nhập — mặc định nhận hóa đơn khi khách chưa khai email riêng.
+  const accountEmail = getStoredUser()?.email ?? null;
   const pending = data?.pendingUpgradeRequest ?? null;
   const wallet = data?.walletBalance ?? 0;
   // Trần đơn của gói tự mua lớn nhất (upgradePlans luôn chứa bậc cao nhất) —
@@ -373,6 +512,15 @@ export default function SettingsPlanPage() {
           </CardContent>
         )}
       </Card>
+
+      {/* ===== Thông tin xuất hóa đơn (06/10) — chỉ chủ shop (nhân viên nhận billingProfile null) ===== */}
+      {data && data.billingProfile !== null && !data.exempt && (
+        <BillingProfileCard
+          profile={data.billingProfile}
+          accountEmail={accountEmail}
+          onSaved={refresh}
+        />
+      )}
 
       {/* ===== Chọn gói & thanh toán — trình bày kiểu bảng giá SaaS (anh Trung
           22/08 khuya: to, rõ, đẹp như đối thủ; nêu rõ 3 giới hạn dưới từng gói,

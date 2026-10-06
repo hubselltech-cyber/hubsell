@@ -25,6 +25,7 @@ import { prisma } from "../lib/prisma";
 import { invalidatePlanState } from "./plan-enforcement";
 import { creditReferralCommission } from "./referral-wallet";
 import { sendPlanActivatedMail } from "./customer-mails";
+import { kickHqAutoInvoice } from "../integrations/invoice/hq-auto-invoice";
 
 type Tx = Prisma.TransactionClient;
 
@@ -309,6 +310,9 @@ export async function recordPackagePayment(
   // trả tiền chờ hết TTL cache trạng thái trần (GĐ2 cưỡng chế).
   invalidatePlanState(input.userId);
   mailPlanActivated(result);
+  // Tự xuất HĐĐT + gửi PDF cho khách (06/10) — fire-and-forget, chỉ chạy khi
+  // công tắc HQ bật; Ví không có bút toán sổ quỹ nên tự bỏ qua.
+  kickHqAutoInvoice(result.payment.id);
   const amount = Number(result.payment.amount);
   if (amount > 0) {
     await creditReferralCommission(
