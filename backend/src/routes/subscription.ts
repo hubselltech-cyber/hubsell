@@ -12,6 +12,7 @@ import { prisma } from "../lib/prisma";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import { isMailerConfigured, sendMail } from "../lib/mailer";
 import { getOwnerPlanState } from "../services/plan-enforcement";
+import { TAX_CODE_RE } from "../integrations/invoice/misa-einvoice";
 import { CYCLE_LABEL, planPriceFor } from "../services/subscription-service";
 import {
   cancelCheckout,
@@ -92,6 +93,82 @@ async function notifyHqUpgradeRequest(input: {
   }
 }
 
+// ---- Hồ sơ XUẤT HÓA ĐƠN của khách mua gói (06/10/2026) ----
+// Khách khai một lần ở /settings/plan; mỗi lần thanh toán, Hubsell tự phát
+// hành HĐĐT theo hồ sơ này (integrations/invoice/hq-auto-invoice.ts). Trống =
+// hóa đơn ghi tên tài khoản + email đăng nhập (khách lẻ không MST).
+const BILLING_PROFILE_SELECT = {
+  billingName: true,
+  billingTaxCode: true,
+  billingAddress: true,
+  billingEmail: true,
+} as const;
+
+function billingProfileOf(u: {
+  billingName: string | null;
+  billingTaxCode: string | null;
+  billingAddress: string | null;
+  billingEmail: string | null;
+}) {
+  return {
+    name: u.billingName,
+    taxCode: u.billingTaxCode,
+    address: u.billingAddress,
+    email: u.billingEmail,
+  };
+}
+
+// PUT /api/subscription/billing-profile — { name?, taxCode?, address?, email? }
+// (chuỗi rỗng = xóa). Có MST thì tên đơn vị + địa chỉ bắt buộc (hóa đơn theo
+// đơn vị thiếu địa chỉ là cơ quan thuế từ chối).
+router.put("/billing-profile", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const b = req.body ?? {};
+    const text = (v: unknown, max: number) => {
+      if (v === undefined || v === null) return null;
+      if (typeof v !== "string") return undefined;
+      const t = v.trim();
+      if (t.length > max) return undefined;
+      return t || null;
+    };
+    const name = text(b.name, 200);
+    const taxCodeRaw = text(b.taxCode, 20);
+    const address = text(b.address, 300);
+    const email = text(b.email, 200);
+    if ([name, taxCodeRaw, address, email].some((v) => v === undefined)) {
+      res.status(400).json({ error: "Dữ liệu không hợp lệ hoặc quá dài" });
+      return;
+    }
+    // Khách hay dán MST có dấu chấm / khoảng trắng — bỏ trước khi kiểm dạng.
+    const taxCode = taxCodeRaw ? taxCodeRaw.replace(/[\s.]/g, "") : null;
+    if (taxCode && !TAX_CODE_RE.test(taxCode)) {
+      res.status(400).json({ error: "Mã số thuế không hợp lệ (10 số, 10-3 số chi nhánh, hoặc 12/13 số)" });
+      return;
+    }
+    if (taxCode && (!name || !address)) {
+      res.status(400).json({ error: "Xuất hóa đơn theo đơn vị cần đủ tên đơn vị và địa chỉ" });
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      res.status(400).json({ error: "Email nhận hóa đơn không hợp lệ" });
+      return;
+    }
+    const updated = await prisma.user.update({
+      where: { id: req.ownerId! },
+      data: {
+        billingName: name,
+        billingTaxCode: taxCode,
+        billingAddress: address,
+        billingEmail: email,
+      },
+      select: BILLING_PROFILE_SELECT,
+    });
+    res.json({ billingProfile: billingProfileOf(updated) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/me", async (req: AuthRequest, res, next) => {
   try {
     const state = await getOwnerPlanState(req.ownerId!);
@@ -120,7 +197,7 @@ router.get("/me", async (req: AuthRequest, res, next) => {
           }),
           prisma.user.findUnique({
             where: { id: req.ownerId! },
-            select: { phone: true },
+            select: { ...BILLING_PROFILE_SELECT, phone: true },
           }),
           // Đơn cổng đang chờ (QR còn hạn) — khách quay lại trang là mở lại được.
           findOpenCheckout(req.ownerId!),
@@ -187,6 +264,8 @@ router.get("/me", async (req: AuthRequest, res, next) => {
         : null,
       walletBalance: wallet ? Number(wallet.balance) : null,
       contactPhone: ownerProfile?.phone ?? null,
+      // Hồ sơ xuất hóa đơn (06/10) — chỉ chủ shop; nhân viên nhận null.
+      billingProfile: ownerProfile ? billingProfileOf(ownerProfile) : null,
       enterprisePlan,
     });
   } catch (err) {

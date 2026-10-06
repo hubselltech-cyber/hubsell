@@ -36,6 +36,7 @@ import { startAdsDailySummaryWorker } from "./ads-daily-summary";
 import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
 import { startSubscriptionReminderWorker } from "./subscription-reminder";
+import { startHqInvoiceAutoWorker } from "./hq-invoice-auto";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
 import { startHealthWatchWorker } from "./health-watch";
@@ -107,6 +108,9 @@ export function startAllWorkers(): void {
   startLazadaRenewalReminderWorker();
   // Nhắc hạn gói Hubsell (thư billing@ + chuông) 7 ngày / 1 ngày trước hạn.
   startSubscriptionReminderWorker();
+  // Lưới an toàn tự xuất HĐĐT bán gói + gửi PDF cho khách (06/10): nhặt bút
+  // toán lỡ sau restart / MISA lỗi tạm / chờ cấp số / mail lỗi.
+  startHqInvoiceAutoWorker();
   // Bồi đơn tài khoản trial reviewer (Xét duyệt app TikTok 16/09, 10-12 ngày) —
   // tắt bằng REVIEWER_DEMO_TOPUP_MINUTES=0 khi có kết quả.
   startReviewerDemoTopupWorker();

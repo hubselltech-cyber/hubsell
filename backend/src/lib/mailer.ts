@@ -63,12 +63,22 @@ export function resolveSender(role?: MailRole): { from: string; replyTo?: string
   return { from: fallback };
 }
 
+/** Tệp đính kèm (VD bản PDF hóa đơn điện tử gửi khách). */
+export interface MailAttachment {
+  filename: string;
+  /** Nội dung nhị phân, hoặc chuỗi base64 kèm encoding "base64". */
+  content: Buffer | string;
+  contentType?: string;
+  encoding?: "base64";
+}
+
 /** Gửi một email HTML. Ném lỗi để tầng route quyết định cách phản hồi. */
 export async function sendMail(opts: {
   to: string;
   subject: string;
   html: string;
   role?: MailRole;
+  attachments?: MailAttachment[];
 }): Promise<void> {
   if (!isMailerConfigured()) {
     throw new Error(

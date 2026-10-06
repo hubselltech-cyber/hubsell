@@ -39,6 +39,10 @@ import {
   type HqVatMode,
 } from "../integrations/invoice/issue-hq";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
+import {
+  getPlatformInvoiceConfigRow,
+  processHqLedgerInvoice,
+} from "../integrations/invoice/hq-auto-invoice";
 import adminPlansRouter from "./admin-plans";
 import adminHealthRouter from "./admin-health";
 import adminInputInvoicesRouter from "./admin-input-invoices";
@@ -1277,6 +1281,14 @@ const LEDGER_SELECT = {
   invoiceStatus: true,
   invoiceNo: true,
   einvoiceTransactionId: true,
+  invoiceBuyerName: true,
+  invoiceBuyerTaxCode: true,
+  einvoiceAutoAttempts: true,
+  einvoiceAutoError: true,
+  einvoiceAutoTriedAt: true,
+  invoiceEmailTo: true,
+  invoiceEmailSentAt: true,
+  invoiceEmailError: true,
   occurredAt: true,
   createdByName: true,
   withdrawalRequestId: true,
@@ -1973,11 +1985,8 @@ router.put(
 // chốt an toàn MISA_ALLOW_PUBLISH vẫn gác publish như mọi luồng khác.
 // ============================================================
 
-/** Bản ghi cấu hình duy nhất (tạo rỗng nếu chưa có). */
-async function hqInvoiceConfigRow() {
-  const row = await prisma.platformInvoiceConfig.findFirst();
-  return row ?? prisma.platformInvoiceConfig.create({ data: {} });
-}
+/** Bản ghi cấu hình duy nhất (tạo rỗng nếu chưa có) — dùng chung với luồng tự xuất. */
+const hqInvoiceConfigRow = getPlatformInvoiceConfigRow;
 
 /** Che trường mật — GET không bao giờ trả mật khẩu, chỉ báo đã lưu hay chưa. */
 function maskHqInvoiceConfig(row: Awaited<ReturnType<typeof hqInvoiceConfigRow>>) {
@@ -2044,8 +2053,33 @@ router.put(
         res.status(400).json({ error: "vatMode không hợp lệ (KCT/0/5/8/10)" });
         return;
       }
+      if (b.autoIssueEnabled !== undefined && typeof b.autoIssueEnabled !== "boolean") {
+        res.status(400).json({ error: "autoIssueEnabled phải là true/false" });
+        return;
+      }
+      if (b.autoEmailEnabled !== undefined && typeof b.autoEmailEnabled !== "boolean") {
+        res.status(400).json({ error: "autoEmailEnabled phải là true/false" });
+        return;
+      }
 
       const row = await hqInvoiceConfigRow();
+      // Mốc tự xuất (autoIssueEnabledAt): HQ chọn được ngày "áp dụng cho khoản
+      // thu phát sinh từ" (autoIssueFrom, ISO) — VD lùi về sáng nay để xuất
+      // luôn cho khách vừa mua trước khi bật. Không chọn: chuyển TẮT → BẬT lấy
+      // "bây giờ"; tắt công tắc thì xóa mốc. Mốc không được ở tương lai.
+      let autoIssueEnabledAt: Date | null | undefined;
+      if (b.autoIssueEnabled === false) {
+        autoIssueEnabledAt = null;
+      } else if (typeof b.autoIssueFrom === "string" && b.autoIssueFrom.trim()) {
+        const from = new Date(b.autoIssueFrom);
+        if (Number.isNaN(from.getTime()) || from.getTime() > Date.now() + 60_000) {
+          res.status(400).json({ error: "Ngày áp dụng tự xuất không hợp lệ (không được ở tương lai)" });
+          return;
+        }
+        autoIssueEnabledAt = from;
+      } else if (b.autoIssueEnabled === true && !row.autoIssueEnabled) {
+        autoIssueEnabledAt = new Date();
+      }
       // Để trống = giữ nguyên (undefined); có nhập = MÃ HÓA trước khi ghi DB.
       const secret = (field: PlatformInvoiceSecretField, v: unknown) =>
         typeof v === "string" && v.trim()
@@ -2068,11 +2102,19 @@ router.put(
           esignPassword: secret("esignPassword", b.esignPassword),
           certSerial: text(b.certSerial),
           vatMode: b.vatMode,
+          autoIssueEnabled: b.autoIssueEnabled,
+          autoIssueEnabledAt,
+          autoEmailEnabled: b.autoEmailEnabled,
         },
       });
       await writeAuditLog(req, {
         action: "hq-invoice.config-update",
-        detail: { taxCode: updated.taxCode, invoiceSeries: updated.invoiceSeries },
+        detail: {
+          taxCode: updated.taxCode,
+          invoiceSeries: updated.invoiceSeries,
+          autoIssueEnabled: updated.autoIssueEnabled,
+          autoEmailEnabled: updated.autoEmailEnabled,
+        },
       });
       res.json({
         config: maskHqInvoiceConfig(updated),
@@ -2186,6 +2228,10 @@ router.post(
         where: { id: entry.id },
         data: {
           einvoiceTransactionId: published.transactionId,
+          invoiceBuyerName: buyerName,
+          invoiceBuyerTaxCode: buyerTaxCode || null,
+          invoiceEmailTo: input.buyerEmail ?? null,
+          einvoiceAutoError: null,
           ...(issued
             ? {
                 invoiceStatus: LedgerInvoiceStatus.ISSUED,
@@ -2195,6 +2241,11 @@ router.post(
         },
         select: LEDGER_SELECT,
       });
+      // Xuất tay xong cũng gửi PDF cho khách nếu công tắc tự gửi đang bật
+      // (fire-and-forget; chưa có số thì worker lấy số rồi gửi sau).
+      if (row.autoEmailEnabled && input.buyerEmail) {
+        void processHqLedgerInvoice(entry.id, { trigger: "manual", ignoreEligibility: true });
+      }
       await writeAuditLog(req, {
         action: "hq-invoice.issue",
         detail: {
@@ -2247,6 +2298,101 @@ router.get(
         fileName: `hoa-don-${entry.invoiceNo ?? entry.einvoiceTransactionId}.pdf`,
         base64: file.data,
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/finance/ledger/:id/auto-invoice — chạy lại luồng tự động
+// (phát hành → lấy số → email) cho MỘT bút toán thu phí gói: nút "Thử lại"
+// trên Sổ quỹ sau khi HQ sửa nguyên nhân (cấu hình, hồ sơ khách…). Mọi luật ở
+// hq-auto-invoice.ts; lỗi trả 200 kèm step=failed để UI hiện đúng lời nhắn.
+router.post(
+  "/finance/ledger/:id/auto-invoice",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const entry = await prisma.platformLedgerEntry.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, direction: true, packagePaymentId: true, customerId: true },
+      });
+      if (!entry) {
+        res.status(404).json({ error: "Không tìm thấy bút toán" });
+        return;
+      }
+      if (entry.direction !== LedgerDirection.IN) {
+        res.status(400).json({ error: "Chỉ xuất hóa đơn cho khoản THU" });
+        return;
+      }
+      if (!entry.packagePaymentId && !entry.customerId) {
+        res.status(400).json({
+          error: "Bút toán không gắn khách hàng — dùng nút Xuất hóa đơn để nhập người mua tay",
+        });
+        return;
+      }
+      const result = await processHqLedgerInvoice(entry.id, {
+        trigger: "manual",
+        ignoreEligibility: true,
+      });
+      await writeAuditLog(req, {
+        action: "hq-invoice.auto-retry",
+        detail: { ledgerEntryId: entry.id, step: result.step, invoiceNo: result.invoiceNo, error: result.error },
+      });
+      const updated = await prisma.platformLedgerEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+        select: LEDGER_SELECT,
+      });
+      res.json({ result, entry: { ...updated, amount: toNumber(updated.amount) } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/finance/ledger/:id/send-invoice-email — gửi (lại) email PDF
+// hóa đơn cho khách. Body: { to? } — ghi đè địa chỉ nhận (khách đổi email).
+router.post(
+  "/finance/ledger/:id/send-invoice-email",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const entry = await prisma.platformLedgerEntry.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, invoiceNo: true, einvoiceTransactionId: true },
+      });
+      if (!entry) {
+        res.status(404).json({ error: "Không tìm thấy bút toán" });
+        return;
+      }
+      if (!entry.einvoiceTransactionId) {
+        res.status(400).json({ error: "Bút toán chưa có hóa đơn xuất qua API — không có PDF để gửi" });
+        return;
+      }
+      if (!entry.invoiceNo) {
+        res.status(400).json({ error: "Hóa đơn chưa được cấp số — bấm Thử lại để hỏi meInvoice trước" });
+        return;
+      }
+      const to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+      if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        res.status(400).json({ error: "Email nhận không hợp lệ" });
+        return;
+      }
+      const result = await processHqLedgerInvoice(entry.id, {
+        trigger: "manual",
+        ignoreEligibility: true,
+        resendEmail: true,
+        emailTo: to || null,
+      });
+      await writeAuditLog(req, {
+        action: "hq-invoice.send-email",
+        detail: { ledgerEntryId: entry.id, to: result.emailedTo, step: result.step, error: result.error },
+      });
+      const updated = await prisma.platformLedgerEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+        select: LEDGER_SELECT,
+      });
+      res.json({ result, entry: { ...updated, amount: toNumber(updated.amount) } });
     } catch (err) {
       next(err);
     }

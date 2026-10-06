@@ -4950,6 +4950,18 @@ export interface PlatformLedgerEntry {
   packagePaymentId: string | null;
   /** TransactionID meInvoice khi khoản thu xuất HĐĐT qua API — có = tải được PDF. */
   einvoiceTransactionId: string | null;
+  /** ---- Tự xuất + gửi email hóa đơn bán gói (06/10) ---- */
+  /** Người mua đã in lên hóa đơn (snapshot lúc phát hành). */
+  invoiceBuyerName: string | null;
+  invoiceBuyerTaxCode: string | null;
+  /** Số lượt máy đã thử; lỗi lượt gần nhất (null = OK); mốc thử gần nhất. */
+  einvoiceAutoAttempts: number;
+  einvoiceAutoError: string | null;
+  einvoiceAutoTriedAt: string | null;
+  /** Email hóa đơn gửi khách: địa chỉ, mốc gửi xong (null = chưa), lỗi gần nhất. */
+  invoiceEmailTo: string | null;
+  invoiceEmailSentAt: string | null;
+  invoiceEmailError: string | null;
   /** Khoản mục CHI (key HQ_EXPENSE_CATEGORIES) — null với khoản thu/dòng cũ. */
   expenseCategory: string | null;
   /** Chứng từ đầu vào của phiếu CHI — cho bảng kê mua vào của kế toán. */
@@ -5313,6 +5325,11 @@ export interface HqInvoiceConfig {
   esignUsername: string | null;
   certSerial: string | null;
   vatMode: string;
+  /** Tự phát hành HĐĐT khi ghi nhận thanh toán gói (chỉ bút toán từ mốc autoIssueEnabledAt). */
+  autoIssueEnabled: boolean;
+  autoIssueEnabledAt: string | null;
+  /** Tự gửi email PDF hóa đơn cho khách khi có số. */
+  autoEmailEnabled: boolean;
   hasMeinvoicePassword: boolean;
   hasEsignSecretKey: boolean;
   hasEsignPassword: boolean;
@@ -5346,6 +5363,10 @@ export function updateHqInvoiceConfig(data: {
   esignPassword?: string;
   certSerial?: string;
   vatMode?: string;
+  autoIssueEnabled?: boolean;
+  /** ISO — mốc "áp dụng cho khoản thu phát sinh từ"; bỏ trống = giữ mốc cũ / lấy lúc bật. */
+  autoIssueFrom?: string;
+  autoEmailEnabled?: boolean;
 }) {
   return apiFetch<HqInvoiceConfigResponse>("/api/admin/finance/invoice-config", {
     method: "PUT",
@@ -5385,6 +5406,39 @@ export function issueHqInvoice(
 export function downloadHqInvoicePdf(ledgerEntryId: string) {
   return apiFetch<{ fileName: string; base64: string }>(
     `/api/admin/finance/ledger/${ledgerEntryId}/invoice-pdf`
+  );
+}
+
+/** Kết quả một lượt luồng tự động (phát hành → lấy số → email) cho một bút toán. */
+export interface HqAutoInvoiceResult {
+  entryId: string;
+  step:
+    | "locked"
+    | "not-eligible"
+    | "nothing"
+    | "issued"
+    | "number-pending"
+    | "emailed"
+    | "failed";
+  invoiceNo: string | null;
+  transactionId: string | null;
+  emailedTo: string | null;
+  error: string | null;
+}
+
+/** Nút "Thử lại" — chạy lại luồng tự động cho bút toán thu phí gói. */
+export function retryHqAutoInvoice(ledgerEntryId: string) {
+  return apiFetch<{ result: HqAutoInvoiceResult; entry: PlatformLedgerEntry }>(
+    `/api/admin/finance/ledger/${ledgerEntryId}/auto-invoice`,
+    { method: "POST" }
+  );
+}
+
+/** Gửi (lại) email PDF hóa đơn cho khách; `to` ghi đè địa chỉ nhận. */
+export function sendHqInvoiceEmail(ledgerEntryId: string, to?: string) {
+  return apiFetch<{ result: HqAutoInvoiceResult; entry: PlatformLedgerEntry }>(
+    `/api/admin/finance/ledger/${ledgerEntryId}/send-invoice-email`,
+    { method: "POST", body: JSON.stringify({ to: to ?? "" }) }
   );
 }
 
@@ -5661,8 +5715,17 @@ export interface MySubscriptionResponse {
   walletBalance: number | null;
   /** SĐT hồ sơ chủ shop — điền sẵn ô "để lại SĐT" khi đăng ký mua/tư vấn. */
   contactPhone: string | null;
+  /** Hồ sơ xuất hóa đơn của chủ shop (06/10) — null với nhân viên. Trống = khách lẻ theo tên tài khoản. */
+  billingProfile: MyBillingProfile | null;
   /** Gói Enterprise "Liên hệ báo giá" — card hiện khi gói tồn tại (kể cả nháp). */
   enterprisePlan: { id: string; name: string } | null;
+}
+
+export interface MyBillingProfile {
+  name: string | null;
+  taxCode: string | null;
+  address: string | null;
+  email: string | null;
 }
 
 export function fetchMySubscription() {
@@ -5684,6 +5747,19 @@ export function requestPlanUpgrade(params: {
     "/api/subscription/upgrade-request",
     { method: "POST", body: JSON.stringify(params) }
   );
+}
+
+/** Lưu hồ sơ xuất hóa đơn (chuỗi rỗng = xóa). Có MST thì tên + địa chỉ bắt buộc. */
+export function updateMyBillingProfile(data: {
+  name: string;
+  taxCode: string;
+  address: string;
+  email: string;
+}) {
+  return apiFetch<{ billingProfile: MyBillingProfile }>("/api/subscription/billing-profile", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
 }
 
 export function cancelMyPlanUpgradeRequest() {
