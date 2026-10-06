@@ -56,6 +56,18 @@ import {
 } from "@/lib/api";
 import { formatMoney } from "./shared";
 
+/** ISO → "yyyy-mm-dd" theo lịch Việt Nam (UTC+7). */
+function vnDateInput(iso: string): string {
+  const t = new Date(new Date(iso).getTime() + 7 * 60 * 60 * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
+}
+
+/** "yyyy-mm-dd" → ISO của 0h ngày đó giờ Việt Nam. */
+function vnMidnightIso(date: string): string {
+  return new Date(`${date}T00:00:00+07:00`).toISOString();
+}
+
 const VAT_MODE_LABEL: Record<string, string> = {
   KCT: "Không chịu thuế (dịch vụ phần mềm)",
   "0": "0%",
@@ -88,6 +100,9 @@ export function HqInvoiceConfigDialog({
   const [form, setForm] = useState<Record<string, string>>({});
   // Công tắc tự động (06/10) — tách khỏi form chuỗi để gửi đúng kiểu boolean.
   const [auto, setAuto] = useState({ autoIssueEnabled: false, autoEmailEnabled: true });
+  // Ngày "áp dụng cho khoản thu phát sinh từ" (yyyy-mm-dd, lịch VN) — gửi lên
+  // thành 0h VN ngày đó. Lùi về sáng nay = xuất luôn cho khách vừa mua.
+  const [autoFrom, setAutoFrom] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -99,6 +114,7 @@ export function HqInvoiceConfigDialog({
           autoIssueEnabled: r.config.autoIssueEnabled,
           autoEmailEnabled: r.config.autoEmailEnabled,
         });
+        setAutoFrom(vnDateInput(r.config.autoIssueEnabledAt ?? new Date().toISOString()));
         setForm({
           taxCode: r.config.taxCode ?? "",
           companyName: r.config.companyName ?? "",
@@ -122,7 +138,12 @@ export function HqInvoiceConfigDialog({
   async function handleSave() {
     setSaving(true);
     try {
-      const r = await updateHqInvoiceConfig({ ...form, ...auto });
+      const r = await updateHqInvoiceConfig({
+        ...form,
+        ...auto,
+        autoIssueFrom:
+          auto.autoIssueEnabled && autoFrom ? vnMidnightIso(autoFrom) : undefined,
+      });
       setResp(r);
       setForm((f) => ({ ...f, meinvoicePassword: "" }));
       toast.success(
@@ -286,6 +307,24 @@ export function HqInvoiceConfigDialog({
                   onCheckedChange={(v) => setAuto((a) => ({ ...a, autoEmailEnabled: v }))}
                 />
               </div>
+              {auto.autoIssueEnabled && (
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">Áp dụng cho khoản thu phát sinh từ ngày</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      className="h-8 w-44"
+                      value={autoFrom}
+                      max={vnDateInput(new Date().toISOString())}
+                      onChange={(e) => setAutoFrom(e.target.value)}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Khoản thu từ 0h ngày này mà chưa có hóa đơn sẽ được máy xuất
+                      (lưới quét 30&apos; hoặc bấm Thử lại). Khoản cũ hơn giữ nguyên.
+                    </span>
+                  </div>
+                </div>
+              )}
               {auto.autoIssueEnabled && form.signMethod === "USB_TOKEN" && (
                 <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

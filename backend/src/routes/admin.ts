@@ -2063,14 +2063,23 @@ router.put(
       }
 
       const row = await hqInvoiceConfigRow();
-      // Mốc bật tự xuất: chỉ ghi khi chuyển TẮT → BẬT (bật lại sau khi tắt là
-      // mốc mới — khoản thu trong lúc tắt coi như đã xử lý tay, không xuất đè).
-      const autoIssueEnabledAt =
-        b.autoIssueEnabled === true && !row.autoIssueEnabled
-          ? new Date()
-          : b.autoIssueEnabled === false
-            ? null
-            : undefined;
+      // Mốc tự xuất (autoIssueEnabledAt): HQ chọn được ngày "áp dụng cho khoản
+      // thu phát sinh từ" (autoIssueFrom, ISO) — VD lùi về sáng nay để xuất
+      // luôn cho khách vừa mua trước khi bật. Không chọn: chuyển TẮT → BẬT lấy
+      // "bây giờ"; tắt công tắc thì xóa mốc. Mốc không được ở tương lai.
+      let autoIssueEnabledAt: Date | null | undefined;
+      if (b.autoIssueEnabled === false) {
+        autoIssueEnabledAt = null;
+      } else if (typeof b.autoIssueFrom === "string" && b.autoIssueFrom.trim()) {
+        const from = new Date(b.autoIssueFrom);
+        if (Number.isNaN(from.getTime()) || from.getTime() > Date.now() + 60_000) {
+          res.status(400).json({ error: "Ngày áp dụng tự xuất không hợp lệ (không được ở tương lai)" });
+          return;
+        }
+        autoIssueEnabledAt = from;
+      } else if (b.autoIssueEnabled === true && !row.autoIssueEnabled) {
+        autoIssueEnabledAt = new Date();
+      }
       // Để trống = giữ nguyên (undefined); có nhập = MÃ HÓA trước khi ghi DB.
       const secret = (field: PlatformInvoiceSecretField, v: unknown) =>
         typeof v === "string" && v.trim()

@@ -5364,6 +5364,8 @@ export function updateHqInvoiceConfig(data: {
   certSerial?: string;
   vatMode?: string;
   autoIssueEnabled?: boolean;
+  /** ISO — mốc "áp dụng cho khoản thu phát sinh từ"; bỏ trống = giữ mốc cũ / lấy lúc bật. */
+  autoIssueFrom?: string;
   autoEmailEnabled?: boolean;
 }) {
   return apiFetch<HqInvoiceConfigResponse>("/api/admin/finance/invoice-config", {
