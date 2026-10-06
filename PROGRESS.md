@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 06/10/2026 (sáng) — APK thử 062d3ba1 (anh duyệt) gộp master + iOS LÊN APP STORE CONNECT (hồ sơ điền xong, chờ anh gõ mật khẩu reviewer + bấm nộp)
+
+- **Android:** APK `062d3ba1` từ nhánh cloud `claude/determined-carson-9yjicg` (hàng miễn phí Expo tối 05/10 chờ ~106', build xong 00:17) → anh thử "dùng được" → **fast-forward master `f7167d3`** (Tổng quan đọc finance/analytics + tab Gợi ý Ads).
+- **iOS lần đầu:** Apple không gửi được mã 2FA SMS cho `dev@hubsell.vn` → bỏ đường đăng nhập Apple ID, dùng **khóa API App Store Connect** (Team Key `EAS Hubsell`, Key ID `Q5L8979HZT`, Admin; `.p8` ở `hubsell-mobile/asc-api-key.p8` gitignore). Bẫy: build iOS lần đầu PHẢI chạy interactive (non-interactive từ chối tạo Distribution Certificate) với 5 biến `EXPO_ASC_API_KEY_PATH / EXPO_ASC_KEY_ID / EXPO_ASC_ISSUER_ID / EXPO_APPLE_TEAM_ID=BF6Y7D47P5 / EXPO_APPLE_TEAM_TYPE=COMPANY_OR_ORGANIZATION`; từ nay cert đã nằm trên Expo nên `--non-interactive` chạy được. Build `2812493f` (1.0.0 **build 4**) → `eas submit` `636125d1` xong; `eas.json` submit.ios ghi sẵn key/issuer/ascAppId.
+- **App Store Connect app `6819512670`** (Company Name `Hubsell Technology` — anh chốt, không đổi được): App Information (phụ đề, Business, Content Rights, Age Rating 4+), Pricing 0, **chỉ Việt Nam**, bỏ Mac/Vision Pro, App Privacy đã Publish (Name / Email / User ID / Other User Content), trang 1.0: 6 ảnh **1206×2622** (ASC từ chối 1290×2796 → thư mục `docs/store/screenshots/iphone-6.3/`), promo + mô tả + từ khóa + URL + bản quyền, build 4 đã gắn, App Review contact + user `reviewer@hubsell.vn` + Notes. **Mô tả và Notes viết lại** vì app đã gỡ tab Tin nhắn (bỏ chat/ảnh, thêm Quảng cáo / Tồn kho / nút QR) — `docs/store/LISTING.md` cập nhật theo.
+- **Còn tay anh:** gõ mật khẩu reviewer vào ô Password → Save → **Add for Review → Submit to App Review**. Sau khi Apple duyệt: đổi dải "ra mắt tháng 10/2026" + landing (xem memory hubsell-mobile-len-store). Play Console vẫn chờ GCN tên tiếng Anh.
+
+---
+
 ## Phiên 05/10/2026 (chiều) — MOBILE: Tổng quan đọc Doanh thu đúng ô Tài chính (web sửa theo) + GỢI Ý CHẠY ADS thành tab riêng trên trang Quảng cáo Shopee (anh Trung chốt từng bước qua bản mô phỏng; nhánh `claude/determined-carson-9yjicg`, CHƯA build APK)
 
 - **Tổng quan sai "Doanh thu hôm nay" (anh phát hiện trên app):** hero đọc `totalRevenue` của `/api/analytics` = Σ giá trị đơn gốc (`analytics.ts:172`) = thẻ "Tổng giá trị sản phẩm" bên Tài chính. Sửa `OverviewPage.tsx`: 3 số tiền (Doanh thu · Chi phí · Lợi nhuận) đọc `breakdown` của `/api/finance/analytics` hôm nay (+ hôm qua cho ▲/▼) — đúng 4 thẻ Tài chính; đơn / phễu / donut / trend vẫn `/api/analytics`. Tâm donut ghi "giá trị đơn hôm nay". **Web Tổng quan sửa cùng cách** (`frontend/src/app/page.tsx`, chủ shop; SALES giữ giá trị gốc vì không có quyền finance). Lưu ý: `/api/finance` có `requirePlanUnlocked` → shop hết hạn gói giờ thấy lỗi ngay Tổng quan app (Tài chính vốn đã vậy).
