@@ -1134,12 +1134,12 @@ export function LedgerSection({
                               >
                                 Chờ cấp số
                               </span>
-                            ) : e.einvoiceAutoError?.startsWith("Chờ phiên ký eSign") ? (
+                            ) : e.einvoiceAutoError?.startsWith("Chờ ") ? (
                               <span
                                 className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700"
                                 title={e.einvoiceAutoError}
                               >
-                                Chờ phiên ký eSign
+                                {e.einvoiceAutoError.split(":")[0]}
                               </span>
                             ) : e.einvoiceAutoError ? (
                               <span
@@ -1171,7 +1171,7 @@ export function LedgerSection({
                             <p
                               className={cn(
                                 "max-w-[260px] truncate text-xs",
-                                e.einvoiceAutoError.startsWith("Chờ phiên ký eSign") ? "text-amber-700" : "text-rose-600"
+                                e.einvoiceAutoError.startsWith("Chờ ") ? "text-amber-700" : "text-rose-600"
                               )}
                               title={e.einvoiceAutoError}
                             >

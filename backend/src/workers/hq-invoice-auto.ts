@@ -20,6 +20,7 @@ import { LedgerDirection, LedgerInvoiceStatus } from "@prisma/client";
 import {
   getPlatformInvoiceConfigRow,
   isSignSessionError,
+  isWaitingError,
   MAX_AUTO_ATTEMPTS,
   processHqLedgerInvoice,
 } from "../integrations/invoice/hq-auto-invoice";
@@ -108,6 +109,8 @@ export async function runHqInvoiceAutoOnce(now = new Date()): Promise<number> {
       done++;
       if (r.step === "failed" && isSignSessionError(r.error)) {
         waitingSignSession++;
+      } else if (r.step === "failed" && isWaitingError(r.error)) {
+        console.log(`[HQ invoice] Worker: bút toán ${c.id} đang chờ — ${r.error}`);
       } else if (r.step === "failed") {
         console.warn(`[HQ invoice] Worker: bút toán ${c.id} lỗi — ${r.error}`);
       } else if (r.step !== "nothing" && r.step !== "locked") {

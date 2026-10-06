@@ -41,6 +41,7 @@ vi.mock("../../services/customer-mails", async (importOriginal) => {
 });
 
 import { prisma } from "../../lib/prisma";
+import { InvoiceProviderError } from "../invoice/invoice-errors";
 import { recordPackagePayment } from "../../services/subscription-service";
 import { processHqLedgerInvoice } from "../invoice/hq-auto-invoice";
 import { runHqInvoiceAutoOnce } from "../../workers/hq-invoice-auto";
@@ -260,6 +261,42 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     const e3 = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
     expect(e3.einvoiceAutoAttempts).toBe(e.einvoiceAutoAttempts);
     expect(e3.einvoiceAutoError).toContain("Ký phiên");
+  });
+
+  it("MISA báo trùng RefID: tờ đã phát hành → nối lại + gửi mail; tờ nháp chưa ký → chờ, giữ mã tra cứu", async () => {
+    await setConfig({ autoIssueEnabled: true, autoIssueEnabledAt: new Date("2026-10-06T00:00:00Z") });
+    misa.publish.mockRejectedValue(
+      new InvoiceProviderError("meInvoice từ chối phát hành", { code: "InvoiceDuplicated", publishSent: true })
+    );
+    // Tra theo RefID → tờ NHÁP chưa ký (publishStatus 0) có mã tra cứu.
+    misa.statuses.mockImplementation(async (_ids: string[], _cfg: unknown, by?: string) =>
+      by === "refId"
+        ? [{ transactionId: "TX-DUP", invoiceNo: null, isDeleted: false, publishStatus: 0 }]
+        : [{ transactionId: "TX-DUP", invoiceNo: null, isDeleted: false, publishStatus: 0 }]
+    );
+    const id = await payAndGetEntryId(new Date("2026-10-07T08:00:00Z"));
+    misa.publish.mockClear();
+    await prisma.platformLedgerEntry.update({
+      where: { id },
+      data: { einvoiceTransactionId: null, einvoiceAutoError: null, einvoiceAutoAttempts: 0 },
+    });
+
+    const r1 = await processHqLedgerInvoice(id, { trigger: "worker" });
+    expect(r1.step).toBe("failed");
+    expect(r1.error).toContain("Chờ ký tờ nháp");
+    let e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e.einvoiceTransactionId).toBe("TX-DUP");
+    expect(e.einvoiceAutoAttempts).toBe(0); // trạng thái chờ không đốt lượt
+    expect(mail.sendInvoice).not.toHaveBeenCalled();
+
+    // Anh ký tờ nháp trên web → lượt sau hỏi theo mã tra cứu thấy số → gửi mail.
+    misa.statuses.mockResolvedValue([{ transactionId: "TX-DUP", invoiceNo: "00000061", isDeleted: false, publishStatus: 1 }]);
+    const r2 = await processHqLedgerInvoice(id, { trigger: "worker" });
+    expect(r2.step).toBe("emailed");
+    expect(misa.publish).toHaveBeenCalledTimes(1); // chỉ lượt 1 gọi; lượt 2 không phát hành lại
+    e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e.invoiceStatus).toBe("ISSUED");
+    expect(e.invoiceNo).toBe("00000061");
   });
 
   it("bút toán đang bị lượt khác khóa → locked, không gọi MISA", async () => {

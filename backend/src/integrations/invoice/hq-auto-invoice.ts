@@ -59,6 +59,7 @@ import {
   type StandardInvoiceConfig,
 } from "./misa-einvoice";
 import { isPublishAllowed } from "./misa-safety";
+import { explainInvoiceError } from "./invoice-errors";
 
 /** Trần lượt máy tự xử lý một bút toán — quá là dừng, báo HQ làm tay. */
 export const MAX_AUTO_ATTEMPTS = 5;
@@ -264,6 +265,19 @@ export function isSignSessionError(message: string | null | undefined): boolean 
   return Boolean(message && (SIGN_SESSION_RE.test(message) || message.startsWith("Chờ phiên ký eSign")));
 }
 
+/**
+ * meInvoice đang giữ tờ NHÁP chưa ký cho khoản thu (lần gọi trước ký hỏng nhưng
+ * tờ đã được tạo; MISA báo trùng RefID ở lần gọi sau). Cũng là trạng thái chờ:
+ * ký tờ đó trên web (xác nhận eSign) hoặc xóa nháp rồi Thử lại.
+ */
+export const DRAFT_WAITING_MESSAGE =
+  "Chờ ký tờ nháp trên meInvoice: lần gọi trước đã tạo hóa đơn nhưng chưa ký được. Vào meinvoice.vn → Hóa đơn → Chưa phát hành, ký tờ của khoản thu này (hoặc xóa nháp rồi bấm Thử lại); máy tự lấy số khi tờ được ký.";
+
+/** Mọi lời nhắn bắt đầu bằng "Chờ " là TRẠNG THÁI CHỜ (không đốt lượt, nhãn vàng). */
+export function isWaitingError(message: string | null | undefined): boolean {
+  return Boolean(message && (isSignSessionError(message) || message.startsWith("Chờ ")));
+}
+
 function trimError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.length > 600 ? `${msg.slice(0, 597)}…` : msg;
@@ -355,7 +369,25 @@ export async function processHqLedgerInvoice(
         amount: Number(entry.amount),
         vatMode: cfgRow.vatMode as HqVatMode,
       });
-      const published = await publishStandardInvoice(input, cfg);
+      let published: { invoiceNo: string | null; transactionId: string | null };
+      let draftWaiting = false;
+      try {
+        published = await publishStandardInvoice(input, cfg);
+      } catch (err) {
+        // MISA báo TRÙNG RefID = tờ đã tồn tại bên meInvoice (lần trước ký hỏng
+        // sau khi tạo, hoặc phát hành xong mà Hubsell không nhận được kết quả).
+        // Tra ngược theo RefID để NỐI LẠI thay vì kẹt lỗi mãi — học recoverDuplicate
+        // của tenant (misa-provider.ts).
+        const explained = explainInvoiceError(err);
+        if (explained.code !== "InvoiceDuplicated" && explained.code !== "DuplicateInvoiceRefID") throw err;
+        const [found] = await getInvoiceStatuses([input.orderCode], cfg, "refId");
+        if (!found || found.isDeleted || !found.transactionId) throw err;
+        published = {
+          invoiceNo: found.publishStatus === 1 ? found.invoiceNo : null,
+          transactionId: found.transactionId,
+        };
+        draftWaiting = found.publishStatus !== 1;
+      }
       const issued = Boolean(published.invoiceNo);
       entry = await prisma.platformLedgerEntry.update({
         where: { id: entry.id },
@@ -371,6 +403,8 @@ export async function processHqLedgerInvoice(
         select: ENTRY_SELECT,
       });
       step = issued ? "issued" : "number-pending";
+      // Tờ nháp chưa ký: đã lưu mã tra cứu (lượt sau chỉ hỏi số), báo HQ việc cần làm.
+      if (draftWaiting) throw new Error(DRAFT_WAITING_MESSAGE);
     }
 
     // ---- Bước 2: lấy số (meInvoice cấp trễ) ----
@@ -419,12 +453,13 @@ export async function processHqLedgerInvoice(
     step = "failed";
   }
 
-  // Lỗi "chờ phiên ký eSign" → đổi lời nhắn thành việc cần làm, KHÔNG đốt lượt.
-  const waitingSignSession = isSignSessionError(error);
-  if (waitingSignSession) error = `${SIGN_SESSION_MESSAGE} (meInvoice: CallSignServiceFail)`;
+  // Lỗi "chờ phiên ký eSign" → đổi lời nhắn thành việc cần làm. Mọi trạng thái
+  // CHỜ (phiên ký, tờ nháp) KHÔNG đốt lượt — máy cứ 30' thử lại.
+  if (isSignSessionError(error)) error = `${SIGN_SESSION_MESSAGE} (meInvoice: CallSignServiceFail)`;
+  const waiting = isWaitingError(error);
   // Lượt HQ bấm tay cũng không tính vào trần máy — trần chỉ để worker dừng
   // spam, không phải để khóa người.
-  const countsTowardCap = !waitingSignSession && opts.trigger !== "manual";
+  const countsTowardCap = !waiting && opts.trigger !== "manual";
   const attempts = entry.einvoiceAutoAttempts + (countsTowardCap ? 1 : 0);
   await prisma.platformLedgerEntry.update({
     where: { id: entry.id },
