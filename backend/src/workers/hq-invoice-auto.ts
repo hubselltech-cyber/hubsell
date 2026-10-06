@@ -19,11 +19,18 @@ import { LedgerDirection, LedgerInvoiceStatus } from "@prisma/client";
 
 import {
   getPlatformInvoiceConfigRow,
+  isSignSessionError,
   MAX_AUTO_ATTEMPTS,
   processHqLedgerInvoice,
 } from "../integrations/invoice/hq-auto-invoice";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import { prisma } from "../lib/prisma";
+import { mailHq } from "../services/hq-mail";
+
+const FRONTEND_URL = (process.env.APP_FRONTEND_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+/** Nhắc HQ mở phiên ký eSign tối đa một lần mỗi chừng này khi còn hóa đơn chờ. */
+export const SIGN_SESSION_REMIND_GAP_MS = 20 * 60 * 60 * 1000;
+let lastSignSessionRemindAt = 0;
 
 const DEFAULT_INTERVAL_MINUTES = 30;
 const FIRST_RUN_DELAY_MS = 3 * 60 * 1000;
@@ -95,14 +102,26 @@ export async function runHqInvoiceAutoOnce(now = new Date()): Promise<number> {
     });
 
     let done = 0;
+    let waitingSignSession = 0;
     for (const c of candidates) {
       const r = await processHqLedgerInvoice(c.id, { trigger: "worker" });
       done++;
-      if (r.step === "failed") {
+      if (r.step === "failed" && isSignSessionError(r.error)) {
+        waitingSignSession++;
+      } else if (r.step === "failed") {
         console.warn(`[HQ invoice] Worker: bút toán ${c.id} lỗi — ${r.error}`);
       } else if (r.step !== "nothing" && r.step !== "locked") {
         console.log(`[HQ invoice] Worker: bút toán ${c.id} → ${r.step}${r.invoiceNo ? ` · số ${r.invoiceNo}` : ""}`);
       }
+    }
+    // Hóa đơn đang chờ phiên ký eSign: nhắc HQ mở app, nhiều nhất một thư/ngày.
+    if (waitingSignSession > 0 && now.getTime() - lastSignSessionRemindAt > SIGN_SESSION_REMIND_GAP_MS) {
+      lastSignSessionRemindAt = now.getTime();
+      console.warn(`[HQ invoice] ${waitingSignSession} hóa đơn bán gói chờ phiên ký eSign`);
+      void mailHq({
+        subject: `[Hubsell] ${waitingSignSession} hóa đơn bán gói đang chờ phiên ký eSign`,
+        html: `<p>Khách đã thanh toán nhưng meInvoice chưa ký được vì app MISA eSign chưa mở phiên ký.</p><p>Mở app MISA eSign → Thiết lập → bật <b>Ký phiên</b> (hiệu lực 24h). Máy tự thử lại mỗi 30 phút, hoặc vào <a href="${FRONTEND_URL}/admin/finance">Sổ quỹ HQ</a> bấm Thử lại.</p>`,
+      });
     }
     return done;
   } catch (err) {

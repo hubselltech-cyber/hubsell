@@ -238,7 +238,8 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     const id = await payAndGetEntryId(new Date("2026-10-07T05:00:00Z"));
     const before = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
 
-    const r = await processHqLedgerInvoice(id, { trigger: "manual", ignoreEligibility: true });
+    // Lượt worker mới tính vào trần; lượt HQ bấm tay (manual) không đốt lượt.
+    const r = await processHqLedgerInvoice(id, { trigger: "worker", ignoreEligibility: true });
     expect(r.step).toBe("failed");
     expect(r.error).toContain("ký hiệu không tồn tại");
     const e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
@@ -247,6 +248,18 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     expect(e.einvoiceAutoAttempts).toBe(before.einvoiceAutoAttempts + 1);
     expect(e.einvoiceAutoLockedAt).toBeNull();
     expect(mail.sendInvoice).not.toHaveBeenCalled();
+
+    // HQ bấm tay → không tăng lượt; meInvoice báo CallSignServiceFail → lời nhắn
+    // "chờ phiên ký eSign", cũng không tăng lượt (máy cứ 30' thử lại).
+    const r2 = await processHqLedgerInvoice(id, { trigger: "manual", ignoreEligibility: true });
+    expect(r2.step).toBe("failed");
+    misa.publish.mockRejectedValue(new Error("meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=CallSignServiceFail"));
+    const r3 = await processHqLedgerInvoice(id, { trigger: "worker", ignoreEligibility: true });
+    expect(r3.step).toBe("failed");
+    expect(r3.error).toContain("Chờ phiên ký eSign");
+    const e3 = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e3.einvoiceAutoAttempts).toBe(e.einvoiceAutoAttempts);
+    expect(e3.einvoiceAutoError).toContain("Ký phiên");
   });
 
   it("bút toán đang bị lượt khác khóa → locked, không gọi MISA", async () => {

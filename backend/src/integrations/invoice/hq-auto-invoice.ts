@@ -248,6 +248,22 @@ const ENTRY_SELECT = {
 
 type EntryRow = Prisma.PlatformLedgerEntryGetPayload<{ select: typeof ENTRY_SELECT }>;
 
+/**
+ * meInvoice báo "CallSignServiceFail" = gọi dịch vụ ký eSign không được. Với
+ * chữ ký số từ xa MISA eSign, mỗi chữ ký phải được người ký xác nhận trên app,
+ * trừ khi app đang mở PHIÊN KÝ (bật "Ký phiên", hiệu lực 24h). Không có phiên →
+ * meInvoice không ký được → lỗi này. Đây KHÔNG phải lỗi dữ liệu: không đốt lượt
+ * thử, máy cứ 30' thử lại; anh Trung mở app bật phiên là lượt sau xuất được.
+ */
+export const SIGN_SESSION_RE = /CallSign(Service|Sevice)Fail/i;
+export const SIGN_SESSION_MESSAGE =
+  "Chờ phiên ký eSign: mở app MISA eSign trên điện thoại → Thiết lập → bật Ký phiên (24h), rồi bấm Thử lại hoặc chờ máy tự thử lại mỗi 30 phút.";
+
+/** Lỗi này là "chờ phiên ký eSign" (không đốt lượt thử)? Hàm thuần để test. */
+export function isSignSessionError(message: string | null | undefined): boolean {
+  return Boolean(message && (SIGN_SESSION_RE.test(message) || message.startsWith("Chờ phiên ký eSign")));
+}
+
 function trimError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.length > 600 ? `${msg.slice(0, 597)}…` : msg;
@@ -403,7 +419,13 @@ export async function processHqLedgerInvoice(
     step = "failed";
   }
 
-  const attempts = entry.einvoiceAutoAttempts + 1;
+  // Lỗi "chờ phiên ký eSign" → đổi lời nhắn thành việc cần làm, KHÔNG đốt lượt.
+  const waitingSignSession = isSignSessionError(error);
+  if (waitingSignSession) error = `${SIGN_SESSION_MESSAGE} (meInvoice: CallSignServiceFail)`;
+  // Lượt HQ bấm tay cũng không tính vào trần máy — trần chỉ để worker dừng
+  // spam, không phải để khóa người.
+  const countsTowardCap = !waitingSignSession && opts.trigger !== "manual";
+  const attempts = entry.einvoiceAutoAttempts + (countsTowardCap ? 1 : 0);
   await prisma.platformLedgerEntry.update({
     where: { id: entry.id },
     data: {
@@ -415,7 +437,7 @@ export async function processHqLedgerInvoice(
   });
 
   // Chạm trần lượt máy mà vẫn lỗi → MỘT thư báo HQ, worker không nhặt nữa.
-  if (error && attempts === MAX_AUTO_ATTEMPTS && opts.trigger !== "manual") {
+  if (error && countsTowardCap && attempts === MAX_AUTO_ATTEMPTS) {
     void mailHq({
       subject: `[Hubsell] ⚠️ Hóa đơn bán gói tự xuất THẤT BẠI ${attempts} lượt — cần làm tay`,
       html: `<p>Khoản thu <b>${Number(entry.amount).toLocaleString("vi-VN")}₫</b> của khách ${escapeHtml(
