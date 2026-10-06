@@ -53,3 +53,11 @@ export function changePassword(currentPassword: string, newPassword: string) {
     body: { currentPassword, newPassword },
   });
 }
+
+/** Tự xóa tài khoản (Apple 5.1.1(v)) — đòi mật khẩu hiện tại; thành công thì phiên hết hiệu lực. */
+export function deleteAccount(password: string) {
+  return api<{ ok?: boolean }>("/api/auth/me/delete", {
+    method: "POST",
+    body: { password },
+  });
+}

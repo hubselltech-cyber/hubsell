@@ -95,7 +95,7 @@ Apple chỉ có một cặp ô tài khoản: điền tài khoản **chủ shop**
 
 ## 4. Ghi chú gửi người duyệt (tiếng Anh)
 
-Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới ĐÃ DÁN vào App Store Connect 06/10 (viết lại: bỏ Tin nhắn + thư viện ảnh, thêm Quảng cáo / Tồn kho / nút QR; không cần mã vận đơn mẫu vì ô gõ tay tìm theo vài số cuối). Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
+Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới viết lại **06/10 chiều sau khi Apple từ chối lần 1** (xem `APPLE-REVIEW-REPLY-1.md`): bản cũ ghi "The app has no sign-up" trong khi app CÓ màn Đăng ký → người duyệt tự đăng ký tài khoản trống rồi dính 3 lỗi. Nay nói thật có đăng ký, nhấn mạnh dùng tài khoản demo, ghi rõ nút xóa tài khoản và chuyện gói không bán trong app. Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
 
 ```
 Hubsell is a B2B tool for online merchants in Vietnam who sell on the
@@ -105,14 +105,28 @@ orders, follow their ad campaigns, adjust stock, and (warehouse staff)
 scan return parcels. The app's interface is in Vietnamese only.
 
 ACCOUNTS
-The app has no sign-up. Accounts are created by a business on our website
-and staff accounts are issued by the shop owner, so sign-in is required.
-The demo account below is connected to sample stores ("Hubsell Demo
-Store") that already contain orders, returns, stock and financial data.
+PLEASE REVIEW WITH THE DEMO ACCOUNT BELOW. It is connected to sample
+stores ("Hubsell Demo Store") that already contain orders, returns, stock
+and financial data. A newly registered account has no marketplace stores
+connected yet (connecting a store requires a real Shopee/Lazada/TikTok
+seller account), so most screens would be empty.
 
 Shop owner (all screens): see the user name / password fields above.
 Warehouse staff account (opens directly on the warehouse screens) is also
 available on request: user name reviewer/reviewer_kho.
+
+Sign-up: the app has a registration screen that creates a merchant
+account. Only name, email and password are required; phone number is
+optional. Users can delete their account at any time inside the app:
+Settings tab ("Cau hinh") -> tap the name row at the top -> "Xoa tai
+khoan" (enter current password to confirm). Personal data is erased
+immediately and the remaining data is purged within 30 days.
+
+PAYMENTS
+Nothing is sold inside the app. Hubsell plans are B2B service contracts
+bought by businesses on our website (bank transfer, with a VAT invoice);
+the app does not show prices, plans, trials or any upgrade/purchase
+entry point and never links to a purchase page.
 
 HOW TO TEST
 - Home tab: three swipeable pages (Overview, Finance, Ads). Finance has a
@@ -132,7 +146,9 @@ HOW TO TEST
 
 PERMISSIONS
 - Camera: only to scan shipping barcodes. No photo or video is saved or
-  uploaded.
+  uploaded. If camera access was denied earlier, the scan screen shows an
+  "Open Settings" button; orders can also be found by typing the last
+  digits of a code, no camera needed.
 - Microphone and speech recognition: only after the user taps the
   microphone button to ask the Assistant a question by voice. Speech-to-text
   is done by the operating system's speech service; our servers receive the

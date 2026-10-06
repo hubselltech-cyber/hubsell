@@ -97,7 +97,9 @@ export default function RegisterScreen() {
     if (!USERNAME_REGEX.test(username))
       return "Tên đăng nhập: 3-30 ký tự, chữ thường, số, dấu chấm, gạch dưới";
     if (usernameStatus === "taken") return "Tên đăng nhập này đã có người dùng, chọn tên khác nhé";
-    if (!PHONE_REGEX.test(phone)) return "Vui lòng nhập số điện thoại hợp lệ (6-15 chữ số)";
+    // SĐT KHÔNG bắt buộc (Apple 5.1.1 — không đòi dữ liệu cá nhân ngoài cái app
+    // cần để chạy); đã gõ thì phải hợp lệ.
+    if (phone && !PHONE_REGEX.test(phone)) return "Số điện thoại không hợp lệ (6-15 chữ số)";
     if (password.length < 6) return "Mật khẩu phải có ít nhất 6 ký tự";
     if (password !== confirmPassword) return "Mật khẩu nhập lại không khớp";
     if (!acceptTerms) return "Bạn cần đồng ý Điều khoản dịch vụ và Chính sách bảo mật";
@@ -117,7 +119,7 @@ export default function RegisterScreen() {
         fullName: fullName.trim(),
         username,
         country: countryCode,
-        phoneNumber: phone,
+        ...(phone ? { phoneNumber: phone } : {}),
         ...(referralCode.trim() ? { referralCode: referralCode.trim() } : {}),
         acceptTerms: true,
       });
@@ -218,7 +220,7 @@ export default function RegisterScreen() {
               : "Viết liền, không dấu — nhân viên sẽ đăng nhập dạng tênnày/têncủahọ"}
           </Text>
 
-          <Text className={labelClass}>Số điện thoại</Text>
+          <Text className={labelClass}>Số điện thoại (không bắt buộc)</Text>
           <View className={`mb-3 flex-row items-center ${inputClass} py-0`}>
             {/* Ô ghép Mã vùng + SĐT như PhoneInput web: bấm cờ để đổi nước */}
             <Pressable

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -307,6 +308,10 @@ export function ScanScreen({
   if (!isWeb) {
     if (!permission) return <View className="flex-1 bg-slate-950" />;
     if (!permission.granted) {
+      // iOS chỉ hỏi quyền MỘT lần: đã từ chối thì requestPermission() về ngay
+      // không hiện gì — người duyệt Apple bấm nút thấy "chết" (từ chối 2.1.0
+      // ngày 06/10). canAskAgain=false → đưa thẳng vào Cài đặt của app.
+      const mustOpenSettings = !permission.canAskAgain;
       return (
         <View className="flex-1 items-center justify-center bg-slate-950 px-8">
           <Ionicons name="camera-outline" size={48} color="#64748b" />
@@ -314,14 +319,22 @@ export function ScanScreen({
             Cần quyền Camera để quét mã vận đơn
           </Text>
           <Text className="mt-2 text-center text-sm text-slate-400 dark:text-slate-500">
-            Hubsell chỉ dùng camera để đọc mã trên tem kiện hàng.
+            {mustOpenSettings
+              ? "Bạn đã từ chối quyền Camera. Mở Cài đặt → Hubsell → bật Camera rồi quay lại đây."
+              : "Hubsell chỉ dùng camera để đọc mã trên tem kiện hàng."}
           </Text>
           <ActionButton
-            label="Cấp quyền Camera"
-            icon="camera"
+            label={mustOpenSettings ? "Mở Cài đặt" : "Cấp quyền Camera"}
+            icon={mustOpenSettings ? "settings" : "camera"}
             className="mt-6 min-w-[220px]"
-            onPress={() => void requestPermission()}
+            onPress={() => {
+              if (mustOpenSettings) void Linking.openSettings();
+              else void requestPermission();
+            }}
           />
+          <Text className="mt-6 text-center text-xs text-slate-500">
+            Không dùng camera? Vào tab Đơn hàng để tìm đơn theo mã vận đơn / mã đơn.
+          </Text>
         </View>
       );
     }

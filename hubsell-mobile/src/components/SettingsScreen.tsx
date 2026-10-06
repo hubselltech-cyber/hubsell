@@ -13,8 +13,9 @@ import { UserAvatar } from "./UserAvatar";
 
 /**
  * Trang công khai trên landing (hubsell.vn) — cả App Store lẫn Google Play đều
- * bắt app có link Chính sách bảo mật ngay trong app (Apple 5.1.1) và một
- * đường xin xóa tài khoản (Google Data safety). Mở bằng trình duyệt trong app.
+ * bắt app có link Chính sách bảo mật ngay trong app (Apple 5.1.1). Nút xóa tài
+ * khoản THẬT nằm trong AccountScreen (Apple 5.1.1(v) đòi xóa ngay trong app);
+ * link ở đây chỉ là trang chính sách. Mở bằng trình duyệt trong app.
  */
 const SITE = "https://hubsell.vn";
 const ABOUT_LINKS: { key: string; label: string; hint: string; url: string; icon: React.ComponentProps<typeof Ionicons>["name"] }[] = [
@@ -41,8 +42,8 @@ const ABOUT_LINKS: { key: string; label: string; hint: string; url: string; icon
   },
   {
     key: "delete",
-    label: "Yêu cầu xóa tài khoản",
-    hint: "Xóa toàn bộ dữ liệu trong 30 ngày",
+    label: "Chính sách xóa tài khoản",
+    hint: "Nút xóa nằm trong trang Tài khoản — dữ liệu xóa hẳn trong 30 ngày",
     url: `${SITE}/xoa-tai-khoan`,
     icon: "trash-outline",
   },

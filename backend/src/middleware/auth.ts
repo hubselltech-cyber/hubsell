@@ -74,9 +74,11 @@ export async function requireAuth(
         isPlatformAdmin: true,
         permissions: true,
         lastActiveAt: true,
+        deletedAt: true,
       },
     });
-    if (!user) {
+    // Đã tự xóa tài khoản trong app → token cũ còn hạn cũng không được vào.
+    if (!user || user.deletedAt) {
       res.status(401).json({ error: "Tài khoản không còn tồn tại" });
       return;
     }

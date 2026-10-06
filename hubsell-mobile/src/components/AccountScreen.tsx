@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -12,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useAuth } from "../auth/AuthContext";
-import { changePassword } from "../api/auth";
+import { changePassword, deleteAccount } from "../api/auth";
 import { fetchMyPlan } from "../api/subscription";
 import { ApiError } from "../api/client";
 import type { MyPlanResponse } from "../types/api";
@@ -83,6 +85,9 @@ function InfoRow({
   );
 }
 
+/** Dòng "Gói đang dùng" chỉ hiện ngoài iOS (xem chú thích trong useEffect nạp gói). */
+const SHOW_PLAN = Platform.OS !== "ios";
+
 const VALUE_CLS = "text-sm font-medium text-slate-900 dark:text-slate-100";
 const EMPTY_CLS = "text-sm text-slate-400 dark:text-slate-500";
 const INPUT_CLS =
@@ -103,9 +108,16 @@ export function AccountScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [plan, setPlan] = useState<MyPlanResponse | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   // Gói đang dùng — lỗi mạng thì chỉ ẩn dòng gói, không chặn cả màn.
+  // iOS KHÔNG hiện: Apple từ chối 3.1.1 (06/10/2026) vì thấy "gói · dùng thử ·
+  // hết hạn" mà không mua được bằng In-App Purchase. Gói bán cho doanh nghiệp
+  // trên web, app chỉ là công cụ dùng — trên iOS giấu luôn cho khỏi tranh cãi.
   useEffect(() => {
+    if (SHOW_PLAN === false) return;
     let cancelled = false;
     fetchMyPlan()
       .then((res) => {
@@ -152,6 +164,44 @@ export function AccountScreen() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const isOwner = user.role === "ADMIN";
+
+  // Xóa tài khoản ngay trong app (Apple 5.1.1(v)): đòi mật khẩu + hộp xác nhận.
+  const runDelete = async () => {
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      await deleteAccount(deletePassword);
+      await signOut();
+      router.replace("/login");
+      Alert.alert(
+        "Đã xóa tài khoản",
+        "Thông tin cá nhân của bạn đã được xóa. Dữ liệu còn lại sẽ xóa hẳn trong 30 ngày."
+      );
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "Có lỗi xảy ra, thử lại sau");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+  const confirmDelete = () => {
+    setDeleteError("");
+    if (!deletePassword) {
+      setDeleteError("Nhập mật khẩu hiện tại để xác nhận");
+      return;
+    }
+    Alert.alert(
+      "Xóa tài khoản?",
+      isOwner
+        ? "Tài khoản của bạn và mọi nhân viên trong shop sẽ bị khóa ngay, gian hàng ngừng đồng bộ. Không hoàn tác được."
+        : "Tài khoản của bạn sẽ bị khóa ngay và không hoàn tác được.",
+      [
+        { text: "Hủy", style: "cancel" },
+        { text: "Xóa tài khoản", style: "destructive", onPress: () => void runDelete() },
+      ]
+    );
   };
 
   return (
@@ -291,6 +341,42 @@ export function AccountScreen() {
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <Text className="text-sm font-semibold text-white">Đổi mật khẩu</Text>
+            )}
+          </Pressable>
+        </View>
+
+        <View
+          className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
+          style={{ elevation: 2 }}
+        >
+          <Text className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Xóa tài khoản
+          </Text>
+          <Text className="mb-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Xóa ngay thông tin cá nhân (tên, email, số điện thoại, ảnh) và khóa đăng nhập.
+            {isOwner ? " Nhân viên trong shop cũng bị khóa, gian hàng ngừng đồng bộ." : ""}{" "}
+            Dữ liệu còn lại xóa hẳn trong 30 ngày; chứng từ kế toán giữ theo luật. Không hoàn
+            tác được.
+          </Text>
+          <TextInput
+            className={`mb-3 ${INPUT_CLS}`}
+            placeholder="Mật khẩu hiện tại để xác nhận"
+            placeholderTextColor="#94a3b8"
+            secureTextEntry
+            value={deletePassword}
+            onChangeText={setDeletePassword}
+          />
+          {deleteError ? <Text className="mb-2 text-xs text-red-500">{deleteError}</Text> : null}
+          <Pressable
+            className="items-center rounded-xl border border-red-300 py-3 active:opacity-80 dark:border-red-800"
+            onPress={confirmDelete}
+            disabled={deleteBusy}
+            accessibilityRole="button"
+          >
+            {deleteBusy ? (
+              <ActivityIndicator color="#ef4444" size="small" />
+            ) : (
+              <Text className="text-sm font-semibold text-red-500">Xóa tài khoản</Text>
             )}
           </Pressable>
         </View>

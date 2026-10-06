@@ -25,6 +25,7 @@ import {
 import { findReferrerByCode } from "../services/referral-wallet";
 import { ensureDefaultSubscription, getDefaultTrialDays } from "../services/subscription-service";
 import { sendPasswordChangedMail, sendWelcomeMail } from "../services/customer-mails";
+import { deleteOwnAccount } from "../services/account-deletion";
 import { generateUsername, normalizeUsername } from "../lib/username";
 import { PRIVACY_VERSION, TERMS_VERSION, type TermsAcceptanceSource } from "../lib/legal";
 
@@ -342,7 +343,8 @@ router.post("/login", async (req, res, next) => {
     // So sánh mật khẩu với hash đã lưu.
     // Dùng cùng MỘT thông báo lỗi cho mọi trường hợp (sai chủ shop, sai nhân
     // viên, sai mật khẩu) để không lộ tài khoản/shop nào tồn tại.
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    // Tài khoản đã tự xóa (deletedAt) coi như không tồn tại — cùng thông báo.
+    if (!user || user.deletedAt || !(await bcrypt.compare(password, user.passwordHash))) {
       recordLoginFail(failKey);
       res.status(401).json({ error: "Tài khoản hoặc mật khẩu không đúng" });
       return;
@@ -429,6 +431,28 @@ router.post("/change-password", requireAuth, async (req: AuthRequest, res, next)
     // Báo cho chủ tài khoản (no-reply@) — người bị đổi trộm còn kịp đặt lại.
     sendPasswordChangedMail(user);
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/me/delete — NGƯỜI DÙNG TỰ XÓA TÀI KHOẢN ngay trong app (Apple
+// 5.1.1(v), Google Data safety). Body: { password } — đòi mật khẩu hiện tại để
+// người khác cầm máy đang mở khóa không bấm xóa được. Xóa mềm + ẩn danh ngay,
+// token đang cầm hết hiệu lực; chi tiết xem services/account-deletion.ts.
+router.post("/me/delete", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { password } = req.body ?? {};
+    if (typeof password !== "string" || !password) {
+      res.status(400).json({ error: "Nhập mật khẩu hiện tại để xác nhận xóa tài khoản" });
+      return;
+    }
+    const result = await deleteOwnAccount(req.userId!, password);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true, removedUsers: result.removedUsers });
   } catch (err) {
     next(err);
   }
