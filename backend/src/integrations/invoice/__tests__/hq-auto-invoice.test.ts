@@ -9,6 +9,7 @@ import {
   composeHqBuyer,
   hqItemNameFor,
   isAutoInvoiceEligible,
+  isSignSessionError,
 } from "../hq-auto-invoice";
 import { invoiceIssuedEmailHtml, invoiceIssuedSubject } from "../../../services/customer-mails";
 
@@ -171,5 +172,17 @@ describe("thư hóa đơn đã phát hành", () => {
     expect(html).not.toContain("đính kèm thư này");
     expect(html).toContain("mã tra cứu");
     expect(html).not.toContain("Mã số thuế");
+  });
+});
+
+describe("isSignSessionError — meInvoice không gọi được eSign vì chưa mở phiên ký", () => {
+  it("bắt cả hai cách MISA viết mã lỗi và lời nhắn đã dịch", () => {
+    expect(isSignSessionError("meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=CallSignServiceFail")).toBe(true);
+    expect(isSignSessionError("ErrorCode=CallSignSeviceFail")).toBe(true);
+    expect(isSignSessionError("Chờ phiên ký eSign: mở app ...")).toBe(true);
+  });
+  it("lỗi khác thì không", () => {
+    expect(isSignSessionError("ErrorCode=InvoiceDuplicated")).toBe(false);
+    expect(isSignSessionError(null)).toBe(false);
   });
 });
