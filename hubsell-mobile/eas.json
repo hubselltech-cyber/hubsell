@@ -31,7 +31,11 @@
         "track": "internal"
       },
       "ios": {
-        "ascApiKeyPath": "./asc-api-key.p8"
+        "ascApiKeyPath": "./asc-api-key.p8",
+        "ascApiKeyId": "Q5L8979HZT",
+        "ascApiKeyIssuerId": "45aa28aa-3bb8-4ae7-80ab-3ea817696c6b",
+        "ascAppId": "6819512670",
+        "appleTeamId": "BF6Y7D47P5"
       }
     }
   }

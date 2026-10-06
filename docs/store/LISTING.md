@@ -41,14 +41,16 @@ Cả 5 đường dẫn trên trả về 200 khi kiểm ngày 01/10/2026. Dùng `
 Hubsell là phần mềm quản lý bán hàng đa sàn cho nhà bán trên Shopee, Lazada và TikTok Shop. Ứng dụng di động mang những việc cần làm ngay ra khỏi bàn máy tính: chủ shop mở máy là thấy hôm nay lãi bao nhiêu, nhân viên kho cầm điện thoại quét mã là nhận xong kiện hàng hoàn.
 
 DÀNH CHO CHỦ SHOP
-• Kết quả hôm nay: doanh thu và lợi nhuận ròng, so với hôm qua, kèm nhịp lãi 7 ngày gần nhất.
-• Tài chính: đi từ giá trị đơn tới lợi nhuận ròng, thấy rõ từng khoản sàn khấu trừ, giá vốn, quảng cáo; biết tiền đang nằm ở ví sàn hay đã về ngân hàng.
-• Đơn hàng của mọi gian trong một danh sách: lọc theo trạng thái, hãng vận chuyển, gian hàng; đơn hỏa tốc được đánh dấu riêng để xử lý trước.
+• Kết quả hôm nay: doanh thu, chi phí và lợi nhuận, so với hôm qua, kèm nhịp lãi 7 ngày gần nhất.
+• Tài chính: đi từ giá trị đơn tới lợi nhuận ròng, thấy rõ từng khoản sàn khấu trừ, giá vốn, quảng cáo; biết tiền đang nằm ở ví sàn hay đã về ngân hàng; chọn kỳ bất kỳ.
+• Quảng cáo: theo dõi chiến dịch đang chạy của các gian đã nối, thấy chiến dịch cần xử lý kèm đề xuất, tạm dừng hoặc bật lại ngay trên máy.
+• Đơn hàng của mọi gian trong một danh sách: lọc theo trạng thái, hãng vận chuyển, gian hàng; đơn hỏa tốc được đánh dấu riêng để xử lý trước; bấm vào đơn xem chi tiết và các khoản phí.
+• Quét mã bất kỳ đơn nào bằng camera để mở ngay chi tiết đơn: shop, trạng thái, đơn vị vận chuyển, sản phẩm, phí và doanh thu ước tính.
 • Thống kê bốc hàng: cộng sẵn số lượng cần lấy theo từng sản phẩm, từng SKU cho các đơn đang chờ.
-• Tin nhắn khách hàng: đọc và trả lời ngay trên máy, gửi kèm ảnh, với các sàn đã nối chat.
 • Trợ lý Hubsell: hỏi bằng tiếng Việt, gõ hoặc nói, nhận câu trả lời bằng số liệu của chính shop.
 
-DÀNH CHO NHÂN VIÊN KHO
+DÀNH CHO KHO
+• Tồn kho từng mã hàng: nhập thêm hoặc xuất bớt theo số lượng ngay khi đang ở ngoài.
 • Quét mã vận đơn bằng camera để nhận hàng hoàn, không cần máy quét rời.
 • Ba âm báo khác nhau cho quét đúng, quét trùng và mã lỗi, không cần nhìn màn hình.
 • Ghi nhận hàng hỏng ngay lúc nhận, kèm ghi chú tình trạng kiện.
@@ -56,7 +58,7 @@ DÀNH CHO NHÂN VIÊN KHO
 
 AN TOÀN VÀ TIỆN DỤNG
 • Khóa ứng dụng bằng Face ID hoặc vân tay.
-• Phân quyền theo vai: chủ shop thấy tài chính, nhân viên kho chỉ thấy màn quét.
+• Phân quyền theo vai: chủ shop thấy tài chính, nhân viên kho chỉ thấy phần kho và quét đơn.
 • Giao diện sáng và tối.
 • Con số trùng với bản web vì cùng một nguồn dữ liệu.
 
@@ -68,12 +70,12 @@ Hỗ trợ: https://hubsell.vn/ho-tro · support@hubsell.vn
 
 Ghi chú khi dán:
 - **App Store**: dán nguyên văn. Không thêm chữ "Android", "CH Play" (Apple 2.3.10 cấm nhắc nền tảng khác).
-- **Câu tin nhắn** cố ý viết "với các sàn đã nối chat": trên app di động thẻ TikTok ở màn Tin nhắn đang là màn "Hubsell chưa nối chat TikTok Shop" ([messages.tsx:245](../../hubsell-mobile/src/app/(admin)/messages.tsx)). Khi nối xong thì sửa thành tên ba sàn.
+- **06/10: bỏ mục Tin nhắn** khỏi mô tả, ghi chú người duyệt và nhãn dữ liệu — tab Tin nhắn đã gỡ khỏi app từ bản 04/10 (không còn `messages.tsx`, không còn dùng expo-image-picker). Thêm Quảng cáo, Tồn kho, quét đơn bất kỳ. Mô tả này ĐÃ DÁN vào App Store Connect 06/10.
 
 ### Có gì mới (bản 1.0.0)
 
 ```
-Bản phát hành đầu tiên của Hubsell trên điện thoại: kết quả kinh doanh hôm nay, đơn hàng mọi sàn, tin nhắn khách, Trợ lý Hubsell và quét mã nhận hàng hoàn cho kho.
+Bản phát hành đầu tiên của Hubsell trên điện thoại: kết quả kinh doanh hôm nay, đơn hàng mọi sàn, quảng cáo, tồn kho, Trợ lý Hubsell và quét mã nhận hàng hoàn cho kho.
 ```
 
 ---
@@ -84,7 +86,7 @@ Bản phát hành đầu tiên của Hubsell trên điện thoại: kết quả 
 
 | Vai | Tên đăng nhập | Mật khẩu | Vào app thấy gì |
 |---|---|---|---|
-| Chủ shop | `reviewer@hubsell.vn` | anh Trung giữ, điền tay | Trang chủ 3 trang vuốt, Đơn hàng, Tin nhắn, Cấu hình, Trợ lý |
+| Chủ shop | `reviewer@hubsell.vn` | anh Trung giữ, điền tay | Trang chủ 3 trang vuốt (Tổng quan / Tài chính / Quảng cáo), Đơn hàng, QR, Kho, Cấu hình, Trợ lý |
 | Nhân viên kho | `reviewer/reviewer_kho` | mục 2.3 bản hướng dẫn | Mở thẳng màn quét đơn hoàn |
 
 Apple chỉ có một cặp ô tài khoản: điền tài khoản **chủ shop**, tài khoản kho ghi trong phần Notes bên dưới.
@@ -93,47 +95,48 @@ Apple chỉ có một cặp ô tài khoản: điền tài khoản **chủ shop**
 
 ## 4. Ghi chú gửi người duyệt (tiếng Anh)
 
-Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Thay hai chỗ `<...>` trước khi dán.
+Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới ĐÃ DÁN vào App Store Connect 06/10 (viết lại: bỏ Tin nhắn + thư viện ảnh, thêm Quảng cáo / Tồn kho / nút QR; không cần mã vận đơn mẫu vì ô gõ tay tìm theo vài số cuối). Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
 
 ```
 Hubsell is a B2B tool for online merchants in Vietnam who sell on the
 Shopee, Lazada and TikTok Shop marketplaces. It is a companion app to our
 web product: merchants use it to check today's revenue and profit, browse
-orders, reply to buyer messages, and (warehouse staff) scan return parcels.
-The app's interface is in Vietnamese only.
+orders, follow their ad campaigns, adjust stock, and (warehouse staff)
+scan return parcels. The app's interface is in Vietnamese only.
 
 ACCOUNTS
 The app has no sign-up. Accounts are created by a business on our website
 and staff accounts are issued by the shop owner, so sign-in is required.
-Both demo accounts below are connected to sample stores ("Hubsell Demo
-Store") that already contain orders, returns and financial data.
+The demo account below is connected to sample stores ("Hubsell Demo
+Store") that already contain orders, returns, stock and financial data.
 
-1) Shop owner (all screens)
-   Email:    reviewer@hubsell.vn
-   Password: <owner password>
-
-2) Warehouse staff (opens directly on the return-scanning screen)
-   Username: reviewer/reviewer_kho
-   Password: <staff password>
+Shop owner (all screens): see the user name / password fields above.
+Warehouse staff account (opens directly on the warehouse screens) is also
+available on request: user name reviewer/reviewer_kho.
 
 HOW TO TEST
-- Owner: the Home tab has three swipeable pages (Overview, Finance,
-  Warehouse). The Orders tab lists orders from all stores with filters.
-  The Messages tab shows buyer conversations. The round button on Home
-  opens the Hubsell Assistant; ask e.g. "Doanh thu hôm nay bao nhiêu".
-- Warehouse: the scan screen reads the tracking barcode printed on a
-  return parcel. You do not need a physical parcel: type one of these codes
-  into the field "Hoặc nhập mã vận đơn / mã đơn…" at the bottom of the
-  scan screen instead: <code 1>, <code 2>, <code 3>
+- Home tab: three swipeable pages (Overview, Finance, Ads). Finance has a
+  period filter.
+- Orders tab: orders from all stores with filters; tap an order to see its
+  details and fees.
+- Round QR button in the middle of the tab bar: scans any order's tracking
+  barcode to open its details. No physical parcel needed: type at least 3
+  trailing digits of any order code shown in the Orders tab into the search
+  field at the bottom of the scan screen.
+- Warehouse tab ("Kho"): "Ton kho" adjusts stock quantities; "Don hoan"
+  lists return parcels and has a scan button to receive them. You can type
+  the last digits of a tracking number from the pending list instead of
+  scanning.
+- Round button at the bottom right of Home opens the Hubsell Assistant;
+  ask e.g. "Doanh thu hom nay bao nhieu".
 
 PERMISSIONS
 - Camera: only to scan shipping barcodes. No photo or video is saved or
   uploaded.
-- Photo library: only when the user taps the image button in a chat to
-  pick a picture to send to a buyer.
 - Microphone and speech recognition: only after the user taps the
-  microphone button to ask the Assistant a question by voice. Speech-to-text is done by the operating
-  system's speech service; our servers receive the resulting text only.
+  microphone button to ask the Assistant a question by voice. Speech-to-text
+  is done by the operating system's speech service; our servers receive the
+  resulting text only.
 - Face ID / fingerprint: optional app lock, enabled in Settings.
 
 PAYMENTS
@@ -143,7 +146,7 @@ payment page. It is a free companion to a web-based business tool
 
 ACCOUNT DELETION
 Because accounts hold a business's accounting records, deletion is
-requested from Settings > "Yêu cầu xóa tài khoản", which opens
+requested from Settings > "Yeu cau xoa tai khoan", which opens
 https://hubsell.vn/xoa-tai-khoan. Requests are completed within 30 days.
 
 Contact: support@hubsell.vn, +84 96 5863292
@@ -252,7 +255,7 @@ Dòng xin quyền hiện trên iPhone (đều tiếng Việt, nêu rõ mục đ�
 | Icon App Store | 1024×1024, không alpha | Có: `hubsell-mobile/assets/images/icon-1024.png` (EAS tự gắn vào bản build) |
 | Icon Google Play | 512×512 | Có: [icon-512.png](icon-512.png) |
 | Ảnh bìa Google Play | 1024×500, không alpha | Có: [feature-graphic-1024x500.png](feature-graphic-1024x500.png). Sửa chữ ở [feature-graphic.html](feature-graphic.html) rồi chạy `node docs/store/render.mjs` và `python docs/store/finish.py` |
-| Ảnh màn hình iPhone 6,9" | 1290×2796, 3 đến 10 ảnh | Có (05/10): 6 ảnh ở [screenshots/iphone/](screenshots/iphone/). Dựng từ ảnh chụp app thật trên máy ảo Android (bản `25817e81`), đã cắt thanh trạng thái + thanh điều hướng Android. Có bản TestFlight thì chụp lại trên iPhone thật để thay |
+| Ảnh màn hình iPhone | ★ 06/10 App Store Connect chỉ nhận cỡ "iPhone with Dynamic Island (medium display)" = 1179×2556 hoặc **1206×2622** (1290×2796 bị báo "File dimensions are invalid") → bộ đã tải lên ở [screenshots/iphone-6.3/](screenshots/iphone-6.3/) (resize từ iphone/). Bản 1290×2796: 6 ảnh ở [screenshots/iphone/](screenshots/iphone/). Dựng từ ảnh chụp app thật trên máy ảo Android (bản `25817e81`), đã cắt thanh trạng thái + thanh điều hướng Android. Có bản TestFlight thì chụp lại trên iPhone thật để thay |
 | Ảnh màn hình Android | cạnh dài không quá 2 lần cạnh ngắn, 2 đến 8 ảnh | Có (05/10): 6 ảnh 1080×2160 ở [screenshots/android/](screenshots/android/) |
 
 Ảnh gốc (đã cắt) ở `screenshots/raw/`. Sửa chú thích trong `screenshots/render-shots.mjs` rồi chạy `node docs/store/screenshots/render-shots.mjs` và `python docs/store/screenshots/finish-shots.py`. Xem nhanh cả bộ: [screenshots/xem-nhanh.png](screenshots/xem-nhanh.png).
