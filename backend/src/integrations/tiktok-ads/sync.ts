@@ -3,7 +3,10 @@
 //
 // Ghi vào AdsCampaign + AdsCampaignDailyPerf — cùng bảng với Shopee/Lazada, sàn
 // suy từ Channel.channelName. Ánh xạ từ vựng:
-//   operation_status ENABLE/DISABLE → status ongoing/paused
+//   operation_status ENABLE/DISABLE → status ongoing/paused (campaign-status.ts)
+//   vắng ở /gmv_max/campaign/get/     → status ended (đã xóa / kết thúc trên TikTok —
+//     báo cáo chỉ có chiến dịch TIÊU TIỀN trong kỳ nên một mình nó không nói được
+//     chiến dịch nào đã biến mất; xem reconcileTiktokCampaignStatuses)
 //   roas_bid (ROI mục tiêu)         → roasTarget (NO_BID = phân phối tối đa → NULL)
 //   cost / orders / gross_revenue   → expense / broad* VÀ direct* (GMV Max chỉ
 //     có MỘT bộ số: đơn của chính SP trong campaign, gộp cả đơn tự nhiên —
@@ -24,7 +27,8 @@
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { dateKeyToDbDate, vnDateKey } from "../../lib/ads-dates";
-import { TiktokAdsApiError, getGmvMaxStores, type GmvMaxStore } from "./client";
+import { reconcileTiktokCampaignStatuses, tiktokCampaignStatusOf } from "./campaign-status";
+import { TiktokAdsApiError, getGmvMaxCampaigns, getGmvMaxStores, type GmvMaxStore } from "./client";
 import { fetchGmvMaxCampaignDaily } from "./report";
 
 /** 40105 = access token sai hoặc đã bị thu hồi (docs Appendix - Return codes). */
@@ -147,6 +151,68 @@ export async function verifyTiktokAdsLink(channelId: string): Promise<TiktokAdsL
   );
 }
 
+/** Link đã báo "thiếu quyền Campaign" một lần trong tiến trình — khỏi lặp log mỗi xung vài phút. */
+const campaignListDenied = new Set<string>();
+
+/**
+ * Kéo /gmv_max/campaign/get/ rồi áp luật đối soát (campaign-status.ts) lên AdsCampaign
+ * của gian. Trả về số chiến dịch đang chạy sau đối soát, hoặc null khi không đối soát
+ * (lỗi sàn, hoặc hai nguồn mâu thuẫn: danh sách rỗng mà báo cáo vẫn có chiến dịch →
+ * nhiều khả năng sàn trả thiếu, gán "ended" hàng loạt rồi lượt sau sống lại chỉ gây hoang mang).
+ */
+async function reconcileTiktokCampaignsWithList(
+  channelId: string,
+  scope: TiktokAdsScope,
+  reported: Iterable<string>
+): Promise<number | null> {
+  let listed;
+  try {
+    listed = await getGmvMaxCampaigns(scope.accessToken, scope.advertiserId, scope.storeId);
+  } catch (err) {
+    const code = err instanceof TiktokAdsApiError ? err.code : 0;
+    if (code === 40001) {
+      if (!campaignListDenied.has(scope.linkId)) {
+        campaignListDenied.add(scope.linkId);
+        console.warn(`[TikTok Ads] Token của link ${scope.linkId} chưa có quyền Campaign — chiến dịch đã xóa trên TikTok sẽ không tự về "Đã dừng" cho tới khi ủy quyền lại.`);
+      }
+    } else {
+      console.warn(`[TikTok Ads] Không đọc được danh sách chiến dịch (bỏ qua đối soát): ${(err as Error).message}`);
+    }
+    return null;
+  }
+  const reportedIds = [...reported];
+  if (listed.length === 0 && reportedIds.length > 0) {
+    console.warn(`[TikTok Ads] Danh sách chiến dịch rỗng trong khi báo cáo có ${reportedIds.length} chiến dịch — bỏ qua đối soát lượt này.`);
+    return null;
+  }
+
+  const known = await prisma.adsCampaign.findMany({
+    where: { channelId },
+    select: { id: true, campaignId: true, status: true, name: true },
+  });
+  const r = reconcileTiktokCampaignStatuses({
+    known,
+    listed: listed.map((l) => ({
+      campaignId: String(l.campaign_id ?? ""),
+      name: l.campaign_name ?? "",
+      operationStatus: l.operation_status ?? "",
+      secondaryStatus: l.secondary_status,
+    })),
+    reported: reportedIds,
+  });
+  for (const u of r.updates) {
+    await prisma.adsCampaign.update({ where: { id: u.id }, data: { status: u.status, ...(u.name != null ? { name: u.name } : {}) } });
+  }
+  for (const c of r.creates) {
+    await prisma.adsCampaign.upsert({
+      where: { channelId_campaignId: { channelId, campaignId: c.campaignId } },
+      update: { status: c.status, name: c.name },
+      create: { channelId, campaignId: c.campaignId, name: c.name, status: c.status, adType: "gmv_max" },
+    });
+  }
+  return r.liveCampaigns;
+}
+
 export interface SyncTiktokAdsResult {
   /** false = gian chưa nối quảng cáo (hoặc link hỏng) → worker giãn nhịp. */
   linked: boolean;
@@ -206,7 +272,7 @@ export async function syncTiktokAdsCampaigns(
     const data = {
       name: c.name,
       adType: "gmv_max",
-      status: c.operationStatus === "ENABLE" ? "ongoing" : "paused",
+      status: tiktokCampaignStatusOf(c),
       biddingMethod: c.bidType === "NO_BID" ? "max_delivery" : "target_roi",
       budget: c.budget,
       roasTarget: c.roasBid,
@@ -220,6 +286,12 @@ export async function syncTiktokAdsCampaigns(
     result.campaignsUpserted++;
     if (data.status === "ongoing") result.liveCampaigns++;
   }
+
+  // ĐỐI SOÁT với danh sách chiến dịch còn tồn tại: chiến dịch tắt lâu không tiêu tiền
+  // vẫn hiện (tạm dừng), chiến dịch TikTok không còn liệt kê → "ended". Hỏng (thiếu
+  // quyền Campaign ở token cũ, lỗi mạng) thì bỏ qua — báo cáo vẫn là xương sống.
+  const live = await reconcileTiktokCampaignsWithList(channel.id, scope, latest.keys());
+  if (live != null) result.liveCampaigns = live;
 
   const recentFrom = vnDateKey(1);
   for (const r of rows) {

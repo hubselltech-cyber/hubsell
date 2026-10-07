@@ -2820,8 +2820,9 @@ export interface TiktokAdsCampaignRow {
   id: string;
   campaignId: string;
   name: string;
-  status: "ongoing" | "paused" | string;
-  /** target_roi = đặt ROI mục tiêu; max_delivery = phân phối tối đa (không có mục tiêu). */
+  /** ongoing = đang chạy; paused = tắt trên TikTok; ended = TikTok không còn liệt kê (đã xóa / hết hạn). */
+  status: "ongoing" | "paused" | "ended" | string;
+  /** target_roi = đặt ROI mục tiêu; max_delivery = phân phối tối đa; "" = chưa biết (chiến dịch chưa tiêu tiền, chỉ có từ danh sách). */
   biddingMethod: string;
   roasTarget: number | null;
   budget: number;

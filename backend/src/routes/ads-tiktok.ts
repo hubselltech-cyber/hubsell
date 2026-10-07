@@ -43,6 +43,7 @@ import {
   isTiktokAdsConfigured,
   updateGmvMaxCreatives,
 } from "../integrations/tiktok-ads";
+import { compareTiktokCampaigns } from "../integrations/tiktok-ads/campaign-status";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 import {
   VIDEO_ACTIONS,
@@ -358,10 +359,10 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         auto: c.tiktokAutoRule ? autoStatusOf(c.tiktokAutoRule) : null,
       };
     });
-    // Đang chạy + tốn tiền nhất lên đầu; campaign tắt không số xuống cuối.
-    campaigns.sort(
-      (a, b) => b.spend - a.spend || Number(b.status === "ongoing") - Number(a.status === "ongoing") || a.name.localeCompare(b.name)
-    );
+    // NHÓM trạng thái trước (đang chạy luôn trên cùng → tạm dừng → đã dừng), trong nhóm
+    // tiêu nhiều đứng trước. Trước 07/10 xếp theo chi tiêu trước nên chiến dịch đã tắt mà
+    // tuần trước tiêu nhiều vẫn chèn lên trên chiến dịch đang chạy (anh Trung).
+    campaigns.sort(compareTiktokCampaigns);
 
     const spend = campaigns.reduce((s, c) => s + c.spend, 0);
     const orders = campaigns.reduce((s, c) => s + c.orders, 0);

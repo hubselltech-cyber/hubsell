@@ -159,6 +159,16 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   sản phẩm (cờ "sửa được qua API" theo chiến dịch; vẫn chưa code nút sửa cho tới khi chứng minh trên gian nhà) ở mục 7b file kia.
 - CHƯA probe: `/campaign/gmv_max/create/`, `/campaign/status/update/`.
 
+### Trạng thái chiến dịch & đối soát hai nguồn (07/10/2026 — `campaign-status.ts`)
+
+- Ba trạng thái trong `AdsCampaign.status` của TikTok: `ongoing` (ENABLE) · `paused` (DISABLE / lạ) · `ended` (TikTok không còn liệt kê,
+  hoặc `secondary_status` DELETE / TIME_DONE). Bảng và trang xếp **nhóm trước** (đang chạy → tạm dừng → đã dừng), trong nhóm theo chi tiêu.
+- Báo cáo chỉ có chiến dịch TIÊU TIỀN trong kỳ, danh sách `/gmv_max/campaign/get/` có MỌI chiến dịch còn tồn tại → mỗi lượt sync đọc cả hai
+  (`reconcileTiktokCampaignsWithList` trong `sync.ts`): có ở danh sách = trạng thái theo danh sách; Hubsell biết mà vắng ở CẢ danh sách lẫn
+  báo cáo lượt này = `ended`; danh sách có mà Hubsell chưa biết = tạo dòng (không có ROI mục tiêu / ngân sách). Token chưa có quyền
+  Campaign (40001) hay sàn lỗi → bỏ qua đối soát, báo cáo vẫn chạy; danh sách rỗng mà báo cáo có chiến dịch → bỏ qua lượt. Khuôn trả về của
+  danh sách (`list` + `page_info`) suy từ probe 19/09, chưa chạy với token thật sau khi code — sai khuôn thì chỉ mất phần "Đã dừng".
+
 ## 5. Quy ước sổ hành động (AdsActionLog) cho video
 
 `status` = `PLANNED` (diễn tập) | `SENDING` (đã ghi sổ, chưa xác nhận kết quả — A3) | `SUCCESS` | `FAILED` · `action` = `exclude_video` | `restore_video` · `mode` = `live` · `verdict` = `manual` (chủ shop tự bấm; lệnh tự
