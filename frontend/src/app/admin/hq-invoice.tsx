@@ -6,7 +6,7 @@
 //     chỉ chủ nền tảng sửa được; mật khẩu để trống = giữ nguyên).
 //  2. HqIssueInvoiceDialog: xuất hóa đơn cho một bút toán THU — prefill người
 //     mua từ khách hàng gắn bút toán, số tiền = ĐÚNG số trên sổ (không sửa).
-//  3. (06/10) Nút giám sát luồng TỰ ĐỘNG (eSign ký nền): HqInvoiceAutoRetryButton
+//  3. (06/10) Nút giám sát luồng TỰ ĐỘNG: HqInvoiceAutoRetryButton
 //     chạy lại phát hành → lấy số → email; HqInvoiceEmailButton gửi (lại) PDF
 //     cho khách, sửa được địa chỉ nhận. Công tắc tự xuất/tự gửi ở dialog 1.
 // Chưa có GPKD/tài khoản meInvoice → cả hai vẫn mở được, hiện rõ còn thiếu gì;
@@ -256,9 +256,9 @@ export function HqInvoiceConfigDialog({
               <div className="grid gap-2">
                 <Label>Phương thức ký</Label>
                 <NativeSelect value={form.signMethod} onChange={set("signMethod")}>
-                  <option value="ESIGN_CLOUD">MISA eSign — xuất tay trên web, máy chỉ nhắc</option>
+                  <option value="ESIGN_CLOUD">MISA eSign — máy đẩy tờ nháp, anh ký theo lô trên web</option>
                   <option value="HSM">Ký nền HSM — máy tự xuất, không ai bấm</option>
-                  <option value="USB_TOKEN">USB token</option>
+                  <option value="USB_TOKEN">USB token — máy đẩy tờ nháp, ký trên web máy cắm USB</option>
                 </NativeSelect>
               </div>
               <div className="grid gap-2">
@@ -286,9 +286,10 @@ export function HqInvoiceConfigDialog({
                     {resp.config.autoIssueEnabledAt
                       ? ` (đang bật từ ${new Date(resp.config.autoIssueEnabledAt).toLocaleString("vi-VN")})`
                       : ""}
-                    . Chỉ tự động với ký nền HSM. Với MISA eSign, cổng tích hợp
-                    không ra được tờ cho eSign ký: dòng thu treo &quot;Chờ xuất tay&quot;,
-                    anh lập trên meinvoice.vn rồi bấm Đã xuất + nhập số ở Sổ quỹ.
+                    . HSM: máy ký và ra số ngay. MISA eSign / USB token: máy đẩy
+                    TỜ NHÁP đầy đủ dữ liệu lên meinvoice.vn, dòng thu treo &quot;Chờ anh
+                    ký&quot;; anh vào Hóa đơn → Chưa phát hành → Ký &amp; phát hành (một
+                    lần cho cả lô), máy tự lấy số + gửi PDF cho khách.
                   </p>
                 </div>
                 <Switch
@@ -328,12 +329,13 @@ export function HqInvoiceConfigDialog({
                   </div>
                 </div>
               )}
-              {auto.autoIssueEnabled && form.signMethod === "USB_TOKEN" && (
+              {auto.autoIssueEnabled && form.signMethod !== "HSM" && (
                 <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
-                    Đang chọn USB token: máy không tự ký được, lệnh tự xuất sẽ lỗi.
-                    Chỉ HSM mới tự động chạy; MISA eSign thì xuất tay trên web.
+                    Bước ký vẫn là việc của người: tờ nháp nằm chờ trên meinvoice.vn
+                    cho tới khi anh bấm Ký &amp; phát hành. Nên ký trong ngày để ngày
+                    hóa đơn khớp ngày thu tiền; HQ nhắc qua email 1 lần/ngày khi còn tờ chờ.
                   </span>
                 </div>
               )}
@@ -399,9 +401,14 @@ export function HqIssueInvoiceDialog({
         buyerEmail: buyerEmail.trim() || undefined,
         itemName: itemName.trim(),
       });
-      if (result.pendingNumber) {
+      if (result.webDraft) {
         toast.info(
-          "meInvoice đã nhận lệnh nhưng chưa cấp số — tra trên meInvoice rồi điền số hóa đơn vào bút toán."
+          "Đã đẩy tờ nháp lên meinvoice.vn — vào Hóa đơn → Chưa phát hành → Ký & phát hành (eSign). Máy tự lấy số và gửi PDF cho khách sau khi ký.",
+          { duration: 9000 }
+        );
+      } else if (result.pendingNumber) {
+        toast.info(
+          "meInvoice đã nhận lệnh nhưng chưa cấp số — máy sẽ tự hỏi lại và điền số."
         );
       } else {
         toast.success(`Đã phát hành hóa đơn số ${result.invoiceNo}`);

@@ -297,8 +297,53 @@ cần `InvoiceTemplateID` từ `/invoiceweb/templates`, `CreatedDate/ModifiedDat
 Tenant (`misa-provider.ts`) đi cùng đường cho shop eSign/USB; shop HSM giữ SignType 2. Hủy/đổi ý trước khi ký →
 `delete`. Test DB mock + thử thật tờ khách Hiển trên tài khoản anh (anh ký eSign trên web).
 
+## 13. ✅ ĐÃ CODE LUỒNG TỜ NHÁP CHO HQ (07/10 đêm → 23:00, master local) — chờ anh gật rồi push + thử thật tờ khách Hiển
+
+**Đọc lại tài liệu `/invoiceweb/insert` trên developer.misa.vn (Chrome anh) trước khi viết, chốt tên trường:**
+người mua `AccountObjectName` / `AccountObjectTaxCode` / `AccountObjectAddress` / `CitizenIDNumber` (đơn vị) · `ContactName` (họ tên người mua) ·
+`ReceiverEmail` / `ReceiverName` / `ReceiverMobile` · `PaymentMethod` (x) · `CurrencyCode` (x) · `ExchangeRate` (x) · `DiscountRate` (x) · bộ tổng
+`TotalSaleAmountOC/TotalSaleAmount/TotalDiscount*/TotalVAT*/TotalAmount*` (x) · `CreatedDate`/`ModifiedDate` (x) · `EInvoiceStatus` 1 gốc / 3 thay thế / 4 điều chỉnh
+(+ `OrgInvNo`, `OrgInvTemplateNo` = ký tự đầu, `OrgInvSeries` = 6 ký tự cuối, `OrgInvDate`, `ChangeReason`) · `BuyerOrderCode`/`BuyerSalesChannel`/`BuyerShopName` ·
+`CustomField1..10`. Dòng: `InventoryItemType` 0 HHDV / 2 KM / 3 ghi chú / 4 CK dòng · `SortOrder` · `SortOrderView` · `Description` · **`UnitName` (x)** · `Quantity` ·
+`UnitPrice` · `AmountOC/Amount` · `DiscountRate/DiscountAmountOC/DiscountAmount` · `VATRate` int? (x với HĐ VAT: -1 KCT · -3 KKKNT · 0/5/8/10 · null = app tự tính) ·
+`VATAmountOC/VATAmount`. Công thức master = tổng dòng (TotalSaleAmountOC = Σ AmountOC loại 0; TotalAmountOC = sale − CK + VAT). `getlist` trả đúng đối tượng InvoiceData
+(≤ 50 RefID), RefID không có trên web → không có dòng. `/invoiceweb/templates` body `TypeInvoice` 0 + TaxCode/UserName/Password, chỉ header ClientID (không Bearer).
+
+**Thử sandbox bằng CHÍNH module mới (`backend/scripts/misa-invoiceweb-module-probe.ts`, 22:54):**
+
+| Ca | Kết quả |
+|---|---|
+| GTGT 1K26TYY, dòng KCT 2.990.000, người mua có MST 0101243150 + địa chỉ + email | insert 200 → getlist thấy (PublishStatus 0, InvNo null, TransactionID null) → delete → rỗng ✅ |
+| GTGT 1K26TYY, 10% bóc ngược (100.000 + 10.000), khách lẻ ContactName | ✅ như trên |
+| BÁN HÀNG 2K26TYY, không gửi VATRate, thuế 0 | ✅ như trên |
+| Gửi lại CÙNG RefID khi tờ còn chờ | MISA trả 200 nhưng getlist vẫn **1 dòng** → ghi đè, không nhân đôi (dù vậy code vẫn tra trước khi đẩy) |
+
+**Code (test 39/39 xanh: `misa-invoiceweb.test.ts` 7 ca thuần + `hq-auto-invoice-db.test.ts` 9 ca DB mock + 23 ca thuần cũ; `tsc` BE/FE sạch, eslint sạch):**
+- `backend/src/integrations/invoice/misa-invoiceweb.ts` (MỚI): `getWebAccessToken` (cache theo clientId|MST|username, parse Data JSON string, TTL theo expires_in),
+  `listWebTemplates`/`findWebTemplate` (cache 1 giờ, báo rõ ký hiệu nào tài khoản có khi không khớp), `buildWebDraftPayload` (hàm thuần: đơn vị vs khách lẻ, email,
+  KCT/-3, bán hàng không VATRate, quà tặng loại 2, điều chỉnh EInvoiceStatus 4 + Org*, CustomField1 = mã tham chiếu Hubsell), `insertWebDraft` (qua chốt
+  MISA_ALLOW_PUBLISH), `getWebInvoices` (issued = có số + TransactionID + PublishStatus ≠ 0), `deleteWebDraft`, **`webRefIdFor` = UUID v5 ổn định** từ mã
+  tham chiếu (tài liệu đòi GUID; không cần cột mới, gọi lại ra cùng RefID).
+- `hq-auto-invoice.ts`: `usesWebDraft(ESIGN_CLOUD | USB_TOKEN)`; bước 1 → `settleHqWebDraft`: tra RefID → đã ký thì nối số + mã (chạy tiếp PDF + mail) · chưa có
+  thì đẩy nháp · còn chờ thì để nguyên; hai ca sau ném lời nhắn **"Chờ anh ký trên meinvoice.vn: …"** (prefix `WEB_DRAFT_WAITING_PREFIX`, không đốt lượt, đã
+  lưu snapshot người mua). Mã tra cứu "ma" cũ → bỏ mã, lượt sau đi lại bước 1. `cleanupHqWebDraft`: HQ đổi trạng thái hóa đơn tay (Không cần / Đã xuất) khi nháp
+  còn chờ → xóa nháp (tờ đã ký không đụng).
+- `issue-hq.ts`: dòng dịch vụ có `unitName: "Gói"` (web app bắt buộc ĐVT; cổng HSM cũng in ra — trước để trống).
+- `routes/admin.ts`: nút xuất tay HQ với eSign/USB đi `settleHqWebDraft` (trả `webDraft: true` + lời nhắn); PATCH trạng thái hóa đơn → `cleanupHqWebDraft`.
+- `workers/hq-invoice-auto.ts`: thư nhắc 1 lần/ngày đổi nội dung đúng việc (link app3 → lọc Chưa phát hành → Ký & phát hành theo lô, nhắc ký trong ngày).
+- HQ UI `hq-invoice.tsx`: nhãn phương thức ký + đoạn giải thích + hộp vàng "bước ký vẫn là việc của người"; toast sau xuất tay. Nhãn vàng ở Sổ quỹ tự hiện vì
+  prefix "Chờ ".
+
+**Chưa làm (cố ý, lát sau):** luồng **tenant** (`misa-provider.ts` vẫn SignType 2 cho `ESIGN_CLOUD` → shop dùng eSign vẫn `CallSignServiceFail`); cần thêm cách
+hỏi trạng thái theo RefID cho tờ nháp (vòng `checkStatuses` hiện theo TransactionID) — làm sau khi HQ chạy thật một tờ.
+
+**Việc anh (sau khi gật):** `git push origin master` → Render deploy → HQ → meInvoice: phương thức ký **MISA eSign**, lưu → Sổ quỹ → dòng khách Hiển **Thử lại** →
+nhãn "Chờ anh ký trên meinvoice.vn" → app3.meinvoice.vn/v3/hoa-don → lọc Chưa phát hành → thấy tờ 1C26THB (cột tham chiếu `HQLEDGER-…`) → kiểm số tiền/người
+mua → **Ký & phát hành** (xác nhận eSign) → chờ ≤ 30' (hoặc bấm Thử lại) → dòng ISSUED có số + mail PDF về khách.
+
 ## 7. Nhật ký
 
+- **07/10/2026 đêm (23:00):** code xong luồng tờ nháp HQ (mục 13), sandbox 3 ca OK, test 39/39; chờ anh gật push + thử thật tờ khách Hiển.
 - **07/10/2026:** đọc được tài liệu MISA (môi trường đã mở 4 tên miền). Chốt nguyên nhân gốc: ITG
   `SignType 2` = HSM nhà cung cấp thứ ba; eSign chỉ ký từ web. Đề xuất hướng A (HSM). Chưa sửa code,
   chờ anh chốt.

@@ -20,7 +20,7 @@ import { LedgerDirection, LedgerInvoiceStatus } from "@prisma/client";
 import {
   getPlatformInvoiceConfigRow,
   isSignSessionError,
-  isEsignWaitingError,
+  isWebDraftWaitingError,
   isWaitingError,
   MAX_AUTO_ATTEMPTS,
   processHqLedgerInvoice,
@@ -28,6 +28,7 @@ import {
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import { prisma } from "../lib/prisma";
 import { mailHq } from "../services/hq-mail";
+import { MEINVOICE_WEB_INVOICES_URL } from "../integrations/invoice/misa-invoiceweb";
 
 const FRONTEND_URL = (process.env.APP_FRONTEND_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 /** Nhắc HQ ký tờ chờ trên meinvoice.vn tối đa một lần mỗi chừng này khi còn hóa đơn chờ. */
@@ -108,7 +109,7 @@ export async function runHqInvoiceAutoOnce(now = new Date()): Promise<number> {
     for (const c of candidates) {
       const r = await processHqLedgerInvoice(c.id, { trigger: "worker" });
       done++;
-      if (r.step === "failed" && (isEsignWaitingError(r.error) || isSignSessionError(r.error))) {
+      if (r.step === "failed" && (isWebDraftWaitingError(r.error) || isSignSessionError(r.error))) {
         waitingSignSession++;
       } else if (r.step === "failed" && isWaitingError(r.error)) {
         console.log(`[HQ invoice] Worker: bút toán ${c.id} đang chờ — ${r.error}`);
@@ -118,14 +119,14 @@ export async function runHqInvoiceAutoOnce(now = new Date()): Promise<number> {
         console.log(`[HQ invoice] Worker: bút toán ${c.id} → ${r.step}${r.invoiceNo ? ` · số ${r.invoiceNo}` : ""}`);
       }
     }
-    // Khoản thu chờ xuất tay (eSign) hoặc chờ dịch vụ ký nền (HSM chưa khai): nhắc
-    // HQ nhiều nhất một thư/ngày — máy không tự làm thay được.
+    // Tờ nháp chờ anh ký trên web (eSign/USB) hoặc chờ dịch vụ ký nền (HSM chưa
+    // khai): nhắc HQ nhiều nhất một thư/ngày — bước ký là việc của người.
     if (waitingSignSession > 0 && now.getTime() - lastSignSessionRemindAt > SIGN_SESSION_REMIND_GAP_MS) {
       lastSignSessionRemindAt = now.getTime();
-      console.warn(`[HQ invoice] ${waitingSignSession} khoản thu bán gói chờ xuất hóa đơn tay`);
+      console.warn(`[HQ invoice] ${waitingSignSession} tờ hóa đơn bán gói đang chờ ký trên meinvoice.vn`);
       void mailHq({
-        subject: `[Hubsell] ${waitingSignSession} khoản thu bán gói đang chờ xuất hóa đơn`,
-        html: `<p>Khách đã thanh toán nhưng máy không tự xuất được hóa đơn (MISA eSign chỉ ký trên web).</p><p>Vào <a href="https://app3.meinvoice.vn/v3/hoa-don">meinvoice.vn → Hóa đơn → Thêm mới</a>, lập tờ theo thông tin khách ở <a href="${FRONTEND_URL}/admin/finance">Sổ quỹ HQ</a>, ký eSign, gửi PDF cho khách, rồi bấm <b>Đã xuất</b> + nhập số hóa đơn ở dòng thu đó.</p>`,
+        subject: `[Hubsell] ${waitingSignSession} hóa đơn bán gói đang chờ anh ký trên meinvoice.vn`,
+        html: `<p>Khách đã thanh toán; máy đã đẩy tờ nháp đầy đủ dữ liệu lên web app meInvoice, chỉ còn bước ký.</p><p>Vào <a href="${MEINVOICE_WEB_INVOICES_URL}">meinvoice.vn → Hóa đơn</a> → lọc <b>Chưa phát hành</b> → chọn các tờ của Hubsell (cột tham chiếu ghi HQLEDGER-…) → <b>Ký &amp; phát hành</b> (một lần xác nhận eSign cho cả lô). Máy tự lấy số và gửi PDF cho khách; theo dõi ở <a href="${FRONTEND_URL}/admin/finance">Sổ quỹ HQ</a>. Nên ký trong ngày để ngày hóa đơn khớp ngày thu tiền.</p>`,
       });
     }
     return done;

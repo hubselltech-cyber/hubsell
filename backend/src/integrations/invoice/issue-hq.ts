@@ -69,6 +69,8 @@ export function buildHqInvoiceLine(
   return {
     name: itemName,
     sku: "HUBSELL-SAAS",
+    // ĐVT là nội dung bắt buộc của hóa đơn; web app meInvoice (tờ nháp) đòi có.
+    unitName: "Gói",
     quantity: 1,
     unitPrice: amountWithoutVat,
     vatRate: rate,

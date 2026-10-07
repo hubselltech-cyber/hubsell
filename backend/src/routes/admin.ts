@@ -40,8 +40,12 @@ import {
 } from "../integrations/invoice/issue-hq";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import {
+  cleanupHqWebDraft,
   getPlatformInvoiceConfigRow,
+  isWaitingError,
   processHqLedgerInvoice,
+  settleHqWebDraft,
+  usesWebDraft,
 } from "../integrations/invoice/hq-auto-invoice";
 import adminPlansRouter from "./admin-plans";
 import adminHealthRouter from "./admin-health";
@@ -1676,6 +1680,15 @@ router.patch(
         data: patch,
         select: LEDGER_SELECT,
       });
+      // HQ tự quyết hóa đơn của dòng thu (không cần / đã lập tay) trong khi tờ
+      // nháp của máy còn chờ ký trên meinvoice.vn → xóa nháp kẻo ký thành tờ thừa.
+      if (
+        invoiceStatus !== undefined &&
+        invoiceStatus !== LedgerInvoiceStatus.PENDING &&
+        !updated.einvoiceTransactionId
+      ) {
+        void cleanupHqWebDraft(entry.id);
+      }
       await writeAuditLog(req, {
         action: "ledger.update",
         targetUserId: updated.customer?.id ?? null,
@@ -2212,6 +2225,61 @@ router.post(
         amount: toNumber(entry.amount),
         vatMode: row.vatMode as HqVatMode,
       });
+
+      // eSign / USB token (08/10/2026): đẩy TỜ NHÁP lên web app meInvoice rồi chờ
+      // anh ký trên web — settleHqWebDraft ném lời nhắn chờ (không phải lỗi) sau
+      // khi đã lưu người mua; tờ đã ký ở lần trước thì nối số luôn.
+      if (usesWebDraft(cfg.signMethod)) {
+        const full = await prisma.platformLedgerEntry.findUniqueOrThrow({
+          where: { id: entry.id },
+          select: { id: true, invoiceEmailTo: true },
+        });
+        let message: string | null = null;
+        let settled: { invoiceNo: string | null; einvoiceTransactionId: string | null } | null = null;
+        try {
+          settled = await settleHqWebDraft(
+            full as Parameters<typeof settleHqWebDraft>[0],
+            input,
+            cfg,
+            { name: buyerName, taxCode: buyerTaxCode || null, email: input.buyerEmail ?? null }
+          );
+        } catch (err) {
+          const msg = (err as Error).message;
+          if (!isWaitingError(msg)) {
+            res.status(502).json({ error: msg });
+            return;
+          }
+          message = msg;
+        }
+        const updated = await prisma.platformLedgerEntry.update({
+          where: { id: entry.id },
+          data: { einvoiceAutoError: message },
+          select: LEDGER_SELECT,
+        });
+        if (settled?.einvoiceTransactionId && row.autoEmailEnabled) {
+          void processHqLedgerInvoice(entry.id, { trigger: "manual", ignoreEligibility: true });
+        }
+        await writeAuditLog(req, {
+          action: "hq-invoice.issue",
+          detail: {
+            ledgerEntryId: entry.id,
+            buyerName,
+            amount: toNumber(entry.amount),
+            invoiceNo: settled?.invoiceNo ?? null,
+            transactionId: settled?.einvoiceTransactionId ?? null,
+            webDraft: true,
+          },
+        });
+        res.json({
+          entry: { ...updated, amount: toNumber(updated.amount) },
+          invoiceNo: settled?.invoiceNo ?? null,
+          transactionId: settled?.einvoiceTransactionId ?? null,
+          pendingNumber: !settled?.invoiceNo,
+          webDraft: !settled?.einvoiceTransactionId,
+          message,
+        });
+        return;
+      }
 
       let published;
       try {

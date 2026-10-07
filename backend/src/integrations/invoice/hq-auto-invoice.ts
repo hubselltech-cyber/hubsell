@@ -11,10 +11,13 @@
 // bước, bước nào xong rồi thì bỏ qua — gọi lại bao nhiêu lần cũng an toàn:
 //   1. PHÁT HÀNH: chưa có einvoiceTransactionId → RefID "HQLEDGER-<id>" (MISA
 //      chống trùng theo RefID: gọi đôi là báo InvoiceDuplicated chứ không ra hai
-//      tờ). Chỉ chạy với ký nền HSM (publishStandardInvoice, SignType 2).
-//      Phương thức MISA eSign: cổng tích hợp KHÔNG ra được tờ cho eSign ký
-//      (07/10/2026) → máy không gọi MISA, dòng thu treo "Chờ xuất tay", HQ lập
-//      trên web rồi ghi số bằng nút Đã xuất.
+//      tờ). Ký nền HSM → publishStandardInvoice (SignType 2), ra số ngay.
+//      MISA eSign / USB token (08/10/2026, nhóm API WEB APP — misa-invoiceweb.ts):
+//      máy ĐẨY TỜ NHÁP đầy đủ dữ liệu lên meinvoice.vn (RefID = UUID v5 của
+//      "HQLEDGER-<id>", gọi lại không ra tờ thứ hai), dòng thu treo "Chờ anh ký
+//      trên meinvoice.vn"; anh vào Hóa đơn → Chưa phát hành → Ký & phát hành
+//      (một lần xác nhận eSign cho cả lô). Lượt sau tra lại RefID: tờ đã ký thì
+//      mang số + TransactionID → chạy tiếp bước 2–3 như HSM.
 //   2. LẤY SỐ: có TransactionID mà chưa có số (meInvoice cấp trễ) →
 //      getInvoiceStatuses để điền số. Webhook MISA chỉ khớp InvoiceLog của
 //      tenant, không chạm bút toán HQ, nên phải tự hỏi.
@@ -63,6 +66,14 @@ import {
 } from "./misa-einvoice";
 import { isPublishAllowed } from "./misa-safety";
 import { explainInvoiceError } from "./invoice-errors";
+import {
+  deleteWebDraft,
+  getWebInvoices,
+  insertWebDraft,
+  MEINVOICE_WEB_INVOICES_URL,
+  webRefIdFor,
+} from "./misa-invoiceweb";
+import type { CreateInvoiceInput } from "./types";
 
 /** Trần lượt máy tự xử lý một bút toán — quá là dừng, báo HQ làm tay. */
 export const MAX_AUTO_ATTEMPTS = 5;
@@ -270,19 +281,91 @@ export function isSignSessionError(message: string | null | undefined): boolean 
 }
 
 /**
- * Phương thức ký MISA eSign: cổng tích hợp KHÔNG có đường nào ra được tờ cho
- * eSign ký (07/10/2026 — SignType 2 đòi HSM; /publishing/token chỉ dựng XML
- * chưa ký, KHÔNG lưu gì bên MISA, kiểm sandbox: gọi lại ra mã tra cứu khác, số
- * không bị chiếm). Nên với eSign, máy KHÔNG gọi MISA: dòng thu treo trạng thái
- * chờ xuất tay, HQ lập tờ trên web rồi ghi số vào HQ (nút Đã xuất). Không đốt lượt.
+ * Phương thức ký MISA eSign / USB token: cổng phát hành không ký được (SignType 2
+ * đòi HSM — 07/10/2026). Từ 08/10 máy ĐẨY TỜ NHÁP lên web app meInvoice (nhóm
+ * /invoiceweb/*, misa-invoiceweb.ts) rồi treo trạng thái chờ: anh ký trên web,
+ * máy tự nhận số ở lượt sau. Không đốt lượt; worker nhắc 1 thư/ngày.
  */
-export const ESIGN_WAITING_PREFIX = "Chờ xuất tay trên meinvoice.vn";
-export const ESIGN_WAITING_MESSAGE =
-  `${ESIGN_WAITING_PREFIX}: MISA eSign chỉ ký được trên web, máy không tự xuất được. Vào meinvoice.vn → Hóa đơn → Thêm mới, lập tờ theo thông tin khách ở dòng này, ký eSign, gửi PDF cho khách, rồi bấm "Đã xuất" + nhập số hóa đơn ở đây. Muốn tự động hoàn toàn cần HSM.`;
+export function usesWebDraft(signMethod: string): boolean {
+  return signMethod === "ESIGN_CLOUD" || signMethod === "USB_TOKEN";
+}
 
-/** Lỗi này là "chờ xuất tay (eSign)"? Hàm thuần để test + worker nhắc. */
-export function isEsignWaitingError(message: string | null | undefined): boolean {
-  return Boolean(message && message.startsWith(ESIGN_WAITING_PREFIX));
+export const WEB_DRAFT_WAITING_PREFIX = "Chờ anh ký trên meinvoice.vn";
+
+/** Lời nhắn chờ ký — `pushedNow` = lượt này vừa đẩy tờ nháp (khác lượt chỉ thấy tờ còn chờ). */
+export function webDraftWaitingMessage(pushedNow: boolean): string {
+  const head = pushedNow
+    ? "đã đẩy tờ nháp đầy đủ dữ liệu lên web app meInvoice"
+    : "tờ nháp đang chờ ký trên web app meInvoice";
+  return `${WEB_DRAFT_WAITING_PREFIX}: ${head}. Vào ${MEINVOICE_WEB_INVOICES_URL} → lọc Chưa phát hành → chọn tờ → Ký & phát hành (xác nhận eSign trên điện thoại, một lần cho cả lô). Máy tự lấy số và gửi PDF cho khách sau khi ký; không cần nhập tay.`;
+}
+
+/** Lỗi này là "chờ anh ký tờ nháp trên web"? Hàm thuần để test + worker nhắc. */
+export function isWebDraftWaitingError(message: string | null | undefined): boolean {
+  return Boolean(message && message.startsWith(WEB_DRAFT_WAITING_PREFIX));
+}
+
+/**
+ * Bước 1 cho phương thức eSign/USB: tra RefID trên web app → tờ đã ký thì nối
+ * số + mã tra cứu vào bút toán (trả về bản ghi mới); chưa có tờ thì đẩy nháp;
+ * tờ còn chờ thì để nguyên. Hai ca sau NÉM lời nhắn chờ (không đốt lượt) sau
+ * khi đã lưu snapshot người mua để HQ thấy tờ lập cho ai. Dùng chung với nút
+ * xuất tay của HQ (routes/admin.ts).
+ */
+export async function settleHqWebDraft(
+  entry: EntryRow,
+  input: CreateInvoiceInput,
+  cfg: StandardInvoiceConfig,
+  buyer: Pick<HqBuyer, "name" | "taxCode" | "email">
+): Promise<EntryRow> {
+  const refId = webRefIdFor(input.orderCode);
+  const [found] = await getWebInvoices([refId], cfg);
+  const snapshot = {
+    invoiceBuyerName: buyer.name,
+    invoiceBuyerTaxCode: buyer.taxCode,
+    invoiceEmailTo: entry.invoiceEmailTo ?? buyer.email,
+  };
+  if (found?.transactionId) {
+    // Tờ đã được ký/phát hành trên web: có mã tra cứu; số thường có luôn, chưa
+    // có thì bước 2 hỏi /invoice/status như tờ HSM cấp số trễ.
+    const issued = Boolean(found.issued && found.invoiceNo);
+    return prisma.platformLedgerEntry.update({
+      where: { id: entry.id },
+      data: {
+        ...snapshot,
+        einvoiceTransactionId: found.transactionId,
+        ...(issued ? { invoiceStatus: LedgerInvoiceStatus.ISSUED, invoiceNo: found.invoiceNo } : {}),
+      },
+      select: ENTRY_SELECT,
+    });
+  }
+  if (!found) await insertWebDraft(input, cfg);
+  await prisma.platformLedgerEntry.update({ where: { id: entry.id }, data: snapshot });
+  throw new Error(webDraftWaitingMessage(!found));
+}
+
+/**
+ * HQ đổi ý trên dòng thu (đánh dấu "Không cần hóa đơn" hoặc tự ghi số của tờ
+ * lập tay) khi tờ nháp của máy còn nằm chờ trên web → xóa nháp để anh không ký
+ * nhầm thành hóa đơn thừa. Tờ đã ký thì không đụng. Best-effort: lỗi chỉ ghi log.
+ */
+export async function cleanupHqWebDraft(entryId: string): Promise<void> {
+  try {
+    const cfgRow = await getPlatformInvoiceConfigRow();
+    const cfg = hqStandardConfig(cfgRow);
+    if (!usesWebDraft(cfg.signMethod) || standardConfigMissing(cfg).length > 0) return;
+    const refId = webRefIdFor(`HQLEDGER-${entryId}`);
+    const [found] = await getWebInvoices([refId], cfg);
+    if (!found || found.transactionId) return;
+    await deleteWebDraft(refId, cfg);
+    await prisma.platformLedgerEntry.updateMany({
+      where: { id: entryId, einvoiceTransactionId: null },
+      data: { einvoiceAutoError: null },
+    });
+    console.log(`[HQ invoice] Đã xóa tờ nháp chờ ký của bút toán ${entryId} trên meinvoice.vn`);
+  } catch (err) {
+    console.warn(`[HQ invoice] Không xóa được tờ nháp của bút toán ${entryId}: ${(err as Error).message}`);
+  }
 }
 
 /**
@@ -361,11 +444,6 @@ export async function processHqLedgerInvoice(
 
     // ---- Bước 1: phát hành ----
     if (!entry.einvoiceTransactionId && entry.invoiceStatus !== LedgerInvoiceStatus.ISSUED) {
-      if (cfg.signMethod === "ESIGN_CLOUD") {
-        // MISA eSign: không có đường tự động qua cổng tích hợp — KHÔNG gọi MISA,
-        // treo trạng thái chờ xuất tay (không đốt lượt, worker nhắc 1 thư/ngày).
-        throw new Error(ESIGN_WAITING_MESSAGE);
-      }
       if (!isPublishAllowed()) {
         throw new Error(
           "Chốt an toàn server MISA_ALLOW_PUBLISH đang tắt — chưa phát hành được (bật env trên Render)."
@@ -394,42 +472,49 @@ export async function processHqLedgerInvoice(
         amount: Number(entry.amount),
         vatMode: cfgRow.vatMode as HqVatMode,
       });
-      let published: { invoiceNo: string | null; transactionId: string | null };
-      let draftWaiting = false;
-      try {
-        published = await publishStandardInvoice(input, cfg);
-      } catch (err) {
-        // MISA báo TRÙNG RefID = tờ đã tồn tại bên meInvoice (lần trước ký hỏng
-        // sau khi tạo, hoặc phát hành xong mà Hubsell không nhận được kết quả).
-        // Tra ngược theo RefID để NỐI LẠI thay vì kẹt lỗi mãi — học recoverDuplicate
-        // của tenant (misa-provider.ts).
-        const explained = explainInvoiceError(err);
-        if (explained.code !== "InvoiceDuplicated" && explained.code !== "DuplicateInvoiceRefID") throw err;
-        const [found] = await getInvoiceStatuses([input.orderCode], cfg, "refId");
-        if (!found || found.isDeleted || !found.transactionId) throw err;
-        published = {
-          invoiceNo: found.publishStatus === 1 ? found.invoiceNo : null,
-          transactionId: found.transactionId,
-        };
-        draftWaiting = found.publishStatus !== 1;
+      if (usesWebDraft(cfg.signMethod)) {
+        // eSign / USB: đẩy tờ nháp lên web app, chờ anh ký (ném lời nhắn chờ);
+        // tờ đã ký ở lượt trước → nối số + mã tra cứu rồi chạy tiếp bước 2–3.
+        entry = await settleHqWebDraft(entry, input, cfg, buyerFromAccount);
+        step = entry.invoiceNo ? "issued" : "number-pending";
+      } else {
+        let published: { invoiceNo: string | null; transactionId: string | null };
+        let draftWaiting = false;
+        try {
+          published = await publishStandardInvoice(input, cfg);
+        } catch (err) {
+          // MISA báo TRÙNG RefID = tờ đã tồn tại bên meInvoice (lần trước ký hỏng
+          // sau khi tạo, hoặc phát hành xong mà Hubsell không nhận được kết quả).
+          // Tra ngược theo RefID để NỐI LẠI thay vì kẹt lỗi mãi — học recoverDuplicate
+          // của tenant (misa-provider.ts).
+          const explained = explainInvoiceError(err);
+          if (explained.code !== "InvoiceDuplicated" && explained.code !== "DuplicateInvoiceRefID") throw err;
+          const [found] = await getInvoiceStatuses([input.orderCode], cfg, "refId");
+          if (!found || found.isDeleted || !found.transactionId) throw err;
+          published = {
+            invoiceNo: found.publishStatus === 1 ? found.invoiceNo : null,
+            transactionId: found.transactionId,
+          };
+          draftWaiting = found.publishStatus !== 1;
+        }
+        const issued = Boolean(published.invoiceNo);
+        entry = await prisma.platformLedgerEntry.update({
+          where: { id: entry.id },
+          data: {
+            einvoiceTransactionId: published.transactionId,
+            invoiceBuyerName: buyerFromAccount.name,
+            invoiceBuyerTaxCode: buyerFromAccount.taxCode,
+            invoiceEmailTo: entry.invoiceEmailTo ?? buyerFromAccount.email,
+            ...(issued
+              ? { invoiceStatus: LedgerInvoiceStatus.ISSUED, invoiceNo: published.invoiceNo }
+              : {}),
+          },
+          select: ENTRY_SELECT,
+        });
+        step = issued ? "issued" : "number-pending";
+        // Tờ chưa ký: đã lưu mã tra cứu (lượt sau chỉ hỏi số), báo HQ việc cần làm.
+        if (draftWaiting) throw new Error(DRAFT_WAITING_MESSAGE);
       }
-      const issued = Boolean(published.invoiceNo);
-      entry = await prisma.platformLedgerEntry.update({
-        where: { id: entry.id },
-        data: {
-          einvoiceTransactionId: published.transactionId,
-          invoiceBuyerName: buyerFromAccount.name,
-          invoiceBuyerTaxCode: buyerFromAccount.taxCode,
-          invoiceEmailTo: entry.invoiceEmailTo ?? buyerFromAccount.email,
-          ...(issued
-            ? { invoiceStatus: LedgerInvoiceStatus.ISSUED, invoiceNo: published.invoiceNo }
-            : {}),
-        },
-        select: ENTRY_SELECT,
-      });
-      step = issued ? "issued" : "number-pending";
-      // Tờ chưa ký: đã lưu mã tra cứu (lượt sau chỉ hỏi số), báo HQ việc cần làm.
-      if (draftWaiting) throw new Error(DRAFT_WAITING_MESSAGE);
     }
 
     // ---- Bước 2: lấy số (meInvoice cấp trễ, hoặc tờ chưa ký chờ anh ký trên web) ----
@@ -450,16 +535,18 @@ export async function processHqLedgerInvoice(
           select: ENTRY_SELECT,
         });
         step = "issued";
-      } else if (cfg.signMethod === "ESIGN_CLOUD" && !status) {
-        // Mã tra cứu "ma" từ bản 07/10 tối (cổng token trả mã nhưng MISA không
-        // lưu gì) — bỏ đi để dòng thu về trạng thái chờ xuất tay, không treo mãi.
+      } else if (usesWebDraft(cfg.signMethod) && !status) {
+        // Mã tra cứu "ma" (bản 07/10 tối: cổng token trả mã nhưng MISA không lưu
+        // gì) — bỏ đi để lượt sau đi lại bước 1 (tra RefID / đẩy tờ nháp).
         entry = await prisma.platformLedgerEntry.update({
           where: { id: entry.id },
           data: { einvoiceTransactionId: null },
           select: ENTRY_SELECT,
         });
         step = "nothing";
-        throw new Error(ESIGN_WAITING_MESSAGE);
+        throw new Error(
+          "Chờ lượt sau: meInvoice không có hóa đơn nào theo mã tra cứu đã lưu — đã bỏ mã; lượt sau (hoặc bấm Thử lại) máy tra RefID và đẩy tờ nháp lên meinvoice.vn."
+        );
       } else {
         step = "number-pending";
       }

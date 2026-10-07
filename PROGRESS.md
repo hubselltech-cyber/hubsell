@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 07/10/2026 (đêm 22:30–23:05) — ✅ HÓA ĐƠN HQ: CODE XONG LUỒNG TỜ NHÁP `/invoiceweb/*` (eSign/USB), sandbox 3 ca OK, test 39/39 — CHỜ ANH GẬT PUSH + THỬ THẬT
+
+- **Anh: "Làm phần hóa đơn nào".** Trước khi viết, đọc lại tài liệu `/invoiceweb/insert` + `templates` + `getlist` trên developer.misa.vn (Chrome anh) để lấy đúng tên trường (AccountObjectTaxCode, ReceiverEmail, UnitName bắt buộc, VATRate -1/-3/0/5/8/10…) — chép đủ vào `docs/HOA-DON-HQ-KY-NEN-KHAO-SAT-07-10.md` **mục 13**.
+- **Module mới `backend/src/integrations/invoice/misa-invoiceweb.ts`:** token web app (cache), mẫu (cache 1h), `buildWebDraftPayload` thuần, `insertWebDraft` (qua chốt MISA_ALLOW_PUBLISH), `getWebInvoices`, `deleteWebDraft`, `webRefIdFor` = UUID v5 ổn định từ `HQLEDGER-<id>` (tài liệu đòi GUID; không thêm cột DB).
+- **Thử sandbox bằng chính module** (`scripts/misa-invoiceweb-module-probe.ts`): KCT có MST + email · 10% bóc ngược · bán hàng 2K — cả 3 insert 200 → getlist thấy → delete sạch. Gửi lại cùng RefID: MISA 200 nhưng vẫn 1 tờ (ghi đè).
+- **HQ nối xong:** `hq-auto-invoice.ts` bước 1 với eSign/USB → `settleHqWebDraft` (tra RefID → đã ký thì nối số + chạy PDF/mail; chưa có thì đẩy nháp; còn chờ để nguyên) + lời nhắn "Chờ anh ký trên meinvoice.vn" không đốt lượt; `cleanupHqWebDraft` xóa nháp khi HQ tự đánh dấu hóa đơn; nút xuất tay HQ + PATCH trạng thái trong `routes/admin.ts`; worker nhắc 1 thư/ngày đúng việc; UI `hq-invoice.tsx` đổi nhãn/giải thích/toast; dòng dịch vụ có ĐVT "Gói".
+- **Kiểm:** `tsc` BE + FE sạch, eslint sạch, vitest 39/39 (7 ca thuần module mới, 9 ca DB mock có kịch bản đẩy nháp → chờ → ký xong → ISSUED + mail → mã ma được dọn). DB dev local phải `prisma db push` (migration 20260830 hỏng từ 17/09 chặn migrate deploy; đã gỡ chỉ mục trùng tên `order_line_ledger_productId_idx` rồi push — chỉ local).
+- **Chưa làm (lát sau):** tenant `misa-provider.ts` vẫn SignType 2 cho eSign; cần vòng hỏi trạng thái theo RefID. Làm sau khi HQ chạy thật một tờ.
+- **Việc anh:** gật → `git push origin master` (GitHub đêm qua từ chối push, master local đi trước nhiều commit) → Render deploy → HQ chọn **MISA eSign** → dòng khách Hiển **Thử lại** → app3.meinvoice.vn → Chưa phát hành → tờ 1C26THB → **Ký & phát hành** → ≤ 30' máy nối số + gửi PDF.
+
 ## Phiên 07/10/2026 (tối) — HÓA ĐƠN HQ: KHẢO SÁT LẠI `CallSignServiceFail` → KẾT LUẬN eSign KHÔNG ký được qua cổng tích hợp, ĐỀ XUẤT THUÊ HSM (chờ anh chốt)
 
 - **Đọc được tài liệu MISA** (môi trường hôm nay mở `doc.meinvoice.vn`, `app.meinvoice.vn/api/v2/Help`, `helpv4.meinvoice.vn`, `developer.misa.vn`). Toàn bộ bằng chứng + 5 hướng + ticket soạn sẵn ở **`docs/HOA-DON-HQ-KY-NEN-KHAO-SAT-07-10.md`**.

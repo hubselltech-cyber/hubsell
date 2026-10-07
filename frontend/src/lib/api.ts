@@ -5398,6 +5398,10 @@ export function issueHqInvoice(
     transactionId: string | null;
     /** true = phát hành đã nhận nhưng meInvoice chưa cấp số (cấp trễ). */
     pendingNumber: boolean;
+    /** true = eSign/USB: đã đẩy TỜ NHÁP lên meinvoice.vn, chờ chủ nền tảng ký trên web (08/10). */
+    webDraft?: boolean;
+    /** Lời nhắn chờ ký (khi webDraft) — cùng chuỗi ghi ở einvoiceAutoError. */
+    message?: string | null;
   }>(`/api/admin/finance/ledger/${ledgerEntryId}/issue-invoice`, {
     method: "POST",
     body: JSON.stringify(data),

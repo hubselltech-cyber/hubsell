@@ -36,6 +36,17 @@ vi.mock("../invoice/misa-einvoice", async (importOriginal) => {
   };
 });
 
+const web = vi.hoisted(() => ({ getWebInvoices: vi.fn(), insertWebDraft: vi.fn(), deleteWebDraft: vi.fn() }));
+vi.mock("../invoice/misa-invoiceweb", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../invoice/misa-invoiceweb")>();
+  return {
+    ...mod,
+    getWebInvoices: web.getWebInvoices,
+    insertWebDraft: web.insertWebDraft,
+    deleteWebDraft: web.deleteWebDraft,
+  };
+});
+
 const mail = vi.hoisted(() => ({ sendInvoice: vi.fn() }));
 vi.mock("../../services/customer-mails", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../services/customer-mails")>();
@@ -267,39 +278,84 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     expect(e3.einvoiceAutoError).toContain("Thiết lập ký số");
   });
 
-  it("phương thức ký MISA eSign → KHÔNG gọi MISA, treo 'Chờ xuất tay', không đốt lượt; mã tra cứu ma (bản 07/10 tối) được dọn", async () => {
+  it("phương thức ký MISA eSign → đẩy TỜ NHÁP lên web app, treo 'Chờ anh ký', không đốt lượt; anh ký xong → nối số + gửi mail", async () => {
     await setConfig({ autoIssueEnabled: true, autoIssueEnabledAt: new Date("2026-10-06T00:00:00Z"), signMethod: "ESIGN_CLOUD" });
     misa.publish.mockClear();
     misa.createUnsigned.mockClear();
     misa.statuses.mockClear();
+    web.getWebInvoices.mockReset();
+    web.insertWebDraft.mockReset();
+    mail.sendInvoice.mockClear();
+    misa.download.mockResolvedValue([{ transactionId: "TX-WEB-1", data: "JVBERi0=", errorCode: null }]);
+    mail.sendInvoice.mockResolvedValue(true);
     const id = await payAndGetEntryId(new Date("2026-10-07T09:00:00Z"));
     await prisma.platformLedgerEntry.update({
       where: { id },
-      data: { einvoiceTransactionId: null, einvoiceAutoError: null, einvoiceAutoAttempts: 0, invoiceNo: null, invoiceStatus: "PENDING" },
+      data: { einvoiceTransactionId: null, einvoiceAutoError: null, einvoiceAutoAttempts: 0, invoiceNo: null, invoiceStatus: "PENDING", invoiceBuyerName: null, invoiceEmailTo: null },
     });
     misa.publish.mockClear();
-    misa.createUnsigned.mockClear();
+    web.getWebInvoices.mockReset();
+    web.insertWebDraft.mockReset();
 
+    // Lượt 1: web chưa có tờ → đẩy nháp (RefID = UUID v5 của HQLEDGER-<id>) → chờ, snapshot người mua đã lưu.
+    web.getWebInvoices.mockResolvedValueOnce([]);
+    web.insertWebDraft.mockResolvedValueOnce({ refId: "x", invSeries: "1C26THB", raw: {} });
     const r1 = await processHqLedgerInvoice(id, { trigger: "worker" });
     expect(misa.publish).not.toHaveBeenCalled();
     expect(misa.createUnsigned).not.toHaveBeenCalled();
+    expect(web.insertWebDraft).toHaveBeenCalledTimes(1);
+    expect(web.insertWebDraft.mock.calls[0][0].orderCode).toBe(`HQLEDGER-${id}`);
+    expect(web.insertWebDraft.mock.calls[0][0].buyerTaxCode).toBe("0101243150");
     expect(r1.step).toBe("failed");
-    expect(r1.error).toContain("Chờ xuất tay trên meinvoice.vn");
+    expect(r1.error).toContain("Chờ anh ký trên meinvoice.vn");
+    expect(r1.error).toContain("đã đẩy tờ nháp");
     let e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
     expect(e.einvoiceTransactionId).toBeNull();
     expect(e.invoiceStatus).toBe("PENDING");
     expect(e.einvoiceAutoAttempts).toBe(0);
+    expect(e.invoiceBuyerName).toBe("CÔNG TY TNHH KHÁCH TEST");
+    expect(e.invoiceEmailTo).toBe(`ketoan-${STAMP}@khach.test`);
     expect(mail.sendInvoice).not.toHaveBeenCalled();
 
-    // Dòng dính mã tra cứu "ma" (cổng token trả mã nhưng MISA không lưu) → status rỗng → xóa mã, treo chờ xuất tay.
-    await prisma.platformLedgerEntry.update({ where: { id }, data: { einvoiceTransactionId: "TX-GHOST" } });
+    // Lượt 2: tờ còn chờ trên web → KHÔNG đẩy lại, vẫn chờ, vẫn không đốt lượt.
+    web.getWebInvoices.mockResolvedValueOnce([
+      { refId: "x", invoiceNo: null, transactionId: null, publishStatus: 0, eInvoiceStatus: 1, issued: false, raw: {} },
+    ]);
+    const r2 = await processHqLedgerInvoice(id, { trigger: "worker" });
+    expect(web.insertWebDraft).toHaveBeenCalledTimes(1);
+    expect(r2.error).toContain("tờ nháp đang chờ ký");
+    e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e.einvoiceAutoAttempts).toBe(0);
+
+    // Lượt 3: anh đã ký trên web → tờ mang số + mã tra cứu → ISSUED + gửi mail kèm PDF.
+    web.getWebInvoices.mockResolvedValueOnce([
+      { refId: "x", invoiceNo: "00000012", transactionId: "TX-WEB-1", publishStatus: 1, eInvoiceStatus: 1, issued: true, raw: {} },
+    ]);
+    const r3 = await processHqLedgerInvoice(id, { trigger: "worker" });
+    expect(r3.step).toBe("emailed");
+    expect(r3.invoiceNo).toBe("00000012");
+    expect(web.insertWebDraft).toHaveBeenCalledTimes(1);
+    expect(misa.publish).not.toHaveBeenCalled();
+    e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e.invoiceStatus).toBe("ISSUED");
+    expect(e.invoiceNo).toBe("00000012");
+    expect(e.einvoiceTransactionId).toBe("TX-WEB-1");
+    expect(e.einvoiceAutoError).toBeNull();
+    expect(e.invoiceEmailSentAt).not.toBeNull();
+    expect(mail.sendInvoice).toHaveBeenCalledTimes(1);
+
+    // Dòng dính mã tra cứu "ma" (bản 07/10 tối) → status rỗng → xóa mã, lượt sau đi lại bước 1.
+    await prisma.platformLedgerEntry.update({
+      where: { id },
+      data: { einvoiceTransactionId: "TX-GHOST", invoiceNo: null, invoiceStatus: "PENDING", invoiceEmailSentAt: null },
+    });
     misa.statuses.mockResolvedValue([]);
-    const r2 = await processHqLedgerInvoice(id, { trigger: "manual", ignoreEligibility: true });
-    expect(r2.error).toContain("Chờ xuất tay");
+    const attemptsBefore = e.einvoiceAutoAttempts; // lượt 3 (worker, thành công) đã tính 1 lượt máy
+    const r4 = await processHqLedgerInvoice(id, { trigger: "manual", ignoreEligibility: true });
+    expect(r4.error).toContain("Chờ lượt sau");
     e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
     expect(e.einvoiceTransactionId).toBeNull();
-    expect(e.invoiceStatus).toBe("PENDING");
-    expect(e.einvoiceAutoAttempts).toBe(0);
+    expect(e.einvoiceAutoAttempts).toBe(attemptsBefore); // trạng thái chờ không đốt lượt
     expect(misa.publish).not.toHaveBeenCalled();
   });
 
