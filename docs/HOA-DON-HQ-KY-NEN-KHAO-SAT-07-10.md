@@ -91,36 +91,54 @@ trên eTax, ký hợp đồng, và là chứng thư dự phòng khi HSM sự c�
 
 ---
 
-## 6. Ticket gửi MISA (developer.misa.vn → Quản lý ứng dụng → Ticket hỗ trợ; dự phòng integration@misa.com.vn / 19008677)
+## 6. Ticket gửi MISA (viết lại 07/10 đêm sau khi thử thật; anh dán vào developer.misa.vn → Quản lý ứng dụng → Ticket hỗ trợ; dự phòng integration@misa.com.vn / 19008677)
 
-**Tiêu đề:** `[Hubsell] Cổng tích hợp meInvoice có hỗ trợ ký số bằng MISA eSign không? Danh sách HSM được hỗ trợ`
+**Tiêu đề:** `[Hubsell] Đã mua meInvoice + MISA eSign — cổng tích hợp Open API ký tự động bằng eSign cách nào?`
 
 ```
 Kính gửi Phòng Tích hợp hệ thống MISA,
 
 Tôi là Nguyễn Trung Hiếu, chủ tài khoản Developer của ứng dụng "Hubsell"
 (app id 019f9d4c-da7e-7234-8e3c-6b17e595f6e0). Công ty TNHH Công nghệ Hubsell
-(MST 0111626360) đã mua meInvoice + MISA eSign, tờ khai ĐKTĐ00001 được CQT chấp
-nhận ngày 06/10/2026, và đang phát hành hóa đơn qua cổng tích hợp
-POST /apis/itg/meinvoice/invoice/publishing với SignType = 2.
+(MST 0111626360) ngày 06/10/2026 đã mua meInvoice và chữ ký số từ xa MISA eSign
+(chứng thư 54010C6A…A0AC), tờ khai ĐKTĐ00001 được CQT chấp nhận, ký hiệu 1C26THB,
+eSign đã kết nối trong Hệ thống → Thiết lập ký số và ký tay trên web được bình thường.
 
-Kết quả: mọi lệnh phát hành trả ErrorCode "CallSignServiceFail", kể cả khi app
-MISA eSign đang mở Ký phiên. Trên app.meinvoice.vn không thấy tờ nháp nào được tạo.
+Mục tiêu: phần mềm Hubsell gọi Open API để PHÁT HÀNH HÓA ĐƠN KÝ BẰNG eSign
+TỰ ĐỘNG khi khách thanh toán, không phải vào web bấm. Chúng tôi đã thử:
 
-Xin MISA xác nhận giúp:
-1. Cổng tích hợp (API REFERENCE trên developer.misa.vn) có hỗ trợ ký số bằng
-   chữ ký số từ xa MISA eSign không? Nếu có, cần SignType nào, thiết lập gì
-   trên meInvoice, và có cần Ký phiên trên app không?
-2. Nếu SignType 2 chỉ dành cho máy chủ HSM: meInvoice hiện nhận HSM của những
-   nhà cung cấp nào (SoftDreams/EasyCA, CyberLotus, Viettel-CA, VNPT-CA…)?
-3. Gói MISA eSign đã mua ngày 06/10/2026 có thể đổi sang chứng thư số HSM do
-   MISA cung cấp/phân phối không? Nếu có, xin báo giá.
+1. POST /apis/itg/meinvoice/invoice/publishing, SignType = 2
+   → ErrorCode "CallSignServiceFail" (kể cả khi app eSign đang mở Ký phiên).
+   Tài liệu doc.meinvoice.vn/api/Document/InvoicePublishHSM.html ghi SignType 2 gọi
+   "máy chủ HSM của nhà cung cấp (softdream, cyber lotus)" — không phải eSign.
+2. POST /apis/itg/meinvoice/invoice/publishing/token, SignType = 1
+   → trả InvNo + TransactionID + XML chưa ký, nhưng meInvoice KHÔNG lưu tờ nào
+   (gọi lại cùng RefID ra TransactionID khác, tra /invoice/status rỗng, không hiện
+   trên web) — chỉ dành cho phần mềm tự ký bằng USB/SignedService rồi gửi lại.
+3. Trên web app.meinvoice.vn có API nội bộ v3invoice/code/publishesignincloud
+   (ký eSign và phát hành trên cloud) nhưng không nằm trong Open API của đối tác.
+
+Xin MISA trả lời cụ thể:
+
+Câu 1. Với tài khoản ĐÃ có meInvoice + MISA eSign như trên, ứng dụng tích hợp
+qua Open API phát hành hóa đơn ký bằng eSign bằng endpoint nào, SignType nào,
+cần thiết lập gì thêm, và có cần Ký phiên trên app không? Xin kèm ví dụ request.
+
+Câu 2. Nếu Open API hiện CHƯA hỗ trợ ký bằng eSign: MISA có lộ trình mở không,
+dự kiến khi nào? Trong lúc chờ, meInvoice nhận máy chủ HSM của những nhà cung
+cấp nào (SoftDreams, CyberLotus, Viettel-CA, VNPT-CA…)?
+
+Câu 3. Gói eSign mua ngày 06/10/2026 có chuyển sang chứng thư số HSM (do MISA
+cung cấp hoặc phân phối) được không? Nếu có, xin báo giá và cách làm.
+
+Chúng tôi đã đầu tư meInvoice + eSign đúng theo tư vấn "ký số mọi lúc mọi nơi,
+không cần USB"; mong MISA chỉ rõ cách để ứng dụng tích hợp dùng được chữ ký đó.
 
 Trân trọng cảm ơn.
 Nguyễn Trung Hiếu — dev@hubsell.tech — 0965863292
 ```
 
-**Trả lời của MISA:** _(chưa có — ghi nguyên văn vào đây khi nhận)_
+**Trả lời của MISA:** _(chưa có — ghi nguyên văn vào đây khi nhận, kèm ngày giờ)_
 
 ---
 
