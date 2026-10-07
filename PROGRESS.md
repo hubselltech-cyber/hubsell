@@ -5,6 +5,18 @@
 
 ---
 
+## Phiên 08/10/2026 (00:15, chốt đêm) — KẾ HOẠCH SÁNG 08/10: LÁT T1 LUỒNG TENANT (Kết nối & Xuất hóa đơn) ĐI TỜ NHÁP
+
+- **Vì sao gấp:** khóa thí điểm module Hóa đơn đã gỡ 24/08 → mọi shop khách bật được; UI tenant ẩn phương thức ký, luôn lưu ESIGN_CLOUD, adapter `misa-provider.ts` gọi SignType 2 → shop dùng eSign (đa số) sẽ `CallSignServiceFail` ở tờ đầu; worker tự xuất 15' lại thử lại hỏng. Anh chốt: **sáng 08/10 làm**, đêm nay tắt local (env đã trả: SHOPEE_CALLBACK_HTTP_PORT comment lại, NEXT_PUBLIC_API_URL=https://localhost:4000).
+- **Lát T1 (lõi tenant, ~3–4 giờ, trình anh gật rồi mới đẩy):**
+  1. `misa-provider.ts createInvoice`: `usesWebDraft(signMethod)` → `insertWebDraft` (tra `getWebInvoices` theo RefID trước + lưới đỡ `/invoice/status` inputType=2) → trả `PENDING` không mã tra cứu + cờ chờ ký; HSM giữ `publishStandardInvoice`. RefID = `webRefIdFor(orderCode)` lưu `InvoiceLog.providerRef` (cột sẵn có — kiểm cột đang dùng gì trước).
+  2. `issue-order.ts`: nhận PENDING chờ ký → không FAILED, không đốt lượt; đặt `cqtNextCheckAt` để vòng hỏi nhận (kiểm chỉ mục riêng phần `InvoiceLog_cqt_due_idx` có đòi transactionId không).
+  3. `workers/invoice-cqt-follow.ts` + `cqt-follow.ts`: nhánh mới cho log PENDING chưa có transactionId nhưng có providerRef → adapter method mới `findDrafts(refIds)` (≤50/lệnh) → đã ký: ghi transactionId + invoiceNo + ISSUED + lịch sử + chuông shop; còn chờ: hẹn hỏi lại; không thấy (shop xóa nháp trên web) → ghi lỗi rõ để worker tự xuất lập lại.
+  4. UI shop: `invoice-config-section.tsx` hiện lại chọn phương thức ký (eSign/USB = "Hubsell lập tờ, bạn ký theo lô trên meinvoice.vn"; HSM = tự động), mặc định ESIGN_CLOUD; `routes/invoice-config.ts` SIGN_METHODS thêm HSM; Lịch sử hóa đơn (`invoice-issue-card.tsx` / trang /invoicing) nhãn "Chờ bạn ký trên meinvoice.vn" + đếm + link app3 + nút "Tôi đã ký, kiểm ngay" (gọi vòng hỏi cho shop).
+  5. Test: DB mock theo kịch bản HQ (đẩy nháp → chờ → ký → ISSUED); sandbox 1 tờ bằng tài khoản thử; docs/HANG-DOI-BEN.md mục 4.6 + docs khảo sát mục 17.
+- **Lát T2 (sau):** hóa đơn điều chỉnh (`adjust-order.ts`) đi tờ nháp (EInvoiceStatus 4 + Org*); thư nhắc shop khi tờ chờ ký > 1 ngày; HSM gửi SĐT/CCCD.
+- **Việc tay anh:** meinvoice → Hệ thống → Thông tin đơn vị → điền SĐT công ty (dòng "Điện thoại:" bên bán đang trống trên tờ 00000001).
+
 ## Phiên 07/10/2026 (đêm 23:45–00:15) — 🏆 HÓA ĐƠN THẬT ĐẦU TIÊN qua luồng tờ nháp: 1C26THB số 00000001, PDF đã về mail khách
 
 - Anh bấm Thử lại dòng Hiển sau deploy → tờ nháp có SĐT → Phát hành trên meinvoice (bỏ tích gửi mail MISA, ký eSign) → **số 00000001, mã CQT 00D1A1C1…, mã tra cứu Z4FDCAKXZWK0**, một tờ duy nhất. Sổ quỹ: **Đã xuất · 00000001 · Đã gửi hiennv.th@gmail.com 23:49:15**. Trọn luồng đẩy nháp → ký web → nối số → PDF → mail chạy thật (docs mục 15).
