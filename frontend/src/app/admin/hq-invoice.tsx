@@ -375,7 +375,7 @@ export function HqIssueInvoiceDialog({
   const [buyerAddress, setBuyerAddress] = useState("");
   const [buyerEmail, setBuyerEmail] = useState(entry.customer?.email ?? "");
   const [itemName, setItemName] = useState(
-    entry.note ?? "Phí dịch vụ phần mềm Hubsell"
+    entry.note ?? "Phần mềm Hubsell"
   );
   const [submitting, setSubmitting] = useState(false);
 
@@ -510,7 +510,7 @@ export function HqIssueInvoiceDialog({
         <div className="grid gap-2">
           <Label>Nội dung dòng hóa đơn</Label>
           <Input
-            placeholder="vd: Phí dịch vụ phần mềm Hubsell — gói Growth 12 tháng"
+            placeholder="vd: Phần mềm Hubsell - gói Growth, 12 tháng"
             value={itemName}
             onChange={(e) => setItemName(e.target.value)}
           />

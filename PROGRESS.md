@@ -10,6 +10,7 @@
 - Anh bấm Thử lại dòng Hiển sau deploy → tờ nháp có SĐT → Phát hành trên meinvoice (bỏ tích gửi mail MISA, ký eSign) → **số 00000001, mã CQT 00D1A1C1…, mã tra cứu Z4FDCAKXZWK0**, một tờ duy nhất. Sổ quỹ: **Đã xuất · 00000001 · Đã gửi hiennv.th@gmail.com 23:49:15**. Trọn luồng đẩy nháp → ký web → nối số → PDF → mail chạy thật (docs mục 15).
 - **Chốt thêm:** Hubsell là bên gửi mail duy nhất → tờ nháp bỏ `ReceiverEmail` (hộp Phát hành MISA sẽ không tự tích gửi mail); HQ không làm ô ghi đè người mua (sửa trên meinvoice trước khi ký). Thêm lưới đỡ: web không thấy RefID → hỏi `/invoice/status` theo RefID rồi mới đẩy nháp mới.
 - Test 42/42, tsc BE sạch. Local soi bước hóa đơn vẫn đang chạy (env tạm 4001) — trả lại khi anh xong.
+- **00:00 08/10 — KCT + tên hàng (docs mục 16):** anh đưa tờ Salework (KCT, "Phần mềm Salework … (Gói 13 tháng)") → giữ KCT, đổi tên hàng thành `Phần mềm Hubsell - gói …` (bỏ chữ "Phí dịch vụ" đứng đầu, gạch ngắn). Tờ 00000001: "Điện thoại:" trống là của bên bán → anh khai ở meinvoice → Thông tin đơn vị.
 - **Việc còn:** tenant eSign (misa-provider) chuyển sang tờ nháp + vòng hỏi theo RefID; HSM gửi SĐT/CCCD; HQ UI nhãn "Chờ anh ký" có thể hiện số tờ đang chờ trên web.
 
 ## Phiên 07/10/2026 (đêm 23:30–23:55) — BƯỚC "THÔNG TIN XUẤT HÓA ĐƠN" TRONG LUỒNG MUA GÓI (anh chốt), đã soi local

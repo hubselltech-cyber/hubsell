@@ -375,6 +375,16 @@ mua → **Ký & phát hành** (xác nhận eSign) → chờ ≤ 30' (hoặc bấ
   nằm ở cổng phát hành) — tránh đẩy nháp trùng cho khoản thu đã có hóa đơn.
 - Anh chốt thêm: HQ **không** làm ô ghi đè người mua; cần sửa thì sửa thẳng trên tờ nháp ở meinvoice trước khi ký.
 
+## 16. Thuế suất KCT + tên hàng — học theo người đi trước (08/10 00:00)
+
+- Anh đưa tờ **Salework** (VietInvoice, ký hiệu 1C26TSA số 00001243, 06/05/2026): "Phần mềm Salework Tài chính Không giới hạn đơn hàng (Gói 13 tháng)",
+  ĐVT Gói, **thuế suất KCT, tiền thuế 0**. Cùng mô hình thuê bao phần mềm như Hubsell → giữ **KCT** (anh chốt: học theo người đi trước); vẫn nên hỏi
+  kế toán một câu, không gấp. MISA in "X" ở ô tiền thuế, VietInvoice in "0" — chỉ là cách in, dữ liệu gửi CQT đều KCT.
+- **Đổi tên hàng** cho khớp mục "phần mềm" của luật: `Phần mềm Hubsell - gói <tên>, <kỳ> (<từ> - <đến>)` (trước: "Phí dịch vụ phần mềm Hubsell — …";
+  chữ "dịch vụ" đứng đầu dễ bị đọc thành dịch vụ chịu thuế 10%); dấu gạch ngắn thay gạch dài cho bản in. Áp từ tờ sau; tờ 00000001 giữ nguyên.
+- Tờ 00000001: dòng "Điện thoại:" trống là của BÊN BÁN (khai ở meinvoice → Hệ thống → Thông tin đơn vị — việc anh); SĐT khách trên tờ nháp là ô
+  "SĐT gửi SMS", mẫu chuẩn TT78 không in SĐT người mua.
+
 ## 7. Nhật ký
 
 - **07/10/2026 đêm (23:00):** code xong luồng tờ nháp HQ (mục 13), sandbox 3 ca OK, test 39/39; chờ anh gật push + thử thật tờ khách Hiển.

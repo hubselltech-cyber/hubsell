@@ -224,14 +224,19 @@ export function buyerProblem(b: Pick<HqBuyer, "taxCode" | "address"> & Partial<H
   return null;
 }
 
-/** Dòng hóa đơn từ khoản thanh toán gói — hàm thuần để test. */
+/**
+ * Dòng hóa đơn từ khoản thanh toán gói — hàm thuần để test. Chữ "Phần mềm" đứng
+ * đầu (học Salework, tờ 1C26TSA 00001243: "Phần mềm Salework … (Gói 13 tháng)",
+ * KCT) — khớp mục không chịu thuế GTGT của luật; "Phí dịch vụ…" dễ bị đọc thành
+ * dịch vụ chịu thuế 10%. Dấu gạch ngắn thay gạch dài cho bản in sạch.
+ */
 export function hqItemNameFor(p: {
   planName: string;
   cycle: keyof typeof CYCLE_LABEL;
   periodStart: Date;
   periodEnd: Date;
 }): string {
-  return `Phí dịch vụ phần mềm Hubsell — gói ${p.planName}, ${CYCLE_LABEL[p.cycle]} (${vnDateLabel(p.periodStart)} – ${vnDateLabel(p.periodEnd)})`;
+  return `Phần mềm Hubsell - gói ${p.planName}, ${CYCLE_LABEL[p.cycle]} (${vnDateLabel(p.periodStart)} - ${vnDateLabel(p.periodEnd)})`;
 }
 
 // ---------------- Lõi xử lý một bút toán ----------------
@@ -521,7 +526,7 @@ export async function processHqLedgerInvoice(
 
       const itemName = entry.packagePayment
         ? hqItemNameFor(entry.packagePayment)
-        : (entry.note ?? "Phí dịch vụ phần mềm Hubsell");
+        : (entry.note ?? "Phần mềm Hubsell");
       const input = buildHqInvoiceInput({
         refId: `HQLEDGER-${entry.id}`,
         buyerName: buyerFromAccount.name,
@@ -692,7 +697,7 @@ async function sendInvoiceEmail(
 
   const itemName = entry.packagePayment
     ? hqItemNameFor(entry.packagePayment)
-    : (entry.note ?? "Phí dịch vụ phần mềm Hubsell");
+    : (entry.note ?? "Phần mềm Hubsell");
   const ok = await sendInvoiceIssuedMail(
     to,
     {

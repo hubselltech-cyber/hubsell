@@ -144,7 +144,7 @@ describe("hqItemNameFor — dòng hóa đơn nêu gói, kỳ và khoảng hiệu
       periodStart: new Date("2026-10-06T03:00:00Z"),
       periodEnd: new Date("2027-10-06T03:00:00Z"),
     });
-    expect(name).toBe("Phí dịch vụ phần mềm Hubsell — gói Growth, 12 tháng (06/10/2026 – 06/10/2027)");
+    expect(name).toBe("Phần mềm Hubsell - gói Growth, 12 tháng (06/10/2026 - 06/10/2027)");
   });
 });
 
