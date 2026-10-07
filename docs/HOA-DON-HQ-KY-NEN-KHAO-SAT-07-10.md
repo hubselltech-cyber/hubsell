@@ -252,6 +252,51 @@ lượt); bước 2 thấy mã tra cứu mà `/invoice/status` rỗng thì xóa 
   cần 1–2 ngày thử trên sandbox + tài khoản eSign thật (eSign không có sandbox).
 - Trước mắt: xuất tay trên web khi có khách (hiện ~1 tờ/ngày), HQ nhắc.
 
+## 12. ★ TÌM THẤY API LƯU TỜ NHÁP TRÊN CỔNG developer.misa.vn (07/10 đêm) — THỬ SANDBOX THÀNH CÔNG
+
+Anh hỏi "sao BigSeller nối được MISA" → em vào cổng developer bằng Chrome của anh (đăng nhập MISA ID), mục
+lục tài liệu meInvoice **đã có thêm** so với bản đọc 07/08:
+
+- USE CASES: *Phát hành hóa đơn lên cloud* · *Phát hành hóa đơn lên Cloud (ký số bằng USB token)* ·
+  **Đẩy hóa đơn nháp lên web app Meinvoice**.
+- API REFERENCE nhóm **API WEB APP (HÓA ĐƠN NHÁP)**: `POST /invoiceweb/token` · `POST /invoiceweb/templates`
+  · **`POST /invoiceweb/insert`** ("đẩy hóa đơn nháp — hóa đơn thô, chưa ký điện tử — lên meinvoice web", lô ≤30,
+  chống trùng RefID, xem tại app3.meinvoice.vn/v3/hoa-don) · `DELETE /invoiceweb/delete?invoiceWithCode&refid`
+  (chỉ xóa tờ Chưa phát hành) · `POST /invoiceweb/getlist?invoiceWithCode` (≤50 RefID, trả số HĐ + mã tra cứu
+  sau khi tờ được phát hành trên web) · `POST /invoiceweb/paging` · `/invoiceweb/paging/calculating`.
+- Nhóm **PHÁT HÀNH HÓA ĐƠN KÝ BẰNG USB TOKEN/FILE** (mô hình Salework): `/invoice/publishing/token` SignType 1
+  → XML thô → tool **MISA SignedService** trên máy có USB (`http://<máy>:12019/api/SignXML`, body
+  `{PinCode, XmlContent}`) → `/invoice/publishing/token` lần 2 với `PublishInvoiceData[{RefID, TransactionID,
+  InvSeries, InvoiceData=XML đã ký}]`. Giải thích vì sao lệnh token hôm nay "không lưu gì": nó chỉ là bước 1.
+
+**Đây chính là API BigSeller/KiotViet dùng.** Câu 4 trong ticket MISA coi như đã có đáp án (vẫn để MISA trả lời cho
+chắc, nhất là câu 1–3).
+
+**Thử sandbox (`backend/scripts/misa-invoiceweb-probe*.ts`, MST 0101243150-732):**
+
+| Bước | Kết quả |
+|---|---|
+| `POST /invoiceweb/token` header `ClientID` + `ClientSecret`, body `{TaxCode, UserName, Password}` | 200, `Data` là **JSON string** `{access_token, token_type, expires_in, UserID, OrganizationUnitID, UserName, CompanyID}` — phải parse rồi lấy `access_token` (dùng nguyên chuỗi Data → 401 UnAuthorize) |
+| `POST /invoiceweb/templates?invoiceWithCode=false` header `ClientID`, body `{TypeInvoice:0, TaxCode, UserName, Password}` | 200, 2 mẫu: `1K26TYY` (IPTemplateID `d5c90289-…`), `2K26TYY` |
+| `POST /invoiceweb/insert` header `ClientID` + `Authorization: Bearer <access_token>` + `TaxCode` | **200 Success=true**, Data `[{RefID, InvSeries, InvDate, EInvoiceStatus:1}]` — tờ nháp 99.000đ KCT (VATRate -1) RefID `ad24f160-ec7b-432e-a044-049e14419d9d` |
+| `POST /invoiceweb/getlist?invoiceWithCode=false` body `[RefID]` | 200, 1 dòng: `InvNo "<Chưa cấp số>"`, `TransactionID null`, **`PublishStatus 0`**, `EInvoiceStatus 1`, đúng tên khách + 99.000 |
+| `POST /invoiceweb/paging?invoiceWithCode=false` body `{pageIndex, pageSize, fromDate, toDate}` | 200, thấy tờ nháp (CompanyID 66465) |
+| `DELETE /invoiceweb/delete?invoiceWithCode=false&refid=…` | 200 Success=true; `getlist` sau đó rỗng → xóa nháp sạch |
+
+→ **Trọn vòng đời tờ nháp chạy được trên sandbox.** Việc còn lại để chứng minh end-to-end là ký trên web
+(sandbox không có eSign; làm trên tài khoản thật của anh với tờ khách Hiển).
+
+**Khác biệt payload so với cổng phát hành:** tên trường kiểu web (`AccountObjectName/TaxCode/Address`,
+`ContactName`, `InvoiceDetails[]` với `Description`, `VATRate` số nguyên: -1 KCT, -3 KKKNT, 0/5/8/10, null = KHAC),
+cần `InvoiceTemplateID` từ `/invoiceweb/templates`, `CreatedDate/ModifiedDate`, `EInvoiceStatus` 1/3/4,
+`CustomField1..10` (BigSeller nhét mã đơn/mã vận đơn/kênh vào đây).
+
+**Kế hoạch code (sáng 08/10):** `misa-invoiceweb.ts` (token cache theo shop + 4 hàm) → HQ: `ESIGN_CLOUD`/`USB_TOKEN`
+→ `insert` tờ nháp, trạng thái "Chờ anh ký trên meinvoice.vn → Lọc → Chưa phát hành → Phát hành", bước 2 poll
+`getlist` theo RefID tới khi có `InvNo` + `TransactionID` → tải PDF (`/invoice/Download` theo TransactionID) → mail.
+Tenant (`misa-provider.ts`) đi cùng đường cho shop eSign/USB; shop HSM giữ SignType 2. Hủy/đổi ý trước khi ký →
+`delete`. Test DB mock + thử thật tờ khách Hiển trên tài khoản anh (anh ký eSign trên web).
+
 ## 7. Nhật ký
 
 - **07/10/2026:** đọc được tài liệu MISA (môi trường đã mở 4 tên miền). Chốt nguyên nhân gốc: ITG
