@@ -12,6 +12,7 @@
 - **Kiểm:** tsc mobile sạch, eslint 2 file sửa không thêm lỗi.
 - **Anh chốt (07/10 sáng):** nút màn xin quyền Camera dùng **"Tiếp tục"** (đúng chữ Apple yêu cầu, không dùng "Mở Camera" để khỏi bị so với câu Continue/Next), tiêu đề giữ "Quét mã vận đơn bằng camera". Code trên nhánh không đổi thêm.
 - **Máy anh Trung:** dự án clone ở `D:\Claude Code\Hubsell` (có dấu cách → cd phải để trong ngoặc kép); lệnh `eas` chưa có trên PATH → dùng `npx eas-cli …`.
+- **Thử gộp trên máy anh (07/10 trưa) — DỪNG, chưa gộp gì:** `git pull origin master` OK (master local = `edc7b4d`, có hóa đơn tự động). `git merge origin/claude/gracious-galileo-w5yruu` bị từ chối vì máy anh có **2 file sửa dở chưa commit**: `hubsell-mobile/src/api/client.ts` + `hubsell-mobile/src/components/AccountScreen.tsx` (chưa rõ từ phiên nào) → tối em xem nội dung (`git diff`) rồi mới stash/bỏ, KHÔNG xóa bừa. Chưa push gì lên master, chưa build.
 - **Kế hoạch tối 07/10:** anh cấp quyền Chrome → em vào App Store Connect thay Notes (LISTING.md mục 4), dán trả lời (`APPLE-REVIEW-REPLY-1.md`), chọn build 5 và Resubmit. Trước đó anh gộp master + `eas build -p ios --profile production --non-interactive` + `eas submit -p ios --latest` (EAS chưa đăng nhập trong phiên cloud). Tùy chọn: giải nén `.ipa` xem `Payload/Hubsell.app/PlugIns` không tồn tại để chắc câu widget.
 
 ## Phiên 06/10/2026 (chiều) — APPLE TỪ CHỐI iOS 1.0 build 4 (3 guideline) → sửa xong code, chờ anh gộp master + build 5 + nộp lại (nhánh `claude/gracious-galileo-w5yruu`)
