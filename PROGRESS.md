@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 07/10/2026 (tối) — phiên cloud KHÔNG có Chrome → anh dừng, chuyển sang phiên local
+
+- **Phiên cloud này không làm được việc tối:** không có công cụ Chrome (Claude in Chrome / liên kết máy anh chưa bật cho phiên), EAS chưa đăng nhập, không có `asc-api-key.p8` → không vào được App Store Connect, không build/submit. Anh chốt: *"tạm dừng để anh mở local"*.
+- **Đã làm:** dọn khối Notes `docs/store/LISTING.md` mục 4 trước khi dán cho Apple — bỏ mục PAYMENTS lặp (gộp câu 3.1.3(f) vào mục đầu), thay mục ACCOUNT DELETION cũ (bảo "xin xóa qua web") bằng câu đúng với nút xóa trong app, tách câu widget ra mục WIDGETS / EXTENSIONS riêng thay vì kẹt giữa PERMISSIONS. Nhánh `claude/jolly-albattani-hi6cz3` = toàn bộ sửa App Review + đã gộp master; **chưa có PR**, master chưa có code này.
+- **Lưu ý:** trang `https://hubsell.vn/xoa-tai-khoan` được nhắc trong Notes + SettingsScreen nhưng **không thấy trong `frontend/src`** (landing ở nơi khác?) — phiên cloud bị chặn mạng nên chưa kiểm được trang có sống không; anh mở thử trước khi nộp.
+- **Việc phiên local (theo thứ tự):** (1) `git diff` 2 file sửa dở trên máy anh rồi stash → gộp nhánh này vào master, push (Render migrate `user_deleted_at`); (2) `npx eas-cli build -p ios --profile production --non-interactive` → build 5 → `npx eas-cli submit -p ios --latest`; (3) App Store Connect: thay Notes (LISTING.md mục 4), chọn build 5, Reply to App Review dán `APPLE-REVIEW-REPLY-1.md`, Resubmit; (4) kiểm `reviewer@hubsell.vn` đăng nhập web được.
+
 ## Phiên 07/10/2026 (sáng) — ĐỌC NGUYÊN VĂN THƯ APPLE (khác phỏng đoán hôm qua) → sửa thêm, vẫn chờ anh gộp master + build 5 + nộp lại
 
 - **Nguyên văn Apple** (Messages trong submission): **5.1.1(iv)** = màn giải thích trước hộp xin quyền Camera có nút "Cấp quyền" → phải là "Continue/Next", nên có link vào Settings; **3.1.1** = app truy cập thuê bao mua ngoài app, hết dùng thử thì bị dẫn tới thanh toán ngoài IAP; **2.1 Information Needed** = "app appears to offer widget extension functionality" — hỏi cách bật. Không nhắc xóa tài khoản / SĐT (việc hôm qua vẫn giữ). Toàn bộ + bản trả lời tiếng Anh: `docs/store/APPLE-REVIEW-REPLY-1.md`.

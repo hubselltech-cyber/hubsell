@@ -123,10 +123,12 @@ khoan" (enter current password to confirm). Personal data is erased
 immediately and the remaining data is purged within 30 days.
 
 PAYMENTS
-Nothing is sold inside the app. Hubsell plans are B2B service contracts
-bought by businesses on our website (bank transfer, with a VAT invoice);
-the app does not show prices, plans, trials or any upgrade/purchase
-entry point and never links to a purchase page.
+Nothing is sold inside the app. The app is a free companion to a
+web-based business tool (App Store Review Guideline 3.1.3(f)). Hubsell
+plans are B2B service contracts bought by businesses on our website
+(bank transfer, with a VAT invoice); the app does not show prices,
+plans, trials or any upgrade/purchase entry point and never links to a
+purchase page.
 
 HOW TO TEST
 - Home tab: three swipeable pages (Overview, Finance, Ads). Finance has a
@@ -150,23 +152,19 @@ PERMISSIONS
   button, then the system permission prompt appears. If camera access was
   declined earlier, the screen shows an "Open Settings" button; orders can
   also be found by typing the last digits of a code, no camera needed.
-
-The app has no widget or app extension.
 - Microphone and speech recognition: only after the user taps the
   microphone button to ask the Assistant a question by voice. Speech-to-text
   is done by the operating system's speech service; our servers receive the
   resulting text only.
 - Face ID / fingerprint: optional app lock, enabled in Settings.
 
-PAYMENTS
-The app is free and contains no purchases, prices, or links to any
-payment page. It is a free companion to a web-based business tool
-(App Store Review Guideline 3.1.3(f)).
+WIDGETS / EXTENSIONS
+The app has no widget or app extension of any kind.
 
 ACCOUNT DELETION
-Because accounts hold a business's accounting records, deletion is
-requested from Settings > "Yeu cau xoa tai khoan", which opens
-https://hubsell.vn/xoa-tai-khoan. Requests are completed within 30 days.
+Available inside the app (see ACCOUNTS above). The Settings tab also
+links to our deletion policy page, https://hubsell.vn/xoa-tai-khoan,
+which explains what is erased and when.
 
 Contact: support@hubsell.vn, +84 96 5863292
 ```
