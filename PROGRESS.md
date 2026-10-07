@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 07/10/2026 (đêm 23:30–23:55) — BƯỚC "THÔNG TIN XUẤT HÓA ĐƠN" TRONG LUỒNG MUA GÓI (anh chốt), đã soi local
+
+- **Anh hỏi:** hồ sơ hóa đơn hiện ở đâu — trả lời: chỉ là thẻ trên trang Gói dịch vụ, lúc bấm mua không hỏi. **Anh chốt:** chèn vào luồng mua, một bước, không cản.
+- **Đã code (`frontend/src/app/settings/plan/page.tsx`):** tách `BillingProfileFields` dùng chung; `BillingStepDialog` mở trước Thanh toán ngay / Đăng ký mua / Trả bằng Ví khi hồ sơ chưa có MST hay CCCD: điền sẵn hồ sơ + SĐT tài khoản, nút **Lưu và tiếp tục** (PUT billing-profile rồi chạy tiếp hành động mua) hoặc **Bỏ qua — xuất hóa đơn khách lẻ**. Hồ sơ đã có MST/CCCD → không hỏi, hiện dòng "Hóa đơn xuất theo đơn vị: … · Sửa" (neo `#billing-profile`) dưới tiêu đề Chọn gói. Nhân viên / tài khoản miễn phí đi thẳng. Đăng ký tư vấn Enterprise không hỏi (chưa mua).
+- **Soi local (cổng 4001, demo@hubsell.tech):** bấm Đăng ký mua → cảnh báo đổi gói giữa kỳ → hộp Thông tin xuất hóa đơn → điền tên + MST + địa chỉ → Lưu và tiếp tục → sang hộp SĐT liên hệ như cũ; thẻ hồ sơ + dòng tóm tắt cập nhật ngay. tsc + eslint sạch. ⚠️ Đã đổi tạm `backend/.env` (SHOPEE_CALLBACK_HTTP_PORT=4001) + `frontend/.env.local` (http://localhost:4001) — **trả lại sau khi anh xem xong**.
+- Quyết định nhỏ của em: hộp hỏi lại ở MỖI lần mua khi hồ sơ còn thiếu MST/CCCD (bỏ qua không ghi nhớ) — lý do: mua gói thưa (tháng/năm), sai hóa đơn tốn thủ tục điều chỉnh; anh muốn "bỏ qua là thôi hẳn" thì nói em thêm ghi nhớ.
+
 ## Phiên 07/10/2026 (đêm 23:05–23:30) — THỬ THẬT TỜ NHÁP OK trên tài khoản Hubsell; bổ sung SĐT + CCCD vào hồ sơ xuất hóa đơn của khách
 
 - **Thử thật:** anh push `48230c7` + `0e088ef`, bấm Thử lại dòng khách Hiển 99.000đ → **tờ nháp 1C26THB hiện trên app3.meinvoice.vn** ("HĐ mới", đủ tên người mua, email, dòng dịch vụ ĐVT Gói, KCT). Luồng đẩy nháp qua `/invoiceweb/insert` chạy thật được. Chi tiết + ảnh mô tả ở `docs/HOA-DON-HQ-KY-NEN-KHAO-SAT-07-10.md` mục 14.

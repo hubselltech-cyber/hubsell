@@ -146,6 +146,135 @@ function UsageBar({
   );
 }
 
+/** Trạng thái form hồ sơ xuất hóa đơn — dùng chung cho thẻ ở trang và bước trong luồng mua. */
+type BillingForm = {
+  name: string;
+  taxCode: string;
+  address: string;
+  email: string;
+  phone: string;
+  idNumber: string;
+};
+
+function billingFormOf(profile: MyBillingProfile | null): BillingForm {
+  return {
+    name: profile?.name ?? "",
+    taxCode: profile?.taxCode ?? "",
+    address: profile?.address ?? "",
+    email: profile?.email ?? "",
+    phone: profile?.phone ?? "",
+    idNumber: profile?.idNumber ?? "",
+  };
+}
+
+/** Có MST → hóa đơn theo đơn vị: tên + địa chỉ bắt buộc. */
+function billingFormIncomplete(form: BillingForm): boolean {
+  return form.taxCode.trim() !== "" && (!form.name.trim() || !form.address.trim());
+}
+
+/**
+ * Các ô nhập hồ sơ xuất hóa đơn (07/10): tên/MST/địa chỉ/email/SĐT + CCCD cho khách lẻ.
+ * Thẻ ở trang và hộp thoại trong luồng mua cùng dùng để hai nơi không lệch nhau.
+ */
+function BillingProfileFields({
+  form,
+  onChange,
+  accountEmail,
+  accountPhone,
+  idPrefix,
+}: {
+  form: BillingForm;
+  onChange: (k: keyof BillingForm, v: string) => void;
+  accountEmail: string | null;
+  accountPhone: string | null;
+  idPrefix: string;
+}) {
+  const isCompany = form.taxCode.trim() !== "";
+  const set = (k: keyof BillingForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    onChange(k, e.target.value);
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${idPrefix}-name`}>Tên đơn vị / người mua</Label>
+          <Input
+            id={`${idPrefix}-name`}
+            placeholder="VD: CÔNG TY TNHH ABC (trống = tên tài khoản)"
+            value={form.name}
+            onChange={set("name")}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${idPrefix}-tax`}>Mã số thuế (nếu xuất theo đơn vị)</Label>
+          <Input
+            id={`${idPrefix}-tax`}
+            placeholder="10 số hoặc 10-3 số chi nhánh"
+            value={form.taxCode}
+            onChange={set("taxCode")}
+          />
+        </div>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${idPrefix}-address`}>
+          Địa chỉ{isCompany ? " (bắt buộc khi có MST)" : ""}
+        </Label>
+        <Input
+          id={`${idPrefix}-address`}
+          placeholder="Địa chỉ trụ sở theo đăng ký kinh doanh"
+          value={form.address}
+          onChange={set("address")}
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${idPrefix}-email`}>Email nhận hóa đơn</Label>
+          <Input
+            id={`${idPrefix}-email`}
+            type="email"
+            placeholder={accountEmail ?? "ketoan@congty.vn"}
+            value={form.email}
+            onChange={set("email")}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${idPrefix}-phone`}>Số điện thoại trên hóa đơn</Label>
+          <Input
+            id={`${idPrefix}-phone`}
+            inputMode="tel"
+            placeholder={accountPhone ? `Trống = ${accountPhone}` : "VD: 0912 345 678"}
+            value={form.phone}
+            onChange={set("phone")}
+          />
+        </div>
+      </div>
+      {!isCompany && (
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${idPrefix}-id`}>Số định danh cá nhân / CCCD (không bắt buộc)</Label>
+          <Input
+            id={`${idPrefix}-id`}
+            inputMode="numeric"
+            placeholder="12 số — ghi vào để hóa đơn mang định danh của bạn"
+            value={form.idNumber}
+            onChange={set("idNumber")}
+          />
+          <p className="text-xs text-muted-foreground">
+            Khách lẻ không cần khai. Chỉ hóa đơn có MST hoặc số định danh mới dùng được để
+            hạch toán chi phí.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Một dòng tóm tắt hồ sơ: hóa đơn sẽ xuất cho ai. */
+function billingSummary(profile: MyBillingProfile | null): string {
+  if (profile?.taxCode) return `Hóa đơn xuất theo đơn vị: ${profile.name} · MST ${profile.taxCode}`;
+  if (profile?.idNumber) return `Hóa đơn ghi tên: ${profile.name} · CCCD ${profile.idNumber}`;
+  if (profile?.name) return `Hóa đơn ghi tên: ${profile.name}`;
+  return "Chưa khai — hóa đơn sẽ ghi tên tài khoản (khách lẻ, không MST).";
+}
+
 /**
  * Thẻ THÔNG TIN XUẤT HÓA ĐƠN (06/10) — khách lẻ để trống (hóa đơn ghi tên tài
  * khoản + email đăng nhập); đơn vị điền tên + MST + địa chỉ để hóa đơn điện tử
@@ -163,32 +292,13 @@ function BillingProfileCard({
   accountPhone: string | null;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState({
-    name: profile?.name ?? "",
-    taxCode: profile?.taxCode ?? "",
-    address: profile?.address ?? "",
-    email: profile?.email ?? "",
-    phone: profile?.phone ?? "",
-    idNumber: profile?.idNumber ?? "",
-  });
+  const [form, setForm] = useState<BillingForm>(billingFormOf(profile));
   const [dirty, setDirty] = useState(false);
   // Hồ sơ nạp sau khi thẻ đã render (query về muộn) → đổ lại ô, trừ khi khách đang gõ.
   useEffect(() => {
     if (dirty) return;
-    setForm({
-      name: profile?.name ?? "",
-      taxCode: profile?.taxCode ?? "",
-      address: profile?.address ?? "",
-      email: profile?.email ?? "",
-      phone: profile?.phone ?? "",
-      idNumber: profile?.idNumber ?? "",
-    });
+    setForm(billingFormOf(profile));
   }, [profile, dirty]);
-
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDirty(true);
-    setForm((f) => ({ ...f, [k]: e.target.value }));
-  };
 
   const saveMutation = useMutation({
     mutationFn: () => updateMyBillingProfile(form),
@@ -201,16 +311,8 @@ function BillingProfileCard({
       toast.error(err instanceof ApiError ? err.message : "Không lưu được — thử lại sau."),
   });
 
-  const isCompany = form.taxCode.trim() !== "";
-  const summary =
-    profile?.taxCode
-      ? `Hóa đơn xuất theo đơn vị: ${profile.name} · MST ${profile.taxCode}`
-      : profile?.name
-        ? `Hóa đơn ghi tên: ${profile.name}`
-        : "Chưa khai — hóa đơn sẽ ghi tên tài khoản (khách lẻ, không MST).";
-
   return (
-    <Card className="shadow-sm">
+    <Card id="billing-profile" className="shadow-sm">
       <CardHeader className="border-b pb-3">
         <CardTitle className="flex flex-wrap items-center gap-2">
           <ReceiptText className="size-5 text-slate-500" />
@@ -220,79 +322,20 @@ function BillingProfileCard({
           Mỗi lần thanh toán, Hubsell tự phát hành hóa đơn điện tử theo thông tin này và
           gửi bản PDF về email nhận hóa đơn{accountEmail ? ` (mặc định ${accountEmail})` : ""}.
           {" "}
-          {summary}
+          {billingSummary(profile)}
         </p>
       </CardHeader>
       <CardContent className="space-y-3 pt-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="billing-name">Tên đơn vị / người mua</Label>
-            <Input
-              id="billing-name"
-              placeholder="VD: CÔNG TY TNHH ABC (trống = tên tài khoản)"
-              value={form.name}
-              onChange={set("name")}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="billing-tax">Mã số thuế (nếu xuất theo đơn vị)</Label>
-            <Input
-              id="billing-tax"
-              placeholder="10 số hoặc 10-3 số chi nhánh"
-              value={form.taxCode}
-              onChange={set("taxCode")}
-            />
-          </div>
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="billing-address">
-            Địa chỉ{isCompany ? " (bắt buộc khi có MST)" : ""}
-          </Label>
-          <Input
-            id="billing-address"
-            placeholder="Địa chỉ trụ sở theo đăng ký kinh doanh"
-            value={form.address}
-            onChange={set("address")}
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="billing-email">Email nhận hóa đơn</Label>
-            <Input
-              id="billing-email"
-              type="email"
-              placeholder={accountEmail ?? "ketoan@congty.vn"}
-              value={form.email}
-              onChange={set("email")}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="billing-phone">Số điện thoại trên hóa đơn</Label>
-            <Input
-              id="billing-phone"
-              inputMode="tel"
-              placeholder={accountPhone ? `Trống = ${accountPhone}` : "VD: 0912 345 678"}
-              value={form.phone}
-              onChange={set("phone")}
-            />
-          </div>
-        </div>
-        {!isCompany && (
-          <div className="grid gap-1.5">
-            <Label htmlFor="billing-id">Số định danh cá nhân / CCCD (không bắt buộc)</Label>
-            <Input
-              id="billing-id"
-              inputMode="numeric"
-              placeholder="12 số — ghi vào để hóa đơn mang định danh của bạn"
-              value={form.idNumber}
-              onChange={set("idNumber")}
-            />
-            <p className="text-xs text-muted-foreground">
-              Khách lẻ không cần khai. Chỉ hóa đơn có MST hoặc số định danh mới dùng được để
-              hạch toán chi phí.
-            </p>
-          </div>
-        )}
+        <BillingProfileFields
+          form={form}
+          onChange={(k, v) => {
+            setDirty(true);
+            setForm((f) => ({ ...f, [k]: v }));
+          }}
+          accountEmail={accountEmail}
+          accountPhone={accountPhone}
+          idPrefix="billing"
+        />
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             Hóa đơn đã phát hành không tự đổi theo hồ sơ mới — sai thông tin thì trả lời email
@@ -300,13 +343,99 @@ function BillingProfileCard({
           </p>
           <Button
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || !dirty || (isCompany && (!form.name.trim() || !form.address.trim()))}
+            disabled={saveMutation.isPending || !dirty || billingFormIncomplete(form)}
           >
             {saveMutation.isPending ? "Đang lưu…" : "Lưu"}
           </Button>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * BƯỚC HÓA ĐƠN TRONG LUỒNG MUA (anh Trung 07/10): bấm Thanh toán ngay / Đăng ký
+ * mua / Trả bằng Ví mà hồ sơ chưa có MST hay CCCD → hỏi MỘT lần, không cản:
+ * "Lưu và tiếp tục" (lưu hồ sơ rồi đi tiếp) hoặc "Bỏ qua" (hóa đơn khách lẻ theo
+ * tên tài khoản). Hồ sơ đã có MST/CCCD thì không hỏi, chỉ hiện dòng tóm tắt + Sửa.
+ */
+function BillingStepDialog({
+  step,
+  profile,
+  accountEmail,
+  accountPhone,
+  onClose,
+  onSaved,
+}: {
+  step: { proceed: () => void } | null;
+  profile: MyBillingProfile | null;
+  accountEmail: string | null;
+  accountPhone: string | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<BillingForm>(billingFormOf(profile));
+  // Mỗi lần mở lại → đổ hồ sơ mới nhất vào ô.
+  useEffect(() => {
+    if (step) setForm(billingFormOf(profile));
+  }, [step, profile]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => updateMyBillingProfile(form),
+    onSuccess: () => {
+      onSaved();
+      const proceed = step?.proceed;
+      onClose();
+      proceed?.();
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được — thử lại sau."),
+  });
+
+  const skip = () => {
+    const proceed = step?.proceed;
+    onClose();
+    proceed?.();
+  };
+
+  return (
+    <Dialog open={step !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ReceiptText className="size-5 text-slate-500" />
+            Thông tin xuất hóa đơn
+          </DialogTitle>
+          <DialogDescription>
+            Hubsell tự xuất hóa đơn điện tử sau khi tiền về. Cần hóa đơn để hạch toán chi phí
+            thì khai tên đơn vị + mã số thuế (hoặc số định danh cá nhân). Bỏ qua thì hóa đơn ghi
+            tên tài khoản như khách lẻ.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <BillingProfileFields
+            form={form}
+            onChange={(k, v) => setForm((f) => ({ ...f, [k]: v }))}
+            accountEmail={accountEmail}
+            accountPhone={accountPhone}
+            idPrefix="buy-billing"
+          />
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" size="sm" onClick={skip}>
+              Bỏ qua — xuất hóa đơn khách lẻ
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending || billingFormIncomplete(form)}
+            >
+              {saveMutation.isPending ? "Đang lưu…" : "Lưu và tiếp tục"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -330,6 +459,9 @@ export default function SettingsPlanPage() {
     isConsult: boolean;
   } | null>(null);
   const [phone, setPhone] = useState("");
+  // Bước hóa đơn trong luồng mua (07/10): giữ hành động mua để chạy tiếp sau khi
+  // khách Lưu hoặc Bỏ qua.
+  const [billingStep, setBillingStep] = useState<{ proceed: () => void } | null>(null);
   // 25/09: bảng giá bày CẢ THANG (anh Trung: ẩn gói thấp hơn là không hợp lý).
   // Đổi sang gói KHÁC khi kỳ đã trả tiền còn ngày → kỳ mới bắt đầu ngay, ngày
   // còn lại không cộng dồn (subscription-service chỉ nối tiếp khi CÙNG gói).
@@ -445,6 +577,18 @@ export default function SettingsPlanPage() {
       return;
     }
     proceed();
+  }
+  // Hồ sơ đã có MST hoặc CCCD → đủ để xuất đúng người, không hỏi lại.
+  const billingProfile = data?.billingProfile ?? null;
+  const billingReady = Boolean(billingProfile?.taxCode || billingProfile?.idNumber);
+  // Chèn bước hóa đơn trước mọi hành động MUA (nhân viên không có hồ sơ, tài
+  // khoản miễn phí, hoặc hồ sơ đã đủ thì đi thẳng).
+  function withBillingStep(proceed: () => void) {
+    if (!data || billingProfile === null || data.exempt || billingReady) {
+      proceed();
+      return;
+    }
+    setBillingStep({ proceed });
   }
   const statusBadge =
     sub === null
@@ -569,6 +713,15 @@ export default function SettingsPlanPage() {
                 ? "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua rồi bấm Thanh toán ngay: trang thanh toán mở ra, quét QR bằng app ngân hàng, gói mở ngay khi tiền về."
                 : "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua rồi bấm Đăng ký mua, Hubsell sẽ liên hệ hướng dẫn thanh toán."}
             </p>
+            {billingReady && (
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm">
+                <ReceiptText className="size-4 text-slate-500" />
+                <span>{billingSummary(billingProfile)}</span>
+                <a href="#billing-profile" className="font-medium text-primary hover:underline">
+                  Sửa
+                </a>
+              </p>
+            )}
           </div>
 
           {/* Đơn payOS đang chờ (khách đóng popup rồi quay lại) — đi tiếp được */}
@@ -751,7 +904,7 @@ export default function SettingsPlanPage() {
                         disabled={checkoutMutation.isPending}
                         onClick={() =>
                           guardPlanChange(p, cycle, () =>
-                            checkoutMutation.mutate({ planId: p.id, cycle })
+                            withBillingStep(() => checkoutMutation.mutate({ planId: p.id, cycle }))
                           )
                         }
                       >
@@ -770,13 +923,15 @@ export default function SettingsPlanPage() {
                       variant={gateway ? "ghost" : isBestSeller ? "default" : "outline"}
                       onClick={() =>
                         guardPlanChange(p, cycle, () =>
-                          openBuyDialog({
-                            planId: p.id,
-                            planName: p.name,
-                            cycle,
-                            price,
-                            isConsult: false,
-                          })
+                          withBillingStep(() =>
+                            openBuyDialog({
+                              planId: p.id,
+                              planName: p.name,
+                              cycle,
+                              price,
+                              isConsult: false,
+                            })
+                          )
                         )
                       }
                     >
@@ -791,7 +946,11 @@ export default function SettingsPlanPage() {
                       <Button
                         className="w-full"
                         variant="ghost"
-                        onClick={() => guardPlanChange(p, cycle, () => setWalletBuy({ plan: p, cycle }))}
+                        onClick={() =>
+                          guardPlanChange(p, cycle, () =>
+                            withBillingStep(() => setWalletBuy({ plan: p, cycle }))
+                          )
+                        }
                       >
                         <Wallet className="size-4" />
                         Trả bằng Ví Hubsell
@@ -939,6 +1098,16 @@ export default function SettingsPlanPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* ===== Bước hóa đơn trong luồng mua (07/10) — hỏi một lần, không cản ===== */}
+      <BillingStepDialog
+        step={billingStep}
+        profile={billingProfile}
+        accountEmail={accountEmail}
+        accountPhone={data?.contactPhone ?? null}
+        onClose={() => setBillingStep(null)}
+        onSaved={refresh}
+      />
 
       {/* ===== QR payOS — quét là gói mở khi tiền về (09/09) ===== */}
       <GatewayCheckoutDialog
