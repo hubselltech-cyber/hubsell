@@ -171,6 +171,50 @@ export async function getGmvMaxStores(accessToken: string, advertiserId: string)
   return data.store_list ?? [];
 }
 
+/** Một dòng của /gmv_max/campaign/get/ (khuôn đã xác minh bằng probe 19/09/2026 — docs/ADS-TIKTOK-GMV-MAX.md). */
+export interface GmvMaxCampaignListItem {
+  campaign_id: string;
+  campaign_name?: string;
+  /** ENABLE | DISABLE */
+  operation_status?: string;
+  /** CAMPAIGN_STATUS_ENABLE | CAMPAIGN_STATUS_DISABLE | CAMPAIGN_STATUS_PRODUCT_USED_BY_PRODUCT_GMV_MAX | … */
+  secondary_status?: string;
+}
+
+/** Trần số trang khi liệt kê chiến dịch — chống vòng lặp nếu page_info của sàn lệch. */
+const GMV_MAX_CAMPAIGN_LIST_MAX_PAGES = 20;
+
+/**
+ * MỌI chiến dịch Product GMV Max còn tồn tại của một shop — khác báo cáo (chỉ có
+ * chiến dịch tiêu tiền trong kỳ). Không trả ROI mục tiêu / ngân sách / sản phẩm.
+ * Cần nhóm quyền Campaign (TikTok duyệt 19/09/2026); token cấp TRƯỚC ngày đó trả
+ * 40001 thiếu quyền → nơi gọi tự bỏ qua, không được làm hỏng lượt đồng bộ.
+ */
+export async function getGmvMaxCampaigns(
+  accessToken: string,
+  advertiserId: string,
+  storeId: string
+): Promise<GmvMaxCampaignListItem[]> {
+  const out: GmvMaxCampaignListItem[] = [];
+  for (let page = 1; page <= GMV_MAX_CAMPAIGN_LIST_MAX_PAGES; page++) {
+    const data = await adsGet<{ list?: GmvMaxCampaignListItem[]; page_info?: { page?: number; total_page?: number } }>(
+      "/gmv_max/campaign/get/",
+      accessToken,
+      {
+        advertiser_id: advertiserId,
+        filtering: { gmv_max_promotion_types: ["PRODUCT_GMV_MAX"], store_ids: [storeId] },
+        page,
+        page_size: 100,
+      }
+    );
+    const list = data.list ?? [];
+    out.push(...list);
+    const totalPage = data.page_info?.total_page ?? 1;
+    if (list.length === 0 || page >= totalPage) break;
+  }
+  return out;
+}
+
 export interface GmvMaxReportQuery {
   advertiserId: string;
   /** Docs: tối đa 1 shop mỗi lượt gọi. */

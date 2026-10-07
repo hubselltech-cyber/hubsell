@@ -2820,8 +2820,9 @@ export interface TiktokAdsCampaignRow {
   id: string;
   campaignId: string;
   name: string;
-  status: "ongoing" | "paused" | string;
-  /** target_roi = đặt ROI mục tiêu; max_delivery = phân phối tối đa (không có mục tiêu). */
+  /** ongoing = đang chạy; paused = tắt trên TikTok; ended = TikTok không còn liệt kê (đã xóa / hết hạn). */
+  status: "ongoing" | "paused" | "ended" | string;
+  /** target_roi = đặt ROI mục tiêu; max_delivery = phân phối tối đa; "" = chưa biết (chiến dịch chưa tiêu tiền, chỉ có từ danh sách). */
   biddingMethod: string;
   roasTarget: number | null;
   budget: number;
@@ -5528,6 +5529,8 @@ export interface PlatformSubscriptionsResponse {
     paymentsThisMonth: number;
   };
   total: number;
+  page: number;
+  pageSize: number;
   subscriptions: PlatformSubscription[];
   recentPayments: PlatformPackagePayment[];
   upgradeRequests: PlatformUpgradeRequest[];
@@ -5581,10 +5584,14 @@ export function deletePlatformPlan(id: string) {
 export function fetchPlatformSubscriptions(params?: {
   filter?: "all" | "expiring" | "expired";
   q?: string;
+  page?: number;
+  pageSize?: number;
 }) {
   const search = new URLSearchParams();
   if (params?.filter && params.filter !== "all") search.set("filter", params.filter);
   if (params?.q) search.set("q", params.q);
+  if (params?.page) search.set("page", String(params.page));
+  if (params?.pageSize) search.set("pageSize", String(params.pageSize));
   const suffix = search.toString() ? `?${search.toString()}` : "";
   return apiFetch<PlatformSubscriptionsResponse>(`/api/admin/subscriptions${suffix}`);
 }

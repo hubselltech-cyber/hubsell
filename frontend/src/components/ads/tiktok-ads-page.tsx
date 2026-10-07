@@ -27,6 +27,16 @@ import { toast } from "sonner";
 
 import { formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
+import {
+  TIKTOK_CAMPAIGN_STATUS_META,
+  TiktokCampaignStatusBadge,
+  TiktokCampaignStatusFilterChips,
+  countTiktokCampaignStatuses,
+  isTiktokCampaignStatusFilter,
+  sortTiktokCampaignsByStatus,
+  tiktokCampaignStatusKey,
+  type TiktokCampaignStatusFilter,
+} from "@/components/ads/tiktok-campaign-status";
 import { AUTO_MODE_BADGE } from "@/components/ads/tiktok-campaign-page";
 import { TiktokProductBreakevenTab } from "@/components/ads/tiktok-product-breakeven-tab";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -71,7 +81,9 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
         <>
           <p className="max-w-60 truncate text-sm text-slate-900">{c.name || `Chiến dịch #${c.campaignId}`}</p>
           <p className="text-xs text-slate-500">
-            GMV Max · {c.biddingMethod === "max_delivery" ? "phân phối tối đa" : "ROI mục tiêu"}
+            GMV Max
+            {c.biddingMethod === "max_delivery" && " · phân phối tối đa"}
+            {c.biddingMethod === "target_roi" && " · ROI mục tiêu"}
             {c.budget > 0 && ` · ngân sách ${formatVND(c.budget)}/ngày`}
           </p>
         </>
@@ -83,12 +95,7 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
     size: 110,
     meta: { label: "Trạng thái" },
     header: "Trạng thái",
-    cell: ({ row }) =>
-      row.original.status === "ongoing" ? (
-        <Badge className="bg-emerald-500 text-white">Đang chạy</Badge>
-      ) : (
-        <Badge className="bg-amber-100 text-amber-700">Tạm dừng</Badge>
-      ),
+    cell: ({ row }) => <TiktokCampaignStatusBadge status={row.original.status} />,
   },
   {
     id: "auto",
@@ -206,6 +213,8 @@ export function TiktokAdsPage() {
   const [unlinking, setUnlinking] = useState(false);
   // null = chưa tự chọn tab → mặc định theo tình trạng kết nối (xem `tab` bên dưới).
   const [tabPick, setTabPick] = useState<"overview" | "breakeven" | "connect" | null>(null);
+  // Lọc bảng chiến dịch theo trạng thái — chỉ lọc, không đụng thứ tự (đang chạy luôn trên cùng).
+  const [statusFilter, setStatusFilter] = useState<TiktokCampaignStatusFilter>("all");
 
   useEffect(() => setAllowed(can(getStoredUser(), "ads.tiktok")), []);
 
@@ -302,6 +311,11 @@ export function TiktokAdsPage() {
   const summary = data?.summary ?? null;
   const campaigns = data?.campaigns ?? [];
   const noChannel = !!data && data.channels.length === 0;
+  // Nhóm trạng thái quyết định thứ tự (backend đã xếp, trang xếp lại cho chắc); bộ lọc chỉ cắt bớt.
+  const orderedCampaigns = sortTiktokCampaignsByStatus(campaigns);
+  const statusCounts = countTiktokCampaignStatuses(campaigns);
+  const visibleCampaigns =
+    statusFilter === "all" ? orderedCampaigns : orderedCampaigns.filter((c) => tiktokCampaignStatusKey(c.status) === statusFilter);
 
   return (
     <AppShell>
@@ -628,18 +642,36 @@ export function TiktokAdsPage() {
                     {q.loading || waiting ? "Đang tải…" : "Gian chưa có chiến dịch GMV Max nào."}
                   </p>
                 ) : (
-                  <div className="min-w-0">
-                    <DataTable
-                      tableId="ads-campaigns-tiktok"
-                      columns={CAMPAIGN_COLUMNS}
-                      data={campaigns}
-                      getRowId={(c) => c.id}
-                      onRowClick={(c) => router.push(`/ads/tiktok/campaign?id=${c.id}&from=${fromKey}&to=${toKey}`)}
-                      striped={false}
-                      headerEmphasis
-                      stickyHeader
-                      toolbar={`${formatNumber(campaigns.length)} chiến dịch · ${data?.link?.advertiserName ?? ""}`}
-                    />
+                  <div className="min-w-0 space-y-3">
+                    {/* Bộ lọc đứng NGOÀI DataTable để khi bộ lọc trả rỗng, chip vẫn còn đó cho người dùng bấm lại. */}
+                    <TiktokCampaignStatusFilterChips value={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
+                    {visibleCampaigns.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-muted-foreground">
+                        Không có chiến dịch nào ở trạng thái {statusFilter === "all" ? "" : TIKTOK_CAMPAIGN_STATUS_META[statusFilter].label.toLowerCase()}.
+                      </p>
+                    ) : (
+                      <DataTable
+                        tableId="ads-campaigns-tiktok"
+                        columns={CAMPAIGN_COLUMNS}
+                        data={visibleCampaigns}
+                        getRowId={(c) => c.id}
+                        onRowClick={(c) => router.push(`/ads/tiktok/campaign?id=${c.id}&from=${fromKey}&to=${toKey}`)}
+                        striped={false}
+                        headerEmphasis
+                        stickyHeader
+                        toolbar={
+                          statusFilter === "all"
+                            ? `${formatNumber(campaigns.length)} chiến dịch · ${data?.link?.advertiserName ?? ""}`
+                            : `${formatNumber(visibleCampaigns.length)} / ${formatNumber(campaigns.length)} chiến dịch · ${data?.link?.advertiserName ?? ""}`
+                        }
+                        viewExtras={{
+                          get: () => ({ statusFilter }),
+                          apply: (ex) => {
+                            if (isTiktokCampaignStatusFilter(ex.statusFilter)) setStatusFilter(ex.statusFilter);
+                          },
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </CardContent>

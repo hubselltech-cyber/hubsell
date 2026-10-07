@@ -280,8 +280,8 @@ router.delete("/plans/:id", requirePlatformAdmin, async (req: AuthRequest, res, 
 
 const EXPIRING_SOON_DAYS = 7;
 
-// GET /api/admin/subscriptions?filter=all|expiring|expired&q=<email/tên>
-// Danh sách thuê bao (kèm khách + gói) + thẻ số + thanh toán gần đây.
+// GET /api/admin/subscriptions?filter=all|expiring|expired&q=<email/tên>&page=1&pageSize=20
+// Danh sách thuê bao (kèm khách + gói, phân trang) + thẻ số + thanh toán gần đây.
 router.get(
   "/subscriptions",
   requirePlatformPermission("hq.finance"),
@@ -291,6 +291,8 @@ router.get(
       const soon = new Date(now.getTime() + EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000);
       const filter = String(req.query.filter ?? "all");
       const q = String(req.query.q ?? "").trim();
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
 
       const where: Prisma.SubscriptionWhereInput = {
         ...(filter === "expiring"
@@ -318,7 +320,8 @@ router.get(
             where,
             // Sắp hết hạn lên đầu (null = vô thời hạn xuống cuối), mới tạo trước.
             orderBy: [{ currentPeriodEnd: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-            take: 100,
+            skip: (page - 1) * pageSize,
+            take: pageSize,
             select: {
               id: true,
               status: true,
@@ -424,6 +427,8 @@ router.get(
           paymentsThisMonth: monthAgg._count,
         },
         total,
+        page,
+        pageSize,
         subscriptions: subs.map((s) => ({
           id: s.id,
           user: s.user,

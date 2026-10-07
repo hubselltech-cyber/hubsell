@@ -44,6 +44,7 @@ import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { AppShell } from "@/components/shell/app-shell";
+import { TiktokCampaignStatusBadge, tiktokCampaignStatusKey } from "@/components/ads/tiktok-campaign-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -474,12 +475,7 @@ export function TiktokCampaignPage() {
               </Link>
               <h1 className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-slate-900">
                 <span className="min-w-0 truncate">{c?.name || (q.loading ? "Đang tải…" : "Chiến dịch")}</span>
-                {c &&
-                  (c.status === "ongoing" ? (
-                    <Badge className="bg-emerald-500 text-white">Đang chạy</Badge>
-                  ) : (
-                    <Badge className="bg-amber-100 text-amber-700">Tạm dừng</Badge>
-                  ))}
+                {c && <TiktokCampaignStatusBadge status={c.status} />}
               </h1>
               {c && (
                 <p className="text-sm text-muted-foreground">
@@ -934,7 +930,11 @@ export function TiktokCampaignPage() {
                 gọn ở đây để thấy đủ bức tranh mà không làm rối bảng. */}
             {outsideLine && <p className={TEXT_SUB}>{outsideLine}</p>}
             {owner && c && c.status !== "ongoing" && (
-              <p className={TEXT_SUB}>Chiến dịch đang tạm dừng — TikTok chỉ cho loại hoặc khôi phục video khi chiến dịch đang bật.</p>
+              <p className={TEXT_SUB}>
+                {tiktokCampaignStatusKey(c.status) === "ended"
+                  ? "Chiến dịch đã dừng — TikTok không còn liệt kê nó; số bên dưới chỉ để đối chiếu."
+                  : "Chiến dịch đang tạm dừng — TikTok chỉ cho loại hoặc khôi phục video khi chiến dịch đang bật."}
+              </p>
             )}
           </CardContent>
         </Card>
