@@ -146,9 +146,12 @@ HOW TO TEST
 
 PERMISSIONS
 - Camera: only to scan shipping barcodes. No photo or video is saved or
-  uploaded. If camera access was denied earlier, the scan screen shows an
-  "Open Settings" button; orders can also be found by typing the last
-  digits of a code, no camera needed.
+  uploaded. The scan screen first explains the purpose with a "Continue"
+  button, then the system permission prompt appears. If camera access was
+  declined earlier, the screen shows an "Open Settings" button; orders can
+  also be found by typing the last digits of a code, no camera needed.
+
+The app has no widget or app extension.
 - Microphone and speech recognition: only after the user taps the
   microphone button to ask the Assistant a question by voice. Speech-to-text
   is done by the operating system's speech service; our servers receive the

@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 07/10/2026 (sáng) — ĐỌC NGUYÊN VĂN THƯ APPLE (khác phỏng đoán hôm qua) → sửa thêm, vẫn chờ anh gộp master + build 5 + nộp lại
+
+- **Nguyên văn Apple** (Messages trong submission): **5.1.1(iv)** = màn giải thích trước hộp xin quyền Camera có nút "Cấp quyền" → phải là "Continue/Next", nên có link vào Settings; **3.1.1** = app truy cập thuê bao mua ngoài app, hết dùng thử thì bị dẫn tới thanh toán ngoài IAP; **2.1 Information Needed** = "app appears to offer widget extension functionality" — hỏi cách bật. Không nhắc xóa tài khoản / SĐT (việc hôm qua vẫn giữ). Toàn bộ + bản trả lời tiếng Anh: `docs/store/APPLE-REVIEW-REPLY-1.md`.
+- **Sửa thêm:** `ScanScreen` nút **"Tiếp tục"** + câu chữ trung tính, đã từ chối → "Mở Cài đặt"; `api/client.ts` lỗi backend mã `PLAN_*` (gia hạn/nâng gói) → câu trung tính trên app (kiểm: `requirePlanUnlocked` gắn ở ads/expenses/operations/koc/tax… mà tab Quảng cáo mobile gọi `/api/ads` → hết hạn là lộ câu "gia hạn"). Widget: rà code + lockfile + listing **không có gì** — trả lời xác nhận không có, nhờ Apple chỉ chỗ gợi ý.
+- **Kiểm:** tsc mobile sạch, eslint 2 file sửa không thêm lỗi.
+- **Còn tay anh:** như hôm qua (gộp master → build 5 → submit → thay Notes → dán trả lời → Resubmit). Tùy chọn: giải nén `.ipa` xem `Payload/Hubsell.app/PlugIns` không tồn tại để chắc câu widget.
+
 ## Phiên 06/10/2026 (chiều) — APPLE TỪ CHỐI iOS 1.0 build 4 (3 guideline) → sửa xong code, chờ anh gộp master + build 5 + nộp lại (nhánh `claude/gracious-galileo-w5yruu`)
 
 - **Apple trả hồ sơ** submission `bc9bbaf6…`: 2.1.0 App Completeness · 3.1.1 IAP · 5.1.1 Data Collection. Người duyệt thử trên iPad, **tự đăng ký tài khoản mới** thay vì dùng `reviewer@hubsell.vn` — vì Notes cũ ghi "The app has no sign-up" (sai, app có màn Đăng ký). Hai ảnh họ gửi: màn Tài khoản hiện "Gói Scale · Dùng thử · còn 14 ngày" (→ 3.1.1) và màn quét "Cấp quyền Camera" bấm không phản ứng (→ 2.1.0; iOS chỉ hỏi quyền một lần). Phân tích + bản trả lời tiếng Anh: **`docs/store/APPLE-REVIEW-REPLY-1.md`**.

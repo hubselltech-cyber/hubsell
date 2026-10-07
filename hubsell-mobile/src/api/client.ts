@@ -92,9 +92,14 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const message =
-      (data as { error?: string } | null)?.error ??
-      `Máy chủ trả lỗi (${res.status})`;
+    const body = data as { error?: string; code?: string } | null;
+    // Apple 3.1.1 (06/10/2026): app KHÔNG được dẫn người dùng tới cách thanh
+    // toán ngoài IAP. Backend khi gói hết hạn / vượt trần trả câu "gia hạn /
+    // nâng gói…" (code PLAN_*) — trên app thay bằng câu trung tính, không nhắc
+    // tới gói, giá hay nơi mua. Gói là hợp đồng B2B mua trên web, app chỉ dùng.
+    const message = body?.code?.startsWith("PLAN_")
+      ? "Tính năng này hiện chưa được bật cho tài khoản của bạn. Vui lòng liên hệ quản trị viên shop."
+      : (body?.error ?? `Máy chủ trả lỗi (${res.status})`);
     throw new ApiError(message, res.status, data);
   }
   return data as T;

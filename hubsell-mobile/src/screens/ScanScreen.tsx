@@ -308,24 +308,26 @@ export function ScanScreen({
   if (!isWeb) {
     if (!permission) return <View className="flex-1 bg-slate-950" />;
     if (!permission.granted) {
-      // iOS chỉ hỏi quyền MỘT lần: đã từ chối thì requestPermission() về ngay
-      // không hiện gì — người duyệt Apple bấm nút thấy "chết" (từ chối 2.1.0
-      // ngày 06/10). canAskAgain=false → đưa thẳng vào Cài đặt của app.
+      // Apple 5.1.1(iv) (06/10/2026): màn giải thích TRƯỚC hộp xin quyền không
+      // được "thúc" người dùng cấp quyền — nút phải là "Tiếp tục"/"Tiếp theo",
+      // không phải "Cấp quyền". Hộp quyền của hệ thống mới là nơi họ quyết.
+      // iOS chỉ hỏi MỘT lần: đã từ chối thì requestPermission() về ngay không
+      // hiện gì (2.1.0 cũ) → canAskAgain=false: nói rõ và mở Cài đặt của app.
       const mustOpenSettings = !permission.canAskAgain;
       return (
         <View className="flex-1 items-center justify-center bg-slate-950 px-8">
           <Ionicons name="camera-outline" size={48} color="#64748b" />
           <Text className="mt-4 text-center text-base font-semibold text-white">
-            Cần quyền Camera để quét mã vận đơn
+            Quét mã vận đơn bằng camera
           </Text>
           <Text className="mt-2 text-center text-sm text-slate-400 dark:text-slate-500">
             {mustOpenSettings
-              ? "Bạn đã từ chối quyền Camera. Mở Cài đặt → Hubsell → bật Camera rồi quay lại đây."
-              : "Hubsell chỉ dùng camera để đọc mã trên tem kiện hàng."}
+              ? "Camera đang tắt cho Hubsell. Bạn có thể bật lại trong Cài đặt → Hubsell → Camera."
+              : "Màn hình này dùng camera để đọc mã trên tem kiện hàng. Ở bước tiếp theo, hệ thống sẽ hỏi bạn có cho phép hay không."}
           </Text>
           <ActionButton
-            label={mustOpenSettings ? "Mở Cài đặt" : "Cấp quyền Camera"}
-            icon={mustOpenSettings ? "settings" : "camera"}
+            label={mustOpenSettings ? "Mở Cài đặt" : "Tiếp tục"}
+            icon={mustOpenSettings ? "settings-outline" : "arrow-forward"}
             className="mt-6 min-w-[220px]"
             onPress={() => {
               if (mustOpenSettings) void Linking.openSettings();
