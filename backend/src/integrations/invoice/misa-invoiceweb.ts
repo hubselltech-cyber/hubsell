@@ -459,8 +459,10 @@ export function buildWebDraftPayload(
     AccountObjectAddress: input.buyerAddress || undefined,
     // Số định danh cá nhân (NĐ 254/2026): khách lẻ cung cấp thì phải ghi.
     CitizenIDNumber: input.buyerIdNumber || undefined,
-    ReceiverEmail: input.buyerEmail || undefined,
-    ReceiverName: input.buyerEmail ? (input.buyerContactName ?? input.buyerName) : undefined,
+    // KHÔNG gửi ReceiverEmail (anh Trung 07/10 đêm, sau tờ thật 00000001): có email
+    // thì hộp Phát hành của meInvoice tự tích "Gửi hóa đơn cho khách hàng" → khách
+    // nhận hai thư (MISA không kèm PDF + Hubsell kèm PDF). Hubsell là bên gửi duy
+    // nhất (hq-auto-invoice bước 3 / tenant); email khách vẫn lưu ở Hubsell.
     ReceiverMobile: input.buyerPhone || undefined,
     PaymentMethod: "TM/CK",
     CurrencyCode: "VND",

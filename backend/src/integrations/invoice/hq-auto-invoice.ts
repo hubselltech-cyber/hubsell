@@ -347,7 +347,24 @@ export async function settleHqWebDraft(
   buyer: Pick<HqBuyer, "name" | "taxCode" | "email">
 ): Promise<EntryRow> {
   const refId = webRefIdFor(input.orderCode);
-  const [found] = await getWebInvoices([refId], cfg);
+  let [found] = await getWebInvoices([refId], cfg);
+  if (!found) {
+    // Web app không thấy RefID: trước khi đẩy nháp MỚI, hỏi cổng phát hành theo
+    // RefID — tờ đã ký/phát hành nằm ở đó (lưới đỡ nếu getlist không trả tờ đã
+    // phát hành); tránh đẩy nháp trùng cho khoản thu đã có hóa đơn.
+    const [issued] = await getInvoiceStatuses([refId], cfg, "refId");
+    if (issued && !issued.isDeleted && issued.transactionId) {
+      found = {
+        refId,
+        invoiceNo: issued.invoiceNo,
+        transactionId: issued.transactionId,
+        publishStatus: issued.publishStatus,
+        eInvoiceStatus: null,
+        issued: Boolean(issued.invoiceNo) && issued.publishStatus !== 0,
+        raw: issued.raw,
+      };
+    }
+  }
   const snapshot = {
     invoiceBuyerName: buyer.name,
     invoiceBuyerTaxCode: buyer.taxCode,

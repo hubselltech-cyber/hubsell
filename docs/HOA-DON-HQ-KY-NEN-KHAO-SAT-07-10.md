@@ -362,6 +362,19 @@ mua → **Ký & phát hành** (xác nhận eSign) → chờ ≤ 30' (hoặc bấ
 - **Luồng thử lại sau deploy:** anh đã xóa nháp → bấm Thử lại dòng Hiển → tờ mới có SĐT của Hiển (từ SĐT tài khoản) → ký. Hiển muốn ghi CCCD/MST
   thì tự khai ở Cấu hình → Gói dịch vụ, Hubsell không gọi điện thu hộ.
 
+## 15. 🏆 HÓA ĐƠN THẬT ĐẦU TIÊN QUA LUỒNG TỜ NHÁP (07/10 ~23:45–23:50)
+
+- Sau deploy `4001f9a`: anh bấm Thử lại dòng Hiển → tờ nháp mới (có SĐT) → anh mở hộp Phát hành trên meinvoice (bỏ tích "Gửi hóa đơn cho
+  khách hàng" theo lời khuyên của em, giữ "Gửi CQT cấp mã", ký eSign) → **HĐ 1C26THB số 00000001, mã CQT `00D1A1C1091084491CABECCEB8B6F09E42`,
+  mã tra cứu `Z4FDCAKXZWK0`**, danh sách chỉ có đúng một tờ (không bị nhân đôi dù máy có lượt đẩy lại).
+- Sổ quỹ HQ sau lượt Thử lại kế: **Đã xuất · 00000001 · Đã gửi hiennv.th@gmail.com lúc 23:49:15** → bước nối số + gửi PDF chạy thật.
+- Hộp Phát hành meInvoice: có email trên tờ là nó tự tích "Gửi hóa đơn cho khách hàng" (mail MISA không kèm PDF, khách phải bấm Tra cứu);
+  "Tệp đính kèm" là chỗ gắn thêm file (hợp đồng, bảng kê), không phải PDF hóa đơn. **Chốt: Hubsell là bên gửi duy nhất** → tờ nháp KHÔNG mang
+  `ReceiverEmail` nữa (sửa cùng commit), email khách vẫn ở Hubsell để gửi PDF + gửi lại.
+- Thêm lưới đỡ ở `settleHqWebDraft`: web app không thấy RefID → hỏi `/invoice/status?inputType=2` theo RefID trước khi đẩy nháp mới (tờ đã ký
+  nằm ở cổng phát hành) — tránh đẩy nháp trùng cho khoản thu đã có hóa đơn.
+- Anh chốt thêm: HQ **không** làm ô ghi đè người mua; cần sửa thì sửa thẳng trên tờ nháp ở meinvoice trước khi ký.
+
 ## 7. Nhật ký
 
 - **07/10/2026 đêm (23:00):** code xong luồng tờ nháp HQ (mục 13), sandbox 3 ca OK, test 39/39; chờ anh gật push + thử thật tờ khách Hiển.

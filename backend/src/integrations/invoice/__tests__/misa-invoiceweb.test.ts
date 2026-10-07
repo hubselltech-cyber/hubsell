@@ -68,7 +68,8 @@ describe("buildWebDraftPayload", () => {
     expect(p.AccountObjectName).toBe("CÔNG TY KHÁCH");
     expect(p.AccountObjectTaxCode).toBe("0101243150");
     expect(p.AccountObjectAddress).toBe("12 Phố Thử");
-    expect(p.ReceiverEmail).toBe("kt@khach.vn");
+    // Email KHÔNG lên tờ nháp — Hubsell là bên gửi PDF duy nhất (07/10 đêm).
+    expect("ReceiverEmail" in p).toBe(false);
     expect(p.ReceiverMobile).toBe("0912345678");
     expect(p.CitizenIDNumber).toBeUndefined();
     expect(p.ContactName).toBeUndefined();
@@ -100,7 +101,6 @@ describe("buildWebDraftPayload", () => {
     expect(p.ReceiverMobile).toBeUndefined();
     expect(p.AccountObjectName).toBeUndefined();
     expect(p.AccountObjectTaxCode).toBeUndefined();
-    expect(p.ReceiverEmail).toBeUndefined();
     expect(p.InvoiceDetails[0].VATRate).toBe(10);
     expect(p.InvoiceDetails[0].AmountOC).toBe(100000);
     expect(p.InvoiceDetails[0].VATAmountOC).toBe(10000);

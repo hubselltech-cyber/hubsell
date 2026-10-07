@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 07/10/2026 (đêm 23:45–00:15) — 🏆 HÓA ĐƠN THẬT ĐẦU TIÊN qua luồng tờ nháp: 1C26THB số 00000001, PDF đã về mail khách
+
+- Anh bấm Thử lại dòng Hiển sau deploy → tờ nháp có SĐT → Phát hành trên meinvoice (bỏ tích gửi mail MISA, ký eSign) → **số 00000001, mã CQT 00D1A1C1…, mã tra cứu Z4FDCAKXZWK0**, một tờ duy nhất. Sổ quỹ: **Đã xuất · 00000001 · Đã gửi hiennv.th@gmail.com 23:49:15**. Trọn luồng đẩy nháp → ký web → nối số → PDF → mail chạy thật (docs mục 15).
+- **Chốt thêm:** Hubsell là bên gửi mail duy nhất → tờ nháp bỏ `ReceiverEmail` (hộp Phát hành MISA sẽ không tự tích gửi mail); HQ không làm ô ghi đè người mua (sửa trên meinvoice trước khi ký). Thêm lưới đỡ: web không thấy RefID → hỏi `/invoice/status` theo RefID rồi mới đẩy nháp mới.
+- Test 42/42, tsc BE sạch. Local soi bước hóa đơn vẫn đang chạy (env tạm 4001) — trả lại khi anh xong.
+- **Việc còn:** tenant eSign (misa-provider) chuyển sang tờ nháp + vòng hỏi theo RefID; HSM gửi SĐT/CCCD; HQ UI nhãn "Chờ anh ký" có thể hiện số tờ đang chờ trên web.
+
 ## Phiên 07/10/2026 (đêm 23:30–23:55) — BƯỚC "THÔNG TIN XUẤT HÓA ĐƠN" TRONG LUỒNG MUA GÓI (anh chốt), đã soi local
 
 - **Anh hỏi:** hồ sơ hóa đơn hiện ở đâu — trả lời: chỉ là thẻ trên trang Gói dịch vụ, lúc bấm mua không hỏi. **Anh chốt:** chèn vào luồng mua, một bước, không cản.

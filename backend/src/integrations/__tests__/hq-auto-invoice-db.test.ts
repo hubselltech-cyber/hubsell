@@ -299,7 +299,9 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     web.getWebInvoices.mockReset();
     web.insertWebDraft.mockReset();
 
-    // Lượt 1: web chưa có tờ → đẩy nháp (RefID = UUID v5 của HQLEDGER-<id>) → chờ, snapshot người mua đã lưu.
+    // Lượt 1: web chưa có tờ, cổng phát hành cũng không có theo RefID → đẩy nháp
+    // (RefID = UUID v5 của HQLEDGER-<id>) → chờ, snapshot người mua đã lưu.
+    misa.statuses.mockResolvedValue([]);
     web.getWebInvoices.mockResolvedValueOnce([]);
     web.insertWebDraft.mockResolvedValueOnce({ refId: "x", invSeries: "1C26THB", raw: {} });
     const r1 = await processHqLedgerInvoice(id, { trigger: "worker" });
