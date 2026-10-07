@@ -63,9 +63,20 @@ import {
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { AdminError, AdminPageHeader, StatCard, formatCount, formatMoney, useAdminPage } from "../shared";
+import {
+  AdminError,
+  AdminPageHeader,
+  StatCard,
+  formatCount,
+  formatMoney,
+  pageCount,
+  useAdminPage,
+} from "../shared";
 
 type SubFilter = "all" | "expiring" | "expired";
+
+/** Số thuê bao mỗi trang ở bảng "Thuê bao khách hàng". */
+const SUB_PAGE_SIZE = 20;
 
 const METHOD_LABEL: Record<string, string> = {
   BANK_TRANSFER: "Chuyển khoản",
@@ -707,14 +718,21 @@ export default function PlatformPlansPage() {
   const [q, setQ] = useState("");
   // Chỉ nạp lại khi bấm tìm/đổi lọc — gõ chữ không dội API.
   const [committedQ, setCommittedQ] = useState("");
+  // Phân trang bảng thuê bao: 20 khách/trang, đổi lọc/tìm thì về trang 1.
+  const [subPage, setSubPage] = useState(1);
 
   const fetcher = useCallback(async (): Promise<PageData> => {
     const [plansRes, subs] = await Promise.all([
       fetchPlatformPlans(),
-      fetchPlatformSubscriptions({ filter, q: committedQ || undefined }),
+      fetchPlatformSubscriptions({
+        filter,
+        q: committedQ || undefined,
+        page: subPage,
+        pageSize: SUB_PAGE_SIZE,
+      }),
     ]);
     return { plans: plansRes.plans, subs };
-  }, [filter, committedQ]);
+  }, [filter, committedQ, subPage]);
   const { data, loading, denied, error, reload } = useAdminPage(fetcher);
 
   const [planDialog, setPlanDialog] = useState<
@@ -1053,6 +1071,7 @@ export default function PlatformPlansPage() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   setCommittedQ(q.trim());
+                  setSubPage(1);
                 }}
               >
                 <Input
@@ -1065,7 +1084,10 @@ export default function PlatformPlansPage() {
               <NativeSelect
                 className="w-40"
                 value={filter}
-                onChange={(e) => setFilter(e.target.value as SubFilter)}
+                onChange={(e) => {
+                  setFilter(e.target.value as SubFilter);
+                  setSubPage(1);
+                }}
               >
                 <option value="all">Tất cả</option>
                 <option value="expiring">Sắp hết hạn (7 ngày)</option>
@@ -1110,123 +1132,151 @@ export default function PlatformPlansPage() {
                     : "Chưa có thuê bao nào — chạy script backfill để gán khách hiện có vào gói mặc định."}
                 </p>
               ) : data ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Khách hàng</TableHead>
-                      <TableHead>Gói</TableHead>
-                      <TableHead>Đơn tháng này</TableHead>
-                      <TableHead>Kỳ hiện tại</TableHead>
-                      <TableHead>Còn lại</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.subs.subscriptions.map((s) => (
-                      <TableRow key={s.id}>
-                        <TableCell className="text-sm">
-                          {s.user.fullName}
-                          <p className="text-xs text-muted-foreground">{s.user.email ?? "—"}</p>
-                        </TableCell>
-                        <TableCell className="text-sm">{s.plan.name}</TableCell>
-                        {/* %trần đơn/tháng (GĐ2): đỏ khi đã vượt, vàng từ 80% —
-                            gọi khách mời nâng gói TRƯỚC khi hệ thống tự khóa. */}
-                        <TableCell className="whitespace-nowrap text-sm tabular-nums">
-                          {s.orderLimit != null ? (
-                            <span
-                              className={cn(
-                                "",
-                                s.ordersThisMonth >= s.orderLimit
-                                  ? "text-rose-600"
-                                  : s.ordersThisMonth >= s.orderLimit * 0.8
-                                    ? "text-amber-600"
-                                    : "text-muted-foreground"
-                              )}
-                            >
-                              {formatCount(s.ordersThisMonth)}/{formatCount(s.orderLimit)}{" "}
-                              ({Math.floor((s.ordersThisMonth / s.orderLimit) * 100)}%)
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">
-                              {formatCount(s.ordersThisMonth)}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {s.currentPeriodEnd
-                            ? `${formatDate(s.currentPeriodStart)} → ${formatDate(s.currentPeriodEnd)}`
-                            : "Vô thời hạn"}
-                        </TableCell>
-                        <TableCell>
-                          {s.daysLeft === null ? (
-                            <span className="text-sm text-muted-foreground">—</span>
-                          ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Khách hàng</TableHead>
+                        <TableHead>Gói</TableHead>
+                        <TableHead>Đơn tháng này</TableHead>
+                        <TableHead>Kỳ hiện tại</TableHead>
+                        <TableHead>Còn lại</TableHead>
+                        <TableHead>Trạng thái</TableHead>
+                        <TableHead className="text-right">Thao tác</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.subs.subscriptions.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="text-sm">
+                            {s.user.fullName}
+                            <p className="text-xs text-muted-foreground">{s.user.email ?? "—"}</p>
+                          </TableCell>
+                          <TableCell className="text-sm">{s.plan.name}</TableCell>
+                          {/* %trần đơn/tháng (GĐ2): đỏ khi đã vượt, vàng từ 80% —
+                              gọi khách mời nâng gói TRƯỚC khi hệ thống tự khóa. */}
+                          <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                            {s.orderLimit != null ? (
+                              <span
+                                className={cn(
+                                  "",
+                                  s.ordersThisMonth >= s.orderLimit
+                                    ? "text-rose-600"
+                                    : s.ordersThisMonth >= s.orderLimit * 0.8
+                                      ? "text-amber-600"
+                                      : "text-muted-foreground"
+                                )}
+                              >
+                                {formatCount(s.ordersThisMonth)}/{formatCount(s.orderLimit)}{" "}
+                                ({Math.floor((s.ordersThisMonth / s.orderLimit) * 100)}%)
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {formatCount(s.ordersThisMonth)}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                            {s.currentPeriodEnd
+                              ? `${formatDate(s.currentPeriodStart)} → ${formatDate(s.currentPeriodEnd)}`
+                              : "Vô thời hạn"}
+                          </TableCell>
+                          <TableCell>
+                            {s.daysLeft === null ? (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            ) : (
+                              <span
+                                className={cn(
+                                  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                                  s.daysLeft < 0
+                                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                                    : s.daysLeft <= 7
+                                      ? "border-amber-300 bg-amber-50 text-amber-700"
+                                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                )}
+                              >
+                                {s.daysLeft < 0 ? `Quá ${-s.daysLeft} ngày` : `${s.daysLeft} ngày`}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
                             <span
                               className={cn(
                                 "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-                                s.daysLeft < 0
-                                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                                  : s.daysLeft <= 7
-                                    ? "border-amber-300 bg-amber-50 text-amber-700"
+                                s.status === "ACTIVE"
+                                  ? s.isTrial
+                                    ? "border-sky-200 bg-sky-50 text-sky-700"
                                     : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : s.status === "EXPIRED"
+                                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                                    : "border-slate-200 bg-slate-50 text-slate-600"
                               )}
                             >
-                              {s.daysLeft < 0 ? `Quá ${-s.daysLeft} ngày` : `${s.daysLeft} ngày`}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-                              s.status === "ACTIVE"
+                              {s.status === "ACTIVE"
                                 ? s.isTrial
-                                  ? "border-sky-200 bg-sky-50 text-sky-700"
-                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  ? "Dùng thử"
+                                  : "Hiệu lực"
                                 : s.status === "EXPIRED"
-                                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                                  : "border-slate-200 bg-slate-50 text-slate-600"
-                            )}
-                          >
-                            {s.status === "ACTIVE"
-                              ? s.isTrial
-                                ? "Dùng thử"
-                                : "Hiệu lực"
-                              : s.status === "EXPIRED"
-                                ? s.isTrial
-                                  ? "Hết dùng thử"
-                                  : "Quá hạn"
-                                : "Đã hủy"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Đổi gói, giữ nguyên hạn và kỳ dùng thử — không sinh chứng từ"
-                              onClick={() => setChangePlanFor(s)}
-                            >
-                              <ArrowLeftRight className="size-4" />
-                              Đổi gói
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                setPaymentFor({ user: s.user, defaultPlanId: s.plan.id })
-                              }
-                            >
-                              <CircleDollarSign className="size-4" />
-                              Ghi nhận thanh toán
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                                  ? s.isTrial
+                                    ? "Hết dùng thử"
+                                    : "Quá hạn"
+                                  : "Đã hủy"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Đổi gói, giữ nguyên hạn và kỳ dùng thử — không sinh chứng từ"
+                                onClick={() => setChangePlanFor(s)}
+                              >
+                                <ArrowLeftRight className="size-4" />
+                                Đổi gói
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  setPaymentFor({ user: s.user, defaultPlanId: s.plan.id })
+                                }
+                              >
+                                <CircleDollarSign className="size-4" />
+                                Ghi nhận thanh toán
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
+                    <span>
+                      {formatCount(data.subs.total)} thuê bao · trang {data.subs.page}/
+                      {pageCount(data.subs.total, data.subs.pageSize)}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={subPage <= 1 || loading}
+                        onClick={() => setSubPage((p) => p - 1)}
+                      >
+                        Trước
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          subPage >= pageCount(data.subs.total, data.subs.pageSize) || loading
+                        }
+                        onClick={() => setSubPage((p) => p + 1)}
+                      >
+                        Sau
+                      </Button>
+                    </div>
+                  </div>
+                </>
               ) : null}
             </CardContent>
           </Card>
