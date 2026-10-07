@@ -179,7 +179,8 @@ describe("isSignSessionError — meInvoice không gọi được eSign vì chưa
   it("bắt cả hai cách MISA viết mã lỗi và lời nhắn đã dịch", () => {
     expect(isSignSessionError("meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=CallSignServiceFail")).toBe(true);
     expect(isSignSessionError("ErrorCode=CallSignSeviceFail")).toBe(true);
-    expect(isSignSessionError("Chờ phiên ký eSign: mở app ...")).toBe(true);
+    expect(isSignSessionError("Chờ dịch vụ ký nền: meInvoice ...")).toBe(true);
+    expect(isSignSessionError("Chờ phiên ký eSign: lời nhắn cũ")).toBe(false);
   });
   it("lỗi khác thì không", () => {
     expect(isSignSessionError("ErrorCode=InvoiceDuplicated")).toBe(false);

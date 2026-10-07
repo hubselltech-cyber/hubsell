@@ -9,9 +9,11 @@
 //
 // MỘT bút toán THU (PlatformLedgerEntry, packagePaymentId != null) đi qua ba
 // bước, bước nào xong rồi thì bỏ qua — gọi lại bao nhiêu lần cũng an toàn:
-//   1. PHÁT HÀNH: chưa có einvoiceTransactionId → publishStandardInvoice với
-//      RefID "HQLEDGER-<id>" (MISA chống trùng theo RefID: gọi đôi là báo
-//      InvoiceDuplicated chứ không ra hai tờ).
+//   1. PHÁT HÀNH: chưa có einvoiceTransactionId → RefID "HQLEDGER-<id>" (MISA
+//      chống trùng theo RefID: gọi đôi là báo InvoiceDuplicated chứ không ra hai
+//      tờ). Phương thức ký ESIGN_CLOUD → createUnsignedInvoice: lập tờ CHƯA KÝ,
+//      anh ký eSign theo lô trên meinvoice.vn (07/10/2026: eSign không ký nền
+//      được qua cổng tích hợp). HSM → publishStandardInvoice ký nền luôn.
 //   2. LẤY SỐ: có TransactionID mà chưa có số (meInvoice cấp trễ) →
 //      getInvoiceStatuses để điền số. Webhook MISA chỉ khớp InvoiceLog của
 //      tenant, không chạm bút toán HQ, nên phải tự hỏi.
@@ -51,6 +53,7 @@ import {
 import { CYCLE_LABEL } from "../../services/subscription-service";
 import { buildHqInvoiceInput, hqStandardConfig, type HqVatMode } from "./issue-hq";
 import {
+  createUnsignedInvoice,
   downloadInvoiceFiles,
   getInvoiceStatuses,
   publishStandardInvoice,
@@ -250,19 +253,34 @@ const ENTRY_SELECT = {
 type EntryRow = Prisma.PlatformLedgerEntryGetPayload<{ select: typeof ENTRY_SELECT }>;
 
 /**
- * meInvoice báo "CallSignServiceFail" = gọi dịch vụ ký eSign không được. Với
- * chữ ký số từ xa MISA eSign, mỗi chữ ký phải được người ký xác nhận trên app,
- * trừ khi app đang mở PHIÊN KÝ (bật "Ký phiên", hiệu lực 24h). Không có phiên →
- * meInvoice không ký được → lỗi này. Đây KHÔNG phải lỗi dữ liệu: không đốt lượt
- * thử, máy cứ 30' thử lại; anh Trung mở app bật phiên là lượt sau xuất được.
+ * meInvoice báo "CallSignServiceFail" = lệnh ký nền (SignType 2) không gọi được
+ * dịch vụ ký. 07/10/2026 chốt nguyên nhân: SignType 2 chỉ ký qua MÁY CHỦ HSM của
+ * nhà cung cấp thứ ba đã khai ở Thiết lập ký số — KHÔNG ký bằng MISA eSign, mở
+ * Ký phiên trên app cũng không đổi gì. Với eSign, luồng này nay LẬP TỜ CHƯA KÝ
+ * (createUnsignedInvoice) để anh ký trên web; lỗi này chỉ còn gặp khi phương
+ * thức ký là HSM mà HSM chưa khai. Vẫn là trạng thái chờ: không đốt lượt thử.
  */
 export const SIGN_SESSION_RE = /CallSign(Service|Sevice)Fail/i;
 export const SIGN_SESSION_MESSAGE =
-  "Chờ phiên ký eSign: mở app MISA eSign trên điện thoại → Thiết lập → bật Ký phiên (24h), rồi bấm Thử lại hoặc chờ máy tự thử lại mỗi 30 phút.";
+  "Chờ dịch vụ ký nền: meInvoice không gọi được máy chủ ký (CallSignServiceFail). Kiểm Hệ thống → Thiết lập ký số trên meinvoice.vn đã nối HSM chưa; dùng MISA eSign thì chọn phương thức ký eSign trong HQ.";
 
-/** Lỗi này là "chờ phiên ký eSign" (không đốt lượt thử)? Hàm thuần để test. */
+/** Lỗi này là "chờ dịch vụ ký nền" (không đốt lượt thử)? Hàm thuần để test. */
 export function isSignSessionError(message: string | null | undefined): boolean {
-  return Boolean(message && (SIGN_SESSION_RE.test(message) || message.startsWith("Chờ phiên ký eSign")));
+  return Boolean(message && (SIGN_SESSION_RE.test(message) || message.startsWith("Chờ dịch vụ ký nền")));
+}
+
+/**
+ * Phương thức ký eSign: Hubsell đã lập tờ đủ dữ liệu trên meInvoice (có số + mã
+ * tra cứu), tờ nằm ở trạng thái Chưa phát hành chờ anh ký eSign theo lô trên web.
+ * Máy không làm gì thêm được — chỉ 30' hỏi lại; ký xong là tự lấy số + gửi mail.
+ */
+export const ESIGN_WAITING_PREFIX = "Chờ anh ký eSign trên meinvoice.vn";
+export const ESIGN_WAITING_MESSAGE =
+  `${ESIGN_WAITING_PREFIX}: Hóa đơn → Lọc → Trạng thái HĐ = Chưa phát hành → tích chọn → Phát hành (một lần xác nhận trên app eSign cho tới 50 tờ). Ký xong máy tự lấy số và gửi mail cho khách.`;
+
+/** Lỗi này là "chờ anh ký eSign trên web"? Hàm thuần để test + worker nhắc. */
+export function isEsignWaitingError(message: string | null | undefined): boolean {
+  return Boolean(message && message.startsWith(ESIGN_WAITING_PREFIX));
 }
 
 /**
@@ -369,10 +387,21 @@ export async function processHqLedgerInvoice(
         amount: Number(entry.amount),
         vatMode: cfgRow.vatMode as HqVatMode,
       });
+      // eSign KHÔNG ký nền được qua cổng tích hợp (07/10/2026) → lập tờ CHƯA KÝ,
+      // anh ký theo lô trên web; mọi phương thức ký nền khác (HSM) mới phát hành thẳng.
+      const esignOnWeb = cfg.signMethod === "ESIGN_CLOUD";
       let published: { invoiceNo: string | null; transactionId: string | null };
       let draftWaiting = false;
       try {
-        published = await publishStandardInvoice(input, cfg);
+        if (esignOnWeb) {
+          const created = await createUnsignedInvoice(input, cfg);
+          // Số đã cấp nhưng tờ CHƯA ký — chưa phải hóa đơn; chỉ giữ mã tra cứu,
+          // số lấy lại từ /invoice/status sau khi anh ký (PublishStatus = 1).
+          published = { invoiceNo: null, transactionId: created.transactionId };
+          draftWaiting = true;
+        } else {
+          published = await publishStandardInvoice(input, cfg);
+        }
       } catch (err) {
         // MISA báo TRÙNG RefID = tờ đã tồn tại bên meInvoice (lần trước ký hỏng
         // sau khi tạo, hoặc phát hành xong mà Hubsell không nhận được kết quả).
@@ -403,11 +432,11 @@ export async function processHqLedgerInvoice(
         select: ENTRY_SELECT,
       });
       step = issued ? "issued" : "number-pending";
-      // Tờ nháp chưa ký: đã lưu mã tra cứu (lượt sau chỉ hỏi số), báo HQ việc cần làm.
-      if (draftWaiting) throw new Error(DRAFT_WAITING_MESSAGE);
+      // Tờ chưa ký: đã lưu mã tra cứu (lượt sau chỉ hỏi số), báo HQ việc cần làm.
+      if (draftWaiting) throw new Error(esignOnWeb ? ESIGN_WAITING_MESSAGE : DRAFT_WAITING_MESSAGE);
     }
 
-    // ---- Bước 2: lấy số (meInvoice cấp trễ) ----
+    // ---- Bước 2: lấy số (meInvoice cấp trễ, hoặc tờ chưa ký chờ anh ký trên web) ----
     if (entry.einvoiceTransactionId && !entry.invoiceNo) {
       const [status] = await getInvoiceStatuses([entry.einvoiceTransactionId], cfg);
       if (status?.isDeleted) {
@@ -415,13 +444,20 @@ export async function processHqLedgerInvoice(
           `Hóa đơn (mã tra cứu ${entry.einvoiceTransactionId}) đã bị xóa/hủy trên meInvoice — kiểm tra rồi xuất lại tay.`
         );
       }
-      if (status?.invoiceNo) {
+      // Tờ chưa ký có thể đã mang số (cấp lúc lập) nhưng PublishStatus = 0 — chưa
+      // phải hóa đơn, không được ghi ISSUED. Không có PublishStatus (null) coi như đã phát hành.
+      const signed = Boolean(status?.invoiceNo) && status?.publishStatus !== 0;
+      if (signed && status?.invoiceNo) {
         entry = await prisma.platformLedgerEntry.update({
           where: { id: entry.id },
           data: { invoiceStatus: LedgerInvoiceStatus.ISSUED, invoiceNo: status.invoiceNo },
           select: ENTRY_SELECT,
         });
         step = "issued";
+      } else if (cfg.signMethod === "ESIGN_CLOUD") {
+        // Chưa ký: tờ không hiện ở /invoice/status (sandbox 07/10) hoặc PublishStatus 0.
+        step = "number-pending";
+        throw new Error(ESIGN_WAITING_MESSAGE);
       } else {
         step = "number-pending";
       }
