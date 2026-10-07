@@ -138,6 +138,11 @@ Trân trọng cảm ơn.
 Nguyễn Trung Hiếu — dev@hubsell.tech — 0965863292
 ```
 
+**Trạng thái:** ✅ ĐÃ GỬI 07/10/2026 ~21:50 qua developer.misa.vn → Quản lý ứng dụng → Quản lý danh sách yêu
+cầu hỗ trợ (em gửi bằng Chrome của anh, anh đăng nhập MISA ID; sản phẩm "Hóa đơn điện tử"; có thêm đoạn lưu ý
+Hubsell xuất hóa đơn cho cả shop khách hàng qua cùng cổng). Danh sách hiện 4 ticket, ticket này "Chờ xử lý".
+Ticket trước (02/10) được trả lời sau ~2 ngày → kiểm lại từ 09/10 ở cùng trang hoặc mail dev@hubsell.tech.
+
 **Trả lời của MISA:** _(chưa có — ghi nguyên văn vào đây khi nhận, kèm ngày giờ)_
 
 ---
