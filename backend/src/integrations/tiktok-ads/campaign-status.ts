@@ -93,42 +93,37 @@ export interface TiktokCampaignReconcileResult {
 export function reconcileTiktokCampaignStatuses(input: TiktokCampaignReconcileInput): TiktokCampaignReconcileResult {
   const listed = new Map<string, { name: string; status: TiktokCampaignStatus }>();
   for (const l of input.listed) {
-    if (!l.campaignId) continue;
-    listed.set(l.campaignId, { name: l.name ?? "", status: tiktokCampaignStatusOf(l) });
+    if (l.campaignId) listed.set(l.campaignId, { name: l.name ?? "", status: tiktokCampaignStatusOf(l) });
   }
   const reported = new Set(input.reported);
-  const knownById = new Map(input.known.map((k) => [k.campaignId, k] as const));
 
   const updates: TiktokCampaignReconcileResult["updates"] = [];
   const creates: TiktokCampaignReconcileResult["creates"] = [];
+  let liveCampaigns = 0;
 
   for (const k of input.known) {
     const l = listed.get(k.campaignId);
+    let status: string = k.status;
     if (l) {
+      status = l.status;
       const nameChanged = l.name !== "" && l.name !== k.name;
       if (l.status !== k.status || nameChanged) {
         updates.push({ id: k.id, status: l.status, ...(nameChanged ? { name: l.name } : {}) });
       }
-      continue;
+    } else if (!reported.has(k.campaignId) && (k.status === "ongoing" || k.status === "paused")) {
+      // Vắng ở cả danh sách lẫn báo cáo lượt này → TikTok không còn chiến dịch này.
+      status = "ended";
+      updates.push({ id: k.id, status: "ended" });
     }
-    if (reported.has(k.campaignId)) continue; // báo cáo vừa thấy → còn sống, trạng thái đã ghi theo báo cáo
-    if (k.status === "ongoing" || k.status === "paused") updates.push({ id: k.id, status: "ended" });
+    if (status === "ongoing") liveCampaigns++;
   }
 
+  const knownIds = new Set(input.known.map((k) => k.campaignId));
   for (const [campaignId, l] of listed) {
-    if (!knownById.has(campaignId)) creates.push({ campaignId, name: l.name, status: l.status });
+    if (knownIds.has(campaignId)) continue;
+    creates.push({ campaignId, name: l.name, status: l.status });
+    if (l.status === "ongoing") liveCampaigns++;
   }
-
-  // Đếm đang chạy sau đối soát: dòng đã biết lấy trạng thái mới nhất, cộng dòng tạo mới.
-  const finalStatus = new Map<string, string>();
-  for (const k of input.known) finalStatus.set(k.campaignId, k.status);
-  for (const u of updates) {
-    const k = input.known.find((x) => x.id === u.id);
-    if (k) finalStatus.set(k.campaignId, u.status);
-  }
-  for (const c of creates) finalStatus.set(c.campaignId, c.status);
-  let liveCampaigns = 0;
-  for (const s of finalStatus.values()) if (s === "ongoing") liveCampaigns++;
 
   return { updates, creates, liveCampaigns };
 }

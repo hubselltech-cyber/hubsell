@@ -163,7 +163,7 @@ const campaignListDenied = new Set<string>();
 async function reconcileTiktokCampaignsWithList(
   channelId: string,
   scope: TiktokAdsScope,
-  reported: Iterable<string>
+  reported: ReadonlySet<string>
 ): Promise<number | null> {
   let listed;
   try {
@@ -180,9 +180,8 @@ async function reconcileTiktokCampaignsWithList(
     }
     return null;
   }
-  const reportedIds = [...reported];
-  if (listed.length === 0 && reportedIds.length > 0) {
-    console.warn(`[TikTok Ads] Danh sách chiến dịch rỗng trong khi báo cáo có ${reportedIds.length} chiến dịch — bỏ qua đối soát lượt này.`);
+  if (listed.length === 0 && reported.size > 0) {
+    console.warn(`[TikTok Ads] Danh sách chiến dịch rỗng trong khi báo cáo có ${reported.size} chiến dịch — bỏ qua đối soát lượt này.`);
     return null;
   }
 
@@ -198,7 +197,7 @@ async function reconcileTiktokCampaignsWithList(
       operationStatus: l.operation_status ?? "",
       secondaryStatus: l.secondary_status,
     })),
-    reported: reportedIds,
+    reported,
   });
   for (const u of r.updates) {
     await prisma.adsCampaign.update({ where: { id: u.id }, data: { status: u.status, ...(u.name != null ? { name: u.name } : {}) } });
@@ -290,7 +289,7 @@ export async function syncTiktokAdsCampaigns(
   // ĐỐI SOÁT với danh sách chiến dịch còn tồn tại: chiến dịch tắt lâu không tiêu tiền
   // vẫn hiện (tạm dừng), chiến dịch TikTok không còn liệt kê → "ended". Hỏng (thiếu
   // quyền Campaign ở token cũ, lỗi mạng) thì bỏ qua — báo cáo vẫn là xương sống.
-  const live = await reconcileTiktokCampaignsWithList(channel.id, scope, latest.keys());
+  const live = await reconcileTiktokCampaignsWithList(channel.id, scope, new Set(latest.keys()));
   if (live != null) result.liveCampaigns = live;
 
   const recentFrom = vnDateKey(1);

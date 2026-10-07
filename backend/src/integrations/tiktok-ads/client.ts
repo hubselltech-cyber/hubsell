@@ -179,8 +179,6 @@ export interface GmvMaxCampaignListItem {
   operation_status?: string;
   /** CAMPAIGN_STATUS_ENABLE | CAMPAIGN_STATUS_DISABLE | CAMPAIGN_STATUS_PRODUCT_USED_BY_PRODUCT_GMV_MAX | … */
   secondary_status?: string;
-  create_time?: string;
-  modify_time?: string;
 }
 
 /** Trần số trang khi liệt kê chiến dịch — chống vòng lặp nếu page_info của sàn lệch. */

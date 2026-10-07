@@ -48,9 +48,7 @@ export const TIKTOK_CAMPAIGN_STATUS_META: Record<
  * "đang chạy", và cũng không giấu hẳn một chiến dịch Hubsell chưa hiểu.
  */
 export function tiktokCampaignStatusKey(raw: string): TiktokCampaignStatusKey {
-  if (raw === "ongoing") return "ongoing";
-  if (raw === "ended" || raw === "deleted" || raw === "closed") return "ended";
-  return "paused";
+  return raw === "ongoing" || raw === "ended" ? raw : "paused";
 }
 
 /** Xếp theo nhóm trạng thái, ổn định (Array.prototype.sort ổn định từ ES2019). */
@@ -60,6 +58,11 @@ export function sortTiktokCampaignsByStatus<T extends { status: string }>(rows: 
 }
 
 export type TiktokCampaignStatusFilter = "all" | TiktokCampaignStatusKey;
+
+/** Dùng khi đọc bộ lọc từ Chế độ xem đã lưu (dữ liệu ngoài, không tin kiểu). */
+export function isTiktokCampaignStatusFilter(v: unknown): v is TiktokCampaignStatusFilter {
+  return v === "all" || v === "ongoing" || v === "paused" || v === "ended";
+}
 
 export function countTiktokCampaignStatuses<T extends { status: string }>(
   rows: readonly T[]

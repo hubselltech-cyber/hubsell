@@ -32,6 +32,7 @@ import {
   TiktokCampaignStatusBadge,
   TiktokCampaignStatusFilterChips,
   countTiktokCampaignStatuses,
+  isTiktokCampaignStatusFilter,
   sortTiktokCampaignsByStatus,
   tiktokCampaignStatusKey,
   type TiktokCampaignStatusFilter,
@@ -666,8 +667,7 @@ export function TiktokAdsPage() {
                         viewExtras={{
                           get: () => ({ statusFilter }),
                           apply: (ex) => {
-                            if (ex.statusFilter === "all" || ex.statusFilter === "ongoing" || ex.statusFilter === "paused" || ex.statusFilter === "ended")
-                              setStatusFilter(ex.statusFilter);
+                            if (isTiktokCampaignStatusFilter(ex.statusFilter)) setStatusFilter(ex.statusFilter);
                           },
                         }}
                       />
