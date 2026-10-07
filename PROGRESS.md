@@ -2,6 +2,7 @@
 
 > File ghi nhận tiến độ theo từng phiên làm việc, giữ ngữ cảnh cho các phiên sau.
 > Log nghiệp vụ chi tiết (checklist Done/Todo) nằm ở [TODO.md](TODO.md); kiến trúc & hướng dẫn ở [README.md](README.md).
+> Repo trên máy anh Trung: `D:\Claude Code\Hubsell` (PowerShell: `cd "D:\Claude Code\Hubsell"` — có dấu cách, phải để trong ngoặc kép). KHÔNG đoán đường dẫn khác.
 
 ---
 
