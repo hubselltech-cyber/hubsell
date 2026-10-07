@@ -341,6 +341,27 @@ hỏi trạng thái theo RefID cho tờ nháp (vòng `checkStatuses` hiện theo
 nhãn "Chờ anh ký trên meinvoice.vn" → app3.meinvoice.vn/v3/hoa-don → lọc Chưa phát hành → thấy tờ 1C26THB (cột tham chiếu `HQLEDGER-…`) → kiểm số tiền/người
 mua → **Ký & phát hành** (xác nhận eSign) → chờ ≤ 30' (hoặc bấm Thử lại) → dòng ISSUED có số + mail PDF về khách.
 
+## 14. THỬ THẬT LẦN 1 (07/10 ~23:10) — tờ nháp LÊN ĐƯỢC tài khoản thật; anh chốt bổ sung SĐT + CCCD vào hồ sơ khách
+
+- Sau khi push `48230c7`, anh bấm Thử lại dòng khách Hiển 99.000đ (gói Starter 1 tháng): lượt 1 chỉ dọn mã tra cứu "ma" (đã sửa `0e088ef` để
+  dọn xong đi tiếp cùng lượt), lượt 2 đẩy nháp → **app3.meinvoice.vn hiện tờ 1C26THB ngày 07/10, 99.000, trạng thái "HĐ mới"**, mở ra thấy:
+  Họ tên người mua Nguyễn Văn Hiển, email, dòng "Phí dịch vụ phần mềm Hubsell — gói Starter, 1 tháng (06/10/2026 – 06/11/2026)", ĐVT Gói,
+  SL 1, 99.000, thuế KCT. Cột Khách hàng ở danh sách trống vì khách lẻ không có Tên đơn vị (bình thường). Có một dòng trống 0đ phía dưới —
+  nhiều khả năng là dòng nhập tiếp của trình soạn web; nếu còn sau khi lưu thì xóa trước khi ký.
+- **Quy định người mua cá nhân (tra 07/10):** NĐ 254/2026 (hiệu lực 01/07/2026, thay NĐ 123): cá nhân cung cấp tên/địa chỉ/số định danh thì
+  ghi đủ; không cung cấp thì ghi "Bán cho người tiêu dùng"; hóa đơn kiểu người tiêu dùng không dùng hạch toán chi phí được. Tờ chỉ có tên là
+  hợp lệ phía người bán.
+- **Anh chốt:** lúc mua gói khách khai thông tin xuất hóa đơn; không khai = khách lẻ; khai gì thì tờ nháp phải mang đủ cái đó (kể cả SĐT —
+  tài khoản có SĐT mà tờ không có là thiếu). Anh **xóa tờ nháp này** trên web để em đẩy lại tờ đủ thông tin sau khi sửa.
+- **Đã sửa (commit kế tiếp):** `User.billingPhone` + `User.billingIdNumber` (migration `20261007230000_billing_phone_id_number`, migrate deploy
+  lúc Render start); route `PUT /api/subscription/billing-profile` nhận `phone` (chuẩn hóa +84 → 0, 9–11 số) + `idNumber` (12 số, cần họ tên);
+  thẻ "Thông tin xuất hóa đơn" ở /settings/plan thêm ô SĐT (trống = SĐT tài khoản) và ô CCCD (chỉ hiện khi không có MST);
+  `composeHqBuyer` → `phone` = billingPhone ?? SĐT tài khoản (đổi dạng trong nước), `idNumber` = CCCD khách khai (khai CCCD cũng tính là hồ sơ
+  khách); `CreateInvoiceInput.buyerPhone/buyerIdNumber` → payload web `ReceiverMobile` + `CitizenIDNumber`; xóa tài khoản xóa cả 6 trường billing.
+  Cổng HSM (`buildStandardInvoicePayload`) CHƯA gửi SĐT/CCCD — tên trường ITG chưa tra, làm khi dùng HSM.
+- **Luồng thử lại sau deploy:** anh đã xóa nháp → bấm Thử lại dòng Hiển → tờ mới có SĐT của Hiển (từ SĐT tài khoản) → ký. Hiển muốn ghi CCCD/MST
+  thì tự khai ở Cấu hình → Gói dịch vụ, Hubsell không gọi điện thu hộ.
+
 ## 7. Nhật ký
 
 - **07/10/2026 đêm (23:00):** code xong luồng tờ nháp HQ (mục 13), sandbox 3 ca OK, test 39/39; chờ anh gật push + thử thật tờ khách Hiển.

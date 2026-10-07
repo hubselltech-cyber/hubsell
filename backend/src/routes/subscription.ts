@@ -22,6 +22,7 @@ import {
   gatewayInfo,
   getCheckoutStatus,
 } from "../services/gateway-checkout";
+import { localPhone } from "../integrations/invoice/hq-auto-invoice";
 
 const router = Router();
 
@@ -102,6 +103,8 @@ const BILLING_PROFILE_SELECT = {
   billingTaxCode: true,
   billingAddress: true,
   billingEmail: true,
+  billingPhone: true,
+  billingIdNumber: true,
 } as const;
 
 function billingProfileOf(u: {
@@ -109,18 +112,24 @@ function billingProfileOf(u: {
   billingTaxCode: string | null;
   billingAddress: string | null;
   billingEmail: string | null;
+  billingPhone: string | null;
+  billingIdNumber: string | null;
 }) {
   return {
     name: u.billingName,
     taxCode: u.billingTaxCode,
     address: u.billingAddress,
     email: u.billingEmail,
+    phone: u.billingPhone,
+    idNumber: u.billingIdNumber,
   };
 }
 
-// PUT /api/subscription/billing-profile — { name?, taxCode?, address?, email? }
-// (chuỗi rỗng = xóa). Có MST thì tên đơn vị + địa chỉ bắt buộc (hóa đơn theo
-// đơn vị thiếu địa chỉ là cơ quan thuế từ chối).
+// PUT /api/subscription/billing-profile — { name?, taxCode?, address?, email?,
+// phone?, idNumber? } (chuỗi rỗng = xóa). Có MST thì tên đơn vị + địa chỉ bắt
+// buộc (hóa đơn theo đơn vị thiếu địa chỉ là cơ quan thuế từ chối). idNumber =
+// số định danh cá nhân 12 số (khách lẻ muốn hóa đơn ghi định danh, NĐ 254/2026);
+// phone chuẩn hóa bằng localPhone của hq-auto-invoice (+84 → 0).
 router.put("/billing-profile", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     const b = req.body ?? {};
@@ -135,7 +144,9 @@ router.put("/billing-profile", requireAdmin, async (req: AuthRequest, res, next)
     const taxCodeRaw = text(b.taxCode, 20);
     const address = text(b.address, 300);
     const email = text(b.email, 200);
-    if ([name, taxCodeRaw, address, email].some((v) => v === undefined)) {
+    const phoneRaw = text(b.phone, 30);
+    const idNumberRaw = text(b.idNumber, 20);
+    if ([name, taxCodeRaw, address, email, phoneRaw, idNumberRaw].some((v) => v === undefined)) {
       res.status(400).json({ error: "Dữ liệu không hợp lệ hoặc quá dài" });
       return;
     }
@@ -153,6 +164,20 @@ router.put("/billing-profile", requireAdmin, async (req: AuthRequest, res, next)
       res.status(400).json({ error: "Email nhận hóa đơn không hợp lệ" });
       return;
     }
+    const phone = phoneRaw ? localPhone(phoneRaw) : null;
+    if (phoneRaw && !phone) {
+      res.status(400).json({ error: "Số điện thoại trên hóa đơn không hợp lệ (9–11 chữ số)" });
+      return;
+    }
+    const idNumber = idNumberRaw ? idNumberRaw.replace(/[\s.]/g, "") : null;
+    if (idNumber && !/^\d{12}$/.test(idNumber)) {
+      res.status(400).json({ error: "Số định danh cá nhân/CCCD phải đủ 12 chữ số" });
+      return;
+    }
+    if (idNumber && !name) {
+      res.status(400).json({ error: "Ghi số định danh cá nhân thì cần họ tên người mua" });
+      return;
+    }
     const updated = await prisma.user.update({
       where: { id: req.ownerId! },
       data: {
@@ -160,6 +185,8 @@ router.put("/billing-profile", requireAdmin, async (req: AuthRequest, res, next)
         billingTaxCode: taxCode,
         billingAddress: address,
         billingEmail: email,
+        billingPhone: phone,
+        billingIdNumber: idNumber,
       },
       select: BILLING_PROFILE_SELECT,
     });

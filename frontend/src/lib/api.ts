@@ -5737,6 +5737,10 @@ export interface MyBillingProfile {
   taxCode: string | null;
   address: string | null;
   email: string | null;
+  /** SĐT in trên hóa đơn (trống = SĐT tài khoản). */
+  phone: string | null;
+  /** Số định danh cá nhân/CCCD 12 số — khách lẻ muốn hóa đơn ghi định danh. */
+  idNumber: string | null;
 }
 
 export function fetchMySubscription() {
@@ -5766,6 +5770,8 @@ export function updateMyBillingProfile(data: {
   taxCode: string;
   address: string;
   email: string;
+  phone: string;
+  idNumber: string;
 }) {
   return apiFetch<{ billingProfile: MyBillingProfile }>("/api/subscription/billing-profile", {
     method: "PUT",

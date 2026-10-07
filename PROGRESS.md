@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 07/10/2026 (đêm 23:05–23:30) — THỬ THẬT TỜ NHÁP OK trên tài khoản Hubsell; bổ sung SĐT + CCCD vào hồ sơ xuất hóa đơn của khách
+
+- **Thử thật:** anh push `48230c7` + `0e088ef`, bấm Thử lại dòng khách Hiển 99.000đ → **tờ nháp 1C26THB hiện trên app3.meinvoice.vn** ("HĐ mới", đủ tên người mua, email, dòng dịch vụ ĐVT Gói, KCT). Luồng đẩy nháp qua `/invoiceweb/insert` chạy thật được. Chi tiết + ảnh mô tả ở `docs/HOA-DON-HQ-KY-NEN-KHAO-SAT-07-10.md` mục 14.
+- **Anh hỏi quy định người mua cá nhân** → tra NĐ 254/2026: cá nhân cung cấp gì ghi nấy, không cung cấp ghi "Bán cho người tiêu dùng"; tờ chỉ có tên hợp lệ. **Anh chốt:** khách khai gì lúc mua gói thì tờ phải mang đủ, kể cả SĐT; anh xóa tờ nháp để đẩy lại tờ đủ thông tin.
+- **Đã code:** `User.billingPhone/billingIdNumber` + migration `20261007230000_billing_phone_id_number`; route billing-profile nhận phone (chuẩn hóa +84→0) + idNumber (12 số); thẻ Thông tin xuất hóa đơn thêm 2 ô; `composeHqBuyer` lấy SĐT hồ sơ → SĐT tài khoản, CCCD khách khai; payload web gửi `ReceiverMobile` + `CitizenIDNumber`; xóa tài khoản xóa đủ 6 trường billing. Test 42/42, tsc BE/FE + eslint sạch.
+- **Việc anh:** push → Render deploy (migrate deploy tự chạy) → đã xóa nháp cũ → Sổ quỹ dòng Hiển **Thử lại** → tờ mới có SĐT → kiểm → Ký & phát hành.
+- **Chưa làm:** cổng HSM chưa gửi SĐT/CCCD (chưa tra tên trường ITG); tenant eSign vẫn SignType 2; hộp thoại xuất tay HQ chưa có ô SĐT/CCCD (route đã nhận).
+
 ## Phiên 07/10/2026 (đêm 22:30–23:05) — ✅ HÓA ĐƠN HQ: CODE XONG LUỒNG TỜ NHÁP `/invoiceweb/*` (eSign/USB), sandbox 3 ca OK, test 39/39 — CHỜ ANH GẬT PUSH + THỬ THẬT
 
 - **Anh: "Làm phần hóa đơn nào".** Trước khi viết, đọc lại tài liệu `/invoiceweb/insert` + `templates` + `getlist` trên developer.misa.vn (Chrome anh) để lấy đúng tên trường (AccountObjectTaxCode, ReceiverEmail, UnitName bắt buộc, VATRate -1/-3/0/5/8/10…) — chép đủ vào `docs/HOA-DON-HQ-KY-NEN-KHAO-SAT-07-10.md` **mục 13**.

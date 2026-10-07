@@ -117,6 +117,10 @@ export interface HqBuyer {
   taxCode: string | null;
   address: string | null;
   email: string | null;
+  /** SĐT in trên hóa đơn: hồ sơ xuất hóa đơn → SĐT tài khoản (đổi +84 → 0). */
+  phone: string | null;
+  /** Số định danh cá nhân/CCCD khách tự khai (khách lẻ) — NĐ 254/2026 ghi khi khách cung cấp. */
+  idNumber: string | null;
   /** Lấy từ đâu — hiện trong lỗi/log để HQ biết sửa chỗ nào. */
   source: "billing-profile" | "invoice-config" | "account";
 }
@@ -124,10 +128,14 @@ export interface HqBuyer {
 export interface HqBuyerSources {
   fullName: string;
   email: string | null;
+  /** SĐT tài khoản (E.164 "+84…") — lưới đỡ khi hồ sơ không khai SĐT riêng. */
+  phone: string | null;
   billingName: string | null;
   billingTaxCode: string | null;
   billingAddress: string | null;
   billingEmail: string | null;
+  billingPhone: string | null;
+  billingIdNumber: string | null;
   /** Pháp nhân shop khai ở module hóa đơn của chính họ (InvoiceConfig cấp shop). */
   invoiceConfig: { companyName: string | null; taxCode: string | null; companyAddress: string | null } | null;
 }
@@ -137,17 +145,23 @@ export interface HqBuyerSources {
  *   1. Hồ sơ xuất hóa đơn khách tự khai (/settings/plan) — có tên hoặc MST là dùng.
  *   2. Pháp nhân shop khai ở module hóa đơn của họ (đủ tên + MST).
  *   3. Tên tài khoản + email đăng nhập (khách lẻ, không MST).
- * Email nhận hóa đơn: billingEmail > email đăng nhập.
+ * Email nhận hóa đơn: billingEmail > email đăng nhập. SĐT: billingPhone > SĐT tài
+ * khoản. Số định danh: chỉ từ hồ sơ khách khai (anh Trung 07/10: khách khai gì
+ * thì tờ phải mang đủ cái đó, không khai thì là khách lẻ).
  */
 export function composeHqBuyer(u: HqBuyerSources): HqBuyer {
   const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
   const email = clean(u.billingEmail) ?? clean(u.email);
-  if (clean(u.billingName) || clean(u.billingTaxCode)) {
+  const phone = localPhone(clean(u.billingPhone) ?? clean(u.phone));
+  const idNumber = clean(u.billingIdNumber);
+  if (clean(u.billingName) || clean(u.billingTaxCode) || idNumber) {
     return {
       name: clean(u.billingName) ?? u.fullName,
       taxCode: clean(u.billingTaxCode),
       address: clean(u.billingAddress),
       email,
+      phone,
+      idNumber,
       source: "billing-profile",
     };
   }
@@ -158,10 +172,21 @@ export function composeHqBuyer(u: HqBuyerSources): HqBuyer {
       taxCode: clean(ic.taxCode),
       address: clean(ic.companyAddress),
       email,
+      phone,
+      idNumber: null,
       source: "invoice-config",
     };
   }
-  return { name: u.fullName, taxCode: null, address: null, email, source: "account" };
+  return { name: u.fullName, taxCode: null, address: null, email, phone, idNumber: null, source: "account" };
+}
+
+/** SĐT in trên hóa đơn dạng trong nước ("+84912…" → "0912…"); không ra dạng số thì bỏ. */
+export function localPhone(raw: string | null): string | null {
+  if (!raw) return null;
+  let p = raw.replace(/[\s.\-()]/g, "");
+  if (p.startsWith("+84")) p = `0${p.slice(3)}`;
+  else if (p.startsWith("84") && p.length >= 11) p = `0${p.slice(2)}`;
+  return /^0\d{8,10}$/.test(p) ? p : null;
 }
 
 async function resolveHqBuyer(userId: string): Promise<HqBuyer | null> {
@@ -170,10 +195,13 @@ async function resolveHqBuyer(userId: string): Promise<HqBuyer | null> {
     select: {
       fullName: true,
       email: true,
+      phone: true,
       billingName: true,
       billingTaxCode: true,
       billingAddress: true,
       billingEmail: true,
+      billingPhone: true,
+      billingIdNumber: true,
       invoiceConfigs: {
         where: { channelId: null },
         select: { companyName: true, taxCode: true, companyAddress: true },
@@ -186,7 +214,7 @@ async function resolveHqBuyer(userId: string): Promise<HqBuyer | null> {
 }
 
 /** Người mua có MST thì tên + địa chỉ phải đủ — hóa đơn theo đơn vị thiếu địa chỉ là CQT từ chối. */
-export function buyerProblem(b: HqBuyer): string | null {
+export function buyerProblem(b: Pick<HqBuyer, "taxCode" | "address"> & Partial<HqBuyer>): string | null {
   if (b.taxCode && !TAX_CODE_RE.test(b.taxCode)) {
     return `MST người mua "${b.taxCode}" không hợp lệ (10/12/13 số) — sửa ở hồ sơ xuất hóa đơn của khách.`;
   }
@@ -483,6 +511,8 @@ export async function processHqLedgerInvoice(
         buyerTaxCode: buyerFromAccount.taxCode ?? undefined,
         buyerAddress: buyerFromAccount.address ?? undefined,
         buyerEmail: buyerFromAccount.email ?? undefined,
+        buyerPhone: buyerFromAccount.phone ?? undefined,
+        buyerIdNumber: buyerFromAccount.idNumber ?? undefined,
         itemName,
         amount: Number(entry.amount),
         vatMode: cfgRow.vatMode as HqVatMode,

@@ -457,8 +457,11 @@ export function buildWebDraftPayload(
     InvDate: vnTodayIso(now),
     ...buyer,
     AccountObjectAddress: input.buyerAddress || undefined,
+    // Số định danh cá nhân (NĐ 254/2026): khách lẻ cung cấp thì phải ghi.
+    CitizenIDNumber: input.buyerIdNumber || undefined,
     ReceiverEmail: input.buyerEmail || undefined,
     ReceiverName: input.buyerEmail ? (input.buyerContactName ?? input.buyerName) : undefined,
+    ReceiverMobile: input.buyerPhone || undefined,
     PaymentMethod: "TM/CK",
     CurrencyCode: "VND",
     ExchangeRate: 1,

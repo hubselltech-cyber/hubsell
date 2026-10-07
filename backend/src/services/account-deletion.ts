@@ -40,6 +40,10 @@ export function anonymizedUserData(now: Date) {
     permissions: [] as string[],
     billingName: null,
     billingTaxCode: null,
+    billingAddress: null,
+    billingEmail: null,
+    billingPhone: null,
+    billingIdNumber: null,
     deletedAt: now,
   };
 }

@@ -155,10 +155,12 @@ function UsageBar({
 function BillingProfileCard({
   profile,
   accountEmail,
+  accountPhone,
   onSaved,
 }: {
   profile: MyBillingProfile | null;
   accountEmail: string | null;
+  accountPhone: string | null;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState({
@@ -166,6 +168,8 @@ function BillingProfileCard({
     taxCode: profile?.taxCode ?? "",
     address: profile?.address ?? "",
     email: profile?.email ?? "",
+    phone: profile?.phone ?? "",
+    idNumber: profile?.idNumber ?? "",
   });
   const [dirty, setDirty] = useState(false);
   // Hồ sơ nạp sau khi thẻ đã render (query về muộn) → đổ lại ô, trừ khi khách đang gõ.
@@ -176,6 +180,8 @@ function BillingProfileCard({
       taxCode: profile?.taxCode ?? "",
       address: profile?.address ?? "",
       email: profile?.email ?? "",
+      phone: profile?.phone ?? "",
+      idNumber: profile?.idNumber ?? "",
     });
   }, [profile, dirty]);
 
@@ -249,16 +255,44 @@ function BillingProfileCard({
             onChange={set("address")}
           />
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="billing-email">Email nhận hóa đơn</Label>
-          <Input
-            id="billing-email"
-            type="email"
-            placeholder={accountEmail ?? "ketoan@congty.vn"}
-            value={form.email}
-            onChange={set("email")}
-          />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1.5">
+            <Label htmlFor="billing-email">Email nhận hóa đơn</Label>
+            <Input
+              id="billing-email"
+              type="email"
+              placeholder={accountEmail ?? "ketoan@congty.vn"}
+              value={form.email}
+              onChange={set("email")}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="billing-phone">Số điện thoại trên hóa đơn</Label>
+            <Input
+              id="billing-phone"
+              inputMode="tel"
+              placeholder={accountPhone ? `Trống = ${accountPhone}` : "VD: 0912 345 678"}
+              value={form.phone}
+              onChange={set("phone")}
+            />
+          </div>
         </div>
+        {!isCompany && (
+          <div className="grid gap-1.5">
+            <Label htmlFor="billing-id">Số định danh cá nhân / CCCD (không bắt buộc)</Label>
+            <Input
+              id="billing-id"
+              inputMode="numeric"
+              placeholder="12 số — ghi vào để hóa đơn mang định danh của bạn"
+              value={form.idNumber}
+              onChange={set("idNumber")}
+            />
+            <p className="text-xs text-muted-foreground">
+              Khách lẻ không cần khai. Chỉ hóa đơn có MST hoặc số định danh mới dùng được để
+              hạch toán chi phí.
+            </p>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             Hóa đơn đã phát hành không tự đổi theo hồ sơ mới — sai thông tin thì trả lời email
@@ -518,6 +552,7 @@ export default function SettingsPlanPage() {
         <BillingProfileCard
           profile={data.billingProfile}
           accountEmail={accountEmail}
+          accountPhone={data.contactPhone}
           onSaved={refresh}
         />
       )}

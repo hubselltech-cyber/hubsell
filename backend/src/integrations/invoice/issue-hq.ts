@@ -86,6 +86,8 @@ export function buildHqInvoiceInput(args: {
   buyerTaxCode?: string;
   buyerAddress?: string;
   buyerEmail?: string;
+  buyerPhone?: string;
+  buyerIdNumber?: string;
   itemName: string;
   amount: number;
   vatMode: HqVatMode;
@@ -96,6 +98,8 @@ export function buildHqInvoiceInput(args: {
     buyerTaxCode: args.buyerTaxCode || undefined,
     buyerAddress: args.buyerAddress || undefined,
     buyerEmail: args.buyerEmail || undefined,
+    buyerPhone: args.buyerPhone || undefined,
+    buyerIdNumber: args.buyerIdNumber || undefined,
     lines: [buildHqInvoiceLine(args.itemName, args.amount, args.vatMode)],
     totalAmount: args.amount,
   };

@@ -81,6 +81,10 @@ export interface CreateInvoiceInput {
   buyerAddress?: string;
   /** Email người mua — NCC gửi hóa đơn điện tử về địa chỉ này. */
   buyerEmail?: string;
+  /** SĐT người mua in trên hóa đơn / nhận SMS (dạng "0912…"). */
+  buyerPhone?: string;
+  /** Số định danh cá nhân (CCCD 12 số) của người mua cá nhân — NĐ 254/2026. */
+  buyerIdNumber?: string;
   lines: InvoiceLine[];
   /** Tổng tiền hàng đã gồm thuế (đối chiếu với tổng tính từ lines). */
   totalAmount: number;

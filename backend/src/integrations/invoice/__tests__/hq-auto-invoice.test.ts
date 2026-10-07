@@ -16,10 +16,13 @@ import { invoiceIssuedEmailHtml, invoiceIssuedSubject } from "../../../services/
 const base = {
   fullName: "Nguyễn Văn A",
   email: "a@shop.vn",
+  phone: "+84912345678",
   billingName: null,
   billingTaxCode: null,
   billingAddress: null,
   billingEmail: null,
+  billingPhone: null,
+  billingIdNumber: null,
   invoiceConfig: null,
 };
 
@@ -30,8 +33,15 @@ describe("composeHqBuyer — thứ tự ưu tiên nguồn người mua", () => {
       taxCode: null,
       address: null,
       email: "a@shop.vn",
+      phone: "0912345678", // SĐT tài khoản +84 → dạng trong nước
+      idNumber: null,
       source: "account",
     });
+  });
+
+  it("khách lẻ khai CCCD + SĐT riêng ở hồ sơ → vẫn là hồ sơ khách, mang định danh + SĐT đó", () => {
+    const b = composeHqBuyer({ ...base, billingIdNumber: "001199001234", billingPhone: "0988 777 666" });
+    expect(b).toMatchObject({ name: "Nguyễn Văn A", taxCode: null, idNumber: "001199001234", phone: "0988777666", source: "billing-profile" });
   });
 
   it("hồ sơ xuất hóa đơn thắng mọi nguồn khác; email riêng thắng email đăng nhập", () => {
@@ -48,6 +58,8 @@ describe("composeHqBuyer — thứ tự ưu tiên nguồn người mua", () => {
       taxCode: "0101243150",
       address: "Hà Nội",
       email: "ketoan@abc.vn",
+      phone: "0912345678",
+      idNumber: null,
       source: "billing-profile",
     });
   });

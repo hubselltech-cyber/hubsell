@@ -2221,6 +2221,10 @@ router.post(
           typeof req.body?.buyerAddress === "string" ? req.body.buyerAddress.trim() : "",
         buyerEmail:
           typeof req.body?.buyerEmail === "string" ? req.body.buyerEmail.trim() : "",
+        buyerPhone:
+          typeof req.body?.buyerPhone === "string" ? req.body.buyerPhone.trim() : "",
+        buyerIdNumber:
+          typeof req.body?.buyerIdNumber === "string" ? req.body.buyerIdNumber.trim() : "",
         itemName,
         amount: toNumber(entry.amount),
         vatMode: row.vatMode as HqVatMode,

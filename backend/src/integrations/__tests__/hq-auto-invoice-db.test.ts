@@ -128,6 +128,8 @@ beforeAll(async () => {
       billingTaxCode: "0101243150",
       billingAddress: "12 Phố Test, Hà Nội",
       billingEmail: `ketoan-${STAMP}@khach.test`,
+      phone: "+84912000111",
+      billingPhone: "0988 000 222",
     },
   });
   userId = user.id;
@@ -306,6 +308,7 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     expect(web.insertWebDraft).toHaveBeenCalledTimes(1);
     expect(web.insertWebDraft.mock.calls[0][0].orderCode).toBe(`HQLEDGER-${id}`);
     expect(web.insertWebDraft.mock.calls[0][0].buyerTaxCode).toBe("0101243150");
+    expect(web.insertWebDraft.mock.calls[0][0].buyerPhone).toBe("0988000222");
     expect(r1.step).toBe("failed");
     expect(r1.error).toContain("Chờ anh ký trên meinvoice.vn");
     expect(r1.error).toContain("đã đẩy tờ nháp");

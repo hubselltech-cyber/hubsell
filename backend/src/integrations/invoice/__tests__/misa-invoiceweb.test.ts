@@ -54,6 +54,7 @@ describe("buildWebDraftPayload", () => {
       buyerTaxCode: "0101243150",
       buyerAddress: "12 Phố Thử",
       buyerEmail: "kt@khach.vn",
+      buyerPhone: "0912345678",
       itemName: "Phí dịch vụ phần mềm Hubsell — gói Pro",
       amount: 2990000,
       vatMode: "KCT",
@@ -68,6 +69,8 @@ describe("buildWebDraftPayload", () => {
     expect(p.AccountObjectTaxCode).toBe("0101243150");
     expect(p.AccountObjectAddress).toBe("12 Phố Thử");
     expect(p.ReceiverEmail).toBe("kt@khach.vn");
+    expect(p.ReceiverMobile).toBe("0912345678");
+    expect(p.CitizenIDNumber).toBeUndefined();
     expect(p.ContactName).toBeUndefined();
     expect(p.EInvoiceStatus).toBe(1);
     expect(p.CustomField1).toBe("HQLEDGER-e1");
@@ -86,12 +89,15 @@ describe("buildWebDraftPayload", () => {
     const input = buildHqInvoiceInput({
       refId: "HQLEDGER-e2",
       buyerName: "Nguyễn Văn A",
+      buyerIdNumber: "001199001234",
       itemName: "Phí dịch vụ",
       amount: 110000,
       vatMode: "10",
     });
     const p = buildWebDraftPayload(input, cfg, tpl, NOW);
     expect(p.ContactName).toBe("Nguyễn Văn A");
+    expect(p.CitizenIDNumber).toBe("001199001234");
+    expect(p.ReceiverMobile).toBeUndefined();
     expect(p.AccountObjectName).toBeUndefined();
     expect(p.AccountObjectTaxCode).toBeUndefined();
     expect(p.ReceiverEmail).toBeUndefined();

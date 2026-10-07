@@ -311,6 +311,11 @@ model User {
   billingTaxCode String?
   billingAddress String?
   billingEmail   String?
+  /// 07/10/2026 (anh Trung): khách khai gì thì tờ hóa đơn phải mang đủ cái đó —
+  /// SĐT in trên hóa đơn (trống = SĐT tài khoản) và số định danh cá nhân/CCCD
+  /// (khách lẻ không MST nhưng muốn hóa đơn ghi định danh — NĐ 254/2026).
+  billingPhone    String?
+  billingIdNumber String?
   planUpgradeRequests PlanUpgradeRequest[]
   gatewayOrders       GatewayPaymentOrder[]
 
