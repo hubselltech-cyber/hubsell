@@ -143,6 +143,14 @@ cầu hỗ trợ (em gửi bằng Chrome của anh, anh đăng nhập MISA ID; s
 Hubsell xuất hóa đơn cho cả shop khách hàng qua cùng cổng). Danh sách hiện 4 ticket, ticket này "Chờ xử lý".
 Ticket trước (02/10) được trả lời sau ~2 ngày → kiểm lại từ 09/10 ở cùng trang hoặc mail dev@hubsell.tech.
 
+**Bổ sung câu 4 (gửi 07/10 ~22:35, trong cùng ticket, sau khi anh hỏi "sao BigSeller nối được MISA"):**
+đối chiếu tài liệu BigSeller (help.bigseller.pro "Introduction to MISA meInvoice", 07/05/2025): BigSeller chỉ
+**đẩy dữ liệu** hóa đơn sang meInvoice (To Push → Pushing → Push Successfully/Failed), cột Invoice Number
+trống, "xóa trên BigSeller cũng xóa bên MISA" → tờ nằm ở **Chưa phát hành**, chủ shop vào meInvoice ký
+(USB/eSign/HSM) và phát hành; không chỗ nào nhắc chữ ký số. Cùng mô hình MISA eShop/KiotViet ("hóa đơn chưa
+phát hành → ký khi phát hành"). Câu 4 hỏi MISA: Open API có endpoint **lưu hóa đơn chưa phát hành** không
+(`/publishing/token` không lưu); nếu chỉ cấp cho đối tác thì thủ tục xin cấp cho Hubsell.
+
 **Trả lời của MISA:** _(chưa có — ghi nguyên văn vào đây khi nhận, kèm ngày giờ)_
 
 ---
