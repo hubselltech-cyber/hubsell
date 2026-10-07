@@ -15,6 +15,7 @@
   4. UI shop: `invoice-config-section.tsx` hiện lại chọn phương thức ký (eSign/USB = "Hubsell lập tờ, bạn ký theo lô trên meinvoice.vn"; HSM = tự động), mặc định ESIGN_CLOUD; `routes/invoice-config.ts` SIGN_METHODS thêm HSM; Lịch sử hóa đơn (`invoice-issue-card.tsx` / trang /invoicing) nhãn "Chờ bạn ký trên meinvoice.vn" + đếm + link app3 + nút "Tôi đã ký, kiểm ngay" (gọi vòng hỏi cho shop).
   5. Test: DB mock theo kịch bản HQ (đẩy nháp → chờ → ký → ISSUED); sandbox 1 tờ bằng tài khoản thử; docs/HANG-DOI-BEN.md mục 4.6 + docs khảo sát mục 17.
 - **Lát T2 (sau):** hóa đơn điều chỉnh (`adjust-order.ts`) đi tờ nháp (EInvoiceStatus 4 + Org*); thư nhắc shop khi tờ chờ ký > 1 ngày; HSM gửi SĐT/CCCD.
+- **Anh chốt KHÔNG làm (00:35):** theo dõi phôi hóa đơn còn lại / cảnh báo hết phôi (cho cả HQ lẫn shop khách) — hết phôi là việc giữa shop và MISA, đằng nào cũng có thao tác vào MISA phát hành; tờ nháp không ăn phôi nên không mất gì. Đừng tự đề xuất lại.
 - **Việc tay anh:** meinvoice → Hệ thống → Thông tin đơn vị → điền SĐT công ty (dòng "Điện thoại:" bên bán đang trống trên tờ 00000001).
 
 ## Phiên 07/10/2026 (đêm 23:45–00:15) — 🏆 HÓA ĐƠN THẬT ĐẦU TIÊN qua luồng tờ nháp: 1C26THB số 00000001, PDF đã về mail khách
