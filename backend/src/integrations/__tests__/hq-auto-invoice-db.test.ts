@@ -344,15 +344,20 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     expect(e.invoiceEmailSentAt).not.toBeNull();
     expect(mail.sendInvoice).toHaveBeenCalledTimes(1);
 
-    // Dòng dính mã tra cứu "ma" (bản 07/10 tối) → status rỗng → xóa mã, lượt sau đi lại bước 1.
+    // Dòng dính mã tra cứu "ma" (bản 07/10 tối) → status rỗng → xóa mã và đi tiếp
+    // bước 1 NGAY trong lượt này: tra RefID (chưa có) → đẩy tờ nháp → chờ ký.
     await prisma.platformLedgerEntry.update({
       where: { id },
       data: { einvoiceTransactionId: "TX-GHOST", invoiceNo: null, invoiceStatus: "PENDING", invoiceEmailSentAt: null },
     });
     misa.statuses.mockResolvedValue([]);
+    web.getWebInvoices.mockResolvedValueOnce([]);
+    web.insertWebDraft.mockResolvedValueOnce({ refId: "x", invSeries: "1C26THB", raw: {} });
     const attemptsBefore = e.einvoiceAutoAttempts; // lượt 3 (worker, thành công) đã tính 1 lượt máy
     const r4 = await processHqLedgerInvoice(id, { trigger: "manual", ignoreEligibility: true });
-    expect(r4.error).toContain("Chờ lượt sau");
+    expect(r4.error).toContain("Chờ anh ký trên meinvoice.vn");
+    expect(r4.error).toContain("đã đẩy tờ nháp");
+    expect(web.insertWebDraft).toHaveBeenCalledTimes(2);
     e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
     expect(e.einvoiceTransactionId).toBeNull();
     expect(e.einvoiceAutoAttempts).toBe(attemptsBefore); // trạng thái chờ không đốt lượt

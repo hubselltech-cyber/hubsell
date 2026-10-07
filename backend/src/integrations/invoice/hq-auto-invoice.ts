@@ -442,6 +442,21 @@ export async function processHqLedgerInvoice(
     const cfg = hqStandardConfig(cfgRow);
     const buyerFromAccount = entry.customerId ? await resolveHqBuyer(entry.customerId) : null;
 
+    // ---- Bước 0 (eSign/USB): dọn mã tra cứu "ma" rồi đi tiếp NGAY trong lượt này ----
+    // Bản 07/10 tối lưu mã do cổng token trả nhưng MISA không giữ gì; hỏi
+    // /invoice/status rỗng thì bỏ mã để bước 1 bên dưới tra RefID / đẩy tờ nháp
+    // — không bắt HQ bấm Thử lại hai lần.
+    if (usesWebDraft(cfg.signMethod) && entry.einvoiceTransactionId && !entry.invoiceNo) {
+      const [probe] = await getInvoiceStatuses([entry.einvoiceTransactionId], cfg);
+      if (!probe) {
+        entry = await prisma.platformLedgerEntry.update({
+          where: { id: entry.id },
+          data: { einvoiceTransactionId: null },
+          select: ENTRY_SELECT,
+        });
+      }
+    }
+
     // ---- Bước 1: phát hành ----
     if (!entry.einvoiceTransactionId && entry.invoiceStatus !== LedgerInvoiceStatus.ISSUED) {
       if (!isPublishAllowed()) {
@@ -535,18 +550,6 @@ export async function processHqLedgerInvoice(
           select: ENTRY_SELECT,
         });
         step = "issued";
-      } else if (usesWebDraft(cfg.signMethod) && !status) {
-        // Mã tra cứu "ma" (bản 07/10 tối: cổng token trả mã nhưng MISA không lưu
-        // gì) — bỏ đi để lượt sau đi lại bước 1 (tra RefID / đẩy tờ nháp).
-        entry = await prisma.platformLedgerEntry.update({
-          where: { id: entry.id },
-          data: { einvoiceTransactionId: null },
-          select: ENTRY_SELECT,
-        });
-        step = "nothing";
-        throw new Error(
-          "Chờ lượt sau: meInvoice không có hóa đơn nào theo mã tra cứu đã lưu — đã bỏ mã; lượt sau (hoặc bấm Thử lại) máy tra RefID và đẩy tờ nháp lên meinvoice.vn."
-        );
       } else {
         step = "number-pending";
       }
