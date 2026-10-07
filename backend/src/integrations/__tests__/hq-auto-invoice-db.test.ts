@@ -21,7 +21,6 @@ vi.mock("../invoice/misa-safety", async (importOriginal) => {
 
 const misa = vi.hoisted(() => ({
   publish: vi.fn(),
-  createUnsigned: vi.fn(),
   statuses: vi.fn(),
   download: vi.fn(),
 }));
@@ -30,7 +29,6 @@ vi.mock("../invoice/misa-einvoice", async (importOriginal) => {
   return {
     ...mod,
     publishStandardInvoice: misa.publish,
-    createUnsignedInvoice: misa.createUnsigned,
     getInvoiceStatuses: misa.statuses,
     downloadInvoiceFiles: misa.download,
   };
@@ -283,7 +281,6 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
   it("phương thức ký MISA eSign → đẩy TỜ NHÁP lên web app, treo 'Chờ anh ký', không đốt lượt; anh ký xong → nối số + gửi mail", async () => {
     await setConfig({ autoIssueEnabled: true, autoIssueEnabledAt: new Date("2026-10-06T00:00:00Z"), signMethod: "ESIGN_CLOUD" });
     misa.publish.mockClear();
-    misa.createUnsigned.mockClear();
     misa.statuses.mockClear();
     web.getWebInvoices.mockReset();
     web.insertWebDraft.mockReset();
@@ -306,7 +303,6 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     web.insertWebDraft.mockResolvedValueOnce({ refId: "x", invSeries: "1C26THB", raw: {} });
     const r1 = await processHqLedgerInvoice(id, { trigger: "worker" });
     expect(misa.publish).not.toHaveBeenCalled();
-    expect(misa.createUnsigned).not.toHaveBeenCalled();
     expect(web.insertWebDraft).toHaveBeenCalledTimes(1);
     expect(web.insertWebDraft.mock.calls[0][0].orderCode).toBe(`HQLEDGER-${id}`);
     expect(web.insertWebDraft.mock.calls[0][0].buyerTaxCode).toBe("0101243150");

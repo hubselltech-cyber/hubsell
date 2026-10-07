@@ -300,9 +300,9 @@ type EntryRow = Prisma.PlatformLedgerEntryGetPayload<{ select: typeof ENTRY_SELE
  * meInvoice báo "CallSignServiceFail" = lệnh ký nền (SignType 2) không gọi được
  * dịch vụ ký. 07/10/2026 chốt nguyên nhân: SignType 2 chỉ ký qua MÁY CHỦ HSM của
  * nhà cung cấp thứ ba đã khai ở Thiết lập ký số — KHÔNG ký bằng MISA eSign, mở
- * Ký phiên trên app cũng không đổi gì. Với eSign, luồng này nay LẬP TỜ CHƯA KÝ
- * (createUnsignedInvoice) để anh ký trên web; lỗi này chỉ còn gặp khi phương
- * thức ký là HSM mà HSM chưa khai. Vẫn là trạng thái chờ: không đốt lượt thử.
+ * Ký phiên trên app cũng không đổi gì. eSign/USB nay đi tờ nháp web app
+ * (settleHqWebDraft) nên lỗi này chỉ còn gặp khi phương thức ký là HSM mà HSM
+ * chưa khai. Vẫn là trạng thái chờ: không đốt lượt thử.
  */
 export const SIGN_SESSION_RE = /CallSign(Service|Sevice)Fail/i;
 export const SIGN_SESSION_MESSAGE =

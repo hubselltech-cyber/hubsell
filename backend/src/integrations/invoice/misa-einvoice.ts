@@ -7,8 +7,9 @@
  *   2. Build payload hóa đơn: pháp nhân (MST/tên/địa chỉ) + MẪU SỐ + KÝ HIỆU
  *      đã đăng ký CQT + dòng hàng.
  *   3. KÝ SỐ từng hóa đơn: HSM (SignType 2) thì meInvoice ký nền qua máy chủ
- *      HSM của NCC đã khai; MISA eSign KHÔNG ký nền được qua cổng tích hợp
- *      (07/10/2026) → lập tờ chưa ký (createUnsignedInvoice) rồi ký trên web.
+ *      HSM của NCC đã khai. MISA eSign / USB token KHÔNG ký nền được qua cổng
+ *      này (07/10/2026) → đi TỜ NHÁP web app (misa-invoiceweb.ts), chủ shop ký
+ *      theo lô trên meinvoice.vn; cổng này chỉ còn lo tra trạng thái / tải PDF.
  *   4. Gửi meInvoice phát hành → CHỜ CQT CẤP MÃ cho từng hóa đơn → nhận số
  *      hóa đơn + mã CQT.
  *
@@ -39,7 +40,6 @@ import type { CreateInvoiceInput } from "./types";
  */
 const ENDPOINTS = {
   publish: "/invoice/publishing", // phát hành + xin cấp mã CQT (ký nền HSM, SignType 2)
-  publishToken: "/invoice/publishing/token", // lập tờ CHƯA KÝ (SignType 1) — ký trên web/USB sau
   templates: "/invoice/templates", // danh sách mẫu/ký hiệu đã đăng ký với CQT
   status: "/invoice/status", // tra trạng thái hóa đơn (body = mảng TransactionID)
   download: "/invoice/Download", // tải PDF/XML (body = mảng TransactionID) — chữ D hoa theo tài liệu
@@ -58,8 +58,9 @@ export const MISA_SIGN_TYPE = { USB_TOKEN: 1, HSM: 2, POS: 5 } as const;
 
 /**
  * Map signMethod của Hubsell → SignType meInvoice cho cổng ký nền. ESIGN_CLOUD
- * giữ map 2 vì luồng tenant (misa-provider.ts) vẫn gọi như trước — chỉ đúng khi
- * tài khoản đó khai HSM; HQ (hq-auto-invoice.ts) đã rẽ eSign sang lập tờ chưa ký.
+ * còn map 2 vì luồng tenant (misa-provider.ts) vẫn gọi cổng này — chỉ đúng khi
+ * tài khoản đó khai HSM (lát T1 08/10 chuyển tenant eSign/USB sang tờ nháp);
+ * HQ (hq-auto-invoice.ts) đã rẽ eSign/USB sang misa-invoiceweb.ts.
  */
 export function misaSignType(signMethod: string): number {
   return signMethod === "ESIGN_CLOUD" || signMethod === "HSM"
@@ -378,12 +379,9 @@ export interface StandardPublishResult {
 }
 
 /**
- * Gửi một lệnh lập/phát hành tới cổng ITG và bóc kết quả theo từng hóa đơn.
- * Dùng chung cho hai cổng:
- *   · /invoice/publishing        (SignType 2 — HSM, meInvoice ký nền server-side)
- *     → kết quả ở PublishInvoiceResult[]
- *   · /invoice/publishing/token  (SignType 1 — lập tờ CHƯA KÝ, chờ ký trên web/USB)
- *     → kết quả ở CreateInvoiceResult[]
+ * Gửi một lệnh phát hành tới cổng ITG (/invoice/publishing, SignType 2 — HSM ký
+ * nền) và bóc kết quả theo từng hóa đơn ở PublishInvoiceResult[]. `resultKeys`
+ * để tham số hóa nếu sau này nối thêm cổng cùng khuôn trả lời.
  * GOTCHA sandbox: các khối kết quả có thể là JSON STRING lồng trong JSON — parse thêm
  * một lần. Mọi lỗi sau khi lệnh đã rời Hubsell mang publishSent để adapter phân biệt
  * "chưa rõ kết quả" với "chắc chắn chưa lập".
@@ -487,8 +485,9 @@ async function postItgPublish(
  * Phát hành một hóa đơn KÊ KHAI, KÝ NỀN (SignType 2): meInvoice tạo XML rồi gọi
  * MÁY CHỦ HSM của nhà cung cấp mà công ty đã khai ở Thiết lập ký số (SoftDreams,
  * CyberLotus…). Sandbox 23/08 chạy được vì tài khoản thử của MISA có sẵn HSM.
- * ⚠️ KHÔNG dùng được với MISA eSign (07/10/2026: tài khoản chỉ nối eSign →
- * CallSignServiceFail dù mở Ký phiên) — eSign đi createUnsignedInvoice().
+ * ⚠️ KHÔNG dùng được với MISA eSign / USB (07/10/2026: tài khoản chỉ nối eSign →
+ * CallSignServiceFail dù mở Ký phiên) — hai phương thức đó đi tờ nháp
+ * (misa-invoiceweb.ts insertWebDraft), ký trên meinvoice.vn.
  */
 export async function publishStandardInvoice(
   input: CreateInvoiceInput,
@@ -500,29 +499,6 @@ export async function publishStandardInvoice(
     cfg,
     ["PublishInvoiceResult", "publishInvoiceResult"],
     "hóa đơn kê khai"
-  );
-}
-
-/**
- * DỰNG XML CHƯA KÝ (SignType 1, cổng /invoice/publishing/token) — bước 1 của luồng
- * "phần mềm tự ký": MISA trả InvNo dự kiến + TransactionID + XML <HDon> chưa có
- * DSCKS để CLIENT ký (USB token qua MISA SignedService, hoặc tự dựng XMLDSig) rồi
- * gửi lại. ⚠️ KHÔNG LƯU GÌ BÊN MISA (kiểm sandbox 07/10/2026): gọi lại cùng RefID
- * ra TransactionID khác, số không bị chiếm (tờ phát hành ngay sau vẫn lấy đúng số
- * đó), không hiện ở web / paging / status. Vì thế KHÔNG dùng được để "lập tờ cho
- * eSign ký trên web". Giữ hàm này làm viên gạch cho luồng tự ký XML sau này.
- */
-export async function createUnsignedInvoice(
-  input: CreateInvoiceInput,
-  cfg: StandardInvoiceConfig
-): Promise<StandardPublishResult> {
-  const payload = { ...buildStandardInvoicePayload(input, cfg), SignType: MISA_SIGN_TYPE.USB_TOKEN };
-  return postItgPublish(
-    ENDPOINTS.publishToken,
-    payload,
-    cfg,
-    ["CreateInvoiceResult", "createInvoiceResult"],
-    "tờ hóa đơn chưa ký"
   );
 }
 

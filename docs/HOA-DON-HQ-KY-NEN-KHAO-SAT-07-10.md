@@ -385,6 +385,17 @@ mua → **Ký & phát hành** (xác nhận eSign) → chờ ≤ 30' (hoặc bấ
 - Tờ 00000001: dòng "Điện thoại:" trống là của BÊN BÁN (khai ở meinvoice → Hệ thống → Thông tin đơn vị — việc anh); SĐT khách trên tờ nháp là ô
   "SĐT gửi SMS", mẫu chuẩn TT78 không in SĐT người mua.
 
+## 17. Dọn mã hướng F (08/10 00:30, anh hỏi "đã dọn code thừa từ tối chưa")
+
+- Gỡ `createUnsignedInvoice()` + endpoint `/invoice/publishing/token` khỏi `misa-einvoice.ts` (hướng F thất bại; cổng token là bước 1 của luồng
+  tự ký XML — khi nào làm luồng đó thì viết lại theo tài liệu "PHÁT HÀNH HÓA ĐƠN KÝ BẰNG USB TOKEN/FILE", không giữ mã chết).
+- Gỡ 2 script dò đã hết việc: `scripts/misa-draft-probe.ts` (hướng F), `scripts/misa-invoiceweb-probe.ts` (fetch tay, đã có bản dùng module
+  `misa-invoiceweb-module-probe.ts`). Kết quả dò vẫn ở mục 8, 11, 12; mã cũ xem git trước commit dọn.
+- Sửa chú thích còn nhắc "lập tờ chưa ký (createUnsignedInvoice)" ở `misa-einvoice.ts`, `hq-auto-invoice.ts`; đổi tên biến worker
+  `waitingSignSession`/`SIGN_SESSION_REMIND_GAP_MS` → `waitingSignature`/`SIGN_REMIND_GAP_MS` (không còn khái niệm "phiên ký").
+- GIỮ (còn dùng cho HSM): `SIGN_SESSION_RE`/`isSignSessionError` (CallSignServiceFail = HSM chưa khai), `DRAFT_WAITING_MESSAGE` (HSM báo trùng
+  RefID mà tờ chưa phát hành), `misaSignType()` (tenant còn gọi tới khi lát T1 xong).
+
 ## 7. Nhật ký
 
 - **07/10/2026 đêm (23:00):** code xong luồng tờ nháp HQ (mục 13), sandbox 3 ca OK, test 39/39; chờ anh gật push + thử thật tờ khách Hiển.
