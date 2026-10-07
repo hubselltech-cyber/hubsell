@@ -256,7 +256,8 @@ export function HqInvoiceConfigDialog({
               <div className="grid gap-2">
                 <Label>Phương thức ký</Label>
                 <NativeSelect value={form.signMethod} onChange={set("signMethod")}>
-                  <option value="ESIGN_CLOUD">Ký nền HSM (khuyên dùng)</option>
+                  <option value="ESIGN_CLOUD">MISA eSign — máy lập tờ, anh ký theo lô trên web</option>
+                  <option value="HSM">Ký nền HSM — máy chủ ký của nhà cung cấp</option>
                   <option value="USB_TOKEN">USB token</option>
                 </NativeSelect>
               </div>
@@ -285,7 +286,10 @@ export function HqInvoiceConfigDialog({
                     {resp.config.autoIssueEnabledAt
                       ? ` (đang bật từ ${new Date(resp.config.autoIssueEnabledAt).toLocaleString("vi-VN")})`
                       : ""}
-                    . Cần phương thức ký nền HSM / eSign — USB token không tự ký được.
+                    . Với MISA eSign: máy lập tờ đủ dữ liệu lên meInvoice, anh vào
+                    meinvoice.vn → Hóa đơn → lọc Chưa phát hành → Phát hành theo lô
+                    (một lần xác nhận trên app cho tới 50 tờ); ký xong máy tự lấy số
+                    và gửi mail. Chỉ HSM mới không cần ai bấm.
                   </p>
                 </div>
                 <Switch
@@ -330,7 +334,7 @@ export function HqInvoiceConfigDialog({
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
                     Đang chọn USB token: máy không tự ký được, lệnh tự xuất sẽ lỗi.
-                    Chuyển sang Ký nền HSM (MISA eSign) để tự động chạy.
+                    Chọn MISA eSign (ký theo lô trên web) hoặc HSM để tự động chạy.
                   </span>
                 </div>
               )}

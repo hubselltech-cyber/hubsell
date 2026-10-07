@@ -6,8 +6,9 @@
  *   1. Lấy Bearer token bằng cặp khóa meInvoice của SHOP (misa-auth.ts).
  *   2. Build payload hóa đơn: pháp nhân (MST/tên/địa chỉ) + MẪU SỐ + KÝ HIỆU
  *      đã đăng ký CQT + dòng hàng.
- *   3. KÝ SỐ từng hóa đơn: signMethod = ESIGN_CLOUD thì ký nền qua MISA eSign
- *      (misa-esign.ts) — không cần cắm USB; USB_TOKEN thì ký phía client.
+ *   3. KÝ SỐ từng hóa đơn: HSM (SignType 2) thì meInvoice ký nền qua máy chủ
+ *      HSM của NCC đã khai; MISA eSign KHÔNG ký nền được qua cổng tích hợp
+ *      (07/10/2026) → lập tờ chưa ký (createUnsignedInvoice) rồi ký trên web.
  *   4. Gửi meInvoice phát hành → CHỜ CQT CẤP MÃ cho từng hóa đơn → nhận số
  *      hóa đơn + mã CQT.
  *
@@ -37,23 +38,33 @@ import type { CreateInvoiceInput } from "./types";
  * Lấy ĐÚNG từ tài liệu portal developer.misa.vn ngày 07/08/2026.
  */
 const ENDPOINTS = {
-  publish: "/invoice/publishing", // phát hành + xin cấp mã CQT
+  publish: "/invoice/publishing", // phát hành + xin cấp mã CQT (ký nền HSM, SignType 2)
+  publishToken: "/invoice/publishing/token", // lập tờ CHƯA KÝ (SignType 1) — ký trên web/USB sau
   templates: "/invoice/templates", // danh sách mẫu/ký hiệu đã đăng ký với CQT
   status: "/invoice/status", // tra trạng thái hóa đơn (body = mảng TransactionID)
   download: "/invoice/Download", // tải PDF/XML (body = mảng TransactionID) — chữ D hoa theo tài liệu
 };
 
 /**
- * SignType của meInvoice (tài liệu "Lưu ý khi bắt đầu"):
- *   1 = ký qua USB token / file mềm
- *   2 = ký qua HSM (ký số từ xa, có hiển thị CKS) ← MISA eSign
+ * SignType của meInvoice (tài liệu "Lưu ý khi bắt đầu" + doc.meinvoice.vn
+ * InvoicePublishHSM, đọc 07/10/2026):
+ *   1 = ký qua USB token / file mềm — cổng /invoice/publishing/token trả tờ CHƯA KÝ
+ *   2 = ký nền qua MÁY CHỦ HSM của nhà cung cấp thứ ba (SoftDreams, CyberLotus…)
+ *       khai ở Thiết lập ký số. ⚠️ KHÔNG PHẢI MISA eSign — tài khoản chỉ nối eSign
+ *       gọi SignType 2 sẽ CallSignServiceFail.
  *   5 = hóa đơn máy tính tiền, ký sau, không hiển thị CKS
  */
-export const MISA_SIGN_TYPE = { USB_TOKEN: 1, ESIGN_CLOUD: 2, POS: 5 } as const;
+export const MISA_SIGN_TYPE = { USB_TOKEN: 1, HSM: 2, POS: 5 } as const;
 
-/** Map signMethod của Hubsell → SignType meInvoice. */
+/**
+ * Map signMethod của Hubsell → SignType meInvoice cho cổng ký nền. ESIGN_CLOUD
+ * giữ map 2 vì luồng tenant (misa-provider.ts) vẫn gọi như trước — chỉ đúng khi
+ * tài khoản đó khai HSM; HQ (hq-auto-invoice.ts) đã rẽ eSign sang lập tờ chưa ký.
+ */
 export function misaSignType(signMethod: string): number {
-  return signMethod === "ESIGN_CLOUD" ? MISA_SIGN_TYPE.ESIGN_CLOUD : MISA_SIGN_TYPE.USB_TOKEN;
+  return signMethod === "ESIGN_CLOUD" || signMethod === "HSM"
+    ? MISA_SIGN_TYPE.HSM
+    : MISA_SIGN_TYPE.USB_TOKEN;
 }
 
 /**
@@ -367,17 +378,26 @@ export interface StandardPublishResult {
 }
 
 /**
- * Phát hành một hóa đơn KÊ KHAI (SignType 2 — HSM, meInvoice ký nền server-side
- * theo chứng thư gắn với tài khoản; đã xác nhận trên sandbox 23/08, KHÔNG cần
- * gọi eSign ở bước này).
+ * Gửi một lệnh lập/phát hành tới cổng ITG và bóc kết quả theo từng hóa đơn.
+ * Dùng chung cho hai cổng:
+ *   · /invoice/publishing        (SignType 2 — HSM, meInvoice ký nền server-side)
+ *     → kết quả ở PublishInvoiceResult[]
+ *   · /invoice/publishing/token  (SignType 1 — lập tờ CHƯA KÝ, chờ ký trên web/USB)
+ *     → kết quả ở CreateInvoiceResult[]
+ * GOTCHA sandbox: các khối kết quả có thể là JSON STRING lồng trong JSON — parse thêm
+ * một lần. Mọi lỗi sau khi lệnh đã rời Hubsell mang publishSent để adapter phân biệt
+ * "chưa rõ kết quả" với "chắc chắn chưa lập".
  */
-export async function publishStandardInvoice(
-  input: CreateInvoiceInput,
-  cfg: StandardInvoiceConfig
+async function postItgPublish(
+  path: string,
+  payload: unknown,
+  cfg: StandardInvoiceConfig,
+  resultKeys: string[],
+  what: string
 ): Promise<StandardPublishResult> {
   // Hàng rào ĐẦU TIÊN — chặn trước cả khi kiểm cấu hình, để không có đường
   // nào chạm tới API phát hành khi chưa được phép (xem misa-safety.ts).
-  assertPublishAllowed("hóa đơn kê khai");
+  assertPublishAllowed(what);
 
   const missing = standardConfigMissing(cfg);
   if (missing.length > 0) {
@@ -388,7 +408,7 @@ export async function publishStandardInvoice(
   // đúng bộ này, lấy thẳng cfg.clientId sẽ rỗng với shop dùng khóa app chung.
   const creds = credsFromConfig(cfg);
   const token = await getMisaAccessToken(creds);
-  const url = `${misaApiBase()}${ENDPOINTS.publish}`;
+  const url = `${misaApiBase()}${path}`;
   let res: Response;
   try {
     res = await providerFetch("MISA", "publishing", url, {
@@ -398,11 +418,9 @@ export async function publishStandardInvoice(
         ClientID: creds?.clientId ?? "",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(buildStandardInvoicePayload(input, cfg)),
+      body: JSON.stringify(payload),
     });
   } catch (err) {
-    // Từ đây trở xuống lệnh phát hành ĐÃ rời Hubsell: mọi lỗi mang publishSent để
-    // adapter phân biệt "chưa rõ kết quả" với "chắc chắn chưa lập" (lỗi lấy token ở trên).
     throw new InvoiceProviderError(`Không gọi được ${url}: ${(err as Error).message}`, {
       network: true,
       publishSent: true,
@@ -433,11 +451,9 @@ export async function publishStandardInvoice(
     throw providerErrorFromBody("meInvoice từ chối phát hành", text, undefined, { publishSent: true });
   }
 
-  // Kết quả nằm ở publishInvoiceResult[] — MỖI hóa đơn một phần tử, thành công
-  // khi ErrorCode của phần tử = null. GOTCHA sandbox: các khối dữ liệu lồng
-  // (Data của /templates, publishInvoiceResult ở đây) có thể là JSON STRING
-  // lồng trong JSON — phải parse thêm một lần.
-  let results = pick(raw, "PublishInvoiceResult", "publishInvoiceResult");
+  // Kết quả nằm ở <resultKeys>[] — MỖI hóa đơn một phần tử, thành công khi
+  // ErrorCode của phần tử = null/"".
+  let results = pick(raw, ...resultKeys);
   if (typeof results === "string") {
     try {
       results = JSON.parse(results);
@@ -450,7 +466,7 @@ export async function publishStandardInvoice(
   if (perInvoiceError != null && perInvoiceError !== "") {
     const desc = pick(first, "DescriptionErrorCode", "descriptionErrorCode");
     throw new InvoiceProviderError(
-      `meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=${String(perInvoiceError)}`,
+      `meInvoice từ chối phát hành hóa đơn (${resultKeys[0]}): ErrorCode=${String(perInvoiceError)}`,
       {
         code: String(perInvoiceError),
         description: typeof desc === "string" ? desc : null,
@@ -461,10 +477,55 @@ export async function publishStandardInvoice(
   const invoiceNo = pick(first, "InvNo", "InvoiceNo", "InvoiceNumber");
   const transactionId = pick(first, "TransactionID", "TransactionId", "RefID");
   return {
-    invoiceNo: invoiceNo != null ? String(invoiceNo) : null,
+    invoiceNo: invoiceNo != null && invoiceNo !== "" ? String(invoiceNo) : null,
     transactionId: typeof transactionId === "string" ? transactionId : null,
     raw,
   };
+}
+
+/**
+ * Phát hành một hóa đơn KÊ KHAI, KÝ NỀN (SignType 2): meInvoice tạo XML rồi gọi
+ * MÁY CHỦ HSM của nhà cung cấp mà công ty đã khai ở Thiết lập ký số (SoftDreams,
+ * CyberLotus…). Sandbox 23/08 chạy được vì tài khoản thử của MISA có sẵn HSM.
+ * ⚠️ KHÔNG dùng được với MISA eSign (07/10/2026: tài khoản chỉ nối eSign →
+ * CallSignServiceFail dù mở Ký phiên) — eSign đi createUnsignedInvoice().
+ */
+export async function publishStandardInvoice(
+  input: CreateInvoiceInput,
+  cfg: StandardInvoiceConfig
+): Promise<StandardPublishResult> {
+  return postItgPublish(
+    ENDPOINTS.publish,
+    buildStandardInvoicePayload(input, cfg),
+    cfg,
+    ["PublishInvoiceResult", "publishInvoiceResult"],
+    "hóa đơn kê khai"
+  );
+}
+
+/**
+ * LẬP TỜ CHƯA KÝ (SignType 1, cổng /invoice/publishing/token): meInvoice lưu tờ
+ * đủ dữ liệu, cấp số + mã tra cứu ngay, giữ ở trạng thái "Chưa phát hành" để
+ * người có chữ ký số ký trên web (eSign theo lô, một lần xác nhận tới 50 tờ) hoặc
+ * USB token. Sau khi ký, tra /invoice/status theo TransactionID thấy
+ * PublishStatus = 1 → luồng lấy số / tải PDF / gửi mail chạy như thường.
+ * Đã thử sandbox 07/10/2026 (ký hiệu 1K26TYY): HTTP 200, InvNo + TransactionID +
+ * XML chưa có DSCKS; tờ KHÔNG xuất hiện ở /invoice/paging hay /invoice/status
+ * cho tới khi được ký.
+ * LƯU Ý: số đã cấp — tờ bỏ không ký thì phải xóa trên web, đừng để trống số.
+ */
+export async function createUnsignedInvoice(
+  input: CreateInvoiceInput,
+  cfg: StandardInvoiceConfig
+): Promise<StandardPublishResult> {
+  const payload = { ...buildStandardInvoicePayload(input, cfg), SignType: MISA_SIGN_TYPE.USB_TOKEN };
+  return postItgPublish(
+    ENDPOINTS.publishToken,
+    payload,
+    cfg,
+    ["CreateInvoiceResult", "createInvoiceResult"],
+    "tờ hóa đơn chưa ký"
+  );
 }
 
 // ============================================================

@@ -2045,7 +2045,7 @@ router.put(
         res.status(400).json({ error: 'Ký hiệu không hợp lệ (7 ký tự, VD "1C26THB")' });
         return;
       }
-      if (b.signMethod !== undefined && !["USB_TOKEN", "ESIGN_CLOUD"].includes(b.signMethod)) {
+      if (b.signMethod !== undefined && !["USB_TOKEN", "ESIGN_CLOUD", "HSM"].includes(b.signMethod)) {
         res.status(400).json({ error: "signMethod không hợp lệ" });
         return;
       }

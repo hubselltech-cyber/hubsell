@@ -21,6 +21,7 @@ vi.mock("../invoice/misa-safety", async (importOriginal) => {
 
 const misa = vi.hoisted(() => ({
   publish: vi.fn(),
+  createUnsigned: vi.fn(),
   statuses: vi.fn(),
   download: vi.fn(),
 }));
@@ -29,6 +30,7 @@ vi.mock("../invoice/misa-einvoice", async (importOriginal) => {
   return {
     ...mod,
     publishStandardInvoice: misa.publish,
+    createUnsignedInvoice: misa.createUnsigned,
     getInvoiceStatuses: misa.statuses,
     downloadInvoiceFiles: misa.download,
   };
@@ -56,6 +58,8 @@ async function setConfig(data: {
   autoIssueEnabled: boolean;
   autoIssueEnabledAt: Date | null;
   autoEmailEnabled?: boolean;
+  /** Mặc định HSM (ký nền thẳng); ESIGN_CLOUD = lập tờ chưa ký, anh ký trên web. */
+  signMethod?: "HSM" | "ESIGN_CLOUD" | "USB_TOKEN";
 }) {
   await prisma.platformInvoiceConfig.update({
     where: { id: configId },
@@ -67,7 +71,7 @@ async function setConfig(data: {
       invoiceSeries: "1C26THB",
       meinvoiceUsername: "test@hubsell.vn",
       meinvoicePassword: "plain-test-password",
-      signMethod: "ESIGN_CLOUD",
+      signMethod: data.signMethod ?? "HSM",
       vatMode: "KCT",
       autoEmailEnabled: data.autoEmailEnabled ?? true,
       autoIssueEnabled: data.autoIssueEnabled,
@@ -250,17 +254,61 @@ describe("processHqLedgerInvoice — một khoản thu phí gói", () => {
     expect(e.einvoiceAutoLockedAt).toBeNull();
     expect(mail.sendInvoice).not.toHaveBeenCalled();
 
-    // HQ bấm tay → không tăng lượt; meInvoice báo CallSignServiceFail → lời nhắn
-    // "chờ phiên ký eSign", cũng không tăng lượt (máy cứ 30' thử lại).
+    // HQ bấm tay → không tăng lượt; meInvoice báo CallSignServiceFail (HSM chưa
+    // khai) → lời nhắn "chờ dịch vụ ký nền", cũng không tăng lượt (máy cứ 30' thử lại).
     const r2 = await processHqLedgerInvoice(id, { trigger: "manual", ignoreEligibility: true });
     expect(r2.step).toBe("failed");
     misa.publish.mockRejectedValue(new Error("meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=CallSignServiceFail"));
     const r3 = await processHqLedgerInvoice(id, { trigger: "worker", ignoreEligibility: true });
     expect(r3.step).toBe("failed");
-    expect(r3.error).toContain("Chờ phiên ký eSign");
+    expect(r3.error).toContain("Chờ dịch vụ ký nền");
     const e3 = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
     expect(e3.einvoiceAutoAttempts).toBe(e.einvoiceAutoAttempts);
-    expect(e3.einvoiceAutoError).toContain("Ký phiên");
+    expect(e3.einvoiceAutoError).toContain("Thiết lập ký số");
+  });
+
+  it("phương thức ký eSign → LẬP TỜ CHƯA KÝ (không phát hành thẳng) → chờ anh ký trên web, không đốt lượt → ký xong có số → gửi mail", async () => {
+    await setConfig({ autoIssueEnabled: true, autoIssueEnabledAt: new Date("2026-10-06T00:00:00Z"), signMethod: "ESIGN_CLOUD" });
+    misa.publish.mockClear();
+    misa.createUnsigned.mockResolvedValue({ invoiceNo: "00000178", transactionId: "TX-UNSIGNED", raw: {} });
+    // Tờ chưa ký: /invoice/status không thấy (như sandbox 07/10) …
+    misa.statuses.mockResolvedValue([]);
+    const id = await payAndGetEntryId(new Date("2026-10-07T09:00:00Z"));
+    misa.createUnsigned.mockClear();
+    await prisma.platformLedgerEntry.update({
+      where: { id },
+      data: { einvoiceTransactionId: null, einvoiceAutoError: null, einvoiceAutoAttempts: 0, invoiceNo: null, invoiceStatus: "PENDING" },
+    });
+
+    const r1 = await processHqLedgerInvoice(id, { trigger: "worker" });
+    expect(misa.createUnsigned).toHaveBeenCalledTimes(1);
+    expect(misa.publish).not.toHaveBeenCalled(); // KHÔNG gọi SignType 2 với eSign
+    expect(r1.step).toBe("failed");
+    expect(r1.error).toContain("Chờ anh ký eSign trên meinvoice.vn");
+    let e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e.einvoiceTransactionId).toBe("TX-UNSIGNED");
+    expect(e.invoiceNo).toBeNull(); // số cấp lúc lập chưa phải hóa đơn
+    expect(e.invoiceStatus).toBe("PENDING");
+    expect(e.einvoiceAutoAttempts).toBe(0);
+    expect(mail.sendInvoice).not.toHaveBeenCalled();
+
+    // … hoặc thấy nhưng PublishStatus = 0 (có số, chưa ký) → vẫn chờ, không ghi ISSUED.
+    misa.statuses.mockResolvedValue([{ transactionId: "TX-UNSIGNED", invoiceNo: "00000178", isDeleted: false, publishStatus: 0 }]);
+    const r2 = await processHqLedgerInvoice(id, { trigger: "worker" });
+    expect(r2.error).toContain("Chờ anh ký eSign");
+    e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e.invoiceStatus).toBe("PENDING");
+    expect(e.einvoiceAutoAttempts).toBe(0);
+
+    // Anh ký trên web → PublishStatus 1 → ISSUED + gửi mail; không lập lại tờ.
+    misa.statuses.mockResolvedValue([{ transactionId: "TX-UNSIGNED", invoiceNo: "00000178", isDeleted: false, publishStatus: 1 }]);
+    const r3 = await processHqLedgerInvoice(id, { trigger: "worker" });
+    expect(r3.step).toBe("emailed");
+    expect(misa.createUnsigned).toHaveBeenCalledTimes(1);
+    e = await prisma.platformLedgerEntry.findUniqueOrThrow({ where: { id } });
+    expect(e.invoiceStatus).toBe("ISSUED");
+    expect(e.invoiceNo).toBe("00000178");
+    expect(e.invoiceEmailSentAt).not.toBeNull();
   });
 
   it("MISA báo trùng RefID: tờ đã phát hành → nối lại + gửi mail; tờ nháp chưa ký → chờ, giữ mã tra cứu", async () => {
