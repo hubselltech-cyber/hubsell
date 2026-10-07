@@ -118,14 +118,14 @@ export async function runHqInvoiceAutoOnce(now = new Date()): Promise<number> {
         console.log(`[HQ invoice] Worker: bút toán ${c.id} → ${r.step}${r.invoiceNo ? ` · số ${r.invoiceNo}` : ""}`);
       }
     }
-    // Tờ đã lập, chờ anh ký eSign trên web (hoặc chờ dịch vụ ký nền): nhắc HQ
-    // nhiều nhất một thư/ngày — máy không tự ký thay được.
+    // Khoản thu chờ xuất tay (eSign) hoặc chờ dịch vụ ký nền (HSM chưa khai): nhắc
+    // HQ nhiều nhất một thư/ngày — máy không tự làm thay được.
     if (waitingSignSession > 0 && now.getTime() - lastSignSessionRemindAt > SIGN_SESSION_REMIND_GAP_MS) {
       lastSignSessionRemindAt = now.getTime();
-      console.warn(`[HQ invoice] ${waitingSignSession} hóa đơn bán gói chờ ký trên meinvoice.vn`);
+      console.warn(`[HQ invoice] ${waitingSignSession} khoản thu bán gói chờ xuất hóa đơn tay`);
       void mailHq({
-        subject: `[Hubsell] ${waitingSignSession} hóa đơn bán gói đang chờ anh ký trên meinvoice.vn`,
-        html: `<p>Khách đã thanh toán, Hubsell đã lập tờ hóa đơn lên meInvoice nhưng tờ chưa được ký.</p><p>Vào <a href="https://app3.meinvoice.vn/v3/hoa-don">meinvoice.vn → Hóa đơn</a> → Lọc → Trạng thái HĐ = <b>Chưa phát hành</b> → tích chọn → <b>Phát hành</b> (một lần xác nhận trên app MISA eSign cho tới 50 tờ). Ký xong máy tự lấy số và gửi mail cho khách trong 30 phút, hoặc vào <a href="${FRONTEND_URL}/admin/finance">Sổ quỹ HQ</a> bấm Thử lại.</p>`,
+        subject: `[Hubsell] ${waitingSignSession} khoản thu bán gói đang chờ xuất hóa đơn`,
+        html: `<p>Khách đã thanh toán nhưng máy không tự xuất được hóa đơn (MISA eSign chỉ ký trên web).</p><p>Vào <a href="https://app3.meinvoice.vn/v3/hoa-don">meinvoice.vn → Hóa đơn → Thêm mới</a>, lập tờ theo thông tin khách ở <a href="${FRONTEND_URL}/admin/finance">Sổ quỹ HQ</a>, ký eSign, gửi PDF cho khách, rồi bấm <b>Đã xuất</b> + nhập số hóa đơn ở dòng thu đó.</p>`,
       });
     }
     return done;

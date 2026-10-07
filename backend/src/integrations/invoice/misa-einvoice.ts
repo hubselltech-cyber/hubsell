@@ -504,15 +504,13 @@ export async function publishStandardInvoice(
 }
 
 /**
- * LẬP TỜ CHƯA KÝ (SignType 1, cổng /invoice/publishing/token): meInvoice lưu tờ
- * đủ dữ liệu, cấp số + mã tra cứu ngay, giữ ở trạng thái "Chưa phát hành" để
- * người có chữ ký số ký trên web (eSign theo lô, một lần xác nhận tới 50 tờ) hoặc
- * USB token. Sau khi ký, tra /invoice/status theo TransactionID thấy
- * PublishStatus = 1 → luồng lấy số / tải PDF / gửi mail chạy như thường.
- * Đã thử sandbox 07/10/2026 (ký hiệu 1K26TYY): HTTP 200, InvNo + TransactionID +
- * XML chưa có DSCKS; tờ KHÔNG xuất hiện ở /invoice/paging hay /invoice/status
- * cho tới khi được ký.
- * LƯU Ý: số đã cấp — tờ bỏ không ký thì phải xóa trên web, đừng để trống số.
+ * DỰNG XML CHƯA KÝ (SignType 1, cổng /invoice/publishing/token) — bước 1 của luồng
+ * "phần mềm tự ký": MISA trả InvNo dự kiến + TransactionID + XML <HDon> chưa có
+ * DSCKS để CLIENT ký (USB token qua MISA SignedService, hoặc tự dựng XMLDSig) rồi
+ * gửi lại. ⚠️ KHÔNG LƯU GÌ BÊN MISA (kiểm sandbox 07/10/2026): gọi lại cùng RefID
+ * ra TransactionID khác, số không bị chiếm (tờ phát hành ngay sau vẫn lấy đúng số
+ * đó), không hiện ở web / paging / status. Vì thế KHÔNG dùng được để "lập tờ cho
+ * eSign ký trên web". Giữ hàm này làm viên gạch cho luồng tự ký XML sau này.
  */
 export async function createUnsignedInvoice(
   input: CreateInvoiceInput,

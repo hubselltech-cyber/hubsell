@@ -11,9 +11,10 @@
 // bước, bước nào xong rồi thì bỏ qua — gọi lại bao nhiêu lần cũng an toàn:
 //   1. PHÁT HÀNH: chưa có einvoiceTransactionId → RefID "HQLEDGER-<id>" (MISA
 //      chống trùng theo RefID: gọi đôi là báo InvoiceDuplicated chứ không ra hai
-//      tờ). Phương thức ký ESIGN_CLOUD → createUnsignedInvoice: lập tờ CHƯA KÝ,
-//      anh ký eSign theo lô trên meinvoice.vn (07/10/2026: eSign không ký nền
-//      được qua cổng tích hợp). HSM → publishStandardInvoice ký nền luôn.
+//      tờ). Chỉ chạy với ký nền HSM (publishStandardInvoice, SignType 2).
+//      Phương thức MISA eSign: cổng tích hợp KHÔNG ra được tờ cho eSign ký
+//      (07/10/2026) → máy không gọi MISA, dòng thu treo "Chờ xuất tay", HQ lập
+//      trên web rồi ghi số bằng nút Đã xuất.
 //   2. LẤY SỐ: có TransactionID mà chưa có số (meInvoice cấp trễ) →
 //      getInvoiceStatuses để điền số. Webhook MISA chỉ khớp InvoiceLog của
 //      tenant, không chạm bút toán HQ, nên phải tự hỏi.
@@ -53,7 +54,6 @@ import {
 import { CYCLE_LABEL } from "../../services/subscription-service";
 import { buildHqInvoiceInput, hqStandardConfig, type HqVatMode } from "./issue-hq";
 import {
-  createUnsignedInvoice,
   downloadInvoiceFiles,
   getInvoiceStatuses,
   publishStandardInvoice,
@@ -270,15 +270,17 @@ export function isSignSessionError(message: string | null | undefined): boolean 
 }
 
 /**
- * Phương thức ký eSign: Hubsell đã lập tờ đủ dữ liệu trên meInvoice (có số + mã
- * tra cứu), tờ nằm ở trạng thái Chưa phát hành chờ anh ký eSign theo lô trên web.
- * Máy không làm gì thêm được — chỉ 30' hỏi lại; ký xong là tự lấy số + gửi mail.
+ * Phương thức ký MISA eSign: cổng tích hợp KHÔNG có đường nào ra được tờ cho
+ * eSign ký (07/10/2026 — SignType 2 đòi HSM; /publishing/token chỉ dựng XML
+ * chưa ký, KHÔNG lưu gì bên MISA, kiểm sandbox: gọi lại ra mã tra cứu khác, số
+ * không bị chiếm). Nên với eSign, máy KHÔNG gọi MISA: dòng thu treo trạng thái
+ * chờ xuất tay, HQ lập tờ trên web rồi ghi số vào HQ (nút Đã xuất). Không đốt lượt.
  */
-export const ESIGN_WAITING_PREFIX = "Chờ anh ký eSign trên meinvoice.vn";
+export const ESIGN_WAITING_PREFIX = "Chờ xuất tay trên meinvoice.vn";
 export const ESIGN_WAITING_MESSAGE =
-  `${ESIGN_WAITING_PREFIX}: Hóa đơn → Lọc → Trạng thái HĐ = Chưa phát hành → tích chọn → Phát hành (một lần xác nhận trên app eSign cho tới 50 tờ). Ký xong máy tự lấy số và gửi mail cho khách.`;
+  `${ESIGN_WAITING_PREFIX}: MISA eSign chỉ ký được trên web, máy không tự xuất được. Vào meinvoice.vn → Hóa đơn → Thêm mới, lập tờ theo thông tin khách ở dòng này, ký eSign, gửi PDF cho khách, rồi bấm "Đã xuất" + nhập số hóa đơn ở đây. Muốn tự động hoàn toàn cần HSM.`;
 
-/** Lỗi này là "chờ anh ký eSign trên web"? Hàm thuần để test + worker nhắc. */
+/** Lỗi này là "chờ xuất tay (eSign)"? Hàm thuần để test + worker nhắc. */
 export function isEsignWaitingError(message: string | null | undefined): boolean {
   return Boolean(message && message.startsWith(ESIGN_WAITING_PREFIX));
 }
@@ -359,6 +361,11 @@ export async function processHqLedgerInvoice(
 
     // ---- Bước 1: phát hành ----
     if (!entry.einvoiceTransactionId && entry.invoiceStatus !== LedgerInvoiceStatus.ISSUED) {
+      if (cfg.signMethod === "ESIGN_CLOUD") {
+        // MISA eSign: không có đường tự động qua cổng tích hợp — KHÔNG gọi MISA,
+        // treo trạng thái chờ xuất tay (không đốt lượt, worker nhắc 1 thư/ngày).
+        throw new Error(ESIGN_WAITING_MESSAGE);
+      }
       if (!isPublishAllowed()) {
         throw new Error(
           "Chốt an toàn server MISA_ALLOW_PUBLISH đang tắt — chưa phát hành được (bật env trên Render)."
@@ -387,21 +394,10 @@ export async function processHqLedgerInvoice(
         amount: Number(entry.amount),
         vatMode: cfgRow.vatMode as HqVatMode,
       });
-      // eSign KHÔNG ký nền được qua cổng tích hợp (07/10/2026) → lập tờ CHƯA KÝ,
-      // anh ký theo lô trên web; mọi phương thức ký nền khác (HSM) mới phát hành thẳng.
-      const esignOnWeb = cfg.signMethod === "ESIGN_CLOUD";
       let published: { invoiceNo: string | null; transactionId: string | null };
       let draftWaiting = false;
       try {
-        if (esignOnWeb) {
-          const created = await createUnsignedInvoice(input, cfg);
-          // Số đã cấp nhưng tờ CHƯA ký — chưa phải hóa đơn; chỉ giữ mã tra cứu,
-          // số lấy lại từ /invoice/status sau khi anh ký (PublishStatus = 1).
-          published = { invoiceNo: null, transactionId: created.transactionId };
-          draftWaiting = true;
-        } else {
-          published = await publishStandardInvoice(input, cfg);
-        }
+        published = await publishStandardInvoice(input, cfg);
       } catch (err) {
         // MISA báo TRÙNG RefID = tờ đã tồn tại bên meInvoice (lần trước ký hỏng
         // sau khi tạo, hoặc phát hành xong mà Hubsell không nhận được kết quả).
@@ -433,7 +429,7 @@ export async function processHqLedgerInvoice(
       });
       step = issued ? "issued" : "number-pending";
       // Tờ chưa ký: đã lưu mã tra cứu (lượt sau chỉ hỏi số), báo HQ việc cần làm.
-      if (draftWaiting) throw new Error(esignOnWeb ? ESIGN_WAITING_MESSAGE : DRAFT_WAITING_MESSAGE);
+      if (draftWaiting) throw new Error(DRAFT_WAITING_MESSAGE);
     }
 
     // ---- Bước 2: lấy số (meInvoice cấp trễ, hoặc tờ chưa ký chờ anh ký trên web) ----
@@ -454,9 +450,15 @@ export async function processHqLedgerInvoice(
           select: ENTRY_SELECT,
         });
         step = "issued";
-      } else if (cfg.signMethod === "ESIGN_CLOUD") {
-        // Chưa ký: tờ không hiện ở /invoice/status (sandbox 07/10) hoặc PublishStatus 0.
-        step = "number-pending";
+      } else if (cfg.signMethod === "ESIGN_CLOUD" && !status) {
+        // Mã tra cứu "ma" từ bản 07/10 tối (cổng token trả mã nhưng MISA không
+        // lưu gì) — bỏ đi để dòng thu về trạng thái chờ xuất tay, không treo mãi.
+        entry = await prisma.platformLedgerEntry.update({
+          where: { id: entry.id },
+          data: { einvoiceTransactionId: null },
+          select: ENTRY_SELECT,
+        });
+        step = "nothing";
         throw new Error(ESIGN_WAITING_MESSAGE);
       } else {
         step = "number-pending";

@@ -192,6 +192,35 @@ trên tài khoản thật khi anh gật, rồi anh ký eSign ngay trên web.
 - **Việc sau:** luồng tenant (`misa-provider.ts`) vẫn gọi SignType 2 cho `ESIGN_CLOUD` — shop dùng eSign sẽ
   gặp cùng lỗi; chuyển sang lập tờ chưa ký + ký trên web khi HQ chạy ổn.
 
+## 11. HƯỚNG F THẤT BẠI khi chạy thật (07/10 đêm) — đã lùi về "Chờ xuất tay"
+
+Trên tài khoản thật: Thử lại ra nhãn vàng (có mã tra cứu) nhưng meinvoice.vn **không có tờ nào**, kể cả
+bỏ hết bộ lọc. Kiểm lại sandbox (`misa-draft-probe-4`, kết quả):
+
+| Lệnh | Kết quả | Nghĩa |
+|---|---|---|
+| `/invoice/status` theo RefID và TransactionID của tờ token lúc nãy | `[]` | MISA không có bản ghi |
+| Gọi lại `/publishing/token` CÙNG RefID | InvNo 00000178, TransactionID **khác** (`7NFQCJ86KLN0`) | không có gì được lưu, chỉ dựng XML + số dự kiến |
+| Phát hành thật SignType 2, RefID mới | **InvNo 00000178** | số KHÔNG bị tờ token chiếm |
+| Phát hành SignType 2 cùng RefID tờ token | InvNo 00000179, thành công | RefID cũng không bị giữ |
+
+**Kết luận chắc:** `/invoice/publishing/token` là bước 1 của luồng "phần mềm tự ký" (createinvoice → client ký
+XML bằng MISA SignedService/USB → gửi lại). Nó **không lưu gì**, không có "tờ chưa ký" nào trên web cho eSign
+ký. Giả định "tờ sẽ hiện ở Chưa phát hành" của em ở mục 8 là sai và chưa được kiểm trước khi đưa lên prod —
+lỗi em. Không gây hậu quả bên MISA (không số, không tờ); bên HQ dòng khách Hiển dính một mã tra cứu "ma".
+
+**Đã sửa (cùng đêm):** `ESIGN_CLOUD` → máy KHÔNG gọi MISA, treo *"Chờ xuất tay trên meinvoice.vn"* (không đốt
+lượt); bước 2 thấy mã tra cứu mà `/invoice/status` rỗng thì xóa mã (tự dọn dòng khách Hiển); worker nhắc
+1 thư/ngày "N khoản thu chờ xuất hóa đơn"; HQ UI ghi rõ eSign = xuất tay, chỉ HSM tự động.
+`createUnsignedInvoice()` giữ lại với chú thích đúng (viên gạch cho luồng tự ký XML sau này).
+
+**Còn lại để tự động hóa thật sự (chọn một, không gấp):**
+- **HSM** (hướng A, mục 3): không đổi code, ~880k–4,9tr/năm tùy NCC meInvoice nhận.
+- **Tự ký XML bằng eSign Open API** (hướng C): dựng XMLDSig từ XML của `/publishing/token`, ký hash qua
+  `/esign/v1/signing/hash` (anh xác nhận trên app hoặc Ký phiên 24h), gửi lại qua cổng token. Nhiều ẩn số,
+  cần 1–2 ngày thử trên sandbox + tài khoản eSign thật (eSign không có sandbox).
+- Trước mắt: xuất tay trên web khi có khách (hiện ~1 tờ/ngày), HQ nhắc.
+
 ## 7. Nhật ký
 
 - **07/10/2026:** đọc được tài liệu MISA (môi trường đã mở 4 tên miền). Chốt nguyên nhân gốc: ITG
