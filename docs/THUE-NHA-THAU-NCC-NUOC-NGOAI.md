@@ -25,7 +25,7 @@
 
 | NCC (pháp nhân trên hóa đơn) | Dịch vụ · nhịp | Trong danh sách NCCNN? | Cách khai | Căn cứ đã kiểm |
 |---|---|---|---|---|
-| **Anthropic, PBC** | Claude Max — hàng tháng | ✅ MST 9000020034, đăng ký 06/03/2026 | **Không khai thay** | Dòng 97 danh sách. Hóa đơn Claude phải có dòng thuế VN — chỉ lưu invoice |
+| **Anthropic, PBC** | Claude Max — hàng tháng | ✅ MST 9000020034, đăng ký 06/03/2026 | **Không khai thay** | Dòng 97 danh sách. ✅ Đã kiểm hóa đơn API XSX3Y4AB-0001 (28/09/2026): ghi "VAT Registration: Vietnam VAT 9000020034", thu VAT Việt Nam 10% ($0,56 trên $5), Bill to có VN TIN 0111626360. ⚠️ Tên Bill to còn là "TRUNGHIEUMMO's Individual Org" → đổi thành CÔNG TY TNHH CÔNG NGHỆ HUBSELL trong console Anthropic |
 | **Hostinger PTE Ltd.** | Tên miền hubsell.tech — 1 năm, hết hạn 16/07/2027 | ✅ MST 9000000302 (27/05/2022) | **Không khai thay** | RDAP: registrar HOSTINGER operations UAB (IANA 1636). Thư Hostinger 16/07/2026, hóa đơn H_47006397: 182.900 + 5.230 ICANN + **28.220 thuế** = 216.350₫ → Hostinger đã thu thuế VN. ⚠️ Chưa thấy PDF hóa đơn — kiểm pháp nhân ghi trên PDF đúng là Hostinger PTE Ltd. |
 | **Render** | Backend + worker SG — hàng tháng | ❌ | Khai 01/NTNN + nộp thay | Không có tên nào chứa "Render" |
 | **Supabase** | Database Pro — hàng tháng | ❌ | Khai 01/NTNN + nộp thay | Không có |
@@ -48,8 +48,10 @@ NCC Việt Nam xuất hóa đơn GTGT thường, **không** thuộc thuế nhà 
 2. Render / Supabase / Vercel / Zoho: lần trả đầu tiên **đứng tên công ty** là mốc bắt đầu nghĩa vụ
    → trước đó phải sửa billing (bước "Sửa billing các NCC ngoại" ở tab Lịch thuế). Ngay kỳ đầu
    nộp kèm đăng ký khai theo tháng.
-3. Kiểm hai hóa đơn PDF: Claude (có dòng thuế VN chưa?) và Hostinger (pháp nhân PTE Ltd.?). Nếu
-   hóa đơn Claude KHÔNG có dòng thuế VN → hỏi Anthropic billing vì họ đã đăng ký từ 06/03/2026.
+3. ~~Kiểm hóa đơn Claude~~ ✅ 08/10 đã kiểm, có thuế VN 10%. Còn Hostinger: kiểm PDF ghi pháp nhân PTE Ltd.
+4. Supabase 648.414₫ trả 27/09 (sổ quỹ quý 3) = lần đầu phát sinh thuế nhà thầu, hạn khai từng lần
+   07/10 ĐÃ QUA → nộp 01/NTNN trước 12/10 để trong khung trễ ≤5 ngày (cảnh cáo). Nộp thay ≈ 71.846₫
+   (718.464 × 5% × 2). Kèm đăng ký khai theo tháng.
 
 ## Những tên khác trong danh sách có thể dùng sau
 
