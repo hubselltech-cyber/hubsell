@@ -26,6 +26,7 @@ import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { toast } from "sonner";
 
 import { formatRoi } from "@/components/ads/tiktok-ads-format";
+import { TiktokAdviceBadge } from "@/components/ads/tiktok-advice-body";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import {
   TIKTOK_CAMPAIGN_STATUS_META,
@@ -191,6 +192,18 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
           {formatRoi(c.roi)}
         </span>
       );
+    },
+  },
+  {
+    id: "advice",
+    size: 170,
+    meta: { label: "Nhận định" },
+    header: "Nhận định",
+    cell: ({ row }) => {
+      const c = row.original;
+      // Chiến dịch tắt / chưa tiêu tiền không có gì để nhận định — để trống cho bảng sạch (cùng cách trang chiến dịch ẩn nhãn).
+      if (!c.advice || c.advice.kind === "paused" || c.advice.kind === "no_spend") return <span className="text-slate-400">—</span>;
+      return <TiktokAdviceBadge advice={c.advice} campaignName={c.name} />;
     },
   },
 ];

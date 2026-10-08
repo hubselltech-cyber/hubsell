@@ -266,6 +266,16 @@ export async function syncTiktokAdsCampaigns(
     if (!cur || r.date > cur.date) latest.set(r.campaignId, r);
   }
 
+  // Mục tiêu ROI đang lưu của từng chiến dịch — để nhận ra lần khách đổi trong Seller Center (Hubsell không sửa
+  // được GMV Max qua API) và ghi mốc roasTargetChangedAt: gợi ý hạ mục tiêu khóa 48 giờ sau mỗi lần đổi (cùng luật Shopee).
+  const prevTargetOf = new Map<string, number | null>();
+  if (latest.size > 0) {
+    const prevRows = await prisma.adsCampaign.findMany({
+      where: { channelId: channel.id, campaignId: { in: [...latest.keys()] } },
+      select: { campaignId: true, roasTarget: true },
+    });
+    for (const r of prevRows) prevTargetOf.set(r.campaignId, r.roasTarget != null ? Number(r.roasTarget) : null);
+  }
   const rowIdByCampaignId = new Map<string, string>();
   for (const [campaignId, c] of latest) {
     const data = {
@@ -276,9 +286,11 @@ export async function syncTiktokAdsCampaigns(
       budget: c.budget,
       roasTarget: c.roasBid,
     };
+    // Chiến dịch thấy lần đầu không tính là "đổi".
+    const targetChanged = prevTargetOf.has(campaignId) && prevTargetOf.get(campaignId) !== (c.roasBid ?? null);
     const row = await prisma.adsCampaign.upsert({
       where: { channelId_campaignId: { channelId: channel.id, campaignId } },
-      update: data,
+      update: targetChanged ? { ...data, roasTargetChangedAt: new Date() } : data,
       create: { channelId: channel.id, campaignId, ...data },
     });
     rowIdByCampaignId.set(campaignId, row.id);

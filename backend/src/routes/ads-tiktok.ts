@@ -186,7 +186,7 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
       where: { channelId: selected.id, status: "ongoing" },
       orderBy: { lastSyncedAt: "desc" },
       take: PRODUCT_ADS_MAX_CAMPAIGNS,
-      select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true },
+      select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true, roasTargetChangedAt: true },
     });
     const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: from, endDate: to };
     const products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null; advice: CampaignAdvice | null; adviceCampaign: string }> = {};
@@ -241,6 +241,7 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
         spend: p.cost,
         gmv: p.gmv,
         avgDailySpend: avgDailySpendOf(daysOf.get(main.id) ?? [], to),
+        roasTargetChangedAt: main.roasTargetChangedAt,
       });
     }
     res.json({ linked: true, from, to, campaigns: campaigns.length, products });
@@ -357,6 +358,21 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         breakeven: breakevenForUi(breakeven?.byCampaignRowId.get(c.id)),
         /** Loại video tự động: chế độ + lượt xét gần nhất (null = chưa cấu hình = Tắt). */
         auto: c.tiktokAutoRule ? autoStatusOf(c.tiktokAutoRule) : null,
+        /** Nhận định (campaign-advice.ts) — cùng bộ chẩn đoán với trang chiến dịch và tab Hòa vốn sản phẩm (anh Trung 08/10:
+            khách phải xem được nhận định của mọi chiến dịch đang chạy ngay trên bảng, không phải mở từng cái). */
+        advice: campaignAdvice({
+          status: c.status,
+          roasTarget,
+          budget: Number(c.budget),
+          breakeven: breakeven?.byCampaignRowId.get(c.id) ?? null,
+          spend,
+          gmv,
+          avgDailySpend: avgDailySpendOf(
+            c.dailyPerf.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
+            vnDateKey(0)
+          ),
+          roasTargetChangedAt: c.roasTargetChangedAt,
+        }),
       };
     });
     // NHÓM trạng thái trước (đang chạy luôn trên cùng → tạm dừng → đã dừng), trong nhóm
@@ -475,6 +491,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         channelId: true,
         status: true,
         roasTarget: true,
+        roasTargetChangedAt: true,
         budget: true,
         biddingMethod: true,
         itemIds: true,
@@ -592,6 +609,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
               perfDays.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
               vnDateKey(0)
             ),
+            roasTargetChangedAt: campaign.roasTargetChangedAt,
           }),
         },
         from: period.startDate,

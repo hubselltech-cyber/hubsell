@@ -10,14 +10,36 @@
 //   · BUDGET_USED_PCT 80  — tiêu từ 80% ngân sách ngày = ngân sách đang là thứ chặn.
 //   · TARGET_REACHED_PCT 90 — ROI thực từ 90% mục tiêu = coi như đạt mục tiêu.
 // KHÔNG có mốc "mục tiêu cao gấp N lần hòa vốn thì nên hạ" — không có căn cứ nào cho N; chỉ nói dư địa bằng số lãi / 100đ.
+//
+// HẠ ROI MỤC TIÊU ĐI TỪNG NẤC (anh Trung 08/10/2026, cùng luật với Shopee chốt 04/10): "hạ mục tiêu" không phải một phát về sát
+// hòa vốn — mỗi lần hạ TARGET_STEP_PCT (10%), rồi để TikTok chạy đủ TARGET_STEP_WAIT_HOURS (48 giờ) mới xét nấc kế; sàn là ROI hòa
+// vốn. Mốc đổi = AdsCampaign.roasTargetChangedAt (đồng bộ thấy roas_bid trên sàn khác số đang lưu — khách sửa trong Seller Center;
+// Hubsell không sửa được chiến dịch GMV Max qua API). NÂNG mục tiêu lên hòa vốn khi đang đặt dưới hòa vốn thì vẫn một phát: đó là
+// chặn lỗ, không phải dò phân phối.
 // ============================================================
 
 import { breakevenUnusableReason } from "./auto-rules";
 import type { TiktokBreakeven } from "../../lib/tiktok-breakeven";
 import { profitPer100AtRoi } from "./breakeven";
+import { TARGET_STEP_PCT, TARGET_STEP_WAIT_HOURS } from "../shopee/ads-assistant-rules";
 
 export const BUDGET_USED_PCT = 80;
 export const TARGET_REACHED_PCT = 90;
+export { TARGET_STEP_PCT, TARGET_STEP_WAIT_HOURS };
+
+/** Nấc hạ kế tiếp của ROI mục tiêu: giảm TARGET_STEP_PCT, 1 số lẻ, không thủng sàn (hòa vốn). null = đã sát sàn. */
+export function nextRoiTargetStep(target: number, floor: number): number | null {
+  const stepped = Math.round(target * (1 - TARGET_STEP_PCT) * 10) / 10;
+  const next = Math.max(stepped, floor);
+  return next < target ? next : null;
+}
+
+/** Số giờ còn phải theo dõi sau lần đổi mục tiêu gần nhất (0 = hết khóa / chưa từng đổi). */
+export function targetWatchHoursLeft(changedAt: Date | null | undefined, now: Date): number {
+  if (!changedAt) return 0;
+  const left = TARGET_STEP_WAIT_HOURS - (now.getTime() - changedAt.getTime()) / 3_600_000;
+  return left > 0 ? Math.ceil(left) : 0;
+}
 
 export type CampaignAdviceKind =
   | "paused" // chiến dịch đang tắt — không chẩn đoán
@@ -27,6 +49,7 @@ export type CampaignAdviceKind =
   | "target_below" // đang lãi nhưng ROI mục tiêu đặt dưới hòa vốn
   | "budget_capped" // đạt mục tiêu + tiêu gần hết ngân sách
   | "target_binding" // lãi, chưa đạt mục tiêu, tiêu ít ngân sách → mục tiêu đang bó phân phối
+  | "target_watching" // như target_binding nhưng mục tiêu vừa đổi < 48 giờ → giữ nguyên, theo dõi
   | "healthy";
 
 export interface CampaignAdviceInput {
@@ -45,6 +68,10 @@ export interface CampaignAdviceInput {
   gmv: number;
   /** Chi tiêu trung bình của những NGÀY TRỌN có tiêu tiền trong khoảng xem (không tính hôm nay); null = chưa có ngày nào. */
   avgDailySpend: number | null;
+  /** Lần gần nhất Hubsell thấy ROI mục tiêu đổi (AdsCampaign.roasTargetChangedAt); còn trong 48 giờ thì không gợi ý hạ tiếp. */
+  roasTargetChangedAt?: Date | null;
+  /** Mốc "bây giờ" (test truyền vào). */
+  now?: Date;
 }
 
 export interface CampaignAdvice {
@@ -68,6 +95,10 @@ export interface CampaignAdvice {
   keepPer100: number | null;
   /** Có nên đưa đường tới Seller Center (kết luận kéo theo việc sửa chiến dịch). */
   editInSellerCenter: boolean;
+  /** target_binding: nấc ROI mục tiêu nên hạ xuống (giảm 10%, không dưới hòa vốn); null = kết luận khác. */
+  nextTarget: number | null;
+  /** target_watching: còn bao nhiêu giờ phải theo dõi sau lần đổi mục tiêu gần nhất; null = không trong khóa. */
+  watchHoursLeft: number | null;
 }
 
 const num = (n: number, d = 2) => n.toLocaleString("vi-VN", { maximumFractionDigits: d });
@@ -82,7 +113,7 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
     tone: CampaignAdvice["tone"],
     points: string[],
     conclusion: string,
-    extra: { keepPer100?: number | null; editInSellerCenter?: boolean } = {}
+    extra: { keepPer100?: number | null; editInSellerCenter?: boolean; nextTarget?: number | null; watchHoursLeft?: number | null } = {}
   ): CampaignAdvice => ({
     kind,
     label,
@@ -93,6 +124,8 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
     budgetUsedPct,
     keepPer100: extra.keepPer100 ?? null,
     editInSellerCenter: extra.editInSellerCenter ?? false,
+    nextTarget: extra.nextTarget ?? null,
+    watchHoursLeft: extra.watchHoursLeft ?? null,
   });
 
   if (i.status !== "ongoing") return make("paused", "Đang tạm dừng", "muted", [], "Chiến dịch đang tắt nên không có gì để chẩn đoán.");
@@ -155,13 +188,32 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
     );
   }
   if (i.roasTarget != null && !reached && budgetUsedPct != null && budgetUsedPct < BUDGET_USED_PCT) {
+    const bindingFacts = facts(targetPoint(false), budgetPoint, "Đang lãi nhưng tiêu ít: nhiều khả năng mục tiêu cao đang làm TikTok phân phối dè dặt.");
+    // Khóa cứng giữa hai nấc: mục tiêu vừa đổi thì để TikTok chạy đủ TARGET_STEP_WAIT_HOURS rồi mới xét hạ tiếp.
+    const hoursLeft = targetWatchHoursLeft(i.roasTargetChangedAt, i.now ?? new Date());
+    if (hoursLeft > 0) {
+      return make(
+        "target_watching",
+        "Theo dõi sau đổi mục tiêu",
+        "ok",
+        bindingFacts,
+        `Mục tiêu vừa đổi chưa đủ ${TARGET_STEP_WAIT_HOURS} giờ — TikTok còn đang học lại. Giữ nguyên, còn khoảng ${hoursLeft} giờ nữa mới xét hạ nấc tiếp.`,
+        { keepPer100: keep, watchHoursLeft: hoursLeft }
+      );
+    }
+    const nextTarget = nextRoiTargetStep(i.roasTarget, beRoi);
+    if (nextTarget == null) {
+      return make("healthy", "Đang lãi", "ok", bindingFacts, `ROI mục tiêu đã sát hòa vốn ${num(beRoi)}, không còn nấc để hạ. Giữ nguyên.`, {
+        keepPer100: keep,
+      });
+    }
     return make(
       "target_binding",
       "Mục tiêu đang bó phân phối",
       "info",
-      facts(targetPoint(false), budgetPoint),
-      `Đang lãi nhưng tiêu ít: nhiều khả năng mục tiêu cao đang làm TikTok phân phối dè dặt. Hạ ROI mục tiêu thì thêm đơn nhưng lãi mỗi đơn mỏng đi — đừng đặt dưới ${num(beRoi)}.`,
-      { keepPer100: keep, editInSellerCenter: true }
+      bindingFacts,
+      `Giảm ROI mục tiêu một nấc, từ ${num(i.roasTarget)} xuống ${num(nextTarget)}, rồi theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới giảm tiếp. Không xuống dưới hòa vốn ${num(beRoi)}.`,
+      { keepPer100: keep, editInSellerCenter: true, nextTarget }
     );
   }
   return make("healthy", "Đang lãi", "ok", facts(targetPoint(reached), budgetPoint), "Quảng cáo đang có lãi, chưa thấy gì cần sửa.", { keepPer100: keep });

@@ -18,7 +18,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, S
 import { toast } from "sonner";
 
 import { TIKTOK_SELLER_CENTER_ADS_URL, formatRoi } from "@/components/ads/tiktok-ads-format";
-import { TiktokAdviceBody, TiktokRunAdviceBody } from "@/components/ads/tiktok-advice-body";
+import { TIKTOK_ADVICE_TONE as ADVICE_TONE, TiktokAdviceBody, TiktokRunAdviceBody } from "@/components/ads/tiktok-advice-body";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { Badge } from "@/components/ui/badge";
@@ -47,15 +47,8 @@ const TH = "whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2 fo
 type RowVerdict = TiktokProductBreakevenVerdict;
 type AdsOf = TiktokProductAdsData["products"][string] | undefined;
 
-/** Màu nhãn chẩn đoán — cùng bảng màu với nhãn kết luận của trang chiến dịch. */
-const ADVICE_TONE: Record<"warn" | "info" | "ok" | "muted", string> = {
-  warn: "bg-rose-50 text-red-500",
-  info: "bg-amber-50 text-amber-700",
-  ok: "bg-emerald-50 text-emerald-700",
-  muted: "bg-slate-100 text-slate-600",
-};
 /** Chẩn đoán ĐÃ kết luận được lãi / lỗ (các loại còn lại để nhận định của dòng sản phẩm nói — vd "Thiếu giá vốn" rõ hơn "Chưa kết luận được"). */
-const DECIDED_ADVICE = new Set(["losing", "target_below", "budget_capped", "target_binding", "healthy"]);
+const DECIDED_ADVICE = new Set(["losing", "target_below", "budget_capped", "target_binding", "target_watching", "healthy"]);
 function decidedAdvice(ads: AdsOf) {
   const a = ads?.advice;
   return a && DECIDED_ADVICE.has(a.kind) ? a : null;

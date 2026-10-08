@@ -2836,6 +2836,8 @@ export interface TiktokAdsCampaignRow {
   breakeven: TiktokAdsBreakeven | null;
   /** Loại video tự động của chiến dịch; null = chưa cấu hình (Tắt). */
   auto: TiktokAdsAutoStatus | null;
+  /** Nhận định (campaign-advice.ts) — cùng bộ với trang chiến dịch. Vắng = backend cũ. */
+  advice?: TiktokAdsCampaignAdvice | null;
 }
 
 export type TiktokAdsAutoMode = "off" | "dry_run" | "live";
@@ -2966,7 +2968,7 @@ export interface TiktokAdsVideoActionLog {
 }
 
 export interface TiktokAdsCampaignAdvice {
-  kind: "paused" | "no_spend" | "no_breakeven" | "losing" | "target_below" | "budget_capped" | "target_binding" | "healthy";
+  kind: "paused" | "no_spend" | "no_breakeven" | "losing" | "target_below" | "budget_capped" | "target_binding" | "target_watching" | "healthy";
   label: string;
   /** Dữ kiện, mỗi ý một dòng. Vắng = backend cũ (chỉ có `text`). */
   points?: string[];
@@ -2979,6 +2981,10 @@ export interface TiktokAdsCampaignAdvice {
   /** Lãi sau quảng cáo trên mỗi 100đ doanh thu ở ROI thực; null = chưa có hòa vốn tin được. */
   keepPer100: number | null;
   editInSellerCenter: boolean;
+  /** target_binding: nấc ROI mục tiêu nên hạ xuống (giảm 10%, không dưới hòa vốn). Vắng = backend cũ. */
+  nextTarget?: number | null;
+  /** target_watching: còn bao nhiêu giờ theo dõi sau lần đổi mục tiêu gần nhất. Vắng = backend cũ. */
+  watchHoursLeft?: number | null;
 }
 
 export interface TiktokAdsCampaignVideos {

@@ -29,7 +29,8 @@ describe("productBreakevenVerdict — cột Nhận định của tab Hòa vốn 
     const v = productBreakevenVerdict(be({}), [camp(15)], 90);
     expect(v.verdict).toBe("ok");
     expect(v.reason).toContain("13,3đ");
-    expect(v.reason).toContain("đừng đặt dưới 5");
+    // Anh Trung 08/10: hạ mục tiêu đi từng nấc 10% + theo dõi 48 giờ, không nói chung chung "hạ về không dưới hòa vốn".
+    expect(v.reason).toContain("hạ mục tiêu từng nấc 10%, theo dõi 48 giờ mới hạ tiếp, không xuống dưới 5");
   });
   it("chiến dịch ĐANG CHẠY đặt ROI mục tiêu dưới hòa vốn → cảnh báo kèm số lỗ + mức phải nâng; chiến dịch tạm dừng thì không", () => {
     // Biên lãi 20% − 1/4 (25%) = lỗ 5đ trên mỗi 100đ doanh thu.

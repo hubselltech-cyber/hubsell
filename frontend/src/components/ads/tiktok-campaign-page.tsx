@@ -35,9 +35,9 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { TIKTOK_SELLER_CENTER_ADS_URL, formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
+import { formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
-import { TiktokAdviceBody } from "@/components/ads/tiktok-advice-body";
+import { TiktokAdviceBadge } from "@/components/ads/tiktok-advice-body";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { TiktokDryRunBacktest } from "@/components/ads/tiktok-dry-run-backtest";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -190,14 +190,6 @@ const SORT_VALUE: Record<SortKey, (v: TiktokAdsVideoRow) => number | null> = {
   ctr: (v) => v.ctr,
   cvr: (v) => v.cvr,
   roi: (v) => v.roi ?? 0,
-};
-
-/** Màu nhãn kết luận của chiến dịch — cùng bảng màu với cột Nhận định của tab Hòa vốn sản phẩm. */
-const ADVICE_TONE: Record<"warn" | "info" | "ok" | "muted", string> = {
-  warn: "bg-rose-50 text-red-500",
-  info: "bg-amber-50 text-amber-700",
-  ok: "bg-emerald-50 text-emerald-700",
-  muted: "bg-slate-100 text-slate-600",
 };
 
 const PAGE_SIZES = [20, 50, 100];
@@ -501,27 +493,9 @@ export function TiktokCampaignPage() {
               {/* KẾT LUẬN CỦA CHIẾN DỊCH: một nhãn, trỏ chuột / bấm hiện lý do + việc nên làm (không chèn khối lên trên bảng). Chiến dịch
                   tạo từ Seller Center không sửa được qua API (probe 19/09/2026) → kết luận nào kéo theo việc sửa thì đưa đường tới đó. */}
               {c && advice && advice.kind !== "paused" && advice.kind !== "no_spend" && (
-                <Popover>
-                  <PopoverTrigger openOnHover delay={80} render={<button type="button" className="mt-1.5 cursor-pointer rounded-full" aria-label={`Kết luận: ${advice.label}`} />}>
-                    <Badge className={cn(ADVICE_TONE[advice.tone], "underline decoration-dotted underline-offset-2")}>{advice.label}</Badge>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-96 gap-1.5 p-3 text-sm">
-                    <p className="font-semibold text-slate-900">{advice.label}</p>
-                    <TiktokAdviceBody advice={advice} />
-                    {advice.editInSellerCenter && (
-                      <a
-                        href={TIKTOK_SELLER_CENTER_ADS_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 inline-flex items-center gap-1.5 font-medium text-slate-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                        title={`Seller Center → Quảng cáo cửa hàng → chiến dịch "${c.name}"`}
-                      >
-                        <ExternalLink className="size-3.5" />
-                        Sửa chiến dịch trong Seller Center
-                      </a>
-                    )}
-                  </PopoverContent>
-                </Popover>
+                <div className="mt-1.5">
+                  <TiktokAdviceBadge advice={advice} campaignName={c.name} align="start" />
+                </div>
               )}
             </div>
             <div className="ml-auto">
