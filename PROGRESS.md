@@ -5,7 +5,7 @@
 
 ---
 
-## Phiên 08/10/2026 (sáng) — BĂNG THÔNG RENDER: đo 3 phương án giãn nhịp pg-boss, anh chốt C (LISTEN/NOTIFY + nhịp thưa), ĐÃ CODE, chờ anh push
+## Phiên 08/10/2026 (sáng) — BĂNG THÔNG RENDER: đo 3 phương án giãn nhịp pg-boss, anh chốt C (LISTEN/NOTIFY + nhịp thưa), ĐÃ PUSH + KIỂM PROD OK, chờ xem biểu đồ băng thông
 
 - **Đo lại 08/10 trên database local** (`backend/scripts/pgboss-egress-probe.ts` + bản tạm, 6 hàng đợi trống, byte ghi socket, chưa tính TLS). Mô hình khớp số đo: số câu/giây = Σ (số vòng ÷ nhịp hỏi), mỗi câu ~1,1 KB.
   | Phương án | KB/giây | MB/giờ |
@@ -23,7 +23,7 @@
   - Migration `20261008100000_queue_notify`: `UPDATE pgboss.queue SET notify = true` cho 6 hàng đợi worker đang nhận (không `stock.dead`), có BEGIN + lock_timeout 10 s, không đụng bảng nghiệp vụ. Worker bản cũ gặp cờ vẫn chạy như trước → không cần đưa lên hai lần.
   - Probe `pgboss-egress-probe.ts` đọc hằng từ queue-config (không lệch mã); `.env.example` 2 biến mới; docs HANG-DOI-BEN.md mục 3.5 + mục mới 3.5.1 + bảng 3.6; test queue-config 22/22 (thêm 4 bài: hằng nhịp, cờ env, lưới đỡ, migration đúng 6 tên).
   - **Đã kiểm local:** `tsc --noEmit` sạch; vitest `src/lib` + `src/workers` 205/205; probe qua đúng đường `startQueue("worker")` sau khi áp migration tay (local có migration `fee_audit` hỏng từ 17/09 chặn `migrate deploy`, không liên quan): **6,4 MB/giờ**; `QUEUE_LISTEN_NOTIFY=off` → 28,5 MB/giờ; chưa áp cờ notify mà đã bật listener → 30,7 MB/giờ (= B + nhịp tim). E2E: `enqueue()` qua Prisma → worker đăng ký nhịp hỏi 30 giây nhận sau **40 ms** (đúng là NOTIFY đánh thức).
-  - **Sau deploy cần xem:** log worker có dòng `[Queue] Sẵn sàng … nghe NOTIFY`, KHÔNG có `[Queue] Cảnh báo: … listen_notify_unavailable`; Supabase kết nối worker +1; biểu đồ băng thông Render worker giảm ~50 MB/giờ (110 → ~60) sau 1–2 giờ; migration `20261008100000_queue_notify` finished, 0 rolled back.
+  - ✅ **ĐÃ PUSH `f3f05ab` 09:05 (anh bảo "Em push và kiểm tra luôn"), KIỂM PROD 09:07–09:12 qua Chrome của anh (trang Logs + Metrics worker đọc được):** web `/health` đổi bản 09:07:50; worker deploy live 09:07; log worker 09:07:19 `Applying migration 20261008100000_queue_notify` → `All migrations have been successfully applied`; 09:07:22 `[Queue] Sẵn sàng — vai worker, 7 hàng đợi, pool 2 kết nối, có giám sát, nghe NOTIFY` + 6 dòng Nhận việc đúng nhịp mới (1 / 5 / 0,5 giây, `invoice.issue` 1 vòng, "có NOTIFY thì 30 giây"); tìm `Cảnh báo` trong 1 giờ: chỉ 1 dòng Auto-sync cứu đơn (không liên quan), KHÔNG có `listen_notify_unavailable`; tìm `Event-queue`: không có lỗi; tìm `Lỗi`: chỉ các lỗi đã biết trước deploy (TikTok 105005 scope LT046, Shopee chat không quyền). Biểu đồ Outbound Bandwidth worker (7 ngày) đang ~125 MB/giờ đi ngang → ⏳ XEM LẠI sau 1–2 giờ (kỳ vọng ~60–80 MB/giờ). Trang HQ Sức khỏe không đọc được vì Chrome đang đăng nhập tài khoản nhân viên, chưa kiểm số kết nối Supabase.
 
 ---
 
