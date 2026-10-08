@@ -5,16 +5,14 @@ import { useAuth } from "@/auth/AuthContext";
 import { Card } from "@/components/Card";
 import { hapticTap } from "@/lib/haptics";
 import { usePlan } from "@/plan/PlanContext";
-import { PLAN_INFO_VISIBLE } from "@/plan/plan-ui";
 
 /**
  * THẺ KHÓA thay nội dung màn tầng nâng cao (Tổng quan số tiền, Tài chính,
  * Quảng cáo) khi backend trả 403 PLAN_LOCKED — tương ứng PlanLockedScreen web.
  * Phải nói rõ đơn + tồn kho vẫn đồng bộ để khách yên tâm dữ liệu không mất.
- * LUẬT STORE (client.ts 06/10, Apple 3.1.1 + Play Billing): câu chữ TRUNG
- * TÍNH trên mọi nền tảng — không nhắc gói, giá, gia hạn hay nơi mua; không
- * nút/link ra ngoài. `message` là câu client đã thay trung tính. Chỉ còn nút
- * "tải lại" để kiểm lại sau khi chủ shop xử lý trên web.
+ * CÙNG HÀNH VI iOS + Android (anh Trung 08/10, luật store xem plan-ui.ts): câu
+ * chữ trung tính — không nhắc gói, giá, gia hạn, nơi mua, không chỉ sang bản
+ * web; `message` là câu client đã thay trung tính. Chỉ còn nút "tải lại".
  */
 export function PlanLockedCard({
   message,
@@ -46,13 +44,9 @@ export function PlanLockedCard({
         {message ?? "Tính năng này hiện chưa được bật cho tài khoản của bạn."} Đơn hàng và tồn
         kho vẫn được đồng bộ đầy đủ phía sau.
       </Text>
-      {/* iOS: không chỉ sang bản web (Apple soi cả gợi ý ra ngoài); câu client
-          đã có "liên hệ quản trị viên shop" là đủ. */}
-      {isOwner && !PLAN_INFO_VISIBLE ? null : (
+      {isOwner ? null : (
         <Text className="mt-2 text-center text-xs font-medium leading-5 text-slate-700 dark:text-slate-200">
-          {isOwner
-            ? "Đăng nhập bản web để xem chi tiết tài khoản."
-            : "Liên hệ chủ shop để được mở lại."}
+          Liên hệ chủ shop để được mở lại.
         </Text>
       )}
       <Pressable

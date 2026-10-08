@@ -5,7 +5,7 @@ import { useAuth } from "@/auth/AuthContext";
 import * as storage from "@/auth/storage";
 import { hapticTap } from "@/lib/haptics";
 import { usePlan } from "@/plan/PlanContext";
-import { PLAN_INFO_VISIBLE, planBannerOf } from "@/plan/plan-ui";
+import { planBannerOf } from "@/plan/plan-ui";
 
 const SEEN_KEY = "hubsell.planBannerSeen";
 
@@ -22,14 +22,14 @@ async function readSeen(): Promise<string[]> {
  * DẢI NHẮC GÓI dưới thanh mục Trang chủ (08/10) — cùng triết lý PlanQuotaBanner
  * web: vàng khi sắp hết hạn / chạm 80% trần (có nút tắt, nhớ theo khóa), đỏ khi
  * hết hạn / vượt trần / đã khóa (KHÔNG tắt được).
- * LUẬT STORE: dải chỉ là CHỮ — không bấm được, không link ra trang gói
- * (app không bán gói); iOS ẩn hẳn (PLAN_INFO_VISIBLE). Nhân viên thấy lời
- * nhắc "báo chủ shop".
+ * LUẬT STORE (plan-ui.ts): dải chỉ là CHỮ trung tính — không bấm được, không
+ * link, không nhắc gói / gia hạn; CÙNG hành vi iOS + Android. Nhân viên thấy
+ * lời nhắc "báo chủ shop".
  */
 export function PlanBanner() {
   const { plan } = usePlan();
   const { user } = useAuth();
-  const content = PLAN_INFO_VISIBLE ? planBannerOf(plan) : null;
+  const content = planBannerOf(plan);
   // null = chưa đọc kho → chưa vẽ (tránh nháy dải vàng rồi biến mất).
   const [seen, setSeen] = useState<string[] | null>(null);
 

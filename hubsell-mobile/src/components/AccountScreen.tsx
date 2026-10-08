@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -85,8 +84,12 @@ function InfoRow({
   );
 }
 
-/** Dòng "Gói đang dùng" chỉ hiện ngoài iOS (xem chú thích chỗ đọc gói bên dưới). */
-const SHOW_PLAN = Platform.OS !== "ios";
+/**
+ * Dòng "Gói đang dùng" TẮT trên cả hai nền tảng (anh Trung 08/10: một bản dựng,
+ * iOS + Android cùng hành vi; luật store xem plan/plan-ui.ts). Giữ mã để bật
+ * lại khi có cách bán hợp lệ trong app.
+ */
+const SHOW_PLAN = false;
 
 const VALUE_CLS = "text-sm font-medium text-slate-900 dark:text-slate-100";
 const EMPTY_CLS = "text-sm text-slate-400 dark:text-slate-500";
