@@ -5,6 +5,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { Card } from "@/components/Card";
 import { hapticTap } from "@/lib/haptics";
 import { usePlan } from "@/plan/PlanContext";
+import { PLAN_INFO_VISIBLE } from "@/plan/plan-ui";
 
 /**
  * THẺ KHÓA thay nội dung màn tầng nâng cao (Tổng quan số tiền, Tài chính,
@@ -45,11 +46,15 @@ export function PlanLockedCard({
         {message ?? "Tính năng này hiện chưa được bật cho tài khoản của bạn."} Đơn hàng và tồn
         kho vẫn được đồng bộ đầy đủ phía sau.
       </Text>
-      <Text className="mt-2 text-center text-xs font-medium leading-5 text-slate-700 dark:text-slate-200">
-        {isOwner
-          ? "Đăng nhập bản web để xem chi tiết tài khoản."
-          : "Liên hệ chủ shop để được mở lại."}
-      </Text>
+      {/* iOS: không chỉ sang bản web (Apple soi cả gợi ý ra ngoài); câu client
+          đã có "liên hệ quản trị viên shop" là đủ. */}
+      {isOwner && !PLAN_INFO_VISIBLE ? null : (
+        <Text className="mt-2 text-center text-xs font-medium leading-5 text-slate-700 dark:text-slate-200">
+          {isOwner
+            ? "Đăng nhập bản web để xem chi tiết tài khoản."
+            : "Liên hệ chủ shop để được mở lại."}
+        </Text>
+      )}
       <Pressable
         className="mt-3"
         hitSlop={8}

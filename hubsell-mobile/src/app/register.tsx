@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Platform,
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
@@ -153,7 +154,11 @@ export default function RegisterScreen() {
             Tạo tài khoản
           </Text>
           <Text className="mt-1 text-center text-sm text-slate-500 dark:text-slate-400">
-            Dùng thử miễn phí, không cần thẻ
+            {/* iOS: không nhắc "dùng thử / thẻ" — Apple 3.1.3(f) cấm lời mời mua
+                ngoài app, người duyệt 06/10 tự đăng ký rồi soi màn này. */}
+            {Platform.OS === "ios"
+              ? "Dùng chung tài khoản với bản web Hubsell"
+              : "Dùng thử miễn phí, không cần thẻ"}
           </Text>
         </View>
 
