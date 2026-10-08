@@ -5,6 +5,7 @@ import {
   ALL_QUEUES,
   DEAD_QUEUES,
   DEFAULT_EVT_ORDER_CONCURRENCY,
+  DEFAULT_NOTIFY_POLL_SECONDS,
   DEFAULT_INVOICE_AUTO_ADJUST_MODE,
   DEFAULT_INVOICE_BULK_MODE,
   DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS,
@@ -20,6 +21,11 @@ import {
   invoiceRequestSweepSeconds,
   invoiceSingleMode,
   invoiceSingleWaitMs,
+  listenNotifyEnabled,
+  notifyPollSeconds,
+  POLL_FAST_SECONDS,
+  POLL_MANUAL_SECONDS,
+  POLL_SLOW_SECONDS,
   queueOptionsForRole,
   resolveQueueConnection,
   stockChannelConcurrency,
@@ -72,18 +78,57 @@ describe("queueOptionsForRole", () => {
       max: 1,
       supervise: false,
       consumes: false,
+      listenNotify: false,
     });
   });
 
-  it("worker và all giám sát + nhận việc; QUEUE_POOL_MAX sai thì về mặc định", () => {
+  it("worker và all giám sát + nhận việc + nghe NOTIFY; QUEUE_POOL_MAX sai thì về mặc định", () => {
     expect(queueOptionsForRole("worker", {})).toEqual({
       max: DEFAULT_WORKER_POOL_MAX,
       supervise: true,
       consumes: true,
+      listenNotify: true,
     });
+    expect(queueOptionsForRole("worker", { QUEUE_LISTEN_NOTIFY: "off" }).listenNotify).toBe(false);
     expect(queueOptionsForRole("all", { QUEUE_POOL_MAX: "4" }).max).toBe(4);
     expect(queueOptionsForRole("worker", { QUEUE_POOL_MAX: "0" }).max).toBe(DEFAULT_WORKER_POOL_MAX);
     expect(queueOptionsForRole("worker", { QUEUE_POOL_MAX: "abc" }).max).toBe(DEFAULT_WORKER_POOL_MAX);
+  });
+});
+
+describe("nhịp hỏi việc (08/10/2026, băng thông Render)", () => {
+  it("ba mức nhịp: đơn + tồn 1 giây, chậm 5 giây, hóa đơn bấm tay giữ 0,5 (mức thấp nhất pg-boss)", () => {
+    expect(POLL_FAST_SECONDS).toBe(1);
+    expect(POLL_SLOW_SECONDS).toBe(5);
+    expect(POLL_MANUAL_SECONDS).toBe(0.5);
+  });
+
+  it("QUEUE_LISTEN_NOTIFY mặc định bật; off / 0 / false là tắt", () => {
+    expect(listenNotifyEnabled({})).toBe(true);
+    expect(listenNotifyEnabled({ QUEUE_LISTEN_NOTIFY: "on" })).toBe(true);
+    expect(listenNotifyEnabled({ QUEUE_LISTEN_NOTIFY: "off" })).toBe(false);
+    expect(listenNotifyEnabled({ QUEUE_LISTEN_NOTIFY: "0" })).toBe(false);
+    expect(listenNotifyEnabled({ QUEUE_LISTEN_NOTIFY: "FALSE" })).toBe(false);
+  });
+
+  it("QUEUE_NOTIFY_POLL_SECONDS trong 0,5–3600, sai thì về mặc định 30", () => {
+    expect(notifyPollSeconds({})).toBe(DEFAULT_NOTIFY_POLL_SECONDS);
+    expect(DEFAULT_NOTIFY_POLL_SECONDS).toBe(30);
+    expect(notifyPollSeconds({ QUEUE_NOTIFY_POLL_SECONDS: "10" })).toBe(10);
+    expect(notifyPollSeconds({ QUEUE_NOTIFY_POLL_SECONDS: "0.4" })).toBe(DEFAULT_NOTIFY_POLL_SECONDS);
+    expect(notifyPollSeconds({ QUEUE_NOTIFY_POLL_SECONDS: "abc" })).toBe(DEFAULT_NOTIFY_POLL_SECONDS);
+  });
+
+  it("migration queue_notify bật cờ cho đúng các hàng đợi worker đang nhận (không có stock.dead)", () => {
+    const sql = fs.readFileSync(
+      path.join(__dirname, "../../../prisma/migrations/20261008100000_queue_notify/migration.sql"),
+      "utf8"
+    );
+    for (const name of ["evt.order", "evt.auth", "evt.dead", "stock.channel", "stock.verify", "invoice.issue"]) {
+      expect(sql).toContain(`'${name}'`);
+    }
+    expect(sql).not.toContain("'stock.dead'");
+    expect(sql).toMatch(/SET notify = true/);
   });
 });
 

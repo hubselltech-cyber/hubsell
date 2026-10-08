@@ -36,7 +36,7 @@ import {
   handleTiktokOrderJob,
 } from "../integrations/tiktok/webhook-queue";
 import { enqueue, hasLiveJob, QUEUES, registerWorker } from "../lib/queue";
-import { EVT_ORDER_MAX_ATTEMPTS, evtOrderConcurrency } from "../lib/queue-config";
+import { EVT_ORDER_MAX_ATTEMPTS, evtOrderConcurrency, POLL_FAST_SECONDS, POLL_SLOW_SECONDS } from "../lib/queue-config";
 import { prisma } from "../lib/prisma";
 import {
   markEventById,
@@ -175,14 +175,16 @@ export async function runDeadEventJob(job: OrderEventJob | AuthEventJob): Promis
 export async function registerEventQueueWorkers(): Promise<void> {
   await registerWorker<OrderEventJob>(
     QUEUES.evtOrder,
-    { concurrency: evtOrderConcurrency(), pollSeconds: 0.5 },
+    { concurrency: evtOrderConcurrency(), pollSeconds: POLL_FAST_SECONDS },
     (job) => runOrderEventJob(job.data, job.retryCount)
   );
-  // Sự kiện ủy quyền hiếm và không gấp tới từng giây: 1 việc một lúc, hỏi 2 giây một lần.
-  await registerWorker<AuthEventJob>(QUEUES.evtAuth, { concurrency: 1, pollSeconds: 2 }, (job) =>
+  // Sự kiện ủy quyền hiếm và không gấp tới từng giây: 1 việc một lúc, nhịp hỏi thưa.
+  await registerWorker<AuthEventJob>(QUEUES.evtAuth, { concurrency: 1, pollSeconds: POLL_SLOW_SECONDS }, (job) =>
     runAuthEventJob(job.data, job.retryCount)
   );
-  await registerWorker<OrderEventJob | AuthEventJob>(QUEUES.evtDead, { concurrency: 2, pollSeconds: 2 }, (job) =>
-    runDeadEventJob(job.data)
+  await registerWorker<OrderEventJob | AuthEventJob>(
+    QUEUES.evtDead,
+    { concurrency: 2, pollSeconds: POLL_SLOW_SECONDS },
+    (job) => runDeadEventJob(job.data)
   );
 }

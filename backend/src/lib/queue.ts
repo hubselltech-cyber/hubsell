@@ -30,6 +30,7 @@ import { prisma } from "./prisma";
 import {
   ALL_QUEUES,
   QUEUE_SCHEMA,
+  notifyPollSeconds,
   queueOptionsForRole,
   resolveQueueConnection,
   type QueueName,
@@ -86,6 +87,11 @@ export async function startQueue(role: HubsellRole): Promise<boolean> {
     supervise: opts.supervise,
     // Lịch chạy định kỳ của pg-boss chưa dùng (và chưa thử trên Supabase).
     schedule: false,
+    // Worker giữ thêm 1 kết nối LISTEN để được đánh thức ngay (08/10/2026, vì băng
+    // thông Render — queue-config.ts phần "Nhịp hỏi việc"). Chỉ có tác dụng với hàng
+    // đợi đã bật cờ notify (migration 20261008100000_queue_notify). Không lập được
+    // listener thì thư viện báo warning và chỉ còn nhịp hỏi — không mất việc.
+    useListenNotify: opts.listenNotify,
   });
   // Bắt buộc có listener "error": thiếu thì lỗi kết nối nền thành lỗi không bắt, sập tiến trình.
   instance.on("error", (err) => console.error("[Queue] Lỗi nền:", err.message));
@@ -103,7 +109,8 @@ export async function startQueue(role: HubsellRole): Promise<boolean> {
     lastStartError = null;
     console.log(
       `[Queue] Sẵn sàng — vai ${role}, ${existing.size} hàng đợi, pool ${opts.max} kết nối` +
-        (opts.supervise ? ", có giám sát" : ", chỉ gửi")
+        (opts.supervise ? ", có giám sát" : ", chỉ gửi") +
+        (opts.listenNotify ? ", nghe NOTIFY" : "")
     );
     return true;
   } catch (err) {
@@ -218,7 +225,11 @@ export interface WorkerOptions {
    * việc, mỗi vòng lấy một lô và chạy song song các việc trong lô.
    */
   concurrency: number;
-  /** Nhịp hỏi việc khi hàng đợi trống, giây (thư viện cho thấp nhất 0,5). */
+  /**
+   * Nhịp hỏi việc khi hàng đợi trống, giây (thư viện cho thấp nhất 0,5). Khi hàng
+   * đợi có LISTEN/NOTIFY đang hoạt động thì nhịp này không dùng: việc mới được
+   * đánh thức ngay, còn hỏi việc chỉ là lưới đỡ theo QUEUE_NOTIFY_POLL_SECONDS.
+   */
   pollSeconds: number;
 }
 
@@ -246,6 +257,7 @@ export async function registerWorker<T extends object>(
       localConcurrency: loops,
       batchSize,
       pollingIntervalSeconds: Math.max(0.5, opts.pollSeconds),
+      notifyPollingIntervalSeconds: notifyPollSeconds(),
       burstWhenBatchFull: batchSize > 1,
       perJobResults: true,
     },
@@ -263,7 +275,10 @@ export async function registerWorker<T extends object>(
         })
       )
   );
-  console.log(`[Queue] Nhận việc ${name}: ${loops} vòng × lô ${batchSize}, nhịp hỏi ${opts.pollSeconds} giây`);
+  console.log(
+    `[Queue] Nhận việc ${name}: ${loops} vòng × lô ${batchSize}, nhịp hỏi ${opts.pollSeconds} giây` +
+      `, có NOTIFY thì ${notifyPollSeconds()} giây`
+  );
   return true;
 }
 

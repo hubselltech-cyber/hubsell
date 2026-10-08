@@ -140,13 +140,31 @@ Trần chế độ phiên của bộ gộp đang là 30. Hiện dùng: web 5 + w
 
 | Tiến trình | Thêm | Ghi chú |
 |---|---|---|
-| Worker | 2 kết nối cho pg-boss, chế độ phiên | Lấy việc, báo xong, giám sát |
+| Worker | 2 kết nối cho pg-boss + 1 kết nối LISTEN (từ 08/10), chế độ phiên | Lấy việc, báo xong, giám sát; nghe NOTIFY |
 | Web | 0–1, tự trả khi nghỉ | Việc gửi đi qua kết nối sẵn có của Prisma |
 
-Lúc bình thường 10–11/30. Lúc deploy (bản cũ và mới cùng sống, cộng migrate) khoảng 22–24/30.
+Lúc bình thường 11–12/30. Lúc deploy (bản cũ và mới cùng sống, cộng migrate) khoảng 23–25/30.
 
-- **Chưa bật LISTEN/NOTIFY.** Nó tốn thêm 1 kết nối giữ thường trực cho mỗi worker để đổi lấy khoảng 350 ms. Nhịp hỏi 0,5 giây đã cho độ trễ giữa 0,36 giây, trong khi hôm nay việc đẩy tồn từ web sang worker chờ tới 5 giây.
-- Chuỗi kết nối của pg-boss đặt bằng biến riêng (`QUEUE_DATABASE_URL`, mặc định bằng `DATABASE_URL`). Khi số worker tăng tới mức chật trần 30 thì trỏ biến này sang cổng 6543 (đã thử chạy được), không sửa mã.
+- **LISTEN/NOTIFY: bật từ 08/10/2026 vì băng thông Render** (trước đó không bật: 1 kết nối thường trực đổi lấy 350 ms là không đáng). Lý do đổi và số đo ở mục 3.5.1. Đường lui: `QUEUE_LISTEN_NOTIFY=off` ở worker → chỉ còn nhịp hỏi. Chỉ chạy ở cổng 5432 (chế độ phiên); nếu `QUEUE_DATABASE_URL` trỏ 6543 thì thư viện báo warning `listen_notify_unavailable` và tự về nhịp hỏi, không mất việc.
+- Chuỗi kết nối của pg-boss đặt bằng biến riêng (`QUEUE_DATABASE_URL`, mặc định bằng `DATABASE_URL`). Khi số worker tăng tới mức chật trần 30 thì trỏ biến này sang cổng 6543 (đã thử chạy được), không sửa mã — nhưng khi đó mất NOTIFY (xem trên), băng thông hỏi việc quay về mức nhịp hỏi.
+
+#### 3.5.1. Băng thông hỏi việc và nhịp hỏi (đổi 08/10/2026)
+
+Render tính tiền byte worker gửi ra ngoài; database ở Supabase là "ra ngoài". Thư Render 04/10: 9,47 GB / 5 GB gói Hobby sau 4,4 ngày, 9,13 GB là worker. Biểu đồ worker đi ngang 110–120 MB/giờ cả ngày lẫn đêm từ 03/10 — ba nấc tăng trùng ba hàng đợi nhịp 0,5 giây lên prod.
+
+Đo bằng `backend/scripts/pgboss-egress-probe.ts` (database local, 6 hàng đợi trống, đếm byte ghi socket, chưa tính TLS). Mỗi câu hỏi việc gửi ~1,1 KB nguyên văn; số câu/giây = Σ (số vòng ÷ nhịp hỏi), khớp số đo.
+
+| Cấu hình | KB/giây | MB/giờ |
+|---|---|---|
+| Cũ (tới 08/10): 0,5 giây `evt.order` / `stock.channel` / `invoice.issue` (mỗi cái 2 vòng), 2 giây còn lại | 15,0 | 55 |
+| Nhịp 1 giây (đơn, tồn) / 5 giây (ủy quyền, lỗi, đối soát) / 0,5 giây hóa đơn bấm tay nhưng 1 vòng; chưa NOTIFY | 7,7 | 28,5 |
+| Như trên + LISTEN/NOTIFY, hỏi việc chỉ là lưới đỡ 30 giây (**đang chạy**) | 1,7 | 6,4 |
+
+- Đánh thức qua NOTIFY đo local: 110 ms (gửi qua pool pg-boss), 159 ms (gửi qua Prisma `fromPrisma`, đúng đường web prod gửi). Trên Supabase prod cổng 5432 bài T15 ngày 01/10 đo giữa 9 ms.
+- Cờ `notify` của 6 hàng đợi worker đang nhận do migration `20261008100000_queue_notify` đặt (`stock.dead` không có worker, không bật). Lệnh gửi việc phát `pg_notify` trong cùng giao dịch ghi việc, nên gửi qua Prisma vẫn đánh thức được.
+- `invoice.issue` xuống 1 vòng: việc chỉ là tín hiệu (pump rồi trả về ngay), vòng thứ hai không thêm được gì. Nhịp 0,5 giây giữ nguyên vì đây là chỗ duy nhất khách ngồi chờ vòng xoay.
+- Các số nhịp hỏi là hằng trong `queue-config.ts` (`POLL_FAST_SECONDS` 1, `POLL_SLOW_SECONDS` 5, `POLL_MANUAL_SECONDS` 0,5 — tự chọn); lưới đỡ `QUEUE_NOTIFY_POLL_SECONDS` mặc định 30 = mặc định pg-boss.
+- **Chưa xong:** nửa còn lại của băng thông worker (~50 MB/giờ: các vòng quét Prisma + gọi sàn) chưa tách được từ Node (socket của Prisma không đếm được); cách tách là `pg_stat_statements` bên Supabase. Không phương án nào ở bảng trên đưa worker về dưới 5 GB/tháng.
 
 ### 3.6. Các con số
 
@@ -155,7 +173,7 @@ Lúc bình thường 10–11/30. Lúc deploy (bản cũ và mới cùng sống, 
 | Số lượt thử | 3 lượt, giãn 30–60 giây rồi 60–120 giây | Số lượt giữ nguyên. Giãn cách hiện là đúng 30 rồi 60 giây; thư viện cộng thêm một khoảng lệch ngẫu nhiên để các việc hỏng cùng lúc không thử lại cùng lúc |
 | Hạn giữ một việc | 5 phút | **Em tự chọn.** Hiện đẩy tồn dùng 15 phút (cũng tự chọn). Sẽ tính lại sau khi có thời hạn gọi sàn |
 | Số việc chạy cùng lúc mỗi worker, `evt.order` | 4 | **Em tự chọn**, đặt bằng biến môi trường. Hiện Shopee 1, TikTok 3; worker có 3 kết nối database |
-| Nhịp hỏi | 0,5 giây (`evt.order`, `stock.channel`), 2 giây (còn lại) | 0,5 giây là mức thấp nhất thư viện cho; đã đo độ trễ ở mức này |
+| Nhịp hỏi | ~~0,5 giây (`evt.order`, `stock.channel`), 2 giây (còn lại)~~ → từ 08/10: 1 giây (đơn, tồn), 5 giây (ủy quyền, lỗi, đối soát), 0,5 giây (hóa đơn bấm tay); có NOTIFY thì chỉ là lưới đỡ 30 giây | Đổi vì băng thông Render, số đo ở mục 3.5.1. 0,5 giây là mức thấp nhất thư viện cho |
 | Giữ việc đã xong | 7 ngày | Bằng chính sách dọn nhật ký kỹ thuật hiện có |
 | Thời hạn chờ lệnh gọi sàn | **Chưa đề xuất số** | Chưa có số đo. Bước 0 chỉ ghi lại thời gian từng lệnh gọi; sau 3–5 ngày em trình số kèm phân bố thật |
 

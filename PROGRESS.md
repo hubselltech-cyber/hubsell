@@ -5,6 +5,28 @@
 
 ---
 
+## Phiên 08/10/2026 (sáng) — BĂNG THÔNG RENDER: đo 3 phương án giãn nhịp pg-boss, anh chốt C (LISTEN/NOTIFY + nhịp thưa), ĐÃ CODE, chờ anh push
+
+- **Đo lại 08/10 trên database local** (`backend/scripts/pgboss-egress-probe.ts` + bản tạm, 6 hàng đợi trống, byte ghi socket, chưa tính TLS). Mô hình khớp số đo: số câu/giây = Σ (số vòng ÷ nhịp hỏi), mỗi câu ~1,1 KB.
+  | Phương án | KB/giây | MB/giờ |
+  |---|---|---|
+  | Hiện tại (0,5 / 2 giây; evt.order, stock.channel, invoice.issue mỗi cái 2 vòng) | 15,0 | 55 |
+  | A: sự kiện đơn + đẩy tồn 1 giây; ủy quyền / lỗi / đối soát 5 giây; hóa đơn giữ 0,5 | 9,4 | 35 |
+  | B: A + `invoice.issue` xuống 1 vòng (việc chỉ là tín hiệu `pump` rồi trả ngay, vòng thứ hai vô ích, nhịp 0,5 giữ nguyên) | 7,7 | 28,5 |
+  | C: B + bật LISTEN/NOTIFY (`useListenNotify`, hàng đợi `notify: true`, nhịp lùi 30 giây khi có listener) | 1,7 | 6,4 |
+- **C đo thêm:** đánh thức 110 ms (gửi qua pool pg-boss) / 159 ms (gửi qua Prisma `fromPrisma`, đúng đường web prod gửi). Mất listener thì pg-boss tự lùi về nhịp của B (không mất việc). Giá: +1 kết nối thường trực ở worker (pool 2 → 3) + nhịp tim 10 giây. HANG-DOI-BEN.md mục bảng thử 01/10: LISTEN chạy được trên Supabase prod cổng 5432 (chế độ phiên), KHÔNG chạy ở 6543.
+- **Nói thẳng:** không phương án nào đưa worker về dưới 5 GB/tháng — nửa Prisma (~50 MB/giờ, chưa tách) một mình đã ~36 GB/tháng. C bớt ~45 MB/giờ ≈ 32 GB/tháng ≈ 5 USD/tháng; B bớt ~27 MB/giờ ≈ 3 USD/tháng.
+- **Anh chốt C ("Làm như em đề xuất") → ✅ ĐÃ CODE 09:05, chờ anh push:**
+  - `lib/queue-config.ts`: hằng nhịp hỏi `POLL_FAST_SECONDS` 1 / `POLL_SLOW_SECONDS` 5 / `POLL_MANUAL_SECONDS` 0,5 (tự chọn, có chú thích số đo); `listenNotifyEnabled()` (đường lui `QUEUE_LISTEN_NOTIFY=off`); `notifyPollSeconds()` lưới đỡ mặc định 30 = mặc định pg-boss (`QUEUE_NOTIFY_POLL_SECONDS`); `queueOptionsForRole` thêm `listenNotify` (web luôn false).
+  - `lib/queue.ts`: `useListenNotify: opts.listenNotify` khi dựng PgBoss; `registerWorker` đặt `notifyPollingIntervalSeconds`; log "Sẵn sàng … nghe NOTIFY" và "có NOTIFY thì 30 giây".
+  - `event-queue.ts` / `stock-queue.ts` dùng hằng mới; `invoice-lanes.ts` `invoice.issue` concurrency 2 → 1 (nhịp 0,5 giữ).
+  - Migration `20261008100000_queue_notify`: `UPDATE pgboss.queue SET notify = true` cho 6 hàng đợi worker đang nhận (không `stock.dead`), có BEGIN + lock_timeout 10 s, không đụng bảng nghiệp vụ. Worker bản cũ gặp cờ vẫn chạy như trước → không cần đưa lên hai lần.
+  - Probe `pgboss-egress-probe.ts` đọc hằng từ queue-config (không lệch mã); `.env.example` 2 biến mới; docs HANG-DOI-BEN.md mục 3.5 + mục mới 3.5.1 + bảng 3.6; test queue-config 22/22 (thêm 4 bài: hằng nhịp, cờ env, lưới đỡ, migration đúng 6 tên).
+  - **Đã kiểm local:** `tsc --noEmit` sạch; vitest `src/lib` + `src/workers` 205/205; probe qua đúng đường `startQueue("worker")` sau khi áp migration tay (local có migration `fee_audit` hỏng từ 17/09 chặn `migrate deploy`, không liên quan): **6,4 MB/giờ**; `QUEUE_LISTEN_NOTIFY=off` → 28,5 MB/giờ; chưa áp cờ notify mà đã bật listener → 30,7 MB/giờ (= B + nhịp tim). E2E: `enqueue()` qua Prisma → worker đăng ký nhịp hỏi 30 giây nhận sau **40 ms** (đúng là NOTIFY đánh thức).
+  - **Sau deploy cần xem:** log worker có dòng `[Queue] Sẵn sàng … nghe NOTIFY`, KHÔNG có `[Queue] Cảnh báo: … listen_notify_unavailable`; Supabase kết nối worker +1; biểu đồ băng thông Render worker giảm ~50 MB/giờ (110 → ~60) sau 1–2 giờ; migration `20261008100000_queue_notify` finished, 0 rolled back.
+
+---
+
 ## Phiên 08/10/2026 (00:15, chốt đêm) — KẾ HOẠCH SÁNG 08/10: LÁT T1 LUỒNG TENANT (Kết nối & Xuất hóa đơn) ĐI TỜ NHÁP
 
 - **Vì sao gấp:** khóa thí điểm module Hóa đơn đã gỡ 24/08 → mọi shop khách bật được; UI tenant ẩn phương thức ký, luôn lưu ESIGN_CLOUD, adapter `misa-provider.ts` gọi SignType 2 → shop dùng eSign (đa số) sẽ `CallSignServiceFail` ở tờ đầu; worker tự xuất 15' lại thử lại hỏng. Anh chốt: **sáng 08/10 làm**, đêm nay tắt local (env đã trả: SHOPEE_CALLBACK_HTTP_PORT comment lại, NEXT_PUBLIC_API_URL=https://localhost:4000).

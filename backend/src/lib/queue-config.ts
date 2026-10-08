@@ -166,6 +166,58 @@ export interface QueueRoleOptions {
   supervise: boolean;
   /** Tiến trình này có nhận việc để xử lý không. */
   consumes: boolean;
+  /**
+   * Giữ một kết nối LISTEN để được đánh thức ngay khi có việc (mục 3.5 docs). Chỉ
+   * tiến trình nhận việc mới cần; web không bao giờ nghe.
+   */
+  listenNotify: boolean;
+}
+
+// ---------- Nhịp hỏi việc (đổi 08/10/2026 vì băng thông Render — docs mục 3.5) ----------
+//
+// Số đo 05–08/10/2026 (scripts/pgboss-egress-probe.ts): mỗi câu hỏi việc gửi ~1,1 KB
+// lên Supabase, Render tính là băng thông ra; số câu/giây = Σ (số vòng ÷ nhịp hỏi).
+// Cấu hình cũ (0,5 / 2 giây, ba hàng đợi 2 vòng) = 15 KB/giây = 55 MB/giờ lúc TRỐNG.
+// Cách giảm: (1) nhịp hỏi thưa hơn ở dưới, (2) bật LISTEN/NOTIFY — có listener thì
+// nhịp hỏi chỉ là lưới đỡ 30 giây, việc mới được đánh thức ngay (đo local: 110–160 ms).
+// Đo với cả hai: 1,7 KB/giây = 6,4 MB/giờ. Mất listener thì pg-boss tự về nhịp ở dưới.
+
+/**
+ * Hàng đợi sự kiện đơn + đẩy tồn: việc đến từ webhook sàn, chậm thêm nửa giây không
+ * ai thấy (một lượt kéo đơn mất vài giây). MẶC ĐỊNH TỰ CHỌN 1 giây (cũ 0,5).
+ */
+export const POLL_FAST_SECONDS = 1;
+/**
+ * Ủy quyền / hàng đợi lỗi / đối soát tồn (việc hẹn giờ sau 3 phút): không gấp tới
+ * từng giây. MẶC ĐỊNH TỰ CHỌN 5 giây (cũ 2).
+ */
+export const POLL_SLOW_SECONDS = 5;
+/**
+ * Tín hiệu hóa đơn bấm tay: chỗ duy nhất khách ngồi chờ vòng xoay → GIỮ mức thấp
+ * nhất thư viện cho (0,5 giây). Băng thông giảm ở chỗ khác: 1 vòng thay vì 2
+ * (việc chỉ là tín hiệu, trả về ngay, vòng thứ hai không thêm được gì).
+ */
+export const POLL_MANUAL_SECONDS = 0.5;
+
+/**
+ * Nhịp hỏi LƯỚI ĐỠ khi hàng đợi có LISTEN/NOTIFY đang hoạt động. Mặc định 30 giây =
+ * mặc định của pg-boss 12 (`notifyPollingIntervalSeconds`); không phải căn cứ đo.
+ * Đổi bằng QUEUE_NOTIFY_POLL_SECONDS (0,5–3600).
+ */
+export const DEFAULT_NOTIFY_POLL_SECONDS = 30;
+
+export function notifyPollSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.QUEUE_NOTIFY_POLL_SECONDS);
+  return Number.isFinite(n) && n >= 0.5 && n <= 3600 ? n : DEFAULT_NOTIFY_POLL_SECONDS;
+}
+
+/**
+ * Đường lui: QUEUE_LISTEN_NOTIFY=off ở worker thì không giữ kết nối LISTEN, chỉ
+ * còn nhịp hỏi ở trên (= 28,5 MB/giờ đo local). Mặc định bật.
+ */
+export function listenNotifyEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = (env.QUEUE_LISTEN_NOTIFY ?? "").trim().toLowerCase();
+  return !(raw === "off" || raw === "0" || raw === "false");
 }
 
 /**
@@ -177,10 +229,10 @@ export function queueOptionsForRole(
   role: HubsellRole,
   env: NodeJS.ProcessEnv = process.env
 ): QueueRoleOptions {
-  if (role === "web") return { max: WEB_POOL_MAX, supervise: false, consumes: false };
+  if (role === "web") return { max: WEB_POOL_MAX, supervise: false, consumes: false, listenNotify: false };
   const n = Number(env.QUEUE_POOL_MAX);
   const max = Number.isInteger(n) && n >= 1 && n <= 10 ? n : DEFAULT_WORKER_POOL_MAX;
-  return { max, supervise: true, consumes: true };
+  return { max, supervise: true, consumes: true, listenNotify: listenNotifyEnabled(env) };
 }
 
 /**

@@ -42,7 +42,13 @@ import { runStockVerifyJob, type StockVerifyJob } from "../integrations/shopee/i
 import { claimChannelBatch, processClaimedJobs } from "../integrations/stock-push-worker";
 import { prisma } from "../lib/prisma";
 import { QUEUES, registerWorker } from "../lib/queue";
-import { STOCK_PUSH_LEASE_SECONDS, stockChannelConcurrency, stockSweepSeconds } from "../lib/queue-config";
+import {
+  POLL_FAST_SECONDS,
+  POLL_SLOW_SECONDS,
+  STOCK_PUSH_LEASE_SECONDS,
+  stockChannelConcurrency,
+  stockSweepSeconds,
+} from "../lib/queue-config";
 
 // ---------- Bộ chạy theo gian (trong tiến trình) ----------
 // Trạng thái dưới đây chỉ là HÀNG CHỜ TỚI LƯỢT trong tiến trình này. Mất khi
@@ -206,13 +212,13 @@ export async function runStockChannelJob(job: StockChannelJob): Promise<void> {
 export async function registerStockQueueWorkers(): Promise<void> {
   await registerWorker<StockChannelJob>(
     QUEUES.stockChannel,
-    { concurrency: stockChannelConcurrency(), pollSeconds: 0.5 },
+    { concurrency: stockChannelConcurrency(), pollSeconds: POLL_FAST_SECONDS },
     (job) => runStockChannelJob(job.data)
   );
   // Đối soát: 1 việc một lúc như hàng đợi cũ (mỗi việc là một lệnh đọc tồn Shopee,
   // chưa có giãn nhịp theo shop — chạy song song là tăng tốc độ gọi sàn). Việc
-  // chạy sau lượt đẩy 3 phút, không gấp tới từng giây: hỏi 2 giây một lần.
-  await registerWorker<StockVerifyJob>(QUEUES.stockVerify, { concurrency: 1, pollSeconds: 2 }, (job) =>
+  // chạy sau lượt đẩy 3 phút, không gấp tới từng giây: nhịp hỏi thưa.
+  await registerWorker<StockVerifyJob>(QUEUES.stockVerify, { concurrency: 1, pollSeconds: POLL_SLOW_SECONDS }, (job) =>
     runStockVerifyJob(job.data)
   );
 }

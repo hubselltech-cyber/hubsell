@@ -41,7 +41,12 @@
 import { hostname } from "node:os";
 import { randomBytes } from "node:crypto";
 
-import { invoiceLaneConcurrency, invoiceMode, invoiceRequestSweepSeconds } from "../lib/queue-config";
+import {
+  invoiceLaneConcurrency,
+  invoiceMode,
+  invoiceRequestSweepSeconds,
+  POLL_MANUAL_SECONDS,
+} from "../lib/queue-config";
 import { prisma } from "../lib/prisma";
 import { QUEUES, registerWorker } from "../lib/queue";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
@@ -369,9 +374,11 @@ export async function runInvoiceIssueSignal(job: InvoiceIssueSignal): Promise<vo
  * gửi (quy tắc đưa lên hai lần).
  */
 export async function registerInvoiceQueueWorkers(): Promise<void> {
+  // 1 vòng là đủ: việc chỉ là tín hiệu (pump rồi trả về ngay), vòng thứ hai không
+  // thêm được gì mà tốn gấp đôi câu hỏi việc (08/10/2026). Nhịp giữ 0,5 giây.
   await registerWorker<InvoiceIssueSignal>(
     QUEUES.invoiceIssue,
-    { concurrency: 2, pollSeconds: 0.5 },
+    { concurrency: 1, pollSeconds: POLL_MANUAL_SECONDS },
     (job) => runInvoiceIssueSignal(job.data)
   );
 }
