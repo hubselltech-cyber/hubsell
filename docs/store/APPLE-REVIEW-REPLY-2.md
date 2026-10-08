@@ -46,12 +46,16 @@ Lưu ý khi nói với Apple: app KHÔNG phải "chỉ đọc" (có quét nhập
 chiến dịch, cập nhật tồn) → viết "vận hành trên dữ liệu khách đã có, không mua bán gì
 trong app", đừng viết read-only kẻo người duyệt bấm thấy nút hành động.
 
-## Việc anh làm tay sau khi build 6 lên App Store Connect
+## ✅ ĐÃ NỘP LẠI 08/10 23:23 — build mang số 7 (build 6 ngày 07/10 bị hủy nên bộ đếm nhảy)
+
+EAS build `3b29ffe5` (22:40) → `eas submit` (23:09) → trên ASC: Mô tả + Notes mới, gỡ build 5 chọn 1.0.0 (7), Update Review, Reply (thư dưới, đã đổi "build 6" thành "build 7"), Resubmit → **Waiting for Review**. Anh chốt: lần 3 bị từ chối → làm IAP.
+
+## Các bước đã làm trên App Store Connect (để tham khảo)
 
 1. App Store Connect → bản 1.0 → **Mô tả** thêm câu "Ứng dụng dành cho khách hàng đã có
    tài khoản Hubsell… Ứng dụng không có chức năng đăng ký tài khoản." (LISTING.md mục 2).
 2. **Notes** thay bằng khối mới ở LISTING.md mục 4.
-3. Chọn **build 6** → **Update Review** → vào submission → **Reply to App Review** dán
+3. Chọn **build 7** → **Update Review** → vào submission → **Reply to App Review** dán
    nội dung dưới → **Resubmit to App Review**.
 
 ## Nội dung trả lời (dán vào Reply to App Review)
@@ -59,8 +63,8 @@ trong app", đừng viết read-only kẻo người duyệt bấm thấy nút h�
 ```
 Hello,
 
-Thank you for the review. We have changed the app in build 6 so that the
-situation described in your message cannot occur, and we would like to
+Thank you for the review. We have changed the app in build 7 (version 1.0)
+so that the situation described in your message cannot occur, and we would like to
 explain how Hubsell works.
 
 Guideline 3.1.1 – In-App Purchase
@@ -75,7 +79,7 @@ The demo account in the Sign-in information section (reviewer@hubsell.vn)
 is a regular paid business account with no trial and no expiry, so it
 never shows any "trial expired" state.
 
-Changes in build 6:
+Changes in build 7:
 
 1. The registration screen has been removed. Accounts are created by
    merchants on our website; the app only signs in to an existing
@@ -96,7 +100,7 @@ Changes in build 6:
    support centre, privacy policy, terms of service and account deletion
    policy pages, which the guidelines require.
 
-Build 6 therefore contains no purchasing and no call to action for
+Build 7 therefore contains no purchasing and no call to action for
 purchase outside the app. If you still see a screen that appears to
 reference purchasing or an external payment option, we would be grateful
 if you could point us to it so we can correct it.
