@@ -22,7 +22,8 @@ import Svg, {
 import { hapticTap } from "@/lib/haptics";
 import { fetchAnalytics, fetchOverview } from "@/api/finance";
 import { fetchReturnsSummary } from "@/api/warehouse";
-import { ApiError } from "@/api/client";
+import { ApiError, isPlanLockedError } from "@/api/client";
+import { PlanLockedCard } from "@/components/PlanLockedCard";
 import type {
   AnalyticsResponse,
   ChannelName,
@@ -128,6 +129,10 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   // Shop vừa đăng ký, chưa uỷ quyền gian nào → backend trả 409 NO_CHANNEL cho
   // mọi API số liệu. Hiện thẻ hướng dẫn thay vì câu lỗi thô.
   const [noChannel, setNoChannel] = useState(false);
+  // Gói hết hạn quá ân hạn / vượt trần → /api/finance/analytics trả 403
+  // PLAN_LOCKED. CHỈ khối tiền (hero + Chi phí) đổi thành thẻ khóa; số đơn,
+  // phễu, tỷ trọng kênh, đơn hoàn (API không bị khóa) vẫn hiện bình thường.
+  const [planLocked, setPlanLocked] = useState<string | null>(null);
 
   /**
    * mode: "first" = lần đầu (spinner thay nội dung) · "pull" = kéo xuống (vòng
@@ -143,23 +148,30 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
     try {
       const { from, to } = rangeFor("today");
       const yd = yesterdayRange();
+      let lockedMsg: string | null = null;
       const [ana, fin, prevFin, ret] = await Promise.all([
         // Số ĐƠN hôm nay + kỳ trước (hôm qua) để tính ▲/▼ số đơn + trend 14
         // ngày cho sparkline + phễu + đơn theo sàn cho donut.
         fetchOverview(from, to),
         // Số TIỀN hôm nay = 4 thẻ Báo cáo dòng tiền (cùng nguồn trang Tài chính).
-        fetchAnalytics(from, to),
+        // Gói bị khóa → null + nhớ câu backend, các khối khác vẫn tải tiếp.
+        fetchAnalytics(from, to).catch((e: unknown) => {
+          if (!isPlanLockedError(e)) throw e;
+          lockedMsg = e.message;
+          return null;
+        }),
         // Hôm qua chỉ để so ▲/▼ doanh thu — hỏng thì bỏ pill, không che màn.
         fetchAnalytics(yd.from, yd.to).catch(() => null),
         fetchReturnsSummary(),
       ]);
       if (seq !== reqSeq.current) return;
       setAnalytics(ana);
-      setMoney(fin.breakdown);
+      setMoney(fin?.breakdown ?? null);
       setPrevMoney(prevFin?.breakdown ?? null);
       setReturns(ret.summary);
       setError("");
       setNoChannel(false);
+      setPlanLocked(lockedMsg);
     } catch (err) {
       if (seq !== reqSeq.current) return;
       if (
@@ -289,7 +301,13 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         <>
           {/* HERO Kết quả hôm nay — band tối cả hai theme, bố cục 2 CỘT
               Doanh thu | Lợi nhuận (chốt 13/08), sparkline lãi 7 ngày dưới đáy.
-              Các khối vào trang so le 60ms — đủ thấy nhịp, không đủ gây chờ. */}
+              Các khối vào trang so le 60ms — đủ thấy nhịp, không đủ gây chờ.
+              Gói bị khóa → thẻ khóa đứng đúng chỗ hero, phần đơn bên dưới giữ nguyên. */}
+          {planLocked ? (
+            <Animated.View entering={FadeInDown.duration(280)} className="mb-3">
+              <PlanLockedCard message={planLocked} onRetry={() => void load("first")} />
+            </Animated.View>
+          ) : (
           <Animated.View entering={FadeInDown.duration(280)}>
             <View
               className="mb-3 overflow-hidden rounded-3xl border border-white/10 bg-[#0b1626] p-5"
@@ -369,6 +387,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               ) : null}
             </View>
           </Animated.View>
+          )}
 
           {/* Hai thẻ KPI: Đơn hàng (+ số món, ▲/▼ so hôm qua — /api/analytics)
               và Chi phí (= thẻ "Chi phí" Tài chính, chiếm % doanh thu) */}
@@ -398,12 +417,14 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100"
                 style={TABULAR}
               >
-                {compactMoney(totalExpense)}
+                {planLocked ? "—" : compactMoney(totalExpense)}
               </Text>
               <Text className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
-                {costRatio !== null
-                  ? `Chiếm ${costRatio}% doanh thu`
-                  : "Giá vốn + vận hành + quảng cáo"}
+                {planLocked
+                  ? "Đang tạm khóa"
+                  : costRatio !== null
+                    ? `Chiếm ${costRatio}% doanh thu`
+                    : "Giá vốn + vận hành + quảng cáo"}
               </Text>
             </Card>
           </Animated.View>

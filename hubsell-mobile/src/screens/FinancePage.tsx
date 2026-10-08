@@ -13,7 +13,8 @@ import {
   fetchCashFlow,
   fetchOverview,
 } from "@/api/finance";
-import { ApiError } from "@/api/client";
+import { ApiError, isPlanLockedError } from "@/api/client";
+import { PlanLockedCard } from "@/components/PlanLockedCard";
 import type {
   AnalyticsResponse,
   BreakdownItem,
@@ -183,6 +184,8 @@ export function FinancePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // Gói bị khóa (403 PLAN_LOCKED) → thẻ khóa thay ô lỗi, giữ câu backend.
+  const [planLocked, setPlanLocked] = useState<string | null>(null);
   // Số thứ tự lượt tải — đổi kỳ/sàn liên tiếp thì chỉ lượt MỚI NHẤT được ghi.
   const reqSeq = useRef(0);
 
@@ -209,8 +212,14 @@ export function FinancePage() {
         setPrevBreakdown(prevAna?.breakdown ?? null);
         setOverview(ov);
         setCashRows(cash.rows);
+        setPlanLocked(null);
       } catch (err) {
         if (seq !== reqSeq.current) return;
+        if (isPlanLockedError(err)) {
+          // Khóa giữa phiên (hết ân hạn khi app đang mở) cũng phải hiện — kể cả tải nền.
+          setPlanLocked(err.message);
+          return;
+        }
         if (asRefresh === "silent") return; // tải nền hỏng thì giữ số cũ
         setError(
           err instanceof ApiError ? err.message : "Có lỗi xảy ra, kéo xuống thử lại"
@@ -307,6 +316,8 @@ export function FinancePage() {
         <View className="items-center py-16">
           <ActivityIndicator size="large" color="#64748b" />
         </View>
+      ) : planLocked ? (
+        <PlanLockedCard message={planLocked} onRetry={() => void load(range, channel)} />
       ) : error ? (
         <View className="items-center rounded-2xl bg-white dark:bg-slate-900 p-6">
           <Text className="text-center text-sm text-red-500 dark:text-red-400">{error}</Text>

@@ -12,7 +12,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { ApiError } from "@/api/client";
+import { ApiError, isPlanLockedError } from "@/api/client";
+import { PlanLockedCard } from "@/components/PlanLockedCard";
 import {
   createAdsCampaignFromRecommendation,
   fetchAdsRecommendations,
@@ -99,9 +100,13 @@ export function AdsRecommendSection({
   // Khóa lượt tải đã về (gian + token) — "đang tải" = khóa hiện tại chưa về,
   // không cần setState đồng bộ trong effect.
   const loadKey = `${channelId}#${reloadToken}`;
-  const [loaded, setLoaded] = useState<{ key: string; error: string } | null>(null);
+  const [loaded, setLoaded] = useState<{ key: string; error: string; locked?: boolean } | null>(
+    null
+  );
   const loading = loaded?.key !== loadKey;
   const error = loaded?.key === loadKey ? loaded.error : "";
+  const planLocked = loaded?.key === loadKey && loaded.locked === true;
+  const [retryTick, setRetryTick] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [itemLoadingId, setItemLoadingId] = useState<string | null>(null);
@@ -132,9 +137,11 @@ export function AdsRecommendSection({
         setLoaded({
           key: loadKey,
           error: err instanceof ApiError ? err.message : "Không tải được gợi ý",
+          locked: isPlanLockedError(err),
         });
       });
-  }, [channelId, loadKey]);
+    // retryTick: nút "Đã gia hạn, tải lại" của thẻ khóa.
+  }, [channelId, loadKey, retryTick]);
 
   /** Mở một SP chưa có dải ROAS của sàn → lấy riêng cho SP đó (3 call), chấm lại cả bảng. */
   const openDetail = (row: AdsRecommendationRow) => {
@@ -183,6 +190,15 @@ export function AdsRecommendSection({
           <ActivityIndicator color="#64748b" />
           <Text className="mt-2 text-xs text-slate-400 dark:text-slate-500">Đang chấm điểm sản phẩm…</Text>
         </View>
+      ) : planLocked && !data ? (
+        <PlanLockedCard
+          compact
+          message={error}
+          onRetry={() => {
+            setLoaded(null);
+            setRetryTick((t) => t + 1);
+          }}
+        />
       ) : error && !data ? (
         <Text className="py-3 text-center text-xs text-red-500 dark:text-red-400">{error}</Text>
       ) : data ? (

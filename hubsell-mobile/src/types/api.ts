@@ -62,10 +62,15 @@ export interface MeResponse {
   hasChannels: boolean;
 }
 
-/** GET /api/subscription/me — chỉ chép phần màn Cấu hình dùng. */
+/**
+ * GET /api/subscription/me — chép phần app dùng: dòng gói ở Tài khoản + dải
+ * nhắc gia hạn / thẻ khóa (cùng nguồn với PlanQuotaBanner web). Backend là hàng
+ * rào thật (requirePlanUnlocked → 403 PLAN_LOCKED); app chỉ trình bày.
+ */
 export interface MyPlanResponse {
-  /** Tài khoản điều hành nền tảng — không thuộc gói nào. */
+  /** Tài khoản điều hành nền tảng — không thuộc gói nào, ẩn mọi dải nhắc. */
   exempt: boolean;
+  /** false = khách cũ chưa gán thuê bao → không giới hạn gì. */
   hasSubscription: boolean;
   plan: { id: string; code: string; name: string } | null;
   subscription: {
@@ -75,6 +80,18 @@ export interface MyPlanResponse {
     currentPeriodEnd: string | null;
     daysLeft: number | null;
   } | null;
+  orders: {
+    limit: number | null;
+    used: number;
+    ratio: number | null;
+    state: "ok" | "warn" | "over" | "locked";
+    /** Hết ân hạn trần đơn sau mốc này — null khi chưa chạm 100%. */
+    graceDeadline: string | null;
+  };
+  /** Gói hết hạn: ân hạn 7 ngày (lockDeadline) rồi khóa tầng nâng cao. */
+  expiry: { expired: boolean; lockDeadline: string | null; locked: boolean };
+  locked: boolean;
+  lockedReason: "ORDERS" | "EXPIRED" | null;
 }
 
 export interface OrderItemDto {

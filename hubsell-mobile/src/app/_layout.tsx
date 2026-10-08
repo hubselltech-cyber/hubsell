@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/auth/AuthContext";
 import { BiometricGate } from "@/auth/BiometricGate";
+import { PlanProvider } from "@/plan/PlanContext";
 import { ThemeProvider } from "@/theme/ThemeContext";
 
 export default function RootLayout() {
@@ -12,6 +13,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
+          <PlanProvider>
           <BiometricGate>
             {/* style auto: chữ status bar tự đảo theo scheme sáng/tối */}
             <StatusBar style="auto" />
@@ -20,6 +22,7 @@ export default function RootLayout() {
               <Stack.Screen name="assistant" options={{ presentation: "modal" }} />
             </Stack>
           </BiometricGate>
+          </PlanProvider>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>

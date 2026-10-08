@@ -10,7 +10,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { ApiError } from "@/api/client";
+import { ApiError, isPlanLockedError } from "@/api/client";
+import { PlanLockedCard } from "@/components/PlanLockedCard";
 import {
   decideAdsCampaign,
   fetchAdsOverview,
@@ -122,6 +123,8 @@ export function AdsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // Gói bị khóa (403 PLAN_LOCKED) → thẻ khóa thay ô lỗi, giữ câu backend.
+  const [planLocked, setPlanLocked] = useState<string | null>(null);
   // Tăng mỗi lần kéo xuống làm mới → khối Gợi ý chạy Ads tải lại theo
   // (khối đó không theo nhịp 60s vì mỗi lần gọi là chấm cả kho SP).
   const [recoToken, setRecoToken] = useState(0);
@@ -146,8 +149,13 @@ export function AdsPage() {
         const res = await fetchAdsOverview(p, { from, to, channelId: chId || undefined });
         if (seq !== reqSeq.current) return;
         setData(res);
+        setPlanLocked(null);
       } catch (err) {
         if (seq !== reqSeq.current) return;
+        if (isPlanLockedError(err)) {
+          setPlanLocked(err.message);
+          return;
+        }
         if (asRefresh === "silent") return; // tải nền hỏng thì giữ số cũ
         setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra, kéo xuống thử lại");
       } finally {
@@ -286,6 +294,13 @@ export function AdsPage() {
         {loading ? (
           <View className="items-center py-16">
             <ActivityIndicator size="large" color="#64748b" />
+          </View>
+        ) : planLocked ? (
+          <View className="mt-2">
+            <PlanLockedCard
+              message={planLocked}
+              onRetry={() => void load(platform, range, channelId)}
+            />
           </View>
         ) : error ? (
           <View className="items-center rounded-2xl bg-white p-6 dark:bg-slate-900">

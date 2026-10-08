@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useAuth } from "../auth/AuthContext";
 import { changePassword, deleteAccount } from "../api/auth";
-import { fetchMyPlan } from "../api/subscription";
+import { usePlan } from "@/plan/PlanContext";
 import { ApiError } from "../api/client";
 import type { MyPlanResponse } from "../types/api";
 import { UserAvatar } from "./UserAvatar";
@@ -85,7 +85,7 @@ function InfoRow({
   );
 }
 
-/** Dòng "Gói đang dùng" chỉ hiện ngoài iOS (xem chú thích trong useEffect nạp gói). */
+/** Dòng "Gói đang dùng" chỉ hiện ngoài iOS (xem chú thích chỗ đọc gói bên dưới). */
 const SHOW_PLAN = Platform.OS !== "ios";
 
 const VALUE_CLS = "text-sm font-medium text-slate-900 dark:text-slate-100";
@@ -107,27 +107,17 @@ export function AccountScreen() {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [plan, setPlan] = useState<MyPlanResponse | null>(null);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
-  // Gói đang dùng — lỗi mạng thì chỉ ẩn dòng gói, không chặn cả màn.
+  // Gói đang dùng — đọc từ PlanContext (một nguồn với dải nhắc Trang chủ);
+  // chưa tải được thì chỉ ẩn dòng gói, không chặn cả màn.
   // iOS KHÔNG hiện: Apple từ chối 3.1.1 (06/10/2026) vì thấy "gói · dùng thử ·
   // hết hạn" mà không mua được bằng In-App Purchase. Gói bán cho doanh nghiệp
   // trên web, app chỉ là công cụ dùng — trên iOS giấu luôn cho khỏi tranh cãi.
-  useEffect(() => {
-    if (SHOW_PLAN === false) return;
-    let cancelled = false;
-    fetchMyPlan()
-      .then((res) => {
-        if (!cancelled) setPlan(res);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { plan: myPlan } = usePlan();
+  const plan = SHOW_PLAN ? myPlan : null;
 
   if (!user) return null;
 

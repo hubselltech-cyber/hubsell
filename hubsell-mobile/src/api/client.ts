@@ -21,6 +21,7 @@ const API_BASE =
 
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
+let onPlanLocked: (() => void) | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -28,6 +29,15 @@ export function setAuthToken(token: string | null) {
 
 export function setOnUnauthorized(cb: (() => void) | null) {
   onUnauthorized = cb;
+}
+
+/**
+ * Backend trả 403 PLAN_LOCKED khi gói hết hạn quá ân hạn / vượt trần đơn —
+ * PlanContext nghe tín hiệu này để tải lại trạng thái gói ngay (dải nhắc đổi
+ * sang đỏ mà không chờ nhịp 5 phút).
+ */
+export function setOnPlanLocked(cb: (() => void) | null) {
+  onPlanLocked = cb;
 }
 
 export class ApiError extends Error {
@@ -91,6 +101,10 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
     onUnauthorized?.();
   }
 
+  if (res.status === 403 && (data as { code?: string } | null)?.code === "PLAN_LOCKED") {
+    onPlanLocked?.();
+  }
+
   if (!res.ok) {
     const body = data as { error?: string; code?: string } | null;
     // Apple 3.1.1 (06/10/2026): app KHÔNG được dẫn người dùng tới cách thanh
@@ -103,4 +117,13 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
     throw new ApiError(message, res.status, data);
   }
   return data as T;
+}
+
+/** Lỗi do gói bị khóa (403 PLAN_LOCKED) — màn gọi hiện thẻ khóa thay ô lỗi. */
+export function isPlanLockedError(err: unknown): err is ApiError {
+  return (
+    err instanceof ApiError &&
+    err.status === 403 &&
+    (err.body as { code?: string } | null)?.code === "PLAN_LOCKED"
+  );
 }

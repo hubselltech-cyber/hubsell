@@ -4,6 +4,7 @@ import { useRouter, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { AssistantOrb } from "@/components/AssistantOrb";
+import { PlanBanner } from "@/components/PlanBanner";
 import { OverviewPage } from "@/screens/OverviewPage";
 import { FinancePage } from "@/screens/FinancePage";
 import { AdsPage } from "@/screens/AdsPage";
@@ -79,6 +80,10 @@ export default function AdminHome() {
           </View>
         ) : null}
       </View>
+
+      {/* Dải nhắc gói: sắp hết hạn (vàng, tắt được) / hết hạn, vượt trần, khóa
+          (đỏ, không tắt) — cùng luật PlanQuotaBanner web, chạm → trang gói web. */}
+      <PlanBanner />
 
       {PagerView ? (
         <PagerView

@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 08/10/2026 (trưa) — MOBILE: DẢI NHẮC HẾT HẠN GÓI + THẺ KHÓA TẦNG NÂNG CAO (anh hỏi 06/10 "app đã có thông báo gia hạn / chặn chưa" → chưa; nay có) — ĐÃ COMMIT, chờ anh push
+
+- **Trước:** app chỉ có dòng "Gói đang dùng · Quá hạn" ở Tài khoản (Android). Hết ân hạn thì backend trả 403 PLAN_LOCKED cho `/api/finance/*` và `/api/quang-cao/*` → Tổng quan, Tài chính, Quảng cáo, Gợi ý Ads hiện câu lỗi thô ("kéo xuống thử lại"), không nói lý do, không nói đơn vẫn đồng bộ.
+- **Nay (hubsell-mobile):** (1) `src/plan/PlanContext.tsx` — một nguồn trạng thái gói toàn app (GET /api/subscription/me khi đăng nhập, foreground, 5 phút, và NGAY khi có API trả 403 PLAN_LOCKED qua `setOnPlanLocked` trong client.ts); Tài khoản đọc từ đây thay vì tự gọi. (2) `components/PlanBanner.tsx` dưới thanh mục Trang chủ, luật ưu tiên chép `bannerContentOf` web: đỏ (khóa / hết hạn trong ân hạn / vượt trần, không tắt được), vàng (còn ≤ 3 ngày / chạm 80 % trần, có nút tắt nhớ theo khóa trong SecureStore). (3) `components/PlanLockedCard.tsx` thay ô lỗi ở Tài chính, Quảng cáo, Gợi ý Ads; Tổng quan CHỈ thay khối tiền (hero + ô Chi phí), số đơn / phễu / tỷ trọng kênh / đơn hoàn vẫn hiện. `isPlanLockedError()` trong client.ts. `MyPlanResponse` thêm orders / expiry / locked / lockedReason.
+- **★ Luật store đã áp (khớp client.ts 06/10 + docs/DUA-APP-LEN-CH-PLAY-APP-STORE.md):** KHÔNG nút/link ra trang mua gói, KHÔNG chữ "gia hạn / nâng gói / nơi mua" trong app; dải chỉ nêu sự kiện (hết hạn ngày nào, tính năng nâng cao tạm khóa từ ngày nào, đơn vẫn đồng bộ); thẻ khóa dùng câu trung tính client đã thay + "Đăng nhập bản web để xem chi tiết tài khoản" (chủ shop) / "Liên hệ chủ shop" (nhân viên). **iOS ẩn hẳn dải nhắc** (cùng cờ với dòng gói ở Tài khoản — Apple 3.1.1); thẻ khóa iOS vẫn hiện vì API đã 403 nhưng không nhắc gói. Bản đầu em có nút "Gia hạn trên web" mở app.hubsell.tech/settings/plan — đã GỠ sau khi đọc chốt 06/10.
+- **Đã thử local** (backend + giả lập web, tài khoản seed tạm bỏ cờ điều hành, đổi `currentPeriodEnd` qua script): 3 trạng thái còn 2 ngày (vàng + tắt nhớ qua tải lại) / hết hạn 1 ngày (đỏ, ghi ngày khóa 12/10) / quá ân hạn (đỏ + thẻ khóa cả 4 chỗ, Tổng quan vẫn có số đơn), cỡ 320 / 360 / 390, nền tối. DB local đã trả về như cũ. ⏳ CHƯA thử máy ảo Android + máy thật; chưa build APK (anh dặn gom rồi build cả thể).
+- **Bẫy phiên này:** thay đổi của em bị cất vào `stash@{0}` khi master gộp 34 commit (06→08/10); 4 file mới không nằm trong stash → dựng lại từ đầu. Stash vẫn còn, có thể `git stash drop stash@{0}` sau khi commit này lên.
+- **Bẫy ngoài lề:** `getOwnerPlanState` có cache 60 s theo chủ shop — đổi DB xong phải chờ ~1 phút mới thấy trạng thái mới.
+
 ## Phiên 08/10/2026 (sáng) — ✅ LÁT T1 LUỒNG TENANT ĐI TỜ NHÁP — ĐÃ PUSH `73e3dc7` + `466393a` (anh đẩy ~10:30) + MISA trả lời ticket
 
 - **Anh chốt sau khi push:** khách thao tác như HQ — Hubsell chỉ lên tờ nháp, seller vẫn vào meInvoice ký & phát hành (đúng mô hình BigSeller/KiotViet/MISA eShop). Muốn không bấm gì thì chỉ còn HSM (thuê NCC thứ ba) hoặc "eSign nâng cao" (MISA chưa nói giá). ⏳ Chờ anh thử thật vai seller trên shop của anh với tài khoản HQ 1C26THB.
