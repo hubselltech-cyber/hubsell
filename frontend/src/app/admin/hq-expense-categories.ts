@@ -33,7 +33,7 @@ export const HQ_EXPENSE_CATEGORIES: HqExpenseCategory[] = [
   {
     key: "SOFTWARE",
     label: "Phần mềm & hạ tầng (AI, server, domain)",
-    hint: "NCC nước ngoài (Anthropic, Render, Supabase…) phát sinh THUẾ NHÀ THẦU — gom riêng khoản mục này để kế toán kê khai thay.",
+    hint: "NCC nước ngoài CHƯA đăng ký thuế VN (Render, Supabase, Vercel, Zoho, Apple, Google…) phát sinh THUẾ NHÀ THẦU — gom riêng khoản mục này để kế toán kê khai thay. Anthropic + Hostinger đã đăng ký, tự khai nộp — không khai thay (bảng ở tab Lịch thuế).",
   },
   { key: "MARKETING", label: "Marketing & quảng cáo" },
   { key: "BANK_FEE", label: "Phí ngân hàng & cổng thanh toán" },
