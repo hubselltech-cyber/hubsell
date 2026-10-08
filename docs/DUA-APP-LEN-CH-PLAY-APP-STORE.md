@@ -8,7 +8,7 @@ Cập nhật 01/10/2026 (D-U-N-S đã cấp 25/09; nội dung trang kho, tờ kh
 
 | Kho | Đã xong | Còn lại |
 |---|---|---|
-| Google Play | Tài khoản nhà phát triển loại tổ chức đã tạo, đã trả 25 USD; tên nhà phát triển `Hubsell Technology`; D-U-N-S Google tra ra ngay; website `hubsell.vn` đã xác minh | Mục Xác minh danh tính: tải giấy tờ tổ chức (chờ giấy đăng ký có tên tiếng Anh, hồ sơ OD-0967282/26), rồi CCCD người đại diện, rồi OTP hai số điện thoại. Chưa xong thì nút Tạo ứng dụng còn khóa |
+| Google Play | Tài khoản nhà phát triển loại tổ chức đã tạo, đã trả 25 USD; tên nhà phát triển `Hubsell Technology`; D-U-N-S Google tra ra ngay; website `hubsell.vn` đã xác minh; **08/10 GCN mới có tên tiếng Anh đã về** (`Downloads\Certificate (1).pdf`: tên nước ngoài HUBSELL TECHNOLOGY COMPANY LIMITED, viết tắt HUBSELL TECHNOLOGY CO., LTD.) | Mục Xác minh danh tính (Trang chủ → Bắt đầu → Tổ chức → Tiếp): **anh tự kéo tệp GCN vào ô** vì khung tải tệp là iframe payments.google.com, công cụ Chrome của Claude không chèn tệp được; rồi bước 2 CCCD người đại diện (Claude không được nhập giấy tờ tùy thân); OTP số điện thoại chỉ mở sau khi Google duyệt 2 bước trên. Chưa xong thì nút Tạo ứng dụng còn khóa. Rủi ro: Play/D&B ghi `CO., LTD.` = tên viết tắt trên GCN, Google có thể hỏi lại |
 | App Store | Đã nộp đơn Apple Developer Program loại Company / Organization trên **web**, Enrollment ID `NC89XMUT6N`, trạng thái đang xét | Chờ Apple xác minh quyền ký (email về `dev@hubsell.vn`, có thể gọi +84 965863292) → đồng ý thỏa thuận + trả 99 USD |
 
 Những điểm làm khác hướng dẫn cũ, **lấy theo bảng này**:
