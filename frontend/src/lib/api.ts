@@ -4460,6 +4460,11 @@ export interface InvoiceQueueResponse extends InvoiceAutoIssueState {
   autoAdjustEnabled: boolean;
   /** Đã đủ cấu hình tối thiểu để phát hành (ký hiệu + tài khoản meInvoice). */
   configured: boolean;
+  /**
+   * Cách ký của shop (lát T1 tenant, 08/10/2026): DRAFT = eSign / USB Token → Hubsell lập
+   * tờ nháp, shop ký theo lô trên web NCC; AUTO = HSM ký nền; null = chưa cấu hình.
+   */
+  signMode?: "DRAFT" | "AUTO" | null;
   /** Tổng TOÀN hàng chờ — không đổi theo tab lọc. */
   total: number;
   /** Số đơn trong hàng chờ đã được sàn đối soát. */

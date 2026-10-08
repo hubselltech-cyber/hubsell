@@ -83,22 +83,31 @@ import { TABLE_HEAD_EMPHASIS, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /** Hai mốc tự động phát hành — mỗi mốc mang sẵn câu giải thích (thay tooltip). */
+/**
+ * Câu giải thích mốc xuất đổi theo CÁCH KÝ của shop (lát T1 tenant, 08/10/2026): chữ ký
+ * eSign / USB Token → Hubsell chỉ LẬP TỜ NHÁP, shop ký theo lô trên web NCC (NĐ 254/2026:
+ * ngày ký chậm nhất là ngày làm việc tiếp theo kể từ ngày lập); HSM → ra số ngay.
+ */
 const AUTO_ISSUE_TRIGGER_OPTIONS: Array<{
   value: InvoiceAutoIssueTrigger;
   title: string;
   badge?: string;
-  desc: string;
+  desc: (draft: boolean) => string;
 }> = [
   {
     value: "DELIVERED",
     title: "Ngay khi giao thành công",
     badge: "Đúng quy định",
-    desc: "Hóa đơn ra cùng ngày giao hàng — đúng thời điểm pháp luật yêu cầu lập hóa đơn.",
+    desc: (draft) =>
+      draft
+        ? "Tờ nháp lập cùng ngày giao hàng — đúng thời điểm pháp luật yêu cầu; bạn ký trong ngày hoặc ngày làm việc kế."
+        : "Hóa đơn ra cùng ngày giao hàng — đúng thời điểm pháp luật yêu cầu lập hóa đơn.",
   },
   {
     value: "SETTLED",
     title: "Sau khi sàn đối soát xong",
-    desc: "Ra trễ vài ngày so với quy định. Bù lại, đơn bị hoàn sớm chưa kịp xuất nên ít phải lập hóa đơn điều chỉnh.",
+    desc: (draft) =>
+      `${draft ? "Tờ nháp lập" : "Ra"} trễ vài ngày so với quy định. Bù lại, đơn bị hoàn sớm chưa kịp xuất nên ít phải lập hóa đơn điều chỉnh.`,
   },
 ];
 
@@ -355,9 +364,11 @@ export function InvoiceIssueCard({
     saveAutoIssue({ enabled }, (r) =>
       !r.autoIssueEnabled
         ? "Đã tắt tự động phát hành."
-        : r.autoIssueTrigger === "SETTLED"
-          ? "Đã BẬT tự động phát hành — đơn giao từ hôm nay, sau khi sàn đối soát, sẽ được xuất mỗi 15 phút. Đơn cũ hơn xuất tay ở hàng chờ."
-          : "Đã BẬT tự động phát hành — đơn giao thành công từ hôm nay sẽ được xuất mỗi 15 phút. Đơn cũ hơn xuất tay ở hàng chờ."
+        : queue?.signMode === "DRAFT"
+          ? `Đã BẬT tự động — đơn giao${r.autoIssueTrigger === "SETTLED" ? " và sàn đối soát xong" : " thành công"} từ hôm nay sẽ được lập tờ nháp mỗi 15 phút; bạn ký theo lô trên web nhà cung cấp (nên ký trong ngày). Đơn cũ hơn xuất tay ở hàng chờ.`
+          : r.autoIssueTrigger === "SETTLED"
+            ? "Đã BẬT tự động phát hành — đơn giao từ hôm nay, sau khi sàn đối soát, sẽ được xuất mỗi 15 phút. Đơn cũ hơn xuất tay ở hàng chờ."
+            : "Đã BẬT tự động phát hành — đơn giao thành công từ hôm nay sẽ được xuất mỗi 15 phút. Đơn cũ hơn xuất tay ở hàng chờ."
     );
 
   const handleChangeTrigger = (trigger: InvoiceAutoIssueTrigger) =>
@@ -531,13 +542,14 @@ export function InvoiceIssueCard({
               <h3 className="text-sm font-semibold text-slate-900">
                 Xuất hóa đơn cho đơn hàng
               </h3>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                Thí điểm
-              </span>
+              {/* Nhãn "Thí điểm" gỡ 08/10/2026: module đã mở thương mại từ 24/08, nhãn
+                  làm khách nghi ngờ chứng từ thật. */}
             </div>
             <p className={TEXT_SUB}>
               Đơn <b>đã giao thành công</b> chưa có hóa đơn tự vào hàng chờ —
               tick chọn rồi xuất, hoặc bật tự động.
+              {queue?.signMode === "DRAFT" &&
+                " Với chữ ký eSign / USB Token, Hubsell lập tờ nháp để bạn ký theo lô trên web nhà cung cấp — hóa đơn có hiệu lực sau khi bạn ký."}
             </p>
           </div>
         </div>
@@ -563,8 +575,18 @@ export function InvoiceIssueCard({
                   Tự động phát hành
                 </Label>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Hệ thống tự xuất hóa đơn mỗi 15 phút cho đơn giao <b>từ ngày bật</b>.
-                  Đơn cũ hơn bạn xuất tay ở hàng chờ bên dưới.
+                  {queue?.signMode === "DRAFT" ? (
+                    <>
+                      Hệ thống tự lập <b>tờ nháp</b> mỗi 15 phút cho đơn giao <b>từ ngày bật</b>;
+                      bạn ký theo lô trên web nhà cung cấp, nên ký trong ngày. Đơn cũ hơn bạn
+                      xuất tay ở hàng chờ bên dưới.
+                    </>
+                  ) : (
+                    <>
+                      Hệ thống tự xuất hóa đơn mỗi 15 phút cho đơn giao <b>từ ngày bật</b>.
+                      Đơn cũ hơn bạn xuất tay ở hàng chờ bên dưới.
+                    </>
+                  )}
                 </p>
               </div>
               {savingAuto ? (
@@ -624,7 +646,7 @@ export function InvoiceIssueCard({
                         )}
                       </span>
                       <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {opt.desc}
+                        {opt.desc(queue?.signMode === "DRAFT")}
                       </span>
                     </span>
                   </button>

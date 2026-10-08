@@ -26,6 +26,7 @@ import {
 } from "../integrations/invoice/auto-issue-policy";
 import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
 import { draftSignUrl, isSignOverdue } from "../integrations/invoice/draft-signing";
+import { usesWebDraft } from "../integrations/invoice/misa-invoiceweb";
 import { getInvoiceProvider } from "../integrations/invoice/index";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import { runInvoiceCqtFollowOnce } from "../workers/invoice-cqt-follow";
@@ -979,6 +980,7 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
           autoAdjustEnabled: true,
           invoiceSeries: true,
           meinvoiceUsername: true,
+          signMethod: true,
         },
       }),
     ]);
@@ -1027,6 +1029,9 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
       autoAdjustEnabled: cfg?.autoAdjustEnabled ?? false,
       // Đủ điều kiện phát hành tối thiểu: đã chọn ký hiệu + có tài khoản meInvoice.
       configured: Boolean(cfg?.invoiceSeries && cfg?.meinvoiceUsername),
+      // Cách ký của shop (lát T1 tenant): DRAFT = eSign/USB → Hubsell lập tờ nháp, shop ký
+      // trên web NCC; AUTO = HSM ký nền. Giao diện đổi câu chữ khối Tự động theo đây.
+      signMode: cfg ? (usesWebDraft(cfg.signMethod) ? "DRAFT" : "AUTO") : null,
       total,
       settledTotal,
       overdueTotal,
