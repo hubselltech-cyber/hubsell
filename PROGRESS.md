@@ -5,6 +5,23 @@
 
 ---
 
+## Phiên 08/10/2026 (chiều) — ADS: HẠ ROI MỤC TIÊU THEO BIÊN LÃI (sàn "ROAS an toàn" giữ lãi mong muốn) + MỞ GỢI Ý HẠ CHO CA ĐÃ ĐẠT MỤC TIÊU — ĐÃ CODE, CHỜ ANH GẬT RỒI PUSH
+
+- **Ca anh soi (ANO TikTok):** ROI thực 13,84 / mục tiêu 15 / hòa vốn 5,58 / tiêu 12% ngân sách mà máy nói "Quảng cáo đang có lãi, chưa thấy gì cần sửa". Nguyên nhân: campaign-advice.ts (19/09) chỉ khuyên hạ khi ROI **chưa đạt** 90% mục tiêu; 13,84 ≥ 13,5 nên rơi vào healthy. Shopee assessDelivery cùng khuôn (đòi ROAS < mục tiêu). Lý do cũ: "không có căn cứ cho mốc N × hòa vốn".
+- **Tài liệu đã tra (08/10):** TikTok Best practices for Product GMV Max — *lower ROI targets boost delivery and GMV, higher targets may limit spend; keep each ROI setting at least three full days; budget consumption below 80%*. Google Ads — *gradually reduce tROAS to increase conversion value*. Công thức mục tiêu theo lãi ròng mong muốn (Amazon ACoS: Target ACoS = margin − desired profit; blog ngành: 1,3–1,5 × break-even). POAS (ProfitMetrics/Adchieve). ROAS biên: lợi nhuận lớn nhất khi đồng kế tiếp vẫn trả trên hòa vốn (WorkMagic, SegmentStream).
+- **Luật mới (chung Shopee + TikTok, `shopee/ads-assistant-rules.ts`):**
+  - Sàn "ROAS an toàn" = `profitFloorRoas(biên, lãi mong muốn)` = 1/(biên − lãi/100), làm tròn lên 0,1; không dưới hòa vốn (TikTok) / không dưới hòa vốn × dangerFactor (Shopee). Lãi mong muốn `config.profit.minKeepPer100`, **mặc định 5đ/100đ (tự chọn, ghi rõ)**; biên không đủ → không có sàn hợp lệ, không khuyên hạ, nói cách sửa.
+  - Vạch "mục tiêu đang ghìm": ROAS thực < mục tiêu × `TARGET_BINDING_BAND` 1,1 (kể cả đã đạt) + ngân sách còn dư → gợi ý hạ một nấc 10%. ROAS vượt mục tiêu quá 10% mà tiêu ít → "mục tiêu không phải thứ chặn, thêm video / sản phẩm". Số 1,1 tự chọn, đối xứng mốc 90% của TikTok.
+  - `stepProfitCheck`: so lãi tuyệt đối (GMV × biên − chi) 2 ngày trọn trước / sau nấc HẠ gần nhất; không tăng → **target_hold "Giữ mục tiêu"**. Cần cột mới `AdsCampaign.roasTargetPrev` (migration `20261008170000_ads_campaign_roas_target_prev`, ADD COLUMN IF NOT EXISTS — nhẹ) ghi ở 3 chỗ đổi mục tiêu (sync TikTok, sync Shopee, nâng mục tiêu trong Hubsell).
+  - Khóa giữa hai nấc: TikTok **72 giờ** (`TIKTOK_TARGET_STEP_WAIT_HOURS`, theo tài liệu TikTok 3 ngày trọn); Shopee giữ 48 giờ (anh chốt 04/10).
+  - Chữ: "đã đạt" chỉ khi ROI ≥ mục tiêu; 90%–dưới mục tiêu = "gần đạt (từ 90%)". Đề xuất kèm lãi/100đ ở nấc mới + sàn + mức lãi giữ.
+- **TikTok:** `tiktok-ads/advice-inputs.ts` nạp minKeepPer100 (AdsAssistantConfig.config.profit — gian TikTok dùng chung bảng) + stepChecks (một findMany quanh mốc đổi, 14 ngày) cho 3 route (bảng Tổng quan, trang chiến dịch, tab Hòa vốn sản phẩm). PUT `/api/quang-cao/tiktok/profit-config` {channelId, minKeepPer100}. Web: ô "Lãi tối thiểu giữ lại sau quảng cáo" ngay dưới mô tả bảng chiến dịch (Enter / nút Lưu chỉ hiện khi số đổi).
+- **Shopee:** assessDelivery nhận minKeepPer100 + stepCheck; DeliveryStatus thêm `target_hold`; câu đề xuất ghi lãi/100đ ở nấc mới + "giữ lãi từ Xđ/100đ"; Cấu hình Trợ lý thêm khối "Hạ mục tiêu ROAS — lãi tối thiểu giữ lại".
+- **Kiểm:** vitest 103/103 (ads-delivery, tiktok-ads-campaign-advice viết lại, ads-assistant-rules, breakeven, auto-execute) + toàn bộ `src/integrations/__tests__` xanh; tsc backend + frontend sạch; eslint frontend sạch. Local: gieo reviewer@hubsell.vn + 6 chiến dịch GMV Max demo (scripts/_tmp, không commit) → 6 nhãn đúng: Ngân sách đang chặn / Quảng cáo đang lỗ / Giữ mục tiêu / Mục tiêu đang ghìm phân phối (ANO: hạ 15 → 13,5, sàn 3,3 với biên 35,8%) / Theo dõi sau đổi mục tiêu (còn 52 giờ) / Đang lãi (vượt xa mục tiêu); đổi lãi mong muốn 5 → 10 lưu DB, sàn đổi 3,3 → 3,9.
+- ⏳ Sau deploy: kiểm câu mới trên ANO (Shopee + TikTok). Hai số tự chọn (5đ/100đ, vạch 1,1) ghi rõ trong mã; anh muốn đổi thì sửa hằng số.
+
+---
+
 ## Phiên 08/10/2026 (trưa) — MOBILE: DẢI NHẮC HẾT HẠN GÓI + THẺ KHÓA TẦNG NÂNG CAO (anh hỏi 06/10 "app đã có thông báo gia hạn / chặn chưa" → chưa; nay có) — ĐÃ COMMIT, chờ anh push
 
 - **Trước:** app chỉ có dòng "Gói đang dùng · Quá hạn" ở Tài khoản (Android). Hết ân hạn thì backend trả 403 PLAN_LOCKED cho `/api/finance/*` và `/api/quang-cao/*` → Tổng quan, Tài chính, Quảng cáo, Gợi ý Ads hiện câu lỗi thô ("kéo xuống thử lại"), không nói lý do, không nói đơn vẫn đồng bộ.

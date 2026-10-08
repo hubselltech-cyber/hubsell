@@ -59,9 +59,11 @@ import {
   getStoredUser,
   getTiktokAdsAuthUrl,
   requestTiktokAdsRefresh,
+  saveTiktokAdsProfitConfig,
   unlinkTiktokAds,
   type TiktokAdsCampaignRow,
 } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 import { RANGE_PRESETS, formatRangeLabel, toDateKey, type DateRange } from "@/lib/date-range";
 import { formatNumber, formatVND } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -69,6 +71,60 @@ import { qk } from "@/lib/query-keys";
 import { TEXT_NUMBER_STRONG, TEXT_SUB } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
+
+/**
+ * Ô "Lãi tối thiểu giữ lại sau quảng cáo" (đ / 100đ doanh thu) của gian — sàn để gợi ý hạ ROI mục tiêu dừng lại
+ * (backend profitFloorRoas). Một ô, một nút Lưu; chỉ hiện khi số đổi khác số đang lưu (khách cần đơn giản).
+ */
+function TiktokProfitFloorField({ channelId, value, onSaved }: { channelId: string; value: number; onSaved: () => void }) {
+  const [draft, setDraft] = useState(String(value));
+  const [saving, setSaving] = useState(false);
+  const parsed = Number(draft.replace(",", "."));
+  const valid = Number.isFinite(parsed) && parsed >= 0 && parsed < 100;
+  const dirty = valid && Math.round(parsed * 10) / 10 !== value;
+  async function save() {
+    if (!dirty) return;
+    setSaving(true);
+    try {
+      const r = await saveTiktokAdsProfitConfig(channelId, Math.round(parsed * 10) / 10);
+      toast.success(r.message);
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được mức lãi mong muốn");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+      <label htmlFor="tiktok-min-keep" className="font-medium text-slate-900">
+        Lãi tối thiểu giữ lại sau quảng cáo
+      </label>
+      <div className="flex items-center gap-1.5">
+        <Input
+          id="tiktok-min-keep"
+          inputMode="decimal"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void save();
+          }}
+          aria-invalid={!valid}
+          className="h-8 w-16 text-right"
+        />
+        <span className="text-muted-foreground">đ trên mỗi 100đ doanh thu</span>
+      </div>
+      {dirty && (
+        <Button size="sm" variant="outline" onClick={() => void save()} disabled={saving || !valid}>
+          {saving ? "Đang lưu…" : "Lưu"}
+        </Button>
+      )}
+      <span className="text-xs text-muted-foreground">
+        Gợi ý hạ ROI mục tiêu đi từng nấc 10% và dừng ở mức còn giữ được số lãi này; đặt 0 là hạ được tới hòa vốn.
+      </span>
+    </div>
+  );
+}
 
 const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
   {
@@ -648,6 +704,15 @@ export function TiktokAdsPage() {
                   hòa vốn (mốc bắt đầu lỗ, tính từ Lãi/Lỗ thực hiện của các đơn đã đối soát — trỏ vào số để xem căn cứ). Bấm
                   một chiến dịch để soi từng video: video nào đang tiêu tiền mà không ra đơn.
                 </CardDescription>
+                {/* 08/10: sàn cho gợi ý hạ ROI mục tiêu — khách đặt mức lãi tối thiểu muốn giữ sau quảng cáo. */}
+                {data?.minKeepPer100 != null && selectedId && (
+                  <TiktokProfitFloorField
+                    key={`${selectedId}-${data.minKeepPer100}`}
+                    channelId={selectedId}
+                    value={data.minKeepPer100}
+                    onSaved={() => void queryClient.invalidateQueries({ queryKey: ["tiktok-ads"] })}
+                  />
+                )}
               </CardHeader>
               <CardContent>
                 {campaigns.length === 0 ? (

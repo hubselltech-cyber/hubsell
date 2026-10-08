@@ -155,7 +155,7 @@ export async function upsertShopeeCampaignSettings(
         where: {
           channelId_campaignId: { channelId: channel.id, campaignId },
         },
-        update: targetChanged ? { ...data, roasTargetChangedAt: new Date() } : data,
+        update: targetChanged ? { ...data, roasTargetChangedAt: new Date(), roasTargetPrev: prevTarget } : data,
         create: { channelId: channel.id, campaignId, ...data },
       });
       rowIdByCampaignId.set(campaignId, row.id);

@@ -13,8 +13,8 @@ import { SHOP_GROUP, campaignGroupKey } from "../../lib/ads-margin";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import { prisma } from "../../lib/prisma";
 import type { TiktokBreakevenSource } from "../../lib/report-source";
-import { TIKTOK_MARGIN_WINDOW_DAYS, toTiktokBreakeven, type TiktokBreakeven } from "../../lib/tiktok-breakeven";
-import { TARGET_STEP_PCT, TARGET_STEP_WAIT_HOURS } from "../shopee/ads-assistant-rules";
+import { TIKTOK_MARGIN_WINDOW_DAYS, TIKTOK_TARGET_STEP_WAIT_HOURS, toTiktokBreakeven, type TiktokBreakeven } from "../../lib/tiktok-breakeven";
+import { TARGET_STEP_PCT } from "../shopee/ads-assistant-rules";
 import { MIN_ORDERS_FOR_MARGIN } from "../shopee/ads-insights";
 import {
   fetchChannelBreakevens,
@@ -187,8 +187,8 @@ export function productBreakevenVerdict(
       verdict: "ok",
       reason:
         `Chiến dịch "${running.name}" đang đặt ROI mục tiêu ${roi(running.roasTarget as number)}, trên hòa vốn ${roi(be.breakevenRoi)}: đạt đúng mục tiêu thì mỗi 100đ doanh thu còn lãi khoảng ${roi(keep)}đ sau quảng cáo. ` +
-        // Anh Trung 08/10: không nói chung chung "hạ về không dưới hòa vốn" — hạ là đi từng nấc 10% rồi theo dõi 48 giờ (cùng luật campaign-advice.ts).
-        `Muốn phân phối rộng hơn thì hạ mục tiêu từng nấc ${Math.round(TARGET_STEP_PCT * 100)}%, theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới hạ tiếp, không xuống dưới ${roi(be.breakevenRoi)}.`,
+        // Anh Trung 08/10: không nói chung chung "hạ về không dưới hòa vốn" — hạ là đi từng nấc 10% rồi theo dõi 72 giờ (cùng luật campaign-advice.ts).
+        `Muốn phân phối rộng hơn thì hạ mục tiêu từng nấc ${Math.round(TARGET_STEP_PCT * 100)}%, theo dõi ${TIKTOK_TARGET_STEP_WAIT_HOURS} giờ mới hạ tiếp, không xuống dưới ${roi(be.breakevenRoi)}.`,
     };
   }
   return { verdict: "ok", reason: `Đặt ROI mục tiêu từ ${roi(be.breakevenRoi)} trở lên thì quảng cáo không ăn vào vốn.` };

@@ -75,6 +75,7 @@ import {
 } from "../integrations/tiktok-ads/breakeven";
 import { TIKTOK_MARGIN_WINDOW_DAYS, type TiktokBreakeven } from "../lib/tiktok-breakeven";
 import { avgDailySpendOf, campaignAdvice, type CampaignAdvice } from "../integrations/tiktok-ads/campaign-advice";
+import { loadMinKeepPer100, loadStepChecks, saveMinKeepPer100 } from "../integrations/tiktok-ads/advice-inputs";
 import { MIN_ORDERS_FOR_MARGIN } from "../integrations/shopee/ads-insights";
 import { VIDEO_STATUS_SENDING, sendVideoCommand } from "../integrations/tiktok-ads/send-command";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
@@ -186,7 +187,7 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
       where: { channelId: selected.id, status: "ongoing" },
       orderBy: { lastSyncedAt: "desc" },
       take: PRODUCT_ADS_MAX_CAMPAIGNS,
-      select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true, roasTargetChangedAt: true },
+      select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true, roasTargetChangedAt: true, roasTargetPrev: true },
     });
     const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: from, endDate: to };
     const products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null; advice: CampaignAdvice | null; adviceCampaign: string }> = {};
@@ -227,6 +228,23 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
     }
     const be = await computeTiktokProductBreakevens({ id: selected.id, userId: req.ownerId! }, BREAKEVEN_MIN_COVERAGE_PCT).catch(() => null);
     const rowOf = new Map((be?.products ?? []).map((r) => [r.productId, r] as const));
+    // Lãi mong muốn của gian + so lãi trước/sau nấc hạ: biên của chiến dịch = biên của sản phẩm chính nó đang chạy.
+    const minKeepPer100 = await loadMinKeepPer100(selected.id);
+    const marginOfCampaign = new Map<string, number | null>();
+    for (const spuId of Object.keys(products)) {
+      const main = mainCampaignOf.get(spuId)?.campaign;
+      const row = rowOf.get(spuId);
+      if (main && row && !marginOfCampaign.has(main.id)) marginOfCampaign.set(main.id, row.breakeven?.margin ?? null);
+    }
+    const stepChecks = await loadStepChecks(
+      campaigns.map((c) => ({
+        id: c.id,
+        roasTarget: c.roasTarget != null ? Number(c.roasTarget) : null,
+        roasTargetChangedAt: c.roasTargetChangedAt,
+        roasTargetPrev: c.roasTargetPrev != null ? Number(c.roasTargetPrev) : null,
+      })),
+      (id) => marginOfCampaign.get(id)
+    );
     for (const [spuId, p] of Object.entries(products)) {
       const main = mainCampaignOf.get(spuId)?.campaign;
       const row = rowOf.get(spuId);
@@ -242,9 +260,11 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
         gmv: p.gmv,
         avgDailySpend: avgDailySpendOf(daysOf.get(main.id) ?? [], to),
         roasTargetChangedAt: main.roasTargetChangedAt,
+        minKeepPer100,
+        stepCheck: stepChecks.get(main.id) ?? null,
       });
     }
-    res.json({ linked: true, from, to, campaigns: campaigns.length, products });
+    res.json({ linked: true, from, to, campaigns: campaigns.length, products, minKeepPer100 });
   } catch (err) {
     next(err);
   }
@@ -322,6 +342,18 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
       return null;
     });
 
+    // Lãi mong muốn của gian (cấu hình) + so lãi trước/sau nấc hạ gần nhất — hai đầu vào phụ của chẩn đoán.
+    const minKeepPer100 = await loadMinKeepPer100(selected.id);
+    const stepChecks = await loadStepChecks(
+      rows.map((c) => ({
+        id: c.id,
+        roasTarget: c.roasTarget != null ? Number(c.roasTarget) : null,
+        roasTargetChangedAt: c.roasTargetChangedAt,
+        roasTargetPrev: c.roasTargetPrev != null ? Number(c.roasTargetPrev) : null,
+      })),
+      (id) => breakeven?.byCampaignRowId.get(id)?.margin
+    );
+
     const seriesMap = new Map<string, { spend: number; gmv: number; orders: number }>();
     const campaigns = rows.map((c) => {
       let spend = 0;
@@ -372,6 +404,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
             vnDateKey(0)
           ),
           roasTargetChangedAt: c.roasTargetChangedAt,
+          minKeepPer100,
+          stepCheck: stepChecks.get(c.id) ?? null,
         }),
       };
     });
@@ -388,6 +422,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
       ...base,
       dataFrom: oldest._min.date ? dateKey(oldest._min.date) : null,
       breakeven: breakevenForUi(breakeven?.shop),
+      /** Lãi tối thiểu muốn giữ sau quảng cáo (đ/100đ doanh thu) — sàn hạ ROI mục tiêu; khách sửa qua PUT /profit-config. */
+      minKeepPer100,
       link,
       summary: {
         spend,
@@ -492,6 +528,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         status: true,
         roasTarget: true,
         roasTargetChangedAt: true,
+        roasTargetPrev: true,
         budget: true,
         biddingMethod: true,
         itemIds: true,
@@ -526,6 +563,18 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       if (period.endDate === vnDateKey(0)) await saveCampaignProductIds(campaign.id, campaign.itemIds, spuIds).catch(() => {});
       const breakeven = await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null);
       const campaignBreakeven = breakeven?.byCampaignRowId.get(campaign.id);
+      const minKeepPer100 = await loadMinKeepPer100(campaign.channelId);
+      const stepChecks = await loadStepChecks(
+        [
+          {
+            id: campaign.id,
+            roasTarget: campaign.roasTarget != null ? Number(campaign.roasTarget) : null,
+            roasTargetChangedAt: campaign.roasTargetChangedAt,
+            roasTargetPrev: campaign.roasTargetPrev != null ? Number(campaign.roasTargetPrev) : null,
+          },
+        ],
+        () => campaignBreakeven?.margin
+      );
       // Chi tiêu từng ngày của chiến dịch trong khoảng xem (đã có trong DB từ lượt đồng bộ) → % ngân sách ngày đang dùng.
       const perfDays = await prisma.adsCampaignDailyPerf.findMany({
         where: {
@@ -610,6 +659,8 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
               vnDateKey(0)
             ),
             roasTargetChangedAt: campaign.roasTargetChangedAt,
+            minKeepPer100,
+            stepCheck: stepChecks.get(campaign.id) ?? null,
           }),
         },
         from: period.startDate,
@@ -1163,6 +1214,32 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/copy", requireAdmin, async (req: 
 
 // Ảnh bìa + kênh + caption cho các video của TRANG ĐANG XEM (≤24 id/lượt).
 // Không gắn với gian nào: dữ liệu công khai của TikTok, chỉ cần đã qua cổng quyền ads.tiktok.
+// PUT /api/quang-cao/tiktok/profit-config — lãi tối thiểu muốn giữ sau quảng cáo (đ/100đ doanh thu) của một gian: sàn để gợi
+// ý hạ ROI mục tiêu dừng lại (profitFloorRoas). Body: { channelId, minKeepPer100 }. Lưu vào AdsAssistantConfig.config.profit.
+adsTiktokRouter.put("/profit-config", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const body = req.body as { channelId?: unknown; minKeepPer100?: unknown };
+    const channelId = String(body.channelId ?? "");
+    const value = Number(body.minKeepPer100);
+    if (!Number.isFinite(value) || value < 0 || value >= 100) {
+      res.status(400).json({ error: "Lãi mong muốn phải là số từ 0 đến dưới 100 (đ trên mỗi 100đ doanh thu)." });
+      return;
+    }
+    const channel = await prisma.channel.findFirst({
+      where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.TIKTOK },
+      select: { id: true },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian TikTok" });
+      return;
+    }
+    const minKeepPer100 = await saveMinKeepPer100(channel.id, Math.round(value * 10) / 10);
+    res.json({ message: "Đã lưu mức lãi mong muốn", minKeepPer100 });
+  } catch (err) {
+    next(err);
+  }
+});
+
 adsTiktokRouter.get("/video-meta", async (req: AuthRequest, res, next) => {
   try {
     const ids = String(req.query.ids ?? "")

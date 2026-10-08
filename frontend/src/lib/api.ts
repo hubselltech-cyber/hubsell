@@ -2916,6 +2916,16 @@ export interface TiktokAdsDashboard {
   series: { date: string; spend: number; gmv: number; orders: number }[];
   adsRefreshing: boolean;
   adsSyncedAt: string | null;
+  /** Lãi tối thiểu muốn giữ sau quảng cáo (đ / 100đ doanh thu) — sàn để gợi ý hạ ROI mục tiêu dừng lại. Vắng = backend cũ. */
+  minKeepPer100?: number;
+}
+
+/** Lưu lãi tối thiểu muốn giữ sau quảng cáo của gian TikTok (đ / 100đ doanh thu, 0 ≤ x < 100). */
+export function saveTiktokAdsProfitConfig(channelId: string, minKeepPer100: number) {
+  return apiFetch<{ message: string; minKeepPer100: number }>(`/api/quang-cao/tiktok/profit-config`, {
+    method: "PUT",
+    body: JSON.stringify({ channelId, minKeepPer100 }),
+  });
 }
 
 export function fetchTiktokAdsDashboard(params: { channelId?: string; from: string; to: string }) {
@@ -2968,7 +2978,17 @@ export interface TiktokAdsVideoActionLog {
 }
 
 export interface TiktokAdsCampaignAdvice {
-  kind: "paused" | "no_spend" | "no_breakeven" | "losing" | "target_below" | "budget_capped" | "target_binding" | "target_watching" | "healthy";
+  kind:
+    | "paused"
+    | "no_spend"
+    | "no_breakeven"
+    | "losing"
+    | "target_below"
+    | "budget_capped"
+    | "target_binding"
+    | "target_watching"
+    | "target_hold"
+    | "healthy";
   label: string;
   /** Dữ kiện, mỗi ý một dòng. Vắng = backend cũ (chỉ có `text`). */
   points?: string[];
@@ -2981,8 +3001,14 @@ export interface TiktokAdsCampaignAdvice {
   /** Lãi sau quảng cáo trên mỗi 100đ doanh thu ở ROI thực; null = chưa có hòa vốn tin được. */
   keepPer100: number | null;
   editInSellerCenter: boolean;
-  /** target_binding: nấc ROI mục tiêu nên hạ xuống (giảm 10%, không dưới hòa vốn). Vắng = backend cũ. */
+  /** target_binding: nấc ROI mục tiêu nên hạ xuống (giảm 10%, không dưới sàn an toàn). Vắng = backend cũ. */
   nextTarget?: number | null;
+  /** target_binding: lãi / 100đ doanh thu nếu ROI về đúng nextTarget. */
+  keepAtNextTarget?: number | null;
+  /** Sàn không hạ mục tiêu xuống dưới (giữ lãi mong muốn, không dưới hòa vốn); null = chưa có hòa vốn / biên không đủ. */
+  safeTarget?: number | null;
+  /** Lãi mong muốn (đ/100đ) đã dùng để tính safeTarget. */
+  minKeepPer100?: number;
   /** target_watching: còn bao nhiêu giờ theo dõi sau lần đổi mục tiêu gần nhất. Vắng = backend cũ. */
   watchHoursLeft?: number | null;
 }
@@ -7007,6 +7033,8 @@ export interface ShopeeAssistantConfig {
   review: { enabled: boolean; dangerFactor: number };
   spike: { enabled: boolean; dayMultiple: number; minTodaySpend: number };
   grace: { enabled: boolean; minOrders7d: number };
+  /** Hạ mục tiêu theo biên lãi (08/10): lãi tối thiểu muốn giữ sau quảng cáo, đ / 100đ doanh thu. Vắng = backend cũ. */
+  profit?: { minKeepPer100: number };
   /** GĐ3 — tự thực thi: off | dry_run (diễn tập ghi sổ) | live (gọi sàn thật). */
   autoExecute: {
     mode: "off" | "dry_run" | "live";
@@ -7359,11 +7387,18 @@ export interface ShopeeAssistantSummary {
 /** Đợt E (24/09): campaign đang lãi nhưng bị chặn phân phối — Hubsell chỉ gợi ý,
  *  chủ shop sửa trên Seller Center. Số tính trên 7 ngày trọn, bỏ hôm nay. */
 export interface DeliveryCheck {
-  status: "budget_capped" | "target_binding";
+  /** target_hold (08/10): nấc hạ gần nhất không ra thêm lãi → giữ mục tiêu. */
+  status: "budget_capped" | "target_binding" | "target_hold";
   roas: number;
   breakevenRoas: number;
-  /** Không nên hạ mục tiêu xuống dưới mốc này (hòa vốn × hệ số an toàn). */
+  /** Không nên hạ mục tiêu xuống dưới mốc này = max(hòa vốn × hệ số an toàn, sàn giữ lãi mong muốn). */
   safeTarget: number;
+  /** Lãi mong muốn (đ/100đ) đã dùng để tính safeTarget. Vắng = backend cũ. */
+  minKeepPer100?: number;
+  /** Lãi / 100đ doanh thu nếu ROAS về đúng nextTarget. Vắng = backend cũ. */
+  keepAtNextTarget?: number | null;
+  /** target_hold: lãi tuyệt đối 2 ngày trọn trước / sau nấc hạ gần nhất. */
+  stepCheck?: { changedOn: string; before: number; after: number; days: number; flat: boolean } | null;
   budget: number;
   avgDailySpend: number;
   budgetUsedPct: number | null;

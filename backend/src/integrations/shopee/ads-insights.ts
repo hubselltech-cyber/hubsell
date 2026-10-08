@@ -21,7 +21,7 @@
 // ============================================================
 
 import { ChannelName, type AdsCampaign, type AdsCampaignDailyPerf } from "@prisma/client";
-import { dateKey, dateKeyToDbDate, startOfDaysAgo, vnDateKey } from "../../lib/ads-dates";
+import { dateKey, dateKeyToDbDate, startOfDaysAgo, vnDateKey, vnDateKeyOf } from "../../lib/ads-dates";
 import {
   MARGIN_MIN_COST_COVERAGE_PCT,
   SHOP_GROUP,
@@ -39,6 +39,7 @@ import type { AdsMarginSource } from "../../lib/report-source";
 import {
   ASSISTANT_WINDOWS,
   assessDelivery,
+  stepProfitCheck,
   assessRoasTarget,
   evaluateShopeeCampaign,
   normalizeAssistantConfig,
@@ -216,6 +217,19 @@ export async function computeChannelAdsInsights(
       prev7: { spend: prev7Spend, gmv: prev7Gmv, daysWithSpend: prev7DaysWithSpend },
       dangerFactor: config.review.dangerFactor,
       roasTargetChangedAt: c.roasTargetChangedAt,
+      minKeepPer100: config.profit.minKeepPer100,
+      // So lãi tuyệt đối 2 ngày trọn trước / sau nấc HẠ gần nhất (dailyPerf 30 ngày có sẵn ở đây).
+      stepCheck:
+        margin != null
+          ? stepProfitCheck({
+              days: c.dailyPerf.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense), gmv: Number(p.broadGmv) })),
+              margin,
+              roasTarget,
+              roasTargetPrev: c.roasTargetPrev != null ? Number(c.roasTargetPrev) : null,
+              changedOn: c.roasTargetChangedAt ? vnDateKeyOf(c.roasTargetChangedAt) : null,
+              today: vnDateKey(0),
+            })
+          : null,
     });
 
     return {

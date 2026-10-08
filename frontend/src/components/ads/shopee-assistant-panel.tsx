@@ -112,6 +112,11 @@ export const DELIVERY_META: Record<
     title: "Mục tiêu ROAS đang bó phân phối",
     className: "bg-sky-50 text-sky-700 border border-sky-200",
   },
+  target_hold: {
+    label: "Giữ mục tiêu",
+    title: "Nấc hạ gần nhất không ra thêm lãi",
+    className: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  },
 };
 
 /**
@@ -141,8 +146,23 @@ export function deliveryAdviceText(
       ],
     };
   }
+  if (d.status === "target_hold" && d.stepCheck) {
+    const sc = d.stepCheck;
+    points.push(
+      `Mục tiêu ROAS đang đặt ${x(d.roasTarget ?? 0)}; lần hạ gần nhất ngày ${sc.changedOn.slice(8, 10)}/${sc.changedOn.slice(5, 7)}.`,
+      `Lãi ${sc.days} ngày sau khi hạ ${formatVND(sc.after)}, ${sc.days} ngày trước ${formatVND(sc.before)}: không tăng.`
+    );
+    return {
+      points,
+      recommendation: "Giữ mục tiêu ROAS hiện tại, không hạ tiếp.",
+      notes: ["Hạ thêm chỉ thêm chi phí mà không thêm lãi — đã tới mức phân phối bão hòa.", "Muốn thêm đơn thì thêm sản phẩm / mẫu quảng cáo mới."],
+    };
+  }
+  const roas = d.roasTarget ?? 0;
   points.push(
-    `Mục tiêu ROAS đang đặt ${x(d.roasTarget ?? 0)}, cao hơn ROAS thực nên chưa đạt.`,
+    d.roas < roas
+      ? `Mục tiêu ROAS đang đặt ${x(roas)}, cao hơn ROAS thực nên chưa đạt.`
+      : `Mục tiêu ROAS đang đặt ${x(roas)}, ROAS thực bám sát mục tiêu (chưa vượt quá 10%).`,
     d.budget > 0
       ? `Ngân sách ngày ${formatVND(d.budget)}, mới dùng khoảng ${d.budgetUsedPct}%: không phải thứ chặn.`
       : "Ngân sách không giới hạn: không phải thứ chặn.",
@@ -156,7 +176,12 @@ export function deliveryAdviceText(
         : "Hạ mục tiêu ROAS từng nấc nhỏ.",
     notes: [
       "Theo dõi 48 giờ rồi mới hạ tiếp, vì mỗi lần đổi mục tiêu sàn phải học lại.",
-      `Không xuống dưới ${x(d.safeTarget)} (hòa vốn × hệ số an toàn), dưới mức này lãi mỗi đơn quá mỏng.`,
+      ...(d.nextTarget != null && d.keepAtNextTarget != null
+        ? [`Ở ${x(d.nextTarget)} mỗi 100đ doanh thu còn lãi khoảng ${d.keepAtNextTarget.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}đ sau quảng cáo.`]
+        : []),
+      d.minKeepPer100 != null
+        ? `Không xuống dưới ${x(d.safeTarget)}: mức giữ được ít nhất ${d.minKeepPer100}đ lãi trên mỗi 100đ doanh thu (sửa trong Cấu hình Trợ lý).`
+        : `Không xuống dưới ${x(d.safeTarget)} (hòa vốn × hệ số an toàn), dưới mức này lãi mỗi đơn quá mỏng.`,
       "Chỉnh trên Seller Center. Hubsell không tự hạ mục tiêu.",
     ],
   };
@@ -1187,6 +1212,19 @@ export function ShopeeAssistantConfigCard({
                 value={draft.grace.minOrders7d}
                 onChange={(v) => patch("grace", { minOrders7d: v })}
                 disabled={!draft.enabled || !draft.grace.enabled}
+              />
+            </RuleBlock>
+            {/* 08/10: sàn hạ mục tiêu ROAS theo biên lãi — gợi ý "hạ một nấc" dừng ở mức còn giữ được lãi này. */}
+            <RuleBlock
+              title="Hạ mục tiêu ROAS — lãi tối thiểu giữ lại"
+              hint="Chiến dịch đang lãi mà tiêu ít thì Trợ lý gợi ý hạ mục tiêu từng nấc 10%; không hạ xuống dưới mức còn giữ được số lãi này trên mỗi 100đ doanh thu."
+            >
+              <NumberField
+                label="Lãi tối thiểu sau quảng cáo (đ / 100đ doanh thu)"
+                value={draft.profit?.minKeepPer100 ?? 5}
+                onChange={(v) => setDraft((p) => ({ ...p, profit: { minKeepPer100: v } }))}
+                step={1}
+                disabled={!draft.enabled}
               />
             </RuleBlock>
           </div>

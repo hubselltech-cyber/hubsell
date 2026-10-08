@@ -290,7 +290,8 @@ export async function syncTiktokAdsCampaigns(
     const targetChanged = prevTargetOf.has(campaignId) && prevTargetOf.get(campaignId) !== (c.roasBid ?? null);
     const row = await prisma.adsCampaign.upsert({
       where: { channelId_campaignId: { channelId: channel.id, campaignId } },
-      update: targetChanged ? { ...data, roasTargetChangedAt: new Date() } : data,
+      // Giữ cả mục tiêu CŨ (roasTargetPrev) để biết lần đổi là hạ hay nâng (so lãi trước/sau nấc hạ).
+      update: targetChanged ? { ...data, roasTargetChangedAt: new Date(), roasTargetPrev: prevTargetOf.get(campaignId) ?? null } : data,
       create: { channelId: channel.id, campaignId, ...data },
     });
     rowIdByCampaignId.set(campaignId, row.id);

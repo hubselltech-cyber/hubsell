@@ -326,11 +326,19 @@ describe("recommendAction", () => {
     const delivery = {
       roas: 9, breakevenRoas: 6.63, safeTarget: 7.3, budget: 100000,
       avgDailySpend: 95000, budgetUsedPct: 95, roasTarget: 12.5, nextTarget: 11.3, fullDays: 5,
+      minKeepPer100: 5, keepAtNextTarget: 6.2, stepCheck: null,
     };
     expect(recommendAction({ ...base, verdict: "healthy", delivery: { ...delivery, status: "budget_capped" } })).toMatch(/^Tăng ngân sách ngày/);
     expect(recommendAction({ ...base, verdict: "healthy", delivery: { ...delivery, status: "target_binding" } })).toBe(
-      "Giảm mục tiêu ROAS một nấc, từ 12,5x xuống 11,3x, rồi theo dõi 48 giờ mới giảm tiếp. Không xuống dưới 7,3x."
+      "Giảm mục tiêu ROAS một nấc, từ 12,5x xuống 11,3x, rồi theo dõi 48 giờ mới giảm tiếp. Ở 11,3x mỗi 100đ doanh thu còn lãi khoảng 6,2đ. Không xuống dưới 7,3x (giữ lãi từ 5đ/100đ)."
     );
+    expect(
+      recommendAction({
+        ...base,
+        verdict: "healthy",
+        delivery: { ...delivery, status: "target_hold", stepCheck: { changedOn: "2026-10-05", before: 1_200_000, after: 1_100_000, days: 2, flat: true } },
+      })
+    ).toMatch(/^Giữ mục tiêu ROAS\. Sau nấc hạ gần nhất \(2026-10-05\)/);
     expect(recommendAction({ ...base, verdict: "healthy" })).toMatch(/^Giữ nguyên/);
   });
   it("Hubsell đã tạm dừng → nhắc điều kiện bật lại; campaign không đánh giá → null", () => {

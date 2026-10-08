@@ -16,6 +16,8 @@ import {
   TARGET_STEP_WAIT_HOURS,
   assessDelivery,
   assessRoasTarget,
+  profitFloorRoas,
+  stepProfitCheck,
 } from "../shopee/ads-assistant-rules";
 
 const BE = 6.9;
@@ -104,8 +106,13 @@ describe("assessDelivery — target_binding (ca thật ANO 24/09)", () => {
     expect(r?.status).toBe("target_binding");
     expect(r?.roasTarget).toBe(12.2);
     expect(r?.budgetUsedPct).toBeNull();
-    expect(r?.safeTarget).toBe(7.6); // 6,9 × 1,1 = 7,59 → 7,6
-    expect(r?.nextTarget).toBe(11); // một nấc 10%: 12,2 → 10,98 → 11,0 (không nhảy thẳng về 7,6)
+    // 08/10: sàn = max(hòa vốn × 1,1 = 7,6; sàn giữ 5đ/100đ = 1/(1/6,9 − 0,05) = 10,54 → 10,6).
+    expect(r?.safeTarget).toBe(10.6);
+    expect(r?.minKeepPer100).toBe(5);
+    expect(r?.nextTarget).toBe(11); // một nấc 10%: 12,2 → 10,98 → 11,0 (không nhảy thẳng về sàn)
+    expect(r?.keepAtNextTarget).toBe(5.4); // 1/6,9 − 1/11 = 14,49% − 9,09%
+    // Lãi mong muốn 0 → sàn về vùng vàng 7,6 như trước.
+    expect(assessDelivery(base({ roasTarget: 12.2, roasTargetCheck: ok, minKeepPer100: 0 }))?.safeTarget).toBe(7.6);
   });
 
   it("khóa cứng 48 giờ sau khi mục tiêu đổi: trong khóa → null, hết khóa → gợi ý lại", () => {
@@ -132,8 +139,57 @@ describe("assessDelivery — target_binding (ca thật ANO 24/09)", () => {
     expect(assessDelivery(base({ roasTarget: 7.6, roasTargetCheck: ok, prev7: { spend: 1_000_000, gmv: 7_595_000, daysWithSpend: 7 } }))).toBeNull();
   });
 
-  it("ROAS thực đã đạt mục tiêu → null", () => {
-    const ok = assessRoasTarget({ roasTarget: 9, breakevenRoas: BE, dangerFactor: FACTOR });
-    expect(assessDelivery(base({ roasTarget: 9, roasTargetCheck: ok }))).toBeNull();
+  it("ROAS thực đã đạt mục tiêu nhưng chưa vượt 10% → vẫn target_binding; vượt quá 10% → null (08/10)", () => {
+    const ok9 = assessRoasTarget({ roasTarget: 9, breakevenRoas: BE, dangerFactor: FACTOR });
+    // Lãi mong muốn 0 để sàn = 7,6 (mục tiêu 9 còn nấc để hạ); với sàn 10,6 mặc định thì mục tiêu 9 đã dưới sàn → null.
+    expect(assessDelivery(base({ roasTarget: 9, roasTargetCheck: ok9, minKeepPer100: 0 }))?.status).toBe("target_binding"); // 9,44 < 9,9
+    expect(assessDelivery(base({ roasTarget: 9, roasTargetCheck: ok9 }))).toBeNull();
+    const ok8 = assessRoasTarget({ roasTarget: 8, breakevenRoas: BE, dangerFactor: FACTOR });
+    expect(assessDelivery(base({ roasTarget: 8, roasTargetCheck: ok8, minKeepPer100: 0 }))).toBeNull(); // 9,44 ≥ 8,8
+  });
+
+  it("nấc hạ gần nhất không ra thêm lãi (stepCheck.flat) → target_hold, không đề xuất nấc kế", () => {
+    const ok = assessRoasTarget({ roasTarget: 12.2, breakevenRoas: BE, dangerFactor: FACTOR });
+    const flat = { changedOn: "2026-10-04", before: 900_000, after: 850_000, days: 2, flat: true };
+    const r = assessDelivery(base({ roasTarget: 12.2, roasTargetCheck: ok, stepCheck: flat }));
+    expect(r?.status).toBe("target_hold");
+    expect(r?.nextTarget).toBeNull();
+    expect(r?.stepCheck).toEqual(flat);
+  });
+});
+
+describe("profitFloorRoas — sàn ROAS giữ lãi mong muốn", () => {
+  it("1/(biên − lãi/100), làm tròn lên 0,1; biên không đủ → null", () => {
+    expect(profitFloorRoas(0.2, 5)).toBe(6.7);
+    expect(profitFloorRoas(0.1793, 5)).toBe(7.8);
+    expect(profitFloorRoas(0.2, 0)).toBe(5);
+    expect(profitFloorRoas(0.04, 5)).toBeNull();
+    expect(profitFloorRoas(0, 5)).toBeNull();
+  });
+});
+
+describe("stepProfitCheck — so lãi tuyệt đối trước / sau nấc hạ", () => {
+  const days = [
+    { date: "2026-10-01", expense: 100_000, gmv: 1_000_000 },
+    { date: "2026-10-02", expense: 100_000, gmv: 1_100_000 },
+    { date: "2026-10-03", expense: 120_000, gmv: 1_200_000 },
+    { date: "2026-10-04", expense: 150_000, gmv: 1_300_000 }, // ngày đổi — bỏ
+    { date: "2026-10-05", expense: 180_000, gmv: 1_600_000 },
+    { date: "2026-10-06", expense: 190_000, gmv: 1_700_000 },
+    { date: "2026-10-07", expense: 200_000, gmv: 1_600_000 },
+  ];
+  const basic = { days, margin: 0.2, roasTarget: 11, roasTargetPrev: 12.2, changedOn: "2026-10-04", today: "2026-10-08" };
+  it("lấy 2 ngày trọn sát trước và 2 ngày trọn sát sau ngày đổi, lãi = GMV × biên − chi", () => {
+    const r = stepProfitCheck(basic);
+    // Trước = 02–03/10: 2,3tr × 0,2 − 220k = 240k. Sau = 05–06/10: 3,3tr × 0,2 − 370k = 290k (07/10 là ngày thứ 3, không lấy).
+    expect(r).toEqual({ changedOn: "2026-10-04", before: 240_000, after: 290_000, days: 2, flat: false });
+  });
+  it("không tăng → flat; chưa đủ 2 ngày trọn sau → null; lần đổi là NÂNG → null", () => {
+    const flat = stepProfitCheck({ ...basic, days: days.map((d) => (d.date >= "2026-10-05" ? { ...d, gmv: 1_300_000 } : d)) }); // sau: 2,6tr×0,2−370k = 150k
+    expect(flat?.flat).toBe(true);
+    expect(stepProfitCheck({ ...basic, today: "2026-10-06" })).toBeNull();
+    expect(stepProfitCheck({ ...basic, roasTargetPrev: 10 })).toBeNull();
+    expect(stepProfitCheck({ ...basic, roasTargetPrev: null })).toBeNull();
+    expect(stepProfitCheck({ ...basic, changedOn: null })).toBeNull();
   });
 });

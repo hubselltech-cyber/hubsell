@@ -126,6 +126,9 @@ export interface ShopeeAssistantConfig {
    *  khi probe xác minh enum edit_action + quyền write trên shop thật.
    *  Không có trần lệnh mỗi ngày (gỡ 01/10/2026): bản lưu cũ còn trường
    *  maxActionsPerDay thì normalize bỏ qua. */
+  /** HẠ MỤC TIÊU THEO BIÊN LÃI (08/10/2026): lãi tối thiểu muốn giữ lại sau quảng cáo trên mỗi 100đ doanh thu.
+   *  Sàn "ROAS an toàn" = 1 / (biên − minKeepPer100/100) — xem profitFloorRoas. */
+  profit: { minKeepPer100: number };
   autoExecute: {
     mode: "off" | "dry_run" | "live";
     /** ĐỢT B (24/09): campaign lỗ (pause_now) thì HẠ NGÂN SÁCH NGÀY trước (change_budget),
@@ -135,6 +138,9 @@ export interface ShopeeAssistantConfig {
   };
 }
 
+/** Lãi tối thiểu muốn giữ sau quảng cáo (đ/100đ doanh thu) — MẶC ĐỊNH TỰ CHỌN; căn cứ xem mục "SÀN ROAS AN TOÀN" bên dưới. */
+export const DEFAULT_MIN_KEEP_PER_100 = 5;
+
 export const DEFAULT_SHOPEE_ASSISTANT_CONFIG: ShopeeAssistantConfig = {
   enabled: true,
   floor: { minSpend7d: 100_000, minClicks7d: 50 },
@@ -142,6 +148,7 @@ export const DEFAULT_SHOPEE_ASSISTANT_CONFIG: ShopeeAssistantConfig = {
   review: { enabled: true, dangerFactor: 1.1 },
   spike: { enabled: true, dayMultiple: 2, minTodaySpend: 100_000 },
   grace: { enabled: true, minOrders7d: 30 },
+  profit: { minKeepPer100: DEFAULT_MIN_KEEP_PER_100 },
   autoExecute: { mode: "off", cutBudgetFirst: true },
 };
 
@@ -184,6 +191,13 @@ export function normalizeAssistantConfig(raw: unknown): ShopeeAssistantConfig {
     grace: {
       enabled: bool(sect("grace").enabled, d.grace.enabled),
       minOrders7d: num(sect("grace").minOrders7d, d.grace.minOrders7d),
+    },
+    profit: {
+      // Trần 99: lãi mong muốn ≥ 100đ/100đ là vô nghĩa (không ROAS nào đạt) — bản lưu rác về mặc định.
+      minKeepPer100: (() => {
+        const v = num(sect("profit").minKeepPer100, d.profit.minKeepPer100);
+        return v < 100 ? v : d.profit.minKeepPer100;
+      })(),
     },
     autoExecute: {
       mode: (AUTO_EXECUTE_MODES as readonly string[]).includes(
@@ -440,6 +454,71 @@ export const DELIVERY_MIN_FULL_DAYS = 3;
 export const TARGET_STEP_PCT = 0.1;
 export const TARGET_STEP_WAIT_HOURS = 48;
 
+// SÀN "ROAS AN TOÀN" THEO BIÊN LÃI + VẠCH "MỤC TIÊU ĐANG GHÌM" (anh Trung 08/10/2026, ca ANO TikTok: ROI thực 13,84 /
+// mục tiêu 15 / hòa vốn 5,58 / tiêu 12% ngân sách mà máy nói "chưa thấy gì cần sửa" vì ROI đã ≥ 90% mục tiêu).
+//   - Sàn an toàn = 1 / (biên − lãi mong muốn/100): công thức "mục tiêu = 1/(biên − lãi ròng mong muốn)" của giới Amazon ACoS
+//     (Target ACoS = margin − desired profit; BQool) — chính là POAS tối thiểu diễn đạt bằng ROAS. Thay cho "hòa vốn × 1,1"
+//     (hệ số không nói được giữ bao nhiêu lãi). Sàn này không bao giờ thấp hơn hòa vốn × dangerFactor (vùng vàng của đợt A).
+//   - DEFAULT_MIN_KEEP_PER_100 = 5đ/100đ: MẶC ĐỊNH TỰ CHỌN (không sàn nào công bố), khách sửa trong Cấu hình Trợ lý. Với biên
+//     ~18% nó trùng mốc 1,4 × hòa vốn mà blog ngành hay khuyên (Top Growth Marketing: 1,3–1,5 × break-even).
+//   - TARGET_BINDING_BAND 1,1: ROAS thực < mục tiêu × 1,1 (kể cả đã đạt) + ngân sách còn dư → mục tiêu là thứ đang ghìm
+//     (TikTok: "lower ROI targets boost delivery and GMV, higher targets may limit spend"; Shopee: lower bound = nhiều hiển
+//     thị hơn). ROAS vượt mục tiêu quá 10% mà vẫn tiêu ít → thứ chặn nằm ở video / sản phẩm, hạ mục tiêu không giúp.
+//     Số 1,1 là MẶC ĐỊNH TỰ CHỌN, đối xứng với mốc "đạt từ 90%" của TikTok.
+//   - stepProfitCheck: thước đo ROAS BIÊN rẻ tiền — so LÃI TUYỆT ĐỐI (GMV × biên − chi) của STEP_CHECK_DAYS ngày trọn sau nấc
+//     hạ với cùng số ngày trước đó; không tăng → hạ thêm không ra thêm tiền, giữ mục tiêu (lợi nhuận lớn nhất khi đồng kế
+//     tiếp vẫn trả trên hòa vốn — WorkMagic / SegmentStream về marginal ROAS). Chỉ xét khi lần đổi gần nhất là HẠ (roasTargetPrev).
+export const TARGET_BINDING_BAND = 1.1;
+export const STEP_CHECK_DAYS = 2;
+
+/** Sàn ROAS giữ được `minKeepPer100` đ lãi / 100đ doanh thu, làm tròn LÊN 0,1. null = biên không đủ cho mức lãi đó. */
+export function profitFloorRoas(margin: number, minKeepPer100: number): number | null {
+  if (!Number.isFinite(margin) || margin <= 0) return null;
+  const left = margin - Math.max(0, minKeepPer100) / 100;
+  if (!(left > 0)) return null;
+  return Math.ceil((1 / left) * 10 - 1e-9) / 10;
+}
+
+export interface StepProfitCheck {
+  /** Ngày sàn (VN) có lần hạ mục tiêu gần nhất. */
+  changedOn: string;
+  /** Lãi tuyệt đối N ngày trọn TRƯỚC ngày đổi / SAU ngày đổi (bỏ chính ngày đổi vì nửa cũ nửa mới). */
+  before: number;
+  after: number;
+  days: number;
+  /** after ≤ before: hạ không ra thêm lãi. */
+  flat: boolean;
+}
+
+/**
+ * So lãi tuyệt đối trước / sau nấc HẠ gần nhất. null khi: chưa từng hạ (prev null hoặc prev ≤ hiện tại), chưa đủ N ngày
+ * trọn sau ngày đổi, hoặc không đủ N ngày có số trước đó. `days` = số theo ngày của chính chiến dịch (ngày sàn, bất kỳ thứ tự).
+ */
+export function stepProfitCheck(input: {
+  days: { date: string; expense: number; gmv: number }[];
+  margin: number;
+  roasTarget: number | null;
+  roasTargetPrev: number | null;
+  changedOn: string | null;
+  today: string;
+  n?: number;
+}): StepProfitCheck | null {
+  const n = input.n ?? STEP_CHECK_DAYS;
+  const changedOn = input.changedOn;
+  if (!changedOn || input.roasTarget == null || input.roasTargetPrev == null) return null;
+  if (!(input.roasTargetPrev > input.roasTarget)) return null;
+  if (!Number.isFinite(input.margin)) return null;
+  const sorted = [...input.days].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const before = sorted.filter((d) => d.date < changedOn).slice(-n);
+  const after = sorted.filter((d) => d.date > changedOn && d.date < input.today).slice(0, n);
+  if (before.length < n || after.length < n) return null;
+  const profit = (rows: { expense: number; gmv: number }[]) =>
+    Math.round(rows.reduce((s, d) => s + d.gmv * input.margin - d.expense, 0));
+  const b = profit(before);
+  const a = profit(after);
+  return { changedOn, before: b, after: a, days: n, flat: a <= b };
+}
+
 /** Nấc hạ kế tiếp của mục tiêu ROAS: giảm TARGET_STEP_PCT, 1 số lẻ, không thủng sàn.
  *  null = đã sát sàn, không còn nấc nào để hạ. */
 export function nextRoasTargetStep(target: number, safeTarget: number): number | null {
@@ -448,15 +527,21 @@ export function nextRoasTargetStep(target: number, safeTarget: number): number |
   return next < target ? next : null;
 }
 
-export type DeliveryStatus = "budget_capped" | "target_binding";
+export type DeliveryStatus = "budget_capped" | "target_binding" | "target_hold";
 
 export interface DeliveryCheck {
   status: DeliveryStatus;
   /** ROAS 7 ngày trọn (bỏ hôm nay). */
   roas: number;
   breakevenRoas: number;
-  /** Mốc mục tiêu KHÔNG nên hạ xuống dưới = hòa vốn × dangerFactor, làm tròn lên 0,1. */
+  /** Mốc mục tiêu KHÔNG nên hạ xuống dưới = max(hòa vốn × dangerFactor, sàn giữ lãi mong muốn), làm tròn lên 0,1. */
   safeTarget: number;
+  /** Lãi tối thiểu muốn giữ (đ/100đ doanh thu) đã dùng để tính safeTarget. */
+  minKeepPer100: number;
+  /** Lãi/100đ doanh thu nếu ROAS thực về đúng nextTarget (biên − 1/nextTarget); null khi không có nấc. */
+  keepAtNextTarget: number | null;
+  /** target_hold: lãi tuyệt đối trước / sau nấc hạ gần nhất. */
+  stepCheck: StepProfitCheck | null;
   /** Ngân sách ngày trên sàn (0 = không giới hạn). */
   budget: number;
   /** Chi tiêu trung bình của những ngày trọn CÓ tiêu tiền. */
@@ -483,6 +568,10 @@ export function assessDelivery(input: {
   /** Mốc mục tiêu ROAS đổi gần nhất — còn trong TARGET_STEP_WAIT_HOURS thì không gợi ý hạ tiếp. */
   roasTargetChangedAt?: Date | null;
   now?: Date;
+  /** Lãi tối thiểu muốn giữ (đ/100đ) — config.profit.minKeepPer100; bỏ trống = mặc định. */
+  minKeepPer100?: number;
+  /** Kết quả so lãi trước / sau nấc hạ gần nhất (stepProfitCheck); flat → target_hold. */
+  stepCheck?: StepProfitCheck | null;
 }): DeliveryCheck | null {
   if (input.status !== "ongoing" || input.verdict !== "healthy") return null;
   const be = Number(input.breakevenRoas);
@@ -494,7 +583,12 @@ export function assessDelivery(input: {
   if (roas < be * factor) return null;
   if (input.roasTargetCheck && input.roasTargetCheck.status !== "ok") return null;
 
-  const safeTarget = Math.ceil(be * factor * 10 - 1e-9) / 10;
+  const minKeepPer100 = input.minKeepPer100 ?? DEFAULT_MIN_KEEP_PER_100;
+  const margin = 1 / be;
+  // Sàn an toàn = cao hơn của (vùng vàng đợt A) và (sàn giữ lãi mong muốn). Biên không đủ cho lãi mong muốn → không có
+  // sàn hợp lệ để hạ tới → không gợi ý hạ (Infinity làm nextRoasTargetStep trả null).
+  const profitFloor = profitFloorRoas(margin, minKeepPer100);
+  const safeTarget = Math.max(Math.ceil(be * factor * 10 - 1e-9) / 10, profitFloor ?? Number.POSITIVE_INFINITY);
   const budget = Number(input.budget) || 0;
   const avgDailySpend = spend / daysWithSpend;
   const budgetUsedPct = budget > 0 ? Math.round((avgDailySpend / budget) * 100) : null;
@@ -510,21 +604,30 @@ export function assessDelivery(input: {
     roasTarget,
     nextTarget: null,
     fullDays: daysWithSpend,
+    minKeepPer100,
+    keepAtNextTarget: null,
+    stepCheck: input.stepCheck ?? null,
   };
   if (budgetUsedPct != null && budgetUsedPct >= BUDGET_CAP_PCT) {
     return { status: "budget_capped", ...base };
   }
-  if (roasTarget != null && roas < roasTarget) {
+  // Mục tiêu đang ghìm: ROAS thực chưa vượt mục tiêu quá TARGET_BINDING_BAND (kể cả đã đạt) + ngân sách còn dư.
+  if (roasTarget != null && roas < roasTarget * TARGET_BINDING_BAND) {
     // Khóa cứng giữa hai nấc: mục tiêu vừa đổi thì để sàn chạy đủ TARGET_STEP_WAIT_HOURS.
     const changedAt = input.roasTargetChangedAt;
     const now = input.now ?? new Date();
     if (changedAt && now.getTime() - changedAt.getTime() < TARGET_STEP_WAIT_HOURS * 3_600_000) {
       return null;
     }
+    // Nấc hạ gần nhất không ra thêm lãi → giữ, không hạ tiếp (đo ROAS biên bằng lãi tuyệt đối).
+    if (input.stepCheck?.flat) {
+      return { status: "target_hold", ...base };
+    }
     // Mục tiêu đã sát sàn an toàn thì không còn gì để khuyên hạ.
     const nextTarget = nextRoasTargetStep(roasTarget, safeTarget);
     if (nextTarget == null) return null;
-    return { status: "target_binding", ...base, nextTarget };
+    const keepAtNextTarget = Math.round((margin - 1 / nextTarget) * 1000) / 10;
+    return { status: "target_binding", ...base, nextTarget, keepAtNextTarget };
   }
   return null;
 }
@@ -651,10 +754,21 @@ export function recommendAction(input: {
   if (delivery?.status === "budget_capped") {
     return "Tăng ngân sách ngày: chiến dịch đang lãi và ngày nào cũng tiêu gần hết ngân sách.";
   }
+  if (delivery?.status === "target_hold" && delivery.stepCheck) {
+    const sc = delivery.stepCheck;
+    return (
+      `Giữ mục tiêu ROAS. Sau nấc hạ gần nhất (${sc.changedOn}), lãi ${sc.days} ngày sau (${vnd(sc.after)}) ` +
+      `không hơn ${sc.days} ngày trước (${vnd(sc.before)}) — hạ thêm không ra thêm lãi.`
+    );
+  }
   if (delivery?.status === "target_binding" && delivery.roasTarget != null && delivery.nextTarget != null) {
+    const keep =
+      delivery.keepAtNextTarget != null
+        ? ` Ở ${roasText(delivery.nextTarget)} mỗi 100đ doanh thu còn lãi khoảng ${delivery.keepAtNextTarget.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}đ.`
+        : "";
     return (
       `Giảm mục tiêu ROAS một nấc, từ ${roasText(delivery.roasTarget)} xuống ${roasText(delivery.nextTarget)}, ` +
-      `rồi theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới giảm tiếp. Không xuống dưới ${roasText(delivery.safeTarget)}.`
+      `rồi theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới giảm tiếp.${keep} Không xuống dưới ${roasText(delivery.safeTarget)} (giữ lãi từ ${delivery.minKeepPer100}đ/100đ).`
     );
   }
   return "Giữ nguyên, chiến dịch đang ổn.";

@@ -991,7 +991,7 @@ export async function setRoasTargetByOwner(
     // Ghi ngay để bảng đổi màu tức thì; xung 30' kế sẽ đọc lại từ sàn xác nhận.
     await prisma.adsCampaign.update({
       where: { id: row.id },
-      data: { roasTarget: target, ...(prev !== target ? { roasTargetChangedAt: new Date() } : {}) },
+      data: { roasTarget: target, ...(prev !== target ? { roasTargetChangedAt: new Date(), roasTargetPrev: prev } : {}) },
     });
     await prisma.opsActivity.create({
       data: {

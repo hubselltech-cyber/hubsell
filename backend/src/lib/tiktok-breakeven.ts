@@ -58,6 +58,13 @@ import type { DateRangeFilter } from "./date-range";
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */
 export const TIKTOK_MARGIN_WINDOW_DAYS = 60;
 
+/**
+ * Khóa giữa hai nấc hạ ROI mục tiêu của TikTok = 72 giờ: tài liệu "Best practices for Product GMV Max" (ads.tiktok.com/help, đọc
+ * 08/10/2026): "Keep each ROI setting for at least three full days before making adjustments." (Shopee giữ 48 giờ — anh Trung
+ * chọn 04/10.) Đặt ở lib thuần để breakeven.ts và campaign-advice.ts cùng dùng mà không vòng import.
+ */
+export const TIKTOK_TARGET_STEP_WAIT_HOURS = 72;
+
 /** Cửa sổ hòa vốn tính tới lúc gọi: TIKTOK_MARGIN_WINDOW_DAYS ngày, theo ngày tạo đơn. */
 export function tiktokMarginWindowRange(): DateRangeFilter {
   return { gte: startOfDaysAgo(TIKTOK_MARGIN_WINDOW_DAYS), lte: new Date() };

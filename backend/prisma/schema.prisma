@@ -561,6 +561,9 @@ model AdsCampaign {
   /// Lúc Hubsell thấy mục tiêu ROAS đổi (đồng bộ thấy số sàn khác số đang lưu, hoặc Hubsell gửi lệnh đổi).
   /// Gợi ý hạ mục tiêu khóa 48 giờ kể từ mốc này (TARGET_STEP_WAIT_HOURS).
   roasTargetChangedAt DateTime?
+  /// Mục tiêu ROAS NGAY TRƯỚC lần đổi gần nhất (08/10/2026): biết lần đổi là HẠ hay NÂNG để so lãi tuyệt đối trước/sau
+  /// nấc hạ (stepProfitCheck) — nấc hạ không ra thêm lãi thì khuyên giữ, không hạ tiếp. NULL = chưa từng thấy đổi.
+  roasTargetPrev      Decimal?  @db.Decimal(8, 2)
   startTime     DateTime? // campaign_duration.start_time
   endTime       DateTime? // campaign_duration.end_time; NULL = không hẹn ngày tắt
   /// item_id_list của campaign, nối bằng dấu phẩy ("8027...,8031...") — dùng để
