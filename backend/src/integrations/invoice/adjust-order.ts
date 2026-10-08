@@ -31,6 +31,7 @@ import {
   type AdjustmentReferencePlan,
 } from "./adjust-precheck";
 import { cqtNextOnWrite } from "./cqt-follow";
+import { AWAITING_SIGNATURE_CODE, DRAFT_FIRST_CHECK_MS, NUMBER_PENDING_CODE } from "./draft-signing";
 import { getInvoiceProvider } from "./index";
 import {
   allocateOrderDiscount,
@@ -413,12 +414,19 @@ export async function issueAdjustmentForOrder(
     },
   });
 
+  const now = new Date();
   const issued = result.status === InvoiceLogStatus.ISSUED;
+  // Tờ nháp điều chỉnh chờ chủ shop ký trên web (lát T1 tenant) / đã ký chờ cấp số —
+  // cùng luật với issue-order.ts: giữ đang chờ, không phải lỗi, vòng hỏi lo tiếp.
+  const awaiting = !issued && result.awaitingSignature === true;
+  const settling = !issued && !awaiting && result.status === InvoiceLogStatus.PENDING && !!result.transactionId;
   // Chưa rõ kết quả mà nhà cung cấp tra ngược được (lát 6b): giữ dòng đang chờ cho
   // vòng quét kiểm lại — xem issue-order.ts cùng chỗ.
-  const keepPending = !issued && result.outcomeUnknown === true && canRecheckLater(provider);
-  const finalStatus = keepPending ? InvoiceLogStatus.PENDING : result.status;
+  const keepPending =
+    !issued && !awaiting && !settling && result.outcomeUnknown === true && canRecheckLater(provider);
+  const finalStatus = keepPending || awaiting || settling ? InvoiceLogStatus.PENDING : result.status;
   const errorMessage = keepPending ? keptPendingMessage(provider.name) : (result.errorMessage ?? null);
+  const deferred = awaiting || settling;
   const [updated] = await prisma.$transaction([
     prisma.invoiceLog.update({
       where: { id: log.id },
@@ -428,8 +436,11 @@ export async function issueAdjustmentForOrder(
         transactionId: result.transactionId ?? null,
         vatAmount: result.vatAmount ?? vatTotal,
         errorMessage,
-        issuedAt: issued ? new Date() : null,
-        cqtNextCheckAt: cqtNextOnWrite(finalStatus, result.transactionId, new Date()),
+        issuedAt: issued ? now : null,
+        awaitingSignatureAt: awaiting ? now : null,
+        cqtNextCheckAt: awaiting
+          ? new Date(now.getTime() + DRAFT_FIRST_CHECK_MS)
+          : cqtNextOnWrite(finalStatus, result.transactionId, now),
       },
     }),
     prisma.invoiceStatusHistory.create({
@@ -441,22 +452,36 @@ export async function issueAdjustmentForOrder(
         source: "HUBSELL",
         note: issued
           ? `Điều chỉnh GIẢM cho HĐ ${original.invoiceNo} (${reason}): số ${result.invoiceNo ?? "?"}, mã tra cứu ${result.transactionId ?? "?"}`
-          : keepPending
-            ? `Chưa rõ kết quả, giữ đang chờ để tự kiểm lại theo mã tham chiếu ${refId}. Nhà cung cấp báo: ${result.errorMessage ?? "?"}`
-            : (result.errorMessage ?? null),
+          : awaiting
+            ? `Đã lập tờ nháp điều chỉnh GIẢM cho HĐ ${original.invoiceNo} (${reason}) trên ${provider.name} theo mã tham chiếu ${refId}, chờ chủ shop ký trên web.`
+            : settling
+              ? `${provider.name} đã nhận hóa đơn điều chỉnh (mã tra cứu ${result.transactionId}), chờ cấp số.`
+              : keepPending
+                ? `Chưa rõ kết quả, giữ đang chờ để tự kiểm lại theo mã tham chiếu ${refId}. Nhà cung cấp báo: ${result.errorMessage ?? "?"}`
+                : (result.errorMessage ?? null),
       },
     }),
   ]);
 
   return {
     ok: issued,
-    httpStatus: issued ? 201 : 502,
-    error: issued ? undefined : (errorMessage ?? "NCC từ chối phát hành hóa đơn điều chỉnh"),
+    httpStatus: issued ? 201 : deferred ? 202 : 502,
+    error: issued || deferred ? undefined : (errorMessage ?? "NCC từ chối phát hành hóa đơn điều chỉnh"),
     // Mã lỗi + tầm lỗi của nhà cung cấp (lát 11): làn dùng để biết lỗi nào đáng thử lại
     // (TRANSIENT) và lỗi nào là của tài khoản. Trước lát 11 hai trường này bị bỏ rơi.
-    errorCode: issued ? undefined : keepPending ? OUTCOME_UNKNOWN_CODE : result.errorCode,
-    errorScope: issued ? undefined : result.errorScope,
+    errorCode: issued
+      ? undefined
+      : keepPending
+        ? OUTCOME_UNKNOWN_CODE
+        : awaiting
+          ? AWAITING_SIGNATURE_CODE
+          : settling
+            ? NUMBER_PENDING_CODE
+            : result.errorCode,
+    errorScope: issued || deferred ? undefined : result.errorScope,
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
+    awaitingSignature: awaiting ? true : undefined,
+    message: deferred ? (errorMessage ?? undefined) : undefined,
     pauseBeforeNextMs: publishGapOf(provider),
     log: {
       ...updated,

@@ -75,6 +75,10 @@ export interface FollowLog {
   invoiceSeries: string | null;
   adjustmentForLogId: string | null;
   createdAt: Date;
+  /** Mã tham chiếu đã gửi NCC — vòng quét dùng cho tờ nháp chờ ký (draft-signing.ts). */
+  providerRef?: string | null;
+  /** Khác null = tờ nháp đang chờ chủ shop ký trên web NCC (lát T1 tenant) — không hỏi theo mã tra cứu. */
+  awaitingSignatureAt?: Date | null;
 }
 
 /** Dòng sẽ thành gì sau khi áp kết quả của nhà cung cấp — thuần tính toán, chưa ghi. */

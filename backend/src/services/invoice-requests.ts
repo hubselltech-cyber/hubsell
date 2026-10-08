@@ -35,6 +35,7 @@ import {
   type AdjustmentScope,
 } from "../integrations/invoice/adjust-order";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
+import { AWAITING_SIGNATURE_CODE, isDeferredAtProvider } from "../integrations/invoice/draft-signing";
 import { issueInvoiceForOrder, type IssueOrderResult } from "../integrations/invoice/issue-order";
 import { OUTCOME_UNKNOWN_CODE } from "../integrations/invoice/unknown-outcome";
 import { prisma } from "../lib/prisma";
@@ -215,6 +216,8 @@ export interface BatchProgress {
   failed: number;
   /** Chưa rõ kết quả — vòng quét đang kiểm lại với nhà cung cấp. */
   checking: number;
+  /** Tờ nháp đã lập trên web nhà cung cấp, chờ chủ shop ký theo lô (lát T1 tenant). */
+  awaiting: number;
   cancelled: number;
   /** Còn dòng chờ = lô còn chạy. */
   active: boolean;
@@ -239,6 +242,7 @@ export async function getBatchProgress(ownerId: string, batchId: string): Promis
     issued: 0,
     failed: 0,
     checking: 0,
+    awaiting: 0,
     cancelled: 0,
     active: false,
     errors: [],
@@ -250,6 +254,7 @@ export async function getBatchProgress(ownerId: string, batchId: string): Promis
     else if (g.status === "FAILED") p.failed += n;
     else if (g.status === "CANCELLED") p.cancelled += n;
     else if (g.errorCode === REQUEST_CODE_UNKNOWN) p.checking += n;
+    else if (g.errorCode === AWAITING_SIGNATURE_CODE) p.awaiting += n;
     else p.issued += n;
   }
   p.active = p.pending > 0;
@@ -319,6 +324,10 @@ export interface StoredRequestResult {
   code?: string;
   reason?: string;
   suggestion?: string;
+  /** Tờ nháp chờ chủ shop ký trên web nhà cung cấp (lát T1 tenant) — không phải lỗi. */
+  awaitingSignature?: boolean;
+  /** Câu cho người bấm khi 202 (chờ ký / chờ số). */
+  message?: string;
 }
 
 export interface SingleRequestInput {
@@ -565,7 +574,15 @@ async function finishRequest(
   r?: IssueOrderResult
 ): Promise<boolean> {
   const stored: StoredRequestResult | null = r
-    ? { httpStatus: r.httpStatus, error: r.error, code: r.errorCode, reason: r.reason, suggestion: r.suggestion }
+    ? {
+        httpStatus: r.httpStatus,
+        error: r.error,
+        code: r.errorCode,
+        reason: r.reason,
+        suggestion: r.suggestion,
+        awaitingSignature: r.awaitingSignature,
+        message: r.message,
+      }
     : null;
   const patch = JSON.stringify(stored ? { result: stored } : {});
   const rows = await prisma.$queryRaw<{ notify: boolean | null }[]>`
@@ -591,6 +608,15 @@ async function notifySingleFinished(
 ): Promise<void> {
   const adjust = reqRow.kind === REQUEST_KIND_ADJUST;
   const what = adjust ? "hóa đơn điều chỉnh" : `hóa đơn cho đơn ${reqRow.targetKey}`;
+  if (r.awaitingSignature) {
+    await notify(ownerId, {
+      type: "INVOICE_SINGLE_DONE",
+      title: `Đã lập tờ nháp ${what} — chờ bạn ký`,
+      body: r.message ?? "Vào web nhà cung cấp hóa đơn, lọc Chưa phát hành và Ký & phát hành; Hubsell tự nhận số sau khi ký.",
+      link: "/invoicing/history",
+    });
+    return;
+  }
   await notify(ownerId, {
     type: "INVOICE_SINGLE_DONE",
     title: r.ok ? `Đã lập ${what}${r.log?.invoiceNo ? ` số ${r.log.invoiceNo}` : ""}` : `Chưa lập được ${what}`,
@@ -678,6 +704,10 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
         result.issued += 1;
         await finishRequest(reqRow.id, { status: "DONE", resultLogId: ar.log?.id ?? null }, ar);
         console.log(`[auto-adjust/sàn] Đơn ${step.orderCode}: đã lập hóa đơn điều chỉnh số ${ar.log?.invoiceNo ?? "?"}`);
+      } else if (isDeferredAtProvider(ar)) {
+        // Tờ nháp điều chỉnh chờ chủ shop ký / chờ số: việc này xong phần của nó, vòng hỏi lo tiếp.
+        await finishRequest(reqRow.id, { status: "DONE", resultLogId: ar.log?.id ?? null, errorCode: ar.errorCode ?? null, error: ar.message ?? null }, ar);
+        console.log(`[auto-adjust/sàn] Đơn ${step.orderCode}: đã lập tờ nháp điều chỉnh, chờ chủ shop ký`);
       } else if (ar.errorCode === OUTCOME_UNKNOWN_CODE) {
         await finishRequest(reqRow.id, { status: "DONE", resultLogId: ar.log?.id ?? null, errorCode: REQUEST_CODE_UNKNOWN, error: ar.error ?? null }, ar);
       } else if (ar.httpStatus === 409 && !ar.errorCode) {
@@ -711,6 +741,14 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
     } else if (r.conflict === "ISSUED") {
       result.issued += 1;
       bell = await finishRequest(reqRow.id, { status: "DONE", errorCode: REQUEST_CODE_ALREADY_ISSUED, error: r.error ?? null }, r);
+    } else if (isDeferredAtProvider(r)) {
+      // Tờ nháp chờ chủ shop ký trên web nhà cung cấp / đã ký chờ số (lát T1 tenant): yêu
+      // cầu xong phần của nó; vòng hỏi theo giờ nối số. Lô đếm riêng (BatchProgress.awaiting).
+      bell = await finishRequest(
+        reqRow.id,
+        { status: "DONE", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: r.message ?? null },
+        r
+      );
     } else if (r.conflict === "PENDING" || r.errorCode === OUTCOME_UNKNOWN_CODE) {
       // Dòng InvoiceLog đang chờ là vé của đơn; vòng quét lát 6b tra lại rồi nối số
       // hoặc trả đơn về Hàng chờ. Yêu cầu này xong phần của nó.
@@ -812,13 +850,14 @@ async function notifyIfBatchFinished(ownerId: string, batchId: string): Promise<
   const p = await getBatchProgress(ownerId, batchId);
   if (!p || p.active) return;
   const parts = [
+    p.awaiting > 0 ? `${p.awaiting} tờ nháp chờ bạn ký trên web nhà cung cấp (ký theo lô, nên ký trong ngày)` : null,
     p.failed > 0 ? `${p.failed} đơn lỗi` : null,
     p.checking > 0 ? `${p.checking} tờ đang kiểm lại với nhà cung cấp` : null,
     p.cancelled > 0 ? `${p.cancelled} đơn đã dừng` : null,
   ].filter(Boolean);
   await notify(ownerId, {
     type: "INVOICE_BULK_DONE",
-    title: `Đã xuất ${p.issued}/${p.total} hóa đơn`,
+    title: p.awaiting > 0 ? `Đã lập ${p.issued + p.awaiting}/${p.total} hóa đơn` : `Đã xuất ${p.issued}/${p.total} hóa đơn`,
     body:
       parts.length > 0
         ? `Còn lại: ${parts.join(", ")}. Xem lý do từng đơn tại Lịch sử hóa đơn.`

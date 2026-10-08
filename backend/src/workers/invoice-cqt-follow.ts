@@ -22,6 +22,12 @@
 // đó trong lượt, các dòng đã nhận tự tới hạn lại sau CQT_CLAIM_MS. Worker chết giữa
 // lượt cũng vậy. Nhà cung cấp không trả dòng cho một mã → không suy diễn, hẹn hỏi lại.
 //
+// TỜ NHÁP CHỜ KÝ (lát T1 tenant, 08/10/2026): dòng PENDING không có mã tra cứu nhưng có
+// awaitingSignatureAt + providerRef cũng mang giờ hỏi kế và được NHẬN bằng cùng câu
+// UPDATE; hỏi adapter.findDrafts theo mã tham chiếu (lô ≤ statusBatchSize), áp kế hoạch
+// của integrations/invoice/draft-signing.ts: ký xong → nối số, chuông; nháp bị xóa →
+// đơn về hàng chờ, chuông; còn chờ → hẹn lại.
+//
 // CHỈ ĐỌC phía nhà cung cấp — không đi qua chốt cho phép phát hành.
 // Cấu hình: INVOICE_CQT_SWEEP_MINUTES (mặc định 30; "0" = tắt vòng quét).
 // ============================================================
@@ -35,6 +41,13 @@ import {
   planFollow,
   type FollowLog,
 } from "../integrations/invoice/cqt-follow";
+import {
+  applyDraftPlan,
+  canFollowDrafts,
+  draftNextCheckAt,
+  planDraftFollow,
+  type DraftFollowLog,
+} from "../integrations/invoice/draft-signing";
 import { getProviderEntry } from "../integrations/invoice/provider-registry";
 import type { InvoiceProvider } from "../integrations/invoice/types";
 import { prisma } from "../lib/prisma";
@@ -70,12 +83,24 @@ export interface CqtFollowStats {
   failedOwners: number;
   /** Hết quỹ giờ của lượt mà còn dòng tới hạn. */
   leftover: boolean;
+  /** Tờ nháp chờ ký đã hỏi nhà cung cấp (lát T1 tenant). */
+  draftsAsked: number;
+  /** Tờ nháp chủ shop đã ký → nối số (hoặc mã tra cứu, chờ số). */
+  draftsSigned: number;
+  /** Tờ nháp không còn bên nhà cung cấp → đơn về hàng chờ. */
+  draftsGone: number;
 }
 
 interface OwnerAlert {
   provider: string;
   rejectedNos: string[];
   cancelledNos: string[];
+}
+
+interface DraftAlert {
+  provider: string;
+  signedNos: string[];
+  goneCodes: string[];
 }
 
 /** NHẬN dòng tới hạn: một câu UPDATE, hai tiến trình không nhận trùng một dòng. */
@@ -94,7 +119,97 @@ async function claimDue(now: Date, ownerId?: string): Promise<FollowLog[]> {
       FOR UPDATE SKIP LOCKED
     )
     RETURNING "id", "ownerId", "orderId", "orderCode", "provider", "status"::text AS "status", "cqtStatus",
-      "invoiceNo", "transactionId", "invoiceSeries", "adjustmentForLogId", "createdAt"`;
+      "invoiceNo", "transactionId", "invoiceSeries", "adjustmentForLogId", "createdAt",
+      "providerRef", "awaitingSignatureAt"`;
+}
+
+/** Dòng đã nhận là TỜ NHÁP CHỜ KÝ (lát T1 tenant)? Thu hẹp kiểu cho draft-signing.ts. */
+function asDraftLog(l: FollowLog): DraftFollowLog | null {
+  if (l.status !== InvoiceLogStatus.PENDING || l.transactionId || !l.awaitingSignatureAt || !l.providerRef) return null;
+  return {
+    id: l.id,
+    ownerId: l.ownerId,
+    orderId: l.orderId,
+    orderCode: l.orderCode,
+    provider: l.provider,
+    providerRef: l.providerRef,
+    adjustmentForLogId: l.adjustmentForLogId,
+    awaitingSignatureAt: l.awaitingSignatureAt,
+    createdAt: l.createdAt,
+  };
+}
+
+/**
+ * Xử lý các TỜ NHÁP CHỜ KÝ đã nhận của MỘT shop. Trả false khi hỏi nhà cung cấp không
+ * được. Shop đổi nhà cung cấp / nhà cung cấp không có luồng nháp → không có cách hỏi:
+ * giữ trong diện theo dõi, hẹn theo nhịp tờ nháp.
+ */
+async function followDraftsOwner(
+  ownerId: string,
+  logs: DraftFollowLog[],
+  now: Date,
+  stats: CqtFollowStats,
+  alerts: Map<string, DraftAlert>
+): Promise<boolean> {
+  let provider: InvoiceProvider | null;
+  try {
+    provider = await getInvoiceProvider(ownerId);
+  } catch (err) {
+    console.error(`[CQT-follow] Shop ${ownerId}: không dựng được kết nối nhà cung cấp (tờ nháp) — ${(err as Error).message}`);
+    return false;
+  }
+  const askable = logs.filter((l) => provider && provider.name === l.provider && canFollowDrafts(provider));
+  const unaskable = logs.filter((l) => !askable.includes(l));
+  if (unaskable.length > 0) {
+    stats.unaskable += unaskable.length;
+    for (const l of unaskable) {
+      await prisma.invoiceLog.updateMany({
+        where: { id: l.id, status: InvoiceLogStatus.PENDING, transactionId: null },
+        data: { cqtNextCheckAt: draftNextCheckAt(l.awaitingSignatureAt, now) },
+      });
+    }
+  }
+  if (askable.length === 0 || !provider || !canFollowDrafts(provider)) return true;
+
+  const size = Math.max(1, provider.capabilities.statusBatchSize);
+  for (let i = 0; i < askable.length; i += size) {
+    const chunk = askable.slice(i, i + size);
+    const res = await provider.findDrafts(chunk.map((l) => l.providerRef));
+    if (!res.ok) {
+      console.error(
+        `[CQT-follow] Shop ${ownerId}: hỏi tờ nháp ${provider.name} không được${res.accountProblem ? " (lỗi tài khoản / cấu hình)" : ""} — ${res.message}`
+      );
+      if (res.accountProblem) {
+        const l = getProviderEntry(provider.name)?.label ?? provider.name;
+        await notify(ownerId, {
+          type: "INVOICE_STATUS_CHECK_BLOCKED",
+          title: `Hubsell không kiểm tra được trạng thái hóa đơn với ${l}`,
+          body: `${res.message} Trong lúc này Hubsell không biết tờ nháp nào bạn đã ký. Kiểm tra lại kết nối ở trang Kết nối & Xuất hóa đơn; sửa xong Hubsell tự kiểm lại.`,
+          link: "/invoicing/connect",
+        });
+      }
+      return false;
+    }
+    for (const log of chunk) {
+      stats.draftsAsked += 1;
+      const plan = planDraftFollow(log, res.found.get(log.providerRef), now);
+      if (!(await applyDraftPlan(log, plan, now))) {
+        stats.skipped += 1;
+        continue;
+      }
+      if (plan.kind === "WAIT") continue;
+      const alert = alerts.get(ownerId) ?? { provider: provider.name, signedNos: [], goneCodes: [] };
+      alerts.set(ownerId, alert);
+      if (plan.kind === "SIGNED") {
+        stats.draftsSigned += 1;
+        alert.signedNos.push(plan.invoiceNo ?? log.orderCode);
+      } else {
+        stats.draftsGone += 1;
+        alert.goneCodes.push(log.orderCode);
+      }
+    }
+  }
+  return true;
 }
 
 /** Ghi "đã hỏi, không có gì đổi" cho nhiều dòng một lần, gom theo giờ hỏi kế. */
@@ -222,6 +337,9 @@ export async function runInvoiceCqtFollowOnce(
     unaskable: 0,
     failedOwners: 0,
     leftover: false,
+    draftsAsked: 0,
+    draftsSigned: 0,
+    draftsGone: 0,
   };
   if (running) return stats; // lượt trước chưa xong — bỏ lượt này
   running = true;
@@ -229,18 +347,25 @@ export async function runInvoiceCqtFollowOnce(
   const budgetMs = opts.budgetMs ?? (sweepMinutes() || DEFAULT_SWEEP_MINUTES) * 60_000;
   const failedOwners = new Set<string>();
   const alerts = new Map<string, OwnerAlert>();
+  const draftAlerts = new Map<string, DraftAlert>();
   try {
     for (;;) {
       const claimed = await claimDue(now, opts.ownerId);
       if (claimed.length === 0) break;
       stats.claimed += claimed.length;
 
+      // Tờ nháp chờ ký (lát T1 tenant): không có mã tra cứu, hỏi theo mã tham chiếu.
+      const drafts = claimed.map(asDraftLog).filter((d): d is DraftFollowLog => d !== null);
+      const draftIds = new Set(drafts.map((d) => d.id));
       // Dòng mang giờ hỏi nhưng không còn thuộc diện theo dõi (đã hỏng / đã hủy, mất mã
       // tra cứu) — có thể sót lại từ lúc vòng cũ còn chạy: gỡ giờ hỏi, không hỏi.
       const followed = claimed.filter(
-        (l) => l.transactionId && (l.status === InvoiceLogStatus.PENDING || l.status === InvoiceLogStatus.ISSUED)
+        (l) =>
+          !draftIds.has(l.id) &&
+          l.transactionId &&
+          (l.status === InvoiceLogStatus.PENDING || l.status === InvoiceLogStatus.ISSUED)
       );
-      const stale = claimed.filter((l) => !followed.includes(l));
+      const stale = claimed.filter((l) => !followed.includes(l) && !draftIds.has(l.id));
       if (stale.length > 0) {
         await prisma.invoiceLog.updateMany({
           where: { id: { in: stale.map((l) => l.id) } },
@@ -263,6 +388,27 @@ export async function runInvoiceCqtFollowOnce(
               if (!(await followOwner(ownerId, logs, now, stats, alerts))) failedOwners.add(ownerId);
             } catch (err) {
               console.error(`[CQT-follow] Shop ${ownerId}: lỗi khi hỏi trạng thái — ${(err as Error).message}`);
+              failedOwners.add(ownerId);
+            }
+          })
+        );
+      }
+
+      const draftsByOwner = new Map<string, DraftFollowLog[]>();
+      for (const d of drafts) {
+        if (failedOwners.has(d.ownerId)) continue;
+        const list = draftsByOwner.get(d.ownerId);
+        if (list) list.push(d);
+        else draftsByOwner.set(d.ownerId, [d]);
+      }
+      const draftOwners = [...draftsByOwner.entries()];
+      for (let i = 0; i < draftOwners.length; i += OWNER_CONCURRENCY) {
+        await Promise.all(
+          draftOwners.slice(i, i + OWNER_CONCURRENCY).map(async ([ownerId, logs]) => {
+            try {
+              if (!(await followDraftsOwner(ownerId, logs, now, stats, draftAlerts))) failedOwners.add(ownerId);
+            } catch (err) {
+              console.error(`[CQT-follow] Shop ${ownerId}: lỗi khi hỏi tờ nháp — ${(err as Error).message}`);
               failedOwners.add(ownerId);
             }
           })
@@ -298,6 +444,27 @@ export async function runInvoiceCqtFollowOnce(
       });
     }
 
+    // Chuông tờ nháp (lát T1 tenant): một cái cho mỗi việc mỗi shop mỗi lượt.
+    for (const [ownerId, alert] of draftAlerts) {
+      const l = getProviderEntry(alert.provider)?.label ?? alert.provider;
+      if (alert.signedNos.length > 0) {
+        await notify(ownerId, {
+          type: "INVOICE_DRAFT_SIGNED",
+          title: `Đã nhận ${alert.signedNos.length} hóa đơn bạn vừa ký trên ${l}`,
+          body: `Số ${firstNos(alert.signedNos)}. Xem và tải PDF tại Lịch sử & Báo cáo thuế.`,
+          link: "/invoicing/history",
+        });
+      }
+      if (alert.goneCodes.length > 0) {
+        await notify(ownerId, {
+          type: "INVOICE_DRAFT_GONE",
+          title: `${alert.goneCodes.length} tờ nháp đã bị xóa trên ${l} trước khi ký`,
+          body: `Đơn ${firstNos(alert.goneCodes)} quay lại Hàng chờ xuất hóa đơn — xuất lại nếu vẫn cần hóa đơn.`,
+          link: "/invoicing/connect",
+        });
+      }
+    }
+
     stats.failedOwners = failedOwners.size;
     if (stats.claimed > 0) {
       console.log(
@@ -306,6 +473,9 @@ export async function runInvoiceCqtFollowOnce(
           (stats.issuedFixed ? `, ${stats.issuedFixed} đang chờ → đã phát hành` : "") +
           (stats.cancelled ? `, ${stats.cancelled} đã hủy bên nhà cung cấp` : "") +
           (stats.rejected ? `, ${stats.rejected} CƠ QUAN THUẾ TỪ CHỐI` : "") +
+          (stats.draftsAsked ? `, ${stats.draftsAsked} tờ nháp chờ ký đã hỏi` : "") +
+          (stats.draftsSigned ? `, ${stats.draftsSigned} tờ nháp đã ký → nối số` : "") +
+          (stats.draftsGone ? `, ${stats.draftsGone} tờ nháp đã bị xóa` : "") +
           (stats.unaskable ? `, ${stats.unaskable} không có cách hỏi` : "") +
           (stats.skipped ? `, ${stats.skipped} bị tiến trình khác đổi` : "") +
           (stats.failedOwners ? `, ${stats.failedOwners} shop hỏi không được` : "") +

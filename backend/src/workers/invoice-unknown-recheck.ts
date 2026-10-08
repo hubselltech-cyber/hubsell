@@ -58,7 +58,12 @@ export interface RecheckRunStats {
   kept: number;
 }
 
-/** Các dòng tới lượt: đang chờ, chưa có mã tra cứu, đủ tuổi, chưa hỏi hoặc đã quá hạn hỏi lại. */
+/**
+ * Các dòng tới lượt: đang chờ, chưa có mã tra cứu, đủ tuổi, chưa hỏi hoặc đã quá hạn hỏi lại.
+ * BỎ QUA tờ nháp chờ chủ shop ký (awaitingSignatureAt khác NULL — lát T1 tenant): tờ đó
+ * có chủ đích chưa có mã, vòng hỏi theo giờ (invoice-cqt-follow) lo; tra ngược ở đây
+ * sẽ thấy "không có tờ nào" rồi ghi hỏng sai.
+ */
 async function loadDueLogs(now: Date, ownerId?: string): Promise<UnknownLog[]> {
   const oldEnough = new Date(now.getTime() - UNKNOWN_MIN_AGE_MS);
   const retryBefore = new Date(now.getTime() - RECHECK_RETRY_MS);
@@ -68,6 +73,7 @@ async function loadDueLogs(now: Date, ownerId?: string): Promise<UnknownLog[]> {
     SELECT "id", "ownerId", "orderId", "orderCode", "provider", "providerRef", "adjustmentForLogId", "createdAt"
     FROM "InvoiceLog"
     WHERE "status" = 'PENDING' AND "transactionId" IS NULL
+      AND "awaitingSignatureAt" IS NULL
       AND "createdAt" < ${oldEnough.toISOString()}::timestamp
       AND ("cqtCheckedAt" IS NULL OR "cqtCheckedAt" < ${retryBefore.toISOString()}::timestamp)
       ${ownerId ? Prisma.sql`AND "ownerId" = ${ownerId}` : Prisma.empty}

@@ -103,7 +103,7 @@ describe("Lệnh MISA đi qua cửa đo với đúng loại lệnh", () => {
       meinvoicePassword: creds.password,
       invoicePattern: "1",
       invoiceSeries: "1C26TAA",
-      signMethod: "ESIGN_CLOUD",
+      signMethod: "HSM", // cổng phát hành ký nền (lát T1 08/10: ESIGN_CLOUD/USB đi tờ nháp)
       esignClientId: null,
       esignSecretKey: null,
       esignUsername: null,

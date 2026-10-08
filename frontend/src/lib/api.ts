@@ -3940,8 +3940,8 @@ export interface InvoiceConfigDTO {
   meinvoiceUsername: string;
   hasMeinvoicePassword: boolean;
   meinvoicePasswordMasked: string | null;
-  // (3) Chữ ký số MISA eSign
-  signMethod: string; // USB_TOKEN | ESIGN_CLOUD
+  // (3) Chữ ký số — USB_TOKEN | ESIGN_CLOUD (đi tờ nháp, shop ký trên web NCC) | HSM (ký nền)
+  signMethod: string;
   esignClientId: string;
   esignUsername: string;
   certSerial: string;
@@ -4156,6 +4156,11 @@ export interface InvoiceLogDTO {
   /** Dòng FAILED này đã tới mức máy ngừng tự thử (lát 7) → nhãn "lượt n/n, máy đã ngừng thử". */
   autoRetryStopped: boolean;
   autoRetryMaxAttempts: number;
+  /**
+   * Tờ nháp đã lập trên web nhà cung cấp, đang chờ chủ shop ký theo lô (lát T1 tenant,
+   * 08/10/2026 — chữ ký số từ xa / USB token không ký nền được). Nhãn "Chờ bạn ký".
+   */
+  awaitingSignature: boolean;
   issuedAt: string | null;
   createdAt: string;
   /** ≠ null = đây là HÓA ĐƠN ĐIỀU CHỈNH (tiền âm) cho InvoiceLog gốc có id này. */
@@ -4216,6 +4221,8 @@ export interface TaxReportResponse {
     cqtUncheckedCount: number;
     /** Tờ đã hủy/xóa trong kỳ. */
     cancelledCount: number;
+    /** Tờ nháp đang chờ chủ shop ký trên web NCC — đếm toàn shop, không theo kỳ. */
+    awaitingSignatureCount: number;
   };
   /**
    * ĐỐI CHIẾU SÓT của kỳ (03/09): đếm trên ĐƠN theo ngày giao — kỳ này giao
@@ -4345,6 +4352,11 @@ export interface InvoiceSingleResult {
   error?: string;
   pending?: boolean;
   message?: string;
+  /**
+   * 202: tờ nháp đã lập trên web nhà cung cấp, chờ chủ shop ký theo lô (lát T1 tenant).
+   * Không phải lỗi — `message` là câu hướng dẫn chỗ ký.
+   */
+  awaitingSignature?: boolean;
 }
 
 /**
@@ -4357,6 +4369,31 @@ export function issueInvoice(orderCode: string) {
     method: "POST",
     body: JSON.stringify({ orderCode }),
   });
+}
+
+/**
+ * TỜ NHÁP CHỜ CHỦ SHOP KÝ (lát T1 tenant, 08/10/2026): đếm toàn shop + hạn ký + link
+ * trang ký của nhà cung cấp. Nuôi dải nhắc ở Hàng chờ xuất hóa đơn và Lịch sử hóa đơn.
+ */
+export interface AwaitingSignatureDTO {
+  count: number;
+  /** Tờ đã quá hạn ký (ngày làm việc tiếp theo kể từ ngày lập — NĐ 254/2026). */
+  overdueCount: number;
+  oldestAt: string | null;
+  /** Trang web nơi ký (null khi không đọc được cấu hình NCC). */
+  signUrl: string | null;
+}
+
+export function fetchAwaitingSignature() {
+  return apiFetch<AwaitingSignatureDTO>("/api/tax/invoices/awaiting-signature");
+}
+
+/** "Tôi đã ký, kiểm ngay": máy chủ hỏi nhà cung cấp ngay cho riêng shop này (429 khi vừa kiểm). */
+export function checkAwaitingSignature() {
+  return apiFetch<{ checked: number; signed: number; gone: number; waiting: number; busy?: boolean }>(
+    "/api/tax/invoices/awaiting-signature/check",
+    { method: "POST" }
+  );
 }
 
 /** Tải bản thể hiện PDF (đã ký) của hóa đơn trong nhật ký — trả base64. */
@@ -4455,8 +4492,16 @@ export function fetchInvoiceQueue(
 export function issueInvoicesBulk(orderCodes: string[]) {
   return apiFetch<{
     issued: number;
+    /** Tờ nháp đã lập, chờ chủ shop ký trên web NCC (lát T1 tenant). */
+    awaiting: number;
     failed: number;
-    results: Array<{ orderCode: string; ok: boolean; invoiceNo?: string | null; error?: string }>;
+    results: Array<{
+      orderCode: string;
+      ok: boolean;
+      invoiceNo?: string | null;
+      error?: string;
+      awaitingSignature?: boolean;
+    }>;
   }>("/api/tax/invoices/bulk", {
     method: "POST",
     body: JSON.stringify({ orderCodes }),
@@ -4473,6 +4518,8 @@ export interface InvoiceBatchProgress {
   failed: number;
   /** Chưa rõ kết quả — hệ thống đang tự kiểm lại với nhà cung cấp. */
   checking: number;
+  /** Tờ nháp đã lập trên web NCC, chờ chủ shop ký theo lô (lát T1 tenant). */
+  awaiting: number;
   cancelled: number;
   active: boolean;
   errors: Array<{ orderCode: string; error: string }>;

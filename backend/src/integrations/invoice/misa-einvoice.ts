@@ -645,6 +645,8 @@ export interface MisaInvoiceStatusItem {
   isDeleted: boolean;
   /** Số hóa đơn (nếu NCC trả kèm) — bù cho log PENDING chưa nhận webhook. */
   invoiceNo: string | null;
+  /** Mã tham chiếu (RefID) MISA trả kèm — để khớp lại khi hỏi nhiều mã một lệnh theo RefID. */
+  refId: string | null;
   raw: unknown;
 }
 
@@ -680,8 +682,10 @@ export async function getInvoiceStatuses(
     const sendTaxStatus = pick(item, "SendTaxStatus", "sendTaxStatus");
     const transactionId = pick(item, "TransactionID", "TransactionId");
     const invNo = pick(item, "InvNo", "InvoiceNo", "InvoiceNumber", "invNo");
+    const refId = pick(item, "RefID", "RefId", "refID", "refId");
     return {
       transactionId: typeof transactionId === "string" ? transactionId : null,
+      refId: typeof refId === "string" && refId.trim() !== "" ? refId.trim() : null,
       publishStatus: typeof publishStatus === "number" ? publishStatus : null,
       sendTaxStatus: typeof sendTaxStatus === "number" ? sendTaxStatus : null,
       isDeleted: pick(item, "IsDelete", "isDelete", "IsDeleted") === true,

@@ -33,10 +33,13 @@ import {
 } from "@/lib/api";
 import { INVOICE_UNIT_SUGGESTIONS } from "@/lib/invoice-units";
 import {
+  DEFAULT_SIGN_METHOD,
   HUBSELL_PARTNER_CODE,
   INVOICE_FIELD_HINTS,
   INVOICE_SERIES_RE,
   INVOICE_VENDORS,
+  signMethodMeta,
+  signNoteFor,
   TAX_CODE_RE,
   vendorMeta,
 } from "@/lib/invoice-vendors";
@@ -59,9 +62,10 @@ import { cn } from "@/lib/utils";
  *   · API Key theo gian hàng (đối soát hoa hồng ISV — cùng lý do).
  *   · Tab Máy tính tiền (POS chưa nối API; seller sàn = kê khai; code POS
  *     backend + cột DB giữ nguyên, chỉ ẩn UI — mở lại ở giai đoạn 2).
- *   · Khối eSign + chọn phương thức ký (SignType 2 HSM meInvoice ký nền
- *     server-side, không cần eSign; USB chưa hỗ trợ) — signMethod luôn lưu
- *     ESIGN_CLOUD.
+ *   · Khối bộ khóa eSign (esignClientId…) — Hubsell không ký hộ, không cần khóa.
+ *     08/10/2026 (lát T1 tenant) MỞ LẠI ô chọn PHƯƠNG THỨC KÝ vì ba loại chữ ký đi
+ *     ba đường khác nhau: eSign / USB Token → Hubsell lập tờ nháp, shop ký theo lô
+ *     trên web NCC; HSM → ký nền. Nhãn + giải thích ở invoice-vendors.ts.
  *   · Toggle "Kích hoạt module" (không persist, chỉ gây lạc).
  *
  * Vẫn giữ: validate TT 78 inline (mirror backend), secret dạng che (để trống
@@ -181,6 +185,8 @@ export function InvoiceConfigSection({
   const [meinvoicePasswordInput, setMeinvoicePasswordInput] = useState("");
   /** Máy chủ báo bản mật khẩu đã lưu (mã hóa trong DB) không giải mã được. */
   const [passwordUnreadable, setPasswordUnreadable] = useState(false);
+  // Phương thức ký (lát T1 tenant 08/10): quyết định đường xuất — tờ nháp (eSign/USB) hay ký nền (HSM).
+  const [signMethod, setSignMethod] = useState<string>(DEFAULT_SIGN_METHOD);
 
   // (3) Bộ khóa eSign — UI ĐÃ ẨN (HSM không cần eSign), state chỉ để round-trip
   // giá trị cũ khi lưu, không mất dữ liệu shop nào đã lỡ nhập.
@@ -233,6 +239,7 @@ export function InvoiceConfigSection({
         setPasswordUnreadable(
           r.config.unreadableSecrets?.includes("meinvoicePassword") ?? false
         );
+        setSignMethod(r.config.signMethod || DEFAULT_SIGN_METHOD);
         setEsignClientId(r.config.esignClientId);
         setEsignUsername(r.config.esignUsername);
         setCertSerial(r.config.certSerial);
@@ -291,9 +298,7 @@ export function InvoiceConfigSection({
         companyName: companyName.trim(),
         companyAddress: companyAddress.trim(),
         provider,
-        // HSM ký nền server-side — phương thức duy nhất đang hỗ trợ (USB chưa
-        // nối, selector đã gỡ khỏi UI 23/08).
-        signMethod: "ESIGN_CLOUD",
+        signMethod,
         // Luôn gửi mã ISV cố định của Hubsell — không lấy từ input (read-only).
         partnerCode: HUBSELL_PARTNER_CODE,
         clientId: clientId.trim(),
@@ -628,6 +633,43 @@ export function InvoiceConfigSection({
                     </p>
                   )}
 
+                  {/* PHƯƠNG THỨC KÝ (lát T1 tenant, 08/10/2026): eSign / USB Token →
+                      Hubsell lập tờ nháp, shop ký theo lô trên web NCC; HSM → ký nền.
+                      Chỉ NCC đã nối (có signMethods) mới hiện ô này. */}
+                  {vendor.signMethods && (
+                    <div
+                      className={cn(
+                        "grid gap-1.5",
+                        vendor.soon && "pointer-events-none opacity-50",
+                      )}
+                    >
+                      <Label htmlFor="inv-sign-method">Chữ ký số shop đang dùng</Label>
+                      <NativeSelect
+                        id="inv-sign-method"
+                        value={signMethod}
+                        onChange={(e) => setSignMethod(e.target.value)}
+                      >
+                        {vendor.signMethods.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                      <p className={cn(TEXT_SUB, "leading-relaxed")}>
+                        {signNoteFor(vendor, signMethod)}
+                      </p>
+                      {signMethodMeta(vendor, signMethod)?.draft && (
+                        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                          Bước ký vẫn là việc của bạn: tờ nháp nằm chờ trên{" "}
+                          {vendor.serviceName} cho tới khi bạn Ký &amp; phát hành. Nên ký
+                          trong ngày — theo NĐ 254/2026, hóa đơn lập tại thời điểm giao
+                          hàng và ngày ký số chậm nhất là ngày làm việc tiếp theo kể từ
+                          ngày lập. Hubsell sẽ nhắc khi có tờ chờ ký.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Bước 3 — KÝ HIỆU: ưu tiên CHỌN từ danh sách kéo về từ
                       meInvoice (đúng ký hiệu đã đăng ký CQT, seller không phải
                       thuộc chuỗi TT78); chưa tải được thì vẫn nhập tay. Mẫu số
@@ -929,7 +971,7 @@ export function InvoiceConfigSection({
                   </span>
                 </div>
                 <p className={cn(TEXT_SUB, "mt-3 border-t border-slate-100 pt-3")}>
-                  {vendor.signNote}
+                  {signNoteFor(vendor, signMethod)}
                 </p>
               </div>
             </div>
@@ -962,6 +1004,14 @@ export function InvoiceConfigSection({
                   <b>Test kết nối</b> dùng thông tin <b>đã lưu</b> — đổi tài
                   khoản xong nhớ bấm Lưu trước khi Test.
                 </li>
+                {vendor.signMethods && (
+                  <li>
+                    <b>Chữ ký số:</b> chọn đúng loại shop đang dùng trên{" "}
+                    {vendor.serviceName}. eSign / USB Token → Hubsell lập tờ nháp, bạn
+                    ký theo lô trên web (một lần xác nhận cho cả lô, nên ký trong
+                    ngày). HSM → ký tự động, có số ngay khi xuất.
+                  </li>
+                )}
                 <li>
                   Cấu hình xong, sang tab <b>Xuất hóa đơn</b>{" "}để phát hành;
                   tra cứu &amp; tải PDF tại trang <b>Lịch sử &amp; Báo cáo thuế</b>.

@@ -51,6 +51,7 @@ import {
   normalizeAutoIssueTrigger,
   vnStartOfDay,
 } from "../integrations/invoice/auto-issue-policy";
+import { isDeferredAtProvider } from "../integrations/invoice/draft-signing";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import { notify } from "../services/notifications";
@@ -189,6 +190,11 @@ export interface AutoIssueRunResult {
   picked: number;
   issued: number;
   failed: number;
+  /**
+   * Tờ đã giao cho nhà cung cấp mà chưa xong về phía họ (lát T1 tenant): tờ nháp chờ
+   * chủ shop ký trên web, hoặc đã ký chờ cấp số. Không phải lỗi, không phải đã phát hành.
+   */
+  deferred: number;
   /** Đơn vừa chạm mức dừng tự thử ở lượt này (lát 7). */
   stopped: string[];
   pauseReason: string | null;
@@ -231,11 +237,12 @@ export async function runAutoIssueForShop(
     { transientBlocks }
   );
   if (orders.length === 0) {
-    return { outcome: "IDLE", picked: 0, issued: 0, failed: 0, stopped: [], pauseReason: null, interrupted: false };
+    return { outcome: "IDLE", picked: 0, issued: 0, failed: 0, deferred: 0, stopped: [], pauseReason: null, interrupted: false };
   }
 
   let issued = 0;
   let failed = 0;
+  let deferred = 0;
   /** Đơn vừa chạm mức dừng tự thử ở lượt này — một chuông gom cho cả lượt. */
   const stopped: string[] = [];
   let streakCode: string | null = null;
@@ -253,8 +260,11 @@ export async function runAutoIssueForShop(
     // Nghỉ giữa hai lệnh phát hành theo bảng khả năng của nhà cung cấp (MISA trả
     // lời ticket 02/10/2026: mỗi lệnh cách nhau 1–3 giây). Tờ cuối không nghỉ.
     const pauseMs = i < orders.length - 1 ? (r.pauseBeforeNextMs ?? 0) : 0;
-    if (r.ok) {
-      issued += 1;
+    // Đã phát hành, hoặc đã giao cho nhà cung cấp (tờ nháp chờ ký / chờ số): không phải
+    // lỗi — không vào chuỗi lỗi, không ngắt mạch.
+    if (r.ok || isDeferredAtProvider(r)) {
+      if (r.ok) issued += 1;
+      else deferred += 1;
       streakCode = null;
       streak = 0;
       if (pauseMs > 0) await sleep(pauseMs);
@@ -292,6 +302,7 @@ export async function runAutoIssueForShop(
         : "DONE";
   console.log(
     `[Auto-issue] Shop ${cfg.ownerId} (${trigger}): phát hành ${issued} hóa đơn` +
+      (deferred > 0 ? `, ${deferred} tờ nháp chờ chủ shop ký / chờ số` : "") +
       (failed > 0 ? `, ${failed} lỗi (xem Nhật ký hóa đơn)` : "") +
       (stopped.length > 0
         ? `, ${stopped.length} đơn máy ngừng tự thử sau ${maxAutoIssueAttempts()} lượt: ${stopped.join(", ")}`
@@ -322,6 +333,19 @@ export async function runAutoIssueForShop(
         (issued > 0 ? ` (lượt này đã kịp phát hành ${issued} hóa đơn).` : "."),
       link: "/invoicing/connect",
     });
+  } else if (deferred > 0) {
+    // Tờ nháp chờ ký (lát T1 tenant): chuông nói đúng việc chủ shop phải làm — vào web
+    // nhà cung cấp ký theo lô. Chuông cùng tiêu đề trong 24 giờ tự gộp (notify chống dội).
+    await notify(cfg.ownerId, {
+      type: "INVOICE_AUTO_ISSUE",
+      title: "Có hóa đơn tự động lập đang chờ bạn ký",
+      body:
+        `${deferred} tờ nháp đã lập trên web nhà cung cấp hóa đơn, chờ bạn ký theo lô` +
+        (issued > 0 ? `; ${issued} hóa đơn đã phát hành` : "") +
+        (failed > 0 ? `; ${failed} đơn lỗi` : "") +
+        ". Nên ký trong ngày (ngày ký chậm nhất là ngày làm việc tiếp theo kể từ ngày lập). Xem tại Lịch sử & Báo cáo thuế.",
+      link: "/invoicing/history",
+    });
   } else if (issued > 0 || failed > 0) {
     await notify(cfg.ownerId, {
       type: "INVOICE_AUTO_ISSUE",
@@ -335,7 +359,7 @@ export async function runAutoIssueForShop(
       link: "/invoicing/history",
     });
   }
-  return { outcome, picked: orders.length, issued, failed, stopped, pauseReason, interrupted };
+  return { outcome, picked: orders.length, issued, failed, deferred, stopped, pauseReason, interrupted };
 }
 
 /** ĐƯỜNG CŨ (INVOICE_MODE=legacy): một vòng đi tuần tự qua mọi shop. */

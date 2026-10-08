@@ -16,6 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { AwaitingSignatureBanner } from "@/components/invoice/awaiting-signature-banner";
 import { TaxDeclarationCard } from "@/components/invoicing/tax-declaration-card";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
@@ -613,6 +614,9 @@ export default function TaxHistoryPage() {
               </p>
             )}
 
+            {/* Tờ nháp đang chờ chủ shop ký trên web NCC (lát T1 tenant) — một nút, ký xong tải lại. */}
+            <AwaitingSignatureBanner refreshKey={inv?.awaitingSignatureCount ?? 0} onChanged={() => void load(range)} />
+
             {/* ===== NHẬT KÝ HÓA ĐƠN ĐIỆN TỬ ===== */}
             <Card className="shadow-sm">
               <CardContent className="pt-5">
@@ -734,9 +738,12 @@ export default function TaxHistoryPage() {
                                   )}
                                   title={l.errorMessage ?? undefined}
                                 >
-                                  {/* Tờ gửi đi chưa rõ kết quả: Hubsell đang tự tra lại với nhà
-                                      cung cấp, vài phút là có kết luận — lý do nằm ở tooltip. */}
-                                  {l.status === "PENDING" && !l.transactionId && l.errorMessage
+                                  {/* Tờ nháp chờ chủ shop ký trên web NCC (lát T1 tenant) — tooltip
+                                      là câu hướng dẫn chỗ ký. Tờ gửi đi chưa rõ kết quả: Hubsell
+                                      đang tự tra lại với nhà cung cấp, vài phút là có kết luận. */}
+                                  {l.status === "PENDING" && l.awaitingSignature
+                                    ? "Chờ bạn ký"
+                                    : l.status === "PENDING" && !l.transactionId && l.errorMessage
                                     ? "Đang kiểm lại"
                                     : l.status === "FAILED" && l.orderErrorCount
                                       ? /* Lát 7: lỗi vì dữ liệu của chính đơn — ghi lượt thứ mấy; tới mức

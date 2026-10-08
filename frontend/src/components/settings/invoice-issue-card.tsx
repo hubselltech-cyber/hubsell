@@ -44,6 +44,7 @@ import {
   X,
 } from "lucide-react";
 
+import { AwaitingSignatureBanner } from "@/components/invoice/awaiting-signature-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -199,6 +200,8 @@ export function InvoiceIssueCard({
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); // đang xuất (lẻ hoặc hàng loạt)
+  /** Đổi giá trị = dải "tờ nháp chờ ký" tải lại (vừa xuất thêm — lát T1 tenant). */
+  const [awaitingKey, setAwaitingKey] = useState(0);
   const [savingAuto, setSavingAuto] = useState(false);
   const [savingAutoAdjust, setSavingAutoAdjust] = useState(false);
   const [issueCode, setIssueCode] = useState("");
@@ -272,10 +275,15 @@ export function InvoiceIssueCard({
         }
         const clean = p.failed === 0 && p.checking === 0 && p.cancelled === 0;
         if (clean) {
-          toast.success(`Đã phát hành ${p.issued} hóa đơn — xem và tải PDF tại Lịch sử & Báo cáo thuế.`);
+          toast.success(
+            p.awaiting > 0
+              ? `Đã lập ${p.awaiting} tờ nháp chờ bạn ký trên web nhà cung cấp${p.issued > 0 ? ` và phát hành ${p.issued} hóa đơn` : ""} — ký theo lô ở đó, Hubsell tự nhận số.`
+              : `Đã phát hành ${p.issued} hóa đơn — xem và tải PDF tại Lịch sử & Báo cáo thuế.`
+          );
           setBatchId(null);
           setProgress(null);
         }
+        setAwaitingKey((k) => k + 1);
         void loadQueue(filter, page, pageSize);
       } catch (err) {
         if (!alive) return;
@@ -404,23 +412,28 @@ export function InvoiceIssueCard({
         return;
       }
       let issued = 0;
+      let awaiting = 0;
       let failed = 0;
       let firstErr: string | undefined;
       for (let i = 0; i < orderCodes.length; i += 50) {
         const r = await issueInvoicesBulk(orderCodes.slice(i, i + 50));
         issued += r.issued;
+        awaiting += r.awaiting ?? 0;
         failed += r.failed;
-        firstErr ??= r.results.find((x) => !x.ok)?.error ?? undefined;
+        firstErr ??= r.results.find((x) => !x.ok && !x.awaitingSignature)?.error ?? undefined;
       }
+      const done =
+        awaiting > 0
+          ? `Đã lập ${awaiting} tờ nháp chờ bạn ký trên web nhà cung cấp${issued > 0 ? `, phát hành ${issued} hóa đơn` : ""}`
+          : `Đã phát hành ${issued} hóa đơn`;
       if (failed === 0) {
-        toast.success(
-          `Đã phát hành ${issued} hóa đơn — xem và tải PDF tại Lịch sử & Báo cáo thuế.`
-        );
+        toast.success(`${done} — xem tại Lịch sử & Báo cáo thuế.`);
       } else {
         toast.warning(
-          `Phát hành ${issued} hóa đơn, ${failed} đơn lỗi${firstErr ? ` (${firstErr})` : ""} — chi tiết tại Lịch sử & Báo cáo thuế.`
+          `${done}, ${failed} đơn lỗi${firstErr ? ` (${firstErr})` : ""} — chi tiết tại Lịch sử & Báo cáo thuế.`
         );
       }
+      setAwaitingKey((k) => k + 1);
       void loadQueue(filter, page, pageSize);
     } catch (err) {
       toast.error(
@@ -442,7 +455,11 @@ export function InvoiceIssueCard({
       const res = await issueInvoice(orderCode);
       // Lát 10: shop đang có lượt xuất dài → máy chủ nhận yêu cầu, kết quả về chuông.
       if (res.pending) toast.info(res.message ?? "Đã nhận yêu cầu xuất hóa đơn — xong sẽ có thông báo ở chuông.");
-      else
+      else if (res.awaitingSignature || (!res.log?.invoiceNo && res.message)) {
+        // Lát T1 tenant: tờ nháp đã lập, chờ chủ shop ký trên web NCC (hoặc đã ký chờ số).
+        toast.info(res.message ?? "Đã lập tờ nháp — ký trên web nhà cung cấp, Hubsell tự nhận số.", { duration: 10_000 });
+        setAwaitingKey((k) => k + 1);
+      } else
         toast.success(
           `Đã phát hành hóa đơn số ${res.log?.invoiceNo ?? "?"} cho đơn ${orderCode}.`
         );
@@ -754,6 +771,14 @@ export function InvoiceIssueCard({
           </div>
         )}
 
+        {/* ---- Tờ nháp đang chờ chủ shop ký trên web NCC (lát T1 tenant, 08/10/2026):
+            việc của người, một nút — mở trang ký + "Tôi đã ký, kiểm ngay". ---- */}
+        <AwaitingSignatureBanner
+          className="mt-3"
+          refreshKey={awaitingKey}
+          onChanged={() => void loadQueue(filter, page, pageSize)}
+        />
+
         {/* ---- Thanh công cụ: tìm mã đơn + làm mới ---- */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -823,6 +848,7 @@ export function InvoiceIssueCard({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <span className="font-medium">
                 {`Đã xuất ${progress.issued}/${progress.total} hóa đơn`}
+                {(progress.awaiting ?? 0) > 0 && ` · ${progress.awaiting} tờ nháp chờ bạn ký trên web nhà cung cấp`}
                 {progress.failed > 0 && ` · ${progress.failed} đơn lỗi`}
                 {progress.checking > 0 && ` · ${progress.checking} tờ đang kiểm lại với nhà cung cấp`}
                 {progress.cancelled > 0 && ` · ${progress.cancelled} đơn đã dừng`}

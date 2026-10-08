@@ -25,7 +25,7 @@ const cfg: StandardInvoiceConfig = {
   meinvoicePassword: "p",
   invoicePattern: "1",
   invoiceSeries: "1K26TYY",
-  signMethod: "ESIGN_CLOUD",
+  signMethod: "HSM", // cổng phát hành ký nền (lát T1 08/10: ESIGN_CLOUD/USB đi tờ nháp)
   esignClientId: null,
   esignSecretKey: null,
   esignUsername: null,

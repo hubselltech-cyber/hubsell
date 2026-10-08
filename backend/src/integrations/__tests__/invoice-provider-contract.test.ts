@@ -46,7 +46,7 @@ const CFG: MisaProviderConfig = {
   invoicePattern: "1",
   invoiceSeries: "1C26TAA",
   defaultUnitName: "Cái",
-  signMethod: "ESIGN_CLOUD",
+  signMethod: "HSM", // cổng phát hành ký nền (lát T1 08/10: ESIGN_CLOUD/USB đi tờ nháp)
   esignClientId: null,
   esignSecretKey: null,
   esignUsername: null,
@@ -163,6 +163,9 @@ describe("Bảng khả năng của MISA (thử sandbox 02/10/2026 + MISA trả l
       webhook: false,
       cancelViaApi: false,
       validatesAdjustmentOriginal: false,
+      // Lát T1 tenant 08/10/2026: nhóm API WEB APP (tờ nháp) — sandbox 07/10 + tờ thật HQ
+      // 00000001 + MISA trả lời ticket 08/10 chỉ đích danh API này cho hóa đơn nháp.
+      draftSigning: { supported: true, signUrl: "https://app3.meinvoice.vn/v3/hoa-don" },
     });
     expect(new MisaInvoiceProvider(CFG).capabilities).toBe(MISA_CAPABILITIES);
   });
@@ -173,7 +176,7 @@ describe("Tra ngược theo mã tham chiếu (MISA)", () => {
     statusMock.mockResolvedValue([]);
     const r = await new MisaInvoiceProvider(CFG).findByReference("DH-001");
     expect(r).toEqual({ state: "NOT_FOUND" });
-    expect(statusMock).toHaveBeenCalledWith(["DH-001"], CFG, "refId");
+    expect(statusMock).toHaveBeenCalledWith(expect.arrayContaining(["DH-001"]), CFG, "refId"); // lát T1: hỏi kèm UUID v5 của mã (đường tờ nháp)
   });
 
   it("tờ còn hiệu lực → THẤY, kèm số và mã tra cứu", async () => {

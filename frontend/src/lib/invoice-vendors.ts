@@ -60,8 +60,13 @@ export interface InvoiceVendorMeta {
   helpUrl?: string;
   /** Cổng tra cứu công khai hóa đơn của NCC. */
   lookupUrl?: string;
-  /** Mô tả phương thức ký số của NCC — hiển thị dưới widget Trạng thái kết nối. */
+  /** Mô tả phương thức ký số của NCC — hiển thị dưới widget Trạng thái kết nối (khi NCC chưa có bộ phương thức ký riêng). */
   signNote: string;
+  /**
+   * Các phương thức ký NCC này nhận qua Hubsell (lát T1 tenant, 08/10/2026). Có = form
+   * hiện ô chọn + giải thích theo từng phương thức. Không có = NCC chưa nối, chỉ ghi signNote.
+   */
+  signMethods?: readonly SignMethodMeta[];
   /** true = có API kéo danh sách ký hiệu về chọn (nút "Tải ký hiệu"). */
   canFetchTemplates?: boolean;
   /** NCC tuỳ biến — cần nhập endpoint API riêng. */
@@ -76,6 +81,21 @@ export interface InvoiceVendorMeta {
   credentialFields: VendorCredentialField[];
 }
 
+/**
+ * MỘT PHƯƠNG THỨC KÝ SỐ mà Hubsell hỗ trợ với một NCC. `value` lưu vào InvoiceConfig.signMethod
+ * (backend nhận USB_TOKEN | ESIGN_CLOUD | HSM). Hai cách làm việc:
+ *   · `draft: true`  — Hubsell LẬP TỜ NHÁP đầy đủ dữ liệu trên web NCC, chủ shop ký theo lô
+ *                      ở đó (một lần xác nhận chữ ký cho tới 50 tờ); Hubsell tự nhận số sau ký.
+ *   · `draft: false` — NCC ký nền tự động, có số ngay, không ai phải bấm.
+ */
+export interface SignMethodMeta {
+  value: "USB_TOKEN" | "ESIGN_CLOUD" | "HSM";
+  label: string;
+  /** Câu giải thích hiện dưới ô chọn + dưới widget Trạng thái kết nối. */
+  note: string;
+  draft: boolean;
+}
+
 /** Ghi chú ký số dùng chung cho NCC chưa nối API — chốt câu chữ thật khi tích hợp. */
 const SIGN_NOTE_SOON =
   "Phương thức ký số theo quy định của nhà cung cấp — chi tiết được chốt khi Hubsell mở tích hợp chính thức.";
@@ -86,6 +106,48 @@ const SIGN_NOTE_SOON =
  * khách). Khi có link affiliate chính thức từ MISA thì thay đúng MỘT chỗ này.
  */
 export const MEINVOICE_SIGNUP_URL = "https://www.meinvoice.vn/dang-ky/";
+
+/**
+ * PHƯƠNG THỨC KÝ VỚI meInvoice (lát T1 tenant, 08/10/2026 — căn cứ MISA trả lời ticket
+ * 08/10: cổng phát hành chỉ ký nền bằng HSM / "eSign nâng cao"; eSign thường và USB token
+ * ký trên web; hóa đơn nháp đi nhóm API WEB APP). Mặc định ESIGN_CLOUD: đa số shop nhỏ
+ * mua meInvoice kèm eSign.
+ */
+export const MISA_SIGN_METHODS: readonly SignMethodMeta[] = [
+  {
+    value: "ESIGN_CLOUD",
+    label: "MISA eSign (ký từ xa) — Hubsell lập tờ nháp, bạn ký theo lô trên meinvoice.vn",
+    note:
+      "Hubsell lập sẵn tờ nháp đầy đủ dữ liệu trên meinvoice.vn; bạn vào Hóa đơn → Chưa phát hành, chọn các tờ rồi Ký & phát hành — xác nhận eSign trên điện thoại một lần cho cả lô. Hubsell tự nhận số hóa đơn sau khi ký.",
+    draft: true,
+  },
+  {
+    value: "USB_TOKEN",
+    label: "USB Token — Hubsell lập tờ nháp, bạn ký theo lô trên máy có cắm USB",
+    note:
+      "Hubsell lập sẵn tờ nháp trên meinvoice.vn; bạn ký theo lô trên máy tính đã cắm USB Token và cài công cụ ký của MISA. Hubsell tự nhận số hóa đơn sau khi ký.",
+    draft: true,
+  },
+  {
+    value: "HSM",
+    label: "HSM (máy chủ ký số của nhà cung cấp chữ ký) — ký tự động, không ai phải bấm",
+    note:
+      "meInvoice gọi máy chủ HSM đã khai ở Hệ thống → Thiết lập ký số → Chữ ký số HSM để ký nền từng tờ: có số hóa đơn ngay khi xuất. Cần thuê chứng thư HSM (SoftDreams, CyberLotus, Viettel-CA…). MISA eSign KHÔNG phải HSM.",
+    draft: false,
+  },
+];
+
+/** Meta phương thức ký đang chọn của một NCC — rơi về phương thức đầu (mặc định) khi giá trị lạ. */
+export function signMethodMeta(vendor: Pick<InvoiceVendorMeta, "signMethods">, value: string): SignMethodMeta | null {
+  const list = vendor.signMethods;
+  if (!list || list.length === 0) return null;
+  return list.find((m) => m.value === value) ?? list[0];
+}
+
+/** Câu ký số hiện dưới widget Trạng thái kết nối: theo phương thức đang chọn, hoặc signNote chung. */
+export function signNoteFor(vendor: InvoiceVendorMeta, signMethod: string): string {
+  return signMethodMeta(vendor, signMethod)?.note ?? vendor.signNote;
+}
 
 export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
   {
@@ -101,7 +163,8 @@ export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
     helpUrl: "https://www.meinvoice.vn/tro-giup/",
     lookupUrl: "https://www.meinvoice.vn/tra-cuu/",
     signNote:
-      "Hóa đơn được ký nền tự động (HSM) theo chứng thư gắn với tài khoản meInvoice — không cần USB Token hay cấu hình gì thêm.",
+      "Chọn phương thức ký khớp với chữ ký số shop đang dùng trên meInvoice — Hubsell lập tờ nháp để bạn ký theo lô, hoặc để HSM ký nền.",
+    signMethods: MISA_SIGN_METHODS,
     canFetchTemplates: true,
     credentialFields: [
       {
@@ -309,11 +372,11 @@ export function isCustomVendor(v: string): boolean {
  */
 export const HUBSELL_PARTNER_CODE = "HUBSELL-ISV-2026";
 
-/** Phương thức ký số (giá trị lưu DB — backend validate đúng 2 giá trị này). */
-export const SIGN_METHODS = [
-  { value: "USB_TOKEN", label: "Ký số qua USB Token (Thủ công)" },
-  { value: "ESIGN_CLOUD", label: "MISA eSign — Ký số từ xa (Tự động)" },
-] as const;
+/** Phương thức ký số (giá trị lưu DB — backend validate đúng 3 giá trị này). Nhãn/giải thích theo NCC: xem MISA_SIGN_METHODS. */
+export const SIGN_METHODS = MISA_SIGN_METHODS;
+
+/** Phương thức ký mặc định cho shop mới (đa số mua meInvoice kèm eSign). */
+export const DEFAULT_SIGN_METHOD = "ESIGN_CLOUD";
 
 // ============================================================
 // VALIDATE THEO TT 78/2021 — bản MIRROR của backend

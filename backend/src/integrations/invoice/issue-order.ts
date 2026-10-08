@@ -20,6 +20,7 @@ import { prisma } from "../../lib/prisma";
 import { SecretBoxError } from "../../lib/secret-box";
 import { autoRetryExhausted, nextOrderErrorCount } from "./auto-issue-policy";
 import { cqtNextOnWrite } from "./cqt-follow";
+import { AWAITING_SIGNATURE_CODE, DRAFT_FIRST_CHECK_MS, NUMBER_PENDING_CODE } from "./draft-signing";
 import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
@@ -45,6 +46,15 @@ export interface IssueOrderResult {
    * Dòng nhật ký vẫn ghi FAILED; người gọi không được coi là "chắc chắn chưa lập".
    */
   outcomeUnknown?: boolean;
+  /**
+   * true = nhà cung cấp đã nhận TỜ NHÁP, chủ shop phải ký trên web của họ (lát T1
+   * tenant, 08/10/2026). Dòng nhật ký PENDING + awaitingSignatureAt; `ok` vẫn false
+   * (chưa có số) nhưng KHÔNG phải lỗi: `error` trống, `message` là câu hướng dẫn chỗ ký,
+   * httpStatus 202. Nơi lặp nhiều tờ không đếm vào chuỗi lỗi (isDeferredAtProvider).
+   */
+  awaitingSignature?: true;
+  /** Câu cho người bấm khi httpStatus 202 (chờ ký / chờ cấp số) — không phải lỗi. */
+  message?: string;
   /**
    * Có mặt khi lệnh đã đi tới nhà cung cấp: người gọi đang lặp qua nhiều tờ phải
    * chờ đủ số ms này trước tờ kế (ProviderCapabilities.publishGapMs — MISA 02/10:
@@ -315,13 +325,26 @@ async function openInvoiceConflict(ownerId: string, orderCode: string): Promise<
       orderCode,
       status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
     },
-    select: { status: true, invoiceNo: true, transactionId: true, errorMessage: true, provider: true },
+    select: {
+      status: true,
+      invoiceNo: true,
+      transactionId: true,
+      errorMessage: true,
+      provider: true,
+      awaitingSignatureAt: true,
+    },
   });
   if (!existing) return null;
+  // Tờ nháp đang chờ chủ shop ký trên web nhà cung cấp (lát T1 tenant) — không phải lỗi,
+  // không phải "đang kiểm lại": nói rõ việc cần làm.
+  const awaitingSignature = existing.status === InvoiceLogStatus.PENDING && !!existing.awaitingSignatureAt;
   // Dòng đang chờ, chưa có mã tra cứu mà đã mang lời nhắn = lượt trước chưa rõ kết quả,
   // vòng quét đang kiểm lại (unknown-outcome.ts).
   const rechecking =
-    existing.status === InvoiceLogStatus.PENDING && !existing.transactionId && !!existing.errorMessage;
+    existing.status === InvoiceLogStatus.PENDING &&
+    !existing.transactionId &&
+    !awaitingSignature &&
+    !!existing.errorMessage;
   return {
     ok: false,
     httpStatus: 409,
@@ -329,9 +352,11 @@ async function openInvoiceConflict(ownerId: string, orderCode: string): Promise<
     error:
       existing.status === InvoiceLogStatus.ISSUED
         ? `Đơn này đã có hóa đơn số ${existing.invoiceNo ?? "?"} — muốn phát hành lại phải hủy/thay thế trước.`
-        : rechecking
-          ? recheckInProgressMessage(existing.provider)
-          : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
+        : awaitingSignature
+          ? "Đơn này đã có tờ nháp đang chờ bạn ký trên web nhà cung cấp — ký xong Hubsell tự nhận số, không cần xuất lại."
+          : rechecking
+            ? recheckInProgressMessage(existing.provider)
+            : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
   };
 }
 
@@ -493,20 +518,31 @@ export async function issueInvoiceForOrder(
         totalAmount,
       });
 
+  const now = new Date();
   const issued = result.status === InvoiceLogStatus.ISSUED;
+  // TỜ NHÁP CHỜ KÝ (lát T1 tenant, 08/10/2026): nhà cung cấp đã nhận tờ nháp, chủ shop
+  // ký trên web của họ. Dòng giữ PENDING làm vé của đơn, cột awaitingSignatureAt đánh
+  // dấu, vòng hỏi theo giờ (invoice-cqt-follow) tra theo mã tham chiếu rồi nối số.
+  // KHÔNG phải lỗi: không đếm lượt lỗi, không ngắt mạch.
+  const awaiting = !issued && result.awaitingSignature === true;
+  // Nhà cung cấp trả "đang chờ" KÈM mã tra cứu (tờ đã ký, số cấp trễ): vòng hỏi trạng
+  // thái theo tiếp như tờ HSM cấp số trễ.
+  const settling = !issued && !awaiting && result.status === InvoiceLogStatus.PENDING && !!result.transactionId;
   // CHƯA RÕ KẾT QUẢ mà nhà cung cấp tra ngược được (lát 6b): GIỮ dòng đang chờ. Dòng
   // vẫn là vé của đơn nên không ai xuất trùng được; vòng quét invoice-unknown-recheck
   // tra lại rồi nối số / trả đơn về hàng chờ. Nhà cung cấp không tra ngược được thì
   // ghi hỏng như lát 5, lời nhắn của adapter bảo chủ shop tự kiểm.
-  const keepPending = !issued && result.outcomeUnknown === true && canRecheckLater(provider);
-  const finalStatus = keepPending ? InvoiceLogStatus.PENDING : result.status;
+  const keepPending =
+    !issued && !awaiting && !settling && result.outcomeUnknown === true && canRecheckLater(provider);
+  const finalStatus = keepPending || awaiting || settling ? InvoiceLogStatus.PENDING : result.status;
   const errorMessage = keepPending ? keptPendingMessage(provider.name) : (result.errorMessage ?? null);
+  const deferred = awaiting || settling;
 
   // LƯỢT LỖI RIÊNG ĐƠN (bước 5 lát 7): dòng FAILED ghi tầm lỗi + số lượt lỗi tầm
   // ORDER của hóa đơn gốc này tính tới giờ. Số cũ đọc từ các dòng FAILED trước của
   // cùng đơn (chỉ mục orderId, vài dòng). Lỗi tầm ACCOUNT / TRANSIENT chép lại số
   // cũ, không cộng — xem auto-issue-policy.ts. Dòng giữ "đang chờ" không đếm.
-  const failedNow = !issued && !keepPending;
+  const failedNow = finalStatus === InvoiceLogStatus.FAILED;
   const failScope: InvoiceErrorScope | undefined = failedNow ? (result.errorScope ?? "ORDER") : undefined;
   let orderErrorCount: number | undefined;
   let autoRetryJustStopped = false;
@@ -536,9 +572,13 @@ export async function issueInvoiceForOrder(
         errorMessage,
         errorScope: failScope ?? null,
         orderErrorCount: orderErrorCount ?? null,
-        issuedAt: issued ? new Date() : null,
-        // Tờ có mã tra cứu: hẹn giờ hỏi trạng thái cơ quan thuế (lát 12).
-        cqtNextCheckAt: cqtNextOnWrite(finalStatus, result.transactionId, new Date()),
+        issuedAt: issued ? now : null,
+        // Tờ nháp chờ ký: đánh dấu + hẹn vòng hỏi tờ nháp. Tờ có mã tra cứu: hẹn giờ hỏi
+        // trạng thái cơ quan thuế (lát 12).
+        awaitingSignatureAt: awaiting ? now : null,
+        cqtNextCheckAt: awaiting
+          ? new Date(now.getTime() + DRAFT_FIRST_CHECK_MS)
+          : cqtNextOnWrite(finalStatus, result.transactionId, now),
       },
     }),
     prisma.invoiceStatusHistory.create({
@@ -550,9 +590,13 @@ export async function issueInvoiceForOrder(
         source: "HUBSELL",
         note: issued
           ? `Phát hành qua ${provider.name}: số ${result.invoiceNo ?? "?"}, mã tra cứu ${result.transactionId ?? "?"}`
-          : keepPending
-            ? `Chưa rõ kết quả, giữ đang chờ để tự kiểm lại theo mã tham chiếu ${orderCode}. Nhà cung cấp báo: ${result.errorMessage ?? "?"}`
-            : (result.errorMessage ?? null),
+          : awaiting
+            ? `Đã lập tờ nháp trên ${provider.name} theo mã tham chiếu ${orderCode}, chờ chủ shop ký trên web.`
+            : settling
+              ? `${provider.name} đã nhận hóa đơn (mã tra cứu ${result.transactionId}), chờ cấp số.`
+              : keepPending
+                ? `Chưa rõ kết quả, giữ đang chờ để tự kiểm lại theo mã tham chiếu ${orderCode}. Nhà cung cấp báo: ${result.errorMessage ?? "?"}`
+                : (result.errorMessage ?? null),
       },
     }),
     prisma.order.update({
@@ -563,11 +607,21 @@ export async function issueInvoiceForOrder(
 
   return {
     ok: issued,
-    httpStatus: issued ? 201 : 502,
-    error: issued ? undefined : (errorMessage ?? "NCC từ chối phát hành"),
-    errorCode: issued ? undefined : keepPending ? OUTCOME_UNKNOWN_CODE : result.errorCode,
-    errorScope: issued ? undefined : (result.errorScope ?? "ORDER"),
+    httpStatus: issued ? 201 : deferred ? 202 : 502,
+    error: issued || deferred ? undefined : (errorMessage ?? "NCC từ chối phát hành"),
+    errorCode: issued
+      ? undefined
+      : keepPending
+        ? OUTCOME_UNKNOWN_CODE
+        : awaiting
+          ? AWAITING_SIGNATURE_CODE
+          : settling
+            ? NUMBER_PENDING_CODE
+            : result.errorCode,
+    errorScope: issued || deferred ? undefined : (result.errorScope ?? "ORDER"),
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
+    awaitingSignature: awaiting ? true : undefined,
+    message: deferred ? (errorMessage ?? undefined) : undefined,
     pauseBeforeNextMs: buyerTaxCodeError ? undefined : publishGapOf(provider),
     orderErrorCount,
     autoRetryJustStopped: autoRetryJustStopped ? true : undefined,

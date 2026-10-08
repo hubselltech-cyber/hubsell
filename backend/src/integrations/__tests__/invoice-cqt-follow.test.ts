@@ -163,7 +163,7 @@ describe("Adapter MISA hỏi trạng thái theo lô", () => {
     invoicePattern: "1",
     invoiceSeries: "1K26TYY",
     defaultUnitName: "Cái",
-    signMethod: "ESIGN_CLOUD",
+    signMethod: "HSM", // cổng phát hành ký nền (lát T1 08/10: ESIGN_CLOUD/USB đi tờ nháp)
     esignClientId: null,
     esignSecretKey: null,
     esignUsername: null,

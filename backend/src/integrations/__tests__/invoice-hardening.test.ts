@@ -40,7 +40,7 @@ const CFG: StandardInvoiceConfig = {
   invoicePattern: "2",
   invoiceSeries: "2C26TAA",
   defaultUnitName: "Cái",
-  signMethod: "ESIGN_CLOUD",
+  signMethod: "HSM", // cổng phát hành ký nền (lát T1 08/10: ESIGN_CLOUD/USB đi tờ nháp)
   esignClientId: null,
   esignSecretKey: null,
   esignUsername: null,

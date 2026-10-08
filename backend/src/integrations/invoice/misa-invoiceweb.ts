@@ -59,6 +59,16 @@ export const WEB_GETLIST_BATCH_MAX = 50;
 /** Trang web nơi chủ shop ký tờ nháp — dùng trong lời nhắn / thư nhắc. */
 export const MEINVOICE_WEB_INVOICES_URL = "https://app3.meinvoice.vn/v3/hoa-don";
 
+/**
+ * Phương thức ký nào đi đường TỜ NHÁP (chủ shop ký trên web): MISA eSign (ESIGN_CLOUD)
+ * và USB token — cổng phát hành không ký nền được với hai loại này (MISA ticket
+ * 08/10/2026: SignType 2 chỉ HSM / "eSign nâng cao"). HSM giữ cổng phát hành.
+ * Dùng chung cho HQ (hq-auto-invoice) và tenant (misa-provider).
+ */
+export function usesWebDraft(signMethod: string): boolean {
+  return signMethod === "ESIGN_CLOUD" || signMethod === "USB_TOKEN";
+}
+
 // ============================================================
 // RefID dạng GUID, suy ra ỔN ĐỊNH từ mã tham chiếu Hubsell
 // ============================================================

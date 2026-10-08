@@ -58,7 +58,11 @@ const router = Router();
 
 // Danh sách NCC hợp lệ và NCC "sắp ra mắt" đọc từ sổ đăng ký
 // (integrations/invoice/provider-registry.ts) — mở một NCC là sửa ở đó.
-const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
+// Phương thức ký (lát T1 tenant, 08/10/2026): ESIGN_CLOUD (MISA eSign) và USB_TOKEN đi
+// đường TỜ NHÁP — chủ shop ký theo lô trên web nhà cung cấp; HSM = máy chủ ký của nhà
+// cung cấp thứ ba, ký nền tự động qua cổng phát hành. Nhãn/giải thích ở frontend
+// invoice-vendors.ts (SIGN_METHODS).
+const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD", "HSM"];
 const INVOICE_TYPES = ["STANDARD", "POS"];
 
 /**
@@ -302,7 +306,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       return;
     }
     if (typeof signMethod !== "string" || !SIGN_METHODS.includes(signMethod)) {
-      res.status(400).json({ error: "Phương thức ký không hợp lệ (USB_TOKEN | ESIGN_CLOUD)" });
+      res.status(400).json({ error: "Phương thức ký không hợp lệ (USB_TOKEN | ESIGN_CLOUD | HSM)" });
       return;
     }
     // posProvider tuỳ chọn (client cũ không gửi) — có gửi thì phải hợp lệ.

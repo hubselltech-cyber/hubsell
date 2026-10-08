@@ -151,7 +151,21 @@ trống, "xóa trên BigSeller cũng xóa bên MISA" → tờ nằm ở **Chưa 
 phát hành → ký khi phát hành"). Câu 4 hỏi MISA: Open API có endpoint **lưu hóa đơn chưa phát hành** không
 (`/publishing/token` không lưu); nếu chỉ cấp cho đối tác thì thủ tục xin cấp cho Hubsell.
 
-**Trả lời của MISA:** _(chưa có — ghi nguyên văn vào đây khi nhận, kèm ngày giờ)_
+**Trả lời của MISA (08/10/2026 08:49, Chuyên viên hỗ trợ Phòng Tích hợp hệ thống — chép nguyên văn từ thư thông báo, ticket 01a116e4-9449-7c27-bc1c-c10129fbb9fc):**
+
+> Chào anh/chị. Cảm ơn anh/chị đã liên hệ với Phòng Tích hợp hệ thống.
+> - Việc anh muốn phát hành hóa đơn có ký số trên hóa đơn (SignType = 2), với chữ ký số là eSign, bắt buộc anh phải có eSign nâng cao, chứ không hẳn là anh cứ có chữ ký số esign thì anh sẽ phát hành được hóa đơn
+> - Trong tài liệu có 1 API lấy Danh sách Chứng thư số, anh dùng API đó nếu lấy được dữ liệu về, thì đó là những CKS anh có thể dùng được, nếu không có thì CKS của anh đang k đáp ứng yêu cầu
+> - /invoice/publishing/token API này dùng để phát hành hóa đơn với CKS loại USB token, khi phát hành hóa đơn với loại CKS này, anh cần thực hiện 3 bước mới phát hành ra 1 hóa đơn (tạo XML, ký XML, phát hành XML), đến bước phát hành XML thành công, hệ thống mới ghi nhận hóa đơn của anh, chứ không lưu trữ nháp, lỗi ...
+> - Để tạo hóa đơn nháp anh có thể tham khảo tài liệu API WEB APP (HÓA ĐƠN NHÁP) - https://developer.misa.vn/products-openapi/MEINVOICE
+> Trân trọng, Phòng Tích hợp hệ thống.
+
+**Đọc ra gì (08/10 sáng):**
+1. **Hướng tờ nháp (API WEB APP) là đường MISA chỉ đích danh** cho hóa đơn nháp → thiết kế HQ (mục 13–15) và lát T1 tenant (mục 18) đúng đường chính thống, không phải đường vòng.
+2. **"eSign nâng cao"** là khái niệm mới: eSign thường (gói anh mua 06/10) KHÔNG ký nền qua SignType 2; muốn máy tự ký hoàn toàn phải nâng lên "eSign nâng cao" (MISA không nói giá / cách nâng). Việc anh quyết: có hỏi MISA kinh doanh giá "eSign nâng cao" cho HQ không (shop khách gần như không mua). Tới lúc đó HQ vẫn chạy tờ nháp + anh ký theo lô — không chặn gì.
+3. **"API lấy Danh sách Chứng thư số"** trên cổng ITG: chưa tra trong tài liệu (ghi nhận 07/08 chỉ thấy nhóm eSign riêng `/esign/v1/certificates/*`). Chỉ cần tra khi đi hướng eSign nâng cao: gọi thử với tài khoản HQ, trả rỗng = chứng thư hiện tại không ký nền được (đúng như đã thấy `CallSignServiceFail`).
+4. `/invoice/publishing/token` = đúng luồng USB 3 bước, không lưu nháp — khớp kết luận 07/10 (mục 11), đã gỡ mã (mục 17).
+5. Câu 2 (lộ trình eSign qua Open API, danh sách HSM) và câu 3 (đổi gói eSign → HSM) MISA KHÔNG trả lời. Không hỏi lại — không còn chặn việc gì.
 
 ---
 
@@ -396,8 +410,46 @@ mua → **Ký & phát hành** (xác nhận eSign) → chờ ≤ 30' (hoặc bấ
 - GIỮ (còn dùng cho HSM): `SIGN_SESSION_RE`/`isSignSessionError` (CallSignServiceFail = HSM chưa khai), `DRAFT_WAITING_MESSAGE` (HSM báo trùng
   RefID mà tờ chưa phát hành), `misaSignType()` (tenant còn gọi tới khi lát T1 xong).
 
+## 18. ✅ LÁT T1 — LUỒNG TENANT ĐI TỜ NHÁP (08/10/2026 sáng, code xong local, chờ anh gật → push)
+
+**Vấn đề:** mọi shop khách bật module Hóa đơn đều lưu `signMethod = ESIGN_CLOUD` (ô chọn bị ẩn từ 23/08) và `misa-provider.ts` gọi
+SignType 2 → shop dùng MISA eSign (đa số) gặp `CallSignServiceFail` ở tờ đầu, worker tự xuất 15 phút lại thử lại hỏng. Lát này đưa
+tenant đi cùng đường HQ (mục 13–15): **Hubsell lập tờ nháp trên meinvoice.vn, chủ shop ký theo lô, máy tự nối số.**
+
+**Nghiệp vụ thuế làm căn cứ (đọc lại 08/10 — [thuvienphapluat.vn](https://thuvienphapluat.vn/hoi-dap-phap-luat/thoi-diem-lap-hoa-don-co-phai-la-thoi-diem-ky-so-hoa-don-theo-nghi-dinh-2542026ndcp-138096838.html)):**
+NĐ 254/2026 (hiệu lực 01/07/2026) — hóa đơn lập tại thời điểm giao hàng (Điều 9); **ngày ký số được khác ngày lập nhưng chậm nhất là
+NGÀY LÀM VIỆC TIẾP THEO kể từ ngày lập** (ký trễ hơn: hóa đơn vẫn có hiệu lực nhưng là vi phạm thủ tục). Tờ nháp mang `InvDate` = ngày
+đẩy (≈ ngày giao khi tự động), nên shop phải ký trong ngày hoặc ngày làm việc kế → mọi chỗ (ô chọn phương thức ký, hướng dẫn nhanh, dải
+nhắc, chuông, lời nhắn) đều nói đúng câu này; `signDeadline()` tính hạn theo giờ VN (T2–T5 → hôm sau; T6/T7/CN → Thứ Hai; ngày lễ
+KHÔNG tính — tự chọn, chỉ nhắc không khóa). ⚠️ **Chưa kiểm:** khi ký muộn trên web, MISA giữ `InvDate` của tờ nháp hay đổi sang ngày
+ký — xem ở tờ thật đầu tiên ký khác ngày; nếu MISA giữ ngày đẩy thì `issuedAt` = ngày đẩy (đang ghi vậy) là đúng ngày lập.
+
+**Thiết kế (5 mục đã trình đêm 07/10, làm đủ):**
+
+| # | Chỗ | Làm gì |
+|---|---|---|
+| 1 | `misa-provider.ts` | `createInvoice`: `usesWebDraft(signMethod)` (ESIGN_CLOUD / USB_TOKEN) → `createViaWebDraft`: tra web theo RefID (UUID v5 của mã Hubsell) → không có thì hỏi `/invoice/status` theo RefID (lưới đỡ tờ đã phát hành) → vẫn không có thì `insertWebDraft` → trả `PENDING + awaitingSignature`. Đã ký → ISSUED (hoặc PENDING + mã tra cứu khi chưa có số, mã `HUBSELL_NUMBER_PENDING`). Lỗi mạng giữa chừng = HỎNG tạm (tờ nháp không ăn số, lượt sau tra lại rồi chỉ đẩy khi thiếu) — KHÔNG phải "chưa rõ kết quả". HSM giữ `publishStandardInvoice`. Thêm `findDrafts(refs)` (web getlist ≤ 50 → mã thiếu hỏi cổng tra cứu → cả hai không có = GONE); `findByReference` hỏi cả mã Hubsell lẫn UUID v5 trong một lệnh. Bảng khả năng thêm `draftSigning: {supported: true, signUrl}` (nguồn ghi tại chỗ). |
+| 2 | Lõi `issue-order.ts` / `adjust-order.ts` | `awaitingSignature` → dòng PENDING + cột mới **`InvoiceLog.awaitingSignatureAt`** (migration `20261008140000`, ADD COLUMN có khóa thử lại) + `cqtNextCheckAt = +10 phút`; không đếm lượt lỗi, không ngắt mạch; `IssueOrderResult` thêm `awaitingSignature`, `message`, httpStatus **202**. Bấm lại đơn đang chờ ký → 409 "đã có tờ nháp đang chờ bạn ký". Hóa đơn điều chỉnh với eSign cũng đi tờ nháp (EInvoiceStatus 4 đã có sẵn ở payload web). |
+| 3 | Vòng hỏi `workers/invoice-cqt-follow.ts` + lõi mới `draft-signing.ts` | Dòng chờ ký được NHẬN bằng cùng câu UPDATE theo `cqtNextCheckAt`; gom theo shop → `provider.findDrafts` theo lô → `planDraftFollow`/`applyDraftPlan` (ghi có điều kiện): **SIGNED** → ISSUED + số + mã, `issuedAt` = ngày đẩy, hẹn hỏi CQT 1 giờ, lịch sử, đơn ISSUED, chuông `INVOICE_DRAFT_SIGNED`; **WAITING** → hẹn 30 phút (2 ngày đầu) / 6 giờ (sau); **GONE/DELETED** (chủ shop xóa nháp; chỉ tin khi tờ đã đẩy ≥ 10 phút) → **CANCELLED** (đúng nghĩa sẵn có "seller tự xóa bên NCC": đơn về hàng chờ, máy không tự xuất lại, bấm tay được) + chuông `INVOICE_DRAFT_GONE`. Vòng quét tờ chưa rõ (`invoice-unknown-recheck`) thêm `awaitingSignatureAt IS NULL` — không ghi hỏng nhầm tờ nháp. Worker tự xuất / làn / yêu cầu bấm tay: kết quả "chờ ký / chờ số" (`isDeferredAtProvider`) KHÔNG vào chuỗi lỗi, làn đóng yêu cầu DONE với mã `HUBSELL_AWAITING_SIGNATURE`, lô đếm riêng `awaiting`, chuông nói đúng việc. |
+| 4 | UI shop | `invoice-vendors.ts`: `MISA_SIGN_METHODS` (ESIGN_CLOUD mặc định / USB_TOKEN / HSM, mỗi cái có `note` + cờ `draft`), `signNoteFor()`; `invoice-config-section.tsx` MỞ LẠI ô "Chữ ký số shop đang dùng" + hộp vàng "bước ký vẫn là việc của bạn… ký trong ngày (NĐ 254/2026)"; Hướng dẫn nhanh thêm mục Chữ ký số; backend `SIGN_METHODS` nhận thêm `HSM`. Dải mới **`AwaitingSignatureBanner`** (một nút: Mở trang ký + "Tôi đã ký, kiểm ngay") ở Hàng chờ xuất hóa đơn và Lịch sử hóa đơn; nhãn **"Chờ bạn ký"** trong nhật ký; toast/tiến độ lô nói "tờ nháp chờ bạn ký". API: `GET /api/tax/invoices/awaiting-signature` (đếm + quá hạn + link), `POST …/check` (dời giờ hỏi về ngay + chạy vòng hỏi cho riêng shop, 429 nếu vừa kiểm < 30 giây), `/api/tax/report` thêm `awaitingSignatureCount` + `logs[].awaitingSignature`. |
+| 5 | Test | `invoice-draft-signing.test.ts` 20 ca thuần (hạn ký, nhịp, kế hoạch, adapter rẽ đường, findDrafts, tra ngược 2 mã); `invoice-draft-signing-db.test.ts` 9 ca DB (xuất → chờ ký → 409 → vòng chưa rõ bỏ qua → còn chờ / đã ký / chưa số / nháp bị xóa / NCC lỗi / điều chỉnh). Bộ cũ: 7 test cấu hình `ESIGN_CLOUD` đổi sang `HSM` (chúng kiểm cổng phát hành), 1 kỳ vọng tra ngược nhận thêm UUID; **192 + 98 + 29 ca xanh**, `tsc` BE/FE sạch, eslint FE sạch. |
+
+**Không làm (cố ý, T2):** thư nhắc shop khi tờ chờ ký > 1 ngày (HQ đã có, tenant chưa); HSM gửi SĐT/CCCD; ô ghi đè người mua. Không làm
+theo dõi phôi (anh chốt 00:35).
+
+**Rủi ro / việc kiểm sau deploy:**
+1. Shop prod nào đang `ESIGN_CLOUD` mà thực ra có HSM nối ở meInvoice (từng phát hành được qua SignType 2) sẽ chuyển sang tờ nháp — không
+   hỏng, chỉ phải vào web ký; shop đó đổi ô chọn sang HSM là về như cũ. **Chưa kiểm prod có shop nào như vậy** (SQL: `InvoiceLog` ISSUED
+   của shop không phải sandbox) — anh chạy câu đếm ở Supabase nếu muốn chắc trước khi push.
+2. Migration ADD COLUMN trên `InvoiceLog` khi deploy (có khóa thử lại 40 lần × 3 giây) — bảng nhỏ, kỳ vọng vài trăm ms.
+3. Thử thật đề xuất: tạo cấu hình tenant trên shop của anh bằng chính tài khoản meInvoice HQ (MST 0111626360, ký hiệu 1C26THB, phương
+   thức eSign) → xuất tay một đơn → dải "1 hóa đơn đang chờ bạn ký" → ký trên app3 → bấm "Tôi đã ký, kiểm ngay" → nhãn Đã phát hành + số.
+   Cùng lúc kiểm điểm ⚠️ InvDate ở trên.
+4. Chưa soi giao diện ở trình duyệt local (ô chọn phương thức ký + dải nhắc) — chỉ kiểm bằng tsc/eslint; anh nhìn qua trên prod sau deploy.
+
 ## 7. Nhật ký
 
+- **08/10/2026 sáng:** MISA trả lời ticket (mục 6): tờ nháp = API WEB APP (đúng đường), ký nền eSign cần "eSign nâng cao". Code xong lát T1 tenant (mục 18): 29 test mới xanh, bộ cũ 290 ca xanh; chờ anh gật → push.
 - **07/10/2026 đêm (23:00):** code xong luồng tờ nháp HQ (mục 13), sandbox 3 ca OK, test 39/39; chờ anh gật push + thử thật tờ khách Hiển.
 - **07/10/2026:** đọc được tài liệu MISA (môi trường đã mở 4 tên miền). Chốt nguyên nhân gốc: ITG
   `SignType 2` = HSM nhà cung cấp thứ ba; eSign chỉ ký từ web. Đề xuất hướng A (HSM). Chưa sửa code,

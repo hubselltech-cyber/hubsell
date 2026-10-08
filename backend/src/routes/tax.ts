@@ -25,7 +25,10 @@ import {
   normalizeAutoIssueTrigger,
 } from "../integrations/invoice/auto-issue-policy";
 import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
+import { draftSignUrl, isSignOverdue } from "../integrations/invoice/draft-signing";
+import { getInvoiceProvider } from "../integrations/invoice/index";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
+import { runInvoiceCqtFollowOnce } from "../workers/invoice-cqt-follow";
 import { invoiceBulkMode, invoiceSingleMode, invoiceSingleWaitMs } from "../lib/queue-config";
 import {
   acceptBulkIssue,
@@ -233,6 +236,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           errorMessage: true,
           errorScope: true, // tầm lỗi của dòng FAILED (lát 7)
           orderErrorCount: true, // số lượt lỗi riêng đơn tính tới dòng này (lát 7)
+          awaitingSignatureAt: true, // tờ nháp chờ chủ shop ký trên web NCC (lát T1 tenant)
           issuedAt: true,
           createdAt: true,
           adjustmentForLogId: true, // ≠ null = hóa đơn ĐIỀU CHỈNH (tiền âm)
@@ -269,6 +273,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       cqtWaitingCount,
       cqtUncheckedCount,
       cancelledCount,
+      awaitingSignatureCount,
     ] = await Promise.all([
       prisma.invoiceLog.aggregate({
         where: {
@@ -320,6 +325,8 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       prisma.invoiceLog.count({
         where: { ownerId, status: InvoiceLogStatus.CANCELLED, ...logPeriodWhere(range) },
       }),
+      // Tờ nháp chờ chủ shop ký — đếm toàn shop, không theo kỳ (việc phải làm).
+      prisma.invoiceLog.count({ where: AWAITING_WHERE(ownerId) }),
     ]);
 
     // ---- ĐỐI CHIẾU SÓT (03/09 — kế toán trưởng hỏi "kỳ này bao nhiêu đơn
@@ -411,6 +418,8 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       cqtUncheckedCount,
       /** Tờ đã hủy/xóa (trên NCC hoặc qua webhook) trong kỳ. */
       cancelledCount,
+      /** Tờ nháp đang chờ chủ shop ký trên web NCC (toàn shop, lát T1 tenant). */
+      awaitingSignatureCount,
     };
 
     // Hóa đơn gốc nào TRONG TRANG này đã có điều chỉnh đang chờ/đã phát hành —
@@ -500,6 +509,8 @@ router.get("/report", async (req: AuthRequest, res, next) => {
               !l.adjustmentForLogId &&
               autoRetryExhausted(l.orderErrorCount),
             autoRetryMaxAttempts: maxAutoIssueAttempts(),
+            // Tờ nháp chờ chủ shop ký trên web NCC (lát T1 tenant) → nhãn "Chờ bạn ký".
+            awaitingSignature: l.status === InvoiceLogStatus.PENDING && !!l.awaitingSignatureAt,
             // Sàn đã chốt hoàn mà hóa đơn bán chưa có điều chỉnh → seller phải xử lý.
             needsAdjustment:
               l.status === InvoiceLogStatus.ISSUED &&
@@ -607,7 +618,16 @@ async function respondSingleRequest(
     error: done.error ?? undefined,
     code: done.errorCode ?? undefined,
   };
-  res.status(r.httpStatus).json({ log, error: r.error, code: r.code, reason: r.reason, suggestion: r.suggestion });
+  res.status(r.httpStatus).json({
+    log,
+    error: r.error,
+    code: r.code,
+    reason: r.reason,
+    suggestion: r.suggestion,
+    // Tờ nháp chờ ký / chờ số (lát T1 tenant): 202, không phải lỗi, kèm câu hướng dẫn.
+    awaitingSignature: r.awaitingSignature,
+    message: r.message,
+  });
 }
 
 // POST /api/tax/invoices — PHÁT HÀNH hóa đơn cho MỘT đơn (lõi ở issue-order.ts).
@@ -649,7 +669,7 @@ router.post("/invoices", async (req: AuthRequest, res, next) => {
       return;
     }
     const r = await issueInvoiceForOrder(req.ownerId!, channelScope(req), orderCode);
-    res.status(r.httpStatus).json({ log: r.log, error: r.error });
+    res.status(r.httpStatus).json({ log: r.log, error: r.error, awaitingSignature: r.awaitingSignature, message: r.message });
   } catch (err) {
     next(err);
   }
@@ -685,6 +705,8 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
       ok: boolean;
       invoiceNo?: string | null;
       error?: string;
+      /** Tờ nháp đã lập, chờ chủ shop ký trên web nhà cung cấp (lát T1 tenant). */
+      awaitingSignature?: boolean;
     }> = [];
     for (const [i, orderCode] of orderCodes.entries()) {
       const r = await issueInvoiceForOrder(req.ownerId!, scope, orderCode);
@@ -693,6 +715,7 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
         ok: r.ok,
         invoiceNo: r.log?.invoiceNo ?? null,
         error: r.error,
+        awaitingSignature: r.awaitingSignature,
       });
       // Nghỉ giữa hai lệnh phát hành theo bảng khả năng của nhà cung cấp (MISA trả lời
       // ticket 02/10/2026: cùng ký hiệu phải tuần tự, mỗi lệnh cách nhau 1–3 giây).
@@ -702,7 +725,94 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
       }
     }
     const issued = results.filter((r) => r.ok).length;
-    res.json({ issued, failed: results.length - issued, results });
+    const awaiting = results.filter((r) => r.awaitingSignature).length;
+    res.json({ issued, awaiting, failed: results.length - issued - awaiting, results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- TỜ NHÁP CHỜ CHỦ SHOP KÝ (lát T1 tenant, 08/10/2026) ----------
+// Chữ ký số từ xa / USB token không ký nền được: Hubsell lập tờ nháp trên web nhà cung
+// cấp, chủ shop ký theo lô ở đó. Hai cửa cho giao diện: đếm tờ đang chờ (dải nhắc ở
+// Hàng chờ + Lịch sử), và "Tôi đã ký, kiểm ngay" (gọi vòng hỏi cho riêng shop này).
+
+/** Dòng tờ nháp chờ ký của shop — đếm trên toàn shop, không theo kỳ (là việc phải làm). */
+const AWAITING_WHERE = (ownerId: string) => ({
+  ownerId,
+  status: InvoiceLogStatus.PENDING,
+  transactionId: null,
+  awaitingSignatureAt: { not: null },
+});
+
+// GET /api/tax/invoices/awaiting-signature — số tờ đang chờ ký + hạn ký + link web NCC.
+router.get("/invoices/awaiting-signature", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const rows = await prisma.invoiceLog.findMany({
+      where: AWAITING_WHERE(ownerId),
+      select: { awaitingSignatureAt: true, provider: true },
+      orderBy: { awaitingSignatureAt: "asc" },
+      take: 500,
+    });
+    const now = new Date();
+    const overdueCount = rows.filter((r) => r.awaitingSignatureAt && isSignOverdue(r.awaitingSignatureAt, now)).length;
+    let signUrl: string | null = null;
+    if (rows.length > 0) {
+      try {
+        const provider = await getInvoiceProvider(ownerId);
+        signUrl = provider ? draftSignUrl(provider) : null;
+      } catch {
+        signUrl = null; // không đọc được cấu hình: dải vẫn hiện số, thiếu link
+      }
+    }
+    res.json({
+      count: rows.length,
+      overdueCount,
+      oldestAt: rows[0]?.awaitingSignatureAt ?? null,
+      signUrl,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Hai lượt "kiểm ngay" của một shop cách nhau tối thiểu bấy lâu (tự chọn — chống bấm liên tục). */
+const AWAITING_CHECK_MIN_GAP_MS = 30_000;
+
+// POST /api/tax/invoices/awaiting-signature/check — chủ shop vừa ký trên web, muốn Hubsell
+// nhận số ngay thay vì chờ nhịp 30 phút: dời giờ hỏi của các tờ chờ ký về "bây giờ" rồi
+// chạy một lượt vòng hỏi cho riêng shop này (chỉ đọc phía nhà cung cấp).
+router.post("/invoices/awaiting-signature/check", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const now = new Date();
+    const recent = await prisma.invoiceLog.findFirst({
+      where: { ...AWAITING_WHERE(ownerId), cqtCheckedAt: { gte: new Date(now.getTime() - AWAITING_CHECK_MIN_GAP_MS) } },
+      select: { id: true },
+    });
+    if (recent) {
+      res.status(429).json({ error: "Vừa kiểm xong — chờ nửa phút rồi bấm lại nếu vẫn chưa thấy số." });
+      return;
+    }
+    const due = await prisma.invoiceLog.updateMany({
+      where: AWAITING_WHERE(ownerId),
+      data: { cqtNextCheckAt: now },
+    });
+    if (due.count === 0) {
+      res.json({ checked: 0, signed: 0, gone: 0, waiting: 0 });
+      return;
+    }
+    const stats = await runInvoiceCqtFollowOnce(now, { ownerId, budgetMs: 20_000 });
+    const remaining = await prisma.invoiceLog.count({ where: AWAITING_WHERE(ownerId) });
+    res.json({
+      checked: stats.draftsAsked,
+      signed: stats.draftsSigned,
+      gone: stats.draftsGone,
+      waiting: remaining,
+      // Vòng quét đang chạy lượt khác trong cùng tiến trình → lượt này bị bỏ, chưa hỏi gì.
+      busy: stats.claimed === 0 && stats.draftsAsked === 0,
+    });
   } catch (err) {
     next(err);
   }

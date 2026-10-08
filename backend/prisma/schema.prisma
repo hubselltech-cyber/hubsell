@@ -1188,6 +1188,13 @@ model InvoiceLog {
   /// cqt-follow.ts); vòng quét workers/invoice-cqt-follow.ts NHẬN dòng bằng cách dời
   /// cột này về sau trước khi hỏi, nên hai worker không hỏi trùng một tờ.
   cqtNextCheckAt DateTime?
+  /// TỜ NHÁP ĐANG CHỜ CHỦ SHOP KÝ trên web của nhà cung cấp (lát T1 tenant, 08/10/2026):
+  /// phương thức ký eSign / USB token không ký nền được, Hubsell đẩy tờ nháp đầy đủ dữ
+  /// liệu lên meinvoice.vn rồi chờ. Cột = lúc đẩy nháp; dòng khi đó PENDING, chưa có
+  /// transactionId. Vòng hỏi workers/invoice-cqt-follow.ts tra theo providerRef, ký xong
+  /// thì ghi số + mã tra cứu và xóa cột này. Vòng quét tờ chưa rõ kết quả BỎ QUA dòng có
+  /// cột này (tờ chưa rõ ≠ tờ đang chờ ký). NULL = không phải tờ nháp chờ ký.
+  awaitingSignatureAt DateTime?
 
   /// Snapshot NGƯỜI MUA lúc phát hành — bảng kê bán ra phải tự đủ dữ liệu
   /// (Order.buyerInvoiceInfo bị cron BVDLCN xóa sau 30/90 ngày).

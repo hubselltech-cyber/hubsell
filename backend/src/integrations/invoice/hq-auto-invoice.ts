@@ -71,6 +71,7 @@ import {
   getWebInvoices,
   insertWebDraft,
   MEINVOICE_WEB_INVOICES_URL,
+  usesWebDraft,
   webRefIdFor,
 } from "./misa-invoiceweb";
 import type { CreateInvoiceInput } from "./types";
@@ -318,10 +319,9 @@ export function isSignSessionError(message: string | null | undefined): boolean 
  * đòi HSM — 07/10/2026). Từ 08/10 máy ĐẨY TỜ NHÁP lên web app meInvoice (nhóm
  * /invoiceweb/*, misa-invoiceweb.ts) rồi treo trạng thái chờ: anh ký trên web,
  * máy tự nhận số ở lượt sau. Không đốt lượt; worker nhắc 1 thư/ngày.
+ * Luật "phương thức nào đi tờ nháp" nay ở misa-invoiceweb.ts (dùng chung với tenant).
  */
-export function usesWebDraft(signMethod: string): boolean {
-  return signMethod === "ESIGN_CLOUD" || signMethod === "USB_TOKEN";
-}
+export { usesWebDraft } from "./misa-invoiceweb";
 
 export const WEB_DRAFT_WAITING_PREFIX = "Chờ anh ký trên meinvoice.vn";
 

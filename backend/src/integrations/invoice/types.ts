@@ -115,6 +115,14 @@ export interface InvoiceResult {
    */
   errorScope?: "ACCOUNT" | "ORDER" | "TRANSIENT";
   /**
+   * TỜ NHÁP CHỜ CHỦ SHOP KÝ (chỉ có nghĩa khi status = PENDING, lát T1 tenant 08/10/2026):
+   * nhà cung cấp đã nhận tờ nháp đầy đủ dữ liệu, chủ shop phải ký trên web của họ (eSign /
+   * USB token không ký nền được). Chưa có mã tra cứu; lõi đánh dấu InvoiceLog.awaitingSignatureAt
+   * và vòng hỏi tra lại qua findDrafts theo mã tham chiếu. `errorMessage` khi đó là câu
+   * hướng dẫn chỗ ký (không phải lỗi). Chỉ có khi capabilities.draftSigning.supported.
+   */
+  awaitingSignature?: boolean;
+  /**
    * CHƯA RÕ KẾT QUẢ (chỉ có nghĩa khi status = FAILED): lệnh phát hành đã gửi sang
    * NCC nhưng không có câu trả lời rõ "đã lập" hay "từ chối" (đứt mạng sau khi gửi,
    * NCC lỗi máy chủ, trả lời thành công mà không kèm số lẫn mã tra cứu, báo trùng
@@ -191,6 +199,12 @@ export interface ProviderCapabilities {
    * NCC lập cả tờ điều chỉnh trỏ vào số hóa đơn gốc sai, Hubsell phải tự bảo đảm.
    */
   validatesAdjustmentOriginal: boolean;
+  /**
+   * NCC nhận TỜ NHÁP để chủ shop ký trên web của họ (lát T1 tenant, 08/10/2026) — đường
+   * đi của chữ ký số từ xa / USB token không ký nền được. `signUrl` = trang chủ shop vào
+   * ký. Adapter khai true thì phải cài findDrafts và trả awaitingSignature từ createInvoice.
+   */
+  draftSigning: { supported: false } | { supported: true; signUrl: string };
 }
 
 /**
@@ -221,6 +235,23 @@ export type ReferenceLookup =
        */
       accountProblem: boolean;
     };
+
+/**
+ * Kết quả tra MỘT tờ nháp theo mã tham chiếu (lát T1 tenant). Tách bạch vì hậu quả khác nhau:
+ * SIGNED nối số; WAITING hẹn hỏi lại; GONE/DELETED = không còn hóa đơn nào, đơn quay lại hàng chờ.
+ */
+export type DraftLookup =
+  | { state: "SIGNED"; invoiceNo: string | null; transactionId: string }
+  | { state: "WAITING" }
+  /** Không có tờ nào mang mã này ở cả web lẫn cổng tra cứu — chủ shop đã xóa nháp. */
+  | { state: "GONE" }
+  /** NCC có tờ nhưng báo đã xóa bỏ / hủy. */
+  | { state: "DELETED" };
+
+/** Kết quả tra MỘT LÔ tờ nháp. Mã không có trong `found` = adapter không kết luận được, hẹn hỏi lại. */
+export type DraftBatchResult =
+  | { ok: true; found: Map<string, DraftLookup> }
+  | { ok: false; message: string; accountProblem: boolean };
 
 /** Một tờ cần hỏi trạng thái: mã tra cứu NCC cấp + ký hiệu lúc phát hành (nếu Hubsell có lưu). */
 export interface StatusQuery {
@@ -292,4 +323,11 @@ export interface InvoiceProvider {
    * hỏi trạng thái bỏ qua tờ của NCC đó (không có cách hỏi).
    */
   checkStatuses?(items: StatusQuery[]): Promise<StatusBatchResult>;
+
+  /**
+   * Tra một lô TỜ NHÁP theo mã tham chiếu đã gửi lúc lập (CreateInvoiceInput.orderCode):
+   * đã ký chưa, số + mã tra cứu, hay đã bị xóa. Bắt buộc có khi capabilities.draftSigning
+   * .supported = true. Lô không quá capabilities.statusBatchSize. CHỈ ĐỌC. Không ném lỗi.
+   */
+  findDrafts?(references: string[]): Promise<DraftBatchResult>;
 }

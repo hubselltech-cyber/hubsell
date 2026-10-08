@@ -2,9 +2,17 @@
  * ADAPTER MISA meInvoice — GỌI API THẬT (nối 23/08/2026 sau khi thông sandbox).
  *
  * Nhận NGUYÊN ROW InvoiceConfig của shop (không chỉ cặp khóa) vì phát hành cần
- * đủ MST/ký hiệu/mẫu số/signMethod. Luồng hiện nối là KÊ KHAI (STANDARD,
- * SignType 2 — HSM meInvoice ký nền); luồng máy tính tiền (POS) chưa nối —
- * trả FAILED với lời nhắn rõ thay vì phát hành sai loại.
+ * đủ MST/ký hiệu/mẫu số/signMethod. Luồng hiện nối là KÊ KHAI (STANDARD); luồng
+ * máy tính tiền (POS) chưa nối — trả FAILED với lời nhắn rõ thay vì phát hành sai loại.
+ *
+ * HAI ĐƯỜNG THEO PHƯƠNG THỨC KÝ (lát T1 tenant, 08/10/2026 — MISA trả lời ticket
+ * 08/10: ký nền SignType 2 chỉ với HSM / "eSign nâng cao"; eSign thường và USB token
+ * ký trên web):
+ *   · HSM         → cổng phát hành /invoice/publishing SignType 2, ra số ngay.
+ *   · ESIGN_CLOUD / USB_TOKEN → nhóm API WEB APP (misa-invoiceweb.ts): đẩy TỜ NHÁP
+ *     đầy đủ dữ liệu lên meinvoice.vn, trả PENDING + awaitingSignature; chủ shop ký
+ *     theo lô trên web; vòng hỏi gọi findDrafts theo mã tham chiếu rồi nối số.
+ *     Mã tham chiếu bên MISA của đường này là UUID v5 của mã Hubsell (webRefIdFor).
  *
  * Theo hợp đồng InvoiceProvider: KHÔNG ném lỗi nghiệp vụ — mọi từ chối/lỗi API
  * (kể cả chốt an toàn MISA_ALLOW_PUBLISH của misa-safety.ts) trả về
@@ -13,6 +21,12 @@
 
 import { InvoiceLogStatus } from "@prisma/client";
 import { mapCqtStatus, seriesHasTaxCode } from "./cqt-status";
+import {
+  AWAITING_SIGNATURE_CODE,
+  awaitingSignatureMessage,
+  NUMBER_PENDING_CODE,
+  numberPendingMessage,
+} from "./draft-signing";
 import { explainInvoiceError, InvoiceProviderError, isPublishOutcomeUnknown } from "./invoice-errors";
 import { clearMisaTokenCache } from "./misa-auth";
 import {
@@ -23,8 +37,19 @@ import {
   type MisaInvoiceStatusItem,
   type StandardInvoiceConfig,
 } from "./misa-einvoice";
+import {
+  clearWebTokenCache,
+  getWebInvoices,
+  insertWebDraft,
+  MEINVOICE_WEB_INVOICES_URL,
+  usesWebDraft,
+  WEB_GETLIST_BATCH_MAX,
+  webRefIdFor,
+} from "./misa-invoiceweb";
 import type {
   CreateInvoiceInput,
+  DraftBatchResult,
+  DraftLookup,
   InvoiceProvider,
   InvoiceResult,
   ProviderCapabilities,
@@ -91,6 +116,11 @@ export const MISA_CAPABILITIES: ProviderCapabilities = {
   // hệ thống khác, nên thông tin của hóa đơn gốc sẽ không validate"; gốc không có thì
   // cơ quan thuế từ chối. Hubsell tự kiểm trước (adjust-precheck.ts, lát 3).
   validatesAdjustmentOriginal: false,
+  // [doc] nhóm "API WEB APP (hóa đơn nháp)" trên developer.misa.vn; [thử 07/10] sandbox
+  // trọn vòng đời insert → getlist → delete; [thật 07/10 đêm] tờ 1C26THB 00000001 của HQ
+  // lập từ nháp, ký eSign trên web, nối số + PDF; [MISA 08/10] ticket xác nhận "để tạo
+  // hóa đơn nháp tham khảo API WEB APP". Chủ shop ký ở app3.meinvoice.vn/v3/hoa-don.
+  draftSigning: { supported: true, signUrl: MEINVOICE_WEB_INVOICES_URL },
 };
 
 /**
@@ -137,6 +167,9 @@ export class MisaInvoiceProvider implements InvoiceProvider {
         errorMessage: `Chưa đủ cấu hình phát hành — thiếu: ${missing.join(", ")}. Vào Kết nối & Xuất hóa đơn để bổ sung.`,
       };
     }
+
+    // Chữ ký số từ xa / USB token: không ký nền được → đường tờ nháp (xem đầu tệp).
+    if (usesWebDraft(this.cfg.signMethod)) return this.createViaWebDraft(input);
 
     try {
       const result = await this.publishWithRetry(input);
@@ -189,6 +222,133 @@ export class MisaInvoiceProvider implements InvoiceProvider {
   }
 
   /**
+   * ĐƯỜNG TỜ NHÁP (eSign / USB token). Thứ tự: tra web theo RefID (lượt trước có thể đã
+   * đẩy; chủ shop có thể đã ký) → không thấy trên web thì hỏi cổng tra cứu theo RefID
+   * (lưới đỡ: tờ đã phát hành có thể không còn ở danh sách web) → vẫn không có thì đẩy
+   * nháp mới. Gọi lại bao nhiêu lần cũng ra cùng RefID (UUID v5) nên không sinh tờ thừa.
+   * Kết quả: đã ký → ISSUED (hoặc PENDING + mã tra cứu khi chưa cấp số); còn lại →
+   * PENDING + awaitingSignature. Lỗi mạng giữa chừng KHÔNG phải "chưa rõ kết quả" kiểu
+   * phát hành: tờ nháp không ăn số, lượt sau tra lại rồi chỉ đẩy khi thiếu.
+   */
+  private async createViaWebDraft(input: CreateInvoiceInput): Promise<InvoiceResult> {
+    const vatAmount = input.lines.reduce((s, l) => s + l.vatAmount, 0);
+    try {
+      const refId = webRefIdFor(input.orderCode);
+      const [onWeb] = await getWebInvoices([refId], this.cfg);
+      let signed: { invoiceNo: string | null; transactionId: string } | null =
+        onWeb?.transactionId ? { invoiceNo: onWeb.invoiceNo, transactionId: onWeb.transactionId } : null;
+      if (!onWeb) {
+        const rows = await getInvoiceStatuses([refId], this.cfg, "refId");
+        const live = rows.find((r) => !r.isDeleted && r.transactionId);
+        if (live?.transactionId) signed = { invoiceNo: live.invoiceNo, transactionId: live.transactionId };
+      }
+      if (signed) {
+        return signed.invoiceNo
+          ? { status: InvoiceLogStatus.ISSUED, invoiceNo: signed.invoiceNo, transactionId: signed.transactionId, vatAmount }
+          : {
+              status: InvoiceLogStatus.PENDING,
+              transactionId: signed.transactionId,
+              vatAmount,
+              errorCode: NUMBER_PENDING_CODE,
+              errorMessage: numberPendingMessage(this.name),
+            };
+      }
+      const pushedNow = !onWeb;
+      if (pushedNow) await insertWebDraft(input, this.cfg);
+      return {
+        status: InvoiceLogStatus.PENDING,
+        awaitingSignature: true,
+        vatAmount,
+        errorCode: AWAITING_SIGNATURE_CODE,
+        errorMessage: awaitingSignatureMessage(this.name, MEINVOICE_WEB_INVOICES_URL, pushedNow),
+      };
+    } catch (err) {
+      const explained = explainInvoiceError(err);
+      if (explained.code === "TokenExpiredCode" || explained.code === "InvalidTokenCode") {
+        clearMisaTokenCache();
+        clearWebTokenCache();
+      }
+      if (isPublishOutcomeUnknown(err)) {
+        return {
+          status: InvoiceLogStatus.FAILED,
+          errorScope: "TRANSIENT",
+          errorCode: explained.code ?? "HUBSELL_DRAFT_UNKNOWN",
+          errorMessage:
+            "Chưa rõ tờ nháp đã lên meinvoice.vn chưa (mất kết nối giữa chừng). Lượt sau Hubsell tra lại rồi chỉ lập khi còn thiếu — không sinh tờ thừa. " +
+            `(meInvoice: ${explained.message})`,
+        };
+      }
+      return {
+        status: InvoiceLogStatus.FAILED,
+        errorMessage: explained.message,
+        errorCode: explained.code ?? undefined,
+        errorScope: explained.scope,
+      };
+    }
+  }
+
+  /**
+   * Tra một lô tờ nháp theo mã tham chiếu Hubsell (≤ statusBatchSize = 50, bằng trần
+   * getlist). Web trả tờ (có mã tra cứu = đã ký); mã không có trên web thì hỏi cổng tra
+   * cứu theo RefID; cả hai nơi đều không có → GONE (chủ shop đã xóa nháp). So RefID
+   * không phân biệt hoa thường (MISA có thể trả GUID chữ hoa).
+   */
+  async findDrafts(references: string[]): Promise<DraftBatchResult> {
+    const found = new Map<string, DraftLookup>();
+    const byGuid = new Map<string, string>();
+    for (const ref of references) byGuid.set(webRefIdFor(ref).toLowerCase(), ref);
+    const guids = [...byGuid.keys()];
+    try {
+      for (let i = 0; i < guids.length; i += WEB_GETLIST_BATCH_MAX) {
+        const chunk = guids.slice(i, i + WEB_GETLIST_BATCH_MAX);
+        const seen = new Set<string>();
+        for (const item of await getWebInvoices(chunk, this.cfg)) {
+          const key = item.refId.toLowerCase();
+          const ref = byGuid.get(key);
+          if (!ref) continue;
+          seen.add(key);
+          found.set(
+            ref,
+            item.transactionId
+              ? { state: "SIGNED", invoiceNo: item.invoiceNo, transactionId: item.transactionId }
+              : { state: "WAITING" }
+          );
+        }
+        const missing = chunk.filter((g) => !seen.has(g));
+        if (missing.length === 0) continue;
+        for (const row of await getInvoiceStatuses(missing, this.cfg, "refId")) {
+          const key = row.refId?.toLowerCase();
+          const ref = key ? byGuid.get(key) : undefined;
+          if (!ref || !key) continue;
+          seen.add(key);
+          found.set(
+            ref,
+            row.isDeleted
+              ? { state: "DELETED" }
+              : row.transactionId
+                ? { state: "SIGNED", invoiceNo: row.invoiceNo, transactionId: row.transactionId }
+                : { state: "WAITING" }
+          );
+        }
+        for (const g of missing) {
+          if (!seen.has(g)) found.set(byGuid.get(g) as string, { state: "GONE" });
+        }
+      }
+      return { ok: true, found };
+    } catch (err) {
+      if (err instanceof InvoiceProviderError) {
+        const explained = explainInvoiceError(err);
+        if (explained.code === "TokenExpiredCode" || explained.code === "InvalidTokenCode") {
+          clearMisaTokenCache();
+          clearWebTokenCache();
+        }
+        return { ok: false, message: explained.message, accountProblem: explained.scope === "ACCOUNT" };
+      }
+      return { ok: false, message: (err as Error).message, accountProblem: false };
+    }
+  }
+
+  /**
    * MISA báo TRÙNG mã đơn = hóa đơn ĐÃ phát hành ở lần trước nhưng Hubsell không
    * nhận được kết quả (đứt mạng / server restart giữa chừng) → log kẹt FAILED,
    * ngày nào worker cũng thử lại và ngày nào cũng trùng, còn seller không thấy số
@@ -228,11 +388,13 @@ export class MisaInvoiceProvider implements InvoiceProvider {
    * Tra ngược theo mã tham chiếu (RefID) đã gửi lúc phát hành. MISA trả danh sách
    * rỗng cho mã chưa có hóa đơn. Nhiều tờ cùng mã (không mong đợi — MISA chặn
    * trùng) thì ưu tiên tờ còn hiệu lực và báo số tờ ở `matches`.
+   * Hỏi CẢ HAI dạng mã trong một lệnh: mã Hubsell (đường HSM) và UUID v5 của nó
+   * (đường tờ nháp) — shop đổi phương thức ký giữa chừng vẫn tìm được tờ.
    */
   async findByReference(reference: string): Promise<ReferenceLookup> {
     let items: MisaInvoiceStatusItem[];
     try {
-      items = await getInvoiceStatuses([reference], this.cfg, "refId");
+      items = await getInvoiceStatuses([reference, webRefIdFor(reference)], this.cfg, "refId");
     } catch (err) {
       // Lỗi có mã của MISA (đăng nhập sai, tài khoản chưa phân quyền...) thì dịch ra
       // việc cần làm như lúc phát hành; lỗi mạng / lỗi lạ coi là sự cố tạm.
