@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 08/10/2026 (sáng, lượt nhắc tự động) — Theo dõi thời hạn chờ gọi sàn 30 giây (6a) sau 3 ngày + Observability Supabase — CHỈ ĐỌC, không đổi gì
+
+- **6a đã lên từ 05/10 10:07** (`67dacb1`, kèm 6b lần một `bb82b25` — anh đẩy ngay sáng 05/10, sổ cũ còn ghi "chưa đẩy"). Log Render 7 ngày: worker có đúng **2 lệnh bị cắt ở 30 giây, đều TikTok** (06/10 15:08 tracking vận đơn, 07/10 07:16 chi tiết đơn), 0 lệnh hợp lệ nào trong khoảng 15–30 giây (Shopee lâu nhất vẫn 15,0 giây), web 0 dòng, `TIKTOK_FILE` chạy đúng (lâu nhất 3,3 giây), `LAZADA_FILE` chưa có lưu lượng. Không gian nào lỗi đồng bộ vì thời hạn (Supabase: Shopee 24/26, TikTok 14/14, Lazada 1/1 đồng bộ; gian lỗi đều là gian cũ đã biết). → **Giữ 30 giây, không đổi biến môi trường.** Chi tiết: `docs/HANG-DOI-BEN.md` mục 4.7 "Đợt 6a" → "Kết quả theo dõi".
+- **Observability → Database (7 ngày, bin 1 giờ):** swap đi ngang 420–480 MB (05/10 463 · 06/10 478 · 07/10 475 · 08/10 422 MB); bộ nhớ cam kết 1,32–1,45 GB / trần 1,46 GB (06/10 14:00 chạm 1,45 = 99,7%). ⚠️ Khung ngắn hơn thấy **vượt trần**: khung 24 giờ ô 08/10 02:25–03:25 = **1,59 GB (109,5%)**, khung 60 phút ô 09:21 = **1,61 GB (110,3%)** rồi về 1,39 GB phút sau; các ngày trước ô 02:00–03:00 chỉ 1,33–1,39 GB. RAM thật dùng ~385–468 MB / 933 MB. Nguyên nhân chưa kiểm (03:00 là bảo trì đêm sổ cái, nhưng ô 03:00–04:00 chỉ 1,32 GB; 09:21 trùng lúc worker vừa lên bản LISTEN/NOTIFY 09:07 và em chạy 3 câu SQL nhỏ). Theo quy tắc "tìm gốc trước khi nâng gói": chưa đề xuất nâng Small, đề xuất soi hai mốc đó trước.
+- **Phát hiện ngoài phạm vi:** 2 dòng `Channel` Shopee ACTIVE không có `externalShopId`, tạo 06/08 và 10/08, chưa từng đồng bộ (vết ủy quyền dở); 2 dòng `[NccHTTP] QUA HAN MISA` 60 giây tối 06/10 (luồng hóa đơn HQ lúc thử eSign, đã cắt đúng).
+
+
 ## Phiên 08/10/2026 (sáng) — BĂNG THÔNG RENDER: đo 3 phương án giãn nhịp pg-boss, anh chốt C (LISTEN/NOTIFY + nhịp thưa), ĐÃ PUSH + KIỂM PROD OK, chờ xem biểu đồ băng thông
 
 - **Đo lại 08/10 trên database local** (`backend/scripts/pgboss-egress-probe.ts` + bản tạm, 6 hàng đợi trống, byte ghi socket, chưa tính TLS). Mô hình khớp số đo: số câu/giây = Σ (số vòng ÷ nhịp hỏi), mỗi câu ~1,1 KB.
