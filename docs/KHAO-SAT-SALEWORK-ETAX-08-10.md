@@ -47,3 +47,31 @@ phát hành là biết ngay. Dự đoán: Vietinvoice (đối tác chính của 
 3. Muốn tự thành "đơn vị cung cấp hóa đơn" (Hubtax, ý anh 01/10) thì phải xin ký hợp đồng nhận–truyền với Cục Thuế
    hoặc làm "tổ chức giải pháp" đi qua một tổ chức truyền nhận (như 4 đơn vị qua EFY): vốn ký quỹ 5 tỷ, ≥ 20 nhân sự
    CNTT, hạ tầng — không phải việc của năm nay.
+
+## Bổ sung 08/10 trưa — màn "Quản lý tài nguyên": Salework BÁN PHÔI hóa đơn (mô hình đại lý)
+
+Ảnh anh gửi: "Số dư hóa đơn — toàn bộ đơn vị kinh doanh trong công ty dùng chung số dư này"; gói 10.000 → 1.000.000 tờ,
+đơn giá **150 → 60 đ/tờ (đã VAT)**; "Miễn phí phần mềm đến 31/12/2026"; "Đã dùng hết số hóa đơn trong gói".
+
+**Cách vận hành (suy từ mô hình đại lý chuẩn của ngành, chưa có tài liệu Salework nói thẳng):**
+1. Salework ký hợp đồng **đại lý / sỉ** với một tổ chức cung cấp dịch vụ HĐĐT (dự đoán Hilo — T-VAN HILO, hoặc Vietinvoice/ICORP;
+   cả hai đều có trong danh sách TCT và đều có chương trình đại lý chiết khấu 20–40 %, Hilo còn có T-VAN). Nhà cung cấp bán cho
+   Salework số lượng tờ theo giá sỉ; Salework bán lại trong eTax với giá 60–150 đ/tờ — bán lẻ Hilo ~470.000 đ/100 tờ, Vietinvoice
+   gói V-300/V-500 cũng vài nghìn đ/tờ, nên 60–150 đ gần như là giá vốn hoặc lỗ: **mồi** để giữ seller cho sóng thuế 2026.
+2. "Mua gói không chọn đơn vị": số dư thuộc **tài khoản công ty trên Salework** (một khách = nhiều đơn vị kinh doanh = nhiều MST).
+   Mỗi đơn vị vẫn tự "Đăng ký phát hành" (tờ khai 01/ĐKTĐ, ký hiệu, chứng thư số của chính MST đó) với nhà cung cấp phía sau;
+   mỗi tờ phát hành của bất kỳ đơn vị nào trừ chung vào bể số dư. Về phía nhà cung cấp, Salework là **khách hàng đại lý** mua sỉ,
+   còn hóa đơn vẫn mang MST + chữ ký số của từng shop (đúng luật — không ai được phát hành thay).
+3. Salework kiếm tiền ở: chênh lệch giá tờ (nếu có), phí phần mềm sau 31/12/2026, và quan trọng hơn là **khóa seller vào hệ sinh thái**
+   (Kho Vận + Tài chính + eTax).
+
+**Cách kiểm chắc nhà cung cấp phía sau (anh có tài khoản eTax):** vào Đăng ký phát hành → xem tờ khai 01/ĐKTĐ-HĐĐT, dòng
+"Tên tổ chức cung cấp dịch vụ hóa đơn điện tử"; hoặc mở một hóa đơn mẫu, link tra cứu trỏ về tên miền nhà cung cấp.
+
+**So với Hubsell (chốt 23/08: chỉ affiliate, không làm đại lý thu tiền):**
+- MISA cũng có chương trình đại lý (Thỏa thuận hợp tác ĐL meInvoice, chiết khấu trên giá trị đơn hàng thành công). Hubsell có thể
+  bán gói meInvoice ngay trong app (một nút "Mua gói hóa đơn") hưởng chiết khấu — doanh thu thêm + tiện cho khách.
+- Đổi lại phải: thu tiền hộ, xuất hóa đơn GTGT cho shop (phí gói), đối soát số tờ với MISA, hỗ trợ cấp 1 khi khách thiếu phôi, chịu rủi ro
+  khách đòi hoàn. Đúng những việc anh đã gạt 23/08.
+- Đề xuất: **chưa làm**; giữ affiliate tới khi có ≥ 20–30 shop xuất hóa đơn thật qua Hubsell rồi mới đem số đó đi đàm phán giá
+  sỉ (chiến lược 25/08). Salework bán 60 đ/tờ là mồi, không phải mức Hubsell cần đua.
