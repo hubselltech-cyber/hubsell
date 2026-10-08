@@ -5,7 +5,9 @@
 
 ---
 
-## Phiên 08/10/2026 (sáng) — ✅ LÁT T1 LUỒNG TENANT ĐI TỜ NHÁP (code xong local, test xanh, CHỜ ANH GẬT → PUSH) + MISA trả lời ticket
+## Phiên 08/10/2026 (sáng) — ✅ LÁT T1 LUỒNG TENANT ĐI TỜ NHÁP — ĐÃ PUSH `73e3dc7` + `466393a` (anh đẩy ~10:30) + MISA trả lời ticket
+
+- **Anh chốt sau khi push:** khách thao tác như HQ — Hubsell chỉ lên tờ nháp, seller vẫn vào meInvoice ký & phát hành (đúng mô hình BigSeller/KiotViet/MISA eShop). Muốn không bấm gì thì chỉ còn HSM (thuê NCC thứ ba) hoặc "eSign nâng cao" (MISA chưa nói giá). ⏳ Chờ anh thử thật vai seller trên shop của anh với tài khoản HQ 1C26THB.
 
 - **MISA trả lời ticket 08:49** (nguyên văn docs/HOA-DON-HQ-KY-NEN-KHAO-SAT-07-10.md mục 6): tờ nháp đi **API WEB APP** (đúng đường mình đang dùng); ký nền SignType 2 bằng eSign phải có **"eSign nâng cao"** (gói eSign thường không được — MISA không nói giá); có "API lấy danh sách chứng thư số" để tự kiểm (chưa tra); `/publishing/token` = USB 3 bước, không lưu nháp (khớp kết luận 07/10). Câu lộ trình + HSM + đổi gói: không trả lời. **Việc anh quyết (không gấp):** có hỏi giá "eSign nâng cao" cho HQ không — hiện HQ vẫn chạy tờ nháp + anh ký theo lô, không chặn gì.
 - **Căn cứ thuế nạp lại:** NĐ 254/2026 — hóa đơn lập tại thời điểm giao hàng (Đ.9); **ngày ký số được khác ngày lập nhưng chậm nhất là ngày làm việc tiếp theo** (thuvienphapluat.vn, link trong docs mục 18). Vì tờ nháp mang ngày lập = ngày đẩy nên mọi câu chữ UI/chuông đều nhắc "ký trong ngày"; `signDeadline()` tính hạn giờ VN (T6/T7/CN → Thứ Hai; lễ không tính — tự chọn). ⚠️ Chưa kiểm: ký muộn trên web thì MISA giữ InvDate hay đổi — xem ở tờ thật đầu tiên ký khác ngày.
