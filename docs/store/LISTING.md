@@ -63,7 +63,7 @@ AN TOÀN VÀ TIỆN DỤNG
 • Con số trùng với bản web vì cùng một nguồn dữ liệu.
 
 ĐĂNG NHẬP
-Ứng dụng dành cho khách hàng đang dùng Hubsell. Đăng nhập bằng email và mật khẩu của tài khoản Hubsell sẵn có; tài khoản nhân viên do chủ shop cấp.
+Ứng dụng dành cho khách hàng đã có tài khoản Hubsell. Đăng nhập bằng email và mật khẩu của tài khoản Hubsell sẵn có; tài khoản nhân viên do chủ shop cấp. Ứng dụng không có chức năng đăng ký tài khoản.
 
 Hỗ trợ: https://hubsell.vn/ho-tro · support@hubsell.vn
 <!-- LONG-END -->
@@ -95,7 +95,7 @@ Apple chỉ có một cặp ô tài khoản: điền tài khoản **chủ shop**
 
 ## 4. Ghi chú gửi người duyệt (tiếng Anh)
 
-Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới viết lại **06/10 chiều sau khi Apple từ chối lần 1** (xem `APPLE-REVIEW-REPLY-1.md`): bản cũ ghi "The app has no sign-up" trong khi app CÓ màn Đăng ký → người duyệt tự đăng ký tài khoản trống rồi dính 3 lỗi. Nay nói thật có đăng ký, nhấn mạnh dùng tài khoản demo, ghi rõ nút xóa tài khoản và chuyện gói không bán trong app. Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
+Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới viết lại **08/10 tối sau khi Apple từ chối lần 2** (xem `APPLE-REVIEW-REPLY-2.md`): build 6 **GỠ HẲN màn Đăng ký** (tài khoản tạo trên web, như Haravan / Pancake POS) và gỡ nút mở web app ở thẻ chưa có gian → Notes nói rõ không có đăng ký, không dùng thử, không link ra web app; nhấn mạnh dùng tài khoản demo, ghi rõ nút xóa tài khoản. Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
 
 ```
 Hubsell is a B2B tool for online merchants in Vietnam who sell on the
@@ -107,28 +107,27 @@ scan return parcels. The app's interface is in Vietnamese only.
 ACCOUNTS
 PLEASE REVIEW WITH THE DEMO ACCOUNT BELOW. It is connected to sample
 stores ("Hubsell Demo Store") that already contain orders, returns, stock
-and financial data. A newly registered account has no marketplace stores
-connected yet (connecting a store requires a real Shopee/Lazada/TikTok
-seller account), so most screens would be empty.
+and financial data.
 
 Shop owner (all screens): see the user name / password fields above.
 Warehouse staff account (opens directly on the warehouse screens) is also
 available on request: user name reviewer/reviewer_kho.
 
-Sign-up: the app has a registration screen that creates a merchant
-account. Only name, email and password are required; phone number is
-optional. Users can delete their account at any time inside the app:
-Settings tab ("Cau hinh") -> tap the name row at the top -> "Xoa tai
-khoan" (enter current password to confirm). Personal data is erased
-immediately and the remaining data is purged within 30 days.
+Sign-up: there is NO registration inside the app. Accounts are created
+by merchants on our website; the app only signs in to an existing
+account (like other B2B merchant tools). Users can delete their account
+at any time inside the app: Settings tab ("Cau hinh") -> tap the name
+row at the top -> "Xoa tai khoan" (enter current password to confirm).
+Personal data is erased immediately and the remaining data is purged
+within 30 days.
 
 PAYMENTS
-Nothing is sold inside the app. The app is a free companion to a
-web-based business tool (App Store Review Guideline 3.1.3(f)). Hubsell
-plans are B2B service contracts bought by businesses on our website
-(bank transfer, with a VAT invoice); the app does not show prices,
-plans, trials or any upgrade/purchase entry point and never links to a
-purchase page.
+Nothing is sold inside the app. The app is a free companion for existing
+customers of our web-based business tool (App Store Review Guideline
+3.1.3(f)): it works on the data the merchant already has (orders, stock,
+finance, ad campaigns). The app has no sign-up, no trial, no prices, no
+plan information, no upgrade/purchase entry point and no link to any
+purchase page or to the web application.
 
 HOW TO TEST
 - Home tab: three swipeable pages (Overview, Finance, Ads). Finance has a

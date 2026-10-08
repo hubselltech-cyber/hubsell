@@ -9,9 +9,7 @@ import React, {
 import { setAuthToken, setOnUnauthorized } from "../api/client";
 import {
   login as apiLogin,
-  register as apiRegister,
   fetchMe,
-  type RegisterPayload,
 } from "../api/auth";
 import type { AuthUser, LoginResponse } from "../types/api";
 import * as storage from "./storage";
@@ -36,7 +34,6 @@ interface AuthContextValue {
   user: AuthUser | null;
   signIn: (identifier: string, password: string) => Promise<AuthUser>;
   /** Đăng ký chủ shop mới — backend trả token ngay, vào app không cần đăng nhập lại. */
-  signUp: (data: RegisterPayload) => Promise<AuthUser>;
   signOut: () => Promise<void>;
 }
 
@@ -121,14 +118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [persistSession]
   );
 
-  const signUp = useCallback(
-    (data: RegisterPayload) => apiRegister(data).then(persistSession),
-    [persistSession]
-  );
-
   const value = useMemo(
-    () => ({ status, user, signIn, signUp, signOut }),
-    [status, user, signIn, signUp, signOut]
+    () => ({ status, user, signIn, signOut }),
+    [status, user, signIn, signOut]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

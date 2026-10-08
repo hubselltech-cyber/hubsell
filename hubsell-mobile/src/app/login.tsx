@@ -146,18 +146,13 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
-          {/* Khu đăng ký — chủ shop mới tải app về phải tạo được tài khoản
-              ngay trên điện thoại, không bắt mở web (anh Trung 03/10). */}
-          <View className="mt-4 flex-row items-center justify-center gap-1">
-            <Text className="text-xs text-slate-500 dark:text-slate-400">
-              Chưa có tài khoản?
-            </Text>
-            <Pressable onPress={() => router.push("/register")} hitSlop={8}>
-              <Text className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                Đăng ký miễn phí
-              </Text>
-            </Pressable>
-          </View>
+          {/* KHÔNG có màn Đăng ký trong app (anh Trung chốt 08/10 tối, sau khi
+              Apple từ chối 3.1.1 lần 2): tài khoản tạo trên bản web — app chỉ
+              đăng nhập, như Haravan / Pancake POS. Chỉ chữ, không link, không
+              nhắc dùng thử / gói (Apple 3.1.3(f)). Cùng hành vi iOS + Android. */}
+          <Text className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
+            Dùng tài khoản Hubsell sẵn có của shop bạn.
+          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

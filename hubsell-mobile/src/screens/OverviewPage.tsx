@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import * as WebBrowser from "expo-web-browser";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import Svg, {
   Defs,
@@ -49,8 +48,9 @@ import { RAISED_SHADOW, TABULAR } from "@/theme/tokens";
  */
 const FIXED_CHANNELS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA"];
 
-/** Trang Kênh bán trên web app — nơi duy nhất uỷ quyền gian hàng (OAuth sàn). */
-const CONNECT_CHANNEL_URL = "https://app.hubsell.tech/channels";
+/* Thẻ "chưa có gian" KHÔNG còn nút mở web app (08/10 tối, Apple 3.1.1 lần 2):
+   người duyệt bấm sang web là thấy dải dùng thử + trang gói → bị coi là dẫn
+   tới cách thanh toán ngoài app. Chỉ còn chữ + nút Tải lại trong app. */
 
 /**
  * TỔNG QUAN HÔM NAY — trang đầu tiên chủ shop nhìn thấy khi mở app.
@@ -275,18 +275,9 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             Chưa có gian hàng nào
           </Text>
           <Text className="mt-1.5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Kết nối Shopee, Lazada hoặc TikTok Shop trên bản web (mục Kênh bán) —
-            đơn hàng và số liệu sẽ tự về app, không cần cài gì thêm.
+            Chủ shop kết nối Shopee, Lazada hoặc TikTok Shop ở mục Kênh bán trên
+            bản web Hubsell — đơn hàng và số liệu sẽ tự về app, không cần cài gì thêm.
           </Text>
-          <Pressable
-            className="mt-4 rounded-xl bg-slate-900 px-5 py-3 active:opacity-80 dark:bg-slate-700"
-            onPress={() => {
-              hapticTap();
-              void WebBrowser.openBrowserAsync(CONNECT_CHANNEL_URL);
-            }}
-          >
-            <Text className="text-sm font-semibold text-white">Kết nối gian hàng trên web</Text>
-          </Pressable>
           <Pressable className="mt-3" onPress={() => void load("first")} hitSlop={8}>
             <Text className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
               Đã kết nối xong, tải lại
