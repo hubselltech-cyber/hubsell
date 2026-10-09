@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 09/10/2026 (sáng, lượt nhắc tự động) — KIỂM PROD BƯỚC 6b LẦN MỘT (gỡ đường cũ webhook + đẩy tồn) + TÀI LIỆU CHÍNH THỨC GỬI LẠI WEBHOOK — CHỈ ĐỌC, không đổi gì
+
+- **Trạng thái đẩy:** 6a `67dacb1` + 6b `bb82b25` đã lên master từ 05/10 10:07 (anh đẩy), nên lượt này KHÔNG có gì để đẩy; chỉ kiểm bằng số thật + đọc tài liệu.
+- **Số thật prod 09/10 10:20–10:40 (Supabase SQL chỉ đọc + log Render qua Chrome của anh):** web `/health` = `228ea68`, snapshot worker mới nhất mang `228ea68` (uptime 12 giờ); `webhook_events` 15 phút: Shopee 38 + TikTok 30, 24 giờ: 1.935 + 2.774, từ 05/10 **0 dòng PENDING/FAILED**; hai bảng cũ không dòng mới sau 01/10, đang tự vơi (395 / 495 SUCCESS còn lại); `stock_push_jobs` 0 dòng (worker xóa dòng xong việc → không dồn); gian: Shopee 24/26, TikTok 14/14, Lazada 1/1 đồng bộ, fail = 0; log web 7 ngày **0 dòng 503**, đúng 1 dòng `[Webhook TikTok] Không ghi được vào hàng đợi bền` (07/10 02:50, database kẹt giao dịch → 500); log worker `[Stock-queue] BẬT` ở mọi lần deploy, lần cuối 08/10 15:04. **Kết luận: 6b chạy đúng 4 ngày, không sửa gì.**
+- **Tài liệu CHÍNH THỨC về gửi lại webhook (việc nợ từ 05/10, nay trả xong):** Shopee (open.shopee.com → Push Mechanism → bảng Basics từng push, không cần đăng nhập): hạn trả lời **3 giây**, gửi lại **300 s / 1.800 s / 10.800 s** (3 lượt), "Can Repeated Same Message: Yes", "Sequence Guaranteed: No" — đọc đủ 3 push Hubsell nhận (code 1, 3, 4). TikTok (partner.tiktokshop.com/docv2/page/configuration-guide, Step 4): hạn **3 giây**, HTTP 200 thân rỗng, gửi lại **2 phút / 30 phút / 3 giờ / 12 giờ**, dừng sau lượt 4, 401 cũng tính hỏng, at-least-once → khớp số Hookdeck. Ghi ở docs/HANG-DOI-BEN.md mục 4.7 "Đợt 6b lần một" → "Kết quả theo dõi". Thiết kế giữ nguyên (vòng quét định kỳ vẫn là lưới).
+- **Ngoài phạm vi:** worker có 4 dòng `[Stock-queue] Lỗi lưới quét:` với thông điệp rỗng (3 dòng 05/10 04:09 trước 6b, 1 dòng 09/10 02:49) — log chỉ in `err.message`; việc nhỏ: in thêm `name`/`code` (stock-queue.ts dòng 184). Chưa tìm nguyên nhân.
+- **Việc còn:** lượt nhắc 10/10 (6c hóa đơn), 22/10 (30 giây + bộ nhớ DB), 02/11 (6b lần hai: xóa hai bảng, trình SQL trước).
+
 ## Phiên 08/10/2026 (chiều) — ADS: HẠ ROI MỤC TIÊU THEO BIÊN LÃI (sàn "ROAS an toàn" giữ lãi mong muốn) + MỞ GỢI Ý HẠ CHO CA ĐÃ ĐẠT MỤC TIÊU — ĐÃ CODE, CHỜ ANH GẬT RỒI PUSH
 
 - **Ca anh soi (ANO TikTok):** ROI thực 13,84 / mục tiêu 15 / hòa vốn 5,58 / tiêu 12% ngân sách mà máy nói "Quảng cáo đang có lãi, chưa thấy gì cần sửa". Nguyên nhân: campaign-advice.ts (19/09) chỉ khuyên hạ khi ROI **chưa đạt** 90% mục tiêu; 13,84 ≥ 13,5 nên rơi vào healthy. Shopee assessDelivery cùng khuôn (đòi ROAS < mục tiêu). Lý do cũ: "không có căn cứ cho mốc N × hòa vốn".
