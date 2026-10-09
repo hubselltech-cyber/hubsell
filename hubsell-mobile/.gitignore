@@ -45,3 +45,4 @@ example
 # khóa nộp store (EAS submit) — không bao giờ commit
 google-play-service-account.json
 asc-api-key*.p8
+build-artifacts/

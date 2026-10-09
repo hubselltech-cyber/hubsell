@@ -35,6 +35,18 @@ Những điểm làm khác hướng dẫn cũ, **lấy theo bảng này**:
   4. Phát hành công khai: chọn quốc gia (Việt Nam) → bản phát hành → gửi Google xem xét. Tài khoản tổ chức nên KHÔNG bị rào 12 tester × 14 ngày; dashboard vẫn có hộp "Đăng ký truy cập vào kênh phát hành công khai" (3 bước) ẩn, nếu Google bắt thì mới làm.
   5. Cho `eas submit`: tạo service account Google Cloud + gắn vào Người dùng và quyền của Play Console.
 
+## ✅ 09/10/2026 trưa: HỒ SƠ PLAY CONSOLE ĐIỀN XONG, AAB ĐÃ TẢI, CHỜ ANH BẤM "GỬI ĐỂ XEM XÉT"
+
+Làm qua Chrome (tài khoản dev@hubsell.vn `/u/3/`, app 4973694311665052949), nội dung lấy từ `docs/store/LISTING.md`:
+
+- **Build AAB**: EAS `27121082` profile production, versionCode 2 (1.0.0), cùng mã nguồn build 7 Apple (`2c16351`). Tải về `hubsell-mobile/build-artifacts/hubsell-1.0.0-vc2-production.aab` (92 MB, gitignore). Công cụ Chrome của Claude chỉ tải tệp ≤10 MB → anh kéo tệp vào ô tải của Play Console.
+- **Nội dung ứng dụng (tab Đã xử lý đủ)**: Chính sách quyền riêng tư `https://hubsell.vn/privacy`; Quảng cáo = Không; Chính phủ = Không; Tài chính = không có tính năng tài chính; Sức khỏe = không; Thông tin đăng nhập = Có hạn chế, 1 bộ `reviewer@hubsell.vn` (anh gõ mật khẩu) + hướng dẫn tiếng Anh 464 ký tự + tick "đủ quyền mọi tính năng"; Đối tượng = 18+; Mức phân loại IARC gửi 09:36 (loại "Mọi loại ứng dụng khác", email dev@hubsell.vn; Nội dung trực tuyến = **Có** vì app hiển thị dữ liệu máy chủ + câu trả lời Trợ lý; còn lại Không, kể cả "trao đổi nội dung giữa người dùng" = Không vì tab Tin nhắn đã gỡ); Mã nhận dạng quảng cáo = Không dùng; **An toàn dữ liệu**: thu thập Có, mã hóa Có, "app không cho tạo tài khoản" + đăng nhập bằng tài khoản tạo bên ngoài (tài khoản doanh nghiệp), URL xóa dữ liệu `https://hubsell.vn/xoa-tai-khoan`; 4 loại dữ liệu = Tên / Địa chỉ email / Mã nhận dạng người dùng (thu thập, không nhất thời, bắt buộc, mục đích Chức năng app + Quản lý tài khoản) + Nội dung khác do người dùng tạo (thu thập, tùy chọn, Chức năng app + Phân tích). KHÔNG khai Tin nhắn/Ảnh (đã gỡ tab Tin nhắn).
+- **Cài đặt cửa hàng**: Ứng dụng / Doanh nghiệp; liên hệ support@hubsell.vn, +84965863292, https://hubsell.vn.
+- **Trang thông tin mặc định (vi)**: tên, mô tả ngắn 79/80, mô tả dài 2100/4000 (bản LISTING mục 2, đổi "Face ID" thành "vân tay hoặc khuôn mặt"), icon 512, ảnh bìa 1024×500, 6 ảnh điện thoại đúng thứ tự 1→6, khai báo AI = không gắn nhãn. Mẹo kỹ thuật: ô tải ảnh không có `input[type=file]` trong DOM → tạo input ẩn bằng JS, `file_upload` vào đó rồi dispatch DragEvent `drop` (DataTransfer) lên khung `.container.reorderable`; panel bên phải hiện tệp → bấm "Thêm". Thả 6 ảnh một lượt thì thứ tự lộn → thả từng ảnh.
+- **Phát hành công khai**: Quốc gia = Việt Nam; bản phát hành `1.0.0 (2)`, ghi chú `<vi>` = dòng "Có gì mới" LISTING; Play báo 35,6 MB, 1 cảnh báo thiếu tệp gỡ rối R8 (không chặn). Đã Lưu → Tổng quan về việc xuất bản liệt kê **10 thay đổi** chờ gửi.
+- ⛔ Bộ lọc an toàn của Claude chặn nút **"Gửi 10 nội dung thay đổi để được xem xét"** (xuất bản công khai) và một lần nút Lưu hộp Email trong An toàn dữ liệu → anh tự bấm. Sau khi gửi: Google xem xét thường 1–7 ngày (app mới có thể lâu hơn), kết quả về Zoho dev@ → mail-digest sẽ báo. Chế độ Xuất bản có quản lý đang TẮT = duyệt xong là lên Play ngay.
+- Chưa làm: service account Google Cloud cho `eas submit` (lần sau vẫn kéo tay được); tệp mapping R8 (tùy chọn).
+
 ## 0. Quyết định cần chốt trước khi bắt tay
 
 | Việc | Đề xuất | Lý do |
