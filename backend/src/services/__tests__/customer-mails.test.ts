@@ -11,8 +11,11 @@ import {
   vnDateLabel,
   vnDateTimeLabel,
   welcomeEmailHtml,
+  connectReminderEmailHtml,
+  CONNECT_REMINDER_SUBJECT,
 } from "../customer-mails";
 import { vnDayWindow } from "../../workers/subscription-reminder";
+import { signupWindow } from "../../workers/onboarding-reminder";
 
 const ENV_KEYS = [
   "MAIL_FROM",
@@ -133,5 +136,27 @@ describe("vnDayWindow — cửa sổ ngày lịch VN của worker nhắc hạn",
     const w = vnDayWindow(now, -1);
     expect(w.from.toISOString()).toBe("2026-09-17T17:00:00.000Z");
     expect(w.to.toISOString()).toBe("2026-09-18T17:00:00.000Z");
+  });
+});
+
+describe("thư nhắc nối gian (khách mới 1 ngày chưa nối gian, 09/10/2026)", () => {
+  it("một nút duy nhất về trang Kênh bán, tên khách được escape, mời trả lời thư", () => {
+    const html = connectReminderEmailHtml({ fullName: "<b>Lan</b>" });
+    expect(html).toContain("&lt;b&gt;Lan&lt;/b&gt;");
+    expect(html).not.toContain("<b>Lan</b>");
+    expect(html.match(/<a href=/g)?.length).toBe(1);
+    expect(html).toContain("/channels");
+    expect(html).toContain("Nối gian hàng");
+    expect(html).toContain("Trả lời thẳng email này");
+    expect(CONNECT_REMINDER_SUBJECT).toContain("lãi hay lỗ");
+  });
+});
+
+describe("signupWindow — cửa sổ đăng ký của worker nhắc nối gian", () => {
+  it("mốc 24 giờ = đăng ký từ 48 giờ tới 24 giờ trước", () => {
+    const now = new Date("2026-10-09T03:00:00Z");
+    const w = signupWindow(now, 24);
+    expect(w.from.toISOString()).toBe("2026-10-07T03:00:00.000Z");
+    expect(w.to.toISOString()).toBe("2026-10-08T03:00:00.000Z");
   });
 });

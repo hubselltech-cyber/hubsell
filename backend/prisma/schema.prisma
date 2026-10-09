@@ -270,7 +270,8 @@ model User {
   // Phân quyền theo gian hàng — CHỈ có ý nghĩa với vai trò SALES.
   // Không gán gian nào = SALES đó chưa xem được đơn nào (mặc định đóng, an toàn
   // hơn là mở toàn bộ); ADMIN và WAREHOUSE vốn đã thấy mọi gian nên bỏ qua bảng này.
-  staffChannels StaffChannel[] @relation("StaffChannels")
+  staffChannels       StaffChannel[]       @relation("StaffChannels")
+  onboardingReminders OnboardingReminder[]
 
   // Trạng thái Trung tâm điều hành (Command Center) — gắn theo chủ shop.
   opsResolvedAlerts OpsResolvedAlert[] @relation("OpsResolvedAlerts")
@@ -307,15 +308,15 @@ model User {
   /// THÔNG TIN XUẤT HÓA ĐƠN khi khách mua gói Hubsell (06/10/2026) — khách tự
   /// khai ở /settings/plan. Trống = hóa đơn ghi tên tài khoản + email đăng nhập
   /// (khách lẻ không MST); có MST = xuất theo đơn vị (tên + địa chỉ bắt buộc).
-  billingName    String?
-  billingTaxCode String?
-  billingAddress String?
-  billingEmail   String?
+  billingName         String?
+  billingTaxCode      String?
+  billingAddress      String?
+  billingEmail        String?
   /// 07/10/2026 (anh Trung): khách khai gì thì tờ hóa đơn phải mang đủ cái đó —
   /// SĐT in trên hóa đơn (trống = SĐT tài khoản) và số định danh cá nhân/CCCD
   /// (khách lẻ không MST nhưng muốn hóa đơn ghi định danh — NĐ 254/2026).
-  billingPhone    String?
-  billingIdNumber String?
+  billingPhone        String?
+  billingIdNumber     String?
   planUpgradeRequests PlanUpgradeRequest[]
   gatewayOrders       GatewayPaymentOrder[]
 
@@ -339,6 +340,8 @@ model User {
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
   @@unique([ownerId, staffUsername])
+  /// Worker nhắc khách mới quét theo khoảng ngày đăng ký (onboarding-reminder.ts).
+  @@index([createdAt])
 }
 
 /// LOG ĐỒNG Ý ĐIỀU KHOẢN — bằng chứng hợp đồng điện tử click-wrap (Luật Giao
@@ -469,48 +472,48 @@ model Channel {
   // ── LỊCH QUÉT THEO TỪNG GIAN của worker auto-sync (12/09/2026, thay vòng
   // for tuần tự qua mọi gian — chịu tải hàng chục ngàn gian, nhiều worker) ──
   /// Hạn quét NHANH kế tiếp (đơn, hoàn, cứu đơn). null = đến hạn ngay (gian mới/boot).
-  nextFastSyncAt         DateTime?
+  nextFastSyncAt           DateTime?
   /// Hạn quét NHỊP GIỜ kế tiếp (đối soát phí, payout, rút ví, cảnh báo điều hành).
-  nextHourlySyncAt       DateTime?
+  nextHourlySyncAt         DateTime?
   /// Hạn quét ADS kế tiếp (chi phí ngày + campaign + Trợ lý tự thực thi) — mặc định 24h.
-  nextAdsSyncAt          DateTime?
+  nextAdsSyncAt            DateTime?
   /// Lần sync ads xong gần nhất — trang Trợ lý quảng cáo mở mà cũ >30' thì nudge worker.
-  lastAdsSyncAt          DateTime?
+  lastAdsSyncAt            DateTime?
   /// Nối Hubsell Ads (hoặc lần đầu) → lượt ads kế tiếp kéo lùi 30 ngày thay vì 7.
-  adsBackfillPending     Boolean   @default(false)
+  adsBackfillPending       Boolean   @default(false)
   /// Gian VỪA NỐI API (TikTok/Shopee/Lazada): lượt worker đầu kéo trọn HISTORY_BACKFILL_DAYS
   /// ngày đơn + đối soát phí thật thay vì 2 ngày / 7 ngày, xong cả hai mới hạ cờ (23/09/2026:
   /// ANO Official nối xong, 44 đơn T7 sàn đã trả nhưng Kiểm toán báo oan vì bản kê chỉ quét 7 ngày).
-  historyBackfillPending Boolean   @default(false)
+  historyBackfillPending   Boolean   @default(false)
   /// DỰNG LẠI SAO KÊ (02/10/2026): bật = lượt worker kế đọc lại TOÀN BỘ bản kê của gian từ đơn cũ
   /// nhất rồi ghi lại sao kê từng đơn, xong không lỗi mới hạ cờ. Bật khi cách dựng sao kê đổi hoặc
   /// phát hiện sao kê đã ghi sai (sự cố lượt quét 7 ngày ghi đè làm đơn TikTok mất dòng bán).
-  settlementRebuildPending Boolean @default(false)
+  settlementRebuildPending Boolean   @default(false)
   /// DANH MỤC SẢN PHẨM TỰ KÉO (anh Trung 28/09/2026: nối gian xong vào Giá vốn trống, phải bấm
   /// "Đồng bộ từ sàn"): gian vừa nối đặt = now → worker product-catalog-sync kéo ngay; xong → đêm
   /// sau (03:00–05:00 VN, rải ngẫu nhiên); lỗi → +30'. null = không tự kéo (gian Offline/mock).
-  nextProductSyncAt      DateTime?
+  nextProductSyncAt        DateTime?
   /// Lần kéo danh mục XONG gần nhất (worker hoặc nút "Đồng bộ từ sàn").
-  lastProductSyncAt      DateTime?
+  lastProductSyncAt        DateTime?
   /// Lỗi lần kéo danh mục gần nhất (null = lần gần nhất OK).
-  productSyncError       String?
+  productSyncError         String?
   /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
-  syncBackoffLevel       Int       @default(0)
+  syncBackoffLevel         Int       @default(0)
   /// XUNG ads (tầng A, docs/ADS-NHIP-CANH-BAO.md): hạn xung kế tiếp — cấu hình campaign + số hôm nay + ví.
-  nextAdsPulseAt         DateTime?
+  nextAdsPulseAt           DateTime?
   /// Số dư ví ads sàn báo ở xung gần nhất (Shopee: total_balance; Lazada: 0 = cờ hết tiền, null = không rõ).
-  adsWalletBalance       Decimal?  @db.Decimal(14, 2)
-  adsWalletSyncedAt      DateTime?
+  adsWalletBalance         Decimal?  @db.Decimal(14, 2)
+  adsWalletSyncedAt        DateTime?
   /// ĐỢT B (24/09/2026): cờ auto_top_up của ví ads Shopee (get_shop_toggle_info) — true = sàn tự nạp,
   /// cảnh báo ví cạn hạ mức; false = KHÔNG tự nạp, cạn là quảng cáo ngừng; null = chưa đọc / Lazada.
-  adsAutoTopUp           Boolean?
+  adsAutoTopUp             Boolean?
   /// GMS = GMV Max CẤP SHOP (24/09/2026): kết quả check_create_gms_product_campaign_eligibility ở lượt lịch sử gần nhất —
   /// "active" (shop ĐANG chạy GMS, reason active_campaign) | "eligible" | "not_whitelisted" | "not_have_enough_sku" |
   /// "exclusive_with_other_campaign" | "error:<mã>"; null = chưa hỏi. Chi tiêu GMS KHÔNG nằm trong campaign sản phẩm.
-  adsGmsStatus           String?
-  adsGmsCheckedAt        DateTime?
+  adsGmsStatus             String?
+  adsGmsCheckedAt          DateTime?
   /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
-  syncLockedAt           DateTime?
+  syncLockedAt             DateTime?
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi
@@ -548,27 +551,27 @@ model AdSpend {
 /// ngược lên sàn. campaignId giữ dạng String (id sàn có thể vượt Int32 — cùng
 /// quy ước với ChannelProduct.externalId).
 model AdsCampaign {
-  id            String    @id @default(cuid())
-  channelId     String
-  campaignId    String // campaign_id bên sàn
-  adType        String    @default("") // auto | manual
-  name          String    @default("") // ad_name — campaign auto có thể trống
-  status        String    @default("") // ongoing | scheduled | ended | paused | deleted | closed
-  placement     String    @default("") // search | discovery | all
-  biddingMethod String    @default("") // auto | manual
-  budget        Decimal   @default(0) @db.Decimal(14, 2) // ngân sách campaign, 0 = không giới hạn
-  roasTarget    Decimal?  @db.Decimal(8, 2) // mục tiêu ROAS (auto bidding); NULL = không đặt
+  id                  String    @id @default(cuid())
+  channelId           String
+  campaignId          String // campaign_id bên sàn
+  adType              String    @default("") // auto | manual
+  name                String    @default("") // ad_name — campaign auto có thể trống
+  status              String    @default("") // ongoing | scheduled | ended | paused | deleted | closed
+  placement           String    @default("") // search | discovery | all
+  biddingMethod       String    @default("") // auto | manual
+  budget              Decimal   @default(0) @db.Decimal(14, 2) // ngân sách campaign, 0 = không giới hạn
+  roasTarget          Decimal?  @db.Decimal(8, 2) // mục tiêu ROAS (auto bidding); NULL = không đặt
   /// Lúc Hubsell thấy mục tiêu ROAS đổi (đồng bộ thấy số sàn khác số đang lưu, hoặc Hubsell gửi lệnh đổi).
   /// Gợi ý hạ mục tiêu khóa 48 giờ kể từ mốc này (TARGET_STEP_WAIT_HOURS).
   roasTargetChangedAt DateTime?
   /// Mục tiêu ROAS NGAY TRƯỚC lần đổi gần nhất (08/10/2026): biết lần đổi là HẠ hay NÂNG để so lãi tuyệt đối trước/sau
   /// nấc hạ (stepProfitCheck) — nấc hạ không ra thêm lãi thì khuyên giữ, không hạ tiếp. NULL = chưa từng thấy đổi.
   roasTargetPrev      Decimal?  @db.Decimal(8, 2)
-  startTime     DateTime? // campaign_duration.start_time
-  endTime       DateTime? // campaign_duration.end_time; NULL = không hẹn ngày tắt
+  startTime           DateTime? // campaign_duration.start_time
+  endTime             DateTime? // campaign_duration.end_time; NULL = không hẹn ngày tắt
   /// item_id_list của campaign, nối bằng dấu phẩy ("8027...,8031...") — dùng để
   /// map về ChannelProduct (externalId = item hoặc item-model) khi tính ROAS hòa vốn.
-  itemIds       String    @default("")
+  itemIds             String    @default("")
 
   /// QUYẾT ĐỊNH CỦA CHỦ SHOP với verdict Trợ lý (GĐ2 — Trợ lý chỉ đề xuất):
   /// "" = chưa quyết; HANDLED = đã xử lý trên Seller Center; WATCHING = theo
@@ -1164,11 +1167,11 @@ model InvoiceLog {
   /// nguồn số liệu cột "Thuế sàn trích hộ" của báo cáo đối soát.
   platformTaxWithheld Decimal @default(0) @db.Decimal(12, 2)
 
-  errorMessage String? // lý do khi status = FAILED
+  errorMessage    String? // lý do khi status = FAILED
   /// TẦM của lỗi khi status = FAILED (invoice-errors.ts: ACCOUNT | ORDER | TRANSIENT) —
   /// hóa đơn bước 5 lát 7 (03/10/2026). Là sự thật gốc để tính lại orderErrorCount.
   /// NULL = dòng đời trước lát 7, hoặc dòng không phải FAILED.
-  errorScope   String?
+  errorScope      String?
   /// SỐ LƯỢT LỖI RIÊNG ĐƠN (tầm ORDER) của hóa đơn gốc này tính TỚI dòng này — ghi khi
   /// issue-order.ts ghi FAILED (lỗi tầm khác chép lại số cũ, không cộng). Worker tự
   /// phát hành bỏ qua đơn có dòng FAILED mang số ≥ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS
@@ -1176,21 +1179,21 @@ model InvoiceLog {
   /// Bấm tay vẫn được. NULL = chưa đếm (dòng đời trước, dòng điều chỉnh, dòng vòng
   /// quét tờ chưa rõ ghi).
   orderErrorCount Int?
-  issuedAt     DateTime? // thời điểm NCC phát hành thành công
+  issuedAt        DateTime? // thời điểm NCC phát hành thành công
 
   /// Trạng thái phía CƠ QUAN THUẾ do worker invoice-status-sync kéo từ NCC
   /// (03/09): WAITING (chờ cấp mã / chưa gửi) · SEND_ERROR (gửi CQT lỗi) ·
   /// ACCEPTED (đã cấp mã / CQT tiếp nhận) · REJECTED (CQT từ chối — hóa đơn
   /// KHÔNG hợp lệ, loại khỏi VAT đầu ra tới khi seller gửi lại trên NCC).
   /// NULL = chưa kiểm lần nào.
-  cqtStatus    String?
-  cqtCheckedAt DateTime? // lần cuối worker hỏi NCC — nhịp kiểm lại tính từ đây
+  cqtStatus           String?
+  cqtCheckedAt        DateTime? // lần cuối worker hỏi NCC — nhịp kiểm lại tính từ đây
   /// GIỜ HỎI TRẠNG THÁI KẾ TIẾP (hóa đơn bước 5 lát 12, 03/10/2026). NULL = không cần
   /// hỏi nữa (đã có kết luận, tờ hỏng / đã hủy, hoặc chưa có mã tra cứu). Mọi chỗ ghi
   /// mã tra cứu vào dòng phải đặt cột này qua cqtNextOnWrite (integrations/invoice/
   /// cqt-follow.ts); vòng quét workers/invoice-cqt-follow.ts NHẬN dòng bằng cách dời
   /// cột này về sau trước khi hỏi, nên hai worker không hỏi trùng một tờ.
-  cqtNextCheckAt DateTime?
+  cqtNextCheckAt      DateTime?
   /// TỜ NHÁP ĐANG CHỜ CHỦ SHOP KÝ trên web của nhà cung cấp (lát T1 tenant, 08/10/2026):
   /// phương thức ký eSign / USB token không ký nền được, Hubsell đẩy tờ nháp đầy đủ dữ
   /// liệu lên meinvoice.vn rồi chờ. Cột = lúc đẩy nháp; dòng khi đó PENDING, chưa có
@@ -1211,15 +1214,6 @@ model InvoiceLog {
   order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   statusHistory InvoiceStatusHistory[] // audit log — mỗi lần đổi trạng thái một dòng
-
-  @@index([ownerId, createdAt])
-  // Báo cáo/bảng kê theo NGÀY LẬP hóa đơn (kỳ kê khai) — không theo ngày tạo log.
-  @@index([ownerId, issuedAt])
-  @@index([orderId])
-  // Webhook MISA tra hóa đơn theo mã giao dịch NCC — cần index để worker không quét bảng.
-  @@index([transactionId])
-  // Tra "hóa đơn gốc này đã có điều chỉnh chưa" khi lập/hiển thị.
-  @@index([adjustmentForLogId])
   // CHỐNG PHÁT HÀNH TRÙNG ở database — hai chỉ mục DUY NHẤT RIÊNG PHẦN chỉ có
   // trong SQL migration 20261002150000_invoice_provider_ref (Prisma không khai được):
   //   InvoiceLog_open_original_key   (ownerId, orderCode)  WHERE adjustmentForLogId IS NULL
@@ -1235,6 +1229,15 @@ model InvoiceLog {
   // Chỉ mục RIÊNG PHẦN cho vòng hỏi trạng thái cơ quan thuế (workers/invoice-cqt-follow.ts),
   // chỉ có trong SQL migration 20261003190000_invoice_cqt_next_check:
   //   InvoiceLog_cqt_due_idx (cqtNextCheckAt) WHERE cqtNextCheckAt IS NOT NULL
+
+  @@index([ownerId, createdAt])
+  // Báo cáo/bảng kê theo NGÀY LẬP hóa đơn (kỳ kê khai) — không theo ngày tạo log.
+  @@index([ownerId, issuedAt])
+  @@index([orderId])
+  // Webhook MISA tra hóa đơn theo mã giao dịch NCC — cần index để worker không quét bảng.
+  @@index([transactionId])
+  // Tra "hóa đơn gốc này đã có điều chỉnh chưa" khi lập/hiển thị.
+  @@index([adjustmentForLogId])
 }
 
 /// LÀN TỰ PHÁT HÀNH HÓA ĐƠN THEO SHOP (hóa đơn bước 5 lát 8, 03/10/2026) — một dòng
@@ -2781,38 +2784,38 @@ model PlatformRecurringExpense {
 /// meInvoice ở đây quyết định pháp nhân Hubsell trên hóa đơn. Trống toàn bộ
 /// cho tới khi công ty có GPKD + hợp đồng meInvoice (chờ 09/2026).
 model PlatformInvoiceConfig {
-  id                String   @id @default(cuid())
-  taxCode           String?
-  companyName       String?
-  companyAddress    String?
+  id                 String    @id @default(cuid())
+  taxCode            String?
+  companyName        String?
+  companyAddress     String?
   /// Mẫu số (1 = HĐ GTGT) + ký hiệu 7 ký tự (VD "1C26THB") — regex dùng chung
   /// INVOICE_PATTERN_RE/INVOICE_SERIES_RE của misa-einvoice.ts.
-  invoicePattern    String?
-  invoiceSeries     String?
-  meinvoiceUsername String?
-  meinvoicePassword String?
+  invoicePattern     String?
+  invoiceSeries      String?
+  meinvoiceUsername  String?
+  meinvoicePassword  String?
   /// USB_TOKEN | ESIGN_CLOUD — mặc định ký nền HSM như tenant đã verify sandbox.
-  signMethod        String   @default("ESIGN_CLOUD")
-  esignClientId     String?
-  esignSecretKey    String?
-  esignUsername     String?
-  esignPassword     String?
-  certSerial        String?
+  signMethod         String    @default("ESIGN_CLOUD")
+  esignClientId      String?
+  esignSecretKey     String?
+  esignUsername      String?
+  esignPassword      String?
+  certSerial         String?
   /// Thuế suất GTGT dòng dịch vụ gói: "KCT" | "0" | "5" | "8" | "10".
   /// Mặc định KCT — dịch vụ phần mềm thuộc đối tượng KHÔNG chịu thuế GTGT
   /// (chờ kế toán dịch vụ xác nhận khi thương mại hóa).
-  vatMode           String   @default("KCT")
+  vatMode            String    @default("KCT")
   /// TỰ ĐỘNG XUẤT HĐĐT khi ghi nhận thanh toán gói (06/10/2026 — anh Trung chốt
   /// đầu tư eSign ký nền): payOS báo tiền về / kế toán ghi nhận chuyển khoản →
   /// bút toán THU sinh ra là phát hành luôn, không ai phải bấm. Chỉ áp cho bút
   /// toán phát sinh TỪ LÚC BẬT (autoIssueEnabledAt) — khoản cũ có thể đã lập
   /// tay trên meInvoice, tự xuất đè là trùng hóa đơn (học luật autoIssueEnabledAt
   /// của tenant, 19/09).
-  autoIssueEnabled    Boolean   @default(false)
-  autoIssueEnabledAt  DateTime?
+  autoIssueEnabled   Boolean   @default(false)
+  autoIssueEnabledAt DateTime?
   /// Tự gửi email bản PDF hóa đơn cho khách ngay khi có số hóa đơn.
-  autoEmailEnabled    Boolean   @default(true)
-  updatedAt         DateTime @updatedAt
+  autoEmailEnabled   Boolean   @default(true)
+  updatedAt          DateTime  @updatedAt
 
   @@map("platform_invoice_config")
 }
@@ -3118,6 +3121,25 @@ model SubscriptionReminder {
   @@unique([subscriptionId, kind, periodEnd])
   @@index([batchId])
   @@map("subscription_reminders")
+}
+
+/// VÉ CHỐNG TRÙNG thư nhắc KHÁCH MỚI (workers/onboarding-reminder.ts, 09/10/2026):
+/// chủ shop đăng ký xong mà chưa nối gian → nhắc một lần ở mốc 1 ngày. Mỗi
+/// (chủ shop, mốc) một dòng, giành vé bằng createMany skipDuplicates + batchId
+/// y hệt subscription_reminders; gửi hỏng xóa vé để lượt sau thử lại.
+model OnboardingReminder {
+  id        String   @id @default(cuid())
+  userId    String
+  /// connect-1 (chưa nối gian sau 1 ngày) — thêm mốc mới = thêm kind.
+  kind      String
+  batchId   String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind])
+  @@index([batchId])
+  @@map("onboarding_reminders")
 }
 
 enum PlanUpgradeRequestStatus {

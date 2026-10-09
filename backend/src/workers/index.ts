@@ -36,6 +36,7 @@ import { startAdsDailySummaryWorker } from "./ads-daily-summary";
 import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
 import { startSubscriptionReminderWorker } from "./subscription-reminder";
+import { startOnboardingReminderWorker } from "./onboarding-reminder";
 import { startHqInvoiceAutoWorker } from "./hq-invoice-auto";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
@@ -108,6 +109,8 @@ export function startAllWorkers(): void {
   startLazadaRenewalReminderWorker();
   // Nhắc hạn gói Hubsell (thư billing@ + chuông) 7 ngày / 1 ngày trước hạn.
   startSubscriptionReminderWorker();
+  // Nhắc khách mới đăng ký 1 ngày mà chưa nối gian (thư noreply@, anh Trung 09/10).
+  startOnboardingReminderWorker();
   // Lưới an toàn tự xuất HĐĐT bán gói + gửi PDF cho khách (06/10): nhặt bút
   // toán lỡ sau restart / MISA lỗi tạm / chờ cấp số / mail lỗi.
   startHqInvoiceAutoWorker();

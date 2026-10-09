@@ -3,6 +3,7 @@
 //
 //   Sự kiện                     Gửi từ      Trả lời về
 //   Khách đăng ký mới           noreply     support@   (+ báo HQ)
+//   Đăng ký 1 ngày chưa nối gian noreply    support@   (worker onboarding-reminder)
 //   Mật khẩu vừa được đổi       noreply     support@
 //   Kích hoạt / gia hạn gói     billing     billing@
 //   Hóa đơn điện tử đã phát hành billing    billing@   (kèm PDF — hq-auto-invoice.ts)
@@ -116,6 +117,37 @@ export function sendWelcomeMail(user: {
   void mailHq({
     subject: `[Hubsell] Khách mới: ${user.fullName}`,
     html: `<p>Vừa có tài khoản chủ shop mới${user.source === "google" ? " (đăng ký bằng Google)" : ""}.</p><p>Khách: ${escapeHtml(user.fullName)} (${escapeHtml(user.email ?? "—")})<br/>Mã: ${user.id}</p><p><a href="${FRONTEND_URL}/admin/customers">Xem ở HQ</a></p>`,
+  });
+}
+
+// ---------------- 1b. Đăng ký 1 ngày mà chưa nối gian ----------------
+// Anh Trung 09/10/2026: khách đăng ký bằng email không có SĐT nên không gọi
+// được — thư này là kênh duy nhất chạm tới họ. Giọng kể chuyện, MỘT nút, câu
+// cuối mời trả lời để biết họ vướng ở đâu (worker onboarding-reminder.ts).
+
+export function connectReminderEmailHtml(input: { fullName: string }): string {
+  return shell({
+    heading: "Còn một bước nữa là biết tháng này lãi hay lỗ",
+    bodyHtml: [
+      p(`Xin chào ${escapeHtml(input.fullName)},`),
+      p("Hôm qua bạn đã tạo tài khoản Hubsell. Nhưng chưa có gian hàng nào được nối, nên Hubsell chưa có đơn nào để tính cho bạn."),
+      p("Nối gian hàng mất khoảng 2 phút: bạn đăng nhập sàn, bấm đồng ý, đơn tự chảy về. Từ lúc đó mỗi đơn về là biết ngay đơn đó lời hay lỗ sau phí sàn, phí ship, giá vốn."),
+      p("Bạn không cần nhập gì bằng tay. Nối xong rồi cứ để đó, cuối tháng mở lên là có số."),
+    ].join("\n"),
+    cta: { label: "Nối gian hàng", url: `${FRONTEND_URL}/channels` },
+    footnote:
+      "Vướng ở bước nào, hay có điều gì chưa yên tâm? Trả lời thẳng email này, Hubsell đọc và trả lời từng thư.",
+  });
+}
+
+export const CONNECT_REMINDER_SUBJECT = "Hubsell — Còn một bước nữa là biết tháng này lãi hay lỗ";
+
+/** Trả về true khi đã gửi — worker dựa vào đây để giữ / nhả vé chống trùng. */
+export async function sendConnectReminderMail(to: string, input: { fullName: string }): Promise<boolean> {
+  return safeSend("connect-reminder", to, {
+    role: "noreply",
+    subject: CONNECT_REMINDER_SUBJECT,
+    html: connectReminderEmailHtml(input),
   });
 }
 

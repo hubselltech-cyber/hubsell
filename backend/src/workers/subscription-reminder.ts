@@ -11,6 +11,10 @@
 // Cùng lượt: khách hết hạn HÔM QUA mà chưa gia hạn → MỘT thư tổng hợp báo HQ
 // (không bắn từng khách — đông khách là loạn hộp thư).
 //
+// Anh Trung 09/10/2026: khách ĐÃ CÓ TÍN HIỆU gia hạn (yêu cầu mua/nâng gói đang
+// PENDING ở /admin/plans) thì KHÔNG nhắc nữa — họ đang chờ HQ hướng dẫn chuyển
+// khoản, nhắc thêm là làm phiền. Bản tổng hợp HQ vẫn liệt kê họ (HQ cần biết).
+//
 // QUY MÔ: không quét cả bảng — mỗi mốc là một truy vấn khoảng ngày trên index
 // currentPeriodEnd, đọc theo trang. CHỐNG TRÙNG bằng vé subscription_reminders
 // (unique thuê bao + mốc + kỳ hạn): chèn cả lô skipDuplicates kèm batchId của
@@ -90,14 +94,22 @@ interface Candidate {
 }
 
 /** Đọc theo trang các thuê bao còn hiệu lực có hạn rơi trong khoảng. */
-async function* candidatesIn(window: { from: Date; to: Date }): AsyncGenerator<Candidate[]> {
+async function* candidatesIn(
+  window: { from: Date; to: Date },
+  opts: { skipPendingUpgrade?: boolean } = {}
+): AsyncGenerator<Candidate[]> {
   let cursor: string | undefined;
   for (;;) {
     const rows = await prisma.subscription.findMany({
       where: {
         status: "ACTIVE",
         currentPeriodEnd: { gte: window.from, lt: window.to },
-        user: { email: { not: null }, isPlatformAdmin: false },
+        user: {
+          email: { not: null },
+          isPlatformAdmin: false,
+          deletedAt: null,
+          ...(opts.skipPendingUpgrade ? { planUpgradeRequests: { none: { status: "PENDING" } } } : {}),
+        },
       },
       select: {
         id: true,
@@ -166,7 +178,7 @@ async function mapLimited<T>(items: T[], limit: number, fn: (item: T) => Promise
 
 async function remindMark(now: Date, mark: (typeof RENEWAL_MARKS)[number]): Promise<number> {
   let sent = 0;
-  for await (const page of candidatesIn(vnDayWindow(now, mark.daysLeft))) {
+  for await (const page of candidatesIn(vnDayWindow(now, mark.daysLeft), { skipPendingUpgrade: true })) {
     const won = await claim(page, mark.kind);
     await mapLimited(won, SEND_CONCURRENCY, async (c) => {
       const input = {
