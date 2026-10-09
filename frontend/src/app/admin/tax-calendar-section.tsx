@@ -12,14 +12,17 @@
 //  - NĐ 125/2020/NĐ-CP: khung phạt chậm nộp tờ khai
 // Kịch bản: hoạt động từ ~09/2026, năm tài chính = năm dương lịch, năm đầu
 // kê khai GTGT/TNCN theo QUÝ (quyền mặc định của DN mới thành lập).
-// Thuế NHÀ THẦU (trả Render/Supabase/Vercel... hàng tháng) không có mốc
-// ngày cố định trong năm đầu (10 ngày kể từ từng lần trả / ngày 20 tháng sau
-// nếu đăng ký khai tháng) → nằm ở card riêng cuối trang + thủ tục một lần.
-// NCC nào PHẢI khai thay / KHÔNG phải: bảng CONTRACTOR_VENDORS — tra cổng
-// etaxvn.gdt.gov.vn/nccnn (mục "List of registered foreign providers") ngày
-// 08/10/2026, 322 NCC; NCC đã đăng ký tự khai thì bên mua không khấu trừ
-// (Điều 79 TT 80/2021/TT-BTC). Danh sách đổi theo thời gian → tra lại khi
-// thêm NCC mới. Chi tiết docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md.
+// Thuế NHÀ THẦU — chính sách chốt 08/10/2026 (anh Trung): NCC nước ngoài
+// CHƯA đăng ký thuế VN (Render/Supabase/Vercel/Zoho/Apple/Google/Expo…) mua
+// với tư cách CÁ NHÂN (hóa đơn tên cá nhân, thẻ cá nhân, không hoàn ứng,
+// không vào sổ quỹ / hóa đơn đầu vào, KHÔNG khai 01/NTNN). Lý do: NQ
+// 198/2025/QH15 miễn thuế TNDN 3 năm cho DNNVV mới (~09/2026 → ~09/2029) nên
+// đưa chi phí vào công ty không giảm được thuế, còn nộp thay 10,8% là chi
+// phí ròng. Anthropic + Hostinger (đã đăng ký, tự nộp thuế VN) giữ tên công
+// ty + MST. Đổi sang công ty khi gọi vốn / doanh thu đủ lớn → khi đó card
+// Thuế nhà thầu cuối trang + bảng CONTRACTOR_VENDORS (tra cổng
+// etaxvn.gdt.gov.vn/nccnn ngày 08/10/2026, 322 NCC; Điều 79 TT 80/2021) là
+// hướng dẫn sẵn. Chi tiết docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md.
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -252,80 +255,85 @@ const ONE_TIME_STEPS: {
   },
   {
     key: "gpkd-nha-thau-lan-dau",
-    when: "Lần đầu trả tiền NCC nước ngoài",
-    title: "Khai thuế nhà thầu lần đầu (Render, Supabase, Vercel, Apple, Google…)",
-    note: "Tờ khai 01/NTNN trên eTax trong 10 NGÀY kể từ ngày thanh toán, MỘT tờ gom mọi NCC phải khai thay (mỗi NCC một dòng). Anthropic đã đăng ký thuế tại VN → KHÔNG kê vào tờ này. Trả đều hàng tháng → nhân dịp này đăng ký khai THEO THÁNG cho đỡ vụn (bảng NCC nào phải khai ở card Thuế nhà thầu cuối trang).",
+    when: "Khi chuyển NCC ngoại sang tên công ty",
+    title: "Khai thuế nhà thầu lần đầu — HOÃN (NCC chưa đăng ký thuế VN đang mua cá nhân)",
+    note: "Chốt 08/10/2026: Render, Supabase, Vercel, Zoho, Apple, Google… mua cá nhân, không khai 01/NTNN, không đăng ký MST nộp thay. Chỉ mở lại khi gọi vốn / doanh thu đủ lớn: khi đó nộp 04.1-ĐK-TCT xin MST nộp thay (thủ tục 1.008494 trên dichvucong.gdt.gov.vn) → 01/NTNN (1.008333) MỘT tờ gom mọi NCC, mỗi NCC một dòng, đăng ký khai THEO THÁNG hạn ngày 20 tháng sau. Anthropic + Hostinger đã đăng ký thuế VN → không bao giờ kê vào tờ này.",
   },
   {
     key: "gpkd-billing-mst",
-    when: "Trước kỳ thanh toán tới",
-    title: "Sửa billing các NCC ngoại về tên công ty + MST + thẻ công ty",
-    note: "Invoice Stripe/Anthropic đứng tên cá nhân là chi phí bị loại khi quyết toán — sửa trong trang Billing của từng dịch vụ, một lần là xong.",
+    when: "Mỗi lần trả tiền dịch vụ",
+    title: "Billing NCC ngoại: chưa đăng ký thuế VN → tên cá nhân; Anthropic/Hostinger → tên công ty + MST",
+    note: "Đã làm 08/10/2026: Render + Supabase về tên Nguyen Trung Hieu, bỏ VAT number, thẻ cá nhân; Vercel gói miễn phí không cần. Anthropic (API + Claude Max) + Hostinger giữ CÔNG TY TNHH CÔNG NGHỆ HUBSELL + MST 0111626360 + thẻ công ty. Thẻ công ty lỡ trả cho nhóm cá nhân → giám đốc hoàn tạm ứng về TK công ty, kế toán ghi tạm ứng (không phải chi phí, không phát sinh thuế nhà thầu).",
   },
 ];
 
 // NCC nước ngoài Hubsell đang trả tiền — tra cổng NCCNN 08/10/2026 (322 NCC).
-// mode: "self" = NCC đã đăng ký thuế VN, tự khai nộp → mình KHÔNG khai thay;
-//       "withhold" = chưa đăng ký → mình khai 01/NTNN + nộp thay.
+// mode: "self"     = NCC đã đăng ký thuế VN, tự khai nộp → công ty mua, giữ
+//                    tên công ty + MST, KHÔNG khai thay;
+//       "personal" = chưa đăng ký → chốt 08/10/2026 mua CÁ NHÂN (hóa đơn tên
+//                    cá nhân, thẻ cá nhân), không vào công ty, không khai;
+//                    nếu sau này chuyển sang công ty thì thành "withhold";
+//       "withhold" = chưa đăng ký VÀ công ty đứng tên → khai 01/NTNN + nộp
+//                    thay (hiện không có NCC nào ở nhóm này).
 const CONTRACTOR_VENDORS: {
   name: string;
   what: string;
-  mode: "self" | "withhold";
+  mode: "self" | "personal" | "withhold";
   note: string;
 }[] = [
   {
     name: "Anthropic, PBC",
-    what: "Claude (gói Max) — hàng tháng",
+    what: "Claude API (HQ đọc hóa đơn) + Claude Max — hàng tháng",
     mode: "self",
-    note: "Đã đăng ký thuế VN, MST 9000020034 (06/03/2026). Hóa đơn phải có dòng thuế VN do Anthropic thu — chỉ lưu invoice, không kê vào 01/NTNN.",
+    note: "Đã đăng ký thuế VN, MST 9000020034 (06/03/2026). Hóa đơn có dòng VAT VN 10% do Anthropic thu (đã kiểm XSX3Y4AB-0001) — giữ Bill to tên công ty + MST 0111626360, chỉ lưu invoice, không kê vào 01/NTNN.",
   },
   {
     name: "Hostinger PTE Ltd.",
     what: "Tên miền hubsell.tech — 1 năm, gia hạn 16/07/2027",
     mode: "self",
-    note: "Đã đăng ký thuế VN, MST 9000000302. Hóa đơn H_47006397 (16/07/2026) đã thu 28.220₫ thuế trên 188.130₫ → NCC tự nộp. Kiểm PDF hóa đơn đứng tên đúng pháp nhân Hostinger PTE Ltd.",
+    note: "Đã đăng ký thuế VN, MST 9000000302. Hóa đơn H_47006397 (16/07/2026) đã thu 28.220₫ thuế trên 188.130₫ → NCC tự nộp. Giữ tên công ty; kiểm PDF hóa đơn đứng tên đúng pháp nhân Hostinger PTE Ltd.",
   },
   {
     name: "Render",
     what: "Server backend + worker — hàng tháng",
-    mode: "withhold",
-    note: "Không có trong danh sách NCCNN.",
+    mode: "personal",
+    note: "Không có trong danh sách NCCNN. 08/10/2026 đã đổi billing về tên Nguyen Trung Hieu, bỏ VAT number, thẻ cá nhân.",
   },
   {
     name: "Supabase",
     what: "Database Pro — hàng tháng",
-    mode: "withhold",
-    note: "Không có trong danh sách NCCNN.",
+    mode: "personal",
+    note: "Không có trong danh sách NCCNN. 08/10/2026 đã đổi về tên cá nhân, xóa Tax ID, thẻ cá nhân.",
   },
   {
     name: "Vercel",
-    what: "Frontend app + landing — hàng tháng",
-    mode: "withhold",
-    note: "Không có trong danh sách NCCNN.",
+    what: "Frontend app + landing — gói miễn phí",
+    mode: "personal",
+    note: "Không có trong danh sách NCCNN. Tài khoản cá nhân, chưa trả tiền; khi lên gói trả phí giữ tên cá nhân.",
   },
   {
     name: "Zoho (Mail Lite)",
     what: "Hộp thư dev@hubsell.vn — 12 USD/năm, gia hạn 19/09/2027",
-    mode: "withhold",
-    note: "Không có trong danh sách NCCNN.",
+    mode: "personal",
+    note: "Không có trong danh sách NCCNN. Kỳ gia hạn 2027 trả thẻ cá nhân, hóa đơn tên cá nhân.",
   },
   {
     name: "Apple Inc.",
     what: "Apple Developer Program — 99 USD/năm, trả 05/10/2026",
-    mode: "withhold",
-    note: "Hóa đơn MD16509292 do Apple Inc. xuất, thuế 0. Danh sách NCCNN chỉ có Apple Distribution International Ltd. (pháp nhân khác) → vẫn phải khai thay. Hóa đơn đang đứng tên cá nhân — nếu công ty nhận chi phí này thì hạn khai 15/10/2026.",
+    mode: "personal",
+    note: "Hóa đơn MD16509292 do Apple Inc. xuất (Sold To NGUYEN TRUNG HIEU, thuế 0). Danh sách NCCNN chỉ có Apple Distribution International Ltd. (pháp nhân khác). Đã lỡ trả thẻ công ty 2.570.657₫ → hoàn tạm ứng, không vào chi phí.",
   },
   {
     name: "Google LLC",
     what: "Phí nhà phát triển Google Play — 25 USD một lần, trả 01/10/2026",
-    mode: "withhold",
-    note: "Biên nhận do Google LLC (Mỹ) xuất, thuế 0. Danh sách NCCNN chỉ có Google Asia Pacific Pte Ltd → vẫn phải khai thay. Nếu công ty nhận chi phí này thì hạn khai 11/10/2026.",
+    mode: "personal",
+    note: "Biên nhận do Google LLC (Mỹ) xuất, thuế 0. Danh sách NCCNN chỉ có Google Asia Pacific Pte Ltd. Đã lỡ trả thẻ công ty 648.534₫ → hoàn tạm ứng, không vào chi phí.",
   },
   {
     name: "Expo (EAS), GitHub",
     what: "Build app mobile, kho mã — đang dùng gói miễn phí",
-    mode: "withhold",
-    note: "Không có trong danh sách NCCNN. Chưa phát sinh; bắt đầu trả tiền là vào nhóm phải khai.",
+    mode: "personal",
+    note: "Không có trong danh sách NCCNN. Chưa phát sinh; khi trả tiền thì cũng mua cá nhân.",
   },
 ];
 
@@ -521,12 +529,16 @@ export function TaxCalendarSection() {
             công ty hoạt động từ ~09/2026, năm tài chính theo năm dương lịch,
             năm đầu kê khai GTGT/TNCN theo <b>quý</b> (quyền mặc định của doanh
             nghiệp mới). Lệ phí môn bài đã <b>bãi bỏ từ 01/01/2026</b> (NQ
-            198/2025/QH15) — không phải khai, không phải nộp. Thời hạn theo NĐ
-            252/2026/NĐ-CP; hạn trùng ngày nghỉ tự lùi sang ngày làm việc kế
-            tiếp. Riêng <b>thuế nhà thầu</b> (trả Anthropic/Render/Supabase…
-            hàng tháng) không có ngày cố định — hạn bám theo từng lần thanh
-            toán, xem card cuối trang. Dấu tick lưu chung cho cả HQ — ai xử lý
-            xong thì đánh dấu, người khác nhìn vào biết ngay.
+            198/2025/QH15) — không phải khai, không phải nộp. Cũng theo NQ
+            198/2025/QH15, doanh nghiệp nhỏ và vừa được{" "}
+            <b>miễn thuế TNDN 3 năm</b> kể từ ngày cấp GCN đăng ký doanh nghiệp
+            lần đầu → Hubsell miễn tới <b>~09/2029</b> (vẫn phải khai + quyết
+            toán, số thuế = 0). Thời hạn theo NĐ 252/2026/NĐ-CP; hạn trùng ngày
+            nghỉ tự lùi sang ngày làm việc kế tiếp. Riêng <b>thuế nhà thầu</b>:
+            chốt 08/10/2026 NCC ngoại chưa đăng ký thuế VN mua cá nhân nên{" "}
+            <b>hiện không phát sinh</b> — xem card cuối trang. Dấu tick lưu
+            chung cho cả HQ — ai xử lý xong thì đánh dấu, người khác nhìn vào
+            biết ngay.
           </p>
         </CardContent>
       </Card>
@@ -783,16 +795,35 @@ export function TaxCalendarSection() {
         <CardContent>
           <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
             <RefreshCcw className="h-4 w-4 text-sky-600" />
-            Thuế nhà thầu — nộp thay NCC nước ngoài chưa đăng ký thuế tại VN
+            Thuế nhà thầu — NCC nước ngoài chưa đăng ký thuế tại VN: hiện mua
+            cá nhân, không khai
           </p>
           <ul className="list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-slate-600">
             <li>
-              Phát sinh <b>mỗi lần công ty trả tiền dịch vụ cho NCC nước ngoài
-              CHƯA đăng ký thuế tại Việt Nam</b> — với Hubsell là hàng tháng
-              (server, database, frontend) + vài khoản năm (Zoho, Apple). NCC
-              đã đăng ký trên cổng NCCNN và tự khai nộp thì bên mua{" "}
-              <b>không</b> khấu trừ (Điều 79 TT 80/2021/TT-BTC) — xem bảng
-              dưới, tra lại trước khi thêm NCC mới.
+              <b>Chính sách Hubsell (chốt 08/10/2026):</b> NCC nước ngoài{" "}
+              <b>chưa</b> đăng ký thuế VN (Render, Supabase, Vercel, Zoho,
+              Apple, Google, Expo…) mua với tư cách <b>cá nhân</b> — hóa đơn
+              tên cá nhân, thẻ cá nhân, không hoàn ứng, không đưa vào sổ quỹ /
+              hóa đơn đầu vào, <b>không khai 01/NTNN</b>, không đăng ký MST nộp
+              thay. NCC <b>đã</b> đăng ký (Anthropic, Hostinger) tự nộp thuế VN
+              → công ty mua, giữ tên công ty + MST, bên mua không khấu trừ
+              (Điều 79 TT 80/2021/TT-BTC).
+            </li>
+            <li>
+              <b>Vì sao:</b> công ty được miễn thuế TNDN 3 năm (NQ 198/2025,
+              tới ~09/2029) nên đưa chi phí ngoại vào công ty không giảm được
+              đồng thuế nào, trong khi nộp thay ≈ <b>10,8%</b> số đã trả là chi
+              phí ròng + thêm một tờ khai mỗi tháng. Thẻ công ty lỡ trả cho
+              nhóm này → giám đốc hoàn tạm ứng về TK công ty, kế toán ghi tạm
+              ứng (không phải chi phí). Đổi sang công ty khi gọi vốn hoặc doanh
+              thu đủ lớn — khi đó áp dụng các mục dưới.
+            </li>
+            <li>
+              Khi chuyển sang công ty: phát sinh <b>mỗi lần công ty trả tiền
+              cho NCC chưa đăng ký</b>. Trước tiên nộp 04.1-ĐK-TCT xin MST nộp
+              thay 13 số (thủ tục 1.008494 trên dichvucong.gdt.gov.vn, CQT cấp
+              vài ngày), rồi 01/NTNN (thủ tục 1.008333) — ô &ldquo;Mã số thuế
+              nộp thay&rdquo; trống là chưa có MST này.
             </li>
             <li>
               Mức kê phổ biến cho SaaS: <b>5% GTGT + 5% TNDN</b> theo diện dịch
@@ -824,8 +855,8 @@ export function TaxCalendarSection() {
           </ul>
 
           <p className="mb-1.5 mt-4 text-xs font-semibold text-foreground">
-            NCC nào phải khai thay — tra cổng NCCNN ngày 08/10/2026 (322 NCC đã
-            đăng ký)
+            NCC nước ngoài Hubsell đang dùng — tra cổng NCCNN ngày 08/10/2026
+            (322 NCC đã đăng ký)
           </p>
           <div className="overflow-x-auto rounded-md border border-slate-200">
             <table className="w-full min-w-[640px] text-left text-xs">
@@ -847,7 +878,11 @@ export function TaxCalendarSection() {
                     <td className="whitespace-nowrap px-2.5 py-1.5">
                       {v.mode === "self" ? (
                         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                          Không khai thay
+                          Công ty mua · không khai thay
+                        </span>
+                      ) : v.mode === "personal" ? (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                          Mua cá nhân · không khai
                         </span>
                       ) : (
                         <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
@@ -863,11 +898,14 @@ export function TaxCalendarSection() {
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
             NCC Việt Nam (MISA meInvoice, Mắt Bão hubsell.vn, payOS) xuất hóa
-            đơn GTGT thường — <b>không</b> thuộc thuế nhà thầu. Cách tra lại:
-            etaxvn.gdt.gov.vn/nccnn → &ldquo;List of registered foreign
-            providers&rdquo; → để trống ô tìm, bấm Search → dò đúng{" "}
-            <b>pháp nhân ghi trên hóa đơn</b> (Apple Inc. ≠ Apple Distribution
-            International; Google LLC ≠ Google Asia Pacific).
+            đơn GTGT thường — <b>không</b> thuộc thuế nhà thầu; Mắt Bão anh
+            trả tiền cá nhân nhưng hóa đơn tên công ty → ghi phiếu chi &ldquo;chi
+            hộ&rdquo;. Thêm NCC ngoại mới: tra etaxvn.gdt.gov.vn/nccnn →
+            &ldquo;List of registered foreign providers&rdquo; → để trống ô
+            tìm, bấm Search → dò đúng <b>pháp nhân ghi trên hóa đơn</b> (Apple
+            Inc. ≠ Apple Distribution International; Google LLC ≠ Google Asia
+            Pacific). Có trong danh sách → mua tên công ty; không có → mua cá
+            nhân.
           </p>
         </CardContent>
       </Card>
@@ -882,8 +920,10 @@ export function TaxCalendarSection() {
             </p>
             <ul className="list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-slate-600">
               <li>
-                Thuế nhà thầu (nếu đã đăng ký khai theo tháng): tờ khai + tiền
-                chậm nhất <b>ngày 20 tháng sau</b> — xem card phía trên.
+                Thuế nhà thầu: <b>hiện không phát sinh</b> (NCC chưa đăng ký
+                thuế VN mua cá nhân). Khi chuyển sang công ty và đăng ký khai
+                theo tháng: tờ khai + tiền chậm nhất <b>ngày 20 tháng sau</b> —
+                xem card phía trên.
               </li>
               <li>
                 Khi có lao động — đóng BHXH, BHYT, BHTN: chậm nhất{" "}
