@@ -1506,8 +1506,9 @@ export interface ShopeeIncomeTotals {
 }
 
 export interface ShopeeIncomeOverviewData extends ShopeeEnvelope {
-  /** Docs 10/2025: ví dụ response đặt total_income NGANG HÀNG error/message,
-   *  bảng tham số lại ghi trong `response` — đọc cả hai chỗ, probe sẽ chốt. */
+  /** Prod 09/10/2026 (15 gian): total_income nằm TRONG `response`. Ví dụ trong
+   *  docs 10/2025 lại đặt ngang hàng error/message — giữ cả hai nhánh, nơi đọc
+   *  duy nhất là lib/pending-income.ts (shopeePendingAmount). */
   response?: {
     latest_payout_date?: string;
     total_income?: ShopeeIncomeTotals;
@@ -1546,20 +1547,23 @@ export interface ShopeeIncomeDetailItem {
   creation_date?: number; // epoch giây
 }
 
-export interface ShopeeIncomeDetailBlock {
-  list?: ShopeeIncomeDetailItem[];
-  next_page?: { cursor?: string; page_size?: number };
-}
-
+/**
+ * Prod 09/10/2026: danh sách nằm THẲNG ở `response.list` (docs ghi
+ * income_detail_list.list — sai). Gian ít đơn: Σ estimated_escrow_amount của
+ * list = đúng pending_amount. Trang kế (`next_page.cursor` theo docs) CHƯA thấy
+ * trong response thật — gian >50 đơn Pending chưa kiểm.
+ */
 export interface ShopeeIncomeDetailData extends ShopeeEnvelope {
-  response?: { income_detail_list?: ShopeeIncomeDetailBlock };
-  income_detail_list?: ShopeeIncomeDetailBlock;
+  response?: {
+    list?: ShopeeIncomeDetailItem[];
+    next_page?: { cursor?: string; page_size?: number };
+  };
 }
 
 /**
  * GET get_income_detail — từng đơn trong một trạng thái thu nhập. date_from/
  * date_to bắt buộc gửi nhưng chỉ có nghĩa với Released (≤14 ngày); Pending trả
- * MỌI đơn đang chờ. Phân trang bằng cursor ("" trang đầu, rỗng = hết).
+ * MỌI đơn đang chờ. Cursor: "" trang đầu; sàn trả rỗng/không trả = hết.
  */
 export async function getIncomeDetail(
   params: {

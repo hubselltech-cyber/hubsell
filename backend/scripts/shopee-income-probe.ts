@@ -2,8 +2,8 @@
 // PROBE (READ-ONLY): gọi thật get_income_overview + get_income_detail (Pending)
 // trên gian Shopee đã nối để đối chiếu với ô "Chưa thanh toán" màn Doanh thu
 // Seller Center (anh Trung 09/10/2026: cột "Doanh thu đang giao" trong Phân bổ
-// dòng tiền không khớp sàn). Không ghi DB. Docs 10/2025 còn mâu thuẫn chỗ đặt
-// total_income (trong hay ngoài `response`) — in NGUYÊN VĂN để chốt.
+// dòng tiền không khớp sàn). Không ghi DB. Đọc số qua lib/pending-income.ts
+// (cùng hàm với luồng thật) + in nguyên văn response để đối chiếu hình dạng.
 // Chạy:  cd backend && npx tsx scripts/shopee-income-probe.ts [external_shop_id]
 // ============================================================
 
@@ -14,6 +14,7 @@ import {
   getIncomeOverview,
 } from "../src/integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../src/integrations/shopee/service";
+import { shopeePendingAmount } from "../src/lib/pending-income";
 import { LEDGER_FORMULA_VERSION } from "../src/lib/order-ledger";
 
 const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
@@ -46,15 +47,15 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
       // 1) Tổng theo trạng thái — không gửi income_status để sàn trả đủ.
       const ov = await getIncomeOverview({ accessToken, shopId });
       console.log("get_income_overview (nguyên văn):", JSON.stringify(ov));
-      const totals = ov.response?.total_income ?? ov.total_income;
-      if (totals) {
-        console.log(
-          `  Chưa thanh toán (pending_amount): ${fmt(Number(totals.pending_amount ?? 0))}`,
-        );
-        console.log(
-          `  Đã thanh toán  (released_amount): ${fmt(Number(totals.released_amount ?? 0))}`,
-        );
-      }
+      const pendingAmount = shopeePendingAmount(ov);
+      const released = (ov.response?.total_income ?? ov.total_income)
+        ?.released_amount;
+      console.log(
+        `  Chưa thanh toán (pending_amount): ${pendingAmount == null ? "—" : fmt(pendingAmount)}`,
+      );
+      console.log(
+        `  Đã thanh toán  (released_amount): ${released == null ? "—" : fmt(Number(released))}`,
+      );
 
       // 2) Từng đơn Pending — cộng lại để so với pending_amount và đếm đơn.
       let cursor = "";
@@ -62,7 +63,6 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
       let count = 0;
       let sum = 0;
       const statuses = new Map<string, number>();
-      let shapeLogged = false;
       do {
         const d = await getIncomeDetail({
           accessToken,
@@ -73,24 +73,22 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
           cursor,
           pageSize: 50,
         });
-        // Lượt chạy prod 09/10: mọi gian trả 0 dòng dù pending_amount > 0 → in
-        // NGUYÊN VĂN trang đầu (cắt 800 ký tự) để thấy sàn đặt danh sách ở đâu.
-        if (!shapeLogged) {
-          shapeLogged = true;
+        // Prod 09/10: danh sách ở response.list; in nguyên văn trang đầu (cắt
+        // 600 ký tự) để thấy sàn có trả next_page hay không với gian nhiều đơn.
+        if (pages === 0) {
           console.log(
             "  get_income_detail trang đầu (nguyên văn):",
-            JSON.stringify(d).slice(0, 800),
+            JSON.stringify(d).slice(0, 600),
           );
         }
-        const block = d.response?.income_detail_list ?? d.income_detail_list;
-        const list = block?.list ?? [];
+        const list = d.response?.list ?? [];
         for (const it of list) {
           count++;
           sum += Number(it.estimated_escrow_amount ?? 0);
           const k = `${it.description ?? "?"} | ${it.status ?? "?"}`;
           statuses.set(k, (statuses.get(k) ?? 0) + 1);
         }
-        cursor = block?.next_page?.cursor ?? "";
+        cursor = d.response?.next_page?.cursor ?? "";
         pages++;
       } while (cursor && pages < 200);
       console.log(

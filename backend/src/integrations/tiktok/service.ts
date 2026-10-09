@@ -496,7 +496,8 @@ export interface SyncSettlementsResult {
 }
 
 const SETTLE_WINDOW_DAYS = 30;
-const SETTLE_BACKFILL_FLOOR = Date.UTC(2025, 0, 1) / 1000; // API 202501/202507 chỉ có dữ liệu từ đây
+/** API Finance 202501/202507 chỉ có dữ liệu từ 01/01/2025 (epoch giây) — mốc dùng chung với payouts.ts. */
+export const SETTLE_BACKFILL_FLOOR = Date.UTC(2025, 0, 1) / 1000;
 
 /** Các bản kê mà sao kê ĐANG LƯU của đơn được dựng từ đó (số ước tính → chưa có). */
 function storedStatementIds(
