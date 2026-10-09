@@ -923,6 +923,10 @@ model OpsActivity {
   ownerId   String
   tag       String // inventory | finance | channel | ads
   message   String
+  /// Dữ liệu có cấu trúc đi kèm dòng chữ (09/10/2026): { refs: [{code, channelName,
+  /// shopName, amount}], refTotal, href, label } — mã đơn liên quan để giao diện in
+  /// chip + nút sao chép. Dòng cũ null → chỉ in chữ như trước.
+  meta      Json?
   createdAt DateTime @default(now())
 
   owner User @relation("OpsActivities", fields: [ownerId], references: [id], onDelete: Cascade)

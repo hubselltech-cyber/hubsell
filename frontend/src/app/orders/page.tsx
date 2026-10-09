@@ -305,6 +305,19 @@ export default function OrdersPage() {
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Deep-link /orders?q=<mã đơn> từ chip mã đơn ở Trung tâm điều hành (09/10/2026):
+  // điền sẵn ô tìm kiếm ở tab Tất cả. Đọc trong effect (không phải initializer)
+  // để HTML server và client khớp nhau; xóa tham số ngay để F5 không giữ lọc cũ.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q")?.trim();
+    if (!q) return;
+    setSearch(q);
+    setDebouncedSearch(q);
+    params.delete("q");
+    const rest = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+  }, []);
   const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
   // Id các đơn đang tích chọn. Dùng Set để tích/bỏ tích không phải quét mảng.

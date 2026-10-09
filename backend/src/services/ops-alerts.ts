@@ -19,6 +19,7 @@ import {
   ChannelName,
   FeeAuditStatus,
   KocSampleStatus,
+  Prisma,
   ReturnStatus,
   ShippingDisputeStatus,
   ShippingStatus,
@@ -96,6 +97,27 @@ const CHANNEL_LABEL: Record<string, string> = {
   OFFLINE: "Offline",
 };
 
+/**
+ * Một ĐƠN HÀNG liên quan tới cảnh báo (09/10/2026 — anh Trung: thông báo tài
+ * chính phải kèm mã đơn + nút sao chép, khách hỏi "đơn nào? xem ở đâu?").
+ * `code` = mã đơn TRÊN SÀN (khách tra Seller Center bằng mã này); `amount` =
+ * số tiền của đơn trong ngữ cảnh cảnh báo (chênh ship / treo / lỗ…), dùng để
+ * xếp đơn nhiều tiền nhất lên đầu. Bản sao chữ, không giữ quan hệ — đơn bị xóa
+ * theo gian thì nhật ký vẫn còn mã.
+ */
+export interface AlertOrderRef {
+  code: string;
+  channelName: string;
+  shopName: string | null;
+  amount: number;
+}
+
+/** Trần số mã đơn đính kèm một cảnh báo — thẻ lẫn nhật ký in 3 mã, phần còn
+ *  lại là "+N đơn khác" dẫn tới trang xử lý (anh Trung 09/10: "khoảng 3 mã rồi
+ *  +N thôi, đừng liệt kê hết"). Đủ để khách biết đơn nào mà payload không phình
+ *  theo shop lớn (cảnh báo gộp có thể hàng trăm đơn). */
+export const ALERT_REF_LIMIT = 3;
+
 /** Một điều kiện sự cố mà detector phát hiện được (chưa gắn với DB). */
 export interface DetectedAlert {
   type: string;
@@ -104,6 +126,10 @@ export interface DetectedAlert {
   severity: "high" | "medium" | "low";
   title: string;
   summary: string;
+  /** Đơn liên quan, nhiều tiền nhất trước, tối đa ALERT_REF_LIMIT. */
+  refs?: AlertOrderRef[];
+  /** Tổng số đơn thật sự liên quan (≥ refs.length) — để in "+N đơn khác". */
+  refTotal?: number;
   /** ActionParams cho nút xử lý phía frontend — deep-link nội bộ, hoặc
    *  "ads-resume" = nút Bật lại chiến dịch Trợ lý đã dừng (gọi sàn thật).
    *  `source` = nhãn sàn phát sinh cảnh báo (badge "Shopee"/"TikTok"… trên thẻ). */
@@ -118,6 +144,53 @@ export interface DetectedAlert {
 }
 
 // ─────────────────────────── DETECTORS ───────────────────────────
+
+/**
+ * Xếp đơn nhiều tiền nhất lên đầu rồi cắt theo trần — luật THUẦN dùng chung
+ * cho mọi detector có danh sách đơn (test không cần DB).
+ */
+export function pickTopOrderRefs(refs: AlertOrderRef[], limit = ALERT_REF_LIMIT): AlertOrderRef[] {
+  return [...refs].sort((a, b) => b.amount - a.amount).slice(0, Math.max(0, limit));
+}
+
+/**
+ * Top N đơn theo một cột tiền của Order — MỘT câu SELECT có ORDER BY + LIMIT,
+ * đi cạnh câu aggregate của detector (không kéo cả tập đơn về RAM). Cột null
+ * (vd expectedPayout chưa có) xếp cuối; `fallbackField` thay số tiền khi null.
+ */
+async function topOrderRefs(
+  where: NonNullable<Parameters<typeof prisma.order.findMany>[0]>["where"],
+  amountField: "shippingFeeDiff" | "payoutShortfall" | "expectedPayout",
+  fallbackField?: "totalAmount"
+): Promise<AlertOrderRef[]> {
+  // `nulls: "last"` chỉ hợp lệ với cột nullable (expectedPayout); cột có
+  // @default(0) truyền object là Prisma từ chối cả câu (bắt được khi thử local 09/10).
+  const nullable = amountField === "expectedPayout";
+  const rows = await prisma.order.findMany({
+    where,
+    orderBy: { [amountField]: nullable ? { sort: "desc", nulls: "last" } : "desc" },
+    take: ALERT_REF_LIMIT,
+    select: {
+      orderCode: true,
+      [amountField]: true,
+      ...(fallbackField ? { [fallbackField]: true } : {}),
+      channel: { select: { channelName: true, shopName: true } },
+    },
+  });
+  return rows.map((r) => {
+    const o = r as Record<string, unknown> & {
+      orderCode: string;
+      channel: { channelName: string; shopName: string | null };
+    };
+    const raw = o[amountField] ?? (fallbackField ? o[fallbackField] : null);
+    return {
+      code: o.orderCode,
+      channelName: o.channel.channelName,
+      shopName: o.channel.shopName,
+      amount: Number(raw ?? 0),
+    };
+  });
+}
 
 /**
  * CHÁY HÀNG: SKU liên kết kho vật lý, CÓ phát sinh đơn trong 30 ngày (đang bán
@@ -421,16 +494,28 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
   // thì trang mở ra cũng đúng N. Chỉ cần số đếm (limit 0): từ 30/09/2026 đọc
   // bằng một câu SELECT trên sổ cái đơn thay vì kéo đơn 7 ngày của mọi chủ shop
   // lên RAM ở mỗi lượt quét (LEDGER_REPORTS_SOURCE=orders lui về đường cũ).
+  // limit = ALERT_REF_LIMIT: cùng câu đếm, kèm vài dòng lỗ nặng nhất để thẻ
+  // và nhật ký nêu được mã đơn (danh sách có thể lẫn đơn thiếu giá vốn → lọc).
   const stats = await loadLossOrders(
     resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE),
     { userId: ownerId },
     { gte: daysAgo(LOSS_WINDOW_DAYS), lte: new Date() },
-    0
+    ALERT_REF_LIMIT
   );
   if (stats.lossCount === 0) return [];
 
   const lossCount = stats.lossCount;
   const totalLoss = stats.totalLoss;
+  const refs = pickTopOrderRefs(
+    stats.items
+      .filter((o) => !o.missingCostPrice && o.profitAfterTax < 0)
+      .map((o) => ({
+        code: o.orderCode,
+        channelName: o.channelName,
+        shopName: o.shopName,
+        amount: Math.abs(o.profitAfterTax),
+      }))
+  );
   return [
     {
       type: "loss-orders",
@@ -439,6 +524,8 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
       severity: totalLoss >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       title: `${lossCount} đơn giao gần đây bị LỖ — tổng ${vnd(totalLoss)}`,
       summary: `Trong ${LOSS_WINDOW_DAYS} ngày qua có ${lossCount} đơn Đã giao lợi nhuận âm (phí thật từ sao kê sàn). Bấm xem từng đơn lỗ do giá vốn hay do phí sàn để điều chỉnh giá bán.`,
+      refs,
+      refTotal: lossCount,
       // Route mới sau điều chuyển menu 08/08; /finance/loss-orders cũ vẫn redirect
       payload: {
         kind: "navigate",
@@ -454,13 +541,14 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
  * còn ở trạng thái "Chờ khiếu nại" — tiền đòi lại được nếu khiếu nại sớm.
  */
 async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> {
+  const where = {
+    channel: { userId: ownerId },
+    shippingFeeDiff: { gt: 0 },
+    shippingDisputeStatus: ShippingDisputeStatus.CHO_KHIEU_NAI,
+    createdAt: { gte: daysAgo(SHIPPING_WINDOW_DAYS) },
+  };
   const agg = await prisma.order.aggregate({
-    where: {
-      channel: { userId: ownerId },
-      shippingFeeDiff: { gt: 0 },
-      shippingDisputeStatus: ShippingDisputeStatus.CHO_KHIEU_NAI,
-      createdAt: { gte: daysAgo(SHIPPING_WINDOW_DAYS) },
-    },
+    where,
     _count: { _all: true },
     _sum: { shippingFeeDiff: true },
   });
@@ -468,6 +556,7 @@ async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> 
   const count = agg._count._all;
   if (count === 0) return [];
   const total = Number(agg._sum.shippingFeeDiff ?? 0);
+  const refs = await topOrderRefs(where, "shippingFeeDiff");
 
   return [
     {
@@ -477,6 +566,8 @@ async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> 
       severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       title: `${count} đơn bị sàn trừ THÊM phí ship — tổng ${vnd(total)} chờ khiếu nại`,
       summary: `${SHIPPING_WINDOW_DAYS} ngày qua sàn khấu trừ phí vận chuyển cao hơn mức báo ban đầu trên ${count} đơn. Khiếu nại sớm để đòi lại tiền trước khi quá hạn đối soát.`,
+      refs,
+      refTotal: count,
       // Route mới sau điều chuyển menu 08/08; /finance/shipping-alerts cũ vẫn redirect
       payload: {
         kind: "navigate",
@@ -508,18 +599,20 @@ const FEE_AUDIT_MAX_AGE_DAYS = 90;
 async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
   const alerts: DetectedAlert[] = [];
 
+  const shortWhere = {
+    channel: { userId: ownerId },
+    payoutShortfall: { gte: FEE_AUDIT_SHORTFALL_MIN },
+    payoutAuditStatus: FeeAuditStatus.CHO_XU_LY,
+    createdAt: { gte: daysAgo(SHIPPING_WINDOW_DAYS) },
+  };
   const shortAgg = await prisma.order.aggregate({
-    where: {
-      channel: { userId: ownerId },
-      payoutShortfall: { gte: FEE_AUDIT_SHORTFALL_MIN },
-      payoutAuditStatus: FeeAuditStatus.CHO_XU_LY,
-      createdAt: { gte: daysAgo(SHIPPING_WINDOW_DAYS) },
-    },
+    where: shortWhere,
     _count: { _all: true },
     _sum: { payoutShortfall: true },
   });
   if (shortAgg._count._all > 0) {
     const total = Number(shortAgg._sum.payoutShortfall ?? 0);
+    const refs = await topOrderRefs(shortWhere, "payoutShortfall");
     alerts.push({
       type: "fee-audit-shortfall",
       dedupeKey: "rolling-30d",
@@ -529,6 +622,8 @@ async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
       // sai một lần là mất niềm tin cả radar — hướng dẫn đối chiếu trước.
       title: `${shortAgg._count._all} đơn nghi sàn trả thiếu so với số sàn tự ước tính — tổng ${vnd(total)}`,
       summary: `Tiền giải ngân thực tế thấp hơn số Shopee tự ước tính trên ${shortAgg._count._all} đơn, so theo từng loại phí (đã loại đơn hoàn tiền và khoản chỉ chốt lúc quyết toán). Mở Kiểm toán phí sàn xem chênh từng loại phí, đối chiếu chi tiết quyết toán trên Seller Center rồi hãy quyết định khiếu nại.`,
+      refs,
+      refTotal: shortAgg._count._all,
       payload: {
         kind: "navigate",
         href: "/finance/fee-audit?tab=payout",
@@ -538,39 +633,53 @@ async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
   }
 
   const now = Date.now();
-  const pendingRows = await prisma.order.findMany({
-    where: {
-      channel: {
-        userId: ownerId,
-        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
-      },
-      isSettled: false,
-      shippingStatus: ShippingStatus.DELIVERED,
-      returnStatus: ReturnStatus.NONE,
-      // Trần tuổi đứng NGOÀI OR — cả hai nhánh đều phải trong cửa sổ 90 ngày.
-      createdAt: { gte: daysAgo(FEE_AUDIT_MAX_AGE_DAYS) },
-      OR: [
-        { deliveredAt: { lt: new Date(now - FEE_AUDIT_PENDING_DAYS * DAY_MS) } },
-        {
-          deliveredAt: null,
-          createdAt: { lt: new Date(now - FEE_AUDIT_FALLBACK_DAYS * DAY_MS) },
-        },
-      ],
+  const pendingWhere = {
+    channel: {
+      userId: ownerId,
+      channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
     },
-    select: { expectedPayout: true, totalAmount: true },
-  });
-  if (pendingRows.length > 0) {
-    const total = pendingRows.reduce(
-      (s, o) => s + Number(o.expectedPayout ?? o.totalAmount),
-      0
-    );
+    isSettled: false,
+    shippingStatus: ShippingStatus.DELIVERED,
+    returnStatus: ReturnStatus.NONE,
+    // Trần tuổi đứng NGOÀI OR — cả hai nhánh đều phải trong cửa sổ 90 ngày.
+    createdAt: { gte: daysAgo(FEE_AUDIT_MAX_AGE_DAYS) },
+    OR: [
+      { deliveredAt: { lt: new Date(now - FEE_AUDIT_PENDING_DAYS * DAY_MS) } },
+      {
+        deliveredAt: null,
+        createdAt: { lt: new Date(now - FEE_AUDIT_FALLBACK_DAYS * DAY_MS) },
+      },
+    ],
+  };
+  // Số tiền treo = expectedPayout, chưa có thì totalAmount — hai câu aggregate
+  // (có / không expectedPayout) thay cho việc kéo mọi đơn treo về RAM cộng tay
+  // (09/10/2026: shop lớn có thể hàng nghìn đơn treo mỗi lượt quét).
+  const [withPayout, withoutPayout] = await Promise.all([
+    prisma.order.aggregate({
+      where: { ...pendingWhere, expectedPayout: { not: null } },
+      _count: { _all: true },
+      _sum: { expectedPayout: true },
+    }),
+    prisma.order.aggregate({
+      where: { ...pendingWhere, expectedPayout: null },
+      _count: { _all: true },
+      _sum: { totalAmount: true },
+    }),
+  ]);
+  const pendingCount = withPayout._count._all + withoutPayout._count._all;
+  if (pendingCount > 0) {
+    const total =
+      Number(withPayout._sum.expectedPayout ?? 0) + Number(withoutPayout._sum.totalAmount ?? 0);
+    const refs = await topOrderRefs(pendingWhere, "expectedPayout", "totalAmount");
     alerts.push({
       type: "fee-audit-pending",
       dedupeKey: "overdue",
       tag: "finance",
       severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
-      title: `${pendingRows.length} đơn giao xong đã lâu mà sàn CHƯA trả tiền — ${vnd(total)} đang treo`,
+      title: `${pendingCount} đơn giao xong đã lâu mà sàn CHƯA trả tiền — ${vnd(total)} đang treo`,
       summary: `Đơn giao thành công quá ${FEE_AUDIT_PENDING_DAYS} ngày nhưng chưa thấy sàn giải ngân. Kiểm tra ví sàn/đối soát — tiền treo lâu có thể là đơn bị sàn giữ lại hoặc lỗi đối soát.`,
+      refs,
+      refTotal: pendingCount,
       payload: {
         kind: "navigate",
         href: "/finance/fee-audit?tab=pending",
@@ -1519,10 +1628,30 @@ async function detectAdsAutoActions(ownerId: string): Promise<DetectedAlert[]> {
 
 const lastScanAt = new Map<string, number>();
 
+/**
+ * Dữ liệu có cấu trúc đi kèm cảnh báo (mã đơn + đích xử lý) — MỘT hàm dựng cho
+ * cả payload thẻ lẫn meta nhật ký, để hai nơi không bao giờ lệch nhau.
+ */
+export function alertRefsMeta(a: DetectedAlert) {
+  if (!a.refs || a.refs.length === 0) return null;
+  return {
+    refs: a.refs,
+    refTotal: a.refTotal ?? a.refs.length,
+    href: a.payload.href,
+    label: a.payload.label,
+  };
+}
+
 /** Ghi một dòng nhật ký vận hành khi cảnh báo mới xuất hiện / tái phát. */
 async function logAlertActivity(ownerId: string, a: DetectedAlert): Promise<void> {
+  const meta = alertRefsMeta(a);
   await prisma.opsActivity.create({
-    data: { ownerId, tag: a.tag, message: `⚠️ ${a.title}` },
+    data: {
+      ownerId,
+      tag: a.tag,
+      message: `⚠️ ${a.title}`,
+      ...(meta ? { meta: meta as unknown as Prisma.InputJsonValue } : {}),
+    },
   });
   // Đẩy lên CHUÔNG THÔNG BÁO (Tầng 3): cảnh báo điều hành mới/tái phát là đúng
   // loại sự kiện chủ shop cần biết ngay cả khi không mở Dashboard. notify tự
@@ -1559,7 +1688,7 @@ export async function applyDetectedAlert(
     severity: d.severity,
     title: d.title,
     summary: d.summary,
-    payload: JSON.stringify(d.payload),
+    payload: JSON.stringify({ ...d.payload, ...(alertRefsMeta(d) ?? {}) }),
   };
 
   if (!existing) {

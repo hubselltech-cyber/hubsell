@@ -42,9 +42,17 @@ function serializeActivity(a: {
   id: string;
   tag: string;
   message: string;
+  meta?: unknown;
   createdAt: Date;
 }) {
-  return { id: a.id, tag: a.tag, message: a.message, at: a.createdAt.toISOString() };
+  return {
+    id: a.id,
+    tag: a.tag,
+    message: a.message,
+    // {refs, refTotal, href, label} từ ops-alerts.alertRefsMeta — null với dòng cũ.
+    meta: a.meta ?? null,
+    at: a.createdAt.toISOString(),
+  };
 }
 
 function serializeChat(m: {

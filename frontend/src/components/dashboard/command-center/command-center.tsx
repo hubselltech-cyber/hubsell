@@ -29,6 +29,7 @@ import {
 import { AlertCard } from "./alert-card";
 import { ActionModal } from "./action-modal";
 import { ActivityFeed } from "./activity-feed";
+import { parseOrderRefs } from "@/components/shared/order-ref-chips";
 import { ChatDrawer } from "./chat-drawer";
 import { nextId } from "./mock-service";
 import {
@@ -118,6 +119,10 @@ function opsDtoToAlert(dto: OpsAlertDTO): OpsAlert {
     actionLabel: p?.label ?? "Xem chi tiết",
     action,
     createdAt: dto.createdAt,
+    ...(() => {
+      const orderRefs = parseOrderRefs(dto.payload);
+      return orderRefs ? { orderRefs } : {};
+    })(),
   };
 }
 
@@ -149,7 +154,14 @@ function mergeChat(persisted: OpsChatDTO[]): Record<string, ChatMessage[]> {
 }
 
 function activityDtoToItem(dto: OpsActivityDTO): ActivityItem {
-  return { id: dto.id, tag: dto.tag as AlertTag, message: dto.message, at: dto.at };
+  const orderRefs = parseOrderRefs(dto.meta);
+  return {
+    id: dto.id,
+    tag: dto.tag as AlertTag,
+    message: dto.message,
+    at: dto.at,
+    ...(orderRefs ? { orderRefs } : {}),
+  };
 }
 
 /** Nhật ký đã lưu, sắp mới nhất lên đầu. */

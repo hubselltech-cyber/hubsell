@@ -3,6 +3,7 @@
 import { FlaskConical } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { OrderRefChips } from "@/components/shared/order-ref-chips";
 import {
   TAG_META,
   type ActivityItem,
@@ -104,8 +105,13 @@ function FeedRow({ item }: { item: ActivityItem }) {
   return (
     <div className="flex gap-3 border-b border-slate-100 py-2.5 last:border-b-0">
       <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[item.tag])} />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-sm leading-relaxed text-slate-700">{item.message}</p>
+        {/* Mã đơn liên quan + nút sao chép (anh Trung 09/10: khách hỏi "đơn nào?").
+            3 mã, còn lại "+N đơn khác" dẫn tới trang xử lý. */}
+        {item.orderRefs && (
+          <OrderRefChips orderRefs={item.orderRefs} max={3} className="mt-1.5" />
+        )}
         <p className="mt-0.5 text-[11px] text-slate-400">
           {formatRelative(item.at)}
         </p>

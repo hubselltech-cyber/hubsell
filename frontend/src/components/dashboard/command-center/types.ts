@@ -115,6 +115,26 @@ export type ActionParams =
       hubsellStock: number | null;
     };
 
+/**
+ * Một đơn hàng liên quan tới cảnh báo / dòng nhật ký — `code` là mã đơn TRÊN
+ * SÀN (khách tra Seller Center bằng mã này), `amount` là số tiền của đơn trong
+ * ngữ cảnh cảnh báo. Backend đính tối đa 5 đơn nhiều tiền nhất (ops-alerts).
+ */
+export interface OrderRef {
+  code: string;
+  channelName: string;
+  shopName: string | null;
+  amount: number;
+}
+
+/** Mã đơn đính kèm + tổng số đơn thật + đích xử lý — dùng chung thẻ và nhật ký. */
+export interface OrderRefs {
+  refs: OrderRef[];
+  refTotal: number;
+  href?: string;
+  label?: string;
+}
+
 export interface OpsAlert {
   id: string;
   tag: AlertTag;
@@ -130,6 +150,8 @@ export interface OpsAlert {
   action: ActionParams;
   /** ISO timestamp lúc phát sinh cảnh báo. */
   createdAt: string;
+  /** Đơn liên quan (cảnh báo tài chính thật) — không có thì thẻ chỉ in chữ. */
+  orderRefs?: OrderRefs;
 }
 
 export interface ActivityItem {
@@ -137,6 +159,8 @@ export interface ActivityItem {
   tag: AlertTag;
   message: string;
   at: string; // ISO
+  /** Đơn liên quan lúc ghi dòng này — dòng cũ / dòng tay không có. */
+  orderRefs?: OrderRefs;
 }
 
 /** Nội dung một tin nhắn — text, bảng dán từ Excel, hoặc ảnh đính kèm nhẹ. */

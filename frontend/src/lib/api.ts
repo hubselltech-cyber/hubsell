@@ -3861,6 +3861,8 @@ export interface OpsActivityDTO {
   id: string;
   tag: string;
   message: string;
+  /** {refs, refTotal, href, label} — mã đơn liên quan (null với dòng cũ). */
+  meta?: unknown;
   at: string;
 }
 

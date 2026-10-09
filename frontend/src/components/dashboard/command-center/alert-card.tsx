@@ -3,6 +3,7 @@
 import { Check, Lock, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { OrderRefChips } from "@/components/shared/order-ref-chips";
 import { cn } from "@/lib/utils";
 import {
   canAct,
@@ -111,6 +112,11 @@ export function AlertCard({
           <p className="mt-0.5 text-sm leading-relaxed text-slate-500">
             {alert.summary}
           </p>
+          {/* Mã đơn liên quan — cùng nguồn với dòng nhật ký; 3 mã + "+N đơn khác"
+              (anh Trung 09/10: đừng liệt kê hết). */}
+          {alert.orderRefs && (
+            <OrderRefChips orderRefs={alert.orderRefs} max={3} className="mt-2" />
+          )}
 
           {/* Hàng thao tác */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
