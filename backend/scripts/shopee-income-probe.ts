@@ -72,15 +72,17 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
           cursor,
           pageSize: 50,
         });
-        const block = d.response?.income_detail_list ?? d.income_detail_list;
-        const list = block?.list ?? [];
-        if (!shapeLogged && list[0]) {
+        // Lượt chạy prod 09/10: mọi gian trả 0 dòng dù pending_amount > 0 → in
+        // NGUYÊN VĂN trang đầu (cắt 800 ký tự) để thấy sàn đặt danh sách ở đâu.
+        if (!shapeLogged) {
           shapeLogged = true;
           console.log(
-            "  Mẫu dòng Pending (nguyên văn):",
-            JSON.stringify(list[0]),
+            "  get_income_detail trang đầu (nguyên văn):",
+            JSON.stringify(d).slice(0, 800),
           );
         }
+        const block = d.response?.income_detail_list ?? d.income_detail_list;
+        const list = block?.list ?? [];
         for (const it of list) {
           count++;
           sum += Number(it.estimated_escrow_amount ?? 0);
@@ -96,20 +98,33 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
       for (const [k, n] of statuses) console.log(`    ${n} dòng: ${k}`);
 
       // 3) Số app đang có trong DB cho cùng gian — để thấy lệch ở đâu.
-      const [open] = await prisma.$queryRaw<
-        { ship: unknown; deliv: unknown; est: unknown; n: unknown }[]
+      // Tách theo trạng thái vận đơn + tuổi đơn: lượt 09/10 Σ expectedPayout DB
+      // LỚN HƠN pending_amount sàn ở 3/5 gian → nghi đơn cũ sàn đã chi/hủy mà
+      // app còn giữ isSettled=false, hoặc ước tính của đơn chưa bàn giao.
+      const rows = await prisma.$queryRaw<
+        {
+          s: string;
+          n: unknown;
+          tot: unknown;
+          est: unknown;
+          nest: unknown;
+          old: unknown;
+        }[]
       >`
-        SELECT
-          COALESCE(sum(CASE WHEN "shippingStatus" = 'SHIPPING'  THEN "totalAmount" END), 0) AS ship,
-          COALESCE(sum(CASE WHEN "shippingStatus" = 'DELIVERED' THEN "totalAmount" END), 0) AS deliv,
+        SELECT "shippingStatus"::text AS s, count(*) AS n,
+          COALESCE(sum("totalAmount"), 0) AS tot,
           COALESCE(sum("expectedPayout"), 0) AS est,
-          count(*) AS n
+          count("expectedPayout") AS nest,
+          count(*) FILTER (WHERE "createdAt" < now() - interval '30 days') AS old
         FROM "Order"
         WHERE "channelId" = ${channel.id} AND NOT "isSettled" AND "shippingStatus" <> 'CANCELLED'
+        GROUP BY 1 ORDER BY 1
       `;
-      console.log(
-        `  DB app: ${Number(open.n)} đơn chưa quyết toán; Tổng tiền đang giao ${fmt(Number(open.ship))}, đã giao ${fmt(Number(open.deliv))}, Σ expectedPayout ${fmt(Number(open.est))}`,
-      );
+      for (const r of rows) {
+        console.log(
+          `  DB ${r.s}: ${Number(r.n)} đơn (${Number(r.old)} đơn >30 ngày), Tổng tiền ${fmt(Number(r.tot))}, Σ expectedPayout ${fmt(Number(r.est))} trên ${Number(r.nest)} đơn có ước tính`,
+        );
+      }
     } catch (e) {
       console.log("✗ Lỗi gọi API:", (e as Error).message);
     }
