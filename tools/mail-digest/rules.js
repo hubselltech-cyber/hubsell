@@ -101,6 +101,10 @@ export function classify(m) {
 
   // San & doi tac
   if (has(from, MARKET_DOMAINS)) {
+    // Google Play nhac tu dong (playpartners-noreply: "xac minh ngay", "hoan tat thiet lap") -> P4; thu duyet/tu choi tu Play Console van P1
+    if (from.includes('playpartners-noreply') && has(subject, ['xác minh', 'verify', 'hoàn tất', 'complete', 'thiết lập', 'set up', 'setup'])) {
+      return { level: 'P4', group: 'Google Play nhắc tự động' };
+    }
     if (has(subject, NEWSLETTER_WORDS) && !has(subject, ['policy', 'chính sách', 'deprecat', 'api'])) return { level: 'P4', group: 'Bản tin' };
     const name = from.includes('shopee') ? 'Shopee'
       : from.includes('lazada') ? 'Lazada'

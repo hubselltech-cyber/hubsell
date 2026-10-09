@@ -22,6 +22,19 @@ Những điểm làm khác hướng dẫn cũ, **lấy theo bảng này**:
 
 ---
 
+## ✅ Trạng thái 09/10/2026 sáng: Play Console XONG XÁC MINH, ỨNG DỤNG ĐÃ TẠO
+
+- 09/10 08:14 Google gửi "Danh tính của bạn đã được xác minh" (Zoho dev@). Thư 07:36 "Xác minh tài khoản của bạn ngay" (playpartners-noreply) chỉ là nhắc tự động, mail-digest đã hạ xuống P4.
+- Vào Play Console lần đầu sau duyệt bị chặn bởi **Điều khoản dịch vụ Play Console** (hiệu lực 29/04/2020, kèm DDA) → anh đồng ý, em bấm. Chrome của anh: dev@hubsell.vn = `/u/3/`.
+- **Xác minh số điện thoại**: Tài khoản nhà phát triển → Chi tiết tài khoản → tab Thông tin liên hệ. Số liên hệ và số nhà phát triển cùng là +84 965863292, SMS một lượt, anh nhập OTP → cả hai dòng hiện "Số điện thoại đã được xác minh", đã Lưu thay đổi.
+- **Tạo ứng dụng** (Trang chủ → Tạo ứng dụng): tên `Hubsell - Quản lý bán đa sàn`, tên gói `vn.hubsell.app`, Tiếng Việt, Ứng dụng, Miễn phí, tick 3 khai báo (Chính sách chương trình, Điều khoản ký ứng dụng Play, luật xuất khẩu Hoa Kỳ). **Mã app trong Play Console: `4973694311665052949`**. Dashboard: `https://play.google.com/console/u/3/developers/4691969570523261762/app/4973694311665052949/app-dashboard`.
+- Dashboard liệt kê việc còn lại (lấy nội dung từ `docs/store/LISTING.md`):
+  1. Thử nghiệm nội bộ (không cần duyệt): Chọn người thử nghiệm → Tạo bản phát hành mới (cần AAB, tức `eas build -p android --profile production`) → Xem trước và xác nhận.
+  2. Nội dung ứng dụng (9 mục): Chính sách quyền riêng tư, Thông tin đăng nhập (App access: tài khoản reviewer), Quảng cáo, Mức phân loại nội dung, Đối tượng mục tiêu, An toàn dữ liệu (bảng mục 5 LISTING), Ứng dụng của chính phủ, Tính năng tài chính, Sức khỏe.
+  3. Chọn danh mục + thông tin liên hệ; Thiết lập trang thông tin cửa hàng (mô tả, icon 512, ảnh bìa 1024×500, 6 ảnh Android ở docs/store/screenshots/android/).
+  4. Phát hành công khai: chọn quốc gia (Việt Nam) → bản phát hành → gửi Google xem xét. Tài khoản tổ chức nên KHÔNG bị rào 12 tester × 14 ngày; dashboard vẫn có hộp "Đăng ký truy cập vào kênh phát hành công khai" (3 bước) ẩn, nếu Google bắt thì mới làm.
+  5. Cho `eas submit`: tạo service account Google Cloud + gắn vào Người dùng và quyền của Play Console.
+
 ## 0. Quyết định cần chốt trước khi bắt tay
 
 | Việc | Đề xuất | Lý do |
