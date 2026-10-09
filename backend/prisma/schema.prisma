@@ -423,6 +423,12 @@ model Channel {
   walletBalance         Decimal?  @db.Decimal(14, 2)
   /// Thời điểm đồng bộ số dư ví gần nhất — hiển thị "cập nhật lúc" trên bảng.
   walletBalanceSyncedAt DateTime?
+  /// "CHƯA THANH TOÁN" sàn tự công bố (09/10/2026): tiền sàn sẽ trả shop của mọi
+  /// đơn sàn chưa chi — Shopee get_income_overview.pending_amount; TikTok
+  /// sum_est_settlement_amount của /orders/unsettled. null = sàn không có API
+  /// (Lazada/Offline) hoặc chưa sync được → bảng hiện "—", không bịa 0.
+  pendingIncome         Decimal?  @db.Decimal(14, 2)
+  pendingIncomeSyncedAt DateTime?
 
   // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
   // VD: 0.12 = 12%. Có thể chỉnh riêng cho từng gian hàng.

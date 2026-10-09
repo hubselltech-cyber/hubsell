@@ -59,7 +59,7 @@ import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
 import { autoExecuteTouched, runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
 import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { adsItemSignalsDue, syncShopeeAdsItemSignals } from "../integrations/shopee/ads-item-signals";
-import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
+import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
   backfillShopeeReturnsByOrder,
   backfillShopeeTrackingCodes,
@@ -76,7 +76,7 @@ import {
 } from "../integrations/tiktok/service";
 import { backfillTiktokReturnsByOrder, syncTiktokReturns } from "../integrations/tiktok/returns-sync";
 import { processTiktokDeliveryTracking } from "../integrations/tiktok/delivery-fail";
-import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
+import { syncTiktokPayouts, syncTiktokPendingIncome } from "../integrations/tiktok/payouts";
 import {
   syncLazadaOrders,
   syncLazadaSettlements,
@@ -737,6 +737,12 @@ async function runHourlyTier(
     } catch (err) {
       console.error(`[Auto-sync] Lỗi sync payout TikTok "${channel.shopName}":`, (err as Error).message);
     }
+    // "Chưa thanh toán" sàn tự công bố (09/10) → Channel.pendingIncome, một call.
+    try {
+      await syncTiktokPendingIncome(channel);
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi đọc Chưa thanh toán TikTok "${channel.shopName}":`, (err as Error).message);
+    }
   } else if (channel.channelName === ChannelName.SHOPEE) {
     // Bọc try riêng (25/08): đối soát ném lỗi không được nuốt rút ví + cảnh báo.
     try {
@@ -778,6 +784,12 @@ async function runHourlyTier(
         `[Auto-sync] Lỗi sync rút ví Shopee "${channel.shopName}" (app có thể chưa bật quyền ví):`,
         (err as Error).message
       );
+    }
+    // "Chưa thanh toán" sàn tự công bố (09/10) → Channel.pendingIncome, một call.
+    try {
+      await syncShopeePendingIncome(channel);
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi đọc Chưa thanh toán Shopee "${channel.shopName}":`, (err as Error).message);
     }
   }
 

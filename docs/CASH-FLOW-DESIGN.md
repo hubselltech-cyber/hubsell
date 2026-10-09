@@ -17,9 +17,10 @@
    dư ví thật hoặc đã về bank; cộng thêm là đếm hai lần. Vì lý do này chi phí
    vận hành nguồn PLATFORM_WALLET/BANK_ACCOUNT cũng bỏ khỏi bảng (số dư thật
    tự phản ánh), chúng vẫn ở nguyên các trang P&L.
-4. **"Tổng doanh thu dự kiến" = Đang giao + Chờ đối soát + Ví sàn** — tiền còn
-   nằm NGOÀI ngân hàng, sẽ về tay chủ shop. Tiền đã về bank là quá khứ đã cầm
-   chắc, không thuộc "dự kiến" nên không cộng.
+4. **"Tổng doanh thu dự kiến" = Chưa thanh toán + Ví sàn** (từ 09/10/2026;
+   trước đó = Đang giao + Chờ đối soát + Ví sàn) — tiền còn nằm NGOÀI ngân
+   hàng, sẽ về tay chủ shop. Tiền đã về bank là quá khứ đã cầm chắc, không
+   thuộc "dự kiến" nên không cộng.
 5. **Cột "Về Ngân hàng" chỉ tính 30 ngày gần nhất** — lũy kế all-time phình mãi
    vô nghĩa; 30 ngày khớp thói quen đối chiếu sổ bank theo tháng của kế toán.
 6. **Real-time:** mở bảng là frontend gọi `POST /cash-flow/refresh` chạy NGẦM
@@ -33,6 +34,31 @@
    chết chỉ sinh cảnh báo nhiễu); mọi điểm chuyển status ACTIVE/DISCONNECTED
    đều phải set/clear `disconnectedAt` (webhook có guard đổi trạng thái thật
    mới ghi để không reset đồng hồ 30 ngày).
+
+## Cột "Chưa thanh toán" thay "Đang giao" + "Chờ đối soát" (09/10/2026, anh Trung chốt)
+
+**Vì sao đổi:** hai cột cũ cộng từ ĐƠN trong app. Probe prod 09/10
+(`backend/scripts/shopee-income-probe.ts`): ANO Official Store có 1.885 đơn đã
+giao hơn 30 ngày vẫn `isSettled=false` → "chờ đối soát" 399,8tr trong khi Seller
+Center báo chưa thanh toán 16,07tr; cột "đang giao" 19,15tr (ước tính net của 122
+đơn SHIPPING) còn lớn hơn cả tổng chưa thanh toán của sàn — một phần đơn SHIPPING
+trong app đã xong trên sàn. Sổ cái KHỚP bảng Order (không phải lỗi sổ); lỗi gốc là
+đơn lịch sử không được đánh dấu quyết toán (việc riêng, chưa làm).
+
+**Số sàn tự công bố, một call/gian, lưu `Channel.pendingIncome` + `pendingIncomeSyncedAt`:**
+
+| Sàn | Nguồn | Ghi chú |
+|---|---|---|
+| Shopee | `GET /api/v2/payment/get_income_overview` → `response.total_income.pending_amount` (API mới 14/10/2025; shop VN = Local chỉ có Pending/Released, gửi `income_status=0` bị error_param). `released_amount` = ô "Đã thanh toán · Tổng cộng". | Prod 09/10: `total_income` nằm TRONG `response` (ví dụ docs đặt ngang hàng `error` — đọc cả hai, `lib/pending-income.ts`). Gian ít đơn: Σ `get_income_detail` (income_status=2, danh sách ở `response.list`, mỗi dòng `estimated_escrow_amount`) = đúng pending_amount. Phân trang detail >50 đơn chưa kiểm. |
+| TikTok | `GET /finance/202507/orders/unsettled` → `sum_est_settlement_amount` (chuỗi), chỉ gửi `search_time_ge` = 01/01/2025, page_size 20. | Docs: "estimated amount, subject to change before settlement". Tổng có đúng cho CẢ tập hay chỉ trang đầu khi >20 giao dịch — CHƯA kiểm với gian thật, đối chiếu Seller Center khi lên prod. |
+| Lazada | KHÔNG có API (Finance API chỉ 4 endpoint: GetPayoutStatus, QueryAccountTransactions, QueryLogisticsFeeDetail, QueryTransactionDetails — toàn số đã chốt/đã chi). | Lùi về Σ đang giao + chờ đối soát từ đơn, `pendingIncomeSource = ORDERS`, tooltip nói rõ. |
+| Offline | null → "—". | |
+
+**Luồng:** `POST /cash-flow/refresh` (mở bảng / nút Làm mới) gọi cùng lượt với
+sync ví; cron giờ `order-auto-sync.ts` gọi sau sync rút ví (Shopee) / payout
+(TikTok). Sàn không trả số → giữ số cũ. Shopee/TikTok chưa sync lần nào → null
+("—"), KHÔNG lùi về số đơn (đang phồng). Payload GET vẫn trả `inTransit` /
+`pendingSettle` để đối chiếu, bảng không hiển thị.
 
 ## Nguồn số từng sàn (cột Ví sàn + Về Ngân hàng)
 

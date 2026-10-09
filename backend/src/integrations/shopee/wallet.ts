@@ -16,8 +16,9 @@
 import type { Channel } from "@prisma/client";
 import { WithdrawalSource } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { getWalletTransactionList, type ShopeeWalletTxn } from "./client";
+import { getIncomeOverview, getWalletTransactionList, type ShopeeWalletTxn } from "./client";
 import { getValidShopeeAccessToken } from "./service";
+import { shopeePendingAmount } from "../../lib/pending-income";
 
 const DAY_SEC = 24 * 60 * 60;
 // Probe production 14/08: cửa sổ 15 ngày bị sàn chê "wallet.time_invalid — time
@@ -45,6 +46,24 @@ function mapStatus(raw?: string): "SUCCESS" | "PENDING" | "FAILED" {
   if (s === "COMPLETED" || s === "SUCCESS") return "SUCCESS";
   if (s === "FAILED" || s === "CANCELLED" || s === "REJECTED") return "FAILED";
   return "PENDING";
+}
+
+/**
+ * "CHƯA THANH TOÁN" của gian = get_income_overview.pending_amount (API mới
+ * 10/2025, MỘT call/gian, kiểm prod 09/10/2026 khớp ô Chưa thanh toán màn Doanh
+ * thu Seller Center: ANO 16.069.072). Ghi Channel.pendingIncome cho bảng Phân bổ
+ * dòng tiền. Sàn không trả số → GIỮ số cũ, không ghi đè null.
+ */
+export async function syncShopeePendingIncome(channel: Channel): Promise<number | null> {
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  const data = await getIncomeOverview({ accessToken, shopId });
+  const pending = shopeePendingAmount(data);
+  if (pending == null) return null;
+  await prisma.channel.update({
+    where: { id: channel.id },
+    data: { pendingIncome: pending, pendingIncomeSyncedAt: new Date() },
+  });
+  return pending;
 }
 
 export interface SyncWithdrawalsResult {

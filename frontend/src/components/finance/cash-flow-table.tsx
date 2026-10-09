@@ -47,11 +47,16 @@ function todayKey(): string {
  * BẢNG PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG (thiết kế lại 14/08 — chốt chủ shop)
  *
  * Mỗi cột trả lời "tiền đang ở đâu", KHÔNG mô phỏng:
- *   đang giao (đơn đã bàn giao VC) → chờ đối soát (đã giao, chưa quyết toán)
+ *   Chưa thanh toán (SỐ SÀN TỰ CÔNG BỐ — tiền sàn sẽ trả cho mọi đơn đã bàn
+ *   giao vận chuyển mà sàn chưa chi, gồm cả đang giao lẫn đã giao chờ chi;
+ *   Lazada không có API thì tính từ đơn, Offline "—")
  *   → Số dư Ví sàn (SỐ THẬT từ API — sàn không có ví thì "—")
  *   → Về Ngân hàng 30 ngày (đối chiếu sổ bank theo tháng).
- * Tổng doanh thu DỰ KIẾN = 3 cột đầu — tiền còn nằm ngoài ngân hàng, sẽ về
+ * Tổng doanh thu DỰ KIẾN = 2 cột đầu — tiền còn nằm ngoài ngân hàng, sẽ về
  * tay chủ shop; tiền đã về bank là quá khứ đã cầm chắc, không thuộc "dự kiến".
+ * 09/10/2026 (anh Trung chốt): hai cột cũ "đang giao" + "chờ đối soát" tính từ
+ * đơn trong app bị phồng ảo (ANO chờ đối soát 399,8tr trong khi Seller Center
+ * báo 16tr) → thay bằng số sàn.
  * Dòng được map ĐỘNG từ danh sách gian hàng API trả về (kết nối thêm gian là
  * tự có thêm dòng); hàng TỔNG CỘNG cộng dồn bằng reduce theo đúng các dòng
  * đang lọc. Cột tiền căn phải, cột chữ căn trái.
@@ -153,13 +158,12 @@ export function CashFlowTable() {
   // Ví sàn null (sàn không có ví) không đóng góp vào tổng.
   const totals = shown.reduce(
     (acc, r) => ({
-      inTransit: acc.inTransit + r.inTransit,
-      pendingSettle: acc.pendingSettle + r.pendingSettle,
+      pendingIncome: acc.pendingIncome + (r.pendingIncome ?? 0),
       wallet: acc.wallet + (r.walletBalance ?? 0),
       withdrawn30d: acc.withdrawn30d + r.withdrawn30d,
       totalExpected: acc.totalExpected + r.totalExpected,
     }),
-    { inTransit: 0, pendingSettle: 0, wallet: 0, withdrawn30d: 0, totalExpected: 0 }
+    { pendingIncome: 0, wallet: 0, withdrawn30d: 0, totalExpected: 0 }
   );
 
   function openWithdrawDialog() {
@@ -201,16 +205,12 @@ export function CashFlowTable() {
     }
   }
 
-  // 3 cột đầu là các chặng tiền CHƯA về tay; cột 4 là số đối chiếu sổ bank.
+  // 2 cột đầu là các chặng tiền CHƯA về tay; cột 3 là số đối chiếu sổ bank.
   // Tooltip viết NGÔN NGỮ ĐỜI THƯỜNG cho chủ shop — không thuật ngữ kỹ thuật.
   const COLS: { label: string; tip: string }[] = [
     {
-      label: "Doanh thu đang giao",
-      tip: "Tiền của các đơn đã đưa cho bên vận chuyển, hàng đang trên đường đến khách. Đơn còn nằm trong kho chưa tính vì vẫn có thể bị hủy.",
-    },
-    {
-      label: "Doanh thu chờ đối soát",
-      tip: "Đơn đã giao xong cho khách, đang chờ sàn tính toán và cộng tiền vào ví cho mình.",
+      label: "Chưa thanh toán",
+      tip: "Tiền sàn sẽ trả cho mình của các đơn đã đưa cho bên vận chuyển mà sàn chưa chi (gồm cả đơn đang giao lẫn đơn đã giao đang chờ sàn cộng tiền), đã trừ phí sàn. Đọc thẳng từ sàn: Shopee là ô “Chưa thanh toán” ở mục Doanh thu, TikTok là giao dịch chưa quyết toán. Lazada không có số này nên tính từ đơn trong app.",
     },
     {
       label: "Số dư Ví sàn",
@@ -222,7 +222,7 @@ export function CashFlowTable() {
     },
     {
       label: "Tổng doanh thu dự kiến",
-      tip: "Đang giao + Chờ đối soát + Ví sàn = tổng số tiền sắp về tay anh/chị. Tiền đã về ngân hàng không tính nữa vì đã cầm chắc rồi.",
+      tip: "Chưa thanh toán + Ví sàn = tổng số tiền sắp về tay anh/chị. Tiền đã về ngân hàng không tính nữa vì đã cầm chắc rồi.",
     },
   ];
 
@@ -236,8 +236,8 @@ export function CashFlowTable() {
             Phân bổ dòng tiền theo gian hàng
           </CardTitle>
           <CardDescription className="mt-1">
-            Tiền của từng gian đang ở đâu: đang giao → chờ đối soát → Ví sàn (số
-            dư THẬT từ API) → về Ngân hàng. Tổng dự kiến = tiền chưa về tay.
+            Tiền của từng gian đang ở đâu: sàn chưa thanh toán → Ví sàn (số
+            THẬT từ API) → về Ngân hàng. Tổng dự kiến = tiền chưa về tay.
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -286,7 +286,7 @@ export function CashFlowTable() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] border-separate border-spacing-0 text-sm">
+            <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   <th className="border-b border-slate-300 bg-slate-50 px-5 py-3.5 text-left text-sm font-semibold text-slate-800">
@@ -345,11 +345,27 @@ export function CashFlowTable() {
                           )}
                         </span>
                       </td>
-                      <td className={cn(cell, "text-right text-slate-900")}>
-                        <Cash value={r.inTransit} />
-                      </td>
                       <td className={cn(cell, "text-right font-medium text-amber-700")}>
-                        <Cash value={r.pendingSettle} />
+                        {r.pendingIncome == null ? (
+                          // Offline không có sàn trả tiền; Shopee/TikTok chưa
+                          // đọc được số từ sàn — "—" chứ không phải 0đ.
+                          <span
+                            className="text-slate-400"
+                            title="Sàn chưa báo số hoặc gian không bán qua sàn"
+                          >
+                            —
+                          </span>
+                        ) : (
+                          <span
+                            title={
+                              r.pendingIncomeSource === "ORDERS"
+                                ? "Lazada không có số này từ sàn — tính từ đơn đã giao vận chuyển trong app"
+                                : syncedLabel(r.pendingIncomeSyncedAt) || undefined
+                            }
+                          >
+                            <Cash value={r.pendingIncome} />
+                          </span>
+                        )}
                       </td>
                       <td className={cn(cell, "text-right font-medium text-emerald-700")}>
                         {r.walletBalance == null ? (
@@ -384,10 +400,7 @@ export function CashFlowTable() {
                     TỔNG CỘNG {platform ? `(${CHANNEL_META[platform].label})` : ""}
                   </td>
                   <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
-                    <Money value={totals.inTransit} className="font-bold" />
-                  </td>
-                  <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
-                    <Money value={totals.pendingSettle} className="font-bold" />
+                    <Money value={totals.pendingIncome} className="font-bold" />
                   </td>
                   <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
                     <Money value={totals.wallet} className="font-bold" />

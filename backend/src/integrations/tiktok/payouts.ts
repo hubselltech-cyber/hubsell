@@ -14,8 +14,9 @@
 import type { Channel } from "@prisma/client";
 import { WithdrawalSource } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { fetchPayments, type TikTokPayment } from "./client";
+import { fetchPayments, fetchUnsettledTransactions, type TikTokPayment } from "./client";
 import { getValidAccessToken } from "./service";
+import { tiktokUnsettledSum } from "../../lib/pending-income";
 
 const MAX_PAGES = 20;
 let shapeLogged = false;
@@ -31,6 +32,34 @@ function mapStatus(p: TikTokPayment): "SUCCESS" | "PENDING" | "FAILED" {
   if (s === "PAID" || s === "SUCCESS") return "SUCCESS";
   if (s === "FAILED") return "FAILED";
   return "PENDING";
+}
+
+// API 202507 chỉ có giao dịch từ 01/01/2025 (cùng mốc SETTLE_BACKFILL_FLOOR ở service.ts).
+const UNSETTLED_FLOOR_SEC = Date.UTC(2025, 0, 1) / 1000;
+
+/**
+ * "CHƯA THANH TOÁN" của gian TikTok = sum_est_settlement_amount của
+ * /finance/202507/orders/unsettled (ước tính CỦA CHÍNH SÀN cho mọi đơn + điều
+ * chỉnh chưa quyết toán). Chỉ gửi search_time_ge (lượt thật 16/09: gửi cả
+ * ge+lt bị 36009002/3) — trang đầu đã mang tổng, không cần lật trang.
+ * Sàn không trả tổng → GIỮ số cũ, không ghi đè null.
+ */
+export async function syncTiktokPendingIncome(channel: Channel): Promise<number | null> {
+  const { accessToken, shopCipher } = await getValidAccessToken(channel);
+  const data = await fetchUnsettledTransactions({
+    accessToken,
+    shopCipher,
+    searchTimeGe: UNSETTLED_FLOOR_SEC,
+    pageSize: 20,
+    sortOrder: "DESC",
+  });
+  const pending = tiktokUnsettledSum(data);
+  if (pending == null) return null;
+  await prisma.channel.update({
+    where: { id: channel.id },
+    data: { pendingIncome: pending, pendingIncomeSyncedAt: new Date() },
+  });
+  return pending;
 }
 
 export interface SyncTiktokPayoutsResult {

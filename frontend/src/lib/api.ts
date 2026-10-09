@@ -951,10 +951,17 @@ export interface CashFlowRow {
   shopName: string;
   /** Gian đã ngắt kết nối — hiển thị thêm 30 ngày (nhãn mờ) rồi backend tự ẩn. */
   disconnected: boolean;
-  /** Doanh thu đang giao: đơn ĐÃ bàn giao vận chuyển, chưa quyết toán. */
+  /** Doanh thu đang giao (tính từ đơn trong app) — bảng không dùng nữa từ 09/10/2026, giữ để đối chiếu. */
   inTransit: number;
-  /** Doanh thu chờ đối soát: đơn đã giao nhưng sàn chưa quyết toán. */
+  /** Doanh thu chờ đối soát (tính từ đơn trong app) — bảng không dùng nữa từ 09/10/2026, giữ để đối chiếu. */
   pendingSettle: number;
+  /** "Chưa thanh toán": tiền sàn sẽ trả cho shop của mọi đơn sàn chưa chi (đã
+   *  trừ phí). PLATFORM = sàn tự công bố (Shopee/TikTok); ORDERS = tính từ đơn
+   *  (Lazada không có API); null = chưa sync được / Offline → hiện "—". */
+  pendingIncome: number | null;
+  pendingIncomeSource: "PLATFORM" | "ORDERS" | null;
+  /** Mốc sàn báo số Chưa thanh toán (ISO) — chỉ khi nguồn PLATFORM. */
+  pendingIncomeSyncedAt: string | null;
   /** Số dư Ví sàn THẬT (Shopee: API ví; Lazada: sao kê đã chốt chưa chi;
    *  TikTok: đợt chi tiền đang xử lý). null = sàn không có ví / chưa sync
    *  được — hiển thị "—", không phải 0. */
@@ -963,8 +970,8 @@ export interface CashFlowRow {
   walletSyncedAt: string | null;
   /** Tiền đã về ngân hàng trong 30 ngày gần nhất. */
   withdrawn30d: number;
-  /** Tổng doanh thu DỰ KIẾN = đang giao + chờ đối soát + ví sàn (tiền còn nằm
-   *  ngoài ngân hàng, sẽ về tay chủ shop). */
+  /** Tổng doanh thu DỰ KIẾN = chưa thanh toán + ví sàn (tiền còn nằm ngoài
+   *  ngân hàng, sẽ về tay chủ shop). */
   totalExpected: number;
 }
 

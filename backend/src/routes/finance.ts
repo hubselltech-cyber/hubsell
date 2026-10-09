@@ -59,9 +59,9 @@ import {
   type ShopTaxConfig,
   PLATFORM_TAX_RATE,
 } from "../config/tax-config";
-import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
+import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
-import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
+import { syncTiktokPayouts, syncTiktokPendingIncome } from "../integrations/tiktok/payouts";
 import { loadAdSpendRows, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
 import {
   cashFlowTotalsFromLedger,
@@ -812,6 +812,15 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 //     Đơn PENDING/PROCESSED cố ý KHÔNG tính — chưa bàn giao thì tỷ lệ hủy cao,
 //     đưa vào dòng tiền dự kiến là lạc quan ảo.
 //   - pendingSettle : đơn đã giao NHƯNG sàn chưa quyết toán (chờ về ví).
+//     ⚠️ 09/10/2026: hai cột trên tính từ ĐƠN trong app nên phồng ảo khi đơn
+//     lịch sử không được đánh dấu quyết toán (ANO: 1.885 đơn đã giao >30 ngày
+//     còn "chờ đối soát" 399,8tr trong khi Seller Center báo 16tr). Vẫn trả về
+//     để đối chiếu, nhưng bảng KHÔNG dùng nữa.
+//   - pendingIncome : "CHƯA THANH TOÁN" SÀN TỰ CÔNG BỐ — tiền sàn sẽ trả shop của
+//     mọi đơn đã bàn giao vận chuyển mà sàn chưa chi (gồm cả đang giao lẫn đã
+//     giao chờ chi, ĐÃ trừ phí). Shopee get_income_overview.pending_amount;
+//     TikTok Σ ước tính /orders/unsettled; Lazada không có API → tính từ đơn
+//     (pendingIncomeSource = ORDERS); Offline null. Anh Trung chốt 09/10/2026.
 //   - walletBalance : số dư ví THẬT của sàn. Shopee = current_balance giao dịch
 //     ví mới nhất (sync lưu Channel.walletBalance); Lazada không có ví giữ tiền
 //     → dùng Σ kỳ sao kê đã chốt nhưng CHƯA chi (WalletWithdrawal PENDING từ
@@ -819,9 +828,10 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 //     TikTok/Offline = null (TikTok chờ shop thật để kiểm chứng ledger).
 //   - withdrawn30d  : tiền đã về ngân hàng 30 NGÀY GẦN NHẤT (lũy kế all-time
 //     phình mãi, vô nghĩa quản trị) — số đối chiếu sổ bank theo tháng.
-//   - totalExpected : inTransit + pendingSettle + walletBalance = "Tổng doanh
-//     thu dự kiến" — tiền còn nằm ngoài ngân hàng, SẼ về tay chủ shop. Tiền đã
-//     về bank là quá khứ đã cầm chắc, không thuộc "dự kiến".
+//   - totalExpected : pendingIncome + walletBalance = "Tổng doanh thu dự kiến"
+//     — tiền còn nằm ngoài ngân hàng, SẼ về tay chủ shop. Tiền đã về bank là
+//     quá khứ đã cầm chắc, không thuộc "dự kiến". (Trước 09/10: inTransit +
+//     pendingSettle + walletBalance.)
 // Đơn ĐÃ quyết toán không cộng theo từng đơn nữa — tiền của chúng đã nằm trong
 // số dư ví thật/sổ bank, cộng thêm là đếm hai lần. Chi phí vận hành nguồn
 // PLATFORM_WALLET/BANK_ACCOUNT cũng bỏ khỏi bảng này vì lý do đó (số dư thật
@@ -864,6 +874,8 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
             status: true,
             walletBalance: true,
             walletBalanceSyncedAt: true,
+            pendingIncome: true,
+            pendingIncomeSyncedAt: true,
           },
         }),
         // NGUỒN SỐ GỐC: cùng công thức computePnlRow với mọi báo cáo (chốt
@@ -915,6 +927,20 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
       } else if (c.channelName === ChannelName.LAZADA || c.channelName === ChannelName.TIKTOK) {
         walletBalance = pendingByChannel.get(c.id) ?? 0;
       }
+      // "Chưa thanh toán": Shopee/TikTok = số sàn đã sync (chưa sync → null,
+      // KHÔNG lùi về số đơn vì số đơn đang phồng); Lazada không có API → tổng
+      // đang giao + chờ đối soát từ đơn, gắn nguồn ORDERS để UI nói rõ.
+      let pendingIncome: number | null = null;
+      let pendingIncomeSource: "PLATFORM" | "ORDERS" | null = null;
+      if (c.channelName === ChannelName.SHOPEE || c.channelName === ChannelName.TIKTOK) {
+        if (c.pendingIncome != null) {
+          pendingIncome = Number(c.pendingIncome);
+          pendingIncomeSource = "PLATFORM";
+        }
+      } else if (c.channelName === ChannelName.LAZADA) {
+        pendingIncome = inTransit + pendingSettle;
+        pendingIncomeSource = "ORDERS";
+      }
       return {
         channelId: c.id,
         channelName: c.channelName,
@@ -923,6 +949,10 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
         disconnected: c.status === "DISCONNECTED",
         inTransit,
         pendingSettle,
+        pendingIncome,
+        pendingIncomeSource,
+        pendingIncomeSyncedAt:
+          pendingIncomeSource === "PLATFORM" ? (c.pendingIncomeSyncedAt?.toISOString() ?? null) : null,
         walletBalance,
         // Chỉ ví Shopee có mốc sync (Lazada tính live từ sao kê mỗi request).
         walletSyncedAt:
@@ -930,7 +960,7 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
             ? (c.walletBalanceSyncedAt?.toISOString() ?? null)
             : null,
         withdrawn30d: withdrawn30dByChannel.get(c.id) ?? 0,
-        totalExpected: inTransit + pendingSettle + (walletBalance ?? 0),
+        totalExpected: (pendingIncome ?? 0) + (walletBalance ?? 0),
       };
     });
 
@@ -966,14 +996,23 @@ router.post("/cash-flow/refresh", async (req: AuthRequest, res, next) => {
     let synced = 0;
     const errors: string[] = [];
     for (const ch of channels) {
+      let failed: string | null = null;
+      const collect = (err: unknown) => {
+        failed ??= (err as Error).message;
+      };
       try {
+        // Ví/đợt chi tiền + "Chưa thanh toán" (09/10): hai call độc lập, call
+        // sau vẫn chạy khi call trước lỗi; lỗi nào cũng ghi tên gian một lần.
         if (ch.channelName === ChannelName.SHOPEE) {
-          await syncShopeeWithdrawals(ch, { daysBack: 30 });
+          await syncShopeeWithdrawals(ch, { daysBack: 30 }).catch(collect);
+          await syncShopeePendingIncome(ch).catch(collect);
         } else if (ch.channelName === ChannelName.TIKTOK) {
-          await syncTiktokPayouts(ch, { daysBack: 30 });
+          await syncTiktokPayouts(ch, { daysBack: 30 }).catch(collect);
+          await syncTiktokPendingIncome(ch).catch(collect);
         } else {
           await syncLazadaPayouts(ch, { daysBack: 30 });
         }
+        if (failed) throw new Error(failed);
         synced++;
       } catch (err) {
         errors.push(`${ch.shopName}: ${(err as Error).message}`);
