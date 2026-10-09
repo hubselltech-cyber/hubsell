@@ -137,7 +137,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
 });
 
 // POST /api/channels — tạo gian hàng KHÔNG qua OAuth.
-// Chủ shop thường chỉ được tạo gian OFFLINE (bán ngoài sàn). Shopee/Lazada/
+// Từ 09/10/2026 CHỈ quản trị nền tảng mới dùng được (kể cả OFFLINE). Shopee/Lazada/
 // TikTok bắt buộc đi luồng ủy quyền thật (/shopee/auth-url, /lazada/auth-url,
 // /tiktok/auth-url) — token giả lập `shp_/laz_/ttk_` (di sản thời chưa có
 // OAuth) chỉ còn dành cho QUẢN TRỊ NỀN TẢNG để demo/giả lập đơn; 15/09/2026
@@ -153,9 +153,15 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
       return;
     }
     const name = channelName as ChannelName;
-    if (name !== ChannelName.OFFLINE && !req.isPlatformAdmin) {
+    if (!req.isPlatformAdmin) {
+      // 09/10/2026: gian OFFLINE cũng đóng với chủ shop thường — chưa có luồng
+      // nhập đơn tay nên gian này 0 đơn, chỉ làm nhiễu HQ (2 gian do khách bấm
+      // thử). Khi làm tính năng bán tại quầy thì mở lại kèm tên rõ nghĩa.
       res.status(403).json({
-        error: `Gian ${CHANNEL_LABEL[name]} phải kết nối bằng cách ủy quyền trên sàn. Bấm "Kết nối gian hàng" và chọn ${CHANNEL_LABEL[name]}.`,
+        error:
+          name === ChannelName.OFFLINE
+            ? "Gian Offline (bán ngoài sàn) tạm chưa mở. Hãy kết nối Shopee, Lazada hoặc TikTok."
+            : `Gian ${CHANNEL_LABEL[name]} phải kết nối bằng cách ủy quyền trên sàn. Bấm "Kết nối gian hàng" và chọn ${CHANNEL_LABEL[name]}.`,
       });
       return;
     }

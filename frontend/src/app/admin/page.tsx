@@ -208,13 +208,16 @@ export default function PlatformOverviewPage() {
                 hint={`+${formatCount(stats.orders.last24h)} trong 24 giờ qua`}
               />
               <StatCard
-                label="Gian hàng đã kết nối"
+                label="Gian hàng đang hoạt động"
                 value={formatCount(
                   stats.channelsByPlatform.reduce((s, c) => s + c.count, 0)
                 )}
-                hint={stats.channelsByPlatform
-                  .map((c) => `${c.platform}: ${c.count}`)
-                  .join(" · ")}
+                hint={[
+                  ...stats.channelsByPlatform.map((c) => `${c.platform}: ${c.count}`),
+                  ...(stats.channelsDisconnected
+                    ? [`đã ngắt: ${formatCount(stats.channelsDisconnected)}`]
+                    : []),
+                ].join(" · ")}
               />
               <StatCard
                 label="Tài khoản nhân viên của các shop"

@@ -75,6 +75,11 @@ import { TourDialog } from "@/components/tour/tour-dialog";
 import { CHANNELS_TOUR, LAZADA_TOUR, TIKTOK_TOUR, type GuideTour } from "@/lib/guide-tours";
 
 const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
+// 09/10/2026: gian OFFLINE ẨN khỏi hộp "Kết nối gian hàng" của chủ shop thường
+// — chưa có luồng nhập đơn tay nên gian này chỉ gây nhiễu (HQ thấy 2 gian
+// OFFLINE 0 đơn do khách bấm thử). Quản trị nền tảng vẫn tạo được để demo.
+// CONNECTABLE giữ nguyên để GOM/HIỂN THỊ gian OFFLINE đã có từ trước.
+const CONNECTABLE_FOR_SHOP: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK"];
 
 // Khoá sessionStorage nhớ GIAN ĐÍCH của luồng "Kết nối lại" khi code uỷ quyền
 // phải đi vòng về máy dev (?shopee=code / ?lazada=code) — backend đối chiếu
@@ -169,11 +174,14 @@ function ConnectDialog({
   initialLazadaCode,
   lazadaSubscribeUrl,
   onShowGuide,
+  platformAdmin,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   existing: Channel[];
   onDone: () => void;
+  /** Quản trị nền tảng mới thấy lựa chọn OFFLINE (xem CONNECTABLE_FOR_SHOP). */
+  platformAdmin: boolean;
   /**
    * Link gói Hubsell trên Lazada Service Marketplace — khác null khi backend
    * cầm app ISV (Lazada kiểm đơn đặt gói lúc ủy quyền, tự đưa seller sang
@@ -324,7 +332,7 @@ function ConnectDialog({
             >
               {/* TikTok mở cho mọi chủ shop từ 16/09/2026 (ISV TikTok đã duyệt,
                   hàng đợi webhook đã có) — anh Trung chốt bỏ khóa "sắp ra mắt". */}
-              {CONNECTABLE.map((n) => (
+              {(platformAdmin ? CONNECTABLE : CONNECTABLE_FOR_SHOP).map((n) => (
                 <option key={n} value={n}>
                   {CHANNEL_META[n].label}
                 </option>
@@ -1303,14 +1311,18 @@ export default function ChannelsPage() {
                               </>
                             ) : (
                               <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleReconnect(c)}
-                                >
-                                  <PlugZap className="size-3.5" />
-                                  Kết nối lại
-                                </Button>
+                                {/* Gian OFFLINE đã ngắt: chủ shop thường không nối lại
+                                    được nữa (backend 403 từ 09/10/2026) — chỉ còn Xóa gian. */}
+                                {(platformAdmin || c.channelName !== "OFFLINE") && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleReconnect(c)}
+                                  >
+                                    <PlugZap className="size-3.5" />
+                                    Kết nối lại
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -1362,6 +1374,7 @@ export default function ChannelsPage() {
         }}
         existing={channels}
         onDone={load}
+        platformAdmin={platformAdmin}
         initialLazadaCode={lazadaPrefill ?? undefined}
         lazadaSubscribeUrl={lazadaSubscribeUrl}
         onShowGuide={(p) => {

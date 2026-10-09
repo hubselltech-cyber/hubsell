@@ -4636,7 +4636,10 @@ export interface PlatformStats {
     newOwners7d: number;
     newOwners30d: number;
   };
+  /** Chỉ gian ĐANG HOẠT ĐỘNG theo sàn (09/10/2026); gian đã ngắt ở dưới. */
   channelsByPlatform: { platform: ChannelName; count: number }[];
+  /** Tổng gian đã ngắt (mọi sàn) — backend cũ không có trường này. */
+  channelsDisconnected?: number;
   orders: { total: number; last24h: number };
   webhooks: {
     shopee: { status: string; count: number }[];
