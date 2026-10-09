@@ -14,6 +14,7 @@ import {
   getIncomeOverview,
 } from "../src/integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../src/integrations/shopee/service";
+import { LEDGER_FORMULA_VERSION } from "../src/lib/order-ledger";
 
 const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
 
@@ -123,6 +124,78 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
       for (const r of rows) {
         console.log(
           `  DB ${r.s}: ${Number(r.n)} đơn (${Number(r.old)} đơn >30 ngày), Tổng tiền ${fmt(Number(r.tot))}, Σ expectedPayout ${fmt(Number(r.est))} trên ${Number(r.nest)} đơn có ước tính`,
+        );
+      }
+
+      // 4) SỔ CÁI (nguồn của bảng Phân bổ dòng tiền) so với bảng Order: ảnh anh
+      // Trung 09/10 tối: ANO "chờ đối soát" 399,8tr trong khi Order chỉ 1,46tr.
+      const led = await prisma.$queryRaw<
+        { s: string; n: unknown; v: unknown; dirty: unknown; stale: unknown }[]
+      >`
+        SELECT "shippingStatus"::text AS s, count(*) AS n,
+          COALESCE(sum("platformRevenue"), 0) AS v,
+          count(*) FILTER (WHERE "dirtyAt" IS NOT NULL) AS dirty,
+          count(*) FILTER (WHERE "formulaVersion" <> ${LEDGER_FORMULA_VERSION}::int) AS stale
+        FROM "order_ledger"
+        WHERE "channelId" = ${channel.id} AND NOT "isSettled" AND "shippingStatus" IN ('SHIPPING', 'DELIVERED')
+        GROUP BY 1 ORDER BY 1
+      `;
+      for (const r of led) {
+        console.log(
+          `  SỔ CÁI ${r.s} chưa quyết toán: ${Number(r.n)} dòng, Σ platformRevenue ${fmt(Number(r.v))}, bẩn ${Number(r.dirty)}, công thức cũ ${Number(r.stale)}`,
+        );
+      }
+      // Dòng sổ cái nói CHƯA quyết toán nhưng Order nói ĐÃ / đã hủy — mẫu 5 dòng.
+      const mism = await prisma.$queryRaw<
+        {
+          code: string;
+          ls: string;
+          os: string;
+          oset: boolean;
+          lv: unknown;
+          comp: Date | null;
+          dirty: Date | null;
+          upd: Date;
+        }[]
+      >`
+        SELECT l."orderCode" AS code, l."shippingStatus"::text AS ls, o."shippingStatus"::text AS os,
+          o."isSettled" AS oset, l."platformRevenue" AS lv, l."computedAt" AS comp, l."dirtyAt" AS dirty, o."updatedAt" AS upd
+        FROM "order_ledger" l JOIN "Order" o ON o.id = l."orderId"
+        WHERE l."channelId" = ${channel.id} AND NOT l."isSettled" AND l."shippingStatus" IN ('SHIPPING', 'DELIVERED')
+          AND (o."isSettled" OR o."shippingStatus" <> l."shippingStatus")
+        ORDER BY l."platformRevenue" DESC
+        LIMIT 5
+      `;
+      const [mc] = await prisma.$queryRaw<{ n: unknown; v: unknown }[]>`
+        SELECT count(*) AS n, COALESCE(sum(l."platformRevenue"), 0) AS v
+        FROM "order_ledger" l JOIN "Order" o ON o.id = l."orderId"
+        WHERE l."channelId" = ${channel.id} AND NOT l."isSettled" AND l."shippingStatus" IN ('SHIPPING', 'DELIVERED')
+          AND (o."isSettled" OR o."shippingStatus" <> l."shippingStatus")
+      `;
+      console.log(
+        `  SỔ CÁI lệch Order: ${Number(mc.n)} dòng, Σ ${fmt(Number(mc.v))}`,
+      );
+      // Dòng sổ MỒ CÔI (Order đã xóa) hoặc TRÙNG (một orderId nằm ở hai createdDate).
+      const [orph] = await prisma.$queryRaw<
+        { orphan: unknown; ov: unknown; dup: unknown; dv: unknown }[]
+      >`
+        SELECT
+          (SELECT count(*) FROM "order_ledger" l LEFT JOIN "Order" o ON o.id = l."orderId"
+             WHERE l."channelId" = ${channel.id} AND o.id IS NULL) AS orphan,
+          (SELECT COALESCE(sum(l."platformRevenue"), 0) FROM "order_ledger" l LEFT JOIN "Order" o ON o.id = l."orderId"
+             WHERE l."channelId" = ${channel.id} AND o.id IS NULL AND NOT l."isSettled") AS ov,
+          (SELECT count(*) FROM (SELECT "orderId" FROM "order_ledger" WHERE "channelId" = ${channel.id}
+             GROUP BY "orderId" HAVING count(*) > 1) d) AS dup,
+          (SELECT COALESCE(sum(v), 0) FROM (SELECT sum("platformRevenue") - max("platformRevenue") AS v FROM "order_ledger"
+             WHERE "channelId" = ${channel.id} AND NOT "isSettled" GROUP BY "orderId" HAVING count(*) > 1) d2) AS dv
+      `;
+      console.log(
+        `  SỔ CÁI mồ côi: ${Number(orph.orphan)} dòng (chưa quyết toán Σ ${fmt(Number(orph.ov))}); trùng orderId: ${Number(orph.dup)} đơn (phần thừa chưa quyết toán Σ ${fmt(Number(orph.dv))})`,
+      );
+
+      for (const m of mism) {
+        console.log(
+          `    ${m.code}: sổ ${m.ls} / Order ${m.os}${m.oset ? " ĐÃ quyết toán" : ""}, ${fmt(Number(m.lv))}, sổ tính ${m.comp?.toISOString().slice(0, 16) ?? "-"}, bẩn ${m.dirty ? m.dirty.toISOString().slice(0, 16) : "không"}, Order sửa ${m.upd.toISOString().slice(0, 16)}`,
         );
       }
     } catch (e) {
