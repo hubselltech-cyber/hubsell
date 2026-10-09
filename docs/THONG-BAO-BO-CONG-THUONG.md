@@ -135,3 +135,25 @@ Ba con số dưới đây chưa có trong Điều khoản trước 25/09, em th�
 - Yêu cầu xóa tài khoản xử lý trong **30 ngày** (đã có ở /xoa-tai-khoan và /privacy, nay nhắc lại).
 
 Một câu ở /payment mục 3 đã sửa cho khớp cơ chế thật: trước ghi "nâng gói giữa kỳ Hubsell tính phần chênh lệch cho thời gian còn lại", nhưng code không bù trừ ngày (kỳ mới bắt đầu ngay, app cảnh báo trước khi trả — anh chốt 25/09). Nay ghi đúng như vậy.
+
+## 9. Lần 1 bị từ chối (07/10/2026) và nộp lại lần 2 (09/10/2026)
+
+**Hồ sơ nộp 04/10/2026 20:34** (tạo trên online.gov.vn, loại "Nền tảng TMĐT kinh doanh trực tiếp có đặt hàng trực tuyến") bị **từ chối 07/10 09:28**, chuyên viên Phạm Văn Dương, Sở Công Thương Hà Nội. Lý do nguyên văn: "Nội dung công khai trên nền tảng thương mại điện tử chưa đầy đủ theo quy định tại Nghị định số 248/NĐ-CP ngày 30/6/2026… Đề nghị Quý đơn vị bổ sung, hoàn thiện theo quy định. Mọi thắc mắc vui lòng liên hệ: Phòng Quản lý Thương mại – Sở Công Thương thành phố Hà Nội, điện thoại: 024.22155502." Cổng KHÔNG gửi email; hồ sơ bị từ chối không có nút sửa → phải tạo hồ sơ mới.
+
+**Đối chiếu với nguyên văn Điều 4–16 NĐ 248/2026** (lấy từ thuvienphapluat 09/10), những mục "ít nhất phải có" mà hubsell.vn còn thiếu trước 09/10:
+
+| Điều | Thiếu | Đã bổ sung 09/10 (landing fac8712, app 9c3f717) |
+|---|---|---|
+| 4 | số, ngày cấp, nơi cấp GCN ĐKDN; điện thoại | footer + /quy-che: GCN số 0111626360 cấp 09/09/2026 tại Phòng ĐKKD&TCDN – Sở Tài chính HN; điện thoại 0965 863 292; người đại diện; đối tác thanh toán payOS |
+| 5 | 8 khoản a–h chưa gọi tên; quy trình xem/sửa/xóa/khiếu nại bảo mật chưa thành bước | /quy-che Điều 5 + /privacy mục 15 tóm tắt đúng a–h |
+| 6 | quyền nghĩa vụ chủ quản a–i, khách hàng a–d | /quy-che Điều 6 liệt kê đủ |
+| 7 | trình tự theo bước; thời hạn phản hồi ban đầu + dự kiến theo từng loại vấn đề; công cụ hỗ trợ | /quy-che Điều 7: 5 bước + bảng 6 loại vấn đề + 4 công cụ |
+| 8 | thời điểm áp dụng biểu giá; cách tính | /quy-che Điều 8 |
+| 9 | giới hạn thời gian cung cấp, phạm vi địa lý, tính khả dụng | /quy-che Điều 9 a–đ |
+| 10 | Ví Hubsell (ưu đãi quy đổi) chưa nêu trong chính sách thanh toán; phương thức hoàn tiền | /quy-che Điều 10 |
+| 11–14 | chưa nói rõ "không áp dụng" và vì sao | /quy-che Điều 11–14 |
+| 15 | thiết bị phù hợp, số thiết bị dùng đồng thời, mô tả tính năng | /quy-che Điều 15 a–c |
+| 16 | thời điểm hợp đồng chấm dứt khi khách chấm dứt; quy trình/thời hạn phản hồi | /quy-che Điều 16 1–4 |
+| Chung | chính sách chỉ ở landing, chưa có ở nơi đăng ký/thanh toán; link footer đặt tên chung | 12 link footer đặt tên theo Điều (#dieu-N); trang đăng nhập app có link Điều khoản / Bảo mật / Quy chế |
+
+**Nộp lại:** chạy lại `node scripts/export-legal-pdfs.mjs https://hubsell.vn` (nay 10 PDF, thêm trang đăng nhập app) → online.gov.vn → Tạo hồ sơ mới → điền như lần 1 (giá trị ở mục 3–5), 8 slot tài liệu: 1=02 privacy, 2=01 quy-che, 3=06 bảng giá, 4=04 payment, 5=01 quy-che, 6=01 quy-che, 7=05 ho-tro, 8=03 terms (+ 10 trang đăng nhập app nếu cho nhiều tệp) → Lưu & Gửi duyệt. Nếu từ chối lần 2: gọi 024.22155502 hỏi đích danh mục thiếu trước khi sửa tiếp.
