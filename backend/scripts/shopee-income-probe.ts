@@ -9,7 +9,10 @@
 
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
-import { getIncomeDetail, getIncomeOverview } from "../src/integrations/shopee/client";
+import {
+  getIncomeDetail,
+  getIncomeOverview,
+} from "../src/integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../src/integrations/shopee/service";
 
 const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
@@ -33,7 +36,9 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
   const today = new Date().toISOString().slice(0, 10);
 
   for (const channel of channels) {
-    console.log(`\n===== ${channel.shopName} (${channel.externalShopId}) =====`);
+    console.log(
+      `\n===== ${channel.shopName} (${channel.externalShopId}) =====`,
+    );
     try {
       const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
 
@@ -42,8 +47,12 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
       console.log("get_income_overview (nguyên văn):", JSON.stringify(ov));
       const totals = ov.response?.total_income ?? ov.total_income;
       if (totals) {
-        console.log(`  Chưa thanh toán (pending_amount): ${fmt(Number(totals.pending_amount ?? 0))}`);
-        console.log(`  Đã thanh toán  (released_amount): ${fmt(Number(totals.released_amount ?? 0))}`);
+        console.log(
+          `  Chưa thanh toán (pending_amount): ${fmt(Number(totals.pending_amount ?? 0))}`,
+        );
+        console.log(
+          `  Đã thanh toán  (released_amount): ${fmt(Number(totals.released_amount ?? 0))}`,
+        );
       }
 
       // 2) Từng đơn Pending — cộng lại để so với pending_amount và đếm đơn.
@@ -67,7 +76,10 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
         const list = block?.list ?? [];
         if (!shapeLogged && list[0]) {
           shapeLogged = true;
-          console.log("  Mẫu dòng Pending (nguyên văn):", JSON.stringify(list[0]));
+          console.log(
+            "  Mẫu dòng Pending (nguyên văn):",
+            JSON.stringify(list[0]),
+          );
         }
         for (const it of list) {
           count++;
@@ -79,12 +91,14 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
         pages++;
       } while (cursor && pages < 200);
       console.log(
-        `  get_income_detail Pending: ${count} dòng / ${pages} trang, Σ estimated_escrow_amount = ${fmt(sum)}`
+        `  get_income_detail Pending: ${count} dòng / ${pages} trang, Σ estimated_escrow_amount = ${fmt(sum)}`,
       );
       for (const [k, n] of statuses) console.log(`    ${n} dòng: ${k}`);
 
       // 3) Số app đang có trong DB cho cùng gian — để thấy lệch ở đâu.
-      const [open] = await prisma.$queryRaw<{ ship: unknown; deliv: unknown; est: unknown; n: unknown }[]>`
+      const [open] = await prisma.$queryRaw<
+        { ship: unknown; deliv: unknown; est: unknown; n: unknown }[]
+      >`
         SELECT
           COALESCE(sum(CASE WHEN "shippingStatus" = 'SHIPPING'  THEN "totalAmount" END), 0) AS ship,
           COALESCE(sum(CASE WHEN "shippingStatus" = 'DELIVERED' THEN "totalAmount" END), 0) AS deliv,
@@ -94,7 +108,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
         WHERE "channelId" = ${channel.id} AND NOT "isSettled" AND "shippingStatus" <> 'CANCELLED'
       `;
       console.log(
-        `  DB app: ${Number(open.n)} đơn chưa quyết toán; Tổng tiền đang giao ${fmt(Number(open.ship))}, đã giao ${fmt(Number(open.deliv))}, Σ expectedPayout ${fmt(Number(open.est))}`
+        `  DB app: ${Number(open.n)} đơn chưa quyết toán; Tổng tiền đang giao ${fmt(Number(open.ship))}, đã giao ${fmt(Number(open.deliv))}, Σ expectedPayout ${fmt(Number(open.est))}`,
       );
     } catch (e) {
       console.log("✗ Lỗi gọi API:", (e as Error).message);
