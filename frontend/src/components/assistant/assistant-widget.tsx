@@ -44,76 +44,56 @@ const CHIP_CLASS =
   "rounded-full border border-emerald-200 bg-card px-3 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50";
 
 /**
- * Avatar: orb navy tối + vành gradient + MŨI TÊN THẬT tách từ logo (chốt
- * 21/08 — /assistant-arrow.png là đúng pixel mũi tên trong logo-hubsell.png,
- * đã tách nền trắng + tách khỏi chữ H bằng script vùng liên thông; logo gốc
- * 24bpp nền trắng đặc nên không đặt thẳng lên nền tối được). Sparkle nhỏ góc
- * trên trái làm điểm nhấn AI, chấm xanh góc dưới phải cân bố cục.
+ * Avatar (chốt 09/10 — anh Trung chọn phương án B trong 4 bản xem thử):
+ * orb navy tối + vành gradient + BONG BÓNG CHAT emerald có sparkle 4 cánh
+ * trắng bên trong — nói đúng việc "đây là nơi hỏi", không trùng hình AI đại
+ * trà (sparkle trần) lẫn bản mũi tên PNG 21/08 (mờ ở 48px, anh chê xấu).
+ * Vẽ thuần vector nên sắc ở mọi cỡ, không cần ảnh ngoài.
  */
 function AssistantAvatar({ className }: { className?: string }) {
   const uid = React.useId();
-  const spark = `hb-spark-${uid}`;
+  const ring = `hb-ring-${uid}`;
+  const bubble = `hb-bubble-${uid}`;
   const orb = `hb-orb-${uid}`;
-  const halo = `hb-halo-${uid}`;
-  const shadow = `hb-shadow-${uid}`;
   return (
     <svg viewBox="0 0 48 48" aria-hidden="true" className={className}>
       <defs>
-        <linearGradient id={spark} x1="10%" y1="90%" x2="90%" y2="10%">
+        <linearGradient id={ring} x1="10%" y1="90%" x2="90%" y2="10%">
           <stop offset="0%" stopColor="#4ade80" />
           <stop offset="55%" stopColor="#2ee08d" />
           <stop offset="100%" stopColor="#059669" />
+        </linearGradient>
+        <linearGradient id={bubble} x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#10b981" />
+          <stop offset="100%" stopColor="#047857" />
         </linearGradient>
         <radialGradient id={orb} cx="30%" cy="22%" r="95%">
           <stop offset="0%" stopColor="#17293f" />
           <stop offset="100%" stopColor="#050b16" />
         </radialGradient>
-        {/* Quầng sáng tỏa sau mũi tên — như được rọi đèn từ trong orb */}
-        <radialGradient id={halo} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
-          <stop offset="60%" stopColor="#10b981" stopOpacity="0.14" />
-          <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-        </radialGradient>
-        <filter id={shadow} x="-30%" y="-30%" width="160%" height="160%">
-          <feDropShadow dx="0" dy="0.8" stdDeviation="0.9" floodColor="#02100a" floodOpacity="0.55" />
-        </filter>
       </defs>
       <circle cx="24" cy="24" r="24" fill={`url(#${orb})`} />
-      <circle cx="25" cy="22.5" r="14.5" fill={`url(#${halo})`} />
-      {/* Phản quang mép trên — cảm giác quả cầu kính */}
-      <path
-        d="M8.5 14.5 A19 19 0 0 1 23.5 5.5"
-        fill="none"
-        stroke="#ffffff"
-        strokeOpacity="0.12"
-        strokeWidth="1"
-        strokeLinecap="round"
-      />
       <circle
         cx="24"
         cy="24"
         r="21.4"
         fill="none"
-        stroke={`url(#${spark})`}
+        stroke={`url(#${ring})`}
         strokeOpacity="0.6"
         strokeWidth="1.5"
       />
-      {/* Mũi tên tăng trưởng nguyên bản của logo (ảnh 284x223, giữ tỷ lệ) */}
-      <image
-        href="/assistant-arrow.png"
-        x="8.5"
-        y="11.9"
-        width="31.5"
-        height="24.7"
-        filter={`url(#${shadow})`}
-      />
-      {/* Sparkle nhỏ — điểm nhấn AI, nhấp nháy thở chậm cho avatar có sự sống */}
+      {/* Bong bóng chat, đuôi chỉ xuống góc trái dưới */}
       <path
-        d="M14 11c.6 2.4 1.7 3.5 4.1 4.1-2.4.6-3.5 1.7-4.1 4.1-.6-2.4-1.7-3.5-4.1-4.1 2.4-.6 3.5-1.7 4.1-4.1Z"
-        fill="#6ee7a7"
+        d="M14 13.5h20a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4h-9.5L18 37v-4.5h-4a4 4 0 0 1-4-4v-11a4 4 0 0 1 4-4z"
+        fill={`url(#${bubble})`}
+      />
+      {/* Sparkle 4 cánh — điểm nhấn AI, thở chậm cho avatar có sự sống */}
+      <path
+        d="M24 17c.9 3.6 2.5 5.2 6.1 6.1-3.6.9-5.2 2.5-6.1 6.1-.9-3.6-2.5-5.2-6.1-6.1 3.6-.9 5.2-2.5 6.1-6.1z"
+        fill="#ffffff"
         className="animate-[pulse_3s_ease-in-out_infinite] motion-reduce:animate-none"
       />
-      <circle cx="36.5" cy="32" r="1.5" fill="#34d399" opacity="0.9" />
+      <circle cx="32.5" cy="18.5" r="1.2" fill="#d1fae5" />
     </svg>
   );
 }
