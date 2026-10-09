@@ -159,7 +159,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
         }[]
       >`
         SELECT l."orderCode" AS code, l."shippingStatus"::text AS ls, o."shippingStatus"::text AS os,
-          o."isSettled" AS oset, l."platformRevenue" AS lv, l."computedAt" AS comp, l."dirtyAt" AS dirty, o."updatedAt" AS upd
+          o."isSettled" AS oset, l."platformRevenue" AS lv, l."computedAt" AS comp, l."dirtyAt" AS dirty
         FROM "order_ledger" l JOIN "Order" o ON o.id = l."orderId"
         WHERE l."channelId" = ${channel.id} AND NOT l."isSettled" AND l."shippingStatus" IN ('SHIPPING', 'DELIVERED')
           AND (o."isSettled" OR o."shippingStatus" <> l."shippingStatus")
@@ -195,7 +195,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN") + " ₫";
 
       for (const m of mism) {
         console.log(
-          `    ${m.code}: sổ ${m.ls} / Order ${m.os}${m.oset ? " ĐÃ quyết toán" : ""}, ${fmt(Number(m.lv))}, sổ tính ${m.comp?.toISOString().slice(0, 16) ?? "-"}, bẩn ${m.dirty ? m.dirty.toISOString().slice(0, 16) : "không"}, Order sửa ${m.upd.toISOString().slice(0, 16)}`,
+          `    ${m.code}: sổ ${m.ls} / Order ${m.os}${m.oset ? " ĐÃ quyết toán" : ""}, ${fmt(Number(m.lv))}, sổ tính ${m.comp?.toISOString().slice(0, 16) ?? "-"}, bẩn ${m.dirty ? m.dirty.toISOString().slice(0, 16) : "không"}`,
         );
       }
     } catch (e) {
