@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { PhoneInput } from "@/components/auth/phone-input";
 import { LegalLink, SocialAuthButtons } from "@/components/auth/social-buttons";
-import { PRIVACY_URL, TERMS_URL } from "@/lib/legal";
+import { PRIVACY_URL, QUY_CHE_URL, TERMS_URL } from "@/lib/legal";
 import {
   login,
   register as apiRegister,
@@ -628,6 +628,16 @@ export default function LoginPage() {
             (Vercel), lộ credentials admin là lộ dữ liệu shop thật. */}
         <p className="text-center text-xs text-muted-foreground">
           Hubsell · Quản lý bán hàng đa kênh
+        </p>
+        {/* 09/10/2026: NĐ 248/2026 bắt công khai chính sách ngay trên nền tảng
+            nơi khách đăng ký/thanh toán, không chỉ trên landing (Sở Công Thương
+            từ chối hồ sơ thông báo vì "nội dung công khai chưa đầy đủ"). */}
+        <p className="text-center text-xs text-muted-foreground">
+          <LegalLink href={TERMS_URL}>Điều khoản dịch vụ</LegalLink>
+          {" · "}
+          <LegalLink href={PRIVACY_URL}>Chính sách bảo mật</LegalLink>
+          {" · "}
+          <LegalLink href={QUY_CHE_URL}>Quy chế hoạt động nền tảng</LegalLink>
         </p>
       </div>
     </div>
