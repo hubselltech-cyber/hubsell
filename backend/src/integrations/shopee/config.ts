@@ -84,6 +84,13 @@ export const SHOPEE_PATHS = {
   escrowDetail: "/api/v2/payment/get_escrow_detail",
   /** Lịch sử giao dịch ví sàn (rút tiền, phí, giải ngân...) — shop API, READ-ONLY. */
   walletTransactionList: "/api/v2/payment/get_wallet_transaction_list",
+  /** TỔNG thu nhập theo trạng thái chi trả — pending_amount = "Chưa thanh toán"
+   *  màn Doanh thu Seller Center (API mới 14/10/2025, shop VN = Local: chỉ
+   *  Pending/Released, không có To Release). READ-ONLY. */
+  incomeOverview: "/api/v2/payment/get_income_overview",
+  /** Từng đơn trong một trạng thái thu nhập (Pending: estimated_escrow_amount +
+   *  estimated_payout_time; Released: lọc theo ngày chi, ≤14 ngày). READ-ONLY. */
+  incomeDetail: "/api/v2/payment/get_income_detail",
   /** Hiệu suất quảng cáo CPC toàn shop theo NGÀY (expense = tiền ads đã tiêu).
    *  LƯU Ý: Ads API có thể cần bật quyền riêng trên Console — lỗi permission
    *  thì liên hệ Shopee mở module Ads cho app. */

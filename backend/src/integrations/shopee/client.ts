@@ -1488,6 +1488,107 @@ export async function getEscrowDetail(
   );
 }
 
+// ---------- Tổng quan thu nhập Seller Center (READ-ONLY) ----------
+
+/**
+ * Trạng thái thu nhập Shopee: 1 = Released (đã chi), 2 = Pending (chưa thanh
+ * toán). Shop CB mới có 0 = To Release; shop VN (Local) gửi 0 bị error_param.
+ */
+export type ShopeeIncomeStatus = 0 | 1 | 2;
+
+export interface ShopeeIncomeTotals {
+  /** Tổng tiền CHƯA chi (Local: đơn trước ESCROW_PAID) = ô "Chưa thanh toán". */
+  pending_amount?: number;
+  /** Chỉ shop CB: xếp hàng chi kỳ tới. */
+  to_release_amount?: number;
+  /** Tổng đã chi về ví. */
+  released_amount?: number;
+}
+
+export interface ShopeeIncomeOverviewData extends ShopeeEnvelope {
+  /** Docs 10/2025: ví dụ response đặt total_income NGANG HÀNG error/message,
+   *  bảng tham số lại ghi trong `response` — đọc cả hai chỗ, probe sẽ chốt. */
+  response?: {
+    latest_payout_date?: string;
+    total_income?: ShopeeIncomeTotals;
+  };
+  total_income?: ShopeeIncomeTotals;
+}
+
+/** GET get_income_overview — một call/gian, trả tổng theo trạng thái. */
+export async function getIncomeOverview(
+  params: { accessToken: string; shopId: string; incomeStatus?: ShopeeIncomeStatus },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeIncomeOverviewData> {
+  const extra: Array<[string, string | number]> =
+    params.incomeStatus == null ? [] : [["income_status", params.incomeStatus]];
+  return callShopGet<ShopeeIncomeOverviewData>(
+    SHOPEE_PATHS.incomeOverview,
+    params.accessToken,
+    params.shopId,
+    extra,
+    "get_income_overview",
+    cfg
+  );
+}
+
+export interface ShopeeIncomeDetailItem {
+  order_sn?: string;
+  payment_method?: string;
+  description?: string; // "Order Income" / "Adjustment"…
+  status?: string; // chuỗi mô tả theo ngôn ngữ shop
+  currency?: string;
+  estimated_escrow_amount?: number; // Pending
+  estimated_payout_time?: number; // epoch giây, Pending
+  to_release_amount?: number; // CB
+  released_amount?: number; // Released
+  actual_payout_time?: number; // epoch giây, Released
+  creation_date?: number; // epoch giây
+}
+
+export interface ShopeeIncomeDetailBlock {
+  list?: ShopeeIncomeDetailItem[];
+  next_page?: { cursor?: string; page_size?: number };
+}
+
+export interface ShopeeIncomeDetailData extends ShopeeEnvelope {
+  response?: { income_detail_list?: ShopeeIncomeDetailBlock };
+  income_detail_list?: ShopeeIncomeDetailBlock;
+}
+
+/**
+ * GET get_income_detail — từng đơn trong một trạng thái thu nhập. date_from/
+ * date_to bắt buộc gửi nhưng chỉ có nghĩa với Released (≤14 ngày); Pending trả
+ * MỌI đơn đang chờ. Phân trang bằng cursor ("" trang đầu, rỗng = hết).
+ */
+export async function getIncomeDetail(
+  params: {
+    accessToken: string;
+    shopId: string;
+    incomeStatus: ShopeeIncomeStatus;
+    dateFrom: string; // YYYY-MM-DD
+    dateTo: string; // YYYY-MM-DD
+    cursor?: string;
+    pageSize?: number;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeIncomeDetailData> {
+  return callShopGet<ShopeeIncomeDetailData>(
+    SHOPEE_PATHS.incomeDetail,
+    params.accessToken,
+    params.shopId,
+    [
+      ["income_status", params.incomeStatus],
+      ["date_from", params.dateFrom],
+      ["date_to", params.dateTo],
+      ["cursor", params.cursor ?? ""],
+      ["page_size", params.pageSize ?? 50],
+    ],
+    "get_income_detail",
+    cfg
+  );
+}
+
 // ---------- Ví sàn (READ-ONLY) ----------
 
 /** Một dòng giao dịch ví Shopee (rút tiền / giải ngân / phí…). */
