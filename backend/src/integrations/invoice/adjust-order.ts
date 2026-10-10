@@ -42,7 +42,6 @@ import {
   type IssueOrderResult,
   type ResolvedInvoiceBuyer,
 } from "./issue-order";
-import { isPublishAllowed } from "./misa-safety";
 import type { InvoiceLine } from "./types";
 import { canRecheckLater, keptPendingMessage, OUTCOME_UNKNOWN_CODE, recheckInProgressMessage } from "./unknown-outcome";
 
@@ -589,45 +588,9 @@ export async function decideScopeFromPlatformReturn(
       };
 }
 
-/**
- * Hook TỰ ĐỘNG THEO SÀN — gọi khi returns-sync thấy trạng thái yêu cầu hoàn
- * chuyển VÀO tập PLATFORM_RETURN_DONE_STATUSES. Fire-and-forget — không được
- * chặn vòng sync.
- */
-export function maybeAutoAdjustOnPlatformReturn(ownerId: string, orderId: string): void {
-  void (async () => {
-    if (!isPublishAllowed()) return;
-    const cfg = await prisma.invoiceConfig.findFirst({
-      where: { ownerId, channelId: null },
-      select: { autoAdjustEnabled: true },
-    });
-    if (!cfg?.autoAdjustEnabled) return;
-    const original = await prisma.invoiceLog.findFirst({
-      where: { ownerId, orderId, status: InvoiceLogStatus.ISSUED, adjustmentForLogId: null },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, orderCode: true, totalAmount: true },
-    });
-    if (!original) return; // đơn chưa từng xuất hóa đơn
-
-    const decided = await decideScopeFromPlatformReturn(orderId, Number(original.totalAmount));
-    if (!decided) return; // sàn chưa báo số — lượt quét sau tính tiếp
-
-    const r = await issueAdjustmentForOrder(
-      ownerId,
-      { userId: ownerId },
-      original.id,
-      decided.reason,
-      decided.scope
-    );
-    if (!r.ok && r.httpStatus !== 409) {
-      console.error(
-        `[auto-adjust/sàn] Đơn ${original.orderCode}: ${r.error ?? "lỗi không xác định"}`
-      );
-    }
-  })().catch((err) => {
-    console.error("[auto-adjust/sàn] Lỗi không bắt được:", err);
-  });
-}
+// Hook tự động theo sàn (fire-and-forget trong RAM, trước lát 11) đã gỡ ở bước 6c
+// (10/10/2026): điểm vào duy nhất nay là services/invoice-requests.ts
+// autoAdjustOnPlatformReturn — ghi yêu cầu ADJUST nguồn AUTO_RETURN, làn của shop làm.
 
 // LƯU Ý LỊCH SỬ (25/08 rạng sáng): từng có hook "lưới vét" bắn từ luồng kho
 // nhập hàng hoàn (RECEIVED_INTACT) — ĐÃ GỠ theo chỉ đạo anh Trung nhắc lần 2:

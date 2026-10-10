@@ -2,9 +2,9 @@
 // ĐIỀU CHỈNH TỰ ĐỘNG KHI SÀN CHỐT HOÀN THÀNH YÊU CẦU BỀN — hóa đơn bước 5, lát 11
 // (03/10/2026). Chạy trên database dev. Nhà cung cấp thay bằng adapter giả; KHÔNG chạm MISA.
 //
-//   1. Chế độ legacy: "before" không ghi gì (đường cũ giữ nguyên).
-//   2. Chế độ queue: "before" ghi MỘT dòng giữ chỗ (không gọi nhà cung cấp, gọi hai lần
-//      vẫn một dòng); "after" thả cho chạy; làn lập điều chỉnh đúng phạm vi sàn báo.
+//   1. (Ca chế độ legacy đã bỏ cùng đường cũ ở bước 6c, 10/10/2026.)
+//   2. "before" ghi MỘT dòng giữ chỗ (không gọi nhà cung cấp, gọi hai lần vẫn một
+//      dòng); "after" thả cho chạy; làn lập điều chỉnh đúng phạm vi sàn báo.
 //   3. Shop tắt công tắc / đơn chưa có hóa đơn / hóa đơn đã có điều chỉnh → không ghi.
 //   4. Sàn chưa báo số → hẹn lại 60 phút; có số rồi → lập đúng phần tiền hoàn.
 //   5. Đơn chưa mang trạng thái "hoàn đã chốt" (lượt ghi đơn chưa xong) → xem lại sau 1 phút.
@@ -126,7 +126,6 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  process.env.INVOICE_AUTO_ADJUST_MODE = "queue";
   atProvider = {};
   createCalls = [];
   createResult = issuedNow;
@@ -155,7 +154,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  delete process.env.INVOICE_AUTO_ADJUST_MODE;
   await whenInvoiceLanesIdle();
 });
 
@@ -169,14 +167,7 @@ afterAll(async () => {
 });
 
 describe("Lát 11: ghi yêu cầu điều chỉnh tự động", () => {
-  it("chế độ legacy: 'before' không ghi gì", async () => {
-    process.env.INVOICE_AUTO_ADJUST_MODE = "legacy";
-    const o = await issuedOriginal();
-    await autoAdjustOnPlatformReturn(fx.userId, o.orderId, "before");
-    expect(await prisma.invoiceRequest.count({ where: { ownerId: fx.userId } })).toBe(0);
-  });
-
-  it("chế độ queue: 'before' ghi MỘT dòng giữ chỗ, gọi hai lần vẫn một dòng; 'after' thả; làn lập đúng phạm vi", async () => {
+  it("'before' ghi MỘT dòng giữ chỗ, gọi hai lần vẫn một dòng; 'after' thả; làn lập đúng phạm vi", async () => {
     const o = await issuedOriginal();
     await autoAdjustOnPlatformReturn(fx.userId, o.orderId, "before");
     await autoAdjustOnPlatformReturn(fx.userId, o.orderId, "before"); // lượt đồng bộ sau thấy lại lần chuyển trạng thái

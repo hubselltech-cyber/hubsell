@@ -6,7 +6,6 @@ import {
   DEAD_QUEUES,
   DEFAULT_EVT_ORDER_CONCURRENCY,
   DEFAULT_NOTIFY_POLL_SECONDS,
-  DEFAULT_INVOICE_AUTO_ADJUST_MODE,
   DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS,
   DEFAULT_INVOICE_SINGLE_WAIT_SECONDS,
   DEFAULT_STOCK_CHANNEL_CONCURRENCY,
@@ -14,7 +13,6 @@ import {
   DEFAULT_WORKER_POOL_MAX,
   EVT_ORDER_MAX_ATTEMPTS,
   evtOrderConcurrency,
-  invoiceAutoAdjustMode,
   invoiceRequestSweepSeconds,
   invoiceSingleWaitMs,
   listenNotifyEnabled,
@@ -198,11 +196,3 @@ describe("xuất một đơn + điều chỉnh tay qua làn (bước 5 lát 10)"
   });
 });
 
-describe("điều chỉnh tự động thành yêu cầu bền (bước 5 lát 11)", () => {
-  it("INVOICE_AUTO_ADJUST_MODE: chỉ nhận queue | legacy, sai thì về mặc định", () => {
-    expect(invoiceAutoAdjustMode({})).toBe(DEFAULT_INVOICE_AUTO_ADJUST_MODE);
-    expect(invoiceAutoAdjustMode({ INVOICE_AUTO_ADJUST_MODE: " Queue " })).toBe("queue");
-    expect(invoiceAutoAdjustMode({ INVOICE_AUTO_ADJUST_MODE: "legacy" })).toBe("legacy");
-    expect(invoiceAutoAdjustMode({ INVOICE_AUTO_ADJUST_MODE: "x" })).toBe(DEFAULT_INVOICE_AUTO_ADJUST_MODE);
-  });
-});

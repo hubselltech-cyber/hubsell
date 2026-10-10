@@ -262,30 +262,6 @@ export function invoiceSingleWaitMs(env: NodeJS.ProcessEnv = process.env): numbe
 }
 
 /**
- * ĐƯỜNG TỰ ĐIỀU CHỈNH KHI SÀN CHỐT HOÀN (bước 5 lát 11, 03/10/2026):
- *   · legacy — bắn một lệnh điều chỉnh chạy trong RAM đúng một lần lúc trạng thái hoàn
- *     chuyển vào nhóm đã chốt; hỏng (sàn chưa báo số, nhà cung cấp lỗi, worker đang
- *     deploy) là mất, chỉ còn nhãn "Cần điều chỉnh" cho chủ shop làm tay.
- *   · queue  — ghi một dòng invoice_requests (ADJUST, nguồn AUTO_RETURN); làn của shop
- *     làm và thử lại tới khi có kết luận.
- * Đưa lên HAI LẦN: lần một mặc định legacy (worker biết xử lý dòng AUTO_RETURN lên
- * trước — worker bản lát 10 gặp dòng chưa mang phạm vi sẽ hiểu là giảm TOÀN BỘ), lần
- * hai đổi mặc định sang queue. Đường lui: INVOICE_AUTO_ADJUST_MODE=legacy ở mọi tiến
- * trình chạy đồng bộ hoàn (worker, và web nếu có nút đồng bộ tay).
- */
-export type InvoiceAutoAdjustMode = "queue" | "legacy";
-/**
- * Lần một (78de0e5, 03/10/2026 14:18) mặc định legacy — worker biết xử lý dòng
- * AUTO_RETURN lên trước, đã kiểm prod 14:19. Lần hai đổi mặc định sang queue.
- */
-export const DEFAULT_INVOICE_AUTO_ADJUST_MODE: InvoiceAutoAdjustMode = "queue";
-
-export function invoiceAutoAdjustMode(env: NodeJS.ProcessEnv = process.env): InvoiceAutoAdjustMode {
-  const raw = (env.INVOICE_AUTO_ADJUST_MODE ?? "").trim().toLowerCase();
-  return raw === "queue" || raw === "legacy" ? raw : DEFAULT_INVOICE_AUTO_ADJUST_MODE;
-}
-
-/**
  * Nhịp lưới quét yêu cầu bấm tay tới hạn, giây. Mặc định 5 (docs 4.6 B — bằng lưới
  * quét đẩy tồn): tín hiệu pg-boss không tới thì chủ shop chờ thêm nhiều nhất chừng
  * này. Câu quét đi theo chỉ mục riêng phần chỉ chứa dòng chờ. Đổi bằng

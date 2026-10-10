@@ -30,7 +30,6 @@ import { InvoiceLogStatus, Prisma, ShippingStatus } from "@prisma/client";
 import {
   decideScopeFromPlatformReturn,
   issueAdjustmentForOrder,
-  maybeAutoAdjustOnPlatformReturn,
   PLATFORM_RETURN_DONE_STATUSES,
   type AdjustmentScope,
 } from "../integrations/invoice/adjust-order";
@@ -40,7 +39,6 @@ import { issueInvoiceForOrder, type IssueOrderResult } from "../integrations/inv
 import { OUTCOME_UNKNOWN_CODE } from "../integrations/invoice/unknown-outcome";
 import { prisma } from "../lib/prisma";
 import { enqueue, isQueueReady, QUEUES } from "../lib/queue";
-import { invoiceAutoAdjustMode } from "../lib/queue-config";
 import { notify } from "./notifications";
 
 /**
@@ -434,15 +432,12 @@ export async function awaitRequest(ownerId: string, id: string, timeoutMs: numbe
  *   · "before" (TRƯỚC khi ghi đơn): chế độ queue ghi một dòng yêu cầu giữ chỗ. Ghi
  *     trước + chỉ mục duy nhất = tiến trình chết giữa chừng thì lượt đồng bộ sau thấy
  *     lại đúng lần chuyển trạng thái đó và ghi lại, không mất và không trùng.
- *   · "after" (SAU khi đã ghi đơn + số lượng trả): chế độ queue thả yêu cầu cho chạy
- *     ngay; chế độ legacy bắn lệnh trong RAM như trước lát 11.
+ *   · "after" (SAU khi đã ghi đơn + số lượng trả): thả yêu cầu cho chạy ngay.
+ * (Đường cũ bắn lệnh trong RAM đúng một lần — INVOICE_AUTO_ADJUST_MODE=legacy — đã
+ * gỡ ở bước 6c, 10/10/2026.)
  * KHÔNG ném: tự điều chỉnh không được làm hỏng vòng đồng bộ hoàn.
  */
 export async function autoAdjustOnPlatformReturn(ownerId: string, orderId: string, phase: "before" | "after"): Promise<void> {
-  if (invoiceAutoAdjustMode() === "legacy") {
-    if (phase === "after") maybeAutoAdjustOnPlatformReturn(ownerId, orderId);
-    return;
-  }
   try {
     if (phase === "after") {
       // Chỉ thả dòng CHƯA chạy lượt nào (dòng đang chờ thử lại giữ nguyên lịch của nó).

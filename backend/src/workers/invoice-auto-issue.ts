@@ -54,7 +54,6 @@ import {
 } from "../integrations/invoice/auto-issue-policy";
 import { isDeferredAtProvider } from "../integrations/invoice/draft-signing";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
-import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import { notify } from "../services/notifications";
 import { prisma } from "../lib/prisma";
 import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
