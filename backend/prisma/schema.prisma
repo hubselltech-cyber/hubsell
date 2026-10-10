@@ -3410,22 +3410,20 @@ model ReviewAutoReplyConfig {
 }
 
 /// Sổ chống trùng tự trả lời đánh giá: mỗi (gian, mã đánh giá phía sàn) MỘT dòng.
-/// Worker GHI dòng trước khi gửi (unique chặn hai tiến trình gửi đôi), gửi xong
+/// Worker GHI dòng trước khi gửi (khóa chính chặn hai tiến trình gửi đôi), gửi xong
 /// đổi SENDING → SENT; gửi lỗi thì XÓA dòng để lượt hôm sau thử lại. Dòng kẹt
 /// SENDING (tiến trình chết giữa chừng) không bao giờ gửi lại — thà sót còn hơn
 /// trả lời hai lần lên sàn.
 model ReviewAutoReply {
-  id        String   @id @default(cuid())
-  ownerId   String
   channelId String
   reviewId  String
-  rating    Int
+  rating    Int      @db.SmallInt
   /// SENDING | SENT.
   status    String   @default("SENDING")
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  @@unique([channelId, reviewId])
+  /// Bản gọn 20261010200000: khóa chính ghép thay id + unique; giữ 30 ngày.
+  @@id([channelId, reviewId])
   @@index([createdAt])
   @@map("review_auto_replies")
 }

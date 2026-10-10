@@ -9,6 +9,7 @@ import {
   normalizeTemplates,
   pickReply,
   scheduleAfterConfigChange,
+  templatesForStorage,
   toConfigDTO,
 } from "../review-auto-reply";
 
@@ -115,5 +116,17 @@ describe("isEnabledRating", () => {
     expect(isEnabledRating(0, on)).toBe(false);
     expect(isEnabledRating(NaN, on)).toBe(false);
     expect(isEnabledRating(4.6, on)).toBe(true);
+  });
+});
+
+describe("templatesForStorage", () => {
+  it("trùng mặc định → null (không lưu ~5 KB JSON/shop)", () => {
+    expect(templatesForStorage(DEFAULT_REPLY_TEMPLATES)).toBeNull();
+    expect(templatesForStorage({ "4": [] })).toBeNull();
+  });
+  it("có sửa → lưu bản đã chuẩn hóa", () => {
+    const t = templatesForStorage({ "5": ["Cảm ơn {TEN_KHACH}"] });
+    expect(t?.["5"]).toEqual(["Cảm ơn {TEN_KHACH}"]);
+    expect(t?.["1"]).toEqual(DEFAULT_REPLY_TEMPLATES["1"]);
   });
 });

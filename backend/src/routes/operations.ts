@@ -15,6 +15,7 @@ import multer from "multer";
 import {
   ChannelName,
   DeliveryFailChatStatus,
+  Prisma,
   ReturnStatus,
   ShippingStatus,
   type Channel,
@@ -59,8 +60,8 @@ import {
 import {
   autoRepliedKeys,
   normalizeStars,
-  normalizeTemplates,
   scheduleAfterConfigChange,
+  templatesForStorage,
   toConfigDTO,
 } from "../services/review-auto-reply";
 
@@ -958,7 +959,7 @@ router.put(
           new Date()
         ),
         ...(body.templates !== undefined
-          ? { templates: normalizeTemplates(body.templates) }
+          ? { templates: templatesForStorage(body.templates) ?? Prisma.DbNull }
           : {}),
       };
       const row = await prisma.reviewAutoReplyConfig.upsert({

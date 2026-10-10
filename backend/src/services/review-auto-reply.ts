@@ -91,6 +91,15 @@ export function normalizeTemplates(raw: unknown): ReplyTemplates {
   return out;
 }
 
+/**
+ * Bộ mẫu để GHI DB: trùng hẳn mặc định → null (đa số shop không sửa mẫu; khỏi
+ * lưu ~5 KB JSON mỗi dòng, sau này đổi câu mặc định trong code cũng tự áp).
+ */
+export function templatesForStorage(raw: unknown): ReplyTemplates | null {
+  const t = normalizeTemplates(raw);
+  return JSON.stringify(t) === JSON.stringify(DEFAULT_REPLY_TEMPLATES) ? null : t;
+}
+
 /** Mức sao bật từ đầu vào bất kỳ → mảng số 1..5 không trùng, tăng dần. */
 export function normalizeStars(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -262,12 +271,15 @@ async function withLazadaRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T
   throw lastErr;
 }
 
-/** Tên sản phẩm theo item id phía sàn — chỉ tra đúng các item cần (không nạp cả danh mục). */
+/**
+ * Tên sản phẩm theo item id phía sàn. ChannelProduct chỉ có chỉ mục channelId nên
+ * mỗi câu là một lượt đọc danh mục của gian → gom lô 500 item (thực tế 1 câu/gian/ngày).
+ */
 async function productNamesOf(channelId: string, itemIds: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const ids = [...new Set(itemIds.filter(Boolean))];
-  for (let i = 0; i < ids.length; i += 50) {
-    const chunk = ids.slice(i, i + 50);
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
     const rows = await prisma.channelProduct.findMany({
       where: {
         channelId,
@@ -296,25 +308,23 @@ export function isEnabledRating(rating: number, stars: Set<number>): boolean {
   return stars.has(Number(toStarLevel(rating)));
 }
 
-/** Ghi sổ trước khi gửi — trả về id đánh giá GIÀNH được (unique loại phần đã có). */
-async function claimTargets(ownerId: string, channelId: string, targets: Target[]): Promise<Set<string>> {
-  if (targets.length === 0) return new Set();
-  const existing = await prisma.reviewAutoReply.findMany({
-    where: { channelId, reviewId: { in: targets.map((t) => t.reviewId) } },
-    select: { reviewId: true },
-  });
-  const taken = new Set(existing.map((e) => e.reviewId));
+/**
+ * Ghi sổ trước khi gửi — trả về id đánh giá GIÀNH được. Một câu lệnh cho cả lô:
+ * dòng đã có (lượt trước / tiến trình khác) bị ON CONFLICT bỏ qua, RETURNING chỉ
+ * trả dòng vừa chèn.
+ */
+async function claimTargets(channelId: string, targets: Target[]): Promise<Set<string>> {
   const won = new Set<string>();
-  for (const t of targets) {
-    if (taken.has(t.reviewId)) continue;
-    try {
-      await prisma.reviewAutoReply.create({
-        data: { ownerId, channelId, reviewId: t.reviewId, rating: t.rating },
-      });
-      won.add(t.reviewId);
-    } catch {
-      // P2002 — tiến trình khác vừa giành; bỏ qua
-    }
+  for (let i = 0; i < targets.length; i += 500) {
+    const chunk = targets.slice(i, i + 500);
+    const rows = await prisma.$queryRaw<{ reviewId: string }[]>`
+      INSERT INTO "review_auto_replies" ("channelId", "reviewId", "rating")
+      SELECT ${channelId}, x."reviewId", x."rating"
+      FROM UNNEST(${chunk.map((t) => t.reviewId)}::text[], ${chunk.map((t) => Math.round(t.rating))}::smallint[])
+        AS x("reviewId", "rating")
+      ON CONFLICT ("channelId", "reviewId") DO NOTHING
+      RETURNING "reviewId"`;
+    for (const r of rows) won.add(r.reviewId);
   }
   return won;
 }
@@ -336,7 +346,6 @@ async function settleTargets(channelId: string, sent: string[], failed: string[]
 
 async function runShopeeChannel(
   ch: Channel,
-  ownerId: string,
   stars: Set<number>,
   templates: ReplyTemplates,
   sinceSec: number,
@@ -377,7 +386,7 @@ async function runShopeeChannel(
     customer: r.customer,
     productName: names.get(r.itemId) ?? "",
   }));
-  const won = await claimTargets(ownerId, ch.id, targets);
+  const won = await claimTargets(ch.id, targets);
   const toSend = targets.filter((t) => won.has(t.reviewId));
 
   for (let i = 0; i < toSend.length; i += SHOPEE_REPLY_COMMENT_MAX) {
@@ -413,7 +422,6 @@ async function runShopeeChannel(
 
 async function runLazadaChannel(
   ch: Channel,
-  ownerId: string,
   stars: Set<number>,
   templates: ReplyTemplates,
   sinceMs: number,
@@ -457,7 +465,7 @@ async function runLazadaChannel(
       }
     }
   }
-  const won = await claimTargets(ownerId, ch.id, targets);
+  const won = await claimTargets(ch.id, targets);
 
   for (const t of targets) {
     if (!won.has(t.reviewId)) continue;
@@ -514,7 +522,7 @@ export async function runReviewAutoReplyForOwner(
   for (let i = 0; i < shopee.length; i += SHOPEE_CHANNEL_CONCURRENCY) {
     await Promise.all(
       shopee.slice(i, i + SHOPEE_CHANNEL_CONCURRENCY).map((ch) =>
-        runShopeeChannel(ch, cfg.ownerId, stars, templates, Math.floor(sinceMs / 1000), result).catch(
+        runShopeeChannel(ch, stars, templates, Math.floor(sinceMs / 1000), result).catch(
           (e) => noteError(ch, e)
         )
       )
@@ -522,7 +530,7 @@ export async function runReviewAutoReplyForOwner(
   }
   for (const ch of channels) {
     if (ch.channelName !== ChannelName.LAZADA) continue;
-    await runLazadaChannel(ch, cfg.ownerId, stars, templates, sinceMs, result).catch((e) =>
+    await runLazadaChannel(ch, stars, templates, sinceMs, result).catch((e) =>
       noteError(ch, e)
     );
   }

@@ -8,8 +8,8 @@
 //     hai worker không chạy trùng một shop.
 //   · Xong → lastRun* + nextRunAt = khung giờ cố định của shop NGÀY MAI
 //     (08:00–20:00 giờ VN, rải theo ownerId).
-//   · Mỗi giờ dọn sổ review_auto_replies cũ hơn RETENTION_DAYS (đánh giá đó đã
-//     có trả lời trên sàn nên không còn lọt vào lượt quét).
+//   · Mỗi giờ dọn sổ review_auto_replies cũ hơn RETENTION_DAYS (30 ngày — đánh
+//     giá đó đã có trả lời trên sàn nên không còn lọt vào lượt quét).
 // KHÔNG dùng pg-boss: một lượt shop nhiều gian Lazada chạy cả phút, sẽ chặn
 // hàng đợi (gotcha pg-boss stately).
 // Tắt: REVIEW_AUTO_REPLY_OFF=1.
@@ -24,7 +24,8 @@ const CLAIM_BATCH = 40;
 const CONCURRENCY = 8;
 /** Giành lượt = đẩy lịch ra 2 giờ; tiến trình chết giữa chừng thì 2 giờ sau chạy lại. */
 const CLAIM_MS = 2 * 60 * 60 * 1000;
-const RETENTION_DAYS = 180;
+/** Sổ chỉ cần sống lâu hơn độ trễ dữ liệu sàn + cửa sổ quét (≤14 ngày) — xem migration 20261010200000. */
+const RETENTION_DAYS = 30;
 const CLEANUP_EVERY_MS = 60 * 60 * 1000;
 
 let started = false;
