@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 10/10/2026 (chiều) — LƯỢT NHẮC 6c HÓA ĐƠN LÀM LẠI (lượt tự động 08:30 treo ở một lệnh PowerShell, không ra báo cáo) — ĐÃ KIỂM KÊ + SỐ PROD + KẾ HOẠCH, CHỜ ANH CHỐT
+
+- **Số thật prod (Supabase SQL chỉ đọc + Render env qua Chrome):** `InvoiceConfig` 0 shop; `InvoiceLog` 2 dòng 28/07 (sandbox), 0 tờ từ 02/10; `invoice_requests` 2 lượt bấm tay thật (03/10 20:04, 06/10 12:53) đi trọn đường mới, hỏng đúng lý do "chưa cấu hình NCC"; `misa_webhook_logs` 0; Render web + worker KHÔNG đặt biến INVOICE_* nào → prod chạy mặc định mới ở cả 5 công tắc. Kết luận: cả đường mới lẫn đường cũ đều chưa từng gọi NCC thật trên prod.
+- **Kế hoạch 6c** (docs/HANG-DOI-BEN.md 4.7 "Đợt 6c"): 5 lần đẩy nhỏ, không migration — 6c-1 `INVOICE_MODE` + vòng chung cũ; 6c-2 `INVOICE_CQT_MODE` + xóa tệp `invoice-status-sync.ts`; 6c-3 `INVOICE_BULK_MODE`/`INVOICE_SINGLE_MODE` + route `/invoices/bulk` (backend trước, FE sau); 6c-4 `INVOICE_AUTO_ADJUST_MODE` + `maybeAutoAdjustOnPlatformReturn`; 6c-5 webhook MISA cũ (lát 13 hoãn → CHỜ ANH). Em nghiêng gỡ 6c-1→4 ngay (đường lui chưa từng bật, đường cũ cũng chưa chạy thật, giữ hai đường = test gấp đôi).
+- **Gom 20–30 tờ/lệnh:** CHƯA ĐO; bài đo L1–L6 trên sandbox (~60 tờ, ~1 giờ) đã ghi docs; đề nghị hoãn tới khi có shop >100 tờ/ngày (khách thật đi tờ nháp eSign/USB, lời khuyên gom lô của MISA là cho cổng HSM).
+- ⏳ **Chờ anh quyết 3 điểm:** gỡ 6c-1→4 ngay hay chờ shop MISA thật; 6c-5 giữ hay gỡ mã (giữ `misa-webhook.ts` + `misa-webhook-service.ts`), xóa bảng cùng 02/11; đo gom lô ngay hay hoãn. Chưa viết mã.
+
 ## Phiên 10/10/2026 (sáng) — APPLE TỪ CHỐI LẦN 3 (3.1.1) → MUA GÓI TRONG APP iOS QUA APP STORE (IN-APP PURCHASE) — CODE XONG, BUILD 8 ĐÃ LÊN ASC, CHỜ ANH KÝ PAID APPS AGREEMENT
 
 - **Apple 09/10 23:44:** build 7 bị trả, chỉ còn 3.1.1 — "gói mua ngoài app phải mua được trong app bằng IAP" (3.1.3(b)). Bỏ màn Đăng ký chưa đủ. **Anh chốt:** làm IAP; giá app = giá web ÷ 0,85 (khách chịu phần Apple giữ); em phản biện và anh đồng ý: KHÔNG đặt payOS cạnh IAP, KHÔNG ghi "+15%" hay so giá trong app (3.1.3 cấm). Thiết kế đầy đủ ở `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md`.
