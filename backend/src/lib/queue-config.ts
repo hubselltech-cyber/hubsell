@@ -249,52 +249,6 @@ export function invoiceLaneConcurrency(env: NodeJS.ProcessEnv = process.env): nu
 }
 
 /**
- * ĐƯỜNG XUẤT HÓA ĐƠN HÀNG LOẠT BẤM TAY (bước 5 lát 9, 03/10/2026):
- *   · inline — web gọi nhà cung cấp ngay trong request, tối đa 50 đơn (trước lát 9).
- *   · lane   — web chỉ ghi dòng invoice_requests + gửi tín hiệu rồi trả lời ngay;
- *     làn của shop ở worker phát hành lần lượt, giao diện hỏi tiến độ theo lô.
- * Lát 9 ĐƯA LÊN HAI LẦN: lần một mặc định inline (bảng + worker biết xử lý yêu cầu
- * lên trước, chưa ai gửi), lần hai đổi mặc định sang lane. Giao diện đọc cờ
- * `bulkViaLane` trong /invoice-queue để chọn đường nên lên Vercel lúc nào cũng được.
- * Đường lui: INVOICE_BULK_MODE=inline ở web.
- */
-export type InvoiceBulkMode = "lane" | "inline";
-/**
- * Lần một (564ff27, 03/10/2026 13:09) mặc định inline — bảng invoice_requests, hàng
- * đợi invoice.issue và worker biết xử lý yêu cầu lên trước, đã kiểm prod 13:11. Lần
- * hai đổi mặc định sang lane. Đường lui: INVOICE_BULK_MODE=inline ở web.
- */
-export const DEFAULT_INVOICE_BULK_MODE: InvoiceBulkMode = "lane";
-
-export function invoiceBulkMode(env: NodeJS.ProcessEnv = process.env): InvoiceBulkMode {
-  const raw = (env.INVOICE_BULK_MODE ?? "").trim().toLowerCase();
-  return raw === "lane" || raw === "inline" ? raw : DEFAULT_INVOICE_BULK_MODE;
-}
-
-/**
- * ĐƯỜNG XUẤT MỘT ĐƠN THEO MÃ + ĐIỀU CHỈNH TAY (bước 5 lát 10, 03/10/2026):
- *   · inline — web gọi nhà cung cấp ngay trong request (trước lát 10).
- *   · lane   — web ghi MỘT dòng invoice_requests, gọi làn của shop rồi CHỜ kết quả
- *     tối đa INVOICE_SINGLE_WAIT_SECONDS; câu trả lời giữ nguyên hình dạng cũ. Quá
- *     thời gian chờ (làn đang bận một lượt dài) thì trả 202 "đã nhận", kết quả về chuông.
- * Công tắc RIÊNG với INVOICE_BULK_MODE vì worker bản lát 9 chưa biết loại yêu cầu
- * ADJUST: lần một (mặc định inline) đưa worker biết xử lý lên trước, lần hai mới
- * đổi mặc định sang lane. Đường lui: INVOICE_SINGLE_MODE=inline ở web.
- */
-export type InvoiceSingleMode = "lane" | "inline";
-/**
- * Lần một (49b109d, 03/10/2026 13:38) mặc định inline — worker biết xử lý loại ADJUST
- * và ghi kết quả chi tiết lên trước, đã kiểm prod 13:40. Lần hai đổi mặc định sang
- * lane. Đường lui: INVOICE_SINGLE_MODE=inline ở web.
- */
-export const DEFAULT_INVOICE_SINGLE_MODE: InvoiceSingleMode = "lane";
-
-export function invoiceSingleMode(env: NodeJS.ProcessEnv = process.env): InvoiceSingleMode {
-  const raw = (env.INVOICE_SINGLE_MODE ?? "").trim().toLowerCase();
-  return raw === "lane" || raw === "inline" ? raw : DEFAULT_INVOICE_SINGLE_MODE;
-}
-
-/**
  * Web chờ kết quả một yêu cầu đơn lẻ tối đa chừng này giây. MẶC ĐỊNH TỰ CHỌN 25:
  * một tờ bình thường xong trong 1–4 giây (tín hiệu ~0,5 giây + một lệnh phát hành
  * 0,35–0,6 giây trên sandbox); 25 giây đủ cho một tờ gặp nhà cung cấp chậm mà vẫn

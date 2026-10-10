@@ -15,7 +15,6 @@ import { taxReportTotalsFromRows, type TaxReportTotals } from "../lib/tax-totals
 import { ensureLedgerFresh, ledgerTaxReportTotals } from "../services/order-ledger";
 import {
   decideScopeFromPlatformReturn,
-  issueAdjustmentForOrder,
   PLATFORM_RETURN_DONE_STATUSES,
   type AdjustmentScope,
 } from "../integrations/invoice/adjust-order";
@@ -28,9 +27,8 @@ import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
 import { draftSignUrl, isSignOverdue } from "../integrations/invoice/draft-signing";
 import { usesWebDraft } from "../integrations/invoice/misa-invoiceweb";
 import { getInvoiceProvider } from "../integrations/invoice/index";
-import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import { runInvoiceCqtFollowOnce } from "../workers/invoice-cqt-follow";
-import { invoiceBulkMode, invoiceSingleMode, invoiceSingleWaitMs } from "../lib/queue-config";
+import { invoiceSingleWaitMs } from "../lib/queue-config";
 import {
   acceptBulkIssue,
   awaitRequest,
@@ -644,90 +642,29 @@ router.post("/invoices", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: blocked });
       return;
     }
-    if (invoiceSingleMode() === "lane") {
-      // Lát 10: không gọi nhà cung cấp trong request — ghi một yêu cầu, làn của shop
-      // phát hành (không chen ngang lượt đang xin số trên cùng ký hiệu), web chờ kết quả.
-      // Phạm vi gian của người bấm kiểm NGAY ở đây vì làn chạy với quyền toàn shop.
-      const inScope = await prisma.order.findFirst({
-        where: { orderCode, channel: channelScope(req) },
-        select: { id: true },
-      });
-      if (!inScope) {
-        res.status(404).json({ error: `Không tìm thấy đơn ${orderCode} trong phạm vi của bạn` });
-        return;
-      }
-      const submitted = await submitSingleRequest({
-        ownerId: req.ownerId!,
-        kind: REQUEST_KIND_ISSUE,
-        targetKey: orderCode,
-        requestedById: req.userId ?? null,
-      });
-      if (!submitted) {
-        res.status(409).json({ error: "Đơn này đang nằm trong một lượt xuất hóa đơn — chờ lượt đó xong." });
-        return;
-      }
-      await respondSingleRequest(res, req.ownerId!, submitted.id, `xuất hóa đơn cho đơn ${orderCode}`);
+    // Lát 10: không gọi nhà cung cấp trong request — ghi một yêu cầu, làn của shop
+    // phát hành (không chen ngang lượt đang xin số trên cùng ký hiệu), web chờ kết quả.
+    // Phạm vi gian của người bấm kiểm NGAY ở đây vì làn chạy với quyền toàn shop.
+    // (Đường gọi nhà cung cấp ngay trong request đã gỡ ở bước 6c, 10/10/2026.)
+    const inScope = await prisma.order.findFirst({
+      where: { orderCode, channel: channelScope(req) },
+      select: { id: true },
+    });
+    if (!inScope) {
+      res.status(404).json({ error: `Không tìm thấy đơn ${orderCode} trong phạm vi của bạn` });
       return;
     }
-    const r = await issueInvoiceForOrder(req.ownerId!, channelScope(req), orderCode);
-    res.status(r.httpStatus).json({ log: r.log, error: r.error, awaitingSignature: r.awaitingSignature, message: r.message });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/tax/invoices/bulk — phát hành HÀNG LOẠT từ hàng chờ.
-// Body: { orderCodes: string[] } (tối đa 50/lần). Xử lý TUẦN TỰ từng đơn theo
-// yêu cầu của MISA (số hóa đơn cấp liên tục theo ký hiệu — bắn song song là
-// dính InvoiceNumberNotCotinuous), đơn lỗi không chặn đơn sau.
-router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
-  try {
-    const raw = req.body?.orderCodes;
-    const orderCodes: string[] = Array.isArray(raw)
-      ? [...new Set(raw.map((c) => String(c).trim()).filter((c) => c !== ""))]
-      : [];
-    if (orderCodes.length === 0) {
-      res.status(400).json({ error: "Thiếu danh sách mã đơn (orderCodes)" });
+    const submitted = await submitSingleRequest({
+      ownerId: req.ownerId!,
+      kind: REQUEST_KIND_ISSUE,
+      targetKey: orderCode,
+      requestedById: req.userId ?? null,
+    });
+    if (!submitted) {
+      res.status(409).json({ error: "Đơn này đang nằm trong một lượt xuất hóa đơn — chờ lượt đó xong." });
       return;
     }
-    if (orderCodes.length > 50) {
-      res.status(400).json({ error: "Tối đa 50 đơn mỗi lần phát hành hàng loạt" });
-      return;
-    }
-    const blocked = await sandboxTaxCodeBlocked(req);
-    if (blocked) {
-      res.status(400).json({ error: blocked });
-      return;
-    }
-
-    const scope = channelScope(req);
-    const results: Array<{
-      orderCode: string;
-      ok: boolean;
-      invoiceNo?: string | null;
-      error?: string;
-      /** Tờ nháp đã lập, chờ chủ shop ký trên web nhà cung cấp (lát T1 tenant). */
-      awaitingSignature?: boolean;
-    }> = [];
-    for (const [i, orderCode] of orderCodes.entries()) {
-      const r = await issueInvoiceForOrder(req.ownerId!, scope, orderCode);
-      results.push({
-        orderCode,
-        ok: r.ok,
-        invoiceNo: r.log?.invoiceNo ?? null,
-        error: r.error,
-        awaitingSignature: r.awaitingSignature,
-      });
-      // Nghỉ giữa hai lệnh phát hành theo bảng khả năng của nhà cung cấp (MISA trả lời
-      // ticket 02/10/2026: cùng ký hiệu phải tuần tự, mỗi lệnh cách nhau 1–3 giây).
-      // Bấm tay hàng loạt không có đường tắt bắn dồn. Tờ cuối không nghỉ.
-      if (i < orderCodes.length - 1 && r.pauseBeforeNextMs) {
-        await new Promise<void>((resolve) => setTimeout(resolve, r.pauseBeforeNextMs));
-      }
-    }
-    const issued = results.filter((r) => r.ok).length;
-    const awaiting = results.filter((r) => r.awaitingSignature).length;
-    res.json({ issued, awaiting, failed: results.length - issued - awaiting, results });
+    await respondSingleRequest(res, req.ownerId!, submitted.id, `xuất hóa đơn cho đơn ${orderCode}`);
   } catch (err) {
     next(err);
   }
@@ -822,14 +759,10 @@ router.post("/invoices/awaiting-signature/check", async (req: AuthRequest, res, 
 // ---------- XUẤT HÀNG LOẠT CHẠY NỀN (bước 5 lát 9, 03/10/2026) ----------
 // POST /api/tax/invoices/batches — NHẬN một lần bấm Xuất: ghi dòng invoice_requests
 // rồi trả lời ngay { batchId, queued, skipped }; làn của shop ở worker phát hành lần
-// lượt. Đường cũ /invoices/bulk giữ nguyên cho giao diện bản cũ và làm đường lui.
+// lượt. (Đường cũ /invoices/bulk gọi nhà cung cấp trong request đã gỡ ở bước 6c, 10/10/2026.)
 // Body: { orderCodes: string[] } (tối đa BULK_MAX_ORDERS = cỡ trang lớn nhất của hàng chờ).
 router.post("/invoices/batches", async (req: AuthRequest, res, next) => {
   try {
-    if (invoiceBulkMode() !== "lane") {
-      res.status(409).json({ error: "Xuất hàng loạt chạy nền chưa bật — tải lại trang rồi thử lại." });
-      return;
-    }
     const raw = req.body?.orderCodes;
     const orderCodes: string[] = Array.isArray(raw)
       ? [...new Set(raw.map((c) => String(c).trim()).filter((c) => c !== ""))]
@@ -1005,10 +938,10 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
         });
       }
     }
-    // Lát 9: đường chạy nền đang bật không (giao diện đọc cờ để chọn đường), lô đang
-    // chạy của shop (quay lại trang vẫn thấy tiến độ), đơn nào trong trang đang có yêu
-    // cầu chờ (nhãn "Đang xuất", không tick lại được). Ba câu nhỏ theo chỉ mục.
-    const bulkViaLane = invoiceBulkMode() === "lane";
+    // Lát 9: lô đang chạy của shop (quay lại trang vẫn thấy tiến độ), đơn nào trong
+    // trang đang có yêu cầu chờ (nhãn "Đang xuất", không tick lại được). Hai câu nhỏ
+    // theo chỉ mục. Cờ `bulkViaLane` giữ hằng true cho bản giao diện cũ còn trong cache
+    // (đường cũ gỡ ở bước 6c, 10/10/2026).
     const [activeBatchId, issuingCodes] = await Promise.all([
       findActiveBatchId(ownerId),
       openIssueRequestCodes(
@@ -1017,7 +950,7 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
       ),
     ]);
     res.json({
-      bulkViaLane,
+      bulkViaLane: true,
       bulkMaxOrders: BULK_MAX_ORDERS,
       activeBatchId,
       autoIssueEnabled: cfg?.autoIssueEnabled ?? false,
@@ -1224,53 +1157,36 @@ router.post("/invoices/:id/adjust", async (req: AuthRequest, res, next) => {
       finalReason = decided.reason;
     }
 
-    if (invoiceSingleMode() === "lane") {
-      // Lát 10: điều chỉnh tay cũng đi qua làn của shop (xem POST /invoices).
-      const original = await prisma.invoiceLog.findFirst({
-        where: { id: req.params.id, ownerId: req.ownerId! },
-        select: { orderId: true },
-      });
-      const inScope =
-        original &&
-        (!original.orderId ||
-          (await prisma.order.findFirst({
-            where: { id: original.orderId, channel: channelScope(req) },
-            select: { id: true },
-          })));
-      if (!inScope) {
-        res.status(404).json({ error: "Không tìm thấy hóa đơn gốc" });
-        return;
-      }
-      const submitted = await submitSingleRequest({
-        ownerId: req.ownerId!,
-        kind: REQUEST_KIND_ADJUST,
-        targetKey: req.params.id,
-        params: { reason: finalReason, scope: encodeAdjustScope(scope) },
-        requestedById: req.userId ?? null,
-      });
-      if (!submitted) {
-        res.status(409).json({ error: "Đang có yêu cầu điều chỉnh chờ xử lý cho hóa đơn này." });
-        return;
-      }
-      await respondSingleRequest(res, req.ownerId!, submitted.id, "lập hóa đơn điều chỉnh");
+    // Lát 10: điều chỉnh tay cũng đi qua làn của shop (xem POST /invoices). Câu trả
+    // lời giữ `code` + `reason` + `suggestion` khi Hubsell chủ động KHÔNG lập (không
+    // xác nhận được hóa đơn gốc...) — giao diện hiện hộp giải thích thay vì toast.
+    const original = await prisma.invoiceLog.findFirst({
+      where: { id: req.params.id, ownerId: req.ownerId! },
+      select: { orderId: true },
+    });
+    const inScope =
+      original &&
+      (!original.orderId ||
+        (await prisma.order.findFirst({
+          where: { id: original.orderId, channel: channelScope(req) },
+          select: { id: true },
+        })));
+    if (!inScope) {
+      res.status(404).json({ error: "Không tìm thấy hóa đơn gốc" });
       return;
     }
-    const r = await issueAdjustmentForOrder(
-      req.ownerId!,
-      channelScope(req),
-      req.params.id,
-      finalReason,
-      scope
-    );
-    // `code` + `reason` + `suggestion` có mặt khi Hubsell chủ động KHÔNG lập (không
-    // xác nhận được hóa đơn gốc...) — giao diện hiện hộp giải thích thay vì toast.
-    res.status(r.httpStatus).json({
-      log: r.log,
-      error: r.error,
-      code: r.errorCode,
-      reason: r.reason,
-      suggestion: r.suggestion,
+    const submitted = await submitSingleRequest({
+      ownerId: req.ownerId!,
+      kind: REQUEST_KIND_ADJUST,
+      targetKey: req.params.id,
+      params: { reason: finalReason, scope: encodeAdjustScope(scope) },
+      requestedById: req.userId ?? null,
     });
+    if (!submitted) {
+      res.status(409).json({ error: "Đang có yêu cầu điều chỉnh chờ xử lý cho hóa đơn này." });
+      return;
+    }
+    await respondSingleRequest(res, req.ownerId!, submitted.id, "lập hóa đơn điều chỉnh");
   } catch (err) {
     next(err);
   }

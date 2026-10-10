@@ -4488,10 +4488,7 @@ export interface InvoiceAutoIssueState {
 }
 
 export interface InvoiceQueueResponse extends InvoiceAutoIssueState {
-  /**
-   * Backend đã bật đường xuất hàng loạt CHẠY NỀN (hóa đơn bước 5 lát 9): bấm Xuất là
-   * ghi yêu cầu rồi hỏi tiến độ theo lô. Vắng mặt / false = đường cũ (chờ ngay trên nút).
-   */
+  /** Luôn true từ bước 6c (10/10/2026) — đường chờ ngay trên nút đã gỡ; giữ trường cho bản cũ. */
   bulkViaLane?: boolean;
   /** Số đơn tối đa một lần bấm ở đường chạy nền. */
   bulkMaxOrders?: number;
@@ -4532,26 +4529,6 @@ export function fetchInvoiceQueue(
   if (settled === "stopped") qs.set("stopped", "yes");
   else if (settled !== "all") qs.set("settled", settled);
   return apiFetch<InvoiceQueueResponse>(`/api/tax/invoice-queue?${qs}`);
-}
-
-/** Phát hành hàng loạt (tối đa 50/lần) — backend xử lý tuần tự từng đơn. */
-export function issueInvoicesBulk(orderCodes: string[]) {
-  return apiFetch<{
-    issued: number;
-    /** Tờ nháp đã lập, chờ chủ shop ký trên web NCC (lát T1 tenant). */
-    awaiting: number;
-    failed: number;
-    results: Array<{
-      orderCode: string;
-      ok: boolean;
-      invoiceNo?: string | null;
-      error?: string;
-      awaitingSignature?: boolean;
-    }>;
-  }>("/api/tax/invoices/bulk", {
-    method: "POST",
-    body: JSON.stringify({ orderCodes }),
-  });
 }
 
 /** Tiến độ một lượt xuất hóa đơn chạy nền (lát 9). */

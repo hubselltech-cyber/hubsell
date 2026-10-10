@@ -7,9 +7,7 @@ import {
   DEFAULT_EVT_ORDER_CONCURRENCY,
   DEFAULT_NOTIFY_POLL_SECONDS,
   DEFAULT_INVOICE_AUTO_ADJUST_MODE,
-  DEFAULT_INVOICE_BULK_MODE,
   DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS,
-  DEFAULT_INVOICE_SINGLE_MODE,
   DEFAULT_INVOICE_SINGLE_WAIT_SECONDS,
   DEFAULT_STOCK_CHANNEL_CONCURRENCY,
   DEFAULT_STOCK_SWEEP_SECONDS,
@@ -17,9 +15,7 @@ import {
   EVT_ORDER_MAX_ATTEMPTS,
   evtOrderConcurrency,
   invoiceAutoAdjustMode,
-  invoiceBulkMode,
   invoiceRequestSweepSeconds,
-  invoiceSingleMode,
   invoiceSingleWaitMs,
   listenNotifyEnabled,
   notifyPollSeconds,
@@ -185,13 +181,6 @@ describe("tên hàng đợi khớp migration", () => {
 });
 
 describe("xuất hóa đơn hàng loạt chạy nền (bước 5 lát 9)", () => {
-  it("INVOICE_BULK_MODE: chỉ nhận lane | inline, sai thì về mặc định", () => {
-    expect(invoiceBulkMode({})).toBe(DEFAULT_INVOICE_BULK_MODE);
-    expect(invoiceBulkMode({ INVOICE_BULK_MODE: " Lane " })).toBe("lane");
-    expect(invoiceBulkMode({ INVOICE_BULK_MODE: "inline" })).toBe("inline");
-    expect(invoiceBulkMode({ INVOICE_BULK_MODE: "x" })).toBe(DEFAULT_INVOICE_BULK_MODE);
-  });
-
   it("INVOICE_REQUEST_SWEEP_SECONDS: mặc định 5, ngoài khoảng thì về mặc định", () => {
     expect(invoiceRequestSweepSeconds({})).toBe(DEFAULT_INVOICE_REQUEST_SWEEP_SECONDS);
     expect(invoiceRequestSweepSeconds({ INVOICE_REQUEST_SWEEP_SECONDS: "2" })).toBe(2);
@@ -201,13 +190,6 @@ describe("xuất hóa đơn hàng loạt chạy nền (bước 5 lát 9)", () =>
 });
 
 describe("xuất một đơn + điều chỉnh tay qua làn (bước 5 lát 10)", () => {
-  it("INVOICE_SINGLE_MODE: chỉ nhận lane | inline, sai thì về mặc định", () => {
-    expect(invoiceSingleMode({})).toBe(DEFAULT_INVOICE_SINGLE_MODE);
-    expect(invoiceSingleMode({ INVOICE_SINGLE_MODE: "LANE" })).toBe("lane");
-    expect(invoiceSingleMode({ INVOICE_SINGLE_MODE: "inline" })).toBe("inline");
-    expect(invoiceSingleMode({ INVOICE_SINGLE_MODE: "x" })).toBe(DEFAULT_INVOICE_SINGLE_MODE);
-  });
-
   it("INVOICE_SINGLE_WAIT_SECONDS: mặc định 25 giây, ngoài khoảng 1–120 thì về mặc định", () => {
     expect(invoiceSingleWaitMs({})).toBe(DEFAULT_INVOICE_SINGLE_WAIT_SECONDS * 1000);
     expect(invoiceSingleWaitMs({ INVOICE_SINGLE_WAIT_SECONDS: "3" })).toBe(3000);

@@ -21,10 +21,10 @@
  *   · TỰ ĐỘNG (kiểu Salework): công tắc worker 15 phút, đơn ĐÃ GIAO + ĐÃ ĐỐI
  *     SOÁT. Backend xử lý tuần tự (MISA cấp số liên tục), tối đa 50 đơn/lần.
  *   · Vẫn giữ ô nhập mã đơn cho trường hợp xuất một đơn ngoài danh sách.
- *   · XUẤT CHẠY NỀN (hóa đơn bước 5 lát 9, 03/10/2026): khi backend báo cờ
- *     `bulkViaLane`, bấm Xuất chỉ GHI YÊU CẦU rồi hiện thanh tiến độ "Đang xuất
- *     7/40" — rời trang việc vẫn chạy, quay lại vẫn thấy. Vẫn một nút. Cờ tắt thì
- *     chạy đường cũ (chờ ngay trên nút, lô 50).
+ *   · XUẤT CHẠY NỀN (hóa đơn bước 5 lát 9, 03/10/2026): bấm Xuất chỉ GHI YÊU CẦU
+ *     rồi hiện thanh tiến độ "Đang xuất 7/40" — rời trang việc vẫn chạy, quay lại
+ *     vẫn thấy. Vẫn một nút. (Đường cũ chờ ngay trên nút, lô 50, đã gỡ ở bước 6c
+ *     10/10/2026.)
  */
 
 /** Nhịp hỏi tiến độ lô đang chạy. */
@@ -68,7 +68,6 @@ import {
   fetchInvoiceBatch,
   fetchInvoiceQueue,
   issueInvoice,
-  issueInvoicesBulk,
   startInvoiceBatch,
   type InvoiceBatchProgress,
   setInvoiceAutoAdjust,
@@ -400,51 +399,22 @@ export function InvoiceIssueCard({
     }
   }
 
-  /** Xuất một danh sách mã đơn (dùng cho cả nút dòng lẫn thanh hàng loạt).
-   *  Backend nhận tối đa 50 đơn/lần — trang 100 đơn tick hết thì chia lô 50
-   *  gọi tuần tự (MISA cấp số hóa đơn liên tục nên vẫn phải lần lượt). */
+  /** Xuất một danh sách mã đơn (dùng cho cả nút dòng lẫn thanh hàng loạt): backend
+   *  ghi yêu cầu rồi trả lời ngay; thanh tiến độ lo phần còn lại. */
   async function issueMany(orderCodes: string[]) {
     if (orderCodes.length === 0 || busy || batchRunning) return;
     setBusy(true);
     try {
-      if (queue?.bulkViaLane) {
-        // Đường chạy nền: backend ghi yêu cầu rồi trả lời ngay; thanh tiến độ lo phần còn lại.
-        const r = await startInvoiceBatch(orderCodes);
-        if (r.skipped.length > 0) {
-          toast.warning(
-            `${r.skipped.length} đơn không đưa vào lượt xuất (${r.skipped[0].reason}${r.skipped.length > 1 ? "…" : ""}).`
-          );
-        }
-        dismissedBatch.current = null;
-        setProgress(null);
-        setBatchId(r.batchId);
-        setSelected(new Set());
-        void loadQueue(filter, page, pageSize);
-        return;
-      }
-      let issued = 0;
-      let awaiting = 0;
-      let failed = 0;
-      let firstErr: string | undefined;
-      for (let i = 0; i < orderCodes.length; i += 50) {
-        const r = await issueInvoicesBulk(orderCodes.slice(i, i + 50));
-        issued += r.issued;
-        awaiting += r.awaiting ?? 0;
-        failed += r.failed;
-        firstErr ??= r.results.find((x) => !x.ok && !x.awaitingSignature)?.error ?? undefined;
-      }
-      const done =
-        awaiting > 0
-          ? `Đã lập ${awaiting} tờ nháp chờ bạn ký trên web nhà cung cấp${issued > 0 ? `, phát hành ${issued} hóa đơn` : ""}`
-          : `Đã phát hành ${issued} hóa đơn`;
-      if (failed === 0) {
-        toast.success(`${done} — xem tại Lịch sử & Báo cáo thuế.`);
-      } else {
+      const r = await startInvoiceBatch(orderCodes);
+      if (r.skipped.length > 0) {
         toast.warning(
-          `${done}, ${failed} đơn lỗi${firstErr ? ` (${firstErr})` : ""} — chi tiết tại Lịch sử & Báo cáo thuế.`
+          `${r.skipped.length} đơn không đưa vào lượt xuất (${r.skipped[0].reason}${r.skipped.length > 1 ? "…" : ""}).`
         );
       }
-      setAwaitingKey((k) => k + 1);
+      dismissedBatch.current = null;
+      setProgress(null);
+      setBatchId(r.batchId);
+      setSelected(new Set());
       void loadQueue(filter, page, pageSize);
     } catch (err) {
       toast.error(
