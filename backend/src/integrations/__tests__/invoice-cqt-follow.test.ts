@@ -15,7 +15,6 @@ vi.mock("../invoice/misa-einvoice", async (importOriginal) => {
   return { ...actual, getInvoiceStatuses: statusMock };
 });
 
-import { DEFAULT_INVOICE_CQT_MODE, invoiceCqtMode } from "../../lib/queue-config";
 import {
   CQT_FIRST_CHECK_MS,
   CQT_RECHECK_OLD_MS,
@@ -133,12 +132,6 @@ describe("Kế hoạch áp kết quả của nhà cung cấp", () => {
 });
 
 describe("Công tắc và nhãn nguồn", () => {
-  it("INVOICE_CQT_MODE: nhận follow / legacy, giá trị lạ rơi về mặc định", () => {
-    expect(invoiceCqtMode({ INVOICE_CQT_MODE: "follow" })).toBe("follow");
-    expect(invoiceCqtMode({ INVOICE_CQT_MODE: " LEGACY " })).toBe("legacy");
-    expect(invoiceCqtMode({ INVOICE_CQT_MODE: "abc" })).toBe(DEFAULT_INVOICE_CQT_MODE);
-    expect(invoiceCqtMode({})).toBe(DEFAULT_INVOICE_CQT_MODE);
-  });
   it("nguồn ghi lịch sử của MISA giữ đúng giá trị vòng cũ đã ghi", () => {
     expect(statusSyncSource("MISA")).toBe("MISA_STATUS_SYNC");
   });

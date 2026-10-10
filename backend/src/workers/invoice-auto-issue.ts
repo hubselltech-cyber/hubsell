@@ -1,8 +1,9 @@
 // ============================================================
-// WORKER TỰ ĐỘNG PHÁT HÀNH HÓA ĐƠN (23/08 — học theo Salework)
+// TỰ ĐỘNG PHÁT HÀNH HÓA ĐƠN — "MỘT SHOP MỘT LƯỢT" (23/08 — học theo Salework)
 //
-// Nhịp 15 phút: với mỗi shop đã BẬT autoIssueEnabled (trang Kết nối & Xuất
-// hóa đơn), tự phát hành hóa đơn cho đơn đủ điều kiện:
+// Làn của shop (workers/invoice-lanes.ts) gọi runAutoIssueForShop cho mỗi shop đã
+// BẬT autoIssueEnabled (trang Kết nối & Xuất hóa đơn), tự phát hành hóa đơn cho đơn
+// đủ điều kiện:
 //
 //   • shippingStatus = DELIVERED (đã giao thành công). MỐC XUẤT theo shop chọn
 //     (InvoiceConfig.autoIssueTrigger — 19/09): DELIVERED = xuất ngay, SETTLED =
@@ -16,7 +17,7 @@
 //     24h gần nhất — đơn vừa FAILED sẽ được thử lại tối đa 1 lần/ngày thay vì
 //     spam NCC mỗi 15 phút.
 //   • KHÔNG có hóa đơn CANCELLED (03/09): seller đã chủ động hủy/xóa trên NCC
-//     (worker invoice-status-sync phát hiện) — xuất lại hay không là quyết
+//     (vòng hỏi trạng thái invoice-cqt-follow phát hiện) — xuất lại hay không là quyết
 //     định của seller (làm tay ở hàng chờ), máy không tự xuất đè.
 //   • KHÔNG có dòng FAILED mang orderErrorCount ≥ INVOICE_AUTO_ISSUE_MAX_ATTEMPTS
 //     (bước 5 lát 7, 03/10): đơn bị từ chối vì dữ liệu của chính nó 3 lượt thì
@@ -34,12 +35,12 @@
 //     (decideAfterFailure): worker này chỉ quét + gọi, mọi quyết định là hàm
 //     thuần có test ở đó.
 //
-// Cấu hình: INVOICE_AUTO_ISSUE_MINUTES (mặc định 15; "0" = tắt worker).
+// Nhịp khi shop hết đơn: INVOICE_AUTO_ISSUE_MINUTES (đọc ở workers/invoice-lanes.ts).
 //
-// BƯỚC 5 LÁT 8 (03/10): phần "một shop một lượt" tách thành runAutoIssueForShop
-// để hai đường dùng chung — vòng chung ở tệp này (INVOICE_MODE=legacy) và làn theo
-// shop ở workers/invoice-lanes.ts (INVOICE_MODE=lanes). Vòng chung giữ nguyên hành
-// vi cũ (lỗi tạm vẫn chặn đơn 24 giờ); làn mới chỉ chặn 24 giờ với lỗi riêng đơn.
+// BƯỚC 5 LÁT 8 (03/10): phần "một shop một lượt" tách thành runAutoIssueForShop;
+// vòng chung một cờ RAM đi tuần tự qua mọi shop (INVOICE_MODE=legacy) đã GỠ ở bước 6c
+// (10/10/2026) — tệp này chỉ còn phần làn dùng. `transientBlocks: true` (lỗi tạm chặn
+// đơn 24 giờ) là hành vi của vòng cũ, làn truyền false.
 // ============================================================
 
 import { InvoiceLogStatus, type Prisma, ShippingStatus } from "@prisma/client";
@@ -58,13 +59,10 @@ import { notify } from "../services/notifications";
 import { prisma } from "../lib/prisma";
 import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
 
-const DEFAULT_INTERVAL_MINUTES = 15;
 /** Trần hóa đơn mỗi shop mỗi lượt quét — chống xả hàng loạt khi cấu hình sai. */
 export const MAX_PER_OWNER_PER_RUN = 20;
 /** Đơn có bản ghi hóa đơn (kể cả FAILED) mới hơn cửa sổ này thì chưa thử lại. */
 const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-let running = false;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -360,47 +358,4 @@ export async function runAutoIssueForShop(
     });
   }
   return { outcome, picked: orders.length, issued, failed, deferred, stopped, pauseReason, interrupted };
-}
-
-/** ĐƯỜNG CŨ (INVOICE_MODE=legacy): một vòng đi tuần tự qua mọi shop. */
-export async function runInvoiceAutoIssueOnce(): Promise<void> {
-  if (running) return; // lượt trước chưa xong (NCC chậm) — bỏ lượt này
-  running = true;
-  try {
-    // Chốt an toàn tổng: chưa được phép phát hành thì không làm gì cả —
-    // kể cả ghi log FAILED (sẽ thành rác lặp vô hạn).
-    if (!isPublishAllowed()) return;
-
-    const configs = await prisma.invoiceConfig.findMany({
-      where: {
-        channelId: null,
-        autoIssueEnabled: true,
-        autoIssuePausedAt: null, // đang ngắt mạch — chờ chủ shop sửa rồi bật lại
-        provider: "MISA",
-      },
-      select: AUTO_ISSUE_CONFIG_SELECT,
-    });
-
-    for (const cfg of configs) {
-      if (autoIssueSkipReason(cfg)) continue;
-      await runAutoIssueForShop(cfg, { transientBlocks: true });
-    }
-  } catch (err) {
-    console.error("[Auto-issue] Lỗi lượt quét:", (err as Error).message);
-  } finally {
-    running = false;
-  }
-}
-
-/** Khởi động worker theo nhịp — gọi một lần từ index.ts. */
-export function startInvoiceAutoIssueWorker(): void {
-  const minutes = Number(process.env.INVOICE_AUTO_ISSUE_MINUTES ?? DEFAULT_INTERVAL_MINUTES);
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    console.log("[Auto-issue] Worker TẮT (INVOICE_AUTO_ISSUE_MINUTES=0)");
-    return;
-  }
-  // Lượt đầu chờ 3 phút cho server ấm máy (tránh dồn API call lúc boot).
-  setTimeout(() => void runInvoiceAutoIssueOnce(), 3 * 60 * 1000);
-  setInterval(() => void runInvoiceAutoIssueOnce(), minutes * 60 * 1000);
-  console.log(`[Auto-issue] Worker chạy nhịp ${minutes} phút`);
 }

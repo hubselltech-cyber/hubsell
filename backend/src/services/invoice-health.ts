@@ -16,7 +16,6 @@
 // ============================================================
 
 import type { SignalLevel } from "../config/capacity-plan";
-import { invoiceMode } from "../lib/queue-config";
 import { prisma } from "../lib/prisma";
 
 /**
@@ -51,7 +50,7 @@ export interface InvoiceHealth {
   cqtOverdueMaxMin: number | null;
   /** Làn còn tên tiến trình giữ mà hạn thuê đã qua hơn laneLateMin phút. */
   lanesStale: number;
-  /** Làn của shop đang bật tự phát hành (không ngắt mạch) trễ lịch hơn laneLateMin phút. Luôn 0 khi INVOICE_MODE=legacy. */
+  /** Làn của shop đang bật tự phát hành (không ngắt mạch) trễ lịch hơn laneLateMin phút. */
   lanesLate: number;
   /** Shop bật tự phát hành đang ngắt mạch; trong đó số shop ngắt trong 24 giờ qua. */
   pausedShops: number;
@@ -67,7 +66,6 @@ export async function collectInvoiceHealth(now: Date = new Date()): Promise<Invo
   const nowTs = ts(now);
   const cqtBefore = ts(new Date(now.getTime() - INVOICE_HEALTH.cqtOverdueMin * 60_000));
   const laneBefore = ts(new Date(now.getTime() - INVOICE_HEALTH.laneLateMin * 60_000));
-  const lanesOn = invoiceMode() === "lanes";
 
   const [requests, unknown, cqt, lanes, paused] = await Promise.all([
     prisma.$queryRaw<{ n: number; oldest: Date | null }[]>`
@@ -108,7 +106,7 @@ export async function collectInvoiceHealth(now: Date = new Date()): Promise<Invo
     cqtOverdue: cqt[0]?.n ?? 0,
     cqtOverdueMaxMin: minutesSince(now, cqt[0]?.oldest),
     lanesStale: lanes[0]?.stale ?? 0,
-    lanesLate: lanesOn ? (lanes[0]?.late ?? 0) : 0,
+    lanesLate: lanes[0]?.late ?? 0,
     pausedShops: paused[0]?.n ?? 0,
     pausedShops24h: paused[0]?.recent ?? 0,
   };
@@ -141,7 +139,7 @@ export function invoiceSignal(h: InvoiceHealth | null): [value: string, level: S
   if (h.cqtOverdue > 0) {
     problems.push({
       level: cqtMin >= T.cqtCritMin ? "crit" : "warn",
-      hint: "Vòng hỏi trạng thái cơ quan thuế không chạy hoặc còn tồn — xem log [CQT-follow] trên worker (dòng CÒN TỒN), INVOICE_CQT_MODE",
+      hint: "Vòng hỏi trạng thái cơ quan thuế không chạy hoặc còn tồn — xem log [CQT-follow] trên worker (dòng CÒN TỒN), INVOICE_CQT_SWEEP_MINUTES",
     });
   }
   if (h.lanesStale > 0 || h.lanesLate > 0) {

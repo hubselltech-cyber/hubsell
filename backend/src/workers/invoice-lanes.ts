@@ -1,6 +1,6 @@
 // ============================================================
 // LÀN TỰ PHÁT HÀNH HÓA ĐƠN THEO SHOP — hóa đơn bước 5, lát 8 (03/10/2026).
-// Thay vòng chung một cờ RAM của workers/invoice-auto-issue.ts khi INVOICE_MODE=lanes.
+// Thay vòng chung một cờ RAM của workers/invoice-auto-issue.ts (vòng đó đã gỡ ở bước 6c, 10/10/2026).
 //
 //   Lưới quét mỗi 30 giây:  shop bật tự phát hành, không ngắt mạch, tới giờ chạy
 //                           (invoice_lanes.nextRunAt), chưa ai thuê → nhận tối đa
@@ -27,14 +27,12 @@
 // LÁT 9 (03/10/2026) — YÊU CẦU BẤM TAY đi chung làn:
 //   Mỗi lượt của một shop:  1. yêu cầu bấm tay tới hạn (invoice_requests), cũ trước
 //                           2. phần còn lại của 20 tờ cho tự phát hành — chỉ khi làn
-//                              tới giờ theo lịch (nextRunAt), shop bật công tắc,
-//                              INVOICE_MODE=lanes.
+//                              tới giờ theo lịch (nextRunAt), shop bật công tắc.
 //   Ai gọi lượt:            tín hiệu pg-boss invoice.issue (ngay sau khi chủ shop bấm)
 //                           + lưới quét yêu cầu mỗi 5 giây (mất tín hiệu vẫn chạy).
 //                           Hai đường này thuê làn KHÔNG xét nextRunAt: nextRunAt là
 //                           lịch của tự phát hành; yêu cầu tới hạn theo nextRetryAt của nó.
-//   Lưới quét yêu cầu chạy ở MỌI INVOICE_MODE (đường lui legacy của tự phát hành
-//   không làm chết nút bấm tay). Ngắt mạch chỉ chặn phần tự động.
+//   Lưới quét yêu cầu không xét công tắc tự phát hành. Ngắt mạch chỉ chặn phần tự động.
 // Cấu hình thêm: INVOICE_REQUEST_SWEEP_SECONDS (5).
 // ============================================================
 
@@ -43,7 +41,6 @@ import { randomBytes } from "node:crypto";
 
 import {
   invoiceLaneConcurrency,
-  invoiceMode,
   invoiceRequestSweepSeconds,
   POLL_MANUAL_SECONDS,
 } from "../lib/queue-config";
@@ -268,7 +265,7 @@ export async function runInvoiceLaneOnce(ownerId: string, opts: LaneRunOptions =
     let auto: AutoIssueOutcome | null = null;
     const remaining = MAX_PER_OWNER_PER_RUN - req.processed;
     const reqStopped = req.outcome === "TRANSIENT" || req.outcome === "ABORTED" || req.interrupted;
-    if (!reqStopped && autoDue && remaining > 0 && invoiceMode() === "lanes" && isPublishAllowed()) {
+    if (!reqStopped && autoDue && remaining > 0 && isPublishAllowed()) {
       const cfg = await prisma.invoiceConfig.findFirst({
         where: { ownerId, ...ACTIVE_CONFIG },
         select: AUTO_ISSUE_CONFIG_SELECT,
@@ -384,8 +381,8 @@ export async function registerInvoiceQueueWorkers(): Promise<void> {
 }
 
 /**
- * Khởi động lưới quét yêu cầu bấm tay — gọi một lần từ workers/index.ts, ở MỌI
- * INVOICE_MODE. KHÔNG phụ thuộc pg-boss đã lên hay chưa.
+ * Khởi động lưới quét yêu cầu bấm tay — gọi một lần từ workers/index.ts. KHÔNG phụ
+ * thuộc pg-boss đã lên hay chưa.
  */
 export function startInvoiceRequestScheduler(): void {
   if (requestSweepTimer) return;
@@ -438,7 +435,7 @@ export async function stopInvoiceLanes(timeoutMs: number): Promise<void> {
   ]);
 }
 
-/** Khởi động lưới quét — gọi một lần từ workers/index.ts khi INVOICE_MODE=lanes. */
+/** Khởi động lưới quét — gọi một lần từ workers/index.ts. */
 export function startInvoiceLaneScheduler(): void {
   const minutes = Number(process.env.INVOICE_AUTO_ISSUE_MINUTES ?? DEFAULT_IDLE_MINUTES);
   if (Number.isFinite(minutes) && minutes <= 0) {

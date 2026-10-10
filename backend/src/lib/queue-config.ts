@@ -236,28 +236,6 @@ export function queueOptionsForRole(
 }
 
 /**
- * ĐƯỜNG TỰ PHÁT HÀNH HÓA ĐƠN (bước 5 lát 8, 03/10/2026):
- *   · legacy — vòng chung đi tuần tự qua mọi shop mỗi 15 phút, cờ `running` trong
- *     RAM (workers/invoice-auto-issue.ts).
- *   · lanes  — làn riêng từng shop thuê ở bảng invoice_lanes, các shop chạy song
- *     song, lưới quét 30 giây (workers/invoice-lanes.ts).
- * Lát 8 ĐƯA LÊN HAI LẦN: lần một mặc định còn legacy (migration + bảng lên trước,
- * worker đã có mã làn), lần hai đổi mặc định sang lanes. Đường lui: INVOICE_MODE=legacy.
- */
-export type InvoiceMode = "lanes" | "legacy";
-/**
- * Lần một (359f1cf, 03/10/2026 10:09) mặc định legacy — bảng invoice_lanes + mã làn
- * lên trước, prod không đổi hành vi. Lần hai (anh Trung đã duyệt kế hoạch hai lần
- * 03/10) đổi mặc định sang lanes. Đường lui: INVOICE_MODE=legacy ở worker.
- */
-export const DEFAULT_INVOICE_MODE: InvoiceMode = "lanes";
-
-export function invoiceMode(env: NodeJS.ProcessEnv = process.env): InvoiceMode {
-  const raw = (env.INVOICE_MODE ?? "").trim().toLowerCase();
-  return raw === "lanes" || raw === "legacy" ? raw : DEFAULT_INVOICE_MODE;
-}
-
-/**
  * Số SHOP được tự phát hành cùng lúc ở MỘT tiến trình worker. MẶC ĐỊNH TỰ CHỌN 2
  * (anh Trung chốt 01/10/2026, mục 3.8): khóa ứng dụng với nhà cung cấp là khóa
  * chung của Hubsell, nhiều shop bắn cùng lúc là dồn vào một hạn mức chưa có số.
@@ -351,29 +329,6 @@ export const DEFAULT_INVOICE_AUTO_ADJUST_MODE: InvoiceAutoAdjustMode = "queue";
 export function invoiceAutoAdjustMode(env: NodeJS.ProcessEnv = process.env): InvoiceAutoAdjustMode {
   const raw = (env.INVOICE_AUTO_ADJUST_MODE ?? "").trim().toLowerCase();
   return raw === "queue" || raw === "legacy" ? raw : DEFAULT_INVOICE_AUTO_ADJUST_MODE;
-}
-
-/**
- * ĐƯỜNG HỎI TRẠNG THÁI HÓA ĐƠN VỚI NHÀ CUNG CẤP / CƠ QUAN THUẾ (bước 5 lát 12, 03/10/2026):
- *   · legacy — vòng 12 giờ gọi thẳng MISA, 200 tờ mỗi shop, bỏ tờ quá 30 ngày
- *     (workers/invoice-status-sync.ts).
- *   · follow — vòng quét theo cột cqtNextCheckAt, hỏi qua adapter, theo tới khi có kết
- *     luận (workers/invoice-cqt-follow.ts).
- * Đưa lên HAI LẦN: lần một mặc định legacy (cột + chỉ mục lên trước, mọi chỗ ghi mã tra
- * cứu bắt đầu đặt giờ hỏi — bản cũ đang chạy lúc deploy chưa biết đặt), lần hai đổi mặc
- * định sang follow. Đường lui: INVOICE_CQT_MODE=legacy ở worker.
- */
-export type InvoiceCqtMode = "follow" | "legacy";
-/**
- * Lần một (d93fb5b, 03/10/2026 21:47) mặc định legacy — cột cqtNextCheckAt, chỉ mục và
- * các chỗ đặt giờ hỏi lên trước, đã kiểm prod 21:49. Lần hai (anh Trung 03/10: "Tiếp
- * tục làm luôn lần 2") đổi mặc định sang follow. Đường lui: INVOICE_CQT_MODE=legacy ở worker.
- */
-export const DEFAULT_INVOICE_CQT_MODE: InvoiceCqtMode = "follow";
-
-export function invoiceCqtMode(env: NodeJS.ProcessEnv = process.env): InvoiceCqtMode {
-  const raw = (env.INVOICE_CQT_MODE ?? "").trim().toLowerCase();
-  return raw === "follow" || raw === "legacy" ? raw : DEFAULT_INVOICE_CQT_MODE;
 }
 
 /**

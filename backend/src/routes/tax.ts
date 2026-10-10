@@ -227,7 +227,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           invoiceSeries: true,
           transactionId: true, // mã tra cứu — nuôi nút Tải PDF + link tra cứu công khai
           status: true,
-          cqtStatus: true, // trạng thái phía CQT do worker invoice-status-sync kéo
+          cqtStatus: true, // trạng thái phía CQT do vòng hỏi invoice-cqt-follow kéo
           cqtCheckedAt: true,
           buyerName: true,
           buyerTaxCode: true,

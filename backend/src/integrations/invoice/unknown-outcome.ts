@@ -231,7 +231,7 @@ export async function recheckUnknownLog(log: UnknownLog, provider: InvoiceProvid
 
   // Có tờ nhưng chưa phát hành xong, hoặc đã phát hành mà chưa đọc được mã tra cứu.
   if (found.transactionId) {
-    // Ghi mã tra cứu: dòng rời vòng quét này, vòng hỏi trạng thái (invoice-status-sync) theo tiếp.
+    // Ghi mã tra cứu: dòng rời vòng quét này, vòng hỏi trạng thái (invoice-cqt-follow) theo tiếp.
     await prisma.invoiceLog.updateMany({
       where: stillUnknown(log.id),
       data: {

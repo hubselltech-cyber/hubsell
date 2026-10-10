@@ -1,7 +1,7 @@
 // ============================================================
 // VÒNG HỎI TRẠNG THÁI HÓA ĐƠN (nhà cung cấp + cơ quan thuế) THEO "GIỜ HỎI KẾ TIẾP"
-// — hóa đơn bước 5, lát 12 (03/10/2026, docs/HANG-DOI-BEN.md mục 4.6 T). Thay
-// workers/invoice-status-sync.ts khi INVOICE_CQT_MODE=follow.
+// — hóa đơn bước 5, lát 12 (03/10/2026, docs/HANG-DOI-BEN.md mục 4.6 T). Thay vòng
+// 12 giờ gọi thẳng MISA (workers/invoice-status-sync.ts, đã xóa ở bước 6c 10/10/2026).
 //
 //   Mỗi lượt:  NHẬN tối đa CLAIM_BATCH dòng tới hạn của MỌI shop bằng MỘT câu UPDATE
 //              (dời cqtNextCheckAt về sau CQT_CLAIM_MS, FOR UPDATE SKIP LOCKED) → gom
@@ -497,7 +497,7 @@ function sweepMinutes(): number {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_SWEEP_MINUTES;
 }
 
-/** Khởi động vòng quét — gọi một lần từ workers/index.ts khi INVOICE_CQT_MODE=follow. */
+/** Khởi động vòng quét — gọi một lần từ workers/index.ts. */
 export function startInvoiceCqtFollowWorker(): void {
   const minutes = sweepMinutes();
   if (minutes <= 0) {

@@ -21,14 +21,11 @@
 // một luồng đã gỡ ở bước 6b (05/10/2026).
 // ============================================================
 
-import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";
 import { startInvoiceLaneScheduler, startInvoiceRequestScheduler } from "./invoice-lanes";
 import { startInvoiceCqtFollowWorker } from "./invoice-cqt-follow";
-import { startInvoiceStatusSyncWorker } from "./invoice-status-sync";
 import { startInvoiceUnknownRecheckWorker } from "./invoice-unknown-recheck";
 import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
-import { invoiceCqtMode, invoiceMode } from "../lib/queue-config";
 import { startStockReconcileWorker } from "./stock-reconcile";
 import { startTokenRefreshWorker } from "./token-refresh";
 import { startWeeklyReportWorker } from "./weekly-report";
@@ -82,25 +79,17 @@ export function startAllWorkers(): void {
   startWeeklyReportWorker();
   // Tóm tắt cuối ngày Trợ lý quảng cáo (bước 6 sự cố 14/09) — chuông 20h VN.
   startAdsDailySummaryWorker();
-  // Tự phát hành hóa đơn cho đơn ĐÃ GIAO (ngủ khi chưa bật MISA). Hai đường, chọn
-  // bằng INVOICE_MODE (bước 5 lát 8): vòng chung một cờ của đường cũ, hoặc làn
-  // theo shop thuê ở database + lưới quét (workers/invoice-lanes.ts).
-  if (invoiceMode() === "legacy") {
-    startInvoiceAutoIssueWorker();
-  } else {
-    startInvoiceLaneScheduler();
-  }
+  // Tự phát hành hóa đơn cho đơn ĐÃ GIAO (ngủ khi chưa bật MISA): làn theo shop thuê
+  // ở database + lưới quét (workers/invoice-lanes.ts, bước 5 lát 8). Vòng chung một
+  // cờ RAM của đường cũ đã gỡ ở bước 6c (10/10/2026).
+  startInvoiceLaneScheduler();
   // Yêu cầu xuất hóa đơn bấm tay (bước 5 lát 9): lưới quét invoice_requests gọi làn
-  // của shop. Chạy ở mọi INVOICE_MODE — đường lui của tự phát hành không tắt nút bấm tay.
+  // của shop.
   startInvoiceRequestScheduler();
-  // Đồng bộ trạng thái CQT của hóa đơn (meInvoice không có webhook). Hai đường, chọn
-  // bằng INVOICE_CQT_MODE (bước 5 lát 12): vòng 12 giờ gọi thẳng MISA của đường cũ,
-  // hoặc vòng quét theo giờ hỏi kế tiếp qua adapter (workers/invoice-cqt-follow.ts).
-  if (invoiceCqtMode() === "legacy") {
-    startInvoiceStatusSyncWorker();
-  } else {
-    startInvoiceCqtFollowWorker();
-  }
+  // Hỏi trạng thái hóa đơn với nhà cung cấp / CQT (meInvoice không có webhook): vòng
+  // quét theo giờ hỏi kế tiếp qua adapter (workers/invoice-cqt-follow.ts, bước 5 lát
+  // 12). Vòng 12 giờ gọi thẳng MISA của đường cũ đã gỡ ở bước 6c (10/10/2026).
+  startInvoiceCqtFollowWorker();
   // Tra lại các tờ hóa đơn gửi đi mà chưa rõ kết quả (bước 5 lát 6b).
   startInvoiceUnknownRecheckWorker();
   // Nhắc hạn kê khai thuế quý qua chuông.
