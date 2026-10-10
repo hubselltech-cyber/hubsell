@@ -46,6 +46,20 @@ thấy giá niêm yết. Apple chỉ cho chọn trong bảng mức giá VND có 
 mức ≥ giá web ÷ 0,85. Ví dụ Starter tháng 99.000 → 116.471 → mức 119.000₫ (nếu có).
 **Ngoài app tuyệt đối không ghi "+15%" hay so giá** — 3.1.3 cấm làm nản lòng dùng IAP.
 
+### ✅ Giá đã đặt trên ASC 10/10 (đã rà lại cả 20, Availability = tất cả 175 nước — app chỉ bán VN nên vô hại)
+
+| Gói | Web 1/3/6/12 tháng | App Store 1/3/6/12 tháng (VND) |
+|---|---|---|
+| Starter | 99.000 / 297.000 / 594.000 / 1.089.000 | **119.000 / 359.000 / 699.000 / 1.289.000** |
+| Growth | 199.000 / 597.000 / 1.194.000 / 2.189.000 | **239.000 / 709.000 / 1.409.000 / 2.590.000** |
+| Pro | 399.000 / 1.129.000 / 2.129.000 / 3.990.000 | **470.000 / 1.329.000 / 2.549.000 / 4.695.000** |
+| Business | 699.000 / 1.979.000 / 3.729.000 / 6.990.000 | **829.000 / 2.349.000 / 4.390.000 / 8.290.000** |
+| Scale | 1.199.000 / 3.399.000 / 6.399.000 / 11.990.000 | **1.419.000 / 3.999.000 / 7.590.000 / 14.199.000** |
+
+Mức Apple: dưới ~1,3 triệu bước 1.000₫; trên đó thưa dần (vd 2.500.000 / 2.549.000 / 2.590.000 /
+2.595.000 / 2.599.000) → lấy mức đầu tiên ≥ web ÷ 0,85. Bẫy ASC: ô tìm giá khớp CHUỖI CON
+("4.390.000" ra cả 439.000 và 1.439.000) → luôn chọn đúng dòng, kiểm lại bằng hộp "Current Price".
+
 ⏳ Đăng ký **App Store Small Business Program** (doanh thu < 1 triệu USD/năm → 15%) tại
 developer.apple.com → Account → Small Business Program, Account Holder (anh) tự bấm.
 
