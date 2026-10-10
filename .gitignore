@@ -42,3 +42,8 @@ pgdata/
 
 # Thu muc tam cua Claude Code (scratchpad, profile Chrome headless, anh chup test) - chuyen tu o C sang day 19/08
 .claude-tmp/
+
+# 10/10: chung chi GOC cong khai cua Apple (xac minh JWS In-App Purchase) - phai len Render
+!backend/certs/
+!backend/certs/apple/
+!backend/certs/apple/*.cer
