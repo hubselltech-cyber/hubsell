@@ -112,8 +112,9 @@ ngày), Lazada ~7 call report + adgroup. Không có gì seller "cần tức thì
 ### Tầng C — VAN AN TOÀN THEO APP (chưa có, bắt buộc)
 
 1. **Token bucket theo app** trong worker (Shopee app chính, Hubsell Ads, Lazada):
-   trần call/giây cấu hình được (`ADS_APP_QPS`, mặc định thận trọng **3/s** tới khi
-   Shopee trả lời ticket). Mọi call ads đi qua bucket.
+   trần call/giây cấu hình được (`ADS_APP_QPS`, mặc định thận trọng **3/s** — con số
+   TỰ CHỌN; Shopee trả lời 10/10/2026 là KHÔNG công khai ngưỡng, xem mục 11). Mọi
+   call ads đi qua bucket.
 2. **Cầu dao chung trong DB** (`ApiThrottleState{app, pausedUntil, reason}`): gặp
    `exceed_partner_api` / `exceed_api` → **không retry**, đặt `pausedUntil = now + 5'`
    (nhân đôi tới 60'); mọi worker đọc trước khi gọi. Gặp `exceed_shop_api` **hoặc
@@ -265,6 +266,8 @@ Mỗi bước một commit, không gộp.
   mục 11, anh Trung gửi.
 
 ## 11. Nháp ticket hỏi quota (anh gửi, câu trả lời lưu memory hubsell-api-quota-san)
+
+**★ KẾT QUẢ Shopee (10/10/2026, email openapi@support.shopee.com, ticket 2098790879624904785, sau 2 vòng):** "The specific rate-limit thresholds for Ads APIs are not publicly available. At the shop level, calling once per minute should generally be allowed. If you encounter a rate-limit error, please retry at a different time." → Không có con số theo partner/app, ticket ĐÓNG. Hệ quả: `ADS_APP_QPS = 3` giữ nguyên với tư cách mặc định tự chọn; qua ~800 gian chạy ads thì đo mã `exceed_partner_api` thật trên worker rồi mới chỉnh. Cấp shop: xung 5–6 call liền nhau mỗi 30' giữ nguyên (429 ngày 28/09 xảy ra ngay cả với 1 call/30' nên "1 call/phút" không giải thích được); lùi gian 15' đúng tinh thần "retry at a different time". Lazada #58082 chưa có trả lời.
 
 **Shopee (Console → Raise Ticket, kèm lúc nộp Go-Live app Hubsell Ads):**
 

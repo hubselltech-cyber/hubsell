@@ -165,7 +165,7 @@ Marketing, Ads Service…" — app Hubsell Ads gọi được hết, không cầ
 
 Tổng nền ≈ 300 call/gian/ngày → 1.000 gian chạy ads ≈ 3,5 call/s, đúng trần
 token bucket `ADS_APP_QPS = 3` hiện tại → khi qua 800 gian chạy ads phải có số
-trần thật từ Shopee (ticket 2098790879624904785 đang chờ vòng 2).
+trần thật — nhưng Shopee trả lời 10/10/2026 (ticket 2098790879624904785) là KHÔNG công khai ngưỡng → chỉ còn cách đo mã `exceed_partner_api` thật trên worker rồi chỉnh.
 
 ---
 
@@ -319,8 +319,9 @@ Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên k
 12. ✅ ĐÃ CODE 24/09 (mục 12, chỉ đọc; ANO eligible chưa chạy) — **GMS = GMV Max cấp shop:** chi tiêu GMS hiện KHÔNG vào bảng chiến dịch (chỉ nằm trong tổng chi cấp shop).
     Bước đầu: probe `check_create_gms_product_campaign_eligibility` trên 3 shop nhà. Đây cũng là nơi duy nhất
     tính được hòa vốn theo đúng rổ ads (có `get_gms_item_performance` từng SP).
-13. **Trần gọi API theo app:** ticket Shopee 2098790879624904785 chờ vòng 2; khi qua ~800 gian chạy ads phải
-    có số thật để nâng `ADS_APP_QPS` (hiện 3 call/s).
+13. **Trần gọi API theo app:** ticket Shopee 2098790879624904785 ĐÓNG 10/10/2026 — Shopee không công khai số
+    (chỉ nói cấp shop ~1 call/phút OK); khi qua ~800 gian chạy ads phải đo `exceed_partner_api` thật trên worker
+    rồi mới chỉnh `ADS_APP_QPS` (hiện 3 call/s, mặc định tự chọn).
 14. **Thẻ nhắc trong tour kết nối Shopee** ("có chạy quảng cáo thì sang Trợ lý bấm Kết nối Hubsell Ads") — anh
     chốt không cần ("có hiện là được rồi").
 

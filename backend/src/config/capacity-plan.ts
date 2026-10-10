@@ -131,7 +131,7 @@ export const CAPACITY_MILESTONES: CapacityMilestone[] = [
     upgrades: [],
     checklist: [
       "ISV Shopee được duyệt → Go-Live app Hubsell Ads → 3 shop nhà ủy quyền lại",
-      "Nhận trả lời 2 ticket quota (Shopee email, Lazada #58082) → đặt ADS_APP_QPS / ADS_PULSE_LAZADA_MINUTES",
+      "Ticket quota: Shopee trả lời 10/10 không công khai số (ADS_APP_QPS=3 tự chọn, giữ); Lazada #58082 chưa trả lời → ADS_PULSE_LAZADA_MINUTES giữ 60",
       "Gỡ liên kết trùng shop nhà ở nick test (GIỮ admin@hubsell.vn)",
     ],
   },

@@ -40,6 +40,8 @@ export const ADS_CADENCE = {
   REFRESH_GAP_MIN: 2,
   /** Ví ads còn dưới N giờ đốt → cảnh báo (ops-alerts). */
   WALLET_LOW_HOURS: 24,
-  /** Trần call/giây của MỖI app cho nhóm Ads API — thận trọng tới khi Shopee trả lời ticket. */
+  /** Trần call/giây của MỖI app cho nhóm Ads API — MẶC ĐỊNH TỰ CHỌN: Shopee trả lời 10/10/2026 là
+   *  không công khai ngưỡng (cấp shop ~1 call/phút OK, dính 429 thì gọi lại lúc khác); qua ~800 gian
+   *  chạy ads thì đo mã exceed_partner_api thật rồi mới chỉnh. */
   APP_QPS: envNum("ADS_APP_QPS", 3),
 } as const;
