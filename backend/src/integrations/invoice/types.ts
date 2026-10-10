@@ -205,6 +205,12 @@ export interface ProviderCapabilities {
    * ký. Adapter khai true thì phải cài findDrafts và trả awaitingSignature từ createInvoice.
    */
   draftSigning: { supported: false } | { supported: true; signUrl: string };
+  /**
+   * Số tờ tối đa adapter nhận trong MỘT lệnh lập hóa đơn (createInvoices). 1 = từng tờ
+   * một lệnh (createInvoice). Lớn hơn 1 thì adapter PHẢI cài createInvoices. Lõi
+   * issue-order gom đơn theo số này; khoảng nghỉ publishGapMs áp giữa hai LỆNH.
+   */
+  createBatchSize: number;
 }
 
 /**
@@ -303,6 +309,14 @@ export interface InvoiceProvider {
 
   /** Gửi yêu cầu phát hành hóa đơn cho một đơn hàng. */
   createInvoice(input: CreateInvoiceInput): Promise<InvoiceResult>;
+
+  /**
+   * Lập MỘT LÔ tờ trong một lệnh (anh Trung chốt 10/10/2026: tờ nháp gửi 20 tờ một lệnh).
+   * Trả đúng một kết quả cho mỗi phần tử, cùng thứ tự. Không ném lỗi nghiệp vụ: lệnh hỏng
+   * cả lô thì mỗi phần tử mang kết quả hỏng. Bắt buộc có khi capabilities.createBatchSize
+   * > 1; nơi gọi bảo đảm lô không quá số đó.
+   */
+  createInvoices?(inputs: CreateInvoiceInput[]): Promise<InvoiceResult[]>;
 
   /** Hủy một hóa đơn đã phát hành (theo transactionId NCC cấp lúc tạo). */
   cancelInvoice(transactionId: string, reason: string): Promise<InvoiceResult>;

@@ -166,6 +166,9 @@ describe("Bảng khả năng của MISA (thử sandbox 02/10/2026 + MISA trả l
       // Lát T1 tenant 08/10/2026: nhóm API WEB APP (tờ nháp) — sandbox 07/10 + tờ thật HQ
       // 00000001 + MISA trả lời ticket 08/10 chỉ đích danh API này cho hóa đơn nháp.
       draftSigning: { supported: true, signUrl: "https://app3.meinvoice.vn/v3/hoa-don" },
+      // 10/10/2026: cổng phát hành HSM vẫn một tờ một lệnh (chưa đo, chưa có khách ký HSM);
+      // đường tờ nháp khai 20 ở capabilities của adapter (WEB_INSERT_BATCH_SIZE, đo sandbox 10/10).
+      createBatchSize: 1,
     });
     expect(new MisaInvoiceProvider(CFG).capabilities).toBe(MISA_CAPABILITIES);
   });

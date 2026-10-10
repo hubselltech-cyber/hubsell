@@ -1,8 +1,9 @@
 /**
- * LÕI PHÁT HÀNH HÓA ĐƠN CHO MỘT ĐƠN HÀNG — dùng chung cho 3 cửa:
- *   · POST /api/tax/invoices        (xuất tay 1 đơn)
- *   · POST /api/tax/invoices/bulk   (xuất hàng loạt từ hàng chờ)
- *   · worker invoice-auto-issue     (tự động xuất theo lịch)
+ * LÕI PHÁT HÀNH HÓA ĐƠN CHO ĐƠN HÀNG — dùng chung cho mọi cửa (bấm một đơn, lô bấm
+ * tay, tự phát hành theo lịch) qua làn của shop (services/invoice-requests.ts,
+ * workers/invoice-auto-issue.ts). Từ 10/10/2026 có issueInvoicesForOrders gom nhiều
+ * đơn một lệnh nhà cung cấp (tờ nháp MISA 20 tờ/lệnh); issueInvoiceForOrder giữ cho
+ * một đơn.
  *
  * Quy ước như route gốc 23/08: dòng hàng theo InvoiceLine (đơn giá CHƯA thuế,
  * % từ Product.vatRate, tên in ưu tiên taxName); ghi InvoiceLog PENDING → kết
@@ -24,7 +25,7 @@ import { AWAITING_SIGNATURE_CODE, DRAFT_FIRST_CHECK_MS, NUMBER_PENDING_CODE } fr
 import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
-import type { InvoiceLine, InvoiceProvider, InvoiceResult } from "./types";
+import type { CreateInvoiceInput, InvoiceLine, InvoiceProvider, InvoiceResult } from "./types";
 import { canRecheckLater, keptPendingMessage, OUTCOME_UNKNOWN_CODE, recheckInProgressMessage } from "./unknown-outcome";
 
 /** Khoảng nghỉ nhà cung cấp yêu cầu giữa hai lệnh phát hành; undefined khi không yêu cầu. */
@@ -360,16 +361,46 @@ async function openInvoiceConflict(ownerId: string, orderCode: string): Promise<
   };
 }
 
+// ============================================================
+// LÕI TÁCH BA BƯỚC (10/10/2026, gom lô 20 tờ một lệnh — anh Trung chốt):
+//   loadIssue     tải đơn + adapter + dựng dòng hàng, KHÔNG ghi gì (lỗi sớm trả kết quả ngay)
+//   claimIssue    ghi dòng PENDING = VÉ của đơn (chỉ mục duy nhất chặn trùng)
+//   finalizeIssue áp kết quả nhà cung cấp: cập nhật dòng + lịch sử + đơn trong MỘT giao dịch
+// issueInvoiceForOrder = ba bước cho một đơn (hợp đồng cũ, không đổi hành vi).
+// issueInvoicesForOrders = tải tất cả → gom theo adapter → mỗi lô: đặt vé → MỘT lệnh
+// createInvoices → chốt sổ từng tờ → báo kết quả qua onResult.
+// ============================================================
+
+/** Đơn đã tải xong, chưa đặt vé — đủ dữ kiện để gọi nhà cung cấp. */
+interface LoadedIssue {
+  orderCode: string;
+  orderId: string;
+  channelId: string | null;
+  provider: InvoiceProvider;
+  invoiceSeries: string | null;
+  lines: InvoiceLine[];
+  vatTotal: number;
+  totalAmount: number;
+  buyer: ResolvedInvoiceBuyer;
+  /** Mã số thuế người mua sai dạng: KHÔNG gọi nhà cung cấp, ghi sổ FAILED tầm ORDER. */
+  buyerTaxCodeError: string | null;
+}
+
+type LoadOutcome = { kind: "done"; result: IssueOrderResult } | { kind: "ready"; issue: LoadedIssue };
+
+type ClaimedLog = Awaited<ReturnType<typeof prisma.invoiceLog.create>>;
+
 /**
  * @param channelWhere Phạm vi gian hàng của người gọi — route truyền
  *        channelScope(req) (đã gồm giới hạn nhân viên), worker truyền
  *        {userId: ownerId} (toàn shop).
  */
-export async function issueInvoiceForOrder(
+async function loadIssue(
   ownerId: string,
   channelWhere: Prisma.ChannelWhereInput,
   orderCode: string
-): Promise<IssueOrderResult> {
+): Promise<LoadOutcome> {
+  const done = (result: IssueOrderResult): LoadOutcome => ({ kind: "done", result });
   const order = await prisma.order.findFirst({
     where: { orderCode, channel: channelWhere },
     include: {
@@ -381,24 +412,24 @@ export async function issueInvoiceForOrder(
     },
   });
   if (!order) {
-    return {
+    return done({
       ok: false,
       httpStatus: 404,
       error: `Không tìm thấy đơn ${orderCode} trong phạm vi của bạn`,
-    };
+    });
   }
   if (order.shippingStatus === ShippingStatus.CANCELLED) {
-    return { ok: false, httpStatus: 400, error: "Đơn đã hủy — không phát hành hóa đơn" };
+    return done({ ok: false, httpStatus: 400, error: "Đơn đã hủy — không phát hành hóa đơn" });
   }
   if (order.items.length === 0) {
-    return { ok: false, httpStatus: 400, error: "Đơn không có dòng hàng nào để lên hóa đơn" };
+    return done({ ok: false, httpStatus: 400, error: "Đơn không có dòng hàng nào để lên hóa đơn" });
   }
 
   // Chống phát hành trùng, lớp 1: đơn đã có hóa đơn đang chờ/đã phát hành thì
   // dừng sớm với thông điệp rõ. Lớp 2 (chốt thật) là chỉ mục duy nhất ở database,
-  // bắt ở chỗ ghi dòng PENDING bên dưới.
+  // bắt ở chỗ ghi dòng PENDING (claimIssue).
   const conflict = await openInvoiceConflict(ownerId, orderCode);
-  if (conflict) return conflict;
+  if (conflict) return done(conflict);
 
   let provider: Awaited<ReturnType<typeof getInvoiceProvider>>;
   try {
@@ -406,15 +437,15 @@ export async function issueInvoiceForOrder(
   } catch (err) {
     const blocked = secretUnreadableResult(ownerId, err);
     if (!blocked) throw err;
-    return blocked;
+    return done(blocked);
   }
   if (!provider) {
-    return {
+    return done({
       ok: false,
       httpStatus: 400,
       error:
         "Chưa cấu hình nhà cung cấp hóa đơn (hoặc NCC chưa được hỗ trợ) — vào Kết nối & Xuất hóa đơn trước.",
-    };
+    });
   }
 
   // THUẾ SUẤT MẶC ĐỊNH của shop (24/08 — kho vật lý chỉ quản số lượng, không
@@ -461,63 +492,106 @@ export async function issueInvoiceForOrder(
       buyerTaxCodeError = `Mã số thuế / số định danh người mua "${buyer.buyerTaxCode}" không đúng định dạng (khách điền sai trên sàn) — liên hệ khách lấy số đúng rồi lập hóa đơn cho đơn này trực tiếp trên meInvoice.`;
     }
   }
+  return {
+    kind: "ready",
+    issue: {
+      orderCode,
+      orderId: order.id,
+      channelId: order.channelId,
+      provider,
+      invoiceSeries: cfg?.invoiceSeries ?? null,
+      lines,
+      vatTotal,
+      totalAmount,
+      buyer,
+      buyerTaxCodeError,
+    },
+  };
+}
 
-  // Dòng PENDING là VÉ của đơn này: database chỉ cho MỘT hóa đơn gốc đang chờ /
-  // đã phát hành cho mỗi (shop, mã đơn) — chỉ mục InvoiceLog_open_original_key.
-  // Hai luồng cùng qua được lớp kiểm ở trên thì luồng ghi sau bị từ chối ở đây,
-  // TRƯỚC khi gọi nhà cung cấp.
-  let log: Awaited<ReturnType<typeof prisma.invoiceLog.create>>;
+/**
+ * Dòng PENDING là VÉ của đơn này: database chỉ cho MỘT hóa đơn gốc đang chờ /
+ * đã phát hành cho mỗi (shop, mã đơn) — chỉ mục InvoiceLog_open_original_key.
+ * Hai luồng cùng qua được lớp kiểm ở loadIssue thì luồng ghi sau bị từ chối ở đây,
+ * TRƯỚC khi gọi nhà cung cấp.
+ */
+async function claimIssue(
+  ownerId: string,
+  issue: LoadedIssue
+): Promise<{ log: ClaimedLog; conflict?: undefined } | { log?: undefined; conflict: IssueOrderResult }> {
   try {
-    log = await prisma.invoiceLog.create({
+    const log = await prisma.invoiceLog.create({
       data: {
         ownerId,
-        orderId: order.id,
-        orderCode,
-        provider: provider.name,
-        // Mã tham chiếu gửi NCC của hóa đơn gốc luôn là mã đơn (xem createInvoice bên dưới).
-        providerRef: orderCode,
+        orderId: issue.orderId,
+        orderCode: issue.orderCode,
+        provider: issue.provider.name,
+        // Mã tham chiếu gửi NCC của hóa đơn gốc luôn là mã đơn (xem createInvoice).
+        providerRef: issue.orderCode,
         status: InvoiceLogStatus.PENDING,
-        totalAmount,
-        vatAmount: vatTotal,
+        totalAmount: issue.totalAmount,
+        vatAmount: issue.vatTotal,
         // Ký hiệu + snapshot dòng hàng LÚC PHÁT HÀNH — hóa đơn điều chỉnh sau
         // này (khách trả hàng) ghi ÂM đúng số đã xuất, không dựng lại từ đơn.
-        invoiceSeries: cfg?.invoiceSeries ?? null,
-        lines: lines as unknown as Prisma.InputJsonValue,
+        invoiceSeries: issue.invoiceSeries,
+        lines: issue.lines as unknown as Prisma.InputJsonValue,
         // Snapshot người mua — bảng kê bán ra tự đủ dữ liệu sau khi cron BVDLCN
         // xóa Order.buyerInvoiceInfo.
-        buyerName: buyer.buyerName,
-        buyerTaxCode: buyer.buyerTaxCode ?? null,
+        buyerName: issue.buyer.buyerName,
+        buyerTaxCode: issue.buyer.buyerTaxCode ?? null,
       },
     });
+    return { log };
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
-    return (
-      (await openInvoiceConflict(ownerId, orderCode)) ?? {
+    return {
+      conflict: (await openInvoiceConflict(ownerId, issue.orderCode)) ?? {
         ok: false,
         httpStatus: 409,
         conflict: "PENDING",
         error: "Đơn này đang có yêu cầu phát hành chờ xử lý.",
-      }
-    );
+      },
+    };
   }
+}
 
-  // MST người mua sai dạng → KHÔNG gọi NCC (khỏi đốt số hóa đơn cho một tờ chắc
-  // chắn bị từ chối) nhưng vẫn ghi sổ FAILED: seller thấy lý do ở Lịch sử, và
-  // worker tự động chỉ thử lại 1 lần/ngày thay vì mỗi 15 phút.
-  const result: InvoiceResult = buyerTaxCodeError
-    ? {
-        status: InvoiceLogStatus.FAILED,
-        errorMessage: buyerTaxCodeError,
-        errorCode: "HUBSELL_BUYER_TAXCODE_INVALID",
-        errorScope: "ORDER",
-      }
-    : await provider.createInvoice({
-        orderCode,
-        ...buyer,
-        lines,
-        totalAmount,
-      });
+/** Dữ liệu gửi nhà cung cấp cho một đơn đã tải. */
+function createInputOf(issue: LoadedIssue): CreateInvoiceInput {
+  return { orderCode: issue.orderCode, ...issue.buyer, lines: issue.lines, totalAmount: issue.totalAmount };
+}
 
+/**
+ * MST người mua sai dạng → KHÔNG gọi NCC (khỏi đốt số hóa đơn cho một tờ chắc
+ * chắn bị từ chối) nhưng vẫn ghi sổ FAILED: seller thấy lý do ở Lịch sử, và
+ * worker tự động chỉ thử lại 1 lần/ngày thay vì mỗi 15 phút.
+ */
+function buyerTaxCodeFailed(message: string): InvoiceResult {
+  return {
+    status: InvoiceLogStatus.FAILED,
+    errorMessage: message,
+    errorCode: "HUBSELL_BUYER_TAXCODE_INVALID",
+    errorScope: "ORDER",
+  };
+}
+
+/** Adapter ném thay vì trả kết quả (trái hợp đồng): coi là lỗi TẠM để vé không treo. */
+function providerThrew(err: unknown): InvoiceResult {
+  return {
+    status: InvoiceLogStatus.FAILED,
+    errorScope: "TRANSIENT",
+    errorCode: "HUBSELL_PROVIDER_THREW",
+    errorMessage: `Nhà cung cấp hóa đơn trả lỗi bất thường: ${(err as Error)?.message ?? String(err)}`,
+  };
+}
+
+/** Áp kết quả nhà cung cấp lên vé: dòng nhật ký + lịch sử + đơn trong MỘT giao dịch. */
+async function finalizeIssue(
+  issue: LoadedIssue,
+  log: ClaimedLog,
+  result: InvoiceResult,
+  pauseBeforeNextMs: number | undefined
+): Promise<IssueOrderResult> {
+  const { provider, orderCode } = issue;
   const now = new Date();
   const issued = result.status === InvoiceLogStatus.ISSUED;
   // TỜ NHÁP CHỜ KÝ (lát T1 tenant, 08/10/2026): nhà cung cấp đã nhận tờ nháp, chủ shop
@@ -549,7 +623,7 @@ export async function issueInvoiceForOrder(
   if (failedNow) {
     const prev = await prisma.invoiceLog.aggregate({
       where: {
-        orderId: order.id,
+        orderId: issue.orderId,
         adjustmentForLogId: null,
         status: InvoiceLogStatus.FAILED,
         id: { not: log.id },
@@ -568,7 +642,7 @@ export async function issueInvoiceForOrder(
         status: finalStatus,
         invoiceNo: result.invoiceNo ?? null,
         transactionId: result.transactionId ?? null,
-        vatAmount: result.vatAmount ?? vatTotal,
+        vatAmount: result.vatAmount ?? issue.vatTotal,
         errorMessage,
         errorScope: failScope ?? null,
         orderErrorCount: orderErrorCount ?? null,
@@ -600,7 +674,7 @@ export async function issueInvoiceForOrder(
       },
     }),
     prisma.order.update({
-      where: { id: order.id },
+      where: { id: issue.orderId },
       data: { einvoiceStatus: finalStatus },
     }),
   ]);
@@ -622,7 +696,7 @@ export async function issueInvoiceForOrder(
     outcomeUnknown: !issued && result.outcomeUnknown ? true : undefined,
     awaitingSignature: awaiting ? true : undefined,
     message: deferred ? (errorMessage ?? undefined) : undefined,
-    pauseBeforeNextMs: buyerTaxCodeError ? undefined : publishGapOf(provider),
+    pauseBeforeNextMs,
     orderErrorCount,
     autoRetryJustStopped: autoRetryJustStopped ? true : undefined,
     log: {
@@ -632,4 +706,151 @@ export async function issueInvoiceForOrder(
       platformTaxWithheld: Number(updated.platformTaxWithheld),
     },
   };
+}
+
+/**
+ * Phát hành cho MỘT đơn (một lệnh nhà cung cấp). Hợp đồng giữ nguyên từ 23/08.
+ * @param channelWhere Phạm vi gian hàng của người gọi — route truyền
+ *        channelScope(req) (đã gồm giới hạn nhân viên), worker truyền
+ *        {userId: ownerId} (toàn shop).
+ */
+export async function issueInvoiceForOrder(
+  ownerId: string,
+  channelWhere: Prisma.ChannelWhereInput,
+  orderCode: string
+): Promise<IssueOrderResult> {
+  const loaded = await loadIssue(ownerId, channelWhere, orderCode);
+  if (loaded.kind === "done") return loaded.result;
+  const { issue } = loaded;
+  const claim = await claimIssue(ownerId, issue);
+  if (claim.conflict) return claim.conflict;
+  let result: InvoiceResult;
+  if (issue.buyerTaxCodeError) result = buyerTaxCodeFailed(issue.buyerTaxCodeError);
+  else {
+    try {
+      result = await issue.provider.createInvoice(createInputOf(issue));
+    } catch (err) {
+      result = providerThrew(err);
+    }
+  }
+  return finalizeIssue(issue, claim.log, result, issue.buyerTaxCodeError ? undefined : publishGapOf(issue.provider));
+}
+
+export interface IssueManyOptions {
+  /** Hỏi trước mỗi lệnh nhà cung cấp; true = dừng êm (các đơn chưa đặt vé để lại nguyên). */
+  shouldStop?: () => boolean | Promise<boolean>;
+  /** Hỏi ngay trước khi đặt vé một đơn; false = bỏ qua đơn đó (không báo onResult). */
+  stillWanted?: (orderCode: string) => Promise<boolean>;
+  /**
+   * Nhận kết quả từng đơn (thứ tự: đơn lỗi sớm trước, rồi theo lô). Trả "STOP" để không
+   * gọi nhà cung cấp thêm lệnh nào (các kết quả còn lại của CÙNG lô vẫn được báo đủ, vì
+   * lô đã gửi).
+   */
+  onResult: (orderCode: string, r: IssueOrderResult) => Promise<"CONTINUE" | "STOP">;
+}
+
+export interface IssueManyOutcome {
+  /** Số đơn đã báo qua onResult. */
+  processed: number;
+  /** shouldStop trả true — phần chưa đặt vé để lại cho lượt sau. */
+  interrupted: boolean;
+  /** onResult trả STOP. */
+  stopped: boolean;
+  /** Khoảng nghỉ nhà cung cấp đòi trước lệnh kế (nếu lượt này đã gọi nhà cung cấp). */
+  pauseBeforeNextMs?: number;
+}
+
+/**
+ * Phát hành cho NHIỀU đơn, gom theo lô của nhà cung cấp (capabilities.createBatchSize —
+ * tờ nháp MISA 20 tờ một lệnh; cổng HSM 1). Thứ tự làm: tải mọi đơn (không ghi) → báo
+ * ngay các đơn lỗi sớm (không thấy / đã hủy / đã có hóa đơn / chưa cấu hình) → gom đơn
+ * sẵn sàng theo adapter (adapter dựng mới mỗi lần nhưng cùng cấu hình → gom theo tên +
+ * gian) → mỗi lô: đặt vé từng đơn (trùng → báo 409), MỘT lệnh createInvoices, chốt sổ
+ * từng tờ, báo onResult. Khoảng nghỉ publishGapMs áp GIỮA HAI LỆNH ngay tại đây; lệnh
+ * cuối ghi pauseBeforeNextMs để nơi gọi nghỉ trước lệnh kế của chính nó.
+ * Vé đã đặt thì luôn được gửi và chốt sổ — STOP / dừng êm chỉ có hiệu lực giữa hai lô.
+ */
+export async function issueInvoicesForOrders(
+  ownerId: string,
+  channelWhere: Prisma.ChannelWhereInput,
+  orderCodes: string[],
+  opts: IssueManyOptions
+): Promise<IssueManyOutcome> {
+  const out: IssueManyOutcome = { processed: 0, interrupted: false, stopped: false };
+  const deliver = async (orderCode: string, r: IssueOrderResult): Promise<void> => {
+    out.processed += 1;
+    if ((await opts.onResult(orderCode, r)) === "STOP") out.stopped = true;
+  };
+
+  interface Group {
+    provider: InvoiceProvider;
+    issues: LoadedIssue[];
+  }
+  const groups = new Map<string, Group>();
+  for (const orderCode of orderCodes) {
+    const loaded = await loadIssue(ownerId, channelWhere, orderCode);
+    if (loaded.kind === "done") {
+      await deliver(orderCode, loaded.result);
+      continue;
+    }
+    const key = `${loaded.issue.provider.name}:${loaded.issue.channelId ?? "shop"}`;
+    const g = groups.get(key);
+    if (g) g.issues.push(loaded.issue);
+    else groups.set(key, { provider: loaded.issue.provider, issues: [loaded.issue] });
+  }
+  if (out.stopped) return out;
+
+  let calledProvider = false;
+  for (const group of groups.values()) {
+    const { provider } = group;
+    const cap = provider.capabilities.createBatchSize;
+    const size = typeof provider.createInvoices === "function" && cap > 1 ? cap : 1;
+    const gap = publishGapOf(provider);
+    for (let at = 0; at < group.issues.length; at += size) {
+      if (opts.shouldStop && (await opts.shouldStop())) {
+        out.interrupted = true;
+        return out;
+      }
+      // Đặt vé cho cả lô trước, rồi mới gọi — vé đã đặt là phải gửi.
+      const chunk = group.issues.slice(at, at + size);
+      const results: Array<{ orderCode: string; r: IssueOrderResult }> = [];
+      const claimed: Array<{ issue: LoadedIssue; log: ClaimedLog }> = [];
+      for (const issue of chunk) {
+        if (opts.stillWanted && !(await opts.stillWanted(issue.orderCode))) continue;
+        const claim = await claimIssue(ownerId, issue);
+        if (claim.conflict) results.push({ orderCode: issue.orderCode, r: claim.conflict });
+        else claimed.push({ issue, log: claim.log });
+      }
+      const toSend = claimed.filter((c) => !c.issue.buyerTaxCodeError);
+      let provided: InvoiceResult[] = [];
+      if (toSend.length > 0) {
+        // Nghỉ giữa hai LỆNH theo bảng khả năng (MISA 02/10: mỗi lệnh cách 1–3 giây).
+        if (calledProvider && gap) await new Promise<void>((r) => setTimeout(r, gap));
+        calledProvider = true;
+        const inputs = toSend.map((c) => createInputOf(c.issue));
+        try {
+          provided =
+            size > 1 && provider.createInvoices
+              ? await provider.createInvoices(inputs)
+              : [await provider.createInvoice(inputs[0])];
+        } catch (err) {
+          provided = inputs.map(() => providerThrew(err));
+        }
+        if (provided.length !== inputs.length) {
+          const bad = providerThrew(new Error(`adapter trả ${provided.length} kết quả cho ${inputs.length} tờ`));
+          provided = inputs.map(() => ({ ...bad }));
+        }
+      }
+      let k = 0;
+      for (const c of claimed) {
+        const result = c.issue.buyerTaxCodeError ? buyerTaxCodeFailed(c.issue.buyerTaxCodeError) : provided[k++];
+        const r = await finalizeIssue(c.issue, c.log, result, c.issue.buyerTaxCodeError ? undefined : gap);
+        results.push({ orderCode: c.issue.orderCode, r });
+      }
+      if (toSend.length > 0) out.pauseBeforeNextMs = gap;
+      for (const { orderCode, r } of results) await deliver(orderCode, r);
+      if (out.stopped) return out;
+    }
+  }
+  return out;
 }

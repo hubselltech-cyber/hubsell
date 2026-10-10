@@ -1389,7 +1389,7 @@ Không lặp lại: hàng đợi tín hiệu `invoice.issue` đã nằm trong d�
 
 *Chưa kiểm.* Dòng "Hóa đơn" trên trang HQ Sức khỏe của prod (kiểm sau khi đẩy); mức vàng / đỏ trên prod (chưa shop nào dùng hóa đơn); thời gian chạy của năm câu đọc trên bảng lớn (prod InvoiceLog 2 dòng).
 
-**Đợt 6c — kiểm kê và kế hoạch 10/10/2026 (lượt nhắc; chưa viết mã, chờ anh Trung chốt)**
+**Đợt 6c — kiểm kê và kế hoạch 10/10/2026 (lượt nhắc)**
 
 *Số thật prod (Supabase SQL chỉ đọc, 10/10 ~15:30; Render env đọc qua Chrome).*
 
@@ -1421,6 +1421,41 @@ Mỗi lần đẩy MỘT commit, không migration (trừ xóa bảng ở 02/11),
 *Việc sổ: gom 20–30 tờ một lệnh (MISA 02/10).* CHƯA ĐO. Cả hai cổng đã nhận mảng: `/invoice/publishing` bọc `InvoiceData: [...]` (tài liệu ghi tối đa 30/lệnh, MISA nói 50) và `/invoiceweb` `insertWebDraft` gửi `[payload]`. Lưu ý mới từ 08/10: khách thật ký eSign/USB nên đi tờ nháp (`insertWebDraft`), còn lời khuyên gom lô của MISA là cho `/invoice/publishing` (HSM). Bài đo đề xuất (sandbox MST 0101243150-732, lập ~60 tờ sandbox không xóa được, ~1 giờ): L1 lô 5 hợp lệ (thời gian, kết quả từng tờ, số liên tục); L2 lô 20 và lô 30; L3 lô 31 (quá trần tài liệu); L4 lô có MỘT tờ sai thuế suất ở giữa → cả lô hỏng hay chỉ tờ đó (quyết định cách ghi "chưa rõ kết quả" theo lô); L5 lô có một RefID đã lập; L6 lặp L1 + L4 với `insertWebDraft`. Đề nghị HOÃN đo tới khi có shop thật >100 tờ/ngày: hiện 0 shop cấu hình, 1 tờ/lệnh cho 20–40 tờ/phút/ký hiệu là đủ.
 
 **Việc cần anh Trung quyết (10/10):** (1) gỡ 6c-1 → 6c-4 ngay hay chờ shop MISA thật đầu tiên; (2) 6c-5 webhook MISA cũ: giữ nguyên tới lát 13, hay gỡ mã ngay (giữ `misa-webhook.ts` + `misa-webhook-service.ts`) và xóa bảng cùng đợt 02/11; (3) bài đo gom lô: đo ngay hay hoãn.
+
+**Anh Trung chốt 10/10/2026 chiều:** "Gỡ 1-4 luôn, vì mình xác định là dùng đường mới nên cũng không cần quan tâm đường cũ nữa. Công việc bây giờ của mình chỉ là gửi tờ hóa đơn nháp nên cũng nhẹ nhàng hơn, cứ gửi chốt cứng 20 tờ 1 lệnh." 6c-5 (webhook MISA cũ) chưa chốt → giữ nguyên, thuộc lát 13.
+
+*Đã làm (10/10 chiều, 4 commit gỡ + 1 commit gom lô; anh push):*
+
+| Commit | Nội dung | Kiểm |
+|---|---|---|
+| `1a67159` | 6c-1 + 6c-2: gỡ `INVOICE_MODE` + vòng chung một cờ RAM; gỡ `INVOICE_CQT_MODE` + xóa tệp `workers/invoice-status-sync.ts` | tsc sạch |
+| `cc0441c` | 6c-3: gỡ `INVOICE_BULK_MODE` + `INVOICE_SINGLE_MODE`; xóa route `POST /invoices/bulk` + `issueInvoicesBulk` ở web; `/invoice-queue` trả `bulkViaLane: true` hằng cho bản giao diện cũ | tsc BE + FE, eslint FE |
+| `a1dbb96` | 6c-4: gỡ `INVOICE_AUTO_ADJUST_MODE` + `maybeAutoAdjustOnPlatformReturn` | tsc |
+| (gom lô) | xem mục dưới | 12 tệp test hóa đơn 145/145, cả bộ xem PROGRESS |
+
+Dev DB có bản ghi migration hỏng cũ `20260830120000_fee_audit` (17/09) nên `prisma migrate deploy` local từ chối (P3009); migration mới áp bằng `prisma db execute --file` như lát 8/12 — không liên quan prod.
+
+**Gom 20 tờ một lệnh — đường tờ nháp (10/10/2026)**
+
+*Đo sandbox trước khi viết* (`scripts/misa-web-draft-batch-probe.ts`, MST sandbox, 35 tờ nháp lập rồi xóa sạch):
+
+| Ca | Kết quả |
+|---|---|
+| D1 lô 5 hợp lệ | nhận sau 490 ms; `Data` là JSON string chứa MẢNG, mỗi tờ một phần tử `{RefID, InvSeries, InvDate, EInvoiceStatus}`; getlist thấy 5/5 |
+| D2 lô 5 có tờ #3 sai ký hiệu + mẫu | MISA sandbox NHẬN cả tờ sai (không kiểm ký hiệu/mẫu) → không đo được mã lỗi riêng tờ; mã vẫn đọc `ErrorCode` từng phần tử phòng production trả |
+| D3 lô 5 có tờ #2 trùng RefID tờ đã có | nhận sau 329 ms, `Data` chỉ 4 phần tử — tờ trùng bị BỎ LẶNG LẼ, không lỗi → tờ không có trong câu trả lời phải coi là chưa nhận (`HUBSELL_DRAFT_NOT_IN_RESPONSE`), tra lại web rồi mới kết luận |
+| D4 lô 20 hợp lệ | nhận sau 1.119 ms; getlist 20/20. So với 20 lệnh lẻ ≈ 2 giây + nghỉ 1 giây/tờ ≈ 21 giây |
+
+*Thiết kế.*
+- Hợp đồng adapter (`types.ts`): `capabilities.createBatchSize` (1 = từng tờ) + `createInvoices?(inputs)` trả đúng một kết quả mỗi phần tử, cùng thứ tự, không ném. MISA: eSign / USB (đường tờ nháp) khai `WEB_INSERT_BATCH_SIZE = 20` (anh chốt cứng; trần tài liệu 30 = `WEB_INSERT_BATCH_MAX`); HSM giữ 1 (chưa đo, chưa có khách ký HSM).
+- `misa-invoiceweb.ts`: `insertWebDraftPayloads(payloads)` một lệnh insert cho cả lô; `mapWebInsertResponse` (hàm thuần) ghép kết quả theo RefID, thiếu → `HUBSELL_DRAFT_NOT_IN_RESPONSE`, chỉ ghép theo vị trí khi MISA không trả RefID và số phần tử khớp.
+- `misa-provider.ts` `createViaWebDraftBatch`: một lệnh getlist cho cả lô → tờ không có trên web hỏi cổng tra cứu một lệnh → tờ thiếu dựng payload, MỘT lệnh insert → tờ không có trong câu trả lời tra lại web một lần (thấy = đã có, không thấy = lỗi TẠM). Lỗi trước insert hay insert hỏng cả lô → mọi tờ chưa có kết quả mang cùng kết quả lỗi (`draftErrorResult`, giống một tờ).
+- `issue-order.ts` tách ba bước `loadIssue` (không ghi) → `claimIssue` (dòng PENDING = vé) → `finalizeIssue` (một giao dịch); `issueInvoiceForOrder` giữ hợp đồng cũ; mới `issueInvoicesForOrders(owner, phạm vi, mã đơn[], {shouldStop, stillWanted, onResult})`: tải tất cả → báo ngay đơn lỗi sớm → gom theo adapter (tên + gian) → mỗi lô: đặt vé từng đơn → một lệnh `createInvoices` → chốt sổ từng tờ → `onResult`. Vé đã đặt thì luôn gửi; STOP / dừng êm chỉ có hiệu lực giữa hai lô; khoảng nghỉ `publishGapMs` áp giữa hai LỆNH ngay trong lõi.
+- Hai vòng gọi lõi: `runIssueRequestsForShop` gom các yêu cầu XUẤT liên tiếp thành một lượt (điều chỉnh tay và điều chỉnh tự động vẫn từng tờ); `runAutoIssueForShop` đưa cả 20 đơn vào một lượt, luật ngắt mạch áp trên kết quả trả về (lô đã gửi thì mọi tờ trong lô đều được ghi sổ, kể cả sau quyết định dừng).
+
+*Đã kiểm.* `invoice-web-draft-batch.test.ts` 9 ca không database (ghép RefID, bảng khả năng, lô trộn 4 ca, thiếu trong câu trả lời, mã lỗi riêng tờ, đứt mạng, hỏng trước insert, HSM đi lần lượt); `invoice-requests.test.ts` thêm 2 ca database (adapter khai lô 3: 5 yêu cầu đi 2 lệnh cũ trước; yêu cầu hủy trước lượt không vào lô + lỗi tài khoản giữa lô: cả lô vẫn có kết quả, phần chưa gửi FAILED cùng lý do); 12 tệp test hóa đơn 145/145.
+
+*Chưa kiểm.* Chưa có shop thật nào cấu hình MISA trên prod → lượt lô 20 thật đầu tiên là ở shop MISA đầu tiên; mã lỗi riêng tờ của production MISA (sandbox không kiểm ký hiệu/mẫu nên chưa thấy hình dạng thật).
 
 ## 5. Rủi ro và điều em không cam kết
 
@@ -1458,9 +1493,9 @@ Ghi ngày 02/10/2026. Việc nào xong thì gạch ở đây và ghi kết quả
 | ~~Thời hạn chờ lệnh gọi sàn~~ | ✅ 05/10: anh Trung duyệt 30 giây; 6a `67dacb1` lên master 05/10 10:07 | ✅ 08/10 đã xem log 3 ngày sau khi bật: 2 lệnh TikTok bị cắt (đều treo hẳn), 0 lệnh hợp lệ bị cắt, không gian nào lỗi vì thời hạn → giữ 30 giây, không đổi biến môi trường (mục 4.7 "Đợt 6a", phần "Kết quả theo dõi") |
 | Bước 5 (hóa đơn) | Anh Trung duyệt 02/10; làm theo 14 lát ở mục 4.6 F, mỗi lát commit và đẩy riêng | Lát 2 chờ câu đọc trên prod (mục 4.6 C) và trình migration |
 | ~~Mã tham chiếu của hóa đơn đã bị XÓA bên MISA có dùng lại được không~~ | ✅ MISA trả lời 02/10 15:34, đọc 03/10 (mục 4.6 N) | Tờ đã phát hành không xóa được → ca này không có trên prod. Phần còn lại của trả lời đã thành lát 6c |
-| Gom 20–30 tờ một lệnh phát hành (MISA 02/10: "lý tưởng", tối đa 50) | ⏳ 10/10: CHƯA ĐO, bài đo L1–L6 + đề nghị hoãn ở mục 4.7 "Đợt 6c"; chờ anh Trung chốt. Trước đó: sau lát 11 của bước 5 (anh Trung chốt 03/10: không làm trong lát 9 — gom lô thì "chưa rõ kết quả" thành chưa rõ cho cả 20–30 tờ, cần đo sandbox riêng) | Hợp đồng adapter thêm `createInvoices(lô)` tùy bảng khả năng; một tờ một lệnh vẫn đúng, chỉ chậm (20–40 tờ/phút/ký hiệu). Trình anh số đo thật trước khi làm |
+| Gom 20–30 tờ một lệnh phát hành (MISA 02/10: "lý tưởng", tối đa 50) | ✅ 10/10 ĐƯỜNG TỜ NHÁP 20 tờ/lệnh (anh chốt cứng), đo sandbox + thiết kế ở mục 4.7 "Gom 20 tờ một lệnh"; cổng HSM vẫn 1 tờ/lệnh (chưa đo, chưa có khách HSM). Trước đó: sau lát 11 của bước 5 (anh Trung chốt 03/10: không làm trong lát 9 — gom lô thì "chưa rõ kết quả" thành chưa rõ cho cả 20–30 tờ, cần đo sandbox riêng) | Hợp đồng adapter thêm `createInvoices(lô)` tùy bảng khả năng; một tờ một lệnh vẫn đúng, chỉ chậm (20–40 tờ/phút/ký hiệu). Trình anh số đo thật trước khi làm |
 | Hạn mức gọi API của MISA | Khi MISA bật lại (ticket 02/10: "sẽ bật lại sớm", tài liệu sẽ ghi số theo từng API) | Dòng `[NccHTTP] QUA TAI` xuất hiện là lúc có số thật; đọc tài liệu MISA, điền vào mục D, cân lại 2 shop cùng lúc |
-| Bước 6 (dọn) | 6a `67dacb1` + 6b lần một `bb82b25` đều lên master 05/10 10:07 (anh Trung đẩy); 6b lần hai (xóa hai bảng) sau 31/10; 6c hóa đơn: ✅ 10/10 đã kiểm kê + số prod + kế hoạch 5 lần đẩy ở mục 4.7 "Đợt 6c", CHỜ anh Trung chốt 3 điểm | Mục 4.7. ✅ 08/10 đã kiểm 6a (giữ 30 giây). ✅ 09/10 đã kiểm 6b lần một trên prod (webhook 2 sàn nhận đều, 0 tồn, 0 dòng 503, worker `[Stock-queue] BẬT`) + đã đọc tài liệu CHÍNH THỨC gửi lại webhook Shopee (3 lượt 5 phút/30 phút/3 giờ, hạn 3 giây) và TikTok (4 lượt 2 phút/30 phút/3 giờ/12 giờ, hạn 3 giây). Lượt nhắc còn: 10/10 (6c), 02/11 (xóa bảng) |
+| Bước 6 (dọn) | 6a `67dacb1` + 6b lần một `bb82b25` đều lên master 05/10 10:07 (anh Trung đẩy); 6b lần hai (xóa hai bảng) sau 31/10; 6c hóa đơn: ✅ 10/10 6c-1→6c-4 ĐÃ GỠ (4 commit, mục 4.7 "Đợt 6c"); 6c-5 webhook MISA cũ giữ tới lát 13 | Mục 4.7. ✅ 08/10 đã kiểm 6a (giữ 30 giây). ✅ 09/10 đã kiểm 6b lần một trên prod (webhook 2 sàn nhận đều, 0 tồn, 0 dòng 503, worker `[Stock-queue] BẬT`) + đã đọc tài liệu CHÍNH THỨC gửi lại webhook Shopee (3 lượt 5 phút/30 phút/3 giờ, hạn 3 giây) và TikTok (4 lượt 2 phút/30 phút/3 giờ/12 giờ, hạn 3 giây). Lượt nhắc còn: 10/10 (6c), 02/11 (xóa bảng) |
 | Bước 5 lát 13: webhook nhà cung cấp hóa đơn qua đường nhận chung (HOÃN, anh Trung chốt 03/10) | Khi có nhà cung cấp hóa đơn đầu tiên thật sự có webhook, hoặc khi Hubtax bắt đầu | Kế hoạch đã trình 03/10: (1) địa chỉ chung `/api/webhooks/invoice/<mã nhà cung cấp>` — mã lạ 404, Hubtax và bên "sắp ra mắt" 503, hai địa chỉ MISA cũ trỏ chung; (2) ghi `webhook_events` + xếp việc `invoice.event` chung giao dịch, việc hết lượt về `evt.dead`; (3) hàng đợi loại GỘP THEO KHÓA `<nhà cung cấp>:<mã tra cứu>` để sự kiện của một tờ vào sổ đúng thứ tự (bản nháp mục 4.6 C ghi `standard`); (4) phần kiểm chữ ký + đọc sự kiện đặt ở sổ đăng ký nhà cung cấp, không ở adapter theo shop; (5) migration một câu `pgboss.create_queue`, đưa lên hai lần với công tắc `INVOICE_WEBHOOK_MODE`; (6) HQ đọc nhật ký webhook MISA từ hai nguồn. Đọc sự kiện theo tài liệu THẬT của nhà cung cấp đó, đừng dựa hình dạng đoán trong `misa-webhook.ts`. BA LỖI của đường cũ `misa-webhook-service.ts` phải sửa lúc đó (hiện không gây hại vì không có lưu lượng): tìm hóa đơn theo mã đơn không kèm chủ shop (mã đơn chỉ duy nhất trong một gian) → chỉ nhận khi đúng một dòng khớp; tờ điều chỉnh cũng ghi đè `Order.einvoiceStatus`; lượt ghi không điều kiện. Hệ quả cho bước 6c: bảng `misa_webhook_logs` và hàng đợi webhook MISA cũ không "chuyển sang đường mới" được — tới lúc đó chọn giữ nguyên hoặc gỡ hẳn, trình anh Trung |
 | Hóa đơn của chính Hubsell trên HQ: chưa có xử lý "chưa rõ kết quả" | Khi Hubsell bắt đầu xuất hóa đơn cho khách qua HQ | `routes/admin.ts` gọi thẳng `publishStandardInvoice`, không qua adapter: đứt mạng sau khi gửi thì báo lỗi, bấm lại sẽ gặp lỗi trùng mã mà không tự nối số (mục 4.6 K). Cho đi qua adapter hoặc thêm bước tra ngược |
 | Tự phát hành: mốc "đã xét tới ngày nào" cho từng shop | Khi có shop phát hành hàng nghìn hóa đơn mỗi ngày | Hiện mỗi lượt đi lại qua mọi đơn đã giao kể từ ngày bật (mục 4.6, bảng A điểm 8) |

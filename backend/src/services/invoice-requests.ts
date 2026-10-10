@@ -35,7 +35,7 @@ import {
 } from "../integrations/invoice/adjust-order";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import { AWAITING_SIGNATURE_CODE, isDeferredAtProvider } from "../integrations/invoice/draft-signing";
-import { issueInvoiceForOrder, type IssueOrderResult } from "../integrations/invoice/issue-order";
+import { issueInvoiceForOrder, issueInvoicesForOrders, type IssueOrderResult } from "../integrations/invoice/issue-order";
 import { OUTCOME_UNKNOWN_CODE } from "../integrations/invoice/unknown-outcome";
 import { prisma } from "../lib/prisma";
 import { enqueue, isQueueReady, QUEUES } from "../lib/queue";
@@ -642,28 +642,102 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
     take: opts.budget,
     select: { id: true, kind: true, source: true, targetKey: true, batchId: true, params: true, createdAt: true },
   });
+  type DueRow = (typeof due)[number];
   const result: RequestRunResult = { outcome: "IDLE", processed: 0, issued: 0, failed: 0, interrupted: false };
   if (due.length === 0) return result;
 
   const batches = new Set<string>();
   let transient = false;
+  let transientReason = "";
+  let transientCode: string | null = null;
   let aborted = false;
-  for (const [i, reqRow] of due.entries()) {
+  let abortCode: string | null = null;
+  let abortError = "Nhà cung cấp từ chối phát hành";
+
+  /** Khách bấm "Dừng phần còn lại" sau khi lượt này đã lấy danh sách → bỏ qua dòng đó. */
+  const stillPending = async (id: string): Promise<boolean> => {
+    const still = await prisma.invoiceRequest.findUnique({ where: { id }, select: { status: true } });
+    return still?.status === "PENDING";
+  };
+
+  /**
+   * Áp kết quả MỘT yêu cầu xuất / điều chỉnh tay: ghi dòng, chuông cho đơn lẻ, và quyết
+   * định lượt có đi tiếp không. Lỗi tạm / lỗi tài khoản: phần xử lý CÁC YÊU CẦU KHÁC
+   * làm một lần sau vòng (xem cuối hàm), ở đây chỉ ghi nhận.
+   */
+  const applyResult = async (reqRow: DueRow, r: IssueOrderResult): Promise<"CONTINUE" | "STOP"> => {
+    /** Đơn lẻ = có người đang chờ câu trả lời ngay trên màn hình (lát 10). */
+    const single = reqRow.batchId === null;
+    let bell = false;
+    if (r.ok) {
+      result.issued += 1;
+      bell = await finishRequest(reqRow.id, { status: "DONE", resultLogId: r.log?.id ?? null }, r);
+    } else if (r.conflict === "ISSUED") {
+      result.issued += 1;
+      bell = await finishRequest(reqRow.id, { status: "DONE", errorCode: REQUEST_CODE_ALREADY_ISSUED, error: r.error ?? null }, r);
+    } else if (isDeferredAtProvider(r)) {
+      // Tờ nháp chờ chủ shop ký trên web nhà cung cấp / đã ký chờ số (lát T1 tenant): yêu
+      // cầu xong phần của nó; vòng hỏi theo giờ nối số. Lô đếm riêng (BatchProgress.awaiting).
+      bell = await finishRequest(
+        reqRow.id,
+        { status: "DONE", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: r.message ?? null },
+        r
+      );
+    } else if (r.conflict === "PENDING" || r.errorCode === OUTCOME_UNKNOWN_CODE) {
+      // Dòng InvoiceLog đang chờ là vé của đơn; vòng quét lát 6b tra lại rồi nối số
+      // hoặc trả đơn về Hàng chờ. Yêu cầu này xong phần của nó.
+      bell = await finishRequest(
+        reqRow.id,
+        { status: "DONE", resultLogId: r.log?.id ?? null, errorCode: REQUEST_CODE_UNKNOWN, error: r.error ?? null },
+        r
+      );
+    } else if (r.errorScope === "TRANSIENT") {
+      transient = true;
+      transientReason = r.error ?? "Nhà cung cấp hóa đơn đang trục trặc";
+      transientCode = r.errorCode ?? null;
+      if (single) {
+        // Đơn lẻ không tự thử lại: người bấm đang chờ, nhận lỗi ngay và tự bấm lại
+        // (đúng hành vi trước lát 10). Lượt vẫn dừng vì nhà cung cấp đang trục trặc.
+        result.failed += 1;
+        bell = await finishRequest(reqRow.id, { status: "FAILED", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: transientReason }, r);
+        if (bell) await notifySingleFinished(ownerId, reqRow, r);
+      }
+      return "STOP";
+    } else {
+      result.failed += 1;
+      bell = await finishRequest(
+        reqRow.id,
+        { status: "FAILED", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: r.error ?? "Nhà cung cấp từ chối phát hành" },
+        r
+      );
+      if (r.errorScope === "ACCOUNT") {
+        aborted = true;
+        abortCode = r.errorCode ?? null;
+        abortError = r.error ?? abortError;
+        if (bell) await notifySingleFinished(ownerId, reqRow, r);
+        return "STOP";
+      }
+    }
+    if (bell) await notifySingleFinished(ownerId, reqRow, r);
+    return "CONTINUE";
+  };
+
+  let idx = 0;
+  outer: while (idx < due.length) {
     if (opts.shouldStop && (await opts.shouldStop())) {
       result.interrupted = true;
       break;
     }
-    // Khách bấm "Dừng phần còn lại" sau khi lượt này đã lấy danh sách → bỏ qua dòng đó.
-    const still = await prisma.invoiceRequest.findUnique({ where: { id: reqRow.id }, select: { status: true } });
-    if (still?.status !== "PENDING") continue;
-    result.processed += 1;
-    if (reqRow.batchId) batches.add(reqRow.batchId);
+    const reqRow = due[idx];
 
-    // TUẦN TỰ — nhà cung cấp cấp số hóa đơn liên tục theo ký hiệu.
     // ĐIỀU CHỈNH TỰ ĐỘNG (lát 11): luật riêng — chưa đủ dữ kiện hay nhà cung cấp lỗi
     // tạm thì hẹn lại 60 phút tới tối đa 7 ngày; hỏng hẳn thì một chuông. Không kéo
-    // theo yêu cầu bấm tay, và không bị yêu cầu bấm tay kéo theo.
+    // theo yêu cầu bấm tay, và không bị yêu cầu bấm tay kéo theo. Từng tờ một.
     if (reqRow.source === REQUEST_SOURCE_AUTO_RETURN) {
+      idx += 1;
+      if (!(await stillPending(reqRow.id))) continue;
+      result.processed += 1;
+      if (reqRow.batchId) batches.add(reqRow.batchId);
       const step = await runAutoAdjust(ownerId, reqRow);
       if (step.kind === "DROP") {
         await prisma.invoiceRequest.updateMany({
@@ -694,7 +768,7 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
         continue;
       }
       const ar = step.r;
-      const gap = i < due.length - 1 ? (ar.pauseBeforeNextMs ?? 0) : 0;
+      const gap = idx < due.length ? (ar.pauseBeforeNextMs ?? 0) : 0;
       if (ar.ok) {
         result.issued += 1;
         await finishRequest(reqRow.id, { status: "DONE", resultLogId: ar.log?.id ?? null }, ar);
@@ -712,7 +786,9 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
         await retry(ar.error ?? "Nhà cung cấp hóa đơn đang trục trặc.", AUTO_ADJUST_RETRY_MS, ar.errorCode ?? null);
         // Nhà cung cấp đang trục trặc: dừng lượt, các yêu cầu khác để lượt sau.
         transient = true;
-        break;
+        transientReason = ar.error ?? "Nhà cung cấp hóa đơn đang trục trặc";
+        transientCode = ar.errorCode ?? null;
+        break outer;
       } else {
         result.failed += 1;
         const why = ar.error ?? "Nhà cung cấp từ chối lập hóa đơn điều chỉnh.";
@@ -724,95 +800,92 @@ export async function runIssueRequestsForShop(ownerId: string, opts: RequestRunO
       continue;
     }
 
-    const r = await runOneRequest(ownerId, reqRow);
-    const pauseMs = i < due.length - 1 ? (r.pauseBeforeNextMs ?? 0) : 0;
-    /** Đơn lẻ = có người đang chờ câu trả lời ngay trên màn hình (lát 10). */
-    const single = reqRow.batchId === null;
-    let bell = false;
-
-    if (r.ok) {
-      result.issued += 1;
-      bell = await finishRequest(reqRow.id, { status: "DONE", resultLogId: r.log?.id ?? null }, r);
-    } else if (r.conflict === "ISSUED") {
-      result.issued += 1;
-      bell = await finishRequest(reqRow.id, { status: "DONE", errorCode: REQUEST_CODE_ALREADY_ISSUED, error: r.error ?? null }, r);
-    } else if (isDeferredAtProvider(r)) {
-      // Tờ nháp chờ chủ shop ký trên web nhà cung cấp / đã ký chờ số (lát T1 tenant): yêu
-      // cầu xong phần của nó; vòng hỏi theo giờ nối số. Lô đếm riêng (BatchProgress.awaiting).
-      bell = await finishRequest(
-        reqRow.id,
-        { status: "DONE", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: r.message ?? null },
-        r
-      );
-    } else if (r.conflict === "PENDING" || r.errorCode === OUTCOME_UNKNOWN_CODE) {
-      // Dòng InvoiceLog đang chờ là vé của đơn; vòng quét lát 6b tra lại rồi nối số
-      // hoặc trả đơn về Hàng chờ. Yêu cầu này xong phần của nó.
-      bell = await finishRequest(
-        reqRow.id,
-        { status: "DONE", resultLogId: r.log?.id ?? null, errorCode: REQUEST_CODE_UNKNOWN, error: r.error ?? null },
-        r
-      );
-    } else if (r.errorScope === "TRANSIENT") {
-      transient = true;
-      const reason = r.error ?? "Nhà cung cấp hóa đơn đang trục trặc";
-      if (single) {
-        // Đơn lẻ không tự thử lại: người bấm đang chờ, nhận lỗi ngay và tự bấm lại
-        // (đúng hành vi trước lát 10). Lượt vẫn dừng vì nhà cung cấp đang trục trặc.
-        result.failed += 1;
-        bell = await finishRequest(reqRow.id, { status: "FAILED", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: reason }, r);
-        if (bell) await notifySingleFinished(ownerId, reqRow, r);
-      }
-      // Nhà cung cấp đang trục trặc thì đơn nào cũng vậy: cả phần đang chờ CỦA CÁC LÔ tính một lượt.
-      await prisma.invoiceRequest.updateMany({
-        where: { ownerId, batchId: { not: null }, status: "PENDING", nextRetryAt: { lte: now } },
-        data: { attempts: { increment: 1 }, nextRetryAt: new Date(Date.now() + REQUEST_RETRY_MS), errorCode: r.errorCode ?? null, error: reason },
-      });
-      const exhausted = await prisma.invoiceRequest.findMany({
-        // Chỉ yêu cầu của các lô: yêu cầu tự động có nhịp thử lại riêng (60 phút, 7 ngày).
-        where: { ownerId, batchId: { not: null }, status: "PENDING", attempts: { gte: REQUEST_MAX_ATTEMPTS } },
-        select: { id: true, batchId: true },
-      });
-      if (exhausted.length > 0) {
-        await prisma.invoiceRequest.updateMany({
-          where: { id: { in: exhausted.map((e) => e.id) }, status: "PENDING" },
-          data: {
-            status: "FAILED",
-            finishedAt: new Date(),
-            error: `${reason} Đã thử ${REQUEST_MAX_ATTEMPTS} lượt — tick lại đơn để xuất khi nhà cung cấp ổn định.`,
-          },
-        });
-        result.failed += exhausted.length;
-        for (const e of exhausted) if (e.batchId) batches.add(e.batchId);
-      }
-      break;
-    } else {
-      result.failed += 1;
-      bell = await finishRequest(
-        reqRow.id,
-        { status: "FAILED", resultLogId: r.log?.id ?? null, errorCode: r.errorCode ?? null, error: r.error ?? "Nhà cung cấp từ chối phát hành" },
-        r
-      );
-      if (r.errorScope === "ACCOUNT") {
-        aborted = true;
-        if (bell) await notifySingleFinished(ownerId, reqRow, r);
-        const rest = await prisma.invoiceRequest.findMany({
-          // Yêu cầu tự động không bị đánh hỏng theo: nó tự thử lại theo nhịp của nó.
-          where: { ownerId, status: "PENDING", source: { not: REQUEST_SOURCE_AUTO_RETURN } },
-          select: { id: true, batchId: true },
-        });
-        if (rest.length > 0) {
-          await prisma.invoiceRequest.updateMany({
-            where: { id: { in: rest.map((e) => e.id) }, status: "PENDING" },
-            data: { status: "FAILED", finishedAt: new Date(), errorCode: r.errorCode ?? null, error: r.error ?? "Nhà cung cấp từ chối phát hành" },
-          });
-          result.failed += rest.length;
-          for (const e of rest) if (e.batchId) batches.add(e.batchId);
-        }
-        break;
-      }
+    // ĐIỀU CHỈNH TAY (lát 10): từng tờ một — tờ điều chỉnh chưa gom lô.
+    if (reqRow.kind === REQUEST_KIND_ADJUST) {
+      idx += 1;
+      if (!(await stillPending(reqRow.id))) continue;
+      result.processed += 1;
+      if (reqRow.batchId) batches.add(reqRow.batchId);
+      const r = await runOneRequest(ownerId, reqRow);
+      if ((await applyResult(reqRow, r)) === "STOP") break;
+      const gap = idx < due.length ? (r.pauseBeforeNextMs ?? 0) : 0;
+      if (gap > 0) await sleep(gap);
+      continue;
     }
-    if (bell) await notifySingleFinished(ownerId, reqRow, r);
-    if (pauseMs > 0) await sleep(pauseMs);
+
+    // XUẤT HÓA ĐƠN: các yêu cầu xuất liên tiếp đi chung MỘT lượt gom lô — lõi tự chia
+    // theo bảng khả năng của adapter (tờ nháp MISA 20 tờ một lệnh, 10/10/2026). Kết quả
+    // về theo mã đơn; cùng một mã có hai yêu cầu (hiếm — lô + đơn lẻ) thì nhận lần lượt.
+    const run: DueRow[] = [];
+    while (idx < due.length && due[idx].source !== REQUEST_SOURCE_AUTO_RETURN && due[idx].kind !== REQUEST_KIND_ADJUST) {
+      run.push(due[idx]);
+      idx += 1;
+    }
+    const queue = new Map<string, DueRow[]>();
+    for (const row of run) queue.set(row.targetKey, [...(queue.get(row.targetKey) ?? []), row]);
+    const many = await issueInvoicesForOrders(ownerId, { userId: ownerId }, run.map((row) => row.targetKey), {
+      shouldStop: opts.shouldStop,
+      stillWanted: async (code) => {
+        const rows = queue.get(code);
+        const row = rows?.[0];
+        if (!row) return false;
+        if (await stillPending(row.id)) return true;
+        rows?.shift();
+        return false;
+      },
+      onResult: async (code, r) => {
+        const row = queue.get(code)?.shift();
+        if (!row) return "CONTINUE";
+        result.processed += 1;
+        if (row.batchId) batches.add(row.batchId);
+        return applyResult(row, r);
+      },
+    });
+    if (many.interrupted) {
+      result.interrupted = true;
+      break;
+    }
+    if (many.stopped) break;
+    if (many.pauseBeforeNextMs && idx < due.length) await sleep(many.pauseBeforeNextMs);
+  }
+
+  if (transient) {
+    // Nhà cung cấp đang trục trặc thì đơn nào cũng vậy: cả phần đang chờ CỦA CÁC LÔ tính một lượt.
+    await prisma.invoiceRequest.updateMany({
+      where: { ownerId, batchId: { not: null }, status: "PENDING", nextRetryAt: { lte: now } },
+      data: { attempts: { increment: 1 }, nextRetryAt: new Date(Date.now() + REQUEST_RETRY_MS), errorCode: transientCode, error: transientReason },
+    });
+    const exhausted = await prisma.invoiceRequest.findMany({
+      // Chỉ yêu cầu của các lô: yêu cầu tự động có nhịp thử lại riêng (60 phút, 7 ngày).
+      where: { ownerId, batchId: { not: null }, status: "PENDING", attempts: { gte: REQUEST_MAX_ATTEMPTS } },
+      select: { id: true, batchId: true },
+    });
+    if (exhausted.length > 0) {
+      await prisma.invoiceRequest.updateMany({
+        where: { id: { in: exhausted.map((e) => e.id) }, status: "PENDING" },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          error: `${transientReason} Đã thử ${REQUEST_MAX_ATTEMPTS} lượt — tick lại đơn để xuất khi nhà cung cấp ổn định.`,
+        },
+      });
+      result.failed += exhausted.length;
+      for (const e of exhausted) if (e.batchId) batches.add(e.batchId);
+    }
+  } else if (aborted) {
+    const rest = await prisma.invoiceRequest.findMany({
+      // Yêu cầu tự động không bị đánh hỏng theo: nó tự thử lại theo nhịp của nó.
+      where: { ownerId, status: "PENDING", source: { not: REQUEST_SOURCE_AUTO_RETURN } },
+      select: { id: true, batchId: true },
+    });
+    if (rest.length > 0) {
+      await prisma.invoiceRequest.updateMany({
+        where: { id: { in: rest.map((e) => e.id) }, status: "PENDING" },
+        data: { status: "FAILED", finishedAt: new Date(), errorCode: abortCode, error: abortError },
+      });
+      result.failed += rest.length;
+      for (const e of rest) if (e.batchId) batches.add(e.batchId);
+    }
   }
 
   result.outcome = transient

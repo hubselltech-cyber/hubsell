@@ -53,7 +53,7 @@ import {
   vnStartOfDay,
 } from "../integrations/invoice/auto-issue-policy";
 import { isDeferredAtProvider } from "../integrations/invoice/draft-signing";
-import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
+import { issueInvoicesForOrders } from "../integrations/invoice/issue-order";
 import { notify } from "../services/notifications";
 import { prisma } from "../lib/prisma";
 import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
@@ -62,8 +62,6 @@ import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
 export const MAX_PER_OWNER_PER_RUN = 20;
 /** Đơn có bản ghi hóa đơn (kể cả FAILED) mới hơn cửa sổ này thì chưa thử lại. */
 const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface AutoIssueCandidateInput {
   ownerId: string;
@@ -246,43 +244,39 @@ export async function runAutoIssueForShop(
   let streak = 0;
   let pauseReason: string | null = null;
   let transient = false;
-  let interrupted = false;
-  for (const [i, orderCode] of orders.entries()) {
-    if (opts.shouldStop && (await opts.shouldStop())) {
-      interrupted = true;
-      break;
-    }
-    // TUẦN TỰ — MISA cấp số hóa đơn liên tục theo ký hiệu.
-    const r = await issueInvoiceForOrder(cfg.ownerId, { userId: cfg.ownerId }, orderCode);
-    // Nghỉ giữa hai lệnh phát hành theo bảng khả năng của nhà cung cấp (MISA trả
-    // lời ticket 02/10/2026: mỗi lệnh cách nhau 1–3 giây). Tờ cuối không nghỉ.
-    const pauseMs = i < orders.length - 1 ? (r.pauseBeforeNextMs ?? 0) : 0;
-    // Đã phát hành, hoặc đã giao cho nhà cung cấp (tờ nháp chờ ký / chờ số): không phải
-    // lỗi — không vào chuỗi lỗi, không ngắt mạch.
-    if (r.ok || isDeferredAtProvider(r)) {
-      if (r.ok) issued += 1;
-      else deferred += 1;
-      streakCode = null;
-      streak = 0;
-      if (pauseMs > 0) await sleep(pauseMs);
-      continue;
-    }
-    failed += 1;
-    if (r.autoRetryJustStopped) stopped.push(orderCode);
-    const code = r.errorCode ?? r.error ?? "?";
-    streak = code === streakCode ? streak + 1 : 1;
-    streakCode = code;
-    const decision = decideAfterFailure(r.errorScope, streak);
-    if (decision === "PAUSE") {
-      pauseReason = r.error ?? "NCC từ chối phát hành";
-      break;
-    }
-    if (decision === "STOP_RUN") {
-      transient = true;
-      break;
-    }
-    if (pauseMs > 0) await sleep(pauseMs);
-  }
+  // Lõi gom đơn theo lô của nhà cung cấp (tờ nháp MISA 20 tờ một lệnh, 10/10/2026) và
+  // tự nghỉ giữa hai lệnh theo bảng khả năng; ở đây chỉ đếm + áp luật ngắt mạch. Lô đã
+  // gửi thì mọi tờ trong lô đều được báo về (kể cả sau khi quyết định dừng).
+  const many = await issueInvoicesForOrders(cfg.ownerId, { userId: cfg.ownerId }, orders, {
+    shouldStop: opts.shouldStop,
+    onResult: async (orderCode, r) => {
+      // Đã phát hành, hoặc đã giao cho nhà cung cấp (tờ nháp chờ ký / chờ số): không phải
+      // lỗi — không vào chuỗi lỗi, không ngắt mạch.
+      if (r.ok || isDeferredAtProvider(r)) {
+        if (r.ok) issued += 1;
+        else deferred += 1;
+        streakCode = null;
+        streak = 0;
+        return "CONTINUE";
+      }
+      failed += 1;
+      if (r.autoRetryJustStopped) stopped.push(orderCode);
+      const code = r.errorCode ?? r.error ?? "?";
+      streak = code === streakCode ? streak + 1 : 1;
+      streakCode = code;
+      const decision = decideAfterFailure(r.errorScope, streak);
+      if (decision === "PAUSE") {
+        pauseReason ??= r.error ?? "NCC từ chối phát hành";
+        return "STOP";
+      }
+      if (decision === "STOP_RUN") {
+        transient = true;
+        return "STOP";
+      }
+      return "CONTINUE";
+    },
+  });
+  const interrupted = many.interrupted;
 
   if (pauseReason) {
     await prisma.invoiceConfig.update({

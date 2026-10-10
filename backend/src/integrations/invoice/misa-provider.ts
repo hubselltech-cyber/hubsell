@@ -38,9 +38,14 @@ import {
   type StandardInvoiceConfig,
 } from "./misa-einvoice";
 import {
+  buildWebDraftPayload,
   clearWebTokenCache,
+  findWebTemplate,
   getWebInvoices,
   insertWebDraft,
+  insertWebDraftPayloads,
+  WEB_INSERT_BATCH_SIZE,
+  WEB_INSERT_NOT_IN_RESPONSE,
   MEINVOICE_WEB_INVOICES_URL,
   usesWebDraft,
   WEB_GETLIST_BATCH_MAX,
@@ -121,7 +126,17 @@ export const MISA_CAPABILITIES: ProviderCapabilities = {
   // lập từ nháp, ký eSign trên web, nối số + PDF; [MISA 08/10] ticket xác nhận "để tạo
   // hóa đơn nháp tham khảo API WEB APP". Chủ shop ký ở app3.meinvoice.vn/v3/hoa-don.
   draftSigning: { supported: true, signUrl: MEINVOICE_WEB_INVOICES_URL },
+  // Cổng phát hành HSM: một tờ một lệnh (tài liệu cho tới 30, MISA 02/10 khuyên 20–30 —
+  // CHƯA đo, chưa có khách ký HSM). Đường tờ nháp khai số khác ở `capabilities` của
+  // adapter (WEB_INSERT_BATCH_SIZE, đo sandbox 10/10/2026).
+  createBatchSize: 1,
 };
+
+/** Tờ nháp đã được ký trên web (có mã tra cứu; số có thể cấp trễ). */
+interface SignedDraft {
+  invoiceNo: string | null;
+  transactionId: string;
+}
 
 /**
  * Kết quả "CHƯA RÕ" của một lệnh phát hành (bước 5 lát 5). Vẫn là FAILED để đơn
@@ -144,11 +159,18 @@ function unknownOutcome(detail: string): InvoiceResult {
 
 export class MisaInvoiceProvider implements InvoiceProvider {
   readonly name = "MISA";
-  readonly capabilities = MISA_CAPABILITIES;
+  readonly capabilities: ProviderCapabilities;
 
-  constructor(private cfg: MisaProviderConfig) {}
+  constructor(private cfg: MisaProviderConfig) {
+    // Đường tờ nháp (eSign / USB token) gom 20 tờ một lệnh insert (anh Trung chốt
+    // 10/10/2026); cổng HSM giữ một tờ một lệnh.
+    this.capabilities = usesWebDraft(cfg.signMethod)
+      ? { ...MISA_CAPABILITIES, createBatchSize: WEB_INSERT_BATCH_SIZE }
+      : MISA_CAPABILITIES;
+  }
 
-  async createInvoice(input: CreateInvoiceInput): Promise<InvoiceResult> {
+  /** Lỗi cấu hình chặn trước khi gọi nhà cung cấp — dùng chung cho một tờ và cả lô. */
+  private configBlocked(): InvoiceResult | null {
     if (this.cfg.defaultInvoiceType === "POS") {
       return {
         status: InvoiceLogStatus.FAILED,
@@ -167,6 +189,28 @@ export class MisaInvoiceProvider implements InvoiceProvider {
         errorMessage: `Chưa đủ cấu hình phát hành — thiếu: ${missing.join(", ")}. Vào Kết nối & Xuất hóa đơn để bổ sung.`,
       };
     }
+    return null;
+  }
+
+  /**
+   * MỘT LÔ tờ (createBatchSize = 20 ở đường tờ nháp). Cổng HSM chưa gom: lập lần lượt
+   * từng tờ qua createInvoice để giữ đúng hợp đồng "mỗi phần tử một kết quả".
+   */
+  async createInvoices(inputs: CreateInvoiceInput[]): Promise<InvoiceResult[]> {
+    if (inputs.length === 0) return [];
+    const blocked = this.configBlocked();
+    if (blocked) return inputs.map(() => ({ ...blocked }));
+    if (!usesWebDraft(this.cfg.signMethod)) {
+      const out: InvoiceResult[] = [];
+      for (const input of inputs) out.push(await this.createInvoice(input));
+      return out;
+    }
+    return this.createViaWebDraftBatch(inputs);
+  }
+
+  async createInvoice(input: CreateInvoiceInput): Promise<InvoiceResult> {
+    const blocked = this.configBlocked();
+    if (blocked) return blocked;
 
     // Chữ ký số từ xa / USB token: không ký nền được → đường tờ nháp (xem đầu tệp).
     if (usesWebDraft(this.cfg.signMethod)) return this.createViaWebDraft(input);
@@ -235,56 +279,155 @@ export class MisaInvoiceProvider implements InvoiceProvider {
     try {
       const refId = webRefIdFor(input.orderCode);
       const [onWeb] = await getWebInvoices([refId], this.cfg);
-      let signed: { invoiceNo: string | null; transactionId: string } | null =
+      let signed: SignedDraft | null =
         onWeb?.transactionId ? { invoiceNo: onWeb.invoiceNo, transactionId: onWeb.transactionId } : null;
       if (!onWeb) {
         const rows = await getInvoiceStatuses([refId], this.cfg, "refId");
         const live = rows.find((r) => !r.isDeleted && r.transactionId);
         if (live?.transactionId) signed = { invoiceNo: live.invoiceNo, transactionId: live.transactionId };
       }
-      if (signed) {
-        return signed.invoiceNo
-          ? { status: InvoiceLogStatus.ISSUED, invoiceNo: signed.invoiceNo, transactionId: signed.transactionId, vatAmount }
-          : {
-              status: InvoiceLogStatus.PENDING,
-              transactionId: signed.transactionId,
-              vatAmount,
-              errorCode: NUMBER_PENDING_CODE,
-              errorMessage: numberPendingMessage(this.name),
-            };
-      }
+      if (signed) return this.signedDraftResult(signed, vatAmount);
       const pushedNow = !onWeb;
       if (pushedNow) await insertWebDraft(input, this.cfg);
-      return {
-        status: InvoiceLogStatus.PENDING,
-        awaitingSignature: true,
-        vatAmount,
-        errorCode: AWAITING_SIGNATURE_CODE,
-        errorMessage: awaitingSignatureMessage(this.name, MEINVOICE_WEB_INVOICES_URL, pushedNow),
-      };
+      return this.awaitingDraftResult(vatAmount, pushedNow);
     } catch (err) {
-      const explained = explainInvoiceError(err);
-      if (explained.code === "TokenExpiredCode" || explained.code === "InvalidTokenCode") {
-        clearMisaTokenCache();
-        clearWebTokenCache();
+      return this.draftErrorResult(err);
+    }
+  }
+
+  /**
+   * ĐƯỜNG TỜ NHÁP THEO LÔ (anh Trung chốt 10/10/2026: 20 tờ một lệnh). Cùng thứ tự với
+   * một tờ nhưng mỗi bước MỘT lệnh cho cả lô: getlist theo mọi RefID → tờ không có trên
+   * web hỏi cổng tra cứu một lệnh → tờ còn thiếu dựng payload, MỘT lệnh insert. Kết quả
+   * gắn về từng tờ theo RefID (mapWebInsertResponse); tờ MISA không trả phần tử (đo
+   * sandbox: trùng RefID bị bỏ lặng lẽ) tra lại web một lần rồi mới kết luận. Lỗi trước
+   * khi insert (đăng nhập, getlist) hay lệnh insert hỏng cả lô → mọi tờ chưa có kết quả
+   * mang cùng kết quả lỗi của một tờ (draftErrorResult).
+   */
+  private async createViaWebDraftBatch(inputs: CreateInvoiceInput[]): Promise<InvoiceResult[]> {
+    const vat = inputs.map((input) => input.lines.reduce((s, l) => s + l.vatAmount, 0));
+    const refIds = inputs.map((input) => webRefIdFor(input.orderCode));
+    const results: (InvoiceResult | undefined)[] = inputs.map(() => undefined);
+    const fillRest = (r: InvoiceResult) => results.map((x) => x ?? { ...r });
+    try {
+      const onWeb = new Map<string, { invoiceNo: string | null; transactionId: string | null }>();
+      for (let i = 0; i < refIds.length; i += WEB_GETLIST_BATCH_MAX) {
+        for (const item of await getWebInvoices(refIds.slice(i, i + WEB_GETLIST_BATCH_MAX), this.cfg)) {
+          onWeb.set(item.refId.toLowerCase(), { invoiceNo: item.invoiceNo, transactionId: item.transactionId });
+        }
       }
-      if (isPublishOutcomeUnknown(err)) {
-        return {
-          status: InvoiceLogStatus.FAILED,
-          errorScope: "TRANSIENT",
-          errorCode: explained.code ?? "HUBSELL_DRAFT_UNKNOWN",
-          errorMessage:
-            "Chưa rõ tờ nháp đã lên meinvoice.vn chưa (mất kết nối giữa chừng). Lượt sau Hubsell tra lại rồi chỉ lập khi còn thiếu — không sinh tờ thừa. " +
-            `(meInvoice: ${explained.message})`,
+      const missing = refIds.filter((r) => !onWeb.has(r.toLowerCase()));
+      const signedElsewhere = new Map<string, SignedDraft>();
+      if (missing.length > 0) {
+        for (const row of await getInvoiceStatuses(missing, this.cfg, "refId")) {
+          if (!row.isDeleted && row.transactionId && row.refId) {
+            signedElsewhere.set(row.refId.toLowerCase(), { invoiceNo: row.invoiceNo, transactionId: row.transactionId });
+          }
+        }
+      }
+      const toPush: number[] = [];
+      inputs.forEach((_input, i) => {
+        const key = refIds[i].toLowerCase();
+        const web = onWeb.get(key);
+        const signed: SignedDraft | null = web?.transactionId
+          ? { invoiceNo: web.invoiceNo, transactionId: web.transactionId }
+          : (signedElsewhere.get(key) ?? null);
+        if (signed) results[i] = this.signedDraftResult(signed, vat[i]);
+        else if (web) results[i] = this.awaitingDraftResult(vat[i], false);
+        else toPush.push(i);
+      });
+      if (toPush.length === 0) return fillRest(this.draftErrorResult(new Error("không có tờ nào")));
+
+      const template = await findWebTemplate(this.cfg);
+      const payloads = toPush.map((i) => buildWebDraftPayload(inputs[i], this.cfg, template));
+      const batch = await insertWebDraftPayloads(payloads, this.cfg);
+      const recheck: number[] = [];
+      batch.items.forEach((item, k) => {
+        const i = toPush[k];
+        if (!item.errorCode) results[i] = this.awaitingDraftResult(vat[i], true);
+        else if (item.errorCode === WEB_INSERT_NOT_IN_RESPONSE) recheck.push(i);
+        else {
+          results[i] = this.draftErrorResult(
+            new InvoiceProviderError(`meInvoice web từ chối tờ nháp: ErrorCode=${item.errorCode}`, {
+              code: item.errorCode,
+              description: item.description,
+              publishSent: true,
+            })
+          );
+        }
+      });
+      if (recheck.length > 0) {
+        // Tờ không có trong câu trả lời: tra lại web MỘT lần — thấy thì coi như đã có từ
+        // trước (không đẩy thêm), không thấy thì báo lỗi tạm để lượt sau làm lại.
+        const seen = new Set(
+          (await getWebInvoices(recheck.map((i) => refIds[i]), this.cfg)).map((x) => x.refId.toLowerCase())
+        );
+        for (const i of recheck) {
+          results[i] = seen.has(refIds[i].toLowerCase())
+            ? this.awaitingDraftResult(vat[i], false)
+            : {
+                status: InvoiceLogStatus.FAILED,
+                errorScope: "TRANSIENT",
+                errorCode: WEB_INSERT_NOT_IN_RESPONSE,
+                errorMessage:
+                  "meInvoice không trả kết quả cho tờ này trong lô và tra lại cũng không thấy — Hubsell sẽ lập lại ở lượt sau.",
+              };
+        }
+      }
+      return results.map((r) => r ?? this.draftErrorResult(new Error("tờ không được xử lý")));
+    } catch (err) {
+      return fillRest(this.draftErrorResult(err));
+    }
+  }
+
+  private signedDraftResult(signed: SignedDraft, vatAmount: number): InvoiceResult {
+    return signed.invoiceNo
+      ? { status: InvoiceLogStatus.ISSUED, invoiceNo: signed.invoiceNo, transactionId: signed.transactionId, vatAmount }
+      : {
+          status: InvoiceLogStatus.PENDING,
+          transactionId: signed.transactionId,
+          vatAmount,
+          errorCode: NUMBER_PENDING_CODE,
+          errorMessage: numberPendingMessage(this.name),
         };
-      }
+  }
+
+  private awaitingDraftResult(vatAmount: number, pushedNow: boolean): InvoiceResult {
+    return {
+      status: InvoiceLogStatus.PENDING,
+      awaitingSignature: true,
+      vatAmount,
+      errorCode: AWAITING_SIGNATURE_CODE,
+      errorMessage: awaitingSignatureMessage(this.name, MEINVOICE_WEB_INVOICES_URL, pushedNow),
+    };
+  }
+
+  /**
+   * Lỗi trên đường tờ nháp. Lỗi mạng giữa chừng KHÔNG phải "chưa rõ kết quả" kiểu phát
+   * hành: tờ nháp không ăn số, lượt sau tra lại rồi chỉ đẩy khi thiếu → báo lỗi TẠM.
+   */
+  private draftErrorResult(err: unknown): InvoiceResult {
+    const explained = explainInvoiceError(err);
+    if (explained.code === "TokenExpiredCode" || explained.code === "InvalidTokenCode") {
+      clearMisaTokenCache();
+      clearWebTokenCache();
+    }
+    if (isPublishOutcomeUnknown(err)) {
       return {
         status: InvoiceLogStatus.FAILED,
-        errorMessage: explained.message,
-        errorCode: explained.code ?? undefined,
-        errorScope: explained.scope,
+        errorScope: "TRANSIENT",
+        errorCode: explained.code ?? "HUBSELL_DRAFT_UNKNOWN",
+        errorMessage:
+          "Chưa rõ tờ nháp đã lên meinvoice.vn chưa (mất kết nối giữa chừng). Lượt sau Hubsell tra lại rồi chỉ lập khi còn thiếu — không sinh tờ thừa. " +
+          `(meInvoice: ${explained.message})`,
       };
     }
+    return {
+      status: InvoiceLogStatus.FAILED,
+      errorMessage: explained.message,
+      errorCode: explained.code ?? undefined,
+      errorScope: explained.scope,
+    };
   }
 
   /**

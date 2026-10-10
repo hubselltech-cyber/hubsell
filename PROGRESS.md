@@ -5,7 +5,15 @@
 
 ---
 
-## Phiên 10/10/2026 (chiều) — LƯỢT NHẮC 6c HÓA ĐƠN LÀM LẠI (lượt tự động 08:30 treo ở một lệnh PowerShell, không ra báo cáo) — ĐÃ KIỂM KÊ + SỐ PROD + KẾ HOẠCH, CHỜ ANH CHỐT
+## Phiên 10/10/2026 (chiều) — 6c HÓA ĐƠN: GỠ 4 ĐƯỜNG LUI XONG + GOM 20 TỜ NHÁP MỘT LỆNH (anh chốt) — CHƯA PUSH
+
+- **Anh chốt:** "Gỡ 1-4 luôn… cứ gửi chốt cứng 20 tờ 1 lệnh" (tờ nháp). 6c-5 webhook MISA cũ chưa chốt → giữ.
+- **Gỡ:** `1a67159` (6c-1 `INVOICE_MODE` + 6c-2 `INVOICE_CQT_MODE`, xóa `invoice-status-sync.ts`), `cc0441c` (6c-3 bulk/single, xóa `/invoices/bulk` + FE), `a1dbb96` (6c-4 auto-adjust). Prod không đổi hành vi (Render không đặt biến).
+- **Gom lô:** đo sandbox trước (`scripts/misa-web-draft-batch-probe.ts`: lô 20 về 1,1 s; trùng RefID bị MISA bỏ lặng lẽ khỏi câu trả lời; sandbox không kiểm ký hiệu/mẫu). Mã: hợp đồng `createBatchSize` + `createInvoices`; MISA đường nháp 20 tờ (`WEB_INSERT_BATCH_SIZE`), HSM 1; `insertWebDraftPayloads` + `mapWebInsertResponse`; `issue-order.ts` tách load/claim/finalize + `issueInvoicesForOrders`; hai vòng làn gọi lô. Chi tiết docs/HANG-DOI-BEN.md 4.7 "Gom 20 tờ một lệnh".
+- **Kiểm:** tsc BE + FE, eslint FE; test hóa đơn 12 tệp 145/145 (9 ca mới không DB + 2 ca DB gom lô); cả bộ: xem dòng dưới. Dev DB: `migrate deploy` bị P3009 (fee_audit hỏng từ 17/09) → áp Apple IAP bằng `prisma db execute --file`.
+- ⏳ **Anh push** (5 commit); sau deploy kiểm `/health` + snapshot worker; lượt lô thật đầu tiên là ở shop MISA đầu tiên (prod hiện 0 shop cấu hình).
+
+## Phiên 10/10/2026 (chiều, lượt đầu) — LƯỢT NHẮC 6c HÓA ĐƠN LÀM LẠI (lượt tự động 08:30 treo ở một lệnh PowerShell, không ra báo cáo) — ĐÃ KIỂM KÊ + SỐ PROD + KẾ HOẠCH
 
 - **Số thật prod (Supabase SQL chỉ đọc + Render env qua Chrome):** `InvoiceConfig` 0 shop; `InvoiceLog` 2 dòng 28/07 (sandbox), 0 tờ từ 02/10; `invoice_requests` 2 lượt bấm tay thật (03/10 20:04, 06/10 12:53) đi trọn đường mới, hỏng đúng lý do "chưa cấu hình NCC"; `misa_webhook_logs` 0; Render web + worker KHÔNG đặt biến INVOICE_* nào → prod chạy mặc định mới ở cả 5 công tắc. Kết luận: cả đường mới lẫn đường cũ đều chưa từng gọi NCC thật trên prod.
 - **Kế hoạch 6c** (docs/HANG-DOI-BEN.md 4.7 "Đợt 6c"): 5 lần đẩy nhỏ, không migration — 6c-1 `INVOICE_MODE` + vòng chung cũ; 6c-2 `INVOICE_CQT_MODE` + xóa tệp `invoice-status-sync.ts`; 6c-3 `INVOICE_BULK_MODE`/`INVOICE_SINGLE_MODE` + route `/invoices/bulk` (backend trước, FE sau); 6c-4 `INVOICE_AUTO_ADJUST_MODE` + `maybeAutoAdjustOnPlatformReturn`; 6c-5 webhook MISA cũ (lát 13 hoãn → CHỜ ANH). Em nghiêng gỡ 6c-1→4 ngay (đường lui chưa từng bật, đường cũ cũng chưa chạy thật, giữ hai đường = test gấp đôi).

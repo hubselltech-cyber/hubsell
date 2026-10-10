@@ -19,6 +19,9 @@
 //  10. Dừng êm giữa lô: yêu cầu còn PENDING, lượt sau làm tiếp, không tờ nào lập hai lần.
 //  11. Chưa rõ kết quả: yêu cầu đóng với mã OUTCOME_UNKNOWN, đếm riêng "đang kiểm lại".
 //  12. Làn đang do tiến trình khác thuê: không chạy, yêu cầu giữ nguyên.
+//  13. Gom lô (10/10/2026): adapter khai createBatchSize 3 → 5 yêu cầu đi 2 lệnh (3 + 2),
+//      cũ trước; yêu cầu bị hủy trước lượt không vào lô; lỗi tài khoản giữa lô → cả lô
+//      vẫn được ghi kết quả, phần chưa gửi đánh hỏng cùng lý do.
 // ============================================================
 import "./load-env";
 import { InvoiceLogStatus, ShippingStatus } from "@prisma/client";
@@ -471,5 +474,60 @@ describe("Lát 9: làn xử lý yêu cầu bấm tay", () => {
     expect(await runInvoiceLaneOnce(fx2.userId, { forRequests: true })).toBeNull();
     expect(called).toEqual([]);
     expect((await getBatchProgress(fx2.userId, r.batchId!))?.pending).toBe(1);
+  });
+});
+
+describe("Gom lô 20 tờ một lệnh (10/10/2026) — adapter khai createInvoices", () => {
+  let batchCalls: string[][] = [];
+  const batchProvider: InvoiceProvider = {
+    ...fakeProvider,
+    capabilities: { ...MISA_CAPABILITIES, publishGapMs: 0, createBatchSize: 3 },
+    async createInvoices(inputs) {
+      batchCalls.push(inputs.map((i) => i.orderCode));
+      return inputs.map((i) => nextResult(i));
+    },
+  };
+
+  beforeEach(() => {
+    batchCalls = [];
+    providerHolder.current = batchProvider;
+  });
+  afterEach(() => {
+    providerHolder.current = fakeProvider;
+  });
+
+  it("5 yêu cầu → hai lệnh 3 + 2, cũ trước, không gọi lệnh lẻ; tiến độ lô đủ 5", async () => {
+    const codes: string[] = [];
+    for (let i = 0; i < 5; i += 1) codes.push(await deliveredOrder(fx2, product2Id));
+    const r = await accept(fx2, codes);
+    await sweepInvoiceRequests(new Date(), only());
+    await whenInvoiceLanesIdle();
+
+    expect(batchCalls).toEqual([codes.slice(0, 3), codes.slice(3)]);
+    expect(called).toEqual([]);
+    expect(await getBatchProgress(fx2.userId, r.batchId!)).toMatchObject({ total: 5, issued: 5, failed: 0, pending: 0, active: false });
+    expect((await requests(fx2)).every((x) => x.status === "DONE" && x.resultLogId)).toBe(true);
+    expect(await prisma.invoiceLog.count({ where: { ownerId: fx2.userId, status: InvoiceLogStatus.ISSUED } })).toBe(5);
+  });
+
+  it("yêu cầu bị hủy trước lượt không vào lô; lỗi tài khoản ở tờ thứ hai: cả lô ba tờ vẫn có kết quả, phần chưa gửi FAILED cùng lý do", async () => {
+    const codes: string[] = [];
+    for (let i = 0; i < 5; i += 1) codes.push(await deliveredOrder(fx2, product2Id));
+    nextResult = (input) => (input.orderCode === codes[1] ? accountFault() : issued());
+    const r = await accept(fx2, codes);
+    // Tờ thứ 5 bị hủy riêng trước khi lượt chạy (giả lập khách bỏ tick đúng lúc).
+    const rows = await requests(fx2);
+    await prisma.invoiceRequest.update({ where: { id: rows[4].id }, data: { status: "CANCELLED", finishedAt: new Date() } });
+
+    await sweepInvoiceRequests(new Date(), only());
+    await whenInvoiceLanesIdle();
+
+    // Lô 1 (3 tờ) đã gửi nên cả ba đều có kết quả; lô 2 không gửi vì lỗi tài khoản.
+    expect(batchCalls).toEqual([codes.slice(0, 3)]);
+    const after = await requests(fx2);
+    expect(after.map((x) => x.status)).toEqual(["DONE", "FAILED", "DONE", "FAILED", "CANCELLED"]);
+    expect(after[3].error).toBe("Sai mật khẩu meInvoice (test)");
+    expect(await getBatchProgress(fx2.userId, r.batchId!)).toMatchObject({ issued: 2, failed: 2, pending: 0, active: false });
+    // Không ngắt mạch tự phát hành của shop vì shop không bật (như ca lỗi tài khoản cũ).
   });
 });

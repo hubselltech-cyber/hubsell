@@ -54,6 +54,14 @@ const ENDPOINTS = {
 
 /** Tối đa tờ nháp một lệnh insert (tài liệu khuyến nghị) / RefID một lệnh getlist. */
 export const WEB_INSERT_BATCH_MAX = 30;
+/**
+ * Số tờ nháp Hubsell gửi trong một lệnh insert — anh Trung chốt cứng 20 (10/10/2026),
+ * dưới trần 30 của tài liệu. Đo sandbox 10/10 (scripts/misa-web-draft-batch-probe.ts):
+ * lô 20 về sau 1,1 giây, lô 5 sau 0,5 giây; 20 lệnh lẻ ≈ 2 giây + nghỉ 1 giây/tờ.
+ */
+export const WEB_INSERT_BATCH_SIZE = 20;
+/** Mã Hubsell gán cho tờ MISA không trả phần tử nào trong câu trả lời của lô. */
+export const WEB_INSERT_NOT_IN_RESPONSE = "HUBSELL_DRAFT_NOT_IN_RESPONSE";
 export const WEB_GETLIST_BATCH_MAX = 50;
 
 /** Trang web nơi chủ shop ký tờ nháp — dùng trong lời nhắn / thư nhắc. */
@@ -542,6 +550,89 @@ export async function insertWebDraft(
     );
   }
   return { refId: payload.RefID, invSeries: template.invSeries, raw };
+}
+
+/** Kiểu một phần tử gửi /invoiceweb/insert (kết quả của buildWebDraftPayload). */
+export type WebDraftPayload = ReturnType<typeof buildWebDraftPayload>;
+
+export interface WebDraftBatchItem {
+  /** RefID của tờ (đọc từ câu trả lời; không có thì lấy theo vị trí trong lô). */
+  refId: string;
+  /** Mã lỗi riêng tờ do MISA trả trong phần tử Data; null = nhận. */
+  errorCode: string | null;
+  description: string | null;
+  raw: unknown;
+}
+
+export interface WebDraftBatchResult {
+  items: WebDraftBatchItem[];
+  raw: unknown;
+}
+
+/**
+ * Đẩy MỘT LÔ tờ nháp (tối đa WEB_INSERT_BATCH_MAX) trong MỘT lệnh /invoiceweb/insert.
+ * Payload do người gọi dựng sẵn (buildWebDraftPayload). Lệnh hỏng cả lô → ném
+ * InvoiceProviderError (publishSent); kết quả từng tờ ở `items` theo đúng thứ tự
+ * payload (khớp bằng RefID khi MISA trả, không thì theo vị trí). Cách MISA cư xử khi
+ * một tờ trong lô sai: đo trên sandbox bằng scripts/misa-web-draft-batch-probe.ts.
+ */
+export async function insertWebDraftPayloads(
+  payloads: WebDraftPayload[],
+  cfg: StandardInvoiceConfig
+): Promise<WebDraftBatchResult> {
+  assertPublishAllowed("lô tờ nháp hóa đơn lên meinvoice.vn");
+  if (payloads.length === 0) return { items: [], raw: null };
+  if (payloads.length > WEB_INSERT_BATCH_MAX) {
+    throw new Error(`Lô tờ nháp quá ${WEB_INSERT_BATCH_MAX} tờ (${payloads.length})`);
+  }
+  const missing = standardConfigMissing(cfg);
+  if (missing.length > 0) {
+    throw new Error(`Chưa đủ cấu hình meInvoice — thiếu: ${missing.join(", ")}`);
+  }
+  const raw = await webPost(
+    ENDPOINTS.insert,
+    { invoiceWithCode: String(webInvoiceWithCode(cfg)) },
+    payloads,
+    cfg,
+    { publishSent: true }
+  );
+  return { items: mapWebInsertResponse(payloads.map((pl) => pl.RefID), unwrapData(raw)), raw };
+}
+
+/**
+ * Gắn câu trả lời của /invoiceweb/insert về từng tờ đã gửi (hàm thuần, có test).
+ * Đo sandbox 10/10/2026: Data là mảng, mỗi tờ MỘT phần tử mang RefID; tờ TRÙNG RefID
+ * đã có bị MISA lặng lẽ BỎ khỏi mảng (không ErrorCode) → tờ không có trong câu trả lời
+ * KHÔNG được coi là nhận: gán WEB_INSERT_NOT_IN_RESPONSE để nơi gọi tra lại. Chỉ khi
+ * MISA không trả RefID nào mà số phần tử bằng số tờ gửi mới ghép theo vị trí.
+ */
+export function mapWebInsertResponse(refIds: string[], data: unknown): WebDraftBatchItem[] {
+  const list: unknown[] = Array.isArray(data) ? data : data != null ? [data] : [];
+  const byRef = new Map<string, unknown>();
+  for (const el of list) {
+    const ref = pick(el, "RefID", "refID", "RefId");
+    if (typeof ref === "string" && ref) byRef.set(ref.toLowerCase(), el);
+  }
+  const positional = byRef.size === 0 && list.length === refIds.length;
+  return refIds.map((refId, i) => {
+    const el = positional ? list[i] : byRef.get(refId.toLowerCase());
+    if (el === undefined) {
+      return {
+        refId,
+        errorCode: WEB_INSERT_NOT_IN_RESPONSE,
+        description: "meInvoice không trả kết quả cho tờ này trong lô (thường là trùng RefID đã có trên web)",
+        raw: null,
+      };
+    }
+    const code = pick(el, "ErrorCode", "errorCode");
+    const desc = pick(el, "DescriptionErrorCode", "descriptionErrorCode");
+    return {
+      refId,
+      errorCode: code != null && code !== "" ? String(code) : null,
+      description: typeof desc === "string" ? desc : null,
+      raw: el,
+    };
+  });
 }
 
 /** Một tờ trên web app đọc "mềm" từ /invoiceweb/getlist. */
