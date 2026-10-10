@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -102,6 +102,31 @@ export function SettingsScreen() {
           </View>
           <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
         </Pressable>
+
+        {/* Gói dịch vụ — mua qua App Store (10/10/2026, Apple 3.1.1). Chỉ iOS +
+            chủ shop; Android chưa nối Google Play Billing nên không có lối vào. */}
+        {Platform.OS === "ios" && user.role === "ADMIN" ? (
+          <Pressable
+            className="mb-4 flex-row items-center gap-3 rounded-2xl bg-white p-4 active:opacity-70 dark:bg-slate-900"
+            style={{ elevation: 2 }}
+            onPress={() => router.push("/plan")}
+            accessibilityRole="button"
+            accessibilityLabel="Mở mục Gói dịch vụ"
+          >
+            <View className="h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-500/15">
+              <Ionicons name="ribbon-outline" size={20} color="#059669" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Gói dịch vụ
+              </Text>
+              <Text className="text-[11px] text-slate-500 dark:text-slate-400">
+                Xem gói đang dùng, mua hoặc gia hạn qua App Store
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+          </Pressable>
+        ) : null}
 
         {/* Giao diện Sáng/Tối — mặc định theo lịch sáng↔tối của hệ điều hành */}
         <View

@@ -5546,7 +5546,7 @@ export function sendHqInvoiceEmail(ledgerEntryId: string, to?: string) {
 // ---------- Gói dịch vụ & Thuê bao (hq.finance; sửa bảng giá: chủ nền tảng) ----------
 
 export type BillingCycle = "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "YEARLY";
-export type PackagePaymentMethod = "BANK_TRANSFER" | "WALLET" | "GATEWAY";
+export type PackagePaymentMethod = "BANK_TRANSFER" | "WALLET" | "GATEWAY" | "APPLE_IAP";
 export type SubscriptionEffectiveStatus = "ACTIVE" | "EXPIRED" | "CANCELLED";
 
 export interface ServicePlan {

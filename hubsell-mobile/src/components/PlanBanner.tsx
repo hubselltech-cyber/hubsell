@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useAuth } from "@/auth/AuthContext";
 import * as storage from "@/auth/storage";
 import { hapticTap } from "@/lib/haptics";
@@ -29,6 +30,7 @@ async function readSeen(): Promise<string[]> {
 export function PlanBanner() {
   const { plan } = usePlan();
   const { user } = useAuth();
+  const router = useRouter();
   const content = planBannerOf(plan);
   // null = chưa đọc kho → chưa vẽ (tránh nháy dải vàng rồi biến mất).
   const [seen, setSeen] = useState<string[] | null>(null);
@@ -87,6 +89,26 @@ export function PlanBanner() {
           >
             {isOwner ? content.detail : "Báo chủ shop để không gián đoạn việc dùng app."}
           </Text>
+          {/* iOS + chủ shop: đã mua được trong app (10/10) → dẫn thẳng tới màn Gói dịch vụ. */}
+          {isOwner && Platform.OS === "ios" ? (
+            <Pressable
+              onPress={() => {
+                hapticTap();
+                router.push("/plan");
+              }}
+              className="mt-1.5 self-start active:opacity-70"
+              accessibilityRole="button"
+              accessibilityLabel="Mở mục Gói dịch vụ"
+            >
+              <Text
+                className={`text-[12px] font-semibold ${
+                  red ? "text-red-700 dark:text-red-300" : "text-amber-800 dark:text-amber-200"
+                }`}
+              >
+                Xem gói dịch vụ ›
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
         {content.dismissible ? (
           <Pressable

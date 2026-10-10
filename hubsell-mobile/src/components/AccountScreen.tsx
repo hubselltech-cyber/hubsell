@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -85,11 +86,12 @@ function InfoRow({
 }
 
 /**
- * Dòng "Gói đang dùng" TẮT trên cả hai nền tảng (anh Trung 08/10: một bản dựng,
- * iOS + Android cùng hành vi; luật store xem plan/plan-ui.ts). Giữ mã để bật
- * lại khi có cách bán hợp lệ trong app.
+ * Dòng "Gói đang dùng": iOS BẬT từ 10/10/2026 vì đã có cách mua hợp lệ trong
+ * app (In-App Purchase, màn /plan — Apple từ chối 3.1.1 ba lần khi app chỉ xem
+ * mà không mua được). Android vẫn TẮT tới khi nối Google Play Billing (Google
+ * Play Payments mục 4 cũng cấm nhắc gói mà không bán qua Play).
  */
-const SHOW_PLAN = false;
+const SHOW_PLAN = Platform.OS === "ios";
 
 const VALUE_CLS = "text-sm font-medium text-slate-900 dark:text-slate-100";
 const EMPTY_CLS = "text-sm text-slate-400 dark:text-slate-500";
@@ -116,9 +118,8 @@ export function AccountScreen() {
 
   // Gói đang dùng — đọc từ PlanContext (một nguồn với dải nhắc Trang chủ);
   // chưa tải được thì chỉ ẩn dòng gói, không chặn cả màn.
-  // iOS KHÔNG hiện: Apple từ chối 3.1.1 (06/10/2026) vì thấy "gói · dùng thử ·
-  // hết hạn" mà không mua được bằng In-App Purchase. Gói bán cho doanh nghiệp
-  // trên web, app chỉ là công cụ dùng — trên iOS giấu luôn cho khỏi tranh cãi.
+  // iOS hiện (từ 10/10) vì đã mua được trong app qua App Store (màn /plan);
+  // Android ẩn tới khi nối Google Play Billing — xem SHOW_PLAN.
   const { plan: myPlan } = usePlan();
   const plan = SHOW_PLAN ? myPlan : null;
 
@@ -282,6 +283,18 @@ export function AccountScreen() {
                 <Text className="text-[11px] text-slate-500 dark:text-slate-400">
                   {planInfo.note}
                 </Text>
+              ) : null}
+              {isOwner && !plan?.exempt ? (
+                <Pressable
+                  onPress={() => router.push("/plan")}
+                  className="mt-1 self-start active:opacity-70"
+                  accessibilityRole="button"
+                  accessibilityLabel="Mở mục Gói dịch vụ"
+                >
+                  <Text className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
+                    Mua hoặc gia hạn qua App Store ›
+                  </Text>
+                </Pressable>
               ) : null}
             </InfoRow>
           ) : null}

@@ -258,6 +258,7 @@ const METHOD_LABEL: Record<PackagePaymentMethod, string> = {
   BANK_TRANSFER: "Chuyển khoản",
   WALLET: "Ví Hubsell",
   GATEWAY: "Cổng thanh toán payOS",
+  APPLE_IAP: "App Store (mua trong app iOS)",
 };
 
 /**

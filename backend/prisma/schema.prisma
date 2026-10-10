@@ -207,6 +207,11 @@ model User {
   avatar              String?
   /// `sub` Google trả về khi đăng nhập Google — khoá liên kết tài khoản OAuth.
   googleId            String?   @unique
+  /// Mua gói trong app iOS (10/10/2026): UUID gửi cho StoreKit làm
+  /// appAccountToken khi mua — giao dịch Apple trả về mang token này nên
+  /// backend biết khoản tiền thuộc CHỦ SHOP nào mà không tin app. Sinh lười
+  /// lần đầu mở màn Gói dịch vụ; bất biến sau đó.
+  appleAppAccountToken String?  @unique
   /// Quên mật khẩu: chỉ lưu SHA-256 CỦA token (lộ DB không lộ link reset),
   /// hạn 30 phút, dùng một lần (reset xong xoá cả hai cột).
   resetTokenHash      String?
@@ -3034,6 +3039,7 @@ enum PackagePaymentMethod {
   BANK_TRANSFER // chuyển khoản tay — kế toán xác nhận trên /admin/plans
   WALLET // trừ Ví Hubsell (hoa hồng giới thiệu) — KHÔNG có tiền vào quỹ, không ghi sổ quỹ
   GATEWAY // cổng thanh toán (chờ đăng ký khi có GPKD) — webhook ghi qua externalRef
+  APPLE_IAP // mua trong app iOS qua App Store (10/10/2026) — tiền Apple trả về sau khi trừ hoa hồng; externalRef "apple:<transactionId>"
 }
 
 /// BẢNG GIÁ GÓI HUBSELL — mỗi dòng một gói (Beta 0đ, Starter, Professional...).

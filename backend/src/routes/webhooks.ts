@@ -37,6 +37,8 @@ import {
 import { enqueueMisaWebhook } from "../integrations/invoice/misa-webhook-queue";
 import { getPayosConfig, verifyPayosWebhook } from "../integrations/payos/client";
 import { handlePayosWebhook } from "../services/gateway-checkout";
+import { AppleIapError, handleAppleNotification } from "../services/apple-iap";
+import { AppleVerifyError } from "../integrations/apple-iap/verifier";
 import { isQueueReady } from "../lib/queue";
 import { recordAuthEvent, recordOrderEvent } from "../services/webhook-inbox";
 
@@ -631,6 +633,40 @@ router.post("/payos", async (req, res) => {
   } catch (err) {
     console.error("[payOS] Xử lý webhook lỗi:", (err as Error).message);
     res.status(500).json({ success: false, error: "Xử lý webhook lỗi — payOS sẽ gửi lại" });
+  }
+});
+
+// ============================================================
+// APP STORE SERVER NOTIFICATIONS V2 (10/10) — URL khai trên App Store Connect
+// (App Information → App Store Server Notifications, cả Production lẫn Sandbox):
+// /api/webhooks/apple-iap. Thân { signedPayload } là JWS Apple ký — xác minh
+// chuỗi chứng chỉ rồi mới tin (services/apple-iap.ts). Chữ ký sai → 401;
+// lỗi xử lý → 500 để Apple gửi lại (Apple retry tới 5 lần trong vài ngày).
+// ============================================================
+router.post("/apple-iap", async (req, res) => {
+  const signed = (req.body as { signedPayload?: unknown } | undefined)?.signedPayload;
+  if (typeof signed !== "string" || signed.split(".").length !== 3) {
+    res.status(400).json({ success: false, error: "Thiếu signedPayload" });
+    return;
+  }
+  try {
+    const result = await handleAppleNotification(signed);
+    res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    if (err instanceof AppleVerifyError) {
+      console.warn("[AppleIAP] Thông báo chữ ký SAI:", err.message);
+      res.status(401).json({ success: false, error: err.message });
+      return;
+    }
+    if (err instanceof AppleIapError) {
+      // Dữ liệu hợp lệ nhưng không khớp Hubsell (vd token lạ) — 200 để Apple
+      // khỏi gửi lại mãi; HQ xem log.
+      console.warn("[AppleIAP] Thông báo bỏ qua:", err.message);
+      res.status(200).json({ success: true, ignored: true, reason: err.message });
+      return;
+    }
+    console.error("[AppleIAP] Xử lý thông báo lỗi:", (err as Error).message);
+    res.status(500).json({ success: false, error: "Xử lý lỗi — Apple sẽ gửi lại" });
   }
 });
 

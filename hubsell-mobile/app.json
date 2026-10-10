@@ -79,7 +79,8 @@
           "microphonePermission": "Hubsell cần Micro để bạn hỏi Trợ lý bằng giọng nói thay vì gõ tay.",
           "speechRecognitionPermission": "Hubsell dùng nhận dạng giọng nói của máy để chuyển câu hỏi của bạn thành chữ."
         }
-      ]
+      ],
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true,

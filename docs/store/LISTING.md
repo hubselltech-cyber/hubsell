@@ -97,6 +97,25 @@ Apple chỉ có một cặp ô tài khoản: điền tài khoản **chủ shop**
 
 Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới viết lại **08/10 tối sau khi Apple từ chối lần 2** (xem `APPLE-REVIEW-REPLY-2.md`): build 6 **GỠ HẲN màn Đăng ký** (tài khoản tạo trên web, như Haravan / Pancake POS) và gỡ nút mở web app ở thẻ chưa có gian → Notes nói rõ không có đăng ký, không dùng thử, không link ra web app; nhấn mạnh dùng tài khoản demo, ghi rõ nút xóa tài khoản. Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
 
+**★ 10/10 — build 8 (Apple từ chối lần 3, chuyển sang In-App Purchase, xem `APPLE-REVIEW-REPLY-3.md` + `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md`): với Apple, THAY đoạn PAYMENTS bên dưới bằng đoạn này** (Google giữ nguyên đoạn cũ vì Android chưa bán trong app):
+
+```
+PAYMENTS (iOS)
+Service plans can now be purchased inside the app with In-App Purchase
+(20 non-renewing subscriptions: Starter / Growth / Pro / Business / Scale
+x 1 / 3 / 6 / 12 months, submitted together with this build). Entry
+points: Settings tab ("Cau hinh") -> "Goi dich vu" card, and the plan row
+on the Account screen. Prices shown come from StoreKit. There is no other
+purchase method, no external link and no price comparison anywhere in the
+app. Merchants who bought a plan on our website keep using it in the app
+(Guideline 3.1.3(b)); the same plans are now available via IAP.
+
+To test: sign in with the demo account, open Settings -> "Goi dich vu",
+pick a plan and a period, tap "Mua goi" and complete the sandbox purchase.
+The plan activates immediately and the new period shows on the same screen.
+"Khoi phuc giao dich" re-syncs any unfinished StoreKit transaction.
+```
+
 ```
 Hubsell is a B2B tool for online merchants in Vietnam who sell on the
 Shopee, Lazada and TikTok Shop marketplaces. It is a companion app to our

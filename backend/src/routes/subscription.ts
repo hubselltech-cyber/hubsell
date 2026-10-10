@@ -23,6 +23,8 @@ import {
   getCheckoutStatus,
 } from "../services/gateway-checkout";
 import { localPhone } from "../integrations/invoice/hq-auto-invoice";
+import { AppleIapError, appleCatalogFor, redeemAppleJws } from "../services/apple-iap";
+import { AppleVerifyError } from "../integrations/apple-iap/verifier";
 
 const router = Router();
 
@@ -473,5 +475,53 @@ router.delete("/upgrade-request", requireAdmin, async (req: AuthRequest, res, ne
 // Lịch sử thanh toán CỐ TÌNH không có endpoint phía khách (anh Trung bỏ
 // 22/08 khuya: đừng nhắc khách họ đã mất tiền) — chứng từ chỉ xem ở HQ
 // (/admin/plans, bảng "Thanh toán gần đây" + export kế toán).
+
+// ============================================================
+// MUA GÓI TRONG APP iOS QUA APP STORE (10/10/2026) — chỉ CHỦ SHOP.
+// Giá hiển thị là của StoreKit (app tự tải), backend chỉ phát danh mục mã sản
+// phẩm + appAccountToken, rồi nhận JWS giao dịch về ghi nhận. Chi tiết luồng:
+// services/apple-iap.ts. Đường web KHÔNG dùng hai endpoint này.
+// ============================================================
+
+// GET /api/subscription/apple-iap/catalog → { appAccountToken, items[] }
+router.get("/apple-iap/catalog", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    res.json(await appleCatalogFor(req.ownerId!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/subscription/apple-iap/redeem { jws } → ghi nhận khoản mua.
+// Idempotent: cùng giao dịch gửi lại trả outcome "duplicate" + 200, app cứ
+// finishTransaction. Lỗi xác minh/khớp chủ → 4xx có message tiếng Việt.
+router.post("/apple-iap/redeem", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const jws = typeof req.body?.jws === "string" ? req.body.jws.trim() : "";
+    if (!jws || jws.split(".").length !== 3 || jws.length > 20_000) {
+      res.status(400).json({ error: "Thiếu dữ liệu giao dịch Apple" });
+      return;
+    }
+    const r = await redeemAppleJws(req.ownerId!, jws);
+    res.json({
+      ok: true,
+      outcome: r.outcome,
+      planName: r.planName,
+      cycle: r.cycle,
+      periodEnd: r.periodEnd ? r.periodEnd.toISOString() : null,
+      sandbox: r.env === "Sandbox",
+    });
+  } catch (err) {
+    if (err instanceof AppleIapError) {
+      res.status(err.httpStatus).json({ error: err.message });
+      return;
+    }
+    if (err instanceof AppleVerifyError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
 
 export default router;

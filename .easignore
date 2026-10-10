@@ -33,3 +33,6 @@ yarn-error.*
 .env*.local
 google-play-service-account.json
 asc-api-key*.p8
+
+# 10/10: AAB/IPA tải về để kéo tay lên Play Console (92 MB) — không gửi lên EAS
+/hubsell-mobile/build-artifacts

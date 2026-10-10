@@ -82,6 +82,7 @@ const METHOD_LABEL: Record<string, string> = {
   BANK_TRANSFER: "Chuyển khoản",
   WALLET: "Ví Hubsell",
   GATEWAY: "Cổng thanh toán",
+  APPLE_IAP: "App Store (app iOS)",
 };
 
 const CYCLES: { value: BillingCycle; label: string; months: number }[] = [

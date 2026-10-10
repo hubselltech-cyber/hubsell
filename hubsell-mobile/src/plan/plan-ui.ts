@@ -13,6 +13,13 @@ import type { MyPlanResponse } from "@/types/api";
  *   đồng bộ, liên hệ quản trị viên shop. Nhắc "sắp hết hạn" chỉ cho thuê bao
  *   ĐÃ TRẢ TIỀN (khách mua trên web rồi); tài khoản dùng thử không nhắc trước —
  *   người duyệt store luôn dùng tài khoản dùng thử.
+ *
+ * CẬP NHẬT 10/10/2026 — Apple từ chối 3.1.1 LẦN 3 kể cả khi app đã câm hoàn
+ * toàn về gói ("gói mua ngoài app phải mua được trong app"). Anh Trung chốt
+ * bán qua In-App Purchase → iOS nay CÓ màn Gói dịch vụ (/plan, PlanStoreScreen)
+ * và dải nhắc/Tài khoản dẫn tới đó; chữ trên dải vẫn trung tính như trên (vẫn
+ * đúng cho Android — Android chưa nối Google Play Billing nên KHÔNG có lối vào
+ * mua). Mọi câu chữ nhắc nơi mua ngoài app / so giá VẪN CẤM cả hai nền tảng.
  */
 export interface PlanBannerContent {
   key: string;
