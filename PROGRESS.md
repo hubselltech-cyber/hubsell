@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 10/10/2026 (tối) — TỰ TRẢ LỜI ĐÁNH GIÁ CHUYỂN VỀ MÁY CHỦ, MỖI SHOP 1 LẦN/NGÀY — CHƯA PUSH
+
+- **Anh báo:** tự trả lời đánh giá "thỉnh thoảng không chạy, phải vào bấm nó mới làm". **Gốc:** engine chạy TRONG TRÌNH DUYỆT (reviews-page quét 5'/lần khi trang mở), cờ số sao + bộ mẫu + sổ chống trùng nằm localStorage → tắt tab / đổi máy / nhân viên máy khác là không chạy. **Anh chốt:** 1 ngày trả lời 1 lần.
+- **Backend:** migration `20261010180000_review_auto_reply` — `review_auto_reply_config` (1 dòng/chủ shop: enabledStars, templates, nextRunAt + kết quả lượt gần nhất) và `review_auto_replies` (sổ chống trùng unique channelId+reviewId, ghi TRƯỚC khi gửi, lỗi thì xóa để mai thử lại); cả hai bật RLS, không khóa ngoại. `services/review-auto-reply.ts` (Shopee get_comment theo trang tới mốc lượt trước − 2 ngày, lần đầu 14 ngày, ≤10 trang; gửi gộp `replyComments` ≤100/lượt gọi — hàm mới ở shopee/client; Lazada NOT_REPLIED ≤30 sản phẩm/gian tuần tự có nhịp nghỉ; đánh giá thiếu số sao bỏ qua). `workers/review-auto-reply.ts` poll 1', nhặt ≤40 shop tới hạn, 8 shop song song, giành lượt bằng updateMany có điều kiện; giờ chạy cố định theo shop rải 08:00–20:00 VN (băm ownerId); không dùng pg-boss. Tắt: `REVIEW_AUTO_REPLY_OFF=1`. Route `GET/PUT /api/operations/review-auto/config`; `GET /reviews` gắn `autoReplied` từ sổ.
+- **Frontend:** trang Cấu hình tự động hóa đọc/ghi máy chủ + dòng "Lần chạy gần nhất / Lượt kế"; trang Phản hồi đánh giá bỏ engine trình duyệt, badge AI Auto lấy từ máy chủ. Lần đầu mở trang, cấu hình localStorage cũ tự chép lên máy chủ (bật từ tắt → chạy ngay lượt kế, không chờ tới mai).
+- **Kiểm:** tsc BE + FE, eslint FE, vitest 16/16 (lịch, chuẩn hóa, bốc mẫu, lọc sao); DB dev: áp migration bằng `prisma db execute` (`migrate deploy` bị công cụ chặn), chạy 1 lượt worker với shop giả → lastRunAt ghi, lượt kế ngày mai 16:44 VN; unique chặn ghi đôi; curl API GET/PUT/400 đúng. Chưa chạy gửi thật lên sàn (không bật công tắc trên DB dev vì gian dev nối shop thật).
+- ⏳ **Anh push**; sau deploy anh mở trang Cấu hình tự động hóa một lần trên trình duyệt đang bật công tắc (để chép cấu hình cũ lên), xem dòng "Lượt kế"; hôm sau kiểm "Lần chạy gần nhất" + log `[Review-auto-reply]`.
+
 ## Phiên 10/10/2026 (chiều) — 6c HÓA ĐƠN: GỠ 4 ĐƯỜNG LUI XONG + GOM 20 TỜ NHÁP MỘT LỆNH (anh chốt) — CHƯA PUSH
 
 - **Anh chốt:** "Gỡ 1-4 luôn… cứ gửi chốt cứng 20 tờ 1 lệnh" (tờ nháp). 6c-5 webhook MISA cũ chưa chốt → giữ.

@@ -56,6 +56,13 @@ import {
   effectiveDeliveryFailConfig,
   mergeDeliveryFailOutcome,
 } from "../integrations/shopee/delivery-fail";
+import {
+  autoRepliedKeys,
+  normalizeStars,
+  normalizeTemplates,
+  scheduleAfterConfigChange,
+  toConfigDTO,
+} from "../services/review-auto-reply";
 
 const router = Router();
 
@@ -118,6 +125,8 @@ interface OpsReview {
   orderCode: string | null;
   createdAt: number | null;
   externalId: string;
+  /** Hệ thống đã tự trả lời (sổ review_auto_replies) — badge "AI Auto". */
+  autoReplied?: boolean;
 }
 
 /** Lỗi của riêng một gian — trả kèm để UI ghi chú, không chặn gian khác. */
@@ -854,6 +863,10 @@ router.get("/reviews", async (req: AuthRequest, res, next) => {
     await Promise.all([...shopeeJobs, lazadaJob]);
 
     reviews.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    const auto = await autoRepliedKeys(
+      reviews.map((r) => ({ channelId: r.channelId, reviewId: r.externalId }))
+    );
+    for (const r of reviews) if (auto.has(r.id)) r.autoReplied = true;
     res.json({ reviews, errors, channelCount: channels.length });
   } catch (err) {
     next(err);
@@ -898,6 +911,67 @@ router.post("/reviews/reply", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
+
+// ============================================================
+// TỰ ĐỘNG TRẢ LỜI ĐÁNH GIÁ — cấu hình theo CHỦ SHOP (10/10/2026)
+// Worker workers/review-auto-reply.ts chạy mỗi shop 1 lần/ngày. Trang Phản hồi
+// đánh giá chỉ ĐỌC (lấy bộ mẫu soạn gợi ý); trang Cấu hình tự động hóa ghi.
+// ============================================================
+router.get(
+  "/review-auto/config",
+  requirePermission("operations.ai-rules", "operations.reviews"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const row = await prisma.reviewAutoReplyConfig.findUnique({
+        where: { ownerId: req.ownerId! },
+      });
+      res.json(toConfigDTO(row));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Body: { enabledStars?: number[], templates?: Record<"1".."5", string[]> } —
+// trường nào vắng thì giữ nguyên giá trị đang lưu.
+router.put(
+  "/review-auto/config",
+  requirePermission("operations.ai-rules"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const body = req.body ?? {};
+      if (body.enabledStars === undefined && body.templates === undefined) {
+        res.status(400).json({ error: "Thiếu enabledStars hoặc templates" });
+        return;
+      }
+      const ownerId = req.ownerId!;
+      const prev = await prisma.reviewAutoReplyConfig.findUnique({ where: { ownerId } });
+      const prevStars = normalizeStars(prev?.enabledStars ?? []);
+      const enabledStars =
+        body.enabledStars !== undefined ? normalizeStars(body.enabledStars) : prevStars;
+      const data = {
+        enabledStars,
+        nextRunAt: scheduleAfterConfigChange(
+          prevStars,
+          prev?.nextRunAt ?? null,
+          enabledStars,
+          new Date()
+        ),
+        ...(body.templates !== undefined
+          ? { templates: normalizeTemplates(body.templates) }
+          : {}),
+      };
+      const row = await prisma.reviewAutoReplyConfig.upsert({
+        where: { ownerId },
+        create: { ownerId, ...data },
+        update: data,
+      });
+      res.json(toConfigDTO(row));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ============================================================
 // GET /api/operations/product-context?query=... | ?channelId=&itemId=...

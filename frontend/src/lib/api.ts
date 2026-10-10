@@ -6173,6 +6173,8 @@ export interface OpsReviewDTO {
   orderCode: string | null;
   createdAt: number | null;
   externalId: string;
+  /** Hệ thống đã tự trả lời (worker chạy nền hằng ngày) — badge "AI Auto". */
+  autoReplied?: boolean;
 }
 
 export interface OpsProductContextDTO {
@@ -6310,6 +6312,39 @@ export function replyOpsReview(body: {
 }) {
   return apiFetch<{ ok: boolean }>("/api/operations/reviews/reply", {
     method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Bộ mẫu câu trả lời đánh giá theo mức sao "1".."5". */
+export type ReviewReplyTemplatesDTO = Record<"1" | "2" | "3" | "4" | "5", string[]>;
+
+/** Cấu hình tự trả lời đánh giá (worker chạy nền mỗi shop 1 lần/ngày). */
+export interface ReviewAutoReplyConfigDTO {
+  /** false = chưa từng lưu trên máy chủ. */
+  saved: boolean;
+  enabledStars: number[];
+  templates: ReviewReplyTemplatesDTO;
+  defaultTemplates: ReviewReplyTemplatesDTO;
+  nextRunAt: string | null;
+  /** Lượt kế đã tới hạn — chạy trong vài phút tới. */
+  dueNow: boolean;
+  lastRunAt: string | null;
+  lastRunReplied: number;
+  lastRunFailed: number;
+  lastRunError: string | null;
+}
+
+export function fetchReviewAutoReplyConfig() {
+  return apiFetch<ReviewAutoReplyConfigDTO>("/api/operations/review-auto/config");
+}
+
+export function saveReviewAutoReplyConfig(body: {
+  enabledStars?: number[];
+  templates?: ReviewReplyTemplatesDTO;
+}) {
+  return apiFetch<ReviewAutoReplyConfigDTO>("/api/operations/review-auto/config", {
+    method: "PUT",
     body: JSON.stringify(body),
   });
 }

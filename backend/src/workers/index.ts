@@ -41,6 +41,7 @@ import { startHealthWatchWorker } from "./health-watch";
 import { startProductCatalogSyncWorker } from "./product-catalog-sync";
 import { startOrderLedgerWorker } from "./order-ledger";
 import { startStockPushScheduler } from "./stock-queue";
+import { startReviewAutoReplyWorker } from "./review-auto-reply";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -113,4 +114,6 @@ export function startAllWorkers(): void {
   // Sổ cái đơn (giai đoạn 1 kiến trúc quy mô): tính lại dòng trigger đánh dấu,
   // tạo phân mảnh tháng, đối soát đêm sổ ↔ đơn gốc.
   startOrderLedgerWorker();
+  // Tự trả lời đánh giá theo số sao — mỗi shop 1 lần/ngày (anh Trung 10/10).
+  startReviewAutoReplyWorker();
 }

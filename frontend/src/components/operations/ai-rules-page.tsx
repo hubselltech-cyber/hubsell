@@ -1,20 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, RotateCcw, Save, Star } from "lucide-react";
+import { Bot, Loader2, RotateCcw, Save, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { DeliveryFailTab } from "@/components/operations/delivery-fail-tab";
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import {
-  DEFAULT_AUTO_REPLY_STARS,
-  DEFAULT_REPLY_TEMPLATES,
-  loadAutoReplyStars,
-  loadReplyTemplates,
-  saveAutoReplyStars,
-  saveReplyTemplates,
+  loadReviewAutoReplyConfig,
   TEMPLATE_VARS,
-  type AutoReplyStars,
   type ReplyTemplates,
   type StarLevel,
 } from "@/components/operations/reply-templates";
@@ -28,6 +22,8 @@ import {
 } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
+import { saveReviewAutoReplyConfig, type ReviewAutoReplyConfigDTO } from "@/lib/api";
+import { formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +31,8 @@ import { cn } from "@/lib/utils";
  * CẤU HÌNH TỰ ĐỘNG HÓA CSKH
  *
  * Hai tab: (1) Phản hồi đánh giá — bộ mẫu câu theo số sao + công tắc tự động
- * gửi từng mức sao (trang Phản hồi đánh giá đọc và gửi thật lên sàn);
+ * gửi từng mức sao (lưu máy chủ; worker backend tự trả lời mỗi shop 1 lần/ngày,
+ * 10/10/2026);
  * (2) Cứu đơn giao thất bại. 09/09/2026: bỏ danh sách "kịch bản AI" và khối
  * "giọng điệu thương hiệu" — chúng chỉ là công tắc mock trong state client,
  * không nối vào đâu; production không bày công tắc không có tác dụng.
@@ -68,38 +65,50 @@ export function OperationsAiRulesPage() {
     if (wanted === "delivery-fail") setTab("delivery-fail");
   }, []);
 
-  // ── Cờ tự động phản hồi theo số sao (CẤU HÌNH THẬT — reviews-page đọc) ──
-  // Nạp bản đã lưu ở useEffect (tránh lệch SSR/CSR như templates bên dưới);
-  // gạt switch là ghi localStorage ngay, không cần nút Lưu riêng.
-  const [autoStars, setAutoStars] = useState<AutoReplyStars>(DEFAULT_AUTO_REPLY_STARS);
-  useEffect(() => {
-    setAutoStars(loadAutoReplyStars());
-  }, []);
-
-  function toggleAutoStar(star: StarLevel, enabled: boolean) {
-    setAutoStars((prev) => {
-      const next = { ...prev, [star]: enabled };
-      saveAutoReplyStars(next);
-      return next;
-    });
-    toast.success(
-      enabled
-        ? `Đã BẬT tự động phản hồi đánh giá ${star} sao — áp dụng từ lượt quét kế tiếp của trang Phản hồi đánh giá.`
-        : `Đã tắt tự động phản hồi đánh giá ${star} sao.`
-    );
-  }
-
-  // ── Bộ mẫu câu phản hồi đánh giá (randomizer) ──
-  // Khởi tạo bằng mặc định rồi nạp bản đã lưu ở useEffect: localStorage chỉ
-  // có ở client, đọc thẳng lúc render đầu sẽ lệch SSR/CSR.
-  const [templates, setTemplates] = useState<ReplyTemplates>(DEFAULT_REPLY_TEMPLATES);
+  // ── Cấu hình tự trả lời đánh giá (MÁY CHỦ — worker chạy mỗi shop 1 lần/ngày) ──
+  // Gạt công tắc là lưu ngay; bộ mẫu lưu bằng nút "Lưu bộ mẫu".
+  const [cfg, setCfg] = useState<ReviewAutoReplyConfigDTO | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<ReplyTemplates | null>(null);
   const [editingStar, setEditingStar] = useState<StarLevel>("5");
+  const [savingStars, setSavingStars] = useState(false);
+  const [savingTemplates, setSavingTemplates] = useState(false);
+
   useEffect(() => {
-    setTemplates(loadReplyTemplates());
+    loadReviewAutoReplyConfig()
+      .then((c) => {
+        setCfg(c);
+        setTemplates(c.templates);
+      })
+      .catch((err) =>
+        setLoadError(err instanceof Error ? err.message : "Không tải được cấu hình")
+      );
   }, []);
+
+  async function toggleAutoStar(star: StarLevel, enabled: boolean) {
+    if (!cfg || savingStars) return;
+    const set = new Set(cfg.enabledStars);
+    if (enabled) set.add(Number(star));
+    else set.delete(Number(star));
+    setSavingStars(true);
+    try {
+      const next = await saveReviewAutoReplyConfig({ enabledStars: [...set] });
+      setCfg(next);
+      toast.success(
+        enabled
+          ? `Đã BẬT tự động trả lời đánh giá ${star} sao — hệ thống tự chạy mỗi ngày một lần.`
+          : `Đã tắt tự động trả lời đánh giá ${star} sao.`
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Lưu cấu hình thất bại");
+    } finally {
+      setSavingStars(false);
+    }
+  }
 
   function changeTemplate(index: number, value: string) {
     setTemplates((prev) => {
+      if (!prev) return prev;
       const list = [...prev[editingStar]];
       while (list.length < 5) list.push("");
       list[index] = value;
@@ -107,19 +116,30 @@ export function OperationsAiRulesPage() {
     });
   }
 
+  async function persistTemplates(next: ReplyTemplates, okMessage: string) {
+    setSavingTemplates(true);
+    try {
+      const saved = await saveReviewAutoReplyConfig({ templates: next });
+      setCfg(saved);
+      setTemplates(saved.templates);
+      toast.success(okMessage);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Lưu bộ mẫu thất bại");
+    } finally {
+      setSavingTemplates(false);
+    }
+  }
+
   function handleSaveTemplates() {
-    saveReplyTemplates(templates);
-    toast.success("Đã lưu bộ mẫu câu phản hồi (áp dụng ngay cho trang Phản hồi đánh giá).");
+    if (templates) void persistTemplates(templates, "Đã lưu bộ mẫu câu phản hồi.");
   }
 
   function handleRestoreDefaults() {
-    setTemplates(DEFAULT_REPLY_TEMPLATES);
-    saveReplyTemplates(DEFAULT_REPLY_TEMPLATES);
-    toast.success("Đã khôi phục bộ mẫu câu mặc định.");
+    if (cfg) void persistTemplates(cfg.defaultTemplates, "Đã khôi phục bộ mẫu câu mặc định.");
   }
 
   // 5 ô mẫu của mức sao đang chỉnh (đắp chuỗi rỗng cho đủ 5 ô)
-  const editingList = [...templates[editingStar]];
+  const editingList = [...(templates?.[editingStar] ?? [])];
   while (editingList.length < 5) editingList.push("");
 
   return (
@@ -145,6 +165,17 @@ export function OperationsAiRulesPage() {
 
       {tab === "delivery-fail" ? (
         <DeliveryFailTab />
+      ) : !cfg ? (
+        <Card className="flex min-h-[240px] items-center justify-center">
+          {loadError ? (
+            <p className="text-sm text-red-600">{loadError}</p>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Đang tải cấu hình…
+            </div>
+          )}
+        </Card>
       ) : (
         <>
       {/* ===== MẪU CÂU PHẢN HỒI ĐÁNH GIÁ (RANDOMIZER CHỐNG SPAM TRÙNG) ===== */}
@@ -181,12 +212,21 @@ export function OperationsAiRulesPage() {
               ))}
             </NativeSelect>
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleRestoreDefaults}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRestoreDefaults}
+                disabled={savingTemplates}
+              >
                 <RotateCcw className="size-4" />
                 Khôi phục mặc định
               </Button>
-              <Button size="sm" onClick={handleSaveTemplates}>
-                <Save className="size-4" />
+              <Button size="sm" onClick={handleSaveTemplates} disabled={savingTemplates}>
+                {savingTemplates ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
                 Lưu bộ mẫu
               </Button>
             </div>
@@ -204,19 +244,15 @@ export function OperationsAiRulesPage() {
               />
             ))}
           </div>
-          <p className={cn(TEXT_SUB)}>
-            Lưu tại trình duyệt này (localStorage) — sẽ chuyển vào cấu hình tài
-            khoản khi module có DB riêng.
-          </p>
         </CardContent>
       </Card>
 
       <div>
         <div className="space-y-3">
           {/* ===== 5 CÔNG TẮC TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (CẤU HÌNH THẬT) =====
-              Thay cho rule mock "tự động trả lời 5 sao" cũ: bật mức nào thì
-              trang Phản hồi đánh giá TỰ GỬI THẬT phản hồi lên sàn cho đánh giá
-              chưa trả lời ở mức đó (quét mỗi 5 phút khi trang đang mở). */}
+              Bật mức nào thì worker backend TỰ GỬI THẬT phản hồi lên sàn cho
+              đánh giá chưa trả lời ở mức đó — mỗi shop 1 lần/ngày, không cần
+              mở trang. */}
           <Card className="border-violet-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -225,10 +261,11 @@ export function OperationsAiRulesPage() {
               </CardTitle>
               <CardDescription>
                 Bật mức sao nào, hệ thống tự gửi phản hồi <b>thật</b> sang sàn cho
-                đánh giá mới ở mức đó. Hiệu lực khi trang Phản hồi đánh giá đang
-                mở (tự quét đánh giá mới 5 phút/lần); mức đang tắt vẫn được soạn
-                sẵn câu trả lời chờ nhân viên duyệt.
+                đánh giá chưa trả lời ở mức đó, <b>mỗi ngày một lần</b> — không cần
+                mở trang. Mức đang tắt vẫn được soạn sẵn câu trả lời chờ nhân viên
+                duyệt.
               </CardDescription>
+              <RunStatus cfg={cfg} />
             </CardHeader>
             <CardContent className="space-y-1">
               {STAR_SWITCH_ROWS.map(({ star, dot, note }) => (
@@ -249,7 +286,8 @@ export function OperationsAiRulesPage() {
                   </div>
                   {/* KHÔNG bọc Switch trong <label> — từng dính bug double-toggle */}
                   <Switch
-                    checked={autoStars[star]}
+                    checked={cfg.enabledStars.includes(Number(star))}
+                    disabled={savingStars}
                     onCheckedChange={(v) => toggleAutoStar(star, v)}
                     aria-label={`Bật/tắt tự động trả lời đánh giá ${star} sao`}
                   />
@@ -262,5 +300,34 @@ export function OperationsAiRulesPage() {
         </>
       )}
     </OperationsFrame>
+  );
+}
+
+function fmtDateTime(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} ${d.getDate()}/${d.getMonth() + 1}`;
+}
+
+/** Dòng trạng thái lượt chạy: lần gần nhất trả lời bao nhiêu + lượt kế. Lỗi chỉ hiện khi có. */
+function RunStatus({ cfg }: { cfg: ReviewAutoReplyConfigDTO }) {
+  if (cfg.enabledStars.length === 0) return null;
+  return (
+    <div className={cn(TEXT_SUB, "space-y-0.5 pt-1")}>
+      {cfg.lastRunAt ? (
+        <p>
+          Lần chạy gần nhất {fmtDateTime(cfg.lastRunAt)}: đã trả lời{" "}
+          {formatNumber(cfg.lastRunReplied)} đánh giá
+          {cfg.lastRunFailed > 0 ? `, ${formatNumber(cfg.lastRunFailed)} lỗi` : ""}.
+        </p>
+      ) : null}
+      {cfg.nextRunAt ? (
+        <p>
+          {cfg.dueNow
+            ? "Lượt kế: trong vài phút tới."
+            : `Lượt kế: ${fmtDateTime(cfg.nextRunAt)}.`}
+        </p>
+      ) : null}
+      {cfg.lastRunError ? <p className="text-amber-700">{cfg.lastRunError}</p> : null}
+    </div>
   );
 }

@@ -1346,6 +1346,45 @@ export interface ShopeeReplyCommentData extends ShopeeEnvelope {
   };
 }
 
+/** Trần comment_list của reply_comment theo tài liệu Shopee v2. */
+export const SHOPEE_REPLY_COMMENT_MAX = 100;
+
+/**
+ * Trả lời NHIỀU đánh giá trong MỘT lượt gọi (≤ SHOPEE_REPLY_COMMENT_MAX) — worker
+ * tự trả lời hằng ngày dùng để một gian nhiều đánh giá không đập API từng cái.
+ * Trả danh sách comment_id bị từ chối kèm lý do; lỗi cả lượt thì ném.
+ */
+export async function replyComments(
+  params: {
+    accessToken: string;
+    shopId: string;
+    items: { commentId: number; reply: string }[];
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<{ failed: { commentId: number; message: string }[] }> {
+  if (params.items.length === 0) return { failed: [] };
+  const data = await callShopPost<ShopeeReplyCommentData>(
+    SHOPEE_PATHS.productReplyComment,
+    params.accessToken,
+    params.shopId,
+    {
+      comment_list: params.items
+        .slice(0, SHOPEE_REPLY_COMMENT_MAX)
+        .map((i) => ({ comment_id: i.commentId, comment: i.reply })),
+    },
+    "reply_comment",
+    cfg
+  );
+  return {
+    failed: (data.response?.result_list ?? [])
+      .filter((r) => r.fail_error && r.comment_id != null)
+      .map((r) => ({
+        commentId: r.comment_id!,
+        message: r.fail_message || r.fail_error || "bị từ chối",
+      })),
+  };
+}
+
 /** Trả lời MỘT đánh giá. Shopee có thể trả 200 kèm fail per-comment → ném lỗi rõ. */
 export async function replyComment(
   params: { accessToken: string; shopId: string; commentId: number; reply: string },

@@ -23,11 +23,9 @@ import {
   type ReviewTag,
 } from "@/components/operations/mock-data";
 import {
-  loadAutoRepliedIds,
-  loadAutoReplyStars,
+  loadReviewAutoReplyConfig,
   pickRandomReply,
-  saveAutoRepliedIds,
-  toStarLevel,
+  type ReplyTemplates,
 } from "@/components/operations/reply-templates";
 import { humanizeChannelError } from "@/components/operations/channel-error";
 import { OperationsFrame } from "@/components/operations/operations-frame";
@@ -63,12 +61,10 @@ import { cn } from "@/lib/utils";
  *   · Không có đánh giá → empty state (09/09/2026: bỏ hẳn bộ mock/demo).
  *
  * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (cấu hình ở trang Cấu hình tự động hóa):
- *   trang tự quét đánh giá mới 5 phút/lần; đánh giá THẬT chưa trả lời ở mức
- *   sao đang BẬT cờ autoReplyStars → tự bốc mẫu random + GỬI THẬT lên sàn,
- *   đánh dấu badge "AI Auto"; mức đang TẮT giữ trạng thái chờ duyệt tay (ô
- *   soạn prefill sẵn gợi ý). Sổ localStorage chống gửi trùng giữa các lượt
- *   quét. Đây là "cron phía client" — cron server 24/7 chờ chuyển bộ mẫu +
- *   cờ vào DB khi thương mại hoá.
+ *   10/10/2026 chuyển hẳn về máy chủ — worker backend (workers/review-auto-reply)
+ *   tự trả lời MỖI NGÀY MỘT LẦN cho mức sao đang bật, không cần mở trang này.
+ *   Trang chỉ hiển thị: badge "AI Auto" lấy từ sổ review_auto_replies (cờ
+ *   autoReplied của API), bộ mẫu lấy từ cấu hình máy chủ để soạn gợi ý.
  *
  * Bố cục 2 cột: feed đánh giá (trái) + AI Reply Builder sticky (phải).
  */
@@ -94,7 +90,7 @@ interface ReviewRow {
   rating: number;
   content: string;
   replied: boolean;
-  /** true = phản hồi do engine TỰ ĐỘNG gửi trong phiên này — badge "AI Auto". */
+  /** true = phản hồi do worker TỰ ĐỘNG gửi (sổ máy chủ) — badge "AI Auto". */
   autoReplied?: boolean;
   createdAt: string;
   tag: ReviewTag;
@@ -145,10 +141,16 @@ export function OperationsReviewsPage() {
   const [editing, setEditing] = useState(false);
   const [sendingReply, setSendingReply] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
+  // Bộ mẫu câu của shop (máy chủ) — null khi chưa nạp/lỗi thì dùng câu engine.
+  const [templates, setTemplates] = useState<ReplyTemplates | null>(null);
+  useEffect(() => {
+    loadReviewAutoReplyConfig()
+      .then((c) => setTemplates(c.templates))
+      .catch(() => {});
+  }, []);
 
-  // ── Nạp đánh giá thật: lần đầu khi vào trang, sau đó QUÉT 5 phút/lần —
-  // "cron phía client" cấp dữ liệu mới cho engine tự động phản hồi. Lượt quét
-  // sau lỗi/trống thì GIỮ dữ liệu đang có, không rơi ngược về demo. ──
+  // ── Nạp đánh giá thật: lần đầu khi vào trang, sau đó làm mới 5 phút/lần
+  // khi trang đang mở. Lượt sau lỗi/trống thì GIỮ dữ liệu đang có. ──
   const loadingRef = useRef(false);
   const loadReviews = useCallback(async (initial: boolean) => {
     if (loadingRef.current) return; // lượt trước chưa xong thì bỏ qua nhịp này
@@ -157,9 +159,8 @@ export function OperationsReviewsPage() {
       const r = await fetchOpsReviews();
       setChannelErrors(r.errors);
       if (r.reviews.length > 0) {
-        // Review có trong sổ auto-replied coi như ĐÃ trả lời kể cả khi sàn
+        // Review có trong sổ tự trả lời coi như ĐÃ trả lời kể cả khi sàn
         // trả dữ liệu trễ (reply rỗng ở lượt quét ngay sau khi gửi).
-        const ledger = loadAutoRepliedIds();
         setRows(
           r.reviews.map((rv) => {
             const tag = classifyReviewTag(rv.rating, rv.content);
@@ -173,8 +174,8 @@ export function OperationsReviewsPage() {
               productName: rv.productName,
               rating: rv.rating,
               content: rv.content,
-              replied: (rv.reply != null && rv.reply !== "") || ledger.has(rv.id),
-              autoReplied: ledger.has(rv.id),
+              replied: (rv.reply != null && rv.reply !== "") || !!rv.autoReplied,
+              autoReplied: !!rv.autoReplied,
               createdAt: fmtDate(rv.createdAt),
               tag,
               aiSuggestion: generateReviewReply({
@@ -260,7 +261,7 @@ export function OperationsReviewsPage() {
    *  (chống sàn phạt trùng nội dung); user xoá hết mẫu thì rơi về câu engine. */
   function suggestionFor(r: ReviewRow): string {
     return (
-      pickRandomReply(r.rating, {
+      pickRandomReply(templates, r.rating, {
         customer: r.customer,
         shopName: r.shopName,
         productName: r.productName,
@@ -279,74 +280,6 @@ export function OperationsReviewsPage() {
   function markReplied(ids: Set<string>) {
     setRows((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, replied: true } : r)));
   }
-
-  // ── ENGINE TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO ──────────────────────────────────
-  // Chạy sau mỗi lượt quét (rows đổi): lọc đánh giá THẬT chưa trả lời ở mức
-  // sao đang BẬT trong cấu hình (trang Cấu hình tự động hóa) và chưa có trong
-  // sổ chống trùng → bốc mẫu random đúng mức sao, GỬI THẬT lên sàn TUẦN TỰ
-  // (rate limit Lazada tính toàn app), xong đánh dấu replied + badge AI Auto.
-  // Mức sao đang TẮT không đụng tới — giữ "Chưa trả lời" chờ CSKH duyệt tay.
-  const autoRunningRef = useRef(false);
-  useEffect(() => {
-    if (mode !== "real" || autoRunningRef.current) return;
-    const cfg = loadAutoReplyStars();
-    if (!Object.values(cfg).some(Boolean)) return; // tắt hết — khỏi tốn công
-    const ledger = loadAutoRepliedIds();
-    const targets = rows.filter(
-      (r) =>
-        !r.replied &&
-        r.channelId != null &&
-        r.externalId != null &&
-        cfg[toStarLevel(r.rating)] &&
-        !ledger.has(r.id)
-    );
-    if (targets.length === 0) return;
-
-    autoRunningRef.current = true;
-    (async () => {
-      let ok = 0;
-      let firstError = "";
-      const done = new Set<string>();
-      for (const r of targets) {
-        try {
-          await replyOpsReview({
-            channelId: r.channelId!,
-            reviewId: r.externalId!,
-            // Mỗi đánh giá một mẫu NGẪU NHIÊN — sàn không quét trùng nội dung
-            content:
-              pickRandomReply(r.rating, {
-                customer: r.customer,
-                shopName: r.shopName,
-                productName: r.productName,
-              }) ?? r.aiSuggestion,
-          });
-          done.add(r.id);
-          ledger.add(r.id);
-          ok++;
-        } catch (err) {
-          if (!firstError)
-            firstError = err instanceof Error ? err.message : "lỗi không rõ";
-        }
-      }
-      saveAutoRepliedIds(ledger);
-      if (done.size > 0) {
-        setRows((prev) =>
-          prev.map((r) =>
-            done.has(r.id) ? { ...r, replied: true, autoReplied: true } : r
-          )
-        );
-        toast.success(
-          `🤖 AI đã tự động trả lời ${formatNumber(ok)} đánh giá lên sàn theo cấu hình số sao.`
-        );
-      }
-      if (ok < targets.length) {
-        toast.error(
-          `${formatNumber(targets.length - ok)} đánh giá tự động gửi thất bại${firstError ? ` — ${firstError}` : ""}`
-        );
-      }
-      autoRunningRef.current = false;
-    })();
-  }, [rows, mode]);
 
   async function sendReply() {
     if (!selected || sendingReply) return;
@@ -686,8 +619,8 @@ export function OperationsReviewsPage() {
               </Button>
               <p className={cn(TEXT_SUB, "text-center")}>
                 Nút này chỉ áp dụng cho đánh giá 5 sao chưa trả lời — gửi thẳng
-                lên sàn. Muốn hệ thống tự gửi theo từng mức sao, bật công tắc ở
-                trang Cấu hình tự động hóa.
+                lên sàn. Muốn hệ thống tự gửi mỗi ngày theo từng mức sao, bật công
+                tắc ở trang Cấu hình tự động hóa.
               </p>
             </CardContent>
           </Card>

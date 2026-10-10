@@ -3383,6 +3383,53 @@ model DeliveryFailConfig {
   @@map("delivery_fail_config")
 }
 
+/// Tự động trả lời đánh giá theo số sao — 1 dòng/chủ shop (10/10/2026, anh Trung:
+/// trước đây cờ + bộ mẫu nằm localStorage, chỉ chạy khi trang đang mở; nay worker
+/// workers/review-auto-reply.ts chạy MỖI NGÀY MỘT LẦN cho từng shop). Không có
+/// dòng = chưa bật mức nào + bộ mẫu mặc định trong code. Không khóa ngoại (bảng
+/// mới, migration không lấy khóa trên "User").
+model ReviewAutoReplyConfig {
+  id             String    @id @default(cuid())
+  ownerId        String    @unique
+  /// Các mức sao (1..5) đang bật tự trả lời. Rỗng = tắt hẳn (nextRunAt = null).
+  enabledStars   Int[]     @default([])
+  /// Bộ mẫu { "1": string[], ..., "5": string[] }. null = mặc định trong code.
+  templates      Json?
+  /// Lượt chạy kế. null = không lên lịch (tắt hết mức sao).
+  nextRunAt      DateTime?
+  lastRunAt      DateTime?
+  lastRunReplied Int       @default(0)
+  lastRunFailed  Int       @default(0)
+  /// Lỗi đầu tiên của lượt gần nhất (gian hết hạn ủy quyền, sàn từ chối…).
+  lastRunError   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([nextRunAt])
+  @@map("review_auto_reply_config")
+}
+
+/// Sổ chống trùng tự trả lời đánh giá: mỗi (gian, mã đánh giá phía sàn) MỘT dòng.
+/// Worker GHI dòng trước khi gửi (unique chặn hai tiến trình gửi đôi), gửi xong
+/// đổi SENDING → SENT; gửi lỗi thì XÓA dòng để lượt hôm sau thử lại. Dòng kẹt
+/// SENDING (tiến trình chết giữa chừng) không bao giờ gửi lại — thà sót còn hơn
+/// trả lời hai lần lên sàn.
+model ReviewAutoReply {
+  id        String   @id @default(cuid())
+  ownerId   String
+  channelId String
+  reviewId  String
+  rating    Int
+  /// SENDING | SENT.
+  status    String   @default("SENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([channelId, reviewId])
+  @@index([createdAt])
+  @@map("review_auto_replies")
+}
+
 /// Loại việc trong hàng đợi hỏi tracking của Cứu đơn giao thất bại.
 enum DeliveryTrackingTaskKind {
   DETECT // đơn SHIPPING chưa cảnh báo — dò lượt giao thất bại
