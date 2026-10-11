@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 11/10/2026 (tối) — GIÁ VỐN THEO GIAN (cùng mã SKU mỗi gian một giá vốn) — ĐÃ PUSH, LIVE
+
+- **Khách xin:** bộ lọc ở Cấu hình giá vốn để nhập giá theo từng gian (cùng SKU, mỗi gian một giá vốn). **Khảo sát:** SKU chưa nối kho vốn lưu được giá riêng từng gian; SKU đã nối kho luôn lấy giá kho; tab Mapping và nhập Excel ghi đè mọi gian. **Anh chốt** làm cả hai lát: kho chỉ quản số lượng, giá gian thắng giá kho.
+- **Quy tắc một nơi:** `effectiveSkuCost` (lib/cost-price.ts) = `ChannelProduct.costPrice` > 0, không thì `Product.costPrice` ("giá vốn mặc định"). Đồng bộ đơn 3 sàn chụp theo đó; vá đơn cũ bằng giá kho bỏ qua dòng của gian có giá riêng (`OWN_COST_EXISTS`); gỡ liên kết → `keepCostOnDetach`.
+- **Migration `20261011120000_cost_price_per_shop`:** NULL giá sót trên dòng gian đã nối kho (trước đây bị bỏ qua) → giá hiệu lực không đổi.
+- **Giao diện:** trang Giá vốn có ô lọc Gian hàng, mỗi ô ghi giá riêng của gian, xóa trống = về giá kho; tab Mapping có ô chọn gian (`channelIds`), "giá khác nhau giữa các gian" là thông tin chứ không phải lỗi, bỏ trạng thái ambiguous; Excel xuất/nhập cột Gian hàng (lib/cost-import.ts, dòng không gian áp như cũ); trang Sản phẩm "Giá vốn mặc định".
+- **Kiểm:** 22 test mới (thuần + DB dev); cả bộ 1453 qua, 6 hỏng có sẵn (như phiên 10/10). Bấm thử local với gian tạm thứ hai, giao diện tối + 375px.
+- **Prod (SQL chỉ đọc):** trước deploy 2.451 SKU đã nối kho / 5 tài khoản, 211 giá sót đều bằng giá kho → không số nào đổi. `8fb3e3c` LIVE 22:25; migration xong, giá sót còn 0. Giả định "chưa khách nào nối kho" sai — khách nguyentrunghuy1408 (3 gian) đổi cách dùng, anh tự báo khách.
+
 ## Phiên 10/10/2026 (tối) — TỰ TRẢ LỜI ĐÁNH GIÁ CHUYỂN VỀ MÁY CHỦ, MỖI SHOP 1 LẦN/NGÀY — CHƯA PUSH
 
 - **Anh báo:** tự trả lời đánh giá "thỉnh thoảng không chạy, phải vào bấm nó mới làm". **Gốc:** engine chạy TRONG TRÌNH DUYỆT (reviews-page quét 5'/lần khi trang mở), cờ số sao + bộ mẫu + sổ chống trùng nằm localStorage → tắt tab / đổi máy / nhân viên máy khác là không chạy. **Anh chốt:** 1 ngày trả lời 1 lần.
