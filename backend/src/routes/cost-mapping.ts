@@ -64,6 +64,20 @@ function readIdList(raw: unknown): string[] | undefined {
   return raw.filter((x): x is string => typeof x === "string" && x !== "");
 }
 
+/**
+ * Các gian chủ shop đang chọn ở tab Mapping (giá vốn theo gian, 11/10/2026).
+ * Không gửi = mọi gian (như cũ). Gửi mảng rỗng = không gian nào → không ghi gì
+ * (an toàn: không bao giờ hiểu "bỏ chọn hết" thành "áp mọi gian").
+ * GET nhận dạng chuỗi "id1,id2" ở query.
+ */
+function readChannelScope(raw: unknown): string[] | undefined {
+  if (typeof raw === "string") {
+    const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    return ids.length > 0 ? ids : undefined;
+  }
+  return readIdList(raw);
+}
+
 // ---------- Bảng giá tự nhập ----------
 
 router.get("/rules", async (req: AuthRequest, res, next) => {
@@ -228,11 +242,11 @@ router.post("/rules/apply", async (req: AuthRequest, res, next) => {
   }
 });
 
-// ---------- Gộp theo mã SKU: đề xuất + đặt giá một lần cho mọi gian ----------
+// ---------- Gộp theo mã SKU: đề xuất + đặt giá một lần cho các gian đang chọn ----------
 
 router.get("/mapping/skus", async (req: AuthRequest, res, next) => {
   try {
-    res.json(await listSkuGroups(req.ownerId!));
+    res.json(await listSkuGroups(req.ownerId!, readChannelScope(req.query.channelIds)));
   } catch (err) {
     next(err);
   }
@@ -240,7 +254,13 @@ router.get("/mapping/skus", async (req: AuthRequest, res, next) => {
 
 router.post("/mapping/fill-suggested", async (req: AuthRequest, res, next) => {
   try {
-    res.json(await fillSuggested(req.ownerId!, readIdList(req.body?.codes)));
+    res.json(
+      await fillSuggested(
+        req.ownerId!,
+        readIdList(req.body?.codes),
+        readChannelScope(req.body?.channelIds)
+      )
+    );
   } catch (err) {
     next(err);
   }
@@ -271,7 +291,9 @@ router.post("/mapping/set-cost", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Giá vốn phải là số lớn hơn 0" });
       return;
     }
-    res.json(await setCostForCodes(req.ownerId!, codes, cost));
+    res.json(
+      await setCostForCodes(req.ownerId!, codes, cost, readChannelScope(req.body?.channelIds))
+    );
   } catch (err) {
     if (!sendMappingError(err, res)) next(err);
   }

@@ -80,6 +80,10 @@ const PAGE_TABS = [
 ] as const;
 type PageTab = (typeof PAGE_TABS)[number]["key"];
 
+/** Khoá lọc gian của hàng kho nội bộ (không thuộc gian sàn nào, channelId ""). */
+const OFFLINE_SHOP_KEY = "offline";
+const shopKey = (i: SkuProduct) => i.channelId || OFFLINE_SHOP_KEY;
+
 /** Khoá localStorage nhớ đã tắt dải cảnh báo thiếu giá vốn (nối thêm userId). */
 const BANNER_HIDE_KEY = "hubsell_cost_missing_banner_hidden";
 
@@ -105,6 +109,9 @@ export default function CostPricesPage() {
   const router = useRouter();
   const [pageTab, setPageTab] = useState<PageTab>("entry");
   const [channel, setChannel] = useState<SkuChannelFilter>("all");
+  // Lọc theo GIAN (giá vốn theo gian, 11/10/2026): "all" hoặc khoá gian
+  // (channelId; hàng kho nội bộ dùng OFFLINE_SHOP_KEY).
+  const [shop, setShop] = useState<string>("all");
   const [items, setItems] = useState<SkuProduct[]>([]);
   const [missingCount, setMissingCount] = useState(0);
   // Gian vừa nối, danh mục chưa kéo xong lần đầu (worker đang kéo nền).
@@ -145,17 +152,35 @@ export default function CostPricesPage() {
     }
   }
 
-  // Tập nền theo trạng thái trên sàn — các bộ lọc khác và "Hiển thị X/Y" tính trên tập này.
+  // Các gian có trong danh sách đang tải (đã theo tab sàn) — nguồn của ô lọc Gian hàng.
+  const shopOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const i of items) {
+      const key = shopKey(i);
+      if (!seen.has(key)) seen.set(key, i.shopName);
+    }
+    return [...seen].map(([key, name]) => ({ key, name }));
+  }, [items]);
+  // Đổi tab sàn mà gian đang chọn không còn trong danh sách → về Tất cả gian.
+  useEffect(() => {
+    if (shop !== "all" && !loading && !shopOptions.some((o) => o.key === shop)) setShop("all");
+  }, [shop, shopOptions, loading]);
+  const shopItems = useMemo(
+    () => (shop === "all" ? items : items.filter((i) => shopKey(i) === shop)),
+    [items, shop]
+  );
+
+  // Tập nền theo gian + trạng thái trên sàn — các bộ lọc khác và "Hiển thị X/Y" tính trên tập này.
   const listedItems = useMemo(
     () =>
       listing === "all"
-        ? items
-        : items.filter((i) => (listing === "active") === (i.status === "ACTIVE")),
-    [items, listing]
+        ? shopItems
+        : shopItems.filter((i) => (listing === "active") === (i.status === "ACTIVE")),
+    [shopItems, listing]
   );
   const delistedCount = useMemo(
-    () => items.filter((i) => i.status === "DELISTED").length,
-    [items]
+    () => shopItems.filter((i) => i.status === "DELISTED").length,
+    [shopItems]
   );
 
   // Lọc ngay tại màn hình → kết quả cập nhật tức thì khi gõ, không cần chờ API
@@ -222,7 +247,7 @@ export default function CostPricesPage() {
   // Đổi kênh / tìm kiếm / bộ lọc → về trang 1 để không đứng ở trang trống.
   useEffect(() => {
     setPage(1);
-  }, [channel, search, statusFilter, listing]);
+  }, [channel, shop, search, statusFilter, listing]);
   const pageCount = Math.max(1, Math.ceil(groups.length / pageSize));
   // Đổi bộ lọc / tìm kiếm / kênh làm số trang co lại → kéo về trang cuối còn dữ liệu.
   useEffect(() => {
@@ -329,7 +354,9 @@ export default function CostPricesPage() {
    * khác thì dẫn sang tab Mapping để khách tự quyết (ghi đè hoặc giữ nguyên).
    */
   function offerSiblings(siblings: CostSiblings | null | undefined, what: string) {
-    if (!siblings) return;
+    // Đang lọc đúng một gian = đang đặt giá RIÊNG cho gian đó → không gợi ý chép
+    // sang gian khác (giá vốn theo gian, 11/10/2026).
+    if (!siblings || shop !== "all") return;
     if (siblings.fillable > 0) {
       toast(`${what} còn ở ${formatNumber(siblings.fillShops)} gian khác chưa có giá vốn`, {
         duration: 12000,
@@ -365,6 +392,22 @@ export default function CostPricesPage() {
         [item.skuId]: current > 0 ? String(current) : "",
       }));
 
+    if (raw === "" && item.linked && item.costSource === "shop") {
+      // SKU đã nối kho đang có giá riêng của gian: xoá ô = bỏ giá riêng, gian
+      // về theo giá mặc định ở kho (lưu 0 — máy chủ coi 0 là "chưa có giá riêng").
+      setSavingId(item.skuId);
+      try {
+        await updateSkuCostPrice(item.skuId, 0);
+        toast.success(`${item.sku} ở gian ${item.shopName} về theo giá vốn mặc định ở kho`);
+        load();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.message : "Không lưu được giá vốn");
+        restore();
+      } finally {
+        setSavingId(null);
+      }
+      return;
+    }
     if (raw === "") {
       // Ô trống là trạng thái hợp lệ của SKU chưa nhập giá — chỉ báo lỗi khi
       // người dùng xoá mất một giá vốn ĐÃ CÓ (nhiều khả năng là lỡ tay).
@@ -583,6 +626,23 @@ export default function CostPricesPage() {
                   </button>
                 )}
               </div>
+
+              {/* Lọc theo GIAN — chỉ hiện khi có từ 2 gian (giá vốn theo gian) */}
+              {shopOptions.length > 1 && (
+                <NativeSelect
+                  className="w-56"
+                  aria-label="Lọc theo gian hàng"
+                  value={shop}
+                  onChange={(e) => setShop(e.target.value)}
+                >
+                  <option value="all">Tất cả gian ({formatNumber(shopOptions.length)})</option>
+                  {shopOptions.map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              )}
 
               {/* Lọc theo trạng thái TRÊN SÀN (đang bán / đã gỡ) */}
               <NativeSelect

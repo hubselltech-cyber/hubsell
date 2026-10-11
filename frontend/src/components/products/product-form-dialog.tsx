@@ -157,7 +157,9 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
                   name="costPrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Giá vốn (₫)</FormLabel>
+                      <FormLabel title="Gian nào chưa đặt giá vốn riêng (trang Cấu hình Giá vốn) thì dùng giá này">
+                        Giá vốn mặc định (₫)
+                      </FormLabel>
                       <FormControl>
                         <Input type="number" min="0" placeholder="65000" {...field} />
                       </FormControl>

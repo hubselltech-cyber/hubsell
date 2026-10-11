@@ -4,7 +4,11 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { setStockAbsolute } from "../services/stock-ledger";
 import { syncChannelProducts } from "../marketplace/product-sync";
-import { backfillOrderLinesByProducts, invalidateOwnerCostCaches } from "../lib/cost-price";
+import {
+  backfillOrderLinesByProducts,
+  invalidateOwnerCostCaches,
+  keepCostOnDetach,
+} from "../lib/cost-price";
 
 const router = Router();
 
@@ -256,6 +260,8 @@ async function seedInitialStockFromChannel(
 /**
  * Sản phẩm gốc costPrice = 0 nhưng có SKU sàn vừa nối mang costPrice > 0 →
  * chép số đó sang sản phẩm gốc (không đụng sản phẩm đã có giá vốn thật).
+ * Giá trên SKU sàn KHÔNG bị xóa: từ 11/10/2026 nó là giá riêng của gian và vẫn
+ * thắng giá kho sau khi nối; giá kho chỉ là mặc định cho các gian còn trống.
  */
 async function inheritChannelCostPrice(productIds: string[], ownerId: string) {
   const bare = await prisma.product.findMany({
@@ -584,7 +590,7 @@ router.post("/unlink", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const result = await prisma.channelProduct.updateMany({
+    const targets = await prisma.channelProduct.findMany({
       where: {
         id: { in: channelProductIds },
         channel: {
@@ -592,7 +598,18 @@ router.post("/unlink", async (req: AuthRequest, res, next) => {
           ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
         },
       },
-      data: { productId: null },
+      select: { id: true },
+    });
+    const ids = targets.map((t) => t.id);
+
+    // Gian đang dùng giá mặc định của kho → chép giá đó xuống thành giá riêng
+    // TRƯỚC khi tháo, để giá vốn không tụt về 0 (giá vốn theo gian, 11/10/2026).
+    const result = await prisma.$transaction(async (tx) => {
+      await keepCostOnDetach(tx, { channelProductIds: ids }, req.ownerId!);
+      return tx.channelProduct.updateMany({
+        where: { id: { in: ids } },
+        data: { productId: null },
+      });
     });
 
     res.json({ unlinked: result.count });

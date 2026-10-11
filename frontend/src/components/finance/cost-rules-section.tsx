@@ -132,7 +132,6 @@ export function CostRulesSection({ onApplied }: { onApplied: () => void }) {
 
   const fillRows = preview?.rows.filter((r) => r.status === "fill") ?? [];
   const conflictRows = preview?.rows.filter((r) => r.status === "conflict") ?? [];
-  const ambiguousRows = preview?.rows.filter((r) => r.status === "ambiguous") ?? [];
   const willChange = fillRows.length + overwrite.size;
 
   return (
@@ -233,16 +232,6 @@ export function CostRulesSection({ onApplied }: { onApplied: () => void }) {
                   <RowSection
                     title={`Sẽ điền giá vốn (${formatNumber(fillRows.length)})`}
                     rows={fillRows}
-                  />
-                )}
-
-                {ambiguousRows.length > 0 && (
-                  <RowSection
-                    title={`Bỏ qua — một sản phẩm kho khớp ra nhiều giá (${formatNumber(
-                      ambiguousRows.length
-                    )})`}
-                    hint="Các SKU này cùng nối về một sản phẩm kho nhưng bảng giá cho ra giá khác nhau. Hãy đặt giá cho sản phẩm đó ở danh sách phía trên."
-                    rows={ambiguousRows}
                   />
                 )}
 
@@ -372,14 +361,6 @@ function RowSection({
                 </TableCell>
                 <TableCell className="truncate" title={r.productName}>
                   {r.productName}
-                  {r.productId && (
-                    <span
-                      className="ml-1.5 text-xs text-muted-foreground"
-                      title="SKU đã nối kho — giá vốn ghi lên sản phẩm kho, mọi gian cùng nối sản phẩm đó đổi theo"
-                    >
-                      · đã nối kho
-                    </span>
-                  )}
                 </TableCell>
                 <TableCell className="truncate" title={shopLabel(r)}>
                   {shopLabel(r)}

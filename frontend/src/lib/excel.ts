@@ -530,12 +530,15 @@ export function exportInvestorReportToExcel(report: InvestorReportResponse) {
 
 /**
  * Xuất danh sách SKU kèm giá vốn hiện tại. File này chính là mẫu để sửa hàng
- * loạt rồi nhập ngược lại: chỉ cột "Mã SKU" và "Giá vốn" được đọc khi nhập,
- * các cột còn lại để người dùng biết mình đang sửa cái gì.
+ * loạt rồi nhập ngược lại: khi nhập chỉ đọc "Mã SKU", "Giá vốn" và "Gian hàng"
+ * (+ "Kênh bán" khi hai gian trùng tên) — mỗi dòng ghi đúng giá của gian đó
+ * (giá vốn theo gian, 11/10/2026). Các cột còn lại để người dùng biết mình
+ * đang sửa cái gì.
  */
 export function exportCostPricesToExcel(items: SkuProduct[]) {
   const rows = items.map((i) => ({
     "Mã SKU": i.sku,
+    "Gian hàng": i.shopName,
     "Tên sản phẩm": i.productName,
     "Phân loại": i.variantName ?? "",
     "Kênh bán": CHANNEL_LABEL[i.channelName] ?? i.channelName,
@@ -547,21 +550,25 @@ export function exportCostPricesToExcel(items: SkuProduct[]) {
   }));
   downloadSheet(
     rows,
-    [18, 40, 26, 12, 16, 16, 16, 14, 14],
+    [18, 24, 40, 26, 12, 16, 16, 16, 14, 14],
     "Gia von",
     `hubsell_gia_von_${fileStamp()}.xlsx`
   );
 }
 
-/** File mẫu trống cho người chưa có dữ liệu, kèm 2 dòng ví dụ. */
+/**
+ * File mẫu trống cho người chưa có dữ liệu, kèm ví dụ. "Gian hàng" để trống =
+ * áp cho mọi gian có mã đó; ghi tên gian = chỉ gian đó.
+ */
 export function downloadCostPriceTemplate() {
   const rows = [
-    { "Mã SKU": "SH-AO-THUN-M", "Giá vốn": 74000 },
-    { "Mã SKU": "SH-AO-THUN-L", "Giá vốn": 76000 },
+    { "Mã SKU": "SH-AO-THUN-M", "Giá vốn": 74000, "Gian hàng": "" },
+    { "Mã SKU": "SH-AO-THUN-L", "Giá vốn": 76000, "Gian hàng": "" },
+    { "Mã SKU": "SH-AO-THUN-L", "Giá vốn": 82000, "Gian hàng": "Tên gian Mall của bạn" },
   ];
   downloadSheet(
     rows,
-    [22, 16],
+    [22, 16, 28],
     "Mau gia von",
     "hubsell_mau_nhap_gia_von.xlsx"
   );

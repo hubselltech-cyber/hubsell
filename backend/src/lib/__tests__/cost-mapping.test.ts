@@ -87,12 +87,11 @@ describe("planMapping", () => {
       fill: 1,
       same: 1,
       conflict: 1,
-      ambiguous: 0,
       unmatched: 1,
     });
   });
 
-  it("một sản phẩm gốc khớp ra hai giá → ambiguous, không đoán", () => {
+  it("hai gian cùng sản phẩm kho khớp ra hai giá → mỗi gian một giá (giá vốn theo gian)", () => {
     const two = buildRuleMatcher(
       [
         { code: "A1", cost: 100 },
@@ -107,7 +106,11 @@ describe("planMapping", () => {
       ],
       two
     );
-    expect(plan.rows.map((r) => r.status)).toEqual(["ambiguous", "ambiguous", "fill"]);
+    expect(plan.rows.map((r) => [r.status, r.newCost])).toEqual([
+      ["fill", 100],
+      ["fill", 200],
+      ["fill", 100],
+    ]);
   });
 });
 

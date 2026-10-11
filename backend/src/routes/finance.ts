@@ -26,9 +26,11 @@ import {
   applyCostPrice,
   applyCostPriceIn,
   backfillOwnerCostPrices,
+  effectiveSkuCost,
   invalidateOwnerCostCaches,
 } from "../lib/cost-price";
 import { findCostSiblings } from "../lib/cost-mapping";
+import { groupByCost, planCostImport, type CostImportRow } from "../lib/cost-import";
 import costMappingRouter from "./cost-mapping";
 import {
   businessDayStart,
@@ -1160,9 +1162,10 @@ router.get("/expenses", async (req: AuthRequest, res, next) => {
 
 // GET /api/finance/sku-products?channel=all|shopee|tiktok|lazada|offline
 // Danh sách SKU (đã đồng bộ từ sàn) để chủ shop nhập giá vốn.
-// Lọc theo SÀN chứ không theo gian hàng: giá vốn là thuộc tính của sản phẩm gốc
-// trong kho, một SKU bán ở hai gian vẫn chung một giá nhập.
-// - Sàn cụ thể  → các SKU sàn đã liên kết của mọi gian trên sàn đó
+// Mỗi dòng = một SKU trên MỘT gian (kèm channelId để trang lọc theo gian). Từ
+// 11/10/2026 giá vốn theo gian: giá riêng của gian thắng giá mặc định ở kho
+// (lib/cost-price effectiveSkuCost).
+// - Sàn cụ thể  → các SKU sàn của mọi gian trên sàn đó
 // - offline     → sản phẩm kho chưa liên kết sàn nào (bán tại quầy)
 // - all         → cả hai
 router.get("/sku-products", async (req: AuthRequest, res, next) => {
@@ -1177,11 +1180,17 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       productName: string;
       variantName: string | null; // phân loại (màu/size) — tên hiển thị trên sàn
       channelName: ChannelName;
+      channelId: string; // "" với hàng kho nội bộ (Offline)
       shopName: string; // gian hàng cụ thể — phân biệt 2 shop cùng một sàn
       imageUrl: string | null;
       sellingPrice: string;
-      costPrice: string;
-      /** false = SKU sàn chưa nối kho gốc — giá vốn lưu ở cấp SKU sàn. */
+      costPrice: string; // giá vốn HIỆU LỰC
+      /**
+       * Giá đang dùng lấy từ đâu: "shop" = giá riêng của gian, "default" = giá
+       * mặc định của sản phẩm kho đã nối (gian chưa đặt giá riêng), "none" = chưa có.
+       */
+      costSource: "shop" | "default" | "none";
+      /** false = SKU sàn chưa nối kho gốc. */
       linked: boolean;
       /**
        * ACTIVE = đang bán trên sàn; DELISTED = sàn đã gỡ/ẩn/xóa (đồng bộ giữ
@@ -1199,10 +1208,9 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       modelId: string | null;
     }[] = [];
 
-    // 1) SKU trên sàn — CẢ đã lẫn CHƯA liên kết kho gốc.
-    // Đã liên kết: giá vốn đọc từ sản phẩm gốc (nguồn chân lý). Chưa liên kết:
-    // giá vốn đọc từ chính dòng SKU sàn (ChannelProduct.costPrice) — dành cho
-    // khách không muốn quản tồn kho tập trung nhưng vẫn cần giá vốn để tính lãi.
+    // 1) SKU trên sàn — CẢ đã lẫn CHƯA liên kết kho gốc. Giá vốn = giá riêng
+    // của gian (ChannelProduct.costPrice), không có thì giá mặc định của sản
+    // phẩm kho đã nối — costSource cho trang biết đang dùng giá nào.
     if (channel !== "offline") {
       const channelProducts = await prisma.channelProduct.findMany({
         where: {
@@ -1215,7 +1223,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
         },
         include: {
           product: true,
-          channel: { select: { channelName: true, shopName: true } },
+          channel: { select: { id: true, channelName: true, shopName: true } },
         },
         orderBy: { createdAt: "desc" },
       });
@@ -1223,6 +1231,8 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       for (const cp of channelProducts) {
         const linked = Boolean(cp.productId && cp.product);
         const [itemId, modelId] = (cp.externalId ?? "").split("-");
+        const ownCost = Number(cp.costPrice ?? 0);
+        const cost = effectiveSkuCost(cp);
         rows.push({
           skuId: cp.id,
           productId: cp.productId ?? "",
@@ -1230,10 +1240,12 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
           productName: linked ? cp.product!.productName : cp.productName,
           variantName: cp.variantName ?? cp.productName,
           channelName: cp.channel.channelName,
+          channelId: cp.channel.id,
           shopName: cp.channel.shopName,
           imageUrl: linked ? (cp.product!.imageUrl ?? cp.imageUrl) : cp.imageUrl,
           sellingPrice: String(linked ? cp.product!.sellingPrice : cp.price),
-          costPrice: String((linked ? cp.product!.costPrice : cp.costPrice) ?? 0),
+          costPrice: String(cost),
+          costSource: ownCost > 0 ? "shop" : cost > 0 ? "default" : "none",
           linked,
           status: cp.status,
           itemId: itemId || null,
@@ -1256,10 +1268,12 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
           productName: p.productName,
           variantName: null,
           channelName: ChannelName.OFFLINE,
+          channelId: "",
           shopName: "Kho nội bộ",
           imageUrl: p.imageUrl,
           sellingPrice: String(p.sellingPrice),
           costPrice: String(p.costPrice),
+          costSource: Number(p.costPrice) > 0 ? "default" : "none",
           linked: true, // sản phẩm kho gốc — giá vốn nằm ngay trên nó
           status: ChannelProductStatus.ACTIVE,
           itemId: null,
@@ -1977,11 +1991,11 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    // Tìm sản phẩm gốc: theo mã SKU nếu có, không thì thử id mapping rồi id sản phẩm.
-    // SKU sàn CHƯA liên kết kho không có sản phẩm gốc → giá vốn lưu ngay trên
-    // dòng ChannelProduct (đường unlinkedCpIds bên dưới).
+    // Dòng của MỘT GIAN (id ChannelProduct) → giá riêng của gian đó, kể cả SKU
+    // đã nối kho (giá vốn theo gian, 11/10/2026). Id sản phẩm kho (hàng Offline)
+    // hoặc mã trùng mã kho (popup SKU P&L) → giá mặc định ở kho.
     let productId: string | null = null;
-    let unlinkedCpIds: string[] = [];
+    let shopCpIds: string[] = [];
     if (skuCode) {
       const product = await prisma.product.findUnique({
         where: { userId_skuCode: { userId: req.ownerId!, skuCode } },
@@ -1989,27 +2003,24 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       });
       productId = product?.id ?? null;
       if (!productId) {
-        // Mã chỉ tồn tại trên sàn (popup SKU P&L với hàng chưa nối kho):
-        // áp cho MỌI dòng sàn chưa liên kết trùng mã đó của shop này.
+        // Mã chỉ tồn tại trên sàn (popup SKU P&L không mang gian): áp cho MỌI
+        // gian có mã đó của shop này.
         const cps = await prisma.channelProduct.findMany({
           where: {
-            productId: null,
             channelSku: { equals: skuCode, mode: "insensitive" },
             channel: { userId: req.ownerId! },
           },
           select: { id: true },
         });
-        unlinkedCpIds = cps.map((c) => c.id);
+        shopCpIds = cps.map((c) => c.id);
       }
     } else {
       const channelProduct = await prisma.channelProduct.findFirst({
         where: { id: skuId, channel: { userId: req.ownerId! } },
-        select: { id: true, productId: true },
+        select: { id: true },
       });
-      if (channelProduct?.productId) {
-        productId = channelProduct.productId;
-      } else if (channelProduct) {
-        unlinkedCpIds = [channelProduct.id];
+      if (channelProduct) {
+        shopCpIds = [channelProduct.id];
       } else {
         const product = await prisma.product.findFirst({
           where: { id: skuId, userId: req.ownerId! },
@@ -2019,7 +2030,7 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       }
     }
 
-    if (!productId && unlinkedCpIds.length === 0) {
+    if (!productId && shopCpIds.length === 0) {
       res.status(404).json({
         error: skuCode
           ? `Không tìm thấy mã SKU "${skuCode}" trong kho lẫn trên sàn.`
@@ -2052,9 +2063,9 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    // SKU sàn chưa liên kết kho: lưu trên ChannelProduct + vá đơn cũ theo channelSku.
+    // Giá riêng của gian: lưu trên ChannelProduct + vá đơn cũ theo (gian, mã SKU).
     const { backfilledOrderLines, sample } = await applyChannelCostPrice(
-      unlinkedCpIds,
+      shopCpIds,
       cost,
       req.ownerId!
     );
@@ -2070,35 +2081,6 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
-
-/**
- * Đổi danh sách sku_id (id ChannelProduct HOẶC id Product) thành danh sách
- * productId thật, đã lọc theo chủ sở hữu. Giá vốn lưu trên Product nên nhiều
- * sku_id có thể quy về cùng một productId — trả về Set để không update trùng.
- */
-async function resolveProductIds(
-  skuIds: string[],
-  ownerId: string
-): Promise<Set<string>> {
-  const [channelProducts, products] = await Promise.all([
-    prisma.channelProduct.findMany({
-      where: {
-        id: { in: skuIds },
-        productId: { not: null },
-        channel: { userId: ownerId },
-      },
-      select: { productId: true },
-    }),
-    prisma.product.findMany({
-      where: { id: { in: skuIds }, userId: ownerId },
-      select: { id: true },
-    }),
-  ]);
-  return new Set([
-    ...channelProducts.map((cp) => cp.productId!),
-    ...products.map((p) => p.id),
-  ]);
-}
 
 // PATCH /api/finance/update-cost-bulk — áp một giá vốn cho NHIỀU SKU cùng lúc.
 // Dùng cho nút "Áp dụng cho tất cả phân loại" (size M/L/XL của cùng một mẫu).
@@ -2127,17 +2109,20 @@ router.patch("/update-cost-bulk", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const productIds = await resolveProductIds(skuIds, req.ownerId!);
-    // Phần còn lại có thể là SKU sàn CHƯA liên kết kho — giá vốn ở cấp mapping.
-    const unlinkedCps = await prisma.channelProduct.findMany({
-      where: {
-        id: { in: skuIds },
-        productId: null,
-        channel: { userId: req.ownerId! },
-      },
-      select: { id: true },
-    });
-    if (productIds.size === 0 && unlinkedCps.length === 0) {
+    // Dòng của gian (id ChannelProduct) → giá riêng của gian, kể cả SKU đã nối
+    // kho; id sản phẩm kho (hàng Offline) → giá mặc định ở kho.
+    const [shopCps, products] = await Promise.all([
+      prisma.channelProduct.findMany({
+        where: { id: { in: skuIds }, channel: { userId: req.ownerId! } },
+        select: { id: true },
+      }),
+      prisma.product.findMany({
+        where: { id: { in: skuIds }, userId: req.ownerId! },
+        select: { id: true },
+      }),
+    ]);
+    const productIds = new Set(products.map((p) => p.id));
+    if (productIds.size === 0 && shopCps.length === 0) {
       res.status(404).json({ error: "Không tìm thấy SKU / sản phẩm nào" });
       return;
     }
@@ -2148,19 +2133,19 @@ router.patch("/update-cost-bulk", async (req: AuthRequest, res, next) => {
       const r = await applyCostPrice([...productIds], cost, req.ownerId!);
       backfilledOrderLines += r.backfilledOrderLines;
     }
-    let updatedUnlinked = 0;
-    if (unlinkedCps.length > 0) {
+    let updatedShop = 0;
+    if (shopCps.length > 0) {
       const r = await applyChannelCostPrice(
-        unlinkedCps.map((c) => c.id),
+        shopCps.map((c) => c.id),
         cost,
         req.ownerId!
       );
-      updatedUnlinked = r.updated;
+      updatedShop = r.updated;
       backfilledOrderLines += r.backfilledOrderLines;
     }
 
     res.json({
-      updated: productIds.size + updatedUnlinked,
+      updated: productIds.size + updatedShop,
       costPrice: String(cost),
       backfilledOrderLines,
       siblings: await findCostSiblings(req.ownerId!, skuIds),
@@ -2186,9 +2171,9 @@ router.post("/cost-prices/backfill-orders", async (req: AuthRequest, res, next) 
 });
 
 // POST /api/finance/cost-prices/import — nhập giá vốn hàng loạt từ Excel.
-// Cột chuẩn: [Mã SKU, Giá vốn]. Khớp theo Product.skuCode hoặc
-// ChannelProduct.channelSku. SKU không tìm thấy → báo lỗi theo dòng, không chặn
-// các dòng hợp lệ còn lại.
+// Cột chuẩn: [Mã SKU, Giá vốn] + tùy chọn [Gian hàng, Kênh bán] — luật khớp ở
+// lib/cost-import.ts. SKU không tìm thấy → báo lỗi theo dòng, không chặn các
+// dòng hợp lệ còn lại.
 router.post(
   "/cost-prices/import",
   upload.single("file"),
@@ -2216,8 +2201,7 @@ router.post(
 
       const ownerId = req.ownerId!;
       const errors: { row: number; message: string }[] = [];
-      // sku (đã chuẩn hoá) → giá vốn. Dòng sau ghi đè dòng trước nếu trùng SKU.
-      const wanted = new Map<string, { cost: number; row: number }>();
+      const parsed: CostImportRow[] = [];
 
       rows.forEach((row, idx) => {
         const excelRow = idx + 2; // +1 header, +1 đếm từ 1
@@ -2247,10 +2231,17 @@ router.post(
           });
           return;
         }
-        wanted.set(sku.toLowerCase(), { cost, row: excelRow });
+        parsed.push({
+          row: excelRow,
+          sku,
+          cost,
+          // Cột tùy chọn (11/10/2026): có gian → chỉ ghi giá riêng của gian đó.
+          shop: pick("Gian hàng", "GianHang", "Gian", "shop", "shopName"),
+          channel: pick("Kênh bán", "KenhBan", "Kênh", "channel"),
+        });
       });
 
-      if (wanted.size === 0) {
+      if (parsed.length === 0) {
         res.status(400).json({
           error: "Không có dòng nào hợp lệ trong file",
           errors,
@@ -2258,74 +2249,42 @@ router.post(
         return;
       }
 
-      const skuList = [...wanted.keys()];
-
-      // Tìm sản phẩm gốc theo cả mã nội bộ lẫn mã trên sàn.
-      // Kéo CẢ dòng sàn chưa liên kết: giá vốn của chúng lưu ở cấp SKU sàn.
-      const [products, channelProducts] = await Promise.all([
+      const [products, channels, channelProducts] = await Promise.all([
         prisma.product.findMany({
           where: { userId: ownerId },
-          select: { id: true, skuCode: true },
+          select: { id: true, skuCode: true, costPrice: true },
+        }),
+        prisma.channel.findMany({
+          where: { userId: ownerId },
+          select: { id: true, channelName: true, shopName: true },
         }),
         prisma.channelProduct.findMany({
           where: { channel: { userId: ownerId } },
-          select: { id: true, productId: true, channelId: true, channelSku: true },
+          select: {
+            id: true,
+            channelId: true,
+            channelSku: true,
+            productId: true,
+            costPrice: true,
+            product: { select: { costPrice: true } },
+          },
         }),
       ]);
+      const plan = planCostImport(parsed, {
+        products: products.map((p) => ({ ...p, costPrice: Number(p.costPrice) })),
+        channels,
+        channelProducts: channelProducts.map((cp) => ({
+          id: cp.id,
+          channelId: cp.channelId,
+          channelSku: cp.channelSku,
+          productId: cp.productId,
+          ownCost: Number(cp.costPrice ?? 0),
+          currentCost: effectiveSkuCost(cp),
+        })),
+      });
+      errors.push(...plan.errors);
 
-      const productIdBySku = new Map<string, string>();
-      for (const p of products) productIdBySku.set(p.skuCode.toLowerCase(), p.id);
-      // Mã sàn chỉ dùng khi mã nội bộ không khớp, tránh ghi đè nhầm
-      for (const cp of channelProducts) {
-        if (!cp.productId) continue;
-        const key = cp.channelSku.toLowerCase();
-        if (!productIdBySku.has(key)) productIdBySku.set(key, cp.productId);
-      }
-      // SKU sàn CHƯA liên kết — một mã có thể xuất hiện ở nhiều gian.
-      const unlinkedBySku = new Map<
-        string,
-        { id: string; channelId: string; channelSku: string }[]
-      >();
-      for (const cp of channelProducts) {
-        if (cp.productId) continue;
-        const key = cp.channelSku.toLowerCase();
-        const list = unlinkedBySku.get(key) ?? [];
-        list.push({ id: cp.id, channelId: cp.channelId, channelSku: cp.channelSku });
-        unlinkedBySku.set(key, list);
-      }
-
-      // Gom theo giá vốn để mỗi giá chỉ cần một lệnh updateMany
-      const byCost = new Map<number, string[]>();
-      const byCostUnlinked = new Map<
-        number,
-        { id: string; channelId: string; channelSku: string }[]
-      >();
-      let matched = 0;
-      for (const sku of skuList) {
-        const entry = wanted.get(sku)!;
-        const productId = productIdBySku.get(sku);
-        if (productId) {
-          matched++;
-          const list = byCost.get(entry.cost) ?? [];
-          list.push(productId);
-          byCost.set(entry.cost, list);
-          continue;
-        }
-        const unlinked = unlinkedBySku.get(sku);
-        if (unlinked && unlinked.length > 0) {
-          matched++;
-          const list = byCostUnlinked.get(entry.cost) ?? [];
-          list.push(...unlinked);
-          byCostUnlinked.set(entry.cost, list);
-          continue;
-        }
-        errors.push({
-          row: entry.row,
-          message: `Không tìm thấy SKU "${sku}" trong hệ thống`,
-        });
-      }
-
-      if (matched === 0) {
+      if (plan.matchedRows === 0) {
         res.status(400).json({
           error: "Không có SKU nào trong file khớp với sản phẩm trong hệ thống",
           errors,
@@ -2335,31 +2294,25 @@ router.post(
 
       // Trọn gói: hoặc cập nhật hết, hoặc không đổi gì.
       // Vá luôn giá vốn của các dòng hàng đã bán mà lúc bán chưa biết giá vốn,
-      // qua ĐÚNG hai đường ghi của lib/cost-price.ts (đường nhập tay cũng vậy)
-      // — trước 28/09 chỗ này chép tay logic vá nên thiếu vá theo mã SKU sàn.
+      // qua ĐÚNG hai đường ghi của lib/cost-price.ts (đường nhập tay cũng vậy).
+      // Giá riêng của gian ghi SAU giá kho: vá đơn theo giá kho bỏ qua dòng của
+      // gian có giá riêng, rồi lượt gian vá đúng giá gian.
       // File vài nghìn mã, mỗi giá vốn một lượt ghi → nới thời gian transaction.
       const result = await prisma.$transaction(
         async (tx) => {
-          const touched = new Set<string>();
           let backfilled = 0;
-          for (const [cost, ids] of byCost) {
+          for (const [cost, ids] of groupByCost(plan.productCost)) {
             const r = await applyCostPriceIn(tx, ids, cost, ownerId);
             backfilled += r.backfilledOrderLines;
-            for (const id of ids) touched.add(id);
           }
-          // SKU sàn chưa liên kết: giá vốn lưu trên ChannelProduct + vá đơn cũ
-          // theo (gian, mã SKU) — cùng nguyên tắc "chỉ vá dòng đang 0".
-          for (const [cost, cps] of byCostUnlinked) {
-            const r = await applyChannelCostPriceIn(
-              tx,
-              cps.map((c) => c.id),
-              cost,
-              ownerId
-            );
+          for (const [cost, ids] of groupByCost(plan.shopCost)) {
+            const r = await applyChannelCostPriceIn(tx, ids, cost, ownerId);
             backfilled += r.backfilledOrderLines;
-            for (const cp of cps) touched.add(cp.id);
           }
-          return { updated: touched.size, backfilled };
+          return {
+            updated: plan.productCost.size + plan.shopCost.size,
+            backfilled,
+          };
         },
         { timeout: 120_000, maxWait: 10_000 }
       );

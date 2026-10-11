@@ -7,6 +7,7 @@
 //   3) handleShopeeCallback()          — đổi code → token → lưu/ cập nhật Channel.
 // ============================================================
 
+import { effectiveSkuCost } from "../../lib/cost-price";
 import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
@@ -707,8 +708,8 @@ export async function upsertShopeeOrderTx(
         quantity: line.quantity,
         price: line.price,
         imageUrl: line.imageUrl,
-        // Đã nối kho → giá vốn sản phẩm gốc; chưa nối → giá vốn cấp SKU sàn.
-        costPriceAtSale: String(mp?.product?.costPrice ?? mp?.costPrice ?? 0),
+        // Giá riêng của gian, không có thì giá mặc định ở kho (lib/cost-price).
+        costPriceAtSale: String(effectiveSkuCost(mp)),
       },
     });
   }

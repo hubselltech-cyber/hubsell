@@ -455,10 +455,10 @@ AWAITING ──quét, hàng nguyên vẹn──▶ RECEIVED_INTACT   (cộng l�
 |---|---|
 | **Tự định dạng số** | Gõ `52000` hiện ngay `52.000`. Dùng `<CurrencyInput>` — **đừng dùng `<input type="number">` cho tiền**: không hiện được dấu phân tách, lại dính lỗi lăn chuột làm đổi giá trị rồi tự lưu. |
 | **Xuất Excel** | Xuất đúng những dòng **đang lọc**. Mẹo: lọc "Chưa nhập giá vốn" rồi xuất → file chỉ chứa mã còn thiếu. |
-| **Nhập Excel** | Đọc 2 cột `Mã SKU` + `Giá vốn`. Khớp mã nội bộ trước, mã sàn sau. Tự bỏ dấu chấm người dùng gõ (`1.234.000` → `1234000`). Dòng lỗi báo rõ số dòng, không chặn dòng hợp lệ. |
+| **Nhập Excel** | Đọc `Mã SKU` + `Giá vốn`, tùy chọn `Gian hàng` (+ `Kênh bán` khi 2 gian trùng tên). Có gian → chỉ gian đó; trống → mọi gian có mã + giá mặc định ở kho (luật ở `lib/cost-import.ts`). Ô đã đúng giá thì bỏ qua. Tự bỏ dấu chấm người dùng gõ (`1.234.000` → `1234000`). Dòng lỗi báo rõ số dòng, không chặn dòng hợp lệ. |
 | **Bảng phân cấp** | Mỗi mẫu hàng gộp thành 1 dòng cha có mũi tên xổ ra các phân loại con (size M/L/XL). Dòng cha có ô "Nhập cho tất cả" — gõ một lần, áp cho toàn bộ phân loại. |
 
-⚠️ **Giá vốn lưu trên `Product.costPrice`, không phải trên mapping.** Nhiều SKU sàn cùng trỏ về một sản phẩm gốc thì đã dùng chung một giá vốn — sửa dòng này là dòng kia đổi theo. Nút "áp cho mọi phân loại" vì thế chỉ hiện khi mẫu hàng trải trên **từ 2 sản phẩm gốc trở lên**.
+⚠️ **Giá vốn theo GIAN (từ 11/10/2026).** Giá hiệu lực của một SKU sàn = giá riêng của gian (`ChannelProduct.costPrice` > 0), không có thì giá MẶC ĐỊNH của sản phẩm kho đã nối (`Product.costPrice`). Kho chỉ quản số lượng. Một nguồn quy tắc: `effectiveSkuCost` trong `backend/src/lib/cost-price.ts`. Mọi ô ở trang này ghi giá riêng của đúng gian đó; xoá trống ô của SKU đã nối kho = về theo giá kho. Trang có ô lọc "Gian hàng"; tab Mapping có ô chọn gian — gộp, đề xuất, áp giá chỉ trong các gian đã chọn.
 
 **Phân cấp chỉ ở tầng hiển thị.** Giá vốn vẫn lưu riêng cho từng SKU con, nên SKU P&L và Cảnh báo đơn lỗ vẫn lấy đúng số của từng phân loại — không gộp, không tính trung bình. Mẫu chỉ có một mã thì hiển thị phẳng như cũ, không bọc thêm tầng.
 

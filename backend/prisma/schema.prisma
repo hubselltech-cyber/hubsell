@@ -1360,7 +1360,7 @@ model Product {
   userId          String
   skuCode         String
   productName     String
-  costPrice       Decimal @default(0) @db.Decimal(12, 2) // giá vốn (cấu hình ở trang Cấu hình Giá vốn)
+  costPrice       Decimal @default(0) @db.Decimal(12, 2) // giá vốn MẶC ĐỊNH — gian chưa đặt giá riêng (ChannelProduct.costPrice) thì theo giá này
   sellingPrice    Decimal @default(0) @db.Decimal(12, 2) // giá bán
   quantityInStock Int     @default(0)
 
@@ -1732,10 +1732,10 @@ model ChannelProduct {
   lastSyncedAt           DateTime? // lần cuối kéo về từ sàn
   createdAt              DateTime             @default(now())
 
-  /// Giá vốn RIÊNG của SKU sàn khi CHƯA liên kết kho gốc — cho khách không
-  /// muốn quản tồn kho tập trung vẫn nhập được giá vốn để tính lãi/lỗ.
-  /// Khi ĐÃ liên kết, giá vốn đọc từ Product (nguồn chân lý duy nhất);
-  /// cột này chỉ là fallback lúc chưa nối. NULL = chưa từng nhập.
+  /// Giá vốn RIÊNG CỦA GIAN cho SKU này. Từ 11/10/2026 (giá vốn theo gian):
+  /// > 0 thì THẮNG giá mặc định ở kho kể cả khi đã nối kho; NULL/0 = gian chưa
+  /// đặt giá riêng → theo Product.costPrice (nếu đã nối). Kho chỉ quản số lượng.
+  /// Quy tắc một nơi: lib/cost-price.ts effectiveSkuCost.
   costPrice Decimal? @db.Decimal(12, 2)
 
   /// NULL = chưa liên kết về kho gốc. Đây là cốt lõi của tầng đệm.

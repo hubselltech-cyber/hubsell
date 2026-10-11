@@ -2,10 +2,20 @@
 // GHI GIÁ VỐN — hai đường ghi duy nhất của hệ thống (tách khỏi routes/finance.ts
 // 17/09/2026 để tab "Mapping giá vốn" và hook tự điền khi đồng bộ dùng chung).
 //
-//   - SKU ĐÃ nối kho  → Product.costPrice        (applyCostPrice)
-//   - SKU CHƯA nối kho → ChannelProduct.costPrice (applyChannelCostPrice)
+//   - Giá vốn RIÊNG CỦA GIAN → ChannelProduct.costPrice (applyChannelCostPrice)
+//   - Giá vốn MẶC ĐỊNH ở kho  → Product.costPrice        (applyCostPrice)
 //
 // Cả hai đều VÁ LẠI các dòng hàng đã bán mà lúc bán chưa biết giá vốn.
+//
+// ★ 11/10/2026 — GIÁ VỐN THEO GIAN (anh Trung chốt, khách cần cùng mã SKU mỗi
+//   gian một giá vốn: gian Mall có hóa đơn, mỗi gian một pháp nhân/kho...).
+//   Kho chỉ quản SỐ LƯỢNG; giá vốn hiệu lực của một SKU sàn:
+//     ChannelProduct.costPrice > 0  → giá riêng của gian
+//     không thì Product.costPrice    → giá mặc định ở kho (SKU đã nối kho)
+//   Trước đây SKU đã nối kho luôn lấy giá kho, ô của gian bị bỏ qua. Migration
+//   20261011120000 xóa giá sót trên dòng gian đã nối (vốn không được dùng) nên
+//   giá vốn hiệu lực của mọi khách KHÔNG đổi lúc chuyển. Một nguồn quy tắc:
+//   effectiveSkuCost (JS) và OWN_COST_EXISTS / cột COALESCE trong SQL vá đơn.
 //
 // ★ 28/09/2026 — VÁ THEO CẢ (GIAN, MÃ SKU SÀN), không chỉ theo productId.
 //   Khách phản ánh: nhập giá vốn xong mà báo cáo dòng tiền 30 ngày và ROAS hòa
@@ -49,10 +59,42 @@ const SKU_MATCH = Prisma.sql`(
 )`;
 
 /**
+ * GIÁ VỐN HIỆU LỰC của một SKU sàn (xem đầu tệp): giá riêng của gian nếu > 0,
+ * không thì giá mặc định của sản phẩm kho đã nối, không có thì 0. Đồng bộ đơn
+ * 3 sàn chụp con số này vào OrderItem.costPriceAtSale.
+ */
+export function effectiveSkuCost(
+  cp:
+    | {
+        costPrice: Prisma.Decimal | number | string | null;
+        product?: { costPrice: Prisma.Decimal | number | string } | null;
+      }
+    | null
+    | undefined
+): number {
+  if (!cp) return 0;
+  const own = Number(cp.costPrice ?? 0);
+  if (own > 0) return own;
+  return Number(cp.product?.costPrice ?? 0);
+}
+
+/**
+ * Dòng đơn `oi` của đơn `o` khớp một SKU sàn CÓ GIÁ RIÊNG của gian → giá mặc
+ * định ở kho không được đè lên dòng đó (giá gian thắng).
+ */
+const OWN_COST_EXISTS = Prisma.sql`EXISTS (
+  SELECT 1 FROM "ChannelProduct" AS cp
+  WHERE cp."channelId" = o."channelId"
+    AND cp."costPrice" > 0
+    AND ${SKU_MATCH}
+)`;
+
+/**
  * Vá giá vốn cho dòng hàng đã bán của các SẢN PHẨM GỐC cho trước: dòng đang
  * mang productId của sản phẩm, HOẶC dòng khớp (gian, mã SKU sàn) với một SKU
  * sàn đã nối về sản phẩm đó (đơn về trước khi nối kho). Giá lấy từ DB tại thời
  * điểm gọi → gọi SAU khi đã ghi Product.costPrice trong cùng transaction.
+ * Bỏ qua dòng của gian đang có giá RIÊNG cho SKU đó (giá gian thắng giá kho).
  *
  * OrderItem.costPriceAtSale là ảnh chụp giá vốn tại thời điểm bán — cố ý đóng
  * băng để giá nhập đổi về sau không làm sai lệch báo cáo cũ. Nhưng giá trị 0
@@ -92,13 +134,14 @@ export async function backfillOrderLinesByProducts(
             AND cp."channelId" = o."channelId"
             AND ${SKU_MATCH}
         )
-      )`;
+      )
+      AND NOT ${OWN_COST_EXISTS}`;
 }
 
 /**
- * Vá giá vốn cho dòng hàng đã bán của các SKU SÀN CHƯA NỐI KHO cho trước, theo
- * đúng (gian, mã SKU sàn). Giá lấy từ ChannelProduct.costPrice trong DB.
- * SKU đã nối kho thì bỏ qua — giá vốn của nó theo sản phẩm gốc (hàm trên).
+ * Vá giá vốn cho dòng hàng đã bán của các SKU SÀN cho trước (đã nối kho hay
+ * chưa), theo đúng (gian, mã SKU sàn). Giá lấy từ ChannelProduct.costPrice —
+ * giá riêng của gian — trong DB.
  */
 export async function backfillOrderLinesByChannelProducts(
   db: Db,
@@ -111,11 +154,36 @@ export async function backfillOrderLinesByChannelProducts(
     FROM "ChannelProduct" AS cp, "Order" AS o
     WHERE oi."orderId" = o."id"
       AND cp."id" = ANY(${channelProductIds}::text[])
-      AND cp."productId" IS NULL
       AND cp."costPrice" > 0
       AND o."channelId" = cp."channelId"
       AND ${SKU_MATCH}
       AND oi."costPriceAtSale" = 0`;
+}
+
+/**
+ * SẮP THÁO SKU sàn khỏi sản phẩm kho (gỡ liên kết / xóa sản phẩm kho): gian nào
+ * đang dùng giá MẶC ĐỊNH của kho thì chép giá đó xuống thành giá riêng của
+ * gian, để giá vốn hiệu lực không tụt về 0 sau khi tháo. Gọi TRƯỚC khi đặt
+ * productId = NULL. Gian đã có giá riêng thì giữ nguyên.
+ */
+export async function keepCostOnDetach(
+  db: Db | typeof prisma,
+  target: { channelProductIds: string[] } | { productIds: string[] },
+  ownerId: string
+): Promise<number> {
+  const scope =
+    "channelProductIds" in target
+      ? Prisma.sql`cp."id" = ANY(${target.channelProductIds}::text[])`
+      : Prisma.sql`p."id" = ANY(${target.productIds}::text[])`;
+  return db.$executeRaw`
+    UPDATE "ChannelProduct" AS cp
+    SET "costPrice" = p."costPrice"
+    FROM "Product" AS p
+    WHERE cp."productId" = p."id"
+      AND p."userId" = ${ownerId}
+      AND p."costPrice" > 0
+      AND COALESCE(cp."costPrice", 0) <= 0
+      AND ${scope}`;
 }
 
 /**
@@ -150,7 +218,8 @@ export async function applyCostPriceIn(
 }
 
 /**
- * Đặt giá vốn cho các sản phẩm gốc, ĐỒNG THỜI vá lại các dòng hàng đã bán mà
+ * Đặt giá vốn MẶC ĐỊNH ở kho cho các sản phẩm gốc (gian nào chưa có giá riêng
+ * thì theo giá này), ĐỒNG THỜI vá lại các dòng hàng đã bán mà
  * lúc bán chưa biết giá vốn (xem backfillOrderLinesByProducts).
  */
 export async function applyCostPrice(
@@ -187,7 +256,6 @@ export async function applyChannelCostPriceIn(
   const cps = await db.channelProduct.findMany({
     where: {
       id: { in: channelProductIds },
-      productId: null,
       channel: { userId: ownerId },
     },
     select: { id: true, productName: true },
@@ -208,7 +276,8 @@ export async function applyChannelCostPriceIn(
 }
 
 /**
- * Đặt giá vốn cho các SKU SÀN CHƯA LIÊN KẾT KHO, đồng thời vá lại dòng hàng đã
+ * Đặt giá vốn RIÊNG CỦA GIAN cho các SKU sàn (đã nối kho hay chưa — từ 11/10
+ * giá gian thắng giá kho), đồng thời vá lại dòng hàng đã
  * bán của đúng (gian, mã SKU) đó mà lúc bán chưa có giá vốn (snapshot = 0).
  *
  * Song song với applyCostPrice của sản phẩm gốc: cùng nguyên tắc "0 không phải
@@ -253,21 +322,24 @@ export interface OwnerCostBackfillResult {
  * Trả kèm chẩn đoán để giao diện nói rõ vì sao còn dòng chưa có giá vốn.
  */
 export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCostBackfillResult> {
-  // 1) Dòng đã mang productId → giá vốn sản phẩm gốc.
+  // 1) Dòng đã mang productId → giá mặc định ở kho, TRỪ dòng của gian đang có
+  //    giá riêng cho SKU đó (bước 2 lo, giá gian thắng).
   const byProduct = await prisma.$executeRaw`
     UPDATE "OrderItem" AS oi
     SET "costPriceAtSale" = p."costPrice"
-    FROM "Product" AS p
+    FROM "Product" AS p, "Order" AS o
     WHERE oi."productId" = p."id"
+      AND oi."orderId" = o."id"
       AND p."userId" = ${ownerId}
       AND p."costPrice" > 0
-      AND oi."costPriceAtSale" = 0`;
+      AND oi."costPriceAtSale" = 0
+      AND NOT ${OWN_COST_EXISTS}`;
 
-  // 2) Dòng khớp (gian, mã SKU sàn — có dự phòng sku_id / SPE-): SKU đã nối kho
-  //    lấy giá sản phẩm gốc, chưa nối lấy giá trên chính SKU sàn.
+  // 2) Dòng khớp (gian, mã SKU sàn — có dự phòng sku_id / SPE-): giá riêng của
+  //    gian nếu có, không thì giá mặc định của sản phẩm kho đã nối.
   const bySku = await prisma.$executeRaw`
     UPDATE "OrderItem" AS oi
-    SET "costPriceAtSale" = COALESCE(NULLIF(p."costPrice", 0), cp."costPrice")
+    SET "costPriceAtSale" = COALESCE(NULLIF(cp."costPrice", 0), p."costPrice")
     FROM "Order" AS o
       JOIN "Channel" AS c ON c."id" = o."channelId"
       JOIN "ChannelProduct" AS cp ON cp."channelId" = o."channelId"
@@ -276,7 +348,7 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCos
       AND c."userId" = ${ownerId}
       AND ${SKU_MATCH}
       AND oi."costPriceAtSale" = 0
-      AND COALESCE(NULLIF(p."costPrice", 0), cp."costPrice", 0) > 0`;
+      AND COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) > 0`;
 
   await invalidateOwnerCostCaches(ownerId);
 

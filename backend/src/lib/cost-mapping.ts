@@ -17,11 +17,17 @@
 //     xảy ra khi chủ shop chỉ đích danh mã đó. Máy chủ luôn TÍNH LẠI khi áp,
 //     không tin số client gửi lên.
 //   - Không có nguồn giá vốn thứ ba: mọi thứ ghi xuống qua lib/cost-price.ts.
+//
+// ★ 11/10/2026 — GIÁ VỐN THEO GIAN: mọi thao tác ở đây ghi GIÁ RIÊNG CỦA GIAN
+//   (ChannelProduct.costPrice), kể cả SKU đã nối kho; giá đọc ra là giá hiệu
+//   lực (effectiveSkuCost). Cả tab nhận thêm `channelIds` = các gian chủ shop
+//   đang chọn: gộp, đề xuất, "Điền tất cả", "Áp dụng N gian" CHỈ trong các gian
+//   đó — gian không chọn giữ nguyên giá của nó. Không gửi = mọi gian (như cũ).
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
 import { prisma } from "./prisma";
-import { applyChannelCostPrice, applyCostPrice } from "./cost-price";
+import { applyChannelCostPrice, effectiveSkuCost } from "./cost-price";
 
 /* ───────────────────────── Phần THUẦN (vitest đánh thẳng) ───────────────────────── */
 
@@ -43,8 +49,9 @@ export interface MappingTarget {
   productName: string;
   variantName: string | null;
   imageUrl: string | null;
-  /** null = chưa nối kho → giá vốn nằm trên chính SKU sàn. */
+  /** null = chưa nối kho. */
   productId: string | null;
+  /** Giá vốn HIỆU LỰC: giá riêng của gian, không có thì giá mặc định ở kho. */
   currentCost: number;
 }
 
@@ -167,10 +174,8 @@ export function buildRuleMatcher(rules: CostRule[]): (rawSku: string) => RuleMat
  * fill      = ô đang trống, sẽ điền
  * same      = đã đúng giá này, không làm gì
  * conflict  = đang có giá KHÁC — chỉ ghi đè khi chủ shop tick
- * ambiguous = SKU đã nối kho mà các gian khớp ra các giá KHÁC NHAU cho cùng
- *             một sản phẩm gốc — không đoán, bỏ qua và báo ra
  */
-export type MappingStatus = "fill" | "same" | "conflict" | "ambiguous";
+export type MappingStatus = "fill" | "same" | "conflict";
 
 export interface MappingRow extends MappingTarget {
   newCost: number;
@@ -203,26 +208,13 @@ export function planMapping(
     rows.push({ ...t, newCost: m.cost, matchedCode: m.code, matchKind: m.kind, status });
   }
 
-  // Một sản phẩm gốc chỉ có MỘT giá vốn: nếu các SKU sàn của nó khớp ra nhiều
-  // giá khác nhau thì không giá nào đáng tin hơn giá nào.
-  const costsByProduct = new Map<string, Set<number>>();
-  for (const r of rows) {
-    if (!r.productId) continue;
-    const set = costsByProduct.get(r.productId) ?? new Set<number>();
-    set.add(r.newCost);
-    costsByProduct.set(r.productId, set);
-  }
-  for (const r of rows) {
-    if (r.productId && (costsByProduct.get(r.productId)?.size ?? 0) > 1) {
-      r.status = "ambiguous";
-    }
-  }
-
+  // Từ 11/10/2026 mỗi gian một giá vốn riêng: hai gian cùng sản phẩm kho khớp
+  // ra hai giá là hợp lệ (trước đây bị chặn "ambiguous").
   return { rows, unmatched };
 }
 
 export function countPlan(plan: MappingPlan) {
-  const c = { matched: plan.rows.length, fill: 0, same: 0, conflict: 0, ambiguous: 0 };
+  const c = { matched: plan.rows.length, fill: 0, same: 0, conflict: 0 };
   for (const r of plan.rows) c[r.status]++;
   return { ...c, unmatched: plan.unmatched.length };
 }
@@ -239,12 +231,18 @@ async function loadRules(ownerId: string): Promise<CostRule[]> {
   return rules.map((r) => ({ code: r.code, cost: Number(r.costPrice) }));
 }
 
-/** Mọi SKU sàn của chủ shop kèm giá vốn HIỆU LỰC (đã nối kho thì theo sản phẩm gốc). */
-async function loadTargets(ownerId: string, ids?: string[]): Promise<MappingTarget[]> {
+/**
+ * Mọi SKU sàn của chủ shop (trong các gian `channelIds` nếu có) kèm giá vốn
+ * HIỆU LỰC (giá riêng của gian, không có thì giá mặc định ở kho).
+ */
+async function loadTargets(ownerId: string, channelIds?: string[]): Promise<MappingTarget[]> {
   const cps = await prisma.channelProduct.findMany({
     where: {
-      ...(ids ? { id: { in: ids } } : {}),
-      channel: { userId: ownerId, channelName: { not: ChannelName.OFFLINE } },
+      channel: {
+        userId: ownerId,
+        channelName: { not: ChannelName.OFFLINE },
+        ...(channelIds ? { id: { in: channelIds } } : {}),
+      },
     },
     select: {
       id: true,
@@ -270,35 +268,23 @@ async function loadTargets(ownerId: string, ids?: string[]): Promise<MappingTarg
     variantName: cp.variantName,
     imageUrl: cp.imageUrl,
     productId: cp.product ? cp.productId : null,
-    currentCost: Number((cp.product ? cp.product.costPrice : cp.costPrice) ?? 0),
+    currentCost: effectiveSkuCost(cp),
   }));
 }
 
-/** Ghi một loạt dòng xuống hai nơi lưu giá vốn, gom theo giá. */
+/** Ghi giá riêng của gian cho một loạt SKU sàn, gom theo giá. */
 async function writeRows(
   ownerId: string,
-  rows: { skuId: string; productId: string | null; newCost: number }[]
+  rows: { skuId: string; newCost: number }[]
 ): Promise<{ updatedSkus: number; backfilledOrderLines: number }> {
-  const productsByCost = new Map<number, Set<string>>();
-  const cpsByCost = new Map<number, string[]>();
+  const byCost = new Map<number, string[]>();
   for (const r of rows) {
-    if (r.productId) {
-      const set = productsByCost.get(r.newCost) ?? new Set<string>();
-      set.add(r.productId);
-      productsByCost.set(r.newCost, set);
-    } else {
-      const list = cpsByCost.get(r.newCost) ?? [];
-      list.push(r.skuId);
-      cpsByCost.set(r.newCost, list);
-    }
+    const list = byCost.get(r.newCost);
+    if (list) list.push(r.skuId);
+    else byCost.set(r.newCost, [r.skuId]);
   }
-
   let backfilledOrderLines = 0;
-  for (const [cost, ids] of productsByCost) {
-    const r = await applyCostPrice([...ids], cost, ownerId);
-    backfilledOrderLines += r.backfilledOrderLines;
-  }
-  for (const [cost, ids] of cpsByCost) {
+  for (const [cost, ids] of byCost) {
     const r = await applyChannelCostPrice(ids, cost, ownerId);
     backfilledOrderLines += r.backfilledOrderLines;
   }
@@ -307,9 +293,9 @@ async function writeRows(
 
 // ---------- 1 + 2. Gộp theo mã: đề xuất + đặt giá một lần ----------
 
-async function loadGroups(ownerId: string): Promise<SkuGroup[]> {
+async function loadGroups(ownerId: string, channelIds?: string[]): Promise<SkuGroup[]> {
   const [targets, dismissed] = await Promise.all([
-    loadTargets(ownerId),
+    loadTargets(ownerId, channelIds),
     prisma.costConflictDismissal.findMany({
       where: { userId: ownerId },
       select: { code: true },
@@ -318,8 +304,8 @@ async function loadGroups(ownerId: string): Promise<SkuGroup[]> {
   return groupSkusByCode(targets, new Set(dismissed.map((d) => d.code)));
 }
 
-export async function listSkuGroups(ownerId: string) {
-  const groups = await loadGroups(ownerId);
+export async function listSkuGroups(ownerId: string, channelIds?: string[]) {
+  const groups = await loadGroups(ownerId, channelIds);
   const totals = { codes: groups.length, suggest: 0, conflict: 0, missing: 0, complete: 0 };
   let suggestEmptySlots = 0;
   for (const g of groups) {
@@ -337,17 +323,21 @@ export async function listSkuGroups(ownerId: string) {
  * `onlyCodes` = gợi ý "áp luôn cho N gian khác" ngay sau khi lưu giá ở tab Nhập
  * giá vốn — chỉ điền cho đúng các mã vừa nhập.
  */
-export async function fillSuggested(ownerId: string, onlyCodes?: string[]) {
+export async function fillSuggested(
+  ownerId: string,
+  onlyCodes?: string[],
+  channelIds?: string[]
+) {
   const only = onlyCodes ? new Set(onlyCodes.map(normalizeSkuCode)) : null;
-  const rows: { skuId: string; productId: string | null; newCost: number }[] = [];
+  const rows: { skuId: string; newCost: number }[] = [];
   let codes = 0;
-  for (const g of await loadGroups(ownerId)) {
+  for (const g of await loadGroups(ownerId, channelIds)) {
     if (g.status !== "suggest" || g.suggestedCost === null) continue;
     if (only && !only.has(g.code)) continue;
     codes++;
     for (const e of g.entries) {
       if (e.currentCost <= 0) {
-        rows.push({ skuId: e.skuId, productId: e.productId, newCost: g.suggestedCost });
+        rows.push({ skuId: e.skuId, newCost: g.suggestedCost });
       }
     }
   }
@@ -356,23 +346,35 @@ export async function fillSuggested(ownerId: string, onlyCodes?: string[]) {
 }
 
 /**
- * NÚT "ÁP DỤNG CHO TẤT CẢ GIAN": chủ shop chỉ đích danh (các) mã và một giá →
- * ghi cho MỌI gian có mã đó, KỂ CẢ gian đang có giá khác (đó chính là ý muốn).
+ * NÚT "ÁP DỤNG N GIAN": chủ shop chỉ đích danh (các) mã và một giá → ghi cho
+ * MỌI gian ĐANG CHỌN có mã đó (`channelIds`, không gửi = mọi gian), KỂ CẢ gian
+ * đang có giá khác (đó chính là ý muốn). Gian không chọn giữ nguyên.
  * Nhiều mã một lượt = ô "Giá vốn chung" của cả mẫu.
  */
-export async function setCostForCodes(ownerId: string, codes: string[], cost: number) {
+export async function setCostForCodes(
+  ownerId: string,
+  codes: string[],
+  cost: number,
+  channelIds?: string[]
+) {
   const wanted = new Set(codes.map(normalizeSkuCode).filter(Boolean));
-  const hit = (await loadTargets(ownerId)).filter((t) => wanted.has(normalizeSkuCode(t.sku)));
+  const hit = (await loadTargets(ownerId, channelIds)).filter((t) =>
+    wanted.has(normalizeSkuCode(t.sku))
+  );
   if (hit.length === 0) throw new MappingInputError("Không tìm thấy mã SKU này trên gian nào");
 
   const rows = hit
     .filter((t) => t.currentCost !== cost)
-    .map((t) => ({ skuId: t.skuId, productId: t.productId, newCost: cost }));
+    .map((t) => ({ skuId: t.skuId, newCost: cost }));
   const r = await writeRows(ownerId, rows);
-  // Mã đã về một giá chung → quyết định "giữ lệch giá" cũ (nếu có) hết nghĩa.
-  await prisma.costConflictDismissal.deleteMany({
-    where: { userId: ownerId, code: { in: [...wanted] } },
-  });
+  // Mã đã về một giá chung ở MỌI gian → quyết định "giữ giá khác nhau" cũ (nếu
+  // có) hết nghĩa. Chỉ áp cho vài gian thì các gian kia vẫn có thể khác giá có
+  // chủ đích — giữ nguyên quyết định.
+  if (!channelIds) {
+    await prisma.costConflictDismissal.deleteMany({
+      where: { userId: ownerId, code: { in: [...wanted] } },
+    });
+  }
   return {
     updatedSkus: r.updatedSkus,
     shops: new Set(hit.map((t) => t.channelId)).size,
@@ -513,10 +515,10 @@ export async function autoFillCostForNewSkus(
     if (costs.size === 1) siblingCost.set(g.code, [...costs][0]);
   }
 
-  const rows: { skuId: string; productId: null; newCost: number }[] = [];
+  const rows: { skuId: string; newCost: number }[] = [];
   for (const t of fresh) {
     const cost = matchRule(t.sku)?.cost ?? siblingCost.get(normalizeSkuCode(t.sku)) ?? 0;
-    if (cost > 0) rows.push({ skuId: t.skuId, productId: null, newCost: cost });
+    if (cost > 0) rows.push({ skuId: t.skuId, newCost: cost });
   }
   if (rows.length === 0) return 0;
 

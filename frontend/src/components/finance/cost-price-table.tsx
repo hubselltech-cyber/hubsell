@@ -486,6 +486,16 @@ function CostCell({
         )}
         placeholder="Nhập giá vốn"
         aria-label={`Giá vốn của ${item.sku}`}
+        // Giá vốn theo gian (11/10/2026): chỉ giải thích ở tooltip, không thêm nhãn.
+        title={
+          item.linked && item.channelId
+            ? item.costSource === "default"
+              ? "Đang theo giá vốn mặc định ở kho. Nhập giá ở đây để đặt riêng cho gian này."
+              : item.costSource === "shop"
+                ? "Giá vốn riêng của gian này. Xoá trống ô để về theo giá mặc định ở kho."
+                : undefined
+            : undefined
+        }
         // Trang dùng để nhận ra ô đang gõ dở khi tự nạp lại danh sách.
         data-sku-id={item.skuId}
         value={drafts[item.skuId] ?? ""}

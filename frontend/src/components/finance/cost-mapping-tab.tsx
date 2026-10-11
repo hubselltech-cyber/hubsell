@@ -3,10 +3,12 @@
 import * as React from "react";
 import { toast } from "sonner";
 import {
-  AlertTriangle,
+  ChevronDown,
   ChevronRight,
   ImageIcon,
+  Info,
   Layers,
+  Store,
   Loader2,
   Search,
   SearchX,
@@ -56,6 +58,11 @@ import { baseProductName, variantGroupKey, variantLabel } from "@/lib/variant-gr
  *   2. Chủ shop tìm mã, nhập giá MỘT LẦN, bấm "Áp dụng" là mọi gian nhận giá.
  *      Dòng mẫu cha có ô "Giá vốn chung" cho cả loạt phân loại × mọi gian.
  * Khớp theo MÃ SKU, không bao giờ theo tên.
+ *
+ * ★ 11/10/2026 — GIÁ VỐN THEO GIAN: ô "Gian hàng" chọn các gian đang làm việc.
+ * Gộp, đề xuất, "Điền tất cả", "Áp dụng N gian" chỉ chạy trong các gian đã
+ * chọn (máy chủ nhận channelIds); gian không chọn giữ nguyên giá. Giá khác nhau
+ * giữa các gian là hợp lệ — báo dạng thông tin, không dạng lỗi.
  */
 
 type StatusFilter = "all" | CostSkuGroup["status"];
@@ -63,7 +70,7 @@ type StatusFilter = "all" | CostSkuGroup["status"];
 const FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "suggest", label: "Đề xuất điền" },
-  { key: "conflict", label: "Lệch giá giữa các gian" },
+  { key: "conflict", label: "Giá khác nhau giữa các gian" },
   { key: "missing", label: "Chưa có giá" },
   { key: "complete", label: "Đã đủ" },
 ];
@@ -92,9 +99,18 @@ function shopLabel(e: CostMappingTarget) {
   return `${CHANNEL_META[e.channelName].label} · ${e.shopName}`;
 }
 
+interface ShopOption {
+  id: string;
+  label: string;
+}
+
 export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
   const [data, setData] = React.useState<CostSkuGroupList | null>(null);
   const [loading, setLoading] = React.useState(true);
+  // Gian đang chọn: null = mọi gian. Danh sách gian lấy từ lượt tải không lọc.
+  const [scope, setScope] = React.useState<string[] | null>(null);
+  const [shops, setShops] = React.useState<ShopOption[]>([]);
+  const channelIds = scope ?? undefined;
   const [filling, setFilling] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [status, setStatus] = React.useState<StatusFilter>("all");
@@ -104,13 +120,25 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchCostSkuGroups());
+      const res = await fetchCostSkuGroups(scope ?? undefined);
+      setData(res);
+      if (!scope) {
+        const seen = new Map<string, string>();
+        for (const g of res.groups) {
+          for (const e of g.entries) if (!seen.has(e.channelId)) seen.set(e.channelId, shopLabel(e));
+        }
+        setShops(
+          [...seen]
+            .map(([id, label]) => ({ id, label }))
+            .sort((a, b) => a.label.localeCompare(b.label, "vi"))
+        );
+      }
     } catch (err) {
       toast.error(errorMessage(err, "Không tải được danh sách mã SKU"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope]);
 
   React.useEffect(() => {
     load();
@@ -125,7 +153,7 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
   async function handleFillAll() {
     setFilling(true);
     try {
-      const res = await fillSuggestedCosts();
+      const res = await fillSuggestedCosts(undefined, channelIds);
       const parts = [
         `Đã điền giá vốn cho ${formatNumber(res.filledSkus)} ô trống của ${formatNumber(res.codes)} mã SKU`,
       ];
@@ -217,15 +245,17 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
         </Card>
       )}
 
+      {/* Giá khác nhau giữa các gian là HỢP LỆ (giá vốn theo gian) — báo dạng
+          thông tin để khách xác nhận cố ý hay nhập nhầm, không tô màu lỗi. */}
       {totals.conflict > 0 && (
-        <Card className="border-amber-300 bg-amber-50/70">
+        <Card className="border-sky-200 bg-sky-50/60">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
-            <div className="flex min-w-0 items-center gap-3 text-amber-800">
-              <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+            <div className="flex min-w-0 items-center gap-3 text-sky-800">
+              <Info className="size-5 shrink-0 text-sky-600" />
               <p>
                 <b className="tabular-nums">{formatNumber(totals.conflict)}</b> mã SKU đang có giá
-                vốn khác nhau giữa các gian — bấm vào giá đúng rồi áp dụng, hoặc chọn giữ nguyên
-                nếu bạn cố ý để giá riêng từng gian.
+                vốn khác nhau giữa các gian. Cố ý đặt giá riêng thì chọn “Giữ giá riêng từng
+                gian”; muốn một giá chung thì bấm vào giá đúng rồi áp dụng.
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => setStatus("conflict")}>
@@ -235,27 +265,32 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
         </Card>
       )}
 
-      {/* ===== 2. TÌM MÃ → NHẬP MỘT LẦN → ÁP CHO MỌI GIAN ===== */}
+      {/* ===== 2. TÌM MÃ → NHẬP MỘT LẦN → ÁP CHO CÁC GIAN ĐANG CHỌN ===== */}
       <div className="space-y-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9 pr-9"
-            placeholder="Tìm theo mã SKU hoặc tên sản phẩm…"
-            aria-label="Tìm mã SKU"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              aria-label="Xoá từ khoá"
-              className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <X className="size-4" />
-            </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {shops.length > 1 && (
+            <ShopScopePicker shops={shops} value={scope} onChange={setScope} />
           )}
+          <div className="relative min-w-64 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-9 pr-9"
+              placeholder="Tìm theo mã SKU hoặc tên sản phẩm…"
+              aria-label="Tìm mã SKU"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Xoá từ khoá"
+                className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((f) => (
@@ -296,18 +331,24 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
                     <TableHead className="w-[15%]">Mã SKU</TableHead>
                     <TableHead>Gian hàng đang bán mã này</TableHead>
                     <TableHead className="w-80 pr-[9.875rem] text-right">
-                      Giá vốn cho mọi gian
+                      {scope ? "Giá vốn cho gian đang chọn" : "Giá vốn cho mọi gian"}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {buckets.slice(0, visible).map((b) =>
                     b.skus.length === 1 ? (
-                      <SkuRow key={b.key} sku={b.skus[0]} onSaved={afterWrite} />
+                      <SkuRow
+                        key={b.key}
+                        sku={b.skus[0]}
+                        channelIds={channelIds}
+                        onSaved={afterWrite}
+                      />
                     ) : (
                       <React.Fragment key={b.key}>
                         <BucketRow
                           bucket={b}
+                          channelIds={channelIds}
                           open={expanded.has(b.key)}
                           onToggle={() =>
                             setExpanded((prev) => {
@@ -324,7 +365,13 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
                         />
                         {expanded.has(b.key) &&
                           b.skus.map((s) => (
-                            <SkuRow key={s.code} sku={s} child onSaved={afterWrite} />
+                            <SkuRow
+                              key={s.code}
+                              sku={s}
+                              child
+                              channelIds={channelIds}
+                              onSaved={afterWrite}
+                            />
                           ))}
                       </React.Fragment>
                     )
@@ -349,10 +396,88 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
   );
 }
 
+/* ───────────────────────────── Chọn gian làm việc ───────────────────────────── */
+
+/**
+ * Ô "Gian hàng": tick các gian muốn làm việc. Mặc định mọi gian (null). Không
+ * cho bỏ tick gian cuối — không bao giờ có trạng thái "không gian nào".
+ */
+function ShopScopePicker({
+  shops,
+  value,
+  onChange,
+}: {
+  shops: ShopOption[];
+  value: string[] | null;
+  onChange: (next: string[] | null) => void;
+}) {
+  const chosen = new Set(value ?? shops.map((s) => s.id));
+  const label =
+    value === null
+      ? `Tất cả gian (${formatNumber(shops.length)})`
+      : value.length === 1
+        ? (shops.find((s) => s.id === value[0])?.label ?? "1 gian")
+        : `${formatNumber(value.length)}/${formatNumber(shops.length)} gian`;
+
+  function toggle(id: string) {
+    const next = new Set(chosen);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    if (next.size === 0) return;
+    onChange(
+      next.size === shops.length ? null : shops.filter((s) => next.has(s.id)).map((s) => s.id)
+    );
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button variant="outline" className="max-w-72 justify-between gap-2">
+            <Store className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">{label}</span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+          </Button>
+        }
+      />
+      <PopoverContent align="start" className="w-72 p-2">
+        <p className={cn(TEXT_SUB, "px-2 pb-2")}>
+          Gộp mã, đề xuất và áp giá chỉ trong các gian được chọn. Gian không chọn giữ nguyên giá.
+        </p>
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="w-full rounded-md px-2 py-1.5 text-left text-sm font-medium hover:bg-muted"
+        >
+          Chọn tất cả gian
+        </button>
+        <ul className="max-h-64 overflow-y-auto">
+          {shops.map((s) => (
+            <li key={s.id}>
+              <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                <input
+                  type="checkbox"
+                  aria-label={s.label}
+                  className="size-4 shrink-0 accent-primary"
+                  checked={chosen.has(s.id)}
+                  onChange={() => toggle(s.id)}
+                />
+                <span className="truncate" title={s.label}>
+                  {s.label}
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /* ─────────────────────────── Nút áp dụng có xác nhận ghi đè ─────────────────────────── */
 
 /**
- * Bấm là ghi cho MỌI gian. Không có giá nào bị mất thì áp thẳng; có ô đang mang
+ * Bấm là ghi cho mọi gian ĐANG CHỌN. Không có giá nào bị mất thì áp thẳng; có ô đang mang
  * giá KHÁC thì hỏi lại kèm danh sách — thao tác này không hoàn tác được.
  */
 function ApplyButton({
@@ -439,9 +564,15 @@ function ApplyButton({
   );
 }
 
-async function saveCodes(codes: string[], cost: number, what: string, onSaved: () => Promise<void>) {
+async function saveCodes(
+  codes: string[],
+  cost: number,
+  what: string,
+  channelIds: string[] | undefined,
+  onSaved: () => Promise<void>
+) {
   try {
-    const res = await setCostForSkuCodes(codes, cost);
+    const res = await setCostForSkuCodes(codes, cost, channelIds);
     const parts = [`Đã áp ${formatVND(cost)} cho ${what} trên ${formatNumber(res.shops)} gian`];
     if (res.backfilledOrderLines > 0) {
       parts.push(`tính lại ${formatNumber(res.backfilledOrderLines)} dòng hàng đã bán`);
@@ -517,10 +648,12 @@ function Thumb({ src, alt }: { src: string | null; alt: string }) {
 function SkuRow({
   sku,
   child,
+  channelIds,
   onSaved,
 }: {
   sku: CostSkuGroup;
   child?: boolean;
+  channelIds: string[] | undefined;
   onSaved: () => Promise<void>;
 }) {
   // Giá khởi điểm của ô: giá đề xuất / giá các gian đang thống nhất. Lệch giá
@@ -631,7 +764,7 @@ function SkuRow({
                   ? "Giá chung mới"
                   : "Nhập giá vốn"
             }
-            aria-label={`Giá vốn của mã ${sku.code} cho mọi gian`}
+            aria-label={`Giá vốn của mã ${sku.code} cho ${channelIds ? "gian đang chọn" : "mọi gian"}`}
             value={draft}
             onValueChange={setDraft}
           />
@@ -643,7 +776,7 @@ function SkuRow({
             primary={sku.status === "suggest" || sku.status === "conflict"}
             disabled={!valid || changes.length === 0}
             overwriting={overwriting}
-            onApply={() => saveCodes([sku.code], cost, displaySku, onSaved)}
+            onApply={() => saveCodes([sku.code], cost, displaySku, channelIds, onSaved)}
           />
         </form>
       </TableCell>
@@ -655,11 +788,13 @@ function SkuRow({
 
 function BucketRow({
   bucket,
+  channelIds,
   open,
   onToggle,
   onSaved,
 }: {
   bucket: ProductBucket;
+  channelIds: string[] | undefined;
   open: boolean;
   onToggle: () => void;
   onSaved: () => Promise<void>;
@@ -726,7 +861,7 @@ function BucketRow({
             {[
               emptySlots > 0 && `${formatNumber(emptySlots)} ô chưa có giá`,
               suggest > 0 && `${formatNumber(suggest)} mã có đề xuất`,
-              conflict > 0 && `${formatNumber(conflict)} mã lệch giá`,
+              conflict > 0 && `${formatNumber(conflict)} mã khác giá giữa các gian`,
             ]
               .filter(Boolean)
               .join(" · ")}
@@ -745,7 +880,7 @@ function BucketRow({
                 "border-amber-500 bg-amber-100/70 font-medium placeholder:text-amber-800"
             )}
             placeholder="Giá vốn chung"
-            aria-label={`Giá vốn chung cho mọi phân loại của ${bucket.name} trên mọi gian`}
+            aria-label={`Giá vốn chung cho mọi phân loại của ${bucket.name} trên ${channelIds ? "gian đang chọn" : "mọi gian"}`}
             value={draft}
             onValueChange={setDraft}
           />
@@ -760,6 +895,7 @@ function BucketRow({
                 bucket.skus.map((s) => s.code),
                 cost,
                 bucket.name,
+                channelIds,
                 onSaved
               );
               setDraft("");

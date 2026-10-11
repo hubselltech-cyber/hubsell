@@ -474,7 +474,16 @@ export default function ProductsHubPage() {
       ...(seesCost
         ? [
             columnHelper.accessor("costPrice", {
-              header: () => <div className="text-right">Giá vốn</div>,
+              // Giá vốn theo gian (11/10/2026): giá ở kho là MẶC ĐỊNH cho các gian
+              // chưa đặt giá riêng ở trang Cấu hình Giá vốn.
+              header: () => (
+                <div
+                  className="text-right"
+                  title="Gian nào chưa đặt giá vốn riêng (trang Cấu hình Giá vốn) thì dùng giá này"
+                >
+                  Giá vốn mặc định
+                </div>
+              ),
               cell: (info) => (
                 <div className="text-right">
                   <Money value={info.getValue() ?? 0} className={TEXT_NUMBER_MUTED} />

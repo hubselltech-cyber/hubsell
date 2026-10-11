@@ -2237,12 +2237,20 @@ export interface SkuProduct {
   productName: string;
   variantName: string | null; // phân loại (màu/size) theo tên trên sàn
   channelName: ChannelName;
+  /** id gian — "" với hàng kho nội bộ (Offline). Bộ lọc "Gian hàng" dùng cột này. */
+  channelId: string;
   /** Tên gian hàng cụ thể ("Kho nội bộ" với hàng offline) — cột Cửa hàng của bảng. */
   shopName: string;
   imageUrl: string | null;
   sellingPrice: string;
+  /** Giá vốn HIỆU LỰC của SKU trên gian này. */
   costPrice: string;
-  /** false = SKU sàn chưa nối kho gốc — giá vốn lưu ở cấp SKU sàn, vẫn nhập được. */
+  /**
+   * Giá vốn theo gian (11/10/2026): "shop" = giá riêng của gian, "default" =
+   * đang theo giá mặc định của sản phẩm kho đã nối, "none" = chưa có.
+   */
+  costSource: "shop" | "default" | "none";
+  /** false = SKU sàn chưa nối kho gốc. */
   linked: boolean;
   /** ACTIVE = đang bán trên sàn; DELISTED = sàn đã gỡ/ẩn/xóa (giữ để đơn cũ tra giá vốn). */
   status: "ACTIVE" | "DELISTED";
@@ -2473,8 +2481,8 @@ export interface CostMappingRow extends CostMappingTarget {
   newCost: number;
   matchedCode: string;
   matchKind: "exact" | "prefix";
-  /** fill = sẽ điền ô trống · conflict = đang có giá khác · ambiguous = một SP kho khớp ra nhiều giá */
-  status: "fill" | "conflict" | "ambiguous";
+  /** fill = sẽ điền ô trống · conflict = đang có giá khác */
+  status: "fill" | "conflict";
 }
 
 export interface CostMappingPreview {
@@ -2483,7 +2491,6 @@ export interface CostMappingPreview {
     fill: number;
     same: number;
     conflict: number;
-    ambiguous: number;
     unmatched: number;
   };
   rows: CostMappingRow[];
@@ -2549,15 +2556,20 @@ export function applyCostRules(overwriteSkuIds: string[]) {
   );
 }
 
-export function fetchCostSkuGroups() {
-  return apiFetch<CostSkuGroupList>("/api/finance/cost-prices/mapping/skus");
+/**
+ * `channelIds` = các gian đang chọn ở tab Mapping (giá vốn theo gian): gộp,
+ * đề xuất và áp giá chỉ trong các gian đó. Không truyền = mọi gian.
+ */
+export function fetchCostSkuGroups(channelIds?: string[]) {
+  const q = channelIds ? `?channelIds=${encodeURIComponent(channelIds.join(","))}` : "";
+  return apiFetch<CostSkuGroupList>(`/api/finance/cost-prices/mapping/skus${q}`);
 }
 
 /** Nút "Điền tất cả": mọi mã đã có giá ở một gian → điền ô trống ở gian khác. */
-export function fillSuggestedCosts(codes?: string[]) {
+export function fillSuggestedCosts(codes?: string[], channelIds?: string[]) {
   return apiFetch<{ codes: number; filledSkus: number; backfilledOrderLines: number }>(
     "/api/finance/cost-prices/mapping/fill-suggested",
-    { method: "POST", body: JSON.stringify({ codes }) }
+    { method: "POST", body: JSON.stringify({ codes, channelIds }) }
   );
 }
 
@@ -2569,11 +2581,11 @@ export function dismissCostConflict(code: string, dismissed: boolean) {
   );
 }
 
-/** Nút "Áp dụng cho tất cả gian": đặt MỘT giá cho (các) mã trên mọi gian. */
-export function setCostForSkuCodes(codes: string[], costPrice: number) {
+/** Nút "Áp dụng N gian": đặt MỘT giá cho (các) mã trên các gian đang chọn (không truyền = mọi gian). */
+export function setCostForSkuCodes(codes: string[], costPrice: number, channelIds?: string[]) {
   return apiFetch<{ updatedSkus: number; shops: number; backfilledOrderLines: number }>(
     "/api/finance/cost-prices/mapping/set-cost",
-    { method: "POST", body: JSON.stringify({ codes, costPrice }) }
+    { method: "POST", body: JSON.stringify({ codes, costPrice, channelIds }) }
   );
 }
 
