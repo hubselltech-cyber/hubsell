@@ -397,6 +397,12 @@ model Channel {
   accessTokenExpireAt  DateTime?
   /// Thời điểm refresh_token hết hạn — quá hạn thì buộc chủ shop uỷ quyền lại
   refreshTokenExpireAt DateTime?
+  /// LẦN ỦY QUYỀN OAuth GẦN NHẤT (12/10/2026): chỉ ghi ở callback nối/kết nối lại
+  /// gian, KHÔNG đổi khi worker làm mới token. Dùng để biết token của gian được
+  /// cấp TRƯỚC hay SAU khi app Hubsell bật thêm phạm vi (TikTok Product Modify
+  /// 12/10/2026): token cũ không tự có phạm vi mới → nhắc "Kết nối lại gian".
+  /// NULL = gian nối trước khi có cột này (coi như cũ).
+  authorizedAt         DateTime?
   /// NGÀY HẾT HẠN ỦY QUYỀN phía sàn (03/10/2026, Shopee: expire_time của get_shop_info) —
   /// thời hạn chủ shop đặt trên trang ủy quyền của Shopee; tới ngày này Shopee từ chối
   /// làm mới token (shop_access_expired) dù refresh_token còn hạn. Thẻ gian ở trang

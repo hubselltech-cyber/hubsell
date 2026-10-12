@@ -7,13 +7,12 @@
 // cần — UI hiện dòng 2 nhỏ, mờ, gập lại.
 //
 // 28/09 (khách Hi.Bé gặp TikTok 105005 "not been granted any access scope"):
-// thêm loại "scope" = SÀN CHƯA CẤP QUYỀN cho app Hubsell (khác "auth" = gian
-// mất kết nối). Anh chốt 28/09 bật scope Product Modify, nhưng console TikTok
-// CHẶN đổi scope khi app đang xét duyệt ("Ứng dụng đang trong quá trình đánh
-// giá") → câu hiện tại = giai đoạn CHỜ (sửa tay trên Seller Center). Khi scope
-// bật xong: đổi câu thành "Kênh bán → Kết nối lại gian" (TikTok: đổi scope app
-// thì gian phải ủy quyền lại). Kèm NHÃN NGẮN (`shortReason`)
-// ≤ 1 dòng để banner in cạnh từng SKU / trên tiêu đề khi mọi SKU cùng lý do.
+// thêm loại "scope" = TOKEN CỦA GIAN THIẾU QUYỀN app cần (khác "auth" = gian
+// mất kết nối). 12/10/2026: TikTok duyệt app, Product Modify đã BẬT trên
+// Partner Center (integrations/tiktok/scopes.ts) → token cấp trước mốc đó
+// không có quyền mới, gian phải đi lại luồng "Kênh bán → Kết nối lại gian"
+// rồi bấm Đẩy lại. Kèm NHÃN NGẮN (`shortReason`) ≤ 1 dòng để banner in cạnh
+// từng SKU / trên tiêu đề khi mọi SKU cùng lý do.
 // ============================================================
 
 export interface StockPushFailure {
@@ -64,7 +63,7 @@ export function shortStockPushReason(kind: FailureKind): string {
     case "rate-limit":
       return "Sàn giới hạn lượt gọi — hệ thống tự thử lại, không cần làm gì";
     case "scope":
-      return "Sàn chưa cấp cho Hubsell quyền sửa tồn (đang chờ sàn duyệt) — tạm sửa tồn trên Seller Center";
+      return "Gian chưa cấp cho Hubsell quyền sửa tồn — vào Kênh bán → Kết nối lại gian, rồi Đẩy lại";
     case "auth":
       return "Gian mất kết nối — vào Kênh bán kết nối lại gian";
     case "promotion":
@@ -88,7 +87,7 @@ export function humanizeOrderSyncError(raw: string | null | undefined): string |
   if (/error_kyc_auth|seller registration/.test(s))
     return "Shopee chưa cho ứng dụng đọc đơn vì gian chưa hoàn tất đăng ký người bán (KYC) trên Seller Center. Hoàn tất đăng ký rồi vào Kênh bán → kết nối lại gian.";
   if (/105005|access scope|not been granted|scope required|insufficient scope/.test(s))
-    return "Sàn chưa cấp cho Hubsell quyền cần thiết (đang chờ sàn duyệt) — không cần làm gì, Hubsell sẽ nhắc kết nối lại gian khi có quyền.";
+    return "Gian chưa cấp cho Hubsell quyền cần thiết (ủy quyền trước khi Hubsell có quyền này). Vào Kênh bán → Kết nối lại gian để cấp lại.";
   if (/invalid_access_token|invalid_token|token expired|refresh_token|error_auth|unauthorized|105002|IllegalAccessToken/i.test(raw))
     return "Gian mất kết nối với sàn — vào Kênh bán kết nối lại gian.";
   if (/rate limit|error_rate_limit|too many requests|http 429|901/.test(s))
@@ -123,7 +122,7 @@ export function describeStockPushFailure(f: StockPushFailure): string {
       line = `Sàn đang giới hạn lượt gọi, chưa đẩy được ${sku} lên "${f.shopName}". Không cần làm gì — hệ thống tự thử lại; còn treo sau 15 phút thì bấm "Đẩy lại".`;
       break;
     case "scope":
-      line = `Sàn chưa cấp cho Hubsell quyền sửa tồn trên gian "${f.shopName}" nên ${sku} chưa đẩy được${num}. Hubsell đang chờ sàn duyệt quyền này; tạm sửa tồn trên Seller Center, có quyền Hubsell sẽ nhắc bạn kết nối lại gian.`;
+      line = `Gian "${f.shopName}" chưa cấp cho Hubsell quyền sửa tồn nên ${sku} chưa đẩy được${num}. Gian ủy quyền trước khi Hubsell có quyền này: vào Kênh bán → Kết nối lại gian (mất khoảng một phút, không mất dữ liệu), rồi bấm "Đẩy lại".`;
       break;
     case "auth":
       line = `Gian "${f.shopName}" mất kết nối nên không đẩy được tồn. Vào Kênh bán → kết nối lại gian, rồi bấm "Đẩy lại".`;
@@ -147,7 +146,7 @@ export function describeChannelFailure(shopName: string, raw: string): string {
     kind === "auth"
       ? `Gian "${shopName}" mất kết nối với sàn nên tồn kho và đơn hàng không đồng bộ. Vào Kênh bán → kết nối lại gian.`
       : kind === "scope"
-        ? `Sàn chưa cấp cho Hubsell quyền cần thiết trên gian "${shopName}" (đang chờ sàn duyệt). Tạm thao tác trên Seller Center; có quyền Hubsell sẽ nhắc bạn kết nối lại gian.`
+        ? `Gian "${shopName}" chưa cấp cho Hubsell quyền cần thiết (ủy quyền trước khi Hubsell có quyền này). Vào Kênh bán → Kết nối lại gian để cấp lại.`
         : kind === "rate-limit"
           ? `Sàn đang giới hạn lượt gọi với gian "${shopName}". Không cần làm gì — hệ thống tự thử lại.`
           : `Gian "${shopName}" đang không đồng bộ được với sàn. Thử "Sync ngay toàn bộ" trong Cài đặt đồng bộ; vẫn lỗi thì kết nối lại gian ở Kênh bán.`;

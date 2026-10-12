@@ -14,6 +14,7 @@ import {
   stageStockPush,
   type StockPushTicket,
 } from "../integrations/inventory-push";
+import { tiktokNeedsReauthForStockPush } from "../integrations/tiktok/scopes";
 import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
@@ -852,6 +853,7 @@ async function listSyncChannels(ownerId: string) {
       channelName: true,
       shopName: true,
       refreshToken: true,
+      authorizedAt: true,
       stockSyncEnabled: true,
       stockSyncEnabledAt: true,
       lastStockReconcileAt: true,
@@ -871,6 +873,9 @@ async function listSyncChannels(ownerId: string) {
     channelName: c.channelName,
     shopName: c.shopName,
     connected: Boolean(c.refreshToken),
+    /// Gian TikTok ủy quyền trước khi app có quyền sửa tồn (12/10/2026): đẩy
+    /// tồn sẽ bị sàn từ chối (105005) cho tới khi chủ shop Kết nối lại gian.
+    needsReauth: tiktokNeedsReauthForStockPush(c),
     stockSyncEnabled: c.stockSyncEnabled,
     stockSyncEnabledAt: c.stockSyncEnabledAt,
     linkedCount: c._count.channelProducts,

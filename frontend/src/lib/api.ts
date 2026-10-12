@@ -1355,6 +1355,12 @@ export interface SyncChannel {
   channelName: ChannelName;
   shopName: string;
   connected: boolean;
+  /**
+   * Gian TikTok ủy quyền TRƯỚC khi app Hubsell có quyền sửa tồn (12/10/2026):
+   * bật xong sàn vẫn từ chối đẩy tồn cho tới khi chủ shop Kết nối lại gian.
+   * Backend cũ không trả → undefined = không nhắc.
+   */
+  needsReauth?: boolean;
   stockSyncEnabled: boolean;
   stockSyncEnabledAt: string | null;
   /** Số SKU sàn của gian đã nối về kho (số dòng sẽ được đẩy). */

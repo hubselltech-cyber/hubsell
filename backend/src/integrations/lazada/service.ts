@@ -253,6 +253,7 @@ export async function handleLazadaCallback(
   const now = Date.now();
   const tokenData = {
     ...tokenFields(token, now),
+    authorizedAt: new Date(now), // mốc ủy quyền (callback), refresh không ghi
     externalShopName,
     status: "ACTIVE",
     disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền

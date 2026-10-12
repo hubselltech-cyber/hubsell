@@ -29,7 +29,9 @@ describe("classifyStockPushFailure", () => {
     const msg = describeStockPushFailure({ raw, shopName: "Hi.Bé", channelSku: "LT082-BE", expected: 1146 });
     const [line1] = msg.split("\n");
     expect(line1).toContain("chưa cấp cho Hubsell quyền sửa tồn");
-    expect(line1).toContain("Seller Center");
+    // 12/10: app đã có quyền Product Modify → chỉ đường Kết nối lại gian, không còn "chờ sàn duyệt"
+    expect(line1).toContain("Kết nối lại gian");
+    expect(line1).not.toContain("chờ sàn duyệt");
     expect(line1).not.toContain("mất kết nối");
     expect(line1).not.toContain("105005");
     expect(shortReasonFromMessage(msg)).toBe(shortStockPushReason("scope"));

@@ -334,6 +334,7 @@ export async function handleShopeeCallback(
     // Number(): expire_in là GIÂY, phòng API trả chuỗi (xem ghi chú ở refresh).
     accessTokenExpireAt: new Date(now + Number(token.expire_in ?? 0) * 1000),
     refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
+    authorizedAt: new Date(now), // mốc ủy quyền (callback), refresh không ghi
     externalShopName,
     authExpireAt,
     authExpireCheckedAt,

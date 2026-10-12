@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -66,6 +67,24 @@ const INITIAL_MODE_LABEL: Record<InitialStockMode, string> = {
   NONE: "Không gieo — tôi tự nhập tồn rồi bấm Sync",
 };
 
+/**
+ * Khóa localStorage nhớ chủ shop đã "Bỏ qua" hộp nhắc Kết nối lại gian TikTok
+ * (12/10/2026: app Hubsell bật quyền sửa tồn, token gian ủy quyền trước đó không
+ * có quyền). Bỏ qua = không hiện lại cho gian đó; kết nối lại gian thì backend
+ * hết trả needsReauth nên hộp tự biến mất.
+ */
+const REAUTH_DISMISS_KEY = "hubsell:stock-sync:tiktok-reauth-dismissed";
+
+function readReauthDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(REAUTH_DISMISS_KEY);
+    const arr = raw ? (JSON.parse(raw) as unknown) : [];
+    return new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
 function fmtTime(iso: string | null | undefined) {
   if (!iso) return "";
   return new Date(iso).toLocaleString("vi-VN", {
@@ -87,8 +106,28 @@ export function SyncSettingsDialog({
   onOpenChange,
   onStateChange,
 }: SyncSettingsDialogProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [channels, setChannels] = useState<SyncChannel[]>([]);
+  // Gian TikTok chủ shop đã gạt hộp nhắc Kết nối lại (đọc từ localStorage sau mount).
+  const [reauthDismissed, setReauthDismissed] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setReauthDismissed(readReauthDismissed());
+  }, []);
+  function dismissReauth(channelId: string) {
+    const next = new Set(reauthDismissed);
+    next.add(channelId);
+    setReauthDismissed(next);
+    try {
+      localStorage.setItem(REAUTH_DISMISS_KEY, JSON.stringify([...next]));
+    } catch {
+      // không lưu được thì chỉ ẩn trong phiên này
+    }
+  }
+  function goReconnect() {
+    onOpenChange(false);
+    router.push("/channels");
+  }
   const [safetyStock, setSafetyStock] = useState("0");
   const [savedSafety, setSavedSafety] = useState(0);
   const [lowStock, setLowStock] = useState("0");
@@ -459,6 +498,19 @@ export function SyncSettingsDialog({
                             {c.stockSyncEnabled && c.stockSyncEnabledAt
                               ? ` · bật từ ${fmtTime(c.stockSyncEnabledAt)}`
                               : ""}
+                            {c.stockSyncEnabled && c.needsReauth ? (
+                              <>
+                                {" · "}
+                                <button
+                                  type="button"
+                                  className="text-amber-700 underline-offset-2 hover:underline"
+                                  onClick={goReconnect}
+                                  title="Gian ủy quyền trước khi Hubsell có quyền sửa tồn trên TikTok — token cũ không có quyền này"
+                                >
+                                  cần Kết nối lại gian để đẩy tồn
+                                </button>
+                              </>
+                            ) : null}
                             {c.lastReconcileAt
                               ? ` · đối soát ${fmtTime(c.lastReconcileAt)}: ${
                                   c.lastReconcileMismatch
@@ -561,6 +613,28 @@ export function SyncSettingsDialog({
                         </p>
                       )}
 
+                      {isPreviewing && c.needsReauth && !reauthDismissed.has(c.id) && (
+                        <div className="mx-3 mb-2 space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                          <p className="flex items-start gap-1.5 text-sm">
+                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                            <span>
+                              Gian <b>{c.shopName}</b> ủy quyền cho Hubsell trước khi TikTok cấp
+                              quyền sửa tồn (12/10). Bật xong, TikTok sẽ từ chối mọi lần đẩy tồn
+                              của gian này cho tới khi bạn vào <b>Kênh bán → Kết nối lại gian</b>{" "}
+                              (khoảng một phút, không mất đơn hay cấu hình). Đồng bộ đơn, đối
+                              soát vẫn chạy bình thường.
+                            </span>
+                          </p>
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => dismissReauth(c.id)}>
+                              Bỏ qua
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={goReconnect}>
+                              Kết nối lại gian
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                       {isPreviewing && (
                         <PreviewPanel
                           channel={c}

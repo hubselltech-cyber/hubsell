@@ -360,6 +360,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
         refreshToken: token.refresh_token,
         accessTokenExpireAt: accessExpireAt,
         refreshTokenExpireAt: refreshExpireAt,
+        authorizedAt: new Date(), // mốc ủy quyền — token mới mang đủ phạm vi app đang bật
         shopCipher: shop.cipher,
         externalShopName: shop.name,
         status: "ACTIVE",
