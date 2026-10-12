@@ -13,6 +13,13 @@ import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/clie
 import { prisma } from "../../lib/prisma";
 import { carrierFromName } from "../../services/shipping";
 import { backfillOrderItemImagesTx } from "../order-item-images";
+import {
+  decimalDiffers,
+  fetchExistingOrdersByCode,
+  hasPlannedChanges,
+  needsItemImageBackfill,
+  syncWriteAlways,
+} from "../order-sync-write";
 import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
 import { stageStockPush, type StockPushTicket } from "../inventory-push";
@@ -212,7 +219,8 @@ function logShape(label: string, sample: unknown): void {
 export interface SyncOrdersResult {
   fetched: number; // số đơn TikTok trả về
   created: number; // số Order tạo mới
-  updated: number; // số Order cập nhật trạng thái
+  updated: number; // số Order đã có mà sàn báo KHÁC giá trị đang lưu → có UPDATE
+  unchanged: number; // số Order đã có, sàn trả đúng giá trị đang lưu → không mở giao dịch (12/10/2026)
   itemsCreated: number; // số OrderItem tạo mới
   pages: number;
   /** true = có lát chạm chốt chặn số trang, còn đơn CHƯA đọc. */
@@ -267,6 +275,7 @@ export async function syncTiktokOrders(
     fetched: 0,
     created: 0,
     updated: 0,
+    unchanged: 0,
     itemsCreated: 0,
     pages: 0,
     truncated: false,
@@ -289,7 +298,16 @@ export async function syncTiktokOrders(
     result.pages++;
     slicePages++;
 
-    for (const o of data.orders ?? []) {
+    // Đơn đã có đọc MỘT câu cho cả trang rồi so trong RAM — đơn không khác thì
+    // không mở giao dịch (12/10/2026, order-sync-write.ts).
+    const pageOrders = data.orders ?? [];
+    const existingByCode = await fetchExistingOrdersByCode(
+      prisma,
+      channel.id,
+      pageOrders.map((o) => o.id),
+      TIKTOK_EXISTING_SELECT
+    );
+    for (const o of pageOrders) {
       result.fetched++;
       if (!shapeLogged) {
         shapeLogged = true;
@@ -299,15 +317,26 @@ export async function syncTiktokOrders(
         if (!windowMinUpdate || o.update_time < windowMinUpdate) windowMinUpdate = o.update_time;
         if (o.update_time > windowMaxUpdate) windowMaxUpdate = o.update_time;
       }
+      const existing = existingByCode.get(o.id) ?? null;
+      if (
+        existing &&
+        !hasPlannedChanges(planTiktokOrderUpdate(existing, o)) &&
+        !needsItemImageBackfill(existing.createdAt)
+      ) {
+        result.unchanged++;
+        continue;
+      }
       // Đồng bộ lô CỐ Ý không trừ kho (chỉ upsert), nên mỗi đơn một transaction nhẹ.
       const outcome = await prisma.$transaction((tx) =>
-        upsertOrderTx(tx, channel, o, feeRate)
+        upsertOrderTx(tx, channel, o, feeRate, existing)
       );
       if (outcome.created) {
         result.created++;
         result.itemsCreated += outcome.itemsCreated;
-      } else {
+      } else if (outcome.changed) {
         result.updated++;
+      } else {
+        result.unchanged++; // chỉ điền bù ảnh dòng hàng, Order không đổi
       }
     }
 
@@ -328,26 +357,113 @@ export async function syncTiktokOrders(
   return result;
 }
 
+/** Cột của đơn đã có cần đọc để lập bản ghi dự kiến (đúng các cột UPDATE có thể ghi). */
+export const TIKTOK_EXISTING_SELECT = {
+  id: true,
+  orderCode: true,
+  createdAt: true,
+  shippingStatus: true,
+  paymentStatus: true,
+  totalAmount: true,
+  platformSubsidy: true,
+  trackingCode: true,
+  platformPackageId: true,
+  deliveredAt: true,
+  carrier: true,
+  shippingCarrierName: true,
+  isSettled: true,
+} satisfies Prisma.OrderSelect;
+
+export type TiktokExistingOrder = Prisma.OrderGetPayload<{ select: typeof TIKTOK_EXISTING_SELECT }>;
+
+/** Các giá trị rút từ payload đơn TikTok mà cả planner lẫn tạo mới cùng dùng. */
+function tiktokOrderFields(order: TikTokOrder) {
+  const status = tiktokOrderStatus(order);
+  const shippingStatus = mapShippingStatus(status);
+  return {
+    status,
+    shippingStatus,
+    paymentStatus: status === "UNPAID" ? "UNPAID" : "PAID",
+    totalAmount: Number(order.payment?.total_amount ?? 0) || 0,
+    trackingCode: order.tracking_number?.trim() || null,
+    // Kiện hàng đầu tiên — id cho API in vận đơn/bàn giao (fulfillment packages).
+    packageId: order.packages?.[0]?.id?.trim() || null,
+    // Trợ giá SÀN lúc đặt đơn (payment.platform_discount — TikTok bù lại phần giảm
+    // giá do sàn tài trợ khi giải ngân, cùng nghĩa platform_discount_amount của bản
+    // kê) → P&L ước tính real-time; số thật ghi đè khi đối soát. Voucher SHOP
+    // KHÔNG ghi: OrderItem.price = sale_price đã trừ giảm giá shop (tránh trừ đôi).
+    platformSubsidy: Number(order.payment?.platform_discount ?? 0) || 0,
+    // Mốc giao thành công theo SÀN (delivery_time) — chính xác hơn "lúc đồng bộ".
+    deliveredAt:
+      shippingStatus === ShippingStatus.DELIVERED
+        ? order.delivery_time
+          ? new Date(order.delivery_time * 1000)
+          : new Date()
+        : null,
+    // Tên PHƯƠNG THỨC + hãng nguyên văn — nguồn bắt hỏa tốc: "Hỏa tốc"/"Giao Trong
+    // Ngày" nằm ở delivery_option_name, hãng có thể là J&T giao thường. Ghi ghép
+    // "phương thức · hãng" để cùng luật EXPRESS_KEYWORDS với Shopee/Lazada
+    // (khảo sát 08/09/2026 — chuỗi VN thật chưa có trong docs, soi log khi nối shop thật).
+    carrierName:
+      [order.delivery_option_name?.trim(), order.shipping_provider?.trim()]
+        .filter(Boolean)
+        .join(" · ") || null,
+    carrier: carrierFromName(order.shipping_provider),
+  };
+}
+
+/**
+ * Bản ghi dự kiến cho đơn ĐÃ CÓ: chỉ gồm cột mà sàn báo KHÁC giá trị đang lưu.
+ * Rỗng = đơn không đổi → tầng gọi không mở giao dịch (12/10/2026). Thuần, không
+ * chạm database; giữ nguyên các luật ghi của bản trước:
+ *   · đơn đã đối soát: số bản kê là sự thật, không ghi đè platformSubsidy;
+ *   · vận đơn / kiện chỉ ghi khi sàn có giá trị (không xóa bằng rỗng);
+ *   · mốc giao thành công ghi MỘT lần; hãng chỉ điền khi trống.
+ * SYNC_WRITE_ALWAYS=1 → trả đủ cột như trước (đường lui khi nghi so thiếu).
+ */
+export function planTiktokOrderUpdate(existing: TiktokExistingOrder, order: TikTokOrder): Prisma.OrderUpdateInput {
+  const f = tiktokOrderFields(order);
+  const always = syncWriteAlways();
+  const data: Prisma.OrderUpdateInput = {};
+  if (always || existing.shippingStatus !== f.shippingStatus) data.shippingStatus = f.shippingStatus;
+  if (always || existing.paymentStatus !== f.paymentStatus) data.paymentStatus = f.paymentStatus;
+  if (always || decimalDiffers(existing.totalAmount, f.totalAmount)) data.totalAmount = f.totalAmount;
+  // Đơn đã đối soát: số bản kê là sự thật, đồng bộ lô không ghi đè cột tài chính.
+  if (!existing.isSettled && (always || decimalDiffers(existing.platformSubsidy, f.platformSubsidy))) {
+    data.platformSubsidy = f.platformSubsidy;
+  }
+  if (f.trackingCode && (always || existing.trackingCode !== f.trackingCode)) data.trackingCode = f.trackingCode;
+  if (f.packageId && (always || existing.platformPackageId !== f.packageId)) data.platformPackageId = f.packageId;
+  // Mốc GIAO THÀNH CÔNG ghi MỘT lần (Kiểm toán phí sàn rổ #3 đếm từ đây).
+  if (f.deliveredAt && !existing.deliveredAt) data.deliveredAt = f.deliveredAt;
+  // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
+  if (f.carrier && !existing.carrier) data.carrier = f.carrier;
+  // Tên hãng NGUYÊN VĂN là dữ kiện sàn (nguồn bắt hỏa tốc) — ghi khi khác.
+  if (f.carrierName && (always || existing.shippingCarrierName !== f.carrierName)) {
+    data.shippingCarrierName = f.carrierName;
+  }
+  return data;
+}
+
 /**
  * Tạo mới hoặc cập nhật MỘT đơn TikTok TRONG một transaction cho trước. Tạo mới
- * thì kèm OrderItem + snapshot giá vốn; đã tồn tại thì chỉ cập nhật các trường
- * biến động (trạng thái, tổng tiền, vận đơn) — KHÔNG đụng OrderItem để giữ
- * nguyên snapshot giá vốn ban đầu.
+ * thì kèm OrderItem + snapshot giá vốn; đã tồn tại thì chỉ ghi cột KHÁC
+ * (planTiktokOrderUpdate) — KHÔNG đụng OrderItem để giữ nguyên snapshot giá vốn.
  *
  * Nhận `tx` từ bên ngoài để webhook có thể GỘP upsert + trừ kho vào cùng một
- * transaction (đảm bảo nguyên tử); luồng đồng bộ lô thì tự bọc `$transaction`.
+ * transaction (đảm bảo nguyên tử); luồng đồng bộ lô thì tự bọc `$transaction`
+ * và truyền `existing` đã đọc theo lô (không truyền thì tự đọc).
  */
 async function upsertOrderTx(
   tx: Prisma.TransactionClient,
   channel: Channel,
   order: TikTokOrder,
-  feeRate: number
-): Promise<{ orderId: string; created: boolean; itemsCreated: number }> {
+  feeRate: number,
+  existing?: TiktokExistingOrder | null
+): Promise<{ orderId: string; created: boolean; changed: boolean; itemsCreated: number }> {
   const orderCode = order.id;
-  const totalAmount = Number(order.payment?.total_amount ?? 0) || 0;
-  const status = tiktokOrderStatus(order);
-  const shippingStatus = mapShippingStatus(status);
-  const paymentStatus = status === "UNPAID" ? "UNPAID" : "PAID";
+  const { shippingStatus, paymentStatus, totalAmount, trackingCode, packageId, platformSubsidy, deliveredAt, carrierName, carrier } =
+    tiktokOrderFields(order);
   const customerName =
     order.recipient_address?.name?.trim() ||
     [order.recipient_address?.first_name, order.recipient_address?.last_name]
@@ -356,59 +472,24 @@ async function upsertOrderTx(
       .trim() ||
     "Khách TikTok";
   const customerPhone = order.recipient_address?.phone_number?.trim() || null;
-  const trackingCode = order.tracking_number?.trim() || null;
-  // Kiện hàng đầu tiên — id cho API in vận đơn/bàn giao (fulfillment packages).
-  const packageId = order.packages?.[0]?.id?.trim() || null;
-  // Trợ giá SÀN lúc đặt đơn (payment.platform_discount — TikTok bù lại phần giảm
-  // giá do sàn tài trợ khi giải ngân, cùng nghĩa platform_discount_amount của bản
-  // kê) → P&L ước tính real-time; số thật ghi đè khi đối soát. Voucher SHOP
-  // KHÔNG ghi: OrderItem.price = sale_price đã trừ giảm giá shop (tránh trừ đôi).
-  const platformSubsidy = Number(order.payment?.platform_discount ?? 0) || 0;
-  // Mốc giao thành công theo SÀN (delivery_time) — chính xác hơn "lúc đồng bộ".
-  const deliveredAt =
-    shippingStatus === ShippingStatus.DELIVERED
-      ? order.delivery_time
-        ? new Date(order.delivery_time * 1000)
-        : new Date()
-      : null;
-  // Tên PHƯƠNG THỨC + hãng nguyên văn — nguồn bắt hỏa tốc: "Hỏa tốc"/"Giao Trong
-  // Ngày" nằm ở delivery_option_name, hãng có thể là J&T giao thường. Ghi ghép
-  // "phương thức · hãng" để cùng luật EXPRESS_KEYWORDS với Shopee/Lazada
-  // (khảo sát 08/09/2026 — chuỗi VN thật chưa có trong docs, soi log khi nối shop thật).
-  const carrierName =
-    [order.delivery_option_name?.trim(), order.shipping_provider?.trim()]
-      .filter(Boolean)
-      .join(" · ") || null;
-  const carrier = carrierFromName(order.shipping_provider);
 
-  const existing = await tx.order.findUnique({
-    where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, carrier: true, deliveredAt: true, isSettled: true },
-  });
-  // Đơn đã đối soát: số bản kê là sự thật, đồng bộ lô không ghi đè cột tài chính.
-  const existingSettled = existing?.isSettled === true;
+  if (existing === undefined) {
+    existing = await tx.order.findUnique({
+      where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+      select: TIKTOK_EXISTING_SELECT,
+    });
+  }
 
   if (existing) {
-    await tx.order.update({
-      where: { id: existing.id },
-      select: { id: true },
-      data: {
-        shippingStatus,
-        paymentStatus,
-        totalAmount,
-        ...(existingSettled ? {} : { platformSubsidy }),
-        ...(trackingCode ? { trackingCode } : {}),
-        ...(packageId ? { platformPackageId: packageId } : {}),
-        // Mốc GIAO THÀNH CÔNG ghi MỘT lần (Kiểm toán phí sàn rổ #3 đếm từ đây).
-        ...(deliveredAt && !existing.deliveredAt ? { deliveredAt } : {}),
-        // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
-        ...(carrier && !existing.carrier ? { carrier } : {}),
-        // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
-        ...(carrierName ? { shippingCarrierName: carrierName } : {}),
-      },
-    });
-    await backfillOrderItemImagesTx(tx, existing.id, aggregateLineItems(order));
-    return { orderId: existing.id, created: false, itemsCreated: 0 };
+    const data = planTiktokOrderUpdate(existing, order);
+    const changed = hasPlannedChanges(data);
+    if (changed) {
+      await tx.order.update({ where: { id: existing.id }, select: { id: true }, data });
+    }
+    if (needsItemImageBackfill(existing.createdAt)) {
+      await backfillOrderItemImagesTx(tx, existing.id, aggregateLineItems(order));
+    }
+    return { orderId: existing.id, created: false, changed, itemsCreated: 0 };
   }
 
   const lines = aggregateLineItems(order);
@@ -470,7 +551,7 @@ async function upsertOrderTx(
     });
   }
 
-  return { orderId: created.id, created: true, itemsCreated: lines.length };
+  return { orderId: created.id, created: true, changed: true, itemsCreated: lines.length };
 }
 
 export interface SyncSettlementsOptions {

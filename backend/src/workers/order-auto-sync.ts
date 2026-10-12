@@ -444,7 +444,7 @@ async function runFastTier(
       warnIfTruncated(channel, r, opts.backfill);
       if (r.created > 0) {
         console.log(
-          `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
+          `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
         );
       }
     } else if (channel.channelName === ChannelName.TIKTOK) {
@@ -460,7 +460,7 @@ async function runFastTier(
       warnIfTruncated(channel, r, opts.backfill);
       if (r.created > 0) {
         console.log(
-          `[Auto-sync] TikTok "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
+          `[Auto-sync] TikTok "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
         );
       }
     } else {
@@ -474,7 +474,7 @@ async function runFastTier(
       warnIfTruncated(channel, r, opts.backfill);
       if (r.created > 0) {
         console.log(
-          `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
+          `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
         );
       }
     }

@@ -17,6 +17,14 @@ import { withDbLock } from "../../lib/db-lock";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
 import { backfillOrderItemImagesTx } from "../order-item-images";
+import {
+  decimalDiffers,
+  fetchExistingOrdersByCode,
+  hasPlannedChanges,
+  needsItemImageBackfill,
+  syncWriteAlways,
+  type OrderUpsertOutcome,
+} from "../order-sync-write";
 import { carrierFromName } from "../../services/shipping";
 import {
   deductStockTx,
@@ -496,7 +504,10 @@ export interface SyncShopeeOrdersOptions {
 export interface SyncShopeeOrdersResult {
   fetched: number;
   created: number;
+  /** Đơn đã có mà sàn báo KHÁC giá trị đang lưu → có UPDATE. */
   updated: number;
+  /** Đơn đã có, sàn trả lại đúng giá trị đang lưu → không mở giao dịch (12/10/2026). */
+  unchanged: number;
   itemsCreated: number;
   pages: number;
   /** true = dừng vì chạm chốt chặn số trang, còn đơn CHƯA đọc (phần cũ nhất của kỳ). */
@@ -530,6 +541,7 @@ export async function syncShopeeOrders(
     fetched: 0,
     created: 0,
     updated: 0,
+    unchanged: 0,
     itemsCreated: 0,
     pages: 0,
     truncated: false,
@@ -557,20 +569,38 @@ export async function syncShopeeOrders(
       result.pages++;
 
       const sns = (list.response?.order_list ?? []).map((o) => o.order_sn);
-      // Lấy chi tiết theo lô ≤50 rồi upsert từng đơn.
+      // Lấy chi tiết theo lô ≤50; đơn đã có đọc MỘT câu cho cả lô rồi so trong
+      // RAM — đơn không khác thì không mở giao dịch (12/10/2026, order-sync-write.ts).
       for (let i = 0; i < sns.length; i += ORDER_DETAIL_BATCH) {
         const batch = sns.slice(i, i + ORDER_DETAIL_BATCH);
         const details = await getOrderDetail(accessToken, shopId, batch);
+        const existingByCode = await fetchExistingOrdersByCode(
+          prisma,
+          channel.id,
+          details.map((d) => d.order_sn),
+          SHOPEE_EXISTING_SELECT
+        );
         for (const d of details) {
           result.fetched++;
+          const existing = existingByCode.get(d.order_sn) ?? null;
+          if (
+            existing &&
+            !hasPlannedChanges(planShopeeOrderUpdate(existing, d)) &&
+            !needsItemImageBackfill(existing.createdAt)
+          ) {
+            result.unchanged++;
+            continue;
+          }
           const outcome = await prisma.$transaction((tx) =>
-            upsertShopeeOrderTx(tx, channel, d, feeRate)
+            upsertShopeeOrderTx(tx, channel, d, feeRate, existing)
           );
           if (outcome.created) {
             result.created++;
             result.itemsCreated += outcome.itemsCreated;
-          } else {
+          } else if (outcome.changed) {
             result.updated++;
+          } else {
+            result.unchanged++; // chỉ điền bù ảnh dòng hàng, Order không đổi
           }
         }
       }
@@ -586,17 +616,90 @@ export async function syncShopeeOrders(
   return result;
 }
 
+/** Cột của đơn đã có cần đọc để lập bản ghi dự kiến (đúng các cột UPDATE có thể ghi). */
+export const SHOPEE_EXISTING_SELECT = {
+  id: true,
+  orderCode: true,
+  createdAt: true,
+  shippingStatus: true,
+  paymentStatus: true,
+  totalAmount: true,
+  shippingCarrierName: true,
+  carrier: true,
+  deliveredAt: true,
+  returnStatus: true,
+  returnRequestedAt: true,
+} satisfies Prisma.OrderSelect;
+
+export type ShopeeExistingOrder = Prisma.OrderGetPayload<{ select: typeof SHOPEE_EXISTING_SELECT }>;
+
+/**
+ * Bản ghi dự kiến cho đơn ĐÃ CÓ: chỉ gồm cột mà sàn báo KHÁC giá trị đang lưu.
+ * Rỗng = đơn không đổi → tầng gọi không mở giao dịch (12/10/2026). Thuần, không
+ * chạm database; giữ nguyên các luật ghi của bản trước:
+ *   · mốc giao thành công ghi MỘT lần / kéo về mốc sàn (lib/delivered-at.ts);
+ *   · hãng vận chuyển chỉ điền khi trống (không ghi đè chọn tay của kho);
+ *   · tên hãng nguyên văn là dữ kiện sàn — cập nhật khi khác;
+ *   · cờ hoàn chỉ TIẾN NONE → AWAITING, kèm mốc "sàn báo hoàn".
+ * SYNC_WRITE_ALWAYS=1 → trả đủ cột như trước (đường lui khi nghi so thiếu).
+ */
+export function planShopeeOrderUpdate(
+  existing: ShopeeExistingOrder,
+  order: ShopeeOrderDetail,
+  now: Date = new Date()
+): Prisma.OrderUpdateInput {
+  const totalAmount = Number(order.total_amount ?? 0) || 0;
+  const shippingStatus = mapShopeeStatus(order.order_status);
+  const returning = shopeeReturnStatus(order.order_status);
+  const paymentStatus = order.order_status === "UNPAID" ? "UNPAID" : "PAID";
+  const carrier = carrierFromName(order.shipping_carrier);
+  // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
+  const platformUpdatedAt = order.update_time ? new Date(order.update_time * 1000) : null;
+  const deliveredAt =
+    shippingStatus === ShippingStatus.DELIVERED
+      ? correctedDeliveredAt(existing.deliveredAt, platformUpdatedAt, now)
+      : null;
+  const always = syncWriteAlways();
+
+  const data: Prisma.OrderUpdateInput = {};
+  if (always || existing.shippingStatus !== shippingStatus) data.shippingStatus = shippingStatus;
+  if (always || existing.paymentStatus !== paymentStatus) data.paymentStatus = paymentStatus;
+  if (always || decimalDiffers(existing.totalAmount, totalAmount)) data.totalAmount = totalAmount;
+  // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí sàn rổ
+  // #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này); correctedDeliveredAt trả
+  // null khi mốc đang có đã đúng.
+  if (deliveredAt) data.deliveredAt = deliveredAt;
+  // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
+  if (carrier && !existing.carrier) data.carrier = carrier;
+  // Tên hãng NGUYÊN VĂN là dữ kiện sàn (nguồn bắt hỏa tốc) — ghi khi khác.
+  if (order.shipping_carrier && (always || existing.shippingCarrierName !== order.shipping_carrier)) {
+    data.shippingCarrierName = order.shipping_carrier;
+  }
+  // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong
+  // (RECEIVED_INTACT / CLAIM_SETTLED…) để không regress tiến độ hoàn. Kèm mốc
+  // "sàn báo hoàn" để trang Đối soát đơn hoàn tính tuổi đơn.
+  if (returning && existing.returnStatus === ReturnStatus.NONE) {
+    data.returnStatus = returning;
+    data.returnRequestedAt = now;
+  } else if (returning && existing.returnStatus === ReturnStatus.AWAITING && !existing.returnRequestedAt) {
+    data.returnRequestedAt = now;
+  }
+  return data;
+}
+
 /**
  * Tạo mới / cập nhật MỘT đơn Shopee trong transaction. Tạo mới kèm OrderItem +
- * snapshot giá vốn; đã tồn tại thì chỉ cập nhật trường biến động (trạng thái,
- * tổng tiền) — không đụng OrderItem để giữ nguyên snapshot.
+ * snapshot giá vốn; đã tồn tại thì chỉ ghi cột KHÁC (planShopeeOrderUpdate) —
+ * không đụng OrderItem để giữ nguyên snapshot. `existing` truyền từ tầng đọc
+ * theo lô (đồng bộ lô); không truyền (webhook, quét đơn hoàn) thì tự đọc.
  */
 export async function upsertShopeeOrderTx(
   tx: Prisma.TransactionClient,
   channel: Channel,
   order: ShopeeOrderDetail,
-  feeRate: number
-): Promise<{ created: boolean; itemsCreated: number }> {
+  feeRate: number,
+  existing?: ShopeeExistingOrder | null
+): Promise<OrderUpsertOutcome> {
   const orderCode = order.order_sn;
   const totalAmount = Number(order.total_amount ?? 0) || 0;
   const shippingStatus = mapShopeeStatus(order.order_status);
@@ -611,48 +714,24 @@ export async function upsertShopeeOrderTx(
   // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
   const platformUpdatedAt = order.update_time ? new Date(order.update_time * 1000) : null;
   const deliveredAt = deliveredAtFromPlatform(platformUpdatedAt);
-  const fixedDeliveredAt = (stored: Date | null) => correctedDeliveredAt(stored, platformUpdatedAt);
 
-  const existing = await tx.order.findUnique({
-    where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true, deliveredAt: true },
-  });
+  if (existing === undefined) {
+    existing = await tx.order.findUnique({
+      where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+      select: SHOPEE_EXISTING_SELECT,
+    });
+  }
 
   if (existing) {
-    await tx.order.update({
-      where: { id: existing.id },
-      select: { id: true },
-      data: {
-        shippingStatus,
-        paymentStatus,
-        totalAmount,
-        // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
-        // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
-        ...(shippingStatus === ShippingStatus.DELIVERED && fixedDeliveredAt(existing.deliveredAt)
-          ? { deliveredAt: fixedDeliveredAt(existing.deliveredAt)! }
-          : {}),
-        // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
-        ...(carrier && !existing.carrier ? { carrier } : {}),
-        // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
-        ...(order.shipping_carrier
-          ? { shippingCarrierName: order.shipping_carrier }
-          : {}),
-        // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong
-        // (RECEIVED_INTACT / CLAIM_SETTLED…) để không regress tiến độ hoàn.
-        // Kèm mốc "sàn báo hoàn" để trang Đối soát đơn hoàn tính tuổi đơn
-        // (không có mốc thì đơn hiện "không rõ", cảnh báo quá hạn tê liệt).
-        ...(returning && existing.returnStatus === ReturnStatus.NONE
-          ? { returnStatus: returning, returnRequestedAt: new Date() }
-          : {}),
-        ...(returning &&
-        existing.returnStatus === ReturnStatus.AWAITING &&
-        !existing.returnRequestedAt
-          ? { returnRequestedAt: new Date() }
-          : {}),
-      },
-    });
-    await backfillOrderItemImagesTx(tx, existing.id, aggregateShopeeItems(order));
-    return { created: false, itemsCreated: 0 };
+    const data = planShopeeOrderUpdate(existing, order);
+    const changed = hasPlannedChanges(data);
+    if (changed) {
+      await tx.order.update({ where: { id: existing.id }, select: { id: true }, data });
+    }
+    if (needsItemImageBackfill(existing.createdAt)) {
+      await backfillOrderItemImagesTx(tx, existing.id, aggregateShopeeItems(order));
+    }
+    return { created: false, changed, itemsCreated: 0 };
   }
 
   const lines = aggregateShopeeItems(order);
@@ -714,7 +793,7 @@ export async function upsertShopeeOrderTx(
     });
   }
 
-  return { created: true, itemsCreated: lines.length };
+  return { created: true, changed: true, itemsCreated: lines.length };
 }
 
 // ============================================================

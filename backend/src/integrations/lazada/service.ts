@@ -18,6 +18,13 @@ import { prisma } from "../../lib/prisma";
 import { correctedDeliveredAt, deliveredAtFromPlatform } from "../../lib/delivered-at";
 import { withDbLock } from "../../lib/db-lock";
 import { backfillOrderItemImagesTx } from "../order-item-images";
+import {
+  decimalDiffers,
+  fetchExistingOrdersByCode,
+  hasPlannedChanges,
+  needsItemImageBackfill,
+  syncWriteAlways,
+} from "../order-sync-write";
 import { CHANNEL_LABEL } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
 import { carrierFromName } from "../../services/shipping";
@@ -491,7 +498,10 @@ export interface SyncLazadaOrdersOptions {
 export interface SyncLazadaOrdersResult {
   fetched: number;
   created: number;
+  /** Đơn đã có mà sàn báo KHÁC giá trị đang lưu → có ghi. */
   updated: number;
+  /** Đơn đã có, sàn trả đúng giá trị đang lưu → không mở giao dịch (12/10/2026). */
+  unchanged: number;
   itemsCreated: number;
   pages: number;
   /** true = dừng vì chạm chốt chặn số trang, còn đơn CHƯA đọc. */
@@ -522,6 +532,7 @@ export async function syncLazadaOrders(
     fetched: 0,
     created: 0,
     updated: 0,
+    unchanged: 0,
     itemsCreated: 0,
     pages: 0,
     truncated: false,
@@ -550,16 +561,29 @@ export async function syncLazadaOrders(
       accessToken,
       batch.map((o) => o.order_id!)
     );
+    // Đơn đã có đọc MỘT câu cho cả lô rồi so trong RAM — đơn không khác (kể cả
+    // chi tiết ship) thì không mở giao dịch (12/10/2026, order-sync-write.ts).
+    const existingByCode = await fetchExistingOrdersByCode(
+      prisma,
+      channel.id,
+      batch.map((o) => String(o.order_number ?? o.order_id)),
+      LAZADA_EXISTING_SELECT
+    );
     for (const order of batch) {
       result.fetched++;
       const items = itemsByOrder.get(String(order.order_id)) ?? [];
       if (!result.sample) {
         result.sample = { order, item: items[0] ?? null };
       }
+      const existing = existingByCode.get(String(order.order_number ?? order.order_id)) ?? null;
+      if (existing && !lazadaOrderNeedsWrite(existing, order, items)) {
+        result.unchanged++;
+        continue;
+      }
       // Kho biến động → dòng "tồn chờ đẩy" + việc stock.channel ghi CHUNG giao
       // dịch đơn (giai đoạn 2 bước 4); chốt phiếu sau commit ở dưới.
       const { outcome, stockTicket } = await prisma.$transaction(async (tx) => {
-        const r = await upsertLazadaOrderTx(tx, channel, order, items);
+        const r = await upsertLazadaOrderTx(tx, channel, order, items, existing);
         const ticket = r.stockSync
           ? await stageStockPush(tx, r.stockSync.productIds, {
               source: `đồng bộ Lazada đơn ${order.order_number ?? order.order_id}`,
@@ -571,8 +595,10 @@ export async function syncLazadaOrders(
       if (outcome.created) {
         result.created++;
         result.itemsCreated += outcome.itemsCreated;
-      } else {
+      } else if (outcome.changed) {
         result.updated++;
+      } else {
+        result.unchanged++; // chỉ điền bù ảnh dòng hàng, Order không đổi
       }
       // Chốt phiếu đẩy tồn SAU commit (chỉ ghi DB, không gọi API sàn — không chậm vòng quét).
       await finishStockPush(stockTicket);
@@ -587,6 +613,8 @@ export async function syncLazadaOrders(
 
 export interface LazadaOrderUpsertResult {
   created: boolean;
+  /** true khi có ghi Order / chi tiết ship (đơn đã có mà khác) hoặc tạo mới. */
+  changed: boolean;
   itemsCreated: number;
   /**
    * Kho có biến động (hold/trừ/hoàn) → tầng gọi enqueue đẩy tồn SAU khi
@@ -647,33 +675,30 @@ async function applyLazadaStockTx(
  * tổng tiền) — không đụng OrderItem để giữ nguyên snapshot. Mirror Shopee.
  * Kèm tác động tồn kho (hold/trừ/hoàn) — xem applyLazadaStockTx.
  */
-export async function upsertLazadaOrderTx(
-  tx: Prisma.TransactionClient,
-  channel: Channel,
-  order: LazadaOrder,
-  items: LazadaOrderItem[]
-): Promise<LazadaOrderUpsertResult> {
-  const orderCode = String(order.order_number ?? order.order_id);
-  const totalAmount = Number(order.price ?? 0) || 0;
-  const repStatus = pickLazadaStatus(order.statuses);
-  const shippingStatus = mapLazadaStatus(repStatus);
-  const returning = lazadaReturnStatus(repStatus);
-  const paymentStatus = repStatus === "unpaid" ? "UNPAID" : "PAID";
-  const shipName = [order.address_shipping?.first_name, order.address_shipping?.last_name]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  const buyerName = [order.customer_first_name, order.customer_last_name]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  const customerName = shipName || buyerName || "Khách Lazada";
-  const customerPhone = order.address_shipping?.phone?.trim() || null;
-  // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
-  const platformUpdatedAt = order.updated_at ? new Date(order.updated_at) : null;
-  const deliveredAt = deliveredAtFromPlatform(platformUpdatedAt);
-  const fixedDeliveredAt = (stored: Date | null) => correctedDeliveredAt(stored, platformUpdatedAt);
+/** Cột của đơn đã có cần đọc để lập bản ghi dự kiến (đúng các cột UPDATE có thể ghi + chi tiết ship). */
+export const LAZADA_EXISTING_SELECT = {
+  id: true,
+  orderCode: true,
+  createdAt: true,
+  shippingStatus: true,
+  paymentStatus: true,
+  totalAmount: true,
+  trackingCode: true,
+  carrier: true,
+  shippingCarrierName: true,
+  deliveredAt: true,
+  returnStatus: true,
+  returnRequestedAt: true,
+  lazadaSettlement: {
+    select: { shipFee: true, shipFeeCustomer: true, shipDiscountPlatform: true, shipDiscountSeller: true },
+  },
+} satisfies Prisma.OrderSelect;
 
+export type LazadaExistingOrder = Prisma.OrderGetPayload<{ select: typeof LAZADA_EXISTING_SELECT }>;
+
+/** Các giá trị rút từ đơn + dòng hàng Lazada mà planner, chi tiết ship và tạo mới cùng dùng. */
+function lazadaOrderFields(order: LazadaOrder, items: LazadaOrderItem[]) {
+  const repStatus = pickLazadaStatus(order.statuses);
   // ---- CHI TIẾT PHÍ VẬN CHUYỂN từ Order API (Seller-Center mirror) ----
   // Khoản ship KHÔNG chảy qua ví người bán nên sao kê Finance không có dòng
   // nào — nguồn duy nhất là dữ liệu đơn/dòng hàng. Ghi vào cùng bảng
@@ -696,22 +721,6 @@ export async function upsertLazadaOrderTx(
   }
   const hasShipDetail =
     shipOriginal !== 0 || shipCustomer !== 0 || shipDiscPlatform !== 0 || shipDiscSeller !== 0;
-  const writeShipDetail = async (orderId: string) => {
-    if (!hasShipDetail) return;
-    const ship = {
-      shipFee: shipOriginal,
-      shipFeeCustomer: shipCustomer,
-      shipDiscountPlatform: shipDiscPlatform,
-      shipDiscountSeller: shipDiscSeller,
-    };
-    await tx.lazadaOrderSettlement.upsert({
-      where: { orderId },
-      select: { orderId: true },
-      create: { orderId, ...ship },
-      update: ship,
-    });
-  };
-
   // ---- MÃ VẬN ĐƠN + HÃNG từ dòng hàng (đã nằm sẵn trong call items — 0 call
   // thêm). Kho quét tem trên kiện (cả chiều đi lẫn kiện giao thất bại quay đầu
   // — Lazada giữ nguyên mã) nên thiếu là tra trượt. Đơn nhiều kiện lấy mã kiện
@@ -723,50 +732,160 @@ export async function upsertLazadaOrderTx(
   const rawProvider =
     items.map((it) => it.shipment_provider?.toString().trim()).find(Boolean) ||
     null;
-  const carrier = carrierFromName(rawProvider);
+  return {
+    repStatus,
+    shippingStatus: mapLazadaStatus(repStatus),
+    returning: lazadaReturnStatus(repStatus),
+    paymentStatus: repStatus === "unpaid" ? "UNPAID" : "PAID",
+    totalAmount: Number(order.price ?? 0) || 0,
+    // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
+    platformUpdatedAt: order.updated_at ? new Date(order.updated_at) : null,
+    ship: hasShipDetail
+      ? {
+          shipFee: shipOriginal,
+          shipFeeCustomer: shipCustomer,
+          shipDiscountPlatform: shipDiscPlatform,
+          shipDiscountSeller: shipDiscSeller,
+        }
+      : null,
+    trackingCode,
+    rawProvider,
+    carrier: carrierFromName(rawProvider),
+  };
+}
 
-  const existing = await tx.order.findUnique({
-    where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true, trackingCode: true, deliveredAt: true },
-  });
+/**
+ * Bản ghi dự kiến cho đơn ĐÃ CÓ: chỉ gồm cột mà sàn báo KHÁC giá trị đang lưu.
+ * Rỗng = Order không đổi (chi tiết ship xét riêng: lazadaShipDetailDiffers).
+ * Thuần, không chạm database; giữ nguyên các luật ghi của bản trước:
+ *   · mốc giao thành công ghi MỘT lần / kéo về mốc sàn (lib/delivered-at.ts);
+ *   · vận đơn chỉ ghi khi sàn có và khác (không ghi đè bằng rỗng);
+ *   · hãng chỉ điền khi trống; tên hãng nguyên văn ghi khi khác;
+ *   · cờ hoàn chỉ TIẾN NONE → AWAITING, kèm mốc "sàn báo hoàn".
+ * SYNC_WRITE_ALWAYS=1 → trả đủ cột như trước (đường lui khi nghi so thiếu).
+ */
+export function planLazadaOrderUpdate(
+  existing: LazadaExistingOrder,
+  order: LazadaOrder,
+  items: LazadaOrderItem[],
+  now: Date = new Date()
+): Prisma.OrderUpdateInput {
+  const f = lazadaOrderFields(order, items);
+  const always = syncWriteAlways();
+  const deliveredAt =
+    f.shippingStatus === ShippingStatus.DELIVERED
+      ? correctedDeliveredAt(existing.deliveredAt, f.platformUpdatedAt, now)
+      : null;
+  const data: Prisma.OrderUpdateInput = {};
+  if (always || existing.shippingStatus !== f.shippingStatus) data.shippingStatus = f.shippingStatus;
+  if (always || existing.paymentStatus !== f.paymentStatus) data.paymentStatus = f.paymentStatus;
+  if (always || decimalDiffers(existing.totalAmount, f.totalAmount)) data.totalAmount = f.totalAmount;
+  // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí sàn rổ
+  // #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này); null = mốc đang có đã đúng.
+  if (deliveredAt) data.deliveredAt = deliveredAt;
+  // Điền vận chuyển khi có dữ liệu mới — sàn cấp vận đơn SAU khi tạo đơn nên
+  // bản ghi cũ thường trống; không ghi đè bằng giá trị rỗng.
+  if (f.trackingCode && f.trackingCode !== existing.trackingCode) data.trackingCode = f.trackingCode;
+  if (f.carrier && !existing.carrier) data.carrier = f.carrier;
+  // Tên hãng NGUYÊN VĂN là dữ kiện sàn (nguồn bắt hỏa tốc) — ghi khi khác.
+  if (f.rawProvider && (always || existing.shippingCarrierName !== f.rawProvider)) {
+    data.shippingCarrierName = f.rawProvider;
+  }
+  // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong.
+  // Kèm mốc "sàn báo hoàn" cho trang Đối soát đơn hoàn tính tuổi đơn.
+  if (f.returning && existing.returnStatus === ReturnStatus.NONE) {
+    data.returnStatus = f.returning;
+    data.returnRequestedAt = now;
+  } else if (f.returning && existing.returnStatus === ReturnStatus.AWAITING && !existing.returnRequestedAt) {
+    data.returnRequestedAt = now;
+  }
+  return data;
+}
+
+/** Chi tiết ship (4 cột LazadaOrderSettlement) sàn báo có khác bản đang lưu không. */
+export function lazadaShipDetailDiffers(existing: LazadaExistingOrder, order: LazadaOrder, items: LazadaOrderItem[]): boolean {
+  const { ship } = lazadaOrderFields(order, items);
+  if (!ship) return false;
+  const stored = existing.lazadaSettlement;
+  if (!stored) return true;
+  return (
+    syncWriteAlways() ||
+    decimalDiffers(stored.shipFee, ship.shipFee) ||
+    decimalDiffers(stored.shipFeeCustomer, ship.shipFeeCustomer) ||
+    decimalDiffers(stored.shipDiscountPlatform, ship.shipDiscountPlatform) ||
+    decimalDiffers(stored.shipDiscountSeller, ship.shipDiscountSeller)
+  );
+}
+
+/**
+ * Đơn đã có cần mở giao dịch không: Order khác, chi tiết ship khác, hoặc đơn cũ
+ * cần điền bù ảnh. Trạng thái không đổi thì tác động kho (hold/trừ/hoàn) đã
+ * được ghi trong chính giao dịch lần trước (idempotent theo mốc trên Order),
+ * nên không cần chạy lại.
+ */
+export function lazadaOrderNeedsWrite(existing: LazadaExistingOrder, order: LazadaOrder, items: LazadaOrderItem[]): boolean {
+  return (
+    hasPlannedChanges(planLazadaOrderUpdate(existing, order, items)) ||
+    lazadaShipDetailDiffers(existing, order, items) ||
+    needsItemImageBackfill(existing.createdAt)
+  );
+}
+
+export async function upsertLazadaOrderTx(
+  tx: Prisma.TransactionClient,
+  channel: Channel,
+  order: LazadaOrder,
+  items: LazadaOrderItem[],
+  existing?: LazadaExistingOrder | null
+): Promise<LazadaOrderUpsertResult> {
+  const orderCode = String(order.order_number ?? order.order_id);
+  const f = lazadaOrderFields(order, items);
+  const { repStatus, shippingStatus, returning, paymentStatus, totalAmount, trackingCode, rawProvider, carrier } = f;
+  const shipName = [order.address_shipping?.first_name, order.address_shipping?.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const buyerName = [order.customer_first_name, order.customer_last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const customerName = shipName || buyerName || "Khách Lazada";
+  const customerPhone = order.address_shipping?.phone?.trim() || null;
+  const deliveredAt = deliveredAtFromPlatform(f.platformUpdatedAt);
+
+  const writeShipDetail = async (orderId: string) => {
+    if (!f.ship) return;
+    await tx.lazadaOrderSettlement.upsert({
+      where: { orderId },
+      select: { orderId: true },
+      create: { orderId, ...f.ship },
+      update: f.ship,
+    });
+  };
+
+  if (existing === undefined) {
+    existing = await tx.order.findUnique({
+      where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+      select: LAZADA_EXISTING_SELECT,
+    });
+  }
 
   if (existing) {
-    await tx.order.update({
-      where: { id: existing.id },
-      select: { id: true },
-      data: {
-        shippingStatus,
-        paymentStatus,
-        totalAmount,
-        // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
-        // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
-        ...(shippingStatus === ShippingStatus.DELIVERED && fixedDeliveredAt(existing.deliveredAt)
-          ? { deliveredAt: fixedDeliveredAt(existing.deliveredAt)! }
-          : {}),
-        // Điền vận chuyển khi có dữ liệu mới — sàn cấp vận đơn SAU khi tạo đơn
-        // nên bản ghi cũ thường trống; không ghi đè bằng giá trị rỗng.
-        ...(trackingCode && trackingCode !== existing.trackingCode
-          ? { trackingCode }
-          : {}),
-        ...(carrier && !existing.carrier ? { carrier } : {}),
-        // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
-        ...(rawProvider ? { shippingCarrierName: rawProvider } : {}),
-        // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong.
-        // Kèm mốc "sàn báo hoàn" cho trang Đối soát đơn hoàn tính tuổi đơn.
-        ...(returning && existing.returnStatus === ReturnStatus.NONE
-          ? { returnStatus: returning, returnRequestedAt: new Date() }
-          : {}),
-        ...(returning &&
-        existing.returnStatus === ReturnStatus.AWAITING &&
-        !existing.returnRequestedAt
-          ? { returnRequestedAt: new Date() }
-          : {}),
-      },
-    });
-    await writeShipDetail(existing.id);
-    await backfillOrderItemImagesTx(tx, existing.id, aggregateLazadaItems(items));
-    const stockSync = await applyLazadaStockTx(tx, existing.id, repStatus);
-    return { created: false, itemsCreated: 0, stockSync };
+    const data = planLazadaOrderUpdate(existing, order, items);
+    const orderChanged = hasPlannedChanges(data);
+    if (orderChanged) {
+      await tx.order.update({ where: { id: existing.id }, select: { id: true }, data });
+    }
+    const shipChanged = lazadaShipDetailDiffers(existing, order, items);
+    if (shipChanged) await writeShipDetail(existing.id);
+    if (needsItemImageBackfill(existing.createdAt)) {
+      await backfillOrderItemImagesTx(tx, existing.id, aggregateLazadaItems(items));
+    }
+    // Tác động kho chỉ khi trạng thái đổi (idempotent theo mốc trên Order; webhook
+    // Lazada truyền existing = undefined nên vẫn đi qua planner như trên).
+    const statusChanged = data.shippingStatus !== undefined || data.paymentStatus !== undefined;
+    const stockSync = statusChanged ? await applyLazadaStockTx(tx, existing.id, repStatus) : undefined;
+    return { created: false, changed: orderChanged || shipChanged, itemsCreated: 0, stockSync };
   }
 
   const lines = aggregateLazadaItems(items);
@@ -829,7 +948,7 @@ export async function upsertLazadaOrderTx(
   }
 
   const stockSync = await applyLazadaStockTx(tx, created.id, repStatus);
-  return { created: true, itemsCreated: lines.length, stockSync };
+  return { created: true, changed: true, itemsCreated: lines.length, stockSync };
 }
 
 
