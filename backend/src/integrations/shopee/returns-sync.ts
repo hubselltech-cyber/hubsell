@@ -264,6 +264,8 @@ export interface SyncShopeeReturnsResult {
   itemsUpdated: number;
   /** Số đơn đã đối soát được đọc lại escrow để lấy số hoàn sao kê còn thiếu. */
   escrowRefreshed: number;
+  /** Mã đơn vừa đổi cờ hoàn (gắn / hạ) lượt này — tầng ước tính escrow hỏi lại (lát B, 12/10/2026). */
+  changedOrderCodes: string[];
 }
 
 export interface SyncShopeeReturnsOptions {
@@ -281,6 +283,7 @@ function emptyReturnsResult(): SyncShopeeReturnsResult {
     delivered: 0,
     itemsUpdated: 0,
     escrowRefreshed: 0,
+    changedOrderCodes: [],
   };
 }
 
@@ -385,6 +388,7 @@ async function applyShopeeReturnGroup(
   );
   if (plan.flagged) result.flagged++;
   if (plan.unflagged) result.unflagged++;
+  if (plan.flagged || plan.unflagged) result.changedOrderCodes.push(orderSn);
   if (plan.trackingSaved) result.trackingSaved++;
 
   // KIỆN HOÀN ĐÃ VỀ TAY? Chỉ hỏi get_return_detail khi: hàng phải về

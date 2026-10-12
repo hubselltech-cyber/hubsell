@@ -45,6 +45,53 @@ export function hasPlannedChanges(data: Record<string, unknown>): boolean {
 }
 
 /**
+ * Chuẩn hóa một ô để so "giá trị đang lưu" với "giá trị sắp ghi": Decimal/số
+ * về number, Date về mili-giây, mảng/JSON về chuỗi khóa đã sắp xếp, null và
+ * undefined coi như nhau. Dùng cho bản kê ước tính (Shopee escrow, TikTok
+ * unsettled) — hàng chục cột số, không muốn liệt kê tay từng cột.
+ */
+export function normalizeCell(v: unknown): string | number | null {
+  if (v === null || v === undefined) return null;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === "number") return v;
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (typeof v === "object") {
+    // Prisma.Decimal có toNumber(); mảng/JSON thì chuỗi hóa với khóa sắp xếp.
+    const d = v as { toNumber?: () => number };
+    if (typeof d.toNumber === "function") return d.toNumber();
+    return stableJson(v);
+  }
+  return String(v);
+}
+
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(o[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v ?? null);
+}
+
+/**
+ * Bản ghi sắp ghi có ô nào khác dòng đang lưu không. `existing` thiếu khóa
+ * (chưa có dòng / cột chưa đọc) → coi là khác. Khóa trong `data` là chuẩn;
+ * cột thừa ở `existing` bỏ qua.
+ */
+export function rowDiffers(existing: Record<string, unknown> | null | undefined, data: Record<string, unknown>): boolean {
+  if (!existing) return true;
+  for (const key of Object.keys(data)) {
+    if (!(key in existing)) return true;
+    if (normalizeCell(existing[key]) !== normalizeCell(data[key])) return true;
+  }
+  return false;
+}
+
+/**
  * Đọc các đơn đã có của một lô mã đơn trong MỘT câu, trả map theo orderCode.
  * `select` do từng sàn khai (đúng các cột mà bản ghi dự kiến cần so, kèm orderCode).
  */

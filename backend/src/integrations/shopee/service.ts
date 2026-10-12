@@ -508,6 +508,11 @@ export interface SyncShopeeOrdersResult {
   updated: number;
   /** Đơn đã có, sàn trả lại đúng giá trị đang lưu → không mở giao dịch (12/10/2026). */
   unchanged: number;
+  /**
+   * Mã đơn vừa tạo hoặc vừa đổi shippingStatus / returnStatus trong lượt này —
+   * tầng ước tính phí escrow hỏi lại đúng các đơn này (lát B, 12/10/2026).
+   */
+  changedOrderCodes: string[];
   itemsCreated: number;
   pages: number;
   /** true = dừng vì chạm chốt chặn số trang, còn đơn CHƯA đọc (phần cũ nhất của kỳ). */
@@ -542,6 +547,7 @@ export async function syncShopeeOrders(
     created: 0,
     updated: 0,
     unchanged: 0,
+    changedOrderCodes: [],
     itemsCreated: 0,
     pages: 0,
     truncated: false,
@@ -583,17 +589,18 @@ export async function syncShopeeOrders(
         for (const d of details) {
           result.fetched++;
           const existing = existingByCode.get(d.order_sn) ?? null;
-          if (
-            existing &&
-            !hasPlannedChanges(planShopeeOrderUpdate(existing, d)) &&
-            !needsItemImageBackfill(existing.createdAt)
-          ) {
+          const plan = existing ? planShopeeOrderUpdate(existing, d) : null;
+          if (existing && plan && !hasPlannedChanges(plan) && !needsItemImageBackfill(existing.createdAt)) {
             result.unchanged++;
             continue;
           }
           const outcome = await prisma.$transaction((tx) =>
             upsertShopeeOrderTx(tx, channel, d, feeRate, existing)
           );
+          // Đơn mới hoặc đổi trạng thái giao / hoàn → tầng ước tính escrow hỏi lại.
+          if (outcome.created || plan?.shippingStatus !== undefined || plan?.returnStatus !== undefined) {
+            result.changedOrderCodes.push(d.order_sn);
+          }
           if (outcome.created) {
             result.created++;
             result.itemsCreated += outcome.itemsCreated;

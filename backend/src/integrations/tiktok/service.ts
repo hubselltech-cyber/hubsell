@@ -18,6 +18,7 @@ import {
   fetchExistingOrdersByCode,
   hasPlannedChanges,
   needsItemImageBackfill,
+  rowDiffers,
   syncWriteAlways,
 } from "../order-sync-write";
 import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
@@ -867,6 +868,13 @@ async function fetchOrderLinesFromStatements(
  * tính unsettled (estimated=true: KHÔNG đụng isSettled, ghi expectedPayout làm
  * mẫu số Kiểm toán phí sàn như Shopee).
  */
+/**
+ * Trả về số đã ghi (0–2: bản kê chi tiết, cột gộp Order). Bản kê ƯỚC TÍNH
+ * (unsettled, mỗi giờ mọi đơn chưa quyết toán 45 ngày) so với dòng đang lưu
+ * trước khi ghi — số không đổi thì không UPSERT/UPDATE (lát B 12/10/2026; câu
+ * upsert dài 2 KB, prod ~60 nghìn lượt/ngày ghi lại số cũ). Bản kê THẬT giữ
+ * ghi như cũ (đặt isSettled/settledAt, một lần mỗi đơn).
+ */
 async function writeTiktokSettlement(
   order: { id: string; shippingDisputeStatus: ShippingDisputeStatus },
   lines: TikTokTxBreakdown[],
@@ -879,7 +887,7 @@ async function writeTiktokSettlement(
     estimatedSettlementAt?: Date | null;
     unsettledReason?: string | null;
   }
-): Promise<void> {
+): Promise<number> {
   const { detail, order: cols } = mapTiktokBreakdownToSettlement(lines);
   const detailData = {
     ...detail,
@@ -890,31 +898,49 @@ async function writeTiktokSettlement(
     unsettledReason: meta.unsettledReason ?? null,
     settledAt: meta.estimated ? null : meta.settledAt ?? null,
   };
-  await prisma.tiktokOrderSettlement.upsert({
-    where: { orderId: order.id },
-    select: { orderId: true },
-    create: { orderId: order.id, ...detailData },
-    update: detailData,
-  });
-  await prisma.order.update({
-    where: { id: order.id },
-    select: { id: true },
-    data: {
-      ...cols,
-      ...(meta.estimated
-        ? { expectedPayout: cols.actualPayout }
-        : { isSettled: true, settledAt: meta.settledAt ?? new Date() }),
-      // Phần ship shop chịu trên TikTok là CHÍNH SÁCH (phí ship người bán /
-      // SFP), không phải sàn trừ nhầm → giữ làm chi phí trong P&L nhưng
-      // không đưa vào rổ "Truy thu phí ship" (chỉ đổi khi còn CHO_KHIEU_NAI —
-      // seller đã bấm khiếu nại thì tôn trọng).
-      ...(!meta.estimated &&
-      cols.shippingFeeDiff > 0 &&
-      order.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
-        ? { shippingDisputeStatus: ShippingDisputeStatus.DA_DOI_SOAT }
-        : {}),
-    },
-  });
+  const orderData = {
+    ...cols,
+    ...(meta.estimated
+      ? { expectedPayout: cols.actualPayout }
+      : { isSettled: true, settledAt: meta.settledAt ?? new Date() }),
+    // Phần ship shop chịu trên TikTok là CHÍNH SÁCH (phí ship người bán /
+    // SFP), không phải sàn trừ nhầm → giữ làm chi phí trong P&L nhưng
+    // không đưa vào rổ "Truy thu phí ship" (chỉ đổi khi còn CHO_KHIEU_NAI —
+    // seller đã bấm khiếu nại thì tôn trọng).
+    ...(!meta.estimated &&
+    cols.shippingFeeDiff > 0 &&
+    order.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
+      ? { shippingDisputeStatus: ShippingDisputeStatus.DA_DOI_SOAT }
+      : {}),
+  };
+
+  let writeDetail = true;
+  let writeOrder = true;
+  if (meta.estimated && !syncWriteAlways()) {
+    const stored = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: {
+        ...(Object.fromEntries(Object.keys(orderData).map((k) => [k, true])) as Prisma.OrderSelect),
+        tiktokSettlement: true,
+      },
+    });
+    const { tiktokSettlement, ...storedOrder } = (stored ?? {}) as { tiktokSettlement?: unknown } & Record<string, unknown>;
+    writeDetail = rowDiffers(tiktokSettlement as Record<string, unknown> | null, detailData);
+    writeOrder = rowDiffers(storedOrder, orderData);
+  }
+
+  if (writeDetail) {
+    await prisma.tiktokOrderSettlement.upsert({
+      where: { orderId: order.id },
+      select: { orderId: true },
+      create: { orderId: order.id, ...detailData },
+      update: detailData,
+    });
+  }
+  if (writeOrder) {
+    await prisma.order.update({ where: { id: order.id }, select: { id: true }, data: orderData });
+  }
+  return (writeDetail ? 1 : 0) + (writeOrder ? 1 : 0);
 }
 
 export interface SyncUnsettledOptions {
@@ -925,7 +951,10 @@ export interface SyncUnsettledOptions {
 
 export interface SyncUnsettledResult {
   transactions: number;
+  /** Đơn có số ước tính KHÁC số đang lưu → đã ghi. */
   ordersUpdated: number;
+  /** Đơn sàn trả đúng số đang lưu → không ghi (lát B 12/10/2026). */
+  ordersUnchanged: number;
   ordersNotFound: number;
   skippedSettled: number; // đơn đã có bản kê thật → không cho số ước tính ghi đè
   unlinked: number;
@@ -949,6 +978,7 @@ export async function syncTiktokUnsettledEstimates(
   const result: SyncUnsettledResult = {
     transactions: 0,
     ordersUpdated: 0,
+    ordersUnchanged: 0,
     ordersNotFound: 0,
     skippedSettled: 0,
     unlinked: 0,
@@ -1058,12 +1088,13 @@ export async function syncTiktokUnsettledEstimates(
       continue;
     }
     const first = lines.find((l) => l.type === "ORDER") ?? lines[0];
-    await writeTiktokSettlement(order, lines, {
+    const writes = await writeTiktokSettlement(order, lines, {
       estimated: true,
       estimatedSettlementAt: parseEstimatedSettlement(first?.estimated_settlement),
       unsettledReason: first?.unsettled_reason ?? null,
     });
-    result.ordersUpdated++;
+    if (writes > 0) result.ordersUpdated++;
+    else result.ordersUnchanged++;
   }
 
   return result;

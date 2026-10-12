@@ -237,4 +237,11 @@ chuỗi `QUEUE_DATABASE_URL`), gom tín hiệu dồn dập trong 100 ms, listene
 - 12/10/2026: **lát C code xong** — vé DETECT đã an bài thì đỗ 24 giờ
   (`DETECT_SETTLED_PARK_MS`, `parkedDetectTaskData`, cả Shopee lẫn TikTok),
   bước dọn xóa khi đơn rời SHIPPING; test DB `delivery-fail-park-db.test.ts`
-  3/3. Kiểm prod sau 24 giờ cùng lát A theo mục 3 bước 3.
+  3/3. ✅ ĐÃ PUSH `2020617`, worker deploy 10:24.
+- 12/10/2026: **lát B code xong** đúng cách anh chốt: `sweep` "new" / "delivered"
+  (1 lần/ngày VN, `claimDailyEscrowSweep`) / "all"; `changedOrderCodes` từ đồng
+  bộ đơn + quét đơn hoàn (quét hoàn chạy TRƯỚC ước tính); so trước khi ghi bằng
+  `rowDiffers`; TikTok unsettled so trước khi upsert. Test
+  `escrow-estimate-sweep.test.ts` 10/10. Chi tiết PROGRESS.md phiên 12/10.
+  Kiểm prod sau 24 giờ cùng A + C theo mục 3 bước 3, thêm: Kiểm toán phí sàn rổ
+  #2 không tăng báo oan.

@@ -22,6 +22,8 @@ import {
   type ShopeeOrderIncome,
 } from "./client";
 import { getValidShopeeAccessToken } from "./service";
+import { rowDiffers, syncWriteAlways } from "../order-sync-write";
+import { vnDateKeyOf } from "../../lib/ads-dates";
 
 /** Cửa sổ quét release_time — get_escrow_list giới hạn khoảng hẹp, 15 ngày cho an toàn. */
 const WINDOW_SEC = 15 * 24 * 60 * 60;
@@ -544,71 +546,132 @@ export async function syncShopeeSettlements(
 // soát"); khi sàn giải ngân thật, syncShopeeSettlements ghi đè số cuối cùng.
 // ============================================================
 
+// LÁT B BĂNG THÔNG WORKER (12/10/2026, anh Trung chốt — docs/BANG-THONG-WORKER-CO-VIEC-THI-GOI.md):
+// trước đó MỌI đơn chưa quyết toán trong cửa sổ bị hỏi lại + ghi lại mỗi 10'
+// dù số không đổi (prod ~170 nghìn UPDATE + ngần ấy call/ngày; 98% số ước tính
+// cuối = số quyết toán đúng từng đồng). Nay chọn đơn theo ba nguồn:
+//   · đơn CHƯA CÓ SỐ (expectedPayout null): hỏi mỗi lượt như cũ (phản ánh chủ
+//     shop 06/08 "phí đơn mới hiện chậm");
+//   · đơn vừa ĐỔI shippingStatus / returnStatus trong lượt quét này (mã đơn do
+//     đồng bộ đơn + quét đơn hoàn đưa sang); webhook có móc riêng bên dưới;
+//   · lưới đỡ MỘT lần/ngày cho đơn đã giao chưa quyết toán (khoản chốt muộn
+//     không kèm đổi trạng thái, ví dụ hoa hồng affiliate) — mẫu số Kiểm toán phí
+//     sàn luôn là lời hứa gần nhất của sàn.
+// Mọi lần hỏi đều SO TRƯỚC KHI GHI (rowDiffers): khác mới UPDATE.
+
+export type ShopeeEscrowSweep =
+  /** Đơn chưa có số + mã đơn vừa đổi trạng thái (mặc định mỗi lượt 10'). */
+  | "new"
+  /** Như "new" + mọi đơn ĐÃ GIAO chưa quyết toán trong cửa sổ (lưới đỡ 1 lần/ngày). */
+  | "delivered"
+  /** Mọi đơn chưa quyết toán trong cửa sổ (gian mới nạp lịch sử). */
+  | "all";
+
 export interface SyncShopeePendingEstimatesOptions {
-  /** Chỉ ước tính cho đơn tạo trong N ngày gần nhất. Mặc định 7. */
+  /** Chỉ xét đơn tạo trong N ngày gần nhất. Mặc định 7. */
   daysBack?: number;
   /** Trần số đơn mỗi lượt (mỗi đơn 1 call API — giữ quota). */
   limit?: number;
+  /** Phạm vi chọn đơn — xem ShopeeEscrowSweep. Mặc định "new". */
+  sweep?: ShopeeEscrowSweep;
+  /** Mã đơn vừa đổi trạng thái trong lượt quét này → hỏi lại dù đã có số. */
+  orderCodes?: string[];
 }
 
 export interface SyncShopeePendingEstimatesResult {
+  /** Số đơn được hỏi sàn lượt này. */
   scanned: number;
+  /** Số đơn sàn trả số KHÁC số đang lưu → đã ghi. */
   updated: number;
+  /** Số đơn sàn trả đúng số đang lưu → không ghi. */
+  unchanged: number;
   errors: number;
+}
+
+/** Cột ước tính đang lưu cần đọc để so với số sàn vừa trả (đúng các khóa mapShopeeEscrowFields + 2 cột mẫu số). */
+const ESCROW_ESTIMATE_SELECT = {
+  id: true,
+  orderCode: true,
+  fixedFee: true,
+  paymentFee: true,
+  serviceFee: true,
+  sellerProtectionFee: true,
+  affiliateFee: true,
+  sellerVoucher: true,
+  sellerDiscountVoucher: true,
+  platformSubsidy: true,
+  shippingFeeQuoted: true,
+  shippingFeeActual: true,
+  shipSubsidyPlatform: true,
+  shippingFeeDiff: true,
+  taxWithheld: true,
+  actualPayout: true,
+  refundedAmount: true,
+  expectedPayout: true,
+  expectedIncome: true,
+} satisfies Prisma.OrderSelect;
+
+type EscrowEstimateRow = Prisma.OrderGetPayload<{ select: typeof ESCROW_ESTIMATE_SELECT }>;
+
+/** Bản ghi ước tính từ order_income — KHÔNG đụng isSettled/settledAt. */
+export function escrowEstimateData(income: ShopeeOrderIncome) {
+  return {
+    ...mapShopeeEscrowFields(income),
+    // Snapshot MẪU SỐ cho Kiểm toán phí sàn: số escrow ước tính mới nhất của
+    // chính Shopee + NGUYÊN BẢN các trường số (diff từng thành phần lúc quyết
+    // toán). syncShopeeSettlements KHÔNG ghi đè hai cột này.
+    expectedPayout: n(income.escrow_amount),
+    expectedIncome: snapshotIncome(income),
+  };
+}
+
+/** Ghi ước tính cho một đơn nếu khác số đang lưu. Trả true khi có ghi. */
+async function applyShopeeEscrowEstimate(row: EscrowEstimateRow, income: ShopeeOrderIncome): Promise<boolean> {
+  const data = escrowEstimateData(income);
+  if (!syncWriteAlways() && !rowDiffers(row as unknown as Record<string, unknown>, data)) return false;
+  await prisma.order.update({ where: { id: row.id }, select: { id: true }, data });
+  return true;
 }
 
 export async function syncShopeePendingEscrowEstimates(
   channel: Channel,
   opts: SyncShopeePendingEstimatesOptions = {}
 ): Promise<SyncShopeePendingEstimatesResult> {
-  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
   const daysBack = opts.daysBack ?? 7;
   const limit = opts.limit ?? 300;
+  const sweep = opts.sweep ?? "new";
+  const codes = [...new Set(opts.orderCodes ?? [])];
 
   // Đơn CHƯA quyết toán, chưa hủy, mới tạo gần đây — đơn hủy không có escrow,
   // đơn đã settled do luồng chính thống quản.
+  const base: Prisma.OrderWhereInput = {
+    channelId: channel.id,
+    isSettled: false,
+    shippingStatus: { not: ShippingStatus.CANCELLED },
+    createdAt: { gte: new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000) },
+  };
+  const scope: Prisma.OrderWhereInput[] = [{ expectedPayout: null }];
+  if (codes.length > 0) scope.push({ orderCode: { in: codes } });
+  if (sweep === "delivered") scope.push({ shippingStatus: ShippingStatus.DELIVERED });
   const orders = await prisma.order.findMany({
-    where: {
-      channelId: channel.id,
-      isSettled: false,
-      shippingStatus: { not: ShippingStatus.CANCELLED },
-      createdAt: { gte: new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000) },
-    },
-    select: { id: true, orderCode: true },
+    where: sweep === "all" ? base : { ...base, OR: scope },
+    select: ESCROW_ESTIMATE_SELECT,
     orderBy: { createdAt: "desc" },
     take: limit,
   });
 
-  const result: SyncShopeePendingEstimatesResult = {
-    scanned: orders.length,
-    updated: 0,
-    errors: 0,
-  };
+  const result: SyncShopeePendingEstimatesResult = { scanned: orders.length, updated: 0, unchanged: 0, errors: 0 };
+  if (orders.length === 0) return result;
 
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
   for (const order of orders) {
     try {
-      const detail = await getEscrowDetail({
-        accessToken,
-        shopId,
-        orderSn: order.orderCode,
-      });
+      const detail = await getEscrowDetail({ accessToken, shopId, orderSn: order.orderCode });
       const income = detail.response?.order_income;
       // Đơn quá mới sàn chưa dựng xong bản nháp phí → bỏ qua êm, lượt sau lấy.
       if (!income) continue;
-
-      await prisma.order.update({
-        where: { id: order.id },
-        select: { id: true },
-        data: {
-          ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
-          // Snapshot MẪU SỐ cho Kiểm toán phí sàn: số escrow ước tính mới nhất
-          // của chính Shopee + NGUYÊN BẢN các trường số (diff từng thành phần
-          // lúc quyết toán). syncShopeeSettlements KHÔNG ghi đè hai cột này.
-          expectedPayout: n(income.escrow_amount),
-          expectedIncome: snapshotIncome(income),
-        },
-      });
-      result.updated++;
+      if (await applyShopeeEscrowEstimate(order, income)) result.updated++;
+      else result.unchanged++;
     } catch (err) {
       // Lỗi một đơn (đơn chưa có escrow, mạng...) không chặn đơn khác.
       result.errors++;
@@ -623,12 +686,26 @@ export async function syncShopeePendingEscrowEstimates(
 }
 
 /**
+ * Lưới đỡ ước tính "delivered" chạy MỘT lần mỗi ngày (giờ VN) cho mỗi gian —
+ * nhớ trong RAM theo khóa ngày; restart worker thì cùng lắm thêm một lượt.
+ * Trả true đúng lượt đầu tiên của ngày.
+ */
+const escrowSweepDay = new Map<string, string>();
+export function claimDailyEscrowSweep(channelId: string, now: Date = new Date(), store = escrowSweepDay): boolean {
+  const key = vnDateKeyOf(now);
+  if (store.get(channelId) === key) return false;
+  store.set(channelId, key);
+  return true;
+}
+
+/**
  * Ước tính phí escrow cho MỘT đơn — móc từ worker webhook: đơn vừa tạo/đổi
  * trạng thái nhận số phí tạm tính NGAY (yêu cầu chủ shop 06/08: P&L đơn mới
  * đang phải chờ nhịp quét nên phí hiện chậm), không đợi vòng quét.
  * Đơn đã isSettled bỏ qua — số THẬT do syncShopeeSettlements quản, không cho
  * ước tính ghi đè. Sàn chưa dựng bản nháp phí (đơn quá mới) → trả false êm,
- * lượt webhook đổi trạng thái sau hoặc vòng quét sẽ lấy được.
+ * lượt webhook đổi trạng thái sau hoặc vòng quét sẽ lấy được. Số không đổi
+ * so với đang lưu → không ghi (vẫn trả true: đã có số).
  */
 export async function syncShopeeEscrowEstimateForOrder(
   channel: Channel,
@@ -636,7 +713,7 @@ export async function syncShopeeEscrowEstimateForOrder(
 ): Promise<boolean> {
   const order = await prisma.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, isSettled: true },
+    select: { ...ESCROW_ESTIMATE_SELECT, isSettled: true },
   });
   if (!order || order.isSettled) return false;
 
@@ -645,15 +722,6 @@ export async function syncShopeeEscrowEstimateForOrder(
   const income = detail.response?.order_income;
   if (!income) return false;
 
-  await prisma.order.update({
-    where: { id: order.id },
-    select: { id: true },
-    data: {
-      ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
-      // Snapshot mẫu số Kiểm toán phí sàn — cùng lý do với vòng quét ước tính.
-      expectedPayout: n(income.escrow_amount),
-      expectedIncome: snapshotIncome(income),
-    },
-  });
+  await applyShopeeEscrowEstimate(order, income);
   return true;
 }

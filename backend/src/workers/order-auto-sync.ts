@@ -50,6 +50,7 @@ import { prisma } from "../lib/prisma";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import {
+  claimDailyEscrowSweep,
   syncShopeePendingEscrowEstimates,
   syncShopeeSettlements,
 } from "../integrations/shopee/settlements";
@@ -428,6 +429,8 @@ async function runFastTier(
 ): Promise<{ changed: boolean; ordersOk: boolean }> {
   let changed = false;
   let ordersOk = false;
+  // Mã đơn Shopee vừa tạo / đổi trạng thái lượt này → tầng ước tính escrow hỏi lại (lát B 12/10).
+  const escrowCodes: string[] = [];
 
   // --- Đơn hàng ---
   // Lượt backfill gian mới: trục create_time, cửa sổ HISTORY_BACKFILL_DAYS — đúng
@@ -441,6 +444,7 @@ async function runFastTier(
             timeRangeField: "update_time",
           });
       changed = r.created > 0 || r.updated > 0;
+      escrowCodes.push(...r.changedOrderCodes);
       warnIfTruncated(channel, r, opts.backfill);
       if (r.created > 0) {
         console.log(
@@ -559,31 +563,14 @@ async function runFastTier(
 
   // ---------- Shopee ----------
 
-  // --- Phí ƯỚC TÍNH cho đơn chờ đối soát: chạy MỌI lượt (chủ shop 06/08: phí
-  // đơn mới hiện chậm) nhưng cửa sổ hẹp; lượt trùng nhịp giờ vét rộng hơn.
-  // isSettled vẫn false — giữ nhãn "chờ đối soát".
-  try {
-    const est = await syncShopeePendingEscrowEstimates(channel, {
-      daysBack: opts.backfill ? HISTORY_BACKFILL_DAYS : opts.deep ? SETTLE_DAYS_BACK : ORDERS_DAYS_BACK,
-    });
-    if (est.updated > 0) {
-      console.log(
-        `[Auto-sync] Ước tính phí Shopee "${channel.shopName}": ${est.updated}/${est.scanned} đơn chờ đối soát nhận số tạm tính`
-      );
-    }
-  } catch (err) {
-    console.error(
-      `[Auto-sync] Lỗi ước tính phí gian "${channel.shopName}":`,
-      (err as Error).message
-    );
-  }
-
   // --- ĐƠN HOÀN Shopee (Returns API) — nguồn duy nhất thấy yêu cầu Trả
   // hàng/Hoàn tiền trên đơn đã COMPLETED, kèm mã vận đơn CHIỀU HOÀN cho kho quét.
+  // Chạy TRƯỚC ước tính phí (12/10): đơn vừa đổi cờ hoàn cần hỏi lại escrow ngay.
   try {
     const ret = await syncShopeeReturns(channel, {
       daysBack: opts.deep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
     });
+    escrowCodes.push(...ret.changedOrderCodes);
     if (ret.flagged > 0 || ret.unflagged > 0 || ret.trackingSaved > 0) {
       console.log(
         `[Auto-sync] Đơn hoàn Shopee "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ (yêu cầu hủy), ${ret.trackingSaved} mã vận đơn hoàn, ${ret.ordersFetched} đơn cũ kéo mới`
@@ -592,6 +579,30 @@ async function runFastTier(
   } catch (err) {
     console.error(
       `[Auto-sync] Lỗi quét đơn hoàn Shopee "${channel.shopName}":`,
+      (err as Error).message
+    );
+  }
+
+  // --- Phí ƯỚC TÍNH cho đơn chờ đối soát (anh Trung chốt 12/10, lát B băng
+  // thông worker): mỗi lượt chỉ hỏi đơn CHƯA CÓ SỐ (chủ shop 06/08: phí đơn mới
+  // hiện chậm) + đơn vừa đổi trạng thái giao/hoàn ở hai bước trên; lưới đỡ một
+  // lần/ngày cho đơn đã giao chưa quyết toán; gian mới nạp lịch sử thì vét hết.
+  // Số không đổi thì không ghi. isSettled vẫn false — giữ nhãn "chờ đối soát".
+  try {
+    const sweep = opts.backfill ? "all" : claimDailyEscrowSweep(channel.id) ? "delivered" : "new";
+    const est = await syncShopeePendingEscrowEstimates(channel, {
+      sweep,
+      orderCodes: escrowCodes,
+      daysBack: opts.backfill ? HISTORY_BACKFILL_DAYS : SETTLE_DAYS_BACK,
+    });
+    if (est.scanned > 0) {
+      console.log(
+        `[Auto-sync] Ước tính phí Shopee "${channel.shopName}" (${sweep}): hỏi ${est.scanned} đơn, ${est.updated} đổi số, ${est.unchanged} giữ nguyên${est.errors ? `, ${est.errors} lỗi` : ""}`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi ước tính phí gian "${channel.shopName}":`,
       (err as Error).message
     );
   }
@@ -704,9 +715,9 @@ async function runHourlyTier(
       const u = await syncTiktokUnsettledEstimates(channel, {
         daysBack: opts.backfill ? HISTORY_BACKFILL_DAYS : UNSETTLED_DAYS_BACK,
       });
-      if (u.ordersUpdated > 0) {
+      if (u.ordersUpdated > 0 || u.ordersUnchanged > 0) {
         console.log(
-          `[Auto-sync] Ước tính TikTok "${channel.shopName}": ${u.ordersUpdated} đơn chờ đối soát nhận số sàn ước tính (${u.transactions} dòng, ${u.ordersNotFound} chưa có đơn)`
+          `[Auto-sync] Ước tính TikTok "${channel.shopName}": ${u.ordersUpdated} đơn đổi số, ${u.ordersUnchanged} giữ nguyên (${u.transactions} dòng, ${u.ordersNotFound} chưa có đơn)`
         );
       }
     } catch (err) {
