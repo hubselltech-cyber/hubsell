@@ -73,7 +73,7 @@ import {
   computeTiktokProductBreakevens,
   saveCampaignProductIds,
 } from "../integrations/tiktok-ads/breakeven";
-import { TIKTOK_MARGIN_WINDOW_DAYS, type TiktokBreakeven } from "../lib/tiktok-breakeven";
+import { TIKTOK_MARGIN_WINDOW_DAYS, tiktokEstProfit, type TiktokBreakeven } from "../lib/tiktok-breakeven";
 import { avgDailySpendOf, campaignAdvice, type CampaignAdvice } from "../integrations/tiktok-ads/campaign-advice";
 import { loadMinKeepPer100, loadStepChecks, saveMinKeepPer100 } from "../integrations/tiktok-ads/advice-inputs";
 import { MIN_ORDERS_FOR_MARGIN } from "../integrations/shopee/ads-insights";
@@ -388,6 +388,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         /** Đang chạy, có tiêu tiền, mà ROI thực thấp hơn ROI mục tiêu đã đặt. */
         belowTarget: c.status === "ongoing" && roasTarget != null && roi != null && roi < roasTarget,
         breakeven: breakevenForUi(breakeven?.byCampaignRowId.get(c.id)),
+        /** Lãi/lỗ ước tính trong kỳ xem = doanh thu × biên lãi trước quảng cáo − chi phí (lib/tiktok-breakeven.ts). null = chưa có biên lãi. */
+        estProfit: tiktokEstProfit(gmv, spend, breakeven?.byCampaignRowId.get(c.id)),
         /** Loại video tự động: chế độ + lượt xét gần nhất (null = chưa cấu hình = Tắt). */
         auto: c.tiktokAutoRule ? autoStatusOf(c.tiktokAutoRule) : null,
         /** Nhận định (campaign-advice.ts) — cùng bộ chẩn đoán với trang chiến dịch và tab Hòa vốn sản phẩm (anh Trung 08/10:
@@ -417,6 +419,9 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     const spend = campaigns.reduce((s, c) => s + c.spend, 0);
     const orders = campaigns.reduce((s, c) => s + c.orders, 0);
     const gmv = campaigns.reduce((s, c) => s + c.gmv, 0);
+    // Tổng lãi/lỗ ước tính: chỉ cộng chiến dịch đã có biên lãi; cả gian chưa có thì null (thẻ số hiện "—").
+    const withProfit = campaigns.filter((c) => c.estProfit != null);
+    const estProfit = withProfit.length ? withProfit.reduce((s, c) => s + (c.estProfit as number), 0) : null;
 
     res.json({
       ...base,
@@ -433,6 +438,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         costPerOrder: orders > 0 ? spend / orders : null,
         liveCampaigns: campaigns.filter((c) => c.status === "ongoing").length,
         belowTargetCount: campaigns.filter((c) => c.belowTarget).length,
+        estProfit,
       },
       campaigns,
       series: [...seriesMap.entries()]
@@ -645,6 +651,11 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           gmv: products.reduce((s, x) => s + x.gmv, 0),
           auto: campaign.tiktokAutoRule ? autoStatusOf(campaign.tiktokAutoRule) : null,
           breakeven: breakevenForUi(campaignBreakeven),
+          estProfit: tiktokEstProfit(
+            products.reduce((s, x) => s + x.gmv, 0),
+            products.reduce((s, x) => s + x.cost, 0),
+            campaignBreakeven
+          ),
           budget: Number(campaign.budget),
           /** Chẩn đoán + việc nên làm (campaign-advice.ts) — khách tự sửa trong Seller Center, Hubsell không sửa được qua API. */
           advice: campaignAdvice({

@@ -2863,6 +2863,8 @@ export interface TiktokAdsCampaignRow {
   auto: TiktokAdsAutoStatus | null;
   /** Nhận định (campaign-advice.ts) — cùng bộ với trang chiến dịch. Vắng = backend cũ. */
   advice?: TiktokAdsCampaignAdvice | null;
+  /** Lãi/lỗ ước tính kỳ xem = doanh thu × biên lãi trước quảng cáo − chi phí; null = chưa có biên lãi. Vắng = backend cũ. */
+  estProfit?: number | null;
 }
 
 export type TiktokAdsAutoMode = "off" | "dry_run" | "live";
@@ -2936,6 +2938,8 @@ export interface TiktokAdsDashboard {
     costPerOrder: number | null;
     liveCampaigns: number;
     belowTargetCount: number;
+    /** Tổng lãi/lỗ ước tính của các chiến dịch đã có biên lãi; null = cả gian chưa có. Vắng = backend cũ. */
+    estProfit?: number | null;
   } | null;
   campaigns: TiktokAdsCampaignRow[];
   series: { date: string; spend: number; gmv: number; orders: number }[];
@@ -3054,6 +3058,8 @@ export interface TiktokAdsCampaignVideos {
     gmv: number;
     auto: TiktokAdsAutoStatus | null;
     breakeven: TiktokAdsBreakeven | null;
+    /** Lãi/lỗ ước tính kỳ xem (cùng công thức cột ở Tổng quan). Vắng = backend cũ. */
+    estProfit?: number | null;
     /** Ngân sách ngày; 0 = không rõ / không giới hạn. */
     budget: number;
     /** Chẩn đoán + việc nên làm (backend campaign-advice.ts). Khách tự sửa trong Seller Center — API không sửa được chiến dịch. */

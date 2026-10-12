@@ -13,8 +13,9 @@
 //     tab này; đã nối → mở Tổng quan, gian chưa nối chỉ còn con số vàng trên tab.
 //   · đã nối    → thẻ số + biểu đồ + bảng campaign (ROI thực so ROI mục tiêu),
 //                 bấm một campaign để soi video tiêu tiền không ra đơn.
-// Chưa có ROAS hòa vốn: lợi nhuận đơn TikTok đã trừ phí GMV Max trong quyết
-// toán, biên lãi "chưa trừ ads" phải bóc riêng (đợt sau).
+// Hòa vốn (18/09): biên lãi trước quảng cáo tính từ đơn đã đối soát, đã cộng ngược
+// phí GMV Max sàn trừ trong quyết toán (tiktok-breakeven.tsx). Cột "Lãi/lỗ ước
+// tính" (12/10, khách xin giống Shopee) = doanh thu × biên lãi đó − chi phí.
 // ============================================================
 
 import { useEffect, useMemo, useState } from "react";
@@ -40,6 +41,7 @@ import {
 } from "@/components/ads/tiktok-campaign-status";
 import { AUTO_MODE_BADGE } from "@/components/ads/tiktok-campaign-page";
 import { TiktokProductBreakevenTab } from "@/components/ads/tiktok-product-breakeven-tab";
+import { HintIcon } from "@/components/finance/hint-icon";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { AppShell } from "@/components/shell/app-shell";
@@ -68,7 +70,7 @@ import { RANGE_PRESETS, formatRangeLabel, toDateKey, type DateRange } from "@/li
 import { formatNumber, formatVND } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
-import { TEXT_NUMBER_STRONG, TEXT_SUB } from "@/lib/typography";
+import { TEXT_NUMBER_STRONG, TEXT_SUB, moneyTone } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
@@ -246,6 +248,31 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
           }
         >
           {formatRoi(c.roi)}
+        </span>
+      );
+    },
+  },
+  {
+    id: "estProfit",
+    size: 140,
+    meta: { label: "Lãi/lỗ ước tính", align: "right" },
+    header: () => (
+      <span className="inline-flex items-center gap-1">
+        Lãi/lỗ ước tính
+        <HintIcon hint="Doanh thu GMV Max × biên lãi trước quảng cáo (1 ÷ Hòa vốn) − chi phí trong kỳ. Cùng rổ số với ROI thực: ROI trên hòa vốn thì số này dương, dưới thì âm. Là ước tính vì đơn trong kỳ chưa đối soát; doanh thu GMV Max gồm cả đơn tự nhiên của sản phẩm trong chiến dịch." />
+      </span>
+    ),
+    cell: ({ row }) => {
+      const c = row.original;
+      if (c.estProfit == null) return <span className="text-slate-400">—</span>;
+      // Mượn biên lãi toàn gian (chiến dịch chưa đủ đơn đã đối soát) → số thô: tô nhạt + nói rõ khi trỏ chuột.
+      const borrowed = c.breakeven?.source === "shop";
+      return (
+        <span
+          className={cn(TEXT_NUMBER_STRONG, moneyTone(c.estProfit), borrowed && "opacity-60")}
+          title={borrowed ? "Tạm tính theo biên lãi toàn gian — chiến dịch chưa đủ 5 đơn đã đối soát có giá vốn" : undefined}
+        >
+          {formatVND(c.estProfit)}
         </span>
       );
     },
@@ -621,7 +648,7 @@ export function TiktokAdsPage() {
               <p className="text-sm text-muted-foreground">Đang kéo số 30 ngày từ TikTok, bảng sẽ tự hiện sau ít giây…</p>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
               <StatCard
                 label="Chi phí quảng cáo"
                 value={<Money value={summary?.spend ?? 0} />}
@@ -657,6 +684,14 @@ export function TiktokAdsPage() {
                 subtitle={
                   summary?.costPerOrder != null ? `Chi phí mỗi đơn ${formatVND(summary.costPerOrder)}` : "Chưa có đơn"
                 }
+              />
+              <StatCard
+                label="Lãi/lỗ ước tính"
+                value={summary?.estProfit == null ? "—" : <Money value={summary.estProfit} />}
+                icon={Megaphone}
+                tone={summary?.estProfit == null ? "neutral" : summary.estProfit >= 0 ? "positive" : "negative"}
+                colorValue={summary?.estProfit != null}
+                subtitle={summary?.estProfit == null ? "Chưa có đơn đã đối soát để tính biên lãi" : "Doanh thu × biên lãi trước quảng cáo − chi phí"}
               />
             </div>
 

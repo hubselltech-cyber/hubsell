@@ -258,6 +258,27 @@ export function toTiktokBreakeven(base: BreakevenBase, source: "campaign" | "sho
   };
 }
 
+// ------------------------------------------------------------
+// Lãi/lỗ ước tính của một chiến dịch trong kỳ xem (cột "Lãi/lỗ ước tính", 12/10/2026 — khách xin giống Shopee)
+// ------------------------------------------------------------
+//
+//   lãi ước tính = doanh thu GMV Max × biên lãi TRƯỚC quảng cáo − chi phí quảng cáo
+//
+// Cùng rổ số với "ROI thực" (doanh thu ÷ chi phí): ROI trên hòa vốn thì số dương, dưới thì âm, đổi dấu đúng tại hòa vốn.
+// Không trừ ads hai lần: phí GMV Max sàn trừ trong quyết toán đơn đã được cộng ngược khi tính biên lãi.
+// Là ƯỚC TÍNH vì: biên lãi lấy từ đơn ĐÃ ĐỐI SOÁT 60 ngày (lứa cũ) áp vào doanh thu kỳ xem (đơn chưa đối soát); doanh thu
+// GMV Max gồm cả đơn tự nhiên của sản phẩm trong chiến dịch (định nghĩa của TikTok) nên đây là lãi của SẢN PHẨM sau quảng
+// cáo, không phải phần lãi "quảng cáo đẻ thêm". ★ Mẫu số (gross_revenue có rút đơn hủy hay không) vẫn là giả định chưa kiểm
+// bằng số prod — dòng "Đối chiếu doanh thu" trong ô Hòa vốn là chỗ kiểm (docs/ADS-TIKTOK-GMV-MAX.md mục 8).
+// Biên lãi ≤ 0 ("lỗ sẵn") vẫn tính: ra số âm sâu hơn cả tiền ads, đúng với thực tế bán đã lỗ trước quảng cáo.
+
+/** Lãi/lỗ ước tính; null khi chưa có biên lãi (chiến dịch lẫn gian đều chưa đủ đơn đã đối soát có giá vốn). Thuần. */
+export function tiktokEstProfit(gmv: number, spend: number, breakeven: Pick<TiktokBreakeven, "margin"> | null | undefined): number | null {
+  const margin = breakeven?.margin;
+  if (margin == null || !Number.isFinite(margin)) return null;
+  return gmv * margin - spend;
+}
+
 /** Doanh thu MỌI đơn đặt (kể cả hủy / đang giao) trên tập SKU, ngày tạo (giờ VN) trong [from, to] — để so với doanh thu TikTok báo. Thuần. */
 export function placedRevenue(rows: BreakevenPnlRow[], skuSet: ReadonlySet<string>, from: string, to: string): number {
   let sum = 0;

@@ -388,6 +388,16 @@ Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không 
   Chiến dịch < `MIN_ORDERS_FOR_MARGIN` (5) đơn giao thành → mượn biên lãi toàn gian (`source: "shop"`).
 - **Nơi hiện**: cột Hòa vốn (Tổng quan) · đầu trang chiến dịch · popup cấu hình NHẮC khi ROI mục tiêu / mức loại dưới
   hòa vốn, KHÔNG tự sửa ngưỡng của khách.
+- ★ **CỘT "LÃI/LỖ ƯỚC TÍNH"** (12/10/2026, khách xin giống Shopee, anh Trung "làm luôn"): `tiktokEstProfit` (lib thuần,
+  3 test) = **doanh thu GMV Max kỳ xem × biên lãi trước quảng cáo (1 ÷ Hòa vốn) − chi phí kỳ xem**. Cùng rổ số với ROI
+  thực nên đổi dấu đúng tại hòa vốn (có test khớp dấu). Không trừ ads hai lần vì biên lãi đã cộng ngược phí GMV Max.
+  Dashboard trả `estProfit` từng chiến dịch + `summary.estProfit` (chỉ cộng chiến dịch có biên lãi, cả gian chưa có →
+  null → thẻ "—"); route chiến dịch cũng trả `estProfit` (FE chi tiết chưa hiện). UI: cột sau ROI thực, thẻ số thứ 5
+  (lưới 2/3/5 cột như Shopee), mượn biên lãi gian (`source = shop`) → tô nhạt + title. Giới hạn ghi trong tooltip: biên lãi
+  lứa đã đối soát áp vào doanh thu chưa đối soát; doanh thu GMV Max gồm cả đơn tự nhiên → đây là lãi của SẢN PHẨM sau
+  quảng cáo, không phải phần "quảng cáo đẻ thêm". ⏳ Giả định mẫu số (dòng "Đối chiếu doanh thu") VẪN CHƯA kiểm bằng số
+  prod — anh trỏ ô Hòa vốn TC054 đọc X · Y; lệch > 10% thì phải hiệu chỉnh cột này. Phương án "lãi thật từ sổ cái" bị
+  gác: đơn kỳ xem chưa đối soát, ra lỗ ảo; hợp cho cột "Lãi thực hiện" khi khoảng xem đã lùi đủ xa. Từng video: để sau.
 - ★ **MỨC LOẠI THEO HÒA VỐN** (anh Trung duyệt 18/09): `AutoRuleConfig.hardBasis` `pct` (mặc định) | `breakeven`.
   `auto-rules.ts` `resolveHardLevel(cfg, breakeven)` → `{hardRoi, basis, fallbackReason, label}`; `planAutoExclusion`
   nhận thêm `breakeven`, trả `plan.hard`. Hòa vốn chỉ được dùng khi `breakevenUnusableReason` rỗng: biên lãi RIÊNG của

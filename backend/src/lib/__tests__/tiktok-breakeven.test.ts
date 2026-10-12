@@ -19,6 +19,7 @@ import {
   tiktokBreakevenBase,
   tiktokBreakevenBaseByGroup,
   tiktokCampaignCheckOf,
+  tiktokEstProfit,
   tiktokGroupMappingOf,
   toTiktokBreakeven,
   type BreakevenPnlRow,
@@ -344,5 +345,33 @@ describe("mặt tiền ChannelBreakevens — hai đường cộng cùng một c�
     expect([...be.productBases().keys()]).toEqual(["100"]);
     expect(be.productPace().get("100")).toEqual({ units7d: 1, units30d: 3 });
     expect(be.productPace().get("200")).toEqual({ units7d: 0, units30d: 1 });
+  });
+});
+
+// LÃI/LỖ ƯỚC TÍNH (12/10/2026) = doanh thu × biên lãi trước quảng cáo − chi phí; cùng rổ với ROI thực nên đổi dấu đúng tại hòa vốn.
+describe("tiktokEstProfit", () => {
+  it("ROI trên hòa vốn → dương; dưới → âm; đúng bằng 0 tại hòa vốn", () => {
+    const be = { margin: 0.2 }; // hòa vốn = 5
+    expect(tiktokEstProfit(6_000_000, 1_000_000, be)).toBeCloseTo(200_000); // ROI 6 > 5
+    expect(tiktokEstProfit(4_000_000, 1_000_000, be)).toBeCloseTo(-200_000); // ROI 4 < 5
+    expect(tiktokEstProfit(5_000_000, 1_000_000, be)).toBeCloseTo(0);
+  });
+  it("chưa có biên lãi → null; biên lãi âm (lỗ sẵn) → âm sâu hơn cả tiền ads", () => {
+    expect(tiktokEstProfit(1_000_000, 100_000, null)).toBeNull();
+    expect(tiktokEstProfit(1_000_000, 100_000, { margin: null })).toBeNull();
+    expect(tiktokEstProfit(1_000_000, 100_000, { margin: -0.1 })).toBeCloseTo(-200_000);
+    expect(tiktokEstProfit(0, 0, { margin: 0.2 })).toBe(0);
+  });
+  it("khớp dấu với so sánh ROI thực ↔ hòa vốn của toTiktokBreakeven", () => {
+    const be = toTiktokBreakeven(
+      { settledOrders: 5, cancelledOrders: 0, revenue: 1_000_000, profitBeforeAds: 175_000, adFee: 0, missingCostRevenue: 0, pendingOrders: 0 },
+      "campaign"
+    );
+    const spend = 1_218_615;
+    for (const gmv of [17_788_694, 6_000_000, 7_000_000]) {
+      const roi = gmv / spend;
+      const est = tiktokEstProfit(gmv, spend, be)!;
+      expect(est >= 0).toBe(roi >= be.breakevenRoi!);
+    }
   });
 });
