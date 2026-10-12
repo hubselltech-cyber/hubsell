@@ -281,8 +281,10 @@ export const PLAN_FEATURES = [
   "Đồng bộ đơn hàng & tồn kho Shopee, Lazada, TikTok",
   "Báo cáo tài chính — lãi/lỗ thực theo đối soát sàn",
   "Trợ lý quảng cáo: ROAS hòa vốn, cảnh báo cắt lỗ",
-  "Trợ lý vận hành & chat CSKH đa kênh",
-  "Cứu đơn giao thất bại, quản lý hoàn/trả",
+  // 12/10/2026: bỏ "chat CSKH" + "Cứu đơn giao thất bại" — hai tính năng đã ẩn
+  // (anh Trung chốt, xem docs/CUU-DON-API-NHAN-KHACH-KHAO-SAT.md mục 6).
+  "Trợ lý vận hành: tự phản hồi đánh giá đa kênh",
+  "Quản lý hoàn/trả, đối soát phí ship & phí sàn",
   "Phân quyền nhân viên, chuông cảnh báo & báo cáo tự động",
 ];
 
