@@ -24,6 +24,7 @@ import {
   syncTiktokSettlements,
   syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
+import { tiktokNeedsReauthForStockPush } from "../integrations/tiktok/scopes";
 import {
   isLazadaConfigured,
   buildAuthorizeUrl as buildLazadaAuthorizeUrl,
@@ -128,6 +129,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
           // theo kỳ đăng ký dịch vụ 6 tháng, FE hiện "Kỳ dịch vụ đến…" + nút Gia hạn.
           refreshTokenExpireAt,
           matchedProductCount: matchedByChannel.get(c.id) ?? 0,
+          // Gian TikTok ủy quyền TRƯỚC khi app Hubsell bật quyền sửa tồn (12/10/2026):
+          // token cũ không có quyền → trang Kênh bán hiện nút Kết nối lại dù gian
+          // đang hoạt động (integrations/tiktok/scopes.ts).
+          needsReauth: tiktokNeedsReauthForStockPush(c),
         };
       })
     );

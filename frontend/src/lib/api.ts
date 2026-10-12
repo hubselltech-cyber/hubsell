@@ -2651,6 +2651,11 @@ export interface Channel {
   lastSyncError?: string | null;
   /** Thời điểm gian chuyển sang ngắt kết nối (ISO); null khi đang nối. */
   disconnectedAt?: string | null;
+  /**
+   * Gian TikTok ủy quyền TRƯỚC khi app Hubsell có quyền sửa tồn (12/10/2026):
+   * đẩy tồn bị sàn từ chối cho tới khi Kết nối lại. Backend cũ không trả.
+   */
+  needsReauth?: boolean;
 }
 
 /** TẦNG 2 — một sản phẩm thô kéo từ gian hàng về. */

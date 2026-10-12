@@ -1186,6 +1186,17 @@ export default function ChannelsPage() {
                                   </p>
                                 );
                               })()}
+                            {/* TikTok: gian ủy quyền trước khi app Hubsell bật quyền sửa tồn
+                                (12/10/2026) → token cũ thiếu quyền, đẩy tồn bị sàn từ chối.
+                                Nói rõ + nút Kết nối lại nằm bên phải (gian vẫn đang hoạt động,
+                                KHÔNG cần Ngắt kết nối). */}
+                            {c.channelName === "TIKTOK" && active && c.apiConnected && c.needsReauth && (
+                              <p className={cn(TEXT_SUB, "flex items-center gap-x-1.5 text-amber-600")}>
+                                <PlugZap className="size-3 shrink-0" />
+                                Gian ủy quyền trước khi TikTok cấp cho Hubsell quyền sửa tồn kho — bấm
+                                Kết nối lại để đẩy được tồn; đơn và đối soát vẫn chạy bình thường.
+                              </p>
+                            )}
                             {/* Shopee / TikTok: quyền của shop với app có THỜI HẠN đặt lúc ủy quyền
                                 trên sàn. Hiện ngày hết hạn (chữ đỏ, anh Trung 03/10/2026) để chủ
                                 shop biết trước; gian đã ngắt vì hết hạn thì nói rõ lý do (không
@@ -1299,6 +1310,20 @@ export default function ChannelsPage() {
                                     Giả lập đơn
                                   </Button>
                                 ) : null}
+                                {/* Gian TikTok thiếu quyền sửa tồn: ủy quyền lại ĐÚNG gian này
+                                    (handleReconnect ký id vào state), không phải ngắt rồi nối. */}
+                                {c.channelName === "TIKTOK" && c.apiConnected && c.needsReauth && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-amber-300 text-amber-700"
+                                    onClick={() => handleReconnect(c)}
+                                    title="Ủy quyền lại trên TikTok để Hubsell có quyền sửa tồn kho cho gian này"
+                                  >
+                                    <PlugZap className="size-3.5" />
+                                    Kết nối lại
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="outline"
