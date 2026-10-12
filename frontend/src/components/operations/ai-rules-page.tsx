@@ -50,9 +50,20 @@ const STAR_SWITCH_ROWS: { star: StarLevel; dot: string; note?: string }[] = [
 /** Hai tab của màn Cấu hình kịch bản AI (pill-tab tự làm — app chưa có ui/tabs). */
 type AiRulesTab = "reviews" | "delivery-fail";
 
+/**
+ * 12/10/2026 anh Trung chốt ẨN tab "Cứu đơn giao thất bại" ("có dùng được
+ * đâu mà giữ"): chưa sàn nào nhắn khách được (Shopee từ chối Chat API cho app
+ * ISV, TikTok đòi ≥1.000 gian ủy quyền, Lazada chưa có nhóm quyền IM) — không
+ * phơi tính năng chưa chạy cho đối thủ. Backend cùng cờ DELIVERY_FAIL_FEATURE
+ * (shopee/delivery-fail.ts) tắt worker + chuông + thẻ. Mở lại: đổi 2 cờ.
+ */
+const DELIVERY_FAIL_FEATURE = false;
+
 const TAB_ITEMS: { id: AiRulesTab; label: string }[] = [
   { id: "reviews", label: "Phản hồi đánh giá" },
-  { id: "delivery-fail", label: "Cứu đơn giao thất bại" },
+  ...(DELIVERY_FAIL_FEATURE
+    ? [{ id: "delivery-fail" as const, label: "Cứu đơn giao thất bại" }]
+    : []),
 ];
 
 export function OperationsAiRulesPage() {
@@ -62,7 +73,7 @@ export function OperationsAiRulesPage() {
   const [tab, setTab] = useState<AiRulesTab>("reviews");
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get("tab");
-    if (wanted === "delivery-fail") setTab("delivery-fail");
+    if (wanted === "delivery-fail" && DELIVERY_FAIL_FEATURE) setTab("delivery-fail");
   }, []);
 
   // ── Cấu hình tự trả lời đánh giá (MÁY CHỦ — worker chạy mỗi shop 1 lần/ngày) ──
@@ -144,7 +155,9 @@ export function OperationsAiRulesPage() {
 
   return (
     <OperationsFrame>
-      {/* ===== THANH PILL-TAB: Phản hồi đánh giá | Giao không thành công ===== */}
+      {/* ===== THANH PILL-TAB: Phản hồi đánh giá | Cứu đơn giao thất bại =====
+          (chỉ vẽ khi có từ 2 tab — tab Cứu đơn đang ẩn thì trang là một màn) */}
+      {TAB_ITEMS.length > 1 ? (
       <div className="flex w-fit gap-1 rounded-lg bg-muted p-1">
         {TAB_ITEMS.map((t) => (
           <button
@@ -162,6 +175,7 @@ export function OperationsAiRulesPage() {
           </button>
         ))}
       </div>
+      ) : null}
 
       {tab === "delivery-fail" ? (
         <DeliveryFailTab />

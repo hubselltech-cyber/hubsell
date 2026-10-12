@@ -56,7 +56,18 @@ import { cn } from "@/lib/utils";
  * là mặt cấu hình + báo cáo: dải StatCard (cùng khuôn thẻ chỉ số Tổng quan),
  * 2 công tắc lưu ngay khi gạt, mẫu tin chỉnh xong bấm Lưu, nhật ký dùng bộ
  * Table quy chuẩn — mọi thứ ăn theo design system, không tự chế kiểu riêng.
+ *
+ * 12/10/2026 anh Trung chốt ẨN nhánh "tự nhắn khách" (AUTO_CHAT_FEATURE=false):
+ * chưa sàn nào nhắn được (Shopee từ chối Chat API cho app ISV, TikTok đòi
+ * ≥1.000 gian ủy quyền, Lazada chưa có nhóm quyền IM) — không phơi tính năng
+ * chưa chạy cho đối thủ. Giấu: công tắc chat + tooltip nợ tích hợp, khối mẫu
+ * tin, cột "Nhắn khách", phụ đề "đã nhắn khách X/Y". Backend cùng cờ
+ * DELIVERY_FAIL_AUTO_CHAT_FEATURE (shopee/delivery-fail.ts). Bật lại khi
+ * TikTok đủ 1.000 gian (làm TikTok + Lazada một thể): đổi 2 cờ là đủ.
  */
+
+/** Cờ tính năng tự nhắn khách — xem chú thích đầu tệp. */
+const AUTO_CHAT_FEATURE = false;
 
 const TEMPLATE_VARS = ["{ten_khach}", "{ma_don}", "{ten_san_pham}"] as const;
 
@@ -198,7 +209,9 @@ export function DeliveryFailTab() {
             // Trung thực với công của mình (anh Trung 26/08): tách rõ phần đã
             // nhắn khách — phần còn lại là shipper tự giao lại thành công.
             saveRate !== null
-              ? `Tỷ lệ cứu ${saveRate}% — đã nhắn khách ${formatNumber(summary?.savedMessaged ?? 0)}/${formatNumber(summary?.saved ?? 0)} đơn`
+              ? AUTO_CHAT_FEATURE
+                ? `Tỷ lệ cứu ${saveRate}% — đã nhắn khách ${formatNumber(summary?.savedMessaged ?? 0)}/${formatNumber(summary?.saved ?? 0)} đơn`
+                : `Tỷ lệ cứu ${saveRate}% trên các đơn đã có kết quả`
               : "Giao thành công, không hoàn (số tham khảo)"
           }
         />
@@ -249,6 +262,8 @@ export function DeliveryFailTab() {
             />
           </div>
 
+          {AUTO_CHAT_FEATURE ? (
+          <>
           <div className="flex items-start gap-3.5 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-violet-50">
               <MessageSquare className="size-5 text-violet-600" />
@@ -328,6 +343,8 @@ export function DeliveryFailTab() {
               </Button>
             </div>
           </div>
+          </>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -379,7 +396,7 @@ export function DeliveryFailTab() {
                   </TableHead>
                   <TableHead>Phát hiện lúc</TableHead>
                   <TableHead>Kết quả</TableHead>
-                  <TableHead>Nhắn khách</TableHead>
+                  {AUTO_CHAT_FEATURE ? <TableHead>Nhắn khách</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -424,6 +441,7 @@ export function DeliveryFailTab() {
                       <TableCell>
                         <Badge className={outcome.className}>{outcome.label}</Badge>
                       </TableCell>
+                      {AUTO_CHAT_FEATURE ? (
                       <TableCell className="whitespace-normal">
                         <Badge className={chat.className}>{chat.label}</Badge>
                         {n.chatStatus === "FAILED" && n.chatError ? (
@@ -445,6 +463,7 @@ export function DeliveryFailTab() {
                           </p>
                         ) : null}
                       </TableCell>
+                      ) : null}
                     </TableRow>
                   );
                 })}

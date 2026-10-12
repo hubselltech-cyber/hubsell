@@ -54,6 +54,7 @@ import {
 import {
   classifyDeliveryFailOutcome,
   countFailedDeliveries,
+  DELIVERY_FAIL_AUTO_CHAT_FEATURE,
   effectiveDeliveryFailConfig,
   mergeDeliveryFailOutcome,
 } from "../integrations/shopee/delivery-fail";
@@ -1267,23 +1268,30 @@ router.get("/delivery-fail/config", async (req: AuthRequest, res, next) => {
 router.put("/delivery-fail/config", async (req: AuthRequest, res, next) => {
   try {
     const { alertEnabled, autoChatEnabled, chatTemplate } = req.body ?? {};
-    if (
-      typeof alertEnabled !== "boolean" ||
-      typeof autoChatEnabled !== "boolean" ||
-      typeof chatTemplate !== "string"
-    ) {
-      res.status(400).json({ error: "Thiếu alertEnabled / autoChatEnabled / chatTemplate" });
+    if (typeof alertEnabled !== "boolean") {
+      res.status(400).json({ error: "Thiếu alertEnabled" });
       return;
     }
-    const data = {
-      alertEnabled,
-      autoChatEnabled,
-      chatTemplate: chatTemplate.trim().slice(0, 1000),
-    };
+    // Tính năng tự nhắn khách đang ẨN (DELIVERY_FAIL_AUTO_CHAT_FEATURE=false,
+    // anh Trung chốt 12/10/2026): chỉ ghi cờ cảnh báo, GIỮ NGUYÊN 2 trường chat
+    // chủ shop từng lưu — FE không gửi lên, mà có gửi cũng không ghi đè.
+    if (
+      DELIVERY_FAIL_AUTO_CHAT_FEATURE &&
+      (typeof autoChatEnabled !== "boolean" || typeof chatTemplate !== "string")
+    ) {
+      res.status(400).json({ error: "Thiếu autoChatEnabled / chatTemplate" });
+      return;
+    }
+    const chatData = DELIVERY_FAIL_AUTO_CHAT_FEATURE
+      ? {
+          autoChatEnabled: autoChatEnabled as boolean,
+          chatTemplate: (chatTemplate as string).trim().slice(0, 1000),
+        }
+      : {};
     const row = await prisma.deliveryFailConfig.upsert({
       where: { ownerId: req.ownerId! },
-      create: { ownerId: req.ownerId!, ...data },
-      update: data,
+      create: { ownerId: req.ownerId!, alertEnabled, ...chatData },
+      update: { alertEnabled, ...chatData },
     });
     res.json(effectiveDeliveryFailConfig(row));
   } catch (err) {

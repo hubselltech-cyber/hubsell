@@ -291,6 +291,31 @@ export function nextDetectDelayMs(events: ShopeeTrackingEvent[], nowMs: number):
   return DETECT_ACTIVE_INTERVAL_MS;
 }
 
+/**
+ * CỜ TÍNH NĂNG "tự nhắn khách qua chat sàn" — anh Trung chốt 12/10/2026: ẨN
+ * HẲN vì chưa sàn nào chạy được (Shopee từ chối Chat API cho app ISV 16/09;
+ * TikTok đòi ≥1.000 gian ủy quyền mới cấp scope Customer Service; Lazada cần
+ * nhóm quyền IM chưa xin) — không phơi tính năng chưa làm được cho đối thủ.
+ * Tắt cờ = cấu hình hiệu lực luôn autoChatEnabled=false (worker không gọi
+ * sàn, không ghi SKIPPED), route PUT bỏ qua 2 trường chat, FE giấu công tắc +
+ * mẫu tin + cột Nhắn khách. Giá trị DB của chủ shop GIỮ NGUYÊN để bật lại
+ * (mốc: TikTok đủ 1.000 gian → làm TikTok + Lazada một thể) chỉ cần đổi cờ
+ * này + AUTO_CHAT_FEATURE phía FE. Khảo sát: docs/CUU-DON-API-NHAN-KHACH-KHAO-SAT.md.
+ */
+export const DELIVERY_FAIL_AUTO_CHAT_FEATURE = false;
+
+/**
+ * CỜ TÍNH NĂNG "Cứu đơn giao thất bại" TOÀN BỘ — anh Trung chốt 12/10/2026
+ * (cùng phiên, sau cờ auto-chat): ẨN LUÔN tab + chuông + thẻ Trung tâm điều
+ * hành ("có dùng được đâu mà giữ"). Tắt cờ = cấu hình hiệu lực alertEnabled=
+ * false → 3 worker (Shopee/TikTok/Lazada) không quét tracking (tiết kiệm
+ * quota sàn), không phát chuông, ops-alerts không dựng thẻ; bảng
+ * DeliveryFailConfig/Notice/TrackingTask GIỮ NGUYÊN, routes vẫn sống. Mở lại
+ * khi nối được chat (TikTok đủ 1.000 gian → làm TikTok + Lazada): đổi cờ này
+ * + DELIVERY_FAIL_FEATURE phía FE (ai-rules-page.tsx) + trả bước tour.
+ */
+export const DELIVERY_FAIL_FEATURE = false;
+
 /** Cấu hình HIỆU LỰC: chưa có dòng DB = cảnh báo BẬT, auto-chat TẮT. */
 export interface EffectiveDeliveryFailConfig {
   alertEnabled: boolean;
@@ -303,8 +328,12 @@ export function effectiveDeliveryFailConfig(
   row: { alertEnabled: boolean; autoChatEnabled: boolean; chatTemplate: string } | null
 ): EffectiveDeliveryFailConfig {
   return {
-    alertEnabled: row?.alertEnabled ?? true,
-    autoChatEnabled: row?.autoChatEnabled ?? false,
+    // Cờ tính năng tắt → cả hai luôn TẮT dù DB ghi gì (xem chú thích 2 cờ).
+    alertEnabled: DELIVERY_FAIL_FEATURE && (row?.alertEnabled ?? true),
+    autoChatEnabled:
+      DELIVERY_FAIL_FEATURE &&
+      DELIVERY_FAIL_AUTO_CHAT_FEATURE &&
+      (row?.autoChatEnabled ?? false),
     chatTemplate: row?.chatTemplate.trim() || DEFAULT_CHAT_TEMPLATE,
   };
 }

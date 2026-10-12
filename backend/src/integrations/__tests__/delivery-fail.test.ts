@@ -9,6 +9,8 @@ import {
   classifyOutcomeFromTracking,
   countFailedDeliveries,
   DEFAULT_CHAT_TEMPLATE,
+  DELIVERY_FAIL_AUTO_CHAT_FEATURE,
+  DELIVERY_FAIL_FEATURE,
   DETECT_ACTIVE_INTERVAL_MS,
   DETECT_IDLE_INTERVAL_MS,
   effectiveDeliveryFailConfig,
@@ -305,15 +307,27 @@ describe("chatSkipReason", () => {
 });
 
 describe("effectiveDeliveryFailConfig", () => {
-  it("chưa có dòng DB → cảnh báo BẬT, auto-chat TẮT, template mặc định", () => {
+  it("chưa có dòng DB → cảnh báo BẬT (khi tính năng mở), auto-chat TẮT, template mặc định", () => {
     expect(effectiveDeliveryFailConfig(null)).toEqual({
-      alertEnabled: true,
+      // 12/10/2026 anh Trung chốt ẨN cả tính năng → cờ tắt thì cảnh báo cũng TẮT.
+      alertEnabled: DELIVERY_FAIL_FEATURE,
       autoChatEnabled: false,
       chatTemplate: DEFAULT_CHAT_TEMPLATE,
     });
   });
 
-  it("template chủ shop xoá trắng → rơi về mặc định, cờ giữ nguyên", () => {
+  it("tính năng Cứu đơn đang ẨN (12/10/2026): DB bật cảnh báo vẫn ra TẮT → worker không quét", () => {
+    expect(DELIVERY_FAIL_FEATURE).toBe(false);
+    const cfg = effectiveDeliveryFailConfig({
+      alertEnabled: true,
+      autoChatEnabled: true,
+      chatTemplate: "",
+    });
+    expect(cfg.alertEnabled).toBe(false);
+    expect(cfg.autoChatEnabled).toBe(false);
+  });
+
+  it("template chủ shop xoá trắng → rơi về mặc định, cờ cảnh báo giữ nguyên", () => {
     expect(
       effectiveDeliveryFailConfig({
         alertEnabled: false,
@@ -322,8 +336,21 @@ describe("effectiveDeliveryFailConfig", () => {
       })
     ).toEqual({
       alertEnabled: false,
-      autoChatEnabled: true,
+      // Cờ tính năng tắt (12/10/2026) → auto-chat luôn TẮT dù DB ghi true;
+      // bật lại cờ thì giá trị DB phải được tôn trọng.
+      autoChatEnabled: DELIVERY_FAIL_FEATURE && DELIVERY_FAIL_AUTO_CHAT_FEATURE,
       chatTemplate: DEFAULT_CHAT_TEMPLATE,
     });
+  });
+
+  it("tính năng tự nhắn khách đang ẨN: DB bật vẫn ra TẮT (12/10/2026)", () => {
+    expect(DELIVERY_FAIL_AUTO_CHAT_FEATURE).toBe(false);
+    expect(
+      effectiveDeliveryFailConfig({
+        alertEnabled: true,
+        autoChatEnabled: true,
+        chatTemplate: "xin chào",
+      }).autoChatEnabled
+    ).toBe(false);
   });
 });

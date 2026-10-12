@@ -124,9 +124,9 @@ const SECTIONS: GuideSection[] = [
   {
     key: "money-guard",
     icon: ShieldCheck,
-    title: "Giữ tiền: đơn hoàn, phí ship, giao thất bại",
+    title: "Giữ tiền: đơn hoàn, phí ship, phí sàn",
     description:
-      "Quét nhận hàng hoàn, khiếu nại kiện quá hạn, đòi lại phí ship sàn trừ thêm, kiểm toán phí sàn và tự nhắn khách khi shipper giao hỏng.",
+      "Quét nhận hàng hoàn, khiếu nại kiện quá hạn, đòi lại phí ship sàn trừ thêm và kiểm toán phí sàn.",
     tour: MONEY_GUARD_TOUR,
   },
   {

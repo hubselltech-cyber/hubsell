@@ -65,7 +65,6 @@ function writeDismissed(on: boolean) {
 const OWNER_FEATURES = [
   "Kết quả hôm nay: doanh thu, lợi nhuận ròng, tiền đã về ngân hàng — cùng con số với bản web.",
   "Đơn hàng của mọi sàn theo trạng thái, lọc riêng đơn hỏa tốc, tìm theo mã đơn hay tên khách.",
-  "Trả lời tin nhắn khách Shopee, TikTok Shop, Lazada ngay trên máy, gửi được ảnh.",
   "Hỏi Trợ lý Hubsell bằng tiếng Việt tự nhiên, nhận số liệu thật của shop.",
 ];
 

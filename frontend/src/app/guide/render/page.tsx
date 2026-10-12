@@ -39,7 +39,7 @@ const TOURS: Record<string, { tour: GuideTour; title: string }> = {
   donhang: { tour: ORDERS_TOUR, title: "Đơn hàng & đối soát dòng tiền" },
   hoadon: { tour: INVOICE_TOUR, title: "Kết nối & xuất hóa đơn điện tử" },
   taichinh: { tour: FINANCE_TOUR, title: "Báo cáo tài chính & lãi/lỗ thật" },
-  giutien: { tour: MONEY_GUARD_TOUR, title: "Giữ tiền: đơn hoàn, phí ship, giao thất bại" },
+  giutien: { tour: MONEY_GUARD_TOUR, title: "Giữ tiền: đơn hoàn, phí ship, phí sàn" },
   ads: { tour: ADS_TOUR, title: "Trợ lý quảng cáo Shopee" },
   nhansu: { tour: STAFF_PLAN_TOUR, title: "Nhân viên, gói dịch vụ & cấu hình" },
 };

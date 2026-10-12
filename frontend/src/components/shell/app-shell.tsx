@@ -85,6 +85,11 @@ interface NavChild {
    * tầng 2 là chính trang đó tự hiện thẻ "chưa mở" khi ai gõ thẳng URL.
    */
   locked?: boolean;
+  /**
+   * ẨN HẲN trang con khỏi sidebar + Ctrl+K (cùng nghĩa `hidden` của NavItem):
+   * route vẫn sống, lá quyền trong cây phân quyền giữ nguyên.
+   */
+  hidden?: boolean;
 }
 export interface NavItem {
   /**
@@ -162,12 +167,21 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    // Tự động hoá CSKH & phản hồi sàn đa kênh — chat Shopee THẬT production.
+    // Tự động hoá CSKH & phản hồi sàn đa kênh.
     label: "Trợ lý vận hành",
     icon: "smart_toy",
     perm: "operations",
     children: [
-      { href: "/operations-assistant/chat", label: "Trợ lý Chat", perm: "operations.chat" },
+      // ẨN HẲN 12/10/2026 (anh Trung "có dùng được đâu mà giữ"): chat Shopee
+      // mất từ 16/09 (sàn không cấp Chat API cho app ISV), TikTok cần ≥1.000
+      // gian ủy quyền mới xin được scope, Lazada chưa có nhóm quyền IM. Mở lại
+      // khi nối được chat: bỏ cờ hidden (route + lá quyền operations.chat còn).
+      {
+        href: "/operations-assistant/chat",
+        label: "Trợ lý Chat",
+        perm: "operations.chat",
+        hidden: true,
+      },
       { href: "/operations-assistant/reviews", label: "Phản hồi đánh giá", perm: "operations.reviews" },
       // Trước 10/08 mục này "SALES thấy menu nhưng API 403 vì là dữ liệu lãi/lỗ"
       // — cây phân quyền đã giải đúng nợ đó: có lá operations.loss-orders mới thấy.
@@ -535,6 +549,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!i.children) return i;
     const children = i.children.filter(
       (c) =>
+        !c.hidden &&
         (!c.adminOnly || isAdmin(user)) &&
         (isAdmin(user) || !c.perm || can(user, c.perm))
     );

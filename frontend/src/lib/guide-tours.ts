@@ -718,13 +718,9 @@ export const MONEY_GUARD_TOUR: GuideTour = {
       target: { x: 58.89, y: 17.32, w: 77.78, h: 16.31 },
       zoom: 1.3,
     },
-    {
-      img: `${GT}/gt-rescue.png`,
-      title: "Cứu đơn giao thất bại: nhắn khách trước khi kiện quay đầu",
-      desc: "“Cấu hình tự động hóa” → tab “Cứu đơn giao thất bại”: shipper báo giao hỏng là Hubsell cảnh báo chủ shop và tự nhắn khách qua chat sàn theo mẫu bạn soạn (Shopee). Thẻ đếm đơn được cảnh báo, cứu được, mất đơn, doanh thu giữ lại; nhật ký ghi từng đơn đã nhắn.",
-      target: { x: 58.89, y: 45, w: 77.78, h: 60 },
-      zoom: 1.2,
-    },
+    // 12/10/2026: bước "Cứu đơn giao thất bại" (gt-rescue.png) ĐÃ GỠ — anh
+    // Trung chốt ẩn cả tính năng tới khi nối được chat sàn (xem
+    // components/operations/ai-rules-page.tsx). Mở lại thì trả bước + giọng đọc.
   ],
 };
 
