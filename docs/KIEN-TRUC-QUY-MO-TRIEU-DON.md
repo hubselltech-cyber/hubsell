@@ -2,15 +2,15 @@
 
 Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **anh Trung đã duyệt hướng 30/09/2026**; giai đoạn 0 đã xong và đang chạy trên prod, giai đoạn 1 bắt đầu 30/09/2026 (thiết kế chi tiết: `docs/SO-CAI-DON.md`).
 
-## 0. Tiến độ (cập nhật 30/09/2026 tối)
+## 0. Tiến độ (cập nhật 12/10/2026)
 
 | Giai đoạn | Tình trạng |
 |---|---|
 | 0. Cầm máu | Xong phần đã chốt, đã lên prod (bản `ce65553`) |
-| 1. Sổ cái đơn | **Đang làm.** Bước 1 (30/09) đã viết xong và chạy thử đạt trên DB local (7.570 đơn khớp từng đồng, ~960 đơn/giây), CHƯA push: bảng phân mảnh theo tháng + trigger đánh dấu + worker tính lại + đối soát đêm + công cụ so khớp trên HQ; công thức Lãi/Lỗ tách sang `lib/pnl-formula.ts`. Chưa báo cáo nào đọc từ sổ. Việc kế: push để migrate lên prod, so khớp trên dữ liệu thật, rồi chuyển từng báo cáo. Chi tiết `docs/SO-CAI-DON.md` |
-| 2. Hàng đợi và webhook | **Bắt đầu 01/10/2026.** Đã thử pg-boss 12.35.1 với bộ gộp kết nối Supabase: chạy được ở cả chế độ phiên lẫn chế độ giao dịch. Bản thiết kế + thứ tự chuyển ở `docs/HANG-DOI-BEN.md`, đang chờ anh Trung duyệt; chưa viết mã |
-| 3. Đồng bộ và các worker còn lại | Chưa bắt đầu |
-| 4. Vòng đời dữ liệu và quan sát | Chưa bắt đầu (riêng chỉ mục `Order(channelId, deliveredAt)` đã tạo) |
+| 1. Sổ cái đơn | **Lên prod 30/09/2026, mọi báo cáo đọc sổ** (Báo cáo dòng tiền, Tổng quan, Lãi/Lỗ, Thuế, Đơn lỗ, SKU, Trợ lý, biên lãi quảng cáo 3 sàn); so prod 0 lệch ở mọi lượt so; worker sổ bật (`LEDGER_WORKER_ON=1`). **Còn đuôi:** (a) chưa gỡ đường lui hẹn ~07–08/10 — các công tắc `CASH_FLOW_SOURCE`, `OVERVIEW_SOURCE`, `REALIZED_PNL_SOURCE`, `TAX_SOURCE`, `LEDGER_REPORTS_SOURCE`, `ADS_MARGIN_SOURCE`, `TIKTOK_BREAKEVEN_SOURCE`, `LEDGER_SCOPE_PARAMS`, `LEDGER_WRITE_STYLE` và hàm `fetchPnlRows` vẫn còn trong mã (kiểm 12/10); (b) chưa đo tiêu chí "báo cáo tháng shop 300.000 đơn dưới 2 giây" bằng dữ liệu sinh thử. Chi tiết `docs/SO-CAI-DON.md` |
+| 2. Hàng đợi và webhook | **Gần xong.** Bước 0–4 (nền, webhook Lazada / TikTok / Shopee, đẩy tồn) lên prod 01–02/10; bước 5 hóa đơn lát 1–12 + 14 lên prod 02–03/10, lát 13 (webhook nhà cung cấp hóa đơn) hoãn tới khi có nhà cung cấp có webhook thật. Bước 6 dọn: 6a thời hạn chờ 30 giây (05/10, kiểm 08/10 giữ nguyên); 6b lần một gỡ mã đường cũ (05/10, kiểm 09/10); 6c-1→4 gỡ đường cũ hóa đơn + gom 20 tờ một lệnh (10/10, `1534d61`). **Còn:** 6b lần hai xóa `shopee_webhook_logs` / `tiktok_webhook_logs` sau 31/10 (lượt nhắc 02/11); 6c-5 webhook MISA cũ đi cùng lát 13. Chi tiết `docs/HANG-DOI-BEN.md` mục 4.7 |
+| 3. Đồng bộ và các worker còn lại | Chưa bắt đầu. Đề nghị (12/10): gỡ xong đuôi giai đoạn 1 trước khi mở, để không chồng đại tu đồng bộ lên lúc báo cáo còn hai đường chạy song song |
+| 4. Vòng đời dữ liệu và quan sát | Chưa bắt đầu (riêng chỉ mục `Order(channelId, deliveredAt)` đã tạo). Đề nghị (chưa chốt): làm trước phần rẻ — lưu giữ, chỉ mục, chỉ số HQ, test hàng rào; hoãn chia bảng `Order` theo tháng tới khi có mốc dung lượng cụ thể |
 
 Đã làm ở giai đoạn 0: bỏ trần 2.000 đơn của báo cáo; chặn đánh dấu "đã gỡ" nhầm khi danh mục chưa kéo đủ; gỡ lệnh đẩy tồn bị kẹt; bỏ quyết toán giả lập với gian sàn; đồng bộ đơn báo khi bị cắt; số cảnh báo tồn hiện tổng thật; dải nhắc kỳ vượt 20.000 đơn; các định nghĩa tài chính ở mục 9a; tờ khai theo ngày giao; Tổng quan trừ quảng cáo sàn.
 
