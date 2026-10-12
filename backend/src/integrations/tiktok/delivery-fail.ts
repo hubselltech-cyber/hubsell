@@ -38,6 +38,7 @@ import {
   TASK_ERROR_BACKOFF_MS,
   TASK_MAX_ORDER_AGE_DAYS,
   effectiveDeliveryFailConfig,
+  parkedDetectTaskData,
   type DeliveryFailOutcome,
   type DeliveryTrackingQueueResult,
 } from "../shopee/delivery-fail";
@@ -334,15 +335,17 @@ export async function processTiktokDeliveryTracking(
         continue;
       }
 
-      // Vé DETECT
+      // Vé DETECT. Hành trình đã an bài (đã giao / quay đầu không qua lượt
+      // hỏng) → ĐỖ vé, không xóa: Order còn SHIPPING thì xóa là bị phát lại
+      // nhịp sau (xem DETECT_SETTLED_PARK_MS ở shopee/delivery-fail.ts).
       if (trackedOutcome === "saved") {
-        await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+        await prisma.deliveryTrackingTask.update({ where: { id: task.id }, data: parkedDetectTaskData(Date.now()) });
         continue;
       }
       const fails = countTiktokFailedDeliveries(events);
       if (fails < DELIVERY_FAIL_THRESHOLD) {
         if (trackedOutcome === "lost") {
-          await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+          await prisma.deliveryTrackingTask.update({ where: { id: task.id }, data: parkedDetectTaskData(Date.now()) });
         } else {
           await prisma.deliveryTrackingTask.update({
             where: { id: task.id },

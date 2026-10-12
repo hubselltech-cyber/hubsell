@@ -89,6 +89,22 @@ export const DETECT_IDLE_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const DETECT_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 /** Nhịp chốt kết quả đơn đã cảnh báo — không cần real-time (chuông đã reo). */
 export const OUTCOME_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/**
+ * Vé DETECT mà hành trình đã AN BÀI (sàn báo đã giao / quay đầu không qua
+ * lượt hỏng) thì ĐỖ LẠI chừng này rồi mới hỏi lại, KHÔNG xóa (12/10/2026,
+ * docs/BANG-THONG-WORKER-CO-VIEC-THI-GOI.md lát C). Trước đó vé bị xóa ngay,
+ * nhưng Order trong DB vẫn SHIPPING nhiều ngày (Shopee để TO_CONFIRM_RECEIVE
+ * sau khi giao) nên bước phát vé tạo lại vé ở nhịp 10' kế tiếp → gọi
+ * tracking + xóa lặp vô hạn: prod 30/09→12/10 đo ~50 nghìn call tracking và
+ * ~50 nghìn DELETE vé mỗi ngày cho ~1.800 đơn đang giao. Vé đỗ sẽ được bước
+ * dọn (2) xóa khi đồng bộ đơn đổi trạng thái; chưa đổi thì tối đa 1 call/ngày.
+ */
+export const DETECT_SETTLED_PARK_MS = 24 * 60 * 60 * 1000;
+
+/** Dữ liệu hẹn lại cho vé DETECT đã an bài — dùng chung Shopee / TikTok. */
+export function parkedDetectTaskData(nowMs: number) {
+  return { nextRunAt: new Date(nowMs + DETECT_SETTLED_PARK_MS), lastRunAt: new Date(nowMs), attempts: 0 };
+}
 /** Vé lỗi (sàn chập chờn, đơn tách kiện...) nghỉ 1h rồi thử lại. */
 export const TASK_ERROR_BACKOFF_MS = 60 * 60 * 1000;
 /** Lỗi liên tiếp quá N lần → bỏ vé (đơn tách kiện cần package_number là lỗi
@@ -571,8 +587,10 @@ export async function processShopeeDeliveryTracking(
 
       // ---- Vé DETECT: dò lượt giao thất bại ----
       if (trackedOutcome === "saved") {
-        // Giao xong mà chưa từng có lượt hỏng — hết việc, khỏi cảnh báo.
-        await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+        // Giao xong mà chưa từng có lượt hỏng — hết việc, khỏi cảnh báo. Vé ĐỖ
+        // LẠI (không xóa) tới khi sync đơn đổi trạng thái rồi bước dọn xóa —
+        // xóa ngay là bị phát lại ở nhịp sau (DETECT_SETTLED_PARK_MS).
+        await prisma.deliveryTrackingTask.update({ where: { id: task.id }, data: parkedDetectTaskData(Date.now()) });
         continue;
       }
       const fails = countFailedDeliveries(events);
@@ -580,7 +598,8 @@ export async function processShopeeDeliveryTracking(
         if (trackedOutcome === "lost") {
           // Quay đầu KHÔNG qua lượt giao hỏng (hủy giữa đường...) — không phải
           // việc của cảnh báo giao thất bại; sync đơn sẽ tự ghi nhận trạng thái.
-          await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+          // Cùng lý do trên: đỗ vé, không xóa.
+          await prisma.deliveryTrackingTask.update({ where: { id: task.id }, data: parkedDetectTaskData(Date.now()) });
         } else {
           await prisma.deliveryTrackingTask.update({
             where: { id: task.id },

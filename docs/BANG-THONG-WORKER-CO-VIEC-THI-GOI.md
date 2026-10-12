@@ -233,5 +233,8 @@ chuỗi `QUEUE_DATABASE_URL`), gom tín hiệu dồn dập trong 100 ms, listene
   số đếm từ mốc này là "trước deploy lát A" sạch (chỉ còn trạng thái sau 08/10).
 - 12/10/2026: **lát A code xong** (`integrations/order-sync-write.ts` + 3
   service + `order-auto-sync` log), tsc sạch, test mới 16/16 + stock-push 7/7;
-  chi tiết PROGRESS.md phiên 12/10. Chờ anh push; kiểm prod sau 24 giờ theo
-  mục 3 "Thứ tự và cổng" bước 3.
+  chi tiết PROGRESS.md phiên 12/10. ✅ ĐÃ PUSH `1421075` (anh bảo em push).
+- 12/10/2026: **lát C code xong** — vé DETECT đã an bài thì đỗ 24 giờ
+  (`DETECT_SETTLED_PARK_MS`, `parkedDetectTaskData`, cả Shopee lẫn TikTok),
+  bước dọn xóa khi đơn rời SHIPPING; test DB `delivery-fail-park-db.test.ts`
+  3/3. Kiểm prod sau 24 giờ cùng lát A theo mục 3 bước 3.
