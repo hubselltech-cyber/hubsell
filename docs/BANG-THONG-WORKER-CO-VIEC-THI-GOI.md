@@ -22,8 +22,8 @@ của khách.
 
 Nguồn: `pg_stat_statements` trên Supabase prod (bộ đếm từ **30/09 06:04 UTC**,
 tức 11,85 ngày, trộn cả trước và sau 08/10), chạy qua SQL Editor trong Chrome
-của anh; bảng gốc lưu ở scratchpad phiên (`pgss-top-calls.md`, `pgss-groups.md`,
-`pgss-top-rows.md`, `prod-counts.md`). Prod đang bật `LEDGER_WORKER_ON=1` (anh
+của anh; bảng gốc lưu ở `docs/bang-thong-worker-do-2026-10-12/` (`pgss-top-calls.md`,
+`pgss-groups.md`, `pgss-top-rows.md`, `prod-counts.md`). Prod đang bật `LEDGER_WORKER_ON=1` (anh
 xác nhận).
 
 ### 2.1. Quy mô prod lúc đo
