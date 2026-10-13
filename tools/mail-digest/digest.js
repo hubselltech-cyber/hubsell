@@ -83,7 +83,9 @@ async function readAccount(acc, state) {
   const st = (state[acc.key] ||= {});
   const listed = await client.list();
   const byName = new Map(listed.map((b) => [b.path.toLowerCase(), b.path]));
-  const resolve = (name) => byName.get(name.toLowerCase()) || name;
+  // Khop ca duong dan; neu khong co thi khop theo ten nhanh cuoi (vd 'He thong' nam trong 'Ho tro/He thong')
+  const byLeaf = new Map(listed.map((b) => [b.path.split(b.delimiter || '/').pop().toLowerCase(), b.path]));
+  const resolve = (name) => byName.get(name.toLowerCase()) || byLeaf.get(name.toLowerCase()) || name;
 
   try {
     // Thu muc chi dem
