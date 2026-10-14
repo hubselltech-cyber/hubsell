@@ -2,7 +2,7 @@
 // ĐƠN LỖ / DÒNG TIỀN THEO GIAN / LÃI-LỖ THEO SKU trên DB dev: đường sổ cái
 // (SQL trên order_ledger + order_line_ledger) phải cho cùng kết quả với đường
 // cũ (kéo đơn, cộng JS) trên DỮ LIỆU THẬT của DB dev — mọi chủ shop.
-// Prod so bằng ?source=orders|ledger (docs/SO-CAI-DON.md mục 9.5).
+// (docs/SO-CAI-DON.md mục 9.5). Đường cũ nay chỉ còn ở pnl-rows-oracle.ts (gỡ khỏi route 14/10/2026).
 // Chưa áp migration sổ cái → cả file tự BỎ QUA.
 // ============================================================
 
@@ -11,7 +11,10 @@ import { describe, expect, it } from "vitest";
 import { prisma } from "../../lib/prisma";
 import { parseDateRange } from "../../lib/date-range";
 import { ensureLedgerFresh } from "../../services/order-ledger";
+import { ShippingStatus } from "@prisma/client";
+import { lossOrdersFromRows, openCashFromRows } from "../../lib/finance-views";
 import { loadLossOrders, loadOpenCash, loadSkuAgg } from "../../routes/finance";
+import { OPEN_CASH_WHERE, fetchPnlRows, skuAggFromOrders } from "./pnl-rows-oracle";
 
 const ledgerReady: boolean = await (async () => {
   try {
@@ -49,11 +52,12 @@ describe.skipIf(!ledgerReady)("Đơn lỗ / dòng tiền theo gian / SKU — s�
     for (const userId of await owners()) {
       for (const { label, range } of RANGES) {
         const tag = `${userId} ${label}`;
-        const [ledger, orders] = await Promise.all([
-          loadLossOrders("ledger", { userId }, range, 200),
-          loadLossOrders("orders", { userId }, range, 200),
+        const [ledger, raw] = await Promise.all([
+          loadLossOrders({ userId }, range, 200),
+          fetchPnlRows({ userId }, range, { shippingStatus: ShippingStatus.DELIVERED, lean: true }),
         ]);
-        if (orders.truncated) continue;
+        if (raw.truncated) continue;
+        const orders = lossOrdersFromRows(raw.rows, 200);
         expect(ledger.ledgerPending).toBe(0);
         for (const k of ["analyzedCount", "lossCount", "warningCount", "listTotal"] as const) {
           expect(ledger[k], `${tag} ${k}`).toBe(orders[k]);
@@ -84,7 +88,7 @@ describe.skipIf(!ledgerReady)("Đơn lỗ / dòng tiền theo gian / SKU — s�
         }
         if (orders.listTotal <= 200) expect(matched, `${tag} đủ dòng`).toBe(orders.items.length);
         // Chỉ số đếm (thẻ cảnh báo): không kéo danh sách.
-        const statsOnly = await loadLossOrders("ledger", { userId }, range, 0);
+        const statsOnly = await loadLossOrders({ userId }, range, 0);
         expect(statsOnly.items).toEqual([]);
         expect(statsOnly.lossCount).toBe(orders.lossCount);
         compared += 1;
@@ -96,8 +100,12 @@ describe.skipIf(!ledgerReady)("Đơn lỗ / dòng tiền theo gian / SKU — s�
   it("Dòng tiền theo gian: tiền đơn đang giao / chờ đối soát của từng gian", { timeout: 300_000 }, async () => {
     let compared = 0;
     for (const userId of await owners()) {
-      const [ledger, orders] = await Promise.all([loadOpenCash("ledger", { userId }), loadOpenCash("orders", { userId })]);
-      if (orders.truncated) continue;
+      const [ledger, raw] = await Promise.all([
+        loadOpenCash({ userId }),
+        fetchPnlRows({ userId }, undefined, { lean: true, where: OPEN_CASH_WHERE }),
+      ]);
+      if (raw.truncated) continue;
+      const orders = openCashFromRows(raw.rows);
       for (const col of ["inTransit", "pendingSettle"] as const) {
         const a = new Map([...ledger[col]].filter(([, v]) => v !== 0));
         const b = new Map([...orders[col]].filter(([, v]) => v !== 0));
@@ -122,8 +130,8 @@ describe.skipIf(!ledgerReady)("Đơn lỗ / dòng tiền theo gian / SKU — s�
       for (const { label, range } of RANGES) {
         const tag = `${userId} ${label}`;
         const [ledger, orders] = await Promise.all([
-          loadSkuAgg("ledger", { userId }, range),
-          loadSkuAgg("orders", { userId }, range),
+          loadSkuAgg({ userId }, range),
+          skuAggFromOrders({ userId }, range),
         ]);
         if (orders.truncated) continue;
         expect([...ledger.bySku.keys()].sort(), `${tag} tập mã`).toEqual([...orders.bySku.keys()].sort());

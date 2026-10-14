@@ -19,7 +19,7 @@ import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import { createManualProductAdsRaw } from "./client";
 import { shopeeDateParam, vnDateKey } from "../../lib/ads-dates";
 import type { AdsInsightChannel } from "../../lib/ads-margin";
-import type { AdsMarginSource } from "../../lib/report-source";
+import type { AdsMarginSource } from "../../lib/ads-margin";
 import { computeProductBreakevenWithMargins } from "./ads-insights";
 import {
   medianOrganicCvr,

@@ -12,7 +12,7 @@ import { dateKey, vnDateKey } from "../../lib/ads-dates";
 import { SHOP_GROUP, campaignGroupKey } from "../../lib/ads-margin";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import { prisma } from "../../lib/prisma";
-import type { TiktokBreakevenSource } from "../../lib/report-source";
+import type { TiktokBreakevenSource } from "../../lib/tiktok-breakeven";
 import { TIKTOK_MARGIN_WINDOW_DAYS, TIKTOK_TARGET_STEP_WAIT_HOURS, toTiktokBreakeven, type TiktokBreakeven } from "../../lib/tiktok-breakeven";
 import { TARGET_STEP_PCT } from "../shopee/ads-assistant-rules";
 import { MIN_ORDERS_FOR_MARGIN } from "../shopee/ads-insights";
@@ -65,8 +65,8 @@ export function memoizeByChannel<T>(compute: (channel: { id: string; userId: str
 export const computeTiktokAdsBreakeven = memoizeByChannel(computeTiktokAdsBreakevenUncached);
 
 /**
- * Bản không nhớ đệm của computeTiktokAdsBreakeven. `opts.source`: ép đường cộng (công cụ đối chiếu, test); bỏ trống = theo
- * env TIKTOK_BREAKEVEN_SOURCE, có lưới đỡ.
+ * Bản không nhớ đệm của computeTiktokAdsBreakeven. `opts.source`: ép đường cộng (công cụ đối chiếu, test); bỏ trống =
+ * câu gom trong database, có lưới đỡ.
  */
 export async function computeTiktokAdsBreakevenUncached(
   channel: TiktokBreakevenChannel,
@@ -235,7 +235,7 @@ export function computeTiktokProductBreakevens(channel: { id: string; userId: st
 
 /**
  * Bản không nhớ đệm của computeTiktokProductBreakevens. `opts.source`: ép đường cộng (công cụ đối chiếu, test); bỏ trống =
- * theo env TIKTOK_BREAKEVEN_SOURCE, có lưới đỡ.
+ * câu gom trong database, có lưới đỡ.
  */
 export async function computeTiktokProductBreakevensUncached(
   channel: TiktokBreakevenChannel,

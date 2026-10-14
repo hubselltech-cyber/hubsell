@@ -10,8 +10,7 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { channelScope, type ChannelScope } from "../lib/channel-filter";
 import { parseDateRange, type DateRangeFilter } from "../lib/date-range";
-import type { ReportSource } from "../lib/report-source";
-import { taxReportTotalsFromRows, type TaxReportTotals } from "../lib/tax-totals";
+import type { TaxReportTotals } from "../lib/tax-totals";
 import { ensureLedgerFresh, ledgerTaxReportTotals } from "../services/order-ledger";
 import {
   decideScopeFromPlatformReturn,
@@ -47,11 +46,10 @@ import {
   type StandardInvoiceConfig,
 } from "../integrations/invoice/misa-einvoice";
 import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
-import { buildTaxDeclaration, parseDeclarationPeriod, taxSource } from "../services/tax-declaration";
+import { buildTaxDeclaration, parseDeclarationPeriod } from "../services/tax-declaration";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa. Từ
-// 30/09/2026 đọc kết quả đó từ SỔ CÁI ĐƠN; fetchPnlRows chỉ còn là đường cũ.
-import { fetchPnlRows } from "./finance";
+// 30/09/2026 đọc kết quả đó từ SỔ CÁI ĐƠN (đường cũ kéo đơn đã gỡ 14/10/2026).
 import {
   additionalTaxOn,
   getShopTaxConfig,
@@ -178,19 +176,14 @@ router.put("/settings", async (req: AuthRequest, res, next) => {
 });
 
 /**
- * Tổng các đơn không hủy của kỳ cho khối thuế (lib/tax-totals.ts) theo nguồn:
- * sổ cái đơn — một câu SELECT trong database, tính nốt dòng bẩn của kỳ trước —
- * hoặc đường cũ kéo đơn (giữ 1 tuần sau công tắc TAX_SOURCE=orders).
+ * Tổng các đơn không hủy của kỳ cho khối thuế (lib/tax-totals.ts) từ sổ cái đơn:
+ * một câu SELECT trong database, tính nốt dòng bẩn của kỳ trước. `truncated`
+ * luôn false (giữ trường cho giao diện; test DB so với taxReportTotalsFromRows).
  */
 export async function loadTaxReportTotals(
-  source: ReportSource,
   scope: ChannelScope,
   range: DateRangeFilter | undefined
 ): Promise<{ totals: TaxReportTotals; truncated: boolean; ledgerPending: number }> {
-  if (source === "orders") {
-    const { rows, truncated } = await fetchPnlRows(scope, range, { lean: true });
-    return { totals: taxReportTotalsFromRows(rows), truncated, ledgerPending: 0 };
-  }
   const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
   return {
     totals: await ledgerTaxReportTotals(scope, range),
@@ -206,13 +199,10 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    // Nguồn số của khối thuế sàn / thuế bổ sung: sổ cái đơn (mặc định) hay đường
-    // cũ kéo đơn (?source=orders / TAX_SOURCE=orders) — hai đường cùng kết quả.
-    const source = taxSource(req.query.source);
     const [cfg, taxData, logs, invoiceCfg] = await Promise.all([
       getShopTaxConfig(ownerId),
       // Đơn KHÔNG HỦY trong kỳ — cùng tập đơn SSOT với mọi báo cáo tài chính.
-      loadTaxReportTotals(source, scope, range),
+      loadTaxReportTotals(scope, range),
       prisma.invoiceLog.findMany({
         where: { ownerId, ...logPeriodWhere(range) },
         orderBy: { createdAt: "desc" },
@@ -463,8 +453,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       settings: serializeSettings(cfg),
       invoiceSummary,
       coverage,
-      truncated: taxData.truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới
-      source, // "ledger" | "orders"
+      truncated: taxData.truncated, // luôn false từ 14/10/2026 — giữ trường cho giao diện
       ledgerPending: taxData.ledgerPending, // đơn trong kỳ còn chờ sổ cái tính lại
       summary: {
         orderCount: t.orderCount,
@@ -551,15 +540,7 @@ router.get("/declaration", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Kỳ không hợp lệ — year=YYYY, quarter=1..4 hoặc bỏ trống (cả năm)" });
       return;
     }
-    res.json(
-      await buildTaxDeclaration(
-        req.ownerId!,
-        channelScope(req),
-        period,
-        new Date(),
-        taxSource(req.query.source)
-      )
-    );
+    res.json(await buildTaxDeclaration(req.ownerId!, channelScope(req), period, new Date()));
   } catch (err) {
     next(err);
   }

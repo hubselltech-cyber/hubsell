@@ -1,8 +1,8 @@
 // ============================================================
 // BÁO CÁO DÒNG TIỀN trên DB dev: đường sổ cái (SUM trong database) phải cho
 // cùng bộ tổng với đường cũ (kéo đơn, cộng JS) trên DỮ LIỆU THẬT của DB dev —
-// mọi chủ shop có gian, cả kỳ và 60 ngày gần nhất. Đây là phép so mà prod chạy
-// bằng ?source=orders|ledger (docs/SO-CAI-DON.md mục 9).
+// mọi chủ shop có gian, cả kỳ và 60 ngày gần nhất (docs/SO-CAI-DON.md mục 9).
+// Đường cũ nay chỉ còn ở pnl-rows-oracle.ts (gỡ khỏi route 14/10/2026).
 // Chưa áp migration sổ cái → cả file tự BỎ QUA.
 // ============================================================
 
@@ -12,7 +12,8 @@ import { prisma } from "../../lib/prisma";
 import { parseDateRange } from "../../lib/date-range";
 import { ensureLedgerFresh } from "../../services/order-ledger";
 import { loadCashFlowTotals } from "../../routes/finance";
-import type { CashFlowTotals } from "../../lib/cash-flow-totals";
+import { cashFlowTotalsFromRows, type CashFlowTotals } from "../../lib/cash-flow-totals";
+import { fetchPnlRows } from "./pnl-rows-oracle";
 
 const ledgerReady: boolean = await (async () => {
   try {
@@ -67,12 +68,12 @@ describe.skipIf(!ledgerReady)("Báo cáo dòng tiền — sổ cái = kéo đơn
         const fresh = await ensureLedgerFresh(scope, range, { maxInline: 20_000 });
         expect(fresh.dirty, `${userId} ${label} còn dòng bẩn`).toBe(0);
         const [ledger, orders] = await Promise.all([
-          loadCashFlowTotals("ledger", scope, range),
-          loadCashFlowTotals("orders", scope, range),
+          loadCashFlowTotals(scope, range),
+          fetchPnlRows(scope, range, { lean: true }),
         ]);
         if (orders.truncated) continue; // đường cũ chạm phanh 20.000 thì số của nó là cận dưới, không so
         expect(ledger.ledgerPending).toBe(0);
-        expectSameTotals(ledger.totals, orders.totals, `${userId} ${label}`);
+        expectSameTotals(ledger.totals, cashFlowTotalsFromRows(orders.rows), `${userId} ${label}`);
         compared += 1;
       }
     }

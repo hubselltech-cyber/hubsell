@@ -20,9 +20,9 @@
 
 import { SHOP_GROUP, type AdsGroupSets } from "../../lib/ads-margin";
 import { diffJson, keyBy, type JsonDiffOptions } from "../../lib/json-diff";
-import type { TiktokBreakevenSource } from "../../lib/report-source";
 import {
   TIKTOK_BREAKEVEN_MAX_ORDERS,
+  type TiktokBreakevenSource,
   breakevensFromGroups,
   breakevensFromRows,
   tiktokGroupMappingOf,
@@ -123,7 +123,7 @@ export async function compareBreakevenSources(
   };
 
   const t0 = Date.now();
-  const rows = await loadBreakevenRows(channel, "ledger", range);
+  const rows = await loadBreakevenRows(channel, range);
   const t1 = Date.now();
   const sqlGroups = await loadBreakevenGroups(channel, tiktokGroupMappingOf(sets, checks), range);
   const t2 = Date.now();

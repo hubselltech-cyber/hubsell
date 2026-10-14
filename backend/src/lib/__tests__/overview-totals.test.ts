@@ -19,7 +19,6 @@ import {
   type LedgerOverviewBreakdown,
   type OverviewTotals,
 } from "../overview-totals";
-import { resolveReportSource } from "../report-source";
 import { FIXTURE_ORDERS } from "./ledger-order-fixture";
 
 /** Bảng bóc GROUP BY như services/order-ledger.ts làm trong database, cộng trong RAM từ dòng sổ. */
@@ -105,15 +104,5 @@ describe("overviewTotals — đường sổ cái = đường kéo đơn từng �
     expect(e.active.count).toBe(0);
     expect(e.active.revenueGross).toBe(0);
     expect(e.byDay.size).toBe(0);
-  });
-});
-
-describe("resolveReportSource — ?source= thắng env, mặc định sổ cái", () => {
-  it("mặc định ledger; env orders lui về đường cũ; query hợp lệ thắng env", () => {
-    expect(resolveReportSource(undefined, undefined)).toBe("ledger");
-    expect(resolveReportSource(undefined, "orders")).toBe("orders");
-    expect(resolveReportSource("ledger", "orders")).toBe("ledger");
-    expect(resolveReportSource("ORDERS", undefined)).toBe("orders");
-    expect(resolveReportSource("x", undefined)).toBe("ledger");
   });
 });

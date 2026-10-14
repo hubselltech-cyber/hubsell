@@ -1,8 +1,10 @@
 # Phương án: gom biên lãi / hòa vốn quảng cáo TRONG DATABASE
 
 Trạng thái: **ANH TRUNG ĐÃ DUYỆT 30/09/2026 chiều**; tối 30/09 anh đổi điểm 1 ở mục 9: **tách TikTok thành đợt riêng**, Shopee + Lazada làm chung đợt 1. Ba điểm còn lại giữ theo đề xuất.
-**Đợt 1 (Shopee + Lazada): XONG tối 30/09 — prod 20/20 gian khớp, mặc định đã đổi sang `sql`** (đường lui `ADS_MARGIN_SOURCE=rows` giữ tới ~07/10) — chi tiết và số đo ở mục 11.
-**Đợt 2 (TikTok): XONG đêm 30/09 — prod 11/11 gian khớp, mặc định đã đổi sang `sql`** (đường lui `TIKTOK_BREAKEVEN_SOURCE=rows` giữ tới ~07/10) — chi tiết và số đo ở mục 12.
+**Đợt 1 (Shopee + Lazada): XONG tối 30/09 — prod 20/20 gian khớp, mặc định đã đổi sang `sql`** (đường lui `ADS_MARGIN_SOURCE=rows` ĐÃ GỠ 14/10) — chi tiết và số đo ở mục 11.
+**Đợt 2 (TikTok): XONG đêm 30/09 — prod 11/11 gian khớp, mặc định đã đổi sang `sql`** (đường lui `TIKTOK_BREAKEVEN_SOURCE=rows` ĐÃ GỠ 14/10) — chi tiết và số đo ở mục 12.
+
+**14/10/2026 — gỡ đường lui (lát 3.0 của giai đoạn 3, `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`):** xóa `lib/report-source.ts` (ba công tắc env `ADS_MARGIN_SOURCE`, `TIKTOK_BREAKEVEN_SOURCE`, `LEDGER_REPORTS_SOURCE`), công tắc `LEDGER_SCOPE_PARAMS` (mốc kỳ nay LUÔN dạng hằng; `order-ledger-params-compare.ts` + lệnh `params-compare` + test `order-ledger-params-db` xóa), công tắc `LEDGER_WRITE_STYLE` (ghi lô nay LUÔN dạng JSON; `orderValues` / `lineValues` + test `order-ledger-write-style-db` xóa; `ledger-memory-probe.ts` bỏ `--style`). **GIỮ** theo quyết định 30/09 của anh Trung: lưới đỡ khi câu gom lỗi (`fetchChannelMargins` / `fetchChannelBreakevens` không truyền `source`) — nay lùi về đường `rows` đọc DÒNG GỌN TỪ SỔ CÁI (`ledgerCompactOrders`), không còn đường đọc đơn gốc; `source` truyền tường minh (`"rows"` / `"sql"`) vẫn dành cho công cụ đối chiếu (`ads-compare` chỉ còn tầng so hai đường cộng) và test. Dòng gọn từ sổ ↔ từ đơn gốc nay chỉ so trong test `ads-rows-ledger-db` qua bản đối soát `integrations/__tests__/pnl-rows-oracle.ts`.
 Thuộc giai đoạn 1 của `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, tiếp nối `docs/SO-CAI-DON.md` mục 9.7.
 
 ## 1. Mục tiêu và ranh giới
@@ -194,8 +196,8 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 
 1. ✅ Push ở chế độ `rows` (commit `d23d807`, web + worker live 18:54–18:55).
 2. ✅ So trên prod: `npx tsx scripts/ledger-backfill.ts ads-compare --platform SHOPEE` rồi `--platform LAZADA` trên Render Shell của worker — kết quả ở mục 11.7.
-3. ✅ Đổi mặc định sang `sql` trong code; `ADS_MARGIN_SOURCE=rows` là đường lui, gỡ cùng đợt ~07/10 (kèm `marginsFromRows`, bộ đệm mảng đơn, `MARGIN_MAX_ORDERS`; giữ `marginOverRows` làm chuẩn đối chiếu trong test).
-4. ✅ Lưới đỡ (anh chốt 30/09 tối, mục 11.8): câu gom lỗi thì lượt đó tự tính bằng đường `rows`, ghi log `[Ads-margin]`, gian đó nghỉ câu gom 5 phút rồi tự thử lại. Lui tay hẳn vẫn là env `ADS_MARGIN_SOURCE=rows` trên CẢ web và worker.
+3. ✅ Đổi mặc định sang `sql` trong code; `ADS_MARGIN_SOURCE=rows` là đường lui — ✅ ĐÃ GỠ 14/10 (công tắc env; `marginsFromRows`, bộ đệm mảng đơn, `MARGIN_MAX_ORDERS` GIỮ vì lưới đỡ và công cụ đối chiếu còn dùng — xem ghi chú 14/10 đầu tệp).
+4. ✅ Lưới đỡ (anh chốt 30/09 tối, mục 11.8): câu gom lỗi thì lượt đó tự tính bằng đường `rows`, ghi log `[Ads-margin]`, gian đó nghỉ câu gom 5 phút rồi tự thử lại. Từ 14/10 không còn cách lui tay bằng env; lưới đỡ vẫn tự chạy.
 5. ⏳ Theo dõi một tuần: log lỗi của web/worker, CPU database ở trang Supabase.
 
 ### 11.6 Hai phát hiện ngoài phạm vi — anh chốt 30/09 tối "cả ba việc phải làm cho xong", ĐÃ SỬA (mục 11.8)
@@ -216,7 +218,7 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 
 - Nguồn theo env: câu gom trong database lỗi → lượt đó tính bằng đường `rows`, khách vẫn thấy số; một dòng log `[Ads-margin]` kèm mã gian và lỗi gốc. Gian đó đi thẳng đường `rows` trong 5 phút (mặc định tự chọn: không dội lại câu đang lỗi ở mỗi lượt mở trang, đủ ngắn để tự hồi) rồi thử lại câu gom.
 - Nguồn chỉ định tường minh (công cụ đối chiếu, test): lỗi ném ra nguyên vẹn, để lưới đỡ không che mất lệch.
-- Lưới đỡ sống cùng đường `rows`, gỡ ~07/10. Test: `integrations/__tests__/ads-margin-fallback-db.test.ts`.
+- 14/10: lưới đỡ GIỮ (đường `rows` nay đọc dòng gọn từ sổ cái), chỉ gỡ công tắc env. Test: `integrations/__tests__/ads-margin-fallback-db.test.ts`.
 
 **2. Mốc kỳ dạng hằng cho MỌI câu đọc sổ cái** (`services/order-ledger.ts`)
 
@@ -244,7 +246,7 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 
 ## 12. Đợt 2 (TikTok): đã làm tối 30/09/2026
 
-Trạng thái: lên prod ở chế độ `rows` (commit `d37a9b0`, 22:45), so trên prod 11/11 gian TikTok khớp, rồi đổi mặc định sang `sql` (mục 12.7). Đường lui: env `TIKTOK_BREAKEVEN_SOURCE=rows` trên CẢ web và worker.
+Trạng thái: lên prod ở chế độ `rows` (commit `d37a9b0`, 22:45), so trên prod 11/11 gian TikTok khớp, rồi đổi mặc định sang `sql` (mục 12.7). Đường lui env `TIKTOK_BREAKEVEN_SOURCE=rows` ĐÃ GỠ 14/10 (lưới đỡ giữ).
 
 ### 12.1 Bản đồ mã nguồn
 
@@ -327,6 +329,6 @@ Việc còn lại:
 
 1. ✅ Push ở chế độ `rows` (`d37a9b0`, worker live 22:45).
 2. ✅ So trên prod (kết quả ở trên).
-3. ✅ Đổi mặc định của `resolveTiktokBreakevenSource` sang `sql`. `TIKTOK_BREAKEVEN_SOURCE=rows` (trên CẢ web và worker) là đường lui, gỡ cùng đợt ~07/10: `loadBreakevenRows`, `breakevensFromRows`, lưới đỡ, `breakeven-compare.ts`, phần TikTok của lệnh `ads-compare`, `TIKTOK_BREAKEVEN_MAX_ORDERS` (GIỮ các hàm thuần làm chuẩn đối chiếu trong test).
+3. ✅ Đổi mặc định sang `sql`. `TIKTOK_BREAKEVEN_SOURCE=rows` là đường lui — ✅ ĐÃ GỠ 14/10 cùng `resolveTiktokBreakevenSource` (chỉ công tắc env; `loadBreakevenRows` nay chỉ đọc sổ cái, `breakevensFromRows`, lưới đỡ, `breakeven-compare.ts`, tầng so hai đường cộng của `ads-compare`, `TIKTOK_BREAKEVEN_MAX_ORDERS` GIỮ — xem ghi chú 14/10 đầu tệp).
 4. ✅ Sau khi bật (bản `cb79880`, web + worker live 23:03): `prisma migrate status` báo database đã đủ migration (gồm `20260930280000`); chạy lại `ads-compare --platform TIKTOK` 11/11 gian khớp; tab Hòa vốn sản phẩm của gian and.not.or (tài khoản Chủ Shop Hubsell) mở bình thường: hòa vốn toàn gian 6,31, 22 / 58 sản phẩm có mốc riêng.
 5. ⏳ Theo dõi một tuần: log `[Tiktok-breakeven]` của web/worker, CPU database ở trang Supabase.

@@ -1,6 +1,6 @@
 // ============================================================
 // QUẢNG CÁO trên DB dev: dòng gọn của đơn đọc từ SỔ CÁI phải giống dòng dựng từ
-// đơn gốc qua computePnlRow (đường cũ), trên DỮ LIỆU THẬT của DB dev — vì vậy
+// đơn gốc qua computePnlRow (bản đối soát pnl-rows-oracle.ts), trên DỮ LIỆU THẬT của DB dev — vì vậy
 // mọi phép tính phía sau (biên lãi Shopee/Lazada, hòa vốn TikTok theo gian /
 // chiến dịch / sản phẩm, nhịp bán) cho cùng kết quả.
 // (docs/SO-CAI-DON.md mục 9.7). Chưa áp migration sổ cái → cả file tự BỎ QUA.
@@ -20,6 +20,7 @@ import {
   type BreakevenPnlRow,
 } from "../../lib/tiktok-breakeven";
 import { loadBreakevenRows } from "../tiktok-ads/breakeven-source";
+import { breakevenRowsFromOrders, marginRowsFromOrders } from "./pnl-rows-oracle";
 
 const ledgerReady: boolean = await (async () => {
   try {
@@ -55,7 +56,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo — dòng gọn từ sổ cái = dò
     let withOrders = 0;
     for (const ch of await channels([ChannelName.SHOPEE, ChannelName.LAZADA])) {
       const tag = `${ch.shopName} (${ch.channelName})`;
-      const [ledger, orders] = await Promise.all([loadMarginRows(ch, "ledger"), loadMarginRows(ch, "orders")]);
+      const [ledger, orders] = await Promise.all([loadMarginRows(ch), marginRowsFromOrders(ch)]);
       expect(ledger.length, `${tag} số đơn`).toBe(orders.length);
       for (let i = 0; i < orders.length; i++) {
         const a = ledger[i];
@@ -99,7 +100,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo — dòng gọn từ sổ cái = dò
   it("TikTok: từng dòng (kể cả cờ đối soát THẬT, phí GMV Max) + hòa vốn gian / từng SKU + nhịp bán", { timeout: 300_000 }, async () => {
     for (const ch of await channels([ChannelName.TIKTOK])) {
       const tag = `${ch.shopName} (TIKTOK)`;
-      const [ledger, orders] = await Promise.all([loadBreakevenRows(ch, "ledger"), loadBreakevenRows(ch, "orders")]);
+      const [ledger, orders] = await Promise.all([loadBreakevenRows(ch), breakevenRowsFromOrders(ch)]);
       expect(ledger.length, `${tag} số đơn`).toBe(orders.length);
       for (let i = 0; i < orders.length; i++) {
         const a: BreakevenPnlRow = ledger[i];

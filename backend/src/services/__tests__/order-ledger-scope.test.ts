@@ -1,18 +1,15 @@
 // ============================================================
 // ledgerScopeSql — mảnh WHERE dùng chung của mọi câu đọc sổ cái. Logic thuần, KHÔNG DB.
-//   · Mặc định (từ 30/09/2026 tối): mốc kỳ viết dạng hằng trên tham số số
-//     nguyên, không còn ép kiểu từ chuỗi ở từng dòng quét.
-//   · Cách cũ ("text", đường lui env LEDGER_SCOPE_PARAMS=text): câu chữ + tham số
-//     GIỮ NGUYÊN như bản đã so khớp prod.
-// Hai cách ra cùng giá trị trên database thật: integrations/__tests__/order-ledger-params-db.test.ts.
+// Mốc kỳ viết dạng hằng trên tham số số nguyên (từ 30/09/2026 tối), không ép
+// kiểu từ chuỗi ở từng dòng quét. Cách cũ chuỗi ép kiểu và công tắc
+// LEDGER_SCOPE_PARAMS đã gỡ 14/10/2026 (so prod 2.976 lượt 0 lệch trước đó).
 // ============================================================
 
 import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
-import { ledgerScopeSql, withLedgerParamStyle } from "../order-ledger";
+import { ledgerScopeSql } from "../order-ledger";
 
 const range = { gte: new Date("2026-08-31T17:00:00.000Z"), lte: new Date("2026-09-30T10:15:30.123Z") };
-const asText = <T>(fn: () => T) => withLedgerParamStyle("text", async () => fn());
 
 describe("ledgerScopeSql", () => {
   it("mặc định: mốc kỳ là biểu thức trên số nguyên, không còn ép kiểu từ chuỗi", () => {
@@ -34,45 +31,17 @@ describe("ledgerScopeSql", () => {
     ]);
   });
 
-  it("cách cũ (đường lui): câu chữ và tham số như trước — chuỗi ISO ép ::timestamp, khóa ngày VN ép ::date", async () => {
-    const q = await asText(() =>
-      ledgerScopeSql({ userId: "u1", id: "c1", channelName: ChannelName.SHOPEE }, range, { alias: "l" })
-    );
-    expect(q.sql).toBe(
-      `l."ownerId" = ? AND l."channelId" = ? AND l."channelName" = ?::"ChannelName"` +
-        ` AND l."createdAt" >= ?::timestamp AND l."createdAt" <= ?::timestamp` +
-        ` AND l."createdDate" >= ?::date AND l."createdDate" <= ?::date`
-    );
-    expect(q.values).toEqual([
-      "u1",
-      "c1",
-      "SHOPEE",
-      "2026-08-31T17:00:00.000Z",
-      "2026-09-30T10:15:30.123Z",
-      "2026-09-01",
-      "2026-09-30",
-    ]);
-    const many = await asText(() =>
-      ledgerScopeSql({ userId: "u1", id: { in: ["c1", "c2"] } }, range, { axis: "delivered" })
-    );
+  it("nhiều gian + trục ngày giao: đúng cột và đủ mốc", () => {
+    const many = ledgerScopeSql({ userId: "u1", id: { in: ["c1", "c2"] } }, range, { axis: "delivered" });
     expect(many.sql).toBe(
       `"ownerId" = ? AND "channelId" IN (?,?)` +
-        ` AND "deliveredAt" >= ?::timestamp AND "deliveredAt" <= ?::timestamp` +
-        ` AND "deliveredDate" >= ?::date AND "deliveredDate" <= ?::date`
+        ` AND "deliveredAt" >= (TIMESTAMP '1970-01-01 00:00:00' + ? * INTERVAL '1 millisecond')` +
+        ` AND "deliveredAt" <= (TIMESTAMP '1970-01-01 00:00:00' + ? * INTERVAL '1 millisecond')` +
+        ` AND "deliveredDate" >= (DATE '1970-01-01' + ?::int) AND "deliveredDate" <= (DATE '1970-01-01' + ?::int)`
     );
   });
 
-  it("withLedgerParamStyle trả lại cách đang dùng sau khi chạy xong, kể cả khi lỗi", async () => {
-    const before = ledgerScopeSql({ userId: "u1" }, range).sql;
-    await expect(
-      withLedgerParamStyle("text", async () => {
-        throw new Error("thử");
-      })
-    ).rejects.toThrow("thử");
-    expect(ledgerScopeSql({ userId: "u1" }, range).sql).toBe(before);
-  });
-
-  it("không kỳ / không gian: không phụ thuộc cách viết mốc", () => {
+  it("không kỳ / không gian: không có mốc", () => {
     expect(ledgerScopeSql({ userId: "u1", id: { in: [] } }, undefined).sql).toBe(`"ownerId" = ? AND FALSE`);
     expect(ledgerScopeSql({ userId: "u1" }, undefined).sql).toBe(`"ownerId" = ?`);
   });

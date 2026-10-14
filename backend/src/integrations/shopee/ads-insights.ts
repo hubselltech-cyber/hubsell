@@ -35,7 +35,7 @@ import {
   type ChannelMargins,
 } from "../../lib/ads-margin";
 import { prisma } from "../../lib/prisma";
-import type { AdsMarginSource } from "../../lib/report-source";
+import type { AdsMarginSource } from "../../lib/ads-margin";
 import {
   ASSISTANT_WINDOWS,
   assessDelivery,

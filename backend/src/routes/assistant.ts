@@ -34,13 +34,12 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
-// NGUỒN SỐ: các bộ nạp hai nguồn dùng chung với Tổng quan / trang Đơn lỗ / bảng
-// dòng tiền — từ 30/09/2026 đọc SỔ CÁI ĐƠN (SUM trong database) thay vì kéo đơn
-// lên RAM; LEDGER_REPORTS_SOURCE=orders lui về đường cũ (docs/SO-CAI-DON.md 9.6).
+// NGUỒN SỐ: các bộ nạp dùng chung với Tổng quan / trang Đơn lỗ / bảng dòng
+// tiền — từ 30/09/2026 đọc SỔ CÁI ĐƠN (SUM trong database) thay vì kéo đơn lên
+// RAM (docs/SO-CAI-DON.md 9.6); đường cũ đã gỡ 14/10/2026.
 import { loadLossOrders, loadOpenCashTotals } from "./finance";
 import { loadOverviewTotals } from "./analytics";
 import { gmvMaxRowsOf, type OverviewTotals } from "../lib/overview-totals";
-import { resolveReportSource, type ReportSource } from "../lib/report-source";
 import { platformAdsSpend } from "../services/ads-spend";
 import {
   assistantDecisionActive,
@@ -204,11 +203,6 @@ function pctDelta(current: number, previous: number): string | null {
 
 // ─────────────────────────── Nguyên liệu P&L dùng chung ───────────────────────────
 
-/** Nguồn số mặc định của Trợ lý (body.source của /ask thắng — để so hai đường trên prod). */
-export function assistantSource(query?: unknown): ReportSource {
-  return resolveReportSource(query, process.env.LEDGER_REPORTS_SOURCE);
-}
-
 /**
  * Lãi ròng của một kỳ từ bộ tổng đơn tính doanh thu: Doanh thu − giá vốn − sàn
  * khấu trừ − phần lợi nhuận của đơn chưa có giá vốn (không tính vào lợi nhuận,
@@ -237,8 +231,7 @@ export async function buildPeriodReport(
   ownerId: string,
   scope: ChannelScope,
   range: DateRangeFilter,
-  label: string,
-  source: ReportSource = assistantSource()
+  label: string
 ): Promise<AssistantReply> {
   const lengthMs = range.lte.getTime() - range.gte.getTime() + 1;
   const prevRange: DateRangeFilter = {
@@ -254,11 +247,11 @@ export async function buildPeriodReport(
     await Promise.all([
       // Bộ tổng đơn tính doanh thu của kỳ (kèm chuỗi ngày) và của kỳ trước; sổ
       // cái làm tươi một lần cho cả hai kỳ.
-      loadOverviewTotals(source, scope, range, {
+      loadOverviewTotals(scope, range, {
         byDaySince: toBusinessDateKey(range.gte),
         fresh: { range: { gte: prevRange.gte, lte: range.lte } },
       }),
-      loadOverviewTotals(source, scope, prevRange),
+      loadOverviewTotals(scope, prevRange),
       prisma.operatingExpense.aggregate({
         where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
         _sum: { amount: true },
@@ -369,8 +362,6 @@ interface ResolveCtx {
   ownerId: string;
   scope: ChannelScope;
   period: Period;
-  /** Nguồn số của các câu trả lời cộng từ đơn: sổ cái đơn / đường cũ kéo đơn. */
-  source: ReportSource;
 }
 
 interface IntentDef {
@@ -397,7 +388,7 @@ const INTENTS: IntentDef[] = [
       { p: "kinh doanh the nao", w: 3 },
       { p: "buon ban the nao", w: 3 },
     ],
-    async resolve({ ownerId, scope, period, source }) {
+    async resolve({ ownerId, scope, period }) {
       // "Báo cáo" trần không kèm mốc → mặc định 7 ngày gần nhất (1 ngày quá
       // mỏng để gọi là báo cáo, biểu đồ cũng chỉ có 1 cột).
       let p = period;
@@ -412,7 +403,7 @@ const INTENTS: IntentDef[] = [
           explicit: false,
         };
       }
-      return buildPeriodReport(ownerId, scope, p.range, p.label, source);
+      return buildPeriodReport(ownerId, scope, p.range, p.label);
     },
   },
   {
@@ -428,8 +419,8 @@ const INTENTS: IntentDef[] = [
       { p: "kiem duoc", w: 2 },
       { p: "lai bao nhieu", w: 3 },
     ],
-    async resolve({ ownerId, scope, period, source }) {
-      const { totals } = await loadOverviewTotals(source, scope, period.range, {
+    async resolve({ ownerId, scope, period }) {
+      const { totals } = await loadOverviewTotals(scope, period.range, {
         fresh: { range: period.range },
       });
       const orderCount = totals.active.count;
@@ -498,8 +489,8 @@ const INTENTS: IntentDef[] = [
       { p: "ban duoc bao nhieu", w: 3 },
       { p: "thu ve", w: 2 },
     ],
-    async resolve({ scope, period, source }) {
-      const { totals } = await loadOverviewTotals(source, scope, period.range, {
+    async resolve({ scope, period }) {
+      const { totals } = await loadOverviewTotals(scope, period.range, {
         fresh: { range: period.range },
       });
       const orderCount = totals.active.count;
@@ -833,14 +824,11 @@ const INTENTS: IntentDef[] = [
       { p: "rut tien", w: 2 },
       { p: "tien", w: 1 },
     ],
-    async resolve({ scope, source }) {
+    async resolve({ scope }) {
       // Không lọc kỳ → CHỈ cộng đơn câu trả lời dùng (đơn tính doanh thu, chưa
       // quyết toán, đang giao / đã giao) — cùng điều kiện với bảng Phân bổ dòng
       // tiền theo gian. Đơn đã quyết toán không cộng: tiền đã nằm trong ví sàn.
-      const { inTransit, inTransitCount, pendingSettle, pendingCount } = await loadOpenCashTotals(
-        source,
-        scope
-      );
+      const { inTransit, inTransitCount, pendingSettle, pendingCount } = await loadOpenCashTotals(scope);
       const chans = await prisma.channel.findMany({
         where: scope,
         select: { walletBalance: true },
@@ -882,12 +870,12 @@ const INTENTS: IntentDef[] = [
       { p: "lo bao nhieu", w: 3 },
       { p: "sku lo", w: 3 },
     ],
-    async resolve({ scope, period, source }) {
+    async resolve({ scope, period }) {
       const p = widenToMonth(period);
       // Cùng định nghĩa với trang Đơn lỗ + chuông cảnh báo (lãi < 0, kể cả đơn
       // thiếu giá vốn mà vẫn âm) — trước đây ba nơi ba cách tính. Tập soát ở
       // đây là ĐƠN TÍNH DOANH THU của kỳ; chỉ lấy số đếm + 3 đơn lỗ nặng nhất.
-      const data = await loadLossOrders(source, scope, p.range, 3, "active");
+      const data = await loadLossOrders(scope, p.range, 3, "active");
       const losses = data.items.filter((r) => r.profitAfterTax < 0);
       return {
         outcome: "answered",
@@ -1059,7 +1047,7 @@ router.post("/ask", async (req: AuthRequest, res, next) => {
 
     const norm = normalize(rawQuestion);
     const period = detectPeriod(norm);
-    const ctx: ResolveCtx = { ownerId, scope, period, source: assistantSource(req.body?.source) };
+    const ctx: ResolveCtx = { ownerId, scope, period };
 
     // Bấm CHIP hỏi lại → đi thẳng intent, khỏi chấm điểm lại.
     if (directIntent) {

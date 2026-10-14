@@ -2,7 +2,7 @@
 // BIÊN LÃI QUẢNG CÁO Shopee/Lazada — logic thuần của lib/ads-margin.ts, KHÔNG DB:
 //   · đơn THIẾU GIÁ VỐN bị loại khỏi phép tính (28/09/2026, anh Trung: "không
 //     được sai giá vốn trong lãi lỗ kéo theo ROAS hòa vốn");
-//   · công tắc ADS_MARGIN_SOURCE, bộ nhóm SKU của gian, mặt tiền hai đường cộng.
+//   · bộ nhóm SKU của gian, mặt tiền hai đường cộng.
 // ============================================================
 
 import { describe, expect, it } from "vitest";
@@ -22,7 +22,6 @@ import {
   productGroupKey,
   type MarginRow,
 } from "../ads-margin";
-import { resolveAdsMarginSource } from "../report-source";
 
 function row(p: { sku: string; price: number; qty?: number; revenue: number; profit: number; missing?: boolean }): MarginRow {
   return {
@@ -102,23 +101,6 @@ describe("marginOverRows — loại đơn thiếu giá vốn", () => {
 // Biên lãi theo nhóm SKU — hai đường cộng sau một mặt tiền
 // (docs/QUANG-CAO-GOM-TRONG-DATABASE.md)
 // ------------------------------------------------------------
-
-describe("resolveAdsMarginSource — công tắc ADS_MARGIN_SOURCE", () => {
-  it("mặc định và giá trị lạ → sql (gom trong database); chỉ `rows` mới lui về đường duyệt mảng đơn", () => {
-    expect(resolveAdsMarginSource(undefined, undefined)).toBe("sql");
-    expect(resolveAdsMarginSource("", undefined)).toBe("sql");
-    expect(resolveAdsMarginSource("ledger", undefined)).toBe("sql");
-    expect(resolveAdsMarginSource("sql", undefined)).toBe("sql");
-    expect(resolveAdsMarginSource("rows", undefined)).toBe("rows");
-    expect(resolveAdsMarginSource(" ROWS ", undefined)).toBe("rows");
-  });
-
-  it("báo cáo đã lui về đơn gốc (LEDGER_REPORTS_SOURCE=orders) → luôn rows", () => {
-    expect(resolveAdsMarginSource(undefined, "orders")).toBe("rows");
-    expect(resolveAdsMarginSource("sql", "orders")).toBe("rows");
-    expect(resolveAdsMarginSource(undefined, "ledger")).toBe("sql");
-  });
-});
 
 describe("bộ nhóm SKU của gian", () => {
   const products = [

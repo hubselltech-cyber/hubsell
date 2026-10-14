@@ -29,10 +29,10 @@ import {
   pnlRowsForMargin,
   type AdsGroupSets,
   type AdsInsightChannel,
+  type AdsMarginSource,
   type MarginBase,
 } from "../../lib/ads-margin";
 import { diffJson, keyBy, type JsonDiffOptions } from "../../lib/json-diff";
-import type { AdsMarginSource } from "../../lib/report-source";
 import { computeChannelAdsInsights, computeChannelProductBreakeven } from "./ads-insights";
 import { loadAdsGroupSets, loadMarginGroups, loadMarginRows } from "./ads-margin-source";
 import { computeChannelAdsRecommendations } from "./ads-recommend-data";
@@ -125,7 +125,7 @@ export async function compareMarginSources(
   }
 
   const t0 = Date.now();
-  const ledgerRows = await loadMarginRows(channel, "ledger", range);
+  const ledgerRows = await loadMarginRows(channel, range);
   const rows = pnlRowsForMargin(ledgerRows, channel.channelName);
   const t1 = Date.now();
   const sqlGroups = await loadMarginGroups(channel, adsGroupMappingOf(sets), range);

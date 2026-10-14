@@ -9,8 +9,9 @@
 // (chỉ T-VAN mới được nộp), KHÔNG gán "chỉ tiêu số mấy" của tờ khai (hướng
 // dẫn giữa MISA/Shopee còn mâu thuẫn — gán sai là khách bị phạt).
 //
-// Nguồn số: computePnlRow (SSOT tài chính) trên tập đơn phân trang
-// forEachPnlOrderPage — cùng công thức với Báo cáo dòng tiền / Lãi-Lỗ.
+// Nguồn số: SỔ CÁI ĐƠN (kết quả computePnlRow đã ghi xuống database) — cùng
+// công thức với Báo cáo dòng tiền / Lãi-Lỗ. Đường cũ đọc đơn theo trang đã gỡ
+// 14/10/2026 (bản đối soát: integrations/__tests__/pnl-rows-oracle.ts).
 //
 // KỲ CẮT THEO NGÀY SÀN BÁO GIAO THÀNH CÔNG (anh Trung chốt 30/09/2026 — "học
 // theo các bên khác cho đồng bộ": báo cáo thuế của chính các sàn cũng cắt theo
@@ -40,9 +41,7 @@ import {
 import { BUSINESS_TZ_OFFSET_MS, type DateRangeFilter } from "../lib/date-range";
 import type { ChannelScope } from "../lib/channel-filter";
 import { prisma } from "../lib/prisma";
-import { resolveReportSource, type ReportSource } from "../lib/report-source";
 import type { DeclarationRawRow } from "../lib/tax-totals";
-import { computePnlRow, forEachPnlOrderPage } from "../routes/finance";
 import { ensureLedgerFresh, ledgerDeclarationByChannel } from "./order-ledger";
 
 // ---------------------------------------------------------------- KỲ
@@ -327,9 +326,7 @@ export interface TaxDeclarationResult {
   missingDeliveredAt: number;
   /** Cơ sở cắt kỳ đang dùng: ngày sàn báo giao thành công / ngày tạo đơn. */
   basis: "delivered" | "created";
-  /** Nguồn số: sổ cái đơn (mặc định) / kéo đơn (đường cũ). */
-  source: ReportSource;
-  /** Đơn của shop còn chờ sổ cái tính lại (0 khi đọc đường cũ) — số kê khai có thể chưa đủ. */
+  /** Đơn của shop còn chờ sổ cái tính lại — số kê khai có thể chưa đủ. */
   ledgerPending: number;
 }
 
@@ -349,69 +346,16 @@ export function declarationBasis(): "delivered" | "created" {
   return process.env.TAX_DECLARATION_BY_DELIVERED === "1" ? "delivered" : "created";
 }
 
-async function loadDeclarationInputs(
-  scope: ChannelScope,
-  range: DateRangeFilter
-): Promise<{ rows: DeclarationInput[]; truncated: boolean; missingDeliveredAt: number }> {
-  const rows: DeclarationInput[] = [];
-  let missingDeliveredAt = 0;
-  const byDelivered = declarationBasis() === "delivered";
-  const { truncated } = await forEachPnlOrderPage(
-    scope,
-    // Theo mốc giao thì KHÔNG cắt theo ngày tạo — cắt ở điều kiện dưới.
-    byDelivered ? undefined : range,
-    byDelivered
-      ? {
-          shippingStatus: ShippingStatus.DELIVERED,
-          where: {
-            OR: [
-              { deliveredAt: range },
-              // Đơn cũ chưa có mốc giao: tạm theo ngày tạo, đếm riêng.
-              { deliveredAt: null, createdAt: range },
-            ],
-          },
-        }
-      : {},
-    (page) => {
-    for (const o of page) {
-      if (byDelivered && o.deliveredAt === null) missingDeliveredAt += 1;
-      const r = computePnlRow(o);
-      rows.push({
-        channelName: r.channelName,
-        shippingStatus: r.shippingStatus,
-        isSettled: r.isSettled,
-        revenueGross: r.revenueGross,
-        sellerVoucher: r.sellerVoucher,
-        refundedAmount: r.refundedAmount,
-        platformTax: r.platformTax,
-      });
-    }
-    }
-  );
-  return { rows, truncated, missingDeliveredAt };
-}
-
-/** Nguồn số của module Thuế: sổ cái đơn (mặc định từ 30/09/2026) hay đường cũ (TAX_SOURCE=orders / ?source=). */
-export function taxSource(query?: unknown): ReportSource {
-  return resolveReportSource(query, process.env.TAX_SOURCE);
-}
-
 /**
- * Bảng theo sàn của một khoảng kỳ theo nguồn số (docs/SO-CAI-DON.md mục 9.4):
- *   - "ledger": một câu GROUP BY trong database trên sổ cái — không kéo đơn,
- *     không có phanh 20.000;
- *   - "orders": đường cũ đọc đơn theo trang rồi gom bằng JS (có `truncated`).
- * Cả hai áp cùng cơ sở cắt kỳ (declarationBasis) và cùng cách làm tròn.
+ * Bảng theo sàn của một khoảng kỳ (docs/SO-CAI-DON.md mục 9.4): một câu GROUP
+ * BY trong database trên sổ cái — không kéo đơn, không có phanh 20.000; áp cơ sở
+ * cắt kỳ declarationBasis và cùng cách làm tròn với aggregateDeclaration (hàm
+ * thuần giữ lại làm mốc test). `truncated` luôn false, giữ trường cho giao diện.
  */
 export async function loadDeclarationRows(
-  source: ReportSource,
   scope: ChannelScope,
   range: DateRangeFilter
 ): Promise<{ rows: DeclarationChannelRow[]; truncated: boolean; missingDeliveredAt: number }> {
-  if (source === "orders") {
-    const x = await loadDeclarationInputs(scope, range);
-    return { rows: aggregateDeclaration(x.rows), truncated: x.truncated, missingDeliveredAt: x.missingDeliveredAt };
-  }
   const x = await ledgerDeclarationByChannel(scope, range, declarationBasis());
   return { rows: declarationRowsFromLedger(x.rows), truncated: false, missingDeliveredAt: x.missingDeliveredAt };
 }
@@ -424,19 +368,15 @@ export async function buildTaxDeclaration(
   ownerId: string,
   scope: ChannelScope,
   period: DeclarationPeriod,
-  now: Date = new Date(),
-  source: ReportSource = taxSource()
+  now: Date = new Date()
 ): Promise<TaxDeclarationResult> {
   const range = periodRange(period);
   // Sổ cái: tính nốt dòng bẩn của TOÀN SHOP trước (tờ khai cắt theo ngày giao
   // nên đơn của kỳ có thể được tạo từ kỳ trước; lũy kế năm cũng là toàn shop).
   // Còn dư → ledgerPending để UI nhắc số có thể chưa đủ.
-  let ledgerPending = 0;
-  if (source === "ledger") {
-    const fresh = await ensureLedgerFresh({ userId: ownerId }, undefined, { maxInline: 500 });
-    ledgerPending = fresh.dirty + fresh.staleVersion;
-  }
-  const { rows, truncated, missingDeliveredAt } = await loadDeclarationRows(source, scope, range);
+  const fresh = await ensureLedgerFresh({ userId: ownerId }, undefined, { maxInline: 500 });
+  const ledgerPending = fresh.dirty + fresh.staleVersion;
+  const { rows, truncated, missingDeliveredAt } = await loadDeclarationRows(scope, range);
   const total = sumRows(rows);
 
   // Lũy kế năm: toàn shop (ngưỡng tính theo pháp nhân, không theo gian đang
@@ -450,7 +390,7 @@ export async function buildTaxDeclaration(
     annualTaxable = total.taxableRevenue;
     annualTruncated = truncated;
   } else {
-    const y = await loadDeclarationRows(source, { userId: ownerId }, yearRange);
+    const y = await loadDeclarationRows({ userId: ownerId }, yearRange);
     annualTaxable = sumRows(y.rows).taxableRevenue;
     annualTruncated = y.truncated;
   }
@@ -484,7 +424,6 @@ export async function buildTaxDeclaration(
     truncated,
     missingDeliveredAt,
     basis: declarationBasis(),
-    source,
     ledgerPending,
   };
 }

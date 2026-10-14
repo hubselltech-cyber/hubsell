@@ -16,8 +16,9 @@
 //   npx tsx scripts/bench-large-shop.ts cleanup
 //
 // Đo sau khi dựng (mã chủ shop / mã gian do lệnh build in ra):
-//   npx tsx scripts/ledger-backfill.ts params-compare --owner <userId>
+//   npx tsx scripts/ledger-backfill.ts compare --owner <userId> --fresh
 //   npx tsx scripts/ledger-backfill.ts ads-compare --channel <channelId> --explain
+//   (lệnh params-compare đã gỡ 14/10/2026 cùng cách viết mốc kỳ cũ)
 //
 // CHỈ chạy trên database máy mình: script từ chối mọi DATABASE_URL không trỏ
 // localhost. Khi gian thử còn tồn tại thì ĐỪNG chạy cả bộ test (nhiều test

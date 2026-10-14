@@ -66,27 +66,19 @@ import { syncTiktokPayouts, syncTiktokPendingIncome } from "../integrations/tikt
 import { loadAdSpendRows, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
 import {
   cashFlowTotalsFromLedger,
-  cashFlowTotalsFromRows,
   computeGrossDeductions,
   computeGrossDeductionsFromTotals,
-  resolveCashFlowSource,
   type CashFlowTotals,
 } from "../lib/cash-flow-totals";
 import {
   encodePnlCursor,
-  matchesPnlFilter,
   parsePnlCursor,
-  pnlSummaryTotalsFromRows,
   type LedgerPnlFilter,
   type PnlListCursor,
   type PnlSummaryTotals,
 } from "../lib/realized-pnl-totals";
-import { resolveReportSource, type ReportSource } from "../lib/report-source";
 import {
   LOSS_ORDER_LIST_LIMIT,
-  lossOrdersFromRows,
-  openCashFromRows,
-  openCashTotalsFromRows,
   toLossOrderItem,
   type LossOrderBasis,
   type LossOrdersData,
@@ -179,24 +171,16 @@ function pct(amount: number, total: number): number {
 // import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
 
 /**
- * ĐƠN LỖ của kỳ theo nguồn số (lib/finance-views.ts, docs/SO-CAI-DON.md mục 9.5):
- * sổ cái đơn — số đếm + danh sách lấy bằng SQL — hoặc đường cũ kéo đơn Đã giao.
+ * ĐƠN LỖ của kỳ từ sổ cái đơn (lib/finance-views.ts, docs/SO-CAI-DON.md mục 9.5):
+ * số đếm cả kỳ + danh sách lỗ nặng nhất lấy bằng SQL. `truncated` luôn false —
+ * giữ trường để giao diện không đổi (đường cũ kéo đơn có phanh 20.000 đã gỡ 14/10/2026).
  */
 export async function loadLossOrders(
-  source: ReportSource,
   scope: ChannelScope,
   range: DateRangeFilter | undefined,
   limit: number = LOSS_ORDER_LIST_LIMIT,
   basis: LossOrderBasis = "delivered"
 ): Promise<LossOrdersData & { truncated: boolean; ledgerPending: number }> {
-  if (source === "orders") {
-    const { rows, truncated } = await fetchPnlRows(scope, range, {
-      ...(basis === "delivered" ? { shippingStatus: ShippingStatus.DELIVERED } : {}),
-      lean: true,
-    });
-    const inBasis = basis === "active" ? rows.filter(countsAsRevenue) : rows;
-    return { ...lossOrdersFromRows(inBasis, limit), truncated, ledgerPending: 0 };
-  }
   const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
   return {
     ...(await ledgerLossOrders(scope, range, limit, basis)),
@@ -205,22 +189,10 @@ export async function loadLossOrders(
   };
 }
 
-/** Tiền đơn chưa quyết toán theo gian (bảng Phân bổ dòng tiền) theo nguồn số — không lọc kỳ. */
+/** Tiền đơn chưa quyết toán theo gian (bảng Phân bổ dòng tiền) từ sổ cái — không lọc kỳ. */
 export async function loadOpenCash(
-  source: ReportSource,
   scope: ChannelScope
 ): Promise<OpenCashByChannel & { truncated: boolean; ledgerPending: number }> {
-  if (source === "orders") {
-    // CHỈ đọc đơn bảng này dùng: chưa quyết toán, đang giao / đã giao.
-    const { rows, truncated } = await fetchPnlRows(scope, undefined, {
-      lean: true,
-      where: {
-        isSettled: false,
-        shippingStatus: { in: [ShippingStatus.SHIPPING, ShippingStatus.DELIVERED] },
-      },
-    });
-    return { ...openCashFromRows(rows), truncated, ledgerPending: 0 };
-  }
   const fresh = await ensureLedgerFresh(scope, undefined, { maxInline: 500 });
   return {
     ...(await ledgerOpenCashByChannel(scope)),
@@ -229,21 +201,10 @@ export async function loadOpenCash(
   };
 }
 
-/** Tổng + số đơn chưa quyết toán của đơn tính doanh thu (Trợ lý hỏi đáp: "tiền đang ở đâu") theo nguồn số. */
+/** Tổng + số đơn chưa quyết toán của đơn tính doanh thu (Trợ lý hỏi đáp: "tiền đang ở đâu") từ sổ cái. */
 export async function loadOpenCashTotals(
-  source: ReportSource,
   scope: ChannelScope
 ): Promise<OpenCashTotals & { truncated: boolean; ledgerPending: number }> {
-  if (source === "orders") {
-    const { rows, truncated } = await fetchPnlRows(scope, undefined, {
-      lean: true,
-      where: {
-        isSettled: false,
-        shippingStatus: { in: [ShippingStatus.SHIPPING, ShippingStatus.DELIVERED] },
-      },
-    });
-    return { ...openCashTotalsFromRows(rows), truncated, ledgerPending: 0 };
-  }
   const fresh = await ensureLedgerFresh(scope, undefined, { maxInline: 500 });
   return {
     ...(await ledgerOpenCashTotals(scope)),
@@ -252,64 +213,14 @@ export async function loadOpenCashTotals(
   };
 }
 
-/** Gom MỘT đơn vào bảng theo SKU — đường cũ của Lãi/Lỗ theo SKU (gọi ngay trong từng trang đọc). */
-export function addOrderToSkuAgg(bySku: Map<string, SkuAgg>, order: PnlOrder) {
-  // Sàn khấu trừ của đơn = Giá trị đơn − Doanh thu thực tế (SSOT) — gồm
-  // đủ phí + thuế + voucher/xu; đơn chưa đối soát chỉ gồm voucher đã biết.
-  const r = computePnlRow(order);
-  const orderFee = r.revenueGross - r.platformRevenue;
-
-  // Tổng doanh thu các dòng hàng trong đơn → dùng làm mẫu số phân bổ phí
-  const orderLineRevenue = order.items.reduce(
-    (s, it) => s + Number(it.price) * it.quantity,
-    0
-  );
-
-  for (const item of order.items) {
-    const sku = item.product?.skuCode ?? item.channelSku;
-    const lineRevenue = Number(item.price) * item.quantity;
-    const lineCogs = Number(item.costPriceAtSale) * item.quantity;
-    // Phân bổ phí theo tỷ trọng doanh thu dòng hàng
-    const share = orderLineRevenue > 0 ? lineRevenue / orderLineRevenue : 0;
-
-    const row = bySku.get(sku) ?? {
-      sku,
-      productName: item.productName,
-      imageUrl: item.product?.imageUrl ?? null,
-      quantitySold: 0,
-      revenue: 0,
-      cogs: 0,
-      allocatedFee: 0,
-    };
-    row.quantitySold += item.quantity;
-    row.revenue += lineRevenue;
-    row.cogs += lineCogs;
-    row.allocatedFee += orderFee * share;
-    if (!row.imageUrl && item.product?.imageUrl) row.imageUrl = item.product.imageUrl;
-    bySku.set(sku, row);
-  }
-}
-
 /**
- * Phần gom TỪ ĐƠN của Lãi/Lỗ theo SKU (đơn Đã giao có dòng hàng) theo nguồn số:
- * sổ DÒNG HÀNG (GROUP BY trong database) hoặc đường cũ đọc đơn theo trang.
+ * Phần gom TỪ ĐƠN của Lãi/Lỗ theo SKU (đơn Đã giao có dòng hàng): GROUP BY trên
+ * sổ DÒNG HÀNG trong database (luật phân bổ phí cũ ghi ở lib/finance-views.ts).
  */
 export async function loadSkuAgg(
-  source: ReportSource,
   scope: ChannelScope,
   range: DateRangeFilter | undefined
 ): Promise<{ bySku: Map<string, SkuAgg>; truncated: boolean; ledgerPending: number }> {
-  if (source === "orders") {
-    const bySku = new Map<string, SkuAgg>();
-    // Đơn không có dòng hàng thì vòng phân bổ tự bỏ qua — không cần filter riêng.
-    const { truncated } = await forEachPnlOrderPage(
-      scope,
-      range,
-      { shippingStatus: ShippingStatus.DELIVERED },
-      (page) => page.forEach((o) => addOrderToSkuAgg(bySku, o))
-    );
-    return { bySku, truncated, ledgerPending: 0 };
-  }
   const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
   return {
     bySku: await ledgerSkuAgg(scope, range),
@@ -325,11 +236,9 @@ export async function loadSkuAgg(
 // Đơn chứa SKU chưa cấu hình giá vốn ⇒ kèm warning để chủ shop đi nhập giá vốn.
 router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
   try {
-    // Nguồn số: sổ cái đơn (mặc định) hay đường cũ kéo đơn (?source=orders /
-    // LEDGER_REPORTS_SOURCE=orders). Số đếm là của CẢ KỲ; danh sách trả tối đa
-    // LOSS_ORDER_LIST_LIMIT dòng lỗ nặng nhất, kèm listTotal để giao diện nói rõ.
-    const source = resolveReportSource(req.query.source, process.env.LEDGER_REPORTS_SOURCE);
-    const data = await loadLossOrders(source, channelScope(req), parseDateRange(req.query));
+    // Số đếm là của CẢ KỲ; danh sách trả tối đa LOSS_ORDER_LIST_LIMIT dòng lỗ
+    // nặng nhất, kèm listTotal để giao diện nói rõ.
+    const data = await loadLossOrders(channelScope(req), parseDateRange(req.query));
 
     // Đơn LỖ và cả đơn THIẾU GIÁ VỐN (số liệu chưa đáng tin, cần đối soát) — lỗ
     // nặng nhất lên đầu.
@@ -341,8 +250,7 @@ router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
       warningCount: data.warningCount,
       listTotal: data.listTotal,
       listLimit: LOSS_ORDER_LIST_LIMIT,
-      truncated: data.truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn
-      source,
+      truncated: data.truncated,
       ledgerPending: data.ledgerPending,
       orders,
       // Giữ tên cũ để tương thích ngược
@@ -363,93 +271,26 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
 // ============================================================
 // NGUỒN SỐ GỐC DUY NHẤT (SINGLE SOURCE OF TRUTH) CỦA MODULE TÀI CHÍNH
 //
-// "Lãi/Lỗ Thực Hiện" là nguồn số gốc. Mọi con số tài chính của MỘT đơn
-// (doanh thu gốc, từng bucket phí, giá vốn, thuế, lợi nhuận) sinh ra từ đúng
-// MỘT hàm computePnlRow() trên đúng MỘT tập đơn fetchPnlRows():
-//   - /realized-pnl : hiển thị từng dòng computePnlRow (chi tiết + phân trang).
-//   - /analytics    : Báo cáo dòng tiền — chỉ là VIEW tổng hợp, CHỈ được
-//     SUM() các trường của những dòng này theo nhóm; TUYỆT ĐỐI không tự
-//     query/tính lại theo công thức riêng.
-// Muốn đổi công thức phí/thuế/lãi: sửa MỘT chỗ ở đây, mọi trang tự khớp nhau.
+// Mọi con số tài chính của MỘT đơn (doanh thu gốc, từng bucket phí, giá vốn,
+// thuế, lợi nhuận) sinh ra từ đúng MỘT hàm computePnlRow() (lib/pnl-formula.ts).
+// Từ 30/09/2026 kết quả đó được GHI XUỐNG SỔ CÁI ĐƠN (services/order-ledger.ts,
+// docs/SO-CAI-DON.md) và mọi báo cáo đọc sổ bằng SUM / GROUP BY trong database:
+//   - /realized-pnl : lọc + cắt trang trên sổ, dòng chi tiết dựng lại bằng
+//     computePnlRow cho đúng các đơn của trang;
+//   - /analytics, Tổng quan, Thuế, Đơn lỗ, SKU, Trợ lý: CHỈ cộng cột của sổ,
+//     TUYỆT ĐỐI không tự query/tính lại theo công thức riêng.
+// Muốn đổi công thức phí/thuế/lãi: sửa MỘT chỗ ở computePnlRow, tăng
+// LEDGER_FORMULA_VERSION để worker tính lại sổ, mọi trang tự khớp nhau.
+//
+// Đường cũ "kéo đơn lên RAM rồi cộng bằng JS" (fetchPnlRows / forEachPnlOrderPage,
+// phanh 20.000 đơn — gốc sự cố 29/09/2026) đã GỠ 14/10/2026; bản đối soát chỉ
+// còn ở integrations/__tests__/pnl-rows-oracle.ts cho test DB dev.
 //
 // Quy ước: các trường phí bóc riêng để hai bảng tự chọn cột. Đơn ĐÃ QUYẾT TOÁN
 // dùng phí thực tế (chính xác); CHƯA quyết toán mọi bucket phí/thuế = 0 ("chờ
 // đối soát" — quyết định chủ shop 30/07: sổ đối soát không bịa phí % kênh).
 // netRevenue = doanh thu sau khi trừ toàn bộ phí sàn; profit = netRevenue − giá vốn.
 // ============================================================
-
-/** Lọc thêm trên tập đơn SSOT (ngoài gian + kỳ) — dùng chung cho mọi bản đọc. */
-export interface PnlOrderFilter {
-  shippingStatus?: ShippingStatus;
-  /** Điều kiện Order bổ sung (VD cash-flow chỉ cần đơn chưa quyết toán). */
-  where?: Prisma.OrderWhereInput;
-}
-
-/**
- * TẬP ĐƠN ĐẦU VÀO dùng chung của mọi báo cáo tài chính: cùng WHERE + include
- * SSOT, đọc THEO TRANG (cuộn cursor, mới nhất trước). Trả từng trang 1.000 đơn qua
- * `onPage` để nơi gọi rút ngay thành dòng gọn rồi bỏ trang — 22/09/2026 bản gom
- * cả 20.000 đơn kèm include nặng vào một mảng từng làm Render hết heap. `max`
- * (mặc định 20.000) là phanh an toàn cuối — chạm thì trả `truncated` để UI bảo
- * thu hẹp kỳ, không im lặng cắt.
- *
- * 29/09/2026: bản cũ `fetchPnlOrders` (take 2.000, mới nhất trước) ĐÃ BỎ — shop
- * 2.661 đơn/tháng bị cắt mất 661 đơn đầu tháng trong khi chi phí cố định vẫn
- * trừ đủ, Báo cáo dòng tiền ra lãi 13,19 triệu thay vì 34,29 triệu.
- */
-export async function forEachPnlOrderPage(
-  scope: ChannelScope,
-  range: DateRangeFilter | undefined,
-  opts: { pageSize?: number; max?: number } & PnlOrderFilter,
-  onPage: (page: PnlOrder[]) => void | Promise<void>
-): Promise<{ count: number; truncated: boolean }> {
-  const pageSize = opts.pageSize ?? 1000;
-  const max = opts.max ?? 20_000;
-  let count = 0;
-  let cursor: string | undefined;
-  for (;;) {
-    const page = await prisma.order.findMany({
-      where: {
-        ...opts.where,
-        channel: scope,
-        createdAt: range,
-        ...(opts.shippingStatus ? { shippingStatus: opts.shippingStatus } : {}),
-      },
-      // MỚI NHẤT TRƯỚC (id phá thế hòa cho cursor ổn định): nếu chạm phanh thì
-      // phần bị bỏ là đơn CŨ nhất của kỳ, không phải đơn vừa phát sinh.
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      include: PNL_INCLUDE,
-      take: pageSize,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
-    count += page.length;
-    await onPage(page);
-    if (page.length < pageSize) return { count, truncated: false };
-    if (count >= max) return { count, truncated: true };
-    cursor = page[page.length - 1].id;
-  }
-}
-
-/**
- * TOÀN BỘ dòng Lãi/Lỗ của kỳ (mới nhất trước) — đọc theo trang, bóc số ngay rồi
- * bỏ đơn thô. `lean` bỏ bản kê chi tiết Lazada/TikTok của từng dòng cho báo cáo
- * chỉ cộng tổng (mỗi bản kê ~30 số, 20.000 dòng là đáng kể). `truncated` = kỳ
- * vượt phanh 20.000 đơn, số là cận dưới — nơi gọi phải báo ra, không giấu.
- */
-export async function fetchPnlRows(
-  scope: ChannelScope,
-  range?: DateRangeFilter,
-  opts: { lean?: boolean; max?: number } & PnlOrderFilter = {}
-): Promise<{ rows: PnlRow[]; truncated: boolean }> {
-  const rows: PnlRow[] = [];
-  const { truncated } = await forEachPnlOrderPage(scope, range, opts, (page) => {
-    for (const o of page) {
-      const r = computePnlRow(o);
-      rows.push(opts.lean ? { ...r, lazada: null, tiktok: null } : r);
-    }
-  });
-  return { rows, truncated };
-}
 
 /**
  * TỔNG KẾT KỲ của bảng Lãi/Lỗ — HÀM THUẦN (test được, không DB).
@@ -543,17 +384,13 @@ export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
 const PNL_PAGE_SIZES = [20, 50, 100];
 
 /**
- * Dữ liệu của bảng Lãi/Lỗ theo nguồn số (docs/SO-CAI-DON.md mục 9.3):
- *   - "ledger" (mặc định từ 30/09/2026): lọc + sắp xếp + cắt trang TRÊN SỔ,
- *     chỉ lấy mã của ≤ 100 đơn của trang, rồi đọc đúng các đơn đó và dựng dòng
- *     chi tiết bằng computePnlRow (dòng hàng, bản kê Lazada/TikTok như cũ).
- *     Tổng kết = ba câu cộng trong database với cùng điều kiện lọc.
- *   - "orders" (đường cũ, giữ 1 tuần sau công tắc REALIZED_PNL_SOURCE=orders):
- *     kéo cả kỳ lên RAM, lọc và cắt trang bằng JS, có phanh 20.000.
+ * Dữ liệu của bảng Lãi/Lỗ từ sổ cái (docs/SO-CAI-DON.md mục 9.3): lọc + sắp xếp
+ * + cắt trang TRÊN SỔ, chỉ lấy mã của ≤ 100 đơn của trang, rồi đọc đúng các đơn
+ * đó và dựng dòng chi tiết bằng computePnlRow (dòng hàng, bản kê Lazada/TikTok
+ * như cũ). Tổng kết = ba câu cộng trong database với cùng điều kiện lọc.
  * `cursor` = đọc tiếp sau dòng đó (xuất Excel); `rowsOnly` = bỏ tổng kết.
  */
 export async function loadRealizedPnl(
-  source: ReportSource,
   scope: ChannelScope,
   range: DateRangeFilter | undefined,
   filter: LedgerPnlFilter,
@@ -571,35 +408,6 @@ export async function loadRealizedPnl(
   truncated: boolean;
   ledgerPending: number;
 }> {
-  if (source === "orders") {
-    const { rows: all, truncated } = await fetchPnlRows(scope, range, {
-      shippingStatus: filter.shippingStatus,
-    });
-    const filtered = all.filter((r) => matchesPnlFilter(r, filter));
-    let start = (opts.page - 1) * opts.pageSize;
-    if (opts.cursor) {
-      const c = opts.cursor;
-      const at = filtered.findIndex((r) => r.id === c.orderId);
-      start =
-        at >= 0
-          ? at + 1
-          : filtered.findIndex((r) => r.createdAt.getTime() < c.createdAt.getTime());
-      if (start < 0) start = filtered.length;
-    }
-    const rows = filtered.slice(start, start + opts.pageSize);
-    const last = rows[rows.length - 1];
-    return {
-      rows,
-      nextCursor:
-        last && start + opts.pageSize < filtered.length
-          ? encodePnlCursor({ createdAt: last.createdAt, orderId: last.id })
-          : null,
-      totals: opts.rowsOnly ? null : pnlSummaryTotalsFromRows(filtered),
-      truncated,
-      ledgerPending: 0,
-    };
-  }
-
   const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
   const [ids, totals] = await Promise.all([
     // Xin dư một dòng để biết còn trang sau hay không (con trỏ của xuất Excel).
@@ -677,10 +485,8 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       ...(search ? { search } : {}),
     };
 
-    // Nguồn số: sổ cái đơn (mặc định) hay đường cũ kéo đơn (?source=orders /
-    // REALIZED_PNL_SOURCE=orders). Xuất Excel gọi rowsOnly=1 + cursor: chỉ lấy
-    // dòng, đọc tiếp theo con trỏ, không tính lại tóm tắt ở mỗi trang.
-    const source = resolveReportSource(req.query.source, process.env.REALIZED_PNL_SOURCE);
+    // Xuất Excel gọi rowsOnly=1 + cursor: chỉ lấy dòng, đọc tiếp theo con trỏ,
+    // không tính lại tóm tắt ở mỗi trang.
     const rowsOnly = req.query.rowsOnly === "true" || req.query.rowsOnly === "1";
     const cursor = parsePnlCursor(req.query.cursor);
 
@@ -699,7 +505,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       chartStart = new Date(chartEnd.getTime() - (PNL_MAX_POINTS - 1) * DAY_MS);
     }
 
-    const data = await loadRealizedPnl(source, scope, dateRange, filter, {
+    const data = await loadRealizedPnl(scope, dateRange, filter, {
       page,
       pageSize,
       cursor,
@@ -712,7 +518,6 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         rows: data.rows,
         nextCursor: data.nextCursor,
         truncated: data.truncated,
-        source,
         ledgerPending: data.ledgerPending,
       });
       return;
@@ -766,8 +571,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       total,
       pageCount: Math.max(1, Math.ceil(total / pageSize)),
       nextCursor: data.nextCursor,
-      truncated: data.truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới
-      source, // "ledger" | "orders"
+      truncated: data.truncated, // luôn false từ 14/10/2026 — giữ trường cho giao diện
       ledgerPending: data.ledgerPending, // đơn trong kỳ còn chờ sổ cái tính lại
       summary: {
         count: total,
@@ -845,8 +649,6 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 router.get("/cash-flow", async (req: AuthRequest, res, next) => {
   try {
     const scope = channelScope(req);
-    // Nguồn số của hai cột tiền đơn: sổ cái đơn (mặc định) hay đường cũ kéo đơn.
-    const source = resolveReportSource(req.query.source, process.env.LEDGER_REPORTS_SOURCE);
     const since30d = new Date(Date.now() - 30 * 86_400_000);
     const [channels, openCash, pendingPayouts, recentWithdrawals] =
       await Promise.all([
@@ -882,7 +684,7 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
         // NGUỒN SỐ GỐC: cùng công thức computePnlRow với mọi báo cáo (chốt
         // SSOT) — không tự tính totalAmount − phí riêng. Bảng không lọc kỳ: chỉ
         // cộng đơn chưa quyết toán, đang giao / đã giao, theo gian.
-        loadOpenCash(source, scope),
+        loadOpenCash(scope),
         // "Ví sàn" Lazada: kỳ sao kê đã chốt nhưng sàn CHƯA chi (paid=0 từ
         // /finance/payout/status/get, sync ghi status=PENDING) — số thật.
         prisma.walletWithdrawal.groupBy({
@@ -965,7 +767,7 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
       };
     });
 
-    res.json({ rows, truncated: openCash.truncated, source, ledgerPending: openCash.ledgerPending });
+    res.json({ rows, truncated: openCash.truncated, ledgerPending: openCash.ledgerPending });
   } catch (err) {
     next(err);
   }
@@ -1330,11 +1132,9 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
     /** Phần gom từ đơn + chi phí biến đổi gắn riêng SKU. */
     type SkuRow = SkuAgg & { marketingCost: number };
 
-    // Nguồn số của phần gom từ đơn: sổ dòng hàng (mặc định) hay đường cũ.
-    const source = resolveReportSource(req.query.source, process.env.LEDGER_REPORTS_SOURCE);
     const [skuData, variableExpenses] = await Promise.all([
-      // NGUỒN SỐ GỐC: cùng tập đơn SSOT — đơn ĐÃ GIAO có dòng hàng.
-      loadSkuAgg(source, channelScope(req), range),
+      // NGUỒN SỐ GỐC: sổ dòng hàng — đơn ĐÃ GIAO có dòng hàng.
+      loadSkuAgg(channelScope(req), range),
       prisma.operatingExpense.findMany({
         where: {
           userId: ownerId,
@@ -1456,8 +1256,7 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
 
     res.json({
       items,
-      truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới
-      source,
+      truncated, // luôn false từ 14/10/2026 — giữ trường cho giao diện
       ledgerPending: skuData.ledgerPending,
       summary: {
         skuCount: items.length,
@@ -2338,23 +2137,15 @@ router.post(
 export { computeGrossDeductions };
 
 /**
- * Bộ tổng của Báo cáo dòng tiền theo nguồn số:
- *   - "ledger" (mặc định từ 30/09/2026): tính nốt dòng bẩn trong phạm vi (tối
- *     đa 500 đơn ≈ vài giây) rồi SUM trong database trên sổ cái đơn — RAM
- *     không kéo đơn, không có phanh 20.000. Dòng bẩn còn dư → ledgerPending.
- *   - "orders" (đường cũ, giữ 1 tuần sau công tắc CASH_FLOW_SOURCE=orders):
- *     fetchPnlRows kéo đơn theo trang, cộng bằng JS, có phanh (truncated).
- * Hai đường cho cùng CashFlowTotals — so trên prod bằng ?source=orders|ledger.
+ * Bộ tổng của Báo cáo dòng tiền từ sổ cái đơn: tính nốt dòng bẩn trong phạm vi
+ * (tối đa 500 đơn ≈ vài giây) rồi SUM trong database — RAM không kéo đơn, không
+ * có phanh 20.000. Dòng bẩn còn dư → ledgerPending. `truncated` luôn false (giữ
+ * trường cho giao diện; test DB so với cashFlowTotalsFromRows trên đơn gốc).
  */
 export async function loadCashFlowTotals(
-  source: "ledger" | "orders",
   scope: ChannelScope,
   range: DateRangeFilter | undefined
 ): Promise<{ totals: CashFlowTotals; truncated: boolean; ledgerPending: number }> {
-  if (source === "orders") {
-    const { rows, truncated } = await fetchPnlRows(scope, range, { lean: true });
-    return { totals: cashFlowTotalsFromRows(rows), truncated, ledgerPending: 0 };
-  }
   const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
   // Chuỗi ngày chỉ cần 14 ngày gần nhất (biểu đồ) — không kéo cả năm về.
   const byDaySince = toBusinessDateKey(
@@ -2401,12 +2192,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           }
         : {};
 
-    // NGUỒN SỐ: sổ cái đơn (SUM trong database — docs/SO-CAI-DON.md) hoặc đường
-    // cũ kéo đơn (?source=orders / CASH_FLOW_SOURCE=orders). Cùng tập đơn + cùng
-    // công thức với trang Lãi/Lỗ Thực Hiện (tab "Tất cả", đọc ĐỦ kỳ).
-    const source = resolveCashFlowSource(req.query.source);
+    // NGUỒN SỐ: sổ cái đơn (SUM trong database — docs/SO-CAI-DON.md). Cùng tập
+    // đơn + cùng công thức với trang Lãi/Lỗ Thực Hiện (tab "Tất cả", đọc ĐỦ kỳ).
     const [{ totals, truncated, ledgerPending }, expenses, operatingIncomeAgg, adSpendRows, tiktokAdsChannels, taxCfg] = await Promise.all([
-      loadCashFlowTotals(source, scope, range),
+      loadCashFlowTotals(scope, range),
       prisma.operatingExpense.findMany({
         where: {
           userId: ownerId,
@@ -2654,9 +2443,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
-      truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới, UI nhắc thu hẹp kỳ
-      source, // "ledger" | "orders"
-      ledgerPending, // đơn trong kỳ còn chờ sổ cái tính lại (0 khi đọc đường cũ)
+      truncated, // luôn false từ 14/10/2026 — giữ trường cho giao diện
+      ledgerPending, // đơn trong kỳ còn chờ sổ cái tính lại
       deliveredOrderCount: delivered.count,
       totalRevenue,
       totalCost,

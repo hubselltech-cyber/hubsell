@@ -65,7 +65,7 @@ async function testSets(ch: { id: string; userId: string; channelName: ChannelNa
   lines: number;
   orders: number;
 }> {
-  const rows = pnlRowsForMargin(await loadMarginRows(ch, "ledger"), ch.channelName);
+  const rows = pnlRowsForMargin(await loadMarginRows(ch), ch.channelName);
   const skus = [...new Set(rows.flatMap((r) => r.items.map((i) => i.sku)))].sort();
   const extra: AdsGroupSets = new Map();
   if (skus.length > 0) extra.set("t:all", new Set(skus));
@@ -111,7 +111,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
     for (const ch of await channels()) {
       const tag = `${ch.shopName} (${ch.channelName})`;
       const range = marginWindowRange();
-      const rows = pnlRowsForMargin(await loadMarginRows(ch, "ledger", range), ch.channelName);
+      const rows = pnlRowsForMargin(await loadMarginRows(ch, range), ch.channelName);
       if (rows.length === 0) continue;
       const scope = { userId: ch.userId, id: ch.id, channelName: ch.channelName };
       const opts = { settledOnly: ch.channelName === ChannelName.LAZADA, recentSince: new Date(range.lte.getTime() - 7 * 86_400_000) };
@@ -316,7 +316,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
     });
     // O1 góp 3 đơn vị vào sản phẩm 100: mốc trùng giờ tạo thì còn, lùi sau 1 mili giây thì mất.
     expect(at.get(productGroupKey("100"))!.unitsRecent - after.get(productGroupKey("100"))!.unitsRecent).toBe(3);
-    const rows = pnlRowsForMargin(await loadMarginRows(channel(), "ledger", range), ChannelName.SHOPEE);
+    const rows = pnlRowsForMargin(await loadMarginRows(channel(), range), ChannelName.SHOPEE);
     const pure = marginsFromRows(rows, await loadAdsGroupSets(fx.channelId), o1CreatedAt.getTime() + SALES_PACE_RECENT_MS);
     expect(pure.productPace().get("100")!.units7d).toBe(at.get(productGroupKey("100"))!.unitsRecent);
   });

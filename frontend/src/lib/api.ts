@@ -840,7 +840,6 @@ export interface RealizedPnlResponse {
   /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
   truncated?: boolean;
   /** Nguồn số: "ledger" = sổ cái đơn (mặc định từ 30/09/2026), "orders" = kéo đơn (đường cũ). */
-  source?: "ledger" | "orders";
   /** Số đơn trong kỳ đang chờ sổ cái tính lại — số có thể lệch nhỏ vài phút. */
   ledgerPending?: number;
   /** Con trỏ đọc tiếp sau dòng cuối trang (null = hết) — dùng cho xuất Excel. */
@@ -1012,7 +1011,6 @@ export interface AnalyticsResponse {
   /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
   truncated?: boolean;
   /** Nguồn số: "ledger" = sổ cái đơn (mặc định từ 30/09/2026), "orders" = kéo đơn (đường cũ). */
-  source?: "ledger" | "orders";
   /** Số đơn trong khoảng trang đọc đang chờ sổ cái tính lại — số có thể lệch nhỏ vài phút. */
   ledgerPending?: number;
   /** Số đơn phát sinh trong kỳ đang tính doanh thu (không gồm đơn hủy). */
@@ -2102,7 +2100,6 @@ export interface FinanceAnalytics {
   /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
   truncated?: boolean;
   /** Nguồn số: "ledger" = sổ cái đơn (mặc định từ 30/09/2026), "orders" = kéo đơn (đường cũ). */
-  source?: "ledger" | "orders";
   /** Số đơn trong kỳ đang chờ sổ cái tính lại — số trên trang có thể lệch nhỏ vài phút. */
   ledgerPending?: number;
   deliveredOrderCount: number;
@@ -4311,7 +4308,6 @@ export interface TaxReportResponse {
   /** Chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới. */
   truncated?: boolean;
   /** Nguồn số của khối thuế: sổ cái đơn / kéo đơn. */
-  source?: "ledger" | "orders";
   /** Số đơn trong kỳ đang chờ sổ cái tính lại. */
   ledgerPending?: number;
   summary: {
@@ -4457,7 +4453,6 @@ export interface TaxDeclarationResponse {
   /** Cơ sở cắt kỳ: ngày sàn báo giao thành công / ngày tạo đơn (bản cũ không trả = ngày tạo). */
   basis?: "delivered" | "created";
   /** Nguồn số: "ledger" = sổ cái đơn (mặc định từ 30/09/2026), "orders" = kéo đơn (đường cũ). */
-  source?: "ledger" | "orders";
   /** Số đơn của shop đang chờ sổ cái tính lại — số kê khai có thể chưa đủ trong vài phút. */
   ledgerPending?: number;
 }

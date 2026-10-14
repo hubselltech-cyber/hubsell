@@ -15,18 +15,14 @@ import { channelScope, hasChannelFilter, type ChannelScope } from "../lib/channe
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
 // sync không trừ kho → hai nguồn cũ đều cho số sai với Lazada).
 // Từ 30/09/2026 các SUM đó đọc từ SỔ CÁI ĐƠN (kết quả computePnlRow đã ghi
-// xuống database — docs/SO-CAI-DON.md); fetchPnlRows chỉ còn là đường cũ sau
-// công tắc OVERVIEW_SOURCE=orders.
-import { fetchPnlRows } from "./finance";
+// xuống database — docs/SO-CAI-DON.md). Đường cũ kéo đơn đã gỡ 14/10/2026.
 import { platformAdsSpend } from "../services/ads-spend";
 import { RETURNING_STATUSES } from "../lib/finance-definitions";
 import {
   gmvMaxRowsOf,
   overviewTotalsFromLedger,
-  overviewTotalsFromRows,
   type OverviewTotals,
 } from "../lib/overview-totals";
-import { resolveReportSource, type ReportSource } from "../lib/report-source";
 import {
   ensureLedgerFresh,
   ledgerOverviewBreakdown,
@@ -48,17 +44,15 @@ const RETURNING_IN = { in: RETURNING_STATUSES };
 // import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
 
 /**
- * Bộ tổng ĐƠN TÍNH DOANH THU của một phạm vi (lib/overview-totals.ts) theo nguồn:
- *   - "ledger" (mặc định từ 30/09/2026): SUM + GROUP BY trong database trên sổ
- *     cái đơn — RAM không kéo đơn, không có phanh 20.000. `fresh` = tính nốt
- *     dòng bẩn của khoảng đó trước (tối đa 500 đơn), còn dư → ledgerPending.
- *   - "orders" (đường cũ, giữ 1 tuần sau công tắc OVERVIEW_SOURCE=orders):
- *     fetchPnlRows kéo đơn theo trang, cộng bằng JS, có phanh (truncated).
+ * Bộ tổng ĐƠN TÍNH DOANH THU của một phạm vi (lib/overview-totals.ts): SUM +
+ * GROUP BY trong database trên sổ cái đơn — RAM không kéo đơn, không có phanh
+ * 20.000. `fresh` = tính nốt dòng bẩn của khoảng đó trước (tối đa 500 đơn), còn
+ * dư → ledgerPending. `truncated` luôn false (giữ trường cho giao diện; test DB
+ * so với overviewTotalsFromRows trên đơn gốc).
  * `byDaySince`: chuỗi ngày chỉ cần từ mốc này (trục biểu đồ); `summaryOnly`:
  * chỉ cần tổng (kỳ trước) — bỏ hai bảng bóc.
  */
 export async function loadOverviewTotals(
-  source: ReportSource,
   scope: ChannelScope,
   range: DateRangeFilter | undefined,
   opts: {
@@ -67,10 +61,6 @@ export async function loadOverviewTotals(
     fresh?: { range: DateRangeFilter | undefined };
   } = {}
 ): Promise<{ totals: OverviewTotals; truncated: boolean; ledgerPending: number }> {
-  if (source === "orders") {
-    const { rows, truncated } = await fetchPnlRows(scope, range, { lean: true });
-    return { totals: overviewTotalsFromRows(rows), truncated, ledgerPending: 0 };
-  }
   let ledgerPending = 0;
   if (opts.fresh) {
     const fresh = await ensureLedgerFresh(scope, opts.fresh.range, { maxInline: 500 });
@@ -108,9 +98,6 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const scope = channelScope(req);
     const filteredByChannel = hasChannelFilter(req);
     const seesFinancials = canSeeFinancials(req);
-    // Nguồn số: sổ cái đơn (mặc định) hay đường cũ kéo đơn (?source=orders /
-    // OVERVIEW_SOURCE=orders) — hai đường cho cùng kết quả.
-    const source = resolveReportSource(req.query.source, process.env.OVERVIEW_SOURCE);
     /** Người không được xem tài chính giữ 0 để không rò số. */
     const fin = (v: number) => (seesFinancials ? v : 0);
 
@@ -161,7 +148,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
           lte: range.lte,
         }
       : undefined;
-    const { totals, truncated, ledgerPending } = await loadOverviewTotals(source, scope, range, {
+    const { totals, truncated, ledgerPending } = await loadOverviewTotals(scope, range, {
       byDaySince: toBusinessDateKey(chartStart),
       fresh: { range: freshRange },
     });
@@ -360,7 +347,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         lte: new Date(chartEnd.getTime() + DAY_MS - 1),
       };
       const [{ totals: trendTotals }, trendExpenses] = await Promise.all([
-        loadOverviewTotals(source, scope, trendRange, {
+        loadOverviewTotals(scope, trendRange, {
           byDaySince: toBusinessDateKey(trendStart),
         }),
         seesFinancials
@@ -448,7 +435,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
           // Cùng công thức doanh thu với kỳ hiện tại (Σ revenueGross qua
           // computePnlRow) — so sánh mới cùng thước đo, hết lệch giả.
           const [{ totals: prev }, cnt] = await Promise.all([
-            loadOverviewTotals(source, scope, prevRange, { summaryOnly: true }),
+            loadOverviewTotals(scope, prevRange, { summaryOnly: true }),
             prisma.order.count({
               where: { channel: scope, createdAt: prevRange },
             }),
@@ -492,7 +479,6 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // tab Network là đọc được nguyên số liệu.
     if (!seesFinancials) {
       res.json({
-        source,
         ledgerPending,
         activeOrderCount: active.count,
         itemQuantity,
@@ -520,9 +506,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
-      truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới
-      source, // "ledger" | "orders"
-      ledgerPending, // đơn trong khoảng trang đọc còn chờ sổ cái tính lại (0 khi đọc đường cũ)
+      truncated, // luôn false từ 14/10/2026 — giữ trường cho giao diện
+      ledgerPending, // đơn trong khoảng trang đọc còn chờ sổ cái tính lại
       activeOrderCount: active.count,
       itemQuantity,
       totalRevenue,

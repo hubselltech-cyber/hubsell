@@ -3,7 +3,7 @@
 // database) phải cho cùng kết quả với đường cũ (kéo cả kỳ, lọc/cắt bằng JS)
 // trên DỮ LIỆU THẬT của DB dev: cùng danh sách đơn theo đúng thứ tự, cùng tổng
 // kết, với mọi bộ lọc của bảng; đọc theo con trỏ ra đủ và đúng thứ tự.
-// Prod so bằng ?source=orders|ledger (docs/SO-CAI-DON.md mục 9.3).
+// (docs/SO-CAI-DON.md mục 9.3). Đường cũ nay chỉ còn ở pnl-rows-oracle.ts (gỡ khỏi route 14/10/2026).
 // Chưa áp migration sổ cái → cả file tự BỎ QUA.
 // ============================================================
 
@@ -14,6 +14,7 @@ import { prisma } from "../../lib/prisma";
 import { parseDateRange } from "../../lib/date-range";
 import { ensureLedgerFresh } from "../../services/order-ledger";
 import { loadRealizedPnl } from "../../routes/finance";
+import { realizedPnlFromOrders } from "./pnl-rows-oracle";
 import {
   parsePnlCursor,
   type LedgerPnlFilter,
@@ -101,8 +102,8 @@ describe.skipIf(!ledgerReady)("Lãi/Lỗ thực hiện — sổ cái = kéo đơ
         for (const page of [1, 2]) {
           const opts = { page, pageSize: 20, byDaySince: daySince };
           const [ledger, orders] = await Promise.all([
-            loadRealizedPnl("ledger", scope, range, f, opts),
-            loadRealizedPnl("orders", scope, range, f, opts),
+            loadRealizedPnl(scope, range, f, opts),
+            realizedPnlFromOrders(scope, range, f, opts),
           ]);
           if (orders.truncated) continue;
           expect(ledger.rows.map((r) => r.id), `${label} trang ${page}: danh sách`).toEqual(orders.rows.map((r) => r.id));
@@ -112,7 +113,7 @@ describe.skipIf(!ledgerReady)("Lãi/Lỗ thực hiện — sổ cái = kéo đơ
           compared += 1;
         }
         if (f.search && f.search === fragment) {
-          const hit = await loadRealizedPnl("ledger", scope, range, f, { page: 1, pageSize: 20 });
+          const hit = await loadRealizedPnl(scope, range, f, { page: 1, pageSize: 20 });
           expect(hit.totals!.count, `${label}: phải tìm thấy ít nhất đơn mẫu`).toBeGreaterThan(0);
           for (const r of hit.rows) expect(r.orderCode.toLowerCase()).toContain(fragment);
           searched += 1;
@@ -120,12 +121,12 @@ describe.skipIf(!ledgerReady)("Lãi/Lỗ thực hiện — sổ cái = kéo đơ
       }
 
       // ĐỌC THEO CON TRỎ (xuất Excel): gom đủ, đúng thứ tự, không trùng — so với đường cũ một lượt.
-      const all = await loadRealizedPnl("orders", scope, range, {}, { page: 1, pageSize: 100_000, rowsOnly: true });
+      const all = await realizedPnlFromOrders(scope, range, {}, { page: 1, pageSize: 100_000, rowsOnly: true });
       if (!all.truncated) {
         const ids: string[] = [];
         let cursor: string | null = null;
         for (let guard = 0; guard < 2_000; guard++) {
-          const pageData = await loadRealizedPnl("ledger", scope, range, {}, {
+          const pageData = await loadRealizedPnl(scope, range, {}, {
             page: 1,
             pageSize: 100,
             rowsOnly: true,

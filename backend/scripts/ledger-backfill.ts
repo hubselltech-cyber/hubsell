@@ -13,40 +13,26 @@
 //   npx tsx scripts/ledger-backfill.ts compare (--all | --owner <userId>) [--channel <id>] [--from --to] [--fresh]
 //   npx tsx scripts/ledger-backfill.ts partitions
 //   npx tsx scripts/ledger-backfill.ts ads-compare [--platform TIKTOK|SHOPEE|LAZADA] [--channel <id>] [--explain]
-//       so dòng gọn của đơn (nguyên liệu biên lãi / hòa vốn quảng cáo) đọc từ sổ với dòng dựng
-//       từ đơn gốc, từng gian, rồi so HAI ĐƯỜNG CỘNG (duyệt mảng đơn ↔ gom trong database,
-//       docs/QUANG-CAO-GOM-TRONG-DATABASE.md): Shopee/Lazada biên lãi từng nhóm, nhịp bán, ba
-//       kết quả cuối; TikTok hòa vốn từng nhóm, tự kiểm mẫu số, đà bán, hai kết quả cuối.
-//       --explain (kèm --channel): in kế hoạch chạy thật của câu gom.
-//   npx tsx scripts/ledger-backfill.ts params-compare [--owner <userId>]
-//       so MỌI câu đọc sổ ở hai cách viết mốc kỳ (chuỗi ép kiểu ↔ dạng hằng, xem LedgerParamStyle):
-//       từng chủ shop × 6 kỳ, từng gian × 2 kỳ; kết quả phải giống hệt, in kèm tổng thời gian mỗi cách.
+//       so HAI ĐƯỜNG CỘNG của quảng cáo trên cùng dòng gọn đọc từ sổ (duyệt mảng đơn ↔ gom
+//       trong database, docs/QUANG-CAO-GOM-TRONG-DATABASE.md): Shopee/Lazada biên lãi từng nhóm,
+//       nhịp bán, ba kết quả cuối; TikTok hòa vốn từng nhóm, tự kiểm mẫu số, đà bán, hai kết
+//       quả cuối. --explain (kèm --channel): in kế hoạch chạy thật của câu gom.
+//       (Tầng so "dòng gọn từ sổ ↔ từ đơn gốc" và lệnh params-compare đã gỡ 14/10/2026
+//       cùng đường đọc đơn cũ; so sổ ↔ đơn gốc dùng lệnh `compare` / `audit`.)
 //
 // Chạy trên Render Shell của WORKER (đừng redeploy khi đang chạy). Chỉ đọc
 // đơn theo lô ≤ 500 nên không dồn tải; `drain` tự dừng khi hết dòng bẩn.
-// Hai lệnh so (ads-compare, params-compare) in chữ KHÔNG DẤU để đọc được trên
-// Render Shell.
+// Lệnh ads-compare in chữ KHÔNG DẤU để đọc được trên Render Shell.
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
 import { compareMarginSources } from "../src/integrations/shopee/ads-margin-compare";
-import { loadAdsGroupSets, loadMarginRows, marginGroupOptions } from "../src/integrations/shopee/ads-margin-source";
+import { loadAdsGroupSets, marginGroupOptions } from "../src/integrations/shopee/ads-margin-source";
 import { compareBreakevenSources } from "../src/integrations/tiktok-ads/breakeven-compare";
-import { loadBreakevenInputs, loadBreakevenRows } from "../src/integrations/tiktok-ads/breakeven-source";
-import {
-  adsGroupMappingOf,
-  marginOverRows,
-  marginWindowRange,
-  pnlRowsForMargin,
-  type AdsInsightChannel,
-} from "../src/lib/ads-margin";
+import { loadBreakevenInputs } from "../src/integrations/tiktok-ads/breakeven-source";
+import { adsGroupMappingOf, marginWindowRange, type AdsInsightChannel } from "../src/lib/ads-margin";
 import { parseDateRange } from "../src/lib/date-range";
-import {
-  tiktokBreakevenBase,
-  tiktokBreakevenBaseByGroup,
-  tiktokGroupMappingOf,
-  tiktokMarginWindowRange,
-} from "../src/lib/tiktok-breakeven";
+import { tiktokGroupMappingOf, tiktokMarginWindowRange } from "../src/lib/tiktok-breakeven";
 import { prisma } from "../src/lib/prisma";
 import {
   auditLedger,
@@ -58,7 +44,6 @@ import {
   ledgerStatus,
   markLedgerScope,
 } from "../src/services/order-ledger";
-import { compareLedgerParamStyles, defaultCompareRanges } from "../src/services/order-ledger-params-compare";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -145,116 +130,30 @@ async function compare(): Promise<void> {
 // ads-compare
 // ------------------------------------------------------------
 
-interface CompactRow {
-  createdAt: Date;
-  shippingStatus: string;
-  isSettled: boolean;
-  actualRevenue: number;
-  profit: number;
-  missingCostPrice: boolean;
-  items: { sku: string; price: number; quantity: number }[];
-  tiktok?: { feeGmvMax: number } | null;
-}
-
-const close = (x: number, y: number) => Math.abs(x - y) <= 1;
-
-/** So hai mảng dòng gọn theo thứ tự (mới nhất trước) — trả số dòng lệch + mô tả dòng lệch đầu tiên. */
-function diffCompactRows(a: CompactRow[], b: CompactRow[]): { mismatched: number; first: string | null } {
-  const key = (items: CompactRow["items"]) =>
-    items.map((i) => `${i.sku}|${Math.round(i.price)}|${i.quantity}`).sort().join(";");
-  let mismatched = 0;
-  let first: string | null = null;
-  const n = Math.max(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const x = a[i];
-    const y = b[i];
-    const why: string[] = [];
-    if (!x || !y) why.push("thieu dong");
-    else {
-      if (x.createdAt.getTime() !== y.createdAt.getTime()) why.push("createdAt");
-      if (x.shippingStatus !== y.shippingStatus) why.push(`status ${x.shippingStatus}/${y.shippingStatus}`);
-      if (x.isSettled !== y.isSettled) why.push(`isSettled ${x.isSettled}/${y.isSettled}`);
-      if (x.missingCostPrice !== y.missingCostPrice) why.push("missingCost");
-      if (Math.abs(x.actualRevenue - y.actualRevenue) > 0.5) why.push(`revenue ${x.actualRevenue}/${y.actualRevenue}`);
-      if (Math.abs(x.profit - y.profit) > 0.5) why.push(`profit ${x.profit}/${y.profit}`);
-      if (key(x.items) !== key(y.items)) why.push("items");
-      if ((x.tiktok == null) !== (y.tiktok == null)) why.push("tiktok null");
-      if (Math.abs((x.tiktok?.feeGmvMax ?? 0) - (y.tiktok?.feeGmvMax ?? 0)) > 0.5) why.push("feeGmvMax");
-    }
-    if (why.length) {
-      mismatched += 1;
-      if (!first) first = `#${i} ${x?.createdAt?.toISOString() ?? "-"}: ${why.join(", ")}`;
-    }
-  }
-  return { mismatched, first };
-}
-
-/** TikTok: dòng gọn từ sổ ↔ từ đơn gốc + nguyên liệu hòa vốn theo gian và theo từng SKU, rồi hai đường cộng hòa vốn (mảng đơn ↔ gom trong database). */
+/** TikTok: hai đường cộng hòa vốn (mảng dòng gọn từ sổ ↔ gom trong database) — nguyên liệu, tự kiểm, đà bán, kết quả cuối. */
 async function compareTiktokRows(ch: AdsInsightChannel): Promise<{ ok: boolean; line: string }> {
-  const t0 = Date.now();
-  const ledger = await loadBreakevenRows(ch, "ledger");
-  const t1 = Date.now();
-  const orders = await loadBreakevenRows(ch, "orders");
-  const t2 = Date.now();
-  const d = diffCompactRows(ledger, orders);
-  const x = tiktokBreakevenBase(ledger, null);
-  const y = tiktokBreakevenBase(orders, null);
-  const groupOfSku = new Map<string, string>();
-  for (const r of orders) for (const it of r.items) groupOfSku.set(it.sku, it.sku);
-  const gx = tiktokBreakevenBaseByGroup(ledger, groupOfSku);
-  const gy = tiktokBreakevenBaseByGroup(orders, groupOfSku);
-  let groupDiff = 0;
-  for (const [g, by] of gy) {
-    const bx = gx.get(g);
-    if (!bx || bx.settledOrders !== by.settledOrders || bx.pendingOrders !== by.pendingOrders || !close(bx.revenue, by.revenue) || !close(bx.profitBeforeAds, by.profitBeforeAds)) groupDiff += 1;
-  }
-  const rowsOk =
-    d.mismatched === 0 && groupDiff === 0 &&
-    x.settledOrders === y.settledOrders && x.cancelledOrders === y.cancelledOrders && x.pendingOrders === y.pendingOrders &&
-    close(x.revenue, y.revenue) && close(x.profitBeforeAds, y.profitBeforeAds) && close(x.adFee, y.adFee) && close(x.missingCostRevenue, y.missingCostRevenue);
-  const line =
-    `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} skuGroups=${gy.size} groupDiff=${groupDiff} ` +
-    `settled=${x.settledOrders}/${y.settledOrders} cancelled=${x.cancelledOrders}/${y.cancelledOrders} pending=${x.pendingOrders}/${y.pendingOrders} ` +
-    `revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profitBeforeAds=${Math.round(x.profitBeforeAds)}/${Math.round(y.profitBeforeAds)} adFee=${Math.round(x.adFee)}/${Math.round(y.adFee)} ` +
-    `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
-
   const m = await compareBreakevenSources(ch);
   const lech = [...m.baseMismatches, ...m.checkMismatches, ...m.paceMismatches, ...m.endToEndMismatches];
-  const gom =
-    ` | GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
+  const line =
+    `GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
     `soGoc=${m.baseMismatches.length} tuKiem=${m.checkMismatches.length} daBan=${m.paceMismatches.length} ketQuaCuoi=${m.endToEndMismatches.length} ` +
     `(rows ${m.timing.rowsMs}ms, sql ${m.timing.sqlMs}ms)` +
     (m.capped ? " CHAM PHANH 8000 DON - duong rows chi dai dien don moi nhat, khong ket luan duoc" : "") +
     (lech.length ? ` LECH DAU: ${lech.slice(0, 5).join(" ; ")}` : "");
-  return { ok: rowsOk && m.ok, line: line + gom };
+  return { ok: m.ok, line };
 }
 
-/** Shopee/Lazada: dòng gọn từ sổ ↔ từ đơn gốc, rồi hai đường cộng biên lãi (mảng đơn ↔ gom trong database). */
+/** Shopee/Lazada: hai đường cộng biên lãi (mảng dòng gọn từ sổ ↔ gom trong database) — biên lãi từng nhóm, nhịp bán, kết quả cuối. */
 async function compareMarginRows(ch: AdsInsightChannel): Promise<{ ok: boolean; line: string }> {
-  const t0 = Date.now();
-  const ledger = await loadMarginRows(ch, "ledger");
-  const t1 = Date.now();
-  const orders = await loadMarginRows(ch, "orders");
-  const t2 = Date.now();
-  const d = diffCompactRows(ledger, orders);
-  const x = marginOverRows(pnlRowsForMargin(ledger, ch.channelName), null);
-  const y = marginOverRows(pnlRowsForMargin(orders, ch.channelName), null);
-  const rowsOk =
-    d.mismatched === 0 && x.orders === y.orders && x.missingCostOrders === y.missingCostOrders &&
-    x.costCoveragePct === y.costCoveragePct && close(x.revenue, y.revenue) && close(x.profit, y.profit);
-
   const m = await compareMarginSources(ch);
   const lech = [...m.baseMismatches, ...m.paceMismatches, ...m.endToEndMismatches];
   const line =
-    `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} orders=${x.orders}/${y.orders} missingCost=${x.missingCostOrders}/${y.missingCostOrders} ` +
-    `coverage=${x.costCoveragePct}/${y.costCoveragePct} revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profit=${Math.round(x.profit)}/${Math.round(y.profit)} ` +
-    `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "") +
-    ` | GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
+    `GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
     `soGoc=${m.baseMismatches.length} nhipBan=${m.paceMismatches.length} ketQuaCuoi=${m.endToEndMismatches.length} ` +
     `(rows ${m.timing.rowsMs}ms, sql ${m.timing.sqlMs}ms)` +
     (m.capped ? " CHAM PHANH 20000 DON - duong rows chi dai dien don moi nhat, khong ket luan duoc" : "") +
     (lech.length ? ` LECH DAU: ${lech.slice(0, 5).join(" ; ")}` : "");
-  return { ok: rowsOk && m.ok, line };
+  return { ok: m.ok, line };
 }
 
 /** Kế hoạch chạy thật của câu gom (biên lãi Shopee/Lazada, hòa vốn TikTok) cho một gian, bỏ các mảnh tháng không chạy tới. */
@@ -312,58 +211,6 @@ async function adsCompare(): Promise<void> {
 }
 
 // ------------------------------------------------------------
-// params-compare
-// ------------------------------------------------------------
-
-async function paramsCompare(): Promise<void> {
-  const onlyOwner = arg("owner");
-  const channels = await prisma.channel.findMany({
-    where: onlyOwner ? { userId: onlyOwner } : {},
-    select: { id: true, userId: true, channelName: true },
-    orderBy: [{ userId: "asc" }, { id: "asc" }],
-  });
-  const ranges = defaultCompareRanges();
-  const channelRanges = ranges.filter((r) => r.label === "thangnay" || r.label === "400ngay");
-  const total = new Map<string, { text: number; const: number }>();
-  let allMatch = true;
-  let probes = 0;
-  const add = (label: string, r: Awaited<ReturnType<typeof compareLedgerParamStyles>>) => {
-    allMatch &&= r.ok;
-    probes += r.probes;
-    let text = 0;
-    let konst = 0;
-    for (const [name, t] of r.timing) {
-      const sum = total.get(name) ?? { text: 0, const: 0 };
-      sum.text += t.text;
-      sum.const += t.const;
-      total.set(name, sum);
-      text += t.text;
-      konst += t.const;
-    }
-    console.log(`${r.ok ? "KHOP" : "LECH"} ${label} luot=${r.probes} text=${Math.round(text)}ms const=${Math.round(konst)}ms`);
-    for (const m of r.mismatches.slice(0, 5)) console.log(`   ${m.slice(0, 400)}`);
-  };
-  for (const userId of [...new Set(channels.map((c) => c.userId))]) {
-    add(`owner ${userId}`, await compareLedgerParamStyles({ userId }, ranges, { label: userId }));
-  }
-  for (const ch of channels) {
-    add(
-      `gian ${ch.channelName} ${ch.id}`,
-      await compareLedgerParamStyles({ userId: ch.userId, id: ch.id, channelName: ch.channelName }, channelRanges, {
-        channel: ch,
-        label: ch.id,
-      })
-    );
-  }
-  console.log("--- tong thoi gian theo cau doc (ms): text / const");
-  for (const [name, t] of [...total].sort((a, b) => b[1].text - a[1].text)) {
-    console.log(`${name.padEnd(22)} ${String(Math.round(t.text)).padStart(7)} / ${String(Math.round(t.const)).padStart(7)}`);
-  }
-  console.log(allMatch ? `TAT CA KHOP (${probes} luot so)` : "CO LECH - xem tren");
-  if (!allMatch) process.exitCode = 2;
-}
-
-// ------------------------------------------------------------
 
 const COMMANDS: Record<string, () => Promise<void>> = {
   status,
@@ -373,7 +220,6 @@ const COMMANDS: Record<string, () => Promise<void>> = {
   audit,
   compare,
   "ads-compare": adsCompare,
-  "params-compare": paramsCompare,
 };
 
 async function main(): Promise<void> {

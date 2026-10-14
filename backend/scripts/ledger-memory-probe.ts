@@ -9,10 +9,10 @@
 // (pg_backend_memory_contexts, hoặc bộ nhớ tiến trình backend nếu thiếu quyền)
 // và số câu đang được giữ (pg_prepared_statements).
 //
-//   npx tsx scripts/ledger-memory-probe.ts [--chunks 80] [--size 100] [--style json|values]
+//   npx tsx scripts/ledger-memory-probe.ts [--chunks 80] [--size 100]
 //
-// --style: cach ghi (services/order-ledger.ts LedgerWriteStyle) — mac dinh la cach dang dung;
-// chay hai lan (values roi json) de so bo nho truoc va sau.
+// (Tùy chọn --style json|values đã gỡ 14/10/2026 cùng cách ghi VALUES cũ; số đo
+// hai cách ghi ngày 01/10/2026 ghi ở chú thích writeLedgerChunk của order-ledger.ts.)
 //
 // CHỈ chạy trên DB dev (localhost): ghi lại dòng sổ với cùng giá trị, đổi
 // computedAt. Postgres phải chạy cùng máy nếu đo qua hệ điều hành.
@@ -42,9 +42,7 @@ async function main(): Promise<void> {
   // khi nạp lib/prisma (resolveDatabaseUrl đọc env lúc nạp).
   process.env.DB_CONNECTION_LIMIT = "1";
   const { prisma } = await import("../src/lib/prisma");
-  const { recomputeLedgerOrders, withLedgerWriteStyle } = await import("../src/services/order-ledger");
-  const styleArg = arg("style");
-  if (styleArg !== undefined && styleArg !== "json" && styleArg !== "values") throw new Error("--style chi nhan json | values");
+  const { recomputeLedgerOrders } = await import("../src/services/order-ledger");
 
   const chunks = Math.max(1, Number(arg("chunks") ?? 80) || 80);
   const size = Math.min(100, Math.max(1, Number(arg("size") ?? 100) || 100));
@@ -99,7 +97,7 @@ async function main(): Promise<void> {
       `SELECT "id" FROM "Order" ORDER BY "createdAt" DESC LIMIT ${chunks * size}`
     )
   ).map((r) => r.id);
-  console.log(`Don lay duoc: ${ids.length} — lo ${size} don, toi da ${chunks} lo, cach ghi: ${styleArg ?? "mac dinh"}`);
+  console.log(`Don lay duoc: ${ids.length} — lo ${size} don, toi da ${chunks} lo`);
 
   const before = await measure();
   line("truoc khi ghi", before);
@@ -109,9 +107,7 @@ async function main(): Promise<void> {
   let done = 0;
   for (let i = 0; i < ids.length; i += size) {
     const claims = ids.slice(i, i + size).map((orderId) => ({ orderId, dirtyAt: null }));
-    const r = styleArg
-      ? await withLedgerWriteStyle(styleArg, () => recomputeLedgerOrders(claims))
-      : await recomputeLedgerOrders(claims);
+    const r = await recomputeLedgerOrders(claims);
     written += r.written;
     lines += r.lines;
     done += 1;

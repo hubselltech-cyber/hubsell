@@ -5,8 +5,11 @@
 // Hai đường cộng cho cùng một kết quả (luật ở lib/ads-margin.ts):
 //   "sql"  (mặc định): GROUP BY trên sổ dòng hàng (ledgerMarginByGroup) — đủ mọi
 //          đơn, RAM chỉ giữ một dòng kết quả cho mỗi nhóm.
-//   "rows" (đường lui ADS_MARGIN_SOURCE=rows, gỡ ~07/10): giữ dòng gọn của cả
-//          cửa sổ trong RAM rồi duyệt; có phanh MARGIN_MAX_ORDERS.
+//   "rows" : dòng gọn của cả cửa sổ đọc từ SỔ CÁI (ledgerCompactOrders) rồi duyệt
+//          trong RAM; có phanh MARGIN_MAX_ORDERS. Từ 14/10/2026 chỉ còn hai nơi
+//          dùng: lưới đỡ khi câu gom lỗi (anh Trung chốt 30/09) và công cụ đối
+//          chiếu / test (`source` truyền tường minh). Công tắc env
+//          ADS_MARGIN_SOURCE và đường đọc đơn gốc đã gỡ.
 // Ba nơi dùng (chiến dịch, bảng hòa vốn sản phẩm, gợi ý chạy quảng cáo) cùng
 // dựng MỘT bộ nhóm nên dùng chung một lượt gom.
 // ============================================================
@@ -26,6 +29,7 @@ import {
   type AdsGroupMapping,
   type AdsGroupSets,
   type AdsInsightChannel,
+  type AdsMarginSource,
   type ChannelMargins,
   type LedgerMarginOptions,
   type MarginGroupStats,
@@ -34,13 +38,6 @@ import {
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import type { DateRangeFilter } from "../../lib/date-range";
 import { prisma } from "../../lib/prisma";
-import {
-  resolveAdsMarginSource,
-  resolveReportSource,
-  type AdsMarginSource,
-  type ReportSource,
-} from "../../lib/report-source";
-import { fetchPnlRows } from "../../routes/finance";
 import { ensureLedgerFresh, ledgerCompactOrders, ledgerMarginByGroup } from "../../services/order-ledger";
 
 // ------------------------------------------------------------
@@ -48,23 +45,17 @@ import { ensureLedgerFresh, ledgerCompactOrders, ledgerMarginByGroup } from "../
 // ------------------------------------------------------------
 
 /**
- * Đơn của MỘT gian trong cửa sổ, dạng gọn, mới nhất trước — theo nguồn số
- * (docs/SO-CAI-DON.md mục 9.7):
- *   - "ledger" (mặc định): hai câu SELECT trên sổ cái — không đọc bảng đơn kèm
- *     dòng hàng / kho / bản kê, không tính lại computePnlRow ở mỗi lượt. Tính
- *     nốt dòng bẩn của cửa sổ trước (giá vốn vừa nhập phải vào biên lãi ngay).
- *   - "orders" (LEDGER_REPORTS_SOURCE=orders): đường cũ fetchPnlRows.
+ * Đơn của MỘT gian trong cửa sổ, dạng gọn, mới nhất trước, đọc từ SỔ CÁI
+ * (docs/SO-CAI-DON.md mục 9.7): hai câu SELECT — không đọc bảng đơn kèm dòng
+ * hàng / kho / bản kê, không tính lại computePnlRow ở mỗi lượt. Tính nốt dòng
+ * bẩn của cửa sổ trước (giá vốn vừa nhập phải vào biên lãi ngay).
  * `range`: công cụ đối chiếu truyền CÙNG một cửa sổ cho hai đường cộng.
  */
 export async function loadMarginRows(
   channel: AdsInsightChannel,
-  source: ReportSource = resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE),
   range: DateRangeFilter = marginWindowRange()
 ): Promise<MarginRow[]> {
   const scope = { userId: channel.userId, id: channel.id, channelName: channel.channelName };
-  if (source === "orders") {
-    return (await fetchPnlRows(scope, range, { max: MARGIN_MAX_ORDERS })).rows;
-  }
   await ensureLedgerFresh(scope, range, { maxInline: 1000 });
   const { orders } = await ledgerCompactOrders(scope, range, MARGIN_MAX_ORDERS);
   return orders;
@@ -194,20 +185,19 @@ const marginSqlFailedAt = new Map<string, number>();
 /**
  * Biên lãi + nhịp bán của mọi nhóm của gian (có nhớ đệm).
  *
- * `source` bỏ trống = theo env, và có LƯỚI ĐỠ (anh Trung chốt 30/09/2026): câu
- * gom trong database lỗi thì lượt đó tính bằng đường "rows" để khách vẫn thấy
- * số, lỗi ghi ra log với nhãn [Ads-margin]. Lưới đỡ sống cùng đường "rows" (gỡ
- * ~07/10). `source` truyền tường minh (công cụ đối chiếu, test) = đúng đường đó,
- * lỗi ném ra nguyên vẹn — không để lưới đỡ che mất lệch.
+ * `source` bỏ trống = câu gom trong database, có LƯỚI ĐỠ (anh Trung chốt
+ * 30/09/2026): câu gom lỗi thì lượt đó tính bằng đường "rows" (dòng gọn đọc từ
+ * sổ cái) để khách vẫn thấy số, lỗi ghi ra log với nhãn [Ads-margin]. `source`
+ * truyền tường minh (công cụ đối chiếu, test) = đúng đường đó, lỗi ném ra nguyên
+ * vẹn — không để lưới đỡ che mất lệch.
  */
 export async function fetchChannelMargins(
   channel: AdsInsightChannel,
   sets: AdsGroupSets,
   source?: AdsMarginSource
 ): Promise<ChannelMargins> {
-  const resolved = source ?? resolveAdsMarginSource();
-  if (resolved === "rows") return marginsFromRows(await fetchChannelMarginRows(channel), sets);
-  if (source !== undefined) {
+  if (source === "rows") return marginsFromRows(await fetchChannelMarginRows(channel), sets);
+  if (source === "sql") {
     return marginsFromGroups(await fetchChannelMarginGroups(channel, adsGroupMappingOf(sets)));
   }
   const failedAt = marginSqlFailedAt.get(channel.id);

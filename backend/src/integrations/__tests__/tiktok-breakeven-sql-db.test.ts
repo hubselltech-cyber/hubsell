@@ -320,7 +320,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — gom hòa vốn trong data
     const inputs = await loadBreakevenInputs(fx.channelId);
     const g = await loadBreakevenGroups(channel(), tiktokGroupMappingOf(inputs.sets, inputs.checks), range);
     expect(g.get(SHOP_GROUP)).toMatchObject({ settledOrders: 0, cancelledOrders: 0, pendingOrders: 3, revenue: 0, missingCostRevenue: 0 });
-    const pure = breakevensFromRows(await loadBreakevenRows(channel(), "ledger", range), inputs.sets, inputs.checks, range.lte.getTime());
+    const pure = breakevensFromRows(await loadBreakevenRows(channel(), range), inputs.sets, inputs.checks, range.lte.getTime());
     expect(pure.base(SHOP_GROUP)).toMatchObject({ settledOrders: 0, cancelledOrders: 0, pendingOrders: 3, revenue: 0, missingCostRevenue: 0 });
   });
 
@@ -333,7 +333,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — gom hòa vốn trong data
     const after = await ledgerTiktokBreakevenByGroup(scope(), range, mapping, { paceNow: new Date(atNow.getTime() + 1) });
     // N1 góp 2 đơn vị vào sản phẩm 100: mốc trùng giờ tạo thì còn, lùi sau 1 mili giây thì mất.
     expect(at.get(productGroupKey("100"))!.units7d - after.get(productGroupKey("100"))!.units7d).toBe(2);
-    const rows = await loadBreakevenRows(channel(), "ledger", range);
+    const rows = await loadBreakevenRows(channel(), range);
     const pure = breakevensFromRows(rows, inputs.sets, inputs.checks, atNow.getTime());
     expect(pure.productPace().get("100")!.units7d).toBe(at.get(productGroupKey("100"))!.units7d);
   });

@@ -18,10 +18,10 @@
 // Quy ước SQL thô: mọi tham số đều ép kiểu tường minh (::numeric, ::date,
 // ::"ShippingStatus"...) vì Prisma gửi chuỗi dưới dạng text. Câu GHI theo lô
 // (≤ 100 đơn) gửi cả lô trong MỘT tham số JSON, kiểu từng cột khai ở
-// jsonb_to_recordset — chữ câu lệnh cố định (xem LedgerWriteStyle).
+// jsonb_to_recordset — chữ câu lệnh cố định (cách VALUES cũ đã gỡ 14/10/2026).
 // NGOẠI LỆ cho câu ĐỌC: mốc thời gian / mốc ngày đem so với cột KHÔNG ép kiểu
 // từ chuỗi (Postgres đổi kiểu lại ở từng dòng quét) mà viết dạng hằng qua
-// tsParam / dayParam — xem timestampConst.
+// tsParam / dayParam — xem timestampConst (cách chuỗi ép kiểu cũ đã gỡ 14/10/2026).
 // ============================================================
 
 import { Prisma, type ShippingStatus } from "@prisma/client";
@@ -126,36 +126,13 @@ export const dateConst = (dateKey: string): Prisma.Sql =>
   Prisma.sql`(DATE '1970-01-01' + ${Math.round(Date.parse(`${dateKey}T00:00:00Z`) / 86_400_000)}::int)`;
 
 /**
- * Cách viết mốc kỳ trong MỌI câu đọc sổ cái:
- *   "const" (mặc định từ 30/09/2026 tối): dạng hằng — timestampConst / dateConst;
- *   "text" : cách cũ, chuỗi ép `::timestamp` / `::date`.
- * Hai cách cho cùng giá trị nên cùng kết quả; khác nhau ở tốc độ và kế hoạch
- * chạy. Env LEDGER_SCOPE_PARAMS=text là đường lui (giữ tới ~07/10) phòng khi một
- * báo cáo trên prod chạy chậm đi vì Postgres đổi kế hoạch.
+ * Mốc thời gian / mốc ngày ("yyyy-mm-dd") của một câu đọc sổ: LUÔN dạng hằng
+ * (timestampConst / dateConst) từ 30/09/2026 tối — so trên prod 2.976 lượt 0
+ * lệch (docs/QUANG-CAO-GOM-TRONG-DATABASE.md mục 11.8–11.9); cách cũ chuỗi ép
+ * `::timestamp` / `::date` và công tắc LEDGER_SCOPE_PARAMS đã gỡ 14/10/2026.
  */
-export type LedgerParamStyle = "const" | "text";
-let paramStyle: LedgerParamStyle = process.env.LEDGER_SCOPE_PARAMS?.trim().toLowerCase() === "text" ? "text" : "const";
-
-/**
- * Chạy `fn` với một cách viết mốc kỳ cụ thể rồi trả lại cách đang dùng. CHỈ cho
- * công cụ đối chiếu và test (chạy tuần tự): đây là biến chung của tiến trình,
- * mọi câu đọc sổ dựng trong lúc `fn` chạy đều theo nó.
- */
-export async function withLedgerParamStyle<T>(style: LedgerParamStyle, fn: () => Promise<T>): Promise<T> {
-  const previous = paramStyle;
-  paramStyle = style;
-  try {
-    return await fn();
-  } finally {
-    paramStyle = previous;
-  }
-}
-
-/** Mốc thời gian / mốc ngày ("yyyy-mm-dd") của một câu đọc sổ, theo cách viết đang dùng. */
-const tsParam = (d: Date): Prisma.Sql =>
-  paramStyle === "const" ? timestampConst(d) : Prisma.sql`${d.toISOString()}::timestamp`;
-const dayParam = (dateKey: string): Prisma.Sql =>
-  paramStyle === "const" ? dateConst(dateKey) : Prisma.sql`${dateKey}::date`;
+const tsParam = (d: Date): Prisma.Sql => timestampConst(d);
+const dayParam = (dateKey: string): Prisma.Sql => dateConst(dateKey);
 
 /**
  * WHERE cho phạm vi gian (cùng nghĩa với `channel: scope` của Prisma) + kỳ.
@@ -231,17 +208,6 @@ export async function claimDirtyLedgerRows(
 // Ghi sổ
 // ------------------------------------------------------------
 
-const money = (n: number) => Prisma.sql`${n.toFixed(2)}::numeric`;
-const dateOrNull = (d: string | null) => (d === null ? Prisma.sql`NULL::date` : Prisma.sql`${d}::date`);
-// Mốc thời gian gửi dưới dạng CHUỖI ISO (UTC, có "Z") rồi ép kiểu: cột
-// timestamp (không múi) nhận chuỗi ISO và BỎ QUA phần múi → đúng giờ UTC như
-// Prisma vẫn lưu; cột timestamptz đọc "Z" nên cũng đúng. Không gửi Date thô để
-// khỏi phụ thuộc cách driver gán kiểu tham số và TimeZone của phiên.
-const ts = (d: Date) => Prisma.sql`${d.toISOString()}::timestamp`;
-const tsOrNull = (d: Date | null) => (d === null ? Prisma.sql`NULL::timestamp` : ts(d));
-const tstzOrNull = (d: Date | null) =>
-  d === null ? Prisma.sql`NULL::timestamptz` : Prisma.sql`${d.toISOString()}::timestamptz`;
-
 const ORDER_COLUMNS = [
   "orderId", "createdDate", "channelId", "ownerId", "channelName", "orderCode",
   "createdAt", "deliveredAt", "deliveredDate", "settledAt", "settledDate",
@@ -252,20 +218,6 @@ const ORDER_COLUMNS = [
   "formulaVersion", "computedAt", "dirtyAt", "claimedAt",
 ] as const;
 
-function orderValues(r: OrderLedgerRow, claimedDirtyAt: Date | null): Prisma.Sql {
-  const moneyCols = ORDER_LEDGER_MONEY_COLUMNS.map((c) => money(r[c]));
-  return Prisma.sql`(
-    ${r.orderId}, ${r.createdDate}::date, ${r.channelId}, ${r.ownerId}, ${r.channelName}::"ChannelName", ${r.orderCode},
-    ${ts(r.createdAt)}, ${tsOrNull(r.deliveredAt)}, ${dateOrNull(r.deliveredDate)}, ${tsOrNull(r.settledAt)}, ${dateOrNull(r.settledDate)},
-    ${r.shippingStatus}::"ShippingStatus", ${r.returnStatus}::"ReturnStatus", ${r.isSettled}::boolean,
-    ${r.returnType}::"LedgerReturnType", ${r.countsAsRevenue}::boolean, ${r.isReturning}::boolean, ${r.isLoss}::boolean,
-    ${r.missingCostPrice}::boolean, ${r.itemCount}::int, ${r.totalQuantity}::int, ${r.returnedQuantity}::int,
-    ${Prisma.join(moneyCols)},
-    ${r.refundEstimated}::boolean, ${r.refundSource},
-    ${r.formulaVersion}::int, now(), NULL::timestamptz, ${tstzOrNull(claimedDirtyAt)}
-  )`;
-}
-
 const LINE_COLUMNS = [
   "orderItemId", "createdDate", "orderId", "channelId", "ownerId", "channelName", "productId", "channelSku", "productName",
   "createdAt", "deliveredDate", "settledDate", "shippingStatus", "returnStatus", "isSettled", "countsAsRevenue", "missingCostPrice",
@@ -273,21 +225,6 @@ const LINE_COLUMNS = [
   "share", "revenueGross", "actualRevenue", "platformRevenue", "platformDeduction", "refundedAmount", "feeGmvMax", "profit", "profitAfterTax",
   "formulaVersion",
 ] as const;
-
-function lineValues(l: OrderLineLedgerRow): Prisma.Sql {
-  return Prisma.sql`(
-    ${l.orderItemId}, ${l.createdDate}::date, ${l.orderId}, ${l.channelId}, ${l.ownerId}, ${l.channelName}::"ChannelName",
-    ${l.productId}, ${l.channelSku}, ${l.productName},
-    ${ts(l.createdAt)}, ${dateOrNull(l.deliveredDate)}, ${dateOrNull(l.settledDate)},
-    ${l.shippingStatus}::"ShippingStatus", ${l.returnStatus}::"ReturnStatus", ${l.isSettled}::boolean, ${l.countsAsRevenue}::boolean, ${l.missingCostPrice}::boolean,
-    ${l.quantity}::int, ${l.returnedQuantity}::int, ${l.recoveredQuantity}::int,
-    ${money(l.price)}, ${money(l.costPriceAtSale)}, ${money(l.lineGross)}, ${money(l.lineCost)}, ${money(l.costSnapshot)}, ${money(l.recoveredCost)},
-    ${l.share.toFixed(10)}::numeric,
-    ${money(l.revenueGross)}, ${money(l.actualRevenue)}, ${money(l.platformRevenue)}, ${money(l.platformDeduction)}, ${money(l.refundedAmount)},
-    ${money(l.feeGmvMax)}, ${money(l.profit)}, ${money(l.profitAfterTax)},
-    ${l.formulaVersion}::int
-  )`;
-}
 
 const quoteList = (cols: readonly string[]) => Prisma.raw(cols.map((c) => `"${c}"`).join(", "));
 
@@ -301,32 +238,15 @@ const ORDER_UPSERT_SET = Prisma.raw(
 );
 
 /**
- * Cách GHI một lô vào sổ:
- *   "json"   (mặc định từ 01/10/2026): cả lô đi trong MỘT tham số JSON, database
- *            tự tách dòng bằng jsonb_to_recordset → chữ câu lệnh CỐ ĐỊNH;
- *   "values" : cách cũ, VALUES ghép từng giá trị thành tham số riêng.
- * Hai cách ghi cùng giá trị (test order-ledger-write-style-db). Khác nhau ở bộ
- * nhớ database: câu VALUES của một lô 100 đơn có 4.000–5.000 tham số và chữ câu
- * lệnh đổi gần như mỗi lô (số dòng hàng, chỗ nào NULL), trong khi Prisma giữ
- * lại tới 100 câu đã chuẩn bị cho TỪNG kết nối. Đo trên DB dev 01/10/2026
- * (scripts/ledger-memory-probe.ts): một kết nối ghi 40 lô phình từ 5 MB lên
- * 326 MB rồi đứng ở ~350 MB; prod 30/09/2026 13:04 compute Micro (1 GB RAM)
- * hết bộ nhớ sau đợt dựng sổ. Env LEDGER_WRITE_STYLE=values là đường lui (giữ
- * tới ~08/10).
+ * Cách GHI một lô vào sổ (từ 01/10/2026, duy nhất từ 14/10/2026): cả lô đi trong
+ * MỘT tham số JSON, database tự tách dòng bằng jsonb_to_recordset → chữ câu lệnh
+ * CỐ ĐỊNH. Cách cũ VALUES ghép từng giá trị thành tham số riêng (4.000–5.000
+ * tham số một lô 100 đơn, chữ câu lệnh đổi gần như mỗi lô) làm Prisma giữ tới
+ * 100 câu đã chuẩn bị cho TỪNG kết nối: đo trên DB dev 01/10/2026
+ * (scripts/ledger-memory-probe.ts) một kết nối ghi 40 lô phình từ 5 MB lên
+ * 326 MB; prod 30/09/2026 13:04 compute Micro (1 GB RAM) hết bộ nhớ sau đợt
+ * dựng sổ. Công tắc LEDGER_WRITE_STYLE=values đã gỡ.
  */
-export type LedgerWriteStyle = "json" | "values";
-let writeStyle: LedgerWriteStyle = process.env.LEDGER_WRITE_STYLE?.trim().toLowerCase() === "values" ? "values" : "json";
-
-/** Chạy `fn` với một cách ghi cụ thể rồi trả lại cách đang dùng. CHỈ cho test và công cụ đo (chạy tuần tự). */
-export async function withLedgerWriteStyle<T>(style: LedgerWriteStyle, fn: () => Promise<T>): Promise<T> {
-  const previous = writeStyle;
-  writeStyle = style;
-  try {
-    return await fn();
-  } finally {
-    writeStyle = previous;
-  }
-}
 
 // Kiểu Postgres của từng cột trong gói JSON. Cột tiền gửi dạng CHUỖI đã làm tròn
 // (toFixed) để numeric nhận đúng từng số lẻ; mốc thời gian gửi chuỗi ISO như
@@ -414,16 +334,12 @@ function lineJson(l: OrderLineLedgerRow): Record<string, unknown> {
 type BuiltLedger = ReturnType<typeof buildLedgerRows>;
 
 /**
- * Điều kiện "dòng thuộc lô này" cho bảng mang bí danh `l`, theo cách ghi đang dùng.
- * Cách JSON nối với gói khóa (createdDate, orderId) và kèm biên ngày nhỏ nhất /
- * lớn nhất của lô ở dạng hằng (dateConst) để Postgres vẫn CẮT MẢNH tháng — nối
- * với một hàm trả bảng thì tự nó không cắt được mảnh.
+ * Điều kiện "dòng thuộc lô này" cho bảng mang bí danh `l`: nối với gói khóa
+ * (createdDate, orderId) dạng JSON và kèm biên ngày nhỏ nhất / lớn nhất của lô
+ * ở dạng hằng (dateConst) để Postgres vẫn CẮT MẢNH tháng — nối với một hàm trả
+ * bảng thì tự nó không cắt được mảnh.
  */
-function chunkKeysSql(built: BuiltLedger[]): { from: Prisma.Sql | null; where: Prisma.Sql } {
-  if (writeStyle === "values") {
-    const keys = Prisma.join(built.map((b) => Prisma.sql`(${b.order.createdDate}::date, ${b.order.orderId})`));
-    return { from: null, where: Prisma.sql`(l."createdDate", l."orderId") IN (${keys})` };
-  }
+function chunkKeysSql(built: BuiltLedger[]): { from: Prisma.Sql; where: Prisma.Sql } {
   const dates = built.map((b) => b.order.createdDate).sort();
   const keys = JSON.stringify(built.map((b) => ({ createdDate: b.order.createdDate, orderId: b.order.orderId })));
   return {
@@ -466,7 +382,7 @@ export async function recomputeLedgerOrders(
       await prisma
         .$executeRaw(Prisma.sql`
           UPDATE "order_ledger" AS l SET "claimedAt" = NULL
-          ${k.from ? Prisma.sql`FROM ${k.from}` : Prisma.empty}
+          FROM ${k.from}
           WHERE ${k.where} AND l."claimedAt" IS NOT NULL
         `)
         .catch(() => undefined);
@@ -488,15 +404,9 @@ async function writeLedgerChunk(built: BuiltLedger[], claimedAt: Map<string, Dat
   const claimOf = (b: BuiltLedger) => claimedAt.get(b.order.orderId) ?? null;
   const lines = built.flatMap((b) => b.lines);
 
-  const orderSource =
-    writeStyle === "values"
-      ? Prisma.sql`VALUES ${Prisma.join(built.map((b) => orderValues(b.order, claimOf(b))))}`
-      : Prisma.sql`SELECT ${ORDER_JSON_SQL.select}
+  const orderSource = Prisma.sql`SELECT ${ORDER_JSON_SQL.select}
       FROM jsonb_to_recordset(${JSON.stringify(built.map((b) => orderJson(b.order, claimOf(b))))}::jsonb) AS r(${ORDER_JSON_SQL.record})`;
-  const lineSource =
-    writeStyle === "values"
-      ? Prisma.sql`VALUES ${Prisma.join(lines.map(lineValues))}`
-      : Prisma.sql`SELECT ${LINE_JSON_SQL.select}
+  const lineSource = Prisma.sql`SELECT ${LINE_JSON_SQL.select}
         FROM jsonb_to_recordset(${JSON.stringify(lines.map(lineJson))}::jsonb) AS r(${LINE_JSON_SQL.record})`;
 
   await prisma.$transaction(async (tx) => {
@@ -519,12 +429,12 @@ async function writeLedgerChunk(built: BuiltLedger[], claimedAt: Map<string, Dat
     // Dòng vừa INSERT mới (không có dòng nháp) mang claimedAt = mốc nhặt → xóa.
     await tx.$executeRaw(Prisma.sql`
       UPDATE "order_ledger" AS l SET "claimedAt" = NULL
-      ${k.from ? Prisma.sql`FROM ${k.from}` : Prisma.empty}
+      FROM ${k.from}
       WHERE ${k.where} AND l."claimedAt" IS NOT NULL AND l."dirtyAt" IS NULL
     `);
     await tx.$executeRaw(Prisma.sql`
       DELETE FROM "order_line_ledger" AS l
-      ${k.from ? Prisma.sql`USING ${k.from}` : Prisma.empty}
+      USING ${k.from}
       WHERE ${k.where}
     `);
     if (lines.length > 0) {

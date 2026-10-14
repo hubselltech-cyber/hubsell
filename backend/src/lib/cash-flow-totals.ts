@@ -4,12 +4,12 @@
 // /api/finance/analytics cần đúng MỘT bộ tổng (CashFlowTotals): số đơn từng
 // nhóm, Σ vài cột tiền của nhóm, và ba bảng bóc (giá vốn theo sàn, GMV Max
 // theo gian, doanh thu/giá vốn theo ngày). Bộ tổng này có HAI nguồn:
-//   1. cashFlowTotalsFromRows(pnlRows)  — đường cũ: kéo đơn lên RAM, cộng
-//      bằng JS (giữ lại sau công tắc CASH_FLOW_SOURCE=orders trong 1 tuần).
-//   2. cashFlowTotalsFromLedger(summary, breakdown) — đường mới: SUM trong
+//   1. cashFlowTotalsFromRows(pnlRows)  — cộng bằng JS trên dòng computePnlRow.
+//      Từ 14/10/2026 CHỈ còn là MỐC TEST (đường cũ kéo đơn đã gỡ khỏi route).
+//   2. cashFlowTotalsFromLedger(summary, breakdown) — đường chạy thật: SUM trong
 //      database trên sổ cái đơn (services/order-ledger.ts), RAM không kéo đơn.
 // Hai đường PHẢI cho cùng kết quả từng đồng — test lib/__tests__/cash-flow-
-// totals.test.ts khóa điều đó; prod so bằng ?source=orders|ledger.
+// totals.test.ts và integrations/__tests__/cash-flow-ledger-db.test.ts khóa điều đó.
 //
 // Nguyên tắc (docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md, trụ 1): tiền ghi sổ một
 // lần, database cộng; báo cáo không kéo đơn lên RAM.
@@ -217,8 +217,8 @@ export interface CashFlowTotals {
 const sumInto = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
 
 /**
- * ĐƯỜNG CŨ: từ các dòng computePnlRow (fetchPnlRows) — logic nguyên văn của
- * /api/finance/analytics trước 30/09/2026, chỉ dời vào hàm thuần.
+ * MỐC TEST: từ các dòng computePnlRow — logic nguyên văn của /api/finance/analytics
+ * trước 30/09/2026, chỉ dời vào hàm thuần. Không còn route nào gọi (14/10/2026).
  */
 export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
   const active = {
@@ -356,17 +356,4 @@ export function cashFlowTotalsFromLedger(
     revenueByDay,
     cogsByDay,
   };
-}
-
-/** Nguồn số của Báo cáo dòng tiền: sổ cái (mặc định từ 30/09/2026) hoặc kéo đơn (đường cũ). */
-export type CashFlowSource = "ledger" | "orders";
-
-/**
- * Chọn nguồn: ?source= của request thắng (để so hai đường trên prod), rồi env
- * CASH_FLOW_SOURCE (công tắc lui về đường cũ), mặc định sổ cái.
- */
-export function resolveCashFlowSource(query: unknown, env = process.env.CASH_FLOW_SOURCE): CashFlowSource {
-  const q = typeof query === "string" ? query.trim().toLowerCase() : "";
-  if (q === "orders" || q === "ledger") return q;
-  return env === "orders" ? "orders" : "ledger";
 }

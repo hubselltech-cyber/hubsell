@@ -30,7 +30,6 @@ import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { prisma } from "../lib/prisma";
 import { loadLossOrders } from "../routes/finance";
-import { resolveReportSource } from "../lib/report-source";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -493,11 +492,10 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
   // vẫn âm nghĩa là phí sàn đã ăn hết doanh thu, càng phải báo. Thẻ nói N đơn
   // thì trang mở ra cũng đúng N. Chỉ cần số đếm (limit 0): từ 30/09/2026 đọc
   // bằng một câu SELECT trên sổ cái đơn thay vì kéo đơn 7 ngày của mọi chủ shop
-  // lên RAM ở mỗi lượt quét (LEDGER_REPORTS_SOURCE=orders lui về đường cũ).
+  // lên RAM ở mỗi lượt quét.
   // limit = ALERT_REF_LIMIT: cùng câu đếm, kèm vài dòng lỗ nặng nhất để thẻ
   // và nhật ký nêu được mã đơn (danh sách có thể lẫn đơn thiếu giá vốn → lọc).
   const stats = await loadLossOrders(
-    resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE),
     { userId: ownerId },
     { gte: daysAgo(LOSS_WINDOW_DAYS), lte: new Date() },
     ALERT_REF_LIMIT

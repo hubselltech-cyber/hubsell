@@ -27,7 +27,6 @@ import {
   cashFlowTotalsFromRows,
   computeGrossDeductions,
   computeGrossDeductionsFromTotals,
-  resolveCashFlowSource,
   type CashFlowTotals,
   type LedgerCashFlowBreakdown,
 } from "../cash-flow-totals";
@@ -213,19 +212,5 @@ describe("cashFlowTotals — đường sổ cái = đường kéo đơn từng �
     expect(g.totalDeduction).toBe(0);
     for (const i of g.items) expect(i.amount).toBe(0);
     for (const i of g.items) expect(Number.isNaN(i.percent)).toBe(false);
-  });
-});
-
-describe("resolveCashFlowSource — ?source= thắng env, mặc định sổ cái", () => {
-  it("mặc định ledger; env CASH_FLOW_SOURCE=orders lui về đường cũ", () => {
-    expect(resolveCashFlowSource(undefined, undefined)).toBe("ledger");
-    expect(resolveCashFlowSource(undefined, "orders")).toBe("orders");
-    expect(resolveCashFlowSource(undefined, "gì đó")).toBe("ledger");
-  });
-  it("query hợp lệ thắng env; query lạ bỏ qua", () => {
-    expect(resolveCashFlowSource("orders", undefined)).toBe("orders");
-    expect(resolveCashFlowSource(" LEDGER ", "orders")).toBe("ledger");
-    expect(resolveCashFlowSource("abc", "orders")).toBe("orders");
-    expect(resolveCashFlowSource(["orders"], undefined)).toBe("ledger");
   });
 });

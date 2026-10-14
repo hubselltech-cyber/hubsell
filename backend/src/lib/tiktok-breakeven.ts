@@ -73,6 +73,14 @@ export function tiktokMarginWindowRange(): DateRangeFilter {
 /** Phanh số đơn khi giữ đơn 60 ngày của một gian trong RAM. Chỉ đường "rows" còn dùng. */
 export const TIKTOK_BREAKEVEN_MAX_ORDERS = 8000;
 
+/**
+ * Nơi cộng nguyên liệu hòa vốn của Trợ lý quảng cáo TikTok: "sql" = GROUP BY trên
+ * sổ dòng hàng (mặc định từ 30/09/2026); "rows" = duyệt mảng dòng gọn đọc từ sổ
+ * cái (lưới đỡ khi câu gom lỗi, công cụ đối chiếu, test). Công tắc env
+ * TIKTOK_BREAKEVEN_SOURCE đã gỡ 14/10/2026.
+ */
+export type TiktokBreakevenSource = "rows" | "sql";
+
 /** Phần của một dòng P&L mà phép tính hòa vốn cần — tách riêng để test không phải dựng cả đơn. */
 export interface BreakevenPnlRow {
   createdAt: Date;

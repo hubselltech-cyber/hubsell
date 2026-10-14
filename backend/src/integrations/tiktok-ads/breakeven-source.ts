@@ -5,8 +5,10 @@
 // Hai đường cộng cho cùng một kết quả (luật ở lib/tiktok-breakeven.ts):
 //   "sql"  (mặc định): GROUP BY trên sổ dòng hàng (ledgerTiktokBreakevenByGroup)
 //          — đủ mọi đơn, RAM chỉ giữ một dòng kết quả cho mỗi nhóm.
-//   "rows" (đường lui TIKTOK_BREAKEVEN_SOURCE=rows, gỡ ~07/10): giữ dòng gọn của
-//          đơn 60 ngày trong RAM rồi duyệt; có phanh TIKTOK_BREAKEVEN_MAX_ORDERS.
+//   "rows" : dòng gọn của đơn 60 ngày đọc từ SỔ CÁI rồi duyệt trong RAM; có phanh
+//          TIKTOK_BREAKEVEN_MAX_ORDERS. Từ 14/10/2026 chỉ còn hai nơi dùng: lưới
+//          đỡ khi câu gom lỗi và công cụ đối chiếu / test (`source` tường minh).
+//          Công tắc env TIKTOK_BREAKEVEN_SOURCE và đường đọc đơn gốc đã gỡ.
 // Hai nơi dùng (hòa vốn chiến dịch, tab Hòa vốn sản phẩm) cùng dựng MỘT bộ nhóm
 // nên ở đường "sql" dùng chung một lượt gom.
 // ============================================================
@@ -17,12 +19,6 @@ import { buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, type AdsGroupSe
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import type { DateRangeFilter } from "../../lib/date-range";
 import { prisma } from "../../lib/prisma";
-import {
-  resolveReportSource,
-  resolveTiktokBreakevenSource,
-  type ReportSource,
-  type TiktokBreakevenSource,
-} from "../../lib/report-source";
 import {
   TIKTOK_BREAKEVEN_MAX_ORDERS,
   TIKTOK_MARGIN_WINDOW_DAYS,
@@ -35,11 +31,11 @@ import {
   type ChannelBreakevens,
   type LedgerTiktokBreakevenGroup,
   type LedgerTiktokBreakevenMapping,
+  type TiktokBreakevenSource,
   type TiktokCampaignCheck,
   type TiktokCheckWindows,
   type TiktokGroupMapping,
 } from "../../lib/tiktok-breakeven";
-import { computePnlRow, forEachPnlOrderPage } from "../../routes/finance";
 import { ensureLedgerFresh, ledgerCompactOrders, ledgerTiktokBreakevenByGroup } from "../../services/order-ledger";
 
 /** Định danh gian truyền vào các phép tính hòa vốn. */
@@ -108,42 +104,17 @@ export type TiktokBreakevenInputs = Awaited<ReturnType<typeof loadBreakevenInput
 // ------------------------------------------------------------
 
 /**
- * Đơn 60 ngày của gian ở dạng gọn (tối đa TIKTOK_BREAKEVEN_MAX_ORDERS đơn mới nhất) theo nguồn số (docs/SO-CAI-DON.md mục 9.7):
- *   - "ledger" (mặc định từ 30/09/2026): hai câu SELECT trên sổ cái đơn + bảng bản kê TikTok (chỉ lấy cờ "ước tính") —
- *     không đọc bảng đơn kèm dòng hàng / kho / bản kê đầy đủ, không tính lại computePnlRow ở mỗi lượt mở trang.
- *   - "orders" (LEDGER_REPORTS_SOURCE=orders): đường cũ đọc đơn theo trang qua computePnlRow.
- * Hai đường cho cùng dòng BreakevenPnlRow (có test trên DB dev).
+ * Đơn 60 ngày của gian ở dạng gọn (tối đa TIKTOK_BREAKEVEN_MAX_ORDERS đơn mới nhất) đọc từ SỔ CÁI (docs/SO-CAI-DON.md
+ * mục 9.7): hai câu SELECT trên sổ cái đơn + bảng bản kê TikTok (chỉ lấy cờ "ước tính") — không đọc bảng đơn kèm dòng
+ * hàng / kho / bản kê đầy đủ, không tính lại computePnlRow ở mỗi lượt mở trang.
  * `range`: công cụ đối chiếu truyền CÙNG một cửa sổ cho hai đường cộng.
  */
 export async function loadBreakevenRows(
   channel: TiktokBreakevenChannel,
-  source: ReportSource = resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE),
   range: DateRangeFilter = tiktokMarginWindowRange()
 ): Promise<BreakevenPnlRow[]> {
   const scope = scopeOf(channel);
   const rows: BreakevenPnlRow[] = [];
-  if (source === "orders") {
-    // Đọc THEO TRANG rồi rút ngay thành dòng gọn (22/09/2026 — gian ~185 đơn/ngày = ~11.000 đơn kèm include nặng, giữ nguyên
-    // cả mảng từng làm Render hết heap).
-    await forEachPnlOrderPage(scope, range, { max: TIKTOK_BREAKEVEN_MAX_ORDERS }, (page) => {
-      for (const o of page) {
-        const r = computePnlRow(o);
-        rows.push({
-          createdAt: r.createdAt,
-          shippingStatus: r.shippingStatus,
-          // Chỉ bản kê THẬT mới là "đã đối soát"; số ước tính của sàn (estimated) thì chưa.
-          isSettled: r.isSettled && r.tiktok != null && (r.tiktok as { estimated?: boolean }).estimated !== true,
-          // Chỉ giữ 3 trường phép tính cần — bỏ tham chiếu tới object sản phẩm của trang.
-          items: r.items.map((it) => ({ sku: it.sku, price: it.price, quantity: it.quantity })),
-          actualRevenue: r.actualRevenue,
-          profit: r.profit,
-          missingCostPrice: r.missingCostPrice,
-          tiktok: r.tiktok ? { feeGmvMax: Number((r.tiktok as Record<string, unknown>).feeGmvMax) || 0 } : null,
-        });
-      }
-    });
-    return rows;
-  }
   // Giá vốn vừa nhập phải vào hòa vốn ngay → tính nốt dòng bẩn của cửa sổ trước khi đọc.
   await ensureLedgerFresh(scope, range, { maxInline: 1000 });
   const { orders } = await ledgerCompactOrders(scope, range, TIKTOK_BREAKEVEN_MAX_ORDERS, { withTiktokSettlement: true });
@@ -242,10 +213,11 @@ const breakevenSqlFailedAt = new Map<string, number>();
 /**
  * Nguyên liệu hòa vốn + tự kiểm + đà bán của mọi nhóm của gian.
  *
- * `source` bỏ trống = theo env, và có LƯỚI ĐỠ như Shopee/Lazada: câu gom trong
- * database lỗi thì lượt đó tính bằng đường "rows" để khách vẫn thấy số, lỗi ghi
- * ra log với nhãn [Tiktok-breakeven]. `source` truyền tường minh (công cụ đối
- * chiếu, test) = đúng đường đó, lỗi ném ra nguyên vẹn — không để lưới đỡ che mất lệch.
+ * `source` bỏ trống = câu gom trong database, có LƯỚI ĐỠ như Shopee/Lazada: câu
+ * gom lỗi thì lượt đó tính bằng đường "rows" (dòng gọn đọc từ sổ cái) để khách
+ * vẫn thấy số, lỗi ghi ra log với nhãn [Tiktok-breakeven]. `source` truyền tường
+ * minh (công cụ đối chiếu, test) = đúng đường đó, lỗi ném ra nguyên vẹn — không
+ * để lưới đỡ che mất lệch.
  */
 export async function fetchChannelBreakevens(
   channel: TiktokBreakevenChannel,
@@ -256,9 +228,8 @@ export async function fetchChannelBreakevens(
   const viaSql = async () =>
     breakevensFromGroups(await fetchChannelBreakevenGroups(channel, tiktokGroupMappingOf(inputs.sets, inputs.checks)));
 
-  const resolved = source ?? resolveTiktokBreakevenSource();
-  if (resolved === "rows") return viaRows();
-  if (source !== undefined) return viaSql();
+  if (source === "rows") return viaRows();
+  if (source === "sql") return viaSql();
   const failedAt = breakevenSqlFailedAt.get(channel.id);
   if (failedAt === undefined || Date.now() - failedAt >= BREAKEVEN_SQL_FAILURE_COOLDOWN_MS) {
     try {

@@ -9,8 +9,8 @@
 //     ngoài biên lãi, đơn nhiều SKU phân bổ theo giá trị dòng, ngưỡng độ phủ;
 //   · bộ nhóm của một gian: toàn gian, mỗi chiến dịch, mỗi sản phẩm sàn;
 //   · mặt tiền ChannelMargins với hai bản — cộng trên mảng đơn trong RAM
-//     (marginsFromRows, đường lui "rows") và tra kết quả đã gom trong database
-//     (marginsFromGroups, đường "sql").
+//     (marginsFromRows, đường "rows": lưới đỡ + công cụ đối chiếu) và tra kết
+//     quả đã gom trong database (marginsFromGroups, đường "sql", mặc định).
 // Nạp dữ liệu + bộ đệm: integrations/shopee/ads-margin-source.ts.
 // Câu SQL gom: services/order-ledger.ts (ledgerMarginByGroup).
 // ============================================================
@@ -52,8 +52,16 @@ export interface MarginRow {
   items: { sku: string; price: number; quantity: number; costPriceAtSale: number }[];
 }
 
-/** Phanh số đơn của cửa sổ biên lãi một gian — cùng mức với đường cũ (fetchPnlRows). Chỉ đường "rows" còn dùng. */
+/** Phanh số đơn của cửa sổ biên lãi một gian khi giữ dòng gọn trong RAM. Chỉ đường "rows" còn dùng. */
 export const MARGIN_MAX_ORDERS = 20_000;
+
+/**
+ * Nơi cộng biên lãi của Trợ lý quảng cáo Shopee/Lazada: "sql" = GROUP BY trên sổ
+ * dòng hàng (mặc định từ 30/09/2026); "rows" = duyệt mảng dòng gọn đọc từ sổ cái
+ * (lưới đỡ khi câu gom lỗi, công cụ đối chiếu, test). Công tắc env
+ * ADS_MARGIN_SOURCE đã gỡ 14/10/2026.
+ */
+export type AdsMarginSource = "rows" | "sql";
 
 /**
  * Lọc tập đơn P&L làm NGUYÊN LIỆU biên lãi theo đặc thù nguồn phí của sàn:

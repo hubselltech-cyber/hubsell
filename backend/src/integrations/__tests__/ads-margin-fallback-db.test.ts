@@ -44,8 +44,6 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — lưới đỡ khi 
   const channel = () => ({ id: fx.channelId, userId: fx.userId, channelName: ChannelName.SHOPEE });
 
   beforeAll(async () => {
-    vi.stubEnv("ADS_MARGIN_SOURCE", "");
-    vi.stubEnv("LEDGER_REPORTS_SOURCE", "");
     fx = await createStockFixture("adsfallback");
     const sku = `TEST-${fx.suffix}-A`;
     await prisma.channelProduct.create({

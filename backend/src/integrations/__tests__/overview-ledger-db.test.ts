@@ -1,8 +1,8 @@
 // ============================================================
 // TỔNG QUAN trên DB dev: đường sổ cái (SUM/GROUP BY trong database) phải cho
 // cùng bộ tổng với đường cũ (kéo đơn, cộng JS) trên DỮ LIỆU THẬT của DB dev —
-// mọi chủ shop có gian; cả kỳ, 60 ngày và 7 ngày gần nhất. Prod so bằng
-// ?source=orders|ledger (docs/SO-CAI-DON.md mục 9.2).
+// mọi chủ shop có gian; cả kỳ, 60 ngày và 7 ngày gần nhất (docs/SO-CAI-DON.md
+// mục 9.2). Đường cũ nay chỉ còn ở pnl-rows-oracle.ts (gỡ khỏi route 14/10/2026).
 // Chưa áp migration sổ cái → cả file tự BỎ QUA.
 // ============================================================
 
@@ -12,7 +12,8 @@ import { prisma } from "../../lib/prisma";
 import { parseDateRange } from "../../lib/date-range";
 import { ensureLedgerFresh } from "../../services/order-ledger";
 import { loadOverviewTotals } from "../../routes/analytics";
-import type { OverviewTotals } from "../../lib/overview-totals";
+import { overviewTotalsFromRows, type OverviewTotals } from "../../lib/overview-totals";
+import { fetchPnlRows } from "./pnl-rows-oracle";
 
 const ledgerReady: boolean = await (async () => {
   try {
@@ -69,14 +70,14 @@ describe.skipIf(!ledgerReady)("Tổng quan — sổ cái = kéo đơn trên DB d
       expect(fresh.dirty, `${userId} còn dòng bẩn`).toBe(0);
       for (const c of cases) {
         const [ledger, orders] = await Promise.all([
-          loadOverviewTotals("ledger", scope, c.range, { byDaySince: c.daySince, fresh: { range: c.range } }),
-          loadOverviewTotals("orders", scope, c.range),
+          loadOverviewTotals(scope, c.range, { byDaySince: c.daySince, fresh: { range: c.range } }),
+          fetchPnlRows(scope, c.range, { lean: true }),
         ]);
         if (orders.truncated) continue; // đường cũ chạm phanh 20.000 → số của nó là cận dưới
         expect(ledger.ledgerPending).toBe(0);
-        expectSameTotals(ledger.totals, orders.totals, `${userId} ${c.label}`, c.daySince);
+        expectSameTotals(ledger.totals, overviewTotalsFromRows(orders.rows), `${userId} ${c.label}`, c.daySince);
         // summaryOnly (đường kỳ trước): tổng giữ nguyên, không có bảng bóc.
-        const light = await loadOverviewTotals("ledger", scope, c.range, { summaryOnly: true });
+        const light = await loadOverviewTotals(scope, c.range, { summaryOnly: true });
         expect(light.totals.active.count).toBe(ledger.totals.active.count);
         expect(light.totals.byDay.size).toBe(0);
         compared += 1;

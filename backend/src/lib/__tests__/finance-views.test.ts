@@ -16,7 +16,7 @@ import {
   type LossOrderSource,
   type SkuAgg,
 } from "../finance-views";
-import { addOrderToSkuAgg } from "../../routes/finance";
+import { addOrderToSkuAgg } from "../../integrations/__tests__/pnl-rows-oracle";
 import { FIXTURE_ORDERS, mkOrder, D } from "./ledger-order-fixture";
 
 const ORDERS = [

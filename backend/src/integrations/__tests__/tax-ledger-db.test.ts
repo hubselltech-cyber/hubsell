@@ -5,7 +5,7 @@
 //   · bảng kê khai theo sàn + lũy kế năm (/api/tax/declaration) — CẢ HAI cơ sở
 //     cắt kỳ: theo ngày sàn báo giao (TAX_DECLARATION_BY_DELIVERED=1, prod) và
 //     theo ngày tạo đơn.
-// Prod so bằng ?source=orders|ledger (docs/SO-CAI-DON.md mục 9.4).
+// (docs/SO-CAI-DON.md mục 9.4). Đường cũ nay chỉ còn ở pnl-rows-oracle.ts (gỡ khỏi route 14/10/2026).
 // Chưa áp migration sổ cái → cả file tự BỎ QUA.
 // ============================================================
 
@@ -14,13 +14,16 @@ import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "../../lib/prisma";
 import { parseDateRange } from "../../lib/date-range";
 import { ensureLedgerFresh, ledgerFreshness } from "../../services/order-ledger";
+import { taxReportTotalsFromRows } from "../../lib/tax-totals";
 import { loadTaxReportTotals } from "../../routes/tax";
 import {
   buildTaxDeclaration,
   loadDeclarationRows,
   periodRange,
+  sumRows,
   type DeclarationPeriod,
 } from "../../services/tax-declaration";
+import { declarationRowsFromOrders, fetchPnlRows } from "./pnl-rows-oracle";
 
 const ledgerReady: boolean = await (async () => {
   try {
@@ -63,14 +66,14 @@ describe.skipIf(!ledgerReady)("Thuế — sổ cái = kéo đơn trên DB dev", 
     let compared = 0;
     for (const userId of await owners()) {
       for (const { label, range } of ranges) {
-        const [ledger, orders] = await Promise.all([
-          loadTaxReportTotals("ledger", { userId }, range),
-          loadTaxReportTotals("orders", { userId }, range),
+        const [ledger, raw] = await Promise.all([
+          loadTaxReportTotals({ userId }, range),
+          fetchPnlRows({ userId }, range, { lean: true }),
         ]);
-        if (orders.truncated) continue;
+        if (raw.truncated) continue;
         expect(ledger.ledgerPending).toBe(0);
         const a = ledger.totals as unknown as Record<string, number>;
-        const b = orders.totals as unknown as Record<string, number>;
+        const b = taxReportTotalsFromRows(raw.rows) as unknown as Record<string, number>;
         for (const k of ["orderCount", "settledCount", "missingCostCount"]) {
           expect(a[k], `${userId} ${label} ${k}`).toBe(b[k]);
         }
@@ -101,8 +104,8 @@ describe.skipIf(!ledgerReady)("Thuế — sổ cái = kéo đơn trên DB dev", 
           const label = `${userId} ${basis} ${period.year}-${period.quarter ?? "năm"}`;
           const range = periodRange(period);
           const [ledger, orders] = await Promise.all([
-            loadDeclarationRows("ledger", scope, range),
-            loadDeclarationRows("orders", scope, range),
+            loadDeclarationRows(scope, range),
+            declarationRowsFromOrders(scope, range),
           ]);
           if (orders.truncated) continue;
           expect(ledger.missingDeliveredAt, `${label} missingDeliveredAt`).toBe(orders.missingDeliveredAt);
@@ -119,21 +122,18 @@ describe.skipIf(!ledgerReady)("Thuế — sổ cái = kéo đơn trên DB dev", 
           }
           if (orders.rows.length > 0) nonEmpty += 1;
 
-          // Toàn bộ kết quả trang (tổng, tách GTGT/TNCN, lũy kế năm, bậc ngưỡng).
-          const now = new Date();
-          const [full, fullOld] = await Promise.all([
-            buildTaxDeclaration(userId, scope, period, now, "ledger"),
-            buildTaxDeclaration(userId, scope, period, now, "orders"),
-          ]);
-          if (fullOld.truncated || fullOld.annual.truncated) continue;
+          // Kết quả trang (tổng + lũy kế năm) so với tổng gom từ đơn gốc; tách
+          // GTGT/TNCN và bậc ngưỡng là hàm thuần trên các tổng này (test lib/tax-totals).
+          const full = await buildTaxDeclaration(userId, scope, period, new Date());
+          const oldTotal = sumRows(orders.rows);
+          const oldAnnual = await declarationRowsFromOrders({ userId }, periodRange({ year: period.year, quarter: null }));
+          if (oldAnnual.truncated) continue;
           expect(full.ledgerPending).toBe(0);
           expect(full.basis).toBe(basis);
-          expect(near(full.total.taxableRevenue, fullOld.total.taxableRevenue), `${label} tổng doanh thu tính thuế`).toBe(true);
-          expect(near(full.total.taxWithheldActual, fullOld.total.taxWithheldActual), `${label} tổng đã khấu trừ`).toBe(true);
-          expect(near(full.total.withheldSplit.vat, fullOld.total.withheldSplit.vat), `${label} GTGT`).toBe(true);
-          expect(near(full.annual.taxableRevenueToDate, fullOld.annual.taxableRevenueToDate), `${label} lũy kế năm`).toBe(true);
-          expect(full.annual.tier.tier, `${label} bậc ngưỡng`).toBe(fullOld.annual.tier.tier);
-          expect(full.total.orderCount, `${label} tổng số đơn`).toBe(fullOld.total.orderCount);
+          expect(near(full.total.taxableRevenue, oldTotal.taxableRevenue), `${label} tổng doanh thu tính thuế`).toBe(true);
+          expect(near(full.total.taxWithheldActual, oldTotal.taxWithheldActual), `${label} tổng đã khấu trừ`).toBe(true);
+          expect(near(full.annual.taxableRevenueToDate, sumRows(oldAnnual.rows).taxableRevenue), `${label} lũy kế năm`).toBe(true);
+          expect(full.total.orderCount, `${label} tổng số đơn`).toBe(oldTotal.orderCount);
           compared += 1;
         }
       }

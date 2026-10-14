@@ -154,7 +154,8 @@ lại (10–20 giây) thấy câu lỗi dev "backend đang chạy ở cổng 400
    Env: `MEMORY_WATCH_SECONDS=0` tắt, `MEMORY_WATCH_WARN_PCT` / `_CRIT_PCT` đổi ngưỡng.
 3. Ba chỗ từng giữ hàng nghìn/chục nghìn đơn kèm include nặng trong một mảng
    chuyển sang đọc theo trang 1.000 đơn rồi rút ngay thành dòng gọn
-   (`forEachPnlOrderPage` trong routes/finance.ts): hòa vốn Ads TikTok
+   (`forEachPnlOrderPage` trong routes/finance.ts — từ 30/09 các nơi này đọc
+   sổ cái, hàm đã gỡ 14/10/2026): hòa vốn Ads TikTok
    (integrations/tiktok-ads/breakeven.ts — chạy MỖI lần mở trang Quảng cáo
    TikTok, 60 ngày, trần 8.000 đơn), tờ khai thuế (services/tax-declaration.ts —
    cả năm toàn shop, trần 20.000), và backfill bản kê TikTok

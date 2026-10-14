@@ -2,14 +2,13 @@
 // HÒA VỐN QUẢNG CÁO TikTok — logic thuần của lib/tiktok-breakeven.ts, KHÔNG DB:
 //   · luật: chỉ đơn đã có kết cục cuối, cộng ngược phí GMV Max, đơn hủy cùng lứa,
 //     tự kiểm mẫu số, đà bán;
-//   · công tắc TIKTOK_BREAKEVEN_SOURCE, bộ nhóm + khoảng tự kiểm, mặt tiền hai
+//   · bộ nhóm + khoảng tự kiểm, mặt tiền hai
 //     đường cộng.
 // ============================================================
 
 import { describe, expect, it } from "vitest";
 import { ShippingStatus } from "@prisma/client";
 import { SHOP_GROUP, buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, productGroupKey } from "../ads-margin";
-import { resolveTiktokBreakevenSource } from "../report-source";
 import {
   breakevensFromGroups,
   breakevensFromRows,
@@ -207,18 +206,6 @@ describe("salesPaceByGroup — đà bán 7 / 30 ngày của từng sản phẩm"
     expect(p.get("SP-A")).toEqual({ units7d: 3, units30d: 4 });
     expect(p.get("SP-B")).toEqual({ units7d: 1, units30d: 1 });
     expect(p.size).toBe(2);
-  });
-});
-
-describe("resolveTiktokBreakevenSource — công tắc TIKTOK_BREAKEVEN_SOURCE", () => {
-  it("mặc định sql (gom trong database); `rows` là đường lui; báo cáo đã lui về đơn gốc thì luôn rows", () => {
-    expect(resolveTiktokBreakevenSource(undefined, undefined)).toBe("sql");
-    expect(resolveTiktokBreakevenSource("", undefined)).toBe("sql");
-    expect(resolveTiktokBreakevenSource("sql", undefined)).toBe("sql");
-    expect(resolveTiktokBreakevenSource(" ROWS ", undefined)).toBe("rows");
-    expect(resolveTiktokBreakevenSource("rows", "ledger")).toBe("rows");
-    expect(resolveTiktokBreakevenSource(undefined, "orders")).toBe("rows");
-    expect(resolveTiktokBreakevenSource("sql", "orders")).toBe("rows");
   });
 });
 
