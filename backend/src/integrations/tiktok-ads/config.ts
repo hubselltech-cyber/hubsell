@@ -17,6 +17,11 @@
 //   TIKTOK_ADS_APP_ID / TIKTOK_ADS_SECRET — bắt buộc để bật.
 //   TIKTOK_ADS_REDIRECT_URI — phải TRÙNG KHỚP Redirect URL khai trên portal;
 //                             bỏ trống = https://app.hubsell.tech/ads/tiktok/callback.
+//                             GIỮ .tech sau buổi cắt sang hubsell.vn (10/2026): đổi
+//                             URL trên portal TikTok là sửa app → có thể bị xét duyệt
+//                             lại; Vercel 301 app.hubsell.tech → app.hubsell.vn giữ
+//                             nguyên đường dẫn + query, state đã ký nên callback vẫn
+//                             chạy. Chỉ thêm URL .vn khi có dịp nộp lại app.
 // ============================================================
 
 export const TIKTOK_ADS_API_BASE = "https://business-api.tiktok.com/open_api/v1.3";

@@ -487,7 +487,8 @@ export const LAZADA_TOUR: GuideTour = {
  * sang services.tiktokshop.com → TikTok đưa tới trang đăng nhập Seller Center VN →
  * trang custom-authorize 2 bước (01 Cài đặt: cửa hàng, thời hạn Không giới hạn,
  * email liên hệ bắt buộc → 02 Ủy quyền) → TikTok trả về app.hubsell.tech/channels/
- * tiktok/callback (kèm state) → Hubsell đổi code lấy token, hiện "Kết nối thành công".
+ * tiktok/callback (URL khai trên Partner Center; từ buổi cắt 10/2026 Vercel 301 sang
+ * app.hubsell.vn giữ nguyên query) → Hubsell đổi code lấy token, hiện "Kết nối thành công".
  * Bẫy đã gặp: trình duyệt đang đăng nhập tài khoản KHÔNG sở hữu gian hàng → TikTok
  * hiện màn "Bắt đầu bán" (đăng ký shop mới) thay vì ủy quyền.
  *

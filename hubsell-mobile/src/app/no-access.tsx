@@ -16,7 +16,7 @@ export default function NoAccessScreen() {
       </Text>
       <Text className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
         App mobile hiện dành cho nhân viên kho (quyền "Đối soát đơn hoàn").
-        Nhờ chủ shop cấp quyền, hoặc dùng bản web app.hubsell.tech.
+        Nhờ chủ shop cấp quyền, hoặc dùng bản web app.hubsell.vn.
       </Text>
       <Pressable
         className="mt-6 rounded-xl bg-slate-900 px-6 py-3 active:opacity-80 dark:bg-slate-700"

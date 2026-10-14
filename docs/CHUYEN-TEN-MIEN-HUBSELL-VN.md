@@ -1,6 +1,6 @@
 # CHUYỂN TÊN MIỀN hubsell.tech → hubsell.vn
 
-> Anh Trung chốt 19/09/2026: **chuyển dần**, chạy song song hai tên miền; phần **hạ tầng (chặng 3) đợi TikTok review app xong** (nộp lại 16/09, hạn 10–12 ngày làm việc) vì hồ sơ TikTok khai URL `.tech` và redirect TikTok Ads đang là `app.hubsell.tech/ads/tiktok/callback`.
+> Anh Trung chốt 19/09/2026: **chuyển dần**, chạy song song hai tên miền; phần **hạ tầng (chặng 3) đợi TikTok review app xong** (TikTok duyệt app 12/10/2026). 12/10 anh chốt làm chặng 3 ban ngày 13–14/10; 14/10 khảo sát xong: **không ảnh hưởng Apple review** (app iOS gọi thẳng backend Render, không universal link, link pháp lý đã là .vn).
 
 ## 1. Trạng thái
 
@@ -9,7 +9,7 @@
 | 0. Alias | 3 tên miền `.vn` chạy song song `.tech` | ✅ 19/09 |
 | 1. Email | Zoho Mail Lite, hộp + bí danh `@hubsell.vn`, thư hệ thống gửi qua Zoho | ✅ 19/09 |
 | 2. Mặt tiền | chữ, email hỗ trợ, link pháp lý, canonical, link giới thiệu về `.vn` | ✅ 19/09 |
-| 3. Hạ tầng (buổi cắt) | env, 301, portal các sàn | ⏳ **chờ TikTok review OK** |
+| 3. Hạ tầng (buổi cắt) | env, 301 | ⏳ **14/10 đang làm** — mã đã xong (dải nhắc đăng nhập lại), CÒN anh đổi env Render → em đổi env Vercel + bật 301 (xem mục 3) |
 | 4. Hậu kỳ | giữ `.tech` + 301 tối thiểu 12 tháng | sau chặng 3 |
 
 ## 2. Cái đang chạy (để tra khi cần)
@@ -43,26 +43,69 @@ Env Render: `SMTP_HOST=smtppro.zoho.com` (tài khoản tổ chức trả tiền 
 
 **Điểm đã lường trước ở giai đoạn song song:** vào `app.hubsell.vn` phải đăng nhập lại (phiên lưu theo tên miền); đăng nhập Google / nối gian hàng từ `app.hubsell.vn` bị trả về `app.hubsell.tech` vì mọi luồng quay về đọc `APP_FRONTEND_URL` → **chưa phát link app đuôi `.vn` cho khách**. KHÔNG viết code "quay về đúng tên miền xuất phát" — sau 301 chỉ còn một tên miền, code đó thành đồ bỏ.
 
-## 3. CHẶNG 3 — buổi cắt (một buổi tối ít khách, SAU khi TikTok review OK)
+## 3. CHẶNG 3 — buổi cắt (14/10/2026, ban ngày — anh chốt 12/10)
 
-Làm đúng thứ tự — khai bên ngoài trước, đổi env sau, 301 sau cùng:
+Thứ tự bắt buộc: **đổi env backend → đổi env landing → thử luồng → 301 sau cùng.** Portal các sàn KHÔNG đụng (lý do ở 3.1).
 
-1. **Khai URL mới trên các portal (chưa đổi gì phía mình):**
-   - TikTok Marketing API: thêm Redirect URL `https://app.hubsell.vn/ads/tiktok/callback` (mặc định trong code: `backend/src/integrations/tiktok-ads/config.ts`).
-   - Website URL trên Console Shopee (app chính 2040029 + Hubsell Ads 2044679), Lazada (ISV 142085), TikTok Shop. Callback / webhook các sàn + payOS trỏ thẳng `hubsell-backend-sg.onrender.com` nên KHÔNG đổi.
-   - Google Cloud (client "Hubsell Web"): thêm origin `https://app.hubsell.vn` nếu màn hình OAuth yêu cầu (redirect URI trỏ backend nên không đổi).
-2. **Đổi env:** Render `APP_FRONTEND_URL=https://app.hubsell.vn`, `CORS_ORIGINS` thêm `.vn` (allowlist cứng trong `app.ts` đã có sẵn), `TIKTOK_ADS_REDIRECT_URI`, `REFERRAL_LINK_BASE` (nếu đang đặt); Vercel landing `NEXT_PUBLIC_APP_URL=https://app.hubsell.vn` (nút, chữ khung tour, redirect `/register` tự theo).
-3. **Thử 5 luồng trên `.vn`:** đăng nhập Google · email quên mật khẩu (link phải là `.vn`) · nối Shopee · nối TikTok Ads · thanh toán payOS (returnUrl).
-4. **Bật 301** `hubsell.tech` → `hubsell.vn` và `app.hubsell.tech` → `app.hubsell.vn`, giữ nguyên đường dẫn + tham số (link giới thiệu cũ, link trong thư đã gửi vẫn ăn). Làm ở Vercel → Domains → Edit → Redirect to.
-5. **Dải thông báo trong app vài ngày:** "Hubsell chuyển sang hubsell.vn, anh/chị đăng nhập lại một lần".
-6. **Dọn chữ còn sót:** `hubsell-mobile/src/app/no-access.tsx` (cần phát hành bản app mới), bỏ cụm "(và hubsell.tech)" trong Điều khoản khi đã 301 ổn định (đổi ngày cập nhật + `TERMS_VERSION`), Search Console khai Change of Address.
+### 3.1 Quyết định 14/10 sau khi rà mã (khác bản kế hoạch cũ)
 
-**Đường lùi:** bước 3 lỗi thì trả env về `.tech` (khoảng 5 phút) — lúc đó chưa bật 301 nên khách không bị ảnh hưởng.
+| Việc trong kế hoạch cũ | Quyết định | Lý do |
+|---|---|---|
+| Thêm Redirect URL `.vn` trên TikTok Marketing API (Ads) | **KHÔNG làm** | Sửa app trên portal TikTok có thể kéo xét duyệt lại. Callback `/ads/tiktok/callback` nhận `auth_code` + `state` do backend ký (`tiktok-ads/oauth.ts`), không phụ thuộc origin; 301 giữ nguyên đường dẫn + query nên luồng vẫn chạy. Giữ `TIKTOK_ADS_REDIRECT_URI` = `.tech`. |
+| Đổi Redirect URL TikTok Shop (Partner Center) `app.hubsell.tech/channels/tiktok/callback` | **KHÔNG làm** | App vừa được duyệt 12/10 + bật Product Modify; sửa URL = sửa app đã duyệt. Trang callback đọc `state` ở `sessionStorage` của **origin đích sau 301** (app.hubsell.vn, nơi khách bấm Kết nối) nên vẫn khớp. Giữ `TIKTOK_REDIRECT_URI` = `.tech`. Thêm URL `.vn` khi có dịp nộp lại app. |
+| Website URL trên Console Shopee (2040029, 2044679), Lazada ISV 142085 | **Dời sang hậu kỳ** | Chỉ là thông tin hiển thị, `.tech` vẫn mở được nhờ 301; sửa hồ sơ app đã duyệt không đáng rủi ro. |
+| Google Cloud thêm origin `app.hubsell.vn` | **Không cần** | Đăng nhập Google là code flow: FE chuyển sang `/api/auth/google` (backend) → Google → callback backend → redirect `APP_FRONTEND_URL`. Không có JS origin. |
+| `CORS_ORIGINS` thêm `.vn` | **Không cần** | Allowlist cứng trong `app.ts` đã có `hubsell.vn`, `www.hubsell.vn`, `app.hubsell.vn` từ 09/2026. |
+
+Vì sao 301 đủ cho mọi callback: Vercel domain redirect giữ nguyên đường dẫn + query (kiểm lại bằng `curl -I` ngay sau khi bật, bước 3.4).
+
+### 3.2 Env Render — **anh làm** (công cụ của em bị chặn xem/sửa env Render 14/10)
+
+Làm trên CẢ HAI service `hubsell-backend-sg` (web) và `hubsell-worker-sg` (worker gửi thư có link):
+
+| Biến | Đặt thành | Ghi chú |
+|---|---|---|
+| `APP_FRONTEND_URL` | `https://app.hubsell.vn` | Biến duy nhất bắt buộc. Quyết định đích redirect sau Google login, link trong thư (quên mật khẩu, nhắc gói, nối gian), returnUrl payOS, `fe` trong state OAuth 3 sàn. |
+| `REFERRAL_LINK_BASE` | `https://hubsell.vn/register` | Chỉ sửa nếu đang đặt `.tech`; mặc định trong mã đã là `.vn`. |
+| `TIKTOK_ADS_REDIRECT_URI`, `TIKTOK_REDIRECT_URI` | **GIỮ NGUYÊN** `.tech` | Xem 3.1. |
+| `CORS_ORIGINS` | giữ nguyên | Xem 3.1. |
+
+Lưu = Render tự deploy lại (~1m40s mỗi service, không migration). Render báo bảo trì hạ tầng **15/10 08:00 GMT+7** — làm xong trước mốc đó.
+
+### 3.3 Env Vercel landing — em làm sau khi 3.2 xong
+
+Project `hubsell-landing` → Environment Variables → `NEXT_PUBLIC_APP_URL` (Production + Preview, tạo 09/08) đổi thành `https://app.hubsell.vn` → **Redeploy** bản Production (biến `NEXT_PUBLIC_*` nướng lúc build). Mặc định trong mã (`src/lib/site.ts`, `next.config.ts`, `.env.example`) đã đổi sang `.vn` ngày 14/10.
+
+### 3.4 Thử luồng trên `.vn` (trước khi 301)
+
+1. Đăng nhập Google từ `app.hubsell.vn/login` → phải quay về `app.hubsell.vn` (không văng sang `.tech`).
+2. Quên mật khẩu → link trong thư là `app.hubsell.vn/reset-password?...`.
+3. Landing `hubsell.vn` → nút Dùng thử / `/register?ref=` → sang `app.hubsell.vn/login`.
+4. Nối Shopee (callback backend → redirect theo `fe` trong state = `.vn`).
+5. payOS: tạo yêu cầu nâng gói → returnUrl `.vn` (xem trong link thanh toán).
+
+Lỗi ở đây → trả `APP_FRONTEND_URL` về `.tech` (5 phút), chưa bật 301 nên khách không ảnh hưởng.
+
+### 3.5 Bật 301 — Vercel → project → Domains → Edit → Redirect to
+
+- `hubsell` : `app.hubsell.tech` → `app.hubsell.vn` (mã 308/301, giữ đường dẫn).
+- `hubsell-landing` : `hubsell.tech` → `hubsell.vn`. (`www.hubsell.tech` không gắn project nào — không cần.)
+- Kiểm ngay: `curl -sI "https://app.hubsell.tech/channels/tiktok/callback?code=x&state=y"` phải trả `Location: https://app.hubsell.vn/channels/tiktok/callback?code=x&state=y`. Không giữ query → **tắt 301 ngay**, vì callback TikTok phụ thuộc điều này.
+
+### 3.6 Dải nhắc trong app — ✅ mã xong 14/10
+
+`frontend/src/components/auth/domain-move-notice.tsx` gắn trên form `/login`: chỉ hiện ở host `app.hubsell.vn`, một câu "đã chuyển sang app.hubsell.vn, đăng nhập lại một lần", nút Bỏ qua = không hiện lại (localStorage), tự tắt sau 30/11/2026 (mốc tự chọn). Đã soi local sáng/tối/mobile, chữ 14px.
+
+### 3.7 Dọn chữ còn sót
+
+- ✅ 14/10 `hubsell-mobile/src/app/no-access.tsx` đổi chữ sang `.vn` — đi cùng bản mobile KẾ TIẾP, **không nộp build mới khi Apple đang xét** (reset hàng đợi).
+- Bỏ cụm "(và hubsell.tech)" trong Điều khoản khi 301 ổn định (đổi ngày cập nhật + `TERMS_VERSION`); Search Console khai Change of Address.
 
 **Không làm:** đưa backend về `api.hubsell.vn` (phải khai lại callback + webhook 3 sàn và payOS, khách không được lợi gì).
 
 ## 4. Hậu kỳ
 
 - Giữ gia hạn `hubsell.tech` + 301 tối thiểu 12 tháng; `dev@` / `support@hubsell.tech` giữ làm bí danh nhận thư cùng thời gian đó.
+- Website URL hiển thị trên Console Shopee (app 2040029 + Hubsell Ads 2044679), Lazada ISV 142085, TikTok Shop: đổi sang `https://hubsell.vn` khi có dịp sửa hồ sơ app (dời từ chặng 3, xem 3.1). Cùng dịp: thêm Redirect URL `.vn` cho TikTok Ads + TikTok Shop rồi mới đổi `TIKTOK_ADS_REDIRECT_URI` / `TIKTOK_REDIRECT_URI`.
 - Đổi email đăng ký ở từng cổng đối tác (Shopee, TikTok, Lazada, payOS, Render, Vercel, Supabase) sang `dev@hubsell.vn` TRƯỚC khi bỏ `.tech`. Tài khoản HQ trong app cũng đang là `dev@hubsell.tech`.
 - DMARC nâng từ `p=none` lên `quarantine` sau vài tuần báo cáo sạch.

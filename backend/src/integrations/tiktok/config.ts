@@ -6,6 +6,11 @@
 //
 // Redirect URI phải TRÙNG KHỚP tuyệt đối với cấu hình trên Partner Center, kể cả
 // dấu "/". Ở local: https://localhost:3000/channels/tiktok/callback
+// Prod: https://app.hubsell.tech/channels/tiktok/callback — GIỮ .tech sau buổi cắt
+// sang hubsell.vn (10/2026): sửa URL trên Partner Center là sửa app đã duyệt 12/10,
+// có thể bị xét duyệt lại; Vercel 301 app.hubsell.tech → app.hubsell.vn giữ nguyên
+// đường dẫn + query, trang callback đọc state ở sessionStorage của app.hubsell.vn
+// (nơi khách bấm Kết nối) nên vẫn khớp. Chỉ thêm URL .vn khi có dịp nộp lại app.
 // ============================================================
 
 export interface TikTokConfig {
