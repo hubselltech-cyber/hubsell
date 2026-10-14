@@ -5,7 +5,7 @@
 
 ---
 
-## Phiên 15/10/2026 (chiều) — SKU PHÂN LOẠI CON BỊ GỘP (khách Hi.Bé) — CODE XONG, CHƯA PUSH
+## Phiên 15/10/2026 (chiều) — SKU PHÂN LOẠI CON BỊ GỘP (khách Hi.Bé) — `f7b597d8` ĐÃ PUSH
 
 - **Báo lỗi:** Nguyễn Trung Huy (Hi.Bé, `huyut2k`, 3 gian): sản phẩm Shopee 2 tầng Màu × Size, Hubsell chỉ về 1 dòng/màu, không cập nhật tồn các size. Anh nghi gọi sai API tầng 1 và hỏi sàn có mấy tầng.
 - **Khảo sát API:** Shopee `get_model_list` trả mỗi tổ hợp đủ tầng là một model (`tier_index [0,1]`, tối đa 2 tầng); TikTok `skus[]` + `sales_attributes` (tối đa 3); Lazada `skus[]` + `saleProp`. Không sàn nào lồng phân loại → **không phải gọi sai API**.
