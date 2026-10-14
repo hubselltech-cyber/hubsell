@@ -890,8 +890,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
         )}
 
-        {/* Thông báo app điện thoại ra mắt tháng 10/2026 (anh Trung 25/09):
-            khách mới đã đăng ký, cần biết rõ app khi nào có / làm được gì.
+        {/* Thông báo app điện thoại (anh Trung 25/09; 14/10 đổi sang "đã có
+            trên Google Play", iPhone chờ Apple): khách cần biết tải ở đâu / làm được gì.
             Mọi tài khoản shop (kho cũng có màn quét), tự tắt bằng ô tích.
             Nhường chỗ khi dải SĐT đang hiện. */}
         {user && !hqWorkspace && phoneNudge === "hidden" && <MobileAppLaunchNotice />}

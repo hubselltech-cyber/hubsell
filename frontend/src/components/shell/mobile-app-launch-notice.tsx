@@ -28,7 +28,7 @@
 import { useState } from "react";
 import { ScanLine, Smartphone, Wallet } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -38,11 +38,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+// 14/10/2026 — BẢN "ĐÃ CÓ MẶT": Android phát hành trên Google Play 13/10
+// (vn.hubsell.app); iPhone đang chờ Apple duyệt. Tăng NOTICE_VERSION để khách
+// đã tắt bản "sắp ra mắt" thấy lại; khi Apple duyệt: điền APP_STORE_URL +
+// tăng version lần nữa.
+
 /** Đổi khi nội dung thay đổi lớn → khách đã tắt bản cũ sẽ thấy bản mới. */
-const NOTICE_VERSION = "launch-2026-10";
+const NOTICE_VERSION = "live-android-2026-10";
 /** Sau mốc này dải tự biến mất dù chưa ai gỡ code (an toàn khi lỡ quên). */
-const NOTICE_UNTIL = new Date("2026-11-16T00:00:00+07:00");
+const NOTICE_UNTIL = new Date("2027-01-15T00:00:00+07:00");
 const DISMISS_KEY = "hubsell_mobile_app_notice_dismissed";
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=vn.hubsell.app";
+/** null = chưa lên App Store (chờ Apple duyệt). */
+const APP_STORE_URL: string | null = null;
 
 function readDismissed(): boolean {
   if (typeof window === "undefined") return false;
@@ -64,8 +72,9 @@ function writeDismissed(on: boolean) {
 
 const OWNER_FEATURES = [
   "Kết quả hôm nay: doanh thu, lợi nhuận ròng, tiền đã về ngân hàng — cùng con số với bản web.",
-  "Đơn hàng của mọi sàn theo trạng thái, lọc riêng đơn hỏa tốc, tìm theo mã đơn hay tên khách.",
-  "Hỏi Trợ lý Hubsell bằng tiếng Việt tự nhiên, nhận số liệu thật của shop.",
+  "Đơn hàng của mọi sàn theo trạng thái, lọc riêng đơn hỏa tốc, quét mã đơn bằng camera mở ngay chi tiết.",
+  "Quảng cáo đang chạy của các gian đã nối: tạm dừng hoặc bật lại ngay trên máy.",
+  "Hỏi Trợ lý Hubsell bằng tiếng Việt tự nhiên, gõ hoặc nói, nhận số liệu thật của shop.",
 ];
 
 const WAREHOUSE_FEATURES = [
@@ -77,7 +86,7 @@ const ACCOUNT_NOTES = [
   "Đăng nhập bằng đúng email và mật khẩu đang dùng, không cần đăng ký lại.",
   "Phân quyền nhân viên giữ nguyên: chủ shop thấy tài chính, nhân viên kho thấy màn quét.",
   "Có sẵn trong mọi gói dịch vụ, không thu thêm phí.",
-  "Khi app mở tải, Hubsell báo ngay trong phần mềm này kèm đường dẫn App Store và CH Play.",
+  "Bản iPhone đang chờ Apple duyệt — khi lên App Store, Hubsell báo ngay trong phần mềm này.",
 ];
 
 export function MobileAppLaunchNotice() {
@@ -99,13 +108,21 @@ export function MobileAppLaunchNotice() {
         <Smartphone className="size-4 shrink-0" />
         <p className="min-w-0 flex-1 truncate">
           <span className="font-semibold">
-            Ứng dụng Hubsell trên điện thoại ra mắt tháng 10/2026
+            Ứng dụng Hubsell đã có trên Google Play
           </span>
           <span className="hidden lg:inline">
             {" "}
-            — dùng chung tài khoản này, có sẵn trong mọi gói, không thêm phí.
+            — bản iPhone đang chờ Apple duyệt. Dùng chung tài khoản này, không thêm phí.
           </span>
         </p>
+        <a
+          href={PLAY_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 rounded-md bg-sky-600 px-2.5 py-1 font-medium text-white transition-colors hover:bg-sky-700"
+        >
+          Tải trên Google Play
+        </a>
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -135,9 +152,10 @@ export function MobileAppLaunchNotice() {
               Ứng dụng Hubsell trên điện thoại
             </DialogTitle>
             <DialogDescription>
-              Dự kiến ra mắt <b>tháng 10/2026</b> trên App Store (iPhone) và
-              CH Play (Android). Ứng dụng đã hoàn thiện, hồ sơ nhà phát triển
-              đang ở bước xét duyệt của Apple và Google.
+              Bản Android đã có trên <b>Google Play</b> từ 13/10/2026.
+              {APP_STORE_URL
+                ? " Bản iPhone đã có trên App Store."
+                : " Bản iPhone đang chờ Apple duyệt, lên App Store ngay khi được duyệt."}
             </DialogDescription>
           </DialogHeader>
 
@@ -175,10 +193,30 @@ export function MobileAppLaunchNotice() {
               </ul>
             </section>
 
-            <p className="text-muted-foreground">
-              Trong lúc chờ, bản web vẫn mở được trên trình duyệt điện thoại
-              với đầy đủ tính năng.
-            </p>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href={PLAY_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants()}
+              >
+                Tải trên Google Play
+              </a>
+              {APP_STORE_URL ? (
+                <a
+                  href={APP_STORE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonVariants({ variant: "outline" })}
+                >
+                  Tải trên App Store
+                </a>
+              ) : (
+                <Button variant="outline" disabled>
+                  App Store · sắp có
+                </Button>
+              )}
+            </div>
           </div>
 
           <DialogFooter className="items-center gap-3 sm:justify-between">
