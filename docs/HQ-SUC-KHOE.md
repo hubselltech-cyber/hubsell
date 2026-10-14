@@ -37,9 +37,9 @@ nâng cấp gói CPU."* Lý do: *"làm sao tự nhiên anh nhớ được việc
 - Cầu dao app (ApiThrottleState đang paused), số lần trip 24h.
 - Gian `syncFailCount ≥ 3` (sàn trễ đồng bộ), ủy quyền Hubsell Ads DISCONNECTED.
 - **Mốc nước quét đơn** (15/10/2026, lát 3.6 giai đoạn 3): số gian có mốc / đang quét, gian đang vét dở
-  (`ordersCatchupBeforeAt` khác NULL = lượt trước chạm trần trang), gian có mốc cũ hơn 60' / 6 giờ
+  (`ordersCatchupBeforeAt` khác NULL = lượt trước chạm trần trang), gian có mốc cũ hơn 90' / 6 giờ
   (`watermarkLagWarnMin` / `watermarkLagCritMin`, tự chọn), gian trễ nhất. Dấu hiệu `worker.watermark`
-  vàng khi có gian vét dở hoặc quá 60', đỏ khi quá 6 giờ. Thẻ "Worker" ở KPI đầu trang cũng ghi tóm tắt.
+  vàng khi có gian vét dở hoặc quá 90', đỏ khi quá 6 giờ. Thẻ "Worker" ở KPI đầu trang cũng ghi tóm tắt.
 
 ### 2.3 Hạ tầng (INFRA)
 - DB: `pg_database_size` (MB), 5 bảng lớn nhất, số kết nối đang mở / `max_connections`.

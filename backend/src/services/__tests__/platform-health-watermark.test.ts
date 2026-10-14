@@ -37,7 +37,7 @@ describe("watermarkSignal", () => {
     expect(hint).toContain("vét tiếp");
   });
 
-  it("gian trễ quá 60' → vàng; quá 6 giờ → đỏ", () => {
+  it("gian trễ quá ngưỡng vàng (90') → vàng; quá 6 giờ → đỏ", () => {
     expect(watermarkSignal({ ...base, lagOver60: 1, maxLagMin: 95 })[1]).toBe("warn");
     expect(watermarkSignal({ ...base, lagOver60: 3, lagOver6h: 1, maxLagMin: 400 })[1]).toBe("crit");
   });
