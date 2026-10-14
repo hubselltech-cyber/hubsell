@@ -37,6 +37,7 @@ import {
 import { finishStockPush, stageStockPush } from "../inventory-push";
 import { planSettlementWrite } from "../settlement-merge";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
+import type { SyncCompleteness } from "../sync-contract";
 import {
   createToken,
   getMultipleOrderItems,
@@ -496,7 +497,7 @@ export interface SyncLazadaOrdersOptions {
   byUpdateTime?: boolean;
 }
 
-export interface SyncLazadaOrdersResult {
+export interface SyncLazadaOrdersResult extends SyncCompleteness {
   fetched: number;
   created: number;
   /** Đơn đã có mà sàn báo KHÁC giá trị đang lưu → có ghi. */

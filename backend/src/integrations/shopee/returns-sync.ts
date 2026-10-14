@@ -46,6 +46,7 @@ import {
 import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
 import { mapShopeeEscrowFields } from "./settlements";
 import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-lookup";
+import type { SyncCompleteness } from "../sync-contract";
 
 /** Chốt chặn phân trang vô tận (50 yêu cầu/trang → 2500 yêu cầu/lượt là quá đủ). */
 const MAX_RETURN_PAGES = 50;
@@ -247,7 +248,7 @@ export function planReturnUpdate(
   return plan;
 }
 
-export interface SyncShopeeReturnsResult {
+export interface SyncShopeeReturnsResult extends SyncCompleteness {
   /** Số yêu cầu hoàn đọc được trong cửa sổ. */
   scanned: number;
   /** Số đơn MỚI được gắn cờ chờ về tay (NONE → AWAITING). */
@@ -275,6 +276,8 @@ export interface SyncShopeeReturnsOptions {
 
 function emptyReturnsResult(): SyncShopeeReturnsResult {
   return {
+    pages: 0,
+    truncated: false,
     scanned: 0,
     flagged: 0,
     unflagged: 0,
@@ -550,6 +553,7 @@ export async function syncShopeeReturns(
     // — trước gửi 1 nên trang đầu bị bỏ qua, API trả RỖNG suốt từ 13/08 (phát
     // hiện 20/08 khi backfill: scanned=0 dù gian có đơn hoàn). Khớp return_sn
     // giữa các trang nên dù sàn hiểu là offset hay page vẫn không trùng.
+    let more = false;
     for (let pageNo = 0; pageNo < MAX_RETURN_PAGES; pageNo++) {
       const page = await getReturnList({
         accessToken,
@@ -559,14 +563,18 @@ export async function syncShopeeReturns(
         updateTimeFrom: from,
         updateTimeTo: to,
       });
+      result.pages++;
       const list = page.response?.return ?? [];
       for (const e of list) {
         const key = e.return_sn ?? `${e.order_sn}-${e.create_time}`;
         const prev = bySn.get(key);
         if (!prev || (e.update_time ?? 0) >= (prev.update_time ?? 0)) bySn.set(key, e);
       }
-      if (!page.response?.more || list.length === 0) break;
+      more = Boolean(page.response?.more) && list.length > 0;
+      if (!more) break;
     }
+    // Hết MAX_RETURN_PAGES mà sàn vẫn báo còn → lát này CHƯA ĐỦ (hợp đồng lát 3.1).
+    if (more) result.truncated = true;
   }
   const entries = [...bySn.values()];
   result.scanned = entries.length;

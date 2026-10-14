@@ -37,6 +37,7 @@ import {
   type TikTokTxBreakdown,
 } from "./client";
 import { planSettlementWrite, type SettlementWritePlan } from "../settlement-merge";
+import type { SyncCompleteness } from "../sync-contract";
 import {
   describeTiktokFeeTax,
   groupTiktokLinesByOrder,
@@ -217,7 +218,7 @@ function logShape(label: string, sample: unknown): void {
   console.log(`[TikTok] Hình dạng ${label}: ${parts.join(" ")}`);
 }
 
-export interface SyncOrdersResult {
+export interface SyncOrdersResult extends SyncCompleteness {
   fetched: number; // số đơn TikTok trả về
   created: number; // số Order tạo mới
   updated: number; // số Order đã có mà sàn báo KHÁC giá trị đang lưu → có UPDATE

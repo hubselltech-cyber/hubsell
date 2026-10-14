@@ -96,6 +96,7 @@ import { vnDateKey } from "../lib/ads-dates";
 import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
 import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 import { autoRunDue, dailyRunOffsetMin, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";
+import { incompleteReadMessage, type SyncCompleteness } from "../integrations/sync-contract";
 
 // ---------- Cấu hình nhịp ----------
 
@@ -404,19 +405,22 @@ async function processChannel(channel: Channel): Promise<void> {
 }
 
 /**
- * Lượt kéo đơn chạm chốt chặn số trang = còn đơn CHƯA đọc. Trước 29/09/2026 việc
- * này hoàn toàn im lặng. Hiện mới ghi log; nạp tiếp phần còn thiếu cần con trỏ
- * tiến độ theo gian (giai đoạn 3, docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md mục 6.3).
+ * Lượt đọc sàn chạm chốt chặn số trang = còn dữ liệu CHƯA đọc (hợp đồng
+ * integrations/sync-contract.ts, lát 3.1). Trước 29/09/2026 việc này hoàn toàn
+ * im lặng; nay mọi lượt đọc (đơn, yêu cầu hoàn) đều báo một dòng cùng từ khóa
+ * "CHƯA ĐỦ". Nạp tiếp phần còn thiếu là việc của mốc nước từng gian (lát 3.2):
+ * mốc không tiến khi chưa đủ, lượt sau đọc tiếp. Lượt nạp lịch sử gian mới chưa
+ * đủ vẫn hạ cờ backfill (giữ hành vi cũ) — giữ cờ thì mỗi lượt lại nạp 90 ngày
+ * và lại chạm cùng một chốt; phần thiếu cũng do lát 3.2 bù.
  */
-function warnIfTruncated(
+function warnIfIncomplete(
   channel: Channel,
-  r: { truncated: boolean; fetched: number; pages: number },
+  what: "đơn" | "yêu cầu hoàn",
+  r: SyncCompleteness & { fetched?: number; scanned?: number },
   backfill?: boolean
 ): void {
   if (!r.truncated) return;
-  console.warn(
-    `[Auto-sync] ${channel.channelName} "${channel.shopName}" (${channel.id}): lượt ${backfill ? "nạp lịch sử" : "quét biến động"} CHƯA ĐỦ — dừng ở ${r.pages} trang, ${r.fetched} đơn; phần cũ hơn chưa đọc`
-  );
+  console.warn(incompleteReadMessage(channel, what, r, backfill ? "nạp lịch sử" : "quét biến động"));
 }
 
 // ============================================================
@@ -445,7 +449,7 @@ async function runFastTier(
           });
       changed = r.created > 0 || r.updated > 0;
       escrowCodes.push(...r.changedOrderCodes);
-      warnIfTruncated(channel, r, opts.backfill);
+      warnIfIncomplete(channel, "đơn", r, opts.backfill);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
@@ -461,7 +465,7 @@ async function runFastTier(
             byUpdateTime: true,
           });
       changed = r.created > 0 || r.updated > 0;
-      warnIfTruncated(channel, r, opts.backfill);
+      warnIfIncomplete(channel, "đơn", r, opts.backfill);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] TikTok "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
@@ -475,7 +479,7 @@ async function runFastTier(
             byUpdateTime: true,
           });
       changed = r.created > 0 || r.updated > 0;
-      warnIfTruncated(channel, r, opts.backfill);
+      warnIfIncomplete(channel, "đơn", r, opts.backfill);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
@@ -513,6 +517,7 @@ async function runFastTier(
       const ret = await syncTiktokReturns(channel, {
         daysBack: opts.deep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
       });
+      warnIfIncomplete(channel, "yêu cầu hoàn", ret);
       if (ret.flagged > 0 || ret.unflagged > 0 || ret.itemsUpdated > 0) {
         console.log(
           `[Auto-sync] Đơn hoàn TikTok "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ, ${ret.itemsUpdated} dòng SKU trả (${ret.scanned} yêu cầu)`
@@ -547,6 +552,7 @@ async function runFastTier(
       const ret = await syncLazadaReturns(channel, {
         daysBack: opts.deep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
       });
+      warnIfIncomplete(channel, "yêu cầu hoàn", ret);
       if (ret.flagged > 0 || ret.unflagged > 0 || ret.itemsUpdated > 0) {
         console.log(
           `[Auto-sync] Đơn hoàn Lazada "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ, ${ret.itemsUpdated} dòng SKU trả (${ret.scanned} yêu cầu)`
@@ -570,6 +576,7 @@ async function runFastTier(
     const ret = await syncShopeeReturns(channel, {
       daysBack: opts.deep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
     });
+    warnIfIncomplete(channel, "yêu cầu hoàn", ret);
     escrowCodes.push(...ret.changedOrderCodes);
     if (ret.flagged > 0 || ret.unflagged > 0 || ret.trackingSaved > 0) {
       console.log(

@@ -270,7 +270,13 @@ export async function getOrders(
       offset: String(params.offset ?? 0),
       limit: String(params.limit ?? 100),
       sort_by: byUpdate ? "updated_at" : "created_at",
-      sort_direction: "ASC",
+      // MỚI NHẤT TRƯỚC (14/10/2026, lát 3.1): chạm chốt chặn số trang thì phần
+      // bị bỏ là đơn CŨ nhất, như Shopee/TikTok — trước đây ASC nên bị cắt là
+      // mất đúng đơn MỚI NHẤT. Với phân trang offset, DESC còn an toàn hơn khi
+      // có biến động giữa chừng: đơn vừa đổi nhảy lên ĐẦU, các trang sau chỉ đọc
+      // trùng (upsert vô hại); ASC thì đơn đó nhảy xuống CUỐI, trang kế bị hụt
+      // một dòng ở biên — mất đơn mà không ai biết.
+      sort_direction: "DESC",
     },
     "orders/get",
     cfg

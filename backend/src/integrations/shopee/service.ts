@@ -35,6 +35,7 @@ import {
 } from "../order-stock";
 import { stageStockPush, type StockPushTicket } from "../inventory-push";
 import type { StockSyncRequest } from "./inventory-sync";
+import type { SyncCompleteness } from "../sync-contract";
 import {
   getAccessToken,
   getOrderDetail,
@@ -502,7 +503,7 @@ export interface SyncShopeeOrdersOptions {
   timeRangeField?: "create_time" | "update_time";
 }
 
-export interface SyncShopeeOrdersResult {
+export interface SyncShopeeOrdersResult extends SyncCompleteness {
   fetched: number;
   created: number;
   /** Đơn đã có mà sàn báo KHÁC giá trị đang lưu → có UPDATE. */

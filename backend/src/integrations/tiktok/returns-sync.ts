@@ -41,6 +41,7 @@ import { autoAdjustOnPlatformReturn } from "../../services/invoice-requests";
 import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-lookup";
 import { searchReturns, type TikTokReturnOrder } from "./client";
 import { getValidAccessToken } from "./service";
+import type { SyncCompleteness } from "../sync-contract";
 
 /** Trần trang mỗi lượt (50 yêu cầu/trang). */
 const MAX_PAGES = 40;
@@ -243,7 +244,7 @@ export function planTiktokReturnUpdate(
   return plan;
 }
 
-export interface SyncTiktokReturnsResult {
+export interface SyncTiktokReturnsResult extends SyncCompleteness {
   scanned: number;
   flagged: number;
   unflagged: number;
@@ -295,6 +296,8 @@ function groupReturnsByOrder(returns: Iterable<TikTokReturnOrder>): Map<string, 
 
 function emptyReturnsResult(): SyncTiktokReturnsResult {
   return {
+    pages: 0,
+    truncated: false,
     scanned: 0,
     flagged: 0,
     unflagged: 0,
@@ -439,6 +442,9 @@ export async function syncTiktokReturns(
     }
     pageToken = page.next_page_token || undefined;
   } while (pageToken && pages < MAX_PAGES);
+  result.pages = pages;
+  // Còn trang mà đã chạm MAX_PAGES → CHƯA ĐỦ (hợp đồng lát 3.1).
+  if (pageToken) result.truncated = true;
   result.scanned = byId.size;
   if (byId.size === 0) return result;
 

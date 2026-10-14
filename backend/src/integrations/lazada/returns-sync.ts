@@ -30,6 +30,7 @@ import {
   type LazadaReverseOrderLine,
 } from "./client";
 import { getValidLazadaAccessToken } from "./service";
+import type { SyncCompleteness } from "../sync-contract";
 
 /** Trần trang mỗi lát thời gian (50 yêu cầu/trang). */
 const MAX_PAGES_PER_SLICE = 40;
@@ -214,7 +215,7 @@ export function planLazadaReturnUpdate(
   return plan;
 }
 
-export interface SyncLazadaReturnsResult {
+export interface SyncLazadaReturnsResult extends SyncCompleteness {
   scanned: number;
   flagged: number;
   unflagged: number;
@@ -242,6 +243,8 @@ export async function syncLazadaReturns(
   const floorMs = nowMs - daysBack * 24 * 60 * 60 * 1000;
 
   const result: SyncLazadaReturnsResult = {
+    pages: 0,
+    truncated: false,
     scanned: 0,
     flagged: 0,
     unflagged: 0,
@@ -256,6 +259,7 @@ export async function syncLazadaReturns(
   const byId = new Map<string, LazadaReverseOrder>();
   for (let to = nowMs; to > floorMs; to -= SLICE_MS) {
     const from = Math.max(floorMs, to - SLICE_MS);
+    let more = false;
     for (let pageNo = 1; pageNo <= MAX_PAGES_PER_SLICE; pageNo++) {
       const page = await getReverseOrders({
         accessToken,
@@ -266,12 +270,16 @@ export async function syncLazadaReturns(
         modifiedFromMs: Math.floor(from / 1000),
         modifiedToMs: Math.floor(to / 1000),
       });
+      result.pages++;
       for (const ro of page.items) {
         const key = String(ro.reverse_order_id ?? `${ro.trade_order_id}-${pageNo}`);
         if (!byId.has(key)) byId.set(key, ro);
       }
-      if (page.items.length < 50) break;
+      more = page.items.length >= 50;
+      if (!more) break;
     }
+    // Trang cuối vẫn đầy mà đã hết MAX_PAGES_PER_SLICE → lát này CHƯA ĐỦ (hợp đồng lát 3.1).
+    if (more) result.truncated = true;
   }
   result.scanned = byId.size;
   if (byId.size === 0) return result;
