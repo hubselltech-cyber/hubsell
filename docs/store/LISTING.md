@@ -4,6 +4,15 @@ Soạn 01/10/2026 cho bản 1.0.0, mã app `vn.hubsell.app`. Mọi nội dung d�
 
 Độ dài các ô có giới hạn đã đếm bằng máy (`python docs/store/check-lengths.py`).
 
+> **15/10/2026 — định vị lại "Trợ lý quảng cáo đa sàn" (anh Trung chốt).** Nội dung
+> dưới đây là bản ĐANG TRÊN KHO (Google Play đã phát hành, Apple đang xét build 1.0
+> (10)), giữ nguyên để đối chiếu. Sau khi Apple duyệt, đổi ở bản kế tiếp theo
+> `docs/marketing/DINH-VI-LAI-HUBSELL-QUANG-CAO.md` mục 3.1: tên app
+> `Hubsell - Trợ lý quảng cáo` (26/30), phụ đề Apple `Lãi thật từng đồng quảng cáo`
+> (28/30), mô tả ngắn Google `Biết lãi thật của từng chiến dịch quảng cáo trên mọi
+> sàn, tự canh chiến dịch lỗ` (79/80), mô tả dài mở đầu bằng trợ lý quảng cáo, ảnh
+> 1–3 là màn Quảng cáo. Không rút bản đang xét để đổi tên.
+
 ---
 
 ## 1. Thông tin chung

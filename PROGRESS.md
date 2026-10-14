@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 15/10/2026 — ĐỊNH VỊ LẠI: HUBSELL = TRỢ LÝ QUẢNG CÁO ĐA SÀN — ĐÃ PUSH, LIVE
+
+- **Quyết định của anh Trung:** không còn là "phần mềm quản lý bán hàng đa kênh" cạnh tranh với các ông lớn; từ giờ Hubsell là **trợ lý quảng cáo đa sàn**. Em đề xuất gắn thêm "tính theo lãi thật" vào tên, anh chốt ngược: *"Trợ lý quảng cáo đa sàn. Thế thôi là đủ."* Lãi thật chỉ là tính năng số 1 trong thân trang. Giữ tên Hubsell (nhãn hiệu, Play, Apple đang xét, BCT), đổi descriptor. Phương án + lý lẽ + bảng khả năng từng sàn: `docs/marketing/DINH-VI-LAI-HUBSELL-QUANG-CAO.md`.
+- **Lát 1 (landing `07e4c5d`, `8ac8d47`):** title/OG, hero (H1 "Trợ lý quảng cáo đa sàn cho Shopee, Lazada, TikTok Shop", laptop = ảnh Trợ lý quảng cáo, thẻ Chi quảng cáo hôm nay), dải 4 số (24/7), nỗi đau của người chạy quảng cáo, tour: ads lên chốt 01 và trải đầu, band Trợ lý AI hỏi về chiến dịch, FAQ 2 câu mới (ghi đúng TikTok chưa bật/tắt chiến dịch), CTA, menu "Trợ lý quảng cáo", footer, /tinh-nang, /quy-che. Soi preview desktop + mobile.
+- **Lát 2 (repo chính `0a376f4d`, `3f337a6d`, `e7962f06`):** title web app + login + dòng dưới logo + mobile login; sidebar nhóm Trợ lý quảng cáo xuống **ngay dưới Quản lý Tài chính** (anh chốt vị trí); hộp nhắc giá vốn, onboarding, tour, chip gợi ý Trợ lý AI kể theo "nối gian → giá vốn → quảng cáo". Thẻ "Quảng cáo hôm nay" đầu Tổng quan làm xong rồi **gỡ hẳn cùng ngày** (anh xem số thật: trùng Trung tâm điều hành, thấp mật độ; "Tổng quan để như cũ, khách vẫn phải qua nối gian → giá vốn → tài chính mới tới quảng cáo"). Thư gửi khách hiện có: nháp `docs/marketing/THU-DINH-VI-LAI-KHACH-HIEN-CO.md`, chưa gửi.
+- **Hạ tầng thử:** `.claude/launch.json` thêm `backend-http` (4010, tắt SSL) + `frontend-http` để soi app trong trình duyệt của Claude desktop (cert tự ký bị từ chối) — `90a04db5`.
+- **Còn lại:** kho ứng dụng đổi tên sau khi Apple duyệt (docs/store/LISTING.md có ghi chú), 2 thư nhắc tự động, mobile (tab Quảng cáo + thông báo đẩy), tháng 11 giá theo chi tiêu ads + video + nội dung. Việc sản phẩm để thông điệp mạnh hơn: nộp scope Campaign TikTok, nối ads TikTok ANO prod, Shopee đợt B.
+
+---
+
 ## Phiên 12/10/2026 — BĂNG THÔNG WORKER RENDER: ĐO THẬT RỒI SỬA ĐỒNG BỘ ĐƠN "CHỈ GHI KHI KHÁC" (lát A) — CODE XONG, CHƯA PUSH
 
 - **Bối cảnh:** lượt tóm tắt thư 08:47 báo 2 thư Render "Bandwidth Limit" treo 7 ngày. Anh bảo xem biểu đồ rồi bỏ cờ: Outbound worker 7 ngày ~120 → ~80 MB/giờ sau `f3f05ab` (08/10), tháng 10 đã 26,8 GB / 5 GB, dự kiến 17,30 USD; đã bỏ cờ 2 thư trên Zoho. Anh: "tốn kém quá mà chưa có khách" → lên kế hoạch; anh chốt đơn/kho/ads không được chậm, và ads liên quan tiền khách.

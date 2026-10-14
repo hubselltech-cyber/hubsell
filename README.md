@@ -1,6 +1,12 @@
-# Hubsell — Phần mềm quản lý bán hàng đa kênh
+# Hubsell — Trợ lý quảng cáo đa sàn
 
-Nền tảng quản lý bán hàng đa kênh (Shopee, Lazada, TikTok, Offline) — mô hình tương tự Salework.
+**Định vị từ 15/10/2026 (anh Trung chốt):** Hubsell là **trợ lý quảng cáo đa sàn** cho
+nhà bán trên Shopee, Lazada, TikTok Shop — không còn là "phần mềm quản lý bán hàng đa
+kênh" cạnh tranh với Sapo, Nhanh, Haravan, Salework. Đơn hàng, kho, đối soát, lãi lỗ
+từng đơn, hóa đơn vẫn có đủ và vẫn là **nền dữ liệu** để trợ lý tính ROAS hòa vốn,
+nhưng không còn là câu định vị. Phương án đầy đủ và các quyết định:
+[docs/marketing/DINH-VI-LAI-HUBSELL-QUANG-CAO.md](docs/marketing/DINH-VI-LAI-HUBSELL-QUANG-CAO.md).
+Phần dưới đây là lịch sử kỹ thuật của hệ thống, giữ nguyên để tra cứu.
 
 > ## 🏆 Phiên bản **v1.0 — MVP hoàn chỉnh** (18/07/2026)
 >
