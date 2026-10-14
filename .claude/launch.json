@@ -66,6 +66,24 @@
       "port": 8082
     },
     {
+      "name": "backend-http",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.SSL_KEY_FILE='';process.env.SSL_CERT_FILE='';process.env.PORT='4010';process.env.SHOPEE_CALLBACK_HTTP_PORT='4012';require('child_process').spawn('npm',['run','dev','--prefix','backend'],{stdio:'inherit',shell:true})"
+      ],
+      "port": 4010
+    },
+    {
+      "name": "frontend-http",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.NEXT_PUBLIC_API_URL='http://localhost:4010';require('child_process').spawn('npx',['next','dev','-p','3000'],{stdio:'inherit',shell:true,cwd:'frontend'})"
+      ],
+      "port": 3000
+    },
+    {
       "name": "backend-alt",
       "runtimeExecutable": "node",
       "runtimeArgs": [
