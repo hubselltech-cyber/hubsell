@@ -3880,3 +3880,40 @@ model PlatformCapacityMilestone {
 
   @@map("platform_capacity_milestones")
 }
+
+/// Trạng thái một lượt Chuẩn bị hàng chạy nền (14/10/2026).
+enum FulfillmentBatchStatus {
+  RUNNING // máy chủ đang gọi sàn — giao diện hỏi tiến độ mỗi ~1,5s
+  DONE // xong (kể cả khi có đơn sàn từ chối — xem failed[])
+  FAILED // lỗi ngoài dự kiến hoặc máy chủ khởi động lại giữa chừng
+}
+
+/// LƯỢT CHUẨN BỊ HÀNG CHẠY NỀN (14/10/2026 — sự cố 58 đơn 09/09: một request
+/// đồng bộ 1,5–3 phút bị cắt giữa chừng, giao diện lệch DB). Giờ POST
+/// /bulk/confirm tạo một dòng ở đây, trả batchId ngay, việc gọi sàn chạy tiếp
+/// trong tiến trình web; giao diện GET theo batchId để hiện "đã sắp xếp x/y".
+/// Kết quả từng đơn (confirmedIds/skipped/failed/notes) ghi vào dòng này lúc
+/// xong — trạng thái đơn (PROCESSED + mã vận đơn) vẫn ghi thẳng vào Order ngay
+/// khi sàn nhận từng nhóm, nên máy chủ có chết giữa chừng thì đơn đã xong vẫn
+/// đúng; chỉ dòng này treo RUNNING → đọc lại quá 3 phút coi là FAILED.
+/// Dòng cũ hơn 7 ngày dọn bằng worker dọn dữ liệu (chỉ để tra soát).
+model FulfillmentBatch {
+  id           String                 @id @default(cuid())
+  ownerId      String
+  status       FulfillmentBatchStatus @default(RUNNING)
+  /// Số đơn thật sự đem đi gọi sàn (đã trừ skipped).
+  total        Int
+  /// Số đơn đã có kết quả (sàn nhận hoặc từ chối).
+  done         Int                    @default(0)
+  confirmedIds Json                   @default("[]")
+  skipped      Json                   @default("[]")
+  failed       Json                   @default("[]")
+  notes        Json                   @default("[]")
+  error        String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  finishedAt   DateTime?
+
+  @@index([ownerId, createdAt])
+  @@map("fulfillment_batches")
+}

@@ -2683,3 +2683,163 @@ export async function downloadShippingDocument(
   ensureOk(json, "download_shipping_document");
   throw new Error("Shopee download_shipping_document không trả file PDF");
 }
+
+// ============================================================
+// SẮP XẾP VẬN CHUYỂN THEO MẺ — bộ "mass" API (docs 14/10/2026)
+//
+// Đi theo MÃ KIỆN (package_number, lấy từ get_order_detail field package_list),
+// tối đa 50 kiện/lần, các kiện phải CÙNG product_location_id (kho) + CÙNG
+// logistics_channel_id (kênh vận chuyển — do người mua chọn lúc đặt). Adapter
+// gom nhóm trước khi gọi. Mọi hàm trả success_list/fail_list theo từng kiện,
+// envelope error chỉ khi cả mẻ hỏng (sai tham số, token…).
+// ============================================================
+
+/** Kiện của một đơn trong get_order_detail (response_optional_fields=package_list). */
+export interface ShopeeOrderPackage {
+  package_number?: string;
+  logistics_status?: string;
+  logistics_channel_id?: number;
+  shipping_carrier?: string;
+  item_list?: { item_id?: number; model_id?: number; product_location_id?: string }[];
+  group_shipment_id?: number;
+}
+
+interface ShopeeOrderPackagesData extends ShopeeEnvelope {
+  response?: { order_list?: { order_sn: string; order_status?: string; package_list?: ShopeeOrderPackage[] }[] };
+}
+
+/**
+ * Danh sách kiện của NHIỀU đơn (≤50 order_sn/lần) — chỉ xin package_list để
+ * payload nhẹ, không đụng luồng đồng bộ đơn (ORDER_DETAIL_FIELDS).
+ */
+export async function getOrderPackages(
+  accessToken: string,
+  shopId: string,
+  orderSnList: string[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<Map<string, { orderStatus?: string; packages: ShopeeOrderPackage[] }>> {
+  const data = await callShopGet<ShopeeOrderPackagesData>(
+    SHOPEE_PATHS.orderDetail,
+    accessToken,
+    shopId,
+    [
+      ["order_sn_list", orderSnList.join(",")],
+      ["response_optional_fields", "package_list"],
+    ],
+    "get_order_detail(package_list)",
+    cfg
+  );
+  const out = new Map<string, { orderStatus?: string; packages: ShopeeOrderPackage[] }>();
+  for (const o of data.response?.order_list ?? []) {
+    if (!o.order_sn) continue;
+    out.set(o.order_sn, { orderStatus: o.order_status, packages: o.package_list ?? [] });
+  }
+  return out;
+}
+
+export interface ShopeeMassFail {
+  package_number?: string;
+  fail_reason?: string;
+}
+
+/** Khung giờ lấy hàng của mass API: có thêm cờ "recommended" (docs 24/03/2025). */
+export interface ShopeeMassShippingParameter extends ShopeeShippingParameter {
+  success_list?: { package_number?: string }[];
+  fail_list?: ShopeeMassFail[];
+}
+
+interface ShopeeMassShippingParameterData extends ShopeeEnvelope {
+  response?: ShopeeMassShippingParameter;
+}
+
+/**
+ * Tham số pickup/dropoff chung cho một nhóm kiện cùng kho + cùng kênh vận chuyển.
+ * Kiện không thuộc nhóm (sàn tự kiểm) nằm trong fail_list kèm lý do.
+ */
+export async function getMassShippingParameter(
+  accessToken: string,
+  shopId: string,
+  params: { packageNumbers: string[]; logisticsChannelId?: number; productLocationId?: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeMassShippingParameter> {
+  const body: Record<string, unknown> = {
+    package_list: params.packageNumbers.map((package_number) => ({ package_number })),
+  };
+  if (params.logisticsChannelId != null) body.logistics_channel_id = params.logisticsChannelId;
+  if (params.productLocationId) body.product_location_id = params.productLocationId;
+  const data = await callShopPost<ShopeeMassShippingParameterData>(
+    SHOPEE_PATHS.massShippingParameter,
+    accessToken,
+    shopId,
+    body,
+    "get_mass_shipping_parameter",
+    cfg
+  );
+  return data.response ?? {};
+}
+
+export interface ShopeeMassShipBody {
+  package_list: { package_number: string }[];
+  logistics_channel_id?: number;
+  product_location_id?: string;
+  pickup?: { address_id: number; pickup_time_id?: string };
+  dropoff?: { branch_id?: number; sender_real_name?: string; tracking_number?: string };
+}
+
+interface ShopeeMassShipData extends ShopeeEnvelope {
+  response?: { success_list?: { package_number?: string }[]; fail_list?: ShopeeMassFail[] };
+}
+
+/** Sắp xếp vận chuyển cho ≤50 kiện một lượt — KHÔNG hoàn tác được. */
+export async function massShipOrder(
+  accessToken: string,
+  shopId: string,
+  body: ShopeeMassShipBody,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<{ success: string[]; failed: ShopeeMassFail[] }> {
+  const data = await callShopPost<ShopeeMassShipData>(
+    SHOPEE_PATHS.massShipOrder,
+    accessToken,
+    shopId,
+    body as unknown as Record<string, unknown>,
+    "mass_ship_order",
+    cfg
+  );
+  return {
+    success: (data.response?.success_list ?? []).map((s) => s.package_number ?? "").filter(Boolean),
+    failed: data.response?.fail_list ?? [],
+  };
+}
+
+interface ShopeeMassTrackingData extends ShopeeEnvelope {
+  response?: {
+    success_list?: { package_number?: string; tracking_number?: string; hint?: string }[];
+    fail_list?: ShopeeMassFail[];
+  };
+}
+
+/**
+ * Mã vận đơn của ≤50 kiện một lượt. Kiện sàn chưa cấp mã nằm trong success_list
+ * với tracking_number rỗng (docs: hỏi lại trong 5 phút) → map tới null.
+ */
+export async function getMassTrackingNumber(
+  accessToken: string,
+  shopId: string,
+  packageNumbers: string[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<{ tracking: Map<string, string | null>; failed: ShopeeMassFail[] }> {
+  const data = await callShopPost<ShopeeMassTrackingData>(
+    SHOPEE_PATHS.massTrackingNumber,
+    accessToken,
+    shopId,
+    { package_list: packageNumbers.map((package_number) => ({ package_number })) },
+    "get_mass_tracking_number",
+    cfg
+  );
+  const tracking = new Map<string, string | null>();
+  for (const s of data.response?.success_list ?? []) {
+    if (!s.package_number) continue;
+    tracking.set(s.package_number, s.tracking_number?.trim() || null);
+  }
+  return { tracking, failed: data.response?.fail_list ?? [] };
+}

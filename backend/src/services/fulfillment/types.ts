@@ -78,9 +78,25 @@ export interface FulfillOrderRef {
 export interface LabelFetchResult {
   /** PDF vận đơn theo từng đơn (đơn lỗi không có mặt trong map). */
   pdfs: Map<string, Buffer>;
+  /**
+   * PDF GỘP nhiều đơn của sàn (chỉ khi xin `combined` — in vận đơn không kèm
+   * phiếu xuất hàng, 14/10): trang xếp đúng thứ tự `orderIds`. Đơn nằm trong
+   * một phần gộp KHÔNG có mặt trong `pdfs`. Route ghép các phần theo thứ tự
+   * seller chọn (phần gộp đứng ở vị trí đơn đầu tiên của nó).
+   */
+  combined?: { orderIds: string[]; pdf: Buffer }[];
   /** Cập nhật mã vận đơn/kiện adapter khám phá được trong lúc lấy phiếu. */
   discovered: Map<string, { trackingCode?: string | null; packageId?: string | null }>;
   failed: { orderId: string; orderCode: string; reason: string }[];
+}
+
+export interface LabelFetchOptions {
+  /**
+   * Cho phép adapter tải MỘT file cho nhiều đơn (Shopee download_shipping_document
+   * ≤50 đơn cùng hãng) thay vì từng đơn — nhanh hơn ~10 lần với mẻ 50. Chỉ bật
+   * khi không in kèm phiếu xuất hàng (phiếu phải xen kẽ sau từng vận đơn).
+   */
+  combined?: boolean;
 }
 
 /**
@@ -110,12 +126,25 @@ export interface FulfillmentAdapter {
   /** Sắp xếp vận chuyển THẬT cho một đơn. Không ném — trả ok=false kèm lý do. */
   arrangeShipment(channel: Channel, order: FulfillOrderRef, choice: FulfillChoice): Promise<ArrangeResult>;
   /**
+   * Sắp xếp vận chuyển cho NHIỀU đơn cùng gian bằng API mẻ của sàn (14/10/2026:
+   * Shopee mass_ship_order 50 kiện/lần, TikTok Batch Ship Packages). Trả kết
+   * quả theo id đơn — đơn nào thiếu trong map coi như lỗi "sàn không trả lời".
+   * `onProgress(done)` gọi sau mỗi nhóm để lượt chạy nền cập nhật tiến độ.
+   * Không cài = route gọi arrangeShipment từng đơn như trước.
+   */
+  arrangeShipmentBatch?(
+    channel: Channel,
+    orders: FulfillOrderRef[],
+    choice: FulfillChoice,
+    onProgress?: (done: number) => void
+  ): Promise<Map<string, ArrangeResult>>;
+  /**
    * Hỏi sàn đơn nào đã sẵn vận đơn (rẻ, không dựng file). Không cài = coi như
    * sẵn ngay (kênh offline / sàn cấp mã ngay lúc sắp xếp).
    */
   probeLabelReadiness?(channel: Channel, orders: FulfillOrderRef[]): Promise<LabelReadiness>;
   /** Tải vận đơn PDF chính chủ cho nhiều đơn của cùng gian. */
-  fetchLabels(channel: Channel, orders: FulfillOrderRef[]): Promise<LabelFetchResult>;
+  fetchLabels(channel: Channel, orders: FulfillOrderRef[], opts?: LabelFetchOptions): Promise<LabelFetchResult>;
 }
 
 /**
@@ -170,4 +199,33 @@ export function readFulfillDefaults(raw: unknown): FulfillDefaults | null {
     addressId: typeof o.addressId === "string" ? o.addressId : undefined,
     branchId: typeof o.branchId === "string" ? o.branchId : undefined,
   };
+}
+
+/** Cắt mảng thành từng mẻ `size` phần tử (trần của API sàn). */
+export function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Chạy `fn` cho từng phần tử với tối đa `limit` việc song song — dùng cho API
+ * chỉ có bản từng kiện (vận đơn TikTok) mà không dồn sàn bằng Promise.all.
+ */
+export async function mapWithLimit<T, R>(
+  list: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = new Array(list.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, list.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= list.length) return;
+      out[i] = await fn(list[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return out;
 }

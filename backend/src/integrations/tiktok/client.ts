@@ -1180,3 +1180,54 @@ export async function updateTiktokInventory(
     cfg
   );
 }
+
+/** Một kiện trong lỗi riêng lẻ của Batch Ship Packages (data.errors[]). */
+export interface TikTokBatchShipError {
+  code?: number;
+  message?: string;
+  detail?: { package_id?: string };
+}
+
+/**
+ * Sắp xếp vận chuyển cho NHIỀU kiện một lượt (Batch Ship Packages, docs 14/10/2026:
+ * POST /fulfillment/202309/packages/ship, body `packages[]`, tài liệu không ghi
+ * trần số kiện). Sàn trả code 0 nhưng vẫn có thể có `data.errors[]` theo từng
+ * kiện (vd "package in freeze status") — hàm trả map package_id → lỗi.
+ */
+export async function batchShipPackages(
+  params: {
+    accessToken: string;
+    shopCipher: string;
+    packages: {
+      id: string;
+      handoverMethod: "PICKUP" | "DROP_OFF";
+      pickupSlot?: { start_time: number; end_time: number };
+    }[];
+  },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<Map<string, string>> {
+  const body = {
+    packages: params.packages.map((p) => ({
+      id: p.id,
+      handover_method: p.handoverMethod,
+      ...(p.pickupSlot ? { pickup_slot: p.pickupSlot } : {}),
+    })),
+  };
+  const data = await callApi<{ errors?: TikTokBatchShipError[] }>(
+    {
+      method: "POST",
+      path: "/fulfillment/202309/packages/ship",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      body,
+    },
+    cfg
+  );
+  const errors = new Map<string, string>();
+  for (const e of data?.errors ?? []) {
+    const id = e.detail?.package_id?.trim();
+    if (!id) continue;
+    errors.set(id, `${e.message || "sàn từ chối"}${e.code ? ` (${e.code})` : ""}`);
+  }
+  return errors;
+}

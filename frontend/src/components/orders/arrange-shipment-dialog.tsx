@@ -50,6 +50,11 @@ import { cn } from "@/lib/utils";
  * Sau khi sàn OK, mặc định mở luôn hộp thoại in vận đơn A6 (anh Trung chốt);
  * ai muốn in sau thì tắt công tắc — trạng thái nhớ trong localStorage.
  *
+ * 14/10 — CHẠY NỀN + THEO MẺ: bấm Chuẩn bị, máy chủ trả batchId ngay rồi gọi
+ * sàn theo mẻ (Shopee mass_ship_order 50 kiện/lần, TikTok Batch Ship); nút hiện
+ * "Sàn đã sắp xếp x/y…" theo tiến độ hỏi mỗi 1,5s (lib/api bulkConfirmOrders).
+ * Mẻ 58 đơn hồi 09/09 bị cắt request giữa chừng nay không còn.
+ *
  * 05/09 — ĐỢI SÀN CẤP VẬN ĐƠN rồi mới in: Shopee nhận ship_order xong nhưng
  * cấp tracking_number trễ vài giây tới vài chục giây. Trước đây xin PDF ngay
  * nên đơn chưa có mã bị rơi khỏi file (chuẩn bị 4 đơn, in ra 1). Nay sau khi
@@ -118,10 +123,20 @@ export function ArrangeShipmentDialog({
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<"confirm" | "wait" | "print" | null>(null);
   const [waitProgress, setWaitProgress] = React.useState<{ ready: number; total: number } | null>(null);
+  /** Tiến độ lượt chạy nền "đã sắp xếp x/y" (14/10) — null khi chưa bắt đầu. */
+  const [confirmProgress, setConfirmProgress] = React.useState<{ done: number; total: number } | null>(null);
   const [printAfter, setPrintAfter] = React.useState(true);
   const [printOpts, setPrintOpts] = React.useState<PrintOptions>({ labels: true, pickList: false });
 
   const orderIds = React.useMemo(() => orders.map((o) => o.id), [orders]);
+  // Đóng tab/tải lại trang giữa lượt chạy nền: máy chủ vẫn chạy tiếp (kết quả
+  // đọc lại ở bảng đơn), nhưng hỏi để người dùng không tưởng việc bị hủy.
+  React.useEffect(() => {
+    if (!open || !busy) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [open, busy]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -172,7 +187,9 @@ export function ArrangeShipmentDialog({
       // Chỉ gửi đơn của các gian chạy được — gian lỗi/giữ chỗ bỏ ngoài
       const runnableIds = new Set(runnable.map((g) => g.channelId));
       const ids = orders.filter((o) => runnableIds.has(o.channelId)).map((o) => o.id);
-      const res = await bulkConfirmOrders(ids, choices);
+      // Chạy nền trên máy chủ (Shopee mass_ship_order / TikTok Batch Ship), hộp
+      // thoại chỉ hỏi tiến độ — mẻ 200 đơn không còn bị cắt request giữa chừng.
+      const res = await bulkConfirmOrders(ids, choices, (done, total) => setConfirmProgress({ done, total }));
 
       const failedText =
         res.failed.length > 0
@@ -212,11 +229,14 @@ export function ArrangeShipmentDialog({
     } finally {
       setBusy(null);
       setWaitProgress(null);
+      setConfirmProgress(null);
     }
   }
 
   const busyLabel =
-    busy === "wait"
+    busy === "confirm" && confirmProgress
+      ? `Sàn đã sắp xếp ${formatNumber(confirmProgress.done)}/${formatNumber(confirmProgress.total)}…`
+      : busy === "wait"
       ? waitProgress
         ? `Sàn đã cấp vận đơn ${formatNumber(waitProgress.ready)}/${formatNumber(waitProgress.total)}…`
         : "Đang chờ sàn cấp vận đơn…"

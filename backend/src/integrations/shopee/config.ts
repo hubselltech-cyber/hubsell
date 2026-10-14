@@ -189,6 +189,19 @@ export const SHOPEE_PATHS = {
   shippingDocumentResult: "/api/v2/logistics/get_shipping_document_result",
   /** Tải file vận đơn PDF (POST, trả BINARY chứ không phải JSON). */
   downloadShippingDocument: "/api/v2/logistics/download_shipping_document",
+
+  // ── SẮP XẾP VẬN CHUYỂN THEO MẺ (Logistics "mass" API, docs 14/10/2026) ──
+  // Bộ API mới của sàn (New API 24/02/2025) đi theo MÃ KIỆN (package_number),
+  // mỗi lần tối đa 50 kiện CÙNG kho (product_location_id) + CÙNG kênh vận
+  // chuyển (logistics_channel_id). Thay cho ship_order từng đơn: mẻ 50 đơn từ
+  // ~150 lượt gọi còn vài lượt. `batch_ship_order` KHÔNG dùng được: docs ghi
+  // "Only channel 90003 - Padrão in Brazil".
+  /** Tham số pickup/dropoff cho nhiều kiện (POST, ≤50 kiện). */
+  massShippingParameter: "/api/v2/logistics/get_mass_shipping_parameter",
+  /** Sắp xếp vận chuyển nhiều kiện (POST, ≤50 kiện) — trả success_list/fail_list. */
+  massShipOrder: "/api/v2/logistics/mass_ship_order",
+  /** Mã vận đơn của nhiều kiện (POST, ≤50 kiện); mã có thể rỗng vài phút đầu. */
+  massTrackingNumber: "/api/v2/logistics/get_mass_tracking_number",
 } as const;
 
 /**

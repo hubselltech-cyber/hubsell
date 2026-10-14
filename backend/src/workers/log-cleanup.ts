@@ -150,6 +150,14 @@ export async function runOnce(): Promise<void> {
       (ids) => prisma.misaWebhookLog.deleteMany({ where: { id: { in: ids } } })
     );
 
+    // Lượt Chuẩn bị hàng chạy nền (14/10): chỉ để tra soát, giữ 7 ngày.
+    await deleteInBatches(
+      "fulfillment_batches",
+      (take) =>
+        prisma.fulfillmentBatch.findMany({ where: { createdAt: { lt: doneBefore } }, select: { id: true }, take }),
+      (ids) => prisma.fulfillmentBatch.deleteMany({ where: { id: { in: ids } } })
+    );
+
     // Nhật ký đẩy tồn lên sàn: SUCCESS 7 ngày, FAILED 30 ngày.
     const syncLogWhere = {
       OR: [

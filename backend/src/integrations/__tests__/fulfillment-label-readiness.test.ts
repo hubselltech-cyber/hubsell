@@ -21,6 +21,12 @@ vi.mock("../shopee/client", async (importOriginal) => {
     createShippingDocument: vi.fn(),
     getShippingDocumentResult: vi.fn(),
     downloadShippingDocument: vi.fn(),
+    // Đường theo mẻ (14/10): mặc định sàn không trả kiện → adapter lùi về hỏi
+    // từng đơn như trước, nên các case cũ giữ nguyên kỳ vọng.
+    getOrderPackages: vi.fn(),
+    getMassTrackingNumber: vi.fn(),
+    getMassShippingParameter: vi.fn(),
+    massShipOrder: vi.fn(),
   };
 });
 vi.mock("../shopee/service", async (importOriginal) => {
@@ -34,6 +40,8 @@ vi.mock("../shopee/service", async (importOriginal) => {
 import {
   createShippingDocument,
   downloadShippingDocument,
+  getMassTrackingNumber,
+  getOrderPackages,
   getShippingDocumentParameter,
   getShippingDocumentResult,
   getTrackingNumber,
@@ -50,6 +58,8 @@ const ref = (id: string, trackingCode: string | null = null): FulfillOrderRef =>
 });
 
 const mocked = {
+  packages: vi.mocked(getOrderPackages),
+  massTracking: vi.mocked(getMassTrackingNumber),
   tracking: vi.mocked(getTrackingNumber),
   docParam: vi.mocked(getShippingDocumentParameter),
   create: vi.mocked(createShippingDocument),
@@ -60,6 +70,8 @@ const mocked = {
 beforeEach(() => {
   vi.useFakeTimers();
   for (const m of Object.values(mocked)) m.mockReset();
+  mocked.packages.mockResolvedValue(new Map());
+  mocked.massTracking.mockResolvedValue({ tracking: new Map(), failed: [] });
 });
 afterEach(() => {
   vi.useRealTimers();

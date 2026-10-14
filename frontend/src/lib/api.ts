@@ -1719,12 +1719,70 @@ export interface BulkConfirmResult {
   notes?: { orderCode: string; note: string }[];
 }
 
-/** Chuẩn bị hàng THẬT (ship_order / pack+rts) cho nhiều đơn — sàn OK mới thành Đã xử lý. */
-export function bulkConfirmOrders(orderIds: string[], choices?: Record<string, FulfillChoice>) {
-  return apiFetch<BulkConfirmResult>("/api/orders/bulk/confirm", {
+/** Lượt Chuẩn bị hàng chạy nền (14/10): request trả batchId ngay, hỏi tiến độ sau. */
+export interface BulkConfirmStarted {
+  batchId: string;
+  total: number;
+  skipped: { orderCode: string; reason: string }[];
+}
+
+export interface BulkConfirmProgress extends BulkConfirmResult {
+  batchId: string;
+  status: "RUNNING" | "DONE" | "FAILED";
+  total: number;
+  /** Số đơn đã có kết quả (sàn nhận hoặc từ chối). */
+  done: number;
+  error: string | null;
+}
+
+/** Bắt đầu Chuẩn bị hàng THẬT (mass_ship_order / Batch Ship / pack+rts) — trả batchId ngay. */
+export function startBulkConfirm(orderIds: string[], choices?: Record<string, FulfillChoice>) {
+  return apiFetch<BulkConfirmStarted>("/api/orders/bulk/confirm", {
     method: "POST",
     body: JSON.stringify({ orderIds, choices }),
   });
+}
+
+/** Tiến độ + kết quả một lượt Chuẩn bị hàng. */
+export function fetchBulkConfirmProgress(batchId: string) {
+  return apiFetch<BulkConfirmProgress>(`/api/orders/bulk/confirm/${encodeURIComponent(batchId)}`);
+}
+
+const CONFIRM_POLL_MS = 1500;
+/** Trần đợi một lượt chạy nền — 200 đơn Lazada từng đơn vẫn dưới mức này. */
+const CONFIRM_MAX_MS = 15 * 60_000;
+
+/**
+ * Chuẩn bị hàng THẬT cho nhiều đơn: bắt đầu lượt chạy nền rồi hỏi tiến độ tới
+ * khi xong. `onProgress(done, total)` để hộp thoại hiện "đã sắp xếp x/y".
+ * Trả cùng hình dạng BulkConfirmResult như trước để phần in không đổi.
+ */
+export async function bulkConfirmOrders(
+  orderIds: string[],
+  choices?: Record<string, FulfillChoice>,
+  onProgress?: (done: number, total: number) => void
+): Promise<BulkConfirmResult> {
+  const started = await startBulkConfirm(orderIds, choices);
+  onProgress?.(0, started.total);
+  const t0 = Date.now();
+  for (;;) {
+    await new Promise<void>((r) => setTimeout(r, CONFIRM_POLL_MS));
+    let p: BulkConfirmProgress;
+    try {
+      p = await fetchBulkConfirmProgress(started.batchId);
+    } catch (err) {
+      // Mất mạng một nhịp không làm hỏng lượt đang chạy trên máy chủ — hỏi lại.
+      if (err instanceof ApiError && err.status === 404) throw err;
+      if (Date.now() - t0 > CONFIRM_MAX_MS) throw err;
+      continue;
+    }
+    onProgress?.(p.done, p.total);
+    if (p.status === "DONE") return p;
+    if (p.status === "FAILED") throw new ApiError(500, p.error ?? "Lượt chuẩn bị hàng bị gián đoạn");
+    if (Date.now() - t0 > CONFIRM_MAX_MS) {
+      throw new ApiError(504, "Lượt chuẩn bị hàng chạy quá lâu — tải lại danh sách để xem đơn nào sàn đã nhận");
+    }
+  }
 }
 
 export interface LabelReadinessResult {

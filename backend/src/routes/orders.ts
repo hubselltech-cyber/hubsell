@@ -17,7 +17,6 @@ import { channelScope } from "../lib/channel-filter";
 import { attachItemImages } from "../services/item-images";
 import {
   CARRIER_LABEL,
-  carrierFromName,
   expressShippingWhere,
   isExpressShipping,
   notExpressShippingWhere,
@@ -32,6 +31,7 @@ import {
   UNPAID_REASON,
   humanizeArrangeError,
 } from "../services/fulfillment";
+import { getFulfillmentBatch, startFulfillmentBatch } from "../services/fulfillment/batch-runner";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -588,13 +588,10 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
 const BULK_MAX = 200;
 
-/** Đọc + kiểm mảng orderIds trong body; trả null khi đã trả lỗi cho client. */
-/** Nhịp giữa hai lần ship_order/pack cùng gian trong một mẻ Chuẩn bị hàng. */
-const ARRANGE_GAP_MS = 300;
 /** Số đơn mẫu tối đa thử khi hỏi sàn phương án vận chuyển cho một gian. */
 const SAMPLE_TRIES = 3;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Đọc + kiểm mảng orderIds trong body; trả null khi đã trả lỗi cho client. */
 function readBulkOrderIds(
   req: AuthRequest,
   res: express.Response,
@@ -768,10 +765,14 @@ router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
  * POST /api/orders/bulk/confirm — "Chuẩn bị hàng" THẬT cho nhiều đơn.
  * Body: { orderIds: string[], choices?: { [channelId]: FulfillChoice } }
  *
- * Với sàn có adapter: gọi sàn từng đơn (ship_order / pack+rts); sàn OK mới
- * ghi PROCESSED + packedAt + mã vận đơn/kiện. Sàn từ chối thì đơn ở nguyên
- * Chờ xử lý kèm lý do — không "giả vờ đã xử lý". Kênh offline: đổi trạng thái
- * nội bộ như cũ. Lựa chọn của từng gian được lưu làm mặc định lần sau.
+ * 14/10/2026 — CHẠY NỀN + THEO MẺ: request chỉ kiểm đơn, tạo một lượt
+ * FulfillmentBatch rồi trả 202 { batchId, total, skipped } NGAY. Việc gọi sàn
+ * (Shopee mass_ship_order 50 kiện/lần, TikTok Batch Ship, Lazada từng đơn) chạy
+ * tiếp trong services/fulfillment/batch-runner; giao diện hỏi
+ * GET /bulk/confirm/:batchId mỗi ~1,5s để hiện "đã sắp xếp x/y" và lấy kết
+ * quả cuối. Sàn OK mới ghi PROCESSED + packedAt + mã vận đơn/kiện cho từng đơn;
+ * sàn từ chối thì đơn ở nguyên Chờ xử lý kèm lý do — không "giả vờ đã xử lý".
+ * Kênh offline: đổi trạng thái nội bộ. Lựa chọn của từng gian lưu làm mặc định.
  *
  * Bỏ qua có chọn lọc thay vì fail cả mẻ: 50 đơn mà 1 đơn hỏng thì báo riêng
  * đơn đó, 49 đơn còn lại vẫn chạy.
@@ -798,8 +799,6 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
 
     const found = new Set(orders.map((o) => o.id));
     const skipped: { orderCode: string; reason: string }[] = [];
-    const failed: { orderCode: string; reason: string }[] = [];
-    const notes: { orderCode: string; note: string }[] = [];
     const ready: typeof orders = [];
 
     for (const o of orders) {
@@ -825,88 +824,39 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
         confirmed: 0,
         confirmedIds: [],
         skipped,
-        failed,
+        failed: [],
       });
       return;
     }
 
+    // Giữ thứ tự seller chọn trong từng gian để tiến độ chạy theo thứ tự bảng.
+    const position = new Map(orderIds.map((id, i) => [id, i]));
+    ready.sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0));
     const groups = new Map<string, typeof ready>();
     for (const o of ready) {
       groups.set(o.channelId, [...(groups.get(o.channelId) ?? []), o]);
     }
 
-    const confirmedIds: string[] = [];
-    const markProcessed = async (
-      id: string,
-      extra: { trackingCode?: string | null; platformPackageId?: string | null; carrierName?: string | null } = {}
-    ) => {
-      // Hãng sàn gán lúc sắp xếp (Lazada trả ngay shipment_provider) — ghi luôn
-      // để phiếu xuất hàng in ngay sau đó không bị "Chưa gán"; sync sau vẫn đè.
-      const carrier = extra.carrierName ? carrierFromName(extra.carrierName) : null;
-      await prisma.order.update({
-        where: { id },
-        data: {
-          shippingStatus: ShippingStatus.PROCESSED,
-          packedAt: new Date(),
-          ...(extra.trackingCode ? { trackingCode: extra.trackingCode } : {}),
-          ...(extra.platformPackageId ? { platformPackageId: extra.platformPackageId } : {}),
-          ...(extra.carrierName ? { shippingCarrierName: extra.carrierName } : {}),
-          ...(carrier ? { carrier } : {}),
-        },
-      });
-      confirmedIds.push(id);
-    };
+    const { batchId, total } = await startFulfillmentBatch({ ownerId: req.ownerId!, groups, choices, skipped });
+    res.status(202).json({ batchId, total, skipped });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    // Các gian chạy song song, trong một gian chạy TUẦN TỰ (đỡ dồn rate-limit
-    // và để lỗi token của gian hiện ra một lần thay vì 50 lần).
-    await Promise.all(
-      [...groups.values()].map(async (list) => {
-        const channel = list[0].channel;
-        const adapter = getFulfillmentAdapter(channel.channelName);
-        if (!adapter) {
-          for (const o of list) await markProcessed(o.id);
-          return;
-        }
-        if (!adapter.supported) {
-          const r = await adapter.arrangeShipment(channel, toFulfillRef(list[0]), { method: "PICKUP" });
-          for (const o of list) failed.push({ orderCode: o.orderCode, reason: r.error ?? "Sàn chưa hỗ trợ" });
-          return;
-        }
-        const choice: FulfillChoice =
-          choices[channel.id] ?? readFulfillDefaults(channel.fulfillmentSettings) ?? { method: "PICKUP" };
-        if (choices[channel.id]) {
-          // Lưu mặc định (bỏ khung giờ — đổi theo ngày)
-          await prisma.channel.update({
-            where: { id: channel.id },
-            data: {
-              fulfillmentSettings: {
-                method: choice.method,
-                ...(choice.addressId ? { addressId: choice.addressId } : {}),
-                ...(choice.branchId ? { branchId: choice.branchId } : {}),
-              },
-            },
-          });
-        }
-        for (const [idx, o] of list.entries()) {
-          // Nhịp nhỏ giữa hai đơn cùng gian: sàn nhận từng đơn rõ ràng, không dồn
-          // rate-limit khi mẻ 50 đơn (chậm thêm ~0,3s/đơn — người dùng không cảm nhận).
-          if (idx > 0) await sleep(ARRANGE_GAP_MS);
-          const r = await adapter.arrangeShipment(channel, toFulfillRef(o), choice);
-          if (r.ok) {
-            await markProcessed(o.id, {
-              trackingCode: r.trackingCode,
-              platformPackageId: r.packageId,
-              carrierName: r.carrierName,
-            });
-            if (r.note) notes.push({ orderCode: o.orderCode, note: r.note });
-          } else {
-            failed.push({ orderCode: o.orderCode, reason: r.error ?? "Sàn từ chối" });
-          }
-        }
-      })
-    );
-
-    res.json({ confirmed: confirmedIds.length, confirmedIds, skipped, failed, notes });
+/**
+ * GET /api/orders/bulk/confirm/:batchId — tiến độ + kết quả một lượt Chuẩn bị
+ * hàng. RUNNING: { done, total }; DONE: thêm confirmed/confirmedIds/failed/notes;
+ * FAILED: error (máy chủ khởi động lại giữa chừng…).
+ */
+router.get("/bulk/confirm/:batchId", async (req: AuthRequest, res, next) => {
+  try {
+    const snap = await getFulfillmentBatch(String(req.params.batchId), req.ownerId!);
+    if (!snap) {
+      res.status(404).json({ error: "Không tìm thấy lượt chuẩn bị hàng này" });
+      return;
+    }
+    res.json(snap);
   } catch (err) {
     next(err);
   }
@@ -1042,6 +992,9 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
     const orders = orderIds.map((id) => byId.get(id)).filter((r): r is NonNullable<typeof r> => Boolean(r));
 
     const labelPdfs = new Map<string, Buffer>();
+    /** PDF gộp nhiều đơn của sàn, đặt ở vị trí đơn đầu tiên của phần gộp. */
+    const combinedByFirst = new Map<string, Buffer>();
+    const inCombined = new Set<string>();
     const failed: { orderCode: string; reason: string }[] = [];
 
     if (wantLabels) {
@@ -1065,8 +1018,15 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
           const adapter = getFulfillmentAdapter(channel.channelName);
           if (!adapter) return; // offline: không có vận đơn sàn, chỉ phiếu nhặt
           try {
-            const r = await adapter.fetchLabels(channel, list.map(toFulfillRef));
+            // Không in kèm phiếu xuất hàng → cho sàn trả MỘT file cho nhiều đơn
+            // (Shopee 50 đơn/lượt) thay vì tải từng đơn — nhanh hơn ~10 lần.
+            const r = await adapter.fetchLabels(channel, list.map(toFulfillRef), { combined: !wantPickList });
             for (const [id, pdf] of r.pdfs) labelPdfs.set(id, pdf);
+            for (const part of r.combined ?? []) {
+              if (part.orderIds.length === 0) continue;
+              combinedByFirst.set(part.orderIds[0], part.pdf);
+              for (const id of part.orderIds) inCombined.add(id);
+            }
             for (const f of r.failed) failed.push({ orderCode: f.orderCode, reason: f.reason });
             // Mã vận đơn/kiện khám phá được trong lúc lấy phiếu → lưu lại
             for (const [id, d] of r.discovered) {
@@ -1090,7 +1050,7 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
 
     const parts = [];
     for (const o of orders) {
-      const label = labelPdfs.get(o.id) ?? null;
+      const label = labelPdfs.get(o.id) ?? combinedByFirst.get(o.id) ?? null;
       const pickList = wantPickList
         ? await buildPickListPdf({
             orderCode: o.orderCode,
@@ -1120,7 +1080,7 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
     const failedCodes = new Set(failed.map((f) => f.orderCode));
     const summary = {
       orders: orders.length,
-      labels: labelPdfs.size,
+      labels: labelPdfs.size + inCombined.size,
       pages: merged.pages,
       broken: merged.broken,
       failed,
