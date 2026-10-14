@@ -248,6 +248,8 @@ export interface LazadaOrderListParams {
    * quét trục update để bắt đơn cũ vừa chuyển "đang hoàn".
    */
   updatedAfter?: string;
+  /** Mốc ISO 8601 trên của trục biến động (đi cùng updatedAfter) — mốc nước của worker. */
+  updatedBefore?: string;
   offset?: number;
   /** Tối đa 100 đơn/trang theo giới hạn Lazada. */
   limit?: number;
@@ -265,7 +267,10 @@ export async function getOrders(
     {
       access_token: params.accessToken,
       ...(byUpdate
-        ? { update_after: params.updatedAfter! }
+        ? {
+            update_after: params.updatedAfter!,
+            ...(params.updatedBefore ? { update_before: params.updatedBefore } : {}),
+          }
         : { created_after: params.createdAfter! }),
       offset: String(params.offset ?? 0),
       limit: String(params.limit ?? 100),

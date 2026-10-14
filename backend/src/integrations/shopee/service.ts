@@ -494,6 +494,12 @@ function aggregateShopeeItems(order: ShopeeOrderDetail) {
 export interface SyncShopeeOrdersOptions {
   /** Lấy đơn tạo trong bao nhiêu ngày gần nhất. Mặc định 90 (chia cửa sổ 15 ngày). */
   daysBack?: number;
+  /**
+   * Cửa sổ TƯỜNG MINH theo trục update_time (giây Unix, hai đầu đóng) — mốc nước
+   * của worker (lát 3.2). Có mặt thì thắng `daysBack` và ép `timeRangeField=update_time`.
+   */
+  updateTimeFrom?: number;
+  updateTimeTo?: number;
   maxPages?: number;
   /**
    * Trục thời gian lọc đơn. Worker nền dùng "update_time": đơn CŨ (tạo cả tháng
@@ -537,7 +543,10 @@ export async function syncShopeeOrders(
   const nowSec = Math.floor(Date.now() / 1000);
   const daysBack = opts.daysBack ?? 90;
   const maxPages = opts.maxPages ?? MAX_PAGES;
-  const startFrom = nowSec - daysBack * 24 * 60 * 60;
+  const byWatermark = opts.updateTimeFrom !== undefined && opts.updateTimeTo !== undefined;
+  const endSec = byWatermark ? opts.updateTimeTo! : nowSec;
+  const startFrom = byWatermark ? opts.updateTimeFrom! : nowSec - daysBack * 24 * 60 * 60;
+  const timeRangeField = byWatermark ? "update_time" : opts.timeRangeField;
 
   const feeRate =
     Number(channel.feeRate) > 0
@@ -555,8 +564,8 @@ export async function syncShopeeOrders(
     truncated: false,
   };
 
-  // Chia [startFrom, now] thành các cửa sổ ≤15 ngày, đi lùi từ hiện tại.
-  for (let winTo = nowSec; winTo > startFrom; winTo -= WINDOW_SEC) {
+  // Chia [startFrom, endSec] thành các cửa sổ ≤15 ngày, đi lùi từ mốc trên.
+  for (let winTo = endSec; winTo > startFrom; winTo -= WINDOW_SEC) {
     if (result.pages >= maxPages) {
       result.truncated = true; // còn cửa sổ chưa đụng tới
       break;
@@ -572,7 +581,7 @@ export async function syncShopeeOrders(
         timeTo: winTo,
         pageSize: ORDER_LIST_PAGE_SIZE,
         cursor,
-        timeRangeField: opts.timeRangeField,
+        timeRangeField,
       });
       result.pages++;
 
@@ -590,6 +599,9 @@ export async function syncShopeeOrders(
         );
         for (const d of details) {
           result.fetched++;
+          if (d.update_time && (result.oldestUpdateTime === undefined || d.update_time < result.oldestUpdateTime)) {
+            result.oldestUpdateTime = d.update_time;
+          }
           const existing = existingByCode.get(d.order_sn) ?? null;
           const plan = existing ? planShopeeOrderUpdate(existing, d) : null;
           if (existing && plan && !hasPlannedChanges(plan) && !needsItemImageBackfill(existing.createdAt)) {

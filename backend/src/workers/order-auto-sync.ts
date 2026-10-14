@@ -97,6 +97,7 @@ import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
 import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 import { autoRunDue, dailyRunOffsetMin, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";
 import { incompleteReadMessage, type SyncCompleteness } from "../integrations/sync-contract";
+import { nextWatermark, planOrderWindow, watermarkLogLine, type WatermarkWrite } from "../services/order-watermark";
 
 // ---------- Cấu hình nhịp ----------
 
@@ -121,12 +122,13 @@ const JITTER_RATIO = 0.15;
 // ---------- Cửa sổ quét (giữ nguyên từ bản vòng for) ----------
 
 /**
- * Quét đơn có BIẾN ĐỘNG trong N ngày gần nhất (trục update_time, từ 09/08).
- * Trục update phủ cả đơn mới tạo LẪN đơn cũ vừa đổi trạng thái — đặc biệt đơn
- * tạo 1-3 tuần trước mà sàn vừa báo HOÀN, thứ trục create_time cũ bỏ sót khiến
- * trang Đối soát đơn hoàn phải chờ người bấm đồng bộ tay 90 ngày.
+ * Quét đơn có BIẾN ĐỘNG (trục update_time, từ 09/08): trục update phủ cả đơn mới
+ * tạo LẪN đơn cũ vừa đổi trạng thái — đặc biệt đơn tạo 1-3 tuần trước mà sàn vừa
+ * báo HOÀN, thứ trục create_time cũ bỏ sót. Cửa sổ KHÔNG còn cứng 2 ngày: từ
+ * 14/10/2026 (lát 3.2) mỗi gian có MỐC NƯỚC (services/order-watermark.ts) — đọc
+ * từ mốc − 30 phút tới hiện tại, bị cắt thì vét dần, mốc chỉ tiến khi đọc đủ.
+ * Gian chưa có mốc đọc 2 ngày như cũ; env ORDER_SYNC_WINDOW=fixed là đường lui.
  */
-const ORDERS_DAYS_BACK = 2;
 /**
  * Cửa sổ quét YÊU CẦU HOÀN Shopee (Returns API, trục update_time). Yêu cầu hoàn
  * trên đơn COMPLETED không đổi order_status nên quét đơn ở trên KHÔNG thấy —
@@ -342,6 +344,7 @@ async function processChannel(channel: Channel): Promise<void> {
   let settlementsOk = false;
   let adsSynced = false;
   let pulse: { delayMin: number; synced: boolean } | null = null;
+  let watermark: WatermarkWrite | null = null;
 
   try {
     if (channel.channelName === ChannelName.SHOPEE && !isShopeeConfigured()) return;
@@ -354,6 +357,7 @@ async function processChannel(channel: Channel): Promise<void> {
     const fast = await runFastTier(channel, { deep: tiers.hourly, backfill });
     changed = fast.changed;
     ordersOk = fast.ordersOk;
+    watermark = fast.watermark;
     // XUNG ads trước tầng giờ: cảnh báo tiền là thứ cần sớm nhất trong lượt.
     if (tiers.pulse) {
       pulse = isTiktok ? await runTiktokAdsPulse(channel) : await runAdsPulseTier(channel);
@@ -396,6 +400,8 @@ async function processChannel(channel: Channel): Promise<void> {
           ...(adsSynced ? { adsBackfillPending: false } : {}),
           ...(backfillDone ? { historyBackfillPending: false } : {}),
           ...(rebuildDone ? { settlementRebuildPending: false } : {}),
+          // Mốc nước (lát 3.2) ghi cùng câu UPDATE lịch — không thêm câu lệnh nào.
+          ...(watermark ?? {}),
         },
       })
       .catch((err) =>
@@ -430,9 +436,14 @@ function warnIfIncomplete(
 async function runFastTier(
   channel: Channel,
   opts: { deep: boolean; backfill?: boolean }
-): Promise<{ changed: boolean; ordersOk: boolean }> {
+): Promise<{ changed: boolean; ordersOk: boolean; watermark: WatermarkWrite | null }> {
   let changed = false;
   let ordersOk = false;
+  /** Hai cột mốc nước cần ghi sau lượt đơn (null = không ghi: backfill / lỗi / đường lui). */
+  let watermark: WatermarkWrite | null = null;
+  // Cửa sổ đọc của lượt — tính TRƯỚC khi gọi sàn (now0 là lúc bắt đầu, không phải lúc xong).
+  const plan = opts.backfill ? null : planOrderWindow(channel, Date.now());
+  const window = plan ? { updateTimeFrom: plan.fromSec, updateTimeTo: plan.toSec } : null;
   // Mã đơn Shopee vừa tạo / đổi trạng thái lượt này → tầng ước tính escrow hỏi lại (lát B 12/10).
   const escrowCodes: string[] = [];
 
@@ -441,15 +452,13 @@ async function runFastTier(
   // tham số nút "Đồng bộ đơn" tay đã chạy thật (cắt lát 15 ngày bên trong service).
   try {
     if (channel.channelName === ChannelName.SHOPEE) {
-      const r = opts.backfill
-        ? await syncShopeeOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS })
-        : await syncShopeeOrders(channel, {
-            daysBack: ORDERS_DAYS_BACK,
-            timeRangeField: "update_time",
-          });
+      const r = window
+        ? await syncShopeeOrders(channel, window)
+        : await syncShopeeOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS });
       changed = r.created > 0 || r.updated > 0;
       escrowCodes.push(...r.changedOrderCodes);
       warnIfIncomplete(channel, "đơn", r, opts.backfill);
+      if (plan) watermark = nextWatermark(plan, r);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
@@ -458,33 +467,33 @@ async function runFastTier(
     } else if (channel.channelName === ChannelName.TIKTOK) {
       // Trục update_time như hai sàn kia — bắt cả đơn cũ vừa hủy/hoàn. Đồng bộ
       // lô KHÔNG trừ kho (webhook lo); chỉ upsert trạng thái/tiền/vận đơn.
-      const r = opts.backfill
-        ? await syncTiktokOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS })
-        : await syncTiktokOrders(channel, {
-            daysBack: ORDERS_DAYS_BACK,
-            byUpdateTime: true,
-          });
+      const r = window
+        ? await syncTiktokOrders(channel, window)
+        : await syncTiktokOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS });
       changed = r.created > 0 || r.updated > 0;
       warnIfIncomplete(channel, "đơn", r, opts.backfill);
+      if (plan) watermark = nextWatermark(plan, r);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] TikTok "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
         );
       }
     } else {
-      const r = opts.backfill
-        ? await syncLazadaOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS })
-        : await syncLazadaOrders(channel, {
-            daysBack: ORDERS_DAYS_BACK,
-            byUpdateTime: true,
-          });
+      const r = window
+        ? await syncLazadaOrders(channel, window)
+        : await syncLazadaOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS });
       changed = r.created > 0 || r.updated > 0;
       warnIfIncomplete(channel, "đơn", r, opts.backfill);
+      if (plan) watermark = nextWatermark(plan, r);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật, ${r.unchanged} không đổi)`
         );
       }
+    }
+    if (plan) {
+      const line = watermarkLogLine(channel, plan, watermark);
+      if (line) console.log(line);
     }
     // Đồng bộ đơn OK → reset bộ đếm lỗi (nguồn cảnh báo "sàn trễ đồng bộ"
     // tự đóng). Best-effort: lỗi ghi bookkeeping không được chặn lượt quét.
@@ -542,7 +551,7 @@ async function runFastTier(
     }
     // Các khối dưới (phí ước tính escrow, tracking backfill, hóa đơn người mua)
     // là API riêng của Shopee — TikTok dừng ở đây.
-    return { changed, ordersOk };
+    return { changed, ordersOk, watermark };
   }
 
   if (channel.channelName === ChannelName.LAZADA) {
@@ -564,7 +573,7 @@ async function runFastTier(
         (err as Error).message
       );
     }
-    return { changed, ordersOk };
+    return { changed, ordersOk, watermark };
   }
 
   // ---------- Shopee ----------
@@ -657,7 +666,7 @@ async function runFastTier(
       (err as Error).message
     );
   }
-  return { changed, ordersOk };
+  return { changed, ordersOk, watermark };
 }
 
 // ============================================================

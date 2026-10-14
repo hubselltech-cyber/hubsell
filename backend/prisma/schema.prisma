@@ -531,6 +531,11 @@ model Channel {
   adsGmsCheckedAt          DateTime?
   /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
   syncLockedAt             DateTime?
+  /// MỐC NƯỚC quét đơn (lát 3.2 giai đoạn 3, 14/10/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 2): mọi đơn có
+  /// update_time <= mốc này đã đọc đầy đủ. null = chưa có mốc → quét 2 ngày như cũ. Chỉ worker tiến mốc.
+  ordersWatermarkAt        DateTime?
+  /// Khác null = lượt quét trước bị cắt (chạm trần trang): lượt sau vét phần CŨ HƠN mốc này trước khi tiến mốc nước.
+  ordersCatchupBeforeAt    DateTime?
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi

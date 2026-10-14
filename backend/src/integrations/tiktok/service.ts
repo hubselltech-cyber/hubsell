@@ -187,6 +187,12 @@ export interface SyncOrdersOptions {
   daysBack?: number;
   /** true = lọc theo update_time (bắt đơn cũ vừa đổi trạng thái) thay vì create_time. */
   byUpdateTime?: boolean;
+  /**
+   * Cửa sổ TƯỜNG MINH theo trục update_time (giây Unix, hai đầu đóng) — mốc nước
+   * của worker (lát 3.2). Có mặt thì thắng `daysBack` và ép `byUpdateTime`.
+   */
+  updateTimeFrom?: number;
+  updateTimeTo?: number;
   maxPages?: number;
 }
 
@@ -245,9 +251,13 @@ export async function syncTiktokOrders(
   // Mặc định 120 ngày (không phải 90): đơn tạo sát mép 90 ngày được lượt đầu
   // kéo về rồi rơi khỏi cửa sổ ở lượt sau, trạng thái cũ kẹt mãi (16/09: 4 đơn
   // 18/06 kẹt "chờ xử lý"). Thêm một tháng đệm để lượt bấm tay vét hết.
-  const fromSec =
-    opts.createTimeGe ?? nowSec - (opts.daysBack ?? 120) * 24 * 60 * 60;
-  const toSec = opts.createTimeLt ?? nowSec;
+  const byWatermark = opts.updateTimeFrom !== undefined && opts.updateTimeTo !== undefined;
+  if (byWatermark) opts = { ...opts, byUpdateTime: true };
+  const fromSec = byWatermark
+    ? opts.updateTimeFrom!
+    : (opts.createTimeGe ?? nowSec - (opts.daysBack ?? 120) * 24 * 60 * 60);
+  // update_time_lt / create_time_lt là mốc MỞ: cửa sổ mốc nước đóng hai đầu nên +1 giây.
+  const toSec = byWatermark ? opts.updateTimeTo! + 1 : (opts.createTimeLt ?? nowSec);
   const maxPages = opts.maxPages ?? MAX_PAGES;
 
   // Quét theo create_time (đồng bộ tay 90 ngày) CẮT LÁT 15 ngày, mỗi lát có trần
@@ -355,6 +365,7 @@ export async function syncTiktokOrders(
       `[TikTok] Cửa sổ update_time ${new Date(fromSec * 1000).toISOString()} → ${new Date(toSec * 1000).toISOString()}: ${result.fetched} đơn, update_time thấp nhất ${windowMinUpdate ? new Date(windowMinUpdate * 1000).toISOString() : "?"}, cao nhất ${windowMaxUpdate ? new Date(windowMaxUpdate * 1000).toISOString() : "?"}`
     );
   }
+  if (windowMinUpdate) result.oldestUpdateTime = windowMinUpdate;
 
   return result;
 }

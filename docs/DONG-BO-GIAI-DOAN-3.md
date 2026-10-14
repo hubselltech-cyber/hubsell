@@ -8,7 +8,7 @@ Ngày lập: 14/10/2026. Người lập: Claude (Lead Dev). Thiết kế gốc: 
 |---|---|---|---|
 | 3.0 | Gỡ đuôi giai đoạn 1 (9 công tắc env đường lui + đường đọc đơn gốc) | Không | ✅ 14/10 `1ce3bd31` — chi tiết `docs/SO-CAI-DON.md` mục 9.8 |
 | 3.1 | Hợp đồng "dữ liệu + đầy đủ" cho mọi lượt đọc sàn + sửa Lazada kéo đơn ASC→DESC | Không | ✅ 14/10 — mục 1 dưới |
-| 3.2 | Mốc nước từng gian thay cửa sổ cứng 2 ngày | Có: 2 cột NULL trên `Channel` (trình SQL trước) | Chưa |
+| 3.2 | Mốc nước từng gian thay cửa sổ cứng 2 ngày | Có: 2 cột NULL trên `Channel` (migration `20261014230000_channel_orders_watermark`) | ✅ 14/10 tối — anh chốt luật + OVERLAP 30 phút + SQL; mã ở mục 2.7 |
 | 3.3 | Nhịp quét theo mức hoạt động (webhook vừa tới thì lùi quét; gian vắng 7 ngày → 6 giờ; có đơn 10 phút → 5 phút) | Không | Chưa — các số là mặc định tự chọn, anh chưa nhận |
 | 3.4 | Bộ giới hạn tốc độ dùng chung ở DB, áp mọi API sàn | Có (bảng nhỏ) | Chưa |
 | 3.5 | Worker còn vòng for → vé (token-refresh, lazada-renewal, stock-reconcile, weekly-report, ads-daily-summary) | Có (1–2 cột lịch) | Chưa |
@@ -44,7 +44,7 @@ Mọi hàm đọc sàn theo trang đều có chốt chặn số trang (Shopee 10
 
 Đường lui: revert commit. Không migration, không đổi env.
 
-## 2. Lát 3.2 — mốc nước từng gian (PHƯƠNG ÁN 14/10/2026, CHỜ ANH TRUNG CHỐT)
+## 2. Lát 3.2 — mốc nước từng gian (phương án 14/10/2026 — anh Trung CHỐT 14/10 tối, đã làm)
 
 ### 2.1. Hiện trạng đã rà (14/10)
 
@@ -115,3 +115,11 @@ ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "ordersCatchupBeforeAt" TIMESTAMP
 1. Luật ở 2.2 (đặc biệt: cắt thì vét phần cũ hơn bằng mốc thời gian, không lưu con trỏ sàn).
 2. `OVERLAP` 30 phút — nhận, hay đổi.
 3. SQL ở 2.4 — gật thì em viết mã, test xanh, trình commit rồi anh push.
+
+### 2.7. Đã làm (14/10/2026 tối, đúng phương án 2.2–2.4)
+
+- `services/order-watermark.ts` (thuần): `planOrderWindow(channel, now0)` → `{mode, fromSec, toSec}`; `nextWatermark(plan, r)` → hai cột cần ghi; `watermarkLogLine`. Hằng `WATERMARK_OVERLAP_SEC = 30 phút` (tự chọn, anh nhận 14/10), `WATERMARK_DEFAULT_DAYS = 2`, sàn dưới `WATERMARK_FLOOR_DAYS = HISTORY_BACKFILL_DAYS = 90`. Mốc vét nằm ngoài cửa sổ (cũ hơn sàn dưới / ở tương lai) thì bỏ, quét thường. Bị cắt mà `oldestUpdateTime` nằm ngoài cửa sổ (sàn trả dòng ngoài bộ lọc — nghi vấn TikTok 16/09 chưa đóng) hoặc không có → không đặt mốc vét, không tiến mốc, lượt sau quét lại: không bao giờ tiến mốc sai.
+- Ba hàm đồng bộ đơn nhận `updateTimeFrom` / `updateTimeTo` (giây, hai đầu đóng; TikTok `update_time_lt` là mốc mở nên +1 giây) và trả `oldestUpdateTime` (Shopee từ chi tiết đơn, TikTok từ `update_time`, Lazada từ `updated_at`). Lazada `client.getOrders` thêm `update_before`. Các lời gọi `daysBack` cũ (nút tay, kho, backfill 90 ngày) không đổi.
+- Worker: `runFastTier` tính cửa sổ TRƯỚC khi gọi sàn (`now0` = lúc bắt đầu), lượt backfill không dùng mốc nước; hai cột ghi trong cùng câu `UPDATE` lịch ở `finally` của `processChannel` (không thêm câu lệnh); lượt lỗi không ghi. Log chỉ khi bị cắt ("vét tiếp từ … tới …") hoặc vét xong ("mốc nước = …"); lượt thường im lặng. `ORDERS_DAYS_BACK` bỏ; đường lui `ORDER_SYNC_WINDOW=fixed`.
+- Test: `services/__tests__/order-watermark.test.ts` 15 ca (fresh / advance / sàn 90 ngày / catch-up / mốc vét ngoài cửa sổ / fixed / cắt / vét xong / vét lại cắt / chuỗi 3 lượt / log). Không có test DB cho đường ghi: hai cột đi cùng câu UPDATE lịch đã chạy từ 12/09 — kiểm trên prod theo 2.5.
+- Migration đã áp DB máy em (`apply-migration-local`). Prod: Render áp lúc khởi động; chỉ `ADD COLUMN NULL` trên `Channel`.

@@ -495,6 +495,12 @@ export interface SyncLazadaOrdersOptions {
    * đổi trạng thái — đặc biệt sàn báo HOÀN — vẫn lọt cửa sổ quét hẹp của worker.
    */
   byUpdateTime?: boolean;
+  /**
+   * Cửa sổ TƯỜNG MINH theo trục biến động (giây Unix, hai đầu đóng) — mốc nước
+   * của worker (lát 3.2). Có mặt thì thắng `daysBack` và ép `byUpdateTime`.
+   */
+  updateTimeFrom?: number;
+  updateTimeTo?: number;
 }
 
 export interface SyncLazadaOrdersResult extends SyncCompleteness {
@@ -527,8 +533,15 @@ export async function syncLazadaOrders(
 
   const daysBack = opts.daysBack ?? 90;
   const maxPages = opts.maxPages ?? MAX_PAGES;
-  const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
-  const timeFilter = opts.byUpdateTime ? { updatedAfter: since } : { createdAfter: since };
+  const byWatermark = opts.updateTimeFrom !== undefined && opts.updateTimeTo !== undefined;
+  const since = byWatermark
+    ? new Date(opts.updateTimeFrom! * 1000).toISOString()
+    : new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+  const timeFilter = byWatermark
+    ? { updatedAfter: since, updatedBefore: new Date(opts.updateTimeTo! * 1000).toISOString() }
+    : opts.byUpdateTime
+      ? { updatedAfter: since }
+      : { createdAfter: since };
 
   const result: SyncLazadaOrdersResult = {
     fetched: 0,
@@ -546,6 +559,12 @@ export async function syncLazadaOrders(
   for (;;) {
     const page = await getOrders({ accessToken, ...timeFilter, offset, limit: ORDER_LIST_PAGE_SIZE });
     result.pages++;
+    for (const o of page.orders) {
+      const t = o.updated_at ? Math.floor(Date.parse(o.updated_at) / 1000) : NaN;
+      if (Number.isFinite(t) && (result.oldestUpdateTime === undefined || t < result.oldestUpdateTime)) {
+        result.oldestUpdateTime = t;
+      }
+    }
     orders.push(...page.orders);
     offset += page.orders.length;
     if (page.orders.length < ORDER_LIST_PAGE_SIZE) break;

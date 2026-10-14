@@ -23,6 +23,13 @@ export interface SyncCompleteness {
   pages: number;
   /** true = dừng vì chạm chốt chặn số trang; còn dữ liệu CHƯA đọc. */
   truncated: boolean;
+  /**
+   * update_time (giây Unix) CŨ NHẤT trong các dòng đã đọc — nguyên liệu cho mốc
+   * nước (services/order-watermark.ts): bị cắt thì phần chưa đọc là phần cũ hơn
+   * mốc này (ba sàn đều đọc mới nhất trước). undefined = không đọc được dòng nào
+   * hoặc sàn không trả update_time.
+   */
+  oldestUpdateTime?: number;
 }
 
 /** Kết quả một lượt đọc thuần: đã đọc hết hay dừng non. */
