@@ -85,6 +85,13 @@ export const HEALTH_THRESHOLDS = {
    * nhân đôi) mới đáng xem lại nhịp gọi.
    */
   breakerTripsWarn24h: 3,
+  /**
+   * Mốc nước quét đơn (lát 3.2/3.6 giai đoạn 3, 15/10/2026): gian có mốc cũ hơn
+   * N phút → vàng / đỏ. MẶC ĐỊNH TỰ CHỌN: nhịp quét nhanh giãn tối đa 60' nên
+   * mốc cũ hơn 60' là có gian bị bỏ lượt; 6 giờ = quá nửa ngày không quét được.
+   */
+  watermarkLagWarnMin: 60,
+  watermarkLagCritMin: 360,
   /** Dự báo chạm mốc trong ≤ N ngày → nhắc trước. */
   etaWarnDays: 14,
 } as const;

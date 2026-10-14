@@ -6144,6 +6144,16 @@ export interface PlatformHealthResponse {
       breakerTrips24h: number;
       syncStalled: number;
       adsAuthDisconnected: number;
+      /** Mốc nước quét đơn (15/10/2026). null = không đọc được; vắng ở ảnh chụp cũ. */
+      watermark?: {
+        channels: number;
+        withMark: number;
+        catchingUp: number;
+        lagOver60: number;
+        lagOver6h: number;
+        maxLagMin: number | null;
+        maxLagShop: string | null;
+      } | null;
     };
     infra: {
       dbSizeMb: number | null;

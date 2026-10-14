@@ -132,7 +132,11 @@ export default function AdminHealthPage() {
               <StatCard
                 label="Worker"
                 value={m.worker.overdueFast15 === 0 ? "Đúng nhịp" : `${m.worker.overdueFast15} gian trễ`}
-                hint={`${m.growth.channelsAds} gian chạy ads · webhook chờ ${m.worker.webhookPending}${m.worker.breakersPaused.length ? " · CẦU DAO ĐÓNG" : ""}`}
+                hint={`${
+                  m.worker.watermark
+                    ? `mốc nước ${m.worker.watermark.withMark}/${m.worker.watermark.channels} gian${m.worker.watermark.maxLagMin != null ? `, trễ nhất ${m.worker.watermark.maxLagMin}'` : ""}${m.worker.watermark.catchingUp ? `, ${m.worker.watermark.catchingUp} vét dở` : ""} · `
+                    : ""
+                }${m.growth.channelsAds} gian chạy ads · webhook chờ ${m.worker.webhookPending}${m.worker.breakersPaused.length ? " · CẦU DAO ĐÓNG" : ""}`}
               />
               <StatCard
                 label="Database"

@@ -8,7 +8,7 @@
 // ============================================================
 
 import v8 from "v8";
-import { ChannelName, WebhookJobStatus } from "@prisma/client";
+import { ChannelName, Prisma, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
 import { DEAD_QUEUES } from "../lib/queue-config";
@@ -65,6 +65,24 @@ export interface GrowthLayer {
   webhooksPerDay7d: number;
 }
 
+/**
+ * Mốc nước quét đơn theo gian (Channel.ordersWatermarkAt / ordersCatchupBeforeAt,
+ * lát 3.2 giai đoạn 3) — đếm trên các gian đang quét (ACTIVE, có token, 3 sàn).
+ */
+export interface WatermarkHealth {
+  channels: number;
+  /** Gian đã có mốc (lượt quét đầu sau deploy / sau khi nối mới đặt mốc). */
+  withMark: number;
+  /** Gian đang vét dở vì lượt trước bị cắt (ordersCatchupBeforeAt khác NULL). */
+  catchingUp: number;
+  /** Gian có mốc cũ hơn T.watermarkLagWarnMin / T.watermarkLagCritMin. */
+  lagOver60: number;
+  lagOver6h: number;
+  /** Tuổi mốc lớn nhất (phút) + gian đó. null = chưa gian nào có mốc. */
+  maxLagMin: number | null;
+  maxLagShop: string | null;
+}
+
 export interface WorkerLayer {
   overdueFast15: number;
   overdueFast60: number;
@@ -87,6 +105,8 @@ export interface WorkerLayer {
   inboxOldestMin: number | null;
   /** Đường hóa đơn (bước 5 lát 14). null = không đọc được; vắng mặt ở ảnh chụp đời trước 03/10/2026. */
   invoice?: InvoiceHealth | null;
+  /** Mốc nước quét đơn (lát 3.6). null = không đọc được; vắng mặt ở ảnh chụp trước 15/10/2026. */
+  watermark?: WatermarkHealth | null;
 }
 
 export interface InfraLayer {
@@ -193,6 +213,37 @@ export async function collectGrowth(): Promise<GrowthLayer> {
   };
 }
 
+/** Mốc nước quét đơn: hai câu đếm nhẹ trên Channel (không có chỉ mục riêng — bảng gian nhỏ). */
+export async function collectWatermarkHealth(): Promise<WatermarkHealth> {
+  const scope = Prisma.sql`"status" = 'ACTIVE' AND "refreshToken" IS NOT NULL AND "channelName" IN ('SHOPEE', 'LAZADA', 'TIKTOK')`;
+  const [agg] = await prisma.$queryRaw<
+    { channels: number; withMark: number; catchingUp: number; lagOver60: number; lagOver6h: number; maxLagSec: number | null }[]
+  >`
+    SELECT COUNT(*)::int AS "channels",
+           COUNT("ordersWatermarkAt")::int AS "withMark",
+           COUNT("ordersCatchupBeforeAt")::int AS "catchingUp",
+           COUNT(*) FILTER (WHERE "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagWarnMin}::int))::int AS "lagOver60",
+           COUNT(*) FILTER (WHERE "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagCritMin}::int))::int AS "lagOver6h",
+           MAX(EXTRACT(EPOCH FROM (now() - "ordersWatermarkAt")))::float AS "maxLagSec"
+    FROM "Channel" WHERE ${scope}`;
+  const worst =
+    agg?.maxLagSec != null
+      ? await prisma.$queryRaw<{ shopName: string; channelName: string }[]>`
+          SELECT "shopName", "channelName" FROM "Channel"
+          WHERE ${scope} AND "ordersWatermarkAt" IS NOT NULL
+          ORDER BY "ordersWatermarkAt" ASC LIMIT 1`
+      : [];
+  return {
+    channels: agg?.channels ?? 0,
+    withMark: agg?.withMark ?? 0,
+    catchingUp: agg?.catchingUp ?? 0,
+    lagOver60: agg?.lagOver60 ?? 0,
+    lagOver6h: agg?.lagOver6h ?? 0,
+    maxLagMin: agg?.maxLagSec != null ? Math.round(agg.maxLagSec / 60) : null,
+    maxLagShop: worst[0] ? `${worst[0].channelName} · ${worst[0].shopName}` : null,
+  };
+}
+
 export async function collectWorker(): Promise<WorkerLayer> {
   const now = Date.now();
   const t15 = new Date(now - T.fastOverdueMin * 60 * 1000);
@@ -204,7 +255,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     refreshToken: { not: null },
     channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
-  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox, invoice] =
+  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark] =
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
@@ -238,6 +289,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
         [{ n: 0n, oldest: null }]
       ),
       safe<InvoiceHealth | null>("invoice.health", collectInvoiceHealth(new Date(now)), null),
+      safe<WatermarkHealth | null>("channel.watermark", collectWatermarkHealth(), null),
     ]);
   const d24 = now - DAY_MS;
   // Hàng đợi webhook sàn = Shopee + TikTok gộp (cùng khuôn, cùng SLA).
@@ -263,6 +315,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     inboxPending: Number(inbox[0]?.n ?? 0),
     inboxOldestMin: inbox[0]?.oldest ? Math.round((now - inbox[0].oldest.getTime()) / 60000) : null,
     invoice,
+    watermark,
   };
 }
 
@@ -437,6 +490,7 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     w.overdueFast15 >= T.overdueAbs || overduePct >= T.overdueRatioPct ? (w.overdueFast60 > 0 ? "crit" : "warn") : "ok",
     "Worker không kịp nhặt vé → thêm AUTO_SYNC_CONCURRENCY hoặc tách worker riêng"
   );
+  push("worker.watermark", "Mốc nước quét đơn", ...watermarkSignal(w.watermark ?? null));
   push(
     "worker.webhook",
     "Hàng đợi webhook Shopee",
@@ -494,6 +548,29 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     "Đặt connection_limit trong DATABASE_URL, dùng pooler"
   );
   return out;
+}
+
+/**
+ * Dấu hiệu MỐC NƯỚC quét đơn (lát 3.6): mỗi gian đang quét phải có mốc tươi hơn
+ * nhịp quét giãn tối đa (60'); gian đang vét dở = lượt trước chạm trần trang.
+ * Gian chưa có mốc chỉ là thông tin (vừa deploy / vừa nối / lượt đầu chưa chạy) —
+ * gian lỗi liên tiếp đã có dấu hiệu "sàn trễ đồng bộ" lo.
+ */
+export function watermarkSignal(wm: WatermarkHealth | null): [value: string, level: SignalLevel, hint: string] {
+  if (!wm) {
+    return ["không đọc được", "warn", "Cột ordersWatermarkAt chưa có? — migration 20261014230000_channel_orders_watermark đã áp chưa"];
+  }
+  const lag = wm.maxLagMin != null ? `trễ nhất ${wm.maxLagMin}'${wm.maxLagShop ? ` (${wm.maxLagShop})` : ""}` : "chưa có mốc nào";
+  const value =
+    `${wm.withMark}/${wm.channels} gian có mốc · ${lag}` +
+    ` · ${wm.catchingUp} đang vét dở` +
+    (wm.lagOver60 > 0 ? ` · ${wm.lagOver60} gian quá ${T.watermarkLagWarnMin}'` : "");
+  const level: SignalLevel = wm.lagOver6h > 0 ? "crit" : wm.lagOver60 > 0 || wm.catchingUp > 0 ? "warn" : "ok";
+  const hint =
+    wm.catchingUp > 0
+      ? "Gian chạm trần trang mỗi lượt — lọc log worker theo \"vét tiếp\": lặp mãi ở một gian = sàn trả dòng ngoài cửa sổ (TikTok?) hoặc gian quá lớn, xem docs/DONG-BO-GIAI-DOAN-3.md"
+      : "Mốc cũ = gian bị bỏ lượt (lỗi token / sàn / worker quá tải) — xem lastSyncError gian trễ nhất; cột trống = vừa deploy hoặc gian mới";
+  return [value, level, hint];
 }
 
 /**
