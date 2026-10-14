@@ -744,7 +744,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               Hubsell
             </p>
             <p className="truncate text-xs leading-tight text-muted-foreground">
-              {hqWorkspace ? "Điều hành Hubsell" : "Quản lý bán hàng đa kênh"}
+              {hqWorkspace ? "Điều hành Hubsell" : "Trợ lý quảng cáo đa sàn"}
             </p>
           </div>
         </Link>

@@ -576,7 +576,7 @@ export default function LoginPage() {
           <div className="text-center">
             <p className="text-xl font-bold">Hubsell</p>
             <p className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Store className="size-3.5" /> Quản lý bán hàng đa kênh
+              <Store className="size-3.5" /> Trợ lý quảng cáo đa sàn
             </p>
           </div>
         </div>
@@ -631,7 +631,7 @@ export default function LoginPage() {
         {/* KHÔNG in tài khoản demo ra đây nữa: URL production công khai
             (Vercel), lộ credentials admin là lộ dữ liệu shop thật. */}
         <p className="text-center text-xs text-muted-foreground">
-          Hubsell · Quản lý bán hàng đa kênh
+          Hubsell · Trợ lý quảng cáo đa sàn
         </p>
         {/* 09/10/2026: NĐ 248/2026 bắt công khai chính sách ngay trên nền tảng
             nơi khách đăng ký/thanh toán, không chỉ trên landing (Sở Công Thương

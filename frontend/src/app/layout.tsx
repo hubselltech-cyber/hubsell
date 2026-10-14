@@ -25,8 +25,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hubsell — Quản lý bán hàng đa kênh",
-  description: "Nền tảng quản lý bán hàng đa kênh: Shopee, Lazada, TikTok, Offline",
+  // 15/10/2026 anh Trung chốt định vị lại: Trợ lý quảng cáo đa sàn.
+  title: "Hubsell — Trợ lý quảng cáo đa sàn",
+  description: "Trợ lý quảng cáo đa sàn Shopee, Lazada, TikTok Shop — trên nền đơn, kho, dòng tiền trọn bộ",
 };
 
 // Áp theme TRƯỚC KHI render (chống nháy màu mặc định khi F5): đọc lựa chọn từ
