@@ -148,6 +148,19 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    // 15/10/2026 định vị lại "Trợ lý quảng cáo đa sàn": nhóm này lên ngay dưới
+    // Quản lý Tài chính (anh Trung chốt vị trí; trước nằm dưới Trợ lý vận hành).
+    // Route giữ /ads/* (adblock chặn /api/ads nên API đã là /api/quang-cao).
+    label: "Trợ lý quảng cáo",
+    icon: "campaign",
+    perm: "ads",
+    children: [
+      { href: "/ads/shopee", label: "Quảng cáo Shopee", perm: "ads.shopee" },
+      { href: "/ads/lazada", label: "Quảng cáo Lazada", perm: "ads.lazada" },
+      { href: "/ads/tiktok", label: "Quảng cáo TikTok", perm: "ads.tiktok" },
+    ],
+  },
+  {
     // Nghiệp vụ kho gom về một nhóm: nhập hàng, quản lý sản phẩm và đối soát
     // hàng hoàn đều là việc của kho.
     label: "Quản lý Kho",
@@ -191,16 +204,6 @@ const NAV_ITEMS: NavItem[] = [
         perm: "operations.loss-orders",
       },
       { href: "/operations-assistant/ai-rules", label: "Cấu hình tự động hóa", perm: "operations.ai-rules" },
-    ],
-  },
-  {
-    label: "Trợ lý quảng cáo",
-    icon: "campaign",
-    perm: "ads",
-    children: [
-      { href: "/ads/tiktok", label: "Quảng cáo TikTok", perm: "ads.tiktok" },
-      { href: "/ads/shopee", label: "Quảng cáo Shopee", perm: "ads.shopee" },
-      { href: "/ads/lazada", label: "Quảng cáo Lazada", perm: "ads.lazada" },
     ],
   },
   {

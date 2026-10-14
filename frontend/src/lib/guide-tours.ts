@@ -248,7 +248,7 @@ export const ORDERS_TOUR: GuideTour = {
     {
       img: `${GT}/dh-costs.png`,
       title: "Nhập giá vốn cho sản phẩm",
-      desc: "Vào “Quản lý Tài chính” → “Cấu hình Giá vốn”, điền giá vốn từng SKU — nhập xong bấm ra ngoài ô là tự lưu. Tab “Mapping giá vốn” gộp theo mã SKU để nhập một lần áp cho mọi gian hoặc chỉ các gian bạn chọn (mỗi gian được đặt giá vốn riêng). Đây là điều kiện để lãi/lỗ tính đúng.",
+      desc: "Vào “Quản lý Tài chính” → “Cấu hình Giá vốn”, điền giá vốn từng SKU — nhập xong bấm ra ngoài ô là tự lưu. Tab “Mapping giá vốn” gộp theo mã SKU để nhập một lần áp cho mọi gian hoặc chỉ các gian bạn chọn (mỗi gian được đặt giá vốn riêng). Đây là điều kiện để lãi/lỗ tính đúng và để Trợ lý quảng cáo biết ROAS hòa vốn của từng sản phẩm.",
       target: { x: 82.49, y: 54.79, w: 8.89, h: 3.75 },
       zoom: 1.8,
     },

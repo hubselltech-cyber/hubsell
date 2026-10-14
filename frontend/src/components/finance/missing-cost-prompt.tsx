@@ -101,9 +101,10 @@ export function MissingCostPrompt({ summary }: { summary?: MissingCostSummary })
               có giá vốn
             </DialogTitle>
             <DialogDescription>
-              Lợi nhuận của kỳ đang xem chưa tính các đơn này.{" "}
+              Chưa có giá vốn thì trợ lý quảng cáo chưa biết chiến dịch nào đang
+              lỗ, và lợi nhuận kỳ đang xem chưa tính các đơn này.{" "}
               <span className="font-medium text-foreground">Nhập giá vốn sản phẩm</span>{" "}
-              để Hubsell tính đúng lãi/lỗ từng đơn.
+              một lần để Hubsell tính hòa vốn từng SKU và lãi/lỗ từng đơn.
             </DialogDescription>
           </DialogHeader>
         </div>

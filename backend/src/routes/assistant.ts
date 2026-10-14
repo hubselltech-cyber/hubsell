@@ -969,13 +969,15 @@ const INTENTS: IntentDef[] = [
 const INTENT_BY_ID = new Map(INTENTS.map((d) => [d.id, d]));
 
 /** Câu mẫu chào màn hình + gợi ý khi miss — lấy từ chính bộ intent. */
+// 15/10/2026 định vị lại "Trợ lý quảng cáo đa sàn": câu quảng cáo lên đầu
+// (chip đầu tiên trong khung chat), các câu còn lại giữ nguyên.
 const SUGGESTIONS = [
-  "Báo cáo tuần này",
+  "Quảng cáo có campaign nào đốt tiền không?",
   "Hôm nay lãi bao nhiêu?",
+  "Báo cáo tuần này",
   "Có bao nhiêu đơn chờ xử lý?",
   "SKU nào sắp hết hàng?",
   "Đơn hoàn đang thế nào?",
-  "Quảng cáo có campaign nào đốt tiền không?",
   "Tiền của shop đang nằm ở đâu?",
 ];
 

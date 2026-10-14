@@ -74,7 +74,7 @@ export default function LoginScreen() {
           />
           <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">Hubsell</Text>
           <Text className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Quản lý bán hàng đa kênh
+            Trợ lý quảng cáo đa sàn
           </Text>
         </View>
 

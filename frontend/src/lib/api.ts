@@ -1316,6 +1316,30 @@ export function fetchDashboardSummary() {
   return apiFetch<DashboardSummary>("/api/dashboard/summary");
 }
 
+/** Thẻ "Quảng cáo hôm nay" trên Tổng quan (định vị lại 15/10/2026) — đọc DB, không gọi sàn. */
+export interface AdsTodaySummary {
+  today: string;
+  platforms: {
+    platform: "shopee" | "lazada" | "tiktok";
+    hasChannel: boolean;
+    connected: boolean;
+    spendToday: number;
+    spendYesterday: number;
+    openAlerts: number;
+  }[];
+  totalToday: number;
+  totalYesterday: number;
+  openAlerts: number;
+  anyChannel: boolean;
+  anyConnected: boolean;
+  /** Trang Trợ lý quảng cáo của sàn đang "nóng" nhất (hoặc sàn nên nối trước). */
+  href: string;
+}
+
+export function fetchAdsToday() {
+  return apiFetch<AdsTodaySummary>("/api/quang-cao/hom-nay");
+}
+
 // ----- Đồng bộ tồn kho tự động (Inventory Sync) -----
 
 /** Cảnh báo lệch tồn CHƯA xử lý (mới nhất trước). */

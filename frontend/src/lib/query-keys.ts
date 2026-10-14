@@ -22,6 +22,7 @@ export const qk = {
 
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,
+  adsToday: () => ["ads-today"] as const,
   analytics: (range?: DateRange, channel?: ChannelFilterQuery) =>
     ["analytics", rangeToQuery(range), channelFilterToQuery(channel)] as const,
 

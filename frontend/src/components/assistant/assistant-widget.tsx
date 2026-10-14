@@ -108,9 +108,9 @@ interface Msg {
 
 /** Dự phòng khi API gợi ý chưa kịp về — khớp bộ intent backend. */
 const FALLBACK_SUGGESTIONS = [
+  "Quảng cáo có campaign nào đốt tiền không?",
   "Hôm nay lãi bao nhiêu?",
   "Có bao nhiêu đơn chờ xử lý?",
-  "SKU nào sắp hết hàng?",
 ];
 
 /**

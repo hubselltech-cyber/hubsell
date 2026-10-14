@@ -6,7 +6,7 @@ import { editManualProductAdsRaw } from "../integrations/shopee/client";
 import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
 import { normalizeAssistantConfig, recommendAction } from "../integrations/shopee/ads-assistant-rules";
-import { ADS_RANGE_MAX_DAYS, dateKey, dateKeyToDbDate, resolveAdsDateRange } from "../lib/ads-dates";
+import { ADS_RANGE_MAX_DAYS, dateKey, dateKeyToDbDate, resolveAdsDateRange, vnDateKey } from "../lib/ads-dates";
 import { MARGIN_WINDOW_DAYS } from "../lib/ads-margin";
 import {
   computeChannelAdsInsights,
@@ -1277,6 +1277,137 @@ router.post("/shopee/write-probe", async (req: AuthRequest, res, next) => {
       cfg
     );
     res.json({ probe: { campaignId, editAction, budget, roasTarget }, shopeeResponse: raw });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/quang-cao/hom-nay — THẺ "QUẢNG CÁO HÔM NAY" trên Tổng quan (lát 2
+// định vị lại "Trợ lý quảng cáo đa sàn", anh Trung chốt 15/10/2026).
+//
+// Trang Tổng quan mở mỗi sáng nên thẻ phải RẺ: chỉ đọc bảng AdSpend (xung ads
+// ghi sẵn theo ngày sàn, đủ cả 3 sàn — TikTok = Σ cost GMV Max/ngày) và cảnh
+// báo quảng cáo ĐANG MỞ trong OpsAlert (scanOpsAlerts do Trung tâm điều hành
+// cùng trang gọi, throttle 10'). KHÔNG gọi sàn, KHÔNG chạy lại bộ luật (mỗi
+// gian là một lượt P&L 30 ngày). Cột DATE lọc bằng khóa ngày, không
+// parseDateRange (bẫy đã ghi). Mỗi sàn trả: có gian? đã nối quảng cáo? chi hôm
+// nay / hôm qua, số cảnh báo mở — thẻ tự quyết "mời nối" hay "xem và xử lý".
+// ---------------------------------------------------------------------------
+type AdsTodayPlatform = "shopee" | "lazada" | "tiktok";
+const ADS_TODAY_PLATFORM_OF: Partial<Record<ChannelName, AdsTodayPlatform>> = {
+  [ChannelName.SHOPEE]: "shopee",
+  [ChannelName.LAZADA]: "lazada",
+  [ChannelName.TIKTOK]: "tiktok",
+};
+
+router.get("/hom-nay", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const todayKey = vnDateKey(0);
+    const yesterdayKey = vnDateKey(1);
+
+    const channels = await prisma.channel.findMany({
+      where: {
+        userId: ownerId,
+        status: "ACTIVE",
+        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
+      },
+      select: { id: true, channelName: true },
+    });
+    const platformOfChannel = new Map<string, AdsTodayPlatform>();
+    for (const c of channels) {
+      const p = ADS_TODAY_PLATFORM_OF[c.channelName];
+      if (p) platformOfChannel.set(c.id, p);
+    }
+    const ids = [...platformOfChannel.keys()];
+
+    const [spendRows, campaignGroups, tiktokLinks, openAlerts] = await Promise.all([
+      ids.length
+        ? prisma.adSpend.findMany({
+            where: {
+              channelId: { in: ids },
+              date: { in: [dateKeyToDbDate(todayKey), dateKeyToDbDate(yesterdayKey)] },
+            },
+            select: { channelId: true, date: true, amount: true },
+          })
+        : [],
+      ids.length
+        ? prisma.adsCampaign.groupBy({
+            by: ["channelId"],
+            where: { channelId: { in: ids } },
+            _count: { _all: true },
+          })
+        : [],
+      ids.length
+        ? prisma.tiktokAdsStoreLink.findMany({
+            where: { channelId: { in: ids }, status: "ACTIVE" },
+            select: { channelId: true },
+          })
+        : [],
+      prisma.opsAlert.findMany({
+        where: { ownerId, status: "OPEN", tag: "ads" },
+        select: { dedupeKey: true },
+      }),
+    ]);
+
+    const platforms: Record<
+      AdsTodayPlatform,
+      { hasChannel: boolean; connected: boolean; spendToday: number; spendYesterday: number; openAlerts: number }
+    > = {
+      shopee: { hasChannel: false, connected: false, spendToday: 0, spendYesterday: 0, openAlerts: 0 },
+      lazada: { hasChannel: false, connected: false, spendToday: 0, spendYesterday: 0, openAlerts: 0 },
+      tiktok: { hasChannel: false, connected: false, spendToday: 0, spendYesterday: 0, openAlerts: 0 },
+    };
+    for (const p of platformOfChannel.values()) platforms[p].hasChannel = true;
+    // Shopee/Lazada: đã đồng bộ được chiến dịch = đã nối Ads API. TikTok: có
+    // liên kết tài khoản quảng cáo đang ACTIVE (TKQC rời shop, docs/ADS-TIKTOK-GMV-MAX.md).
+    for (const g of campaignGroups) {
+      const p = platformOfChannel.get(g.channelId);
+      if (p && p !== "tiktok" && g._count._all > 0) platforms[p].connected = true;
+    }
+    for (const l of tiktokLinks) {
+      if (platformOfChannel.get(l.channelId) === "tiktok") platforms.tiktok.connected = true;
+    }
+    for (const r of spendRows) {
+      const p = platformOfChannel.get(r.channelId);
+      if (!p) continue;
+      const key = r.date.toISOString().slice(0, 10);
+      const amount = Number(r.amount);
+      if (key === todayKey) platforms[p].spendToday += amount;
+      else if (key === yesterdayKey) platforms[p].spendYesterday += amount;
+    }
+    // Cảnh báo ads: dedupeKey hầu hết là id gian → quy về sàn; loại khác (vd
+    // theo campaign) vẫn đếm vào tổng.
+    let otherAlerts = 0;
+    for (const a of openAlerts) {
+      const p = platformOfChannel.get(a.dedupeKey);
+      if (p) platforms[p].openAlerts += 1;
+      else otherAlerts += 1;
+    }
+
+    const list = (Object.keys(platforms) as AdsTodayPlatform[]).map((p) => ({ platform: p, ...platforms[p] }));
+    const connected = list.filter((p) => p.connected);
+    const totalToday = list.reduce((s, p) => s + p.spendToday, 0);
+    const totalYesterday = list.reduce((s, p) => s + p.spendYesterday, 0);
+    const totalAlerts = list.reduce((s, p) => s + p.openAlerts, 0) + otherAlerts;
+    // Nút chính dẫn tới sàn đang "nóng" nhất: nhiều cảnh báo → chi nhiều → sàn
+    // đầu tiên đã nối. Chưa nối gì thì mời nối sàn đầu tiên có gian.
+    const target =
+      [...connected].sort((a, b) => b.openAlerts - a.openAlerts || b.spendToday - a.spendToday)[0] ??
+      list.find((p) => p.hasChannel) ??
+      null;
+
+    res.json({
+      today: todayKey,
+      platforms: list,
+      totalToday,
+      totalYesterday,
+      openAlerts: totalAlerts,
+      anyChannel: list.some((p) => p.hasChannel),
+      anyConnected: connected.length > 0,
+      href: target ? `/ads/${target.platform}` : "/channels",
+    });
   } catch (err) {
     next(err);
   }

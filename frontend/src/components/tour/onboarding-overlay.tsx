@@ -76,7 +76,7 @@ export function OnboardingOverlay({
               {isAdmin
                 ? view === "tour"
                   ? "Xem nhanh cách liên kết gian hàng thật — chỉ mất chưa đầy một phút."
-                  : "Liên kết gian hàng thật của bạn để Hubsell bắt đầu đồng bộ đơn hàng."
+                  : "Nối gian hàng → nhập giá vốn → nối quảng cáo: ba bước để trợ lý chỉ ra chiến dịch nào đang lỗ."
                 : "Bước đầu tiên để kích hoạt hệ thống là kết nối gian hàng."}
             </p>
           </div>
@@ -114,8 +114,8 @@ export function OnboardingOverlay({
               <div className="mx-auto mt-5 grid max-w-md gap-2 text-left text-sm">
                 {[
                   { icon: ShieldCheck, text: "Uỷ quyền chính chủ trên trang của sàn — Hubsell không giữ mật khẩu của bạn." },
-                  { icon: Zap, text: "Đơn hàng, sản phẩm tự đồng bộ về ngay sau khi kết nối." },
-                  { icon: Store, text: "Một sàn kết nối được nhiều gian hàng, quản lý tập trung một nơi." },
+                  { icon: Zap, text: "Đơn hàng, phí sàn tự về ngay — cùng giá vốn, đây là số để tính ROAS hòa vốn từng sản phẩm." },
+                  { icon: Store, text: "Nối xong gian thì nối quảng cáo của sàn đó — trợ lý canh chiến dịch trên cả ba sàn ở một nơi." },
                 ].map(({ icon: Icon, text }) => (
                   <div key={text} className="flex items-start gap-2.5 text-muted-foreground">
                     <Icon className="mt-0.5 size-4 shrink-0 text-primary" />

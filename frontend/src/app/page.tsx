@@ -41,6 +41,7 @@ import {
 import { ChannelShareCard } from "@/components/dashboard/channel-share-card";
 import { RevenueCostChart } from "@/components/dashboard/revenue-cost-chart";
 import { CommandCenter } from "@/components/dashboard/command-center";
+import { AdsTodayCard } from "@/components/dashboard/ads-today-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -598,6 +599,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* ===== QUẢNG CÁO HÔM NAY — thẻ đầu tiên (định vị lại 15/10/2026:
+            Hubsell = Trợ lý quảng cáo đa sàn). Tự ẩn khi chưa có gian / không
+            có quyền ads. ===== */}
+        <AdsTodayCard />
 
         {/* ===== BÁO CÁO TÀI CHÍNH (đơn Đã giao) ===== */}
         <div>
