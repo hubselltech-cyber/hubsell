@@ -225,6 +225,7 @@ export function PlanStoreScreen() {
     const cycle = selectedCycle[g.planId] ?? g.cycles[0]?.cycle;
     const entry = g.cycles.find((c) => c.cycle === cycle);
     if (!entry || !token) return;
+    if (g.maxOrdersPerMonth != null && (myPlan?.orders.used ?? 0) > g.maxOrdersPerMonth) return; // nút đã xám, chặn thêm cho chắc
     hapticTap();
     setBuying(entry.productId);
     try {
@@ -263,6 +264,12 @@ export function PlanStoreScreen() {
   const current = myPlan?.plan;
   const sub = myPlan?.subscription;
   const isOwner = user?.role === "ADMIN";
+  // Số đơn tháng này của shop — gói có trần thấp hơn số này thì KHÔNG cho mua:
+  // mua xong backend khóa cứng ngay (vượt 120% trần, plan-enforcement), khách
+  // mất tiền mà vẫn khóa. Phát hiện 14/10/2026 khi thử sandbox: reviewer@ mua
+  // Starter (300 đơn) trong khi shop demo ~1.000 đơn/tháng → "đang tạm khóa".
+  const ordersUsed = myPlan?.orders.used ?? 0;
+  const tooSmall = (g: PlanGroup) => g.maxOrdersPerMonth != null && ordersUsed > g.maxOrdersPerMonth;
 
   return (
     <View className="flex-1 bg-slate-50 dark:bg-slate-950">
@@ -343,6 +350,8 @@ export function PlanStoreScreen() {
             const entry = g.cycles.find((c) => c.cycle === cycle) ?? g.cycles[0];
             const isCurrent = current?.id === g.planId;
             const busy = buying === entry.productId;
+            const blocked = tooSmall(g);
+            const disabled = blocked || busy || buying !== null;
             return (
               <View
                 key={g.planId}
@@ -360,6 +369,12 @@ export function PlanStoreScreen() {
                   ) : null}
                 </View>
                 <Text className="mt-1 text-xs text-slate-500 dark:text-slate-400">{limitLine(g)}</Text>
+                {blocked ? (
+                  <Text className="mt-1.5 text-xs font-medium leading-5 text-red-600 dark:text-red-400">
+                    Tháng này shop đã có {nf.format(ordersUsed)} đơn, gói này tối đa{" "}
+                    {nf.format(g.maxOrdersPerMonth!)} đơn/tháng — chọn gói có hạn mức cao hơn.
+                  </Text>
+                ) : null}
 
                 {/* Kỳ hạn */}
                 <View className="mt-3 flex-row flex-wrap gap-2">
@@ -403,14 +418,33 @@ export function PlanStoreScreen() {
                   </View>
                   <Pressable
                     onPress={() => void buy(g)}
-                    disabled={busy || buying !== null}
+                    disabled={disabled}
                     className={`flex-row items-center gap-2 rounded-xl px-4 py-2.5 ${
-                      busy || buying !== null ? "bg-emerald-300" : "bg-emerald-600 active:bg-emerald-700"
+                      blocked
+                        ? "bg-slate-200 dark:bg-slate-700"
+                        : busy || buying !== null
+                          ? "bg-emerald-300"
+                          : "bg-emerald-600 active:bg-emerald-700"
                     }`}
                     accessibilityRole="button"
+                    accessibilityState={{ disabled }}
                   >
-                    {busy ? <ActivityIndicator color="#fff" /> : <Ionicons name="logo-apple" size={16} color="#fff" />}
-                    <Text className="text-sm font-semibold text-white">{isCurrent ? "Gia hạn" : "Mua gói"}</Text>
+                    {busy ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Ionicons
+                        name={blocked ? "lock-closed-outline" : "logo-apple"}
+                        size={16}
+                        color={blocked ? "#64748b" : "#fff"}
+                      />
+                    )}
+                    <Text
+                      className={`text-sm font-semibold ${
+                        blocked ? "text-slate-500 dark:text-slate-300" : "text-white"
+                      }`}
+                    >
+                      {blocked ? "Vượt hạn mức" : isCurrent ? "Gia hạn" : "Mua gói"}
+                    </Text>
                   </Pressable>
                 </View>
               </View>
