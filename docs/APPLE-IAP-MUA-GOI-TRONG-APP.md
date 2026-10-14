@@ -134,3 +134,18 @@ finishTransaction(purchase, isConsumable)
 - Chỉ một cách mua: App Store. Không chữ/link/nút dẫn tới web, payOS, chuyển khoản.
 - Không nhắc giá web, không "+15%", không "rẻ hơn ở…".
 - Khách mua trên web vào app thấy gói đang chạy, không bị đòi mua lại (3.1.3(b)).
+
+## 6. ★ Bẫy openiap: Non-Renewing là `type "subs"`, phải fetch `"all"` (Apple từ chối lần 6, 14/10/2026)
+
+Apple 2.1(b): "unable to complete purchase Non Renewable Subscription". Gốc (đã kiểm mã nguồn
+openiap-apple, lõi native của expo-iap 6.0): `StoreKitTypesBridge.productType` gắn StoreKit
+`.nonRenewable` → `type: "subs"`; `OpenIapModule.fetchProducts` nhánh `.inApp` chỉ giữ
+`type == .inApp`, nhánh `.subs` chỉ giữ sản phẩm có `product.subscription != nil` (non-renewing
+không có). → `fetchProducts({type:"in-app"})` lẫn `"subs"` đều trả RỖNG, màn hiện "App Store chưa
+có gói nào". Chỉ `type:"all"` trả về, và hook `useIAP` xếp chúng vào mảng `subscriptions` (theo
+`item.type`), không vào `products`.
+
+Sửa: `PlanStoreScreen` gọi `type:"all"` + đọc gộp `[...products, ...subscriptions]`;
+`requestPurchase` giữ `type:"in-app"` (native iOS chỉ nhìn `request.apple`). Backend không đổi.
+Chi tiết + thư trả lời: `docs/store/APPLE-REVIEW-REPLY-6.md`. Bài học: luồng StoreKit PHẢI thử
+trên iPhone thật qua TestFlight + Sandbox Tester trước khi nộp; web không có StoreKit nên không lộ.

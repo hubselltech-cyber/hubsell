@@ -17,6 +17,7 @@ import {
   getPendingTransactionsIOS,
   useIAP,
   type Product,
+  type ProductSubscription,
   type Purchase,
 } from "expo-iap";
 import { useAuth } from "@/auth/AuthContext";
@@ -46,7 +47,20 @@ import {
  *
  * Chỉ iOS + chủ shop: Android chưa nối Google Play Billing (làm sau), mục này
  * không hiện trên Android (SettingsScreen gác).
+ *
+ * ★ BẪY openiap (Apple từ chối lần 6, 14/10/2026 — 2.1(b) "unable to complete
+ * purchase Non Renewable Subscription"): StoreKit `.nonRenewable` được openiap
+ * gắn `type: "subs"` (StoreKitTypesBridge.productType), nên
+ * fetchProducts({type:"in-app"}) LỌC BỎ hết gói của mình (trả mảng rỗng → màn
+ * hiện "App Store chưa có gói nào"), còn type "subs" cũng bỏ vì
+ * Product.subscription của non-renewing là nil. Chỉ type "all" trả về, và hook
+ * useIAP xếp chúng vào mảng `subscriptions` (theo item.type), KHÔNG vào
+ * `products`. → Phải gọi "all" và đọc gộp products + subscriptions.
+ * requestPurchase giữ type "in-app": native iOS chỉ nhìn request.apple.
  */
+
+/** Món hàng StoreKit mình cần: chỉ id + giá hiển thị, bất kể openiap xếp loại gì. */
+type StoreItem = Product | ProductSubscription;
 
 const CYCLE_ORDER: AppleCycle[] = ["MONTHLY", "QUARTERLY", "SEMIANNUAL", "YEARLY"];
 const CYCLE_LABEL: Record<AppleCycle, string> = {
@@ -73,10 +87,10 @@ interface PlanGroup {
   maxChannels: number | null;
   maxStaff: number | null;
   /** Chỉ các kỳ StoreKit có sản phẩm (đã duyệt + có giá). */
-  cycles: { cycle: AppleCycle; productId: string; product: Product }[];
+  cycles: { cycle: AppleCycle; productId: string; product: StoreItem }[];
 }
 
-function groupCatalog(items: AppleCatalogItem[], products: Product[]): PlanGroup[] {
+function groupCatalog(items: AppleCatalogItem[], products: StoreItem[]): PlanGroup[] {
   const byId = new Map(products.map((p) => [p.id, p]));
   const groups = new Map<string, PlanGroup>();
   for (const it of items) {
@@ -167,7 +181,7 @@ export function PlanStoreScreen() {
     [refreshPlan]
   );
 
-  const { connected, products, fetchProducts, requestPurchase } = useIAP({
+  const { connected, products, subscriptions, fetchProducts, requestPurchase } = useIAP({
     onPurchaseSuccess: (purchase) => void handlePurchase(purchase, "buy"),
     onPurchaseError: (error) => {
       setBuying(null);
@@ -194,15 +208,18 @@ export function PlanStoreScreen() {
     };
   }, []);
 
-  // 2. Giá từ StoreKit khi đã nối và có danh mục.
+  // 2. Giá từ StoreKit khi đã nối và có danh mục. PHẢI "all" (xem bẫy đầu file):
+  // "in-app" và "subs" đều lọc mất Non-Renewing Subscription.
   useEffect(() => {
     if (!connected || !catalog || catalog.length === 0) return;
-    void fetchProducts({ skus: catalog.map((c) => c.productId), type: "in-app" });
+    void fetchProducts({ skus: catalog.map((c) => c.productId), type: "all" });
   }, [connected, catalog, fetchProducts]);
 
-  const groups = useMemo(() => (catalog ? groupCatalog(catalog, products) : []), [catalog, products]);
+  // Non-renewing nằm ở `subscriptions`; gộp cả hai để không phụ thuộc cách openiap xếp loại.
+  const storeItems = useMemo<StoreItem[]>(() => [...products, ...subscriptions], [products, subscriptions]);
+  const groups = useMemo(() => (catalog ? groupCatalog(catalog, storeItems) : []), [catalog, storeItems]);
   const storeReady = connected && catalog !== null;
-  const nothingToSell = storeReady && catalog.length > 0 && products.length === 0;
+  const nothingToSell = storeReady && catalog.length > 0 && storeItems.length === 0;
 
   const buy = async (g: PlanGroup) => {
     const cycle = selectedCycle[g.planId] ?? g.cycles[0]?.cycle;
@@ -309,7 +326,7 @@ export function PlanStoreScreen() {
           <View className="rounded-2xl bg-white p-4 dark:bg-slate-900" style={{ elevation: 2 }}>
             <Text className="text-sm text-red-600 dark:text-red-400">{loadError}</Text>
           </View>
-        ) : !storeReady || (catalog.length > 0 && products.length === 0 && !nothingToSell) ? (
+        ) : !storeReady || (catalog.length > 0 && storeItems.length === 0 && !nothingToSell) ? (
           <View className="items-center py-10">
             <ActivityIndicator />
             <Text className="mt-3 text-xs text-slate-500 dark:text-slate-400">Đang tải bảng giá từ App Store…</Text>
