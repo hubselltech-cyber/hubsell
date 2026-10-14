@@ -9,8 +9,8 @@
 | 0. Alias | 3 tên miền `.vn` chạy song song `.tech` | ✅ 19/09 |
 | 1. Email | Zoho Mail Lite, hộp + bí danh `@hubsell.vn`, thư hệ thống gửi qua Zoho | ✅ 19/09 |
 | 2. Mặt tiền | chữ, email hỗ trợ, link pháp lý, canonical, link giới thiệu về `.vn` | ✅ 19/09 |
-| 3. Hạ tầng (buổi cắt) | env, 301 | ⏳ **14/10 đang làm** — mã đã xong (dải nhắc đăng nhập lại), CÒN anh đổi env Render → em đổi env Vercel + bật 301 (xem mục 3) |
-| 4. Hậu kỳ | giữ `.tech` + 301 tối thiểu 12 tháng | sau chặng 3 |
+| 3. Hạ tầng (buổi cắt) | env, 301 | ✅ **14/10 09:30 XONG** — Render APP_FRONTEND_URL (anh), Vercel NEXT_PUBLIC_APP_URL tạo lại loại Config + Redeploy (em), redirect **307** app.hubsell.tech→app.hubsell.vn + hubsell.tech→hubsell.vn (anh bấm, công cụ chặn em); curl kiểm 6 URL giữ nguyên path + query. Đổi 307→308 sau vài ngày ổn định (mục 4) |
+| 4. Hậu kỳ | giữ `.tech` + 301 tối thiểu 12 tháng | ⏳ từ 14/10 |
 
 ## 2. Cái đang chạy (để tra khi cần)
 
@@ -105,6 +105,9 @@ Lỗi ở đây → trả `APP_FRONTEND_URL` về `.tech` (5 phút), chưa bật
 
 ## 4. Hậu kỳ
 
+- **Nhật ký buổi cắt 14/10/2026 (09:00–09:30):** Render env anh đổi 2 service → backend redirect Google callback về `.vn` (kiểm header Location) → Vercel landing: biến `NEXT_PUBLIC_APP_URL` cũ loại Secret không đổi sang Config được → xóa, tạo lại loại Config (Production + Preview) → Redeploy không cache → `/register?ref=` sang `app.hubsell.vn`, 25 link app trên trang chủ đều `.vn` → redirect 307 hai domain (chọn 307 thay 301 vì trình duyệt không cache, lùi được tức thì) → curl: `/channels/tiktok/callback?code&state`, `/ads/tiktok/callback?auth_code&state`, `/login?social&token`, `/register?ref`, `/terms` đều giữ nguyên path + query. `www.hubsell.tech` không gắn project, không phân giải — bỏ. CHƯA tự tay thử: quên mật khẩu, nối Shopee, payOS returnUrl trên `.vn` (cùng biến `APP_FRONTEND_URL` đã kiểm) — anh thử khi tiện.
+- **Đổi 307 → 308** ở Vercel Domains (cả hai project) sau ~1 tuần không sự cố, để Google chuyển hẳn thứ hạng sang `.vn`.
+- Vercel Hobby Deployment Storage 9,81/10 GB (14/10) — dọn preview cũ nhánh `claude/*` để deploy không bị chặn.
 - Giữ gia hạn `hubsell.tech` + 301 tối thiểu 12 tháng; `dev@` / `support@hubsell.tech` giữ làm bí danh nhận thư cùng thời gian đó.
 - Website URL hiển thị trên Console Shopee (app 2040029 + Hubsell Ads 2044679), Lazada ISV 142085, TikTok Shop: đổi sang `https://hubsell.vn` khi có dịp sửa hồ sơ app (dời từ chặng 3, xem 3.1). Cùng dịp: thêm Redirect URL `.vn` cho TikTok Ads + TikTok Shop rồi mới đổi `TIKTOK_ADS_REDIRECT_URI` / `TIKTOK_REDIRECT_URI`.
 - Đổi email đăng ký ở từng cổng đối tác (Shopee, TikTok, Lazada, payOS, Render, Vercel, Supabase) sang `dev@hubsell.vn` TRƯỚC khi bỏ `.tech`. Tài khoản HQ trong app cũng đang là `dev@hubsell.tech`.
