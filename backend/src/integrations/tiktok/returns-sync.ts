@@ -42,6 +42,7 @@ import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-l
 import { searchReturns, type TikTokReturnOrder } from "./client";
 import { getValidAccessToken } from "./service";
 import type { SyncCompleteness } from "../sync-contract";
+import { expandReturnKeys } from "../order-line-keys";
 
 /** Trần trang mỗi lượt (50 yêu cầu/trang). */
 const MAX_PAGES = 40;
@@ -123,6 +124,12 @@ export interface TiktokReturnUpdatePlan {
   /** Số lượng trả theo seller_sku (mỗi return_line_item = 1 đơn vị) — null =
    *  không có dữ liệu; map RỖNG khi chỉ hoàn tiền. */
   itemReturns: Map<string, number> | null;
+  /**
+   * Cùng số lượng theo sku_id (return_line_items không có product_id) — bước
+   * áp dụng tra khóa dòng sàn có đuôi phân loại qua ChannelProduct.externalId
+   * đuôi "-skuId" (order-line-keys.expandReturnKeys, 15/10/2026).
+   */
+  itemReturnsBySkuId: Map<string, number> | null;
 }
 
 export interface PlanTiktokReturnOptions {
@@ -155,6 +162,7 @@ export function planTiktokReturnUpdate(
     delivered: false,
     keptByBuyer: false,
     itemReturns: null,
+    itemReturnsBySkuId: null,
   };
 
   const relevant = group.filter((ro) => tiktokReturnSolutionOf(ro) !== null);
@@ -230,6 +238,7 @@ export function planTiktokReturnUpdate(
   }
 
   const map = new Map<string, number>();
+  const bySkuId = new Map<string, number>();
   if (!refundOnly) {
     for (const ro of alive) {
       if (tiktokReturnSolutionOf(ro) !== ReturnSolution.RETURN_REFUND) continue;
@@ -237,10 +246,13 @@ export function planTiktokReturnUpdate(
         const sku = li.seller_sku?.trim() || li.sku_id?.trim() || "";
         if (!sku) continue;
         map.set(sku, (map.get(sku) ?? 0) + 1);
+        const skuId = li.sku_id?.trim();
+        if (skuId) bySkuId.set(skuId, (bySkuId.get(skuId) ?? 0) + 1);
       }
     }
   }
   plan.itemReturns = map;
+  plan.itemReturnsBySkuId = bySkuId;
   return plan;
 }
 
@@ -367,8 +379,14 @@ async function applyTiktokReturnGroups(
       }
 
       if (plan.itemReturns) {
+        // Dòng đơn mang khóa có đuôi phân loại → tra qua sku_id (chỉ khi cần).
+        const needExpand = order.items.some((it) => !plan.itemReturns!.has(it.channelSku));
+        const expanded =
+          needExpand && plan.itemReturnsBySkuId?.size
+            ? await expandReturnKeys(prisma, channel.id, plan.itemReturnsBySkuId)
+            : new Map<string, number>();
         for (const it of order.items) {
-          const qty = plan.itemReturns.get(it.channelSku) ?? 0;
+          const qty = plan.itemReturns.get(it.channelSku) ?? expanded.get(it.channelSku) ?? 0;
           if (qty !== it.returnedQuantity) {
             await prisma.orderItem.update({ where: { id: it.id }, data: { returnedQuantity: qty } });
             result.itemsUpdated++;

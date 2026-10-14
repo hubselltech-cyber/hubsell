@@ -5,6 +5,18 @@
 
 ---
 
+## Phiên 15/10/2026 (chiều) — SKU PHÂN LOẠI CON BỊ GỘP (khách Hi.Bé) — CODE XONG, CHƯA PUSH
+
+- **Báo lỗi:** Nguyễn Trung Huy (Hi.Bé, `huyut2k`, 3 gian): sản phẩm Shopee 2 tầng Màu × Size, Hubsell chỉ về 1 dòng/màu, không cập nhật tồn các size. Anh nghi gọi sai API tầng 1 và hỏi sàn có mấy tầng.
+- **Khảo sát API:** Shopee `get_model_list` trả mỗi tổ hợp đủ tầng là một model (`tier_index [0,1]`, tối đa 2 tầng); TikTok `skus[]` + `sales_attributes` (tối đa 3); Lazada `skus[]` + `saleProp`. Không sàn nào lồng phân loại → **không phải gọi sai API**.
+- **Thủ phạm:** bước "gộp dòng trùng channelSku" trong 3 adapter khi khách bấm "Áp dụng cho tất cả phân loại" → 1 dòng giữ externalId model đầu, đẩy tồn chỉ 1 model. **Số thật** (SQL chỉ đọc qua Chrome của anh): Hi.Bé Shopee 319/361, TikTok 392/467 dòng gộp; toàn nền tảng 13 khách Shopee (1.391 dòng, XPL2 STORE 906) + 12 gian TikTok (~700). Lazada không gộp (SellerSku duy nhất) nhưng trống tên phân loại vì payload không có `Variation`.
+- **Anh chốt:** chạy SQL rồi làm luôn; đuôi phải là TÊN phân loại chứ không phải id; đảm bảo khách khác không gặp.
+- **Sửa (docs/DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md):** `marketplace/sku-key.ts` (không gộp; mã trùng → `LT075-HONG (Hồng, 3-5kg)`, chưa có tên → `#skuId`); `product-sync` danh tính theo externalId + đổi khóa tại chỗ giữ productId/giá vốn, DELISTED theo id; 3 adapter bỏ gộp, Lazada đọc saleProp; `integrations/order-line-keys.ts` + Shopee/TikTok gom dòng đơn theo id lá, OrderItem.channelSku = khóa dòng sàn; hoàn hàng tra khóa qua id khi cần; stock-refresh theo externalId; TikTok enrich đổi khóa tạm; migration chỉ mục `(channelId, externalId)` (đã áp local).
+- **Kiểm:** tsc sạch; 19 test mới xanh (sku-key 10, product-sync 4, order-line-keys 5); order-sync-write/returns 3 sàn/tiktok-adapter/stock-push/reconcile/cost 110 ca xanh. Bộ full 1.565 ca: 10 hỏng = 6 hỏng sẵn (channel-delete-db ×3, order-ledger-db, realized-pnl-ledger-db, lazada-webhook-queue) + delivery-fail-park-db ×3 (Cứu đơn đã ẩn 12/10 — hỏng cả khi stash bản sửa) + log-cleanup (DB dev thiếu bảng fulfillment_batches) — không ca nào do bản sửa này.
+- **Còn lại:** anh push → Render migrate; Hi.Bé bấm Đồng bộ từ sàn Shopee + TikTok rồi nối 4 dòng size mới; nhắn khách đặt SKU riêng từng size trên sàn.
+
+---
+
 ## Phiên 15/10/2026 — ĐỊNH VỊ LẠI: HUBSELL = TRỢ LÝ QUẢNG CÁO ĐA SÀN — ĐÃ PUSH, LIVE
 
 - **Quyết định của anh Trung:** không còn là "phần mềm quản lý bán hàng đa kênh" cạnh tranh với các ông lớn; từ giờ Hubsell là **trợ lý quảng cáo đa sàn**. Em đề xuất gắn thêm "tính theo lãi thật" vào tên, anh chốt ngược: *"Trợ lý quảng cáo đa sàn. Thế thôi là đủ."* Lãi thật chỉ là tính năng số 1 trong thân trang. Giữ tên Hubsell (nhãn hiệu, Play, Apple đang xét, BCT), đổi descriptor. Phương án + lý lẽ + bảng khả năng từng sàn: `docs/marketing/DINH-VI-LAI-HUBSELL-QUANG-CAO.md`.

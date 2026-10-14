@@ -25,8 +25,14 @@ export async function backfillOrderItemImagesTx(
   if (missing === 0) return;
   for (const line of lines) {
     if (!line.imageUrl) continue;
+    // Dòng đơn mới ghi khóa dòng sàn có đuôi phân loại ("LT075-HONG (Hồng, 3-5kg)")
+    // khi mã trùng (15/10/2026) → so cả khóa đúng lẫn khóa bắt đầu bằng mã thô.
     await tx.orderItem.updateMany({
-      where: { orderId, channelSku: line.channelSku, imageUrl: null },
+      where: {
+        orderId,
+        imageUrl: null,
+        OR: [{ channelSku: line.channelSku }, { channelSku: { startsWith: `${line.channelSku} (` } }],
+      },
       data: { imageUrl: line.imageUrl },
     });
   }

@@ -10,6 +10,13 @@
 //     VỪA TẠO MỚI, còn trống giá, được tự điền theo bảng giá tự nhập / SKU trùng
 //     mã ở gian khác của chính chủ shop (lib/cost-mapping.ts, 17/09).
 //   - SKU không còn thấy trên sàn → đánh DELISTED (giữ lịch sử, không xoá).
+//
+// Từ 15/10/2026 (sự cố Hi.Bé — xem marketplace/sku-key.ts):
+//   - DANH TÍNH dòng = `externalId` (id phân loại lá phía sàn). Khóa `channelSku`
+//     là khóa hiển thị, duy nhất trong gian; mã trùng được thêm đuôi tên phân loại.
+//   - Dòng cũ có cùng externalId mà khóa khác (đổi tên phân loại, hoặc dòng gộp
+//     cũ "LT075-HONG" nay thành "LT075-HONG (Hồng, 3-5kg)") → ĐỔI KHÓA tại chỗ,
+//     giữ nguyên liên kết kho + giá vốn thay vì tạo dòng mới + gỡ dòng cũ.
 // ============================================================
 
 import type { Channel } from "@prisma/client";
@@ -17,6 +24,8 @@ import { ChannelProductStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { autoFillCostForNewSkus } from "../lib/cost-mapping";
 import { getProductAdapter } from "./registry";
+import { resolveChannelSkuKeys } from "./sku-key";
+import type { NormalizedChannelProduct } from "./types";
 
 export interface ProductSyncResult {
   scanned: number; // số SP sàn adapter trả về
@@ -24,22 +33,69 @@ export interface ProductSyncResult {
   updated: number; // số ChannelProduct cập nhật
   delisted: number; // số SKU cũ không còn → đánh DELISTED
   costAutoFilled: number; // số SKU mới được tự điền giá vốn theo mã
+  /** Số dòng đổi khóa hiển thị theo externalId (đuôi phân loại / đổi tên). */
+  renamed: number;
   /** false = adapter chạm chốt chặn phân trang, danh mục CHƯA đủ — đã BỎ QUA bước đánh DELISTED. */
   complete: boolean;
 }
 
+interface ExistingRow {
+  id: string;
+  channelSku: string;
+  externalId: string | null;
+  variantName: string | null;
+  status: ChannelProductStatus;
+}
+
+/**
+ * Chọn dòng cũ đại diện cho một externalId khi DB lỡ có nhiều dòng cùng id sàn
+ * (người bán từng đổi model_sku: dòng cũ DELISTED + dòng mới cùng model). Ưu
+ * tiên dòng đang mang đúng khóa mới, rồi dòng ACTIVE, rồi dòng đầu.
+ */
+export function pickRowForExternalId(rows: ExistingRow[], key: string): ExistingRow {
+  return rows.find((r) => r.channelSku === key) ?? rows.find((r) => r.status === "ACTIVE") ?? rows[0];
+}
+
 /**
  * Đồng bộ sản phẩm của MỘT gian: lấy adapter phù hợp → kéo (đã chuẩn hoá) →
- * upsert bảng đệm. Idempotent theo (channelId, channelSku).
+ * gán khóa duy nhất → upsert bảng đệm theo externalId (rồi mới tới khóa).
  */
 export async function syncChannelProducts(channel: Channel): Promise<ProductSyncResult> {
   const adapter = getProductAdapter(channel);
-  const { products, complete } = await adapter.fetchProducts(channel);
+  const { products: raw, complete } = await adapter.fetchProducts(channel);
   const now = new Date();
+
+  // Toàn bộ dòng của gian (đã cần sẵn cho bước DELISTED) → tra theo externalId
+  // và theo khóa trong RAM, không thêm truy vấn theo từng sản phẩm.
+  const existing: ExistingRow[] = await prisma.channelProduct.findMany({
+    where: { channelId: channel.id },
+    select: { id: true, channelSku: true, externalId: true, variantName: true, status: true },
+  });
+  const byKey = new Map<string, ExistingRow>();
+  const byExt = new Map<string, ExistingRow[]>();
+  for (const r of existing) {
+    byKey.set(r.channelSku, r);
+    if (r.externalId) {
+      const l = byExt.get(r.externalId) ?? [];
+      l.push(r);
+      byExt.set(r.externalId, l);
+    }
+  }
+
+  // Khóa duy nhất: mã trùng → đuôi tên phân loại. Adapter không đọc được tên
+  // (TikTok lượt không bổ sung chi tiết) thì mượn tên đã lưu của đúng dòng đó.
+  const { products, suffixed } = resolveChannelSkuKeys(raw, (p: NormalizedChannelProduct) => {
+    if (p.variantName) return p.variantName;
+    const rows = p.externalId ? byExt.get(p.externalId) : undefined;
+    return rows?.find((r) => r.variantName)?.variantName ?? null;
+  });
 
   let created = 0;
   let updated = 0;
+  let renamed = 0;
+  let renameSkipped = 0;
   const createdIds: string[] = [];
+  const seenIds = new Set<string>();
 
   for (const p of products) {
     const data = {
@@ -62,23 +118,66 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
       lastSyncedAt: now,
     };
 
-    const existing = await prisma.channelProduct.findUnique({
-      where: { channelId_channelSku: { channelId: channel.id, channelSku: p.channelSku } },
-      select: { id: true },
-    });
+    // 1) Theo externalId (danh tính thật). 2) Theo khóa (dòng cũ chưa có externalId).
+    const extRows = p.externalId ? byExt.get(p.externalId) : undefined;
+    let row = extRows?.length ? pickRowForExternalId(extRows, p.channelSku) : undefined;
+    let newKey: string | undefined;
+    if (row && row.channelSku !== p.channelSku) {
+      const clash = byKey.get(p.channelSku);
+      if (clash && clash.id !== row.id) {
+        // Khóa mới đang thuộc một dòng KHÁC (id sàn khác) — không đổi, giữ khóa
+        // cũ để không phá unique; cập nhật dữ liệu như thường và đếm để soi log.
+        renameSkipped++;
+      } else {
+        newKey = p.channelSku;
+      }
+    }
+    if (!row) row = byKey.get(p.channelSku);
 
-    if (existing) {
+    if (row) {
       // KHÔNG đụng productId — liên kết là của người dùng.
-      await prisma.channelProduct.update({ where: { id: existing.id }, data });
+      await prisma.channelProduct.update({
+        where: { id: row.id },
+        data: { ...data, ...(newKey ? { channelSku: newKey } : {}) },
+      });
+      if (newKey) {
+        byKey.delete(row.channelSku);
+        row.channelSku = newKey;
+        byKey.set(newKey, row);
+        renamed++;
+      }
+      if (p.variantName) row.variantName = p.variantName;
+      if (!row.externalId && p.externalId) {
+        row.externalId = p.externalId;
+        byExt.set(p.externalId, [...(byExt.get(p.externalId) ?? []), row]);
+      }
+      seenIds.add(row.id);
       updated++;
     } else {
-      const row = await prisma.channelProduct.create({
+      const made = await prisma.channelProduct.create({
         data: { channelId: channel.id, channelSku: p.channelSku, ...data },
         select: { id: true },
       });
-      createdIds.push(row.id);
+      const fresh: ExistingRow = {
+        id: made.id,
+        channelSku: p.channelSku,
+        externalId: p.externalId,
+        variantName: p.variantName,
+        status: data.status,
+      };
+      byKey.set(p.channelSku, fresh);
+      if (p.externalId) byExt.set(p.externalId, [...(byExt.get(p.externalId) ?? []), fresh]);
+      seenIds.add(made.id);
+      createdIds.push(made.id);
       created++;
     }
+  }
+
+  if (suffixed > 0 || renamed > 0 || renameSkipped > 0) {
+    console.log(
+      `[product-sync] gian ${channel.shopName} (${channel.id}): ${suffixed} dòng trùng mã được thêm đuôi phân loại, ` +
+        `${renamed} dòng đổi khóa theo id sàn${renameSkipped ? `, ${renameSkipped} dòng KHÔNG đổi được vì khóa mới thuộc dòng khác` : ""}`
+    );
   }
 
   // SKU cũ không còn trong danh mục sàn → đánh DELISTED (không xoá để giữ liên kết).
@@ -87,7 +186,7 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
   // (enqueueStockPush chỉ nhặt ACTIVE) → bán vượt tồn (rà soát 29/09/2026).
   let delisted = 0;
   if (complete) {
-    delisted = await delistUnseen(channel.id, new Set(products.map((p) => p.channelSku)));
+    delisted = await delistUnseen(existing, seenIds);
   } else {
     console.warn(
       `[product-sync] gian ${channel.shopName} (${channel.id}): danh mục CHƯA đủ (chạm chốt chặn phân trang, đọc được ${products.length} SKU) — bỏ qua bước đánh DELISTED`
@@ -112,6 +211,7 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
     updated,
     delisted,
     costAutoFilled,
+    renamed,
     complete,
   };
 }
@@ -120,16 +220,14 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
 const DELIST_BATCH = 1000;
 
 /**
- * Đánh DELISTED các SKU đang ACTIVE của gian mà KHÔNG có trong `seen`. So khớp
- * trong bộ nhớ rồi cập nhật theo lô id: `channelSku notIn [hàng chục nghìn mã]`
- * vượt trần tham số của Postgres ở gian danh mục lớn.
+ * Đánh DELISTED các dòng đang ACTIVE của gian mà lượt kéo KHÔNG chạm tới
+ * (`seenIds`). So khớp trong bộ nhớ rồi cập nhật theo lô id: `channelSku notIn
+ * [hàng chục nghìn mã]` vượt trần tham số của Postgres ở gian danh mục lớn.
  */
-async function delistUnseen(channelId: string, seen: Set<string>): Promise<number> {
-  const active = await prisma.channelProduct.findMany({
-    where: { channelId, status: ChannelProductStatus.ACTIVE },
-    select: { id: true, channelSku: true },
-  });
-  const goneIds = active.filter((r) => !seen.has(r.channelSku)).map((r) => r.id);
+async function delistUnseen(existing: ExistingRow[], seenIds: Set<string>): Promise<number> {
+  const goneIds = existing
+    .filter((r) => r.status === ChannelProductStatus.ACTIVE && !seenIds.has(r.id))
+    .map((r) => r.id);
   let count = 0;
   for (let i = 0; i < goneIds.length; i += DELIST_BATCH) {
     const r = await prisma.channelProduct.updateMany({

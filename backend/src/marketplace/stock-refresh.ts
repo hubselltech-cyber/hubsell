@@ -57,12 +57,19 @@ export async function refreshLinkedChannelStock(channel: Channel): Promise<Stock
   const adapter = getProductAdapter(channel);
   // Chỉ cần tồn — bỏ bước bổ sung ảnh/phân loại (TikTok tốn 1 call/sản phẩm).
   const { products } = await adapter.fetchProducts(channel, { details: false });
-  const bySku = new Map(products.map((p) => [p.channelSku, p]));
+  // Khớp theo externalId (danh tính thật của dòng — mã người bán có thể trùng
+  // giữa các phân loại, 15/10/2026); dòng cũ chưa có externalId rơi về khóa.
+  const byExt = new Map<string, (typeof products)[number]>();
+  const bySku = new Map<string, (typeof products)[number]>();
+  for (const p of products) {
+    if (p.externalId && !byExt.has(p.externalId)) byExt.set(p.externalId, p);
+    bySku.set(p.channelSku, p);
+  }
   const now = new Date();
   let refreshed = 0;
   let missing = 0;
   for (const row of linked) {
-    const p = bySku.get(row.channelSku);
+    const p = (row.externalId ? byExt.get(row.externalId) : undefined) ?? bySku.get(row.channelSku);
     if (!p || p.channelStock === null) {
       missing++;
       continue;

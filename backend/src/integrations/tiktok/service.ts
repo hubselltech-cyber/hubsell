@@ -37,6 +37,7 @@ import {
   type TikTokTxBreakdown,
 } from "./client";
 import { planSettlementWrite, type SettlementWritePlan } from "../settlement-merge";
+import { lineKey, resolveOrderLineRows, tiktokLineExternalId } from "../order-line-keys";
 import type { SyncCompleteness } from "../sync-contract";
 import {
   describeTiktokFeeTax,
@@ -147,28 +148,42 @@ function mapShippingStatus(tiktokStatus?: string): ShippingStatus {
 }
 const unknownStatusLogged = new Set<string>();
 
-/** Gộp line_items theo SKU người bán, cộng dồn số lượng (202309 tách theo đơn vị). */
-function aggregateLineItems(order: TikTokOrder) {
+/**
+ * Gộp line_items theo PHÂN LOẠI LÁ (product_id + sku_id), cộng dồn số lượng
+ * (202309 tách theo đơn vị). Trước 15/10/2026 gộp theo seller_sku → hai size
+ * cùng mã thành một dòng; nay giữ externalId để tra đúng dòng ChannelProduct.
+ */
+export function aggregateLineItems(order: TikTokOrder) {
   const agg = new Map<
     string,
-    { channelSku: string; productName: string; price: number; quantity: number; imageUrl: string | null }
+    {
+      channelSku: string;
+      externalId: string | null;
+      productName: string;
+      price: number;
+      quantity: number;
+      imageUrl: string | null;
+    }
   >();
   for (const li of order.line_items ?? []) {
     // trim như tiktokChannelSku ở adapter sản phẩm — seller gõ thừa dấu cách
     // là đơn không khớp SKU sàn, giá vốn không tra được (28/09).
     const sku = li.seller_sku?.trim() || li.sku_id || li.id;
+    const externalId = tiktokLineExternalId(li.product_id, li.sku_id);
+    const key = lineKey({ channelSku: sku, externalId });
     const qty = li.quantity ?? 1;
     const imageUrl = li.sku_image?.trim() || null;
     // "Tên sản phẩm - Tên phân loại" như Shopee (item_name - model_name).
     const name =
       [li.product_name?.trim(), li.sku_name?.trim()].filter(Boolean).join(" - ") || sku;
-    const existing = agg.get(sku);
+    const existing = agg.get(key);
     if (existing) {
       existing.quantity += qty;
       if (!existing.imageUrl && imageUrl) existing.imageUrl = imageUrl;
     } else {
-      agg.set(sku, {
+      agg.set(key, {
         channelSku: sku,
+        externalId,
         productName: name,
         price: Number(li.sale_price ?? 0) || 0,
         quantity: qty,
@@ -510,19 +525,8 @@ async function upsertOrderTx(
   // Nối SKU sàn → sản phẩm gốc (nếu đã liên kết) để snapshot giá vốn & gắn productId.
   // Lấy CẢ dòng chưa liên kết kho: giá vốn khi đó nằm ở cấp SKU sàn (costPrice
   // của ChannelProduct) — khách không nối kho gốc vẫn tính được lãi/lỗ.
-  const skus = lines.map((l) => l.channelSku);
-  const mappings = skus.length
-    ? await tx.channelProduct.findMany({
-        where: { channelId: channel.id, channelSku: { in: skus } },
-        select: {
-          channelSku: true,
-          productId: true,
-          costPrice: true,
-          product: { select: { costPrice: true } },
-        },
-      })
-    : [];
-  const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
+  // Tra theo product_id-sku_id trước, seller_sku là đường lui (order-line-keys).
+  const rowByLine = await resolveOrderLineRows(tx, channel.id, lines);
 
   const created = await tx.order.create({
     select: { id: true },
@@ -547,13 +551,14 @@ async function upsertOrderTx(
   });
 
   for (const line of lines) {
-    const mp = mapBySku.get(line.channelSku);
+    const mp = rowByLine.get(lineKey(line));
     await tx.orderItem.create({
       select: { id: true },
       data: {
         orderId: created.id,
         productId: mp?.productId ?? null,
-        channelSku: line.channelSku,
+        // Khóa dòng sàn khớp được (có đuôi phân loại nếu mã trùng); không khớp → mã thô.
+        channelSku: mp?.channelSku ?? line.channelSku,
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,

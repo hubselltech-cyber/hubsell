@@ -401,8 +401,10 @@ export interface LazadaProductSku {
   special_price?: number | string;
   Status?: string; // active / inactive / deleted
   Images?: string[];
-  /** Chuỗi thuộc tính phân loại, vd "Đỏ, XL" (saleProp gộp sẵn). */
+  /** Chuỗi thuộc tính phân loại, vd "Đỏ, XL" — payload thật thường KHÔNG có. */
   Variation?: string;
+  /** Thuộc tính phân loại thật của /products/get, vd {color_family: "Nâu", size: "3-5kg"}. */
+  saleProp?: Record<string, unknown>;
 }
 
 export interface LazadaProduct {

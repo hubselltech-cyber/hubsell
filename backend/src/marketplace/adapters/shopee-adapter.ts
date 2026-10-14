@@ -6,7 +6,11 @@
 //   2. Phân trang get_item_list (offset/has_next_page/next_offset), lấy ĐỦ mọi
 //      item_status để không sót sản phẩm mới đăng/đang chờ.
 //   3. get_item_base_info (lô ≤50) + get_model_list (SKU thật ở cấp model).
-//   4. TRANSFORMER: đổi cấu trúc Shopee → NormalizedChannelProduct.
+//      Shopee tối đa 2 tầng phân loại; get_model_list trả MỖI TỔ HỢP đủ tầng là
+//      một model (tier_index [i, j]) — không có phân loại lồng nhau, không cần
+//      gọi thêm API nào để tới phân loại lá (đối chiếu docs 15/10/2026).
+//   4. TRANSFORMER: đổi cấu trúc Shopee → NormalizedChannelProduct, mỗi model
+//      một dòng KỂ CẢ khi trùng model_sku (khóa duy nhất gán ở product-sync).
 // ============================================================
 
 import type { Channel } from "@prisma/client";
@@ -147,22 +151,10 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
       }
     }
 
-    // Gộp các dòng TRÙNG channelSku: người bán có thể đặt CHUNG một SKU cho nhiều
-    // model (vd Áo gió 9 màu×size cùng "AOGIO_001"). Về mặt kho, đó là MỘT SKU bán
-    // (đơn hàng cũng tham chiếu đúng SKU đó) → gộp về 1 dòng, variant để null vì
-    // không xác định. Nhờ vậy số liệu & bảng đệm phản ánh đúng số SKU thật.
-    const bySku = new Map<string, NormalizedChannelProduct>();
-    for (const p of normalized) {
-      const existing = bySku.get(p.channelSku);
-      if (existing) {
-        existing.variantName = null;
-        // Mỗi model giữ tồn RIÊNG trên sàn — gộp dòng thì CỘNG tồn (null = sàn
-        // không trả số, chỉ cộng khi có ít nhất một bên biết số).
-        if (p.channelStock !== null) {
-          existing.channelStock = (existing.channelStock ?? 0) + p.channelStock;
-        }
-      } else bySku.set(p.channelSku, p);
-    }
-    return { products: [...bySku.values()], complete };
+    // KHÔNG gộp dòng trùng model_sku (sửa 15/10/2026, sự cố Hi.Bé): người bán bấm
+    // "Áp dụng cho tất cả phân loại" là 5 size cùng một mã — gộp lại thì chỉ còn
+    // 1 model nhận tồn. Mỗi model = một dòng; khóa duy nhất do product-sync gán
+    // (marketplace/sku-key.ts: đuôi tên phân loại).
+    return { products: normalized, complete };
   },
 };

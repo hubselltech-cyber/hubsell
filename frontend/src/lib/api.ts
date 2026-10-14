@@ -2356,6 +2356,8 @@ export function syncProductsFromChannels(channelId?: string) {
     updated: number;
     /** Số SKU mới được tự điền giá vốn vì trùng mã với bảng giá / gian khác. */
     costAutoFilled?: number;
+    /** Số dòng đổi khóa hiển thị theo id sàn (mã trùng thêm đuôi phân loại, 15/10/2026). */
+    renamed?: number;
     perChannel: {
       channelId: string;
       channelName: ChannelName;

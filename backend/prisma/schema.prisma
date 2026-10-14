@@ -1758,6 +1758,8 @@ model ChannelProduct {
   @@unique([channelId, channelSku]) // 1 SKU sàn chỉ nối vào tối đa 1 sản phẩm gốc
   @@index([productId])
   @@index([channelId])
+  /// Tra dòng theo id phân loại lá phía sàn (khớp đơn/hoàn từ 15/10/2026).
+  @@index([channelId, externalId])
 }
 
 /// BẢNG GIÁ VỐN TỰ NHẬP (tab "Mapping giá vốn", 17/09/2026): chủ shop khai

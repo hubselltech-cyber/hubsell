@@ -34,6 +34,7 @@ import {
   type StockOutcome,
 } from "../order-stock";
 import { stageStockPush, type StockPushTicket } from "../inventory-push";
+import { lineKey, resolveOrderLineRows, shopeeLineExternalId } from "../order-line-keys";
 import type { StockSyncRequest } from "./inventory-sync";
 import type { SyncCompleteness } from "../sync-contract";
 import {
@@ -462,30 +463,43 @@ function shopeeReturnStatus(status?: string): ReturnStatus | null {
   return status === "TO_RETURN" ? ReturnStatus.AWAITING : null;
 }
 
-/** Gộp item_list theo SKU người bán, cộng dồn số lượng. */
-function aggregateShopeeItems(order: ShopeeOrderDetail) {
+/**
+ * Gộp item_list theo PHÂN LOẠI LÁ (item_id + model_id), cộng dồn số lượng.
+ * Trước 15/10/2026 gộp theo SKU người bán → hai size cùng mã thành một dòng;
+ * nay giữ externalId để tra đúng dòng ChannelProduct (order-line-keys.ts).
+ */
+export function aggregateShopeeItems(order: ShopeeOrderDetail) {
   const agg = new Map<
     string,
-    { channelSku: string; productName: string; price: number; quantity: number; imageUrl: string | null }
+    {
+      channelSku: string;
+      externalId: string | null;
+      productName: string;
+      price: number;
+      quantity: number;
+      imageUrl: string | null;
+    }
   >();
   for (const it of order.item_list ?? []) {
-    // Cùng hàm sinh khoá với đồng bộ sản phẩm → đơn luôn khớp đúng ChannelProduct,
-    // kể cả khi người bán để trống SKU (tách theo model) hay đặt chung SKU (gộp).
+    // Cùng hàm sinh khoá với đồng bộ sản phẩm → đơn luôn khớp đúng ChannelProduct
+    // kể cả dòng cũ chưa có externalId (người bán để trống SKU → khóa tổng hợp).
     const sku = shopeeChannelSku({
       itemId: it.item_id,
       modelId: it.model_id,
       itemSku: it.item_sku,
       modelSku: it.model_sku,
     });
+    const externalId = shopeeLineExternalId(it.item_id, it.model_id);
+    const key = lineKey({ channelSku: sku, externalId });
     const qty = it.model_quantity_purchased ?? 1;
     const price = Number(it.model_discounted_price ?? it.model_original_price ?? 0) || 0;
     const name = [it.item_name, it.model_name].filter(Boolean).join(" - ") || sku;
     const imageUrl = it.image_info?.image_url?.trim() || null;
-    const ex = agg.get(sku);
+    const ex = agg.get(key);
     if (ex) {
       ex.quantity += qty;
       if (!ex.imageUrl && imageUrl) ex.imageUrl = imageUrl;
-    } else agg.set(sku, { channelSku: sku, productName: name, price, quantity: qty, imageUrl });
+    } else agg.set(key, { channelSku: sku, externalId, productName: name, price, quantity: qty, imageUrl });
   }
   return [...agg.values()];
 }
@@ -756,21 +770,10 @@ export async function upsertShopeeOrderTx(
   }
 
   const lines = aggregateShopeeItems(order);
-  const skus = lines.map((l) => l.channelSku);
   // Lấy CẢ dòng chưa liên kết kho: giá vốn khi đó nằm ở cấp SKU sàn (costPrice
   // của ChannelProduct) — khách không nối kho gốc vẫn tính được lãi/lỗ.
-  const mappings = skus.length
-    ? await tx.channelProduct.findMany({
-        where: { channelId: channel.id, channelSku: { in: skus } },
-        select: {
-          channelSku: true,
-          productId: true,
-          costPrice: true,
-          product: { select: { costPrice: true } },
-        },
-      })
-    : [];
-  const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
+  // Tra theo item_id-model_id trước, mã người bán là đường lui (order-line-keys).
+  const rowByLine = await resolveOrderLineRows(tx, channel.id, lines);
 
   const created = await tx.order.create({
     select: { id: true },
@@ -797,13 +800,14 @@ export async function upsertShopeeOrderTx(
   });
 
   for (const line of lines) {
-    const mp = mapBySku.get(line.channelSku);
+    const mp = rowByLine.get(lineKey(line));
     await tx.orderItem.create({
       select: { id: true },
       data: {
         orderId: created.id,
         productId: mp?.productId ?? null,
-        channelSku: line.channelSku,
+        // Khóa dòng sàn khớp được (có đuôi phân loại nếu mã trùng); không khớp → mã thô.
+        channelSku: mp?.channelSku ?? line.channelSku,
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,

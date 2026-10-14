@@ -37,6 +37,17 @@ function lazadaStatusToNorm(itemStatus?: string, skuStatus?: string): "ACTIVE" |
   return item === "active" && sku === "active" ? "ACTIVE" : "DELISTED";
 }
 
+/** "Nâu, 3-5kg" từ saleProp (giữ thứ tự sàn trả); rỗng/thiếu → null. */
+export function lazadaVariantFromSaleProp(
+  saleProp: Record<string, unknown> | null | undefined
+): string | null {
+  if (!saleProp || typeof saleProp !== "object") return null;
+  const parts = Object.values(saleProp)
+    .map((v) => (typeof v === "string" || typeof v === "number" ? String(v).trim() : ""))
+    .filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+
 /** Mỗi biến thể (sku) = 1 dòng chuẩn — SKU thật của Lazada nằm ở cấp biến thể. */
 function transformSku(p: LazadaProduct, s: LazadaProductSku): NormalizedChannelProduct {
   const sku = lazadaChannelSku({
@@ -50,7 +61,9 @@ function transformSku(p: LazadaProduct, s: LazadaProductSku): NormalizedChannelP
   return {
     channelSku: sku,
     productName: p.attributes?.name ?? sku,
-    variantName: s.Variation?.trim() || null,
+    // /products/get thật (Hi.Bé 15/10: 258 dòng đều trống tên) không trả
+    // `Variation` — tên phân loại nằm ở saleProp {color_family: "Nâu", size: "3-5kg"}.
+    variantName: s.Variation?.trim() || lazadaVariantFromSaleProp(s.saleProp),
     price,
     imageUrl: s.Images?.[0] || p.images?.[0] || null,
     externalId: `${p.item_id ?? "0"}-${s.SkuId ?? "0"}`,
@@ -100,19 +113,9 @@ export const lazadaProductAdapter: MarketplaceProductAdapter = {
       for (const s of skus) normalized.push(transformSku(p, s));
     }
 
-    // Gộp dòng TRÙNG channelSku (người bán đặt chung SellerSku cho nhiều biến
-    // thể) — một SKU bán là MỘT dòng kho, variant để null vì không xác định.
-    const bySku = new Map<string, NormalizedChannelProduct>();
-    for (const p of normalized) {
-      const existing = bySku.get(p.channelSku);
-      if (existing) {
-        existing.variantName = null;
-        // Mỗi biến thể giữ tồn RIÊNG trên sàn — gộp dòng thì CỘNG tồn.
-        if (p.channelStock !== null) {
-          existing.channelStock = (existing.channelStock ?? 0) + p.channelStock;
-        }
-      } else bySku.set(p.channelSku, p);
-    }
-    return { products: [...bySku.values()], complete };
+    // KHÔNG gộp dòng trùng SellerSku (15/10/2026, cùng luật 3 sàn): Lazada vốn
+    // bắt SellerSku duy nhất trong gian nên hiếm khi trùng; có trùng thì
+    // product-sync gán đuôi tên phân loại (marketplace/sku-key.ts).
+    return { products: normalized, complete };
   },
 };

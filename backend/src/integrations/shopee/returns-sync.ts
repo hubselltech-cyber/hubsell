@@ -47,6 +47,7 @@ import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
 import { mapShopeeEscrowFields } from "./settlements";
 import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-lookup";
 import type { SyncCompleteness } from "../sync-contract";
+import { expandReturnKeys, shopeeLineExternalId } from "../order-line-keys";
 
 /** Chốt chặn phân trang vô tận (50 yêu cầu/trang → 2500 yêu cầu/lượt là quá đủ). */
 const MAX_RETURN_PAGES = 50;
@@ -89,6 +90,13 @@ export interface ReturnUpdatePlan {
    * Chỉ hoàn tiền (khách giữ hàng) → map rỗng → mọi dòng về 0.
    */
   itemReturns: Map<string, number> | null;
+  /**
+   * Cùng số lượng trả nhưng theo id phân loại lá "item_id-model_id" (15/10/2026):
+   * đơn mới ghi OrderItem.channelSku = khóa dòng sàn có đuôi phân loại khi mã
+   * trùng, nên bước áp dụng tra khóa qua ChannelProduct.externalId
+   * (order-line-keys.expandReturnKeys) khi mã thô không khớp.
+   */
+  itemReturnsByExternalId: Map<string, number> | null;
   /** Yêu cầu sống mới nhất (để vòng sync hỏi chi tiết kiện hoàn về tay chưa). */
   latestAlive: ShopeeReturnEntry | null;
 }
@@ -171,6 +179,7 @@ export function planReturnUpdate(
     unflagged: false,
     trackingSaved: false,
     itemReturns: null,
+    itemReturnsByExternalId: null,
     latestAlive: latest,
   };
 
@@ -209,6 +218,7 @@ export function planReturnUpdate(
     // Dòng hàng trả: chỉ khi hàng về; khách giữ hàng → không dòng nào bị trả.
     if (latest?.item && latest.item.length > 0) {
       const map = new Map<string, number>();
+      const byExt = new Map<string, number>();
       if (!refundOnly) {
         for (const it of latest.item) {
           const sku = shopeeChannelSku({
@@ -218,9 +228,12 @@ export function planReturnUpdate(
             modelSku: it.variation_sku,
           });
           map.set(sku, (map.get(sku) ?? 0) + (it.amount ?? 0));
+          const ext = shopeeLineExternalId(it.item_id, it.model_id);
+          if (ext) byExt.set(ext, (byExt.get(ext) ?? 0) + (it.amount ?? 0));
         }
       }
       plan.itemReturns = map;
+      plan.itemReturnsByExternalId = byExt;
     }
   } else {
     if (order.returnStatus === ReturnStatus.AWAITING) {
@@ -494,10 +507,16 @@ async function applyShopeeReturnGroup(
     }
   }
 
-  // Số lượng trả theo dòng SKU (chỉ ghi dòng có thay đổi — idempotent).
+  // Số lượng trả theo dòng SKU (chỉ ghi dòng có thay đổi — idempotent). Dòng
+  // đơn mang khóa có đuôi phân loại → tra qua id sàn (một truy vấn, chỉ khi cần).
   if (plan.itemReturns) {
+    const needExpand = order.items.some((it) => !plan.itemReturns!.has(it.channelSku));
+    const expanded =
+      needExpand && plan.itemReturnsByExternalId?.size
+        ? await expandReturnKeys(prisma, channel.id, plan.itemReturnsByExternalId)
+        : new Map<string, number>();
     for (const it of order.items) {
-      const qty = plan.itemReturns.get(it.channelSku) ?? 0;
+      const qty = plan.itemReturns.get(it.channelSku) ?? expanded.get(it.channelSku) ?? 0;
       if (qty !== it.returnedQuantity) {
         await prisma.orderItem.update({
           where: { id: it.id },

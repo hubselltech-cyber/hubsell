@@ -21,6 +21,7 @@ import {
 } from "../../integrations/tiktok/client";
 import { getValidAccessToken } from "../../integrations/tiktok/service";
 import { prisma } from "../../lib/prisma";
+import { normalizeVariantName, suffixedSku } from "../sku-key";
 import type {
   FetchedProducts,
   FetchProductsOptions,
@@ -184,7 +185,8 @@ export function missingImageProductIds(
 
 async function writeProductDetail(channelId: string, d: TikTokProduct, productId: string): Promise<number> {
   const skus = d.skus ?? [];
-  // seller_sku dùng chung cho nhiều biến thể = dòng GỘP, variantName cố ý để null.
+  // seller_sku dùng chung cho nhiều biến thể: từ 15/10/2026 KHÔNG gộp nữa — mỗi
+  // SKU lá một dòng, khóa tạm "SKU #skuId" (sku-key.ts) cho tới khi có tên.
   const keyCount = new Map<string, number>();
   for (const s of skus) {
     const k = tiktokChannelSku(s);
@@ -194,15 +196,35 @@ async function writeProductDetail(channelId: string, d: TikTokProduct, productId
   for (const s of skus) {
     const imageUrl = firstImage(d, s);
     if (!imageUrl || !s.id) continue;
-    const variantName = (keyCount.get(tiktokChannelSku(s)) ?? 0) > 1 ? null : variantNameOf(s);
-    const base = { channelId, externalId: `${productId}-${s.id}`, imageUrl: null };
+    const variantName = variantNameOf(s);
+    const externalId = `${productId}-${s.id}`;
     if (variantName) {
       await prisma.channelProduct.updateMany({
-        where: { ...base, variantName: null },
+        where: { channelId, externalId, variantName: null },
         data: { variantName },
       });
+      // Dòng trùng mã đang mang khóa tạm "#skuId" → đổi sang đuôi tên phân loại
+      // ngay (không chờ lượt đồng bộ sau), giữ liên kết kho; đụng khóa thì để
+      // product-sync xử lý lượt sau.
+      if ((keyCount.get(tiktokChannelSku(s)) ?? 0) > 1) {
+        const tmpKey = suffixedSku(tiktokChannelSku(s), null, s.id, false);
+        const niceKey = suffixedSku(tiktokChannelSku(s), normalizeVariantName(variantName), s.id, false);
+        const clash = await prisma.channelProduct.findUnique({
+          where: { channelId_channelSku: { channelId, channelSku: niceKey } },
+          select: { id: true },
+        });
+        if (!clash) {
+          await prisma.channelProduct.updateMany({
+            where: { channelId, externalId, channelSku: tmpKey },
+            data: { channelSku: niceKey },
+          });
+        }
+      }
     }
-    const r = await prisma.channelProduct.updateMany({ where: base, data: { imageUrl } });
+    const r = await prisma.channelProduct.updateMany({
+      where: { channelId, externalId, imageUrl: null },
+      data: { imageUrl },
+    });
     written += r.count;
   }
   const mainImage = pickUrl(d.main_images?.[0]);
@@ -345,18 +367,10 @@ export const tiktokProductAdapter: MarketplaceProductAdapter = {
       for (const s of skus) normalized.push(transformTiktokSku(p, s));
     }
 
-    // Gộp dòng TRÙNG channelSku (người bán đặt chung seller_sku cho nhiều biến
-    // thể) — một SKU bán là MỘT dòng kho, variant để null, tồn CỘNG dồn.
-    const bySku = new Map<string, NormalizedChannelProduct>();
-    for (const p of normalized) {
-      const existing = bySku.get(p.channelSku);
-      if (existing) {
-        existing.variantName = null;
-        if (p.channelStock !== null) {
-          existing.channelStock = (existing.channelStock ?? 0) + p.channelStock;
-        }
-      } else bySku.set(p.channelSku, p);
-    }
-    return { products: [...bySku.values()], complete };
+    // KHÔNG gộp dòng trùng seller_sku (15/10/2026, sự cố Hi.Bé: 392/467 dòng
+    // TikTok bị gộp theo màu, mất size). Mỗi SKU lá = một dòng; khóa duy nhất do
+    // product-sync gán (marketplace/sku-key.ts: đuôi tên phân loại, chưa có tên
+    // thì "#skuId" rồi đổi khi chi tiết bổ sung xong).
+    return { products: normalized, complete };
   },
 };
