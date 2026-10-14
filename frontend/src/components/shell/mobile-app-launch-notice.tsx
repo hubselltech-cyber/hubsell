@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// THÔNG BÁO ỨNG DỤNG DI ĐỘNG SẮP RA MẮT — dải mỏng dưới header, mọi trang.
+// THÔNG BÁO ỨNG DỤNG DI ĐỘNG — dải mỏng dưới header, mọi trang.
 //
 // Bối cảnh (anh Trung 25/09/2026): seller đã bắt đầu đăng ký dùng Hubsell,
 // landing + bảng giá hứa "ứng dụng di động cho chủ shop & kho" nhưng app
@@ -42,6 +42,15 @@ import {
 // (vn.hubsell.app); iPhone đang chờ Apple duyệt. Tăng NOTICE_VERSION để khách
 // đã tắt bản "sắp ra mắt" thấy lại; khi Apple duyệt: điền APP_STORE_URL +
 // tăng version lần nữa.
+//
+// 14/10/2026 tối — NÚT TẢI = MÃ QR (anh Trung): khách đang ngồi máy tính dùng
+// phần mềm, bấm nút trên dải ra ngay hộp có mã QR, giơ điện thoại quét là
+// xong — không phải tự gõ link Google Play trên máy. QR là SVG tĩnh
+// public/qr/tai-app.svg (bản sao đúng của landing, đã giải mã kiểm tra = URL
+// https://hubsell.vn/tai-app); trang đó nhìn hệ máy: Android chuyển thẳng
+// Google Play, iPhone chuyển App Store khi có link. Nội dung QR cố định nên
+// Apple duyệt xong KHÔNG phải sinh lại. Nếu khách đang mở phần mềm ngay trên
+// điện thoại thì quét QR vô nghĩa → nút dẫn thẳng tới kho ứng dụng của máy.
 
 /** Đổi khi nội dung thay đổi lớn → khách đã tắt bản cũ sẽ thấy bản mới. */
 const NOTICE_VERSION = "live-android-2026-10";
@@ -51,6 +60,9 @@ const DISMISS_KEY = "hubsell_mobile_app_notice_dismissed";
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=vn.hubsell.app";
 /** null = chưa lên App Store (chờ Apple duyệt). */
 const APP_STORE_URL: string | null = null;
+/** Mã QR tĩnh — nội dung https://hubsell.vn/tai-app (trang tự đưa tới đúng kho ứng dụng). */
+const QR_SRC = "/qr/tai-app.svg";
+const QR_TARGET = "https://hubsell.vn/tai-app";
 
 function readDismissed(): boolean {
   if (typeof window === "undefined") return false;
@@ -68,6 +80,19 @@ function writeDismissed(on: boolean) {
   } catch {
     /* chế độ riêng tư chặn storage — coi như chưa tắt */
   }
+}
+
+/**
+ * Khách đang mở phần mềm trên chính điện thoại → không cần QR, dẫn thẳng kho
+ * ứng dụng của máy. Trả null khi là máy tính (hoặc iPhone mà App Store chưa
+ * có link → vẫn mở hộp QR để đọc "sắp có").
+ */
+function directStoreUrl(): string | null {
+  if (typeof navigator === "undefined") return null;
+  const ua = navigator.userAgent;
+  if (/android/i.test(ua)) return PLAY_STORE_URL;
+  if (/iphone|ipad|ipod/i.test(ua)) return APP_STORE_URL;
+  return null;
 }
 
 const OWNER_FEATURES = [
@@ -89,17 +114,79 @@ const ACCOUNT_NOTES = [
   "Bản iPhone đang chờ Apple duyệt — khi lên App Store, Hubsell báo ngay trong phần mềm này.",
 ];
 
+/** Hai nút kho ứng dụng — dùng chung cho hộp QR và hộp chi tiết. */
+function StoreButtons({ className = "" }: { className?: string }) {
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`}>
+      <a
+        href={PLAY_STORE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={buttonVariants()}
+      >
+        Android · Google Play
+      </a>
+      {APP_STORE_URL ? (
+        <a
+          href={APP_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({ variant: "outline" })}
+        >
+          iPhone · App Store
+        </a>
+      ) : (
+        <Button variant="outline" disabled>
+          iPhone · App Store sắp có
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Ảnh mã QR trong khung trắng (nền trắng cố định để máy quét đọc được cả ở giao diện tối). */
+function QrImage({ size }: { size: number }) {
+  return (
+    <div className="shrink-0 rounded-2xl border border-sky-200 bg-white p-3 shadow-sm dark:border-sky-800">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={QR_SRC}
+        alt={`Mã QR mở ${QR_TARGET} để tải ứng dụng Hubsell`}
+        width={size}
+        height={size}
+        style={{ width: size, height: size }}
+      />
+    </div>
+  );
+}
+
 export function MobileAppLaunchNotice() {
   const [dismissed, setDismissed] = useState<boolean>(readDismissed);
+  // Mốc hết hạn tính MỘT lần lúc mount (lint react-hooks/purity cấm Date.now()
+  // ngay trong thân render) — dải mở cả ngày cũng không cần tự biến mất giữa chừng.
+  const [expired] = useState(() => Date.now() >= NOTICE_UNTIL.getTime());
   const [open, setOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
-  if (dismissed) return null;
-  if (Date.now() >= NOTICE_UNTIL.getTime()) return null;
+  if (dismissed || expired) return null;
 
   function toggleDismiss(on: boolean) {
     writeDismissed(on);
     setDismissed(on);
-    if (on) setOpen(false);
+    if (on) {
+      setOpen(false);
+      setQrOpen(false);
+    }
+  }
+
+  /** Bấm nút tải trên dải: điện thoại → kho ứng dụng luôn; máy tính → hộp QR. */
+  function onDownloadClick() {
+    const direct = directStoreUrl();
+    if (direct) {
+      window.open(direct, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setQrOpen(true);
   }
 
   return (
@@ -115,14 +202,14 @@ export function MobileAppLaunchNotice() {
             — bản iPhone đang chờ Apple duyệt. Dùng chung tài khoản này, không thêm phí.
           </span>
         </p>
-        <a
-          href={PLAY_STORE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={onDownloadClick}
           className="shrink-0 rounded-md bg-sky-600 px-2.5 py-1 font-medium text-white transition-colors hover:bg-sky-700"
         >
-          Tải trên Google Play
-        </a>
+          <span className="sm:hidden">Tải app</span>
+          <span className="hidden sm:inline">Quét mã tải app</span>
+        </button>
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -144,6 +231,48 @@ export function MobileAppLaunchNotice() {
         </label>
       </div>
 
+      {/* HỘP MÃ QR — một việc duy nhất: giơ điện thoại lên quét. */}
+      <Dialog open={qrOpen} onOpenChange={setQrOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Smartphone className="size-5 text-sky-600" />
+              Quét mã để tải ứng dụng Hubsell
+            </DialogTitle>
+            <DialogDescription>
+              Mở camera điện thoại, hướng vào mã bên dưới — máy tự mở đúng kho
+              ứng dụng: Android vào Google Play, iPhone vào App Store khi bản
+              iPhone được duyệt.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col items-center gap-4 py-2">
+            <QrImage size={208} />
+            <p className="text-center text-xs text-muted-foreground">
+              Đăng nhập bằng đúng tài khoản đang dùng, không thu thêm phí.
+            </p>
+            {/* Đang cầm điện thoại mở hộp này (iPhone chưa có link) thì bấm nút thay vì quét. */}
+            <StoreButtons className="justify-center" />
+          </div>
+
+          <DialogFooter className="items-center gap-3 sm:justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setQrOpen(false);
+                setOpen(true);
+              }}
+              className="text-sm text-sky-700 underline-offset-4 hover:underline dark:text-sky-300"
+            >
+              Ứng dụng làm được gì?
+            </button>
+            <Button variant="outline" onClick={() => setQrOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
@@ -160,6 +289,17 @@ export function MobileAppLaunchNotice() {
           </DialogHeader>
 
           <div className="space-y-5 text-sm">
+            <section className="flex items-center gap-4 rounded-lg border border-sky-200 bg-sky-50/60 p-3.5 dark:border-sky-900/50 dark:bg-sky-950/30">
+              <QrImage size={112} />
+              <div className="min-w-0 space-y-2">
+                <p className="font-semibold">Quét mã bằng camera điện thoại để tải</p>
+                <p className="text-muted-foreground">
+                  Máy tự mở đúng kho ứng dụng của hệ máy đang dùng.
+                </p>
+                <StoreButtons />
+              </div>
+            </section>
+
             <section>
               <h3 className="flex items-center gap-2 font-semibold">
                 <Wallet className="size-4 text-emerald-600" />
@@ -192,31 +332,6 @@ export function MobileAppLaunchNotice() {
                 ))}
               </ul>
             </section>
-
-            <div className="flex flex-wrap gap-2">
-              <a
-                href={PLAY_STORE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonVariants()}
-              >
-                Tải trên Google Play
-              </a>
-              {APP_STORE_URL ? (
-                <a
-                  href={APP_STORE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={buttonVariants({ variant: "outline" })}
-                >
-                  Tải trên App Store
-                </a>
-              ) : (
-                <Button variant="outline" disabled>
-                  App Store · sắp có
-                </Button>
-              )}
-            </div>
           </div>
 
           <DialogFooter className="items-center gap-3 sm:justify-between">
