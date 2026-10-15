@@ -11,7 +11,7 @@
  * nào, lúc nào, từ đâu. Đó là lý do có bảng log thay vì một cờ boolean.
  */
 export const TERMS_VERSION = "2026-09-19";
-export const PRIVACY_VERSION = "2026-09-19";
+export const PRIVACY_VERSION = "2026-10-15";
 
 export const TERMS_URL = "https://hubsell.vn/terms";
 export const PRIVACY_URL = "https://hubsell.vn/privacy";
