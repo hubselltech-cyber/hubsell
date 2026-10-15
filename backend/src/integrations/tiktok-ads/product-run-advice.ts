@@ -13,8 +13,18 @@
 //                    08/10; mặc định 5đ/100đ là MẶC ĐỊNH TỰ CHỌN, khách sửa được); không bao giờ dưới hòa vốn.
 //   · MỐC ĐANG ĐẠT = ROI GMV Max của gian 30 ngày (GMV ÷ chi phí) — đúng "ROI khuyến nghị = GMV trước đây ÷ chi phí quảng cáo
 //                    trước đây" của TikTok (Best practices for Product GMV Max, 06/2026). Gian chưa tiêu đủ (minHistorySpend) → chưa có mốc.
-//   · KHỞI ĐIỂM    = max(sàn giữ lãi, mốc đang đạt × RUN_ADVICE_ANCHOR_FACTOR) — TikTok: "theo ROI khuyến nghị hoặc đặt thấp hơn một
-//                    chút"; 0,9 là MẶC ĐỊNH TỰ CHỌN, mượn mốc 90% mục tiêu của chính TikTok (ROI protection / tự tăng ngân sách).
+//   · QUY VỀ BIÊN CỦA TỪNG SẢN PHẨM (anh Trung 15/10 đêm: "ROI mục tiêu của tất cả các chiến dịch đều giống nhau thì giá trị của
+//                    công cụ giảm đi rất nhiều — hòa vốn khác nhau mà đề xuất giống nhau là chưa ổn"): mốc của gian là ROI trộn của
+//                    CÁC SẢN PHẨM ĐANG QUẢNG CÁO, ứng với biên lãi của chính chúng (anchorMargin). Cái giữ nguyên khi chuyển sang sản
+//                    phẩm khác không phải con số ROI mà là TỶ LỆ TIỀN QUẢNG CÁO TRÊN BIÊN LÃI: k = (1 ÷ ROI gian) ÷ biên đang quảng cáo
+//                    (ANO: 1/12,85 ÷ 17,5% ≈ 44% biên lãi đi vào quảng cáo). Áp cùng k cho sản phẩm biên m → ROI = 1 ÷ (k × m) =
+//                    ROI gian × biên đang quảng cáo ÷ m: biên thấp → ROI cao hơn, biên cao → được đặt thấp hơn. Đây là cách đặt
+//                    "ACoS mục tiêu = một phần của biên lãi" của giới Amazon (Perpetua: Target ACoS = margin − target profit margin)
+//                    và đúng ý DataGlass Labs: "Target ROAS should not be the same for every product… split the catalogue into
+//                    margin bands". Không có biên đang quảng cáo (chiến dịch chưa biết SKU / chưa đủ đơn) → mượn biên toàn gian;
+//                    không có nốt → dùng thẳng ROI gian (ghi rõ).
+//   · KHỞI ĐIỂM    = max(sàn giữ lãi, ROI quy về biên × RUN_ADVICE_ANCHOR_FACTOR) — TikTok: "theo ROI khuyến nghị hoặc đặt thấp hơn
+//                    một chút"; 0,9 là MẶC ĐỊNH TỰ CHỌN, mượn mốc 90% mục tiêu của chính TikTok (ROI protection / tự tăng ngân sách).
 //                    Chưa có mốc → khởi điểm = sàn giữ lãi, nhắc khách dùng ROI gợi ý trong Seller Center (TikTok: "không có dữ liệu
 //                    thì dùng ROI và ngân sách khuyến nghị ở giao diện hệ thống").
 //   · NGÂN SÁCH    = 2 × GMV ngày của sản phẩm ÷ ROI khởi điểm — công thức CHÍNH THỨC của TikTok ("Ngân sách khuyến nghị = 2 × GMV
@@ -68,6 +78,11 @@ export interface ProductRunAdviceInput {
   /** Quảng cáo GMV Max của cả gian 30 ngày gần nhất (số TikTok báo). */
   shopAdsSpend30d: number;
   shopAdsGmv30d: number;
+  /**
+   * Biên lãi trước quảng cáo của CÁC SẢN PHẨM ĐANG QUẢNG CÁO (SKU của những chiến dịch có tiêu tiền trong 30 ngày, đơn đã đối soát);
+   * không có thì biên toàn gian; null = không biết → không quy về biên, dùng thẳng ROI gian.
+   */
+  anchorMargin?: number | null;
   /** Lãi tối thiểu muốn giữ sau quảng cáo (đ/100đ doanh thu) — cấu hình gian; bỏ trống = mặc định. */
   minKeepPer100?: number;
 }
@@ -109,6 +124,10 @@ export interface ProductRunAdvice {
   minKeepPer100: number;
   /** Mốc đang đạt: ROI GMV Max của gian 30 ngày; null = gian chưa có đủ số. */
   anchorRoi: number | null;
+  /** Biên lãi các sản phẩm đang quảng cáo đã dùng để quy mốc về biên của sản phẩm này; null = không quy (dùng thẳng ROI gian). */
+  anchorMargin: number | null;
+  /** Mốc đã quy về biên của sản phẩm = ROI gian × biên đang quảng cáo ÷ biên sản phẩm (trước khi × 0,9); null = không có mốc. */
+  scaledAnchorRoi: number | null;
   /** Ngân sách ngày đề xuất; null khi Chưa nên. */
   budget: ProductRunBudget | null;
 }
@@ -141,23 +160,39 @@ export function productRunAdvice(i: ProductRunAdviceInput): ProductRunAdvice {
   // MỐC ĐANG ĐẠT — ROI quảng cáo thật của chính gian 30 ngày (GMV ÷ chi phí, số TikTok báo).
   const anchorRoi = i.shopAdsSpend30d >= T.minHistorySpend && i.shopAdsGmv30d > 0 ? i.shopAdsGmv30d / i.shopAdsSpend30d : null;
 
-  // KHỞI ĐIỂM — thấp hơn mốc đang đạt một chút, không thủng sàn.
-  const anchorStart = anchorRoi != null ? ceil1(anchorRoi * RUN_ADVICE_ANCHOR_FACTOR) : null;
+  // QUY MỐC VỀ BIÊN CỦA SẢN PHẨM — giữ cùng tỷ lệ tiền quảng cáo trên biên lãi mà gian đang đạt (xem đầu tệp).
+  const anchorMargin = i.anchorMargin != null && i.anchorMargin > 0 && i.margin > 0 ? i.anchorMargin : null;
+  const scaledAnchorRoi = anchorRoi != null ? (anchorMargin != null ? (anchorRoi * anchorMargin) / i.margin : anchorRoi) : null;
+  /** Phần biên lãi đang đi vào quảng cáo ở mức gian đang đạt (ANO ≈ 44%). */
+  const adsShareOfMargin = anchorRoi != null && anchorMargin != null ? 1 / anchorRoi / anchorMargin : null;
+
+  // KHỞI ĐIỂM — thấp hơn mốc (đã quy về biên) một chút, không thủng sàn.
+  const anchorStart = scaledAnchorRoi != null ? ceil1(scaledAnchorRoi * RUN_ADVICE_ANCHOR_FACTOR) : null;
   const suggestedRoi = anchorStart != null ? Math.max(floorRoi, anchorStart) : floorRoi;
   const start = num(suggestedRoi, 1);
+
+  const anchorLine = (): string => {
+    if (anchorRoi == null || scaledAnchorRoi == null || anchorStart == null) {
+      return `Gian chưa có đủ số quảng cáo GMV Max 30 ngày để làm mốc → khởi điểm lấy sàn giữ lãi ${start}; TikTok khuyên dùng ROI gợi ý hiện trong Seller Center khi tạo chiến dịch, nhưng không đặt dưới ${start}.`;
+    }
+    const scaling =
+      anchorMargin != null && adsShareOfMargin != null
+        ? `Gian đang đạt ROI ${num(anchorRoi)} (GMV Max 30 ngày qua) trên các sản phẩm biên lãi ${num(anchorMargin * 100, 1)}%, tức khoảng ${num(adsShareOfMargin * 100, 0)}% biên lãi đi vào quảng cáo. ` +
+          `Giữ cùng tỷ lệ đó cho sản phẩm này (biên ${num(i.margin * 100, 1)}%) → ROI ${num(scaledAnchorRoi, 1)}`
+        : `Gian đang đạt ROI ${num(anchorRoi)} (GMV Max 30 ngày qua; chưa biết biên lãi các sản phẩm đang quảng cáo nên chưa quy về biên của sản phẩm này)`;
+    const pick =
+      floorRoi > anchorStart
+        ? `× ${num(RUN_ADVICE_ANCHOR_FACTOR)} = ${num(anchorStart, 1)} thấp hơn sàn giữ lãi nên khởi điểm lấy sàn ${start}`
+        : `× ${num(RUN_ADVICE_ANCHOR_FACTOR)} (TikTok khuyên theo ROI đang đạt hoặc thấp hơn một chút) → ROI mục tiêu khởi điểm ${start}`;
+    return `${scaling} ${pick}: đạt đúng mức này thì mỗi 100đ doanh thu còn lãi khoảng ${num(keepAt(i.margin, suggestedRoi), 1)}đ.`;
+  };
 
   const points: string[] = [
     `Biên lãi trước quảng cáo ${num(i.margin * 100, 1)}% → ROI hòa vốn ${be}. ` +
       (profitFloor != null
         ? `Sàn giữ lãi ${floor}: không đặt ROI mục tiêu dưới mức này thì mỗi 100đ doanh thu còn giữ từ ${minKeepPer100}đ lãi sau quảng cáo.`
         : `Biên lãi không đủ để giữ ${minKeepPer100}đ/100đ sau quảng cáo — sàn chỉ còn là hòa vốn ${floor}.`),
-    anchorRoi != null && anchorStart != null
-      ? `Gian đang đạt ROI ${num(anchorRoi)} (GMV Max 30 ngày qua) → ROI mục tiêu khởi điểm ${start} ` +
-        (floorRoi > anchorStart
-          ? `(mức đạt được × ${num(RUN_ADVICE_ANCHOR_FACTOR)} = ${num(anchorStart, 1)} thấp hơn sàn giữ lãi nên lấy sàn)`
-          : `(mức đạt được × ${num(RUN_ADVICE_ANCHOR_FACTOR)} — TikTok khuyên theo ROI đang đạt hoặc thấp hơn một chút)`) +
-        `: đạt đúng mức này thì mỗi 100đ doanh thu còn lãi khoảng ${num(keepAt(i.margin, suggestedRoi), 1)}đ.`
-      : `Gian chưa có đủ số quảng cáo GMV Max 30 ngày để làm mốc → khởi điểm lấy sàn giữ lãi ${start}; TikTok khuyên dùng ROI gợi ý hiện trong Seller Center khi tạo chiến dịch, nhưng không đặt dưới ${start}.`,
+    anchorLine(),
   ];
   const checks: ProductRunCheck[] = [];
 
@@ -268,6 +303,8 @@ export function productRunAdvice(i: ProductRunAdviceInput): ProductRunAdvice {
     floorRoi,
     minKeepPer100,
     anchorRoi,
+    anchorMargin,
+    scaledAnchorRoi,
     budget,
   };
 }

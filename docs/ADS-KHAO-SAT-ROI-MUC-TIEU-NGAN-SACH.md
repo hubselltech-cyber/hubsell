@@ -89,7 +89,9 @@ Nguyên tắc: **sàn** (không được thủng) lấy từ biên lãi; **đi�
 sàn giữ lãi   = 1 ÷ (biên trước ads − minKeepPer100/100)        — profitFloorRoas, mặc định 5đ/100đ (anh chốt 08/10 cho Shopee; cùng cấu hình AdsAssistantConfig.profit, TikTok đã đọc sẵn)
 mốc đang đạt  = ROI GMV Max của gian 30 ngày (tiêu ≥ 100.000đ)   — đúng công thức "ROI khuyến nghị = GMV ÷ chi phí" của TikTok
               | không có → roas_bid của /gmv_max/bid/recommend/ (trung bình ngành) — TikTok: "không có dữ liệu thì dùng gợi ý hệ thống"
-khởi điểm     = max(sàn giữ lãi, mốc đang đạt × 0,9), làm tròn 0,1  — "thấp hơn một chút" theo TikTok; 0,9 là MẶC ĐỊNH TỰ CHỌN, đối xứng mốc 90% mục tiêu của chính TikTok (ROI protection / auto budget)
+mốc quy về biên = mốc đang đạt × biên đang quảng cáo ÷ biên sản phẩm   — ★ anh chốt 15/10 đêm (mục 7b): giữ CÙNG TỶ LỆ tiền quảng cáo trên biên lãi
+              | biên đang quảng cáo = Σ lãi trước ads ÷ Σ doanh thu (đơn đã đối soát) của SKU các chiến dịch có tiêu tiền 30 ngày; không có → biên gian
+khởi điểm     = max(sàn giữ lãi, mốc quy về biên × 0,9), làm tròn 0,1  — "thấp hơn một chút" theo TikTok; 0,9 là MẶC ĐỊNH TỰ CHỌN, đối xứng mốc 90% mục tiêu của chính TikTok (ROI protection / auto budget)
 ```
 Câu trong ô: *"Đặt ROI mục tiêu 11,6 (gian đang đạt 12,85, TikTok khuyên theo mức đạt được hoặc thấp hơn một chút). Không đặt dưới 5,9 — dưới đó lãi còn chưa tới 5đ/100đ. Sau mỗi 3 ngày trọn, nếu tiêu dưới 80% ngân sách thì hạ 10% một nấc; lãi ước tính không tăng thêm sau nấc hạ thì dừng."*
 
@@ -173,6 +175,32 @@ chỉ chặn bởi trần tồn); tăng ngân sách +30%; lát 3.4 "lãi tăng t
 - **Kiểm:** tsc backend + frontend sạch; 64 test (6 tệp, gồm 2 tệp DB dev) xanh. Soi UI cục bộ trên gian "Hubsell Demo Store"
   (reviewer@hubsell.vn, cổng 4001 tạm, đã trả lại): sản phẩm biên 32,9% · gian 11,05 · giữ 10đ/100đ (cấu hình của gian) → sàn 4,4 · khởi
   điểm 10 · ngân sách 167.837 → trần thử → nâng lên 100.000 — khớp tính tay.
+### 7b. Quy mốc về biên của từng sản phẩm (anh Trung 15/10 đêm, ngay sau khi push `c15b72f9`)
+
+Anh xem: "ROI mục tiêu của tất cả các chiến dịch đều giống nhau thì giá trị của công cụ bị giảm đi rất nhiều — mức hòa vốn khác nhau mà
+đề xuất giống nhau anh thấy chưa ổn." Đúng: mốc "ROI gian đang đạt" là một số cho cả gian, nên mọi sản phẩm có sàn dưới 11,6 đều nhận
+11,6; chỉ sàn giữ lãi khác nhau.
+
+**Sửa:** thứ giữ nguyên khi chuyển sang sản phẩm khác không phải con số ROI mà là **tỷ lệ tiền quảng cáo trên biên lãi** mà gian đang
+đạt: k = (1 ÷ ROI gian) ÷ biên các sản phẩm đang quảng cáo (ANO: 1/12,85 ÷ 17,5% ≈ 44% biên lãi đi vào quảng cáo). Áp cùng k cho sản
+phẩm biên m → ROI = 1 ÷ (k × m) = ROI gian × biên đang quảng cáo ÷ m, rồi × 0,9, không dưới sàn. Hệ quả: lãi giữ lại / 100đ tỷ lệ với
+biên (biên 21,9% giữ ~11,1đ, biên 14,2% giữ ~7,2đ) — cùng "mức cố gắng" quảng cáo cho mọi sản phẩm. Căn cứ: cách đặt ACoS mục tiêu
+theo phần của biên lãi (Perpetua: "Target ACoS = Profit Margin (Before Advertising) – Target Profit Margin (After Advertising)");
+DataGlass Labs: "Target ROAS should not be the same for every product… split the catalogue into margin bands and run a campaign per
+band". Biên đang quảng cáo = Σ lãi trước ads ÷ Σ doanh thu (đơn đã đối soát 60 ngày) của SKU các chiến dịch có tiêu tiền trong 30 ngày
+(`breakevens.base(campaignGroupKey)`); chiến dịch chưa biết SKU → không góp; không có gì → biên toàn gian; không có nốt → dùng thẳng ROI
+gian và ô nói rõ. Ví dụ ANO (gian 12,85, biên đang quảng cáo 17,5%):
+
+| Biên sản phẩm | Hòa vốn | Sàn giữ lãi 5đ | Mốc quy về biên | Khởi điểm (× 0,9) | Giữ lại / 100đ |
+|---|---|---|---|---|---|
+| 32,9% | 3,04 | 3,6 | 6,8 | **6,2** | 16,8đ |
+| 21,9% | 4,57 | 5,9 | 10,3 | **9,3** | 11,1đ |
+| 17,7% | 5,65 | 7,9 | 12,7 | **11,5** | 9,0đ |
+| 14,2% | 7,04 | 10,9 | 15,8 | **14,3** | 7,2đ |
+| 7,9% | 12,66 | 34,5 | 28,5 | **34,5** (sàn thắng) | 5đ |
+
+Trường `anchorMargin` + `scaledAnchorRoi` trong kết quả; test "quy mốc về biên từng sản phẩm" 5 biên.
+
 - **Chưa làm:** `bid/recommend` làm mốc khi gian chưa có số (số sàn không theo sản phẩm, 1 SPU → 7,2 / 2 SPU → 4 — chưa đáng tin để tự
   động, khách tự đọc trong Seller Center); lát 3.4; mobile không có ô này. **Theo dõi:** ANO sau deploy — ô Nên chạy phải ra khởi điểm ~11,6
   cho sản phẩm biên 17,7%; sau vài tuần anh so lãi thật rồi mới chỉnh 0,9 / 5đ / +30%.

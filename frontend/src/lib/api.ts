@@ -3225,6 +3225,10 @@ export interface TiktokProductRunAdvice {
   minKeepPer100?: number;
   /** ROI GMV Max của gian 30 ngày làm mốc; null = chưa có số. */
   anchorRoi?: number | null;
+  /** Biên lãi các sản phẩm đang quảng cáo dùng để quy mốc về biên của sản phẩm; null = không quy. */
+  anchorMargin?: number | null;
+  /** Mốc đã quy về biên của sản phẩm (ROI gian × biên đang quảng cáo ÷ biên sản phẩm). */
+  scaledAnchorRoi?: number | null;
   /** Ngân sách ngày đề xuất (công thức TikTok 2 × GMV ÷ ROI, đã chặn trần); null khi Chưa nên. Vắng = backend cũ. */
   budget?: { daily: number; byTiktok: number | null; note: string } | null;
 }

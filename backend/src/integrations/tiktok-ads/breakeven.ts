@@ -277,12 +277,26 @@ export async function computeTiktokProductBreakevensUncached(
   const adsFrom = vnDateKey(RUN_ADVICE_ADS_DAYS - 1);
   let shopAdsSpend30d = 0;
   let shopAdsGmv30d = 0;
-  for (const c of campaigns)
+  // Biên lãi của CÁC SẢN PHẨM ĐANG QUẢNG CÁO (SKU của chiến dịch có tiêu tiền trong cửa sổ, đơn đã đối soát 60 ngày) — để quy mốc ROI gian
+  // về biên của từng sản phẩm (anh Trung 15/10 đêm: hòa vốn khác nhau mà đề xuất giống nhau là chưa ổn). Không có → biên toàn gian.
+  let advertisedRevenue = 0;
+  let advertisedProfit = 0;
+  for (const c of campaigns) {
+    let spent = 0;
     for (const d of c.dailyPerf) {
       if (dateKey(d.date) < adsFrom) continue;
+      spent += Number(d.expense);
       shopAdsSpend30d += Number(d.expense);
       shopAdsGmv30d += Number(d.broadGmv);
     }
+    if (spent > 0) {
+      const own = breakevens.base(campaignGroupKey(c.id));
+      advertisedRevenue += own.revenue;
+      advertisedProfit += own.profitBeforeAds;
+    }
+  }
+  const shopBreakeven = toTiktokBreakeven(breakevens.base(SHOP_GROUP), "shop");
+  const anchorMargin = advertisedRevenue > 0 ? advertisedProfit / advertisedRevenue : shopBreakeven.margin;
 
   const products: ProductBreakevenRow[] = [];
   for (const [productId, base] of breakevens.productBases()) {
@@ -316,6 +330,7 @@ export async function computeTiktokProductBreakevensUncached(
               stock: stockOf.get(productId) ?? null,
               shopAdsSpend30d,
               shopAdsGmv30d,
+              anchorMargin,
               minKeepPer100,
             })
           : null,
@@ -324,5 +339,5 @@ export async function computeTiktokProductBreakevensUncached(
   // Bán nhiều đứng trước — tính cả phần doanh thu thiếu giá vốn, để sản phẩm bán chạy mà chưa nhập giá vốn không chìm xuống đáy.
   const sold = (p: ProductBreakevenRow) => p.revenue + p.missingCostRevenue;
   products.sort((a, b) => sold(b) - sold(a) || b.breakeven.pendingOrders - a.breakeven.pendingOrders);
-  return { shop: toTiktokBreakeven(breakevens.base(SHOP_GROUP), "shop"), windowDays: TIKTOK_MARGIN_WINDOW_DAYS, products };
+  return { shop: shopBreakeven, windowDays: TIKTOK_MARGIN_WINDOW_DAYS, products };
 }

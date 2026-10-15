@@ -29,7 +29,7 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.minKeepPer100).toBe(5);
     expect(a.anchorRoi).toBe(8);
     expect(a.suggestedRoi).toBe(7.5); // 8 × 0,9 = 7,2 < sàn 7,5 → lấy sàn
-    expect(a.points[1]).toContain("thấp hơn sàn giữ lãi nên lấy sàn");
+    expect(a.points[1]).toContain("thấp hơn sàn giữ lãi nên khởi điểm lấy sàn 7,5");
     expect(a.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass"]);
     expect(a.conclusion).toContain("đạt cả ba điều kiện");
     expect(a.conclusion).toContain("ROI mục tiêu 7,5, không đặt dưới 7,5");
@@ -43,27 +43,60 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.conclusion).toContain("Ngân sách 100.000đ/ngày");
   });
 
-  // Ca ANO 15/10 (ảnh anh Trung): biên 17,7%, hòa vốn 5,66, gian đạt 12,85, doanh thu ~2,34 triệu/ngày.
-  it("ANO: mốc đang đạt 12,85 → khởi điểm 11,6 (× 0,9), sàn 7,9; ngân sách 2 × 2,34tr ÷ 11,6 ≈ 400.000", () => {
-    const a = productRunAdvice({
-      ...base,
-      margin: 0.177,
-      breakevenRoi: 1 / 0.177,
-      units7d: 58,
-      units30d: 243,
-      revenue30d: 70_250_000,
-      stock: 5000,
-      shopAdsSpend30d: 10_000_000,
-      shopAdsGmv30d: 128_500_000,
-    });
+  // Ca ANO 15/10 (ảnh anh Trung): biên 17,7%, hòa vốn 5,66, gian đạt 12,85 trên các sản phẩm đang quảng cáo biên 17,5%, doanh thu
+  // ~2,34 triệu/ngày. Không truyền biên đang quảng cáo → dùng thẳng ROI gian (× 0,9 = 11,6).
+  const ano: ProductRunAdviceInput = {
+    ...base,
+    margin: 0.177,
+    breakevenRoi: 1 / 0.177,
+    units7d: 58,
+    units30d: 243,
+    revenue30d: 70_250_000,
+    stock: 5000,
+    shopAdsSpend30d: 10_000_000,
+    shopAdsGmv30d: 128_500_000,
+  };
+  it("ANO (chưa biết biên đang quảng cáo): mốc 12,85 → khởi điểm 11,6 (× 0,9), sàn 7,9; ngân sách 2 × 2,34tr ÷ 11,6 ≈ 400.000", () => {
+    const a = productRunAdvice(ano);
     expect(a.tier).toBe("run");
     expect(a.floorRoi).toBe(7.9); // 1/(0,177 − 0,05) = 7,87 → 7,9
+    expect(a.anchorMargin).toBeNull();
+    expect(a.scaledAnchorRoi).toBe(12.85);
     expect(a.suggestedRoi).toBe(11.6); // 12,85 × 0,9 = 11,565 → 11,6
+    expect(a.points[1]).toContain("chưa biết biên lãi các sản phẩm đang quảng cáo");
     expect(a.points[1]).toContain("khởi điểm 11,6");
     expect(a.points[1]).toContain("còn lãi khoảng 9,1đ"); // 17,7% − 1/11,6
     expect(a.checks.find((c) => c.key === "feasible")?.text).toContain("cao hơn sàn giữ lãi 7,9");
     expect(a.budget?.byTiktok).toBeCloseTo((2 * (70_250_000 / 30)) / 11.6, 0); // ≈ 403.736
     expect(a.budget?.daily).toBe(400_000);
+  });
+
+  // Anh Trung 15/10 đêm: "ROI mục tiêu của tất cả các chiến dịch đều giống nhau thì giá trị công cụ giảm đi rất nhiều" → quy mốc về biên
+  // của từng sản phẩm: giữ cùng tỷ lệ tiền quảng cáo trên biên lãi (1/12,85 ÷ 17,5% ≈ 44%).
+  it("quy mốc về biên từng sản phẩm: cùng gian, biên khác nhau → khởi điểm khác nhau (biên thấp → ROI cao hơn)", () => {
+    const withMargin = { ...ano, anchorMargin: 0.175 };
+    const p177 = productRunAdvice(withMargin); // 12,85 × 0,175 / 0,177 = 12,70 → × 0,9 = 11,43 → 11,5
+    const p219 = productRunAdvice({ ...withMargin, margin: 0.219, breakevenRoi: 1 / 0.219 }); // 10,27 → 9,24 → 9,3
+    const p142 = productRunAdvice({ ...withMargin, margin: 0.142, breakevenRoi: 1 / 0.142 }); // 15,84 → 14,25 → 14,3
+    const p329 = productRunAdvice({ ...withMargin, margin: 0.329, breakevenRoi: 1 / 0.329 }); // 6,84 → 6,15 → 6,2 (sàn 3,6)
+    const p079 = productRunAdvice({ ...withMargin, margin: 0.079, breakevenRoi: 1 / 0.079 }); // 28,47 → 25,6 < sàn 34,5 → sàn
+    expect(p177.anchorMargin).toBe(0.175);
+    expect(p177.scaledAnchorRoi).toBeCloseTo(12.7, 1);
+    expect(p177.suggestedRoi).toBe(11.5);
+    expect(p219.suggestedRoi).toBe(9.3);
+    expect(p142.suggestedRoi).toBe(14.3);
+    expect(p329.suggestedRoi).toBe(6.2);
+    expect(p079.floorRoi).toBe(34.5); // 1/(0,079 − 0,05) = 34,48
+    expect(p079.suggestedRoi).toBe(34.5);
+    expect(p079.points[1]).toContain("thấp hơn sàn giữ lãi nên khởi điểm lấy sàn 34,5");
+    expect(p219.points[1]).toContain("khoảng 44% biên lãi đi vào quảng cáo");
+    expect(p219.points[1]).toContain("Giữ cùng tỷ lệ đó cho sản phẩm này (biên 21,9%) → ROI 10,3");
+    // Cùng tỷ lệ ⇒ lãi giữ lại / 100đ tỷ lệ với biên: 21,9% giữ ~11,1đ, 14,2% giữ ~7,2đ.
+    expect(p219.points[1]).toContain("còn lãi khoảng 11,1đ");
+    expect(p142.points[1]).toContain("còn lãi khoảng 7,2đ");
+    // Biên đang quảng cáo không hợp lệ (0 / âm) → không quy, như chưa biết.
+    expect(productRunAdvice({ ...ano, anchorMargin: 0 }).anchorMargin).toBeNull();
+    expect(productRunAdvice({ ...ano, anchorMargin: -0.1 }).suggestedRoi).toBe(11.6);
   });
 
   it("ROI gian thấp hơn hòa vốn của sản phẩm → Chưa nên, không có ngân sách", () => {
