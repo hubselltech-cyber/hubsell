@@ -75,7 +75,14 @@ export function BulkActionBar({
       onClear();
       onDone(); // tải lại để nhãn "Đã in" hiện ngay
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không lấy được vận đơn");
+      console.error("[bulk-action-bar] in phiếu lỗi:", err);
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error && err.message
+            ? `Không lấy được vận đơn — ${err.message}`
+            : "Không lấy được vận đơn"
+      );
     } finally {
       toast.dismiss(toastId);
       setBusy(null);

@@ -32,6 +32,13 @@ import {
   humanizeArrangeError,
 } from "../services/fulfillment";
 import { getFulfillmentBatch, startFulfillmentBatch } from "../services/fulfillment/batch-runner";
+import {
+  CANCELLED_REASON,
+  LEFT_PENDING_REASON,
+  NOT_FOUND_REASON,
+  NO_READY_ORDERS_CODE,
+  describeNoReadyOrders,
+} from "../services/fulfillment/confirm-skip";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -807,20 +814,27 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
         if (o.paymentStatus === "UNPAID") skipped.push({ orderCode: o.orderCode, reason: UNPAID_REASON });
         else ready.push(o);
       } else if (o.shippingStatus === ShippingStatus.CANCELLED)
-        skipped.push({ orderCode: o.orderCode, reason: "Đơn đã hủy" });
-      else skipped.push({ orderCode: o.orderCode, reason: "Đơn đã rời trạng thái Chờ xử lý" });
+        skipped.push({ orderCode: o.orderCode, reason: CANCELLED_REASON });
+      else skipped.push({ orderCode: o.orderCode, reason: LEFT_PENDING_REASON });
     }
     for (const id of orderIds.filter((x) => !found.has(x))) {
-      skipped.push({ orderCode: id, reason: "Không tìm thấy hoặc ngoài quyền" });
+      skipped.push({ orderCode: id, reason: NOT_FOUND_REASON });
     }
 
     if (ready.length === 0) {
-      const unpaid = skipped.filter((s) => s.reason === UNPAID_REASON).length;
+      // 15/10: nói rõ VÌ SAO (30 đơn đã rời Chờ xử lý = sàn đã nhận ở lượt trước)
+      // + mã lỗi để giao diện đóng hộp thoại và tải lại bảng; ghi log để tra soát
+      // vì người dùng thường chỉ chụp màn hình câu báo.
+      const { error, counts } = describeNoReadyOrders(skipped);
+      console.warn(
+        `[fulfillment] bulk/confirm 409 owner=${req.ownerId} chọn ${orderIds.length} đơn, không đơn nào gọi sàn được:`,
+        JSON.stringify(counts),
+        "mẫu:",
+        skipped.slice(0, 3).map((s) => s.orderCode).join(", ")
+      );
       res.status(409).json({
-        error:
-          unpaid > 0 && unpaid === skipped.length
-            ? `Loại ${unpaid} đơn chưa chuẩn bị vì khách chưa thanh toán — sàn chưa cho sắp xếp vận chuyển`
-            : "Không có đơn nào ở trạng thái Chờ xử lý để chuẩn bị",
+        error,
+        code: NO_READY_ORDERS_CODE,
         confirmed: 0,
         confirmedIds: [],
         skipped,

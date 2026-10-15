@@ -48,3 +48,21 @@ In vận đơn: `fetchLabels(..., { combined: true })` khi không in kèm phiế
 4. TikTok Hi.Bé: mẻ nhỏ 3–5 kiện trước.
 
 Mã: `backend/src/services/fulfillment/{shopee,tiktok,batch-runner,types}.ts`, `integrations/shopee/client.ts` (4 hàm mass), `integrations/tiktok/client.ts` (`batchShipPackages`), `routes/orders.ts`, migration `20261014210000_fulfillment_batch`. Test: `integrations/__tests__/fulfillment-mass-ship.test.ts`.
+
+## 4. Sự cố 15/10/2026 — "Không kết nối được máy chủ" rồi "Không có đơn nào ở trạng thái Chờ xử lý"
+
+Anh Trung test 30 đơn Shopee (ANO 21 + DarkMan 9) ngay sau khi bản 14/10 lên prod (backend `f7b597d8`, web đã có luồng chạy nền — đã kiểm bundle, không lệch bản):
+
+1. Bấm Chuẩn bị lần 1 → web báo **"Không kết nối được máy chủ"**, nhưng sàn **đã nhận đủ đơn** (anh xác nhận trên Seller Center).
+2. Bấm lần 2 trên cùng hộp thoại → 409 **"Không có đơn nào ở trạng thái Chờ xử lý để chuẩn bị"**.
+
+**Đọc mã:** câu "Không kết nối được máy chủ" trong hộp thoại chỉ hiện khi mã web ném lỗi **không phải** `ApiError` (lỗi mạng của `apiFetch` có câu dài riêng nhắc chặn quảng cáo). Sau khi lượt chạy nền DONE, đoạn duy nhất còn chạy là **đợi mã vận đơn + in** — và `fetchOrderLabelsPdf` dùng `fetch` thô, lỗi mạng/ngắt request ở đó là `TypeError` → bị dịch thành "Không kết nối được máy chủ", hộp thoại **không đóng, bảng không tải lại** → người dùng bấm lại trên danh sách cũ → 409 đúng kỹ thuật nhưng vô nghĩa với người dùng. Lỗi cụ thể của bước in lần 1 **chưa xác định** (cần log Render `[fulfillment.shopee]` + console trình duyệt lúc đó).
+
+**Sửa (15/10):**
+- Hộp thoại: bước in bọc `try/catch` riêng — sàn đã nhận thì luôn đóng hộp thoại + tải lại bảng; lỗi in chỉ là cảnh báo *"N đơn đã được sàn nhận nhưng chưa in được: … — lọc Chưa in phiếu rồi bấm In"*. Lỗi JS khác in nguyên văn (`Lỗi ngoài dự kiến: …`) thay vì đổ cho kết nối.
+- `fetchOrderLabelsPdf`: lỗi mạng → `ApiError(0, networkErrorMessage())` như `apiFetch`.
+- Backend 409: `services/fulfillment/confirm-skip.ts` — câu báo nói rõ *"30 đơn đã rời trạng thái Chờ xử lý — sàn đã nhận ở lượt chuẩn bị trước…"* + đuôi các nhóm khác, kèm `code: NO_READY_ORDERS`; web nhận mã này thì đóng hộp thoại + tải lại. Ghi `console.warn [fulfillment] bulk/confirm 409` với số đếm theo lý do + 3 mã mẫu.
+- `batch-runner`: **nhịp tim 30 s** chạm `updatedAt` khi RUNNING, để lượt gọi sàn im lặng >3 phút không bị `getFulfillmentBatch` đánh FAILED oan.
+- Test: `fulfillment-confirm-skip.test.ts` 5 ca.
+
+**Chưa làm / theo dõi:** bước in vẫn là một request đồng bộ `/bulk/labels` (30 đơn: dựng vận đơn + poll + tải gộp); nếu log cho thấy request này bị cắt thì chuyển sang chạy nền giống Chuẩn bị hàng.

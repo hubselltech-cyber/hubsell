@@ -26,6 +26,14 @@ import { readFulfillDefaults, type ArrangeResult, type FulfillChoice, type Fulfi
 
 /** Dòng RUNNING không được cập nhật quá lâu = tiến trình đã chết giữa chừng. */
 const STALE_MS = 3 * 60_000;
+/**
+ * Nhịp tim: đang chạy thì chạm updatedAt đều đặn kể cả khi chưa có đơn nào xong
+ * (15/10 — một lượt gọi sàn kéo dài, vd Shopee mass_ship_order + lùi về từng
+ * đơn cho nhóm lỗi, có thể im lặng quá STALE_MS; không có nhịp tim thì
+ * getFulfillmentBatch đánh FAILED oan một lượt vẫn đang chạy và giao diện báo
+ * "máy chủ khởi động lại" trong khi sàn đang nhận đơn).
+ */
+const HEARTBEAT_MS = 30_000;
 /** Ghi tiến độ xuống DB tối đa mỗi khoảng này (tránh 50 UPDATE cho 50 đơn). */
 const PROGRESS_WRITE_MS = 1000;
 /** Nhịp giữa hai đơn cùng gian khi phải đi đường từng đơn. */
@@ -76,7 +84,7 @@ export async function startFulfillmentBatch(params: BatchStartParams): Promise<{
     select: { id: true },
   });
   // Cố ý không await: request trả batchId ngay, việc gọi sàn chạy tiếp.
-  void runBatch(row.id, params).catch(async (err) => {
+  void runBatchWithHeartbeat(row.id, params).catch(async (err) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[fulfillment.batch] ${row.id} lỗi ngoài dự kiến:`, message);
     await prisma.fulfillmentBatch
@@ -84,6 +92,21 @@ export async function startFulfillmentBatch(params: BatchStartParams): Promise<{
       .catch(() => undefined);
   });
   return { batchId: row.id, total };
+}
+
+/** Chạy lượt + nhịp tim; dừng nhịp tim dù lượt xong hay ném lỗi. */
+async function runBatchWithHeartbeat(batchId: string, params: BatchStartParams): Promise<void> {
+  const timer = setInterval(() => {
+    // Chỉ chạm updatedAt (Prisma @updatedAt) — `done` do flushProgress ghi.
+    void prisma.fulfillmentBatch
+      .updateMany({ where: { id: batchId, status: "RUNNING" }, data: { updatedAt: new Date() } })
+      .catch(() => undefined);
+  }, HEARTBEAT_MS);
+  try {
+    await runBatch(batchId, params);
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 async function runBatch(batchId: string, params: BatchStartParams): Promise<void> {

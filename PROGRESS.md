@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 15/10/2026 (sáng sớm) — CHUẨN BỊ HÀNG THEO MẺ: LẦN 1 BÁO LỖI OAN, LẦN 2 409 — ĐÃ SỬA, CHỜ ANH PUSH
+
+- **Anh test 30 đơn Shopee (ANO 21 + DarkMan 9):** lần 1 web báo "Không kết nối được máy chủ" nhưng sàn **đã nhận đủ**; lần 2 trên cùng hộp thoại → 409 "Không có đơn nào ở trạng thái Chờ xử lý".
+- **Đã kiểm:** prod không lệch bản (backend `/health` = `f7b597d8`, bundle web có `bulk/confirm/${id}` + "Lượt chuẩn bị hàng"). Câu "Không kết nối được máy chủ" của hộp thoại = lỗi JS không phải `ApiError` → chỉ có thể ở bước **đợi mã vận đơn + in** sau khi lượt nền DONE; `fetchOrderLabelsPdf` dùng `fetch` thô nên lỗi mạng/ngắt request thành `TypeError`. Hộp thoại không đóng → bấm lại trên danh sách cũ → 409 đúng kỹ thuật nhưng không nói vì sao. **Lỗi cụ thể của bước in lần 1 chưa xác định** — cần log Render + console.
+- **Sửa:** (1) hộp thoại tách bước in: sàn nhận rồi thì luôn đóng + tải lại bảng, lỗi in chỉ cảnh báo "N đơn đã được sàn nhận nhưng chưa in được: …"; lỗi JS in nguyên văn; (2) `fetchOrderLabelsPdf` lỗi mạng → `ApiError(0)`; (3) backend 409 qua `confirm-skip.ts`: "30 đơn đã rời trạng thái Chờ xử lý — sàn đã nhận ở lượt trước…" + `code NO_READY_ORDERS` → web đóng hộp thoại + tải lại; log `[fulfillment] bulk/confirm 409`; (4) `batch-runner` nhịp tim 30 s tránh FAILED oan. Docs `CHUAN-BI-HANG-THEO-ME.md` mục 4.
+- **Kiểm:** test `fulfillment-confirm-skip` 5 ca + mass-ship + label-readiness = 25 xanh; tsc be+fe sạch. Chưa soi được trên prod (cần đơn thật).
+- **Còn lại:** anh push; anh dán log Render lọc `fulfillment` quanh giờ test + console trình duyệt để tìm đúng lỗi bước in; nếu `/bulk/labels` bị cắt vì lâu → chuyển in sang chạy nền.
+
+---
+
 ## Phiên 15/10/2026 (chiều) — SKU PHÂN LOẠI CON BỊ GỘP (khách Hi.Bé) — `f7b597d8` ĐÃ PUSH
 
 - **Báo lỗi:** Nguyễn Trung Huy (Hi.Bé, `huyut2k`, 3 gian): sản phẩm Shopee 2 tầng Màu × Size, Hubsell chỉ về 1 dòng/màu, không cập nhật tồn các size. Anh nghi gọi sai API tầng 1 và hỏi sàn có mấy tầng.

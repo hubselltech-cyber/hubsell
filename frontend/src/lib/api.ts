@@ -1821,15 +1821,24 @@ export async function fetchOrderLabelsPdf(
   opts: { labels: boolean; pickList: boolean }
 ): Promise<{ blob: Blob; summary: LabelSummary | null }> {
   const token = getToken();
-  const res = await fetch(`${API_URL}/api/orders/bulk/labels`, {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ orderIds, labels: opts.labels, pickList: opts.pickList }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/orders/bulk/labels`, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ orderIds, labels: opts.labels, pickList: opts.pickList }),
+    });
+  } catch (err) {
+    // 15/10: trước đây lỗi mạng ở đây là TypeError thô → hộp thoại Chuẩn bị hàng
+    // dịch thành "Không kết nối được máy chủ" dù sàn ĐÃ nhận đơn. Đưa về cùng
+    // ApiError(0) như apiFetch để câu báo nói đúng (mạng / chặn quảng cáo).
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, networkErrorMessage(), NETWORK_BLOCKED_CODE);
+  }
   if (!res.ok) {
     let message = `Máy chủ trả về lỗi ${res.status}`;
     try {

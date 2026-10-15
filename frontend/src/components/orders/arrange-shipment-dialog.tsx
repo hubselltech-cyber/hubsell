@@ -102,6 +102,19 @@ function initialChoice(g: ShippingOptionGroup): FulfillChoice {
   };
 }
 
+/** Mã 409 của /bulk/confirm khi không còn đơn nào gọi sàn được (backend confirm-skip.ts). */
+const NO_READY_ORDERS_CODE = "NO_READY_ORDERS";
+
+/**
+ * Câu báo lỗi cho người dùng: ApiError đã là tiếng người; lỗi JS khác (mã web
+ * hỏng) in nguyên văn để tra soát thay vì đổ oan cho kết nối máy chủ.
+ */
+function describeError(err: unknown): string {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof Error && err.message) return `Lỗi ngoài dự kiến: ${err.message}`;
+  return "Không kết nối được máy chủ";
+}
+
 export function ArrangeShipmentDialog({
   open,
   onOpenChange,
@@ -215,17 +228,41 @@ export function ArrangeShipmentDialog({
       for (const n of res.notes ?? []) toast.info(`${n.orderCode}: ${n.note}`, { duration: 7000 });
 
       if (printAfter && (printOpts.labels || printOpts.pickList) && res.confirmedIds.length > 0) {
-        if (printOpts.labels) {
-          setBusy("wait");
-          await waitForLabelsReady(res.confirmedIds, setWaitProgress);
+        // Bước IN tách khỏi bước CHUẨN BỊ (15/10): sàn đã nhận đơn rồi thì lỗi ở
+        // bước in (mạng, pop-up, sàn chưa dựng xong vận đơn…) chỉ là "chưa in
+        // được", KHÔNG được báo như chuẩn bị hỏng và KHÔNG giữ hộp thoại mở —
+        // anh Trung 15/10 thấy "Không kết nối được máy chủ", bấm lại thì 30 đơn
+        // đã rời Chờ xử lý. Hộp thoại luôn đóng + bảng tải lại sau đoạn này.
+        try {
+          if (printOpts.labels) {
+            setBusy("wait");
+            await waitForLabelsReady(res.confirmedIds, setWaitProgress);
+          }
+          setBusy("print");
+          await printLabels(res.confirmedIds, printOpts);
+        } catch (err) {
+          console.error("[arrange-shipment] in sau khi chuẩn bị lỗi:", err);
+          toast.warning(
+            `${formatNumber(res.confirmed)} đơn đã được sàn nhận nhưng chưa in được: ${describeError(err)} — ` +
+              `lọc "Chưa in phiếu" rồi bấm In sau ít phút.`,
+            { duration: 12_000 }
+          );
         }
-        setBusy("print");
-        await printLabels(res.confirmedIds, printOpts);
       }
       onOpenChange(false);
       onDone();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
+      // Không còn đơn nào ở Chờ xử lý (thường là bấm lần 2 sau khi sàn đã nhận ở
+      // lượt trước): câu 409 đã nói rõ; đóng hộp thoại + tải lại bảng để người
+      // dùng thấy đúng trạng thái thay vì bấm tiếp trên danh sách cũ.
+      if (err instanceof ApiError && err.code === NO_READY_ORDERS_CODE) {
+        toast.warning(err.message, { duration: 10_000 });
+        onOpenChange(false);
+        onDone();
+        return;
+      }
+      console.error("[arrange-shipment] chuẩn bị hàng lỗi:", err);
+      toast.error(describeError(err));
     } finally {
       setBusy(null);
       setWaitProgress(null);
