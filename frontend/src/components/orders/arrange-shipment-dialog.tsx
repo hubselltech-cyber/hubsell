@@ -202,7 +202,14 @@ export function ArrangeShipmentDialog({
       const ids = orders.filter((o) => runnableIds.has(o.channelId)).map((o) => o.id);
       // Chạy nền trên máy chủ (Shopee mass_ship_order / TikTok Batch Ship), hộp
       // thoại chỉ hỏi tiến độ — mẻ 200 đơn không còn bị cắt request giữa chừng.
-      const res = await bulkConfirmOrders(ids, choices, (done, total) => setConfirmProgress({ done, total }));
+      const res = await bulkConfirmOrders(
+        ids,
+        choices,
+        (done, total) => setConfirmProgress({ done, total }),
+        // Bấm lại khi lượt trước còn chạy: máy chủ không tạo lượt mới (15/10),
+        // hộp thoại chỉ báo rồi theo dõi tiếp lượt đó như thường.
+        () => toast.info("Lượt trước vẫn đang chạy — đang theo dõi tiếp", { duration: 6000 })
+      );
 
       const failedText =
         res.failed.length > 0

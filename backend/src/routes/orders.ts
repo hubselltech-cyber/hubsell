@@ -31,13 +31,19 @@ import {
   UNPAID_REASON,
   humanizeArrangeError,
 } from "../services/fulfillment";
-import { getFulfillmentBatch, startFulfillmentBatch } from "../services/fulfillment/batch-runner";
+import {
+  findLiveRunningBatches,
+  getFulfillmentBatch,
+  startFulfillmentBatch,
+} from "../services/fulfillment/batch-runner";
 import {
   CANCELLED_REASON,
+  IN_RUNNING_BATCH_REASON,
   LEFT_PENDING_REASON,
   NOT_FOUND_REASON,
   NO_READY_ORDERS_CODE,
   describeNoReadyOrders,
+  splitByRunningBatches,
 } from "../services/fulfillment/confirm-skip";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
@@ -783,6 +789,13 @@ router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
  *
  * Bỏ qua có chọn lọc thay vì fail cả mẻ: 50 đơn mà 1 đơn hỏng thì báo riêng
  * đơn đó, 49 đơn còn lại vẫn chạy.
+ *
+ * 15/10 — KHÔNG CHỒNG LƯỢT: đơn đang nằm trong một lượt RUNNING còn sống
+ * (updatedAt trong 3 phút = STALE_MS của batch-runner) của cùng chủ shop thì bỏ
+ * qua với IN_RUNNING_BATCH_REASON, không gọi sàn lần hai (sự cố 08:40: bấm lại
+ * sau 6 giây → 20 đơn Shopee bị gọi lại, sàn từ chối "not eligible for
+ * rescheduling"). Mọi đơn sẵn sàng đều ở đúng MỘT lượt → trả 202
+ * { batchId: lượt cũ, reattached: true } để giao diện theo dõi tiếp lượt đó.
  */
 router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
   try {
@@ -806,7 +819,7 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
 
     const found = new Set(orders.map((o) => o.id));
     const skipped: { orderCode: string; reason: string }[] = [];
-    const ready: typeof orders = [];
+    let ready: typeof orders = [];
 
     for (const o of orders) {
       if (o.shippingStatus === ShippingStatus.PENDING) {
@@ -819,6 +832,34 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
     }
     for (const id of orderIds.filter((x) => !found.has(x))) {
       skipped.push({ orderCode: id, reason: NOT_FOUND_REASON });
+    }
+
+    // Đơn còn Chờ xử lý nhưng đang ở một lượt RUNNING còn sống → không gọi lại.
+    // Chỉ hỏi DB khi còn đơn sẵn sàng (đơn đã PROCESSED đã bị loại ở trên).
+    if (ready.length > 0) {
+      const running = await findLiveRunningBatches(req.ownerId!);
+      if (running.length > 0) {
+        const split = splitByRunningBatches(running, ready.map((o) => o.id));
+        if (split.reattachTo) {
+          const prev = running.find((b) => b.id === split.reattachTo)!;
+          console.warn(
+            `[fulfillment] bulk/confirm owner=${req.ownerId} ${ready.length} đơn đều đang ở lượt ${prev.id} ` +
+              `(RUNNING) — không tạo lượt mới, giao diện theo dõi tiếp`
+          );
+          res.status(202).json({ batchId: prev.id, total: prev.total, skipped, reattached: true });
+          return;
+        }
+        if (split.held.size > 0) {
+          for (const o of ready) {
+            if (split.held.has(o.id)) skipped.push({ orderCode: o.orderCode, reason: IN_RUNNING_BATCH_REASON });
+          }
+          console.warn(
+            `[fulfillment] bulk/confirm owner=${req.ownerId} bỏ qua ${split.held.size} đơn đang ở lượt ` +
+              `${[...new Set(split.held.values())].join(",")} (RUNNING), còn ${split.free.length} đơn tạo lượt mới`
+          );
+          ready = ready.filter((o) => !split.held.has(o.id));
+        }
+      }
     }
 
     if (ready.length === 0) {

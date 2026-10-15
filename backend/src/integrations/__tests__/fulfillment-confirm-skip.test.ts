@@ -7,10 +7,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CANCELLED_REASON,
+  IN_RUNNING_BATCH_REASON,
   LEFT_PENDING_REASON,
   NOT_FOUND_REASON,
   countSkipReasons,
   describeNoReadyOrders,
+  splitByRunningBatches,
 } from "../../services/fulfillment/confirm-skip";
 import { UNPAID_REASON } from "../../services/fulfillment/types";
 
@@ -53,6 +55,83 @@ describe("describeNoReadyOrders", () => {
 
   it("danh sách rỗng → câu chung, không đuôi", () => {
     expect(describeNoReadyOrders([]).error).toBe("Không có đơn nào ở trạng thái Chờ xử lý để chuẩn bị");
-    expect(countSkipReasons([])).toEqual({ unpaid: 0, leftPending: 0, cancelled: 0, notFound: 0, other: 0 });
+    expect(countSkipReasons([])).toEqual({
+      unpaid: 0,
+      leftPending: 0,
+      cancelled: 0,
+      notFound: 0,
+      inRunning: 0,
+      other: 0,
+    });
+  });
+
+  it("đơn đang ở lượt trước (rải ≥2 lượt) → bảo ĐỢI, xét trước 'đã rời Chờ xử lý'", () => {
+    const r = describeNoReadyOrders([...row(IN_RUNNING_BATCH_REASON, 10), ...row(LEFT_PENDING_REASON, 20)]);
+    expect(r.counts.inRunning).toBe(10);
+    expect(r.error).toMatch(/^10 đơn đang được sắp xếp ở lượt chuẩn bị trước — đợi lượt đó xong/);
+    expect(r.error).toContain("không bấm lại");
+    expect(r.error).toContain("20 đơn đã rời Chờ xử lý");
+  });
+});
+
+// ------------------------------------------------------------
+// Chặn lượt chồng lên lượt đang chạy (sự cố 15/10 08:40: bấm lại sau 6 giây,
+// lượt 2 cùng 30 đơn tạo khi lượt 1 còn RUNNING → 20 đơn Shopee bị gọi lại).
+// ------------------------------------------------------------
+describe("splitByRunningBatches", () => {
+  const ids = (n: number, prefix = "o") => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+
+  it("không có lượt nào đang chạy → mọi đơn tự do, không reattach", () => {
+    const r = splitByRunningBatches([], ids(3));
+    expect(r.free).toEqual(["o0", "o1", "o2"]);
+    expect(r.held.size).toBe(0);
+    expect(r.reattachTo).toBeNull();
+  });
+
+  it("bấm lại đúng 30 đơn khi lượt trước còn chạy → reattach vào lượt đó, không đơn tự do", () => {
+    const r = splitByRunningBatches([{ id: "b1", orderIds: ids(30) }], ids(30));
+    expect(r.free).toEqual([]);
+    expect(r.held.size).toBe(30);
+    expect(r.reattachTo).toBe("b1");
+  });
+
+  it("chọn thêm đơn mới ngoài lượt đang chạy → đơn cũ bị giữ, đơn mới tự do, không reattach", () => {
+    const r = splitByRunningBatches([{ id: "b1", orderIds: ids(30) }], [...ids(30), "n1", "n2"]);
+    expect(r.free).toEqual(["n1", "n2"]);
+    expect(r.held.size).toBe(30);
+    expect(r.held.get("o0")).toBe("b1");
+    expect(r.reattachTo).toBeNull();
+  });
+
+  it("đơn bị giữ rải ở hai lượt, không còn đơn tự do → không reattach (route trả 409 bảo đợi)", () => {
+    const r = splitByRunningBatches(
+      [
+        { id: "b1", orderIds: ["a", "b"] },
+        { id: "b2", orderIds: ["c"] },
+      ],
+      ["a", "c"]
+    );
+    expect(r.free).toEqual([]);
+    expect(r.held.get("a")).toBe("b1");
+    expect(r.held.get("c")).toBe("b2");
+    expect(r.reattachTo).toBeNull();
+  });
+
+  it("đơn chọn không thuộc lượt đang chạy (lượt đó xử lý đơn khác) → tự do hết", () => {
+    const r = splitByRunningBatches([{ id: "b1", orderIds: ["x", "y"] }], ["a", "b"]);
+    expect(r.free).toEqual(["a", "b"]);
+    expect(r.reattachTo).toBeNull();
+  });
+
+  it("cùng một đơn nằm ở hai lượt (không nên xảy ra) → gán cho lượt đứng trước", () => {
+    const r = splitByRunningBatches(
+      [
+        { id: "new", orderIds: ["a"] },
+        { id: "old", orderIds: ["a"] },
+      ],
+      ["a"]
+    );
+    expect(r.held.get("a")).toBe("new");
+    expect(r.reattachTo).toBe("new");
   });
 });

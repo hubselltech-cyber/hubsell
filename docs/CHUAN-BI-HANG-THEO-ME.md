@@ -18,7 +18,11 @@ Anh Trung: "chuẩn bị đơn của mình hơi chậm, trên Shopee hay TikTok 
 ## 2. Luồng mới
 
 ```
-POST /api/orders/bulk/confirm  → kiểm đơn, tạo fulfillment_batches (RUNNING), trả 202 {batchId,total,skipped}
+POST /api/orders/bulk/confirm  → kiểm đơn
+     15/10: hỏi fulfillment_batches RUNNING của chủ shop còn sống (updatedAt < 3 phút = STALE_MS)
+            đơn đang nằm trong orderIds của lượt đó → bỏ qua "Đang được sắp xếp ở lượt trước — đợi lượt đó xong"
+            MỌI đơn sẵn sàng đều ở đúng MỘT lượt → 202 {batchId: lượt cũ, total, skipped, reattached: true}, KHÔNG tạo lượt mới
+     tạo fulfillment_batches (RUNNING, orderIds = đơn đem đi gọi sàn), trả 202 {batchId,total,skipped}
    batch-runner (tiến trình web, không pg-boss vì việc dài chặn hàng đợi)
      mỗi gian song song:
        Shopee  arrangeShipmentBatch: get_order_detail(package_list) 50 đơn → gom (kho, kênh) ≤50
@@ -30,7 +34,10 @@ POST /api/orders/bulk/confirm  → kiểm đơn, tạo fulfillment_batches (RUNN
 GET  /api/orders/bulk/confirm/:batchId → {status, done, total, confirmed, failed, notes}
      RUNNING quá 3 phút không cập nhật = FAILED (máy chủ khởi động lại)
 Giao diện: lib/api bulkConfirmOrders tự poll 1,5 s; nút "Sàn đã sắp xếp x/y…"; xong → đợi mã → in
+           reattached → toast "Lượt trước vẫn đang chạy — đang theo dõi tiếp" rồi poll lượt cũ như thường
 ```
+
+Chặn chồng lượt (15/10): `splitByRunningBatches` (hàm thuần, `confirm-skip.ts`) nhận các lượt RUNNING còn sống + id đơn chọn, trả `free` / `held` / `reattachTo`. Lượt "còn sống" = `updatedAt` trong 3 phút — cùng `STALE_MS` mà `getFulfillmentBatch` dùng để đánh FAILED, hai nơi phải cùng một số. Đơn bị giữ rải ở ≥2 lượt mà không còn đơn tự do → 409 `NO_READY_ORDERS` với câu "N đơn đang được sắp xếp ở lượt chuẩn bị trước — đợi lượt đó xong rồi tải lại danh sách, không bấm lại". Truy vấn đi qua chỉ mục riêng phần `fulfillment_batches_running_owner_idx (ownerId, updatedAt) WHERE status = 'RUNNING'` (gần như rỗng lúc bình thường); so khớp id đơn trong bộ nhớ vì mỗi chủ shop chỉ 0–2 lượt đang chạy, không cần GIN.
 
 In vận đơn: `fetchLabels(..., { combined: true })` khi không in kèm phiếu xuất hàng → Shopee tải MỘT PDF cho cả nhóm cùng loại phiếu; sàn từ chối ("khác hãng") → tải lẻ. Probe mã vận đơn (`/bulk/label-readiness`) cũng đi theo mẻ.
 
@@ -65,4 +72,12 @@ Anh Trung test 30 đơn Shopee (ANO 21 + DarkMan 9) ngay sau khi bản 14/10 lê
 - `batch-runner`: **nhịp tim 30 s** chạm `updatedAt` khi RUNNING, để lượt gọi sàn im lặng >3 phút không bị `getFulfillmentBatch` đánh FAILED oan.
 - Test: `fulfillment-confirm-skip.test.ts` 5 ca.
 
-**Chưa làm / theo dõi:** bước in vẫn là một request đồng bộ `/bulk/labels` (30 đơn: dựng vận đơn + poll + tải gộp); nếu log cho thấy request này bị cắt thì chuyển sang chạy nền giống Chuẩn bị hàng.
+**Đọc Supabase (15/10, cùng ngày):** lượt 1 (30 đơn) DONE sau 8,5 giây; 6 giây sau trình duyệt báo lỗi nên anh bấm lại → lượt 2 cùng 30 đơn được tạo **khi lượt 1 còn RUNNING** (dòng batch chưa kịp chuyển DONE lúc route kiểm đơn): 10 đơn bị bỏ qua, 20 đơn Shopee đã sắp xếp bị gọi lại và sàn từ chối `Package … not eligible for rescheduling`. Bảng `fulfillment_batches` không lưu danh sách đơn đầu vào nên route không có cách biết đơn nào đang ở lượt khác.
+
+**Sửa lần 2 (15/10) — chặn lượt chồng lên lượt đang chạy:**
+- Migration `20261015170000_fulfillment_batch_order_ids`: cột `orderIds JSONB NOT NULL DEFAULT '[]'` (không ghi lại bảng trên PG ≥ 11) + chỉ mục riêng phần `fulfillment_batches_running_owner_idx (ownerId, updatedAt) WHERE status = 'RUNNING'`. `startFulfillmentBatch` ghi id đơn thật sự đem đi gọi sàn.
+- `POST /bulk/confirm`: `findLiveRunningBatches(ownerId)` (RUNNING, `updatedAt` trong `STALE_MS` 3 phút) → `splitByRunningBatches`: đơn đang ở lượt sống bị bỏ qua với `IN_RUNNING_BATCH_REASON` ("Đang được sắp xếp ở lượt trước — đợi lượt đó xong"); mọi đơn sẵn sàng đều ở đúng MỘT lượt → `202 { batchId: lượt cũ, total, skipped, reattached: true }`, không tạo lượt mới; rải ≥2 lượt → 409 `NO_READY_ORDERS` câu "đợi lượt đó xong… không bấm lại". Log `[fulfillment] bulk/confirm … đang ở lượt <id>`.
+- Web: `bulkConfirmOrders(…, onReattached)` → hộp thoại `toast.info("Lượt trước vẫn đang chạy — đang theo dõi tiếp")` rồi poll lượt cũ như thường; kết quả cuối vẫn là của lượt cũ (confirmed/failed/skipped của lượt đó).
+- Test `fulfillment-confirm-skip.test.ts`: +1 ca câu 409 mới, +6 ca `splitByRunningBatches` (không lượt, bấm lại đúng 30 đơn → reattach, thêm đơn mới → giữ cũ + tự do mới, rải 2 lượt → không reattach, lượt khác đơn, một đơn ở hai lượt).
+
+**Chưa làm / theo dõi:** bước in vẫn là một request đồng bộ `/bulk/labels` (30 đơn: dựng vận đơn + poll + tải gộp); nếu log cho thấy request này bị cắt thì chuyển sang chạy nền giống Chuẩn bị hàng. Lượt chết thật (máy chủ khởi động lại) giữ đơn tối đa 3 phút rồi tự nhả — đúng ý, vì sàn có thể đã nhận một phần.

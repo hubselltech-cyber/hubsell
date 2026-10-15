@@ -1721,6 +1721,12 @@ export interface BulkConfirmStarted {
   batchId: string;
   total: number;
   skipped: { orderCode: string; reason: string }[];
+  /**
+   * 15/10: mọi đơn chọn đều đang ở đúng MỘT lượt trước còn chạy → máy chủ không
+   * tạo lượt mới, trả batchId lượt cũ để theo dõi tiếp (bấm lại sau 6 giây
+   * từng làm 20 đơn Shopee bị gọi sàn lần hai).
+   */
+  reattached?: boolean;
 }
 
 export interface BulkConfirmProgress extends BulkConfirmResult {
@@ -1751,15 +1757,18 @@ const CONFIRM_MAX_MS = 15 * 60_000;
 
 /**
  * Chuẩn bị hàng THẬT cho nhiều đơn: bắt đầu lượt chạy nền rồi hỏi tiến độ tới
- * khi xong. `onProgress(done, total)` để hộp thoại hiện "đã sắp xếp x/y".
+ * khi xong. `onProgress(done, total)` để hộp thoại hiện "đã sắp xếp x/y";
+ * `onReattached()` khi máy chủ bảo theo dõi tiếp lượt trước thay vì tạo mới.
  * Trả cùng hình dạng BulkConfirmResult như trước để phần in không đổi.
  */
 export async function bulkConfirmOrders(
   orderIds: string[],
   choices?: Record<string, FulfillChoice>,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  onReattached?: () => void
 ): Promise<BulkConfirmResult> {
   const started = await startBulkConfirm(orderIds, choices);
+  if (started.reattached) onReattached?.();
   onProgress?.(0, started.total);
   const t0 = Date.now();
   for (;;) {

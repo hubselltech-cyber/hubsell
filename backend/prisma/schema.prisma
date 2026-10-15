@@ -3912,6 +3912,9 @@ model FulfillmentBatch {
   total        Int
   /// Số đơn đã có kết quả (sàn nhận hoặc từ chối).
   done         Int                    @default(0)
+  /// id đơn thật sự đem đi gọi sàn ở lượt này (15/10/2026 — để lượt sau không
+  /// gọi lại đơn đang được lượt này xử lý; sự cố bấm 2 lần 30 đơn Shopee).
+  orderIds     Json                   @default("[]")
   confirmedIds Json                   @default("[]")
   skipped      Json                   @default("[]")
   failed       Json                   @default("[]")
@@ -3921,6 +3924,10 @@ model FulfillmentBatch {
   updatedAt    DateTime               @updatedAt
   finishedAt   DateTime?
 
+  // Chỉ mục RIÊNG PHẦN "lượt đang chạy của chủ shop" (routes/orders.ts bulk/confirm
+  // hỏi trước khi tạo lượt mới), chỉ có trong SQL migration
+  // 20261015170000_fulfillment_batch_order_ids:
+  //   fulfillment_batches_running_owner_idx (ownerId, updatedAt) WHERE status = 'RUNNING'
   @@index([ownerId, createdAt])
   @@map("fulfillment_batches")
 }

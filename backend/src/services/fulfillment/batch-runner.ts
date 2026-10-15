@@ -24,8 +24,13 @@ import { carrierFromName } from "../shipping";
 import { getFulfillmentAdapter } from "./index";
 import { readFulfillDefaults, type ArrangeResult, type FulfillChoice, type FulfillOrderRef } from "./types";
 
-/** Dòng RUNNING không được cập nhật quá lâu = tiến trình đã chết giữa chừng. */
-const STALE_MS = 3 * 60_000;
+/**
+ * Dòng RUNNING không được cập nhật quá lâu = tiến trình đã chết giữa chừng.
+ * Cùng ngưỡng này quyết định lượt nào còn "sống" khi chặn lượt mới chồng lên
+ * (findLiveRunningBatches) — hai nơi phải cùng một số, nếu không lượt bị
+ * getFulfillmentBatch coi là chết vẫn giữ đơn, hoặc ngược lại.
+ */
+export const STALE_MS = 3 * 60_000;
 /**
  * Nhịp tim: đang chạy thì chạm updatedAt đều đặn kể cả khi chưa có đơn nào xong
  * (15/10 — một lượt gọi sàn kéo dài, vd Shopee mass_ship_order + lùi về từng
@@ -79,8 +84,11 @@ function toRef(o: BatchOrderRow): FulfillOrderRef {
 /** Tạo dòng batch rồi chạy nền; trả về ngay để route phản hồi. */
 export async function startFulfillmentBatch(params: BatchStartParams): Promise<{ batchId: string; total: number }> {
   const total = [...params.groups.values()].reduce((s, g) => s + g.length, 0);
+  // orderIds: đơn thật sự đem đi gọi sàn — lượt sau đọc để không gọi lại đơn
+  // đang được lượt này xử lý (sự cố bấm 2 lần 30 đơn Shopee 15/10).
+  const orderIds = [...params.groups.values()].flatMap((g) => g.map((o) => o.id));
   const row = await prisma.fulfillmentBatch.create({
-    data: { ownerId: params.ownerId, total, skipped: params.skipped },
+    data: { ownerId: params.ownerId, total, orderIds, skipped: params.skipped },
     select: { id: true },
   });
   // Cố ý không await: request trả batchId ngay, việc gọi sàn chạy tiếp.
@@ -243,6 +251,32 @@ async function runBatch(batchId: string, params: BatchStartParams): Promise<void
       finishedAt: new Date(),
     },
   });
+}
+
+/** Một lượt RUNNING còn sống của chủ shop — đầu vào cho splitByRunningBatches. */
+export interface LiveRunningBatch {
+  id: string;
+  total: number;
+  orderIds: string[];
+}
+
+/**
+ * Các lượt RUNNING của chủ shop còn được chạm updatedAt trong STALE_MS (nhịp
+ * tim 30 s + tiến độ) — lượt im lặng lâu hơn coi như đã chết, không giữ đơn.
+ * Đi qua chỉ mục riêng phần fulfillment_batches_running_owner_idx; lúc bình
+ * thường 0–2 dòng.
+ */
+export async function findLiveRunningBatches(ownerId: string): Promise<LiveRunningBatch[]> {
+  const rows = await prisma.fulfillmentBatch.findMany({
+    where: { ownerId, status: "RUNNING", updatedAt: { gt: new Date(Date.now() - STALE_MS) } },
+    select: { id: true, total: true, orderIds: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    total: r.total,
+    orderIds: Array.isArray(r.orderIds) ? r.orderIds.filter((x): x is string => typeof x === "string") : [],
+  }));
 }
 
 /** Ảnh chụp tiến độ/kết quả cho giao diện; null = không có hoặc không thuộc chủ shop. */
