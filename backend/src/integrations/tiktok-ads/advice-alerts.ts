@@ -15,7 +15,7 @@
 import { dateKey, vnDateKey } from "../../lib/ads-dates";
 import { prisma } from "../../lib/prisma";
 import { notify } from "../../services/notifications";
-import { loadMinKeepPer100, loadStepChecks } from "./advice-inputs";
+import { loadCampaignFullDays, loadMinKeepPer100, loadStepChecks } from "./advice-inputs";
 import { computeTiktokAdsBreakeven } from "./breakeven";
 import { avgDailySpendOf, campaignAdvice, type CampaignAdviceKind } from "./campaign-advice";
 
@@ -28,6 +28,9 @@ export const ADVICE_ALERT_KINDS: ReadonlySet<CampaignAdviceKind> = new Set<Campa
   "target_below",
   "budget_capped",
   "target_binding",
+  // 15/10 đêm — ca không ra đơn: hạ ROI (không phân phối) / tạm dừng (tiêu tiền không ra đơn).
+  "no_delivery",
+  "no_orders",
 ]);
 
 export const NOTIFY_TYPE_TIKTOK_ADVICE = "tiktok-ads-advice";
@@ -74,12 +77,13 @@ export async function runTiktokAdviceAlerts(
       adviceKind: true,
       dailyPerf: {
         where: { date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${yesterday}T00:00:00Z`) } },
-        select: { date: true, expense: true, broadGmv: true },
+        select: { date: true, expense: true, broadGmv: true, broadOrder: true },
       },
     },
   });
   result.campaigns = rows.length;
   if (rows.length === 0) return result;
+  const fullDays = await loadCampaignFullDays(rows.map((c) => c.id), today);
 
   const breakeven = await computeTiktokAdsBreakeven({ id: channel.id, userId: channel.userId }).catch((err) => {
     console.error(`[TikTok Ads] Chuông kết luận — tính hòa vốn lỗi "${channel.shopName}":`, (err as Error).message);
@@ -99,9 +103,11 @@ export async function runTiktokAdviceAlerts(
   for (const c of rows) {
     let spend = 0;
     let gmv = 0;
+    let orders = 0;
     for (const p of c.dailyPerf) {
       spend += Number(p.expense);
       gmv += Number(p.broadGmv);
+      orders += p.broadOrder;
     }
     const advice = campaignAdvice({
       status: "ongoing",
@@ -110,6 +116,8 @@ export async function runTiktokAdviceAlerts(
       breakeven: breakeven?.byCampaignRowId.get(c.id) ?? null,
       spend,
       gmv,
+      orders,
+      fullDaysRunning: fullDays.get(c.id) ?? 0,
       avgDailySpend: avgDailySpendOf(
         c.dailyPerf.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
         today

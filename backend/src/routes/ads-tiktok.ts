@@ -74,8 +74,8 @@ import {
   saveCampaignProductIds,
 } from "../integrations/tiktok-ads/breakeven";
 import { TIKTOK_MARGIN_WINDOW_DAYS, tiktokEstProfit, type TiktokBreakeven } from "../lib/tiktok-breakeven";
-import { avgDailySpendOf, campaignAdvice, type CampaignAdvice } from "../integrations/tiktok-ads/campaign-advice";
-import { loadMinKeepPer100, loadStepChecks, saveMinKeepPer100 } from "../integrations/tiktok-ads/advice-inputs";
+import { avgDailySpendOf, campaignAdvice, type CampaignAdvice, noOrdersWindowOk } from "../integrations/tiktok-ads/campaign-advice";
+import { loadCampaignFullDays, loadMinKeepPer100, loadStepChecks, saveMinKeepPer100 } from "../integrations/tiktok-ads/advice-inputs";
 import { MIN_ORDERS_FOR_MARGIN } from "../integrations/shopee/ads-insights";
 import { VIDEO_STATUS_SENDING, sendVideoCommand } from "../integrations/tiktok-ads/send-command";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
@@ -245,6 +245,7 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
       })),
       (id) => marginOfCampaign.get(id)
     );
+    const fullDays = await loadCampaignFullDays(campaigns.map((c) => c.id), vnDateKey(0));
     for (const [spuId, p] of Object.entries(products)) {
       const main = mainCampaignOf.get(spuId)?.campaign;
       const row = rowOf.get(spuId);
@@ -258,6 +259,8 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
         breakevenProblem: row.verdict === "ok" || row.verdict === "target_below" ? "" : row.reason,
         spend: p.cost,
         gmv: p.gmv,
+        orders: p.orders,
+        fullDaysRunning: fullDays.get(main.id) ?? 0,
         avgDailySpend: avgDailySpendOf(daysOf.get(main.id) ?? [], to),
         roasTargetChangedAt: main.roasTargetChangedAt,
         minKeepPer100,
@@ -354,6 +357,12 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
       (id) => breakeven?.byCampaignRowId.get(id)?.margin
     );
 
+    // Số ngày trọn chiến dịch đã có số — ca "không ra đơn" (15/10/2026).
+    const fullDays = await loadCampaignFullDays(rows.map((c) => c.id), vnDateKey(0));
+    // Chỉ xét ca "không ra đơn" khi khoảng xem có đủ 3 ngày trọn VÀ kết nối quảng cáo còn hiệu lực (mất kết nối → số DB không cập nhật,
+    // 0 đơn là do thiếu số chứ không phải TikTok không phân phối — gian demo 15/10 báo nhầm cả 6 chiến dịch).
+    const selLink = selected ? linkOf.get(selected.id) : undefined;
+    const noOrdersOk = !!selLink && selLink.auth.status === "ACTIVE" && selLink.status === "ACTIVE" && noOrdersWindowOk(period.startDate, period.endDate, vnDateKey(0));
     const seriesMap = new Map<string, { spend: number; gmv: number; orders: number }>();
     const campaigns = rows.map((c) => {
       let spend = 0;
@@ -401,6 +410,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
           breakeven: breakeven?.byCampaignRowId.get(c.id) ?? null,
           spend,
           gmv,
+          orders,
+          fullDaysRunning: noOrdersOk ? (fullDays.get(c.id) ?? 0) : null,
           avgDailySpend: avgDailySpendOf(
             c.dailyPerf.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
             vnDateKey(0)
@@ -570,6 +581,9 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       const breakeven = await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null);
       const campaignBreakeven = breakeven?.byCampaignRowId.get(campaign.id);
       const minKeepPer100 = await loadMinKeepPer100(campaign.channelId);
+      const fullDays = await loadCampaignFullDays([campaign.id], vnDateKey(0));
+      // Khoảng xem phải đủ 3 ngày trọn mới xét ca "không ra đơn" (scope đã kiểm kết nối còn hiệu lực ở trên).
+      const noOrdersOk = noOrdersWindowOk(period.startDate, period.endDate, vnDateKey(0));
       const stepChecks = await loadStepChecks(
         [
           {
@@ -665,6 +679,8 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
             breakeven: campaignBreakeven ?? null,
             spend: products.reduce((s, x) => s + x.cost, 0),
             gmv: products.reduce((s, x) => s + x.gmv, 0),
+            orders: products.reduce((s, x) => s + x.orders, 0),
+            fullDaysRunning: noOrdersOk ? (fullDays.get(campaign.id) ?? 0) : null,
             avgDailySpend: avgDailySpendOf(
               perfDays.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
               vnDateKey(0)

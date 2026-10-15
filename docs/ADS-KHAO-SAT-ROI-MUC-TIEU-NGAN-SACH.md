@@ -238,6 +238,31 @@ Trường `anchorMargin` + `scaledAnchorRoi` trong kết quả; test "quy mốc 
   hiện trong danh sách Thông báo với câu kết luận.
 - **FE** `tiktok-advice-body.tsx` `ConclusionBlock`: khối Kết luận (ô Nên chạy) / Đề xuất (chẩn đoán chiến dịch) có viền trái + nền + chữ
   theo tông (đỏ lỗ · vàng cần làm · xanh ổn · xám chưa kết luận), nhãn in hoa nhỏ — điểm nhấn anh yêu cầu.
+### 7f. Không ra đơn thì sao — ba kết luận mới (anh hỏi 15/10 đêm, chốt "làm như em đề xuất")
+
+Câu hỏi của anh: "chạy theo đề xuất mà không ra đơn thì sao" và "sau bao lâu thì nhận định hạ ROI". Trước đó bộ chẩn đoán chỉ có
+"Chưa tiêu tiền" (xám, không chuông) hoặc "Quảng cáo đang lỗ" (khuyên nâng ROI — sai thuốc khi 0 đơn). Nay `campaign-advice.ts` xét
+ca 0 đơn TRƯỚC mọi phép so ROI, theo số ngày trọn chiến dịch đã có số (`loadCampaignFullDays`: ngày đầu có dòng AdsCampaignDailyPerf →
+hết hôm qua) và mức tiêu:
+
+| Điều kiện | Kết luận | Việc nên làm | Chuông |
+|---|---|---|---|
+| < 3 ngày trọn, 0 đơn | `learning` "Đang khởi động" (xám) | Giữ nguyên tới hết 3 ngày trọn | không |
+| ≥ 3 ngày trọn, 0 đơn, tiêu < 20% ngân sách (hoặc chưa tới 100.000đ) | `no_delivery` "TikTok không phân phối" (vàng) | Hạ ROI một nấc 10%, không dưới sàn giữ lãi, giữ 3 ngày trọn; sát sàn / chạy Phân phối tối đa rồi → thêm video hoặc Phân phối tối đa 3–5 ngày | có |
+| ≥ 3 ngày trọn, 0 đơn, tiêu ≥ 20% ngân sách và ≥ 100.000đ | `no_orders` "Tiêu tiền không ra đơn" (đỏ) | ĐỪNG hạ ROI; tạm dừng trong Seller Center, xem lại giá / ảnh / video | có |
+| vừa đổi mục tiêu < 72 giờ, 0 đơn | `target_watching` | Giữ nguyên, chưa có đơn lúc học lại là bình thường | không |
+
+Nguồn mốc: 3 ngày trọn = TikTok "Giữ mỗi cài đặt ROI ít nhất 3 ngày trọn vẹn" (Best practices for Product GMV Max); "Phân phối tối đa 3–5
+ngày khởi động, ngân sách ≥ 10 × giá trị đơn" = TikTok Best practices for Max delivery; bài Shop Ads cũ (02/2025) "không chỉnh gì 3 ngày
+đầu, chạy tối thiểu 7 ngày". **20% ngân sách** và **100.000đ** (= mức ngân sách tối thiểu) là MẶC ĐỊNH TỰ CHỌN
+(`TIKTOK_NO_DELIVERY_BUDGET_PCT`, `TIKTOK_MIN_DAILY_BUDGET` ở lib/tiktok-breakeven.ts). Trần "tối đa 2 nấc hạ" CHƯA cưỡng chế (không lưu
+số nấc đã hạ) — thay bằng sàn giữ lãi: sát sàn thì thôi hạ. Có đơn hoặc không biết ngày bật → luật cũ nguyên vẹn. **Hai lưới an toàn:** khoảng xem phải đủ 3 ngày trọn (`noOrdersWindowOk` — xem 1 ngày thì
+không kết luận) và kết nối quảng cáo còn hiệu lực (mất kết nối → số DB không cập nhật, 0 đơn là thiếu số; gian demo 15/10 từng báo nhầm cả 6
+chiến dịch) — không đạt thì truyền `fullDaysRunning = null`. Ba route (Tổng quan, trang
+chiến dịch, tab Hòa vốn) + chuông cùng truyền `orders` + `fullDaysRunning`; hai loại mới vào `ADVICE_ALERT_KINDS`. Ô "Nên chạy" thêm câu
+trong tooltip: "Không ra đơn thì 3 ngày đầu mất tối đa ngân sách × 3; sau 3 ngày trọn trợ lý sẽ nhắc hạ ROI hoặc tạm dừng". Test: 6 ca mới
+ở `tiktok-ads-campaign-advice`, cập nhật `tiktok-ads-advice-alerts`.
+
 - **Sau deploy:** Render chạy migration; log worker `[Auto-sync] "<gian>" nhận định chiến dịch TikTok: N/M đổi kết luận, K chuông` ở lượt
   ngày đầu (lần đầu mọi chiến dịch đều "đổi" từ "" → chuông cho mọi chiến dịch đang có việc — ANO có thể nhận vài chuông một lúc, một lần).
 

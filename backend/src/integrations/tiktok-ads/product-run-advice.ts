@@ -48,14 +48,14 @@ import { RECOMMEND_THRESHOLDS } from "../shopee/ads-recommend";
 import { DEFAULT_MIN_KEEP_PER_100, profitFloorRoas } from "../shopee/ads-assistant-rules";
 // Mốc 80% ngân sách của TikTok nằm ở lib/tiktok-breakeven.ts (campaign-advice.ts cũng lấy từ đó) — không import campaign-advice để
 // khỏi vòng product-run-advice → campaign-advice → breakeven → product-run-advice.
-import { TIKTOK_BUDGET_USED_PCT as BUDGET_USED_PCT } from "../../lib/tiktok-breakeven";
+import { TIKTOK_BUDGET_USED_PCT as BUDGET_USED_PCT, TIKTOK_MIN_DAILY_BUDGET, TIKTOK_MIN_FULL_DAYS } from "../../lib/tiktok-breakeven";
 
 /** "Thấp hơn một chút" so với mốc đang đạt (TikTok không nêu %) — MẶC ĐỊNH TỰ CHỌN, đối xứng mốc 90% mục tiêu của TikTok. */
 export const RUN_ADVICE_ANCHOR_FACTOR = 0.9;
 /** Ngân sách = 2 × GMV ÷ ROI mục tiêu — số của TikTok (Best practices for Product GMV Max). */
 export const RUN_ADVICE_BUDGET_GMV_MULTIPLIER = 2;
-/** Mức tối thiểu VND của chiến dịch PRODUCT_SALES theo phụ lục Marketing API; GMV Max chưa có trang riêng. */
-export const RUN_ADVICE_MIN_BUDGET = 100_000;
+/** Mức tối thiểu VND của chiến dịch PRODUCT_SALES theo phụ lục Marketing API; GMV Max chưa có trang riêng (lib/tiktok-breakeven.ts). */
+export const RUN_ADVICE_MIN_BUDGET = TIKTOK_MIN_DAILY_BUDGET;
 export const RUN_ADVICE_PACE_SLOW = 0.8;
 export const RUN_ADVICE_PACE_UP = 1.2;
 
@@ -351,6 +351,10 @@ export function runBudget(i: ProductRunAdviceInput, tier: Exclude<ProductRunTier
     notes.push(`Nâng lên ${vnd(RUN_ADVICE_MIN_BUDGET)}/ngày — mức tối thiểu của chiến dịch TikTok Shop tại Việt Nam (phụ lục API, GMV Max chưa có mức riêng).`);
     budget = RUN_ADVICE_MIN_BUDGET;
   }
+  const daily = Math.max(roundK(budget), RUN_ADVICE_MIN_BUDGET);
   notes.push(`Ngân sách là trần: TikTok chỉ tiêu khi đạt ROI mục tiêu; tiêu từ ${BUDGET_USED_PCT}% thì trợ lý chiến dịch sẽ nhắc tăng.`);
-  return { daily: Math.max(roundK(budget), RUN_ADVICE_MIN_BUDGET), byTiktok, note: notes.join(" ") };
+  // Rủi ro gói gọn (anh Trung 15/10 đêm: "không ra đơn thì sao"): 3 ngày trọn đầu là lúc chưa nhận định — mất tối đa ngân sách × 3; sau đó trợ lý
+  // chiến dịch kết luận "TikTok không phân phối" (hạ ROI) hoặc "Tiêu tiền không ra đơn" (tạm dừng).
+  notes.push(`Không ra đơn thì ${TIKTOK_MIN_FULL_DAYS} ngày đầu mất tối đa ${vnd(daily * TIKTOK_MIN_FULL_DAYS)}; sau ${TIKTOK_MIN_FULL_DAYS} ngày trọn trợ lý sẽ nhắc hạ ROI hoặc tạm dừng.`);
+  return { daily, byTiktok, note: notes.join(" ") };
 }

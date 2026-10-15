@@ -75,6 +75,15 @@ export const TIKTOK_TARGET_STEP_WAIT_HOURS = 72;
  */
 export const TIKTOK_BUDGET_USED_PCT = 80;
 export const TIKTOK_BUDGET_STEP_PCT = 0.3;
+/** Mức ngân sách ngày tối thiểu VND của chiến dịch PRODUCT_SALES theo phụ lục Marketing API (GMV Max chưa có trang riêng). */
+export const TIKTOK_MIN_DAILY_BUDGET = 100_000;
+/**
+ * Số ngày trọn tối thiểu trước khi nhận định "không ra đơn" (TikTok: "Giữ mỗi cài đặt ROI ít nhất 3 ngày trọn vẹn trước khi điều
+ * chỉnh" — cùng mốc với khóa 72 giờ) và % ngân sách dưới mức đó coi là "TikTok không phân phối" (20% — MẶC ĐỊNH TỰ CHỌN, anh Trung
+ * chốt 15/10/2026 đêm; docs/ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md mục 7f).
+ */
+export const TIKTOK_MIN_FULL_DAYS = 3;
+export const TIKTOK_NO_DELIVERY_BUDGET_PCT = 20;
 
 /** Cửa sổ hòa vốn tính tới lúc gọi: TIKTOK_MARGIN_WINDOW_DAYS ngày, theo ngày tạo đơn. */
 export function tiktokMarginWindowRange(): DateRangeFilter {

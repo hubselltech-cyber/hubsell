@@ -25,7 +25,10 @@ describe("adviceAlertPlan — ghi khi đổi, chuông khi đổi sang loại có
     expect(adviceAlertPlan("target_hold", "target_hold")).toEqual({ changed: false, alert: false });
   });
 
-  it("bộ loại có việc đúng bốn loại cần sửa trong Seller Center", () => {
-    expect([...ADVICE_ALERT_KINDS].sort()).toEqual(["budget_capped", "losing", "target_below", "target_binding"]);
+  it("bộ loại có việc = bốn loại sửa mục tiêu / ngân sách + hai loại không ra đơn (15/10 đêm)", () => {
+    expect([...ADVICE_ALERT_KINDS].sort()).toEqual(["budget_capped", "losing", "no_delivery", "no_orders", "target_below", "target_binding"]);
+    expect(adviceAlertPlan("learning", "no_delivery")).toEqual({ changed: true, alert: true });
+    expect(adviceAlertPlan("no_delivery", "no_orders")).toEqual({ changed: true, alert: true });
+    expect(adviceAlertPlan("", "learning")).toEqual({ changed: true, alert: false });
   });
 });

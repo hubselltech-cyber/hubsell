@@ -3089,6 +3089,9 @@ export interface TiktokAdsCampaignAdvice {
   kind:
     | "paused"
     | "no_spend"
+    | "learning" // 15/10: mới bật, chưa đủ 3 ngày trọn
+    | "no_delivery" // 15/10: ≥ 3 ngày trọn, 0 đơn, tiêu < 20% ngân sách → hạ ROI một nấc
+    | "no_orders" // 15/10: ≥ 3 ngày trọn, 0 đơn, đã tiêu tiền thật → tạm dừng
     | "no_breakeven"
     | "losing"
     | "target_below"

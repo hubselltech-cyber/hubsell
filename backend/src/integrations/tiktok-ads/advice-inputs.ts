@@ -36,6 +36,28 @@ export async function saveMinKeepPer100(channelId: string, minKeepPer100: number
   return next.profit.minKeepPer100;
 }
 
+/**
+ * Số NGÀY TRỌN chiến dịch đã có số (ngày đầu có dòng AdsCampaignDailyPerf → hết hôm qua) — "đã bật bao lâu" cho nhận định không ra đơn
+ * (15/10/2026). Lần nối đầu Hubsell kéo lùi 30 ngày nên ngày đầu có số ≈ ngày bật với chiến dịch mới; chiến dịch cũ hơn 30 ngày thì
+ * số này chỉ là cận dưới (vẫn ≥ 3, đủ cho luật). Một câu groupBy cho cả danh sách; chiến dịch chưa có dòng nào → 0.
+ */
+export async function loadCampaignFullDays(campaignIds: string[], today: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (campaignIds.length === 0) return out;
+  const rows = await prisma.adsCampaignDailyPerf.groupBy({
+    by: ["adsCampaignId"],
+    where: { adsCampaignId: { in: campaignIds } },
+    _min: { date: true },
+  });
+  const todayMs = new Date(`${today}T00:00:00Z`).getTime();
+  for (const r of rows) {
+    const first = r._min.date;
+    if (!first) continue;
+    out.set(r.adsCampaignId, Math.max(0, Math.floor((todayMs - first.getTime()) / 86_400_000)));
+  }
+  return out;
+}
+
 export interface StepCheckCampaign {
   id: string;
   roasTarget: number | null;

@@ -26,7 +26,15 @@
 // ============================================================
 
 import { breakevenUnusableReason } from "./auto-rules";
-import { TIKTOK_BUDGET_STEP_PCT, TIKTOK_BUDGET_USED_PCT, TIKTOK_TARGET_STEP_WAIT_HOURS, type TiktokBreakeven } from "../../lib/tiktok-breakeven";
+import {
+  TIKTOK_BUDGET_STEP_PCT,
+  TIKTOK_BUDGET_USED_PCT,
+  TIKTOK_MIN_DAILY_BUDGET,
+  TIKTOK_MIN_FULL_DAYS,
+  TIKTOK_NO_DELIVERY_BUDGET_PCT,
+  TIKTOK_TARGET_STEP_WAIT_HOURS,
+  type TiktokBreakeven,
+} from "../../lib/tiktok-breakeven";
 import { profitPer100AtRoi } from "./breakeven";
 import {
   DEFAULT_MIN_KEEP_PER_100,
@@ -50,6 +58,18 @@ export function nextBudgetStep(budget: number): number | null {
 export const TARGET_STEP_WAIT_HOURS = TIKTOK_TARGET_STEP_WAIT_HOURS;
 export { TARGET_STEP_PCT, TARGET_BINDING_BAND, DEFAULT_MIN_KEEP_PER_100 };
 
+/**
+ * Khoảng xem có đủ MIN_FULL_DAYS ngày TRỌN (bỏ hôm nay) để xét ca "không ra đơn" không. Thuần. Khoảng 1–2 ngày hoặc chỉ hôm nay → false
+ * → route truyền fullDaysRunning = null (luật cũ), tránh kết luận "không phân phối" chỉ vì khách đang xem một ngày.
+ */
+export function noOrdersWindowOk(startDate: string, endDate: string, today: string): boolean {
+  const yesterday = new Date(new Date(`${today}T00:00:00Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
+  const end = endDate < yesterday ? endDate : yesterday;
+  if (startDate > end) return false;
+  const days = Math.round((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / 86_400_000) + 1;
+  return days >= MIN_FULL_DAYS;
+}
+
 /** Nấc hạ kế tiếp của ROI mục tiêu: giảm TARGET_STEP_PCT, 1 số lẻ, không thủng sàn. null = đã sát sàn. */
 export function nextRoiTargetStep(target: number, floor: number): number | null {
   const stepped = Math.round(target * (1 - TARGET_STEP_PCT) * 10) / 10;
@@ -64,9 +84,17 @@ export function targetWatchHoursLeft(changedAt: Date | null | undefined, now: Da
   return left > 0 ? Math.ceil(left) : 0;
 }
 
+/** Số ngày trọn tối thiểu trước khi nhận định không ra đơn (TikTok: giữ mỗi mức ROI ≥ 3 ngày trọn). */
+export const MIN_FULL_DAYS = TIKTOK_MIN_FULL_DAYS;
+/** Dưới mức này của ngân sách ngày = "TikTok không phân phối" (20% — mặc định tự chọn). */
+export const NO_DELIVERY_BUDGET_PCT = TIKTOK_NO_DELIVERY_BUDGET_PCT;
+
 export type CampaignAdviceKind =
   | "paused" // chiến dịch đang tắt — không chẩn đoán
   | "no_spend" // chưa tiêu tiền trong khoảng xem
+  | "learning" // 15/10: mới bật, chưa đủ MIN_FULL_DAYS ngày trọn mà chưa có đơn → chưa nhận định
+  | "no_delivery" // 15/10: ≥ MIN_FULL_DAYS ngày trọn, 0 đơn, tiêu < NO_DELIVERY_BUDGET_PCT% ngân sách → TikTok không phân phối: hạ ROI một nấc
+  | "no_orders" // 15/10: ≥ MIN_FULL_DAYS ngày trọn, 0 đơn mà đã tiêu tiền thật → tạm dừng, đừng hạ ROI
   | "no_breakeven" // chưa có mốc hòa vốn tin được → chưa kết luận lãi / lỗ
   | "losing" // ROI thực dưới hòa vốn
   | "target_below" // đang lãi nhưng ROI mục tiêu đặt dưới hòa vốn
@@ -90,6 +118,10 @@ export interface CampaignAdviceInput {
   /** Chi tiêu + doanh thu sàn báo trong khoảng xem. */
   spend: number;
   gmv: number;
+  /** Số đơn sàn báo trong khoảng xem (broadOrder); bỏ trống = không xét ca "không ra đơn". */
+  orders?: number;
+  /** Số ngày trọn chiến dịch đã có số (advice-inputs loadCampaignFullDays); null / bỏ trống = không biết → không xét ca "không ra đơn". */
+  fullDaysRunning?: number | null;
   /** Chi tiêu trung bình của những NGÀY TRỌN có tiêu tiền trong khoảng xem (không tính hôm nay); null = chưa có ngày nào. */
   avgDailySpend: number | null;
   /** Lần gần nhất Hubsell thấy ROI mục tiêu đổi (AdsCampaign.roasTargetChangedAt); còn trong khóa thì không gợi ý hạ tiếp. */
@@ -178,6 +210,72 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
   });
 
   if (i.status !== "ongoing") return make("paused", "Đang tạm dừng", "muted", [], "Chiến dịch đang tắt nên không có gì để chẩn đoán.");
+
+  // KHÔNG RA ĐƠN (anh Trung 15/10/2026 đêm: "chạy theo đề xuất mà không ra đơn thì sao / sau bao lâu thì nhận định hạ ROI") — xét TRƯỚC mọi
+  // phép so ROI vì ROI 0 không nói gì về mục tiêu. Ba ca theo số ngày trọn đã bật và mức tiêu:
+  //   · chưa đủ MIN_FULL_DAYS ngày trọn → "Đang khởi động", chưa nhận định (TikTok tối ưu ROI theo ngày, giữ mỗi mức ≥ 3 ngày trọn);
+  //   · đủ ngày, tiêu < NO_DELIVERY_BUDGET_PCT% ngân sách (hoặc chưa tới mức ngân sách tối thiểu) → "TikTok không phân phối": ROI mục tiêu cao
+  //     hơn mức máy tìm được khách → hạ MỘT nấc 10%, không dưới sàn, chờ 3 ngày trọn; sát sàn rồi thì thêm video / Phân phối tối đa 3–5 ngày
+  //     (TikTok "Best practices for Max delivery": khởi động bằng Max delivery 3–5 ngày, ngân sách ≥ 10 × giá trị đơn);
+  //   · đủ ngày, đã tiêu tiền thật mà 0 đơn → "Tiêu tiền không ra đơn": ĐỪNG hạ ROI (hạ chỉ cho máy tiêu mạnh hơn), tạm dừng, xem lại giá / ảnh / video.
+  const fullDays = i.fullDaysRunning ?? null;
+  if (i.orders != null && i.orders <= 0 && fullDays != null) {
+    const daysLine = `Bật được ${fullDays} ngày trọn, chưa có đơn nào.`;
+    if (fullDays < MIN_FULL_DAYS) {
+      return make(
+        "learning",
+        "Đang khởi động",
+        "muted",
+        [daysLine, i.spend > 0 ? `Đã tiêu ${vnd(i.spend)}.` : "Chưa tiêu tiền."],
+        `Mới bật, chưa đủ ${MIN_FULL_DAYS} ngày trọn để nhận định — TikTok tối ưu ROI theo ngày, giữ nguyên cài đặt tới hết ${MIN_FULL_DAYS} ngày trọn.`
+      );
+    }
+    const spendLine =
+      budgetUsedPct != null ? `Mỗi ngày tiêu khoảng ${budgetUsedPct}% ngân sách (${vnd(i.budget)}).` : i.spend > 0 ? `Đã tiêu ${vnd(i.spend)}.` : "Chưa tiêu tiền trong khoảng xem.";
+    const lowDelivery = budgetUsedPct != null ? budgetUsedPct < NO_DELIVERY_BUDGET_PCT : i.spend < TIKTOK_MIN_DAILY_BUDGET;
+    if (!lowDelivery && i.spend >= TIKTOK_MIN_DAILY_BUDGET) {
+      return make(
+        "no_orders",
+        "Tiêu tiền không ra đơn",
+        "warn",
+        [daysLine, spendLine],
+        `Đã tiêu ${vnd(i.spend)} mà chưa có đơn nào — đừng hạ ROI mục tiêu, hạ chỉ cho TikTok tiêu mạnh hơn vào thứ chưa bán được. Tạm dừng chiến dịch trong Seller Center, xem lại giá, ảnh, video rồi mới chạy lại.`,
+        { editInSellerCenter: true }
+      );
+    }
+    // Không phân phối: sàn giữ lãi (nếu đã có hòa vốn tin được) chặn nấc hạ; chưa có hòa vốn thì vẫn hạ 10% nhưng không có sàn để chặn.
+    const beEarly = (i.breakevenProblem ?? breakevenUnusableReason(i.breakeven)) ? null : i.breakeven;
+    const floorEarly =
+      beEarly && beEarly.margin != null && beEarly.breakevenRoi != null
+        ? Math.max(profitFloorRoas(beEarly.margin, minKeepPer100) ?? 0, Math.ceil(beEarly.breakevenRoi * 10 - 1e-9) / 10)
+        : null;
+    const hoursLeft = targetWatchHoursLeft(i.roasTargetChangedAt, i.now ?? new Date());
+    if (i.roasTarget != null && hoursLeft > 0) {
+      return make(
+        "target_watching",
+        "Theo dõi sau đổi mục tiêu",
+        "muted",
+        [daysLine, spendLine],
+        `Mục tiêu vừa đổi chưa đủ ${TARGET_STEP_WAIT_HOURS} giờ — chưa có đơn trong lúc TikTok học lại là bình thường. Giữ nguyên, còn khoảng ${hoursLeft} giờ nữa mới xét tiếp.`,
+        { safeTarget: floorEarly, watchHoursLeft: hoursLeft }
+      );
+    }
+    const nextTarget = i.roasTarget != null ? nextRoiTargetStep(i.roasTarget, floorEarly ?? 0) : null;
+    const maxDelivery = `thêm video mới hoặc chạy Phân phối tối đa ${MIN_FULL_DAYS}–5 ngày để TikTok có dữ liệu (cách TikTok khuyên cho sản phẩm chưa có lịch sử)`;
+    const conclusion =
+      i.roasTarget == null
+        ? `Chiến dịch Phân phối tối đa mà vẫn không tiêu, không đơn — vấn đề ở video hoặc sản phẩm, không phải mục tiêu: thêm video, xem lại giá và ảnh.`
+        : nextTarget == null
+          ? `ROI mục tiêu ${num(i.roasTarget)} đã sát sàn giữ lãi${floorEarly != null ? ` ${num(floorEarly)}` : ""}, không hạ nữa — ${maxDelivery}.`
+          : `ROI mục tiêu ${num(i.roasTarget)} cao hơn mức TikTok tìm được khách nên máy gần như không phân phối. Hạ một nấc xuống ${num(nextTarget)}` +
+            `${floorEarly != null ? ` (không dưới ${num(floorEarly)})` : " (chưa có hòa vốn để chặn sàn — nhập giá vốn)"}, giữ ${MIN_FULL_DAYS} ngày trọn rồi xét tiếp; vẫn không phân phối thì ${maxDelivery}.`;
+    return make("no_delivery", "TikTok không phân phối", "info", [daysLine, spendLine], conclusion, {
+      editInSellerCenter: true,
+      nextTarget,
+      safeTarget: floorEarly,
+    });
+  }
+
   if (!(i.spend > 0)) return make("no_spend", "Chưa tiêu tiền", "muted", [], "Chiến dịch chưa tiêu tiền trong khoảng ngày đang xem.");
 
   const roi = i.gmv / i.spend;

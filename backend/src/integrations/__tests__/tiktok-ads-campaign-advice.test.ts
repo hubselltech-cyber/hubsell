@@ -5,6 +5,7 @@ import {
   campaignAdvice,
   nextRoiTargetStep,
   targetWatchHoursLeft,
+  noOrdersWindowOk,
   type CampaignAdviceInput,
 } from "../tiktok-ads/campaign-advice";
 import type { TiktokBreakeven } from "../../lib/tiktok-breakeven";
@@ -226,5 +227,81 @@ describe("avgDailySpendOf", () => {
     ];
     expect(avgDailySpendOf(days, "2026-09-19")).toBe(250_000);
     expect(avgDailySpendOf([{ date: "2026-09-19", expense: 50_000 }], "2026-09-19")).toBeNull();
+  });
+});
+
+// KHÔNG RA ĐƠN (anh Trung 15/10/2026 đêm: "sau bao lâu thì nhận định hạ ROI khi không ra đơn") — mốc 3 ngày trọn của TikTok, 20% ngân sách tự chọn.
+describe("campaignAdvice — không ra đơn: khởi động / không phân phối / tiêu tiền không ra đơn", () => {
+  const zero = (over: Partial<CampaignAdviceInput> = {}) => input({ gmv: 0, orders: 0, ...over });
+
+  it("chưa đủ 3 ngày trọn → Đang khởi động, không nhận định", () => {
+    const a = campaignAdvice(zero({ fullDaysRunning: 2, spend: 50_000, avgDailySpend: 25_000 }));
+    expect(a.kind).toBe("learning");
+    expect(a.tone).toBe("muted");
+    expect(a.conclusion).toContain("chưa đủ 3 ngày trọn");
+    expect(campaignAdvice(zero({ fullDaysRunning: 0, spend: 0, avgDailySpend: null })).kind).toBe("learning");
+  });
+
+  it("đủ 3 ngày, tiêu < 20% ngân sách, 0 đơn → TikTok không phân phối: hạ một nấc 10%, không dưới sàn giữ lãi 6,7", () => {
+    const a = campaignAdvice(zero({ fullDaysRunning: 3, spend: 60_000, avgDailySpend: 20_000 })); // 1,3% ngân sách 1,5tr
+    expect(a.kind).toBe("no_delivery");
+    expect(a.label).toBe("TikTok không phân phối");
+    expect(a.tone).toBe("info");
+    expect(a.nextTarget).toBe(13.5);
+    expect(a.safeTarget).toBe(6.7);
+    expect(a.editInSellerCenter).toBe(true);
+    expect(a.conclusion).toContain("Hạ một nấc xuống 13,5 (không dưới 6,7), giữ 3 ngày trọn rồi xét tiếp");
+    expect(a.conclusion).toContain("Phân phối tối đa 3–5 ngày");
+    // Tiêu lặt vặt (dưới mức ngân sách tối thiểu) cũng là không phân phối dù % ngân sách không tính được.
+    expect(campaignAdvice(zero({ fullDaysRunning: 5, spend: 40_000, avgDailySpend: null, budget: 0 })).kind).toBe("no_delivery");
+    // Không có hòa vốn tin được → vẫn hạ 10% nhưng nói rõ không có sàn chặn.
+    const nb = campaignAdvice(zero({ fullDaysRunning: 3, spend: 60_000, avgDailySpend: 20_000, breakeven: null }));
+    expect(nb.kind).toBe("no_delivery");
+    expect(nb.nextTarget).toBe(13.5);
+    expect(nb.conclusion).toContain("chưa có hòa vốn để chặn sàn");
+  });
+
+  it("không phân phối mà mục tiêu đã sát sàn / chạy Phân phối tối đa → không hạ nữa, thêm video", () => {
+    const floor = campaignAdvice(zero({ fullDaysRunning: 4, spend: 30_000, avgDailySpend: 10_000, roasTarget: 6.7 }));
+    expect(floor.kind).toBe("no_delivery");
+    expect(floor.nextTarget).toBeNull();
+    expect(floor.conclusion).toContain("đã sát sàn giữ lãi 6,7, không hạ nữa");
+    const md = campaignAdvice(zero({ fullDaysRunning: 4, spend: 30_000, avgDailySpend: 10_000, roasTarget: null }));
+    expect(md.kind).toBe("no_delivery");
+    expect(md.conclusion).toContain("Phân phối tối đa mà vẫn không tiêu");
+  });
+
+  it("vừa hạ mục tiêu chưa đủ 72 giờ mà chưa có đơn → theo dõi, không hạ tiếp", () => {
+    const now = new Date("2026-10-15T12:00:00Z");
+    const a = campaignAdvice(zero({ fullDaysRunning: 5, spend: 30_000, avgDailySpend: 10_000, roasTargetChangedAt: new Date("2026-10-14T12:00:00Z"), now }));
+    expect(a.kind).toBe("target_watching");
+    expect(a.watchHoursLeft).toBe(48);
+    expect(a.conclusion).toContain("chưa có đơn trong lúc TikTok học lại là bình thường");
+  });
+
+  it("đủ 3 ngày, tiêu tiền thật (≥ 20% ngân sách, ≥ 100.000đ) mà 0 đơn → Tiêu tiền không ra đơn: tạm dừng, đừng hạ ROI", () => {
+    const a = campaignAdvice(zero({ fullDaysRunning: 3, spend: 900_000, avgDailySpend: 300_000 })); // 20% ngân sách 1,5tr
+    expect(a.kind).toBe("no_orders");
+    expect(a.tone).toBe("warn");
+    expect(a.nextTarget).toBeNull();
+    expect(a.editInSellerCenter).toBe(true);
+    expect(a.conclusion).toContain("Đã tiêu 900.000đ mà chưa có đơn nào — đừng hạ ROI mục tiêu");
+    expect(a.conclusion).toContain("Tạm dừng chiến dịch trong Seller Center");
+  });
+
+  it("có đơn hoặc không biết ngày bật → luật cũ nguyên vẹn", () => {
+    expect(campaignAdvice(input({ orders: 10, fullDaysRunning: 1 })).kind).toBe("target_binding");
+    expect(campaignAdvice(zero({ spend: 0, avgDailySpend: null })).kind).toBe("no_spend"); // fullDaysRunning bỏ trống
+    expect(campaignAdvice(zero({ spend: 0, avgDailySpend: null, fullDaysRunning: null })).kind).toBe("no_spend");
+  });
+});
+
+describe("noOrdersWindowOk — khoảng xem phải đủ 3 ngày trọn (bỏ hôm nay) mới xét ca không ra đơn", () => {
+  it("7 ngày qua / 3 ngày trọn → được; chỉ hôm nay / 2 ngày / khoảng tương lai → không", () => {
+    expect(noOrdersWindowOk("2026-10-09", "2026-10-15", "2026-10-15")).toBe(true); // 09→14 = 6 ngày trọn
+    expect(noOrdersWindowOk("2026-10-12", "2026-10-14", "2026-10-15")).toBe(true); // đúng 3
+    expect(noOrdersWindowOk("2026-10-13", "2026-10-15", "2026-10-15")).toBe(false); // 13→14 = 2
+    expect(noOrdersWindowOk("2026-10-15", "2026-10-15", "2026-10-15")).toBe(false); // chỉ hôm nay
+    expect(noOrdersWindowOk("2026-10-16", "2026-10-20", "2026-10-15")).toBe(false);
   });
 });

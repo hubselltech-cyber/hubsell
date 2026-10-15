@@ -48,7 +48,7 @@ type RowVerdict = TiktokProductBreakevenVerdict;
 type AdsOf = TiktokProductAdsData["products"][string] | undefined;
 
 /** Chẩn đoán ĐÃ kết luận được lãi / lỗ (các loại còn lại để nhận định của dòng sản phẩm nói — vd "Thiếu giá vốn" rõ hơn "Chưa kết luận được"). */
-const DECIDED_ADVICE = new Set(["losing", "target_below", "budget_capped", "target_binding", "target_watching", "healthy"]);
+const DECIDED_ADVICE = new Set(["losing", "target_below", "budget_capped", "target_binding", "target_watching", "target_hold", "healthy", "learning", "no_delivery", "no_orders"]);
 function decidedAdvice(ads: AdsOf) {
   const a = ads?.advice;
   return a && DECIDED_ADVICE.has(a.kind) ? a : null;
