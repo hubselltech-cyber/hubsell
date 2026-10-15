@@ -22,6 +22,7 @@ import {
   type TiktokBreakevenChannel,
 } from "./breakeven-source";
 import { productRunAdvice, type ProductRunAdvice } from "./product-run-advice";
+import { loadMinKeepPer100 } from "./advice-inputs";
 
 export interface ChannelTiktokBreakeven {
   shop: TiktokBreakeven;
@@ -208,6 +209,8 @@ export interface ProductBreakevenRow {
   /** Đà bán: số sản phẩm bán ra (mọi đơn đặt trừ hủy) 7 và 30 ngày gần nhất. */
   units7d: number;
   units30d: number;
+  /** Doanh thu 30 ngày mọi đơn đặt trừ hủy (GMV lịch sử — nguyên liệu công thức ngân sách TikTok của nhận định Nên chạy). */
+  revenue30d: number;
   /** Tồn TRÊN SÀN cộng các phân loại (ChannelProduct.channelStock); null = Hubsell chưa đọc được tồn của sản phẩm này. */
   stock: number | null;
   breakeven: TiktokBreakeven;
@@ -244,7 +247,8 @@ export async function computeTiktokProductBreakevensUncached(
 ): Promise<ChannelProductBreakevens> {
   const inputs = await loadBreakevenInputs(channel.id);
   const { campaigns, channelProducts, skusByProductId } = inputs;
-  const breakevens = await fetchChannelBreakevens(channel, inputs, opts.source);
+  // Lãi tối thiểu khách muốn giữ sau quảng cáo (cấu hình Trợ lý, chung với Shopee) — sàn giữ lãi của nhận định Nên chạy.
+  const [breakevens, minKeepPer100] = await Promise.all([fetchChannelBreakevens(channel, inputs, opts.source), loadMinKeepPer100(channel.id)]);
   const info = new Map<string, { name: string; imageUrl: string | null }>();
   for (const cp of channelProducts) {
     const productId = (cp.externalId ?? "").split("-")[0];
@@ -296,6 +300,7 @@ export async function computeTiktokProductBreakevensUncached(
       missingCostRevenue: base.missingCostRevenue,
       units7d: pace.get(productId)?.units7d ?? 0,
       units30d: pace.get(productId)?.units30d ?? 0,
+      revenue30d: pace.get(productId)?.revenue30d ?? 0,
       stock: stockOf.get(productId) ?? null,
       breakeven,
       campaigns: camps,
@@ -307,9 +312,11 @@ export async function computeTiktokProductBreakevensUncached(
               breakevenRoi: breakeven.breakevenRoi,
               units7d: pace.get(productId)?.units7d ?? 0,
               units30d: pace.get(productId)?.units30d ?? 0,
+              revenue30d: pace.get(productId)?.revenue30d ?? 0,
               stock: stockOf.get(productId) ?? null,
               shopAdsSpend30d,
               shopAdsGmv30d,
+              minKeepPer100,
             })
           : null,
     });

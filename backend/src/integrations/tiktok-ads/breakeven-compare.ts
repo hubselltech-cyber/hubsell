@@ -165,9 +165,10 @@ export async function compareBreakevenSources(
   const paceRows = fromRows.productPace();
   const paceSql = fromSql.productPace();
   for (const productId of new Set([...paceRows.keys(), ...paceSql.keys()])) {
-    const a = paceRows.get(productId) ?? { units7d: 0, units30d: 0 };
-    const b = paceSql.get(productId) ?? { units7d: 0, units30d: 0 };
-    if (a.units7d !== b.units7d || a.units30d !== b.units30d) {
+    const a = paceRows.get(productId) ?? { units7d: 0, units30d: 0, revenue30d: 0 };
+    const b = paceSql.get(productId) ?? { units7d: 0, units30d: 0, revenue30d: 0 };
+    // Doanh thu 30 ngày cộng theo tỷ trọng (số thực) → so với cùng dung sai tiền như các tổng khác.
+    if (a.units7d !== b.units7d || a.units30d !== b.units30d || Math.abs(a.revenue30d - b.revenue30d) > BREAKEVEN_COMPARE_MONEY_TOLERANCE) {
       paceMismatches.push(`${productId}: ${JSON.stringify(a)}/${JSON.stringify(b)}`);
     }
   }

@@ -65,6 +65,17 @@ export const TIKTOK_MARGIN_WINDOW_DAYS = 60;
  */
 export const TIKTOK_TARGET_STEP_WAIT_HOURS = 72;
 
+/**
+ * Hai mốc ngân sách của TikTok (đặt ở lib thuần để campaign-advice.ts và product-run-advice.ts cùng dùng, không vòng import):
+ *   · TIKTOK_BUDGET_USED_PCT 80 — tiêu từ 80% ngân sách ngày = ngân sách đang là thứ chặn (tự tăng ngân sách của GMV Max kích hoạt khi
+ *     "at least 80% of your budget has been used"; Best practices: "Giữ mức tiêu thụ ngân sách dưới 80%").
+ *   · TIKTOK_BUDGET_STEP_PCT 0,3 — mỗi lần tăng ngân sách 30%: "Best practices for Max delivery" (03/2026): "tăng dần thêm 30% mỗi
+ *     ngày thay vì tăng đột ngột"; tự tăng ngân sách của chính TikTok là +50%/bước. Đề xuất 15/10/2026, anh Trung chốt "cứ làm theo
+ *     hướng này" (docs/ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md mục 3.3).
+ */
+export const TIKTOK_BUDGET_USED_PCT = 80;
+export const TIKTOK_BUDGET_STEP_PCT = 0.3;
+
 /** Cửa sổ hòa vốn tính tới lúc gọi: TIKTOK_MARGIN_WINDOW_DAYS ngày, theo ngày tạo đơn. */
 export function tiktokMarginWindowRange(): DateRangeFilter {
   return { gte: startOfDaysAgo(TIKTOK_MARGIN_WINDOW_DAYS), lte: new Date() };
@@ -301,10 +312,15 @@ export function placedRevenue(rows: BreakevenPnlRow[], skuSet: ReadonlySet<strin
   return sum;
 }
 
-/** Đà bán của một nhóm SKU: số sản phẩm bán ra 7 ngày và 30 ngày gần nhất. */
+/** Đà bán của một nhóm SKU: số sản phẩm bán ra 7 ngày và 30 ngày gần nhất + doanh thu 30 ngày (mọi đơn đặt trừ hủy). */
 export interface TiktokSalesPace {
   units7d: number;
   units30d: number;
+  /**
+   * Doanh thu 30 ngày của nhóm trên MỌI đơn đặt trừ đơn hủy (kể cả chưa đối soát) — cùng cách chia theo tỷ trọng giá trị hàng
+   * với placedRevenue. Là "GMV lịch sử" của công thức ngân sách TikTok (ngân sách = 2 × GMV ÷ ROI mục tiêu — product-run-advice.ts).
+   */
+  revenue30d: number;
 }
 
 /** Hai mốc lùi của đà bán, tính từ lúc tính. */
@@ -323,13 +339,16 @@ export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfSku: ReadonlyMa
     if (isCancelled(row)) continue;
     const t = row.createdAt.getTime();
     if (t < t30 || t > now.getTime()) continue;
+    // Doanh thu chia cho từng dòng hàng theo tỷ trọng giá trị hàng — đúng luật của placedRevenue và cột actualRevenue của sổ dòng hàng.
+    const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     for (const it of row.items) {
       const g = groupOfSku.get(it.sku);
       if (g == null) continue;
       let cur = out.get(g);
-      if (!cur) out.set(g, (cur = { units7d: 0, units30d: 0 }));
+      if (!cur) out.set(g, (cur = { units7d: 0, units30d: 0, revenue30d: 0 }));
       cur.units30d += it.quantity;
       if (t >= t7) cur.units7d += it.quantity;
+      if (itemTotal > 0) cur.revenue30d += row.actualRevenue * ((it.price * it.quantity) / itemTotal);
     }
   }
   return out;
@@ -506,7 +525,7 @@ export function breakevensFromGroups(groups: ReadonlyMap<string, LedgerTiktokBre
     },
     productPace() {
       const out = new Map<string, TiktokSalesPace>();
-      for (const [productId, g] of products()) out.set(productId, { units7d: g.units7d, units30d: g.units30d });
+      for (const [productId, g] of products()) out.set(productId, { units7d: g.units7d, units30d: g.units30d, revenue30d: g.revenue30d });
       return out;
     },
   };

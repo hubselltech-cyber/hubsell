@@ -45,7 +45,7 @@ describe("campaignAdvice", () => {
     expect(a.nextTarget).toBe(13.5);
     expect(a.keepAtNextTarget).toBe(12.6); // 20% − 1/13,5
     expect(a.conclusion).toBe(
-      `Giảm ROI mục tiêu một nấc, từ 15 xuống 13,5, rồi theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới giảm tiếp. Ở 13,5 mỗi 100đ doanh thu còn lãi khoảng 12,6đ. Không xuống dưới 6,7 (giữ lãi từ 5đ/100đ).`
+      `Giảm ROI mục tiêu một nấc, từ 15 xuống 13,5, rồi theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới giảm tiếp. Ở 13,5 mỗi 100đ doanh thu còn lãi khoảng 12,6đ. Không xuống dưới 6,7 (giữ lãi từ 5đ/100đ). Chỉ giảm một lần trong ngày — giảm lần hai là mất bảo vệ ROI của TikTok hôm đó.`
     );
     expect(a.editInSellerCenter).toBe(true);
   });
@@ -174,7 +174,12 @@ describe("campaignAdvice", () => {
   });
 
   it("đạt từ 90% mục tiêu VÀ tiêu từ 80% ngân sách → ngân sách đang chặn (hai mốc của TikTok)", () => {
-    expect(campaignAdvice(input({ roasTarget: 12, avgDailySpend: 1_200_000 })).kind).toBe("budget_capped"); // 11,5 ≥ 10,8 · 80%
+    const capped = campaignAdvice(input({ roasTarget: 12, avgDailySpend: 1_200_000 }));
+    expect(capped.kind).toBe("budget_capped"); // 11,5 ≥ 10,8 · 80%
+    // 15/10/2026: nấc tăng ngân sách 30% (TikTok Max delivery "tăng dần 30% mỗi ngày"), làm tròn 10.000, giữ 3 ngày trọn.
+    expect(capped.nextBudget).toBe(1_950_000); // 1.500.000 × 1,3
+    expect(capped.conclusion).toContain("từ 1.500.000đ lên 1.950.000đ, rồi giữ 3 ngày trọn");
+    expect(campaignAdvice(input({ roasTarget: 12, avgDailySpend: 1_200_000, budget: 0 })).budgetUsedPct).toBeNull();
     expect(campaignAdvice(input({ roasTarget: 12, avgDailySpend: 1_190_000 })).kind).toBe("target_binding"); // 79% → ngân sách còn dư, mục tiêu ghìm
     expect(campaignAdvice(input({ roasTarget: 13, avgDailySpend: 1_200_000 })).kind).toBe("healthy"); // 11,5 < 11,7 chưa đạt, ngân sách đã 80% → không phán
   });

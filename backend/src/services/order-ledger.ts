@@ -1709,6 +1709,7 @@ export async function ledgerTiktokBreakevenByGroup(
       pendingOrders: Number(r.pendingOrders),
       units30d: Number(r.units30d),
       units7d: Number(r.units7d),
+      revenue30d: Number(r.revenue30d),
       placedRevenue: Number(r.placedRevenue),
     });
   }
@@ -1803,7 +1804,11 @@ function tiktokBreakevenByGroupQuery(
              COALESCE(sum("adFee") FILTER (WHERE "paid" AND "cls" = 3), 0) AS "adFee",
              COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "cls" = 1), 0) AS "missingCostRevenue",
              COALESCE(sum("quantity") FILTER (WHERE "pace30"), 0) AS "units30d",
-             COALESCE(sum("quantity") FILTER (WHERE "pace7"), 0) AS "units7d"
+             COALESCE(sum("quantity") FILTER (WHERE "pace7"), 0) AS "units7d",
+             -- Doanh thu 30 ngày mọi đơn đặt trừ hủy (GMV lịch sử cho công thức ngân sách) — cùng cột actualRevenue (đã chia theo dòng)
+             -- và cùng điều kiện "paid" với placedRevenue: dòng giá 0 (quà kèm) có thể mang phần dư làm tròn của đơn, đường duyệt mảng
+             -- chia theo tỷ trọng giá trị hàng nên dòng đó luôn 0 → bỏ ở cả hai đường (test tiktok-breakeven-sql-db bắt được lệch −800đ).
+             COALESCE(sum("actualRevenue") FILTER (WHERE "pace30" AND "paid"), 0) AS "revenue30d"
       FROM "lines"
       GROUP BY "sku"
     ),
@@ -1835,18 +1840,18 @@ function tiktokBreakevenByGroupQuery(
     -- chỉ có nhóm đã có trong hai phần đầu vì cùng đi từ "lines").
     "parts" AS (
       SELECT 0 AS "grp", a."hasPaid", a."settledOrders", a."cancelledOrders", a."pendingOrders", a."revenue",
-             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", 0::numeric AS "placedRevenue"
+             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", a."revenue30d", 0::numeric AS "placedRevenue"
       FROM "bySku" a
       UNION ALL
       SELECT m."grp", a."hasPaid", a."settledOrders", a."cancelledOrders", a."pendingOrders", a."revenue",
-             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", 0::numeric
+             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", a."revenue30d", 0::numeric
       FROM "map" m
       JOIN "bySku" a ON a."sku" = m."sku"
       UNION ALL
-      SELECT mu."grp", FALSE, mu."settledOrders", mu."cancelledOrders", mu."pendingOrders", 0, 0, 0, 0, 0, 0, 0::numeric
+      SELECT mu."grp", FALSE, mu."settledOrders", mu."cancelledOrders", mu."pendingOrders", 0, 0, 0, 0, 0, 0, 0::numeric, 0::numeric
       FROM "multi" mu
       UNION ALL
-      SELECT c."grp", FALSE, 0, 0, 0, 0, 0, 0, 0, 0, 0, c."placedRevenue"
+      SELECT c."grp", FALSE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0::numeric, c."placedRevenue"
       FROM "checks" c
     )
     SELECT "grp",
@@ -1860,6 +1865,7 @@ function tiktokBreakevenByGroupQuery(
            sum("missingCostRevenue") AS "missingCostRevenue",
            sum("units30d") AS "units30d",
            sum("units7d") AS "units7d",
+           sum("revenue30d") AS "revenue30d",
            sum("placedRevenue") AS "placedRevenue"
     FROM "parts"
     GROUP BY "grp"

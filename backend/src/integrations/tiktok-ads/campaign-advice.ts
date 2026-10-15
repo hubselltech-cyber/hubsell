@@ -26,7 +26,7 @@
 // ============================================================
 
 import { breakevenUnusableReason } from "./auto-rules";
-import { TIKTOK_TARGET_STEP_WAIT_HOURS, type TiktokBreakeven } from "../../lib/tiktok-breakeven";
+import { TIKTOK_BUDGET_STEP_PCT, TIKTOK_BUDGET_USED_PCT, TIKTOK_TARGET_STEP_WAIT_HOURS, type TiktokBreakeven } from "../../lib/tiktok-breakeven";
 import { profitPer100AtRoi } from "./breakeven";
 import {
   DEFAULT_MIN_KEEP_PER_100,
@@ -36,8 +36,16 @@ import {
   type StepProfitCheck,
 } from "../shopee/ads-assistant-rules";
 
-export const BUDGET_USED_PCT = 80;
+export const BUDGET_USED_PCT = TIKTOK_BUDGET_USED_PCT;
 export const TARGET_REACHED_PCT = 90;
+/** Mỗi lần tăng ngân sách 30% (15/10/2026 — nguồn ở lib/tiktok-breakeven.ts). */
+export const BUDGET_STEP_PCT = TIKTOK_BUDGET_STEP_PCT;
+
+/** Ngân sách ngày sau một nấc tăng BUDGET_STEP_PCT, làm tròn 10.000. null khi không rõ ngân sách. */
+export function nextBudgetStep(budget: number): number | null {
+  if (!(budget > 0)) return null;
+  return Math.round((budget * (1 + BUDGET_STEP_PCT)) / 10_000) * 10_000;
+}
 /** 72 giờ — căn cứ TikTok "keep each ROI setting for at least three full days" (xem lib/tiktok-breakeven.ts). */
 export const TARGET_STEP_WAIT_HOURS = TIKTOK_TARGET_STEP_WAIT_HOURS;
 export { TARGET_STEP_PCT, TARGET_BINDING_BAND, DEFAULT_MIN_KEEP_PER_100 };
@@ -125,6 +133,8 @@ export interface CampaignAdvice {
   minKeepPer100: number;
   /** target_watching: còn bao nhiêu giờ phải theo dõi sau lần đổi mục tiêu gần nhất; null = không trong khóa. */
   watchHoursLeft: number | null;
+  /** budget_capped: ngân sách ngày nên nâng lên (+BUDGET_STEP_PCT, làm tròn 10.000); null = kết luận khác / không rõ ngân sách. */
+  nextBudget: number | null;
 }
 
 const num = (n: number, d = 2) => n.toLocaleString("vi-VN", { maximumFractionDigits: d });
@@ -147,6 +157,7 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
       keepAtNextTarget?: number | null;
       safeTarget?: number | null;
       watchHoursLeft?: number | null;
+      nextBudget?: number | null;
     } = {}
   ): CampaignAdvice => ({
     kind,
@@ -163,6 +174,7 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
     safeTarget: extra.safeTarget ?? null,
     minKeepPer100,
     watchHoursLeft: extra.watchHoursLeft ?? null,
+    nextBudget: extra.nextBudget ?? null,
   });
 
   if (i.status !== "ongoing") return make("paused", "Đang tạm dừng", "muted", [], "Chiến dịch đang tắt nên không có gì để chẩn đoán.");
@@ -223,13 +235,19 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
     );
   }
   if (budgetUsedPct != null && budgetUsedPct >= BUDGET_USED_PCT && reached) {
+    // Nấc tăng 30% (TikTok Max delivery: "tăng dần thêm 30% mỗi ngày"); tăng rồi giữ 3 ngày trọn như nấc ROI. Hoặc bật "tự tăng ngân sách"
+    // của TikTok (+50%/bước, tối đa 10 lần/ngày, về lại hôm sau) — khách chọn.
+    const nextBudget = nextBudgetStep(i.budget);
     return make(
       "budget_capped",
       "Ngân sách đang chặn",
       "info",
       facts(targetPoint(), budgetPoint),
-      "Chiến dịch đang lãi và gần tiêu hết ngân sách — ngân sách đang là thứ chặn đơn. Tăng ngân sách ngày thì có thêm đơn ở cùng mức lãi.",
-      { keepPer100: keep, editInSellerCenter: true, safeTarget }
+      "Chiến dịch đang lãi và gần tiêu hết ngân sách — ngân sách đang là thứ chặn đơn. " +
+        (nextBudget != null
+          ? `Tăng ngân sách ngày một nấc ${Math.round(BUDGET_STEP_PCT * 100)}%, từ ${vnd(i.budget)} lên ${vnd(nextBudget)}, rồi giữ ${TARGET_STEP_WAIT_HOURS / 24} ngày trọn mới tăng tiếp; hoặc bật "Tự tăng ngân sách" của TikTok trong chiến dịch.`
+          : "Tăng ngân sách ngày thì có thêm đơn ở cùng mức lãi."),
+      { keepPer100: keep, editInSellerCenter: true, safeTarget, nextBudget }
     );
   }
   if (i.roasTarget != null && budgetUsedPct != null && budgetUsedPct < BUDGET_USED_PCT) {
@@ -299,7 +317,9 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
       bindingFacts,
       `Giảm ROI mục tiêu một nấc, từ ${num(i.roasTarget)} xuống ${num(nextTarget)}, rồi theo dõi ${TARGET_STEP_WAIT_HOURS} giờ mới giảm tiếp.` +
         (keepAtNextTarget != null ? ` Ở ${num(nextTarget)} mỗi 100đ doanh thu còn lãi khoảng ${num(keepAtNextTarget, 1)}đ.` : "") +
-        ` Không xuống dưới ${num(safeTarget)} (giữ lãi từ ${minKeepPer100}đ/100đ).`,
+        ` Không xuống dưới ${num(safeTarget)} (giữ lãi từ ${minKeepPer100}đ/100đ).` +
+        // TikTok "About ROI protection" (09/2026): hạ ROI mục tiêu quá một lần trong ngày (hoặc nâng tay) → mất bảo vệ ROI của ngày đó.
+        " Chỉ giảm một lần trong ngày — giảm lần hai là mất bảo vệ ROI của TikTok hôm đó.",
       { ...ok, editInSellerCenter: true, nextTarget, keepAtNextTarget }
     );
   }

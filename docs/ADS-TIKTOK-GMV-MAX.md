@@ -493,8 +493,15 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   2. **Khả thi:** ROI quảng cáo THẬT của cả gian 30 ngày (`AdsCampaignDailyPerf`: broadGmv ÷ expense, tiêu từ 100.000đ) thấp hơn hòa vốn
      của sản phẩm → Chưa nên; trên hòa vốn nhưng dưới mức an toàn → Chạy thử; gian chưa có số → cho qua, ghi rõ.
   3. **Đà bán:** nhịp 7 ngày ÷ nhịp 30 ngày ≤ 0,8 hoặc 30 ngày không có đơn → Chạy thử.
-  ROI mục tiêu đề xuất = hòa vốn × 1,1 làm tròn LÊN 0,1 — 1,1 là MẶC ĐỊNH (cùng hệ số vùng an toàn của Trợ lý Shopee), không phải số của
-  TikTok; ô lý do in kèm "đạt đúng mục tiêu thì mỗi 100đ còn lãi Xđ" để khách tự cân. FE: nhãn + ô lý do chung khuôn `TiktokAdviceBody`, chip
+  ~~ROI mục tiêu đề xuất = hòa vốn × 1,1~~ → ★ **15/10/2026 LÀM LẠI** (anh Trung: "chạy theo đề xuất hiện tại thì chỉ có hòa vốn hoặc
+  lãi rất mỏng"; khảo sát + nguồn nguyên văn: `docs/ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md`): **sàn giữ lãi** = 1 ÷ (biên − lãi muốn
+  giữ) (`profitFloorRoas`, cấu hình chung với Shopee, mặc định 5đ/100đ); **khởi điểm** = max(sàn, ROI gian 30 ngày × 0,9) — TikTok
+  "theo ROI khuyến nghị (= GMV ÷ chi phí lịch sử) hoặc thấp hơn một chút", 0,9 tự chọn; gian chưa có số → khởi điểm = sàn, nhắc dùng
+  ROI gợi ý trong Seller Center; **ngân sách ngày** = 2 × GMV ngày ÷ ROI (công thức TikTok; GMV ngày = `revenue30d` mọi đơn đặt trừ hủy
+  ÷ 30, thêm vào `TiktokSalesPace` ở cả hai đường rows/sql + công cụ đối chiếu), trần tồn 14 ngày, Chạy thử thêm trần 10% lãi tháng ÷ 7
+  rồi lấy nửa, sàn 100.000đ (phụ lục API, GMV Max chưa có mức riêng); kết luận in nhịp: giữ 3 ngày trọn, tiêu < 80% → hạ 10% (≤ 1
+  lần/ngày — mất ROI protection), tiêu ≥ 80% → tăng 30% (`TIKTOK_BUDGET_STEP_PCT`; `campaign-advice` budget_capped trả `nextBudget`).
+  Ô lý do in kèm "đạt đúng mục tiêu thì mỗi 100đ còn lãi Xđ" để khách tự cân. FE: nhãn + ô lý do chung khuôn `TiktokAdviceBody`, chip
   "Nên chạy quảng cáo", đường "Tạo chiến dịch trong Seller Center". Ô LÝ DO (anh Trung: phải rõ căn cứ tại sao nên, tại sao chưa nên):
   `checks[]` — mỗi điều kiện một dòng có dấu Đạt / Cần dè chừng / Không đạt / Chưa có số + số thật + mốc so sánh (`TiktokRunAdviceBody`),
   kết luận gọi đúng tên điều kiện làm nên kết luận đó. ⚠️ Chưa soi UI bằng số thật ở local (DB local không có đơn TikTok).

@@ -3119,6 +3119,8 @@ export interface TiktokAdsCampaignAdvice {
   minKeepPer100?: number;
   /** target_watching: còn bao nhiêu giờ theo dõi sau lần đổi mục tiêu gần nhất. Vắng = backend cũ. */
   watchHoursLeft?: number | null;
+  /** budget_capped: ngân sách ngày nên nâng lên (+30%). Vắng = backend cũ. */
+  nextBudget?: number | null;
 }
 
 export interface TiktokAdsCampaignVideos {
@@ -3216,7 +3218,15 @@ export interface TiktokProductRunAdvice {
   checks?: { key: "feasible" | "pace" | "stock"; title: string; status: "pass" | "caution" | "block" | "unknown"; text: string }[];
   conclusion: string;
   text: string;
+  /** ROI mục tiêu KHỞI ĐIỂM = max(sàn giữ lãi, ROI gian 30 ngày × 0,9) (15/10/2026; trước đó = hòa vốn × 1,1). */
   suggestedRoi: number;
+  /** Sàn giữ lãi: không đặt ROI mục tiêu dưới mức này. Vắng = backend cũ. */
+  floorRoi?: number;
+  minKeepPer100?: number;
+  /** ROI GMV Max của gian 30 ngày làm mốc; null = chưa có số. */
+  anchorRoi?: number | null;
+  /** Ngân sách ngày đề xuất (công thức TikTok 2 × GMV ÷ ROI, đã chặn trần); null khi Chưa nên. Vắng = backend cũ. */
+  budget?: { daily: number; byTiktok: number | null; note: string } | null;
 }
 
 export interface TiktokProductBreakevenRow {

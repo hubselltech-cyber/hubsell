@@ -203,9 +203,27 @@ describe("salesPaceByGroup — đà bán 7 / 30 ngày của từng sản phẩm"
       row({ sku: "la", createdAt: ago(1) }),
     ];
     const p = salesPaceByGroup(rows, g, now);
-    expect(p.get("SP-A")).toEqual({ units7d: 3, units30d: 4 });
-    expect(p.get("SP-B")).toEqual({ units7d: 1, units30d: 1 });
+    // revenue30d: doanh thu mọi đơn đặt trừ hủy trong 30 ngày (250k × 2 đơn SP-A; đơn 40 ngày và đơn hủy không tính).
+    expect(p.get("SP-A")).toEqual({ units7d: 3, units30d: 4, revenue30d: 500_000 });
+    expect(p.get("SP-B")).toEqual({ units7d: 1, units30d: 1, revenue30d: 250_000 });
     expect(p.size).toBe(2);
+  });
+
+  it("đơn nhiều sản phẩm: doanh thu chia theo tỷ trọng giá trị hàng (cùng luật placedRevenue); dòng giá 0 không nhận doanh thu", () => {
+    const rows: BreakevenPnlRow[] = [
+      row({
+        createdAt: ago(1),
+        actualRevenue: 300_000,
+        items: [
+          { sku: "A1", price: 100_000, quantity: 3 }, // 300k / 400k
+          { sku: "B", price: 100_000, quantity: 1 }, // 100k / 400k
+          { sku: "A2", price: 0, quantity: 1 },
+        ],
+      }),
+    ];
+    const p = salesPaceByGroup(rows, g, now);
+    expect(p.get("SP-A")).toEqual({ units7d: 4, units30d: 4, revenue30d: 225_000 });
+    expect(p.get("SP-B")).toEqual({ units7d: 1, units30d: 1, revenue30d: 75_000 });
   });
 });
 
@@ -296,8 +314,8 @@ describe("mặt tiền ChannelBreakevens — hai đường cộng cùng một c�
     expect(be.placedRevenue(campaignGroupKey("c2"))).toBe(0);
     expect(be.placedRevenue(productGroupKey("100"))).toBe(0); // nhóm không có khoảng tự kiểm
     expect([...be.productBases().keys()]).toEqual(["100"]); // 200 chỉ có dòng giá 0
-    expect(be.productPace().get("100")).toEqual({ units7d: 1, units30d: 3 });
-    expect(be.productPace().get("200")).toEqual({ units7d: 0, units30d: 1 });
+    expect(be.productPace().get("100")).toEqual({ units7d: 1, units30d: 3, revenue30d: 750_000 });
+    expect(be.productPace().get("200")).toEqual({ units7d: 0, units30d: 1, revenue30d: 0 });
   });
 
   it("đường sql: tra đúng kết quả đã gom; sản phẩm không có dòng có giá không lên danh sách", () => {
@@ -312,6 +330,7 @@ describe("mặt tiền ChannelBreakevens — hai đường cộng cùng một c�
       pendingOrders: 0,
       units30d: 0,
       units7d: 0,
+      revenue30d: 0,
       placedRevenue: 0,
       ...over,
     });
@@ -319,7 +338,7 @@ describe("mặt tiền ChannelBreakevens — hai đường cộng cùng một c�
       new Map([
         [SHOP_GROUP, group({ settledOrders: 2, revenue: 500_000, profitBeforeAds: 100_000, adFee: 40_000, pendingOrders: 1 })],
         [campaignGroupKey("c1"), group({ settledOrders: 2, revenue: 500_000, placedRevenue: 500_000 })],
-        [productGroupKey("100"), group({ settledOrders: 2, revenue: 500_000, units30d: 3, units7d: 1 })],
+        [productGroupKey("100"), group({ settledOrders: 2, revenue: 500_000, units30d: 3, units7d: 1, revenue30d: 750_000 })],
         [productGroupKey("200"), group({ hasPaid: false, units30d: 1 })],
       ])
     );
@@ -330,8 +349,8 @@ describe("mặt tiền ChannelBreakevens — hai đường cộng cùng một c�
     expect(be.placedRevenue(campaignGroupKey("c1"))).toBe(500_000);
     expect(be.placedRevenue(campaignGroupKey("c2"))).toBe(0);
     expect([...be.productBases().keys()]).toEqual(["100"]);
-    expect(be.productPace().get("100")).toEqual({ units7d: 1, units30d: 3 });
-    expect(be.productPace().get("200")).toEqual({ units7d: 0, units30d: 1 });
+    expect(be.productPace().get("100")).toEqual({ units7d: 1, units30d: 3, revenue30d: 750_000 });
+    expect(be.productPace().get("200")).toEqual({ units7d: 0, units30d: 1, revenue30d: 0 });
   });
 });
 
