@@ -5,7 +5,14 @@
 
 ---
 
-## Phiên 15/10/2026 (sáng sớm) — CHUẨN BỊ HÀNG THEO MẺ: LẦN 1 BÁO LỖI OAN, LẦN 2 409 — ĐÃ SỬA, CHỜ ANH PUSH
+## Phiên 15/10/2026 (sáng sớm) — CHUẨN BỊ HÀNG THEO MẺ: LẦN 1 BÁO LỖI OAN, LẦN 2 409 — ĐÃ SỬA, `8c08d973` LIVE 09:18
+
+- **Kiểm prod thật (Render Logs + Supabase SQL qua Chrome của anh, ~09:10):** fulfillment_batches: 08:30:53 mẻ 14 đơn DONE 3s 14/14; **08:40:42 mẻ 30 đơn DONE 8,5s, 30/30 sàn nhận** (mass API Shopee chạy đúng cả 2 gian); **08:40:48 mẻ thứ hai cùng 30 đơn** (10 bỏ qua đã rời Chờ xử lý, 20 ANO bị gọi lại → Shopee `not eligible for rescheduling`); 08:51 in 30 đơn (tải gộp 21 ANO bị `packages_can_not_download_together` → tải lẻ), 30/30 đã in. Kết luận: máy chủ không hỏng; trình duyệt báo lỗi trong <6 giây rồi anh bấm lại → lượt chồng. Lỗi phía trình duyệt lần 1 **chưa rõ** (anh chưa trả lời câu lỗi là câu nào).
+- **Em tự test đơn thật (anh yêu cầu, ~09:30):** TikTok 586597441574766009 (and.not.or) → sàn nhận trong ~5s, Đã xử lý + mã J&T 862537022237, Console sạch. Không tái hiện lỗi.
+- **Khóa lượt chồng (phiên phụ, `8c08d973`):** migration 20261015170000 cột `fulfillment_batches.orderIds` + chỉ mục riêng phần RUNNING; POST /bulk/confirm bỏ qua đơn đang ở lượt RUNNING còn sống (3 phút), mọi đơn cùng một lượt → trả lại batchId cũ `reattached` để web poll tiếp; test +7 (32 xanh). Gộp fast-forward vào master.
+- **Đã push 09:17 (anh bảo em push):** Render live 09:18:30, `/health` = 8c08d973, migration đã áp (cột + chỉ mục + dòng _prisma_migrations OK), không lỗi khởi động.
+
+### Bản nháp trước khi kiểm prod
 
 - **Anh test 30 đơn Shopee (ANO 21 + DarkMan 9):** lần 1 web báo "Không kết nối được máy chủ" nhưng sàn **đã nhận đủ**; lần 2 trên cùng hộp thoại → 409 "Không có đơn nào ở trạng thái Chờ xử lý".
 - **Đã kiểm:** prod không lệch bản (backend `/health` = `f7b597d8`, bundle web có `bulk/confirm/${id}` + "Lượt chuẩn bị hàng"). Câu "Không kết nối được máy chủ" của hộp thoại = lỗi JS không phải `ApiError` → chỉ có thể ở bước **đợi mã vận đơn + in** sau khi lượt nền DONE; `fetchOrderLabelsPdf` dùng `fetch` thô nên lỗi mạng/ngắt request thành `TypeError`. Hộp thoại không đóng → bấm lại trên danh sách cũ → 409 đúng kỹ thuật nhưng không nói vì sao. **Lỗi cụ thể của bước in lần 1 chưa xác định** — cần log Render + console.
