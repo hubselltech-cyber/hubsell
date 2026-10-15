@@ -186,14 +186,10 @@ export default function AssistantScreen() {
       >
         <AssistantOrb size={38} />
         <View className="min-w-0 flex-1">
-          <View className="flex-row items-center gap-1.5">
-            <Text className="text-sm font-semibold text-white">Trợ lý Hubsell</Text>
-            <View className="rounded-full bg-emerald-500 px-1.5 py-px">
-              <Text className="text-[9px] font-bold uppercase tracking-wide text-emerald-950">
-                AI
-              </Text>
-            </View>
-          </View>
+          {/* Không gắn huy hiệu "AI": Apple từ chối lần 7 (15/10/2026, 5.1.1(i)/5.1.2(i))
+              vì tưởng app gửi dữ liệu cho dịch vụ AI bên thứ ba. Trợ lý là tầng luật
+              trên máy chủ Hubsell, không LLM — xem docs/store/APPLE-REVIEW-REPLY-7.md. */}
+          <Text className="text-sm font-semibold text-white">Trợ lý Hubsell</Text>
           <View className="flex-row items-center gap-1.5">
             <View className="size-1.5 rounded-full bg-emerald-400" />
             <Text className="text-xs text-slate-400" numberOfLines={1}>

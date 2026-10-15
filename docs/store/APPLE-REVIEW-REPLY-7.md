@@ -34,13 +34,13 @@ Kết luận: **app không gửi dữ liệu người dùng cho dịch vụ AI b
 
 ## Phương án
 
-**A (đề xuất): giữ build 1.0 (10), trả lời + ghi chú + Resubmit.** Đúng lối Apple chỉ. Rủi ro:
+**A: giữ build 1.0 (10), trả lời + ghi chú + Resubmit.** Đúng lối Apple chỉ. Rủi ro:
 người duyệt vẫn nhìn huy hiệu "AI" và không tin → nếu bị trả lần 8 cùng lý do thì sang B.
 
-**B: build 1.0 (11) bỏ huy hiệu "AI"** (đổi thành "Beta" hoặc bỏ hẳn) + trả lời như A. Thêm
+**B (ANH CHỐT 15/10 ~14h: "bỏ luôn chữ AI đi rồi giải thích với họ"): build 1.0 (11) bỏ hẳn huy hiệu "AI"** ở header màn Trợ lý (`assistant.tsx`) + trả lời như A. Thêm
 ~40 phút (EAS build + submit + Apple xử lý) và review lại từ đầu bản dựng mới.
 
-Em không chọn B trước vì (1) Apple nói rõ "reply to confirm" là đủ, (2) mỗi lần đổi build là
+Em đề xuất A trước vì (1) Apple nói rõ "reply to confirm" là đủ, (2) mỗi lần đổi build là
 đổi thứ người duyệt đã xem qua, (3) huy hiệu "AI" trùng nhận diện với web.
 
 ## Thư trả lời (Reply to App Review) — tiếng Anh, đã sẵn
@@ -51,8 +51,9 @@ Hello,
 Thank you for the review. We confirm that the app does NOT send any user data to a
 third-party AI service and does NOT include any third-party AI service or SDK.
 
-What the reviewer likely saw is the "Hubsell Assistant" screen (chat bubble on the Home tab,
-labelled "AI"). This assistant is built and hosted entirely by us:
+What the reviewer likely saw is the "Hubsell Assistant" screen (chat bubble on the Home tab),
+which in build 1.0 (10) carried a small "AI" label next to its name. That label was only a
+product nickname; to avoid any confusion we have removed it in build 1.0 (11). This assistant is built and hosted entirely by us:
 
 - Questions typed or spoken by the user are sent only to our own backend
   (api.hubsell.vn, operated by Hubsell Technology Co., Ltd.), where a rule-based engine
@@ -69,7 +70,8 @@ users will be notified before any such feature is ever enabled. We have also add
 "Mobile app" paragraph describing the camera, photo library, microphone/speech recognition
 and Face ID permissions the app requests.
 
-We have added this confirmation to the App Review Information notes as requested.
+We have added this confirmation to the App Review Information notes as requested, and
+submitted build 1.0 (11) with the "AI" label removed.
 
 Thank you for your help.
 Hubsell team
@@ -80,7 +82,7 @@ Hubsell team
 ```
 --- Third-party AI (added Oct 15, 2026 after 5.1.1(i)/5.1.2(i) feedback) ---
 The app does NOT use or send data to any third-party AI service. The "Hubsell Assistant"
-(labelled "AI" on the chat screen) is our own rule-based query engine running on our backend
+(chat screen; the former "AI" label was removed in build 1.0 (11)) is our own rule-based query engine running on our backend
 (api.hubsell.vn): it matches keywords and returns the user's own sales numbers from our
 database. No LLM / external AI provider, no AI SDK in the binary. Voice input uses Apple's
 iOS Speech framework (on-device recognition); only the recognized text is sent to our
@@ -88,7 +90,9 @@ backend, audio is never stored or shared. Privacy policy: https://hubsell.vn/pri
 (section 5 lists all sub-processors; "Mobile app" paragraph in section 3).
 ```
 
-## Thứ tự làm (ai làm gì)
+## Thứ tự làm (ai làm gì) — theo B
+
+0. **Claude**: bỏ huy hiệu "AI" (`hubsell-mobile/src/app/assistant.tsx`), tsc, `eas build -p ios --profile production` → build 1.0 (11) → `eas submit --latest`; trên ASC đổi build của bản 1.0 sang (11).
 
 1. **Claude**: sửa `/privacy` landing — thêm đoạn "Ứng dụng di động" vào cuối mục 3 (câu chữ
    LISTING.md mục 9, bỏ dòng thư viện ảnh/tin nhắn vì CSKH chat đã ẩn 12/10 — vẫn giữ vì
