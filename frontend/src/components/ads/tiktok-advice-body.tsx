@@ -3,6 +3,7 @@
 // Anh Trung 19/09/2026: viết dồn một đoạn trong ô nhỏ rất khó đọc → DỮ KIỆN mỗi ý một dòng, KẾT LUẬN để riêng bên dưới.
 
 import { AlertTriangle, CheckCircle2, ExternalLink, HelpCircle, XCircle } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { TIKTOK_SELLER_CENTER_ADS_URL, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { formatVND } from "@/lib/format";
@@ -30,10 +31,9 @@ export function TiktokAdviceBody({ advice }: { advice: TiktokAdsCampaignAdvice }
           </ul>
         </>
       )}
-      <div className="mt-1 border-t border-slate-200 pt-2">
-        <p className="text-xs font-medium text-slate-500">Đề xuất</p>
-        <p className="text-slate-900">{advice.conclusion}</p>
-      </div>
+      <ConclusionBlock tone={advice.tone} label="Đề xuất">
+        {advice.conclusion}
+      </ConclusionBlock>
     </>
   );
 }
@@ -45,6 +45,23 @@ export const TIKTOK_ADVICE_TONE: Record<TiktokAdsCampaignAdvice["tone"], string>
   ok: "bg-emerald-50 text-emerald-700",
   muted: "bg-slate-100 text-slate-600",
 };
+
+/** Khối Kết luận tô theo tông (anh Trung 15/10 đêm: "cho chữ màu khác hoặc đổi tông để tạo điểm nhấn Kết luận"). */
+const CONCLUSION_TONE: Record<TiktokAdsCampaignAdvice["tone"], string> = {
+  warn: "border-red-400 bg-rose-50 text-red-700",
+  info: "border-amber-400 bg-amber-50 text-amber-800",
+  ok: "border-emerald-400 bg-emerald-50 text-emerald-800",
+  muted: "border-slate-300 bg-slate-50 text-slate-700",
+};
+
+function ConclusionBlock({ tone, label = "Kết luận", children }: { tone: TiktokAdsCampaignAdvice["tone"]; label?: string; children: ReactNode }) {
+  return (
+    <div className={cn("mt-1 rounded-md border-l-[3px] px-2.5 py-1.5", CONCLUSION_TONE[tone])}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">{label}</p>
+      <p className="font-medium">{children}</p>
+    </div>
+  );
+}
 
 /**
  * Nhãn nhận định + hộp Căn cứ / Đề xuất khi trỏ chuột — một khuôn cho cột Nhận định của bảng chiến dịch và trang chiến dịch
@@ -124,10 +141,7 @@ export function TiktokRunAdviceBody({ advice }: { advice: TiktokProductRunAdvice
           </ul>
         </div>
       )}
-      <div className="mt-1 border-t border-slate-200 pt-2">
-        <p className="text-xs font-medium text-slate-500">Kết luận</p>
-        <p className="text-slate-900">{advice.conclusion}</p>
-      </div>
+      <ConclusionBlock tone={advice.tone}>{advice.conclusion}</ConclusionBlock>
       {/* 15/10/2026: hai con số cần đặt — ROI mục tiêu + ngân sách ngày (công thức TikTok 2 × GMV ÷ ROI). Anh Trung: không giải thích
           dài; cách ra số để trong tooltip. Backend cũ không có `budget` thì không hiện. */}
       {advice.budget && (

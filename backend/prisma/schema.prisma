@@ -638,6 +638,12 @@ model AdsCampaign {
   /// thủ công; NULL với auto / trống. Shopee KHÔNG cấp hiệu suất từng từ khóa qua API.
   manualBidding Json?
 
+  /// CHUÔNG KẾT LUẬN CHIẾN DỊCH TIKTOK (15/10/2026 — anh Trung "làm chuông"): kết luận campaign-advice
+  /// (losing / target_below / budget_capped / target_binding / …) mà lượt ngày chấm gần nhất; đổi loại so với
+  /// lần trước mới chuông (luật B8 "đổi mới chuông"). "" = chưa chấm. Chỉ gian TikTok dùng.
+  adviceKind   String    @default("")
+  adviceKindAt DateTime?
+
   lastSyncedAt DateTime @updatedAt
   createdAt    DateTime @default(now())
 

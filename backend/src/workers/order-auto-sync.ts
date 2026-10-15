@@ -96,6 +96,7 @@ import { vnDateKey } from "../lib/ads-dates";
 import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
 import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 import { autoRunDue, dailyRunOffsetMin, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";
+import { runTiktokAdviceAlerts } from "../integrations/tiktok-ads/advice-alerts";
 import { incompleteReadMessage, type SyncCompleteness } from "../integrations/sync-contract";
 import { nextWatermark, planOrderWindow, watermarkLogLine, type WatermarkWrite } from "../services/order-watermark";
 
@@ -991,6 +992,16 @@ async function maybeRunTiktokAdsDaily(channel: Channel): Promise<void> {
     console.log(
       `[Auto-sync] "${channel.shopName}" ads TikTok lượt ngày: ${d.tracked}/${d.campaigns} chiến dịch theo dõi, ${d.evaluated} xét luật (${d.planned} diễn tập, ${d.executed} loại thật, ${d.failed} lỗi)`
     );
+    // Chuông kết luận chiến dịch (15/10/2026): chấm lại campaign-advice cho mọi chiến dịch đang chạy, chuông khi kết luận đổi sang loại
+    // có việc phải làm (advice-alerts.ts). Đi sau lượt ngày để mỗi gian một lần mỗi ngày; lỗi không ảnh hưởng lượt ngày.
+    try {
+      const a = await runTiktokAdviceAlerts(channel);
+      if (a.changed > 0) {
+        console.log(`[Auto-sync] "${channel.shopName}" nhận định chiến dịch TikTok: ${a.changed}/${a.campaigns} đổi kết luận, ${a.alerted} chuông`);
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] "${channel.shopName}" chuông kết luận TikTok lỗi:`, (err as Error).message);
+    }
   }
 }
 

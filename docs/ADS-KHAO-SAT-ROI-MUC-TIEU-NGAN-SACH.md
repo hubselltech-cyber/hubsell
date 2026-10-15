@@ -223,8 +223,23 @@ Trường `anchorMargin` + `scaledAnchorRoi` trong kết quả; test "quy mốc 
 - **Shopee:** `assessDelivery` (ads-insights) cùng ba kết luận budget_capped / target_binding / target_hold hiện ở bảng Trợ lý khi mở
   trang; `ads-pulse.ts` chỉ là xung ĐỌC số (campaign mới, ngân sách, ROAS mục tiêu, ví) nuôi rule engine, không phải chuông; trong
   integrations/shopee chỉ delivery-fail và returns-sync có `notify` → chuông riêng cho "hạ ROAS / tăng ngân sách" cũng chưa có.
-- Đề xuất (chưa làm, chờ anh): lượt ngày TikTok (auto-run) chấm thêm `campaignAdvice` và chuông khi kết luận ĐỔI (cùng luật B8 "đổi mới
-  chuông"), để khách không phải mở trang mới biết cần hạ ROI / tăng ngân sách.
+- ~~Đề xuất (chưa làm, chờ anh)~~ → ✅ anh chốt "làm chuông em nhé" → mục 7e.
+
+### 7e. Chuông khi kết luận chiến dịch đổi + tô màu Kết luận (anh chốt 15/10 đêm, "ổn rồi")
+
+- **`advice-alerts.ts`** `runTiktokAdviceAlerts(channel)`: gọi ngay sau `runTiktokAdsDaily` trong worker `order-auto-sync` (mỗi gian một lần
+  mỗi ngày, cùng van công bằng); chấm `campaignAdvice` cho mọi chiến dịch đang chạy trên **7 ngày trọn gần nhất, bỏ hôm nay** (cùng cửa
+  sổ assessDelivery Shopee) từ số đã có trong DB (không gọi sàn); ghi loại vào cột mới `AdsCampaign.adviceKind` + `adviceKindAt`
+  (migration `20261015230000_ads_campaign_advice_kind`, ADD COLUMN DEFAULT ''); **chuông** (`type tiktok-ads-advice`, tiêu đề
+  "Tên chiến dịch: nhãn", thân = câu kết luận, link trang chiến dịch) khi loại ĐỔI so với lần trước VÀ loại mới có việc phải làm:
+  `losing` · `target_below` · `budget_capped` (tăng ngân sách) · `target_binding` (hạ ROI). Loại giữ / theo dõi / lãi / chưa kết luận chỉ
+  ghi. Quay về healthy rồi ghìm lại → chuông lại. Tắt: `ADS_TIKTOK_ADVICE_ALERTS_OFF=1`. Test `tiktok-ads-advice-alerts` (4 ca thuần).
+- **Chạy thật trên DB dev** (gian demo 6 chiến dịch): lượt 1 → 6 đổi, 3 chuông (2 ghìm + 1 lỗ); lượt 2 ngay sau → 0/0 (B8). Chuông
+  hiện trong danh sách Thông báo với câu kết luận.
+- **FE** `tiktok-advice-body.tsx` `ConclusionBlock`: khối Kết luận (ô Nên chạy) / Đề xuất (chẩn đoán chiến dịch) có viền trái + nền + chữ
+  theo tông (đỏ lỗ · vàng cần làm · xanh ổn · xám chưa kết luận), nhãn in hoa nhỏ — điểm nhấn anh yêu cầu.
+- **Sau deploy:** Render chạy migration; log worker `[Auto-sync] "<gian>" nhận định chiến dịch TikTok: N/M đổi kết luận, K chuông` ở lượt
+  ngày đầu (lần đầu mọi chiến dịch đều "đổi" từ "" → chuông cho mọi chiến dịch đang có việc — ANO có thể nhận vài chuông một lúc, một lần).
 
 - **Chưa làm:** `bid/recommend` làm mốc khi gian chưa có số (số sàn không theo sản phẩm, 1 SPU → 7,2 / 2 SPU → 4 — chưa đáng tin để tự
   động, khách tự đọc trong Seller Center); lát 3.4; mobile không có ô này. **Theo dõi:** ANO sau deploy — ô Nên chạy phải ra khởi điểm ~11,6
