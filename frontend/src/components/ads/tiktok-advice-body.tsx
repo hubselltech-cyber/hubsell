@@ -128,21 +128,15 @@ export function TiktokRunAdviceBody({ advice }: { advice: TiktokProductRunAdvice
         <p className="text-xs font-medium text-slate-500">Kết luận</p>
         <p className="text-slate-900">{advice.conclusion}</p>
       </div>
-      {/* 15/10/2026: ngân sách ngày đề xuất theo công thức TikTok (2 × GMV ÷ ROI) + cách ra số — backend cũ không có thì không hiện. */}
+      {/* 15/10/2026: hai con số cần đặt — ROI mục tiêu + ngân sách ngày (công thức TikTok 2 × GMV ÷ ROI). Anh Trung: không giải thích
+          dài; cách ra số để trong tooltip. Backend cũ không có `budget` thì không hiện. */}
       {advice.budget && (
-        <div className="mt-1 border-t border-slate-200 pt-2">
-          <p className="text-xs font-medium text-slate-500">
-            Ngân sách ngày <span className="font-semibold text-slate-900">{formatVND(advice.budget.daily)}</span>
-            {advice.suggestedRoi > 0 && (
-              <>
-                {" · ROI mục tiêu "}
-                <span className="font-semibold text-slate-900">{formatRoi(advice.suggestedRoi)}</span>
-              </>
-            )}
-            {advice.floorRoi != null && <> · không dưới {formatRoi(advice.floorRoi)}</>}
-          </p>
-          <p className="text-slate-700">{advice.budget.note}</p>
-        </div>
+        <p className="mt-1 border-t border-slate-200 pt-2 text-xs text-slate-500" title={advice.budget.note}>
+          ROI mục tiêu <span className="font-semibold text-slate-900">{formatRoi(advice.suggestedRoi)}</span>
+          {advice.floorRoi != null && <> (không dưới {formatRoi(advice.floorRoi)})</>}
+          {" · Ngân sách "}
+          <span className="font-semibold text-slate-900">{formatVND(advice.budget.daily)}</span>/ngày
+        </p>
       )}
     </>
   );

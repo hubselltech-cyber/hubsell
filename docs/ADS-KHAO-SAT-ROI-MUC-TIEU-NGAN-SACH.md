@@ -161,7 +161,7 @@ chỉ chặn bởi trần tồn); tăng ngân sách +30%; lát 3.4 "lãi tăng t
   lãi → sàn = hòa vốn + điều kiện Khả thi báo "Cần dè chừng"); `anchorRoi` = ROI gian 30 ngày (tiêu ≥ 100.000đ); `suggestedRoi` =
   max(sàn, ceil₀,₁(mốc × 0,9)), không mốc → sàn + câu nhắc ROI gợi ý Seller Center; `budget` = `runBudget()` (2 × GMV ngày ÷ ROI → trần tồn
   → [Chạy thử] trần thử + nửa → sàn 100.000 → làm tròn 10.000) kèm `note` kể cách ra số; kết luận in nhịp (3 ngày trọn, < 80% hạ 10% ≤
-  1 lần/ngày, ≥ 80% tăng 30%). Điều kiện Khả thi so với **sàn giữ lãi** thay vì hòa vốn × 1,1. 13 test (`tiktok-ads-product-run-advice`),
+  1 lần/ngày, ≥ 80% tăng 30%). Điều kiện Khả thi so với **sàn giữ lãi** thay vì hòa vốn × 1,1. 12 test (`tiktok-ads-product-run-advice`),
   có ca ANO thật (biên 17,7% · gian 12,85 · 2,34tr/ngày → 11,6 · sàn 7,9 · 400.000đ).
 - **`revenue30d`** thêm vào `TiktokSalesPace` (GMV 30 ngày mọi đơn đặt trừ hủy, chia theo tỷ trọng giá trị hàng): đường rows
   (`salesPaceByGroup`), đường sql (`ledgerTiktokBreakevenByGroup` — lọc `paid` như placedRevenue: test `tiktok-breakeven-sql-db` bắt được
@@ -200,6 +200,31 @@ gian và ô nói rõ. Ví dụ ANO (gian 12,85, biên đang quảng cáo 17,5%):
 | 7,9% | 12,66 | 34,5 | 28,5 | **34,5** (sàn thắng) | 5đ |
 
 Trường `anchorMargin` + `scaledAnchorRoi` trong kết quả; test "quy mốc về biên từng sản phẩm" 5 biên.
+
+### 7c. Rút gọn chữ (anh Trung 15/10 đêm: "không cần giải thích kỹ tới vậy, chỉ cần kết luận nên đặt ROI bao nhiêu, ngân sách bao nhiêu")
+
+- Kết luận = một câu: "Nên chạy vì đạt cả ba điều kiện. Đặt ROI mục tiêu 9,3, ngân sách 400.000đ/ngày." (Chạy thử: "Chỉ nên chạy thử ngân
+  sách nhỏ vì còn phải dè chừng …. Đặt ROI mục tiêu X, ngân sách Y/ngày."). Bỏ hẳn đoạn nhịp 3 ngày / hạ 10% / tăng 30% khỏi ô này —
+  nhịp đó là việc của trợ lý chiến dịch sau khi chạy (mục 7d).
+- Hai dòng dữ kiện ngắn: "Biên lãi 21,9% → hòa vốn 4,57 · sàn giữ lãi 5,9 (giữ từ 5đ/100đ)." và "ROI gian 30 ngày 12,85 trên biên 17,5%
+  (~44% biên lãi đi vào quảng cáo) → quy về biên 21,9% của sản phẩm: 10,3 → khởi điểm 9,3 (× 0,9); đạt đúng mức này còn lãi ~11,1đ/100đ."
+- FE: một dòng "ROI mục tiêu 9,3 (không dưới 5,9) · Ngân sách 400.000đ/ngày"; cách ra số (công thức TikTok, trần, sàn) chuyển vào tooltip.
+- 12 test cập nhật câu chữ.
+
+### 7d. Rà: trợ lý đã nhắc giảm ROI / tăng hạ ngân sách chưa (anh hỏi 15/10 đêm)
+
+- **TikTok — có, trên trang** (`campaign-advice.ts`, cùng một bộ cho nhãn ở Tổng quan, trang chiến dịch và cột Nhận định tab Hòa vốn):
+  `losing` nâng ROI lên hòa vốn + loại video · `target_below` nâng ROI · `budget_capped` **tăng ngân sách** (+30%, từ X lên Y, hoặc bật tự
+  tăng của TikTok) · `target_binding` **giảm ROI** 10% một nấc, ≤ 1 lần/ngày, không dưới sàn giữ lãi · `target_watching` giữ 72 giờ ·
+  `target_hold` nấc hạ không ra thêm lãi thì giữ. Tự loại video có chuông (auto-run B8).
+- **TikTok — chưa có:** chuông chủ động cho các kết luận trên (chỉ thấy khi mở trang; `grep notify` trong tiktok-ads chỉ có tự loại video);
+  **hạ ngân sách** không có — chủ đích: ở chế độ ROI mục tiêu ngân sách là trần, TikTok chỉ tiêu khi đạt ROI (lỗ thì nâng ROI / loại
+  video chứ không hạ ngân sách).
+- **Shopee:** `assessDelivery` (ads-insights) cùng ba kết luận budget_capped / target_binding / target_hold hiện ở bảng Trợ lý khi mở
+  trang; `ads-pulse.ts` chỉ là xung ĐỌC số (campaign mới, ngân sách, ROAS mục tiêu, ví) nuôi rule engine, không phải chuông; trong
+  integrations/shopee chỉ delivery-fail và returns-sync có `notify` → chuông riêng cho "hạ ROAS / tăng ngân sách" cũng chưa có.
+- Đề xuất (chưa làm, chờ anh): lượt ngày TikTok (auto-run) chấm thêm `campaignAdvice` và chuông khi kết luận ĐỔI (cùng luật B8 "đổi mới
+  chuông"), để khách không phải mở trang mới biết cần hạ ROI / tăng ngân sách.
 
 - **Chưa làm:** `bid/recommend` làm mốc khi gian chưa có số (số sàn không theo sản phẩm, 1 SPU → 7,2 / 2 SPU → 4 — chưa đáng tin để tự
   động, khách tự đọc trong Seller Center); lát 3.4; mobile không có ô này. **Theo dõi:** ANO sau deploy — ô Nên chạy phải ra khởi điểm ~11,6

@@ -29,18 +29,15 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.minKeepPer100).toBe(5);
     expect(a.anchorRoi).toBe(8);
     expect(a.suggestedRoi).toBe(7.5); // 8 × 0,9 = 7,2 < sàn 7,5 → lấy sàn
-    expect(a.points[1]).toContain("thấp hơn sàn giữ lãi nên khởi điểm lấy sàn 7,5");
+    expect(a.points[1]).toContain("= 7,2 dưới sàn nên lấy sàn");
     expect(a.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass"]);
     expect(a.conclusion).toContain("đạt cả ba điều kiện");
-    expect(a.conclusion).toContain("ROI mục tiêu 7,5, không đặt dưới 7,5");
-    expect(a.conclusion).toContain("Giữ mỗi mức ROI 3 ngày trọn");
-    expect(a.conclusion).toContain("tối đa 1 lần/ngày");
-    expect(a.conclusion).toContain("tăng ngân sách 30%");
+    // Anh Trung 15/10 đêm: kết luận chỉ cần ROI + ngân sách, nhịp nâng hạ để trợ lý chiến dịch nhắc.
+    expect(a.conclusion).toBe("Nên chạy vì đạt cả ba điều kiện. Đặt ROI mục tiêu 7,5, ngân sách 100.000đ/ngày.");
     // Ngân sách = 2 × 250.000 ÷ 7,5 = 66.667 → dưới sàn 100.000 → 100.000.
     expect(a.budget).toMatchObject({ daily: 100_000, byTiktok: 2 * 250_000 / 7.5 });
     expect(a.budget?.note).toContain("Theo công thức TikTok");
     expect(a.budget?.note).toContain("Nâng lên 100.000đ/ngày");
-    expect(a.conclusion).toContain("Ngân sách 100.000đ/ngày");
   });
 
   // Ca ANO 15/10 (ảnh anh Trung): biên 17,7%, hòa vốn 5,66, gian đạt 12,85 trên các sản phẩm đang quảng cáo biên 17,5%, doanh thu
@@ -63,9 +60,9 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.anchorMargin).toBeNull();
     expect(a.scaledAnchorRoi).toBe(12.85);
     expect(a.suggestedRoi).toBe(11.6); // 12,85 × 0,9 = 11,565 → 11,6
-    expect(a.points[1]).toContain("chưa biết biên lãi các sản phẩm đang quảng cáo");
+    expect(a.points[1]).toContain("chưa biết biên các sản phẩm đang quảng cáo");
     expect(a.points[1]).toContain("khởi điểm 11,6");
-    expect(a.points[1]).toContain("còn lãi khoảng 9,1đ"); // 17,7% − 1/11,6
+    expect(a.points[1]).toContain("còn lãi ~9,1đ/100đ"); // 17,7% − 1/11,6
     expect(a.checks.find((c) => c.key === "feasible")?.text).toContain("cao hơn sàn giữ lãi 7,9");
     expect(a.budget?.byTiktok).toBeCloseTo((2 * (70_250_000 / 30)) / 11.6, 0); // ≈ 403.736
     expect(a.budget?.daily).toBe(400_000);
@@ -88,12 +85,13 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(p329.suggestedRoi).toBe(6.2);
     expect(p079.floorRoi).toBe(34.5); // 1/(0,079 − 0,05) = 34,48
     expect(p079.suggestedRoi).toBe(34.5);
-    expect(p079.points[1]).toContain("thấp hơn sàn giữ lãi nên khởi điểm lấy sàn 34,5");
-    expect(p219.points[1]).toContain("khoảng 44% biên lãi đi vào quảng cáo");
-    expect(p219.points[1]).toContain("Giữ cùng tỷ lệ đó cho sản phẩm này (biên 21,9%) → ROI 10,3");
+    expect(p079.points[1]).toContain("dưới sàn nên lấy sàn");
+    expect(p079.points[1]).toContain("khởi điểm 34,5");
+    expect(p219.points[1]).toContain("~44% biên lãi đi vào quảng cáo");
+    expect(p219.points[1]).toContain("quy về biên 21,9% của sản phẩm: 10,3 → khởi điểm 9,3");
     // Cùng tỷ lệ ⇒ lãi giữ lại / 100đ tỷ lệ với biên: 21,9% giữ ~11,1đ, 14,2% giữ ~7,2đ.
-    expect(p219.points[1]).toContain("còn lãi khoảng 11,1đ");
-    expect(p142.points[1]).toContain("còn lãi khoảng 7,2đ");
+    expect(p219.points[1]).toContain("còn lãi ~11,1đ/100đ");
+    expect(p142.points[1]).toContain("còn lãi ~7,2đ/100đ");
     // Biên đang quảng cáo không hợp lệ (0 / âm) → không quy, như chưa biết.
     expect(productRunAdvice({ ...ano, anchorMargin: 0 }).anchorMargin).toBeNull();
     expect(productRunAdvice({ ...ano, anchorMargin: -0.1 }).suggestedRoi).toBe(11.6);
@@ -114,8 +112,7 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.tier).toBe("test");
     expect(a.suggestedRoi).toBe(7.5); // 6 × 0,9 = 5,4 < sàn → sàn
     expect(a.checks.find((c) => c.key === "feasible")?.text).toContain("chưa tới sàn giữ lãi 7,5");
-    expect(a.conclusion).toContain("Chỉ nên chạy thử ngân sách nhỏ");
-    expect(a.conclusion).toContain("tăng ngân sách 30% mỗi lần");
+    expect(a.conclusion).toBe('Chỉ nên chạy thử ngân sách nhỏ vì còn phải dè chừng "ROI gian đang đạt so với sàn giữ lãi". Đặt ROI mục tiêu 7,5, ngân sách 100.000đ/ngày.');
     expect(a.budget?.note).toContain("Chạy thử: lấy một nửa.");
   });
 
@@ -124,7 +121,7 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.tier).toBe("test");
     expect(a.floorRoi).toBe(25);
     expect(a.suggestedRoi).toBe(27); // 30 × 0,9
-    expect(a.points[0]).toContain("không đủ để giữ 5đ/100đ");
+    expect(a.points[0]).toContain("biên không đủ giữ 5đ/100đ nên sàn = hòa vốn 25");
     expect(a.checks.find((c) => c.key === "feasible")?.status).toBe("caution");
     expect(a.checks.find((c) => c.key === "feasible")?.text).toContain("không đủ giữ 5đ/100đ");
   });
@@ -134,7 +131,7 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.minKeepPer100).toBe(2);
     expect(a.floorRoi).toBe(6.1); // 1/(0,185 − 0,02) = 6,06 → 6,1
     expect(a.suggestedRoi).toBe(7.2); // 8 × 0,9 — giờ cao hơn sàn
-    expect(a.points[1]).toContain("TikTok khuyên theo ROI đang đạt hoặc thấp hơn một chút");
+    expect(a.points[1]).toContain("khởi điểm 7,2 (× 0,9)");
   });
 
   it("gian chưa tiêu đủ tiền quảng cáo → không xét khả thi, khởi điểm = sàn giữ lãi, nhắc dùng ROI gợi ý trong Seller Center", () => {
@@ -142,8 +139,8 @@ describe("productRunAdvice — Nên chạy / Chạy thử / Chưa nên cho sản
     expect(a.tier).toBe("run");
     expect(a.anchorRoi).toBeNull();
     expect(a.suggestedRoi).toBe(7.5);
-    expect(a.points[1]).toContain("khởi điểm lấy sàn giữ lãi 7,5");
-    expect(a.points[1]).toContain("ROI gợi ý hiện trong Seller Center");
+    expect(a.points[1]).toContain("khởi điểm = sàn giữ lãi 7,5");
+    expect(a.points[1]).toContain("ROI gợi ý trong Seller Center");
     expect(a.checks.find((c) => c.key === "feasible")?.status).toBe("unknown");
     expect(a.conclusion).toContain("chưa xét được");
   });

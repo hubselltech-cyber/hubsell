@@ -45,14 +45,10 @@
 // ============================================================
 
 import { RECOMMEND_THRESHOLDS } from "../shopee/ads-recommend";
-import { DEFAULT_MIN_KEEP_PER_100, TARGET_STEP_PCT, profitFloorRoas } from "../shopee/ads-assistant-rules";
-// Ba mốc của TikTok nằm ở lib/tiktok-breakeven.ts (campaign-advice.ts cũng lấy từ đó) — không import campaign-advice để khỏi vòng
-// product-run-advice → campaign-advice → breakeven → product-run-advice.
-import {
-  TIKTOK_BUDGET_STEP_PCT as BUDGET_STEP_PCT,
-  TIKTOK_BUDGET_USED_PCT as BUDGET_USED_PCT,
-  TIKTOK_TARGET_STEP_WAIT_HOURS,
-} from "../../lib/tiktok-breakeven";
+import { DEFAULT_MIN_KEEP_PER_100, profitFloorRoas } from "../shopee/ads-assistant-rules";
+// Mốc 80% ngân sách của TikTok nằm ở lib/tiktok-breakeven.ts (campaign-advice.ts cũng lấy từ đó) — không import campaign-advice để
+// khỏi vòng product-run-advice → campaign-advice → breakeven → product-run-advice.
+import { TIKTOK_BUDGET_USED_PCT as BUDGET_USED_PCT } from "../../lib/tiktok-breakeven";
 
 /** "Thấp hơn một chút" so với mốc đang đạt (TikTok không nêu %) — MẶC ĐỊNH TỰ CHỌN, đối xứng mốc 90% mục tiêu của TikTok. */
 export const RUN_ADVICE_ANCHOR_FACTOR = 0.9;
@@ -171,27 +167,27 @@ export function productRunAdvice(i: ProductRunAdviceInput): ProductRunAdvice {
   const suggestedRoi = anchorStart != null ? Math.max(floorRoi, anchorStart) : floorRoi;
   const start = num(suggestedRoi, 1);
 
+  // Anh Trung 15/10 đêm: "không cần giải thích kỹ tới vậy — chỉ cần kết luận nên đặt ROI bao nhiêu, ngân sách bao nhiêu"; nhịp nâng / hạ
+  // về sau là việc của trợ lý chiến dịch (campaign-advice.ts). Dữ kiện mỗi ý MỘT dòng ngắn, cách ra số đầy đủ nằm ở budget.note (tooltip).
   const anchorLine = (): string => {
     if (anchorRoi == null || scaledAnchorRoi == null || anchorStart == null) {
-      return `Gian chưa có đủ số quảng cáo GMV Max 30 ngày để làm mốc → khởi điểm lấy sàn giữ lãi ${start}; TikTok khuyên dùng ROI gợi ý hiện trong Seller Center khi tạo chiến dịch, nhưng không đặt dưới ${start}.`;
+      return `Gian chưa có số GMV Max 30 ngày → khởi điểm = sàn giữ lãi ${start}; có ROI gợi ý trong Seller Center thì dùng, không dưới ${start}.`;
     }
-    const scaling =
-      anchorMargin != null && adsShareOfMargin != null
-        ? `Gian đang đạt ROI ${num(anchorRoi)} (GMV Max 30 ngày qua) trên các sản phẩm biên lãi ${num(anchorMargin * 100, 1)}%, tức khoảng ${num(adsShareOfMargin * 100, 0)}% biên lãi đi vào quảng cáo. ` +
-          `Giữ cùng tỷ lệ đó cho sản phẩm này (biên ${num(i.margin * 100, 1)}%) → ROI ${num(scaledAnchorRoi, 1)}`
-        : `Gian đang đạt ROI ${num(anchorRoi)} (GMV Max 30 ngày qua; chưa biết biên lãi các sản phẩm đang quảng cáo nên chưa quy về biên của sản phẩm này)`;
-    const pick =
-      floorRoi > anchorStart
-        ? `× ${num(RUN_ADVICE_ANCHOR_FACTOR)} = ${num(anchorStart, 1)} thấp hơn sàn giữ lãi nên khởi điểm lấy sàn ${start}`
-        : `× ${num(RUN_ADVICE_ANCHOR_FACTOR)} (TikTok khuyên theo ROI đang đạt hoặc thấp hơn một chút) → ROI mục tiêu khởi điểm ${start}`;
-    return `${scaling} ${pick}: đạt đúng mức này thì mỗi 100đ doanh thu còn lãi khoảng ${num(keepAt(i.margin, suggestedRoi), 1)}đ.`;
+    const keep = `đạt đúng mức này còn lãi ~${num(keepAt(i.margin, suggestedRoi), 1)}đ/100đ`;
+    const pick = floorRoi > anchorStart ? `(× ${num(RUN_ADVICE_ANCHOR_FACTOR)} = ${num(anchorStart, 1)} dưới sàn nên lấy sàn)` : `(× ${num(RUN_ADVICE_ANCHOR_FACTOR)})`;
+    if (anchorMargin != null && adsShareOfMargin != null) {
+      return (
+        `ROI gian 30 ngày ${num(anchorRoi)} trên biên ${num(anchorMargin * 100, 1)}% (~${num(adsShareOfMargin * 100, 0)}% biên lãi đi vào quảng cáo) ` +
+        `→ quy về biên ${num(i.margin * 100, 1)}% của sản phẩm: ${num(scaledAnchorRoi, 1)} → khởi điểm ${start} ${pick}; ${keep}.`
+      );
+    }
+    return `ROI gian 30 ngày ${num(anchorRoi)} (chưa biết biên các sản phẩm đang quảng cáo) → khởi điểm ${start} ${pick}; ${keep}.`;
   };
 
   const points: string[] = [
-    `Biên lãi trước quảng cáo ${num(i.margin * 100, 1)}% → ROI hòa vốn ${be}. ` +
-      (profitFloor != null
-        ? `Sàn giữ lãi ${floor}: không đặt ROI mục tiêu dưới mức này thì mỗi 100đ doanh thu còn giữ từ ${minKeepPer100}đ lãi sau quảng cáo.`
-        : `Biên lãi không đủ để giữ ${minKeepPer100}đ/100đ sau quảng cáo — sàn chỉ còn là hòa vốn ${floor}.`),
+    profitFloor != null
+      ? `Biên lãi ${num(i.margin * 100, 1)}% → hòa vốn ${be} · sàn giữ lãi ${floor} (giữ từ ${minKeepPer100}đ/100đ).`
+      : `Biên lãi ${num(i.margin * 100, 1)}% → hòa vốn ${be}; biên không đủ giữ ${minKeepPer100}đ/100đ nên sàn = hòa vốn ${floor}.`,
     anchorLine(),
   ];
   const checks: ProductRunCheck[] = [];
@@ -278,19 +274,14 @@ export function productRunAdvice(i: ProductRunAdviceInput): ProductRunAdvice {
   const tier: ProductRunTier = blocks.length > 0 ? "not_yet" : cautions.length > 0 ? "test" : "run";
 
   const budget = tier === "not_yet" ? null : runBudget(i, tier, suggestedRoi);
-  const budgetLine = budget ? ` Ngân sách ${vnd(budget.daily)}/ngày.` : "";
-  const rhythm =
-    `Giữ mỗi mức ROI ${TIKTOK_TARGET_STEP_WAIT_HOURS / 24} ngày trọn; tiêu dưới ${BUDGET_USED_PCT}% ngân sách thì hạ ROI mục tiêu ${Math.round(TARGET_STEP_PCT * 100)}% một nấc ` +
-    `(tối đa 1 lần/ngày — hạ nhiều hơn là mất bảo vệ ROI của TikTok ngày đó), lãi không tăng thêm sau nấc hạ thì dừng; ` +
-    `tiêu từ ${BUDGET_USED_PCT}% ngân sách mà vẫn đạt ROI thì tăng ngân sách ${Math.round(BUDGET_STEP_PCT * 100)}%.`;
+  // Kết luận = một câu: nên / thử / chưa + ROI mục tiêu + ngân sách. Nhịp nâng hạ sau khi chạy do trợ lý chiến dịch nhắc trên trang chiến dịch.
+  const setting = budget ? `Đặt ROI mục tiêu ${start}, ngân sách ${vnd(budget.daily)}/ngày.` : `Đặt ROI mục tiêu ${start}.`;
   const conclusion =
     tier === "not_yet"
       ? `Chưa nên chạy vì không đạt ${names(blocks)}. Xử lý xong rồi hãy chạy.`
       : tier === "test"
-        ? `Chỉ nên chạy thử ngân sách nhỏ vì còn phải dè chừng ${names(cautions)}. Đặt ROI mục tiêu ${start}, không dưới ${floor}.${budgetLine} ` +
-          `ROI thực giữ được trên ${floor} đủ ${TIKTOK_TARGET_STEP_WAIT_HOURS / 24} ngày trọn thì mới tăng ngân sách ${Math.round(BUDGET_STEP_PCT * 100)}% mỗi lần.`
-        : `Nên chạy vì ${unknown.length === 0 ? "đạt cả ba điều kiện" : `các điều kiện xét được đều đạt (chưa xét được ${names(unknown)})`}. ` +
-          `Tạo chiến dịch GMV Max trong Seller Center với ROI mục tiêu ${start}, không đặt dưới ${floor}.${budgetLine} ${rhythm}`;
+        ? `Chỉ nên chạy thử ngân sách nhỏ vì còn phải dè chừng ${names(cautions)}. ${setting}`
+        : `Nên chạy vì ${unknown.length === 0 ? "đạt cả ba điều kiện" : `các điều kiện xét được đều đạt (chưa xét được ${names(unknown)})`}. ${setting}`;
   return {
     tier,
     label: LABEL[tier],
@@ -360,6 +351,6 @@ export function runBudget(i: ProductRunAdviceInput, tier: Exclude<ProductRunTier
     notes.push(`Nâng lên ${vnd(RUN_ADVICE_MIN_BUDGET)}/ngày — mức tối thiểu của chiến dịch TikTok Shop tại Việt Nam (phụ lục API, GMV Max chưa có mức riêng).`);
     budget = RUN_ADVICE_MIN_BUDGET;
   }
-  notes.push("Ngân sách là trần: TikTok chỉ tiêu khi đạt ROI mục tiêu, nên giữ tiêu dưới 80% rồi tăng dần.");
+  notes.push(`Ngân sách là trần: TikTok chỉ tiêu khi đạt ROI mục tiêu; tiêu từ ${BUDGET_USED_PCT}% thì trợ lý chiến dịch sẽ nhắc tăng.`);
   return { daily: Math.max(roundK(budget), RUN_ADVICE_MIN_BUDGET), byTiktok, note: notes.join(" ") };
 }
