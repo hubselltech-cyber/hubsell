@@ -56,7 +56,7 @@ which in build 1.0 (10) carried a small "AI" label next to its name. That label 
 product nickname; to avoid any confusion we have removed it in build 1.0 (11). This assistant is built and hosted entirely by us:
 
 - Questions typed or spoken by the user are sent only to our own backend
-  (api.hubsell.vn, operated by Hubsell Technology Co., Ltd.), where a rule-based engine
+  (operated by Hubsell Technology Co., Ltd.), where a rule-based engine
   matches keywords and returns the user's own sales figures from our database. No large
   language model or external AI provider is involved; the app binary contains no AI/ML SDK.
 - The voice button uses the iOS Speech framework (on-device speech recognition provided by
@@ -82,8 +82,7 @@ Hubsell team
 ```
 --- Third-party AI (added Oct 15, 2026 after 5.1.1(i)/5.1.2(i) feedback) ---
 The app does NOT use or send data to any third-party AI service. The "Hubsell Assistant"
-(chat screen; the former "AI" label was removed in build 1.0 (11)) is our own rule-based query engine running on our backend
-(api.hubsell.vn): it matches keywords and returns the user's own sales numbers from our
+(chat screen; the former "AI" label was removed in build 1.0 (11)) is our own rule-based query engine running on our backend: it matches keywords and returns the user's own sales numbers from our
 database. No LLM / external AI provider, no AI SDK in the binary. Voice input uses Apple's
 iOS Speech framework (on-device recognition); only the recognized text is sent to our
 backend, audio is never stored or shared. Privacy policy: https://hubsell.vn/privacy
