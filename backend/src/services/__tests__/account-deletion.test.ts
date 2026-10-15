@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import bcrypt from "bcryptjs";
 
-import { DELETED_USER_NAME, anonymizedUserData } from "./account-deletion";
+import { DELETED_USER_NAME, anonymizedUserData } from "../account-deletion";
 
 describe("anonymizedUserData", () => {
   it("xóa sạch mọi trường nhận dạng và đặt mốc deletedAt", () => {

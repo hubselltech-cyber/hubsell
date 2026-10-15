@@ -1,7 +1,7 @@
 # Đăng ký nhãn hiệu chữ "HUBSELL" tại Cục Sở hữu trí tuệ
 
 Soạn 25/09/2026 (anh Trung: "Soạn đi em"). Chủ đơn: CÔNG TY TNHH CÔNG NGHỆ HUBSELL, MST 0111626360.
-Bộ hồ sơ sinh bằng `docs/scripts-phap-ly-make-nhan-hieu.py` → `C:\Users\trung\Downloads\Ho-so-nhan-hieu-Hubsell\`.
+Bộ hồ sơ sinh bằng `tools/phap-ly/make-nhan-hieu.py` → `C:\Users\trung\Downloads\Ho-so-nhan-hieu-Hubsell\`.
 
 ## 1. Kết luận và căn cứ
 

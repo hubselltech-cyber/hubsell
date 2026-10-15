@@ -933,7 +933,7 @@ Một số đo thêm ở máy local ngày 02/10 (Node 24.16): lệnh `fetch` kh�
 | Prisma | Ba model `ShopeeWebhookLog`, `TiktokWebhookLog`, `MisaWebhookLog` | Kiểu `WebhookJobStatus` giữ lại, `WebhookEvent` đang dùng |
 | Biến môi trường | `LAZADA_WEBHOOK_MODE`, `TIKTOK_WEBHOOK_MODE`, `SHOPEE_WEBHOOK_MODE`, `STOCK_PUSH_MODE`, sau đó `INVOICE_MODE` | Kiểm trên Render cả web lẫn worker không đặt biến nào trước khi gỡ |
 | Test | `tiktok-webhook-queue.test.ts`, `misa-webhook-queue.test.ts`, `stock-push.test.ts`, ca đường lui trong ba tệp `*-webhook-inbox.test.ts` / `lazada-webhook-queue.test.ts` / `stock-queue.test.ts`, `log-cleanup.test.ts`, `inventory-reconcile.test.ts`, `inventory-idempotency.test.ts`, `queue-config.test.ts` | Ca nào kiểm lõi dùng chung thì chuyển sang đường mới, không xóa |
-| Tài liệu | `.env.example`, `prisma/supabase-schema.sql` | |
+| Tài liệu | `.env.example`, `prisma/manual-migrations/supabase-schema.sql` | |
 
 **Cách đưa đợt 6b lên: hai lần, như các bước trước.** Lần một chỉ gỡ mã (bảng còn nguyên). Lần hai mới chạy migration xóa bảng. Lý do: lúc deploy bản cũ còn sống vài phút và worker bản cũ quét bảng cũ mỗi vài giây; xóa bảng ngay trong lượt deploy đó là bản cũ báo lỗi liên tục, và lệnh xóa bảng phải chờ khóa.
 

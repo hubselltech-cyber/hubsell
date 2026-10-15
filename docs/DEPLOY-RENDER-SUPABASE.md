@@ -17,7 +17,7 @@ ngrok/tunnel gì ở local.
 3. Thêm đuôi `?sslmode=require` vào cuối chuỗi — cloud bắt buộc SSL.
 4. Tạo bảng: **không cần làm gì** nếu theo Bước 2 (Render tự chạy
    `prisma migrate deploy` lúc khởi động). Muốn tạo tay thì dán
-   `backend/prisma/supabase-schema.sql` vào Supabase → **SQL Editor** → Run
+   `backend/prisma/manual-migrations/supabase-schema.sql` vào Supabase → **SQL Editor** → Run
    (chỉ trên database rỗng).
 
 ## Bước 2 — Deploy backend lên Render

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseLedgerPeriod } from "./ledger-period";
+import { parseLedgerPeriod } from "../ledger-period";
 
 describe("parseLedgerPeriod", () => {
   it("from/to trọn một tháng → nhận ra tháng, cắt mốc theo giờ VN", () => {

@@ -38,85 +38,94 @@ Phần dưới đây là lịch sử kỹ thuật của hệ thống, giữ nguy
 > ℹ️ Thư viện `xlsx` được cài từ **CDN chính thức của SheetJS** (`cdn.sheetjs.com/xlsx-0.20.3`) — bản đã vá lỗ hổng bảo mật, vì bản trên npm đã ngừng cập nhật.
 - **Database:** PostgreSQL 17 (cài native trên Windows, service `postgresql-x64-17`)
 
-## Cấu trúc dự án (Monorepo)
+## Cấu trúc dự án (Monorepo) — cây rà lại 15/10/2026
+
+**Luật đặt tệp (giữ cây gọn để sửa về sau):**
+
+| Thứ cần thêm | Đặt ở | Không đặt ở |
+|---|---|---|
+| Endpoint `/api/*` mới | `backend/src/routes/<nhóm>.ts` (một tệp = một nhóm), mount trong `app.ts` | trong `index.ts` |
+| Nghiệp vụ gọi từ nhiều route / worker | `backend/src/services/` | trong route |
+| Tiện ích thuần, công thức, không gọi DB | `backend/src/lib/` | trong services |
+| Tiến trình chạy theo nhịp | `backend/src/workers/<tên>.ts` + đăng ký trong `workers/index.ts`; KHÔNG giữ trạng thái nghiệp vụ ở biến cấp module (test `no-module-state` chặn) | setInterval rải trong route/service |
+| Gọi API sàn / nhà cung cấp | `backend/src/integrations/<sàn>/` | trong services |
+| Hằng số cấu hình tĩnh, registry | `backend/src/config/` | rải trong mã |
+| Test | `__tests__/` cạnh thư mục của mã được test (`*.test.ts`; test DB đặt tên `*-db.test.ts`) | cạnh tệp nguồn |
+| Script chạy một lần (backfill, probe, bench) | `backend/scripts/` | `backend/prisma/` (chỉ schema + migrations + seed) |
+| Đổi schema | `backend/prisma/migrations/<YYYYMMDDHHMMSS>_<tên>/migration.sql` + `schema.prisma`; SQL áp tay cũ giữ ở `prisma/manual-migrations/` | ALTER tay không có migration |
+| Trang web mới | `frontend/src/app/<nhóm>/<trang>/page.tsx` | tệp lẻ ngoài `app/` |
+| Component | theo TÍNH NĂNG `frontend/src/components/<nhóm>/`; dùng chung → `shared/`; mount một lần → `shell/` | trong `app/` |
+| Hàm thuần phía web | `frontend/src/lib/` | trong component |
+| Tài liệu thiết kế / quyết định | `docs/<CHU-DE>.md` (chữ in hoa, không dấu), chỉ mục ở `docs/README.md`; marketing → `docs/marketing/`, store → `docs/store/` | gốc repo (chỉ README, PROGRESS, TODO) |
+| Công cụ ngoài app (chạy trên máy anh) | `tools/<tên>/` | `docs/` |
 
 ```
 hubsell/
-├── frontend/                       # Giao diện web — cổng 3000
+├── README.md · PROGRESS.md · TODO.md   # Kiến trúc · nhật ký phiên · checklist
+├── render.yaml · docker-compose.yml     # Render (web + worker SG) · Postgres local tùy chọn
+├── start-backend.bat · start-frontend.bat · start-https.bat   # Bấm đúp chạy local
+├── scripts/                             # gen-certs.sh, dev-https.sh (HTTPS local)
+├── tools/                               # Công cụ ngoài app: mail-digest/ (tóm tắt thư 07:30), phap-ly/ (sinh hồ sơ PDF)
+├── docs/                                # 45+ tài liệu — chỉ mục theo chủ đề: docs/README.md
+│   ├── marketing/ · store/              # Định vị, video, bài FB · hồ sơ App Store / Google Play, thư trả Apple
+│   ├── landing-persona/ · bang-thong-worker-do-2026-10-12/   # Tư liệu đo đạc
+│   └── *.md                             # KIEN-TRUC-QUY-MO-TRIEU-DON, HANG-DOI-BEN, SO-CAI-DON, DONG-BO-GIAI-DOAN-3,
+│                                        #   GOI-NGU-DONG-GIAN-HET-HAN, HQ-SUC-KHOE, DEPLOY-RENDER-SUPABASE, ...
+│
+├── frontend/                            # Next.js — app.hubsell.vn (Vercel)
 │   └── src/
-│       ├── app/
-│       │   ├── page.tsx            # Tổng quan + Báo cáo tài chính (biểu đồ) — chỉ Admin
-│       │   ├── login/page.tsx      # Đăng nhập / Đăng ký
-│       │   ├── orders/page.tsx     # Quản lý đơn hàng tập trung (lọc, đổi trạng thái, hủy hoàn kho)
-│       │   ├── products/page.tsx   # Quản lý sản phẩm & kho + Nhập/Xuất Excel
-│       │   ├── channels/page.tsx   # Cấu hình kết nối gian hàng + giả lập đơn — chỉ Admin
-│       │   ├── mappings/page.tsx   # Liên kết sản phẩm sàn ↔ kho gốc — chỉ Admin
-│       │   ├── staff/page.tsx      # Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
-│       │   └── finance/            # 💰 Hubsell Finance — chỉ Admin
-│       │       ├── analytics/      #   Báo cáo dòng tiền (Area Chart doanh thu vs chi phí)
-│       │       ├── expenses/       #   Chi phí vận hành (bảng + modal thêm nhanh)
-│       │       ├── ...             #   (loss-orders đã dời sang operations-assistant/, shipping-alerts sang warehouse/ — route cũ redirect)
-│       │       └── cost-prices/    #   Cấu hình Giá vốn (lọc theo sàn, nhập onBlur tự lưu)
-│       ├── components/             # (100% thư mục — sắp xếp 26/08/2026)
-│       │   ├── shell/              # Mount MỘT lần ở tầng app: app-shell, query-provider,
-│       │   │                       #   command-palette, notification-bell, user-avatar-menu,
-│       │   │                       #   nav-icon, banner mất kết nối, cưỡng chế trần gói
-│       │   ├── shared/             # Widget dùng chung nhiều trang: access-denied,
-│       │   │                       #   channel-filter, date-range-picker, refreshing
-│       │   ├── tour/               # Hệ tour động: guide-tour-player, onboarding-overlay
-│       │   ├── dashboard/ finance/ orders/ products/ ads/ koc/ operations/
-│       │   │   settings/ warehouse/ ...  # Component theo TÍNH NĂNG (domain)
-│       │   ├── data-table/         # DataTable dùng chung (cột ẩn/ghim/kéo, view đặt tên)
-│       │   └── ui/                 # Component shadcn/ui
-│       └── lib/
-│           ├── api.ts              # Lớp gọi API + quản lý token đăng nhập
-│           ├── excel.ts            # Xuất Excel (SP, đơn hàng) + tạo file mẫu (client-side)
-│           └── format.ts           # Định dạng tiền VND, số, ngày giờ
+│       ├── app/                         # Route theo nhóm nghiệp vụ
+│       │   ├── page.tsx · login/ · reset-password/ · guide/
+│       │   ├── orders/ · products/ · channels/ · mappings/ · staff/
+│       │   ├── warehouse/{returns,shipping-alerts,sync}
+│       │   ├── finance/{analytics,expenses,cost-prices,fee-audit,loss-orders,realized-pnl,shipping-alerts}
+│       │   ├── ads/{shopee,lazada,tiktok}          # Trợ lý quảng cáo đa sàn
+│       │   ├── operations-assistant/{chat,reviews,ai-rules,loss-orders}
+│       │   ├── invoicing/{connect,history,tax-settings}
+│       │   ├── settings/{general,plan,tax,other} · affiliate/ · koc-marketing/ (ẩn)
+│       │   └── admin/{customers,finance,health,marketing,plans,system}   # HQ điều hành nền tảng
+│       ├── components/                  # Theo TÍNH NĂNG: ads/ assistant/ auth/ channels/ dashboard/ finance/
+│       │   │                            #   invoice/ invoicing/ koc/ mappings/ operations/ orders/ products/
+│       │   │                            #   settings/ support/ warehouse/
+│       │   ├── shell/                   # Mount MỘT lần: app-shell, query-provider, command-palette,
+│       │   │                            #   notification-bell, plan-quota-guard (cưỡng chế gói)
+│       │   ├── shared/ · tour/ · data-table/ · ui/ (shadcn)
+│       └── lib/                         # api.ts (gọi API + token), format.ts, excel.ts, permissions.ts,
+│                                        #   guide-tours.ts, query-keys.ts, use-api-query.ts, pnl-mappers.ts, ...
 │
-├── backend/                        # Máy chủ API — cổng 4000
+├── backend/                             # Express + Prisma — Render SG: web (API) + worker (nền)
 │   ├── prisma/
-│   │   ├── schema.prisma           # Toàn bộ schema DB (User/Channel/Order/kho/gói thuê bao/hóa đơn...)
-│   │   ├── migrations/             # Lịch sử thay đổi cấu trúc DB — tự áp khi deploy (migrate deploy)
-│   │   └── seed.ts                 # Dữ liệu mẫu (admin@hubsell.vn / hubsell123)
-│   ├── scripts/                    # Công cụ vận hành 1 lần: probe API sàn, seed demo, migration local...
-│   └── src/                        # (sắp xếp theo VAI TRÒ — 26/08/2026)
-│       ├── index.ts                # Điểm khởi động server + kích các worker nền
-│       ├── app.ts                  # Khai báo Express app: gắn route + middleware
-│       ├── middleware/
-│       │   └── auth.ts             # JWT: ký token, requireAuth, phân quyền chủ/nhân viên/HQ
-│       ├── lib/                    # Hạ tầng + tiện ích thuần (không nghiệp vụ)
-│       │   ├── prisma.ts           # Kết nối Prisma dùng chung
-│       │   ├── mailer.ts           # Gửi email (nodemailer)
-│       │   └── ...                 # backend-url, channel-filter, date-range, phone, username
-│       ├── config/                 # Registry/cấu hình tĩnh
-│       │   ├── permission-registry.ts          # Cây phân quyền nhân viên (khóa lá)
-│       │   ├── platform-permission-registry.ts # Phân quyền khu điều hành HQ
-│       │   └── tax-config.ts       # Nguồn công thức thuế DUY NHẤT (bóc ngược VAT từ giá bán)
-│       ├── services/               # Nghiệp vụ gọi từ routes (google-oauth, notifications,
-│       │                           #   ops-alerts, plan-enforcement, subscription-service,
-│       │                           #   referral-wallet, tax-pilot, platform-audit, item-images...)
-│       ├── workers/                # MỌI tiến trình nền chạy theo nhịp
-│       │   ├── order-auto-sync.ts  # Quét đơn Shopee/Lazada 10' + đối soát + cứu đơn giao thất bại
-│       │   ├── token-refresh.ts    # Cron lưới an toàn refresh token Shopee
-│       │   ├── invoice-auto-issue.ts # Tự xuất hóa đơn điện tử 15'
-│       │   ├── weekly-report.ts    # Báo cáo tuần đẩy chuông sáng thứ 2
-│       │   └── log-cleanup.ts      # Dọn log theo chính sách 7/30 ngày
-│       ├── routes/                 # 25 file route = 25 nhóm endpoint /api/* (auth, orders,
-│       │                           #   products, finance, tax, subscription, admin/HQ, webhooks...)
-│       ├── integrations/           # Tích hợp sàn THẬT — mỗi sàn một thư mục
-│       │   ├── shopee/             # OAuth, đơn, đối soát, ads, hoàn trả, chat, hóa đơn người mua
-│       │   ├── lazada/             # OAuth, đơn, settlements Finance API, ads, reverse
-│       │   ├── tiktok/             # OAuth + đồng bộ đơn/đối soát (chờ data thật)
-│       │   ├── invoice/            # Hóa đơn điện tử MISA meInvoice (issue-order là lõi dùng chung)
-│       │   ├── ai/                 # AI Copilot (gác chờ thương mại hóa)
-│       │   └── ...                 # inventory-push, stock-push-worker: queue đẩy tồn kho lên sàn
-│       └── marketplace/            # Lớp trừu tượng sàn + adapter + mockMarketplace (giả lập)
+│   │   ├── schema.prisma · seed.ts
+│   │   ├── migrations/                  # Tự áp khi deploy (migrate deploy)
+│   │   └── manual-migrations/           # SQL áp tay thời kỳ đầu (supabase-schema.sql, ...) — tư liệu
+│   ├── scripts/                         # 65 script một lần: backfill-*, probe-*, bench-*, apply-migration-local
+│   └── src/
+│       ├── index.ts                     # Khởi động theo HUBSELL_ROLE=all|web|worker
+│       ├── app.ts                       # Express app: mount 35 route + middleware gác quyền/gói
+│       ├── middleware/auth.ts           # JWT, requireAuth, requirePermission, requirePlatformPermission
+│       ├── config/                      # permission-registry, platform-permission-registry, tax-config,
+│       │                                #   ads-cadence, capacity-plan
+│       ├── lib/                         # Thuần + hạ tầng: prisma, queue (pg-boss), mailer, secret-box,
+│       │                                #   date-range, finance-definitions, pnl-formula, cost-price, ...
+│       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
+│       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
+│       │                                #   notifications, platform-health, fulfillment/, ...
+│       ├── routes/                      # 35 nhóm endpoint /api/*: auth, orders, products, finance, tax,
+│       │                                #   subscription, ads, tiktok-ads, webhooks, admin*, support, ...
+│       ├── workers/                     # 24 tiến trình nền, đăng ký trong workers/index.ts:
+│       │                                #   order-auto-sync (lịch từng gian), event-queue (webhook pg-boss),
+│       │                                #   stock-queue, stock-reconcile, order-ledger, token-refresh,
+│       │                                #   plan-hibernate, subscription-reminder, invoice-*, review-auto-reply, ...
+│       ├── integrations/                # Mỗi đối tác một thư mục: shopee/ lazada/ tiktok/ tiktok-ads/
+│       │                                #   hubsell-ads/ invoice/ (MISA) payos/ apple-iap/ ai/
+│       │                                #   + lõi dùng chung: order-sync-write, sync-contract, stock-push-worker
+│       └── marketplace/                 # Lớp trừu tượng sàn + adapter + mockMarketplace (giả lập)
 │
-├── docker-compose.yml              # PostgreSQL qua Docker (tuỳ chọn, hiện dùng native)
-├── start-backend.bat               # Bấm đúp chạy backend
-├── start-frontend.bat              # Bấm đúp chạy frontend
-└── README.md
+└── hubsell-mobile/                      # Expo — một bản dựng iOS/Android (Google Play đã phát hành)
+    └── src/{app,screens,components,api,auth,plan,theme,lib,types}
 ```
+
+Không nằm trong repo: `hubsell-landing/` (repo riêng, ignore), `certs/` (cert local), `.claude/worktrees/` (phiên phụ của app).
 
 ## API hiện có
 

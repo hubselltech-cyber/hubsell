@@ -37,7 +37,7 @@ Hai tờ mới nằm ở `Downloads\Doi-ten-bo-sung-COMPANY-LIMITED\`: Mẫu 12 
 
 Ngày ký để trống "ngày ....... tháng 09 năm 2026": anh ghi tay cùng một ngày cho cả hai, ký, rồi scan PDF. Nộp online có thể ký số thay chữ ký tay nếu cổng cho phép ký lên file.
 
-Sinh lại file: `python docs/scripts-phap-ly-make-doi-ten.py` (reportlab, font Arial + Segoe UI Symbol cho ô tick).
+Sinh lại file: `python tools/phap-ly/make-doi-ten.py` (reportlab, font Arial + Segoe UI Symbol cho ô tick).
 
 ## 3. Các bước trên dangkyquamang.dkkd.gov.vn
 

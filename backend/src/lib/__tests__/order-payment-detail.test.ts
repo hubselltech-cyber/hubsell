@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderPaymentDetail } from "./order-payment-detail";
+import { orderPaymentDetail } from "../order-payment-detail";
 
 type Input = Parameters<typeof orderPaymentDetail>[0];
 

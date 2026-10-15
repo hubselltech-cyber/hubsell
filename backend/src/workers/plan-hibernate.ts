@@ -24,9 +24,9 @@ export async function runPlanHibernation(now: Date = new Date()): Promise<void> 
   running = true;
   try {
     const r = await hibernateExpiredOwners(now);
-    if (r.channels > 0) {
-      console.log(`[plan-hibernation] Đặt ngủ đông ${r.channels} gian của ${r.owners} chủ shop hết gói quá ân hạn`);
-    }
+    // Log cả lượt 0 gian (4 dòng/ngày) — kiểm prod 15/10 không phân biệt được
+    // "chưa chạy" với "không có gì để ngủ" khi chỉ log lúc có gian.
+    console.log(`[plan-hibernation] Lượt quét: đặt ngủ đông ${r.channels} gian của ${r.owners} chủ shop hết gói quá ân hạn`);
   } catch (err) {
     console.error("[plan-hibernation] Lỗi lượt quét:", (err as Error).message);
   } finally {

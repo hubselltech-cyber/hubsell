@@ -3,7 +3,7 @@
  *  1) Gán % phí sàn mặc định cho các gian hàng đã kết nối từ trước.
  *  2) Quyết toán các đơn "Đã giao" phát sinh trước khi có tính năng này.
  *
- * Chạy:  npx tsx prisma/backfill-settlement.ts
+ * Chạy:  npx tsx scripts/backfill-settlement.ts
  */
 import { PrismaClient } from "@prisma/client";
 import { PLATFORM_FEE_RATE, mockSettlement } from "../src/marketplace/mockMarketplace";
