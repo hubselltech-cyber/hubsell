@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 15/10/2026 (chiều) — iOS: APPLE TỪ CHỐI LẦN 7 = 5.1.1(i)/5.1.2(i) "third-party AI" (IAP ĐÃ QUA) — thư + chính sách sẵn, chờ anh gật
+
+- **Diễn biến:** In Review từ sáng, hơn 3 giờ (6 lần trước ~14 phút) → 13:25 Apple trả: app "appears to share the user's personal data with a third-party AI service" mà không nói rõ/xin phép. **Không còn 2.1(b) IAP, không còn 3.1.1** → thanh toán đã qua, 20 IAP vẫn Ready for Review. Apple mở đường: nếu không dùng AI bên thứ ba thì reply xác nhận + ghi vào App Review Information.
+- **Gốc (đã rà mã):** màn Trợ lý Hubsell mobile có huy hiệu "AI" + nút micro (`hubsell-mobile/src/app/assistant.tsx:193`). Sự thật: `/api/assistant/ask` là tầng luật thuần (từ khóa → Prisma, không LLM); giọng nói dùng iOS Speech framework (nhận dạng của máy), app chỉ nhận chữ; bản dựng mobile không có SDK AI. Anthropic chỉ được gọi ở copilot CSKH web (đã ẩn 12/10, mobile không có đường gọi) và HQ đọc hóa đơn đầu vào của chính công ty.
+- **Đã làm:** `docs/store/APPLE-REVIEW-REPLY-7.md` (phân tích + thư Reply + đoạn Notes tiếng Anh + thứ tự làm); `/privacy` landing thêm đoạn **"Ứng dụng di động"** (camera, thư viện ảnh, micro/nhận dạng giọng nói, Face ID — câu chữ LISTING mục 9) + đoạn **"Trợ lý Hubsell"** nói rõ không gửi tới AI/LLM bên thứ ba, cuối mục 3; `updatedAt` 15/10/2026; `PRIVACY_VERSION` backend 2026-10-15 (chỉ ghi log lúc đăng ký, không ép khách đồng ý lại). tsc landing sạch. Commit `da291c78` (main) + `6359c5a` (landing), chưa push.
+- **Phương án A (đề xuất):** giữ build 1.0 (10) → anh push 2 repo (landing lên Vercel trước vì thư dẫn link) → em dán Notes + gửi Reply qua Chrome → anh bấm Resubmit. Không chạy SQL reviewer@. Trả lần 8 cùng lý do → B: build 11 bỏ huy hiệu "AI".
+
+---
+
 ## Phiên 15/10/2026 (sáng sớm) — CHUẨN BỊ HÀNG THEO MẺ: LẦN 1 BÁO LỖI OAN, LẦN 2 409 — ĐÃ SỬA, `8c08d973` LIVE 09:18
 
 - **Kiểm prod thật (Render Logs + Supabase SQL qua Chrome của anh, ~09:10):** fulfillment_batches: 08:30:53 mẻ 14 đơn DONE 3s 14/14; **08:40:42 mẻ 30 đơn DONE 8,5s, 30/30 sàn nhận** (mass API Shopee chạy đúng cả 2 gian); **08:40:48 mẻ thứ hai cùng 30 đơn** (10 bỏ qua đã rời Chờ xử lý, 20 ANO bị gọi lại → Shopee `not eligible for rescheduling`); 08:51 in 30 đơn (tải gộp 21 ANO bị `packages_can_not_download_together` → tải lẻ), 30/30 đã in. Kết luận: máy chủ không hỏng; trình duyệt báo lỗi trong <6 giây rồi anh bấm lại → lượt chồng. Lỗi phía trình duyệt lần 1 **chưa rõ** (anh chưa trả lời câu lỗi là câu nào).
