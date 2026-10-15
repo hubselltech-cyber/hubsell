@@ -88,6 +88,7 @@ export async function findChannelsPendingFirstCatalog(
       userId: ownerId,
       status: "ACTIVE",
       refreshToken: { not: null },
+      hibernatedAt: null,
       channelName: { in: ONLINE },
       lastProductSyncAt: null,
       productSyncError: null,

@@ -142,6 +142,7 @@ export async function runLazadaRenewalReminders(force = false, now: Date = new D
         status: "ACTIVE",
         refreshToken: { not: null },
         externalShopId: { not: null },
+        hibernatedAt: null, // chủ hết gói quá ân hạn: không nhắc ủy quyền lại
         OR: [
           { accessTokenExpireAt: { lte: horizon } },
           { refreshTokenExpireAt: { lte: horizon } },

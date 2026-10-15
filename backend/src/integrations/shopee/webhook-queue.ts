@@ -15,6 +15,7 @@ import { syncShopeeEscrowEstimateForOrder } from "./settlements";
 import { createSyncAlert } from "./inventory-sync";
 import { finishStockPush } from "../inventory-push";
 import { describeChannelFailure } from "../../services/sync-alert-text";
+import { HIBERNATED_SKIP_NOTE, isHibernated } from "../../services/plan-hibernation";
 
 /**
  * Kéo lại MỘT đơn Shopee rồi upsert + tác động kho, xếp việc đẩy tồn, kéo phí
@@ -28,6 +29,9 @@ export async function handleShopeeOrderJob(
 ): Promise<string | null> {
   const channel = await findShopeeChannelByShopId(shopId);
   if (!channel) return "shop chưa kết nối Hubsell";
+  // Chủ shop hết gói quá ân hạn: sàn vẫn đẩy (route đã ack 200), mình không ghi đơn.
+  // Gia hạn → mốc nước vét bù (services/plan-hibernation.ts).
+  if (isHibernated(channel)) return HIBERNATED_SKIP_NOTE;
 
   const result = await processShopeeOrderEvent(channel, orderSn, { trackingNo: trackingNo || undefined });
   console.log(

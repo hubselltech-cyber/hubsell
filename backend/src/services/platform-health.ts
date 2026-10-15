@@ -253,6 +253,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
   const syncable = {
     status: "ACTIVE" as const,
     refreshToken: { not: null },
+    hibernatedAt: null, // gian ngủ đông (hết gói quá ân hạn) không tính là "trễ quét"
     channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
   const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark] =

@@ -267,6 +267,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
         channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
         status: "ACTIVE",
         refreshToken: { not: null },
+        hibernatedAt: null, // gian ngủ đông (hết gói quá ân hạn) không hỏi sàn
       },
     });
 

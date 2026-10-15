@@ -43,6 +43,8 @@ function monthKeyNow(): string {
 }
 
 const STILL_SYNCING = "Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ.";
+/** Hết gói quá ân hạn → gian ngủ đông (backend services/plan-hibernation.ts, 15/10/2026). */
+const SYNC_PAUSED = "Đồng bộ đơn hàng và tồn kho đang tạm ngừng; dữ liệu đã có vẫn giữ nguyên.";
 const CONTACT_ADMIN = "Liên hệ quản trị viên shop để được hỗ trợ.";
 
 export function planBannerOf(data: MyPlanResponse | null): PlanBannerContent | null {
@@ -54,11 +56,14 @@ export function planBannerOf(data: MyPlanResponse | null): PlanBannerContent | n
 
   // Ưu tiên theo độ nặng (chép bannerContentOf web): khóa > hết hạn > vượt trần > 80% > sắp hết hạn.
   if (data.locked) {
+    // Hết gói quá ân hạn (15/10/2026): gian ngủ đông, đồng bộ tạm ngừng; vượt trần
+    // đơn vẫn đồng bộ. Câu chữ trung tính theo luật store — không nhắc gia hạn.
+    const syncLine = data.lockedReason === "EXPIRED" ? SYNC_PAUSED : STILL_SYNCING;
     return {
       key: `${month}:locked`,
       tone: "red",
       lead: "Một số tính năng nâng cao đang tạm khóa",
-      detail: `${STILL_SYNCING} ${CONTACT_ADMIN}`,
+      detail: `${syncLine} ${CONTACT_ADMIN}`,
       dismissible: false,
     };
   }
@@ -69,7 +74,7 @@ export function planBannerOf(data: MyPlanResponse | null): PlanBannerContent | n
       lead: expiry.lockDeadline
         ? `Tính năng nâng cao sẽ tạm khóa từ ngày ${fmtDate(expiry.lockDeadline)}`
         : "Tính năng nâng cao sắp tạm khóa",
-      detail: `${STILL_SYNCING} ${CONTACT_ADMIN}`,
+      detail: `Khi đó đồng bộ đơn hàng và tồn kho cũng tạm ngừng; dữ liệu đã có vẫn giữ nguyên. ${CONTACT_ADMIN}`,
       dismissible: false,
     };
   }
@@ -105,7 +110,7 @@ export function planBannerOf(data: MyPlanResponse | null): PlanBannerContent | n
       key: `expiring:${subscription.currentPeriodEnd}`,
       tone: "amber",
       lead: `Kỳ dịch vụ hiện tại kết thúc ngày ${fmtDate(subscription.currentPeriodEnd)}`,
-      detail: `Sau đó tính năng nâng cao tạm khóa sau 7 ngày. ${STILL_SYNCING}`,
+      detail: "Sau đó 7 ngày tính năng nâng cao tạm khóa và đồng bộ đơn hàng, tồn kho tạm ngừng; dữ liệu đã có vẫn giữ nguyên.",
       dismissible: true,
     };
   }

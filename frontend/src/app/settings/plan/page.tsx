@@ -657,7 +657,7 @@ export default function SettingsPlanPage() {
             {data.locked && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
                 {data.lockedReason === "EXPIRED"
-                  ? "Gói đã hết hạn quá ân hạn — các tính năng nâng cao đang tạm khóa. Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ."
+                  ? "Gói đã hết hạn quá ân hạn — các tính năng nâng cao đang tạm khóa, đồng bộ đơn hàng và tồn kho tạm ngừng. Gia hạn là nối lại ngay và tự kéo bù đơn; dữ liệu đã có giữ nguyên."
                   : "Shop đã vượt trần đơn quá ân hạn — các tính năng nâng cao đang tạm khóa. Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ."}
               </div>
             )}

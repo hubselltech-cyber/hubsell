@@ -288,6 +288,9 @@ async function tick(): Promise<void> {
         channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
         status: "ACTIVE",
         refreshToken: { not: null },
+        // Gian ngủ đông (chủ shop hết gói quá ân hạn, services/plan-hibernation.ts)
+        // không quét; next*At của chúng đã đẩy về 2100 nên chỉ mục cũng bỏ qua.
+        hibernatedAt: null,
         ...(inFlight.size > 0 ? { id: { notIn: [...inFlight] } } : {}),
         AND: [
           { OR: [{ syncLockedAt: null }, { syncLockedAt: { lt: stale } }] },

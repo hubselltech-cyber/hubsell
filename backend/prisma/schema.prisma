@@ -536,6 +536,11 @@ model Channel {
   ordersWatermarkAt        DateTime?
   /// Khác null = lượt quét trước bị cắt (chạm trần trang): lượt sau vét phần CŨ HƠN mốc này trước khi tiến mốc nước.
   ordersCatchupBeforeAt    DateTime?
+  /// NGỦ ĐÔNG (15/10/2026, docs/GOI-NGU-DONG-GIAN-HET-HAN.md): khác null = chủ shop hết gói quá ân hạn
+  /// EXPIRED_GRACE_DAYS → worker không quét đơn/đối soát/ads/tồn, webhook nhận rồi bỏ; chỉ còn làm mới token.
+  /// Lúc đặt cờ, mọi next*SyncAt đẩy về 2100 để rơi khỏi chỉ mục (status, next*At). Thanh toán/gia hạn
+  /// → xóa cờ + kéo hạn về ngay; mốc nước giữ nguyên nên lượt đầu tự vét bù (trần WATERMARK_FLOOR_DAYS).
+  hibernatedAt             DateTime?
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi

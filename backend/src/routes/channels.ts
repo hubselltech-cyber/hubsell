@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import crypto from "crypto";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { respondHibernated } from "../services/plan-hibernation";
 import { HISTORY_BACKFILL_NOTICE } from "../services/sync-schedule";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import {
@@ -629,6 +630,7 @@ router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Không tìm thấy gian hàng" });
       return;
     }
+    if (respondHibernated(res, channel)) return;
 
     if (channel.channelName === ChannelName.TIKTOK) {
       if (!channel.shopCipher) {
@@ -745,6 +747,7 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
       res.status(404).json({ error: "Không tìm thấy gian hàng" });
       return;
     }
+    if (respondHibernated(res, channel)) return;
 
     if (channel.channelName === ChannelName.SHOPEE) {
       if (!channel.refreshToken) {

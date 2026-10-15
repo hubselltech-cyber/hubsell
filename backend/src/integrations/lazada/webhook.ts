@@ -23,6 +23,7 @@ import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import { finishStockPush, stageStockPush } from "../inventory-push";
 import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
+import { HIBERNATED_SKIP_NOTE, isHibernated } from "../../services/plan-hibernation";
 
 // ---------- 1. Xác thực chữ ký ----------
 
@@ -143,11 +144,15 @@ export async function findLazadaChannelsBySellerId(sellerId: string) {
  * vô ích), null khi xử lý trọn vẹn.
  */
 export async function handleLazadaOrderJob(sellerId: string, tradeOrderId: string): Promise<string | null> {
-  const channels = await findLazadaChannelsBySellerId(sellerId);
-  if (channels.length === 0) {
+  const allChannels = await findLazadaChannelsBySellerId(sellerId);
+  if (allChannels.length === 0) {
     console.warn(`[Webhook Lazada] seller ${sellerId} chưa nối gian nào — bỏ qua đơn ${tradeOrderId}`);
     return "seller chưa kết nối Hubsell";
   }
+  // Gian của chủ shop hết gói quá ân hạn: sàn vẫn đẩy (route đã ack 200), mình
+  // không ghi đơn; cùng seller nối vào tài khoản khác còn gói thì vẫn xử lý.
+  const channels = allChannels.filter((c) => !isHibernated(c));
+  if (channels.length === 0) return HIBERNATED_SKIP_NOTE;
   let skipped: string | null = null;
   for (const channel of channels) {
     const result = await processLazadaOrderPush(channel, tradeOrderId);

@@ -157,10 +157,11 @@ async function pushClaimedJobs(
   hooks: { shouldStop?: () => boolean; onJobStart: (index: number) => void }
 ): Promise<boolean> {
   const channel = await prisma.channel.findFirst({
-    where: { id: channelId, status: "ACTIVE", refreshToken: { not: null } },
+    where: { id: channelId, status: "ACTIVE", refreshToken: { not: null }, hibernatedAt: null },
   });
   if (!channel) {
-    // Gian đã ngắt kết nối/xóa — job không còn ý nghĩa.
+    // Gian đã ngắt kết nối/xóa/ngủ đông (hết gói quá ân hạn) — job không còn ý
+    // nghĩa; gian thức lại thì lượt đối soát tồn 6h sẽ cân lại.
     await prisma.stockPushJob.deleteMany({
       where: { id: { in: claimed.map((j) => j.id) } },
     });

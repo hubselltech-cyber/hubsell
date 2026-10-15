@@ -12,7 +12,8 @@
 //    hệ + đường Ví Hubsell ở /referral). Tự bật MỘT lần mỗi (tháng, mức) khi
 //    chạm mức đỏ.
 // 3) PlanLockedScreen — màn thay nội dung các trang tầng giá trị gia tăng khi
-//    bị khóa. Đơn + tồn kho vẫn đồng bộ ngầm phía backend — màn này phải nói
+//    bị khóa. Vượt trần đơn: đơn + tồn kho vẫn đồng bộ ngầm phía backend; HẾT GÓI
+//    quá ân hạn (15/10/2026): gian ngủ đông, đồng bộ tạm ngừng, gia hạn là vét bù — màn này phải nói
 //    rõ điều đó để khách yên tâm dữ liệu không mất.
 //
 // Nguồn số liệu duy nhất: GET /api/subscription/me (qk.mySubscription — cache
@@ -116,7 +117,8 @@ function bannerContentOf(data: MySubscriptionResponse): BannerContent | null {
       key: `${month}:locked-expired`,
       tone: "red",
       lead: `Gói ${planName} đã hết hạn — các tính năng nâng cao đang tạm khóa`,
-      detail: "Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ; gia hạn là mở lại nguyên vẹn.",
+      detail:
+        "Đồng bộ đơn hàng và tồn kho cũng tạm ngừng. Gia hạn là nối lại ngay và tự kéo bù đơn phát sinh trong lúc ngừng; dữ liệu đã có giữ nguyên.",
       autoPopup: true,
       dismissible: false,
     };
@@ -137,7 +139,7 @@ function bannerContentOf(data: MySubscriptionResponse): BannerContent | null {
       tone: "red",
       lead: `Gói ${planName}${subscription?.isTrial ? " (dùng thử)" : ""} đã hết hạn`,
       detail: expiry.lockDeadline
-        ? `Các tính năng nâng cao sẽ tạm khóa sau ngày ${fmtDate(expiry.lockDeadline)} nếu chưa gia hạn — đơn hàng vẫn đồng bộ bình thường.`
+        ? `Sau ngày ${fmtDate(expiry.lockDeadline)} nếu chưa gia hạn: các tính năng nâng cao tạm khóa và đồng bộ đơn hàng, tồn kho tạm ngừng — dữ liệu đã có vẫn giữ nguyên.`
         : "Gia hạn để tiếp tục sử dụng đầy đủ tính năng.",
       autoPopup: true,
       dismissible: false,
@@ -487,8 +489,8 @@ export function UpgradePlanDialog({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Trong thời gian chờ nâng gói, đơn hàng và tồn kho vẫn được đồng bộ đầy đủ —
-          không mất dữ liệu nào.{" "}
+          Dữ liệu đã có của shop được giữ nguyên, không mất gì — nâng gói hoặc gia hạn là
+          mọi số liệu hiện lại.{" "}
           <Link href="/settings/plan" className="font-medium underline underline-offset-2">
             Xem chi tiết gói &amp; lịch sử thanh toán
           </Link>
@@ -530,8 +532,10 @@ export function PlanLockedScreen({
               : data.orders.limit != null
                 ? `Tháng này đã có ${nf.format(data.orders.used)}/${nf.format(data.orders.limit)} đơn — tính năng này tạm khóa cho tới khi nâng gói.`
                 : "Tính năng này tạm khóa cho tới khi nâng gói."}{" "}
-            Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ phía sau — {expired ? "gia hạn" : "nâng gói"} là
-            mọi số liệu hiện lại nguyên vẹn, không mất gì.
+            {expired
+              ? "Đồng bộ đơn hàng và tồn kho đang tạm ngừng — gia hạn là nối lại ngay và tự kéo bù đơn phát sinh trong lúc ngừng."
+              : "Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ phía sau — nâng gói là mọi số liệu hiện lại nguyên vẹn."}{" "}
+            Dữ liệu đã có không mất gì.
           </p>
         </div>
         {isShopAdmin ? (

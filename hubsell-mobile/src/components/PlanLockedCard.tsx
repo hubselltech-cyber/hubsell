@@ -9,7 +9,8 @@ import { usePlan } from "@/plan/PlanContext";
 /**
  * THẺ KHÓA thay nội dung màn tầng nâng cao (Tổng quan số tiền, Tài chính,
  * Quảng cáo) khi backend trả 403 PLAN_LOCKED — tương ứng PlanLockedScreen web.
- * Phải nói rõ đơn + tồn kho vẫn đồng bộ để khách yên tâm dữ liệu không mất.
+ * Phải nói rõ dữ liệu đã có không mất (15/10/2026: hết gói quá ân hạn thì đồng bộ
+ * tạm ngừng — gian ngủ đông — nên không hứa "vẫn đồng bộ" nữa; dải nhắc plan-ui.ts nói rõ).
  * CÙNG HÀNH VI iOS + Android (anh Trung 08/10, luật store xem plan-ui.ts): câu
  * chữ trung tính — không nhắc gói, giá, gia hạn, nơi mua, không chỉ sang bản
  * web; `message` là câu client đã thay trung tính. Chỉ còn nút "tải lại".
@@ -41,8 +42,8 @@ export function PlanLockedCard({
         Tính năng này đang tạm khóa
       </Text>
       <Text className="mt-1.5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
-        {message ?? "Tính năng này hiện chưa được bật cho tài khoản của bạn."} Đơn hàng và tồn
-        kho vẫn được đồng bộ đầy đủ phía sau.
+        {message ?? "Tính năng này hiện chưa được bật cho tài khoản của bạn."} Dữ liệu đã có của
+        shop vẫn được giữ nguyên.
       </Text>
       {isOwner ? null : (
         <Text className="mt-2 text-center text-xs font-medium leading-5 text-slate-700 dark:text-slate-200">

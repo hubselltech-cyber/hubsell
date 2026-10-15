@@ -25,6 +25,7 @@ import {
 import { finishStockPush } from "../inventory-push";
 import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
+import { HIBERNATED_SKIP_NOTE, isHibernated } from "../../services/plan-hibernation";
 
 /**
  * Loại sự kiện webhook TikTok Shop (trường `type`, dạng số) — ĐỐI CHIẾU bảng
@@ -105,6 +106,8 @@ export async function handleTiktokOrderJob(
 ): Promise<string | null> {
   const channel = await findTiktokChannelByShopId(shopId);
   if (!channel) return "shop chưa kết nối Hubsell";
+  // Chủ shop hết gói quá ân hạn: sàn vẫn đẩy (route đã ack 200), mình không ghi đơn.
+  if (isHibernated(channel)) return HIBERNATED_SKIP_NOTE;
 
   const result = await processTiktokOrderEvent(channel, orderId);
   console.log(

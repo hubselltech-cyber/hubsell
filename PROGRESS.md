@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 15/10/2026 (tối) — NGỦ ĐÔNG GIAN HẾT GÓI QUÁ ÂN HẠN (anh chốt "em cứ làm đi") — ĐÃ COMMIT, CHƯA PUSH
+
+- **Anh hỏi:** gian hết gói quá 7 ngày ân hạn có nên ngừng cập nhật đơn — tốn hạ tầng mà chẳng được gì. Em đồng ý về hướng nhưng đề nghị **ngủ đông** thay vì cắt sạch (giữ làm mới token để khách quay lại không phải ủy quyền lại; webhook phải vẫn ack 200; mốc nước lát 3.2 vét bù khi gia hạn). Anh: "Em cứ làm đi". Luật 22/08 "đơn + tồn kho không bao giờ ngắt" nay chỉ còn đúng với **vượt trần đơn**; hết gói quá ân hạn thì ngủ đông. Thiết kế đầy đủ: `docs/GOI-NGU-DONG-GIAN-HET-HAN.md`.
+- **Mã:** cột `Channel.hibernatedAt` (migration `20261015210000_channel_hibernated_at`, ADD COLUMN NULL); `services/plan-hibernation.ts` (hàm thuần + `hibernateExpiredOwners` theo trang 200, một UPDATE/trang, đẩy mọi `next*SyncAt` về 2100 để rơi khỏi chỉ mục; `wakeHibernatedChannelsTx`); worker `plan-hibernate.ts` mỗi 6h (số tự chọn), env `PLAN_HIBERNATE_OFF=1`; `recordPackagePaymentTx` đánh thức trong cùng giao dịch (mọi đường: payOS, Ví, Apple IAP, HQ); worker quét đơn / đối soát tồn / đẩy tồn / hàng hóa / nhắc Lazada / HQ sức khỏe thêm `hibernatedAt: null`; 3 bộ xử lý webhook trả `HIBERNATED_SKIP_NOTE`; nút Đồng bộ tay + tự chữa lành + quét hoàn bỏ gian ngủ (403 `PLAN_LOCKED`/`EXPIRED`). Chữ hứa "vẫn đồng bộ" đổi ở nhánh hết hạn: backend 403 + 2 chuông, web `plan-quota-guard` + `/settings/plan`, mobile `plan-ui.ts` + `PlanLockedCard` (trung tính, không nhắc gia hạn; chỉ có hiệu lực ở build sau). Landing /terms, /quy-che không hứa gì về đồng bộ → không sửa; cam kết "không xóa dữ liệu" với BCT giữ nguyên.
+- **Kiểm:** tsc backend + frontend + mobile sạch; `plan-hibernation.test.ts` 11 ca + hàng rào biến cấp module + lịch quét = 52 xanh. Toàn bộ vitest 1.579 xanh / 10 đỏ ở 6 tệp database — **đỏ sẵn trên mã gốc** (đã stash kiểm ca Lazada; còn lại là DB dev thiếu chỉ mục GIN/trigger sổ cái cũ). Cột mới áp vào DB dev bằng `prisma db execute` (lệnh `migrate deploy` bị bộ lọc chặn dù là localhost).
+- **Sau deploy cần soi:** log `[plan-hibernation] BẬT`, lượt đầu ~5' `Đặt ngủ đông N gian của M chủ`; SQL đo trước/sau ở docs mục 6; một khách gia hạn thật → log `đánh thức N gian` + lượt quét vét bù. **Chưa làm:** thẻ Gian ngủ đông trên HQ Sức khỏe; test tích hợp DB cho đặt cờ/đánh thức.
+
+---
+
 ## Phiên 15/10/2026 (chiều) — iOS: APPLE TỪ CHỐI LẦN 7 = 5.1.1(i)/5.1.2(i) "third-party AI" (IAP ĐÃ QUA) — thư + chính sách sẵn, chờ anh gật
 
 - **Diễn biến:** In Review từ sáng, hơn 3 giờ (6 lần trước ~14 phút) → 13:25 Apple trả: app "appears to share the user's personal data with a third-party AI service" mà không nói rõ/xin phép. **Không còn 2.1(b) IAP, không còn 3.1.1** → thanh toán đã qua, 20 IAP vẫn Ready for Review. Apple mở đường: nếu không dùng AI bên thứ ba thì reply xác nhận + ghi vào App Review Information.

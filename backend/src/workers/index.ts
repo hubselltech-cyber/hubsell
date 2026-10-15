@@ -42,6 +42,7 @@ import { startProductCatalogSyncWorker } from "./product-catalog-sync";
 import { startOrderLedgerWorker } from "./order-ledger";
 import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
+import { startPlanHibernateWorker } from "./plan-hibernate";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -66,6 +67,10 @@ export function startAllWorkers(): void {
   // Worker quét sàn theo LỊCH TỪNG GIAN (đơn, đối soát, ads) — claim vé theo
   // gian, song song có trần, giãn nhịp gian im ắng.
   startOrderAutoSync();
+  // Ngủ đông gian của chủ shop hết gói quá ân hạn (15/10/2026): đặt cờ để worker
+  // trên bỏ qua gian, webhook nhận rồi bỏ; gia hạn là thức lại trong giao dịch
+  // thanh toán (services/plan-hibernation.ts). Token vẫn làm mới bên dưới.
+  startPlanHibernateWorker();
   // Cron refresh token Shopee (app chính + Hubsell Ads) — lưới an toàn cạnh
   // lazy-refresh, quét DB lọc token sắp hết hạn rồi làm mới có giãn cách.
   startTokenRefreshWorker();

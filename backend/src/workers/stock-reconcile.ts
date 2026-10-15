@@ -64,6 +64,7 @@ async function runOnce(): Promise<void> {
         stockSyncEnabled: true,
         status: "ACTIVE",
         refreshToken: { not: null },
+        hibernatedAt: null, // gian ngủ đông (hết gói quá ân hạn) không đối soát
         channelName: { in: PUSHABLE_CHANNELS },
       },
       orderBy: { createdAt: "asc" },

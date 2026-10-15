@@ -7,10 +7,14 @@
 // - Trần ĐƠN/THÁNG: chặn MỀM bậc thang. 80% cảnh báo vàng + chuông → 100%
 //   cảnh báo đỏ + popup (đơn VẪN đồng bộ đủ) → vượt ân hạn (120% hoặc 7 ngày
 //   kể từ lúc chạm 100%) thì KHÓA TẦNG GIÁ TRỊ GIA TĂNG (tài chính/trợ lý/
-//   quảng cáo… hiện màn mời nâng gói). Đơn + tồn kho vẫn SYNC NGẦM — KHÔNG
-//   BAO GIỜ ngắt đồng bộ, nâng gói là dữ liệu hiện lại nguyên vẹn.
+//   quảng cáo… hiện màn mời nâng gói). Đơn + tồn kho vẫn SYNC NGẦM khi vượt
+//   trần đơn — nâng gói là dữ liệu hiện lại nguyên vẹn.
 // - Gói HẾT HẠN (kể cả hết dùng thử): cùng cơ chế mềm — ân hạn 7 ngày rồi
 //   khóa tầng giá trị gia tăng; thanh toán/gia hạn là mở lại ngay.
+//   ⚠️ 15/10/2026 anh Trung đổi luật: hết hạn quá ân hạn thì gian NGỦ ĐÔNG
+//   (services/plan-hibernation.ts) — ngừng quét đơn/đối soát/ads/tồn, webhook
+//   nhận rồi bỏ, chỉ còn làm mới token; gia hạn thức lại + mốc nước vét bù ≤90
+//   ngày. Không xóa dữ liệu. Vượt trần đơn KHÔNG ngủ đông (luật 22/08 giữ).
 // - Khách CŨ chưa được gán thuê bao (backfill --assign chưa chạy): coi như
 //   KHÔNG GIỚI HẠN — không bao giờ khóa nhầm người chưa từng được báo giá.
 // - Full tính năng mọi bậc đã chốt nên GĐ2 KHÔNG gate theo ServicePlan.features
@@ -285,8 +289,8 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
       type: "plan_expiry",
       title: `Gói ${sub.plan.name}${sub.isTrial ? " (dùng thử)" : ""} đã hết hạn từ ${fmtDate(periodEnd!)}`,
       body: expiryLocked
-        ? "Các tính năng nâng cao đang tạm khóa. Đơn hàng + tồn kho vẫn đồng bộ ngầm — thanh toán là mở lại nguyên vẹn."
-        : `Sau ngày ${fmtDate(expiryLockDeadline!)} các tính năng nâng cao sẽ tạm khóa nếu chưa gia hạn.`,
+        ? "Các tính năng nâng cao đang tạm khóa, đồng bộ đơn hàng + tồn kho tạm ngừng — thanh toán là mở lại ngay, đơn phát sinh trong lúc ngừng được kéo bù. Dữ liệu đã có giữ nguyên."
+        : `Sau ngày ${fmtDate(expiryLockDeadline!)} các tính năng nâng cao sẽ tạm khóa và đồng bộ đơn hàng, tồn kho tạm ngừng nếu chưa gia hạn.`,
       link: "/settings/plan",
     });
   }
@@ -448,7 +452,7 @@ export async function requirePlanUnlocked(
     res.status(403).json({
       error:
         st.lockedReason === "EXPIRED"
-          ? `Gói ${st.plan?.name ?? "dịch vụ"} đã hết hạn — gia hạn để tiếp tục dùng các tính năng nâng cao. Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ.`
+          ? `Gói ${st.plan?.name ?? "dịch vụ"} đã hết hạn — gia hạn để tiếp tục dùng các tính năng nâng cao và nối lại đồng bộ đơn hàng, tồn kho (đang tạm ngừng). Dữ liệu đã có giữ nguyên.`
           : `Shop đã vượt trần đơn của gói ${st.plan?.name ?? "hiện tại"} — nâng gói để mở lại các tính năng nâng cao. Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ.`,
       code: "PLAN_LOCKED",
       reason: st.lockedReason,

@@ -204,7 +204,8 @@ export function createApp() {
   // GĐ2 CƯỠNG CHẾ TRẦN (22/08): requirePlanUnlocked khóa TẦNG GIÁ TRỊ GIA TĂNG
   // (tài chính/thuế/trợ lý/quảng cáo/KOC) khi vượt ân hạn trần đơn hoặc gói hết
   // hạn quá ân hạn. Nhóm SỐNG CÒN (dashboard/analytics/đơn/kho/kênh/nhân viên/
-  // referral) CỐ TÌNH không gắn — đơn + tồn kho không bao giờ ngừng đồng bộ,
+  // referral) CỐ TÌNH không gắn — đơn + tồn kho vẫn đồng bộ khi vượt trần đơn
+  // (hết gói quá ân hạn thì gian NGỦ ĐÔNG — services/plan-hibernation.ts, 15/10),
   // và /api/referral phải luôn mở vì đó là đường thanh toán bằng Ví để tự cứu.
   app.use("/api/dashboard", requireAuth, requirePermission("dashboard"), requireChannel, dashboardRouter);
   // /api/analytics phục vụ biểu đồ trang Tổng quan → đi cùng quyền dashboard.
