@@ -1,8 +1,10 @@
 /**
- * Ghép ảnh màn hình cho trang kho (docs/store/LISTING.md mục 7) từ ảnh chụp app thật trong raw/
- * (chụp trên máy ảo Android, đã cắt thanh trạng thái + thanh điều hướng của Android):
- *   - iphone/  1290×2796 : App Store, iPhone 6,9"
- *   - android/ 1080×2160 : Google Play (tỷ lệ 2:1)
+ * Ghép ảnh màn hình cho trang kho (docs/store/LISTING.md mục 7) từ ảnh thô trong raw/
+ * (16/10/2026: chụp giả lập web 3x bằng capture-raw.mjs, 1179×2556, chữ nét; bộ cũ 05/10 chụp
+ * máy ảo Android 1080px rồi phóng nên App Store hiện nhòe — anh Trung bảo làm lại):
+ *   - iphone-6.3/ 1206×2622 : App Store, cỡ "iPhone Dynamic Island (medium)" ASC nhận
+ *                             (1290×2796 bị ASC từ chối 06/10); điện thoại chiếm ~85% bề ngang
+ *   - android/    1080×2160 : Google Play (tỷ lệ 2:1)
  * Dùng Chrome cài sẵn qua playwright-core của hubsell-landing:
  *   node docs/store/screenshots/render-shots.mjs
  *   python docs/store/screenshots/finish-shots.py   (bỏ kênh alpha)
@@ -23,10 +25,11 @@ const SHOTS = [
   { img: "4-don-hoan", t: "Quét mã, nhận hàng hoàn", s: "Biết đơn nào chờ về kho, đơn nào quá hạn" },
   { img: "5-ton-kho", t: "Tồn kho từng mã, biết hàng sắp hết", s: "Chạm vào dòng để nhập, xuất" },
   { img: "6-tro-ly", t: "Hỏi bằng tiếng Việt, đáp bằng số thật", s: "Gõ hoặc nói với Trợ lý Hubsell" },
+  { img: "7-quang-cao", t: "Quảng cáo nào đang đốt tiền?", s: "Trợ lý quảng cáo Shopee, Lazada, TikTok trên tay" },
 ];
 const SIZES = [
-  { dir: "iphone", w: 1290, h: 2796, cap: 520, pw: 1050 },
-  { dir: "android", w: 1080, h: 2160, cap: 380, pw: 850 },
+  { dir: "iphone-6.3", w: 1206, h: 2622, cap: 380, pw: 1030 },
+  { dir: "android", w: 1080, h: 2160, cap: 300, pw: 860 },
 ];
 
 const browser = await chromium.launch({ channel: "chrome" });

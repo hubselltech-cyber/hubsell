@@ -81,6 +81,16 @@ Ghi chú khi dán:
 - **App Store**: dán nguyên văn. Không thêm chữ "Android", "CH Play" (Apple 2.3.10 cấm nhắc nền tảng khác).
 - **06/10: bỏ mục Tin nhắn** khỏi mô tả, ghi chú người duyệt và nhãn dữ liệu — tab Tin nhắn đã gỡ khỏi app từ bản 04/10 (không còn `messages.tsx`, không còn dùng expo-image-picker). Thêm Quảng cáo, Tồn kho, quét đơn bất kỳ. Mô tả này ĐÃ DÁN vào App Store Connect 06/10.
 
+### Có gì mới (bản 1.1.0 — 16/10/2026)
+
+Bản 1.1.0:
+• Trợ lý quảng cáo TikTok: xem chi phí, doanh thu, ROI và lãi ước tính của từng chiến dịch GMV Max, biết chiến dịch nào cần xử lý.
+• Loại / khôi phục video đang tiêu tiền không ra đơn ngay trên điện thoại, có lịch sử lệnh.
+• Màn quét mã có nút đóng, chạm ra ngoài là tắt bàn phím.
+• Sửa câu chữ nhắc hạn gói.
+
+Ảnh màn hình 16/10: dựng lại từ giả lập web 3x (chữ nét, điện thoại to hơn), 7 ảnh (thêm Quảng cáo) — `screenshots/iphone-6.3/` 1206×2622 và `screenshots/android/` 1080×2160; quy trình ở `screenshots/capture-raw.mjs` → `render-shots.mjs` → `finish-shots.py`.
+
 ### Có gì mới (bản 1.0.0)
 
 ```

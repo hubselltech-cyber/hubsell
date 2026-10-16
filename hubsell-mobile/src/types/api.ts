@@ -686,3 +686,213 @@ export interface AdsRecommendationsResponse {
   missingCostCount?: number;
   safeRoasFactor: number;
 }
+
+
+// ============================================================
+// TRỢ LÝ QUẢNG CÁO TIKTOK (GMV Max) — GET /api/quang-cao/tiktok (backend
+// routes/ads-tiktok.ts). Chép đúng kiểu ở frontend/src/lib/api.ts (mục TikTok)
+// — KHÔNG gộp vào AdsPlatform/AdsCampaignDto: shape khác hẳn Shopee, và các
+// lệnh pause / resume / decision không tồn tại cho TikTok (16/10/2026,
+// docs/ADS-TIKTOK-TREN-MOBILE.md).
+// ============================================================
+
+export type TiktokAdsAutoMode = "off" | "dry_run" | "live";
+
+export interface TiktokAdsAutoStatus {
+  mode: TiktokAdsAutoMode;
+  lastRunOn: string | null;
+  lastRunMode?: "dry_run" | "live" | null;
+  lastRunSummary: string | null;
+  lastRunExclude: number;
+  lastRunSkipped: string | null;
+  lastRunError: string | null;
+}
+
+export interface TiktokAdsBreakeven {
+  roi: number | null;
+  margin: number | null;
+  negativeMargin: boolean;
+  /** campaign = biên lãi riêng SKU của chiến dịch; shop = mượn biên lãi toàn gian. */
+  source: "campaign" | "shop" | "product" | null;
+  orders: number;
+  cancelledOrders: number;
+  pendingOrders: number;
+  costCoveragePct: number | null;
+}
+
+export type TiktokAdsAdviceKind =
+  | "paused"
+  | "no_spend"
+  | "learning"
+  | "no_delivery"
+  | "no_orders"
+  | "no_breakeven"
+  | "losing"
+  | "target_below"
+  | "budget_capped"
+  | "target_binding"
+  | "target_watching"
+  | "target_hold"
+  | "healthy";
+
+export interface TiktokAdsCampaignAdvice {
+  kind: TiktokAdsAdviceKind;
+  label: string;
+  points?: string[];
+  conclusion?: string;
+  text: string;
+  tone: "warn" | "info" | "ok" | "muted";
+  budgetUsedPct: number | null;
+  keepPer100: number | null;
+  /** Việc nên làm phải sửa trong Seller Center (API không sửa được chiến dịch). */
+  editInSellerCenter: boolean;
+  nextTarget?: number | null;
+  keepAtNextTarget?: number | null;
+  safeTarget?: number | null;
+  minKeepPer100?: number;
+  watchHoursLeft?: number | null;
+  nextBudget?: number | null;
+}
+
+export interface TiktokAdsCampaignRow {
+  id: string;
+  campaignId: string;
+  name: string;
+  /** ongoing = đang chạy; paused = tắt trên TikTok; ended = TikTok không còn liệt kê. */
+  status: "ongoing" | "paused" | "ended" | string;
+  biddingMethod: string;
+  roasTarget: number | null;
+  budget: number;
+  spend: number;
+  orders: number;
+  gmv: number;
+  roi: number | null;
+  costPerOrder: number | null;
+  belowTarget: boolean;
+  breakeven: TiktokAdsBreakeven | null;
+  auto: TiktokAdsAutoStatus | null;
+  advice?: TiktokAdsCampaignAdvice | null;
+  estProfit?: number | null;
+}
+
+export interface TiktokAdsDashboard {
+  configured: boolean;
+  channels: {
+    id: string;
+    shopName: string;
+    /** null = gian chưa nối tài khoản quảng cáo. */
+    ads: {
+      status: "ACTIVE" | "NO_ACCESS" | "REVOKED";
+      advertiserName: string;
+      problem: string | null;
+    } | null;
+  }[];
+  selectedChannelId: string | null;
+  from: string;
+  to: string;
+  dataFrom: string | null;
+  breakeven: TiktokAdsBreakeven | null;
+  link: {
+    linked: boolean;
+    status: string;
+    advertiserName: string | null;
+    lastSyncedAt: string | null;
+    lastSyncError: string | null;
+  } | null;
+  summary: {
+    spend: number;
+    orders: number;
+    gmv: number;
+    roi: number | null;
+    costPerOrder: number | null;
+    liveCampaigns: number;
+    belowTargetCount: number;
+    estProfit?: number | null;
+  } | null;
+  campaigns: TiktokAdsCampaignRow[];
+  adsRefreshing: boolean;
+  adsSyncedAt: string | null;
+  minKeepPer100?: number;
+}
+
+export type TiktokAdsAutoVerdict =
+  | "learning"
+  | "protected"
+  | "insufficient"
+  | "exclude"
+  | "grace"
+  | "flag"
+  | "healthy";
+
+export interface TiktokAdsVideoRow {
+  spuId: string;
+  videoId: string;
+  deliveryStatus: string;
+  cost: number;
+  orders: number;
+  gmv: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cvr: number;
+  roi: number | null;
+  noOrder: boolean;
+  excluded: boolean;
+  /** Lệnh vừa gửi, TikTok chưa áp dụng xong (~20 phút). */
+  pending: "REMOVE" | "ADD" | null;
+  auto: { verdict: TiktokAdsAutoVerdict; reason: string; on: string; graduatedOn: string } | null;
+}
+
+export interface TiktokAdsVideoActionLog {
+  id: string;
+  action: "exclude_video" | "restore_video" | "config_change";
+  mode: "dry_run" | "live";
+  status: "SUCCESS" | "FAILED" | "PLANNED" | "SENDING";
+  error: string | null;
+  source: "manual" | "auto";
+  videos: { videoId: string; note: string }[];
+  grounds: string[];
+  createdAt: string;
+}
+
+export interface TiktokAdsCampaignVideos {
+  campaign: {
+    id: string;
+    campaignId: string;
+    name: string;
+    shopName: string;
+    channelId: string;
+    status: string;
+    biddingMethod: string;
+    roasTarget: number | null;
+    spend: number;
+    orders: number;
+    gmv: number;
+    auto: TiktokAdsAutoStatus | null;
+    breakeven: TiktokAdsBreakeven | null;
+    estProfit?: number | null;
+    budget: number;
+    advice: TiktokAdsCampaignAdvice;
+  };
+  from: string;
+  to: string;
+  products: { spuId: string; name: string; cost: number; orders: number; gmv: number }[];
+  videos: TiktokAdsVideoRow[];
+  actions: TiktokAdsVideoActionLog[];
+  totals: {
+    videoCount: number;
+    spendingCount: number;
+    excludedCount: number;
+    videoSpend: number;
+    noOrderCount: number;
+    noOrderSpend: number;
+  };
+}
+
+export interface TiktokVideoMeta {
+  videoId: string;
+  author: string;
+  authorName: string;
+  caption: string;
+  thumbnailUrl: string;
+}

@@ -32,6 +32,7 @@ import { useChannelColors } from "@/theme/channel-colors";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { Card } from "@/components/Card";
 import { AdsRecommendSection } from "@/components/AdsRecommendSection";
+import { TiktokAdsSection } from "@/components/TiktokAdsSection";
 import { TABULAR } from "@/theme/tokens";
 
 /**
@@ -49,9 +50,16 @@ import { TABULAR } from "@/theme/tokens";
  * chiến dịch tự do, từ khóa, GMV Max cấp shop ở lại web.
  */
 
-const PLATFORMS: { key: AdsPlatform; label: string; channelName: string }[] = [
+/**
+ * TikTok (16/10/2026) là chip thứ ba nhưng KHÔNG đi qua AdsPlatform: API
+ * /api/quang-cao/tiktok có shape khác hẳn và không có pause / resume /
+ * decision → thân trang do TiktokAdsSection vẽ (docs/ADS-TIKTOK-TREN-MOBILE.md).
+ */
+type UiPlatform = AdsPlatform | "tiktok";
+const PLATFORMS: { key: UiPlatform; label: string; channelName: string }[] = [
   { key: "shopee", label: "Shopee", channelName: "SHOPEE" },
   { key: "lazada", label: "Lazada", channelName: "LAZADA" },
+  { key: "tiktok", label: "TikTok", channelName: "TIKTOK" },
 ];
 
 // Cùng nhãn với web (VERDICT_META). Thứ tự mảng = mức nặng, dùng để xếp "Cần xử lý".
@@ -114,7 +122,10 @@ function needsAttention(c: AdsCampaignDto): boolean {
 
 export function AdsPage() {
   const channelColors = useChannelColors();
-  const [platform, setPlatform] = useState<AdsPlatform>("shopee");
+  const [uiPlatform, setUiPlatform] = useState<UiPlatform>("shopee");
+  // Nhánh Shopee / Lazada bên dưới chỉ chạy khi không phải TikTok.
+  const platform: AdsPlatform = uiPlatform === "tiktok" ? "shopee" : uiPlatform;
+  const isTiktok = uiPlatform === "tiktok";
   const [channelId, setChannelId] = useState("");
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [data, setData] = useState<AdsOverviewResponse | null>(null);
@@ -169,10 +180,13 @@ export function AdsPage() {
   );
 
   useEffect(() => {
+    if (isTiktok) return;
     void load(platform, range, channelId);
-  }, [platform, range, channelId, load]);
+  }, [platform, range, channelId, load, isTiktok]);
 
-  useAutoRefresh(() => void load(platform, range, channelId, "silent"));
+  useAutoRefresh(() => {
+    if (!isTiktok) void load(platform, range, channelId, "silent");
+  });
 
   const platformMeta = PLATFORMS.find((p) => p.key === platform)!;
   const campaigns = data?.campaigns ?? [];
@@ -192,27 +206,14 @@ export function AdsPage() {
   // Gian đã nối Hubsell Ads (hoặc sàn không cần) — như shopee-ads-page web.
   const adsLinked = !data?.adsApp?.required || data.adsApp.status === "ACTIVE";
 
-  return (
-    <View className="flex-1">
-      <ScrollView
-        className="flex-1 bg-slate-50 dark:bg-slate-950"
-        contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRecoToken((t) => t + 1);
-              void load(platform, range, channelId, true);
-            }}
-          />
-        }
-      >
-        <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
-
-        {/* Sàn + chế độ Trợ lý (chỉ xem — đổi chế độ ở web) */}
-        <View className="mb-2 flex-row flex-wrap items-center gap-2">
+  // Đầu trang dùng chung cho cả ba sàn: bộ lọc ngày + chip sàn (+ nhãn chế độ Trợ lý của Shopee / Lazada).
+  // (TikTok giữ bộ lọc ngày riêng, mặc định 7 ngày — số TikTok trễ tới 11 giờ nên "Hôm nay" toàn 0.)
+  const header = (
+    <>
+      {/* Sàn + chế độ Trợ lý (chỉ xem — đổi chế độ ở web) */}
+      <View className="mb-2 flex-row flex-wrap items-center gap-2">
           {PLATFORMS.map((p) => {
-            const active = platform === p.key;
+            const active = uiPlatform === p.key;
             return (
               <Pressable
                 key={p.key}
@@ -229,7 +230,7 @@ export function AdsPage() {
                   setRecoCount(null);
                   // Lazada không có tab Gợi ý — đang đứng ở đó thì về Đang chạy.
                   if (p.key !== "shopee") setFilter((f) => (f === "reco" ? "ongoing" : f));
-                  setPlatform(p.key);
+                  setUiPlatform(p.key);
                 }}
               >
                 <View
@@ -247,14 +248,36 @@ export function AdsPage() {
             );
           })}
           <View className="flex-1" />
-          {mode ? (
+          {mode && !isTiktok ? (
             <View className="rounded-full bg-slate-100 px-2.5 py-1 dark:bg-slate-800">
               <Text className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 {MODE_LABEL[mode]}
               </Text>
             </View>
           ) : null}
-        </View>
+      </View>
+    </>
+  );
+
+  if (isTiktok) return <TiktokAdsSection header={header} />;
+
+  return (
+    <View className="flex-1">
+      <ScrollView
+        className="flex-1 bg-slate-50 dark:bg-slate-950"
+        contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRecoToken((t) => t + 1);
+              void load(platform, range, channelId, true);
+            }}
+          />
+        }
+      >
+        <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
+        {header}
 
         {/* Chọn gian của sàn — một gian vẫn hiện tên để biết đang xem số của shop nào */}
         {data && data.channels.length > 0 ? (

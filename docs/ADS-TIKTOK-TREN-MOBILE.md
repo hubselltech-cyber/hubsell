@@ -1,8 +1,17 @@
 # Phương án: Trợ lý quảng cáo TikTok trên app di động
 
 Ngày: 16/10/2026. Người yêu cầu: anh Trung ("rất quan trọng, nghiên cứu kỹ như senior, chú ý
-trải nghiệm người dùng"). Người soạn: Claude. Trạng thái: **PHƯƠNG ÁN, CHƯA CODE** — chờ anh chốt
-4 câu hỏi ở mục 9.
+trải nghiệm người dùng"). Người soạn: Claude.
+
+**Trạng thái 16/10 khuya: ANH CHỐT GỘP vào bản 1.1.0 ("cũng tương đối dễ dùng, gộp cả TikTok Ads
+vào rồi update một lượt cả 2 kho") → LÁT 1 + 2 ĐÃ CODE**, soi giả lập web local (tài khoản demo
+reviewer@, 6 chiến dịch giả; màn Video soi bằng dữ liệu giả vì gian local không có token TikTok
+thật), sáng/tối. Khác với phương án ở trên, đã chốt khi soi:
+- Thẻ Cần xử lý **không có đoạn kết luận** (anh 16/10: "quá dài, bỏ hẳn như Shopee") — chỉ nhãn + tên + MỘT nút; căn cứ ở hộp chi tiết.
+- Chip TikTok có **bộ lọc ngày riêng, mặc định 7 ngày** (số TikTok trễ tới 11 giờ, "Hôm nay" toàn 0); Shopee / Lazada giữ kỳ của họ.
+- Gian đã nối nhưng **kết nối hỏng** (hủy ủy quyền / token hết hạn): vẫn hiện số cũ + dải đỏ, như web; chỉ gian chưa nối mới chỉ đường về web.
+- Mã: `hubsell-mobile/src/{api/ads-tiktok.ts, lib/tiktok-ads.ts, components/TiktokAdsSection.tsx, components/TiktokCampaignSheet.tsx, screens/TiktokVideosScreen.tsx, app/tiktok-campaign.tsx}`; `AdsPage.tsx` thêm chip; types ở `types/api.ts`; thêm `expo-clipboard`. Backend 0 thay đổi.
+- Lát 3 (thông báo đẩy) chưa làm. Câu hỏi 3–4 mục 9 còn mở (luật Cần xử lý đang là mặc định tự chọn).
 
 Tài liệu gốc phải đọc trước khi code: [ADS-TIKTOK-GMV-MAX.md](ADS-TIKTOK-GMV-MAX.md) (API, luật,
 bẫy), [KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md](KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md) (bố cục Shopee

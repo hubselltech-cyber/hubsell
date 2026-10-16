@@ -1,0 +1,49 @@
+import { api } from "./client";
+import type {
+  TiktokAdsCampaignVideos,
+  TiktokAdsDashboard,
+  TiktokVideoMeta,
+} from "../types/api";
+
+/**
+ * Trợ lý quảng cáo TikTok (GMV Max) — cùng API với web, backend không đổi
+ * (docs/ADS-TIKTOK-TREN-MOBILE.md). Đường dẫn /api/quang-cao/tiktok (tránh
+ * chữ ads bị adblock chặn). Lệnh DUY NHẤT lên sàn là loại / khôi phục video.
+ */
+const BASE = "/api/quang-cao/tiktok";
+
+/** Tổng quan + chiến dịch (có nhận định, tự động, hòa vốn) — đọc DB, nhẹ. */
+export function fetchTiktokAdsDashboard(params: { from: string; to: string; channelId?: string }) {
+  const q = new URLSearchParams({ from: params.from, to: params.to });
+  if (params.channelId) q.set("channelId", params.channelId);
+  return api<TiktokAdsDashboard>(`${BASE}?${q.toString()}`);
+}
+
+/** Video của một chiến dịch — gọi TikTok sống 2–3 lượt, chỉ gọi khi mở màn Video. */
+export function fetchTiktokCampaignVideos(campaignRowId: string, range: { from: string; to: string }) {
+  return api<TiktokAdsCampaignVideos>(
+    `${BASE}/campaigns/${encodeURIComponent(campaignRowId)}/videos?from=${range.from}&to=${range.to}`
+  );
+}
+
+/** LỆNH THẬT lên TikTok: REMOVE = loại video khỏi chiến dịch, ADD = khôi phục. Chỉ chủ shop. */
+export function sendTiktokVideoAction(
+  campaignRowId: string,
+  action: "REMOVE" | "ADD",
+  items: { videoId: string; spuId: string; cost: number; orders: number }[]
+) {
+  return api<{ ok: true; count: number; message: string }>(
+    `${BASE}/campaigns/${encodeURIComponent(campaignRowId)}/videos/action`,
+    { method: "POST", body: { action, items } }
+  );
+}
+
+/** Ảnh bìa + kênh + caption (≤ 24 mã) — oEmbed công khai, đang hay bị TikTok chặn: lỗi thì bỏ qua. */
+export function fetchTiktokVideoMeta(videoIds: string[]) {
+  return api<{ items: Record<string, TiktokVideoMeta> }>(`${BASE}/video-meta?ids=${videoIds.join(",")}`);
+}
+
+/** Kéo lại số từ TikTok cho gian (kéo-xuống-làm-mới). */
+export function requestTiktokAdsRefresh(channelId: string) {
+  return api<unknown>(`${BASE}/refresh`, { method: "POST", body: { channelId } });
+}
