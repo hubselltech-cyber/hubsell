@@ -128,3 +128,69 @@ Gợi ý câu trả lời "Why…" (≤ 200 ký tự):
    vận hành hiện dòng "Shopee tạm chưa cấp quyền chat cho Hubsell", Cứu đơn ghi
    SKIPPED lý do rõ (cảnh báo chuông vẫn chạy). Sàn cấp quyền là tự thông,
    không cần deploy.
+
+## 7. Thông báo Shopee 16/10/2026: bỏ IP Whitelist, thay bằng PII Necessity Declaration
+
+Nguồn: 3 thư `info@shopee.sg` ngày 16/10/2026 (hộp hubselltech@gmail.com) +
+Developer Guide "Requesting Access to Sensitive Data" (open.shopee.com/developer-guide/718,
+cập nhật 16/10/2026). Đối chiếu với hiện trạng mục 6 và bộ nhớ phiên 15/09.
+
+### 7.1 Ba thư nói gì
+
+| Thư | Nội dung | Hiệu lực |
+|---|---|---|
+| **[Action Required] IP Address Whitelist Replaced by PII Necessity Declaration** | Ô "Enable IP Address Whitelist" trên app đổi thành công tắc **"Does this App require buyer PII access?"**. ON = khai IP, chỉ IP đã khai mới gọi được OpenAPI, nhận PII không che. OFF = không khai IP, PII bị che. App từng bật whitelist → công tắc mặc định ON, phải rà trước **23/10/2026 23:59 GMT+8**. ISV muốn PII không che phải: (1) công tắc ON + IP, (2) báo cáo pentest đã duyệt còn hạn. | Ngay |
+| **Significant OpenAPI Updates of Order** | `get_order_detail` + `get_package_detail` thêm vào `item_list`: `is_fulfillment_mapping`, `bundle_sku_id`, `components[]` (parent_sku_id, barcode_upc, quantity, warehouse_id, mapping_type 1 Group / 2 Lucky bag / 3 Mapping List). Chỉ trả cho shop trong whitelist FFM; shop khác không có trường mới. | Đã live |
+| **Support for IP Subnet Input in CIDR Format** | Ô IP của app nhận dải CIDR **/24 → /32, tối đa 3 dải**; ô Other IT Assets nhận /22 → /32, 3 dải mỗi ô. Mỗi dòng một IP hoặc một dải; không IPv6, không wildcard, không dạng đầu-cuối. | 16/10/2026 |
+
+### 7.2 Developer Guide 718 nói rõ hơn thư (điểm then chốt)
+
+- "By default, sensitive data is masked" — tên, SĐT, email, địa chỉ khách bị che
+  mặc định cho MỌI developer chưa khai.
+- **Pentest chỉ bắt buộc với ISV phục vụ Thái Lan, Malaysia, Singapore,
+  Philippines và ISV CNCB/HKCB.** Hubsell chỉ phục vụ Việt Nam → theo guide
+  KHÔNG thuộc diện phải nộp pentest; chỉ cần công tắc PII ON + khai IP.
+  (Thư chung viết "ISV phải đủ cả 2 điều kiện" — guide hẹp hơn, nếu Console
+  vẫn đòi pentest thì mới tính.)
+- Nếu có pentest: hiệu lực 2 năm từ ngày phát hành báo cáo; phải black-box,
+  Critical/High đã vá, báo cáo quét lỗ hổng suông không được nhận; duyệt ~10
+  ngày làm việc; nộp ở Personal Center → Security Reports & Certifications → Add.
+
+### 7.3 Hiện trạng Hubsell đối chiếu
+
+- **App Hubsell (2040029, ERP System):** 15/09 đã khai IP `74.220.52.0` +
+  `74.220.60.0` nhưng **Enable IP Address Whitelist để OFF** (form lúc đó từ
+  chối CIDR, Render chỉ cam kết DẢI `74.220.52.0/24` + `74.220.60.0/24`).
+  → Theo thư, công tắc PII của mình mặc định **OFF**, không bị ép làm gì trước
+  23/10. Nhưng Console 15/09 đã hiện "Access to Sensitive Data: No access" (!)
+  → dữ liệu khách Shopee đang (hoặc sẽ) bị che.
+- **Mình ĐANG dùng PII người mua:** `get_order_detail` xin
+  `recipient_address` (tên + SĐT) → `Order.customerName/customerPhone`
+  (`backend/src/integrations/shopee/service.ts`), hiện ở trang Đơn hàng,
+  tìm theo SĐT, hộp hoàn/khiếu nại, app mobile; `get_buyer_invoice_info`
+  (tên, MST/CCCD, địa chỉ, email người mua) cho Hóa đơn & Thuế — module
+  này đã có nhánh "bị che dạng A****b → lượt sau hỏi lại" nhưng nếu che
+  VĨNH VIỄN thì hóa đơn Shopee không bao giờ có thông tin người mua.
+  Vận đơn KHÔNG ảnh hưởng (PDF do Shopee sinh).
+- **App Hubsell Ads (2044679, Ads Service):** API Ads không trả PII → công tắc
+  phải OFF. Chưa nhìn lại Console sau 16/10 — cần kiểm xem có bị ON mặc định.
+- **Trường FFM mới:** mã mình chỉ khai TS type, không parse strict → trường lạ
+  bị bỏ qua, không ảnh hưởng. Shop VN chưa thấy whitelist FFM; ghi nhận, chưa làm.
+
+### 7.4 Phương án đề xuất (chờ anh chốt)
+
+1. **Bật công tắc PII ON cho app Hubsell 2040029** + khai đúng 2 dải CIDR
+   `74.220.52.0/24` và `74.220.60.0/24` (thư 3 vừa cho phép /24, tối đa 3 dải
+   — đủ chỗ cho cả web `hubsell-backend-sg` lẫn worker `hubsell-worker-sg`
+   cùng vùng Singapore). Trước khi khai: mở Render → service → Connect →
+   Outbound, chép ĐÚNG dải đang hiện (Render có thể thêm dải).
+2. **Giữ OFF cho app Hubsell Ads** và xác nhận trên Console.
+3. **Rủi ro chính:** khai thiếu/sai IP = Shopee chặn toàn bộ lệnh gọi của MỌI
+   khách (đồng bộ đơn, chuẩn bị hàng, ads). Làm giờ vắng (sau 22h), theo dõi
+   log Render `[Shopee]` 10 phút sau khi Submit, lỗi IP thì tắt công tắc ngay.
+   Máy anh/em chạy script local gọi Shopee sẽ bị chặn — chấp nhận.
+4. Nếu Console đòi pentest dù chỉ phục vụ VN → gửi ticket dẫn guide 718
+   (phạm vi TH/MY/SG/PH) trước khi đi thuê pentest black-box.
+5. Việc cần anh: đăng nhập Console (tài khoản zing4teen@gmail.com) trên Chrome,
+   em điền cùng; và xem trang Đơn hàng một gian Shopee: SĐT khách đang hiện
+   số thật hay dạng `******123` để biết mức độ gấp.

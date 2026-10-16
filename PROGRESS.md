@@ -5,6 +5,17 @@
 
 ---
 
+## Phiên 16/10/2026 (đêm) — 3 THƯ SHOPEE OPEN PLATFORM: BỎ IP WHITELIST → CÔNG TẮC PII + CIDR /24 + TRƯỜNG FFM TRONG ĐƠN — ĐÃ ĐỐI CHIẾU, CHỜ ANH CHỐT BẬT PII
+
+- **Anh báo có 2 thư Shopee Partner; thực tế 3 thư `info@shopee.sg` 16/10.** Đọc + đối chiếu mã và Console 15/09 → ghi trọn ở `docs/SHOPEE-ISV-HO-SO.md` mục 7.
+- **Thư 1 (Action Required):** "Enable IP Address Whitelist" đổi thành công tắc "Does this App require buyer PII access?". App từng bật whitelist → ON mặc định, hạn rà **23/10/2026**. ISV muốn PII không che: công tắc ON + khai IP + pentest. **Mình 15/09 để whitelist OFF → công tắc mặc định OFF, không bị ép trước 23/10**, nhưng Console từng báo "Access to Sensitive Data: No access" → tên/SĐT khách + thông tin hóa đơn người mua bị che.
+- **Guide 718 (cập nhật 16/10) hẹp hơn thư:** pentest chỉ bắt ISV phục vụ TH/MY/SG/PH + CNCB/HKCB → Hubsell (VN) chỉ cần công tắc ON + IP. Mặc định mọi developer bị che PII.
+- **Thư 3 (CIDR):** ô IP app nhận /24→/32, tối đa 3 dải → khai được đúng dải Render `74.220.52.0/24` + `74.220.60.0/24` (15/09 form từ chối CIDR nên khai tạm địa chỉ mạng).
+- **Thư 2 (FFM):** `get_order_detail`/`get_package_detail` thêm `is_fulfillment_mapping`, `bundle_sku_id`, `components[]` cho shop whitelist FFM — mã không parse strict, 0 ảnh hưởng, chưa làm.
+- **Mình đang dùng PII:** `recipient_address` → `customerName/customerPhone` (trang Đơn hàng, tìm SĐT, hoàn/khiếu nại, mobile); `get_buyer_invoice_info` cho Hóa đơn & Thuế (che vĩnh viễn = hóa đơn Shopee không có người mua). Vận đơn không ảnh hưởng.
+- **Đề xuất:** bật PII ON app 2040029 + 2 dải /24 (kiểm Render Outbound ngay trước), giữ OFF app Hubsell Ads, làm giờ vắng + theo dõi log 10 phút, lỗi IP thì tắt ngay. Cần anh: đăng nhập Console trên Chrome; xem SĐT khách gian Shopee đang thật hay `******`.
+- Chưa kiểm được prod (app.hubsell.vn chưa đăng nhập trong trình duyệt tích hợp; open.shopee.com chặn WebFetch, đọc bằng trình duyệt tích hợp).
+
 ## Phiên 16/10/2026 (khuya) — MOBILE 1.1.0: SỬA NÚT TRỞ VỀ MÀN QUÉT + TIKTOK ADS TRÊN APP (anh chốt gộp) + ẢNH KHO LÀM LẠI — CẢ 2 KHO ĐÃ NỘP DUYỆT (iOS WAITING_FOR_REVIEW, Play đang xem xét); chờ anh push
 
 - **Anh hỏi app đã sửa gì mà chưa lên kho:** App Store 1.0 (11) = `342a8bf0`, Google Play 1.0.0 (2) = `2c163518`. Chưa lên iOS: câu chữ ngủ đông (`3275f23a`). Chưa lên Android thêm: bỏ huy hiệu AI, dòng "Trợ lý quảng cáo đa sàn" ở đăng nhập, app.hubsell.vn ở màn không quyền, mã mua gói iOS (gác `Platform.OS === "ios"`, Android không hiện). App KHÔNG có expo-updates → mọi sửa phải build + nộp kho; khách nhận qua tự cập nhật của App Store / Play (1–7 ngày), không phải cài lại.
