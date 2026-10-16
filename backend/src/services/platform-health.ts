@@ -34,6 +34,17 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** "shopee:2044679 tới 14:32 (bậc 1 · 10', lần 4)" — giờ VN, hàm thuần (test). */
+export function breakerDetailText(b: { app: string; pausedUntil: string; level: number; tripCount: number }): string {
+  const until = new Date(b.pausedUntil).toLocaleTimeString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const pauseMin = Math.min(60, 5 * 2 ** Math.max(0, b.level));
+  return `${b.app} tới ${until} (bậc ${b.level} · ${pauseMin}', lần ${b.tripCount})`;
+}
+
 /**
  * Một truy vấn hỏng (bảng chưa có ở môi trường này, quyền pg_* bị chặn...) không
  * được làm vỡ cả trang Sức khỏe — trả giá trị dự phòng + log một dòng.
@@ -94,6 +105,8 @@ export interface WorkerLayer {
   stockPushPending: number;
   deliveryOverdue: number;
   breakersPaused: string[];
+  /** Cầu dao đang đóng: lý do sàn trả + mở lại lúc nào (giờ VN) + bậc — để HQ đọc là biết vì sao (16/10/2026). */
+  breakersDetail: Array<{ app: string; reason: string | null; pausedUntil: string; level: number; tripCount: number }>;
   breakerTrips24h: number;
   syncStalled: number; // syncFailCount >= 3
   adsAuthDisconnected: number;
@@ -308,6 +321,15 @@ export async function collectWorker(): Promise<WorkerLayer> {
     stockPushPending,
     deliveryOverdue,
     breakersPaused: breakers.filter((b) => b.pausedUntil && b.pausedUntil.getTime() > now).map((b) => b.app),
+    breakersDetail: breakers
+      .filter((b) => b.pausedUntil && b.pausedUntil.getTime() > now)
+      .map((b) => ({
+        app: b.app,
+        reason: b.reason,
+        pausedUntil: b.pausedUntil!.toISOString(),
+        level: b.level,
+        tripCount: b.tripCount,
+      })),
     breakerTrips24h: breakers.filter((b) => b.updatedAt.getTime() > d24).reduce((s, b) => s + (b.level + 1), 0),
     syncStalled,
     adsAuthDisconnected,
@@ -504,11 +526,14 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   push(
     "worker.breaker",
     "Cầu dao API sàn",
-    w.breakersPaused.length
-      ? `ĐÓNG: ${w.breakersPaused.join(", ")}`
+    w.breakersDetail.length
+      ? `ĐÓNG: ${w.breakersDetail.map(breakerDetailText).join(" · ")}`
       : `mở (đóng ${w.breakerTrips24h} lần liên tiếp gần nhất, 24h)`,
     w.breakersPaused.length ? "crit" : w.breakerTrips24h >= T.breakerTripsWarn24h ? "warn" : "ok",
-    "Nhiều gian cùng vượt trần theo app — xem log [ApiBudget] trên worker, hạ ADS_APP_QPS hoặc xin nâng quota"
+    w.breakersDetail.length
+      ? `Lý do: ${w.breakersDetail.map((b) => b.reason?.slice(0, 160) ?? "không ghi").join(" | ")}` +
+          " — 'Bão 429' = ≥3 gian khác nhau bị sàn chặn tầng shop trong 10'; mã exceed_partner_api mới là vượt trần theo app thật (xem log [ApiBudget] trên worker)"
+      : "Nhiều gian cùng vượt trần theo app — xem log [ApiBudget] trên worker, hạ ADS_APP_QPS hoặc xin nâng quota"
   );
   push(
     "worker.queues",

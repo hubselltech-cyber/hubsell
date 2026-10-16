@@ -32,6 +32,7 @@ import {
 import { syncShopeeAdsSpend } from "./ads-spend";
 import { syncShopeeGms } from "./ads-gms";
 import { vnDayWindow } from "../../lib/ads-dates";
+import { isApiBudgetError } from "../../services/api-budget";
 
 /** Trạng thái campaign không cần theo dõi nữa. */
 export const ADS_DEAD_STATUSES = ["ended", "deleted", "closed"];
@@ -109,6 +110,9 @@ export async function pulseShopeeAds(
       });
     }
   } catch (err) {
+    // ★ 16/10/2026: gian đã bị sàn chặn (429 tầng shop) thì DỪNG xung ngay — gọi
+    // tiếp các bước sau chỉ thêm 429 từ cùng một gian (từng làm cầu dao đóng cả app).
+    if (isApiBudgetError(err)) throw err;
     console.warn(
       `[Ads-pulse] Ví ads Shopee "${channel.shopName}" không đọc được:`,
       (err as Error).message
@@ -122,6 +126,7 @@ export async function pulseShopeeAds(
     try {
       await syncShopeeGms(channel, access);
     } catch (err) {
+      if (isApiBudgetError(err)) throw err;
       console.warn(`[Ads-pulse] GMS lần đầu "${channel.shopName}" không đọc được:`, (err as Error).message);
     }
   }
@@ -141,6 +146,7 @@ export async function pulseShopeeAds(
       });
     }
   } catch (err) {
+    if (isApiBudgetError(err)) throw err;
     console.warn(
       `[Ads-pulse] Cờ ví tự nạp Shopee "${channel.shopName}" không đọc được:`,
       (err as Error).message

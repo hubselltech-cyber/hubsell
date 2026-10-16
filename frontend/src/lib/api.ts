@@ -6178,6 +6178,8 @@ export interface PlatformHealthResponse {
       stockPushPending: number;
       deliveryOverdue: number;
       breakersPaused: string[];
+      /** Cầu dao đang đóng kèm lý do + mở lại lúc nào (16/10/2026); vắng ở ảnh chụp cũ. */
+      breakersDetail?: Array<{ app: string; reason: string | null; pausedUntil: string; level: number; tripCount: number }>;
       breakerTrips24h: number;
       syncStalled: number;
       adsAuthDisconnected: number;

@@ -126,6 +126,24 @@ ngày), Lazada ~7 call report + adgroup. Không có gì seller "cần tức thì
    đúng "call log" Shopee đòi ở ticket quota) và chỉ mã partner mới đóng cầu dao;
    `api-budget.ts` đếm **bão 429**: ≥ 3 lần tầng shop trong 10' (`RATE_LIMIT_STORM`)
    → coi là trần app, đóng cầu dao như cũ.
+   **★ Sửa 16/10/2026 (sự cố thật lần 2):** HQ báo cầu dao ĐÓNG `shopee:2044679`
+   khi mới vài gian ủy quyền (anh Trung: "sao mới vài shop đã vượt ngưỡng"). Gốc:
+   bão 429 đếm theo **lần**, giả định "mỗi gian 1 call/30' nên 3 lần = 3 gian" sai —
+   xung Shopee (`ads-pulse.ts`) gọi 5–7 call liền cho MỘT gian và 3 bước cuối (ví,
+   GMS lần đầu, cờ ví tự nạp) nuốt `ApiBudgetError` rồi gọi tiếp → gian đã bị sàn
+   chặn tầng shop sinh 3 lần 429 trong vài giây → cầu dao đóng cả app. Sửa: (1) bão
+   = ≥ 3 **gian khác nhau** trong 10' (`withApiBudget` nhận khóa gian: shop_id Shopee /
+   access_token Lazada); (2) xung gặp `ApiBudgetError` ở bất kỳ bước nào thì ném tiếp
+   → gian lùi 15' (`order-auto-sync`), không gọi thêm; (3) thẻ Cầu dao trên HQ hiện
+   lý do sàn trả + mở lại lúc nào (giờ VN) + bậc + số lần, thay vì chỉ tên app.
+   **Đối chiếu prod 16/10 11:40 VN (SQL chỉ đọc `api_throttle_states`):** `shopee:2044679`
+   `tripCount = 102` (từ 28/09 → ~3 lần/ngày), bậc 0, nghỉ 5' (11:30→11:35 VN), `reason` =
+   "Bão 429: ≥3 gian vượt trần trong 10' — Shopee get_all_cpc_ads_daily_performance lỗi:
+   HTTP 429 — vượt trần gọi API (**error_rate_limit** Too many requests. You have reached
+   the rate limit…)". Tức thân 429 là mã chung `error_rate_limit`, KHÔNG phải
+   `exceed_partner_api` → đúng là bão tầng shop, không phải trần app. Gian nối Hubsell
+   Ads lúc đó: 29 ACTIVE + 2 DISCONNECTED (không phải "vài gian"). App chính
+   `shopee:2040029` chỉ đóng 14 lần, lần cuối 15/09 (trước khi tách tầng).
 3. **Sửa retry của client**: `client.ts` hiện retry 3 lần 1.5s→6s cho mọi
    "rate limit" — đúng cho lỗi thoáng, **sai** cho vượt trần theo app (FAQ: đừng
    retry). Tách: partner-level → ném `ApiBudgetError`; shop-level → 1 retry sau 3s.

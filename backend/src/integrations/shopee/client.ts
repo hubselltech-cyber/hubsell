@@ -321,7 +321,7 @@ async function callShopGet<T extends ShopeeEnvelope>(
       if (res.status === 429) throw await rateLimitError(ctx, res);
       return ensureOk((await res.json()) as T, ctx);
     });
-  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit) : call();
+  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit, shopId) : call();
 }
 
 /**
@@ -355,7 +355,7 @@ async function callShopPost<T extends ShopeeEnvelope>(
       if (res.status === 429) throw await rateLimitError(ctx, res);
       return ensureOk((await res.json()) as T, ctx);
     });
-  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit) : call();
+  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit, shopId) : call();
 }
 
 /** Lấy thông tin gian hàng (tên, khu vực...) để hiển thị. */

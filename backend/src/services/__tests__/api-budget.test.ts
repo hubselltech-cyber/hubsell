@@ -1,6 +1,6 @@
 // Van an toàn gọi Ads API theo app (tầng C, docs/ADS-NHIP-CANH-BAO.md) — phần thuần.
 import { describe, expect, it } from "vitest";
-import { acquireApiToken, isRateLimitStorm, pauseMsForLevel } from "../api-budget";
+import { acquireApiToken, isRateLimitStorm, pauseMsForLevel, type RateLimitHit } from "../api-budget";
 import { classifyShopeeAdsRateLimit } from "../../integrations/shopee/client";
 import { classifyLazadaAdsRateLimit } from "../../integrations/lazada/client";
 
@@ -41,25 +41,37 @@ describe("classifyLazadaAdsRateLimit", () => {
   });
 });
 
-describe("isRateLimitStorm — nhiều gian cùng 429 trong cửa sổ mới đóng cầu dao chung", () => {
+describe("isRateLimitStorm — nhiều GIAN KHÁC NHAU cùng 429 trong cửa sổ mới đóng cầu dao chung", () => {
   const M = 60_000;
-  it("3 lần trong 10' → bão; 2 lần → chưa", () => {
-    const hits: number[] = [];
-    expect(isRateLimitStorm(hits, 0)).toBe(false);
-    expect(isRateLimitStorm(hits, 4 * M)).toBe(false);
-    expect(isRateLimitStorm(hits, 9 * M)).toBe(true);
+  it("3 gian khác nhau trong 10' → bão; 2 gian → chưa", () => {
+    const hits: RateLimitHit[] = [];
+    expect(isRateLimitStorm(hits, 0, "A")).toBe(false);
+    expect(isRateLimitStorm(hits, 4 * M, "B")).toBe(false);
+    expect(isRateLimitStorm(hits, 9 * M, "C")).toBe(true);
   });
-  it("429 rời rạc như sự cố 28/09 (00:50, 04:06, 13:18, 18:45, 20:28, 20:48, 21:32) → không bao giờ bão", () => {
-    const hits: number[] = [];
+  it("MỘT gian dính 429 liên tiếp trong một xung (ví, GMS, cờ ví — sự cố 16/10) → KHÔNG bão", () => {
+    const hits: RateLimitHit[] = [];
+    expect(isRateLimitStorm(hits, 0, "A")).toBe(false);
+    expect(isRateLimitStorm(hits, 1_000, "A")).toBe(false);
+    expect(isRateLimitStorm(hits, 2_000, "A")).toBe(false);
+    expect(isRateLimitStorm(hits, 3_000, "A")).toBe(false);
+    // Thêm gian thứ hai vẫn chưa đủ 3 gian.
+    expect(isRateLimitStorm(hits, 4_000, "B")).toBe(false);
+    expect(isRateLimitStorm(hits, 5_000, "B")).toBe(false);
+    // Gian thứ ba → bão thật.
+    expect(isRateLimitStorm(hits, 6_000, "C")).toBe(true);
+  });
+  it("429 rời rạc như sự cố 28/09 (00:50, 04:06, 13:18, 18:45, 20:28, 20:48, 21:32, 7 gian) → không bao giờ bão", () => {
+    const hits: RateLimitHit[] = [];
     const times = [50, 246, 798, 1125, 1228, 1248, 1292].map((m) => m * M);
-    expect(times.map((t) => isRateLimitStorm(hits, t)).some(Boolean)).toBe(false);
+    expect(times.map((t, i) => isRateLimitStorm(hits, t, `shop-${i}`)).some(Boolean)).toBe(false);
   });
   it("mốc cũ ngoài cửa sổ bị loại", () => {
-    const hits: number[] = [];
-    isRateLimitStorm(hits, 0);
-    isRateLimitStorm(hits, 1 * M);
-    expect(isRateLimitStorm(hits, 12 * M)).toBe(false);
-    expect(hits).toEqual([12 * M]);
+    const hits: RateLimitHit[] = [];
+    isRateLimitStorm(hits, 0, "A");
+    isRateLimitStorm(hits, 1 * M, "B");
+    expect(isRateLimitStorm(hits, 12 * M, "C")).toBe(false);
+    expect(hits).toEqual([{ shop: "C", at: 12 * M }]);
   });
 });
 

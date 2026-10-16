@@ -128,37 +128,50 @@ export async function tripAppBreaker(app: string, reason: string): Promise<numbe
 // (client.ts) — một gian dính không kéo cả app nghỉ. Nhưng nếu NHIỀU gian cùng
 // dính trong thời gian ngắn thì đó là dấu hiệu trần theo app thật (hoặc sàn
 // đang siết) → vẫn phải đóng cầu dao, không được để hàng loạt gian tiếp tục
-// đập vào. Ngưỡng mặc định: ≥ 3 lần 429 tầng shop trong 10' (mỗi gian chỉ
-// xung 1 call/30' nên 3 lần/10' gần như chắc là 3 gian khác nhau). Đếm trong
-// RAM từng tiến trình — worker đang là 1 instance; nhiều instance thì mỗi bên
-// tự đếm, vẫn an toàn (chỉ nhạy hơn, không lỏng hơn).
+// đập vào. Ngưỡng mặc định: ≥ 3 GIAN KHÁC NHAU dính 429 tầng shop trong 10'.
+// ★ 16/10/2026: bản cũ đếm theo LẦN (giả định "mỗi gian 1 call/30' nên 3 lần =
+// 3 gian") — sai: một xung Shopee gọi 5–7 call liền cho MỘT gian, gian đã bị
+// sàn chặn thì call sau cũng 429 → 3 lần trong vài giây từ một gian → cầu dao
+// đóng cả app (HQ 16/10 báo ĐÓNG shopee:2044679 khi mới vài gian). Nay mỗi
+// mốc kèm khóa gian, bão = số gian KHÁC NHAU trong cửa sổ. Đếm trong RAM từng
+// tiến trình — nhiều instance thì mỗi bên tự đếm, vẫn an toàn (chỉ nhạy hơn).
 export const RATE_LIMIT_STORM = {
-  /** Số lần 429 tầng shop trong cửa sổ → coi là vượt trần theo app. */
+  /** Số GIAN khác nhau dính 429 tầng shop trong cửa sổ → coi là vượt trần theo app. */
   trips: 3,
   windowMs: 10 * 60 * 1000,
 } as const;
-const shopRateLimitHits = new Map<string, number[]>();
 
-/** Hàm thuần (test): ghi thêm mốc `now`, trả true nếu đủ `trips` mốc trong `windowMs`. */
+/** Một lần 429 tầng shop: gian nào, lúc nào (ms). */
+export interface RateLimitHit {
+  shop: string;
+  at: number;
+}
+const shopRateLimitHits = new Map<string, RateLimitHit[]>();
+
+/**
+ * Hàm thuần (test): ghi thêm mốc `now` của gian `shop`, loại mốc ngoài cửa sổ,
+ * trả true nếu có ≥ `trips` GIAN KHÁC NHAU trong `windowMs`.
+ */
 export function isRateLimitStorm(
-  hits: number[],
+  hits: RateLimitHit[],
   now: number,
+  shop: string,
   trips: number = RATE_LIMIT_STORM.trips,
   windowMs: number = RATE_LIMIT_STORM.windowMs
 ): boolean {
-  hits.push(now);
+  hits.push({ shop, at: now });
   const cutoff = now - windowMs;
-  while (hits.length && hits[0] < cutoff) hits.shift();
-  return hits.length >= trips;
+  while (hits.length && hits[0].at < cutoff) hits.shift();
+  return new Set(hits.map((h) => h.shop)).size >= trips;
 }
 
-function noteShopRateLimit(app: string): boolean {
+function noteShopRateLimit(app: string, shop: string): boolean {
   let hits = shopRateLimitHits.get(app);
   if (!hits) {
     hits = [];
     shopRateLimitHits.set(app, hits);
   }
-  const storm = isRateLimitStorm(hits, Date.now());
+  const storm = isRateLimitStorm(hits, Date.now(), shop);
   if (storm) hits.length = 0; // đã đóng cầu dao → đếm lại từ đầu sau khi mở
   return storm;
 }
@@ -166,13 +179,16 @@ function noteShopRateLimit(app: string): boolean {
 /**
  * Bọc MỘT call Ads API: chờ cầu dao mở → lấy token → gọi. `classify` đọc lỗi
  * sàn trả về: "partner" → đóng cầu dao + ném; "shop" → ném để caller lùi gian
- * (nhiều gian cùng dính trong 10' → coi như partner, đóng cầu dao); null → ném
- * nguyên lỗi.
+ * (≥3 gian KHÁC NHAU cùng dính trong 10' → coi như partner, đóng cầu dao);
+ * null → ném nguyên lỗi. `shop` = khóa gian (shop_id Shopee / access_token
+ * Lazada) để bão đếm theo gian; thiếu thì mỗi call tính là một gian riêng
+ * (hành vi cũ, nhạy hơn).
  */
 export async function withApiBudget<T>(
   app: string,
   fn: () => Promise<T>,
-  classify: (err: unknown) => "partner" | "shop" | null
+  classify: (err: unknown) => "partner" | "shop" | null,
+  shop?: string
 ): Promise<T> {
   await assertAppOpen(app);
   await acquireApiToken(app);
@@ -186,14 +202,15 @@ export async function withApiBudget<T>(
       throw new ApiBudgetError(app, "partner_rate_limit", message);
     }
     if (scope === "shop") {
-      if (noteShopRateLimit(app)) {
+      const shopKey = shop || `?${Date.now()}`;
+      if (noteShopRateLimit(app, shopKey)) {
         await tripAppBreaker(
           app,
-          `Bão 429: ≥${RATE_LIMIT_STORM.trips} gian vượt trần trong ${RATE_LIMIT_STORM.windowMs / 60000}' — ${message}`.slice(0, 300)
+          `Bão 429: ≥${RATE_LIMIT_STORM.trips} gian khác nhau vượt trần trong ${RATE_LIMIT_STORM.windowMs / 60000}' — ${message}`.slice(0, 300)
         );
         throw new ApiBudgetError(app, "partner_rate_limit", message);
       }
-      console.warn(`[ApiBudget] 429 tầng shop app "${app}" (chỉ lùi gian): ${message}`);
+      console.warn(`[ApiBudget] 429 tầng shop app "${app}" gian ${shop ?? "?"} (chỉ lùi gian): ${message}`);
       throw new ApiBudgetError(app, "shop_rate_limit", message);
     }
     throw err;

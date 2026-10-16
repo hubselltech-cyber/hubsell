@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 16/10/2026 (trưa) — CẦU DAO ADS ĐÓNG OAN: BÃO 429 ĐẾM THEO GIAN, XUNG DỪNG KHI BỊ CHẶN, HQ HIỆN LÝ DO — CHƯA COMMIT
+
+- **Anh hỏi:** HQ Sức khỏe báo "Cầu dao API sàn — ĐÓNG: shopee:2044679" (Hubsell Ads) dù mới vài gian ủy quyền, "lỗi vượt ngưỡng này là gì".
+- **Gốc (đọc mã, chưa đọc được prod):** không phải vượt quota app. Luật bão 429 (`services/api-budget.ts`, đặt 28/09) đóng cầu dao khi ≥3 lần HTTP 429 tầng shop trong 10', đếm theo LẦN không theo GIAN; đồng thời xung Shopee (`integrations/shopee/ads-pulse.ts`) 3 bước cuối (ví, GMS lần đầu, cờ ví tự nạp) nuốt `ApiBudgetError` rồi gọi tiếp → một gian bị Shopee chặn tầng shop tạo 3 lần 429 trong vài giây → đóng cả app 5'→60'.
+- **Sửa:** `withApiBudget(app, fn, classify, shop)` — bão = số gian KHÁC NHAU trong cửa sổ (`RateLimitHit{shop, at}`, Shopee truyền shop_id, Lazada truyền access_token); `ads-pulse.ts` ném tiếp `ApiBudgetError` ở 3 khối catch; `platform-health.ts` thêm `breakersDetail` (reason, pausedUntil, level, tripCount) + `breakerDetailText` → thẻ Cầu dao hiện "shopee:2044679 tới 14:32 (bậc 1 · 10', lần 4)" và hint = lý do sàn trả; FE `api.ts` kiểu tùy chọn. Test api-budget viết lại 4 ca (một gian 429 liên tiếp KHÔNG bão). tsc BE + FE sạch; 29 test budget/health xanh. Docs `ADS-NHIP-CANH-BAO.md` Tầng C mục 2 ghi sự cố lần 2.
+- **Prod (anh cho dùng Chrome, SQL chỉ đọc Supabase 11:40 VN):** `shopee:2044679` tripCount **102** (≈3 lần/ngày từ 28/09), bậc 0, nghỉ 5' (11:30→11:35), reason = "Bão 429 … get_all_cpc_ads_daily_performance … HTTP 429 (**error_rate_limit** Too many requests…)" → mã chung tầng shop, KHÔNG phải exceed_partner_api → khớp phân tích. Gian nối Hubsell Ads: 29 ACTIVE + 2 DISCONNECTED (không phải vài gian). App chính 2040029 chỉ 14 lần, lần cuối 15/09. 10 test *-db khác (channel-delete, delivery-fail-park, lazada-webhook-queue, order-ledger, realized-pnl-ledger, log-cleanup) đỏ trên DB local — đã kiểm bằng `git stash`: cây sạch cũng đỏ đúng 10/10 → có sẵn, không do sửa này.
+
+---
+
 ## Phiên 16/10/2026 (sáng) — LÀM LẠI HƯỚNG DẪN SỬ DỤNG TRỢ LÝ QUẢNG CÁO SHOPEE (15 bước, cấu hình chi tiết) + GIỌNG GENMAX "NGỌC HUYỀN - VBEE" — CHƯA COMMIT
 
 - **Anh gọi:** tính năng đổi nhiều từ bản tour 25/09 (6 bước) → làm lại, "chi tiết một chút cho phần cấu hình"; hỏi lấy được giọng "Ngọc Huyền - VBee" (app GenMax, MiniMax, Speech 02 HD) qua API không.

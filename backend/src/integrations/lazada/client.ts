@@ -129,7 +129,7 @@ async function callLazada<T extends LazadaEnvelope>(
   };
   // Van an toàn theo app cho Sponsored Solutions (Ads) — services/api-budget.ts.
   return isLazadaAdsPath(path)
-    ? withApiBudget(`lazada:${cfg.appKey}`, call, classifyLazadaAdsRateLimit)
+    ? withApiBudget(`lazada:${cfg.appKey}`, call, classifyLazadaAdsRateLimit, params.access_token)
     : call();
 }
 
