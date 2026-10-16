@@ -39,9 +39,9 @@ import {
 } from "@/components/ui/dialog";
 
 // 14/10/2026 — BẢN "ĐÃ CÓ MẶT": Android phát hành trên Google Play 13/10
-// (vn.hubsell.app); iPhone đang chờ Apple duyệt. Tăng NOTICE_VERSION để khách
-// đã tắt bản "sắp ra mắt" thấy lại; khi Apple duyệt: điền APP_STORE_URL +
-// tăng version lần nữa.
+// (vn.hubsell.app). 16/10/2026 — Apple duyệt + phát hành App Store (Apple ID
+// 6819512670) → điền APP_STORE_URL, tăng NOTICE_VERSION lần nữa để khách đã
+// tắt bản "iPhone đang chờ" thấy dải đủ 2 kho.
 //
 // 14/10/2026 tối — NÚT TẢI = MÃ QR (anh Trung): khách đang ngồi máy tính dùng
 // phần mềm, bấm nút trên dải ra ngay hộp có mã QR, giơ điện thoại quét là
@@ -53,13 +53,13 @@ import {
 // điện thoại thì quét QR vô nghĩa → nút dẫn thẳng tới kho ứng dụng của máy.
 
 /** Đổi khi nội dung thay đổi lớn → khách đã tắt bản cũ sẽ thấy bản mới. */
-const NOTICE_VERSION = "live-android-2026-10";
+const NOTICE_VERSION = "live-ios-2026-10";
 /** Sau mốc này dải tự biến mất dù chưa ai gỡ code (an toàn khi lỡ quên). */
 const NOTICE_UNTIL = new Date("2027-01-15T00:00:00+07:00");
 const DISMISS_KEY = "hubsell_mobile_app_notice_dismissed";
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=vn.hubsell.app";
-/** null = chưa lên App Store (chờ Apple duyệt). */
-const APP_STORE_URL: string | null = null;
+/** App Store từ 16/10/2026; giữ kiểu string | null để mọi nhánh render vẫn tự xử lý nếu phải gỡ link. */
+const APP_STORE_URL: string | null = "https://apps.apple.com/vn/app/id6819512670";
 /** Mã QR tĩnh — nội dung https://hubsell.vn/tai-app (trang tự đưa tới đúng kho ứng dụng). */
 const QR_SRC = "/qr/tai-app.svg";
 const QR_TARGET = "https://hubsell.vn/tai-app";
@@ -111,7 +111,7 @@ const ACCOUNT_NOTES = [
   "Đăng nhập bằng đúng email và mật khẩu đang dùng, không cần đăng ký lại.",
   "Phân quyền nhân viên giữ nguyên: chủ shop thấy tài chính, nhân viên kho thấy màn quét.",
   "Có sẵn trong mọi gói dịch vụ, không thu thêm phí.",
-  "Bản iPhone đang chờ Apple duyệt — khi lên App Store, Hubsell báo ngay trong phần mềm này.",
+  "Có trên Google Play từ 13/10/2026 và App Store từ 16/10/2026.",
 ];
 
 /** Hai nút kho ứng dụng — dùng chung cho hộp QR và hộp chi tiết. */
@@ -195,11 +195,11 @@ export function MobileAppLaunchNotice() {
         <Smartphone className="size-4 shrink-0" />
         <p className="min-w-0 flex-1 truncate">
           <span className="font-semibold">
-            Ứng dụng Hubsell đã có trên Google Play
+            Ứng dụng Hubsell đã có trên Google Play và App Store
           </span>
           <span className="hidden lg:inline">
             {" "}
-            — bản iPhone đang chờ Apple duyệt. Dùng chung tài khoản này, không thêm phí.
+            — dùng chung tài khoản này, không thêm phí.
           </span>
         </p>
         <button
@@ -241,8 +241,7 @@ export function MobileAppLaunchNotice() {
             </DialogTitle>
             <DialogDescription>
               Mở camera điện thoại, hướng vào mã bên dưới — máy tự mở đúng kho
-              ứng dụng: Android vào Google Play, iPhone vào App Store khi bản
-              iPhone được duyệt.
+              ứng dụng: Android vào Google Play, iPhone vào App Store.
             </DialogDescription>
           </DialogHeader>
 
@@ -281,9 +280,9 @@ export function MobileAppLaunchNotice() {
               Ứng dụng Hubsell trên điện thoại
             </DialogTitle>
             <DialogDescription>
-              Bản Android đã có trên <b>Google Play</b> từ 13/10/2026.
+              Bản Android có trên <b>Google Play</b> từ 13/10/2026.
               {APP_STORE_URL
-                ? " Bản iPhone đã có trên App Store."
+                ? " Bản iPhone có trên App Store từ 16/10/2026."
                 : " Bản iPhone đang chờ Apple duyệt, lên App Store ngay khi được duyệt."}
             </DialogDescription>
           </DialogHeader>

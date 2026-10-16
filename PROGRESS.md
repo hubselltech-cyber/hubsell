@@ -5,7 +5,16 @@
 
 ---
 
-## Phiên 16/10/2026 (chiều) — TIKTOK CHẶN oEMBED: BẢNG VIDEO MẤT ẢNH + TÊN → GẮN HEADER TRÌNH DUYỆT + LOG TÓM TẮT — CHƯA PUSH
+## Phiên 16/10/2026 (tối) — APPLE DUYỆT APP iOS (lần nộp 8) → ĐIỀN LINK APP STORE 2 NƠI + TĂNG NOTICE_VERSION — CHƯA PUSH
+
+- **Anh báo:** "apple có vẻ đã ok rồi". Em kiểm: `https://apps.apple.com/vn/app/id6819512670` trả 301 sang slug có tên, trang đích tiêu đề "Hubsell - Quản lý bán đa sàn App - App Store" → **ĐÃ LÊN KHO** (build 1.0 (11), 20 IAP, phát hành tự động). Cả 2 kho xong: Google Play 13/10, App Store 16/10.
+- **Landing (repo hubsell-landing):** `lib/site.ts` APP_STORE_URL = link trên (giữ kiểu `string | null`); `/tai-app` mô tả meta + ghi chú (iPhone giờ redirect thẳng App Store, QR không đổi); khối #mobile dòng chú thích "iPhone có trên App Store từ 16/10/2026"; bảng giá dòng app "(Google Play + App Store)". Viên, 2 nút, dock Tải app, huy hiệu chân trang tự đổi theo hằng. tsc xanh.
+- **Web app:** `mobile-app-launch-notice.tsx` APP_STORE_URL điền, `NOTICE_VERSION` = `live-ios-2026-10` (khách đã tắt bản Android thấy lại), dải "đã có trên Google Play và App Store", hộp QR/chi tiết bỏ câu "khi được duyệt". tsc xanh. Docs DUA-APP mục trạng thái ghi mốc 16/10.
+- **Còn tay (anh):** (1) push 2 repo; (2) SQL Supabase trả `reviewer@hubsell.vn` về Business còn hạn (bản ở REPLY-6, đổi `currentPeriodEnd` = `now() + interval '1 year'`); (3) ASC mô tả IAP "Starter 1 tháng" còn "3 nhân viên" — Starter không có trần nhân viên (`maxStaff` null) → sửa mô tả, không cần duyệt lại; (4) giữ worker `reviewer-demo-topup` cho các lần cập nhật sau.
+
+---
+
+## Phiên 16/10/2026 (chiều) — TIKTOK CHẶN oEMBED: BẢNG VIDEO MẤT ẢNH + TÊN → GẮN HEADER TRÌNH DUYỆT + LOG TÓM TẮT — ĐÃ PUSH `a5bd6c96`
 
 - **Anh hỏi:** vì sao Hubsell không lấy được ảnh/tên video quảng cáo TikTok, có phải video mới chưa tự lấy về.
 - **Kết luận:** KHÔNG phải video mới (dòng 6 đơn cũng trống @kênh). Ảnh/tên đi qua cổng oEmbed công khai của TikTok (`video-meta.ts`, hỏi khi khách mở trang, lô 20 id, đệm RAM 3h, lỗi đệm 10', KHÔNG ghi log). Thử từ trình duyệt máy anh: `tiktok.com/oembed` trả **503 "overload-protect triggered"** / lỗi Akamai edgesuite cho mọi video kể cả @tiktok chính chủ; `/embed/v2` cũng bị → TikTok đang siết cổng công khai. Chưa kiểm được từ Render (API cần đăng nhập, backend nuốt lỗi). API chính thức không thay được (`/gmv_max/video/get/` chỉ video tài khoản nhà, báo cáo không có tên/ảnh — probe 17/09).
