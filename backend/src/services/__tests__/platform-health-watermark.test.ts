@@ -54,4 +54,12 @@ describe("watermarkSignal", () => {
     expect(level).toBe("ok");
     expect(value).toContain("0/0 gian");
   });
+
+  it("gian ngủ đông chỉ được nêu số, không làm vàng (16/10/2026: RUXI ngủ đông bị báo trễ 233')", () => {
+    const [value, level] = watermarkSignal({ ...base, hibernated: 4 });
+    expect(level).toBe("ok");
+    expect(value).toContain("4 ngủ đông (không tính)");
+    // Ảnh chụp cũ không có trường này → không in gì thêm.
+    expect(watermarkSignal(base)[0]).not.toContain("ngủ đông");
+  });
 });

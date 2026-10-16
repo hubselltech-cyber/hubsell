@@ -13,6 +13,7 @@ import { prisma } from "../lib/prisma";
 import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
 import { DEAD_QUEUES } from "../lib/queue-config";
 import { collectInvoiceHealth, invoiceSignal, type InvoiceHealth } from "./invoice-health";
+import { DELIVERY_FAIL_FEATURE } from "../integrations/shopee/delivery-fail";
 import {
   CAPACITY_MILESTONES,
   CURRENT_INFRA,
@@ -81,7 +82,10 @@ export interface GrowthLayer {
  * lát 3.2 giai đoạn 3) — đếm trên các gian đang quét (ACTIVE, có token, 3 sàn).
  */
 export interface WatermarkHealth {
+  /** Gian đang quét (ACTIVE, có token, 3 sàn, KHÔNG ngủ đông). */
   channels: number;
+  /** Gian ngủ đông (hết gói quá ân hạn) — worker bỏ qua, mốc đứng yên, không tính trễ. Vắng ở ảnh chụp trước 16/10/2026. */
+  hibernated?: number;
   /** Gian đã có mốc (lượt quét đầu sau deploy / sau khi nối mới đặt mốc). */
   withMark: number;
   /** Gian đang vét dở vì lượt trước bị cắt (ordersCatchupBeforeAt khác NULL). */
@@ -226,28 +230,36 @@ export async function collectGrowth(): Promise<GrowthLayer> {
   };
 }
 
-/** Mốc nước quét đơn: hai câu đếm nhẹ trên Channel (không có chỉ mục riêng — bảng gian nhỏ). */
+/**
+ * Mốc nước quét đơn: hai câu đếm nhẹ trên Channel (không có chỉ mục riêng — bảng gian nhỏ).
+ * Gian NGỦ ĐÔNG (hibernatedAt khác NULL — chủ hết gói quá ân hạn, plan-hibernation.ts)
+ * bị worker bỏ qua nên mốc đứng yên mãi: KHÔNG tính vào gian trễ (16/10/2026 HQ báo
+ * vàng oan "RUXI 233'" đúng ngày 4 gian dùng thử ngủ đông), chỉ đếm riêng để HQ biết.
+ */
 export async function collectWatermarkHealth(): Promise<WatermarkHealth> {
   const scope = Prisma.sql`"status" = 'ACTIVE' AND "refreshToken" IS NOT NULL AND "channelName" IN ('SHOPEE', 'LAZADA', 'TIKTOK')`;
+  const awake = Prisma.sql`"hibernatedAt" IS NULL`;
   const [agg] = await prisma.$queryRaw<
-    { channels: number; withMark: number; catchingUp: number; lagOver60: number; lagOver6h: number; maxLagSec: number | null }[]
+    { channels: number; hibernated: number; withMark: number; catchingUp: number; lagOver60: number; lagOver6h: number; maxLagSec: number | null }[]
   >`
-    SELECT COUNT(*)::int AS "channels",
-           COUNT("ordersWatermarkAt")::int AS "withMark",
-           COUNT("ordersCatchupBeforeAt")::int AS "catchingUp",
-           COUNT(*) FILTER (WHERE "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagWarnMin}::int))::int AS "lagOver60",
-           COUNT(*) FILTER (WHERE "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagCritMin}::int))::int AS "lagOver6h",
-           MAX(EXTRACT(EPOCH FROM (now() - "ordersWatermarkAt")))::float AS "maxLagSec"
+    SELECT COUNT(*) FILTER (WHERE ${awake})::int AS "channels",
+           COUNT(*) FILTER (WHERE NOT (${awake}))::int AS "hibernated",
+           COUNT("ordersWatermarkAt") FILTER (WHERE ${awake})::int AS "withMark",
+           COUNT("ordersCatchupBeforeAt") FILTER (WHERE ${awake})::int AS "catchingUp",
+           COUNT(*) FILTER (WHERE ${awake} AND "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagWarnMin}::int))::int AS "lagOver60",
+           COUNT(*) FILTER (WHERE ${awake} AND "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagCritMin}::int))::int AS "lagOver6h",
+           MAX(EXTRACT(EPOCH FROM (now() - "ordersWatermarkAt"))) FILTER (WHERE ${awake})::float AS "maxLagSec"
     FROM "Channel" WHERE ${scope}`;
   const worst =
     agg?.maxLagSec != null
       ? await prisma.$queryRaw<{ shopName: string; channelName: string }[]>`
           SELECT "shopName", "channelName" FROM "Channel"
-          WHERE ${scope} AND "ordersWatermarkAt" IS NOT NULL
+          WHERE ${scope} AND ${awake} AND "ordersWatermarkAt" IS NOT NULL
           ORDER BY "ordersWatermarkAt" ASC LIMIT 1`
       : [];
   return {
     channels: agg?.channels ?? 0,
+    hibernated: agg?.hibernated ?? 0,
     withMark: agg?.withMark ?? 0,
     catchingUp: agg?.catchingUp ?? 0,
     lagOver60: agg?.lagOver60 ?? 0,
@@ -283,7 +295,11 @@ export async function collectWorker(): Promise<WorkerLayer> {
       }), null),
       safe("misaWebhookLog.count", prisma.misaWebhookLog.count({ where: { status: WebhookJobStatus.PENDING } }), 0),
       safe("stockPushJob.count", prisma.stockPushJob.count({ where: { status: "PENDING" } }), 0),
-      safe("deliveryTrackingTask.count", prisma.deliveryTrackingTask.count({ where: { nextRunAt: { lt: t60 } } }), 0),
+      // Cứu đơn đang ẨN (DELIVERY_FAIL_FEATURE=false, 12/10/2026): 3 worker không nhặt vé
+      // nên vé cũ nằm "quá hạn" mãi (16/10 HQ báo 2.410) — không phải việc dồn, không đếm.
+      DELIVERY_FAIL_FEATURE
+        ? safe("deliveryTrackingTask.count", prisma.deliveryTrackingTask.count({ where: { nextRunAt: { lt: t60 } } }), 0)
+        : Promise.resolve(0),
       safe("apiThrottleState.findMany", prisma.apiThrottleState.findMany(), []),
       safe("channel.count", prisma.channel.count({ where: { status: "ACTIVE", syncFailCount: { gte: 3 } } }), 0),
       safe("channelAppAuth.count", prisma.channelAppAuth.count({ where: { status: "DISCONNECTED" } }), 0),
@@ -538,8 +554,9 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   push(
     "worker.queues",
     "Đẩy tồn / cứu đơn / MISA chờ",
-    `${w.stockPushPending} tồn, ${w.deliveryOverdue} vé cứu đơn quá hạn, ${w.misaPending} MISA`,
-    w.stockPushPending > 500 || w.deliveryOverdue > 100 ? "warn" : "ok"
+    // Ảnh chụp cũ vẫn mang deliveryOverdue > 0 khi tính năng đã ẩn → chữ lẫn mức đều bỏ qua số đó.
+    `${w.stockPushPending} tồn, ${DELIVERY_FAIL_FEATURE ? `${w.deliveryOverdue} vé cứu đơn quá hạn` : "cứu đơn đang ẩn"}, ${w.misaPending} MISA`,
+    w.stockPushPending > 500 || (DELIVERY_FAIL_FEATURE && w.deliveryOverdue > 100) ? "warn" : "ok"
   );
   push(
     "channel.token",
@@ -590,7 +607,8 @@ export function watermarkSignal(wm: WatermarkHealth | null): [value: string, lev
   const value =
     `${wm.withMark}/${wm.channels} gian có mốc · ${lag}` +
     ` · ${wm.catchingUp} đang vét dở` +
-    (wm.lagOver60 > 0 ? ` · ${wm.lagOver60} gian quá ${T.watermarkLagWarnMin}'` : "");
+    (wm.lagOver60 > 0 ? ` · ${wm.lagOver60} gian quá ${T.watermarkLagWarnMin}'` : "") +
+    (wm.hibernated ? ` · ${wm.hibernated} ngủ đông (không tính)` : "");
   const level: SignalLevel = wm.lagOver6h > 0 ? "crit" : wm.lagOver60 > 0 || wm.catchingUp > 0 ? "warn" : "ok";
   const hint =
     wm.catchingUp > 0

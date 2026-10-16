@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 16/10/2026 (khuya, sau 22h) — HQ SỨC KHỎE BÁO VÀNG OAN: GIAN NGỦ ĐÔNG LÀM "MỐC NƯỚC TRỄ 233'" + 2.410 VÉ CỨU ĐƠN CỦA TÍNH NĂNG ĐÃ ẨN — ĐÃ SỬA, CHỜ ANH PUSH
+
+- **Anh gửi ảnh "Việc nên làm hôm nay" 2 dòng vàng.** Soi mã, không soi được prod (SQL chỉ đọc để anh dán ở `docs/DONG-BO-GIAI-DOAN-3.md` 3.3 mục 3):
+  - **"Mốc nước quét đơn: trễ nhất 233' (TIKTOK · Gia Dụng RUXI), 3 gian quá 90'"**: `collectWatermarkHealth` đếm mọi gian ACTIVE có token, KHÔNG loại `hibernatedAt` (trong khi `collectWorker` đã loại). 16/10 là ngày đầu worker `plan-hibernate` cho ngủ 4 gian dùng thử hết gói (RUXI, LUMI SOLAR, Thanh Thuỷ, phantuan2628 — danh sách 15/10) → mốc nước đứng yên → vàng oan. Sửa: SQL `COUNT(*) FILTER (WHERE "hibernatedAt" IS NULL)` cho mọi cột, thêm `hibernated` (tùy chọn, ảnh chụp cũ không có) in "· N ngủ đông (không tính)"; FE thẻ Worker thêm ", N ngủ đông". Suy luận từ mã + lịch ngủ đông, **chưa kiểm số prod**: gian trễ thật = dòng `hibernatedAt` NULL trong SQL trên.
+  - **"2410 vé cứu đơn quá hạn"**: `deliveryTrackingTask.count(nextRunAt < 60')` trong khi `DELIVERY_FAIL_FEATURE=false` từ 12/10 → 3 worker `return` trước khi nhặt vé, vé cũ nằm quá hạn vĩnh viễn (không tăng thêm: enqueue nằm sau cổng cờ). Sửa: cờ tắt → không đếm (0 query), dòng ghi "cứu đơn đang ẩn", mức vàng bỏ qua số cũ trong ảnh chụp. Bảng vé GIỮ NGUYÊN (bật lại thì bước "dọn vé" tự xóa vé đơn đã an bài).
+- Test `platform-health-watermark.test.ts` +1 ca ngủ đông (11/11 xanh), tsc backend + frontend sạch. Docs: `HQ-SUC-KHOE.md` 2.2, `GOI-NGU-DONG-GIAN-HET-HAN.md` mục 7, `DONG-BO-GIAI-DOAN-3.md` 3.3.
+- Chưa kiểm trên trình duyệt (cần DB prod + đăng nhập HQ); sau deploy mở HQ → Sức khỏe: dòng mốc nước phải "53/53 gian có mốc · … · 4 ngủ đông (không tính)" xanh, dòng hàng đợi "0 tồn, cứu đơn đang ẩn, 0 MISA".
+
 ## Phiên 16/10/2026 (đêm) — 3 THƯ SHOPEE OPEN PLATFORM: BỎ IP WHITELIST → CÔNG TẮC PII + CIDR /24 + TRƯỜNG FFM TRONG ĐƠN — ĐÃ ĐỐI CHIẾU, CHỜ ANH CHỐT BẬT PII
 
 - **Anh báo có 2 thư Shopee Partner; thực tế 3 thư `info@shopee.sg` 16/10.** Đọc + đối chiếu mã và Console 15/09 → ghi trọn ở `docs/SHOPEE-ISV-HO-SO.md` mục 7.

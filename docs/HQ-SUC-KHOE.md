@@ -33,13 +33,18 @@ nâng cấp gói CPU."* Lý do: *"làm sao tự nhiên anh nhớ được việc
 - Gian **trễ hạn quét nhanh** > 15' và > 60' (nextFastSyncAt quá hạn, không bị khóa).
 - Gian trễ xung ads > 2× nhịp.
 - Hàng đợi webhook Shopee/MISA: số PENDING, tuổi job cũ nhất; StockPushJob pending;
-  DeliveryTrackingTask quá hạn.
+  DeliveryTrackingTask quá hạn — **chỉ đếm khi `DELIVERY_FAIL_FEATURE` bật** (16/10/2026: tính năng
+  Cứu đơn ẩn từ 12/10, worker không nhặt vé nên 2.410 vé cũ nằm "quá hạn" mãi → HQ báo vàng oan;
+  nay dòng ghi "cứu đơn đang ẩn", số cũ trong ảnh chụp không làm vàng).
 - Cầu dao app (ApiThrottleState đang paused), số lần trip 24h.
 - Gian `syncFailCount ≥ 3` (sàn trễ đồng bộ), ủy quyền Hubsell Ads DISCONNECTED.
 - **Mốc nước quét đơn** (15/10/2026, lát 3.6 giai đoạn 3): số gian có mốc / đang quét, gian đang vét dở
   (`ordersCatchupBeforeAt` khác NULL = lượt trước chạm trần trang), gian có mốc cũ hơn 90' / 6 giờ
   (`watermarkLagWarnMin` / `watermarkLagCritMin`, tự chọn), gian trễ nhất. Dấu hiệu `worker.watermark`
   vàng khi có gian vét dở hoặc quá 90', đỏ khi quá 6 giờ. Thẻ "Worker" ở KPI đầu trang cũng ghi tóm tắt.
+  **Gian ngủ đông** (`hibernatedAt` khác NULL, `GOI-NGU-DONG-GIAN-HET-HAN.md`) bị worker bỏ qua nên mốc
+  đứng yên: từ 16/10/2026 KHÔNG tính vào x/y lẫn gian trễ, chỉ in "· N ngủ đông (không tính)" (hôm 16/10
+  4 gian dùng thử ngủ đông đúng luật làm HQ báo vàng "RUXI 233'").
 
 ### 2.3 Hạ tầng (INFRA)
 - DB: `pg_database_size` (MB), 5 bảng lớn nhất, số kết nối đang mở / `max_connections`.

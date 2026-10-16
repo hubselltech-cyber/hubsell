@@ -142,3 +142,8 @@ Lát 3.2 vừa lên prod tối 14/10 mà chưa ai nhìn thấy số. Lát 3.3 đ
 
 1. Mở HQ → Sức khỏe: thẻ Worker có "mốc nước x/y gian"; dấu hiệu "Mốc nước quét đơn" xanh, trễ nhất dưới 60'. Nếu vàng vì "vét dở" → lọc log worker theo "vét tiếp": một gian lặp mãi = sàn trả dòng ngoài cửa sổ (nghi vấn TikTok 16/09) hoặc gian quá lớn.
 2. x/y chưa đủ ngay sau deploy là bình thường (gian chưa chạy lượt đầu); sau 1 giờ phải bằng nhau.
+3. (16/10/2026) Gian ngủ đông (`hibernatedAt`) không còn tính vào x/y lẫn "gian quá 90'" — lượt ngủ
+   đông đầu tiên sáng 16/10 làm dấu hiệu vàng oan ("RUXI 233'", 3 gian quá 90'). Muốn đối chiếu:
+   `SELECT "channelName","shopName","hibernatedAt","lastSyncError", now()-"ordersWatermarkAt" AS tuoi
+   FROM "Channel" WHERE status='ACTIVE' AND "refreshToken" IS NOT NULL AND "ordersWatermarkAt" < now() - interval '90 minutes'
+   ORDER BY tuoi DESC;` — gian trễ thật là dòng có `hibernatedAt` NULL.

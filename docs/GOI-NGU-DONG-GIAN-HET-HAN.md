@@ -139,6 +139,9 @@ where "hibernatedAt" is not null;
 ## 7. Chưa làm / việc sau
 
 - Thẻ "Gian ngủ đông" trên HQ → Sức khỏe (đếm theo sàn) — hiện chỉ có log + SQL trên.
+  ✅ 16/10/2026 một phần: dấu hiệu "Mốc nước quét đơn" in "· N ngủ đông (không tính)" và loại gian
+  ngủ đông khỏi phép đếm trễ (sáng 16/10 lượt ngủ đông đầu tiên làm HQ báo vàng oan "RUXI 233'");
+  thẻ riêng đếm theo sàn vẫn chưa làm.
 - Dọn dữ liệu của khách bỏ hẳn sau N tháng: **không** thuộc lát này (anh đã đóng
   `hubsell-data-retention`, đừng tự mở lại).
 - Test tích hợp trên database cho `hibernateExpiredOwners` / `wakeHibernatedChannelsTx`

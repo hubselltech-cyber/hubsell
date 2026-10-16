@@ -6186,6 +6186,8 @@ export interface PlatformHealthResponse {
       /** Mốc nước quét đơn (15/10/2026). null = không đọc được; vắng ở ảnh chụp cũ. */
       watermark?: {
         channels: number;
+        /** Gian ngủ đông, không tính trễ (16/10/2026); vắng ở ảnh chụp cũ. */
+        hibernated?: number;
         withMark: number;
         catchingUp: number;
         lagOver60: number;
