@@ -33,12 +33,20 @@ function jwt() {
 }
 
 const BASE = "https://api.appstoreconnect.apple.com";
-async function api(method, path, body) {
+// 16/10/2026: ASC trả 500 UNEXPECTED_ERROR ngắt quãng (web cũng lỗi) → thử lại tới 8 lần, giãn 5–20 giây.
+async function api(method, path, body, attempt = 0) {
   const res = await fetch(path.startsWith("http") ? path : `${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${jwt()}`, "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
+  if ((res.status === 500 || res.status === 502 || res.status === 503) && attempt < 8) {
+    const wait = Math.min(20000, 5000 + attempt * 2500);
+    process.stderr.write(`  (ASC ${res.status} ở ${method} ${path.slice(0, 60)} — thử lại sau ${wait / 1000}s)
+`);
+    await new Promise((r) => setTimeout(r, wait));
+    return api(method, path, body, attempt + 1);
+  }
   const text = await res.text();
   let json = null;
   try {
@@ -116,7 +124,10 @@ if (cmd === "status") {
   }
   console.log("Bộ ảnh:", set.type, set.id, "— các bộ có:", sets.map((s) => s.type).join(", "));
   for (const old of await screenshotsOf(set.id)) {
-    await api("DELETE", `/v1/appScreenshots/${old.id}`);
+    // 404 = đã xóa ở lượt thử lại trước (ASC 500 rồi vẫn xóa) → bỏ qua.
+    await api("DELETE", `/v1/appScreenshots/${old.id}`).catch((e) => {
+      if (!/404/.test(String(e.message))) throw e;
+    });
     console.log("  xóa", old.name);
   }
   const files = readdirSync(dir).filter((f) => f.endsWith(".png")).sort();
@@ -136,8 +147,22 @@ if (cmd === "status") {
     ids.push(shot.id);
     console.log("  tải", f, buf.length, "byte");
   }
-  await api("PATCH", `/v1/appScreenshotSets/${set.id}/relationships/appScreenshots`, { data: ids.map((id) => ({ type: "appScreenshots", id })) });
-  console.log("Xong", ids.length, "ảnh, thứ tự đã đặt theo tên tệp.");
+  // Sắp lại thứ tự: ASC hay trả 409 "Can't Add/Remove Relationship when reorder" — thứ tự tạo đã đúng tên tệp nên không chặn.
+  await api("PATCH", `/v1/appScreenshotSets/${set.id}/relationships/appScreenshots`, { data: ids.map((id) => ({ type: "appScreenshots", id })) }).catch((e) => console.log("  (không sắp lại được:", String(e.message).slice(0, 120), ")"));
+  console.log("Xong", ids.length, "ảnh.");
+} else if (cmd === "prune") {
+  // Xóa ảnh treo (AWAITING_UPLOAD / FAILED) còn sót sau lượt tải bị ngắt.
+  const [vs] = args;
+  const v = await versionByString(vs);
+  const loc = await localization(v.id);
+  for (const set of await screenshotSets(loc.id)) {
+    for (const sh of await screenshotsOf(set.id)) {
+      if (sh.state === "COMPLETE") continue;
+      await api("DELETE", `/v1/appScreenshots/${sh.id}`).catch((e) => { if (!/404/.test(String(e.message))) throw e; });
+      console.log("  xóa ảnh treo", set.type, sh.name, sh.state);
+    }
+  }
+  console.log("prune xong");
 } else if (cmd === "attach-build") {
   const [vs, buildNo] = args;
   const v = await versionByString(vs);
