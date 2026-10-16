@@ -191,13 +191,27 @@ export function MobileAppLaunchNotice() {
 
   return (
     <>
-      <div className="flex items-center gap-3 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900 md:px-6 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-100">
-        <Smartphone className="size-4 shrink-0" />
+      {/* 16/10/2026 — DẢI RA MẮT (anh Trung): tông xanh nhạt trước đây nhìn
+          như thông báo thường, khách lướt qua. Đổi sang dải gradient ngọc→lam
+          mang hình thức CHÚC MỪNG ra mắt, chữ trắng, biểu tượng điện thoại
+          "đổ chuông" lắc nhẹ mỗi 3 giây (animate-phone-ring, tắt khi khách
+          chọn giảm chuyển động) để kéo mắt khách — kể cả khách mới đăng ký
+          cũng thấy dải này ngay lần đầu vào. */}
+      <div className="flex items-center gap-3 border-b border-emerald-700/30 bg-gradient-to-r from-emerald-500 via-teal-500 to-sky-500 px-4 py-2 text-sm text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.18)] md:px-6 dark:from-emerald-600 dark:via-teal-600 dark:to-sky-700">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/40">
+          <Smartphone className="size-4 animate-phone-ring motion-reduce:animate-none" />
+        </span>
         <p className="min-w-0 flex-1 truncate">
-          <span className="font-semibold">
+          {/* Viên RA MẮT chỉ từ md: ở khổ tablet nó chiếm chỗ làm câu chính cụt. */}
+          <span className="mr-2 hidden rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ring-1 ring-white/40 md:inline-block">
+            Ra mắt
+          </span>
+          {/* Màn điện thoại chỉ đủ chỗ ~150px chữ bên cạnh 2 nút → câu ngắn, khỏi cụt "Ứng dụng Hu…". */}
+          <span className="font-semibold sm:hidden">App Hubsell đã ra mắt</span>
+          <span className="hidden font-semibold sm:inline">
             Ứng dụng Hubsell đã có trên Google Play và App Store
           </span>
-          <span className="hidden lg:inline">
+          <span className="hidden text-white/90 lg:inline">
             {" "}
             — dùng chung tài khoản này, không thêm phí.
           </span>
@@ -205,24 +219,26 @@ export function MobileAppLaunchNotice() {
         <button
           type="button"
           onClick={onDownloadClick}
-          className="shrink-0 rounded-md bg-sky-600 px-2.5 py-1 font-medium text-white transition-colors hover:bg-sky-700"
+          className="shrink-0 rounded-md bg-white px-2.5 py-1 font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50"
         >
           <span className="sm:hidden">Tải app</span>
           <span className="hidden sm:inline">Quét mã tải app</span>
         </button>
+        {/* Màn điện thoại giấu nút này cho chữ đủ chỗ — hộp QR vẫn có link
+            "Ứng dụng làm được gì?" dẫn sang hộp chi tiết. */}
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="shrink-0 rounded-md border border-sky-300 bg-card px-2.5 py-1 font-medium transition-colors hover:bg-sky-100 dark:border-sky-800 dark:hover:bg-sky-900/40"
+          className="hidden shrink-0 rounded-md border border-white/50 bg-white/10 px-2.5 py-1 font-medium text-white transition-colors hover:bg-white/20 sm:inline-block"
         >
           Xem chi tiết
         </button>
         {/* Dấu tích tắt — anh Trung 25/09: khách tự tắt bằng ô tích, không
             phải nút X mờ dễ bấm nhầm. */}
-        <label className="hidden shrink-0 cursor-pointer select-none items-center gap-1.5 whitespace-nowrap sm:flex">
+        <label className="hidden shrink-0 cursor-pointer select-none items-center gap-1.5 whitespace-nowrap text-white/90 sm:flex">
           <input
             type="checkbox"
-            className="size-4 accent-sky-600"
+            className="size-4 accent-white"
             checked={false}
             onChange={() => toggleDismiss(true)}
             aria-label="Không hiện thông báo ứng dụng di động nữa"

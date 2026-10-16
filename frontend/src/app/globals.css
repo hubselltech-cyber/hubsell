@@ -181,6 +181,13 @@ html[data-theme="emerald"] {
 
   --animate-dialog-pop: dialog-pop 0.22s cubic-bezier(0.22, 1.35, 0.36, 1);
   --animate-page-enter: page-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  /*
+   * phone-ring — biểu tượng điện thoại "giật giật" như đang đổ chuông trên dải
+   * ra mắt ứng dụng di động (anh Trung 16/10/2026: khách phải chú ý). Lắc nhanh
+   * trong 0,8 giây đầu rồi đứng yên tới hết chu kỳ 3 giây để không gây mỏi mắt;
+   * dùng `rotate` riêng (không đụng transform). Kèm motion-reduce:animate-none.
+   */
+  --animate-phone-ring: phone-ring 3s ease-in-out infinite;
 
   @keyframes dialog-pop {
     from {
@@ -200,6 +207,25 @@ html[data-theme="emerald"] {
     to {
       opacity: 1;
       translate: 0 0;
+    }
+  }
+  @keyframes phone-ring {
+    0%,
+    27%,
+    100% {
+      rotate: 0deg;
+    }
+    3%,
+    9%,
+    15%,
+    21% {
+      rotate: -14deg;
+    }
+    6%,
+    12%,
+    18%,
+    24% {
+      rotate: 14deg;
     }
   }
 }
