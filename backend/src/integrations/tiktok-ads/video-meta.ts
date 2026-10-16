@@ -47,28 +47,63 @@ function remember(videoId: string, meta: TiktokVideoMeta | null) {
   cache.set(videoId, { at: Date.now(), meta });
 }
 
-async function fetchOne(videoId: string): Promise<TiktokVideoMeta | null> {
+// 16/10/2026: cổng oEmbed trả 503 "overload-protect triggered" cho MỌI video (cả video chính chủ
+// @tiktok) từ trình duyệt ở VN — bảng mất ảnh + tên hàng loạt mà backend không ghi gì. Từ nay:
+// (1) gửi header như trình duyệt (yêu cầu từ IP datacenter không có User-Agent bị siết trước),
+// (2) mỗi lượt hỏi ghi MỘT dòng log tóm tắt (hỏi/được/hỏng theo mã HTTP) để đọc log Render là biết
+// Render có bị chặn không và TikTok đã mở lại chưa. Không log từng video kẻo rác.
+const OEMBED_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+  Accept: "application/json,text/plain;q=0.9,*/*;q=0.8",
+  "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+};
+
+/** Kết quả một lượt hỏi: meta (null = không lấy được) + nhãn vì sao (mã HTTP / empty / timeout / error). */
+export type OembedOutcome = { meta: TiktokVideoMeta | null; why: string };
+
+async function fetchOne(videoId: string): Promise<OembedOutcome> {
   const url = `https://www.tiktok.com/oembed?url=${encodeURIComponent(`https://www.tiktok.com/@/video/${videoId}`)}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-  if (!res.ok) return null;
-  const j = (await res.json()) as {
-    author_unique_id?: string;
-    author_name?: string;
-    title?: string;
-    thumbnail_url?: string;
-  };
-  if (!j.thumbnail_url && !j.title) return null;
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: OEMBED_HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (err) {
+    return { meta: null, why: (err as Error)?.name === "TimeoutError" ? "timeout" : "error" };
+  }
+  if (!res.ok) return { meta: null, why: String(res.status) };
+  let j: { author_unique_id?: string; author_name?: string; title?: string; thumbnail_url?: string };
+  try {
+    j = (await res.json()) as typeof j;
+  } catch {
+    return { meta: null, why: "not-json" };
+  }
+  if (!j.thumbnail_url && !j.title) return { meta: null, why: "empty" };
   return {
-    videoId,
-    author: j.author_unique_id ?? "",
-    authorName: j.author_name ?? "",
-    caption: j.title ?? "",
-    thumbnailUrl: j.thumbnail_url ?? "",
+    meta: {
+      videoId,
+      author: j.author_unique_id ?? "",
+      authorName: j.author_name ?? "",
+      caption: j.title ?? "",
+      thumbnailUrl: j.thumbnail_url ?? "",
+    },
+    why: "ok",
   };
 }
 
+/** Gom nhãn hỏng thành "503×4, timeout×1" — thuần, có test. */
+export function summarizeOembedFailures(whys: string[]): string {
+  const count = new Map<string, number>();
+  for (const w of whys) if (w !== "ok") count.set(w, (count.get(w) ?? 0) + 1);
+  return [...count.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([w, n]) => `${w}×${n}`)
+    .join(", ");
+}
+
 /** Trả meta cho các video hỏi tới (thiếu = TikTok không cho / video riêng tư / đã xóa). */
-export async function getTiktokVideoMeta(videoIds: string[]): Promise<Record<string, TiktokVideoMeta>> {
+export async function getTiktokVideoMeta(
+  videoIds: string[],
+  fetchMeta: (videoId: string) => Promise<OembedOutcome> = fetchOne
+): Promise<Record<string, TiktokVideoMeta>> {
   const ids = [...new Set(videoIds.filter((id) => /^\d{15,22}$/.test(id)))].slice(0, VIDEO_META_MAX_IDS);
   const out: Record<string, TiktokVideoMeta> = {};
   const todo: string[] = [];
@@ -81,16 +116,24 @@ export async function getTiktokVideoMeta(videoIds: string[]): Promise<Record<str
       todo.push(id);
     }
   }
+  if (todo.length === 0) return out;
+  const whys: string[] = [];
   let i = 0;
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, todo.length) }, async () => {
       while (i < todo.length) {
         const id = todo[i++];
-        const meta = await fetchOne(id).catch(() => null);
+        const { meta, why } = await fetchMeta(id).catch((): OembedOutcome => ({ meta: null, why: "error" }));
         remember(id, meta);
+        whys.push(why);
         if (meta) out[id] = meta;
       }
     })
   );
+  const failed = whys.filter((w) => w !== "ok").length;
+  const line = `[TikTok Ads] oEmbed: hỏi ${todo.length}, được ${todo.length - failed}, hỏng ${failed}` +
+    (failed ? ` (${summarizeOembedFailures(whys)})` : "");
+  if (failed) console.warn(line);
+  else console.log(line);
   return out;
 }

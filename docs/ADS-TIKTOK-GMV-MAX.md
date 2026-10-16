@@ -94,6 +94,13 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
 - **Tên/ảnh video**: `/gmv_max/video/get/` bắt buộc `identity_list` và chỉ trả video của tài khoản TikTok nhà,
   KHÔNG trả video creator/affiliate (nhóm chiếm đa số, nơi tiền rơi) → dùng **oEmbed công khai**
   `tiktok.com/oembed?url=…/@/video/{id}` (không cần token). Link mở video: `tiktok.com/@{author}/video/{id}`.
+  - ⚠️ **16/10/2026 TikTok siết cổng oEmbed**: trả HTTP 503 "overload-protect triggered" (lớp chống quá tải Akamai) cho
+    MỌI video, kể cả video chính chủ @tiktok, thử từ trình duyệt ở VN; `/embed/v2/{id}` cũng bị → bảng video mất ảnh +
+    @kênh + caption hàng loạt (KHÔNG phải do video mới; Hubsell chỉ hỏi oEmbed khi khách mở trang, theo lô 20 id, không
+    lấy nền). Cổng công khai không cam kết dịch vụ, không có cách thay bằng API chính thức (xem trên). Từ 16/10
+    `video-meta.ts` gửi header như trình duyệt và ghi MỘT dòng log mỗi lượt `[TikTok Ads] oEmbed: hỏi N, được M, hỏng K
+    (503×a, timeout×b)` — đọc log Render để biết Render có bị chặn không / TikTok mở lại chưa. Nếu còn chặn lâu: tính gọi
+    oEmbed từ trình duyệt khách + lưu @kênh/caption vào DB (link ảnh CDN hết hạn ~2 ngày nên lưu link không giữ được ảnh).
 - **Loại/khôi phục video** `/campaign/gmv_max/creative/update/` (REMOVE | ADD, ≤400 video/lượt): chạy được với
   scope hiện tại, với campaign tạo từ Seller Center và video affiliate. Campaign phải đang bật. Sàn không trả
   kết quả từng video; lệnh thật đầu tiên 17/09 được áp dụng sau **~5–8 phút** (docs ghi 20 phút).

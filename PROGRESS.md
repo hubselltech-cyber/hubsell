@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 16/10/2026 (chiều) — TIKTOK CHẶN oEMBED: BẢNG VIDEO MẤT ẢNH + TÊN → GẮN HEADER TRÌNH DUYỆT + LOG TÓM TẮT — CHƯA PUSH
+
+- **Anh hỏi:** vì sao Hubsell không lấy được ảnh/tên video quảng cáo TikTok, có phải video mới chưa tự lấy về.
+- **Kết luận:** KHÔNG phải video mới (dòng 6 đơn cũng trống @kênh). Ảnh/tên đi qua cổng oEmbed công khai của TikTok (`video-meta.ts`, hỏi khi khách mở trang, lô 20 id, đệm RAM 3h, lỗi đệm 10', KHÔNG ghi log). Thử từ trình duyệt máy anh: `tiktok.com/oembed` trả **503 "overload-protect triggered"** / lỗi Akamai edgesuite cho mọi video kể cả @tiktok chính chủ; `/embed/v2` cũng bị → TikTok đang siết cổng công khai. Chưa kiểm được từ Render (API cần đăng nhập, backend nuốt lỗi). API chính thức không thay được (`/gmv_max/video/get/` chỉ video tài khoản nhà, báo cáo không có tên/ảnh — probe 17/09).
+- **Anh hỏi lưu DB có tốn không:** không (vài MB, nửa ngày) nhưng KHÔNG chữa gốc — chỉ giữ cái đã lấy được, link ảnh CDN hết hạn ~2 ngày. Anh chốt làm bước nhỏ trước.
+- **Sửa (`video-meta.ts`):** gửi `User-Agent`/`Accept`/`Accept-Language` như trình duyệt; `fetchOne` trả `{meta, why}` (mã HTTP / timeout / error / not-json / empty); mỗi lượt hỏi ghi MỘT dòng `[TikTok Ads] oEmbed: hỏi N, được M, hỏng K (503×a, …)` (warn khi có hỏng, log khi sạch; lượt đọc toàn đệm không log); `getTiktokVideoMeta(ids, fetchMeta?)` tiêm được để test; `summarizeOembedFailures` thuần. Test mới `tiktok-ads-video-meta.test.ts` 4 ca xanh; tsc BE sạch. Docs `ADS-TIKTOK-GMV-MAX.md` mục Tên/ảnh video ghi sự cố.
+- **Sáng mai:** đọc log Render tìm `[TikTok Ads] oEmbed` → nếu Render vẫn hỏng 503 nhiều ngày mà máy khách không → chuyển gọi oEmbed từ trình duyệt khách + lưu @kênh/caption vào DB; nếu đã "hỏng 0" thì chỉ là sự cố tạm của TikTok, không làm gì thêm.
+
+---
+
 ## Phiên 16/10/2026 (trưa) — CẦU DAO ADS ĐÓNG OAN: BÃO 429 ĐẾM THEO GIAN, XUNG DỪNG KHI BỊ CHẶN, HQ HIỆN LÝ DO — CHƯA COMMIT
 
 - **Anh hỏi:** HQ Sức khỏe báo "Cầu dao API sàn — ĐÓNG: shopee:2044679" (Hubsell Ads) dù mới vài gian ủy quyền, "lỗi vượt ngưỡng này là gì".
