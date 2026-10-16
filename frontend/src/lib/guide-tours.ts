@@ -10,8 +10,9 @@ import type { TourStep } from "@/components/tour/guide-tour-player";
  *    (+ capture-shopee-confirm.js cho màn Confirm Authorization dựng lại).
  *  - 3 tour còn lại: scripts/capture-guide-tour-assets.js.
  *
- * Giọng thuyết minh (MP3 Hoài My): scripts/generate-onboarding-voice.js (tour
- * gian hàng) và generate-guide-voice.js (3 tour kia) — LỜI THOẠI phải sửa
+ * Giọng thuyết minh (MP3 Hoài My — edge-tts; riêng tour Trợ lý quảng cáo dùng
+ * GenMax MiniMax "Ngọc Huyền - VBee" từ 16/10/2026): scripts/generate-onboarding-voice.js
+ * (tour gian hàng) và generate-guide-voice.js (các tour kia) — LỜI THOẠI phải sửa
  * cùng lúc với title/desc ở đây rồi sinh lại file.
  */
 
@@ -725,49 +726,230 @@ export const MONEY_GUARD_TOUR: GuideTour = {
   ],
 };
 
+/**
+ * 16/10/2026 làm lại theo bản Trợ lý hiện tại (anh Trung: "đã thay đổi khá nhiều,
+ * cấu hình phải chi tiết"): 15 bước / 8 ảnh — thêm hộp chi tiết chiến dịch, tách
+ * từng khối Cấu hình (sàn dữ liệu, tự thực thi, 4 quy tắc, hạ mục tiêu ROAS),
+ * Sổ hành động & bảng điểm. Ảnh: capture-live-tour-assets.js ads. Giọng: GenMax
+ * MiniMax "Ngọc Huyền - VBee" (generate-guide-voice.js ads). Quay: render-tour-video.js ads.
+ * Tab "GMV Max cấp shop" chỉ hiện với gian đã nối Hubsell Ads → không có trong tour.
+ */
 export const ADS_TOUR: GuideTour = {
   voiceDir: "/guide-assets/voice/ads",
   steps: [
     {
       img: `${GT}/ad-overview.png`,
-      title: "Trợ lý quảng cáo Shopee: số thật + ROAS hòa vốn",
-      desc: "“Trợ lý quảng cáo” → “Quảng cáo Shopee”. Bấm “Kết nối Hubsell Ads” một lần để đọc số từ Shopee Ads. Chọn gian, khoảng ngày. Năm thẻ: chi phí, GMV từ ads, ROAS, ROAS hòa vốn tính từ biên lãi thật của shop, và lãi/lỗ ước tính.",
-      target: { x: 58.89, y: 53, w: 77.78, h: 34 },
-      zoom: 1.25,
+      title: "Mở Trợ lý quảng cáo Shopee, kết nối Hubsell Ads một lần",
+      desc: "Menu “Trợ lý quảng cáo” → “Quảng cáo Shopee”. Góc phải chọn gian và khoảng ngày. Lần đầu bấm “Kết nối Hubsell Ads”: Shopee tách quyền quảng cáo sang ứng dụng riêng nên mỗi gian liên kết thêm một lần (đăng nhập đúng tài khoản Shopee của gian rồi Đồng ý). “Làm mới” kéo số mới nhất; Hubsell cũng tự kéo mỗi 30 phút.",
+      target: { x: 76.19, y: 16.46, w: 43.17, h: 3.75 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/ad-overview.png`,
+      title: "Năm thẻ số: lãi hay lỗ thật sau quảng cáo",
+      desc: "Chi phí Ads, GMV từ Ads, ROAS, ROAS hòa vốn và Lãi/lỗ ước tính. ROAS hòa vốn tính từ biên lãi ròng thật của shop (giá vốn + phí sàn của đơn đã đối soát 30 ngày, loại đơn thiếu giá vốn) — ROAS dưới số này là chạy lỗ dù sàn báo dương. Lãi/lỗ ước tính = GMV từ Ads × biên lãi − chi phí.",
+      target: { x: 45.74, y: 53.39, w: 51.48, h: 34.28 },
+      zoom: 1.3,
     },
     {
       img: `${GT}/ad-overview.png`,
       title: "Dải đỏ: chiến dịch cần xử lý",
-      desc: "Trợ lý so ROAS từng chiến dịch với ROAS hòa vốn của chính sản phẩm trong chiến dịch đó — không phải một con số đoán. Dải đỏ đếm chiến dịch đề xuất tạm dừng hoặc cần duyệt; bấm “Lọc cần xử lý”.",
+      desc: "Trợ lý so ROAS từng chiến dịch với ROAS hòa vốn của chính sản phẩm trong chiến dịch đó — không phải một con số đoán. Dải đỏ đếm chiến dịch đề xuất tạm dừng / cần duyệt; bấm “Lọc cần xử lý” để bảng chỉ còn những dòng này. Chuông góc phải cũng báo khi Trợ lý có đề xuất mới.",
       target: { x: 58.89, y: 30.42, w: 77.78, h: 7.5 },
       zoom: 1.5,
     },
     {
       img: `${GT}/ad-campaigns.png`,
-      title: "Bảng chiến dịch: màu theo lãi thật",
-      desc: "Mỗi chiến dịch: nhãn Trợ lý (Ổn / Đề xuất tạm dừng / Cần duyệt / Thiếu dữ liệu), trạng thái, ngân sách, chi phí, đơn, chi phí mỗi đơn, GMV. ROAS tô xanh khi có lãi thật, vàng sát ngưỡng, đỏ đang lỗ dù sàn báo dương. Bấm một dòng xem căn cứ.",
-      target: { x: 58.89, y: 55, w: 77.78, h: 75 },
+      title: "Bảng chiến dịch: nhãn Trợ lý và màu ROAS",
+      desc: "Cột Trợ lý: Ổn / Cần duyệt / Đề xuất tạm dừng / Thiếu dữ liệu; đang lãi mà bị chặn phân phối thì nhãn xanh “Ngân sách đang chặn” / “Mục tiêu đang bó”; máy đã tắt thì “Hubsell tạm dừng”. Các cột: trạng thái, ngân sách, chi phí, đơn, CP/đơn, GMV, ROAS tô màu theo hòa vốn, Mục tiêu (đỏ khi thấp hơn hòa vốn), Lãi/lỗ ước tính. Bấm một dòng để xem căn cứ.",
+      target: { x: 58.89, y: 62.19, w: 77.78, h: 55.31 },
       zoom: 1.2,
+    },
+    {
+      img: `${GT}/ad-detail.png`,
+      title: "Hộp chi tiết: căn cứ, từ khóa và nút quyết định",
+      desc: "“Căn cứ” nêu cửa sổ ngày, ROAS so với ngưỡng, tiền đã tiêu. Mục tiêu trên sàn thấp hơn hòa vốn → cảnh báo kèm nút “Nâng lên X” gửi thẳng lên Shopee; đang lãi mà bị ngân sách / mục tiêu chặn → gợi ý tăng ngân sách hoặc hạ mục tiêu từng nấc. Từ khóa đang đặt + hỏi “Từ khóa Shopee gợi ý”. Nút: Mở Seller Center · Tạm dừng (gửi lệnh thật) · Đã xử lý · Theo dõi thêm · Bỏ qua.",
+      target: { x: 50, y: 50, w: 40, h: 59.38 },
+      zoom: 1.6,
     },
     {
       img: `${GT}/ad-suggest.png`,
       title: "Gợi ý chạy ads: nên chạy sản phẩm nào",
-      desc: "Tab “Gợi ý chạy ads” xếp hạng từng sản phẩm: Nên chạy ngay / Thử nhỏ / Chưa nên, kèm lý do (cầu yếu, sắp hết hàng…) và ROAS cần đạt. Có số thị trường của Shopee thì gợi ý chính xác hơn.",
+      desc: "Tab “Gợi ý chạy ads” xếp hạng từng sản phẩm: Nên chạy ngay / Thử nhỏ / Chưa nên, kèm lý do (đà bán yếu, sắp hết hàng…) và ROAS cần đạt. Bấm một dòng để xem căn cứ và tạo chiến dịch với mục tiêu, ngân sách đã tính sẵn. Có số thị trường của Shopee thì gợi ý chính xác hơn — bấm “Lấy số của sàn”.",
       target: { x: 58.89, y: 60, w: 77.78, h: 70 },
       zoom: 1.2,
     },
     {
       img: `${GT}/ad-breakeven.png`,
       title: "ROAS hòa vốn sản phẩm: đặt mục tiêu TRƯỚC khi tạo",
-      desc: "Tab “ROAS hòa vốn sản phẩm”: mỗi SKU có biên lãi 30 ngày, ROAS hòa vốn và mục tiêu an toàn. Đặt ROAS mục tiêu trên Shopee dưới cột hòa vốn là chạy lỗ dù sàn báo dương — mang số này đi tạo chiến dịch.",
+      desc: "Tab “ROAS hòa vốn sản phẩm”: mỗi SKU có biên lãi 30 ngày, ROAS hòa vốn, mục tiêu an toàn và mức đang đặt trên sàn. Đặt ROAS mục tiêu trên Shopee dưới cột hòa vốn là chạy lỗ dù sàn báo dương — mang số “Mục tiêu an toàn” đi tạo chiến dịch.",
       target: { x: 58.89, y: 62, w: 77.78, h: 66 },
       zoom: 1.2,
     },
     {
       img: `${GT}/ad-config.png`,
-      title: "Cấu hình Trợ lý: luật riêng, diễn tập trước",
-      desc: "Tab “Cấu hình Trợ lý Tự động”: bật Trợ lý cho gian, sàn dữ liệu tối thiểu, 4 quy tắc (loại thẳng, vùng vàng chờ duyệt, vọt chi trong ngày, bảo vệ công thần) đều neo theo ROAS hòa vốn. Chế độ Diễn tập chỉ ghi sổ để bạn xem Trợ lý định làm gì; tin rồi mới bật thực thi, và ưu tiên hạ ngân sách trước, tắt sau.",
-      target: { x: 58.89, y: 66, w: 77.78, h: 60 },
+      title: "Cấu hình: bật Trợ lý cho gian và sàn dữ liệu",
+      desc: "Tab “Cấu hình Trợ lý Tự động” là luật riêng của gian đang chọn. Công tắc “Bật Trợ lý cho gian này”: tắt là cột Trợ lý và cảnh báo biến mất, số liệu vẫn đồng bộ. “Sàn dữ liệu”: chưa đủ chi tiêu (mặc định 100.000đ / 7 ngày) hoặc click (50 / 7 ngày) thì Trợ lý không phán xét — cửa sổ ngắn hơn tự hạ ngưỡng tương ứng.",
+      target: { x: 39.97, y: 50.44, w: 37.01, h: 29.17 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/ad-config.png`,
+      title: "Tự thực thi: Tắt / Diễn tập / Thực thi thật",
+      desc: "Tắt: chỉ gắn nhãn. Diễn tập: máy ghi vào Sổ hành động những gì ĐỊNH làm, không đụng sàn — chạy vài tuần để kiểm. Thực thi thật: máy tự tạm dừng chiến dịch dính “Đề xuất tạm dừng” / “Vọt chi”; đã bấm Bỏ qua / Theo dõi thì không bị đụng; ROAS đạt lại thì tự bật. “Hạ ngân sách trước, tắt sau”: lần đầu chỉ hạ ngân sách ngày, hôm sau vẫn lỗ mới tắt; hết lỗ thì trả ngân sách cũ.",
+      target: { x: 77.81, y: 54.6, w: 37.01, h: 20.83 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/ad-config.png`,
+      title: "Quy tắc 1 — Loại thẳng",
+      desc: "Tiêu quá “Mức tiêu tối đa cho phép thử” (mặc định 150.000đ) mà 0 đơn, hoặc ROAS tụt dưới hòa vốn × “Hệ số nguy hiểm” (0,95) → Đề xuất tạm dừng ngay. Đơn từ ads về trễ vài giờ nên trong ngày máy chỉ kết luận khi đã tiêu đủ mức này; cửa sổ 3 ngày tính một nửa, 30 ngày tính gấp rưỡi. Shop ngân sách lớn nên nâng mức tiêu.",
+      target: { x: 39.97, y: 77.72, w: 37.01, h: 22.92 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/ad-config.png`,
+      title: "Quy tắc 2 — Vùng vàng chờ duyệt",
+      desc: "ROAS đã trên hòa vốn nhưng chưa vượt hòa vốn × “Vùng an toàn” (mặc định 1,1) → nhãn vàng “Cần duyệt”: lãi mỏng, cần người quyết, máy không tự tắt. Đây cũng là mức máy đòi hỏi trước khi tự bật lại chiến dịch nó đã dừng.",
+      target: { x: 77.81, y: 77.72, w: 37.01, h: 22.92 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/ad-config-2.png`,
+      title: "Quy tắc 3 — Vọt chi trong ngày",
+      desc: "Hôm nay tiêu gấp “N lần trung bình ngày” (mặc định 2) và đã quá “Chi tiêu hôm nay tối thiểu” (100.000đ) mà ROAS dưới hòa vốn → báo ngay, không chờ đủ mẫu. Ở chế độ Thực thi thật, vọt chi tắt ngay, không qua bước hạ ngân sách.",
+      target: { x: 39.97, y: 33.24, w: 37.01, h: 20.83 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/ad-config-2.png`,
+      title: "Quy tắc 4 — Bảo vệ công thần",
+      desc: "Chiến dịch có từ “Ngưỡng công thần” đơn trong 7 ngày (mặc định 30) mà vi phạm quy tắc 1 hoặc 2 chỉ bị hạ xuống “theo dõi sát”, không đề xuất cắt ngay — tránh tắt nhầm chiến dịch chủ lực vì một ngày xấu.",
+      target: { x: 77.81, y: 33.24, w: 37.01, h: 20.83 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/ad-config-2.png`,
+      title: "Hạ mục tiêu ROAS — lãi tối thiểu giữ lại, rồi Lưu",
+      desc: "Chiến dịch đang lãi mà tiêu ít vì mục tiêu ROAS trên sàn đặt cao → Trợ lý gợi ý hạ mục tiêu từng nấc 10%, mỗi nấc cách nhau 48 giờ để sàn học lại. “Lãi tối thiểu sau quảng cáo” (mặc định 5đ trên mỗi 100đ doanh thu) là mức sàn: không gợi ý hạ xuống dưới mức còn giữ được số lãi này. Sửa xong bấm “Lưu cấu hình”.",
+      target: { x: 58.89, y: 55.17, w: 74.86, h: 20.52 },
+      zoom: 1.25,
+    },
+    {
+      img: `${GT}/ad-log.png`,
+      title: "Sổ hành động & bảng điểm Trợ lý",
+      desc: "Mọi lần máy định (diễn tập) hay đã (thật) tạm dừng / hạ ngân sách / bật lại đều ghi kèm căn cứ, và kết luận nhìn từ những ngày sau: vẫn lỗ là máy đúng, ROAS đạt lại là máy sai. Tắt/bật trên Seller Center cũng được ghi (“Tắt trên sàn”, “Bật trên sàn”). Mỗi tối 20h một chuông tổng kết dừng / bật lại / diễn tập. Xem bảng điểm vài tuần, tin rồi hãy bật Thực thi thật.",
+      target: { x: 58.89, y: 81.13, w: 77.64, h: 14.1 },
+      zoom: 1.3,
+    },
+  ],
+};
+
+/**
+ * 16/10/2026 — TOUR TRỢ LÝ QUẢNG CÁO TIKTOK (GMV Max), 14 bước / 11 ảnh `tt-*.png` chụp gian "Hubsell Demo Store"
+ * (reviewer@hubsell.vn, DB local) bằng capture-live-tour-assets.js tiktokads — trang chiến dịch (video / chạy thử /
+ * đối chiếu) gọi thẳng TikTok nên được giả lập trong script chụp. Giọng GenMax "Ngọc Huyền - VBee"
+ * (generate-guide-voice.js tiktokads). Quay: render-tour-video.js tiktokads.
+ */
+export const TIKTOK_ADS_TOUR: GuideTour = {
+  voiceDir: "/guide-assets/voice/tiktokads",
+  steps: [
+    {
+      img: `${GT}/tt-connect.png`,
+      title: "Kết nối tài khoản quảng cáo TikTok cho từng gian",
+      desc: "Tab “Kết nối tài khoản quảng cáo”: mỗi gian TikTok Shop một dòng. Bấm “Kết nối”, đăng nhập tài khoản TikTok for Business đang chạy GMV Max cho gian đó — Hubsell tự nhận tài khoản quảng cáo của gian, chỉ đọc số, không sửa chiến dịch. Người khác giữ tài khoản thì “Sao chép link gửi họ”. Kết nối không hết hạn; thu hồi trên TikTok mới cần “Kết nối lại”.",
+      target: { x: 58.89, y: 27.72, w: 77.64, h: 7.73 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/tt-overview.png`,
+      title: "Tổng quan: chọn gian, khoảng ngày và năm thẻ số",
+      desc: "Chọn gian và khoảng ngày ở góc phải; “Làm mới” kéo số mới nhất (Hubsell tự kéo mỗi giờ). Năm thẻ: Chi phí quảng cáo, Doanh thu GMV Max (gồm cả đơn tự nhiên của sản phẩm trong chiến dịch — cách TikTok tính), ROI, Đơn hàng kèm chi phí mỗi đơn, và Lãi/lỗ ước tính = doanh thu × biên lãi trước quảng cáo − chi phí.",
+      target: { x: 45.74, y: 39.64, w: 51.48, h: 35.95 },
+      zoom: 1.3,
+    },
+    {
+      img: `${GT}/tt-campaigns.png`,
+      title: "Lãi tối thiểu giữ lại và bảng chiến dịch GMV Max",
+      desc: "Ô “Lãi tối thiểu giữ lại sau quảng cáo” (đ trên mỗi 100đ doanh thu) là cấu hình chung của gian: gợi ý hạ ROI mục tiêu đi từng nấc 10% và dừng ở mức còn giữ được số lãi này; đặt 0 là hạ được tới hòa vốn. Bảng chiến dịch: chip Đang chạy / Tạm dừng / Đã dừng; cột “Tự động” cho biết chiến dịch đang Tắt, Diễn tập hay Tự loại thật.",
+      target: { x: 58.89, y: 31.51, w: 74.86, h: 5.83 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/tt-campaigns-2.png`,
+      title: "ROI mục tiêu, hòa vốn, ROI thực và Nhận định",
+      desc: "Cuộn bảng sang phải: ROI mục tiêu đang đặt trên TikTok; Hòa vốn (bấm số gạch chân xem căn cứ: 1 ÷ biên lãi trước quảng cáo, chỉ đơn đã đối soát 60 ngày); ROI thực tô đỏ khi thấp hơn mục tiêu hoặc hòa vốn; Lãi/lỗ ước tính; và Nhận định: Đang lãi · Quảng cáo đang lỗ · Mục tiêu đang ghìm phân phối · Giữ mục tiêu · Ngân sách đang chặn · TikTok không phân phối…",
+      target: { x: 58.89, y: 70, w: 77.78, h: 48 },
+      zoom: 1.2,
+    },
+    {
+      img: `${GT}/tt-advice.png`,
+      title: "Bấm Nhận định: căn cứ và đề xuất",
+      desc: "Mỗi nhận định mở ra Căn cứ (ROI thực so với hòa vốn, lãi/lỗ trên 100đ doanh thu, mục tiêu đang đặt) và Đề xuất một câu: loại bớt video, nâng/hạ ROI mục tiêu một nấc, tăng ngân sách +30%, giữ mục tiêu… Chiến dịch chỉ sửa được trên Seller Center (API TikTok không cho sửa) — có link “Sửa chiến dịch trong Seller Center”. Kết luận đổi loại thì chuông báo.",
+      target: { x: 77.33, y: 76.65, w: 26.67, h: 27.89 },
+      zoom: 1.6,
+    },
+    {
+      img: `${GT}/tt-breakeven.png`,
+      title: "Hòa vốn sản phẩm: nên chạy sản phẩm nào, ROI và ngân sách bao nhiêu",
+      desc: "Tab “Hòa vốn sản phẩm”: hòa vốn toàn gian, số sản phẩm đã có mốc riêng (từ 5 đơn đối soát, đủ giá vốn), số thiếu giá vốn. Mỗi sản phẩm: doanh thu, biên lãi, ROI hòa vốn, chiến dịch đang chứa nó, Nhận định (Chạy thử / Đã có mốc / Mục tiêu dưới hòa vốn / Lỗ trước quảng cáo / Thiếu giá vốn). Bấm dòng để xem “Nên chạy”: ROI mục tiêu X, ngân sách Y/ngày.",
+      target: { x: 58.89, y: 60, w: 77.78, h: 70 },
+      zoom: 1.2,
+    },
+    {
+      img: `${GT}/tt-campaign.png`,
+      title: "Trang chiến dịch: video nào tiêu tiền mà không ra đơn",
+      desc: "Bấm một chiến dịch: đầu trang là ROI mục tiêu · Hòa vốn · ROI thực · chi phí · đơn · % ngân sách ngày + nhận định. Ba thẻ: video đang tiêu tiền, tiêu tiền chưa ra đơn, tiền vào các video đó. Chip lọc: Chưa ra đơn / ROI dưới mục tiêu / Máy sẽ loại / Cần xem / Đang học / Đã loại. Bảng video: cột “Tự động” (Sẽ loại · Ân hạn · Cần xem · Ổn), chi phí, đơn, doanh thu, ROI (số trễ tới 11 giờ).",
+      target: { x: 58.89, y: 55, w: 77.78, h: 60 },
+      zoom: 1.2,
+    },
+    {
+      img: `${GT}/tt-campaign-pick.png`,
+      title: "Loại tay: tick video rồi Loại khỏi chiến dịch",
+      desc: "Tick các video tiêu tiền mà không ra đơn → thanh công cụ hiện tổng tiền đã tiêu → “Loại khỏi chiến dịch”. Hubsell ghi sổ rồi gửi lệnh thật lên TikTok; sàn cần khoảng 20 phút để áp dụng. Loại nhầm thì tick lại → Khôi phục, hoặc “Khôi phục cả lệnh” trong tab Lịch sử. Video đã khôi phục tay, máy không loại lại trong 30 ngày.",
+      target: { x: 58.89, y: 64.29, w: 77.78, h: 4.5 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/tt-rule.png`,
+      title: "Tự động loại video: Tắt / Diễn tập / Tự loại thật",
+      desc: "Nút “Tự động loại video” mở cấu hình riêng từng chiến dịch. Tắt: máy không làm gì. Diễn tập: mỗi ngày sau 12h trưa máy chấm điểm, ghi sổ, báo chuông video SẼ bị loại — chưa loại. Tự loại thật: gửi lệnh loại lên TikTok; chỉ bật được sau ≥ 1 ngày diễn tập với đúng bộ số. “ROI mục tiêu” mặc định lấy số trên TikTok; “Soi theo” là cửa sổ 3–30 ngày tới hôm qua.",
+      target: { x: 50, y: 40, w: 37.78, h: 25 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/tt-rule-2.png`,
+      title: "Nâng cao — Loại thẳng tay",
+      desc: "Mở “Nâng cao”. Ba luật, bật tắt từng luật: (1) Tiêu từ … mà 0 đơn (mặc định 200.000đ trong cửa sổ đang soi); (2) Có đơn nhưng ROI dưới mức loại — mức loại tính theo % ROI mục tiêu (mặc định 50%) hoặc theo ROI hòa vốn của chiến dịch; giữa mức loại và mục tiêu chỉ gắn cờ “Cần xem”; (3) Chi phí mỗi đơn vượt trần (mặc định tắt, đặt theo biên lãi sản phẩm).",
+      target: { x: 50, y: 17, w: 38, h: 26 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/tt-rule-2.png`,
+      title: "Sàn dữ liệu, bảo vệ công thần, chốt an toàn mỗi ngày",
+      desc: "“Chưa xét khi tiêu dưới …” (50.000đ): ít tiền quá chưa đủ để phán; video TikTok còn đang học không bao giờ bị xét. “Bảo vệ video công thần”: video từ 20 đơn trong 30 ngày mà vi phạm phải liên tục 2 ngày mới loại. “Chốt an toàn mỗi ngày”: loại tối đa 10 video/ngày (tốn tiền nhất trước), luôn giữ lại ít nhất 3 video đang ra đơn.",
+      target: { x: 50, y: 56, w: 38, h: 50 },
+      zoom: 1.3,
+    },
+    {
+      img: `${GT}/tt-rule-3.png`,
+      title: "Chạy thử với cấu hình này, rồi Lưu",
+      desc: "“Chạy thử với cấu hình này” chấm bằng số thật của TikTok, không ghi sổ: “Nếu áp hôm nay” liệt kê video sẽ loại kèm lý do, số công thần ân hạn, cần xem, ổn. Ưng thì “Lưu”. “Sao chép sang chiến dịch khác” áp cùng bộ số cho chiến dịch khác của gian (chiến dịch đích nhận Diễn tập). Đổi số là phải diễn tập lại một lượt trước khi Tự loại thật.",
+      target: { x: 50, y: 77.28, w: 37.78, h: 20.42 },
+      zoom: 1.5,
+    },
+    {
+      img: `${GT}/tt-backtest.png`,
+      title: "Đối chiếu diễn tập: máy định loại có đúng không?",
+      desc: "Tab “Đối chiếu diễn tập” (chỉ hiện khi đang Diễn tập): mỗi video máy định loại, từ hôm sau ngày đó tới nay tiêu thêm bao nhiêu, ra mấy đơn, ROI — kết luận Máy đúng (vẫn không ra đơn) / Lưng chừng / Hồi phục (đã lên tới mục tiêu, loại thật là mất). Nếu loại thật, TikTok dồn tiền sang video khác chứ không bớt chi. Xem vài ngày, tin rồi mới bật Tự loại thật.",
+      target: { x: 58.89, y: 65.18, w: 77.78, h: 38.65 },
+      zoom: 1.2,
+    },
+    {
+      img: `${GT}/tt-history.png`,
+      title: "Lịch sử loại / khôi phục và chuông",
+      desc: "Tab “Lịch sử loại / khôi phục”: từng lệnh ghi giờ, ai làm (Trợ lý tự động / thủ công), chế độ (Diễn tập — chưa loại / Đã gửi lên TikTok / TikTok từ chối), căn cứ và từng video kèm số lúc đó; nút “Khôi phục cả lệnh”. Đổi thông số tự động loại cũng ghi lại “X → Y”. Chuông báo khi máy định loại, loại thật, sàn từ chối, hay nhận định chiến dịch đổi.",
+      target: { x: 58.89, y: 74.97, w: 77.78, h: 58.23 },
       zoom: 1.2,
     },
   ],

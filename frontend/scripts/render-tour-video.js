@@ -13,7 +13,7 @@
  *  4. ffmpeg: dò mốc 0 bằng độ sáng trung bình khung hình (YAVG), cắt video từ
  *     đó, trộn 15 MP3 theo mốc (adelay + amix), xuất H.264/AAC 1920x1080.
  *
- * Chạy: node scripts/render-tour-video.js [lazada|tiktok|channels|kho|donhang|hoadon|taichinh|giutien|ads|nhansu] [thư-mục-ra]
+ * Chạy: node scripts/render-tour-video.js [lazada|tiktok|channels|kho|donhang|hoadon|taichinh|giutien|ads|tiktokads|nhansu] [thư-mục-ra]
  *   mặc định tour lazada, ra %USERPROFILE%\Downloads\hubsell-huong-dan-<tour>.mp4
  * Cần: frontend dev server localhost:3000, ffmpeg + ffprobe trong PATH.
  */
@@ -32,6 +32,7 @@ const VOICE_DIR = {
   taichinh: "guide-assets/voice/taichinh",
   giutien: "guide-assets/voice/giutien",
   ads: "guide-assets/voice/ads",
+  tiktokads: "guide-assets/voice/tiktokads",
   nhansu: "guide-assets/voice/nhansu",
   channels: "onboarding/voice",
   kho: "guide-assets/voice/kho",

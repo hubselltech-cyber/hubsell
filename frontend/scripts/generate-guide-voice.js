@@ -12,8 +12,8 @@
  * generate-onboarding-voice.js: truyền câu qua --file UTF-8 (qua --text argv
  * bị NoAudioReceived), dịch vụ flaky nên retry 4 lượt + nghỉ giữa các call.
  *
- * Chạy: node scripts/generate-guide-voice.js [kho|donhang|hoadon|lazada|tiktok|taichinh|giutien|ads|nhansu]
- * (không truyền = sinh cả 3 tour).
+ * Chạy: node scripts/generate-guide-voice.js [kho|donhang|hoadon|lazada|tiktok|taichinh|giutien|ads|tiktokads|nhansu] [số bước]
+ * (không truyền = sinh mọi tour; thêm số bước = chỉ sinh lại một câu). Tour `ads` / `tiktokads` đọc bằng GenMax (xem GENMAX bên dưới).
  */
 const { spawnSync } = require("child_process");
 const fs = require("fs");
@@ -21,6 +21,50 @@ const path = require("path");
 
 const BASE = "D:/Claude Code/Hubsell/frontend/public/guide-assets/voice";
 const VOICE = "vi-VN-HoaiMyNeural";
+
+/**
+ * 16/10/2026: tour nào có trong GENMAX thì đọc bằng GenMax (genmax.io — tài khoản
+ * anh Trung, khóa ở C:\Users\trung\.genmax-key, KHÔNG đưa vào repo) thay edge-tts.
+ * Giọng "Ngọc Huyền - VBee" là giọng CỘNG ĐỒNG (clone MiniMax người khác chia sẻ,
+ * GET /v1/community/voices → voice_id UUID), gọi như giọng clone của mình:
+ * POST /v1/text-to-speech/{voice_id} provider=minimax model speech-02-hd
+ * language_code "Vietnamese" → GET /v1/history/{id} tới completed → tải audio_url.
+ * Giá ~1 credit/ký tự (tour ads 15 câu ≈ 5.000 credit).
+ */
+const GENMAX = {
+  ads: { voice: "19725c22-f795-4fa1-bfc5-88c5a82f9440", model: "speech-02-hd", speed: 1.0 },
+  tiktokads: { voice: "19725c22-f795-4fa1-bfc5-88c5a82f9440", model: "speech-02-hd", speed: 1.0 },
+};
+const GENMAX_KEY_FILE = path.join(process.env.USERPROFILE || "C:/Users/trung", ".genmax-key");
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function genmaxTts(text, dest, cfg) {
+  const key = fs.readFileSync(GENMAX_KEY_FILE, "utf8").trim();
+  const H = { "xi-api-key": key, "content-type": "application/json" };
+  const sub = await fetch(`https://api.genmax.io/v1/text-to-speech/${cfg.voice}`, {
+    method: "POST",
+    headers: H,
+    body: JSON.stringify({
+      text,
+      provider: "minimax",
+      model_id: cfg.model,
+      language_code: "Vietnamese",
+      voice_settings: { speed: cfg.speed, pitch: 0, vol: 1 },
+    }),
+  }).then((r) => r.json());
+  if (!sub.id) throw new Error("GenMax không nhận việc: " + JSON.stringify(sub));
+  for (let i = 0; i < 90; i++) {
+    await sleepMs(2000);
+    const h = await fetch(`https://api.genmax.io/v1/history/${sub.id}`, { headers: H }).then((r) => r.json());
+    if (h.status === "completed") {
+      const buf = Buffer.from(await fetch(h.result.audio_url).then((r) => r.arrayBuffer()));
+      fs.writeFileSync(dest, buf);
+      return h.credits_deducted;
+    }
+    if (h.status === "failed") throw new Error("GenMax lỗi: " + h.error);
+  }
+  throw new Error("GenMax quá 3 phút chưa xong: " + sub.id);
+}
 
 const TOURS = {
   // 06/09 làm lại theo hub Hàng hóa 3 tầng: nguyên lý trước, rồi 3 bước thiết lập.
@@ -116,13 +160,41 @@ const TOURS = {
     "Quản lý Tài chính, mục Kiểm toán phí sàn gom ba rổ tiền bị giữ: truy thu phí ship, sàn trả thiếu so với bản kê, và chờ sàn trả tiền quá hạn. Mỗi rổ một tab, mỗi đơn một dòng với số sàn báo, thực trừ, bị trừ thêm. Đổi trạng thái ngay tại cột cuối.",
     "Cuối cùng, Cấu hình tự động hóa, tab Cứu đơn giao thất bại. Shipper báo giao hỏng là Hubsell cảnh báo chủ shop và tự nhắn khách qua chat sàn theo mẫu bạn soạn, hiện áp dụng cho Shopee. Thẻ đếm đơn được cảnh báo, cứu được, mất đơn, và doanh thu giữ lại. Nhật ký ghi từng đơn đã nhắn.",
   ],
+  // 16/10/2026 làm lại 15 bước (xem ADS_TOUR trong lib/guide-tours.ts) — giọng GenMax
+  // MiniMax "Ngọc Huyền - VBee" (GENMAX bên dưới), số lẻ viết bằng chữ để đọc đúng.
   ads: [
-    "Vào Trợ lý quảng cáo, chọn Quảng cáo Shopee. Bấm Kết nối Hubsell Ads một lần để đọc số thật từ Shopee Ads. Chọn gian hàng và khoảng ngày. Năm thẻ: chi phí, GMV từ ads, ROAS, ROAS hòa vốn tính từ biên lãi thật của shop, và lãi lỗ ước tính.",
-    "Trợ lý so ROAS từng chiến dịch với ROAS hòa vốn của chính sản phẩm trong chiến dịch đó, không phải một con số đoán. Dải đỏ đếm chiến dịch đề xuất tạm dừng hoặc cần duyệt. Bấm Lọc cần xử lý để xem riêng.",
-    "Bảng chiến dịch: mỗi dòng có nhãn Trợ lý là Ổn, Đề xuất tạm dừng, Cần duyệt hay Thiếu dữ liệu, kèm trạng thái, ngân sách, chi phí, số đơn, chi phí mỗi đơn, GMV. ROAS tô xanh khi có lãi thật, vàng khi sát ngưỡng, đỏ khi đang lỗ dù sàn báo dương. Bấm một dòng để xem căn cứ.",
-    "Tab Gợi ý chạy ads xếp hạng từng sản phẩm: Nên chạy ngay, Thử nhỏ, hay Chưa nên, kèm lý do như cầu yếu hay sắp hết hàng, và ROAS cần đạt. Có số thị trường của Shopee thì gợi ý chính xác hơn.",
-    "Tab ROAS hòa vốn sản phẩm: mỗi SKU có biên lãi ba mươi ngày, ROAS hòa vốn và mục tiêu an toàn. Đặt ROAS mục tiêu trên Shopee dưới cột hòa vốn là chạy lỗ dù sàn báo dương. Mang số này đi tạo chiến dịch.",
-    "Tab Cấu hình Trợ lý Tự động: bật Trợ lý cho gian, đặt sàn dữ liệu tối thiểu, và bốn quy tắc: loại thẳng, vùng vàng chờ duyệt, vọt chi trong ngày, bảo vệ công thần, đều neo theo ROAS hòa vốn. Chế độ Diễn tập chỉ ghi sổ để bạn xem Trợ lý định làm gì. Tin rồi mới bật thực thi, và ưu tiên hạ ngân sách trước, tắt sau.",
+    "Vào Trợ lý quảng cáo, chọn Quảng cáo Shopee. Góc phải chọn gian hàng và khoảng ngày muốn xem. Lần đầu, bấm Kết nối Hubsell Ads: Shopee tách quyền quảng cáo sang một ứng dụng riêng, nên mỗi gian liên kết thêm một lần, đăng nhập đúng tài khoản Shopee của gian rồi bấm Đồng ý. Nút Làm mới kéo số mới nhất từ sàn, ngoài ra Hubsell tự kéo mỗi ba mươi phút.",
+    "Năm thẻ số: chi phí quảng cáo, GMV từ quảng cáo, ROAS, ROAS hòa vốn, và lãi lỗ ước tính. ROAS hòa vốn tính từ biên lãi ròng thật của shop, lấy giá vốn và phí sàn từ đơn đã đối soát ba mươi ngày gần nhất. ROAS dưới số này là đang chạy lỗ, dù sàn báo dương. Lãi lỗ ước tính bằng GMV từ quảng cáo nhân biên lãi, trừ chi phí.",
+    "Trợ lý so ROAS từng chiến dịch với ROAS hòa vốn của chính sản phẩm trong chiến dịch đó, không phải một con số đoán. Dải đỏ đếm số chiến dịch đề xuất tạm dừng hoặc cần duyệt. Bấm Lọc cần xử lý để bảng chỉ còn những dòng này. Chuông thông báo ở góc phải cũng báo mỗi khi Trợ lý có đề xuất mới.",
+    "Bảng chiến dịch. Cột Trợ lý gắn nhãn từng dòng: Ổn, Cần duyệt, Đề xuất tạm dừng, hay Thiếu dữ liệu. Chiến dịch đang lãi nhưng bị chặn phân phối có nhãn xanh Ngân sách đang chặn, hoặc Mục tiêu đang bó. Máy đã tắt thì ghi Hubsell tạm dừng. Tiếp theo là trạng thái, ngân sách, chi phí, số đơn, chi phí mỗi đơn, GMV, ROAS tô màu theo hòa vốn, cột Mục tiêu tô đỏ khi đặt thấp hơn hòa vốn, và lãi lỗ ước tính. Bấm một dòng để xem căn cứ.",
+    "Hộp chi tiết. Phần Căn cứ nói rõ cửa sổ ngày đang xét, ROAS so với ngưỡng, và số tiền đã tiêu. Mục tiêu ROAS trên sàn đặt thấp hơn hòa vốn thì có hộp cảnh báo kèm nút Nâng lên mức an toàn, gửi thẳng lên Shopee. Đang lãi mà bị ngân sách hoặc mục tiêu chặn thì Trợ lý gợi ý tăng ngân sách, hay hạ mục tiêu từng nấc. Phần Từ khóa cho xem từ khóa đang đặt và hỏi từ khóa Shopee gợi ý. Dưới cùng là các nút: Mở Seller Center, Tạm dừng ngay trong Hubsell, Đã xử lý trên Seller Center, Theo dõi thêm, hoặc Bỏ qua cảnh báo.",
+    "Tab Gợi ý chạy ads xếp hạng từng sản phẩm: Nên chạy ngay, Thử nhỏ, hay Chưa nên, kèm lý do và ROAS cần đạt. Bấm một dòng để xem căn cứ và tạo chiến dịch với mục tiêu, ngân sách đã tính sẵn. Có số thị trường của Shopee thì gợi ý chính xác hơn, bấm Lấy số của sàn.",
+    "Tab ROAS hòa vốn sản phẩm: mỗi mã hàng có biên lãi ba mươi ngày, ROAS hòa vốn, mục tiêu an toàn, và mức đang đặt trên sàn. Đặt ROAS mục tiêu trên Shopee dưới cột hòa vốn là chạy lỗ dù sàn báo dương. Mang số Mục tiêu an toàn đi tạo chiến dịch.",
+    "Tab Cấu hình Trợ lý Tự động là luật riêng của gian đang chọn. Trên cùng là công tắc Bật Trợ lý cho gian này: tắt đi thì cột Trợ lý và mọi cảnh báo biến mất, số liệu vẫn đồng bộ bình thường. Khối Sàn dữ liệu: chiến dịch chưa tiêu đủ một trăm nghìn đồng, hoặc chưa đủ năm mươi lượt click trong bảy ngày, thì Trợ lý chưa phán xét. Cửa sổ ngắn hơn, ngưỡng tự hạ theo.",
+    "Khối Tự thực thi có ba chế độ. Tắt: Trợ lý chỉ gắn nhãn và cảnh báo. Diễn tập: máy ghi vào Sổ hành động những gì nó định làm, nhưng không đụng lên sàn, nên chạy vài tuần để kiểm. Thực thi thật: máy tự tạm dừng chiến dịch dính Đề xuất tạm dừng hoặc Vọt chi. Chiến dịch bạn đã bấm Bỏ qua hay Theo dõi thì không bị đụng, và ROAS đạt lại thì máy tự bật. Công tắc Hạ ngân sách trước, tắt sau: lần đầu máy chỉ hạ ngân sách ngày để giữ chiến dịch sống, hôm sau vẫn lỗ mới tạm dừng, hết lỗ thì trả lại ngân sách cũ.",
+    "Quy tắc một, Loại thẳng. Chiến dịch tiêu quá mức cho phép thử, mặc định một trăm năm mươi nghìn đồng, mà không có đơn, hoặc ROAS tụt dưới hòa vốn nhân hệ số nguy hiểm, mặc định không phẩy chín lăm, thì Trợ lý đề xuất tạm dừng ngay. Đơn từ quảng cáo về trễ vài giờ, nên trong ngày máy chỉ kết luận khi đã tiêu đủ mức này. Shop ngân sách lớn nên nâng mức tiêu lên cho phù hợp.",
+    "Quy tắc hai, Vùng vàng chờ duyệt. ROAS đã trên hòa vốn nhưng chưa vượt hòa vốn nhân vùng an toàn, mặc định một phẩy một, thì gắn nhãn vàng Cần duyệt: lãi còn mỏng, cần người quyết, máy không tự tắt. Đây cũng là mức máy đòi hỏi trước khi tự bật lại chiến dịch nó đã dừng.",
+    "Quy tắc ba, Vọt chi trong ngày. Hôm nay tiêu gấp đôi trung bình ngày, và đã quá một trăm nghìn đồng, mà ROAS dưới hòa vốn, thì báo ngay, không chờ đủ mẫu. Hai con số này sửa được. Ở chế độ Thực thi thật, vọt chi bị tắt ngay, không qua bước hạ ngân sách.",
+    "Quy tắc bốn, Bảo vệ công thần. Chiến dịch có từ ba mươi đơn trong bảy ngày mà vi phạm quy tắc một hoặc hai, chỉ bị hạ xuống theo dõi sát, không đề xuất cắt ngay. Để không tắt nhầm chiến dịch chủ lực chỉ vì một ngày xấu.",
+    "Khối Hạ mục tiêu ROAS. Chiến dịch đang lãi mà tiêu ít vì mục tiêu ROAS trên sàn đặt cao, Trợ lý gợi ý hạ mục tiêu từng nấc mười phần trăm, mỗi nấc cách nhau bốn mươi tám giờ để sàn học lại. Ô Lãi tối thiểu sau quảng cáo, mặc định năm đồng trên mỗi trăm đồng doanh thu, là mức sàn: không gợi ý hạ xuống dưới mức còn giữ được số lãi này. Sửa xong, bấm Lưu cấu hình.",
+    "Cuối trang là Sổ hành động và bảng điểm Trợ lý. Mọi lần máy định làm khi diễn tập, hay đã làm thật, như tạm dừng, hạ ngân sách, bật lại, đều ghi ở đây kèm căn cứ lúc đó, và kết luận nhìn từ những ngày sau: vẫn lỗ là máy đúng, ROAS đạt lại là máy sai. Thao tác tắt bật trên Seller Center cũng được ghi là Tắt trên sàn, Bật trên sàn. Mỗi tối tám giờ, một chuông tổng kết số lần dừng, bật lại, và diễn tập trong ngày. Xem bảng điểm vài tuần, tin rồi hãy bật Thực thi thật.",
+  ],
+  // 16/10/2026 — tour Trợ lý quảng cáo TikTok (14 bước, TIKTOK_ADS_TOUR) — giọng GenMax Ngọc Huyền.
+  tiktokads: [
+    "Vào Trợ lý quảng cáo, chọn Quảng cáo TikTok, mở tab Kết nối tài khoản quảng cáo. Mỗi gian TikTok Shop là một dòng. Bấm Kết nối, đăng nhập tài khoản TikTok for Business đang chạy GMV Max cho gian đó. Hubsell tự nhận tài khoản quảng cáo của gian, chỉ đọc số, không sửa chiến dịch. Nếu người khác giữ tài khoản quảng cáo, bấm Sao chép link gửi họ. Kết nối không hết hạn, chỉ khi thu hồi trên TikTok mới cần bấm Kết nối lại.",
+    "Tab Tổng quan chiến dịch. Chọn gian và khoảng ngày ở góc phải, bấm Làm mới để kéo số mới nhất; Hubsell cũng tự kéo mỗi giờ. Năm thẻ số: chi phí quảng cáo, doanh thu GMV Max, gồm cả đơn tự nhiên của sản phẩm trong chiến dịch theo cách TikTok tính, ROI, đơn hàng kèm chi phí mỗi đơn, và lãi lỗ ước tính bằng doanh thu nhân biên lãi trước quảng cáo, trừ chi phí.",
+    "Ngay trên bảng là ô Lãi tối thiểu giữ lại sau quảng cáo, tính bằng đồng trên mỗi trăm đồng doanh thu. Đây là cấu hình chung của gian: Trợ lý gợi ý hạ ROI mục tiêu từng nấc mười phần trăm, và dừng ở mức còn giữ được số lãi này. Đặt không là hạ được tới hòa vốn. Bảng chiến dịch GMV Max lọc theo Đang chạy, Tạm dừng, Đã dừng. Cột Tự động cho biết chiến dịch đang Tắt, Diễn tập, hay Tự loại thật.",
+    "Cuộn bảng sang phải. ROI mục tiêu đang đặt trên TikTok. Hòa vốn, bấm số gạch chân để xem căn cứ: một chia biên lãi trước quảng cáo, chỉ tính đơn đã đối soát sáu mươi ngày. ROI thực tô đỏ khi thấp hơn mục tiêu hoặc hòa vốn. Rồi lãi lỗ ước tính, và cột Nhận định: Đang lãi, Quảng cáo đang lỗ, Mục tiêu đang ghìm phân phối, Giữ mục tiêu, Ngân sách đang chặn, hay TikTok không phân phối.",
+    "Bấm vào nhận định để xem Căn cứ: ROI thực so với hòa vốn, lãi hay lỗ trên mỗi trăm đồng doanh thu, mục tiêu đang đặt. Dưới là Đề xuất một câu: loại bớt video, nâng hay hạ ROI mục tiêu một nấc, tăng ngân sách ba mươi phần trăm, hoặc giữ mục tiêu. Chiến dịch chỉ sửa được trên Seller Center, nên có sẵn link Sửa chiến dịch trong Seller Center. Khi kết luận đổi loại, chuông thông báo sẽ báo.",
+    "Tab Hòa vốn sản phẩm. Ba thẻ: hòa vốn toàn gian, số sản phẩm đã có mốc riêng, và số sản phẩm thiếu giá vốn. Mỗi sản phẩm một dòng: doanh thu, biên lãi, ROI hòa vốn, chiến dịch đang chứa nó, và nhận định: Chạy thử, Đã có mốc hòa vốn, Mục tiêu dưới hòa vốn, Lỗ trước quảng cáo, hay Thiếu giá vốn. Bấm một dòng để xem ô Nên chạy: đặt ROI mục tiêu bao nhiêu, ngân sách bao nhiêu mỗi ngày, tính từ biên lãi của chính sản phẩm đó.",
+    "Bấm một chiến dịch để soi từng video. Đầu trang: ROI mục tiêu, hòa vốn, ROI thực, chi phí, số đơn, phần trăm ngân sách ngày đang dùng, và nhận định. Ba thẻ: video đang tiêu tiền, video tiêu tiền mà chưa ra đơn, và số tiền vào các video đó. Chip lọc nhanh: Chưa ra đơn, Có đơn ROI dưới mục tiêu, Máy sẽ loại, Cần xem, Đang học, Đã loại. Bảng video có trạng thái TikTok, cột Tự động là kết luận lượt chấm gần nhất, chi phí, đơn, doanh thu, ROI. Lưu ý chi phí từng video TikTok cập nhật trễ tới mười một giờ.",
+    "Loại tay: tick các video tiêu tiền mà không ra đơn, thanh công cụ hiện tổng tiền đã tiêu, bấm Loại khỏi chiến dịch. Hubsell ghi sổ rồi gửi lệnh thật lên TikTok, sàn cần khoảng hai mươi phút để áp dụng. Loại nhầm thì tick lại và bấm Khôi phục, hoặc Khôi phục cả lệnh trong tab Lịch sử. Video đã khôi phục tay thì máy không loại lại trong ba mươi ngày.",
+    "Nút Tự động loại video mở cấu hình riêng của từng chiến dịch. Ba chế độ. Tắt: máy không làm gì. Diễn tập: mỗi ngày sau mười hai giờ trưa, máy chấm điểm, ghi sổ và báo chuông những video sẽ bị loại, nhưng chưa loại. Tự loại thật: gửi lệnh loại lên TikTok, chỉ bật được sau ít nhất một ngày diễn tập với đúng bộ số này. ROI mục tiêu mặc định lấy số đang đặt trên TikTok. Soi theo là cửa sổ từ ba tới ba mươi ngày, tính tới hôm qua.",
+    "Mở Nâng cao. Khối Loại thẳng tay có ba luật, bật tắt từng luật. Một: tiêu từ hai trăm nghìn đồng mà không có đơn, tính trong cửa sổ đang soi. Hai: có đơn nhưng ROI dưới mức loại; mức loại tính theo phần trăm ROI mục tiêu, mặc định năm mươi phần trăm, hoặc theo ROI hòa vốn của chiến dịch; video nằm giữa mức loại và mục tiêu chỉ bị gắn cờ Cần xem. Ba: chi phí mỗi đơn vượt trần, mặc định tắt, đặt theo biên lãi của sản phẩm.",
+    "Khối Sàn dữ liệu: chưa xét khi tiêu dưới năm mươi nghìn đồng, ít tiền quá chưa đủ để phán; video TikTok còn đang học không bao giờ bị xét. Bảo vệ video công thần: video từ hai mươi đơn trong ba mươi ngày mà vi phạm thì phải liên tục hai ngày mới loại. Chốt an toàn mỗi ngày: loại tối đa mười video một ngày, tốn tiền nhất loại trước, và luôn giữ lại ít nhất ba video đang ra đơn.",
+    "Bấm Chạy thử với cấu hình này: máy chấm bằng số thật của TikTok, không ghi sổ. Dòng Nếu áp hôm nay liệt kê video sẽ loại kèm lý do, số công thần ân hạn, cần xem, ổn. Ưng thì bấm Lưu. Sao chép sang chiến dịch khác áp cùng bộ số cho chiến dịch khác của gian. Lưu ý: đổi số là phải diễn tập lại một lượt trước khi bật Tự loại thật.",
+    "Tab Đối chiếu diễn tập, chỉ hiện khi chiến dịch đang Diễn tập. Mỗi video máy định loại: từ hôm sau ngày đó tới nay tiêu thêm bao nhiêu, ra mấy đơn, ROI bao nhiêu, rồi kết luận: Máy đúng khi vẫn không ra đơn, Lưng chừng, hay Hồi phục khi video đã lên tới mục tiêu, loại thật là mất. Nếu loại thật, TikTok dồn tiền sang video khác chứ không bớt chi. Xem vài ngày, tin rồi mới bật Tự loại thật.",
+    "Tab Lịch sử loại, khôi phục. Mỗi lệnh ghi giờ, ai làm, Trợ lý tự động hay thủ công, chế độ Diễn tập chưa loại, Đã gửi lên TikTok, hay TikTok từ chối, kèm căn cứ và từng video với số lúc đó. Nút Khôi phục cả lệnh trả lại nguyên lệnh. Đổi thông số tự động loại cũng được ghi lại. Chuông thông báo báo khi máy định loại, loại thật, sàn từ chối, hay khi nhận định chiến dịch đổi. Chúc shop chạy quảng cáo có lãi.",
   ],
   nhansu: [
     "Mở Nhân viên, bấm Thêm nhân viên. Nhân viên đăng nhập bằng tên shop, gạch chéo, tên nhân viên, và mật khẩu bạn cấp. Không cần email.",
@@ -134,6 +206,8 @@ const TOURS = {
 };
 
 const ONLY = process.argv[2];
+// Tham số 3 (tùy chọn): chỉ sinh lại một bước, vd `ads 1` — sửa một câu không phải đọc lại cả tour.
+const ONLY_STEP = process.argv[3] ? Number(process.argv[3]) : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
@@ -142,10 +216,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const dir = path.join(BASE, tour);
     fs.mkdirSync(dir, { recursive: true });
     for (let i = 0; i < lines.length; i++) {
+      if (ONLY_STEP && i + 1 !== ONLY_STEP) continue;
       const dest = path.join(dir, `step-${i + 1}.mp3`);
       const txt = path.join(dir, `line-${i + 1}.txt`);
       fs.writeFileSync(txt, lines[i], "utf8");
       let ok = false;
+      if (GENMAX[tour]) {
+        let credits = 0;
+        for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+          try {
+            credits = await genmaxTts(lines[i], dest, GENMAX[tour]);
+            ok = fs.existsSync(dest) && fs.statSync(dest).size > 5000;
+          } catch (e) {
+            console.warn(`  ${tour}/step-${i + 1} GenMax lượt ${attempt}: ${e.message}`);
+            await sleep(3000 * attempt);
+          }
+        }
+        fs.rmSync(txt, { force: true });
+        if (!ok) {
+          console.error(`FAIL: ${tour}/step-${i + 1}.mp3 GenMax hỏng sau 3 lượt`);
+          process.exit(1);
+        }
+        console.log(`${tour}/step-${i + 1}.mp3  ${Math.round(fs.statSync(dest).size / 1024)} KB · ${credits} credit`);
+        continue;
+      }
       for (let attempt = 1; attempt <= 4 && !ok; attempt++) {
         const r = spawnSync(
           "python",

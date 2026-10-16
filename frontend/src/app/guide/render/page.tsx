@@ -13,6 +13,7 @@ import {
   FINANCE_TOUR,
   MONEY_GUARD_TOUR,
   ADS_TOUR,
+  TIKTOK_ADS_TOUR,
   STAFF_PLAN_TOUR,
   type GuideTour,
 } from "@/lib/guide-tours";
@@ -41,6 +42,7 @@ const TOURS: Record<string, { tour: GuideTour; title: string }> = {
   taichinh: { tour: FINANCE_TOUR, title: "Báo cáo tài chính & lãi/lỗ thật" },
   giutien: { tour: MONEY_GUARD_TOUR, title: "Giữ tiền: đơn hoàn, phí ship, phí sàn" },
   ads: { tour: ADS_TOUR, title: "Trợ lý quảng cáo Shopee" },
+  tiktokads: { tour: TIKTOK_ADS_TOUR, title: "Trợ lý quảng cáo TikTok" },
   nhansu: { tour: STAFF_PLAN_TOUR, title: "Nhân viên, gói dịch vụ & cấu hình" },
 };
 

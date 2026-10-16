@@ -22,7 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRight, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Unlink, Wallet } from "lucide-react";
+import { ArrowRight, CircleHelp, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Unlink, Wallet } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
@@ -478,6 +478,17 @@ export function TiktokAdsPage() {
               }
               value={tab}
               onChange={setTabPick}
+              // Link tour Hướng dẫn sử dụng của chính trang này (anh Trung 16/10).
+              trailing={
+                <a
+                  href="/guide?muc=tiktok-ads"
+                  className="flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
+                  title="Video hướng dẫn 14 bước: kết nối, đọc số, soi video, cấu hình tự động loại"
+                >
+                  <CircleHelp className="size-3.5" />
+                  Video hướng dẫn
+                </a>
+              }
             />
           )}
         </PageHeaderBand>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  CircleHelp,
   AlertTriangle,
   Megaphone,
   RefreshCw,
@@ -700,14 +701,27 @@ export function ShopeeAdsPage({
             // Mốc số ads dời từ thanh công cụ xuống mép phải hàng tab (anh Trung
             // 17/09: thanh công cụ chật, dòng này chỉ là thông tin phụ).
             trailing={
-              data?.adsSyncedAt && (
-                <span
-                  className="text-xs text-muted-foreground tabular-nums"
-                  title="Lần kéo số quảng cáo từ sàn gần nhất"
-                >
-                  Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
-                </span>
-              )
+              <span className="flex items-center gap-3">
+                {/* Link tour Hướng dẫn sử dụng của chính trang này (anh Trung 16/10) — mới có tour Shopee. */}
+                {platform === "shopee" && (
+                  <a
+                    href="/guide?muc=ads"
+                    className="flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
+                    title="Video hướng dẫn 15 bước: đọc số, hộp chi tiết, cấu hình Trợ lý"
+                  >
+                    <CircleHelp className="size-3.5" />
+                    Video hướng dẫn
+                  </a>
+                )}
+                {data?.adsSyncedAt && (
+                  <span
+                    className="text-xs text-muted-foreground tabular-nums"
+                    title="Lần kéo số quảng cáo từ sàn gần nhất"
+                  >
+                    Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
+                  </span>
+                )}
+              </span>
             }
           />
         </PageHeaderBand>

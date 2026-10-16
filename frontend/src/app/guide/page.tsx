@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown,
   ExternalLink,
@@ -32,6 +32,7 @@ import {
   FINANCE_TOUR,
   MONEY_GUARD_TOUR,
   ADS_TOUR,
+  TIKTOK_ADS_TOUR,
   STAFF_PLAN_TOUR,
   type GuideTour,
 } from "@/lib/guide-tours";
@@ -134,8 +135,16 @@ const SECTIONS: GuideSection[] = [
     icon: Megaphone,
     title: "Trợ lý quảng cáo Shopee",
     description:
-      "ROAS hòa vốn từ lãi thật của shop, chiến dịch nào đang lỗ dù sàn báo dương, nên chạy sản phẩm nào, và cấu hình Trợ lý tự hạ ngân sách / tạm dừng.",
+      "15 bước: kết nối Hubsell Ads, ROAS hòa vốn từ lãi thật, chiến dịch nào đang lỗ dù sàn báo dương, hộp chi tiết + từ khóa, nên chạy sản phẩm nào, và từng khối Cấu hình Trợ lý (sàn dữ liệu, diễn tập / thực thi thật, 4 quy tắc, hạ mục tiêu ROAS, sổ hành động).",
     tour: ADS_TOUR,
+  },
+  {
+    key: "tiktok-ads",
+    icon: Megaphone,
+    title: "Trợ lý quảng cáo TikTok (GMV Max)",
+    description:
+      "14 bước: kết nối tài khoản quảng cáo, ROI hòa vốn và nhận định từng chiến dịch, hòa vốn sản phẩm, soi video tiêu tiền không ra đơn, loại tay, và từng khối cấu hình Tự động loại video (chế độ, luật, công thần, chốt an toàn, chạy thử, đối chiếu diễn tập).",
+    tour: TIKTOK_ADS_TOUR,
   },
   {
     key: "staff-plan",
@@ -244,6 +253,18 @@ export default function GuidePage() {
   const [openKey, setOpenKey] = useState<string | null>(SECTIONS[0].key);
   const [supportOpen, setSupportOpen] = useState(false);
 
+  // Link sâu từ các trang tính năng: /guide?muc=ads mở sẵn mục đó và cuộn tới
+  // (anh Trung 16/10: đặt link hướng dẫn ngay trên trang Quảng cáo Shopee).
+  useEffect(() => {
+    const key = new URLSearchParams(window.location.search).get("muc");
+    if (!key || !SECTIONS.some((s) => s.key === key)) return;
+    setOpenKey(key);
+    const t = window.setTimeout(() => {
+      document.getElementById(`guide-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, []);
+
   return (
     <AppShell>
       <SupportRequestDialog open={supportOpen} onOpenChange={setSupportOpen} />
@@ -261,12 +282,13 @@ export default function GuidePage() {
           </Button>
         </div>
         {SECTIONS.map((s) => (
-          <GuideAccordionItem
-            key={s.key}
-            section={s}
-            open={openKey === s.key}
-            onToggle={() => setOpenKey((cur) => (cur === s.key ? null : s.key))}
-          />
+          <div key={s.key} id={`guide-${s.key}`} className="scroll-mt-4">
+            <GuideAccordionItem
+              section={s}
+              open={openKey === s.key}
+              onToggle={() => setOpenKey((cur) => (cur === s.key ? null : s.key))}
+            />
+          </div>
         ))}
       </div>
     </AppShell>

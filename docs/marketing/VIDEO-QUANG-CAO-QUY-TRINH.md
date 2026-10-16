@@ -18,6 +18,22 @@ Chốt 12/10/2026 sau video "Đơn hàng" (bản v3, 73 giây). Lần sau anh g�
 - Đã thử 12 giọng: giọng CapCut và MiniMax đọc sai tên sàn, nên loại.
 - Chi phí: khoảng 1 credit/ký tự, cả video ~1.000–1.500 credit.
 
+### Giọng cộng đồng GenMax (biết từ 16/10/2026)
+
+- Trên app GenMax, mục "Xem giọng cộng đồng" là giọng clone MiniMax do người khác
+  chia sẻ (vd **Ngọc Huyền - VBee**). API không ghi trong tài liệu nhưng app gọi
+  `GET https://api.genmax.io/v1/community/voices?limit=100&offset=0&search=…`
+  (header `xi-api-key`), mỗi giọng có `voice_id` dạng UUID + `provider: minimax`.
+- Đọc bằng UUID đó như giọng clone của mình: `POST /v1/text-to-speech/{voice_id}`
+  body `provider: "minimax"`, `model_id: "speech-02-hd"` (= "Speech 02 HD" trên app),
+  `language_code: "Vietnamese"`, `voice_settings: { speed, pitch, vol }` → `GET /v1/history/{id}`
+  tới `completed` → tải `result.audio_url`. ~1 credit/ký tự.
+- Ngọc Huyền - VBee: `19725c22-f795-4fa1-bfc5-88c5a82f9440`, tốc độ 1.0 ≈ 17 ký tự/giây.
+  Đọc đúng "Shopee", "Seller Center", "0 đơn" → "không đơn"; "Hubsell" nghe như
+  "hấp-xeo". Số lẻ (0,95 · 1,1) nên viết bằng chữ ("không phẩy chín lăm").
+- Đang dùng cho **tour Hướng dẫn sử dụng Trợ lý quảng cáo Shopee**
+  (`frontend/scripts/generate-guide-voice.js`, mục `GENMAX`), các tour khác vẫn Hoài My (edge-tts).
+
 ## Phong cách anh đã chốt
 
 - **Đánh tâm lý bán hàng, không phải vận hành**: mở bằng mong muốn kiếm thêm (thêm gian = thêm dòng tiền), rồi mới tới cái giá phải trả khi mở rộng, rồi Hubsell. Chốt bằng câu kiểu "Thêm gian, thêm đơn. Không thêm người."
