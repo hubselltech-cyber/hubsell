@@ -105,13 +105,22 @@ function CircleControl({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** embedded = đang nằm trong một TAB (khu chủ shop) → không có mũi tên quay lại. */
+/**
+ * embedded = đang nằm trong một TAB (nút QR giữa thanh tab) → không có mũi tên
+ * quay lại kiểu stack, thay bằng nút X góc trái gọi `onClose` (về tab đầu).
+ * Khách kêu 16/10: mở quét, chạm ô nhập → bàn phím che mất thanh tab, màn camera
+ * không có nút nào để thoát → "không có nút trở về". Nay: X luôn hiện + chạm
+ * ra ngoài ô nhập là hạ bàn phím.
+ */
 export function ScanScreen({
   embedded = false,
   mode = "returns",
+  onClose,
 }: {
   embedded?: boolean;
   mode?: "returns" | "detail";
+  /** Chỉ dùng khi embedded: nút X góc trái. */
+  onClose?: () => void;
 }) {
   const detail = mode === "detail";
   const { height: winHeight } = useWindowDimensions();
@@ -137,18 +146,23 @@ export function ScanScreen({
   // nút điều hướng nằm dưới bàn phím, không cần chừa.
   const rootRef = useRef<View>(null);
   const [kbLift, setKbLift] = useState(0);
+  const [kbOpen, setKbOpen] = useState(false);
   const navInset = embedded || kbLift > 0 ? 0 : insets.bottom;
   useEffect(() => {
     if (isWeb) return;
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const show = Keyboard.addListener(showEvt, (e) => {
+      setKbOpen(true);
       const kbTop = e.endCoordinates.screenY;
       rootRef.current?.measureInWindow((_x, y, _w, h) => {
         setKbLift(Math.max(0, Math.round(y + h - kbTop)));
       });
     });
-    const hide = Keyboard.addListener(hideEvt, () => setKbLift(0));
+    const hide = Keyboard.addListener(hideEvt, () => {
+      setKbOpen(false);
+      setKbLift(0);
+    });
     return () => {
       show.remove();
       hide.remove();
@@ -601,6 +615,17 @@ export function ScanScreen({
         </View>
       )}
 
+      {/* Chạm vào vùng camera = hạ bàn phím (bàn phím mở thì che thanh tab,
+          không có lớp này là kẹt). Nằm DƯỚI lớp điều khiển nên không cướp
+          chạm của nút đèn / X / ô nhập. */}
+      {!isWeb && kbOpen ? (
+        <Pressable
+          className="absolute inset-0"
+          onPress={() => Keyboard.dismiss()}
+          accessibilityLabel="Đóng bàn phím"
+        />
+      ) : null}
+
       {/* Khung ngắm + thanh trên */}
       <View
         pointerEvents="box-none"
@@ -609,9 +634,25 @@ export function ScanScreen({
       >
         <View className="flex-row items-center justify-between px-4">
           <View className="flex-row items-center gap-2.5">
-            {/* Chỉ hiện lối về khi được push vào (không phải tab) và có chỗ
-                để về; nhân viên kho vào thẳng (màn gốc) thì không hiện. */}
-            {!embedded && router.canGoBack() ? (
+            {/* Lối về: nằm trong tab → nút X về tab đầu (khách 16/10 không tìm
+                thấy đường ra); được push vào → mũi tên quay lại; nhân viên kho
+                vào thẳng màn gốc (không tab, không stack) thì không hiện. */}
+            {embedded && onClose ? (
+              <Pressable
+                className="active:opacity-70"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  onClose();
+                }}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Đóng màn quét"
+              >
+                <CircleControl>
+                  <Ionicons name="close" size={22} color="#fff" />
+                </CircleControl>
+              </Pressable>
+            ) : !embedded && router.canGoBack() ? (
               <Pressable
                 className="active:opacity-70"
                 onPress={() => router.back()}

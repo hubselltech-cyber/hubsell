@@ -35,6 +35,7 @@
 - [ADS-TIKTOK-GMV-MAX.md](ADS-TIKTOK-GMV-MAX.md) · [TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md](TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md) — GMV Max TikTok, xin quyền
 - [ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md](ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md) — khảo sát 15/10: ROI mục tiêu + ngân sách khởi điểm có căn cứ (TikTok/Shopee/ngành/đối thủ)
 - [KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md](KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md) — trợ lý quảng cáo trên mobile
+- [ADS-TIKTOK-TREN-MOBILE.md](ADS-TIKTOK-TREN-MOBILE.md) — phương án 16/10: Trợ lý quảng cáo TikTok trên app (chỉ loại/khôi phục video, còn lại dẫn sang Seller Center; chờ anh chốt)
 - [KOC-TIKTOK-AFFILIATE-API.md](KOC-TIKTOK-AFFILIATE-API.md) · [TIKTOK-BINH-LUAN-VIDEO-KHAO-SAT.md](TIKTOK-BINH-LUAN-VIDEO-KHAO-SAT.md) — khảo sát KOC / bình luận video (để sau)
 
 ## Sàn & hồ sơ đối tác

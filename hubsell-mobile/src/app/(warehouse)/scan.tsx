@@ -1,4 +1,5 @@
 import React from "react";
+import type { Href } from "expo-router";
 import { ScanDetailTab } from "@/screens/ScanDetailTab";
 
 /**
@@ -6,5 +7,5 @@ import { ScanDetailTab } from "@/screens/ScanDetailTab";
  * Đơn hàng). Quét NHẬN đơn hoàn nằm trong Kho → Đơn hoàn (/scan-returns).
  */
 export default function WarehouseScanTab() {
-  return <ScanDetailTab />;
+  return <ScanDetailTab homeHref={"/(warehouse)/stock" as Href} />;
 }
