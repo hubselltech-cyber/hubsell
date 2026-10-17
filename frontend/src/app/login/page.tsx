@@ -29,7 +29,6 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { PhoneInput } from "@/components/auth/phone-input";
 import { LegalLink, SocialAuthButtons } from "@/components/auth/social-buttons";
-import { DomainMoveNotice } from "@/components/auth/domain-move-notice";
 import { PRIVACY_URL, QUY_CHE_URL, TERMS_URL } from "@/lib/legal";
 import {
   login,
@@ -580,9 +579,6 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
-
-        {/* Buổi cắt sang hubsell.vn (10/2026): nhắc đăng nhập lại một lần. */}
-        <DomainMoveNotice />
 
         <Card>
           <CardHeader>

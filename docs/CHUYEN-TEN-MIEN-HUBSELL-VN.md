@@ -96,6 +96,8 @@ Lỗi ở đây → trả `APP_FRONTEND_URL` về `.tech` (5 phút), chưa bật
 
 `frontend/src/components/auth/domain-move-notice.tsx` gắn trên form `/login`: chỉ hiện ở host `app.hubsell.vn`, một câu "đã chuyển sang app.hubsell.vn, đăng nhập lại một lần", nút Bỏ qua = không hiện lại (localStorage), tự tắt sau 30/11/2026 (mốc tự chọn). Đã soi local sáng/tối/mobile, chữ 14px.
 
+**17/10: anh Trung chốt gỡ hẳn** ("bỏ luôn đi không cần nữa") — xóa tệp + chỗ gắn trên `/login`.
+
 ### 3.7 Dọn chữ còn sót
 
 - ✅ 14/10 `hubsell-mobile/src/app/no-access.tsx` đổi chữ sang `.vn` — đi cùng bản mobile KẾ TIẾP, **không nộp build mới khi Apple đang xét** (reset hàng đợi).
