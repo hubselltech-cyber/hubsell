@@ -47,6 +47,21 @@ export function breakerDetailText(b: { app: string; pausedUntil: string; level: 
 }
 
 /**
+ * Mức thẻ Cầu dao (17/10/2026): bão 429 BẬC 0 (nghỉ 5' rồi tự mở, 429 lẻ tẻ của
+ * sàn) chỉ VÀNG — đỏ khi đóng liên tiếp (bậc ≥ 1) hoặc sàn báo vượt trần theo
+ * app thật (lý do không phải "Bão 429"). Hàm thuần (test).
+ */
+export function breakerSignalLevel(
+  paused: Array<{ reason: string | null; level: number }>,
+  trips24h: number,
+  warnTrips24h: number
+): SignalLevel {
+  if (paused.some((b) => b.level >= 1 || !b.reason?.startsWith("Bão 429"))) return "crit";
+  if (paused.length) return "warn";
+  return trips24h >= warnTrips24h ? "warn" : "ok";
+}
+
+/**
  * Một truy vấn hỏng (bảng chưa có ở môi trường này, quyền pg_* bị chặn...) không
  * được làm vỡ cả trang Sức khỏe — trả giá trị dự phòng + log một dòng.
  */
@@ -545,10 +560,10 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     w.breakersDetail.length
       ? `ĐÓNG: ${w.breakersDetail.map(breakerDetailText).join(" · ")}`
       : `mở (đóng ${w.breakerTrips24h} lần liên tiếp gần nhất, 24h)`,
-    w.breakersPaused.length ? "crit" : w.breakerTrips24h >= T.breakerTripsWarn24h ? "warn" : "ok",
+    breakerSignalLevel(w.breakersDetail, w.breakerTrips24h, T.breakerTripsWarn24h),
     w.breakersDetail.length
       ? `Lý do: ${w.breakersDetail.map((b) => b.reason?.slice(0, 160) ?? "không ghi").join(" | ")}` +
-          " — 'Bão 429' = ≥3 gian khác nhau bị sàn chặn tầng shop trong 10'; mã exceed_partner_api mới là vượt trần theo app thật (xem log [ApiBudget] trên worker)"
+          " — 'Bão 429' = ≥3 gian và ≥20 % gian đã gọi bị sàn chặn tầng shop trong 10' (bậc 0 tự mở sau 5'); mã exceed_partner_api mới là vượt trần theo app thật (xem log [ApiBudget] trên worker)"
       : "Nhiều gian cùng vượt trần theo app — xem log [ApiBudget] trên worker, hạ ADS_APP_QPS hoặc xin nâng quota"
   );
   push(

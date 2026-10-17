@@ -144,6 +144,16 @@ ngày), Lazada ~7 call report + adgroup. Không có gì seller "cần tức thì
    `exceed_partner_api` → đúng là bão tầng shop, không phải trần app. Gian nối Hubsell
    Ads lúc đó: 29 ACTIVE + 2 DISCONNECTED (không phải "vài gian"). App chính
    `shopee:2040029` chỉ đóng 14 lần, lần cuối 15/09 (trước khi tách tầng).
+   **★ Sửa 17/10/2026 (lần 3 — ngưỡng không theo quy mô):** sau bản 16/10 cầu dao vẫn
+   đóng ~8 lần/ngày (lần 102 → 114 trong ~35 giờ), lý do đúng "≥3 gian khác nhau". Gốc:
+   429 mã chung `error_rate_limit` của Shopee rơi LẺ TẺ, ngẫu nhiên lên từng gian (có từ
+   28/09); 7 gian hiếm khi 3 gian trùng 10', 29 gian thì thường xuyên, 50.000 gian thì
+   đóng liên tục. Sửa: (1) bão = ≥ 3 gian **và** ≥ 20 % số gian ĐÃ GỌI trong cùng 10'
+   (`RATE_LIMIT_STORM.ratio`, số **tự chọn**, chưa có căn cứ sàn; trần app thật Shopee
+   trả `exceed_partner_api` → vẫn đóng ngay); (2) lý do ghi "Bão 429: x/y gian đã gọi …
+   (tên gian)"; (3) thẻ HQ: bão bậc 0 (tự mở sau 5') = VÀNG, đỏ khi bậc ≥ 1 hoặc vượt
+   trần app thật (`breakerSignalLevel`); (4) khóa gian Lazada trước đây là nguyên
+   access_token và bị in ra log `[ApiBudget]` → nay băm `lazadaShopKey`.
 3. **Sửa retry của client**: `client.ts` hiện retry 3 lần 1.5s→6s cho mọi
    "rate limit" — đúng cho lỗi thoáng, **sai** cho vượt trần theo app (FAQ: đừng
    retry). Tách: partner-level → ném `ApiBudgetError`; shop-level → 1 retry sau 3s.

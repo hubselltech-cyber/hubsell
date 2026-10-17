@@ -1,6 +1,7 @@
 // Van an toàn gọi Ads API theo app (tầng C, docs/ADS-NHIP-CANH-BAO.md) — phần thuần.
 import { describe, expect, it } from "vitest";
-import { acquireApiToken, isRateLimitStorm, pauseMsForLevel, type RateLimitHit } from "../api-budget";
+import { acquireApiToken, isRateLimitStorm, lazadaShopKey, pauseMsForLevel, type RateLimitHit } from "../api-budget";
+import { breakerSignalLevel } from "../platform-health";
 import { classifyShopeeAdsRateLimit } from "../../integrations/shopee/client";
 import { classifyLazadaAdsRateLimit } from "../../integrations/lazada/client";
 
@@ -72,6 +73,48 @@ describe("isRateLimitStorm — nhiều GIAN KHÁC NHAU cùng 429 trong cửa s�
     isRateLimitStorm(hits, 1 * M, "B");
     expect(isRateLimitStorm(hits, 12 * M, "C")).toBe(false);
     expect(hits).toEqual([{ shop: "C", at: 12 * M }]);
+  });
+});
+
+describe("isRateLimitStorm — tỷ lệ theo số gian đã gọi (17/10: 29 gian đóng ~8 lần/ngày)", () => {
+  it("29 gian đã gọi: 3–5 gian dính lẻ tẻ → chưa bão; 6 gian (≥20 %) → bão", () => {
+    const hits: RateLimitHit[] = [];
+    for (const s of ["A", "B", "C", "D", "E"]) expect(isRateLimitStorm(hits, 1_000, s, 29)).toBe(false);
+    expect(isRateLimitStorm(hits, 2_000, "F", 29)).toBe(true);
+  });
+  it("50.000 gian: 3 gian không là gì; vẫn cần 20 % (10.000 gian)", () => {
+    const hits: RateLimitHit[] = [];
+    for (let i = 0; i < 9_999; i++) expect(isRateLimitStorm(hits, 1_000, `s${i}`, 50_000)).toBe(false);
+    expect(isRateLimitStorm(hits, 1_000, "s9999", 50_000)).toBe(true);
+  });
+  it("ít gian (5 đã gọi): sàn tối thiểu 3 gian vẫn giữ", () => {
+    const hits: RateLimitHit[] = [];
+    expect(isRateLimitStorm(hits, 0, "A", 5)).toBe(false);
+    expect(isRateLimitStorm(hits, 0, "B", 5)).toBe(false);
+    expect(isRateLimitStorm(hits, 0, "C", 5)).toBe(true);
+  });
+});
+
+describe("lazadaShopKey — không để access_token lọt ra log / lý do cầu dao", () => {
+  it("băm ổn định, không chứa token gốc", () => {
+    const k = lazadaShopKey("50000000abcSECRETtoken");
+    expect(k).toMatch(/^lzd#[0-9a-f]{10}$/);
+    expect(k).not.toContain("SECRET");
+    expect(lazadaShopKey("50000000abcSECRETtoken")).toBe(k);
+    expect(lazadaShopKey(undefined)).toBeUndefined();
+  });
+});
+
+describe("breakerSignalLevel — bão bậc 0 chỉ vàng", () => {
+  it("bão 429 bậc 0 đang đóng → warn; bậc ≥1 hoặc vượt trần app thật → crit", () => {
+    expect(breakerSignalLevel([{ reason: "Bão 429: 6/29 gian ...", level: 0 }], 1, 3)).toBe("warn");
+    expect(breakerSignalLevel([{ reason: "Bão 429: 6/29 gian ...", level: 1 }], 2, 3)).toBe("crit");
+    expect(breakerSignalLevel([{ reason: "ads.rate_limit.exceed_partner_api", level: 0 }], 1, 3)).toBe("crit");
+    expect(breakerSignalLevel([{ reason: null, level: 0 }], 1, 3)).toBe("crit");
+  });
+  it("không đóng: theo số lần 24h", () => {
+    expect(breakerSignalLevel([], 0, 3)).toBe("ok");
+    expect(breakerSignalLevel([], 3, 3)).toBe("warn");
   });
 });
 

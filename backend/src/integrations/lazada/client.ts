@@ -12,7 +12,7 @@
 // ============================================================
 
 import crypto from "crypto";
-import { withApiBudget } from "../../services/api-budget";
+import { lazadaShopKey, withApiBudget } from "../../services/api-budget";
 import {
   getLazadaConfig,
   LAZADA_ADS_BIZ_CODE,
@@ -129,7 +129,7 @@ async function callLazada<T extends LazadaEnvelope>(
   };
   // Van an toàn theo app cho Sponsored Solutions (Ads) — services/api-budget.ts.
   return isLazadaAdsPath(path)
-    ? withApiBudget(`lazada:${cfg.appKey}`, call, classifyLazadaAdsRateLimit, params.access_token)
+    ? withApiBudget(`lazada:${cfg.appKey}`, call, classifyLazadaAdsRateLimit, lazadaShopKey(params.access_token))
     : call();
 }
 

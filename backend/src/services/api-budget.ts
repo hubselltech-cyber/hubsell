@@ -21,6 +21,7 @@
 // (nhịp khác, mã lỗi khác) — mở rộng sau khi có số chính thức.
 // ============================================================
 
+import { createHash } from "crypto";
 import { prisma } from "../lib/prisma";
 import { ADS_CADENCE } from "../config/ads-cadence";
 
@@ -128,16 +129,30 @@ export async function tripAppBreaker(app: string, reason: string): Promise<numbe
 // (client.ts) — một gian dính không kéo cả app nghỉ. Nhưng nếu NHIỀU gian cùng
 // dính trong thời gian ngắn thì đó là dấu hiệu trần theo app thật (hoặc sàn
 // đang siết) → vẫn phải đóng cầu dao, không được để hàng loạt gian tiếp tục
-// đập vào. Ngưỡng mặc định: ≥ 3 GIAN KHÁC NHAU dính 429 tầng shop trong 10'.
+// đập vào. Ngưỡng: ≥ 3 GIAN KHÁC NHAU và ≥ 20 % số gian đã gọi, trong 10'.
 // ★ 16/10/2026: bản cũ đếm theo LẦN (giả định "mỗi gian 1 call/30' nên 3 lần =
 // 3 gian") — sai: một xung Shopee gọi 5–7 call liền cho MỘT gian, gian đã bị
 // sàn chặn thì call sau cũng 429 → 3 lần trong vài giây từ một gian → cầu dao
 // đóng cả app (HQ 16/10 báo ĐÓNG shopee:2044679 khi mới vài gian). Nay mỗi
 // mốc kèm khóa gian, bão = số gian KHÁC NHAU trong cửa sổ. Đếm trong RAM từng
 // tiến trình — nhiều instance thì mỗi bên tự đếm, vẫn an toàn (chỉ nhạy hơn).
+// ★ 17/10/2026: vẫn đóng ~8 lần/ngày (lần 102 → 114 trong ~35 giờ) dù đã đếm
+// theo gian — vì Shopee trả 429 mã chung error_rate_limit LẺ TẺ, rơi ngẫu nhiên
+// vào từng gian (có từ 28/09, mỗi gian 1 call/30' vẫn dính). 7 gian thì hiếm khi
+// 3 gian trùng 10'; 29 gian thì thành chuyện thường, 50.000 gian thì đóng liên
+// tục. Ngưỡng cố định "3 gian" không theo quy mô → thêm điều kiện TỶ LỆ: số gian
+// dính phải ≥ STORM_RATIO số gian ĐÃ GỌI trong cùng cửa sổ. Vượt trần theo app
+// thật thì Shopee trả mã exceed_partner_api → đóng ngay ở nhánh "partner", không
+// phụ thuộc luật này.
 export const RATE_LIMIT_STORM = {
-  /** Số GIAN khác nhau dính 429 tầng shop trong cửa sổ → coi là vượt trần theo app. */
+  /** Sàn tối thiểu: số GIAN khác nhau dính 429 tầng shop trong cửa sổ. */
   trips: 3,
+  /**
+   * Và phải chiếm ≥ tỷ lệ này trong số gian đã gọi trong cửa sổ. 0,2 là số TỰ
+   * CHỌN (17/10, chưa có căn cứ từ sàn): 429 lẻ tẻ đo được ~1–4 %/gian/ngày,
+   * còn trần app thật thì gần như mọi gian cùng dính.
+   */
+  ratio: 0.2,
   windowMs: 10 * 60 * 1000,
 } as const;
 
@@ -147,41 +162,91 @@ export interface RateLimitHit {
   at: number;
 }
 const shopRateLimitHits = new Map<string, RateLimitHit[]>();
+/** Gian đã gọi gần nhất lúc nào (ms), theo app — mẫu số của tỷ lệ bão. */
+const shopLastCalledAt = new Map<string, Map<string, number>>();
 
 /**
  * Hàm thuần (test): ghi thêm mốc `now` của gian `shop`, loại mốc ngoài cửa sổ,
- * trả true nếu có ≥ `trips` GIAN KHÁC NHAU trong `windowMs`.
+ * trả true nếu số GIAN KHÁC NHAU trong `windowMs` ≥ `trips` VÀ ≥ `ratio` ×
+ * `calledShops` (số gian đã gọi trong cùng cửa sổ; 0 = chỉ xét `trips`).
  */
 export function isRateLimitStorm(
   hits: RateLimitHit[],
   now: number,
   shop: string,
+  calledShops: number = 0,
   trips: number = RATE_LIMIT_STORM.trips,
+  ratio: number = RATE_LIMIT_STORM.ratio,
   windowMs: number = RATE_LIMIT_STORM.windowMs
 ): boolean {
   hits.push({ shop, at: now });
   const cutoff = now - windowMs;
   while (hits.length && hits[0].at < cutoff) hits.shift();
-  return new Set(hits.map((h) => h.shop)).size >= trips;
+  const distinct = new Set(hits.map((h) => h.shop)).size;
+  return distinct >= trips && distinct >= Math.ceil(ratio * calledShops);
 }
 
-function noteShopRateLimit(app: string, shop: string): boolean {
+/** Ghi nhận MỘT lần gọi của gian (mọi kết quả) — mẫu số tỷ lệ bão. */
+function noteShopCall(app: string, shop: string, now: number): void {
+  let m = shopLastCalledAt.get(app);
+  if (!m) {
+    m = new Map();
+    shopLastCalledAt.set(app, m);
+  }
+  m.set(shop, now);
+}
+
+/** Số gian đã gọi trong cửa sổ; dọn mốc cũ luôn (chỉ chạy khi gặp 429 — hiếm). */
+function countCalledShops(app: string, now: number): number {
+  const m = shopLastCalledAt.get(app);
+  if (!m) return 0;
+  const cutoff = now - RATE_LIMIT_STORM.windowMs;
+  for (const [shop, at] of m) if (at < cutoff) m.delete(shop);
+  return m.size;
+}
+
+/** Trả danh sách gian khác nhau của bão nếu là bão (rồi xóa sổ đếm), không thì null. */
+function noteShopRateLimit(app: string, shop: string): { shops: string[]; called: number } | null {
   let hits = shopRateLimitHits.get(app);
   if (!hits) {
     hits = [];
     shopRateLimitHits.set(app, hits);
   }
-  const storm = isRateLimitStorm(hits, Date.now(), shop);
-  if (storm) hits.length = 0; // đã đóng cầu dao → đếm lại từ đầu sau khi mở
-  return storm;
+  const now = Date.now();
+  const called = countCalledShops(app, now);
+  if (!isRateLimitStorm(hits, now, shop, called)) return null;
+  const shops = [...new Set(hits.map((h) => h.shop))];
+  hits.length = 0; // đã đóng cầu dao → đếm lại từ đầu sau khi mở
+  return { shops, called };
+}
+
+/**
+ * Khóa gian Lazada = access_token → KHÔNG được ghi nguyên văn ra log/lý do.
+ * Băm ngắn để vẫn đếm theo gian được. Hàm thuần (test).
+ */
+export function lazadaShopKey(accessToken: string | undefined): string | undefined {
+  if (!accessToken) return undefined;
+  return `lzd#${createHash("sha256").update(accessToken).digest("hex").slice(0, 10)}`;
+}
+
+/** "ANO, Gia Hân, 123456" — tên gian Shopee theo shop_id; khóa băm Lazada giữ nguyên. */
+async function shopLabels(shops: string[]): Promise<string> {
+  const numeric = shops.filter((s) => /^\d+$/.test(s));
+  const rows = numeric.length
+    ? await prisma.channel
+        .findMany({ where: { externalShopId: { in: numeric } }, select: { externalShopId: true, shopName: true } })
+        .catch(() => [])
+    : [];
+  const nameById = new Map(rows.map((r) => [r.externalShopId!, r.shopName] as const));
+  return shops.map((s) => nameById.get(s) ?? s).join(", ");
 }
 
 /**
  * Bọc MỘT call Ads API: chờ cầu dao mở → lấy token → gọi. `classify` đọc lỗi
  * sàn trả về: "partner" → đóng cầu dao + ném; "shop" → ném để caller lùi gian
- * (≥3 gian KHÁC NHAU cùng dính trong 10' → coi như partner, đóng cầu dao);
+ * (≥3 gian KHÁC NHAU và ≥20 % gian đã gọi trong 10' → coi như partner, đóng cầu dao);
  * null → ném nguyên lỗi. `shop` = khóa gian (shop_id Shopee / access_token
- * Lazada) để bão đếm theo gian; thiếu thì mỗi call tính là một gian riêng
+ * Lazada đã băm — lazadaShopKey) để bão đếm theo gian; thiếu thì mỗi call tính là một gian riêng
  * (hành vi cũ, nhạy hơn).
  */
 export async function withApiBudget<T>(
@@ -192,6 +257,7 @@ export async function withApiBudget<T>(
 ): Promise<T> {
   await assertAppOpen(app);
   await acquireApiToken(app);
+  if (shop) noteShopCall(app, shop, Date.now());
   try {
     return await fn();
   } catch (err) {
@@ -203,10 +269,12 @@ export async function withApiBudget<T>(
     }
     if (scope === "shop") {
       const shopKey = shop || `?${Date.now()}`;
-      if (noteShopRateLimit(app, shopKey)) {
+      const storm = noteShopRateLimit(app, shopKey);
+      if (storm) {
+        const names = await shopLabels(storm.shops);
         await tripAppBreaker(
           app,
-          `Bão 429: ≥${RATE_LIMIT_STORM.trips} gian khác nhau vượt trần trong ${RATE_LIMIT_STORM.windowMs / 60000}' — ${message}`.slice(0, 300)
+          `Bão 429: ${storm.shops.length}/${storm.called} gian đã gọi trong ${RATE_LIMIT_STORM.windowMs / 60000}' bị chặn (${names}) — ${message}`.slice(0, 300)
         );
         throw new ApiBudgetError(app, "partner_rate_limit", message);
       }
