@@ -18,16 +18,28 @@
 // Đánh dấu dòng: handler xong thì chuyển MỌI dòng đang chờ của đơn đó sang
 // SUCCESS (kể cả dòng đến giữa lúc đang xử lý — dòng đó đã tự tạo một việc mới
 // vì việc cũ đang chạy, nên đánh dấu sớm không làm sót lượt kéo nào).
+//
+// Kẽ hở đã gặp thật (17/10/2026, TikTok gửi hai sự kiện một đơn cùng mili-giây):
+// dòng B gộp vào việc J đang chờ, J được nhận + chạy xong trong 19 ms TRƯỚC KHI
+// giao dịch của B commit → câu đánh dấu của J không thấy B, B kẹt PENDING không
+// còn việc nào trỏ tới. Dữ liệu đơn vẫn đúng (J kéo sàn sau khi B tới), chỉ dòng
+// tra soát kẹt và HQ báo đỏ oan. Lưới đỡ: vòng quét dòng mồ côi ở
+// workers/event-queue.ts xếp lại việc cho đơn đó.
 // ============================================================
 
 import crypto from "crypto";
-import { WebhookJobStatus } from "@prisma/client";
+import { Prisma, WebhookJobStatus } from "@prisma/client";
 
 import { prisma } from "../lib/prisma";
 import { enqueue, QUEUES, upsertQueued } from "../lib/queue";
 
 /** Sàn có sự kiện đơn đi qua hộp thư đến. Thêm sàn = thêm handler ở workers/event-queue.ts. */
 export type OrderEventSource = "SHOPEE" | "LAZADA" | "TIKTOK";
+/**
+ * Bảng webhook_events còn chứa sự kiện của nhà cung cấp hóa đơn (MISA, HUBTAX...,
+ * entityId = mã giao dịch hóa đơn) — câu nào chỉ nhắm sự kiện đơn phải lọc theo danh sách này.
+ */
+const ORDER_EVENT_SOURCES: readonly OrderEventSource[] = ["SHOPEE", "LAZADA", "TIKTOK"];
 
 /** Dữ liệu của một việc evt.order. */
 export interface OrderEventJob {
@@ -188,6 +200,24 @@ export async function markOrderEventsError(job: OrderEventJob, attempts: number,
     SET "attempts" = ${attempts}, "lastError" = ${message.slice(0, 2000)}
     WHERE "source" = ${job.source} AND "shopId" = ${job.shopId} AND "entityId" = ${job.orderId}
       AND "status" = 'PENDING'`;
+}
+
+/**
+ * Các đơn còn dòng PENDING chờ quá `olderThanMinutes` phút (mỗi đơn một lần) —
+ * ứng viên cho vòng quét dòng mồ côi ở workers/event-queue.ts. Chỉ sự kiện đơn
+ * (entityId có giá trị); sự kiện ủy quyền đánh dấu theo mã dòng nên không mồ côi
+ * theo kiểu này. Mốc tính trong Postgres ("createdAt" là timestamp giờ UTC không
+ * kèm múi) để khỏi truyền Date làm tham số.
+ */
+export async function findStalePendingOrderEvents(olderThanMinutes: number, limit: number): Promise<OrderEventJob[]> {
+  const rows = await prisma.$queryRaw<{ source: OrderEventSource; shopId: string; entityId: string }[]>`
+    SELECT DISTINCT "source", "shopId", "entityId"
+    FROM "webhook_events"
+    WHERE "status" = 'PENDING' AND "entityId" IS NOT NULL
+      AND "source" IN (${Prisma.join(ORDER_EVENT_SOURCES)})
+      AND "createdAt" < (NOW() AT TIME ZONE 'UTC') - ${olderThanMinutes}::int * INTERVAL '1 minute'
+    LIMIT ${limit}::int`;
+  return rows.map((r) => ({ source: r.source, shopId: r.shopId, orderId: r.entityId }));
 }
 
 /**

@@ -23,7 +23,7 @@ import { ChannelName, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { createApp } from "../../app";
 import { startQueue, stopQueue } from "../../lib/queue";
-import { registerEventQueueWorkers, runDeadEventJob, runOrderEventJob } from "../../workers/event-queue";
+import { registerEventQueueWorkers, runDeadEventJob, runOrderEventJob, sweepOrphanOrderEvents } from "../../workers/event-queue";
 import { createStockFixture, type StockFixture } from "./fixtures";
 import { getMultipleOrderItems, getOrder } from "../lazada/client";
 
@@ -283,6 +283,36 @@ describe("Webhook Lazada — hộp thư đến + hàng đợi bền", () => {
     expect(rows[0].state).toBe("created");
     expect(rows[0].due).toBeGreaterThan(20); // hẹn ~30 giây sau
     await prisma.$executeRawUnsafe(`DELETE FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`, `SAN_LA:${SELLER_ID}:900008`);
+  });
+
+  it("dòng mồ côi (PENDING quá 10' không còn việc nào — kẽ hở 17/10) → vòng quét xếp lại việc, dòng thành SUCCESS; dòng MISA không bị đụng", async () => {
+    const orderId = "900009";
+    mockOrder(orderId, "pending");
+    const old = new Date(Date.now() - 15 * 60 * 1000);
+    await prisma.webhookEvent.create({
+      data: { source: "LAZADA", eventType: "0", shopId: SELLER_ID, entityId: orderId, bodyHash: `orphan-${SELLER_ID}`, payload: "{}", createdAt: old },
+    });
+    const misa = await prisma.webhookEvent.create({
+      data: { source: "MISA", eventType: "test", shopId: SELLER_ID, entityId: `misa-${SELLER_ID}`, bodyHash: `orphan-misa-${SELLER_ID}`, payload: "{}", createdAt: old },
+    });
+    try {
+      // Dòng còn trẻ hơn 10' thì chưa đụng.
+      const fresh = await prisma.webhookEvent.create({
+        data: { source: "LAZADA", eventType: "0", shopId: SELLER_ID, entityId: "900010", bodyHash: `fresh-${SELLER_ID}`, payload: "{}" },
+      });
+      expect(await sweepOrphanOrderEvents()).toBeGreaterThanOrEqual(1);
+      const [row] = await waitForEvents(orderId, (rows) => rows.length === 1 && rows[0].status === WebhookJobStatus.SUCCESS);
+      expect(row.processedAt).not.toBeNull();
+      expect((await prisma.webhookEvent.findUniqueOrThrow({ where: { id: fresh.id } })).status).toBe(WebhookJobStatus.PENDING);
+      await prisma.webhookEvent.delete({ where: { id: fresh.id } });
+      expect((await prisma.webhookEvent.findUniqueOrThrow({ where: { id: misa.id } })).status).toBe(WebhookJobStatus.PENDING);
+      const misaJobs = await prisma.$queryRawUnsafe<unknown[]>(
+        `SELECT 1 FROM pgboss.job WHERE name = 'evt.order' AND singleton_key LIKE 'MISA:%'`
+      );
+      expect(misaJobs).toHaveLength(0);
+    } finally {
+      await prisma.webhookEvent.delete({ where: { id: misa.id } });
+    }
   });
 
   it("hàng đợi bền chưa sẵn sàng → 503 để Lazada gửi lại, không ghi sự kiện, không tạo đơn", async () => {

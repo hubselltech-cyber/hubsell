@@ -10,6 +10,8 @@
 //     đánh dấu đúng dòng của nó.
 //   · evt.dead  — việc của hai hàng đợi trên đã hết lượt thử: dòng còn chờ →
 //     FAILED + cảnh báo cho chủ shop.
+//   · Vòng quét dòng mồ côi (không phải hàng đợi): dòng sự kiện đơn PENDING quá
+//     lâu mà không còn việc nào sống → xếp lại việc kéo đơn (sweepOrphanOrderEvents).
 //
 // Không có trạng thái nào trong RAM: nhận việc, hạn giữ, không chạy chồng một
 // đơn trên nhiều tiến trình đều do pg-boss lo (evt.order là hàng đợi "gộp theo khóa").
@@ -43,6 +45,7 @@ import {
   markOrderEventsDone,
   markOrderEventsError,
   markOrderEventsFailed,
+  findStalePendingOrderEvents,
   orderEventKey,
   type AuthEventJob,
   type OrderEventJob,
@@ -168,16 +171,73 @@ export async function runDeadEventJob(job: OrderEventJob | AuthEventJob): Promis
   await FAILURE_ALERTS[job.source]?.(job.shopId, job.orderId, EVT_ORDER_MAX_ATTEMPTS, message);
 }
 
+// ---------- Vòng quét dòng mồ côi ----------
+// Dòng PENDING mà không còn việc nào trỏ tới (kẽ hở đánh dấu ở services/webhook-inbox.ts,
+// gặp thật 17/10/2026; hoặc nguyên nhân chưa biết khác) thì không bao giờ tự xong.
+// Xếp lại một việc kéo đơn là cách chữa an toàn cho mọi nguyên nhân: handler luôn kéo
+// trạng thái mới nhất từ sàn rồi đánh dấu mọi dòng chờ của đơn — tốn một lệnh gọi sàn
+// cho mỗi đơn mồ côi (hiếm). Đơn còn việc sống (đang chạy / chờ thử lại) thì để yên.
+
+/**
+ * Dòng chờ quá ngần này phút mới bị coi là mồ côi. Số TỰ CHỌN: gấp đôi hạn giữ việc
+ * của evt.order (expireInSeconds 300) — việc bình thường xử lý trong vài giây, việc
+ * đang thử lại thì còn việc sống nên không bị đụng.
+ */
+export const ORPHAN_AFTER_MINUTES = 10;
+/** Nhịp quét. 10' + 5' vẫn dưới ngưỡng đỏ hộp thư đến của HQ (webhookOldestMin = 30'). */
+const ORPHAN_SWEEP_MS = 5 * 60 * 1000;
+/** Trần đơn mỗi lượt quét — worker chết lâu thì dòng dồn nhiều nhưng đều còn việc sống. */
+const ORPHAN_SWEEP_LIMIT = 100;
+
+/** Một lượt quét. Trả số đơn đã xếp lại việc. Tách riêng để test gọi thẳng. */
+export async function sweepOrphanOrderEvents(): Promise<number> {
+  const candidates = await findStalePendingOrderEvents(ORPHAN_AFTER_MINUTES, ORPHAN_SWEEP_LIMIT);
+  if (candidates.length === 0) return 0;
+  const requeued = await Promise.all(
+    candidates.map(async (job) => {
+      if (await hasLiveJob(QUEUES.evtOrder, orderEventKey(job))) return false;
+      await enqueue(QUEUES.evtOrder, job, { key: orderEventKey(job) });
+      return true;
+    })
+  );
+  const keys = candidates.filter((_, i) => requeued[i]).map(orderEventKey);
+  if (keys.length > 0) {
+    console.warn(
+      `[Event-queue] Xếp lại việc cho ${keys.length} đơn có dòng sự kiện mồ côi (chờ > ${ORPHAN_AFTER_MINUTES}' không còn việc sống): ${keys.slice(0, 5).join(", ")}${keys.length > 5 ? "…" : ""}`
+    );
+  }
+  return keys.length;
+}
+
+let sweepStarted = false;
+let sweepRunning = false;
+function startOrphanSweep(): void {
+  if (sweepStarted) return;
+  sweepStarted = true;
+  setInterval(() => {
+    if (sweepRunning) return;
+    sweepRunning = true;
+    sweepOrphanOrderEvents()
+      .catch((err) => console.error("[Event-queue] Vòng quét dòng mồ côi lỗi:", errorMessage(err)))
+      .finally(() => {
+        sweepRunning = false;
+      });
+  }, ORPHAN_SWEEP_MS).unref();
+}
+
 /**
  * Đăng ký worker cho các hàng đợi sự kiện. Gọi SAU khi startQueue() báo sẵn
  * sàng; ở vai web hàm đăng ký tự bỏ qua (web chỉ gửi việc).
  */
 export async function registerEventQueueWorkers(): Promise<void> {
-  await registerWorker<OrderEventJob>(
+  const consumes = await registerWorker<OrderEventJob>(
     QUEUES.evtOrder,
     { concurrency: evtOrderConcurrency(), pollSeconds: POLL_FAST_SECONDS },
     (job) => runOrderEventJob(job.data, job.retryCount)
   );
+  // Chỉ tiến trình nhận việc mới quét (web chỉ gửi việc). Nhiều worker cùng quét vẫn
+  // an toàn: xếp việc theo khóa gộp, đơn đã có việc chờ thì không tạo thêm.
+  if (consumes && process.env.NODE_ENV !== "test") startOrphanSweep();
   // Sự kiện ủy quyền hiếm và không gấp tới từng giây: 1 việc một lúc, nhịp hỏi thưa.
   await registerWorker<AuthEventJob>(QUEUES.evtAuth, { concurrency: 1, pollSeconds: POLL_SLOW_SECONDS }, (job) =>
     runAuthEventJob(job.data, job.retryCount)

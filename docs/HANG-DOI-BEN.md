@@ -122,8 +122,21 @@ Hết lượt thử → việc sang evt.dead → ghi cảnh báo cho chủ shop 
 
 - `webhook_events`: một bảng cho cả ba sàn (cột sàn, loại sự kiện, mã shop, mã đơn, mã băm thân, thân, trạng thái, lỗi cuối, giờ nhận, giờ xong). Chống gửi trùng bằng khóa duy nhất trên mã băm thân như ba bảng hiện nay. Mỗi sự kiện vẫn có một dòng, kể cả khi việc bị gộp, nên nhật ký trên HQ không mất gì.
 - Web chỉ ghi và xếp việc, không xử lý. Hết cảnh web tự xử lý webhook Shopee.
-- Không còn bước "trả việc mồ côi lúc khởi động". Việc bị bỏ dở quay lại theo hạn giữ.
+- Không còn bước "trả việc mồ côi lúc khởi động". Việc bị bỏ dở quay lại theo hạn giữ. (Dòng sự kiện mồ côi là chuyện khác, xem đoạn 17/10 ngay dưới.)
 - Lazada: thêm một lần ghi database trước khi trả 200. Hạn của Lazada là 500 ms; số đo ghi trong giao dịch là 10 ms (p95 10–45 ms). Database lỗi thì trả 500, Lazada tự gửi lại mỗi 30 phút tối đa 12 lần, tốt hơn là mất.
+
+**Dòng sự kiện mồ côi và vòng quét lưới đỡ (17/10/2026)**
+
+HQ Sức khỏe báo đỏ "hộp thư đến 1 chờ, cũ nhất 86'" trong khi pg-boss không còn việc nào chờ, chạy hay lỗi. Tra prod (Supabase, chỉ đọc): TikTok shop `7494150431986320525`, đơn `586596716497962580` có **hai sự kiện cùng một mili-giây** (09:06:06.081 UTC), thân khác nhau nên đều được ghi.
+
+1. Giao dịch của sự kiện A ghi dòng A và tạo việc J.
+2. Giao dịch của sự kiện B ghi dòng B, lúc xếp việc thì đụng J đang chờ nên gộp vào (không tạo việc mới).
+3. Worker nhận J ở .116 và **xong ở .135, chỉ 19 ms**. Câu đánh dấu "mọi dòng đang chờ của đơn → xong" chạy lúc giao dịch của B **chưa commit** nên không thấy dòng B.
+4. B commit, thành dòng PENDING không còn việc nào trỏ tới, và không bao giờ tự xong.
+
+Tác động: **dữ liệu đơn vẫn đúng**, vì J kéo sàn sau khi B tới. Chỉ có dòng tra soát kẹt lại, và HQ báo đỏ oan và báo mãi. Hại thật nằm ở chỗ ở quy mô triệu đơn, các dòng kẹt này sẽ cộng dồn, dấu hiệu đỏ thường trực sẽ che mất lúc hàng đợi dồn thật. Kẽ hở này nằm sẵn trong thiết kế "gộp vào việc đang chờ", deploy không liên quan. Nó chỉ lộ ra khi handler chạy nhanh hơn phần còn lại của giao dịch bên kia.
+
+Sửa: thêm **vòng quét dòng mồ côi** ở worker (`sweepOrphanOrderEvents`, `backend/src/workers/event-queue.ts`), chạy 5 phút một lần. Vòng quét tìm các đơn có dòng PENDING đã chờ quá 10 phút (chỉ 3 sàn, không đụng dòng MISA/HUBTAX). Đơn nào không còn việc sống thì được xếp lại một việc kéo đơn. Việc đó đánh dấu mọi dòng chờ của đơn, nên mọi nguyên nhân mồ côi đều được chữa, kể cả nguyên nhân chưa biết. Mỗi đơn mồ côi tốn thêm một lệnh gọi sàn. Con số 10 phút là em tự chọn, bằng 2 lần hạn giữ việc 300 giây. 10' + 5' vẫn dưới ngưỡng đỏ 30' của HQ, nên lần sau HQ không còn báo đỏ vì dòng mồ côi nữa. Em không vá kẽ hở ngay tại gốc, vì cách vá đó là khóa hàng giữa hai giao dịch: thêm độ trễ vào đường nhận webhook nóng chỉ để đổi lấy một dòng nhật ký.
 
 ### 3.4. Đẩy tồn
 
