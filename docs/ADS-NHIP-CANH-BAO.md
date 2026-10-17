@@ -547,3 +547,74 @@ workers/order-auto-sync.ts    nhịp xung / lịch sử gọi các tầng trên
 **Chưa đụng (ngoài phạm vi nhóm quảng cáo hôm nay):** tham số `scope` không dùng ở
 `tiktok-ads/auto-run.ts` `applyAutoPlan`; các hàm định dạng tiền riêng của mail / thanh
 toán / trợ lý hỏi đáp.
+
+## 13. Chống lỗi dây chuyền ở quy mô lớn — 4 lát (anh Trung chốt 17/10/2026, BẮT ĐẦU 18/10)
+
+### 13.1 Vì sao
+
+- Cầu dao bật/tắt theo app: 429 lẻ tẻ của vài gian → dừng Ads của MỌI gian 5–60'.
+  Đã vá ngưỡng (Tầng C, sửa 17/10) nhưng bản chất vẫn là "chạy hết tốc hoặc đứng hẳn".
+- **Đường lan sang đơn hàng (đọc mã 17/10, CHƯA ĐO):** xung Ads chạy CHUNG slot với
+  đồng bộ đơn (`order-auto-sync.ts`: quét đơn → xung Ads → đối soát giờ → Ads lịch sử,
+  trong `AUTO_SYNC_CONCURRENCY` = 3 slot). Ads chờ token / bị chặn = giữ slot → đơn và
+  đối soát của gian khác xếp sau. Sự cố quảng cáo có thể làm chậm đơn hàng.
+- **Sức chứa:** 50.000 gian × xung 30' × ~5 lệnh ≈ 12 triệu lệnh/ngày ≈ 140 lệnh/giây
+  (riêng Ads Shopee). `ADS_APP_QPS = 3` ≈ 260.000 lệnh/ngày ≈ **~1.000 gian** ở nhịp hiện
+  tại. Hàng chờ chỉ dàn đều đợt dồn, KHÔNG tạo thêm quota → quota là trần thật.
+- **Đầu mối gốc 429 lẻ tẻ:** Shopee trả lời 10/10 "cấp shop ~1 call/phút là được", còn
+  xung gọi 5–7 lệnh liền nhau cho một gian trong vài giây, và lệnh dính 429 luôn là
+  `get_all_cpc_ads_daily_performance` = lệnh thứ 4 của xung. Giả thuyết, chưa đo.
+
+### 13.2 Nguyên tắc
+
+1. **Tách khoang:** Ads hỏng không được chạm đơn / tồn / dòng tiền.
+2. **Cách ly theo gian:** một gian bị chặn chỉ gian đó lùi.
+3. **Chậm dần thay vì đứng hẳn:** điều tốc, không bật/tắt (trừ mã vượt trần app thật).
+4. **Hàng chờ phải có gộp + ưu tiên + hạn chót + đồng hồ đo tồn** — không xếp vô hạn.
+   Hàng chờ = các cột lịch `next*At` trên Channel (mỗi gian một dòng, gộp sẵn). KHÔNG
+   dùng pg-boss cho từng lệnh API (12 triệu việc/ngày, bẫy gộp theo khóa).
+5. **Logic tách khỏi thông số:** mọi số ở 13.4 nằm trong `config/ads-cadence.ts` (đọc env,
+   có mặc định), mã không rải số. Đo xong chỉ đổi env / một dòng cấu hình.
+
+### 13.3 Bốn lát (làm theo thứ tự)
+
+| Lát | Việc | Kết quả cho seller |
+|---|---|---|
+| 1 | **Tách làn Ads** khỏi vòng đồng bộ đơn: vòng nhặt việc riêng (gian có `nextAdsPulseAt` / `nextAdsSyncAt` đến hạn), khóa riêng, số luồng riêng. Có thể cần cột `adsLockedAt` → trình SQL trước. | Ads sập / bị chặn hẳn thì đơn, tồn, dòng tiền vẫn chạy bình thường |
+| 2 | **Cách ly theo gian, lưu DB:** 429 → gian đó lùi theo bậc, có xáo trộn; bậc lưu DB (khởi động lại / nhiều worker vẫn đúng). Kèm **giãn lệnh trong một xung** của cùng gian (thử nghiệm giả thuyết 13.1). | Một gian bị chặn không ảnh hưởng gian khác |
+| 3 | **Điều tốc thích ứng (AIMD)** thay cầu dao bật/tắt: tỷ lệ 429 tăng → hạ tốc; khỏe → tăng dần tới trần. Cầu dao dừng hẳn chỉ còn cho `exceed_partner_api`. | Số chậm hơn chút, không bao giờ đứng hẳn |
+| 4 | **Ưu tiên + hạn chót + đo nhu cầu/quota** (gộp lát 3.4 GĐ3 — chia quota giữa worker): nhóm 1 gian bật Trợ lý tự thực thi + đang tiêu tiền, nhóm 2 có chiến dịch chạy, nhóm 3 không ads; xung trễ > hạn chót thì bỏ chờ xung kế; nhu cầu vượt ngưỡng → tự giãn nhóm 3 rồi nhóm 2; thẻ HQ "Nhu cầu / Quota Ads". | Gian cần cảnh báo tiền luôn được phục vụ trước |
+
+### 13.4 Thông số — TẤT CẢ là số TỰ CHỌN tới khi đo
+
+| Thông số (env) | Khởi điểm | Lát | Nguồn | Đo lại ở mốc |
+|---|---|---|---|---|
+| `ADS_STORM_RATIO` (tỷ lệ gian dính 429 → bão) | 0,2 | đã có (17/10) — lát 3 thay bằng ngưỡng AIMD | tự chọn | Đ1 |
+| `ADS_CONCURRENCY` (số luồng làn Ads) | 2 | 1 | tự chọn | Đ1, Đ2 |
+| `ADS_SHOP_BACKOFF_MIN` / `_MAX_MIN` (lùi gian) | 15' → 120' | 2 | 15' có từ 28/09; 120' tự chọn | Đ1 |
+| `ADS_SHOP_CALL_GAP_SEC` (giãn lệnh trong xung một gian) | 0 (tắt) → thử 5 | 2 | Shopee 10/10 "~1 call/phút cấp shop" là hướng dẫn chung | Đ1 (so 429 bật/tắt) |
+| `ADS_AIMD_DECREASE` (hạ tốc) | × 0,5 | 3 | tự chọn (kiểu TCP) | Đ2 |
+| `ADS_AIMD_INCREASE_PCT` (tăng mỗi phút) | +10 % | 3 | tự chọn | Đ2 |
+| `ADS_AIMD_TRIGGER` (tỷ lệ 429 / lệnh để hạ tốc) | 5 % | 3 | tự chọn | Đ1, Đ2 |
+| `ADS_APP_QPS` (trần) | 3 | có sẵn | tự chọn (Shopee không công khai) | Đ3 (ticket) |
+| `ADS_DEMAND_STRETCH_PCT` (nhu cầu / quota → giãn nhịp) | 80 % | 4 | tự chọn | Đ4 |
+| `ADS_PULSE_DEADLINE_X` (hạn chót = x × nhịp) | 2 | 4 | tự chọn | Đ2 |
+
+### 13.5 Lịch đo lại (đếm **gian Shopee ACTIVE nối app Hubsell Ads**, vì quota tính theo app)
+
+| Mốc | Khi nào | Đo gì | Việc |
+|---|---|---|---|
+| Đ0 | Sáng 18/10, trước lát 1 | tripCount/ngày, log `[ApiBudget] 429` (gian, lệnh, giờ), thời gian giữ slot của xung | Mốc gốc để so |
+| Đ1 | **7 ngày sau lát 3 lên prod** (cỡ 30–60 gian) | tỷ lệ 429/gian/ngày, lệnh/xung thật, 429 khi bật/tắt giãn lệnh | Chỉnh 15', `CALL_GAP`, `AIMD_TRIGGER`, `CONCURRENCY` |
+| Đ2 | **200 gian** (~20 % sức chứa) | tốc độ AIMD có dao động không, độ trễ xung nhóm 1 | Chỉnh hạ/tăng, hạn chót |
+| Đ3 | **500 gian** (~50 % sức chứa) | nhu cầu / quota thật, log 429 kèm request_id | **Mở ticket Shopee xin nâng quota** (lần trước 12/09 → 10/10 mới trả lời ≈ 4 tuần, nên phải mở ở nửa đường) |
+| Đ4 | **800 gian** (~80 %) | giãn nhịp tự động có kích hoạt đúng, nhóm 1 giữ nhịp | Chỉnh `DEMAND_STRETCH_PCT`; quota chưa nâng thì báo anh |
+
+Chưa chạm mốc gian thì vẫn đo theo thời gian: Đ1 xong thì 30 ngày/lần đọc lại 13.4.
+
+### 13.6 Nhắc nhở
+
+- **Trên HQ (làm trong lát 1):** thêm chỉ số `shopeeAdsShops` vào `GrowthMetrics`
+  (`config/capacity-plan.ts`) và các mốc Đ2/Đ3/Đ4 có checklist → HQ tự hiện "sắp chạm
+  mốc" + ngày dự kiến như các mốc hạ tầng M1…, không phụ thuộc trí nhớ.
+- **Memory** `hubsell-cau-dao-ads-bao-429-theo-gian` ghi lịch đo, mỗi phiên đọc lại.
