@@ -41,11 +41,11 @@ import { enqueue, hasLiveJob, QUEUES, registerWorker } from "../lib/queue";
 import { EVT_ORDER_MAX_ATTEMPTS, evtOrderConcurrency, POLL_FAST_SECONDS, POLL_SLOW_SECONDS } from "../lib/queue-config";
 import { prisma } from "../lib/prisma";
 import {
+  findStalePendingOrderEvents,
   markEventById,
   markOrderEventsDone,
   markOrderEventsError,
   markOrderEventsFailed,
-  findStalePendingOrderEvents,
   orderEventKey,
   type AuthEventJob,
   type OrderEventJob,
@@ -183,7 +183,7 @@ export async function runDeadEventJob(job: OrderEventJob | AuthEventJob): Promis
  * của evt.order (expireInSeconds 300) — việc bình thường xử lý trong vài giây, việc
  * đang thử lại thì còn việc sống nên không bị đụng.
  */
-export const ORPHAN_AFTER_MINUTES = 10;
+const ORPHAN_AFTER_MINUTES = 10;
 /** Nhịp quét. 10' + 5' vẫn dưới ngưỡng đỏ hộp thư đến của HQ (webhookOldestMin = 30'). */
 const ORPHAN_SWEEP_MS = 5 * 60 * 1000;
 /** Trần đơn mỗi lượt quét — worker chết lâu thì dòng dồn nhiều nhưng đều còn việc sống. */
