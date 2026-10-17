@@ -29,7 +29,7 @@
       "android": {
         "serviceAccountKeyPath": "./google-play-service-account.json",
         "track": "production",
-        "releaseStatus": "draft"
+        "releaseStatus": "completed"
       },
       "ios": {
         "ascApiKeyPath": "./asc-api-key.p8",

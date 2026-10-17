@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 17/10/2026 (sáng) — ANDROID 1.1.0: GOOGLE ĐÃ PHÁT HÀNH, MÁY ANH CHƯA TỰ CẬP NHẬT = NHỊP PLAY STORE; eas.json releaseStatus → completed + script play-status
+
+- **Anh hỏi: Play đã có 1.1.0 mà điện thoại không tự cập nhật.** Play Console cần đăng nhập Google (trình duyệt tích hợp không có phiên) → em hỏi thẳng **Google Play Developer API** bằng khóa service account `eas-submit@hubsell-play`: kênh production release **"1.1.0 (3)" status `completed`** (phát hành 100%), AAB vc 2 + 3; trang kho công khai play.google.com đã hiện "Tính năng mới Bản 1.1.0", cập nhật 16/10. Anh xác nhận cài từ Play + Wi-Fi mạnh → kết luận: phía Google đúng, chỉ là nhịp tự cập nhật của Play Store trên máy (≤24h, chạy khi máy rảnh) → bấm Cập nhật tay / Quản lý ứng dụng và thiết bị / xóa cache Play Store. Cột "Người dùng đã cài đặt = 0" trên Console = thống kê trễ 1–2 ngày.
+- **Anh chốt 2 việc:** (1) `hubsell-mobile/eas.json` submit.android.releaseStatus `draft` → **`completed`**: từ giờ `npx eas-cli submit -p android --latest` xong là bản phát hành nằm trên Production, Google duyệt xong tự lên Play, không phải vào Console bấm Gửi (ảnh/ghi chú listing vẫn là thay đổi riêng trên Console); (2) script tạm → **`hubsell-mobile/scripts/play-status.mjs`** (cạnh asc-release.mjs; chỉ đọc: tạo edit tạm → tracks + bundles → xóa edit; `--json`), đã chạy thử ra đúng 4 kênh. Docs DUA-APP (mục service account, mục 1.1.0, mục 5 lệnh).
+- Chưa kiểm trên máy anh sau khi bấm Cập nhật tay.
+
+---
+
 ## Phiên 17/10/2026 (sáng) — BẢNG GIÁ LANDING THÊM DÒNG TÀI KHOẢN NHÂN VIÊN — ✅ LANDING LIVE + maxStaff PROD ĐÃ ĐẶT
 
 - **Anh gửi ảnh bảng giá: "các gói đang không nói rõ số lượng nhân viên, bổ sung ngay".** Sửa `hubsell-landing/src/components/landing/pricing.tsx`: mỗi thẻ thêm gạch thứ 3 **"N tài khoản nhân viên"** (Enterprise: "Thỏa thuận số nhân viên"), bảng so sánh chi tiết thêm hàng "Tài khoản nhân viên (không tính chủ shop)", chú thích dưới lưới + câu "Khác biệt giữa các gói…" nêu đủ 3 trục đơn / gian / nhân viên. tsc xanh; soi preview /bang-gia desktop + 375px (không tràn ngang), bảng chi tiết đúng hàng.
