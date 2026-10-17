@@ -1,0 +1,4 @@
+Bản 1.2.0:
+• Trợ lý quảng cáo TikTok có tab Gợi ý: sản phẩm nên chạy / chạy thử quảng cáo, kèm ROI mục tiêu và ngân sách ngày nên đặt.
+• Trang Quảng cáo gọn hơn: bỏ khối Cần xử lý phía trên chỉ số (đã có tab Cần xử lý), chế độ Tự loại video hiện dòng riêng dễ nhìn.
+• Chiến dịch đã dừng gấp lại dưới danh sách Đang chạy.
