@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 17/10/2026 (sáng) — BẢNG GIÁ LANDING THÊM DÒNG TÀI KHOẢN NHÂN VIÊN — ĐÃ COMMIT LANDING, CHỜ ANH PUSH + ĐẶT maxStaff TRÊN PROD
+
+- **Anh gửi ảnh bảng giá: "các gói đang không nói rõ số lượng nhân viên, bổ sung ngay".** Sửa `hubsell-landing/src/components/landing/pricing.tsx`: mỗi thẻ thêm gạch thứ 3 **"N tài khoản nhân viên"** (Enterprise: "Thỏa thuận số nhân viên"), bảng so sánh chi tiết thêm hàng "Tài khoản nhân viên (không tính chủ shop)", chú thích dưới lưới + câu "Khác biệt giữa các gói…" nêu đủ 3 trục đơn / gian / nhân viên. tsc xanh; soi preview /bang-gia desktop + 375px (không tràn ngang), bảng chi tiết đúng hàng.
+- **Thang số em CHỌN (chưa có căn cứ riêng, anh chốt lại nếu muốn): trần nhân viên = trần gian hàng 3 / 5 / 10 / 20 / 40.** Lý do: (a) anh chốt 22/08 "gói to nhớ tăng trần gian hàng/nhân viên chứ đừng ∞"; (b) Growth trên prod đã = 5 nhân viên (kiểm 16/10) trùng 5 gian; (c) mô tả IAP Starter từng ghi "3 nhân viên". Backend `assertStaffSlot` đếm `user.count({ownerId})` → KHÔNG tính chủ shop, chữ landing ghi đúng luật đó.
+- **⚠️ LỆCH CẦN ANH XỬ LÝ TRÊN PROD:** `service_plans.maxStaff` hiện chỉ GROWTH = 5, còn STARTER / PRO / BUSINESS / SCALE = NULL → app /settings/plan đang in "Không giới hạn nhân viên" trong khi landing (và Quy chế Điều d "trần tài khoản nhân viên ghi tại bảng giá") ghi 3 / 10 / 20 / 40. Hai cách: vào HQ /admin/plans sửa ô Nhân viên từng gói, hoặc dán SQL Supabase (một dòng): `UPDATE service_plans SET "maxStaff" = CASE code WHEN 'STARTER' THEN 3 WHEN 'PRO' THEN 10 WHEN 'BUSINESS' THEN 20 WHEN 'SCALE' THEN 40 END WHERE code IN ('STARTER','PRO','BUSINESS','SCALE') AND "maxStaff" IS NULL;` — grandfather: shop đã có nhiều nhân viên hơn trần không bị xóa ai, chỉ không tạo thêm. Mô tả IAP Starter trên ASC (16/10 vừa bỏ "3 nhân viên", đang chờ Apple duyệt) có thể thêm lại ở lần cập nhật sau, không cần nộp riêng.
+
+---
+
 ## Phiên 16/10/2026 (khuya, sau 22h) — HQ SỨC KHỎE BÁO VÀNG OAN: GIAN NGỦ ĐÔNG LÀM "MỐC NƯỚC TRỄ 233'" + 2.410 VÉ CỨU ĐƠN CỦA TÍNH NĂNG ĐÃ ẨN — ĐÃ SỬA, CHỜ ANH PUSH
 
 - **Anh gửi ảnh "Việc nên làm hôm nay" 2 dòng vàng.** Soi mã, không soi được prod (SQL chỉ đọc để anh dán ở `docs/DONG-BO-GIAI-DOAN-3.md` 3.3 mục 3):
