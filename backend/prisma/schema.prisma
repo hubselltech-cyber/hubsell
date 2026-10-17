@@ -2596,6 +2596,18 @@ enum ConsultLeadStatus {
   DROPPED // không chốt được / lead rác
 }
 
+/// Bộ đếm sự kiện landing theo ngày giờ VN (17/10/2026): lượt mở trang công cụ
+/// /tinh-roas-hoa-von và lượt bấm nút đăng nhập. Ghi qua POST
+/// /api/public/landing-event (danh sách sự kiện cố định), cộng dồn bằng SQL.
+model LandingEventDaily {
+  day   DateTime @db.Date
+  event String
+  count Int      @default(0)
+
+  @@id([day, event])
+  @@map("landing_event_daily")
+}
+
 /// LEAD TƯ VẤN TỪ LANDING (hubsell.tech) — khách CHƯA có tài khoản để lại
 /// Tên + Email + SĐT qua form public. KHÁC PlanUpgradeRequest (khách ĐÃ đăng
 /// nhập gửi từ /settings/plan). Gói khách chốt cuối cùng KHÔNG ghi ở đây —

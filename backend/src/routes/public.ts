@@ -103,4 +103,51 @@ router.post("/consult-lead", async (req, res, next) => {
   }
 });
 
+// ------------------------------------------------------------
+// POST /api/public/landing-event — { event } (17/10/2026, anh Trung: "thêm lượt
+// đếm, nhỏ thôi để mình quan sát"). Đếm trang công cụ /tinh-roas-hoa-von của
+// landing: cộng 1 vào dòng (ngày giờ VN, sự kiện) của bảng landing_event_daily.
+// Không lưu IP / người. Chỉ nhận sự kiện trong danh sách; rate-limit riêng
+// 120 lượt/IP/giờ để script không thổi phồng số.
+// Xem số: hubsell-marketing/so-lieu/SQL-LUOT-DEM-LANDING.sql (repo Hubsell).
+// ------------------------------------------------------------
+const LANDING_EVENTS = new Set(["roas_tool_view", "roas_tool_login_click"]);
+const EVENT_RATE_MAX = 120;
+const eventHits = new Map<string, { count: number; windowStart: number }>();
+
+function eventOverLimit(ip: string): boolean {
+  const now = Date.now();
+  const h = eventHits.get(ip);
+  if (!h || now - h.windowStart > RATE_WINDOW_MS) {
+    eventHits.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  h.count += 1;
+  return h.count > EVENT_RATE_MAX;
+}
+
+router.post("/landing-event", async (req, res, next) => {
+  try {
+    const event = String((req.body ?? {}).event ?? "");
+    if (!LANDING_EVENTS.has(event)) {
+      res.status(400).json({ error: "Sự kiện không hợp lệ." });
+      return;
+    }
+    const ip = String(req.headers["x-forwarded-for"] ?? req.ip ?? "?")
+      .split(",")[0]
+      .trim();
+    if (eventOverLimit(ip)) {
+      res.json({ ok: true }); // vượt nhịp: nuốt lặng lẽ, không đếm
+      return;
+    }
+    await prisma.$executeRaw`
+      INSERT INTO "landing_event_daily" ("day", "event", "count")
+      VALUES ((now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date, ${event}, 1)
+      ON CONFLICT ("day", "event") DO UPDATE SET "count" = "landing_event_daily"."count" + 1`;
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
