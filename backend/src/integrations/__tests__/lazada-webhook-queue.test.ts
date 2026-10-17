@@ -24,6 +24,7 @@ import { prisma } from "../../lib/prisma";
 import { createApp } from "../../app";
 import { startQueue, stopQueue } from "../../lib/queue";
 import { registerEventQueueWorkers, runDeadEventJob, runOrderEventJob, sweepOrphanOrderEvents } from "../../workers/event-queue";
+import { POLL_SLOW_SECONDS } from "../../lib/queue-config";
 import { createStockFixture, type StockFixture } from "./fixtures";
 import { getMultipleOrderItems, getOrder } from "../lazada/client";
 
@@ -34,6 +35,11 @@ vi.mock("../lazada/client", async (importOriginal) => {
 
 process.env.LAZADA_APP_KEY ??= "test-app-key";
 process.env.LAZADA_APP_SECRET ??= "test-app-secret";
+// Việc pg-boss tự chép sang hàng đợi lỗi (và lượt thử lại) KHÔNG phát NOTIFY — 12.35.1
+// chỉ phát khi gửi / sửa việc — nên worker evt.dead chỉ nhặt nó ở nhịp lưới đỡ (mặc
+// định 30 giây, từ 08/10). Test hạ lưới đỡ về đúng nhịp hỏi evt.dead (thư viện không
+// cho thấp hơn) để ca "sàn lỗi" không phải chờ nửa phút.
+process.env.QUEUE_NOTIFY_POLL_SECONDS = String(POLL_SLOW_SECONDS);
 
 let server: Server;
 let baseUrl: string;
