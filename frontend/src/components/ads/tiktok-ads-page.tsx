@@ -22,7 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRight, CircleHelp, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Unlink, Wallet } from "lucide-react";
+import { ArrowRight, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Unlink, Wallet } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
@@ -45,6 +45,7 @@ import { HintIcon } from "@/components/finance/hint-icon";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { AppShell } from "@/components/shell/app-shell";
+import { GuideVideoLink, TIKTOK_ADS_VIDEO_ID } from "@/components/tour/guide-video-dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -478,16 +479,13 @@ export function TiktokAdsPage() {
               }
               value={tab}
               onChange={setTabPick}
-              // Link tour Hướng dẫn sử dụng của chính trang này (anh Trung 16/10).
+              // Video hướng dẫn anh Trung tự quay — mở ngay trên trang, nút X để tắt (17/10).
               trailing={
-                <a
-                  href="/guide?muc=tiktok-ads"
-                  className="flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
-                  title="Video hướng dẫn: kết nối, đọc số, soi video, cấu hình tự động loại"
-                >
-                  <CircleHelp className="size-3.5" />
-                  Video hướng dẫn
-                </a>
+                <GuideVideoLink
+                  videoId={TIKTOK_ADS_VIDEO_ID}
+                  title="Hướng dẫn Trợ lý quảng cáo TikTok (GMV Max)"
+                  hint="Video hướng dẫn: kết nối, đọc số, soi video, cấu hình tự động loại"
+                />
               }
             />
           )}

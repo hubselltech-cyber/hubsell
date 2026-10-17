@@ -20,6 +20,7 @@ import {
 import { AppShell } from "@/components/shell/app-shell";
 import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 import { TourPlayer } from "@/components/tour/guide-tour-player";
+import { TIKTOK_ADS_VIDEO_ID, YoutubeEmbed } from "@/components/tour/guide-video-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -150,7 +151,7 @@ const SECTIONS: GuideSection[] = [
     description:
       "Kết nối tài khoản quảng cáo, ROI hòa vốn và nhận định từng chiến dịch, soi video tiêu tiền không ra đơn, loại tay và cấu hình Tự động loại video.",
     tour: TIKTOK_ADS_TOUR,
-    youtubeId: "jaGQEWVCPbs",
+    youtubeId: TIKTOK_ADS_VIDEO_ID,
   },
   {
     key: "staff-plan",
@@ -244,16 +245,7 @@ function GuideAccordionItem({
           </div>
           <div className="mx-auto max-w-3xl px-4 py-5">
             {section.youtubeId ? (
-              <div className="aspect-video w-full overflow-hidden rounded-xl border bg-black">
-                <iframe
-                  src={`https://www.youtube-nocookie.com/embed/${section.youtubeId}?rel=0`}
-                  title={`Hướng dẫn: ${section.title}`}
-                  className="size-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  referrerPolicy="strict-origin-when-cross-origin"
-                  allowFullScreen
-                />
-              </div>
+              <YoutubeEmbed videoId={section.youtubeId} title={`Hướng dẫn: ${section.title}`} />
             ) : (
               <TourPlayer
                 steps={section.tour.steps}
