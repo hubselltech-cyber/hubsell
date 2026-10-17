@@ -58,6 +58,7 @@ Phần dưới đây là lịch sử kỹ thuật của hệ thống, giữ nguy
 | Hàm thuần phía web | `frontend/src/lib/` | trong component |
 | Tài liệu thiết kế / quyết định | `docs/<CHU-DE>.md` (chữ in hoa, không dấu), chỉ mục ở `docs/README.md`; marketing → `docs/marketing/`, store → `docs/store/` | gốc repo (chỉ README, PROGRESS, TODO) |
 | Công cụ ngoài app (chạy trên máy anh) | `tools/<tên>/` | `docs/` |
+| Việc marketing mới (chiến lược, số liệu khách, nội dung kênh, skill marketing) | `hubsell-marketing/` theo bảng trong `hubsell-marketing/CLAUDE.md` | backend/, frontend/, docs/ |
 
 ```
 hubsell/
@@ -121,8 +122,13 @@ hubsell/
 │       │                                #   + lõi dùng chung: order-sync-write, sync-contract, stock-push-worker
 │       └── marketplace/                 # Lớp trừu tượng sàn + adapter + mockMarketplace (giả lập)
 │
-└── hubsell-mobile/                      # Expo — một bản dựng iOS/Android (Google Play đã phát hành)
-    └── src/{app,screens,components,api,auth,plan,theme,lib,types}
+├── hubsell-mobile/                      # Expo — một bản dựng iOS/Android (Google Play đã phát hành)
+│   └── src/{app,screens,components,api,auth,plan,theme,lib,types}
+│
+└── hubsell-marketing/                   # Làm marketing, KHÔNG có mã app (luật riêng: hubsell-marketing/CLAUDE.md)
+    ├── .agents/product-marketing.md     # Bối cảnh sản phẩm mọi skill đọc
+    ├── .claude/skills/                  # 50 skill marketing (coreyhaines31/marketingskills, MIT)
+    └── so-lieu/ · chien-luoc/ · kenh/ · khach-hang/
 ```
 
 Không nằm trong repo: `hubsell-landing/` (repo riêng, ignore), `certs/` (cert local), `.claude/worktrees/` (phiên phụ của app).
