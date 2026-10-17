@@ -1,0 +1,407 @@
+<title>Hubsell 90 ngày tới khách</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Bố cục: một cột đọc dọc như bản kế hoạch giao việc — tóm tắt → phễu → 3 việc → lịch 12 tuần → máy tính thử → tuần này */
+:root{
+  --bg:#f6f8f7; --surface:#ffffff; --ink:#14201b; --muted:#5b6b64; --line:#dde5e1;
+  --accent:#0f7a55; --accent-soft:#e3f3ec; --warn:#a85b00; --warn-soft:#fdf0dc; --bad:#b4262b; --bad-soft:#fbe5e6;
+  --sky:#1f5fa8; --sky-soft:#e4eefa; --plum:#7a3fa0; --plum-soft:#f1e7f7;
+  --display:"Be Vietnam Pro",system-ui,sans-serif; --body:"Be Vietnam Pro",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1513; --surface:#16201c; --ink:#e6eeea; --muted:#9aaba3; --line:#2a3833;
+  --accent:#43c08f; --accent-soft:#16352a; --warn:#f0a447; --warn-soft:#3a2a12; --bad:#f07a7e; --bad-soft:#3d1c1e;
+  --sky:#7fb2ec; --sky-soft:#17283d; --plum:#c79ae6; --plum-soft:#2c1d38; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1513; --surface:#16201c; --ink:#e6eeea; --muted:#9aaba3; --line:#2a3833;
+  --accent:#43c08f; --accent-soft:#16352a; --warn:#f0a447; --warn-soft:#3a2a12; --bad:#f07a7e; --bad-soft:#3d1c1e;
+  --sky:#7fb2ec; --sky-soft:#17283d; --plum:#c79ae6; --plum-soft:#2c1d38; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.6}
+.wrap{max-width:980px;margin:0 auto;padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:48px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.25}
+h1{font-size:clamp(26px,4.4vw,38px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:22px;font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--muted)}
+.sec{display:flex;flex-direction:column;gap:16px}
+.sec-head{display:flex;flex-direction:column;gap:6px;max-width:68ch}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px;white-space:nowrap}
+.pill.wait{background:var(--warn-soft);color:var(--warn)}
+.pill.ok{background:var(--accent-soft);color:var(--accent)}
+
+/* Hero */
+.hero{display:flex;flex-direction:column;gap:14px}
+.hero .lead{font-size:17px;max-width:62ch}
+.verdict{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px}
+.verdict div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.verdict b{font-size:15px}
+.verdict span{font-size:13.5px;color:var(--muted)}
+
+/* Đường khách đi */
+.flow{display:grid;grid-template-columns:1.2fr auto 1fr auto 1fr auto 1fr;gap:10px;align-items:center}
+.src{display:flex;flex-direction:column;gap:8px;min-width:0}
+.node{border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0;border:1px solid var(--line);background:var(--surface)}
+.node b{font-size:14px}
+.node span{font-size:12.5px;color:var(--muted)}
+.n2{background:var(--sky-soft);border-color:transparent}.n2 b{color:var(--sky)}
+.n3{background:var(--plum-soft);border-color:transparent}.n3 b{color:var(--plum)}
+.n1{background:var(--accent-soft);border-color:transparent}.n1 b{color:var(--accent)}
+.n0{border:2px solid var(--accent)}
+.arrow{font-size:20px;color:var(--muted);text-align:center}
+
+/* Phễu */
+.funnel{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px;position:relative;min-width:0}
+.step .n{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--muted)}
+.step .t{font-weight:600;font-size:14px}
+.step .q{font-size:12.5px;color:var(--muted)}
+.step.key{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.step.key .t{color:var(--accent)}
+.note{background:var(--warn-soft);color:var(--ink);border-radius:10px;padding:12px 16px;font-size:14px}
+.note b{color:var(--warn)}
+
+/* 3 việc */
+.bets{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.bet{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.bet .tag{align-self:flex-start;font-size:12px;font-weight:700;padding:3px 10px;border-radius:6px}
+.b1 .tag{background:var(--accent-soft);color:var(--accent)}
+.b2 .tag{background:var(--sky-soft);color:var(--sky)}
+.b3 .tag{background:var(--plum-soft);color:var(--plum)}
+.bet .what{font-size:14.5px}
+.who{display:grid;grid-template-columns:1fr;gap:8px}
+.who div{border-top:1px solid var(--line);padding-top:8px;font-size:13.5px}
+.who b{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.who ul{margin:0;padding-left:18px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13.5px;border-top:1px solid var(--line);padding-top:10px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+.kill{background:var(--bad-soft);border-radius:8px;padding:8px 10px;font-size:13px}
+.kill b{color:var(--bad)}
+.kill.ok-note{background:var(--accent-soft)}
+.kill.ok-note b{color:var(--accent)}
+
+/* Lịch */
+.gantt-box{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.gantt{display:grid;grid-template-columns:170px repeat(12,minmax(44px,1fr));min-width:760px;font-size:12.5px}
+.gantt > div{padding:8px 6px;border-bottom:1px solid var(--line)}
+.gh{font-family:var(--mono);color:var(--muted);text-align:center;font-size:11.5px}
+.gh small{display:block;font-family:var(--body);font-size:10.5px}
+.phase{grid-column:span 1;text-align:center;font-weight:700;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+.rl{font-weight:600;font-size:13px;display:flex;align-items:center}
+.bar{display:flex;align-items:center}
+.bar span{display:block;width:100%;border-radius:6px;padding:4px 8px;font-size:11.5px;font-weight:600;line-height:1.3}
+.c0 span{background:var(--warn-soft);color:var(--warn)}
+.c1 span{background:var(--accent-soft);color:var(--accent)}
+.c2 span{background:var(--sky-soft);color:var(--sky)}
+.c3 span{background:var(--plum-soft);color:var(--plum)}
+.cta{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:18px 20px}
+.cta-text{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cta-text b{font-size:16px}
+.btn{display:inline-block;background:var(--accent);color:var(--surface);font-weight:700;font-size:14.5px;text-decoration:none;padding:11px 18px;border-radius:10px;white-space:nowrap}
+.btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.cmp-box{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.cmp{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
+.cmp th,.cmp td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+.cmp th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.cmp th:last-child{color:var(--accent)}
+.cmp td:first-child{font-weight:600}
+.cmp td:nth-child(2){color:var(--muted)}
+.cmp tr:last-child td{border-bottom:0}
+
+/* Máy tính */
+.calc{display:grid;grid-template-columns:1fr 1fr;gap:20px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fields label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500}
+.fields input{font:inherit;font-family:var(--mono);font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+.fields input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.out{display:flex;flex-direction:column;gap:14px;min-width:0}
+.big{display:flex;flex-direction:column;gap:2px}
+.big .v{font-family:var(--mono);font-size:44px;font-weight:700;color:var(--accent);line-height:1.1}
+.big .l{font-size:13px;color:var(--muted)}
+.rows{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.rows div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.rows div span:last-child{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.say{border-radius:10px;padding:12px 14px;font-size:14px}
+.say.loss{background:var(--bad-soft)}
+.say.gain{background:var(--accent-soft)}
+.ex{font-size:12.5px;color:var(--muted)}
+
+/* Tuần này + không làm */
+.two{display:grid;grid-template-columns:1.2fr 1fr;gap:14px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.todo{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.todo li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;font-size:14px}
+.todo .who-tag{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:6px;margin-top:2px}
+.todo .anh{background:var(--warn-soft);color:var(--warn)}
+.todo .em{background:var(--accent-soft);color:var(--accent)}
+.no{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+.no li b{display:block;font-size:14px}
+.no li span{color:var(--muted)}
+footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+
+@media (max-width:820px){
+  .bets,.verdict,.two,.calc,.flow,.cta{grid-template-columns:1fr}
+  .btn{white-space:normal;text-align:center}
+  .arrow{transform:rotate(90deg);line-height:1}
+  .funnel{grid-template-columns:1fr 1fr}
+}
+@media (max-width:420px){.fields{grid-template-columns:1fr}.funnel{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">Kế hoạch marketing · 19/10/2026 → 10/01/2027</span>
+    <h1>90 ngày đưa Hubsell tới tay chủ shop</h1>
+    <p class="lead">Một kênh chính, một đội tiếp thị, một công cụ kéo khách quay lại. Không chạy quảng cáo trả tiền, không rải mười kênh. Mỗi việc có người làm, ngày làm, con số để đo và mốc để dừng nếu không ăn.</p>
+    <div class="verdict">
+      <div><b>Bài toán đáng làm</b><span>Tiền quảng cáo là nỗi đau lớn và xảy ra hằng ngày với chủ shop.</span></div>
+      <div><b>Đang ở giai đoạn mài khách đầu</b><span>Quảng cáo trả tiền lúc này là đốt tiền, vì chưa biết khách ở lại bao lâu.</span></div>
+      <div><b>Nguồn lực: anh + em, gần 0 đồng</b><span>Chỉ chọn việc có đòn bẩy: anh tự nói, công cụ miễn phí, đối tác có sẵn khách.</span></div>
+    </div>
+  </header>
+
+  <section class="sec" id="duong-khach">
+    <div class="sec-head">
+      <span class="eyebrow">Đường khách đi</span>
+      <h2>Thấy số thật → tự tính thử → đăng nhập để tính bằng đơn thật</h2>
+      <p class="muted">Cả ba việc đổ về một chỗ: máy tính ROAS hòa vốn. Tính tay chỉ ra con số ước lượng; muốn con số đúng từ lãi lỗ thật từng đơn trên sàn thì phải đăng nhập Hubsell.</p>
+    </div>
+    <div class="flow">
+      <div class="src">
+        <div class="node n2"><b>Bài trong nhóm nhà bán</b><span>Kênh chính · số liệu thật shop nhà</span></div>
+        <div class="node n3"><b>Video người dạy bán hàng</b><span>YouTube, TikTok · đội tiếp thị</span></div>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node n1"><b>Máy tính ROAS hòa vốn</b><span>hubsell.vn, không cần đăng ký</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node n0"><b>Đăng nhập Hubsell</b><span>Tính bằng lãi lỗ thật từng đơn, mọi sản phẩm</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node nx"><b>Dùng thử 14 ngày → trả tiền</b><span>Trợ lý canh chiến dịch mỗi ngày</span></div>
+    </div>
+  </section>
+
+  <section class="sec" id="pheu">
+    <div class="sec-head">
+      <span class="eyebrow">Trước hết</span>
+      <h2>Phễu khách đang rò ở bước nào?</h2>
+      <p class="muted">Đổ thêm khách vào phễu thủng là phí. Năm con số dưới đây quyết định việc nào làm trước.</p>
+    </div>
+    <div class="funnel">
+      <div class="step"><span class="n">?</span><span class="t">Đăng ký</span><span class="q">SQL khối 1, 2</span></div>
+      <div class="step"><span class="n">?</span><span class="t">Nối gian trong 7 ngày</span><span class="q">SQL khối 2</span></div>
+      <div class="step"><span class="n">?</span><span class="t">Có chi ads 30 ngày</span><span class="q">SQL khối 1, 4</span></div>
+      <div class="step key"><span class="n">?</span><span class="t">Được trợ lý canh trong tuần</span><span class="q">Thước đo chính</span></div>
+      <div class="step"><span class="n">?</span><span class="t">Trả tiền</span><span class="q">SQL khối 1, 3</span></div>
+    </div>
+    <p class="note"><b>Chờ anh:</b> dán 6 khối trong <span class="num">so-lieu/SQL-SO-THAT-KHACH-HANG.sql</span> vào Supabase. Nếu dưới một nửa khách đăng ký nối gian trong 7 ngày (mốc tự chọn), tuần 3–4 dồn sức sửa onboarding trước, ba việc dưới lùi lại.</p>
+  </section>
+
+  <section class="sec" id="ba-viec">
+    <div class="sec-head">
+      <span class="eyebrow">Ba việc chính</span>
+      <h2>Mỗi việc: ai làm, đo bằng gì, khi nào dừng</h2>
+    </div>
+    <div class="bets">
+      <article class="bet b2">
+        <span class="tag">Kênh chính · Đăng bài nhóm</span>
+        <h3>Số liệu thật trong nhóm nhà bán</h3>
+        <p class="what">3 bài/tuần trong nhóm Facebook, Zalo nhà bán sàn. Mỗi bài một chuyện có số thật của shop nhà: "ROAS 5 mà vẫn lỗ, đây là lý do". Người đọc thấy giá trị trước, rồi tự bấm máy tính, rồi đăng ký dùng thử.</p>
+        <div class="who">
+          <div><b>Em làm</b><ul><li>Soạn sẵn bài + ảnh số thật mỗi tuần</li><li>Lọc danh sách nhóm đúng chân dung, ghi luật đăng của từng nhóm</li></ul></div>
+          <div><b>Anh làm</b><ul><li>Đăng bằng tài khoản cá nhân, trả lời bình luận</li></ul></div>
+        </div>
+        <dl class="kv"><dt>Tuần</dt><dd class="num">2 → 12</dd><dt>Đo</dt><dd>Đăng ký qua đường dẫn riêng của từng nhóm</dd></dl>
+        <p class="kill"><b>Lưu ý:</b> nhiều nhóm cấm bài quảng cáo. Bài phải là chia sẻ số liệu, đường dẫn để ở bình luận hoặc khi có người hỏi.</p>
+        <p class="kill"><b>Dừng nếu</b> sau 6 tuần (~18 bài) dưới 10 đăng ký có mã (mốc tự chọn) → đổi nhóm hoặc dạng bài.</p>
+      </article>
+
+      <article class="bet b3">
+        <span class="tag">Đội tiếp thị · Người dạy bán hàng</span>
+        <h3>Kênh YouTube, TikTok dạy bán sàn</h3>
+        <p class="what">Người dạy Shopee/TikTok có sẵn hàng nghìn học viên đúng chân dung và được tin hơn quảng cáo. Mời họ dùng miễn phí, làm 1 video "soi lãi thật" trên kênh của họ. Lời mời nhấn vào chữ "trọn đời": khách giới thiệu hôm nay còn trả tiền năm sau thì họ vẫn nhận.</p>
+        <div class="who">
+          <div><b>Em làm</b><ul><li>Danh sách 15 kênh YouTube/TikTok + tin nhắn mời</li><li>Bộ tài liệu đối tác: kịch bản gợi ý, ảnh, đường dẫn riêng</li></ul></div>
+          <div><b>Anh làm</b><ul><li>Gửi lời mời, gọi người đồng ý</li></ul></div>
+        </div>
+        <dl class="kv"><dt>Tuần</dt><dd class="num">4 → 12</dd><dt>Đo</dt><dd>Đối tác hoạt động · khách qua giới thiệu · % trả tiền</dd></dl>
+        <p class="kill ok-note"><b>Hoa hồng (anh chốt 17/10):</b> 10 % trọn đời trên mọi lần khách trả tiền. Bậc thưởng: từ khách trả tiền thứ 100 trở đi, khách mới tính 15 % (mốc 100 là ví dụ anh nêu). Đăng ký suông không tính.</p>
+        <p class="kill"><b>Dừng nếu</b> mời 15 người mà dưới 2 người nhận sau 4 tuần (mốc tự chọn) → xem lại ưu đãi.</p>
+      </article>
+
+      <article class="bet b1">
+        <span class="tag">Công cụ · Kéo khách quay lại</span>
+        <h3>Máy tính ROAS hòa vốn trên hubsell.vn</h3>
+        <p class="what">Nơi bài nhóm và video đối tác dẫn về. Tính tay ra con số ước lượng; nút chính "Đăng nhập để tính bằng lãi lỗ thật từng đơn" đưa khách vào Hubsell. Bản thử ở dưới.</p>
+        <div class="who">
+          <div><b>Em làm</b><ul><li>Dựng trang /may-tinh-roas trên landing</li><li>Mỗi sàn, mỗi ngành một trang riêng để lên Google</li></ul></div>
+          <div><b>Anh làm</b><ul><li>Duyệt giao diện, bấm push</li></ul></div>
+        </div>
+        <dl class="kv"><dt>Tuần</dt><dd class="num">2 → 4</dd><dt>Đo</dt><dd>Lượt dùng/tuần · % bấm "Đăng nhập để tính bằng đơn thật"</dd></dl>
+        <p class="kill"><b>Dừng nếu</b> sau 4 tuần dưới 100 lượt dùng/tuần (mốc tự chọn) → đổi cách dẫn khách về, không bỏ công cụ.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="sec" id="lich">
+    <div class="sec-head">
+      <span class="eyebrow">Lịch 12 tuần</span>
+      <h2>Việc nào chạy tuần nào</h2>
+      <p class="muted">Kéo ngang trên điện thoại.</p>
+    </div>
+    <div class="gantt-box">
+      <div class="gantt" role="table" aria-label="Lịch 12 tuần">
+        <div></div>
+        <div class="phase" style="grid-column:span 2">Gỡ nút thắt</div>
+        <div class="phase" style="grid-column:span 2">Dựng nền</div>
+        <div class="phase" style="grid-column:span 4">Tăng tốc</div>
+        <div class="phase" style="grid-column:span 4">Nhân lên</div>
+
+        <div></div>
+        <div class="gh">T1<small>19/10</small></div><div class="gh">T2<small>26/10</small></div><div class="gh">T3<small>02/11</small></div><div class="gh">T4<small>09/11</small></div>
+        <div class="gh">T5<small>16/11</small></div><div class="gh">T6<small>23/11</small></div><div class="gh">T7<small>30/11</small></div><div class="gh">T8<small>07/12</small></div>
+        <div class="gh">T9<small>14/12</small></div><div class="gh">T10<small>21/12</small></div><div class="gh">T11<small>28/12</small></div><div class="gh">T12<small>04/01</small></div>
+
+        <div class="rl">Số liệu + phễu</div>
+        <div class="bar c0" style="grid-column:span 2"><span>Dán SQL · hỏi 5 khách</span></div>
+        <div class="bar c0" style="grid-column:span 2"><span>Sửa onboarding nếu rò</span></div>
+        <div style="grid-column:span 8"></div>
+
+        <div class="rl">Kênh chính · Bài nhóm</div>
+        <div></div>
+        <div class="bar c2" style="grid-column:span 11"><span>3 bài/tuần · từ tuần 4 dẫn về máy tính · tuần 7 xét mốc dừng</span></div>
+
+        <div class="rl">Đội tiếp thị · Người dạy</div>
+        <div style="grid-column:span 3"></div>
+        <div class="bar c3" style="grid-column:span 2"><span>Mời 15 kênh</span></div>
+        <div class="bar c3" style="grid-column:span 2"><span>Video đầu tiên</span></div>
+        <div class="bar c3" style="grid-column:span 5"><span>Nhân rộng kênh ra khách</span></div>
+
+        <div class="rl">Công cụ · Máy tính</div>
+        <div></div>
+        <div class="bar c1" style="grid-column:span 2"><span>Dựng + lên trang</span></div>
+        <div class="bar c1" style="grid-column:span 2"><span>Trang theo sàn/ngành</span></div>
+        <div class="bar c1" style="grid-column:span 7"><span>Đo % đăng nhập, sửa</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="may-tinh">
+    <div class="sec-head">
+      <span class="eyebrow">Bản thử công cụ</span>
+      <h2>Máy tính ROAS hòa vốn</h2>
+      <p class="muted">Đây là thứ chủ shop sẽ thấy trên hubsell.vn. Số đang điền là ví dụ, anh sửa thử. Tính tay chỉ ra con số ước lượng; ngay dưới kết quả là lý do phải đăng nhập Hubsell.</p>
+    </div>
+    <div class="calc">
+      <div class="fields">
+        <label for="p">Giá bán (₫)<input id="p" type="number" inputmode="numeric" value="200000" min="0" step="1000"></label>
+        <label for="c">Giá vốn (₫)<input id="c" type="number" inputmode="numeric" value="90000" min="0" step="1000"></label>
+        <label for="f">Tổng phí sàn (%)<input id="f" type="number" inputmode="decimal" value="18" min="0" max="100" step="0.5"></label>
+        <label for="k">Đóng gói, khác (₫/đơn)<input id="k" type="number" inputmode="numeric" value="5000" min="0" step="500"></label>
+        <label for="r">Tỉ lệ hoàn (%)<input id="r" type="number" inputmode="decimal" value="8" min="0" max="100" step="0.5"></label>
+        <label for="s">Mất mỗi đơn hoàn (₫)<input id="s" type="number" inputmode="numeric" value="30000" min="0" step="1000"></label>
+        <label for="x" style="grid-column:1/-1">ROAS sàn đang báo<input id="x" type="number" inputmode="decimal" value="3" min="0.1" step="0.1"></label>
+      </div>
+      <div class="out" aria-live="polite">
+        <div class="big"><span class="v num" id="be">—</span><span class="l">ROAS hòa vốn: thấp hơn mức này là lỗ</span></div>
+        <div class="rows">
+          <div><span>Phí sàn mỗi đơn</span><span id="o-fee">—</span></div>
+          <div><span>Lãi trước quảng cáo mỗi đơn (đã trừ hoàn)</span><span id="o-m">—</span></div>
+          <div><span>Tiền ads mỗi đơn ở ROAS đang báo</span><span id="o-ad">—</span></div>
+          <div><span>Lãi thật mỗi đơn</span><span id="o-net">—</span></div>
+        </div>
+        <p class="say" id="say">—</p>
+        <p class="ex">Cách tính: lãi trước ads = (1 − tỉ lệ hoàn) × (giá bán − phí sàn − giá vốn − đóng gói) − tỉ lệ hoàn × mất mỗi đơn hoàn. ROAS hòa vốn = giá bán ÷ lãi trước ads.</p>
+      </div>
+    </div>
+
+    <div class="cta">
+      <div class="cta-text">
+        <b>Con số trên là bạn tự đoán. Muốn đúng, hãy tính bằng đơn thật.</b>
+        <span class="muted">Đăng nhập Hubsell, nối gian hàng: ROAS hòa vốn được tính từ lãi lỗ thật của từng đơn trên sàn, cho mọi sản phẩm, cập nhật mỗi ngày. Dùng thử 14 ngày, không cần thẻ.</span>
+      </div>
+      <a class="btn" href="https://app.hubsell.vn" target="_blank" rel="noopener">Đăng nhập để tính bằng đơn thật</a>
+    </div>
+
+    <div class="cmp-box">
+      <table class="cmp">
+        <thead><tr><th>Dữ kiện</th><th>Tính tay ở đây</th><th>Trong Hubsell</th></tr></thead>
+        <tbody>
+          <tr><td>Phí sàn</td><td>Bạn đoán một con số %</td><td>Từng khoản phí thật trên từng đơn, lấy từ đối soát của sàn</td></tr>
+          <tr><td>Hàng hoàn, đơn hủy</td><td>Bạn đoán tỉ lệ</td><td>Hoàn, hủy thật của từng sản phẩm</td></tr>
+          <tr><td>Giá vốn</td><td>Nhập cho một sản phẩm</td><td>Theo từng gian, nhập một lần dùng mãi</td></tr>
+          <tr><td>Phạm vi</td><td>Một sản phẩm, một lần</td><td>Mọi sản phẩm, mọi chiến dịch, cả ba sàn</td></tr>
+          <tr><td>Sau khi tính</td><td>Tự nhớ, tự canh</td><td>Trợ lý báo chiến dịch dưới hòa vốn và gợi ý nâng ROAS, hạ ngân sách</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="two" id="tuan-nay">
+    <div class="box">
+      <span class="eyebrow">Tuần này (19–25/10)</span>
+      <h2>Ba việc để bắt đầu</h2>
+      <ul class="todo">
+        <li><span class="who-tag anh">Anh</span><span>Dán 6 khối SQL vào Supabase, gửi em kết quả. Toàn câu chỉ đọc, ra số đếm, không có thông tin khách.</span></li>
+        <li><span class="who-tag anh">Anh</span><span>Hỏi 5 khách đang dùng ba câu: Vì sao bạn thử Hubsell? Trước đó bạn làm thế nào? Hubsell biến mất thì bạn tiếc gì nhất?</span></li>
+        <li><span class="who-tag em">Em</span><span>Soạn 3 bài "soi lãi thật" đầu tiên từ số shop nhà + danh sách nhóm Facebook/Zalo để anh đăng tuần 2.</span></li>
+      </ul>
+    </div>
+    <div class="box">
+      <span class="eyebrow">Cố ý chưa làm</span>
+      <ul class="no">
+        <li><b>Chạy quảng cáo Facebook/Google</b><span>Chưa biết khách ở lại bao lâu thì chưa biết được trả bao nhiêu cho một khách.</span></li>
+        <li><b>Viết blog SEO</b><span>6–12 tháng mới có kết quả; máy tính miễn phí lấy phần Google nhanh hơn.</span></li>
+        <li><b>Cold email, LinkedIn, Product Hunt</b><span>Kênh của SaaS Mỹ, chủ shop Việt không ở đó.</span></li>
+        <li><b>Đổi giá gói</b><span>Chờ số chi ads của khách (SQL khối 4).</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>Các mốc dừng và ngưỡng đánh dấu "mốc tự chọn" là em đặt để có điểm xét, sẽ chỉnh khi có số thật. Bản chữ đầy đủ: hubsell-marketing/chien-luoc/CHAN-DOAN-BAN-DAU-2026-10-17.md.</footer>
+</div>
+
+<script>
+(function(){
+  var ids=["p","c","f","k","r","s","x"];
+  var fmt=new Intl.NumberFormat("vi-VN");
+  function money(v){return (v<0?"−":"")+fmt.format(Math.round(Math.abs(v)))+" ₫";}
+  function val(id){var n=parseFloat(document.getElementById(id).value);return isFinite(n)?n:0;}
+  function calc(){
+    var p=val("p"),c=val("c"),f=val("f")/100,k=val("k"),r=val("r")/100,s=val("s"),x=val("x");
+    var fee=p*f;
+    var margin=(1-r)*(p-fee-c-k)-r*s;
+    var ad=x>0?p/x:0;
+    var net=margin-ad;
+    document.getElementById("o-fee").textContent=money(fee);
+    document.getElementById("o-m").textContent=money(margin);
+    document.getElementById("o-ad").textContent=money(ad);
+    document.getElementById("o-net").textContent=money(net);
+    var be=document.getElementById("be"),say=document.getElementById("say");
+    if(margin<=0||p<=0){
+      be.textContent="Không có";
+      say.className="say loss";
+      say.textContent="Chưa chạy quảng cáo đã lỗ mỗi đơn. Chạy ads ở ROAS nào cũng lỗ thêm.";
+      return;
+    }
+    var b=p/margin;
+    be.textContent=b.toFixed(2);
+    if(net<0){
+      say.className="say loss";
+      say.textContent="Sàn báo ROAS "+x+" trông ổn, nhưng mỗi đơn bạn đang lỗ"+money(-net)+". Cần ROAS từ "+b.toFixed(2)+" trở lên mới hòa.";
+    }else{
+      say.className="say gain";
+      say.textContent="Ở ROAS "+x+" mỗi đơn lãi thật "+money(net)+". Chiến dịch có thể hạ ROAS xuống "+b.toFixed(2)+" mà chưa lỗ.";
+    }
+  }
+  ids.forEach(function(id){document.getElementById(id).addEventListener("input",calc);});
+  calc();
+})();
+</script>

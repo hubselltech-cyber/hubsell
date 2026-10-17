@@ -1,6 +1,6 @@
 # Product Marketing Context — Hubsell
 
-**Document version:** v1
+**Document version:** v3
 **Last updated:** 2026-10-17
 
 > Tệp nền mà MỌI skill marketing trong `hubsell-marketing/.claude/skills/` đọc trước khi làm.
@@ -156,6 +156,10 @@ nhận được (gợi ý tính từ giá gói × số tháng khách ở lại �
 *Decisions and tested lessons. Newest first.*
 | Date | Learning | Evidence | Applies to | Status |
 |------|----------|----------|------------|--------|
+| 2026-10-17 | Kênh chính = đăng bài số liệu thật vào nhóm nhà bán (Facebook, Zalo): khách thấy số thật, giá trị thật rồi đăng ký dùng thử | Anh Trung chốt | social, community-marketing | active |
+| 2026-10-17 | Đội tiếp thị = người dạy bán hàng trên YouTube, TikTok (giới thiệu học viên, ăn hoa hồng) | Anh Trung chốt | referrals, influencer-marketing, co-marketing | active |
+| 2026-10-17 | Hoa hồng đối tác giữ 10 % trọn đời (không tăng % tháng đầu); bậc thưởng 15 % cho khách mới từ khách trả tiền thứ 100 trở đi (mốc 100 là ví dụ anh nêu); lời mời nhấn chữ "trọn đời" | Anh Trung chốt | referrals, influencer-marketing, offers | active |
+| 2026-10-17 | Máy tính ROAS hòa vốn miễn phí là đích đến của mọi bài/video; thông điệp chính: tính tay chỉ là ước lượng, muốn chính xác theo lãi lỗ thật từng đơn trên sàn thì đăng nhập Hubsell | Anh Trung chốt | free-tools, copywriting, cro | active |
 | 2026-10-15 | Định vị = "Trợ lý quảng cáo đa sàn"; không gắn "lãi thật" vào tên/slogan, lãi thật là tính năng số 1 trong thân trang | Anh Trung chốt | Mọi kênh | active |
 | 2026-10-15 | Không đặt thẻ "Quảng cáo hôm nay" lên Tổng quan | Anh Trung chốt sau xem số thật | App, onboarding | active |
 | 2026-10-12 | Video bán cảm xúc: nỗi đau → nhẹ nhõm, app chỉ là bằng chứng vài giây | Anh duyệt video Đơn hàng v3 | Video, ads | active |
@@ -163,4 +167,6 @@ nhận được (gợi ý tính từ giá gói × số tháng khách ở lại �
 
 ## Changelog
 *Newest first.*
+- v3 (2026-10-17) — Learnings: chính sách hoa hồng đối tác 10 % trọn đời + bậc 15 % từ khách thứ 100.
+- v2 (2026-10-17) — Learnings: anh chốt kênh chính (bài nhóm), đội tiếp thị (người dạy YouTube/TikTok), máy tính ROAS hòa vốn dẫn về đăng nhập.
 - v1 (2026-10-17) — Bản đầu, tự soạn từ tài liệu định vị 15/10, bảng giá landing, README; các mục số liệu và lời khách thật còn trống.

@@ -1,5 +1,10 @@
 # Chẩn đoán marketing ban đầu — 17/10/2026
 
+> **Anh Trung chốt 17/10 (ghi đè thứ tự cược bên dưới):** kênh chính = đăng bài số liệu thật vào nhóm nhà bán;
+> đội tiếp thị = người dạy bán hàng trên YouTube, TikTok; máy tính ROAS hòa vốn là đích đến của mọi bài/video,
+> nút chính "Đăng nhập để tính bằng lãi lỗ thật từng đơn". Bản kế hoạch hiện hành có hình:
+> [ke-hoach-90-ngay.html](ke-hoach-90-ngay.html). Còn chờ anh chốt: ưu đãi riêng cho đối tác (10 % có thể chưa đủ).
+
 Bản này soạn TRƯỚC khi có số thật (chờ anh chạy `so-lieu/SQL-SO-THAT-KHACH-HANG.sql`). Mọi kết luận ở đây
 là **giả thuyết**, mỗi cái có một con số sẽ xác nhận hoặc bác bỏ. Khi có số: điền mục 2, rồi chạy
 `/marketing-plan hubsell` ra kế hoạch 90 ngày + 12 tháng đầy đủ trong `chien-luoc/`.
