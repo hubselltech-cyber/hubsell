@@ -40,7 +40,31 @@ export const TIKTOK_STATUS_LABEL: Record<TiktokStatusKey, string> = {
 export const TIKTOK_AUTO_MODE_LABEL: Record<TiktokAdsAutoMode, string> = {
   off: "Tắt",
   dry_run: "Diễn tập",
-  live: "Tự loại thật",
+  live: "Đang loại thật",
+};
+
+/**
+ * Nhãn chế độ Tự loại video trên THẺ chiến dịch — dòng riêng, màu riêng (anh Trung 17/10:
+ * "xuống dòng phần chế độ Tự loại / Diễn tập và đổi sang màu khác cho dễ phân biệt").
+ * Xanh da trời = diễn tập (chỉ ghi nhận), tím = đang loại thật; cố ý tránh xanh lá của
+ * "Đang chạy", đỏ / vàng của nhãn nhận định.
+ */
+export const TIKTOK_AUTO_MODE_PILL: Record<
+  Exclude<TiktokAdsAutoMode, "off">,
+  { label: string; bg: string; text: string; icon: string }
+> = {
+  dry_run: {
+    label: "Tự loại video · Diễn tập",
+    bg: "bg-sky-50 dark:bg-sky-500/15",
+    text: "text-sky-700 dark:text-sky-300",
+    icon: "#0369a1",
+  },
+  live: {
+    label: "Tự loại video · Đang loại thật",
+    bg: "bg-violet-50 dark:bg-violet-500/15",
+    text: "text-violet-700 dark:text-violet-300",
+    icon: "#6d28d9",
+  },
 };
 
 /** Màu nhãn nhận định theo tông (web TIKTOK_ADVICE_TONE). */

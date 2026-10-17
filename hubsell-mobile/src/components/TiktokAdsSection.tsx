@@ -26,29 +26,37 @@ import {
   openSellerCenter,
   sortAttention,
   TIKTOK_ADVICE_TONE,
-  TIKTOK_AUTO_MODE_LABEL,
+  TIKTOK_AUTO_MODE_PILL,
   TIKTOK_STATUS_LABEL,
   tiktokStatusKey,
 } from "@/lib/tiktok-ads";
 import { Card } from "@/components/Card";
 import { PlanLockedCard } from "@/components/PlanLockedCard";
 import { TiktokCampaignSheet } from "@/components/TiktokCampaignSheet";
+import { TiktokRecommendSection } from "@/components/TiktokRecommendSection";
 import { TABULAR } from "@/theme/tokens";
 
 /**
  * TRỢ LÝ QUẢNG CÁO TIKTOK trên app — thân của trang Quảng cáo khi chọn chip
  * TikTok (16/10/2026, docs/ADS-TIKTOK-TREN-MOBILE.md). Giữ đúng khung Shopee
- * (Cần xử lý → 4 số → tab → thẻ chiến dịch) để khách không học lại; chỉ đổi
- * thứ TikTok không có: không ví, không chế độ Trợ lý chung, không Tạm dừng.
+ * (4 số → tab → thẻ chiến dịch) để khách không học lại; chỉ đổi thứ TikTok
+ * không có: không ví, không chế độ Trợ lý chung, không Tạm dừng.
  * Việc app làm được thật với TikTok là LOẠI / KHÔI PHỤC VIDEO (màn Video);
  * việc còn lại (ROI, ngân sách, bật / tắt) dẫn sang Seller Center.
+ *
+ * 17/10 anh Trung chốt (xem thật trên máy): (1) BỎ khối "Cần xử lý" trên 4 số —
+ * đã có tab Cần xử lý, 100 việc thì không thành 100 thẻ chồng lên chỉ số; thẻ
+ * trong tab giữ MỘT nút hành động của khối cũ. (2) Tab "Tất cả" → "Gợi ý" như
+ * Shopee; chiến dịch đã dừng xem bằng dòng gấp dưới tab Đang chạy. (3) Chế độ
+ * Tự loại video xuống dòng riêng, màu riêng (TIKTOK_AUTO_MODE_PILL).
  */
 
-type ListFilter = "ongoing" | "flagged" | "all";
+type ListFilter = "ongoing" | "flagged" | "reco";
 const LIST_FILTERS: { key: ListFilter; label: string }[] = [
   { key: "ongoing", label: "Đang chạy" },
   { key: "flagged", label: "Cần xử lý" },
-  { key: "all", label: "Tất cả" },
+  // Nhãn ngắn "Gợi ý": 3 tab chia đều một hàng, máy 320px mỗi tab ~90px.
+  { key: "reco", label: "Gợi ý" },
 ];
 
 export function videosHref(c: { id: string; name: string }, range: DateRange, filter?: string): Href {
@@ -69,6 +77,12 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [planLocked, setPlanLocked] = useState<string | null>(null);
+  // Tăng mỗi lần kéo xuống làm mới → tab Gợi ý xét lại (khối đó không theo nhịp 60s).
+  const [recoToken, setRecoToken] = useState(0);
+  // Số SP có việc để làm — tải nền nên có số trên tab trước khi bấm.
+  const [recoCount, setRecoCount] = useState<number | null>(null);
+  // Chiến dịch đã dừng / kết thúc gấp dưới tab Đang chạy (thay tab Tất cả đã bỏ 17/10).
+  const [showEnded, setShowEnded] = useState(false);
   const reqSeq = useRef(0);
 
   const load = useCallback(
@@ -125,19 +139,16 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
     const ch = data?.selectedChannelId;
     // Kéo xuống = xin TikTok số mới (không chặn) rồi đọc lại DB.
     if (ch && adsLinked && !linkBroken) requestTiktokAdsRefresh(ch).catch(() => undefined);
+    setRecoToken((t) => t + 1);
     void load(range, channelId, true);
   };
 
   const campaigns = data?.campaigns ?? [];
+  // Cần xử lý: xếp nặng trước (tiền đang mất → tiền có thể kiếm thêm), cùng mức thì chi phí giảm dần.
   const attention = sortAttention(campaigns);
-  const attentionIds = new Set(attention.map((c) => c.id));
-  const listed = campaigns.filter((c) =>
-    filter === "ongoing"
-      ? tiktokStatusKey(c.status) === "ongoing"
-      : filter === "flagged"
-        ? attentionIds.has(c.id)
-        : true
-  );
+  const ongoingRows = campaigns.filter((c) => tiktokStatusKey(c.status) === "ongoing");
+  const endedRows = campaigns.filter((c) => tiktokStatusKey(c.status) !== "ongoing");
+  const listed = filter === "ongoing" ? ongoingRows : filter === "flagged" ? attention : [];
   const s = data?.summary ?? null;
   const selected = data?.channels.find((c) => c.id === data.selectedChannelId) ?? null;
   // Đã nối (dù đang hỏng) vẫn có số trong DB → hiện số + dải đỏ, như web; chưa nối mới chỉ đường về web.
@@ -266,34 +277,10 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
               </View>
             ) : null}
 
-            {/* ===== CẦN XỬ LÝ — đặt trên chỉ số ===== */}
-            <Text className="mb-2 mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Cần xử lý{attention.length > 0 ? ` (${attention.length})` : ""}
-            </Text>
-            {attention.length === 0 ? (
-              <View className="mb-4 flex-row items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 dark:bg-emerald-500/10">
-                <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                <Text className="flex-1 text-xs text-emerald-700 dark:text-emerald-300">
-                  Không có chiến dịch nào cần xử lý.
-                </Text>
-              </View>
-            ) : (
-              <View className="mb-4 gap-2.5">
-                {attention.map((c) => (
-                  <AttentionCard
-                    key={c.id}
-                    c={c}
-                    onPress={() => setDetail(c)}
-                    onVideos={(f) => router.push(videosHref(c, range, f))}
-                  />
-                ))}
-              </View>
-            )}
-
             {/* ===== 4 SỐ CỦA KỲ — 5 số của web gộp cho vừa 2×2 ===== */}
             {s ? (
               <>
-                <View className="mb-3 flex-row gap-3">
+                <View className="mb-3 mt-1 flex-row gap-3">
                   <Tile
                     label="Chi phí quảng cáo"
                     value={compactMoney(s.spend)}
@@ -327,10 +314,13 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
               </>
             ) : null}
 
-            {/* ===== HÀNG TAB — ba tab chia đều một hàng ===== */}
+            {/* ===== HÀNG TAB — ba tab chia đều một hàng, số đếm trên Cần xử lý / Gợi ý ===== */}
             <View className="mb-2 flex-row items-center gap-1.5">
               {LIST_FILTERS.map((f) => {
                 const active = filter === f.key;
+                const n =
+                  f.key === "flagged" ? attention.length : f.key === "reco" ? (recoCount ?? 0) : 0;
+                const label = n > 0 ? `${f.label} (${n})` : f.label;
                 return (
                   <Pressable
                     key={f.key}
@@ -350,23 +340,67 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
                       }`}
                       numberOfLines={1}
                     >
-                      {f.label}
+                      {label}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
-            {listed.length === 0 ? (
-              <Text className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
-                Không có chiến dịch nào trong mục này.
-              </Text>
+            {/* Khối gợi ý LUÔN mount khi có gian (tải nền + đếm số cho tab), chỉ vẽ khi tab Gợi ý mở. */}
+            {data.selectedChannelId ? (
+              <TiktokRecommendSection
+                channelId={data.selectedChannelId}
+                reloadToken={recoToken}
+                visible={filter === "reco"}
+                onCount={setRecoCount}
+              />
+            ) : null}
+            {filter === "reco" ? null : listed.length === 0 ? (
+              filter === "flagged" ? (
+                <View className="mb-4 flex-row items-center gap-2 rounded-xl bg-emerald-50 px-3 py-3 dark:bg-emerald-500/10">
+                  <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                  <Text className="flex-1 text-xs text-emerald-700 dark:text-emerald-300">
+                    Không có chiến dịch nào cần xử lý.
+                  </Text>
+                </View>
+              ) : (
+                <Text className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                  Không có chiến dịch nào đang chạy.
+                </Text>
+              )
             ) : (
               <View className="gap-2.5">
                 {listed.map((c) => (
-                  <CampaignCard key={c.id} c={c} onPress={() => setDetail(c)} />
+                  <CampaignCard
+                    key={c.id}
+                    c={c}
+                    onPress={() => setDetail(c)}
+                    // Tab Cần xử lý giữ MỘT nút của khối cũ: việc app làm được (Xem video) hoặc đúng chỗ (Seller Center).
+                    onVideos={filter === "flagged" ? (f) => router.push(videosHref(c, range, f)) : undefined}
+                  />
                 ))}
               </View>
             )}
+            {/* Chiến dịch đã dừng / kết thúc: gấp lại dưới tab Đang chạy (tab Tất cả bỏ 17/10). */}
+            {filter === "ongoing" && endedRows.length > 0 ? (
+              <View className="mt-2.5 gap-2.5">
+                <Pressable
+                  className="flex-row items-center justify-center gap-1 py-1.5"
+                  onPress={() => {
+                    hapticSelect();
+                    setShowEnded((v) => !v);
+                  }}
+                >
+                  <Text className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {showEnded ? "Ẩn chiến dịch đã dừng" : `Xem ${endedRows.length} chiến dịch đã dừng`}
+                  </Text>
+                  <Ionicons name={showEnded ? "chevron-up" : "chevron-down"} size={14} color="#94a3b8" />
+                </Pressable>
+                {showEnded
+                  ? endedRows.map((c) => <CampaignCard key={c.id} c={c} onPress={() => setDetail(c)} />)
+                  : null}
+              </View>
+            ) : null}
           </>
         )}
       </ScrollView>
@@ -431,92 +465,97 @@ export function AdviceChip({ c }: { c: TiktokAdsCampaignRow }) {
   );
 }
 
-/** Dòng trạng thái dưới tên: "Đang chạy · ROI mục tiêu 15 · Tự loại: Diễn tập". */
+/** Dòng trạng thái dưới tên: "Đang chạy · ROI mục tiêu 15x" (chế độ Tự loại tách ra AutoPill — 17/10). */
 export function statusLine(c: TiktokAdsCampaignRow): string {
   const parts = [TIKTOK_STATUS_LABEL[tiktokStatusKey(c.status)]];
   if (c.biddingMethod === "max_delivery") parts.push("Phân phối tối đa");
   else if (c.roasTarget != null) parts.push(`ROI mục tiêu ${fmtRoi(c.roasTarget)}`);
-  if (c.auto && c.auto.mode !== "off") parts.push(`Tự loại: ${TIKTOK_AUTO_MODE_LABEL[c.auto.mode]}`);
   return parts.join(" · ");
 }
 
+/** Chế độ Tự loại video — dòng riêng, màu riêng để khỏi lẫn với trạng thái và nhận định (anh Trung 17/10). */
+export function AutoPill({ c }: { c: TiktokAdsCampaignRow }) {
+  if (!c.auto || c.auto.mode === "off") return null;
+  const m = TIKTOK_AUTO_MODE_PILL[c.auto.mode];
+  return (
+    <View className={`flex-row items-center gap-1 self-start rounded-full px-2 py-0.5 ${m.bg}`}>
+      <Ionicons name="flash-outline" size={11} color={m.icon} />
+      <Text className={`text-[10px] font-semibold ${m.text}`} numberOfLines={1}>
+        {m.label}
+      </Text>
+    </View>
+  );
+}
+
 /**
- * Thẻ "Cần xử lý": chỉ NHÃN + TÊN + MỘT nút (anh Trung 16/10: đoạn kết luận
- * trên thẻ quá dài, bỏ hẳn như Shopee — căn cứ nằm trong hộp chi tiết). Khảo sát 04/10 kết luận 4:
- * app báo triệu chứng mà không có chỗ xử lý là bị chê → nút là việc app làm
- * được (Xem video → loại) hoặc dẫn đúng chỗ (Seller Center).
+ * MỘT nút hành động của thẻ Cần xử lý (khảo sát 04/10 kết luận 4: app báo triệu
+ * chứng mà không có chỗ xử lý là bị chê): việc app làm được (Xem video → loại)
+ * hoặc dẫn đúng chỗ (Seller Center). Từ 17/10 nằm dưới thẻ chiến dịch trong tab
+ * Cần xử lý (khối Cần xử lý trên 4 số đã bỏ).
  */
-function AttentionCard({
+function AttentionAction({ c, onVideos }: { c: TiktokAdsCampaignRow; onVideos: (filter: string) => void }) {
+  const dark = useColorScheme().colorScheme === "dark";
+  const planned = dryRunPlanned(c);
+  const a = c.advice;
+  const warnKind = a && (a.kind === "no_orders" || a.kind === "losing");
+  // Chỉ diễn tập định loại (nhận định không cảnh báo) → nút nói đúng số video máy định loại.
+  const onlyPlanned = !warnKind && !(a && a.tone === "warn") && planned > 0 && !(a && a.editInSellerCenter);
+  if (attentionAction(c) === "videos" || onlyPlanned) {
+    return (
+      <Pressable
+        className="mt-2.5 flex-row items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-2.5 active:opacity-80 dark:bg-slate-100"
+        onPress={() => {
+          hapticTap();
+          onVideos(onlyPlanned || (planned > 0 && !warnKind) ? "exclude" : "no_order");
+        }}
+      >
+        <Ionicons name="videocam-outline" size={15} color={dark ? "#0f172a" : "#fff"} />
+        <Text className="text-[13px] font-semibold text-white dark:text-slate-900" numberOfLines={1}>
+          {onlyPlanned ? `Xem ${planned} video máy định loại` : "Xem video đang đốt tiền"}
+        </Text>
+      </Pressable>
+    );
+  }
+  return (
+    <Pressable
+      className="mt-2.5 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-300 py-2.5 active:opacity-70 dark:border-slate-600"
+      onPress={openSellerCenter}
+    >
+      <Ionicons name="open-outline" size={15} color={dark ? "#e2e8f0" : "#334155"} />
+      <Text className="text-[13px] font-semibold text-slate-800 dark:text-slate-100" numberOfLines={1}>
+        Mở Seller Center để sửa
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Thẻ chiến dịch: tên, dòng trạng thái + nhận định, dòng Tự loại (riêng), ba số như thẻ
+ * Shopee (ROAS → ROI). Có `onVideos` (tab Cần xử lý) thì thêm vạch trái theo mức nặng + MỘT nút.
+ */
+function CampaignCard({
   c,
   onPress,
   onVideos,
 }: {
   c: TiktokAdsCampaignRow;
   onPress: () => void;
-  onVideos: (filter: string) => void;
+  onVideos?: (filter: string) => void;
 }) {
-  const dark = useColorScheme().colorScheme === "dark";
-  const planned = dryRunPlanned(c);
-  const a = c.advice;
-  const warnKind = a && (a.kind === "no_orders" || a.kind === "losing");
-  const tone = a ? TIKTOK_ADVICE_TONE[a.tone] : TIKTOK_ADVICE_TONE.muted;
-  // Chỉ diễn tập định loại (nhận định không cảnh báo) → thẻ xám.
-  const onlyPlanned = !warnKind && !(a && a.tone === "warn") && planned > 0 && !(a && a.editInSellerCenter);
-  const edge = onlyPlanned ? "border-l-slate-400" : tone.edge;
-  const action = attentionAction(c);
-  return (
-    <Card className={`border-l-4 ${edge} p-3`} onPress={onPress}>
-      <View className="flex-row items-center gap-2">
-        {onlyPlanned ? (
-          <View className="rounded-full bg-slate-900 px-2 py-0.5 dark:bg-slate-100">
-            <Text className="text-[10px] font-bold text-white dark:text-slate-900">
-              Trợ lý định loại {planned} video
-            </Text>
-          </View>
-        ) : (
-          <AdviceChip c={c} />
-        )}
-        <View className="flex-1" />
-        <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-      </View>
-      <Text className="mt-1.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100" numberOfLines={2}>
-        {c.name}
-      </Text>
-      {action === "videos" || onlyPlanned ? (
-        <Pressable
-          className="mt-2.5 flex-row items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-2.5 active:opacity-80 dark:bg-slate-100"
-          onPress={() => {
-            hapticTap();
-            onVideos(onlyPlanned || (planned > 0 && !warnKind) ? "exclude" : "no_order");
-          }}
-        >
-          <Ionicons name="videocam-outline" size={15} color="#fff" />
-          <Text className="text-[13px] font-semibold text-white dark:text-slate-900">
-            {onlyPlanned ? `Xem ${planned} video máy định loại` : "Xem video đang đốt tiền"}
-          </Text>
-        </Pressable>
-      ) : (
-        <Pressable
-          className="mt-2.5 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-300 py-2.5 active:opacity-70 dark:border-slate-600"
-          onPress={openSellerCenter}
-        >
-          <Ionicons name="open-outline" size={15} color={dark ? "#e2e8f0" : "#334155"} />
-          <Text className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
-            Mở Seller Center để sửa
-          </Text>
-        </Pressable>
-      )}
-    </Card>
-  );
-}
-
-/** Thẻ chiến dịch: tên, dòng trạng thái, nhận định, ba số như thẻ Shopee (ROAS → ROI). */
-function CampaignCard({ c, onPress }: { c: TiktokAdsCampaignRow; onPress: () => void }) {
   const be = c.breakeven?.roi ?? null;
   const below = c.roi != null && be != null && c.roi < be;
   const ongoing = tiktokStatusKey(c.status) === "ongoing";
+  const a = c.advice;
+  const edge = onVideos
+    ? a && a.tone === "warn"
+      ? "border-l-4 border-l-red-500"
+      : a && a.tone === "info"
+        ? "border-l-4 border-l-amber-500"
+        : "border-l-4 border-l-slate-400"
+    : "";
+  const planned = ongoing ? dryRunPlanned(c) : 0;
   return (
-    <Card className="p-3" onPress={onPress}>
+    <Card className={`p-3 ${edge}`} onPress={onPress}>
       <Text className="text-[13px] font-semibold text-slate-900 dark:text-slate-100" numberOfLines={2}>
         {c.name}
       </Text>
@@ -530,6 +569,16 @@ function CampaignCard({ c, onPress }: { c: TiktokAdsCampaignRow; onPress: () => 
         </Text>
         {ongoing ? <AdviceChip c={c} /> : null}
       </View>
+      {c.auto && c.auto.mode !== "off" ? (
+        <View className="mt-1.5 flex-row flex-wrap items-center gap-1.5">
+          <AutoPill c={c} />
+          {planned > 0 ? (
+            <Text className="text-[10px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
+              định loại {planned} video
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
       <View className="mt-2.5 flex-row border-t border-slate-100 pt-2 dark:border-slate-800">
         <Metric label="Chi phí" value={compactMoney(c.spend)} />
         <Metric
@@ -545,6 +594,7 @@ function CampaignCard({ c, onPress }: { c: TiktokAdsCampaignRow; onPress: () => 
           right
         />
       </View>
+      {onVideos ? <AttentionAction c={c} onVideos={onVideos} /> : null}
     </Card>
   );
 }

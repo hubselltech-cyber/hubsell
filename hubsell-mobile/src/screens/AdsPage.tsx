@@ -190,17 +190,23 @@ export function AdsPage() {
 
   const platformMeta = PLATFORMS.find((p) => p.key === platform)!;
   const campaigns = data?.campaigns ?? [];
+  // Tab Cần xử lý xếp nặng trước: cảnh báo còn hiệu lực (theo mức nặng), việc Hubsell đã làm sau.
+  // (17/10 anh Trung: bỏ khối Cần xử lý trên 4 số — đã có tab, 100 việc không thành 100 thẻ chồng lên chỉ số.)
   const attention = campaigns
     .filter(needsAttention)
     .sort(
       (a, b) =>
-        // Cảnh báo còn hiệu lực trước (theo mức nặng), việc Hubsell đã làm sau.
         (isFlagged(a) ? FLAGGED.indexOf(a.assistant.verdict) : 9) -
           (isFlagged(b) ? FLAGGED.indexOf(b.assistant.verdict) : 9) || b.spend - a.spend
     );
-  const listed = campaigns.filter((c) =>
-    filter === "ongoing" ? c.status === "ongoing" : filter === "flagged" ? needsAttention(c) : true
-  );
+  const listed =
+    filter === "ongoing"
+      ? campaigns.filter((c) => c.status === "ongoing")
+      : filter === "flagged"
+        ? attention
+        : filter === "all"
+          ? campaigns
+          : [];
   const s = data?.summary ?? null;
   const mode = data?.assistant?.config.autoExecute.mode;
   // Gian đã nối Hubsell Ads (hoặc sàn không cần) — như shopee-ads-page web.
@@ -367,29 +373,10 @@ export function AdsPage() {
               </View>
             ) : null}
 
-            {/* ===== CẦN XỬ LÝ — đặt trên chỉ số ===== */}
-            <Text className="mb-2 mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Cần xử lý{attention.length > 0 ? ` (${attention.length})` : ""}
-            </Text>
-            {attention.length === 0 ? (
-              <View className="mb-4 flex-row items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 dark:bg-emerald-500/10">
-                <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                <Text className="flex-1 text-xs text-emerald-700 dark:text-emerald-300">
-                  Không có chiến dịch nào cần xử lý.
-                </Text>
-              </View>
-            ) : (
-              <View className="mb-4 gap-2.5">
-                {attention.map((c) => (
-                  <AttentionCard key={c.id} c={c} onPress={() => setDetail(c)} />
-                ))}
-              </View>
-            )}
-
             {/* ===== 4 SỐ CỦA KỲ ===== */}
             {s ? (
               <>
-                <View className="mb-3 flex-row gap-3">
+                <View className="mb-3 mt-1 flex-row gap-3">
                   <Tile label="Chi phí quảng cáo" value={compactMoney(s.spend)} tone="red" />
                   <Tile
                     label="Doanh thu từ quảng cáo"
@@ -420,10 +407,8 @@ export function AdsPage() {
             <View className="mb-2 flex-row items-center gap-1.5">
               {LIST_FILTERS.filter((f) => f.key !== "reco" || platform === "shopee").map((f) => {
                 const active = filter === f.key;
-                const label =
-                  f.key === "reco" && recoCount != null && recoCount > 0
-                    ? `${f.label} (${recoCount})`
-                    : f.label;
+                const n = f.key === "reco" ? (recoCount ?? 0) : f.key === "flagged" ? attention.length : 0;
+                const label = n > 0 ? `${f.label} (${n})` : f.label;
                 return (
                   <Pressable
                     key={f.key}
@@ -462,13 +447,28 @@ export function AdsPage() {
               />
             ) : null}
             {filter === "reco" ? null : listed.length === 0 ? (
-              <Text className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
-                Không có chiến dịch nào trong mục này.
-              </Text>
+              filter === "flagged" ? (
+                <View className="mb-4 flex-row items-center gap-2 rounded-xl bg-emerald-50 px-3 py-3 dark:bg-emerald-500/10">
+                  <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                  <Text className="flex-1 text-xs text-emerald-700 dark:text-emerald-300">
+                    Không có chiến dịch nào cần xử lý.
+                  </Text>
+                </View>
+              ) : (
+                <Text className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                  Không có chiến dịch nào trong mục này.
+                </Text>
+              )
             ) : (
               <View className="gap-2.5">
                 {listed.map((c) => (
-                  <CampaignCard key={c.id} c={c} onPress={() => setDetail(c)} />
+                  <CampaignCard
+                    key={c.id}
+                    c={c}
+                    onPress={() => setDetail(c)}
+                    // Tab Cần xử lý: vạch trái theo mức nặng + câu đề xuất của khối cũ.
+                    attention={filter === "flagged"}
+                  />
                 ))}
               </View>
             )}
@@ -540,50 +540,31 @@ function hubsellActionLabel(c: AdsCampaignDto): string | null {
   return null;
 }
 
-/** Thẻ "Cần xử lý": chỉ nhãn + tên + đề xuất; căn cứ bằng số nằm trong hộp chi tiết (anh Trung 04/10). */
-function AttentionCard({ c, onPress }: { c: AdsCampaignDto; onPress: () => void }) {
-  const acted = hubsellActionLabel(c);
-  // Vạch trái theo mức nặng: đỏ = đang mất tiền, vàng = cần duyệt, xám = Hubsell đã xử lý.
-  const edge = acted
-    ? "border-l-slate-400"
-    : c.assistant.verdict === "review"
-      ? "border-l-amber-500"
-      : "border-l-red-500";
-  return (
-    <Card className={`border-l-4 ${edge} p-3`} onPress={onPress}>
-      <View className="flex-row items-center gap-2">
-        {acted ? (
-          <View className="rounded-full bg-slate-900 px-2 py-0.5 dark:bg-slate-100">
-            <Text className="text-[10px] font-bold text-white dark:text-slate-900">{acted}</Text>
-          </View>
-        ) : (
-          <VerdictChip verdict={c.assistant.verdict} />
-        )}
-        <View className="flex-1" />
-        <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
-      </View>
-      <Text
-        className="mt-1.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
-        numberOfLines={2}
-      >
-        {c.name}
-      </Text>
-      {c.assistant.recommendation ? (
-        <Text className="mt-1 text-xs text-slate-600 dark:text-slate-300" numberOfLines={2}>
-          <Text className="font-semibold text-slate-900 dark:text-slate-100">Đề xuất: </Text>
-          {c.assistant.recommendation}
-        </Text>
-      ) : null}
-    </Card>
-  );
-}
-
-/** Thẻ chiến dịch: tên, trạng thái, tối đa ba số. */
-function CampaignCard({ c, onPress }: { c: AdsCampaignDto; onPress: () => void }) {
+/**
+ * Thẻ chiến dịch: tên, trạng thái, tối đa ba số. `attention` (tab Cần xử lý, thay khối
+ * Cần xử lý đã bỏ 17/10): vạch trái theo mức nặng (đỏ = đang mất tiền, vàng = cần duyệt,
+ * xám = Hubsell đã xử lý) + câu đề xuất; căn cứ bằng số nằm trong hộp chi tiết (anh Trung 04/10).
+ */
+function CampaignCard({
+  c,
+  onPress,
+  attention,
+}: {
+  c: AdsCampaignDto;
+  onPress: () => void;
+  attention?: boolean;
+}) {
   const below = c.roasBroad != null && c.breakevenRoas != null && c.roasBroad < c.breakevenRoas;
   const acted = hubsellActionLabel(c);
+  const edge = !attention
+    ? ""
+    : acted
+      ? "border-l-4 border-l-slate-400"
+      : c.assistant.verdict === "review"
+        ? "border-l-4 border-l-amber-500"
+        : "border-l-4 border-l-red-500";
   return (
-    <Card className="p-3" onPress={onPress}>
+    <Card className={`p-3 ${edge}`} onPress={onPress}>
       <Text
         className="text-[13px] font-semibold text-slate-900 dark:text-slate-100"
         numberOfLines={2}
@@ -602,6 +583,12 @@ function CampaignCard({ c, onPress }: { c: AdsCampaignDto; onPress: () => void }
         </Text>
         {c.status === "ongoing" ? <VerdictChip verdict={c.assistant.verdict} /> : null}
       </View>
+      {attention && c.assistant.recommendation ? (
+        <Text className="mt-1 text-xs text-slate-600 dark:text-slate-300" numberOfLines={2}>
+          <Text className="font-semibold text-slate-900 dark:text-slate-100">Đề xuất: </Text>
+          {c.assistant.recommendation}
+        </Text>
+      ) : null}
       <View className="mt-2.5 flex-row border-t border-slate-100 pt-2 dark:border-slate-800">
         <Metric label="Chi phí" value={compactMoney(c.spend)} />
         <Metric

@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 17/10/2026 (chiều) — MOBILE 1.2.0: BỎ KHỐI CẦN XỬ LÝ (KHÔNG CÓ TRẦN), TIKTOK TAB GỢI Ý, TỰ LOẠI VIDEO DÒNG RIÊNG — CODE XONG, ĐANG BUILD + NỘP 2 KHO
+
+- **Anh hỏi (ảnh ANO, 4 thẻ "Mục tiêu đang ghìm phân phối"): "phần Cần xử lý đã giới hạn chưa, 100 cái thì sao?"** Kiểm mã: API `/api/quang-cao/{sàn}` trả TOÀN BỘ chiến dịch của gian (TikTok `adsCampaign.findMany` không `take`), mobile vẽ hết `attention.map` trong ScrollView chồng trên 4 số → 100 việc = 100 thẻ phải cuộn qua mới thấy chỉ số; web bảng đã chia trang 20. Máy em chỉ nối DB dev nên không đếm được prod (SQL chỉ đọc đã soạn, chưa cần).
+- **Anh chốt 4 điều + "em làm toàn bộ từ code tới update lên store, tinh thần senior":** (1) bỏ hẳn khối Cần xử lý trên chỉ số (đã có tab) — làm cho CẢ 3 sàn, tab Cần xử lý xếp nặng trước + vạch trái + MỘT nút hành động của khối cũ (TikTok: Xem video / Mở Seller Center; Shopee: câu Đề xuất), số đếm trên tab; (2) TikTok tab Tất cả → **Gợi ý** như Shopee: `components/TiktokRecommendSection.tsx` đọc `product-breakeven` (chỉ DB, backend 0 đổi) → SP chưa chạy ads Nên chạy / Chạy thử, 3 dòng + Xem thêm, hộp chi tiết 3 điều kiện → kết luận → ROI mục tiêu + ngân sách ngày → Mở Seller Center (TikTok không có API tạo chiến dịch); chiến dịch đã dừng gấp lại dưới Đang chạy; (3) Tự loại video xuống dòng riêng, màu riêng (`TIKTOK_AUTO_MODE_PILL`: xanh da trời = Diễn tập, tím = Đang loại thật); (4) soi 320 / 360px sáng + tối trên giả lập web local (reviewer@: 6 chiến dịch, Gợi ý 5 nên chạy); tsc sạch, lint tệp mới sạch (2 lỗi lint còn lại là mẫu cũ `load` trong useEffect).
+- app.json 1.2.0, LISTING "Có gì mới 1.2.0", docs ADS-TIKTOK-TREN-MOBILE (trạng thái 17/10) + DUA-APP (mục 1.2.0). Build EAS + nộp: xem dòng kết quả bên dưới.
+
+---
+
 ## Phiên 17/10/2026 (sáng) — ANDROID 1.1.0: GOOGLE ĐÃ PHÁT HÀNH, MÁY ANH CHƯA TỰ CẬP NHẬT = NHỊP PLAY STORE; eas.json releaseStatus → completed + script play-status
 
 - **Anh hỏi: Play đã có 1.1.0 mà điện thoại không tự cập nhật.** Play Console cần đăng nhập Google (trình duyệt tích hợp không có phiên) → em hỏi thẳng **Google Play Developer API** bằng khóa service account `eas-submit@hubsell-play`: kênh production release **"1.1.0 (3)" status `completed`** (phát hành 100%), AAB vc 2 + 3; trang kho công khai play.google.com đã hiện "Tính năng mới Bản 1.1.0", cập nhật 16/10. Anh xác nhận cài từ Play + Wi-Fi mạnh → kết luận: phía Google đúng, chỉ là nhịp tự cập nhật của Play Store trên máy (≤24h, chạy khi máy rảnh) → bấm Cập nhật tay / Quản lý ứng dụng và thiết bị / xóa cache Play Store. Cột "Người dùng đã cài đặt = 0" trên Console = thống kê trễ 1–2 ngày.

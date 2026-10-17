@@ -81,6 +81,15 @@ Ghi chú khi dán:
 - **App Store**: dán nguyên văn. Không thêm chữ "Android", "CH Play" (Apple 2.3.10 cấm nhắc nền tảng khác).
 - **06/10: bỏ mục Tin nhắn** khỏi mô tả, ghi chú người duyệt và nhãn dữ liệu — tab Tin nhắn đã gỡ khỏi app từ bản 04/10 (không còn `messages.tsx`, không còn dùng expo-image-picker). Thêm Quảng cáo, Tồn kho, quét đơn bất kỳ. Mô tả này ĐÃ DÁN vào App Store Connect 06/10.
 
+### Có gì mới (bản 1.2.0 — 17/10/2026)
+
+Bản 1.2.0:
+• Trợ lý quảng cáo TikTok có tab Gợi ý: sản phẩm nên chạy / chạy thử quảng cáo, kèm ROI mục tiêu và ngân sách ngày nên đặt.
+• Trang Quảng cáo gọn hơn: bỏ khối Cần xử lý phía trên chỉ số (đã có tab Cần xử lý), chế độ Tự loại video hiện dòng riêng dễ nhìn.
+• Chiến dịch đã dừng gấp lại dưới danh sách Đang chạy.
+
+(anh Trung 17/10 xem thật trên máy: khối Cần xử lý trên 4 số không có trần — 100 việc thành 100 thẻ; tab Tất cả thay bằng Gợi ý như Shopee; Tự loại / Diễn tập xuống dòng, đổi màu.)
+
 ### Có gì mới (bản 1.1.0 — 16/10/2026)
 
 Bản 1.1.0:

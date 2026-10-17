@@ -13,6 +13,21 @@ thật), sáng/tối. Khác với phương án ở trên, đã chốt khi soi:
 - Mã: `hubsell-mobile/src/{api/ads-tiktok.ts, lib/tiktok-ads.ts, components/TiktokAdsSection.tsx, components/TiktokCampaignSheet.tsx, screens/TiktokVideosScreen.tsx, app/tiktok-campaign.tsx}`; `AdsPage.tsx` thêm chip; types ở `types/api.ts`; thêm `expo-clipboard`. Backend 0 thay đổi.
 - Lát 3 (thông báo đẩy) chưa làm. Câu hỏi 3–4 mục 9 còn mở (luật Cần xử lý đang là mặc định tự chọn).
 
+**17/10 — anh xem thật trên máy (ANO, 4 việc "Mục tiêu đang ghìm phân phối") và chốt 4 điều, bản 1.2.0:**
+1. **Bỏ hẳn khối "Cần xử lý" trên 4 số** (cả TikTok lẫn Shopee / Lazada) — khối này không có trần: API
+   trả toàn bộ chiến dịch, app vẽ hết → 100 việc = 100 thẻ chồng lên chỉ số; đã có tab Cần xử lý. Tab
+   Cần xử lý nay xếp nặng trước, thẻ có vạch trái theo mức nặng + **MỘT nút** của khối cũ (Xem video /
+   Mở Seller Center; Shopee: câu Đề xuất). Số đếm in trên tab.
+2. **Tab "Tất cả" → "Gợi ý"** như Shopee (`components/TiktokRecommendSection.tsx`): đọc
+   `GET /api/quang-cao/tiktok/product-breakeven` (chỉ DB, backend 0 đổi) → sản phẩm CHƯA chạy quảng cáo
+   có `runAdvice` Nên chạy / Chạy thử, tối đa 3 dòng + Xem thêm; hộp chi tiết = số của SP → 3 điều kiện
+   (khả thi · đà bán · tồn) → kết luận → **ROI mục tiêu khởi điểm + ngân sách ngày** → Mở Seller Center
+   (TikTok không có API tạo chiến dịch). Chiến dịch đã dừng gấp lại dưới tab Đang chạy ("Xem N chiến
+   dịch đã dừng"). Cách ra số ngân sách (`budget.note`, ~6 dòng) cố ý không in.
+3. **Chế độ Tự loại video xuống dòng riêng, màu riêng** (`TIKTOK_AUTO_MODE_PILL`): xanh da trời =
+   Diễn tập, tím = Đang loại thật; tránh xanh lá của "Đang chạy" và đỏ / vàng của nhận định.
+4. Soi giả lập web local reviewer@ (6 chiến dịch, 12 SP → Gợi ý 5 nên chạy) ở 320 / 360px, sáng + tối; tsc sạch.
+
 Tài liệu gốc phải đọc trước khi code: [ADS-TIKTOK-GMV-MAX.md](ADS-TIKTOK-GMV-MAX.md) (API, luật,
 bẫy), [KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md](KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md) (bố cục Shopee
 trên app đã chốt 04–05/10), [ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md](ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md).

@@ -815,6 +815,70 @@ export interface TiktokAdsDashboard {
   minKeepPer100?: number;
 }
 
+// ---- Tab GỢI Ý TikTok (17/10/2026): sản phẩm CHƯA chạy quảng cáo nên chạy / chạy thử — chép từ
+// frontend/src/lib/api.ts TiktokProductRunAdvice / TiktokProductBreakevenRow (backend product-run-advice.ts).
+// TikTok không có API tạo chiến dịch → app chỉ nêu ROI mục tiêu + ngân sách rồi dẫn sang Seller Center.
+
+export interface TiktokProductRunAdvice {
+  tier: "run" | "test" | "not_yet";
+  label: string;
+  tone: "warn" | "info" | "ok";
+  /** Dữ kiện nền: biên lãi, hòa vốn, ROI mục tiêu đề xuất. */
+  points: string[];
+  /** Căn cứ: từng điều kiện đạt hay không, kèm số thật. Vắng = backend cũ. */
+  checks?: {
+    key: "feasible" | "pace" | "stock";
+    title: string;
+    status: "pass" | "caution" | "block" | "unknown";
+    text: string;
+  }[];
+  conclusion: string;
+  text: string;
+  /** ROI mục tiêu khởi điểm = max(sàn giữ lãi, ROI gian quy về biên × 0,9). */
+  suggestedRoi: number;
+  /** Sàn giữ lãi — không đặt ROI mục tiêu dưới mức này. */
+  floorRoi?: number;
+  /** Ngân sách ngày đề xuất (2 × GMV ÷ ROI, đã chặn trần); null khi Chưa nên. */
+  budget?: { daily: number; byTiktok: number | null; note: string } | null;
+}
+
+export type TiktokProductBreakevenVerdict =
+  | "ok"
+  | "target_below"
+  | "low_sample"
+  | "loss"
+  | "no_cost"
+  | "no_settled";
+
+export interface TiktokProductBreakevenRow {
+  productId: string;
+  name: string;
+  imageUrl: string | null;
+  skuCount: number;
+  revenue: number;
+  profitBeforeAds: number;
+  missingCostRevenue: number;
+  units7d: number;
+  units30d: number;
+  stock: number | null;
+  breakeven: TiktokAdsBreakeven;
+  campaigns: { id: string; name: string; status: string; roasTarget: number | null }[];
+  verdict: TiktokProductBreakevenVerdict;
+  reason: string;
+  /** Chỉ có ở sản phẩm CHƯA chạy quảng cáo và hòa vốn đã tin được. */
+  runAdvice?: TiktokProductRunAdvice | null;
+}
+
+export interface TiktokProductBreakevenData {
+  channels: { id: string; shopName: string }[];
+  selectedChannelId: string | null;
+  windowDays: number;
+  minOrders: number;
+  minCoveragePct: number;
+  shop: TiktokAdsBreakeven | null;
+  products: TiktokProductBreakevenRow[];
+}
+
 export type TiktokAdsAutoVerdict =
   | "learning"
   | "protected"

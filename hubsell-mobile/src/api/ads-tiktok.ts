@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   TiktokAdsCampaignVideos,
   TiktokAdsDashboard,
+  TiktokProductBreakevenData,
   TiktokVideoMeta,
 } from "../types/api";
 
@@ -41,6 +42,16 @@ export function sendTiktokVideoAction(
 /** Ảnh bìa + kênh + caption (≤ 24 mã) — oEmbed công khai, đang hay bị TikTok chặn: lỗi thì bỏ qua. */
 export function fetchTiktokVideoMeta(videoIds: string[]) {
   return api<{ items: Record<string, TiktokVideoMeta> }>(`${BASE}/video-meta?ids=${videoIds.join(",")}`);
+}
+
+/**
+ * Hòa vốn + nhận định Nên chạy / Chạy thử / Chưa nên của TỪNG sản phẩm (tab Gợi ý, 17/10).
+ * Chỉ đọc DB (không gọi TikTok) — gian chưa nối quảng cáo vẫn có; chấm cả kho SP nên không
+ * gọi theo nhịp 60s, chỉ khi đổi gian / kéo xuống làm mới.
+ */
+export function fetchTiktokProductBreakeven(channelId?: string) {
+  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+  return api<TiktokProductBreakevenData>(`${BASE}/product-breakeven${qs}`);
 }
 
 /** Kéo lại số từ TikTok cho gian (kéo-xuống-làm-mới). */
