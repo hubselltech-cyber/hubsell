@@ -147,3 +147,61 @@ Lát 3.2 vừa lên prod tối 14/10 mà chưa ai nhìn thấy số. Lát 3.3 đ
    `SELECT "channelName","shopName","hibernatedAt","lastSyncError", now()-"ordersWatermarkAt" AS tuoi
    FROM "Channel" WHERE status='ACTIVE' AND "refreshToken" IS NOT NULL AND "ordersWatermarkAt" < now() - interval '90 minutes'
    ORDER BY tuoi DESC;` — gian trễ thật là dòng có `hibernatedAt` NULL.
+
+## 4. Lát 3.3 — nhịp quét theo mức hoạt động (ĐỀ XUẤT 17/10/2026, lượt nhắc tự động — CHỜ anh Trung chốt, chưa viết mã)
+
+### 4.1. Số thật đọc được sáng 17/10
+
+| Việc | Kết quả | Đã kiểm? |
+|---|---|---|
+| `/health` prod | commit `837d2b27` = bản mới nhất (có 3.2 + 3.6 + sửa ngủ đông 16/10) | ✅ |
+| Tuổi mốc nước, gian vét dở | không đọc được (DB prod + Logs Render bị chặn với công cụ) | ❌ → SQL 4.4 |
+| Số lệnh gọi sàn `[SanHTTP]` | không đọc được | ❌ → từ khóa log 4.4 |
+
+### 4.2. Phát hiện khi đọc lại mã trước khi đề xuất
+
+1. **Tầng nhanh chạy MỌI lượt gian được nhặt** (`processChannel`: "tầng nhanh chạy mọi lượt, rẻ, idempotent"). Nhịp quét đơn THẬT của một gian = min(`nextFastSyncAt`, `nextHourlySyncAt` 60', `nextAdsPulseAt` 30–120'). Giãn riêng tầng nhanh lên 6 giờ như mô tả 12/10 thì gian vẫn bị quét đơn mỗi ≤ 60' qua tầng giờ → số 6 giờ vô tác dụng nếu không đụng tầng giờ.
+2. **`changed` chỉ đếm đơn do CHÍNH lượt quét tạo/sửa.** Gian được webhook phục vụ tốt thì lượt quét luôn thấy "không đổi" và giãn tới 60' dù đang bán mạnh. Bậc giãn hiện tại đo "webhook có sót không", không đo "gian có bán không" — đúng vai lưới an toàn, nên GIỮ, không rút xuống 5'.
+3. Webhook handler không đụng lịch quét; handler Shopee tải trọn dòng `Channel` theo `externalShopId` (có `syncBackoffLevel`) → đánh thức gian vắng không cần thêm câu đọc.
+4. Tín hiệu "gian có đơn" có sẵn và rẻ: `MAX("createdAt")` của `Order` theo `channelId` — `createdAt` là NGÀY SÀN (ghi chú schema), có chỉ mục `(channelId, createdAt)` → một lần quét ngược chỉ mục mỗi lượt. `webhook_events` không có chỉ mục theo shop → không dùng làm tín hiệu.
+5. **Xung đột ngưỡng:** dấu hiệu HQ "Mốc nước quét đơn" đỏ ở 360' (tự chọn 15/10). Gian nhịp 6 giờ sẽ đỏ oan y như gian ngủ đông sáng 16/10 → phải đưa gian vắng ra khỏi phép đếm (cùng cách đã làm với `hibernatedAt`).
+
+### 4.3. Thiết kế đề xuất (không migration, một lần đẩy)
+
+- **Bậc VẮNG** = `syncBackoffLevel = 9` (hằng `IDLE_LEVEL`; bậc thường 0–3 giữ nguyên 10'→20'→40'→60'). Vào bậc cuối lượt khi: không biến động **và** đã ở trần 60' **và** `MAX(Order.createdAt) < now − SYNC_IDLE_DAYS`. Ở bậc vắng: `nextFastSyncAt` = `nextHourlySyncAt` = now + `SYNC_IDLE_MINUTES` (có jitter). Xung ads giữ nguyên (gian không campaign đã là 120', 1 lệnh), nhưng lượt nhặt vì xung KHÔNG chạy tầng nhanh/giờ khi gian ở bậc vắng và chưa đến hạn.
+- **Ra bậc vắng:** (a) lượt quét thấy biến động → về bậc 0 như cũ; (b) **webhook đơn tới gian đang bậc 9** → handler `UPDATE` `syncBackoffLevel=0, nextFastSyncAt=now+nhịp gốc, nextHourlySyncAt=now` — chỉ khi level=9, tức MỘT lần ghi cho cả chuỗi webhook sau đó, không ghi mỗi webhook; đơn vẫn do webhook kéo ngay, lượt quét kế chỉ vét sót; (c) gian thức dậy từ ngủ đông đã đặt `nextFastSyncAt=now` (giữ).
+- **HQ:** `collectWatermarkHealth` + `overdueFast15/60` đếm riêng "N gian vắng (nhịp 6h)", loại khỏi `lagOver60/6h` giống gian ngủ đông; thẻ Worker thêm số đó.
+- **BỎ hai ý của bản 12/10:**
+  - "webhook vừa tới thì lùi lượt quét": tốn một `UPDATE Channel` mỗi webhook (mốc thiết kế 1 triệu đơn/ngày = 1 triệu lần ghi lên dòng nóng) để tiết kiệm tối đa một lượt quét mỗi 10' — lỗ.
+  - "có đơn trong 10 phút → 5 phút": webhook là đường chính; rút nhịp = gấp đôi lệnh gọi trên gian bận nhất — đúng nơi 429 theo gian đã xảy ra 16/10 (cầu dao Ads); chưa có số nào cho thấy lượt quét bắt được đơn webhook sót. Đo trước (log `đơn mới (` có +N > 0 ở gian có webhook = số đơn webhook sót), rồi mới bàn.
+- **Hai số** (đều là MẶC ĐỊNH TỰ CHỌN, env đổi được, anh chỉnh sau khi xem SQL 4.4):
+  - `SYNC_IDLE_DAYS = 7`: lý lẽ chu kỳ tuần — gian chỉ bán cuối tuần có hai đơn cách nhau ≤ 6 ngày; không có nguồn API. SQL câu 3 cho biết hôm nay có bao nhiêu gian vượt 7 ngày (= số gian sẽ vào bậc vắng).
+  - `SYNC_IDLE_MINUTES = 360`: bằng tầng ads lịch sử 6 giờ và ngưỡng đỏ HQ hiện tại; gian 7 ngày không đơn mà trễ 6 giờ thì không ai thấy. Bằng chứng chi phí chỉ là ước tính: Shopee mỗi lượt gian vắng ≈ 1 lệnh danh sách đơn + 1 lệnh yêu cầu hoàn + 2–3 lệnh tầng giờ (escrow/payout) ≈ 5 lệnh × 24 lượt/ngày ≈ 120 lệnh/gian/ngày → ≈ 20 ở nhịp 6 giờ. CHƯA ĐO — đo bằng `[SanHTTP] SHOPEE n=` trước/sau.
+- **Đường lui:** `SYNC_IDLE_DAYS=0` tắt bậc vắng (hành vi hôm nay), không revert, không migration. Hàng rào `no-module-state.test.ts` không đổi (không thêm biến cấp module).
+- Test thuần: `nextFastSchedule` nhận thêm `{ idle: boolean }`; ca vào/ra bậc vắng, webhook đánh thức chỉ ghi khi level=9, HQ loại gian vắng.
+
+### 4.4. SQL chỉ đọc cho anh dán vào Supabase + từ khóa log Render (worker `hubsell-worker-sg`)
+
+```sql
+-- 1. Mốc nước sau 2 ngày (kỳ vọng: gian đang thức tuổi < 1 giờ, cột vét dở NULL)
+SELECT "channelName","shopName","hibernatedAt","ordersWatermarkAt","ordersCatchupBeforeAt", now()-"ordersWatermarkAt" AS tuoi
+FROM "Channel" WHERE status='ACTIVE' AND "refreshToken" IS NOT NULL ORDER BY tuoi DESC NULLS FIRST;
+
+-- 2. Phân bố bậc giãn hiện tại (bao nhiêu gian đã nằm ở trần 60')
+SELECT "channelName","syncBackoffLevel",COUNT(*) FROM "Channel"
+WHERE status='ACTIVE' AND "refreshToken" IS NOT NULL AND "hibernatedAt" IS NULL GROUP BY 1,2 ORDER BY 1,2;
+
+-- 3. Tuổi đơn mới nhất từng gian (số dòng tuổi > 7 ngày = số gian sẽ vào bậc vắng)
+SELECT c."channelName", c."shopName", MAX(o."createdAt") AS don_moi_nhat, now()-MAX(o."createdAt") AS tuoi
+FROM "Channel" c LEFT JOIN "Order" o ON o."channelId"=c.id
+WHERE c.status='ACTIVE' AND c."refreshToken" IS NOT NULL AND c."hibernatedAt" IS NULL
+GROUP BY c.id, c."channelName", c."shopName" ORDER BY tuoi DESC NULLS FIRST;
+```
+
+Log: `[SanHTTP] SHOPEE n=` (mỗi 15', lấy n → lệnh/giờ); `đơn mới (` (dòng +N với N > 0 = đơn webhook sót); `vét tiếp` (gian lặp mãi = sàn trả dòng ngoài cửa sổ); `[TikTok] Cửa sổ update_time` (update_time thấp nhất < đầu cửa sổ = sàn bỏ qua `update_time_ge`, nghi vấn 16/09 — khi đó lát 3.2 cố ý KHÔNG tiến mốc nên gian TikTok sẽ lộ ra ở SQL 1 bằng tuổi mốc tăng mãi, chứ không phải bằng vét dở).
+
+### 4.5. Kiểm sau deploy
+
+1. Sau ~1 ngày SQL 2 có bậc 9 ≈ số gian tuổi > 7 ngày ở SQL 3; HQ Sức khỏe không đỏ vì gian vắng, thẻ Worker ghi "N gian vắng".
+2. `[SanHTTP] SHOPEE n=` mỗi 15' giảm so với 2 ngày trước deploy (ghi số trước/sau vào đây).
+3. Một gian vắng nhận đơn thật: webhook đánh thức, SQL 2 thấy level về 0 trong 1 phút, log `[Auto-sync]` quét gian đó trong ≤ nhịp gốc.
