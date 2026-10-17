@@ -483,7 +483,7 @@ export function TiktokAdsPage() {
                 <a
                   href="/guide?muc=tiktok-ads"
                   className="flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
-                  title="Video hướng dẫn 14 bước: kết nối, đọc số, soi video, cấu hình tự động loại"
+                  title="Video hướng dẫn: kết nối, đọc số, soi video, cấu hình tự động loại"
                 >
                   <CircleHelp className="size-3.5" />
                   Video hướng dẫn

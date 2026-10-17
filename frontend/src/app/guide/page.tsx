@@ -59,6 +59,11 @@ interface GuideSection {
   tour: GuideTour;
   /** Bộ slide chi tiết (deck HTML cũ) — mở ở tab mới; tour mới không có deck. */
   deckSrc?: string;
+  /**
+   * Video anh Trung TỰ QUAY đăng YouTube — có thì hiện khung YouTube THAY tour
+   * động (17/10: tour TikTok 14 bước anh xem thấy khó hiểu, anh tự quay lại).
+   */
+  youtubeId?: string;
 }
 
 const SECTIONS: GuideSection[] = [
@@ -143,8 +148,9 @@ const SECTIONS: GuideSection[] = [
     icon: Megaphone,
     title: "Trợ lý quảng cáo TikTok (GMV Max)",
     description:
-      "14 bước: kết nối tài khoản quảng cáo, ROI hòa vốn và nhận định từng chiến dịch, hòa vốn sản phẩm, soi video tiêu tiền không ra đơn, loại tay, và từng khối cấu hình Tự động loại video (chế độ, luật, công thần, chốt an toàn, chạy thử, đối chiếu diễn tập).",
+      "Kết nối tài khoản quảng cáo, ROI hòa vốn và nhận định từng chiến dịch, soi video tiêu tiền không ra đơn, loại tay và cấu hình Tự động loại video.",
     tour: TIKTOK_ADS_TOUR,
+    youtubeId: "jaGQEWVCPbs",
   },
   {
     key: "staff-plan",
@@ -201,7 +207,7 @@ function GuideAccordionItem({
               )}
             >
               <PlaySquare className="size-3" />
-              {section.tour.steps.length} bước
+              {section.youtubeId ? "Video" : `${section.tour.steps.length} bước`}
             </span>
           </span>
           <span className={cn(TEXT_SUB, "mt-0.5 block")}>
@@ -220,8 +226,9 @@ function GuideAccordionItem({
         <div className="border-t">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-2">
             <p className={TEXT_SUB}>
-              Hướng dẫn tự chạy như video — bấm nút loa để nghe thuyết minh,
-              bấm chấm tròn để nhảy bước.
+              {section.youtubeId
+                ? "Video quay trên giao diện thật — bấm phát để xem, có thể phóng to toàn màn hình."
+                : "Hướng dẫn tự chạy như video — bấm nút loa để nghe thuyết minh, bấm chấm tròn để nhảy bước."}
             </p>
             {section.deckSrc && (
               <Button
@@ -236,11 +243,24 @@ function GuideAccordionItem({
             )}
           </div>
           <div className="mx-auto max-w-3xl px-4 py-5">
-            <TourPlayer
-              steps={section.tour.steps}
-              voiceDir={section.tour.voiceDir}
-              alt={`Hướng dẫn: ${section.title}`}
-            />
+            {section.youtubeId ? (
+              <div className="aspect-video w-full overflow-hidden rounded-xl border bg-black">
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${section.youtubeId}?rel=0`}
+                  title={`Hướng dẫn: ${section.title}`}
+                  className="size-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <TourPlayer
+                steps={section.tour.steps}
+                voiceDir={section.tour.voiceDir}
+                alt={`Hướng dẫn: ${section.title}`}
+              />
+            )}
           </div>
         </div>
       )}
