@@ -10,6 +10,7 @@
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName, ShippingStatus } from "@prisma/client";
+import { vnDateKey } from "../../lib/ads-dates";
 import { prisma } from "../../lib/prisma";
 import { createStockFixture, type StockFixture } from "./fixtures";
 import { ensureLedgerFresh, ledgerMarginByGroup } from "../../services/order-ledger";
@@ -26,7 +27,7 @@ import {
   productGroupKey,
   type AdsGroupSets,
 } from "../../lib/ads-margin";
-import { loadAdsGroupSets, loadMarginGroups, loadMarginRows } from "../shopee/ads-margin-source";
+import { fetchChannelMargins, loadAdsGroupSets, loadMarginGroups, loadMarginRows } from "../shopee/ads-margin-source";
 import { compareMarginSources } from "../shopee/ads-margin-compare";
 
 const ledgerReady: boolean = await (async () => {
@@ -307,6 +308,25 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
     // Có lệch làm tròn thật (nhóm một dòng của O8) nhưng dưới 1 xu mỗi dòng.
     expect(report.maxMoneyDiff).toBeGreaterThan(0);
     expect(report.maxMoneyDiff).toBeLessThan(0.02);
+  });
+
+  it("tự kiểm (Lát 4): doanh thu mọi đơn đặt của chiến dịch trong khoảng tự kiểm — hai đường cộng bằng nhau, tính cả đơn hủy", async () => {
+    const range = marginWindowRange();
+    const sets = await loadAdsGroupSets(fx.channelId);
+    const campKey = campaignGroupKey(campaignRowId);
+    // Khoảng tới HÔM NAY để lấy cả O1 (tạo lúc chạy test); prod dùng tới hết hôm qua.
+    const checks = { from: new Map([[campKey, vnDateKey(29)]]), to: vnDateKey(0) };
+    const viaRows = await fetchChannelMargins(channel(), sets, "rows", checks);
+    const viaSql = await fetchChannelMargins(channel(), sets, "sql", checks);
+    const placedRows = viaRows.placedRevenue(campKey);
+    const placedSql = viaSql.placedRevenue(campKey);
+    expect(placedRows).toBeGreaterThan(0);
+    expect(Math.abs(placedRows - placedSql)).toBeLessThan(0.02);
+    // Đơn hủy O4 (A1, 100k) nằm trong tự kiểm nhưng KHÔNG trong biên lãi → placedRevenue > doanh thu biên lãi của chiến dịch.
+    expect(placedRows).toBeGreaterThan(viaSql.base(campKey).revenue);
+    // Nhóm không có khoảng tự kiểm → 0 ở cả hai đường.
+    expect(viaRows.placedRevenue(productGroupKey("100"))).toBe(0);
+    expect(viaSql.placedRevenue(productGroupKey("100"))).toBe(0);
   });
 
   it("mốc 7 ngày gần đây tính cả đơn tạo ĐÚNG mốc (>=), như đường duyệt mảng", async () => {

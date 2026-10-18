@@ -564,6 +564,8 @@ export interface AdsCampaignDto {
   broadGmv: number;
   roasBroad: number | null;
   breakevenRoas: number | null;
+  /** Lát 4 (18/10/2026): hòa vốn chưa tin được (tự kiểm lệch) — backend đã xóa breakevenRoas; đây là lý do. */
+  breakevenProblem?: string | null;
   /** Lãi ước tính sau quảng cáo — null khi chưa đủ dữ liệu biên lãi. */
   estProfit: number | null;
   assistant: {

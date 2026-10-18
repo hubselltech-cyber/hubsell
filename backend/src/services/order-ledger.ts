@@ -1559,6 +1559,7 @@ export async function ledgerMarginByGroup(
       units: Number(r.units),
       unitsRecent: Number(r.unitsRecent),
       unitsNoCost: Number(r.unitsNoCost),
+      placedRevenue: 0, // tự kiểm đi câu riêng: ledgerPlacedRevenueByGroup
     });
   }
   return out;
@@ -1678,6 +1679,68 @@ function marginByGroupQuery(
     GROUP BY "grp"
   `;
   return { sql, groupNames };
+}
+
+/**
+ * TỰ KIỂM doanh thu (Lát 4, 18/10/2026): doanh thu MỌI đơn đặt (kể cả hủy / chưa đối soát — sàn cũng đếm đơn đặt) của từng nhóm
+ * trong khoảng ngày riêng của nhóm (`checkFrom` theo cặp, `checkTo` chung) — cùng luật với placedRevenueOf (lib/ads-margin).
+ * Tách khỏi ledgerMarginByGroup để bộ đệm biên lãi (digest theo bộ nhóm) dùng chung giữa Trợ lý / tab sản phẩm / gợi ý không bị
+ * vỡ vì khoảng tự kiểm đổi theo ngày; câu này nhẹ (chỉ dòng có giá trong [min checkFrom, checkTo]). Nhóm không tự kiểm (checkFrom
+ * "") không có trong kết quả.
+ */
+export async function ledgerPlacedRevenueByGroup(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  mapping: LedgerMarginMapping & { checkFrom: readonly string[]; checkTo: string }
+): Promise<Map<string, number>> {
+  if (mapping.groups.length !== mapping.keys.length || mapping.groups.length !== mapping.checkFrom.length) {
+    throw new Error(
+      `ledgerPlacedRevenueByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.keys.length} khóa, ${mapping.checkFrom.length} ngày tự kiểm)`
+    );
+  }
+  const out = new Map<string, number>();
+  const checkFromMin = mapping.checkFrom.filter((d) => d !== "").sort()[0];
+  if (!checkFromMin || !mapping.checkTo) return out;
+  const groupNames: string[] = [];
+  const indexOfName = new Map<string, number>();
+  const groupIndexes = mapping.groups.map((name) => {
+    let index = indexOfName.get(name);
+    if (index === undefined) {
+      groupNames.push(name);
+      indexOfName.set(name, (index = groupNames.length));
+    }
+    return index;
+  });
+  const split = splitGroupKeys(groupIndexes, mapping.keys, mapping.checkFrom);
+  const rows = await prisma.$queryRaw<{ grp: number; placedRevenue: unknown }[]>`
+    WITH "checkLines" AS (
+      SELECT l."itemId", l."channelSku", l."actualRevenue", l."createdDate"
+      FROM "order_line_ledger" l
+      WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
+        AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+        AND l."lineGross" > 0
+        AND l."createdDate" >= ${dayParam(checkFromMin)} AND l."createdDate" <= ${dayParam(mapping.checkTo)}
+    ),
+    "mapItem" AS (
+      SELECT DISTINCT "grp", "itemId", NULLIF("checkFrom", '')::date AS "checkFrom"
+      FROM unnest(${split.item.grp}::int[], ${split.item.ids}::text[], ${split.item.check}::text[]) AS m("grp", "itemId", "checkFrom")
+      WHERE "checkFrom" <> ''
+    ),
+    "mapSku" AS (
+      SELECT DISTINCT "grp", "sku", NULLIF("checkFrom", '')::date AS "checkFrom"
+      FROM unnest(${split.sku.grp}::int[], ${split.sku.skus}::text[], ${split.sku.check}::text[]) AS m("grp", "sku", "checkFrom")
+      WHERE "checkFrom" <> ''
+    )
+    SELECT t."grp", sum(t."actualRevenue") AS "placedRevenue"
+    FROM (
+      SELECT m."grp", x."actualRevenue" FROM "checkLines" x JOIN "mapItem" m ON m."itemId" = x."itemId" WHERE x."createdDate" >= m."checkFrom"
+      UNION ALL
+      SELECT m."grp", x."actualRevenue" FROM "checkLines" x JOIN "mapSku" m ON m."sku" = x."channelSku"
+      WHERE x."itemId" IS NULL AND x."createdDate" >= m."checkFrom"
+    ) t
+    GROUP BY t."grp"`;
+  for (const r of rows) out.set(groupNames[Number(r.grp) - 1], Number(r.placedRevenue));
+  return out;
 }
 
 // ------------------------------------------------------------

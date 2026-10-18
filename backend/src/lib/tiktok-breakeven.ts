@@ -55,7 +55,7 @@
 import { createHash } from "crypto";
 import { ShippingStatus } from "@prisma/client";
 import { startOfDaysAgo } from "./ads-dates";
-import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, lineInGroup, type AdsGroupSets } from "./ads-margin";
+import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, lineInGroup, placedRevenueOf, type AdsGroupSets } from "./ads-margin";
 import type { DateRangeFilter } from "./date-range";
 
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */
@@ -371,16 +371,8 @@ export function tiktokEstProfit(
 
 /** Doanh thu MỌI đơn đặt (kể cả hủy / đang giao) trên tập SKU, ngày tạo (giờ VN) trong [from, to] — để so với doanh thu TikTok báo. Thuần. */
 export function placedRevenue(rows: BreakevenPnlRow[], skuSet: ReadonlySet<string>, from: string, to: string): number {
-  let sum = 0;
-  for (const row of rows) {
-    const day = new Date(row.createdAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
-    if (day < from || day > to) continue;
-    const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
-    if (itemTotal <= 0) continue;
-    const matchTotal = row.items.filter((it) => lineInGroup(it, skuSet)).reduce((s, it) => s + it.price * it.quantity, 0);
-    sum += row.actualRevenue * (matchTotal / itemTotal);
-  }
-  return sum;
+  // Một luật cho hai sàn (Lát 4): lib/ads-margin placedRevenueOf.
+  return placedRevenueOf(rows, skuSet, from, to);
 }
 
 /** Đà bán của một nhóm SKU: số sản phẩm bán ra 7 ngày và 30 ngày gần nhất + doanh thu 30 ngày (mọi đơn đặt trừ hủy). */

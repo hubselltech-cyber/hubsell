@@ -1757,7 +1757,16 @@ function buildCampaignColumns(
           />
         </span>
       ),
-      cell: ({ row }) => (
+      cell: ({ row }) =>
+        row.original.breakevenProblem ? (
+          // Lát 4 (18/10/2026): tự kiểm lệch → không đưa số; nói rõ Hubsell đang sửa phía mình, khách không cần làm gì.
+          <span
+            className="text-xs font-medium text-amber-700"
+            title={`${row.original.breakevenProblem}. Hubsell đang rà lại cách nối đơn hàng với sản phẩm của chiến dịch — không cần khách làm gì; có số đáng tin sẽ hiện lại.`}
+          >
+            Chưa tin được
+          </span>
+        ) : (
         <span className="tabular-nums text-slate-700">
           {formatRoas(row.original.breakevenRoas)}
           {row.original.marginSource === "shop" && (
@@ -1769,7 +1778,7 @@ function buildCampaignColumns(
             </span>
           )}
         </span>
-      ),
+        ),
     },
     {
       id: "roasTarget",

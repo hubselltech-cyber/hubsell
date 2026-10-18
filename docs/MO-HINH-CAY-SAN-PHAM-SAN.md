@@ -71,7 +71,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 | 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b (mục 6.9) · ✅ 1c code 18/10 (mục 6.10) |
 | 2 | Bù đơn cũ: HỎI SÀN cho mọi dòng chưa có id của gian ACTIVE trong 90 ngày (mồ côi trước), lô 50, nghỉ 2 s; ghi `externalId` + đổi `channelSku`; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`; gian không gọi được sàn suy luận hẹp (mục 7). | ✅ code 18/10 (mục 7.7) |
 | 3 | Lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt cho cùng mã thô (không bịa, không nhắc — anh chốt 18/10); vá hồi tố 79 dòng. | ✅ code 18/10 (mục 8.7) — chỉ sửa một lần, không áp cho lá khách thêm sau |
-| 4 | Dòng đối chiếu doanh thu cho Shopee (`ads_gms_item_reports` có GMV theo item) — cùng lưới an toàn B6. | ⏳ |
+| 4 | Tự kiểm doanh thu cho Shopee — kiểm MỘT CHIỀU theo `direct_gmv` (sàn chỉ báo doanh thu gán cho quảng cáo); cùng lưới B6. | ✅ code 18/10 (mục 10.6) |
 | — | Lượt vá định kỳ dòng đơn giá vốn 0 của lá đã có giá — bước sau mỗi lượt kéo danh mục một gian (mục 9). | ✅ code 18/10 (mục 9.4) |
 
 ## 5. Lát 0 — chi tiết (18/10/2026)
@@ -332,7 +332,7 @@ thử lại). Ledger worker tính lại theo lô như mọi thay đổi khác; ~
   8,90 trên 45 đơn (−74%). Cách tính SQL này đã tái lập đúng số app trước bù, nên app sẽ hiện 7,05 và hết "Chưa tin được" — chưa
   nhìn tận mắt qua giao diện vì phiên Chrome đã quay về dev@hubsell.tech; anh mở gian and.not.or là thấy.
 
-## 8. Lát 3 — thiết kế: lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt (18/10/2026, CHỜ ANH CHỐT)
+## 8. Lát 3 — lá tách 15/10 nhận lại giá vốn theo LỊCH SỬ khách đã đặt (18/10/2026, đã chốt và chạy)
 
 Anh Trung chốt hướng 18/10: *"thừa kế tự động dựa trên lịch sử khách đã đặt giá vốn, không bịa giá vốn chỉ vì tên SKU có vẻ giống
 nhau; không cần nhắc, khách sai khách tự dò lại."*
@@ -526,3 +526,81 @@ GROUP BY c."id" ORDER BY lines DESC;
 - **Kiểm prod sau deploy:** dán SQL 9.3 trước (số dự kiến ~74 dòng 15–18/10 + dòng cũ hơn, chưa đo); sau lượt kéo đêm 03:00–05:00
   (hoặc gian mới nối) đọc log Render `[Catalog-sync] … vá N dòng đơn giá vốn 0`; dán lại SQL 9.3 → kỳ vọng 0 ở gian ACTIVE đã kéo.
   Gian lỗi kéo danh mục (token hỏng) không được vá tới khi kéo lại được — chấp nhận.
+
+## 10. Lát 4 — thiết kế: tự kiểm doanh thu cho Shopee (18/10/2026, CHỜ ANH CHỐT)
+
+### 10.1 Vì sao Shopee không chép nguyên lưới của TikTok
+
+TikTok GMV Max báo doanh thu **mọi đơn** của sản phẩm trong chiến dịch → so hai chiều với Hubsell được (lệch quá 25% là sai, bất kể
+chiều). Shopee CPC chỉ báo doanh thu **gán cho quảng cáo**: `broad_gmv` = đơn đặt sau khi bấm quảng cáo, **kể cả sản phẩm khác** trong
+gian; `direct_gmv` = đơn của **chính sản phẩm quảng cáo**. Vì vậy:
+- so với `broad_gmv` không có nghĩa (Hubsell có thể thấp hơn hợp lệ vì broad gom cả sản phẩm khác);
+- `direct_gmv` là **cận dưới hợp lệ**: doanh thu Hubsell thấy cho các sản phẩm của chiến dịch (mọi đơn đặt, cùng những ngày) **không
+  thể thấp hơn** doanh thu sàn gán trực tiếp cho chính chúng. Thấp hơn rõ rệt = cây sản phẩm của Hubsell thiếu đơn (đúng kiểu TC025).
+  Chiều ngược (Hubsell cao hơn) là bình thường (đơn tự nhiên) → **không kiểm**.
+
+### 10.2 Số đo prod 18/10 (95 chiến dịch Shopee đang chạy có `direct_gmv` 30 ngày, gian ACTIVE)
+
+| Hubsell ÷ direct_gmv | Số chiến dịch | Ghi chú |
+|---|---|---|
+| ≥ 100% | 74 | bình thường |
+| 80–100% | 8 | nhiễu gán ngày (Shopee ghi đơn về ngày bấm quảng cáo, đơn đặt sau vài ngày) |
+| 50–80% | 3 | Hanoinest 0,64 · Thế Giới Xuyên Thấu 0,72 · Tiệm Buôn Hoài Niệm 0,74 — **ca thật cần soi** |
+| < 50% (đa số = 0) | 10 | **toàn bộ thuộc gian đã NGỦ ĐÔNG** (Samba ×2, Bách Hóa Thanh Thu, LUMI SOLAR…): Lát 2 bỏ qua gian ngủ đông theo thiết kế, sổ chưa có `itemId`; khách đóng tiền → `hibernatedAt` về NULL → worker tự gieo và bù ở lượt kế |
+
+Với ngưỡng 25% (cùng số với TikTok, tự chọn): 2 chiến dịch của gian đang hoạt động sẽ hiện "chưa tin được" ngay sau deploy — đúng
+mục đích của lưới.
+
+### 10.3 Cách làm
+
+- **Nguyên liệu:** `AdsCampaignDailyPerf.directGmv` của chiến dịch Shopee trong cửa sổ biên lãi 30 ngày tới hết hôm qua; `checkFrom` =
+  ngày đầu có số (như TikTok `tiktokCampaignCheckOf`). Hubsell `placedRevenue` = Σ `actualRevenue` dòng có giá của nhóm chiến dịch
+  (khóa `i:<itemId>` | mã, như Lát 1b) trong [from, to], **mọi đơn đặt kể cả hủy** (sàn cũng đếm đơn đặt).
+- **Gom:** đưa phần "checks" (đã có trong câu TikTok) vào `ledgerMarginByGroup` + mapping `checkFrom/checkTo`; đường "rows" dùng lại
+  `placedRevenue` (chuyển hàm này về `lib/ads-margin.ts` cho hai sàn dùng chung). `ChannelMargins` thêm `placedRevenue(groupKey)`.
+- **Luật thuần** `marginCheckProblem(check)`: `directGmv > 0` và `placed < directGmv × (1 − 25/100)` → lý do "Hubsell chỉ thấy X% doanh thu
+  sàn gán trực tiếp cho sản phẩm của chiến dịch (A so với B) — dòng đơn chưa nối đúng sản phẩm, hòa vốn chưa tin được"; ngược lại "".
+  Hằng `SHOPEE_MARGIN_CHECK_MAX_GAP_PCT = 25` (tự chọn; căn cứ bảng 10.2).
+- **Nơi dùng:** `ads-insights` `CampaignInsight` thêm `check` + `breakevenProblem`; có problem → `breakevenRoas = null`, `marginSource = null`
+  → `evaluateShopeeCampaign` / `assessRoasTarget` / `ads-auto-execute` đã coi null là "không có mốc" (auto-execute: `flagged = false`,
+  không tự cắt ngân sách — đã đọc mã). Tab Gợi ý / Hòa vốn sản phẩm Shopee: nhóm **sản phẩm** không có số sàn theo ngày → không tự kiểm
+  (như TikTok nguồn `product`); GMS (GMV Max cấp shop) có `direct_gmv` theo item 7d/30d → áp cùng luật cho từng item trong bảng GMS
+  (phần mở rộng, làm nếu còn thời gian).
+- **UI:** cột ROAS hòa vốn Shopee hiện "Chưa tin được" (vàng) + tooltip lý do, giống ô TikTok; mobile hiện "—" (kiểu đã có `null`).
+- **Không đụng:** Lazada (không có số quảng cáo theo sản phẩm đủ tin), ngưỡng loại / luật tự động của khách.
+
+### 10.4 Kiểm chứng
+
+- Test thuần: dưới ngưỡng / đúng ngưỡng / `directGmv = 0` → ""; thấp hơn 26% → lý do; test DB hai đường bằng nhau có thêm `placedRevenue`
+  (như tiktok-breakeven-sql-db).
+- Prod sau deploy: Hanoinest "Máy Sưởi Mini" (0,64) và Thế Giới Xuyên Thấu "Đầm Maxi" (0,72) hiện "Chưa tin được"; 74 chiến dịch ≥ 100%
+  không đổi số; soi hai ca đó xem thiếu đơn ở đâu (có thể lại là mã đổi / đăng lại tin).
+
+### 10.5 Anh Trung chốt 18/10/2026
+
+1. Kiểm **một chiều** theo `direct_gmv`. ✅ 2. Ngưỡng **25%**. ✅ 3. GMS theo item **để sau**. ✅
+
+### 10.6 Lát 4 — đã code (18/10/2026, chưa push)
+
+- `lib/ads-margin.ts`: `MarginCheck`, `MarginCheckWindows`, `MARGIN_CHECK_MAX_GAP_PCT = 25`, `marginCheckProblem` (một chiều),
+  `placedRevenueOf` (dùng chung hai sàn — `tiktok-breakeven.placedRevenue` gọi lại), `ChannelMargins.placedRevenue(groupKey)`,
+  `adsGroupMappingOf(sets, checks?)` → `checkFrom[]` / `checkTo` + digest gồm khoảng.
+- **Tự kiểm đi câu SQL riêng** `ledgerPlacedRevenueByGroup` (services/order-ledger), KHÔNG nhét vào `ledgerMarginByGroup`: digest
+  của biên lãi không gồm khoảng tự kiểm nên đệm 30' vẫn dùng chung giữa Trợ lý / tab sản phẩm / gợi ý (test lưới đỡ
+  `ads-margin-fallback-db` bắt được: nhét chung làm đệm vỡ, câu gom chạy thêm một lần). Câu riêng nhẹ: chỉ dòng có giá trong
+  [min checkFrom, checkTo], nối cột `itemId` / `channelSku` như Lát 1b. Đệm riêng `placedRevenueCache` (cùng TTL, cùng lệnh xóa).
+- `ads-margin-source.fetchChannelMargins(channel, sets, source?, checks?)`: đường sql = biên lãi (đệm chung) + tự kiểm (đệm riêng) ghép
+  một mặt tiền; đường rows = `marginsFromRows(rows đã lọc, …, checks, rows THÔ)` — đệm rows nay giữ bản thô (tự kiểm cần cả đơn hủy /
+  chưa đối soát), lọc theo luật sàn lúc dùng.
+- `ads-insights`: khoảng tự kiểm mỗi chiến dịch = từ ngày đầu có số sàn trong 30 ngày tới hết hôm qua; `check` + `breakevenProblem`
+  trên `CampaignInsight`; có problem → `margin`/`breakevenRoas` = null, `marginSource` = null (kể cả mượn gian) →
+  `evaluateShopeeCampaign` / `assessRoasTarget` / `ads-auto-execute` coi là không có mốc (auto-execute `flagged = false`, không tự
+  cắt). Route `/api/quang-cao/shopee` trả `breakevenProblem` + `check`.
+- UI web: cột "Hòa vốn" của bảng chiến dịch hiện **"Chưa tin được"** (vàng) + tooltip lý do; mobile thêm kiểu `breakevenProblem?`
+  (hiện "—" vì `breakevenRoas` null). Công cụ đối chiếu: `revenuePlaced` so theo lệch tuyệt đối (rows nhân tỷ trọng, sql cộng dòng
+  đã làm tròn).
+- Test: `ads-margin.test` +4 ca (luật ngưỡng, placedRevenueOf kể cả hủy / id trước mã sau / biên ngày VN, ánh xạ kèm khoảng + digest);
+  `ads-margin-sql-db` +1 ca hai đường bằng nhau cho tự kiểm (đơn hủy O4 nằm trong tự kiểm nhưng không trong biên lãi); 14 tệp quảng
+  cáo + lưới đỡ xanh; tsc BE + FE sạch.
+- Kiểm prod sau deploy: Hanoinest "Máy Sưởi Mini" (0,64) và Thế Giới Xuyên Thấu "Đầm Maxi" (0,72) hiện "Chưa tin được"; 74 chiến
+  dịch ≥ 100% không đổi số; soi hai ca đó (mã đổi / đăng lại tin?).

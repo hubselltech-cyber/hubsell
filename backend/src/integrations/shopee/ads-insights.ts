@@ -29,10 +29,13 @@ import {
   campaignGroupKey,
   groupSkusByItemId,
   lowCostCoverage,
+  marginCheckProblem,
   marginOf,
   productGroupKey,
   type AdsInsightChannel,
   type ChannelMargins,
+  type MarginCheck,
+  type MarginCheckWindows,
 } from "../../lib/ads-margin";
 import { prisma } from "../../lib/prisma";
 import type { AdsMarginSource } from "../../lib/ads-margin";
@@ -66,6 +69,10 @@ export interface CampaignInsight {
   marginSource: "campaign" | "shop" | null;
   marginOrders: number;
   breakevenRoas: number | null;
+  /** Tự kiểm một chiều với direct_gmv (Lát 4); null = chiến dịch chưa có số sàn trong 30 ngày. */
+  check: MarginCheck | null;
+  /** Lý do hòa vốn CHƯA TIN ĐƯỢC (tự kiểm lệch quá ngưỡng) — khi có thì margin/breakevenRoas đã bị xóa. */
+  breakevenProblem: string | null;
   assessment: AssistantAssessment;
   /** Đợt A: mục tiêu ROAS seller đặt trên sàn so với hòa vốn (null = không đặt / chưa có hòa vốn). */
   roasTargetCheck: RoasTargetCheck | null;
@@ -143,11 +150,33 @@ export async function computeChannelAdsInsights(
     select: { channelSku: true, externalId: true },
   });
 
+  // ---- Tự kiểm doanh thu một chiều (Lát 4, 18/10/2026): Shopee direct_gmv là cận dưới của doanh thu Hubsell thấy cho sản phẩm
+  // của chiến dịch. Khoảng tự kiểm của mỗi chiến dịch = từ ngày đầu CÓ số sàn trong 30 ngày tới hết hôm qua (hôm nay còn dở).
+  const checkFrom = new Map<string, string>();
+  const directGmvOf = new Map<string, number>();
+  for (const c of campaignRows) {
+    if (!c.itemIds) continue;
+    let from = "";
+    let direct = 0;
+    for (const p of c.dailyPerf) {
+      const key = dateKey(p.date);
+      if (key > yesterdayKey || key < windowFloorKey["30d"]) continue;
+      if (from === "" || key < from) from = key;
+      direct += Number(p.directGmv);
+    }
+    if (from) {
+      checkFrom.set(campaignGroupKey(c.id), from);
+      directGmvOf.set(c.id, direct);
+    }
+  }
+  const checks: MarginCheckWindows = { from: checkFrom, to: yesterdayKey };
+
   // ---- Biên lãi 30 ngày (chưa trừ ads): toàn gian + riêng từng chiến dịch ----
   const margins = await fetchChannelMargins(
     channel,
     buildAdsGroupSets(groupSkusByItemId(channelProducts), campaignRows),
-    opts.marginSource
+    opts.marginSource,
+    checks
   );
 
   const shopMarginBase = margins.base(SHOP_GROUP);
@@ -189,12 +218,21 @@ export async function computeChannelAdsInsights(
     const own = margins.base(campaignGroupKey(c.id));
     const ownMargin = marginOf(own);
     const useOwn = own.orders >= MIN_ORDERS_FOR_MARGIN && ownMargin != null;
-    const margin = useOwn ? ownMargin : shopMargin;
-    const marginSource: "campaign" | "shop" | null = useOwn
-      ? "campaign"
-      : shopMargin != null
-        ? "shop"
-        : null;
+    // Tự kiểm một chiều (Lát 4): Hubsell thấy ít hơn 75% doanh thu sàn gán trực tiếp cho sản phẩm của chiến dịch → cây sản phẩm
+    // thiếu đơn → KHÔNG đưa hòa vốn (kể cả mượn gian), luật tự động / auto-execute coi là không có mốc (null = không hành động).
+    const from = checkFrom.get(campaignGroupKey(c.id));
+    const check: MarginCheck | null = from
+      ? { revenuePlaced: margins.placedRevenue(campaignGroupKey(c.id)), platformDirectGmv: directGmvOf.get(c.id) ?? 0, from, to: yesterdayKey }
+      : null;
+    const breakevenProblem = marginCheckProblem(check) || null;
+    const margin = breakevenProblem ? null : useOwn ? ownMargin : shopMargin;
+    const marginSource: "campaign" | "shop" | null = breakevenProblem
+      ? null
+      : useOwn
+        ? "campaign"
+        : shopMargin != null
+          ? "shop"
+          : null;
     const breakevenRoas = margin != null && margin > 0 ? 1 / margin : null;
 
     const assessment = evaluateShopeeCampaign(
@@ -241,6 +279,8 @@ export async function computeChannelAdsInsights(
       marginSource,
       marginOrders: useOwn ? own.orders : shopMarginBase.orders,
       breakevenRoas,
+      check,
+      breakevenProblem,
       assessment,
       roasTargetCheck,
       deliveryCheck,

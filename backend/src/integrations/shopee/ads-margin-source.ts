@@ -32,13 +32,14 @@ import {
   type AdsMarginSource,
   type ChannelMargins,
   type LedgerMarginOptions,
+  type MarginCheckWindows,
   type MarginGroupStats,
   type MarginRow,
 } from "../../lib/ads-margin";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import type { DateRangeFilter } from "../../lib/date-range";
 import { prisma } from "../../lib/prisma";
-import { ensureLedgerFresh, ledgerCompactOrders, ledgerMarginByGroup } from "../../services/order-ledger";
+import { ensureLedgerFresh, ledgerCompactOrders, ledgerMarginByGroup, ledgerPlacedRevenueByGroup } from "../../services/order-ledger";
 
 // ------------------------------------------------------------
 // Đường "rows": dòng gọn của từng đơn
@@ -80,8 +81,8 @@ async function fetchChannelMarginRows(channel: AdsInsightChannel): Promise<Margi
   if (hit && Date.now() - hit.at < MARGIN_CACHE_TTL_MS) {
     return (await hit.rows).slice();
   }
-  const rows = (async () =>
-    pnlRowsForMargin(await loadMarginRows(channel), channel.channelName))();
+  // Nhớ bản THÔ (mọi đơn đặt) — tự kiểm (Lát 4) cần cả đơn hủy / chưa đối soát; biên lãi lọc theo luật sàn lúc dùng.
+  const rows = loadMarginRows(channel);
   if (MARGIN_CACHE_TTL_MS > 0) {
     if (marginRowsCache.size >= MARGIN_CACHE_MAX_CHANNELS) {
       const oldest = marginRowsCache.keys().next().value;
@@ -115,7 +116,7 @@ export function marginGroupOptions(channelName: ChannelName, range: DateRangeFil
  */
 export async function loadMarginGroups(
   channel: AdsInsightChannel,
-  mapping: Pick<AdsGroupMapping, "groups" | "keys">,
+  mapping: Pick<AdsGroupMapping, "groups" | "keys"> & Partial<Pick<AdsGroupMapping, "checkFrom" | "checkTo">>,
   range: DateRangeFilter = marginWindowRange()
 ): Promise<Map<string, MarginGroupStats>> {
   const scope = { userId: channel.userId, id: channel.id, channelName: channel.channelName };
@@ -164,6 +165,7 @@ async function fetchChannelMarginGroups(
 function invalidateChannelMargins(channelId: string): void {
   marginRowsCache.delete(channelId);
   marginGroupsCache.delete(channelId);
+  placedRevenueCache.delete(channelId);
 }
 // Nhập giá vốn / áp cho đơn cũ → biên lãi đổi → xóa bộ đệm của các gian đó ngay
 // (28/09: giữ 30' làm bảng ROAS hòa vốn báo "chưa có giá vốn" dù đã vá xong).
@@ -194,18 +196,30 @@ const marginSqlFailedAt = new Map<string, number>();
 export async function fetchChannelMargins(
   channel: AdsInsightChannel,
   sets: AdsGroupSets,
-  source?: AdsMarginSource
+  source?: AdsMarginSource,
+  checks?: MarginCheckWindows
 ): Promise<ChannelMargins> {
-  if (source === "rows") return marginsFromRows(await fetchChannelMarginRows(channel), sets);
-  if (source === "sql") {
-    return marginsFromGroups(await fetchChannelMarginGroups(channel, adsGroupMappingOf(sets)));
-  }
+  // Đường "rows": tự kiểm cần MỌI đơn đặt (kể cả hủy / chưa đối soát) → giữ bản thô bên cạnh bản đã lọc theo luật sàn.
+  const viaRows = async () => {
+    const raw = await fetchChannelMarginRows(channel);
+    return marginsFromRows(pnlRowsForMargin(raw, channel.channelName), sets, undefined, checks, raw);
+  };
+  // Đường "sql": biên lãi theo bộ nhóm (đệm dùng chung Trợ lý / tab sản phẩm / gợi ý — digest KHÔNG gồm khoảng tự kiểm) + tự kiểm
+  // bằng câu riêng nhẹ (đệm riêng theo digest có khoảng), ghép lại một mặt tiền.
+  const viaSql = async () => {
+    const groups = await fetchChannelMarginGroups(channel, adsGroupMappingOf(sets));
+    const placed = checks ? await fetchChannelPlacedRevenue(channel, adsGroupMappingOf(sets, checks)) : new Map<string, number>();
+    const base = marginsFromGroups(groups);
+    return { ...base, placedRevenue: (groupKey: string) => placed.get(groupKey) ?? 0 };
+  };
+  if (source === "rows") return viaRows();
+  if (source === "sql") return viaSql();
   const failedAt = marginSqlFailedAt.get(channel.id);
   if (failedAt === undefined || Date.now() - failedAt >= MARGIN_SQL_FAILURE_COOLDOWN_MS) {
     try {
-      const groups = await fetchChannelMarginGroups(channel, adsGroupMappingOf(sets));
+      const margins = await viaSql();
       marginSqlFailedAt.delete(channel.id);
-      return marginsFromGroups(groups);
+      return margins;
     } catch (err) {
       marginSqlFailedAt.set(channel.id, Date.now());
       console.error(
@@ -215,7 +229,31 @@ export async function fetchChannelMargins(
       );
     }
   }
-  return marginsFromRows(await fetchChannelMarginRows(channel), sets);
+  return viaRows();
+}
+
+/**
+ * Tự kiểm doanh thu (Lát 4) ở đường "sql": một câu riêng, nhớ KẾT QUẢ theo gian + digest có khoảng tự kiểm (đổi mỗi ngày),
+ * cùng thời hạn và cùng lệnh xóa với đệm biên lãi.
+ */
+const placedRevenueCache = new Map<string, { at: number; digest: string; placed: Promise<Map<string, number>> }>();
+
+async function fetchChannelPlacedRevenue(channel: AdsInsightChannel, mapping: AdsGroupMapping): Promise<Map<string, number>> {
+  const hit = placedRevenueCache.get(channel.id);
+  if (hit && hit.digest === mapping.digest && Date.now() - hit.at < MARGIN_CACHE_TTL_MS) return hit.placed;
+  const scope = { userId: channel.userId, id: channel.id, channelName: channel.channelName };
+  const placed = ledgerPlacedRevenueByGroup(scope, marginWindowRange(), mapping);
+  if (MARGIN_CACHE_TTL_MS > 0) {
+    if (!hit && placedRevenueCache.size >= MARGIN_CACHE_MAX_CHANNELS) {
+      const oldest = placedRevenueCache.keys().next().value;
+      if (oldest !== undefined) placedRevenueCache.delete(oldest);
+    }
+    placedRevenueCache.set(channel.id, { at: Date.now(), digest: mapping.digest, placed });
+    placed.catch(() => {
+      if (placedRevenueCache.get(channel.id)?.placed === placed) placedRevenueCache.delete(channel.id);
+    });
+  }
+  return placed;
 }
 
 /** Bộ nhóm của một gian đọc thẳng từ database — cho công cụ đối chiếu và test. */

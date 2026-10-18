@@ -7606,6 +7606,13 @@ export interface ShopeeAdsCampaignRow {
   marginSource: "campaign" | "shop" | null;
   marginOrders: number;
   breakevenRoas: number | null;
+  /**
+   * Lát 4 (18/10/2026): tự kiểm một chiều — Hubsell thấy ít hơn 75% doanh thu sàn gán trực tiếp cho sản phẩm của chiến dịch →
+   * hòa vốn CHƯA TIN ĐƯỢC: backend đã xóa margin/breakevenRoas, đây là lý do để hiện. null = ổn.
+   */
+  breakevenProblem: string | null;
+  /** Số tự kiểm (null = chiến dịch chưa có số sàn trong 30 ngày). */
+  check: { revenuePlaced: number; platformDirectGmv: number; from: string; to: string } | null;
   /** Đợt A: mục tiêu ROAS seller đặt trên sàn so với hòa vốn. null = không đặt
    *  (đấu thầu thủ công) hoặc chưa có hòa vốn. below = đang lỗ theo thiết kế. */
   roasTargetCheck: RoasTargetCheck | null;

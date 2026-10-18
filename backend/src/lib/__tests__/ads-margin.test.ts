@@ -7,9 +7,12 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  MARGIN_CHECK_MAX_GAP_PCT,
   MARGIN_MIN_COST_COVERAGE_PCT,
   SHOP_GROUP,
   adsGroupMappingOf,
+  marginCheckProblem,
+  placedRevenueOf,
   buildAdsGroupSets,
   campaignGroupKey,
   groupSkusByItemId,
@@ -191,6 +194,59 @@ describe("bộ nhóm SKU của gian", () => {
   });
 });
 
+// LÁT 4 (18/10/2026): tự kiểm MỘT CHIỀU với direct_gmv của Shopee (docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 10).
+describe("marginCheckProblem / placedRevenueOf / ánh xạ kèm khoảng tự kiểm", () => {
+  const check = (revenuePlaced: number, platformDirectGmv: number) => ({ revenuePlaced, platformDirectGmv, from: "2026-09-19", to: "2026-10-17" });
+
+  it("Hubsell ≥ 75% direct_gmv → ổn (kể cả cao hơn nhiều: đơn tự nhiên); không có số sàn → ổn", () => {
+    expect(marginCheckProblem(check(100, 100))).toBe("");
+    expect(marginCheckProblem(check(75, 100))).toBe(""); // đúng ngưỡng
+    expect(marginCheckProblem(check(500, 100))).toBe(""); // chiều cao hơn không kiểm
+    expect(marginCheckProblem(check(0, 0))).toBe("");
+    expect(marginCheckProblem(null)).toBe("");
+    expect(MARGIN_CHECK_MAX_GAP_PCT).toBe(25);
+  });
+
+  it("Hubsell dưới 75% direct_gmv → lý do nêu % và hai con số (ca Hanoinest 0,64 / TGXT 0,72 trên prod 18/10)", () => {
+    const why = marginCheckProblem(check(6_400_000, 10_000_000));
+    expect(why).toContain("64%");
+    expect(why).toContain("6.400.000đ");
+    expect(why).toContain("10.000.000đ");
+    expect(why).toContain("chưa tin được");
+    expect(marginCheckProblem(check(0, 10_000_000))).toContain("0%");
+  });
+
+  it("placedRevenueOf: mọi đơn đặt (kể cả hủy), ngày VN trong [from, to], chia theo tỷ trọng, khóa id trước mã sau", () => {
+    const r = (createdAt: string, items: { sku: string; itemId?: string | null; price: number; quantity: number }[], actualRevenue: number) => ({
+      createdAt: new Date(createdAt),
+      actualRevenue,
+      items,
+    });
+    const rows = [
+      r("2026-10-01T03:00:00Z", [{ sku: "A", itemId: "100", price: 100, quantity: 1 }], 100), // trong khoảng, id khớp
+      r("2026-10-02T03:00:00Z", [{ sku: "A", itemId: "100", price: 100, quantity: 1 }, { sku: "B", itemId: "200", price: 300, quantity: 1 }], 400), // 1/4
+      r("2026-10-03T03:00:00Z", [{ sku: "A", itemId: "999", price: 100, quantity: 1 }], 100), // cùng mã, SPU khác → không
+      r("2026-10-04T03:00:00Z", [{ sku: "A", itemId: null, price: 100, quantity: 1 }], 100), // chưa có id → theo mã
+      r("2026-09-30T16:59:00Z", [{ sku: "A", itemId: "100", price: 100, quantity: 1 }], 100), // 23:59 30/09 giờ VN → ngoài
+    ];
+    expect(placedRevenueOf(rows, new Set(["A", "i:100"]), "2026-10-01", "2026-10-31")).toBe(300);
+  });
+
+  it("adsGroupMappingOf kèm khoảng tự kiểm: checkFrom theo cặp, digest đổi khi khoảng đổi", () => {
+    const sets = buildAdsGroupSets(groupSkusByItemId([{ channelSku: "A", externalId: "100-1" }]), [{ id: "c1", itemIds: "100" }]);
+    const plain = adsGroupMappingOf(sets);
+    expect(plain.checkFrom.every((d) => d === "")).toBe(true);
+    expect(plain.checkTo).toBe("");
+    const checks = { from: new Map([[campaignGroupKey("c1"), "2026-10-01"]]), to: "2026-10-17" };
+    const m = adsGroupMappingOf(sets, checks);
+    m.groups.forEach((g, i) => expect(m.checkFrom[i]).toBe(g === campaignGroupKey("c1") ? "2026-10-01" : ""));
+    expect(m.checkTo).toBe("2026-10-17");
+    expect(m.digest).not.toBe(plain.digest);
+    expect(adsGroupMappingOf(sets, { ...checks, to: "2026-10-18" }).digest).not.toBe(m.digest);
+    expect(adsGroupMappingOf(sets, checks).digest).toBe(m.digest);
+  });
+});
+
 describe("ChannelMargins — mặt tiền chung của hai đường cộng", () => {
   const NOW = Date.parse("2026-09-30T10:00:00Z");
   const daysAgo = (n: number) => new Date(NOW - n * 86_400_000);
@@ -274,6 +330,7 @@ describe("ChannelMargins — mặt tiền chung của hai đường cộng", () 
         missingCostRevenue: 0,
       }),
       pace: { units30d: units, units7d: 1, unitsNoCost: 0 },
+      placedRevenue: 0,
     });
     const m = marginsFromGroups(
       new Map([

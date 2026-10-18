@@ -251,22 +251,41 @@ export function buildAdsGroupSets(
   return sets;
 }
 
-/** Bộ nhóm ở dạng gửi được vào câu SQL: hai mảng song song (nhóm, khóa dòng hàng) + dấu vân tay để nhận biết bộ nhóm đổi. */
+/**
+ * Bộ nhóm ở dạng gửi được vào câu SQL: hai mảng song song (nhóm, khóa dòng hàng) + khoảng tự kiểm theo cặp + dấu vân tay để
+ * nhận biết bộ nhóm / khoảng tự kiểm đổi (khoảng đổi mỗi khi sang ngày mới).
+ */
 export interface AdsGroupMapping {
   groups: string[];
   /** Khóa dòng hàng: "i:<itemId>" hoặc mã SKU thô (xem AdsGroupSets). */
   keys: string[];
+  /** Ngày đầu tự kiểm của nhóm ở cùng vị trí ("" = nhóm không tự kiểm). */
+  checkFrom: string[];
+  /** Ngày cuối tự kiểm chung ("" = không tự kiểm). */
+  checkTo: string;
   digest: string;
 }
 
-/** Trải bộ nhóm thành các cặp (nhóm, khóa) xếp thứ tự cố định — cùng bộ nhóm luôn ra cùng `digest`. */
-export function adsGroupMappingOf(sets: AdsGroupSets): AdsGroupMapping {
+/** Trải bộ nhóm (+ khoảng tự kiểm) thành các cặp (nhóm, khóa) xếp thứ tự cố định — cùng đầu vào luôn ra cùng `digest`. */
+export function adsGroupMappingOf(sets: AdsGroupSets, checks?: MarginCheckWindows): AdsGroupMapping {
   const pairs: [string, string][] = [];
   for (const [group, keys] of sets) for (const key of keys) pairs.push([group, key]);
   pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
   const hash = createHash("sha1");
   for (const [group, key] of pairs) hash.update(`${group}\u0000${key}\u0001`);
-  return { groups: pairs.map((p) => p[0]), keys: pairs.map((p) => p[1]), digest: hash.digest("hex") };
+  if (checks) {
+    hash.update(`\u0002${checks.to}`);
+    for (const [group, from] of [...checks.from].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+      hash.update(`\u0002${group}\u0000${from}`);
+    }
+  }
+  return {
+    groups: pairs.map((p) => p[0]),
+    keys: pairs.map((p) => p[1]),
+    checkFrom: pairs.map((p) => checks?.from.get(p[0]) ?? ""),
+    checkTo: checks?.to ?? "",
+    digest: hash.digest("hex"),
+  };
 }
 
 // ------------------------------------------------------------
@@ -309,23 +328,104 @@ export function salesPaceByItem(
   return sales;
 }
 
+// ------------------------------------------------------------
+// TỰ KIỂM DOANH THU VỚI SÀN — Lát 4 (18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 10)
+// ------------------------------------------------------------
+//
+// Shopee CPC chỉ báo doanh thu GÁN CHO QUẢNG CÁO: broad_gmv gom cả sản phẩm khác trong gian (không so được), direct_gmv = đơn
+// của chính sản phẩm quảng cáo → là CẬN DƯỚI hợp lệ: doanh thu Hubsell thấy cho các sản phẩm của chiến dịch (mọi đơn đặt, cùng
+// những ngày) không thể thấp hơn số sàn gán trực tiếp cho chúng. Thấp hơn rõ rệt = cây sản phẩm Hubsell thiếu đơn (ca TC025
+// 18/10) → hòa vốn chưa tin được. Chiều cao hơn là bình thường (đơn tự nhiên) → KHÔNG kiểm. TikTok GMV Max báo mọi đơn nên so
+// hai chiều (lib/tiktok-breakeven breakevenCheckProblem).
+
+/** Khoảng tự kiểm: mỗi nhóm (chiến dịch) một ngày đầu riêng (ngày đầu có số sàn), chung ngày cuối (hết hôm qua). */
+export interface MarginCheckWindows {
+  /** campaignGroupKey → "YYYY-MM-DD". */
+  from: ReadonlyMap<string, string>;
+  to: string;
+}
+
+export interface MarginCheck {
+  /** Doanh thu MỌI đơn đặt Hubsell thấy cho sản phẩm của chiến dịch trong [from, to]. */
+  revenuePlaced: number;
+  /** Doanh thu sàn gán TRỰC TIẾP cho chính các sản phẩm đó (Shopee direct_gmv) cùng khoảng ngày. */
+  platformDirectGmv: number;
+  from: string;
+  to: string;
+}
+
+/**
+ * Hubsell được thấp hơn direct_gmv tối đa 25% — MẶC ĐỊNH TỰ CHỌN (anh Trung chốt 18/10/2026), cùng số với TikTok. Căn cứ đo prod
+ * 18/10 (95 chiến dịch Shopee đang chạy): 74 ≥ 100%, 8 ở 80–100% (nhiễu gán ngày: sàn ghi đơn về ngày bấm quảng cáo), 3 ở 64–74%
+ * (ca thật), còn lại là gian ngủ đông. 25% chừa đủ vùng nhiễu mà vẫn bắt được ca thật.
+ */
+export const MARGIN_CHECK_MAX_GAP_PCT = 25;
+
+/** Lý do hòa vốn chưa tin được theo tự kiểm một chiều; "" = ổn hoặc không có gì để so. Thuần. */
+export function marginCheckProblem(check: MarginCheck | null | undefined): string {
+  if (!check || !(check.platformDirectGmv > 0)) return "";
+  const floor = check.platformDirectGmv * (1 - MARGIN_CHECK_MAX_GAP_PCT / 100);
+  if (check.revenuePlaced >= floor) return "";
+  const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
+  const pct = Math.round((check.revenuePlaced / check.platformDirectGmv) * 100);
+  return `Hubsell chỉ thấy ${pct}% doanh thu sàn gán trực tiếp cho sản phẩm của chiến dịch (${vnd(check.revenuePlaced)} so với ${vnd(check.platformDirectGmv)}) — dòng đơn chưa nối đúng sản phẩm, hòa vốn chưa tin được`;
+}
+
+/**
+ * Doanh thu MỌI đơn đặt (kể cả hủy / đang giao / chưa đối soát) trên một nhóm khóa, ngày tạo (giờ VN) trong [from, to], chia theo
+ * tỷ trọng giá trị hàng — cùng luật với cột actualRevenue của sổ dòng hàng (dòng giá 0 nhận 0). Dùng chung Shopee và TikTok. Thuần.
+ */
+export function placedRevenueOf(
+  rows: { createdAt: Date; actualRevenue: number; items: { sku: string; itemId?: string | null; price: number; quantity: number }[] }[],
+  keys: ReadonlySet<string>,
+  from: string,
+  to: string
+): number {
+  let sum = 0;
+  for (const row of rows) {
+    const day = new Date(new Date(row.createdAt).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+    if (day < from || day > to) continue;
+    const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
+    if (itemTotal <= 0) continue;
+    const matchTotal = row.items.filter((it) => lineInGroup(it, keys)).reduce((s, it) => s + it.price * it.quantity, 0);
+    sum += row.actualRevenue * (matchTotal / itemTotal);
+  }
+  return sum;
+}
+
 /** Biên lãi + nhịp bán của mọi nhóm của một gian — cùng mặt tiền cho hai đường cộng. */
 export interface ChannelMargins {
   /** SHOP_GROUP, campaignGroupKey(...) hoặc productGroupKey(...). Nhóm không có đơn → toàn 0, độ phủ null. */
   base(groupKey: string): MarginBase;
   /** Theo item_id; chỉ có item có dòng hàng trong cửa sổ. */
   productPace(): Map<string, GroupSalesPace>;
+  /** Tự kiểm: doanh thu mọi đơn đặt của nhóm trong khoảng ngày riêng của nó (0 = không có khoảng / không có đơn). */
+  placedRevenue(groupKey: string): number;
 }
 
 const EMPTY_MARGIN_BASE: MarginBase = Object.freeze(marginOverRows([], null));
 
-/** Đường "rows": cộng trên mảng đơn đã lọc theo sàn (pnlRowsForMargin). `nowMs` = mốc "bây giờ" của nhịp bán. */
-export function marginsFromRows(rows: MarginRow[], sets: AdsGroupSets, nowMs?: number): ChannelMargins {
+/**
+ * Đường "rows": cộng trên mảng đơn đã lọc theo sàn (pnlRowsForMargin). `nowMs` = mốc "bây giờ" của nhịp bán. `checks` + `allRows`
+ * (MỌI đơn, chưa lọc hủy / chưa đối soát) cho tự kiểm — bỏ trống thì placedRevenue dùng `rows` (test cũ) hoặc trả 0 khi không có khoảng.
+ */
+export function marginsFromRows(
+  rows: MarginRow[],
+  sets: AdsGroupSets,
+  nowMs?: number,
+  checks?: MarginCheckWindows,
+  allRows?: MarginRow[]
+): ChannelMargins {
   return {
     base(groupKey) {
       if (groupKey === SHOP_GROUP) return marginOverRows(rows, null);
       const skus = sets.get(groupKey);
       return skus && skus.size > 0 ? marginOverRows(rows, skus) : EMPTY_MARGIN_BASE;
+    },
+    placedRevenue(groupKey) {
+      const from = checks?.from.get(groupKey);
+      const keys = sets.get(groupKey);
+      return from && checks && keys && keys.size > 0 ? placedRevenueOf(allRows ?? rows, keys, from, checks.to) : 0;
     },
     productPace() {
       // Khóa dòng hàng → sản phẩm: "i:<itemId>" là chính nó; mã SKU sàn chỉ thuộc một sản phẩm (ChannelProduct unique theo gian + SKU).
@@ -358,12 +458,19 @@ export interface LedgerMarginGroup {
   units: number;
   unitsRecent: number;
   unitsNoCost: number;
+  /** Tự kiểm: doanh thu mọi đơn đặt của nhóm trong khoảng ngày riêng (0 = nhóm không tự kiểm). */
+  placedRevenue: number;
 }
 
-/** Hai mảng song song (nhóm, khóa dòng hàng "i:<itemId>" | mã SKU thô); một khóa được thuộc nhiều nhóm. */
+/**
+ * Hai mảng song song (nhóm, khóa dòng hàng "i:<itemId>" | mã SKU thô); một khóa được thuộc nhiều nhóm. `checkFrom` (cùng vị trí,
+ * "" = nhóm không tự kiểm) + `checkTo` cho phần tự kiểm — bỏ trống = không tự kiểm.
+ */
 export interface LedgerMarginMapping {
   groups: readonly string[];
   keys: readonly string[];
+  checkFrom?: readonly string[];
+  checkTo?: string;
 }
 
 export interface LedgerMarginOptions {
@@ -377,6 +484,7 @@ export interface LedgerMarginOptions {
 export interface MarginGroupStats {
   base: MarginBase;
   pace: GroupSalesPace;
+  placedRevenue: number;
 }
 
 /** Số thô của câu gom → biên lãi + nhịp bán của nhóm. */
@@ -384,6 +492,7 @@ export function marginGroupStatsOf(raw: LedgerMarginGroup): MarginGroupStats {
   return {
     base: marginBaseFromSums(raw),
     pace: { units30d: raw.units, units7d: raw.unitsRecent, unitsNoCost: raw.unitsNoCost },
+    placedRevenue: raw.placedRevenue,
   };
 }
 
@@ -391,6 +500,7 @@ export function marginGroupStatsOf(raw: LedgerMarginGroup): MarginGroupStats {
 export function marginsFromGroups(groups: ReadonlyMap<string, MarginGroupStats>): ChannelMargins {
   return {
     base: (groupKey) => groups.get(groupKey)?.base ?? EMPTY_MARGIN_BASE,
+    placedRevenue: (groupKey) => groups.get(groupKey)?.placedRevenue ?? 0,
     productPace() {
       const sales = new Map<string, GroupSalesPace>();
       for (const [groupKey, stats] of groups) {

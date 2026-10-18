@@ -232,6 +232,9 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           marginSource: it.marginSource,
           marginOrders: it.marginOrders,
           breakevenRoas: it.breakevenRoas,
+          // Lát 4 (18/10/2026): tự kiểm một chiều với direct_gmv — có lý do là hòa vốn đã bị xóa (chưa tin được).
+          breakevenProblem: it.breakevenProblem,
+          check: it.check,
           // Đợt A: mục tiêu ROAS trên sàn so với hòa vốn (below/tight/ok | null).
           roasTargetCheck: it.roasTargetCheck,
           // Đợt E: đang lãi nhưng bị ngân sách chặn / mục tiêu bó — chỉ gợi ý.

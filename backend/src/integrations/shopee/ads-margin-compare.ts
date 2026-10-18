@@ -78,7 +78,8 @@ function diffBase(key: string, a: MarginBase, b: MarginBase, out: string[]): num
 
 /** Kết quả cuối: trường tiền so theo lệch tuyệt đối, các số không nguyên còn lại so tương đối. */
 const END_TO_END_DIFF: JsonDiffOptions = {
-  moneyKeys: new Set(["revenue", "revenue30d"]),
+  // revenuePlaced (tự kiểm Lát 4): đường rows nhân tỷ trọng, đường sql cộng dòng đã làm tròn 2 số lẻ → so theo lệch tuyệt đối.
+  moneyKeys: new Set(["revenue", "revenue30d", "revenuePlaced"]),
   moneyTolerance: MARGIN_COMPARE_MONEY_TOLERANCE,
   relativeTolerance: 1e-4,
 };
