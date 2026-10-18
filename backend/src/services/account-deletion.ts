@@ -35,6 +35,7 @@ export function anonymizedUserData(now: Date) {
     googleId: null,
     // Hash của một chuỗi ngẫu nhiên không ai biết → không mật khẩu nào khớp.
     passwordHash: bcrypt.hashSync(crypto.randomBytes(32).toString("hex"), 4),
+    passwordSetAt: null,
     resetTokenHash: null,
     resetTokenExpiresAt: null,
     permissions: [] as string[],

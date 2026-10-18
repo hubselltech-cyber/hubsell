@@ -180,6 +180,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
         email: null,
         staffUsername: uname,
         passwordHash: await bcrypt.hash(password, 10),
+        passwordSetAt: new Date(), // chủ shop cấp — mật khẩu thật
         fullName: fullName.trim(),
         role: Role.SALES, // "nhân viên" — phạm vi gian bó theo StaffChannel
         ownerId: req.ownerId!,
@@ -301,7 +302,7 @@ router.post("/:id/reset-password", async (req: AuthRequest, res, next) => {
     }
     await prisma.user.update({
       where: { id: staff.id },
-      data: { passwordHash: await bcrypt.hash(password, 10) },
+      data: { passwordHash: await bcrypt.hash(password, 10), passwordSetAt: new Date() },
     });
 
     if (req.isPlatformAdmin) {

@@ -236,6 +236,7 @@ router.post("/register", async (req, res, next) => {
           email: normalizedEmail,
           username: uname.value ?? (await generateUsername(normalizedEmail)),
           passwordHash,
+          passwordSetAt: new Date(), // mật khẩu thật do khách tự đặt
           fullName: fullName.trim(),
           country: normalizedCountry,
           phone: phoneE164,
@@ -351,6 +352,16 @@ router.post("/login", async (req, res, next) => {
     }
     loginFails.delete(failKey);
 
+    // Đăng nhập bằng mật khẩu thành công = chắc chắn có mật khẩu thật → tự chữa
+    // cột passwordSetAt còn NULL (backfill 18/10 để NULL cho user có googleId vì
+    // không phân biệt được đã đi Quên mật khẩu chưa). Fire-and-forget, không
+    // chặn đăng nhập.
+    if (!user.passwordSetAt) {
+      void prisma.user
+        .update({ where: { id: user.id }, data: { passwordSetAt: new Date() } })
+        .catch((err) => console.warn("[auth] không ghi được passwordSetAt:", err));
+    }
+
     res.json({
       token: signToken(user.id),
       user: {
@@ -376,21 +387,28 @@ router.post("/login", async (req, res, next) => {
 
 // GET /api/auth/me — Lấy thông tin người đang đăng nhập.
 // Kèm hasChannels: shop đã kết nối gian hàng nào chưa (cho Onboarding overlay).
+// Kèm user.hasPassword: false = tài khoản Google chưa từng đặt mật khẩu → Cài
+// đặt hiện "Đặt mật khẩu" không đòi mật khẩu hiện tại (xem User.passwordSetAt).
 router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const [user, channelCount] = await Promise.all([
+    const [row, channelCount] = await Promise.all([
       prisma.user.findUnique({
         where: { id: req.userId! },
-        select: { ...PUBLIC_USER_SELECT, createdAt: true },
+        select: { ...PUBLIC_USER_SELECT, createdAt: true, passwordSetAt: true },
       }),
       prisma.channel.count({ where: { userId: req.ownerId! } }),
     ]);
-    if (!user) {
+    if (!row) {
       res.status(401).json({ error: "Tài khoản không tồn tại" });
       return;
     }
+    const { passwordSetAt, ...user } = row;
     res.json({
-      user: { ...user, platformWorkspace: await isPlatformWorkspace(user) },
+      user: {
+        ...user,
+        hasPassword: passwordSetAt !== null,
+        platformWorkspace: await isPlatformWorkspace(user),
+      },
       hasChannels: channelCount > 0,
     });
   } catch (err) {
@@ -401,32 +419,45 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
 // POST /api/auth/change-password — người dùng TỰ đổi mật khẩu của CHÍNH MÌNH
 // (dùng req.userId, không phải ownerId — nhân viên cũng đổi được mật khẩu riêng).
 // Bắt buộc xác nhận mật khẩu hiện tại để chống chiếm phiên đổi trộm mật khẩu.
+// NGOẠI LỆ (18/10/2026): tài khoản Google chưa từng đặt mật khẩu (passwordSetAt
+// NULL — passwordHash chỉ là chuỗi ngẫu nhiên, khách không biết) → ĐẶT mật khẩu
+// lần đầu, không đòi mật khẩu hiện tại; để khách đăng nhập app điện thoại.
 router.post("/change-password", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body ?? {};
-    if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
-      res.status(400).json({ error: "Thiếu mật khẩu hiện tại hoặc mật khẩu mới" });
+    if (typeof newPassword !== "string") {
+      res.status(400).json({ error: "Thiếu mật khẩu mới" });
       return;
     }
     if (newPassword.length < 8) {
       res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 8 ký tự" });
       return;
     }
-    if (newPassword === currentPassword) {
-      res.status(400).json({ error: "Mật khẩu mới phải khác mật khẩu hiện tại" });
-      return;
-    }
 
     const user = await prisma.user.findUnique({ where: { id: req.userId! } });
-    const valid = user && (await bcrypt.compare(currentPassword, user.passwordHash));
-    if (!valid) {
-      res.status(401).json({ error: "Mật khẩu hiện tại không đúng" });
+    if (!user) {
+      res.status(401).json({ error: "Tài khoản không tồn tại" });
       return;
+    }
+    const hasPassword = user.passwordSetAt !== null;
+    if (hasPassword) {
+      if (typeof currentPassword !== "string" || !currentPassword) {
+        res.status(400).json({ error: "Thiếu mật khẩu hiện tại" });
+        return;
+      }
+      if (newPassword === currentPassword) {
+        res.status(400).json({ error: "Mật khẩu mới phải khác mật khẩu hiện tại" });
+        return;
+      }
+      if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+        res.status(401).json({ error: "Mật khẩu hiện tại không đúng" });
+        return;
+      }
     }
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash: await bcrypt.hash(newPassword, 10) },
+      data: { passwordHash: await bcrypt.hash(newPassword, 10), passwordSetAt: new Date() },
     });
     // Báo cho chủ tài khoản (no-reply@) — người bị đổi trộm còn kịp đặt lại.
     sendPasswordChangedMail(user);
@@ -676,6 +707,7 @@ router.post("/reset-password", async (req, res, next) => {
       where: { id: user.id },
       data: {
         passwordHash: await bcrypt.hash(newPassword, 10),
+        passwordSetAt: new Date(), // tài khoản Google đi lối này cũng thành có mật khẩu thật
         resetTokenHash: null, // dùng một lần — vô hiệu ngay
         resetTokenExpiresAt: null,
       },
@@ -709,8 +741,9 @@ router.get("/google", (req, res) => {
 
 // GET /api/auth/google/callback — Google redirect về kèm ?code=&state=.
 // Upsert user theo googleId → email; user MỚI: tự sinh username, mật khẩu là
-// bcrypt của 32 byte ngẫu nhiên (không đăng nhập được bằng password — muốn đặt
-// mật khẩu thì đi luồng Quên mật khẩu). Xong phát JWT, redirect FE kèm token.
+// bcrypt của 32 byte ngẫu nhiên, passwordSetAt để NULL (không đăng nhập được
+// bằng password — đặt mật khẩu ở Cài đặt → "Đặt mật khẩu" hoặc luồng Quên mật
+// khẩu; app điện thoại cần mật khẩu). Xong phát JWT, redirect FE kèm token.
 router.get("/google/callback", async (req, res) => {
   const fail = (msg: string) =>
     res.redirect(

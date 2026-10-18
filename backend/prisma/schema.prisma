@@ -216,6 +216,14 @@ model User {
   /// hạn 30 phút, dùng một lần (reset xong xoá cả hai cột).
   resetTokenHash      String?
   resetTokenExpiresAt DateTime?
+  /// Lần cuối NGƯỜI DÙNG (hoặc chủ shop cấp cho nhân viên) tự đặt mật khẩu
+  /// (18/10/2026). NULL = tài khoản tạo qua Google, passwordHash chỉ là chuỗi
+  /// ngẫu nhiên → chưa có mật khẩu thật: Cài đặt hiện "Đặt mật khẩu" không đòi
+  /// mật khẩu hiện tại, /me trả hasPassword=false. Ghi ở: đăng ký form, đổi /
+  /// đặt lại mật khẩu, chủ shop tạo / reset mật khẩu nhân viên, và tự chữa khi
+  /// đăng nhập bằng mật khẩu thành công mà cột còn NULL (backfill mơ hồ với
+  /// user có googleId — xem migration user_password_set_at).
+  passwordSetAt       DateTime?
   role                Role      @default(SALES)
   /// Quản trị NỀN TẢNG Hubsell (khác ADMIN của shop): mở khóa khu /admin —
   /// thống kê người dùng đăng ký, nhật ký webhook toàn hệ thống. Không nằm

@@ -84,6 +84,13 @@ describe("nội dung thư", () => {
     expect(welcomeEmailHtml({ fullName: "Lan", trialDays: 14 })).toContain("dùng thử <b>14 ngày</b>");
     expect(welcomeEmailHtml({ fullName: "Lan", trialDays: null })).not.toContain("dùng thử");
   });
+  it("thư chào nguồn Google chỉ đường đặt mật khẩu cho app điện thoại; nguồn form thì không", () => {
+    expect(welcomeEmailHtml({ fullName: "Lan", trialDays: 14, source: "google" })).toContain(
+      "Đặt mật khẩu</a> rồi đăng nhập app bằng email này"
+    );
+    expect(welcomeEmailHtml({ fullName: "Lan", trialDays: 14, source: "form" })).not.toContain("app điện thoại");
+    expect(welcomeEmailHtml({ fullName: "Lan", trialDays: 14 })).not.toContain("app điện thoại");
+  });
   it("thư đổi mật khẩu ghi giờ VN và dẫn về form Quên mật khẩu", () => {
     const html = passwordChangedEmailHtml({ fullName: "Lan", changedAt: new Date("2026-09-19T12:11:00Z") });
     expect(html).toContain("19:11 19/09/2026");

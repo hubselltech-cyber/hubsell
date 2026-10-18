@@ -79,10 +79,23 @@ const row = (label: string, value: string) =>
 
 // ---------------- 1. Chào khách mới ----------------
 
-export function welcomeEmailHtml(input: { fullName: string; trialDays: number | null }): string {
+export function welcomeEmailHtml(input: {
+  fullName: string;
+  trialDays: number | null;
+  /** "google" = tài khoản tạo bằng Google, chưa có mật khẩu → chỉ cho app điện thoại (18/10/2026). */
+  source?: "form" | "google";
+}): string {
   const trial =
     input.trialDays && input.trialDays > 0
       ? p(`Tài khoản của bạn đang ở gói dùng thử <b>${input.trialDays} ngày</b>, đầy đủ tính năng.`)
+      : "";
+  // Đăng ký bằng Google thì app điện thoại (chỉ có ô email + mật khẩu) chưa vào
+  // được — chỉ đường đặt mật khẩu ở Cài đặt web.
+  const mobileHint =
+    input.source === "google"
+      ? p(
+          `Dùng app điện thoại Hubsell? Vào <a href="${FRONTEND_URL}/settings/general" style="color:#444">Cài đặt → Đặt mật khẩu</a> rồi đăng nhập app bằng email này.`
+        )
       : "";
   return shell({
     heading: "Chào mừng bạn đến với Hubsell",
@@ -96,6 +109,7 @@ export function welcomeEmailHtml(input: { fullName: string; trialDays: number | 
         <li style="margin-bottom:6px"><b>Nhập giá vốn</b> cho sản phẩm để xem lãi / lỗ thật của từng đơn.</li>
         <li><b>Xử lý đơn tập trung</b>: chuẩn bị hàng, in vận đơn của mọi sàn ở một màn hình.</li>
       </ol>`,
+      mobileHint,
     ].join("\n"),
     cta: { label: "Mở Hubsell", url: `${FRONTEND_URL}/channels` },
     footnote: "Cần hỗ trợ? Trả lời thẳng email này, đội ngũ Hubsell sẽ phản hồi bạn.",
@@ -112,7 +126,11 @@ export function sendWelcomeMail(user: {
   void safeSend("welcome", user.email, {
     role: "noreply",
     subject: "Chào mừng bạn đến với Hubsell",
-    html: welcomeEmailHtml({ fullName: user.fullName, trialDays: user.trialDays ?? null }),
+    html: welcomeEmailHtml({
+      fullName: user.fullName,
+      trialDays: user.trialDays ?? null,
+      source: user.source,
+    }),
   });
   void mailHq({
     subject: `[Hubsell] Khách mới: ${user.fullName}`,

@@ -240,6 +240,12 @@ export interface AuthUser {
    * onboarding "kết nối gian hàng".
    */
   platformWorkspace?: boolean;
+  /**
+   * false = tài khoản Google chưa từng đặt mật khẩu (passwordHash chỉ là chuỗi
+   * ngẫu nhiên) → Cài đặt hiện "Đặt mật khẩu" không đòi mật khẩu hiện tại.
+   * Chỉ /api/auth/me trả; object lưu từ login không có (undefined).
+   */
+  hasPassword?: boolean;
 }
 
 export interface AuthResponse {
@@ -1177,9 +1183,13 @@ export function googleAuthUrl(entry: "login" | "register" = "login"): string {
   return `${API_URL}/api/auth/google?entry=${entry}`;
 }
 
-/** Người dùng TỰ đổi mật khẩu của chính mình (phải xác nhận mật khẩu hiện tại). */
+/**
+ * Người dùng TỰ đổi mật khẩu của chính mình (phải xác nhận mật khẩu hiện tại).
+ * Tài khoản Google chưa có mật khẩu (hasPassword=false) thì bỏ currentPassword
+ * — backend coi là ĐẶT mật khẩu lần đầu.
+ */
 export function changePassword(data: {
-  currentPassword: string;
+  currentPassword?: string;
   newPassword: string;
 }) {
   return apiFetch<{ ok: boolean }>("/api/auth/change-password", {

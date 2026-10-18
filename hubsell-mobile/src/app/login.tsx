@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -14,6 +15,9 @@ import { Image } from "expo-image";
 import { useAuth } from "@/auth/AuthContext";
 import { homePathFor } from "@/lib/permissions";
 import { ApiError } from "@/api/client";
+
+/** Web /login đọc ?mode=forgot → mở thẳng form Quên mật khẩu (cùng link thư "Mật khẩu vừa đổi"). */
+const FORGOT_PASSWORD_URL = "https://app.hubsell.vn/login?mode=forgot";
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
@@ -153,6 +157,23 @@ export default function LoginScreen() {
           <Text className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
             Dùng tài khoản Hubsell sẵn có của shop bạn.
           </Text>
+
+          {/* Khách đăng ký web bằng Google không có mật khẩu → không biết vào app
+              kiểu gì (một khách hỏi 18/10). Chỉ đường sang web đặt mật khẩu
+              (/login?mode=forgot mở thẳng form Quên mật khẩu). Vẫn theo luật
+              Apple ở trên: không link đăng ký, không nhắc dùng thử / gói. */}
+          <Pressable
+            className="mt-2 active:opacity-70"
+            onPress={() => void Linking.openURL(FORGOT_PASSWORD_URL)}
+            hitSlop={8}
+          >
+            <Text className="text-center text-xs text-slate-500 dark:text-slate-400">
+              Quên mật khẩu hoặc đăng ký bằng Google?{" "}
+              <Text className="font-medium text-slate-700 underline dark:text-slate-200">
+                Đặt mật khẩu tại app.hubsell.vn
+              </Text>
+            </Text>
+          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
