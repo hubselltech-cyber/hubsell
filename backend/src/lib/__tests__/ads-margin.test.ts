@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  MARGIN_CHECK_MAX_GAP_PCT,
+  BREAKEVEN_CHECK_MAX_GAP_PCT,
   MARGIN_MIN_COST_COVERAGE_PCT,
   SHOP_GROUP,
   adsGroupMappingOf,
@@ -204,7 +204,7 @@ describe("marginCheckProblem / placedRevenueOf / ánh xạ kèm khoảng tự ki
     expect(marginCheckProblem(check(500, 100))).toBe(""); // chiều cao hơn không kiểm
     expect(marginCheckProblem(check(0, 0))).toBe("");
     expect(marginCheckProblem(null)).toBe("");
-    expect(MARGIN_CHECK_MAX_GAP_PCT).toBe(25);
+    expect(BREAKEVEN_CHECK_MAX_GAP_PCT).toBe(25);
   });
 
   it("Hubsell dưới 75% direct_gmv → lý do nêu % và hai con số (ca Hanoinest 0,64 / TGXT 0,72 trên prod 18/10)", () => {

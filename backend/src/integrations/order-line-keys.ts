@@ -95,6 +95,43 @@ export function lineKey(l: OrderLineKey): string {
   return l.externalId ?? l.channelSku;
 }
 
+type ReturnLine = { channelSku: string; externalId?: string | null };
+
+/** Số lượng hoàn sàn báo theo id cho một dòng đã có `externalId`; undefined = không nằm trong bảng id. */
+function idReturnQty(line: ReturnLine, byId: ReadonlyMap<string, number> | null | undefined, leafOnly: boolean): number | undefined {
+  if (!line.externalId || !byId) return undefined;
+  // TikTok return_line_items chỉ có sku_id → so phần sau dấu "-" cuối của "product-sku".
+  const key = leafOnly ? line.externalId.slice(line.externalId.lastIndexOf("-") + 1) : line.externalId;
+  return byId.get(key);
+}
+
+/**
+ * Số lượng hoàn cho MỘT dòng đơn — id lá trước, mã sau (docs/MO-HINH-CAY-SAN-PHAM-SAN.md 6.4):
+ *  1. dòng đã có `externalId` và sàn báo hoàn theo id → khớp thẳng (`byId` khóa "item-model", TikTok `leafOnly` theo sku_id);
+ *  2. không thì so mã thô (`byCode`), rồi khóa có đuôi phân loại đã mở rộng (`expanded`, expandReturnKeys);
+ *  3. không có gì → 0 (sàn báo bảng hoàn mà dòng này không nằm trong đó).
+ * Thuần.
+ */
+export function returnedQtyOf(
+  line: ReturnLine,
+  byCode: ReadonlyMap<string, number>,
+  byId: ReadonlyMap<string, number> | null | undefined,
+  expanded: ReadonlyMap<string, number>,
+  leafOnly = false
+): number {
+  return idReturnQty(line, byId, leafOnly) ?? byCode.get(line.channelSku) ?? expanded.get(line.channelSku) ?? 0;
+}
+
+/** Còn dòng chưa khớp được bằng id lẫn mã thô → mới cần mở rộng khóa (một truy vấn, chỉ khi cần). Thuần. */
+export function needsReturnKeyExpand(
+  lines: ReturnLine[],
+  byCode: ReadonlyMap<string, number>,
+  byId: ReadonlyMap<string, number> | null | undefined,
+  leafOnly = false
+): boolean {
+  return lines.some((l) => idReturnQty(l, byId, leafOnly) === undefined && !byCode.has(l.channelSku));
+}
+
 /**
  * Mở rộng bảng số lượng hoàn theo id sàn → theo KHÓA dòng ChannelProduct, để so
  * với OrderItem.channelSku (đơn mới ghi khóa có đuôi phân loại). `byExternalId`

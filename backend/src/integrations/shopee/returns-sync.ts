@@ -47,7 +47,7 @@ import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
 import { mapShopeeEscrowFields } from "./settlements";
 import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-lookup";
 import type { SyncCompleteness } from "../sync-contract";
-import { expandReturnKeys, shopeeLineExternalId } from "../order-line-keys";
+import { expandReturnKeys, needsReturnKeyExpand, returnedQtyOf, shopeeLineExternalId } from "../order-line-keys";
 
 /** Chốt chặn phân trang vô tận (50 yêu cầu/trang → 2500 yêu cầu/lượt là quá đủ). */
 const MAX_RETURN_PAGES = 50;
@@ -91,10 +91,9 @@ export interface ReturnUpdatePlan {
    */
   itemReturns: Map<string, number> | null;
   /**
-   * Cùng số lượng trả nhưng theo id phân loại lá "item_id-model_id" (15/10/2026):
-   * đơn mới ghi OrderItem.channelSku = khóa dòng sàn có đuôi phân loại khi mã
-   * trùng, nên bước áp dụng tra khóa qua ChannelProduct.externalId
-   * (order-line-keys.expandReturnKeys) khi mã thô không khớp.
+   * Cùng số lượng trả nhưng theo id phân loại lá "item_id-model_id": khớp thẳng
+   * OrderItem.externalId (id trước, mã sau — 18/10/2026); dòng chưa có id tra
+   * khóa có đuôi phân loại qua ChannelProduct (order-line-keys.expandReturnKeys).
    */
   itemReturnsByExternalId: Map<string, number> | null;
   /** Yêu cầu sống mới nhất (để vòng sync hỏi chi tiết kiện hoàn về tay chưa). */
@@ -315,7 +314,7 @@ const RETURN_ORDER_SELECT = {
   returnLookupAt: true,
   isSettled: true,
   refundedAmount: true,
-  items: { select: { id: true, channelSku: true, returnedQuantity: true } },
+  items: { select: { id: true, channelSku: true, externalId: true, returnedQuantity: true } },
 } as const;
 
 /** Ngữ cảnh một lượt ghi yêu cầu hoàn vào đơn — dùng chung lượt quét thường và lượt quét bù. */
@@ -507,16 +506,17 @@ async function applyShopeeReturnGroup(
     }
   }
 
-  // Số lượng trả theo dòng SKU (chỉ ghi dòng có thay đổi — idempotent). Dòng
-  // đơn mang khóa có đuôi phân loại → tra qua id sàn (một truy vấn, chỉ khi cần).
+  // Số lượng trả theo dòng đơn (chỉ ghi dòng có thay đổi — idempotent): id lá
+  // trước, mã sau (order-line-keys.returnedQtyOf); dòng chưa có id mang khóa có
+  // đuôi phân loại → tra qua ChannelProduct (một truy vấn, chỉ khi cần).
   if (plan.itemReturns) {
-    const needExpand = order.items.some((it) => !plan.itemReturns!.has(it.channelSku));
+    const byId = plan.itemReturnsByExternalId;
     const expanded =
-      needExpand && plan.itemReturnsByExternalId?.size
-        ? await expandReturnKeys(prisma, channel.id, plan.itemReturnsByExternalId)
+      byId?.size && needsReturnKeyExpand(order.items, plan.itemReturns, byId)
+        ? await expandReturnKeys(prisma, channel.id, byId)
         : new Map<string, number>();
     for (const it of order.items) {
-      const qty = plan.itemReturns.get(it.channelSku) ?? expanded.get(it.channelSku) ?? 0;
+      const qty = returnedQtyOf(it, plan.itemReturns, byId, expanded);
       if (qty !== it.returnedQuantity) {
         await prisma.orderItem.update({
           where: { id: it.id },

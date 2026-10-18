@@ -70,7 +70,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 | **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) |
 | 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b (mục 6.9) · ✅ 1c code 18/10 (mục 6.10) |
 | 2 | Bù đơn cũ: HỎI SÀN cho mọi dòng chưa có id của gian ACTIVE trong 90 ngày (mồ côi trước), lô 50, nghỉ 2 s; ghi `externalId` + đổi `channelSku`; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`; gian không gọi được sàn suy luận hẹp (mục 7). | ✅ code 18/10 (mục 7.7) |
-| 3 | Lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt cho cùng mã thô (không bịa, không nhắc — anh chốt 18/10); vá hồi tố 79 dòng. | ✅ code 18/10 (mục 8.7) — chỉ sửa một lần, không áp cho lá khách thêm sau |
+| 3 | Lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt cho cùng mã thô (không bịa, không nhắc — anh chốt 18/10); vá hồi tố 79 dòng. | ✅ chạy xong prod 18/10 (828 lá, mục 8.7–8.8) — việc một lần, **mã đã gỡ** (mục 11), cột `costPriceInheritedAt` giữ làm dấu + đường lui |
 | 4 | Tự kiểm doanh thu cho Shopee — kiểm MỘT CHIỀU theo `direct_gmv` (sàn chỉ báo doanh thu gán cho quảng cáo); cùng lưới B6. | ✅ code 18/10 (mục 10.6) |
 | — | Lượt vá định kỳ dòng đơn giá vốn 0 của lá đã có giá — bước sau mỗi lượt kéo danh mục một gian (mục 9). | ✅ code 18/10 (mục 9.4) |
 
@@ -90,7 +90,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
   đơn với sản phẩm". Mobile hiện "—" (chưa có chữ lý do — bổ sung khi làm lát mobile).
 - Hệ quả với khách hôm nay: TC025 NEW hết hiện 8,90; ba chiến dịch còn lại (lệch < 10%) giữ nguyên.
 
-## 6. Lát 1 — thiết kế (18/10/2026, CHỜ ANH CHỐT trước khi code)
+## 6. Lát 1 — thiết kế (18/10/2026; anh chốt 6.7, đã làm 6.8–6.10, LIVE)
 
 Mục tiêu: từ nay mọi dòng đơn mới **mang id lá sàn**, và mọi phép gom theo sản phẩm / chiến dịch **đi theo id trước,
 mã sau**. Không bù đơn cũ (Lát 2), không đổi tiền (sổ cái không tăng phiên bản công thức).
@@ -139,8 +139,8 @@ vẫn "Chưa tin được" cho tới Lát 2 — đúng kỳ vọng, không đư�
 | Lớp vá | Lát 1 | Sau Lát 2 |
 |---|---|---|
 | `lib/cost-price.ts SKU_MATCH` (vá giá vốn đơn cũ) | ✅ 1c: dòng có id khớp **chỉ** bằng `oi.externalId = cp.externalId`; ba nhánh chuỗi chỉ còn cho dòng `externalId IS NULL` | giữ chuỗi làm đường lui vĩnh viễn cho Lazada chưa có id |
-| `order-item-images` (`startsWith "("`) | giữ | đổi sang `OR externalId = line.externalId` |
-| `expandReturnKeys` (hoàn hàng) | giữ | khớp `OrderItem.externalId` trực tiếp, expand làm đường lui |
+| `order-item-images` (`startsWith "("`) | giữ | ✅ 18/10 chiều (mục 11): dòng sàn có id → `OrderItem.externalId` trước; mã (kể cả `startsWith "("`) chỉ cho dòng đơn `externalId IS NULL` |
+| `expandReturnKeys` (hoàn hàng) | giữ | ✅ 18/10 chiều (mục 11): `returnedQtyOf` khớp `OrderItem.externalId` thẳng (TikTok theo phần sku_id); mã + expand chỉ cho dòng chưa có id |
 | Hòa vốn / biên lãi (ads) | **đổi sang id** (6.3) | — |
 
 Lý do để ảnh + hoàn sang sau: dòng cũ chưa có id thì lợi ích = 0, mà mỗi lớp là một bộ test riêng; gỡ từng lớp sau khi Lát 2
@@ -168,7 +168,7 @@ Lý do để ảnh + hoàn sang sau: dòng cũ chưa có id thì lợi ích = 0,
 2. Lazada: **mã trước, id khi có mẫu** — dòng đơn Lazada để `externalId` NULL cho tới khi có payload thật để chốt tên trường. ✅
 3. Ảnh dòng đơn + hoàn hàng chuyển sang id **sau Lát 2**. ✅
 
-### 6.8 Lát 1a — đã code (18/10/2026, chưa push)
+### 6.8 Lát 1a — đã code (18/10/2026, push `d915bdcc`)
 
 - Migration `20261018120000_order_item_external_id`: khối lấy khóa ACCESS EXCLUSIVE có thử lại (40 × 3 giây) trên `OrderItem` +
   `order_line_ledger`, rồi `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` (`OrderItem_externalId_idx`,
@@ -183,7 +183,7 @@ Lý do để ảnh + hoàn sang sau: dòng cũ chưa có id thì lợi ích = 0,
 - Kiểm prod sau deploy: `SELECT count(*) FROM "OrderItem" WHERE "externalId" IS NOT NULL` tăng theo đơn mới; dòng
   `order_line_ledger` mới có `itemId`; số các báo cáo **không đổi**.
 
-### 6.9 Lát 1b — gom theo id, đã code (18/10/2026, chưa push)
+### 6.9 Lát 1b — gom theo id, đã code (18/10/2026, push `ceb0bcff`)
 
 Cách làm gọn hơn thiết kế 6.3 (không cần hai CTE / hai tập riêng): **một khóa dòng hàng** dùng chung cho TS và SQL.
 
@@ -210,7 +210,7 @@ Cách làm gọn hơn thiết kế 6.3 (không cần hai CTE / hai tập riêng)
   dựng **dòng A1 mang id** (`OrderItem.externalId = "100-1"`) cạnh dòng không id → `rows` = `sql` ở mọi nhóm; 12 tệp quảng cáo
   133/133. Mobile / FE không đổi.
 
-### 6.10 Lát 1c — vá giá vốn theo id, đã code (18/10/2026, chưa push)
+### 6.10 Lát 1c — vá giá vốn theo id, đã code (18/10/2026, push `973d4895`)
 
 - `lib/cost-price.ts SKU_MATCH` (dùng ở cả 5 đường vá: theo sản phẩm kho, theo SKU sàn, nút "Áp giá vốn cho đơn cũ", và điều
   kiện "gian có giá riêng"): `(oi.externalId IS NOT NULL AND oi.externalId = cp.externalId) OR (oi.externalId IS NULL AND <3 nhánh
@@ -222,7 +222,7 @@ Cách làm gọn hơn thiết kế 6.3 (không cần hai CTE / hai tập riêng)
 - Hệ quả với 79 dòng (~36 triệu) đơn 15–18/10 mất giá vốn: chúng mang khóa có đuôi và từ 18/10 có id → khách nhập giá vốn cho lá mới
   là vá được ngay (Lát 3 bàn chuyện thừa kế tự động).
 
-## 7. Lát 2 — thiết kế: bù id cho đơn cũ (18/10/2026, CHỜ ANH CHỐT trước khi code)
+## 7. Lát 2 — thiết kế: bù id cho đơn cũ (18/10/2026; anh chốt 7.6, LIVE, kết quả 7.8)
 
 ### 7.1 Nguyên tắc: hỏi sàn, không đoán
 
@@ -296,7 +296,7 @@ thử lại). Ledger worker tính lại theo lô như mọi thay đổi khác; ~
 3. **Đổi `channelSku`** của dòng cũ sang khóa hiện hành của lá. ✅
 4. Chạy **tự động trong worker sau deploy**, có công tắc tắt. ✅
 
-### 7.7 Lát 2 — đã code (18/10/2026, chưa push)
+### 7.7 Lát 2 — đã code (18/10/2026, push `75214381` + nhịp worker `23cafd80`)
 
 - Migration `20261018150000_order_line_id_backfill`: (a) `CREATE OR REPLACE TRIGGER order_ledger_on_order_item_update` thêm
   `externalId` vào điều kiện đánh dấu (khối khóa SHARE ROW EXCLUSIVE có thử lại); (b) bảng `order_line_id_backfill` (một dòng / gian:
@@ -397,7 +397,7 @@ giá khách đã đặt cho mã); **phân loại khách thêm về sau khách t�
 loại cũ giữ nguyên giá đã nhập. Vì thế **bỏ bước 3 của 8.4** (product-sync không gán giá cho lá tạo mới nữa) và lượt sửa chỉ chạm lá
 tạo trong cửa sổ 15/10 → 19/10 (ngày deploy lát này). Điểm 1–3 còn lại giữ như đề xuất.
 
-### 8.7 Lát 3 — đã code (18/10/2026, chưa push)
+### 8.7 Lát 3 — đã code (18/10/2026, push `3480ef06`, sửa `4ad8f8ca`; **đã gỡ khỏi mã 18/10 chiều — mục 11**)
 
 - Migration `20261018180000_channel_product_cost_inherited`: cột `ChannelProduct.costPriceInheritedAt` (khóa thử lại; chỉ kỹ thuật).
 - `services/cost-split-repair.ts`: `inheritedCostOf` (thuần); `repairSplitLeafCosts` — MỘT câu `UPDATE … RETURNING` toàn nền tảng:
@@ -510,7 +510,7 @@ GROUP BY c."id" ORDER BY lines DESC;
 - Dự kiến (từ số đo 8.8): ~74 dòng 15–18/10 ở vài gian (ANO / and.not.or, Hi.Bé, XPL2, PERLYCO…) + phần dòng cũ hơn cùng tình trạng,
   chưa đo. DB dev: 0 dòng (không có gian thật). **Chưa kiểm prod** — anh dán SQL trên để có số thật trước/sau deploy.
 
-### 9.4 Đã code (18/10/2026, commit chưa push)
+### 9.4 Đã code (18/10/2026, push `03548f78`)
 
 - `lib/cost-price.ts` → `repairZeroCostLinesForChannel(db, channelId)`: hai câu UPDATE phép bằng (nhánh id; nhánh mã cho dòng
   `externalId IS NULL` qua `unnest` ba khóa), `DISTINCT ON` chọn lá ACTIVE trước / tạo sau trước khi trùng id hoặc trùng khóa; chỉ
@@ -527,7 +527,7 @@ GROUP BY c."id" ORDER BY lines DESC;
   (hoặc gian mới nối) đọc log Render `[Catalog-sync] … vá N dòng đơn giá vốn 0`; dán lại SQL 9.3 → kỳ vọng 0 ở gian ACTIVE đã kéo.
   Gian lỗi kéo danh mục (token hỏng) không được vá tới khi kéo lại được — chấp nhận.
 
-## 10. Lát 4 — thiết kế: tự kiểm doanh thu cho Shopee (18/10/2026, CHỜ ANH CHỐT)
+## 10. Lát 4 — thiết kế: tự kiểm doanh thu cho Shopee (18/10/2026; anh chốt 10.5, LIVE `e8a3e0e4`)
 
 ### 10.1 Vì sao Shopee không chép nguyên lưới của TikTok
 
@@ -620,3 +620,22 @@ mục đích của lưới.
 - Bù id (Lát 2): `done/all = 69, done/infer = 8, error/orphan = 2` (2 gian demo không có ủy quyền, thử lại 24 h) — không đổi.
 - SQL 9.3 (vá định kỳ) vẫn **209 dòng** — đúng, lượt vá chạy sau lượt kéo danh mục đêm 03:00–05:00; **kiểm lại sáng 19/10, kỳ vọng
   giảm mạnh ở 6 gian** (Nội Thất Smart Thanh Phúc 121, Mọ Mẫm LAB 62, Tiệm Bé Sâu 15…), đọc log Render `[Catalog-sync] … vá N dòng`.
+
+## 11. Dọn dẹp sau khi 5 lát live (18/10/2026 chiều, anh Trung: "dọn code thừa, đảm bảo mô hình cây")
+
+Nguyên tắc: mã còn lại phải phản ánh đúng cây (id lá là danh tính, mã chỉ là đường lui cho dòng chưa có id), không giữ việc đã xong, không
+hai nơi tự đặt cùng một số.
+
+| Việc | Quyết định | Vì sao |
+|---|---|---|
+| Lát 3 — `services/cost-split-repair.ts`, `workers/cost-split-repair.ts`, test 5 ca, dòng bật trong `workers/index.ts` | **GỠ** | Việc một lần đã chạy xong và kiểm trên prod (828 lá, 8.8; lượt khởi động lại sau deploy `e8a3e0e4` ghi 0). Cửa sổ lá tạo 15→19/10 đã khép về mặt dữ liệu: mọi gian ACTIVE đều kéo danh mục đêm, lá về sau 19/10 nằm ngoài cửa sổ. Giữ job quét mỗi lần khởi động là chi phí vô ích + mã chết. Lịch sử còn trong git (`3480ef06`, `4ad8f8ca`). |
+| Cột `ChannelProduct.costPriceInheritedAt` + `applyChannelCostPriceIn` xóa dấu khi khách tự sửa | giữ | Là dấu "giá do máy thừa kế" trên 828 lá; đường lui vẫn đúng một câu: `UPDATE "ChannelProduct" SET "costPrice" = NULL, "costPriceInheritedAt" = NULL WHERE "costPriceInheritedAt" IS NOT NULL` (kèm vá dòng đơn từ 15/10 về 0 nếu muốn hoàn toàn). |
+| Hai hằng 25 % (`TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT`, `MARGIN_CHECK_MAX_GAP_PCT`) | **GỘP** thành `BREAKEVEN_CHECK_MAX_GAP_PCT` ở `lib/ads-margin.ts`; TikTok import | Một số, một chỗ, một chú thích căn cứ (B6). Khác nhau chỉ ở chiều so (TikTok hai chiều, Shopee một chiều) — nằm ở hàm, không ở số. |
+| Ảnh dòng đơn `backfillOrderItemImagesTx` | **đổi id trước** | Dòng sàn có `externalId` → khớp `OrderItem.externalId`; mã (cả `startsWith "MÃ ("`) chỉ áp cho dòng đơn `externalId IS NULL` (Lazada, đơn cũ ngoài 90 ngày). Dòng có id khác mà trùng mã KHÔNG nhận ảnh nữa (mã dùng chung nhiều lá). Test DB 1 ca 3 dòng. |
+| Số lượng hoàn `returns-sync` Shopee/TikTok | **đổi id trước** qua `order-line-keys.returnedQtyOf` + `needsReturnKeyExpand` (thuần, dùng chung) | Shopee khớp `item-model`, TikTok khớp phần sku_id của `product-sku`; mã thô rồi khóa mở rộng chỉ cho dòng chưa có id; `expandReturnKeys` giữ làm đường lui. `items` select thêm `externalId`. Test thuần 2 ca + 6 tệp hoàn hàng cũ xanh. |
+| `SKU_MATCH` 3 nhánh mã (`lib/cost-price.ts`) | giữ | Đường lui vĩnh viễn cho dòng `externalId IS NULL` (6.4); đã là "id trước" từ 1c. |
+| Worker bù id (Lát 2) | giữ chạy | Gian ngủ đông thức dậy / gian mới nối có đơn cũ → tự gieo + bù; rẻ (poll 5′, không việc thì thoát). |
+| Test `workers/no-module-state` đỏ có sẵn (event-queue `sweepStarted`/`sweepRunning` từ `40ad7ed5`) | **sửa**: thêm vào `ALLOWED_LET` kèm lý do | Hai cờ cùng loại `started`/`running` đã được phép; test đỏ làm người sau không tin bộ test. |
+| Đường "rows" của biên lãi (`marginsFromRows`, `ads-margin-compare`, 3 biến env đường lui — [[hubsell-quang-cao-gom-sql]]) | **chưa đụng** | Việc riêng, có bộ test đối chiếu hai đường làm lưới đỡ cho mọi lát hôm nay; gỡ là một lát riêng sau khi đường SQL chạy đủ lâu. |
+
+Kiểm: tsc BE sạch; bộ test đầy đủ chạy sau khi sửa (kết quả ghi ở PROGRESS). Không đổi dữ liệu, không migration.

@@ -6,6 +6,7 @@
 //   · resolveOrderLineRows: id sàn thắng mã thô; mã thô là đường lui; không khớp → undefined.
 //   · aggregateShopeeItems / aggregateLineItems: hai size cùng mã KHÔNG gộp thành một dòng.
 //   · expandReturnKeys: id đầy đủ (Shopee) và id lá (TikTok) đều ra khóa dòng sàn.
+//   · returnedQtyOf / needsReturnKeyExpand: số lượng hoàn id trước, mã sau (18/10/2026).
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -13,11 +14,14 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import {
   expandReturnKeys,
+  needsReturnKeyExpand,
+  returnedQtyOf,
   lineKey,
   resolveOrderLineRows,
   shopeeLineExternalId,
   tiktokLineExternalId,
 } from "../order-line-keys";
+import { backfillOrderItemImagesTx } from "../order-item-images";
 import { aggregateShopeeItems } from "../shopee/service";
 import { aggregateLineItems } from "../tiktok/service";
 import type { ShopeeOrderDetail } from "../shopee/client";
@@ -103,6 +107,63 @@ describe("order-line-keys", () => {
     expect(lines.map((l) => [lineKey(l), l.quantity])).toEqual([
       ["P-S1", 1],
       ["P-S2", 2],
+    ]);
+  });
+
+  it("returnedQtyOf: id lá trước, mã sau; TikTok so phần sku_id; không có gì → 0", () => {
+    const byCode = new Map([["LT075-HONG", 1]]);
+    const byId = new Map([["111-2", 3]]);
+    const expanded = new Map([["LT075-HONG (Hồng, 3-5kg)", 5]]);
+    // Dòng có id nằm trong bảng id → lấy theo id, không nhìn mã (mã thô dùng chung hai lá).
+    expect(returnedQtyOf({ channelSku: "LT075-HONG", externalId: "111-2" }, byCode, byId, expanded)).toBe(3);
+    // Dòng có id KHÔNG nằm trong bảng id → về mã thô.
+    expect(returnedQtyOf({ channelSku: "LT075-HONG", externalId: "111-1" }, byCode, byId, expanded)).toBe(1);
+    // Dòng chưa có id, khóa có đuôi → bảng mở rộng.
+    expect(returnedQtyOf({ channelSku: "LT075-HONG (Hồng, 3-5kg)", externalId: null }, byCode, byId, expanded)).toBe(5);
+    expect(returnedQtyOf({ channelSku: "KHAC", externalId: null }, byCode, byId, expanded)).toBe(0);
+    // TikTok: bảng theo sku_id, dòng mang "product-sku".
+    expect(returnedQtyOf({ channelSku: "X", externalId: "P-S2" }, new Map(), new Map([["S2", 2]]), new Map(), true)).toBe(2);
+    // Chỉ hoàn tiền (bảng rỗng) → mọi dòng 0.
+    expect(returnedQtyOf({ channelSku: "LT075-HONG", externalId: "111-2" }, new Map(), new Map(), new Map())).toBe(0);
+  });
+
+  it("needsReturnKeyExpand: chỉ khi còn dòng không khớp id lẫn mã", () => {
+    const byCode = new Map([["A", 1]]);
+    const byId = new Map([["111-2", 1]]);
+    expect(needsReturnKeyExpand([{ channelSku: "A", externalId: null }], byCode, byId)).toBe(false);
+    expect(needsReturnKeyExpand([{ channelSku: "LT075-HONG (Hồng, 5-7kg)", externalId: "111-2" }], byCode, byId)).toBe(false);
+    expect(needsReturnKeyExpand([{ channelSku: "LT075-HONG (Hồng, 3-5kg)", externalId: null }], byCode, byId)).toBe(true);
+    expect(needsReturnKeyExpand([{ channelSku: "X", externalId: "P-S9" }], byCode, new Map([["S2", 1]]), true)).toBe(true);
+  });
+
+  it("backfillOrderItemImagesTx: id lá trước (mã đổi vẫn đúng ảnh), mã sau cho dòng chưa có id", async () => {
+    const order = await prisma.order.create({
+      data: {
+        channelId,
+        orderCode: `TEST-LINEKEYS-IMG-${stamp}`,
+        customerName: "Khách test",
+        itemCount: 3,
+        items: {
+          create: [
+            // Có id, mã ghi lệch (mã đổi sau) → phải theo id.
+            { channelSku: "MA-CU", externalId: "111-2", productName: "A", quantity: 1, price: 1000 },
+            // Chưa có id (đơn cũ ngoài cửa sổ bù), khóa có đuôi phân loại → đường lui mã thô + " (".
+            { channelSku: "LT075-HONG (Hồng, 3-5kg)", externalId: null, productName: "B", quantity: 1, price: 1000 },
+            // Có id KHÁC, trùng mã thô → không được ăn ảnh theo mã (mã dùng chung nhiều lá).
+            { channelSku: "LT075-HONG", externalId: "999-9", productName: "C", quantity: 1, price: 1000 },
+          ],
+        },
+      },
+      include: { items: true },
+    });
+    await prisma.$transaction((tx) =>
+      backfillOrderItemImagesTx(tx, order.id, [{ channelSku: "LT075-HONG", externalId: "111-2", imageUrl: "https://img/5-7" }])
+    );
+    const items = await prisma.orderItem.findMany({ where: { orderId: order.id }, orderBy: { productName: "asc" } });
+    expect(items.map((i) => [i.productName, i.imageUrl])).toEqual([
+      ["A", "https://img/5-7"], // theo id, mặc mã lệch
+      ["B", "https://img/5-7"], // chưa có id → đường lui mã thô có đuôi
+      ["C", null], // có id khác → không lấy ảnh theo mã
     ]);
   });
 

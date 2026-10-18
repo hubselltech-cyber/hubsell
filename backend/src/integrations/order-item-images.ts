@@ -19,19 +19,26 @@ import type { Prisma } from "@prisma/client";
 export async function backfillOrderItemImagesTx(
   tx: Prisma.TransactionClient,
   orderId: string,
-  lines: { channelSku: string; imageUrl: string | null }[]
+  lines: { channelSku: string; externalId?: string | null; imageUrl: string | null }[]
 ): Promise<void> {
   const missing = await tx.orderItem.count({ where: { orderId, imageUrl: null } });
   if (missing === 0) return;
   for (const line of lines) {
     if (!line.imageUrl) continue;
-    // Dòng đơn mới ghi khóa dòng sàn có đuôi phân loại ("LT075-HONG (Hồng, 3-5kg)")
-    // khi mã trùng (15/10/2026) → so cả khóa đúng lẫn khóa bắt đầu bằng mã thô.
+    // Id lá trước, mã sau (docs/MO-HINH-CAY-SAN-PHAM-SAN.md 6.4): dòng đơn đã có
+    // externalId (từ 18/10/2026 + bù 90 ngày) khớp bằng id; dòng chưa có id
+    // (Lazada, đơn cũ hơn) so mã — kể cả khóa có đuôi phân loại "MÃ (Hồng, 3-5kg)".
+    const byCode = [
+      { channelSku: line.channelSku },
+      { channelSku: { startsWith: `${line.channelSku} (` } },
+    ];
     await tx.orderItem.updateMany({
       where: {
         orderId,
         imageUrl: null,
-        OR: [{ channelSku: line.channelSku }, { channelSku: { startsWith: `${line.channelSku} (` } }],
+        OR: line.externalId
+          ? [{ externalId: line.externalId }, { externalId: null, OR: byCode }]
+          : byCode,
       },
       data: { imageUrl: line.imageUrl },
     });

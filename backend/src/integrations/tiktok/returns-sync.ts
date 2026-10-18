@@ -42,7 +42,7 @@ import { findOrdersPendingReturnLookup, markReturnLookupDone } from "../return-l
 import { searchReturns, type TikTokReturnOrder } from "./client";
 import { getValidAccessToken } from "./service";
 import type { SyncCompleteness } from "../sync-contract";
-import { expandReturnKeys } from "../order-line-keys";
+import { expandReturnKeys, needsReturnKeyExpand, returnedQtyOf } from "../order-line-keys";
 
 /** Trần trang mỗi lượt (50 yêu cầu/trang). */
 const MAX_PAGES = 40;
@@ -125,9 +125,9 @@ export interface TiktokReturnUpdatePlan {
    *  không có dữ liệu; map RỖNG khi chỉ hoàn tiền. */
   itemReturns: Map<string, number> | null;
   /**
-   * Cùng số lượng theo sku_id (return_line_items không có product_id) — bước
-   * áp dụng tra khóa dòng sàn có đuôi phân loại qua ChannelProduct.externalId
-   * đuôi "-skuId" (order-line-keys.expandReturnKeys, 15/10/2026).
+   * Cùng số lượng theo sku_id (return_line_items không có product_id): khớp
+   * phần sku_id của OrderItem.externalId (id trước, mã sau — 18/10/2026); dòng
+   * chưa có id tra khóa có đuôi "-skuId" qua ChannelProduct (expandReturnKeys).
    */
   itemReturnsBySkuId: Map<string, number> | null;
 }
@@ -290,7 +290,7 @@ const RETURN_ORDER_SELECT = {
   platformReturnStatus: true,
   returnDeliveredAt: true,
   returnLookupAt: true,
-  items: { select: { id: true, channelSku: true, returnedQuantity: true } },
+  items: { select: { id: true, channelSku: true, externalId: true, returnedQuantity: true } },
 } satisfies Prisma.OrderSelect;
 
 /** Gom yêu cầu hoàn theo mã đơn. */
@@ -379,14 +379,15 @@ async function applyTiktokReturnGroups(
       }
 
       if (plan.itemReturns) {
-        // Dòng đơn mang khóa có đuôi phân loại → tra qua sku_id (chỉ khi cần).
-        const needExpand = order.items.some((it) => !plan.itemReturns!.has(it.channelSku));
+        // Id lá trước (externalId "product-sku" so phần sku_id), mã sau; dòng chưa có
+        // id mang khóa có đuôi phân loại → tra qua ChannelProduct (chỉ khi cần).
+        const bySkuId = plan.itemReturnsBySkuId;
         const expanded =
-          needExpand && plan.itemReturnsBySkuId?.size
-            ? await expandReturnKeys(prisma, channel.id, plan.itemReturnsBySkuId)
+          bySkuId?.size && needsReturnKeyExpand(order.items, plan.itemReturns, bySkuId, true)
+            ? await expandReturnKeys(prisma, channel.id, bySkuId)
             : new Map<string, number>();
         for (const it of order.items) {
-          const qty = plan.itemReturns.get(it.channelSku) ?? expanded.get(it.channelSku) ?? 0;
+          const qty = returnedQtyOf(it, plan.itemReturns, bySkuId, expanded, true);
           if (qty !== it.returnedQuantity) {
             await prisma.orderItem.update({ where: { id: it.id }, data: { returnedQuantity: qty } });
             result.itemsUpdated++;

@@ -31,6 +31,8 @@ const ALLOWED_LET: Record<string, string> = {
   draining: "cờ chống chạy chồng lượt dựng sổ",
   maintaining: "cờ chống chạy chồng lượt bảo trì sổ",
   sweeping: "cờ chống chạy chồng lượt quét hàng đợi tồn",
+  sweepStarted: "cờ đã bật vòng quét dòng sự kiện mồ côi trong tiến trình (event-queue)",
+  sweepRunning: "cờ chống chạy chồng một lượt quét dòng mồ côi trong tiến trình",
   workerId: "định danh tiến trình để thuê làn (hostname:pid:random)",
   sweepTimer: "tay cầm timer",
   requestSweepTimer: "tay cầm timer",

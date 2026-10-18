@@ -355,16 +355,18 @@ export interface MarginCheck {
 }
 
 /**
- * Hubsell được thấp hơn direct_gmv tối đa 25% — MẶC ĐỊNH TỰ CHỌN (anh Trung chốt 18/10/2026), cùng số với TikTok. Căn cứ đo prod
- * 18/10 (95 chiến dịch Shopee đang chạy): 74 ≥ 100%, 8 ở 80–100% (nhiễu gán ngày: sàn ghi đơn về ngày bấm quảng cáo), 3 ở 64–74%
- * (ca thật), còn lại là gian ngủ đông. 25% chừa đủ vùng nhiễu mà vẫn bắt được ca thật.
+ * Ngưỡng lệch tự kiểm doanh thu cho CẢ HAI sàn (một số, một chỗ): 25% — MẶC ĐỊNH TỰ CHỌN (anh Trung chốt 18/10/2026), chưa có
+ * số nào của sàn. Căn cứ đo prod 18/10: TikTok ba chiến dịch khỏe của and.not.or lệch +4,0 / +4,7 / +8,8% (sai số thường của hai
+ * cách đếm), chiến dịch hỏng −74%; Shopee 95 chiến dịch đang chạy: 74 ≥ 100%, 8 ở 80–100% (nhiễu gán ngày: sàn ghi đơn về ngày bấm
+ * quảng cáo), 3 ở 64–74% (ca thật), còn lại gian ngủ đông. 25% chừa đủ vùng nhiễu mà vẫn bắt được lỗi cây.
+ * TikTok so HAI chiều (|lệch|, lib/tiktok-breakeven), Shopee MỘT chiều (Hubsell không thấp hơn direct_gmv, marginCheckProblem).
  */
-export const MARGIN_CHECK_MAX_GAP_PCT = 25;
+export const BREAKEVEN_CHECK_MAX_GAP_PCT = 25;
 
 /** Lý do hòa vốn chưa tin được theo tự kiểm một chiều; "" = ổn hoặc không có gì để so. Thuần. */
 export function marginCheckProblem(check: MarginCheck | null | undefined): string {
   if (!check || !(check.platformDirectGmv > 0)) return "";
-  const floor = check.platformDirectGmv * (1 - MARGIN_CHECK_MAX_GAP_PCT / 100);
+  const floor = check.platformDirectGmv * (1 - BREAKEVEN_CHECK_MAX_GAP_PCT / 100);
   if (check.revenuePlaced >= floor) return "";
   const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
   const pct = Math.round((check.revenuePlaced / check.platformDirectGmv) * 100);

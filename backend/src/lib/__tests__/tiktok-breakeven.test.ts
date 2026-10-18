@@ -8,9 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import { ShippingStatus } from "@prisma/client";
-import { SHOP_GROUP, buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, itemKey, productGroupKey } from "../ads-margin";
+import { BREAKEVEN_CHECK_MAX_GAP_PCT, SHOP_GROUP, buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, itemKey, productGroupKey } from "../ads-margin";
 import {
-  TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT,
   breakevenCheckGapPct,
   breakevenCheckProblem,
   breakevensFromGroups,
@@ -443,8 +442,8 @@ describe("breakevenCheckProblem — đối chiếu doanh thu với TikTok", () =
     expect(why).toContain("sản phẩm khác");
   });
 
-  it("ngưỡng là hằng công khai để nơi khác không tự đặt số riêng", () => {
-    expect(TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT).toBe(25);
+  it("ngưỡng dùng chung một hằng với Shopee (lib/ads-margin) — không nơi nào tự đặt số riêng", () => {
+    expect(BREAKEVEN_CHECK_MAX_GAP_PCT).toBe(25);
   });
   it("khớp dấu với so sánh ROI thực ↔ hòa vốn của toTiktokBreakeven", () => {
     const be = toTiktokBreakeven(

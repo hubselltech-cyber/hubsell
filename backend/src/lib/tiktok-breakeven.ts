@@ -55,7 +55,7 @@
 import { createHash } from "crypto";
 import { ShippingStatus } from "@prisma/client";
 import { startOfDaysAgo } from "./ads-dates";
-import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, lineInGroup, placedRevenueOf, type AdsGroupSets } from "./ads-margin";
+import { BREAKEVEN_CHECK_MAX_GAP_PCT, PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, lineInGroup, placedRevenueOf, type AdsGroupSets } from "./ads-margin";
 import type { DateRangeFilter } from "./date-range";
 
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */
@@ -293,13 +293,6 @@ export interface TiktokBreakevenCheck {
 // Khi đó biên lãi là của một tập đơn khác tập TikTok tính ROI → không được dùng để quyết định (loại video, nấc hạ, lãi
 // ước tính). Thà không có số còn hơn số sai.
 
-/**
- * Ngưỡng |lệch| để coi hòa vốn chưa tin được: 25% — MẶC ĐỊNH TỰ CHỌN (anh Trung chốt 18/10/2026), chưa có số nào của
- * sàn. Căn cứ: ba chiến dịch khỏe của and.not.or lệch +4,0 / +4,7 / +8,8% (sai số thường của hai cách đếm), chiến
- * dịch hỏng lệch −74%; 25% chừa chỗ cho sai số thường mà vẫn bắt được lỗi cây.
- */
-export const TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT = 25;
-
 /** % lệch có dấu = (Hubsell − TikTok) ÷ TikTok × 100; null khi TikTok chưa báo doanh thu (không có gì để so). Thuần. */
 export function breakevenCheckGapPct(check: TiktokBreakevenCheck | null | undefined): number | null {
   if (!check || !(check.tiktokGmv > 0)) return null;
@@ -309,7 +302,7 @@ export function breakevenCheckGapPct(check: TiktokBreakevenCheck | null | undefi
 /** Lý do hòa vốn chưa tin được theo tự kiểm; "" = ổn hoặc không có gì để so. Thuần. */
 export function breakevenCheckProblem(check: TiktokBreakevenCheck | null | undefined): string {
   const gap = breakevenCheckGapPct(check);
-  if (gap == null || Math.abs(gap) <= TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT) return "";
+  if (gap == null || Math.abs(gap) <= BREAKEVEN_CHECK_MAX_GAP_PCT) return "";
   const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
   const pct = Math.abs(Math.round(gap));
   const c = check as TiktokBreakevenCheck;
