@@ -706,7 +706,7 @@ export function ShopeeAdsPage({
                 {platform === "shopee" && (
                   <a
                     href="/guide?muc=ads"
-                    className="flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
+                    className="flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline dark:text-red-400"
                     title="Video hướng dẫn 15 bước: đọc số, hộp chi tiết, cấu hình Trợ lý"
                   >
                     <CircleHelp className="size-3.5" />

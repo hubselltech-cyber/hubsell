@@ -36,7 +36,7 @@ export function GuideVideoLink({ videoId, title, hint }: { videoId: string; titl
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-400"
+        className="flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline dark:text-red-400"
         title={hint}
       >
         <CircleHelp className="size-3.5" />
