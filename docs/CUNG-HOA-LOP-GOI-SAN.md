@@ -81,7 +81,7 @@ trong ≤K trang**; nếu trang K vẫn còn tiếp → **chia đôi Δ** và đ
 Đọc trọn cửa sổ thì thứ tự bên trong không quan trọng. Δ tự học theo gian (gian 4.000 đơn/ngày → Δ ≈
 vài giờ; gian vắng → Δ = 15 ngày). Mã ví Shopee đã chia đôi khi sàn chê — nay thành luật chung.
 
-**N4 · Một bộ đếm tốc độ dùng chung (GCRA trong Postgres).** Mỗi khóa (app; app×gian) một dòng, một
+**N4 · Một bộ đếm tốc độ dùng chung (GCRA trong Postgres).** Mỗi khóa (app; app×gian; **app×endpoint** — anh chốt 18/10 đêm sau H4: 100 % 429 Ads rơi vào một endpoint, hai gian cùng giây) một dòng, một
 mốc thời gian; xin lượt = một UPDATE có điều kiện. O(1), không mảng cửa sổ, đúng giữa nhiều tiến trình,
 không mất khi khởi động lại. Giao diện tách riêng để sau này đổi sang Redis nếu DB bận (chưa cần —
 chưa có Redis trên hạ tầng). Ban đầu chỉ bật trần ở nơi có bằng chứng sàn giới hạn (Ads Shopee/Lazada;
@@ -116,7 +116,7 @@ Không xây gì trên giả thuyết chưa kiểm. Mỗi giả thuyết có các
 | H2 | Shopee `get_order_list` trong cửa sổ ≤15 ngày trả **đủ** đơn khi đọc hết trang, bất kể thứ tự | đếm đơn 1 ngày qua API vs Seller Center 2 gian | khớp 100 % | tìm mẫu thiếu, báo ticket Shopee kèm request_id |
 | H3 | Webhook phủ ≥99 % biến động đơn (nền tảng của N1) | 7 ngày: biến động thấy lần đầu qua webhook vs qua quét (log + sổ cái) | ≥99 % cho gian có webhook | quét vẫn là nguồn chính, N1 lùi lại |
 | H4 | 429 Ads Shopee là tầng gian, do 5–7 lệnh dồn trong vài giây | log `[ApiBudget] 429` 24h; thử giãn 5 giây trên 2 gian | 429 giảm rõ | xem lại nhịp xung 30' |
-| H5 | GCRA trong Postgres chịu được tải mục tiêu | đo: 1 UPDATE/lệnh; mục tiêu ~300 lệnh/giây ở 1 triệu đơn/ngày | p99 < 5 ms trên Micro | thiết kế giữ giao diện, đổi sang Redis khi tới mốc |
+| H5 | GCRA trong Postgres chịu được tải mục tiêu | đo: 1 UPDATE/lệnh; mục tiêu ~300 lệnh/giây ở 1 triệu đơn/ngày | ≥ 300 lệnh/giây và **chi phí xin lượt < 5 % thời gian một lệnh sàn** (anh chốt 18/10 đêm thay cho "p99 < 5 ms" — 4,4 ms là RTT Render↔pooler, không phải DB) | xin lượt theo lô; đổi sang Redis khi tới mốc, giữ giao diện |
 | H6 | Số dư ví Shopee = `current_balance` giao dịch mới nhất trong cửa sổ MỚI nhất (1 trang) | so với cách đọc 30 ngày hiện tại trên ANO | khớp từng đồng | giữ cách cũ, chỉ thêm con trỏ |
 | H7 | Mỗi gian 4.000 đơn/ngày sinh ~16.000 biến động | đếm trên sổ cái gian lớn nhất hiện có, ngoại suy | sai số < 2× | chỉnh K, Δ |
 
@@ -142,8 +142,9 @@ Công cụ: `backend/scripts/pha-a-san-probe.ts` (chỉ đọc sàn) chạy trê
 
 1. **Seller Center Shopee** (chốt H2/H6 tới tận màn khách): Đơn hàng → Ngày đặt **17/10** cho ANO (34) và Kids Minh Tuyết (35);
    Tài chính → Số dư TK Shopee: ANO **44.505.039 ₫** (lúc 20:34 VN 18/10), Kids **4.149.400 ₫** (12:56 VN 18/10).
-2. **Chốt 3 điểm** để sang Pha B: (a) vá ngay `sort_field=update_time` cho worker TikTok (H1) hay chờ Pha C; (b) tiêu chí H5 mới
-   "< 5 % thời gian lệnh sàn" + xin lượt theo lô; (c) khóa N4 là (app, endpoint) ngoài (app, gian) theo H4.
+2. ~~Chốt 3 điểm~~ **Anh chốt 18/10 đêm:** (a) ✅ vá ngay — worker TikTok gửi `sort_field` theo đúng trục quét, DESC
+   (`tiktokOrderSearchSort`, test `tiktok-order-search-sort.test.ts`); (b) ✅ tiêu chí H5 = "< 5 % thời gian lệnh sàn" + xin lượt
+   theo lô (đã sửa bảng mục 3); (c) ✅ khóa N4 thêm (app, endpoint) (đã sửa N4). → Sang Pha B.
 
 ### 3b.2 Điều phải sửa trong bản thiết kế sau Pha A
 

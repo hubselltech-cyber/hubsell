@@ -212,6 +212,23 @@ export interface SyncOrdersOptions {
 }
 
 /**
+ * Thứ tự xin sàn cho orders/search — PHẢI cùng trục với bộ lọc thời gian.
+ *
+ * Pha A 18/10/2026 (docs/CUNG-HOA-LOP-GOI-SAN.md 3b H1, đo 24/24 gian): không gửi
+ * `sort_field` thì TikTok trả đơn theo create_time TĂNG dần (cũ nhất trước) dù lọc
+ * theo update_time, nên lượt bị cắt ở trần trang giữ lại phần CŨ và mốc vét của
+ * lát 3.2 (= update_time nhỏ nhất đã đọc, giả định "đọc mới nhất trước") trỏ sai →
+ * mốc nước Siêu Thị 8686 kẹt. Gửi sort theo đúng trục, DESC, thì giả định ấy đúng
+ * (kiểm 24/24 gian đơn điệu giảm). Anh Trung chốt vá ngay 18/10 đêm.
+ */
+export function tiktokOrderSearchSort(byUpdateTime: boolean): {
+  sortField: "create_time" | "update_time";
+  sortOrder: "DESC";
+} {
+  return { sortField: byUpdateTime ? "update_time" : "create_time", sortOrder: "DESC" };
+}
+
+/**
  * Ghi log HÌNH DẠNG payload thật (tên trường, không giá trị khách) — một lần
  * mỗi lượt đồng bộ, để đối chiếu parser với dữ liệu thật khi nối shop
  * (kế hoạch 16/09/2026). Tắt bằng TIKTOK_SHAPE_LOG=0 khi đã chốt.
@@ -319,6 +336,7 @@ export async function syncTiktokOrders(
       accessToken,
       shopCipher,
       ...timeFilter,
+      ...tiktokOrderSearchSort(Boolean(opts.byUpdateTime)),
       pageSize: PAGE_SIZE,
       pageToken,
     });
