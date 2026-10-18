@@ -431,6 +431,10 @@ tạo trong cửa sổ 15/10 → 19/10 (ngày deploy lát này). Điểm 1–3 c
   khởi động. Test: lá oan về trống + dòng về 0, lá đúng giữ nguyên, chạy lại 0.
 - **Anh Trung chốt (A) 18/10 13:38** → push `4ad8f8ca` 13:40; worker hoàn tác chạy ~13:48. **Kiểm 13:52:** còn **828 lá** mang dấu thừa kế,
   **828/828 cùng SPU với nguồn, 0 khác SPU**, 12 gian; XPL2 STORE 0 lá thừa kế (1.028 lá có giá đều do khách đặt). Hoàn tác đúng phạm vi.
+- **Tác dụng phụ nhỏ của hoàn tác (kiểm 13:58):** hoàn tác đưa về 0 mọi dòng từ 15/10 của lá oan đang mang đúng giá thừa kế — nhưng
+  đơn đồng bộ **sáng 15/10 trước lúc tách** đã chụp giá thật của dòng gộp cũ, trùng đúng con số ấy → bị đưa về 0 oan. Đo: dòng giá 0, đơn
+  tạo trước lúc lá được tạo, nhóm có lá nguồn khách đặt giá: **ANO Official Store 6, XPL2 2, PERLYCO 2, Hi.Bé 1 = 11 dòng**. Giá đúng của
+  chúng = giá nguồn (giá gộp cũ lúc bán). Chờ anh chốt có trả lại 11 dòng này không (một câu UPDATE, soạn sẵn).
 - Bên lề (không thuộc lát này): còn ~74 dòng đơn 15–18/10 giá vốn 0 dù lá **đã có giá riêng và đã nối kho** — đơn về trước khi danh
   mục có lá, chưa ai bấm lưu lại giá nên chưa được vá. Nên có lượt vá định kỳ "dòng giá 0 của lá đã có giá" (một câu UPDATE, id trước)
   — đề xuất riêng.
