@@ -52,6 +52,13 @@ import {
 // Apple duyệt xong KHÔNG phải sinh lại. Nếu khách đang mở phần mềm ngay trên
 // điện thoại thì quét QR vô nghĩa → nút dẫn thẳng tới kho ứng dụng của máy.
 
+/**
+ * 19/10/2026 — TẠM ẨN (anh Trung): chờ mobile 1.3.1 (Đăng ký trong app, đăng
+ * nhập Google/Apple) lên cả 2 kho rồi mới hiện lại. Khi bật lại: đặt false,
+ * sửa ACCOUNT_NOTES dòng "email và mật khẩu" cho có Google/Apple, cân nhắc
+ * tăng NOTICE_VERSION để khách đã tắt thấy lại.
+ */
+const NOTICE_PAUSED = true;
 /** Đổi khi nội dung thay đổi lớn → khách đã tắt bản cũ sẽ thấy bản mới. */
 const NOTICE_VERSION = "live-ios-2026-10";
 /** Sau mốc này dải tự biến mất dù chưa ai gỡ code (an toàn khi lỡ quên). */
@@ -168,7 +175,7 @@ export function MobileAppLaunchNotice() {
   const [open, setOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
 
-  if (dismissed || expired) return null;
+  if (NOTICE_PAUSED || dismissed || expired) return null;
 
   function toggleDismiss(on: boolean) {
     writeDismissed(on);
