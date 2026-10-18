@@ -121,3 +121,20 @@ Migration: cột NULL + chỉ mục unique, khóa có thử lại (bẫy deadloc
 - 18/10 ~23:20: **backend xong** (mục 7 bước 1) — `services/social-login.ts`, 2 route, migration, test 12 ca; chưa commit, DB dev chưa áp (classifier chặn), prod áp khi deploy. 
 - 19/10 ~00:10: **C1 + C2 XONG** (em làm qua Chrome anh): 1 client iOS + 2 client Android tạo trong dự án My Project 18602; app.json đã điền `extra.googleIosClientId`, `extra.googleWebClientId`, `iosUrlScheme` thật → nút Google hiện. Còn C4 (key Apple .p8) + C5 (env Render: `GOOGLE_IOS_CLIENT_ID`, `APPLE_SIWA_*`) — anh làm.
 - 18/10 ~23:40: **mobile xong phần code** (bước 2): social.ts + 2 nút + AccountScreen; app.json extra client id RỖNG → nút Google tự ẩn, nút Apple hiện trên iOS. Chờ C1–C5 (mục 6) rồi build thử TestFlight/APK (bước 3).
+
+## 10. Thư báo khách khi 1.3.0 lên kho (anh chốt 19/10: một email, không nhắc trong app ở bản này)
+
+Gửi cho chủ shop ACTIVE có email (ưu tiên nhóm `googleId IS NOT NULL` — họ là người kẹt). Gửi qua `safeSend` role noreply, cùng khung `shell()` của customer-mails. Nội dung nháp:
+
+- **Tiêu đề:** Hubsell — App điện thoại có đăng nhập bằng Google (và Apple)
+- Xin chào {fullName},
+- Bản mới của app Hubsell đã có trên App Store và Google Play. Bạn chỉ cần cập nhật app, mở lên và bấm **Tiếp tục với Google** (iPhone có thêm **Đăng nhập bằng Apple**) là vào thẳng, không cần đặt mật khẩu.
+- App Store và Google Play thường tự cập nhật trong vòng một ngày. Muốn có ngay: mở kho, tìm Hubsell, bấm **Cập nhật**.
+- Nút: **Mở App Store** / **Mở Google Play** (APP_STORE_URL / Play URL sẵn có).
+- Chân thư: Vướng gì cứ trả lời thư này, Hubsell đọc và trả lời từng thư.
+
+Việc code khi gửi: script một lần `backend/scripts/mail-app-1-3-0.ts` (đọc danh sách, gửi tuần tự có nghỉ 200 ms, log số đã gửi, cờ `--dry-run` in danh sách trước) — chạy sau khi CẢ HAI kho đã phát hành, anh duyệt nội dung + danh sách dry-run rồi mới gửi thật.
+
+## 11. Bản sau (1.4): nhắc cập nhật trong app + EAS Update
+
+Anh chốt 19/10: làm từ bản sau. Phạm vi: backend `/api/mobile/version` (latest, min theo nền), app so `Constants.expoConfig.version` lúc mở → dải "Có bản mới" + nút mở kho, dưới min thì chặn; Android thêm Play In-App Updates (`expo-in-app-updates` hoặc tương đương); EAS Update cho thay đổi chỉ JS với `runtimeVersion` policy `appVersion` để JS mới không rơi vào native cũ.
