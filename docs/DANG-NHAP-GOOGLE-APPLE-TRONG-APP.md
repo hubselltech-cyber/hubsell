@@ -150,3 +150,12 @@ Anh: "Phiên bản này 2 nút Google và Apple xếp hàng dọc khá xấu. Ph
 KHÔNG học Salework chỗ "Đăng ký" trên màn đăng nhập — anh chốt 08/10 app không có đăng ký (Google/Apple tạo tài khoản ngầm là đủ).
 
 Gộp cùng màn trống cho chủ shop mới chưa nối gian (phần thẻ đề xuất 19/10) thành bản **1.3.1**, nộp sau khi 1.3.0 duyệt.
+
+### 12.4 Màn Đăng ký trong app (anh chốt 19/10 23:4x: "Thêm cả màn đăng ký nữa. Salework được thì mình cũng được")
+
+Đảo quyết định 08/10 (gỡ Đăng ký sau khi Apple từ chối 3.1.1 lần 2). Vì sao giờ được: lý do bị 3.1.1 là luồng đăng ký dẫn tới dùng thử/mua gói ngoài IAP; từ 10/10 iOS đã có mua gói bằng IAP (màn /plan) nên tài khoản mới có đường mua hợp lệ trong app. Điều kiện giữ để không bị bắt lại:
+- Màn đăng ký chỉ: Họ tên, Email, Mật khẩu (+ nhập lại), ô tick Điều khoản + Chính sách (link web). KHÔNG chữ "dùng thử", "miễn phí 14 ngày", "gói", "giá". Gọi `POST /api/auth/register` sẵn có (backend ghi TermsAcceptance nguồn `register_form`… cân nhắc thêm nguồn `register_app`), nhận token → persistSession → vào app như đăng nhập.
+- Link "Đăng ký" + "Quên mật khẩu?" dưới cùng màn đăng nhập như Salework.
+- Sau đăng ký, chủ shop mới chưa có gian → rơi vào màn trống mục 12.3 (bắt buộc làm cùng).
+- Xóa tài khoản trong app đã có (5.1.1(v)).
+- Ghi chú người duyệt: nêu rõ có tạo tài khoản, dùng thử/gói chỉ qua IAP, reviewer vẫn dùng tài khoản sẵn.
