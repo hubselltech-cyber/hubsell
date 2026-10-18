@@ -35,6 +35,8 @@
 //     (= "SPE-" + externalId). Seller đặt mã SKU sau khi đã có đơn thì đơn cũ
 //     mang khoá cũ, không có dự phòng là không bao giờ vá được.
 //   - KHÔNG GIỚI HẠN NGÀY: mọi đơn từ trước tới nay.
+//   - ★ 18/10/2026 (Lát 1c): dòng đơn có id lá (OrderItem.externalId) khớp CHỈ
+//     bằng id; ba nhánh mã trên chỉ còn cho dòng chưa có id.
 //   - XÓA BỘ ĐỆM Trợ lý quảng cáo sau khi vá (invalidateOwnerCostCaches) — bộ
 //     đệm biên lãi 30 phút làm số đứng im dù đã vá xong.
 // ============================================================
@@ -46,16 +48,26 @@ import { invalidateCostCaches } from "./cost-cache-invalidation";
 type Db = Prisma.TransactionClient;
 
 /**
- * Điều kiện khớp dòng đơn `oi` với SKU sàn `cp` (cùng gian, kiểm ở ngoài):
- *   1. mã SKU hiện tại của SKU sàn;
- *   2. TikTok/Lazada: sku_id — khoá đồng bộ đơn dùng khi seller_sku trống;
- *   3. Shopee: "SPE-" + externalId — khoá khi model_sku/item_sku trống.
- * Cần index OrderItem(channelSku) (migration 28/09) để ba nhánh đều đi index.
+ * Điều kiện khớp dòng đơn `oi` với SKU sàn `cp` (cùng gian, kiểm ở ngoài) — ID TRƯỚC, MÃ SAU
+ * (Lát 1c, 18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md B3):
+ *   · dòng CÓ id lá (OrderItem.externalId, ghi từ Lát 1a) khớp CHỈ bằng id — mã trùng của lá khác / sản phẩm khác không vá
+ *     oan, mã đã đổi đuôi vẫn vá đúng;
+ *   · dòng CHƯA có id (đơn trước 18/10, Lazada) khớp theo mã như trước, có dự phòng:
+ *       1. mã SKU hiện tại của SKU sàn;
+ *       2. TikTok/Lazada: sku_id — khoá đồng bộ đơn dùng khi seller_sku trống;
+ *       3. Shopee: "SPE-" + externalId — khoá khi model_sku/item_sku trống.
+ * Index: OrderItem(externalId) (migration 18/10) cho nhánh id; OrderItem(channelSku) (28/09) cho ba nhánh mã.
  */
 const SKU_MATCH = Prisma.sql`(
-  oi."channelSku" = cp."channelSku"
-  OR (cp."externalId" IS NOT NULL AND oi."channelSku" = split_part(cp."externalId", '-', 2))
-  OR (cp."externalId" IS NOT NULL AND oi."channelSku" = 'SPE-' || cp."externalId")
+  (oi."externalId" IS NOT NULL AND oi."externalId" = cp."externalId")
+  OR (
+    oi."externalId" IS NULL
+    AND (
+      oi."channelSku" = cp."channelSku"
+      OR (cp."externalId" IS NOT NULL AND oi."channelSku" = split_part(cp."externalId", '-', 2))
+      OR (cp."externalId" IS NOT NULL AND oi."channelSku" = 'SPE-' || cp."externalId")
+    )
+  )
 )`;
 
 /**

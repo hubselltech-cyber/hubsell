@@ -101,6 +101,43 @@ describe("Giá vốn theo gian", () => {
     expect(await lineCost(lineB)).toBe(100_000);
   });
 
+  // Lát 1c (18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md B3): vá giá vốn khớp ID TRƯỚC, MÃ SAU.
+  it("dòng có id lá: vá theo id dù mã khác / mã trùng lá khác không vá oan; dòng chưa có id: vá theo mã như cũ", async () => {
+    const skuOf = (name: string) => `TEST-${fx.suffix}-${name}`;
+    // Hai lá cùng sản phẩm 900, mã người bán trùng nên danh mục đã thêm đuôi (sku-key.ts).
+    const red = await prisma.channelProduct.create({
+      data: { channelId: fx.channelId, channelSku: skuOf("SHARED (Đỏ)"), productName: "S", externalId: "900-1" },
+    });
+    const blue = await prisma.channelProduct.create({
+      data: { channelId: fx.channelId, channelSku: skuOf("SHARED (Xanh)"), productName: "S", externalId: "900-2" },
+    });
+    const line = async (code: string, channelSku: string, externalId: string | null) =>
+      (
+        await prisma.order.create({
+          data: {
+            channelId: fx.channelId,
+            orderCode: `TEST-${fx.suffix}-${code}`,
+            customerName: "Khách test",
+            itemCount: 1,
+            items: { create: { channelSku, externalId, productName: "S", quantity: 1, price: 150_000 } },
+          },
+          include: { items: true },
+        })
+      ).items[0].id;
+    const byIdWrongSku = await line("ID1", skuOf("SHARED (Đỏ)"), "900-2"); // id = Xanh, mã lại ghi Đỏ (mã đổi) → theo id
+    const legacyRed = await line("ID2", skuOf("SHARED (Đỏ)"), null); // đơn cũ chưa có id → theo mã
+    const legacyRaw = await line("ID3", skuOf("SHARED"), null); // đơn cũ mang mã thô đã đổi đuôi → chưa vá được (Lát 2)
+
+    await applyChannelCostPrice([red.id], 70_000, fx.userId);
+    expect(await lineCost(byIdWrongSku)).toBe(0); // mã trùng Đỏ nhưng id là Xanh → KHÔNG vá oan
+    expect(await lineCost(legacyRed)).toBe(70_000);
+    expect(await lineCost(legacyRaw)).toBe(0);
+
+    await applyChannelCostPrice([blue.id], 80_000, fx.userId);
+    expect(await lineCost(byIdWrongSku)).toBe(80_000); // đúng lá theo id
+    expect(await lineCost(legacyRed)).toBe(70_000); // đã có số thật → không đụng
+  });
+
   it("gỡ liên kết: gian đang theo giá kho giữ được giá, gian có giá riêng giữ nguyên", async () => {
     await keepCostOnDetach(prisma, { channelProductIds: [cpA, cpB] }, fx.userId);
     const after = await prisma.channelProduct.findMany({ where: { id: { in: [cpA, cpB] } } });

@@ -68,7 +68,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 | Lát | Việc | Trạng thái |
 |---|---|---|
 | **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) |
-| 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b code 18/10 (mục 6.9) · ⏳ 1c |
+| 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b (mục 6.9) · ✅ 1c code 18/10 (mục 6.10) |
 | 2 | Bù đơn cũ: mã ↔ 1 sản phẩm → điền `itemId` suy luận; mã nhiều sản phẩm → quét lại từ sàn CHỈ đơn có dòng mồ côi (~20 nghìn đơn ÷ 50/lượt ≈ 400–500 lượt, rải 32 gian, chạy nền có nhịp nghỉ, không pg-boss); ghi `externalId` + đổi `channelSku` sang khóa hiện hành; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`. | ⏳ |
 | 3 | Lá mới thừa kế giá vốn dòng gộp cũ cùng mã (đánh dấu "thừa kế"); vá hồi tố 79 dòng. Cần anh chốt: thừa kế tự động hay khách đặt. | ⏳ |
 | 4 | Dòng đối chiếu doanh thu cho Shopee (`ads_gms_item_reports` có GMV theo item) — cùng lưới an toàn B6. | ⏳ |
@@ -137,7 +137,7 @@ vẫn "Chưa tin được" cho tới Lát 2 — đúng kỳ vọng, không đư�
 
 | Lớp vá | Lát 1 | Sau Lát 2 |
 |---|---|---|
-| `lib/cost-price.ts SKU_MATCH` (vá giá vốn đơn cũ) | thêm nhánh **đầu** `oi.externalId = cp.externalId` (dòng có id đi nhánh này; ba nhánh chuỗi giữ cho dòng NULL) | giữ chuỗi làm đường lui vĩnh viễn cho Lazada chưa có id |
+| `lib/cost-price.ts SKU_MATCH` (vá giá vốn đơn cũ) | ✅ 1c: dòng có id khớp **chỉ** bằng `oi.externalId = cp.externalId`; ba nhánh chuỗi chỉ còn cho dòng `externalId IS NULL` | giữ chuỗi làm đường lui vĩnh viễn cho Lazada chưa có id |
 | `order-item-images` (`startsWith "("`) | giữ | đổi sang `OR externalId = line.externalId` |
 | `expandReturnKeys` (hoàn hàng) | giữ | khớp `OrderItem.externalId` trực tiếp, expand làm đường lui |
 | Hòa vốn / biên lãi (ads) | **đổi sang id** (6.3) | — |
@@ -208,3 +208,15 @@ Cách làm gọn hơn thiết kế 6.3 (không cần hai CTE / hai tập riêng)
 - Test: `ads-margin.test` (+ca id trước mã sau, bộ nhóm có `i:`), `tiktok-breakeven.test` (+3 ca), hai test DB hai đường bằng nhau
   dựng **dòng A1 mang id** (`OrderItem.externalId = "100-1"`) cạnh dòng không id → `rows` = `sql` ở mọi nhóm; 12 tệp quảng cáo
   133/133. Mobile / FE không đổi.
+
+### 6.10 Lát 1c — vá giá vốn theo id, đã code (18/10/2026, chưa push)
+
+- `lib/cost-price.ts SKU_MATCH` (dùng ở cả 5 đường vá: theo sản phẩm kho, theo SKU sàn, nút "Áp giá vốn cho đơn cũ", và điều
+  kiện "gian có giá riêng"): `(oi.externalId IS NOT NULL AND oi.externalId = cp.externalId) OR (oi.externalId IS NULL AND <3 nhánh
+  mã cũ>)`. Dòng có id không bao giờ bị vá bởi lá khác cùng mã; dòng chưa có id vẫn vá theo mã như trước. Index `OrderItem(externalId)`
+  của Lát 1a phục vụ nhánh id.
+- Test DB `cost-per-shop-db` (+1 ca): hai lá cùng sản phẩm mã trùng (`SHARED (Đỏ)` / `SHARED (Xanh)`); dòng ghi id Xanh nhưng mã Đỏ →
+  vá giá Đỏ **không** đụng, vá giá Xanh mới ăn; dòng cũ không id mã Đỏ → vá theo mã; dòng cũ mã thô `SHARED` → chưa vá được (đợi
+  Lát 2). Lưu ý: dòng mang mã thô đã đổi đuôi hôm nay **không** được vá dù nhập giá — Lát 2 bù id sẽ sửa, không vá "ké" theo mã thô.
+- Hệ quả với 79 dòng (~36 triệu) đơn 15–18/10 mất giá vốn: chúng mang khóa có đuôi và từ 18/10 có id → khách nhập giá vốn cho lá mới
+  là vá được ngay (Lát 3 bàn chuyện thừa kế tự động).
