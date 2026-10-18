@@ -86,7 +86,7 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.CHUA-CO-IOS-CLIENT-ID"
+          "iosUrlScheme": "com.googleusercontent.apps.266117474182-am79goplhqbpdogcirohc492ucqt33bp"
         }
       ]
     ],
@@ -98,8 +98,8 @@
       "eas": {
         "projectId": "3182c4de-dbee-40e8-8728-b7149848673f"
       },
-      "googleIosClientId": "",
-      "googleWebClientId": ""
+      "googleIosClientId": "266117474182-am79goplhqbpdogcirohc492ucqt33bp.apps.googleusercontent.com",
+      "googleWebClientId": "266117474182-q8ik0gt7db03kelrq554bvlfub0c8ebn.apps.googleusercontent.com"
     }
   }
 }

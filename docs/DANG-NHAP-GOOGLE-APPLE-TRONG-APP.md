@@ -66,7 +66,7 @@ Migration: cột NULL + chỉ mục unique, khóa có thử lại (bẫy deadloc
 - `services/social-login.ts`: `verifyGoogleIdToken(idToken)` (JWKS `https://www.googleapis.com/oauth2/v3/certs`, cache theo `Cache-Control`), `verifyAppleIdentityToken(token)` (JWKS Apple), `exchangeAppleAuthorizationCode(code)`, `revokeAppleToken(refreshToken)`, `upsertSocialUser(...)`. JWT verify bằng `jose` (thêm dep) — `jsonwebtoken` hiện có không đọc JWKS.
 - `routes/auth.ts`: `POST /api/auth/social/google`, `POST /api/auth/social/apple` (public, rate-limit như /login theo IP); callback Google web chuyển sang dùng `upsertSocialUser` (hành vi không đổi, test cũ phải xanh).
 - `/api/auth/me` trả thêm `linked: { google: boolean, apple: boolean }` (web Cài đặt hiện "Đã liên kết Google / Apple" — lát sau nếu cần).
-- Env mới (Render web): `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID` (aud chấp nhận thêm `GOOGLE_CLIENT_ID` web sẵn có), `APPLE_SIWA_TEAM_ID=BF6Y7D47P5`, `APPLE_SIWA_KEY_ID`, `APPLE_SIWA_PRIVATE_KEY` (.p8, base64), `APPLE_SIWA_CLIENT_ID=vn.hubsell.app`. Thiếu env → route trả 503 (pattern Lazada/Google web).
+- Env mới (Render web): `GOOGLE_IOS_CLIENT_ID` = client iOS (mục 6.1). **Android KHÔNG cần env riêng:** SDK Android phát idToken với `aud` = **client Web** (đã là `GOOGLE_CLIENT_ID`); hai client Android chỉ để Google kiểm package + SHA-1 lúc mở bộ chọn. `GOOGLE_ANDROID_CLIENT_ID` để trống. `APPLE_SIWA_TEAM_ID=BF6Y7D47P5`, `APPLE_SIWA_KEY_ID`, `APPLE_SIWA_PRIVATE_KEY` (.p8, base64), `APPLE_SIWA_CLIENT_ID=vn.hubsell.app`. Thiếu env → route trả 503 (pattern Lazada/Google web).
 
 ## 5. Mobile
 
@@ -87,6 +87,20 @@ Migration: cột NULL + chỉ mục unique, khóa có thử lại (bẫy deadloc
 | C5 | Render web | 6 env mục 4 | anh dán / em soạn |
 | C6 | App Store Connect | App Privacy không đổi (đã khai email, tên). Ghi chú người duyệt: tài khoản reviewer vẫn đăng nhập bằng mật khẩu. | em |
 
+
+### 6.1 Số đã lấy (18/10 ~23:55, Chrome anh)
+
+| Mục | Giá trị |
+|---|---|
+| Dự án Google Cloud giữ client web | **My Project 18602** (`static-gravity-499208-v9`), tài khoản xwearhn@gmail.com |
+| Client Web sẵn có "Hubsell Web" (= `GOOGLE_CLIENT_ID` Render) | `266117474182-q8ik0gt7db03kelrq554bvlfub0c8ebn.apps.googleusercontent.com` |
+| Play Console | tài khoản dev@hubsell.vn (u/3), nhà phát triển Hubsell Technology `4691969570523261762`, app `4973694311665052949` |
+| ✅ Client **iOS** "Hubsell iOS" (bundle vn.hubsell.app, App Store 6819512670, Team BF6Y7D47P5) — tạo 18/10 ~23:58 | `266117474182-am79goplhqbpdogcirohc492ucqt33bp.apps.googleusercontent.com` → iosUrlScheme `com.googleusercontent.apps.266117474182-am79goplhqbpdogcirohc492ucqt33bp` |
+| ✅ Client **Android** "Hubsell Android (Play App Signing)" — SHA-1 khóa ký Play | `266117474182-f0v215ija2plp3h2h67dcf3r61pnqucu.apps.googleusercontent.com` |
+| ✅ Client **Android** "Hubsell Android (khoa upload EAS)" — SHA-1 khóa upload (APK preview) | `266117474182-ljdacf0bt9g4o2vur8qrd33dh0lo8i00.apps.googleusercontent.com` |
+| SHA-1 khóa ký ứng dụng (Play App Signing) — bản tải từ Play | `28:6D:69:49:55:C4:B2:65:3F:93:29:5E:69:0C:D0:57:E6:90:0A:B4` |
+| SHA-1 khóa tải lên (EAS ký AAB) — bản APK preview / internal | `21:3D:8D:22:37:B9:DA:83:FE:C9:B5:A5:4B:E2:C3:92:CF:83:38:FE` |
+
 ## 7. Thứ tự làm
 
 1. Backend + migration + test (verify token giả bằng khóa test, upsert 3 nhánh, xóa tài khoản không mật khẩu) → push → Render deploy.
@@ -105,4 +119,5 @@ Migration: cột NULL + chỉ mục unique, khóa có thử lại (bẫy deadloc
 
 - 18/10 đêm: thiết kế xong; 1.2.1 đã nộp 2 kho.
 - 18/10 ~23:20: **backend xong** (mục 7 bước 1) — `services/social-login.ts`, 2 route, migration, test 12 ca; chưa commit, DB dev chưa áp (classifier chặn), prod áp khi deploy. 
+- 19/10 ~00:10: **C1 + C2 XONG** (em làm qua Chrome anh): 1 client iOS + 2 client Android tạo trong dự án My Project 18602; app.json đã điền `extra.googleIosClientId`, `extra.googleWebClientId`, `iosUrlScheme` thật → nút Google hiện. Còn C4 (key Apple .p8) + C5 (env Render: `GOOGLE_IOS_CLIENT_ID`, `APPLE_SIWA_*`) — anh làm.
 - 18/10 ~23:40: **mobile xong phần code** (bước 2): social.ts + 2 nút + AccountScreen; app.json extra client id RỖNG → nút Google tự ẩn, nút Apple hiện trên iOS. Chờ C1–C5 (mục 6) rồi build thử TestFlight/APK (bước 3).
