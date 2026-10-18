@@ -146,6 +146,17 @@ Công cụ: `backend/scripts/pha-a-san-probe.ts` (chỉ đọc sàn) chạy trê
    (`tiktokOrderSearchSort`, test `tiktok-order-search-sort.test.ts`); (b) ✅ tiêu chí H5 = "< 5 % thời gian lệnh sàn" + xin lượt
    theo lô (đã sửa bảng mục 3); (c) ✅ khóa N4 thêm (app, endpoint) (đã sửa N4). → Sang Pha B.
 
+### 3b.1b Đóng Pha A (anh Trung 18/10 22:20)
+
+- Anh chốt: **kiểm xong bản vá → commit; Pha B chỉ làm khi anh gọi.** Phần "bật đo chạm trần ở mọi hàm đọc + thẻ HQ chỉ nhìn"
+  (mục 5 dòng Pha A) **đề xuất bỏ**: số đo đã có từ probe + log, chỉ 8686 chạm trần; thẻ đo riêng là thứ Pha B thay.
+- Kiểm bản vá `f7820681` trên prod (worker live 21:53): lượt 21:50 còn mã cũ → mốc nước 8686 lùi 01:55 → 01:27 ngày 16/10
+  (đúng cơ chế kẹt); lượt vét 21:59 (mã mới) đóng cửa sổ 2 phút. Lượt tiến mốc đầu tiên bằng mã mới: xem dòng cuối 3b.1b
+  **✅ 22:22:41 lượt tiến mốc đầu tiên bằng mã mới:** vẫn cắt ở 2.500 nhưng mốc vét = `2026-10-16T18:32:08` (phần cũ hơn
+  THẬT, không còn cửa sổ 2 phút); **22:23:03 vét xong 00:57 → 18:32, mốc nước = 16/10 18:32:08** (+17 giờ trong một lượt;
+  trước đó 3 lượt lùi dần 02:07 → 01:55 → 01:27). Còn ~2 ngày ≈ 2.600 biến động → 1–2 lượt nữa mốc nước tới hiện tại, thẻ HQ xanh.
+  Pha A ĐÓNG; Pha B chờ anh gọi.
+
 ### 3b.2 Điều phải sửa trong bản thiết kế sau Pha A
 
 - Mục 1: biến động/ngày của gian 4.000 đơn = **24.000–32.000** (không phải 16.000); webhook/ngày cùng số.
