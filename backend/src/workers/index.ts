@@ -44,6 +44,7 @@ import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
+import { startCostSplitRepairWorker } from "./cost-split-repair";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -125,4 +126,6 @@ export function startAllWorkers(): void {
   // Bù id lá sàn cho dòng đơn cũ 90 ngày (Lát 2 cây sản phẩm sàn, anh Trung 18/10) —
   // một gian một lúc, hỏi sàn 50 đơn/lượt, nghỉ 2 s; tắt ORDER_LINE_ID_BACKFILL_OFF=1.
   startLineIdBackfillWorker();
+  // Sửa một lần: lá tách 15/10 nhận lại giá vốn khách đã đặt cho mã (Lát 3, anh Trung 18/10); tắt COST_SPLIT_REPAIR_OFF=1.
+  startCostSplitRepairWorker();
 }

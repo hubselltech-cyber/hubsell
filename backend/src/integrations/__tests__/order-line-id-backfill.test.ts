@@ -197,12 +197,16 @@ describe("runChannelBackfill — DB dev, Shopee mock", () => {
     expect(r2).toMatchObject({ phase: "done", ordersDone: 0, apiCalls: 0 });
   });
 
-  it("inferIdsByUniqueSku: mã ↔ đúng một lá mới ghi; mã ứng hai lá (B) không đoán", async () => {
+  it("inferIdsByUniqueSku: mã ↔ đúng một lá mới ghi (kể cả lá đã mang đuôi phân loại); mã ứng hai lá (B) không đoán", async () => {
     await prisma.orderItem.updateMany({ where: { id: { in: [ids.O1, ids.O3] } }, data: { externalId: null } });
     await prisma.orderItem.update({ where: { id: ids.O3 }, data: { channelSku: sku("B") } });
+    // F: mã thô F chỉ còn MỘT lá trong danh mục nhưng lá đó đã mang đuôi "F (Lẻ)" → đơn cũ mã "F" khớp được, đổi sang khóa có đuôi.
+    await prisma.channelProduct.create({ data: { channelId: fx.channelId, channelSku: sku("F (Lẻ)"), productName: "F", externalId: "600-1" } });
+    await order("F1", [{ channelSku: "F" }], 7);
     const n = await inferIdsByUniqueSku(fx.channelId);
-    expect(n).toBe(1);
+    expect(n).toBe(2);
     expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: ids.O1 } })).externalId).toBe("100-1");
     expect((await prisma.orderItem.findUniqueOrThrow({ where: { id: ids.O3 } })).externalId).toBeNull();
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: ids.F1 } })).toMatchObject({ externalId: "600-1", channelSku: sku("F (Lẻ)") });
   });
 });

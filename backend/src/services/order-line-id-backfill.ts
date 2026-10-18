@@ -280,7 +280,8 @@ export async function inferIdsByUniqueSku(channelId: string): Promise<number> {
   return prisma.$executeRaw`
     WITH cand AS (
       SELECT cp."channelId",
-             regexp_replace(regexp_replace(cp."channelSku", '\s\(.*\)(\s#\S+)?$', ''), '\s#\S+$', '') AS base,
+             -- (trong template literal TS phải viết \\s — bẫy 18/10: '\s' thành 's', regexp im lặng không bóc được đuôi)
+             regexp_replace(regexp_replace(cp."channelSku", '\\s\\(.*\\)(\\s#\\S+)?$', ''), '\\s#\\S+$', '') AS base,
              cp."externalId", cp."channelSku"
       FROM "ChannelProduct" cp
       WHERE cp."channelId" = ${channelId} AND cp."externalId" IS NOT NULL

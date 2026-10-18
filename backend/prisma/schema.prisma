@@ -1768,6 +1768,10 @@ model ChannelProduct {
   /// đặt giá riêng → theo Product.costPrice (nếu đã nối). Kho chỉ quản số lượng.
   /// Quy tắc một nơi: lib/cost-price.ts effectiveSkuCost.
   costPrice Decimal? @db.Decimal(12, 2)
+  /// Lá tách 15/10 nhận giá vốn THỪA KẾ từ mã khách đã đặt (sửa một lần, Lát 3
+  /// 18/10/2026 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 8). Chỉ kỹ thuật: khách sửa
+  /// tay → về NULL; đường lui = SET costPrice NULL WHERE cột này NOT NULL. Không hiện UI.
+  costPriceInheritedAt DateTime?
 
   /// NULL = chưa liên kết về kho gốc. Đây là cốt lõi của tầng đệm.
   productId String?

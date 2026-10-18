@@ -277,7 +277,8 @@ export async function applyChannelCostPriceIn(
   const ids = cps.map((c) => c.id);
   await db.channelProduct.updateMany({
     where: { id: { in: ids } },
-    data: { costPrice: cost },
+    // Khách tự đặt → không còn là giá thừa kế (Lát 3): xóa dấu để lượt sửa một lần không bao giờ ghi đè số khách nhập.
+    data: { costPrice: cost, costPriceInheritedAt: null },
   });
   const backfilled = cost > 0 ? await backfillOrderLinesByChannelProducts(db, ids) : 0;
   return {

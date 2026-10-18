@@ -70,7 +70,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 | **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) |
 | 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b (mục 6.9) · ✅ 1c code 18/10 (mục 6.10) |
 | 2 | Bù đơn cũ: HỎI SÀN cho mọi dòng chưa có id của gian ACTIVE trong 90 ngày (mồ côi trước), lô 50, nghỉ 2 s; ghi `externalId` + đổi `channelSku`; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`; gian không gọi được sàn suy luận hẹp (mục 7). | ✅ code 18/10 (mục 7.7) |
-| 3 | Lá mới thừa kế giá vốn dòng gộp cũ cùng mã (đánh dấu "thừa kế"); vá hồi tố 79 dòng. Cần anh chốt: thừa kế tự động hay khách đặt. | ⏳ |
+| 3 | Lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt cho cùng mã thô (không bịa, không nhắc — anh chốt 18/10); vá hồi tố 79 dòng. | ✅ code 18/10 (mục 8.7) — chỉ sửa một lần, không áp cho lá khách thêm sau |
 | 4 | Dòng đối chiếu doanh thu cho Shopee (`ads_gms_item_reports` có GMV theo item) — cùng lưới an toàn B6. | ⏳ |
 
 ## 5. Lát 0 — chi tiết (18/10/2026)
@@ -330,3 +330,88 @@ thử lại). Ledger worker tính lại theo lô như mọi thay đổi khác; ~
   → **+8,3%** (trong ngưỡng 25%, cùng cỡ ba chiến dịch khỏe); hòa vốn **7,05**, biên lãi 14,2%, 192 đơn đối soát + 52 hủy. Trước bù:
   8,90 trên 45 đơn (−74%). Cách tính SQL này đã tái lập đúng số app trước bù, nên app sẽ hiện 7,05 và hết "Chưa tin được" — chưa
   nhìn tận mắt qua giao diện vì phiên Chrome đã quay về dev@hubsell.tech; anh mở gian and.not.or là thấy.
+
+## 8. Lát 3 — thiết kế: lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt (18/10/2026, CHỜ ANH CHỐT)
+
+Anh Trung chốt hướng 18/10: *"thừa kế tự động dựa trên lịch sử khách đã đặt giá vốn, không bịa giá vốn chỉ vì tên SKU có vẻ giống
+nhau; không cần nhắc, khách sai khách tự dò lại."*
+
+### 8.1 Vấn đề
+
+Bản 15/10 tách dòng gộp thành nhiều lá: dòng gộp cũ được **đổi khóa tại chỗ** thành một lá (giữ `productId` + `costPrice` khách đã
+đặt), các lá còn lại **tạo mới, giá vốn trống**. Khách không tự nhập (3 ngày: 0) → đơn mới rơi vào lá trống chụp giá vốn 0 → bị coi
+"thiếu giá vốn", kéo độ phủ xuống, hòa vốn tính thiếu. Đo 15–18/10: 849 dòng đơn khóa có đuôi, 703 giá vốn 0, **79 dòng (~36 triệu,
+13 gian)** là ca lá anh em cùng mã có giá mà lá này không có.
+
+### 8.2 "Lịch sử khách đã đặt" là gì — và không phải là gì
+
+- **Nguồn** = trong cùng gian, lá cùng **mã thô** (mã người bán tự đặt trên sàn, phần trước đuôi phân loại) đang mang **giá vốn hiệu lực
+  do khách đặt**: `ChannelProduct.costPrice > 0`, hoặc đã nối kho và `Product.costPrice > 0`. Đó chính là dòng gộp mà trước 15/10 khách
+  đã đặt giá cho đúng mã này và mọi đơn của mọi phân loại đã chụp giá ấy suốt nhiều tháng — thừa kế = **giữ nguyên hiện trạng khách
+  đã chấp nhận**, không phải số mới.
+- **Đích** = lá cùng mã thô, `costPrice` trống, **chưa nối kho**.
+- **Không** nhìn tên phân loại, tên sản phẩm, mã "na ná"; không nối kho cho lá mới (kho là của khách — anh chốt 15/10 kho chỉ khớp
+  trùng mã, bất biến B5).
+- **Không đoán khi lịch sử mâu thuẫn**: nhiều nguồn có giá thì phải **cùng một giá**; khách đã đặt hai giá khác nhau cho hai lá → bỏ qua
+  nhóm đó.
+
+### 8.3 Số đo prod 18/10 (gian ACTIVE, lá ACTIVE)
+
+| Sàn | Nhóm cùng mã thô | Có lịch sử, 1 nguồn có giá → số lá sẽ thừa kế | Nhiều nguồn cùng giá | Nguồn khác giá → bỏ | **Không có lịch sử → không làm gì** | Gian |
+|---|---|---|---|---|---|---|
+| Shopee | 8.611 | 113 nhóm → **459 lá** | 9 | 0 | 7.811 | 6 |
+| TikTok | 890 | 84 nhóm → **283 lá** | 21 | 1 | 621 | 5 |
+
+Phạm vi thật sự nhỏ: ~740 lá / 11 gian. 8.432 nhóm còn lại (Hi.Bé, LUMI…) chưa từng có giá vốn → đúng tinh thần anh chốt: **không bịa**.
+
+### 8.4 Cách làm
+
+1. **Luật thuần** `inheritedCostOf(siblings)`: trả giá nếu mọi lá có giá hiệu lực trong nhóm đều bằng nhau, null nếu không có hoặc khác
+   nhau. Dùng chung ba đường dưới.
+2. **Một lần cho tồn hiện tại**: `inheritCostForSplitLeaves(channelId)` — gom lá ACTIVE theo mã thô, áp luật, ghi `costPrice` cho lá đích
+   = giá hiệu lực của nguồn (nguồn dùng giá kho → chép xuống thành giá riêng của gian, đúng tiền lệ `keepCostOnDetach`), ghi
+   `costPriceInheritedAt = now`. Chạy một lượt cho mọi gian ACTIVE trong worker danh mục (ngay sau deploy, rồi mỗi đêm như một bước của
+   lượt sync — nhẹ, một câu SQL / gian).
+3. ~~Từ nay về sau: product-sync gán giá cho lá mới~~ — **BỎ** theo anh chốt 8.6 (phân loại khách thêm sau này khách tự nhập).
+4. **Vá hồi tố dòng đơn**: với các lá vừa nhận giá → `backfillOrderLinesByChannelProducts(ids)` (đường vá id trước của Lát 1c) → 79
+   dòng 15–18/10 + mọi dòng sau đó có giá ngay; xóa đệm hòa vốn gian.
+5. **Cột `ChannelProduct.costPriceInheritedAt`** (migration thêm cột NULL): chỉ để kỹ thuật — (a) không bao giờ ghi đè số khách đã
+   sửa tay (khách sửa qua `applyChannelCostPrice` → cột về NULL); (b) đường lui một câu `UPDATE … SET costPrice = NULL WHERE
+   costPriceInheritedAt IS NOT NULL` nếu anh đổi ý. **Không chuông, không dải nhắc, không hiện gì thêm** trên giao diện trong lát này
+   (anh chốt).
+
+### 8.5 Kiểm chứng
+
+- Test thuần luật: 1 nguồn giá riêng; 1 nguồn giá kho; 2 nguồn cùng giá; 2 nguồn khác giá → null; không nguồn → null.
+- Test DB: nhóm tách → lá đích nhận giá + `inheritedAt`, lá đã có giá / đã nối kho không bị đụng, dòng đơn giá 0 của lá đích được vá,
+  dòng đã có giá không đổi; chạy lại idempotent; khách sửa tay → `inheritedAt` NULL và lượt sau không ghi đè; `product-sync` tạo lá mới
+  trong nhóm có nguồn → có giá ngay.
+- Prod sau deploy: `SELECT count(*) FROM "ChannelProduct" WHERE "costPriceInheritedAt" IS NOT NULL` ≈ 740; 79 dòng đơn hết giá vốn 0;
+  độ phủ giá vốn các gian liên quan về 100%.
+
+### 8.6 Anh Trung chốt 18/10/2026 — và một chỉnh hướng quan trọng
+
+Anh hỏi lại: *"giá vốn thì phải do khách đặt chứ?"* → chốt: **chỉ SỬA MỘT LẦN** phần bản 15/10 đã làm sai (trả lại cho lá tách
+giá khách đã đặt cho mã); **phân loại khách thêm về sau khách tự nhập** — Hubsell đã có cơ chế nhắc giá vốn, không thêm gì; các phân
+loại cũ giữ nguyên giá đã nhập. Vì thế **bỏ bước 3 của 8.4** (product-sync không gán giá cho lá tạo mới nữa) và lượt sửa chỉ chạm lá
+tạo trong cửa sổ 15/10 → 19/10 (ngày deploy lát này). Điểm 1–3 còn lại giữ như đề xuất.
+
+### 8.7 Lát 3 — đã code (18/10/2026, chưa push)
+
+- Migration `20261018180000_channel_product_cost_inherited`: cột `ChannelProduct.costPriceInheritedAt` (khóa thử lại; chỉ kỹ thuật).
+- `services/cost-split-repair.ts`: `inheritedCostOf` (thuần); `repairSplitLeafCosts` — MỘT câu `UPDATE … RETURNING` toàn nền tảng:
+  nhóm (gian, mã thô) trên lá ACTIVE có đuôi; nguồn = lá có giá hiệu lực khách đặt (giá riêng gian hoặc giá kho qua liên kết),
+  nhóm hợp lệ khi mọi nguồn cùng giá; đích = lá giá trống, chưa nối kho, `createdAt` trong [15/10, 19/10) (mốc bằng
+  `timestampConst`); ghi `costPrice` + `costPriceInheritedAt`; rồi vá dòng đơn giá 0 của đúng các lá đó
+  (`backfillOrderLinesByChannelProducts`, id trước) và xóa đệm hòa vốn theo chủ shop. Idempotent.
+- `workers/cost-split-repair.ts`: chạy một lượt 3' sau khi worker khởi động, không lịch; `COST_SPLIT_REPAIR_OFF=1`.
+- `applyChannelCostPrice`: khách đặt tay → `costPriceInheritedAt = NULL` (lượt sửa không bao giờ ghi đè số khách nhập).
+- Test `cost-split-repair.test.ts` 4 ca: luật thuần; nguồn giá gian / nguồn giá kho (chép xuống, không nối kho) / hai nguồn khác giá
+  / không nguồn / lá ngoài cửa sổ → đúng từng lá; dòng đơn 0 được vá, dòng có giá giữ; chạy lại 0; khách sửa tay → dấu về NULL và
+  không bị ghi đè.
+- ⚠️ Bẫy tìm thấy khi test: trong template literal TS, `'\s'` của regexp Postgres thành `'s'` → regexp bóc đuôi phân loại **im lặng không
+  khớp**. Dính cả `inferIdsByUniqueSku` của Lát 2 (đã chạy prod một lượt với regexp hỏng: 126 dòng nó ghi là khớp mã bằng khóa y hệt →
+  vẫn đúng; phần bóc đuôi bị bỏ sót sẽ được lượt kế của 5 gian `infer` còn chờ bù sau deploy). Đã sửa `\\s` ở cả hai chỗ, test Lát 2
+  thêm ca lá mang đuôi.
+- Kiểm prod sau deploy: log worker `[cost-split-repair] trả lại giá vốn cho ~740 lá ở ~11 gian; vá N dòng đơn`;
+  `SELECT count(*) FROM "ChannelProduct" WHERE "costPriceInheritedAt" IS NOT NULL` ≈ 740; 79 dòng đơn 15–18/10 hết giá vốn 0.
