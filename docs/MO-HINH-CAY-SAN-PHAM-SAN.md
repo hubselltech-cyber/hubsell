@@ -315,4 +315,18 @@ thử lại). Ledger worker tính lại theo lô như mọi thay đổi khác; ~
   đổi id → sổ có `itemId`; chạm trần → chạy tiếp đúng chỗ; suy luận hẹp).
 - Theo dõi khi chạy prod (chưa có trang HQ, đọc SQL):
   `SELECT c."shopName", b.* FROM order_line_id_backfill b JOIN "Channel" c ON c.id = b."channelId" ORDER BY b."updatedAt" DESC;`
-  Kỳ vọng: ~73 gian, mồ côi xong trong ~15', toàn bộ ~70'; TC025 NEW (and.not.or) hết "Chưa tin được", hòa vốn ≈ 7,1.
+
+### 7.8 Kết quả chạy prod 18/10/2026 (push 10:15, worker bản nhịp mới 10:26)
+
+- Bản đầu mỗi lượt poll 5' chỉ nhận **một** gian → 77 gian sẽ mất ≥ 6 giờ; sửa ngay (`23cafd80`): một lượt poll chạy liên tiếp nhiều
+  gian tới 50', ưu tiên gian hỏi sàn trước gian suy luận. Nhịp thực tế ≈ **4 giây / lượt gọi** (2 s nghỉ + ~2 s gọi sàn và ghi DB),
+  không phải 2 s như ước lượng → toàn nền tảng ≈ 2 giờ, không phải 70'.
+- 12:28: **64 gian xong · 77.293 đơn · 142.309 dòng ghi id lá · 22 dòng ghi SPU · 2 dòng bỏ · 1.606 lượt gọi · 0 lỗi sàn / 429**; 4 gian
+  còn chờ; 2 gian "Hubsell Demo Store" (Shopee + TikTok) lỗi thiếu token — gian demo, nay nghỉ 24 giờ thay vì thử lại 15'
+  (`NO_AUTH_RETRY_MS`). Sổ cái: 0 đơn bẩn tồn đọng — ledger worker theo kịp.
+- Gian lớn nhất Siêu Thị 8686 (TikTok) 15.651 đơn / 314 lượt / 44.810 dòng, 0 bỏ. Khớp sạch hơn dự tính: chỉ 22 dòng gộp cùng SPU
+  và 2 dòng không khớp trên 142 nghìn.
+- **TC025 NEW (and.not.or), tính trên sổ theo `itemId` sau khi bù** (277/277 dòng TC025 có id): đối chiếu Hubsell 65,8 tr · TikTok 60,8 tr
+  → **+8,3%** (trong ngưỡng 25%, cùng cỡ ba chiến dịch khỏe); hòa vốn **7,05**, biên lãi 14,2%, 192 đơn đối soát + 52 hủy. Trước bù:
+  8,90 trên 45 đơn (−74%). Cách tính SQL này đã tái lập đúng số app trước bù, nên app sẽ hiện 7,05 và hết "Chưa tin được" — chưa
+  nhìn tận mắt qua giao diện vì phiên Chrome đã quay về dev@hubsell.tech; anh mở gian and.not.or là thấy.

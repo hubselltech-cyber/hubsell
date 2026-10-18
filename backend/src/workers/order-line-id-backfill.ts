@@ -18,6 +18,8 @@ import { inferIdsByUniqueSku, runChannelBackfill } from "../services/order-line-
 const POLL_MS = 5 * 60 * 1000;
 const FIRST_RUN_DELAY_MS = 2 * 60 * 1000;
 const RETRY_MS = 15 * 60 * 1000;
+/** Gian không có token (demo / chưa ủy quyền lại): nghỉ một ngày rồi thử — khách ủy quyền lại là lượt kế bù. */
+const NO_AUTH_RETRY_MS = 24 * 60 * 60 * 1000;
 /** Nhận gian = đẩy nextRunAt ra xa để tiến trình khác không nhận trùng. */
 const CLAIM_MS = 60 * 60 * 1000;
 /** Ngân sách một lượt poll: chạy liên tiếp nhiều gian tới 50' rồi nhường lượt kế (poll 5' có cờ chống chồng). */
@@ -133,11 +135,15 @@ async function runClaimedChannel(job: { channelId: string; phase: string; cursor
       );
     } catch (err) {
       const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+      // Gian ACTIVE nhưng không có token (gian demo, gian chưa ủy quyền lại): thử lại 15' chỉ rải log — nghỉ 24 giờ
+      // (prod 18/10: "Hubsell Demo Store" thiếu token/shop_id). Lỗi sàn / 429 / mạng vẫn thử lại sau 15'.
+      const noAuth = /chưa uỷ quyền|chưa ủy quyền|thiếu token/i.test(msg);
+      const retryMs = noAuth ? NO_AUTH_RETRY_MS : RETRY_MS;
       await prisma.orderLineIdBackfill.update({
         where: { channelId: channel.id },
-        data: { status: "error", lastError: msg, nextRunAt: new Date(now.getTime() + RETRY_MS), updatedAt: new Date() },
+        data: { status: "error", lastError: msg, nextRunAt: new Date(now.getTime() + retryMs), updatedAt: new Date() },
       });
-      console.error(`${TAG} ${channel.channelName} ${channel.shopName}: LỖI, thử lại sau 15': ${msg}`);
+      console.error(`${TAG} ${channel.channelName} ${channel.shopName}: LỖI, thử lại sau ${Math.round(retryMs / 60_000)}': ${msg}`);
     }
   }
 }
