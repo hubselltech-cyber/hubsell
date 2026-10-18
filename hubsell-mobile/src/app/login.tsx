@@ -19,6 +19,7 @@ import { homePathFor } from "@/lib/permissions";
 import { ApiError } from "@/api/client";
 import { SocialCancelledError, appleSignInAvailable, googleSignInAvailable } from "@/auth/social";
 import { GoogleLogo } from "@/components/GoogleLogo";
+import { useKeyboardScroll } from "@/lib/useKeyboardScroll";
 
 const TERMS_URL = "https://hubsell.vn/terms";
 const PRIVACY_URL = "https://hubsell.vn/privacy";
@@ -33,6 +34,7 @@ export default function LoginScreen() {
   const { signIn, signInWithGoogle, signInWithApple } = useAuth();
   const router = useRouter();
   const scheme = useColorScheme();
+  const { scrollRef, onInputFocus } = useKeyboardScroll();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -109,6 +111,7 @@ export default function LoginScreen() {
       behavior="padding"
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -156,6 +159,7 @@ export default function LoginScreen() {
             keyboardType={staffMode ? "default" : "email-address"}
             value={identifier}
             onChangeText={setIdentifier}
+            onFocus={onInputFocus}
           />
 
           <Text className="mb-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
@@ -169,6 +173,7 @@ export default function LoginScreen() {
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
+              onFocus={onInputFocus}
               onSubmitEditing={submit}
             />
             <Pressable

@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/auth/AuthContext";
 import { homePathFor } from "@/lib/permissions";
 import { ApiError } from "@/api/client";
+import { useKeyboardScroll } from "@/lib/useKeyboardScroll";
 
 const TERMS_URL = "https://hubsell.vn/terms";
 const PRIVACY_URL = "https://hubsell.vn/privacy";
@@ -43,6 +44,7 @@ export default function RegisterScreen() {
   const { signUp } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { scrollRef, onInputFocus } = useKeyboardScroll();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,6 +94,7 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView className="flex-1 bg-slate-50 dark:bg-slate-950" behavior="padding">
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{
           flexGrow: 1,
           justifyContent: "center",
@@ -141,6 +144,7 @@ export default function RegisterScreen() {
             textContentType="name"
             value={fullName}
             onChangeText={setFullName}
+            onFocus={onInputFocus}
           />
 
           <Text className={LABEL_CLS}>Email</Text>
@@ -155,6 +159,7 @@ export default function RegisterScreen() {
             textContentType="emailAddress"
             value={email}
             onChangeText={setEmail}
+            onFocus={onInputFocus}
           />
 
           <Text className={LABEL_CLS}>Mật khẩu</Text>
@@ -168,6 +173,7 @@ export default function RegisterScreen() {
               textContentType="newPassword"
               value={password}
               onChangeText={setPassword}
+              onFocus={onInputFocus}
             />
             <Pressable className="px-3" onPress={() => setShowPassword((s) => !s)} hitSlop={8}>
               <Ionicons
@@ -188,6 +194,7 @@ export default function RegisterScreen() {
             textContentType="newPassword"
             value={confirm}
             onChangeText={setConfirm}
+            onFocus={onInputFocus}
             onSubmitEditing={submit}
           />
 

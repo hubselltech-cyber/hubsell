@@ -19,6 +19,7 @@ import { usePlan } from "@/plan/PlanContext";
 import { ApiError } from "../api/client";
 import type { MyPlanResponse } from "../types/api";
 import { UserAvatar } from "./UserAvatar";
+import { useKeyboardScroll } from "@/lib/useKeyboardScroll";
 
 /** "+84912345678" → "0912345678" — khách Việt đọc số theo dạng trong nước. */
 function displayPhone(phone: string | null | undefined): string {
@@ -106,6 +107,7 @@ export function AccountScreen() {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { scrollRef, onInputFocus } = useKeyboardScroll();
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -213,6 +215,7 @@ export function AccountScreen() {
       behavior="padding"
     >
       <ScrollView
+        ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{
           padding: 16,
@@ -329,6 +332,7 @@ export function AccountScreen() {
               secureTextEntry
               value={current}
               onChangeText={setCurrent}
+              onFocus={onInputFocus}
             />
           )}
           <TextInput
@@ -338,6 +342,7 @@ export function AccountScreen() {
             secureTextEntry
             value={next}
             onChangeText={setNext}
+            onFocus={onInputFocus}
           />
           <TextInput
             className={`mb-3 ${INPUT_CLS}`}
@@ -346,6 +351,7 @@ export function AccountScreen() {
             secureTextEntry
             value={confirm}
             onChangeText={setConfirm}
+            onFocus={onInputFocus}
           />
           {message ? (
             <Text
@@ -410,6 +416,7 @@ export function AccountScreen() {
                 secureTextEntry
                 value={deletePassword}
                 onChangeText={setDeletePassword}
+                onFocus={onInputFocus}
               />
             )}
             {deleteError ? <Text className="mb-2 text-xs text-red-500">{deleteError}</Text> : null}
