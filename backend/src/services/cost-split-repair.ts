@@ -33,6 +33,60 @@ export function inheritedCostOf(siblings: { effectiveCost: number }[]): number |
   return [...costs][0];
 }
 
+/**
+ * HOÀN TÁC lá nhận giá thừa kế OAN (lượt prod 18/10 13:18 gom chỉ theo mã: 3.489 lá của SẢN PHẨM KHÁC, tên khác, trùng mã người bán
+ * nhận giá của sản phẩm nguồn — sai ý anh Trung). Lá "oan" = đang mang dấu thừa kế mà trong cùng (gian, mã thô, SPU) KHÔNG có lá
+ * nguồn nào do khách đặt giá. Trả về đúng trạng thái trước lượt sửa: (1) dòng đơn của lá đó tạo từ 15/10 đang mang ĐÚNG giá thừa kế
+ * (chỉ lượt vá mới đặt được — trước đó lá không có giá nên dòng chụp 0) → về 0; (2) lá → costPrice NULL, dấu NULL.
+ * Idempotent; lá đã được khách sửa tay (dấu NULL) không bị chạm. Chạy TRƯỚC repairSplitLeafCosts ở mỗi lần khởi động.
+ */
+export async function revertCrossProductInheritance(opts: { channelId?: string } = {}): Promise<{ leaves: number; orderLines: number }> {
+  const channelFilter = opts.channelId ? Prisma.sql`AND cp."channelId" = ${opts.channelId}` : Prisma.empty;
+  const bad = await prisma.$queryRaw<{ id: string; channelId: string; externalId: string | null; channelSku: string; cost: string }[]>`
+    WITH leaf AS (
+      SELECT cp."id", cp."channelId", cp."channelSku", cp."externalId", cp."costPrice", cp."costPriceInheritedAt",
+             regexp_replace(regexp_replace(cp."channelSku", '\\s\\(.*\\)(\\s#\\S+)?$', ''), '\\s#\\S+$', '') AS base,
+             split_part(cp."externalId", '-', 1) AS spu,
+             COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) AS cost
+      FROM "ChannelProduct" cp
+      LEFT JOIN "Product" p ON p."id" = cp."productId"
+      WHERE cp."channelSku" ~ '\\s(\\(.*\\)|#\\S+)$' ${channelFilter}
+    )
+    SELECT i."id", i."channelId", i."externalId", i."channelSku", i."costPrice"::text AS cost
+    FROM leaf i
+    WHERE i."costPriceInheritedAt" IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM leaf s
+        WHERE s."channelId" = i."channelId" AND s.base = i.base AND s.spu = i.spu
+          AND s."costPriceInheritedAt" IS NULL AND s.cost > 0
+      )`;
+  if (bad.length === 0) return { leaves: 0, orderLines: 0 };
+  let orderLines = 0;
+  for (const b of bad) {
+    const cost = Number(b.cost);
+    const r = await prisma.$executeRaw`
+      UPDATE "OrderItem" oi
+      SET "costPriceAtSale" = 0
+      FROM "Order" o
+      WHERE oi."orderId" = o."id"
+        AND o."channelId" = ${b.channelId}
+        AND o."createdAt" >= ${timestampConst(SPLIT_LEAF_CREATED_FROM)}
+        AND oi."costPriceAtSale" = ${cost}
+        AND (
+          (oi."externalId" IS NOT NULL AND oi."externalId" = ${b.externalId})
+          OR (oi."externalId" IS NULL AND oi."channelSku" = ${b.channelSku})
+        )`;
+    orderLines += r;
+  }
+  await prisma.channelProduct.updateMany({
+    where: { id: { in: bad.map((b) => b.id) } },
+    data: { costPrice: null, costPriceInheritedAt: null },
+  });
+  const owners = await prisma.channel.findMany({ where: { id: { in: [...new Set(bad.map((b) => b.channelId))] } }, select: { userId: true } });
+  for (const ownerId of new Set(owners.map((o) => o.userId))) await invalidateOwnerCostCaches(ownerId);
+  return { leaves: bad.length, orderLines };
+}
+
 export interface SplitRepairResult {
   /** Lá nhận giá thừa kế. */
   leaves: number;
@@ -55,24 +109,28 @@ export async function repairSplitLeafCosts(opts: { channelId?: string } = {}): P
       SELECT cp."id", cp."channelId", cp."productId", cp."createdAt",
              -- (trong template literal TS phải viết \\s để Postgres nhận \s — bẫy 18/10: '\s' thành 's', regexp im lặng không khớp)
              regexp_replace(regexp_replace(cp."channelSku", '\\s\\(.*\\)(\\s#\\S+)?$', ''), '\\s#\\S+$', '') AS base,
+             split_part(cp."externalId", '-', 1) AS spu,
              COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) AS cost
       FROM "ChannelProduct" cp
       LEFT JOIN "Product" p ON p."id" = cp."productId"
       WHERE cp.status = 'ACTIVE'
         AND cp."channelSku" ~ '\\s(\\(.*\\)|#\\S+)$'
+        AND cp."externalId" IS NOT NULL
         ${channelFilter}
     ),
     src AS (
-      -- Nguồn: lá có giá hiệu lực; nhóm chỉ hợp lệ khi MỌI nguồn cùng một giá.
-      SELECT "channelId", base, min(cost) AS cost
+      -- Nguồn: lá có giá hiệu lực CÙNG SẢN PHẨM SÀN (gian, mã thô, SPU) — không mang giá sang sản phẩm khác dù trùng mã
+      -- (prod 18/10 lượt đầu gom chỉ theo mã: 3.489 lá của sản phẩm khác, tên khác nhận giá — sai ý anh Trung, đã hoàn tác).
+      -- Nhóm chỉ hợp lệ khi MỌI nguồn cùng một giá.
+      SELECT "channelId", base, spu, min(cost) AS cost
       FROM leaf WHERE cost > 0
-      GROUP BY "channelId", base
+      GROUP BY "channelId", base, spu
       HAVING count(DISTINCT cost) = 1
     ),
     target AS (
       SELECT l."id", l."channelId", s.cost
       FROM leaf l
-      JOIN src s ON s."channelId" = l."channelId" AND s.base = l.base
+      JOIN src s ON s."channelId" = l."channelId" AND s.base = l.base AND s.spu = l.spu
       WHERE l.cost = 0
         AND l."productId" IS NULL
         -- Mốc so bằng hằng UTC (timestampConst): so Date tham số thẳng với cột timestamp(3) lệch theo TimeZone phiên (bẫy Lát 2).

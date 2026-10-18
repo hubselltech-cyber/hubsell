@@ -415,3 +415,22 @@ tạo trong cửa sổ 15/10 → 19/10 (ngày deploy lát này). Điểm 1–3 c
   thêm ca lá mang đuôi.
 - Kiểm prod sau deploy: log worker `[cost-split-repair] trả lại giá vốn cho ~740 lá ở ~11 gian; vá N dòng đơn`;
   `SELECT count(*) FROM "ChannelProduct" WHERE "costPriceInheritedAt" IS NOT NULL` ≈ 740; 79 dòng đơn 15–18/10 hết giá vốn 0.
+
+### 8.8 ⚠️ Sự cố lượt chạy prod 18/10 13:18 — gán giá oan cho sản phẩm khác, và cách hoàn tác
+
+- **Thực tế:** lượt sửa ghi **4.320 lá / 16 gian**, không phải ~740. Soi: **828 lá cùng sản phẩm** với lá nguồn (đúng ý); **3 lá khác SPU
+  nhưng trùng tên** (tin đăng lại); **3.489 lá là SẢN PHẨM KHÁC, TÊN KHÁC**, chỉ trùng mã người bán (XPL2 STORE 3.257, Samba 125 + 40,
+  Hi.Bé TikTok 35, Luna Bebe 15, DarkMan 10…). Đó là kiểu "giá của sản phẩm X gán cho sản phẩm Y" anh Trung dặn không làm.
+- **Nguyên nhân (lỗi của em):** câu ước lượng 8.3 gom theo (gian, mã thô, **SPU**) nên ra ~740; câu sửa 8.4 gom chỉ theo (gian, mã thô).
+  Về mặt lịch sử, trước 15/10 mã đó đúng là một dòng một giá cho mọi tin đăng — nhưng anh duyệt thiết kế trên con số theo sản phẩm, và
+  nguyên tắc "không bịa" phải thắng tiền lệ kỹ thuật.
+- **Sửa mã:** `repairSplitLeafCosts` gom theo (gian, mã thô, SPU) — test thêm ca "trùng mã, khác sản phẩm → không mang giá sang".
+- **Hoàn tác:** `revertCrossProductInheritance()` — lá đang mang dấu thừa kế mà cùng (gian, mã thô, SPU) **không có** lá nguồn khách đặt
+  giá → dòng đơn của lá tạo từ 15/10 đang mang **đúng giá thừa kế** về 0 (chỉ lượt vá đặt được số đó; dòng có số khác giữ), lá về
+  `costPrice NULL` + dấu NULL. Idempotent; lá khách đã sửa tay (dấu NULL) không chạm. Worker chạy hoàn tác **trước** lượt sửa ở mỗi lần
+  khởi động. Test: lá oan về trống + dòng về 0, lá đúng giữ nguyên, chạy lại 0.
+- **Trạng thái:** mã + test xong, **chưa push, chưa chạy trên prod** — chờ anh chốt: (A) hoàn tác 3.489 + 3 lá khác SPU, giữ 828 lá cùng
+  sản phẩm (đề xuất); (B) giữ cả vì đúng hiện trạng trước 15/10.
+- Bên lề (không thuộc lát này): còn ~74 dòng đơn 15–18/10 giá vốn 0 dù lá **đã có giá riêng và đã nối kho** — đơn về trước khi danh
+  mục có lá, chưa ai bấm lưu lại giá nên chưa được vá. Nên có lượt vá định kỳ "dòng giá 0 của lá đã có giá" (một câu UPDATE, id trước)
+  — đề xuất riêng.

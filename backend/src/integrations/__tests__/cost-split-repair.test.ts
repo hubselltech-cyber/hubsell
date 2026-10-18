@@ -10,7 +10,7 @@ import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyChannelCostPrice } from "../../lib/cost-price";
 import { prisma } from "../../lib/prisma";
-import { inheritedCostOf, repairSplitLeafCosts } from "../../services/cost-split-repair";
+import { inheritedCostOf, repairSplitLeafCosts, revertCrossProductInheritance } from "../../services/cost-split-repair";
 import { createStockFixture, type StockFixture } from "./fixtures";
 
 describe("inheritedCostOf — luật thuần", () => {
@@ -89,6 +89,8 @@ describe("repairSplitLeafCosts — DB dev", () => {
     // E: lá trống nhưng tạo NGOÀI cửa sổ tách (khách thêm phân loại sau này) → khách tự nhập.
     await leaf("E (1)", "500-1", { costPrice: 70_000, createdAt: before });
     await leaf("E (2)", "500-2", { createdAt: new Date("2026-10-25T10:00:00+07:00") });
+    // G: cùng mã thô "A" nhưng SẢN PHẨM KHÁC (SPU 700) — không được mang giá của A sang (prod 18/10: 3.489 lá bị gán oan).
+    await leaf("A (Khác SP)", "700-1");
     // Dòng đơn của lá A (Xanh): một dòng giá 0 (sẽ vá), một dòng đã có giá (giữ).
     await line("L0", "A (Xanh)", "100-2", 0);
     await line("L1", "A (Xanh)", "100-2", 111_000);
@@ -109,8 +111,23 @@ describe("repairSplitLeafCosts — DB dev", () => {
     expect(await costOf("C (3)")).toEqual({ cost: 0, inherited: false });
     expect(await costOf("D (2)")).toEqual({ cost: 0, inherited: false });
     expect(await costOf("E (2)")).toEqual({ cost: 0, inherited: false });
+    expect(await costOf("A (Khác SP)")).toEqual({ cost: 0, inherited: false }); // trùng mã, khác sản phẩm → không mang giá sang
     expect(await lineCost("L0")).toBe(120_000);
     expect(await lineCost("L1")).toBe(111_000);
+  });
+
+  it("revertCrossProductInheritance: lá nhận giá oan (khác sản phẩm) → lá về trống, dòng đơn từ 15/10 mang giá đó về 0; lá đúng giữ nguyên", async () => {
+    // Giả lập lượt prod 13:18: lá "A (Khác SP)" (SPU 700) bị gán giá 120k của A (SPU 100) + dòng đơn đã bị vá theo.
+    await prisma.channelProduct.update({ where: { id: ids["A (Khác SP)"] }, data: { costPrice: 120_000, costPriceInheritedAt: new Date() } });
+    await line("LX", "A (Khác SP)", "700-1", 120_000);
+    await line("LY", "A (Khác SP)", "700-1", 99_000); // số thật khác giá thừa kế → không đụng
+    const u = await revertCrossProductInheritance({ channelId: fx.channelId });
+    expect(u).toEqual({ leaves: 1, orderLines: 1 });
+    expect(await costOf("A (Khác SP)")).toEqual({ cost: 0, inherited: false });
+    expect(await lineCost("LX")).toBe(0);
+    expect(await lineCost("LY")).toBe(99_000);
+    expect(await costOf("A (Xanh)")).toEqual({ cost: 120_000, inherited: true }); // lá đúng (cùng SPU) không bị hoàn tác
+    expect(await revertCrossProductInheritance({ channelId: fx.channelId })).toEqual({ leaves: 0, orderLines: 0 });
   });
 
   it("chạy lại không ghi gì; khách sửa tay thì dấu thừa kế về NULL và lượt sau không ghi đè", async () => {

@@ -7,13 +7,16 @@
 // 18/10), các lượt sau 0. Không lịch, không lặp. Tắt: COST_SPLIT_REPAIR_OFF=1.
 // ============================================================
 
-import { repairSplitLeafCosts } from "../services/cost-split-repair";
+import { repairSplitLeafCosts, revertCrossProductInheritance } from "../services/cost-split-repair";
 
 const FIRST_RUN_DELAY_MS = 3 * 60 * 1000;
 const TAG = "[cost-split-repair]";
 
 export async function runCostSplitRepairOnce(): Promise<void> {
   try {
+    // Hoàn tác trước: lượt prod 18/10 13:18 gom chỉ theo mã đã gán giá oan cho 3.489 lá của sản phẩm khác (xem service).
+    const undo = await revertCrossProductInheritance();
+    if (undo.leaves > 0) console.log(`${TAG} hoàn tác ${undo.leaves} lá nhận giá oan (khác sản phẩm, trùng mã); trả ${undo.orderLines} dòng đơn về 0`);
     const r = await repairSplitLeafCosts();
     if (r.leaves === 0) {
       console.log(`${TAG} không còn lá tách 15/10 nào thiếu giá vốn có lịch sử — không ghi gì`);
