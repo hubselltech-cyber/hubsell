@@ -13,6 +13,8 @@ import {
   buildAdsGroupSets,
   campaignGroupKey,
   groupSkusByItemId,
+  itemKey,
+  lineGroupKey,
   lowCostCoverage,
   marginBaseFromSums,
   marginOf,
@@ -124,11 +126,31 @@ describe("bộ nhóm SKU của gian", () => {
       { id: "c2", itemIds: "200,999" },
       { id: "c3", itemIds: "" },
     ]);
-    expect([...sets.get(productGroupKey("100"))!].sort()).toEqual(["A-DO", "A-XANH"]);
-    expect([...sets.get(campaignGroupKey("c1"))!].sort()).toEqual(["A-DO", "A-XANH", "B"]);
-    expect([...sets.get(campaignGroupKey("c2"))!]).toEqual(["B"]);
+    // Lát 1b (18/10/2026): mỗi nhóm mang thêm khóa SPU "i:<itemId>" — dòng hàng có id khớp bằng khóa này, mã thô chỉ là đường lui.
+    expect([...sets.get(productGroupKey("100"))!].sort()).toEqual(["A-DO", "A-XANH", itemKey("100")]);
+    expect([...sets.get(campaignGroupKey("c1"))!].sort()).toEqual(["A-DO", "A-XANH", "B", itemKey("100"), itemKey("200")]);
+    // Item lạ (999, chưa có trong danh mục) vẫn có khóa SPU: đơn mang id của nó gom đúng chiến dịch dù danh mục chưa kéo về.
+    expect([...sets.get(campaignGroupKey("c2"))!].sort()).toEqual(["B", itemKey("200"), itemKey("999")]);
     expect(sets.get(campaignGroupKey("c3"))!.size).toBe(0);
     expect(sets.has(SHOP_GROUP)).toBe(false);
+  });
+
+  it("id trước, mã sau: dòng có SPU chỉ khớp khóa SPU (mã trùng sản phẩm khác không kéo vào); dòng chưa có id khớp theo mã", () => {
+    const a = (over: { sku: string; itemId?: string | null }, revenue = 100, profit = 30): MarginRow =>
+      ({ items: [{ ...over, price: 100, quantity: 1 }], actualRevenue: revenue, profit, missingCostPrice: false }) as unknown as MarginRow;
+    const group = new Set(["TC025-XAM", itemKey("100")]);
+    expect(lineGroupKey({ sku: "TC025-XAM", itemId: "100" })).toBe("i:100");
+    expect(lineGroupKey({ sku: "TC025-XAM", itemId: null })).toBe("TC025-XAM");
+    const rows = [
+      a({ sku: "TC025-XAM", itemId: "100" }), // id đúng sản phẩm → tính
+      a({ sku: "TC025-XAM (XÁM)", itemId: "100" }), // mã đã đổi đuôi nhưng id đúng → tính (ca TC025 NEW)
+      a({ sku: "TC025-XAM", itemId: "999" }), // cùng mã nhưng là sản phẩm KHÁC → KHÔNG tính
+      a({ sku: "TC025-XAM", itemId: null }), // đơn cũ chưa có id → đường lui mã → tính
+      a({ sku: "TC025-XAM (XÁM)", itemId: null }), // chưa có id, mã có đuôi không nằm trong nhóm → không tính (Lát 2 bù id)
+    ];
+    const base = marginOverRows(rows, group);
+    expect(base.orders).toBe(3);
+    expect(base.revenue).toBe(300);
   });
 
   it("adsGroupMappingOf: hai mảng song song xếp cố định; digest không phụ thuộc thứ tự nạp, đổi khi bộ nhóm đổi", () => {
@@ -138,13 +160,17 @@ describe("bộ nhóm SKU của gian", () => {
     const b = adsGroupMappingOf(
       buildAdsGroupSets(groupSkusByItemId([...products].reverse()), [{ id: "c1", itemIds: "200,100" }])
     );
-    expect(a.groups.map((g, i) => `${g}|${a.skus[i]}`)).toEqual([
+    expect(a.groups.map((g, i) => `${g}|${a.keys[i]}`)).toEqual([
       "c:c1|A-DO",
       "c:c1|A-XANH",
       "c:c1|B",
+      "c:c1|i:100",
+      "c:c1|i:200",
       "p:100|A-DO",
       "p:100|A-XANH",
+      "p:100|i:100",
       "p:200|B",
+      "p:200|i:200",
     ]);
     expect(b).toEqual(a);
     const more = adsGroupMappingOf(

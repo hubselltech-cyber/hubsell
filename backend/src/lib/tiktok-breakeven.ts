@@ -55,7 +55,7 @@
 import { createHash } from "crypto";
 import { ShippingStatus } from "@prisma/client";
 import { startOfDaysAgo } from "./ads-dates";
-import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, type AdsGroupSets } from "./ads-margin";
+import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, lineInGroup, type AdsGroupSets } from "./ads-margin";
 import type { DateRangeFilter } from "./date-range";
 
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */
@@ -110,7 +110,8 @@ export interface BreakevenPnlRow {
   shippingStatus: ShippingStatus;
   /** Đã đối soát THẬT (bản kê estimated = false). */
   isSettled: boolean;
-  items: { sku: string; price: number; quantity: number }[];
+  /** `itemId` = SPU của dòng (sổ dòng hàng, từ OrderItem.externalId — Lát 1a); null/bỏ trống = chưa có id → khớp theo mã (lib/ads-margin AdsGroupSets). */
+  items: { sku: string; itemId?: string | null; price: number; quantity: number }[];
   actualRevenue: number;
   profit: number;
   missingCostPrice: boolean;
@@ -165,7 +166,7 @@ export function tiktokBreakevenBase(rows: BreakevenPnlRow[], skuSet: ReadonlySet
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     if (itemTotal <= 0) continue;
     const matchTotal = skuSet
-      ? row.items.filter((it) => skuSet.has(it.sku)).reduce((s, it) => s + it.price * it.quantity, 0)
+      ? row.items.filter((it) => lineInGroup(it, skuSet)).reduce((s, it) => s + it.price * it.quantity, 0)
       : itemTotal;
     if (matchTotal <= 0) continue;
     const ratio = matchTotal / itemTotal;
@@ -196,11 +197,12 @@ export function tiktokBreakevenBase(rows: BreakevenPnlRow[], skuSet: ReadonlySet
 
 /**
  * Cùng phép gom của tiktokBreakevenBase nhưng cho NHIỀU nhóm SKU trong MỘT lượt quét đơn (tab Hòa vốn sản phẩm: mỗi sản
- * phẩm một nhóm — vài trăm sản phẩm × vài nghìn đơn thì không quét lại từng nhóm). `groupOfSku`: SKU → mã nhóm; SKU không
+ * phẩm một nhóm — vài trăm sản phẩm × vài nghìn đơn thì không quét lại từng nhóm). `groupOfKey`: khóa dòng hàng (lineGroupKey:
+ * "i:<itemId>" hoặc mã SKU thô) → mã nhóm; khóa không
  * có trong bảng thì bỏ qua. Kết quả của một nhóm PHẢI bằng tiktokBreakevenBase(rows, tập SKU của nhóm) — có test giữ điều đó,
  * để con số của một sản phẩm ở tab mới không bao giờ lệch con số hòa vốn của chiến dịch chỉ chứa sản phẩm đó. Thuần.
  */
-export function tiktokBreakevenBaseByGroup(rows: BreakevenPnlRow[], groupOfSku: ReadonlyMap<string, string>): Map<string, BreakevenBase> {
+export function tiktokBreakevenBaseByGroup(rows: BreakevenPnlRow[], groupOfKey: ReadonlyMap<string, string>): Map<string, BreakevenBase> {
   const out = new Map<string, BreakevenBase>();
   const baseOf = (g: string) => {
     let b = out.get(g);
@@ -213,7 +215,7 @@ export function tiktokBreakevenBaseByGroup(rows: BreakevenPnlRow[], groupOfSku: 
     if (itemTotal <= 0) continue;
     const matchByGroup = new Map<string, number>();
     for (const it of row.items) {
-      const g = groupOfSku.get(it.sku);
+      const g = groupOfKey.get(lineGroupKey(it));
       if (g != null) matchByGroup.set(g, (matchByGroup.get(g) ?? 0) + it.price * it.quantity);
     }
     const cancelled = isCancelled(row);
@@ -375,7 +377,7 @@ export function placedRevenue(rows: BreakevenPnlRow[], skuSet: ReadonlySet<strin
     if (day < from || day > to) continue;
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     if (itemTotal <= 0) continue;
-    const matchTotal = row.items.filter((it) => skuSet.has(it.sku)).reduce((s, it) => s + it.price * it.quantity, 0);
+    const matchTotal = row.items.filter((it) => lineInGroup(it, skuSet)).reduce((s, it) => s + it.price * it.quantity, 0);
     sum += row.actualRevenue * (matchTotal / itemTotal);
   }
   return sum;
@@ -400,7 +402,7 @@ export const TIKTOK_PACE_WINDOW_MS = 30 * 86_400_000;
  * ĐÀ BÁN từng nhóm SKU: số sản phẩm bán ra 7 ngày và 30 ngày gần nhất, tính trên MỌI đơn đặt trừ đơn hủy (đây là nhịp bán,
  * không phải lãi — không cần chờ đối soát). Thuần.
  */
-export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfSku: ReadonlyMap<string, string>, now: Date): Map<string, TiktokSalesPace> {
+export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfKey: ReadonlyMap<string, string>, now: Date): Map<string, TiktokSalesPace> {
   const out = new Map<string, TiktokSalesPace>();
   const t7 = now.getTime() - TIKTOK_PACE_RECENT_MS;
   const t30 = now.getTime() - TIKTOK_PACE_WINDOW_MS;
@@ -411,7 +413,7 @@ export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfSku: ReadonlyMa
     // Doanh thu chia cho từng dòng hàng theo tỷ trọng giá trị hàng — đúng luật của placedRevenue và cột actualRevenue của sổ dòng hàng.
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     for (const it of row.items) {
-      const g = groupOfSku.get(it.sku);
+      const g = groupOfKey.get(lineGroupKey(it));
       if (g == null) continue;
       let cur = out.get(g);
       if (!cur) out.set(g, (cur = { units7d: 0, units30d: 0, revenue30d: 0 }));
@@ -465,21 +467,21 @@ export function tiktokCampaignCheckOf(perf: Iterable<{ day: string; gmv: number 
 /** Bộ nhóm ở dạng gửi được vào câu SQL (LedgerTiktokBreakevenMapping) + dấu vân tay để nhận biết bộ nhóm / khoảng tự kiểm đổi. */
 export interface TiktokGroupMapping extends LedgerTiktokBreakevenMapping {
   groups: string[];
-  skus: string[];
+  keys: string[];
   checkFrom: string[];
   digest: string;
 }
 
 /** Trải bộ nhóm + khoảng tự kiểm thành mảng song song xếp thứ tự cố định — cùng đầu vào luôn ra cùng `digest`. */
 export function tiktokGroupMappingOf(sets: AdsGroupSets, checks: TiktokCheckWindows): TiktokGroupMapping {
-  const { groups, skus, digest } = adsGroupMappingOf(sets);
+  const { groups, keys, digest } = adsGroupMappingOf(sets);
   const hash = createHash("sha1").update(`${digest}\u0002${checks.to}`);
   for (const [group, from] of [...checks.from].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
     hash.update(`\u0002${group}\u0000${from}`);
   }
   return {
     groups,
-    skus,
+    keys,
     checkFrom: groups.map((g) => checks.from.get(g) ?? ""),
     checkTo: checks.to,
     digest: hash.digest("hex"),
@@ -504,13 +506,16 @@ export interface ChannelBreakevens {
 
 const EMPTY_BREAKEVEN_BASE: BreakevenBase = Object.freeze(emptyBreakevenBase());
 
-/** SKU → product id, từ các nhóm sản phẩm của bộ nhóm. Một SKU sàn chỉ thuộc một sản phẩm (ChannelProduct unique theo gian + SKU). */
-function productOfSku(sets: AdsGroupSets): Map<string, string> {
+/**
+ * Khóa dòng hàng → product id, từ các nhóm sản phẩm của bộ nhóm: "i:<itemId>" là chính sản phẩm đó; mã SKU sàn chỉ thuộc
+ * một sản phẩm (ChannelProduct unique theo gian + SKU).
+ */
+function productOfKey(sets: AdsGroupSets): Map<string, string> {
   const out = new Map<string, string>();
-  for (const [groupKey, skus] of sets) {
+  for (const [groupKey, keys] of sets) {
     if (!groupKey.startsWith(PRODUCT_GROUP_PREFIX)) continue;
     const productId = groupKey.slice(PRODUCT_GROUP_PREFIX.length);
-    for (const sku of skus) out.set(sku, productId);
+    for (const key of keys) out.set(key, productId);
   }
   return out;
 }
@@ -533,8 +538,8 @@ export function breakevensFromRows(
       const skus = sets.get(groupKey);
       return from && skus && skus.size > 0 ? placedRevenue(rows, skus, from, checks.to) : 0;
     },
-    productBases: () => tiktokBreakevenBaseByGroup(rows, productOfSku(sets)),
-    productPace: () => salesPaceByGroup(rows, productOfSku(sets), new Date(nowMs)),
+    productBases: () => tiktokBreakevenBaseByGroup(rows, productOfKey(sets)),
+    productPace: () => salesPaceByGroup(rows, productOfKey(sets), new Date(nowMs)),
   };
 }
 
@@ -550,10 +555,10 @@ export interface LedgerTiktokBreakevenGroup extends BreakevenBase, TiktokSalesPa
   placedRevenue: number;
 }
 
-/** Ba mảng song song (nhóm, mã SKU sàn, ngày đầu tự kiểm của nhóm); một SKU được thuộc nhiều nhóm. */
+/** Ba mảng song song (nhóm, khóa dòng hàng "i:<itemId>" | mã SKU thô, ngày đầu tự kiểm của nhóm); một khóa được thuộc nhiều nhóm. */
 export interface LedgerTiktokBreakevenMapping {
   groups: readonly string[];
-  skus: readonly string[];
+  keys: readonly string[];
   /** "YYYY-MM-DD" ngày đầu tự kiểm của nhóm ở cùng vị trí ("" = nhóm không tự kiểm). */
   checkFrom: readonly string[];
   /** "YYYY-MM-DD" ngày cuối tự kiểm, chung mọi nhóm. */

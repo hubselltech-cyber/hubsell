@@ -68,7 +68,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 | Lát | Việc | Trạng thái |
 |---|---|---|
 | **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) |
-| 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a code 18/10 (mục 6.8) · ⏳ 1b, 1c |
+| 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b code 18/10 (mục 6.9) · ⏳ 1c |
 | 2 | Bù đơn cũ: mã ↔ 1 sản phẩm → điền `itemId` suy luận; mã nhiều sản phẩm → quét lại từ sàn CHỈ đơn có dòng mồ côi (~20 nghìn đơn ÷ 50/lượt ≈ 400–500 lượt, rải 32 gian, chạy nền có nhịp nghỉ, không pg-boss); ghi `externalId` + đổi `channelSku` sang khóa hiện hành; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`. | ⏳ |
 | 3 | Lá mới thừa kế giá vốn dòng gộp cũ cùng mã (đánh dấu "thừa kế"); vá hồi tố 79 dòng. Cần anh chốt: thừa kế tự động hay khách đặt. | ⏳ |
 | 4 | Dòng đối chiếu doanh thu cho Shopee (`ads_gms_item_reports` có GMV theo item) — cùng lưới an toàn B6. | ⏳ |
@@ -181,3 +181,30 @@ Lý do để ảnh + hoàn sang sau: dòng cũ chưa có id thì lợi ích = 0,
   `20260830120000_fee_audit` FAILED từ 17/09 nên `migrate deploy` không chạy — không liên quan lát này).
 - Kiểm prod sau deploy: `SELECT count(*) FROM "OrderItem" WHERE "externalId" IS NOT NULL` tăng theo đơn mới; dòng
   `order_line_ledger` mới có `itemId`; số các báo cáo **không đổi**.
+
+### 6.9 Lát 1b — gom theo id, đã code (18/10/2026, chưa push)
+
+Cách làm gọn hơn thiết kế 6.3 (không cần hai CTE / hai tập riêng): **một khóa dòng hàng** dùng chung cho TS và SQL.
+
+- `lib/ads-margin.ts`: `lineGroupKey(it)` = `"i:<itemId>"` khi dòng có SPU, không thì mã SKU thô; `lineInGroup(it, keys)`.
+  `AdsGroupSets` vẫn là `Map<nhóm, Set<khóa>>` nhưng tập khóa nay chứa **cả hai loại**: `buildAdsGroupSets` thêm `itemKey(itemId)`
+  cho nhóm sản phẩm và cho từng item của chiến dịch — **kể cả item chưa có trong danh mục** (đơn mang id của nó vẫn gom đúng
+  chiến dịch; đây chính là ca Shopee đơn về trước khi danh mục tách). Mã thô của các lá đã biết giữ làm đường lui.
+- Luật "id trước, mã sau" tại từng dòng: dòng có `itemId` **chỉ** khớp khóa `i:…` (mã trùng sản phẩm khác không kéo vào; mã đã
+  đổi đuôi vẫn khớp); dòng chưa có `itemId` khớp theo mã như cũ → mọi số hiện có **không đổi** cho tới khi Lát 2 bù id.
+- `marginOverRows`, `salesPaceByItem`, `tiktokBreakevenBase`, `tiktokBreakevenBaseByGroup`, `placedRevenue`, `salesPaceByGroup`
+  đều đi qua `lineGroupKey`; `productOfKey` thay `productOfSku`. Ánh xạ gửi SQL đổi tên `skus` → `keys` (`AdsGroupMapping`,
+  `LedgerMarginMapping`, `LedgerTiktokBreakevenMapping`, `TiktokGroupMapping`); `digest` băm khóa nên bộ đệm 30 phút tự làm mới.
+- SQL (`ledgerMarginByGroup`, `ledgerTiktokBreakevenByGroup`): bộ nhóm được tách sẵn trong TS (`splitGroupKeys`) thành hai
+  `unnest` nhỏ — `mapItem (grp, itemId)` nối `l."itemId"`, `mapSku (grp, sku)` nối `l."channelSku"` cho dòng `itemId IS NULL` —
+  hai nhánh `UNION ALL` đúng như thiết kế 6.3. Khóa ghép `COALESCE('i:' || itemId, channelSku)` chỉ dùng ở bước gom theo SKU
+  (`bySku`, vài nghìn dòng). `ledgerCompactOrders` đọc thêm `itemId` cho đường "rows"; `loadBreakevenRows` chép sang
+  `BreakevenPnlRow.items`.
+- **Đo trên gian thử TikTok 300.000 đơn / 405.000 dòng hàng / 2.000 sản phẩm / 100 chiến dịch (DB dev, 18/10, `bench-large-shop.ts`
+  + `ledger-backfill.ts ads-compare --explain`, so cùng dữ liệu bằng `git stash`):** bản cũ 2,76 giây → bản đầu Lát 1b (nối
+  bằng biểu thức ghép) **4,55 giây, +65%** vì planner mất thống kê cột, `multi`/`checks` rơi Merge Join; tách bằng `LIKE` trên
+  CTE còn 3,69 giây (+33%, ước lượng vẫn sai); tách sẵn trong TS → **3,08–3,16 giây, +12–15%**, không còn Merge Join — dưới
+  ngưỡng +20% tự đặt. Phần dư là nhánh UNION thứ hai (trên gian thử rỗng vì dòng chưa có id) và hai cột khóa thêm.
+- Test: `ads-margin.test` (+ca id trước mã sau, bộ nhóm có `i:`), `tiktok-breakeven.test` (+3 ca), hai test DB hai đường bằng nhau
+  dựng **dòng A1 mang id** (`OrderItem.externalId = "100-1"`) cạnh dòng không id → `rows` = `sql` ở mọi nhóm; 12 tệp quảng cáo
+  133/133. Mobile / FE không đổi.

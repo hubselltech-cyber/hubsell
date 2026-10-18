@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ShippingStatus } from "@prisma/client";
-import { SHOP_GROUP, buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, productGroupKey } from "../ads-margin";
+import { SHOP_GROUP, buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, itemKey, productGroupKey } from "../ads-margin";
 import {
   TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT,
   breakevenCheckGapPct,
@@ -116,6 +116,36 @@ describe("tiktokBreakevenBase", () => {
 
   it("sàn HOÀN lại phí quảng cáo (feeGmvMax dương) thì trừ ra, không cộng", () => {
     expect(tiktokBreakevenBase([row({ profit: 40_000, tiktok: { feeGmvMax: 5_000 } })], null).profitBeforeAds).toBe(35_000);
+  });
+});
+
+// LÁT 1b (18/10/2026): dòng hàng có SPU (itemId từ OrderItem.externalId) khớp nhóm bằng khóa "i:<itemId>"; mã thô chỉ cho dòng chưa có id.
+describe("id trước, mã sau — hòa vốn, hòa vốn từng sản phẩm, tự kiểm", () => {
+  const group = new Set(["TC025-XAM", itemKey("100")]);
+  const rows = [
+    row({ sku: "TC025-XAM", items: [{ sku: "TC025-XAM", itemId: "100", price: 250_000, quantity: 1 }] }), // id đúng → tính
+    row({ items: [{ sku: "TC025-XAM (XÁM)", itemId: "100", price: 250_000, quantity: 1 }] }), // mã đổi đuôi, id đúng → tính
+    row({ items: [{ sku: "TC025-XAM", itemId: "999", price: 250_000, quantity: 1 }] }), // cùng mã, sản phẩm khác → không
+    row({ items: [{ sku: "TC025-XAM", itemId: null, price: 250_000, quantity: 1 }] }), // đơn cũ chưa có id → đường lui mã → tính
+  ];
+
+  it("tiktokBreakevenBase: 3 đơn vào nhóm, đơn của sản phẩm khác dù cùng mã thì không", () => {
+    expect(tiktokBreakevenBase(rows, group)).toMatchObject({ settledOrders: 3, revenue: 750_000 });
+    expect(tiktokBreakevenBase(rows, null).settledOrders).toBe(4);
+  });
+
+  it("tiktokBreakevenBaseByGroup / salesPaceByGroup: tra nhóm theo khóa dòng (lineGroupKey)", () => {
+    const groupOfKey = new Map([[itemKey("100"), "SP-100"], ["TC025-XAM", "SP-100"], [itemKey("999"), "SP-999"]]);
+    const byGroup = tiktokBreakevenBaseByGroup(rows, groupOfKey);
+    expect(byGroup.get("SP-100")).toMatchObject({ settledOrders: 3, revenue: 750_000 });
+    expect(byGroup.get("SP-999")).toMatchObject({ settledOrders: 1, revenue: 250_000 });
+    const pace = salesPaceByGroup(rows, groupOfKey, day("2026-09-02"));
+    expect(pace.get("SP-100")).toMatchObject({ units30d: 3 });
+    expect(pace.get("SP-999")).toMatchObject({ units30d: 1 });
+  });
+
+  it("placedRevenue theo cùng luật", () => {
+    expect(placedRevenue(rows, group, "2026-09-01", "2026-09-01")).toBe(750_000);
   });
 });
 
@@ -259,7 +289,7 @@ describe("bộ nhóm + khoảng tự kiểm gửi vào câu SQL", () => {
 
   it("ba mảng song song: ngày đầu tự kiểm đi theo từng cặp của nhóm, nhóm không tự kiểm mang chuỗi rỗng", () => {
     const m = tiktokGroupMappingOf(sets, checks([[campaignGroupKey("c1"), "2026-09-01"]]));
-    expect(m.groups.length).toBe(m.skus.length);
+    expect(m.groups.length).toBe(m.keys.length);
     expect(m.groups.length).toBe(m.checkFrom.length);
     expect(m.checkTo).toBe("2026-09-17");
     m.groups.forEach((g, i) => expect(m.checkFrom[i]).toBe(g === campaignGroupKey("c1") ? "2026-09-01" : ""));

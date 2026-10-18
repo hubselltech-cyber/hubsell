@@ -18,6 +18,7 @@ import {
   SHOP_GROUP,
   adsGroupMappingOf,
   campaignGroupKey,
+  lineGroupKey,
   marginOverRows,
   marginWindowRange,
   marginsFromRows,
@@ -115,13 +116,14 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
       if (rows.length === 0) continue;
       const scope = { userId: ch.userId, id: ch.id, channelName: ch.channelName };
       const opts = { settledOnly: ch.channelName === ChannelName.LAZADA, recentSince: new Date(range.lte.getTime() - 7 * 86_400_000) };
-      const skus = [...new Set(rows.flatMap((r) => r.items.map((i) => i.sku)))];
+      // Khóa dòng hàng (lineGroupKey): dòng có id → "i:<itemId>", không → mã — "nhóm mọi khóa" phải bằng nhóm toàn gian.
+      const skus = [...new Set(rows.flatMap((r) => r.items.map((i) => lineGroupKey(i))))];
 
       // Mỗi cặp gửi HAI lần: kết quả vẫn phải bằng nhóm toàn gian.
       const doubled = await ledgerMarginByGroup(
         scope,
         range,
-        { groups: [...skus, ...skus].map(() => "t:all"), skus: [...skus, ...skus] },
+        { groups: [...skus, ...skus].map(() => "t:all"), keys: [...skus, ...skus] },
         opts
       );
       const shop = doubled.get(SHOP_GROUP)!;
@@ -132,7 +134,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
       expect(shop.missingCostOrders, `${tag} đơn thiếu giá vốn`).toBe(pure.missingCostOrders);
       expect(shop.units, `${tag} số lượng`).toBe(rows.reduce((n, r) => n + r.items.reduce((s, i) => s + i.quantity, 0), 0));
 
-      const none = await ledgerMarginByGroup(scope, range, { groups: [], skus: [] }, opts);
+      const none = await ledgerMarginByGroup(scope, range, { groups: [], keys: [] }, opts);
       expect([...none.keys()], `${tag} ánh xạ rỗng`).toEqual([SHOP_GROUP]);
       expect(none.get(SHOP_GROUP)).toEqual(shop);
     }
@@ -142,9 +144,9 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
     const scope = { userId: "khong-co", id: "khong-co" };
     const range = marginWindowRange();
     const opts = { settledOnly: false, recentSince: new Date() };
-    await expect(ledgerMarginByGroup(scope, range, { groups: ["p:1"], skus: [] }, opts)).rejects.toThrow(/lệch độ dài/);
+    await expect(ledgerMarginByGroup(scope, range, { groups: ["p:1"], keys: [] }, opts)).rejects.toThrow(/lệch độ dài/);
     await expect(
-      ledgerMarginByGroup(scope, range, { groups: [SHOP_GROUP], skus: ["A"] }, opts)
+      ledgerMarginByGroup(scope, range, { groups: [SHOP_GROUP], keys: ["A"] }, opts)
     ).rejects.toThrow(/dành riêng/);
   });
 });
@@ -177,6 +179,8 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
         items: {
           create: items.map((it) => ({
             channelSku: sku(it.sku),
+            // Lát 1a/1b: dòng A1 mang id lá (sổ có itemId 100 → khóa "i:100"); các dòng khác đi đường mã — hai đường cộng phải bằng nhau ở cả hai.
+            externalId: it.sku === "A1" ? "100-1" : null,
             productName: `Dòng ${it.sku}`,
             quantity: it.quantity,
             price: it.price,

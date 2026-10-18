@@ -49,7 +49,8 @@ export interface MarginRow {
   /** Lợi nhuận đơn (chưa trừ quảng cáo). */
   profit: number;
   missingCostPrice: boolean;
-  items: { sku: string; price: number; quantity: number; costPriceAtSale: number }[];
+  /** `itemId` = SPU của dòng (sổ dòng hàng, từ OrderItem.externalId — Lát 1a); null/bỏ trống = dòng chưa có id → khớp theo mã. */
+  items: { sku: string; itemId?: string | null; price: number; quantity: number; costPriceAtSale: number }[];
 }
 
 /** Phanh số đơn của cửa sổ biên lãi một gian khi giữ dòng gọn trong RAM. Chỉ đường "rows" còn dùng. */
@@ -117,7 +118,7 @@ export interface MarginBase {
  *   của chúng dồn vào missingCostRevenue để báo độ phủ; dưới ngưỡng thì không
  *   kết luận (marginOf trả null).
  */
-export function marginOverRows(rows: MarginRow[], skuSet: Set<string> | null): MarginBase {
+export function marginOverRows(rows: MarginRow[], skuSet: ReadonlySet<string> | null): MarginBase {
   let orders = 0;
   let revenue = 0;
   let profit = 0;
@@ -128,7 +129,7 @@ export function marginOverRows(rows: MarginRow[], skuSet: Set<string> | null): M
     if (itemTotal <= 0) continue;
     const matchTotal = skuSet
       ? row.items
-          .filter((it) => skuSet.has(it.sku))
+          .filter((it) => lineInGroup(it, skuSet))
           .reduce((s, it) => s + it.price * it.quantity, 0)
       : itemTotal;
     if (matchTotal <= 0) continue;
@@ -187,8 +188,31 @@ export const campaignGroupKey = (campaignRowId: string): string => `${CAMPAIGN_G
 /** Nhóm của một sản phẩm sàn (item_id) = mọi SKU phân loại của sản phẩm. */
 export const productGroupKey = (itemId: string): string => `${PRODUCT_GROUP_PREFIX}${itemId}`;
 
-/** Khóa nhóm → tập mã SKU sàn của nhóm. Không chứa SHOP_GROUP (nhóm đó là mọi dòng). */
+/**
+ * Khóa nhóm → tập KHÓA DÒNG HÀNG của nhóm. Không chứa SHOP_GROUP (nhóm đó là mọi dòng).
+ *
+ * ★ "ID TRƯỚC, MÃ SAU" (Lát 1b, 18/10/2026 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md B4): một tập chứa hai loại khóa —
+ *   · `"i:<itemId>"` (itemKey): SPU của sàn — mọi dòng hàng CÓ id lá (OrderItem.externalId, từ Lát 1a) khớp CHỈ bằng khóa này;
+ *   · mã SKU sàn thô: đường lui cho dòng hàng CHƯA có id (đơn trước 18/10, Lazada).
+ * Dòng có id mà SPU không thuộc nhóm thì KHÔNG khớp dù mã trùng — id là danh tính, mã chỉ là chữ. Nhờ vậy đơn của sản phẩm
+ * khác dùng chung mã không bị kéo vào, và đơn về trước khi danh mục có lá vẫn gom đúng khi sổ có itemId.
+ */
 export type AdsGroupSets = Map<string, Set<string>>;
+
+const ITEM_KEY_PREFIX = "i:";
+
+/** Khóa nhóm của một SPU trong tập khóa dòng hàng. Mã SKU thô không bao giờ bắt đầu bằng "i:" (sàn không cho dấu ":" trong mã). */
+export const itemKey = (itemId: string): string => `${ITEM_KEY_PREFIX}${itemId}`;
+
+/** Khóa của MỘT dòng hàng: có SPU → "i:<itemId>", không có → mã SKU thô. Cùng công thức với COALESCE('i:' || itemId, channelSku) trong SQL. */
+export function lineGroupKey(it: { sku: string; itemId?: string | null }): string {
+  return it.itemId ? itemKey(it.itemId) : it.sku;
+}
+
+/** Dòng hàng có thuộc nhóm không — id trước, mã sau. */
+export function lineInGroup(it: { sku: string; itemId?: string | null }, keys: ReadonlySet<string>): boolean {
+  return keys.has(lineGroupKey(it));
+}
 
 /** SKU sàn gom theo item_id — phần trước dấu "-" của externalId ("item" | "item-model"). */
 export function groupSkusByItemId(
@@ -206,40 +230,43 @@ export function groupSkusByItemId(
 }
 
 /**
- * Bộ nhóm của một gian: mỗi sản phẩm sàn một nhóm, mỗi chiến dịch một nhóm (hợp
- * SKU của các item trong itemIds; chiến dịch chưa biết SKU → tập rỗng). Thuần.
+ * Bộ nhóm của một gian: mỗi sản phẩm sàn một nhóm = khóa SPU + mã các lá; mỗi chiến dịch một nhóm = hợp của các item trong
+ * itemIds (khóa SPU của từng item KỂ CẢ item chưa có trong danh mục — dòng đơn mang id vẫn gom đúng; mã các lá đã biết làm
+ * đường lui); chiến dịch chưa biết item → tập rỗng. Thuần.
  */
 export function buildAdsGroupSets(
   skusByItemId: ReadonlyMap<string, Set<string>>,
   campaigns: Iterable<{ id: string; itemIds: string }>
 ): AdsGroupSets {
   const sets: AdsGroupSets = new Map();
-  for (const [itemId, skus] of skusByItemId) sets.set(productGroupKey(itemId), skus);
+  for (const [itemId, skus] of skusByItemId) sets.set(productGroupKey(itemId), new Set([itemKey(itemId), ...skus]));
   for (const c of campaigns) {
-    const skuSet = new Set<string>();
-    for (const itemId of c.itemIds ? c.itemIds.split(",") : []) {
-      for (const sku of skusByItemId.get(itemId) ?? []) skuSet.add(sku);
+    const keys = new Set<string>();
+    for (const itemId of c.itemIds ? c.itemIds.split(",").filter(Boolean) : []) {
+      keys.add(itemKey(itemId));
+      for (const sku of skusByItemId.get(itemId) ?? []) keys.add(sku);
     }
-    sets.set(campaignGroupKey(c.id), skuSet);
+    sets.set(campaignGroupKey(c.id), keys);
   }
   return sets;
 }
 
-/** Bộ nhóm ở dạng gửi được vào câu SQL: hai mảng song song + dấu vân tay để nhận biết bộ nhóm đổi. */
+/** Bộ nhóm ở dạng gửi được vào câu SQL: hai mảng song song (nhóm, khóa dòng hàng) + dấu vân tay để nhận biết bộ nhóm đổi. */
 export interface AdsGroupMapping {
   groups: string[];
-  skus: string[];
+  /** Khóa dòng hàng: "i:<itemId>" hoặc mã SKU thô (xem AdsGroupSets). */
+  keys: string[];
   digest: string;
 }
 
-/** Trải bộ nhóm thành các cặp (nhóm, SKU) xếp thứ tự cố định — cùng bộ nhóm luôn ra cùng `digest`. */
+/** Trải bộ nhóm thành các cặp (nhóm, khóa) xếp thứ tự cố định — cùng bộ nhóm luôn ra cùng `digest`. */
 export function adsGroupMappingOf(sets: AdsGroupSets): AdsGroupMapping {
   const pairs: [string, string][] = [];
-  for (const [group, skus] of sets) for (const sku of skus) pairs.push([group, sku]);
+  for (const [group, keys] of sets) for (const key of keys) pairs.push([group, key]);
   pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
   const hash = createHash("sha1");
-  for (const [group, sku] of pairs) hash.update(`${group}\u0000${sku}\u0001`);
-  return { groups: pairs.map((p) => p[0]), skus: pairs.map((p) => p[1]), digest: hash.digest("hex") };
+  for (const [group, key] of pairs) hash.update(`${group}\u0000${key}\u0001`);
+  return { groups: pairs.map((p) => p[0]), keys: pairs.map((p) => p[1]), digest: hash.digest("hex") };
 }
 
 // ------------------------------------------------------------
@@ -262,7 +289,7 @@ export const SALES_PACE_RECENT_MS = 7 * 86_400_000;
  */
 export function salesPaceByItem(
   rows: MarginRow[],
-  itemBySku: ReadonlyMap<string, string>,
+  itemByKey: ReadonlyMap<string, string>,
   nowMs: number = Date.now()
 ): Map<string, GroupSalesPace> {
   const since7 = nowMs - SALES_PACE_RECENT_MS;
@@ -270,7 +297,7 @@ export function salesPaceByItem(
   for (const row of rows) {
     const recent = new Date(row.createdAt).getTime() >= since7;
     for (const it of row.items) {
-      const itemId = itemBySku.get(it.sku);
+      const itemId = itemByKey.get(lineGroupKey(it));
       if (!itemId) continue;
       let s = sales.get(itemId);
       if (!s) sales.set(itemId, (s = { units30d: 0, units7d: 0, unitsNoCost: 0 }));
@@ -301,14 +328,14 @@ export function marginsFromRows(rows: MarginRow[], sets: AdsGroupSets, nowMs?: n
       return skus && skus.size > 0 ? marginOverRows(rows, skus) : EMPTY_MARGIN_BASE;
     },
     productPace() {
-      // Một SKU sàn chỉ thuộc một sản phẩm (ChannelProduct unique theo gian + SKU).
-      const itemBySku = new Map<string, string>();
-      for (const [groupKey, skus] of sets) {
+      // Khóa dòng hàng → sản phẩm: "i:<itemId>" là chính nó; mã SKU sàn chỉ thuộc một sản phẩm (ChannelProduct unique theo gian + SKU).
+      const itemByKey = new Map<string, string>();
+      for (const [groupKey, keys] of sets) {
         if (!groupKey.startsWith(PRODUCT_GROUP_PREFIX)) continue;
         const itemId = groupKey.slice(PRODUCT_GROUP_PREFIX.length);
-        for (const sku of skus) itemBySku.set(sku, itemId);
+        for (const key of keys) itemByKey.set(key, itemId);
       }
-      return salesPaceByItem(rows, itemBySku, nowMs);
+      return salesPaceByItem(rows, itemByKey, nowMs);
     },
   };
 }
@@ -333,10 +360,10 @@ export interface LedgerMarginGroup {
   unitsNoCost: number;
 }
 
-/** Hai mảng song song (nhóm, mã SKU sàn); một SKU được thuộc nhiều nhóm. */
+/** Hai mảng song song (nhóm, khóa dòng hàng "i:<itemId>" | mã SKU thô); một khóa được thuộc nhiều nhóm. */
 export interface LedgerMarginMapping {
   groups: readonly string[];
-  skus: readonly string[];
+  keys: readonly string[];
 }
 
 export interface LedgerMarginOptions {

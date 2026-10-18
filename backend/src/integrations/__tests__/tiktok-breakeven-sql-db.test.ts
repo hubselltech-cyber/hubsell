@@ -14,7 +14,7 @@ import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName, ShippingStatus } from "@prisma/client";
 import { vnDateKey } from "../../lib/ads-dates";
-import { SHOP_GROUP, campaignGroupKey, productGroupKey, type AdsGroupSets } from "../../lib/ads-margin";
+import { SHOP_GROUP, campaignGroupKey, itemKey, productGroupKey, type AdsGroupSets } from "../../lib/ads-margin";
 import { prisma } from "../../lib/prisma";
 import {
   TIKTOK_PACE_RECENT_MS,
@@ -55,7 +55,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — gom hòa vốn trong data
   /** settlement: "real" = bản kê đã quyết toán, "estimated" = số ước tính của sàn, bỏ trống = chưa có bản kê. */
   async function order(
     code: string,
-    items: { sku: string; quantity: number; price: number; cost: number }[],
+    items: { sku: string; quantity: number; price: number; cost: number; externalId?: string }[],
     data: {
       daysAgo?: number;
       createdAt?: Date;
@@ -79,6 +79,8 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — gom hòa vốn trong data
         items: {
           create: items.map((it) => ({
             channelSku: sku(it.sku),
+            // Lát 1a/1b: dòng A1 mang id lá → sổ có itemId 100 → gom bằng khóa "i:100"; các dòng khác đi đường mã.
+            externalId: it.externalId ?? null,
             productName: `Dòng ${it.sku}`,
             quantity: it.quantity,
             price: it.price,
@@ -91,7 +93,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — gom hòa vốn trong data
       },
     });
   }
-  const a1 = (quantity = 1) => ({ sku: "A1", quantity, price: 100_000, cost: 40_000 });
+  const a1 = (quantity = 1) => ({ sku: "A1", quantity, price: 100_000, cost: 40_000, externalId: "100-1" });
   const a2 = (quantity = 1) => ({ sku: "A2", quantity, price: 50_000, cost: 20_000 });
   const gift = { sku: "G", quantity: 1, price: 0, cost: 5_000 };
   const b = (quantity = 1) => ({ sku: "B", quantity, price: 30_000, cost: 0 });
@@ -278,17 +280,18 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — gom hòa vốn trong data
   it("nhóm mọi SKU = nhóm toàn gian; ánh xạ trùng cặp không cộng đôi; ánh xạ rỗng chỉ ra nhóm toàn gian", async () => {
     const range = tiktokMarginWindowRange();
     const opts = { paceNow: range.lte };
-    const skus = ["A1", "A2", "G", "B", "R1", "R2", "R3"].map(sku);
+    // Dòng A1 mang id (itemId 100) nên khóa của nó là "i:100", không phải mã — "nhóm mọi khóa" phải gồm cả khóa SPU.
+    const skus = [...["A1", "A2", "G", "B", "R1", "R2", "R3"].map(sku), itemKey("100")];
     const doubled = await ledgerTiktokBreakevenByGroup(
       scope(),
       range,
-      { groups: [...skus, ...skus].map(() => "t:all"), skus: [...skus, ...skus], checkFrom: [...skus, ...skus].map(() => ""), checkTo: vnDateKey(1) },
+      { groups: [...skus, ...skus].map(() => "t:all"), keys: [...skus, ...skus], checkFrom: [...skus, ...skus].map(() => ""), checkTo: vnDateKey(1) },
       opts
     );
     const shop = doubled.get(SHOP_GROUP)!;
     expect(doubled.get("t:all")).toEqual(shop);
 
-    const none = await ledgerTiktokBreakevenByGroup(scope(), range, { groups: [], skus: [], checkFrom: [], checkTo: vnDateKey(1) }, opts);
+    const none = await ledgerTiktokBreakevenByGroup(scope(), range, { groups: [], keys: [], checkFrom: [], checkTo: vnDateKey(1) }, opts);
     expect([...none.keys()]).toEqual([SHOP_GROUP]);
     expect(none.get(SHOP_GROUP)).toEqual(shop);
   });
@@ -343,13 +346,13 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — gom hòa vốn trong data
     const opts = { paceNow: range.lte };
     const checkTo = vnDateKey(1);
     await expect(
-      ledgerTiktokBreakevenByGroup(scope(), range, { groups: ["p:1"], skus: [], checkFrom: [""], checkTo }, opts)
+      ledgerTiktokBreakevenByGroup(scope(), range, { groups: ["p:1"], keys: [], checkFrom: [""], checkTo }, opts)
     ).rejects.toThrow(/lệch độ dài/);
     await expect(
-      ledgerTiktokBreakevenByGroup(scope(), range, { groups: ["p:1"], skus: ["A"], checkFrom: [], checkTo }, opts)
+      ledgerTiktokBreakevenByGroup(scope(), range, { groups: ["p:1"], keys: ["A"], checkFrom: [], checkTo }, opts)
     ).rejects.toThrow(/lệch độ dài/);
     await expect(
-      ledgerTiktokBreakevenByGroup(scope(), range, { groups: [SHOP_GROUP], skus: ["A"], checkFrom: [""], checkTo }, opts)
+      ledgerTiktokBreakevenByGroup(scope(), range, { groups: [SHOP_GROUP], keys: ["A"], checkFrom: [""], checkTo }, opts)
     ).rejects.toThrow(/dành riêng/);
   });
 });

@@ -1430,7 +1430,8 @@ export interface LedgerCompactOrder {
   feeGmvMax: number;
   /** Bản kê TikTok của đơn (null = chưa có); estimated = mới là số ước tính của sàn. Chỉ nạp khi withTiktokSettlement. */
   tiktok: { estimated: boolean } | null;
-  items: { sku: string; price: number; quantity: number; costPriceAtSale: number }[];
+  /** `itemId` = SPU của dòng (cột itemId của sổ, Lát 1a); null = dòng chưa có id — phép gom khớp theo mã. */
+  items: { sku: string; itemId: string | null; price: number; quantity: number; costPriceAtSale: number }[];
 }
 
 /**
@@ -1486,7 +1487,7 @@ export async function ledgerCompactOrders(
   const oldest = orders[orders.length - 1].createdAt;
   const lineRange: DateRangeFilter = truncated ? { gte: oldest, lte: range.lte } : range;
   const lines = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
-    SELECT "orderId", "channelSku", "price", "quantity", "costPriceAtSale"
+    SELECT "orderId", "channelSku", "itemId", "price", "quantity", "costPriceAtSale"
     FROM "order_line_ledger"
     WHERE ${ledgerScopeSql(scope, lineRange)}
       AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
@@ -1497,6 +1498,7 @@ export async function ledgerCompactOrders(
     if (!o) continue;
     o.items.push({
       sku: String(ln.channelSku),
+      itemId: ln.itemId == null ? null : String(ln.itemId),
       price: Number(ln.price),
       quantity: Number(ln.quantity),
       costPriceAtSale: Number(ln.costPriceAtSale),
@@ -1577,14 +1579,37 @@ export async function explainLedgerMarginByGroup(
   return rows.map((r) => String(r["QUERY PLAN"]));
 }
 
+/**
+ * Tách bộ nhóm (nhóm theo SỐ THỨ TỰ, khóa dòng hàng) thành hai bộ mảng song song để câu gom nối bằng CỘT THẬT:
+ * khóa "i:<itemId>" → (grp, itemId) nối `l."itemId"`; khóa còn lại = mã SKU thô → (grp, sku) nối `l."channelSku"` cho dòng
+ * chưa có id. Tách ở đây (không WHERE … LIKE trên CTE) để mỗi bảng nhỏ là một `unnest` có số dòng rõ → planner giữ Hash Join
+ * (tách bằng LIKE trong SQL: ước lượng sai, rơi Merge Join, gian thử 300.000 đơn chậm hơn 33%).
+ */
+function splitGroupKeys(groupIndexes: number[], keys: readonly string[], checkFrom?: readonly string[]) {
+  const item = { grp: [] as number[], ids: [] as string[], check: [] as string[] };
+  const sku = { grp: [] as number[], skus: [] as string[], check: [] as string[] };
+  keys.forEach((key, i) => {
+    if (key.startsWith("i:")) {
+      item.grp.push(groupIndexes[i]);
+      item.ids.push(key.slice(2));
+      item.check.push(checkFrom?.[i] ?? "");
+    } else {
+      sku.grp.push(groupIndexes[i]);
+      sku.skus.push(key);
+      sku.check.push(checkFrom?.[i] ?? "");
+    }
+  });
+  return { item, sku };
+}
+
 function marginByGroupQuery(
   scope: ChannelScope,
   range: DateRangeFilter,
   mapping: LedgerMarginMapping,
   opts: LedgerMarginOptions
 ): { sql: Prisma.Sql; groupNames: string[] } {
-  if (mapping.groups.length !== mapping.skus.length) {
-    throw new Error(`ledgerMarginByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.skus.length} SKU)`);
+  if (mapping.groups.length !== mapping.keys.length) {
+    throw new Error(`ledgerMarginByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.keys.length} khóa)`);
   }
   if (mapping.groups.includes(SHOP_GROUP)) {
     throw new Error(`ledgerMarginByGroup: "${SHOP_GROUP}" là khóa dành riêng cho nhóm toàn gian`);
@@ -1601,9 +1626,13 @@ function marginByGroupQuery(
     }
     return index;
   });
+  const split = splitGroupKeys(groupIndexes, mapping.keys);
   const sql = Prisma.sql`
     WITH "lines" AS (
-      SELECT l."orderId", l."channelSku", l."quantity", l."actualRevenue", l."profit",
+      -- Id trước, mã sau (Lát 1b 18/10/2026): dòng có SPU ("itemId") chỉ khớp khóa "i:<itemId>" của bộ nhóm, dòng chưa có id
+      -- khớp mã thô — cùng luật với lineGroupKey (lib/ads-margin). Giữ HAI CỘT THẬT để nối (không nối bằng biểu thức ghép:
+      -- planner mất thống kê cột, đổi Hash Join thành Merge Join — đo gian thử 300.000 đơn chậm hơn 65%).
+      SELECT l."orderId", l."itemId", l."channelSku", l."quantity", l."actualRevenue", l."profit",
              l."missingCostPrice" AS "missing",
              (l."lineGross" > 0) AS "paid",
              (l."createdAt" >= ${tsParam(opts.recentSince)}) AS "recent",
@@ -1614,9 +1643,14 @@ function marginByGroupQuery(
         AND l."shippingStatus" <> 'CANCELLED'
         ${opts.settledOnly ? Prisma.sql`AND l."isSettled"` : Prisma.empty}
     ),
-    "map" AS (
+    -- Bộ nhóm tách sẵn hai bảng nhỏ theo loại khóa (splitGroupKeys) để nối bằng CỘT: SPU → mapItem, mã thô → mapSku.
+    "mapItem" AS (
+      SELECT DISTINCT m."grp", m."itemId"
+      FROM unnest(${split.item.grp}::int[], ${split.item.ids}::text[]) AS m("grp", "itemId")
+    ),
+    "mapSku" AS (
       SELECT DISTINCT m."grp", m."sku"
-      FROM unnest(${groupIndexes}::int[], ${[...mapping.skus]}::text[]) AS m("grp", "sku")
+      FROM unnest(${split.sku.grp}::int[], ${split.sku.skus}::text[]) AS m("grp", "sku")
     ),
     "tagged" AS (
       SELECT 0 AS "grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
@@ -1624,7 +1658,12 @@ function marginByGroupQuery(
       UNION ALL
       SELECT m."grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
       FROM "lines" x
-      JOIN "map" m ON m."sku" = x."channelSku"
+      JOIN "mapItem" m ON m."itemId" = x."itemId"
+      UNION ALL
+      SELECT m."grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
+      FROM "lines" x
+      JOIN "mapSku" m ON m."sku" = x."channelSku"
+      WHERE x."itemId" IS NULL
     )
     SELECT "grp",
            count(DISTINCT "orderId" COLLATE "C") FILTER (WHERE "paid" AND NOT "missing") AS "orders",
@@ -1735,9 +1774,9 @@ function tiktokBreakevenByGroupQuery(
   mapping: LedgerTiktokBreakevenMapping,
   opts: LedgerTiktokBreakevenOptions
 ): { sql: Prisma.Sql; groupNames: string[] } {
-  if (mapping.groups.length !== mapping.skus.length || mapping.groups.length !== mapping.checkFrom.length) {
+  if (mapping.groups.length !== mapping.keys.length || mapping.groups.length !== mapping.checkFrom.length) {
     throw new Error(
-      `ledgerTiktokBreakevenByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.skus.length} SKU, ${mapping.checkFrom.length} ngày tự kiểm)`
+      `ledgerTiktokBreakevenByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.keys.length} khóa, ${mapping.checkFrom.length} ngày tự kiểm)`
     );
   }
   if (mapping.groups.includes(SHOP_GROUP)) {
@@ -1754,6 +1793,7 @@ function tiktokBreakevenByGroupQuery(
     }
     return index;
   });
+  const split = splitGroupKeys(groupIndexes, mapping.keys, mapping.checkFrom);
   const since30 = tsParam(new Date(opts.paceNow.getTime() - TIKTOK_PACE_WINDOW_MS));
   const since7 = tsParam(new Date(opts.paceNow.getTime() - TIKTOK_PACE_RECENT_MS));
   const version = Prisma.sql`${LEDGER_FORMULA_VERSION}::int`;
@@ -1772,7 +1812,12 @@ function tiktokBreakevenByGroupQuery(
     ),
     "lines" AS (
       -- "cls" = kết cục của ĐƠN: 0 chưa có kết cục cuối, 1 có kết cục nhưng thiếu giá vốn, 2 đơn hủy cùng lứa, 3 đã đối soát thật.
-      SELECT l."orderId", l."channelSku" AS "sku", l."quantity", l."actualRevenue", l."createdDate",
+      -- "sku" = KHÓA dòng hàng (lineGroupKey, lib/ads-margin): có SPU → 'i:' || itemId, không → mã SKU thô — id trước, mã sau
+      -- (Lát 1b). Khóa ghép chỉ dùng ở bước gom theo SKU ("bySku", vài nghìn dòng); các mối nối trên 405.000 dòng ("multi",
+      -- "checks") đi bằng HAI CỘT THẬT "itemId" / "channelSku" — nối bằng biểu thức ghép làm planner mất thống kê, đổi Hash Join
+      -- thành Merge Join (đo gian thử 300.000 đơn: 2,8 giây → 4,5 giây).
+      SELECT l."orderId", l."itemId", l."channelSku", COALESCE('i:' || l."itemId", l."channelSku") AS "sku",
+             l."quantity", l."actualRevenue", l."createdDate",
              (l."profit" - l."feeGmvMax") AS "profitBeforeAds",
              (-l."feeGmvMax") AS "adFee",
              (l."lineGross" > 0) AS "paid",
@@ -1792,7 +1837,16 @@ function tiktokBreakevenByGroupQuery(
     ),
     "map" AS (
       SELECT DISTINCT m."grp", m."sku", NULLIF(m."checkFrom", '')::date AS "checkFrom"
-      FROM unnest(${groupIndexes}::int[], ${[...mapping.skus]}::text[], ${[...mapping.checkFrom]}::text[]) AS m("grp", "sku", "checkFrom")
+      FROM unnest(${groupIndexes}::int[], ${[...mapping.keys]}::text[], ${[...mapping.checkFrom]}::text[]) AS m("grp", "sku", "checkFrom")
+    ),
+    -- Bộ nhóm tách sẵn hai bảng nhỏ theo loại khóa (splitGroupKeys) để các mối nối lớn đi bằng CỘT: SPU → mapItem, mã → mapSku.
+    "mapItem" AS (
+      SELECT DISTINCT m."grp", m."itemId", NULLIF(m."checkFrom", '')::date AS "checkFrom"
+      FROM unnest(${split.item.grp}::int[], ${split.item.ids}::text[], ${split.item.check}::text[]) AS m("grp", "itemId", "checkFrom")
+    ),
+    "mapSku" AS (
+      SELECT DISTINCT m."grp", m."sku", NULLIF(m."checkFrom", '')::date AS "checkFrom"
+      FROM unnest(${split.sku.grp}::int[], ${split.sku.skus}::text[], ${split.sku.check}::text[]) AS m("grp", "sku", "checkFrom")
     ),
     "bySku" AS (
       SELECT "sku",
@@ -1825,17 +1879,30 @@ function tiktokBreakevenByGroupQuery(
         UNION ALL
         SELECT m."grp", x."orderId", x."cls"
         FROM "lines" x
-        JOIN "map" m ON m."sku" = x."sku"
+        JOIN "mapItem" m ON m."itemId" = x."itemId"
         WHERE x."paid" AND NOT x."sole"
+        UNION ALL
+        SELECT m."grp", x."orderId", x."cls"
+        FROM "lines" x
+        JOIN "mapSku" m ON m."sku" = x."channelSku"
+        WHERE x."itemId" IS NULL AND x."paid" AND NOT x."sole"
       ) t
       GROUP BY t."grp"
     ),
     "checks" AS (
-      SELECT m."grp", sum(x."actualRevenue") AS "placedRevenue"
-      FROM "lines" x
-      JOIN (SELECT "grp", "sku", "checkFrom" FROM "map" WHERE "checkFrom" IS NOT NULL) m ON m."sku" = x."sku"
-      WHERE x."paid" AND x."createdDate" >= m."checkFrom" AND x."createdDate" <= ${dayParam(mapping.checkTo)}
-      GROUP BY m."grp"
+      SELECT t."grp", sum(t."actualRevenue") AS "placedRevenue"
+      FROM (
+        SELECT m."grp", x."actualRevenue"
+        FROM "lines" x
+        JOIN (SELECT "grp", "itemId", "checkFrom" FROM "mapItem" WHERE "checkFrom" IS NOT NULL) m ON m."itemId" = x."itemId"
+        WHERE x."paid" AND x."createdDate" >= m."checkFrom" AND x."createdDate" <= ${dayParam(mapping.checkTo)}
+        UNION ALL
+        SELECT m."grp", x."actualRevenue"
+        FROM "lines" x
+        JOIN (SELECT "grp", "sku", "checkFrom" FROM "mapSku" WHERE "checkFrom" IS NOT NULL) m ON m."sku" = x."channelSku"
+        WHERE x."itemId" IS NULL AND x."paid" AND x."createdDate" >= m."checkFrom" AND x."createdDate" <= ${dayParam(mapping.checkTo)}
+      ) t
+      GROUP BY t."grp"
     ),
     -- Ghép ba phần về từng nhóm bằng UNION ALL + GROUP BY (mỗi phần tối đa một dòng cho mỗi nhóm; "multi" và "checks"
     -- chỉ có nhóm đã có trong hai phần đầu vì cùng đi từ "lines").

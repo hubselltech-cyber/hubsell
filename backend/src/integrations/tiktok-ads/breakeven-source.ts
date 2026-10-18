@@ -123,7 +123,7 @@ export async function loadBreakevenRows(
       createdAt: o.createdAt,
       shippingStatus: o.shippingStatus,
       isSettled: o.isSettled && o.tiktok != null && !o.tiktok.estimated,
-      items: o.items.map((it) => ({ sku: it.sku, price: it.price, quantity: it.quantity })),
+      items: o.items.map((it) => ({ sku: it.sku, itemId: it.itemId, price: it.price, quantity: it.quantity })),
       actualRevenue: o.actualRevenue,
       profit: o.profit,
       missingCostPrice: o.missingCostPrice,

@@ -115,7 +115,7 @@ export function marginGroupOptions(channelName: ChannelName, range: DateRangeFil
  */
 export async function loadMarginGroups(
   channel: AdsInsightChannel,
-  mapping: Pick<AdsGroupMapping, "groups" | "skus">,
+  mapping: Pick<AdsGroupMapping, "groups" | "keys">,
   range: DateRangeFilter = marginWindowRange()
 ): Promise<Map<string, MarginGroupStats>> {
   const scope = { userId: channel.userId, id: channel.id, channelName: channel.channelName };
