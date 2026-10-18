@@ -1,4 +1,4 @@
-# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt, Pha A đang kiểm)
+# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b)
 
 > Bản 1 (18/10 tối) bị anh Trung bác đúng: nó vẫn là mô hình cũ ("quét cửa sổ thời gian,
 > có trần trang, chạm trần thì cắm cờ") được sửa cho đỡ hỏng. Bản 2 đổi mô hình.
@@ -122,38 +122,36 @@ Không xây gì trên giả thuyết chưa kiểm. Mỗi giả thuyết có các
 
 Pha A xong → bảng này có kết quả thật, ghi vào mục 3 trước khi sang Pha B.
 
-## 3b. Pha A — kết quả kiểm (18/10/2026 đêm, đang chạy)
+## 3b. Pha A — kết quả kiểm (18/10/2026 đêm, ĐÃ CÓ SỐ THẬT cả 7)
 
-Công cụ: `backend/scripts/pha-a-san-probe.ts` (chỉ đọc sàn; `h1` / `h2` / `h6` chạy trên Render shell
-vì cần token gian; `h5` chạy được cả máy dev lẫn Render shell) + 3 câu SQL chỉ đọc cho Supabase ở 3b.8.
-Thay đổi mã duy nhất: `fetchOrders` TikTok nhận thêm `sortField`/`sortOrder` **tùy chọn** — không truyền
-= không gửi, hành vi worker không đổi.
+Công cụ: `backend/scripts/pha-a-san-probe.ts` (chỉ đọc sàn) chạy trên **Render shell worker** (commit `8a0ce112`,
+21:30–21:50 ngày 18/10) + SQL chỉ đọc trên Supabase (3b.8) + log Render worker 24 giờ. Thay đổi mã duy nhất:
+`fetchOrders` TikTok nhận thêm `sortField`/`sortOrder` **tùy chọn** — không truyền = không gửi, worker không đổi.
 
-| # | Trạng thái | Kết quả tới giờ |
-|---|---|---|
-| H1 | ⏳ docs đã kiểm, LIVE chờ `h1` | **Mã hiện tại không gửi `sort_field`** → sàn xếp theo `create_time` DESC (mặc định docs) trong khi lọc theo `update_time`. Mốc vét của lát 3.2 (`nextWatermark`: mốc vét = update_time cũ nhất đã đọc, giả định "ba sàn đều đọc mới nhất trước") **sai cho TikTok**: trang đầu là đơn *tạo* mới nhất, không phải *cập nhật* mới nhất → lượt bị cắt sẽ bỏ sót đơn cũ vừa hủy/hoàn. Chưa gây sự cố vì chưa gian nào chạm 50 trang × 50; gian 4.000 đơn/ngày sẽ chạm. Docs còn ghi: *"Update times may exceed the selected search range due to ongoing data refreshes"* — bộ lọc update_time **không chặt** (khớp quan sát 261/262 ngày 16/09). Cả hai điểm đều là bằng chứng cho N3 (không phụ thuộc thứ tự, đọc trọn cửa sổ). |
-| H2 | ⏳ chờ `h2` + anh so Seller Center | Script đếm `get_order_list` trục create_time cả ngày VN (hôm qua), đọc hết trang, in số đơn theo trạng thái + so với DB Hubsell (chỉ-API-có / chỉ-DB-có). Anh so với Seller Center → Đơn hàng → lọc Ngày đặt. |
-| H3 | ⏳ chờ anh dán SQL 3b.8-A | Không có cột "nguồn" trên đơn; đo bằng `webhook_events` (giữ 7 ngày với SUCCESS → cửa sổ 6 ngày): % đơn tạo có ≥1 webhook và độ trễ webhook đầu so với giờ đặt (p50/p99). |
-| H4 | ⏳ chờ log Render 24h | 429 Ads **chỉ ở RAM + console** (`[ApiBudget] 429 tầng shop …`), không có bảng → không đo được từ DB; `api_throttle_states.tripCount` chỉ đếm lần đóng cầu dao. Một xung `ads-pulse` gọi ≥7 lệnh liền không nghỉ (campaign refs → settings → perf → spend → balance → GMS → toggle). **Mã không đọc `Retry-After`** (0 chỗ trong shopee/client, ads-pulse, api-budget). Phép thử "giãn 5 giây trên 2 gian" là đổi hành vi → làm sau khi có log, anh chốt. |
-| H5 | ✅ máy dev ĐẠT thông lượng · ⏳ Render shell quyết định | Postgres 17 cục bộ: nhiều khóa 13.900 lệnh/giây p99 1,2 ms; một khóa nóng hết sức 6.000/giây p99 5,6 ms (trần row lock ≈ 0,15 ms/lượt); một khóa nóng ở nhịp thật 300/giây p99 9,9 ms **nhưng** timer Windows 15 ms gom 10 luồng thức cùng lúc → số này nghi đo sai, đo lại trên Linux (Render). Lượt bị chặn rẻ như lượt được (p99 1,8 ms). Kết luận tạm: GCRA-Postgres đủ ở mốc 300/giây; **khóa theo app là một dòng nóng** — nếu Render đo p99 > 5 ms thì chia dòng app thành N dòng con (sharded), không đổi giao diện. |
-| H6 | ⏳ chờ `h6` + anh so Seller Center | Docs Shopee: `current_balance` = "The current balance of this account" trên từng giao dịch, **không nói thứ tự trả về**; docs ghi page_size ≤100 và cửa sổ ≤15 ngày, prod thực tế chỉ nhận 40/trang và chê 15 ngày (probe 14/08) → docs ≠ prod, phải kiểm live. Script so (a) 1 trang cửa sổ mới nhất vs (b) quét 30 ngày như hiện tại, in thứ tự trang và số lệnh tiết kiệm. |
-| H7 | ⏳ chờ anh dán SQL 3b.8-B | Không có bảng lịch sử trạng thái đơn → dùng số sự kiện sàn gửi (`webhook_events`) mỗi gian mỗi ngày ÷ đơn mới trong ngày làm số biến động/đơn, ngoại suy cho 4.000 đơn/ngày. |
+| # | Kết quả | Số đo thật | Hệ quả cho thiết kế |
+|---|---|---|---|
+| H1 TikTok tôn trọng `sort_field=update_time` | ✅ ĐẠT khi GỬI · ❌ worker hiện tại KHÔNG gửi | 24/24 gian: gửi `sort_field=update_time` → update_time giảm đơn điệu **đúng cả 24**, 0 đơn ngoài cửa sổ. Không gửi (như worker): **24/24 sai**, và thứ tự thật là **create_time TĂNG dần** (cũ nhất trước — ngược với docs "mặc định DESC" và ngược giả định "ba sàn đọc mới nhất trước" của lát 3.2). **Siêu Thị 8686 TikTok**: cửa sổ 2 ngày có `total_count` **2.577** > trần 2.500 (50 trang × 50) → mỗi lượt đọc 2.500 đơn *cũ nhất*, mốc vét lấy update_time nhỏ nhất đã đọc rồi vét lại một cửa sổ 18 phút, lượt sau lại 2.500 → **mốc nước kẹt** — chính là thẻ đỏ HQ tối 18/10 (log 21:20:35 `2500 đơn`, 21:31:45 vét `1 đơn`). | N2+N3 đúng hướng: không được phụ thuộc thứ tự; cửa sổ phải tự co tới khi đọc trọn. **Vá đúng chỗ ngay được** (không phải vá ngưỡng): gửi `sort_field=update_time, DESC` ở worker TikTok để giả định của mốc vét thành đúng → 8686 hết kẹt; chờ anh chốt. |
+| H2 Shopee `get_order_list` đọc hết trang có đủ đơn | ✅ API = DB (Seller Center anh so thêm) | Ngày VN 17/10, trục create_time, đọc hết trang: ANO **34 = 34** DB, Kids Minh Tuyết **35 = 35** DB, 0 chỉ-API / 0 chỉ-DB. (Trục update_time cùng ngày: 81 và 176 đơn — biến động ≈ 2,4–5× đơn mới.) | Cửa sổ đọc trọn → đủ; không cần thứ tự. Anh so Seller Center → Đơn hàng → Ngày đặt 17/10 cho 2 gian là chốt hẳn. |
+| H3 Webhook phủ ≥ 99 % | ✅ ĐẠT | 6 ngày, đơn tạo sau khi nối gian ≥ 1 giờ: **Shopee 2.510/2.515 = 99,80 %** (49/50 gian ≥ 99 %, gian còn lại < 10 đơn); **TikTok 2.057/2.057 = 100 %** (22/22). Độ trễ webhook đầu so với giờ đặt: Shopee p50 **2 s**, p95 8 s, p99 18 s (2 đơn > 15'); TikTok p50 = p95 = p99 = **2 s**. Lazada: không có gian thật đang hoạt động trong cửa sổ → chưa đo. | N1 đứng vững: webhook là nguồn chính, quét là đối soát thưa. Mục tiêu N7 "99 % gian trễ < 15'" khả thi vì webhook đã < 20 s. |
+| H4 429 Ads do 5–7 lệnh dồn | ❌ KHÔNG ĐÚNG như giả thuyết — là MỘT endpoint | 24 giờ (17/10 23:01 → 18/10 21:27): **12 lần cầu dao đóng** (bậc 0→3, 5'→40'), `api_throttle_states.tripCount` app Ads 2044679 = **125**, app chính 2040029 = 14. **100 % dòng 429 Shopee rơi vào `get_all_cpc_ads_daily_performance`** (cả xung 30' lẫn lịch sử 6 h), mỗi gian 1 lần/xung, 6 lệnh còn lại của xung không bao giờ 429. Hai gian khác nhau 429 cùng giây (17:58:25) → nghi trần theo **app × endpoint**, không chỉ theo gian. Docs Shopee endpoint này không công bố trần. TikTok: 429 `36009002` trên `returns/search`, `retry-after` trống, tự thử lại 1–2 lần là qua. Mã không đọc `Retry-After` (0 chỗ). | N4 khóa phải là **(app, endpoint)** ngoài (app, gian). Cầu dao "bão ≥ 3 gian/10'" đang đóng 12 lần/ngày vì endpoint này lẻ tẻ 429 là bình thường → N5 đúng: lùi theo khóa + AIMD, cầu dao chỉ cho lỗi cứng. Việc nhỏ ngay: gộp daily_performance của xung và lịch sử thành một lệnh/gian/xung. |
+| H5 GCRA-Postgres chịu tải | ✅ thông lượng · ⚠️ p99 không < 5 ms | **Render → Supabase Micro (pooler SG), worker đang chạy**: nhiều khóa **1.755 lệnh/giây**, p50 4,4 ms, p95 7,4 ms, p99 38 ms; một khóa nóng hết sức 811/giây p99 34 ms; một khóa ở nhịp thật 300/giây: p50 4,4 ms, p95 9,9 ms, **p99 31 ms**; lượt bị chặn p99 52 ms; 0 lỗi kết nối với 16 kết nối. (Máy dev: 13.900/giây, p99 1,2 ms — trần row lock ≈ 0,15 ms.) | Sàn 4,4 ms là RTT Render↔pooler, không phải DB chậm → tiêu chí "< 5 ms" đặt sai: nên là **chi phí xin lượt < 5 % thời gian một lệnh sàn** (lệnh sàn 200–1.000 ms → p99 31–38 ms = 3–15 %). Phương thức giữ GCRA-Postgres; dung lượng: xin lượt **theo lô** (một lần cho K trang) để chia nhỏ chi phí, Redis chỉ khi tới mốc. Chờ anh chốt tiêu chí mới. |
+| H6 Số dư ví = 1 trang mới nhất | ✅ ĐẠT khớp từng đồng | ANO: (a) 1 lệnh, cửa sổ 168 h, trang 0 = 40 dòng **MỚI → CŨ** → **44.505.039 ₫** = (b) quét 30 ngày 40 lệnh / 1.498 giao dịch → 44.505.039 ₫ (tiết kiệm 39 lệnh/lượt). Kids Minh Tuyết: 1 lệnh vs 5 lệnh, **4.149.400 ₫** khớp. Sàn trả trang MỚI → CŨ (docs không nói). | Luồng ví: số dư = 1 lệnh; lệnh rút (withdrawal) đọc tăng dần theo con trỏ (N2). Gian 4.000 đơn/ngày hết đọc lại 120–240 nghìn dòng/giờ. |
+| H7 ~16.000 biến động/gian 4.000 đơn | ✅ sai số < 2× (số thật cao hơn) | Sự kiện sàn gửi ÷ đơn mới trong ngày (6 ngày): LUMI SOLAR 5,4–8,0; Gia Dụng RUXI 6,6–7,7; Kids Minh Tuyết 6,0–12,4; Siêu Thị 8686 TikTok ngày nối 17,0 (nạp lại). Trung bình sự kiện/đơn có webhook: Shopee **6,48**, TikTok **5,46**; tối đa một đơn 16–20. | Lấy **6–8 biến động/đơn** → gian 4.000 đơn/ngày ≈ **24.000–32.000 sự kiện/ngày** (≈ 20/phút): hộp thư đến hiện có vẫn nhẹ; K trang/lượt và Δ tính theo số này, không theo 16.000. |
 
-### 3b.1 Việc anh làm (theo thứ tự, mỗi bước ~5 phút)
+### 3b.1 Việc còn lại cho anh (không chặn Pha B)
 
-1. **Render shell** (worker hoặc web, `cd backend`): chạy 4 lệnh, dán nguyên văn kết quả cho em
-   ```bash
-   npx tsx scripts/pha-a-san-probe.ts h1
-   npx tsx scripts/pha-a-san-probe.ts h2
-   npx tsx scripts/pha-a-san-probe.ts h6
-   npx tsx scripts/pha-a-san-probe.ts h5
-   ```
-   `h5` tạo bảng + hàm tạm `_pha_a_gcra_state` / `_pha_a_gcra_try` trong Supabase rồi **xóa khi xong** (~35 giây,
-   ~16 kết nối qua pooler; chạy lúc vắng khách). Không muốn chạy trên prod thì bỏ, em dùng số máy dev + ghi "chưa kiểm Micro".
-2. **Seller Center**: Shopee → Đơn hàng → lọc Ngày đặt = hôm qua, ghi tổng số đơn (so H2); Tài chính → Số dư TK (so H6).
-3. **Supabase SQL (chỉ đọc)**: dán hai câu 3b.8-A và 3b.8-B, gửi bảng kết quả.
-4. **Render Logs (worker, 24 giờ)**: lọc `[ApiBudget] 429` và `HTTP 429`, dán các dòng (kèm giờ); lọc thêm
-   `[TikTok] Cửa sổ update_time` (3–5 dòng) để thấy bộ lọc update_time lỏng tới đâu.
+1. **Seller Center Shopee** (chốt H2/H6 tới tận màn khách): Đơn hàng → Ngày đặt **17/10** cho ANO (34) và Kids Minh Tuyết (35);
+   Tài chính → Số dư TK Shopee: ANO **44.505.039 ₫** (lúc 20:34 VN 18/10), Kids **4.149.400 ₫** (12:56 VN 18/10).
+2. **Chốt 3 điểm** để sang Pha B: (a) vá ngay `sort_field=update_time` cho worker TikTok (H1) hay chờ Pha C; (b) tiêu chí H5 mới
+   "< 5 % thời gian lệnh sàn" + xin lượt theo lô; (c) khóa N4 là (app, endpoint) ngoài (app, gian) theo H4.
+
+### 3b.2 Điều phải sửa trong bản thiết kế sau Pha A
+
+- Mục 1: biến động/ngày của gian 4.000 đơn = **24.000–32.000** (không phải 16.000); webhook/ngày cùng số.
+- N3: TikTok có `sort_field` dùng được, nhưng thiết kế vẫn **không dựa vào thứ tự** (Shopee không có; TikTok filter update_time lỏng theo docs).
+- N4: khóa GCRA = (app) · (app, gian) · **(app, endpoint)**; trần chỉ bật nơi có bằng chứng — hiện là `get_all_cpc_ads_daily_performance`.
+- N5: cầu dao "bão" hiện tại là **giả dương** (12 lần/ngày vì một endpoint lẻ tẻ) → bỏ khi N5 lên, như đã viết.
+- N7: thêm số đo "độ trễ webhook" (p50/p99) vào HQ — đã có số nền 2 s / 18 s để so.
 
 ### 3b.8 SQL chỉ đọc (Supabase)
 
