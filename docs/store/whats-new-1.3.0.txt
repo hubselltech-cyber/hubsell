@@ -1,0 +1,4 @@
+Bản 1.3.0:
+• Đăng nhập nhanh bằng Google, hoặc bằng Apple trên iPhone — không cần nhớ mật khẩu.
+• Tài khoản đăng nhập bằng Google/Apple có thể đặt thêm mật khẩu trong mục Tài khoản.
+• Sửa lỗi nhỏ.

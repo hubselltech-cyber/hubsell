@@ -78,8 +78,13 @@ export function googleAudiences(): string[] {
   ].filter((v): v is string => Boolean(v));
 }
 
+/**
+ * Có ít nhất một client id để kiểm aud. SDK Android phát idToken với aud =
+ * client WEB (GOOGLE_CLIENT_ID sẵn có từ nút Google web) → Android chạy ngay
+ * không cần env mới; iOS cần GOOGLE_IOS_CLIENT_ID (aud = client iOS).
+ */
 export function isGoogleAppConfigured(): boolean {
-  return Boolean(process.env.GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_ANDROID_CLIENT_ID);
+  return googleAudiences().length > 0;
 }
 
 let googleJwks: JWTVerifyGetKey | null = null;

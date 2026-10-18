@@ -860,7 +860,7 @@ router.post("/social/google", async (req, res, next) => {
   try {
     if (!isGoogleAppConfigured()) {
       res.status(503).json({
-        error: "Đăng nhập Google trong app chưa được bật (thiếu GOOGLE_IOS_CLIENT_ID / GOOGLE_ANDROID_CLIENT_ID).",
+        error: "Đăng nhập Google trong app chưa được bật (thiếu GOOGLE_CLIENT_ID / GOOGLE_IOS_CLIENT_ID).",
       });
       return;
     }
