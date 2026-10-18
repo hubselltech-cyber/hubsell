@@ -9,6 +9,7 @@
  *   node scripts/asc-release.mjs screenshots 1.1.0 <thư mục png> [displayType]   (xóa ảnh cũ trong bộ, tải ảnh mới theo thứ tự tên)
  *   node scripts/asc-release.mjs attach-build 1.1.0 12
  *   node scripts/asc-release.mjs submit 1.1.0
+ *   node scripts/asc-release.mjs review-notes 1.3.1 [tệp]          (không tệp = in; có tệp = ghi đè Notes người duyệt)
  */
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -174,10 +175,32 @@ if (cmd === "status") {
 } else if (cmd === "submit") {
   const [vs] = args;
   const v = await versionByString(vs);
-  const rs = await api("POST", "/v1/reviewSubmissions", { data: { type: "reviewSubmissions", attributes: { platform: "IOS" }, relationships: { app: { data: { type: "apps", id: APP_ID } } } } });
-  await api("POST", "/v1/reviewSubmissionItems", { data: { type: "reviewSubmissionItems", relationships: { reviewSubmission: { data: { type: "reviewSubmissions", id: rs.data.id } }, appStoreVersion: { data: { type: "appStoreVersions", id: v.id } } } } });
+  // 19/10/2026: ASC 500 ở bước thêm item nhưng thực ra đã thêm → lượt thử lại 409 "already added", còn lại
+  // một reviewSubmission READY_FOR_REVIEW treo. Chạy lại lệnh này: dùng lại bản treo đó, bỏ qua 409 đó.
+  const open = (await api("GET", `/v1/reviewSubmissions?filter[app]=${APP_ID}&filter[platform]=IOS&filter[state]=READY_FOR_REVIEW&limit=1`)).data[0];
+  const rs = open ? { data: open } : await api("POST", "/v1/reviewSubmissions", { data: { type: "reviewSubmissions", attributes: { platform: "IOS" }, relationships: { app: { data: { type: "apps", id: APP_ID } } } } });
+  await api("POST", "/v1/reviewSubmissionItems", { data: { type: "reviewSubmissionItems", relationships: { reviewSubmission: { data: { type: "reviewSubmissions", id: rs.data.id } }, appStoreVersion: { data: { type: "appStoreVersions", id: v.id } } } } }).catch((e) => {
+    if (!/already added/.test(String(e.message))) throw e;
+  });
   await api("PATCH", `/v1/reviewSubmissions/${rs.data.id}`, { data: { type: "reviewSubmissions", id: rs.data.id, attributes: { submitted: true } } });
   console.log("Đã nộp", vs, "— reviewSubmission", rs.data.id);
+} else if (cmd === "review-notes") {
+  // Ghi chú cho người duyệt (App Review Information → Notes). Không có tệp = in ra; có tệp = ghi đè bằng nội dung tệp.
+  const [vs, file] = args;
+  const v = await versionByString(vs);
+  const r = await api("GET", `/v1/appStoreVersions/${v.id}/appStoreReviewDetail`).catch(() => null);
+  const detail = r?.data;
+  if (!file) {
+    console.log(detail ? detail.attributes.notes : "(chưa có App Review Information)");
+  } else {
+    const notes = readFileSync(file, "utf8");
+    if (detail) {
+      await api("PATCH", `/v1/appStoreReviewDetails/${detail.id}`, { data: { type: "appStoreReviewDetails", id: detail.id, attributes: { notes } } });
+    } else {
+      await api("POST", "/v1/appStoreReviewDetails", { data: { type: "appStoreReviewDetails", attributes: { notes }, relationships: { appStoreVersion: { data: { type: "appStoreVersions", id: v.id } } } } });
+    }
+    console.log("Đã ghi ghi chú người duyệt cho", vs, `(${notes.length} ký tự)`);
+  }
 } else {
-  console.log("Lệnh: status | create-version | whats-new | screenshots | attach-build | submit");
+  console.log("Lệnh: status | create-version | whats-new | screenshots | attach-build | review-notes | submit");
 }

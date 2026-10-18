@@ -152,22 +152,41 @@ Apple chỉ có một cặp ô tài khoản: điền tài khoản **chủ shop**
 
 Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới viết lại **08/10 tối sau khi Apple từ chối lần 2** (xem `APPLE-REVIEW-REPLY-2.md`): build 6 **GỠ HẲN màn Đăng ký** (tài khoản tạo trên web, như Haravan / Pancake POS) và gỡ nút mở web app ở thẻ chưa có gian → Notes nói rõ không có đăng ký, không dùng thử, không link ra web app; nhấn mạnh dùng tài khoản demo, ghi rõ nút xóa tài khoản. Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
 
-**★ 19/10 — bản 1.3.1 (màn Đăng ký quay lại trong app, anh chốt 18/10): với CẢ Apple và Google, THAY đoạn "Sign-up: there is NO registration…" trong ACCOUNTS bằng đoạn này, và trong PAYMENTS (iOS) bỏ chữ "no sign-up":**
+**★ 19/10 — bản 1.3.1 ĐÃ ÁP lên ASC (iOS, `asc-release.mjs review-notes 1.3.1 <tệp>`; trần Notes = 4.000 ký tự, bản này 3.961): toàn văn Notes người duyệt Apple dưới đây — đoạn Sign-up mới thay "there is NO registration…", đoạn "EXPIRED PLAN" (sai: reviewer@ đang BUSINESS ACTIVE tới 16/10/2027) thay bằng "PURCHASE FLOW" ngắn. Google: khi cần cập nhật Play Console thì chép đoạn Sign-up (bỏ chữ In-App Purchase vì Android chưa bán trong app).**
 
 ```
-Sign-up: merchants can create a shop-owner account inside the app
-("Dang ky" link on the sign-in screen: full name, e-mail, password, and a
-checkbox to accept the Terms of Service and Privacy Policy), or sign in
-with Google / Apple. A new account starts with no connected store, so the
-home screen shows an empty state with a button that opens our website
-where marketplaces are connected. Service plans are offered only through
-In-App Purchase (see PAYMENTS); the sign-up flow mentions no trial, no
-plan and no price. PLEASE STILL REVIEW WITH THE DEMO ACCOUNT ABOVE, which
-already has stores and data. Users can delete their account at any time
-inside the app: Settings tab ("Cau hinh") -> tap the name row at the top
--> "Xoa tai khoan" link at the bottom of the Account screen (enter current
-password to confirm). Personal data is erased immediately and the
-remaining data is purged within 30 days.
+Hubsell is a B2B tool for online merchants in Vietnam who sell on the Shopee, Lazada and TikTok Shop marketplaces. It is a companion app to our web product: merchants use it to check today's revenue and profit, browse orders, follow their ad campaigns, adjust stock, and (warehouse staff) scan return parcels. The app's interface is in Vietnamese only.
+
+ACCOUNTS
+PLEASE REVIEW WITH THE DEMO ACCOUNT BELOW. It is connected to sample stores ("Hubsell Demo Store") that already contain orders, returns, stock and financial data.
+
+Shop owner (all screens): see the user name / password fields above.
+
+Sign-up: a shop-owner account can be created inside the app ("Dang ky" on the sign-in screen: name, e-mail, password, accept Terms and Privacy Policy) or with Google / Apple sign-in. A new account has no connected store, so Home shows an empty state with a button to our website, where marketplaces are connected. Plans are sold only via In-App Purchase; sign-up shows no trial, plan or price. Please still review with the demo account above. Account deletion: Settings tab ("Cau hinh") -> tap the name row at the top -> "Xoa tai khoan" link at the bottom of the Account screen. Personal data is erased immediately and the rest is purged within 30 days.
+
+PAYMENTS (In-App Purchase)
+Service plans can be purchased inside the app with In-App Purchase: 20 non-renewing subscriptions (Starter / Growth / Pro / Business / Scale x 1 / 3 / 6 / 12 months), submitted together with this build. Entry points: Settings tab ("Cau hinh") -> "Goi dich vu" card, and the plan row on the Account screen. There is no other purchase method, no external purchase link and no price comparison anywhere in the app. Merchants who bought a plan on our website keep using it in the app (Guideline 3.1.3(b)); the same plans are available via In-App Purchase.
+
+PURCHASE FLOW: Settings -> "Goi dich vu", pick a plan and period, tap "Mua goi" and complete the purchase; the new period shows on the same screen. "Khoi phuc giao dich" re-syncs unfinished StoreKit transactions.
+
+HOW TO TEST
+- Home tab: three swipeable pages (Overview, Finance, Ads). Finance has a period filter.
+- Orders tab: orders from all stores with filters; tap an order to see its details and fees.
+- Round QR button in the middle of the tab bar: scans any order's tracking barcode to open its details. No physical parcel needed: type at least 3 trailing digits of any order code shown in the Orders tab into the search field at the bottom of the scan screen.
+- Warehouse tab ("Kho"): "Ton kho" adjusts stock quantities; "Don hoan" lists return parcels and has a scan button to receive them. You can type the last digits of a tracking number from the pending list instead of scanning.
+- Round button at the bottom right of Home opens the Hubsell Assistant; ask e.g. "Doanh thu hom nay bao nhieu".
+
+PERMISSIONS
+- Camera: only to scan shipping barcodes. No photo or video is saved or uploaded. If camera access was declined earlier, the screen shows an "Open Settings" button; orders can also be found by typing the last digits of a code, no camera needed.
+- Microphone / speech recognition: only when the user taps the mic button to ask the Assistant by voice (see THIRD-PARTY AI below).
+- Face ID / fingerprint: optional app lock, enabled in Settings.
+
+THIRD-PARTY AI: NONE
+The app does not use or send any user data to a third-party AI service and contains no AI/ML SDK. The Hubsell Assistant (the former "AI" label was removed in build 1.0 (11)) is our own rule-based query engine on our own backend: keyword matching that returns the merchant's own sales figures from our database. No LLM or external AI provider is involved. Voice input uses the iOS Speech framework; only the recognized text reaches our server. Privacy policy: https://hubsell.vn/privacy (sections 3 and 5).
+
+ACCOUNT DELETION: inside the app (see ACCOUNTS); policy page https://hubsell.vn/xoa-tai-khoan.
+
+Contact: support@hubsell.vn, +84 96 5863292
 ```
 
 **★ 10/10 — build 8 (Apple từ chối lần 3, chuyển sang In-App Purchase, xem `APPLE-REVIEW-REPLY-3.md` + `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md`): với Apple, THAY đoạn PAYMENTS bên dưới bằng đoạn này** (Google giữ nguyên đoạn cũ vì Android chưa bán trong app):
