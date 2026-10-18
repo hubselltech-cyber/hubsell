@@ -119,10 +119,10 @@ Migration: cột NULL + chỉ mục unique, khóa có thử lại (bẫy deadloc
 
 - 18/10 đêm: thiết kế xong; 1.2.1 đã nộp 2 kho.
 - 18/10 ~23:20: **backend xong** (mục 7 bước 1) — `services/social-login.ts`, 2 route, migration, test 12 ca; chưa commit, DB dev chưa áp (classifier chặn), prod áp khi deploy. 
-- 19/10 ~00:10: **C1 + C2 XONG** (em làm qua Chrome anh): 1 client iOS + 2 client Android tạo trong dự án My Project 18602; app.json đã điền `extra.googleIosClientId`, `extra.googleWebClientId`, `iosUrlScheme` thật → nút Google hiện. Còn C4 (key Apple .p8) + C5 (env Render: `GOOGLE_IOS_CLIENT_ID`, `APPLE_SIWA_*`) — anh làm.
+- 18/10 ~23:10: **C1 + C2 XONG** (em làm qua Chrome anh): 1 client iOS + 2 client Android tạo trong dự án My Project 18602; app.json đã điền `extra.googleIosClientId`, `extra.googleWebClientId`, `iosUrlScheme` thật → nút Google hiện. Còn C4 (key Apple .p8) + C5 (env Render: `GOOGLE_IOS_CLIENT_ID`, `APPLE_SIWA_*`) — anh làm.
 - 18/10 ~23:40: **mobile xong phần code** (bước 2): social.ts + 2 nút + AccountScreen; app.json extra client id RỖNG → nút Google tự ẩn, nút Apple hiện trên iOS. Chờ C1–C5 (mục 6) rồi build thử TestFlight/APK (bước 3).
 
-## 10. Thư báo khách khi 1.3.0 lên kho (anh chốt 19/10: một email, không nhắc trong app ở bản này)
+## 10. Thư báo khách khi 1.3.0 lên kho (anh chốt 18/10: một email, không nhắc trong app ở bản này)
 
 Gửi cho chủ shop ACTIVE có email (ưu tiên nhóm `googleId IS NOT NULL` — họ là người kẹt). Gửi qua `safeSend` role noreply, cùng khung `shell()` của customer-mails. Nội dung nháp:
 
@@ -137,9 +137,9 @@ Việc code khi gửi: script một lần `backend/scripts/mail-app-1-3-0.ts` (�
 
 ## 11. Bản sau (1.4): nhắc cập nhật trong app + EAS Update
 
-Anh chốt 19/10: làm từ bản sau. Phạm vi: backend `/api/mobile/version` (latest, min theo nền), app so `Constants.expoConfig.version` lúc mở → dải "Có bản mới" + nút mở kho, dưới min thì chặn; Android thêm Play In-App Updates (`expo-in-app-updates` hoặc tương đương); EAS Update cho thay đổi chỉ JS với `runtimeVersion` policy `appVersion` để JS mới không rơi vào native cũ.
+Anh chốt 18/10: làm từ bản sau. Phạm vi: backend `/api/mobile/version` (latest, min theo nền), app so `Constants.expoConfig.version` lúc mở → dải "Có bản mới" + nút mở kho, dưới min thì chặn; Android thêm Play In-App Updates (`expo-in-app-updates` hoặc tương đương); EAS Update cho thay đổi chỉ JS với `runtimeVersion` policy `appVersion` để JS mới không rơi vào native cũ.
 
-## 12. Bản sau (1.3.1): ba việc giao diện anh Trung chốt 19/10 (xem ảnh Salework V3.3.5 anh gửi)
+## 12. Bản sau (1.3.1): ba việc giao diện anh Trung chốt 18/10 (xem ảnh Salework V3.3.5 anh gửi)
 
 Anh: "Phiên bản này 2 nút Google và Apple xếp hàng dọc khá xấu. Phiên sau học theo Salework."
 
@@ -149,9 +149,9 @@ Anh: "Phiên bản này 2 nút Google và Apple xếp hàng dọc khá xấu. Ph
 
 KHÔNG học Salework chỗ "Đăng ký" trên màn đăng nhập — anh chốt 08/10 app không có đăng ký (Google/Apple tạo tài khoản ngầm là đủ).
 
-Gộp cùng màn trống cho chủ shop mới chưa nối gian (phần thẻ đề xuất 19/10) thành bản **1.3.1**, nộp sau khi 1.3.0 duyệt.
+Gộp cùng màn trống cho chủ shop mới chưa nối gian (phần thẻ đề xuất 18/10) thành bản **1.3.1**, nộp sau khi 1.3.0 duyệt.
 
-### 12.4 Màn Đăng ký trong app (anh chốt 19/10 23:4x: "Thêm cả màn đăng ký nữa. Salework được thì mình cũng được")
+### 12.4 Màn Đăng ký trong app (anh chốt 18/10 23:4x: "Thêm cả màn đăng ký nữa. Salework được thì mình cũng được")
 
 Đảo quyết định 08/10 (gỡ Đăng ký sau khi Apple từ chối 3.1.1 lần 2). Vì sao giờ được: lý do bị 3.1.1 là luồng đăng ký dẫn tới dùng thử/mua gói ngoài IAP; từ 10/10 iOS đã có mua gói bằng IAP (màn /plan) nên tài khoản mới có đường mua hợp lệ trong app. Điều kiện giữ để không bị bắt lại:
 - Màn đăng ký chỉ: Họ tên, Email, Mật khẩu (+ nhập lại), ô tick Điều khoản + Chính sách (link web). KHÔNG chữ "dùng thử", "miễn phí 14 ngày", "gói", "giá". Gọi `POST /api/auth/register` sẵn có (backend ghi TermsAcceptance nguồn `register_form`… cân nhắc thêm nguồn `register_app`), nhận token → persistSession → vào app như đăng nhập.
@@ -159,3 +159,7 @@ Gộp cùng màn trống cho chủ shop mới chưa nối gian (phần thẻ đ�
 - Sau đăng ký, chủ shop mới chưa có gian → rơi vào màn trống mục 12.3 (bắt buộc làm cùng).
 - Xóa tài khoản trong app đã có (5.1.1(v)).
 - Ghi chú người duyệt: nêu rõ có tạo tài khoản, dùng thử/gói chỉ qua IAP, reviewer vẫn dùng tài khoản sẵn.
+
+### 12.5 Đính chính màn trống (18/10 23:58, anh thử Apple tài khoản mới)
+
+Thẻ "Chưa có gian hàng nào" ĐÃ CÓ SẴN ở `hubsell-mobile/src/screens/OverviewPage.tsx` (câu dẫn sang mục Kênh bán trên web + nút "Đã kết nối xong, tải lại"); em đề xuất làm mới là trùng vì không đọc mã trước. Việc 1.3.1 chỉ còn: thêm MỘT nút "Mở app.hubsell.vn" (Linking https://app.hubsell.vn/channels) vào thẻ có sẵn, giữ nút tải lại.

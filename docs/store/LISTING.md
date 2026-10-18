@@ -81,7 +81,7 @@ Ghi chú khi dán:
 - **App Store**: dán nguyên văn. Không thêm chữ "Android", "CH Play" (Apple 2.3.10 cấm nhắc nền tảng khác).
 - **06/10: bỏ mục Tin nhắn** khỏi mô tả, ghi chú người duyệt và nhãn dữ liệu — tab Tin nhắn đã gỡ khỏi app từ bản 04/10 (không còn `messages.tsx`, không còn dùng expo-image-picker). Thêm Quảng cáo, Tồn kho, quét đơn bất kỳ. Mô tả này ĐÃ DÁN vào App Store Connect 06/10.
 
-### Có gì mới (bản 1.3.0 — 19/10/2026)
+### Có gì mới (bản 1.3.0 — 18/10/2026)
 
 Bản 1.3.0:
 • Đăng nhập nhanh bằng Google, hoặc bằng Apple trên iPhone — không cần nhớ mật khẩu.
