@@ -429,8 +429,8 @@ tạo trong cửa sổ 15/10 → 19/10 (ngày deploy lát này). Điểm 1–3 c
   giá → dòng đơn của lá tạo từ 15/10 đang mang **đúng giá thừa kế** về 0 (chỉ lượt vá đặt được số đó; dòng có số khác giữ), lá về
   `costPrice NULL` + dấu NULL. Idempotent; lá khách đã sửa tay (dấu NULL) không chạm. Worker chạy hoàn tác **trước** lượt sửa ở mỗi lần
   khởi động. Test: lá oan về trống + dòng về 0, lá đúng giữ nguyên, chạy lại 0.
-- **Trạng thái:** mã + test xong, **chưa push, chưa chạy trên prod** — chờ anh chốt: (A) hoàn tác 3.489 + 3 lá khác SPU, giữ 828 lá cùng
-  sản phẩm (đề xuất); (B) giữ cả vì đúng hiện trạng trước 15/10.
+- **Anh Trung chốt (A) 18/10 13:38** → push `4ad8f8ca` 13:40; worker hoàn tác chạy ~13:48. **Kiểm 13:52:** còn **828 lá** mang dấu thừa kế,
+  **828/828 cùng SPU với nguồn, 0 khác SPU**, 12 gian; XPL2 STORE 0 lá thừa kế (1.028 lá có giá đều do khách đặt). Hoàn tác đúng phạm vi.
 - Bên lề (không thuộc lát này): còn ~74 dòng đơn 15–18/10 giá vốn 0 dù lá **đã có giá riêng và đã nối kho** — đơn về trước khi danh
   mục có lá, chưa ai bấm lưu lại giá nên chưa được vá. Nên có lượt vá định kỳ "dòng giá 0 của lá đã có giá" (một câu UPDATE, id trước)
   — đề xuất riêng.
