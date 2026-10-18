@@ -13,7 +13,13 @@ import { SHOP_GROUP, campaignGroupKey } from "../../lib/ads-margin";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import { prisma } from "../../lib/prisma";
 import type { TiktokBreakevenSource } from "../../lib/tiktok-breakeven";
-import { TIKTOK_MARGIN_WINDOW_DAYS, TIKTOK_TARGET_STEP_WAIT_HOURS, toTiktokBreakeven, type TiktokBreakeven } from "../../lib/tiktok-breakeven";
+import {
+  TIKTOK_MARGIN_WINDOW_DAYS,
+  TIKTOK_TARGET_STEP_WAIT_HOURS,
+  breakevenCheckProblem,
+  toTiktokBreakeven,
+  type TiktokBreakeven,
+} from "../../lib/tiktok-breakeven";
 import { TARGET_STEP_PCT } from "../shopee/ads-assistant-rules";
 import { MIN_ORDERS_FOR_MARGIN } from "../shopee/ads-insights";
 import {
@@ -88,11 +94,14 @@ export async function computeTiktokAdsBreakevenUncached(
       continue;
     }
     const check = inputs.checkByCampaignRowId.get(c.id);
+    const fullCheck = check
+      ? { revenuePlaced: breakevens.placedRevenue(groupKey), tiktokGmv: check.tiktokGmv, from: check.from, to: inputs.checks.to }
+      : null;
     byCampaignRowId.set(c.id, {
       ...toTiktokBreakeven(own, "campaign"),
-      check: check
-        ? { revenuePlaced: breakevens.placedRevenue(groupKey), tiktokGmv: check.tiktokGmv, from: check.from, to: inputs.checks.to }
-        : null,
+      check: fullCheck,
+      // Tự kiểm lệch quá ngưỡng → hòa vốn chưa tin được (Lát 0 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 5).
+      checkProblem: breakevenCheckProblem(fullCheck),
     });
   }
 

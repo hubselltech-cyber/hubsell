@@ -23,11 +23,14 @@
 //   định chọn cho đủ mẫu, không phải số của sàn.
 //
 // KHÁC Shopee/Lazada ở hai chỗ, đều vì cách TikTok tính tiền:
-//   1. PHÍ GMV MAX ĐÃ NẰM TRONG LỢI NHUẬN ĐƠN. Sàn trừ "Nạp tiền quảng cáo từ
-//      đơn hàng" ngay trong quyết toán từng đơn (TiktokOrderSettlement.feeGmvMax,
-//      số CÓ DẤU, âm = bị trừ; mapper dồn vào order.serviceFee). computePnlRow
-//      vì thế trả lợi nhuận ĐÃ trừ quảng cáo → phải CỘNG NGƯỢC khoản này mới ra
-//      biên lãi trước quảng cáo:  lãi trước ads = profit − feeGmvMax.
+//   1. PHÍ GMV MAX CÓ THỂ NẰM TRONG LỢI NHUẬN ĐƠN. Gian chọn "Nạp tiền quảng cáo
+//      từ đơn hàng" thì sàn trừ ngay trong quyết toán từng đơn
+//      (TiktokOrderSettlement.feeGmvMax, số CÓ DẤU, âm = bị trừ; mapper dồn vào
+//      order.serviceFee) → computePnlRow trả lợi nhuận ĐÃ trừ quảng cáo → phải
+//      CỘNG NGƯỢC mới ra biên lãi trước quảng cáo: lãi trước ads = profit − feeGmvMax.
+//      Gian trả bằng số dư tài khoản quảng cáo (and.not.or: 0/692 đơn có phí,
+//      kiểm 26/09/2026) thì feeGmvMax = 0 và phép cộng ngược không đổi gì —
+//      đính chính 18/10: chú thích cũ viết như thể sàn luôn trừ.
 //   2. MẪU SỐ PHẢI CÙNG ĐỊNH NGHĨA VỚI "DOANH THU" CỦA TIKTOK. ROI của TikTok =
 //      gross_revenue ÷ chi phí, mà gross_revenue tính trên đơn ĐẶT — đơn hủy /
 //      hoàn về sau KHÔNG bị rút ra (tiền quảng cáo cho đơn đó vẫn mất). Nên đơn
@@ -260,7 +263,57 @@ export interface TiktokBreakeven {
   /** % doanh thu (trong phạm vi) đã có giá vốn — dưới 100 nghĩa là hòa vốn chỉ đại diện phần đó. */
   costCoveragePct: number | null;
   /** Tự kiểm mẫu số (chỉ khi source = campaign): doanh thu MỌI đơn đặt Hubsell thấy vs TikTok báo, cùng SKU, cùng khoảng ngày. */
-  check: { revenuePlaced: number; tiktokGmv: number; from: string; to: string } | null;
+  check: TiktokBreakevenCheck | null;
+  /**
+   * Lý do hòa vốn CHƯA TIN ĐƯỢC vì tự kiểm lệch quá ngưỡng (breakevenCheckProblem); "" / bỏ trống = ổn. Chỉ nguồn
+   * campaign mới có tự kiểm. Mọi nơi quyết định (luật tự động, nhận định, lãi ước tính, API) phải coi hòa vốn có
+   * checkProblem như CHƯA CÓ hòa vốn — bất biến B6 của docs/MO-HINH-CAY-SAN-PHAM-SAN.md.
+   */
+  checkProblem?: string;
+}
+
+export interface TiktokBreakevenCheck {
+  revenuePlaced: number;
+  tiktokGmv: number;
+  from: string;
+  to: string;
+}
+
+// ------------------------------------------------------------
+// TỰ KIỂM MẪU SỐ → HÒA VỐN CHƯA TIN ĐƯỢC (Lát 0, 18/10/2026 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 5)
+// ------------------------------------------------------------
+//
+// Doanh thu MỌI đơn đặt Hubsell thấy trên tập SKU của chiến dịch phải xấp xỉ doanh thu TikTok báo cho cùng sản phẩm,
+// cùng khoảng ngày. Lệch nhiều là CÂY SẢN PHẨM Hubsell dựng cho chiến dịch không khớp sàn, hai chiều đều hỏng:
+//   · Hubsell THIẾU: dòng đơn chưa nối đúng lá (đơn cũ mang mã thô sau khi mã đổi đuôi — TC025 NEW 18/10: 15,4tr so
+//     với 60,0tr, hòa vốn báo 8,90 trong khi đủ đơn là 7,10);
+//   · Hubsell THỪA: mã người bán dùng chung nhiều sản phẩm kéo đơn của sản phẩm khác vào.
+// Khi đó biên lãi là của một tập đơn khác tập TikTok tính ROI → không được dùng để quyết định (loại video, nấc hạ, lãi
+// ước tính). Thà không có số còn hơn số sai.
+
+/**
+ * Ngưỡng |lệch| để coi hòa vốn chưa tin được: 25% — MẶC ĐỊNH TỰ CHỌN (anh Trung chốt 18/10/2026), chưa có số nào của
+ * sàn. Căn cứ: ba chiến dịch khỏe của and.not.or lệch +4,0 / +4,7 / +8,8% (sai số thường của hai cách đếm), chiến
+ * dịch hỏng lệch −74%; 25% chừa chỗ cho sai số thường mà vẫn bắt được lỗi cây.
+ */
+export const TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT = 25;
+
+/** % lệch có dấu = (Hubsell − TikTok) ÷ TikTok × 100; null khi TikTok chưa báo doanh thu (không có gì để so). Thuần. */
+export function breakevenCheckGapPct(check: TiktokBreakevenCheck | null | undefined): number | null {
+  if (!check || !(check.tiktokGmv > 0)) return null;
+  return ((check.revenuePlaced - check.tiktokGmv) / check.tiktokGmv) * 100;
+}
+
+/** Lý do hòa vốn chưa tin được theo tự kiểm; "" = ổn hoặc không có gì để so. Thuần. */
+export function breakevenCheckProblem(check: TiktokBreakevenCheck | null | undefined): string {
+  const gap = breakevenCheckGapPct(check);
+  if (gap == null || Math.abs(gap) <= TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT) return "";
+  const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
+  const pct = Math.abs(Math.round(gap));
+  const c = check as TiktokBreakevenCheck;
+  return gap < 0
+    ? `doanh thu Hubsell thấy cho sản phẩm của chiến dịch thấp hơn TikTok báo ${pct}% (${vnd(c.revenuePlaced)} so với ${vnd(c.tiktokGmv)}) — dòng đơn chưa nối đúng sản phẩm, hòa vốn chưa tin được`
+    : `doanh thu Hubsell thấy cho sản phẩm của chiến dịch cao hơn TikTok báo ${pct}% (${vnd(c.revenuePlaced)} so với ${vnd(c.tiktokGmv)}) — mã SKU đang gom cả đơn của sản phẩm khác, hòa vốn chưa tin được`;
 }
 
 /** Từ nguyên liệu → kết quả hòa vốn. Thuần. */
@@ -300,10 +353,17 @@ export function toTiktokBreakeven(base: BreakevenBase, source: "campaign" | "sho
 // bằng số prod — dòng "Đối chiếu doanh thu" trong ô Hòa vốn là chỗ kiểm (docs/ADS-TIKTOK-GMV-MAX.md mục 8).
 // Biên lãi ≤ 0 ("lỗ sẵn") vẫn tính: ra số âm sâu hơn cả tiền ads, đúng với thực tế bán đã lỗ trước quảng cáo.
 
-/** Lãi/lỗ ước tính; null khi chưa có biên lãi (chiến dịch lẫn gian đều chưa đủ đơn đã đối soát có giá vốn). Thuần. */
-export function tiktokEstProfit(gmv: number, spend: number, breakeven: Pick<TiktokBreakeven, "margin"> | null | undefined): number | null {
+/**
+ * Lãi/lỗ ước tính; null khi chưa có biên lãi (chiến dịch lẫn gian đều chưa đủ đơn đã đối soát có giá vốn) hoặc biên lãi
+ * chưa tin được vì tự kiểm lệch (checkProblem — 18/10/2026). Thuần.
+ */
+export function tiktokEstProfit(
+  gmv: number,
+  spend: number,
+  breakeven: Pick<TiktokBreakeven, "margin" | "checkProblem"> | null | undefined
+): number | null {
   const margin = breakeven?.margin;
-  if (margin == null || !Number.isFinite(margin)) return null;
+  if (margin == null || !Number.isFinite(margin) || breakeven?.checkProblem) return null;
   return gmv * margin - spend;
 }
 

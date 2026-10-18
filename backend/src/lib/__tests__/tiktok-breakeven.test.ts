@@ -10,6 +10,9 @@ import { describe, expect, it } from "vitest";
 import { ShippingStatus } from "@prisma/client";
 import { SHOP_GROUP, buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, productGroupKey } from "../ads-margin";
 import {
+  TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT,
+  breakevenCheckGapPct,
+  breakevenCheckProblem,
   breakevensFromGroups,
   breakevensFromRows,
   placedRevenue,
@@ -367,6 +370,51 @@ describe("tiktokEstProfit", () => {
     expect(tiktokEstProfit(1_000_000, 100_000, { margin: null })).toBeNull();
     expect(tiktokEstProfit(1_000_000, 100_000, { margin: -0.1 })).toBeCloseTo(-200_000);
     expect(tiktokEstProfit(0, 0, { margin: 0.2 })).toBe(0);
+  });
+  it("biên lãi chưa tin được (tự kiểm lệch) → null dù có số — không ước lãi trên cây sản phẩm sai", () => {
+    expect(tiktokEstProfit(6_000_000, 1_000_000, { margin: 0.2, checkProblem: "doanh thu Hubsell thấy thấp hơn TikTok báo 74%" })).toBeNull();
+    expect(tiktokEstProfit(6_000_000, 1_000_000, { margin: 0.2, checkProblem: "" })).toBeCloseTo(200_000);
+  });
+});
+
+// LÁT 0 (18/10/2026): tự kiểm mẫu số lệch quá ngưỡng → hòa vốn chưa tin được (docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 5).
+// Số thật TC025 NEW (and.not.or): Hubsell 15.403.152 · TikTok 60.037.044 → −74% → báo 8,90 trong khi đủ đơn là 7,10.
+describe("breakevenCheckProblem — đối chiếu doanh thu với TikTok", () => {
+  const check = (revenuePlaced: number, tiktokGmv: number) => ({ revenuePlaced, tiktokGmv, from: "2026-08-20", to: "2026-10-17" });
+
+  it("% lệch có dấu = (Hubsell − TikTok) ÷ TikTok; TikTok chưa báo gì hoặc không có tự kiểm → null", () => {
+    expect(breakevenCheckGapPct(check(148_213_949, 142_506_025))).toBeCloseTo(4.0, 1);
+    expect(breakevenCheckGapPct(check(15_403_152, 60_037_044))).toBeCloseTo(-74.3, 1);
+    expect(breakevenCheckGapPct(check(1, 0))).toBeNull();
+    expect(breakevenCheckGapPct(null)).toBeNull();
+    expect(breakevenCheckGapPct(undefined)).toBeNull();
+  });
+
+  it("lệch trong ngưỡng 25% (sai số thường của hai cách đếm: +4,0 / +4,7 / +8,8%) → ổn", () => {
+    expect(breakevenCheckProblem(check(148_213_949, 142_506_025))).toBe("");
+    expect(breakevenCheckProblem(check(90_460_650, 83_133_721))).toBe("");
+    expect(breakevenCheckProblem(check(75, 100))).toBe(""); // đúng bằng ngưỡng vẫn ổn
+    expect(breakevenCheckProblem(null)).toBe("");
+    expect(breakevenCheckProblem(check(5, 0))).toBe("");
+  });
+
+  it("Hubsell THIẾU doanh thu (dòng đơn chưa nối đúng lá) → lý do nêu % và hai con số, hướng về phía Hubsell", () => {
+    const why = breakevenCheckProblem(check(15_403_152, 60_037_044));
+    expect(why).toContain("thấp hơn TikTok báo 74%");
+    expect(why).toContain("15.403.152đ");
+    expect(why).toContain("60.037.044đ");
+    expect(why).toContain("chưa nối đúng sản phẩm");
+    expect(why).toContain("chưa tin được");
+  });
+
+  it("Hubsell THỪA doanh thu (mã dùng chung kéo đơn sản phẩm khác) → lý do nói đúng chiều", () => {
+    const why = breakevenCheckProblem(check(140, 100));
+    expect(why).toContain("cao hơn TikTok báo 40%");
+    expect(why).toContain("sản phẩm khác");
+  });
+
+  it("ngưỡng là hằng công khai để nơi khác không tự đặt số riêng", () => {
+    expect(TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT).toBe(25);
   });
   it("khớp dấu với so sánh ROI thực ↔ hòa vốn của toTiktokBreakeven", () => {
     const be = toTiktokBreakeven(

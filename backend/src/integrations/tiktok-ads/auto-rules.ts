@@ -185,6 +185,8 @@ export interface BreakevenInput {
   source: "campaign" | "shop" | "product" | null;
   orders: number;
   costCoveragePct: number | null;
+  /** Tự kiểm mẫu số lệch quá ngưỡng (lib/tiktok-breakeven breakevenCheckProblem); "" / bỏ trống = ổn. */
+  checkProblem?: string;
 }
 
 export interface HardLevel {
@@ -207,6 +209,8 @@ export function breakevenUnusableReason(be: BreakevenInput | null): string {
   if (be.costCoveragePct == null || be.costCoveragePct < BREAKEVEN_MIN_COVERAGE_PCT) {
     return `mới ${be.costCoveragePct ?? 0}% doanh thu có giá vốn (cần từ ${BREAKEVEN_MIN_COVERAGE_PCT}%)`;
   }
+  // Cây sản phẩm Hubsell dựng cho chiến dịch lệch sàn (18/10/2026, bất biến B6 docs/MO-HINH-CAY-SAN-PHAM-SAN.md).
+  if (be.checkProblem) return be.checkProblem;
   return "";
 }
 

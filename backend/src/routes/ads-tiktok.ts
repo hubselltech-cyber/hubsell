@@ -116,17 +116,26 @@ function parseDays(raw: unknown): number {
 /** ROI hòa vốn gửi cho UI (số làm tròn ở FE). null = gian chưa tính được gì. */
 function breakevenForUi(b: TiktokBreakeven | undefined | null) {
   if (!b) return null;
+  // Tự kiểm lệch quá ngưỡng → KHÔNG trả số ra ngoài (web lẫn mobile đều hiện "—" / "Chưa tin được"), chỉ trả lý do
+  // (Lát 0, 18/10/2026 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 5).
+  const problem = b.checkProblem || null;
   return {
-    roi: b.breakevenRoi,
-    margin: b.margin,
-    negativeMargin: b.negativeMargin,
+    roi: problem ? null : b.breakevenRoi,
+    margin: problem ? null : b.margin,
+    negativeMargin: problem ? false : b.negativeMargin,
     source: b.source,
     orders: b.orders,
     cancelledOrders: b.cancelledOrders,
     pendingOrders: b.pendingOrders,
     costCoveragePct: b.costCoveragePct,
     check: b.check,
+    problem,
   };
+}
+
+/** Biên lãi để tính sàn nấc hạ ROI (loadStepChecks) — không dùng biên lãi chưa tin được. */
+function trustedMargin(b: TiktokBreakeven | undefined | null): number | null | undefined {
+  return b?.checkProblem ? null : b?.margin;
 }
 
 async function ownedTiktokChannels(ownerId: string) {
@@ -354,7 +363,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         roasTargetChangedAt: c.roasTargetChangedAt,
         roasTargetPrev: c.roasTargetPrev != null ? Number(c.roasTargetPrev) : null,
       })),
-      (id) => breakeven?.byCampaignRowId.get(id)?.margin
+      (id) => trustedMargin(breakeven?.byCampaignRowId.get(id))
     );
 
     // Số ngày trọn chiến dịch đã có số — ca "không ra đơn" (15/10/2026).
@@ -593,7 +602,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
             roasTargetPrev: campaign.roasTargetPrev != null ? Number(campaign.roasTargetPrev) : null,
           },
         ],
-        () => campaignBreakeven?.margin
+        () => trustedMargin(campaignBreakeven)
       );
       // Chi tiêu từng ngày của chiến dịch trong khoảng xem (đã có trong DB từ lượt đồng bộ) → % ngân sách ngày đang dùng.
       const perfDays = await prisma.adsCampaignDailyPerf.findMany({

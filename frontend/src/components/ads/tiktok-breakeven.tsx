@@ -22,7 +22,11 @@ const pct = (x: number) => `${(x * 100).toLocaleString("vi-VN", { maximumFractio
 /** Các căn cứ của con số hòa vốn — mỗi ý một dòng. */
 export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
   const out: string[] = [];
-  if (b.negativeMargin && b.margin != null) {
+  if (b.problem) {
+    // Tự kiểm lệch quá ngưỡng (18/10): backend không trả số; nói rõ vì sao và rằng Hubsell đang sửa phía mình, không phải khách.
+    out.push(`Chưa tin được: ${b.problem}`);
+    out.push("Hubsell đang rà lại cách nối đơn hàng với sản phẩm của chiến dịch — không cần khách làm gì; có số đáng tin sẽ hiện lại");
+  } else if (b.negativeMargin && b.margin != null) {
     out.push(`Bán đang lỗ ${pct(Math.abs(b.margin))} trên doanh thu TRƯỚC cả quảng cáo — ROI nào cũng lỗ`);
     out.push("Xem lại giá bán, giá vốn và phí sàn của sản phẩm trước khi chạy tiếp");
   } else if (b.roi != null && b.margin != null) {
@@ -62,7 +66,7 @@ export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
 
 export function TiktokBreakevenValue({ breakeven, className }: { breakeven: TiktokAdsBreakeven | null; className?: string }) {
   if (!breakeven) return <span className={cn("text-slate-400", className)}>—</span>;
-  const label = breakeven.negativeMargin ? "Lỗ sẵn" : formatRoi(breakeven.roi);
+  const label = breakeven.problem ? "Chưa tin được" : breakeven.negativeMargin ? "Lỗ sẵn" : formatRoi(breakeven.roi);
   return (
     <Popover>
       <PopoverTrigger
@@ -74,7 +78,13 @@ export function TiktokBreakevenValue({ breakeven, className }: { breakeven: Tikt
           className={cn(
             "tabular-nums underline decoration-dotted underline-offset-2",
             // Mốc hòa vốn là con số để SO — xanh đậm cho nổi giữa dòng chữ xám (anh Trung 18/09); lỗ sẵn đỏ, chưa có số thì xám.
-            breakeven.negativeMargin ? "text-red-500" : breakeven.roi == null ? "text-slate-400" : "text-emerald-700",
+            breakeven.problem
+              ? "text-amber-600"
+              : breakeven.negativeMargin
+                ? "text-red-500"
+                : breakeven.roi == null
+                  ? "text-slate-400"
+                  : "text-emerald-700",
             className
           )}
         >

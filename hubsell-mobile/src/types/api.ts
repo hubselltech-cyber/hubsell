@@ -718,6 +718,8 @@ export interface TiktokAdsBreakeven {
   cancelledOrders: number;
   pendingOrders: number;
   costCoveragePct: number | null;
+  /** Tự kiểm lệch quá ngưỡng → backend đã xóa roi/margin, đây là lý do (18/10/2026). Bỏ trống / null = ổn. */
+  problem?: string | null;
 }
 
 export type TiktokAdsAdviceKind =

@@ -381,8 +381,14 @@ Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không 
   soát / mới có số ước tính / đang hoàn → để ngoài, đếm `pendingOrders`. Cửa sổ **60 ngày** theo ngày tạo đơn
   (`TIKTOK_MARGIN_WINDOW_DAYS`, mặc định chọn cho đủ mẫu — KHÔNG phải số của sàn), `fetchPnlOrdersAll` phanh 8.000 đơn.
 
-- **Cộng ngược phí GMV Max**: sàn trừ quảng cáo ngay trong quyết toán đơn (`TiktokOrderSettlement.feeGmvMax`, có dấu,
-  âm = bị trừ; mapper dồn vào `order.serviceFee`) → `lãi trước ads = profit − feeGmvMax`.
+- **Cộng ngược phí GMV Max** KHI sàn trừ quảng cáo trong quyết toán đơn (`TiktokOrderSettlement.feeGmvMax`, có dấu,
+  âm = bị trừ; mapper dồn vào `order.serviceFee`) → `lãi trước ads = profit − feeGmvMax`. Gian trả quảng cáo bằng số dư
+  tài khoản quảng cáo (and.not.or: kiểm 26/09, feeGmvMax = 0 ở 692/692 đơn) thì khoản này = 0, lợi nhuận đơn vốn đã là
+  lãi trước quảng cáo — phép cộng ngược không đổi gì. Đính chính 18/10 (trước đó chú thích viết như thể sàn luôn trừ).
+- ★ **18/10/2026 — ĐỐI CHIẾU LỆCH QUÁ 25% → HÒA VỐN "CHƯA TIN ĐƯỢC" (Lát 0 của [MO-HINH-CAY-SAN-PHAM-SAN.md](MO-HINH-CAY-SAN-PHAM-SAN.md))**:
+  TC025 NEW (and.not.or) báo 8,90 trong khi đủ đơn là 7,10 vì 193 dòng đơn cũ mang mã thô `TC025-XAM` rơi khỏi tập SKU
+  sau bản đổi đuôi 15/10 — dòng đối chiếu bắt được (−74%). `breakevenCheckProblem` → `TiktokBreakeven.checkProblem`;
+  luật tự động / nhận định / lãi ước tính / sàn nấc hạ đều coi là chưa có hòa vốn; API xóa `roi`/`margin`, trả `problem`.
 - **Mẫu số theo định nghĩa của TikTok**: gross_revenue đếm đơn ĐẶT, không rút đơn hủy/hoàn → đơn HỦY góp doanh thu,
   0 đồng lãi (không lấy "lỗ ảo" bằng giá vốn của dòng P&L). ★ GIẢ ĐỊNH chưa kiểm được bằng số prod: nếu TikTok thật ra
   có rút đơn hủy thì hòa vốn đang bị nâng cao hơn thực (sai về phía dè dặt). Cách kiểm đã cài sẵn: ô căn cứ hiện

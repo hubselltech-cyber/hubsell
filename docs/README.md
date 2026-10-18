@@ -7,6 +7,7 @@
 - [KIEN-TRUC-QUY-MO-TRIEU-DON.md](KIEN-TRUC-QUY-MO-TRIEU-DON.md) — gốc 5 giai đoạn tới 1 triệu đơn/ngày
 - [HANG-DOI-BEN.md](HANG-DOI-BEN.md) — giai đoạn 2: hàng đợi bền pg-boss, webhook, đẩy tồn
 - [SO-CAI-DON.md](SO-CAI-DON.md) — giai đoạn 1: sổ cái đơn, mọi báo cáo đọc sổ
+- [MO-HINH-CAY-SAN-PHAM-SAN.md](MO-HINH-CAY-SAN-PHAM-SAN.md) — hợp đồng cây sản phẩm sàn (SPU → lá → dòng đơn), danh tính theo id, 5 lát sửa (18/10/2026)
 - [DONG-BO-GIAI-DOAN-3.md](DONG-BO-GIAI-DOAN-3.md) — giai đoạn 3: hợp đồng đọc sàn, mốc nước quét đơn
 - [QUANG-CAO-GOM-TRONG-DATABASE.md](QUANG-CAO-GOM-TRONG-DATABASE.md) — gom số quảng cáo bằng SQL
 - [BANG-THONG-WORKER-CO-VIEC-THI-GOI.md](BANG-THONG-WORKER-CO-VIEC-THI-GOI.md) + thư mục `bang-thong-worker-do-2026-10-12/` — đo và cắt băng thông worker

@@ -2983,6 +2983,11 @@ export interface TiktokAdsBreakeven {
   costCoveragePct: number | null;
   /** Tự kiểm mẫu số: doanh thu MỌI đơn đặt Hubsell thấy vs TikTok báo, cùng SKU, cùng khoảng ngày (chỉ khi source = campaign). */
   check: { revenuePlaced: number; tiktokGmv: number; from: string; to: string } | null;
+  /**
+   * Tự kiểm lệch quá ngưỡng → hòa vốn CHƯA TIN ĐƯỢC: backend đã xóa roi/margin, đây là lý do để hiện cho khách
+   * (18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md). null = ổn.
+   */
+  problem: string | null;
 }
 
 export const TIKTOK_AUTO_MODE_LABEL: Record<TiktokAdsAutoMode, string> = {
