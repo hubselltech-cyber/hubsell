@@ -83,7 +83,7 @@ export function welcomeEmailHtml(input: {
   fullName: string;
   trialDays: number | null;
   /** "google" = tài khoản tạo bằng Google, chưa có mật khẩu → chỉ cho app điện thoại (18/10/2026). */
-  source?: "form" | "google";
+  source?: "form" | "google" | "apple";
 }): string {
   const trial =
     input.trialDays && input.trialDays > 0
@@ -120,7 +120,7 @@ export function sendWelcomeMail(user: {
   id: string;
   email: string | null;
   fullName: string;
-  source: "form" | "google";
+  source: "form" | "google" | "apple";
   trialDays?: number | null;
 }): void {
   void safeSend("welcome", user.email, {
@@ -134,7 +134,7 @@ export function sendWelcomeMail(user: {
   });
   void mailHq({
     subject: `[Hubsell] Khách mới: ${user.fullName}`,
-    html: `<p>Vừa có tài khoản chủ shop mới${user.source === "google" ? " (đăng ký bằng Google)" : ""}.</p><p>Khách: ${escapeHtml(user.fullName)} (${escapeHtml(user.email ?? "—")})<br/>Mã: ${user.id}</p><p><a href="${FRONTEND_URL}/admin/customers">Xem ở HQ</a></p>`,
+    html: `<p>Vừa có tài khoản chủ shop mới${user.source === "google" ? " (đăng ký bằng Google)" : user.source === "apple" ? " (đăng ký bằng Apple)" : ""}.</p><p>Khách: ${escapeHtml(user.fullName)} (${escapeHtml(user.email ?? "—")})<br/>Mã: ${user.id}</p><p><a href="${FRONTEND_URL}/admin/customers">Xem ở HQ</a></p>`,
   });
 }
 

@@ -50,6 +50,10 @@ export interface AuthUser {
   permissions: string[];
   isPlatformAdmin?: boolean;
   platformWorkspace?: boolean;
+  /** false = tài khoản Google/Apple chưa từng đặt mật khẩu (chỉ có sau /me). */
+  hasPassword?: boolean;
+  /** Đã liên kết đăng nhập Google / Apple (chỉ có sau /me, bản 1.3.0). */
+  linked?: { google: boolean; apple: boolean };
 }
 
 export interface LoginResponse {

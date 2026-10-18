@@ -20,12 +20,16 @@ export const PRIVACY_URL = "https://hubsell.vn/privacy";
 export type TermsAcceptanceSource =
   | "register_form" // tick ô đồng ý trên form Tạo tài khoản
   | "google_register" // tick ô rồi bấm "Tiếp tục với Google" ở form đăng ký
-  | "google_login"; // bấm Google ở form ĐĂNG NHẬP, tài khoản chưa tồn tại → dòng "Bằng việc tiếp tục..." dưới nút
+  | "google_login" // bấm Google ở form ĐĂNG NHẬP, tài khoản chưa tồn tại → dòng "Bằng việc tiếp tục..." dưới nút
+  | "google_app" // app mobile 1.3.0: nút "Tiếp tục với Google", đồng ý ngầm qua dòng chữ dưới nút
+  | "apple_app"; // app mobile 1.3.0: nút "Đăng nhập bằng Apple"
 
 export const TERMS_SOURCES: readonly TermsAcceptanceSource[] = [
   "register_form",
   "google_register",
   "google_login",
+  "google_app",
+  "apple_app",
 ];
 
 export function isTermsSource(v: unknown): v is TermsAcceptanceSource {

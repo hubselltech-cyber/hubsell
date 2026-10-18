@@ -103,4 +103,6 @@ Migration: cột NULL + chỉ mục unique, khóa có thử lại (bẫy deadloc
 
 ## 9. Trạng thái
 
-- 18/10 đêm: thiết kế xong, chờ 1.2.1 nộp xong rồi code backend (mục 7 bước 1).
+- 18/10 đêm: thiết kế xong; 1.2.1 đã nộp 2 kho.
+- 18/10 ~23:20: **backend xong** (mục 7 bước 1) — `services/social-login.ts`, 2 route, migration, test 12 ca; chưa commit, DB dev chưa áp (classifier chặn), prod áp khi deploy. 
+- 18/10 ~23:40: **mobile xong phần code** (bước 2): social.ts + 2 nút + AccountScreen; app.json extra client id RỖNG → nút Google tự ẩn, nút Apple hiện trên iOS. Chờ C1–C5 (mục 6) rồi build thử TestFlight/APK (bước 3).

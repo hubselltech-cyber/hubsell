@@ -207,6 +207,11 @@ model User {
   avatar              String?
   /// `sub` Google trả về khi đăng nhập Google — khoá liên kết tài khoản OAuth.
   googleId            String?   @unique
+  /// `sub` Apple (Sign in with Apple trong app, 1.3.0) — ổn định theo Team ID.
+  appleUserId         String?   @unique
+  /// refresh_token Apple MÃ HÓA (lib/secret-box, aad "apple-refresh:<sub>") —
+  /// chỉ để gọi /auth/revoke khi khách xóa tài khoản (Apple 5.1.1(v)).
+  appleRefreshTokenEnc String?
   /// Mua gói trong app iOS (10/10/2026): UUID gửi cho StoreKit làm
   /// appAccountToken khi mua — giao dịch Apple trả về mang token này nên
   /// backend biết khoản tiền thuộc CHỦ SHOP nào mà không tin app. Sinh lười

@@ -21,7 +21,8 @@
           "vi"
         ],
         "CFBundleDevelopmentRegion": "vi"
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "vn.hubsell.app",
@@ -80,7 +81,14 @@
           "speechRecognitionPermission": "Hubsell dùng nhận dạng giọng nói của máy để chuyển câu hỏi của bạn thành chữ."
         }
       ],
-      "expo-iap"
+      "expo-iap",
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.CHUA-CO-IOS-CLIENT-ID"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -89,7 +97,9 @@
     "extra": {
       "eas": {
         "projectId": "3182c4de-dbee-40e8-8728-b7149848673f"
-      }
+      },
+      "googleIosClientId": "",
+      "googleWebClientId": ""
     }
   }
 }

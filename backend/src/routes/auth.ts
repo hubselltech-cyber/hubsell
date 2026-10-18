@@ -26,6 +26,16 @@ import { findReferrerByCode } from "../services/referral-wallet";
 import { ensureDefaultSubscription, getDefaultTrialDays } from "../services/subscription-service";
 import { sendPasswordChangedMail, sendWelcomeMail } from "../services/customer-mails";
 import { deleteOwnAccount } from "../services/account-deletion";
+import {
+  SocialLoginError,
+  isAppleSignInConfigured,
+  isGoogleAppConfigured,
+  exchangeAppleAuthorizationCode,
+  upsertSocialUser,
+  verifyAppleIdentityToken,
+  verifyGoogleIdToken,
+  type SocialLoginErrorCode,
+} from "../services/social-login";
 import { generateUsername, normalizeUsername } from "../lib/username";
 import { PRIVACY_VERSION, TERMS_VERSION, type TermsAcceptanceSource } from "../lib/legal";
 
@@ -48,6 +58,25 @@ function termsAcceptanceData(req: Request, userId: string, source: TermsAcceptan
     ip: clientIp(req),
     userAgent: String(req.headers["user-agent"] ?? "").slice(0, 512) || null,
   };
+}
+
+/** Bằng chứng đồng ý cho lối Google/Apple (services/social-login tự ghi TermsAcceptance). */
+function termsMeta(req: Request) {
+  return {
+    ip: clientIp(req),
+    userAgent: String(req.headers["user-agent"] ?? "").slice(0, 512) || null,
+  };
+}
+
+/** Việc sau khi tạo chủ shop mới qua Google/Apple: gói mặc định + thư chào mừng (không chặn phản hồi). */
+function afterSocialSignup(
+  user: { id: string; email: string | null; fullName: string },
+  source: "google" | "apple"
+) {
+  void ensureDefaultSubscription(user.id);
+  void getDefaultTrialDays().then((trialDays) =>
+    sendWelcomeMail({ id: user.id, email: user.email, fullName: user.fullName, source, trialDays })
+  );
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -394,7 +423,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
     const [row, channelCount] = await Promise.all([
       prisma.user.findUnique({
         where: { id: req.userId! },
-        select: { ...PUBLIC_USER_SELECT, createdAt: true, passwordSetAt: true },
+        select: { ...PUBLIC_USER_SELECT, createdAt: true, passwordSetAt: true, googleId: true, appleUserId: true },
       }),
       prisma.channel.count({ where: { userId: req.ownerId! } }),
     ]);
@@ -402,11 +431,13 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
       res.status(401).json({ error: "Tài khoản không tồn tại" });
       return;
     }
-    const { passwordSetAt, ...user } = row;
+    const { passwordSetAt, googleId, appleUserId, ...user } = row;
     res.json({
       user: {
         ...user,
         hasPassword: passwordSetAt !== null,
+        // Đã liên kết đăng nhập Google / Apple (1.3.0) — Cài đặt hiện trạng thái.
+        linked: { google: googleId !== null, apple: appleUserId !== null },
         platformWorkspace: await isPlatformWorkspace(user),
       },
       hasChannels: channelCount > 0,
@@ -473,12 +504,13 @@ router.post("/change-password", requireAuth, async (req: AuthRequest, res, next)
 // token đang cầm hết hiệu lực; chi tiết xem services/account-deletion.ts.
 router.post("/me/delete", requireAuth, async (req: AuthRequest, res, next) => {
   try {
+    // Mật khẩu tùy chọn: tài khoản Google/Apple chưa đặt mật khẩu (hasPassword=false)
+    // không có gì để gõ — service tự quyết theo passwordSetAt.
     const { password } = req.body ?? {};
-    if (typeof password !== "string" || !password) {
-      res.status(400).json({ error: "Nhập mật khẩu hiện tại để xác nhận xóa tài khoản" });
-      return;
-    }
-    const result = await deleteOwnAccount(req.userId!, password);
+    const result = await deleteOwnAccount(
+      req.userId!,
+      typeof password === "string" && password ? password : null
+    );
     if (!result.ok) {
       res.status(result.status).json({ error: result.error });
       return;
@@ -764,48 +796,21 @@ router.get("/google/callback", async (req, res) => {
       return;
     }
 
-    let user = await prisma.user.findUnique({ where: { googleId: profile.sub } });
-    if (!user) {
-      // Email đã có tài khoản (đăng ký thường trước đó) → LIÊN KẾT googleId,
-      // lần sau bấm Google là vào thẳng.
-      const byEmail = await prisma.user.findUnique({ where: { email: profile.email } });
-      if (byEmail) {
-        user = await prisma.user.update({
-          where: { id: byEmail.id },
-          data: { googleId: profile.sub },
-        });
-      } else {
-        // Tài khoản MỚI qua Google: ghi log đồng ý cùng transaction. Nguồn
-        // phân biệt tick tay (form đăng ký) với đồng ý ngầm (dòng "Bằng việc
-        // tiếp tục..." dưới nút Google ở form đăng nhập).
-        const source: TermsAcceptanceSource =
-          stateInfo.entry === "register" ? "google_register" : "google_login";
-        const username = await generateUsername(profile.email);
-        const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
-        user = await prisma.$transaction(async (tx) => {
-          const created = await tx.user.create({
-            data: {
-              email: profile.email,
-              username,
-              googleId: profile.sub,
-              fullName: profile.name,
-              passwordHash,
-              role: "ADMIN",
-            },
-          });
-          await tx.termsAcceptance.create({
-            data: termsAcceptanceData(req, created.id, source),
-          });
-          return created;
-        });
-        // Chủ shop mới qua Google cũng nhận gói mặc định (Starter — dùng thử 14 ngày).
-        void ensureDefaultSubscription(user.id);
-        const created = user;
-        void getDefaultTrialDays().then((trialDays) =>
-          sendWelcomeMail({ id: created.id, email: created.email, fullName: created.fullName, source: "google", trialDays })
-        );
-      }
-    }
+    // Lõi tìm → liên kết → tạo dùng chung với app mobile (services/social-login).
+    const { user, created } = await upsertSocialUser(
+      {
+        provider: "google",
+        providerId: profile.sub,
+        email: profile.email,
+        emailVerified: profile.emailVerified,
+        name: profile.name,
+      },
+      // Nguồn phân biệt tick tay (form đăng ký) với đồng ý ngầm (dòng "Bằng việc
+      // tiếp tục..." dưới nút Google ở form đăng nhập).
+      stateInfo.entry === "register" ? "google_register" : "google_login",
+      termsMeta(req)
+    );
+    if (created) afterSocialSignup(user, "google");
 
     res.redirect(
       `${FRONTEND_BASE_URL}/login?${new URLSearchParams({
@@ -816,6 +821,123 @@ router.get("/google/callback", async (req, res) => {
   } catch (err) {
     console.error("[google/callback] Lỗi xử lý callback:", err);
     fail((err as Error).message);
+  }
+});
+
+// ============================================================
+// ĐĂNG NHẬP XÃ HỘI TỪ APP MOBILE (bản 1.3.0) — docs/DANG-NHAP-GOOGLE-APPLE-TRONG-APP.md
+// App lấy token bằng SDK native rồi gửi lên; backend kiểm chữ ký JWKS, tìm →
+// liên kết → tạo, phát JWT Hubsell như /login. Rate-limit theo IP như /login.
+// ============================================================
+
+function socialErrorStatus(code: SocialLoginErrorCode): number {
+  switch (code) {
+    case "NOT_CONFIGURED":
+      return 503;
+    case "APPLE_NO_EMAIL":
+      return 409;
+    default:
+      return 401;
+  }
+}
+
+/** Thân phản hồi giống /login — app persistSession cùng một kiểu. */
+async function socialLoginResponse(userId: string) {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: PUBLIC_USER_SELECT,
+  });
+  return {
+    token: signToken(user.id),
+    user: { ...user, platformWorkspace: await isPlatformWorkspace(user) },
+  };
+}
+
+const SOCIAL_RATE_LIMIT_MSG = "Thử đăng nhập quá nhiều lần. Vui lòng thử lại sau 15 phút.";
+
+// POST /api/auth/social/google — Body: { idToken }
+router.post("/social/google", async (req, res, next) => {
+  try {
+    if (!isGoogleAppConfigured()) {
+      res.status(503).json({
+        error: "Đăng nhập Google trong app chưa được bật (thiếu GOOGLE_IOS_CLIENT_ID / GOOGLE_ANDROID_CLIENT_ID).",
+      });
+      return;
+    }
+    const { idToken } = req.body ?? {};
+    if (typeof idToken !== "string" || !idToken) {
+      res.status(400).json({ error: "Thiếu idToken" });
+      return;
+    }
+    const failKey = loginFailKey(req, "social:google");
+    if (isLoginBlocked(failKey)) {
+      res.status(429).json({ error: SOCIAL_RATE_LIMIT_MSG });
+      return;
+    }
+    try {
+      const profile = await verifyGoogleIdToken(idToken);
+      const { user, created } = await upsertSocialUser(profile, "google_app", termsMeta(req));
+      if (created) afterSocialSignup(user, "google");
+      loginFails.delete(failKey);
+      res.json(await socialLoginResponse(user.id));
+    } catch (err) {
+      if (err instanceof SocialLoginError) {
+        if (err.code !== "NOT_CONFIGURED") recordLoginFail(failKey);
+        res.status(socialErrorStatus(err.code)).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/social/apple — Body: { identityToken, authorizationCode?, fullName?: { givenName, familyName } }
+// fullName chỉ có ở lần đăng nhập đầu (Apple không gửi lại) — app phải gửi ngay lần đó.
+router.post("/social/apple", async (req, res, next) => {
+  try {
+    if (!isAppleSignInConfigured()) {
+      res.status(503).json({ error: "Đăng nhập Apple chưa được bật." });
+      return;
+    }
+    const { identityToken, authorizationCode, fullName } = req.body ?? {};
+    if (typeof identityToken !== "string" || !identityToken) {
+      res.status(400).json({ error: "Thiếu identityToken" });
+      return;
+    }
+    const failKey = loginFailKey(req, "social:apple");
+    if (isLoginBlocked(failKey)) {
+      res.status(429).json({ error: SOCIAL_RATE_LIMIT_MSG });
+      return;
+    }
+    const name =
+      fullName && typeof fullName === "object"
+        ? { givenName: fullName.givenName, familyName: fullName.familyName }
+        : null;
+    try {
+      const profile = await verifyAppleIdentityToken(identityToken, name);
+      // refresh_token chỉ để thu hồi khi xóa tài khoản; thiếu key .p8 → null, không chặn.
+      const appleRefreshToken =
+        typeof authorizationCode === "string" && authorizationCode
+          ? await exchangeAppleAuthorizationCode(authorizationCode)
+          : null;
+      const { user, created } = await upsertSocialUser(profile, "apple_app", termsMeta(req), {
+        appleRefreshToken,
+      });
+      if (created) afterSocialSignup(user, "apple");
+      loginFails.delete(failKey);
+      res.json(await socialLoginResponse(user.id));
+    } catch (err) {
+      if (err instanceof SocialLoginError) {
+        if (err.code === "INVALID_TOKEN") recordLoginFail(failKey);
+        res.status(socialErrorStatus(err.code)).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) {
+    next(err);
   }
 });
 

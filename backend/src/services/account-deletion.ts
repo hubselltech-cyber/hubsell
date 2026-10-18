@@ -19,6 +19,8 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
+import { decryptSecret } from "../lib/secret-box";
+import { revokeAppleToken } from "./social-login";
 
 /** Họ tên thay thế sau khi ẩn danh — nhật ký kho/đơn còn tên người làm thì hiện chữ này. */
 export const DELETED_USER_NAME = "Tài khoản đã xóa";
@@ -33,6 +35,8 @@ export function anonymizedUserData(now: Date) {
     fullName: DELETED_USER_NAME,
     avatar: null,
     googleId: null,
+    appleUserId: null,
+    appleRefreshTokenEnc: null,
     // Hash của một chuỗi ngẫu nhiên không ai biết → không mật khẩu nào khớp.
     passwordHash: bcrypt.hashSync(crypto.randomBytes(32).toString("hex"), 4),
     passwordSetAt: null,
@@ -56,20 +60,44 @@ export type DeleteAccountResult =
 /**
  * Xóa tài khoản của CHÍNH người đang đăng nhập, đòi mật khẩu hiện tại để
  * chống người khác cầm máy mở khóa bấm nhầm.
+ * NGOẠI LỆ (1.3.0): tài khoản Google/Apple chưa từng đặt mật khẩu
+ * (passwordSetAt NULL) không có mật khẩu để gõ → bỏ bước này, app đã có hộp
+ * xác nhận riêng. Tài khoản Apple → thu hồi refresh_token (Apple 5.1.1(v)),
+ * lỗi mạng không chặn xóa.
  */
 export async function deleteOwnAccount(
   userId: string,
-  password: string
+  password: string | null
 ): Promise<DeleteAccountResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, ownerId: true, passwordHash: true, deletedAt: true },
+    select: {
+      id: true,
+      ownerId: true,
+      passwordHash: true,
+      passwordSetAt: true,
+      deletedAt: true,
+      appleUserId: true,
+      appleRefreshTokenEnc: true,
+    },
   });
   if (!user || user.deletedAt) {
     return { ok: false, status: 404, error: "Tài khoản không còn tồn tại" };
   }
-  if (!(await bcrypt.compare(password, user.passwordHash))) {
-    return { ok: false, status: 401, error: "Mật khẩu không đúng" };
+  if (user.passwordSetAt !== null) {
+    if (!password) {
+      return { ok: false, status: 401, error: "Nhập mật khẩu hiện tại để xác nhận xóa tài khoản" };
+    }
+    if (!(await bcrypt.compare(password, user.passwordHash))) {
+      return { ok: false, status: 401, error: "Mật khẩu không đúng" };
+    }
+  }
+  if (user.appleUserId && user.appleRefreshTokenEnc) {
+    const refresh = decryptSecret(user.appleRefreshTokenEnc, `apple-refresh:${user.appleUserId}`);
+    if (refresh) {
+      const ok = await revokeAppleToken(refresh);
+      console.log(`[account-deletion] apple revoke user=${user.id} ok=${ok}`);
+    }
   }
 
   const now = new Date();

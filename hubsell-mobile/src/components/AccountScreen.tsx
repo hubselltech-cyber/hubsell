@@ -133,10 +133,17 @@ export function AccountScreen() {
   const phone = displayPhone(user.phone);
   const planInfo = plan ? planSummary(plan) : null;
 
+  // false = tài khoản Google/Apple chưa từng đặt mật khẩu (1.3.0): ô "hiện tại"
+  // không có gì để gõ → ẩn, nút thành "Đặt mật khẩu"; xóa tài khoản cũng không đòi.
+  const hasPassword = user.hasPassword !== false;
+
   const submit = async () => {
     setMessage(null);
-    if (!current || !next) {
-      setMessage({ ok: false, text: "Điền đủ mật khẩu hiện tại và mật khẩu mới" });
+    if ((hasPassword && !current) || !next) {
+      setMessage({
+        ok: false,
+        text: hasPassword ? "Điền đủ mật khẩu hiện tại và mật khẩu mới" : "Điền mật khẩu mới",
+      });
       return;
     }
     if (next !== confirm) {
@@ -145,8 +152,8 @@ export function AccountScreen() {
     }
     setBusy(true);
     try {
-      await changePassword(current, next);
-      setMessage({ ok: true, text: "Đã đổi mật khẩu thành công" });
+      await changePassword(hasPassword ? current : "", next);
+      setMessage({ ok: true, text: hasPassword ? "Đã đổi mật khẩu thành công" : "Đã đặt mật khẩu — từ giờ đăng nhập được bằng email + mật khẩu" });
       setCurrent("");
       setNext("");
       setConfirm("");
@@ -167,7 +174,7 @@ export function AccountScreen() {
     setDeleteBusy(true);
     setDeleteError("");
     try {
-      await deleteAccount(deletePassword);
+      await deleteAccount(hasPassword ? deletePassword : null);
       await signOut();
       router.replace("/login");
       Alert.alert(
@@ -182,7 +189,7 @@ export function AccountScreen() {
   };
   const confirmDelete = () => {
     setDeleteError("");
-    if (!deletePassword) {
+    if (hasPassword && !deletePassword) {
       setDeleteError("Nhập mật khẩu hiện tại để xác nhận");
       return;
     }
@@ -305,16 +312,23 @@ export function AccountScreen() {
           style={{ elevation: 2 }}
         >
           <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
-            Đổi mật khẩu
+            {hasPassword ? "Đổi mật khẩu" : "Đặt mật khẩu"}
           </Text>
-          <TextInput
-            className={`mb-2 ${INPUT_CLS}`}
-            placeholder="Mật khẩu hiện tại"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            value={current}
-            onChangeText={setCurrent}
-          />
+          {!hasPassword && (
+            <Text className="mb-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              Bạn đang đăng nhập bằng Google / Apple. Đặt thêm mật khẩu để vào được bằng email khi cần.
+            </Text>
+          )}
+          {hasPassword && (
+            <TextInput
+              className={`mb-2 ${INPUT_CLS}`}
+              placeholder="Mật khẩu hiện tại"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={current}
+              onChangeText={setCurrent}
+            />
+          )}
           <TextInput
             className={`mb-2 ${INPUT_CLS}`}
             placeholder="Mật khẩu mới (tối thiểu 8 ký tự)"
@@ -346,7 +360,9 @@ export function AccountScreen() {
             {busy ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text className="text-sm font-semibold text-white">Đổi mật khẩu</Text>
+              <Text className="text-sm font-semibold text-white">
+                {hasPassword ? "Đổi mật khẩu" : "Đặt mật khẩu"}
+              </Text>
             )}
           </Pressable>
         </View>
@@ -364,14 +380,16 @@ export function AccountScreen() {
             Dữ liệu còn lại xóa hẳn trong 30 ngày; chứng từ kế toán giữ theo luật. Không hoàn
             tác được.
           </Text>
-          <TextInput
-            className={`mb-3 ${INPUT_CLS}`}
-            placeholder="Mật khẩu hiện tại để xác nhận"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            value={deletePassword}
-            onChangeText={setDeletePassword}
-          />
+          {hasPassword && (
+            <TextInput
+              className={`mb-3 ${INPUT_CLS}`}
+              placeholder="Mật khẩu hiện tại để xác nhận"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+            />
+          )}
           {deleteError ? <Text className="mb-2 text-xs text-red-500">{deleteError}</Text> : null}
           <Pressable
             className="items-center rounded-xl border border-red-300 py-3 active:opacity-80 dark:border-red-800"
