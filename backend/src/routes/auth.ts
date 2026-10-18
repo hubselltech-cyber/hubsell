@@ -167,7 +167,9 @@ async function isPlatformWorkspace(user: {
 const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000";
 
 // POST /api/auth/register — Đăng ký tài khoản mới.
-// Body: { email, password, fullName, username?, country?, phoneNumber? }
+// Body: { email, password, fullName, username?, country?, phoneNumber?, client? }
+// client="app" = màn Đăng ký trong app mobile (1.3.1) → bằng chứng đồng ý ghi
+// nguồn register_app để tách thống kê với form web; mọi thứ khác giống nhau.
 // Email vẫn BẮT BUỘC (nhận thông báo/thanh toán/reset pass); username là tên
 // đăng nhập thay thế — bỏ trống thì tự sinh từ email. phoneNumber là số TRONG
 // NƯỚC ("0912345678"/"912345678") — server ghép mã vùng theo country thành
@@ -184,7 +186,9 @@ router.post("/register", async (req, res, next) => {
       phoneNumber,
       referralCode,
       acceptTerms,
+      client,
     } = req.body ?? {};
+    const termsSource: TermsAcceptanceSource = client === "app" ? "register_app" : "register_form";
 
     // Chặn ở tầng API chứ không chỉ FE: không có đồng ý thì không có hợp đồng,
     // không có hợp đồng thì không có căn cứ thu phí/khóa gói về sau.
@@ -275,7 +279,7 @@ router.post("/register", async (req, res, next) => {
         select: PUBLIC_USER_SELECT,
       });
       await tx.termsAcceptance.create({
-        data: termsAcceptanceData(req, created.id, "register_form"),
+        data: termsAcceptanceData(req, created.id, termsSource),
       });
       return created;
     });

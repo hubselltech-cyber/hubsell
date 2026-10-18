@@ -115,6 +115,8 @@ export function AccountScreen() {
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  // Thẻ xóa tài khoản chỉ hiện khi bấm dòng chữ nhỏ dưới cùng (1.3.1).
+  const [showDelete, setShowDelete] = useState(false);
 
   // Gói đang dùng — đọc từ PlanContext (một nguồn với dải nhắc Trang chủ);
   // chưa tải được thì chỉ ẩn dòng gói, không chặn cả màn.
@@ -367,54 +369,90 @@ export function AccountScreen() {
           </Pressable>
         </View>
 
-        <View
-          className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
-          style={{ elevation: 2 }}
-        >
-          <Text className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-            Xóa tài khoản
-          </Text>
-          <Text className="mb-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Xóa ngay thông tin cá nhân (tên, email, số điện thoại, ảnh) và khóa đăng nhập.
-            {isOwner ? " Nhân viên trong shop cũng bị khóa, gian hàng ngừng đồng bộ." : ""}{" "}
-            Dữ liệu còn lại xóa hẳn trong 30 ngày; chứng từ kế toán giữ theo luật. Không hoàn
-            tác được.
-          </Text>
-          {hasPassword && (
-            <TextInput
-              className={`mb-3 ${INPUT_CLS}`}
-              placeholder="Mật khẩu hiện tại để xác nhận"
-              placeholderTextColor="#94a3b8"
-              secureTextEntry
-              value={deletePassword}
-              onChangeText={setDeletePassword}
-            />
-          )}
-          {deleteError ? <Text className="mb-2 text-xs text-red-500">{deleteError}</Text> : null}
-          <Pressable
-            className="items-center rounded-xl border border-red-300 py-3 active:opacity-80 dark:border-red-800"
-            onPress={confirmDelete}
-            disabled={deleteBusy}
-            accessibilityRole="button"
-          >
-            {deleteBusy ? (
-              <ActivityIndicator color="#ef4444" size="small" />
-            ) : (
-              <Text className="text-sm font-semibold text-red-500">Xóa tài khoản</Text>
-            )}
-          </Pressable>
-        </View>
-
+        {/* 1.3.1 (anh Trung chốt 18/10, ảnh Salework): Đăng xuất là nút nổi đầy
+            chiều ngang; Xóa tài khoản chỉ còn một dòng chữ nhỏ DƯỚI CÙNG màn,
+            cách xa Đăng xuất để không bấm nhầm (trước đây nút viền đỏ to nằm
+            ngay trên Đăng xuất). Bấm dòng nhỏ → mở thẻ xác nhận + mật khẩu
+            (nếu có) như cũ. Apple 5.1.1(v) chỉ đòi "dễ tìm trong app" — dòng
+            chữ ở mục Tài khoản vẫn đạt. */}
         <Pressable
-          className="flex-row items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white py-3.5 active:opacity-80 dark:border-red-900 dark:bg-slate-900"
+          className="mt-2 flex-row items-center justify-center gap-2 rounded-2xl bg-slate-900 py-3.5 active:opacity-80 dark:bg-slate-700"
+          style={{ elevation: 2 }}
           onPress={async () => {
             await signOut();
             router.replace("/login");
           }}
+          accessibilityRole="button"
         >
-          <Ionicons name="log-out-outline" size={18} color="#ef4444" />
-          <Text className="text-sm font-semibold text-red-500">Đăng xuất</Text>
+          <Ionicons name="log-out-outline" size={18} color="#fff" />
+          <Text className="text-sm font-semibold text-white">Đăng xuất</Text>
         </Pressable>
+
+        {showDelete ? (
+          <View
+            className="mt-8 rounded-2xl border border-red-200 bg-white p-4 dark:border-red-900 dark:bg-slate-900"
+            style={{ elevation: 2 }}
+          >
+            <Text className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Xóa tài khoản
+            </Text>
+            <Text className="mb-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              Xóa ngay thông tin cá nhân (tên, email, số điện thoại, ảnh) và khóa đăng nhập.
+              {isOwner ? " Nhân viên trong shop cũng bị khóa, gian hàng ngừng đồng bộ." : ""}{" "}
+              Dữ liệu còn lại xóa hẳn trong 30 ngày; chứng từ kế toán giữ theo luật. Không hoàn
+              tác được.
+            </Text>
+            {hasPassword && (
+              <TextInput
+                className={`mb-3 ${INPUT_CLS}`}
+                placeholder="Mật khẩu hiện tại để xác nhận"
+                placeholderTextColor="#94a3b8"
+                secureTextEntry
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+              />
+            )}
+            {deleteError ? <Text className="mb-2 text-xs text-red-500">{deleteError}</Text> : null}
+            <View className="flex-row gap-2">
+              <Pressable
+                className="flex-1 items-center rounded-xl border border-slate-200 py-3 active:opacity-80 dark:border-slate-700"
+                onPress={() => {
+                  setShowDelete(false);
+                  setDeleteError("");
+                  setDeletePassword("");
+                }}
+                disabled={deleteBusy}
+                accessibilityRole="button"
+              >
+                <Text className="text-sm font-semibold text-slate-700 dark:text-slate-200">Hủy</Text>
+              </Pressable>
+              <Pressable
+                className="flex-1 items-center rounded-xl bg-red-500 py-3 active:opacity-80"
+                onPress={confirmDelete}
+                disabled={deleteBusy}
+                accessibilityRole="button"
+              >
+                {deleteBusy ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text className="text-sm font-semibold text-white">Xóa tài khoản</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable
+            className="mt-10 self-center px-4 py-2 active:opacity-70"
+            onPress={() => setShowDelete(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Xóa tài khoản"
+          >
+            <Text className="text-xs text-red-400/80 underline dark:text-red-400/70">
+              Xóa tài khoản
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

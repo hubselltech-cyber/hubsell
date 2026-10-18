@@ -22,7 +22,8 @@ export type TermsAcceptanceSource =
   | "google_register" // tick ô rồi bấm "Tiếp tục với Google" ở form đăng ký
   | "google_login" // bấm Google ở form ĐĂNG NHẬP, tài khoản chưa tồn tại → dòng "Bằng việc tiếp tục..." dưới nút
   | "google_app" // app mobile 1.3.0: nút "Tiếp tục với Google", đồng ý ngầm qua dòng chữ dưới nút
-  | "apple_app"; // app mobile 1.3.0: nút "Đăng nhập bằng Apple"
+  | "apple_app" // app mobile 1.3.0: nút "Đăng nhập bằng Apple"
+  | "register_app"; // app mobile 1.3.1: màn Đăng ký trong app, tick ô đồng ý (body client="app")
 
 export const TERMS_SOURCES: readonly TermsAcceptanceSource[] = [
   "register_form",
@@ -30,6 +31,7 @@ export const TERMS_SOURCES: readonly TermsAcceptanceSource[] = [
   "google_login",
   "google_app",
   "apple_app",
+  "register_app",
 ];
 
 export function isTermsSource(v: unknown): v is TermsAcceptanceSource {

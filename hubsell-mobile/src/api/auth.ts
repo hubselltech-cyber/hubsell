@@ -32,8 +32,30 @@ export function loginWithApple(input: {
   });
 }
 
-/* Đăng ký + kiểm tên đăng nhập đã GỠ khỏi app 08/10 tối (anh Trung chốt sau
-   khi Apple từ chối 3.1.1 lần 2): tài khoản tạo trên bản web, app chỉ đăng nhập. */
+/**
+ * Đăng ký trong app (1.3.1, anh Trung chốt 18/10 "Salework được thì mình cũng
+ * được"). Gỡ 08/10 vì Apple 3.1.1 (luồng đăng ký dẫn tới dùng thử ngoài IAP);
+ * từ 10/10 iOS mua gói qua IAP nên tài khoản mới có đường mua hợp lệ. Màn chỉ
+ * Họ tên / Email / Mật khẩu + tick điều khoản; `client: "app"` để backend ghi
+ * bằng chứng đồng ý nguồn register_app. Trả {token, user} như đăng nhập.
+ */
+export function register(input: {
+  fullName: string;
+  email: string;
+  password: string;
+}) {
+  return api<LoginResponse>("/api/auth/register", {
+    method: "POST",
+    body: {
+      fullName: input.fullName.trim(),
+      email: input.email.trim(),
+      password: input.password,
+      acceptTerms: true,
+      client: "app",
+    },
+    anonymous: true,
+  });
+}
 
 export function fetchMe() {
   return api<MeResponse>("/api/auth/me");

@@ -81,6 +81,16 @@ Ghi chú khi dán:
 - **App Store**: dán nguyên văn. Không thêm chữ "Android", "CH Play" (Apple 2.3.10 cấm nhắc nền tảng khác).
 - **06/10: bỏ mục Tin nhắn** khỏi mô tả, ghi chú người duyệt và nhãn dữ liệu — tab Tin nhắn đã gỡ khỏi app từ bản 04/10 (không còn `messages.tsx`, không còn dùng expo-image-picker). Thêm Quảng cáo, Tồn kho, quét đơn bất kỳ. Mô tả này ĐÃ DÁN vào App Store Connect 06/10.
 
+### Có gì mới (bản 1.3.1 — 19/10/2026)
+
+Bản 1.3.1:
+• Màn đăng nhập mới: nút Google và Apple xếp hàng ngang gọn hơn, thêm lối "Sử dụng tài khoản nhân viên".
+• Tạo tài khoản chủ shop ngay trong app.
+• Mục Tài khoản: nút Đăng xuất rõ hơn, bớt bấm nhầm.
+• Trang chủ khi chưa nối gian hàng có nút mở thẳng mục Kênh bán.
+
+(Anh Trung chốt 18/10 23:3x–23:4x theo ảnh Salework V3.3.5, thiết kế ở DANG-NHAP-GOOGLE-APPLE-TRONG-APP.md mục 12. Màn Đăng ký quay lại sau khi gỡ 08/10: iOS đã mua gói qua IAP từ 10/10 nên tài khoản mới có đường mua hợp lệ trong app; màn chỉ Họ tên / Email / Mật khẩu + tick điều khoản, KHÔNG chữ dùng thử / gói / giá. **Ghi chú người duyệt Apple cần thêm:** "App cho tạo tài khoản chủ shop mới (Họ tên, Email, Mật khẩu). Gói dịch vụ chỉ mua qua In-App Purchase. Reviewer vẫn dùng tài khoản sẵn có như cũ." Không nhắc nền tảng khác.)
+
 ### Có gì mới (bản 1.3.0 — 18/10/2026)
 
 Bản 1.3.0:
@@ -141,6 +151,24 @@ Apple chỉ có một cặp ô tài khoản: điền tài khoản **chủ shop**
 ## 4. Ghi chú gửi người duyệt (tiếng Anh)
 
 Dán vào **Notes** của App Review (Apple) và ô **Any other instructions** của App access (Google). Bản dưới viết lại **08/10 tối sau khi Apple từ chối lần 2** (xem `APPLE-REVIEW-REPLY-2.md`): build 6 **GỠ HẲN màn Đăng ký** (tài khoản tạo trên web, như Haravan / Pancake POS) và gỡ nút mở web app ở thẻ chưa có gian → Notes nói rõ không có đăng ký, không dùng thử, không link ra web app; nhấn mạnh dùng tài khoản demo, ghi rõ nút xóa tài khoản. Với Google thay "see the user name / password fields above" bằng tài khoản + mật khẩu cụ thể.
+
+**★ 19/10 — bản 1.3.1 (màn Đăng ký quay lại trong app, anh chốt 18/10): với CẢ Apple và Google, THAY đoạn "Sign-up: there is NO registration…" trong ACCOUNTS bằng đoạn này, và trong PAYMENTS (iOS) bỏ chữ "no sign-up":**
+
+```
+Sign-up: merchants can create a shop-owner account inside the app
+("Dang ky" link on the sign-in screen: full name, e-mail, password, and a
+checkbox to accept the Terms of Service and Privacy Policy), or sign in
+with Google / Apple. A new account starts with no connected store, so the
+home screen shows an empty state with a button that opens our website
+where marketplaces are connected. Service plans are offered only through
+In-App Purchase (see PAYMENTS); the sign-up flow mentions no trial, no
+plan and no price. PLEASE STILL REVIEW WITH THE DEMO ACCOUNT ABOVE, which
+already has stores and data. Users can delete their account at any time
+inside the app: Settings tab ("Cau hinh") -> tap the name row at the top
+-> "Xoa tai khoan" link at the bottom of the Account screen (enter current
+password to confirm). Personal data is erased immediately and the
+remaining data is purged within 30 days.
+```
 
 **★ 10/10 — build 8 (Apple từ chối lần 3, chuyển sang In-App Purchase, xem `APPLE-REVIEW-REPLY-3.md` + `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md`): với Apple, THAY đoạn PAYMENTS bên dưới bằng đoạn này** (Google giữ nguyên đoạn cũ vì Android chưa bán trong app):
 

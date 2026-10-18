@@ -11,6 +11,7 @@ import {
   login as apiLogin,
   loginWithApple as apiLoginWithApple,
   loginWithGoogle as apiLoginWithGoogle,
+  register as apiRegister,
   fetchMe,
 } from "../api/auth";
 import { getAppleCredential, getGoogleIdToken } from "./social";
@@ -36,6 +37,8 @@ interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
   signIn: (identifier: string, password: string) => Promise<AuthUser>;
+  /** Màn Đăng ký trong app (1.3.1) — tạo chủ shop mới rồi vào thẳng như đăng nhập. */
+  signUp: (input: { fullName: string; email: string; password: string }) => Promise<AuthUser>;
   /** Nút "Tiếp tục với Google" (1.3.0) — ném SocialCancelledError khi người dùng đóng bộ chọn. */
   signInWithGoogle: () => Promise<AuthUser>;
   /** Nút "Đăng nhập bằng Apple" (iOS, 1.3.0). */
@@ -124,6 +127,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [persistSession]
   );
 
+  const signUp = useCallback(
+    (input: { fullName: string; email: string; password: string }) =>
+      apiRegister(input).then(persistSession),
+    [persistSession]
+  );
+
   const signInWithGoogle = useCallback(
     () => getGoogleIdToken().then(apiLoginWithGoogle).then(persistSession),
     [persistSession]
@@ -134,8 +143,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ status, user, signIn, signInWithGoogle, signInWithApple, signOut }),
-    [status, user, signIn, signInWithGoogle, signInWithApple, signOut]
+    () => ({ status, user, signIn, signUp, signInWithGoogle, signInWithApple, signOut }),
+    [status, user, signIn, signUp, signInWithGoogle, signInWithApple, signOut]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

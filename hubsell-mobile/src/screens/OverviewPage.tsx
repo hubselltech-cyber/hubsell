@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -47,6 +48,9 @@ import { RAISED_SHADOW, TABULAR } from "@/theme/tokens";
  * ĐÚNG như legend Tỷ trọng kênh trên web (ChannelShareCard).
  */
 const FIXED_CHANNELS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA"];
+
+/** Mục Kênh bán trên web — nơi duy nhất nối Shopee / Lazada / TikTok Shop. */
+const CHANNELS_URL = "https://app.hubsell.vn/channels";
 
 /* Thẻ "chưa có gian" KHÔNG còn nút mở web app (08/10 tối, Apple 3.1.1 lần 2):
    người duyệt bấm sang web là thấy dải dùng thử + trang gói → bị coi là dẫn
@@ -278,6 +282,17 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             Chủ shop kết nối Shopee, Lazada hoặc TikTok Shop ở mục Kênh bán trên
             bản web Hubsell — đơn hàng và số liệu sẽ tự về app, không cần cài gì thêm.
           </Text>
+          {/* 1.3.1: thêm MỘT nút mở thẳng mục Kênh bán trên web (chủ shop mới tạo
+              tài khoản trong app / qua Google-Apple không phải tự mò). Nút tải
+              lại giữ nguyên. */}
+          <Pressable
+            className="mt-4 flex-row items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 active:opacity-80"
+            onPress={() => void Linking.openURL(CHANNELS_URL)}
+            accessibilityRole="link"
+          >
+            <Ionicons name="open-outline" size={16} color="#fff" />
+            <Text className="text-sm font-semibold text-white">Mở app.hubsell.vn</Text>
+          </Pressable>
           <Pressable className="mt-3" onPress={() => void load("first")} hitSlop={8}>
             <Text className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
               Đã kết nối xong, tải lại

@@ -164,6 +164,18 @@ Gộp cùng màn trống cho chủ shop mới chưa nối gian (phần thẻ đ�
 
 Thẻ "Chưa có gian hàng nào" ĐÃ CÓ SẴN ở `hubsell-mobile/src/screens/OverviewPage.tsx` (câu dẫn sang mục Kênh bán trên web + nút "Đã kết nối xong, tải lại"); em đề xuất làm mới là trùng vì không đọc mã trước. Việc 1.3.1 chỉ còn: thêm MỘT nút "Mở app.hubsell.vn" (Linking https://app.hubsell.vn/channels) vào thẻ có sẵn, giữ nút tải lại.
 
+### 12.6 Trạng thái 19/10: 1.3.1 ĐÃ CODE XONG (anh chốt "Chốt làm bản 1.3.1 trước")
+
+| Việc | Chỗ sửa | Ghi chú |
+|---|---|---|
+| 12.1 Nút xã hội tròn hàng ngang | `src/app/login.tsx`, `src/components/GoogleLogo.tsx` (SVG chữ G 4 màu) | Dòng "Hoặc đăng nhập với" → hàng icon 56px cách 24px: Apple nền đen (dark: nền trắng) chỉ iOS, Google nền trắng viền xám. Apple tự vẽ Pressable + Ionicons `logo-apple`, accessibilityLabel "Đăng nhập bằng Apple". Dòng điều khoản xuống 10px. |
+| 12.2 Link "Sử dụng tài khoản nhân viên" | `src/app/login.tsx` | Ngay dưới nút Đăng nhập; bấm → nhãn "Tài khoản nhân viên", placeholder "tênchủshop/têncủabạn", link đổi thành "Dùng tài khoản chủ shop". Bỏ dòng chú thích cũ. Backend không đổi. |
+| 12.3 Đăng xuất to, Xóa tài khoản nhỏ | `src/components/AccountScreen.tsx` | Đăng xuất = nút slate-900 đầy ngang, icon log-out. Xóa tài khoản = dòng chữ 12px đỏ nhạt gạch chân dưới cùng (cách 40px); bấm mới mở thẻ viền đỏ có mô tả + ô mật khẩu (nếu có) + Hủy / Xóa tài khoản → hộp Alert như cũ. |
+| 12.4 Màn Đăng ký | `src/app/register.tsx`, `src/api/auth.ts` (`register`), `src/auth/AuthContext.tsx` (`signUp`), backend `lib/legal.ts` + `routes/auth.ts` | Họ tên / Email / Mật khẩu (≥6, cùng ngưỡng backend) / Nhập lại / ô tick "Tôi đồng ý với Điều khoản dịch vụ và Chính sách bảo mật". Không chữ dùng thử / gói / giá. Gửi `client:"app"` → TermsAcceptance nguồn **`register_app`** (thêm vào TermsAcceptanceSource; cột `source` là String nên không cần migration). Nhận token → persistSession → homePathFor. Link "Quên mật khẩu? · Đăng ký" dưới thẻ đăng nhập; "Đã có tài khoản? Đăng nhập" dưới thẻ đăng ký. |
+| 12.5 Nút mở Kênh bán | `src/screens/OverviewPage.tsx` | Thẻ "Chưa có gian hàng nào" có sẵn thêm nút xanh "Mở app.hubsell.vn" (Linking `https://app.hubsell.vn/channels`), giữ "Đã kết nối xong, tải lại". |
+
+Kiểm: mobile `tsc --noEmit` sạch; `expo lint` 22 lỗi sẵn có trước và sau (không thêm); backend `tsc` sạch, vitest 110 tệp pass / 39 tệp cần DB fail y hệt trước khi sửa. Ảnh chụp từ giả lập web (Playwright) các màn Đăng nhập (web chỉ Google; biến thể mô phỏng iOS có cả Apple), Đăng ký, Trang chủ chưa có gian, Tài khoản — đã gửi anh 19/10. app.json `version` 1.3.1; whats-new `docs/store/whats-new-1.3.1.txt`; ghi chú người duyệt mới ở LISTING.md. Chưa build EAS, chưa nộp — chờ 1.3.0 duyệt (mục DUA-APP).
+
 ### 9.1 Kiểm máy thật (18→19/10 đêm, anh Trung)
 
 | Ca | Kết quả |
