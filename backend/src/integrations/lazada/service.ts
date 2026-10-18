@@ -958,6 +958,8 @@ export async function upsertLazadaOrderTx(
         orderId: created.id,
         productId: mp?.productId ?? null,
         channelSku: line.channelSku,
+        // externalId để NULL: dòng đơn Lazada chưa dựng được id lá (payload có product_id + shop_sku, chưa có mẫu
+        // sku_id thật). Anh Trung chốt 18/10/2026: Lazada "mã trước, id khi có mẫu" — docs/MO-HINH-CAY-SAN-PHAM-SAN.md 6.2.
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,

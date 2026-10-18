@@ -67,7 +67,10 @@ describe("order-line-keys", () => {
     const m = await resolveOrderLineRows(prisma, channelId, lines);
     expect(m.get("111-2")?.channelSku).toBe("LT075-HONG (Hồng, 5-7kg)");
     expect(Number(m.get("111-2")?.costPrice)).toBe(65000);
+    // Dòng khớp mang theo id lá để ghi vào OrderItem.externalId (Lát 1a); dòng cũ chưa có id → null.
+    expect(m.get("111-2")?.externalId).toBe("111-2");
     expect(m.get("999-9")?.channelSku).toBe("CU-KHONG-ID");
+    expect(m.get("999-9")?.externalId).toBeNull();
     expect(m.get("LA")).toBeUndefined();
   });
 

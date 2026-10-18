@@ -559,6 +559,9 @@ async function upsertOrderTx(
         productId: mp?.productId ?? null,
         // Khóa dòng sàn khớp được (có đuôi phân loại nếu mã trùng); không khớp → mã thô.
         channelSku: mp?.channelSku ?? line.channelSku,
+        // Danh tính thật của dòng = id lá sàn (product-sku); ghi KỂ CẢ khi danh mục chưa có lá — về sau
+        // danh mục có là tra được, không phải sửa dòng (docs/MO-HINH-CAY-SAN-PHAM-SAN.md B3, 18/10/2026).
+        externalId: mp?.externalId ?? line.externalId,
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,

@@ -1702,6 +1702,12 @@ model OrderItem {
   /// ChannelProduct (đồng bộ danh mục bằng tay) nên gian chưa đồng bộ danh mục
   /// là cả bảng đơn trống ảnh. Đơn cũ được điền bù mỗi lần đơn được quét lại.
   imageUrl         String?
+  /// Id phân loại LÁ phía sàn, đúng khuôn ChannelProduct.externalId ("item-leaf";
+  /// SP đơn Shopee = "item"). Đây là DANH TÍNH THẬT của dòng đơn — channelSku chỉ là
+  /// khóa hiển thị (18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md bất biến B3). Ghi
+  /// lúc tạo đơn kể cả khi danh mục chưa có lá (về sau tra được, không phải sửa dòng).
+  /// NULL: đơn tạo trước 18/10 (Lát 2 bù), Lazada (chưa có mẫu sku_id), sàn không cho id.
+  externalId       String?
   /// HOÀN/TRẢ CẤP DÒNG SKU (kịch bản trả 1 vài SP trong đơn nhiều SP):
   /// số lượng bị khách trả của riêng dòng này — 0 = dòng không bị trả.
   returnedQuantity Int     @default(0)
@@ -1715,6 +1721,8 @@ model OrderItem {
   @@index([orderId])
   /// Vá giá vốn đơn cũ khớp theo mã SKU sàn (lib/cost-price.ts, 28/09/2026).
   @@index([channelSku])
+  /// Tra dòng đơn theo id lá sàn (vá giá vốn theo id — Lát 1c; bù đơn cũ — Lát 2).
+  @@index([externalId])
 }
 
 /// Liên kết (mapping): một Sản phẩm kho gốc ↔ nhiều SKU trên các sàn.
@@ -2483,6 +2491,11 @@ model OrderLineLedger {
   productId   String?
   channelSku  String
   productName String
+  /// Id lá sàn chép từ OrderItem.externalId; itemId = SPU (phần trước dấu "-") — cột
+  /// riêng để câu gom theo sản phẩm / chiến dịch JOIN thẳng, không cắt chuỗi
+  /// (18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md B4). NULL = dòng chưa có id.
+  externalId  String?
+  itemId      String?
 
   createdAt     DateTime
   deliveredDate DateTime? @db.Date
@@ -2521,6 +2534,7 @@ model OrderLineLedger {
   @@index([orderId])
   @@index([productId])
   @@index([channelId, channelSku])
+  @@index([channelId, itemId])
   @@map("order_line_ledger")
 }
 

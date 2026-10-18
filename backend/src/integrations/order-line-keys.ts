@@ -26,6 +26,8 @@ export interface OrderLineKey {
 
 export interface ResolvedLineRow {
   channelSku: string;
+  /** Id lá của dòng ChannelProduct khớp được — ghi vào OrderItem.externalId (Lát 1a, 18/10/2026). */
+  externalId: string | null;
   productId: string | null;
   costPrice: Prisma.Decimal | null;
   product: { costPrice: Prisma.Decimal } | null;

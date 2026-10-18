@@ -114,6 +114,9 @@ export interface OrderLineLedgerRow {
   productId: string | null;
   channelSku: string;
   productName: string;
+  /** Id lá sàn của dòng đơn (OrderItem.externalId) và SPU suy ra — null khi dòng chưa có id (docs/MO-HINH-CAY-SAN-PHAM-SAN.md). */
+  externalId: string | null;
+  itemId: string | null;
   createdAt: Date;
   deliveredDate: string | null;
   settledDate: string | null;
@@ -179,6 +182,17 @@ export const ORDER_LEDGER_MONEY_COLUMNS = [
 export type OrderLedgerMoneyColumn = (typeof ORDER_LEDGER_MONEY_COLUMNS)[number];
 
 /** Làm tròn 2 số lẻ, tránh -0 và sai số nhị phân kiểu 1.005. */
+/**
+ * SPU (sản phẩm sàn) của một id lá: phần trước dấu "-" của "item-leaf"; id không có
+ * dấu "-" (SP đơn Shopee) là chính nó. Cùng cách cắt với groupSkusByItemId
+ * (lib/ads-margin.ts) để nhóm sản phẩm / chiến dịch và dòng sổ nói cùng một id. Thuần.
+ */
+export function ledgerItemIdOf(externalId: string | null | undefined): string | null {
+  if (!externalId) return null;
+  const itemId = externalId.split("-")[0];
+  return itemId || null;
+}
+
 export function round2(n: number): number {
   const r = Math.round((n + Number.EPSILON) * 100) / 100;
   return r === 0 ? 0 : r;
@@ -342,6 +356,8 @@ export function buildLedgerRows(o: LedgerOrder): {
       productId: it.productId,
       channelSku: it.channelSku,
       productName: it.productName,
+      externalId: it.externalId,
+      itemId: ledgerItemIdOf(it.externalId),
       createdAt: o.createdAt,
       deliveredDate,
       settledDate,

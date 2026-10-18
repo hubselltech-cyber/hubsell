@@ -220,6 +220,7 @@ const ORDER_COLUMNS = [
 
 const LINE_COLUMNS = [
   "orderItemId", "createdDate", "orderId", "channelId", "ownerId", "channelName", "productId", "channelSku", "productName",
+  "externalId", "itemId",
   "createdAt", "deliveredDate", "settledDate", "shippingStatus", "returnStatus", "isSettled", "countsAsRevenue", "missingCostPrice",
   "quantity", "returnedQuantity", "recoveredQuantity", "price", "costPriceAtSale", "lineGross", "lineCost", "costSnapshot", "recoveredCost",
   "share", "revenueGross", "actualRevenue", "platformRevenue", "platformDeduction", "refundedAmount", "feeGmvMax", "profit", "profitAfterTax",
@@ -269,7 +270,7 @@ const LINE_MONEY_COLUMNS = [
 ] as const satisfies readonly (keyof OrderLineLedgerRow)[];
 const LINE_JSON_TYPES: Record<string, string> = {
   orderItemId: "text", createdDate: "date", orderId: "text", channelId: "text", ownerId: "text", channelName: `"ChannelName"`,
-  productId: "text", channelSku: "text", productName: "text",
+  productId: "text", channelSku: "text", productName: "text", externalId: "text", itemId: "text",
   createdAt: "timestamp", deliveredDate: "date", settledDate: "date",
   shippingStatus: `"ShippingStatus"`, returnStatus: `"ReturnStatus"`, isSettled: "boolean", countsAsRevenue: "boolean", missingCostPrice: "boolean",
   quantity: "int", returnedQuantity: "int", recoveredQuantity: "int",
@@ -320,7 +321,7 @@ function orderJson(r: OrderLedgerRow, claimedDirtyAt: Date | null): Record<strin
 function lineJson(l: OrderLineLedgerRow): Record<string, unknown> {
   const o: Record<string, unknown> = {
     orderItemId: l.orderItemId, createdDate: l.createdDate, orderId: l.orderId, channelId: l.channelId, ownerId: l.ownerId, channelName: l.channelName,
-    productId: l.productId, channelSku: l.channelSku, productName: l.productName,
+    productId: l.productId, channelSku: l.channelSku, productName: l.productName, externalId: l.externalId, itemId: l.itemId,
     createdAt: l.createdAt.toISOString(), deliveredDate: l.deliveredDate, settledDate: l.settledDate,
     shippingStatus: l.shippingStatus, returnStatus: l.returnStatus, isSettled: l.isSettled, countsAsRevenue: l.countsAsRevenue, missingCostPrice: l.missingCostPrice,
     quantity: l.quantity, returnedQuantity: l.returnedQuantity, recoveredQuantity: l.recoveredQuantity,

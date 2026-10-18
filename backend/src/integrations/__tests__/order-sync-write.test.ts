@@ -344,6 +344,10 @@ describe("syncShopeeOrders — lượt trả y nguyên không ghi, đơn đổi 
     mockPlatform("SHIPPED");
     const r1 = await syncShopeeOrders(await channel(), { daysBack: 2, timeRangeField: "update_time" });
     expect(r1).toMatchObject({ fetched: 3, created: 3, updated: 0, unchanged: 0 });
+    // Lát 1a (18/10/2026): dòng đơn mang id lá sàn — item_id 1, model_id 0 (sản phẩm đơn) → "1", ghi dù danh mục gian trống.
+    const items = await prisma.orderItem.findMany({ where: { order: { channelId } }, select: { externalId: true, channelSku: true } });
+    expect(items).toHaveLength(3);
+    expect(items.every((it) => it.externalId === "1")).toBe(true);
 
     const r2 = await syncShopeeOrders(await channel(), { daysBack: 2, timeRangeField: "update_time" });
     expect(r2).toMatchObject({ fetched: 3, created: 0, updated: 0, unchanged: 3 });

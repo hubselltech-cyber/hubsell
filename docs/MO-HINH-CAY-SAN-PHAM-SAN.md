@@ -68,7 +68,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 | Lát | Việc | Trạng thái |
 |---|---|---|
 | **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) |
-| 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada dựng từ `product_id + shop_sku`); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ⏳ |
+| 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a code 18/10 (mục 6.8) · ⏳ 1b, 1c |
 | 2 | Bù đơn cũ: mã ↔ 1 sản phẩm → điền `itemId` suy luận; mã nhiều sản phẩm → quét lại từ sàn CHỈ đơn có dòng mồ côi (~20 nghìn đơn ÷ 50/lượt ≈ 400–500 lượt, rải 32 gian, chạy nền có nhịp nghỉ, không pg-boss); ghi `externalId` + đổi `channelSku` sang khóa hiện hành; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`. | ⏳ |
 | 3 | Lá mới thừa kế giá vốn dòng gộp cũ cùng mã (đánh dấu "thừa kế"); vá hồi tố 79 dòng. Cần anh chốt: thừa kế tự động hay khách đặt. | ⏳ |
 | 4 | Dòng đối chiếu doanh thu cho Shopee (`ads_gms_item_reports` có GMV theo item) — cùng lưới an toàn B6. | ⏳ |
@@ -88,3 +88,96 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 - UI web: ô Hòa vốn hiện "Chưa tin được" (vàng), popover dòng đầu là lý do + câu "Hubsell đang rà lại cách nối
   đơn với sản phẩm". Mobile hiện "—" (chưa có chữ lý do — bổ sung khi làm lát mobile).
 - Hệ quả với khách hôm nay: TC025 NEW hết hiện 8,90; ba chiến dịch còn lại (lệch < 10%) giữ nguyên.
+
+## 6. Lát 1 — thiết kế (18/10/2026, CHỜ ANH CHỐT trước khi code)
+
+Mục tiêu: từ nay mọi dòng đơn mới **mang id lá sàn**, và mọi phép gom theo sản phẩm / chiến dịch **đi theo id trước,
+mã sau**. Không bù đơn cũ (Lát 2), không đổi tiền (sổ cái không tăng phiên bản công thức).
+
+### 6.1 Dữ liệu
+
+| Bảng | Thêm | Ghi chú |
+|---|---|---|
+| `OrderItem` | `externalId text NULL` — id lá đúng khuôn `ChannelProduct.externalId` (`"item-leaf"`; SP đơn Shopee `"item"`) | Chỉ mục `OrderItem(externalId) WHERE externalId IS NOT NULL` cho vá giá vốn theo id + Lát 2. Prod 18/10: 214 nghìn dòng / 116 MB → `ADD COLUMN NULL` là siêu dữ liệu, chỉ mục thường xây dưới 1 giây. `ALTER TABLE` vẫn cần ACCESS EXCLUSIVE chốc lát trên bảng nóng → **khối lấy khóa có thử lại** như `20260930230000_order_ledger` (bẫy deadlock 30/09). |
+| `order_line_ledger` | `externalId text NULL`, `itemId text NULL` (SPU = phần trước dấu `-`, cột riêng để JOIN/GROUP BY không `split_part`) | Chỉ mục `(channelId, itemId) WHERE itemId IS NOT NULL`. Bảng phân mảnh theo tháng: `ALTER TABLE` cha lan xuống mọi mảnh; chỉ mục tạo trên cha tự gắn vào mảnh mới; `order_ledger_create_month_partition` dùng `PARTITION OF` / `LIKE … INCLUDING` nên mảnh mới thừa kế cột. Dòng sổ cũ: NULL cho tới khi đơn được tính lại (trigger `order_ledger_trg_order_item` bắt UPDATE OrderItem → Lát 2 bù xong là sổ tự theo). **Không tăng `LEDGER_FORMULA_VERSION`** (tiền không đổi, tránh tính lại toàn bộ). |
+
+Sổ dòng hàng: `lib/order-ledger.ts` chép `externalId` từ OrderItem, suy `itemId`; `LINE_COLUMNS` + `LINE_JSON_TYPES` + `lineJson`
+thêm hai cột; `PNL_INCLUDE` (items) đọc thêm `externalId`.
+
+### 6.2 Ghi id lúc tạo đơn — 3 sàn, một luật
+
+| Sàn | Nguồn id trên dòng đơn | Việc |
+|---|---|---|
+| Shopee | `item_id` + `model_id` (`shopeeLineExternalId`, đã có) | `orderItem.create` ghi `externalId: mp?.externalId ?? line.externalId` — ghi id **kể cả khi danh mục chưa có lá** (đây là chỗ Shopee đang mồ côi ~30 dòng/ngày: về sau danh mục có là tra được, không cần sửa dòng). |
+| TikTok | `product_id` + `sku_id` (`tiktokLineExternalId`, đã có) | Như Shopee. |
+| Lazada | Dòng đơn hiện **chưa dựng id** (chỉ so SellerSku). Payload `LazadaOrderItem` có `product_id` + `shop_sku`; docs GetOrderItems còn `sku_id` — **chưa kiểm bằng payload thật**. | `aggregateLazadaItems` dựng `externalId = "${product_id}-${sku_id}"` khi có; không có → NULL (giữ mã). `resolveOrderLineRows` thay cho `findMany` theo `channelSku` → Lazada vào cùng luật "id trước, mã sau". ⚠️ Cần soi 1 payload đơn thật (prod chỉ 1 gian Lazada đang hoạt động) trước khi chốt tên trường. |
+
+Webhook 3 sàn đi cùng `upsertOrderTx` → tự có. Đơn đã tồn tại: vẫn **không** đụng OrderItem (giữ snapshot giá vốn) — bù id cho
+dòng cũ là việc của Lát 2, có kiểm soát riêng.
+
+### 6.3 Gom theo id — "id trước, mã sau"
+
+Hiện `groupSkusByItemId` (lib/ads-margin) dựng tập **mã** cho mỗi sản phẩm, rồi hai câu SQL (`ledgerMarginByGroup`,
+`ledgerTiktokBreakevenByGroup`) và đường "rows" đều nối `map.sku = line.channelSku`. Đổi thành:
+
+- `AdsGroupSets` mang **hai tập** cho mỗi nhóm: `itemIds` (chiến dịch → `AdsCampaign.itemIds`; sản phẩm → chính nó) và
+  `skus` (đường lui, giữ nguyên cách dựng cũ). `adsGroupMappingOf` trải thành **hai cặp mảng** `(grp, itemId)` và `(grp, sku)`;
+  `digest` băm cả hai → bộ đệm 30 phút tự làm mới khi bộ nhóm đổi.
+- SQL: hai CTE `mapItem` / `mapSku`; dòng có `itemId` nối `mapItem`, dòng `itemId IS NULL` nối `mapSku` (`UNION ALL`, không
+  `OR` trong JOIN để giữ kế hoạch chạy đã đo 1,6 giây / 405 nghìn dòng). Phần "checks" (tự kiểm) cùng cách.
+- Đường "rows" (lưới đỡ, test, công cụ `ads-compare`): `MarginRow.items` / `BreakevenPnlRow.items` thêm `itemId?`; khớp itemId
+  trước, mã sau. Test "hai đường bằng nhau" chạy với **cả** dòng có id lẫn không id.
+- Tab Hòa vốn sản phẩm: `productGroupKey(itemId)` nối thẳng theo `itemId` — không qua mã nữa.
+- Chiến dịch → SPU đã là id ở cả ba sàn (Shopee `item_id_list`, TikTok SPU của GMV Max, Lazada adgroup → item), không đổi.
+
+Hệ quả có thể đo được sau deploy: ba chiến dịch khỏe của and.not.or **giữ nguyên số** (dòng cũ đi đường lui mã); TC025 NEW
+vẫn "Chưa tin được" cho tới Lát 2 — đúng kỳ vọng, không được "khỏi bệnh" sớm hơn vì chưa có đơn cũ nào được bù.
+
+### 6.4 Bốn lớp vá chuỗi — gỡ dần, không gỡ cùng lúc
+
+| Lớp vá | Lát 1 | Sau Lát 2 |
+|---|---|---|
+| `lib/cost-price.ts SKU_MATCH` (vá giá vốn đơn cũ) | thêm nhánh **đầu** `oi.externalId = cp.externalId` (dòng có id đi nhánh này; ba nhánh chuỗi giữ cho dòng NULL) | giữ chuỗi làm đường lui vĩnh viễn cho Lazada chưa có id |
+| `order-item-images` (`startsWith "("`) | giữ | đổi sang `OR externalId = line.externalId` |
+| `expandReturnKeys` (hoàn hàng) | giữ | khớp `OrderItem.externalId` trực tiếp, expand làm đường lui |
+| Hòa vốn / biên lãi (ads) | **đổi sang id** (6.3) | — |
+
+Lý do để ảnh + hoàn sang sau: dòng cũ chưa có id thì lợi ích = 0, mà mỗi lớp là một bộ test riêng; gỡ từng lớp sau khi Lát 2
+đã bù để đo được "đường lui mã còn bắt bao nhiêu dòng".
+
+### 6.5 Thứ tự đưa lên (ba lần push, mỗi lần test + tsc + kiểm prod riêng)
+
+1. **1a — nền:** migration + schema + ghi id lúc tạo đơn 3 sàn + sổ dòng hàng mang `externalId`/`itemId`. Kiểm prod: đơn mới sau
+   deploy có `externalId`; dòng sổ mới có `itemId`; số báo cáo **không đổi**.
+2. **1b — gom theo id:** lib + hai câu SQL + hai nguồn + tab sản phẩm + công cụ đối chiếu. Kiểm prod: `ads-compare` hai đường
+   bằng nhau; ba chiến dịch khỏe không đổi số.
+3. **1c — vá giá vốn theo id:** nhánh đầu `SKU_MATCH` + test DB.
+
+### 6.6 Rủi ro và đường lui
+
+- Chỉ **thêm cột NULL**, không xóa, không đổi tiền → đường lui = revert commit, cột thừa vô hại.
+- Migration đụng `OrderItem` lúc Render khởi động song song instance cũ → khối khóa thử lại 40 lần × 3 giây (đã dùng từ 30/09).
+- Câu gom thêm một CTE và một nhánh UNION: đo lại trên DB dev bằng `explainLedgerMarginByGroup` / `explainLedgerTiktokBreakevenByGroup`
+  trước khi push 1b; mục tiêu không chậm hơn 20% số đã đo (1,6 giây / 405 nghìn dòng).
+- Lazada: nếu payload thật không có `sku_id` → Lazada tạm chỉ có mã (như nay), ghi rõ trong docs, không chặn 1a.
+
+### 6.7 Anh Trung chốt 18/10/2026
+
+1. Tách **1a → 1b → 1c** ba lần push. ✅
+2. Lazada: **mã trước, id khi có mẫu** — dòng đơn Lazada để `externalId` NULL cho tới khi có payload thật để chốt tên trường. ✅
+3. Ảnh dòng đơn + hoàn hàng chuyển sang id **sau Lát 2**. ✅
+
+### 6.8 Lát 1a — đã code (18/10/2026, chưa push)
+
+- Migration `20261018120000_order_item_external_id`: khối lấy khóa ACCESS EXCLUSIVE có thử lại (40 × 3 giây) trên `OrderItem` +
+  `order_line_ledger`, rồi `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` (`OrderItem_externalId_idx`,
+  `order_line_ledger_channelId_itemId_idx`). Schema: `OrderItem.externalId`, `OrderLineLedger.externalId` + `itemId`.
+- Ghi id lúc tạo đơn: Shopee / TikTok `externalId: mp?.externalId ?? line.externalId` (ghi cả khi danh mục chưa có lá);
+  `ResolvedLineRow` mang `externalId`; Lazada để NULL kèm chú thích.
+- Sổ dòng hàng: `OrderLineLedgerRow.externalId/itemId`, `ledgerItemIdOf` (cùng cách cắt với `groupSkusByItemId`), `LINE_COLUMNS` /
+  `LINE_JSON_TYPES` / `lineJson`. Không tăng `LEDGER_FORMULA_VERSION`.
+- Test: `lib/__tests__/order-ledger-line-id.test.ts` (thuần), `order-line-keys` (+id trên dòng khớp), `order-sync-write` (3 đơn Shopee
+  tạo mới mang `externalId = "1"` dù danh mục trống). DB dev đã áp migration bằng `prisma db execute` (DB dev kẹt migration
+  `20260830120000_fee_audit` FAILED từ 17/09 nên `migrate deploy` không chạy — không liên quan lát này).
+- Kiểm prod sau deploy: `SELECT count(*) FROM "OrderItem" WHERE "externalId" IS NOT NULL` tăng theo đơn mới; dòng
+  `order_line_ledger` mới có `itemId`; số các báo cáo **không đổi**.
