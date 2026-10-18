@@ -580,7 +580,7 @@ mục đích của lưới.
 
 1. Kiểm **một chiều** theo `direct_gmv`. ✅ 2. Ngưỡng **25%**. ✅ 3. GMS theo item **để sau**. ✅
 
-### 10.6 Lát 4 — đã code (18/10/2026, chưa push)
+### 10.6 Lát 4 — đã code (18/10/2026, push `e8a3e0e4` 14:26)
 
 - `lib/ads-margin.ts`: `MarginCheck`, `MarginCheckWindows`, `MARGIN_CHECK_MAX_GAP_PCT = 25`, `marginCheckProblem` (một chiều),
   `placedRevenueOf` (dùng chung hai sàn — `tiktok-breakeven.placedRevenue` gọi lại), `ChannelMargins.placedRevenue(groupKey)`,
@@ -604,3 +604,19 @@ mục đích của lưới.
   cáo + lưới đỡ xanh; tsc BE + FE sạch.
 - Kiểm prod sau deploy: Hanoinest "Máy Sưởi Mini" (0,64) và Thế Giới Xuyên Thấu "Đầm Maxi" (0,72) hiện "Chưa tin được"; 74 chiến
   dịch ≥ 100% không đổi số; soi hai ca đó (mã đổi / đăng lại tin?).
+
+### 10.7 Kiểm prod sau deploy (18/10/2026 ~15:00, bằng tài khoản quản trị)
+
+- Web `/health` = `e8a3e0e4`; worker: snapshot sức khỏe `e8a3e0e/worker @ 07:29Z` (khởi động lại 93 s sau deploy) — cả hai dịch vụ
+  đã lên bản có Lát 4 + lượt vá định kỳ.
+- `/api/quang-cao/shopee?channelId=<ANO Official Store>`: 73 chiến dịch, 1 đang chạy "Túi Đeo Chéo Nam ANO" → `check` placed 65,6 tr
+  / direct_gmv 59,4 tr = **110 %**, `breakevenProblem = null`, hòa vốn 6,74 (nguồn chiến dịch) — đúng kỳ vọng "≥ 100 % không đổi".
+  DarkMan Store (chưa nối Hubsell Ads): `direct_gmv = 0` mọi chiến dịch → kiểm một chiều không bắt oan (0 cờ).
+- `/api/quang-cao/tiktok?channelId=<and.not.or>`: 4 chiến dịch đang chạy đều `problem = null`, lệch +3,8 / +8,8 / +4,3 / **+8,4 %
+  (TC025 NEW, hòa vốn 7,07)** — số 8,90 cũ không còn.
+- Hai ca Hanoinest / Thế Giới Xuyên Thấu dự kiến hiện "Chưa tin được" **chưa nhìn trực tiếp được** (tài khoản quản trị không có gian
+  đó trong danh sách; đọc API từng gian cần đăng nhập chủ gian) — còn treo, kiểm khi có dịp hoặc hỏi khách.
+- Lát 3 lượt khởi động lại sau deploy KHÔNG ghi gì: vẫn **828 lá** thừa kế, `max(costPriceInheritedAt)` giữ 06:18Z (idempotent).
+- Bù id (Lát 2): `done/all = 69, done/infer = 8, error/orphan = 2` (2 gian demo không có ủy quyền, thử lại 24 h) — không đổi.
+- SQL 9.3 (vá định kỳ) vẫn **209 dòng** — đúng, lượt vá chạy sau lượt kéo danh mục đêm 03:00–05:00; **kiểm lại sáng 19/10, kỳ vọng
+  giảm mạnh ở 6 gian** (Nội Thất Smart Thanh Phúc 121, Mọ Mẫm LAB 62, Tiệm Bé Sâu 15…), đọc log Render `[Catalog-sync] … vá N dòng`.
