@@ -163,3 +163,12 @@ Gộp cùng màn trống cho chủ shop mới chưa nối gian (phần thẻ đ�
 ### 12.5 Đính chính màn trống (18/10 23:58, anh thử Apple tài khoản mới)
 
 Thẻ "Chưa có gian hàng nào" ĐÃ CÓ SẴN ở `hubsell-mobile/src/screens/OverviewPage.tsx` (câu dẫn sang mục Kênh bán trên web + nút "Đã kết nối xong, tải lại"); em đề xuất làm mới là trùng vì không đọc mã trước. Việc 1.3.1 chỉ còn: thêm MỘT nút "Mở app.hubsell.vn" (Linking https://app.hubsell.vn/channels) vào thẻ có sẵn, giữ nút tải lại.
+
+### 9.1 Kiểm máy thật (18→19/10 đêm, anh Trung)
+
+| Ca | Kết quả |
+|---|---|
+| Apple, Apple ID chưa có tài khoản (TestFlight 17) | ✅ tạo chủ shop mới, tên từ Apple, vào thẻ "Chưa có gian hàng nào" |
+| Google, Gmail chưa có tài khoản | ✅ tạo mới, vào được |
+| Xóa tài khoản Apple vừa tạo (không hỏi mật khẩu) | ✅ xóa; log Render `[account-deletion] apple revoke … ok=true` → khóa .p8 + env APPLE_SIWA chạy |
+| Google với Gmail đã có tài khoản (liên kết) | chưa thử riêng (backend dùng chung lõi với callback web) |
