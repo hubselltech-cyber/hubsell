@@ -20,6 +20,8 @@ const FIRST_RUN_DELAY_MS = 2 * 60 * 1000;
 const RETRY_MS = 15 * 60 * 1000;
 /** Nhận gian = đẩy nextRunAt ra xa để tiến trình khác không nhận trùng. */
 const CLAIM_MS = 60 * 60 * 1000;
+/** Ngân sách một lượt poll: chạy liên tiếp nhiều gian tới 50' rồi nhường lượt kế (poll 5' có cờ chống chồng). */
+const CYCLE_BUDGET_MS = 50 * 60 * 1000;
 const TAG = "[line-id-backfill]";
 
 let running = false;
@@ -43,14 +45,23 @@ export async function seedBackfillRows(): Promise<number> {
   return channels.length;
 }
 
-/** Nhận MỘT gian tới hạn (pending / error đã qua giờ thử lại) — trả null nếu không có. */
+/**
+ * Nhận MỘT gian tới hạn (pending / error đã qua giờ thử lại) — trả null nếu không có. Gian hỏi sàn (orphan / all) trước, gian
+ * suy luận hẹp (infer) sau: hòa vốn của khách đang nối sàn phải đúng sớm nhất.
+ */
 async function claimOne(): Promise<{ channelId: string; phase: string; cursorAt: Date | null } | null> {
   const now = new Date();
-  const cand = await prisma.orderLineIdBackfill.findFirst({
-    where: { status: { in: ["pending", "error"] }, nextRunAt: { lte: now } },
-    orderBy: [{ phase: "asc" }, { nextRunAt: "asc" }], // "all" < "infer" < "orphan" theo chữ — không quan trọng, chỉ cần ổn định
-    select: { channelId: true, phase: true, cursorAt: true, status: true },
-  });
+  const cand =
+    (await prisma.orderLineIdBackfill.findFirst({
+      where: { status: { in: ["pending", "error"] }, nextRunAt: { lte: now }, phase: { in: ["orphan", "all"] } },
+      orderBy: [{ nextRunAt: "asc" }],
+      select: { channelId: true, phase: true, cursorAt: true, status: true },
+    })) ??
+    (await prisma.orderLineIdBackfill.findFirst({
+      where: { status: { in: ["pending", "error"] }, nextRunAt: { lte: now }, phase: "infer" },
+      orderBy: [{ nextRunAt: "asc" }],
+      select: { channelId: true, phase: true, cursorAt: true, status: true },
+    }));
   if (!cand) return null;
   const claimed = await prisma.orderLineIdBackfill.updateMany({
     where: { channelId: cand.channelId, status: cand.status, nextRunAt: cand.status === "pending" ? undefined : { lte: now } },
@@ -59,14 +70,32 @@ async function claimOne(): Promise<{ channelId: string; phase: string; cursorAt:
   return claimed.count === 1 ? { channelId: cand.channelId, phase: cand.phase, cursorAt: cand.cursorAt } : null;
 }
 
+/**
+ * Một lượt poll chạy LIÊN TIẾP nhiều gian cho tới khi hết gian tới hạn hoặc hết ngân sách thời gian (CYCLE_BUDGET_MS) —
+ * không phải một gian mỗi 5' (lần đầu 18/10: 77 gian sẽ mất ≥ 6 giờ thay vì ~70'). Nhịp nghỉ giữa hai lượt gọi sàn vẫn 2 s ở
+ * runChannelBackfill; ngân sách chỉ để lượt poll kế không chồng lên (cờ `running`) và restart không mất quá nhiều.
+ */
 export async function runLineIdBackfillOnce(): Promise<void> {
   if (running) return;
   running = true;
+  const startedAt = Date.now();
   try {
     const seeded = await seedBackfillRows();
     if (seeded > 0) console.log(`${TAG} thêm ${seeded} gian vào hàng chờ bù id`);
-    const job = await claimOne();
-    if (!job) return;
+    while (Date.now() - startedAt < CYCLE_BUDGET_MS) {
+      const job = await claimOne();
+      if (!job) return;
+      await runClaimedChannel(job);
+    }
+  } catch (err) {
+    console.error(`${TAG} lượt chạy lỗi:`, err);
+  } finally {
+    running = false;
+  }
+}
+
+async function runClaimedChannel(job: { channelId: string; phase: string; cursorAt: Date | null }): Promise<void> {
+  {
     const channel = await prisma.channel.findUnique({ where: { id: job.channelId } });
     const now = new Date();
     if (!channel) return;
@@ -110,10 +139,6 @@ export async function runLineIdBackfillOnce(): Promise<void> {
       });
       console.error(`${TAG} ${channel.channelName} ${channel.shopName}: LỖI, thử lại sau 15': ${msg}`);
     }
-  } catch (err) {
-    console.error(`${TAG} lượt chạy lỗi:`, err);
-  } finally {
-    running = false;
   }
 }
 
