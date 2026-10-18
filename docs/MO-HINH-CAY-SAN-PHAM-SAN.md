@@ -72,6 +72,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 | 2 | Bù đơn cũ: HỎI SÀN cho mọi dòng chưa có id của gian ACTIVE trong 90 ngày (mồ côi trước), lô 50, nghỉ 2 s; ghi `externalId` + đổi `channelSku`; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`; gian không gọi được sàn suy luận hẹp (mục 7). | ✅ code 18/10 (mục 7.7) |
 | 3 | Lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt cho cùng mã thô (không bịa, không nhắc — anh chốt 18/10); vá hồi tố 79 dòng. | ✅ code 18/10 (mục 8.7) — chỉ sửa một lần, không áp cho lá khách thêm sau |
 | 4 | Dòng đối chiếu doanh thu cho Shopee (`ads_gms_item_reports` có GMV theo item) — cùng lưới an toàn B6. | ⏳ |
+| — | Lượt vá định kỳ dòng đơn giá vốn 0 của lá đã có giá — bước sau mỗi lượt kéo danh mục một gian (mục 9). | ✅ code 18/10 (mục 9.4) |
 
 ## 5. Lát 0 — chi tiết (18/10/2026)
 
@@ -439,3 +440,89 @@ tạo trong cửa sổ 15/10 → 19/10 (ngày deploy lát này). Điểm 1–3 c
 - Bên lề (không thuộc lát này): còn ~74 dòng đơn 15–18/10 giá vốn 0 dù lá **đã có giá riêng và đã nối kho** — đơn về trước khi danh
   mục có lá, chưa ai bấm lưu lại giá nên chưa được vá. Nên có lượt vá định kỳ "dòng giá 0 của lá đã có giá" (một câu UPDATE, id trước)
   — đề xuất riêng.
+
+## 9. Lượt vá định kỳ dòng đơn giá vốn 0 của lá đã có giá (18/10/2026)
+
+### 9.1 Vấn đề còn lại sau Lát 3
+
+- Kiểm prod 18/10 (mục 8.8, bên lề): ~74 dòng đơn tạo 15–18/10 có `costPriceAtSale = 0` dù lá sàn tương ứng **đã có giá hiệu lực**
+  (giá riêng gian `ChannelProduct.costPrice > 0`, hoặc đã nối kho và `Product.costPrice > 0`).
+- Vì sao không đường vá nào chạm tới: mọi đường vá hiện có đều chạy **theo sự kiện ghi giá** (khách lưu giá gian / giá kho, tự điền theo mã,
+  lượt sửa Lát 3) và vá đúng các lá vừa được ghi. Dòng đơn này rơi vào kẽ: đơn về **trước** khi danh mục có lá (chụp 0), rồi lá được tạo
+  (kéo danh mục đêm) và có giá qua đường không vá đơn (nối kho, hoặc giá đã đặt từ trước khi dòng đơn được Lát 2 bù `externalId` —
+  lúc Lát 2 ghi id, không ai ghi giá nên không lượt vá nào chạy). Sau đó không ai bấm lưu lại giá → 0 mãi.
+- Nguyên tắc giữ nguyên (đầu `lib/cost-price.ts`): giá vốn là của khách, **không bịa**; `0` không phải ảnh chụp hợp lệ → **chỉ vá dòng
+  đang 0**; không đặt `productId` hồi tố; không tạo giá mới cho lá nào.
+
+### 9.2 Thiết kế (đã làm theo nguyên tắc "trình trước, code sau" — trình ở đây, anh đọc + chốt khi kiểm prod)
+
+- **Phép vá:** dòng `OrderItem` của gian có `costPriceAtSale = 0`, khớp một lá của gian theo luật của `SKU_MATCH` (**id trước**:
+  `oi.externalId = cp.externalId`; dòng chưa có id khớp **ba nhánh mã**: mã hiện tại / `sku_id` sau dấu `-` / `SPE-` + externalId), lá có
+  giá hiệu lực theo `effectiveSkuCost` (`COALESCE(NULLIF(cp.costPrice,0), p.costPrice, 0) > 0`) → `costPriceAtSale` = giá đó. Lá không
+  giá → giữ 0. Dòng đã có số → không đụng. Chạy lại → 0 dòng (idempotent).
+- **Cùng luật, khác cách ghép:** `SKU_MATCH` là một biểu thức `OR` — Postgres không hash-join được, planner ghép **vòng lặp lồng
+  dòng × lá** (đo dev: `Nested Loop` + `Materialize` toàn bộ lá của gian). Hợp với các đường vá hiện có (vài lá cho trước theo id), nhưng
+  một lượt quét **cả gian mỗi đêm** ở gian hàng chục nghìn dòng 0 × vài nghìn lá (XPL2 3.257 lá) là hàng trăm triệu phép so. Nên lượt
+  định kỳ viết **hai câu UPDATE bằng phép bằng thuần** (cùng ngữ nghĩa với `SKU_MATCH`, bài học Lát 1b "tách khóa ra cột thật"):
+  1. nhánh id: `oi.externalId = l.externalId`;
+  2. nhánh mã cho dòng `externalId IS NULL`: lá bung ba khóa mã bằng `unnest(ARRAY[...])` thành cột `key`, ghép `oi.channelSku = key`.
+  Cả hai đều đi chỉ mục `OrderItem(externalId)` / `OrderItem(channelSku)` và `Order(channelId)`. Lá trùng id / trùng khóa trong gian
+  (dòng DELISTED cũ + dòng ACTIVE mới) chọn **một** theo thứ tự ACTIVE trước, mới cập nhật trước (`DISTINCT ON`) — các đường vá cũ để
+  Postgres chọn ngẫu nhiên, lượt này làm rõ.
+- **Không giới hạn ngày** (không có ngưỡng để phải biện minh): phép bằng + chỉ mục nên quét cả gian rẻ; lượt đầu cũng là lượt bù
+  toàn bộ (~74 dòng đo 18/10 và mọi dòng cũ hơn cùng tình trạng).
+- **Chỗ chạy:** một bước của `workers/product-catalog-sync.ts` **ngay sau khi kéo danh mục một gian thành công** — vì chính lượt kéo
+  danh mục là lúc lá xuất hiện (nguyên nhân gốc), và nhịp đã sẵn: gian mới nối chạy ngay, rồi mỗi đêm 03:00–05:00 giờ VN rải theo gian;
+  không thêm lịch, không thêm trạng thái ở biến module (hàng rào `no-module-state`). Lỗi của bước vá chỉ ghi log, không làm hỏng lịch
+  kéo danh mục. Sau khi vá > 0 dòng → `invalidateOwnerCostCaches(userId)`. Nút "Đồng bộ từ sàn" khách bấm tay KHÔNG chạy bước này
+  (đêm sau bù) — giữ nút nhẹ, một việc.
+- **Công tắc:** `COST_ZERO_REPAIR_OFF=1` tắt riêng bước vá (kéo danh mục vẫn chạy).
+- **Không làm:** không chạm `productId`, không ghi `ChannelProduct`/`Product`, không nhắc khách, không chạy cho gian ngủ đông / mất
+  token (gian đó không có đơn mới; mở lại thì lượt kéo danh mục kế vá luôn).
+
+### 9.3 SQL đo chỉ đọc (Supabase SQL Editor — số dòng sẽ được vá, theo gian)
+
+```sql
+WITH leaf AS (
+  SELECT cp."channelId", cp."externalId", cp."channelSku",
+         COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) AS cost
+  FROM "ChannelProduct" cp LEFT JOIN "Product" p ON p."id" = cp."productId"
+  WHERE COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) > 0
+),
+hit AS (
+  SELECT oi."id", o."channelId", 'id' AS via
+  FROM "OrderItem" oi JOIN "Order" o ON o."id" = oi."orderId"
+  JOIN leaf l ON l."channelId" = o."channelId" AND l."externalId" = oi."externalId"
+  WHERE oi."costPriceAtSale" = 0 AND oi."externalId" IS NOT NULL
+  UNION
+  SELECT oi."id", o."channelId", 'code'
+  FROM "OrderItem" oi JOIN "Order" o ON o."id" = oi."orderId"
+  JOIN leaf l ON l."channelId" = o."channelId"
+  JOIN LATERAL unnest(ARRAY[l."channelSku", split_part(l."externalId", '-', 2), 'SPE-' || l."externalId"]) AS k(key) ON k.key = oi."channelSku"
+  WHERE oi."costPriceAtSale" = 0 AND oi."externalId" IS NULL
+)
+SELECT c."shopName", c."channelName", c."status", count(DISTINCT h."id") AS lines,
+       count(DISTINCT h."id") FILTER (WHERE h.via = 'id') AS via_id
+FROM hit h JOIN "Channel" c ON c."id" = h."channelId"
+GROUP BY c."id" ORDER BY lines DESC;
+```
+
+- Dự kiến (từ số đo 8.8): ~74 dòng 15–18/10 ở vài gian (ANO / and.not.or, Hi.Bé, XPL2, PERLYCO…) + phần dòng cũ hơn cùng tình trạng,
+  chưa đo. DB dev: 0 dòng (không có gian thật). **Chưa kiểm prod** — anh dán SQL trên để có số thật trước/sau deploy.
+
+### 9.4 Đã code (18/10/2026, commit chưa push)
+
+- `lib/cost-price.ts` → `repairZeroCostLinesForChannel(db, channelId)`: hai câu UPDATE phép bằng (nhánh id; nhánh mã cho dòng
+  `externalId IS NULL` qua `unnest` ba khóa), `DISTINCT ON` chọn lá ACTIVE trước / tạo sau trước khi trùng id hoặc trùng khóa; chỉ
+  dòng `costPriceAtSale = 0`; không ghi `productId`, `ChannelProduct`, `Product`. Trả `{ byId, byCode }`.
+- `workers/product-catalog-sync.ts` → `repairZeroCostLinesAfterSync(channel)` gọi ngay sau `syncChannelProducts` thành công
+  trong vòng poll; vá > 0 → `invalidateOwnerCostCaches(userId)` + log
+  `[Catalog-sync] "<gian>": vá N dòng đơn giá vốn 0 của lá đã có giá (a theo id, b theo mã)`; lỗi chỉ log. Công tắc
+  `COST_ZERO_REPAIR_OFF=1` (`.env.example`). Không thêm biến module (hàng rào `no-module-state` qua; ca event-queue.ts lỗi có sẵn).
+- Test DB `integrations/__tests__/cost-zero-repair-db.test.ts` 3 ca / 10 dòng: lá giá riêng → vá; lá giá kho qua liên kết → vá bằng giá
+  kho (không nối kho hộ); lá không giá → 0; dòng có số → giữ; dòng CÓ id mà không lá nào mang id (mã trùng lá khác) → 0 (id trước);
+  dòng chưa có id khớp đủ ba nhánh mã; lá trùng id DELISTED 70k + ACTIVE 120k → 120k; gian khác không chạm; chạy lại 0/0; công tắc tắt
+  → 0, bật → vá. Cùng chạy lại cost-per-shop-db + cost-split-repair + product-catalog-sync: 16/16. `tsc` backend sạch.
+- **Kiểm prod sau deploy:** dán SQL 9.3 trước (số dự kiến ~74 dòng 15–18/10 + dòng cũ hơn, chưa đo); sau lượt kéo đêm 03:00–05:00
+  (hoặc gian mới nối) đọc log Render `[Catalog-sync] … vá N dòng đơn giá vốn 0`; dán lại SQL 9.3 → kỳ vọng 0 ở gian ACTIVE đã kéo.
+  Gian lỗi kéo danh mục (token hỏng) không được vá tới khi kéo lại được — chấp nhận.

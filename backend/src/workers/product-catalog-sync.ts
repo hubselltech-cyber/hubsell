@@ -19,9 +19,15 @@
 //   · Chạy TUẦN TỰ từng gian, tối đa MAX_PER_CYCLE gian mỗi lượt poll; nhận
 //     gian bằng updateMany có điều kiện (nhiều worker không đụng nhau).
 // Tắt: PRODUCT_CATALOG_SYNC_OFF=1.
+//
+// ★ 18/10/2026 — SAU MỖI LƯỢT KÉO THÀNH CÔNG: vá dòng đơn giá vốn 0 của gian mà lá
+//   nay đã có giá hiệu lực (docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 9) — chính lượt kéo
+//   danh mục là lúc lá xuất hiện, và nhịp đêm theo gian đã sẵn. Lỗi chỉ ghi log,
+//   không làm hỏng lịch kéo. Tắt riêng: COST_ZERO_REPAIR_OFF=1.
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
+import { invalidateOwnerCostCaches, repairZeroCostLinesForChannel } from "../lib/cost-price";
 import { prisma } from "../lib/prisma";
 import { syncChannelProducts } from "../marketplace/product-sync";
 
@@ -117,6 +123,34 @@ export function startProductCatalogSyncWorker(): void {
   );
 }
 
+/**
+ * Bước vá sau lượt kéo danh mục một gian (mục 9 docs cây sản phẩm): dòng đơn giá vốn 0
+ * mà lá nay đã có giá hiệu lực → nhận giá. Hai câu UPDATE phép bằng, chỉ dòng đang 0.
+ * Vá > 0 → xóa đệm hòa vốn của chủ shop. Lỗi chỉ log. Export để test/chạy tay.
+ */
+export async function repairZeroCostLinesAfterSync(channel: {
+  id: string;
+  userId: string;
+  shopName: string;
+  channelName: ChannelName;
+}): Promise<number> {
+  if (process.env.COST_ZERO_REPAIR_OFF === "1") return 0;
+  try {
+    const r = await repairZeroCostLinesForChannel(prisma, channel.id);
+    const total = r.byId + r.byCode;
+    if (total > 0) {
+      await invalidateOwnerCostCaches(channel.userId);
+      console.log(
+        `[Catalog-sync] "${channel.shopName}" (${channel.channelName}): vá ${total} dòng đơn giá vốn 0 của lá đã có giá (${r.byId} theo id, ${r.byCode} theo mã)`
+      );
+    }
+    return total;
+  } catch (err) {
+    console.error(`[Catalog-sync] Lỗi vá dòng đơn giá vốn 0 "${channel.shopName}" (${channel.channelName}):`, (err as Error).message);
+    return 0;
+  }
+}
+
 /** Một lượt poll: nhận + kéo tuần tự tới MAX_PER_CYCLE gian đến hạn. Export để chạy tay/test. */
 export async function runProductCatalogSync(): Promise<number> {
   if (running) return 0;
@@ -149,6 +183,7 @@ export async function runProductCatalogSync(): Promise<number> {
         console.log(
           `[Catalog-sync] "${due.shopName}" (${due.channelName}): ${r.scanned} SP sàn, +${r.created} mới, ${r.updated} cập nhật, ${r.delisted} gỡ, ${r.costAutoFilled} tự điền giá vốn`
         );
+        await repairZeroCostLinesAfterSync(due);
       } catch (err) {
         const message = (err as Error).message;
         await scheduleAfterProductSync(due.id, false, message);

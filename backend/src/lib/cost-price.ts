@@ -387,3 +387,77 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCos
     unmatchedZeroLines: Number(diag?.unmatched ?? 0),
   };
 }
+
+/**
+ * LƯỢT VÁ ĐỊNH KỲ THEO GIAN (18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 9):
+ * dòng hàng đã bán của gian đang `costPriceAtSale = 0` mà lá sàn tương ứng NAY có
+ * giá vốn hiệu lực (effectiveSkuCost: giá riêng gian, không thì giá kho qua liên
+ * kết) → nhận giá đó. Lấp kẽ giữa các đường vá theo sự kiện ghi giá: đơn về trước
+ * khi danh mục có lá, rồi lá có giá qua đường không vá đơn (nối kho; giá đặt trước
+ * khi Lát 2 bù id cho dòng) → không ai lưu lại giá nên dòng 0 mãi.
+ *
+ * Cùng luật khớp với SKU_MATCH (id trước; ba nhánh mã chỉ cho dòng chưa có id)
+ * nhưng viết thành HAI câu phép bằng thuần: SKU_MATCH là một `OR` nên planner ghép
+ * vòng lặp lồng dòng × lá — ổn cho vài lá cho trước, không ổn cho quét cả gian mỗi
+ * đêm (gian vài nghìn lá × hàng chục nghìn dòng 0). Hai câu này đi chỉ mục
+ * OrderItem(externalId) / OrderItem(channelSku) + Order(channelId). Lá trùng id /
+ * trùng khóa trong gian (dòng DELISTED cũ + ACTIVE mới) chọn một: ACTIVE trước, tạo
+ * sau trước.
+ *
+ * Chỉ dòng đang 0; không đụng productId; không ghi ChannelProduct/Product. Gọi
+ * invalidateOwnerCostCaches ở bên gọi khi kết quả > 0 (ngoài transaction).
+ */
+export async function repairZeroCostLinesForChannel(
+  db: Db | typeof prisma,
+  channelId: string
+): Promise<{ byId: number; byCode: number }> {
+  const byId = await db.$executeRaw`
+    WITH leaf AS (
+      SELECT DISTINCT ON (cp."externalId")
+        cp."externalId", COALESCE(NULLIF(cp."costPrice", 0), p."costPrice") AS cost
+      FROM "ChannelProduct" AS cp
+      LEFT JOIN "Product" AS p ON p."id" = cp."productId"
+      WHERE cp."channelId" = ${channelId}
+        AND cp."externalId" IS NOT NULL
+        AND COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) > 0
+      ORDER BY cp."externalId", (cp."status" = 'ACTIVE') DESC, cp."createdAt" DESC
+    )
+    UPDATE "OrderItem" AS oi
+    SET "costPriceAtSale" = l.cost
+    FROM "Order" AS o, leaf AS l
+    WHERE oi."orderId" = o."id"
+      AND o."channelId" = ${channelId}
+      AND oi."costPriceAtSale" = 0
+      AND oi."externalId" IS NOT NULL
+      AND oi."externalId" = l."externalId"`;
+
+  const byCode = await db.$executeRaw`
+    WITH keyed AS (
+      SELECT k.key, COALESCE(NULLIF(cp."costPrice", 0), p."costPrice") AS cost, cp."status", cp."createdAt"
+      FROM "ChannelProduct" AS cp
+      LEFT JOIN "Product" AS p ON p."id" = cp."productId"
+      CROSS JOIN LATERAL unnest(ARRAY[
+        cp."channelSku",
+        split_part(cp."externalId", '-', 2),
+        'SPE-' || cp."externalId"
+      ]) AS k(key)
+      WHERE cp."channelId" = ${channelId}
+        AND COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) > 0
+    ),
+    leaf AS (
+      SELECT DISTINCT ON (key) key, cost
+      FROM keyed
+      WHERE key IS NOT NULL AND key <> ''
+      ORDER BY key, ("status" = 'ACTIVE') DESC, "createdAt" DESC
+    )
+    UPDATE "OrderItem" AS oi
+    SET "costPriceAtSale" = l.cost
+    FROM "Order" AS o, leaf AS l
+    WHERE oi."orderId" = o."id"
+      AND o."channelId" = ${channelId}
+      AND oi."costPriceAtSale" = 0
+      AND oi."externalId" IS NULL
+      AND oi."channelSku" = l.key`;
+
+  return { byId, byCode };
+}
