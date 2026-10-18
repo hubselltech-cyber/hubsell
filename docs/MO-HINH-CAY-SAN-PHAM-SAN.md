@@ -434,7 +434,8 @@ tạo trong cửa sổ 15/10 → 19/10 (ngày deploy lát này). Điểm 1–3 c
 - **Tác dụng phụ nhỏ của hoàn tác (kiểm 13:58):** hoàn tác đưa về 0 mọi dòng từ 15/10 của lá oan đang mang đúng giá thừa kế — nhưng
   đơn đồng bộ **sáng 15/10 trước lúc tách** đã chụp giá thật của dòng gộp cũ, trùng đúng con số ấy → bị đưa về 0 oan. Đo: dòng giá 0, đơn
   tạo trước lúc lá được tạo, nhóm có lá nguồn khách đặt giá: **ANO Official Store 6, XPL2 2, PERLYCO 2, Hi.Bé 1 = 11 dòng**. Giá đúng của
-  chúng = giá nguồn (giá gộp cũ lúc bán). Chờ anh chốt có trả lại 11 dòng này không (một câu UPDATE, soạn sẵn).
+  chúng = giá nguồn (giá gộp cũ lúc bán). Anh chốt trả lại → UPDATE trên Supabase 18/10 ~14:08: **11 dòng, tổng 1.081.000đ** (ANO TC077 131.000 × 6, Hi.Bé 53.000, PERLYCO
+  30.000 × 2, XPL2 × 2); trigger sổ cái tự tính lại. Sự cố Lát 3 ĐÓNG.
 - Bên lề (không thuộc lát này): còn ~74 dòng đơn 15–18/10 giá vốn 0 dù lá **đã có giá riêng và đã nối kho** — đơn về trước khi danh
   mục có lá, chưa ai bấm lưu lại giá nên chưa được vá. Nên có lượt vá định kỳ "dòng giá 0 của lá đã có giá" (một câu UPDATE, id trước)
   — đề xuất riêng.
