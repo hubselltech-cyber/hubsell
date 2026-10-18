@@ -69,7 +69,7 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 |---|---|---|
 | **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) |
 | 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b (mục 6.9) · ✅ 1c code 18/10 (mục 6.10) |
-| 2 | Bù đơn cũ: mã ↔ 1 sản phẩm → điền `itemId` suy luận; mã nhiều sản phẩm → quét lại từ sàn CHỈ đơn có dòng mồ côi (~20 nghìn đơn ÷ 50/lượt ≈ 400–500 lượt, rải 32 gian, chạy nền có nhịp nghỉ, không pg-boss); ghi `externalId` + đổi `channelSku` sang khóa hiện hành; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`. | ⏳ |
+| 2 | Bù đơn cũ: HỎI SÀN cho mọi dòng chưa có id của gian ACTIVE trong 90 ngày (mồ côi trước), lô 50, nghỉ 2 s; ghi `externalId` + đổi `channelSku`; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`; gian không gọi được sàn suy luận hẹp (mục 7). | ✅ code 18/10 (mục 7.7) |
 | 3 | Lá mới thừa kế giá vốn dòng gộp cũ cùng mã (đánh dấu "thừa kế"); vá hồi tố 79 dòng. Cần anh chốt: thừa kế tự động hay khách đặt. | ⏳ |
 | 4 | Dòng đối chiếu doanh thu cho Shopee (`ads_gms_item_reports` có GMV theo item) — cùng lưới an toàn B6. | ⏳ |
 
@@ -220,3 +220,99 @@ Cách làm gọn hơn thiết kế 6.3 (không cần hai CTE / hai tập riêng)
   Lát 2). Lưu ý: dòng mang mã thô đã đổi đuôi hôm nay **không** được vá dù nhập giá — Lát 2 bù id sẽ sửa, không vá "ké" theo mã thô.
 - Hệ quả với 79 dòng (~36 triệu) đơn 15–18/10 mất giá vốn: chúng mang khóa có đuôi và từ 18/10 có id → khách nhập giá vốn cho lá mới
   là vá được ngay (Lát 3 bàn chuyện thừa kế tự động).
+
+## 7. Lát 2 — thiết kế: bù id cho đơn cũ (18/10/2026, CHỜ ANH CHỐT trước khi code)
+
+### 7.1 Nguyên tắc: hỏi sàn, không đoán
+
+Thiết kế cũ (mục 4) định suy luận cho mã ↔ 1 sản phẩm và chỉ hỏi sàn cho mã nhiều sản phẩm. Đo lại thì **hỏi sàn cho tất cả rẻ
+hơn tưởng**: ≤ 50 đơn một lượt gọi ở cả hai sàn (Shopee `get_order_detail` `order_sn_list`, TikTok `GET /order/202309/orders?ids=`),
+nên toàn bộ tập cần bù chỉ tốn ~2.000 lượt gọi trên 73 gian. Sàn là nguồn sự thật duy nhất về id lá của từng dòng đơn → **không suy
+luận từ mã**, trừ gian không gọi được sàn (7.3).
+
+### 7.2 Phạm vi — số đo prod 18/10 (dòng đơn Shopee/TikTok chưa có `externalId`)
+
+| Sàn · trạng thái gian | Gian | Đơn (mọi thời) | Đơn 60 ngày | Đơn 90 ngày | … trong đó mồ côi (mã không còn trong danh mục) | Đơn cũ nhất |
+|---|---|---|---|---|---|---|
+| Shopee ACTIVE | 51 | 64.043 | 38.876 | 51.716 | 6.989 | 09/2024 |
+| Shopee DISCONNECTED | 6 | 4.133 | 1.783 | 2.732 | 121 | 03/2026 |
+| TikTok ACTIVE | 22 | 58.646 | 34.051 | 46.792 | 13.958 | 03/2026 |
+
+Đề xuất phạm vi: **mọi dòng chưa có id của gian ACTIVE, đơn tạo trong 90 ngày** (≈ 98.500 đơn ≈ 1.970 lượt gọi), ưu tiên **đơn mồ
+côi trước** (≈ 21.000 đơn ≈ 420 lượt — hòa vốn đúng sớm nhất), rồi phần còn lại để cây nhất quán cho cả tự kiểm, giá vốn theo id,
+Lãi/Lỗ theo SKU. 90 ngày phủ cửa sổ hòa vốn TikTok 60 ngày + biên lãi Shopee 30 ngày có dư. Đơn ngoài 90 ngày (Shopee từ 09/2024,
+~12.000 đơn): **không bù trong lát này** — không báo cáo nào gom theo sản phẩm ở xa hơn thế; anh muốn trọn vẹn thì bật `--all`
+sau, cùng cơ chế.
+
+### 7.3 Cách bù một gian
+
+1. Lấy danh sách đơn cần bù của gian theo thứ tự ưu tiên (mồ côi trước, mới trước), cắt lô 50 mã đơn.
+2. Gọi sàn lấy chi tiết lô; chạy **đúng hàm gom dòng của luồng đồng bộ** (`aggregateShopeeItems` / `aggregateLineItems`) để ra các
+   dòng (mã thô, id lá, số lượng) rồi `resolveOrderLineRows` tra danh mục theo id.
+3. Khớp dòng sàn ↔ `OrderItem` hiện có của đơn (dòng cũ ghi mã thô đúng bằng mã sàn trả, hoặc khóa có đuôi nếu đơn tạo sau 15/10):
+   - **1 ↔ 1** (đa số): ghi `externalId` = id lá; `channelSku` = khóa hiện hành của lá nếu danh mục có (để Lãi/Lỗ theo SKU, ảnh,
+     hoàn hàng trỏ đúng lá), không có thì giữ nguyên.
+   - **1 OrderItem ↔ nhiều dòng sàn** (trước 15/10 hai lá cùng mã bị gộp thành một dòng, số lượng cộng dồn): không tách dòng cũ
+     (sổ cái, hoàn hàng đã bám vào nó). Nếu các lá **cùng một SPU** → ghi `externalId` = **SPU** (khuôn `"item"`, như SP đơn Shopee):
+     sổ có `itemId`, hòa vốn / biên lãi gom đúng; vá giá vốn theo id không khớp lá nào → dòng đó giữ giá đã chụp (chấp nhận, hiếm).
+     Nếu các lá **khác SPU** → để NULL, đếm và báo (không đoán).
+   - Sàn không trả đơn (xóa, quá hạn) → để NULL, đếm.
+4. **Giữ nguyên** `costPriceAtSale`, `productId`, số lượng, giá (B5; snapshot là lịch sử).
+5. Xong gian → `invalidateCostCaches(channelId)` (đệm hòa vốn / biên lãi 30' tự làm mới).
+
+Sổ cái: trigger `order_ledger_on_order_item_update` hiện chỉ đánh dấu khi `orderId, productId, channelSku, productName, quantity,
+price, costPriceAtSale, returnedQuantity, returnRestocked` đổi — **chưa có `externalId`** → dòng chỉ đổi id (mã giữ nguyên) sẽ không
+được tính lại. Lát 2 kèm migration nhỏ `CREATE OR REPLACE TRIGGER` thêm `externalId` vào điều kiện (SHARE ROW EXCLUSIVE, khối khóa
+thử lại). Ledger worker tính lại theo lô như mọi thay đổi khác; ~100.000 đơn rải trong vài giờ là tải bình thường của GĐ1.
+
+### 7.4 Bộ chạy: worker, tuần tự, có nhịp nghỉ, tự dừng
+
+- `workers/order-line-id-backfill.ts` trong tiến trình worker (không pg-boss — việc dài, bẫy stately). Bảng tiến độ
+  `order_line_id_backfill (channelId PK, status pending|running|done|error, priority, cursor, ordersDone, ordersLeft, linesSet,
+  linesSpu, linesSkipped, lastError, updatedAt)` — resumable sau restart, hiện trên HQ Sức khỏe.
+- Nhận gian bằng `updateMany` có điều kiện (nhiều worker không đụng nhau), **một gian một lúc**, lô 50 đơn, **nghỉ 2 giây giữa hai
+  lượt gọi** (0,5 lượt/giây — thấp hơn nhiều mức khởi điểm "đọc batch 5–20/giây" TikTok công bố; Shopee không công bố, 2 s là mặc định
+  tự chọn). 429 / 36009002 → qua cửa rate-limit sẵn có của client; dính nữa thì gian đó nghỉ 15', gian khác chạy. Token hết hạn /
+  gian DISCONNECTED / ngủ đông → `status=error` kèm lý do, worker thử lại khi gian nối lại.
+- Ước lượng: ~2.000 lượt × 2 s ≈ 70 phút chạy tuần tự cho toàn nền tảng; ưu tiên mồ côi xong trong ~15 phút đầu.
+- Công tắc: `ORDER_LINE_ID_BACKFILL_OFF=1` tắt; không có → tự chạy sau deploy (như product-catalog-sync). Chạy lại được: gian
+  `done` chỉ chạm lại khi còn dòng NULL trong phạm vi (đơn về trước khi danh mục có lá đã được 1a lo, nên sau lượt đầu gần như không
+  còn gì).
+- Gian không gọi được sàn (DISCONNECTED, 6 gian): **suy luận hẹp** mã thô ↔ **đúng một lá** trong gian → ghi id lá; còn lại NULL. Không
+  suy luận "một SPU nhiều lá".
+
+### 7.5 Kiểm chứng
+
+- Test DB: gian giả + mock `getOrderDetail` 3 ca: 1↔1 (ghi id + đổi khóa), gộp cùng SPU (ghi SPU), gộp khác SPU (NULL + đếm); dòng đã có
+  id không bị chạm; `costPriceAtSale`/`productId` không đổi; trigger đánh dấu đơn → ledger có `itemId`.
+- Prod sau khi chạy: TC025 NEW tự hết "Chưa tin được" (đối chiếu về ≈ +4–9%, hòa vốn ≈ 7,1); `SELECT count(*) … externalId IS NULL`
+  trong 90 ngày ACTIVE giảm về ≈ 0 (chỉ còn ca khác SPU / sàn không trả); ba chiến dịch khỏe lệch không tăng.
+
+### 7.6 Anh Trung chốt 18/10/2026
+
+1. Phạm vi **90 ngày, gian ACTIVE, mồ côi trước**; ngoài 90 ngày để sau. ✅
+2. Dòng gộp nhiều lá **cùng SPU** → ghi SPU (`"item"`). ✅
+3. **Đổi `channelSku`** của dòng cũ sang khóa hiện hành của lá. ✅
+4. Chạy **tự động trong worker sau deploy**, có công tắc tắt. ✅
+
+### 7.7 Lát 2 — đã code (18/10/2026, chưa push)
+
+- Migration `20261018150000_order_line_id_backfill`: (a) `CREATE OR REPLACE TRIGGER order_ledger_on_order_item_update` thêm
+  `externalId` vào điều kiện đánh dấu (khối khóa SHARE ROW EXCLUSIVE có thử lại); (b) bảng `order_line_id_backfill` (một dòng / gian:
+  `status pending|running|done|error`, `phase orphan|all|infer`, `cursorAt`, bộ đếm `ordersDone/linesSet/linesSpu/linesSkipped/apiCalls`,
+  `lastError`, `nextRunAt`), RLS bật. Prisma `OrderLineIdBackfill` + quan hệ `Channel.lineIdBackfill`.
+- `services/order-line-id-backfill.ts`: `planLineIds` (thuần — đúng ba luật 7.3), `nextPendingOrders` (lô 50, phase orphan/all, cursor
+  lùi theo `createdAt`; mốc so bằng `timestampConst` — so `Date` tham số thẳng với cột `timestamp(3)` lệch theo TimeZone phiên, test
+  bắt được), `fetchPlatformLines` (Shopee `get_order_detail` / TikTok `GET /orders?ids=`, qua đúng `aggregateShopeeItems` /
+  `aggregateLineItems` + `resolveOrderLineRows`), `applyBackfillBatch` (ghi `externalId` + `channelSku`, không đụng giá vốn /
+  productId), `runChannelBackfill` (nghỉ 2 s giữa lượt gọi, trần 400 lượt / lượt chạy, xong gian → xóa đệm hòa vốn),
+  `inferIdsByUniqueSku` (gian không gọi được sàn: mã ↔ đúng một lá).
+- `workers/order-line-id-backfill.ts`: nhịp 5', lượt đầu sau 2'; tự gieo dòng tiến độ cho gian ACTIVE (phase orphan) và DISCONNECTED
+  (phase infer), bỏ gian ngủ đông; nhận một gian bằng `updateMany` có điều kiện; lỗi → `error` + thử lại 15'; công tắc
+  `ORDER_LINE_ID_BACKFILL_OFF=1`. Đăng ký trong `workers/index.ts`.
+- Test `integrations/__tests__/order-line-id-backfill.test.ts` 8 ca: 4 thuần (1↔1, khóa có đuôi, gộp cùng/khác SPU, không khớp / đã có
+  id) + 4 DB với Shopee mock (ưu tiên mồ côi + cursor; ghi id / SPU / đổi khóa / giữ giá vốn / ngoài cửa sổ; **trigger mới**: dòng chỉ
+  đổi id → sổ có `itemId`; chạm trần → chạy tiếp đúng chỗ; suy luận hẹp).
+- Theo dõi khi chạy prod (chưa có trang HQ, đọc SQL):
+  `SELECT c."shopName", b.* FROM order_line_id_backfill b JOIN "Channel" c ON c.id = b."channelId" ORDER BY b."updatedAt" DESC;`
+  Kỳ vọng: ~73 gian, mồ côi xong trong ~15', toàn bộ ~70'; TC025 NEW (and.not.or) hết "Chưa tin được", hòa vốn ≈ 7,1.

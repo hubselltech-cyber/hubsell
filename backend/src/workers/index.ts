@@ -43,6 +43,7 @@ import { startOrderLedgerWorker } from "./order-ledger";
 import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPlanHibernateWorker } from "./plan-hibernate";
+import { startLineIdBackfillWorker } from "./order-line-id-backfill";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -121,4 +122,7 @@ export function startAllWorkers(): void {
   startOrderLedgerWorker();
   // Tự trả lời đánh giá theo số sao — mỗi shop 1 lần/ngày (anh Trung 10/10).
   startReviewAutoReplyWorker();
+  // Bù id lá sàn cho dòng đơn cũ 90 ngày (Lát 2 cây sản phẩm sàn, anh Trung 18/10) —
+  // một gian một lúc, hỏi sàn 50 đơn/lượt, nghỉ 2 s; tắt ORDER_LINE_ID_BACKFILL_OFF=1.
+  startLineIdBackfillWorker();
 }

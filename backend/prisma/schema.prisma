@@ -468,6 +468,7 @@ model Channel {
   orders                Order[]
   channelProducts       ChannelProduct[]
   staffAccess           StaffChannel[]
+  lineIdBackfill        OrderLineIdBackfill?
   invoiceConfigs        InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
   walletWithdrawals     WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
   operatingTxns         OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
@@ -2608,6 +2609,34 @@ enum ConsultLeadStatus {
   CONTACTED // sale đã gọi / đang tư vấn
   CONVERTED // đã chốt (khách đăng ký tài khoản / mua gói)
   DROPPED // không chốt được / lead rác
+}
+
+/// Tiến độ BÙ ID LÁ cho dòng đơn cũ theo gian (Lát 2, 18/10/2026 —
+/// docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 7): worker order-line-id-backfill hỏi sàn
+/// chi tiết đơn 90 ngày, ghi OrderItem.externalId. Một dòng / gian, resumable.
+model OrderLineIdBackfill {
+  channelId    String   @id
+  /// pending | running | done | error
+  status       String   @default("pending")
+  /// orphan (mã không còn trong danh mục, ưu tiên) → all (phần còn lại) → infer (gian không gọi được sàn)
+  phase        String   @default("orphan")
+  /// createdAt của đơn cuối đã xử lý trong phase hiện tại (đi lùi theo thời gian).
+  cursorAt     DateTime?
+  ordersDone   Int      @default(0)
+  linesSet     Int      @default(0)
+  linesSpu     Int      @default(0)
+  linesSkipped Int      @default(0)
+  apiCalls     Int      @default(0)
+  lastError    String?
+  nextRunAt    DateTime @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  updatedAt    DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRunAt])
+  @@map("order_line_id_backfill")
 }
 
 /// Bộ đếm sự kiện landing theo ngày giờ VN (17/10/2026): lượt mở trang công cụ
