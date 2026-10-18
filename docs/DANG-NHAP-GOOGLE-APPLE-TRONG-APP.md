@@ -138,3 +138,15 @@ Việc code khi gửi: script một lần `backend/scripts/mail-app-1-3-0.ts` (�
 ## 11. Bản sau (1.4): nhắc cập nhật trong app + EAS Update
 
 Anh chốt 19/10: làm từ bản sau. Phạm vi: backend `/api/mobile/version` (latest, min theo nền), app so `Constants.expoConfig.version` lúc mở → dải "Có bản mới" + nút mở kho, dưới min thì chặn; Android thêm Play In-App Updates (`expo-in-app-updates` hoặc tương đương); EAS Update cho thay đổi chỉ JS với `runtimeVersion` policy `appVersion` để JS mới không rơi vào native cũ.
+
+## 12. Bản sau (1.3.1): ba việc giao diện anh Trung chốt 19/10 (xem ảnh Salework V3.3.5 anh gửi)
+
+Anh: "Phiên bản này 2 nút Google và Apple xếp hàng dọc khá xấu. Phiên sau học theo Salework."
+
+1. **Nút xã hội hàng ngang, dạng tròn.** Dưới nút Đăng nhập: dòng chữ xám "Hoặc đăng nhập với", rồi một hàng icon tròn ~56px cách đều: Apple (nền đen, logo trắng — chỉ iOS), Google (nền trắng viền xám, logo G màu). Không Facebook (chưa nối). Apple 4.8 vẫn đạt vì hai nút cùng cỡ, cùng hàng; HIG cho phép nút Apple "logo-only" tròn nếu giữ đúng logo + tương phản, nên tự vẽ Pressable thay `AppleAuthenticationButton` (expo-apple-authentication không có kiểu logo-only). Dòng điều khoản giữ, nhỏ hơn.
+2. **"Sử dụng tài khoản nhân viên"** như Salework: một link dưới nút Đăng nhập thay cho dòng chú thích "Nhân viên đăng nhập dạng: tênchủshop/têncủabạn" — bấm thì ô nhập đổi placeholder sang "chủshop/nhânviên". Chỉ là trình bày, backend không đổi.
+3. **Màn Tài khoản: Đăng xuất to, Xóa tài khoản nhỏ.** Hiện nút Xóa tài khoản (viền đỏ, to) nằm TRÊN nút Đăng xuất → dễ bấm nhầm. Đổi: Đăng xuất thành nút đầy chiều ngang, nổi; Xóa tài khoản thành một dòng chữ nhỏ (12px, xám đỏ) đặt DƯỚI CÙNG màn, cách Đăng xuất một khoảng; bấm vẫn vào hộp xác nhận + mật khẩu (nếu có) như cũ. Apple 5.1.1(v) chỉ đòi "dễ tìm trong app", dòng chữ nhỏ ở mục Tài khoản vẫn đạt (nhiều app lớn làm vậy).
+
+KHÔNG học Salework chỗ "Đăng ký" trên màn đăng nhập — anh chốt 08/10 app không có đăng ký (Google/Apple tạo tài khoản ngầm là đủ).
+
+Gộp cùng màn trống cho chủ shop mới chưa nối gian (phần thẻ đề xuất 19/10) thành bản **1.3.1**, nộp sau khi 1.3.0 duyệt.
