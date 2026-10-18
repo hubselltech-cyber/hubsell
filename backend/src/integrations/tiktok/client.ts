@@ -431,11 +431,16 @@ export interface FetchOrdersParams {
   pageSize?: number;
   /** Con trỏ phân trang TikTok trả về ở lần gọi trước. */
   pageToken?: string;
+  /** Trường sắp xếp (docs 202309: create_time | update_time, mặc định sàn = create_time).
+   *  Không truyền = không gửi, giữ nguyên hành vi cũ. Pha A (18/10/2026) dùng để kiểm H1. */
+  sortField?: "create_time" | "update_time";
+  /** Chiều sắp xếp (mặc định sàn = DESC). Không truyền = không gửi. */
+  sortOrder?: "ASC" | "DESC";
 }
 
 /**
  * Tìm đơn hàng của gian. Endpoint /order/202309/orders/search là POST, bộ lọc
- * thời gian nằm trong body; page_size/page_token nằm trên query.
+ * thời gian nằm trong body; page_size/page_token/sort_* nằm trên query.
  */
 export async function fetchOrders(
   params: FetchOrdersParams,
@@ -443,6 +448,8 @@ export async function fetchOrders(
 ): Promise<TikTokOrderSearchData> {
   const query: Record<string, string | number> = { page_size: params.pageSize ?? 50 };
   if (params.pageToken) query.page_token = params.pageToken;
+  if (params.sortField) query.sort_field = params.sortField;
+  if (params.sortOrder) query.sort_order = params.sortOrder;
 
   const body: Record<string, unknown> = {};
   if (params.createTimeGe) body.create_time_ge = params.createTimeGe;

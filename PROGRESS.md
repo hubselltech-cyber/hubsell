@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 18/10/2026 (đêm) — CỨNG HÓA LỚP GỌI SÀN BẢN 2: ANH CHỐT, BẮT ĐẦU PHA A (KIỂM 7 GIẢ THUYẾT)
+
+- **Anh chốt bản 2** ([docs/CUNG-HOA-LOP-GOI-SAN.md](docs/CUNG-HOA-LOP-GOI-SAN.md)) → bắt đầu Pha A, bước đầu kiểm 7 giả thuyết, KHÔNG viết mã nền trước khi có số.
+- **Kiểm docs sàn (Partner Center TikTok + Open Shopee, 18/10):** TikTok `orders/search` có `sort_field` create_time (mặc định) | update_time, `sort_order` mặc định DESC, kèm cảnh báo *update times may exceed the selected search range* (bộ lọc update_time không chặt — khớp 261/262 ngày 16/09). Shopee `get_wallet_transaction_list`: `current_balance` trên từng giao dịch, docs KHÔNG nói thứ tự trả về; docs ghi 100/trang + 15 ngày nhưng prod chỉ nhận 40/trang + chê 15 ngày → phải kiểm live.
+- **Phát hiện ở mã (H1):** `fetchOrders` TikTok KHÔNG gửi `sort_field` → sàn xếp theo create_time trong khi lọc update_time; mốc vét lát 3.2 (`nextWatermark` giả định "ba sàn đọc mới nhất trước") **sai cho TikTok** — chỉ lộ khi lượt bị cắt (50 trang × 50), gian 4.000 đơn/ngày sẽ chạm. H4: 429 Ads chỉ ở RAM + console (không bảng), một xung ads-pulse ≥7 lệnh liền, mã không đọc `Retry-After`. H3/H7: không có cột nguồn/lịch sử trạng thái đơn → đo qua `webhook_events` (giữ 7 ngày).
+- **Đã làm:** `fetchOrders` thêm `sortField`/`sortOrder` tùy chọn (không truyền = không gửi, worker không đổi; tsc sạch); script `backend/scripts/pha-a-san-probe.ts` 4 lệnh con `h1` (TikTok 3 trang có/không sort_field, kiểm đơn điệu + đơn ngoài cửa sổ), `h2` (đếm get_order_list 1 ngày VN đọc hết trang, so DB, anh so Seller Center), `h6` (số dư ví: 1 trang mới nhất vs quét 30 ngày), `h5` (GCRA trong Postgres: bảng + hàm tạm, 5 lượt đo, tự xóa). **H5 máy dev (Postgres 17):** nhiều khóa 13.900 lệnh/giây p99 1,2 ms; một khóa nóng hết sức 6.000/giây p99 5,6 ms; nhịp 300/giây một khóa p99 9,9 ms (nghi timer Windows 15 ms gom luồng) → số quyết định là lượt chạy trên Render shell (Supabase Micro). Docs mục 3b: bảng trạng thái H1–H7 + 4 việc anh làm + 3 câu SQL chỉ đọc (A: % đơn có webhook + p50/p99 trễ; B: sự kiện/ngày/gian ÷ đơn mới; C: api_throttle_states).
+- **Chưa làm / chờ anh:** chạy 4 lệnh probe trên Render shell + dán; so Seller Center (đơn hôm qua, số dư ví); dán SQL A/B/C; dán log Render 24h `[ApiBudget] 429` / `HTTP 429` / `[TikTok] Cửa sổ update_time`. Phần còn lại của Pha A (bật đo "chạm trần" ở mọi hàm đọc + thẻ HQ chỉ nhìn) làm sau khi có số. Chưa commit (docs + script + client.ts).
+
 ## Phiên 18/10/2026 — HÒA VỐN TIKTOK SAI DO DÒNG ĐƠN MẤT DANH TÍNH SÀN → HỢP ĐỒNG CÂY SẢN PHẨM + LÁT 0 "CHƯA TIN ĐƯỢC"
 
 - **Khách hỏi "hòa vốn TikTok và Shopee tính khác nhau à?"** → trả lời: cùng công thức 1 ÷ biên lãi trước quảng cáo, khác ở dữ liệu đầu vào (TikTok 60 ngày chỉ đơn đã đối soát + đơn hủy cùng lứa trong mẫu số; Shopee 30 ngày, bỏ hủy, phí ước tính). Em nói nhầm "TikTok trừ GMV Max trong từng đơn" — anh bắt: đã kiểm 26/09, and.not.or 0/692 đơn có phí → chú thích mã + docs đã đính chính.
