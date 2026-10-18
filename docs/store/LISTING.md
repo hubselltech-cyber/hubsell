@@ -81,6 +81,14 @@ Ghi chú khi dán:
 - **App Store**: dán nguyên văn. Không thêm chữ "Android", "CH Play" (Apple 2.3.10 cấm nhắc nền tảng khác).
 - **06/10: bỏ mục Tin nhắn** khỏi mô tả, ghi chú người duyệt và nhãn dữ liệu — tab Tin nhắn đã gỡ khỏi app từ bản 04/10 (không còn `messages.tsx`, không còn dùng expo-image-picker). Thêm Quảng cáo, Tồn kho, quét đơn bất kỳ. Mô tả này ĐÃ DÁN vào App Store Connect 06/10.
 
+### Có gì mới (bản 1.2.1 — 18/10/2026)
+
+Bản 1.2.1:
+• Màn đăng nhập thêm hướng dẫn cho người đã tạo tài khoản bằng Google: đặt mật khẩu tại app.hubsell.vn rồi đăng nhập app bằng email đó.
+• Sửa lỗi nhỏ.
+
+(18/10: một khách đăng ký web bằng nút Google hỏi "vào app kiểu gì" — tài khoản Google không có mật khẩu, app chỉ có ô email + mật khẩu. Dòng mới mở `app.hubsell.vn/login?mode=forgot`; web Cài đặt có thẻ "Đặt mật khẩu" không đòi mật khẩu cũ. Không nhắc gói / dùng thử / đăng ký — Apple 3.1.1, 3.1.3(f).)
+
 ### Có gì mới (bản 1.2.0 — 17/10/2026)
 
 Bản 1.2.0:

@@ -1,0 +1,3 @@
+Bản 1.2.1:
+• Màn đăng nhập thêm hướng dẫn cho người đã tạo tài khoản bằng Google: đặt mật khẩu tại app.hubsell.vn rồi đăng nhập app bằng email đó.
+• Sửa lỗi nhỏ.

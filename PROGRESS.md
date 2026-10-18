@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 18/10/2026 (đêm) — KHÁCH GOOGLE KHÔNG VÀO ĐƯỢC APP: ĐÃ PUSH `77231cfe`, MOBILE 1.2.1 ĐANG DỰNG + NỘP 2 KHO
+
+- **Anh: "chán em luôn rồi, cơ bản vậy cũng quên"** — em biết tài khoản Google không có mật khẩu từ lúc viết OAuth (ghi trong comment callback) nhưng dựng app mobile + gỡ Đăng ký 08/10 không rà lại. Đính chính mức thiệt hại: web vẫn vào được bằng Google từ đầu, chỉ app mobile (lên kho 13–16/10) kẹt. Memory: feedback-tu-ra-luong-truoc-khi-giao (lần 2) + feedback-ghi-toi-dau-lam-toi-do + hubsell-khach-google-vao-app-mobile. Anh chốt KHÔNG làm Google sign-in trong app (Apple 4.8 kéo thêm Sign in with Apple).
+- **Em kiểm diff phiên con rồi commit + push `77231cfe`** (chỉ 10 tệp của việc này; `tiktok/service.ts` + docs CUNG-HOA là của phiên Pha A, để lại). tsc backend sạch. Migration `20261018220000_user_password_set_at` chạy khi Render deploy — ⏳ kiểm log migrate + thử thẻ "Đặt mật khẩu" bằng tài khoản Google thật.
+- **Mobile 1.2.1:** app.json 1.2.1; `eas build -p all --profile production` bắt đầu ~22:5x (Android `7e43297a`, iOS `052f767c`). Trước đó kiểm ASC: 1.2.0 READY_FOR_SALE, không có bản chờ → tạo 1.2.1 được; Play production 1.2.0 [vc 4] completed. "Có gì mới" ở LISTING + `docs/store/whats-new-1.2.1.txt`; docs DUA-APP mục 1.2.1. Kết quả nộp ghi dòng dưới khi xong.
+- **SQL đếm khách Google (anh dán Supabase, chỉ đọc):** `SELECT count(*) FILTER (WHERE "googleId" IS NOT NULL) FROM "User" WHERE "ownerId" IS NULL AND "deletedAt" IS NULL;` → sau khi web deploy xong, gửi thư chỉ đường cho đúng nhóm này (chưa làm, chờ anh chốt).
+
 ## Phiên 18/10/2026 (đêm, phiên con) — KHÁCH ĐĂNG KÝ GOOGLE KHÔNG VÀO ĐƯỢC APP ĐIỆN THOẠI → 3 LỐI CHỈ ĐƯỜNG — CHƯA COMMIT
 
 - **Gốc:** tài khoản Google mang `passwordHash` ngẫu nhiên, app mobile chỉ có ô email + mật khẩu (anh chốt 08/10 không Google sign-in trong app). **Đã làm:** (1) mobile `login.tsx` thêm dòng "Quên mật khẩu hoặc đăng ký bằng Google? Đặt mật khẩu tại app.hubsell.vn" mở `/login?mode=forgot` (web đã đọc tham số này, không sửa); (2) cột `User.passwordSetAt` (migration `20261018220000_user_password_set_at`, khóa thử lại; backfill = `createdAt` cho user không googleId HOẶC có log đồng ý `register_form`, còn lại NULL — ai đã đi Quên mật khẩu thấy nút "Đặt mật khẩu" không đòi mật khẩu cũ một lần, đăng nhập bằng mật khẩu thành công tự ghi mốc), `/me` trả `user.hasPassword`, `change-password` không đòi mật khẩu hiện tại khi chưa có, thẻ Cài đặt đổi thành "Đặt mật khẩu"; (3) thư chào mừng nguồn Google thêm câu "Dùng app điện thoại? Vào Cài đặt → Đặt mật khẩu…". tsc backend/frontend/mobile sạch, test customer-mails + account-deletion pass.
