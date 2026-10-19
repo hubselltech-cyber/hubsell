@@ -4,7 +4,7 @@
 // Muc uu tien:
 //   P0  Ha tang can xu ly ngay  (Render, Supabase, MISA, Zoho, Vercel, payOS bao loi / het han / vuot han muc)
 //   P1  San & chinh sach        (Shopee, Lazada, TikTok, Apple, Google Play, MISA: duyet app, doi API, chinh sach)
-//   P1  Khach hang              (support@, billing@ -> nguoi that hoi)
+//   P1  Khach hang              (support@, billing@, thu [Hubsell] Yeu cau ho tro moi -> nguoi that hoi)
 //   P2  Phap ly & nha nuoc      (DVC, dang ky kinh doanh, Cuc SHTT, Bo Cong Thuong, D&B)
 //   P2  Hoa don nha cung cap    (Stripe/Render, Zoho Books, Supabase invoice)
 //   P3  He thong Hubsell        (thu [Hubsell] app tu gui)
@@ -46,6 +46,8 @@ export function classify(m) {
 
   // Thu app Hubsell tu gui cho HQ
   if (subject.includes('[hubsell]') && (from.includes('@hubsell.') || from.includes('hubselltech@gmail.com'))) {
+    // Khach gui yeu cau ho tro trong app = nguoi that dang hoi -> P1, khong de chim giua thu bao khach moi (anh Trung chot 19/10/2026)
+    if (subject.includes('yêu cầu hỗ trợ mới')) return { level: 'P1', group: 'Khách hàng hỏi (yêu cầu hỗ trợ trong app)' };
     return { level: 'P3', group: 'Hệ thống Hubsell' };
   }
 

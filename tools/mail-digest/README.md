@@ -56,11 +56,11 @@ Nơi để tệp hóa đơn / biên nhận của nhà cung cấp tải về từ
 |---|---|---|
 | P0 | Hạ tầng cần xử lý ngay | Render, Supabase, MISA, Zoho, Vercel, payOS, Mắt Bão kèm chữ Action Required / failed / exceeded / Restrictions / Invalid payment / Bandwidth / quota / suspend / expired / security / cảnh báo… |
 | P1 | Sàn & chính sách | Shopee, Lazada, TikTok, Apple, Google, MISA: duyệt app, đổi API, chính sách, ticket, xác minh |
-| P1 | Khách hàng | thư mục Hỗ trợ / Thanh toán trên Zoho, hoặc gửi tới support@ / billing@ |
+| P1 | Khách hàng | thư mục Hỗ trợ / Thanh toán trên Zoho, gửi tới support@ / billing@, hoặc thư `[Hubsell] Yêu cầu hỗ trợ mới` (khách gửi trong app) |
 | P1 | Người gửi khác | thư người thật không thuộc nhóm nào, để không bỏ sót |
 | P2 | Pháp lý & nhà nước | gov.vn, dichvucong, dangkyquamang, ipvietnam, D&B, CRIF, Bộ Công Thương |
 | P2 | Hóa đơn nhà cung cấp | Stripe (Render), Zoho Books, thư có chữ invoice / receipt |
-| P3 | Hệ thống Hubsell | tiêu đề có `[Hubsell]` |
+| P3 | Hệ thống Hubsell | tiêu đề có `[Hubsell]` (trừ Yêu cầu hỗ trợ mới → P1) |
 | P4 | Bản tin / thông báo thường | chỉ đếm số, không liệt kê |
 | SKIP | DMARC | bỏ qua |
 
