@@ -624,3 +624,69 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
 - Kiểm chứng local (campaign demo seed tạm, token giả): hộp xác nhận đúng số; bấm xác nhận → POST pause → sàn trả
   `error_param shop_id is invalid` → 409 → dòng lỗi hiện; tsc + eslint sạch, 737 test.
 - ✅ **Bắn sống 25/09 chiều: anh Trung tự test nút Tạm dừng trên shop nhà — lệnh lên sàn OK, Seller Center đổi trạng thái.**
+
+## 15. "CHIẾN DỊCH ĐANG CHẠY MÀ HUBSELL KHÔNG KÉO VỀ" = CHIẾN DỊCH NHÓM NHIỀU SẢN PHẨM (19/10/2026)
+
+> Phiên 19/10 chiều tối đã chẩn đoán xong + ghi docs/PROGRESS ở commit `de7008c5` nhưng phiên hết
+> quota trước khi push → commit mất. Mục này viết lại từ đầu (19/10 tối), giữ đúng kết luận cũ và
+> thêm việc đã code để chốt bằng số thật.
+
+### 15.1 Hiện tượng + Hubsell đang đọc gì
+- Seller Center hiện một chiến dịch **đang chạy** (loại "Chiến dịch Nhóm" gom nhiều sản phẩm —
+  Shopee mở từ 05/2025: GMV Max chọn tới **30 SP/PC, 10 SP/app** chung một ngân sách + một mục tiêu
+  ROAS; Shopee MY gọi là "Ad Group"), nhưng tab Tổng quan Hubsell không có dòng nào cho nó.
+- Hubsell kéo chiến dịch Shopee qua đúng 3 endpoint nhóm **product_level** (ads-campaigns.ts):
+  `get_product_level_campaign_id_list` (ad_type all) → `get_product_level_campaign_setting_info`
+  (info_type 1,2,3) → `get_product_campaign_daily_performance`. Ba endpoint này là "cấp sản phẩm":
+  mỗi campaign gắn `item_id_list` của **một** SP (đợt D tạo campaign cũng bằng
+  `create_manual_product_ads` 1 SP). Tổng chi **cấp shop** thì đọc riêng bằng
+  `get_all_cpc_ads_daily_performance` (bảng AdSpend) — số này gồm MỌI loại ads.
+- Nhóm GMS (`get_gms_campaign_performance`, `get_gms_item_performance`, mục 12) chỉ đọc **GMV Max cấp
+  shop** (1 GMS/shop, Shopee tự chọn SP). Chiến dịch Nhóm là seller tự chọn ≤30 SP → KHÔNG phải GMS.
+
+### 15.2 Chẩn đoán (đóng 19/10 chiều, giữ nguyên)
+- Chiến dịch Nhóm nhiều SP **không được trả trong `get_product_level_campaign_id_list`** → bước 1
+  không có id → bước 2/3 không bao giờ hỏi tới → Hubsell không có dòng campaign, không có số theo ngày.
+- Tiền tiêu của nó **vẫn nằm trong tổng chi cấp shop** (AdSpend) → trang Trợ lý thấy "Tổng chi ads toàn
+  shop" lớn hơn tổng cột Chi phí của bảng chiến dịch. Phần chênh đó = Chiến dịch Nhóm (+ GMS nếu có).
+- Cách chốt lại bằng số thật (không cần đọc docs qua Chrome): mở Seller Center lấy `campaign_id` của
+  chiến dịch Nhóm trong URL, gọi route probe mới ở 15.3 — nếu `id_list_all.found=false`,
+  `setting_info` trả rỗng/lỗi và `gms_campaign_perf_7d` trả lỗi (`campaign_not_found`) thì **không
+  nhóm endpoint nào của Shopee Open Platform đọc được loại này**; nếu nhóm nào trả số thì mục 15.4
+  đổi hướng theo đó.
+- Đã rà lại docs công khai 19/10 tối (Shopee SG/MY/VN ads help + Open Platform developer guide): không
+  trang nào nói có endpoint riêng cho chiến dịch nhiều SP; developer guide chỉ nêu hai đường
+  "Item GMV Max = `create_manual_product_ads` (nhiều campaign, mỗi campaign SP do dev chọn)" và
+  "Shop GMV Max = `create_gms_product_campaign` (1/shop)". open.shopee.com chặn fetch từ máy chủ nên
+  trang endpoint cụ thể phải đọc qua Chrome anh nếu cần dẫn nguyên văn.
+
+### 15.3 ĐÃ CODE 19/10 tối (đọc thuần, không ghi sàn, không ghi DB)
+- **Route `GET /api/quang-cao/shopee/campaigns/probe?channelId=&campaignId=`** →
+  `probeShopeeCampaignById` (ads-gms.ts): hỏi từng nhóm endpoint với đúng id:
+  `id_list_all/auto/manual` (quét ≤20 trang, giãn 1,5 s — có trong danh sách không + sàn gắn
+  ad_type gì), `setting_info` (info_type 1,2,3), `daily_perf_7d`, `gms_campaign_perf_7d`,
+  `gms_item_perf_7d` (campaign_id = id), `db` (AdsCampaign có dòng chưa + `shopSpend7d`,
+  `campaignSpend7d`, `gap7d` 7 ngày trọn). Mỗi khối có `error` nguyên văn mã lỗi sàn. Validate
+  campaignId chỉ số; gian phải của chủ shop đang đăng nhập.
+- **Trang Trợ lý Shopee, ghi chú nguồn số dưới bảng:** thêm câu vàng "Trong đó X₫ chi NGOÀI bảng
+  chiến dịch ở trên (Chiến dịch Nhóm nhiều sản phẩm / GMV Max cấp shop — Shopee không trả các loại
+  này qua API chiến dịch sản phẩm, Hubsell chỉ thấy tổng chi cấp shop)". X = `adSpendTotal − spend`
+  cùng khoảng ngày; chỉ hiện khi ≥ 1 % tổng chi VÀ ≥ 10.000₫ (tránh lệch do hai lượt đồng bộ chưa
+  cùng mốc). Không đổi bảng, không thêm khối — người dùng biết ngay tiền "mất" đi đâu.
+
+### 15.4 Phương án để anh chốt (xếp theo công/giá trị)
+| | Phương án | Công | Được gì | Mất gì |
+|---|---|---|---|---|
+| A | **Nói thật + dòng chênh** (15.3, đã code) | 0 thêm | Seller thấy X₫ ngoài bảng, không tưởng Hubsell mất số | Không có ROAS/đơn của chiến dịch Nhóm; Trợ lý không tự dừng/hạ ngân sách nó |
+| B | **Soi bằng probe trên gian có chiến dịch Nhóm** (ANO hoặc gian khách) rồi mới quyết | 1 cú gọi route | Chốt bằng số thật thay vì docs; nếu nhóm GMS hoặc id_list có trả thì chỉ cần sửa sync (1–2 giờ) | Cần anh mở Seller Center lấy campaign_id |
+| C | **Ticket Shopee Open Platform** "endpoint đọc multi-product GMV Max campaign" | 15' viết, chờ sàn | Đường chính thống; TikTok đã có cấp campaign nhiều SP qua API | Thường vài tuần, có thể "chưa hỗ trợ" |
+| D | Khuyên seller tách Chiến dịch Nhóm thành campaign 1 SP (Hubsell tạo được, đợt D) | 0 | Trợ lý đọc + tự hành động được từng SP | Mất học máy chiến dịch đang chạy; seller phải làm tay |
+
+**Đề xuất:** làm **A (xong) → B ngay khi anh lấy được campaign_id → C song song**. D chỉ nêu cho
+seller nào hỏi, không ép.
+
+### 15.5 Còn treo
+- Chưa chạy probe trên gian thật (phiên cloud không có phiên đăng nhập Hubsell + Chrome) → anh
+  dán URL `https://app.hubsell.vn/api/quang-cao/shopee/campaigns/probe?channelId=<id gian>&campaignId=<id>`
+  khi đã đăng nhập, gửi JSON cho em đọc; hoặc mở phiên cloud có Chrome.
+- Lazada không có loại này (campaign Sponsored Solutions đã nhiều SP sẵn, đọc được) — không đụng.

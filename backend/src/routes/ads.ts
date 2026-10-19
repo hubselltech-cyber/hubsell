@@ -34,6 +34,7 @@ import {
   getShopeeGmsItems,
   getShopeeGmsOverview,
   listShopeeGmsExcludedItems,
+  probeShopeeCampaignById,
   probeShopeeGms,
 } from "../integrations/shopee/ads-gms";
 import {
@@ -567,6 +568,31 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           return;
         }
         res.json(await probeShopeeGms(channel));
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // GET /api/quang-cao/shopee/campaigns/probe?channelId=&campaignId= — ĐỌC THUẦN (mục 15 docs
+    // ADS-SHOPEE-KHAI-THAC-API, 19/10): soi MỘT chiến dịch theo id lấy từ URL Seller Center — nhóm
+    // endpoint product_level và nhóm GMS có trả id ấy không. Dùng khi seller nói "chiến dịch đang
+    // chạy mà Hubsell không thấy" (Chiến dịch Nhóm nhiều SP). Không ghi sàn, không ghi DB.
+    router.get(`/${platform}/campaigns/probe`, async (req: AuthRequest, res, next) => {
+      try {
+        const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+        const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId.trim() : "";
+        if (!/^\d{1,20}$/.test(campaignId)) {
+          res.status(400).json({ error: "campaignId phải là số (lấy từ URL chiến dịch trên Seller Center)" });
+          return;
+        }
+        const channel = await prisma.channel.findFirst({
+          where: { id: channelId, userId: req.ownerId!, channelName },
+        });
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        res.json(await probeShopeeCampaignById(channel, campaignId));
       } catch (err) {
         next(err);
       }

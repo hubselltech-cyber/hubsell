@@ -63,6 +63,7 @@ import {
   type AdsAssistantScorecard,
   type ShopeeAdsCampaignRow,
   type ShopeeAdsDashboard,
+  type ShopeeAdsSummary,
   type ShopeeAssistantConfig,
   type ShopeeAssistantDecision,
   type ShopeeProductBreakevenResponse,
@@ -180,6 +181,18 @@ const PLACEMENT_LABEL: Record<string, string> = {
   // Lazada: productType J = Sponsored Product (N = Sponsored Search → "search").
   product: "Sản phẩm",
 };
+
+/**
+ * Tiền ads NGOÀI bảng chiến dịch = tổng chi cấp shop (AdSpend) − tổng chi các campaign Hubsell
+ * đọc được, cùng khoảng ngày. Phần này là Chiến dịch Nhóm nhiều SP / GMV Max cấp shop — Shopee
+ * không trả qua API chiến dịch sản phẩm (docs ADS-SHOPEE-KHAI-THAC-API mục 15). Chỉ hiện khi
+ * chênh ≥ 1 % tổng chi VÀ ≥ 10.000₫ để tránh lệch nhỏ do hai lượt đồng bộ chưa cùng mốc.
+ */
+function outsideCampaignSpend(s: ShopeeAdsSummary): number {
+  const gap = Math.round(s.adSpendTotal - s.spend);
+  if (s.adSpendTotal <= 0 || gap < 10_000 || gap < s.adSpendTotal * 0.01) return 0;
+  return gap;
+}
 
 function defaultAdsRange(): DateRange {
   return RANGE_PRESETS.find((p) => p.key === "last7")!.resolve();
@@ -1081,6 +1094,14 @@ export function ShopeeAdsPage({
               </span>
             )}{" "}
             {meta.adSpendLabel}: {formatVND(summary.adSpendTotal)}.
+            {platform === "shopee" && outsideCampaignSpend(summary) > 0 && (
+              <span className="text-amber-600">
+                {" "}
+                Trong đó {formatVND(outsideCampaignSpend(summary))} chi NGOÀI bảng chiến dịch ở trên
+                (Chiến dịch Nhóm nhiều sản phẩm / GMV Max cấp shop — Shopee không trả các loại này qua
+                API chiến dịch sản phẩm, Hubsell chỉ thấy tổng chi cấp shop).
+              </span>
+            )}
           </p>
         )}
           </>

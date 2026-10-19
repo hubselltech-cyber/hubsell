@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 19/10/2026 tối — QUẢNG CÁO SHOPEE: "CHIẾN DỊCH ĐANG CHẠY KHÔNG KÉO VỀ" = CHIẾN DỊCH NHÓM NHIỀU SP; PHIÊN TRƯỚC MẤT COMMIT, VIẾT LẠI + CODE PROBE + DÒNG CHÊNH
+
+- **Bối cảnh:** phiên chiều tối đã chẩn đoán xong (chiến dịch Seller Center "đang chạy" là Chiến Dịch Nhóm nhiều sản phẩm, API Shopee nhóm product_level không trả loại này), ghi docs 15.2 + PROGRESS + memory ở commit `de7008c5` **chưa push** → phiên hết quota, commit mất (không có trong origin). Anh: "Tiếp tục làm phần quảng cáo shopee này em nhé. Đọc lại và làm chuẩn" → em viết lại trọn **docs ADS-SHOPEE-KHAI-THAC-API mục 15** (15.1 Hubsell đọc gì, 15.2 chẩn đoán, 15.3 đã code, 15.4 bốn phương án A–D, 15.5 còn treo).
+- **Đã code (đọc thuần):** (1) route `GET /api/quang-cao/shopee/campaigns/probe?channelId=&campaignId=` → `probeShopeeCampaignById` (ads-gms.ts) hỏi từng nhóm endpoint với đúng id lấy từ URL Seller Center: id_list theo 3 ad_type, setting_info, daily perf 7d, GMS campaign/item perf với campaign_id, DB + chênh chi cấp shop − chi campaign 7 ngày trọn; giãn 1,5 s, không ghi gì. (2) Trang Trợ lý Shopee: dòng vàng "Trong đó X₫ chi NGOÀI bảng chiến dịch…" (X = adSpendTotal − spend, chỉ hiện khi ≥ 1 % và ≥ 10.000₫). Rà docs công khai Shopee 19/10: multi-product GMV Max (≤30 SP, từ 05/2025, MY gọi "Ad Group") không có endpoint riêng; developer guide chỉ có Item GMV Max (`create_manual_product_ads`) và Shop GMV Max (GMS).
+- **Phương án trình anh (docs 15.4):** A nói thật + dòng chênh (xong) → B probe trên gian có chiến dịch Nhóm khi anh lấy campaign_id (phiên cloud không có đăng nhập Hubsell/Chrome nên chưa chạy được) → C ticket Shopee Open Platform song song; D (tách thành campaign 1 SP) chỉ nêu khi seller hỏi.
+- Memory: thư mục memory không có trong phiên cloud này → ghi ở PROGRESS + docs 15 thay thế.
+
 ## Phiên 19/10/2026 chiều muộn — HQ ĐỎ "MỐC NƯỚC 8686 2598'" = LỖI THIẾT KẾ LÁT 3.2 (ĐỌC MỚI → CŨ KHÔNG ĐUỔI KỊP), ĐÃ SỬA; M2 CHẠM NHƯNG CHƯA CẦN NÂNG GÓI
 
 - **Anh gửi ảnh HQ Sức khỏe đỏ + hỏi "nâng cấp M2 có cần thiết không khi hạ tầng vẫn dùng được?"** Em đọc code + SQL Supabase (Chrome anh): Siêu Thị 8686 và KTNstore (TikTok) quét OK (lastSyncError trống, fail 0) nhưng mốc nước đứng 17/10 19:40 và 18/10 00:55, không mốc vét, cờ backfill đã hạ. Giả thuyết đầu (sàn trả đơn ngoài cửa sổ) **SAI** — anh đăng nhập Render, log 14:08–14:53 cho thấy cơ chế thật: lượt advance đọc 2.500 đơn mới nhất (2.499 không đổi) → chỉ ghi mốc vét; lượt catchup vét vài phút đơn cũ → mốc = mốc vét; lượt sau lại đọc đúng 2.500 đơn ấy. **Mỗi chu kỳ 2 lượt (~20') mốc tiến 6–13'** → gian > 2.500 biến động/cửa sổ không bao giờ đuổi kịp, 100 lệnh sàn/chu kỳ, chiếm 1 luồng worker 4–12'/lượt. Khác bản vá 18/10 (sàn trả sai thứ tự).
