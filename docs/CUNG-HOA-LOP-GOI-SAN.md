@@ -334,23 +334,48 @@ không có tổng → đo H8 bằng so khớp. Lazada chưa có gian thật ho�
 SELECT c."channelName", c."shopName", round(extract(epoch FROM ((now() AT TIME ZONE 'UTC') - s."cursorAt"))/60) AS tre_phut,
        s."windowMs"/60000 AS cua_so_phut, s."lastStatus", s."lastPages", s."lastRunAt", s."leaseOwner", s."dueAt"
 FROM "sync_cursors" s JOIN "Channel" c ON c.id = s."channelId" WHERE s.stream = 'orders-shadow';
--- So khớp 3 ngày: cả hai / chỉ đường CŨ (Order đổi mà bóng không thấy = đường mới SÓT → dừng, tìm gốc) / chỉ đường MỚI (đường cũ sót)
-WITH s AS (SELECT * FROM "sync_shadow_orders" WHERE "firstSeenAt" >= (now() AT TIME ZONE 'UTC') - interval '3 days'),
-     o AS (SELECT "channelId","orderCode" FROM "Order" WHERE "updatedAt" >= (now() AT TIME ZONE 'UTC') - interval '3 days')
-SELECT c."shopName",
-       (SELECT count(*) FROM s JOIN o USING ("channelId","orderCode") WHERE s."channelId" = c.id) AS ca_hai,
-       (SELECT count(*) FROM o WHERE o."channelId" = c.id AND NOT EXISTS (SELECT 1 FROM "sync_shadow_orders" x WHERE x."channelId" = o."channelId" AND x."orderCode" = o."orderCode")) AS chi_cu,
-       (SELECT count(*) FROM s WHERE s."channelId" = c.id AND NOT EXISTS (SELECT 1 FROM "Order" x WHERE x."channelId" = s."channelId" AND x."orderCode" = s."orderCode")) AS chi_moi
-FROM "Channel" c WHERE c.id IN (SELECT "channelId" FROM "sync_cursors" WHERE stream = 'orders-shadow');
+-- So khớp (19/10 chạy thật mới thấy: "Order" KHÔNG có cột updatedAt → mốc "đường cũ thấy biến động" lấy từ webhook_events,
+-- sàn gửi 99,8–100 % biến động (H3)). Chỉ xét sự kiện có createdAt < cursorAt − 30': đơn đổi TIẾP sau con trỏ có update_time
+-- mới hơn → rơi sang cửa sổ kế (lượt 1 ngày 19/10 "sót" 2 đơn vì thế, lượt 2 thấy ngay); sót THẬT là sót bền qua nhiều lượt.
+--   don_co_webhook = đơn có sự kiện sàn từ lúc ghi danh · bong_thay = bóng cũng thấy · chi_cu = đường MỚI SÓT → dừng gian, tìm gốc
+--   chi_moi (câu dưới) = bóng thấy mà Order không có = đường CŨ sót (hoặc đơn > 90 ngày)
+WITH cur AS (SELECT s."channelId", s."cursorAt", c."channelName"::text AS src, c."externalShopId" AS shop, c."shopName"
+             FROM "sync_cursors" s JOIN "Channel" c ON c.id = s."channelId" WHERE s.stream = 'orders-shadow'),
+     ev AS (SELECT cur."channelId", w."entityId" AS code, min(w."createdAt") AS first_at
+            FROM cur JOIN webhook_events w ON w.source = cur.src AND w."shopId" = cur.shop
+            WHERE w."createdAt" >= (now() AT TIME ZONE 'UTC') - interval '3 days' AND w."createdAt" < cur."cursorAt" - interval '30 minutes' GROUP BY 1, 2)
+SELECT cur."shopName",
+       (SELECT count(*) FROM ev WHERE ev."channelId" = cur."channelId") AS don_co_webhook,
+       (SELECT count(*) FROM ev WHERE ev."channelId" = cur."channelId" AND EXISTS (SELECT 1 FROM "sync_shadow_orders" s WHERE s."channelId" = ev."channelId" AND s."orderCode" = ev.code)) AS bong_thay,
+       (SELECT string_agg(code || '@' || to_char(first_at, 'DD HH24:MI'), ', ') FROM ev WHERE ev."channelId" = cur."channelId"
+          AND NOT EXISTS (SELECT 1 FROM "sync_shadow_orders" s WHERE s."channelId" = ev."channelId" AND s."orderCode" = ev.code)) AS chi_cu,
+       (SELECT count(*) FROM "sync_shadow_orders" s WHERE s."channelId" = cur."channelId"
+          AND NOT EXISTS (SELECT 1 FROM "Order" o WHERE o."channelId" = s."channelId" AND o."orderCode" = s."orderCode")) AS chi_moi
+FROM cur;
 -- 429 / lùi theo khóa
 SELECT key, failures, factor, hits, to_timestamp("blockedUntilMs"/1000) AS blocked_until, "lastError", "updatedAt" FROM "api_rate_keys" ORDER BY hits DESC;
 ```
 Log worker: `[read-lanes] <sàn> "<gian>" orders-shadow: …` chỉ in khi có gì khác thường (co, đáy tràn, đọc lại, thử lại trang, hết ngân sách);
 `[gateway] 429 …` khi lùi; `[cursor-reader] … vẫn lệch tổng` = H8 trên sàn thật.
 
-**Tiêu chí đạt để sang lát 2 (ghi Order qua đường mới, theo cờ gian):** 3–7 ngày trên ≥ 2 gian: `chi_cu` = 0 (trừ đơn Hubsell tự sửa không
-qua sàn — xem tay), trễ con trỏ p99 < 15', không `floorOverflows`, 429 theo khóa không lan sang gian khác (api_rate_keys chỉ có khóa gian/endpoint).
-Lệch = dừng gian đó (xóa dòng), tìm gốc, không chỉnh số.
+**Tiêu chí đạt để sang lát 2 (ghi Order qua đường mới, theo cờ gian):** 3–7 ngày trên ≥ 2 gian: `chi_cu` rỗng (sự kiện sàn gửi mà bóng
+không thấy — trừ sự kiện không phải đơn, xem tay), trễ con trỏ p99 < 15', không `floorOverflows`, 429 theo khóa không lan sang gian khác
+(api_rate_keys chỉ có khóa gian/endpoint). Lệch = dừng gian đó (xóa dòng), tìm gốc, không chỉnh số.
+
+**Chạy thật 19/10 13:12 VN (ghi danh TikTok `Siêu Thị 8686` + Shopee `ANO Official Store` qua SQL trên Supabase):** làn nhặt trong < 2 s sau
+INSERT; ANO 1 trang → 2 mã; 8686 3 trang → 132 mã, dải update_time 05:42:47 → 06:10:04 UTC = đúng cửa sổ [ghi danh − 30', now − 2'];
+cả hai `caught_up`, trễ 3', thuê bao đã trả, tới hạn lại sau 10'; khóa GCRA `TIKTOK:<app>|shop:7494607438764411097` f0 h0 (0 lần 429);
+134/134 mã bóng có trong Order (chi_moi = 0). **Lượt 2 lúc 06:22:09 UTC** (đúng 10' sau, không cần ai nhắc): cửa sổ [06:10:06, 06:20:09],
+8686 1 trang +27 mã (159), ANO 1 trang +0; cả hai `caught_up`, trễ 3'. Lộ 3 điều:
+(a) `Order` không có `updatedAt` → SQL so khớp đổi sang webhook_events (ở trên).
+(b) Shopee `get_order_list` không trả `order_status` nếu không xin `response_optional_fields` → bóng Shopee status NULL — lát 2 đọc chi tiết nên không sửa ở lát 1.
+(c) So 33 đơn có webhook của 8686 trong cửa sổ lượt 1: 31 thấy, 2 đơn MỚI (sự kiện 06:02 và 06:08) "sót" — nhưng lượt 2 thấy ngay với
+update_time **06:10:50 / 06:16:37** (> con trỏ 06:10:06): đơn đổi tiếp (chuẩn bị hàng) nên update_time nhảy sang cửa sổ kế. KHÔNG phải sót;
+SQL so khớp phải chừa 30' sát con trỏ. **Sót thật = sót bền qua nhiều lượt.**
+**Số đáng chú ý cho lát 2 (dung lượng):** 132 mã đổi update_time / 28' ở 8686 nhưng chỉ 22 có webhook (99 IN_TRANSIT — mốc vận chuyển làm
+nhảy update_time mà sàn không bắn sự kiện) → đọc theo update_time thấy ≈ **5–6× số biến động có webhook** (H7 đếm webhook, không đếm cái này).
+TikTok `orders/search` trả trọn đơn nên không tốn lệnh chi tiết; Shopee danh sách → chi tiết sẽ nhân lệnh theo tỷ lệ này — đo trên ANO khi đủ số
+(2 đơn/2 lượt chưa nói được gì). Script `scripts/tiktok-search-probe.ts` (chỉ đọc, Render shell) để hỏi thẳng sàn khi nghi sót thật.
 
 **Lát 2 trở đi (chưa làm):** chi tiết đơn + ghi qua `order-sync-write` theo cờ gian; luồng hoàn / tài chính; thẻ HQ p50/p99; Pha D gỡ đường cũ.
 

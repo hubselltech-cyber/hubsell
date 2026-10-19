@@ -51,23 +51,32 @@ async function main() {
     return;
   }
   if (cmd === "compare") {
+    // "Order" không có cột updatedAt (lộ 19/10 khi chạy thật) → "đường cũ thấy biến động" = sự kiện sàn gửi (webhook_events, H3 phủ 99,8–100 %).
     const days = Number(daysArg ?? 3);
     const since = new Date(Date.now() - days * 86_400_000);
     const cur = await prisma.syncCursor.findUnique({ where: { channelId_stream: { channelId: ch.id, stream: SHADOW_STREAM } } });
-    const [onlyOld, onlyNew, both] = await Promise.all([
-      prisma.$queryRaw<{ n: bigint }[]>`
-        SELECT count(*) AS n FROM "Order" o
-         WHERE o."channelId" = ${ch.id} AND o."updatedAt" >= ${since}
-           AND NOT EXISTS (SELECT 1 FROM "sync_shadow_orders" s WHERE s."channelId" = o."channelId" AND s."orderCode" = o."orderCode")`,
+    // Chừa 30' sát con trỏ: đơn đổi tiếp sau con trỏ có update_time mới hơn → cửa sổ kế mới thấy (19/10 lượt 1 "sót" 2 đơn vì thế).
+    const upto = new Date((cur?.cursorAt.getTime() ?? 0) - 30 * 60_000);
+    const [ev, onlyNew] = await Promise.all([
+      prisma.$queryRaw<{ n: bigint; seen: bigint; missed: string | null }[]>`
+        WITH ev AS (
+          SELECT w."entityId" AS code, min(w."createdAt") AS first_at FROM webhook_events w
+           WHERE w.source = ${ch.channelName}::text AND w."shopId" = ${ch.externalShopId ?? ""}
+             AND w."createdAt" >= ${since} AND w."createdAt" < ${upto}
+           GROUP BY 1)
+        SELECT count(*) AS n,
+               count(*) FILTER (WHERE EXISTS (SELECT 1 FROM "sync_shadow_orders" s WHERE s."channelId" = ${ch.id} AND s."orderCode" = ev.code)) AS seen,
+               string_agg(code || '@' || to_char(first_at, 'DD HH24:MI'), ', ')
+                 FILTER (WHERE NOT EXISTS (SELECT 1 FROM "sync_shadow_orders" s WHERE s."channelId" = ${ch.id} AND s."orderCode" = ev.code)) AS missed
+          FROM ev`,
       prisma.$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM "sync_shadow_orders" s
          WHERE s."channelId" = ${ch.id} AND s."firstSeenAt" >= ${since}
            AND NOT EXISTS (SELECT 1 FROM "Order" o WHERE o."channelId" = s."channelId" AND o."orderCode" = s."orderCode")`,
-      prisma.$queryRaw<{ n: bigint }[]>`
-        SELECT count(*) AS n FROM "sync_shadow_orders" s JOIN "Order" o ON o."channelId" = s."channelId" AND o."orderCode" = s."orderCode"
-         WHERE s."channelId" = ${ch.id} AND s."firstSeenAt" >= ${since}`,
     ]);
-    console.log(`${ch.channelName} "${ch.shopName}" ${days} ngày: cả hai ${both[0].n} · chỉ đường CŨ (Order đổi mà bóng không thấy) ${onlyOld[0].n} · chỉ đường MỚI ${onlyNew[0].n}`);
+    console.log(
+      `${ch.channelName} "${ch.shopName}" ${days} ngày: đơn có webhook ${ev[0].n} · bóng thấy ${ev[0].seen} · đường MỚI SÓT: ${ev[0].missed ?? "(không)"} · chỉ đường MỚI (Order không có) ${onlyNew[0].n}`
+    );
     if (cur) console.log(`con trỏ ${cur.cursorAt.toISOString()} (trễ ${Math.round((Date.now() - cur.cursorAt.getTime()) / 60_000)}'), cửa sổ ${Math.round(cur.windowMs / 60_000)}'`);
     return;
   }
