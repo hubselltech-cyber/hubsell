@@ -21,6 +21,7 @@
 - **Anh (ảnh nút): "Hơi bị phẳng hòa vào giao diện mà phần này quan trọng lắm"** → nút "+ Thêm chiến dịch nhiều sản phẩm vào bảng" đổi thành đỏ đặc, chữ đậm, cao 32px (cùng tông đỏ anh chọn cho link Video hướng dẫn). tsc + eslint FE sạch.
 - **Anh: "Màu đỏ nhìn nguy hiểm quá, giảm bớt tông"** → nút đổi sang xanh biển dịu (sky-600, chữ trắng đậm), cùng họ với hộp giải thích chiến dịch Nhóm trong modal. tsc + eslint FE sạch.
 - **Anh: "Sao Seller Center chưa ghi nhận cắn tiền mà Hubsell có rồi?"** (Hubsell 98.734₫ · 1 đơn · 280.000₫, Seller Center toàn 0) → URL Seller Center có `from=1785517200&to=1788195599` = 01–31/08/2026 → bộ lọc ngày đang ở tháng 8. **Anh xác nhận: đúng do bộ lọc.** Ghi vào bài hướng dẫn khách mục "Lỗi hay gặp".
+- **Anh: "Mình đang tính theo đơn hàng hay theo sản phẩm?"** (Seller Center 01–18/10: 210 đơn / 218 SP / 5.520.959₫; Hubsell 217 đơn / 5.520.960₫) → docs 15.11: cột Đơn = `broad_order` = số ĐƠN (SP đã bán là `broad_order_amount`, không lưu); lệch 217 vs 210 vì Shopee trừ lại đơn hủy nhiều ngày sau còn lịch sử Hubsell chỉ kéo lại 7 ngày (chi phí khớp từng đồng = cùng khoảng ngày). **ĐÃ SỬA:** `WINDOW_DAYS_SHOPEE = 30` riêng Shopee (một call ≤ 1 tháng → không thêm lệnh sàn), Lazada giữ 7. tsc sạch, 80 test worker + vn-day xanh. Lượt lịch sử kế tiếp 217 phải về ≈210.
 - Memory: thư mục memory không có trong phiên cloud này → ghi ở PROGRESS + docs 15 thay thế.
 
 ## Phiên 19/10/2026 chiều muộn — HQ ĐỎ "MỐC NƯỚC 8686 2598'" = LỖI THIẾT KẾ LÁT 3.2 (ĐỌC MỚI → CŨ KHÔNG ĐUỔI KỊP), ĐÃ SỬA; M2 CHẠM NHƯNG CHƯA CẦN NÂNG GÓI

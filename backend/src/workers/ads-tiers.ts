@@ -353,9 +353,11 @@ async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
   // ---------- Shopee: chỉ khi gian có quyền Ads API ----------
   if (!(await hasShopeeAdsAccess(channel.id))) return { synced: false, rateLimited: null };
 
+  // Shopee: cửa sổ 30 ngày cùng số call với 7 ngày (một call ≤ 1 tháng) — xem ADS_CADENCE.WINDOW_DAYS_SHOPEE.
+  const shopeeDaysBack = backfill ? ADS_BACKFILL_DAYS : ADS_CADENCE.WINDOW_DAYS_SHOPEE;
   let synced = false;
   try {
-    const ads = await syncShopeeAdsSpend(channel, { daysBack });
+    const ads = await syncShopeeAdsSpend(channel, { daysBack: shopeeDaysBack });
     synced = true;
     if (ads.daysUpserted > 0 && backfill) {
       console.log(`[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`);
@@ -373,17 +375,17 @@ async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
   }
   try {
     if (backfill) {
-      const camp = await syncShopeeAdsCampaigns(channel, { daysBack });
+      const camp = await syncShopeeAdsCampaigns(channel, { daysBack: shopeeDaysBack });
       synced = true;
       console.log(
-        `[Auto-sync] Backfill Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
+        `[Auto-sync] Backfill Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ${shopeeDaysBack} ngày`
       );
     } else {
-      const w = await syncShopeeAdsPerfWindow(channel, daysBack);
+      const w = await syncShopeeAdsPerfWindow(channel, shopeeDaysBack);
       synced = true;
       if (w.perfDaysUpserted > 0) {
         console.log(
-          `[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}": ${w.campaigns} campaign, ${w.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
+          `[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}": ${w.campaigns} campaign, ${w.perfDaysUpserted} dòng hiệu suất ${shopeeDaysBack} ngày`
         );
       }
     }

@@ -166,7 +166,8 @@ ngày), Lazada ~7 call report + adgroup. Không có gì seller "cần tức thì
 | `PULSE_MIN` | 30 | M1; env `ADS_PULSE_MINUTES` |
 | `PULSE_IDLE_MIN` | 120 | gian có campaign nhưng 2 ngày không chi |
 | `FULL_HOURS` | 6 | cấu hình campaign đổi chậm; env `ADS_SYNC_HOURS` |
-| `WINDOW_DAYS` | 7 | sàn chỉnh số vài ngày đầu |
+| `WINDOW_DAYS` | 7 | Lazada (report 1 call/ngày) |
+| `WINDOW_DAYS_SHOPEE` | 30 (19/10/2026) | Shopee: perf campaign + chi cấp shop nhận ≤ 1 tháng/call → 30 ngày cùng số call; Shopee trừ lại đơn hủy nhiều ngày sau (ANO 01–18/10: Hubsell 217 đơn vs Seller Center 210, chi khớp từng đồng) |
 | `BACKFILL_DAYS` | 30 | lần đầu / nối lại |
 | `STALE_NUDGE_MIN` | 30 | mở trang |
 | `REFRESH_GAP_MIN` | 2 | chống spam nút Làm mới |

@@ -837,3 +837,16 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
   nhắc `from=`/`to=` không phải id); ô nhập (Enter = thêm) + **Thêm vào bảng**; câu lỗi sàn đỏ; ghi chú có gì /
   không có gì sau khi thêm; `<details>` "Soi kỹ thuật" in JSON. Thêm xong đóng popup, nạp lại bảng, dòng syncNote.
 - Bỏ ô `<details>` thu gọn dưới ghi chú nguồn số (lát trước) — một lối vào duy nhất qua popup.
+
+### 15.11 "ĐƠN" HUBSELL LÀ ĐƠN HAY SẢN PHẨM? (19/10 đêm, anh Trung so Seller Center 01–18/10: Shopee 210 đơn / 218 SP / 5.520.959₫, Hubsell 217 đơn / 5.520.960₫)
+- Cột **Đơn** = trường `broad_order` của Shopee = **số ĐƠN** (đơn của bất kỳ SP nào trong shop, 7 ngày sau click).
+  Số **sản phẩm đã bán** là trường `broad_order_amount`, Hubsell KHÔNG lưu/hiện. Khớp 218 chỉ là trùng hợp.
+- Chi phí khớp từng đồng (5.520.960 vs 5.520.959 — làm tròn) → cùng khoảng ngày, cùng nguồn. Lệch 217 vs 210 là
+  vì **Shopee trừ lại đơn hủy** trong cửa sổ quy đổi 7 ngày sau click, số đơn của một ngày còn giảm nhiều ngày sau;
+  tầng lịch sử Hubsell chỉ kéo lại **7 ngày** gần nhất (`WINDOW_DAYS` 7) nên ngày 01–11/10 giữ số từ lần cuối còn trong
+  cửa sổ. Chi phí không bao giờ đổi lùi, đơn/GMV thì có → đúng kiểu lệch "đơn cao hơn, tiền bằng nhau".
+- **ĐÃ SỬA:** `ADS_CADENCE.WINDOW_DAYS_SHOPEE = 30` dùng riêng cho Shopee ở `ads-tiers.ts` (perf campaign + chi cấp
+  shop đều nhận khoảng ≤ 1 tháng trong MỘT call → 30 ngày tốn đúng bằng 7 ngày, không thêm lệnh sàn). Lazada giữ 7
+  (report 1 call/ngày). Lượt lịch sử 6h kế tiếp sẽ kéo lại 01–18/10 → 217 phải về 210 (hoặc số mới nhất của Shopee).
+- Nếu seller cần cột "SP đã bán": thêm cột `broadOrderAmount` vào `AdsCampaignDailyPerf` + đọc `broad_order_amount`
+  ở bước 3 (1 migration, 0 call thêm) — chưa làm, chờ anh thấy cần.

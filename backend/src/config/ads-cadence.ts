@@ -30,8 +30,16 @@ export const ADS_CADENCE = {
   PULSE_NO_CAMPAIGN_MIN: 120,
   /** Tầng lịch sử (giờ). */
   FULL_HOURS: envNum("ADS_SYNC_HOURS", 6),
-  /** Cửa sổ kéo lại mỗi lượt lịch sử (ngày) — sàn chỉnh số vài ngày đầu. */
+  /** Cửa sổ kéo lại mỗi lượt lịch sử (ngày) — Lazada: 1 call/ngày nên giữ 7. */
   WINDOW_DAYS: 7,
+  /**
+   * Cửa sổ lịch sử RIÊNG cho Shopee (ngày): get_product_campaign_daily_performance + get_all_cpc_ads_daily_performance
+   * nhận khoảng ≤ 1 tháng trong MỘT call, nên 30 ngày tốn đúng bằng 7 ngày. Lý do (19/10/2026, anh Trung so với
+   * Seller Center): Shopee TRỪ LẠI đơn hủy trong cửa sổ quy đổi 7 ngày sau click → số đơn của ngày đã qua còn
+   * giảm thêm nhiều ngày sau; chỉ kéo lại 7 ngày thì ngày 8–30 giữ số cũ (ANO 01–18/10: Hubsell 217 đơn, Seller
+   * Center 210, chi phí khớp từng đồng). Chi phí không đổi lùi, đơn/GMV thì có.
+   */
+  WINDOW_DAYS_SHOPEE: 30,
   /** Cửa sổ lần đầu / vừa nối Hubsell Ads (ngày). */
   BACKFILL_DAYS: 30,
   /** Mở trang Trợ lý mà số cũ hơn ngưỡng này (phút) → nudge xung ngay. */
