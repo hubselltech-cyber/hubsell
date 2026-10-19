@@ -758,3 +758,33 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
 - **Ticket 15.6 sửa câu hỏi:** không hỏi "endpoint nào đọc", mà hỏi "endpoint nào LIỆT KÊ multi-product campaign id
   và đọc setting của nó, vì daily_performance đã trả được theo id".
 - Shopee phía seller: ROAS 11,8x quá cao → 0 lượt xem cả ngày; khuyên hạ về hòa vốn SP × 1,1.
+
+### 15.8 LÁT 1 ĐÃ CODE (19/10/2026 tối, anh Trung: "làm luôn cho xong") — chủ shop nhập id, Hubsell kéo số theo ngày
+- **Lượt soi 2 (cùng id 202942166):** `daily_perf_today` 19/10 = 124 lượt xem · 8 click · 1.475₫ (chiến dịch ĐANG
+  chạy thật; Seller Center hiện 0 là chậm số). `daily_perf_neighbors` id ±15: sàn từ chối CẢ LÔ `error_param … has
+  invalid product ads campaign ids` → (a) không có id con liền kề theo SP, (b) **một id lạ làm hỏng cả lô 100** →
+  id nhóm phải đi lô riêng. Seller Center gọi loại này là `manual-mpd` (URL `/pas/product/manual-mpd/<id>`).
+- **Backend (`ads-campaigns.ts`):** `ADS_AD_TYPE_GROUP = "group"`; `splitPerfBatches` (id thường gom ≤100, mỗi id
+  nhóm một lô); `upsertShopeeCampaignPerf(…, { groupIds })` — lô nhóm bị sàn từ chối id (xóa trên Seller Center) →
+  dòng `status = "closed"`, không chặn lô khác, lỗi 429/ngân sách vẫn ném lên; `syncShopeeAdsPerfWindow` (lịch sử)
+  và `pulseShopeeAds` bước 3b (xung) tự gom dòng nhóm còn sống (`liveShopeeGroupCampaigns`), không chạm
+  setting_info; `addShopeeGroupCampaign` (1 call hôm nay xác nhận id thuộc gian + lấy ad_name → upsert dòng
+  `adType group`, status "ongoing" vì sàn không cho đọc, placement từ sàn, không budget/roas/itemIds → 1 call kéo 30
+  ngày); `removeShopeeGroupCampaign` (xóa dòng, cascade perf). Routes `POST shopee/campaigns/group {channelId,
+  campaignId}` (409 kèm câu sàn), `DELETE shopee/campaigns/group/:id?channelId=`.
+- **Trợ lý:** `selectAutoActionCandidates` loại `adType group` (chỉ cảnh báo); `pauseCampaignByOwner` /
+  `resumeCampaignByOwner` / `setRoasTargetByOwner` trả lỗi "Shopee chưa cho gửi lệnh qua API" cho dòng nhóm
+  (chưa bắn thử edit_manual_product_ads với id nhóm — setting_info đã từ chối cùng kiểu, không đáng tốn một lần
+  pause thật làm mất học máy). Hòa vốn: itemIds rỗng → rơi về biên lãi SHOP (đường có sẵn của ads-insights).
+- **FE:** nhãn loại "Nhóm nhiều SP"; ô thu gọn dưới ghi chú nguồn số đổi thành "…Chiến dịch Nhóm nhiều sản phẩm mà
+  bảng trên không thấy? Thêm theo id" — nút **Thêm vào bảng** (chính) + **Soi** (phụ, JSON); thêm xong nạp lại
+  dashboard + dòng syncNote. Modal: hộp xanh giải thích giới hạn, ẩn Tạm dừng / Bật lại, thêm **Bỏ theo dõi**
+  (confirm, chỉ xóa trong Hubsell). Dòng "chi ngoài bảng" sửa chữ: "chưa thêm theo id".
+- **Kiểm:** tsc BE+FE sạch, eslint FE sạch, test mới `ads-group-campaign.test.ts` (3 ca splitPerfBatches + 1 ca
+  Trợ lý bỏ qua nhóm) + ads-auto-execute + ads-shopee-vn-day + ads-gms = 50/50. **Chưa chạy thật** — anh Trung thêm
+  202942166 trên ANO sau deploy: dòng phải hiện "Nhóm nhiều SP · Đang chạy" với số hôm nay (124 lượt xem / 1.475₫),
+  xung 30' kế tiếp cập nhật.
+- **Còn treo:** (a) soi lại sáng 20/10 xem id_list có liệt kê muộn không (nếu có → lát 2 tự khám phá không cần nhập
+  tay); (b) ticket 15.6 đổi câu hỏi thành "endpoint LIỆT KÊ + đọc setting multi-product campaign"; (c) trạng thái dòng
+  nhóm là số nhớ (ongoing cho tới khi sàn từ chối id) — seller tạm dừng trên Seller Center thì Hubsell vẫn ghi
+  "Đang chạy" nhưng số ngày sẽ về 0, chấp nhận ở lát 1.

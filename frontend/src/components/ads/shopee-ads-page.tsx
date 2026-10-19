@@ -57,8 +57,10 @@ import {
   saveShopeeAssistantConfig,
   requestAdsRefresh,
   restoreShopeeAdsBudget,
+  addShopeeGroupCampaign,
   pauseShopeeAdsCampaign,
   probeShopeeCampaignById,
+  removeShopeeGroupCampaign,
   resumeShopeeAdsCampaign,
   setShopeeAdsRoasTarget,
   type AdsAssistantScorecard,
@@ -173,6 +175,8 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
 const AD_TYPE_LABEL: Record<string, string> = {
   auto: "Tự động",
   manual: "Thủ công",
+  // Chiến dịch Nhóm nhiều SP (docs mục 15.7): chủ shop nhập id, Hubsell chỉ đọc số theo ngày.
+  group: "Nhóm nhiều SP",
 };
 
 const PLACEMENT_LABEL: Record<string, string> = {
@@ -499,6 +503,24 @@ export function ShopeeAdsPage({
       await load(channelId, range);
     } catch (err) {
       setSyncNote(`Tạm dừng lỗi: ${(err as Error).message}`);
+    } finally {
+      setDeciding(false);
+    }
+  }
+
+  /** Mục 15.7: bỏ theo dõi chiến dịch Nhóm nhiều SP (xóa dòng trong Hubsell, không đụng sàn). */
+  async function removeGroupCampaign() {
+    const campaign = data?.campaigns.find((c) => c.id === detailId);
+    if (!campaign || deciding || campaign.adType !== "group") return;
+    if (!window.confirm(`Bỏ theo dõi "${campaign.name || campaign.campaignId}" trong Hubsell? Chiến dịch trên Shopee không đổi.`)) return;
+    setDeciding(true);
+    try {
+      await removeShopeeGroupCampaign(campaign.id, channelId);
+      setDetailId(null);
+      setSyncNote(`Đã bỏ theo dõi "${campaign.name || campaign.campaignId}".`);
+      await load(channelId, range);
+    } catch (err) {
+      setSyncNote(`Bỏ theo dõi lỗi: ${(err as Error).message}`);
     } finally {
       setDeciding(false);
     }
@@ -1103,18 +1125,18 @@ export function ShopeeAdsPage({
               <span className="text-amber-600">
                 {" "}
                 Trong đó {formatVND(outsideCampaignSpend(summary))} chi NGOÀI bảng chiến dịch ở trên
-                (Chiến dịch Nhóm nhiều sản phẩm / GMV Max cấp shop — Shopee không trả các loại này qua
-                API chiến dịch sản phẩm, Hubsell chỉ thấy tổng chi cấp shop).
+                (Chiến dịch Nhóm nhiều sản phẩm chưa thêm theo id, hoặc GMV Max cấp shop — Shopee không
+                liệt kê các loại này qua API, Hubsell chỉ thấy tổng chi cấp shop).
               </span>
             )}
           </p>
         )}
 
-        {/* ===== SOI CHIẾN DỊCH THEO ID (mục 15, 19/10) — thu gọn, đọc thuần ===== */}
+        {/* ===== CHIẾN DỊCH NHÓM NHIỀU SP THEO ID (mục 15.7, 19/10) — thu gọn ===== */}
         {platform === "shopee" && channelId && adsLinked && (
           <details className="mx-auto max-w-3xl text-xs text-slate-500">
             <summary className="cursor-pointer select-none text-center">
-              Seller Center có chiến dịch đang chạy mà bảng trên không thấy? Soi theo id
+              Seller Center có Chiến dịch Nhóm nhiều sản phẩm mà bảng trên không thấy? Thêm theo id
             </summary>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
               <Input
@@ -1126,8 +1148,30 @@ export function ShopeeAdsPage({
               />
               <Button
                 size="sm"
+                disabled={probing || !probeId}
+                onClick={async () => {
+                  setProbing(true);
+                  setProbeOut(null);
+                  try {
+                    const r = await addShopeeGroupCampaign(channelId, probeId);
+                    setProbeOut(null);
+                    setProbeId("");
+                    setSyncNote(r.message);
+                    await load(channelId, range);
+                  } catch (err) {
+                    setProbeOut(`Không thêm được: ${(err as Error).message}`);
+                  } finally {
+                    setProbing(false);
+                  }
+                }}
+              >
+                {probing ? "Đang hỏi Shopee…" : "Thêm vào bảng"}
+              </Button>
+              <Button
+                size="sm"
                 variant="outline"
                 disabled={probing || !probeId}
+                title="Hỏi từng nhóm API Shopee với đúng id này và in nguyên văn — chỉ đọc, dùng khi cần hỗ trợ."
                 onClick={async () => {
                   setProbing(true);
                   setProbeOut(null);
@@ -1141,12 +1185,14 @@ export function ShopeeAdsPage({
                   }
                 }}
               >
-                {probing ? "Đang hỏi Shopee…" : "Soi"}
+                Soi
               </Button>
             </div>
             <p className="mt-1.5 text-center">
-              Hỏi từng nhóm API Shopee với đúng id này (danh sách chiến dịch sản phẩm, cấu hình, hiệu
-              suất, GMV Max cấp shop). Chỉ đọc, không đổi gì trên sàn. Gửi kết quả cho Hubsell nếu cần hỗ trợ.
+              Shopee không liệt kê Chiến dịch Nhóm qua API, chỉ trả số theo ngày khi biết id. Bấm vào chiến dịch
+              trên Seller Center, chép dãy số trong đường dẫn (…/manual-mpd/<b>202942166</b>?…), dán vào đây.
+              Hubsell sẽ hiện chi phí, đơn, ROAS của nó trong bảng; không có ngân sách / mục tiêu ROAS / trạng thái
+              (sàn không cho đọc) và Trợ lý chỉ cảnh báo, không tự dừng.
             </p>
             {probeOut && (
               <pre className="mt-2 max-h-96 overflow-auto rounded border bg-slate-50 p-2 text-left text-[11px] leading-snug dark:bg-slate-900">
@@ -1225,6 +1271,7 @@ export function ShopeeAdsPage({
           onPause={() => void pauseCampaign()}
           onRestoreBudget={() => void restoreBudget()}
           onSetTarget={(t) => void setRoasTarget(t)}
+          onRemoveGroup={() => void removeGroupCampaign()}
           onClose={() => setDetailId(null)}
           deciding={deciding}
           platform={platform}

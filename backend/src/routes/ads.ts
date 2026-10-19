@@ -25,6 +25,8 @@ import {
   resumeCampaignByOwner,
   setRoasTargetByOwner,
 } from "../integrations/shopee/ads-auto-execute";
+import { addShopeeGroupCampaign, removeShopeeGroupCampaign } from "../integrations/shopee/ads-campaigns";
+import { isApiBudgetError } from "../services/api-budget";
 import { loadAssistantScorecard } from "../integrations/shopee/ads-scorecard-data";
 import { getCampaignKeywordSuggestions, parseManualBidding } from "../integrations/shopee/ads-keywords";
 import {
@@ -593,6 +595,59 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           return;
         }
         res.json(await probeShopeeCampaignById(channel, campaignId));
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // POST /api/quang-cao/shopee/campaigns/group {channelId, campaignId} — THÊM chiến dịch Nhóm nhiều SP theo
+    // id Seller Center (mục 15.7): sàn không liệt kê loại này nhưng trả số theo ngày khi biết id. 1 call xác
+    // nhận + 1 call kéo 30 ngày. Lỗi id → 409 kèm câu của sàn.
+    router.post(`/${platform}/campaigns/group`, async (req: AuthRequest, res, next) => {
+      try {
+        const body = (req.body ?? {}) as { channelId?: unknown; campaignId?: unknown };
+        const channelId = typeof body.channelId === "string" ? body.channelId : "";
+        const campaignId = typeof body.campaignId === "string" ? body.campaignId.trim() : String(body.campaignId ?? "");
+        if (!/^\d{1,20}$/.test(campaignId)) {
+          res.status(400).json({ error: "campaignId phải là số (lấy từ URL chiến dịch trên Seller Center)" });
+          return;
+        }
+        const channel = await prisma.channel.findFirst({
+          where: { id: channelId, userId: req.ownerId!, channelName, status: "ACTIVE" },
+        });
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        try {
+          const r = await addShopeeGroupCampaign(channel, campaignId);
+          res.json({ ...r, message: `Đã thêm "${r.name || campaignId}" vào bảng — Hubsell kéo số theo ngày từ giờ.` });
+        } catch (err) {
+          if (isApiBudgetError(err)) throw err;
+          res.status(409).json({ error: (err as Error).message });
+        }
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // DELETE /api/quang-cao/shopee/campaigns/group/:id?channelId= — bỏ theo dõi (xóa dòng + số theo ngày).
+    router.delete(`/${platform}/campaigns/group/:id`, async (req: AuthRequest, res, next) => {
+      try {
+        const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+        const channel = await prisma.channel.findFirst({
+          where: { id: channelId, userId: req.ownerId!, channelName },
+        });
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        const ok = await removeShopeeGroupCampaign(channel, String(req.params.id));
+        if (!ok) {
+          res.status(404).json({ error: "Không tìm thấy chiến dịch Nhóm này trong bảng" });
+          return;
+        }
+        res.json({ ok: true });
       } catch (err) {
         next(err);
       }

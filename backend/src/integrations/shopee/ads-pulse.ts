@@ -26,6 +26,7 @@ import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import { getAdsShopToggleInfo, getAdsTotalBalance } from "./client";
 import {
   fetchShopeeCampaignRefs,
+  liveShopeeGroupCampaigns,
   upsertShopeeCampaignPerf,
   upsertShopeeCampaignSettings,
 } from "./ads-campaigns";
@@ -88,8 +89,14 @@ export async function pulseShopeeAds(
 
   // 3. Hiệu suất HÔM NAY (ngày sàn, giờ VN) của các campaign đó (1 call/100). Xung chỉ kéo
   // đúng hôm nay; số hôm qua sàn chỉnh muộn là việc của tầng lịch sử 6 giờ.
+  // 3b. Chiến dịch Nhóm nhiều SP (mục 15.7): id không có trong id_list nên bước 1–2 bỏ qua; dòng Nhóm còn
+  // sống trong DB vẫn kéo số hôm nay — mỗi id một call riêng (splitPerfBatches), không chạm setting_info.
+  const groupRows = await liveShopeeGroupCampaigns(channel.id);
+  for (const [cid, rowId] of groupRows) rowIdByCampaignId.set(cid, rowId);
   if (rowIdByCampaignId.size > 0) {
-    result.perfTodayUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(1));
+    result.perfTodayUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(1), {
+      groupIds: new Set(groupRows.keys()),
+    });
   }
 
   // 4. Chi tiêu cấp shop hôm nay — cùng ngày sàn với bước 3 (1 call).

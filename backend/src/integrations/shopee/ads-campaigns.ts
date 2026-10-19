@@ -24,10 +24,12 @@ import {
   getAdsCampaignDailyPerformance,
   getAdsCampaignIdList,
   getAdsCampaignSettingInfo,
+  type ShopeeAdsCampaignPerfData,
   type ShopeeAdsCampaignPerfEntry,
   type ShopeeAdsCampaignRef,
 } from "./client";
 import { resolveShopeeAdsAccess, type ShopeeAdsAccess } from "../hubsell-ads";
+import { isApiBudgetError } from "../../services/api-budget";
 import { fromShopeeDate } from "./ads-spend";
 import { shopeeDateParam, vnDayWindow } from "../../lib/ads-dates";
 import { reconcileHubsellPauseFlags, recordMarketplaceStatusChange } from "./ads-pause-flag";
@@ -64,6 +66,27 @@ function unwrapPerfCampaignList(
 
 /** Trần an toàn: shop bất thường trả mãi has_next_page → dừng ở 5.000 campaign. */
 const MAX_CAMPAIGNS = 5000;
+
+/**
+ * CHIẾN DỊCH NHÓM NHIỀU SẢN PHẨM (Seller Center `manual-mpd`, docs ADS-SHOPEE-KHAI-THAC-API mục 15.7, soi
+ * thật ANO 19/10/2026): `get_product_level_campaign_id_list` KHÔNG liệt kê, `setting_info` từ chối
+ * (error_param "auto & manual product ad types only"), nhưng `get_product_campaign_daily_performance`
+ * TRẢ ĐƯỢC theo id. → Chủ shop nhập id một lần, Hubsell lưu `adType = "group"` và chỉ kéo số theo ngày;
+ * không có ngân sách / ROAS mục tiêu / trạng thái / item list (sàn không cho đọc), không lệnh ghi.
+ */
+export const ADS_AD_TYPE_GROUP = "group";
+
+/**
+ * Chia id thành các lô gọi perf: id thường gom ≤100/lô như cũ; MỖI id nhóm một lô riêng — sàn từ chối
+ * CẢ LÔ khi có một id không hợp lệ (probe 19/10: "has invalid product ads campaign ids"), nên chiến dịch
+ * Nhóm bị xóa trên sàn không được kéo theo số của mọi campaign khác.
+ */
+export function splitPerfBatches(ids: string[], groupIds: ReadonlySet<string>): Array<{ ids: string[]; group: boolean }> {
+  const normal = ids.filter((id) => !groupIds.has(id));
+  const out: Array<{ ids: string[]; group: boolean }> = chunk(normal, 100).map((b) => ({ ids: b, group: false }));
+  for (const id of ids) if (groupIds.has(id)) out.push({ ids: [id], group: true });
+  return out;
+}
 
 // ---------- Bước 1: toàn bộ campaign_id (1 call / 100 campaign) ----------
 
@@ -180,21 +203,39 @@ export async function upsertShopeeCampaignSettings(
 export async function upsertShopeeCampaignPerf(
   access: ShopeeAdsAccess,
   rowIdByCampaignId: Map<string, string>,
-  window: { startKey: string; endKey: string }
+  window: { startKey: string; endKey: string },
+  opts: { groupIds?: ReadonlySet<string> } = {}
 ): Promise<number> {
   const { accessToken, shopId, cfg } = access;
   let upserted = 0;
-  for (const ids of chunk([...rowIdByCampaignId.keys()], 100)) {
-    const perf = await getAdsCampaignDailyPerformance(
-      {
-        accessToken,
-        shopId,
-        campaignIds: ids,
-        startDate: shopeeDateParam(window.startKey),
-        endDate: shopeeDateParam(window.endKey),
-      },
-      cfg
-    );
+  const groupIds = opts.groupIds ?? new Set<string>();
+  for (const batch of splitPerfBatches([...rowIdByCampaignId.keys()], groupIds)) {
+    const ids = batch.ids;
+    let perf: ShopeeAdsCampaignPerfData;
+    try {
+      perf = await getAdsCampaignDailyPerformance(
+        {
+          accessToken,
+          shopId,
+          campaignIds: ids,
+          startDate: shopeeDateParam(window.startKey),
+          endDate: shopeeDateParam(window.endKey),
+        },
+        cfg
+      );
+    } catch (err) {
+      // Lô nhóm bị sàn từ chối id (đã xóa trên Seller Center) → đóng dòng, không chặn lô khác.
+      // Lỗi ngân sách/429 vẫn ném lên để làn Ads lùi đúng luật.
+      if (batch.group && !isApiBudgetError(err) && /error_param|invalid/i.test((err as Error).message)) {
+        const rowId = rowIdByCampaignId.get(ids[0]);
+        if (rowId) {
+          await prisma.adsCampaign.update({ where: { id: rowId }, data: { status: "closed" } });
+          console.warn(`[Ads] Chiến dịch Nhóm ${ids[0]} bị sàn từ chối → đóng dòng:`, (err as Error).message);
+        }
+        continue;
+      }
+      throw err;
+    }
     for (const entry of unwrapPerfCampaignList(perf.response)) {
       if (entry.campaign_id == null) continue;
       const rowId = rowIdByCampaignId.get(String(entry.campaign_id));
@@ -262,11 +303,88 @@ export async function syncShopeeAdsPerfWindow(
 ): Promise<{ campaigns: number; perfDaysUpserted: number }> {
   const rows = await prisma.adsCampaign.findMany({
     where: { channelId: channel.id, status: { notIn: ["deleted", "closed"] } },
-    select: { id: true, campaignId: true },
+    select: { id: true, campaignId: true, adType: true },
   });
   if (rows.length === 0) return { campaigns: 0, perfDaysUpserted: 0 };
   const access = await resolveShopeeAdsAccess(channel);
   const rowIdByCampaignId = new Map(rows.map((r) => [r.campaignId, r.id] as const));
-  const perfDaysUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(daysBack));
+  const groupIds = new Set(rows.filter((r) => r.adType === ADS_AD_TYPE_GROUP).map((r) => r.campaignId));
+  const perfDaysUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(daysBack), { groupIds });
   return { campaigns: rows.length, perfDaysUpserted };
+}
+
+// ---------- Chiến dịch Nhóm nhiều SP: chủ shop nhập id (mục 15.7) ----------
+
+/** Dòng Nhóm còn sống của gian → map campaignId → rowId (xung kéo số hôm nay, lịch sử kéo cửa sổ). */
+export async function liveShopeeGroupCampaigns(channelId: string): Promise<Map<string, string>> {
+  const rows = await prisma.adsCampaign.findMany({
+    where: { channelId, adType: ADS_AD_TYPE_GROUP, status: { notIn: ["deleted", "closed", "ended"] } },
+    select: { id: true, campaignId: true },
+  });
+  return new Map(rows.map((r) => [r.campaignId, r.id] as const));
+}
+
+/**
+ * Thêm chiến dịch Nhóm theo id Seller Center: hỏi sàn số HÔM NAY (1 call) để xác nhận id thuộc gian +
+ * lấy ad_name; ghi dòng `adType = "group"`, rồi kéo 30 ngày (1 call) để bảng có số ngay. Id đã là
+ * campaign thường trong DB → từ chối (nó đã được đồng bộ bình thường).
+ */
+export async function addShopeeGroupCampaign(
+  channel: Channel,
+  campaignId: string
+): Promise<{ id: string; campaignId: string; name: string; perfDaysUpserted: number }> {
+  const existing = await prisma.adsCampaign.findUnique({
+    where: { channelId_campaignId: { channelId: channel.id, campaignId } },
+    select: { id: true, adType: true, name: true },
+  });
+  if (existing && existing.adType !== ADS_AD_TYPE_GROUP) {
+    throw new Error(`Chiến dịch ${campaignId} đã có trong bảng (loại ${existing.adType || "thường"}) — không phải chiến dịch Nhóm.`);
+  }
+  const access = await resolveShopeeAdsAccess(channel);
+  const today = vnDayWindow(1);
+  let perf: ShopeeAdsCampaignPerfData;
+  try {
+    perf = await getAdsCampaignDailyPerformance(
+      {
+        accessToken: access.accessToken,
+        shopId: access.shopId,
+        campaignIds: [campaignId],
+        startDate: shopeeDateParam(today.startKey),
+        endDate: shopeeDateParam(today.endKey),
+      },
+      access.cfg
+    );
+  } catch (err) {
+    if (isApiBudgetError(err)) throw err;
+    throw new Error(`Shopee không nhận id ${campaignId} cho gian này: ${(err as Error).message}`);
+  }
+  const entry = unwrapPerfCampaignList(perf.response).find((e) => String(e.campaign_id) === campaignId);
+  if (!entry) throw new Error(`Shopee không trả chiến dịch ${campaignId} — kiểm lại id trong URL Seller Center.`);
+  const data = {
+    adType: ADS_AD_TYPE_GROUP,
+    name: entry.ad_name ?? "",
+    // Sàn không cho đọc trạng thái: coi là đang chạy; lô perf bị từ chối id → "closed" (xem upsertShopeeCampaignPerf).
+    status: "ongoing",
+    placement: entry.campaign_placement ?? "all",
+    biddingMethod: "",
+    budget: 0,
+    roasTarget: null,
+    startTime: null,
+    endTime: null,
+    itemIds: "",
+  };
+  const row = await prisma.adsCampaign.upsert({
+    where: { channelId_campaignId: { channelId: channel.id, campaignId } },
+    update: { name: data.name, placement: data.placement, status: "ongoing" },
+    create: { channelId: channel.id, campaignId, ...data },
+  });
+  const map = new Map([[campaignId, row.id]]);
+  const perfDaysUpserted = await upsertShopeeCampaignPerf(access, map, vnDayWindow(30), { groupIds: new Set([campaignId]) });
+  return { id: row.id, campaignId, name: data.name, perfDaysUpserted };
+}
+
+/** Bỏ theo dõi chiến dịch Nhóm (xóa dòng + số theo ngày — cascade). Chỉ dòng adType "group". */
+export async function removeShopeeGroupCampaign(channel: Channel, rowId: string): Promise<boolean> {
+  const r = await prisma.adsCampaign.deleteMany({ where: { id: rowId, channelId: channel.id, adType: ADS_AD_TYPE_GROUP } });
+  return r.count > 0;
 }

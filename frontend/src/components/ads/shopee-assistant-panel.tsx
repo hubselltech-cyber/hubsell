@@ -224,6 +224,7 @@ export function ShopeeAssistantModal({
   onPause,
   onRestoreBudget,
   onSetTarget,
+  onRemoveGroup,
   onClose,
   deciding,
   platform = "shopee",
@@ -239,6 +240,8 @@ export function ShopeeAssistantModal({
   onRestoreBudget?: () => void;
   /** Đợt A: nâng mục tiêu ROAS trên sàn lên `target` (lệnh thật, chỉ Shopee). */
   onSetTarget?: (target: number) => void;
+  /** Mục 15.7: bỏ theo dõi chiến dịch Nhóm nhiều SP (chỉ xóa trong Hubsell). */
+  onRemoveGroup?: () => void;
   onClose: () => void;
   deciding: boolean;
   platform?: "shopee" | "lazada";
@@ -304,6 +307,8 @@ export function ShopeeAssistantModal({
         : null;
   const actionable =
     a?.verdict === "spike" || a?.verdict === "pause_now" || a?.verdict === "review" || a?.verdict === "grace";
+  // Chiến dịch Nhóm nhiều SP (docs mục 15.7): sàn chỉ cho đọc số theo ngày → không nút ghi, ROAS so hòa vốn shop.
+  const isGroup = campaign?.adType === "group";
 
   return (
     <Dialog open={campaign !== null} onOpenChange={(open) => !open && onClose()}>
@@ -342,6 +347,13 @@ export function ShopeeAssistantModal({
 
         {campaign && a && (
           <div className="min-w-0 space-y-4">
+            {isGroup && (
+              <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+                Chiến dịch Nhóm nhiều sản phẩm, thêm theo id. Shopee chỉ cho Hubsell đọc chi phí, đơn, ROAS theo ngày;
+                không đọc được ngân sách, mục tiêu ROAS, trạng thái, danh sách SP, và không nhận lệnh. ROAS so với hòa
+                vốn toàn shop; Trợ lý chỉ cảnh báo, muốn dừng hay đổi mục tiêu thì làm trên Seller Center.
+              </p>
+            )}
             {/* Số chính trong kỳ đang xem */}
             <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/40 p-3 text-sm sm:grid-cols-4">
               <div>
@@ -874,7 +886,18 @@ export function ShopeeAssistantModal({
                 <ExternalLink className="size-4" />
                 Mở Seller Center
               </Button>
-              {campaign.status === "ongoing" && onPause && !confirmPause && (
+              {isGroup && onRemoveGroup && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={deciding}
+                  onClick={onRemoveGroup}
+                  title="Xóa dòng này khỏi bảng Hubsell (không đụng chiến dịch trên Shopee)."
+                >
+                  Bỏ theo dõi
+                </Button>
+              )}
+              {!isGroup && campaign.status === "ongoing" && onPause && !confirmPause && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -887,7 +910,7 @@ export function ShopeeAssistantModal({
                   Tạm dừng
                 </Button>
               )}
-              {(campaign.hubsellPause || campaign.status === "paused") && onResume && (
+              {!isGroup && (campaign.hubsellPause || campaign.status === "paused") && onResume && (
                 <Button
                   size="sm"
                   className="bg-violet-600 text-white hover:bg-violet-700"

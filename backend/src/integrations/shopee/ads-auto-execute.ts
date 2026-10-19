@@ -88,6 +88,11 @@ import {
   type ShopeeAssistantConfig,
 } from "./ads-assistant-rules";
 import { clearHubsellBudgetFlag, clearHubsellPauseFlag } from "./ads-pause-flag";
+import { ADS_AD_TYPE_GROUP } from "./ads-campaigns";
+
+/** Chiến dịch Nhóm nhiều SP (mục 15.7): Shopee từ chối mọi lệnh theo id này ngoài đọc hiệu suất. */
+const GROUP_WRITE_ERROR =
+  "Chiến dịch Nhóm nhiều sản phẩm: Shopee chưa cho gửi lệnh qua API — tạm dừng / đổi mục tiêu trên Seller Center.";
 
 /** Verdict nào thì được phép hành động (v1: chỉ hai loại chắc tay nhất). */
 const ACTIONABLE_VERDICTS = new Set(["pause_now", "spike"]);
@@ -163,6 +168,8 @@ export function selectAutoActionCandidates(
     .filter(
       (it) =>
         it.row.status === "ongoing" &&
+        // Chiến dịch Nhóm nhiều SP (mục 15.7): sàn không nhận lệnh ghi theo id này → Trợ lý chỉ cảnh báo.
+        it.row.adType !== ADS_AD_TYPE_GROUP &&
         it.assessment.verdict !== null &&
         ACTIONABLE_VERDICTS.has(it.assessment.verdict) &&
         !assistantDecisionActive(it) &&
@@ -450,6 +457,7 @@ export async function pauseCampaignByOwner(
 ): Promise<ActOutcome & { status: string }> {
   const row = await prisma.adsCampaign.findFirst({ where: { id: rowId, channelId: channel.id } });
   if (!row) return { ok: false, error: "Không tìm thấy chiến dịch", status: "" };
+  if (row.adType === ADS_AD_TYPE_GROUP) return { ok: false, error: GROUP_WRITE_ERROR, status: row.status };
   if (row.status !== "ongoing") {
     return { ok: false, error: "Chiến dịch không đang chạy — không có gì để tạm dừng.", status: row.status };
   }
@@ -503,6 +511,7 @@ export async function resumeCampaignByOwner(
     where: { id: rowId, channelId: channel.id },
   });
   if (!row) return { ok: false, error: "Không tìm thấy chiến dịch", status: "" };
+  if (row.adType === ADS_AD_TYPE_GROUP) return { ok: false, error: GROUP_WRITE_ERROR, status: row.status };
   // 25/09: bật lại được cả campaign do người tạm dừng (nút Tạm dừng trong Hubsell / Seller Center),
   // không chỉ campaign Trợ lý dừng — API resume của sàn không phân biệt ai đã dừng.
   if (row.hubsellPausedAt == null && row.status !== "paused") {
@@ -950,6 +959,7 @@ export async function setRoasTargetByOwner(
   }
   const row = await prisma.adsCampaign.findFirst({ where: { id: rowId, channelId: channel.id } });
   if (!row) return { ok: false, error: "Không tìm thấy chiến dịch", roasTarget: target };
+  if (row.adType === ADS_AD_TYPE_GROUP) return { ok: false, error: GROUP_WRITE_ERROR, roasTarget: target };
   if (row.biddingMethod !== "auto") {
     return {
       ok: false,

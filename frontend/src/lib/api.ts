@@ -7878,6 +7878,25 @@ export function probeShopeeCampaignById(channelId: string, campaignId: string) {
   );
 }
 
+/**
+ * THÊM chiến dịch Nhóm nhiều SP theo id Seller Center (docs mục 15.7): Shopee không liệt kê loại này qua API
+ * nhưng trả số theo ngày khi biết id → Hubsell lưu dòng "group", chỉ đọc số, Trợ lý chỉ cảnh báo.
+ */
+export function addShopeeGroupCampaign(channelId: string, campaignId: string) {
+  return apiFetch<{ id: string; campaignId: string; name: string; perfDaysUpserted: number; message: string }>(
+    `/api/quang-cao/shopee/campaigns/group`,
+    { method: "POST", body: JSON.stringify({ channelId, campaignId }) }
+  );
+}
+
+/** Bỏ theo dõi chiến dịch Nhóm (xóa dòng + số theo ngày trong Hubsell; không đụng sàn). */
+export function removeShopeeGroupCampaign(rowId: string, channelId: string) {
+  return apiFetch<{ ok: boolean }>(
+    `/api/quang-cao/shopee/campaigns/group/${encodeURIComponent(rowId)}?channelId=${encodeURIComponent(channelId)}`,
+    { method: "DELETE" }
+  );
+}
+
 export function fetchShopeeGmsItems(channelId: string) {
   return apiFetch<ShopeeGmsItemsResponse>(
     `/api/quang-cao/shopee/gms/items?channelId=${encodeURIComponent(channelId)}`
