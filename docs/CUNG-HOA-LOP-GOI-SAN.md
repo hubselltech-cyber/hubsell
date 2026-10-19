@@ -419,6 +419,18 @@ trước; `đụng` > 0 là bình thường ở đơn mới); `api_rate_keys` c�
 **Tiêu chí sang Pha D (tắt đường cũ theo cờ gian):** 7 ngày trên ≥ 2 gian ghi song song: không lệch Order/OrderItem giữa hai đường (SQL so
 cột `shippingStatus/returnStatus/totalAmount` theo mã — soạn khi bật), trễ p99 < 15', không lỗi persist lặp.
 
+### 5e. Việc SẼ làm — chờ bóng đạt tiêu chí (anh Trung 19/10: "chưa cần làm ngay thì không làm", nhắc 22/10)
+
+Anh hỏi "Pha D có làm luôn không" → **chưa**: bóng mới chạy ~1 giờ, lát 2 chưa bật gian nào, đường mới còn thiếu 3 việc phụ.
+Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày); chưa đủ số thì 26/10 kiểm lại.
+
+| Khi nào | Việc | Ghi chú |
+|---|---|---|
+| Bóng đạt tiêu chí 5c + anh chốt | **Bật lát 2** cho 1 gian nhỏ (SQL 5d) | ghi song song 7 ngày |
+| Trước Pha D (làm được khi đã quyết bật lát 2) | **Pha D lát 0 — chuẩn bị, chưa bật gì:** (1) chuyển 3 việc phụ vào đường mới: hỏi lại ước tính escrow Shopee cho đơn đổi trạng thái (`changedOrderCodes` → `syncShopeePendingEscrowEstimates`), chuông giao thất bại Lazada (`noticeLazadaDeliveryFail`), thẻ HQ độ trễ đọc `sync_cursors` thay mốc nước cũ; (2) SQL so lệch hai đường theo mã đơn từng gian (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng); (3) công tắc tắt quét đơn đường cũ THEO GIAN (worker `order-auto-sync` bỏ qua tầng đơn của gian có cờ, webhook giữ nguyên), mặc định tắt | không đụng prod cho tới khi bật cờ |
+| 7 ngày song song không lệch | **Pha D**: bật công tắc từng gian → gỡ mã cũ, trần trang rải rác, cờ; docs hợp đồng đọc sàn thay DONG-BO-GIAI-DOAN-3 mục 1 | mỗi bước có số trước–sau |
+| Sau đơn | Luồng hoàn / tài chính (ví, escrow, sao kê) / Ads / sản phẩm qua máy đọc con trỏ | theo thứ tự mục 5 |
+
 ## 6. Cách bảo đảm "không làm điều chưa chắc"
 
 1. Giả thuyết → thí nghiệm → số → quyết định (mục 3). Không có số thì ghi "tự chọn" và lịch đo.
