@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CircleHelp,
@@ -243,6 +243,9 @@ export function ShopeeAdsPage({
   const [probeId, setProbeId] = useState("");
   const [probing, setProbing] = useState(false);
   const [probeOut, setProbeOut] = useState<string | null>(null);
+  // Ô thêm chiến dịch Nhóm mở/đóng — link ở dòng "chi ngoài bảng" mở ô này cho khách thấy ngay.
+  const [groupBoxOpen, setGroupBoxOpen] = useState(false);
+  const groupBoxRef = useRef<HTMLDetailsElement | null>(null);
   // Phân trang bảng chiến dịch — shop thật có hàng trăm campaign (DarkMan: 142).
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
@@ -1126,7 +1129,17 @@ export function ShopeeAdsPage({
                 {" "}
                 Trong đó {formatVND(outsideCampaignSpend(summary))} chi NGOÀI bảng chiến dịch ở trên
                 (Chiến dịch Nhóm nhiều sản phẩm chưa thêm theo id, hoặc GMV Max cấp shop — Shopee không
-                liệt kê các loại này qua API, Hubsell chỉ thấy tổng chi cấp shop).
+                liệt kê các loại này qua API, Hubsell chỉ thấy tổng chi cấp shop).{" "}
+                <button
+                  type="button"
+                  className="font-semibold text-red-600 underline-offset-2 hover:underline dark:text-red-400"
+                  onClick={() => {
+                    setGroupBoxOpen(true);
+                    groupBoxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                >
+                  Thêm chiến dịch Nhóm theo id
+                </button>
               </span>
             )}
           </p>
@@ -1134,7 +1147,12 @@ export function ShopeeAdsPage({
 
         {/* ===== CHIẾN DỊCH NHÓM NHIỀU SP THEO ID (mục 15.7, 19/10) — thu gọn ===== */}
         {platform === "shopee" && channelId && adsLinked && (
-          <details className="mx-auto max-w-3xl text-xs text-slate-500">
+          <details
+            ref={groupBoxRef}
+            open={groupBoxOpen}
+            onToggle={(e) => setGroupBoxOpen((e.currentTarget as HTMLDetailsElement).open)}
+            className="mx-auto max-w-3xl text-xs text-slate-500"
+          >
             <summary className="cursor-pointer select-none text-center">
               Seller Center có Chiến dịch Nhóm nhiều sản phẩm mà bảng trên không thấy? Thêm theo id
             </summary>
