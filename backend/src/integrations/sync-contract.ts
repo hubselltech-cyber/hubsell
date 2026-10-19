@@ -30,6 +30,16 @@ export interface SyncCompleteness {
    * hoặc sàn không trả update_time.
    */
   oldestUpdateTime?: number;
+  /**
+   * Lượt đọc theo chiều CŨ → MỚI (TikTok từ 19/10/2026, sort update_time ASC) bị
+   * cắt: mọi dòng có update_time ≤ mốc này ĐÃ đọc trọn, phần chưa đọc là phần
+   * MỚI HƠN → mốc nước tiến tới đây dù chưa đủ (services/order-watermark.ts).
+   * Chỉ đặt khi sàn trả đúng thứ tự tăng dần (adapter tự kiểm); undefined = như cũ.
+   * Vì sao: đọc MỚI → CŨ rồi cắt thì phần đã đọc không bao giờ được ghi nhận —
+   * gian > 2.500 biến động/cửa sổ (Siêu Thị 8686 TikTok 19/10) mỗi chu kỳ 2 lượt
+   * đọc lại đúng 2.500 đơn ấy, mốc chỉ tiến 6–13 phút, không bao giờ đuổi kịp.
+   */
+  coveredUpToSec?: number;
 }
 
 /** Kết quả một lượt đọc thuần: đã đọc hết hay dừng non. */
@@ -48,8 +58,12 @@ export function incompleteReadMessage(
   mode: string
 ): string {
   const n = r.fetched ?? r.scanned;
+  const rest =
+    r.coveredUpToSec !== undefined
+      ? `đã đọc trọn tới ${new Date(r.coveredUpToSec * 1000).toISOString()}, phần mới hơn lượt sau đọc tiếp`
+      : "phần cũ hơn chưa đọc";
   return (
     `[Auto-sync] ${channel.channelName} "${channel.shopName}" (${channel.id}): lượt ${mode} ${what} CHƯA ĐỦ — ` +
-    `dừng ở ${r.pages} trang${n !== undefined ? `, ${n} ${what === "đơn" ? "đơn" : "dòng"}` : ""}; phần cũ hơn chưa đọc`
+    `dừng ở ${r.pages} trang${n !== undefined ? `, ${n} ${what === "đơn" ? "đơn" : "dòng"}` : ""}; ${rest}`
   );
 }

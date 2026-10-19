@@ -8,7 +8,7 @@ Ngày lập: 14/10/2026. Người lập: Claude (Lead Dev). Thiết kế gốc: 
 |---|---|---|---|
 | 3.0 | Gỡ đuôi giai đoạn 1 (9 công tắc env đường lui + đường đọc đơn gốc) | Không | ✅ 14/10 `1ce3bd31` — chi tiết `docs/SO-CAI-DON.md` mục 9.8 |
 | 3.1 | Hợp đồng "dữ liệu + đầy đủ" cho mọi lượt đọc sàn + sửa Lazada kéo đơn ASC→DESC | Không | ✅ 14/10 — mục 1 dưới |
-| 3.2 | Mốc nước từng gian thay cửa sổ cứng 2 ngày | Có: 2 cột NULL trên `Channel` (migration `20261014230000_channel_orders_watermark`) | ✅ 14/10 tối — anh chốt luật + OVERLAP 30 phút + SQL; mã ở mục 2.7 |
+| 3.2 | Mốc nước từng gian thay cửa sổ cứng 2 ngày | Có: 2 cột NULL trên `Channel` (migration `20261014230000_channel_orders_watermark`) | ✅ 14/10 tối — anh chốt luật + OVERLAP 30 phút + SQL; mã ở mục 2.7; ⚠️ 19/10 sửa lỗi thiết kế gian vượt trần (TikTok đọc cũ → mới, mục 2.8) |
 | 3.3 | Nhịp quét theo mức hoạt động (webhook vừa tới thì lùi quét; gian vắng 7 ngày → 6 giờ; có đơn 10 phút → 5 phút) | Không | Chưa — các số là mặc định tự chọn, anh chưa nhận |
 | 3.4 | Bộ giới hạn tốc độ dùng chung ở DB, áp mọi API sàn | Có (bảng nhỏ) | Chưa |
 | 3.5 | Worker còn vòng for → vé (token-refresh, lazada-renewal, stock-reconcile, weekly-report, ads-daily-summary) | Có (1–2 cột lịch) | Chưa |
@@ -123,6 +123,30 @@ ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "ordersCatchupBeforeAt" TIMESTAMP
 - Worker: `runFastTier` tính cửa sổ TRƯỚC khi gọi sàn (`now0` = lúc bắt đầu), lượt backfill không dùng mốc nước; hai cột ghi trong cùng câu `UPDATE` lịch ở `finally` của `processChannel` (không thêm câu lệnh); lượt lỗi không ghi. Log chỉ khi bị cắt ("vét tiếp từ … tới …") hoặc vét xong ("mốc nước = …"); lượt thường im lặng. `ORDERS_DAYS_BACK` bỏ; đường lui `ORDER_SYNC_WINDOW=fixed`.
 - Test: `services/__tests__/order-watermark.test.ts` 15 ca (fresh / advance / sàn 90 ngày / catch-up / mốc vét ngoài cửa sổ / fixed / cắt / vét xong / vét lại cắt / chuỗi 3 lượt / log). Không có test DB cho đường ghi: hai cột đi cùng câu UPDATE lịch đã chạy từ 12/09 — kiểm trên prod theo 2.5.
 - Migration đã áp DB máy em (`apply-migration-local`). Prod: Render áp lúc khởi động; chỉ `ADD COLUMN NULL` trên `Channel`.
+
+### 2.8. Sửa 19/10/2026 — gian vượt trần đọc lại mãi: TikTok đọc CŨ → MỚI, mốc tiến dù bị cắt
+
+**Hiện tượng (HQ 19/10 14:58, anh Trung hỏi):** dải đỏ "Mốc nước quét đơn: trễ nhất 2598' (TIKTOK · Siêu Thị 8686)", KTNstore TikTok 2287'. SQL: hai gian quét OK (lastSyncError trống, syncFailCount 0, lượt 14:53), cờ backfill đã hạ, mốc nước 17/10 19:40 / 18/10 00:55, không mốc vét.
+
+**Cơ chế (log worker Render 14:08–14:53, từ khóa `8686`):**
+
+| Giờ VN | Dòng log | Nghĩa |
+|---|---|---|
+| 14:08:42 | `CHƯA ĐỦ — dừng ở 50 trang, 2500 đơn` · `+1 đơn mới (2499 không đổi)` · `mốc nước giữ nguyên, vét tiếp từ 17/10 11:38:05Z tới 12:21:43Z` | lượt advance đọc 2.500 đơn MỚI nhất của cửa sổ 43 giờ, bỏ hết (đã có), chỉ ghi mốc vét = đơn cũ nhất đã đọc |
+| 14:20:02 | `vét xong 11:38:05 → 12:21:43, mốc nước = 12:21:43Z` | lượt catchup vét 43 phút đơn cũ → mốc tiến tới mốc vét |
+| 14:24:22 | `CHƯA ĐỦ 2500` · `vét tiếp 11:51:43 → 12:27:23` | lại đọc đúng 2.500 đơn mới nhất ấy; mốc vét chỉ nhích 6 phút |
+| 14:32 / 14:43 / 14:53 | vét xong 12:27:23 → cắt → vét xong 12:40:01 | mỗi chu kỳ 2 lượt (~20 phút) mốc tiến 6–13 phút |
+
+Luật 2.2 "đọc MỚI NHẤT TRƯỚC, cắt thì mốc vét = cũ nhất đã đọc" chỉ đúng khi cửa sổ có ≤ trần đơn. Gian có **nhiều hơn trần (2.500) biến động trong cửa sổ** thì phần đã đọc (2.500 đơn mới nhất) **không bao giờ được ghi nhận** — chu kỳ sau đọc lại y hệt, mốc chỉ tiến bằng phần dôi. Siêu Thị 8686 ~1.300–6.000 biến động/ngày (H1 Pha A: 2.577/2 ngày; bóng 19/10: 132 mã/28'), cửa sổ 43 giờ → không bao giờ đuổi kịp, mỗi lượt 50 trang × 2 ≈ 100 lệnh sàn và 4–12 phút chiếm một luồng worker. Đây là **lỗi thiết kế lát 3.2**, không phải thiếu worker (HQ gợi ý `AUTO_SYNC_CONCURRENCY=6` là hệ quả, không phải nguyên nhân). Khác bản vá 18/10 (`f7820681`, sàn trả sai thứ tự): lần này sàn trả đúng DESC.
+
+**Sửa (một lần đẩy, không migration):**
+- `integrations/sync-contract.ts`: `SyncCompleteness.coveredUpToSec?` — lượt đọc **CŨ → MỚI** bị cắt thì mọi dòng ≤ mốc này đã đọc trọn, phần chưa đọc là phần MỚI hơn. `incompleteReadMessage` đổi đuôi câu: "đã đọc trọn tới …, phần mới hơn lượt sau đọc tiếp".
+- `services/order-watermark.ts`: `nextWatermark` — cắt mà có `coveredUpToSec` trong cửa sổ → `ordersWatermarkAt = covered`, xóa mốc vét (luật cắt cũ giữ cho sàn đọc mới → cũ); `watermarkLogLine` thêm dòng "lượt bị cắt, đã đọc trọn … → …, mốc nước = …".
+- `integrations/tiktok/service.ts`: `tiktokOrderSearchSort(byUpdateTime, oldestFirst)` — đường mốc nước (`updateTimeFrom/To`) xin `sort_field=update_time&sort_order=ASC`; đường tay `daysBack` + `byUpdateTime` và `create_time` giữ DESC. `tiktokAscCoveredUpTo(updateTimes, truncated)` (thuần): cắt + dãy không giảm → mốc = update_time cuối; sai thứ tự → `undefined` + log `[TikTok] … KHÔNG tăng dần dù xin sort ASC` (không bao giờ tiến mốc sai). Khi `byWatermark` bị cắt thì bỏ `oldestUpdateTime` (mốc vét chỉ đúng với đọc mới → cũ).
+- Shopee / Lazada **chưa đổi**: Shopee trần 200 trang × 100 = 20.000 đơn/lượt, Lazada 100 × 100 = 10.000 — chưa gian nào tới; cùng bẫy, khi tới thì làm giống (adapter trả `coveredUpToSec`).
+- Test: `order-watermark.test.ts` +6 ca (cắt có covered → tiến; covered thắng oldest; covered ngoài cửa sổ; chuỗi 2 lượt đuổi kịp; đang vét dở từ bản cũ; log); `tiktok-order-search-sort.test.ts` viết lại (ASC đường mốc nước, DESC đường tay, 4 ca `tiktokAscCoveredUpTo`). 42 test 4 tệp qua, `tsc --noEmit` sạch.
+
+**Kiểm sau deploy:** log worker `8686` / `KTNstore`: lượt đầu `CHƯA ĐỦ … đã đọc trọn tới …` + `lượt bị cắt, đã đọc trọn … mốc nước = …` (mốc nhảy ~40 giờ), lượt sau mốc = now0; HQ "Mốc nước quét đơn" xanh trong ≤ 3 lượt (~30'); không có dòng `KHÔNG tăng dần dù xin sort ASC`. SQL: `SELECT "shopName", now() - "ordersWatermarkAt" FROM "Channel" WHERE "channelName"='TIKTOK' AND "ordersWatermarkAt" < now() - interval '90 minutes';` → 0 dòng (trừ gian ngủ đông / mới nối).
 
 ## 3. Lát 3.6 — chỉ số HQ + hàng rào (15/10/2026, anh Trung chốt làm trước 3.3)
 

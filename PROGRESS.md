@@ -5,6 +5,12 @@
 
 ---
 
+## Phiên 19/10/2026 chiều muộn — HQ ĐỎ "MỐC NƯỚC 8686 2598'" = LỖI THIẾT KẾ LÁT 3.2 (ĐỌC MỚI → CŨ KHÔNG ĐUỔI KỊP), ĐÃ SỬA; M2 CHẠM NHƯNG CHƯA CẦN NÂNG GÓI
+
+- **Anh gửi ảnh HQ Sức khỏe đỏ + hỏi "nâng cấp M2 có cần thiết không khi hạ tầng vẫn dùng được?"** Em đọc code + SQL Supabase (Chrome anh): Siêu Thị 8686 và KTNstore (TikTok) quét OK (lastSyncError trống, fail 0) nhưng mốc nước đứng 17/10 19:40 và 18/10 00:55, không mốc vét, cờ backfill đã hạ. Giả thuyết đầu (sàn trả đơn ngoài cửa sổ) **SAI** — anh đăng nhập Render, log 14:08–14:53 cho thấy cơ chế thật: lượt advance đọc 2.500 đơn mới nhất (2.499 không đổi) → chỉ ghi mốc vét; lượt catchup vét vài phút đơn cũ → mốc = mốc vét; lượt sau lại đọc đúng 2.500 đơn ấy. **Mỗi chu kỳ 2 lượt (~20') mốc tiến 6–13'** → gian > 2.500 biến động/cửa sổ không bao giờ đuổi kịp, 100 lệnh sàn/chu kỳ, chiếm 1 luồng worker 4–12'/lượt. Khác bản vá 18/10 (sàn trả sai thứ tự).
+- **ĐÃ SỬA (docs/DONG-BO-GIAI-DOAN-3.md mục 2.8):** hợp đồng `SyncCompleteness.coveredUpToSec` (đọc cũ → mới bị cắt = đã đọc trọn tới đây); `nextWatermark` tiến mốc tới `covered`, xóa mốc vét; TikTok đường mốc nước xin `sort_order=ASC` (`tiktokOrderSearchSort(byUpdateTime, oldestFirst)`), `tiktokAscCoveredUpTo` kiểm dãy không giảm (sai thứ tự → không tiến mốc + log); đường tay/create_time giữ DESC; Shopee/Lazada chưa đổi (trần 20.000/10.000 chưa gian nào tới). Test +10 ca (42/42 bốn tệp), tsc sạch. ⏳ Sau deploy: log `8686`/`KTNstore` có "đã đọc trọn tới …", HQ xanh ≤ 30'.
+- **M2 (docs/HQ-SUC-KHOE.md mục 19/10):** chạm vì 106 gian + 3.019 đơn/ngày (số đếm). Tải thật: RSS worker 197–254 MB (335 MB = 65 % ngay sau deploy), heap 65–104/368, DB 16 %, 91/94 gian mốc tươi, worker đúng nhịp → **đề xuất CHƯA nâng Worker Standard (+18 USD), CHƯA đặt AUTO_SYNC_CONCURRENCY=6** (gợi ý ấy là hệ quả của lỗi trên); điều kiện nâng ghi trong docs. DB +400 MB/13 giờ là 3 gian lớn mới nối nạp 90 ngày, không rò. **Chờ anh chốt** rồi tick/không tick M2 trên HQ.
+
 ## Phiên 19/10/2026 chiều — LỊCH TRONG NGÀY: CẦU DAO ADS LÁT 1 "TÁCH LÀN ADS" ĐÃ CODE + SQL 9.3 / PAY PER SALE ĐÃ ĐẾM PROD + iOS 1.3.1 VẪN CHỜ DUYỆT
 
 - **Anh: "lịch hôm nay là làm gì?" → "Em tiến hành làm hết các việc hôm nay phải làm ngay nhé."** Em rà PROGRESS + memory + docs 5e: việc trễ nhất là **cầu dao Ads lát 1** (anh chốt 17/10 làm từ 18/10, trễ 2 ngày vì cây sản phẩm sàn + Pha B/C), còn SQL 9.3, đếm Pay Per Sale, trạng thái iOS.

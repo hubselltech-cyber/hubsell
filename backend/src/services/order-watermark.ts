@@ -80,6 +80,8 @@ export function planOrderWindow(
 export interface WindowReadOutcome {
   truncated: boolean;
   oldestUpdateTime?: number;
+  /** Đọc CŨ → MỚI bị cắt: đã đọc trọn tới mốc này (integrations/sync-contract.ts). */
+  coveredUpToSec?: number;
 }
 
 export interface WatermarkWrite {
@@ -97,6 +99,15 @@ export function nextWatermark(plan: OrderWindowPlan, r: WindowReadOutcome): Wate
     // Đủ: vét xong thì mốc = mốc vét (phần [mốc vét, now0] lượt sau đọc lại qua
     // OVERLAP — đọc trùng, không mất); lượt thường thì mốc = now0 của lượt.
     return { ordersWatermarkAt: new Date(plan.toSec * 1000), ordersCatchupBeforeAt: null };
+  }
+  // Cắt nhưng đọc theo chiều CŨ → MỚI (TikTok 19/10/2026): phần đã đọc là trọn
+  // [from, covered] → ghi nhận ngay, lượt sau đọc tiếp từ covered − OVERLAP.
+  // Không có mốc vét: phần chưa đọc là phần MỚI hơn, lượt thường tự đọc tới.
+  // Trước đó (đọc MỚI → CŨ + mốc vét) gian > trần/cửa sổ mỗi chu kỳ 2 lượt chỉ
+  // tiến bằng phần dôi ra ngoài 2.500 đơn (6–13 phút) — log 8686 19/10 14:08–14:53.
+  const covered = r.coveredUpToSec;
+  if (covered !== undefined && covered > plan.fromSec && covered <= plan.toSec) {
+    return { ordersWatermarkAt: new Date(covered * 1000), ordersCatchupBeforeAt: null };
   }
   // Cắt: giữ mốc nước. Mốc vét = update_time cũ nhất đã đọc, chỉ khi nó còn nằm
   // trong cửa sổ — sàn trả dòng ngoài cửa sổ (bỏ qua bộ lọc) hoặc không có
@@ -121,6 +132,11 @@ export function watermarkLogLine(
   }
   if (plan.mode === "catchup") {
     return `[Auto-sync] ${channel.channelName} "${channel.shopName}": vét xong ${iso(plan.fromSec)} → ${iso(plan.toSec)}, mốc nước = ${iso(plan.toSec)}`;
+  }
+  // Đọc cũ → mới bị cắt: mốc tiến tới phần đã đọc trọn, chưa tới now0.
+  const wmSec = write.ordersWatermarkAt ? Math.floor(write.ordersWatermarkAt.getTime() / 1000) : null;
+  if (wmSec !== null && wmSec < plan.toSec) {
+    return `[Auto-sync] ${channel.channelName} "${channel.shopName}": lượt bị cắt, đã đọc trọn ${iso(plan.fromSec)} → ${iso(wmSec)}, mốc nước = ${iso(wmSec)}, lượt sau đọc tiếp phần mới hơn`;
   }
   return null;
 }

@@ -221,11 +221,37 @@ export interface SyncOrdersOptions {
  * mốc nước Siêu Thị 8686 kẹt. Gửi sort theo đúng trục, DESC, thì giả định ấy đúng
  * (kiểm 24/24 gian đơn điệu giảm). Anh Trung chốt vá ngay 18/10 đêm.
  */
-export function tiktokOrderSearchSort(byUpdateTime: boolean): {
+export function tiktokOrderSearchSort(
+  byUpdateTime: boolean,
+  oldestFirst = false
+): {
   sortField: "create_time" | "update_time";
-  sortOrder: "DESC";
+  sortOrder: "ASC" | "DESC";
 } {
-  return { sortField: byUpdateTime ? "update_time" : "create_time", sortOrder: "DESC" };
+  // Quét update_time theo MỐC NƯỚC (worker): CŨ → MỚI để lượt bị cắt vẫn ghi nhận
+  // được phần đã đọc (coveredUpToSec, sync-contract.ts). Đọc MỚI → CŨ + mốc vét
+  // (18/10) làm gian > 2.500 biến động/cửa sổ đọc lại mãi 2.500 đơn mới nhất
+  // (Siêu Thị 8686 19/10: mốc tiến 6–13'/chu kỳ 20'). Đường gọi tay (daysBack,
+  // không mốc nước) và create_time giữ DESC: mới nhất trước.
+  return {
+    sortField: byUpdateTime ? "update_time" : "create_time",
+    sortOrder: byUpdateTime && oldestFirst ? "ASC" : "DESC",
+  };
+}
+
+/**
+ * Lượt đọc CŨ → MỚI bị cắt: mọi dòng ≤ update_time lớn nhất đã đọc là trọn →
+ * trả mốc ấy để mốc nước tiến. Chỉ tin khi dãy update_time không giảm (sàn tôn
+ * trọng sort ASC; H1 Pha A đo 24/24 gian tôn trọng DESC, chiều ASC kiểm tại chỗ
+ * mỗi lượt) — sai thứ tự thì trả undefined: KHÔNG BAO GIỜ tiến mốc sai.
+ * Thuần, không DB — test integrations/__tests__/tiktok-order-search-sort.test.ts.
+ */
+export function tiktokAscCoveredUpTo(updateTimes: number[], truncated: boolean): number | undefined {
+  if (!truncated || updateTimes.length === 0) return undefined;
+  for (let i = 1; i < updateTimes.length; i++) {
+    if (updateTimes[i] < updateTimes[i - 1]) return undefined;
+  }
+  return updateTimes[updateTimes.length - 1];
 }
 
 /**
@@ -308,6 +334,8 @@ export async function syncTiktokOrders(
   let shapeLogged = false;
   let windowMinUpdate = 0;
   let windowMaxUpdate = 0;
+  /** update_time theo thứ tự sàn trả (quét update_time ASC) — kiểm thứ tự khi bị cắt. */
+  const updateTimesInOrder: number[] = [];
 
   // % phí tạm tính (GĐ1) khi đơn chưa được đối soát — số thật thay sau ở settlement.
   const feeRate =
@@ -336,7 +364,7 @@ export async function syncTiktokOrders(
       accessToken,
       shopCipher,
       ...timeFilter,
-      ...tiktokOrderSearchSort(Boolean(opts.byUpdateTime)),
+      ...tiktokOrderSearchSort(Boolean(opts.byUpdateTime), byWatermark),
       pageSize: PAGE_SIZE,
       pageToken,
     });
@@ -361,6 +389,7 @@ export async function syncTiktokOrders(
       if (o.update_time) {
         if (!windowMinUpdate || o.update_time < windowMinUpdate) windowMinUpdate = o.update_time;
         if (o.update_time > windowMaxUpdate) windowMaxUpdate = o.update_time;
+        if (byWatermark) updateTimesInOrder.push(o.update_time);
       }
       const existing = existingByCode.get(o.id) ?? null;
       if (
@@ -399,6 +428,17 @@ export async function syncTiktokOrders(
     );
   }
   if (windowMinUpdate) result.oldestUpdateTime = windowMinUpdate;
+  if (byWatermark && result.truncated) {
+    // Đọc CŨ → MỚI: phần đã đọc là trọn tới update_time lớn nhất → mốc nước tiến.
+    // oldestUpdateTime bỏ đi: mốc vét "phần cũ hơn chưa đọc" chỉ đúng khi đọc mới → cũ.
+    result.coveredUpToSec = tiktokAscCoveredUpTo(updateTimesInOrder, true);
+    delete result.oldestUpdateTime;
+    if (result.coveredUpToSec === undefined) {
+      console.warn(
+        `[TikTok] "${channel.shopName}": sàn trả update_time KHÔNG tăng dần dù xin sort ASC (${updateTimesInOrder.length} dòng) — lượt cắt không tiến mốc, lượt sau đọc lại`
+      );
+    }
+  }
 
   return result;
 }

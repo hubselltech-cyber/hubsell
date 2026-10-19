@@ -157,6 +157,8 @@ Công cụ: `backend/scripts/pha-a-san-probe.ts` (chỉ đọc sàn) chạy trê
   trước đó 3 lượt lùi dần 02:07 → 01:55 → 01:27). Còn ~2 ngày ≈ 2.600 biến động → 1–2 lượt nữa mốc nước tới hiện tại, thẻ HQ xanh.
   Pha A ĐÓNG; Pha B chờ anh gọi.
 
+- **19/10 chiều — mốc 8686 vẫn kẹt, kiểu HAI:** sau `f7820681` sàn trả đúng DESC nhưng gian có > 2.500 biến động/cửa sổ thì mỗi chu kỳ 2 lượt chỉ tiến 6–13 phút (đọc lại mãi 2.500 đơn mới nhất, phần đã đọc không được ghi nhận). Lỗi thiết kế lát 3.2, sửa ở `docs/DONG-BO-GIAI-DOAN-3.md` mục 2.8 (TikTok đọc CŨ → MỚI, `coveredUpToSec`). Đúng hướng N2 "cửa sổ co" của bản này — Pha C đã làm trong đường mới; đường cũ vá tối thiểu để prod không kẹt trong lúc bóng chạy.
+
 ### 3b.2 Điều phải sửa trong bản thiết kế sau Pha A
 
 - Mục 1: biến động/ngày của gian 4.000 đơn = **24.000–32.000** (không phải 16.000); webhook/ngày cùng số.

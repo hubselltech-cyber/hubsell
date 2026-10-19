@@ -116,6 +116,23 @@ nhất. Ít hơn 7 điểm dữ liệu → "chưa đủ dữ liệu".
   Bỏ mức vàng theo RSS (`ramPctWarn`). Hàm `ramLevel()` có test.
 - Thẻ KPI hiện heap đang dùng làm số chính, RSS + % gói ở dòng phụ.
 - Điều kiện mốc M2 "RAM ≥ 80%" GIỮ theo RSS (chưa đổi).
+
+## 19/10/2026 — M2 chạm theo số đếm, đánh giá có cần nâng gói không (anh Trung hỏi, chờ chốt)
+
+**Chạm:** 106 gian ≥ 100 **và** 3.019 đơn/ngày (7 ngày) ≥ 2.000 — cả hai điều kiện đếm. Nâng gói M2 = Worker Standard 2 GB (25 USD, thay Starter 7 USD).
+
+**Tải thật (đọc prod 19/10 15:00, SQL `platform_health_snapshots` — ảnh chụp do worker chụp nên RAM là RAM worker):**
+
+| Chỉ số | Số | Ngưỡng nâng |
+|---|---|---|
+| RSS worker | 197–254 MB bình thường, 335 MB (65 %) ngay sau deploy 14:52 | ≥ 80 % = 410 MB ở ảnh chụp bình thường |
+| Heap worker | 65–104 / 368 MB | 85 % |
+| DB | 1.333 MB / 8 GB = 16 % | 60–70 % |
+| Mốc nước quét đơn | 91/94 gian tươi; 2 gian trễ vì lỗi mã (DONG-BO-GIAI-DOAN-3 mục 2.8), 1 gian mới | — |
+| Worker | "Đúng nhịp", overdueFast 0 | — |
+
+**Kết luận đề xuất:** mốc đếm chạm là lúc **rà**, không phải lúc **mua**. Mọi thước đo sức chứa còn dưới một nửa → **chưa nâng Worker Standard**, **chưa đặt `AUTO_SYNC_CONCURRENCY=6`** (2 gian TikTok chiếm luồng là do lỗi đọc lại 2.500 đơn mỗi lượt, sửa xong thì nhẹ hơn; tăng luồng trên 512 MB chỉ tăng RAM + lệnh sàn). Nâng khi: RSS worker ≥ 80 % ở ảnh chụp bình thường (không phải lúc khởi động), hoặc ≥ 5 gian mốc nước quá 90' mà không gian nào lỗi token/sàn, hoặc overdueFast tăng. Ba việc checklist M2 còn lại (upsert ads theo lô, webhook Lazada vào hàng đợi bền, rà index Order/OrderItem) vẫn đáng làm khi rảnh — không tốn tiền. Ghi chú DB: tăng ~400 MB trong 13 giờ 19/10 (921 → 1.333 MB) là do 3 gian lớn mới nối nạp 90 ngày (Siêu Thị 8686 18/10, KTNstore + TOVO 21 19/10), không phải rò.
+
 - Kèm: anh đặt env `MALLOC_ARENA_MAX=2` trên Render web để giảm phân mảnh; so RSS
   sau ~1 ngày chạy với mức 320–375 MB.
 

@@ -97,6 +97,42 @@ describe("nextWatermark — ghi gì sau lượt đọc không lỗi", () => {
     });
   });
 
+  it("cắt nhưng đọc CŨ → MỚI (coveredUpToSec) → mốc tiến tới phần đã đọc trọn, không mốc vét", () => {
+    const w = nextWatermark(advance, { truncated: true, coveredUpToSec: NOW - 200 });
+    expect(w).toEqual({ ordersWatermarkAt: at(NOW - 200), ordersCatchupBeforeAt: null });
+  });
+
+  it("coveredUpToSec thắng oldestUpdateTime nếu adapter trả cả hai", () => {
+    const w = nextWatermark(advance, { truncated: true, coveredUpToSec: NOW - 200, oldestUpdateTime: NOW - 500 });
+    expect(w).toEqual({ ordersWatermarkAt: at(NOW - 200), ordersCatchupBeforeAt: null });
+  });
+
+  it("coveredUpToSec ngoài cửa sổ → không tiến mốc (rơi về luật cắt cũ)", () => {
+    expect(nextWatermark(advance, { truncated: true, coveredUpToSec: advance.fromSec })).toEqual({ ordersCatchupBeforeAt: null });
+    expect(nextWatermark(advance, { truncated: true, coveredUpToSec: NOW + 1 })).toEqual({ ordersCatchupBeforeAt: null });
+  });
+
+  it("gian > trần/cửa sổ đọc cũ → mới: hai lượt đuổi kịp, không đọc lại phần đã đọc", () => {
+    // Mốc 2 ngày trước; lượt 1 đọc trọn tới 1 ngày trước thì bị cắt.
+    let state = { ordersWatermarkAt: at(NOW - 2 * DAY), ordersCatchupBeforeAt: null as Date | null };
+    const p1 = planOrderWindow(state, NOW_MS, undefined);
+    state = { ...state, ...nextWatermark(p1, { truncated: true, coveredUpToSec: NOW - DAY }) };
+    expect(state).toEqual({ ordersWatermarkAt: at(NOW - DAY), ordersCatchupBeforeAt: null });
+    // Lượt 2 đọc từ (1 ngày trước trừ OVERLAP) tới now: đủ → mốc = now.
+    const p2 = planOrderWindow(state, NOW_MS + 600_000, undefined);
+    expect(p2).toEqual({ mode: "advance", fromSec: NOW - DAY - WATERMARK_OVERLAP_SEC, toSec: NOW + 600 });
+    state = { ...state, ...nextWatermark(p2, { truncated: false }) };
+    expect(state.ordersWatermarkAt).toEqual(at(NOW + 600));
+  });
+
+  it("đang vét dở từ bản cũ, lượt mới đọc cũ → mới bị cắt → mốc tiến, xóa mốc vét", () => {
+    const catchup = planOrderWindow({ ordersWatermarkAt: at(NOW - 3 * DAY), ordersCatchupBeforeAt: at(NOW - DAY) }, NOW_MS, undefined);
+    expect(nextWatermark(catchup, { truncated: true, coveredUpToSec: NOW - 2 * DAY })).toEqual({
+      ordersWatermarkAt: at(NOW - 2 * DAY),
+      ordersCatchupBeforeAt: null,
+    });
+  });
+
   it("đường lui fixed → không ghi gì", () => {
     const fixed = planOrderWindow({ ordersWatermarkAt: null, ordersCatchupBeforeAt: null }, NOW_MS, "fixed");
     expect(nextWatermark(fixed, { truncated: false })).toBeNull();
@@ -132,5 +168,11 @@ describe("watermarkLogLine — lượt thường im lặng", () => {
     expect(watermarkLogLine(ch, p, nextWatermark(p, { truncated: true, oldestUpdateTime: NOW - 100 }))).toContain("vét tiếp");
     const c = planOrderWindow({ ordersWatermarkAt: at(NOW - 3 * DAY), ordersCatchupBeforeAt: at(NOW - DAY) }, NOW_MS, undefined);
     expect(watermarkLogLine(ch, c, nextWatermark(c, { truncated: false }))).toContain("vét xong");
+  });
+  it("cắt khi đọc cũ → mới → báo mốc tiến tới phần đã đọc trọn", () => {
+    const p = planOrderWindow({ ordersWatermarkAt: at(NOW - 2 * DAY), ordersCatchupBeforeAt: null }, NOW_MS, undefined);
+    const line = watermarkLogLine(ch, p, nextWatermark(p, { truncated: true, coveredUpToSec: NOW - DAY }));
+    expect(line).toContain("đã đọc trọn");
+    expect(line).toContain(at(NOW - DAY).toISOString());
   });
 });
