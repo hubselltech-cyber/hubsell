@@ -697,36 +697,46 @@ seller nào hỏi, không ép.
   đúng 15.2, chuyển sang ticket 15.6.
 - Lazada không có loại này (campaign Sponsored Solutions đã nhiều SP sẵn, đọc được) — không đụng.
 
-### 15.6 Ticket Shopee Open Platform (phương án C) — soạn sẵn, anh gửi khi probe xác nhận
-Nơi gửi: Open Platform Console → Support → Submit ticket (app **Hubsell Ads**, category Ads API).
-Kèm `request_id` của một lượt `get_product_level_campaign_id_list` trên gian có chiến dịch Nhóm
-(lấy từ JSON probe nếu có) + `campaign_id` + `shop_id`.
+### 15.6 Ticket Shopee Open Platform (phương án C) — BẢN CUỐI 19/10 tối, điền số thật từ 15.7, anh dán gửi
+Nơi gửi: open.shopee.com → đăng nhập tài khoản chủ app → Console → **Support / Contact Us → Submit Ticket**,
+chọn app **Hubsell Ads** (Live Partner 2044679), category Ads API. Phiên cloud không có Chrome/đăng nhập nên em
+không gửi được; ticket cũ 2098790879624904785 (10/10) cũng gửi qua Chrome anh. Gửi xong chép số ticket vào đây.
 
-**Title:** Multi-product GMV Max campaign (ad group) not returned by product-level Ads APIs
+**Title:** Multi-product GMV Max campaign (manual-mpd) is readable by daily_performance but not listed by get_product_level_campaign_id_list
 
 **Body (gửi nguyên văn):**
 ```
 Hello Shopee Open Platform team,
 
-Our Ads Service app "Hubsell Ads" (partner_id: <partner id>) reads sellers' Product Ads via
-v2.ads.get_product_level_campaign_id_list → get_product_level_campaign_setting_info →
-get_product_campaign_daily_performance, and shop-level spend via get_all_cpc_ads_daily_performance.
+Our Ads Service app "Hubsell Ads" (partner_id 2044679) reads sellers' Product Ads with
+v2.ads.get_product_level_campaign_id_list -> get_product_level_campaign_setting_info ->
+get_product_campaign_daily_performance, plus shop-level spend from get_all_cpc_ads_daily_performance.
 
-Since the May 2025 update, sellers can create one GMV Max campaign that promotes up to 30 items
-("multi-product" / ad group). For shop_id <shop id>, such a campaign (campaign_id <id>) is ongoing in
-Seller Center, but:
-  1. get_product_level_campaign_id_list (ad_type=all/auto/manual) does not return this campaign_id
-     (request_id: <request id>);
-  2. get_product_level_campaign_setting_info / get_product_campaign_daily_performance with this
-     campaign_id return no data;
-  3. the GMS endpoints (get_gms_campaign_performance with campaign_id) return <error code>.
-Its spend is however included in get_all_cpc_ads_daily_performance, so the shop total and the sum of
-campaign-level data no longer reconcile.
+Sellers can now create one GMV Max campaign promoting several items (Seller Center shows it under
+/portal/marketing/pas/product/manual-mpd/<campaign_id>). On shop_id 239068349 (VN) such a campaign,
+campaign_id 202942166, created 19-10-2026, is ongoing. Observed on 19-10-2026 with the Live app:
+
+  1. get_product_level_campaign_id_list with ad_type=all / manual / auto returns 73 / 73 / 0 campaigns and
+     never includes 202942166.
+  2. get_product_level_campaign_setting_info with campaign_id_list=202942166 returns
+     error_param "has invalid campaignIDs([202942166]), please pass campaign ids of auto & manual product ad
+     types only".
+  3. get_product_campaign_daily_performance with campaign_id_list=202942166 DOES return data
+     (ad_type "manual", campaign_placement "all", ad_name "... [Chien Dich Nhom 19/10/2026 - 2]",
+     19-10-2026: impression 178, clicks 10, expense 2551).
+  4. get_gms_campaign_performance with this campaign_id returns ads_error_product_gms_campaign_not_found
+     (expected, it is not Shop GMV Max).
+
+So the campaign exists for the performance endpoint but there is no endpoint that lists it or reads its
+settings (budget, roas_target, status, item_id_list). Our app can only show it when the seller types the id
+by hand, and shop-level spend no longer reconciles with the sum of listable campaigns.
 
 Questions:
-  a) Which endpoint should an Ads Service app use to list and read multi-product GMV Max campaigns
-     (settings, item list, daily performance)?
-  b) If none exists today, is support planned, and can we be whitelisted for a beta?
+  a) Which endpoint should an Ads Service app use to LIST multi-product GMV Max campaigns (manual-mpd) and
+     to READ their settings and item list? Is there an ad_type value or a new endpoint for this type?
+  b) If none exists today, is support planned, and can partner 2044679 be whitelisted for a beta?
+  c) Is it intended that a single invalid id in campaign_id_list fails the whole
+     get_product_campaign_daily_performance call (error_param "has invalid product ads campaign ids")?
 
 Thank you.
 ```
