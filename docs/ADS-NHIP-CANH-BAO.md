@@ -670,3 +670,6 @@ rồi vài ngày sau đếm `[Ads-lane] … lùi riêng bậc` theo gian (gian n
 bị chặn. Giãn lệnh: bật `ADS_SHOP_CALL_GAP_SEC=5` trên worker ở lượt đo Đ1 (so 429/gian/ngày bật vs tắt), chưa bật mặc định.
 
 **Chưa làm (lát 3):** cầu dao app vẫn bật/tắt theo bão; AIMD thay ngưỡng tỷ lệ; `exceed_partner_api` giữ cầu dao dừng hẳn.
+**Lịch nhắc đã đặt (anh Trung 19/10: "lát 3 chưa làm thì đặt lịch không lại quên"):** tác vụ `hubsell-nhac-2310-cau-dao-ads-lat-3-aimd`
+chạy **23/10/2026 08:30** — đọc tripCount vs Đ0 135 + SQL gian đang lùi riêng + log `[Ads-lane]`, rồi TRÌNH lát 3 AIMD (chưa code
+tới khi anh chốt). Lát 4 đặt lịch sau khi lát 3 lên prod (Đ1 = 7 ngày sau lát 3).
