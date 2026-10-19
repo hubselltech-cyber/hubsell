@@ -10,6 +10,7 @@
 // Nhịp lấy từ config/ads-cadence.ts.
 // ============================================================
 
+import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ADS_CADENCE } from "../config/ads-cadence";
 
@@ -90,7 +91,7 @@ export interface AdsRefreshResult {
 export async function requestAdsRefresh(channelId: string, now = Date.now()): Promise<AdsRefreshResult> {
   const ch = await prisma.channel.findUnique({
     where: { id: channelId },
-    select: { lastAdsSyncAt: true, nextAdsPulseAt: true },
+    select: { lastAdsSyncAt: true, nextAdsPulseAt: true, nextAdsSyncAt: true, channelName: true },
   });
   if (!ch) return { queued: false, adsSyncedAt: null, message: "Không tìm thấy gian" };
   const adsSyncedAt = ch.lastAdsSyncAt?.toISOString() ?? null;
@@ -98,8 +99,23 @@ export async function requestAdsRefresh(channelId: string, now = Date.now()): Pr
     return { queued: false, adsSyncedAt, message: "Số quảng cáo vừa được cập nhật, thử lại sau ít phút" };
   }
   // Đã đến hạn (worker sắp/đang kéo) thì không cần ghi thêm.
-  if (!ch.nextAdsPulseAt || ch.nextAdsPulseAt.getTime() > now) {
-    await prisma.channel.update({ where: { id: channelId }, data: { nextAdsPulseAt: new Date(now) } });
+  const data: { nextAdsPulseAt?: Date; nextAdsSyncAt?: Date } = {};
+  if (!ch.nextAdsPulseAt || ch.nextAdsPulseAt.getTime() > now) data.nextAdsPulseAt = new Date(now);
+  // 19/10/2026 (anh Trung: "ấn lại đối soát lên luôn không?"): với Shopee, Làm mới kéo luôn cả tầng LỊCH SỬ
+  // (cửa sổ 30 ngày — một call ≤ 1 tháng cho perf + một cho chi cấp shop, rẻ) thay vì chỉ hôm nay. Lazada giữ
+  // nguyên (lịch sử 1 call/ngày × 7, để tầng 6h lo). Van chống spam 2' ở trên vẫn áp cho cả hai.
+  if (ch.channelName === ChannelName.SHOPEE && (!ch.nextAdsSyncAt || ch.nextAdsSyncAt.getTime() > now)) {
+    data.nextAdsSyncAt = new Date(now);
   }
-  return { queued: true, adsSyncedAt, message: "Đang kéo số mới từ sàn, bảng sẽ tự cập nhật trong khoảng một phút" };
+  if (Object.keys(data).length > 0) {
+    await prisma.channel.update({ where: { id: channelId }, data });
+  }
+  return {
+    queued: true,
+    adsSyncedAt,
+    message:
+      ch.channelName === ChannelName.SHOPEE
+        ? "Đang kéo số mới từ sàn (hôm nay + 30 ngày gần nhất), bảng sẽ tự cập nhật trong khoảng một phút"
+        : "Đang kéo số mới từ sàn, bảng sẽ tự cập nhật trong khoảng một phút",
+  };
 }

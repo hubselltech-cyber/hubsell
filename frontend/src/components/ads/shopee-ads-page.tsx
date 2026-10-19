@@ -390,7 +390,8 @@ export function ShopeeAdsPage({
         await load(channelId, range, { silent: true });
         return;
       }
-      setSyncNote("Đang kéo số mới từ sàn, bảng sẽ tự cập nhật trong khoảng một phút…");
+      // Câu của API (Shopee: "hôm nay + 30 ngày gần nhất" — Làm mới kéo cả tầng lịch sử từ 19/10).
+      setSyncNote(`${res.message}…`);
       const before = res.adsSyncedAt;
       for (let i = 0; i < REFRESH_POLL_MAX; i++) {
         await new Promise((r) => setTimeout(r, REFRESH_POLL_MS));

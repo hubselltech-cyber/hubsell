@@ -855,3 +855,12 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
   Lazada không có số này). Bảng Hubsell giờ có đúng cặp Đơn hàng / Sản phẩm đã bán như Seller Center.
   Dòng cũ hơn 30 ngày còn 0 tới khi được kéo lại (tooltip cột ghi rõ); ngay sau deploy, lượt lịch sử 6h đầu tiên
   điền 30 ngày. Mobile chưa hiện cột này (kiểu API thêm trường là tương thích, app cũ không hỏng).
+
+### 15.12 "DỮ LIỆU CÀO LÂU LẮM" — nút Làm mới Shopee kéo luôn 30 ngày (19/10 đêm)
+- Anh thấy cột SP đã bán mới chỉ có số hôm nay (69 đơn / 3 SP) vì xung 30' chỉ kéo hôm nay, 30 ngày còn lại chờ
+  tầng lịch sử 6h. **Khách mới KHÔNG bị chậm thế**: gian vừa nối Hubsell Ads được `markAdsBackfill` → lượt lịch sử
+  đến hạn ngay, kéo 30 ngày đủ mọi cột (kể cả cột mới) trong vài phút đầu. Chậm chỉ xảy ra với gian ĐANG chạy khi
+  Hubsell thêm cột mới / mở rộng cửa sổ — dòng cũ phải chờ lượt 6h.
+- **ĐÃ SỬA:** `requestAdsRefresh` (nút Làm mới) với gian Shopee đặt cả `nextAdsSyncAt = now` → làn Ads chạy xung +
+  lịch sử 30 ngày trong cùng lượt (thêm 1 call perf/100 campaign + 1 call chi cấp shop; van 2 phút giữ nguyên).
+  Lazada giữ chỉ xung (lịch sử 1 call/ngày × 7). Câu báo: "Đang kéo số mới từ sàn (hôm nay + 30 ngày gần nhất)…".
