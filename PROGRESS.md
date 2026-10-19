@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 19/10/2026 đêm — BẢNG GIÁ LANDING: MA TRẬN GÓI × KỲ THANH TOÁN (khách thấy khuyến mãi 3 / 6 / 12 tháng) — ĐÃ ĐẨY NHÁNH, CHỜ ANH DUYỆT MERGE
+
+- **Anh (ảnh bảng giá hubsell.vn/bang-gia): "khách đang nhìn thấy một giá cụ thể của một tháng và không thấy được các khuyến mãi khi mua nhiều tháng" → gửi mẫu bảng giá Salework Zalo (gói theo hàng, kỳ theo cột, cột dài nhất có nhãn BEST) "tham khảo cách sắp xếp này".**
+- **Đã làm (repo hubsell-landing, nhánh `claude/modest-tesla-tvwobn`, commit `b082b79`, CHƯA merge master nên prod chưa đổi):** `pricing.tsx` bỏ lưới 6 thẻ chỉ in giá 1 tháng, thay bằng MA TRẬN: mỗi gói một hàng (tên + mô tả + 3 hạn mức đơn / gian / nhân viên + nút Dùng thử), 4 cột Gói 1 / 3 / 6 / 12 tháng (đầu cột ghi "Tiết kiệm tới 6%" / "tới 11%" / "Tặng tới 2 tháng"), ô = giá trọn kỳ to + quy đổi ₫/tháng (làm tròn 500 ₫, có "≈" khi lẻ) + viên "Tiết kiệm N%" hoặc "Tặng N tháng"; cột 12 tháng nền vàng nhạt + ruy băng cam "Lợi nhất"; hàng Pro viền emerald "Bán chạy nhất"; Enterprise một hàng "Liên hệ" + nút Đăng ký tư vấn. Dưới 1024px bảng gập thành thẻ từng gói với 4 ô kỳ 2×2 (ô 12 tháng có dải "Lợi nhất" trên đầu). Trang vẫn 100% tĩnh (không toggle, không state). % và "tặng N tháng" TÍNH từ giá (`dealOf`), không gõ tay. Mô tả đầu trang + meta /bang-gia thêm "mua trước 6–12 tháng tiết kiệm tới 17%". tsc xanh; soi preview 1440 / 820 / 375px không tràn ngang.
+- **Giá 4 kỳ dùng trong bảng = thang chốt 22/08 + Scale 19/09** (Starter 297k / 594k / 1.089k · Growth 597k / 1.194k / 2.189k · Pro 1.129k / 2.129k / 3.990k · Business 1.979k / 3.729k / 6.990k · Scale 3.399k / 6.399k / 11.990k) — lấy từ `backend/scripts/backfill-starter-subscriptions.ts`; phiên cloud không vào được prod nên **anh kiểm lại /admin/plans prod có khớp không trước khi merge** (giá là DATA, HQ sửa thì landing phải sửa tay).
+- **Việc còn:** anh duyệt → merge nhánh vào master landing (Vercel tự lên ~60 giây). Nếu muốn thêm bớt (vd ẩn cột 3 tháng cho gọn, hay đổi "Lợi nhất" thành "BEST"), chỉ sửa mảng `CYCLES` / hàm `BestRibbon` trong `pricing.tsx`.
+
 ## Phiên 19/10/2026 tối — QUẢNG CÁO SHOPEE: "CHIẾN DỊCH ĐANG CHẠY KHÔNG KÉO VỀ" = CHIẾN DỊCH NHÓM NHIỀU SP; PHIÊN TRƯỚC MẤT COMMIT, VIẾT LẠI + CODE PROBE + DÒNG CHÊNH
 
 - **Bối cảnh:** phiên chiều tối đã chẩn đoán xong (chiến dịch Seller Center "đang chạy" là Chiến Dịch Nhóm nhiều sản phẩm, API Shopee nhóm product_level không trả loại này), ghi docs 15.2 + PROGRESS + memory ở commit `de7008c5` **chưa push** → phiên hết quota, commit mất (không có trong origin). Anh: "Tiếp tục làm phần quảng cáo shopee này em nhé. Đọc lại và làm chuẩn" → em viết lại trọn **docs ADS-SHOPEE-KHAI-THAC-API mục 15** (15.1 Hubsell đọc gì, 15.2 chẩn đoán, 15.3 đã code, 15.4 bốn phương án A–D, 15.5 còn treo).
