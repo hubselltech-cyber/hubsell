@@ -1055,8 +1055,9 @@ export function ShopeeAdsPage({
                       {platform === "shopee" && adsLinked && (
                         <Button
                           size="sm"
-                          // Anh Trung 19/10: "hơi bị phẳng hòa vào giao diện mà phần này quan trọng lắm" → nút đỏ đặc, chữ đậm.
-                          className="h-8 bg-red-600 font-semibold text-white shadow-sm hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500"
+                          // Anh Trung 19/10: "phẳng hòa vào giao diện" → nút đặc chữ đậm; rồi "đỏ nhìn nguy hiểm quá" → xanh biển
+                          // dịu (cùng họ với hộp giải thích chiến dịch Nhóm trong modal), vẫn nổi trên nền xám.
+                          className="h-8 bg-sky-600 font-semibold text-white shadow-sm hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500"
                           onClick={() => setGroupDialogOpen(true)}
                           title="Chiến dịch Nhóm nhiều sản phẩm trên Seller Center không tự hiện ở đây — thêm bằng id chiến dịch."
                         >
