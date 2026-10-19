@@ -117,7 +117,7 @@ nhất. Ít hơn 7 điểm dữ liệu → "chưa đủ dữ liệu".
 - Thẻ KPI hiện heap đang dùng làm số chính, RSS + % gói ở dòng phụ.
 - Điều kiện mốc M2 "RAM ≥ 80%" GIỮ theo RSS (chưa đổi).
 
-## 19/10/2026 — M2 chạm theo số đếm, đánh giá có cần nâng gói không (anh Trung hỏi, chờ chốt)
+## 19/10/2026 — M2 chạm theo số đếm, đánh giá có cần nâng gói không (anh Trung CHỐT 19/10 ~15:30: GIỮ Worker Starter, KHÔNG đặt AUTO_SYNC_CONCURRENCY=6, nâng khi đủ điều kiện dưới)
 
 **Chạm:** 106 gian ≥ 100 **và** 3.019 đơn/ngày (7 ngày) ≥ 2.000 — cả hai điều kiện đếm. Nâng gói M2 = Worker Standard 2 GB (25 USD, thay Starter 7 USD).
 
