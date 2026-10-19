@@ -48,6 +48,10 @@ nhận, anh/chị không phải làm lại.
 - "Shopee không nhận id … cho gian này": chép nhầm dãy số (thường lấy phải `from=`/`to=` phía sau) hoặc id của gian
   khác. Chép lại đúng dãy sau `manual-mpd/`.
 - "đã có trong bảng (loại thường)": đây là chiến dịch 1 sản phẩm, Hubsell đã tự thấy, không cần thêm.
+- **"Hubsell có chi phí mà Seller Center hiện 0"** (anh Trung gặp 19/10): bộ lọc ngày trên Seller Center đang để
+  tháng khác (đường dẫn có `from=…&to=…` là mốc thời gian của khoảng đang xem). Đổi ô chọn ngày góc trên bên phải
+  về **Hôm nay** là khớp. Hubsell đọc số theo ngày qua API nên không phụ thuộc bộ lọc đó; hai bên có thể lệch vài %
+  vì Shopee cập nhật báo cáo theo đợt.
 
 ## Kịch bản video 60 giây (quay màn hình)
 0–10s: Seller Center có chiến dịch Nhóm "Đang diễn ra", Hubsell không có dòng tương ứng → "Shopee chưa cho phần mềm

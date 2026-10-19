@@ -20,6 +20,7 @@
 - **Anh (ảnh bảng ANO): "Thêm phần 'Thêm chiến dịch nhiều sản phẩm vào bảng' ấn vào hiện popup nhập id, có hướng dẫn cách lấy id"** → docs 15.10: nút "+ Thêm chiến dịch nhiều sản phẩm vào bảng" cạnh "N chiến dịch khớp bộ lọc"; popup mới `shopee-group-campaign-dialog.tsx` (cách lấy id 3 bước có ví dụ URL, ô nhập, Thêm vào bảng, lỗi sàn, ghi chú, Soi kỹ thuật); link dòng vàng mở cùng popup; bỏ ô thu gọn cũ. tsc + eslint FE sạch. Chưa xem trình duyệt — anh tải lại sau Vercel.
 - **Anh (ảnh nút): "Hơi bị phẳng hòa vào giao diện mà phần này quan trọng lắm"** → nút "+ Thêm chiến dịch nhiều sản phẩm vào bảng" đổi thành đỏ đặc, chữ đậm, cao 32px (cùng tông đỏ anh chọn cho link Video hướng dẫn). tsc + eslint FE sạch.
 - **Anh: "Màu đỏ nhìn nguy hiểm quá, giảm bớt tông"** → nút đổi sang xanh biển dịu (sky-600, chữ trắng đậm), cùng họ với hộp giải thích chiến dịch Nhóm trong modal. tsc + eslint FE sạch.
+- **Anh: "Sao Seller Center chưa ghi nhận cắn tiền mà Hubsell có rồi?"** (Hubsell 98.734₫ · 1 đơn · 280.000₫, Seller Center toàn 0) → URL Seller Center có `from=1785517200&to=1788195599` = 01–31/08/2026 → bộ lọc ngày đang ở tháng 8. **Anh xác nhận: đúng do bộ lọc.** Ghi vào bài hướng dẫn khách mục "Lỗi hay gặp".
 - Memory: thư mục memory không có trong phiên cloud này → ghi ở PROGRESS + docs 15 thay thế.
 
 ## Phiên 19/10/2026 chiều muộn — HQ ĐỎ "MỐC NƯỚC 8686 2598'" = LỖI THIẾT KẾ LÁT 3.2 (ĐỌC MỚI → CŨ KHÔNG ĐUỔI KỊP), ĐÃ SỬA; M2 CHẠM NHƯNG CHƯA CẦN NÂNG GÓI
