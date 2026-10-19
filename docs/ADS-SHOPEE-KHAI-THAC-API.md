@@ -686,7 +686,47 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
 seller nào hỏi, không ép.
 
 ### 15.5 Còn treo
-- Chưa chạy probe trên gian thật (phiên cloud không có phiên đăng nhập Hubsell + Chrome) → anh
-  dán URL `https://app.hubsell.vn/api/quang-cao/shopee/campaigns/probe?channelId=<id gian>&campaignId=<id>`
-  khi đã đăng nhập, gửi JSON cho em đọc; hoặc mở phiên cloud có Chrome.
+- Chưa chạy probe trên gian thật (phiên cloud không có phiên đăng nhập Hubsell + Chrome). API dùng
+  Bearer token nên KHÔNG dán URL thẳng vào trình duyệt được → đã thêm ô **"Seller Center có chiến
+  dịch đang chạy mà bảng trên không thấy? Soi theo id"** (thu gọn, dưới ghi chú nguồn số, trang Trợ
+  lý Shopee, chỉ hiện khi gian đã nối Hubsell Ads): dán `campaign_id` → bấm Soi → JSON hiện tại chỗ.
+  Anh mở Seller Center → Quảng cáo → bấm vào chiến dịch Nhóm → số `campaign_id` nằm trong URL.
+- Đọc kết quả: `id_list_all.found` true = sàn CÓ trả (chẩn đoán 15.2 sai, chỉ cần sửa sync —
+  xem `entry.ad_type`); `setting_info.campaign_list` có dòng = product_level đọc được cấu hình;
+  `gms_campaign_perf_7d.response` có số (không `error`) = nhóm GMS đọc được; tất cả rỗng/lỗi =
+  đúng 15.2, chuyển sang ticket 15.6.
 - Lazada không có loại này (campaign Sponsored Solutions đã nhiều SP sẵn, đọc được) — không đụng.
+
+### 15.6 Ticket Shopee Open Platform (phương án C) — soạn sẵn, anh gửi khi probe xác nhận
+Nơi gửi: Open Platform Console → Support → Submit ticket (app **Hubsell Ads**, category Ads API).
+Kèm `request_id` của một lượt `get_product_level_campaign_id_list` trên gian có chiến dịch Nhóm
+(lấy từ JSON probe nếu có) + `campaign_id` + `shop_id`.
+
+**Title:** Multi-product GMV Max campaign (ad group) not returned by product-level Ads APIs
+
+**Body (gửi nguyên văn):**
+```
+Hello Shopee Open Platform team,
+
+Our Ads Service app "Hubsell Ads" (partner_id: <partner id>) reads sellers' Product Ads via
+v2.ads.get_product_level_campaign_id_list → get_product_level_campaign_setting_info →
+get_product_campaign_daily_performance, and shop-level spend via get_all_cpc_ads_daily_performance.
+
+Since the May 2025 update, sellers can create one GMV Max campaign that promotes up to 30 items
+("multi-product" / ad group). For shop_id <shop id>, such a campaign (campaign_id <id>) is ongoing in
+Seller Center, but:
+  1. get_product_level_campaign_id_list (ad_type=all/auto/manual) does not return this campaign_id
+     (request_id: <request id>);
+  2. get_product_level_campaign_setting_info / get_product_campaign_daily_performance with this
+     campaign_id return no data;
+  3. the GMS endpoints (get_gms_campaign_performance with campaign_id) return <error code>.
+Its spend is however included in get_all_cpc_ads_daily_performance, so the shop total and the sum of
+campaign-level data no longer reconcile.
+
+Questions:
+  a) Which endpoint should an Ads Service app use to list and read multi-product GMV Max campaigns
+     (settings, item list, daily performance)?
+  b) If none exists today, is support planned, and can we be whitelisted for a beta?
+
+Thank you.
+```

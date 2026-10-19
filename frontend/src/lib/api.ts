@@ -7867,6 +7867,17 @@ export interface ShopeeGmsItemsResponse {
 }
 
 /** Từng SP trong GMV Max cấp shop (7 ngày trọn) kèm hòa vốn SP — đọc DB, không gọi sàn. */
+/**
+ * SOI MỘT CHIẾN DỊCH THEO ID (19/10, docs ADS-SHOPEE-KHAI-THAC-API mục 15) — đọc thuần. Dùng khi
+ * Seller Center có chiến dịch "đang chạy" (Chiến dịch Nhóm nhiều SP) mà bảng Hubsell không thấy:
+ * hỏi từng nhóm endpoint Shopee với đúng id, trả JSON nguyên văn để đọc.
+ */
+export function probeShopeeCampaignById(channelId: string, campaignId: string) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/quang-cao/shopee/campaigns/probe?channelId=${encodeURIComponent(channelId)}&campaignId=${encodeURIComponent(campaignId)}`
+  );
+}
+
 export function fetchShopeeGmsItems(channelId: string) {
   return apiFetch<ShopeeGmsItemsResponse>(
     `/api/quang-cao/shopee/gms/items?channelId=${encodeURIComponent(channelId)}`

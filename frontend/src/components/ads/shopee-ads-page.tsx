@@ -58,6 +58,7 @@ import {
   requestAdsRefresh,
   restoreShopeeAdsBudget,
   pauseShopeeAdsCampaign,
+  probeShopeeCampaignById,
   resumeShopeeAdsCampaign,
   setShopeeAdsRoasTarget,
   type AdsAssistantScorecard,
@@ -234,6 +235,10 @@ export function ShopeeAdsPage({
   const [breakevenError, setBreakevenError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  // Soi chiến dịch theo id (mục 15, 19/10): ô nhập id Seller Center + JSON nguyên văn từ route probe.
+  const [probeId, setProbeId] = useState("");
+  const [probing, setProbing] = useState(false);
+  const [probeOut, setProbeOut] = useState<string | null>(null);
   // Phân trang bảng chiến dịch — shop thật có hàng trăm campaign (DarkMan: 142).
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
@@ -1103,6 +1108,52 @@ export function ShopeeAdsPage({
               </span>
             )}
           </p>
+        )}
+
+        {/* ===== SOI CHIẾN DỊCH THEO ID (mục 15, 19/10) — thu gọn, đọc thuần ===== */}
+        {platform === "shopee" && channelId && adsLinked && (
+          <details className="mx-auto max-w-3xl text-xs text-slate-500">
+            <summary className="cursor-pointer select-none text-center">
+              Seller Center có chiến dịch đang chạy mà bảng trên không thấy? Soi theo id
+            </summary>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              <Input
+                className="h-8 w-56 text-xs"
+                placeholder="campaign_id trong URL Seller Center"
+                value={probeId}
+                inputMode="numeric"
+                onChange={(e) => setProbeId(e.target.value.replace(/\D/g, ""))}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={probing || !probeId}
+                onClick={async () => {
+                  setProbing(true);
+                  setProbeOut(null);
+                  try {
+                    const r = await probeShopeeCampaignById(channelId, probeId);
+                    setProbeOut(JSON.stringify(r, null, 2));
+                  } catch (err) {
+                    setProbeOut(`Lỗi: ${(err as Error).message}`);
+                  } finally {
+                    setProbing(false);
+                  }
+                }}
+              >
+                {probing ? "Đang hỏi Shopee…" : "Soi"}
+              </Button>
+            </div>
+            <p className="mt-1.5 text-center">
+              Hỏi từng nhóm API Shopee với đúng id này (danh sách chiến dịch sản phẩm, cấu hình, hiệu
+              suất, GMV Max cấp shop). Chỉ đọc, không đổi gì trên sàn. Gửi kết quả cho Hubsell nếu cần hỗ trợ.
+            </p>
+            {probeOut && (
+              <pre className="mt-2 max-h-96 overflow-auto rounded border bg-slate-50 p-2 text-left text-[11px] leading-snug dark:bg-slate-900">
+                {probeOut}
+              </pre>
+            )}
+          </details>
         )}
           </>
         )}
