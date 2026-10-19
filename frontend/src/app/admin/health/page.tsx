@@ -193,7 +193,7 @@ export default function AdminHealthPage() {
                   m.worker.watermark
                     ? `mốc nước ${m.worker.watermark.withMark}/${m.worker.watermark.channels} gian${m.worker.watermark.maxLagMin != null ? `, trễ nhất ${m.worker.watermark.maxLagMin}'` : ""}${m.worker.watermark.catchingUp ? `, ${m.worker.watermark.catchingUp} vét dở` : ""}${m.worker.watermark.hibernated ? `, ${m.worker.watermark.hibernated} ngủ đông` : ""} · `
                     : ""
-                }${m.growth.channelsAds} gian chạy ads · webhook chờ ${m.worker.webhookPending}${m.worker.breakersPaused.length ? " · CẦU DAO ĐÓNG" : ""}`}
+                }${m.growth.channelsAds} gian chạy ads${m.worker.adsBackingOff ? ` · ${m.worker.adsBackingOff} gian đang lùi 429` : ""} · webhook chờ ${m.worker.webhookPending}${m.worker.breakersPaused.length ? " · CẦU DAO ĐÓNG" : ""}`}
               />
               <StatCard
                 label="Database"

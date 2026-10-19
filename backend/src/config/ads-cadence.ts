@@ -64,4 +64,18 @@ export const ADS_CADENCE = {
    * dính). Lát 3 thay bằng ngưỡng AIMD.
    */
   STORM_RATIO: envNum("ADS_STORM_RATIO", 0.2),
+
+  /**
+   * LÁT 2 — cách ly theo gian: gian dính 429 tầng shop lùi riêng theo bậc, bậc LƯU DB (Channel.adsBackoffLevel /
+   * adsBackoffUntil). Lùi = SHOP_BACKOFF_MIN × 2^bậc, trần SHOP_BACKOFF_MAX_MIN, có xáo trộn ±15 %. 15' có từ 28/09;
+   * 120' tự chọn. Đo lại Đ1.
+   */
+  SHOP_BACKOFF_MIN: envNum("ADS_SHOP_BACKOFF_MIN", 15),
+  SHOP_BACKOFF_MAX_MIN: envNum("ADS_SHOP_BACKOFF_MAX_MIN", 120),
+  /**
+   * LÁT 2 — giãn lệnh trong MỘT xung của cùng gian (giây): hai lệnh Ads API liên tiếp của một gian cách nhau ít nhất
+   * ngần này. 0 = tắt (mặc định). Thử 5 để kiểm giả thuyết 13.1 (Shopee 10/10: "cấp shop ~1 call/phút"; lệnh thứ 4
+   * của xung hay dính 429). Áp ở services/api-budget.ts cho mọi app Ads (Shopee + Lazada). Đo lại Đ1 (so 429 bật/tắt).
+   */
+  SHOP_CALL_GAP_SEC: envNum("ADS_SHOP_CALL_GAP_SEC", 0, -1),
 } as const;

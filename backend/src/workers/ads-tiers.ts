@@ -40,10 +40,24 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(v) && v > 0 ? v : fallback;
 }
 
-/** Kết quả một XUNG ads: hạn xung kế tiếp (phút) + có kéo được số hay không. */
+/** Gian bị sàn chặn ở lượt này: "shop" = 429 tầng shop (lát 2: gian lùi riêng), "app" = cầu dao app đang đóng. */
+export type AdsRateLimited = "shop" | "app" | null;
+
+/** Kết quả một XUNG ads: hạn xung kế tiếp (phút) + có kéo được số hay không + bị chặn hay không. */
 export interface AdsPulseResult {
   delayMin: number;
   synced: boolean;
+  rateLimited?: AdsRateLimited;
+}
+
+/** Kết quả một lượt LỊCH SỬ ads: kéo được số (ghi lastAdsSyncAt, hạ cờ backfill) + bị chặn hay không. */
+export interface AdsHistoryResult {
+  synced: boolean;
+  rateLimited: AdsRateLimited;
+}
+
+function budgetScope(err: unknown): AdsRateLimited {
+  return isApiBudgetError(err) ? (err.scope === "shop_rate_limit" ? "shop" : "app") : null;
 }
 
 /** Gian TikTok CHƯA nối quảng cáo: hạn xung/ads đẩy xa 1 ngày (chỉ để không nhặt mỗi tick). */
@@ -153,9 +167,14 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
     }
   } catch (err) {
     if (isApiBudgetError(err)) {
-      // Van an toàn: app đang bị cầu dao / vượt trần → lùi gian, KHÔNG retry.
+      // Van an toàn: app đang bị cầu dao / vượt trần → lùi gian, KHÔNG retry. 429 tầng shop: làn Ads (lát 2) tính
+      // bậc lùi riêng của gian từ cờ rateLimited; 15' ở đây chỉ còn là đường lui ADS_LANE=0.
       console.warn(`[Ads-pulse] "${channel.shopName}" lùi lịch (${err.scope}): ${err.message}`);
-      return { delayMin: err.scope === "shop_rate_limit" ? 15 : ADS_CADENCE.PULSE_MIN, synced: false };
+      return {
+        delayMin: err.scope === "shop_rate_limit" ? ADS_CADENCE.SHOP_BACKOFF_MIN : ADS_CADENCE.PULSE_MIN,
+        synced: false,
+        rateLimited: budgetScope(err),
+      };
     }
     console.error(`[Ads-pulse] Lỗi xung gian "${channel.shopName}":`, (err as Error).message);
   }
@@ -273,8 +292,8 @@ async function runTiktokAdsPulse(channel: Channel): Promise<AdsPulseResult> {
   }
 }
 
-async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
-  if (!isTiktokAdsConfigured()) return false;
+async function runTiktokAdsTier(channel: Channel): Promise<AdsHistoryResult> {
+  if (!isTiktokAdsConfigured()) return { synced: false, rateLimited: null };
   const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
   try {
     // Tài khoản quảng cáo TikTok là thực thể rời shop — kiểm lại ai đang giữ
@@ -293,16 +312,22 @@ async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
     }
     // Lưới đỡ: xung thường đã chạy lượt ngày rồi (mốc lastVideoTrackOn chặn chạy lại).
     if (r.linked) await maybeRunTiktokAdsDaily(channel);
-    return r.linked;
+    return { synced: r.linked, rateLimited: null };
   } catch (err) {
     console.error(`[Auto-sync] Ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message);
-    return false;
+    return { synced: false, rateLimited: null };
   }
 }
 
-async function runAdsTier(channel: Channel): Promise<boolean> {
+async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
   const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
   const daysBack = backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK;
+  // Lát 2: ghi lại lần bị chặn đầu tiên trong lượt (shop thắng app vì là của riêng gian này).
+  let rateLimited: AdsRateLimited = null;
+  const noteLimit = (err: unknown) => {
+    const s = budgetScope(err);
+    if (s && rateLimited !== "shop") rateLimited = s;
+  };
 
   if (channel.channelName === ChannelName.LAZADA) {
     // Lazada: adgroup (itemIds) chỉ có ở lượt này; report từng ngày cửa sổ daysBack.
@@ -313,19 +338,20 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
           `[Auto-sync] Lịch sử Ads Lazada "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
         );
       }
-      return true;
+      return { synced: true, rateLimited: null };
     } catch (err) {
       if (isApiBudgetError(err)) {
+        noteLimit(err);
         console.warn(`[Auto-sync] Lịch sử Ads Lazada "${channel.shopName}" lùi lịch: ${err.message}`);
       } else {
         console.error(`[Auto-sync] Lỗi lịch sử Ads Lazada "${channel.shopName}":`, (err as Error).message);
       }
-      return false;
+      return { synced: false, rateLimited };
     }
   }
 
   // ---------- Shopee: chỉ khi gian có quyền Ads API ----------
-  if (!(await hasShopeeAdsAccess(channel.id))) return false;
+  if (!(await hasShopeeAdsAccess(channel.id))) return { synced: false, rateLimited: null };
 
   let synced = false;
   try {
@@ -336,8 +362,9 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
     }
   } catch (err) {
     if (isApiBudgetError(err)) {
+      noteLimit(err);
       console.warn(`[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}" lùi lịch: ${err.message}`);
-      return false;
+      return { synced: false, rateLimited };
     }
     console.error(
       `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
@@ -362,6 +389,7 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
     }
   } catch (err) {
     if (isApiBudgetError(err)) {
+      noteLimit(err);
       console.warn(`[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}" lùi lịch: ${err.message}`);
     } else {
       console.error(
@@ -380,6 +408,7 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
       }
     } catch (err) {
       if (isApiBudgetError(err)) {
+        noteLimit(err);
         console.warn(`[Ads-GMS] "${channel.shopName}" lùi lịch: ${err.message}`);
       } else {
         console.error(`[Ads-GMS] Lỗi GMV Max cấp shop gian "${channel.shopName}":`, (err as Error).message);
@@ -398,13 +427,14 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
       }
     } catch (err) {
       if (isApiBudgetError(err)) {
+        noteLimit(err);
         console.warn(`[Ads-signals] "${channel.shopName}" lùi lịch: ${err.message}`);
       } else {
         console.error(`[Ads-signals] Lỗi "${channel.shopName}":`, (err as Error).message);
       }
     }
   }
-  return synced;
+  return { synced, rateLimited };
 }
 
 // ---------- Cửa vào chung cho worker (ads-lane.ts / order-auto-sync.ts) ----------
@@ -414,7 +444,7 @@ export function runAdsPulse(channel: Channel): Promise<AdsPulseResult> {
   return channel.channelName === ChannelName.TIKTOK ? runTiktokAdsPulse(channel) : runAdsPulseTier(channel);
 }
 
-/** LỊCH SỬ ads của một gian theo sàn. true = kéo được số (ghi lastAdsSyncAt, hạ cờ backfill). */
-export function runAdsHistory(channel: Channel): Promise<boolean> {
+/** LỊCH SỬ ads của một gian theo sàn. synced = kéo được số (ghi lastAdsSyncAt, hạ cờ backfill). */
+export function runAdsHistory(channel: Channel): Promise<AdsHistoryResult> {
   return channel.channelName === ChannelName.TIKTOK ? runTiktokAdsTier(channel) : runAdsTier(channel);
 }

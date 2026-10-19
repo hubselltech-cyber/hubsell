@@ -6188,6 +6188,8 @@ export interface PlatformHealthResponse {
       overdueFast15: number;
       overdueFast60: number;
       overduePulse: number;
+      /** Gian đang lùi riêng vì 429 tầng shop (lát 2, 19/10/2026); vắng ở ảnh chụp cũ. */
+      adsBackingOff?: number;
       lockedStale: number;
       webhookPending: number;
       webhookOldestMin: number | null;

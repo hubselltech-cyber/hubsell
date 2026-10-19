@@ -102,6 +102,8 @@ Biến chỉnh nhịp worker quét sàn (workers/order-auto-sync.ts):
 | `ADS_CONCURRENCY` | 2 | Số gian chạy xung/lịch sử ads song song trong một worker ads-lane |
 | `ADS_LOCK_STALE_MINUTES` | 30 | Vé làn Ads mồ côi sau N phút (worker chết) → nhặt lại |
 | `ADS_STORM_RATIO` | 0,2 | Bão 429: tỷ lệ gian dính / gian đã gọi 10' để đóng cầu dao theo app |
+| `ADS_SHOP_BACKOFF_MIN` / `ADS_SHOP_BACKOFF_MAX_MIN` | 15 / 120 | Lát 2: gian dính 429 tầng shop lùi riêng 15' × 2^bậc, trần 120' (bậc lưu DB) |
+| `ADS_SHOP_CALL_GAP_SEC` | 0 | Lát 2: giãn lệnh Ads API liên tiếp của cùng gian (giây); 0 = tắt, thử 5 khi đo Đ1 |
 
 Local: PowerShell `$env:HUBSELL_ROLE="worker"; npm run dev` chạy riêng worker;
 không đặt gì = `all` như trước.

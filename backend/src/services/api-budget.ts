@@ -187,6 +187,15 @@ export function isRateLimitStorm(
   return distinct >= trips && distinct >= Math.ceil(ratio * calledShops);
 }
 
+/**
+ * LÁT 2 (19/10/2026) — giãn lệnh trong một xung của cùng gian. Hàm thuần: lệnh trước của gian lúc `lastAt`
+ * (ms, undefined = chưa gọi), khoảng cách tối thiểu `gapMs` → phải chờ thêm bao nhiêu ms (0 = gọi ngay).
+ */
+export function shopCallWaitMs(lastAt: number | undefined, now: number, gapMs: number): number {
+  if (gapMs <= 0 || lastAt == null) return 0;
+  return Math.max(0, lastAt + gapMs - now);
+}
+
 /** Ghi nhận MỘT lần gọi của gian (mọi kết quả) — mẫu số tỷ lệ bão. */
 function noteShopCall(app: string, shop: string, now: number): void {
   let m = shopLastCalledAt.get(app);
@@ -258,7 +267,12 @@ export async function withApiBudget<T>(
 ): Promise<T> {
   await assertAppOpen(app);
   await acquireApiToken(app);
-  if (shop) noteShopCall(app, shop, Date.now());
+  if (shop) {
+    // Giãn lệnh của CÙNG gian (ADS_SHOP_CALL_GAP_SEC, 0 = tắt): mốc gọi cuối theo gian đã có sẵn cho tỷ lệ bão.
+    const wait = shopCallWaitMs(shopLastCalledAt.get(app)?.get(shop), Date.now(), ADS_CADENCE.SHOP_CALL_GAP_SEC * 1000);
+    if (wait > 0) await sleep(wait);
+    noteShopCall(app, shop, Date.now());
+  }
   try {
     return await fn();
   } catch (err) {

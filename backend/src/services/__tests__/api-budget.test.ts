@@ -1,6 +1,6 @@
 // Van an toàn gọi Ads API theo app (tầng C, docs/ADS-NHIP-CANH-BAO.md) — phần thuần.
 import { describe, expect, it } from "vitest";
-import { acquireApiToken, isRateLimitStorm, lazadaShopKey, pauseMsForLevel, type RateLimitHit } from "../api-budget";
+import { acquireApiToken, isRateLimitStorm, lazadaShopKey, pauseMsForLevel, shopCallWaitMs, type RateLimitHit } from "../api-budget";
 import { breakerSignalLevel } from "../platform-health";
 import { classifyShopeeAdsRateLimit } from "../../integrations/shopee/client";
 import { classifyLazadaAdsRateLimit } from "../../integrations/lazada/client";
@@ -13,6 +13,17 @@ describe("pauseMsForLevel — cầu dao nghỉ 5' × 2^level, trần 60'", () =>
     expect(pauseMsForLevel(4)).toBe(60 * 60_000);
     expect(pauseMsForLevel(9)).toBe(60 * 60_000);
     expect(pauseMsForLevel(-2)).toBe(5 * 60_000);
+  });
+});
+
+describe("shopCallWaitMs — giãn lệnh trong một xung của cùng gian (lát 2, ADS_SHOP_CALL_GAP_SEC)", () => {
+  it("tắt (gap 0) hoặc gian chưa gọi lần nào → gọi ngay", () => {
+    expect(shopCallWaitMs(1_000, 1_500, 0)).toBe(0);
+    expect(shopCallWaitMs(undefined, 1_500, 5_000)).toBe(0);
+  });
+  it("lệnh trước 1 s trước, gap 5 s → chờ 4 s; đã quá gap → 0", () => {
+    expect(shopCallWaitMs(10_000, 11_000, 5_000)).toBe(4_000);
+    expect(shopCallWaitMs(10_000, 20_000, 5_000)).toBe(0);
   });
 });
 

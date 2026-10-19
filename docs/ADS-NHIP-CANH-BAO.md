@@ -591,8 +591,8 @@ toán / trợ lý hỏi đáp.
 |---|---|---|---|---|
 | `ADS_STORM_RATIO` (tỷ lệ gian dính 429 → bão) | 0,2 | đã có (17/10) — lát 3 thay bằng ngưỡng AIMD | tự chọn | Đ1 |
 | `ADS_CONCURRENCY` (số luồng làn Ads) | 2 | 1 | tự chọn | Đ1, Đ2 |
-| `ADS_SHOP_BACKOFF_MIN` / `_MAX_MIN` (lùi gian) | 15' → 120' | 2 | 15' có từ 28/09; 120' tự chọn | Đ1 |
-| `ADS_SHOP_CALL_GAP_SEC` (giãn lệnh trong xung một gian) | 0 (tắt) → thử 5 | 2 | Shopee 10/10 "~1 call/phút cấp shop" là hướng dẫn chung | Đ1 (so 429 bật/tắt) |
+| `ADS_SHOP_BACKOFF_MIN` / `_MAX_MIN` (lùi gian) | 15' → 120' | 2 — ĐÃ CÓ 19/10 (13.8) | 15' có từ 28/09; 120' tự chọn | Đ1 |
+| `ADS_SHOP_CALL_GAP_SEC` (giãn lệnh trong xung một gian) | 0 (tắt) → thử 5 | 2 — ĐÃ CÓ 19/10 (13.8), mặc định TẮT | Shopee 10/10 "~1 call/phút cấp shop" là hướng dẫn chung | Đ1 (so 429 bật/tắt) |
 | `ADS_AIMD_DECREASE` (hạ tốc) | × 0,5 | 3 | tự chọn (kiểu TCP) | Đ2 |
 | `ADS_AIMD_INCREASE_PCT` (tăng mỗi phút) | +10 % | 3 | tự chọn | Đ2 |
 | `ADS_AIMD_TRIGGER` (tỷ lệ 429 / lệnh để hạ tốc) | 5 % | 3 | tự chọn | Đ1, Đ2 |
@@ -646,3 +646,27 @@ ads do làn riêng ads-lane nhặt`; `[Ads-pulse]`/`[Ads-GMS]` vẫn xuất hi�
 **Hệ quả cần nhớ:** gian được nhặt vì ads đến hạn KHÔNG còn "tiện vét đơn luôn" (tầng nhanh vốn chạy mọi lượt của vòng cũ) — đơn
 vẫn theo `nextFastSyncAt` 10'–60' riêng, webhook lo real-time; đây đúng là mục tiêu tách khoang. Số luồng tổng tăng 3 → 3 + 2
 (hai vòng) → đo RAM worker ở Đ1. Lát 2 (cách ly theo gian, bậc lùi lưu DB + giãn lệnh trong xung) nối vào `ads-lane.ts`.
+
+### 13.8 LÁT 2 ĐÃ LÀM (19/10/2026 chiều, ngay sau lát 1 theo anh Trung "làm luôn lát 2") — cách ly 429 theo gian
+
+**Trước:** 429 tầng shop ở xung → gian lùi cố định 15' (RAM, không bậc); ở lịch sử → chỉ bỏ lượt, 6 h sau thử lại; xung dính 429
+vẫn gọi tiếp lịch sử trong cùng lượt. Một gian bị sàn chặn liên tục vẫn gõ đều mỗi 15' và vẫn góp vào tỷ lệ bão.
+
+**Sau:**
+
+| Việc | Ở đâu |
+|---|---|
+| Bậc lùi riêng của gian LƯU DB: `Channel.adsBackoffLevel` (0 = không lùi) + `adsBackoffUntil`; migration khóa Channel có thử lại | `prisma/migrations/20261019170000_channel_ads_backoff` |
+| Hàm tầng trả cờ bị chặn: `AdsPulseResult.rateLimited` / `AdsHistoryResult.rateLimited` = "shop" (429 tầng shop) · "app" (cầu dao app đang đóng) · null; lịch sử Shopee gom cờ từ mọi khối catch (spend, campaign, GMS, signals), "shop" thắng "app" | `workers/ads-tiers.ts` |
+| Làn Ads: (1) không nhặt gian có `adsBackoffUntil > now` (`adsCandidateWhere`); (2) xung dính "shop" → KHÔNG gọi tiếp lịch sử trong lượt; (3) `nextAdsSchedule`: "shop" ở xung hoặc lịch sử → `adsBackoffUntil = now + shopBackoffMs(bậc)`, bậc +1 (trần log2(120/15) = 3), hạn xung đẩy tới hết lùi; lượt kéo được số và không bị chặn → bậc 0; "app" → không đổi bậc (không phải lỗi của gian); log `[Ads-lane] … lùi riêng bậc N tới …` / `… khỏe lại — bậc lùi về 0` | `workers/ads-lane.ts` (`shopBackoffMs`, `nextBackoffLevel`) |
+| Giãn lệnh trong một xung của cùng gian: `withApiBudget` chờ tới `mốc gọi cuối của gian + ADS_SHOP_CALL_GAP_SEC` (mốc đã có sẵn cho tỷ lệ bão) — áp cả Shopee lẫn Lazada Ads; mặc định 0 = tắt, bật bằng env để thử giả thuyết 13.1 | `services/api-budget.ts` (`shopCallWaitMs`) |
+| HQ: `worker.adsBackingOff` (gian đang lùi riêng) + dòng gợi ý trên dải KPI | `services/platform-health.ts`, FE `admin/health/page.tsx` |
+| Đường lui `ADS_LANE=0` giữ hành vi cũ (lùi 15' cố định, không bậc DB) | `workers/ads-tiers.ts` |
+
+**Kiểm:** 115 test liên quan xanh (ads-lane 20 ca, api-budget +2), tsc BE+FE + eslint sạch, `health-smoke.ts` DB dev OK.
+**Chưa chạy sàn thật.** Sau deploy đọc log worker: `[Ads-lane] BẬT … lùi riêng gian dính 429 15'→120', giãn lệnh trong xung 0s`,
+rồi vài ngày sau đếm `[Ads-lane] … lùi riêng bậc` theo gian (gian nào lặp bậc 2–3 = bị sàn siết thật) và so tripCount
+`shopee:2044679` (Đ0 = 135 lúc 14:40 19/10) — kỳ vọng tốc độ +10/ngày giảm vì gian bị chặn không còn gõ lại mỗi 15' trong lúc
+bị chặn. Giãn lệnh: bật `ADS_SHOP_CALL_GAP_SEC=5` trên worker ở lượt đo Đ1 (so 429/gian/ngày bật vs tắt), chưa bật mặc định.
+
+**Chưa làm (lát 3):** cầu dao app vẫn bật/tắt theo bão; AIMD thay ngưỡng tỷ lệ; `exceed_partner_api` giữ cầu dao dừng hẳn.

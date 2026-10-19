@@ -551,6 +551,10 @@ model Channel {
   /// chạy ngoài vòng đồng bộ đơn, khóa riêng nên Ads bị chặn/chậm không giữ chỗ của đơn, tồn, dòng tiền.
   /// Cũ > ADS_LOCK_STALE_MINUTES (30') = worker chết → nhặt lại.
   adsLockedAt              DateTime?
+  /// LÁT 2 cách ly theo gian (19/10/2026, docs 13.8): bậc lùi riêng của gian khi dính 429 tầng shop (0 = không lùi);
+  /// xung/lịch sử thành công → về 0. Làn Ads không nhặt gian có adsBackoffUntil > now.
+  adsBackoffLevel          Int       @default(0)
+  adsBackoffUntil          DateTime?
   /// MỐC NƯỚC quét đơn (lát 3.2 giai đoạn 3, 14/10/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 2): mọi đơn có
   /// update_time <= mốc này đã đọc đầy đủ. null = chưa có mốc → quét 2 ngày như cũ. Chỉ worker tiến mốc.
   ordersWatermarkAt        DateTime?

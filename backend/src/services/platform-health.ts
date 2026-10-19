@@ -124,6 +124,8 @@ export interface WorkerLayer {
   overdueFast15: number;
   overdueFast60: number;
   overduePulse: number;
+  /** Gian đang LÙI RIÊNG vì 429 tầng shop (lát 2, 19/10/2026: Channel.adsBackoffUntil > now). Vắng ở ảnh chụp cũ. */
+  adsBackingOff?: number;
   lockedStale: number;
   webhookPending: number;
   webhookOldestMin: number | null;
@@ -313,7 +315,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     hibernatedAt: null, // gian ngủ đông (hết gói quá ân hạn) không tính là "trễ quét"
     channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
-  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark] =
+  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark, adsBackingOff] =
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
@@ -356,6 +358,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
       ),
       safe<InvoiceHealth | null>("invoice.health", collectInvoiceHealth(new Date(now)), null),
       safe<WatermarkHealth | null>("channel.watermark", collectWatermarkHealth(), null),
+      safe("channel.count", prisma.channel.count({ where: { ...syncable, adsBackoffUntil: { gt: new Date(now) } } }), 0),
     ]);
   const d24 = now - DAY_MS;
   // Hàng đợi webhook sàn = Shopee + TikTok gộp (cùng khuôn, cùng SLA).
@@ -366,6 +369,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     overdueFast15,
     overdueFast60,
     overduePulse,
+    adsBackingOff,
     lockedStale,
     webhookPending: webhookPending + tiktokPending,
     webhookOldestMin: oldestAny ? Math.round((now - oldestAny.createdAt.getTime()) / 60000) : null,

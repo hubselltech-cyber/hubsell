@@ -331,7 +331,7 @@ async function processChannel(channel: Channel): Promise<void> {
     // XUNG ads trước tầng giờ: cảnh báo tiền là thứ cần sớm nhất trong lượt.
     if (tiers.pulse) pulse = await runAdsPulse(channel);
     if (tiers.hourly) settlementsOk = await runHourlyTier(channel, { backfill, rebuild });
-    if (tiers.ads) adsSynced = await runAdsHistory(channel);
+    if (tiers.ads) adsSynced = (await runAdsHistory(channel)).synced;
   } catch (err) {
     console.error(`[Auto-sync] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
   } finally {

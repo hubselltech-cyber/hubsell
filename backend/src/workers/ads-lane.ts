@@ -15,7 +15,13 @@
 //
 // Đường lui: ADS_LANE=0 → worker này không chạy, order-auto-sync nhặt lại cả
 // hai tầng như cũ (adsInOrderSync()). AUTO_SYNC_MINUTES=0 vẫn tắt tất cả.
-// Lát 2 (cách ly theo gian, bậc lùi lưu DB) và lát 3 (AIMD) nối vào đây.
+//
+// LÁT 2 — CÁCH LY THEO GIAN (19/10/2026, docs 13.8): gian dính 429 tầng shop
+// (xung hoặc lịch sử) lùi RIÊNG: bậc lưu Channel.adsBackoffLevel, hạn lùi
+// Channel.adsBackoffUntil = now + SHOP_BACKOFF_MIN × 2^bậc (trần
+// SHOP_BACKOFF_MAX_MIN, xáo trộn ±15 %); làn không nhặt gian đang lùi; lượt
+// thành công → bậc 0. Cầu dao app đang đóng ("app") không phải lỗi của gian →
+// không đổi bậc. Giãn lệnh trong xung: services/api-budget.ts. Lát 3 (AIMD) nối vào đây.
 // ============================================================
 
 import { ChannelName, type Channel } from "@prisma/client";
@@ -24,7 +30,7 @@ import { ADS_CADENCE } from "../config/ads-cadence";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
-import { runAdsHistory, runAdsPulse, type AdsPulseResult } from "./ads-tiers";
+import { runAdsHistory, runAdsPulse, type AdsHistoryResult, type AdsPulseResult } from "./ads-tiers";
 import { adsInOrderSync, withJitter } from "./order-auto-sync";
 
 /** Nhịp nhặt vé (ms) — như vòng đơn. */
@@ -57,14 +63,37 @@ export function adsCandidateWhere(now: Date, staleBefore: Date, excludeIds: stri
     ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
     AND: [
       { OR: [{ adsLockedAt: null }, { adsLockedAt: { lt: staleBefore } }] },
+      // Lát 2: gian đang lùi vì 429 tầng shop thì không nhặt (hạn xung cũng đã đẩy tới adsBackoffUntil).
+      { OR: [{ adsBackoffUntil: null }, { adsBackoffUntil: { lte: now } }] },
       { OR: [{ nextAdsPulseAt: null }, { nextAdsPulseAt: { lte: now } }, { nextAdsSyncAt: { lte: now } }] },
     ],
   };
 }
 
-/** Giá trị ghi lịch sau một lượt (hàm thuần): hạn kế tiếp có jitter, mốc kéo được số, hạ cờ backfill. */
+/** Lùi riêng của gian ở bậc `level` (ms): SHOP_BACKOFF_MIN × 2^level, trần SHOP_BACKOFF_MAX_MIN, xáo trộn ±15 %. Hàm thuần. */
+export function shopBackoffMs(level: number, rand: () => number = Math.random): number {
+  const minutes = Math.min(ADS_CADENCE.SHOP_BACKOFF_MAX_MIN, ADS_CADENCE.SHOP_BACKOFF_MIN * 2 ** Math.max(0, level));
+  return withJitter(minutes * 60 * 1000, rand);
+}
+
+/** Bậc lùi kế tiếp sau một lần 429 tầng shop: +1, không phình quá bậc đã chạm trần (log2(max/min), làm tròn lên). */
+export function nextBackoffLevel(level: number): number {
+  const cap = Math.max(0, Math.ceil(Math.log2(ADS_CADENCE.SHOP_BACKOFF_MAX_MIN / ADS_CADENCE.SHOP_BACKOFF_MIN)));
+  return Math.min(cap, Math.max(0, level) + 1);
+}
+
+/**
+ * Giá trị ghi lịch sau một lượt (hàm thuần): hạn kế tiếp có jitter, mốc kéo được số, hạ cờ backfill;
+ * LÁT 2: 429 tầng shop ở xung hoặc lịch sử → gian lùi riêng theo bậc (`backoffLevel` hiện tại của gian),
+ * hạn xung đẩy tới hết lùi; lượt có kéo được số và không bị chặn → bậc về 0.
+ */
 export function nextAdsSchedule(
-  input: { pulse: AdsPulseResult | null; history: boolean; historyRan: boolean },
+  input: {
+    pulse: AdsPulseResult | null;
+    history: AdsHistoryResult | null;
+    historyRan: boolean;
+    backoffLevel?: number;
+  },
   now: number,
   rand: () => number = Math.random
 ): {
@@ -73,16 +102,31 @@ export function nextAdsSchedule(
   nextAdsSyncAt?: Date;
   lastAdsSyncAt?: Date;
   adsBackfillPending?: false;
+  adsBackoffLevel?: number;
+  adsBackoffUntil?: Date | null;
 } {
-  const fresh = input.history || input.pulse?.synced === true;
+  const historySynced = input.history?.synced === true;
+  const fresh = historySynced || input.pulse?.synced === true;
+  const shopLimited = input.pulse?.rateLimited === "shop" || input.history?.rateLimited === "shop";
+  const level = Math.max(0, input.backoffLevel ?? 0);
+  let nextPulseAt = input.pulse ? now + withJitter(input.pulse.delayMin * 60 * 1000, rand) : null;
+  let backoff: { adsBackoffLevel: number; adsBackoffUntil: Date | null } | null = null;
+  if (shopLimited) {
+    const until = now + shopBackoffMs(level, rand);
+    backoff = { adsBackoffLevel: nextBackoffLevel(level), adsBackoffUntil: new Date(until) };
+    nextPulseAt = Math.max(nextPulseAt ?? 0, until);
+  } else if (fresh && level > 0) {
+    backoff = { adsBackoffLevel: 0, adsBackoffUntil: null };
+  }
   return {
     adsLockedAt: null,
-    ...(input.pulse ? { nextAdsPulseAt: new Date(now + withJitter(input.pulse.delayMin * 60 * 1000, rand)) } : {}),
+    ...(nextPulseAt != null ? { nextAdsPulseAt: new Date(nextPulseAt) } : {}),
     ...(input.historyRan
       ? { nextAdsSyncAt: new Date(now + withJitter(ADS_CADENCE.FULL_HOURS * 60 * 60 * 1000, rand)) }
       : {}),
     ...(fresh ? { lastAdsSyncAt: new Date(now) } : {}),
-    ...(input.history ? { adsBackfillPending: false as const } : {}),
+    ...(historySynced ? { adsBackfillPending: false as const } : {}),
+    ...(backoff ?? {}),
   };
 }
 
@@ -107,7 +151,7 @@ export function startAdsLane(): void {
   setTimeout(() => void tick(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void tick(), TICK_MS).unref();
   console.log(
-    `[Ads-lane] BẬT — làn Ads riêng: song song ${ADS_CADENCE.CONCURRENCY} gian, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
+    `[Ads-lane] BẬT — làn Ads riêng: song song ${ADS_CADENCE.CONCURRENCY} gian, lùi riêng gian dính 429 ${ADS_CADENCE.SHOP_BACKOFF_MIN}'→${ADS_CADENCE.SHOP_BACKOFF_MAX_MIN}', giãn lệnh trong xung ${ADS_CADENCE.SHOP_CALL_GAP_SEC}s, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
   );
 }
 
@@ -143,7 +187,7 @@ async function tick(): Promise<void> {
 async function processAdsChannel(channel: Channel): Promise<void> {
   const tiers = dueAdsTiers(channel, Date.now());
   let pulse: AdsPulseResult | null = null;
-  let history = false;
+  let history: AdsHistoryResult | null = null;
   let historyRan = false;
   try {
     const configured =
@@ -158,7 +202,8 @@ async function processAdsChannel(channel: Channel): Promise<void> {
     }
     // Xung trước (cảnh báo tiền cần sớm nhất), lịch sử sau — cùng thứ tự như vòng cũ.
     if (tiers.pulse) pulse = await runAdsPulse(channel);
-    if (tiers.history) {
+    // Lát 2: xung vừa bị 429 tầng shop thì KHÔNG gọi tiếp lịch sử — thêm lệnh chỉ thêm 429 từ cùng gian.
+    if (tiers.history && pulse?.rateLimited !== "shop") {
       historyRan = true;
       history = await runAdsHistory(channel);
     }
@@ -168,8 +213,16 @@ async function processAdsChannel(channel: Channel): Promise<void> {
     if (tiers.pulse && !pulse) pulse = { delayMin: ADS_CADENCE.PULSE_IDLE_MIN, synced: false };
     if (tiers.history) historyRan = true;
   } finally {
+    const data = nextAdsSchedule({ pulse, history, historyRan, backoffLevel: channel.adsBackoffLevel }, Date.now());
+    if (data.adsBackoffUntil) {
+      console.warn(
+        `[Ads-lane] ${channel.channelName} "${channel.shopName}" lùi riêng bậc ${data.adsBackoffLevel} tới ${data.adsBackoffUntil.toISOString()} (429 tầng shop — gian khác không ảnh hưởng)`
+      );
+    } else if (data.adsBackoffLevel === 0 && channel.adsBackoffLevel > 0) {
+      console.log(`[Ads-lane] ${channel.channelName} "${channel.shopName}" khỏe lại — bậc lùi về 0`);
+    }
     await prisma.channel
-      .update({ where: { id: channel.id }, data: nextAdsSchedule({ pulse, history, historyRan }, Date.now()) })
+      .update({ where: { id: channel.id }, data })
       .catch((err) => console.error(`[Ads-lane] Không ghi được lịch gian "${channel.shopName}":`, (err as Error).message));
   }
 }
