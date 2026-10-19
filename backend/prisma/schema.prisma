@@ -698,6 +698,10 @@ model AdsCampaignDailyPerf {
   broadGmv      Decimal  @default(0) @db.Decimal(14, 2)
   directOrder   Int      @default(0)
   directGmv     Decimal  @default(0) @db.Decimal(14, 2)
+  /// Số SẢN PHẨM đã bán (Shopee broad_order_amount / direct_order_amount) — Seller Center hiện cạnh số đơn (15.11).
+  /// Lazada không có → 0. Dòng cũ hơn cửa sổ lịch sử 30 ngày còn 0 tới khi được kéo lại.
+  broadOrderAmount  Int @default(0)
+  directOrderAmount Int @default(0)
   updatedAt     DateTime @updatedAt
 
   adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)

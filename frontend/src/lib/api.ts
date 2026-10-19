@@ -7616,6 +7616,8 @@ export interface ShopeeAdsCampaignRow {
   broadGmv: number;
   directOrder: number;
   directGmv: number;
+  /** Số SẢN PHẨM đã bán (Shopee broad_order_amount) — khớp cột "Sản phẩm đã bán" Seller Center; Lazada 0. */
+  broadOrderAmount: number;
   roasBroad: number | null;
   roasDirect: number | null;
   /** Biên lãi ròng (chưa trừ ads) của SKU trong campaign — nền của ROAS hòa vốn. */
@@ -7705,6 +7707,8 @@ export interface ShopeeAdsSummary {
   broadGmv: number;
   directOrder: number;
   directGmv: number;
+  /** Tổng SP đã bán (Shopee) trong khoảng đang xem. */
+  broadOrderAmount: number;
   estProfit: number;
   roasBroad: number | null;
   roasDirect: number | null;

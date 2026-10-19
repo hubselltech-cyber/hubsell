@@ -1862,9 +1862,11 @@ export interface ShopeeAdsCampaignMetricPoint {
   expense?: number;
   broad_gmv?: number;
   broad_order?: number;
+  broad_order_amount?: number; // số SẢN PHẨM đã bán (broad) — Seller Center "Sản phẩm đã bán"
   broad_roi?: number;
   direct_gmv?: number;
   direct_order?: number;
+  direct_order_amount?: number;
   direct_roi?: number;
   cr?: number;
   cpc?: number;

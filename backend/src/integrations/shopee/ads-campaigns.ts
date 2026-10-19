@@ -251,6 +251,9 @@ export async function upsertShopeeCampaignPerf(
           broadGmv: Number(point.broad_gmv ?? 0) || 0,
           directOrder: Math.trunc(Number(point.direct_order ?? 0)) || 0,
           directGmv: Number(point.direct_gmv ?? 0) || 0,
+          // 15.11: số SP đã bán — cùng call, 0 lệnh thêm; bảng Hubsell khớp hai số với Seller Center.
+          broadOrderAmount: Math.trunc(Number(point.broad_order_amount ?? 0)) || 0,
+          directOrderAmount: Math.trunc(Number(point.direct_order_amount ?? 0)) || 0,
         };
         await prisma.adsCampaignDailyPerf.upsert({
           where: { adsCampaignId_date: { adsCampaignId: rowId, date } },

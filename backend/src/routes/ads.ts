@@ -178,9 +178,10 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
             acc.broadGmv += Number(p.broadGmv);
             acc.directOrder += p.directOrder;
             acc.directGmv += Number(p.directGmv);
+            acc.broadOrderAmount += p.broadOrderAmount;
             return acc;
           },
-          { spend: 0, impression: 0, clicks: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0 }
+          { spend: 0, impression: 0, clicks: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0, broadOrderAmount: 0 }
         );
 
         // Lãi/lỗ ước tính của campaign trong cửa sổ: lãi ròng của GMV broad trừ
@@ -336,10 +337,11 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           acc.broadGmv += c.broadGmv;
           acc.directOrder += c.directOrder;
           acc.directGmv += c.directGmv;
+          acc.broadOrderAmount += c.broadOrderAmount;
           if (c.estProfit != null) acc.estProfit += c.estProfit;
           return acc;
         },
-        { spend: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0, estProfit: 0 }
+        { spend: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0, broadOrderAmount: 0, estProfit: 0 }
       );
 
       // ---- Ví ads: Shopee có SỐ DƯ; Lazada không có API số dư, chỉ có cờ

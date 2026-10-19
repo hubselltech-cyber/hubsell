@@ -848,5 +848,10 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
 - **ĐÃ SỬA:** `ADS_CADENCE.WINDOW_DAYS_SHOPEE = 30` dùng riêng cho Shopee ở `ads-tiers.ts` (perf campaign + chi cấp
   shop đều nhận khoảng ≤ 1 tháng trong MỘT call → 30 ngày tốn đúng bằng 7 ngày, không thêm lệnh sàn). Lazada giữ 7
   (report 1 call/ngày). Lượt lịch sử 6h kế tiếp sẽ kéo lại 01–18/10 → 217 phải về 210 (hoặc số mới nhất của Shopee).
-- Nếu seller cần cột "SP đã bán": thêm cột `broadOrderAmount` vào `AdsCampaignDailyPerf` + đọc `broad_order_amount`
-  ở bước 3 (1 migration, 0 call thêm) — chưa làm, chờ anh thấy cần.
+- ✅ **Anh: "Làm khớp Shopee luôn cho khách đỡ thắc mắc"** → cột **SP đã bán** (migration `20261019230000_ads_perf_items_sold`:
+  `AdsCampaignDailyPerf.broadOrderAmount` + `directOrderAmount`, khóa có thử lại); bước 3 đọc `broad_order_amount` /
+  `direct_order_amount` cùng call (0 lệnh thêm); route cộng theo khoảng ngày (`campaigns[].broadOrderAmount`,
+  `summary.broadOrderAmount`); FE cột "SP đã bán" ngay sau "Đơn" (chỉ Shopee — `PLATFORM_META.itemsSoldColumn`;
+  Lazada không có số này). Bảng Hubsell giờ có đúng cặp Đơn hàng / Sản phẩm đã bán như Seller Center.
+  Dòng cũ hơn 30 ngày còn 0 tới khi được kéo lại (tooltip cột ghi rõ); ngay sau deploy, lượt lịch sử 6h đầu tiên
+  điền 30 ngày. Mobile chưa hiện cột này (kiểu API thêm trường là tương thích, app cũ không hỏng).

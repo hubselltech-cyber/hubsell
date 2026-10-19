@@ -120,6 +120,8 @@ const PLATFORM_META: Record<
     description: string;
     /** Tooltip cột Đơn — định nghĩa rổ broad của từng sàn. */
     broadHint: string;
+    /** Có cột "SP đã bán" không (Shopee trả broad_order_amount; Lazada không có). */
+    itemsSoldColumn: boolean;
     /** Nhãn đếm đơn làm mẫu biên lãi — Lazada chỉ tính đơn ĐÃ đối soát. */
     marginOrdersLabel: string;
     /** Câu chốt nguồn biên lãi, nối vào tooltip hòa vốn — mỗi sàn một nguồn phí. */
@@ -138,6 +140,7 @@ const PLATFORM_META: Record<
     perm: "ads.shopee",
     description:
       "Dữ liệu thật từ Shopee Ads API — kèm ROAS hòa vốn tính từ lãi/lỗ thực tế của shop.",
+    itemsSoldColumn: true,
     broadHint:
       "Đơn broad: mọi đơn của shop trong 7 ngày sau khi khách bấm quảng cáo (định nghĩa Shopee).",
     marginOrdersLabel: "đơn P&L",
@@ -151,6 +154,7 @@ const PLATFORM_META: Record<
     perm: "ads.lazada",
     description:
       "Dữ liệu thật từ Lazada Sponsored Solutions API — kèm ROAS hòa vốn tính từ lãi/lỗ đã đối soát của shop.",
+    itemsSoldColumn: false,
     broadHint:
       "Đơn store: mọi đơn của gian trong 30 ngày sau khi khách bấm quảng cáo, tính về ngày bấm (định nghĩa Lazada) — số các ngày gần nhất còn tiếp tục tăng.",
     marginOrdersLabel: "đơn đã đối soát",
@@ -1791,6 +1795,26 @@ function buildCampaignColumns(
         </span>
       ),
     },
+    // 15.11 (anh Trung 19/10 "làm khớp Shopee"): Seller Center hiện cả Đơn hàng lẫn Sản phẩm đã bán — cột này là
+    // broad_order_amount cùng call với Đơn. Chỉ Shopee (Lazada không có số này).
+    ...(meta.itemsSoldColumn
+      ? [
+          {
+            id: "itemsSold",
+            size: 100,
+            meta: { label: "SP đã bán", align: "right" },
+            header: () => (
+              <span className="inline-flex items-center gap-1">
+                SP đã bán
+                <HintIcon hint="Số sản phẩm đã bán trong các đơn broad (một đơn mua 2 món tính 2) — đúng cột 'Sản phẩm đã bán' trên Seller Center. Ngày cũ hơn 30 ngày có thể còn 0 tới khi được kéo lại." />
+              </span>
+            ),
+            cell: ({ row }) => (
+              <span className="tabular-nums text-slate-700">{formatNumber(row.original.broadOrderAmount)}</span>
+            ),
+          } satisfies ColumnDef<ShopeeAdsCampaignRow>,
+        ]
+      : []),
     {
       id: "cpo",
       size: 120,
