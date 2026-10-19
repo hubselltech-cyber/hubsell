@@ -482,6 +482,7 @@ model Channel {
   channelProducts       ChannelProduct[]
   staffAccess           StaffChannel[]
   lineIdBackfill        OrderLineIdBackfill?
+  syncCursors           SyncCursor[] // con trỏ máy đọc sàn (Pha B, chưa nối worker)
   invoiceConfigs        InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
   walletWithdrawals     WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
   operatingTxns         OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
@@ -4014,3 +4015,58 @@ model FulfillmentBatch {
   @@index([ownerId, createdAt])
   @@map("fulfillment_batches")
 }
+
+// ============================================================
+// CON TRỎ MÁY ĐỌC SÀN (N2) — Pha B "Nền", docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b.
+// Một dòng = một (gian, luồng dữ liệu): "đã đọc TRỌN mọi dòng có mốc < cursorAt".
+// Tiến cùng giao dịch với trang cuối của cửa sổ (services/cursor-reader.ts).
+// Kiêm hàng việc của làn: nhặt bằng SKIP LOCKED + thuê bao nhịp tim (services/sync-lanes.ts).
+// ============================================================
+model SyncCursor {
+  channelId  String
+  /// "orders" | "returns" | "escrow" | "wallet" | …
+  stream     String
+  cursorAt   DateTime
+  /// Độ dài cửa sổ đã học (ms) — gian lớn nhỏ, gian vắng tới trần sàn (15 ngày).
+  windowMs   Int
+  lastRunAt  DateTime?
+  /// "caught_up" | "budget" | "aborted"
+  lastStatus String?
+  lastPages  Int?
+  /// Làn nhặt việc (N6): "orders" | "finance" | "ads" | "backfill".
+  lane       String    @default("orders")
+  /// Tới hạn chạy lượt kế — làn nhặt dueAt sớm nhất trước (chia đều theo độ trễ).
+  dueAt      DateTime  @default(now())
+  /// Thuê bao: tiến trình đang cầm + hạn; nhịp tim gia hạn, quá hạn = tiến trình khác nhặt được.
+  leaseOwner String?
+  leaseUntil DateTime?
+  updatedAt  DateTime  @updatedAt
+  channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, stream])
+  @@index([lane, dueAt], map: "sync_cursors_lane_due_idx")
+  @@map("sync_cursors")
+}
+
+// ============================================================
+// CỔNG GỌI SÀN (N4 GCRA + N5 lùi theo khóa) — Pha B lát B2, docs CUNG-HOA-LOP-GOI-SAN 5b.
+// Ghi qua hàm SQL api_rate_take / api_rate_penalize (services/marketplace-gateway.ts);
+// model này chỉ để đọc (HQ, test). Mốc thời gian là ms theo đồng hồ DB.
+// ============================================================
+model ApiRateKey {
+  /// "SHOPEE:<app>" | "SHOPEE:<app>|shop:<id>" | "SHOPEE:<app>|ep:<path>" …
+  key            String   @id
+  tatMs          Float    @default(0)
+  blockedUntilMs BigInt   @default(0)
+  failures       Int      @default(0)
+  /// Hệ số nhịp AIMD lúc bị hạ (0–1].
+  factor         Float    @default(1)
+  decreasedAtMs  BigInt   @default(0)
+  /// Tổng số lần lỗi (429 / lỗi cứng) — số đo N7.
+  hits           Int      @default(0)
+  lastError      String?
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@map("api_rate_keys")
+}
+

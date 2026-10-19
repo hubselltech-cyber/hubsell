@@ -1,4 +1,4 @@
-# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b)
+# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b; Pha B "Nền" ĐÃ CODE 19/10, xem 5b)
 
 > Bản 1 (18/10 tối) bị anh Trung bác đúng: nó vẫn là mô hình cũ ("quét cửa sổ thời gian,
 > có trần trang, chạm trần thì cắm cờ") được sửa cho đỡ hỏng. Bản 2 đổi mô hình.
@@ -248,6 +248,52 @@ HQ: độ trễ p50/p99 theo luồng, gian đang lùi, tồn làn, 429 theo khó
 | **Nạp lại** | Gian đã bị cắt dữ liệu (danh sách từ Pha A): nạp lại bằng làn nạp mới, so trước–sau | Khách không phải tự bấm |
 
 Mỗi pha có số đo trước–sau trên HQ. Pha nào không đạt tiêu chí thì không sang pha sau.
+
+## 5b. Pha B "Nền" — đã làm (19/10/2026, anh: "Tiếp tục triển khai làm pha B, nền")
+
+Ba lát, **chưa nối worker nào** (Pha C mới chuyển từng luồng theo cờ gian). Hai bảng mới + 2 hàm SQL chạy khi
+Render `migrate deploy`; không đụng bảng cũ (khóa ngoại tới `Channel` có khối lấy khóa thử lại).
+
+| Lát | Tệp | Việc |
+|---|---|---|
+| **B1** máy đọc con trỏ (N2+N3) | `lib/cursor-window.ts` (thuần) · `services/cursor-reader.ts` · bảng `sync_cursors` | Mỗi (gian, luồng) một con trỏ "đã đọc TRỌN tới T" + cửa sổ đã học. Đọc trọn cửa sổ trong ≤ K trang thì tiến con trỏ **cùng giao dịch** với trang cuối; tràn → co (có tổng sàn → co theo tỷ lệ ngay trang đầu, không thì chia đôi); ở đáy vẫn tràn → đọc tiếp, **không bao giờ cắt**. Token trang hết hạn → đọc lại cửa sổ. Ngân sách lượt xét ở **ranh cửa sổ**. Lỗi tạm có hẹn chờ → đọc lại đúng trang đó. Hợp đồng adapter: `fetchPage(win, token)`, `rowKey`, `persist(rows, tx)`. |
+| **B2** cổng gọi sàn (N4+N5) | `lib/rate-gate.ts` (thuần) · `services/marketplace-gateway.ts` · bảng `api_rate_keys` + hàm `api_rate_take` / `api_rate_penalize` | GCRA nhiều khóa trong **một** vòng đi-về DB, tất cả hoặc không, xin lượt **theo lô** (anh chốt H5). Khóa `(app)` · `(app, gian)` · `(app, endpoint)` (anh chốt sau H4). Trần chỉ bật nơi có bằng chứng: TikTok App × gian, Shopee `get_all_cpc_ads_daily_performance`; khóa khác chỉ lùi + đo (không ghi DB khi xin lượt). Lùi full jitter + tôn trọng Retry-After; 429 không rõ tầng → lùi gian **và** hạ nhịp endpoint (AIMD ×0,5, hồi tuyến tính); "cầu dao" chỉ còn cho lỗi cứng theo app. Bảng phân loại lỗi 3 sàn lấy từ mã hiện có. |
+| **B3** làn + thuê bao (N6) | `services/sync-lanes.ts` · cột `lane/dueAt/leaseOwner/leaseUntil` trên `sync_cursors` | Nhặt `FOR UPDATE SKIP LOCKED`, `dueAt` sớm nhất trước (lượt hết ngân sách đặt dueAt = now → quay lại ngay nhưng xếp sau gian chờ lâu hơn). Thuê bao nhịp tim TTL/3 thay khóa 15'; mất thuê bao → hủy lượt, trả việc là no-op. Lấp suất ngay khi trống. Mỗi làn số luồng riêng. `enrollStream` để Pha C ghi danh gian. |
+
+**Bằng chứng (sàn giả `services/__tests__/fake-marketplace.ts`: thứ tự tăng/giảm/ngẫu nhiên/create_time, phân trang offset trên tập
+đang đổi, trùng dòng, token hết hạn, 429 tiêm, trần trang âm thầm):** 37 ca mới xanh — `cursor-window` 4, `cursor-reader` 14,
+`rate-gate` 6, `marketplace-gateway` 8, `sync-lanes` 4, `read-pipeline` 1 (ghép cả ba: 2 tiến trình × 2 luồng, gian 20.000 đơn
+dính 429 10 % + 4 gian nhỏ → đủ dữ liệu, 4 gian nhỏ đuổi kịp TRƯỚC gian lớn, 0 thuê bao mất) + DB thật 11 ca (`cursor-reader-db` 3,
+`rate-gate-db` 5 — **20 kết nối tranh cùng khóa dồn 5 → đúng 5 lượt**, `sync-lanes-db` 3 — hai tiến trình nhặt song song không trùng).
+tsc sạch. Toàn bộ backend 1.708 pass / 9 fail — 9 ca đỏ là test DB cũ chạy lại sau khi DB dev được áp cột Apple (trước đó cả
+nhóm BỎ QUA): DB dev thiếu `fulfillment_batches`, chỉ mục GIN sổ cái, trigger dọn sổ khi xóa gian — **lệch DB dev**, không ca nào
+đụng bảng/mã mới; prod có đủ migration.
+
+**Ba điều sàn giả bắt được và đã sửa GỐC (không chỉnh số):**
+1. Mốc cuối tính lại mỗi vòng → lượt đuổi theo đồng hồ mãi, không bao giờ "đuổi kịp". Sửa: chốt `now − settle` một lần đầu lượt.
+2. Ngân sách lượt (vd 10 trang) cắt giữa cửa sổ cần K = 20 trang, hoặc 429 giữa cửa sổ → bỏ công cả cửa sổ → gian lớn **có thể
+   không bao giờ tiến** (429 10 %/trang ⇒ chỉ 0,9²⁰ ≈ 12 % cửa sổ đọc trọn một mạch). Sửa: ngân sách chỉ xét ở ranh cửa sổ (lượt
+   dài tối đa ngân sách + K trang) + lỗi tạm có hẹn chờ thì đọc lại đúng trang. Lãng phí tối đa khi chết giữa chừng = 1 cửa sổ ≤ K trang.
+3. Vòng làn toàn microtask (sàn trả từ bộ đệm) bỏ đói bộ hẹn giờ → nhịp tim thuê bao không chạy. Sửa: mỗi vòng nhường một nhịp.
+
+**Giả thuyết MỚI H8 (phải đo ở Pha C):** sàn phân trang kiểu offset trên tập đang đổi → một đơn trong cửa sổ đổi trạng thái giữa
+lúc đọc (rời cửa sổ) làm đơn khác trượt qua ranh trang và bị lỡ. Sàn giả, đổi 1 đơn trong cửa sổ mỗi 3 lệnh: **không báo tổng
+(kiểu Shopee) → lượt tươi lỡ 8 / 4.000 đơn**; **có tổng (TikTok `total_count`, Lazada `countTotal`) → máy đọc thấy tổng trang
+đầu ≠ trang cuối → đọc lại cửa sổ → 0 lỡ** (cái giá ở mức đổi cực gắt này ~12× lệnh, trần `MAX_UNSTABLE_REREADS` = 2).
+Shopee bù bằng **lượt đối soát trễ** (con trỏ thứ hai đọc lại sau khi dữ liệu lắng — test chứng minh bù đủ) + webhook 99,8 % (H3).
+Đo ở Pha C: Shopee `cursor` có phải offset không; tỷ lệ lệch tổng TikTok/Lazada trên gian lớn.
+
+**Số TỰ CHỌN (đều trong `config/marketplace-read.ts`, đọc env, đo lại ở Pha C):** K = 20 trang/cửa sổ; cửa sổ đáy 1', khởi đầu 1 giờ;
+settle 2'; ngân sách lượt 40 trang / 60 s; đọc lại tối đa 2 lần/cửa sổ lệch tổng, 5 lần/trang lỗi tạm; chờ tại chỗ ≤ 2 s; lùi gian
+1 s → 15', lùi endpoint 1 s → 60 s, lỗi cứng app 5' → 60' (như cầu dao cũ); AIMD sàn 0,1, hồi 60'; trần TikTok 3/s/gian, Shopee
+daily_performance 1/s dồn 2; luồng mỗi làn orders 4 · finance 2 · ads 2 · backfill 1; thuê bao 90 s; đuổi kịp → 10'.
+
+**Chạy hai tiến trình cùng một (gian, luồng) vẫn đúng:** con trỏ chỉ tiến ở ranh cửa sổ đã đọc trọn, bên chậm ghi con trỏ cũ hơn
+thì chỉ làm đọc lại (trùng, vô hại) — thuê bao để khỏi phí lệnh, không phải điều kiện đúng.
+
+**Việc của Pha C (chưa làm, chờ anh gọi):** adapter `fetchPage/persist` cho đơn 3 sàn (đầu tiên) dùng đường ghi `order-sync-write`
+hiện có; cờ từng gian; worker đăng ký `runLane` theo `LANES`; so khớp số với mã cũ 3–7 ngày; thẻ HQ độ trễ p50/p99 (`now − cursorAt`),
+gian đang lùi (`api_rate_keys.blockedUntilMs`), 429 theo khóa (`hits`); đo H8.
 
 ## 6. Cách bảo đảm "không làm điều chưa chắc"
 

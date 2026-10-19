@@ -105,12 +105,14 @@ hubsell/
 │       ├── app.ts                       # Express app: mount 35 route + middleware gác quyền/gói
 │       ├── middleware/auth.ts           # JWT, requireAuth, requirePermission, requirePlatformPermission
 │       ├── config/                      # permission-registry, platform-permission-registry, tax-config,
-│       │                                #   ads-cadence, capacity-plan
+│       │                                #   ads-cadence, capacity-plan, marketplace-read (lớp đọc sàn Pha B)
 │       ├── lib/                         # Thuần + hạ tầng: prisma, queue (pg-boss), mailer, secret-box,
 │       │                                #   date-range, finance-definitions, pnl-formula, cost-price, ...
 │       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
-│       │                                #   notifications, platform-health, fulfillment/, ...
+│       │                                #   notifications, platform-health, fulfillment/,
+│       │                                #   cursor-reader + marketplace-gateway + sync-lanes (lớp đọc sàn Pha B,
+│       │                                #   chưa nối worker — docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b), ...
 │       ├── routes/                      # 35 nhóm endpoint /api/*: auth, orders, products, finance, tax,
 │       │                                #   subscription, ads, tiktok-ads, webhooks, admin*, support, ...
 │       ├── workers/                     # 24 tiến trình nền, đăng ký trong workers/index.ts:
