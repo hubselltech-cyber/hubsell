@@ -482,7 +482,8 @@ model Channel {
   channelProducts       ChannelProduct[]
   staffAccess           StaffChannel[]
   lineIdBackfill        OrderLineIdBackfill?
-  syncCursors           SyncCursor[] // con trỏ máy đọc sàn (Pha B, chưa nối worker)
+  syncCursors           SyncCursor[] // con trỏ máy đọc sàn (Pha B) — kiêm cờ ghi danh đọc bóng (Pha C)
+  syncShadowOrders      SyncShadowOrder[] // bảng bóng đơn đường đọc mới nhìn thấy (Pha C lát 1)
   invoiceConfigs        InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
   walletWithdrawals     WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
   operatingTxns         OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
@@ -4068,5 +4069,26 @@ model ApiRateKey {
   updatedAt      DateTime @default(now()) @updatedAt
 
   @@map("api_rate_keys")
+}
+
+// ============================================================
+// BẢNG BÓNG ĐƠN (Pha C lát 1, docs CUNG-HOA-LOP-GOI-SAN 5c): đường đọc mới ghi
+// mã đơn + mốc biến động + trạng thái sàn thấy ở danh sách; KHÔNG đụng Order.
+// So với Order của đường cũ bằng SQL (docs 5c). Ghi qua integrations/order-read-adapters.
+// ============================================================
+model SyncShadowOrder {
+  channelId         String
+  orderCode         String
+  /// update_time sàn trả ở danh sách (TikTok, Lazada); NULL với Shopee (get_order_list không có).
+  platformUpdatedAt DateTime?
+  status            String?
+  firstSeenAt       DateTime  @default(now())
+  lastSeenAt        DateTime  @default(now())
+  seenCount         Int       @default(1)
+  channel           Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, orderCode])
+  @@index([channelId, firstSeenAt], map: "sync_shadow_orders_channel_seen_idx")
+  @@map("sync_shadow_orders")
 }
 

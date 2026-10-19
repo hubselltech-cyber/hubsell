@@ -44,6 +44,7 @@ import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
+import { startReadLanes } from "./read-lanes";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -68,6 +69,10 @@ export function startAllWorkers(): void {
   // Worker quét sàn theo LỊCH TỪNG GIAN (đơn, đối soát, ads) — claim vé theo
   // gian, song song có trần, giãn nhịp gian im ắng.
   startOrderAutoSync();
+  // Lớp đọc sàn MỚI (Pha C lát 1, 19/10/2026): làn "orders" nhặt gian đã ghi danh
+  // trong sync_cursors — đọc bóng đơn, ghi sync_shadow_orders, không đụng Order.
+  // Chưa ghi danh gian nào thì chỉ hỏi DB mỗi 5 s. READ_LANES=0 tắt.
+  startReadLanes();
   // Ngủ đông gian của chủ shop hết gói quá ân hạn (15/10/2026): đặt cờ để worker
   // trên bỏ qua gian, webhook nhận rồi bỏ; gia hạn là thức lại trong giao dịch
   // thanh toán (services/plan-hibernation.ts). Token vẫn làm mới bên dưới.

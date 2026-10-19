@@ -118,10 +118,12 @@ hubsell/
 │       ├── workers/                     # 24 tiến trình nền, đăng ký trong workers/index.ts:
 │       │                                #   order-auto-sync (lịch từng gian), event-queue (webhook pg-boss),
 │       │                                #   stock-queue, stock-reconcile, order-ledger, token-refresh,
-│       │                                #   plan-hibernate, subscription-reminder, invoice-*, review-auto-reply, ...
+│       │                                #   plan-hibernate, subscription-reminder, invoice-*, review-auto-reply,
+│       │                                #   read-lanes (làn đọc sàn mới — đọc bóng đơn theo gian ghi danh), ...
 │       ├── integrations/                # Mỗi đối tác một thư mục: shopee/ lazada/ tiktok/ tiktok-ads/
 │       │                                #   hubsell-ads/ invoice/ (MISA) payos/ apple-iap/ ai/
-│       │                                #   + lõi dùng chung: order-sync-write, sync-contract, stock-push-worker
+│       │                                #   + lõi dùng chung: order-sync-write, sync-contract, stock-push-worker,
+│       │                                #   order-read-adapters (3 adapter đọc đơn cho máy đọc con trỏ)
 │       └── marketplace/                 # Lớp trừu tượng sàn + adapter + mockMarketplace (giả lập)
 │
 ├── hubsell-mobile/                      # Expo — một bản dựng iOS/Android (Google Play đã phát hành)

@@ -1,4 +1,4 @@
-# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b; Pha B "Nền" ĐÃ CODE 19/10, xem 5b)
+# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b; Pha B "Nền" ĐÃ CODE 19/10, xem 5b; Pha C lát 1 "đọc bóng đơn" ĐÃ CODE 19/10, xem 5c)
 
 > Bản 1 (18/10 tối) bị anh Trung bác đúng: nó vẫn là mô hình cũ ("quét cửa sổ thời gian,
 > có trần trang, chạm trần thì cắm cờ") được sửa cho đỡ hỏng. Bản 2 đổi mô hình.
@@ -294,6 +294,65 @@ thì chỉ làm đọc lại (trùng, vô hại) — thuê bao để khỏi phí
 **Việc của Pha C (chưa làm, chờ anh gọi):** adapter `fetchPage/persist` cho đơn 3 sàn (đầu tiên) dùng đường ghi `order-sync-write`
 hiện có; cờ từng gian; worker đăng ký `runLane` theo `LANES`; so khớp số với mã cũ 3–7 ngày; thẻ HQ độ trễ p50/p99 (`now − cursorAt`),
 gian đang lùi (`api_rate_keys.blockedUntilMs`), 429 theo khóa (`hits`); đo H8.
+
+## 5c. Pha C lát 1 — "đọc bóng đơn" (19/10/2026, anh: "push luôn và làm tiếp")
+
+Lát đầu của "Chuyển từng luồng, chạy bóng": đường đọc MỚI chạy **song song** đường cũ trên gian được ghi danh, **chỉ đọc
+danh sách đơn** (Shopee `get_order_list` trục update_time · TikTok `orders/search` sort update_time DESC · Lazada `orders/get`
+update_after/before), ghi **bảng bóng** `sync_shadow_orders` (mã đơn, update_time sàn nếu danh sách có, trạng thái sàn, lần đầu/cuối
+thấy, số lần thấy). **Không gọi chi tiết, không ghi `Order`, không đổi hành vi worker cũ.** Mục đích: đo đường mới trên sàn thật
+trước khi cho nó ghi — độ trễ con trỏ, số lần co cửa sổ, 429 theo khóa, H8, và so tập mã đơn với đường cũ.
+
+| Tệp | Việc |
+|---|---|
+| `integrations/order-read-adapters.ts` | 3 adapter `fetchPage` qua **cổng gọi sàn** (khóa app/gian/endpoint); phần thuần cửa sổ→tham số, trang→`PageResult`; `persistShadowRows` một INSERT … ON CONFLICT cho cả trang (gộp mã trùng trong trang) |
+| `workers/read-lanes.ts` | làn `orders` (`runLane` + `pgLeaseStore`), handler: gian ACTIVE không ngủ đông → `readByCursor` với kho Postgres; 429 lùi ≤ 30 s thì đọc lại đúng trang, dài hơn trả việc cho làn hẹn lại; đuổi kịp → 10' (`LEASE.CAUGHT_UP_RECHECK_MS`), hết ngân sách → tới hạn ngay. Đăng ký trong `workers/index.ts`; `READ_LANES=0` tắt |
+| `scripts/shadow-enroll.ts` | `list` / `on <gian>` / `off <gian>` / `compare <gian> [ngày]` — không gọi sàn |
+| migration `20261019130000_sync_shadow_orders` | bảng bóng + RLS, FK Channel có khóa thử lại |
+
+**Cờ gian = dòng `sync_cursors` luồng `orders-shadow`** (không thêm cột Channel): có dòng là đọc, xóa dòng là thôi trong ≤ 1 lượt.
+Gian chưa ghi danh → worker chỉ hỏi DB mỗi 5 s (một SELECT `FOR UPDATE SKIP LOCKED` trả rỗng). Con trỏ khởi đầu = lúc ghi danh − 30'.
+
+**Kiểm (19/10):** `order-read-adapters.test` 6 ca (tham số 3 sàn, token trang, tổng, Lazada offset, spec qua client giả, sàn lạ ném);
+`shadow-orders-db.test` 3 ca DB thật (gộp mã trùng + seenCount + mốc mới nhất; 3 trang TikTok giả → con trỏ tiến + 150 mã; gian ngủ đông
+không gọi sàn); `no-module-state` 27/27; tsc sạch. **Chưa chạy trên sàn thật** — bước kế là ghi danh 1–2 gian.
+
+**Ghi danh (SQL dán Supabase — hoặc `npx tsx scripts/shadow-enroll.ts on "<tên gian>"` trên Render shell):**
+```sql
+INSERT INTO "sync_cursors" ("channelId","stream","cursorAt","windowMs","lane","dueAt","updatedAt")
+SELECT id, 'orders-shadow', (now() AT TIME ZONE 'UTC') - interval '30 minutes', 3600000, 'orders', (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC')
+FROM "Channel" WHERE "shopName" = '<tên gian>' AND status = 'ACTIVE' AND "channelName" IN ('SHOPEE','TIKTOK','LAZADA')
+ON CONFLICT DO NOTHING;
+-- Rút:  DELETE FROM "sync_cursors" WHERE stream = 'orders-shadow' AND "channelId" IN (SELECT id FROM "Channel" WHERE "shopName" = '<tên gian>');
+```
+Đề xuất gian đầu: **Siêu Thị 8686 (TikTok)** — gian lớn nhất, 2.577 biến động/2 ngày (H1), sẽ thấy co cửa sổ + total_count; **ANO (Shopee)** —
+không có tổng → đo H8 bằng so khớp. Lazada chưa có gian thật hoạt động (H3).
+
+**Đọc số (SQL chỉ đọc):**
+```sql
+-- Độ trễ con trỏ + cửa sổ đã học + lượt gần nhất
+SELECT c."channelName", c."shopName", round(extract(epoch FROM ((now() AT TIME ZONE 'UTC') - s."cursorAt"))/60) AS tre_phut,
+       s."windowMs"/60000 AS cua_so_phut, s."lastStatus", s."lastPages", s."lastRunAt", s."leaseOwner", s."dueAt"
+FROM "sync_cursors" s JOIN "Channel" c ON c.id = s."channelId" WHERE s.stream = 'orders-shadow';
+-- So khớp 3 ngày: cả hai / chỉ đường CŨ (Order đổi mà bóng không thấy = đường mới SÓT → dừng, tìm gốc) / chỉ đường MỚI (đường cũ sót)
+WITH s AS (SELECT * FROM "sync_shadow_orders" WHERE "firstSeenAt" >= (now() AT TIME ZONE 'UTC') - interval '3 days'),
+     o AS (SELECT "channelId","orderCode" FROM "Order" WHERE "updatedAt" >= (now() AT TIME ZONE 'UTC') - interval '3 days')
+SELECT c."shopName",
+       (SELECT count(*) FROM s JOIN o USING ("channelId","orderCode") WHERE s."channelId" = c.id) AS ca_hai,
+       (SELECT count(*) FROM o WHERE o."channelId" = c.id AND NOT EXISTS (SELECT 1 FROM "sync_shadow_orders" x WHERE x."channelId" = o."channelId" AND x."orderCode" = o."orderCode")) AS chi_cu,
+       (SELECT count(*) FROM s WHERE s."channelId" = c.id AND NOT EXISTS (SELECT 1 FROM "Order" x WHERE x."channelId" = s."channelId" AND x."orderCode" = s."orderCode")) AS chi_moi
+FROM "Channel" c WHERE c.id IN (SELECT "channelId" FROM "sync_cursors" WHERE stream = 'orders-shadow');
+-- 429 / lùi theo khóa
+SELECT key, failures, factor, hits, to_timestamp("blockedUntilMs"/1000) AS blocked_until, "lastError", "updatedAt" FROM "api_rate_keys" ORDER BY hits DESC;
+```
+Log worker: `[read-lanes] <sàn> "<gian>" orders-shadow: …` chỉ in khi có gì khác thường (co, đáy tràn, đọc lại, thử lại trang, hết ngân sách);
+`[gateway] 429 …` khi lùi; `[cursor-reader] … vẫn lệch tổng` = H8 trên sàn thật.
+
+**Tiêu chí đạt để sang lát 2 (ghi Order qua đường mới, theo cờ gian):** 3–7 ngày trên ≥ 2 gian: `chi_cu` = 0 (trừ đơn Hubsell tự sửa không
+qua sàn — xem tay), trễ con trỏ p99 < 15', không `floorOverflows`, 429 theo khóa không lan sang gian khác (api_rate_keys chỉ có khóa gian/endpoint).
+Lệch = dừng gian đó (xóa dòng), tìm gốc, không chỉnh số.
+
+**Lát 2 trở đi (chưa làm):** chi tiết đơn + ghi qua `order-sync-write` theo cờ gian; luồng hoàn / tài chính; thẻ HQ p50/p99; Pha D gỡ đường cũ.
 
 ## 6. Cách bảo đảm "không làm điều chưa chắc"
 
