@@ -730,3 +730,31 @@ Questions:
 
 Thank you.
 ```
+
+### 15.7 KẾT QUẢ SOI THẬT TRÊN ANO (19/10/2026 tối, anh Trung bấm "Soi theo id", campaign 202942166 "Chiến Dịch Nhóm 19/10/2026 - 2", GMV Max Tùy chỉnh ROAS 11,8, 3 SP, tạo 19/10)
+| Nhóm endpoint | Kết quả | Nghĩa là |
+|---|---|---|
+| `get_product_level_campaign_id_list` all / manual / auto | 73 / 73 / 0 campaign, **không có id này** | Danh sách KHÔNG liệt kê chiến dịch Nhóm → sync hiện tại không bao giờ biết id |
+| `get_product_level_campaign_setting_info` | `error_param … has invalid campaignIDs([202942166]), please pass campaign ids of auto & manual product ad types only` | Shopee coi chiến dịch Nhóm là **loại ad khác** auto/manual → KHÔNG đọc được cấu hình (ngân sách, ROAS mục tiêu, trạng thái, item list) |
+| `get_product_campaign_daily_performance` với đúng id | **TRẢ ĐƯỢC**: `ad_type "manual"`, `campaign_placement "all"`, `ad_name "Túi đeo chéo ANO … TC047 [Chiến Dịch Nhóm 19/10/2026 - 2]"`, 7 ngày trọn toàn 0 (chiến dịch mới tạo hôm nay) | Có id là đọc được số theo ngày → đủ cho bảng Tổng quan + ROAS hòa vốn |
+| `get_gms_campaign_performance` / item | `ads_error_product_gms_campaign_not_found` | Không phải GMS, như đã đoán |
+| DB | `row null`, chi shop 7d = chi campaign 7d = 1.956.537₫, gap 0 | Chưa tiêu đồng nào nên dòng "chi ngoài bảng" chưa có gì để hiện |
+
+**Kết luận sửa lại 15.2:** không phải "Shopee không trả loại này qua API", mà là **"API đọc được số theo ngày nếu
+biết id, nhưng không có cách liệt kê id và không đọc được cấu hình"**. Nút thắt là KHÁM PHÁ id.
+Chưa biết: (a) id_list có liệt kê muộn hơn (lag ngày) không → soi lại sáng 20/10; (b) mỗi SP trong nhóm có id con
+riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý Shopee ánh xạ nhóm → bản ghi theo SP; probe đã thêm
+`daily_perf_today` + `daily_perf_neighbors` (hỏi id ±15 trong một call, sàn chỉ trả id của shop) để trả lời.
+
+**Hướng làm (chờ lượt soi thứ hai rồi chốt):**
+- **Lát 1 — nhập id tay:** ô "Thêm chiến dịch Nhóm theo id" → lưu `AdsCampaign` với `adType = "group"`, tên từ
+  `ad_name`, không ngân sách/ROAS mục tiêu/trạng thái (sàn không cho đọc), xung 30' + lịch sử kéo số theo ngày
+  như campaign thường (chỉ bước 3, bỏ bước 2). Bảng Tổng quan hiện dòng với nhãn "Nhóm", ROAS so hòa vốn SHOP
+  (nhiều SP, chưa biết SP nào bán). Trợ lý CHỈ cảnh báo, KHÔNG tự dừng/hạ ngân sách (edit_manual_product_ads
+  gần như chắc chắn trả error_param như setting_info — kiểm bằng probe nếu anh muốn, nhưng pause thật thì mất
+  học máy). Nút Tạm dừng ẩn với loại này.
+- **Lát 2 — khám phá tự động** nếu lượt soi 2 cho thấy id_list liệt kê muộn (chỉ cần chờ) hoặc id con liền kề
+  (quét ±N quanh id đã biết mỗi lịch sử 6h).
+- **Ticket 15.6 sửa câu hỏi:** không hỏi "endpoint nào đọc", mà hỏi "endpoint nào LIỆT KÊ multi-product campaign id
+  và đọc setting của nó, vì daily_performance đã trả được theo id".
+- Shopee phía seller: ROAS 11,8x quá cao → 0 lượt xem cả ngày; khuyên hạ về hòa vốn SP × 1,1.

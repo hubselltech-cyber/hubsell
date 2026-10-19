@@ -442,6 +442,38 @@ export async function probeShopeeCampaignById(
     return { error: r.error || null, message: r.message || null, response: r.response ?? null };
   });
   await sleep(GMS_CALL_GAP_MS);
+  // Lượt soi ANO 19/10: daily_perf TRẢ ĐƯỢC chiến dịch Nhóm theo id (ad_type "manual", ad_name = tên SP
+  // đầu + "[tên nhóm]") dù id_list không liệt kê và setting_info từ chối. Hỏi thêm: (a) hôm nay (chiến
+  // dịch mới tạo, cửa sổ 7 ngày trọn toàn 0) và (b) các id lân cận ±15 trong MỘT call — nếu Shopee
+  // cấp mỗi SP trong nhóm một id con liền kề thì sẽ lộ ra ở đây (sàn chỉ trả id thuộc shop này).
+  await safe("daily_perf_today", async () => {
+    const today = shopeeDateParam(vnDateKey(0));
+    const r = await getAdsCampaignDailyPerformance({ ...base, campaignIds: [campaignId], startDate: today, endDate: today }, a.cfg);
+    return { error: r.error || null, message: r.message || null, response: r.response ?? null };
+  });
+  await sleep(GMS_CALL_GAP_MS);
+  await safe("daily_perf_neighbors", async () => {
+    const center = Number(campaignId);
+    const ids: number[] = [];
+    for (let d = -15; d <= 15; d++) if (d !== 0) ids.push(center + d);
+    const today = shopeeDateParam(vnDateKey(0));
+    const r = await getAdsCampaignDailyPerformance({ ...base, campaignIds: ids, startDate, endDate: today }, a.cfg);
+    const list = Array.isArray(r.response)
+      ? r.response.flatMap((s) => s.campaign_list ?? [])
+      : (r.response?.campaign_list ?? []);
+    return {
+      error: r.error || null,
+      message: r.message || null,
+      asked: ids.length,
+      found: list.map((c) => ({
+        campaign_id: c.campaign_id,
+        ad_type: c.ad_type,
+        ad_name: c.ad_name,
+        expense: (c.metrics_list ?? []).reduce((sum, m) => sum + (Number(m.expense ?? 0) || 0), 0),
+      })),
+    };
+  });
+  await sleep(GMS_CALL_GAP_MS);
 
   // 3. Nhóm GMS với campaign_id = id (docs: "provide if available").
   await safe("gms_campaign_perf_7d", async () => {
