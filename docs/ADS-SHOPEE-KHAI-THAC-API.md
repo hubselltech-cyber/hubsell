@@ -802,3 +802,23 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
   tay); (b) ticket 15.6 đổi câu hỏi thành "endpoint LIỆT KÊ + đọc setting multi-product campaign"; (c) trạng thái dòng
   nhóm là số nhớ (ongoing cho tới khi sàn từ chối id) — seller tạm dừng trên Seller Center thì Hubsell vẫn ghi
   "Đang chạy" nhưng số ngày sẽ về 0, chấp nhận ở lát 1.
+
+### 15.9 SHOPEE XÁC NHẬN (19/10/2026 tối, anh Trung hỏi AI hỗ trợ của Shopee Open Platform, chép nguyên ý)
+- `get_product_campaign_daily_performance` trả được một số chiến dịch gom nhóm: chỉ tổng cấp chiến dịch (chi, chỉ số),
+  KHÔNG có danh sách SP hay cấu hình chính thức.
+- `get_product_level_campaign_id_list` chỉ hỗ trợ loại `auto` và `manual`; chiến dịch GMV Max nhiều SP
+  (`manual-mpd`) BỊ BỎ KHỎI danh sách; truyền `gms`, `product_gms`, `gmv_max` bị từ chối.
+- `get_product_level_campaign_setting_info` chỉ cho loại được hỗ trợ, từ chối id nhóm → không đọc được danh sách
+  SP, ngân sách, ROAS mục tiêu, trạng thái vòng đời.
+- **"There is currently no official API endpoint that lists multi-product GMV Max campaigns or retrieves their
+  complete configuration… Campaign discovery and complete grouped-campaign details are not supported through the
+  current Open Platform API. Any future support should be announced through Open Platform announcements."**
+
+**Hệ quả chốt:**
+- Lát 1 (15.8: chủ shop nhập id, Hubsell kéo số theo ngày, Trợ lý chỉ cảnh báo) là **cách duy nhất** hiện có →
+  giữ nguyên, không có lát 2 "tự nhận" cho tới khi Shopee ra API mới. Bỏ việc "soi id_list sáng 20/10".
+- Ticket 15.6 vẫn nên gửi (để Shopee ghi nhận nhu cầu + whitelist beta nếu có), nhưng không còn chặn gì.
+- Việc theo dõi: mỗi tháng liếc Open Platform announcements / docs `v2.ads.*` xem có endpoint mới cho
+  `manual-mpd`; có thì làm lát 2 (liệt kê tự động + cấu hình + item list → bỏ nhập tay, mở lại nút ghi).
+- Hướng dẫn seller (viết vào trang Trợ lý đã có): Chiến dịch Nhóm phải thêm theo id; muốn Trợ lý tự dừng/hạ ngân
+  sách thì chạy chiến dịch 1 SP (Hubsell tạo được, đợt D).
