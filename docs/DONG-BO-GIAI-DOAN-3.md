@@ -146,6 +146,8 @@ Luật 2.2 "đọc MỚI NHẤT TRƯỚC, cắt thì mốc vét = cũ nhất đ�
 - Shopee / Lazada **chưa đổi**: Shopee trần 200 trang × 100 = 20.000 đơn/lượt, Lazada 100 × 100 = 10.000 — chưa gian nào tới; cùng bẫy, khi tới thì làm giống (adapter trả `coveredUpToSec`).
 - Test: `order-watermark.test.ts` +6 ca (cắt có covered → tiến; covered thắng oldest; covered ngoài cửa sổ; chuỗi 2 lượt đuổi kịp; đang vét dở từ bản cũ; log); `tiktok-order-search-sort.test.ts` viết lại (ASC đường mốc nước, DESC đường tay, 4 ca `tiktokAscCoveredUpTo`). 42 test 4 tệp qua, `tsc --noEmit` sạch.
 
+**✅ Kiểm prod 19/10 15:45 (worker dd77a40 live 15:24):** KTNstore lượt 15:45:47 — `CHƯA ĐỦ — dừng ở 50 trang, 2500 đơn; đã đọc trọn tới 2026-10-19T07:52:52Z` + `lượt bị cắt, đã đọc trọn 17/10 17:34:01Z → 19/10 07:52:52Z, mốc nước = 19/10 07:52:52Z` → mốc nhảy **+38 giờ trong MỘT lượt** (bản cũ: 6–13 phút/chu kỳ 20'), không có dòng `KHÔNG tăng dần dù xin sort ASC` (TikTok tôn trọng ASC). Siêu Thị 8686 lượt kế 16:28 (đang ở bậc giãn 60' vì bản cũ thấy "2.499 không đổi" → coi là gian vắng — tác dụng phụ của lỗi, tự hết khi lượt ASC thấy biến động). Kiểm trước deploy: cách kiểm dưới.
+
 **Kiểm sau deploy:** log worker `8686` / `KTNstore`: lượt đầu `CHƯA ĐỦ … đã đọc trọn tới …` + `lượt bị cắt, đã đọc trọn … mốc nước = …` (mốc nhảy ~40 giờ), lượt sau mốc = now0; HQ "Mốc nước quét đơn" xanh trong ≤ 3 lượt (~30'); không có dòng `KHÔNG tăng dần dù xin sort ASC`. SQL: `SELECT "shopName", now() - "ordersWatermarkAt" FROM "Channel" WHERE "channelName"='TIKTOK' AND "ordersWatermarkAt" < now() - interval '90 minutes';` → 0 dòng (trừ gian ngủ đông / mới nối).
 
 ## 3. Lát 3.6 — chỉ số HQ + hàng rào (15/10/2026, anh Trung chốt làm trước 3.3)
