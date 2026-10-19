@@ -7595,12 +7595,15 @@ export interface RoasTargetCheck {
   safeTarget: number;
 }
 
+/** adType của Chiến dịch Nhóm nhiều SP (docs ADS-SHOPEE-KHAI-THAC-API mục 15) — khớp ADS_AD_TYPE_GROUP backend. */
+export const SHOPEE_AD_TYPE_GROUP = "group";
+
 export interface ShopeeAdsCampaignRow {
   assistant: ShopeeAssistantInfo;
   id: string;
   campaignId: string;
   name: string;
-  adType: string; // auto | manual
+  adType: string; // auto | manual | group (Nhóm nhiều SP, nhập id)
   status: string; // ongoing | scheduled | ended | paused | deleted | closed
   placement: string; // search | discovery | all
   biddingMethod: string;

@@ -53,7 +53,7 @@ export function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 /** Bóc campaign_list từ response hiệu suất — docs mô tả cả dạng object lẫn mảng bọc shop. */
-function unwrapPerfCampaignList(
+export function unwrapPerfCampaignList(
   raw:
     | Array<{ campaign_list?: ShopeeAdsCampaignPerfEntry[] }>
     | { campaign_list?: ShopeeAdsCampaignPerfEntry[] }
@@ -314,80 +314,4 @@ export async function syncShopeeAdsPerfWindow(
   const groupIds = new Set(rows.filter((r) => r.adType === ADS_AD_TYPE_GROUP).map((r) => r.campaignId));
   const perfDaysUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(daysBack), { groupIds });
   return { campaigns: rows.length, perfDaysUpserted };
-}
-
-// ---------- Chiến dịch Nhóm nhiều SP: chủ shop nhập id (mục 15.7) ----------
-
-/** Dòng Nhóm còn sống của gian → map campaignId → rowId (xung kéo số hôm nay, lịch sử kéo cửa sổ). */
-export async function liveShopeeGroupCampaigns(channelId: string): Promise<Map<string, string>> {
-  const rows = await prisma.adsCampaign.findMany({
-    where: { channelId, adType: ADS_AD_TYPE_GROUP, status: { notIn: ["deleted", "closed", "ended"] } },
-    select: { id: true, campaignId: true },
-  });
-  return new Map(rows.map((r) => [r.campaignId, r.id] as const));
-}
-
-/**
- * Thêm chiến dịch Nhóm theo id Seller Center: hỏi sàn số HÔM NAY (1 call) để xác nhận id thuộc gian +
- * lấy ad_name; ghi dòng `adType = "group"`, rồi kéo 30 ngày (1 call) để bảng có số ngay. Id đã là
- * campaign thường trong DB → từ chối (nó đã được đồng bộ bình thường).
- */
-export async function addShopeeGroupCampaign(
-  channel: Channel,
-  campaignId: string
-): Promise<{ id: string; campaignId: string; name: string; perfDaysUpserted: number }> {
-  const existing = await prisma.adsCampaign.findUnique({
-    where: { channelId_campaignId: { channelId: channel.id, campaignId } },
-    select: { id: true, adType: true, name: true },
-  });
-  if (existing && existing.adType !== ADS_AD_TYPE_GROUP) {
-    throw new Error(`Chiến dịch ${campaignId} đã có trong bảng (loại ${existing.adType || "thường"}) — không phải chiến dịch Nhóm.`);
-  }
-  const access = await resolveShopeeAdsAccess(channel);
-  const today = vnDayWindow(1);
-  let perf: ShopeeAdsCampaignPerfData;
-  try {
-    perf = await getAdsCampaignDailyPerformance(
-      {
-        accessToken: access.accessToken,
-        shopId: access.shopId,
-        campaignIds: [campaignId],
-        startDate: shopeeDateParam(today.startKey),
-        endDate: shopeeDateParam(today.endKey),
-      },
-      access.cfg
-    );
-  } catch (err) {
-    if (isApiBudgetError(err)) throw err;
-    throw new Error(`Shopee không nhận id ${campaignId} cho gian này: ${(err as Error).message}`);
-  }
-  const entry = unwrapPerfCampaignList(perf.response).find((e) => String(e.campaign_id) === campaignId);
-  if (!entry) throw new Error(`Shopee không trả chiến dịch ${campaignId} — kiểm lại id trong URL Seller Center.`);
-  const data = {
-    adType: ADS_AD_TYPE_GROUP,
-    name: entry.ad_name ?? "",
-    // Sàn không cho đọc trạng thái: coi là đang chạy; lô perf bị từ chối id → "closed" (xem upsertShopeeCampaignPerf).
-    status: "ongoing",
-    placement: entry.campaign_placement ?? "all",
-    biddingMethod: "",
-    budget: 0,
-    roasTarget: null,
-    startTime: null,
-    endTime: null,
-    itemIds: "",
-  };
-  const row = await prisma.adsCampaign.upsert({
-    where: { channelId_campaignId: { channelId: channel.id, campaignId } },
-    update: { name: data.name, placement: data.placement, status: "ongoing" },
-    create: { channelId: channel.id, campaignId, ...data },
-  });
-  const map = new Map([[campaignId, row.id]]);
-  const perfDaysUpserted = await upsertShopeeCampaignPerf(access, map, vnDayWindow(30), { groupIds: new Set([campaignId]) });
-  return { id: row.id, campaignId, name: data.name, perfDaysUpserted };
-}
-
-/** Bỏ theo dõi chiến dịch Nhóm (xóa dòng + số theo ngày — cascade). Chỉ dòng adType "group". */
-export async function removeShopeeGroupCampaign(channel: Channel, rowId: string): Promise<boolean> {
-  const r = await prisma.adsCampaign.deleteMany({ where: { id: rowId, channelId: channel.id, adType: ADS_AD_TYPE_GROUP } });
-  return r.count > 0;
 }

@@ -26,10 +26,10 @@ import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import { getAdsShopToggleInfo, getAdsTotalBalance } from "./client";
 import {
   fetchShopeeCampaignRefs,
-  liveShopeeGroupCampaigns,
   upsertShopeeCampaignPerf,
   upsertShopeeCampaignSettings,
 } from "./ads-campaigns";
+import { liveShopeeGroupCampaigns } from "./ads-group-campaigns";
 import { syncShopeeAdsSpend } from "./ads-spend";
 import { syncShopeeGms } from "./ads-gms";
 import { vnDayWindow } from "../../lib/ads-dates";

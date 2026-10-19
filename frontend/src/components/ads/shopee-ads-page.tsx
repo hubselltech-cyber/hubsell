@@ -62,6 +62,7 @@ import {
   removeShopeeGroupCampaign,
   resumeShopeeAdsCampaign,
   setShopeeAdsRoasTarget,
+  SHOPEE_AD_TYPE_GROUP,
   type AdsAssistantScorecard,
   type ShopeeAdsCampaignRow,
   type ShopeeAdsDashboard,
@@ -179,8 +180,8 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
 const AD_TYPE_LABEL: Record<string, string> = {
   auto: "Tự động",
   manual: "Thủ công",
-  // Chiến dịch Nhóm nhiều SP (docs mục 15.7): chủ shop nhập id, Hubsell chỉ đọc số theo ngày.
-  group: "Nhóm nhiều SP",
+  // Chiến dịch Nhóm nhiều SP (docs mục 15): chủ shop nhập id, Hubsell chỉ đọc số theo ngày.
+  [SHOPEE_AD_TYPE_GROUP]: "Nhóm nhiều SP",
 };
 
 const PLACEMENT_LABEL: Record<string, string> = {
@@ -514,7 +515,7 @@ export function ShopeeAdsPage({
   /** Mục 15.7: bỏ theo dõi chiến dịch Nhóm nhiều SP (xóa dòng trong Hubsell, không đụng sàn). */
   async function removeGroupCampaign() {
     const campaign = data?.campaigns.find((c) => c.id === detailId);
-    if (!campaign || deciding || campaign.adType !== "group") return;
+    if (!campaign || deciding || campaign.adType !== SHOPEE_AD_TYPE_GROUP) return;
     if (!window.confirm(`Bỏ theo dõi "${campaign.name || campaign.campaignId}" trong Hubsell? Chiến dịch trên Shopee không đổi.`)) return;
     setDeciding(true);
     try {
@@ -1761,7 +1762,7 @@ function buildCampaignColumns(
       header: "Ngân sách",
       cell: ({ row }) =>
         // Chiến dịch Nhóm nhiều SP (mục 15.7): sàn không cho đọc ngân sách → gạch ngang, không nói "Không giới hạn".
-        row.original.adType === "group" ? (
+        row.original.adType === SHOPEE_AD_TYPE_GROUP ? (
           <span className="text-slate-400" title="Shopee không trả ngân sách của Chiến dịch Nhóm qua API — xem trên Seller Center.">
             —
           </span>

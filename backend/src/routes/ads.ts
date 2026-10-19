@@ -25,7 +25,11 @@ import {
   resumeCampaignByOwner,
   setRoasTargetByOwner,
 } from "../integrations/shopee/ads-auto-execute";
-import { addShopeeGroupCampaign, removeShopeeGroupCampaign } from "../integrations/shopee/ads-campaigns";
+import {
+  addShopeeGroupCampaign,
+  probeShopeeCampaignById,
+  removeShopeeGroupCampaign,
+} from "../integrations/shopee/ads-group-campaigns";
 import { isApiBudgetError } from "../services/api-budget";
 import { loadAssistantScorecard } from "../integrations/shopee/ads-scorecard-data";
 import { getCampaignKeywordSuggestions, parseManualBidding } from "../integrations/shopee/ads-keywords";
@@ -36,7 +40,6 @@ import {
   getShopeeGmsItems,
   getShopeeGmsOverview,
   listShopeeGmsExcludedItems,
-  probeShopeeCampaignById,
   probeShopeeGms,
 } from "../integrations/shopee/ads-gms";
 import {

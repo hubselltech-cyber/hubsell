@@ -31,6 +31,7 @@ import {
   type AdsScorecardRow,
   type DeliveryCheck,
   type LazadaCampaignLiveDetail,
+  SHOPEE_AD_TYPE_GROUP,
   type ShopeeAdsActionLogRow,
   type ShopeeAdsCampaignRow,
   type ShopeeAssistantConfig,
@@ -308,7 +309,7 @@ export function ShopeeAssistantModal({
   const actionable =
     a?.verdict === "spike" || a?.verdict === "pause_now" || a?.verdict === "review" || a?.verdict === "grace";
   // Chiến dịch Nhóm nhiều SP (docs mục 15.7): sàn chỉ cho đọc số theo ngày → không nút ghi, ROAS so hòa vốn shop.
-  const isGroup = campaign?.adType === "group";
+  const isGroup = campaign?.adType === SHOPEE_AD_TYPE_GROUP;
 
   return (
     <Dialog open={campaign !== null} onOpenChange={(open) => !open && onClose()}>

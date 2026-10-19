@@ -864,3 +864,22 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
 - **ĐÃ SỬA:** `requestAdsRefresh` (nút Làm mới) với gian Shopee đặt cả `nextAdsSyncAt = now` → làn Ads chạy xung +
   lịch sử 30 ngày trong cùng lượt (thêm 1 call perf/100 campaign + 1 call chi cấp shop; van 2 phút giữ nguyên).
   Lazada giữ chỉ xung (lịch sử 1 call/ngày × 7). Câu báo: "Đang kéo số mới từ sàn (hôm nay + 30 ngày gần nhất)…".
+
+### 15.13 DỌN DẸP CUỐI NGÀY (19/10 đêm, anh Trung: "dọn code thừa, đảm bảo cấu trúc tree")
+- **Module mới `integrations/shopee/ads-group-campaigns.ts`** gom trọn nghiệp vụ Chiến dịch Nhóm: `liveShopeeGroupCampaigns`,
+  `addShopeeGroupCampaign`, `removeShopeeGroupCampaign`, `probeShopeeCampaignById`. Trước đó ba hàm đầu nằm lẫn trong
+  `ads-campaigns.ts` (file đồng bộ 3 bước), probe nằm trong `ads-gms.ts` (file GMV Max cấp shop) — sai chỗ.
+  Phần dùng chung với campaign thường giữ ở `ads-campaigns.ts`: `ADS_AD_TYPE_GROUP`, `splitPerfBatches`,
+  `upsertShopeeCampaignPerf`, `unwrapPerfCampaignList` (nay export). Import một chiều: group → campaigns, group → gms
+  (`gmsWindowKeys`); không vòng. `ads-pulse.ts` + `routes/ads.ts` trỏ sang module mới; `ads-gms.ts` bỏ 3 import chỉ
+  probe dùng.
+- **Bỏ khối `daily_perf_neighbors`** trong probe: giả thuyết "id con liền kề theo SP" đã bị soi thật bác bỏ (sàn từ chối
+  cả lô) và Shopee xác nhận không có — để lại chỉ tốn một lệnh luôn lỗi mỗi lần soi. Giữ `daily_perf_today`.
+- **FE:** hằng `SHOPEE_AD_TYPE_GROUP` trong `lib/api.ts` thay 4 chuỗi `"group"` rải ở trang + modal (nhãn loại, cột
+  Ngân sách, Bỏ theo dõi, `isGroup`), khớp `ADS_AD_TYPE_GROUP` backend.
+- Cây module Ads Shopee sau dọn: `client.ts` (gọi sàn) → `ads-campaigns.ts` (3 bước đồng bộ + lô perf) →
+  `ads-group-campaigns.ts` (loại Nhóm) / `ads-gms.ts` (GMV Max cấp shop) / `ads-pulse.ts` (xung) → `workers/ads-tiers.ts`
+  → `routes/ads.ts`; FE `shopee-ads-page.tsx` (trang) + `shopee-assistant-panel.tsx` (modal) +
+  `shopee-group-campaign-dialog.tsx` (popup Nhóm) + `shopee-gms-panel.tsx` (tab GMS).
+- Kiểm: tsc BE+FE sạch, eslint FE sạch, test ads (group/gms/vn-day/auto-execute/workers) xanh. Tên file trong 15.3 /
+  15.7 / 15.8 ở trên là vị trí LÚC ĐÓ; vị trí hiện hành theo mục này.
