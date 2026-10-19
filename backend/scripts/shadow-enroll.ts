@@ -1,9 +1,10 @@
 // ============================================================
 // GHI DANH / RÚT gian khỏi "đọc bóng đơn" (Pha C lát 1, docs/CUNG-HOA-LOP-GOI-SAN.md 5c)
 //
-//   npx tsx scripts/shadow-enroll.ts list                       # gian đang ghi danh + độ trễ
-//   npx tsx scripts/shadow-enroll.ts on  <channelId|shopName>   # bật: tạo dòng sync_cursors (orders-shadow)
-//   npx tsx scripts/shadow-enroll.ts off <channelId|shopName>   # tắt: xóa dòng (bảng bóng giữ nguyên để so)
+//   npx tsx scripts/shadow-enroll.ts list                       # gian đang ghi danh + độ trễ (cả hai luồng)
+//   npx tsx scripts/shadow-enroll.ts on  <channelId|shopName>   # bật đọc bóng: dòng sync_cursors (orders-shadow)
+//   npx tsx scripts/shadow-enroll.ts on  <…> --write            # bật GHI Order qua đường mới (luồng orders, lát 2)
+//   npx tsx scripts/shadow-enroll.ts off <channelId|shopName>   # tắt CẢ HAI luồng (bảng bóng giữ nguyên để so)
 //   npx tsx scripts/shadow-enroll.ts compare <channelId|shopName> [ngày=3]   # so bóng ↔ Order
 //
 // Cùng việc bằng SQL (dán Supabase) ở docs 5c. Không gọi sàn — chỉ ghi DB.
@@ -13,6 +14,7 @@ import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
 import { enrollStream } from "../src/services/sync-lanes";
 import { SHADOW_STREAM } from "../src/integrations/order-read-adapters";
+import { WRITE_STREAM } from "../src/integrations/order-write-adapters";
 import { CURSOR_READ } from "../src/config/marketplace-read";
 
 async function findChannel(key: string) {
@@ -25,13 +27,15 @@ async function findChannel(key: string) {
 }
 
 async function main() {
-  const [cmd, key, daysArg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const writeFlag = args.includes("--write");
+  const [cmd, key, daysArg] = args.filter((a) => a !== "--write");
   if (cmd === "list") {
-    const rows = await prisma.syncCursor.findMany({ where: { stream: SHADOW_STREAM }, include: { channel: { select: { channelName: true, shopName: true } } } });
+    const rows = await prisma.syncCursor.findMany({ where: { stream: { in: [SHADOW_STREAM, WRITE_STREAM] } }, include: { channel: { select: { channelName: true, shopName: true } } } });
     for (const r of rows) {
       const lagMin = Math.round((Date.now() - r.cursorAt.getTime()) / 60_000);
       console.log(
-        `${r.channel.channelName.padEnd(7)} ${r.channel.shopName.padEnd(28)} trễ ${String(lagMin).padStart(5)}'  cửa sổ ${Math.round(r.windowMs / 60_000)}'  ` +
+        `${r.channel.channelName.padEnd(7)} ${r.channel.shopName.padEnd(28)} ${r.stream.padEnd(13)} trễ ${String(lagMin).padStart(5)}'  cửa sổ ${Math.round(r.windowMs / 60_000)}'  ` +
           `${r.lastStatus ?? "-"} ${r.lastPages ?? 0} trang  tới hạn ${r.dueAt.toISOString()}  thuê bao ${r.leaseOwner ?? "-"}`
       );
     }
@@ -41,12 +45,13 @@ async function main() {
   if (!key) throw new Error("thiếu channelId|shopName");
   const ch = await findChannel(key);
   if (cmd === "on") {
-    await enrollStream(ch.id, SHADOW_STREAM, "orders", new Date(Date.now() - 30 * 60_000), CURSOR_READ.INITIAL_WINDOW_MS);
-    console.log(`✅ ghi danh ${ch.channelName} "${ch.shopName}" (${ch.id}) — làn orders nhặt trong ≤ 5 s`);
+    const stream = writeFlag ? WRITE_STREAM : SHADOW_STREAM;
+    await enrollStream(ch.id, stream, "orders", new Date(Date.now() - 30 * 60_000), CURSOR_READ.INITIAL_WINDOW_MS);
+    console.log(`✅ ghi danh ${ch.channelName} "${ch.shopName}" (${ch.id}) luồng ${stream}${writeFlag ? " — GHI Order qua đường mới" : ""} — làn orders nhặt trong ≤ 5 s`);
     return;
   }
   if (cmd === "off") {
-    const r = await prisma.syncCursor.deleteMany({ where: { channelId: ch.id, stream: SHADOW_STREAM } });
+    const r = await prisma.syncCursor.deleteMany({ where: { channelId: ch.id, stream: { in: [SHADOW_STREAM, WRITE_STREAM] } } });
     console.log(`✅ rút ${ch.shopName}: xóa ${r.count} dòng con trỏ (bảng bóng giữ nguyên)`);
     return;
   }

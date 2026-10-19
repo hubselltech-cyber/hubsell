@@ -72,6 +72,8 @@ export interface StreamSpec<Row, Tx> {
   rowKey: (row: Row) => string;
   /** Ghi các dòng (upsert idempotent) trong giao dịch `tx`. */
   persist: (rows: Row[], tx: Tx) => Promise<void>;
+  /** Sau mỗi lần commit thành công (dữ liệu + con trỏ) — việc chỉ được làm SAU commit (chốt phiếu đẩy tồn…). */
+  afterCommit?: () => Promise<void>;
 }
 
 export interface CursorState {
@@ -166,8 +168,10 @@ export async function readByCursor<Row, Tx>(
   };
   const outOfBudget = () => res.pages >= maxPages || now() - startedAt >= maxMs;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const write = (rows: Row[], next: CursorState | null) =>
-    store.commit(spec.channelId, spec.stream, (tx) => (rows.length ? spec.persist(rows, tx) : Promise.resolve()), next);
+  const write = async (rows: Row[], next: CursorState | null) => {
+    await store.commit(spec.channelId, spec.stream, (tx) => (rows.length ? spec.persist(rows, tx) : Promise.resolve()), next);
+    await spec.afterCommit?.();
+  };
 
   // Mốc cuối chốt MỘT lần đầu lượt: tính lại mỗi vòng thì đồng hồ chạy theo từng lệnh
   // sàn, lượt không bao giờ "đuổi kịp" (mỗi vòng lại có cửa sổ vài trăm ms mới).

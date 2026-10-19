@@ -1306,3 +1306,6 @@ export async function findTiktokChannelByShopId(
     },
   });
 }
+
+/** Đường đọc mới (Pha C lát 2, integrations/order-write-adapters.ts) dùng CHUNG hàm upsert — một luật ghi đơn TikTok. */
+export const upsertTiktokOrderTx = upsertOrderTx;

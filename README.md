@@ -123,7 +123,7 @@ hubsell/
 │       ├── integrations/                # Mỗi đối tác một thư mục: shopee/ lazada/ tiktok/ tiktok-ads/
 │       │                                #   hubsell-ads/ invoice/ (MISA) payos/ apple-iap/ ai/
 │       │                                #   + lõi dùng chung: order-sync-write, sync-contract, stock-push-worker,
-│       │                                #   order-read-adapters (3 adapter đọc đơn cho máy đọc con trỏ)
+│       │                                #   order-read-adapters / order-write-adapters (3 adapter đọc bóng / ghi đơn cho máy đọc con trỏ)
 │       └── marketplace/                 # Lớp trừu tượng sàn + adapter + mockMarketplace (giả lập)
 │
 ├── hubsell-mobile/                      # Expo — một bản dựng iOS/Android (Google Play đã phát hành)

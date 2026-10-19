@@ -1,4 +1,4 @@
-# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b; Pha B "Nền" ĐÃ CODE 19/10, xem 5b; Pha C lát 1 "đọc bóng đơn" ĐÃ CODE 19/10, xem 5c)
+# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b; Pha B "Nền" ĐÃ CODE 19/10, xem 5b; Pha C lát 1 "đọc bóng đơn" chạy thật 19/10, xem 5c; lát 2 "ghi Order" ĐÃ CODE 19/10 chưa bật, xem 5d)
 
 > Bản 1 (18/10 tối) bị anh Trung bác đúng: nó vẫn là mô hình cũ ("quét cửa sổ thời gian,
 > có trần trang, chạm trần thì cắm cờ") được sửa cho đỡ hỏng. Bản 2 đổi mô hình.
@@ -378,6 +378,46 @@ TikTok `orders/search` trả trọn đơn nên không tốn lệnh chi tiết; S
 (2 đơn/2 lượt chưa nói được gì). Script `scripts/tiktok-search-probe.ts` (chỉ đọc, Render shell) để hỏi thẳng sàn khi nghi sót thật.
 
 **Lát 2 trở đi (chưa làm):** chi tiết đơn + ghi qua `order-sync-write` theo cờ gian; luồng hoàn / tài chính; thẻ HQ p50/p99; Pha D gỡ đường cũ.
+
+## 5d. Pha C lát 2 — "ghi Order qua đường mới" (19/10/2026, anh: "code lát 2 … cờ riêng, chưa bật, trong lúc bóng chạy")
+
+Luồng **`orders`** (cờ gian = dòng `sync_cursors` stream `orders` — tách khỏi `orders-shadow`; **CHƯA bật gian nào**). Khác lát 1 ở
+hai chỗ: lấy **chi tiết** (Shopee `get_order_detail` ≤ 50 mã/lệnh sau mỗi trang danh sách; Lazada `orders/items/get` ≤ 50 id/lệnh;
+TikTok search đã trả trọn đơn) và **ghi Order bằng ĐÚNG hàm upsert của đường cũ** (`upsertShopeeOrderTx` / `upsertTiktokOrderTx`
+(mới xuất) / `upsertLazadaOrderTx` + `plan*OrderUpdate` "chỉ ghi khi khác" + bù ảnh dòng hàng) — **một luật ghi đơn, hai đường đọc**.
+
+| Tệp | Việc |
+|---|---|
+| `integrations/order-write-adapters.ts` | `writeOrderSpec(channel)` → `{ spec, stats }`; `fetchPage` qua cổng (khóa endpoint riêng cho chi tiết: `get_order_detail`, `orders/items/get`); `persist` đọc đơn đã có theo lô → bỏ qua đơn không đổi → upsert; phiếu đẩy tồn Lazada chốt ở `afterCommit` (móc mới của `StreamSpec`) |
+| `workers/read-lanes.ts` | luồng `orders` → spec ghi; log `ghi: tạo/sửa/không đổi/đụng` khi có ghi |
+| `scripts/shadow-enroll.ts` | `on <gian> --write` bật luồng `orders`; `off` tắt cả hai; `list` hiện cả hai |
+
+**Hai quyết định thiết kế (ghi để Pha D khỏi hỏi lại):**
+1. **Ghi từng đơn một giao dịch, con trỏ ghi SAU cả trang** — không gộp cả trang + con trỏ vào một giao dịch như N2 viết. Lý do: webhook
+   và worker cũ chạy song song cùng đơn; trong Postgres một lỗi (đụng unique P2002 khi hai bên cùng tạo đơn mới) làm hỏng CẢ giao dịch,
+   không thể bỏ qua một đơn rồi ghi tiếp. Bảo đảm N2 giữ nguyên về bản chất: con trỏ chỉ tiến khi mọi đơn của cửa sổ đã commit → chết
+   giữa chừng = đọc lại, upsert idempotent = không nhân đôi. Đụng unique → đọc lại dòng rồi ghi lần hai (`stats.raced`), lỗi khác ném ra
+   cho làn hẹn lại 5' (không nuốt).
+2. **Chưa chuyển các việc phụ của đường cũ**: hỏi lại ước tính escrow Shopee cho đơn đổi trạng thái (`changedOrderCodes`), chuông giao
+   thất bại Lazada, mốc nước cũ (`ordersWatermarkAt`), đo "cửa sổ TikTok" — đường cũ vẫn chạy song song trên gian bật cờ nên không mất;
+   Pha D chuyển nốt khi tắt đường cũ.
+
+**Kiểm (19/10):** `order-write-adapters.test` 6 ca (client + upsert giả: Shopee 70 mã → 2 lệnh chi tiết 50+20; TikTok không gọi chi tiết, đơn
+không đổi không upsert; P2002 → ghi lần hai; Lazada phiếu tồn chốt sau commit, không chốt lại; lỗi khác ném nguyên); `order-write-db.test`
+1 ca DB thật (search giả → `upsertTiktokOrderTx` THẬT: 2 đơn + dòng hàng tạo đúng, lượt 2 update_time đổi mà nội dung y hệt → không ghi,
+lượt 3 giao xong → DELIVERED; con trỏ tiến); tsc sạch.
+
+**Bật thử (khi tiêu chí 5c đạt + anh chốt) — gian nhỏ trước:**
+```sql
+INSERT INTO "sync_cursors" ("channelId","stream","cursorAt","windowMs","lane","dueAt","updatedAt")
+SELECT id, 'orders', (now() AT TIME ZONE 'UTC') - interval '30 minutes', 3600000, 'orders', (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC')
+FROM "Channel" WHERE id = '<channelId>' AND status = 'ACTIVE' ON CONFLICT DO NOTHING;
+-- Tắt: DELETE FROM "sync_cursors" WHERE stream = 'orders' AND "channelId" = '<channelId>';
+```
+Theo dõi: log `[read-lanes] … orders: … ghi: tạo X, sửa Y, không đổi Z, đụng R` (kỳ vọng tạo ≈ 0 và sửa nhỏ vì đường cũ + webhook đã ghi
+trước; `đụng` > 0 là bình thường ở đơn mới); `api_rate_keys` có thêm khóa endpoint chi tiết; so số đơn/tiền từng gian như 5c.
+**Tiêu chí sang Pha D (tắt đường cũ theo cờ gian):** 7 ngày trên ≥ 2 gian ghi song song: không lệch Order/OrderItem giữa hai đường (SQL so
+cột `shippingStatus/returnStatus/totalAmount` theo mã — soạn khi bật), trễ p99 < 15', không lỗi persist lặp.
 
 ## 6. Cách bảo đảm "không làm điều chưa chắc"
 
