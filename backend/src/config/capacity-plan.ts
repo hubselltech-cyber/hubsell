@@ -108,6 +108,8 @@ export interface GrowthMetrics {
   dbPct: number; // % gói DB
   ramPct: number; // % RAM gói
   connPct: number; // % kết nối gói
+  /** Gian Shopee ACTIVE nối app Hubsell Ads — mẫu số quota Ads API (quota tính theo app). 19/10/2026. */
+  shopeeAdsShops: number;
 }
 
 export type MetricKey = keyof GrowthMetrics;
@@ -247,6 +249,54 @@ export const CAPACITY_MILESTONES: CapacityMilestone[] = [
   },
 ];
 
+// ---------- 3b. Mốc QUOTA ADS Shopee (docs/ADS-NHIP-CANH-BAO.md 13.5, anh Trung chốt 17/10/2026) ----------
+//
+// Chuỗi RIÊNG, không nằm trong timeline M0–M6: đếm theo gian Shopee nối app Hubsell Ads
+// vì quota Ads API tính theo app, không theo tổng gian. ADS_APP_QPS=3 ≈ 260.000 lệnh/ngày
+// ≈ ~1.000 gian ở nhịp xung 30' — các mốc là % của sức chứa đó. Đ0/Đ1 đo theo thời gian
+// (sổ tay), không theo gian nên không có ở đây. Đ3 phải MỞ TICKET ở nửa đường vì lần trước
+// Shopee trả lời sau ~4 tuần (12/09 → 10/10).
+export const ADS_QUOTA_MILESTONES: CapacityMilestone[] = [
+  {
+    key: "D2",
+    title: "Đ2 · 200 gian Shopee chạy Ads (~20 % sức chứa quota) — đo AIMD",
+    conditions: [{ metric: "shopeeAdsShops", gte: 200 }],
+    upgrades: [],
+    checklist: [
+      "Đọc log 429 7 ngày: tốc độ AIMD có dao động không, độ trễ xung nhóm 1 (gian bật Trợ lý + đang tiêu tiền)",
+      "Chỉnh ADS_AIMD_DECREASE / ADS_AIMD_INCREASE_PCT / ADS_AIMD_TRIGGER / ADS_PULSE_DEADLINE_X (bảng 13.4) — chỉ đổi env",
+    ],
+  },
+  {
+    key: "D3",
+    title: "Đ3 · 500 gian Shopee chạy Ads (~50 %) — MỞ TICKET Shopee xin nâng quota",
+    conditions: [{ metric: "shopeeAdsShops", gte: 500 }],
+    upgrades: [],
+    checklist: [
+      "Mở ticket Shopee Open Platform xin nâng quota Ads API cho app 2040029, kèm log 429 có request_id + nhu cầu/quota thật",
+      "Ghi số nhu cầu / quota vào docs/ADS-NHIP-CANH-BAO.md 13.5 và memory hubsell-api-quota-san",
+    ],
+  },
+  {
+    key: "D4",
+    title: "Đ4 · 800 gian Shopee chạy Ads (~80 %) — giãn nhịp tự động phải đang chạy",
+    conditions: [{ metric: "shopeeAdsShops", gte: 800 }],
+    upgrades: [],
+    checklist: [
+      "Kiểm giãn nhịp tự động (ADS_DEMAND_STRETCH_PCT) có kích hoạt đúng: nhóm 3 rồi nhóm 2 giãn, nhóm 1 giữ nhịp",
+      "Quota chưa được nâng → báo anh Trung quyết (tính năng có điều kiện / nâng ADS_APP_QPS theo trả lời sàn)",
+    ],
+  },
+];
+
+/** Mốc quota Ads kế tiếp chưa chạm (theo thứ tự Đ2 → Đ3 → Đ4); null = đã qua Đ4. */
+export function nextAdsQuotaMilestone(g: GrowthMetrics): CapacityMilestone | null {
+  return ADS_QUOTA_MILESTONES.find((m) => !isMilestoneReached(m, g)) ?? null;
+}
+
+/** Mọi mốc HQ cho phép tick "đã làm" (route admin-health). */
+export const ALL_MILESTONES: CapacityMilestone[] = [...CAPACITY_MILESTONES, ...ADS_QUOTA_MILESTONES];
+
 // ---------- 4. Hàm thuần ----------
 
 /** Điều kiện nào của mốc đang thỏa với số hiện tại. */
@@ -350,6 +400,7 @@ export const METRIC_LABEL: Record<MetricKey, string> = {
   dbPct: "% dung lượng DB",
   ramPct: "% RAM",
   connPct: "% kết nối DB",
+  shopeeAdsShops: "gian Shopee nối Hubsell Ads",
 };
 
 export type SignalLevel = "ok" | "warn" | "crit";

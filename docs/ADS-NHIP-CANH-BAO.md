@@ -618,3 +618,31 @@ Chưa chạm mốc gian thì vẫn đo theo thời gian: Đ1 xong thì 30 ngày/
   (`config/capacity-plan.ts`) và các mốc Đ2/Đ3/Đ4 có checklist → HQ tự hiện "sắp chạm
   mốc" + ngày dự kiến như các mốc hạ tầng M1…, không phụ thuộc trí nhớ.
 - **Memory** `hubsell-cau-dao-ads-bao-429-theo-gian` ghi lịch đo, mỗi phiên đọc lại.
+
+### 13.7 LÁT 1 ĐÃ LÀM (19/10/2026 chiều) — tách làn Ads khỏi vòng đồng bộ đơn
+
+**Đ0 lúc làm lát 1 (Supabase, 19/10 14:40 VN):** `shopee:2044679` tripCount **135** (17/10 tối 114 → 18/10 20:10 125 → 19/10 135, ≈ +10/ngày
+dù đã có ngưỡng tỷ lệ), lần đóng gần nhất 19/10 11:18 VN bậc 1 (10') lý do "Bão 429: 3/15 gian đã gọi trong 10' bị chặn";
+lúc đọc không đóng. `shopee:2040029` (app chính) 14, lần cuối 15/09. → Mốc gốc để so sau lát 2–3.
+
+**Đã code (commit cùng ngày):**
+
+| Việc | Ở đâu |
+|---|---|
+| Hàm hai tầng ads (xung Shopee/Lazada/TikTok, lịch sử, lượt ngày TikTok, `nextPulseDelayMin`) tách khỏi `order-auto-sync.ts` — KHÔNG đổi logic | `workers/ads-tiers.ts` (`runAdsPulse`, `runAdsHistory`) |
+| Worker làn Ads: tick 20 s, nhặt gian `nextAdsPulseAt` null/đến hạn HOẶC `nextAdsSyncAt` đến hạn, claim bằng UPDATE có điều kiện trên **`Channel.adsLockedAt`** (cột mới), chạy xung rồi lịch sử, ghi hạn + nhả vé. Hàm thuần `dueAdsTiers`, `adsCandidateWhere`, `nextAdsSchedule` có test | `workers/ads-lane.ts` |
+| Vòng đồng bộ đơn: query nhặt vé bỏ 3 điều kiện ads, `dueTiers(..., adsHere)` trả ads/pulse = false khi làn Ads bật; chỉ còn tầng nhanh + tầng giờ | `workers/order-auto-sync.ts` |
+| Đường lui `ADS_LANE=0`: worker ads-lane không chạy, vòng đơn nhặt lại cả hai tầng như trước 19/10 (`adsInOrderSync()`) | `config/ads-cadence.ts` `LANE` |
+| Thông số lát 1 qua env: `ADS_CONCURRENCY` (2), `ADS_LOCK_STALE_MINUTES` (30 — lượt ngày TikTok dài), `ADS_STORM_RATIO` (0,2 — chuyển từ hằng `RATE_LIMIT_STORM.ratio` theo yêu cầu 17/10) | `config/ads-cadence.ts` |
+| Migration: `Channel.adsLockedAt`, chỉ mục `(status, nextAdsSyncAt)`, `platform_health_snapshots.adsShops`; khóa Channel có thử lại | `prisma/migrations/20261019150000_channel_ads_lane` |
+| HQ (13.6): `GrowthLayer.channelsHubsellAds` (gian Shopee ACTIVE nối Hubsell Ads), `GrowthMetrics.shopeeAdsShops`, chuỗi mốc **`ADS_QUOTA_MILESTONES` D2/D3/D4** (200/500/800, Đ3 = mở ticket) với ETA theo snapshot; thẻ "Quota Ads Shopee" dưới timeline `/admin/health`; xung ads trễ / vé mồ côi đọc theo `adsLockedAt` | `config/capacity-plan.ts`, `services/platform-health.ts`, `routes/admin-health.ts`, FE `admin/health/page.tsx` |
+
+**Kiểm:** 104 test liên quan xanh (ads-lane 11 ca mới, schedule, no-module-state, capacity 5 ca mới, api-budget, platform-health);
+toàn backend 1.429 pass / 5 tệp DB-drift cũ (GIN sổ cái, channel-delete, delivery-fail-park, log-cleanup, order-ledger — không liên
+quan); tsc backend + frontend + eslint sạch; `scripts/health-smoke.ts` trên DB dev: channelsHubsellAds 0, D2 0/200, M1 → M2.
+**Chưa chạy sàn thật** — kiểm sau deploy: log worker có `[Ads-lane] BẬT — làn Ads riêng: song song 2 gian…` và `[Auto-sync] BẬT … hai tầng
+ads do làn riêng ads-lane nhặt`; `[Ads-pulse]`/`[Ads-GMS]` vẫn xuất hiện; HQ Sức khỏe không tăng "xung ads trễ".
+
+**Hệ quả cần nhớ:** gian được nhặt vì ads đến hạn KHÔNG còn "tiện vét đơn luôn" (tầng nhanh vốn chạy mọi lượt của vòng cũ) — đơn
+vẫn theo `nextFastSyncAt` 10'–60' riêng, webhook lo real-time; đây đúng là mục tiêu tách khoang. Số luồng tổng tăng 3 → 3 + 2
+(hai vòng) → đo RAM worker ở Đ1. Lát 2 (cách ly theo gian, bậc lùi lưu DB + giãn lệnh trong xung) nối vào `ads-lane.ts`.

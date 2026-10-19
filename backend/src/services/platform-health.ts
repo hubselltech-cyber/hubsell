@@ -8,21 +8,25 @@
 // ============================================================
 
 import v8 from "v8";
-import { ChannelName, Prisma, WebhookJobStatus } from "@prisma/client";
+import { ChannelAppKind, ChannelName, Prisma, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
 import { DEAD_QUEUES } from "../lib/queue-config";
 import { collectInvoiceHealth, invoiceSignal, type InvoiceHealth } from "./invoice-health";
 import { DELIVERY_FAIL_FEATURE } from "../integrations/shopee/delivery-fail";
+import { ADS_CADENCE } from "../config/ads-cadence";
 import {
+  ADS_QUOTA_MILESTONES,
   CAPACITY_MILESTONES,
   CURRENT_INFRA,
   HEALTH_THRESHOLDS as T,
   METRIC_LABEL,
   levelFor,
   ramLevel,
+  isMilestoneReached,
   isMilestoneReachedOrPassed,
   locateOnTimeline,
+  nextAdsQuotaMilestone,
   milestoneEta,
   slopePerDay,
   type CapacityMilestone,
@@ -84,6 +88,9 @@ export interface GrowthLayer {
   channelsActive: number; // Shopee+Lazada+TikTok ACTIVE
   channelsByPlatform: Record<string, number>;
   channelsAds: number; // gian có campaign ongoing
+  /** Gian Shopee ACTIVE (không ngủ đông) đã nối app Hubsell Ads — MẪU SỐ QUOTA Ads API (quota tính theo app,
+   *  docs/ADS-NHIP-CANH-BAO.md 13.5: mốc Đ2 200 / Đ3 500 / Đ4 800). Vắng ở ảnh chụp trước 19/10/2026. */
+  channelsHubsellAds: number;
   channelsDisconnected: number; // tổng gian DISCONNECTED (kể cả rớt lâu ngày)
   channelsDisconnected24h: number; // gian MỚI rớt trong 24h — dấu hiệu token/ủy quyền
   ordersTotal: number;
@@ -182,7 +189,7 @@ export async function collectGrowth(): Promise<GrowthLayer> {
   const d7 = new Date(now - 7 * DAY_MS);
   const d30 = new Date(now - 30 * DAY_MS);
   const d1 = new Date(now - DAY_MS);
-  const [ownersTotal, ownersNew7d, channelsRows, disconnected, disconnected24h, ordersTotal, orders7d, adsChannels, webhooks7d, activeOwnerRows, peak] =
+  const [ownersTotal, ownersNew7d, channelsRows, disconnected, disconnected24h, ordersTotal, orders7d, adsChannels, webhooks7d, activeOwnerRows, peak, hubsellAdsShops] =
     await Promise.all([
       safe("user.count", prisma.user.count({ where: { ownerId: null, isPlatformAdmin: false } }), 0),
       safe("user.count", prisma.user.count({ where: { ownerId: null, isPlatformAdmin: false, createdAt: { gte: d7 } } }), 0),
@@ -222,6 +229,14 @@ export async function collectGrowth(): Promise<GrowthLayer> {
         ) t`,
         [{ n: 0n }]
       ),
+      // Gian Shopee nối Hubsell Ads còn hiệu lực — mẫu số quota Ads (19/10/2026).
+      safe("channelAppAuth.count", prisma.channelAppAuth.count({
+        where: {
+          app: ChannelAppKind.HUBSELL_ADS,
+          status: "ACTIVE",
+          channel: { status: "ACTIVE", channelName: ChannelName.SHOPEE, hibernatedAt: null },
+        },
+      }), 0),
     ]);
   const channelsByPlatform: Record<string, number> = {};
   let channelsActive = 0;
@@ -236,6 +251,7 @@ export async function collectGrowth(): Promise<GrowthLayer> {
     channelsActive,
     channelsByPlatform,
     channelsAds: adsChannels.length,
+    channelsHubsellAds: hubsellAdsShops,
     channelsDisconnected: disconnected,
     channelsDisconnected24h: disconnected24h,
     ordersTotal,
@@ -290,6 +306,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
   const t60 = new Date(now - 60 * 60 * 1000);
   const t2h = new Date(now - 2 * 60 * 60 * 1000);
   const staleLock = new Date(now - 15 * 60 * 1000);
+  const staleAdsLock = new Date(now - ADS_CADENCE.LOCK_STALE_MIN * 60 * 1000);
   const syncable = {
     status: "ACTIVE" as const,
     refreshToken: { not: null },
@@ -300,8 +317,12 @@ export async function collectWorker(): Promise<WorkerLayer> {
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
-      safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextAdsPulseAt: { lt: t2h } } }), 0),
-      safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: { lt: staleLock } } }), 0),
+      // Xung ads trễ: vé riêng của làn Ads (adsLockedAt, 19/10/2026) — không còn đi theo vé đơn.
+      safe("channel.count", prisma.channel.count({ where: { ...syncable, adsLockedAt: null, nextAdsPulseAt: { lt: t2h } } }), 0),
+      // Vé mồ côi: vé đơn cũ >15 phút HOẶC vé ads cũ > ADS_LOCK_STALE_MINUTES (lượt ngày TikTok dài nên rộng hơn).
+      safe("channel.count", prisma.channel.count({
+        where: { ...syncable, OR: [{ syncLockedAt: { lt: staleLock } }, { adsLockedAt: { lt: staleAdsLock } }] },
+      }), 0),
       safe("shopeeWebhookLog.count", prisma.shopeeWebhookLog.count({ where: { status: WebhookJobStatus.PENDING } }), 0),
       safe("shopeeWebhookLog.findFirst", prisma.shopeeWebhookLog.findFirst({
         where: { status: WebhookJobStatus.PENDING },
@@ -440,6 +461,7 @@ export function toGrowthMetrics(m: HealthMetrics): GrowthMetrics {
     dbPct: m.infra.dbPct ?? 0,
     ramPct: m.infra.ramPct,
     connPct: m.infra.connPct ?? 0,
+    shopeeAdsShops: m.growth.channelsHubsellAds ?? 0,
   };
 }
 
@@ -455,24 +477,32 @@ export async function saveSnapshot(m: HealthMetrics): Promise<void> {
       dbSizeMb: m.infra.dbSizeMb ?? 0,
       ramMb: m.infra.ramMb,
       overdueFast: m.worker.overdueFast15,
+      adsShops: m.growth.channelsHubsellAds ?? 0,
       metrics: m as unknown as object,
     },
   });
 }
 
 /** Chuỗi theo NGÀY (snapshot cuối mỗi ngày) 30 ngày cho từng đại lượng. */
-export async function dailyTrends(days = 30): Promise<Record<"channels" | "owners" | "ordersPerDay" | "dbSizeMb", TrendPoint[]>> {
+export type TrendKey = "channels" | "owners" | "ordersPerDay" | "dbSizeMb" | "adsShops";
+
+export async function dailyTrends(days = 30): Promise<Record<TrendKey, TrendPoint[]>> {
   const rows = await prisma.platformHealthSnapshot.findMany({
     where: { takenAt: { gte: new Date(Date.now() - days * DAY_MS) } },
     orderBy: { takenAt: "asc" },
-    select: { takenAt: true, channels: true, owners: true, ordersPerDay: true, dbSizeMb: true },
+    select: { takenAt: true, channels: true, owners: true, ordersPerDay: true, dbSizeMb: true, adsShops: true },
   });
   const byDay = new Map<string, (typeof rows)[number]>();
   for (const r of rows) byDay.set(r.takenAt.toISOString().slice(0, 10), r); // snapshot cuối ngày thắng
   const pts = [...byDay.values()];
-  const series = (k: "channels" | "owners" | "ordersPerDay" | "dbSizeMb") =>
-    pts.map((r) => ({ t: r.takenAt.getTime(), v: r[k] }));
-  return { channels: series("channels"), owners: series("owners"), ordersPerDay: series("ordersPerDay"), dbSizeMb: series("dbSizeMb") };
+  const series = (k: TrendKey) => pts.map((r) => ({ t: r.takenAt.getTime(), v: r[k] }));
+  return {
+    channels: series("channels"),
+    owners: series("owners"),
+    ordersPerDay: series("ordersPerDay"),
+    dbSizeMb: series("dbSizeMb"),
+    adsShops: series("adsShops"),
+  };
 }
 
 // ---------- Timeline + ETA ----------
@@ -492,6 +522,13 @@ export interface TimelineView {
     /** Điều kiện + giá trị hiện tại để hiện "gian 3/20". */
     progress: Array<{ metric: MetricKey; label: string; current: number; target: number }>;
   }>;
+  /**
+   * Mốc QUOTA ADS Shopee Đ2/Đ3/Đ4 (docs/ADS-NHIP-CANH-BAO.md 13.5, 19/10/2026) — chuỗi riêng, đếm theo gian Shopee
+   * nối Hubsell Ads (quota tính theo app). Cùng khuôn với `milestones` để HQ hiện "sắp chạm" + ngày dự kiến.
+   */
+  adsMilestones: TimelineView["milestones"];
+  adsNext: CapacityMilestone | null;
+  adsNextEta: MilestoneEta | null;
 }
 
 export async function buildTimeline(m: HealthMetrics): Promise<TimelineView> {
@@ -507,10 +544,11 @@ export async function buildTimeline(m: HealthMetrics): Promise<TimelineView> {
     dbPct: dbSlopeMb != null ? (dbSlopeMb / CURRENT_INFRA.dbSizeMb) * 100 : null,
     ramPct: null,
     connPct: null,
+    shopeeAdsShops: slopePerDay(trends.adsShops),
   };
   const states = await prisma.platformCapacityMilestone.findMany();
   const stateByKey = new Map(states.map((s) => [s.key, s] as const));
-  const milestones = CAPACITY_MILESTONES.map((ms) => {
+  const view = (ms: CapacityMilestone) => {
     const st = stateByKey.get(ms.key);
     const reached = isMilestoneReachedOrPassed(ms, g);
     return {
@@ -522,8 +560,21 @@ export async function buildTimeline(m: HealthMetrics): Promise<TimelineView> {
       note: st?.note ?? null,
       progress: ms.conditions.map((c) => ({ metric: c.metric, label: METRIC_LABEL[c.metric], current: g[c.metric], target: c.gte })),
     };
-  });
-  return { current, next, nextEta: next ? milestoneEta(next, g, trendsPerDay) : null, trendsPerDay, milestones };
+  };
+  const milestones = CAPACITY_MILESTONES.map(view);
+  // Mốc quota Ads: "đã chạm" = đủ gian theo chuỗi riêng (không kéo theo mốc M).
+  const adsMilestones = ADS_QUOTA_MILESTONES.map((ms) => ({ ...view(ms), reached: isMilestoneReached(ms, g) }));
+  const adsNext = nextAdsQuotaMilestone(g);
+  return {
+    current,
+    next,
+    nextEta: next ? milestoneEta(next, g, trendsPerDay) : null,
+    trendsPerDay,
+    milestones,
+    adsMilestones,
+    adsNext,
+    adsNextEta: adsNext ? milestoneEta(adsNext, g, trendsPerDay) : null,
+  };
 }
 
 // ---------- Dấu hiệu + gợi ý ----------

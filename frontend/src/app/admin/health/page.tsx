@@ -59,6 +59,63 @@ export default function AdminHealthPage() {
     }
   }
 
+  /** Một dòng mốc trên timeline — dùng chung cho mốc sức chứa M0–M6 và mốc quota Ads Đ2–Đ4. */
+  function milestoneRow(item: HealthTimelineItem, currentKey: string | null, nextKey: string | null) {
+    const isCurrent = item.milestone.key === currentKey;
+    const isNext = item.milestone.key === nextKey;
+    const done = Boolean(item.doneAt);
+    return (
+      <li key={item.milestone.key} className="relative">
+        <span
+          className={cn(
+            "absolute -left-[31px] top-1 size-3 rounded-full border-2 border-background",
+            done ? "bg-emerald-500" : isCurrent ? "bg-primary" : item.reached ? "bg-amber-500" : "bg-slate-300"
+          )}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold">{item.milestone.key}</span>
+          <span className="text-sm">{item.milestone.title}</span>
+          {isCurrent && <Badge>Đang ở</Badge>}
+          {isNext && <Badge variant="outline">Kế tiếp</Badge>}
+          {done && <Badge className="bg-emerald-600">Đã làm {fmtDate(item.doneAt)}</Badge>}
+          {!done && item.reached && !isCurrent && item.milestone.key !== "M0" && (
+            <Badge variant="outline" className="border-amber-300 text-amber-700">Đã chạm, chưa làm</Badge>
+          )}
+        </div>
+        {item.progress.length > 0 && (
+          <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+            {item.progress.map((p) => `${p.label} ${formatCount(p.current)}/${formatCount(p.target)}`).join(" · ")}
+          </p>
+        )}
+        {item.milestone.upgrades.length > 0 && (
+          <p className="mt-1 text-xs">
+            <span className="text-muted-foreground">Nâng gói: </span>
+            {item.milestone.upgrades.map((u) => `${u.what} (~$${u.usdPerMonth}/th)`).join("; ")}
+          </p>
+        )}
+        <ul className="mt-2 space-y-1 text-sm">
+          {item.milestone.checklist.map((c) => (
+            <li key={c} className="flex gap-2">
+              <span className={cn("mt-0.5 shrink-0", done ? "text-emerald-600" : "text-muted-foreground")}>{done ? "☑" : "☐"}</span>
+              <span className={cn(done && "text-muted-foreground line-through")}>{c}</span>
+            </li>
+          ))}
+        </ul>
+        {(isCurrent || item.reached) && (
+          <Button
+            size="sm"
+            variant={done ? "outline" : "default"}
+            className="mt-2"
+            disabled={busyKey === item.milestone.key}
+            onClick={() => void toggleDone(item)}
+          >
+            {done ? "Bỏ đánh dấu" : "Đã làm xong mốc này"}
+          </Button>
+        )}
+      </li>
+    );
+  }
+
   if (denied) {
     return (
       <AppShell>
@@ -172,8 +229,9 @@ export default function AdminHealthPage() {
             </Card>
 
             <div className="grid gap-6 lg:grid-cols-5">
+              <div className="space-y-6 lg:col-span-3">
               {/* ---- Timeline ---- */}
-              <Card className="lg:col-span-3">
+              <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Timeline sức chứa</CardTitle>
                   <CardDescription>
@@ -190,64 +248,38 @@ export default function AdminHealthPage() {
                 </CardHeader>
                 <CardContent>
                   <ol className="relative space-y-6 border-l border-border pl-6">
-                    {data.timeline.milestones.map((item) => {
-                      const isCurrent = item.milestone.key === data.timeline.current.key;
-                      const isNext = item.milestone.key === data.timeline.next?.key;
-                      const done = Boolean(item.doneAt);
-                      return (
-                        <li key={item.milestone.key} className="relative">
-                          <span
-                            className={cn(
-                              "absolute -left-[31px] top-1 size-3 rounded-full border-2 border-background",
-                              done ? "bg-emerald-500" : isCurrent ? "bg-primary" : item.reached ? "bg-amber-500" : "bg-slate-300"
-                            )}
-                          />
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold">{item.milestone.key}</span>
-                            <span className="text-sm">{item.milestone.title}</span>
-                            {isCurrent && <Badge>Đang ở</Badge>}
-                            {isNext && <Badge variant="outline">Kế tiếp</Badge>}
-                            {done && <Badge className="bg-emerald-600">Đã làm {fmtDate(item.doneAt)}</Badge>}
-                            {!done && item.reached && !isCurrent && item.milestone.key !== "M0" && (
-                              <Badge variant="outline" className="border-amber-300 text-amber-700">Đã chạm, chưa làm</Badge>
-                            )}
-                          </div>
-                          {item.progress.length > 0 && (
-                            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                              {item.progress.map((p) => `${p.label} ${formatCount(p.current)}/${formatCount(p.target)}`).join(" · ")}
-                            </p>
-                          )}
-                          {item.milestone.upgrades.length > 0 && (
-                            <p className="mt-1 text-xs">
-                              <span className="text-muted-foreground">Nâng gói: </span>
-                              {item.milestone.upgrades.map((u) => `${u.what} (~$${u.usdPerMonth}/th)`).join("; ")}
-                            </p>
-                          )}
-                          <ul className="mt-2 space-y-1 text-sm">
-                            {item.milestone.checklist.map((c) => (
-                              <li key={c} className="flex gap-2">
-                                <span className={cn("mt-0.5 shrink-0", done ? "text-emerald-600" : "text-muted-foreground")}>{done ? "☑" : "☐"}</span>
-                                <span className={cn(done && "text-muted-foreground line-through")}>{c}</span>
-                              </li>
-                            ))}
-                          </ul>
-                          {(isCurrent || item.reached) && (
-                            <Button
-                              size="sm"
-                              variant={done ? "outline" : "default"}
-                              className="mt-2"
-                              disabled={busyKey === item.milestone.key}
-                              onClick={() => void toggleDone(item)}
-                            >
-                              {done ? "Bỏ đánh dấu" : "Đã làm xong mốc này"}
-                            </Button>
-                          )}
-                        </li>
-                      );
-                    })}
+                    {data.timeline.milestones.map((item) => milestoneRow(item, data.timeline.current.key, data.timeline.next?.key ?? null))}
                   </ol>
                 </CardContent>
               </Card>
+
+              {/* ---- Quota Ads Shopee (docs/ADS-NHIP-CANH-BAO.md 13.5, 19/10/2026) ---- */}
+              {data.timeline.adsMilestones && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Quota Ads Shopee — mốc Đ2 · Đ3 · Đ4</CardTitle>
+                    <CardDescription>
+                      {formatCount(m.growth.channelsHubsellAds ?? 0)} gian Shopee nối Hubsell Ads (quota tính theo app, ~1.000 gian ở ADS_APP_QPS=3)
+                      {data.timeline.adsNext ? (
+                        <>
+                          {" "}· kế tiếp <b>{data.timeline.adsNext.key}</b>
+                          {data.timeline.adsNextEta?.days != null
+                            ? ` ≈ ${data.timeline.adsNextEta.days} ngày nữa`
+                            : " (chưa đủ dữ liệu 7 ngày để dự báo)"}
+                        </>
+                      ) : (
+                        " · đã qua mọi mốc"
+                      )}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ol className="relative space-y-6 border-l border-border pl-6">
+                      {data.timeline.adsMilestones.map((item) => milestoneRow(item, null, data.timeline.adsNext?.key ?? null))}
+                    </ol>
+                  </CardContent>
+                </Card>
+              )}
+              </div>
 
               {/* ---- Dấu hiệu + xu hướng ---- */}
               <div className="space-y-6 lg:col-span-2">

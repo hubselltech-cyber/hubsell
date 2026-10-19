@@ -150,9 +150,10 @@ export const RATE_LIMIT_STORM = {
   /**
    * Và phải chiếm ≥ tỷ lệ này trong số gian đã gọi trong cửa sổ. 0,2 là số TỰ
    * CHỌN (17/10, chưa có căn cứ từ sàn): 429 lẻ tẻ đo được ~1–4 %/gian/ngày,
-   * còn trần app thật thì gần như mọi gian cùng dính.
+   * còn trần app thật thì gần như mọi gian cùng dính. Số đọc từ env
+   * ADS_STORM_RATIO qua config/ads-cadence.ts (lát 1, 19/10) — đo xong chỉ đổi env.
    */
-  ratio: 0.2,
+  ratio: ADS_CADENCE.STORM_RATIO,
   windowMs: 10 * 60 * 1000,
 } as const;
 

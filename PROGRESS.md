@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 19/10/2026 chiều — LỊCH TRONG NGÀY: CẦU DAO ADS LÁT 1 "TÁCH LÀN ADS" ĐÃ CODE + SQL 9.3 / PAY PER SALE ĐÃ ĐẾM PROD + iOS 1.3.1 VẪN CHỜ DUYỆT
+
+- **Anh: "lịch hôm nay là làm gì?" → "Em tiến hành làm hết các việc hôm nay phải làm ngay nhé."** Em rà PROGRESS + memory + docs 5e: việc trễ nhất là **cầu dao Ads lát 1** (anh chốt 17/10 làm từ 18/10, trễ 2 ngày vì cây sản phẩm sàn + Pha B/C), còn SQL 9.3, đếm Pay Per Sale, trạng thái iOS.
+- **Cầu dao Ads LÁT 1 "tách khoang" ĐÃ CODE (docs ADS-NHIP-CANH-BAO mục 13.7):** tầng ads tách ra `workers/ads-tiers.ts` (không đổi logic); worker mới `workers/ads-lane.ts` nhặt gian đến hạn xung/lịch sử ads bằng vé riêng **`Channel.adsLockedAt`** (migration `20261019150000_channel_ads_lane`, khóa Channel có thử lại) với `ADS_CONCURRENCY=2`; `order-auto-sync` chỉ còn tầng nhanh + tầng giờ (query nhặt vé bỏ 3 điều kiện ads, `dueTiers(…, adsHere)`); **đường lui `ADS_LANE=0`** về vòng cũ; `ADS_STORM_RATIO` ra env (yêu cầu 17/10). HQ theo 13.6: `channelsHubsellAds` (gian Shopee nối Hubsell Ads = mẫu số quota) + cột snapshot `adsShops` + chuỗi mốc `ADS_QUOTA_MILESTONES` D2/D3/D4 (200/500/800, Đ3 = mở ticket) + thẻ "Quota Ads Shopee" trên `/admin/health` dùng chung dòng mốc với M0–M6. Kiểm: 104 test liên quan xanh (11 ca ads-lane + 5 ca mốc Ads mới), toàn backend 1.429 pass / 5 tệp DB-drift cũ không liên quan, tsc BE+FE + eslint sạch, `scripts/health-smoke.ts` trên DB dev OK. **Chưa chạy sàn thật**; sau deploy đọc log `[Ads-lane] BẬT` + `[Auto-sync] … hai tầng ads do làn riêng`.
+- **Đ0 lúc làm lát 1 (Supabase 14:40 VN):** shopee:2044679 tripCount **135** (18/10 20:10: 125 → +10/ngày), lần đóng gần nhất 11:18 VN bậc 1 "3/15 gian"; lúc đọc không đóng.
+- **SQL 9.3 (cây sản phẩm sàn mục 9) dán lại prod 14:30:** từ **209 dòng / 6 gian** (18/10 15:00) xuống **6 dòng / 1 gian** (Hellokityhh TikTok, 6 via id) → lượt vá định kỳ đêm đã chạy đúng; 6 dòng còn lại chờ lượt kế. Log Render `[Catalog-sync] … vá N dòng` CHƯA đọc được (Render đòi đăng nhập trong Chrome, em không nhập mật khẩu) — anh mở log nếu muốn soi số vá.
+- **Phí Pay Per Sale Shopee, lượt đếm 19/10 (hẹn từ 05/10):** đơn Shopee tạo từ 29/09: 18.508 đơn, 11.335 có ước tính, 11.285 có trường `pay_per_sale`, **0 đơn khác 0**, 0 dòng shortfall nhắc tới, 10.669 đã quyết toán, 0 đơn trả thiếu → VẪN chưa gian nào bị thu CPS, không có trừ hai lần; đếm lại ~2 tuần/lần.
+- **iOS 1.3.1 (`asc-release.mjs status`):** vẫn **WAITING_FOR_REVIEW** (build 18 VALID), 1.2.0 READY_FOR_SALE. Chưa bật lại dải ra mắt app web.
+- **Chưa commit** lúc ghi — commit ngay sau dòng này; git push chừa anh. Bẫy Chrome: tab Supabase không đóng được (query chưa lưu → hộp "Leave site?"), anh đóng tay.
+
 ## Phiên 19/10/2026 — CỨNG HÓA LỚP GỌI SÀN: PHA B "NỀN" ĐÃ PUSH `ad62ad06` + PHA C LÁT 1 "ĐỌC BÓNG ĐƠN" ĐÃ PUSH `0567a499` + GHI DANH 2 GIAN, CHẠY THẬT OK 13:12 VN + LÁT 2 "GHI ORDER" ĐÃ CODE (chưa bật)
 
 - **Anh: "Tiếp tục triển khai làm pha B, nền"** (Pha B = dòng "B · Nền" lộ trình mục 5 docs CUNG-HOA-LOP-GOI-SAN). Làm 3 lát, ghi đủ ở **docs mục 5b**:

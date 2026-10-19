@@ -1,18 +1,21 @@
 // Hàm thuần của kế hoạch sức chứa (mục Sức khỏe HQ, docs/HQ-SUC-KHOE.md).
 import { describe, expect, it } from "vitest";
 import {
+  ADS_QUOTA_MILESTONES,
+  ALL_MILESTONES,
   CAPACITY_MILESTONES,
   daysToReach,
   isMilestoneReached,
   levelFor,
   locateOnTimeline,
   milestoneEta,
+  nextAdsQuotaMilestone,
   ramLevel,
   slopePerDay,
   type GrowthMetrics,
 } from "../capacity-plan";
 
-const base: GrowthMetrics = { channels: 3, owners: 5, ordersPerDay: 40, dbPct: 10, ramPct: 30, connPct: 10 };
+const base: GrowthMetrics = { channels: 3, owners: 5, ordersPerDay: 40, dbPct: 10, ramPct: 30, connPct: 10, shopeeAdsShops: 14 };
 
 describe("timeline mốc", () => {
   it("M0 luôn chạm; 3 gian đang ở M0, kế tiếp M1", () => {
@@ -54,6 +57,38 @@ describe("timeline mốc", () => {
         expect(m.upgrades.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("mốc quota Ads Shopee Đ2/Đ3/Đ4 (docs/ADS-NHIP-CANH-BAO.md 13.5, 19/10/2026)", () => {
+  it("chuỗi riêng, chỉ đếm gian Shopee nối Hubsell Ads, thứ tự 200 → 500 → 800", () => {
+    expect(ADS_QUOTA_MILESTONES.map((m) => m.key)).toEqual(["D2", "D3", "D4"]);
+    for (const m of ADS_QUOTA_MILESTONES) {
+      expect(m.conditions).toEqual([{ metric: "shopeeAdsShops", gte: expect.any(Number) }]);
+      expect(m.checklist.length).toBeGreaterThan(0);
+    }
+    expect(ADS_QUOTA_MILESTONES.map((m) => m.conditions[0].gte)).toEqual([200, 500, 800]);
+  });
+  it("14 gian → kế tiếp Đ2; 250 → Đ3; 900 → không còn mốc", () => {
+    expect(nextAdsQuotaMilestone(base)?.key).toBe("D2");
+    expect(nextAdsQuotaMilestone({ ...base, shopeeAdsShops: 250 })?.key).toBe("D3");
+    expect(nextAdsQuotaMilestone({ ...base, shopeeAdsShops: 900 })).toBeNull();
+  });
+  it("gian tổng (M) không kéo mốc Ads: 600 gian tổng nhưng 14 gian Ads → vẫn chưa chạm Đ2", () => {
+    const g = { ...base, channels: 600 };
+    expect(isMilestoneReached(ADS_QUOTA_MILESTONES[0], g)).toBe(false);
+    expect(locateOnTimeline(g).current.key).toBe("M3");
+  });
+  it("Đ3 là mốc mở ticket; ALL_MILESTONES gộp cả hai chuỗi, khóa không trùng", () => {
+    expect(ADS_QUOTA_MILESTONES[1].title).toMatch(/TICKET/);
+    const keys = ALL_MILESTONES.map((m) => m.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual(expect.arrayContaining(["M0", "D2", "D3", "D4"]));
+  });
+  it("ETA Đ2 theo xu hướng gian Ads: 14 gian, +2/ngày → 93 ngày", () => {
+    const eta = milestoneEta(ADS_QUOTA_MILESTONES[0], base, { shopeeAdsShops: 2 });
+    expect(eta.days).toBe(93);
+    expect(eta.by?.metric).toBe("shopeeAdsShops");
   });
 });
 

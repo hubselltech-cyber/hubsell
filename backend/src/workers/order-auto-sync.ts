@@ -17,16 +17,14 @@
 //                        tốn quota mỗi 10'.
 //   · nextHourlySyncAt — tầng NHỊP GIỜ: đối soát phí thật (Escrow/Finance),
 //                        payout/rút ví, quét cảnh báo điều hành.
-//   · nextAdsPulseAt   — tầng XUNG ADS (docs/ADS-NHIP-CANH-BAO.md): cấu hình
-//                        campaign + số HÔM NAY + ví, mỗi 30' Shopee / 60' Lazada
-//                        cho gian đang tiêu tiền (im ắng 120'; chưa có campaign
-//                        xung nhẹ 1 call). Ngay sau xung: Trợ lý tự thực thi +
-//                        quét cảnh báo → độ trễ cảnh báo "cắn tiền"/"ví cạn".
-//   · nextAdsSyncAt    — tầng ADS LỊCH SỬ: kéo lại 7 ngày mỗi 6h (sàn chỉnh số
-//                        muộn); lần đầu / vừa nối Hubsell Ads kéo trọn 30 ngày
-//                        (adsBackfillPending). Nhịp: config/ads-cadence.ts.
-//                        Trang Trợ lý mở mà số cũ >30' hoặc bấm Làm mới → nudge
-//                        XUNG về "ngay" (services/sync-schedule.ts).
+//   · nextAdsPulseAt / nextAdsSyncAt — tầng XUNG ADS + ADS LỊCH SỬ. TỪ 19/10/2026
+//                        (lát 1 "tách khoang", docs/ADS-NHIP-CANH-BAO.md mục 13)
+//                        hai tầng này do worker RIÊNG workers/ads-lane.ts nhặt,
+//                        với vé riêng Channel.adsLockedAt và số luồng riêng
+//                        ADS_CONCURRENCY — Ads bị chặn / chậm không giữ chỗ của
+//                        đơn, tồn, dòng tiền. Hàm tầng: workers/ads-tiers.ts.
+//                        Đường lui ADS_LANE=0: vòng này nhặt lại cả hai tầng như
+//                        trước 19/10 (adsInOrderSync()).
 //
 // Vòng đời một vé: tick 20s nhặt gian ĐẾN HẠN (bất kỳ tầng nào) chưa ai cầm,
 // CLAIM bằng UPDATE có điều kiện trên syncLockedAt (nhiều worker không nhặt
@@ -36,10 +34,7 @@
 // lặp vô hại.
 //
 // TikTok vào vòng quét từ 16/09/2026 (shop nhà and.not.or đã ủy quyền app ISV):
-// tầng nhanh quét đơn theo update_time + tầng giờ đối soát. Tầng ads (17/09/2026):
-// chỉ gian ĐÃ NỐI tài khoản quảng cáo TikTok Marketing API (TiktokAdsStoreLink)
-// mới kéo số GMV Max — chỉ đọc, không executor; gian chưa nối thì hạn xung/ads
-// đẩy xa để không bị nhặt mỗi tick (nối xong markAdsBackfill kéo hạn về ngay).
+// tầng nhanh quét đơn theo update_time + tầng giờ đối soát.
 //
 // Cấu hình: AUTO_SYNC_MINUTES (ưu tiên) hoặc SHOPEE_AUTO_SYNC_MINUTES (tương
 // thích cũ). Mặc định 10; "0" = tắt toàn bộ.
@@ -54,12 +49,6 @@ import {
   syncShopeePendingEscrowEstimates,
   syncShopeeSettlements,
 } from "../integrations/shopee/settlements";
-import { syncShopeeAdsSpend } from "../integrations/shopee/ads-spend";
-import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
-import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
-import { autoExecuteTouched, runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
-import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubsell-ads";
-import { adsItemSignalsDue, syncShopeeAdsItemSignals } from "../integrations/shopee/ads-item-signals";
 import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
   backfillShopeeReturnsByOrder,
@@ -86,17 +75,8 @@ import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { syncLazadaReturns } from "../integrations/lazada/returns-sync";
 import { ADS_BACKFILL_DAYS, ADS_SYNC_DAYS_BACK, HISTORY_BACKFILL_DAYS } from "../services/sync-schedule";
+import { runAdsHistory, runAdsPulse, type AdsPulseResult } from "./ads-tiers";
 import { ADS_CADENCE } from "../config/ads-cadence";
-import { isApiBudgetError } from "../services/api-budget";
-import { pulseShopeeAds } from "../integrations/shopee/ads-pulse";
-import { pulseLazadaAds } from "../integrations/lazada/ads-pulse";
-import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
-import { syncShopeeGms } from "../integrations/shopee/ads-gms";
-import { vnDateKey } from "../lib/ads-dates";
-import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
-import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
-import { autoRunDue, dailyRunOffsetMin, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";
-import { runTiktokAdviceAlerts } from "../integrations/tiktok-ads/advice-alerts";
 import { incompleteReadMessage, type SyncCompleteness } from "../integrations/sync-contract";
 import { nextWatermark, planOrderWindow, watermarkLogLine, type WatermarkWrite } from "../services/order-watermark";
 
@@ -150,8 +130,6 @@ const UNSETTLED_DAYS_BACK = 45;
  * 30 ngày; upsert idempotent theo (channelId, externalTxnId) nên quét lặp vô hại.
  */
 const PAYOUT_DAYS_BACK = 30;
-/** Gian TikTok CHƯA nối quảng cáo: hạn xung/ads đẩy xa 1 ngày (chỉ để không nhặt mỗi tick). */
-const TIKTOK_NO_ADS_MIN = 24 * 60;
 
 // ---------- Hàm thuần (export cho vitest) ----------
 
@@ -187,43 +165,28 @@ export function withJitter(ms: number, rand: () => number = Math.random): number
   return Math.round(ms * factor);
 }
 
-/** Tầng nào đến hạn với một gian tại thời điểm `now` (null = chưa từng chạy = đến hạn). */
+/**
+ * Tầng nào đến hạn với một gian tại thời điểm `now` (null = chưa từng chạy = đến hạn).
+ * `adsHere` = vòng này có nhặt hai tầng ads không — mặc định KHÔNG từ 19/10/2026 (làn Ads
+ * riêng workers/ads-lane.ts); chỉ true khi ADS_LANE=0 (đường lui).
+ */
 export function dueTiers(
   ch: Pick<Channel, "nextFastSyncAt" | "nextHourlySyncAt" | "nextAdsSyncAt" | "nextAdsPulseAt">,
-  now: number
+  now: number,
+  adsHere = adsInOrderSync()
 ): { fast: boolean; hourly: boolean; ads: boolean; pulse: boolean } {
   const due = (d: Date | null) => !d || d.getTime() <= now;
   return {
     fast: due(ch.nextFastSyncAt),
     hourly: due(ch.nextHourlySyncAt),
-    ads: due(ch.nextAdsSyncAt),
-    pulse: due(ch.nextAdsPulseAt),
+    ads: adsHere && due(ch.nextAdsSyncAt),
+    pulse: adsHere && due(ch.nextAdsPulseAt),
   };
 }
 
-/**
- * Hạn XUNG ads kế tiếp (phút) — tầng A docs/ADS-NHIP-CANH-BAO.md. Hàm thuần:
- *   · không có quyền Ads API / không campaign chạy và không thấy campaign mới
- *     → xung nhẹ PULSE_NO_CAMPAIGN_MIN (1 call);
- *   · có campaign chạy nhưng 2 ngày không chi → PULSE_IDLE_MIN;
- *   · đang tiêu tiền hoặc vừa thấy campaign mới → PULSE_MIN (Lazada: PULSE_LAZADA_MIN);
- *   · còn campaign do HUBSELL tạm dừng → PULSE_MIN (14/09): phải đọc lại cấu hình
- *     + số nhanh để tự bật lại khi ROAS đạt / thấy người bật lại kịp thời.
- */
-export function nextPulseDelayMin(input: {
-  channelName: ChannelName;
-  adsReady: boolean;
-  liveCampaigns: number;
-  spentRecently: boolean;
-  foundNew: boolean;
-  hubsellPaused?: boolean;
-}): number {
-  if (!input.adsReady) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
-  const base =
-    input.channelName === ChannelName.LAZADA ? ADS_CADENCE.PULSE_LAZADA_MIN : ADS_CADENCE.PULSE_MIN;
-  if (input.foundNew || input.hubsellPaused) return base;
-  if (input.liveCampaigns === 0) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
-  return input.spentRecently ? base : ADS_CADENCE.PULSE_IDLE_MIN;
+/** Đường lui ADS_LANE=0: vòng đồng bộ đơn nhặt lại cả xung + lịch sử ads như trước 19/10/2026. */
+export function adsInOrderSync(): boolean {
+  return !ADS_CADENCE.LANE;
 }
 
 // ---------- Trạng thái worker ----------
@@ -231,8 +194,6 @@ export function nextPulseDelayMin(input: {
 let started = false;
 /** Gian đang được worker NÀY xử lý — không nhặt lại trong lúc chạy. */
 const inFlight = new Set<string>();
-/** Gian đã log "bỏ qua Ads vì chưa nối Hubsell Ads" — log một lần, không lặp mỗi lượt. */
-const adsSkipLogged = new Set<string>();
 
 let cadence: SyncCadence = { baseMin: DEFAULT_INTERVAL_MIN, maxMin: DEFAULT_MAX_INTERVAL_MIN };
 let adsIntervalHours = DEFAULT_ADS_INTERVAL_HOURS;
@@ -270,7 +231,11 @@ export function startOrderAutoSync(): void {
   setTimeout(() => void tick(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void tick(), TICK_MS).unref();
   console.log(
-    `[Auto-sync] BẬT — lịch theo gian: quét nhanh ${cadence.baseMin}' (giãn tới ${cadence.maxMin}' khi im ắng), nhịp giờ ${HOURLY_INTERVAL_MIN}', XUNG ads Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử ads mỗi ${adsIntervalHours}h (cửa sổ ${ADS_SYNC_DAYS_BACK} ngày, lần đầu ${ADS_BACKFILL_DAYS}), song song ${concurrency} gian, trần ${ADS_CADENCE.APP_QPS} call/s mỗi app Ads`
+    `[Auto-sync] BẬT — lịch theo gian: quét nhanh ${cadence.baseMin}' (giãn tới ${cadence.maxMin}' khi im ắng), nhịp giờ ${HOURLY_INTERVAL_MIN}', song song ${concurrency} gian${
+      adsInOrderSync()
+        ? `, ĐƯỜNG LUI ADS_LANE=0: kèm XUNG ads Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử ads mỗi ${adsIntervalHours}h (cửa sổ ${ADS_SYNC_DAYS_BACK} ngày, lần đầu ${ADS_BACKFILL_DAYS}), trần ${ADS_CADENCE.APP_QPS} call/s mỗi app Ads`
+        : " — hai tầng ads do làn riêng ads-lane nhặt"
+    }`
   );
 }
 
@@ -300,9 +265,10 @@ async function tick(): Promise<void> {
               { nextFastSyncAt: null },
               { nextFastSyncAt: { lte: now } },
               { nextHourlySyncAt: { lte: now } },
-              { nextAdsSyncAt: { lte: now } },
-              { nextAdsPulseAt: null },
-              { nextAdsPulseAt: { lte: now } },
+              // Hai tầng ads chỉ khi đường lui ADS_LANE=0 — bình thường làn Ads riêng nhặt (ads-lane.ts).
+              ...(adsInOrderSync()
+                ? [{ nextAdsSyncAt: { lte: now } }, { nextAdsPulseAt: null }, { nextAdsPulseAt: { lte: now } }]
+                : []),
             ],
           },
         ],
@@ -347,14 +313,13 @@ async function processChannel(channel: Channel): Promise<void> {
   let ordersOk = false;
   let settlementsOk = false;
   let adsSynced = false;
-  let pulse: { delayMin: number; synced: boolean } | null = null;
+  let pulse: AdsPulseResult | null = null;
   let watermark: WatermarkWrite | null = null;
 
   try {
     if (channel.channelName === ChannelName.SHOPEE && !isShopeeConfigured()) return;
     if (channel.channelName === ChannelName.LAZADA && !isLazadaConfigured()) return;
     if (channel.channelName === ChannelName.TIKTOK && !isTikTokConfigured()) return;
-    const isTiktok = channel.channelName === ChannelName.TIKTOK;
 
     // Tầng nhanh chạy MỌI lượt (rẻ, idempotent) — gian được nhặt vì tầng giờ/ads
     // đến hạn thì tiện vét luôn; cửa sổ sâu khi trùng nhịp giờ.
@@ -362,12 +327,11 @@ async function processChannel(channel: Channel): Promise<void> {
     changed = fast.changed;
     ordersOk = fast.ordersOk;
     watermark = fast.watermark;
+    // Hai tầng ads: chỉ khi đường lui ADS_LANE=0 (dueTiers đã trả false khi làn Ads riêng đang chạy).
     // XUNG ads trước tầng giờ: cảnh báo tiền là thứ cần sớm nhất trong lượt.
-    if (tiers.pulse) {
-      pulse = isTiktok ? await runTiktokAdsPulse(channel) : await runAdsPulseTier(channel);
-    }
+    if (tiers.pulse) pulse = await runAdsPulse(channel);
     if (tiers.hourly) settlementsOk = await runHourlyTier(channel, { backfill, rebuild });
-    if (tiers.ads) adsSynced = isTiktok ? await runTiktokAdsTier(channel) : await runAdsTier(channel);
+    if (tiers.ads) adsSynced = await runAdsHistory(channel);
   } catch (err) {
     console.error(`[Auto-sync] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
   } finally {
@@ -829,334 +793,4 @@ async function runHourlyTier(
   // tự throttle 10'/chủ shop + notify chống trùng 24h; hàm không bao giờ ném lỗi.
   await scanOpsAlerts(channel.userId);
   return settlementsOk;
-}
-
-// ============================================================
-// TẦNG A — XUNG ADS (docs/ADS-NHIP-CANH-BAO.md): cấu hình campaign + số HÔM NAY
-// + ví → rồi Trợ lý tự thực thi + quét cảnh báo NGAY. Đây là nhịp quyết định
-// độ trễ cảnh báo "cắn tiền" / "ví cạn" (30' Shopee, 60' Lazada).
-// Trả về hạn xung kế tiếp (phút) + có kéo được số hay không.
-// ============================================================
-async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; synced: boolean }> {
-  const isLazada = channel.channelName === ChannelName.LAZADA;
-  const adsReady = isLazada ? true : await hasShopeeAdsAccess(channel.id);
-  if (!adsReady) {
-    if (!adsSkipLogged.has(channel.id)) {
-      adsSkipLogged.add(channel.id);
-      console.log(
-        `[Auto-sync] Bỏ qua Ads gian "${channel.shopName}": chưa ủy quyền ${HUBSELL_ADS_APP_LABEL}`
-      );
-    }
-    return {
-      delayMin: nextPulseDelayMin({
-        channelName: channel.channelName,
-        adsReady: false,
-        liveCampaigns: 0,
-        spentRecently: false,
-        foundNew: false,
-      }),
-      synced: false,
-    };
-  }
-  adsSkipLogged.delete(channel.id);
-
-  // Chế độ xung theo DB (không gọi sàn): có campaign chạy? có chi trong 2 ngày?
-  // `watching` = campaign còn đáng theo dõi (chạy/tạm dừng/hẹn giờ). SỰ CỐ 14/09:
-  // xung nhẹ từng khóa theo "0 campaign ĐANG CHẠY" → gian mà campaign cuối cùng
-  // vừa bị (máy/người) tạm dừng rơi vào xung nhẹ mãi, cấu hình không bao giờ
-  // được đọc lại → seller bật lại trên Seller Center mà Hubsell vẫn ghi "Tạm
-  // dừng" (ANO 15:28→18:02+), và cờ Hubsell không bao giờ được hòa giải.
-  const [liveCampaigns, watching, hubsellPausedCount, recentSpend] = await Promise.all([
-    prisma.adsCampaign.count({ where: { channelId: channel.id, status: "ongoing" } }),
-    prisma.adsCampaign.count({
-      where: { channelId: channel.id, status: { in: ["ongoing", "paused", "scheduled"] } },
-    }),
-    prisma.adsCampaign.count({ where: { channelId: channel.id, hubsellPausedAt: { not: null } } }),
-    prisma.adsCampaignDailyPerf.findFirst({
-      where: {
-        adsCampaign: { channelId: channel.id },
-        date: { gte: new Date(`${vnDateKey(1)}T00:00:00.000Z`) },
-        expense: { gt: 0 },
-      },
-      select: { id: true },
-    }),
-  ]);
-  const spentRecently = recentSpend != null;
-  const hubsellPaused = hubsellPausedCount > 0;
-
-  let foundNew = false;
-  let synced = false;
-  try {
-    if (isLazada) {
-      const r = await pulseLazadaAds(channel);
-      synced = true;
-      console.log(
-        `[Ads-pulse] Lazada "${channel.shopName}": ${r.campaignsUpserted} campaign, ${r.perfTodayUpserted} dòng hôm nay${r.walletEmpty ? ", VÍ HẾT TIỀN" : ""}`
-      );
-    } else {
-      // Xung nhẹ CHỈ khi DB không còn campaign nào đáng theo dõi — campaign tạm
-      // dừng vẫn phải đọc lại cấu hình để thấy người bật lại.
-      const r = await pulseShopeeAds(channel, { light: watching === 0 });
-      foundNew = r.newCampaigns > 0;
-      synced = r.mode === "full";
-      if (r.mode === "full") {
-        console.log(
-          `[Ads-pulse] Shopee "${channel.shopName}": ${r.liveCampaigns} campaign sống (${r.newCampaigns} mới), ${r.perfTodayUpserted} dòng hôm nay, ví ${r.walletBalance ?? "?"}`
-        );
-      }
-    }
-  } catch (err) {
-    if (isApiBudgetError(err)) {
-      // Van an toàn: app đang bị cầu dao / vượt trần → lùi gian, KHÔNG retry.
-      console.warn(`[Ads-pulse] "${channel.shopName}" lùi lịch (${err.scope}): ${err.message}`);
-      return { delayMin: err.scope === "shop_rate_limit" ? 15 : ADS_CADENCE.PULSE_MIN, synced: false };
-    }
-    console.error(`[Ads-pulse] Lỗi xung gian "${channel.shopName}":`, (err as Error).message);
-  }
-
-  if (synced) {
-    // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập; live sau probe)
-    // đánh giá ngay trên số vừa kéo, rồi quét cảnh báo để chuông kêu trong nhịp này.
-    let actionTouched = false;
-    try {
-      const act = await runAdsAutoExecute(channel);
-      if (act.mode !== "off" && autoExecuteTouched(act)) {
-        console.log(
-          `[Auto-sync] Trợ lý Ads ${isLazada ? "Lazada " : ""}"${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.budgetCut} hạ ngân sách, ${act.resumed} bật lại, ${act.budgetRestored} trả ngân sách, ${act.failed + act.resumeFailed + act.budgetCutFailed + act.budgetRestoreFailed} lỗi, ${act.skippedDone} đã làm hôm nay${act.deferred > 0 ? ", sàn báo quá nhịp — dừng lượt, xung kế thử lại" : ""}`
-        );
-        // Máy vừa làm gì → ép quét cảnh báo NGAY (bỏ throttle 10') để chuông + thẻ
-        // Trung tâm điều hành lên trong cùng nhịp (sự cố 14/09: dừng mà im lặng).
-        actionTouched = true;
-      }
-    } catch (err) {
-      console.error(
-        `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
-        (err as Error).message
-      );
-    }
-    await scanOpsAlerts(channel.userId, actionTouched);
-  }
-
-  return {
-    delayMin: nextPulseDelayMin({
-      channelName: channel.channelName,
-      adsReady: true,
-      liveCampaigns,
-      spentRecently,
-      foundNew,
-      hubsellPaused,
-    }),
-    synced,
-  };
-}
-
-// ============================================================
-// TẦNG B — ADS LỊCH SỬ: kéo lại cửa sổ 7 ngày (sàn chỉnh số muộn); lần đầu /
-// vừa nối Hubsell Ads kéo trọn 30 ngày (id list + cấu hình + perf). Không có
-// gì seller "cần tức thì" ở đây — xung (tầng A) đã lo cấu hình + hôm nay + ví.
-// Trả về true nếu đã kéo được số (ghi lastAdsSyncAt / hạ cờ backfill).
-// ============================================================
-// ============================================================
-// ADS TIKTOK (GMV Max — TikTok Marketing API, CHỈ ĐỌC). Xung = hôm nay + hôm
-// qua (1 call); lịch sử = cửa sổ 7 ngày / 30 ngày khi vừa nối (1 call). Không
-// ví, không executor, không ghi AdSpend (phí GMV Max đã trừ trong quyết toán
-// đơn — xem integrations/tiktok-ads/sync.ts).
-// ============================================================
-/**
- * LƯỢT HẰNG NGÀY (theo dõi video + xét luật loại tự động): một lần/ngày cho mỗi gian, ở lượt ads ĐẦU TIÊN sau 12h trưa
- * VN (chi phí video TikTok về trễ tới 11h). B5 (18/09): gọi từ CẢ tầng xung (60' khi đang tiêu tiền, 120' khi im) lẫn
- * tầng lịch sử 6h — trước đây chỉ bám tầng 6h nên lượt chấm rơi bất kỳ lúc nào 12h–18h, khách không biết giờ mà xem
- * chuông. Mốc `lastVideoTrackOn` + khóa gian của worker bảo đảm không chạy hai lần một ngày.
- */
-const TIKTOK_DAILY_RUN_CONCURRENCY = Math.max(1, Math.trunc(envNumber("ADS_TIKTOK_DAILY_CONCURRENCY", 1)));
-let tiktokDailyRunsInFlight = 0;
-
-async function maybeRunTiktokAdsDaily(channel: Channel): Promise<void> {
-  const link = await prisma.tiktokAdsStoreLink.findUnique({
-    where: { channelId: channel.id },
-    select: { lastVideoTrackOn: true },
-  });
-  if (!link || !autoRunDue(link.lastVideoTrackOn, undefined, undefined, dailyRunOffsetMin(channel.id))) return;
-  // Mỗi tiến trình worker chỉ chạy MỘT lượt chấm một lúc: lượt chấm của seller lớn kéo dài nhiều phút, không được để vài lượt
-  // như thế chiếm hết các chỗ chạy song song của đồng bộ đơn. Đây là van CÔNG BẰNG chứ không phải khóa đúng-sai (chống chạy
-  // hai lần đã có mốc lastVideoTrackOn + khóa gian) — gian bị nhường sẽ chấm ở nhịp xung kế tiếp.
-  if (tiktokDailyRunsInFlight >= TIKTOK_DAILY_RUN_CONCURRENCY) return;
-  tiktokDailyRunsInFlight++;
-  let d: Awaited<ReturnType<typeof runTiktokAdsDaily>>;
-  try {
-    d = await runTiktokAdsDaily(channel);
-  } finally {
-    tiktokDailyRunsInFlight--;
-  }
-  if (d) {
-    console.log(
-      `[Auto-sync] "${channel.shopName}" ads TikTok lượt ngày: ${d.tracked}/${d.campaigns} chiến dịch theo dõi, ${d.evaluated} xét luật (${d.planned} diễn tập, ${d.executed} loại thật, ${d.failed} lỗi)`
-    );
-    // Chuông kết luận chiến dịch (15/10/2026): chấm lại campaign-advice cho mọi chiến dịch đang chạy, chuông khi kết luận đổi sang loại
-    // có việc phải làm (advice-alerts.ts). Đi sau lượt ngày để mỗi gian một lần mỗi ngày; lỗi không ảnh hưởng lượt ngày.
-    try {
-      const a = await runTiktokAdviceAlerts(channel);
-      if (a.changed > 0) {
-        console.log(`[Auto-sync] "${channel.shopName}" nhận định chiến dịch TikTok: ${a.changed}/${a.campaigns} đổi kết luận, ${a.alerted} chuông`);
-      }
-    } catch (err) {
-      console.error(`[Auto-sync] "${channel.shopName}" chuông kết luận TikTok lỗi:`, (err as Error).message);
-    }
-  }
-}
-
-async function runTiktokAdsPulse(channel: Channel): Promise<{ delayMin: number; synced: boolean }> {
-  if (!isTiktokAdsConfigured()) return { delayMin: TIKTOK_NO_ADS_MIN, synced: false };
-  try {
-    const r = await syncTiktokAdsCampaigns(channel, { daysBack: 2 });
-    if (!r.linked) return { delayMin: TIKTOK_NO_ADS_MIN, synced: false };
-    // Lượt ngày hỏng không được làm hỏng xung (xung còn lo lịch nhịp kế).
-    await maybeRunTiktokAdsDaily(channel).catch((err) =>
-      console.error(`[Auto-sync] Lượt ngày ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message)
-    );
-    const delayMin =
-      r.liveCampaigns === 0
-        ? ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN
-        : r.spentRecently
-          ? ADS_CADENCE.PULSE_TIKTOK_MIN
-          : ADS_CADENCE.PULSE_IDLE_MIN;
-    return { delayMin, synced: true };
-  } catch (err) {
-    console.error(`[Auto-sync] Xung ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message);
-    return { delayMin: ADS_CADENCE.PULSE_IDLE_MIN, synced: false };
-  }
-}
-
-async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
-  if (!isTiktokAdsConfigured()) return false;
-  const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
-  try {
-    // Tài khoản quảng cáo TikTok là thực thể rời shop — kiểm lại ai đang giữ
-    // quyền GMV Max của gian TRƯỚC khi kéo số (đổi người chạy thuê → tự chuyển / báo).
-    const check = await verifyTiktokAdsLink(channel.id);
-    if (check === "switched" || check === "no_access") {
-      console.log(`[Auto-sync] "${channel.shopName}" ads TikTok: tài khoản quảng cáo của gian đã đổi (${check})`);
-    }
-    const r = await syncTiktokAdsCampaigns(channel, {
-      daysBack: backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK,
-    });
-    if (r.linked && r.campaignsUpserted > 0) {
-      console.log(
-        `[Auto-sync] "${channel.shopName}" ads TikTok: ${r.campaignsUpserted} campaign GMV Max, ${r.perfDaysUpserted} dòng ngày, ${r.adSpendDaysUpserted} ngày AdSpend`
-      );
-    }
-    // Lưới đỡ: xung thường đã chạy lượt ngày rồi (mốc lastVideoTrackOn chặn chạy lại).
-    if (r.linked) await maybeRunTiktokAdsDaily(channel);
-    return r.linked;
-  } catch (err) {
-    console.error(`[Auto-sync] Ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message);
-    return false;
-  }
-}
-
-async function runAdsTier(channel: Channel): Promise<boolean> {
-  const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
-  const daysBack = backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK;
-
-  if (channel.channelName === ChannelName.LAZADA) {
-    // Lazada: adgroup (itemIds) chỉ có ở lượt này; report từng ngày cửa sổ daysBack.
-    try {
-      const camp = await syncLazadaAdsCampaigns(channel, { daysBack });
-      if (camp.campaignsUpserted > 0) {
-        console.log(
-          `[Auto-sync] Lịch sử Ads Lazada "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
-        );
-      }
-      return true;
-    } catch (err) {
-      if (isApiBudgetError(err)) {
-        console.warn(`[Auto-sync] Lịch sử Ads Lazada "${channel.shopName}" lùi lịch: ${err.message}`);
-      } else {
-        console.error(`[Auto-sync] Lỗi lịch sử Ads Lazada "${channel.shopName}":`, (err as Error).message);
-      }
-      return false;
-    }
-  }
-
-  // ---------- Shopee: chỉ khi gian có quyền Ads API ----------
-  if (!(await hasShopeeAdsAccess(channel.id))) return false;
-
-  let synced = false;
-  try {
-    const ads = await syncShopeeAdsSpend(channel, { daysBack });
-    synced = true;
-    if (ads.daysUpserted > 0 && backfill) {
-      console.log(`[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`);
-    }
-  } catch (err) {
-    if (isApiBudgetError(err)) {
-      console.warn(`[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}" lùi lịch: ${err.message}`);
-      return false;
-    }
-    console.error(
-      `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
-      (err as Error).message
-    );
-  }
-  try {
-    if (backfill) {
-      const camp = await syncShopeeAdsCampaigns(channel, { daysBack });
-      synced = true;
-      console.log(
-        `[Auto-sync] Backfill Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
-      );
-    } else {
-      const w = await syncShopeeAdsPerfWindow(channel, daysBack);
-      synced = true;
-      if (w.perfDaysUpserted > 0) {
-        console.log(
-          `[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}": ${w.campaigns} campaign, ${w.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
-        );
-      }
-    }
-  } catch (err) {
-    if (isApiBudgetError(err)) {
-      console.warn(`[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}" lùi lịch: ${err.message}`);
-    } else {
-      console.error(
-        `[Auto-sync] Lỗi lịch sử campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
-        (err as Error).message
-      );
-    }
-  }
-  // GMS = GMV Max cấp shop (24/09): eligibility + 2 cửa sổ + từng SP ≈ 4 call/6h, ăn theo lượt
-  // lịch sử. Lỗi ở đây không được làm hỏng lượt ads.
-  if (synced) {
-    try {
-      const g = await syncShopeeGms(channel);
-      if (g.status === "active") {
-        console.log(`[Ads-GMS] "${channel.shopName}": GMV Max cấp shop đang chạy — ${g.reports} cửa sổ, ${g.items} SP có số`);
-      }
-    } catch (err) {
-      if (isApiBudgetError(err)) {
-        console.warn(`[Ads-GMS] "${channel.shopName}" lùi lịch: ${err.message}`);
-      } else {
-        console.error(`[Ads-GMS] Lỗi GMV Max cấp shop gian "${channel.shopName}":`, (err as Error).message);
-      }
-    }
-  }
-  // ĐỢT D: tín hiệu thị trường cho tab Gợi ý chạy ads — 1 lần/ngày/gian, ăn theo lượt
-  // lịch sử (6h) nên không thêm lịch riêng. Lỗi ở đây không được làm hỏng lượt ads.
-  if (synced) {
-    try {
-      if (await adsItemSignalsDue(channel.id)) {
-        const r = await syncShopeeAdsItemSignals(channel);
-        console.log(
-          `[Ads-signals] "${channel.shopName}": ${r.extraInfo}/${r.items} SP có lượt xem, ${r.recommended} SP sàn gợi ý, ${r.proposals} ứng viên đủ số${r.errors.length ? ` · lỗi: ${r.errors.slice(0, 3).join(" | ")}` : ""}`
-        );
-      }
-    } catch (err) {
-      if (isApiBudgetError(err)) {
-        console.warn(`[Ads-signals] "${channel.shopName}" lùi lịch: ${err.message}`);
-      } else {
-        console.error(`[Ads-signals] Lỗi "${channel.shopName}":`, (err as Error).message);
-      }
-    }
-  }
-  return synced;
 }

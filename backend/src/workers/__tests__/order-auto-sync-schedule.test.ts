@@ -2,7 +2,8 @@
 // vai tiến trình. Không chạm DB / API sàn.
 import { afterEach, describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
-import { dueTiers, nextFastSchedule, nextPulseDelayMin, withJitter } from "../order-auto-sync";
+import { adsInOrderSync, dueTiers, nextFastSchedule, withJitter } from "../order-auto-sync";
+import { nextPulseDelayMin } from "../ads-tiers";
 import { ADS_CADENCE } from "../../config/ads-cadence";
 import { resolveHubsellRole } from "../index";
 
@@ -46,10 +47,9 @@ describe("withJitter", () => {
 
 describe("dueTiers", () => {
   const now = Date.parse("2026-09-12T10:00:00Z");
-  it("null = chưa từng chạy = đến hạn mọi tầng", () => {
-    expect(
-      dueTiers({ nextFastSyncAt: null, nextHourlySyncAt: null, nextAdsSyncAt: null, nextAdsPulseAt: null }, now)
-    ).toEqual({ fast: true, hourly: true, ads: true, pulse: true });
+  const all = { nextFastSyncAt: null, nextHourlySyncAt: null, nextAdsSyncAt: null, nextAdsPulseAt: null };
+  it("null = chưa từng chạy = đến hạn mọi tầng (đường lui ADS_LANE=0: vòng đơn nhặt cả ads)", () => {
+    expect(dueTiers(all, now, true)).toEqual({ fast: true, hourly: true, ads: true, pulse: true });
   });
   it("chỉ tầng có hạn ≤ now mới đến hạn", () => {
     expect(
@@ -60,9 +60,17 @@ describe("dueTiers", () => {
           nextAdsSyncAt: new Date(now + 1),
           nextAdsPulseAt: new Date(now - 1),
         },
-        now
+        now,
+        true
       )
     ).toEqual({ fast: false, hourly: true, ads: false, pulse: true });
+  });
+  it("LÁT 1 (19/10): làn Ads riêng đang chạy → vòng đơn KHÔNG nhận hai tầng ads dù đến hạn", () => {
+    expect(dueTiers(all, now, false)).toEqual({ fast: true, hourly: true, ads: false, pulse: false });
+  });
+  it("mặc định = theo ADS_LANE (bật ở test này → ads không về vòng đơn)", () => {
+    expect(adsInOrderSync()).toBe(false);
+    expect(dueTiers(all, now)).toEqual({ fast: true, hourly: true, ads: false, pulse: false });
   });
 });
 

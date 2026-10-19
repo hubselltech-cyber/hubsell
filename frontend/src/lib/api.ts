@@ -6174,6 +6174,8 @@ export interface PlatformHealthResponse {
       channelsActive: number;
       channelsByPlatform: Record<string, number>;
       channelsAds: number;
+      /** Gian Shopee ACTIVE nối app Hubsell Ads — mẫu số quota Ads (19/10/2026); vắng ở ảnh chụp cũ. */
+      channelsHubsellAds?: number;
       channelsDisconnected: number;
       /** Gian MỚI rớt trong 24h (28/09) — dấu hiệu token/ủy quyền; tổng ở trên chỉ để biết. */
       channelsDisconnected24h?: number;
@@ -6238,8 +6240,12 @@ export interface PlatformHealthResponse {
     nextEta: { days: number | null; by: { metric: string; gte: number } | null } | null;
     trendsPerDay: Partial<Record<string, number | null>>;
     milestones: HealthTimelineItem[];
+    /** Mốc QUOTA ADS Shopee Đ2/Đ3/Đ4 — chuỗi riêng theo gian Shopee nối Hubsell Ads (19/10/2026). */
+    adsMilestones: HealthTimelineItem[];
+    adsNext: CapacityMilestoneDto | null;
+    adsNextEta: { days: number | null; by: { metric: string; gte: number } | null } | null;
   };
-  trends: Record<"channels" | "owners" | "ordersPerDay" | "dbSizeMb", { t: number; v: number }[]>;
+  trends: Record<"channels" | "owners" | "ordersPerDay" | "dbSizeMb" | "adsShops", { t: number; v: number }[]>;
 }
 
 export function fetchPlatformHealth() {

@@ -26,6 +26,11 @@ nâng cấp gói CPU."* Lý do: *"làm sao tự nhiên anh nhớ được việc
 - Chủ shop: tổng, hoạt động 30 ngày (có đơn), mới 7 ngày.
 - Gian ACTIVE theo sàn (Shopee/Lazada/TikTok/Offline); gian **đang chạy ads** (có
   campaign `ongoing`); gian DISCONNECTED (token chết).
+- **Gian Shopee nối app Hubsell Ads** (`channelsHubsellAds`, 19/10/2026): ChannelAppAuth
+  HUBSELL_ADS ACTIVE của gian Shopee ACTIVE không ngủ đông — MẪU SỐ QUOTA Ads API (quota
+  tính theo app). Lưu cột `adsShops` trên snapshot để dự báo; là đại lượng `shopeeAdsShops`
+  của chuỗi mốc **quota Ads Đ2/Đ3/Đ4** (`ADS_QUOTA_MILESTONES`, docs/ADS-NHIP-CANH-BAO.md
+  13.5) — thẻ riêng "Quota Ads Shopee" dưới timeline, cùng khuôn tick "đã làm".
 - Đơn: tổng, đơn/ngày trung bình 7 ngày, đỉnh ngày trong 30 ngày.
 - Webhook/ngày (Shopee log 7 ngày ÷ 7).
 

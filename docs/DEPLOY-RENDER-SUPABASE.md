@@ -98,6 +98,10 @@ Biến chỉnh nhịp worker quét sàn (workers/order-auto-sync.ts):
 | `ADS_PULSE_LAZADA_MINUTES` | 60 | XUNG ads Lazada (tới khi có quota app ISV) |
 | `ADS_SYNC_HOURS` | 6 | Tầng LỊCH SỬ ads: kéo lại 7 ngày cho số sàn chỉnh muộn |
 | `ADS_APP_QPS` | 3 | Trần call/giây mỗi app cho Ads API (token bucket + cầu dao DB) |
+| `ADS_LANE` | 1 | Làn Ads riêng (worker ads-lane, 19/10/2026): xung + lịch sử ads có vé riêng, không giữ chỗ của đồng bộ đơn; `0` = đường lui về vòng đơn |
+| `ADS_CONCURRENCY` | 2 | Số gian chạy xung/lịch sử ads song song trong một worker ads-lane |
+| `ADS_LOCK_STALE_MINUTES` | 30 | Vé làn Ads mồ côi sau N phút (worker chết) → nhặt lại |
+| `ADS_STORM_RATIO` | 0,2 | Bão 429: tỷ lệ gian dính / gian đã gọi 10' để đóng cầu dao theo app |
 
 Local: PowerShell `$env:HUBSELL_ROLE="worker"; npm run dev` chạy riêng worker;
 không đặt gì = `all` như trước.

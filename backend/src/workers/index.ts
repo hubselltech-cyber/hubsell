@@ -45,6 +45,7 @@ import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
 import { startReadLanes } from "./read-lanes";
+import { startAdsLane } from "./ads-lane";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -66,9 +67,13 @@ export function startAllWorkers(): void {
   // Hàng đợi webhook MISA (bảng misa_webhook_logs, gỡ ở bước 6c): nhặt lại job dở
   // dang sau restart, quét job đến hạn retry theo nhịp.
   startMisaWebhookWorker();
-  // Worker quét sàn theo LỊCH TỪNG GIAN (đơn, đối soát, ads) — claim vé theo
+  // Worker quét sàn theo LỊCH TỪNG GIAN (đơn, đối soát) — claim vé theo
   // gian, song song có trần, giãn nhịp gian im ắng.
   startOrderAutoSync();
+  // LÀN ADS RIÊNG (19/10/2026, docs/ADS-NHIP-CANH-BAO.md mục 13 lát 1): xung + lịch sử
+  // ads có vé riêng (adsLockedAt) + số luồng riêng (ADS_CONCURRENCY) — Ads bị chặn /
+  // chậm không giữ chỗ của đơn, tồn, dòng tiền. ADS_LANE=0 = về vòng trên như cũ.
+  startAdsLane();
   // Lớp đọc sàn MỚI (Pha C lát 1, 19/10/2026): làn "orders" nhặt gian đã ghi danh
   // trong sync_cursors — đọc bóng đơn, ghi sync_shadow_orders, không đụng Order.
   // Chưa ghi danh gian nào thì chỉ hỏi DB mỗi 5 s. READ_LANES=0 tắt.

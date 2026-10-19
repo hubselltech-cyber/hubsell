@@ -44,4 +44,24 @@ export const ADS_CADENCE = {
    *  không công khai ngưỡng (cấp shop ~1 call/phút OK, dính 429 thì gọi lại lúc khác); qua ~800 gian
    *  chạy ads thì đo mã exceed_partner_api thật rồi mới chỉnh. */
   APP_QPS: envNum("ADS_APP_QPS", 3),
+
+  // ---- Chống lỗi dây chuyền — 4 lát (docs/ADS-NHIP-CANH-BAO.md mục 13, anh Trung chốt 17/10/2026).
+  // Mọi số dưới đây TỰ CHỌN tới khi đo (bảng 13.4, mốc Đ1–Đ4) — đo xong chỉ đổi env.
+
+  /**
+   * LÁT 1 — làn Ads riêng (workers/ads-lane.ts). true (mặc định) = xung + lịch sử ads do worker ads-lane nhặt với vé
+   * riêng; ADS_LANE=0 = ĐƯỜNG LUI: vòng đồng bộ đơn (order-auto-sync) nhặt lại cả hai tầng như trước 19/10/2026.
+   */
+  LANE: (process.env.ADS_LANE ?? "1").trim() !== "0",
+  /** Số gian chạy xung/lịch sử ads SONG SONG trong một worker ads-lane. Đo lại Đ1, Đ2. */
+  CONCURRENCY: envNum("ADS_CONCURRENCY", 2),
+  /** Vé làn Ads (Channel.adsLockedAt) cũ hơn ngưỡng này (phút) = worker cầm vé đã chết → nhặt lại. Lượt ngày TikTok
+   *  của gian lớn kéo dài nhiều phút nên rộng hơn khóa đơn (15'). */
+  LOCK_STALE_MIN: envNum("ADS_LOCK_STALE_MINUTES", 30),
+  /**
+   * Bão 429 (services/api-budget.ts): số gian dính 429 phải ≥ tỷ lệ này trong số gian ĐÃ GỌI 10' qua mới đóng
+   * cầu dao theo app. 0,2 tự chọn 17/10 (429 lẻ tẻ đo ~1–4 %/gian/ngày; trần app thật thì gần như mọi gian cùng
+   * dính). Lát 3 thay bằng ngưỡng AIMD.
+   */
+  STORM_RATIO: envNum("ADS_STORM_RATIO", 0.2),
 } as const;

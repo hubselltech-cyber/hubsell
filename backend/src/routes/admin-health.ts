@@ -15,7 +15,7 @@ import {
   dailyTrends,
   evaluateSignals,
 } from "../services/platform-health";
-import { CAPACITY_MILESTONES, HEALTH_THRESHOLDS } from "../config/capacity-plan";
+import { ALL_MILESTONES, HEALTH_THRESHOLDS } from "../config/capacity-plan";
 
 const router = Router();
 
@@ -45,7 +45,7 @@ router.post(
   async (req: AuthRequest, res, next) => {
     try {
       const key = String(req.params.key);
-      if (!CAPACITY_MILESTONES.some((m) => m.key === key)) {
+      if (!ALL_MILESTONES.some((m) => m.key === key)) {
         res.status(404).json({ error: "Không có mốc này" });
         return;
       }

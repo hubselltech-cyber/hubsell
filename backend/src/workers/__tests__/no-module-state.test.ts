@@ -52,7 +52,8 @@ const ALLOWED_LET: Record<string, string> = {
  */
 const ALLOWED_CONTAINERS: Record<string, string> = {
   "order-auto-sync.ts:inFlight": "gian đang xử lý trong tiến trình này — khóa thật là Channel.syncLockedAt (worker khác nhặt lại sau 15')",
-  "order-auto-sync.ts:adsSkipLogged": "chống lặp một dòng log, không phải trạng thái nghiệp vụ",
+  "ads-tiers.ts:adsSkipLogged": "chống lặp một dòng log, không phải trạng thái nghiệp vụ",
+  "ads-lane.ts:inFlight": "gian đang xử lý ads trong tiến trình này — khóa thật là Channel.adsLockedAt (worker khác nhặt lại sau ADS_LOCK_STALE_MINUTES)",
   "invoice-lanes.ts:running": "promise lượt đang chạy theo gian — thuê làn thật ở bảng invoice_lanes (hết hạn là tiến trình khác nhận)",
   "stock-queue.ts:waiting": "hàng chờ tới lượt trong tiến trình — dòng việc vẫn ở bảng, lưới quét gọi lại",
   "stock-queue.ts:running": "promise lượt đang chạy theo gian — dòng việc vẫn ở bảng",

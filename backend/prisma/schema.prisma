@@ -547,6 +547,10 @@ model Channel {
   adsGmsCheckedAt          DateTime?
   /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
   syncLockedAt             DateTime?
+  /// LÀN ADS RIÊNG (19/10/2026, docs/ADS-NHIP-CANH-BAO.md mục 13 lát 1): vé của worker ads-lane — xung + lịch sử ads
+  /// chạy ngoài vòng đồng bộ đơn, khóa riêng nên Ads bị chặn/chậm không giữ chỗ của đơn, tồn, dòng tiền.
+  /// Cũ > ADS_LOCK_STALE_MINUTES (30') = worker chết → nhặt lại.
+  adsLockedAt              DateTime?
   /// MỐC NƯỚC quét đơn (lát 3.2 giai đoạn 3, 14/10/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 2): mọi đơn có
   /// update_time <= mốc này đã đọc đầy đủ. null = chưa có mốc → quét 2 ngày như cũ. Chỉ worker tiến mốc.
   ordersWatermarkAt        DateTime?
@@ -567,6 +571,7 @@ model Channel {
   @@index([userId])
   @@index([status, nextFastSyncAt])
   @@index([status, nextAdsPulseAt])
+  @@index([status, nextAdsSyncAt])
   @@index([status, nextProductSyncAt])
 }
 
@@ -3951,6 +3956,8 @@ model PlatformHealthSnapshot {
   dbSizeMb     Int      @default(0)
   ramMb        Int      @default(0)
   overdueFast  Int      @default(0)
+  /// Gian Shopee ACTIVE đã nối app Hubsell Ads (19/10/2026) — mẫu số quota Ads, mốc Đ2/Đ3/Đ4 docs/ADS-NHIP-CANH-BAO.md 13.5.
+  adsShops     Int      @default(0)
   /// Toàn bộ metrics 3 lớp (growth/worker/infra) — services/platform-health.ts.
   metrics      Json
 
