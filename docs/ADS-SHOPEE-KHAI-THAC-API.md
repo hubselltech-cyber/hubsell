@@ -784,6 +784,10 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
   Trợ lý bỏ qua nhóm) + ads-auto-execute + ads-shopee-vn-day + ads-gms = 50/50. **Chưa chạy thật** — anh Trung thêm
   202942166 trên ANO sau deploy: dòng phải hiện "Nhóm nhiều SP · Đang chạy" với số hôm nay (124 lượt xem / 1.475₫),
   xung 30' kế tiếp cập nhật.
+- ✅ **CHẠY THẬT 19/10 ~19:30 VN:** anh Trung bấm "Thêm vào bảng" 202942166 trên ANO → dòng "Túi đeo chéo ANO da
+  symply bóng… · Nhóm nhiều SP · Tất cả vị trí · Đang chạy", chi 3.167₫ hôm nay, 0 đơn, ROAS 0x so hòa vốn shop
+  6,22x, lãi ước −3.167₫, nhãn Trợ lý "Thiếu dữ liệu". Sửa ngay sau: cột Ngân sách dòng nhóm hiện "—" (trước hiện
+  "Không giới hạn" vì budget = 0, sai nghĩa — sàn không cho đọc).
 - **Còn treo:** (a) soi lại sáng 20/10 xem id_list có liệt kê muộn không (nếu có → lát 2 tự khám phá không cần nhập
   tay); (b) ticket 15.6 đổi câu hỏi thành "endpoint LIỆT KÊ + đọc setting multi-product campaign"; (c) trạng thái dòng
   nhóm là số nhớ (ongoing cho tới khi sàn từ chối id) — seller tạm dừng trên Seller Center thì Hubsell vẫn ghi

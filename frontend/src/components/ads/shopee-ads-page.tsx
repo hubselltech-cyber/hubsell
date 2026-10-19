@@ -1790,7 +1790,12 @@ function buildCampaignColumns(
       meta: { label: "Ngân sách", align: "right" },
       header: "Ngân sách",
       cell: ({ row }) =>
-        row.original.budget > 0 ? (
+        // Chiến dịch Nhóm nhiều SP (mục 15.7): sàn không cho đọc ngân sách → gạch ngang, không nói "Không giới hạn".
+        row.original.adType === "group" ? (
+          <span className="text-slate-400" title="Shopee không trả ngân sách của Chiến dịch Nhóm qua API — xem trên Seller Center.">
+            —
+          </span>
+        ) : row.original.budget > 0 ? (
           <Money value={row.original.budget} className="text-slate-700" />
         ) : (
           <span className="text-slate-700">Không giới hạn</span>
