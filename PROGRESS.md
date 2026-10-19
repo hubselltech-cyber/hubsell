@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 19/10/2026 đêm — TRỢ LÝ SHOPEE BÁO "ỔN" CHO CAMPAIGN SKU LỖ TRƯỚC ADS — ĐÃ SỬA RULE ENGINE
+
+- **Anh (ảnh bảng ANO):** dòng "Giày Thể Thao Nữ, Sneaker Nữ…" badge **Ổn** nhưng trạng thái kèm "SKU lỗ trước ads", cột Hòa vốn "—", Lãi/lỗ **−209.950₫** (ROAS 7,09x, 150.411₫, 12 đơn) → "quảng cáo như này mà em báo ổn là không đúng".
+- **Nguyên nhân:** `ads-insights` đặt `breakevenRoas = null` khi biên ≤ 0 (lỗ trước ads) → trong `evaluateShopeeCampaign` nhánh Q1 "dưới hòa vốn" và cả Q2 đều cần hòa vốn ≠ null nên im lặng; có đơn nên nhánh 0 đơn không bắt → rơi xuống `healthy`. `recommendAction` có biết `lossBeforeAds` nhưng chỉ dùng khi verdict đã bị cờ → câu khuyên cũng thành "Giữ nguyên, chiến dịch đang ổn".
+- **Sửa (`ads-assistant-rules.ts` + `ads-insights.ts`):** input thêm `lossBeforeAds` (ads-insights truyền `margin ≤ 0`). Tiêu vượt ngưỡng can thiệp → `pause_now` nhánh `below_breakeven` (lý do: "Sản phẩm đang lỗ ngay cả khi chưa tính quảng cáo… mỗi đồng ads là lỗ thêm"); chưa tới ngưỡng → `review` (Cần duyệt) kèm ghi chú số đã tiêu; ≥30 đơn/7 ngày → `grace`; vọt chi → `spike` với câu lỗ trước ads. Hòa vốn "Chưa tin được" (breakevenProblem) không bật cờ này. Hệ quả: chuông Trung tâm điều hành xếp vào ads-roas-risk; auto-execute live sẽ hạ ngân sách/dừng như campaign dưới hòa vốn (khớp câu khuyên "Tạm dừng, tăng giá bán" đã có).
+- **Kiểm:** 6 ca test mới trong `ads-assistant-rules.test.ts` (71 ca 3 file ads xanh), tsc BE sạch; suite thuần không DB 1.062 qua, 1 ca `sort_field` lỗi sẵn không liên quan. Docs ADS-NHIP-CANH-BAO mục 2. Chưa xem trên web (phiên cloud không đăng nhập) — dòng trên ANO sau deploy phải đổi sang **Đề xuất tạm dừng** (7 ngày đã tiêu ≥150.000₫) hoặc **Cần duyệt**.
+
+---
+
 ## Phiên 19/10/2026 tối — QUẢNG CÁO SHOPEE: "CHIẾN DỊCH ĐANG CHẠY KHÔNG KÉO VỀ" = CHIẾN DỊCH NHÓM NHIỀU SP; PHIÊN TRƯỚC MẤT COMMIT, VIẾT LẠI + CODE PROBE + DÒNG CHÊNH
 
 - **Bối cảnh:** phiên chiều tối đã chẩn đoán xong (chiến dịch Seller Center "đang chạy" là Chiến Dịch Nhóm nhiều sản phẩm, API Shopee nhóm product_level không trả loại này), ghi docs 15.2 + PROGRESS + memory ở commit `de7008c5` **chưa push** → phiên hết quota, commit mất (không có trong origin). Anh: "Tiếp tục làm phần quảng cáo shopee này em nhé. Đọc lại và làm chuẩn" → em viết lại trọn **docs ADS-SHOPEE-KHAI-THAC-API mục 15** (15.1 Hubsell đọc gì, 15.2 chẩn đoán, 15.3 đã code, 15.4 bốn phương án A–D, 15.5 còn treo).

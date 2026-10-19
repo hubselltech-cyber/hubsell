@@ -236,7 +236,14 @@ export async function computeChannelAdsInsights(
     const breakevenRoas = margin != null && margin > 0 ? 1 / margin : null;
 
     const assessment = evaluateShopeeCampaign(
-      { status: c.status, breakevenRoas, windows, avgDailySpend7d },
+      {
+        status: c.status,
+        breakevenRoas,
+        // margin ≤ 0: SKU lỗ trước ads → rule engine không được chấm "Ổn" (19/10/2026).
+        lossBeforeAds: margin != null && margin <= 0,
+        windows,
+        avgDailySpend7d,
+      },
       config
     );
     const roasTarget = c.roasTarget != null ? Number(c.roasTarget) : null;

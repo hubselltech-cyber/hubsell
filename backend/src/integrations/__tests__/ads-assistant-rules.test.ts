@@ -24,7 +24,7 @@ const ZERO: AssistantWindowMetrics = { spend: 0, clicks: 0, broadOrder: 0, broad
 /** Dựng input gọn: chỉ khai cửa sổ cần, còn lại 0 (không đủ sàn dữ liệu). */
 function mkInput(
   partial: Partial<Record<"today" | "3d" | "7d" | "30d", Partial<AssistantWindowMetrics>>>,
-  opts: { breakeven?: number | null; avgDaily?: number; status?: string } = {}
+  opts: { breakeven?: number | null; avgDaily?: number; status?: string; lossBeforeAds?: boolean } = {}
 ): AssistantCampaignInput {
   const w = (k: "today" | "3d" | "7d" | "30d"): AssistantWindowMetrics => ({
     ...ZERO,
@@ -33,6 +33,7 @@ function mkInput(
   return {
     status: opts.status ?? "ongoing",
     breakevenRoas: opts.breakeven === undefined ? 4 : opts.breakeven,
+    lossBeforeAds: opts.lossBeforeAds,
     avgDailySpend7d: opts.avgDaily ?? 0,
     windows: { today: w("today"), "3d": w("3d"), "7d": w("7d"), "30d": w("30d") },
   };
@@ -134,6 +135,73 @@ describe("Q2 — vùng vàng chờ duyệt", () => {
       )
     );
     expect(out.verdict).toBe("healthy");
+  });
+});
+
+describe("SKU LỖ TRƯỚC ADS (sự cố 19/10/2026: badge \"Ổn\" cạnh \"SKU lỗ trước ads\" và lãi/lỗ âm)", () => {
+  // Hòa vốn null vì biên ≤ 0 → trước đây Q1/Q2 im lặng → healthy. Giờ không bao giờ "Ổn".
+  it("tiêu vượt ngưỡng can thiệp, có đơn, ROAS 7x → pause_now nhánh below_breakeven, lý do nói rõ lỗ trước ads", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { "7d": { spend: 150_411, clicks: 120, broadOrder: 12, broadGmv: 1_067_000 } },
+        { breakeven: null, lossBeforeAds: true }
+      )
+    );
+    expect(out.verdict).toBe("pause_now");
+    expect(out.window).toBe("7d");
+    expect(out.triggers).toEqual(["below_breakeven"]);
+    expect(out.reasons.join(" ")).toContain("lỗ ngay cả khi chưa tính quảng cáo");
+  });
+
+  it("chưa tiêu tới ngưỡng can thiệp → review (Cần duyệt), KHÔNG healthy, ghi chú số đã tiêu", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { "7d": { spend: 120_000, clicks: 100, broadOrder: 10, broadGmv: 900_000 } },
+        { breakeven: null, lossBeforeAds: true }
+      )
+    );
+    expect(out.verdict).toBe("review");
+    expect(out.window).toBe("7d");
+    expect(out.reasons.join(" ")).toContain("mới tiêu 120.000");
+  });
+
+  it("công thần (≥30 đơn/7 ngày) vẫn chỉ hạ xuống grace, không thành Ổn", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { "7d": { spend: 400_000, clicks: 300, broadOrder: 40, broadGmv: 3_000_000 } },
+        { breakeven: null, lossBeforeAds: true }
+      )
+    );
+    expect(out.verdict).toBe("grace");
+    expect(out.triggers).toEqual(["below_breakeven"]);
+  });
+
+  it("vọt chi hôm nay + lỗ trước ads → spike, lý do thay câu hòa vốn bằng câu lỗ trước ads", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { today: { spend: 300_000, clicks: 50, broadOrder: 5, broadGmv: 2_000_000 } },
+        { breakeven: null, lossBeforeAds: true, avgDaily: 60_000 }
+      )
+    );
+    expect(out.verdict).toBe("spike");
+    expect(out.reasons[1]).toContain("lỗ ngay cả khi chưa tính quảng cáo");
+  });
+
+  it("cờ tắt (mặc định) + hòa vốn null → hành vi cũ giữ nguyên (healthy)", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { "7d": { spend: 150_411, clicks: 120, broadOrder: 12, broadGmv: 1_067_000 } },
+        { breakeven: null }
+      )
+    );
+    expect(out.verdict).toBe("healthy");
+  });
+
+  it("thiếu dữ liệu vẫn là thiếu dữ liệu (sàn dữ liệu đứng trước)", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput({ "7d": { spend: 20_000, clicks: 5, broadOrder: 0, broadGmv: 0 } }, { breakeven: null, lossBeforeAds: true })
+    );
+    expect(out.verdict).toBe("insufficient_data");
   });
 });
 

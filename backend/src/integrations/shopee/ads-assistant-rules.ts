@@ -72,6 +72,10 @@ export interface AssistantCampaignInput {
   status: string;
   /** ROAS hòa vốn của chính SKU trong campaign (null = chưa đủ dữ liệu P&L). */
   breakevenRoas: number | null;
+  /** Biên lãi ≤ 0: SKU LỖ NGAY CẢ KHI CHƯA TÍNH ADS (hòa vốn không tồn tại —
+   *  không ROAS nào gỡ nổi, mỗi đồng ads là lỗ thêm). Sự cố 19/10/2026: campaign
+   *  kiểu này từng mang badge "Ổn" vì hòa vốn null khiến Q1/Q2 im lặng. */
+  lossBeforeAds?: boolean;
   windows: Record<AssistantWindowKey, AssistantWindowMetrics>;
   /** Chi tiêu trung bình/ngày của 7 ngày TRƯỚC hôm nay (mẫu so spike). */
   avgDailySpend7d: number;
@@ -227,6 +231,9 @@ export function evaluateShopeeCampaign(
   }
 
   const { windows, breakevenRoas, avgDailySpend7d } = input;
+  const lossBeforeAds = input.lossBeforeAds === true;
+  const LOSS_BEFORE_ADS_NOTE =
+    "Sản phẩm đang lỗ ngay cả khi chưa tính quảng cáo (biên lãi ≤ 0) — không có ROAS nào gỡ nổi, mỗi đồng ads là lỗ thêm.";
 
   // ---- Q3 SPIKE — chạy TRƯỚC sàn dữ liệu: cháy ví phải báo ngay ----
   if (config.spike.enabled) {
@@ -243,7 +250,9 @@ export function evaluateShopeeCampaign(
       const reasons = [
         `Hôm nay đã tiêu ${vnd(today.spend)} — gấp ${(today.spend / avgDailySpend7d).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} lần trung bình ngày 7 ngày qua (${vnd(avgDailySpend7d)}).`,
       ];
-      if (breakevenRoas != null && todayRoas != null) {
+      if (lossBeforeAds) {
+        reasons.push(LOSS_BEFORE_ADS_NOTE);
+      } else if (breakevenRoas != null && todayRoas != null) {
         reasons.push(
           `ROAS hôm nay ${roasTxt(todayRoas)} đang DƯỚI hòa vốn ${roasTxt(breakevenRoas)} — càng tiêu càng lỗ.`
         );
@@ -292,7 +301,11 @@ export function evaluateShopeeCampaign(
         roas != null &&
         roas < breakevenRoas * config.hard.breakevenFactor;
       if (w.spend < moneyGate) {
-        if (belowBreakeven) {
+        if (lossBeforeAds) {
+          underMoneyNotes.push(
+            `Cửa sổ ${WINDOW_LABEL[k]}: mới tiêu ${vnd(w.spend)} (ngưỡng can thiệp ${vnd(moneyGate)}) nhưng SKU lỗ trước ads nên tiền này đã là lỗ thêm.`
+          );
+        } else if (belowBreakeven) {
           underMoneyNotes.push(
             `Cửa sổ ${WINDOW_LABEL[k]}: ROAS ${roasTxt(roas!)} đang dưới hòa vốn ${roasTxt(breakevenRoas!)} nhưng mới tiêu ${vnd(w.spend)} (ngưỡng can thiệp ${vnd(moneyGate)}) — chưa kết luận, đơn từ quảng cáo thường về trễ vài giờ.`
           );
@@ -305,7 +318,14 @@ export function evaluateShopeeCampaign(
         );
         triggers.push("zero_order");
       }
-      if (belowBreakeven) {
+      // Lỗ trước ads: không có hòa vốn để so, nhưng đã tiêu quá ngưỡng seller
+      // cho phép thử → mỗi đồng là lỗ thật, xếp cùng nhánh "dưới hòa vốn".
+      if (lossBeforeAds) {
+        reasons.push(
+          `Cửa sổ ${WINDOW_LABEL[k]}: đã tiêu ${vnd(w.spend)} vượt ngưỡng can thiệp ${vnd(moneyGate)}${roas != null ? ` (ROAS ${roasTxt(roas)})` : ""} — ${LOSS_BEFORE_ADS_NOTE}`
+        );
+        triggers.push("below_breakeven");
+      } else if (belowBreakeven) {
         reasons.push(
           `Cửa sổ ${WINDOW_LABEL[k]}: ROAS ${roasTxt(roas!)} dưới ngưỡng nguy hiểm ${roasTxt(breakevenRoas! * config.hard.breakevenFactor)} (hòa vốn ${roasTxt(breakevenRoas!)} × ${config.hard.breakevenFactor}) — mỗi đồng ads đang lỗ thật, đã tiêu ${vnd(w.spend)} vượt ngưỡng can thiệp ${vnd(moneyGate)}.`
         );
@@ -337,6 +357,15 @@ export function evaluateShopeeCampaign(
         break;
       }
     }
+  }
+
+  // ---- LỖ TRƯỚC ADS chưa tiêu tới ngưỡng can thiệp → vẫn KHÔNG được "Ổn":
+  // hạ xuống Q2 (Cần duyệt) để người xem thấy ngay, không chờ máy đốt đủ tiền.
+  if (!hardHit && !reviewHit && lossBeforeAds) {
+    reviewHit = {
+      window: eligible[0],
+      reasons: [LOSS_BEFORE_ADS_NOTE, ...underMoneyNotes],
+    };
   }
 
   // ---- Q4 CÔNG THẦN đánh chặn Q1/Q2 ----

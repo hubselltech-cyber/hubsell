@@ -32,6 +32,17 @@ Ràng buộc từ sàn (đã xác minh 12/09, memory `hubsell-api-quota-san`):
 < hòa vốn). `pause_now/review/grace` dùng 3d/7d/30d nhưng cũng duyệt `today`
 trước. "Hôm nay" theo giờ VN (`vnDateKey`).
 
+**SKU lỗ trước ads (sửa 19/10/2026, anh Trung: "quảng cáo như này mà báo ổn là không đúng")**:
+biên lãi ≤ 0 → hòa vốn `null` → trước đây Q1 nhánh ROAS và Q2 im lặng, campaign
+rơi thẳng xuống `healthy` ("Ổn") dù cột Lãi/lỗ âm và nhãn "SKU lỗ trước ads" ngay
+bên cạnh (ca thật ANO: ROAS 7,09x, hòa vốn "—", −209.950₫). Giờ `evaluateShopeeCampaign`
+nhận thêm `lossBeforeAds` (ads-insights truyền `margin ≤ 0`): tiêu vượt ngưỡng can
+thiệp → `pause_now` nhánh `below_breakeven` (chuông ads-roas-risk, auto-execute live
+sẽ hạ ngân sách/dừng như campaign dưới hòa vốn); chưa tới ngưỡng → `review` (Cần duyệt)
+kèm ghi chú số đã tiêu; công thần vẫn chỉ `grace`; vọt chi vẫn `spike` nhưng lý do
+nói rõ lỗ trước ads. Không bao giờ "Ổn". `breakevenProblem` (hòa vốn chưa tin được)
+vẫn xóa margin → cờ này không bật, máy không hành động.
+
 **Nguồn số**: bảng `AdsCampaignDailyPerf` (1 dòng/campaign/ngày) + `AdSpend`
 (cấp shop/ngày). Ví Shopee gọi **sống** `get_total_balance` ở 2 chỗ: mỗi lần mở
 trang Trợ lý và mỗi lượt `scanOpsAlerts` (1 call/gian/lượt).
