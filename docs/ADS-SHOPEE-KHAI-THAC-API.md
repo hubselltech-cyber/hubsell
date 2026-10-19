@@ -822,3 +822,9 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
   `manual-mpd`; có thì làm lát 2 (liệt kê tự động + cấu hình + item list → bỏ nhập tay, mở lại nút ghi).
 - Hướng dẫn seller (viết vào trang Trợ lý đã có): Chiến dịch Nhóm phải thêm theo id; muốn Trợ lý tự dừng/hạ ngân
   sách thì chạy chiến dịch 1 SP (Hubsell tạo được, đợt D).
+- **Bản trả lời thứ hai của AI Shopee (cùng tối):** lặp lại kết luận "không có endpoint liệt kê `manual-mpd`
+  kèm id/cấu hình"; nêu "cải tiến kỳ vọng" = thêm GMV Max vào `get_product_level_campaign_id_list` HOẶC endpoint
+  liệt kê riêng (id, tên, trạng thái, ngân sách, ROAS mục tiêu, SP) + hiệu suất ngày theo từng campaign — đúng 3 câu
+  hỏi ticket 15.6. **Lưu ý sai của bản này:** gợi ý dùng `get_gms_campaign_performance` / `get_gms_item_performance`
+  cho GMV Max — ĐÃ SOI THẬT 2 lần với id 202942166: `ads_error_product_gms_campaign_not_found`. Nhóm GMS chỉ dành
+  cho GMV Max CẤP SHOP (1 campaign/shop, Shopee tự chọn SP), KHÔNG đọc được chiến dịch Nhóm. Đừng thử lại.
