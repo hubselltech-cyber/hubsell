@@ -1055,12 +1055,12 @@ export function ShopeeAdsPage({
                       {platform === "shopee" && adsLinked && (
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
+                          // Anh Trung 19/10: "hơi bị phẳng hòa vào giao diện mà phần này quan trọng lắm" → nút đỏ đặc, chữ đậm.
+                          className="h-8 bg-red-600 font-semibold text-white shadow-sm hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500"
                           onClick={() => setGroupDialogOpen(true)}
                           title="Chiến dịch Nhóm nhiều sản phẩm trên Seller Center không tự hiện ở đây — thêm bằng id chiến dịch."
                         >
-                          <Plus className="size-3.5" />
+                          <Plus className="size-4" />
                           Thêm chiến dịch nhiều sản phẩm vào bảng
                         </Button>
                       )}
