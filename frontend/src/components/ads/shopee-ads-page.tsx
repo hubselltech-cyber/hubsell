@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CircleHelp,
   AlertTriangle,
   Megaphone,
+  Plus,
   RefreshCw,
   Scale,
   Target,
@@ -57,9 +58,7 @@ import {
   saveShopeeAssistantConfig,
   requestAdsRefresh,
   restoreShopeeAdsBudget,
-  addShopeeGroupCampaign,
   pauseShopeeAdsCampaign,
-  probeShopeeCampaignById,
   removeShopeeGroupCampaign,
   resumeShopeeAdsCampaign,
   setShopeeAdsRoasTarget,
@@ -86,6 +85,7 @@ import {
   ShopeeAssistantModal,
   assistantBannerText,
 } from "@/components/ads/shopee-assistant-panel";
+import { ShopeeGroupCampaignDialog } from "@/components/ads/shopee-group-campaign-dialog";
 import { ShopeeGmsPanel, formatRoas, roasToneClass } from "@/components/ads/shopee-gms-panel";
 import { formatNumber, formatVND } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -239,13 +239,8 @@ export function ShopeeAdsPage({
   const [breakevenError, setBreakevenError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
-  // Soi chiến dịch theo id (mục 15, 19/10): ô nhập id Seller Center + JSON nguyên văn từ route probe.
-  const [probeId, setProbeId] = useState("");
-  const [probing, setProbing] = useState(false);
-  const [probeOut, setProbeOut] = useState<string | null>(null);
-  // Ô thêm chiến dịch Nhóm mở/đóng — link ở dòng "chi ngoài bảng" mở ô này cho khách thấy ngay.
-  const [groupBoxOpen, setGroupBoxOpen] = useState(false);
-  const groupBoxRef = useRef<HTMLDetailsElement | null>(null);
+  // Popup thêm Chiến dịch Nhóm nhiều SP theo id (mục 15.7) — nút trên thanh bảng + link ở dòng "chi ngoài bảng".
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   // Phân trang bảng chiến dịch — shop thật có hàng trăm campaign (DarkMan: 142).
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
@@ -1054,7 +1049,23 @@ export function ShopeeAdsPage({
                   striped={false}
                   headerEmphasis
                   stickyHeader
-                  toolbar={`${formatNumber(visibleCampaigns.length)} chiến dịch khớp bộ lọc`}
+                  toolbar={
+                    <span className="flex flex-wrap items-center gap-3">
+                      {formatNumber(visibleCampaigns.length)} chiến dịch khớp bộ lọc
+                      {platform === "shopee" && adsLinked && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => setGroupDialogOpen(true)}
+                          title="Chiến dịch Nhóm nhiều sản phẩm trên Seller Center không tự hiện ở đây — thêm bằng id chiến dịch."
+                        >
+                          <Plus className="size-3.5" />
+                          Thêm chiến dịch nhiều sản phẩm vào bảng
+                        </Button>
+                      )}
+                    </span>
+                  }
                   viewExtras={{
                     get: () => ({ search, statusFilter, onlyNeedsAction }),
                     apply: (ex) => {
@@ -1133,91 +1144,26 @@ export function ShopeeAdsPage({
                 <button
                   type="button"
                   className="font-semibold text-red-600 underline-offset-2 hover:underline dark:text-red-400"
-                  onClick={() => {
-                    setGroupBoxOpen(true);
-                    groupBoxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  }}
+                  onClick={() => setGroupDialogOpen(true)}
                 >
-                  Thêm chiến dịch Nhóm theo id
+                  Thêm chiến dịch nhiều sản phẩm vào bảng
                 </button>
               </span>
             )}
           </p>
         )}
 
-        {/* ===== CHIẾN DỊCH NHÓM NHIỀU SP THEO ID (mục 15.7, 19/10) — thu gọn ===== */}
-        {platform === "shopee" && channelId && adsLinked && (
-          <details
-            ref={groupBoxRef}
-            open={groupBoxOpen}
-            onToggle={(e) => setGroupBoxOpen((e.currentTarget as HTMLDetailsElement).open)}
-            className="mx-auto max-w-3xl text-xs text-slate-500"
-          >
-            <summary className="cursor-pointer select-none text-center">
-              Seller Center có Chiến dịch Nhóm nhiều sản phẩm mà bảng trên không thấy? Thêm theo id
-            </summary>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-              <Input
-                className="h-8 w-56 text-xs"
-                placeholder="campaign_id trong URL Seller Center"
-                value={probeId}
-                inputMode="numeric"
-                onChange={(e) => setProbeId(e.target.value.replace(/\D/g, ""))}
-              />
-              <Button
-                size="sm"
-                disabled={probing || !probeId}
-                onClick={async () => {
-                  setProbing(true);
-                  setProbeOut(null);
-                  try {
-                    const r = await addShopeeGroupCampaign(channelId, probeId);
-                    setProbeOut(null);
-                    setProbeId("");
-                    setSyncNote(r.message);
-                    await load(channelId, range);
-                  } catch (err) {
-                    setProbeOut(`Không thêm được: ${(err as Error).message}`);
-                  } finally {
-                    setProbing(false);
-                  }
-                }}
-              >
-                {probing ? "Đang hỏi Shopee…" : "Thêm vào bảng"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={probing || !probeId}
-                title="Hỏi từng nhóm API Shopee với đúng id này và in nguyên văn — chỉ đọc, dùng khi cần hỗ trợ."
-                onClick={async () => {
-                  setProbing(true);
-                  setProbeOut(null);
-                  try {
-                    const r = await probeShopeeCampaignById(channelId, probeId);
-                    setProbeOut(JSON.stringify(r, null, 2));
-                  } catch (err) {
-                    setProbeOut(`Lỗi: ${(err as Error).message}`);
-                  } finally {
-                    setProbing(false);
-                  }
-                }}
-              >
-                Soi
-              </Button>
-            </div>
-            <p className="mt-1.5 text-center">
-              Shopee không liệt kê Chiến dịch Nhóm qua API, chỉ trả số theo ngày khi biết id. Bấm vào chiến dịch
-              trên Seller Center, chép dãy số trong đường dẫn (…/manual-mpd/<b>202942166</b>?…), dán vào đây.
-              Hubsell sẽ hiện chi phí, đơn, ROAS của nó trong bảng; không có ngân sách / mục tiêu ROAS / trạng thái
-              (sàn không cho đọc) và Trợ lý chỉ cảnh báo, không tự dừng.
-            </p>
-            {probeOut && (
-              <pre className="mt-2 max-h-96 overflow-auto rounded border bg-slate-50 p-2 text-left text-[11px] leading-snug dark:bg-slate-900">
-                {probeOut}
-              </pre>
-            )}
-          </details>
+        {/* Popup "Thêm chiến dịch nhiều sản phẩm vào bảng" (mục 15.7) — mở từ nút trên thanh bảng hoặc link dòng vàng. */}
+        {platform === "shopee" && channelId && (
+          <ShopeeGroupCampaignDialog
+            open={groupDialogOpen}
+            channelId={channelId}
+            onClose={() => setGroupDialogOpen(false)}
+            onAdded={(msg) => {
+              setSyncNote(msg);
+              void load(channelId, range);
+            }}
+          />
         )}
           </>
         )}

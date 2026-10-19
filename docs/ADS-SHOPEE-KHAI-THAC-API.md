@@ -828,3 +828,12 @@ riêng không — ad_name trả về là tên SP ĐẦU + tên nhóm, gợi ý S
   hỏi ticket 15.6. **Lưu ý sai của bản này:** gợi ý dùng `get_gms_campaign_performance` / `get_gms_item_performance`
   cho GMV Max — ĐÃ SOI THẬT 2 lần với id 202942166: `ads_error_product_gms_campaign_not_found`. Nhóm GMS chỉ dành
   cho GMV Max CẤP SHOP (1 campaign/shop, Shopee tự chọn SP), KHÔNG đọc được chiến dịch Nhóm. Đừng thử lại.
+
+### 15.10 UI CHỐT (19/10 tối, anh Trung xem bảng ANO: "Thêm phần 'Thêm chiến dịch nhiều sản phẩm vào bảng' ấn vào thì hiện popup nhập id, có hướng dẫn cách lấy id")
+- Nút **"+ Thêm chiến dịch nhiều sản phẩm vào bảng"** đặt ngay cạnh "N chiến dịch khớp bộ lọc" trên thanh bảng
+  (toolbar DataTable, chỉ Shopee + gian đã nối Hubsell Ads). Link cùng tên ở dòng vàng "chi ngoài bảng" cũng mở popup.
+- Popup `shopee-group-campaign-dialog.tsx`: câu thật "Shopee chưa cho phần mềm nào tự thấy Chiến dịch Nhóm"; hộp
+  **Cách lấy id** 3 bước (Seller Center → bấm tên chiến dịch → chép dãy số sau `manual-mpd/`, ví dụ URL có số đỏ,
+  nhắc `from=`/`to=` không phải id); ô nhập (Enter = thêm) + **Thêm vào bảng**; câu lỗi sàn đỏ; ghi chú có gì /
+  không có gì sau khi thêm; `<details>` "Soi kỹ thuật" in JSON. Thêm xong đóng popup, nạp lại bảng, dòng syncNote.
+- Bỏ ô `<details>` thu gọn dưới ghi chú nguồn số (lát trước) — một lối vào duy nhất qua popup.
