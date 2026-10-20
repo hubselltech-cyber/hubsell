@@ -60,6 +60,10 @@
   Báo cáo dòng tiền (cột Chi phí) và Tổng quan (nhóm ADS → Tổng chi phí / lợi nhuận ròng); KHÔNG vào Lãi/Lỗ thực hiện, sổ cái đơn. Chỉ
   gian TikTok có chiến dịch bị xóa mới đổi, và đổi theo hướng đúng (tăng chi phí). ⏳ Anh: push nhánh → deploy → chạy script xem trước
   rồi `--apply`; sau đó đối chiếu dòng tiền khách 01–20/10 ≈ 9,75tr.
+- **Anh: "merge vào master và push"** → ✅ fast-forward `8c0bfd83..060be79a` lên master (6 commit: LIVE GMV Max + luật chống trừ dòng
+  tiền + 2 script soi + AdSpend từ DB). Lưu ý: phiên trước ghi "đã push" phần LIVE nhưng thực ra mới lên NHÁNH, prod chưa có tới lượt này.
+  Render `/health` = `060be79a` sau ~2 phút (migrate xong). Vercel chưa kiểm được (máy không có gh) — app.hubsell.vn trả 200.
+  ⏳ Anh chạy `scripts/tiktok-adspend-rebuild-from-perf.ts` xem trước → `--apply`; ⏳ log Render `Không đọc được báo cáo LIVE GMV Max`.
 
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 
