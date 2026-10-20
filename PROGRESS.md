@@ -13,6 +13,7 @@
   `youtubeId` → khung YouTube thay tour 15 bước (tour `ADS_TOUR` vẫn giữ trong code), mô tả bỏ chữ "15 bước".
 - **Kiểm:** frontend `tsc --noEmit` sạch, eslint sạch; local `/guide?muc=ads` hiện iframe youtube-nocookie `WY4uqur-MXg` (đã chụp). Nút trên
   trang Shopee cần đăng nhập nên chưa bấm thử local — dùng chung component với TikTok đã LIVE.
+- **Anh: "merge vào master rồi push"** → `502c5a36` fast-forward lên master, Vercel "Deployment has completed". Prod /guide cần đăng nhập nên em chưa mở được.
 
 ## Phiên 20/10/2026 trưa — ADS TIKTOK: KHÁCH 69MINH ĐƯƠNG LỆCH 3 SỐ (SELLER CENTER 26,9TR · HUBSELL 9,7TR · DÒNG TIỀN 3TR)
 
