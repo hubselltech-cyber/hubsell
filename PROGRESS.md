@@ -5,6 +5,14 @@
 
 ---
 
+## Phiên 20/10/2026 sáng — HQ "CẦU DAO ĐÓNG 7 LẦN LIÊN TIẾP (24h)" = CẦU DAO TỰ NÉN LỊCH XUNG RỒI TỰ ĐÓNG LẠI (ĐỌC MÃ, CHỜ ANH KIỂM PROD + CHỐT LÁT 2.5); CHI PHÍ M2
+
+- **Anh gửi ảnh HQ: cầu dao mở nhưng "đóng 7 lần liên tiếp gần nhất, 24h", hỏi kiểm + nếu nâng M2 thì tổng chi phí/tháng.** Phiên cloud không có DATABASE_URL / Render → đọc mã `ads-lane.ts`, `ads-tiers.ts`, `api-budget.ts`, `platform-health.ts`. 7 = bậc 6 của `ApiThrottleState` (7 lần đóng cách nhau < 2 h) = 255' đóng trong chuỗi → Ads mọi gian Hubsell Ads đứng gần hết ngày 19/10; trước lát 1 cao nhất bậc 1.
+- **Cơ chế (docs ADS-NHIP-CANH-BAO 13.9):** lúc cầu dao đóng làn Ads vẫn nhặt 2 gian/20 s, lệnh đầu ném `app_paused` tức thì → gian ghi hạn +30' → ~30 gian bị **nén** vào cùng cửa sổ 5–10'; cầu dao mở → cả đoàn gọi liền nhau (2 luồng × 5–7 lệnh/gian) → vài gian 429 lẻ; mẫu số tỷ lệ bão gần rỗng ngay sau khi mở (3/5 gian = bão) → đóng lại bậc +1 → vòng lặp, bậc không rơi (< 2 h). Lát 1 làm lộ lỗi vì vòng cũ "thất bại tức thì" chậm hơn (chia slot với quét đơn). Tác dụng phụ: gian nhặt lúc đóng bị đẩy `nextAdsSyncAt` +6 h dù chưa kéo lịch sử.
+- **Việc anh kiểm (5'):** SQL `ApiThrottleState` (kỳ vọng shopee:2044679 level 6, reason "Bão 429: 3/5…3/8 gian"), log worker `CẦU DAO ĐÓNG` rơi 5–10' sau giờ mở lần trước, `429 tầng shop` nhiều gian trong 1–3'. Reason `exceed_partner_api` thì là trần app thật (khác).
+- **Đề xuất lát 2.5 (chưa code, chờ anh chốt):** (1) `app_paused` mang `pausedUntil`, gian bị "app" ghi hạn `pausedUntil + ngẫu nhiên [0, 30']` + không đẩy lịch sử; (2) làn không nhặt gian của app đang đóng; (3) bão cần mẫu số tối thiểu (10' đầu sau mở: ≥ 3 gian và ≥ 50 %); (4) thử `ADS_SHOP_CALL_GAP_SEC=5` trên worker (env, không code). Đường lui trong ngày: `ADS_LANE=0`. Lát 3 AIMD 23/10 giữ nguyên.
+- **Chi phí M2:** hiện 39 USD/tháng (web Starter 7 + worker Starter 7 + Supabase Pro 25, `capacity-plan.ts`). M2 = worker Standard 2 GB 25 thay Starter 7 → **57 USD/tháng (+18)**; ngoài ra như cũ: Vercel Hobby 0, Zoho Mail 12 USD/năm, Render băng thông vượt 0,15 USD/GB, Supabase Pro có spend cap. Cầu dao không liên quan M2 (lịch + quota sàn, không phải RAM) — giữ chốt 19/10 chưa nâng.
+
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 
 - **Kiểm Apple (anh hỏi):** App Store Connect API: 1.3.1 `READY_FOR_SALE`, `releaseType = AFTER_APPROVAL` (tự phát hành sau duyệt), không phát hành dần; tra App Store VN hiện 1.3.1 từ 20/10 01:36 giờ VN. Android vc 7 đã completed từ 19/10 → 1.3.1 có trên cả 2 kho.

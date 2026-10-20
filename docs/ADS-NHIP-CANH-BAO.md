@@ -675,3 +675,59 @@ bị chặn. Giãn lệnh: bật `ADS_SHOP_CALL_GAP_SEC=5` trên worker ở lư�
 **Lịch nhắc đã đặt (anh Trung 19/10: "lát 3 chưa làm thì đặt lịch không lại quên"):** tác vụ `hubsell-nhac-2310-cau-dao-ads-lat-3-aimd`
 chạy **23/10/2026 08:30** — đọc tripCount vs Đ0 135 + SQL gian đang lùi riêng + log `[Ads-lane]`, rồi TRÌNH lát 3 AIMD (chưa code
 tới khi anh chốt). Lát 4 đặt lịch sau khi lát 3 lên prod (Đ1 = 7 ngày sau lát 3).
+
+### 13.9 KIỂM 20/10/2026 sáng — HQ "cầu dao đóng 7 lần liên tiếp (24h)" sau khi lát 1 + 2 lên prod (đọc mã, CHƯA có log prod)
+
+**Hiện tượng (ảnh HQ anh Trung gửi 20/10):** dấu hiệu *Cầu dao API sàn* vàng: "mở (đóng 7 lần liên tiếp gần nhất, 24h)".
+Số 7 = `level + 1` của dòng `ApiThrottleState` cập nhật trong 24h (`platform-health.ts`), tức **bậc 6** — một chuỗi 7 lần đóng,
+mỗi lần cách lần trước < 2 h (`LEVEL_DECAY_MS`) nên bậc không bao giờ rơi về 0. Thời gian nghỉ của chuỗi: 5' + 10' + 20' + 40' + 60' + 60'
++ 60' = **255' đóng**, giữa mỗi lần chỉ mở vài phút → Ads của MỌI gian Hubsell Ads đứng số gần hết ngày 19/10. Trước lát 1 chuỗi dài
+nhất ghi nhận là bậc 1 (19/10 11:18). Phiên cloud không có DATABASE_URL / Render nên **chưa đọc được tripCount, lý do, giờ đóng** — mục
+"Kiểm trên prod" bên dưới là việc anh chạy.
+
+**Cơ chế (đọc `ads-lane.ts` + `ads-tiers.ts` + `api-budget.ts`) — cầu dao tự ĐỒNG BỘ HÓA mọi gian rồi tự đóng lại:**
+
+1. **Trong lúc cầu dao đóng, làn Ads vẫn nhặt gian.** `adsCandidateWhere` không xét cầu dao; mỗi tick 20 s nhặt 2 gian, lệnh đầu
+   tiên ném `app_paused` ngay ở `assertAppOpen` (không gọi sàn) → `runAdsPulse` trả `delayMin = PULSE_MIN` (30') → gian được ghi hạn
+   `now + 30' ± 15 %`. Tốc độ "thất bại tức thì" = 6 gian/phút → ~30 gian bị dồn hạn vào cùng một cửa sổ ~5–10' sau 30', lặp mỗi 30'
+   suốt lúc đóng. **Lịch xung vốn rải đều cả ngày bị nén lại thành một đoàn.**
+2. **Cầu dao mở → cả đoàn đập vào sàn liền nhau:** 2 luồng × 5–7 lệnh/gian trong vài giây → ~150–200 lệnh Shopee trong ~5' (dưới
+   `APP_QPS` 3 nhưng là đúng kiểu gọi hay dính 429 lẻ: lệnh thứ 4 của xung, 13.1).
+3. **Mẫu số tỷ lệ bão gần rỗng ngay sau khi mở:** `countCalledShops` chỉ đếm gian đã gọi trong 10' — lúc đóng không gọi ai nên sau khi
+   mở, 7 gian gọi mà 3 gian 429 là `3 ≥ ceil(0,2 × 7) = 2` → "Bão 429" → đóng lại ở **bậc + 1**. Ngưỡng tỷ lệ (17/10) được đặt cho
+   trạng thái đều, không cho giây phút vừa mở.
+4. Vòng lặp: đóng lâu hơn → đoàn nén chặt hơn → mở ra lại bão → bậc 4–6 nghỉ 60' mỗi lần, cách nhau < 2 h → bậc không rơi.
+   Lát 2 không đỡ được vì nhánh "app" cố ý không đổi bậc gian (đúng thiết kế: không phải lỗi của gian), còn gian dính 429 trong bão thì
+   lùi 15' rồi lại về đúng lúc cầu dao còn đóng → lại +30'.
+
+**Vì sao nặng lên sau lát 1:** cơ chế 1–3 có từ trước, nhưng vòng đồng bộ đơn cũ chia 3 slot với quét đơn (mỗi lượt mất thật nhiều
+giây) nên "thất bại tức thì" chậm hơn nhiều, đoàn không nén chặt; làn Ads riêng (tick 20 s, 2 luồng, không việc gì khác) nén nhanh gấp
+nhiều lần. Tức lát 1 đúng mục tiêu tách khoang (đơn/tồn không bị kéo theo — đúng như HQ: chỉ dòng cầu dao vàng) nhưng làm lộ lỗi
+"nén lịch khi cầu dao đóng".
+
+**Tác dụng phụ cần biết:** khi gian bị nhặt lúc cầu dao đóng, `tiers.history` vẫn chạy (chỉ "shop" mới bỏ) → ném `app` → `historyRan =
+true` → `nextAdsSyncAt` bị đẩy **+6 h dù chưa kéo gì**. Ngày có 7 lần đóng thì lịch sử 30 ngày (cột Đơn / SP đã bán khớp Seller Center,
+15.11) của nhiều gian trôi thêm nửa ngày.
+
+**Kiểm trên prod (anh chạy, 5 phút):**
+- SQL Supabase: `SELECT app, level, "tripCount", reason, "pausedUntil", "updatedAt" FROM "ApiThrottleState" ORDER BY "updatedAt" DESC;`
+  — kỳ vọng `shopee:2044679` level 6, tripCount ≈ 135 (Đ0 14:40 19/10) + 7…10, reason bắt đầu "Bão 429: 3/5…3/8 gian đã gọi" (mẫu số
+  nhỏ = dấu vân tay của cơ chế 3).
+- Render worker → Logs, lọc `CẦU DAO ĐÓNG`: giờ đóng phải rơi vào **5–10' sau giờ mở** của lần trước (pausedUntil lần trước). Lọc
+  `429 tầng shop` ngay trước đó: nhiều gian khác nhau trong 1–3 phút = đoàn nén. Lọc `lùi riêng bậc`: gian nào lặp bậc 2–3 là bị sàn
+  siết thật (khác chuyện này).
+- Nếu reason là `exceed_partner_api` (không phải "Bão 429") thì là trần app thật → bỏ qua phân tích trên, hạ `ADS_APP_QPS`.
+
+**Đề xuất sửa — "lát 2.5" (nhỏ, ~40 dòng + test, CHƯA code tới khi anh chốt; không thay lát 3 AIMD 23/10):**
+1. `ApiBudgetError` nhánh `app_paused` mang theo `pausedUntil`; `nextAdsSchedule` khi `rateLimited === "app"` ghi `nextAdsPulseAt =
+   pausedUntil + ngẫu nhiên [0, PULSE_MIN]` — đoàn được **rải đều một nhịp xung sau khi mở**, không nén; và **KHÔNG** coi `historyRan`
+   (giữ `nextAdsSyncAt` để lịch sử chạy khi mở lại).
+2. Làn Ads không nhặt gian của app đang đóng (`assertAppOpen` cache 10 s, rẻ) → hết 6 lần ghi DB/phút vô ích lúc đóng.
+3. Tỷ lệ bão có **mẫu số tối thiểu**: trong 10' đầu sau khi mở (hoặc khi gian đã gọi < 10) không tính bão theo tỷ lệ, chỉ đóng khi
+   ≥ 3 gian **và** ≥ 50 % gian đã gọi — tránh 3/5. Số tự chọn, ghi `ads-cadence.ts`.
+4. Thử nghiệm không cần code: bật `ADS_SHOP_CALL_GAP_SEC=5` trên worker (lát 2 đã có, mặc định tắt) để đo giả thuyết 13.1 "lệnh thứ 4
+   dính 429" — nếu 429 lẻ giảm thì bão ít đi ở gốc.
+Đường lui tức thì nếu Ads đứng tiếp trong ngày: `ADS_LANE=0` trên worker (về vòng cũ, nén chậm hơn) — mất tách khoang nhưng Ads chạy.
+
+**Không liên quan M2:** chuyện này là lịch + quota sàn, không phải RAM/CPU — nâng Worker Standard không đổi gì; gợi ý
+`AUTO_SYNC_CONCURRENCY=6` trên HQ chỉ là dòng checklist đầu của M2, anh đã chốt 19/10 không đặt.
