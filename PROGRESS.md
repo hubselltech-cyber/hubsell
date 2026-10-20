@@ -24,6 +24,14 @@
 - **Kiểm:** backend + frontend `tsc --noEmit` sạch; 87 test ads/ad-spend xanh (thêm 3 test ads-spend, 1 test đối soát LIVE); 29 file test
   khác đỏ vì phiên cloud không có Postgres (đỏ y hệt trước khi sửa). CHƯA chạy với token thật: sau deploy xem log Render có dòng
   `Không đọc được báo cáo LIVE GMV Max` không; rồi mở lại gian khách với bộ lọc 09–20/10 cả hai màn để so với Seller Center cùng khoảng.
+- **Anh: "Em cứ push lên trước nhé. Với khách này thì họ nói họ không bao giờ live"** → đã push; phần LIVE vẫn đúng cho gian khác
+  nhưng KHÔNG giải thích gian này. Tiền 01–08/10 (≈17tr) và phần hụt ngày trùng phải nằm ở chỗ API không trả cho tài khoản đang
+  nối: (a) chiến dịch đã XÓA không còn trong báo cáo tầng chiến dịch, hoặc (b) tài khoản quảng cáo KHÁC chạy trước 09/10 (Seller Center
+  gộp theo gian). Viết `backend/scripts/tiktok-ads-compare-seller-center.ts "<tên gian>" 2026-10-01 2026-10-20`: in bảng theo ngày
+  API tổng tài khoản (không lọc / PRODUCT / LIVE) · API tầng chiến dịch (đúng câu sync) · DB chiến dịch · DB AdSpend · đơn; kèm ngày
+  nối link, tài khoản quảng cáo, chiến dịch còn tồn tại (create_time, có/không trong báo cáo), Σ feeGmvMax sổ cái. Đọc: "API tất cả"
+  ≈ Seller Center mà "API c.dịch" nhỏ hơn → (a), sửa bằng cách ghi AdSpend từ tầng tài khoản + dòng "chi ngoài bảng" như Shopee;
+  "API tất cả" cũng nhỏ hơn → (b), ngoài tầm Hubsell, chỉ nói rõ với khách. Chạy trên máy anh với DATABASE_URL prod.
 - **Còn phải kiểm trên prod (cần DB):** vì sao Product chỉ có số từ 09/10 dù nối 19/10 kéo lùi 30 ngày — khả năng chiến dịch Product của
   khách mới chạy từ 09/10 (trước đó LIVE), lượt sync kế sẽ tự lấp nếu đúng; nếu vẫn trống thì so `tiktokAdsStoreLink.advertiserId` với
   tài khoản đang giữ quyền GMV Max của gian.
