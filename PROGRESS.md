@@ -64,6 +64,11 @@
   tiền + 2 script soi + AdSpend từ DB). Lưu ý: phiên trước ghi "đã push" phần LIVE nhưng thực ra mới lên NHÁNH, prod chưa có tới lượt này.
   Render `/health` = `060be79a` sau ~2 phút (migrate xong). Vercel chưa kiểm được (máy không có gh) — app.hubsell.vn trả 200.
   ⏳ Anh chạy `scripts/tiktok-adspend-rebuild-from-perf.ts` xem trước → `--apply`; ⏳ log Render `Không đọc được báo cáo LIVE GMV Max`.
+- ✅ **Anh chạy script prod, ĐÃ GHI 9 ngày / 3 trong 33 gian TikTok có số chiến dịch:** 69Minh Đương 13–18/10 +5.695.942₫ (đúng chiến dịch
+  đã xóa); LUMI SOLAR 24–25/09 +1.105.471₫ (chưa từng có AdSpend — nghi cùng kiểu xóa, đúng lúc ra tính năng 26/09); uvias.vn 14/10
+  +2.641₫ (chưa rõ: xóa giữa ngày hoặc sàn sửa một ngày về 0 mà perf bỏ dòng 0₫ — nhỏ, theo DB). Ngày 19/10 của khách KHÔNG có trong
+  danh sách vì lượt pulse sau deploy đã tự ghi 1.154.353 → code mới chạy đúng trên prod. Dòng tiền khách 01–20/10 giờ ≈ 9,75tr;
+  ~17tr chênh với Seller Center = chiến dịch xóa trước khi nối Hubsell, không lấy lại được (nói với khách). Việc kỹ thuật ĐÓNG.
 
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 
