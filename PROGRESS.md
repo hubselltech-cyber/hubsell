@@ -43,6 +43,15 @@
   số của chiến dịch không còn thuộc tài khoản đang nối (nghi lần nối đầu 19/10 nhận tài khoản khác, rồi nối lại sang YODY; upsert giữ
   createdAt) → màn quảng cáo 9,7tr ≠ dòng tiền 3,7tr. Thêm vào script mục "DB: chiến dịch có chi tiêu trong khoảng" đánh dấu
   ⚠️ dòng không thuộc tài khoản đang nối; **chờ anh chạy lại** để chốt rồi mới sửa (lọc theo advertiser hoặc dọn khi đổi tài khoản).
+- **Chạy lại (`67952c1c`) → ĐẢO KẾT LUẬN, nghi "tài khoản khác" ở trên là SAI:** DB có chiến dịch `1878896901499266`
+  "…Doanh thu gộp_69Minh Đương_20261013082849" 5.996.595₫ (13–19/10), Hubsell thấy nó ở lượt sync 19/10 04:52 → 09:26 UTC, rồi biến mất
+  khỏi danh sách + báo cáo tài khoản; 09:31 UTC khách tạo chiến dịch mới (create_time sàn là UTC: chiến dịch 07:24 ↔ Hubsell tạo 07:25).
+  → **khách XÓA chiến dịch rồi tạo lại; sàn bỏ hẳn lịch sử chiến dịch đã xóa khỏi MỌI tầng báo cáo, kể cả tổng tài khoản** (trường hợp a,
+  không phải b). Chiến dịch 09/10 bị tắt `PRODUCT_USED_BY_PRODUCT_GMV_MAX` vì chiến dịch 13/10 cùng tài khoản giành SP — khớp.
+  Hệ quả: **DB c.dịch 9,75tr mới là số đúng nhất Hubsell có**; **AdSpend (dòng tiền) 3,75tr SAI** vì lượt sync ghi AdSpend = Σ dòng báo cáo
+  của lượt đó (`gmvMaxDailyTotals` trong `sync.ts`) → ngày của chiến dịch đã xóa thành 0 / không có. ~17tr còn lại của 01–08/10 là chiến dịch
+  xóa TRƯỚC khi nối Hubsell → API không trả nữa, không lấy lại được (nói với khách). **Đề xuất sửa gốc:** AdSpend theo ngày = Σ
+  `AdsCampaignDailyPerf` của gian trong DB (giữ được chiến dịch đã xóa) thay vì Σ dòng của lượt; kèm test ca chiến dịch biến mất. Chờ anh chốt.
 
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 
