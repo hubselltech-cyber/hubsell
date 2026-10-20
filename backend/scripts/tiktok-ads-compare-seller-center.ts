@@ -85,7 +85,24 @@ async function main() {
       },
     },
   });
-  if (!channel) throw new Error(`Không thấy gian TikTok khớp "${needle}"`);
+  if (!channel) {
+    // Nói rõ đang nối DB nào (chỉ host, không in mật khẩu) + gian TikTok có trong đó — chạy nhầm .env dev là thấy ngay.
+    let host = "?";
+    try {
+      host = new URL(process.env.DATABASE_URL ?? "").host;
+    } catch {
+      /* DATABASE_URL thiếu / sai dạng */
+    }
+    const shops = await prisma.channel.findMany({
+      where: { channelName: "TIKTOK" },
+      select: { id: true, shopName: true, createdAt: true, tiktokAdsStoreLink: { select: { id: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    console.log(`DB đang nối: ${host} · gian TikTok trong DB (20 mới nhất): ${shops.length}`);
+    for (const x of shops) console.log(`  ${x.id}  "${x.shopName}"  tạo ${x.createdAt.toISOString().slice(0, 10)}${x.tiktokAdsStoreLink ? " · đã nối ads" : ""}`);
+    throw new Error(`Không thấy gian TikTok khớp "${needle}" — kiểm DATABASE_URL trong backend/.env có trỏ prod không`);
+  }
   const link = channel.tiktokAdsStoreLink;
   console.log(`Gian "${channel.shopName}" (${channel.id}) · shop ${channel.externalShopId} · tạo ${channel.createdAt.toISOString()}`);
   console.log(`  lastAdsSyncAt ${channel.lastAdsSyncAt?.toISOString() ?? "—"} · adsBackfillPending ${channel.adsBackfillPending}`);
