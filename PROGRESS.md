@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 20/10/2026 trưa — TIKTOK: CHIẾN DỊCH MỚI TẠO Ở SELLER CENTER "KHÔNG KÉO VỀ" = CHỈ CHƯA TỚI XUNG; KHÔNG SỬA CODE
+
+- **Anh (ảnh Seller Center gian nhà): chiến dịch "Product GMV Max_Doanh thu gộp_…" (100.000đ/ngày, Đang chờ xử lý) không thấy trên Hubsell, "TikTok cũng gặp tình trạng Quảng cáo nhóm không kéo về được".** Em rà `tiktok-ads/sync.ts` + `report.ts` + `client.ts` + docs mục Campaign: khác Shopee (API Shopee KHÔNG liệt kê Chiến dịch Nhóm), TikTok có hai nguồn đều thấy chiến dịch mới — báo cáo `/gmv_max/report/get/` (campaign × ngày, lọc PRODUCT) và danh sách `/gmv_max/campaign/get/` (gian nhà đã ủy quyền lại 19/09 nên có quyền) → không có loại chiến dịch nào bị lọc rớt.
+- **Anh (ảnh Hubsell, ~1 giờ sau): "à về rồi em"** — dòng "Product GMV Max_Doanh thu gộp…" đã lên: Đang chạy · ROI mục tiêu 20 · ngân sách 100.000đ/ngày · 0đ · Đang khởi động. Có ROI + ngân sách ⇒ về qua BÁO CÁO (báo cáo trả cả dòng ngày 0 chi tiêu của chiến dịch vừa tạo, không chỉ chiến dịch tiêu tiền). ⇒ Nguyên nhân chỉ là **nhịp xung**: TikTok 60 phút khi gian đang chi, 120 phút khi 2 ngày không chi (`ads-cadence.ts`); chiến dịch tạo xong phải chờ lượt kế. Không có lỗi API, không sửa code.
+- Muốn thấy ngay sau khi tạo: bấm **Làm mới** trên trang Trợ lý quảng cáo TikTok (`POST /api/quang-cao/tiktok/refresh` → `requestAdsRefresh`). Ghi nhớ cho khách hỏi tương tự: "tạo xong chờ tối đa 1–2 giờ hoặc bấm Làm mới".
+- Docs TikTok (`business-api.tiktok.com/portal/docs/...`) render bằng JS, WebFetch chỉ đọc được tiêu đề; SDK Python chính thức (`tiktok/tiktok-business-api-sdk`) có model `FilteringGmvMaxReportGet` (campaign_ids · campaign_name · campaign_statuses · creative_delivery_statuses · creative_types · gmv_max_promotion_types · item_group_ids · item_ids · room_ids · search_word) nhưng không ghi enum — enum vẫn phải lấy từ probe (PRODUCT/LIVE ở báo cáo, PRODUCT_GMV_MAX/LIVE_GMV_MAX ở danh sách).
+
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 
 - **Kiểm Apple (anh hỏi):** App Store Connect API: 1.3.1 `READY_FOR_SALE`, `releaseType = AFTER_APPROVAL` (tự phát hành sau duyệt), không phát hành dần; tra App Store VN hiện 1.3.1 từ 20/10 01:36 giờ VN. Android vc 7 đã completed từ 19/10 → 1.3.1 có trên cả 2 kho.
