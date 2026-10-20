@@ -18,6 +18,7 @@ import { notify } from "../../services/notifications";
 import { loadCampaignFullDays, loadMinKeepPer100, loadStepChecks } from "./advice-inputs";
 import { computeTiktokAdsBreakeven } from "./breakeven";
 import { avgDailySpendOf, campaignAdvice, type CampaignAdviceKind } from "./campaign-advice";
+import { TIKTOK_AD_TYPE_LIVE } from "./campaign-status";
 
 /** Cửa sổ chấm: 7 ngày trọn gần nhất, bỏ hôm nay (cùng Shopee assessDelivery). */
 export const ADVICE_ALERT_DAYS = 7;
@@ -65,8 +66,9 @@ export async function runTiktokAdviceAlerts(
   if (adviceAlertsOff()) return result;
   const from = vnDateKey(ADVICE_ALERT_DAYS);
   const yesterday = vnDateKey(1);
+  // Nhận định viết cho Product GMV Max (video, sản phẩm, hòa vốn SP) → chiến dịch LIVE không chấm, không chuông.
   const rows = await prisma.adsCampaign.findMany({
-    where: { channelId: channel.id, status: "ongoing" },
+    where: { channelId: channel.id, status: "ongoing", adType: { not: TIKTOK_AD_TYPE_LIVE } },
     select: {
       id: true,
       name: true,

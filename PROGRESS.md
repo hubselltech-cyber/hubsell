@@ -5,6 +5,29 @@
 
 ---
 
+## Phiên 20/10/2026 trưa — ADS TIKTOK: KHÁCH 69MINH ĐƯƠNG LỆCH 3 SỐ (SELLER CENTER 26,9TR · HUBSELL 9,7TR · DÒNG TIỀN 3TR)
+
+- **Anh (ảnh):** khách kêu số quảng cáo sai; Seller Center 01–20/10 tab "Chiến dịch GMV Max" 26.959.682₫ / 909 đơn; Hubsell "Tháng này"
+  9.749.796₫ / 345 đơn (có số từ 09/10); cột chi phí Báo cáo dòng tiền 3tr. Gian anh vẫn khớp, chỉ khách này lệch, khách mới nối gian 19/10.
+- **Chẩn đoán (đọc code, không có DB):** (1) Hubsell chỉ kéo Product GMV Max (`report.ts` lọc `["PRODUCT"]`), Seller Center gộp cả LIVE
+  → trên các ngày trùng Hubsell ≈ 60 % (chi phí/ngày 0,81tr vs 1,35tr; đơn/ngày 29 vs 45) — gian anh không chạy LIVE nên khớp. (2) Khoảng
+  ngày khác nhau (01/10 vs 09/10). (3) Dòng tiền: luật chống trừ hai lần `summarizeAdsSpend` bỏ CẢ gian khi có bất kỳ đơn `feeGmvMax ≠ 0`,
+  mà `feeGmvMax` gộp `gmv_max_coupon_fee` — khách trả ads bằng hóa đơn tài khoản quảng cáo (ảnh báo nợ 46tr) nên bị bỏ oan; cộng thêm
+  dòng tiền mặc định "30 ngày qua" khác "Tháng này".
+- **Anh: "Em làm luôn đi" → ✅ code:** `sync.ts` kéo báo cáo + danh sách cả PRODUCT lẫn LIVE (LIVE hỏng chỉ log, không đối soát nhóm LIVE
+  lượt đó); `adType` `gmv_max` / `gmv_max_live` (hằng + `isTiktokLiveCampaign` ở `campaign-status.ts`, `creates` của đối soát mang adType);
+  LIVE vào tổng/chuỗi/AdSpend nhưng KHÔNG vào luật tự động (`auto-run.ts`), chuông nhận định (`advice-alerts.ts`), tab Hòa vốn SP, route
+  videos (400) / auto-rule (404); overview trả `live`, `advice` null cho LIVE; FE bảng ghi "LIVE GMV Max", bấm dòng LIVE → toast, dòng chú
+  thích nói rõ tổng gồm GMV Max SP + LIVE, chưa gồm "Quảng cáo mua sắm sản phẩm". `services/ads-spend.ts`: cột Chi phí cộng
+  `max(0, Σ AdSpend − |Σ feeGmvMax|)` chia tỷ lệ theo ngày thay vì bỏ cả gian; ghi chú tooltip đổi thành "đã trừ một phần… chỉ cộng phần còn lại".
+  Docs ADS-TIKTOK-GMV-MAX (mục 2 chốt chặn + mục 6 "LIVE GMV Max trong bảng campaign").
+- **Kiểm:** backend + frontend `tsc --noEmit` sạch; 87 test ads/ad-spend xanh (thêm 3 test ads-spend, 1 test đối soát LIVE); 29 file test
+  khác đỏ vì phiên cloud không có Postgres (đỏ y hệt trước khi sửa). CHƯA chạy với token thật: sau deploy xem log Render có dòng
+  `Không đọc được báo cáo LIVE GMV Max` không; rồi mở lại gian khách với bộ lọc 09–20/10 cả hai màn để so với Seller Center cùng khoảng.
+- **Còn phải kiểm trên prod (cần DB):** vì sao Product chỉ có số từ 09/10 dù nối 19/10 kéo lùi 30 ngày — khả năng chiến dịch Product của
+  khách mới chạy từ 09/10 (trước đó LIVE), lượt sync kế sẽ tự lấp nếu đúng; nếu vẫn trống thì so `tiktokAdsStoreLink.advertiserId` với
+  tài khoản đang giữ quyền GMV Max của gian.
+
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 
 - **Kiểm Apple (anh hỏi):** App Store Connect API: 1.3.1 `READY_FOR_SALE`, `releaseType = AFTER_APPROVAL` (tự phát hành sau duyệt), không phát hành dần; tra App Store VN hiện 1.3.1 từ 20/10 01:36 giờ VN. Android vc 7 đã completed từ 19/10 → 1.3.1 có trên cả 2 kho.

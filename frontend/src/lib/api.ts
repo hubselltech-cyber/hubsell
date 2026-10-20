@@ -2936,6 +2936,8 @@ export interface TiktokAdsCampaignRow {
   name: string;
   /** ongoing = đang chạy; paused = tắt trên TikTok; ended = TikTok không còn liệt kê (đã xóa / hết hạn). */
   status: "ongoing" | "paused" | "ended" | string;
+  /** true = LIVE GMV Max (quảng cáo phiên live): có chi phí/đơn/doanh thu theo ngày, KHÔNG soi video / luật tự động. Vắng = backend cũ. */
+  live?: boolean;
   /** target_roi = đặt ROI mục tiêu; max_delivery = phân phối tối đa; "" = chưa biết (chiến dịch chưa tiêu tiền, chỉ có từ danh sách). */
   biddingMethod: string;
   roasTarget: number | null;

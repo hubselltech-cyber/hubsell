@@ -184,16 +184,20 @@ export interface GmvMaxCampaignListItem {
 /** Trần số trang khi liệt kê chiến dịch — chống vòng lặp nếu page_info của sàn lệch. */
 const GMV_MAX_CAMPAIGN_LIST_MAX_PAGES = 20;
 
+/** Giá trị `gmv_max_promotion_types` của DANH SÁCH chiến dịch (khác báo cáo: PRODUCT / LIVE). */
+export type GmvMaxCampaignListType = "PRODUCT_GMV_MAX" | "LIVE_GMV_MAX";
+
 /**
- * MỌI chiến dịch Product GMV Max còn tồn tại của một shop — khác báo cáo (chỉ có
- * chiến dịch tiêu tiền trong kỳ). Không trả ROI mục tiêu / ngân sách / sản phẩm.
- * Cần nhóm quyền Campaign (TikTok duyệt 19/09/2026); token cấp TRƯỚC ngày đó trả
- * 40001 thiếu quyền → nơi gọi tự bỏ qua, không được làm hỏng lượt đồng bộ.
+ * MỌI chiến dịch GMV Max (Product hoặc LIVE — một loại mỗi lượt, sàn bắt buộc lọc) còn tồn tại
+ * của một shop — khác báo cáo (chỉ có chiến dịch tiêu tiền trong kỳ). Không trả ROI mục tiêu /
+ * ngân sách / sản phẩm. Cần nhóm quyền Campaign (TikTok duyệt 19/09/2026); token cấp TRƯỚC
+ * ngày đó trả 40001 thiếu quyền → nơi gọi tự bỏ qua, không được làm hỏng lượt đồng bộ.
  */
 export async function getGmvMaxCampaigns(
   accessToken: string,
   advertiserId: string,
-  storeId: string
+  storeId: string,
+  promotionType: GmvMaxCampaignListType = "PRODUCT_GMV_MAX"
 ): Promise<GmvMaxCampaignListItem[]> {
   const out: GmvMaxCampaignListItem[] = [];
   for (let page = 1; page <= GMV_MAX_CAMPAIGN_LIST_MAX_PAGES; page++) {
@@ -202,7 +206,7 @@ export async function getGmvMaxCampaigns(
       accessToken,
       {
         advertiser_id: advertiserId,
-        filtering: { gmv_max_promotion_types: ["PRODUCT_GMV_MAX"], store_ids: [storeId] },
+        filtering: { gmv_max_promotion_types: [promotionType], store_ids: [storeId] },
         page,
         page_size: 100,
       }

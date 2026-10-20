@@ -2,7 +2,13 @@
 // TIKTOK ADS — ĐỒNG BỘ CAMPAIGN GMV MAX VÀO BẢNG ADS DÙNG CHUNG (chỉ đọc)
 //
 // Ghi vào AdsCampaign + AdsCampaignDailyPerf — cùng bảng với Shopee/Lazada, sàn
-// suy từ Channel.channelName. Ánh xạ từ vựng:
+// suy từ Channel.channelName. Kéo CẢ HAI loại GMV Max (20/10/2026 — khách 69Minh
+// Đương nối gian 19/10: Seller Center tab "Chiến dịch GMV Max" 26,9tr, Hubsell 9,7tr
+// vì chỉ kéo Product): Product GMV Max (adType gmv_max) + LIVE GMV Max (adType
+// gmv_max_live, chỉ có số chiến dịch × ngày — không soi video, không luật tự động).
+// Sàn bắt buộc lọc một loại mỗi call → 2 call báo cáo + 2 call danh sách mỗi lượt.
+// LIVE hỏng (sàn đổi tham số, thiếu quyền) thì ghi log và vẫn ghi Product như cũ.
+// Ánh xạ từ vựng:
 //   operation_status ENABLE/DISABLE → status ongoing/paused (campaign-status.ts)
 //   vắng ở /gmv_max/campaign/get/     → status ended (đã xóa / kết thúc trên TikTok —
 //     báo cáo chỉ có chiến dịch TIÊU TIỀN trong kỳ nên một mình nó không nói được
@@ -27,9 +33,15 @@
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { dateKeyToDbDate, vnDateKey } from "../../lib/ads-dates";
-import { reconcileTiktokCampaignStatuses, tiktokCampaignStatusOf } from "./campaign-status";
-import { TiktokAdsApiError, getGmvMaxCampaigns, getGmvMaxStores, type GmvMaxStore } from "./client";
-import { fetchGmvMaxCampaignDaily } from "./report";
+import {
+  TIKTOK_AD_TYPE_LIVE,
+  TIKTOK_AD_TYPE_PRODUCT,
+  reconcileTiktokCampaignStatuses,
+  tiktokAdTypeOf,
+  tiktokCampaignStatusOf,
+} from "./campaign-status";
+import { TiktokAdsApiError, getGmvMaxCampaigns, getGmvMaxStores, type GmvMaxCampaignListItem, type GmvMaxStore } from "./client";
+import { fetchGmvMaxCampaignDaily, type GmvMaxCampaignDay } from "./report";
 
 /** 40105 = access token sai hoặc đã bị thu hồi (docs Appendix - Return codes). */
 const TOKEN_DEAD_CODES = new Set([40105]);
@@ -165,9 +177,10 @@ async function reconcileTiktokCampaignsWithList(
   scope: TiktokAdsScope,
   reported: ReadonlySet<string>
 ): Promise<number | null> {
-  let listed;
+  let listed: (GmvMaxCampaignListItem & { adType: string })[];
   try {
-    listed = await getGmvMaxCampaigns(scope.accessToken, scope.advertiserId, scope.storeId);
+    const product = await getGmvMaxCampaigns(scope.accessToken, scope.advertiserId, scope.storeId, "PRODUCT_GMV_MAX");
+    listed = product.map((l) => ({ ...l, adType: TIKTOK_AD_TYPE_PRODUCT }));
   } catch (err) {
     const code = err instanceof TiktokAdsApiError ? err.code : 0;
     if (code === 40001) {
@@ -180,15 +193,25 @@ async function reconcileTiktokCampaignsWithList(
     }
     return null;
   }
+  // LIVE liệt kê riêng; hỏng thì KHÔNG đối soát nhóm LIVE (kẻo gán "ended" oan cả loạt) nhưng Product vẫn đối soát.
+  let liveListed = true;
+  try {
+    const live = await getGmvMaxCampaigns(scope.accessToken, scope.advertiserId, scope.storeId, "LIVE_GMV_MAX");
+    listed.push(...live.map((l) => ({ ...l, adType: TIKTOK_AD_TYPE_LIVE })));
+  } catch (err) {
+    liveListed = false;
+    console.warn(`[TikTok Ads] Không đọc được danh sách chiến dịch LIVE GMV Max (bỏ qua đối soát LIVE): ${(err as Error).message}`);
+  }
   if (listed.length === 0 && reported.size > 0) {
     console.warn(`[TikTok Ads] Danh sách chiến dịch rỗng trong khi báo cáo có ${reported.size} chiến dịch — bỏ qua đối soát lượt này.`);
     return null;
   }
 
-  const known = await prisma.adsCampaign.findMany({
+  const knownAll = await prisma.adsCampaign.findMany({
     where: { channelId },
-    select: { id: true, campaignId: true, status: true, name: true },
+    select: { id: true, campaignId: true, status: true, name: true, adType: true },
   });
+  const known = liveListed ? knownAll : knownAll.filter((k) => k.adType !== TIKTOK_AD_TYPE_LIVE);
   const r = reconcileTiktokCampaignStatuses({
     known,
     listed: listed.map((l) => ({
@@ -196,6 +219,7 @@ async function reconcileTiktokCampaignsWithList(
       name: l.campaign_name ?? "",
       operationStatus: l.operation_status ?? "",
       secondaryStatus: l.secondary_status,
+      adType: l.adType,
     })),
     reported,
   });
@@ -205,10 +229,11 @@ async function reconcileTiktokCampaignsWithList(
   for (const c of r.creates) {
     await prisma.adsCampaign.upsert({
       where: { channelId_campaignId: { channelId, campaignId: c.campaignId } },
-      update: { status: c.status, name: c.name },
-      create: { channelId, campaignId: c.campaignId, name: c.name, status: c.status, adType: "gmv_max" },
+      update: { status: c.status, name: c.name, adType: c.adType },
+      create: { channelId, campaignId: c.campaignId, name: c.name, status: c.status, adType: c.adType },
     });
   }
+  // liveCampaigns trả về = số chiến dịch Product + LIVE đang bật (nhịp xung chỉ cần biết "có gì đang tiêu tiền không").
   return r.liveCampaigns;
 }
 
@@ -244,18 +269,25 @@ export async function syncTiktokAdsCampaigns(
   // 30 ngày một lần để dòng tiền không thủng lịch sử; các lượt sau theo nhịp thường.
   const firstFill = (await prisma.adSpend.count({ where: { channelId: channel.id } })) === 0;
   const daysBack = firstFill ? 30 : Math.min(30, Math.max(1, opts.daysBack ?? 7));
-  let rows;
+  const reportScope = {
+    accessToken: scope.accessToken,
+    advertiserId: scope.advertiserId,
+    storeId: scope.storeId,
+    startDate: vnDateKey(daysBack - 1),
+    endDate: vnDateKey(0),
+  };
+  let rows: GmvMaxCampaignDay[];
   try {
-    rows = await fetchGmvMaxCampaignDaily({
-      accessToken: scope.accessToken,
-      advertiserId: scope.advertiserId,
-      storeId: scope.storeId,
-      startDate: vnDateKey(daysBack - 1),
-      endDate: vnDateKey(0),
-    });
+    rows = await fetchGmvMaxCampaignDaily(reportScope, "PRODUCT");
   } catch (err) {
     await recordTiktokAdsFailure(scope.linkId, err);
     throw err;
+  }
+  // LIVE GMV Max: cùng call, lọc LIVE. Hỏng thì chỉ thiếu LIVE lượt này (log), Product không bị ảnh hưởng.
+  try {
+    rows = rows.concat(await fetchGmvMaxCampaignDaily(reportScope, "LIVE"));
+  } catch (err) {
+    console.warn(`[TikTok Ads] Không đọc được báo cáo LIVE GMV Max của link ${scope.linkId} (chỉ ghi Product lượt này): ${(err as Error).message}`);
   }
 
   // Thuộc tính campaign lặp lại trên mọi dòng ngày — lấy dòng MỚI NHẤT làm chuẩn.
@@ -280,7 +312,7 @@ export async function syncTiktokAdsCampaigns(
   for (const [campaignId, c] of latest) {
     const data = {
       name: c.name,
-      adType: "gmv_max",
+      adType: tiktokAdTypeOf(c.promotionType),
       status: tiktokCampaignStatusOf(c),
       biddingMethod: c.bidType === "NO_BID" ? "max_delivery" : "target_roi",
       budget: c.budget,

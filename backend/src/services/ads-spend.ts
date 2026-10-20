@@ -6,9 +6,14 @@
 // 26/09/2026 (gian ANO, 692 đơn): TikTok KHÔNG trừ GMV Max trong đơn, tiền ads
 // trả bằng số dư tài khoản quảng cáo → phải cộng vào cột Chi phí như Shopee.
 //
-// Chốt chặn tính chồng: gian TikTok nào trong kỳ có phí GMV Max ≠ 0 trên bản kê
-// (TikTok thu theo đơn — khoản đó đã nằm trong "Phí nền tảng" cột Khấu trừ) thì
-// AdSpend của gian đó CHỈ hiện tham chiếu, không cộng vào tổng.
+// Chốt chặn tính chồng (sửa 20/10/2026): gian TikTok nào trong kỳ có phí GMV Max
+// ≠ 0 trên bản kê (TikTok thu theo đơn — khoản đó đã nằm trong "Phí nền tảng" cột
+// Khấu trừ) thì cột Chi phí chỉ cộng PHẦN AdSpend VƯỢT khoản đã thu trong đơn:
+// max(0, Σ AdSpend − |Σ feeGmvMax|). Trước đây chỉ cần MỘT đơn có phí GMV Max là
+// bỏ cả gian khỏi tổng — mà feeGmvMax gộp cả gmv_max_coupon_fee (phí coupon GMV
+// Max, có ở gian trả ads bằng tài khoản quảng cáo) → khách 69Minh Đương trả ads
+// bằng hóa đơn tài khoản quảng cáo (9,7tr) mà dòng tiền chỉ thấy 3tr. Gian trả
+// TRỌN ads qua đơn: |feeGmvMax| ≈ AdSpend → phần cộng thêm ≈ 0, vẫn không trừ hai lần.
 // Gian TikTok chưa nối quảng cáo: một gạch đầu dòng ngắn trong tooltip dòng Ads
 // (anh Trung 26/09: không nhắc nhở dài trong thẻ, seller tự hiểu).
 // ============================================================
@@ -47,7 +52,9 @@ export interface AdsSpendSummary {
 /**
  * Gom AdSpend cho dòng "Chi phí quảng cáo sàn (Ads)" — thuần, có test.
  * gmvMaxChargedByChannel: Σ phí GMV Max trên bản kê theo channelId (số có
- * dấu, ≠ 0 nghĩa là sàn đã thu theo đơn trong kỳ).
+ * dấu, ≠ 0 nghĩa là sàn đã thu theo đơn trong kỳ). Gian có khoản này chỉ cộng
+ * phần AdSpend vượt khoản đã thu, chia đều theo tỷ lệ lên từng ngày (chuỗi
+ * Doanh thu vs Chi phí vẫn khớp tổng).
  */
 export function summarizeAdsSpend(input: {
   rows: AdSpendRow[];
@@ -56,21 +63,32 @@ export function summarizeAdsSpend(input: {
   dateKey: (d: Date) => string;
 }): AdsSpendSummary {
   const summary: AdsSpendSummary = { total: 0, byDay: new Map(), byChannel: new Map(), notes: [] };
-  const referenceOnly = new Set(
-    [...input.gmvMaxChargedByChannel].filter(([, fee]) => fee !== 0).map(([id]) => id)
-  );
 
-  for (const r of input.rows) {
-    if (referenceOnly.has(r.channelId)) continue;
-    summary.total += r.amount;
-    const day = input.dateKey(r.date);
-    summary.byDay.set(day, (summary.byDay.get(day) ?? 0) + r.amount);
-    summary.byChannel.set(r.channelName, (summary.byChannel.get(r.channelName) ?? 0) + r.amount);
+  // Hệ số cộng của từng gian: 1 = cộng đủ; gian bị thu trong đơn = phần vượt / Σ AdSpend (0 khi thu trọn).
+  const spendByChannel = new Map<string, number>();
+  for (const r of input.rows) spendByChannel.set(r.channelId, (spendByChannel.get(r.channelId) ?? 0) + r.amount);
+  const factorOf = new Map<string, number>();
+  const offsetChannels = new Set<string>();
+  for (const [channelId, fee] of input.gmvMaxChargedByChannel) {
+    if (fee === 0) continue;
+    offsetChannels.add(channelId);
+    const spend = spendByChannel.get(channelId) ?? 0;
+    const extra = Math.max(0, spend - Math.abs(fee));
+    factorOf.set(channelId, spend > 0 ? extra / spend : 0);
   }
 
-  const hasReference = input.tiktokChannels.some((ch) => referenceOnly.has(ch.id));
-  const hasUnlinked = input.tiktokChannels.some((ch) => !referenceOnly.has(ch.id) && !ch.adsLinked);
-  if (hasReference) summary.notes.push("TikTok đã trừ tiền quảng cáo trong đơn, không cộng lại ở đây");
+  for (const r of input.rows) {
+    const amount = r.amount * (factorOf.get(r.channelId) ?? 1);
+    if (amount === 0) continue;
+    summary.total += amount;
+    const day = input.dateKey(r.date);
+    summary.byDay.set(day, (summary.byDay.get(day) ?? 0) + amount);
+    summary.byChannel.set(r.channelName, (summary.byChannel.get(r.channelName) ?? 0) + amount);
+  }
+
+  const hasOffset = input.tiktokChannels.some((ch) => offsetChannels.has(ch.id));
+  const hasUnlinked = input.tiktokChannels.some((ch) => !offsetChannels.has(ch.id) && !ch.adsLinked);
+  if (hasOffset) summary.notes.push("TikTok đã trừ một phần tiền quảng cáo trong đơn, ở đây chỉ cộng phần còn lại");
   if (hasUnlinked) summary.notes.push("TikTok cần kết nối tài khoản quảng cáo");
   return summary;
 }

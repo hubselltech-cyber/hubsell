@@ -21,6 +21,27 @@
 
 export type TiktokCampaignStatus = "ongoing" | "paused" | "ended";
 
+/**
+ * adType của AdsCampaign cho TikTok (20/10/2026 — khách 69Minh Đương: Seller Center 26,9tr vs Hubsell 9,7tr vì
+ * Hubsell chỉ kéo Product GMV Max). Hai loại chiến dịch GMV Max của sàn:
+ *   · "gmv_max"      = Product GMV Max (quảng cáo sản phẩm — có tầng sản phẩm/video để soi, loại video, luật tự động)
+ *   · "gmv_max_live" = LIVE GMV Max (quảng cáo phiên live — chỉ có số chiến dịch × ngày; KHÔNG soi video, KHÔNG luật)
+ * Tiền của cả hai đều trả bằng tài khoản quảng cáo → cả hai vào AdSpend (dòng tiền) và tổng trang Trợ lý.
+ */
+export const TIKTOK_AD_TYPE_PRODUCT = "gmv_max";
+export const TIKTOK_AD_TYPE_LIVE = "gmv_max_live";
+
+/** Giá trị `gmv_max_promotion_types` của BÁO CÁO (/gmv_max/report/get/) — khác danh sách chiến dịch (PRODUCT_GMV_MAX / LIVE_GMV_MAX). */
+export type GmvMaxPromotionType = "PRODUCT" | "LIVE";
+
+export function tiktokAdTypeOf(promotionType: GmvMaxPromotionType): string {
+  return promotionType === "LIVE" ? TIKTOK_AD_TYPE_LIVE : TIKTOK_AD_TYPE_PRODUCT;
+}
+
+export function isTiktokLiveCampaign(c: { adType: string }): boolean {
+  return c.adType === TIKTOK_AD_TYPE_LIVE;
+}
+
 /** Thứ tự nhóm trên bảng — chỉ số nhỏ đứng trên. Trạng thái lạ xếp cuối cùng. */
 export const TIKTOK_CAMPAIGN_STATUS_ORDER: readonly TiktokCampaignStatus[] = ["ongoing", "paused", "ended"];
 
@@ -60,8 +81,8 @@ export function compareTiktokCampaigns<T extends { status: string; spend: number
 export interface TiktokCampaignReconcileInput {
   /** Dòng AdsCampaign của gian đang có trong DB. */
   known: { id: string; campaignId: string; status: string; name: string }[];
-  /** /gmv_max/campaign/get/ — nguồn chuẩn "chiến dịch còn tồn tại" (đủ cả chiến dịch không tiêu tiền). */
-  listed: { campaignId: string; name: string; operationStatus: string; secondaryStatus?: string }[];
+  /** /gmv_max/campaign/get/ — nguồn chuẩn "chiến dịch còn tồn tại" (đủ cả chiến dịch không tiêu tiền). adType vắng = Product. */
+  listed: { campaignId: string; name: string; operationStatus: string; secondaryStatus?: string; adType?: string }[];
   /**
    * campaign_id vừa thấy trong BÁO CÁO của chính lượt đồng bộ này. Có trong báo cáo thì
    * chắc chắn còn tồn tại (hoặc mới xóa hôm nay) → không được gán "ended" dù vắng ở danh
@@ -75,7 +96,7 @@ export interface TiktokCampaignReconcileResult {
   /** Dòng đã có cần đổi (chỉ những dòng THỰC SỰ khác, để lastSyncedAt không bị chạm vô cớ). */
   updates: { id: string; status: TiktokCampaignStatus; name?: string }[];
   /** TikTok có mà Hubsell chưa từng thấy (chưa tiêu tiền trong cửa sổ báo cáo nào) → tạo mới. */
-  creates: { campaignId: string; name: string; status: TiktokCampaignStatus }[];
+  creates: { campaignId: string; name: string; status: TiktokCampaignStatus; adType: string }[];
   /** Số chiến dịch đang chạy sau đối soát (listed ∪ reported). */
   liveCampaigns: number;
 }
@@ -91,9 +112,9 @@ export interface TiktokCampaignReconcileResult {
  * Trùng campaign_id trong danh sách: dòng sau đè dòng trước.
  */
 export function reconcileTiktokCampaignStatuses(input: TiktokCampaignReconcileInput): TiktokCampaignReconcileResult {
-  const listed = new Map<string, { name: string; status: TiktokCampaignStatus }>();
+  const listed = new Map<string, { name: string; status: TiktokCampaignStatus; adType: string }>();
   for (const l of input.listed) {
-    if (l.campaignId) listed.set(l.campaignId, { name: l.name ?? "", status: tiktokCampaignStatusOf(l) });
+    if (l.campaignId) listed.set(l.campaignId, { name: l.name ?? "", status: tiktokCampaignStatusOf(l), adType: l.adType || TIKTOK_AD_TYPE_PRODUCT });
   }
   const reported = new Set(input.reported);
 
@@ -121,7 +142,7 @@ export function reconcileTiktokCampaignStatuses(input: TiktokCampaignReconcileIn
   const knownIds = new Set(input.known.map((k) => k.campaignId));
   for (const [campaignId, l] of listed) {
     if (knownIds.has(campaignId)) continue;
-    creates.push({ campaignId, name: l.name, status: l.status });
+    creates.push({ campaignId, name: l.name, status: l.status, adType: l.adType });
     if (l.status === "ongoing") liveCampaigns++;
   }
 

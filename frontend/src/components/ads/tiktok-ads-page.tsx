@@ -141,7 +141,7 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
         <>
           <p className="max-w-60 truncate text-sm text-slate-900">{c.name || `Chiến dịch #${c.campaignId}`}</p>
           <p className="text-xs text-slate-500">
-            GMV Max
+            {c.live ? "LIVE GMV Max" : "GMV Max"}
             {c.biddingMethod === "max_delivery" && " · phân phối tối đa"}
             {c.biddingMethod === "target_roi" && " · ROI mục tiêu"}
             {c.budget > 0 && ` · ngân sách ${formatVND(c.budget)}/ngày`}
@@ -646,11 +646,14 @@ export function TiktokAdsPage() {
                 </Button>
               </div>
             )}
-            {/* Lần nối đầu Hubsell chỉ kéo lùi được 30 ngày → khoảng xem sớm hơn ngày có số thì nói rõ, đừng để khách tưởng tháng đó không tiêu tiền. */}
+            {/* Lần nối đầu Hubsell chỉ kéo lùi được 30 ngày → khoảng xem sớm hơn ngày có số thì nói rõ, đừng để khách tưởng tháng đó không tiêu tiền.
+                Kèm phạm vi (20/10/2026, khách so với Seller Center): tổng gồm Product + LIVE GMV Max; "Quảng cáo mua sắm sản phẩm" (tab khác
+                của Seller Center) không nằm trong đây. */}
             {data?.dataFrom && fromKey < data.dataFrom && (
               <p className={TEXT_SUB}>
                 Hubsell có số quảng cáo của gian từ {data.dataFrom.slice(8, 10)}/{data.dataFrom.slice(5, 7)}/{data.dataFrom.slice(0, 4)}.
-                Các ngày trước đó không nằm trong tổng bên dưới.
+                Các ngày trước đó không nằm trong tổng bên dưới. Tổng gồm chiến dịch GMV Max sản phẩm và LIVE, chưa gồm
+                &quot;Quảng cáo mua sắm sản phẩm&quot; của Seller Center.
               </p>
             )}
             {waiting && campaigns.length === 0 && (
@@ -777,7 +780,14 @@ export function TiktokAdsPage() {
                         columns={CAMPAIGN_COLUMNS}
                         data={visibleCampaigns}
                         getRowId={(c) => c.id}
-                        onRowClick={(c) => router.push(`/ads/tiktok/campaign?id=${c.id}&from=${fromKey}&to=${toKey}`)}
+                        onRowClick={(c) => {
+                          // LIVE GMV Max không có tầng video để soi — sàn chỉ trả số chiến dịch × ngày.
+                          if (c.live) {
+                            toast.info("Chiến dịch LIVE GMV Max chỉ có chi phí, đơn và doanh thu theo ngày — không có danh sách video để soi.");
+                            return;
+                          }
+                          router.push(`/ads/tiktok/campaign?id=${c.id}&from=${fromKey}&to=${toKey}`);
+                        }}
                         striped={false}
                         headerEmphasis
                         stickyHeader

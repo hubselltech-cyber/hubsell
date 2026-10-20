@@ -40,8 +40,11 @@ lệnh loại video) · Reporting › GMV Max reports. **Chưa xin nhóm Campaig
    692 đơn ANO, `gmv_max_ad_fee_amount` = 0 ở mọi đơn — TikTok KHÔNG trừ GMV Max trong đơn, tiền ads trả bằng số dư
    tài khoản quảng cáo; giả định cũ "sàn trừ trong đơn" là SAI với ANO). Báo cáo dòng tiền cộng dòng Ads TikTok như
    Shopee/Lazada (`services/ads-spend.ts`), khớp bảng Quảng cáo cửa hàng của Seller Center theo ngày. Chốt chặn: gian
-   nào trong kỳ có `TiktokOrderSettlement.feeGmvMax` ≠ 0 (sàn thu theo đơn — đã nằm trong Phí nền tảng) thì AdSpend
-   của gian đó chỉ hiện tham chiếu, KHÔNG cộng. Lãi/Lỗ thực hiện giữ nguyên số sàn trả (anh Trung chốt). Mapper
+   nào trong kỳ có `TiktokOrderSettlement.feeGmvMax` ≠ 0 (sàn thu theo đơn — đã nằm trong Phí nền tảng) thì cột Chi phí
+   chỉ cộng PHẦN AdSpend VƯỢT khoản đã thu trong đơn: `max(0, Σ AdSpend − |Σ feeGmvMax|)`, chia theo tỷ lệ lên từng ngày
+   (sửa 20/10/2026 — trước đó chỉ cần MỘT đơn có phí là bỏ cả gian, mà `feeGmvMax` gộp cả `gmv_max_coupon_fee` nên khách
+   69Minh Đương trả ads bằng hóa đơn tài khoản quảng cáo 9,7tr chỉ thấy 3tr ở dòng tiền). Gian trả trọn ads qua đơn: phần
+   vượt ≈ 0 → vẫn không trừ hai lần. Lãi/Lỗ thực hiện giữ nguyên số sàn trả (anh Trung chốt). Mapper
    `gmv_max_ad_fee_amount` → `serviceFee` vẫn giữ cho trường hợp sàn có trừ.
 
 ## 3. Bản đồ code
@@ -239,8 +242,22 @@ TC054 7 ngày 11–17/09: sẽ loại 2 video (296.640đ, 4 đơn, ROI 2,76 và 
 (75 video), 1 xét luật, sổ PLANNED + chuông đúng. **Chưa bắn `live` thật lần nào** — bật trên prod sau khi anh
 xem diễn tập vài hôm.
 
+### LIVE GMV Max trong bảng campaign (20/10/2026 — khách 69Minh Đương nối gian 19/10, Seller Center 26,9tr vs Hubsell 9,7tr)
+
+- Seller Center tab "Chiến dịch GMV Max" gộp CẢ Product lẫn LIVE GMV Max; Hubsell trước đó chỉ kéo `gmv_max_promotion_types:
+  ["PRODUCT"]` → gian chạy LIVE nhiều hụt gần nửa (gian nhà ANO không chạy LIVE nên khớp từng đồng). Từ 20/10 `sync.ts` gọi báo
+  cáo HAI lần (PRODUCT rồi LIVE — sàn bắt buộc lọc một loại mỗi call) và danh sách HAI lần (`PRODUCT_GMV_MAX` / `LIVE_GMV_MAX`);
+  LIVE hỏng (sàn đổi tham số, thiếu quyền) chỉ log và vẫn ghi Product, KHÔNG đối soát nhóm LIVE lượt đó (kẻo gán "ended" oan).
+- `AdsCampaign.adType`: `gmv_max` = Product, `gmv_max_live` = LIVE (hằng ở `campaign-status.ts`). LIVE có đủ chi phí / đơn / doanh
+  thu theo ngày → vào tổng trang Trợ lý, chuỗi ngày và AdSpend (dòng tiền). LIVE KHÔNG có tầng sản phẩm/video nên: bảng ghi
+  "LIVE GMV Max", bấm dòng không mở trang soi video (toast), `advice` = null, không chuông nhận định (`advice-alerts.ts`), không vào
+  lượt theo dõi/loại video (`auto-run.ts`), không vào tab Hòa vốn sản phẩm, các route `/campaigns/:id/videos*` trả 400, route
+  luật tự động coi như không có (404). Mobile: trường `live?: boolean` thêm vào kiểu, UI mobile chưa dùng.
+- Chưa kiểm với token thật sau khi code (phiên cloud không có DB/token): nếu sàn từ chối `["LIVE"]` ở báo cáo thì log
+  `[TikTok Ads] Không đọc được báo cáo LIVE GMV Max…` xuất hiện mỗi lượt và số vẫn như trước — xem log Render sau deploy.
+
 ### Còn treo
-ROI tầng video gộp đơn tự nhiên (luật nghiêng nhân từ); tách luật video nhà / creator; LIVE GMV Max chưa vào bảng campaign.
+ROI tầng video gộp đơn tự nhiên (luật nghiêng nhân từ); tách luật video nhà / creator.
 ✅ Nút **Gỡ kết nối** (18/09 khuya, tab Kết nối — mỗi dòng gian đã nối / nối hỏng có nút, hộp xác nhận nói rõ cái gì dừng cái gì
 giữ): `unlinkTiktokAds` xóa dòng nối (+ token nếu không còn gian nào dùng) và, vì tài khoản quảng cáo đổi được theo thời gian,
 (a) đưa chiến dịch `ongoing` của gian về `paused` — lượt đồng bộ chỉ cập nhật chiến dịch sàn CÒN trả về, để nguyên thì nối tài

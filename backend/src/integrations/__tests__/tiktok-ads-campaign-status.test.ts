@@ -110,8 +110,24 @@ describe("reconcileTiktokCampaignStatuses — đối soát báo cáo × danh sá
       reported: ["1"],
     });
     expect(r.updates).toEqual([]);
-    expect(r.creates).toEqual([{ campaignId: "9", name: "Mới tạo, chưa tiêu", status: "paused" }]);
+    expect(r.creates).toEqual([{ campaignId: "9", name: "Mới tạo, chưa tiêu", status: "paused", adType: "gmv_max" }]);
     expect(r.liveCampaigns).toBe(1);
+  });
+
+  it("chiến dịch LIVE GMV Max trong danh sách → tạo với adType gmv_max_live (20/10/2026)", () => {
+    const r = reconcileTiktokCampaignStatuses({
+      known: [],
+      listed: [
+        { campaignId: "L1", name: "LIVE tối", operationStatus: "ENABLE", adType: "gmv_max_live" },
+        { campaignId: "P1", name: "TC001", operationStatus: "ENABLE" },
+      ],
+      reported: [],
+    });
+    expect(r.creates).toEqual([
+      { campaignId: "L1", name: "LIVE tối", status: "ongoing", adType: "gmv_max_live" },
+      { campaignId: "P1", name: "TC001", status: "ongoing", adType: "gmv_max" },
+    ]);
+    expect(r.liveCampaigns).toBe(2);
   });
 
   it("trùng campaign_id trong danh sách: dòng sau đè dòng trước", () => {

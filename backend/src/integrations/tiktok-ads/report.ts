@@ -11,6 +11,7 @@
 // ============================================================
 
 import { getGmvMaxReport, type GmvMaxReportRow } from "./client";
+import type { GmvMaxPromotionType } from "./campaign-status";
 
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 /** Probe 17/09/2026: report KHÔNG có chiều thời gian (tầng sản phẩm / video) nhận khoảng dài tới 366 ngày. */
@@ -93,22 +94,32 @@ export interface GmvMaxCampaignDay {
   cost: number;
   orders: number;
   gmv: number;
+  /** PRODUCT = Product GMV Max; LIVE = LIVE GMV Max (sync ghi adType theo đây). */
+  promotionType: GmvMaxPromotionType;
 }
 
-/** Campaign Product GMV Max × ngày (gồm campaign tạo từ Seller Center lẫn Ads Manager). */
-export async function fetchGmvMaxCampaignDaily(s: Scope): Promise<GmvMaxCampaignDay[]> {
+/**
+ * Campaign GMV Max × ngày (gồm campaign tạo từ Seller Center lẫn Ads Manager) — MỘT loại mỗi lượt gọi:
+ * PRODUCT (mặc định) hoặc LIVE. Sàn bắt buộc lọc `gmv_max_promotion_types`; Seller Center tab "Chiến dịch
+ * GMV Max" gộp cả hai nên muốn khớp số phải gọi cả hai (sync.ts).
+ */
+export async function fetchGmvMaxCampaignDaily(
+  s: Scope,
+  promotionType: GmvMaxPromotionType = "PRODUCT"
+): Promise<GmvMaxCampaignDay[]> {
   const rows = await fetchAllPages(s, {
     dimensions: ["campaign_id", "stat_time_day"],
     metrics: [
       "campaign_id", "campaign_name", "operation_status", "bid_type", "roas_bid",
       "target_roi_budget", "max_delivery_budget", "cost", "orders", "gross_revenue",
     ],
-    filtering: { gmv_max_promotion_types: ["PRODUCT"] },
+    filtering: { gmv_max_promotion_types: [promotionType] },
   });
   return rows.map((r) => {
     const m = r.metrics;
     const bidType = m.bid_type ?? "";
     return {
+      promotionType,
       campaignId: r.dimensions.campaign_id ?? m.campaign_id ?? "",
       name: m.campaign_name ?? "",
       operationStatus: m.operation_status ?? "",

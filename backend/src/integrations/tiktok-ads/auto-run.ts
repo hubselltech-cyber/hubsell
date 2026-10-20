@@ -32,6 +32,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { notify } from "../../services/notifications";
 import { vnDateKey } from "../../lib/ads-dates";
+import { TIKTOK_AD_TYPE_LIVE } from "./campaign-status";
 import { GMV_MAX_CREATIVE_BATCH, updateGmvMaxCreatives } from "./client";
 import {
   buildVideoActionReasons,
@@ -418,8 +419,9 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
   const today = vnDateKey(0);
   const result: AutoRunResult = { campaigns: 0, tracked: 0, evaluated: 0, planned: 0, executed: 0, failed: 0 };
 
+  // LIVE GMV Max không có tầng video để theo dõi / loại → chỉ chiến dịch Product.
   const ongoing = await prisma.adsCampaign.findMany({
-    where: { channelId: channel.id, status: "ongoing" },
+    where: { channelId: channel.id, status: "ongoing", adType: { not: TIKTOK_AD_TYPE_LIVE } },
     select: { id: true, campaignId: true, name: true, channelId: true, status: true, itemIds: true, tiktokAutoRule: true },
   });
   result.campaigns = ongoing.length;

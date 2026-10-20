@@ -25,17 +25,45 @@ describe("summarizeAdsSpend", () => {
     expect(s.notes).toEqual([]);
   });
 
-  it("gian bị sàn thu theo đơn → AdSpend chỉ tham chiếu, không cộng (không trừ hai lần)", () => {
+  it("gian bị sàn thu TRỌN ads theo đơn → không cộng lại (không trừ hai lần)", () => {
     const s = summarizeAdsSpend({
       rows,
-      gmvMaxChargedByChannel: new Map([["tt", -120_000]]),
+      gmvMaxChargedByChannel: new Map([["tt", -843_529]]),
       tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
       dateKey: key,
     });
     expect(s.total).toBe(100_000);
     expect(s.byChannel.has("TIKTOK")).toBe(false);
     expect(s.byDay.get("2026-09-26")).toBeUndefined();
-    expect(s.notes).toEqual(["TikTok đã trừ tiền quảng cáo trong đơn, không cộng lại ở đây"]);
+    expect(s.notes).toEqual(["TikTok đã trừ một phần tiền quảng cáo trong đơn, ở đây chỉ cộng phần còn lại"]);
+  });
+
+  it("gian trả ads bằng tài khoản quảng cáo nhưng có phí coupon GMV Max trong đơn → chỉ trừ đúng phần đã thu, không bỏ cả gian (69Minh Đương 20/10)", () => {
+    const s = summarizeAdsSpend({
+      rows,
+      gmvMaxChargedByChannel: new Map([["tt", -120_000]]),
+      tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
+      dateKey: key,
+    });
+    // TikTok: 843.529 − 120.000 = 723.529, chia theo tỷ lệ lên hai ngày; Shopee cộng đủ.
+    expect(s.total).toBeCloseTo(823_529, 6);
+    expect(s.byChannel.get("TIKTOK")).toBeCloseTo(723_529, 6);
+    expect(s.byChannel.get("SHOPEE")).toBe(100_000);
+    const factor = 723_529 / 843_529;
+    expect(s.byDay.get("2026-09-26")).toBeCloseTo(543_529 * factor, 6);
+    expect(s.byDay.get("2026-09-25")).toBeCloseTo(100_000 + 300_000 * factor, 6);
+    expect(s.notes).toEqual(["TikTok đã trừ một phần tiền quảng cáo trong đơn, ở đây chỉ cộng phần còn lại"]);
+  });
+
+  it("khoản thu trong đơn lớn hơn AdSpend (lệch kỳ quyết toán) → kẹp 0, không ra số âm", () => {
+    const s = summarizeAdsSpend({
+      rows,
+      gmvMaxChargedByChannel: new Map([["tt", -2_000_000]]),
+      tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
+      dateKey: key,
+    });
+    expect(s.total).toBe(100_000);
+    expect(s.byChannel.has("TIKTOK")).toBe(false);
   });
 
   it("gian TikTok chưa nối quảng cáo → ghi chú rõ, không im lặng", () => {

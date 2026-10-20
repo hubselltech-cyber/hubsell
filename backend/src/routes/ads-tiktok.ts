@@ -43,7 +43,7 @@ import {
   isTiktokAdsConfigured,
   updateGmvMaxCreatives,
 } from "../integrations/tiktok-ads";
-import { compareTiktokCampaigns } from "../integrations/tiktok-ads/campaign-status";
+import { TIKTOK_AD_TYPE_LIVE, compareTiktokCampaigns, isTiktokLiveCampaign } from "../integrations/tiktok-ads/campaign-status";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 import {
   VIDEO_ACTIONS,
@@ -107,6 +107,10 @@ import {
 } from "../integrations/tiktok-ads/auto-run";
 
 export const adsTiktokRouter = Router();
+
+/** LIVE GMV Max chỉ có số chiến dịch × ngày — sàn không có tầng sản phẩm/video cho loại này. */
+const LIVE_CAMPAIGN_NO_VIDEOS =
+  "Chiến dịch LIVE GMV Max không có danh sách video để soi hay loại — Hubsell chỉ ghi chi phí, đơn và doanh thu theo ngày.";
 
 function parseDays(raw: unknown): number {
   const n = Number(raw);
@@ -193,7 +197,7 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
       return;
     }
     const campaigns = await prisma.adsCampaign.findMany({
-      where: { channelId: selected.id, status: "ongoing" },
+      where: { channelId: selected.id, status: "ongoing", adType: { not: TIKTOK_AD_TYPE_LIVE } },
       orderBy: { lastSyncedAt: "desc" },
       take: PRODUCT_ADS_MAX_CAMPAIGNS,
       select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true, roasTargetChangedAt: true, roasTargetPrev: true },
@@ -374,6 +378,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     const noOrdersOk = !!selLink && selLink.auth.status === "ACTIVE" && selLink.status === "ACTIVE" && noOrdersWindowOk(period.startDate, period.endDate, vnDateKey(0));
     const seriesMap = new Map<string, { spend: number; gmv: number; orders: number }>();
     const campaigns = rows.map((c) => {
+      const live = isTiktokLiveCampaign(c);
       let spend = 0;
       let orders = 0;
       let gmv = 0;
@@ -395,6 +400,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         campaignId: c.campaignId,
         name: c.name,
         status: c.status,
+        /** true = LIVE GMV Max (quảng cáo phiên live): có số chiến dịch × ngày, KHÔNG soi video / luật tự động / hòa vốn SP. */
+        live,
         biddingMethod: c.biddingMethod,
         roasTarget,
         budget: Number(c.budget),
@@ -411,8 +418,9 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         /** Loại video tự động: chế độ + lượt xét gần nhất (null = chưa cấu hình = Tắt). */
         auto: c.tiktokAutoRule ? autoStatusOf(c.tiktokAutoRule) : null,
         /** Nhận định (campaign-advice.ts) — cùng bộ chẩn đoán với trang chiến dịch và tab Hòa vốn sản phẩm (anh Trung 08/10:
-            khách phải xem được nhận định của mọi chiến dịch đang chạy ngay trên bảng, không phải mở từng cái). */
-        advice: campaignAdvice({
+            khách phải xem được nhận định của mọi chiến dịch đang chạy ngay trên bảng, không phải mở từng cái).
+            Chiến dịch LIVE: không có tầng video/sản phẩm để làm theo lời khuyên → không nhận định. */
+        advice: live ? null : campaignAdvice({
           status: c.status,
           roasTarget,
           budget: Number(c.budget),
@@ -480,10 +488,14 @@ adsTiktokRouter.get("/campaigns/:id/videos/outside", async (req: AuthRequest, re
   try {
     const campaign = await prisma.adsCampaign.findFirst({
       where: { id: String(req.params.id), channel: { userId: req.ownerId!, channelName: ChannelName.TIKTOK } },
-      select: { id: true, campaignId: true, channelId: true, itemIds: true },
+      select: { id: true, campaignId: true, channelId: true, itemIds: true, adType: true },
     });
     if (!campaign) {
       res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    if (isTiktokLiveCampaign(campaign)) {
+      res.status(400).json({ error: LIVE_CAMPAIGN_NO_VIDEOS });
       return;
     }
     const scope = await getTiktokAdsScope(campaign.channelId);
@@ -558,12 +570,17 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         budget: true,
         biddingMethod: true,
         itemIds: true,
+        adType: true,
         channel: { select: { shopName: true } },
         tiktokAutoRule: { select: { mode: true, lastRunOn: true, lastRunSummary: true } },
       },
     });
     if (!campaign) {
       res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    if (isTiktokLiveCampaign(campaign)) {
+      res.status(400).json({ error: LIVE_CAMPAIGN_NO_VIDEOS });
       return;
     }
     const scope = await getTiktokAdsScope(campaign.channelId);
@@ -761,10 +778,14 @@ adsTiktokRouter.post("/campaigns/:id/videos/action", requireAdmin, async (req: A
 
     const campaign = await prisma.adsCampaign.findFirst({
       where: { id: String(req.params.id), channel: { userId: req.ownerId!, channelName: ChannelName.TIKTOK } },
-      select: { id: true, campaignId: true, name: true, channelId: true, status: true },
+      select: { id: true, campaignId: true, name: true, channelId: true, status: true, adType: true },
     });
     if (!campaign) {
       res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    if (isTiktokLiveCampaign(campaign)) {
+      res.status(400).json({ error: LIVE_CAMPAIGN_NO_VIDEOS });
       return;
     }
     if (campaign.status !== "ongoing") {
@@ -853,9 +874,10 @@ function autoStatusOf(rule: { mode: string; lastRunOn: string; lastRunSummary: u
   };
 }
 
+/** Chiến dịch Product GMV Max của chủ shop cho các route luật tự động. LIVE GMV Max không có video để loại → coi như không có. */
 async function ownedTiktokCampaign(ownerId: string, id: string) {
   return prisma.adsCampaign.findFirst({
-    where: { id, channel: { userId: ownerId, channelName: ChannelName.TIKTOK } },
+    where: { id, channel: { userId: ownerId, channelName: ChannelName.TIKTOK }, adType: { not: TIKTOK_AD_TYPE_LIVE } },
     select: {
       id: true,
       campaignId: true,
@@ -881,7 +903,7 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule", async (req: AuthRequest, res, ne
       (await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null))?.byCampaignRowId.get(campaign.id) ?? null;
     // Chiến dịch khác cùng gian — cho nút "Sao chép sang chiến dịch khác".
     const others = await prisma.adsCampaign.findMany({
-      where: { channelId: campaign.channelId, id: { not: campaign.id } },
+      where: { channelId: campaign.channelId, id: { not: campaign.id }, adType: { not: TIKTOK_AD_TYPE_LIVE } },
       orderBy: [{ status: "asc" }, { name: "asc" }],
       select: { id: true, name: true, status: true, tiktokAutoRule: { select: { mode: true } } },
     });
@@ -1222,7 +1244,7 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/copy", requireAdmin, async (req: 
     }
     const targetIds = (Array.isArray(req.body?.targetIds) ? req.body.targetIds : []).map(String).filter((x: string) => x && x !== campaign.id);
     const targets = await prisma.adsCampaign.findMany({
-      where: { id: { in: targetIds }, channelId: campaign.channelId },
+      where: { id: { in: targetIds }, channelId: campaign.channelId, adType: { not: TIKTOK_AD_TYPE_LIVE } },
       select: { id: true, name: true },
     });
     const src = campaign.tiktokAutoRule;
