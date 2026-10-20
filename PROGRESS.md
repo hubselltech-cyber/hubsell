@@ -35,6 +35,14 @@
 - **Còn phải kiểm trên prod (cần DB):** vì sao Product chỉ có số từ 09/10 dù nối 19/10 kéo lùi 30 ngày — khả năng chiến dịch Product của
   khách mới chạy từ 09/10 (trước đó LIVE), lượt sync kế sẽ tự lấp nếu đúng; nếu vẫn trống thì so `tiktokAdsStoreLink.advertiserId` với
   tài khoản đang giữ quyền GMV Max của gian.
+- **Anh chạy script prod (chiều 20/10):** tài khoản đang nối "MINHĐƯƠNG YODY" 7279321767817052161. API tổng tài khoản = API PRODUCT = API
+  c.dịch = **3.797.314₫** (chỉ ngày 09–12 + 19–20; LIVE 0; 01–08 và 13–18 = 0) → Seller Center 26,9tr **≈ 23tr do tài khoản quảng cáo
+  KHÁC chạy** = trường hợp (b), không phải chiến dịch đã xóa. Khớp với chiến dịch 09/10 bị tắt `PRODUCT_USED_BY_PRODUCT_GMV_MAX` ngày 13/10
+  (sản phẩm bị chiến dịch ở tài khoản khác giành) và 2 chiến dịch mới tạo 19/10. Sổ cái 0 đơn feeGmvMax → dòng tiền không bị luật chống trừ.
+  **Lỗi của mình:** bảng chiến dịch DB có 9.751.224₫ (13–18 có số, 19/10 1,15tr vs API 0,85tr) trong khi AdSpend 3.754.629₫ — DB giữ
+  số của chiến dịch không còn thuộc tài khoản đang nối (nghi lần nối đầu 19/10 nhận tài khoản khác, rồi nối lại sang YODY; upsert giữ
+  createdAt) → màn quảng cáo 9,7tr ≠ dòng tiền 3,7tr. Thêm vào script mục "DB: chiến dịch có chi tiêu trong khoảng" đánh dấu
+  ⚠️ dòng không thuộc tài khoản đang nối; **chờ anh chạy lại** để chốt rồi mới sửa (lọc theo advertiser hoặc dọn khi đổi tài khoản).
 
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 

@@ -198,6 +198,35 @@ async function main() {
     }
   }
 
+  // ---- DB: chiến dịch có chi tiêu trong khoảng — dòng KHÔNG thuộc tài khoản đang nối = sót lại từ lần nối trước
+  // (sync chỉ hỏi advertiser hiện tại nên không ghi đè/xóa các ngày đó).
+  const apiIds = new Set(campSeen.keys());
+  for (const type of ["PRODUCT_GMV_MAX", "LIVE_GMV_MAX"] as const) {
+    const list = await getGmvMaxCampaigns(s.accessToken, s.advertiserId, s.storeId, type).catch(() => []);
+    for (const l of list) apiIds.add(String(l.campaign_id));
+  }
+  const dbCamps = await prisma.adsCampaign.findMany({
+    where: { channelId: channel.id, dailyPerf: { some: { date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) } } } },
+    select: {
+      campaignId: true, name: true, adType: true, status: true, createdAt: true, lastSyncedAt: true,
+      dailyPerf: {
+        where: { date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) } },
+        select: { date: true, expense: true, updatedAt: true },
+      },
+    },
+  });
+  console.log(`\nDB: chiến dịch có chi tiêu trong khoảng: ${dbCamps.length}`);
+  for (const c of dbCamps.sort((x, y) => x.campaignId.localeCompare(y.campaignId))) {
+    const dates = c.dailyPerf.map((p) => p.date.toISOString().slice(0, 10)).sort();
+    const cost = c.dailyPerf.reduce((t, p) => t + Number(p.expense), 0);
+    const lastWrite = c.dailyPerf.reduce((t, p) => (p.updatedAt > t ? p.updatedAt : t), new Date(0));
+    console.log(
+      `  ${c.campaignId} "${c.name}" ${c.adType} ${c.status} · ${vnd(cost)}₫ · ${dates[0]} → ${dates[dates.length - 1]}` +
+        ` · Hubsell tạo ${c.createdAt.toISOString()} · sync c.dịch cuối ${c.lastSyncedAt.toISOString()} · ghi số cuối ${lastWrite.toISOString()}` +
+        (apiIds.has(c.campaignId) ? "" : " · ⚠️ KHÔNG thuộc tài khoản đang nối")
+    );
+  }
+
   // ---- Sổ cái: phí GMV Max trong đơn (luật chống trừ hai lần của dòng tiền)
   const fee = await prisma.$queryRaw<{ n: unknown; v: unknown }[]>`
     SELECT count(*) AS n, COALESCE(sum("feeGmvMax"), 0) AS v FROM "order_ledger"
