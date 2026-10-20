@@ -20,7 +20,7 @@ import {
 import { AppShell } from "@/components/shell/app-shell";
 import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 import { TourPlayer } from "@/components/tour/guide-tour-player";
-import { TIKTOK_ADS_VIDEO_ID, YoutubeEmbed } from "@/components/tour/guide-video-dialog";
+import { SHOPEE_ADS_VIDEO_ID, TIKTOK_ADS_VIDEO_ID, YoutubeEmbed } from "@/components/tour/guide-video-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -141,8 +141,9 @@ const SECTIONS: GuideSection[] = [
     icon: Megaphone,
     title: "Trợ lý quảng cáo Shopee",
     description:
-      "15 bước: kết nối Hubsell Ads, ROAS hòa vốn từ lãi thật, chiến dịch nào đang lỗ dù sàn báo dương, hộp chi tiết + từ khóa, nên chạy sản phẩm nào, và từng khối Cấu hình Trợ lý (sàn dữ liệu, diễn tập / thực thi thật, 4 quy tắc, hạ mục tiêu ROAS, sổ hành động).",
+      "Kết nối Hubsell Ads, ROAS hòa vốn từ lãi thật, chiến dịch nào đang lỗ dù sàn báo dương, hộp chi tiết + từ khóa, nên chạy sản phẩm nào, và từng khối Cấu hình Trợ lý (sàn dữ liệu, diễn tập / thực thi thật, 4 quy tắc, hạ mục tiêu ROAS, sổ hành động).",
     tour: ADS_TOUR,
+    youtubeId: SHOPEE_ADS_VIDEO_ID,
   },
   {
     key: "tiktok-ads",

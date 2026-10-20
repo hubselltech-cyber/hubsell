@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 /** Video hướng dẫn anh Trung tự quay (YouTube) — dùng chung cho trang tính năng + /guide. */
 export const TIKTOK_ADS_VIDEO_ID = "jaGQEWVCPbs";
+export const SHOPEE_ADS_VIDEO_ID = "WY4uqur-MXg";
 
 /** Khung YouTube 16:9 (nocookie, không gợi ý video kênh khác ở cuối). */
 export function YoutubeEmbed({ videoId, title, autoplay = false }: { videoId: string; title: string; autoplay?: boolean }) {

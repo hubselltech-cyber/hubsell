@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  CircleHelp,
   AlertTriangle,
   Megaphone,
   Plus,
@@ -88,6 +87,7 @@ import {
 } from "@/components/ads/shopee-assistant-panel";
 import { ShopeeGroupCampaignDialog } from "@/components/ads/shopee-group-campaign-dialog";
 import { ShopeeGmsPanel, formatRoas, roasToneClass } from "@/components/ads/shopee-gms-panel";
+import { GuideVideoLink, SHOPEE_ADS_VIDEO_ID } from "@/components/tour/guide-video-dialog";
 import { formatNumber, formatVND } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { TEXT_NUMBER_STRONG, moneyTone } from "@/lib/typography";
@@ -746,16 +746,13 @@ export function ShopeeAdsPage({
             // 17/09: thanh công cụ chật, dòng này chỉ là thông tin phụ).
             trailing={
               <span className="flex items-center gap-3">
-                {/* Link tour Hướng dẫn sử dụng của chính trang này (anh Trung 16/10) — mới có tour Shopee. */}
+                {/* Video hướng dẫn anh Trung tự quay — mở ngay trên trang, nút X để tắt (20/10, như TikTok). */}
                 {platform === "shopee" && (
-                  <a
-                    href="/guide?muc=ads"
-                    className="flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline dark:text-red-400"
-                    title="Video hướng dẫn 15 bước: đọc số, hộp chi tiết, cấu hình Trợ lý"
-                  >
-                    <CircleHelp className="size-3.5" />
-                    Video hướng dẫn
-                  </a>
+                  <GuideVideoLink
+                    videoId={SHOPEE_ADS_VIDEO_ID}
+                    title="Hướng dẫn Trợ lý quảng cáo Shopee"
+                    hint="Video hướng dẫn: đọc số, hộp chi tiết, cấu hình Trợ lý"
+                  />
                 )}
                 {data?.adsSyncedAt && (
                   <span

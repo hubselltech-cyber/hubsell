@@ -5,6 +5,15 @@
 
 ---
 
+## Phiên 20/10/2026 chiều — VIDEO HƯỚNG DẪN TRỢ LÝ QUẢNG CÁO SHOPEE (ANH TỰ QUAY)
+
+- **Anh:** thay video YouTube `WY4uqur-MXg` vào "Trợ lý quảng cáo Shopee" giống TikTok.
+- **Đã làm:** `SHOPEE_ADS_VIDEO_ID` trong `components/tour/guide-video-dialog.tsx`; link "Video hướng dẫn" trên hàng tab trang Quảng cáo
+  Shopee đổi từ link sang `/guide?muc=ads` thành `GuideVideoLink` (hộp nổi ngay trên trang + nút X, như TikTok); mục `ads` ở `/guide` có
+  `youtubeId` → khung YouTube thay tour 15 bước (tour `ADS_TOUR` vẫn giữ trong code), mô tả bỏ chữ "15 bước".
+- **Kiểm:** frontend `tsc --noEmit` sạch, eslint sạch; local `/guide?muc=ads` hiện iframe youtube-nocookie `WY4uqur-MXg` (đã chụp). Nút trên
+  trang Shopee cần đăng nhập nên chưa bấm thử local — dùng chung component với TikTok đã LIVE.
+
 ## Phiên 20/10/2026 trưa — ADS TIKTOK: KHÁCH 69MINH ĐƯƠNG LỆCH 3 SỐ (SELLER CENTER 26,9TR · HUBSELL 9,7TR · DÒNG TIỀN 3TR)
 
 - **Anh (ảnh):** khách kêu số quảng cáo sai; Seller Center 01–20/10 tab "Chiến dịch GMV Max" 26.959.682₫ / 909 đơn; Hubsell "Tháng này"
