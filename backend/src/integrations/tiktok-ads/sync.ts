@@ -20,7 +20,8 @@
 //   impression / clicks             → 0 (tầng campaign của GMV Max không có).
 //
 // AdSpend (chi phí ads cấp gian theo NGÀY, cùng bảng với Shopee/Lazada) = Σ cost
-// của mọi chiến dịch GMV Max trong ngày. Kiểm số thật 26/09/2026 (gian ANO, 692
+// của mọi chiến dịch GMV Max trong ngày ĐỌC TỪ DB (20/10/2026: gồm cả chiến dịch
+// khách đã xóa — sàn bỏ hẳn lịch sử của chúng khỏi báo cáo). Kiểm số thật 26/09/2026 (gian ANO, 692
 // đơn): sàn KHÔNG trừ GMV Max trong đơn (gmv_max_ad_fee_amount = 0), tiền ads trả
 // bằng số dư tài khoản quảng cáo → không ghi AdSpend thì dòng tiền THIẾU hẳn ads
 // TikTok. Gian nào sàn thu theo đơn (feeGmvMax ≠ 0) → services/ads-spend.ts chỉ
@@ -359,9 +360,21 @@ export async function syncTiktokAdsCampaigns(
     if (r.cost > 0 && r.date >= recentFrom) result.spentRecently = true;
   }
 
-  // Chi phí ads cấp gian theo ngày — ghi đè cùng bộ số mỗi lượt (sàn cập nhật
-  // lại cost trong ngày), ngày không có dòng nào thì để nguyên.
-  for (const [date, amount] of gmvMaxDailyTotals(rows)) {
+  // Chi phí ads cấp gian theo ngày = Σ AdsCampaignDailyPerf của gian trong DB, KHÔNG phải Σ dòng báo cáo lượt này:
+  // chiến dịch khách XÓA biến khỏi MỌI tầng báo cáo của sàn (kể cả tổng tài khoản) nhưng tiền vẫn đã tiêu —
+  // DB là nơi duy nhất còn giữ. Trước 20/10 lấy Σ dòng lượt này → dòng 0₫ của chiến dịch còn sống đè ngày của
+  // chiến dịch đã xóa về 0 (khách 69Minh Đương: 13–18/10 mất 5,3tr, dòng tiền 3,75tr vs màn quảng cáo 9,75tr).
+  // Ngày sàn có trả dòng (dù 0₫) hoặc DB có số thì ghi; ngày khác để nguyên.
+  const perfByDay = await prisma.adsCampaignDailyPerf.groupBy({
+    by: ["date"],
+    where: {
+      adsCampaign: { channelId: channel.id },
+      date: { gte: dateKeyToDbDate(reportScope.startDate), lte: dateKeyToDbDate(reportScope.endDate) },
+    },
+    _sum: { expense: true },
+  });
+  const dbTotals = new Map(perfByDay.map((p) => [p.date.toISOString().slice(0, 10), Number(p._sum.expense ?? 0)]));
+  for (const [date, amount] of tiktokAdSpendByDay(rows, dbTotals)) {
     await prisma.adSpend.upsert({
       where: { channelId_date: { channelId: channel.id, date: dateKeyToDbDate(date) } },
       update: { amount },
@@ -377,12 +390,17 @@ export async function syncTiktokAdsCampaigns(
   return result;
 }
 
-/** Σ cost theo ngày của mọi chiến dịch (thuần — có test). Ngày tăng dần, bỏ dòng thiếu ngày. */
-export function gmvMaxDailyTotals(rows: { date: string; cost: number }[]): Map<string, number> {
-  const byDay = new Map<string, number>();
-  for (const r of rows) {
-    if (!r.date) continue;
-    byDay.set(r.date, (byDay.get(r.date) ?? 0) + (Number.isFinite(r.cost) ? r.cost : 0));
-  }
-  return new Map([...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)));
+/**
+ * AdSpend cần ghi theo ngày (thuần — có test): ngày = hợp của ngày sàn trả dòng lượt này và ngày DB có số;
+ * số tiền = Σ chiến dịch trong DB (dbTotals, gồm cả chiến dịch đã xóa), ngày DB chưa có thì 0. Ngày tăng dần.
+ */
+export function tiktokAdSpendByDay(rows: { date: string }[], dbTotals: Map<string, number>): Map<string, number> {
+  const days = new Set<string>(dbTotals.keys());
+  for (const r of rows) if (r.date) days.add(r.date);
+  return new Map(
+    [...days].sort().map((d) => {
+      const v = dbTotals.get(d) ?? 0;
+      return [d, Number.isFinite(v) ? v : 0];
+    })
+  );
 }

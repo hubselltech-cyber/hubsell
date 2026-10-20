@@ -52,6 +52,14 @@
   của lượt đó (`gmvMaxDailyTotals` trong `sync.ts`) → ngày của chiến dịch đã xóa thành 0 / không có. ~17tr còn lại của 01–08/10 là chiến dịch
   xóa TRƯỚC khi nối Hubsell → API không trả nữa, không lấy lại được (nói với khách). **Đề xuất sửa gốc:** AdSpend theo ngày = Σ
   `AdsCampaignDailyPerf` của gian trong DB (giữ được chiến dịch đã xóa) thay vì Σ dòng của lượt; kèm test ca chiến dịch biến mất. Chờ anh chốt.
+- **Anh: "Sửa luôn đi em" → ✅ code (sửa gốc, không vá số):** `sync.ts` ghi AdSpend từ `groupBy` `AdsCampaignDailyPerf` của gian trong
+  cửa sổ lượt (`tiktokAdSpendByDay` thay `gmvMaxDailyTotals`) — cơ chế cũ: báo cáo trả dòng 0₫ của chiến dịch còn sống cho 13–18 → đè AdSpend
+  về 0. Test viết lại 3 ca (gồm ca 69Minh Đương). Script một lần `backend/scripts/tiktok-adspend-rebuild-from-perf.ts` (chỉ gian TikTok,
+  30 ngày, mặc định chỉ xem, `--apply` ghi) vì lượt thường chỉ quét 7 ngày → 13/10 của khách không tự sửa. Docs ADS-TIKTOK-GMV-MAX mục 2.6.
+  Kiểm: backend `tsc --noEmit` sạch, 148 test tiktok-ads xanh, script tsc sạch. **Ảnh hưởng tài chính (trả lời anh):** CÓ — AdSpend vào
+  Báo cáo dòng tiền (cột Chi phí) và Tổng quan (nhóm ADS → Tổng chi phí / lợi nhuận ròng); KHÔNG vào Lãi/Lỗ thực hiện, sổ cái đơn. Chỉ
+  gian TikTok có chiến dịch bị xóa mới đổi, và đổi theo hướng đúng (tăng chi phí). ⏳ Anh: push nhánh → deploy → chạy script xem trước
+  rồi `--apply`; sau đó đối chiếu dòng tiền khách 01–20/10 ≈ 9,75tr.
 
 ## Phiên 20/10/2026 sáng — MOBILE 1.3.1 ĐÃ LÊN CẢ 2 KHO; THƯ BÁO KHÁCH + BẬT LẠI DẢI APP (ĐÃ GỬI 133 THƯ — ĐÓNG)
 

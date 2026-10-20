@@ -46,6 +46,12 @@ lệnh loại video) · Reporting › GMV Max reports. **Chưa xin nhóm Campaig
    69Minh Đương trả ads bằng hóa đơn tài khoản quảng cáo 9,7tr chỉ thấy 3tr ở dòng tiền). Gian trả trọn ads qua đơn: phần
    vượt ≈ 0 → vẫn không trừ hai lần. Lãi/Lỗ thực hiện giữ nguyên số sàn trả (anh Trung chốt). Mapper
    `gmv_max_ad_fee_amount` → `serviceFee` vẫn giữ cho trường hợp sàn có trừ.
+   **Nguồn số AdSpend = Σ `AdsCampaignDailyPerf` của gian trong DB, KHÔNG phải Σ dòng báo cáo của lượt sync** (sửa 20/10/2026,
+   `tiktokAdSpendByDay` trong `sync.ts`): chiến dịch khách XÓA biến khỏi MỌI tầng báo cáo của sàn — kể cả tổng tài khoản
+   (đã kiểm prod bằng `scripts/tiktok-ads-compare-seller-center.ts`) — nhưng tiền vẫn đã tiêu; DB là nơi duy nhất còn giữ.
+   Cách cũ để dòng 0₫ của chiến dịch còn sống đè ngày của chiến dịch đã xóa về 0 (69Minh Đương: dòng tiền 3,75tr vs màn quảng
+   cáo 9,75tr). Phần cũ hơn cửa sổ 7 ngày sửa bằng `scripts/tiktok-adspend-rebuild-from-perf.ts` (mặc định chỉ xem, `--apply` ghi).
+   Tiền của chiến dịch xóa TRƯỚC khi gian nối Hubsell thì không lấy lại được — Seller Center sẽ cao hơn Hubsell.
 
 ## 3. Bản đồ code
 
