@@ -53,12 +53,13 @@ import {
 // điện thoại thì quét QR vô nghĩa → nút dẫn thẳng tới kho ứng dụng của máy.
 
 /**
- * 19/10/2026 — TẠM ẨN (anh Trung): chờ mobile 1.3.1 (Đăng ký trong app, đăng
- * nhập Google/Apple) lên cả 2 kho rồi mới hiện lại. Khi bật lại: đặt false,
- * sửa ACCOUNT_NOTES dòng "email và mật khẩu" cho có Google/Apple, cân nhắc
- * tăng NOTICE_VERSION để khách đã tắt thấy lại.
+ * 19/10/2026 — TẠM ẨN (anh Trung) chờ mobile 1.3.1 (Đăng ký trong app, đăng
+ * nhập Google/Apple). 20/10/2026 — 1.3.1 đã lên CẢ 2 kho (iOS tự phát hành
+ * sau duyệt, Android vc 7) → BẬT LẠI, ACCOUNT_NOTES có Google/Apple.
+ * NOTICE_VERSION GIỮ NGUYÊN: khách đã bấm "Không hiện lại" là thôi hẳn
+ * (luật anh Trung "bỏ qua là không hiện lại"); bản tin 1.3.1 tới họ bằng thư.
  */
-const NOTICE_PAUSED = true;
+const NOTICE_PAUSED = false;
 /** Đổi khi nội dung thay đổi lớn → khách đã tắt bản cũ sẽ thấy bản mới. */
 const NOTICE_VERSION = "live-ios-2026-10";
 /** Sau mốc này dải tự biến mất dù chưa ai gỡ code (an toàn khi lỡ quên). */
@@ -115,7 +116,7 @@ const WAREHOUSE_FEATURES = [
 ];
 
 const ACCOUNT_NOTES = [
-  "Đăng nhập bằng đúng email và mật khẩu đang dùng, không cần đăng ký lại.",
+  "Đăng nhập bằng tài khoản đang dùng, không cần đăng ký lại: bấm Google (iPhone có thêm Apple), hoặc gõ email và mật khẩu.",
   "Phân quyền nhân viên giữ nguyên: chủ shop thấy tài chính, nhân viên kho thấy màn quét.",
   "Có sẵn trong mọi gói dịch vụ, không thu thêm phí.",
   "Có trên Google Play từ 13/10/2026 và App Store từ 16/10/2026.",
@@ -220,7 +221,7 @@ export function MobileAppLaunchNotice() {
           </span>
           <span className="hidden text-white/90 lg:inline">
             {" "}
-            — dùng chung tài khoản này, không thêm phí.
+            — dùng chung tài khoản này, đăng nhập bằng Google được, không thêm phí.
           </span>
         </p>
         <button
@@ -271,7 +272,7 @@ export function MobileAppLaunchNotice() {
           <div className="flex flex-col items-center gap-4 py-2">
             <QrImage size={208} />
             <p className="text-center text-xs text-muted-foreground">
-              Đăng nhập bằng đúng tài khoản đang dùng, không thu thêm phí.
+              Đăng nhập bằng tài khoản đang dùng, bấm Google là vào. Không thu thêm phí.
             </p>
             {/* Đang cầm điện thoại mở hộp này (iPhone chưa có link) thì bấm nút thay vì quét. */}
             <StoreButtons className="justify-center" />

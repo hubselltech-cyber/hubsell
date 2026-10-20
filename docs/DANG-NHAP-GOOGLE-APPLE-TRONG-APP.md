@@ -135,6 +135,8 @@ Gửi cho chủ shop ACTIVE có email (ưu tiên nhóm `googleId IS NOT NULL` �
 
 Việc code khi gửi: script một lần `backend/scripts/mail-app-1-3-0.ts` (đọc danh sách, gửi tuần tự có nghỉ 200 ms, log số đã gửi, cờ `--dry-run` in danh sách trước) — chạy sau khi CẢ HAI kho đã phát hành, anh duyệt nội dung + danh sách dry-run rồi mới gửi thật.
 
+**20/10/2026 — đã làm cho 1.3.1** (cả 2 kho có 1.3.1, iOS tự phát hành): script thật là `backend/scripts/mail-app-1-3-1.ts`, nội dung `app131EmailHtml` trong `services/customer-mails.ts`. Nội dung đổi so với nháp trên: nút trong app 1.3.1 là biểu tượng tròn nên thư viết "bấm biểu tượng Google dưới nút Đăng nhập"; MỘT nút "Tải app Hubsell" (hubsell.vn/tai-app tự chọn kho), App Store / Google Play là link chữ; gửi cho MỌI chủ shop (không chỉ nhóm Google), bỏ email nội bộ/thử/sai định dạng. Chờ anh duyệt rồi mới chạy.
+
 ## 11. Bản sau (1.4): nhắc cập nhật trong app + EAS Update
 
 Anh chốt 18/10: làm từ bản sau. Phạm vi: backend `/api/mobile/version` (latest, min theo nền), app so `Constants.expoConfig.version` lúc mở → dải "Có bản mới" + nút mở kho, dưới min thì chặn; Android thêm Play In-App Updates (`expo-in-app-updates` hoặc tương đương); EAS Update cho thay đổi chỉ JS với `runtimeVersion` policy `appVersion` để JS mới không rơi vào native cũ.
