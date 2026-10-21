@@ -31,6 +31,7 @@ import {
 import { resolveShopeeAdsAccess, type ShopeeAdsAccess } from "../hubsell-ads";
 import { isApiBudgetError } from "../../services/api-budget";
 import { fromShopeeDate } from "./ads-spend";
+import { ADS_PERF_METRICS, upsertAdsPerfBatch, type AdsPerfRow } from "../ads-perf-batch";
 import { shopeeDateParam, vnDayWindow } from "../../lib/ads-dates";
 import { reconcileHubsellPauseFlags, recordMarketplaceStatusChange } from "./ads-pause-flag";
 
@@ -197,7 +198,7 @@ export async function upsertShopeeCampaignSettings(
   return rowIdByCampaignId;
 }
 
-// ---------- Bước 3: hiệu suất theo ngày → upsert AdsCampaignDailyPerf (1 call / 100) ----------
+// ---------- Bước 3: hiệu suất theo ngày → upsert AdsCampaignDailyPerf (1 call / 100, ghi theo lô) ----------
 
 /** `window`: khoảng NGÀY SÀN "YYYY-MM-DD" (giờ VN) — lấy từ vnDayWindow, không tự tính bằng giờ máy chủ. */
 export async function upsertShopeeCampaignPerf(
@@ -236,6 +237,9 @@ export async function upsertShopeeCampaignPerf(
       }
       throw err;
     }
+    // Gom cả lô sàn trả rồi ghi MỘT câu (ads-perf-batch) — trước đây mỗi (chiến
+    // dịch, ngày) một upsert: 100 chiến dịch × 30 ngày = 3.000 lượt đi-về DB.
+    const perfRows: AdsPerfRow[] = [];
     for (const entry of unwrapPerfCampaignList(perf.response)) {
       if (entry.campaign_id == null) continue;
       const rowId = rowIdByCampaignId.get(String(entry.campaign_id));
@@ -255,14 +259,10 @@ export async function upsertShopeeCampaignPerf(
           broadOrderAmount: Math.trunc(Number(point.broad_order_amount ?? 0)) || 0,
           directOrderAmount: Math.trunc(Number(point.direct_order_amount ?? 0)) || 0,
         };
-        await prisma.adsCampaignDailyPerf.upsert({
-          where: { adsCampaignId_date: { adsCampaignId: rowId, date } },
-          update: data,
-          create: { adsCampaignId: rowId, date, ...data },
-        });
-        upserted++;
+        perfRows.push({ adsCampaignId: rowId, date, ...data });
       }
     }
+    upserted += await upsertAdsPerfBatch(perfRows, ADS_PERF_METRICS);
   }
   return upserted;
 }

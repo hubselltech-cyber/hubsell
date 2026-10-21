@@ -34,6 +34,7 @@ import {
 } from "./client";
 import { getValidLazadaAccessToken } from "./service";
 import { syncLazadaAdsSpendFromPerf } from "./ads-spend";
+import { upsertAdsPerfBatch, type AdsPerfRow } from "../ads-perf-batch";
 import { reconcileHubsellPauseFlags, recordMarketplaceStatusChange } from "../shopee/ads-pause-flag";
 
 export interface SyncLazadaAdsCampaignsOptions {
@@ -166,6 +167,8 @@ export async function syncLazadaAdsCampaigns(
         pageSize: 100,
         useRtTable: ago === 0, // hôm nay cần bảng realtime mới có số
       });
+      // Gom cả trang (≤ 100 dòng) rồi ghi MỘT câu (ads-perf-batch) thay vì upsert từng dòng.
+      const perfRows: AdsPerfRow[] = [];
       for (const r of page.rows) {
         if (r.campaignId == null) continue;
         const campaignId = String(r.campaignId);
@@ -191,12 +194,7 @@ export async function syncLazadaAdsCampaigns(
           data.broadGmv > 0 ||
           data.directGmv > 0;
         if (!hasAny) continue;
-        await prisma.adsCampaignDailyPerf.upsert({
-          where: { adsCampaignId_date: { adsCampaignId: rowId, date } },
-          update: data,
-          create: { adsCampaignId: rowId, date, ...data },
-        });
-        result.perfDaysUpserted++;
+        perfRows.push({ adsCampaignId: rowId, date, ...data });
         if (data.expense > 0) activeSpendCampaigns.add(campaignId);
         if (!metaByCampaignId.has(campaignId)) {
           const type = lazAdsNum(r.campaignType);
@@ -212,6 +210,9 @@ export async function syncLazadaAdsCampaigns(
           });
         }
       }
+      result.perfDaysUpserted += await upsertAdsPerfBatch(perfRows, [
+        "impression", "clicks", "expense", "broadOrder", "broadGmv", "directOrder", "directGmv",
+      ]);
       if (page.rows.length < 100) break;
     }
   }

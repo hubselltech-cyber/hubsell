@@ -5,6 +5,26 @@
 
 ---
 
+## Phiên 21/10/2026 chiều — ANH ĐÃ NÂNG WORKER STANDARD; RÀ CHECKLIST M2 + UPSERT HIỆU SUẤT ADS THEO LÔ
+
+- **Anh báo:** đã nâng gói Worker (Standard 2 GB) trên Render. Hỏi 4 việc checklist M2 của em (HQ `capacity-plan.ts`) tới đâu.
+- **Rà (ghi docs/HQ-SUC-KHOE.md mục 21/10):** (1) `AUTO_SYNC_CONCURRENCY=6` = env anh đặt tay trên Render, **đặt cùng
+  `NODE_HEAP_MB=1536`** (thiếu là worker 2 GB vẫn chết ở heap 320 MB); (2) webhook Lazada vào hàng đợi bền **đã xong 01/10**;
+  (3) index Order(channelId, createdAt) + OrderItem(orderId) **đã có** trong schema; (4) upsert hiệu suất ads theo lô **chưa** → làm phiên này.
+- **Làm — `integrations/ads-perf-batch.ts` (mới):** `upsertAdsPerfBatch(rows, columns)` gom dòng AdsCampaignDailyPerf rồi ghi MỘT câu
+  `INSERT … SELECT FROM unnest(mảng cột) … ON CONFLICT ("adsCampaignId","date") DO UPDATE` mỗi lô ≤ 1.000 dòng (số tham số cố định theo
+  số cột, không phình theo số dòng). Giữ đúng nghĩa upsert từng dòng cũ: chỉ cột trong `columns` được ghi/đè (TikTok 5 cột, Lazada 7, Shopee 9),
+  cùng khóa lặp trong lô → dòng sau thắng (tránh lỗi Postgres "affect row a second time"), `updatedAt = now()`. Nối vào 3 sàn:
+  Shopee `shopee/ads-campaigns.ts` (ghi sau mỗi lô 100 chiến dịch sàn trả), TikTok `tiktok-ads/sync.ts` (cả cửa sổ một lần), Lazada
+  `lazada/ads-campaigns.ts` (mỗi trang report ≤ 100 dòng). Số đếm `perfDaysUpserted` nay = số dòng sau gộp trùng (trước = số lượt gọi).
+- **Kiểm:** `tsc --noEmit` sạch. Test mới `ads-perf-batch.test.ts`: 3 ca thuần (gộp trùng, rỗng không chạm DB, chia lô 2.001 dòng → 3 câu)
+  + 4 ca DB (tạo mới đủ cột + Decimal 2 số lẻ, đè đúng cột TikTok giữ impression/clicks cũ + updatedAt tiến, khóa lặp trong lô, lô > 1.000).
+  Phiên cloud dựng Postgres 16 tạm (`prisma db push`) → **cả 7 ca xanh trên DB thật**; `ads-shopee-vn-day` xanh. Chạy trọn bộ trên DB tạm:
+  26 file lỗi nhưng **y hệt khi stash code mới** — do DB tạm thiếu trigger/phân mảnh/chỉ mục chỉ có trong migration + không có dữ liệu dev
+  ("DB dev phải có gian… để phép so có nghĩa"), không liên quan thay đổi này.
+- **Anh cần làm trên Render (worker):** đặt `NODE_HEAP_MB=1536` (bắt buộc với gói 2 GB) và `AUTO_SYNC_CONCURRENCY=6`; sau deploy xem
+  `/admin/health` RSS worker + mốc nước gian để chốt giữ 6 hay về 3.
+
 ## Phiên 21/10/2026 trưa — SỬA GỐC OOM WORKER: ĐỐI SOÁT TIKTOK GHI THEO LÔ + ĐẾM LẦN SẬP LƯỢT NẠP LỊCH SỬ
 
 - **Anh chốt:** "Cần sửa gốc sập"; anh tự nâng gói Render để chặn ngay (worker Starter 512 MB → Standard 2 GB: đặt thêm env
