@@ -1,4 +1,4 @@
-"""Chốt kích thước ảnh nộp kho (chạy sau render.mjs):
+"""Chốt kích thước ảnh nộp kho (chạy sau store-feature-graphic.mjs: python tools/do-hoa/store-finish.py):
   - feature-graphic-1024x500.png : thu bản chụp 2x về đúng 1024×500, RGB không alpha (Google bắt buộc).
   - icon-512.png                 : icon Google Play 512×512, thu từ icon-1024 của app.
 """
@@ -6,8 +6,8 @@ from pathlib import Path
 
 from PIL import Image
 
-here = Path(__file__).resolve().parent
-root = here.parent.parent
+root = Path(__file__).resolve().parent.parent.parent
+here = root / "docs" / "store"  # html nguồn + ảnh ra nằm cạnh tư liệu store
 
 fg = Image.open(here / "_feature-graphic@2x.png").convert("RGB")
 assert fg.size == (2048, 1000), fg.size

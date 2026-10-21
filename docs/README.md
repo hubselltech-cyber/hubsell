@@ -61,4 +61,7 @@
 - [LANDING-KE-CHUYEN.md](LANDING-KE-CHUYEN.md) · [LANDING-NHAN-VAT-THUONG-HIEU.md](LANDING-NHAN-VAT-THUONG-HIEU.md) · `landing-persona/`
 - `marketing/` — định vị lại (DINH-VI-LAI-HUBSELL-QUANG-CAO), thư khách hiện có, quy trình video, bài Facebook
 - Việc marketing mới (từ 17/10/2026) làm ở thư mục riêng [`../hubsell-marketing/`](../hubsell-marketing/README.md): bối cảnh sản phẩm, skill marketing, SQL số khách, chiến lược
-- `store/` — [DUA-APP-LEN-CH-PLAY-APP-STORE.md](DUA-APP-LEN-CH-PLAY-APP-STORE.md), LISTING, thư trả Apple REPLY-1…7, ảnh/feature graphic + script dựng
+- `store/` — [DUA-APP-LEN-CH-PLAY-APP-STORE.md](DUA-APP-LEN-CH-PLAY-APP-STORE.md), LISTING, thư trả Apple REPLY-1…7, ảnh/feature graphic (script dựng ở `../tools/do-hoa/`)
+
+## Lưu trữ
+- [archive/PROGRESS-2026-07-09.md](archive/PROGRESS-2026-07-09.md) — nhật ký phiên 28/07 → 24/09/2026 (36 phiên) tách khỏi PROGRESS.md ngày 21/10/2026

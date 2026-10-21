@@ -185,7 +185,7 @@ Cách dùng:
 | Dưới logo (sidebar, login) | (không có) | **Trợ lý quảng cáo** (chữ nhỏ) |
 | Tên kho ứng dụng (≤30) | Hubsell - Quản lý bán đa sàn | **Hubsell - Trợ lý quảng cáo** (26) |
 | Phụ đề Apple (≤30) | Đơn, kho, lãi lỗ trong một app | **Lãi thật từng đồng quảng cáo** (28) |
-| Mô tả ngắn Google (≤80) | Xem lãi ròng, đơn mọi sàn… | **Biết lãi thật của từng chiến dịch quảng cáo trên mọi sàn, tự canh chiến dịch lỗ** (79, đếm lại bằng `docs/store/check-lengths.py`) |
+| Mô tả ngắn Google (≤80) | Xem lãi ròng, đơn mọi sàn… | **Biết lãi thật của từng chiến dịch quảng cáo trên mọi sàn, tự canh chiến dịch lỗ** (79, đếm lại bằng `tools/do-hoa/store-check-lengths.py`) |
 | Tên công ty, nhãn hiệu, tên miền, package id | giữ | **giữ nguyên** |
 
 Phương án khác nếu anh vẫn muốn tên mới (em KHÔNG khuyên, ghi để anh có cái so):

@@ -2,7 +2,7 @@
 
 Soạn 01/10/2026 cho bản 1.0.0, mã app `vn.hubsell.app`. Mọi nội dung dưới đây chép thẳng vào Play Console / App Store Connect ở giai đoạn C của [DUA-APP-LEN-CH-PLAY-APP-STORE.md](../DUA-APP-LEN-CH-PLAY-APP-STORE.md). Phần khai dữ liệu (mục 5, 6) viết theo **code thật** của `hubsell-mobile/` rà ngày 01/10, không theo trí nhớ: sửa app thì phải rà lại.
 
-Độ dài các ô có giới hạn đã đếm bằng máy (`python docs/store/check-lengths.py`).
+Độ dài các ô có giới hạn đã đếm bằng máy (`python tools/do-hoa/store-check-lengths.py`).
 
 > **15/10/2026 — định vị lại "Trợ lý quảng cáo đa sàn" (anh Trung chốt).** Nội dung
 > dưới đây là bản ĐANG TRÊN KHO (Google Play đã phát hành, Apple đang xét build 1.0
@@ -381,7 +381,7 @@ Dòng xin quyền hiện trên iPhone (đều tiếng Việt, nêu rõ mục đ�
 |---|---|---|
 | Icon App Store | 1024×1024, không alpha | Có: `hubsell-mobile/assets/images/icon-1024.png` (EAS tự gắn vào bản build) |
 | Icon Google Play | 512×512 | Có: [icon-512.png](icon-512.png) |
-| Ảnh bìa Google Play | 1024×500, không alpha | Có: [feature-graphic-1024x500.png](feature-graphic-1024x500.png). Sửa chữ ở [feature-graphic.html](feature-graphic.html) rồi chạy `node docs/store/render.mjs` và `python docs/store/finish.py` |
+| Ảnh bìa Google Play | 1024×500, không alpha | Có: [feature-graphic-1024x500.png](feature-graphic-1024x500.png). Sửa chữ ở [feature-graphic.html](feature-graphic.html) rồi chạy `node tools/do-hoa/store-feature-graphic.mjs` và `python tools/do-hoa/store-finish.py` |
 | Ảnh màn hình iPhone | ★ 06/10 App Store Connect chỉ nhận cỡ "iPhone with Dynamic Island (medium display)" = 1179×2556 hoặc **1206×2622** (1290×2796 bị báo "File dimensions are invalid") → bộ đã tải lên ở [screenshots/iphone-6.3/](screenshots/iphone-6.3/) (resize từ iphone/). Bản 1290×2796: 6 ảnh ở [screenshots/iphone/](screenshots/iphone/). Dựng từ ảnh chụp app thật trên máy ảo Android (bản `25817e81`), đã cắt thanh trạng thái + thanh điều hướng Android. Có bản TestFlight thì chụp lại trên iPhone thật để thay |
 | Ảnh màn hình Android | cạnh dài không quá 2 lần cạnh ngắn, 2 đến 8 ảnh | Có (05/10): 6 ảnh 1080×2160 ở [screenshots/android/](screenshots/android/) |
 

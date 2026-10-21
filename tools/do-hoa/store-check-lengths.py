@@ -1,4 +1,5 @@
-"""Đếm độ dài các ô có giới hạn trong LISTING.md — chạy lại mỗi khi sửa câu chữ.
+"""Đếm độ dài các ô có giới hạn trong docs/store/LISTING.md — chạy lại mỗi khi sửa câu chữ:
+  python tools/do-hoa/store-check-lengths.py
 Kho đếm theo ký tự hiển thị; chuẩn hóa NFC để chữ Việt có dấu tính một ký tự.
 """
 import re
@@ -6,7 +7,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-text = unicodedata.normalize("NFC", (Path(__file__).resolve().parent / "LISTING.md").read_text(encoding="utf-8"))
+text = unicodedata.normalize("NFC", (Path(__file__).resolve().parent.parent.parent / "docs" / "store" / "LISTING.md").read_text(encoding="utf-8"))
 
 LIMITS = {"Tên app": 30, "Phụ đề": 30, "Mô tả ngắn": 80, "Từ khóa": 100, "Dòng quảng bá": 170}
 ok = True

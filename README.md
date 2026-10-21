@@ -67,9 +67,9 @@ hubsell/
 ├── start-backend.bat · start-frontend.bat · start-https.bat   # Bấm đúp chạy local
 ├── .easignore                           # EAS Build đóng gói từ GỐC kho git: chỉ cho hubsell-mobile/ lên máy build Expo
 ├── scripts/                             # gen-certs.sh, dev-https.sh (HTTPS local)
-├── tools/                               # Công cụ ngoài app: mail-digest/ (tóm tắt thư 07:30), phap-ly/ (sinh hồ sơ PDF)
+├── tools/                               # Công cụ ngoài app: mail-digest/ (tóm tắt thư 07:30), phap-ly/ (sinh hồ sơ PDF), do-hoa/ (ảnh store + bìa Facebook)
 ├── docs/                                # 45+ tài liệu — chỉ mục theo chủ đề: docs/README.md
-│   ├── marketing/ · store/              # Định vị, video, bài FB · hồ sơ App Store / Google Play, thư trả Apple
+│   ├── marketing/ · store/ · archive/   # Định vị, video, bài FB · hồ sơ App Store / Google Play, thư trả Apple · nhật ký phiên cũ
 │   ├── landing-persona/ · bang-thong-worker-do-2026-10-12/   # Tư liệu đo đạc
 │   └── *.md                             # KIEN-TRUC-QUY-MO-TRIEU-DON, HANG-DOI-BEN, SO-CAI-DON, DONG-BO-GIAI-DOAN-3,
 │                                        #   GOI-NGU-DONG-GIAN-HET-HAN, HQ-SUC-KHOE, DEPLOY-RENDER-SUPABASE, ...
@@ -138,50 +138,45 @@ hubsell/
 
 Không nằm trong repo: `hubsell-landing/` (repo riêng, ignore), `certs/` (cert local), `.claude/worktrees/` (phiên phụ của app).
 
-## API hiện có
+## API hiện có — theo điểm mount trong `backend/src/app.ts` (rà 21/10/2026)
 
-| Method | Đường dẫn | Mô tả | Bảo vệ |
+Bảng cũ (07/2026, liệt kê từng endpoint thời còn "giả lập") đã bỏ vì lệch mã thật. Bảng này
+chỉ ghi **nhóm đường dẫn + lớp gác** đúng như `app.ts`; endpoint lẻ bên trong đọc router
+tương ứng ở `backend/src/routes/<tên>.ts` (mỗi router tự siết đúng lá quyền của route mình).
+
+Ký hiệu cột **Gác** (middleware trong `backend/src/middleware/auth.ts`):
+`JWT` = `requireAuth` · `quyền X` = `requirePermission("X")` (chủ shop toàn quyền, nhân viên cần lá X trong cây `config/permission-registry.ts`; nhiều lá = có MỘT là qua) · `chủ shop` = `adminOnly` · `gói mở` = `requirePlanUnlocked` (khóa tầng giá trị gia tăng khi vượt trần đơn / hết gói quá ân hạn) · `có gian` = `requireChannel` (shop chưa nối gian → 409 `NO_CHANNEL`) · `HQ` = `requirePlatformPermission("hq")` (cây quyền nền tảng `config/platform-permission-registry.ts`).
+
+| Nhóm đường dẫn | Router | Gác | Ghi chú |
 |---|---|---|---|
-| POST | `/api/auth/register` | Đăng ký (bcrypt hash mật khẩu) | Công khai |
-| POST | `/api/auth/login` | Đăng nhập → trả JWT (7 ngày) | Công khai |
-| GET | `/api/auth/me` | Thông tin người đang đăng nhập | 🔒 JWT |
-| GET | `/api/dashboard/summary` | Số liệu tổng quan | 🔒 JWT |
-| GET | `/api/products` | Danh sách SP (phân trang, tìm SKU/tên) | 🔒 JWT |
-| POST | `/api/products` | Thêm SP + tồn kho ban đầu (transaction) | 🔒 JWT |
-| PATCH | `/api/products/:id` | Sửa thông tin SP | 🔒 JWT |
-| POST | `/api/products/import` | Nhập SP hàng loạt từ file Excel (validate + upsert trong 1 transaction) | 🔒 JWT |
-| POST | `/api/inventory/adjust` | Nhập/xuất kho (transaction + khoá dòng) | 🔒 JWT |
-| GET | `/api/inventory/logs` | Lịch sử xuất nhập kho | 🔒 JWT |
-| GET | `/api/orders` | Danh sách đơn hàng | 🔒 JWT |
-| GET | `/api/channels` | Danh sách kênh bán (kèm số đơn/mapping) | 🔒 JWT |
-| POST | `/api/channels` | Kết nối gian hàng (giả lập — cấp API Token ảo) | 🔒 JWT |
-| GET | `/api/channels/tiktok/auth-url` | **[TikTok thật]** Dựng URL uỷ quyền OAuth + `state` chống CSRF | 🔒 Chỉ Admin |
-| POST | `/api/channels/tiktok/callback` | **[TikTok thật]** Đổi `auth_code` → access/refresh token, lấy `shop_cipher`, lưu gian hàng | 🔒 Chỉ Admin |
-| POST | `/api/channels/:id/sync-orders` | **[TikTok thật]** Kéo đơn hàng thật → upsert `Order`+`OrderItem` (idempotent) | 🔒 Chỉ Admin |
-| POST | `/api/channels/:id/sync-settlements` | **[TikTok thật]** Kéo đối soát thật → cập nhật quyết toán từng đơn (Cash Flow) | 🔒 Chỉ Admin |
-| GET | `/api/channels/shopee/auth-url` | **[Shopee thật]** Dựng URL uỷ quyền (ký HMAC-SHA256) + state mang ownerId | 🔒 Chỉ Admin |
-| GET | `/api/auth/shopee/callback` | **[Shopee thật]** Nhận `code`+`shop_id`+`state` → đổi token → lưu Channel → redirect FE | 🔑 State JWT |
-| POST | `/api/channels/:id/disconnect` | Ngắt kết nối gian hàng | 🔒 JWT |
-| GET | `/api/channels/:id/products` | Danh mục sản phẩm trên sàn + trạng thái mapping | 🔒 JWT |
-| GET | `/api/mappings` | Danh sách liên kết SKU sàn ↔ SP gốc | 🔒 JWT |
-| POST | `/api/mappings` | Tạo/đổi liên kết (upsert) | 🔒 JWT |
-| DELETE | `/api/mappings/:id` | Gỡ liên kết | 🔒 JWT |
-| POST | `/api/webhooks/mock-order` | Webhook giả lập nhận đơn từ sàn: tra mapping → tạo Order + trừ kho + log SYNC (transaction) | 🔑 Token kênh |
-| POST | `/api/webhooks/tiktok` | **[TikTok thật]** Webhook đơn hàng (type 1/2/3/4/11/12) + thu hồi/hết hạn ủy quyền (6/7): verify chữ ký → ghi hàng đợi bền `tiktok_webhook_logs` → ack; worker lấy chi tiết đơn → upsert + trừ/hoàn kho (idempotent, retry 3) | 🔑 Chữ ký HMAC |
-| PATCH | `/api/orders/:id/status` | Đổi trạng thái vận chuyển; CANCELLED → tự hoàn kho + ghi log (transaction) | 🔒 JWT |
-| GET | `/api/analytics` | Doanh thu / Giá vốn / Lợi nhuận gộp / **Chi phí HĐ / Lợi nhuận thuần**, biểu đồ | 🔒 Chỉ Admin |
-| GET/POST/DELETE | `/api/expenses` | Quản lý chi phí hoạt động (mặt bằng, lương, đóng gói, quảng cáo) | 🔒 Chỉ Admin |
-| GET/POST/DELETE | `/api/staff` | Quản lý nhân viên (danh sách, tạo, xoá) | 🔒 Chỉ Admin |
-| PUT | `/api/staff/:id/channels` | Gán các gian hàng nhân viên được xử lý (rỗng = tất cả) | 🔒 Chỉ Admin |
-| GET/POST | `/api/finance/expenses` | Danh sách & thêm chi phí vận hành (`type`: FIXED / VARIABLE) | 🔒 Chỉ Admin |
-| GET | `/api/finance/orders-analysis` | Quét đơn Đã giao → **đơn bán lỗ** (Doanh thu − Phí sàn − Giá vốn ≤ 0) + cảnh báo thiếu giá vốn | 🔒 Chỉ Admin |
-| GET | `/api/finance/analytics` | Tổng doanh thu / Lợi nhuận gộp / Lợi nhuận thuần + chuỗi 14 ngày (số đầy đủ) | 🔒 Chỉ Admin |
-| GET | `/api/finance/sku-products?channel=` | Danh sách SKU theo sàn (all/shopee/tiktok/lazada/offline) để nhập giá vốn | 🔒 Chỉ Admin |
-| PATCH | `/api/finance/update-cost` | Cập nhật giá vốn theo `sku_id` + `cost_price` | 🔒 Chỉ Admin |
-| POST | `/api/finance/sync-products` | **Quét sản phẩm từ các sàn đã kết nối** → upsert vào Product + ProductMapping | 🔒 Chỉ Admin |
-| GET | `/api/finance/sku-pnl` | Báo cáo Lời/Lỗ theo từng SKU (sắp xếp lợi nhuận giảm dần) | 🔒 Chỉ Admin |
-| GET | `/api/finance/shipping-discrepancies` | Đơn bị sàn trừ thừa phí ship (phân trang, lọc sàn + trạng thái khiếu nại) | 🔒 Chỉ Admin |
-| PATCH | `/api/finance/shipping-discrepancies/:id/status` | Đổi trạng thái khiếu nại | 🔒 Chỉ Admin |
+| `/api/auth/hubsell-ads` | `hubsell-ads` (callback) | công khai | Shopee redirect về sau khi ủy quyền app Hubsell Ads; mount trước `/api/auth` |
+| `/api/auth/tiktok-ads` | `tiktok-ads` (public) | công khai | FE `/ads/tiktok/callback` gọi vào; danh tính nằm trong `state` đã ký |
+| `/api/auth` | `auth` | công khai | đăng ký, đăng nhập, Google / Apple, đặt lại mật khẩu, `/me`, xóa tài khoản |
+| `/api/webhooks` · `/api/webhook` · `/v1/webhooks` | `webhooks` | chữ ký trên body | TikTok, Shopee (Push), Lazada, MISA meInvoice, payOS → ghi hàng đợi bền rồi ack |
+| `/api/public` | `public` | rate-limit + honeypot | lead "Đăng ký tư vấn" + đếm sự kiện từ landing |
+| `/api/dashboard` · `/api/analytics` | `dashboard`, `analytics` | JWT · quyền `dashboard` · có gian | Tổng quan + biểu đồ |
+| `/api/expenses` | `expenses` | JWT · quyền `finance.expenses` · gói mở · có gian | chi phí vận hành |
+| `/api/finance` | `finance` | JWT · quyền `finance` \| `warehouse.shipping-alerts` \| `operations.loss-orders` · gói mở · có gian | dòng tiền, lãi/lỗ, giá vốn, đối soát phí ship, đơn lỗ (đọc sổ cái đơn) |
+| `/api/products` · `/api/inventory` · `/api/stock-locations` | `products`, `inventory`, `stock-locations` | JWT · quyền `warehouse.products` \| `orders` · có gian | hàng hóa, nhập/xuất kho, vị trí chứa hàng |
+| `/api/orders` | `orders` | JWT · quyền `orders` · có gian | đơn hàng, chuẩn bị hàng theo mẻ, in vận đơn |
+| `/api/warehouse` | `warehouse` | JWT · quyền `warehouse.returns` · có gian | hàng hoàn, cảnh báo vận chuyển, đồng bộ kho |
+| `/api/mappings` | `mappings` | JWT · chủ shop · có gian | liên kết SKU sàn ↔ kho |
+| `/api/channels` | `channels` | JWT | xem gian: mọi tài khoản (không gác có gian để onboarding nối được); kết nối / ngắt / danh mục sàn: chủ shop (gác trong router) |
+| `/api/staff` | `staff` | JWT · chủ shop | nhân viên + phân quyền + gian được giao |
+| `/api/subscription` | `subscription` | JWT | gói của tôi, thanh toán payOS / Ví / Apple IAP — nhân viên cũng đọc được trạng thái gói |
+| `/api/referral` | `referral` | JWT · chủ shop | affiliate của nền tảng + Ví Hubsell; không gác có gian / gói (đường tự cứu bằng Ví) |
+| `/api/support-requests` | `support` | JWT | mọi tài khoản, không cần gian hay gói |
+| `/api/notifications` | `services/notifications` | JWT · chủ shop | chuông thông báo; stream SSE đứng trước router, token đi qua query |
+| `/api/assistant` | `assistant` | JWT · chủ shop · gói mở | Trợ lý Hubsell hỏi số liệu (tầng luật + AI) |
+| `/api/command-center` | `command-center` | JWT · chủ shop | Trung tâm điều hành trên Tổng quan |
+| `/api/invoice-config` · `/api/tax` | `invoice-config`, `tax` | JWT · quyền `invoicing` · gói mở | Hóa đơn & Thuế (MISA meInvoice): cấu hình, tờ nháp, phát hành, tờ khai; không gác có gian |
+| `/api/test/misa-sandbox` | `test-misa-sandbox` | JWT · chủ shop · env `MISA_SANDBOX_TEST_ENABLED=1` trên production | cụm thử sandbox MISA, mặc định 503 trên production |
+| `/api/operations` | `operations` | JWT · quyền `operations.*` · gói mở · có gian | Trợ lý vận hành: đánh giá (chat đang ẩn) |
+| `/api/koc` | `koc` | JWT · quyền `koc` · gói mở · có gian | KOC & Affiliate — đang ẩn (25/09) |
+| `/api/quang-cao/tiktok` (alias `/api/ads/tiktok`) | `ads-tiktok` | JWT · quyền `ads.tiktok` · gói mở · có gian | Trợ lý quảng cáo TikTok (GMV Max) |
+| `/api/quang-cao` (alias `/api/ads`) | `ads` | JWT · quyền `ads` · gói mở · có gian | Trợ lý quảng cáo Shopee / Lazada; tên đường dẫn tránh luật adblock `onrender.com/api/ads/` |
+| `/api/hubsell-ads` · `/api/tiktok-ads` | `hubsell-ads`, `tiktok-ads` | JWT · chủ shop | ủy quyền app Ads Service (Shopee) / tài khoản TikTok Marketing API cho gian đã nối |
+| `/api/admin` | `admin`, `admin-health`, `admin-plans`, `admin-ledger`, `admin-input-invoices` | JWT · HQ | Quản trị nền tảng: khách, gói & thuê bao, sức khỏe, sổ cái, hóa đơn đầu vào, marketing; không gác có gian |
 
 ### 🚚 Đối soát & Khiếu nại chênh lệch phí vận chuyển (`/warehouse/shipping-alerts`)
 
