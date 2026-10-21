@@ -2,7 +2,7 @@
 // docs/ADS-NHIP-CANH-BAO.md mục 13, 19/10/2026). Không chạm DB / API sàn.
 import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
-import { adsCandidateWhere, dueAdsTiers, nextAdsSchedule, nextBackoffLevel, shopBackoffMs } from "../ads-lane";
+import { adsCandidateWhere, DEFER_MIN_MS, dueAdsTiers, nextAdsSchedule, nextBackoffLevel, shopBackoffMs } from "../ads-lane";
 import { ADS_CADENCE } from "../../config/ads-cadence";
 
 const noJitter = () => 0.5; // rand=0.5 → factor 1.0
@@ -172,5 +172,40 @@ describe("config lát 1 + 2 (bảng 13.4 — số tự chọn, đọc env)", () 
     expect(ADS_CADENCE.SHOP_BACKOFF_MIN).toBe(15);
     expect(ADS_CADENCE.SHOP_BACKOFF_MAX_MIN).toBe(120);
     expect(ADS_CADENCE.SHOP_CALL_GAP_SEC).toBe(0);
+  });
+});
+
+describe("13.9 bước A — cổng gọi sàn bảo 'quay lại sau' (deferMs): xếp lại đúng ngần ấy, KHÔNG bậc, KHÔNG cầu dao", () => {
+  const now = Date.UTC(2026, 9, 21, 15, 0, 0);
+  const noJitter = () => 0.5;
+  it("xung bị cổng hoãn 2,6 s → hạn xung = now + tối thiểu 1 phút (nhịp nhặt vé); bậc gian giữ nguyên dù đang bậc 1", () => {
+    const r = nextAdsSchedule(
+      { pulse: { delayMin: 30, synced: false, deferMs: 2_600 }, history: null, historyRan: false, backoffLevel: 1 },
+      now,
+      noJitter
+    );
+    expect(r.nextAdsPulseAt?.getTime()).toBe(now + DEFER_MIN_MS);
+    expect(r.adsBackoffLevel).toBeUndefined();
+    expect(r.adsBackoffUntil).toBeUndefined();
+    expect(r.lastAdsSyncAt).toBeUndefined();
+  });
+  it("cổng bảo chờ 20 phút (mã cứng theo app) → hạn xung = now + 20 phút, không phải 30 phút của nhịp thường", () => {
+    const r = nextAdsSchedule({ pulse: { delayMin: 30, synced: false, deferMs: 20 * 60_000 }, history: null, historyRan: false }, now, noJitter);
+    expect(r.nextAdsPulseAt?.getTime()).toBe(now + 20 * 60_000);
+  });
+  it("lịch sử bị cổng hoãn → hạn lịch sử = now + chờ (≥ 1 phút), KHÔNG đợi 6 giờ; không hạ cờ backfill", () => {
+    const r = nextAdsSchedule(
+      { pulse: null, history: { synced: false, rateLimited: null, deferMs: 90_000 }, historyRan: true },
+      now,
+      noJitter
+    );
+    expect(r.nextAdsSyncAt?.getTime()).toBe(now + 90_000);
+    expect(r.adsBackfillPending).toBeUndefined();
+    expect(r.adsBackoffLevel).toBeUndefined();
+  });
+  it("không deferMs → nhịp như cũ (30' xung, 6 h lịch sử)", () => {
+    const r = nextAdsSchedule({ pulse: { delayMin: 30, synced: true }, history: { synced: true, rateLimited: null }, historyRan: true }, now, noJitter);
+    expect(r.nextAdsPulseAt?.getTime()).toBe(now + 30 * 60_000);
+    expect(r.nextAdsSyncAt?.getTime()).toBe(now + 6 * 3_600_000);
   });
 });

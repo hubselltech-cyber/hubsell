@@ -273,6 +273,8 @@ export const DEFERRED_STATUS = "DEFERRED";
  */
 export function isAdsWriteRateLimited(channelName: ChannelName, error: string | null): boolean {
   if (!error) return false;
+  // 13.9 bước A: cổng gọi sàn bảo "quay lại sau" (throttled / rate_limit / hard_app) → cũng là hoãn, xung kế thử lại.
+  if (/^Cổng gọi sàn:/.test(error)) return true;
   if (channelName === ChannelName.LAZADA) return classifyLazadaAdsRateLimit(error) != null;
   return /rate[_.]limit/i.test(error) || classifyShopeeAdsRateLimit(error) != null;
 }

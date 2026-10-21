@@ -1,6 +1,15 @@
 // Van an toàn gọi Ads API theo app (tầng C, docs/ADS-NHIP-CANH-BAO.md) — phần thuần.
 import { describe, expect, it } from "vitest";
-import { acquireApiToken, isRateLimitStorm, lazadaShopKey, pauseMsForLevel, shopCallWaitMs, type RateLimitHit } from "../api-budget";
+import {
+  acquireApiToken,
+  budgetErrorFromDefer,
+  isApiBudgetError,
+  isRateLimitStorm,
+  lazadaShopKey,
+  pauseMsForLevel,
+  shopCallWaitMs,
+  type RateLimitHit,
+} from "../api-budget";
 import { breakerSignalLevel } from "../platform-health";
 import { classifyShopeeAdsRateLimit } from "../../integrations/shopee/client";
 import { classifyLazadaAdsRateLimit } from "../../integrations/lazada/client";
@@ -138,5 +147,30 @@ describe("acquireApiToken — token bucket theo app", () => {
     expect(Date.now() - t0).toBeLessThan(150); // 10 token đầu không chờ
     await acquireApiToken(app, qps); // token thứ 11 phải chờ ~200ms
     expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
+  });
+});
+
+describe("13.9 bước A — cổng gọi sàn 'quay lại sau' → ApiBudgetError scope gateway_defer", () => {
+  it("giữ waitMs + lý do, chỗ bắt isApiBudgetError cũ nhận ra, thông điệp có khóa + giây chờ + lỗi sàn", () => {
+    const e = budgetErrorFromDefer("shopee:2044679", {
+      waitMs: 2_600,
+      reason: "rate_limit",
+      key: "SHOPEE:2044679|ep:/api/v2/ads/get_all_cpc_ads_daily_performance",
+      cause: new Error("Shopee ads lỗi: HTTP 429 — vượt trần gọi API (error_rate_limit request_id=abc)"),
+    });
+    expect(isApiBudgetError(e)).toBe(true);
+    expect(e.scope).toBe("gateway_defer");
+    expect(e.waitMs).toBe(2_600);
+    expect(e.deferReason).toBe("rate_limit");
+    expect(e.app).toBe("shopee:2044679");
+    expect(e.message).toContain("chờ 3 s");
+    expect(e.message).toContain("get_all_cpc_ads_daily_performance");
+    expect(e.message).toContain("request_id=abc");
+  });
+  it("throttled (chờ lượt GCRA, không có lỗi sàn) → không ghi cause; waitMs âm kẹp 0", () => {
+    const e = budgetErrorFromDefer("shopee:2044679", { waitMs: -5, reason: "throttled", key: "k" });
+    expect(e.waitMs).toBe(0);
+    expect(e.deferReason).toBe("throttled");
+    expect(e.message).toBe("Cổng gọi sàn: throttled k — chờ 0 s");
   });
 });

@@ -83,11 +83,23 @@ function limitOf(key: string, rl: RateLimit | undefined): KeyLimit {
   return rl ? { key, emissionMs: 1000 / rl.perSec, burst: rl.burst } : { key, emissionMs: 0, burst: 1 };
 }
 
+/** Trần của một endpoint: dòng riêng thắng, không có thì tiền tố dài nhất khớp (hàm thuần — test). */
+export function endpointLimit(platform: Platform, endpoint: string, limits = RATE_LIMITS): RateLimit | undefined {
+  const full = `${platform} ${endpoint}`;
+  const exact = limits.endpoint[full];
+  if (exact) return exact;
+  let best: { len: number; rl: RateLimit } | undefined;
+  for (const [prefix, rl] of Object.entries(limits.endpointPrefix ?? {})) {
+    if (full.startsWith(prefix) && (!best || prefix.length > best.len)) best = { len: prefix.length, rl };
+  }
+  return best?.rl;
+}
+
 /** Các khóa một lệnh phải qua (hàm thuần — test). */
 export function gatewayLimits(c: GatewayCall, limits = RATE_LIMITS): KeyLimit[] {
   const out = [limitOf(keyOf.app(c), limits.app[c.platform])];
   if (c.shop) out.push(limitOf(keyOf.shop(c), limits.shop[c.platform]));
-  out.push(limitOf(keyOf.endpoint(c), limits.endpoint[`${c.platform} ${c.endpoint}`]));
+  out.push(limitOf(keyOf.endpoint(c), endpointLimit(c.platform, c.endpoint, limits)));
   return out;
 }
 

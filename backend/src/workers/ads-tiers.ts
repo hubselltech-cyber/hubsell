@@ -48,16 +48,25 @@ export interface AdsPulseResult {
   delayMin: number;
   synced: boolean;
   rateLimited?: AdsRateLimited;
+  /** Thiết kế 13.9 bước A: cổng gọi sàn bảo "quay lại sau ngần này ms" → làn xếp lại gian, không bậc, không cầu dao. */
+  deferMs?: number;
 }
 
 /** Kết quả một lượt LỊCH SỬ ads: kéo được số (ghi lastAdsSyncAt, hạ cờ backfill) + bị chặn hay không. */
 export interface AdsHistoryResult {
   synced: boolean;
   rateLimited: AdsRateLimited;
+  deferMs?: number;
 }
 
+/** Cổng gọi sàn "quay lại sau" không phải lỗi của gian cũng không phải cầu dao → không vào rateLimited. */
 function budgetScope(err: unknown): AdsRateLimited {
-  return isApiBudgetError(err) ? (err.scope === "shop_rate_limit" ? "shop" : "app") : null;
+  if (!isApiBudgetError(err) || err.scope === "gateway_defer") return null;
+  return err.scope === "shop_rate_limit" ? "shop" : "app";
+}
+
+function deferOf(err: unknown): number | undefined {
+  return isApiBudgetError(err) && err.scope === "gateway_defer" ? err.waitMs : undefined;
 }
 
 /** Gian TikTok CHƯA nối quảng cáo: hạn xung/ads đẩy xa 1 ngày (chỉ để không nhặt mỗi tick). */
@@ -174,6 +183,7 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
         delayMin: err.scope === "shop_rate_limit" ? ADS_CADENCE.SHOP_BACKOFF_MIN : ADS_CADENCE.PULSE_MIN,
         synced: false,
         rateLimited: budgetScope(err),
+        deferMs: deferOf(err),
       };
     }
     console.error(`[Ads-pulse] Lỗi xung gian "${channel.shopName}":`, (err as Error).message);
@@ -324,9 +334,13 @@ async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
   const daysBack = backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK;
   // Lát 2: ghi lại lần bị chặn đầu tiên trong lượt (shop thắng app vì là của riêng gian này).
   let rateLimited: AdsRateLimited = null;
+  // Bước A 13.9: cổng bảo "quay lại sau" → giữ thời gian chờ dài nhất trong lượt để làn xếp lại lịch sử sớm (không đợi 6 h).
+  let deferMs: number | undefined;
   const noteLimit = (err: unknown) => {
     const s = budgetScope(err);
     if (s && rateLimited !== "shop") rateLimited = s;
+    const d = deferOf(err);
+    if (d != null) deferMs = Math.max(deferMs ?? 0, d);
   };
 
   if (channel.channelName === ChannelName.LAZADA) {
@@ -366,7 +380,7 @@ async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
     if (isApiBudgetError(err)) {
       noteLimit(err);
       console.warn(`[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}" lùi lịch: ${err.message}`);
-      return { synced: false, rateLimited };
+      return { synced: false, rateLimited, deferMs };
     }
     console.error(
       `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
@@ -436,7 +450,7 @@ async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
       }
     }
   }
-  return { synced, rateLimited };
+  return { synced, rateLimited, deferMs };
 }
 
 // ---------- Cửa vào chung cho worker (ads-lane.ts / order-auto-sync.ts) ----------

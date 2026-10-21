@@ -10,6 +10,7 @@ import {
   classifyLazada,
   classifyShopee,
   classifyTiktok,
+  endpointLimit,
   gatewayLimits,
   GatewayDeferError,
   MemoryRateStore,
@@ -132,5 +133,27 @@ describe("cổng gọi sàn", () => {
     expect(classifyLazada(e("ApiCallLimit"))).toEqual({ kind: "hard_app" });
     expect(classifyLazada(e("code 901 retry in the next second"))).toMatchObject({ kind: "rate_limit", scope: "unknown" });
     expect(classifyLazada(e("IllegalAccessToken"))).toEqual({ kind: "auth" });
+  });
+});
+
+describe("13.9 bước A — trần khởi điểm cho MỌI endpoint Ads Shopee (tiền tố), để AIMD có tác dụng", () => {
+  it("dòng riêng thắng tiền tố: get_all_cpc giữ 1/s (H4); endpoint Ads khác theo tiền tố 2/s burst 2", () => {
+    expect(endpointLimit("SHOPEE", "/api/v2/ads/get_all_cpc_ads_daily_performance")).toEqual({ perSec: 1, burst: 2 });
+    expect(endpointLimit("SHOPEE", "/api/v2/ads/get_total_balance")).toEqual({ perSec: 2, burst: 2 });
+    expect(endpointLimit("SHOPEE", "/api/v2/ads/edit_manual_product_ads")).toEqual({ perSec: 2, burst: 2 });
+  });
+  it("ngoài nhóm Ads (đơn hàng) và sàn khác: không trần → chỉ lùi + đo", () => {
+    expect(endpointLimit("SHOPEE", "/api/v2/order/get_order_list")).toBeUndefined();
+    expect(endpointLimit("LAZADA", "/api/v2/ads/x")).toBeUndefined();
+  });
+  it("tiền tố dài nhất thắng khi lồng nhau", () => {
+    const limits = {
+      app: {},
+      shop: {},
+      endpoint: {},
+      endpointPrefix: { "SHOPEE /api/v2/ads/": { perSec: 2, burst: 2 }, "SHOPEE /api/v2/ads/get_gms_": { perSec: 5, burst: 1 } },
+    };
+    expect(endpointLimit("SHOPEE", "/api/v2/ads/get_gms_item_performance", limits)).toEqual({ perSec: 5, burst: 1 });
+    expect(gatewayLimits(shopee("1", "/api/v2/ads/get_total_balance"), limits).map((k) => k.emissionMs)).toEqual([0, 0, 500]);
   });
 });

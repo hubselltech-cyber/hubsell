@@ -61,6 +61,13 @@ export const ADS_CADENCE = {
    * riêng; ADS_LANE=0 = ĐƯỜNG LUI: vòng đồng bộ đơn (order-auto-sync) nhặt lại cả hai tầng như trước 19/10/2026.
    */
   LANE: (process.env.ADS_LANE ?? "1").trim() !== "0",
+  /**
+   * THIẾT KẾ 13.9 BƯỚC A (21/10/2026) — lệnh Ads Shopee đi qua CỔNG GỌI SÀN (services/marketplace-gateway.ts:
+   * GCRA chung Postgres theo khóa app / app×gian / app×endpoint, AIMD, dừng app chỉ khi mã cứng) thay cho
+   * withApiBudget (token bucket RAM + cầu dao "bão"). true (mặc định) = qua cổng; ADS_GATEWAY=0 = ĐƯỜNG LUI về
+   * withApiBudget như trước 21/10. Khi qua cổng, lát 2 (adsBackoff*) không còn được ghi cho Shopee.
+   */
+  GATEWAY: (process.env.ADS_GATEWAY ?? "1").trim() !== "0",
   /** Số gian chạy xung/lịch sử ads SONG SONG trong một worker ads-lane. Đo lại Đ1, Đ2. */
   CONCURRENCY: envNum("ADS_CONCURRENCY", 2),
   /** Vé làn Ads (Channel.adsLockedAt) cũ hơn ngưỡng này (phút) = worker cầm vé đã chết → nhặt lại. Lượt ngày TikTok

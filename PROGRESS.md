@@ -6,6 +6,28 @@
 
 ---
 
+## Phiên 21/10/2026 đêm — CẦU DAO ADS LẦN 162: ANH YÊU CẦU HỆ THỐNG CHO MỌI GIAN, KHÔNG VÁ THEO SHOP → THIẾT KẾ 13.9 (CHƯA CODE)
+
+- **Anh hỏi:** đã nâng worker Standard, em đã sửa (lát 1+2) sao HQ vẫn báo ĐÓNG shopee:2044679 bậc 2 · 20' · lần 162 (3/9 gian/10').
+- **Trả lời có căn cứ:** (1) nâng gói worker không liên quan — 429 là Shopee từ chối, không phải máy đuối; (2) lát 2 cách ly THEO GIAN chữa sai
+  bệnh: H4 (docs CUNG-HOA-LOP-GOI-SAN, đo 18/10) đã chứng minh 100 % 429 rơi vào MỘT endpoint `get_all_cpc_ads_daily_performance`, hai gian 429
+  cùng giây → trần app × endpoint; làn Ads 2 luồng song song + xung và lịch sử gọi endpoint này 2 lần/gian/lượt càng dễ va; (3) luật bão vẫn
+  đóng cả app. tripCount 135 (19/10 trưa) → 162 (21/10 đêm) ≈ 12/ngày, không giảm sau lát 1+2. Cái sửa đúng đã có — cổng gọi sàn Pha B
+  (`marketplace-gateway.ts`, khóa app×endpoint 1/s cho đúng endpoint này, AIMD, dừng app chỉ mã cứng) — nhưng đường Ads chưa đi qua.
+- **Anh chốt hướng:** "không muốn vá lẻ cho từng shop, phải có một hệ thống đảm bảo cho tất cả các shop mới liên kết" → em viết
+  **docs/ADS-NHIP-CANH-BAO.md mục 13.9**: 9 bất biến I1–I9 (GCRA chung trước khi gọi · sức chứa học bằng AIMD · cô lập theo khóa · **nhu cầu
+  tự co theo sức chứa** D ≤ 0,8·c, giãn lớp 3 → 2 → 1 · ưu tiên + hạn chót · mỗi số hỏi sàn một lần · jitter · HQ hiện nhu cầu/sức chứa ·
+  **bằng chứng bằng test sàn giả N = 1.000/10.000**); 4 bước A→D, mỗi bước có đo + tiêu chí; mục 13.9.4 liệt kê 5 điều chưa chắc.
+  Không viết bộ điều tốc mới, nối Ads vào cổng có sẵn; lát 2 sẽ gỡ ở bước C; lịch nhắc 23/10 "lát 3 AIMD" thay bằng thiết kế này.
+- **Anh chốt 13.9 + "làm bước A ngay" → ĐÃ LÀM (docs 13.9.5):** `shopee/client.ts` lệnh `/api/v2/ads/` → `callAdsApi()` qua
+  `callMarketplace` (khóa app / app×gian / app×endpoint, GCRA Postgres); `GatewayDeferError` → `ApiBudgetError` scope `gateway_defer`
+  (`budgetErrorFromDefer`, giữ waitMs) nên mọi chỗ bắt `isApiBudgetError` giữ nguyên; Trợ lý tự thực thi coi lệnh ghi bị cổng hoãn là
+  DEFERRED (`isAdsWriteRateLimited` nhận "Cổng gọi sàn:"); trần khởi điểm MỌI endpoint Ads Shopee `RATE_LIMITS.endpointPrefix` 2/s burst 2
+  (env `GATEWAY_SHOPEE_ADS_PER_SEC`), `get_all_cpc` giữ 1/s; tầng ads trả `deferMs`, làn Ads xếp lại `now + max(waitMs, 1')` cho cả xung
+  lẫn lịch sử, không bậc, không gọi lịch sử sau xung bị hoãn; cờ `ADS_GATEWAY` (mặc định 1, 0 = đường lui withApiBudget). Kiểm: vitest
+  các tệp liên quan xanh, tsc cả test sạch (backend không có cấu hình eslint). Không migration. **Chưa chạy sàn thật** — anh push, sau 24 h
+  đọc SQL `api_rate_keys` (cột hits theo khóa) + `api_throttle_states.tripCount` phải đứng ở 162 (docs 13.9.5 có SQL + tiêu chí) → bước B.
+
 ## Phiên 22/10/2026 — CRM HQ TỰ CHUYỂN TRẠNG THÁI CHĂM SÓC THEO THUÊ BAO (anh: hết dùng thử → Đã rời bỏ; thanh toán → Đang dùng ổn định)
 
 - **Vì sao:** HQ 21/10 có 155/160 khách (96,9 %) ở "Mới đăng ký" dù đa số hết dùng thử từ lâu — trạng thái đặt tay hoàn toàn nên biểu đồ

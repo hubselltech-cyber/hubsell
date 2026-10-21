@@ -675,3 +675,113 @@ bị chặn. Giãn lệnh: bật `ADS_SHOP_CALL_GAP_SEC=5` trên worker ở lư�
 **Lịch nhắc đã đặt (anh Trung 19/10: "lát 3 chưa làm thì đặt lịch không lại quên"):** tác vụ `hubsell-nhac-2310-cau-dao-ads-lat-3-aimd`
 chạy **23/10/2026 08:30** — đọc tripCount vs Đ0 135 + SQL gian đang lùi riêng + log `[Ads-lane]`, rồi TRÌNH lát 3 AIMD (chưa code
 tới khi anh chốt). Lát 4 đặt lịch sau khi lát 3 lên prod (Đ1 = 7 ngày sau lát 3).
+
+### 13.9 THIẾT KẾ LẠI (21/10/2026 đêm) — một hệ thống cho MỌI gian, không vá theo gian
+
+**Vì sao phải thiết kế lại chứ không làm tiếp lát 3–4 như 13.3.** Anh Trung 21/10: "không muốn vá lẻ cho từng shop
+khi gặp vấn đề, phải có một hệ thống đảm bảo cho tất cả các shop mới liên kết". Nhìn lại 28/09 → 21/10 có 4 lần sửa
+cùng một chỗ (đếm theo lần → theo gian → thêm tỷ lệ → cách ly gian) và tripCount vẫn ~12/ngày (135 → 162 từ 19/10 trưa
+tới 21/10 đêm). Mỗi lần sửa đều đúng với số gian lúc đó rồi sai khi gian tăng, vì bản chất thiết kế là:
+
+| Thiết kế hiện tại | Vì sao không chịu được khi N gian tăng |
+|---|---|
+| Nhịp cố định 30'/gian, số luồng cố định | Nhu cầu gọi = N × lệnh/xung ÷ 30', tăng tuyến tính theo N; không ai so với sức chứa |
+| Token bucket trong RAM từng tiến trình (`ADS_APP_QPS=3`) | Không khớp hình dạng trần thật của sàn (app × endpoint ~1 lệnh/giây — H4); hai luồng cùng gọi một endpoint trong một giây là chuyện thường |
+| Cầu dao bật/tắt theo "bão" với ngưỡng tay (3 gian, 20 %) | Ngưỡng đúng ở N = 7, sai ở N = 29, sai kiểu khác ở N = 40; 429 lẻ của một endpoint làm đứng số mọi gian |
+| Lùi theo gian (lát 2) | Chữa gian trong khi bệnh là khóa app × endpoint — gian không có lỗi gì |
+| Chỉ biết sập khi HQ đỏ | Không có số "nhu cầu / sức chứa" để thấy trước |
+
+**Cái đã có và đúng (Pha B, 19/10, docs CUNG-HOA-LOP-GOI-SAN 5b):** cổng gọi sàn `services/marketplace-gateway.ts`
++ `lib/rate-gate.ts` + bảng `api_rate_keys` (GCRA trong Postgres, dùng chung mọi tiến trình), khóa `(app)`,
+`(app, gian)`, `(app, endpoint)`, AIMD hạ nhịp theo khóa khi 429, lùi full jitter + Retry-After, "dừng app" chỉ cho
+lỗi cứng (`exceed_partner_api`, Lazada ApiCallLimit). Đã có trần cho đúng endpoint `get_all_cpc_ads_daily_performance`
+(1/s, burst 2). **Đường Ads chưa đi qua cổng** — vẫn `withApiBudget` cũ. Thiết kế dưới đây KHÔNG viết thêm bộ điều tốc
+nào; nó nối Ads vào cổng và bổ phần còn thiếu: nhu cầu tự co theo sức chứa, ưu tiên, bằng chứng bằng test.
+
+#### 13.9.1 Bất biến hệ thống phải giữ với MỌI N (đây là "hợp đồng", test phải chứng minh từng dòng)
+
+| # | Bất biến | Cơ chế | Có sẵn? |
+|---|---|---|---|
+| I1 | Tổng nhịp gửi lên mỗi khóa (app / app×gian / app×endpoint) không vượt sức chứa đã biết, **trước khi gọi**, chung cho mọi worker | GCRA Postgres (`api_rate_take`) | ✅ cổng |
+| I2 | Sức chứa là số **học được**, không phải ngưỡng tay: 429 → nhịp khóa × 0,5, hồi tuyến tính; trần cấu hình chỉ là trần trên | AIMD theo khóa (`api_rate_penalize`) | ✅ cổng; ⚠️ khóa chưa có trần thì AIMD không tác dụng (hệ số nhân với 0) → **mọi endpoint Ads phải có trần khởi điểm** (13.9.3) |
+| I3 | Một khóa bị 429 không bao giờ làm khóa khác chờ; "dừng cả app" chỉ khi sàn nói đúng mã cứng | phân loại lỗi 3 sàn trong cổng | ✅ cổng; ⛔ bỏ luật "bão" + `ApiThrottleState` |
+| I4 | **Nhu cầu tự co theo sức chứa:** nhịp xung của từng lớp gian là HÀM của (số gian, lệnh/xung, sức chứa khóa), giữ nhu cầu ≤ 80 % sức chứa; gian mới nối = nhu cầu tăng = nhịp lớp thấp tự giãn, không ai sửa env | `services/ads-demand.ts` (thuần) — 13.9.2 | ❌ mới |
+| I5 | Ưu tiên + hạn chót: gian đang tiêu tiền và bật Trợ lý được phục vụ trước; xung trễ quá hạn chót thì bỏ, chờ xung kế, **không xếp hàng vô hạn** | làn Ads sắp theo (lớp, hạn); hạn chót = 2 × nhịp lớp | ❌ mới (lát 4 cũ) |
+| I6 | Mỗi số chỉ hỏi sàn **một lần** mỗi chu kỳ mỗi gian | gộp `daily_performance` xung + lịch sử; cờ ví tự nạp sang tầng 6 h | ❌ mới |
+| I7 | Không dồn cục: mọi lịch có xáo trộn; gian mới nối rải lịch đầu trong một chu kỳ; sau khi khóa mở lại, gian gọi theo thứ tự hạn qua GCRA, không "xả" | jitter có sẵn + cổng | ✅ phần lớn |
+| I8 | Thấy trước khi thiếu: HQ hiện mỗi khóa **sức chứa hiện tại × hệ số AIMD, nhu cầu, % dùng, tỷ lệ 429, hệ số giãn từng lớp, số gian trễ hạn**; lớp 1 phải giãn = đỏ = mở ticket Shopee (Đ3 không còn đếm gian mà đếm % dùng) | thẻ HQ mới thay thẻ "Cầu dao" | ❌ mới |
+| I9 | **Bằng chứng bằng test, không bằng prod:** sàn giả trần app×endpoint 1/s, N = 1.000 và 10.000 gian, đồng hồ giả → 0 lần dừng app, 429 < 1 % lệnh, độ trễ xung lớp 1 ≤ hạn chót, nhu cầu ≤ 80 % | mở rộng `fake-marketplace.ts` cho Ads | ❌ mới |
+
+#### 13.9.2 Bài toán sức chứa (I4) — công thức, không ngưỡng
+
+Với khóa K có sức chứa `c_K` lượt/giây (= trần cấu hình × hệ số AIMD hiện tại), lớp gian p có `N_p` gian, mỗi xung cần
+`n_{K,p}` lệnh trên K, nhịp xung `T_p` (giây): nhu cầu `D_K = Σ_p N_p · n_{K,p} / T_p`. Điều kiện: `D_K ≤ u · c_K`,
+`u = 0,8`. Bộ tính (chạy mỗi 5' trong làn Ads, thuần, mọi worker tính ra cùng kết quả từ cùng số đếm DB):
+
+1. `T_p` = nhịp gốc (30' Shopee / 60' Lazada, TikTok) cho mọi lớp.
+2. Nếu vượt: giãn lớp 3 (nối Ads, không chiến dịch chạy) tới trần 24 h; vẫn vượt → giãn lớp 2 (có chiến dịch chạy,
+   không bật Trợ lý) tới 6 h; vẫn vượt → giãn lớp 1 (đang tiêu tiền + Trợ lý tự thực thi) tới 2 h.
+3. Lớp 1 phải giãn → tín hiệu đỏ HQ "thiếu quota, mở ticket" (I8). Hệ thống **không tạo thêm quota**; nó bảo đảm không
+   sập và báo trước khi thiếu.
+
+Số hôm nay để thấy ý nghĩa: `get_all_cpc` 1/s = 86.400 lượt/ngày; mỗi gian 48 xung + 4 lịch sử = 52 lượt/ngày sau khi
+gộp (I6) → ~1.330 gian ở 80 %. 40 gian hiện tại = 2,4 % — tức 429 hôm nay **không phải thiếu quota mà là dồn cục**
+(hai luồng cùng giây), đúng việc GCRA giải quyết. Tới ~1.300 gian nhịp lớp 3 mới bắt đầu giãn; tới 50.000 gian thì
+lớp 1 cũng không đủ ở 30' → phải có quota theo app cao hơn (ticket Đ3) hoặc trần thật là theo gian (khi đó không thiếu).
+Thiết kế này làm con số ấy hiện ra trên HQ hàng ngày thay vì phát hiện khi sập.
+
+#### 13.9.3 Thay đổi mã (thứ tự làm = thứ tự rủi ro thấp → cao; mỗi bước có đo + tiêu chí trước khi bước sau)
+
+| Bước | Việc | Đo / tiêu chí qua |
+|---|---|---|
+| **A. Nối Ads Shopee vào cổng** (1 ngày) | `shopee/client.ts` `callShopGet/Post`: `isAdsPath` → `callMarketplace({platform:"SHOPEE", app: partner_id, shop: shop_id, endpoint: path})` thay `withApiBudget`; **trần khởi điểm cho 7 endpoint Ads Shopee** trong `RATE_LIMITS.endpoint` (TỰ CHỌN 2/s burst 2, riêng `get_all_cpc` 1/s đã đo) để AIMD có tác dụng; làn Ads bắt `GatewayDeferError` → `nextAdsPulseAt = now + waitMs` (+jitter), **không bậc**; đường lui `ADS_GATEWAY=0` về `withApiBudget`. Lát 2 (`adsBackoff*`) ngừng ghi. | 24 h log `[gateway] 429` theo khóa + `api_rate_keys.failures`: kỳ vọng 429 trên `get_all_cpc` → ~0 (từ ~30/ngày); **0 lần "dừng app"**; nếu 429 còn ≥ 5/ngày trên khóa đó → trần thật thấp hơn 1/s, AIMD đã hạ — đọc `factor` để biết số thật, KHÔNG sửa tay |
+| **B. Nhu cầu tự co + ưu tiên + hạn chót + gộp lệnh** (2 ngày) | `services/ads-demand.ts` (thuần: `computeCadence(classes, capacities)`), lớp gian = hàm thuần từ `AdsCampaign`/`Channel` (3 lớp 13.3 lát 4), làn Ads sắp theo (lớp, hạn), bỏ xung quá hạn chót; gộp `daily_performance` xung/lịch sử (một lệnh 30 ngày khi lịch sử đến hạn), cờ ví tự nạp sang 6 h; mọi số chính sách (nhịp gốc, trần nhịp từng lớp, u = 0,8, hạn chót ×2) trong `config/ads-cadence.ts`; **xóa** `STORM_RATIO`, `SHOP_BACKOFF_*`, `SHOP_CALL_GAP_SEC`, `CONCURRENCY` chỉ còn là số luồng worker (cổng mới là van) | Test I9 trên sàn giả: N = 40 / 1.000 / 10.000, trần 1/s: 0 dừng app, 429 < 1 %, trễ lớp 1 ≤ hạn chót, D ≤ 0,8 c; prod 3 ngày: lớp 1 không trễ, `[gateway] 429` không tăng |
+| **C. HQ + gỡ cũ** (1 ngày) | Thẻ "Quota Ads theo khóa" (I8) thay thẻ Cầu dao; mốc Đ2–Đ4 đổi điều kiện từ "số gian" sang "% dùng khóa"; gỡ `api-budget.ts` token bucket + bão + `ApiThrottleState`, cột `Channel.adsBackoffLevel/Until` (migration bỏ cột sau 7 ngày chạy ổn) | HQ hiện đúng số cổng; không còn log `[ApiBudget]` |
+| **D. Lazada + TikTok Ads cùng cổng** (1 ngày) | `lazada/client.ts` Ads → `callMarketplace` (khóa app, app×gian băm); `tiktok-ads/client.ts` bỏ `acquireApiToken` RAM → khóa `(app, advertiser)` (trần 240/phút theo docs TikTok) | như A cho từng sàn |
+
+**Gian mới nối** đi đúng đường này không cần việc riêng: lượt nạp 30 ngày đầu đi làn backfill lớp 3 qua cổng (GCRA dàn
+đều), lịch xung đầu rải ngẫu nhiên trong một chu kỳ, lớp gian tự xếp theo dữ liệu. Không có bước "cấu hình cho gian".
+
+#### 13.9.4 Điều chưa chắc — nói rõ để anh quyết
+
+1. Hình dạng trần `get_all_cpc` 1/s suy từ **một** quan sát (2 gian 429 cùng giây 17:58:25 ngày 18/10). Thiết kế không
+   phụ thuộc số đúng: AIMD hạ về số thật, HQ hiện `factor`. Bước A đo 24 h là kiểm chứng.
+2. Sáu endpoint Ads còn lại chưa thấy 429 bao giờ → trần khởi điểm 2/s là tự chọn; cổng học xuống nếu sai.
+3. Cổng thêm một vòng đi-về Postgres mỗi lệnh (H5 đo p50 4,4 ms; 1.755 lệnh/giây). 50.000 gian × 6 lệnh/30' ≈ 170
+   lượt xin/giây → DB chịu được, nhưng là chi phí có thật, phải có trong HQ (số lượt xin/giây).
+4. Ở quy mô ≥ ~1.300 gian Shopee, nhịp lớp 3 giãn là **tính năng**, không phải lỗi: seller không chạy ads thấy số ads chậm
+   hơn; tới lớp 1 giãn là lúc phải xin quota — thiết kế làm ngày đó hiện trước trên HQ.
+5. Lịch nhắc 23/10 "trình lát 3 AIMD" → thay bằng thiết kế này; lát 3–4 của 13.3 coi như gộp vào bước B.
+
+#### 13.9.5 BƯỚC A ĐÃ LÀM (21/10/2026 đêm, anh Trung chốt 13.9 "làm bước A ngay") — Ads Shopee qua cổng gọi sàn
+
+| Việc | Ở đâu |
+|---|---|
+| `callShopGet/Post` với path `/api/v2/ads/` → `callAdsApi()`: `ADS_GATEWAY` bật (mặc định) → `callMarketplace({platform:"SHOPEE", app: partner_id, shop: shop_id, endpoint: path})`; cổng ném `GatewayDeferError` → `budgetErrorFromDefer()` thành `ApiBudgetError` scope **`gateway_defer`** (giữ `waitMs`, `deferReason`) để MỌI chỗ đang bắt `isApiBudgetError` (xung, lịch sử, GMS, keywords, signals, route) không phải đổi. `ADS_GATEWAY=0` = đường lui `withApiBudget` y như cũ. | `integrations/shopee/client.ts`, `services/api-budget.ts` |
+| Trần khởi điểm cho MỌI endpoint Ads Shopee: `RATE_LIMITS.endpointPrefix["SHOPEE /api/v2/ads/"]` = 2/s burst 2 (env `GATEWAY_SHOPEE_ADS_PER_SEC`, TỰ CHỌN); `get_all_cpc` giữ dòng riêng 1/s (H4). `endpointLimit()` = dòng riêng thắng, không có thì tiền tố dài nhất. | `config/marketplace-read.ts`, `services/marketplace-gateway.ts` |
+| Tầng ads: `AdsPulseResult/AdsHistoryResult.deferMs`; `gateway_defer` KHÔNG vào `rateLimited` (không phải lỗi gian, không phải cầu dao); lịch sử giữ chờ dài nhất trong lượt. | `workers/ads-tiers.ts` |
+| Làn Ads: xung bị hoãn → `nextAdsPulseAt = now + max(waitMs, 1')` (jitter), **không bậc**; lịch sử bị hoãn → `nextAdsSyncAt = now + max(waitMs, 1')` thay vì 6 h; xung bị hoãn thì không gọi lịch sử trong lượt (hạn giữ nguyên); log `[Ads-lane] … cổng bảo quay lại sau N s — xếp lại, không bậc`; log BẬT ghi "QUA CỔNG GỌI SÀN". | `workers/ads-lane.ts` |
+| Cờ `ADS_CADENCE.GATEWAY` (env `ADS_GATEWAY`, mặc định 1); `.env.example`. | `config/ads-cadence.ts` |
+| Trợ lý tự thực thi: lệnh ghi (tạm dừng / đổi ngân sách) bị cổng hoãn → `isAdsWriteRateLimited` nhận tiền tố "Cổng gọi sàn:" → sổ ghi DEFERRED, xung kế thử lại đúng dòng (không FAILED). | `integrations/shopee/ads-auto-execute.ts` |
+
+**Kiểm:** vitest ads-lane + api-budget + marketplace-gateway + ads-auto-execute: 78 ca xanh (mới: 3 ca trần tiền tố, 2 ca
+`budgetErrorFromDefer`, 4 ca `nextAdsSchedule` với deferMs, 1 ca lệnh ghi bị cổng hoãn); `tsc --noEmit` (cả test) sạch (backend không có cấu hình eslint).
+**Chưa chạy sàn thật.** Không migration (bảng `api_rate_keys` + hàm SQL có từ Pha B 19/10).
+
+**Đo 24 h sau deploy (tiêu chí 13.9.3 A):**
+1. Log worker ngay sau boot: `[Ads-lane] BẬT — làn Ads riêng: Ads Shopee QUA CỔNG GỌI SÀN …`.
+2. Log `[gateway] 429 …` (thay `[ApiBudget] 429 …`) — đếm theo khóa; log `[Ads-lane] … cổng bảo quay lại sau` = số lần hoãn.
+3. SQL Supabase (chỉ đọc):
+   ```sql
+   SELECT "key", "hits" AS lan_phat, "failures" AS loi_lien_tiep, round("factor"::numeric, 2) AS he_so_nhip,
+          to_timestamp("blockedUntilMs" / 1000) AT TIME ZONE 'Asia/Ho_Chi_Minh' AS lui_toi,
+          left("lastError", 120) AS loi_cuoi, "updatedAt" AT TIME ZONE 'Asia/Ho_Chi_Minh' AS cap_nhat
+     FROM "api_rate_keys" WHERE "key" LIKE 'SHOPEE:2044679%' ORDER BY "hits" DESC, "key";
+   SELECT app, "tripCount", level, reason, "pausedUntil", "updatedAt" FROM "api_throttle_states" WHERE app LIKE 'shopee:%';
+   ```
+   Kỳ vọng: `hits` khóa `|ep:/api/v2/ads/get_all_cpc_ads_daily_performance` ≤ 5/ngày (trước ~30 lần 429/ngày suy từ
+   12 lần đóng × ≥ 3 gian); `tripCount` shopee:2044679 **đứng yên ở 162** (đường Shopee không còn đóng cầu dao);
+   `factor` < 1 trên khóa nào = trần thật thấp hơn trần khởi điểm → đọc số, KHÔNG sửa tay.
+4. Trợ lý quảng cáo Shopee: số hôm nay vẫn tươi ≤ 30' (HQ `overduePulse` không tăng).
+Qua → bước B (13.9.3). Không qua (hits vẫn ≥ 20/ngày trên get_all_cpc dù factor đã hạ) → trần thật không phải app × endpoint
+đơn thuần, đọc lại `lastError` + request_id, mở ticket Shopee kèm log như họ đòi 15/09.

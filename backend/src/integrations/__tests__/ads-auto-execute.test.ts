@@ -290,3 +290,12 @@ describe("isAdsWriteRateLimited — nhận ra lỗi gọi quá nhịp để th�
     expect(isAdsWriteRateLimited(ChannelName.LAZADA, "E0500 campaign not found")).toBe(false);
   });
 });
+
+describe("13.9 bước A — lệnh ghi bị CỔNG GỌI SÀN hoãn cũng là 'quá nhịp' → DEFERRED, xung kế thử lại", () => {
+  it("throttled (chờ lượt GCRA, không có lỗi sàn) / rate_limit / hard_app đều hoãn; lỗi khác vẫn FAILED", () => {
+    expect(isAdsWriteRateLimited(ChannelName.SHOPEE, "Cổng gọi sàn: throttled SHOPEE:2044679|ep:/api/v2/ads/edit_manual_product_ads — chờ 3 s")).toBe(true);
+    expect(isAdsWriteRateLimited(ChannelName.SHOPEE, "Cổng gọi sàn: hard_app SHOPEE:2044679 — chờ 300 s — exceed_partner_api")).toBe(true);
+    expect(isAdsWriteRateLimited(ChannelName.LAZADA, "Cổng gọi sàn: rate_limit LAZADA:140639|shop:lzd#abc — chờ 1 s")).toBe(true);
+    expect(isAdsWriteRateLimited(ChannelName.SHOPEE, "Shopee edit_manual_product_ads lỗi: ads.campaign.error_daily_budget_range")).toBe(false);
+  });
+});

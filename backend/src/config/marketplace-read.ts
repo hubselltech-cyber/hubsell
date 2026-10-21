@@ -91,6 +91,8 @@ export const RATE_LIMITS: {
   app: Partial<Record<"SHOPEE" | "TIKTOK" | "LAZADA", RateLimit>>;
   shop: Partial<Record<"SHOPEE" | "TIKTOK" | "LAZADA", RateLimit>>;
   endpoint: Record<string, RateLimit>;
+  /** Trần theo TIỀN TỐ đường dẫn cho endpoint không có dòng riêng ở `endpoint` (khớp dài nhất thắng). */
+  endpointPrefix: Record<string, RateLimit>;
 } = {
   app: {},
   shop: {
@@ -100,6 +102,12 @@ export const RATE_LIMITS: {
   endpoint: {
     // H4 (Pha A): 100 % 429 Shopee rơi vào endpoint này, 2 gian cùng giây → trần app × endpoint.
     "SHOPEE /api/v2/ads/get_all_cpc_ads_daily_performance": { perSec: 1, burst: 2 },
+  },
+  endpointPrefix: {
+    // Thiết kế 13.9 bước A (21/10/2026): MỌI endpoint Ads Shopee phải có trần khởi điểm thì AIMD mới có tác dụng
+    // (khóa không trần = hệ số nhân với 0). 2/s burst 2 là TỰ CHỌN — chưa endpoint nào ngoài get_all_cpc thấy 429;
+    // cổng tự hạ (× 0,5, hồi 60') nếu sai. Đo lại ở bước A (24 h) rồi Đ1.
+    "SHOPEE /api/v2/ads/": { perSec: envNum("GATEWAY_SHOPEE_ADS_PER_SEC", 2), burst: 2 },
   },
 };
 

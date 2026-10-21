@@ -11,7 +11,9 @@
 // ============================================================
 
 import crypto from "crypto";
-import { withApiBudget } from "../../services/api-budget";
+import { budgetErrorFromDefer, withApiBudget } from "../../services/api-budget";
+import { callMarketplace, isGatewayDefer } from "../../services/marketplace-gateway";
+import { ADS_CADENCE } from "../../config/ads-cadence";
 import { assertShopeeChatAllowed, withShopeeChatGate } from "./chat-gate";
 import {
   getShopeeConfig,
@@ -157,6 +159,23 @@ function isAdsPath(path: string): boolean {
 /** Khóa cầu dao/bucket theo app ký chữ ký (app chính hay Hubsell Ads). */
 function adsAppKey(cfg: ShopeeConfig): string {
   return `shopee:${cfg.partnerId}`;
+}
+
+/**
+ * THIẾT KẾ 13.9 BƯỚC A (21/10/2026, docs/ADS-NHIP-CANH-BAO.md): lệnh Ads đi qua CỔNG GỌI SÀN
+ * (services/marketplace-gateway.ts — GCRA chung Postgres theo khóa app / app×gian / app×endpoint, AIMD
+ * khi 429, dừng app chỉ khi mã cứng) thay cho withApiBudget (token bucket RAM + cầu dao "bão" đóng oan
+ * 12 lần/ngày — H4). Cổng bảo "quay lại sau" → ApiBudgetError scope gateway_defer để worker xếp lại gian
+ * đúng ngần ấy. Đường lui ADS_GATEWAY=0 = withApiBudget như cũ.
+ */
+async function callAdsApi<T>(cfg: ShopeeConfig, path: string, shopId: string, call: () => Promise<T>): Promise<T> {
+  if (!ADS_CADENCE.GATEWAY) return withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit, shopId);
+  try {
+    return await callMarketplace({ platform: "SHOPEE", app: cfg.partnerId, shop: shopId, endpoint: path }, call);
+  } catch (err) {
+    if (isGatewayDefer(err)) throw budgetErrorFromDefer(adsAppKey(cfg), err);
+    throw err;
+  }
 }
 
 /**
@@ -321,7 +340,7 @@ async function callShopGet<T extends ShopeeEnvelope>(
       if (res.status === 429) throw await rateLimitError(ctx, res);
       return ensureOk((await res.json()) as T, ctx);
     });
-  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit, shopId) : call();
+  return isAdsPath(path) ? callAdsApi(cfg, path, shopId, call) : call();
 }
 
 /**
@@ -355,7 +374,7 @@ async function callShopPost<T extends ShopeeEnvelope>(
       if (res.status === 429) throw await rateLimitError(ctx, res);
       return ensureOk((await res.json()) as T, ctx);
     });
-  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit, shopId) : call();
+  return isAdsPath(path) ? callAdsApi(cfg, path, shopId, call) : call();
 }
 
 /** Lấy thông tin gian hàng (tên, khu vực...) để hiển thị. */

@@ -37,6 +37,8 @@ import { adsInOrderSync, withJitter } from "./order-auto-sync";
 const TICK_MS = 20 * 1000;
 /** Lượt đầu sớm sau boot. */
 const FIRST_RUN_DELAY_MS = 20 * 1000;
+/** Cổng bảo chờ ngắn hơn một phút thì vẫn xếp lại tối thiểu một phút (nhịp nhặt vé 20 s, khỏi nhặt lại ngay). */
+export const DEFER_MIN_MS = 60 * 1000;
 
 // ---------- Hàm thuần (export cho vitest) ----------
 
@@ -109,7 +111,12 @@ export function nextAdsSchedule(
   const fresh = historySynced || input.pulse?.synced === true;
   const shopLimited = input.pulse?.rateLimited === "shop" || input.history?.rateLimited === "shop";
   const level = Math.max(0, input.backoffLevel ?? 0);
-  let nextPulseAt = input.pulse ? now + withJitter(input.pulse.delayMin * 60 * 1000, rand) : null;
+  // Bước A 13.9: cổng gọi sàn bảo "quay lại sau waitMs" → xếp lại đúng ngần ấy (sàn tối thiểu DEFER_MIN_MS cho
+  // khớp nhịp nhặt vé), KHÔNG bậc lùi theo gian — khóa đã lùi/hạ nhịp trong DB của cổng, gian không có lỗi.
+  const pulseDefer = input.pulse?.deferMs;
+  let nextPulseAt = input.pulse
+    ? now + withJitter(pulseDefer != null ? Math.max(pulseDefer, DEFER_MIN_MS) : input.pulse.delayMin * 60 * 1000, rand)
+    : null;
   let backoff: { adsBackoffLevel: number; adsBackoffUntil: Date | null } | null = null;
   if (shopLimited) {
     const until = now + shopBackoffMs(level, rand);
@@ -118,12 +125,12 @@ export function nextAdsSchedule(
   } else if (fresh && level > 0) {
     backoff = { adsBackoffLevel: 0, adsBackoffUntil: null };
   }
+  const historyDefer = input.history?.deferMs;
+  const nextSyncMs = historyDefer != null ? Math.max(historyDefer, DEFER_MIN_MS) : ADS_CADENCE.FULL_HOURS * 60 * 60 * 1000;
   return {
     adsLockedAt: null,
     ...(nextPulseAt != null ? { nextAdsPulseAt: new Date(nextPulseAt) } : {}),
-    ...(input.historyRan
-      ? { nextAdsSyncAt: new Date(now + withJitter(ADS_CADENCE.FULL_HOURS * 60 * 60 * 1000, rand)) }
-      : {}),
+    ...(input.historyRan ? { nextAdsSyncAt: new Date(now + withJitter(nextSyncMs, rand)) } : {}),
     ...(fresh ? { lastAdsSyncAt: new Date(now) } : {}),
     ...(historySynced ? { adsBackfillPending: false as const } : {}),
     ...(backoff ?? {}),
@@ -151,7 +158,7 @@ export function startAdsLane(): void {
   setTimeout(() => void tick(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void tick(), TICK_MS).unref();
   console.log(
-    `[Ads-lane] BẬT — làn Ads riêng: song song ${ADS_CADENCE.CONCURRENCY} gian, lùi riêng gian dính 429 ${ADS_CADENCE.SHOP_BACKOFF_MIN}'→${ADS_CADENCE.SHOP_BACKOFF_MAX_MIN}', giãn lệnh trong xung ${ADS_CADENCE.SHOP_CALL_GAP_SEC}s, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
+    `[Ads-lane] BẬT — làn Ads riêng: Ads Shopee ${ADS_CADENCE.GATEWAY ? "QUA CỔNG GỌI SÀN (GCRA app×endpoint, 13.9 bước A)" : "qua withApiBudget (ADS_GATEWAY=0)"}, song song ${ADS_CADENCE.CONCURRENCY} gian, lùi riêng gian dính 429 ${ADS_CADENCE.SHOP_BACKOFF_MIN}'→${ADS_CADENCE.SHOP_BACKOFF_MAX_MIN}', giãn lệnh trong xung ${ADS_CADENCE.SHOP_CALL_GAP_SEC}s, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
   );
 }
 
@@ -203,7 +210,8 @@ async function processAdsChannel(channel: Channel): Promise<void> {
     // Xung trước (cảnh báo tiền cần sớm nhất), lịch sử sau — cùng thứ tự như vòng cũ.
     if (tiers.pulse) pulse = await runAdsPulse(channel);
     // Lát 2: xung vừa bị 429 tầng shop thì KHÔNG gọi tiếp lịch sử — thêm lệnh chỉ thêm 429 từ cùng gian.
-    if (tiers.history && pulse?.rateLimited !== "shop") {
+    // Bước A 13.9: cổng vừa bảo "quay lại sau" ở xung thì cũng không gọi lịch sử — hạn lịch sử giữ nguyên, lượt kế làm.
+    if (tiers.history && pulse?.rateLimited !== "shop" && pulse?.deferMs == null) {
       historyRan = true;
       history = await runAdsHistory(channel);
     }
@@ -214,6 +222,12 @@ async function processAdsChannel(channel: Channel): Promise<void> {
     if (tiers.history) historyRan = true;
   } finally {
     const data = nextAdsSchedule({ pulse, history, historyRan, backoffLevel: channel.adsBackoffLevel }, Date.now());
+    const deferMs = Math.max(pulse?.deferMs ?? 0, history?.deferMs ?? 0);
+    if (deferMs > 0) {
+      console.log(
+        `[Ads-lane] ${channel.channelName} "${channel.shopName}" cổng bảo quay lại sau ${Math.ceil(deferMs / 1000)} s — xếp lại, không bậc`
+      );
+    }
     if (data.adsBackoffUntil) {
       console.warn(
         `[Ads-lane] ${channel.channelName} "${channel.shopName}" lùi riêng bậc ${data.adsBackoffLevel} tới ${data.adsBackoffUntil.toISOString()} (429 tầng shop — gian khác không ảnh hưởng)`

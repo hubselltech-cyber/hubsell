@@ -25,12 +25,19 @@ import { createHash } from "crypto";
 import { prisma } from "../lib/prisma";
 import { ADS_CADENCE } from "../config/ads-cadence";
 
-/** Lỗi ngân sách: caller (worker) bắt để lùi lịch, không coi là lỗi nghiệp vụ. */
+/**
+ * Lỗi ngân sách: caller (worker) bắt để lùi lịch, không coi là lỗi nghiệp vụ.
+ * Scope `gateway_defer` (thiết kế 13.9 bước A, 21/10/2026): CỔNG GỌI SÀN bảo "chưa gọi được, quay lại sau
+ * `waitMs`" — gian xếp lại đúng ngần ấy, KHÔNG bậc lùi theo gian, không cầu dao; `deferReason` = throttled
+ * (chờ lượt GCRA) · rate_limit (sàn 429, khóa đã lùi + hạ nhịp) · hard_app (mã cứng theo app — mọi gian dừng).
+ */
 export class ApiBudgetError extends Error {
   constructor(
     readonly app: string,
-    readonly scope: "app_paused" | "partner_rate_limit" | "shop_rate_limit",
-    message: string
+    readonly scope: "app_paused" | "partner_rate_limit" | "shop_rate_limit" | "gateway_defer",
+    message: string,
+    readonly waitMs: number = 0,
+    readonly deferReason: "throttled" | "rate_limit" | "hard_app" | null = null
   ) {
     super(message);
   }
@@ -38,6 +45,21 @@ export class ApiBudgetError extends Error {
 
 export function isApiBudgetError(err: unknown): err is ApiBudgetError {
   return err instanceof ApiBudgetError;
+}
+
+/** Lỗi cổng "quay lại sau" → ApiBudgetError để MỌI chỗ đang bắt `isApiBudgetError` (xung, lịch sử, route) không phải đổi. Hàm thuần. */
+export function budgetErrorFromDefer(
+  app: string,
+  defer: { waitMs: number; reason: "throttled" | "rate_limit" | "hard_app"; key: string; cause?: unknown }
+): ApiBudgetError {
+  const cause = defer.cause instanceof Error ? ` — ${defer.cause.message.slice(0, 200)}` : "";
+  return new ApiBudgetError(
+    app,
+    "gateway_defer",
+    `Cổng gọi sàn: ${defer.reason} ${defer.key} — chờ ${Math.ceil(defer.waitMs / 1000)} s${cause}`,
+    Math.max(0, defer.waitMs),
+    defer.reason
+  );
 }
 
 // ---------- 1. Token bucket theo app ----------
