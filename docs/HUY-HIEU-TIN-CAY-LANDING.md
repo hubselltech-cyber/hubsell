@@ -7,8 +7,8 @@ Soạn 27/09/2026. Anh Trung xem footer Sapo có 5 huy hiệu (ISO 27001, ISO 90
 | Huy hiệu | Cơ quan | Phí | Làm? | Tình trạng |
 |---|---|---|---|---|
 | Đã thông báo Bộ Công Thương | UBND TP Hà Nội qua online.gov.vn | 0 ₫ | CÓ | ✅ **ĐÃ XÁC NHẬN 19/10/2026**, logo gắn footer 21/10 (mục 1) |
-| Tín nhiệm mạng – **Tổ chức** | Trung tâm An ninh mạng quốc gia (NCA), Cục An ninh mạng, Bộ Công an | 0 ₫ (nguồn thứ 3: mikotech.vn; trang NCA không ghi phí) | CÓ | ✅ ĐÃ GỬI 27/09 tối, chờ NCA 7–14 ngày |
-| Tín nhiệm mạng – **Website** mức Cơ bản | NCA | trang NCA để trống giá, chỉ ghi "mỗi website/năm"; nguồn thứ 3 nói ≈100.000 ₫/năm | CÓ (nếu đúng ≈100k thì vẫn rẻ) | ✅ ĐÃ GỬI 27/09 tối (1 website hubsell.vn, Gói cơ bản); chờ bộ tiêu chí trong 3 ngày về support@, hỏi giá khi NCA liên hệ |
+| Tín nhiệm mạng – **Tổ chức** | Trung tâm An ninh mạng quốc gia (NCA), Cục An ninh mạng, Bộ Công an | 0 ₫ (nguồn thứ 3: mikotech.vn; trang NCA không ghi phí) | ⛔ BỎ | gửi form 27/09, 24 ngày không hồi âm → anh chốt bỏ 21/10 (mục 2.5) |
+| Tín nhiệm mạng – **Website** mức Cơ bản | NCA | trang NCA để trống giá, chỉ ghi "mỗi website/năm"; nguồn thứ 3 nói ≈100.000 ₫/năm | ⛔ BỎ | như trên — anh chốt "không cần thiết" 21/10 |
 | Nói không với hàng giả – BCT | Cục TMĐT & KTS | 0 ₫ | KHÔNG | không có kênh đăng ký mở (xem mục 3) |
 | ISO 27001 / 9001 | tổ chức chứng nhận độc lập | vài chục → vài trăm triệu | HOÃN | kích hoạt khi khách Business/Enterprise đòi |
 | Tín nhiệm mạng – **Hệ thống** / Thiết bị | NCA | có phí theo quy mô hệ thống (trang NCA không công bố); Cơ bản 35 ngày, Nâng cao 66 ngày + đánh giá bên thứ 3 | KHÔNG | anh hỏi 27/09; chứng nhận cả hạ tầng (mình thuê Vercel/Render/Supabase, không sở hữu), bản chất = ISO 27001 kiểu VN → gộp vào điều kiện hoãn ISO; Thiết bị dành cho nhà sản xuất phần cứng |
@@ -65,7 +65,11 @@ Liên hệ NCA: (+84) 593505999, contact@nca.gov.vn, Lô E2 Hoàng Quán Chi, C�
 | **Công khai đầu mối tiếp nhận sự cố ATTT** | footer mới có "Hỗ trợ: support@hubsell.vn", chưa ghi rõ là đầu mối ATTT | ✅ thêm câu "Báo sự cố bảo mật: support@hubsell.vn" ở /an-toan (làm cùng đợt gắn huy hiệu) |
 | Báo cáo đánh giá ATTT bởi đơn vị NCA ủy quyền | chưa có | gói Cơ bản thường không bắt buộc (chỉ Nâng cao 45 ngày + bên thứ 3); nếu NCA đòi thì hỏi giá đơn vị họ chỉ định, báo anh quyết |
 
-### 2.4 Tình trạng 21/10/2026 — 24 ngày không hồi âm, cần liên hệ lại
+### 2.5 ⛔ 21/10/2026 anh Trung CHỐT BỎ Tín nhiệm mạng ("không cần thiết")
+
+Sau kết quả kiểm ở 2.4, anh quyết không theo đuổi nữa: không gọi, không gửi thư, không đăng ký lại. Footer giữ một logo BCT; slot `tinNhiemMangSlug` để rỗng, giữ code vì không tốn gì. Mở lại chỉ khi anh tự nêu (ví dụ khách doanh nghiệp đòi chứng nhận, cùng điều kiện với ISO ở mục 4).
+
+### 2.4 Tình trạng 21/10/2026 — 24 ngày không hồi âm (đã kiểm, rồi anh chốt bỏ ở 2.5)
 
 Kiểm 21/10: (a) 471 thư 30 ngày ở dev@hubsell.vn (support@ đổ về đây) + hubselltech@gmail.com: KHÔNG thư nào từ NCA/tinnhiemmang, kể cả thư xác nhận đã nhận đăng ký; (b) tra danh bạ công khai tinnhiemmang.vn (Website tín nhiệm + Tổ chức tín nhiệm, từ khóa "hubsell"): "chưa được đăng ký xác nhận". Kết luận: form 27/09 nhiều khả năng không tới NCA (BCT còn gửi thư tự động khi nhận hồ sơ; NCA im hoàn toàn). Việc anh làm, chọn 1 trong 2 hoặc cả hai:
 
