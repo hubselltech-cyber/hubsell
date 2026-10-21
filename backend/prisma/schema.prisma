@@ -560,6 +560,10 @@ model Channel {
   /// xung/lịch sử thành công → về 0. Làn Ads không nhặt gian có adsBackoffUntil > now.
   adsBackoffLevel          Int       @default(0)
   adsBackoffUntil          DateTime?
+  /// THIẾT KẾ 13.9 BƯỚC B (21/10/2026): LỚP ƯU TIÊN ads của gian — 1 = đang tiêu tiền + Trợ lý tự thực thi bật,
+  /// 2 = có chiến dịch đang theo dõi, 3 = nối Ads nhưng không chiến dịch. Xung ghi lại sau mỗi lượt; làn Ads nhặt
+  /// lớp thấp trước; nhịp xung từng lớp tự co theo sức chứa (services/ads-demand.ts).
+  adsPriority              Int       @default(2)
   /// MỐC NƯỚC quét đơn (lát 3.2 giai đoạn 3, 14/10/2026, docs/DONG-BO-GIAI-DOAN-3.md mục 2): mọi đơn có
   /// update_time <= mốc này đã đọc đầy đủ. null = chưa có mốc → quét 2 ngày như cũ. Chỉ worker tiến mốc.
   ordersWatermarkAt        DateTime?

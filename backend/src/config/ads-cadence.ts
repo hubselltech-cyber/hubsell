@@ -93,4 +93,29 @@ export const ADS_CADENCE = {
    * của xung hay dính 429). Áp ở services/api-budget.ts cho mọi app Ads (Shopee + Lazada). Đo lại Đ1 (so 429 bật/tắt).
    */
   SHOP_CALL_GAP_SEC: envNum("ADS_SHOP_CALL_GAP_SEC", 0, -1),
+
+  // ---- THIẾT KẾ 13.9 BƯỚC B (21/10/2026) — nhu cầu tự co theo sức chứa (services/ads-demand.ts). Đây là CHÍNH SÁCH,
+  // không phải ngưỡng phản ứng: nhịp từng lớp là hàm của (số gian, lệnh/xung, sức chứa khóa), không ai sửa tay khi gian tăng.
+
+  /** Nhu cầu phải ≤ tỷ lệ này × sức chứa khóa (0,8 TỰ CHỌN — chừa 20 % cho lệnh tay: Làm mới, Trợ lý ghi, nạp gian mới). */
+  DEMAND_UTILIZATION: envNum("ADS_DEMAND_UTILIZATION", 0.8),
+  /**
+   * Trần nhịp xung (phút) từng lớp khi phải giãn: lớp 3 (nối Ads, không chiến dịch) tới 24 h, lớp 2 (có chiến dịch)
+   * 6 h, lớp 1 (đang tiêu tiền + Trợ lý bật) 2 h. Lớp 1 phải giãn = thiếu quota thật = HQ đỏ + ticket Shopee (13.9.2).
+   */
+  DEMAND_CAP_MIN: {
+    1: envNum("ADS_DEMAND_CAP_P1_MIN", 120),
+    2: envNum("ADS_DEMAND_CAP_P2_MIN", 360),
+    3: envNum("ADS_DEMAND_CAP_P3_MIN", 1440),
+  } as Record<1 | 2 | 3, number>,
+  /** Xung trễ quá (hạn chót = nhịp lớp × hệ số này) → tính là "trễ hạn chót" cho HQ (đo, không bỏ xung — 13.9.6). */
+  DEADLINE_X: envNum("ADS_PULSE_DEADLINE_X", 2),
+  /** Tính lại nhịp theo sức chứa mỗi N phút (đếm gian theo lớp + hệ số AIMD từ api_rate_keys). */
+  DEMAND_REFRESH_MIN: envNum("ADS_DEMAND_REFRESH_MIN", 5),
+  /**
+   * Tầng lịch sử cho gian LỚP 3 (nối Ads, không chiến dịch) chạy mỗi N giờ thay vì FULL_HOURS: không có chiến dịch
+   * thì chi tiêu 30 ngày không đổi, kéo lại 6 h/lần chỉ tốn get_all_cpc — khóa chặt nhất (test I9 20.000 gian lớp 3
+   * chỉ ra). 24 TỰ CHỌN.
+   */
+  FULL_HOURS_NO_CAMPAIGN: envNum("ADS_SYNC_HOURS_NO_CAMPAIGN", 24),
 } as const;

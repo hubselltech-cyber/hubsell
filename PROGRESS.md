@@ -27,6 +27,16 @@
   lẫn lịch sử, không bậc, không gọi lịch sử sau xung bị hoãn; cờ `ADS_GATEWAY` (mặc định 1, 0 = đường lui withApiBudget). Kiểm: vitest
   các tệp liên quan xanh, tsc cả test sạch (backend không có cấu hình eslint). Không migration. **Chưa chạy sàn thật** — anh push, sau 24 h
   đọc SQL `api_rate_keys` (cột hits theo khóa) + `api_throttle_states.tripCount` phải đứng ở 162 (docs 13.9.5 có SQL + tiêu chí) → bước B.
+- **Anh "em push luôn và tiếp tục làm" → bước A ĐÃ PUSH `618f77de` (23:17); BƯỚC B ĐÃ CODE (docs 13.9.6), commit riêng chờ anh quyết push:**
+  `Channel.adsPriority` 1/2/3 (migration `20261021230000_channel_ads_priority`, khóa Channel có thử lại); `services/ads-demand.ts`:
+  `adsPriorityOf` (xung Shopee tính, làn ghi lại), `computeCadence` thuần — nhu cầu mỗi khóa ≤ 0,8 × sức chứa (trần × hệ số AIMD đọc
+  `api_rate_keys`), vượt → giãn lớp 3 → 2 → 1 tới 120'/360'/1440', lớp 1 giãn = ĐỎ; `refreshAdsDemand` cache 5' + log `[Ads-demand]`;
+  xung lấy `pulseMinFor(lớp)` làm sàn nhịp. Làn nhặt theo lớp (`adsCandidateOrder`); khi lịch sử đến hạn chạy LỊCH SỬ TRƯỚC rồi xung
+  `skipToday` (bớt 2 lệnh, có `get_all_cpc`); cờ ví tự nạp sang lịch sử (bớt 1 lệnh/xung); lớp 3 lịch sử 24 h (`ADS_SYNC_HOURS_NO_CAMPAIGN`
+  — test 20.000 gian lớp 3 chỉ ra 6 h một mình đã nghẽn `get_all_cpc`). **Hạn chót = đo (`overdue[lớp]`), không bỏ xung** — khác lát 4 cũ,
+  lý do ghi docs. **I9 xanh** (`ads-scale.test.ts`, sàn giả trần thật 0,7/s < 1/s cổng tin): N=40 không giãn, N=1.000 chưa đỏ + lớp 1
+  giữ 30', N=10.000 ĐỎ nhưng 0 dừng app + 429 < 1 % + lớp 1 trước lớp 3. 93 ca xanh (ads-demand 12, ads-scale 3), tsc sạch; 6 suite `*-db`
+  fail sẵn do DB dev local kẹt migration (đã ghi phiên dọn 21/10), không do thay đổi này. Chưa làm: bước C (HQ + gỡ cũ), D (Lazada/TikTok).
 
 ## Phiên 22/10/2026 — CRM HQ TỰ CHUYỂN TRẠNG THÁI CHĂM SÓC THEO THUÊ BAO (anh: hết dùng thử → Đã rời bỏ; thanh toán → Đang dùng ổn định)
 

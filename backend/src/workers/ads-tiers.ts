@@ -26,7 +26,9 @@ import { scanOpsAlerts } from "../services/ops-alerts";
 import { ADS_BACKFILL_DAYS, ADS_SYNC_DAYS_BACK } from "../services/sync-schedule";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { isApiBudgetError } from "../services/api-budget";
-import { pulseShopeeAds } from "../integrations/shopee/ads-pulse";
+import { adsPriorityOf, pulseMinFor, type AdsPriority } from "../services/ads-demand";
+import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
+import { pulseShopeeAds, syncShopeeAutoTopUpFlag } from "../integrations/shopee/ads-pulse";
 import { pulseLazadaAds } from "../integrations/lazada/ads-pulse";
 import { syncShopeeGms } from "../integrations/shopee/ads-gms";
 import { vnDateKey } from "../lib/ads-dates";
@@ -50,6 +52,14 @@ export interface AdsPulseResult {
   rateLimited?: AdsRateLimited;
   /** Thiết kế 13.9 bước A: cổng gọi sàn bảo "quay lại sau ngần này ms" → làn xếp lại gian, không bậc, không cầu dao. */
   deferMs?: number;
+  /** Bước B: lớp ưu tiên vừa tính (Shopee) → làn ghi Channel.adsPriority. */
+  priority?: AdsPriority;
+}
+
+/** Bước B: tùy chọn một lượt xung. */
+export interface AdsPulseOptions {
+  /** Lượt lịch sử vừa kéo cửa sổ 30 ngày (có hôm nay) ngay trước → xung bỏ 2 lệnh "hôm nay" (gộp lệnh, I6). */
+  skipToday?: boolean;
 }
 
 /** Kết quả một lượt LỊCH SỬ ads: kéo được số (ghi lastAdsSyncAt, hạ cờ backfill) + bị chặn hay không. */
@@ -91,13 +101,18 @@ export function nextPulseDelayMin(input: {
   spentRecently: boolean;
   foundNew: boolean;
   hubsellPaused?: boolean;
+  /** Bước B 13.9: nhịp theo sức chứa của lớp gian (services/ads-demand.ts) — chỉ kéo DÀI hơn, không ngắn hơn nhịp nghiệp vụ. */
+  pulseMin?: number;
 }): number {
-  if (!input.adsReady) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
-  const base =
-    input.channelName === ChannelName.LAZADA ? ADS_CADENCE.PULSE_LAZADA_MIN : ADS_CADENCE.PULSE_MIN;
+  const floor = input.pulseMin ?? 0;
+  if (!input.adsReady) return Math.max(ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN, floor);
+  const base = Math.max(
+    input.channelName === ChannelName.LAZADA ? ADS_CADENCE.PULSE_LAZADA_MIN : ADS_CADENCE.PULSE_MIN,
+    floor
+  );
   if (input.foundNew || input.hubsellPaused) return base;
-  if (input.liveCampaigns === 0) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
-  return input.spentRecently ? base : ADS_CADENCE.PULSE_IDLE_MIN;
+  if (input.liveCampaigns === 0) return Math.max(ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN, floor);
+  return input.spentRecently ? base : Math.max(ADS_CADENCE.PULSE_IDLE_MIN, floor);
 }
 
 // ============================================================
@@ -106,7 +121,7 @@ export function nextPulseDelayMin(input: {
 // độ trễ cảnh báo "cắn tiền" / "ví cạn" (30' Shopee, 60' Lazada).
 // Trả về hạn xung kế tiếp (phút) + có kéo được số hay không.
 // ============================================================
-async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
+async function runAdsPulseTier(channel: Channel, opts: AdsPulseOptions = {}): Promise<AdsPulseResult> {
   const isLazada = channel.channelName === ChannelName.LAZADA;
   const adsReady = isLazada ? true : await hasShopeeAdsAccess(channel.id);
   if (!adsReady) {
@@ -123,8 +138,10 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
         liveCampaigns: 0,
         spentRecently: false,
         foundNew: false,
+        pulseMin: isLazada ? undefined : pulseMinFor(3),
       }),
       synced: false,
+      ...(isLazada ? {} : { priority: 3 as const }),
     };
   }
   adsSkipLogged.delete(channel.id);
@@ -135,7 +152,7 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
   // vừa bị (máy/người) tạm dừng rơi vào xung nhẹ mãi, cấu hình không bao giờ
   // được đọc lại → seller bật lại trên Seller Center mà Hubsell vẫn ghi "Tạm
   // dừng" (ANO 15:28→18:02+), và cờ Hubsell không bao giờ được hòa giải.
-  const [liveCampaigns, watching, hubsellPausedCount, recentSpend] = await Promise.all([
+  const [liveCampaigns, watching, hubsellPausedCount, recentSpend, assistantRow] = await Promise.all([
     prisma.adsCampaign.count({ where: { channelId: channel.id, status: "ongoing" } }),
     prisma.adsCampaign.count({
       where: { channelId: channel.id, status: { in: ["ongoing", "paused", "scheduled"] } },
@@ -149,9 +166,22 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
       },
       select: { id: true },
     }),
+    // Bước B: lớp 1 cần biết Trợ lý tự thực thi có bật không (một dòng JSON, cùng lượt đọc).
+    isLazada ? null : prisma.adsAssistantConfig.findUnique({ where: { channelId: channel.id }, select: { config: true } }),
   ]);
   const spentRecently = recentSpend != null;
   const hubsellPaused = hubsellPausedCount > 0;
+  const assistant = isLazada ? null : normalizeAssistantConfig(assistantRow?.config);
+  const priority: AdsPriority | undefined = isLazada
+    ? undefined
+    : adsPriorityOf({
+        adsReady: true,
+        watching,
+        spentRecently,
+        autoExecuteOn: !!assistant && assistant.enabled && assistant.autoExecute.mode !== "off",
+      });
+  // Bước B: nhịp của lớp theo sức chứa (chỉ dài hơn nhịp nghiệp vụ, không ngắn hơn); Lazada chưa qua cổng → nhịp cũ.
+  const pulseMin = priority ? pulseMinFor(priority) : undefined;
 
   let foundNew = false;
   let synced = false;
@@ -165,7 +195,7 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
     } else {
       // Xung nhẹ CHỈ khi DB không còn campaign nào đáng theo dõi — campaign tạm
       // dừng vẫn phải đọc lại cấu hình để thấy người bật lại.
-      const r = await pulseShopeeAds(channel, { light: watching === 0 });
+      const r = await pulseShopeeAds(channel, { light: watching === 0, skipToday: opts.skipToday });
       foundNew = r.newCampaigns > 0;
       synced = r.mode === "full";
       if (r.mode === "full") {
@@ -180,10 +210,11 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
       // bậc lùi riêng của gian từ cờ rateLimited; 15' ở đây chỉ còn là đường lui ADS_LANE=0.
       console.warn(`[Ads-pulse] "${channel.shopName}" lùi lịch (${err.scope}): ${err.message}`);
       return {
-        delayMin: err.scope === "shop_rate_limit" ? ADS_CADENCE.SHOP_BACKOFF_MIN : ADS_CADENCE.PULSE_MIN,
+        delayMin: err.scope === "shop_rate_limit" ? ADS_CADENCE.SHOP_BACKOFF_MIN : Math.max(ADS_CADENCE.PULSE_MIN, pulseMin ?? 0),
         synced: false,
         rateLimited: budgetScope(err),
         deferMs: deferOf(err),
+        priority,
       };
     }
     console.error(`[Ads-pulse] Lỗi xung gian "${channel.shopName}":`, (err as Error).message);
@@ -220,8 +251,10 @@ async function runAdsPulseTier(channel: Channel): Promise<AdsPulseResult> {
       spentRecently,
       foundNew,
       hubsellPaused,
+      pulseMin,
     }),
     synced,
+    priority,
   };
 }
 
@@ -376,6 +409,8 @@ async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
     if (ads.daysUpserted > 0 && backfill) {
       console.log(`[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`);
     }
+    // Bước B (gộp lệnh, I6): cờ ví TỰ NẠP đổi hiếm → đọc ở lượt 6 h thay vì mỗi xung 30' (bớt 1 lệnh/xung/gian).
+    await syncShopeeAutoTopUpFlag(channel);
   } catch (err) {
     if (isApiBudgetError(err)) {
       noteLimit(err);
@@ -456,8 +491,8 @@ async function runAdsTier(channel: Channel): Promise<AdsHistoryResult> {
 // ---------- Cửa vào chung cho worker (ads-lane.ts / order-auto-sync.ts) ----------
 
 /** XUNG ads của một gian theo sàn (TikTok GMV Max đi đường riêng). */
-export function runAdsPulse(channel: Channel): Promise<AdsPulseResult> {
-  return channel.channelName === ChannelName.TIKTOK ? runTiktokAdsPulse(channel) : runAdsPulseTier(channel);
+export function runAdsPulse(channel: Channel, opts: AdsPulseOptions = {}): Promise<AdsPulseResult> {
+  return channel.channelName === ChannelName.TIKTOK ? runTiktokAdsPulse(channel) : runAdsPulseTier(channel, opts);
 }
 
 /** LỊCH SỬ ads của một gian theo sàn. synced = kéo được số (ghi lastAdsSyncAt, hạ cờ backfill). */

@@ -50,7 +50,11 @@ export interface ShopeeAdsPulseResult {
 
 export async function pulseShopeeAds(
   channel: Channel,
-  opts: { light?: boolean } = {}
+  opts: {
+    light?: boolean;
+    /** Bước B 13.9 (gộp lệnh): lượt lịch sử vừa kéo 30 ngày (có hôm nay) ngay trước → bỏ bước 3 + 4 "hôm nay". */
+    skipToday?: boolean;
+  } = {}
 ): Promise<ShopeeAdsPulseResult> {
   const access = await resolveShopeeAdsAccess(channel);
 
@@ -91,16 +95,20 @@ export async function pulseShopeeAds(
   // đúng hôm nay; số hôm qua sàn chỉnh muộn là việc của tầng lịch sử 6 giờ.
   // 3b. Chiến dịch Nhóm nhiều SP (mục 15.7): id không có trong id_list nên bước 1–2 bỏ qua; dòng Nhóm còn
   // sống trong DB vẫn kéo số hôm nay — mỗi id một call riêng (splitPerfBatches), không chạm setting_info.
-  const groupRows = await liveShopeeGroupCampaigns(channel.id);
-  for (const [cid, rowId] of groupRows) rowIdByCampaignId.set(cid, rowId);
-  if (rowIdByCampaignId.size > 0) {
-    result.perfTodayUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(1), {
-      groupIds: new Set(groupRows.keys()),
-    });
-  }
+  // Bước B 13.9 (gộp lệnh, I6): lượt lịch sử vừa kéo cửa sổ 30 ngày — có hôm nay, cả Nhóm — ngay trước xung này
+  // thì bước 3 + 4 chỉ hỏi lại đúng số vừa có → bỏ (bớt 2 lệnh, trong đó có get_all_cpc là khóa chặt nhất).
+  if (!opts.skipToday) {
+    const groupRows = await liveShopeeGroupCampaigns(channel.id);
+    for (const [cid, rowId] of groupRows) rowIdByCampaignId.set(cid, rowId);
+    if (rowIdByCampaignId.size > 0) {
+      result.perfTodayUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(1), {
+        groupIds: new Set(groupRows.keys()),
+      });
+    }
 
-  // 4. Chi tiêu cấp shop hôm nay — cùng ngày sàn với bước 3 (1 call).
-  await syncShopeeAdsSpend(channel, { daysBack: 1 });
+    // 4. Chi tiêu cấp shop hôm nay — cùng ngày sàn với bước 3 (1 call).
+    await syncShopeeAdsSpend(channel, { daysBack: 1 });
+  }
 
   // 5. Ví ads → DB (1 call). Lỗi quyền ví không được chặn 4 bước trên.
   try {
@@ -138,26 +146,27 @@ export async function pulseShopeeAds(
     }
   }
 
-  // 6. ĐỢT B — cờ ví TỰ NẠP (1 call): ví cạn mà không tự nạp → cảnh báo cao; đã
-  // bật tự nạp → hạ mức (cắt cảnh báo ví cạn giả). Lỗi không chặn gì.
+  return result;
+}
+
+/**
+ * ĐỢT B — cờ ví TỰ NẠP (1 call): ví cạn mà không tự nạp → cảnh báo cao; đã bật tự nạp → hạ mức (cắt cảnh báo ví
+ * cạn giả). Bước B 13.9 (gộp lệnh): cờ này đổi hiếm → đọc ở LƯỢT LỊCH SỬ 6 h (workers/ads-tiers.ts) thay vì mỗi
+ * xung 30' như trước 21/10. Lỗi sàn thường không chặn gì; lỗi ngân sách / cổng ném lên để lượt lùi lịch.
+ */
+export async function syncShopeeAutoTopUpFlag(channel: Channel): Promise<boolean | null> {
+  const access = await resolveShopeeAdsAccess(channel);
   try {
-    const tg = await getAdsShopToggleInfo(
-      { accessToken: access.accessToken, shopId: access.shopId },
-      access.cfg
-    );
+    const tg = await getAdsShopToggleInfo({ accessToken: access.accessToken, shopId: access.shopId }, access.cfg);
     const autoTopUp = tg.response?.auto_top_up;
     if (typeof autoTopUp === "boolean") {
-      await prisma.channel.update({
-        where: { id: channel.id },
-        data: { adsAutoTopUp: autoTopUp },
-      });
+      await prisma.channel.update({ where: { id: channel.id }, data: { adsAutoTopUp: autoTopUp } });
+      return autoTopUp;
     }
+    return null;
   } catch (err) {
     if (isApiBudgetError(err)) throw err;
-    console.warn(
-      `[Ads-pulse] Cờ ví tự nạp Shopee "${channel.shopName}" không đọc được:`,
-      (err as Error).message
-    );
+    console.warn(`[Ads-pulse] Cờ ví tự nạp Shopee "${channel.shopName}" không đọc được:`, (err as Error).message);
+    return null;
   }
-  return result;
 }

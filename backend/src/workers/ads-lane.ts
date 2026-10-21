@@ -32,6 +32,7 @@ import { isLazadaConfigured } from "../integrations/lazada/config";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { runAdsHistory, runAdsPulse, type AdsHistoryResult, type AdsPulseResult } from "./ads-tiers";
 import { adsInOrderSync, withJitter } from "./order-auto-sync";
+import { historyHoursFor, refreshAdsDemand, type AdsPriority } from "../services/ads-demand";
 
 /** Nhịp nhặt vé (ms) — như vòng đơn. */
 const TICK_MS = 20 * 1000;
@@ -72,6 +73,14 @@ export function adsCandidateWhere(now: Date, staleBefore: Date, excludeIds: stri
   };
 }
 
+/**
+ * Thứ tự nhặt vé (bước B 13.9, I5): LỚP ƯU TIÊN trước (1 = tiêu tiền + Trợ lý bật → 3 = không chiến dịch), trong
+ * cùng lớp gian chưa từng xung (null) trước rồi gian trễ hạn lâu nhất. Hàm thuần (test đọc được).
+ */
+export function adsCandidateOrder() {
+  return [{ adsPriority: "asc" as const }, { nextAdsPulseAt: { sort: "asc" as const, nulls: "first" as const } }];
+}
+
 /** Lùi riêng của gian ở bậc `level` (ms): SHOP_BACKOFF_MIN × 2^level, trần SHOP_BACKOFF_MAX_MIN, xáo trộn ±15 %. Hàm thuần. */
 export function shopBackoffMs(level: number, rand: () => number = Math.random): number {
   const minutes = Math.min(ADS_CADENCE.SHOP_BACKOFF_MAX_MIN, ADS_CADENCE.SHOP_BACKOFF_MIN * 2 ** Math.max(0, level));
@@ -95,6 +104,8 @@ export function nextAdsSchedule(
     history: AdsHistoryResult | null;
     historyRan: boolean;
     backoffLevel?: number;
+    /** Lớp ưu tiên của gian (Channel.adsPriority hoặc lớp xung vừa tính) → nhịp lịch sử theo lớp (lớp 3 thưa hơn). */
+    priority?: number;
   },
   now: number,
   rand: () => number = Math.random
@@ -106,6 +117,7 @@ export function nextAdsSchedule(
   adsBackfillPending?: false;
   adsBackoffLevel?: number;
   adsBackoffUntil?: Date | null;
+  adsPriority?: number;
 } {
   const historySynced = input.history?.synced === true;
   const fresh = historySynced || input.pulse?.synced === true;
@@ -126,7 +138,9 @@ export function nextAdsSchedule(
     backoff = { adsBackoffLevel: 0, adsBackoffUntil: null };
   }
   const historyDefer = input.history?.deferMs;
-  const nextSyncMs = historyDefer != null ? Math.max(historyDefer, DEFER_MIN_MS) : ADS_CADENCE.FULL_HOURS * 60 * 60 * 1000;
+  const pr = (input.pulse?.priority ?? input.priority ?? 2) as number;
+  const historyHours = historyHoursFor((pr >= 1 && pr <= 3 ? pr : 2) as AdsPriority);
+  const nextSyncMs = historyDefer != null ? Math.max(historyDefer, DEFER_MIN_MS) : historyHours * 60 * 60 * 1000;
   return {
     adsLockedAt: null,
     ...(nextPulseAt != null ? { nextAdsPulseAt: new Date(nextPulseAt) } : {}),
@@ -134,6 +148,8 @@ export function nextAdsSchedule(
     ...(fresh ? { lastAdsSyncAt: new Date(now) } : {}),
     ...(historySynced ? { adsBackfillPending: false as const } : {}),
     ...(backoff ?? {}),
+    // Bước B: lớp ưu tiên xung vừa tính (Shopee) → làn nhặt theo lớp ở lượt sau.
+    ...(input.pulse?.priority != null ? { adsPriority: input.pulse.priority } : {}),
   };
 }
 
@@ -157,13 +173,17 @@ export function startAdsLane(): void {
   }
   setTimeout(() => void tick(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void tick(), TICK_MS).unref();
+  // Bước B: tính nhịp theo sức chứa ngay sau boot — lần đầu refreshAdsDemand tự log một dòng [Ads-demand], rồi chỉ log khi đổi.
+  void refreshAdsDemand();
   console.log(
-    `[Ads-lane] BẬT — làn Ads riêng: Ads Shopee ${ADS_CADENCE.GATEWAY ? "QUA CỔNG GỌI SÀN (GCRA app×endpoint, 13.9 bước A)" : "qua withApiBudget (ADS_GATEWAY=0)"}, song song ${ADS_CADENCE.CONCURRENCY} gian, lùi riêng gian dính 429 ${ADS_CADENCE.SHOP_BACKOFF_MIN}'→${ADS_CADENCE.SHOP_BACKOFF_MAX_MIN}', giãn lệnh trong xung ${ADS_CADENCE.SHOP_CALL_GAP_SEC}s, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
+    `[Ads-lane] BẬT — làn Ads riêng: Ads Shopee ${ADS_CADENCE.GATEWAY ? "QUA CỔNG GỌI SÀN (GCRA app×endpoint, 13.9 bước A)" : "qua withApiBudget (ADS_GATEWAY=0)"}, nhặt theo lớp ưu tiên + nhịp tự co theo sức chứa (13.9 bước B, trần lớp 1/2/3 = ${ADS_CADENCE.DEMAND_CAP_MIN[1]}'/${ADS_CADENCE.DEMAND_CAP_MIN[2]}'/${ADS_CADENCE.DEMAND_CAP_MIN[3]}', dùng ≤ ${Math.round(ADS_CADENCE.DEMAND_UTILIZATION * 100)} %), song song ${ADS_CADENCE.CONCURRENCY} gian, lùi riêng gian dính 429 ${ADS_CADENCE.SHOP_BACKOFF_MIN}'→${ADS_CADENCE.SHOP_BACKOFF_MAX_MIN}', giãn lệnh trong xung ${ADS_CADENCE.SHOP_CALL_GAP_SEC}s, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
   );
 }
 
 /** Một nhịp: nhặt gian đến hạn ads chưa ai cầm, claim bằng adsLockedAt, chạy nền. */
 async function tick(): Promise<void> {
+  // Bước B: nhịp theo sức chứa — nạp lại mỗi DEMAND_REFRESH_MIN (cache), không chặn nhịp nhặt vé.
+  void refreshAdsDemand();
   const free = ADS_CADENCE.CONCURRENCY - inFlight.size;
   if (free <= 0) return;
   try {
@@ -171,8 +191,8 @@ async function tick(): Promise<void> {
     const stale = new Date(now.getTime() - ADS_CADENCE.LOCK_STALE_MIN * 60 * 1000);
     const candidates = await prisma.channel.findMany({
       where: adsCandidateWhere(now, stale, [...inFlight]),
-      // Gian chưa từng xung (null) lên trước, rồi gian trễ hạn lâu nhất.
-      orderBy: { nextAdsPulseAt: { sort: "asc", nulls: "first" } },
+      // Bước B: lớp ưu tiên trước; trong lớp, gian chưa từng xung (null) lên trước, rồi gian trễ hạn lâu nhất.
+      orderBy: adsCandidateOrder(),
       take: free,
     });
     for (const c of candidates) {
@@ -207,13 +227,19 @@ async function processAdsChannel(channel: Channel): Promise<void> {
       historyRan = tiers.history;
       return;
     }
-    // Xung trước (cảnh báo tiền cần sớm nhất), lịch sử sau — cùng thứ tự như vòng cũ.
-    if (tiers.pulse) pulse = await runAdsPulse(channel);
-    // Lát 2: xung vừa bị 429 tầng shop thì KHÔNG gọi tiếp lịch sử — thêm lệnh chỉ thêm 429 từ cùng gian.
-    // Bước A 13.9: cổng vừa bảo "quay lại sau" ở xung thì cũng không gọi lịch sử — hạn lịch sử giữ nguyên, lượt kế làm.
-    if (tiers.history && pulse?.rateLimited !== "shop" && pulse?.deferMs == null) {
+    if (tiers.history) {
+      // Bước B 13.9 (gộp lệnh, I6): lượt LỊCH SỬ chạy TRƯỚC — cửa sổ 30 ngày đã có hôm nay (cả Nhóm) — rồi xung bỏ
+      // 2 lệnh "hôm nay" (skipToday) mà Trợ lý vẫn đánh giá trên số tươi. Trước 21/10: xung trước, lịch sử sau →
+      // get_all_cpc + daily_performance gọi 2 lần/gian/lượt, chính get_all_cpc là khóa chặt nhất (H4).
       historyRan = true;
       history = await runAdsHistory(channel);
+      // Lịch sử bị 429 tầng shop (lát 2, Lazada) hay cổng bảo "quay lại sau" (bước A) → không gọi tiếp xung;
+      // hạn xung giữ nguyên, lượt kế làm cả hai.
+      if (tiers.pulse && history.rateLimited !== "shop" && history.deferMs == null) {
+        pulse = await runAdsPulse(channel, { skipToday: history.synced });
+      }
+    } else if (tiers.pulse) {
+      pulse = await runAdsPulse(channel);
     }
   } catch (err) {
     console.error(`[Ads-lane] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
@@ -221,7 +247,10 @@ async function processAdsChannel(channel: Channel): Promise<void> {
     if (tiers.pulse && !pulse) pulse = { delayMin: ADS_CADENCE.PULSE_IDLE_MIN, synced: false };
     if (tiers.history) historyRan = true;
   } finally {
-    const data = nextAdsSchedule({ pulse, history, historyRan, backoffLevel: channel.adsBackoffLevel }, Date.now());
+    const data = nextAdsSchedule(
+      { pulse, history, historyRan, backoffLevel: channel.adsBackoffLevel, priority: channel.adsPriority },
+      Date.now()
+    );
     const deferMs = Math.max(pulse?.deferMs ?? 0, history?.deferMs ?? 0);
     if (deferMs > 0) {
       console.log(

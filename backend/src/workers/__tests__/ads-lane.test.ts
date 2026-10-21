@@ -2,7 +2,7 @@
 // docs/ADS-NHIP-CANH-BAO.md mục 13, 19/10/2026). Không chạm DB / API sàn.
 import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
-import { adsCandidateWhere, DEFER_MIN_MS, dueAdsTiers, nextAdsSchedule, nextBackoffLevel, shopBackoffMs } from "../ads-lane";
+import { adsCandidateOrder, adsCandidateWhere, DEFER_MIN_MS, dueAdsTiers, nextAdsSchedule, nextBackoffLevel, shopBackoffMs } from "../ads-lane";
 import { ADS_CADENCE } from "../../config/ads-cadence";
 
 const noJitter = () => 0.5; // rand=0.5 → factor 1.0
@@ -207,5 +207,33 @@ describe("13.9 bước A — cổng gọi sàn bảo 'quay lại sau' (deferMs):
     const r = nextAdsSchedule({ pulse: { delayMin: 30, synced: true }, history: { synced: true, rateLimited: null }, historyRan: true }, now, noJitter);
     expect(r.nextAdsPulseAt?.getTime()).toBe(now + 30 * 60_000);
     expect(r.nextAdsSyncAt?.getTime()).toBe(now + 6 * 3_600_000);
+  });
+});
+
+describe("13.9 bước B — làn nhặt theo lớp ưu tiên, xung ghi lớp về Channel", () => {
+  it("thứ tự nhặt vé: adsPriority tăng dần trước, rồi gian chưa từng xung (null) trước, rồi hạn cũ nhất", () => {
+    expect(adsCandidateOrder()).toEqual([{ adsPriority: "asc" }, { nextAdsPulseAt: { sort: "asc", nulls: "first" } }]);
+  });
+  it("xung Shopee trả priority → ghi adsPriority; xung Lazada/TikTok không trả → không đụng cột", () => {
+    const now = Date.UTC(2026, 9, 21, 16, 0, 0);
+    const r = nextAdsSchedule({ pulse: { delayMin: 30, synced: true, priority: 1 }, history: null, historyRan: false }, now, () => 0.5);
+    expect(r.adsPriority).toBe(1);
+    const n = nextAdsSchedule({ pulse: { delayMin: 60, synced: true }, history: null, historyRan: false }, now, () => 0.5);
+    expect(n.adsPriority).toBeUndefined();
+  });
+});
+
+describe("13.9 bước B — lịch sử theo lớp: lớp 3 (không chiến dịch) 24 h, lớp 1–2 FULL_HOURS", () => {
+  it("gian lớp 3 chạy lịch sử xong → hạn lịch sử = now + FULL_HOURS_NO_CAMPAIGN; lớp 2 = now + FULL_HOURS; lớp xung vừa tính thắng cột cũ", () => {
+    const now = Date.UTC(2026, 9, 21, 17, 0, 0);
+    const noJitter = () => 0.5;
+    const ok = { synced: true, rateLimited: null };
+    const p3 = nextAdsSchedule({ pulse: null, history: ok, historyRan: true, priority: 3 }, now, noJitter);
+    expect(p3.nextAdsSyncAt?.getTime()).toBe(now + ADS_CADENCE.FULL_HOURS_NO_CAMPAIGN * 3_600_000);
+    const p2 = nextAdsSchedule({ pulse: null, history: ok, historyRan: true, priority: 2 }, now, noJitter);
+    expect(p2.nextAdsSyncAt?.getTime()).toBe(now + ADS_CADENCE.FULL_HOURS * 3_600_000);
+    const fresh = nextAdsSchedule({ pulse: { delayMin: 30, synced: true, priority: 2 }, history: ok, historyRan: true, priority: 3 }, now, noJitter);
+    expect(fresh.nextAdsSyncAt?.getTime()).toBe(now + ADS_CADENCE.FULL_HOURS * 3_600_000);
+    expect(fresh.adsPriority).toBe(2);
   });
 });

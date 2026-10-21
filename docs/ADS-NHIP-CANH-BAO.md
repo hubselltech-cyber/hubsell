@@ -785,3 +785,29 @@ Thiết kế này làm con số ấy hiện ra trên HQ hàng ngày thay vì ph�
 4. Trợ lý quảng cáo Shopee: số hôm nay vẫn tươi ≤ 30' (HQ `overduePulse` không tăng).
 Qua → bước B (13.9.3). Không qua (hits vẫn ≥ 20/ngày trên get_all_cpc dù factor đã hạ) → trần thật không phải app × endpoint
 đơn thuần, đọc lại `lastError` + request_id, mở ticket Shopee kèm log như họ đòi 15/09.
+
+#### 13.9.6 BƯỚC B ĐÃ LÀM (21/10/2026 đêm, anh Trung "push luôn và tiếp tục làm") — nhu cầu tự co + ưu tiên + gộp lệnh + bằng chứng I9
+
+| Việc | Ở đâu |
+|---|---|
+| **Lớp ưu tiên** `Channel.adsPriority` (1 = đang tiêu tiền + Trợ lý tự thực thi bật · 2 = có chiến dịch theo dõi · 3 = không chiến dịch / chưa ủy quyền); xung Shopee tính `adsPriorityOf()` từ số đã đếm (+ 1 dòng JSON cấu hình Trợ lý) và trả về, làn ghi lại sau lượt. Migration khóa Channel có thử lại. | `services/ads-demand.ts`, `workers/ads-tiers.ts`, `prisma/migrations/20261021230000_channel_ads_priority` |
+| **Nhịp tự co theo sức chứa** `computeCadence()` (thuần, tất định): `D_e = Σ_p N_p·lệnh_{e,p}/T_p + Σ_p N_p·lịch-sử_{e,p}/T^hist_p ≤ u·c_e`; vượt → giãn lớp 3 → 2 → 1 tới trần từng lớp (120'/360'/1440'); `c_e` = trần cấu hình × hệ số AIMD thấp nhất trên khóa (`shopeeAdsCapacity()` đọc `api_rate_keys`). `refreshAdsDemand()` đếm gian theo lớp + đọc hệ số mỗi 5', cache, mọi worker tính ra cùng số; log `[Ads-demand] …` khi đổi. Xung lấy `pulseMinFor(lớp)` làm SÀN của nhịp (chỉ dài hơn nhịp nghiệp vụ 30'/120', không ngắn hơn). | `services/ads-demand.ts`, `config/ads-cadence.ts` (`DEMAND_*`, `DEADLINE_X`) |
+| **Ưu tiên nhặt vé**: `adsCandidateOrder()` = lớp tăng dần → gian chưa từng xung → hạn cũ nhất. | `workers/ads-lane.ts` |
+| **Hạn chót = ĐO, không bỏ xung** (khác 13.3 lát 4): hàng chờ vốn đã bị chặn ở MỘT dòng/gian (`nextAdsPulseAt`), không có hàng vô hạn để cắt; bỏ xung trễ chỉ vứt số tươi. Nên `pulsePastDeadline()` + `snapshot.overdue[lớp]` (gian trễ > nhịp lớp × 2) chỉ để HQ/log thấy lớp nào đang đói. | `services/ads-demand.ts` |
+| **Gộp lệnh (I6)**: khi lịch sử đến hạn, làn chạy LỊCH SỬ TRƯỚC (cửa sổ 30 ngày có hôm nay, cả Nhóm) rồi xung với `skipToday` → bỏ `get_product_campaign_daily_performance` + `get_all_cpc` "hôm nay" (bớt 2 lệnh/lượt-lịch-sử, trong đó có khóa chặt nhất); cờ ví tự nạp `get_shop_toggle_info` chuyển từ xung 30' sang lịch sử (bớt 1 lệnh/xung, 44 lệnh/gian/ngày). Xung lớp 1–2 còn 5 lệnh, lớp 3 1 lệnh. | `workers/ads-lane.ts`, `integrations/shopee/ads-pulse.ts` (`syncShopeeAutoTopUpFlag`), `workers/ads-tiers.ts` |
+| **Lịch sử theo lớp**: lớp 3 mỗi 24 h (`ADS_SYNC_HOURS_NO_CAMPAIGN`) thay vì 6 h — test I9 chỉ ra 20.000 gian lớp 3 × 6 h một mình đã nghẽn `get_all_cpc` (56 lệnh/phút > 48 cho phép) dù chúng không có gì để kéo. | `workers/ads-lane.ts` (`nextAdsSchedule` nhận `priority`), `config/ads-cadence.ts` |
+
+**Bằng chứng I9 — `services/__tests__/ads-scale.test.ts`** (sàn giả trần THẬT `get_all_cpc` 0,7/s < 1/s cổng tin → cổng phải tự học AIMD; đồng hồ giả, mô phỏng tuần tự):
+
+| N gian (lớp 1/2/3) | Giờ mô phỏng | Khẳng định đã xanh |
+|---|---|---|
+| 40 (10/25/5) | 6 h | 0 lần dừng app · 429 < 1 % lệnh · không lớp nào giãn · lớp 1 p99 trễ ≤ hạn chót · ≥ 90 % số xung kỳ vọng |
+| 1.000 (100/700/200) | 3 h | 0 dừng app · 429 < 1 % · chưa đỏ · lớp 1 giữ 30' và không trễ hạn chót (lớp 2 có thể giãn) |
+| 10.000 (3.000/5.000/2.000) | 2 h | **ĐỎ** (lớp 1 giãn tới 120' vẫn vượt — thiếu quota thật) NHƯNG 0 dừng app · 429 < 1 % · lớp 1 trễ ít hơn lớp 3 (lớp 3 bị nhường chỗ, kể cả gian đang chờ) |
+
+`ads-demand.test.ts`: 40 gian ≈ 2,6 % mức cho phép; ~1.300 gian lớp 2 vừa chạm 80 %; thêm gian → chỉ lớp 2 giãn, lớp 1 giữ 30'; 20.000 gian lớp 3 → chỉ lớp 3 giãn (~216') vì `id_list`; 10.000 gian lớp 1 → đỏ; hệ số AIMD 0,5 → giãn sớm hơn; tất định.
+**Kiểm:** 93 ca xanh (ads-demand 12, ads-scale 3, ads-lane +3, cùng các bộ bước A), `tsc --noEmit` cả test sạch. **Chưa chạy sàn thật.**
+
+**Chưa làm / còn lại:** HQ thẻ "Quota Ads theo khóa" + gỡ `api-budget`/`ApiThrottleState`/`adsBackoff*`/`STORM_RATIO`/`SHOP_CALL_GAP_SEC` (bước C — các biến này vẫn là đường lui `ADS_GATEWAY=0` và đường Lazada tới khi bước D xong); Lazada + TikTok Ads qua cổng (bước D). Lớp gian Lazada/TikTok giữ 2.
+
+**Đo sau deploy B (cộng vào 13.9.5):** log boot `[Ads-lane] BẬT … nhặt theo lớp ưu tiên + nhịp tự co theo sức chứa` + một dòng `[Ads-demand] lớp 1: N gian, xung 30' · lớp 2 … · chặt nhất x % của mức cho phép trên get_all_cpc…`; SQL `SELECT "adsPriority", count(*) FROM "Channel" WHERE "channelName"='SHOPEE' AND status='ACTIVE' GROUP BY 1` sau 1 h (lớp đã được ghi); `hits` của khóa `get_all_cpc` trong `api_rate_keys` còn thấp hơn bước A (bớt 2 lệnh mỗi lượt lịch sử).
