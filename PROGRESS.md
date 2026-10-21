@@ -5,6 +5,29 @@
 
 ---
 
+## Phiên 21/10/2026 trưa — SỬA GỐC OOM WORKER: ĐỐI SOÁT TIKTOK GHI THEO LÔ + ĐẾM LẦN SẬP LƯỢT NẠP LỊCH SỬ
+
+- **Anh chốt:** "Cần sửa gốc sập"; anh tự nâng gói Render để chặn ngay (worker Starter 512 MB → Standard 2 GB: đặt thêm env
+  `NODE_HEAP_MB=1536` trên worker, docs/DEPLOY-RENDER-SUPABASE.md 2c — cờ heap trong `npm start` không tự theo gói).
+- **Sửa 1 — `integrations/tiktok/service.ts` `syncTiktokSettlements`:** bỏ gom cả cửa sổ 30 ngày trong RAM. Nay gom theo đơn như cũ
+  nhưng cứ hết MỘT bản kê mà lô ≥ `SETTLE_FLUSH_ORDERS` (20.000 đơn, env `TIKTOK_SETTLE_FLUSH_ORDERS`) thì ghi lô (`flushSettlementBatch`)
+  rồi bỏ; hết cửa sổ ghi nốt. Đơn có dòng ở bản kê ngoài lô → đường merge sẵn có từ 02/10 (đọc lại bản kê cũ qua API, cộng chung) —
+  số y hệt cách gom cũ. Mảnh đã biết của đơn đọc từ DB (`statementIds`) nên bỏ luôn `writtenIn` (Map mã đơn → Set) và `notFound`
+  (Set 257k mã đơn ở Bella Look) — RAM không phụ thuộc cỡ gian. Gian thường (cửa sổ < 20k đơn) không đổi hành vi. Đổi nghĩa 2 số
+  đếm trong kết quả: `ordersUpdated` = số lượt ghi, `ordersNotFound` đếm theo lô (chỉ dùng cho log/toast).
+- **Sửa 2 — vòng lặp sập:** cột mới `Channel.historyBackfillAttempts` (migration `20261021100000_channel_history_backfill_attempts`,
+  khóa có thử lại như các migration Channel trước). Worker tăng bộ đếm TRƯỚC khi chạy lượt backfill, về 0 trong `finally` (xong hay
+  lỗi êm đều về 0 — lỗi token/sàn vẫn thử lại mãi như cũ); số > 0 lúc nhặt gian = lượt trước SẬP; quá `HISTORY_BACKFILL_MAX_ATTEMPTS`
+  (3, services/sync-schedule.ts) → hạ cờ, log `[Auto-sync] ... HẠ CỜ`, chạy nhịp thường (mốc nước + Đồng bộ tay bù).
+- **Kiểm:** backend `tsc --noEmit` sạch; vitest thuần (settlement-merge, order-search-sort) xanh; thêm ca DB
+  `tiktok-settlement-merge-db.test.ts` "GHI THEO LÔ" (`flushOrders: 1`, hai bản kê cùng cửa sổ → cộng đủ, đọc lại đúng 1 lần) —
+  **phiên cloud không có Postgres nên ca DB bị skip, anh chạy `npm test` trên máy có DB dev để xác nhận.** Chưa tái hiện gian 300k
+  đơn đo trần heap (chưa có bộ giả lập).
+- **Còn mở (chưa làm, đề xuất phiên sau):** (1) nạp lịch sử ĐƠN gian lớn đọc tiếp thay vì đọc lại 15.000 đơn mới nhất mỗi lượt
+  (cần mốc riêng cho trục create_time — lát 3.2 chỉ lo update_time); (2) lát CHUNG "bộ nhớ không phụ thuộc cỡ gian" cho ~20 chỗ
+  tự đặt trần trang ở 3 sàn + test giả lập gian lớn làm hàng rào (Pha C). Bella Look: sau deploy anh có thể bật lại
+  `historyBackfillPending` (hoặc bấm Đồng bộ đối soát `?full=1`) để nạp trọn 90 ngày bản kê.
+
 ## Phiên 21/10/2026 sáng — WORKER RENDER HẾT BỘ NHỚ, KHỞI ĐỘNG LẠI ~MỖI GIỜ (GIAN TIKTOK BELLA LOOK)
 
 - **Nguồn:** thư Render 20/10 20:43; anh bảo em mở Render kiểm (Chrome của anh, chỉ đọc).

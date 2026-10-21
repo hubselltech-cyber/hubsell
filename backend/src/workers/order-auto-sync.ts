@@ -74,7 +74,12 @@ import {
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { syncLazadaReturns } from "../integrations/lazada/returns-sync";
-import { ADS_BACKFILL_DAYS, ADS_SYNC_DAYS_BACK, HISTORY_BACKFILL_DAYS } from "../services/sync-schedule";
+import {
+  ADS_BACKFILL_DAYS,
+  ADS_SYNC_DAYS_BACK,
+  HISTORY_BACKFILL_DAYS,
+  HISTORY_BACKFILL_MAX_ATTEMPTS,
+} from "../services/sync-schedule";
 import { runAdsHistory, runAdsPulse, type AdsPulseResult } from "./ads-tiers";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { incompleteReadMessage, type SyncCompleteness } from "../integrations/sync-contract";
@@ -303,7 +308,35 @@ async function processChannel(channel: Channel): Promise<void> {
   // ngay, không đợi hạn. Hạ cờ CHỈ khi cả hai lượt xong không lỗi (token hỏng,
   // sàn chập chờn → lượt sau thử lại). Sự cố 23/09: ANO Official nối xong, đơn
   // T7 sàn đã trả nhưng bản kê chỉ quét 7 ngày → Kiểm toán báo oan 44 đơn.
-  const backfill = channel.historyBackfillPending;
+  let backfill = channel.historyBackfillPending;
+  // ĐẾM LẦN SẬP (21/10/2026): tiến trình chết giữa lượt backfill (OOM) thì khối
+  // finally không chạy, cờ không hạ, lượt sau làm lại y hệt → vòng lặp sập. Tăng
+  // bộ đếm TRƯỚC khi chạy (ghi bền), về 0 trong finally (lượt kết thúc êm, xong hay
+  // lỗi đều về 0 — lỗi token/sàn vẫn thử lại mãi như cũ). Số > 0 lúc nhặt gian =
+  // các lượt trước sập; quá trần thì hạ cờ, chạy nhịp thường.
+  let backfillGaveUp = false;
+  if (backfill) {
+    const attempt = channel.historyBackfillAttempts + 1;
+    if (attempt > HISTORY_BACKFILL_MAX_ATTEMPTS) {
+      backfill = false;
+      backfillGaveUp = true;
+      console.warn(
+        `[Auto-sync] Gian mới "${channel.shopName}": lượt nạp lịch sử ${HISTORY_BACKFILL_DAYS} ngày sập giữa chừng ${channel.historyBackfillAttempts} lần liên tiếp — HẠ CỜ, chuyển nhịp thường; phần lịch sử thiếu bù bằng mốc nước hoặc nút Đồng bộ tay`
+      );
+    } else {
+      // Best-effort: ghi hỏng thì vẫn chạy lượt (ngoài try/finally — không được
+      // ném ra làm gian giữ khóa tới LOCK_STALE_MS).
+      await prisma.channel
+        .update({
+          where: { id: channel.id },
+          select: { id: true },
+          data: { historyBackfillAttempts: attempt },
+        })
+        .catch((err) =>
+          console.warn(`[Auto-sync] Không ghi được bộ đếm backfill gian "${channel.shopName}":`, (err as Error).message)
+        );
+    }
+  }
   // DỰNG LẠI SAO KÊ (02/10/2026): cờ bật → tầng giờ đọc lại TOÀN BỘ bản kê của gian
   // thay cho cửa sổ 7 ngày, ép chạy ngay; hạ cờ khi lượt đó xong không lỗi. Hiện
   // chỉ TikTok có đường dựng lại (lượt quét 7 ngày từng ghi đè làm đơn mất dòng bán).
@@ -367,6 +400,9 @@ async function processChannel(channel: Channel): Promise<void> {
           ...(adsFresh ? { lastAdsSyncAt: new Date(now) } : {}),
           ...(adsSynced ? { adsBackfillPending: false } : {}),
           ...(backfillDone ? { historyBackfillPending: false } : {}),
+          ...(backfillGaveUp ? { historyBackfillPending: false } : {}),
+          // Lượt backfill kết thúc êm (xong hay lỗi) → bộ đếm sập về 0.
+          ...(backfill || backfillGaveUp ? { historyBackfillAttempts: 0 } : {}),
           ...(rebuildDone ? { settlementRebuildPending: false } : {}),
           // Mốc nước (lát 3.2) ghi cùng câu UPDATE lịch — không thêm câu lệnh nào.
           ...(watermark ?? {}),

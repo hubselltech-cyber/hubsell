@@ -238,6 +238,33 @@ describe.skipIf(!columnsReady)("TikTok — sao kê của đơn không bị lư�
     expect(st.statementIds).toEqual(["ST-D1", "ST-D2"]);
   });
 
+  it("GHI THEO LÔ (OOM 21/10): trần lô cắt giữa hai bản kê cùng cửa sổ → vẫn cộng đủ, số y hệt gom cả cửa sổ", async () => {
+    const a = await createOrder(10);
+    const b = await createOrder(9);
+    // Hai bản kê cùng cửa sổ 7 ngày; đơn a có dòng ở cả hai, đơn b chỉ ở bản kê đầu.
+    statement("ST-F1", 5, [saleLine(a.code), saleLine(b.code)]);
+    statement("ST-F2", 2, [refundLine(a.code)]);
+
+    // flushOrders = 1 → hết bản kê F1 (lô 2 đơn ≥ 1) ghi ngay, F2 rơi vào lô sau.
+    await syncTiktokSettlements(await channel(), { daysBack: 7, flushOrders: 1 });
+
+    // Lô 2 thấy a có bản kê F1 ngoài lô (đọc từ DB) → đọc lại F1 rồi cộng chung.
+    expect(api.txCalls).toEqual(["ST-F1", "ST-F2", "ST-F1"]);
+    const rowA = await rowOf(a.id);
+    expect(Number(rowA.tiktokSettlement?.grossSales)).toBe(1_390_000); // dòng bán CÒN NGUYÊN
+    expect(Number(rowA.actualPayout)).toBe(-128_636);
+    expect(rowA.tiktokSettlement?.statementIds).toEqual(["ST-F1", "ST-F2"]);
+    const rowB = await rowOf(b.id);
+    expect(Number(rowB.actualPayout)).toBe(560_000);
+    expect(rowB.tiktokSettlement?.statementIds).toEqual(["ST-F1"]);
+
+    // Lượt sau không có bản kê mới → không đọc lại, không đổi số.
+    api.txCalls = [];
+    await syncTiktokSettlements(await channel(), { daysBack: 7, flushOrders: 1 });
+    expect([...api.txCalls].sort()).toEqual(["ST-F1", "ST-F2"]);
+    expect(Number((await rowOf(a.id)).actualPayout)).toBe(-128_636);
+  });
+
   it("đơn chỉ có một bản kê: mọi lượt đều ghi lại như cũ, không gọi thừa", async () => {
     const o = await createOrder(6);
     statement("ST-E1", 3, [saleLine(o.code)]);

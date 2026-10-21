@@ -167,6 +167,13 @@ lại (10–20 giây) thấy câu lỗi dev "backend đang chạy ở cổng 400
    cả năm toàn shop, trần 20.000), và backfill bản kê TikTok
    (integrations/tiktok/service.ts — ghi theo từng cửa sổ 30 ngày, đơn gặp lại
    ở cửa sổ sau thì kéo lại bản kê đã ghi để cộng chung, số y hệt cách gom cũ).
+   **21/10/2026 (OOM lần 2, worker sập 8 lần/đêm vì gian Bella Look ~3.100 dòng
+   bản kê/ngày = 94.000 dòng/cửa sổ):** cửa sổ 30 ngày vẫn còn quá lớn với gian
+   to → ghi theo LÔ có trần số đơn (`SETTLE_FLUSH_ORDERS` 20.000, env
+   `TIKTOK_SETTLE_FLUSH_ORDERS`), cắt lô ở ranh bản kê; mảnh đã biết của đơn đọc
+   từ DB nên RAM không phụ thuộc cỡ gian. Kèm `Channel.historyBackfillAttempts`
+   (migration 20261021100000): lượt nạp lịch sử sập giữa chừng quá
+   `HISTORY_BACKFILL_MAX_ATTEMPTS` (3) thì worker hạ cờ, không lặp vô hạn.
 4. Frontend: câu lỗi mất kết nối viết cho khách + tự gọi lại mỗi 8 giây
    (lib/use-api-query.ts), React Query thử lại 3 lần giãn 1s → 2s → 4s cho lỗi
    mạng / 5xx (components/shell/query-provider.tsx).

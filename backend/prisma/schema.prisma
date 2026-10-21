@@ -522,6 +522,11 @@ model Channel {
   /// nhất rồi ghi lại sao kê từng đơn, xong không lỗi mới hạ cờ. Bật khi cách dựng sao kê đổi hoặc
   /// phát hiện sao kê đã ghi sai (sự cố lượt quét 7 ngày ghi đè làm đơn TikTok mất dòng bán).
   settlementRebuildPending Boolean   @default(false)
+  /// Số lượt worker ĐÃ BẮT ĐẦU nạp lịch sử gian mới mà chưa về đích (tăng TRƯỚC khi chạy, về 0 khi
+  /// lượt kết thúc — xong hay lỗi êm đều về 0; chỉ lượt SẬP giữa chừng mới để số lại). OOM 20–21/10/2026:
+  /// Bella Look sập 8 lần/đêm, cờ không hạ nên lượt sau làm lại y hệt. Quá HISTORY_BACKFILL_MAX_ATTEMPTS
+  /// → hạ cờ, chuyển nhịp thường (mốc nước + nút Đồng bộ tay bù phần thiếu).
+  historyBackfillAttempts  Int       @default(0)
   /// DANH MỤC SẢN PHẨM TỰ KÉO (anh Trung 28/09/2026: nối gian xong vào Giá vốn trống, phải bấm
   /// "Đồng bộ từ sàn"): gian vừa nối đặt = now → worker product-catalog-sync kéo ngay; xong → đêm
   /// sau (03:00–05:00 VN, rải ngẫu nhiên); lỗi → +30'. null = không tự kéo (gian Offline/mock).

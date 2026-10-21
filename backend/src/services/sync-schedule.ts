@@ -33,6 +33,14 @@ export const ADS_REFRESH_MIN_GAP_MS = ADS_CADENCE.REFRESH_GAP_MIN * 60 * 1000;
  * Cờ Channel.historyBackfillPending đặt lúc TẠO gian, worker hạ khi xong cả hai lượt.
  */
 export const HISTORY_BACKFILL_DAYS = 90;
+/**
+ * Lượt nạp lịch sử SẬP giữa chừng (tiến trình chết trước câu UPDATE hạ cờ — OOM
+ * 20–21/10/2026, Bella Look 8 lần/đêm) được thử lại tối đa chừng này lần liên
+ * tiếp (Channel.historyBackfillAttempts, tăng trước khi chạy, về 0 khi lượt kết
+ * thúc êm). Quá trần → worker hạ cờ, gian chạy nhịp thường; phần lịch sử thiếu bù
+ * bằng mốc nước / nút "Đồng bộ đơn" + "?full" tay, kèm log [Auto-sync] để soi.
+ */
+export const HISTORY_BACKFILL_MAX_ATTEMPTS = 3;
 export const HISTORY_BACKFILL_NOTICE =
   "Hubsell đang kéo danh mục sản phẩm, đơn hàng và số đối soát của 3 tháng gần nhất (90 ngày) về, thường xong trong vài phút. Đơn cũ hơn 3 tháng không được kéo về.";
 
