@@ -179,10 +179,10 @@ export const CAPACITY_MILESTONES: CapacityMilestone[] = [
     ],
     upgrades: [{ what: "Worker Standard (2GB RAM, 1 CPU)", usdPerMonth: 25 }],
     checklist: [
-      "AUTO_SYNC_CONCURRENCY=6 trên worker",
-      "Upsert hiệu suất ads theo lô (createMany/onConflict) thay từng dòng",
-      "Webhook Lazada vào hàng đợi bền như Shopee",
-      "Rà index Order(channelId, createdAt), OrderItem(orderId)",
+      "AUTO_SYNC_CONCURRENCY=6 trên worker (env Render, anh đặt tay cùng NODE_HEAP_MB=1536 khi nâng Standard 2 GB)",
+      "Upsert hiệu suất ads theo lô (createMany/onConflict) thay từng dòng — XONG 21/10 (integrations/ads-perf-batch.ts, 3 sàn)",
+      "Webhook Lazada vào hàng đợi bền như Shopee — XONG 01/10 (docs/HANG-DOI-BEN.md)",
+      "Rà index Order(channelId, createdAt), OrderItem(orderId) — ĐÃ CÓ trong schema (rà 21/10)",
     ],
   },
   {

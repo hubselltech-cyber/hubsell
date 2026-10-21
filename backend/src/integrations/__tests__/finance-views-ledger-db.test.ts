@@ -9,6 +9,7 @@
 import "./load-env";
 import { describe, expect, it } from "vitest";
 import { prisma } from "../../lib/prisma";
+import { ensureParityDataset } from "./parity-seed";
 import { parseDateRange } from "../../lib/date-range";
 import { ensureLedgerFresh } from "../../services/order-ledger";
 import { ShippingStatus } from "@prisma/client";
@@ -19,10 +20,14 @@ import { OPEN_CASH_WHERE, fetchPnlRows, skuAggFromOrders } from "./pnl-rows-orac
 const ledgerReady: boolean = await (async () => {
   try {
     const r = await prisma.$queryRaw<{ r: string | null }[]>`SELECT to_regclass('order_ledger')::text AS r`;
-    return r[0]?.r != null;
+    if (r[0]?.r == null) return false;
   } catch {
     return false;
   }
+  // DB mới dựng từ migration (không có đơn) → dựng bộ đơn mẫu để phép so có nghĩa
+  // (parity-seed.ts). Dựng lỗi thì ném ra cho file đỏ, không im lặng bỏ qua.
+  await ensureParityDataset();
+  return true;
 })();
 if (!ledgerReady) {
   console.log("[finance-views-ledger-db.test] BỎ QUA: DB dev chưa có bảng order_ledger");

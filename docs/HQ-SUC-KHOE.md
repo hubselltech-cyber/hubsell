@@ -140,6 +140,17 @@ Chuông dùng `notify()` sẵn có (type `platform-health`, dedupe 24h theo titl
 email qua `lib/mailer.ts` tới email của mọi user `isPlatformAdmin` (+ env
 `HQ_ALERT_EMAILS` nếu muốn thêm).
 
+## 21/10/2026 — Anh đã nâng Worker Standard 2 GB; rà 4 việc checklist M2
+
+Anh tự nâng gói trên Render trưa 21/10 (sau 2 lần OOM worker, PROGRESS.md phiên 21/10 trưa). Checklist M2 (`capacity-plan.ts`) rà lại:
+
+| Việc | Trạng thái | Ghi chú |
+|---|---|---|
+| `AUTO_SYNC_CONCURRENCY=6` trên worker | **Anh đặt tay** trên Render (env) | Code đọc env, mặc định 3 (`workers/order-auto-sync.ts`). Đặt cùng lúc với `NODE_HEAP_MB=1536` — cờ heap trong `npm start` KHÔNG tự theo gói, thiếu là worker 2 GB vẫn chết ở heap 320 MB (docs/DEPLOY-RENDER-SUPABASE.md 2c). |
+| Upsert hiệu suất ads theo lô | **Xong 21/10** | `integrations/ads-perf-batch.ts`: gom dòng (chiến dịch, ngày) rồi ghi MỘT câu `INSERT … SELECT FROM unnest(mảng) … ON CONFLICT DO UPDATE` mỗi lô ≤ 1.000 dòng; nối vào Shopee (`shopee/ads-campaigns.ts`, mỗi lô 100 chiến dịch sàn trả), TikTok (`tiktok-ads/sync.ts`, cả cửa sổ), Lazada (`lazada/ads-campaigns.ts`, mỗi trang report). Chỉ đè cột sàn có số (TikTok không có impression/clicks → giữ nguyên), cùng khóa lặp trong lô thì dòng sau thắng — y nghĩa upsert từng dòng cũ. Gian 100 chiến dịch × 30 ngày: 3.000 lượt đi-về Supabase → 3 câu. |
+| Webhook Lazada vào hàng đợi bền | **Xong 01/10** | `routes/webhooks.ts` ghi `webhook_events` + xếp việc trong một giao dịch rồi ack (docs/HANG-DOI-BEN.md); test `lazada-webhook-queue.test.ts`. |
+| Rà index Order(channelId, createdAt), OrderItem(orderId) | **Đã có** | `schema.prisma`: Order có `@@index([channelId, createdAt])` (kèm `[channelId, isSettled]`, `[channelId, deliveredAt]`), OrderItem có `@@index([orderId])`. Không cần migration. |
+
 ## 5. Giao diện `/admin/health` (lá quyền mới `hq.health`, sidebar "Sức khỏe")
 
 1. **Hàng KPI** (StatCard sẵn): Gian hoạt động (chip theo sàn) · Chủ shop hoạt động ·

@@ -6,6 +6,72 @@
 
 ---
 
+## Phiên 21/10/2026 khuya — SỬA HẾT 20 CA TEST ĐỎ CÒN LẠI TRÊN DB TRỐNG (anh chốt "phần nào fail sửa luôn một lượt")
+
+- **Bộ đơn mẫu dùng chung `__tests__/parity-seed.ts`:** 7 file đối soát sổ cái = đơn gốc (ads-margin-sql-db, ads-rows-ledger-db,
+  cash-flow / finance-views / overview / realized-pnl / tax-ledger-db) so trên MỌI chủ shop và đòi "DB dev phải có gian Shopee/Lazada có đơn
+  30 ngày" → DB mới dựng từ migration trống là đỏ. Nay `ensureParityDataset()` (gọi trong khối `ledgerReady` của 7 file): DB chưa có đơn
+  Shopee/Lazada 30 ngày thì dựng MỘT chủ shop cố định `test-parity-seed@hubsell.test` — gian Shopee + Lazada, 10 sản phẩm kho nối SKU sàn,
+  25 đơn trải hôm nay → 400 ngày (7/30/60 ngày, quý trước, năm trước), nhiều dòng, đủ trạng thái (giao, đang giao, xử lý, hủy), đã/chưa
+  đối soát với phí + thuế khấu trừ, voucher shop, hoàn một phần nhập kho nguyên vẹn, bán lỗ, quà giá 0, thiếu giá vốn, phí ship chênh,
+  AdSpend 5 ngày; dựng xong `ensureLedgerFresh` phải sạch. Idempotent theo email, KHÔNG dọn (là dữ liệu dev của DB trống); DB dev thật có
+  đơn thì không đụng. Dựng lỗi thì ném ra cho file đỏ, không im lặng bỏ qua.
+- **Env Shopee giả trong `load-env.ts`** (`SHOPEE_PARTNER_ID ??= "1234567"`, `SHOPEE_PARTNER_KEY ??= "test-partner-key"`): hubsell-ads,
+  inventory-idempotency, shopee-auth-expiry-db mock tầng gọi sàn nhưng `isShopeeConfigured()` vẫn đòi đủ 2 biến; .env thật giữ nguyên.
+- **delivery-fail-park-db:** `describe.skipIf(!DELIVERY_FAIL_FEATURE)` — cứu đơn đang ẨN (cờ false từ 12/10), hàm tắt sớm trước khi
+  phát vé nên 3 ca không thể xanh (đỏ y hệt trên DB dev `db push`); bật lại cờ là test tự chạy lại. Không phải lỗi code.
+- **Kết quả trên Postgres 16 tạm, DB dựng từ migration:** trọn bộ `vitest run` **0 đỏ / 1.789 xanh / 3 bỏ qua** (681 file). Dựng lại DB
+  trống rồi chạy riêng 7 file đối soát: seed từ đầu, 20/20 xanh. `tsc --noEmit` sạch. Chưa chạy trên DB dev thật của anh (seed sẽ không
+  dựng vì đã có đơn; env thật không bị ghi đè).
+- **Mốc:** DB trống → `migrate deploy` → `npm test` xanh toàn bộ, không cần dữ liệu hay .env sàn — dùng được cho CI/máy mới.
+
+## Phiên 21/10/2026 tối — MIGRATION BÙ: DỰNG ĐƯỢC DB TRỐNG TỪ MIGRATION (anh chốt "làm luôn cho xong")
+
+- **Rà bằng script** (so cột/enum/index trong schema.prisma với toàn bộ 177 file migration): thiếu KHÔNG chỉ nhóm Ads — 5 bảng Ads,
+  3 bảng Ví + 3 enum Ví, 15 cột lẻ trên User/Product/Order/OrderItem/ChannelProduct/OperatingExpense, giá trị `ReturnStatus.RECEIVED`,
+  unique `Channel(userId, channelName, externalShopId)`, index `order_line_ledger(productId)` (hai cái sau vào schema ở commit mobile
+  946039a 18/10), và `User.email` NOT NULL (schema cho NULL từ khi có nhân viên đăng nhập bằng staffUsername). Tất cả lên prod bằng
+  `db push`. Chi tiết: docs/DEPLOY-RENDER-SUPABASE.md mục cuối.
+- **3 migration bù, đều idempotent** (CREATE … IF NOT EXISTS; cột kiểm information_schema rồi mới ALTER nên prod KHÔNG lấy khóa bảng
+  nóng; FK kiểm pg_constraint; enum kiểm pg_type): `20260914190000_ads_wallet_tables_baseline` (đặt trước migration đầu tiên ALTER
+  AdsCampaign, bảng ở trạng thái 14/09 — cột sau này các migration cũ tự thêm), `20260930220000_push_drift_baseline` (trước
+  order_ledger vì trigger sổ đọc `old."sellerProtectionFee"`), `20261021120000_order_line_ledger_product_idx`. Prisma áp migration chưa
+  ghi nhận theo thứ tự tên nên tên cũ hơn vẫn được prod áp một lần — đã kiểm no-op trên DB dựng bằng `db push` từ schema hiện tại
+  (0 lỗi, `migrate diff` sau đó "No difference").
+- **Kiểm trên Postgres 16 tạm:** DB trống `migrate deploy` áp trọn 180 migration. Trọn bộ vitest trên DB ấy: 1.772 xanh / 20 đỏ (trước
+  khi bù, trên DB `db push`: 53 đỏ). 20 đỏ còn lại = 11 file cần DỮ LIỆU dev ("DB dev phải có gian… để phép so có nghĩa"), 2 file cần
+  env Shopee thật, và `delivery-fail-park-db` (3 ca, đỏ y hệt trên DB `db push` — hàm tắt sớm vì cấu hình cảnh báo giao thất bại chưa bật,
+  không liên quan migration; anh chạy trên DB dev để đối chiếu). `plan-enforcement` từ đỏ → xanh nhờ email NULL.
+- **Rủi ro khi lên prod:** nếu prod THIẾU index productId của sổ dòng đơn (bảng phân mảnh, không CONCURRENTLY được) thì deploy dựng
+  một lần, khóa SHARE theo mảnh vài giây/triệu dòng. Khả năng thấp vì schema đã có từ 18/10 và app đang chạy.
+## Phiên 21/10/2026 chiều — ANH ĐÃ NÂNG WORKER STANDARD; RÀ CHECKLIST M2 + UPSERT HIỆU SUẤT ADS THEO LÔ
+
+- **Anh báo:** đã nâng gói Worker (Standard 2 GB) trên Render. Hỏi 4 việc checklist M2 của em (HQ `capacity-plan.ts`) tới đâu.
+- **Rà (ghi docs/HQ-SUC-KHOE.md mục 21/10):** (1) `AUTO_SYNC_CONCURRENCY=6` = env anh đặt tay trên Render, **đặt cùng
+  `NODE_HEAP_MB=1536`** (thiếu là worker 2 GB vẫn chết ở heap 320 MB); (2) webhook Lazada vào hàng đợi bền **đã xong 01/10**;
+  (3) index Order(channelId, createdAt) + OrderItem(orderId) **đã có** trong schema; (4) upsert hiệu suất ads theo lô **chưa** → làm phiên này.
+- **Làm — `integrations/ads-perf-batch.ts` (mới):** `upsertAdsPerfBatch(rows, columns)` gom dòng AdsCampaignDailyPerf rồi ghi MỘT câu
+  `INSERT … SELECT FROM unnest(mảng cột) … ON CONFLICT ("adsCampaignId","date") DO UPDATE` mỗi lô ≤ 1.000 dòng (số tham số cố định theo
+  số cột, không phình theo số dòng). Giữ đúng nghĩa upsert từng dòng cũ: chỉ cột trong `columns` được ghi/đè (TikTok 5 cột, Lazada 7, Shopee 9),
+  cùng khóa lặp trong lô → dòng sau thắng (tránh lỗi Postgres "affect row a second time"), `updatedAt = now()`. Nối vào 3 sàn:
+  Shopee `shopee/ads-campaigns.ts` (ghi sau mỗi lô 100 chiến dịch sàn trả), TikTok `tiktok-ads/sync.ts` (cả cửa sổ một lần), Lazada
+  `lazada/ads-campaigns.ts` (mỗi trang report ≤ 100 dòng). Số đếm `perfDaysUpserted` nay = số dòng sau gộp trùng (trước = số lượt gọi).
+- **Kiểm:** `tsc --noEmit` sạch. Test mới `ads-perf-batch.test.ts`: 3 ca thuần (gộp trùng, rỗng không chạm DB, chia lô 2.001 dòng → 3 câu)
+  + 4 ca DB (tạo mới đủ cột + Decimal 2 số lẻ, đè đúng cột TikTok giữ impression/clicks cũ + updatedAt tiến, khóa lặp trong lô, lô > 1.000).
+  Phiên cloud dựng Postgres 16 tạm (`prisma db push`) → **cả 7 ca xanh trên DB thật**; `ads-shopee-vn-day` xanh. Chạy trọn bộ trên DB tạm:
+  26 file lỗi nhưng **y hệt khi stash code mới** — do DB tạm thiếu trigger/phân mảnh/chỉ mục chỉ có trong migration + không có dữ liệu dev
+  ("DB dev phải có gian… để phép so có nghĩa"), không liên quan thay đổi này.
+- **Anh cần làm trên Render (worker):** đặt `NODE_HEAP_MB=1536` (bắt buộc với gói 2 GB) và `AUTO_SYNC_CONCURRENCY=6`; sau deploy xem
+  `/admin/health` RSS worker + mốc nước gian để chốt giữ 6 hay về 3.
+- **Anh chốt "kiểm tra, rà soát và làm hết":** rà lại diff lần 2 (cột Date UTC nửa đêm cả 3 sàn, NaN về 0, lỗi lô Nhóm Shopee
+  `continue` trước khi gom), checklist trên `/admin/health` chỉ hiện chữ nên dòng dài không vỡ. Nhánh `claude/nice-wozniak-93evd9`
+  = master + 2 commit, ff được; **phiên cloud bị chặn lệnh push master (deploy prod)** → anh gộp tay: `git merge --ff-only` rồi push,
+  Render tự deploy. Việc còn lại của anh: 2 env trên worker ở trên.
+- **Phát hiện kèm (chưa sửa, việc riêng):** bộ migration KHÔNG dựng được DB trống — `20260914200000_ads_hubsell_pause_flag` ALTER
+  bảng `AdsCampaign` nhưng không migration nào CREATE bảng đó (nhóm bảng Ads lên prod bằng `db push` trước khi có migration). Prod
+  không ảnh hưởng (migrate deploy chỉ chạy phần mới); chỉ vướng khi dựng DB dev/test mới từ migration — cần một migration "bù"
+  `CREATE TABLE IF NOT EXISTS` cho nhóm Ads đặt trước 14/09.
+
 ## Phiên 21/10/2026 chiều — RÀ DỌN TỔNG THỂ: CODE THỪA + CÂY THƯ MỤC (HQ, LANDING, BACKEND, MOBILE)
 
 - **Anh yêu cầu:** "rà soát để dọn dẹp tổng thể, xóa code thừa và đảm bảo cấu trúc tree chuyên nghiệp" sau mấy hôm dọn HQ + Landing.

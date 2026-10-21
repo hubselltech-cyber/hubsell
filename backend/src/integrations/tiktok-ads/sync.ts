@@ -43,6 +43,7 @@ import {
 } from "./campaign-status";
 import { TiktokAdsApiError, getGmvMaxCampaigns, getGmvMaxStores, type GmvMaxCampaignListItem, type GmvMaxStore } from "./client";
 import { fetchGmvMaxCampaignDaily, type GmvMaxCampaignDay } from "./report";
+import { upsertAdsPerfBatch, type AdsPerfRow } from "../ads-perf-batch";
 
 /** 40105 = access token sai hoặc đã bị thu hồi (docs Appendix - Return codes). */
 const TOKEN_DEAD_CODES = new Set([40105]);
@@ -338,27 +339,27 @@ export async function syncTiktokAdsCampaigns(
   const live = await reconcileTiktokCampaignsWithList(channel.id, scope, new Set(latest.keys()));
   if (live != null) result.liveCampaigns = live;
 
+  // Gom rồi ghi theo lô (ads-perf-batch) — trước đây mỗi (chiến dịch, ngày) một upsert.
+  // Chỉ 5 cột TikTok có số: impression/clicks/*OrderAmount không bị đè (như update: data cũ).
   const recentFrom = vnDateKey(1);
+  const perfRows: AdsPerfRow[] = [];
   for (const r of rows) {
     const rowId = rowIdByCampaignId.get(r.campaignId);
     if (!rowId || !r.date) continue;
     if (r.cost <= 0 && r.orders <= 0 && r.gmv <= 0) continue; // dòng 0 không mang thông tin
     const orders = Math.trunc(r.orders);
-    const data = {
+    perfRows.push({
+      adsCampaignId: rowId,
+      date: dateKeyToDbDate(r.date),
       expense: r.cost,
       broadOrder: orders,
       broadGmv: r.gmv,
       directOrder: orders,
       directGmv: r.gmv,
-    };
-    await prisma.adsCampaignDailyPerf.upsert({
-      where: { adsCampaignId_date: { adsCampaignId: rowId, date: dateKeyToDbDate(r.date) } },
-      update: data,
-      create: { adsCampaignId: rowId, date: dateKeyToDbDate(r.date), ...data },
     });
-    result.perfDaysUpserted++;
     if (r.cost > 0 && r.date >= recentFrom) result.spentRecently = true;
   }
+  result.perfDaysUpserted += await upsertAdsPerfBatch(perfRows, ["expense", "broadOrder", "broadGmv", "directOrder", "directGmv"]);
 
   // Chi phí ads cấp gian theo ngày = Σ AdsCampaignDailyPerf của gian trong DB, KHÔNG phải Σ dòng báo cáo lượt này:
   // chiến dịch khách XÓA biến khỏi MỌI tầng báo cáo của sàn (kể cả tổng tài khoản) nhưng tiền vẫn đã tiêu —

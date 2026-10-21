@@ -254,3 +254,30 @@ quy mô hiện tại.
 - Payload thật của MISA có thể lệch tên trường so với hợp đồng dự phóng — sửa
   MỘT chỗ `backend/src/integrations/invoice/misa-webhook.ts` (kiểu +
   validate + bảng map sự kiện), service không phải đổi.
+
+## Dựng DB dev/test MỚI từ migration (21/10/2026)
+
+Trước 21/10 không dựng được: nhóm bảng Ads + Ví và 15 cột lẻ (User.avatar/referral*/
+staffUsername/permissions, Product.material/careInstructions/sizeChart, Order.sellerProtectionFee/
+refundedAmount, OrderItem.returnedQuantity/returnRestocked, ChannelProduct.itemSku,
+OperatingExpense.fundPlatform), giá trị enum ReturnStatus.RECEIVED, unique Channel(userId,
+channelName, externalShopId), index order_line_ledger(productId) và User.email NULL đã lên
+production bằng `prisma db push` mà không có migration → `migrate deploy` trên DB trống dừng ở
+`20260914200000` rồi `20260930230000`. Ba migration bù (đều idempotent, production chạy qua
+không đổi gì, không lấy khóa bảng nóng):
+
+- `20260914190000_ads_wallet_tables_baseline` — CREATE TABLE IF NOT EXISTS 5 bảng Ads + 3 bảng Ví + 3 enum.
+- `20260930220000_push_drift_baseline` — cột lẻ (kiểm information_schema trước khi ALTER), enum, unique, email NULL.
+- `20261021120000_order_line_ledger_product_idx` — chỉ mục productId trên sổ dòng đơn (bảng phân mảnh).
+
+Dựng DB mới: tạo database trống → `DATABASE_URL=... npx prisma migrate deploy` → chạy test
+`npx vitest run`. Đã kiểm 21/10 trên Postgres 16: 180 migration áp trọn; `prisma migrate diff
+--from-url <DB vừa dựng> --to-schema-datamodel prisma/schema.prisma` chỉ còn khác biệt
+"migration có nhiều hơn schema" (FK + trigram của sổ, Order_createdAt_idx, 4 cờ StaffChannel.can*,
+default updatedAt vài bảng tiktok_ads_*) và một mục giả: index productId trên bảng phân mảnh
+Prisma không nhìn thấy (relkind I) dù đã có. Lưu ý Prisma không soi được trigger/function/phân
+mảnh — `db push` KHÔNG thay được migration cho sổ order_ledger.
+
+Test trên DB trống (21/10 khuya): 7 file đối soát sổ cái tự dựng bộ đơn mẫu (`__tests__/parity-seed.ts`,
+chủ shop `test-parity-seed@hubsell.test`, không dọn) khi DB chưa có đơn Shopee/Lazada 30 ngày; env Shopee
+thiếu thì `load-env.ts` đặt giá trị giả. Kết quả chuẩn: 0 đỏ, 3 bỏ qua (cứu đơn đang ẩn tính năng).
