@@ -5,6 +5,25 @@
 
 ---
 
+## Phiên 21/10/2026 tối — MIGRATION BÙ: DỰNG ĐƯỢC DB TRỐNG TỪ MIGRATION (anh chốt "làm luôn cho xong")
+
+- **Rà bằng script** (so cột/enum/index trong schema.prisma với toàn bộ 177 file migration): thiếu KHÔNG chỉ nhóm Ads — 5 bảng Ads,
+  3 bảng Ví + 3 enum Ví, 15 cột lẻ trên User/Product/Order/OrderItem/ChannelProduct/OperatingExpense, giá trị `ReturnStatus.RECEIVED`,
+  unique `Channel(userId, channelName, externalShopId)`, index `order_line_ledger(productId)` (hai cái sau vào schema ở commit mobile
+  946039a 18/10), và `User.email` NOT NULL (schema cho NULL từ khi có nhân viên đăng nhập bằng staffUsername). Tất cả lên prod bằng
+  `db push`. Chi tiết: docs/DEPLOY-RENDER-SUPABASE.md mục cuối.
+- **3 migration bù, đều idempotent** (CREATE … IF NOT EXISTS; cột kiểm information_schema rồi mới ALTER nên prod KHÔNG lấy khóa bảng
+  nóng; FK kiểm pg_constraint; enum kiểm pg_type): `20260914190000_ads_wallet_tables_baseline` (đặt trước migration đầu tiên ALTER
+  AdsCampaign, bảng ở trạng thái 14/09 — cột sau này các migration cũ tự thêm), `20260930220000_push_drift_baseline` (trước
+  order_ledger vì trigger sổ đọc `old."sellerProtectionFee"`), `20261021120000_order_line_ledger_product_idx`. Prisma áp migration chưa
+  ghi nhận theo thứ tự tên nên tên cũ hơn vẫn được prod áp một lần — đã kiểm no-op trên DB dựng bằng `db push` từ schema hiện tại
+  (0 lỗi, `migrate diff` sau đó "No difference").
+- **Kiểm trên Postgres 16 tạm:** DB trống `migrate deploy` áp trọn 180 migration. Trọn bộ vitest trên DB ấy: 1.772 xanh / 20 đỏ (trước
+  khi bù, trên DB `db push`: 53 đỏ). 20 đỏ còn lại = 11 file cần DỮ LIỆU dev ("DB dev phải có gian… để phép so có nghĩa"), 2 file cần
+  env Shopee thật, và `delivery-fail-park-db` (3 ca, đỏ y hệt trên DB `db push` — hàm tắt sớm vì cấu hình cảnh báo giao thất bại chưa bật,
+  không liên quan migration; anh chạy trên DB dev để đối chiếu). `plan-enforcement` từ đỏ → xanh nhờ email NULL.
+- **Rủi ro khi lên prod:** nếu prod THIẾU index productId của sổ dòng đơn (bảng phân mảnh, không CONCURRENTLY được) thì deploy dựng
+  một lần, khóa SHARE theo mảnh vài giây/triệu dòng. Khả năng thấp vì schema đã có từ 18/10 và app đang chạy.
 ## Phiên 21/10/2026 chiều — ANH ĐÃ NÂNG WORKER STANDARD; RÀ CHECKLIST M2 + UPSERT HIỆU SUẤT ADS THEO LÔ
 
 - **Anh báo:** đã nâng gói Worker (Standard 2 GB) trên Render. Hỏi 4 việc checklist M2 của em (HQ `capacity-plan.ts`) tới đâu.
