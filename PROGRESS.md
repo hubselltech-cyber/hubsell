@@ -14,9 +14,10 @@
   kèm biểu tượng `fileserver.online.gov.vn/uploads/Resources/iconxacnhan/DaThongBao.png` (230×86). Cổng mới KHÔNG gửi mail, KHÔNG còn dạng
   `/Home/WebDetails/<số>` như slot 27/09 đã chuẩn bị.
 - **Landing (`hubsell-landing`):** `TRUST_BADGES.bctWebDetailsId` → `bctPublicId` = GUID trên, `trustBadgeItems()` trỏ link + ảnh theo cổng mới;
-  `<TrustBadges/>` chuyển từ hàng rời dưới `<dl>` thành **cột thứ 4 của khối pháp nhân** (lg `1.5fr | 2fr | 1.6fr | auto`), nhãn "Chứng nhận",
-  ảnh cao 44px (bằng cổng in) — đúng ô trống bên phải anh khoanh. Đã soi preview: 1440px 4 cột thẳng hàng (ô cuối 1263–1381px), mobile 375px
-  không tràn ngang, ảnh tải được từ fileserver. `tsc --noEmit` xanh. Landing không có giao diện tối.
+  `<TrustBadges/>` chuyển từ hàng rời dưới `<dl>` thành **ô cuối của khối pháp nhân**, nhãn "Chứng nhận", ảnh cao 44px (bằng cổng in) — đúng
+  ô trống bên phải anh khoanh. Anh xem rồi bảo "canh cho thẳng hàng" → `<dl>` tầng 2 dùng **cùng lưới 5 cột với tầng 1** (1.15fr + 4×1fr,
+  gap 8; Trụ sở span 2): mép trái Mã số = thương hiệu, Trụ sở = Sản phẩm, Liên hệ = Pháp lý, Chứng nhận = Quy chế nền tảng. Đo ở 1440px:
+  346 / 879 / 1146 px trùng từng cột; mobile 375px không tràn ngang, ảnh tải được từ fileserver. `tsc --noEmit` xanh. Landing không có giao diện tối.
 - **Docs:** `docs/THONG-BAO-BO-CONG-THUONG.md` (tình trạng + cách lấy mã nhúng cổng mới), `docs/HUY-HIEU-TIN-CAY-LANDING.md` (mục 0/1/5).
 - **Còn:** anh push landing (Vercel tự deploy) rồi xem hubsell.vn; NCA Tín nhiệm mạng vẫn chưa có thư; app di động đã lên 2 kho → làm thủ tục
   "sửa đổi, bổ sung thông báo" khai thêm ứng dụng khi anh gọi.

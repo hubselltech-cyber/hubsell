@@ -82,6 +82,6 @@ Chốt: bỏ. Nếu anh vẫn muốn thì việc duy nhất là gọi hotline C�
 ## 5. Cách gắn lên landing (đã chuẩn bị sẵn code 27/09)
 
 - `hubsell-landing/src/lib/site.ts`: hằng `TRUST_BADGES` gồm `bctPublicId` (✅ đã điền 21/10) và `tinNhiemMangSlug` (rỗng cho tới khi NCA cấp). Hàm `trustBadgeItems()` dựng link + ảnh từ 2 giá trị này.
-- `hubsell-landing/src/components/site-footer.tsx`: ô `<TrustBadges/>` = cột thứ 4 của `<dl>` khối pháp nhân (lg: `1.5fr | 2fr | 1.6fr | auto`), nhãn "Chứng nhận", ảnh cao 44px; mobile xếp xuống dưới Hỗ trợ; **tự ẩn khi cả hai rỗng**.
+- `hubsell-landing/src/components/site-footer.tsx`: ô `<TrustBadges/>` = ô cuối của `<dl>` khối pháp nhân; `<dl>` dùng **cùng lưới 5 cột với tầng 1** (`1.15fr + 4×1fr`, Trụ sở span 2) để mép trái thẳng với cột link phía trên (Chứng nhận thẳng với Quy chế nền tảng — anh chốt 21/10 "canh cho thẳng hàng"); nhãn "Chứng nhận", ảnh cao 44px; mobile xếp xuống dưới Hỗ trợ; **tự ẩn khi cả hai rỗng**.
 - Nếu mã nhúng thật NCA gửi khác dạng `tinnhiemmang.vn/handle_cert?id=hubsell.vn`, sửa `trustBadgeItems()` theo mã họ gửi (chỉ một chỗ).
 - Vị trí: chỉ footer (mọi trang). Không làm khối "chứng nhận" riêng to như Sapo cho tới khi có ≥3 huy hiệu.
