@@ -147,12 +147,15 @@ export async function hibernateExpiredOwners(now: Date = new Date(), pageSize = 
   let channels = 0;
 
   for (;;) {
+    // `id > cursor` trong WHERE, KHÔNG dùng cursor + skip 1 của Prisma: sau UPDATE,
+    // thuê bao của trang trước hết "còn gian thức" → rơi khỏi điều kiện lọc → dòng
+    // cursor không khớp nữa và skip 1 bỏ sót một chủ thật mỗi trang (lượt sau mới
+    // nhặt lại). Bắt được 22/10 ở care-auto-status (cùng kiểu tập tự co).
     const page = await prisma.subscription.findMany({
-      where,
+      where: cursor ? { AND: [where, { id: { gt: cursor } }] } : where,
       select: { id: true, userId: true, plan: { select: { name: true } } },
       orderBy: { id: "asc" },
       take: pageSize,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
     if (page.length === 0) break;
     cursor = page[page.length - 1]!.id;

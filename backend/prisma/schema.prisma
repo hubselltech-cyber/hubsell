@@ -2616,14 +2616,29 @@ enum PlatformCareStatus {
   CHURNED // đã rời bỏ
 }
 
+/// Ai đặt trạng thái chăm sóc lần gần nhất (22/10/2026, docs/HQ-CRM-TU-CHUYEN-TRANG-THAI.md):
+/// Sale đặt tay, hay hệ thống tự chuyển theo thuê bao (thanh toán → ACTIVE,
+/// hết gói quá ân hạn → CHURNED). Quyết định tay SAU khi hết gói thắng tự động.
+enum PlatformCareStatusSource {
+  MANUAL // Sale/CSKH đặt trong hộp thoại Chăm sóc
+  AUTO_PAYMENT // ghi nhận thanh toán (recordPackagePaymentTx) → ACTIVE
+  AUTO_EXPIRED // worker plan-hibernate: hết gói quá ân hạn → CHURNED
+}
+
 /// HỒ SƠ CHĂM SÓC KHÁCH HÀNG (CRM nội bộ Hubsell) — 1-1 với chủ shop, tạo lười
-/// khi nhân viên điều hành lần đầu cập nhật. Ghi chú là bản MỚI NHẤT (lịch sử
-/// thay đổi nằm ở PlatformAuditLog, không nhân bản ở đây).
+/// khi nhân viên điều hành lần đầu cập nhật HOẶC khi hệ thống tự chuyển trạng
+/// thái theo thuê bao. Ghi chú là bản MỚI NHẤT (lịch sử thay đổi nằm ở
+/// PlatformAuditLog, không nhân bản ở đây).
 model PlatformCustomerCare {
   id          String             @id @default(cuid())
   /// Chủ shop được chăm sóc.
   userId      String             @unique
   status      PlatformCareStatus @default(NEW)
+  /// Ai đặt `status` lần gần nhất — để worker không đè quyết định tay sau hết gói,
+  /// và HQ thấy "tự động" cạnh huy hiệu.
+  statusSource    PlatformCareStatusSource @default(MANUAL)
+  /// Lúc `status` đổi lần gần nhất (khác updatedAt: sửa ghi chú/phụ trách không đụng).
+  statusChangedAt DateTime                 @default(now())
   /// Nhân viên điều hành phụ trách (User thuộc HQ) — null = chưa phân công.
   assigneeId  String?
   /// Ghi chú chăm sóc mới nhất (thay thế mỗi lần lưu).

@@ -21,6 +21,7 @@ import { formatCount, pageCount } from "./shared";
 /** Nhãn tiếng Việt cho mã hành động — mã lạ (phiên bản mới hơn) hiện thô. */
 const ACTION_LABELS: Record<string, string> = {
   "care.update": "Cập nhật chăm sóc khách",
+  "care.auto": "Hệ thống tự chuyển trạng thái chăm sóc",
   "withdrawal.approve": "Duyệt chi trả lệnh rút",
   "withdrawal.reject": "Từ chối lệnh rút",
   "staff.create": "Tạo nhân viên điều hành",

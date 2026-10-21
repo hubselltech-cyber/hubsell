@@ -6,6 +6,35 @@
 
 ---
 
+## Phiên 22/10/2026 — CRM HQ TỰ CHUYỂN TRẠNG THÁI CHĂM SÓC THEO THUÊ BAO (anh: hết dùng thử → Đã rời bỏ; thanh toán → Đang dùng ổn định)
+
+- **Vì sao:** HQ 21/10 có 155/160 khách (96,9 %) ở "Mới đăng ký" dù đa số hết dùng thử từ lâu — trạng thái đặt tay hoàn toàn nên biểu đồ
+  phân bố + chip lọc vô nghĩa. Thiết kế: `docs/HQ-CRM-TU-CHUYEN-TRANG-THAI.md`.
+- **Luật:** (1) thanh toán **amount > 0** (mọi đường qua `recordPackagePaymentTx`: HQ ghi tay, Ví, payOS, Apple IAP) → ACTIVE cùng giao dịch,
+  kể cả đang CHURNED (luật 3 của anh không cần mã riêng); đổi gói 0đ / gói tặng KHÔNG tính. (2) `currentPeriodEnd` < now − 7 ngày (cùng mốc
+  ngủ đông gian, dùng thử hay gói trả tiền đều thế, KHÔNG đòi có gian) → CHURNED, worker `plan-hibernate` bước 2 mỗi 6h. Quyết định tay
+  SAU khi hết gói thắng tự động; đã CHURNED thì không đụng; ghi chú/phụ trách không bao giờ bị tự sửa; mọi lần tự chuyển ghi Nhật ký
+  thao tác `care.auto` (người thao tác = Hệ thống).
+- **Em tự chọn, anh chốt ngược nếu muốn:** rời bỏ tính từ hết ÂN HẠN 7 ngày (không phải ngày hết dùng thử — 7 ngày đó Sale còn gọi được);
+  gói trả tiền hết hạn không gia hạn cũng là rời bỏ.
+- **Dữ liệu:** migration `20261022000000_care_status_source` — enum `PlatformCareStatusSource {MANUAL, AUTO_PAYMENT, AUTO_EXPIRED}`, cột
+  `statusSource` + `statusChangedAt` (dòng cũ = updatedAt). `PATCH /care` chỉ ghi MANUAL khi trạng thái THỰC SỰ đổi; hồ sơ tạo lười vì ghi chú
+  mà vẫn NEW thì `statusChangedAt = user.createdAt` (kẻo một dòng ghi chú trong ân hạn chặn luật rời bỏ). Local đã `db push`.
+- **Mã:** `services/care-auto-status.ts` (hàm thuần + `markCarePaidTx` + `churnExpiredOwners` theo trang 200, mỗi trang 1 giao dịch
+  createMany/updateMany/nhật ký, dây an toàn chống đua với thanh toán); hook trong `subscription-service.ts`; worker `plan-hibernate.ts`
+  thành 2 bước (tắt riêng `PLAN_HIBERNATE_OFF` / `CARE_AUTO_CHURN_OFF`). HQ: dòng "Tự động · ngày" dưới huy hiệu, chú thích hộp thoại Chăm sóc
+  + Tổng quan, nhãn nhật ký.
+- **🐛 Bẫy bắt được nhờ test DB (chạy lần 2 đỏ chập chờn):** phân trang `cursor: {id} + skip: 1` của Prisma trên **tập tự co** (dòng vừa
+  chuyển CHURNED rơi khỏi WHERE) → dòng cursor không còn khớp, `skip 1` nhảy qua một ứng viên THẬT mỗi trang. Tái hiện bằng script 4
+  thuê bao, trang 1 dòng: cursor+skip xử lý **2/4**, `id > cursor` xử lý **4/4**. Sửa gốc cả 2 nơi: `churnExpiredOwners` và
+  `hibernateExpiredOwners` (ngủ đông 15/10 mắc y hệt — thuê bao vừa đặt cờ hết "còn gian thức"; prod bỏ sót ~1 chủ/trang 200 rồi lượt
+  sau mới nhặt, nên chưa ai thấy). Luật: tập tự co → phân trang bằng `id > cursor` trong WHERE. Ghi memory gotcha.
+- **Kiểm:** tsc BE + FE xanh; `care-auto-status.test.ts` (hàm thuần) + `care-auto-status-db.test.ts` (DB dev, 8 chủ shop giả, trang 1 dòng,
+  5 ca) chạy 3 lần liên tiếp xanh; plan-hibernation + subscription-payment + no-module-state vẫn xanh. ⚠️ Test DB chạy worker thật trên DB dev → thuê bao hết hạn khác trong DB dev cũng đã bị đánh
+  CHURNED (đúng luật, dữ liệu dev). CHƯA xem giao diện trong trình duyệt (cần đăng nhập tài khoản điều hành), chưa commit/push.
+- **Lên prod sẽ thấy:** lượt worker đầu (5 phút sau deploy) đánh "Đã rời bỏ" phần lớn 155 khách Mới đăng ký đã quá ân hạn — biểu đồ Tổng
+  quan đổi hẳn; 5 khách anh đặt tay ACTIVE giữ nếu đặt sau khi hết hạn hoặc gói còn hạn. Kiểm: log `[care-auto] Lượt quét CRM` + 2 SQL mục 6.
+
 ## Phiên 21/10/2026 — BỘ CÔNG THƯƠNG ĐÃ XÁC NHẬN hồ sơ hubsell.vn → gắn logo "Đã thông báo" vào footer landing
 
 - **Xác nhận:** anh chụp màn cổng online.gov.vn: hồ sơ lần 2 (gửi 09/10) **Đã xác nhận, ngày duyệt 19/10/2026**; lần 1 (04/10) Bị từ chối.

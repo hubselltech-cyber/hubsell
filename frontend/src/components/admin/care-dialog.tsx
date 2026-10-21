@@ -25,7 +25,8 @@ import {
   type PlatformCareStatus,
   type PlatformUserRow,
 } from "@/lib/api";
-import { CARE_STATUS_META, CARE_STATUSES } from "./shared";
+import { CARE_AUTO_SOURCE_LABEL, CARE_STATUS_META, CARE_STATUSES } from "./shared";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function CareDialog({
@@ -81,7 +82,7 @@ export function CareDialog({
             Chăm sóc — {customer.fullName}
           </DialogTitle>
           <DialogDescription>
-            {customer.email} · đăng ký được theo dõi trong Nhật ký thao tác.
+            {customer.email} · mọi lần lưu được ghi vào Nhật ký thao tác.
           </DialogDescription>
         </DialogHeader>
 
@@ -105,6 +106,18 @@ export function CareDialog({
               </button>
             ))}
           </div>
+          <p className="text-xs text-muted-foreground">
+            Hệ thống tự chuyển theo thuê bao: thanh toán → &ldquo;Đang dùng ổn định&rdquo;;
+            hết gói quá 7 ngày ân hạn → &ldquo;Đã rời bỏ&rdquo;. Trạng thái anh/chị đặt tay sau
+            khi hết gói được giữ nguyên.
+            {customer.care && CARE_AUTO_SOURCE_LABEL[customer.care.statusSource] && (
+              <>
+                {" "}
+                Hiện tại: {CARE_AUTO_SOURCE_LABEL[customer.care.statusSource]?.toLowerCase()}{" "}
+                ({formatDateTime(customer.care.statusChangedAt)}).
+              </>
+            )}
+          </p>
         </div>
 
         <div className="grid gap-2">

@@ -4776,9 +4776,15 @@ export type PlatformCareStatus =
   | "CHURN_RISK"
   | "CHURNED";
 
+/** Ai đặt trạng thái chăm sóc lần gần nhất — tay, hay hệ thống tự chuyển theo thuê bao (22/10/2026). */
+export type PlatformCareStatusSource = "MANUAL" | "AUTO_PAYMENT" | "AUTO_EXPIRED";
+
 /** Hồ sơ chăm sóc — null khi chưa ai đụng tới khách này (ngầm định NEW). */
 export interface PlatformCareInfo {
   status: PlatformCareStatus;
+  statusSource: PlatformCareStatusSource;
+  /** Lúc trạng thái đổi lần gần nhất (sửa ghi chú/phụ trách không đụng). */
+  statusChangedAt: string;
   note: string | null;
   updatedAt: string;
   assignee: { id: string; fullName: string } | null;

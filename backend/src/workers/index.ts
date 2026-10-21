@@ -81,6 +81,7 @@ export function startAllWorkers(): void {
   // Ngủ đông gian của chủ shop hết gói quá ân hạn (15/10/2026): đặt cờ để worker
   // trên bỏ qua gian, webhook nhận rồi bỏ; gia hạn là thức lại trong giao dịch
   // thanh toán (services/plan-hibernation.ts). Token vẫn làm mới bên dưới.
+  // Cùng lượt: CRM HQ chuyển hồ sơ chăm sóc "Đã rời bỏ" (services/care-auto-status.ts, 22/10).
   startPlanHibernateWorker();
   // Cron refresh token Shopee (app chính + Hubsell Ads) — lưới an toàn cạnh
   // lazy-refresh, quét DB lọc token sắp hết hạn rồi làm mới có giãn cách.

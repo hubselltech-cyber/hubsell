@@ -13,6 +13,7 @@ import {
   getToken,
   type ConsultLeadStatus,
   type PlatformCareStatus,
+  type PlatformCareStatusSource,
   type SupportRequestStatus,
 } from "@/lib/api";
 import { SERVER_DOWN_MESSAGE } from "@/lib/use-api-query";
@@ -145,6 +146,12 @@ export const CARE_STATUS_META: Record<
 };
 
 export const CARE_STATUSES = Object.keys(CARE_STATUS_META) as PlatformCareStatus[];
+
+/** Diễn giải nguồn tự động của trạng thái chăm sóc (MANUAL không có dòng phụ). */
+export const CARE_AUTO_SOURCE_LABEL: Partial<Record<PlatformCareStatusSource, string>> = {
+  AUTO_PAYMENT: "Tự chuyển khi ghi nhận thanh toán",
+  AUTO_EXPIRED: "Tự chuyển khi hết gói quá 7 ngày ân hạn",
+};
 
 /** Nhãn + màu huy hiệu cho từng trạng thái LEAD TƯ VẤN từ landing. */
 export const LEAD_STATUS_META: Record<

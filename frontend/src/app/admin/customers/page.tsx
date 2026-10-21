@@ -48,6 +48,7 @@ import { SupportDialog } from "@/components/admin/support-dialog";
 import {
   AdminError,
   AdminPageHeader,
+  CARE_AUTO_SOURCE_LABEL,
   CARE_STATUS_META,
   CARE_STATUSES,
   LEAD_SOURCE_LABEL,
@@ -382,6 +383,14 @@ export default function PlatformCustomersPage() {
                                 >
                                   {care.label}
                                 </span>
+                                {u.care && CARE_AUTO_SOURCE_LABEL[u.care.statusSource] && (
+                                  <p
+                                    className="mt-1 text-[11px] text-muted-foreground"
+                                    title={CARE_AUTO_SOURCE_LABEL[u.care.statusSource]}
+                                  >
+                                    Tự động · {formatDateTime(u.care.statusChangedAt)}
+                                  </p>
+                                )}
                                 {u.care?.note && (
                                   <p
                                     className="mt-1 max-w-[180px] truncate text-xs text-muted-foreground"

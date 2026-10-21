@@ -24,6 +24,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { invalidatePlanState } from "./plan-enforcement";
 import { wakeHibernatedChannelsTx } from "./plan-hibernation";
+import { markCarePaidTx } from "./care-auto-status";
 import { creditReferralCommission } from "./referral-wallet";
 import { sendPlanActivatedMail } from "./customer-mails";
 import { kickHqAutoInvoice } from "../integrations/invoice/hq-auto-invoice";
@@ -203,6 +204,12 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
   // kỳ hạn mới và lệnh quét lại là một sự thật — không có khe "đã trả tiền mà
   // vẫn chưa đồng bộ". Mốc nước giữ nguyên → lượt đầu tự vét bù.
   await wakeHibernatedChannelsTx(tx, input.userId, occurredAt);
+
+  // CRM HQ (22/10/2026): có tiền vào là "Đang dùng ổn định" — cùng giao dịch, kể
+  // cả khách đã bị đánh "Đã rời bỏ" quay lại. Đổi gói 0đ / gói tặng không tính.
+  if (amount > 0) {
+    await markCarePaidTx(tx, input.userId, occurredAt);
+  }
 
   const cycleLabel = CYCLE_LABEL[input.cycle];
   const confirmedByName =

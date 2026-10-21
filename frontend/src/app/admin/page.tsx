@@ -193,7 +193,8 @@ export default function PlatformOverviewPage() {
                   </p>
                   <p className="mb-4 text-xs text-muted-foreground">
                     Theo CRM khu Khách hàng — khách chưa ai chăm sóc tính là
-                    &ldquo;Mới đăng ký&rdquo;.
+                    &ldquo;Mới đăng ký&rdquo;. Thanh toán tự chuyển &ldquo;Đang dùng ổn
+                    định&rdquo;, hết gói quá 7 ngày ân hạn tự chuyển &ldquo;Đã rời bỏ&rdquo;.
                   </p>
                   <CareDistribution data={ov} />
                 </CardContent>

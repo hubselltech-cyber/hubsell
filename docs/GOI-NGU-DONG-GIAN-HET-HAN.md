@@ -52,6 +52,10 @@ lọc bỏ **mỗi tick 20 giây**. Đẩy mọi `next*At` về `HIBERNATE_FAR_F
 truy vấn chỉ là dây an toàn thứ hai. Không để NULL vì `nextFastSyncAt IS NULL` /
 `nextAdsPulseAt IS NULL` nghĩa là "chưa chạy bao giờ → quét ngay".
 
+> 22/10/2026: cùng worker và cùng mốc ân hạn, bước 2 chuyển hồ sơ chăm sóc CRM HQ sang
+> "Đã rời bỏ"; thanh toán chuyển "Đang dùng ổn định" cùng giao dịch đánh thức gian —
+> xem [HQ-CRM-TU-CHUYEN-TRANG-THAI.md](HQ-CRM-TU-CHUYEN-TRANG-THAI.md).
+
 ## 3. Đặt cờ: worker `plan-hibernate`
 
 - Nhịp **6 giờ**, lượt đầu 5 phút sau khi bật — **số tự chọn** (ân hạn tính theo
@@ -63,7 +67,10 @@ truy vấn chỉ là dây an toàn thứ hai. Không để NULL vì `nextFastSyn
   thuê bao: `CANCELLED`/`EXPIRED` có kỳ hạn cũng ngủ — cùng cách suy `expired` của
   `getOwnerPlanState`. Khách cũ chưa được gán thuê bao không có dòng → không bao giờ
   bị ngủ nhầm.
-- Đọc theo trang 200 (cursor id); mỗi trang **một** `UPDATE ... WHERE userId IN (...)`
+- Đọc theo trang 200 bằng `id > cursor` trong WHERE (22/10/2026 sửa: trước dùng `cursor +
+  skip 1` của Prisma, nhưng thuê bao của trang trước vừa đặt cờ hết "còn gian thức" → dòng
+  cursor rơi khỏi lọc → `skip 1` bỏ sót một chủ mỗi trang, lượt sau mới nhặt); mỗi trang
+  **một** `UPDATE ... WHERE userId IN (...)`
   đặt cờ + đẩy `next*At`; một chuông `plan_expiry` cho mỗi chủ (title cố định → `notify`
   tự khử trùng 24h). Idempotent: chạy lặp vô hại.
 - Độ trễ tối đa giữa lúc khóa tầng giá trị gia tăng và lúc ngủ đông là một nhịp

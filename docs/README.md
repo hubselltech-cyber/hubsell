@@ -18,6 +18,7 @@
 
 ## Gói dịch vụ, thanh toán, thuê bao
 - [GOI-NGU-DONG-GIAN-HET-HAN.md](GOI-NGU-DONG-GIAN-HET-HAN.md) — ngủ đông gian khi hết gói quá ân hạn (15/10/2026)
+- [HQ-CRM-TU-CHUYEN-TRANG-THAI.md](HQ-CRM-TU-CHUYEN-TRANG-THAI.md) — CRM HQ tự chuyển trạng thái chăm sóc theo thuê bao: thanh toán → Đang dùng ổn định, hết gói quá ân hạn → Đã rời bỏ (22/10/2026)
 - [PAYOS-KENH-THANH-TOAN.md](PAYOS-KENH-THANH-TOAN.md) — cổng thanh toán payOS
 - [APPLE-IAP-MUA-GOI-TRONG-APP.md](APPLE-IAP-MUA-GOI-TRONG-APP.md) — mua gói trong app iOS
 

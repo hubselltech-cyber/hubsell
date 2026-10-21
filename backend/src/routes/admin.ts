@@ -6,6 +6,7 @@ import {
   LedgerInvoiceStatus,
   LedgerSource,
   PlatformCareStatus,
+  PlatformCareStatusSource,
   Prisma,
   WebhookJobStatus,
 } from "@prisma/client";
@@ -322,6 +323,8 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
           careProfile: {
             select: {
               status: true,
+              statusSource: true,
+              statusChangedAt: true,
               note: true,
               updatedAt: true,
               assignee: { select: { id: true, fullName: true } },
@@ -446,7 +449,7 @@ router.patch(
 
       const customer = await prisma.user.findFirst({
         where: { id: req.params.userId, ownerId: null },
-        select: { id: true, email: true, fullName: true },
+        select: { id: true, email: true, fullName: true, createdAt: true },
       });
       if (!customer) {
         res.status(404).json({ error: "Không tìm thấy chủ shop này" });
@@ -482,8 +485,21 @@ router.patch(
 
       const noteValue =
         note === undefined ? undefined : note === null || note.trim() === "" ? null : note.trim();
+      // Nguồn + mốc đổi trạng thái (CRM tự chuyển 22/10/2026): chỉ ghi "đặt tay"
+      // khi trạng thái THỰC SỰ đổi so với hiện tại (chưa có hồ sơ = NEW ngầm
+      // định) — lưu ghi chú/phân công mà giữ nguyên trạng thái không được tính
+      // là quyết định tay, kẻo worker bỏ qua khách ấy khi hết gói.
+      const existing = await prisma.platformCustomerCare.findUnique({
+        where: { userId: customer.id },
+        select: { status: true },
+      });
+      const statusChanged =
+        status !== undefined && status !== (existing?.status ?? PlatformCareStatus.NEW);
       const patch = {
         ...(status !== undefined ? { status: status as PlatformCareStatus } : {}),
+        ...(statusChanged
+          ? { statusSource: PlatformCareStatusSource.MANUAL, statusChangedAt: new Date() }
+          : {}),
         ...(assigneeId !== undefined ? { assigneeId: assigneeId as string | null } : {}),
         ...(noteValue !== undefined ? { note: noteValue } : {}),
         updatedById: req.userId!,
@@ -491,10 +507,18 @@ router.patch(
 
       const care = await prisma.platformCustomerCare.upsert({
         where: { userId: customer.id },
-        create: { userId: customer.id, ...patch },
+        // Hồ sơ mới mà trạng thái vẫn NEW: "mới đăng ký" từ lúc đăng ký, không
+        // phải từ lúc ghi chú — để mốc này không chặn luật hết gói → rời bỏ.
+        create: {
+          userId: customer.id,
+          ...patch,
+          ...(statusChanged ? {} : { statusChangedAt: customer.createdAt }),
+        },
         update: patch,
         select: {
           status: true,
+          statusSource: true,
+          statusChangedAt: true,
           note: true,
           updatedAt: true,
           assignee: { select: { id: true, fullName: true } },
