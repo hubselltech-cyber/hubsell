@@ -65,6 +65,39 @@ Liên hệ NCA: (+84) 593505999, contact@nca.gov.vn, Lô E2 Hoàng Quán Chi, C�
 | **Công khai đầu mối tiếp nhận sự cố ATTT** | footer mới có "Hỗ trợ: support@hubsell.vn", chưa ghi rõ là đầu mối ATTT | ✅ thêm câu "Báo sự cố bảo mật: support@hubsell.vn" ở /an-toan (làm cùng đợt gắn huy hiệu) |
 | Báo cáo đánh giá ATTT bởi đơn vị NCA ủy quyền | chưa có | gói Cơ bản thường không bắt buộc (chỉ Nâng cao 45 ngày + bên thứ 3); nếu NCA đòi thì hỏi giá đơn vị họ chỉ định, báo anh quyết |
 
+### 2.4 Tình trạng 21/10/2026 — 24 ngày không hồi âm, cần liên hệ lại
+
+Kiểm 21/10: (a) 471 thư 30 ngày ở dev@hubsell.vn (support@ đổ về đây) + hubselltech@gmail.com: KHÔNG thư nào từ NCA/tinnhiemmang, kể cả thư xác nhận đã nhận đăng ký; (b) tra danh bạ công khai tinnhiemmang.vn (Website tín nhiệm + Tổ chức tín nhiệm, từ khóa "hubsell"): "chưa được đăng ký xác nhận". Kết luận: form 27/09 nhiều khả năng không tới NCA (BCT còn gửi thư tự động khi nhận hồ sơ; NCA im hoàn toàn). Việc anh làm, chọn 1 trong 2 hoặc cả hai:
+
+1. **Gọi NCA 0593505999** (giờ hành chính) hỏi hồ sơ đăng ký Tín nhiệm Tổ chức + Website của CÔNG TY TNHH CÔNG NGHỆ HUBSELL, MST 0111626360, website hubsell.vn, đăng ký ngày 27/09/2026 qua form tinnhiemmang.vn, liên hệ support@hubsell.vn. Họ nói chưa có → đăng ký lại form (mục 2.1) ngay trong cuộc gọi.
+2. **Gửi thư từ support@hubsell.vn tới contact@nca.gov.vn** (mẫu dưới, chép nguyên). Thư có dấu vết, dễ chuyển nội bộ hơn form web.
+
+```
+Tiêu đề: Đề nghị xác nhận hồ sơ đăng ký Tín nhiệm mạng – CÔNG TY TNHH CÔNG NGHỆ HUBSELL (hubsell.vn)
+
+Kính gửi Trung tâm An ninh mạng quốc gia (NCA),
+
+Ngày 27/09/2026, Công ty TNHH Công nghệ Hubsell đã gửi đăng ký qua form tại tinnhiemmang.vn cho hai chứng nhận:
+- Tín nhiệm Tổ chức;
+- Tín nhiệm Website (gói Cơ bản) cho https://hubsell.vn.
+
+Đến nay công ty chưa nhận được phản hồi hay bộ tiêu chí đánh giá. Kính đề nghị Trung tâm kiểm tra giúp hồ sơ đã được tiếp nhận chưa; nếu chưa, xin hướng dẫn để công ty gửi lại.
+
+Thông tin tổ chức:
+- Tên: CÔNG TY TNHH CÔNG NGHỆ HUBSELL — Mã số doanh nghiệp 0111626360
+- Địa chỉ: Số nhà 5k1, Ngõ 5, TT75, Tổng Cục II, BQP, Tổ dân phố Kim Chung, Xã Hoài Đức, Thành phố Hà Nội
+- Website: https://hubsell.vn (ngoài ra hubsell.tech, app.hubsell.tech)
+- Người đại diện: Nguyễn Trung Hiếu — Giám đốc — 0965863292
+- Email liên hệ / đầu mối tiếp nhận sự cố an toàn thông tin: support@hubsell.vn
+- Lĩnh vực: dịch vụ trực tuyến (phần mềm quản lý bán hàng đa sàn). Website đã hoàn thành thông báo nền tảng TMĐT với Bộ Công Thương (hồ sơ công khai: https://online.gov.vn/nen-tang/3419a3ba-7e49-4677-ad65-3d1c54c17f14).
+
+Trân trọng,
+Nguyễn Trung Hiếu
+Giám đốc — Công ty TNHH Công nghệ Hubsell
+```
+
+Có kết quả → điền `TRUST_BADGES.tinNhiemMangSlug`, logo tự hiện cạnh logo BCT ở footer.
+
 ## 3. Nói không với hàng giả — KHÔNG làm được, lý do
 
 Đã tra moit.gov.vn + online.gov.vn 27/09/2026:
