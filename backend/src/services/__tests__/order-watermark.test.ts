@@ -26,7 +26,7 @@ describe("planOrderWindow — cửa sổ đọc của lượt", () => {
   it("có mốc → từ mốc − OVERLAP tới now0", () => {
     const wm = NOW - 600; // lượt trước 10 phút
     const p = planOrderWindow({ ordersWatermarkAt: at(wm), ordersCatchupBeforeAt: null }, NOW_MS, undefined);
-    expect(p).toEqual({ mode: "advance", fromSec: wm - WATERMARK_OVERLAP_SEC, toSec: NOW });
+    expect(p).toEqual({ mode: "advance", fromSec: wm - WATERMARK_OVERLAP_SEC, toSec: NOW, watermarkSec: wm });
   });
 
   it("mốc quá cũ → không đọc xa hơn sàn 90 ngày", () => {
@@ -40,7 +40,7 @@ describe("planOrderWindow — cửa sổ đọc của lượt", () => {
     const wm = NOW - 3 * DAY;
     const catchup = NOW - DAY;
     const p = planOrderWindow({ ordersWatermarkAt: at(wm), ordersCatchupBeforeAt: at(catchup) }, NOW_MS, undefined);
-    expect(p).toEqual({ mode: "catchup", fromSec: wm - WATERMARK_OVERLAP_SEC, toSec: catchup });
+    expect(p).toEqual({ mode: "catchup", fromSec: wm - WATERMARK_OVERLAP_SEC, toSec: catchup, watermarkSec: wm });
   });
 
   it("mốc vét nằm ngoài cửa sổ (cũ hơn sàn dưới / ở tương lai) → bỏ, quét thường", () => {
@@ -120,7 +120,7 @@ describe("nextWatermark — ghi gì sau lượt đọc không lỗi", () => {
     expect(state).toEqual({ ordersWatermarkAt: at(NOW - DAY), ordersCatchupBeforeAt: null });
     // Lượt 2 đọc từ (1 ngày trước trừ OVERLAP) tới now: đủ → mốc = now.
     const p2 = planOrderWindow(state, NOW_MS + 600_000, undefined);
-    expect(p2).toEqual({ mode: "advance", fromSec: NOW - DAY - WATERMARK_OVERLAP_SEC, toSec: NOW + 600 });
+    expect(p2).toEqual({ mode: "advance", fromSec: NOW - DAY - WATERMARK_OVERLAP_SEC, toSec: NOW + 600, watermarkSec: NOW - DAY });
     state = { ...state, ...nextWatermark(p2, { truncated: false }) };
     expect(state.ordersWatermarkAt).toEqual(at(NOW + 600));
   });
@@ -151,9 +151,41 @@ describe("nextWatermark — ghi gì sau lượt đọc không lỗi", () => {
     expect(state).toEqual({ ordersWatermarkAt: at(NOW - 2 * DAY), ordersCatchupBeforeAt: null });
 
     const p3 = planOrderWindow(state, NOW_MS + 1_200_000, undefined);
-    expect(p3).toEqual({ mode: "advance", fromSec: NOW - 2 * DAY - WATERMARK_OVERLAP_SEC, toSec: NOW + 1200 });
+    expect(p3).toEqual({ mode: "advance", fromSec: NOW - 2 * DAY - WATERMARK_OVERLAP_SEC, toSec: NOW + 1200, watermarkSec: NOW - 2 * DAY });
     state = { ...state, ...nextWatermark(p3, { truncated: false }) };
     expect(state.ordersWatermarkAt).toEqual(at(NOW + 1200));
+  });
+});
+
+describe("nextWatermark — KHÔNG LÙI MỐC (21/10/2026 Bella Look kẹt 11 giờ)", () => {
+  const wm = NOW - 11 * 3600;
+  const plan = planOrderWindow({ ordersWatermarkAt: at(wm), ordersCatchupBeforeAt: null }, NOW_MS, undefined);
+
+  it("cắt mà phần đọc trọn còn nằm trong 30' chồng lấn trước mốc cũ → giữ mốc, không lùi, không mốc vét", () => {
+    expect(nextWatermark(plan, { truncated: true, coveredUpToSec: wm - 600 })).toEqual({ ordersCatchupBeforeAt: null });
+    expect(nextWatermark(plan, { truncated: true, coveredUpToSec: wm })).toEqual({ ordersCatchupBeforeAt: null });
+  });
+
+  it("cắt mà đã đọc qua mốc cũ dù chỉ 1 giây → tiến", () => {
+    expect(nextWatermark(plan, { truncated: true, coveredUpToSec: wm + 1 })).toEqual({
+      ordersWatermarkAt: at(wm + 1),
+      ordersCatchupBeforeAt: null,
+    });
+  });
+
+  it("gian chưa có mốc (fresh) → luật cũ, không có watermarkSec", () => {
+    const fresh = planOrderWindow({ ordersWatermarkAt: null, ordersCatchupBeforeAt: null }, NOW_MS, undefined);
+    expect(fresh.watermarkSec).toBeUndefined();
+    expect(nextWatermark(fresh, { truncated: true, coveredUpToSec: NOW - 100 })).toEqual({
+      ordersWatermarkAt: at(NOW - 100),
+      ordersCatchupBeforeAt: null,
+    });
+  });
+
+  it("mốc đứng yên → có dòng log nói rõ, không im lặng như trước", () => {
+    const line = watermarkLogLine({ channelName: "TIKTOK", shopName: "Bella Look" }, plan, { ordersCatchupBeforeAt: null });
+    expect(line).toContain("mốc nước KHÔNG tiến");
+    expect(line).toContain(at(wm).toISOString());
   });
 });
 

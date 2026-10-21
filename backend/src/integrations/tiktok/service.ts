@@ -209,6 +209,35 @@ export interface SyncOrdersOptions {
   updateTimeFrom?: number;
   updateTimeTo?: number;
   maxPages?: number;
+  /**
+   * Mốc nước TRƯỚC lượt (giây, lát 3.2). Quét ASC chạm trần trang mà update_time
+   * cuối vẫn ≤ mốc này = chưa tiến được gì (cụm biến động trong 30' chồng lấn
+   * ≥ trần) → đọc thêm tối đa STUCK_EXTRA_PAGES_FACTOR × trần để qua cụm
+   * (21/10/2026 Bella Look: 11 giờ mốc đứng yên, mỗi lượt đọc lại 2.500 đơn cũ).
+   */
+  progressPastSec?: number;
+}
+
+/** Nới trần trang khi lượt ASC chưa qua mốc cũ: tối đa gấp này lần MAX_PAGES. */
+export const STUCK_EXTRA_PAGES_FACTOR = 4;
+
+/**
+ * Có nên đọc thêm trang sau khi chạm trần? Chỉ khi quét theo mốc nước, còn
+ * trang, và update_time cuối đã đọc vẫn ≤ mốc cũ (chưa tiến). Thuần — test.
+ */
+export function tiktokShouldReadPastCap(args: {
+  pagesRead: number;
+  maxPages: number;
+  hasMore: boolean;
+  lastUpdateTime: number | undefined;
+  progressPastSec: number | undefined;
+}): boolean {
+  const { pagesRead, maxPages, hasMore, lastUpdateTime, progressPastSec } = args;
+  if (!hasMore) return false;
+  if (pagesRead < maxPages) return true;
+  if (progressPastSec === undefined || lastUpdateTime === undefined) return false;
+  if (lastUpdateTime > progressPastSec) return false;
+  return pagesRead < maxPages * STUCK_EXTRA_PAGES_FACTOR;
 }
 
 /**
@@ -415,7 +444,34 @@ export async function syncTiktokOrders(
     }
 
     pageToken = data.next_page_token || undefined;
-  } while (pageToken && slicePages < maxPages);
+    if (
+      byWatermark &&
+      pageToken &&
+      slicePages === maxPages &&
+      tiktokShouldReadPastCap({
+        pagesRead: slicePages,
+        maxPages,
+        hasMore: true,
+        lastUpdateTime: updateTimesInOrder[updateTimesInOrder.length - 1],
+        progressPastSec: opts.progressPastSec,
+      })
+    ) {
+      console.warn(
+        `[TikTok] "${channel.shopName}": chạm trần ${maxPages} trang mà update_time cuối ${new Date(updateTimesInOrder[updateTimesInOrder.length - 1] * 1000).toISOString()} chưa qua mốc cũ ${new Date(opts.progressPastSec! * 1000).toISOString()} — đọc thêm tối đa ${maxPages * (STUCK_EXTRA_PAGES_FACTOR - 1)} trang để qua cụm biến động`
+      );
+    }
+  } while (
+    pageToken &&
+    (byWatermark
+      ? tiktokShouldReadPastCap({
+          pagesRead: slicePages,
+          maxPages,
+          hasMore: true,
+          lastUpdateTime: updateTimesInOrder[updateTimesInOrder.length - 1],
+          progressPastSec: opts.progressPastSec,
+        })
+      : slicePages < maxPages)
+  );
   if (pageToken) result.truncated = true; // lát này còn trang chưa đọc
   }
 
@@ -436,6 +492,10 @@ export async function syncTiktokOrders(
     if (result.coveredUpToSec === undefined) {
       console.warn(
         `[TikTok] "${channel.shopName}": sàn trả update_time KHÔNG tăng dần dù xin sort ASC (${updateTimesInOrder.length} dòng) — lượt cắt không tiến mốc, lượt sau đọc lại`
+      );
+    } else if (opts.progressPastSec !== undefined && result.coveredUpToSec <= opts.progressPastSec) {
+      console.warn(
+        `[TikTok] "${channel.shopName}": đọc ${result.pages} trang (${result.fetched} đơn, thấp nhất ${windowMinUpdate ? new Date(windowMinUpdate * 1000).toISOString() : "?"}) mà vẫn chưa qua mốc cũ ${new Date(opts.progressPastSec * 1000).toISOString()} — mốc KHÔNG tiến; cụm > ${MAX_PAGES * STUCK_EXTRA_PAGES_FACTOR * PAGE_SIZE} biến động cùng lúc, hoặc sàn bỏ qua update_time_ge (thấp nhất < cửa sổ)`
       );
     }
   }

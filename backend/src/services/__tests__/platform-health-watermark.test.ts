@@ -84,7 +84,7 @@ describe("watermarkSignal", () => {
     const [, level, hint] = watermarkSignal({ ...base, lagOver60: 1, lagOver6h: 1, maxLagMin: 824, maxLagShop: worst.shop, worst });
     expect(level).toBe("crit");
     expect(hint).toContain("Bella Look");
-    expect(hint).toContain("mốc không ghi");
+    expect(hint).toContain("mốc không tiến");
     expect(hint).not.toContain("xem lastSyncError");
     // Ảnh chụp cũ không có worst → câu chung chung như trước.
     expect(watermarkSignal({ ...base, lagOver60: 1, maxLagMin: 95 })[2]).toContain("xem lastSyncError");
@@ -111,8 +111,9 @@ describe("watermarkWorstHint", () => {
     expect(hint).toContain("…");
   });
 
-  it("đơn vừa OK mà mốc cũ → lượt bị cắt sau tầng đơn", () => {
-    expect(watermarkWorstHint({ ...w, lastSyncAgoMin: 6 })).toContain("lượt bị cắt sau tầng đơn");
+  it("đơn vừa OK mà mốc cũ → lượt bị cắt chưa qua mốc cũ, chỉ từ khóa log", () => {
+    expect(watermarkWorstHint({ ...w, lastSyncAgoMin: 6 })).toContain("chưa qua mốc cũ");
+    expect(watermarkWorstHint({ ...w, lastSyncAgoMin: 6 })).toContain("mốc nước KHÔNG tiến");
     expect(watermarkWorstHint({ ...w, lastSyncAgoMin: 6, lockedMin: 3 })).toContain("đang cầm khóa 3'");
   });
 

@@ -53,10 +53,10 @@ nâng cấp gói CPU."* Lý do: *"làm sao tự nhiên anh nhớ được việc
   **Gian đang nạp lịch sử** (`historyBackfillPending`, gian vừa nối hoặc bật lại cờ để kéo trọn 90 ngày) cũng
   đứng mốc: lượt backfill đọc trục create_time, worker không tính cửa sổ mốc nước (`runFastTier` plan = null)
   dù đơn vẫn về → từ 21/10/2026 KHÔNG tính trễ, in "· N đang nạp lịch sử (không tính)" (hôm 21/10 Bella Look
-  bật lại cờ sau deploy sửa OOM → HQ đỏ "824'" oan, anh Trung tưởng nâng gói worker chưa đủ).
+  là bẫy cùng loại; riêng vụ Bella Look 21/10 hóa ra KHÔNG phải cờ này — xem DONG-BO-GIAI-DOAN-3 mục 2.9).
   **Hint gian trễ nhất** (21/10/2026): backend đọc thêm `lastSyncAt / lastSyncError / syncFailCount /
   syncLockedAt / nextFastSyncAt` của đúng gian đó (`WatermarkHealth.worst`) và viết thẳng vì sao — "lượt ĐƠN LỖI
-  n lần: …" (token / sàn), "đơn vừa OK mà mốc không ghi" (lượt bị cắt sau tầng đơn: tiến trình chết / OOM),
+  n lần: …" (token / sàn), "đơn vừa OK mà mốc không tiến" (lượt bị cắt chưa qua mốc cũ — Bella Look 21/10, mục 2.9),
   "đang cầm khóa x'" (vé mồ côi khi ≥ 15'), "quá hạn quét x' chưa được nhặt" (worker quá tải), còn lại "bậc
   giãn nhịp / vừa nối". Không còn phải mở SQL để biết hướng xem. Cùng ngày worker ghi mốc nước NGAY sau tầng
   đơn (cùng câu bookkeeping `lastSyncAt`) thay vì chỉ ở câu lịch cuối lượt — gian chết giữa tầng giờ không còn

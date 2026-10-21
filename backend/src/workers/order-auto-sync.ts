@@ -448,7 +448,8 @@ async function runFastTier(
   let watermark: WatermarkWrite | null = null;
   // Cửa sổ đọc của lượt — tính TRƯỚC khi gọi sàn (now0 là lúc bắt đầu, không phải lúc xong).
   const plan = opts.backfill ? null : planOrderWindow(channel, Date.now());
-  const window = plan ? { updateTimeFrom: plan.fromSec, updateTimeTo: plan.toSec } : null;
+  // progressPastSec: mốc cũ — TikTok đọc thêm trang khi lượt cắt chưa qua mốc (21/10/2026).
+  const window = plan ? { updateTimeFrom: plan.fromSec, updateTimeTo: plan.toSec, progressPastSec: plan.watermarkSec } : null;
   // Mã đơn Shopee vừa tạo / đổi trạng thái lượt này → tầng ước tính escrow hỏi lại (lát B 12/10).
   const escrowCodes: string[] = [];
 

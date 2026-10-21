@@ -52,6 +52,12 @@ export interface OrderWindowPlan {
   /** Giây Unix, hai đầu đóng (sàn nào dùng "<" thì tự cộng 1). */
   fromSec: number;
   toSec: number;
+  /**
+   * Mốc nước TRƯỚC lượt (giây). Lượt cắt đọc CŨ → MỚI phải đọc QUA mốc này thì
+   * mới gọi là tiến; adapter dùng để đọc thêm trang khi cụm biến động trong 30'
+   * chồng lấn vượt trần trang (21/10/2026 Bella Look: mốc kẹt 11 giờ dù lượt OK).
+   */
+  watermarkSec?: number;
 }
 
 /** Cửa sổ đọc của lượt này. `now0Ms` = thời điểm BẮT ĐẦU gọi sàn. */
@@ -69,11 +75,12 @@ export function planOrderWindow(
   const fromSec = wm === null ? defaultFrom : Math.max(wm - WATERMARK_OVERLAP_SEC, floor);
 
   const catchup = ch.ordersCatchupBeforeAt ? Math.floor(ch.ordersCatchupBeforeAt.getTime() / 1000) : null;
+  const prev = wm === null ? {} : { watermarkSec: wm };
   // Mốc vét nằm ngoài cửa sổ (cũ hơn sàn dưới, hoặc hỏng) → bỏ, quét thường.
   if (catchup !== null && catchup > fromSec && catchup <= now0) {
-    return { mode: "catchup", fromSec, toSec: catchup };
+    return { mode: "catchup", fromSec, toSec: catchup, ...prev };
   }
-  return { mode: wm === null ? "fresh" : "advance", fromSec, toSec: now0 };
+  return { mode: wm === null ? "fresh" : "advance", fromSec, toSec: now0, ...prev };
 }
 
 /** Kết quả lượt đọc mà mốc nước cần: có bị cắt không, update_time cũ nhất đã đọc (giây). */
@@ -107,6 +114,13 @@ export function nextWatermark(plan: OrderWindowPlan, r: WindowReadOutcome): Wate
   // tiến bằng phần dôi ra ngoài 2.500 đơn (6–13 phút) — log 8686 19/10 14:08–14:53.
   const covered = r.coveredUpToSec;
   if (covered !== undefined && covered > plan.fromSec && covered <= plan.toSec) {
+    // KHÔNG LÙI MỐC (21/10/2026): phần đã đọc trọn nằm trong 30' chồng lấn trước
+    // mốc cũ (cụm biến động > trần trang) thì giữ mốc — ghi "covered" sẽ kéo mốc
+    // lùi và lượt sau đọc lại y hệt. Để lượt đọc tự nới trang qua cụm (adapter);
+    // không qua được thì mốc đứng, log "mốc KHÔNG tiến" cho HQ/log thấy.
+    if (plan.watermarkSec !== undefined && covered <= plan.watermarkSec) {
+      return { ordersCatchupBeforeAt: null };
+    }
     return { ordersWatermarkAt: new Date(covered * 1000), ordersCatchupBeforeAt: null };
   }
   // Cắt: giữ mốc nước. Mốc vét = update_time cũ nhất đã đọc, chỉ khi nó còn nằm
@@ -137,6 +151,11 @@ export function watermarkLogLine(
   const wmSec = write.ordersWatermarkAt ? Math.floor(write.ordersWatermarkAt.getTime() / 1000) : null;
   if (wmSec !== null && wmSec < plan.toSec) {
     return `[Auto-sync] ${channel.channelName} "${channel.shopName}": lượt bị cắt, đã đọc trọn ${iso(plan.fromSec)} → ${iso(wmSec)}, mốc nước = ${iso(wmSec)}, lượt sau đọc tiếp phần mới hơn`;
+  }
+  // Cắt mà không ghi được gì: mốc đứng yên — trước 21/10 im lặng nên Bella Look kẹt
+  // 11 giờ không ai thấy (HQ chỉ báo "trễ", SQL lastSyncError trống).
+  if (wmSec === null && write.ordersCatchupBeforeAt === null && plan.watermarkSec !== undefined) {
+    return `[Auto-sync] ${channel.channelName} "${channel.shopName}": lượt bị cắt mà mốc nước KHÔNG tiến (vẫn ${iso(plan.watermarkSec)}) — phần đọc trọn chưa qua mốc cũ (cụm biến động > trần trang trong ${WATERMARK_OVERLAP_SEC / 60}' chồng lấn), sàn trả không tăng dần, hoặc dòng ngoài cửa sổ — xem dòng CHƯA ĐỦ / [TikTok] cùng gian`;
   }
   return null;
 }

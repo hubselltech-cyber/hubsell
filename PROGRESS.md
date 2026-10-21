@@ -5,25 +5,23 @@
 
 ---
 
-## Phiên 21/10/2026 tối — HQ VẪN ĐỎ "MỐC NƯỚC 824' BELLA LOOK" SAU KHI NÂNG GÓI WORKER
+## Phiên 21/10/2026 tối — BELLA LOOK MỐC NƯỚC KẸT 11 GIỜ DÙ LƯỢT QUÉT OK (KHÔNG PHẢI DO GÓI WORKER)
 
-- **Anh (ảnh HQ):** đã xử lý + nâng gói worker lên M2 mà "Mốc nước quét đơn" vẫn Nguy hiểm: 128/128 gian có mốc, trễ nhất 824'
-  (TIKTOK · Bella Look), 0 vét dở, 1 gian quá 90'.
-- **Chẩn đoán (đọc mã, không có SQL prod):** nâng gói không liên quan. Mốc nước Bella Look đứng yên vì (1) gian đang `historyBackfillPending`
-  (bật lại sau deploy để kéo trọn 90 ngày, như em đề xuất trưa) → `runFastTier` lượt backfill `plan = null`, KHÔNG tính/ghi mốc nước dù
-  đơn vẫn về — HQ đếm gian này như gian thường → đỏ oan, y hệt vụ gian ngủ đông 16/10; (2) mốc chỉ ghi ở câu lịch `finally` SAU tầng
-  giờ → đêm qua gian chết giữa đối soát 8 lần nên tầng đơn xong mà mốc không bao giờ ghi. 824' ≈ từ lượt thường cuối ngay sau khi anh
-  hạ cờ 09:10 (~09:16) tới lúc chụp — khớp.
-- **Sửa (không migration):** `services/platform-health.ts`: `WatermarkHealth.backfilling` đếm riêng, loại khỏi gian trễ, in "· N đang nạp
-  lịch sử (không tính)"; `WatermarkHealth.worst` + `watermarkWorstHint()` đọc bookkeeping gian trễ nhất và viết thẳng vì sao (lỗi đơn n
-  lần / đơn OK mà mốc không ghi = lượt bị cắt sau tầng đơn / cầm khóa / quá hạn chưa nhặt / bậc giãn nhịp) thay câu chung chung "xem
-  lastSyncError". `workers/order-auto-sync.ts`: ghi mốc nước NGAY cùng câu bookkeeping sau tầng đơn (câu lịch cuối lượt ghi lại cùng giá
-  trị). FE kiểu + thẻ Worker ", N nạp lịch sử". Docs HQ-SUC-KHOE + DONG-BO-GIAI-DOAN-3 mục 2.9.
-- **Kiểm:** backend `tsc --noEmit` sạch; vitest `platform-health-watermark` (+7 ca) + `order-watermark` 36/36 xanh; frontend tsc + eslint
-  (xem cuối phiên). Chưa chạy với DB (phiên cloud không có Postgres) — câu SQL mới chỉ thêm 2 FILTER + 5 cột sẵn có trên Channel.
-- **Anh kiểm sau deploy:** HQ phải hiện "1 đang nạp lịch sử (không tính)" và Bella Look rời khỏi "trễ nhất"; khi worker log
-  `đã kéo trọn 90 ngày đơn + đối soát, hạ cờ backfill` (hoặc HẠ CỜ sau 3 lần sập) thì gian về phép đếm thường, mốc tiến ngay lượt kế.
-  Nếu HQ vẫn đỏ với hint "lượt ĐƠN LỖI …" thì là token/sàn, không phải worker — hint sẽ in nguyên lỗi.
+- **Anh (ảnh HQ):** đã nâng gói worker lên M2 mà "Mốc nước quét đơn" vẫn Nguy hiểm: trễ nhất 824' (TIKTOK · Bella Look), 0 vét dở.
+- **Đoán 1 (sai):** gian đang `historyBackfillPending` nên mốc không tính. Anh chạy SQL: cờ **false**, lần sập 0, mốc trễ **11:03**,
+  đơn OK **7'** trước, lastSyncError NULL, syncFailCount 0, không khóa, hạn kế 5' → lượt kết thúc bình thường mà mốc không có gì để ghi.
+- **Cơ chế thật (đọc mã, chưa có log):** quét ASC từ mốc − 30', trần 2.500 đơn; 2.500 đơn ấy đều ≤ mốc cũ (cụm biến động ≥ 2.500 trong
+  30' chồng lấn — TikTok đổi trạng thái hàng loạt ở gian 25k đơn) → `coveredUpToSec ≤ mốc` → ghi lại mốc bằng/LÙI → lượt sau đọc lại y hệt,
+  mãi mãi; tầng mốc nước im lặng (log null). Hai nhánh khác cùng bộ số: sàn trả không tăng dần; sàn bỏ `update_time_ge`. **Hệ quả:** biến
+  động 11 giờ gần nhất của Bella Look KHÔNG được quét (ASC chỉ đọc 2.500 cũ nhất), chỉ còn webhook.
+- **Sửa (nhánh `claude/funny-feynman-83tazt`, không migration):** `order-watermark.ts` — `plan.watermarkSec`, KHÔNG LÙI MỐC (covered ≤ mốc →
+  giữ), log "mốc nước KHÔNG tiến". `tiktok/service.ts` — `progressPastSec` + `tiktokShouldReadPastCap()`: chạm trần mà chưa qua mốc cũ thì
+  đọc thêm tới 4× trần (200 trang / 10.000 đơn) để qua cụm, log khi nới và khi nới hết vẫn kẹt. Worker truyền mốc cũ + ghi mốc ngay sau
+  tầng đơn. HQ: `backfilling` đếm riêng (vẫn đúng dù không phải nguyên nhân), `worst` + `watermarkWorstHint()` nói thẳng nhánh nào.
+  Docs DONG-BO-GIAI-DOAN-3 mục 2.9 (có SQL chặn ngay + cách đọc log sau deploy), HQ-SUC-KHOE.
+- **Kiểm:** backend tsc sạch; 54 test 3 tệp xanh (+16 ca); 3 tệp DB đỏ y hệt trước khi sửa (không có DATABASE_URL). Frontend tsc + eslint sạch.
+- **Chờ anh:** (1) merge lên master để Render deploy; (2) tùy chọn chặn ngay bằng SQL đẩy mốc qua cụm (mục 2.9); (3) sau deploy gửi log
+  worker lọc "Bella Look" để chốt nhánh (a) cụm biến động / (b) không tăng dần / (c) sàn bỏ bộ lọc.
 
 ## Phiên 21/10/2026 trưa — SỬA GỐC OOM WORKER: ĐỐI SOÁT TIKTOK GHI THEO LÔ + ĐẾM LẦN SẬP LƯỢT NẠP LỊCH SỬ
 

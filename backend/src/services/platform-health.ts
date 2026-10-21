@@ -779,14 +779,16 @@ export function watermarkWorstHint(w: WatermarkWorstShop): string {
       " → token / cầu dao sàn / API sàn, không phải thiếu worker"
     );
   }
-  // Đơn vừa OK nhưng mốc vẫn cũ: mốc ghi cùng câu lịch cuối lượt (worker ghi thêm
-  // ngay sau tầng đơn từ 21/10) — lượt kết thúc không êm sau tầng đơn.
+  // Đơn vừa OK nhưng mốc vẫn cũ (Bella Look 21/10: SQL lastSyncAt 7', mốc 11 giờ,
+  // không lỗi, không khóa): lượt đọc bị cắt mà phần đọc trọn không qua được mốc cũ
+  // — cụm biến động > trần trang trong 30' chồng lấn, sàn trả không tăng dần, hoặc
+  // dòng ngoài cửa sổ. Tiến trình chết sau tầng đơn cũng ra bộ số này (hiếm hơn).
   if (w.lastSyncAgoMin != null && w.lastSyncAgoMin + 15 < w.lagMin) {
     return (
       head +
-      `lượt đơn gần nhất OK ${w.lastSyncAgoMin}' trước, không lỗi, nhưng mốc không ghi` +
+      `lượt đơn gần nhất OK ${w.lastSyncAgoMin}' trước, không lỗi, nhưng mốc không tiến` +
       (w.lockedMin != null ? `; đang cầm khóa ${w.lockedMin}'` : "") +
-      " → lượt bị cắt sau tầng đơn (tiến trình chết / OOM, tầng giờ quá dài) — xem Render Events + log worker theo tên gian"
+      " → lượt bị cắt mà phần đọc trọn chưa qua mốc cũ (cụm biến động > trần trang / sàn trả không tăng dần / dòng ngoài cửa sổ) — lọc log worker theo tên gian: \"mốc nước KHÔNG tiến\", \"CHƯA ĐỦ\", \"KHÔNG tăng dần\""
     );
   }
   if (w.lockedMin != null) {

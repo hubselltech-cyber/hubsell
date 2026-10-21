@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchOrders } from "../tiktok/client";
 import type { TikTokConfig } from "../tiktok/config";
 import { resetTiktokRateLimitLanes } from "../tiktok/rate-limit";
-import { tiktokAscCoveredUpTo, tiktokOrderSearchSort } from "../tiktok/service";
+import { tiktokAscCoveredUpTo, tiktokOrderSearchSort, tiktokShouldReadPastCap, STUCK_EXTRA_PAGES_FACTOR } from "../tiktok/service";
 
 const cfg: TikTokConfig = { appKey: "k", appSecret: "s", serviceId: "1", redirectUri: "https://x/cb" };
 const fetchSpy = vi.fn();
@@ -78,5 +78,32 @@ describe("fetchOrders — sort_field / sort_order nằm trên query", () => {
     const url = calledUrl();
     expect(url.searchParams.has("sort_field")).toBe(false);
     expect(url.searchParams.has("sort_order")).toBe(false);
+  });
+});
+
+describe("tiktokShouldReadPastCap — nới trần trang khi lượt ASC chưa qua mốc cũ (21/10/2026)", () => {
+  const base = { maxPages: 50, hasMore: true, progressPastSec: 1_000 };
+
+  it("còn dưới trần → đọc tiếp như thường", () => {
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 10, lastUpdateTime: 500 })).toBe(true);
+  });
+
+  it("hết trang → dừng", () => {
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 10, hasMore: false, lastUpdateTime: 500 })).toBe(false);
+  });
+
+  it("chạm trần mà update_time cuối ≤ mốc cũ → đọc thêm, tới gấp STUCK_EXTRA_PAGES_FACTOR lần trần thì dừng", () => {
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 50, lastUpdateTime: 1_000 })).toBe(true);
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 50 * STUCK_EXTRA_PAGES_FACTOR - 1, lastUpdateTime: 900 })).toBe(true);
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 50 * STUCK_EXTRA_PAGES_FACTOR, lastUpdateTime: 900 })).toBe(false);
+  });
+
+  it("chạm trần mà đã qua mốc cũ → dừng đúng trần (gian thường không đổi)", () => {
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 50, lastUpdateTime: 1_001 })).toBe(false);
+  });
+
+  it("không có mốc cũ (lượt đầu) hoặc không có update_time → dừng đúng trần", () => {
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 50, lastUpdateTime: 500, progressPastSec: undefined })).toBe(false);
+    expect(tiktokShouldReadPastCap({ ...base, pagesRead: 50, lastUpdateTime: undefined })).toBe(false);
   });
 });
