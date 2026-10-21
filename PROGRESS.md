@@ -5,6 +5,41 @@
 
 ---
 
+## Phiên 21/10/2026 sáng — WORKER RENDER HẾT BỘ NHỚ, KHỞI ĐỘNG LẠI ~MỖI GIỜ (GIAN TIKTOK BELLA LOOK)
+
+- **Nguồn:** thư Render 20/10 20:43; anh bảo em mở Render kiểm (Chrome của anh, chỉ đọc).
+- **Số thật (Render Events + log `[Bộ nhớ]`):** worker `hubsell-worker-sg` OOM 8 lần từ 20/10 20:43 tới 21/10 07:30 (20:43, 21:36,
+  00:03, 02:59, 04:06, 05:20, 06:32, 07:30); web `hubsell-backend-sg` KHÔNG sự cố. Trước 20:43 heap đều 80–116/368 MB, RSS ~335 MB;
+  sau mỗi lần khởi động heap leo 66 → ~260 MB (cảnh báo "Heap cao 70 %") rồi RSS vượt 512 MB.
+- **Gốc (đọc log + mã, mức chắc: cao, chưa thử tái hiện):** gian TikTok **Bella Look** (`cmvgpmwsw0k4lk13rtgamd3pt`, nối 20/10 20:19)
+  rất lớn: 4.292 chiến dịch GMV Max, bản kê 90 ngày **281.293 dòng**, 256.914 mã đơn trên bản kê chưa có (nạp đơn dừng ở trần 300 trang
+  / 15.000 đơn). `historyBackfillPending` còn bật → mỗi lượt worker chạy đối soát 90 ngày (`syncTiktokSettlements` since), gom
+  `byOrder` cả cửa sổ 30 ngày (~94.000 dòng kèm breakdown) trong RAM → hết bộ nhớ trước khi ghi lịch → cờ không hạ → khởi động lại
+  lượt sau làm lại y hệt = vòng lặp sập. Lượt 00:01 đối soát xong nhưng sập 00:03 trước câu UPDATE hạ cờ.
+- **Ảnh hưởng khách:** app web/API không ảnh hưởng. Mỗi lần sập việc nền đang chạy bị cắt ~1 phút; gian đang cầm khóa quét bị trễ
+  tới 15' (LOCK_STALE_MS), ads tới 30'; webhook nằm hàng đợi bền nên chạy lại. Bella Look: lịch sử đơn chỉ 15.000/≈270.000, đối soát
+  chưa trọn. Chưa đo trễ từng gian khác trên HQ.
+- **Đề xuất (chờ anh chốt):** (1) chặn ngay: anh dán SQL hạ `historyBackfillPending` gian Bella Look; (2) sửa gốc: đối soát ghi theo
+  từng bản kê thay vì gom cả cửa sổ + lượt backfill sập giữa chừng không lặp vô hạn (đếm lần thử) + nạp lịch sử đơn gian lớn đọc tiếp
+  thay vì đọc lại 15.000 đơn mới nhất.
+- **Anh hỏi "sao không áp dụng chung":** em nhận lỗi cùng họ lần 2 (sau 8686 19/10). Đề xuất lát CHUNG "bộ nhớ không phụ thuộc
+  cỡ gian" cho mọi luồng đọc sàn của 3 sàn (đối soát, nạp lịch sử, đơn hoàn, payout, ads; khoảng 20 chỗ tự đặt trần trang): đọc trang
+  nào ghi trang đó rồi bỏ, cờ backfill đếm lần thử, test giả lập gian 300k đơn đo trần heap làm hàng rào. Làm trước khi chuyển tiếp các
+  luồng vào `cursor-reader` (Pha C). Chờ anh chốt.
+- **09:10 anh đã dán SQL hạ cờ `historyBackfillPending` Bella Look.** 09:30 em chạy SQL chỉ đọc (Supabase qua Chrome): gian có 24.919 đơn
+  trong DB, lịch sử là các cụm rời (06/08 2.745 · 21/08 3.748 · 05/09 1.858 · 20/09 2.998 · 05/10 3.415 · 20/10 2.716; ngày đầu mỗi
+  khúc 15 ngày vì TikTok trả cũ trước + trần 2.500/khúc), các ngày khác gần trống (07–14/10 1–21 đơn/ngày); đối soát từ 06/10 gần như 0.
+- **Khách Bella Look:** HOÀNG TÚ LAND… vutientu91@gmail.com, CHƯA có SĐT; dùng thử SCALE trần 20.000, hết hạn 01/11, tháng 10 đã 12.360
+  đơn (62 %) → ~24–25/10 chạm 120 % sẽ khóa Tài chính/Quảng cáo. Anh bảo → em ĐÃ GỬI thư từ support@hubsell.vn (báo lịch sử trước
+  20/10 đang nạp bổ sung, đơn từ 20/10 đủ, xin SĐT/Zalo). Anh chốt tạo gói nháp ENTERPRISE_TRIAL (bậc 6, 40 gian / 100.000 đơn /
+  40 nhân viên, giá 0, không Đang bán) + Đổi gói cho khách: bộ lọc quyền CHẶN em điền form HQ → anh tự làm (chờ).
+- **Anh: "Thuê bao thiếu bộ lọc tìm kiếm".** Ô "Tìm email / tên khách…" có sẵn nhưng chỉ lọc khi bấm Enter, không có gợi ý → em sửa
+  `frontend/src/app/admin/plans/page.tsx`: gõ xong 400 ms tự tìm (cùng cách HQ Khách hàng), Enter vẫn tìm ngay, đổi từ khóa về trang 1.
+  tsc + eslint sạch; CHƯA mở thử local (trang HQ cần đăng nhập quản trị). Trên prod em đã tìm `vutientu91` bằng Enter: ra đúng khách,
+  Scale 13.810/20.000 (69 %). Gói ENTERPRISE_TRIAL anh vừa tạo đang hiện trần ∞/∞/∞ (chưa điền 40/100.000/40).
+- **Anh: Đổi gói không chọn được gói "không bán".** Hộp Đổi gói lọc `isActive` ở FE (backend vốn nhận mọi gói) → sửa cùng tệp: liệt kê
+  cả gói nháp/ngừng bán, gói đang bán lên trước, gói riêng ghi "(gói riêng, không bày bán)". tsc + eslint sạch, chưa thử local.
+
 ## Phiên 20/10/2026 chiều — VIDEO HƯỚNG DẪN TRỢ LÝ QUẢNG CÁO SHOPEE (ANH TỰ QUAY)
 
 - **Anh:** thay video YouTube `WY4uqur-MXg` vào "Trợ lý quảng cáo Shopee" giống TikTok.

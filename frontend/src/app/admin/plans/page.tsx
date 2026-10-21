@@ -9,7 +9,7 @@
 //     THU sổ quỹ (chờ hóa đơn) + hoa hồng giới thiệu 10%. Kế toán không nhập tay lại.
 // ============================================================
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeftRight,
@@ -427,8 +427,13 @@ function ChangePlanDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // Gói nháp / ngừng bán cũng chọn được (21/10, anh Trung): gói RIÊNG cho từng
+  // khách lớn (vd "Enterprise dùng thử") cố ý không bày bán. Gói đang bán lên trước.
   const selectable = useMemo(
-    () => plans.filter((p) => p.isActive && p.id !== target.plan.id),
+    () =>
+      plans
+        .filter((p) => p.id !== target.plan.id)
+        .sort((a, b) => Number(b.isActive) - Number(a.isActive)),
     [plans, target.plan.id]
   );
   const [planId, setPlanId] = useState(selectable[0]?.id ?? "");
@@ -489,6 +494,7 @@ function ChangePlanDialog({
                 {p.maxOrdersPerMonth != null
                   ? ` — ${formatCount(p.maxOrdersPerMonth)} đơn/tháng`
                   : " — không giới hạn đơn"}
+                {p.isActive ? "" : " (gói riêng, không bày bán)"}
               </option>
             ))}
           </NativeSelect>
@@ -717,10 +723,19 @@ interface PageData {
 export default function PlatformPlansPage() {
   const [filter, setFilter] = useState<SubFilter>("all");
   const [q, setQ] = useState("");
-  // Chỉ nạp lại khi bấm tìm/đổi lọc — gõ chữ không dội API.
+  // Gõ xong 400ms tự tìm (debounce, như HQ Khách hàng); Enter thì tìm ngay.
   const [committedQ, setCommittedQ] = useState("");
   // Phân trang bảng thuê bao: 20 khách/trang, đổi lọc/tìm thì về trang 1.
   const [subPage, setSubPage] = useState(1);
+  useEffect(() => {
+    const next = q.trim();
+    if (next === committedQ) return;
+    const t = setTimeout(() => {
+      setCommittedQ(next);
+      setSubPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [q, committedQ]);
 
   const fetcher = useCallback(async (): Promise<PageData> => {
     const [plansRes, subs] = await Promise.all([
