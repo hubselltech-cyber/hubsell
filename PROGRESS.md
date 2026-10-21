@@ -24,6 +24,14 @@
   ("DB dev phải có gian… để phép so có nghĩa"), không liên quan thay đổi này.
 - **Anh cần làm trên Render (worker):** đặt `NODE_HEAP_MB=1536` (bắt buộc với gói 2 GB) và `AUTO_SYNC_CONCURRENCY=6`; sau deploy xem
   `/admin/health` RSS worker + mốc nước gian để chốt giữ 6 hay về 3.
+- **Anh chốt "kiểm tra, rà soát và làm hết":** rà lại diff lần 2 (cột Date UTC nửa đêm cả 3 sàn, NaN về 0, lỗi lô Nhóm Shopee
+  `continue` trước khi gom), checklist trên `/admin/health` chỉ hiện chữ nên dòng dài không vỡ. Nhánh `claude/nice-wozniak-93evd9`
+  = master + 2 commit, ff được; **phiên cloud bị chặn lệnh push master (deploy prod)** → anh gộp tay: `git merge --ff-only` rồi push,
+  Render tự deploy. Việc còn lại của anh: 2 env trên worker ở trên.
+- **Phát hiện kèm (chưa sửa, việc riêng):** bộ migration KHÔNG dựng được DB trống — `20260914200000_ads_hubsell_pause_flag` ALTER
+  bảng `AdsCampaign` nhưng không migration nào CREATE bảng đó (nhóm bảng Ads lên prod bằng `db push` trước khi có migration). Prod
+  không ảnh hưởng (migrate deploy chỉ chạy phần mới); chỉ vướng khi dựng DB dev/test mới từ migration — cần một migration "bù"
+  `CREATE TABLE IF NOT EXISTS` cho nhóm Ads đặt trước 14/09.
 
 ## Phiên 21/10/2026 trưa — SỬA GỐC OOM WORKER: ĐỐI SOÁT TIKTOK GHI THEO LÔ + ĐẾM LẦN SẬP LƯỢT NẠP LỊCH SỬ
 
