@@ -19,7 +19,9 @@
   gap 8; Trụ sở span 2): mép trái Mã số = thương hiệu, Trụ sở = Sản phẩm, Liên hệ = Pháp lý, Chứng nhận = Quy chế nền tảng. Đo ở 1440px:
   346 / 879 / 1146 px trùng từng cột; mobile 375px không tràn ngang, ảnh tải được từ fileserver. `tsc --noEmit` xanh. Landing không có giao diện tối.
 - **Docs:** `docs/THONG-BAO-BO-CONG-THUONG.md` (tình trạng + cách lấy mã nhúng cổng mới), `docs/HUY-HIEU-TIN-CAY-LANDING.md` (mục 0/1/5).
-- **Còn:** anh push landing (Vercel tự deploy) rồi xem hubsell.vn; NCA Tín nhiệm mạng vẫn chưa có thư; app di động đã lên 2 kho → làm thủ tục
+- **✅ LIVE hubsell.vn 22:16** (anh push 22:09; 7 phút đầu prod vẫn bản cũ do Vercel đang dựng, không phải lỗi — build tại máy xanh, bẫy
+  rate-limit GitHub không xảy ra). Đo trên prod: ô Chứng nhận và cột Quy chế nền tảng cùng mép 1146px, link về đúng hồ sơ công khai.
+- **Còn:** NCA Tín nhiệm mạng vẫn chưa có thư; app di động đã lên 2 kho → làm thủ tục
   "sửa đổi, bổ sung thông báo" khai thêm ứng dụng khi anh gọi.
 
 ## Phiên 21/10/2026 khuya — SỬA HẾT 20 CA TEST ĐỎ CÒN LẠI TRÊN DB TRỐNG (anh chốt "phần nào fail sửa luôn một lượt")
