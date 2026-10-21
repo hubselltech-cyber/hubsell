@@ -11,8 +11,8 @@ import { useCallback } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { fetchPlatformMarketing } from "@/lib/api";
-import { MarketingTab } from "../marketing-tab";
-import { AdminError, AdminPageHeader, useAdminPage } from "../shared";
+import { MarketingTab } from "@/components/admin/marketing-tab";
+import { AdminError, AdminPageHeader, useAdminPage } from "@/components/admin/shared";
 
 export default function PlatformMarketingPage() {
   const fetcher = useCallback(() => fetchPlatformMarketing(), []);

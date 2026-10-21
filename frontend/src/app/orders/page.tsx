@@ -21,7 +21,7 @@ import {
 
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
-import { InvoiceStatusPanel } from "@/components/invoice/invoice-status-panel";
+import { InvoiceStatusPanel } from "@/components/invoicing/invoice-status-panel";
 import { Money } from "@/components/ui/money";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";

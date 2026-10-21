@@ -2857,12 +2857,6 @@ export interface HubsellAdsLinkStatus {
   refreshTokenExpireAt: string | null;
 }
 
-export function fetchHubsellAdsStatus(channelId: string) {
-  return apiFetch<HubsellAdsLinkStatus>(
-    `/api/hubsell-ads/status?channelId=${encodeURIComponent(channelId)}`
-  );
-}
-
 /** URL trang ủy quyền Shopee cho app Hubsell Ads — link hết hạn ~5', xin lúc bấm. */
 export function getHubsellAdsAuthUrl(channelId: string) {
   return apiFetch<{ url: string }>(
@@ -4239,32 +4233,6 @@ export function testMeinvoiceConnection() {
     "/api/invoice-config/test-meinvoice",
     { method: "POST" }
   );
-}
-
-export function testEsignConnection() {
-  return apiFetch<InvoiceConnectionTestResult>(
-    "/api/invoice-config/test-esign",
-    { method: "POST" }
-  );
-}
-
-export function testPosConnection() {
-  return apiFetch<InvoiceConnectionTestResult>(
-    "/api/invoice-config/test-pos",
-    { method: "POST" }
-  );
-}
-
-/** Lưu api_key riêng cho một gian hàng. Để trống = giữ nguyên khóa cũ. */
-export function saveInvoiceChannelKey(channelId: string, apiKey: string) {
-  return apiFetch<{
-    channelId: string;
-    hasApiKey: boolean;
-    apiKeyMasked: string | null;
-  }>(`/api/invoice-config/channels/${channelId}`, {
-    method: "PUT",
-    body: JSON.stringify({ apiKey }),
-  });
 }
 
 // ----- Hóa đơn & Thuế: Thuế bổ sung + Báo cáo thuế -----

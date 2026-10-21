@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CircleAlert, FlaskConical } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { InvoiceConfigSection } from "@/components/settings/invoice-config-section";
@@ -12,7 +12,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { isFeatureEnabled } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,15 +24,12 @@ import { cn } from "@/lib/utils";
  * Cả hai tab luôn mounted (ẩn bằng CSS) để form cấu hình không mất dữ liệu
  * đang gõ dở khi chuyển qua lại.
  *
- * Toàn module nằm dưới feature flag `is_tax_module_enabled`. Mặc định TẮT: hiện
- * banner Beta và toàn bộ thao tác chạy ở chế độ Sandbox (không phát hành hóa đơn
- * thật), an toàn cho dữ liệu thật của shop.
+ * Module mở thương mại theo quyền "invoicing" + trần gói (cờ Beta/feature-flag cũ đã gỡ 21/10/2026).
  *
  * Quy định pháp lý về HĐĐT được thu gọn vào icon tooltip cạnh tiêu đề —
  * hover/focus vào icon cam để xem.
  */
 export default function InvoicingConnectPage() {
-  const enabled = isFeatureEnabled("is_tax_module_enabled");
   const [tab, setTab] = useState<"issue" | "config">("issue");
 
   return (
@@ -93,27 +89,13 @@ export default function InvoicingConnectPage() {
       {/* Hộp cảnh báo "Hóa đơn phát hành là chứng từ thật" đã GỠ (anh Trung
           09/10): Hubsell chỉ tạo TỜ NHÁP; việc ký + phát hành là của shop và
           nhà cung cấp hóa đơn, nên không cần dọa khách ở đây. */}
-      {!enabled && (
-        <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-teal-200 bg-teal-50 p-3.5 text-sm text-teal-800">
-          <FlaskConical className="mt-0.5 size-5 shrink-0 text-teal-600" />
-          <div>
-            <p className="font-semibold">Module đang ở chế độ Beta (Giữ chỗ)</p>
-            <p className="mt-0.5 text-teal-700">
-              Bạn có thể cấu hình trước nhà cung cấp và khóa kết nối, nhưng hệ
-              thống <b>chưa phát hành hóa đơn thật</b>.
-            </p>
-          </div>
-        </div>
-      )}
-
-
       {/* Hộp XUẤT hóa đơn nằm ngay trang này (anh Trung chốt 23/08) — cấu hình
           xong là phát hành được tại chỗ; Lịch sử chỉ để tra + tải PDF. */}
       <div className={cn(tab !== "issue" && "hidden")}>
         <InvoiceIssueCard onOpenConfig={() => setTab("config")} />
       </div>
       <div className={cn(tab !== "config" && "hidden")}>
-        <InvoiceConfigSection readOnlyPreview={!enabled} />
+        <InvoiceConfigSection />
       </div>
     </SettingsShell>
   );

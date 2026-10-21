@@ -139,12 +139,7 @@ function FieldError({ msg }: { msg?: string }) {
 /** Giá trị <option> "Đơn vị khác…" — không bao giờ là một đơn vị thật (có dấu gạch dưới đôi). */
 const UNIT_OTHER = "__other__";
 
-export function InvoiceConfigSection({
-  /** Chế độ Beta/xem trước: khóa các nút Lưu để không ghi cấu hình khi module tắt. */
-  readOnlyPreview = false,
-}: {
-  readOnlyPreview?: boolean;
-}) {
+export function InvoiceConfigSection() {
   const [loading, setLoading] = useState(true);
 
   // (1) Pháp nhân & Thuế (một chủ shop = một MST).
@@ -905,14 +900,8 @@ export function InvoiceConfigSection({
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 onClick={handleSaveConfig}
-                disabled={savingConfig || readOnlyPreview || vendor.soon}
-                title={
-                  readOnlyPreview
-                    ? "Module đang ở chế độ Beta — khóa lưu để an toàn dữ liệu"
-                    : vendor.soon
-                      ? `${vendor.label} sắp ra mắt — chọn lại NCC đang hỗ trợ để lưu`
-                      : undefined
-                }
+                disabled={savingConfig || vendor.soon}
+                title={vendor.soon ? `${vendor.label} sắp ra mắt — chọn lại NCC đang hỗ trợ để lưu` : undefined}
               >
                 {savingConfig ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -923,11 +912,9 @@ export function InvoiceConfigSection({
               </Button>
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <ShieldCheck className="size-3.5" />
-                {readOnlyPreview
-                  ? "Beta — đã khóa lưu, chạy Sandbox."
-                  : vendor.soon
-                    ? `${vendor.label} sắp ra mắt — chọn NCC đang hỗ trợ để lưu cấu hình.`
-                    : "Mật khẩu để trống khi lưu = giữ nguyên khóa cũ."}
+                {vendor.soon
+                  ? `${vendor.label} sắp ra mắt — chọn NCC đang hỗ trợ để lưu cấu hình.`
+                  : "Mật khẩu để trống khi lưu = giữ nguyên khóa cũ."}
               </p>
             </div>
           </div>

@@ -13,9 +13,6 @@
 export const TERMS_VERSION = "2026-09-19";
 export const PRIVACY_VERSION = "2026-10-15";
 
-export const TERMS_URL = "https://hubsell.vn/terms";
-export const PRIVACY_URL = "https://hubsell.vn/privacy";
-
 /** Nguồn đồng ý — phân biệt tick tay với đồng ý ngầm qua nút Google. */
 export type TermsAcceptanceSource =
   | "register_form" // tick ô đồng ý trên form Tạo tài khoản

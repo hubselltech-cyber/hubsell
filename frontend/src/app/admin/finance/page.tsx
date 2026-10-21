@@ -23,11 +23,11 @@ import {
 import { currentMonthPeriod } from "@/lib/accounting-period";
 import type { DateRange } from "@/lib/date-range";
 import { cn } from "@/lib/utils";
-import { FinanceTab } from "../finance-tab";
-import { InputInvoicesSection } from "../input-invoices-section";
-import { LedgerSection } from "../ledger-section";
-import { TaxCalendarSection } from "../tax-calendar-section";
-import { AdminError, AdminPageHeader, useAdminPage } from "../shared";
+import { FinanceTab } from "@/components/admin/finance-tab";
+import { InputInvoicesSection } from "@/components/admin/input-invoices-section";
+import { LedgerSection } from "@/components/admin/ledger-section";
+import { TaxCalendarSection } from "@/components/admin/tax-calendar-section";
+import { AdminError, AdminPageHeader, useAdminPage } from "@/components/admin/shared";
 
 interface FinanceData {
   finance: PlatformFinanceResponse;

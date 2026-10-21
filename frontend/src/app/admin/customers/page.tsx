@@ -42,9 +42,9 @@ import {
 } from "@/lib/api";
 import { formatDateTime, formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CareDialog } from "../care-dialog";
-import { LeadDialog } from "../lead-dialog";
-import { SupportDialog } from "../support-dialog";
+import { CareDialog } from "@/components/admin/care-dialog";
+import { LeadDialog } from "@/components/admin/lead-dialog";
+import { SupportDialog } from "@/components/admin/support-dialog";
 import {
   AdminError,
   AdminPageHeader,
@@ -58,7 +58,7 @@ import {
   formatCount,
   pageCount,
   useAdminPage,
-} from "../shared";
+} from "@/components/admin/shared";
 
 interface CustomersData {
   users: PlatformUsersResponse;

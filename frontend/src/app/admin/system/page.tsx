@@ -32,14 +32,14 @@ import {
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { AuditTab } from "../audit-tab";
+import { AuditTab } from "@/components/admin/audit-tab";
 import {
   AdminError,
   AdminPageHeader,
   formatCount,
   pageCount,
   useAdminPage,
-} from "../shared";
+} from "@/components/admin/shared";
 
 const STATUS_META: Record<
   PlatformWebhookLogRow["status"],

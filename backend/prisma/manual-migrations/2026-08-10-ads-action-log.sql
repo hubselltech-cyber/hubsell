@@ -4,7 +4,7 @@
 -- (autoExecute nằm trong JSONB AdsAssistantConfig.config — không cần ALTER.)
 --
 -- CHẠY TAY TRÊN SUPABASE (SQL Editor) TRƯỚC KHI DEPLOY BACKEND MỚI.
--- Local dev: npx prisma db execute --schema prisma/schema.prisma --file scripts/sql/2026-08-10-ads-action-log.sql
+-- Local dev: npx prisma db execute --schema prisma/schema.prisma --file prisma/manual-migrations/2026-08-10-ads-action-log.sql
 -- Idempotent: IF NOT EXISTS toàn bộ, chạy lặp vô hại.
 -- ============================================================
 

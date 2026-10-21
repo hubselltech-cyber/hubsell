@@ -71,7 +71,7 @@ import {
   formatMoney,
   pageCount,
   useAdminPage,
-} from "../shared";
+} from "@/components/admin/shared";
 
 type SubFilter = "all" | "expiring" | "expired";
 

@@ -71,7 +71,7 @@ import {
   HQ_EXPENSE_CATEGORIES,
   HQ_EXPENSE_CATEGORY_LABEL,
   displayExpenseCategory,
-} from "./hq-expense-categories";
+} from "@/lib/hq-expense-categories";
 import {
   HqInvoiceAutoRetryButton,
   HqInvoiceConfigDialog,

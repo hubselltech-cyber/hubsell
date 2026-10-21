@@ -44,7 +44,7 @@ import {
   X,
 } from "lucide-react";
 
-import { AwaitingSignatureBanner } from "@/components/invoice/awaiting-signature-banner";
+import { AwaitingSignatureBanner } from "@/components/invoicing/awaiting-signature-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

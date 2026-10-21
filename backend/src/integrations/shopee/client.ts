@@ -1912,29 +1912,6 @@ export async function getAdsCampaignDailyPerformance(
   );
 }
 
-/** Hiệu suất THEO GIỜ của từng campaign trong MỘT ngày (quy tắc spike GĐ2). */
-export async function getAdsCampaignHourlyPerformance(
-  params: {
-    accessToken: string;
-    shopId: string;
-    campaignIds: Array<number | string>;
-    performanceDate: string; // "DD-MM-YYYY"
-  },
-  cfg: ShopeeConfig = getShopeeConfig()
-): Promise<ShopeeAdsCampaignPerfData> {
-  return callShopGet<ShopeeAdsCampaignPerfData>(
-    SHOPEE_PATHS.adsCampaignHourlyPerf,
-    params.accessToken,
-    params.shopId,
-    [
-      ["performance_date", params.performanceDate],
-      ["campaign_id_list", params.campaignIds.join(",")],
-    ],
-    "get_product_campaign_hourly_performance",
-    cfg
-  );
-}
-
 export interface ShopeeAdsTotalBalanceData extends ShopeeEnvelope {
   response?: { total_balance?: number; data_timestamp?: number };
 }

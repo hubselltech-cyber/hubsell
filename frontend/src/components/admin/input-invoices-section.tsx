@@ -62,7 +62,7 @@ import {
 import { rangeToQuery, type DateRange } from "@/lib/date-range";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CASH_DEDUCT_LIMIT, HQ_EXPENSE_CATEGORIES, HQ_EXPENSE_CATEGORY_LABEL } from "./hq-expense-categories";
+import { CASH_DEDUCT_LIMIT, HQ_EXPENSE_CATEGORIES, HQ_EXPENSE_CATEGORY_LABEL } from "@/lib/hq-expense-categories";
 import { StatCard, formatCount, formatMoney } from "./shared";
 
 const ACCEPT = ".pdf,.xml,.jpg,.jpeg,.png,.webp";

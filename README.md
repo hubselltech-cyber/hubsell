@@ -53,9 +53,9 @@ Phần dưới đây là lịch sử kỹ thuật của hệ thống, giữ nguy
 | Test | `__tests__/` cạnh thư mục của mã được test (`*.test.ts`; test DB đặt tên `*-db.test.ts`) | cạnh tệp nguồn |
 | Script chạy một lần (backfill, probe, bench) | `backend/scripts/` | `backend/prisma/` (chỉ schema + migrations + seed) |
 | Đổi schema | `backend/prisma/migrations/<YYYYMMDDHHMMSS>_<tên>/migration.sql` + `schema.prisma`; SQL áp tay cũ giữ ở `prisma/manual-migrations/` | ALTER tay không có migration |
-| Trang web mới | `frontend/src/app/<nhóm>/<trang>/page.tsx` | tệp lẻ ngoài `app/` |
+| Trang web mới | `frontend/src/app/<nhóm>/<trang>/page.tsx` | tệp lẻ ngoài `app/`; component/helper của trang đặt ở `components/<nhóm>/`, KHÔNG cạnh `page.tsx` (21/10/2026 đã dời 12 tệp HQ) |
 | Component | theo TÍNH NĂNG `frontend/src/components/<nhóm>/`; dùng chung → `shared/`; mount một lần → `shell/` | trong `app/` |
-| Hàm thuần phía web | `frontend/src/lib/` | trong component |
+| Hàm thuần phía web | `frontend/src/lib/` | trong component; `lib/` KHÔNG import ngược từ `app/` hay `components/` |
 | Tài liệu thiết kế / quyết định | `docs/<CHU-DE>.md` (chữ in hoa, không dấu), chỉ mục ở `docs/README.md`; marketing → `docs/marketing/`, store → `docs/store/` | gốc repo (chỉ README, PROGRESS, TODO) |
 | Công cụ ngoài app (chạy trên máy anh) | `tools/<tên>/` | `docs/` |
 | Việc marketing mới (chiến lược, số liệu khách, nội dung kênh, skill marketing) | `hubsell-marketing/` theo bảng trong `hubsell-marketing/CLAUDE.md` | backend/, frontend/, docs/ |
@@ -65,6 +65,7 @@ hubsell/
 ├── README.md · PROGRESS.md · TODO.md   # Kiến trúc · nhật ký phiên · checklist
 ├── render.yaml · docker-compose.yml     # Render (web + worker SG) · Postgres local tùy chọn
 ├── start-backend.bat · start-frontend.bat · start-https.bat   # Bấm đúp chạy local
+├── .easignore                           # EAS Build đóng gói từ GỐC kho git: chỉ cho hubsell-mobile/ lên máy build Expo
 ├── scripts/                             # gen-certs.sh, dev-https.sh (HTTPS local)
 ├── tools/                               # Công cụ ngoài app: mail-digest/ (tóm tắt thư 07:30), phap-ly/ (sinh hồ sơ PDF)
 ├── docs/                                # 45+ tài liệu — chỉ mục theo chủ đề: docs/README.md
@@ -85,21 +86,21 @@ hubsell/
 │       │   ├── invoicing/{connect,history,tax-settings}
 │       │   ├── settings/{general,plan,tax,other} · affiliate/ · koc-marketing/ (ẩn)
 │       │   └── admin/{customers,finance,health,marketing,plans,system}   # HQ điều hành nền tảng
-│       ├── components/                  # Theo TÍNH NĂNG: ads/ assistant/ auth/ channels/ dashboard/ finance/
-│       │   │                            #   invoice/ invoicing/ koc/ mappings/ operations/ orders/ products/
+│       ├── components/                  # Theo TÍNH NĂNG: admin/ (HQ) ads/ assistant/ auth/ channels/ dashboard/ finance/
+│       │   │                            #   invoicing/ koc/ mappings/ operations/ orders/ products/
 │       │   │                            #   settings/ support/ warehouse/
 │       │   ├── shell/                   # Mount MỘT lần: app-shell, query-provider, command-palette,
 │       │   │                            #   notification-bell, plan-quota-guard (cưỡng chế gói)
 │       │   ├── shared/ · tour/ · data-table/ · ui/ (shadcn)
 │       └── lib/                         # api.ts (gọi API + token), format.ts, excel.ts, permissions.ts,
-│                                        #   guide-tours.ts, query-keys.ts, use-api-query.ts, pnl-mappers.ts, ...
+│                                        #   guide-tours.ts, query-keys.ts, use-api-query.ts, pnl-mappers.ts, hq-expense-categories.ts, ...
 │
 ├── backend/                             # Express + Prisma — Render SG: web (API) + worker (nền)
 │   ├── prisma/
 │   │   ├── schema.prisma · seed.ts
 │   │   ├── migrations/                  # Tự áp khi deploy (migrate deploy)
-│   │   └── manual-migrations/           # SQL áp tay thời kỳ đầu (supabase-schema.sql, ...) — tư liệu
-│   ├── scripts/                         # 65 script một lần: backfill-*, probe-*, bench-*, apply-migration-local
+│   │   └── manual-migrations/           # SQL áp tay (supabase-schema.sql, ads 08/2026, bật RLS 09/2026) — tư liệu
+│   ├── scripts/                         # 44 script chạy tay: seed-*, probe-*, bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
 │   └── src/
 │       ├── index.ts                     # Khởi động theo HUBSELL_ROLE=all|web|worker
 │       ├── app.ts                       # Express app: mount 35 route + middleware gác quyền/gói

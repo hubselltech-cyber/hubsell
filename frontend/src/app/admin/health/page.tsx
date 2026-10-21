@@ -16,7 +16,7 @@ import {
   type PlatformHealthResponse,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { AdminError, AdminPageHeader, StatCard, formatCount, useAdminPage } from "../shared";
+import { AdminError, AdminPageHeader, StatCard, formatCount, useAdminPage } from "@/components/admin/shared";
 
 /**
  * HQ → SỨC KHỎE (docs/HQ-SUC-KHOE.md, 12/09/2026)

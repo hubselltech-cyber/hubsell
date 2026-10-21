@@ -24,7 +24,7 @@ import type { DateRange } from "@/lib/date-range";
 import {
   HQ_EXPENSE_CATEGORY_LABEL,
   displayExpenseCategory,
-} from "@/app/admin/hq-expense-categories";
+} from "@/lib/hq-expense-categories";
 
 // Chuyển "yyyy-...T..." → "hh:mm dd/mm/yyyy" cho dễ đọc trong Excel
 function toDateTimeText(value: string): string {

@@ -5,6 +5,50 @@
 
 ---
 
+## Phiên 21/10/2026 chiều — RÀ DỌN TỔNG THỂ: CODE THỪA + CÂY THƯ MỤC (HQ, LANDING, BACKEND, MOBILE)
+
+- **Anh yêu cầu:** "rà soát để dọn dẹp tổng thể, xóa code thừa và đảm bảo cấu trúc tree chuyên nghiệp" sau mấy hôm dọn HQ + Landing.
+- **Cách rà:** `knip` trên frontend / backend / landing (tệp + export không ai dùng) rồi đối chiếu tay từng ứng viên với mã thật,
+  KỂ CẢ `backend/scripts/` import từ `src/` (knip không coi script là điểm vào — nếu tin knip mù quáng đã xóa nhầm `mapShopeeEscrowToOrder`,
+  `marginGroupOptions`…). Kiểm: tsc frontend/backend/landing xanh, eslint tệp đã sửa xanh, vitest backend: 1.429 test đơn vị xanh; 27 suite đụng DB fail SẴN (DB dev local kẹt migration `20260830120000_fee_audit` ghi failed 17/09 nên `migrate deploy` không áp được cột `historyBackfillAttempts` mới) — lỗi môi trường local, không do dọn, chữa riêng bằng `scripts/apply-migration-local.ts`.
+- **Frontend — xóa:** `settings/invoice-plan-purchase.tsx` + `invoice-quota-monitor.tsx` (mua gói hóa đơn đời cũ, chỉ import lẫn nhau);
+  `ui/select.tsx` (shadcn chưa dùng); `lib/feature-flags.ts` (một cờ `is_tax_module_enabled` luôn true từ 24/08) + prop `readOnlyPreview`
+  + hộp "Beta (Giữ chỗ)" ở trang Kết nối hóa đơn; 5 svg mẫu Next (`next/vercel/globe/file/window.svg`); `public/onboarding/` 13 tệp
+  + 2 script sinh (tour onboarding nay chạy bằng guide-tour-player, không tệp nào tham chiếu); 2 ảnh guide không dùng
+  (`connect-dialog-lazada.png`, `tour/tc-expenses.png`) + dòng chụp trong script; 4 hàm gọi API không ai gọi (`fetchHubsellAdsStatus`,
+  `testEsignConnection`, `testPosConnection`, `saveInvoiceChannelKey`); khối NCC máy tính tiền trong `lib/invoice-vendors.ts`
+  (`POS_VENDORS`… — FE không có tab POS); dữ liệu mồi `MOCK_ALERTS/ACTIVITY/CHAT` + bộ SKU cháy hàng giả trong command-center (đã gỡ UI 09/09
+  mà còn sót dữ liệu).
+- **Frontend — dời cho đúng luật cây (README "Luật đặt tệp"):** 12 helper HQ nằm cạnh `page.tsx` trong `app/admin/` (`shared.tsx`,
+  `ledger-section.tsx`, `hq-invoice.tsx`, `tax-calendar-section.tsx`, 4 dialog, 3 tab, `investor-report.tsx`) → `components/admin/`;
+  `hq-expense-categories.ts` → `lib/` (trước đó `lib/excel.ts` import NGƯỢC từ `app/admin/` — lib không được phụ thuộc app);
+  `components/invoice/` (2 tệp) gộp vào `components/invoicing/` (cùng một tính năng, hai thư mục).
+- **Backend — xóa 27 script một lần đã chạy xong / probe đã đóng** (git giữ lịch sử): backfill-settlement, backfill-starter-subscriptions,
+  fix-delivered-at, fix-reviewer-tiktok-ids, heal-payout-shortfall, mail-app-1-3-1 (đã gửi 133/133), prod-hq-username, prod-platform-admin-check,
+  tiktok-adspend-rebuild-from-perf (đã dựng lại 20/10), cleanup-ops-demo, seed-product-specs, check-local-tables, copilot-test,
+  check-koc-channels.js, check-koc-lazada-data.js, shopee-legacy-auth-link, shopee-sandbox-logistics, shopee-settle-live-probe,
+  3 probe chat Shopee (Chat API hoãn), test-lazada-review, fee-audit-diff-report, misa-get-token / misa-publish-test / misa-adjust-test
+  (đã có lane-probe + route test thay), lazada-payout-probe. Còn 44 script: công cụ chạy lại được (seed, probe còn nhắc trong docs, backfill
+  ledger, shadow-enroll, health-smoke…).
+  `scripts/sql/*.sql` (4 tệp SQL áp tay 08–09/2026) → `prisma/manual-migrations/` theo luật README.
+- **Backend — cắt code chết trong src:** `app131EmailHtml`/`APP_1_3_1_SUBJECT` (chỉ script đã xóa dùng), `getAdsCampaignHourlyPerformance`
+  + path cấu hình (chưa ai gọi), `flushPlatformHttpStats`, `clearInbotTokenCache`, `misaWebhookQueueSize`/`drainMisaWebhookQueueOnce`,
+  `buildReplacedPayload`/`SAMPLE_MISA_PUBLISHED`, `TERMS_URL`/`PRIVACY_URL`.
+  `.env.example` bổ sung ~65 biến mã đang đọc mà tệp mẫu chưa ghi (nhóm theo module, kèm tệp đọc + mặc định).
+- **Mobile:** xóa `LICENSE` (MIT của Expo template — app Hubsell không MIT), `scripts/reset-project.js` + lệnh npm; README mẫu Expo
+  "Welcome to your Expo app" → README Hubsell (cấu trúc src, script store, `.easignore` ở gốc repo).
+- **Landing (repo riêng, commit riêng):** `public/screens/dashboard-7d.webp` + đoạn chụp desktop trong `capture-screens.mjs` (hero đã dùng
+  `tour-ads.webp` từ 15/10); README cập nhật đủ 15 route + domain .vn + mục Triển khai (bản cũ còn "hubsell.tech", "dự kiến", 3 route).
+- **Gốc repo:** xóa `node_modules/` rỗng + `.dev-logs/` (07/2026, đều ngoài git); README cây: thêm `.easignore`, `components/admin/`,
+  luật mới "component/helper của trang đặt ở `components/<nhóm>/`, `lib/` không import ngược từ `app/`".
+- **GIỮ có chủ đích (không phải quên):** KOC (7 trang + 9 component + route) và Chat/Cứu đơn — ẩn theo quyết định anh, mở lại sau;
+  `misa-esign.ts` (chờ anh quyết gói ký nền); `routes/test-misa-sandbox.ts` + `mock/misa/` + `simulate-misa-webhook.ts` (cụm test sandbox
+  có cờ, còn dùng); shim chép localStorage → máy chủ trong `reply-templates.ts` (mới 10/10, chưa tới hạn gỡ);
+  ~300 "unused export" knip báo = chỉ thừa từ khóa `export` trên hằng/kiểu dùng nội bộ, KHÔNG phải code chết — không đụng để tránh churn.
+- **Đề xuất chưa làm, chờ anh chốt:** (1) `PROGRESS.md` 437 KB — tách phiên trước 10/2026 sang `docs/archive/PROGRESS-2026-07-09.md`;
+  (2) README bảng "API hiện có" từ 07/2026 còn ghi "giả lập — cấp API Token ảo", lệch mã thật, nên viết lại theo `app.ts` hoặc bỏ;
+  (3) `docs/store/` có 3 script dựng ảnh (`render.mjs`, `check-lengths.py`, `finish.py`) — luật nói công cụ để `tools/`, đang để cạnh tư liệu store.
+
 ## Phiên 21/10/2026 trưa — SỬA GỐC OOM WORKER: ĐỐI SOÁT TIKTOK GHI THEO LÔ + ĐẾM LẦN SẬP LƯỢT NẠP LỊCH SỬ
 
 - **Anh chốt:** "Cần sửa gốc sập"; anh tự nâng gói Render để chặn ngay (worker Starter 512 MB → Standard 2 GB: đặt thêm env
@@ -62,6 +106,8 @@
   Scale 13.810/20.000 (69 %). Gói ENTERPRISE_TRIAL anh vừa tạo đang hiện trần ∞/∞/∞ (chưa điền 40/100.000/40).
 - **Anh: Đổi gói không chọn được gói "không bán".** Hộp Đổi gói lọc `isActive` ở FE (backend vốn nhận mọi gói) → sửa cùng tệp: liệt kê
   cả gói nháp/ngừng bán, gói đang bán lên trước, gói riêng ghi "(gói riêng, không bày bán)". tsc + eslint sạch, chưa thử local.
+- **`e83a5ded` anh push lên master, Vercel LIVE — em kiểm prod:** gõ `vutientu91` không Enter tự lọc còn 1 dòng; hộp Đổi gói liệt kê
+  "Enterprise dùng thử — không giới hạn đơn (gói riêng, không bày bán)". Em chọn sẵn gói đó nhưng bấm lưu bị bộ lọc quyền chặn → anh bấm.
 
 ## Phiên 20/10/2026 chiều — VIDEO HƯỚNG DẪN TRỢ LÝ QUẢNG CÁO SHOPEE (ANH TỰ QUAY)
 

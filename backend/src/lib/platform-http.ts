@@ -170,8 +170,3 @@ export async function platformFetch(
     throw err;
   }
 }
-
-/** Cho test: in + xóa số đo ngay, không chờ nhịp. */
-export function flushPlatformHttpStats(): void {
-  flush();
-}

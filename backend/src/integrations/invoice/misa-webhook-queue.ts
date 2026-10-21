@@ -167,20 +167,3 @@ async function drain(): Promise<void> {
     draining = false;
   }
 }
-
-/** Cho test/giám sát: số job đang chờ xử lý trong hàng đợi bền. */
-export async function misaWebhookQueueSize(): Promise<number> {
-  return prisma.misaWebhookLog.count({
-    where: {
-      status: { in: [WebhookJobStatus.PENDING, WebhookJobStatus.PROCESSING] },
-    },
-  });
-}
-
-/**
- * Cho integration test: chạy MỘT lượt drain và đợi nó xong (worker thật chạy
- * nền qua timer nên test không await được). Không dùng trong luồng chạy thật.
- */
-export async function drainMisaWebhookQueueOnce(): Promise<void> {
-  await drain();
-}

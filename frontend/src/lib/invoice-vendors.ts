@@ -295,74 +295,6 @@ export function vendorMeta(v: string): InvoiceVendorMeta {
   return INVOICE_VENDORS.find((x) => x.value === v) ?? INVOICE_VENDORS[0];
 }
 
-// ============================================================
-// NCC LUỒNG MÁY TÍNH TIỀN (tab POS) — danh mục RIÊNG với luồng kê khai:
-// không có CUSTOM (máy tính tiền phải là NCC được CQT công nhận), và key
-// trường map vào cặp cột posClientId/posSecretKey của InvoiceConfig.
-// ============================================================
-
-export interface PosVendorCredentialField {
-  key: "posClientId" | "posSecretKey";
-  label: string;
-  placeholder?: string;
-  /** true = ô password + luồng che/giữ-nguyên-khi-trống. */
-  secret?: boolean;
-}
-
-export interface PosVendorMeta {
-  value: Exclude<InvoiceVendor, "CUSTOM">;
-  label: string;
-  soon?: boolean;
-  credentialFields: PosVendorCredentialField[];
-}
-
-export const POS_VENDORS: PosVendorMeta[] = [
-  {
-    value: "MISA",
-    label: "MISA meInvoice POS",
-    credentialFields: [
-      { key: "posClientId", label: "POS Client ID", placeholder: "Client ID luồng POS do MISA cấp" },
-      { key: "posSecretKey", label: "POS Secret Key", secret: true },
-    ],
-  },
-  {
-    value: "VIETTEL",
-    label: "Viettel SInvoice POS",
-    soon: true,
-    credentialFields: [
-      { key: "posClientId", label: "Tài khoản API (Username)", placeholder: "Username SInvoice cấp" },
-      { key: "posSecretKey", label: "Mật khẩu API (Password)", secret: true },
-    ],
-  },
-  {
-    value: "VNPT",
-    label: "VNPT Invoice POS",
-    soon: true,
-    credentialFields: [
-      { key: "posClientId", label: "Tài khoản dịch vụ (Account)", placeholder: "Account VNPT cấp" },
-      { key: "posSecretKey", label: "Mật khẩu dịch vụ (ACPass)", secret: true },
-    ],
-  },
-  {
-    value: "BKAV",
-    label: "Bkav eHoadon POS",
-    soon: true,
-    credentialFields: [
-      { key: "posClientId", label: "Partner GUID", placeholder: "GUID Bkav cấp" },
-      { key: "posSecretKey", label: "Partner Token", secret: true },
-    ],
-  },
-];
-
-/** Meta NCC POS đang chọn — fallback MISA khi giá trị lạ. */
-export function posVendorMeta(v: string): PosVendorMeta {
-  return POS_VENDORS.find((x) => x.value === v) ?? POS_VENDORS[0];
-}
-
-export function isCustomVendor(v: string): boolean {
-  return INVOICE_VENDORS.find((x) => x.value === v)?.custom === true;
-}
-
 /**
  * Mã đối tác ISV của Hubsell với nhà cung cấp hóa đơn — CỐ ĐỊNH, không cho shop
  * sửa. Nhờ mã này mà mọi hóa đơn phát hành qua Hubsell được NCC ghi nhận thuộc
@@ -371,9 +303,6 @@ export function isCustomVendor(v: string): boolean {
  * NCC ghi nhận nguồn giới thiệu.
  */
 export const HUBSELL_PARTNER_CODE = "HUBSELL-ISV-2026";
-
-/** Phương thức ký số (giá trị lưu DB — backend validate đúng 3 giá trị này). Nhãn/giải thích theo NCC: xem MISA_SIGN_METHODS. */
-export const SIGN_METHODS = MISA_SIGN_METHODS;
 
 /** Phương thức ký mặc định cho shop mới (đa số mua meInvoice kèm eSign). */
 export const DEFAULT_SIGN_METHOD = "ESIGN_CLOUD";
@@ -388,14 +317,8 @@ export const DEFAULT_SIGN_METHOD = "ESIGN_CLOUD";
 /** MST: 10 số (DN), 12 số (hộ kinh doanh/cá nhân), hoặc 13 số / 10-3 số (đơn vị phụ thuộc). */
 export const TAX_CODE_RE = /^\d{10}(-?\d{3})?$|^\d{12}$/;
 
-/** MẪU SỐ = ký tự đầu ký hiệu: 1 GTGT · 2 bán hàng · 5 vé điện tử · 6 phiếu xuất kho. */
-export const INVOICE_PATTERN_RE = /^[1256]$/;
-
 /** KÝ HIỆU KÊ KHAI (7 ký tự): VD 1C26TAA — ký tự thứ 5 là T (hóa đơn thường). */
 export const INVOICE_SERIES_RE = /^[1256][CK]\d{2}T[A-Z0-9]{2}$/;
-
-/** KÝ HIỆU MÁY TÍNH TIỀN (7 ký tự): ký tự thứ 5 BẮT BUỘC là M, VD 1C26MAA. */
-export const POS_SERIES_RE = /^[1256][CK]\d{2}M[A-Z0-9]{2}$/;
 
 /** Thông điệp lỗi định dạng — dùng chung cho validate inline trên UI. */
 export const INVOICE_FIELD_HINTS = {

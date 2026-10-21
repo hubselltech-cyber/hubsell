@@ -148,7 +148,6 @@ const pctOf = (b) => ({
     const addExp = page.getByRole("button", { name: "Thêm chi phí" });
     await T("btnAddExpense", () => pct(addExp));
     await T("expenseTable", () => pct(page.locator("table").first()));
-    await shot("tc-expenses.png");
     await addExp.click();
     await page.getByRole("dialog").waitFor({ timeout: 10000 });
     await page.waitForTimeout(700);

@@ -169,37 +169,6 @@ export async function sendConnectReminderMail(to: string, input: { fullName: str
   });
 }
 
-// ---------------- 1c. Báo app điện thoại 1.3.1 (gửi MỘT lần) ----------------
-// Anh Trung chốt 18/10/2026: khách hiện tại được báo bằng MỘT email khi bản có
-// đăng nhập Google/Apple lên cả hai kho (docs/DANG-NHAP-GOOGLE-APPLE-TRONG-APP.md
-// mục 10). 1.3.1 lên App Store + Google Play 20/10. Chỉ gửi qua script tay
-// scripts/mail-app-1-3-1.ts (xem trước mặc định, anh duyệt rồi mới --apply).
-
-export const APP_1_3_1_SUBJECT = "Hubsell — App điện thoại đã đăng nhập được bằng Google";
-
-const APP_STORE_URL = "https://apps.apple.com/vn/app/id6819512670";
-const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=vn.hubsell.app";
-
-export function app131EmailHtml(input: { fullName: string }): string {
-  const link = (href: string, label: string) =>
-    `<a href="${href}" style="color:#18181b;font-weight:600">${label}</a>`;
-  return shell({
-    heading: "App Hubsell trên điện thoại đã có bản mới",
-    bodyHtml: [
-      p(`Xin chào ${escapeHtml(input.fullName)},`),
-      p(
-        "Bản mới của app Hubsell đã có trên App Store và Google Play. Bạn mở app, bấm biểu tượng <b>Google</b> dưới nút Đăng nhập là vào thẳng tài khoản đang dùng, không cần đặt mật khẩu. iPhone có thêm nút <b>Apple</b>."
-      ),
-      p("Đăng nhập bằng email và mật khẩu vẫn dùng được như cũ."),
-      p(
-        `Máy thường tự cập nhật trong vòng một ngày. Muốn có ngay thì mở ${link(APP_STORE_URL, "App Store")} hoặc ${link(PLAY_STORE_URL, "Google Play")}, tìm Hubsell và bấm Cập nhật.`
-      ),
-    ].join("\n"),
-    cta: { label: "Tải app Hubsell", url: "https://hubsell.vn/tai-app" },
-    footnote: "Vướng ở bước nào, cứ trả lời thẳng email này. Hubsell đọc và trả lời từng thư.",
-  });
-}
-
 // ---------------- 2. Mật khẩu vừa được đổi ----------------
 
 export function passwordChangedEmailHtml(input: { fullName: string; changedAt: Date }): string {

@@ -16,7 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { AwaitingSignatureBanner } from "@/components/invoice/awaiting-signature-banner";
+import { AwaitingSignatureBanner } from "@/components/invoicing/awaiting-signature-banner";
 import { TaxDeclarationCard } from "@/components/invoicing/tax-declaration-card";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/shared/date-range-picker";

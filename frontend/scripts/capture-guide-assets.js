@@ -98,14 +98,9 @@ const channels = [
   await page.waitForTimeout(600);
   await page.screenshot({ path: path.join(OUT, "connect-dialog-shopee.png") });
 
-  // 4) Chuyển sang Lazada — hiện ô "Code uỷ quyền"
-  await page.selectOption("#channel-select", "LAZADA");
-  await page.getByText("Code uỷ quyền").waitFor();
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(OUT, "connect-dialog-lazada.png") });
 
   await browser.close();
-  console.log("DONE: 4 anh da luu vao", OUT);
+  console.log("DONE: 3 anh da luu vao", OUT);
 })().catch((e) => {
   console.error("FAIL:", e.message);
   process.exit(1);

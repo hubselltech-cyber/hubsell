@@ -104,7 +104,6 @@ export const SHOPEE_PATHS = {
   /** Hiệu suất THEO NGÀY của từng campaign (lô ≤100 id, direct/broad GMV-ROI). */
   adsCampaignDailyPerf: "/api/v2/ads/get_product_campaign_daily_performance",
   /** Hiệu suất THEO GIỜ của từng campaign trong MỘT ngày (cho quy tắc spike GĐ2). */
-  adsCampaignHourlyPerf: "/api/v2/ads/get_product_campaign_hourly_performance",
   /** Số dư ví quảng cáo real-time. */
   adsTotalBalance: "/api/v2/ads/get_total_balance",
   /** ĐỢT B (24/09) — cờ cấp shop: auto_top_up (ví tự nạp) + campaign_surge. 1 call/gian/xung. */

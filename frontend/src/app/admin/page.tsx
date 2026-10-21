@@ -30,7 +30,7 @@ import {
   type PlatformStats,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { InvestorReport } from "./investor-report";
+import { InvestorReport } from "@/components/admin/investor-report";
 import {
   AdminError,
   AdminPageHeader,
@@ -39,7 +39,7 @@ import {
   formatCount,
   formatMoney,
   useAdminPage,
-} from "./shared";
+} from "@/components/admin/shared";
 
 interface DashboardData {
   overview: PlatformOverviewResponse;

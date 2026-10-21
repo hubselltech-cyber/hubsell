@@ -3,7 +3,7 @@
 -- Bảng chiến dịch quảng cáo + hiệu suất theo ngày (sync READ-ONLY từ Ads API).
 --
 -- CHẠY TAY TRÊN SUPABASE (SQL Editor) TRƯỚC KHI DEPLOY BACKEND MỚI.
--- Local dev chạy qua: npx prisma db execute --file scripts/sql/2026-08-10-ads-campaign.sql
+-- Local dev chạy qua: npx prisma db execute --file prisma/manual-migrations/2026-08-10-ads-campaign.sql
 -- Idempotent: IF NOT EXISTS toàn bộ, chạy lặp vô hại.
 -- ============================================================
 

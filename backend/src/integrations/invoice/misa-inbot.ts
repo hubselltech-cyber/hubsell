@@ -271,10 +271,6 @@ export async function getInbotAccessToken(): Promise<string> {
   return token;
 }
 
-export function clearInbotTokenCache(): void {
-  cachedInbot = null;
-}
-
 // ---------- API nghiệp vụ ----------
 
 /** GET một path TUYỆT ĐỐI dưới /meinvoicebot/v1 (đã kèm Bearer + ClientID). */
