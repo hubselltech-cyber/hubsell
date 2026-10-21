@@ -277,3 +277,7 @@ Dựng DB mới: tạo database trống → `DATABASE_URL=... npx prisma migrate
 default updatedAt vài bảng tiktok_ads_*) và một mục giả: index productId trên bảng phân mảnh
 Prisma không nhìn thấy (relkind I) dù đã có. Lưu ý Prisma không soi được trigger/function/phân
 mảnh — `db push` KHÔNG thay được migration cho sổ order_ledger.
+
+Test trên DB trống (21/10 khuya): 7 file đối soát sổ cái tự dựng bộ đơn mẫu (`__tests__/parity-seed.ts`,
+chủ shop `test-parity-seed@hubsell.test`, không dọn) khi DB chưa có đơn Shopee/Lazada 30 ngày; env Shopee
+thiếu thì `load-env.ts` đặt giá trị giả. Kết quả chuẩn: 0 đỏ, 3 bỏ qua (cứu đơn đang ẩn tính năng).

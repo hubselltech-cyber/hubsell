@@ -16,3 +16,9 @@ if (fs.existsSync(envPath)) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
 }
+
+// Máy không có .env Shopee (CI, máy mới): các test mock tầng gọi sàn nhưng
+// isShopeeConfigured()/getShopeeConfig() vẫn đòi đủ 2 biến → đặt giá trị giả.
+// .env thật (DB dev) có sẵn thì giữ nguyên (??=).
+process.env.SHOPEE_PARTNER_ID ??= "1234567";
+process.env.SHOPEE_PARTNER_KEY ??= "test-partner-key";

@@ -5,6 +5,25 @@
 
 ---
 
+## Phiên 21/10/2026 khuya — SỬA HẾT 20 CA TEST ĐỎ CÒN LẠI TRÊN DB TRỐNG (anh chốt "phần nào fail sửa luôn một lượt")
+
+- **Bộ đơn mẫu dùng chung `__tests__/parity-seed.ts`:** 7 file đối soát sổ cái = đơn gốc (ads-margin-sql-db, ads-rows-ledger-db,
+  cash-flow / finance-views / overview / realized-pnl / tax-ledger-db) so trên MỌI chủ shop và đòi "DB dev phải có gian Shopee/Lazada có đơn
+  30 ngày" → DB mới dựng từ migration trống là đỏ. Nay `ensureParityDataset()` (gọi trong khối `ledgerReady` của 7 file): DB chưa có đơn
+  Shopee/Lazada 30 ngày thì dựng MỘT chủ shop cố định `test-parity-seed@hubsell.test` — gian Shopee + Lazada, 10 sản phẩm kho nối SKU sàn,
+  25 đơn trải hôm nay → 400 ngày (7/30/60 ngày, quý trước, năm trước), nhiều dòng, đủ trạng thái (giao, đang giao, xử lý, hủy), đã/chưa
+  đối soát với phí + thuế khấu trừ, voucher shop, hoàn một phần nhập kho nguyên vẹn, bán lỗ, quà giá 0, thiếu giá vốn, phí ship chênh,
+  AdSpend 5 ngày; dựng xong `ensureLedgerFresh` phải sạch. Idempotent theo email, KHÔNG dọn (là dữ liệu dev của DB trống); DB dev thật có
+  đơn thì không đụng. Dựng lỗi thì ném ra cho file đỏ, không im lặng bỏ qua.
+- **Env Shopee giả trong `load-env.ts`** (`SHOPEE_PARTNER_ID ??= "1234567"`, `SHOPEE_PARTNER_KEY ??= "test-partner-key"`): hubsell-ads,
+  inventory-idempotency, shopee-auth-expiry-db mock tầng gọi sàn nhưng `isShopeeConfigured()` vẫn đòi đủ 2 biến; .env thật giữ nguyên.
+- **delivery-fail-park-db:** `describe.skipIf(!DELIVERY_FAIL_FEATURE)` — cứu đơn đang ẨN (cờ false từ 12/10), hàm tắt sớm trước khi
+  phát vé nên 3 ca không thể xanh (đỏ y hệt trên DB dev `db push`); bật lại cờ là test tự chạy lại. Không phải lỗi code.
+- **Kết quả trên Postgres 16 tạm, DB dựng từ migration:** trọn bộ `vitest run` **0 đỏ / 1.789 xanh / 3 bỏ qua** (681 file). Dựng lại DB
+  trống rồi chạy riêng 7 file đối soát: seed từ đầu, 20/20 xanh. `tsc --noEmit` sạch. Chưa chạy trên DB dev thật của anh (seed sẽ không
+  dựng vì đã có đơn; env thật không bị ghi đè).
+- **Mốc:** DB trống → `migrate deploy` → `npm test` xanh toàn bộ, không cần dữ liệu hay .env sàn — dùng được cho CI/máy mới.
+
 ## Phiên 21/10/2026 tối — MIGRATION BÙ: DỰNG ĐƯỢC DB TRỐNG TỪ MIGRATION (anh chốt "làm luôn cho xong")
 
 - **Rà bằng script** (so cột/enum/index trong schema.prisma với toàn bộ 177 file migration): thiếu KHÔNG chỉ nhóm Ads — 5 bảng Ads,

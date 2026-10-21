@@ -20,11 +20,14 @@ vi.mock("../shopee/client", async (importOriginal) => {
 
 import { prisma } from "../../lib/prisma";
 import { getTrackingInfo } from "../shopee/client";
-import { DETECT_SETTLED_PARK_MS, processShopeeDeliveryTracking } from "../shopee/delivery-fail";
+import { DELIVERY_FAIL_FEATURE, DETECT_SETTLED_PARK_MS, processShopeeDeliveryTracking } from "../shopee/delivery-fail";
 
 const tracking = vi.mocked(getTrackingInfo);
 
-describe("processShopeeDeliveryTracking — vé 'đã giao' đỗ lại thay vì xóa-tạo lặp", () => {
+// Cứu đơn đang ẨN (DELIVERY_FAIL_FEATURE=false từ 12/10/2026): hàm tắt sớm trước khi phát vé
+// nên 3 ca dưới không thể xanh — bỏ qua tới khi bật lại cờ, không phải lỗi.
+if (!DELIVERY_FAIL_FEATURE) console.log("[delivery-fail-park-db.test] BỎ QUA: DELIVERY_FAIL_FEATURE đang tắt");
+describe.skipIf(!DELIVERY_FAIL_FEATURE)("processShopeeDeliveryTracking — vé 'đã giao' đỗ lại thay vì xóa-tạo lặp", () => {
   const stamp = Date.now();
   let userId: string;
   let channelId: string;
