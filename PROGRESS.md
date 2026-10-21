@@ -5,6 +5,26 @@
 
 ---
 
+## Phiên 21/10/2026 tối — HQ VẪN ĐỎ "MỐC NƯỚC 824' BELLA LOOK" SAU KHI NÂNG GÓI WORKER
+
+- **Anh (ảnh HQ):** đã xử lý + nâng gói worker lên M2 mà "Mốc nước quét đơn" vẫn Nguy hiểm: 128/128 gian có mốc, trễ nhất 824'
+  (TIKTOK · Bella Look), 0 vét dở, 1 gian quá 90'.
+- **Chẩn đoán (đọc mã, không có SQL prod):** nâng gói không liên quan. Mốc nước Bella Look đứng yên vì (1) gian đang `historyBackfillPending`
+  (bật lại sau deploy để kéo trọn 90 ngày, như em đề xuất trưa) → `runFastTier` lượt backfill `plan = null`, KHÔNG tính/ghi mốc nước dù
+  đơn vẫn về — HQ đếm gian này như gian thường → đỏ oan, y hệt vụ gian ngủ đông 16/10; (2) mốc chỉ ghi ở câu lịch `finally` SAU tầng
+  giờ → đêm qua gian chết giữa đối soát 8 lần nên tầng đơn xong mà mốc không bao giờ ghi. 824' ≈ từ lượt thường cuối ngay sau khi anh
+  hạ cờ 09:10 (~09:16) tới lúc chụp — khớp.
+- **Sửa (không migration):** `services/platform-health.ts`: `WatermarkHealth.backfilling` đếm riêng, loại khỏi gian trễ, in "· N đang nạp
+  lịch sử (không tính)"; `WatermarkHealth.worst` + `watermarkWorstHint()` đọc bookkeeping gian trễ nhất và viết thẳng vì sao (lỗi đơn n
+  lần / đơn OK mà mốc không ghi = lượt bị cắt sau tầng đơn / cầm khóa / quá hạn chưa nhặt / bậc giãn nhịp) thay câu chung chung "xem
+  lastSyncError". `workers/order-auto-sync.ts`: ghi mốc nước NGAY cùng câu bookkeeping sau tầng đơn (câu lịch cuối lượt ghi lại cùng giá
+  trị). FE kiểu + thẻ Worker ", N nạp lịch sử". Docs HQ-SUC-KHOE + DONG-BO-GIAI-DOAN-3 mục 2.9.
+- **Kiểm:** backend `tsc --noEmit` sạch; vitest `platform-health-watermark` (+7 ca) + `order-watermark` 36/36 xanh; frontend tsc + eslint
+  (xem cuối phiên). Chưa chạy với DB (phiên cloud không có Postgres) — câu SQL mới chỉ thêm 2 FILTER + 5 cột sẵn có trên Channel.
+- **Anh kiểm sau deploy:** HQ phải hiện "1 đang nạp lịch sử (không tính)" và Bella Look rời khỏi "trễ nhất"; khi worker log
+  `đã kéo trọn 90 ngày đơn + đối soát, hạ cờ backfill` (hoặc HẠ CỜ sau 3 lần sập) thì gian về phép đếm thường, mốc tiến ngay lượt kế.
+  Nếu HQ vẫn đỏ với hint "lượt ĐƠN LỖI …" thì là token/sàn, không phải worker — hint sẽ in nguyên lỗi.
+
 ## Phiên 21/10/2026 trưa — SỬA GỐC OOM WORKER: ĐỐI SOÁT TIKTOK GHI THEO LÔ + ĐẾM LẦN SẬP LƯỢT NẠP LỊCH SỬ
 
 - **Anh chốt:** "Cần sửa gốc sập"; anh tự nâng gói Render để chặn ngay (worker Starter 512 MB → Standard 2 GB: đặt thêm env

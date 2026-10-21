@@ -191,7 +191,7 @@ export default function AdminHealthPage() {
                 value={m.worker.overdueFast15 === 0 ? "Đúng nhịp" : `${m.worker.overdueFast15} gian trễ`}
                 hint={`${
                   m.worker.watermark
-                    ? `mốc nước ${m.worker.watermark.withMark}/${m.worker.watermark.channels} gian${m.worker.watermark.maxLagMin != null ? `, trễ nhất ${m.worker.watermark.maxLagMin}'` : ""}${m.worker.watermark.catchingUp ? `, ${m.worker.watermark.catchingUp} vét dở` : ""}${m.worker.watermark.hibernated ? `, ${m.worker.watermark.hibernated} ngủ đông` : ""} · `
+                    ? `mốc nước ${m.worker.watermark.withMark}/${m.worker.watermark.channels} gian${m.worker.watermark.maxLagMin != null ? `, trễ nhất ${m.worker.watermark.maxLagMin}'` : ""}${m.worker.watermark.catchingUp ? `, ${m.worker.watermark.catchingUp} vét dở` : ""}${m.worker.watermark.backfilling ? `, ${m.worker.watermark.backfilling} nạp lịch sử` : ""}${m.worker.watermark.hibernated ? `, ${m.worker.watermark.hibernated} ngủ đông` : ""} · `
                     : ""
                 }${m.growth.channelsAds} gian chạy ads${m.worker.adsBackingOff ? ` · ${m.worker.adsBackingOff} gian đang lùi 429` : ""} · webhook chờ ${m.worker.webhookPending}${m.worker.breakersPaused.length ? " · CẦU DAO ĐÓNG" : ""}`}
               />

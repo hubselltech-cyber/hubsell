@@ -150,6 +150,22 @@ Luật 2.2 "đọc MỚI NHẤT TRƯỚC, cắt thì mốc vét = cũ nhất đ�
 
 **Kiểm sau deploy:** log worker `8686` / `KTNstore`: lượt đầu `CHƯA ĐỦ … đã đọc trọn tới …` + `lượt bị cắt, đã đọc trọn … mốc nước = …` (mốc nhảy ~40 giờ), lượt sau mốc = now0; HQ "Mốc nước quét đơn" xanh trong ≤ 3 lượt (~30'); không có dòng `KHÔNG tăng dần dù xin sort ASC`. SQL: `SELECT "shopName", now() - "ordersWatermarkAt" FROM "Channel" WHERE "channelName"='TIKTOK' AND "ordersWatermarkAt" < now() - interval '90 minutes';` → 0 dòng (trừ gian ngủ đông / mới nối).
 
+### 2.9. Sửa 21/10/2026 — HQ đỏ "824' (TIKTOK · Bella Look)" sau khi đã nâng gói worker: mốc đứng yên vì gian đang nạp lịch sử
+
+**Hiện tượng:** anh Trung đã nâng gói worker (M2) + em đã đẩy sửa gốc OOM (`e6eefa9`) mà HQ vẫn đỏ "128/128 gian có mốc · trễ nhất 824' (TIKTOK · Bella Look) · 0 đang vét dở · 1 gian quá 90'", hint chung chung "lỗi token / sàn / worker quá tải".
+
+**Cơ chế (đọc mã, chưa có SQL prod):** hai chỗ làm mốc nước ĐỨNG YÊN dù đơn vẫn về, HQ không phân biệt được:
+1. `runFastTier`: lượt **backfill** (`historyBackfillPending`) đọc 90 ngày theo create_time, `plan = null` → không tính / không ghi mốc nước. Bella Look bật lại cờ sau deploy (đề xuất ở PROGRESS phiên trưa) → mỗi lượt là lượt backfill, mốc giữ nguyên từ lượt thường cuối (~09:16, ngay sau khi hạ cờ 09:10). Giống hệt gian ngủ đông hôm 16/10 — cùng một lỗi đếm.
+2. Mốc nước chỉ ghi ở câu UPDATE lịch trong `finally` của `processChannel`, SAU tầng giờ (đối soát). Gian chết giữa tầng giờ (OOM 8 lần/đêm 20–21/10) → tầng đơn xong, `lastSyncAt` tươi, nhưng mốc không bao giờ ghi.
+
+**Sửa (không migration):**
+- `services/platform-health.ts`: `WatermarkHealth.backfilling` — gian thức đang `historyBackfillPending` đếm riêng, LOẠI khỏi x/y, gian trễ, tuổi mốc (như `hibernated`); dấu hiệu in "· N đang nạp lịch sử (không tính)". `WatermarkHealth.worst` — bookkeeping của gian trễ nhất (`lastSyncAt`, `lastSyncError`, `syncFailCount`, `syncLockedAt`, `nextFastSyncAt`, mốc vét) → `watermarkWorstHint()` viết thẳng hướng xem thay câu chung chung (bảng ở docs/HQ-SUC-KHOE.md).
+- `workers/order-auto-sync.ts` `runFastTier`: ghi mốc nước NGAY trong câu bookkeeping sau tầng đơn (cùng `lastSyncAt`); câu lịch cuối lượt vẫn ghi lại cùng giá trị (idempotent, có log khi hỏng).
+- FE: kiểu `watermark.backfilling / worst`, thẻ Worker thêm ", N nạp lịch sử".
+- Test `platform-health-watermark.test.ts` +7 ca (backfilling không làm đỏ; hint theo từng tình huống; cắt lỗi dài).
+
+**Kiểm sau deploy:** HQ "Mốc nước quét đơn": Bella Look còn cờ backfill → biến khỏi "trễ nhất", in "1 đang nạp lịch sử (không tính)", dấu hiệu xanh nếu các gian khác tươi. Khi backfill xong (log `đã kéo trọn 90 ngày đơn + đối soát, hạ cờ backfill`) hoặc hạ cờ sau 3 lần sập, gian về phép đếm thường và mốc tiến ngay lượt kế (ghi sau tầng đơn, không đợi đối soát). SQL đối chiếu: `SELECT "shopName","historyBackfillPending","historyBackfillAttempts",now()-"ordersWatermarkAt" AS lag,now()-"lastSyncAt" AS since_ok,"lastSyncError","syncLockedAt" FROM "Channel" WHERE "shopName" ILIKE '%bella%';`
+
 ## 3. Lát 3.6 — chỉ số HQ + hàng rào (15/10/2026, anh Trung chốt làm trước 3.3)
 
 ### 3.1. Vì sao trước 3.3

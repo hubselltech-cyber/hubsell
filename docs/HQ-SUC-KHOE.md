@@ -50,6 +50,17 @@ nâng cấp gói CPU."* Lý do: *"làm sao tự nhiên anh nhớ được việc
   **Gian ngủ đông** (`hibernatedAt` khác NULL, `GOI-NGU-DONG-GIAN-HET-HAN.md`) bị worker bỏ qua nên mốc
   đứng yên: từ 16/10/2026 KHÔNG tính vào x/y lẫn gian trễ, chỉ in "· N ngủ đông (không tính)" (hôm 16/10
   4 gian dùng thử ngủ đông đúng luật làm HQ báo vàng "RUXI 233'").
+  **Gian đang nạp lịch sử** (`historyBackfillPending`, gian vừa nối hoặc bật lại cờ để kéo trọn 90 ngày) cũng
+  đứng mốc: lượt backfill đọc trục create_time, worker không tính cửa sổ mốc nước (`runFastTier` plan = null)
+  dù đơn vẫn về → từ 21/10/2026 KHÔNG tính trễ, in "· N đang nạp lịch sử (không tính)" (hôm 21/10 Bella Look
+  bật lại cờ sau deploy sửa OOM → HQ đỏ "824'" oan, anh Trung tưởng nâng gói worker chưa đủ).
+  **Hint gian trễ nhất** (21/10/2026): backend đọc thêm `lastSyncAt / lastSyncError / syncFailCount /
+  syncLockedAt / nextFastSyncAt` của đúng gian đó (`WatermarkHealth.worst`) và viết thẳng vì sao — "lượt ĐƠN LỖI
+  n lần: …" (token / sàn), "đơn vừa OK mà mốc không ghi" (lượt bị cắt sau tầng đơn: tiến trình chết / OOM),
+  "đang cầm khóa x'" (vé mồ côi khi ≥ 15'), "quá hạn quét x' chưa được nhặt" (worker quá tải), còn lại "bậc
+  giãn nhịp / vừa nối". Không còn phải mở SQL để biết hướng xem. Cùng ngày worker ghi mốc nước NGAY sau tầng
+  đơn (cùng câu bookkeeping `lastSyncAt`) thay vì chỉ ở câu lịch cuối lượt — gian chết giữa tầng giờ không còn
+  kéo mốc đứng yên.
 
 ### 2.3 Hạ tầng (INFRA)
 - DB: `pg_database_size` (MB), 5 bảng lớn nhất, số kết nối đang mở / `max_connections`.

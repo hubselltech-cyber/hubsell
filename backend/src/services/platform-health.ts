@@ -108,6 +108,13 @@ export interface WatermarkHealth {
   channels: number;
   /** Gian ngủ đông (hết gói quá ân hạn) — worker bỏ qua, mốc đứng yên, không tính trễ. Vắng ở ảnh chụp trước 16/10/2026. */
   hibernated?: number;
+  /**
+   * Gian đang NẠP LỊCH SỬ (historyBackfillPending): lượt backfill đọc trục create_time
+   * 90 ngày, KHÔNG tính cửa sổ mốc nước nên mốc đứng yên dù đơn vẫn về — không tính
+   * trễ, chỉ nêu số (21/10/2026: Bella Look bật lại cờ sau deploy → HQ đỏ "824'" oan).
+   * Vắng ở ảnh chụp cũ.
+   */
+  backfilling?: number;
   /** Gian đã có mốc (lượt quét đầu sau deploy / sau khi nối mới đặt mốc). */
   withMark: number;
   /** Gian đang vét dở vì lượt trước bị cắt (ordersCatchupBeforeAt khác NULL). */
@@ -118,6 +125,23 @@ export interface WatermarkHealth {
   /** Tuổi mốc lớn nhất (phút) + gian đó. null = chưa gian nào có mốc. */
   maxLagMin: number | null;
   maxLagShop: string | null;
+  /** Chẩn đoán gian trễ nhất — để HQ đọc là biết vì sao, khỏi mở SQL (21/10/2026). Vắng ở ảnh chụp cũ. */
+  worst?: WatermarkWorstShop | null;
+}
+
+/** Các cột bookkeeping của gian có mốc cũ nhất (Channel) — nguồn để viết hint. */
+export interface WatermarkWorstShop {
+  shop: string;
+  lagMin: number;
+  /** Lượt ĐƠN gần nhất kết thúc OK (worker ghi ngay sau tầng đơn) — phút trước; null = chưa có. */
+  lastSyncAgoMin: number | null;
+  lastSyncError: string | null;
+  syncFailCount: number;
+  /** Đang cầm khóa quét bao nhiêu phút; null = không cầm. */
+  lockedMin: number | null;
+  /** Hạn quét nhanh kế tiếp còn bao nhiêu phút (âm = đã quá hạn, worker chưa nhặt); null = chưa đặt. */
+  nextFastInMin: number | null;
+  catchingUp: boolean;
 }
 
 export interface WorkerLayer {
@@ -268,37 +292,86 @@ export async function collectGrowth(): Promise<GrowthLayer> {
  * Gian NGỦ ĐÔNG (hibernatedAt khác NULL — chủ hết gói quá ân hạn, plan-hibernation.ts)
  * bị worker bỏ qua nên mốc đứng yên mãi: KHÔNG tính vào gian trễ (16/10/2026 HQ báo
  * vàng oan "RUXI 233'" đúng ngày 4 gian dùng thử ngủ đông), chỉ đếm riêng để HQ biết.
+ * Gian ĐANG NẠP LỊCH SỬ (historyBackfillPending) cũng vậy: lượt backfill đọc 90 ngày
+ * theo create_time, worker không tính cửa sổ mốc nước (order-auto-sync runFastTier:
+ * plan = null) nên mốc đứng yên dù đơn vẫn về — đếm riêng, không tính trễ (21/10/2026).
  */
 export async function collectWatermarkHealth(): Promise<WatermarkHealth> {
   const scope = Prisma.sql`"status" = 'ACTIVE' AND "refreshToken" IS NOT NULL AND "channelName" IN ('SHOPEE', 'LAZADA', 'TIKTOK')`;
   const awake = Prisma.sql`"hibernatedAt" IS NULL`;
+  // Gian được tính trễ: thức VÀ không đang nạp lịch sử.
+  const counted = Prisma.sql`"hibernatedAt" IS NULL AND "historyBackfillPending" = false`;
   const [agg] = await prisma.$queryRaw<
-    { channels: number; hibernated: number; withMark: number; catchingUp: number; lagOver60: number; lagOver6h: number; maxLagSec: number | null }[]
+    {
+      channels: number;
+      hibernated: number;
+      backfilling: number;
+      withMark: number;
+      catchingUp: number;
+      lagOver60: number;
+      lagOver6h: number;
+      maxLagSec: number | null;
+    }[]
   >`
-    SELECT COUNT(*) FILTER (WHERE ${awake})::int AS "channels",
+    SELECT COUNT(*) FILTER (WHERE ${counted})::int AS "channels",
            COUNT(*) FILTER (WHERE NOT (${awake}))::int AS "hibernated",
-           COUNT("ordersWatermarkAt") FILTER (WHERE ${awake})::int AS "withMark",
-           COUNT("ordersCatchupBeforeAt") FILTER (WHERE ${awake})::int AS "catchingUp",
-           COUNT(*) FILTER (WHERE ${awake} AND "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagWarnMin}::int))::int AS "lagOver60",
-           COUNT(*) FILTER (WHERE ${awake} AND "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagCritMin}::int))::int AS "lagOver6h",
-           MAX(EXTRACT(EPOCH FROM (now() - "ordersWatermarkAt"))) FILTER (WHERE ${awake})::float AS "maxLagSec"
+           COUNT(*) FILTER (WHERE ${awake} AND "historyBackfillPending" = true)::int AS "backfilling",
+           COUNT("ordersWatermarkAt") FILTER (WHERE ${counted})::int AS "withMark",
+           COUNT("ordersCatchupBeforeAt") FILTER (WHERE ${counted})::int AS "catchingUp",
+           COUNT(*) FILTER (WHERE ${counted} AND "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagWarnMin}::int))::int AS "lagOver60",
+           COUNT(*) FILTER (WHERE ${counted} AND "ordersWatermarkAt" < now() - make_interval(mins => ${T.watermarkLagCritMin}::int))::int AS "lagOver6h",
+           MAX(EXTRACT(EPOCH FROM (now() - "ordersWatermarkAt"))) FILTER (WHERE ${counted})::float AS "maxLagSec"
     FROM "Channel" WHERE ${scope}`;
   const worst =
     agg?.maxLagSec != null
-      ? await prisma.$queryRaw<{ shopName: string; channelName: string }[]>`
-          SELECT "shopName", "channelName" FROM "Channel"
-          WHERE ${scope} AND ${awake} AND "ordersWatermarkAt" IS NOT NULL
+      ? await prisma.$queryRaw<
+          {
+            shopName: string;
+            channelName: string;
+            lagSec: number;
+            lastSyncAgoSec: number | null;
+            lastSyncError: string | null;
+            syncFailCount: number;
+            lockedSec: number | null;
+            nextFastInSec: number | null;
+            catchingUp: boolean;
+          }[]
+        >`
+          SELECT "shopName", "channelName",
+                 EXTRACT(EPOCH FROM (now() - "ordersWatermarkAt"))::float AS "lagSec",
+                 EXTRACT(EPOCH FROM (now() - "lastSyncAt"))::float AS "lastSyncAgoSec",
+                 "lastSyncError", "syncFailCount",
+                 EXTRACT(EPOCH FROM (now() - "syncLockedAt"))::float AS "lockedSec",
+                 EXTRACT(EPOCH FROM ("nextFastSyncAt" - now()))::float AS "nextFastInSec",
+                 ("ordersCatchupBeforeAt" IS NOT NULL) AS "catchingUp"
+          FROM "Channel"
+          WHERE ${scope} AND ${counted} AND "ordersWatermarkAt" IS NOT NULL
           ORDER BY "ordersWatermarkAt" ASC LIMIT 1`
       : [];
+  const w = worst[0];
+  const min = (sec: number | null | undefined) => (sec == null ? null : Math.round(sec / 60));
   return {
     channels: agg?.channels ?? 0,
     hibernated: agg?.hibernated ?? 0,
+    backfilling: agg?.backfilling ?? 0,
     withMark: agg?.withMark ?? 0,
     catchingUp: agg?.catchingUp ?? 0,
     lagOver60: agg?.lagOver60 ?? 0,
     lagOver6h: agg?.lagOver6h ?? 0,
     maxLagMin: agg?.maxLagSec != null ? Math.round(agg.maxLagSec / 60) : null,
-    maxLagShop: worst[0] ? `${worst[0].channelName} · ${worst[0].shopName}` : null,
+    maxLagShop: w ? `${w.channelName} · ${w.shopName}` : null,
+    worst: w
+      ? {
+          shop: `${w.channelName} · ${w.shopName}`,
+          lagMin: Math.round(w.lagSec / 60),
+          lastSyncAgoMin: min(w.lastSyncAgoSec),
+          lastSyncError: w.lastSyncError,
+          syncFailCount: w.syncFailCount,
+          lockedMin: min(w.lockedSec),
+          nextFastInMin: min(w.nextFastInSec),
+          catchingUp: w.catchingUp,
+        }
+      : null,
   };
 }
 
@@ -678,13 +751,56 @@ export function watermarkSignal(wm: WatermarkHealth | null): [value: string, lev
     `${wm.withMark}/${wm.channels} gian có mốc · ${lag}` +
     ` · ${wm.catchingUp} đang vét dở` +
     (wm.lagOver60 > 0 ? ` · ${wm.lagOver60} gian quá ${T.watermarkLagWarnMin}'` : "") +
+    (wm.backfilling ? ` · ${wm.backfilling} đang nạp lịch sử (không tính)` : "") +
     (wm.hibernated ? ` · ${wm.hibernated} ngủ đông (không tính)` : "");
   const level: SignalLevel = wm.lagOver6h > 0 ? "crit" : wm.lagOver60 > 0 || wm.catchingUp > 0 ? "warn" : "ok";
   const hint =
     wm.catchingUp > 0
       ? "Gian chạm trần trang mỗi lượt — lọc log worker theo \"vét tiếp\": lặp mãi ở một gian = sàn trả dòng ngoài cửa sổ (TikTok?) hoặc gian quá lớn, xem docs/DONG-BO-GIAI-DOAN-3.md"
-      : "Mốc cũ = gian bị bỏ lượt (lỗi token / sàn / worker quá tải) — xem lastSyncError gian trễ nhất; cột trống = vừa deploy hoặc gian mới";
+      : wm.lagOver60 > 0 && wm.worst
+        ? watermarkWorstHint(wm.worst)
+        : "Mốc cũ = gian bị bỏ lượt (lỗi token / sàn / worker quá tải) — xem lastSyncError gian trễ nhất; cột trống = vừa deploy hoặc gian mới";
   return [value, level, hint];
+}
+
+/**
+ * Vì sao gian trễ nhất có mốc cũ — suy từ bookkeeping của chính gian đó, để HQ
+ * đọc là biết hướng xem, không phải mở SQL (21/10/2026, Bella Look "824'" sau khi
+ * đã nâng gói worker: thật ra gian đang nạp lịch sử nên mốc không tiến).
+ */
+export function watermarkWorstHint(w: WatermarkWorstShop): string {
+  const head = `Gian trễ nhất ${w.shop} (mốc ${w.lagMin}' trước): `;
+  if (w.lastSyncError) {
+    const err = w.lastSyncError.length > 160 ? `${w.lastSyncError.slice(0, 157)}…` : w.lastSyncError;
+    return (
+      head +
+      `lượt ĐƠN LỖI ${w.syncFailCount} lần liên tiếp — "${err}"` +
+      (w.lastSyncAgoMin != null ? ` (lần OK cuối ${w.lastSyncAgoMin}' trước)` : "") +
+      " → token / cầu dao sàn / API sàn, không phải thiếu worker"
+    );
+  }
+  // Đơn vừa OK nhưng mốc vẫn cũ: mốc ghi cùng câu lịch cuối lượt (worker ghi thêm
+  // ngay sau tầng đơn từ 21/10) — lượt kết thúc không êm sau tầng đơn.
+  if (w.lastSyncAgoMin != null && w.lastSyncAgoMin + 15 < w.lagMin) {
+    return (
+      head +
+      `lượt đơn gần nhất OK ${w.lastSyncAgoMin}' trước, không lỗi, nhưng mốc không ghi` +
+      (w.lockedMin != null ? `; đang cầm khóa ${w.lockedMin}'` : "") +
+      " → lượt bị cắt sau tầng đơn (tiến trình chết / OOM, tầng giờ quá dài) — xem Render Events + log worker theo tên gian"
+    );
+  }
+  if (w.lockedMin != null) {
+    return head + `đang cầm khóa quét ${w.lockedMin}'` + (w.lockedMin >= 15 ? " (vé mồ côi — worker chết giữa lượt, tự nhả sau 15')" : " (lượt đang chạy)");
+  }
+  if (w.nextFastInMin != null && w.nextFastInMin < 0) {
+    return head + `quá hạn quét nhanh ${-w.nextFastInMin}' mà chưa được nhặt → worker quá tải / chưa chạy (xem log [Auto-sync] BẬT, AUTO_SYNC_CONCURRENCY)`;
+  }
+  return (
+    head +
+    `lượt đơn gần nhất ${w.lastSyncAgoMin != null ? `${w.lastSyncAgoMin}' trước` : "chưa có"}, không lỗi` +
+    (w.nextFastInMin != null ? `, hạn quét kế ${w.nextFastInMin}'` : "") +
+    " → gian ở bậc giãn nhịp / vừa nối; mốc sẽ tiến ở lượt kế, nếu không thì xem log worker theo tên gian"
+  );
 }
 
 /**

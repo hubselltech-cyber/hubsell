@@ -6209,12 +6209,25 @@ export interface PlatformHealthResponse {
         channels: number;
         /** Gian ngủ đông, không tính trễ (16/10/2026); vắng ở ảnh chụp cũ. */
         hibernated?: number;
+        /** Gian đang nạp lịch sử 90 ngày, mốc không tiến, không tính trễ (21/10/2026); vắng ở ảnh chụp cũ. */
+        backfilling?: number;
         withMark: number;
         catchingUp: number;
         lagOver60: number;
         lagOver6h: number;
         maxLagMin: number | null;
         maxLagShop: string | null;
+        /** Chẩn đoán gian trễ nhất (21/10/2026) — backend đã viết thành hint, FE chỉ cần biết có. */
+        worst?: {
+          shop: string;
+          lagMin: number;
+          lastSyncAgoMin: number | null;
+          lastSyncError: string | null;
+          syncFailCount: number;
+          lockedMin: number | null;
+          nextFastInMin: number | null;
+          catchingUp: boolean;
+        } | null;
       } | null;
     };
     infra: {

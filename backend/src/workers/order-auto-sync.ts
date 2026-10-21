@@ -404,7 +404,8 @@ async function processChannel(channel: Channel): Promise<void> {
           // Lượt backfill kết thúc êm (xong hay lỗi) → bộ đếm sập về 0.
           ...(backfill || backfillGaveUp ? { historyBackfillAttempts: 0 } : {}),
           ...(rebuildDone ? { settlementRebuildPending: false } : {}),
-          // Mốc nước (lát 3.2) ghi cùng câu UPDATE lịch — không thêm câu lệnh nào.
+          // Mốc nước (lát 3.2) ghi cùng câu UPDATE lịch — đã ghi ngay sau tầng đơn
+          // (runFastTier), ghi lại đây cùng giá trị để lượt nào ghi hỏng ở đó còn có log.
           ...(watermark ?? {}),
         },
       })
@@ -501,10 +502,13 @@ async function runFastTier(
     }
     // Đồng bộ đơn OK → reset bộ đếm lỗi (nguồn cảnh báo "sàn trễ đồng bộ"
     // tự đóng). Best-effort: lỗi ghi bookkeeping không được chặn lượt quét.
+    // MỐC NƯỚC ghi NGAY đây (21/10/2026) thay vì chỉ ở câu lịch cuối lượt: Bella
+    // Look chết giữa tầng giờ (OOM) 8 lần/đêm → tầng đơn xong mà mốc không bao giờ
+    // ghi, HQ đỏ dù đơn vẫn về. Câu lịch cuối lượt vẫn ghi lại cùng giá trị (idempotent).
     await prisma.channel
       .update({
         where: { id: channel.id },
-        data: { lastSyncAt: new Date(), lastSyncError: null, syncFailCount: 0 },
+        data: { lastSyncAt: new Date(), lastSyncError: null, syncFailCount: 0, ...(watermark ?? {}) },
       })
       .catch(() => {});
     ordersOk = true;
