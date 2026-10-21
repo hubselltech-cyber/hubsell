@@ -23,6 +23,11 @@
   `tiktok-settlement-merge-db.test.ts` "GHI THEO LÔ" (`flushOrders: 1`, hai bản kê cùng cửa sổ → cộng đủ, đọc lại đúng 1 lần) —
   **phiên cloud không có Postgres nên ca DB bị skip, anh chạy `npm test` trên máy có DB dev để xác nhận.** Chưa tái hiện gian 300k
   đơn đo trần heap (chưa có bộ giả lập).
+- **Đã lên prod (10:28–10:50 VN):** anh nâng worker Starter → Standard 2 GB + env `NODE_HEAP_MB=1536` (log `Khởi động: heap 66/1584 MB`
+  10:28 — hai dòng trước vẫn 368 vì chưa có env). Anh merge ff master `e6eefa9` trên máy (PowerShell không hiểu `&&`, dùng `;`;
+  PROGRESS.md sửa dở phải stash rồi pop, tự gộp không xung đột). Migration đã chạy (SQL đọc được cột mới). 10:38 anh dán SQL bật lại
+  `historyBackfillPending` Bella Look; 10:50:37 worker nhặt, `historyBackfillAttempts` = 1 → lượt 90 ngày theo lô đang chạy.
+  **Việc tiếp:** sau 1–2 giờ SELECT lại (mong `false`/`0`) + search `Bella Look` trong Logs worker; thấy `HẠ CỜ ... sập giữa chừng` thì soi.
 - **Còn mở (chưa làm, đề xuất phiên sau):** (1) nạp lịch sử ĐƠN gian lớn đọc tiếp thay vì đọc lại 15.000 đơn mới nhất mỗi lượt
   (cần mốc riêng cho trục create_time — lát 3.2 chỉ lo update_time); (2) lát CHUNG "bộ nhớ không phụ thuộc cỡ gian" cho ~20 chỗ
   tự đặt trần trang ở 3 sàn + test giả lập gian lớn làm hàng rào (Pha C). Bella Look: sau deploy anh có thể bật lại
