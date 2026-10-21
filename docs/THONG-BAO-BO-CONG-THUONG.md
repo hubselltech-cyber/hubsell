@@ -12,7 +12,7 @@ Soạn 25/09/2026 theo quy trình chính thức trên online.gov.vn (bài "Quy T
 | Nộp ở đâu | online.gov.vn (kết nối Cổng Dịch vụ công quốc gia), đăng nhập bằng **tài khoản Cổng DVC Bộ Công Thương dichvucong.moit.gov.vn** hoặc **VNeID doanh nghiệp**. |
 | Thời gian | Hồ sơ hợp lệ: 3 ngày làm việc. Trạng thái "Đã xác nhận" = xong. |
 | Kết quả | Biểu tượng "Đã thông báo" + mã nhúng HTML gửi qua email, phải gắn lên landing. |
-| Tình trạng | ⏳ CHƯA NỘP. payOS thu tiền thật từ 17/09/2026. Cần nộp trong tuần. |
+| Tình trạng | ✅ **ĐÃ XÁC NHẬN 19/10/2026** (nộp lần 1 04/10 bị từ chối 07/10; nộp lại 09/10 → Sở Công Thương HN duyệt 19/10). Hồ sơ công khai: https://online.gov.vn/nen-tang/3419a3ba-7e49-4677-ad65-3d1c54c17f14 — logo "Đã thông báo" gắn footer landing 21/10 (`TRUST_BADGES.bctPublicId`). Việc còn: khi app di động khai thêm → thủ tục "sửa đổi, bổ sung thông báo" sang "Có cả ứng dụng và website". |
 | Mức phạt nếu không thông báo | NĐ 98/2020 Điều 62: 10–20 triệu (cá nhân), tổ chức gấp đôi ≈ 20–40 triệu, buộc thông báo bổ sung. |
 
 ## 1. Việc chỉ anh Trung làm được (em không được tạo tài khoản / đăng nhập thay)
@@ -24,7 +24,7 @@ Soạn 25/09/2026 theo quy trình chính thức trên online.gov.vn (bài "Quy T
 4. Điền theo mục 3 và 4 dưới đây. Tick ô "Trùng với người đại diện pháp luật" ở góc trên bên phải vì anh vừa là đại diện vừa là người vận hành.
 5. Mục **Tệp đính kèm** → Upload 9 file PDF ở mục 5 (mỗi file một tên tài liệu) + bản scan GCN ĐKDN.
 6. Bấm **Lưu & Gửi duyệt** → trạng thái "Chờ duyệt". Theo dõi email; nếu bị yêu cầu bổ sung thì gửi em nội dung yêu cầu, em sửa trang và xuất lại PDF.
-7. Khi trạng thái **Đã xác nhận**: gửi em **mã nhúng HTML logo** (hoặc link hồ sơ công khai) → em gắn vào chân trang landing (bắt buộc hiển thị).
+7. Khi trạng thái **Đã xác nhận**: gửi em **mã nhúng HTML logo** (hoặc link hồ sơ công khai) → em gắn vào chân trang landing (bắt buộc hiển thị). ✅ Đã làm 21/10/2026: cổng mới không gửi mail, em tra công khai (ô Tìm kiếm online.gov.vn → "hubsell") ra trang `online.gov.vn/nen-tang/<GUID>` kèm biểu tượng `fileserver.online.gov.vn/uploads/Resources/iconxacnhan/DaThongBao.png` (230×86).
 
 ## 2. Kiểm tra trước khi nộp
 

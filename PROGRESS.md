@@ -6,6 +6,21 @@
 
 ---
 
+## Phiên 21/10/2026 — BỘ CÔNG THƯƠNG ĐÃ XÁC NHẬN hồ sơ hubsell.vn → gắn logo "Đã thông báo" vào footer landing
+
+- **Xác nhận:** anh chụp màn cổng online.gov.vn: hồ sơ lần 2 (gửi 09/10) **Đã xác nhận, ngày duyệt 19/10/2026**; lần 1 (04/10) Bị từ chối.
+  Em kiểm chéo trên cổng công khai (không cần đăng nhập): Tìm kiếm "hubsell" → 1 nền tảng hubsell.vn ĐÃ XÁC NHẬN, trang hồ sơ công khai
+  `online.gov.vn/nen-tang/3419a3ba-7e49-4677-ad65-3d1c54c17f14` in đúng tên công ty, MST 0111626360, địa chỉ, 0965863292, support@hubsell.vn
+  kèm biểu tượng `fileserver.online.gov.vn/uploads/Resources/iconxacnhan/DaThongBao.png` (230×86). Cổng mới KHÔNG gửi mail, KHÔNG còn dạng
+  `/Home/WebDetails/<số>` như slot 27/09 đã chuẩn bị.
+- **Landing (`hubsell-landing`):** `TRUST_BADGES.bctWebDetailsId` → `bctPublicId` = GUID trên, `trustBadgeItems()` trỏ link + ảnh theo cổng mới;
+  `<TrustBadges/>` chuyển từ hàng rời dưới `<dl>` thành **cột thứ 4 của khối pháp nhân** (lg `1.5fr | 2fr | 1.6fr | auto`), nhãn "Chứng nhận",
+  ảnh cao 44px (bằng cổng in) — đúng ô trống bên phải anh khoanh. Đã soi preview: 1440px 4 cột thẳng hàng (ô cuối 1263–1381px), mobile 375px
+  không tràn ngang, ảnh tải được từ fileserver. `tsc --noEmit` xanh. Landing không có giao diện tối.
+- **Docs:** `docs/THONG-BAO-BO-CONG-THUONG.md` (tình trạng + cách lấy mã nhúng cổng mới), `docs/HUY-HIEU-TIN-CAY-LANDING.md` (mục 0/1/5).
+- **Còn:** anh push landing (Vercel tự deploy) rồi xem hubsell.vn; NCA Tín nhiệm mạng vẫn chưa có thư; app di động đã lên 2 kho → làm thủ tục
+  "sửa đổi, bổ sung thông báo" khai thêm ứng dụng khi anh gọi.
+
 ## Phiên 21/10/2026 khuya — SỬA HẾT 20 CA TEST ĐỎ CÒN LẠI TRÊN DB TRỐNG (anh chốt "phần nào fail sửa luôn một lượt")
 
 - **Bộ đơn mẫu dùng chung `__tests__/parity-seed.ts`:** 7 file đối soát sổ cái = đơn gốc (ads-margin-sql-db, ads-rows-ledger-db,

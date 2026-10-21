@@ -6,7 +6,7 @@ Soạn 27/09/2026. Anh Trung xem footer Sapo có 5 huy hiệu (ISO 27001, ISO 90
 
 | Huy hiệu | Cơ quan | Phí | Làm? | Tình trạng |
 |---|---|---|---|---|
-| Đã thông báo Bộ Công Thương | UBND TP Hà Nội qua online.gov.vn | 0 ₫ | CÓ | ⏳ chờ duyệt tài khoản DVC (đăng ký 25/09) → nộp theo `THONG-BAO-BO-CONG-THUONG.md` |
+| Đã thông báo Bộ Công Thương | UBND TP Hà Nội qua online.gov.vn | 0 ₫ | CÓ | ✅ **ĐÃ XÁC NHẬN 19/10/2026**, logo gắn footer 21/10 (mục 1) |
 | Tín nhiệm mạng – **Tổ chức** | Trung tâm An ninh mạng quốc gia (NCA), Cục An ninh mạng, Bộ Công an | 0 ₫ (nguồn thứ 3: mikotech.vn; trang NCA không ghi phí) | CÓ | ✅ ĐÃ GỬI 27/09 tối, chờ NCA 7–14 ngày |
 | Tín nhiệm mạng – **Website** mức Cơ bản | NCA | trang NCA để trống giá, chỉ ghi "mỗi website/năm"; nguồn thứ 3 nói ≈100.000 ₫/năm | CÓ (nếu đúng ≈100k thì vẫn rẻ) | ✅ ĐÃ GỬI 27/09 tối (1 website hubsell.vn, Gói cơ bản); chờ bộ tiêu chí trong 3 ngày về support@, hỏi giá khi NCA liên hệ |
 | Nói không với hàng giả – BCT | Cục TMĐT & KTS | 0 ₫ | KHÔNG | không có kênh đăng ký mở (xem mục 3) |
@@ -17,15 +17,17 @@ Ghi chú: huy hiệu NCSC trên Sapo là mẫu cũ (Cục An toàn thông tin, B
 
 ## 1. Đã thông báo Bộ Công Thương
 
-Toàn bộ hồ sơ ở `docs/THONG-BAO-BO-CONG-THUONG.md`. Khi trạng thái **Đã xác nhận**, email gửi mã nhúng dạng:
+Toàn bộ hồ sơ ở `docs/THONG-BAO-BO-CONG-THUONG.md`. ✅ Hồ sơ hubsell.vn **Đã xác nhận 19/10/2026** (Sở Công Thương HN, nộp lại 09/10).
+
+Cổng mới (Luật TMĐT 2025) KHÔNG còn dạng `/Home/WebDetails/<số>` và không gửi mail; mã nhúng thật lấy từ trang hồ sơ công khai (ô Tìm kiếm online.gov.vn → "hubsell" → ĐÃ XÁC NHẬN):
 
 ```html
-<a href="http://online.gov.vn/Home/WebDetails/123456">
-  <img src="http://online.gov.vn/Content/EndUser/LogoCCDVSaleNoti/logoSaleNoti.png" />
+<a href="https://online.gov.vn/nen-tang/3419a3ba-7e49-4677-ad65-3d1c54c17f14">
+  <img src="https://fileserver.online.gov.vn/uploads/Resources/iconxacnhan/DaThongBao.png" alt="Đã thông báo Bộ Công Thương" />
 </a>
 ```
 
-Cách gắn: chép **số ở cuối link WebDetails** vào `TRUST_BADGES.bctWebDetailsId` trong `hubsell-landing/src/lib/site.ts`. Footer tự hiện logo và trỏ về hồ sơ công khai (mục 5). Chưa có số thì KHÔNG gắn logo (BCT cấm treo logo khi chưa được xác nhận).
+Đã gắn 21/10/2026: GUID ở `TRUST_BADGES.bctPublicId` (`hubsell-landing/src/lib/site.ts`), ảnh 230×86 hiện cao 44px (bằng cổng in) ở **cột thứ 4 khối pháp nhân** footer, nhãn "Chứng nhận" (anh chốt đặt vào ô trống bên phải). Ảnh hotlink từ máy chủ cổng theo hướng dẫn của họ ("Hướng dẫn lấy biểu tượng xác nhận và liên kết công khai", 23/07/2026).
 
 ## 2. Tín nhiệm mạng (tinnhiemmang.vn)
 
@@ -79,7 +81,7 @@ Chốt: bỏ. Nếu anh vẫn muốn thì việc duy nhất là gọi hotline C�
 
 ## 5. Cách gắn lên landing (đã chuẩn bị sẵn code 27/09)
 
-- `hubsell-landing/src/lib/site.ts`: hằng `TRUST_BADGES` gồm `bctWebDetailsId` và `tinNhiemMangSlug`, đều rỗng cho tới khi có kết quả. Hàm `trustBadgeItems()` dựng link + ảnh từ 2 giá trị này.
-- `hubsell-landing/src/components/site-footer.tsx`: hàng huy hiệu cao 40px dưới icon YouTube/Facebook, **tự ẩn khi cả hai rỗng** nên production hôm nay không đổi gì.
+- `hubsell-landing/src/lib/site.ts`: hằng `TRUST_BADGES` gồm `bctPublicId` (✅ đã điền 21/10) và `tinNhiemMangSlug` (rỗng cho tới khi NCA cấp). Hàm `trustBadgeItems()` dựng link + ảnh từ 2 giá trị này.
+- `hubsell-landing/src/components/site-footer.tsx`: ô `<TrustBadges/>` = cột thứ 4 của `<dl>` khối pháp nhân (lg: `1.5fr | 2fr | 1.6fr | auto`), nhãn "Chứng nhận", ảnh cao 44px; mobile xếp xuống dưới Hỗ trợ; **tự ẩn khi cả hai rỗng**.
 - Nếu mã nhúng thật NCA gửi khác dạng `tinnhiemmang.vn/handle_cert?id=hubsell.vn`, sửa `trustBadgeItems()` theo mã họ gửi (chỉ một chỗ).
 - Vị trí: chỉ footer (mọi trang). Không làm khối "chứng nhận" riêng to như Sapo cho tới khi có ≥3 huy hiệu.
