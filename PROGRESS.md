@@ -28,6 +28,7 @@
   "Công bố 65đ/đơn", hộp Sửa có ô mới.
 - **DB dev:** `db push` thêm cột; gói ENTERPRISE local đặt pricePerOrder=65 (giữ), PRO local bật tạm để xem bảng → đã tắt lại cuối phiên.
 - **Sau push:** migration tự áp trên Render; anh (hoặc em qua Chrome anh) vào HQ prod → Sửa Enterprise → điền 65; landing push repo riêng.
+- **Anh "Em push lên anh xem" → em push app `3ed49faa` + landing `e32b062` 13:45; 13:57 Render /health = 3ed49faa, hubsell.vn/bang-gia đã in "65 ₫", /api/subscription/me 401 đúng chuẩn chưa đăng nhập. ⏳ CÒN: HQ prod Sửa Enterprise điền Giá công bố 65 (tới lúc đó app prod hiện "Liên hệ").
 
 ## Phiên 22/10/2026 ~10:00 — ĐỌC SỐ THẬT QUA CHROME (anh mở): 5c ĐẠT, CRM KHỚP, A2 LẶP HOÃN 60 s Ở GIAN > 100 CHIẾN DỊCH → A3 "KHÓA GIAN × ENDPOINT CHỈ ĐO"
 
