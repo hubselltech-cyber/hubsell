@@ -90,6 +90,9 @@ mỗi phân loại một ô gõ mã kho + nút nối, Tạo SP kho cho cả sả
   dòng trống có nút xóa từ khóa. Dòng đã nối (không có đích) có nút **Đổi** → ô gõ điền sẵn mã cũ.
 - SKU kho cũ trơ lại sau khi chuyển / đổi (không còn liên kết nào) → tự **Ngừng bán** (`deactivateOrphanProducts`,
   anh chốt 22/10 tối), toast báo; tồn / đơn cũ giữ, khách bật lại ở chip Ngừng bán.
+- Lọc trạng thái TRÊN SÀN (khách 22/10 tối): `GET /mappings?status=active|delisted`; chip "Đang bán trên sàn N · Sàn đã gỡ N",
+  nhãn "Sàn đã gỡ" trên dòng. Dòng DELISTED giữ lại (không xóa) để không mất liên kết / lịch sử; SKU kho của nó tự Ngừng bán
+  theo luật 2.4 khi mọi liên kết đều đã gỡ.
 - Không có cột Combo (Hubsell chưa có SKU combo) — việc riêng nếu khách cần.
 
 ### 2.7 Chỉnh sau khi anh xem prod (22/10 tối)

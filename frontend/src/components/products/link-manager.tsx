@@ -99,6 +99,18 @@ function variantLabel(raw: string | null): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
+/** Nhãn "Sàn đã gỡ" cạnh tên / phân loại — dòng DELISTED vẫn giữ để không mất liên kết. */
+function DelistedBadge() {
+  return (
+    <span
+      className="ml-1.5 inline-flex items-center rounded-full border border-slate-300 bg-slate-100 px-1.5 py-0 align-middle text-[11px] font-medium text-slate-600"
+      title="Sàn đã gỡ / xóa sản phẩm này — Hubsell giữ dòng để không mất liên kết và lịch sử"
+    >
+      Sàn đã gỡ
+    </span>
+  );
+}
+
 /** Đuôi toast khi SKU kho cũ hết liên kết đã tự Ngừng bán (anh Trung chốt 22/10 tối). */
 function orphanNote(list?: { skuCode: string }[]): string {
   if (!list || list.length === 0) return "";
@@ -127,7 +139,13 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
   const router = useRouter();
 
   const [rows, setRows] = useState<ChannelProduct[]>([]);
-  const [counts, setCounts] = useState({ all: 0, linked: 0, unlinked: 0 });
+  const [counts, setCounts] = useState<{ all: number; linked: number; unlinked: number; active?: number; delisted?: number }>({
+    all: 0,
+    linked: 0,
+    unlinked: 0,
+  });
+  // Trạng thái TRÊN SÀN (22/10 tối, khách xin): "" = tất cả, "active" đang bán, "delisted" sàn đã gỡ.
+  const [cpStatus, setCpStatus] = useState<"" | "active" | "delisted">("");
   const [channels, setChannels] = useState<Channel[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
 
@@ -174,6 +192,7 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
         channelName: platformFilter || undefined,
         channelId: channelFilter || undefined,
         linked: linkTab || undefined,
+        status: cpStatus || undefined,
         search: debounced || undefined,
         page,
         pageSize,
@@ -193,7 +212,7 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
     } finally {
       setLoading(false);
     }
-  }, [platformFilter, channelFilter, linkTab, debounced, page, pageSize, router]);
+  }, [platformFilter, channelFilter, linkTab, cpStatus, debounced, page, pageSize, router]);
 
   useEffect(() => {
     load();
@@ -435,6 +454,7 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
     Boolean(platformFilter) ||
     Boolean(channelFilter) ||
     Boolean(linkTab) ||
+    Boolean(cpStatus) ||
     Boolean(search.trim());
 
   /** Nối MỘT dòng sàn vào SKU đích (một bấm) — dùng cho cả dòng đang nối gian khác (chuyển). */
@@ -643,12 +663,54 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
                   >
                     {t.label}
                     <span className="tabular-nums opacity-70">
-                      {formatNumber(count)}
+                      {formatNumber(count ?? 0)}
                     </span>
                   </button>
                 );
               })}
             </div>
+
+            {/* Trạng thái TRÊN SÀN: sàn gỡ sản phẩm thì Hubsell giữ dòng (đã gỡ) để không mất liên
+                kết; khách lọc riêng được (22/10 tối). Chip "Sàn đã gỡ" chỉ hiện khi có dòng. */}
+            {((counts.delisted ?? 0) > 0 || cpStatus) && (
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { key: "active", label: "Đang bán trên sàn", n: counts.active ?? 0 },
+                    { key: "delisted", label: "Sàn đã gỡ", n: counts.delisted ?? 0 },
+                  ] as { key: "active" | "delisted"; label: string; n: number }[]
+                ).map((c) => {
+                  const active = cpStatus === c.key;
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => {
+                        setCpStatus((s) => (s === c.key ? "" : c.key));
+                        setPage(1);
+                      }}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                        active
+                          ? c.key === "delisted"
+                            ? "border-slate-700 bg-slate-700 text-white"
+                            : "border-emerald-600 bg-emerald-600 text-white"
+                          : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                      title={
+                        c.key === "delisted"
+                          ? "Sản phẩm / phân loại sàn đã gỡ hoặc xóa — Hubsell giữ dòng để không mất liên kết và lịch sử"
+                          : "Dòng sàn đang bán"
+                      }
+                    >
+                      {c.label}
+                      <span className="tabular-nums opacity-70">{formatNumber(c.n)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Dropdown 1 — chọn SÀN */}
             <NativeSelect
@@ -798,6 +860,7 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
                                     title={variantLabel(r.variantName) ?? r.channelSku}
                                   >
                                     {variantLabel(r.variantName) ?? r.channelSku}
+                                    {r.status === "DELISTED" && <DelistedBadge />}
                                   </p>
                                   {r.variantName && (
                                     <p className={cn(TEXT_SUB, "truncate font-mono")} title={r.channelSku}>
@@ -811,6 +874,7 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
                                   <div className="min-w-0">
                                     <p className="truncate" title={r.productName}>
                                       {r.productName}
+                                      {r.status === "DELISTED" && <DelistedBadge />}
                                     </p>
                                     <p className={cn(TEXT_SUB, "truncate")}>
                                       <span className={`mr-1.5 inline-flex items-center rounded-full border px-1.5 py-0 text-[11px] font-medium ${meta.className}`}>
@@ -1086,6 +1150,11 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
                   <span className="font-medium text-amber-700">· {formatNumber(unlinked.length)} chưa nối</span>
                 ) : (
                   <span className="text-emerald-700">· đã nối hết</span>
+                )}
+                {g.rows.some((r) => r.status === "DELISTED") && (
+                  <span className="text-slate-500">
+                    · {formatNumber(g.rows.filter((r) => r.status === "DELISTED").length)} sàn đã gỡ
+                  </span>
                 )}
               </p>
             </div>

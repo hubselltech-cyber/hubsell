@@ -2796,7 +2796,7 @@ export interface ChannelProductListResponse {
   page: number;
   pageSize: number;
   pageCount: number;
-  counts: { all: number; linked: number; unlinked: number };
+  counts: { all: number; linked: number; unlinked: number; active?: number; delisted?: number };
 }
 
 export function fetchChannels() {
@@ -3668,6 +3668,8 @@ export function fetchChannelProducts(params: {
   inStock?: "yes";
   /** "grouped" = phân trang theo SẢN PHẨM SÀN (tab cha–con); mặc định phẳng theo dòng. */
   view?: "grouped";
+  /** Trạng thái TRÊN SÀN: đang bán / sàn đã gỡ (dòng DELISTED giữ lại để không mất liên kết). */
+  status?: "active" | "delisted";
 }) {
   const qs = new URLSearchParams();
   if (params.channelName) qs.set("channelName", params.channelName);
@@ -3675,6 +3677,7 @@ export function fetchChannelProducts(params: {
   if (params.linked) qs.set("linked", params.linked);
   if (params.inStock) qs.set("inStock", params.inStock);
   if (params.view) qs.set("view", params.view);
+  if (params.status) qs.set("status", params.status);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));

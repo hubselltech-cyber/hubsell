@@ -60,8 +60,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // inStock=yes (22/10/2026): bỏ phân loại sàn đang báo tồn 0 — hộp "Tự khớp +
     // tạo SKU" dùng để lặp đúng tập sẽ tạo khi khách tích "bỏ qua tồn 0".
     const inStock = req.query.inStock === "yes";
+    // status=active|delisted (22/10/2026, khách: "Hubsell kéo cả sản phẩm đã xóa trên sàn thì
+    // phải lọc được"): sàn gỡ → dòng DELISTED giữ lại (không xóa để giữ liên kết / lịch sử).
+    const cpStatus =
+      req.query.status === "active" ? "ACTIVE" : req.query.status === "delisted" ? "DELISTED" : undefined;
 
-    const scope: Prisma.ChannelProductWhereInput = {
+    const baseScope: Prisma.ChannelProductWhereInput = {
       channel: {
         userId: req.ownerId!,
         ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
@@ -78,6 +82,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
             ],
           }
         : {}),
+    };
+
+    const scope: Prisma.ChannelProductWhereInput = {
+      ...baseScope,
+      ...(cpStatus ? { status: cpStatus } : {}),
     };
 
     const where: Prisma.ChannelProductWhereInput = {
@@ -97,13 +106,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
         ? await pageOfChannelProductGroups(
             req.ownerId!,
             req.allowedChannelIds ?? null,
-            { channelName, channelId, linked, search, inStock },
+            { channelName, channelId, linked, search, inStock, cpStatus },
             page,
             pageSize
           )
         : null;
 
-    const [total, items, linkedCount, unlinkedCount] = await Promise.all([
+    const [total, items, linkedCount, unlinkedCount, activeCount, delistedCount] = await Promise.all([
       grouped ? Promise.resolve(grouped.total) : prisma.channelProduct.count({ where }),
       grouped
         ? prisma.channelProduct
@@ -138,6 +147,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       // số, kể cả khi đang đứng ở một bên.
       prisma.channelProduct.count({ where: { ...scope, productId: { not: null } } }),
       prisma.channelProduct.count({ where: { ...scope, productId: null } }),
+      // Đếm theo trạng thái sàn trên baseScope (không kèm status) để cặp chip luôn có số.
+      prisma.channelProduct.count({ where: { ...baseScope, status: "ACTIVE" } }),
+      prisma.channelProduct.count({ where: { ...baseScope, status: "DELISTED" } }),
     ]);
 
     res.json({
@@ -150,7 +162,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
         all: linkedCount + unlinkedCount,
         linked: linkedCount,
         unlinked: unlinkedCount,
+        active: activeCount,
+        delisted: delistedCount,
       },
+      status: req.query.status === "active" || req.query.status === "delisted" ? req.query.status : "",
     });
   } catch (err) {
     next(err);
@@ -284,7 +299,14 @@ function channelItemId(externalId: string | null): string | null {
 async function pageOfChannelProductGroups(
   ownerId: string,
   allowedChannelIds: string[] | null,
-  f: { channelName?: ChannelName; channelId: string; linked: string; search: string; inStock: boolean },
+  f: {
+    channelName?: ChannelName;
+    channelId: string;
+    linked: string;
+    search: string;
+    inStock: boolean;
+    cpStatus?: "ACTIVE" | "DELISTED";
+  },
   page: number,
   pageSize: number
 ): Promise<{ keys: { channelId: string; itemId: string }[]; total: number }> {
@@ -293,6 +315,7 @@ async function pageOfChannelProductGroups(
   if (f.channelName) conds.push(Prisma.sql`c."channelName" = ${f.channelName}::"ChannelName"`);
   if (f.channelId) conds.push(Prisma.sql`cp."channelId" = ${f.channelId}`);
   if (f.inStock) conds.push(Prisma.sql`(cp."channelStock" IS NULL OR cp."channelStock" <> 0)`);
+  if (f.cpStatus) conds.push(Prisma.sql`cp.status = ${f.cpStatus}::"ChannelProductStatus"`);
   if (f.linked === "yes") conds.push(Prisma.sql`cp."productId" IS NOT NULL`);
   if (f.linked === "no") conds.push(Prisma.sql`cp."productId" IS NULL`);
   if (f.search) {

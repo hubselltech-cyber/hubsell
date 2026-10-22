@@ -109,6 +109,9 @@
   dòng một SKU kho; "Chuyển sang X" xử lý đúng ca. **Anh chốt: SKU cũ trơ lại sau khi chuyển → "chuyển thẳng sang ngừng bán luôn"** →
   `deactivateOrphanProducts` trong `/mappings/link` + `/link-by-sku`: SKU cũ không còn liên kết nào → isActive=false, trả `deactivated[]`,
   toast "SKU cũ Y hết liên kết → đã chuyển Ngừng bán". Kiểm API local: AT01-S nối ORPHAN-TEST → chuyển sang TUI-01 → ORPHAN-TEST isActive=false.
+  Push `b2aaec50`. **Anh: khách muốn lọc "ngừng bán / đang hoạt động" ở tab Sản phẩm trên sàn (Hubsell kéo cả sản phẩm đã xóa trên sàn)** →
+  `GET /mappings?status=active|delisted` (cả SQL nhóm) + counts.active/delisted; tab có cặp chip "Đang bán trên sàn N · Sàn đã gỡ N" (chip gỡ
+  chỉ hiện khi có), nhãn "Sàn đã gỡ" cạnh tên / phân loại, dòng cha đếm "n sàn đã gỡ". Kiểm API local: all 1.466 / active 572 / delisted 894 đúng.
 
 ---
 
