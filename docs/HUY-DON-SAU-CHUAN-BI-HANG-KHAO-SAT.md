@@ -78,6 +78,14 @@ nút "Chỉ xem đơn xin hủy" (deep-link từ chuông), nhãn "Khách xin h�
 Chấp nhận hủy / Từ chối mở hộp xác nhận (cảnh báo kiện quay đầu nếu đã chuẩn bị hàng). Chuẩn bị hàng hàng loạt: `window.confirm` cảnh báo nếu có
 đơn đang xin hủy, KHÔNG chặn (luật "cảnh báo, không khóa cứng").
 
+**Trình bày (anh hỏi 23/10 đêm: "đơn Đã xử lý mà khách xin hủy nằm ở đâu? Nó còn đi kèm đã in / chưa in / đang giao…")** —
+cờ là trục riêng nên đơn Ở NGUYÊN TAB theo trạng thái vận chuyển (Đã xử lý vẫn ở Đã xử lý, lọc con Chưa in / Đã in vẫn đúng). Để không
+rối: (1) backend GHIM đơn xin hủy lên đầu ở MỌI tab, xếp hạn gần nhất trước, trên cả đơn hỏa tốc (`pinnedWhere` route GET /); (2) tô nhẹ cả
+dòng + vạch đỏ mép trái (`rowClassName`); (3) ô Trạng thái giữ "Đã xử lý" + dòng in phiếu, rồi viên "Khách xin hủy" + dòng "còn N giờ để trả
+lời" (quá hạn in đậm), chi tiết ở tooltip mỗi ý một dòng; (4) cột Thao tác chỉ MỘT nút đỏ "Trả lời sàn" mở hộp: dữ kiện 4 dòng (khách, lý do,
+đơn đang ở đâu + đã in/vận đơn, hạn) + hai ô Từ chối / Chấp nhận hủy đứng cạnh nhau. Soi local tab Đã xử lý với 3 đơn seed (đã in còn 31 h,
+chưa in quá hạn 2 h, đơn thường) ở 1600px: hai đơn xin hủy ghim đầu, đơn thường bên dưới; seed đã trả về như cũ.
+
 **Kiểm** — tsc BE/FE sạch; vitest `cancel-request-plan.test.ts` (Shopee 4 ca, TikTok 4, Lazada 3) + 4 file liên quan 41/41; DB dev áp SQL
 migration bằng `prisma db execute` (migrate deploy kẹt bản ghi lỗi cũ `20260830120000_fee_audit` từ 17/09 — có sẵn, không phải do lát này);
 soi web local (cổng 3000 của phiên khác, hot reload) với 1 đơn seed: dải + nhãn + 2 nút hiện đúng, seed đã xóa.

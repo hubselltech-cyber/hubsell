@@ -155,17 +155,25 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // nên chia 2 nhóm — nhóm ghim lấy trước, nhóm còn lại điền tiếp — và tự
     // cắt trang trên tổng 2 nhóm để phân trang vẫn đúng.
     const PINNED_STATUSES = [ShippingStatus.PENDING, ShippingStatus.PROCESSED];
+    // GHIM THÊM đơn KHÁCH ĐANG XIN HỦY (23/10/2026) ở MỌI tab — đơn giữ nguyên
+    // tab theo trạng thái vận chuyển (Đã xử lý vẫn ở Đã xử lý) nhưng phải nổi
+    // lên đầu vì sàn đang đếm giờ chờ shop trả lời; xếp đơn xin hủy trước đơn hỏa tốc.
     const pinnedWhere: Prisma.OrderWhereInput = {
       AND: [
         where,
-        { shippingStatus: { in: PINNED_STATUSES } },
-        expressShippingWhere(),
+        {
+          OR: [
+            { cancelRequestedAt: { not: null } },
+            { AND: [{ shippingStatus: { in: PINNED_STATUSES } }, expressShippingWhere()] },
+          ],
+        },
       ],
     };
-    // Phần bù: ĐÃ bàn giao trở đi hoặc KHÔNG hỏa tốc (kể cả chưa có tên hãng).
+    // Phần bù: không xin hủy VÀ (đã bàn giao trở đi hoặc không hỏa tốc, kể cả chưa có tên hãng).
     const restWhere: Prisma.OrderWhereInput = {
       AND: [
         where,
+        { cancelRequestedAt: null },
         {
           OR: [
             { shippingStatus: { notIn: PINNED_STATUSES } },
@@ -198,7 +206,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
         offset < pinnedTotal
           ? await prisma.order.findMany({
               where: pinnedWhere,
-              orderBy: { createdAt: "desc" },
+              // Đơn xin hủy lên trước (hạn gần nhất trước), rồi hỏa tốc theo thời gian.
+              orderBy: [
+                { cancelRequestDueAt: { sort: "asc", nulls: "last" } },
+                { cancelRequestedAt: { sort: "asc", nulls: "last" } },
+                { createdAt: "desc" },
+              ],
               skip: offset,
               take: pageSize,
               include: listInclude,

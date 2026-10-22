@@ -273,43 +273,52 @@ function cancelDueText(dueAt: string | null | undefined): string | null {
   return `còn ${hours} giờ`;
 }
 
+/**
+ * Nhãn trong cột Trạng thái: một viên "Khách xin hủy" + dòng phụ hạn trả lời.
+ * Chi tiết (giờ xin, lý do, hạn) nằm ở tooltip, mỗi ý một dòng (khẩu vị bảng điểm 11).
+ */
 function CancelRequestLabel({ order }: { order: Order }) {
   if (!order.cancelRequestedAt) return null;
   const due = cancelDueText(order.cancelRequestDueAt);
+  const overdue = due?.startsWith("quá hạn");
+  const tip = [
+    `• Khách xin hủy lúc ${formatDateTime(order.cancelRequestedAt)}`,
+    order.cancelRequestReason ? `• Lý do: ${order.cancelRequestReason}` : "• Khách không nêu lý do",
+    due ? `• Hạn trả lời: ${due}` : "• Sàn không nêu hạn",
+    "Không trả lời thì sàn tự hủy đơn.",
+  ].join("\n");
   return (
-    <span
-      className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
-      title={[
-        `Khách xin hủy lúc ${formatDateTime(order.cancelRequestedAt)}`,
-        order.cancelRequestReason ? `Lý do: ${order.cancelRequestReason}` : null,
-        due ? `Hạn trả lời: ${due}` : "Sàn không nêu hạn",
-      ]
-        .filter(Boolean)
-        .join(" · ")}
-    >
-      <AlertTriangle className="size-3 shrink-0" />
-      Khách xin hủy{due ? ` · ${due}` : ""}
+    <span className="mt-1 flex flex-col items-center" title={tip}>
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+        <AlertTriangle className="size-3 shrink-0" />
+        Khách xin hủy
+      </span>
+      {due && (
+        <span className={cn(TEXT_SUB, "mt-0.5", overdue ? "font-semibold text-rose-600" : "text-rose-600/80")}>
+          {due} để trả lời
+        </span>
+      )}
     </span>
   );
 }
 
+/** Hộp trả lời sàn: dữ kiện mỗi ý một dòng, hai lựa chọn đứng cạnh nhau. */
 function CancelDecideDialog({
-  pending,
+  order,
   onOpenChange,
   onDone,
 }: {
-  pending: { order: Order; accept: boolean } | null;
+  order: Order | null;
   onOpenChange: (o: boolean) => void;
   onDone: () => void;
 }) {
-  const [submitting, setSubmitting] = useState(false);
-  const order = pending?.order;
-  const accept = pending?.accept ?? false;
+  const [submitting, setSubmitting] = useState<"accept" | "reject" | null>(null);
   const packed = order?.shippingStatus === "PROCESSED" || order?.shippingStatus === "SHIPPING";
+  const due = cancelDueText(order?.cancelRequestDueAt);
 
-  async function handleSubmit() {
+  async function decide(accept: boolean) {
     if (!order) return;
-    setSubmitting(true);
+    setSubmitting(accept ? "accept" : "reject");
     try {
       const r = await decideCancelRequest(order.id, accept);
       toast.success(
@@ -323,64 +332,78 @@ function CancelDecideDialog({
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ", { duration: 8000 });
     } finally {
-      setSubmitting(false);
+      setSubmitting(null);
     }
   }
 
+  const facts: { label: string; value: string; strong?: boolean }[] = order
+    ? [
+        { label: "Khách", value: order.customerName },
+        { label: "Lý do", value: order.cancelRequestReason ?? "khách không nêu" },
+        {
+          label: "Đơn đang",
+          value: `${STATUS_META[order.shippingStatus]?.label ?? order.shippingStatus}${
+            order.labelPrintedAt ? " · đã in phiếu" : ""
+          }${order.trackingCode ? ` · vận đơn ${order.trackingCode}` : ""}`,
+          strong: packed,
+        },
+        { label: "Hạn trả lời", value: due ?? "sàn không nêu — không trả lời thì sàn tự hủy" },
+      ]
+    : [];
+
   return (
-    <Dialog open={pending !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={order !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            {accept ? "Chấp nhận hủy" : "Từ chối hủy"} đơn {order?.orderCode}
-          </DialogTitle>
+          <DialogTitle>Khách xin hủy đơn {order?.orderCode}</DialogTitle>
           <DialogDescription>
-            Khách: {order?.customerName}
-            {order?.cancelRequestReason ? <> · Lý do: {order.cancelRequestReason}</> : null}
+            Sàn đang chờ shop trả lời. Chọn một trong hai bên dưới — lệnh gửi thẳng lên sàn.
           </DialogDescription>
         </DialogHeader>
-        <div
-          className={cn(
-            "flex items-start gap-2 rounded-lg border p-3 text-sm",
-            accept
-              ? "border-rose-200 bg-rose-50 text-rose-700"
-              : "border-amber-200 bg-amber-50 text-amber-700"
-          )}
-        >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          {accept ? (
-            <p>
-              Sàn sẽ hủy đơn và hoàn tiền cho khách.
-              {packed ? (
-                <>
-                  {" "}
-                  Đơn này <b>đã chuẩn bị hàng</b>: kiện đã bàn giao sẽ quay đầu về shop, tồn kho được cộng lại
-                  khi sàn báo hủy xong.
-                </>
-              ) : (
-                <> Tồn kho của đơn được cộng lại ngay.</>
-              )}
+
+        <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-sm">
+          {facts.map((f) => (
+            <div key={f.label} className="contents">
+              <dt className="text-muted-foreground">{f.label}</dt>
+              <dd className={cn(f.strong && "font-semibold text-rose-700")}>{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-semibold">Từ chối · tiếp tục giao</p>
+            <p className="flex-1">
+              Đơn đi tiếp như bình thường. Khách vẫn có thể từ chối nhận khi shipper tới (thành giao thất bại).
             </p>
-          ) : (
-            <p>
-              Đơn tiếp tục giao như bình thường. Khách vẫn có thể từ chối nhận hàng khi shipper tới
-              (đơn sẽ thành giao thất bại), nên chỉ từ chối khi đã gói / đã bàn giao.
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full border-amber-300 bg-background"
+              disabled={submitting !== null}
+              onClick={() => decide(false)}
+            >
+              {submitting === "reject" ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}
+              Từ chối
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+            <p className="font-semibold">Chấp nhận hủy</p>
+            <p className="flex-1">
+              {packed
+                ? "Sàn hủy đơn + hoàn tiền. Kiện đã bàn giao sẽ quay đầu; tồn kho cộng lại khi sàn báo hủy xong."
+                : "Sàn hủy đơn + hoàn tiền. Tồn kho của đơn được cộng lại ngay."}
             </p>
-          )}
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Đóng
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={submitting}
-            className={accept ? "bg-rose-600 hover:bg-rose-700" : ""}
-          >
-            {submitting && <Loader2 className="size-4 animate-spin" />}
-            {accept ? "Chấp nhận hủy" : "Từ chối, tiếp tục giao"}
-          </Button>
+            <Button
+              type="button"
+              className="w-full bg-rose-600 hover:bg-rose-700"
+              disabled={submitting !== null}
+              onClick={() => decide(true)}
+            >
+              {submitting === "accept" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+              Chấp nhận hủy
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -432,7 +455,7 @@ export default function OrdersPage() {
   // Chỉ đơn KHÁCH ĐANG XIN HỦY chờ shop quyết — áp trên mọi tab; deep-link
   // /orders?cancelRequested=1 từ chuông thông báo (23/10/2026).
   const [cancelReqFilter, setCancelReqFilter] = useState(false);
-  const [deciding, setDeciding] = useState<{ order: Order; accept: boolean } | null>(null);
+  const [deciding, setDeciding] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
@@ -657,8 +680,6 @@ export default function OrdersPage() {
                 meta={STATUS_META[o.shippingStatus]}
                 fallback={o.shippingStatus}
               />
-              {/* Khách xin hủy, sàn chờ shop quyết — trạng thái vận chuyển giữ nguyên */}
-              <CancelRequestLabel order={o} />
               {/* Nhãn đã in phiếu — nhìn là biết đơn nào người khác đang gói */}
               {o.labelPrintedAt && (
                 <span
@@ -686,6 +707,9 @@ export default function OrdersPage() {
                   Chưa in phiếu
                 </span>
               )}
+              {/* Khách xin hủy, sàn chờ shop quyết — trạng thái vận chuyển giữ nguyên,
+                  đặt cuối ô vì là VIỆC CẦN LÀM (sau dòng in phiếu là dữ kiện) */}
+              <CancelRequestLabel order={o} />
               {/* Tình trạng hàng hoàn — chỉ hiện khi đơn có hoàn */}
               {o.returnStatus !== "NONE" && RETURN_META[o.returnStatus] && (
                 <span
@@ -709,26 +733,15 @@ export default function OrdersPage() {
         header: "Thao tác",
         cell: ({ row }) =>
           row.original.cancelRequestedAt ? (
-            // Khách xin hủy: hai nút quyết thay nút Cập nhật — trả lời sàn trước đã.
-            <div className="flex flex-col items-center gap-1">
-              <Button
-                size="sm"
-                className="w-full bg-rose-600 hover:bg-rose-700"
-                onClick={() => setDeciding({ order: row.original, accept: true })}
-              >
-                <Check className="size-3.5" />
-                Chấp nhận hủy
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={() => setDeciding({ order: row.original, accept: false })}
-              >
-                <Ban className="size-3.5" />
-                Từ chối
-              </Button>
-            </div>
+            // Khách xin hủy: MỘT nút thay nút Cập nhật — mở hộp có cả hai lựa chọn.
+            <Button
+              size="sm"
+              className="bg-rose-600 hover:bg-rose-700"
+              onClick={() => setDeciding(row.original)}
+            >
+              <AlertTriangle className="size-3.5" />
+              Trả lời sàn
+            </Button>
           ) : (
             <Button
               variant="outline"
@@ -1088,6 +1101,12 @@ export default function OrdersPage() {
                   columns={orderColumns}
                   data={items}
                   getRowId={(o) => o.id}
+                  // Khách xin hủy: tô nhẹ cả dòng + vạch đỏ mép trái — nhìn lướt là thấy, ở mọi tab
+                  rowClassName={(o) =>
+                    o.cancelRequestedAt
+                      ? "bg-rose-50/70 shadow-[inset_3px_0_0_0_theme(colors.rose.500)] hover:bg-rose-50 dark:bg-rose-950/25 dark:hover:bg-rose-950/40"
+                      : undefined
+                  }
                   selection={{ selectedIds, onChange: setSelectedIds }}
                   viewExtras={viewExtras}
                   toolbar={`${formatNumber(total)} đơn khớp bộ lọc`}
@@ -1167,7 +1186,7 @@ export default function OrdersPage() {
         />
       )}
       <CancelDecideDialog
-        pending={deciding}
+        order={deciding}
         onOpenChange={(o) => {
           if (!o) setDeciding(null);
         }}

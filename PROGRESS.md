@@ -18,6 +18,10 @@
 - **Kiểm:** tsc BE/FE sạch; `cancel-request-plan.test.ts` 11 ca + 3 file liên quan 41/41; DB dev áp SQL bằng `prisma db execute` (migrate deploy
   kẹt bản ghi lỗi cũ `fee_audit` 17/09); soi web local 1 đơn seed (dải, nhãn, nút) rồi xóa seed. **Chưa:** API thật 3 sàn, hình dạng
   cancellations TikTok, Lazada decide; lát 3; mobile. Memory `hubsell-huy-don-sau-chuan-bi-hang` đã cập nhật.
+- **Anh xem ảnh tab Đã xử lý, hỏi "đơn đã xử lý mà khách xin hủy nằm ở đâu, nó còn đi kèm đã in/chưa in/đang giao"** → sửa trình bày: ghim
+  đơn xin hủy lên đầu MỌI tab (hạn gần trước, trên hỏa tốc), tô nhẹ cả dòng + vạch đỏ, ô Trạng thái giữ nguyên + viên "Khách xin hủy" + "còn N
+  giờ để trả lời", cột Thao tác một nút "Trả lời sàn" mở hộp 2 lựa chọn (dữ kiện 4 dòng). Soi local 1600px với 3 đơn seed Đã xử lý (đã in còn
+  hạn / chưa in quá hạn / thường), seed đã trả lại. Commit riêng sau e0bdb335.
 
 ## Phiên 23/10/2026 sáng — KHẢO SÁT: KHÁCH HỦY ĐƠN SAU KHI ĐÃ CHUẨN BỊ HÀNG / ĐANG GIAO (chỉ đọc, chưa code)
 
