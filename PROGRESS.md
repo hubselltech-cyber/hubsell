@@ -95,6 +95,11 @@
   khoảng giá 214.000–1.294.000 + giá vốn 57.000–157.000 rồi đo: 1366 và 1700 tràn 0, 0 ô tiền tràn; 1280 cuộn 57px, 0 ô tiền tràn.
   Bài học ghi memory [[feedback-soi-co-man-bang-du-lieu-rong-nhat]].
 - **Anh: nút header khối Kho trung tâm "Cài đặt đồng bộ" chuẩn phải là "Cài đặt đồng bộ tồn kho"** → đổi (cả nút bước 3 "Bật đồng bộ tồn kho").
+- **Anh (ảnh prod): "Khách khi ấn nối nhảy sang thì không có nút nối"** — hai lỗi: (1) tab Sản phẩm trên sàn cột tick `w-10` + 52% + phần
+  còn lại = 100% + 40px → bảng rộng hơn khung, nút "Gỡ nối" bị cắt mép phải → cột theo % tổng 100 (3/36/13/48), đo 1440: nút trong khung;
+  (2) gian khách đã nối hết nên dòng nào cũng chỉ có Gỡ nối, và "Nối gian" từ Tồn kho mồi ô tìm bằng MÃ SKU kho (không khớp dòng sàn) → thêm
+  nút **Đổi** ở dòng đã nối (ô gõ điền sẵn mã cũ, Enter = nối sang mã khác / tạo mã mới qua link-by-sku, Esc/× thôi), và "Nối gian" mồi bằng
+  4 chữ đầu TÊN sản phẩm. eslint + tsc sạch; soi local 1440 bằng JS (ô Đổi điền sẵn TC050-BE, Gỡ nối phải 1376 < khung 1393).
 
 ---
 

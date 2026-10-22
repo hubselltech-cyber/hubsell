@@ -14,6 +14,7 @@ import {
   Loader2,
   PackagePlus,
   PackageSearch,
+  Pencil,
   Search,
   Sparkles,
   X,
@@ -140,6 +141,9 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
   const [rootDrafts, setRootDrafts] = useState<Record<string, string>>({});
   // Nhóm đang tạo SKU kho hàng loạt / dòng đang gỡ.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Dòng ĐÃ nối đang mở ô "Đổi" mã kho (anh Trung 22/10 tối: khách nhảy sang mà toàn dòng
+  // đã nối thì không có nút Nối nào — phải đổi được mã ngay tại dòng, không bắt gỡ rồi gõ lại).
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Sản phẩm sàn đang mở hộp thoại nối nhanh (bấm "Chọn SKU có sẵn" trên dòng)
   const [linkTarget, setLinkTarget] = useState<ChannelProduct | null>(null);
@@ -423,7 +427,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
 
   /** Ô "Liên kết" của một dòng sàn: đã nối → mã kho + gỡ; chưa → ô gõ mã tại chỗ. */
   function renderLinkCell(r: ChannelProduct) {
-    if (r.product) {
+    if (r.product && editingId !== r.id) {
       return (
         <div className="flex min-w-0 items-center gap-2">
           <div className="min-w-0 flex-1">
@@ -438,7 +442,18 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
           <Button
             size="sm"
             variant="outline"
-            className="ml-auto h-8 shrink-0 px-2.5 text-red-700 hover:bg-red-50 hover:text-red-700"
+            className="ml-auto h-8 shrink-0 px-2.5"
+            onClick={() => setEditingId(r.id)}
+            title="Nối sang mã SKU kho khác (gõ mã có sẵn hoặc mã mới)"
+            aria-label={`Đổi mã kho của ${variantLabel(r.variantName) ?? r.channelSku}`}
+          >
+            <Pencil className="size-3.5" />
+            Đổi
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 shrink-0 px-2.5 text-red-700 hover:bg-red-50 hover:text-red-700"
             onClick={() => handleUnlinkOne(r)}
             disabled={busyKey === `unlink:${r.id}`}
             title="Gỡ nối dòng này khỏi SKU kho"
@@ -457,8 +472,11 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     return (
       <InlineSkuLink
         row={r}
+        initial={r.product?.skuCode}
+        onCancel={r.product ? () => setEditingId(null) : undefined}
         onPick={() => setLinkTarget(r)}
         onLinked={(created) => {
+          setEditingId(null);
           afterChange();
           if (created) loadAllProducts();
         }}
@@ -612,7 +630,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                 <Table className="table-fixed" containerClassName="overflow-visible">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-10">
+                      <TableHead className="w-[3%]">
                         <input
                           type="checkbox"
                           aria-label="Chọn tất cả trên trang này"
@@ -621,9 +639,10 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                           className="size-4 cursor-pointer accent-primary"
                         />
                       </TableHead>
-                      <TableHead className="w-[38%]">Sản phẩm trên sàn</TableHead>
-                      <TableHead className="w-[14%] text-right">Giá · Tồn sàn</TableHead>
-                      <TableHead>Mã SKU kho (liên kết)</TableHead>
+                      {/* Tổng % = 100 (3 + 36 + 13 + 48): có cột px cố định thì bảng rộng hơn khung và cột cuối bị cắt. */}
+                      <TableHead className="w-[36%]">Sản phẩm trên sàn</TableHead>
+                      <TableHead className="w-[13%] text-right">Giá · Tồn sàn</TableHead>
+                      <TableHead className="w-[48%]">Mã SKU kho (liên kết)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1060,15 +1079,21 @@ function ChannelThumb({ src, alt }: { src: string | null; alt: string }) {
  */
 function InlineSkuLink({
   row,
+  initial,
+  onCancel,
   onPick,
   onLinked,
 }: {
   row: ChannelProduct;
+  /** Mã đang nối (chế độ "Đổi") — điền sẵn để khách sửa. */
+  initial?: string;
+  /** Có = đang "Đổi" trên dòng đã nối: hiện nút hủy, Esc để thoát. */
+  onCancel?: () => void;
   /** Mở hộp tìm SKU có sẵn (khi khách không nhớ mã). */
   onPick: () => void;
   onLinked: (created: boolean) => void;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initial ?? "");
   const [busy, setBusy] = useState(false);
   const label = variantLabel(row.variantName) ?? row.channelSku;
 
@@ -1110,7 +1135,9 @@ function InlineSkuLink({
             e.preventDefault();
             void submit();
           }
+          if (e.key === "Escape" && onCancel) onCancel();
         }}
+        autoFocus={Boolean(onCancel)}
         title="Mã có sẵn trong kho → nối vào; mã mới → tạo SKU kho mới rồi nối. Enter để nối."
       />
       {/* Nút CÓ CHỮ ngay cạnh ô gõ (anh Trung 22/10: "để nút kết nối bên cạnh giống Salework") */}
@@ -1134,6 +1161,11 @@ function InlineSkuLink({
         <Search className="size-3.5" />
         Tìm
       </Button>
+      {onCancel && (
+        <Button size="sm" variant="ghost" className="h-8 px-2" onClick={onCancel} title="Thôi, giữ mã cũ (Esc)" aria-label="Thôi đổi mã">
+          <X className="size-3.5" />
+        </Button>
+      )}
     </div>
   );
 }

@@ -539,6 +539,14 @@ export default function ProductsHubPage() {
     setLinkSeed(seedSearch);
     setTab("links");
   }
+  /**
+   * Từ khóa mồi khi bấm "Nối gian" ở một SKU kho: lấy 4 chữ đầu TÊN sản phẩm (anh Trung 22/10
+   * tối: mồi bằng mã SKU kho thì hầu như không khớp dòng sàn nào — dòng sàn mang mã sàn khác —
+   * khách nhảy sang thấy bảng trống, tưởng không có nút nối).
+   */
+  function linkSeedFor(p: Product): string {
+    return p.productName.trim().split(/\s+/).slice(0, 4).join(" ");
+  }
 
   // Nhân viên không được biết giá vốn — backend đã cắt trường, bỏ luôn cột.
   const seesCost = canSeeFinancials(getStoredUser());
@@ -747,7 +755,7 @@ export default function ProductsHubPage() {
             return isAdmin ? (
               <button
                 type="button"
-                onClick={() => jumpToLinks(row.original.skuCode)}
+                onClick={() => jumpToLinks(linkSeedFor(row.original))}
                 className={cn(
                   TEXT_SUB,
                   "inline-flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 transition-colors hover:border-primary hover:text-foreground"
@@ -1044,7 +1052,7 @@ export default function ProductsHubPage() {
             {isAdmin && (
               <button
                 type="button"
-                onClick={() => jumpToLinks(product.skuCode)}
+                onClick={() => jumpToLinks(linkSeedFor(product))}
                 className="inline-flex items-center gap-1 self-start text-xs text-primary underline-offset-2 hover:underline"
               >
                 <Link2 className="size-3" />
