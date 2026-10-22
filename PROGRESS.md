@@ -85,6 +85,9 @@
   Supabase đang mở; em chỉ đếm trước/sau. **Anh dán chạy UPDATE ("Success") → em đếm lại: đang bán 198 (= 198 dòng sàn ACTIVE), ngừng
   bán 103, còn sót 0, đang bán mà hết hàng 48.** Khách mở Hàng hóa sẽ thấy "Đang bán 198 · Ngừng bán 103 · Hết hàng 48". Toàn nền tảng
   (~6.400 SKU còn lại) CHƯA chạy — chờ phản hồi khách rồi anh quyết.
+- **Anh hỏi "kéo sản phẩm từ sàn về thì về Tồn kho hay Sản phẩm trên sàn?"** → về tab Sản phẩm trên sàn (tầng đệm), nối mới sang kho.
+  **Anh chốt đổi tên tab "Tồn kho" → "Tồn kho đã nối"** (em lưu ý tab vẫn chứa SKU tự thêm/Excel chưa nối — anh vẫn chốt); lời bước 1 khối Kho
+  trung tâm thêm "đang nằm ở tab Sản phẩm trên sàn — chưa vào kho, sang bước 2 để nối".
 
 ---
 

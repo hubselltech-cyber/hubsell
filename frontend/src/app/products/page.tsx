@@ -1231,7 +1231,9 @@ export default function ProductsHubPage() {
   }
 
   const hubTabs: PageTabItem<HubTab>[] = [
-    { key: "inventory", label: "Tồn kho" },
+    // "Tồn kho đã nối" (anh Trung 22/10 tối): khách kéo hàng về tưởng vào thẳng kho; tab này chỉ
+    // có SKU kho — hàng sàn phải nối (bước 2) mới xuất hiện ở đây.
+    { key: "inventory", label: "Tồn kho đã nối" },
     ...(isAdmin
       ? [
           {

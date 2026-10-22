@@ -201,7 +201,7 @@ export function SetupGuide({
     channelCount === 0
       ? "Chưa nối gian hàng nào. Nối Shopee / Lazada / TikTok trước, rồi kéo danh mục về."
       : step1Done
-        ? `${formatNumber(all)} sản phẩm sàn từ ${formatNumber(channelCount)} gian. Sàn thêm hàng mới thì kéo lại.`
+        ? `${formatNumber(all)} sản phẩm sàn từ ${formatNumber(channelCount)} gian, đang nằm ở tab Sản phẩm trên sàn — chưa vào kho, sang bước 2 để nối. Sàn thêm hàng mới thì kéo lại.`
         : `${formatNumber(channelCount)} gian đã nối, chưa kéo sản phẩm nào về.`,
     channelCount === 0 ? (
       <Button size="sm" onClick={() => router.push("/channels")}>
