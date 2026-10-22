@@ -2191,6 +2191,15 @@ export type ShippingDisputeStatus =
   | "DANG_KHIEU_NAI"
   | "DA_DOI_SOAT";
 
+/** Dòng hàng gọn của một đơn ở các bảng Kiểm toán phí — để biết đơn đó là hàng gì. */
+export interface OrderLineBrief {
+  sku: string;
+  name: string;
+  /** Tên phân loại tra từ danh mục gian; "" = không biết. */
+  variation: string;
+  quantity: number;
+}
+
 export interface ShippingDiscrepancy {
   id: string;
   orderCode: string;
@@ -2202,6 +2211,8 @@ export interface ShippingDiscrepancy {
   shippingFeeActual: number; // phí thực tế bị trừ
   discrepancy: number; // ÂM = số tiền shop bị mất
   status: ShippingDisputeStatus;
+  /** Thiếu = backend cũ. */
+  items?: OrderLineBrief[];
 }
 
 export interface ShippingDiscrepancyResponse {
@@ -2285,6 +2296,7 @@ export interface FeeAuditPayoutItem {
   /** Diff từng thành phần — null với đơn tính theo chế độ tương thích cũ. */
   detail: PayoutShortfallDetailItem[] | null;
   status: FeeAuditStatus;
+  items?: OrderLineBrief[];
 }
 
 export interface FeeAuditPendingItem {
@@ -2298,6 +2310,7 @@ export interface FeeAuditPendingItem {
   daysWaiting: number;
   /** false = đơn cũ chưa có mốc giao, số ngày tính từ ngày đặt (thận trọng hơn). */
   sinceDelivered: boolean;
+  items?: OrderLineBrief[];
 }
 
 export type FeeAuditResponse = {

@@ -36,7 +36,7 @@ export type PnlOrder = Prisma.OrderGetPayload<{
 /** Quan hệ đi kèm của tập đơn SSOT — dùng chung cho bản có trần và bản phân trang. */
 export const PNL_INCLUDE = {
   channel: { select: { channelName: true, shopName: true } },
-  items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
+  items: { include: { product: { select: { skuCode: true, imageUrl: true, variantName: true } } } },
   inventoryLogs: {
     where: { changeQuantity: { lt: 0 } },
     include: { product: { select: { costPrice: true } } },
@@ -397,7 +397,9 @@ export function computePnlRow(o: PnlOrder) {
     items: o.items.map((it) => ({
       sku: it.channelSku,
       name: it.productName,
-      variation: "", // OrderItem chưa tách trường phân loại — giữ chỗ
+      // OrderItem không lưu tên phân loại; nơi cần hiển thị (bảng Lãi/Lỗ thực
+      // hiện) tra theo danh tính sàn bằng lib/order-line-names rồi điền vào.
+      variation: "",
       quantity: it.quantity,
       price: Number(it.price),
       costPriceAtSale: Number(it.costPriceAtSale),

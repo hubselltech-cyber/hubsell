@@ -258,21 +258,36 @@ export function ProfitCell({ value }: { value: number }) {
 }
 
 /**
- * Cột "Chi tiết sản phẩm" — mini-list gọn: chỉ Mã SKU (hoặc mã phân loại) × SL,
- * xếp chồng dọc từng dòng. BỎ tên sản phẩm cho bảng gọn nhất.
+ * Cột "Chi tiết sản phẩm" — mỗi dòng hàng hai tầng: TÊN sản phẩm (cắt theo bề
+ * rộng, tooltip đủ tên) · tên PHÂN LOẠI × SL, bên dưới là mã sàn chữ mono.
+ * Trước 22/10 chỉ in mã cho gọn, nhưng khách vài nghìn SKU phải tra ngược mã
+ * SPE-…/173…_1 trên sàn mới biết là hàng gì (anh Trung chốt: tên cắt + tooltip).
  */
 export function ProductLines({ items }: { items: PnlItemLine[] }) {
   if (items.length === 0) return <span className="text-slate-300">—</span>;
   return (
-    <div className="space-y-0.5">
-      {items.map((it, i) => (
-        <div key={`${it.sku}-${i}`} className="whitespace-nowrap leading-tight">
-          <span className="font-mono text-[11px] text-slate-600">
-            {it.variation || it.sku}
-          </span>
-          <span className="text-slate-400"> × {it.quantity}</span>
-        </div>
-      ))}
+    <div className="space-y-1">
+      {items.map((it, i) => {
+        const full = `${it.name}${it.variation ? ` · ${it.variation}` : ""} × ${it.quantity}`;
+        return (
+          <div key={`${it.sku}-${i}`} className="max-w-[20rem] leading-tight">
+            {/* Tên co lại (…) nhường chỗ; phân loại + số lượng LUÔN hiện — đó là
+                phần khách cần nhất khi đối chiếu đơn. */}
+            <p className="flex items-baseline gap-1" title={full}>
+              <span className="min-w-0 truncate text-slate-700">{it.name || it.sku}</span>
+              {it.variation && (
+                <span className="max-w-[10rem] shrink-0 truncate font-medium text-sky-700">
+                  · {it.variation}
+                </span>
+              )}
+              <span className="shrink-0 text-slate-400">× {it.quantity}</span>
+            </p>
+            <p className="truncate font-mono text-[11px] text-slate-500" title={`Mã trên sàn: ${it.sku}`}>
+              {it.sku}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }

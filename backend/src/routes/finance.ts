@@ -30,6 +30,7 @@ import {
   invalidateOwnerCostCaches,
 } from "../lib/cost-price";
 import { findCostSiblings } from "../lib/cost-mapping";
+import { loadVariantNames, type OrderLineRef } from "../lib/order-line-names";
 import { groupByCost, planCostImport, type CostImportRow } from "../lib/cost-import";
 import costMappingRouter from "./cost-mapping";
 import {
@@ -431,10 +432,39 @@ export async function loadRealizedPnl(
       })
     : [];
   const byId = new Map(orders.map((o) => [o.id, o]));
+  // Tên phân loại cho cột "Chi tiết sản phẩm" — tra một lượt cho cả trang
+  // (khách vài nghìn SKU 22/10: chỉ có mã thì không biết là hàng gì).
+  const variantOf = await loadVariantNames(
+    orders.flatMap((o) =>
+      o.items.map((it) => ({
+        channelId: o.channelId,
+        externalId: it.externalId,
+        channelSku: it.channelSku,
+        productVariantName: it.product?.variantName,
+      }))
+    )
+  );
   const rows: PnlRow[] = [];
   for (const i of pageIds) {
     const o = byId.get(i.orderId);
-    if (o) rows.push(computePnlRow(o));
+    if (!o) continue;
+    const row = computePnlRow(o);
+    // computePnlRow giữ nguyên thứ tự o.items → ghép theo chỉ số
+    row.items = row.items.map((line, idx) => {
+      const it = o.items[idx];
+      return it
+        ? {
+            ...line,
+            variation: variantOf({
+              channelId: o.channelId,
+              externalId: it.externalId,
+              channelSku: it.channelSku,
+              productVariantName: it.product?.variantName,
+            }),
+          }
+        : line;
+    });
+    rows.push(row);
   }
   const lastId = pageIds[pageIds.length - 1];
   return {
@@ -1359,6 +1389,42 @@ router.get("/sku-products/missing-cost", async (req: AuthRequest, res, next) => 
 // API trả `discrepancy` ÂM (góc nhìn shop bị mất tiền) cho khớp giao diện.
 // ============================================================
 
+/**
+ * Dòng hàng gọn cho các bảng Kiểm toán phí (khách 22/10: danh sách đơn bị truy
+ * thu chỉ có mã đơn, không biết là sản phẩm gì). Include dùng chung + hàm dựng.
+ */
+const AUDIT_ITEMS_INCLUDE = {
+  channel: { select: { channelName: true, shopName: true } },
+  items: {
+    select: {
+      channelSku: true,
+      productName: true,
+      quantity: true,
+      externalId: true,
+      product: { select: { variantName: true } },
+    },
+  },
+} satisfies Prisma.OrderInclude;
+
+type AuditOrder = Prisma.OrderGetPayload<{ include: typeof AUDIT_ITEMS_INCLUDE }>;
+
+async function auditItemsOf(orders: AuditOrder[]) {
+  const ref = (o: AuditOrder, it: AuditOrder["items"][number]): OrderLineRef => ({
+    channelId: o.channelId,
+    externalId: it.externalId,
+    channelSku: it.channelSku,
+    productVariantName: it.product?.variantName,
+  });
+  const variantOf = await loadVariantNames(orders.flatMap((o) => o.items.map((it) => ref(o, it))));
+  return (o: AuditOrder) =>
+    o.items.map((it) => ({
+      sku: it.channelSku,
+      name: it.productName,
+      variation: variantOf(ref(o, it)),
+      quantity: it.quantity,
+    }));
+}
+
 const DISPUTE_STATUSES: ShippingDisputeStatus[] = [
   ShippingDisputeStatus.CHO_KHIEU_NAI,
   ShippingDisputeStatus.DANG_KHIEU_NAI,
@@ -1396,7 +1462,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         orderBy: [{ settledAt: "desc" }, { createdAt: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { channel: { select: { channelName: true, shopName: true } } },
+        include: AUDIT_ITEMS_INCLUDE,
       }),
       // Toàn bộ đơn khớp bộ lọc (không phân trang) để tính tổng tiền cần đòi
       prisma.order.findMany({
@@ -1404,6 +1470,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         select: { shippingFeeDiff: true, shippingDisputeStatus: true },
       }),
     ]);
+    const itemsOf = await auditItemsOf(rows);
 
     const totalDiscrepancy = allMatching.reduce(
       (s, o) => s + Number(o.shippingFeeDiff),
@@ -1433,6 +1500,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         shippingFeeActual: Number(o.shippingFeeActual), // phí thực tế bị trừ
         discrepancy: -Number(o.shippingFeeDiff), // ÂM = shop bị mất tiền
         status: o.shippingDisputeStatus,
+        items: itemsOf(o),
       })),
     });
   } catch (err) {
@@ -1641,9 +1709,10 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
           orderBy: [{ payoutShortfall: "desc" }, { settledAt: "desc" }],
           skip: (page - 1) * pageSize,
           take: pageSize,
-          include: { channel: { select: { channelName: true, shopName: true } } },
+          include: AUDIT_ITEMS_INCLUDE,
         }),
       ]);
+      const itemsOf = await auditItemsOf(rows);
       res.json({
         summary,
         tab,
@@ -1663,6 +1732,7 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
           // thiếu VÌ ĐÂU". null = đơn tính theo chế độ tương thích cũ.
           detail: o.payoutShortfallDetail ?? null,
           status: o.payoutAuditStatus,
+          items: itemsOf(o),
         })),
       });
       return;
@@ -1676,9 +1746,10 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
         orderBy: [{ deliveredAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { channel: { select: { channelName: true, shopName: true } } },
+        include: AUDIT_ITEMS_INCLUDE,
       }),
     ]);
+    const itemsOf = await auditItemsOf(rows);
     res.json({
       summary,
       tab,
@@ -1699,6 +1770,7 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
           // có mốc giao dùng ngày đặt (FE chú thích "tính từ ngày đặt").
           daysWaiting: Math.floor((Date.now() - since.getTime()) / 86_400_000),
           sinceDelivered: o.deliveredAt !== null,
+          items: itemsOf(o),
         };
       }),
     });

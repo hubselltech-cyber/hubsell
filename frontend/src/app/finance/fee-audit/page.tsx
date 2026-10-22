@@ -60,6 +60,7 @@ import {
   updateFeeAuditStatus,
   updateShippingDisputeStatus,
   type FeeAuditPayoutItem,
+  type OrderLineBrief,
   type FeeAuditPendingItem,
   type FeeAuditStatus,
   type PayoutShortfallDetailItem,
@@ -138,19 +139,29 @@ function ChannelBadge({ channelName }: { channelName: keyof typeof CHANNEL_META 
   );
 }
 
-/** Ô "Mã đơn" dùng chung 3 tab: badge sàn + mã + dòng phụ (ngày · tên gian). */
+/**
+ * Ô "Mã đơn" dùng chung 3 tab: badge sàn + mã + dòng phụ (ngày · tên gian) +
+ * HÀNG TRONG ĐƠN (khách 22/10: danh sách đơn bị truy thu chỉ có mã đơn, không
+ * biết là sản phẩm gì). Tên cắt theo bề rộng, rê chuột ra đủ; đơn nhiều món
+ * in món đầu + "+N món".
+ */
 function OrderCell({
   channelName,
   shopName,
   orderCode,
   subDate,
+  items,
 }: {
   channelName: keyof typeof CHANNEL_META;
   shopName: string;
   orderCode: string;
   subDate: string | null;
+  items?: OrderLineBrief[];
 }) {
   const shop = shopOnlyName(channelName, shopName);
+  const lineText = (it: OrderLineBrief) =>
+    `${it.name || it.sku}${it.variation ? ` · ${it.variation}` : ""} × ${it.quantity}`;
+  const first = items?.[0];
   return (
     <>
       <div className="flex items-center gap-2">
@@ -161,6 +172,24 @@ function OrderCell({
         {subDate ? formatDateTime(subDate) : "—"}
         {shop && <> · {shop}</>}
       </p>
+      {first && items && (
+        <p
+          className="mt-0.5 flex max-w-[15rem] items-baseline gap-1 text-xs"
+          title={items.map(lineText).join("\n")}
+        >
+          {/* Tên co lại (…); phân loại, số lượng và "+N món" luôn hiện */}
+          <span className="min-w-0 truncate text-slate-700">{first.name || first.sku}</span>
+          {first.variation && (
+            <span className="max-w-[7rem] shrink-0 truncate font-medium text-sky-700">
+              · {first.variation}
+            </span>
+          )}
+          <span className="shrink-0 text-slate-400">× {first.quantity}</span>
+          {items.length > 1 && (
+            <span className="shrink-0 text-slate-500">+{formatNumber(items.length - 1)} món</span>
+          )}
+        </p>
+      )}
     </>
   );
 }
@@ -358,6 +387,7 @@ export default function FeeAuditPage() {
             shopName={row.original.shopName}
             orderCode={row.original.orderCode}
             subDate={row.original.settledAt ?? row.original.createdAt}
+            items={row.original.items}
           />
         ),
       },
@@ -435,6 +465,7 @@ export default function FeeAuditPage() {
             shopName={row.original.shopName}
             orderCode={row.original.orderCode}
             subDate={row.original.settledAt}
+            items={row.original.items}
           />
         ),
       },
@@ -517,6 +548,7 @@ export default function FeeAuditPage() {
             shopName={row.original.shopName}
             orderCode={row.original.orderCode}
             subDate={row.original.createdAt}
+            items={row.original.items}
           />
         ),
       },
