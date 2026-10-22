@@ -51,7 +51,7 @@
   standard_conforming_strings=on. Sửa migration dùng `[[:space:]]` (không gạch chéo, đúng ở mọi đường áp); kiểm lại bằng đúng câu UPDATE
   trong file → groupKey đúng; local không còn groupKey lệch.
 - **Anh: "Commit và push lên anh xem"** → tắt dev server, hoàn env local (comment 4001, https://localhost:4000), xóa script seed demo
-  (untracked), commit cả 6 lát + push. Sau deploy: migration tự áp trên Render (backfill phân loại cho SKU kho cũ); khách shop váy bấm
+  (untracked), commit cả 6 lát + push `a6aceaaa` 22/10 tối. Sau deploy: migration tự áp trên Render (backfill phân loại cho SKU kho cũ); khách shop váy bấm
   Đồng bộ từ sàn để dòng SPE-… đổi khóa nếu đã điền SKU cha. Kiểm log `[product-sync]` + SQL `COUNT(*) FROM "Product" WHERE "variantName" IS NOT NULL`.
   CÒN TREO: lời bước 2 khối Kho trung tâm ưu tiên nối tay (anh chưa gật).
 
