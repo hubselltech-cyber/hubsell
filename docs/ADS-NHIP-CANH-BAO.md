@@ -958,3 +958,22 @@ tiêu chí 5c; đề xuất bật lát 2 trên một gian nhỏ ghi ở docs CUN
 **CRM care-auto:** 19 thuê bao hết gói quá 7 ngày ân hạn (trong 44 hết gói / 158 thuê bao / 165 user) = 19 dòng CHURNED AUTO_EXPIRED
 + 19 audit `care.auto` lúc 23:13 ngày 21/10; 5 ACTIVE MANUAL giữ nguyên. Khớp. Docs HQ-CRM mục 6 ước "phần lớn 155 khách" là sai: đa
 số chưa hết gói hoặc chưa quá ân hạn.
+
+**A3 ĐÃ PUSH 99691473 lúc 10:01, boot 10:07:28 (instance mới) — theo dõi 30' tới 10:37 (Chrome anh, Render + Supabase):**
+
+| Chỉ số | Trước A3 (bản A2, 09:35–10:08) | Sau A3 (10:07–10:37) |
+|---|---|---|
+| Dòng `cổng bảo quay lại sau 60 s` lặp ở gian > 100 chiến dịch | ~50 dòng / 12', 12 gian lặp mỗi ~80 s, xung không xong | **0** — dòng cuối 10:08:14 thuộc instance cũ |
+| Xung hoàn tất ở các gian từng kẹt | không có | trong 4' đầu: đaklak 26, ANO 14 (tiếp bước 3), BESI 46, Siêu thị 8686 55, Quang Nhật 128, Xuyên Thấu 52 (tiếp bước 3), TIỆM BUÔN 37, An Nhiên 32, TAROT 49, Kirei 9, Cây Giống 148; TIỆM BUÔN xung lần 2 đúng 10:36 (nhịp 30' bình thường) |
+| Hoãn còn lại | — | chỉ ở bước 4 theo trần gian × get_all_cpc 1/5' (HANA NAIL_BOX 286 → 260 s, Mọ Mẫm 286 s, Lucin Home 437 s vì khóa gian ấy vừa 429 lúc 10:05 → nhịp ×0,5) và vài lần "1–47 s" (chờ app × endpoint quá 3 vòng ngủ trong dòng — xem việc kế); dòng cuối 10:20:28 |
+| `[gateway] 429` | 2 lần 10:00 + 10:05 (get_all_cpc, phạt đúng khóa gian × endpoint, không hạ app) | **0** |
+| `api_rate_keys` chạm từ 10:07 | — | 23 khóa, `sum(hits)` 0 |
+| `tripCount` shopee:2044679 | 162 | 162 |
+| Gian dở bước / trễ xung > 60' | — | 0 / 0 |
+
+→ Vòng lặp hết ngay sau boot; A2 giữ phần đúng (429 → phạt đúng gian × endpoint, chạy tiếp từ bước dở — HANA, Lucin, Biocare đều
+"chạy tiếp từ bước 4" thành công). Lịch nhắc 23/10 09:30 đọc 24 h giữ nguyên tiêu chí 13.9.8 "Đo".
+
+**Việc kế nhỏ ghi lại (chưa làm):** `callMarketplace` ném Defer khi `attempt >= 3` dù mỗi lần chờ chỉ vài trăm ms (app × endpoint 2/s,
+hai luồng song song) → làn xếp lại tối thiểu 1' cho một việc đáng ra chờ 1 s (log "quay lại sau 1 s"). Sửa đúng chỗ: giới hạn theo TỔNG
+thời gian ngủ trong dòng (≤ MAX_INLINE_WAIT_MS) thay vì số vòng. Đưa vào bước C cùng thẻ HQ.

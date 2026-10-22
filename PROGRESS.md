@@ -26,6 +26,12 @@
   1/5' (một lệnh/gian/lượt, căn cứ 95/106); `shopeeShopEndpointPerMin` bỏ khóa chỉ đo khỏi sàn nhịp. Test gateway mới: 10 trang id_list
   cùng gian đi liền, trang 11 bị 429 → phạt đúng gian×id_list. tsc sạch, 109 ca xanh 6 bộ. Chờ anh push → theo dõi log hết dòng
   `quay lại sau 60 s` lặp + gian > 100 chiến dịch có `[Ads-pulse] Shopee "…": N campaign sống` trong 30'.
+- **A3 push 99691473 lúc 10:01 (anh: "push ngay, theo dõi 30 phút"), boot 10:07:28; đo tới 10:37 (docs 13.9.9 bảng Trước/Sau):**
+  vòng lặp hoãn 60 s HẾT ngay sau boot (dòng cuối 10:08 thuộc instance cũ); 11 gian từng kẹt xung xong trong 4' đầu (Cây Giống 148
+  chiến dịch, Quang Nhật 128, BESI 46, TAROT 49…), TIỆM BUÔN xung lần 2 đúng 10:36; hoãn còn lại chỉ ở bước 4 theo trần gian ×
+  get_all_cpc 1/5' (Lucin Home 437 s vì khóa gian ấy vừa 429 → nhịp ×0,5, đúng A2); **0 lần 429 từ 10:05**, 23 khóa chạm / 0 phạt,
+  tripCount 162, 0 gian dở bước, 0 gian trễ xung > 60'. Việc kế nhỏ: cổng ném Defer sau 3 vòng ngủ dù tổng chờ < 2 s → đổi sang giới
+  hạn theo tổng thời gian ngủ (bước C). Lịch 23/10 09:30 đọc 24 h giữ nguyên.
 
 ## Phiên 22/10/2026 sáng — BƯỚC A2 CẦU DAO ADS 13.9 ĐÃ CODE: CỔNG HỌC TRẦN THEO GIAN × ENDPOINT + XUNG CHẠY TIẾP TỪ BƯỚC DỞ (anh chốt "code luôn")
 
