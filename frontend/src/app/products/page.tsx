@@ -1256,7 +1256,8 @@ export default function ProductsHubPage() {
   const hubTabs: PageTabItem<HubTab>[] = [
     // "Tồn kho đã nối" (anh Trung 22/10 tối): khách kéo hàng về tưởng vào thẳng kho; tab này chỉ
     // có SKU kho — hàng sàn phải nối (bước 2) mới xuất hiện ở đây.
-    { key: "inventory", label: "Tồn kho đã nối" },
+    // Lần 2 (anh Trung 22/10 tối): "Tổng kho" — gọn, bao cả SKU tự thêm / Excel lẫn SKU nối từ sàn.
+    { key: "inventory", label: "Tổng kho" },
     ...(isAdmin
       ? [
           {
