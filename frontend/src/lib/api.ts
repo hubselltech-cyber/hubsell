@@ -5646,6 +5646,8 @@ export interface ServicePlan {
   priceQuarterly: number;
   priceSemiannual: number;
   priceYearly: number;
+  /** Giá CÔNG BỐ ₫/đơn cho gói bán bằng tư vấn (Enterprise 65đ, 22/10/2026) — chỉ hiện, null = "Liên hệ". */
+  pricePerOrder: number | null;
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
   maxStaff: number | null;
@@ -5741,6 +5743,7 @@ export interface PlanInput {
   priceQuarterly?: number;
   priceSemiannual?: number;
   priceYearly?: number;
+  pricePerOrder?: number | null;
   maxChannels?: number | null;
   maxOrdersPerMonth?: number | null;
   maxStaff?: number | null;
@@ -5856,6 +5859,8 @@ export interface MyPlanInfo {
 }
 
 export interface MyUpgradePlan extends MyPlanInfo {
+  /** Mô tả ngắn HQ điền ("Cho shop nghìn đơn…") — hiện dưới tên gói ở bảng giá. */
+  description?: string | null;
   priceMonthly: number;
   priceQuarterly: number;
   priceSemiannual: number;
@@ -5910,8 +5915,15 @@ export interface MySubscriptionResponse {
   contactPhone: string | null;
   /** Hồ sơ xuất hóa đơn của chủ shop (06/10) — null với nhân viên. Trống = khách lẻ theo tên tài khoản. */
   billingProfile: MyBillingProfile | null;
-  /** Gói Enterprise "Liên hệ báo giá" — card hiện khi gói tồn tại (kể cả nháp). */
-  enterprisePlan: { id: string; name: string } | null;
+  /** Gói Enterprise "Liên hệ báo giá" — card hiện khi gói tồn tại (kể cả nháp).
+   *  22/10: pricePerOrder = giá CÔNG BỐ ₫/đơn (anh Trung chốt 65đ) chỉ để hiện;
+   *  khách vẫn đăng ký tư vấn; null = "Liên hệ". */
+  enterprisePlan: {
+    id: string;
+    name: string;
+    description: string | null;
+    pricePerOrder: number | null;
+  } | null;
 }
 
 export interface MyBillingProfile {

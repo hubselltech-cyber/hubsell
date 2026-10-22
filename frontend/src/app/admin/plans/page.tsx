@@ -197,6 +197,9 @@ function PlanDialog({
   const [priceQuarterly, setPriceQuarterly] = useState(String(plan?.priceQuarterly ?? 0));
   const [priceSemiannual, setPriceSemiannual] = useState(String(plan?.priceSemiannual ?? 0));
   const [priceYearly, setPriceYearly] = useState(String(plan?.priceYearly ?? 0));
+  // Giá CÔNG BỐ ₫/đơn cho gói bán bằng tư vấn (22/10 anh Trung chốt Enterprise 65đ):
+  // chỉ để hiện trên bảng giá, không tự tính tiền; trống = "Liên hệ".
+  const [pricePerOrder, setPricePerOrder] = useState(plan?.pricePerOrder?.toString() ?? "");
   const [maxChannels, setMaxChannels] = useState(plan?.maxChannels?.toString() ?? "");
   const [maxOrdersPerMonth, setMaxOrdersPerMonth] = useState(
     plan?.maxOrdersPerMonth?.toString() ?? ""
@@ -223,6 +226,7 @@ function PlanDialog({
         priceQuarterly: Math.floor(Number(priceQuarterly)) || 0,
         priceSemiannual: Math.floor(Number(priceSemiannual)) || 0,
         priceYearly: Math.floor(Number(priceYearly)) || 0,
+        pricePerOrder: pricePerOrder.trim() === "" ? null : Number(pricePerOrder),
         maxChannels: limit(maxChannels),
         maxOrdersPerMonth: limit(maxOrdersPerMonth),
         maxStaff: limit(maxStaff),
@@ -313,6 +317,23 @@ function PlanDialog({
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="grid gap-2">
+          <Label>Giá công bố ₫/đơn (gói bán bằng tư vấn)</Label>
+          <Input
+            type="number"
+            min={0}
+            step="0.5"
+            className="w-32"
+            placeholder="Trống = Liên hệ"
+            value={pricePerOrder}
+            onChange={(e) => setPricePerOrder(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Chỉ để hiện trên bảng giá (landing + Gói dịch vụ của khách) cho gói giá kỳ = 0 như
+            Enterprise. Khách vẫn phải đăng ký tư vấn — tiền thật ghi nhận theo số thỏa thuận.
+          </p>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
@@ -922,6 +943,22 @@ export default function PlatformPlansPage() {
                       ].join(" · ")}
                       {p.trialDays > 0 && ` · Dùng thử ${p.trialDays} ngày`}
                     </p>
+
+                    {p.pricePerOrder != null && (
+                      <p
+                        className={cn(
+                          "text-xs",
+                          isBelowFloor(p.pricePerOrder, priceFloorFor(p.maxOrdersPerMonth ?? 0))
+                            ? "font-medium text-amber-700"
+                            : "text-muted-foreground"
+                        )}
+                        title="Giá công bố ₫/đơn trên bảng giá — khách vẫn đăng ký tư vấn"
+                      >
+                        Công bố {formatPerOrder(p.pricePerOrder)} · bán bằng tư vấn
+                        {isBelowFloor(p.pricePerOrder, priceFloorFor(p.maxOrdersPerMonth ?? 0)) &&
+                          ` — dưới giá sàn ${priceFloorFor(p.maxOrdersPerMonth ?? 0)}đ/đơn`}
+                      </p>
+                    )}
 
                     {(() => {
                       const monthly = perOrderAtCap(p.priceMonthly, 1, p.maxOrdersPerMonth);

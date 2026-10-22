@@ -5,7 +5,8 @@
 // và từ 22/08 tối là NƠI MUA GÓI (anh Trung chốt: bày từng gói cho khách
 // chọn ngay tại trang cấu hình):
 //   1) Thẻ gói hiện tại + kỳ hạn + 3 thanh mức dùng so với trần.
-//   2) "Chọn gói & thanh toán": lưới card từng gói, chọn KỲ 1/3/6/12 tháng
+//   2) "Chọn gói & thanh toán": 22/10 đổi sang MA TRẬN GÓI × KỲ giống landing
+//      (components/settings/plan-pricing-matrix.tsx) — ô giá là nút chọn KỲ 1/3/6/12
 //      → nút "Đăng ký mua" (tạo yêu cầu — HQ liên hệ hướng dẫn chuyển khoản,
 //      kế toán Ghi nhận thanh toán là yêu cầu tự đóng) hoặc "Trả bằng Ví"
 //      khi số dư Ví Hubsell đủ (tái dùng /api/referral/renew — trừ ví + gia
@@ -37,6 +38,7 @@ import {
 
 import { PLAN_FEATURES, useMyPlan } from "@/components/shell/plan-quota-guard";
 import { GatewayCheckoutDialog } from "@/components/settings/gateway-checkout-dialog";
+import { CYCLES, PlanPricingMatrix, priceOf } from "@/components/settings/plan-pricing-matrix";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,12 +71,6 @@ import { TEXT_SUB } from "@/lib/typography";
 
 const nf = new Intl.NumberFormat("vi-VN");
 
-const CYCLES: { value: BillingCycle; label: string; months: number; key: keyof MyUpgradePlan }[] = [
-  { value: "MONTHLY", label: "1 tháng", months: 1, key: "priceMonthly" },
-  { value: "QUARTERLY", label: "3 tháng", months: 3, key: "priceQuarterly" },
-  { value: "SEMIANNUAL", label: "6 tháng", months: 6, key: "priceSemiannual" },
-  { value: "YEARLY", label: "12 tháng", months: 12, key: "priceYearly" },
-];
 
 const CYCLE_LABEL: Record<BillingCycle, string> = Object.fromEntries(
   CYCLES.map((c) => [c.value, c.label])
@@ -84,10 +80,6 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("vi-VN");
 }
 
-function priceOf(plan: MyUpgradePlan, cycle: BillingCycle): number {
-  const row = CYCLES.find((c) => c.value === cycle)!;
-  return Number(plan[row.key]);
-}
 
 /** Thanh mức dùng so với trần — cùng thang màu với banner: xanh → vàng 80% → đỏ 100%. */
 function UsageBar({
@@ -443,8 +435,6 @@ export default function SettingsPlanPage() {
   const qc = useQueryClient();
   const { data } = useMyPlan(true);
 
-  // Kỳ đã chọn theo TỪNG gói (mặc định 1 tháng) — khách so giá kỳ dài tự do.
-  const [cycleByPlan, setCycleByPlan] = useState<Record<string, BillingCycle>>({});
   // Bước xác nhận trước khi trừ Ví — trừ tiền không được là một cú click nhầm.
   const [walletBuy, setWalletBuy] = useState<{ plan: MyUpgradePlan; cycle: BillingCycle } | null>(
     null
@@ -701,7 +691,7 @@ export default function SettingsPlanPage() {
         />
       )}
 
-      {/* ===== Chọn gói & thanh toán — trình bày kiểu bảng giá SaaS (anh Trung
+      {/* ===== Chọn gói & thanh toán — ma trận gói × kỳ giống landing (22/10; gốc
           22/08 khuya: to, rõ, đẹp như đối thủ; nêu rõ 3 giới hạn dưới từng gói,
           chưa đặt số = Không giới hạn; bậc 3 gắn Bán chạy nhất) ===== */}
       {data && data.upgradePlans.length > 0 && (
@@ -710,8 +700,8 @@ export default function SettingsPlanPage() {
             <p className="text-base font-semibold">Chọn gói &amp; thanh toán</p>
             <p className={TEXT_SUB}>
               {gateway
-                ? "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua rồi bấm Thanh toán ngay: trang thanh toán mở ra, quét QR bằng app ngân hàng, gói mở ngay khi tiền về."
-                : "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua rồi bấm Đăng ký mua, Hubsell sẽ liên hệ hướng dẫn thanh toán."}
+                ? "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Bấm ô giá để chọn kỳ mua rồi bấm Thanh toán ngay: trang thanh toán mở ra, quét QR bằng app ngân hàng, gói mở ngay khi tiền về."
+                : "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Bấm ô giá để chọn kỳ mua rồi bấm Đăng ký mua, Hubsell sẽ liên hệ hướng dẫn thanh toán."}
             </p>
             {billingReady && (
               <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm">
@@ -790,226 +780,47 @@ export default function SettingsPlanPage() {
             </ul>
           </div>
 
-          {/* 19/09: thêm bậc Scale → 5 gói tự mua + Enterprise = 6 thẻ, xếp 2 hàng × 3
-              (anh Trung chốt cùng bố cục với landing). */}
-          <div className="grid gap-4 pt-2 md:grid-cols-2 xl:grid-cols-3">
-            {data.upgradePlans.map((p) => {
-              const isCurrent = p.id === data.plan?.id;
-              const isLower = data.plan != null && p.tier < data.plan.tier;
-              // Bậc 3 = gói "Bán chạy nhất" (anh Trung chốt 22/08) — theo tier
-              // nên đổi thang gói sau này không phải sửa code.
-              const isBestSeller = p.tier === 3;
-              const cycle = cycleByPlan[p.id] ?? "MONTHLY";
-              const price = priceOf(p, cycle);
-              const months = CYCLES.find((c) => c.value === cycle)!.months;
-              const save =
-                p.priceMonthly > 0 && months > 1
-                  ? Math.round((1 - price / (p.priceMonthly * months)) * 100)
-                  : 0;
-              const walletEnough = wallet >= price && price > 0;
-              // 3 giới hạn nói RÕ dưới từng gói — chưa đặt số = Không giới hạn.
-              const limitRows = [
-                p.maxOrdersPerMonth != null
-                  ? `${nf.format(p.maxOrdersPerMonth)} đơn hàng/tháng`
-                  : "Không giới hạn đơn hàng",
-                p.maxChannels != null
-                  ? `${nf.format(p.maxChannels)} gian hàng`
-                  : "Không giới hạn gian hàng",
-                p.maxStaff != null
-                  ? `${nf.format(p.maxStaff)} tài khoản nhân viên`
-                  : "Không giới hạn nhân viên",
-                "Đầy đủ mọi tính năng Hubsell",
-              ];
-              return (
-                <div
-                  key={p.id}
-                  className={cn(
-                    "relative flex flex-col rounded-2xl border bg-card p-5 shadow-sm",
-                    isBestSeller
-                      ? "border-emerald-500 shadow-md ring-1 ring-emerald-500"
-                      : isCurrent && "border-sky-300"
-                  )}
-                >
-                  {isBestSeller && (
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-sm">
-                      Bán chạy nhất
-                    </span>
-                  )}
-                  {isCurrent && (
-                    <span className="absolute right-4 top-4 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300">
-                      Đang dùng
-                    </span>
-                  )}
-                  {isLower && (
-                    <span className="absolute right-4 top-4 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                      Thấp hơn gói hiện tại
-                    </span>
-                  )}
-                  <p className="text-lg font-bold">{p.name}</p>
-
-                  {/* Chọn kỳ mua — chỉ hiện kỳ gói có bán (giá > 0) */}
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {CYCLES.filter((c) => Number(p[c.key]) > 0).map((c) => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        onClick={() =>
-                          setCycleByPlan((prev) => ({ ...prev, [p.id]: c.value }))
-                        }
-                        className={cn(
-                          "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
-                          cycle === c.value
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                        )}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <p className="mt-4 text-3xl font-extrabold tabular-nums tracking-tight">
-                    {nf.format(price)}₫
-                    <span className="text-sm text-muted-foreground">
-                      /{CYCLE_LABEL[cycle]}
-                    </span>
-                  </p>
-                  <p className="min-h-5 text-sm tabular-nums text-muted-foreground">
-                    {months > 1 && (
-                      <>
-                        ≈ {nf.format(Math.round(price / months))}₫/tháng
-                        {save >= 1 && (
-                          <span className="ml-1.5 font-semibold text-emerald-600">
-                            tiết kiệm {save}%
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </p>
-
-                  <ul className="mt-4 space-y-2.5 border-t pt-4">
-                    {limitRows.map((row) => (
-                      <li key={row} className="flex items-start gap-2.5 text-sm">
-                        <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-                        {row}
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="mt-auto space-y-2 pt-5">
-                    {gateway && (
-                      <Button
-                        className="w-full"
-                        variant={isBestSeller ? "default" : "outline"}
-                        disabled={checkoutMutation.isPending}
-                        onClick={() =>
-                          guardPlanChange(p, cycle, () =>
-                            withBillingStep(() => checkoutMutation.mutate({ planId: p.id, cycle }))
-                          )
-                        }
-                      >
-                        <QrCode className="size-4" />
-                        {checkoutMutation.isPending
-                          ? "Đang mở trang thanh toán…"
-                          : isCurrent
-                            ? "Gia hạn — thanh toán ngay"
-                            : isLower
-                              ? "Chuyển sang gói này"
-                              : "Thanh toán ngay"}
-                      </Button>
-                    )}
-                    <Button
-                      className={cn("w-full", gateway && "h-auto whitespace-normal py-2 text-muted-foreground")}
-                      variant={gateway ? "ghost" : isBestSeller ? "default" : "outline"}
-                      onClick={() =>
-                        guardPlanChange(p, cycle, () =>
-                          withBillingStep(() =>
-                            openBuyDialog({
-                              planId: p.id,
-                              planName: p.name,
-                              cycle,
-                              price,
-                              isConsult: false,
-                            })
-                          )
-                        )
-                      }
-                    >
-                      <ShoppingCart className="size-4" />
-                      {gateway
-                        ? "Nhờ Hubsell hỗ trợ mua"
-                        : isCurrent
-                          ? "Gia hạn gói này"
-                          : "Đăng ký mua"}
-                    </Button>
-                    {walletEnough && (
-                      <Button
-                        className="w-full"
-                        variant="ghost"
-                        onClick={() =>
-                          guardPlanChange(p, cycle, () =>
-                            withBillingStep(() => setWalletBuy({ plan: p, cycle }))
-                          )
-                        }
-                      >
-                        <Wallet className="size-4" />
-                        Trả bằng Ví Hubsell
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Enterprise "Liên hệ báo giá" — bán bằng TƯ VẤN: khách để lại
-                SĐT, HQ gọi lại chốt trần đơn + giá riêng (anh Trung 22/08 khuya). */}
-            {data.enterprisePlan && (
-              <div className="relative flex flex-col rounded-2xl border border-slate-300 bg-card p-5 shadow-sm dark:border-slate-700">
-                <p className="text-lg font-bold">{data.enterprisePlan.name}</p>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  {topSelfServeOrders > 0
-                    ? `Cho shop trên ${nf.format(topSelfServeOrders)} đơn/tháng`
-                    : "Cho shop quy mô lớn / nhiều thương hiệu"}
-                </p>
-                <p className="mt-4 text-3xl font-extrabold tracking-tight">
-                  Báo giá riêng
-                </p>
-                <p className="min-h-5 text-sm text-muted-foreground">
-                  Theo quy mô vận hành của shop
-                </p>
-                <ul className="mt-4 space-y-2.5 border-t pt-4">
-                  {[
-                    "Trần đơn hàng theo thỏa thuận",
-                    "Số gian hàng theo thỏa thuận",
-                    "Không giới hạn nhân viên",
-                    "Đầy đủ tính năng + hỗ trợ triển khai riêng",
-                  ].map((row) => (
-                    <li key={row} className="flex items-start gap-2.5 text-sm">
-                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-                      {row}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-auto pt-5">
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    onClick={() =>
-                      openBuyDialog({
-                        planId: data.enterprisePlan!.id,
-                        planName: data.enterprisePlan!.name,
-                        price: 0,
-                        isConsult: true,
-                      })
-                    }
-                  >
-                    <Clock className="size-4" />
-                    Đăng ký tư vấn
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* 22/10: MA TRẬN GÓI × KỲ giống landing (anh Trung: "để dạng giống bên
+              Landing cho dễ nhìn") — ô giá là nút chọn kỳ; Enterprise hàng cuối hiện
+              giá công bố ₫/đơn + Đăng ký tư vấn. Thành phần: plan-pricing-matrix.tsx. */}
+          <PlanPricingMatrix
+            plans={data.upgradePlans}
+            currentPlan={data.plan}
+            enterprisePlan={data.enterprisePlan}
+            topSelfServeOrders={topSelfServeOrders}
+            gateway={gateway !== null}
+            wallet={wallet}
+            checkoutPending={checkoutMutation.isPending}
+            onCheckout={(p, cycle) =>
+              guardPlanChange(p, cycle, () =>
+                withBillingStep(() => checkoutMutation.mutate({ planId: p.id, cycle }))
+              )
+            }
+            onRequestBuy={(p, cycle, price) =>
+              guardPlanChange(p, cycle, () =>
+                withBillingStep(() =>
+                  openBuyDialog({
+                    planId: p.id,
+                    planName: p.name,
+                    cycle,
+                    price,
+                    isConsult: false,
+                  })
+                )
+              )
+            }
+            onWalletBuy={(p, cycle) =>
+              guardPlanChange(p, cycle, () => withBillingStep(() => setWalletBuy({ plan: p, cycle })))
+            }
+            onConsult={() =>
+              openBuyDialog({
+                planId: data.enterprisePlan!.id,
+                planName: data.enterprisePlan!.name,
+                price: 0,
+                isConsult: true,
+              })
+            }
+          />
 
           {wallet > 0 && (
             <p className={TEXT_SUB}>

@@ -37,6 +37,7 @@ const PLAN_SELECT = {
   priceQuarterly: true,
   priceSemiannual: true,
   priceYearly: true,
+  pricePerOrder: true,
   maxChannels: true,
   maxOrdersPerMonth: true,
   maxStaff: true,
@@ -58,6 +59,7 @@ function serializePlan(p: {
   priceQuarterly: Prisma.Decimal;
   priceSemiannual: Prisma.Decimal;
   priceYearly: Prisma.Decimal;
+  pricePerOrder: Prisma.Decimal | null;
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
   maxStaff: number | null;
@@ -78,6 +80,7 @@ function serializePlan(p: {
     priceQuarterly: toNumber(p.priceQuarterly),
     priceSemiannual: toNumber(p.priceSemiannual),
     priceYearly: toNumber(p.priceYearly),
+    pricePerOrder: p.pricePerOrder === null ? null : Number(p.pricePerOrder),
     maxChannels: p.maxChannels,
     maxOrdersPerMonth: p.maxOrdersPerMonth,
     maxStaff: p.maxStaff,
@@ -128,6 +131,17 @@ function parsePlanBody(body: Record<string, unknown>, partial: boolean) {
   int("priceSemiannual");
   int("priceYearly");
   int("trialDays");
+
+  // Giá công bố ₫/đơn (gói tư vấn): null/rỗng = không công bố → bảng giá ghi "Liên hệ".
+  if (body.pricePerOrder !== undefined) {
+    if (body.pricePerOrder === null || body.pricePerOrder === "") {
+      out.pricePerOrder = null;
+    } else {
+      const v = Number(body.pricePerOrder);
+      if (!Number.isFinite(v) || v <= 0) errors.push("Giá công bố ₫/đơn phải > 0 hoặc để trống");
+      else out.pricePerOrder = Math.round(v * 100) / 100;
+    }
+  }
 
   // Giới hạn: null/rỗng = không giới hạn.
   for (const key of ["maxChannels", "maxOrdersPerMonth", "maxStaff"] as const) {

@@ -235,10 +235,19 @@ router.get("/me", async (req: AuthRequest, res, next) => {
 
     // Gói Enterprise "Liên hệ báo giá" — hiện card khi gói tồn tại, KỂ CẢ đang
     // nháp/giá 0: bán bằng tư vấn chứ không bằng bảng giá (anh Trung 22/08 khuya).
-    const enterprisePlan = await prisma.servicePlan.findUnique({
+    // 22/10: kèm mô tả + giá CÔNG BỐ ₫/đơn (anh Trung chốt 65đ) — chỉ để hiện,
+    // khách vẫn đăng ký tư vấn; null = "Liên hệ".
+    const enterprisePlanRow = await prisma.servicePlan.findUnique({
       where: { code: "ENTERPRISE" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, description: true, pricePerOrder: true },
     });
+    const enterprisePlan = enterprisePlanRow
+      ? {
+          ...enterprisePlanRow,
+          pricePerOrder:
+            enterprisePlanRow.pricePerOrder === null ? null : Number(enterprisePlanRow.pricePerOrder),
+        }
+      : null;
 
     // CẢ THANG gói đang bán (25/09 anh Trung: bỏ luật "chỉ bậc từ gói hiện
     // tại trở lên" của 22/08 — khách dùng thử gói cao (mặc định nay là Scale)
@@ -253,6 +262,7 @@ router.get("/me", async (req: AuthRequest, res, next) => {
         id: true,
         code: true,
         name: true,
+        description: true,
         tier: true,
         maxChannels: true,
         maxOrdersPerMonth: true,

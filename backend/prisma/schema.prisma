@@ -3197,6 +3197,10 @@ model ServicePlan {
   priceQuarterly    Decimal  @default(0) @db.Decimal(14, 2)
   priceSemiannual   Decimal  @default(0) @db.Decimal(14, 2)
   priceYearly       Decimal  @default(0) @db.Decimal(14, 2)
+  /// Giá CÔNG BỐ ₫/đơn cho gói bán bằng tư vấn (Enterprise, 22/10/2026 anh Trung
+  /// chốt 65đ/đơn): chỉ để hiện trên bảng giá — khách vẫn phải liên hệ, HQ tạo gói
+  /// riêng + ghi nhận thanh toán số thỏa thuận. null = không công bố ("Liên hệ").
+  pricePerOrder     Decimal? @db.Decimal(10, 2)
   /// Giới hạn sử dụng — null = không giới hạn. GĐ1 chỉ LƯU và hiển thị;
   /// cưỡng chế (chặn mềm + mời nâng gói) là việc của GĐ2.
   maxChannels       Int?

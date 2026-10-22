@@ -6,6 +6,29 @@
 
 ---
 
+## Phiên 22/10/2026 trưa — TRANG MUA GÓI THEO MA TRẬN GÓI × KỲ GIỐNG LANDING + ENTERPRISE CÔNG BỐ 65đ/ĐƠN (anh hỏi "có hợp lý không, có lãi không, so đối thủ")
+
+- **Anh:** "phần cấu hình mua gói của khách cũng để dạng giống như bên Landing cho dễ nhìn… Enterprise 65đ 1 đơn có hợp lý không? mình có lãi
+  không? so với đối thủ thì sao? … khách mua gói này vẫn phải liên hệ mình tạo gói, chỉ public 65đ/đơn ra thôi."
+- **Nghiên cứu (docs/GIA-ENTERPRISE-THEO-DON.md):** có lãi — chi phí biến đổi 24–60đ/đơn (hạ tầng 11–26đ theo mốc capacity-plan, hoa hồng
+  giới thiệu 6,5đ, hỗ trợ riêng 4–27đ ước) → lãi gộp 5–44đ/đơn; 65đ ngang/nhỉnh BigSeller–Ginee ở 20–30k đơn, đắt gấp 1,5–2,2 lần từ 50k
+  → 65đ = giá niêm yết vùng 20–50k, deal lớn hơn hạ theo giá sàn HQ 45/33đ sẵn có. Sapo đọc lại hôm nay: Growth 999k KHÔNG giới hạn đơn.
+- **Code app:** (1) `ServicePlan.pricePerOrder` Decimal? + migration `20261022120000_service_plan_price_per_order` (bảng nhỏ, không khóa);
+  HQ `/admin/plans` ô "Giá công bố ₫/đơn (gói bán bằng tư vấn)" + dòng "Công bố Nđ/đơn · bán bằng tư vấn" trên thẻ (vàng nếu dưới giá sàn);
+  `/api/subscription/me` trả `enterprisePlan {description, pricePerOrder}` + `upgradePlans[].description`.
+  (2) `components/settings/plan-pricing-matrix.tsx` MỚI: ma trận gói × kỳ cùng bố cục landing (hàng = gói + 3 hạn mức + nút, cột = 1/3/6/12
+  tháng, ô = giá trọn kỳ + ≈₫/tháng + "Tiết kiệm N tháng/N%" tính từ data, cột 12 tháng tô nổi + ruy băng Lợi nhất); khác landing: **ô giá là nút
+  chọn kỳ**, nút Thanh toán ngay / Đăng ký mua / Trả bằng Ví của hàng mua đúng kỳ đang chọn; dưới lg = thẻ từng gói 4 ô 2×2; Enterprise hàng cuối
+  "65 ₫ / đơn hàng" + Đăng ký tư vấn (null = Liên hệ); màu token (bg-primary) vì app có dark. `/settings/plan` bỏ lưới card cũ, gọi component.
+  (3) Landing `pricing.tsx`: Enterprise `perOrder: 65` → "65 ₫ / đơn hàng" ở bảng desktop, thẻ mobile và đầu cột bảng so sánh; "Trên 20.000 đơn / tháng".
+- **Kiểm:** tsc backend + frontend + landing sạch; eslint 2 lỗi `react-hooks/static-components` (component con khai báo trong render) → đưa
+  `PlanActions`/`EnterpriseOffer`/`ConsultButton` ra cấp module, eslint sạch. Soi local qua backend-http 4010 + frontend-http (cert tự ký chặn
+  cặp HTTPS): desktop 1440 sáng/tối, mobile 375 sáng/tối, bấm ô 12 tháng → nút đổi "Kỳ 12 tháng · 990.000 ₫"; lỗi mobile ô 12 tháng cắt chữ
+  "Đã chọn" (grid item kéo giãn + `h-full`) → `flex-col` + `flex-1`; landing /bang-gia desktop + mobile đúng. HQ local: thẻ Enterprise hiện
+  "Công bố 65đ/đơn", hộp Sửa có ô mới.
+- **DB dev:** `db push` thêm cột; gói ENTERPRISE local đặt pricePerOrder=65 (giữ), PRO local bật tạm để xem bảng → đã tắt lại cuối phiên.
+- **Sau push:** migration tự áp trên Render; anh (hoặc em qua Chrome anh) vào HQ prod → Sửa Enterprise → điền 65; landing push repo riêng.
+
 ## Phiên 22/10/2026 ~10:00 — ĐỌC SỐ THẬT QUA CHROME (anh mở): 5c ĐẠT, CRM KHỚP, A2 LẶP HOÃN 60 s Ở GIAN > 100 CHIẾN DỊCH → A3 "KHÓA GIAN × ENDPOINT CHỈ ĐO"
 
 - **Anh:** "em vào chrome đi, a mở rồi mà" → em chạy Supabase SQL + đọc log Render cho 3 việc còn treo (docs ADS-NHIP-CANH-BAO **13.9.9**).
