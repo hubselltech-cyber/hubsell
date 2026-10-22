@@ -70,9 +70,12 @@ export function StockLevelsCell({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
+          // Rộng THEO Ô (bảng Hàng hóa là table-fixed, cột Đang ở 9%): bề rộng cứng
+          // 11rem từng đẩy số tồn canh phải tràn sang cột Bán trên, "20" chen giữa hai
+          // chip gian (anh Trung 22/10 xem prod). Tên vị trí cắt (…), số luôn giữ nguyên.
           <button
             type="button"
-            className="w-[11rem] max-w-[14rem] rounded text-left text-xs leading-5 hover:bg-muted"
+            className="w-full min-w-0 max-w-[14rem] rounded text-left text-xs leading-5 hover:bg-muted"
             title="Bấm xem tồn theo từng vị trí"
           />
         }
@@ -82,14 +85,14 @@ export function StockLevelsCell({
         ) : (
           <span className="flex flex-col tabular-nums">
             {summary.map((l) => (
-              <span key={l.id} className="flex items-baseline justify-between gap-3">
+              <span key={l.id} className="flex items-baseline justify-between gap-2">
                 <span
-                  className={cn("truncate text-muted-foreground", !l.sellable && "italic")}
+                  className={cn("min-w-0 truncate text-muted-foreground", !l.sellable && "italic")}
                   title={l.sellable ? locationLabel(l) : `${locationLabel(l)} — không tính vào tồn bán`}
                 >
                   {locationLabel(l)}
                 </span>
-                <span className={cn("font-medium", (qtyById.get(l.id) ?? 0) < 0 && "text-rose-700")}>
+                <span className={cn("shrink-0 font-medium", (qtyById.get(l.id) ?? 0) < 0 && "text-rose-700")}>
                   {formatNumber(qtyById.get(l.id) ?? 0)}
                 </span>
               </span>

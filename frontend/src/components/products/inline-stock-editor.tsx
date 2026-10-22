@@ -138,9 +138,9 @@ export function InlineStockEditor({
         )}
       >
         {formatNumber(qty)}
-        {editable && (
-          <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-70" />
-        )}
+        {/* Bút chì CHỈ chiếm chỗ khi rê chuột: opacity-0 vẫn giữ 16px bề ngang, viên
+            "9.998" thành 78px tràn sang cột Có thể bán ở 1280–1440 (đo 22/10 tối). */}
+        {editable && <Pencil className="hidden size-3 opacity-70 group-hover:inline" />}
       </button>
       {held > 0 && (
         <p className="mt-1 text-xs text-amber-600">Giữ {formatNumber(held)}</p>

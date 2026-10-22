@@ -120,16 +120,21 @@ const columnHelper = createColumnHelper<Product>();
  */
 const COL_HEAD_CLASS: Record<string, string> = {
   select: "w-10",
-  product: "w-[22%]",
-  skuCode: "w-[10%]",
+  product: "w-[20%]",
+  skuCode: "w-[9%]",
   // Tiền: "1.294.000 ₫" cần ≥ 84px chữ → 10% của bảng tối thiểu 1.000px (soi 22/10 tối với
   // dữ liệu khoảng giá + giá 7 chữ số; trước đó 9% làm số tràn sang cột Tồn kho ở 1280).
   costPrice: "w-[10%]",
   sellingPrice: "w-[10%]",
-  quantityInStock: "w-[7%]",
-  availableToSell: "w-[8%]",
-  locations: "w-[9%]",
-  channels: "w-[12%]",
+  // Tồn kho: viên "9.998" ≈ 62px (bút chì chỉ hiện khi rê) → 8,5%; ở 7% viên (có bút chì) tràn
+  // 28px sang Có thể bán tại 1280. TỔNG % giữ 88 — tăng tổng là hai cột tiền bị ép và tràn.
+  quantityInStock: "w-[8.5%]",
+  availableToSell: "w-[7.5%]",
+  // Đang ở: "Kho chính  20" cần ≥ 80px chữ (tên 55 + khe 8 + số) → 12% của 1.000px; ở 9% (22/10
+  // xem prod) ô "Kho chính" chỉ còn 29px chữ, tên cụt "K…" và số từng tràn sang cột Bán trên.
+  locations: "w-[12%]",
+  // Bán trên: chip "Shopee ×3" tự xuống dòng nên nhường 1% được.
+  channels: "w-[11%]",
   actions: "w-[8.5rem]",
 };
 

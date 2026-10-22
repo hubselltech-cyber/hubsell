@@ -24,6 +24,12 @@
 - **Kiểm:** tsc BE/FE sạch; vitest `src/lib/__tests__` 220 xanh; UI soi 1280 bằng trang tạm giả API (đã xóa) — 2 tầng + mã đuôi, tên dài,
   phân loại đứng lẻ, hàng kho, nhóm khác tên, lọc theo kỳ + nút Xem tất cả; SQL missing-cost chạy thật DB dev (200). Preview đổi tạm sang
   `backend-http` 4010 + `frontend-http` (cert tự ký chặn built-in browser) — không đổi file env.
+- **Anh xem prod Hàng hóa: số tồn "20" ở cột Đang ở ríu vào giữa hai chip TikTok/Shopee** → ô `StockLevelsCell` rộng cứng 11rem trong cột
+  table-fixed 9% nên số canh phải tràn sang Bán trên. Sửa: nút rộng theo ô (`w-full min-w-0`, tên `min-w-0 truncate`, số `shrink-0`); cột Đang ở
+  9→12% (ở 9% "Kho chính" chỉ còn 29px chữ, cụt "K…"); đo thêm thấy viên Tồn kho "9.998" 78px (bút chì opacity-0 vẫn chiếm 16px) tràn 28px sang
+  Có thể bán ở 1280 — bút chì `hidden group-hover:inline`, Tồn kho 7→8,5%, Có thể bán 8→7,5%, Mã SKU 10→9, Sản phẩm 22→20, Bán trên 12→11
+  (TỔNG giữ 88% — thử 89% là hai cột tiền bị ép tràn). Đo JS 1280/1440/1700: không phần tử nào vượt mép ô trừ Giá bán lố 2px vào đệm ở 1280
+  (có từ trước, không chạm chữ); "Kho chính" không bị cắt ở cả ba cỡ.
 - **Chưa kiểm:** DB dev không có gian nào vừa có đơn vừa có `variantName` → đường tra tên phân loại dòng đơn mới có test unit; ⏳ sau deploy
   soi prod Lãi/Lỗ cột Chi tiết sản phẩm (gian Shopee có phân loại). Memory `hubsell-feedback-khach-vai-nghin-sku-2026-10` đã ghi.
 
