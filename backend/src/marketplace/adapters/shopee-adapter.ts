@@ -72,6 +72,7 @@ function transformModel(
     modelId: model.model_id,
     itemSku: info.item_sku,
     modelSku: model.model_sku,
+    modelName: model.model_name,
   });
   const price =
     Number(model.price_info?.[0]?.current_price ?? info.price_info?.[0]?.current_price ?? 0) || 0;

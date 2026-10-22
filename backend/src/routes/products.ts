@@ -16,6 +16,7 @@ import {
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
 import { subtreeIds } from "../lib/location-tree";
+import { cleanVariantName, productGroupKey } from "../lib/product-group";
 
 const router = Router();
 
@@ -107,13 +108,70 @@ function pickColumn(row: Record<string, unknown>, aliases: string[]): unknown {
 const COLS = {
   sku: ["Mã SKU", "SKU", "Ma SKU", "skuCode", "Mã sản phẩm"],
   name: ["Tên sản phẩm", "Tên SP", "productName", "Ten san pham"],
+  // Phân loại (màu / size) — tùy chọn, 22/10/2026; cùng tên + có phân loại = một nhóm cha–con.
+  variant: ["Phân loại", "Phan loai", "variantName", "Phân loại sản phẩm"],
   cost: ["Giá vốn", "costPrice", "Gia von"],
   selling: ["Giá bán", "sellingPrice", "Gia ban"],
   quantity: ["Tồn kho", "Số lượng", "quantityInStock", "Ton kho", "So luong"],
 };
 
-// GET /api/products?page=1&pageSize=10&search=...
-// Danh sách sản phẩm của user đang đăng nhập, có phân trang + tìm theo SKU/Tên.
+/**
+ * PHÂN TRANG THEO NHÓM CHA–CON (22/10/2026, bảng Hàng hóa giống bảng Giá vốn).
+ * Khóa nhóm = Product.groupKey (các phân loại cùng mẫu) hoặc chính id (SKU đơn).
+ * SQL thô vì Prisma groupBy không gom được theo biểu thức COALESCE; bộ lọc lặp
+ * lại đúng điều kiện của `where` phía trên (trạng thái, tìm kiếm, vị trí). Nhóm
+ * mới nhất lên đầu (theo SKU mới nhất trong nhóm) — cùng thứ tự với chế độ phẳng.
+ */
+async function pageOfProductGroups(
+  ownerId: string,
+  f: { status: "active" | "inactive" | "all"; search: string; locationIds: string[] | null },
+  page: number,
+  pageSize: number
+): Promise<{ keys: string[]; total: number }> {
+  const conds: Prisma.Sql[] = [Prisma.sql`p."userId" = ${ownerId}`];
+  if (f.status !== "all") conds.push(Prisma.sql`p."isActive" = ${f.status === "active"}`);
+  if (f.search) {
+    const like = `%${f.search}%`;
+    conds.push(
+      Prisma.sql`(p."skuCode" ILIKE ${like} OR p."productName" ILIKE ${like} OR p."variantName" ILIKE ${like})`
+    );
+  }
+  if (f.locationIds && f.locationIds.length > 0) {
+    conds.push(
+      Prisma.sql`EXISTS (SELECT 1 FROM "product_stock_levels" l WHERE l."productId" = p."id" AND l."locationId" IN (${Prisma.join(f.locationIds)}) AND l."quantity" <> 0)`
+    );
+  }
+  const whereSql = Prisma.join(conds, " AND ");
+  const [rows, count] = await Promise.all([
+    prisma.$queryRaw<{ gk: string }[]>(
+      Prisma.sql`SELECT COALESCE(p."groupKey", p."id") AS gk, MAX(p."createdAt") AS created
+                 FROM "Product" p WHERE ${whereSql}
+                 GROUP BY 1 ORDER BY created DESC, gk
+                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`
+    ),
+    prisma.$queryRaw<{ n: number }[]>(
+      Prisma.sql`SELECT COUNT(DISTINCT COALESCE(p."groupKey", p."id"))::int AS n FROM "Product" p WHERE ${whereSql}`
+    ),
+  ]);
+  return { keys: rows.map((r) => r.gk), total: count[0]?.n ?? 0 };
+}
+
+/** Xếp dòng theo thứ tự nhóm của trang, trong nhóm theo phân loại (số tự nhiên: S, M, L, 3-5kg < 11-13kg). */
+function sortRowsByGroup<
+  T extends { id: string; groupKey: string | null; variantName: string | null; skuCode: string },
+>(rows: T[], keys: string[]): T[] {
+  const rank = new Map(keys.map((k, i) => [k, i]));
+  const collator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
+  return rows.sort((a, b) => {
+    const ra = rank.get(a.groupKey ?? a.id) ?? Number.MAX_SAFE_INTEGER;
+    const rb = rank.get(b.groupKey ?? b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (ra !== rb) return ra - rb;
+    return collator.compare(a.variantName ?? a.skuCode, b.variantName ?? b.skuCode);
+  });
+}
+
+// GET /api/products?page=1&pageSize=10&search=...&view=grouped
+// Danh sách sản phẩm của user đang đăng nhập, có phân trang + tìm theo SKU/Tên/Phân loại.
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -151,41 +209,63 @@ router.get("/", async (req: AuthRequest, res, next) => {
             OR: [
               { skuCode: { contains: search, mode: "insensitive" } },
               { productName: { contains: search, mode: "insensitive" } },
+              { variantName: { contains: search, mode: "insensitive" } },
             ],
           }
         : {}),
     };
-
-    const [total, items, inactiveCount, activeCount] = await Promise.all([
-      prisma.product.count({ where }),
-      prisma.product.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        // Tóm tắt liên kết sàn cho cột "Bán trên" của hub Hàng hóa — mỗi dòng
-        // vài chip nhỏ, chi tiết đầy đủ lấy lazy qua /:id/channel-links.
-        include: {
-          channelProducts: {
-            select: {
-              channelId: true,
-              channelSku: true,
-              externalId: true,
-              channelStock: true,
-              channel: {
-                select: { channelName: true, shopName: true, stockSyncEnabled: true },
-              },
-            },
+    // Tóm tắt liên kết sàn cho cột "Bán trên" của hub Hàng hóa — mỗi dòng
+    // vài chip nhỏ, chi tiết đầy đủ lấy lazy qua /:id/channel-links.
+    const include = {
+      channelProducts: {
+        select: {
+          channelId: true,
+          channelSku: true,
+          externalId: true,
+          channelStock: true,
+          variantName: true,
+          channel: {
+            select: { channelName: true, shopName: true, stockSyncEnabled: true },
           },
-          // Tồn theo vị trí (đợt B) — rỗng khi shop chưa dùng vị trí.
-          stockLevels: { select: { locationId: true, quantity: true } },
         },
-      }),
+      },
+      // Tồn theo vị trí (đợt B) — rỗng khi shop chưa dùng vị trí.
+      stockLevels: { select: { locationId: true, quantity: true } },
+    } satisfies Prisma.ProductInclude;
+
+    // ?view=grouped (bảng Hàng hóa, 22/10/2026): PHÂN TRANG THEO NHÓM cha–con —
+    // mỗi trang = pageSize mẫu hàng, các phân loại của một mẫu không bao giờ bị
+    // cắt sang trang sau. Mặc định (Excel, chọn SKU…) vẫn phân trang phẳng theo SKU.
+    const grouped =
+      req.query.view === "grouped"
+        ? await pageOfProductGroups(req.ownerId!, { status, search, locationIds }, page, pageSize)
+        : null;
+
+    const [total, items, inactiveCount, activeCount, skuTotal] = await Promise.all([
+      grouped ? Promise.resolve(grouped.total) : prisma.product.count({ where }),
+      grouped
+        ? prisma.product
+            .findMany({
+              where: {
+                AND: [where, { OR: [{ groupKey: { in: grouped.keys } }, { id: { in: grouped.keys } }] }],
+              },
+              include,
+            })
+            .then((rows) => sortRowsByGroup(rows, grouped.keys))
+        : prisma.product.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+            include,
+          }),
       // Số SKU đã ngừng bán — chip lọc chỉ hiện khi > 0 (ẩn bằng vắng mặt).
       prisma.product.count({ where: { userId: req.ownerId!, isActive: false } }),
       // Số SKU đang bán toàn shop (không phụ thuộc bộ lọc/tìm kiếm) — khối
       // Kho trung tâm + bước thiết lập đọc số này, không đọc `total` của trang lọc.
       prisma.product.count({ where: { userId: req.ownerId!, isActive: true } }),
+      // Số SKU khớp bộ lọc (chế độ nhóm: `total` là số MẪU, cần thêm số SKU cho nhãn).
+      grouped ? prisma.product.count({ where }) : Promise.resolve(null),
     ]);
 
     // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — HAI query
@@ -282,6 +362,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
       page,
       pageSize,
       pageCount: Math.ceil(total / pageSize),
+      // Chế độ nhóm: total = số MẪU hàng; skuTotal = số SKU khớp bộ lọc (nhãn "N sản phẩm · M SKU").
+      ...(skuTotal !== null ? { skuTotal } : {}),
       status,
       inactiveCount,
       activeCount,
@@ -434,6 +516,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
     const {
       skuCode,
       productName,
+      variantName,
       costPrice,
       sellingPrice,
       initialQuantity,
@@ -484,11 +567,15 @@ router.post("/", async (req: AuthRequest, res, next) => {
     }
 
     const product = await prisma.$transaction(async (tx) => {
+      // Phân loại (tùy chọn, 22/10/2026): cùng tên + có phân loại → gom cha–con trên bảng.
+      const variant = cleanVariantName(variantName);
       const created = await tx.product.create({
         data: {
           userId: req.ownerId!,
           skuCode: sku,
           productName: productName.trim(),
+          variantName: variant,
+          groupKey: productGroupKey(productName.trim(), variant),
           costPrice: cost,
           sellingPrice: selling,
           quantityInStock: 0,
@@ -534,6 +621,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
     const {
       skuCode,
       productName,
+      variantName,
       costPrice,
       sellingPrice,
       taxName,
@@ -568,6 +656,17 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         return;
       }
       data.productName = productName.trim();
+    }
+    // Phân loại: chuỗi rỗng / null = bỏ phân loại (SKU đứng một mình). Khóa gom
+    // tính lại từ tên + phân loại SAU sửa — một nơi (lib/product-group.ts).
+    if (variantName !== undefined) {
+      data.variantName = cleanVariantName(variantName);
+    }
+    if (productName !== undefined || variantName !== undefined) {
+      const nextName = typeof data.productName === "string" ? data.productName : product.productName;
+      const nextVariant =
+        variantName !== undefined ? cleanVariantName(variantName) : product.variantName;
+      data.groupKey = productGroupKey(nextName, nextVariant);
     }
     if (costPrice !== undefined) {
       if (!canSeeFinancials(req)) {
@@ -848,6 +947,8 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
     type ValidRow = {
       skuCode: string;
       productName: string;
+      /** undefined = file không có cột Phân loại → giữ nguyên giá trị đang có. */
+      variantName: string | null | undefined;
       costPrice: number;
       sellingPrice: number;
       quantityInStock: number;
@@ -907,9 +1008,11 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
       }
 
       seenSku.add(skuCode);
+      const rawVariant = pickColumn(row, COLS.variant);
       valid.push({
         skuCode,
         productName,
+        variantName: rawVariant === undefined ? undefined : cleanVariantName(String(rawVariant)),
         costPrice: cost,
         sellingPrice: selling,
         quantityInStock: qty,
@@ -947,10 +1050,13 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
         if (found) {
           // Cập nhật giá; tồn đi qua sổ kho (ADJUST 24/09: Excel ĐÈ tổng — là điều
           // chỉnh sổ, không phải đồng bộ sàn), tự ghi log phần chênh lệch nếu có.
+          const variant = v.variantName === undefined ? found.variantName : v.variantName;
           await tx.product.update({
             where: { id: found.id },
             data: {
               productName: v.productName,
+              variantName: variant,
+              groupKey: productGroupKey(v.productName, variant),
               costPrice: v.costPrice,
               sellingPrice: v.sellingPrice,
             },
@@ -970,6 +1076,8 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
               userId: ownerId,
               skuCode: v.skuCode,
               productName: v.productName,
+              variantName: v.variantName ?? null,
+              groupKey: productGroupKey(v.productName, v.variantName ?? null),
               costPrice: v.costPrice,
               sellingPrice: v.sellingPrice,
               quantityInStock: 0,

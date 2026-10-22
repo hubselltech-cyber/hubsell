@@ -22,6 +22,7 @@ import {
   type ShopeeConfig,
 } from "./config";
 import { platformFetch } from "../../lib/platform-http";
+import { normalizeVariantName } from "../../marketplace/sku-key";
 
 // ---------- Ký request ----------
 
@@ -453,24 +454,40 @@ export interface ShopeeOrderItem {
 
 /**
  * Sinh KHOÁ SKU CHUẨN cho một dòng hàng Shopee — DÙNG CHUNG cho cả đồng bộ sản
- * phẩm lẫn đồng bộ đơn, để hai luồng luôn khớp khoá.
+ * phẩm lẫn đồng bộ đơn / hoàn, để các luồng luôn khớp khoá.
  *
  * PHÂN LOẠI (có model_id): khoá = model_sku của CHÍNH phân loại đó. KHÔNG mượn
- * item_sku — item_sku dùng chung cho mọi phân loại nên mượn nó sẽ gộp nhầm các
- * phân loại khác nhau (vd 3 màu để trống SKU đều thành 1). Trống model_sku → khoá
- * tổng hợp `SPE-{item}-{model}` để mỗi phân loại một dòng. Người bán cố tình đặt
- * CÙNG model_sku cho nhiều phân loại thì vẫn gộp — đúng ý (một SKU bán).
+ * item_sku trần — item_sku dùng chung cho mọi phân loại nên mượn nó sẽ gộp nhầm
+ * các phân loại khác nhau (vd 3 màu để trống SKU đều thành 1).
+ *
+ * Trống model_sku (22/10/2026, khách chỉ điền ô "SKU sản phẩm" cấp cha trên
+ * Seller Center — rất phổ biến): khoá = `{item_sku} (tên phân loại)` theo đúng
+ * luật đuôi tên 15/10 (marketplace/sku-key.ts), ví dụ "VAY01 (Đen, M)" — khách
+ * đọc được, mỗi phân loại một dòng. Không có cả item_sku lẫn tên phân loại mới
+ * rơi về mã máy `SPE-{item}-{model}`. Người bán cố tình đặt CÙNG model_sku cho
+ * nhiều phân loại thì product-sync tự thêm đuôi (resolveChannelSkuKeys).
  *
  * SẢN PHẨM ĐƠN (không model_id): dùng item_sku; trống thì `SPE-{item}`.
+ *
+ * Dòng cũ đã mang khoá `SPE-…` trong DB: product-sync đổi khoá tại chỗ theo
+ * externalId, giữ liên kết kho + giá vốn; đơn/hoàn khớp theo id sàn trước nên
+ * không lệch (integrations/order-line-keys.ts).
  */
 export function shopeeChannelSku(opts: {
   itemId?: number;
   modelId?: number;
   itemSku?: string;
   modelSku?: string;
+  /** model_name của phân loại ("Đen,M") — dùng làm đuôi khi trống model_sku. */
+  modelName?: string;
 }): string {
   if (opts.modelId) {
-    return opts.modelSku?.trim() || `SPE-${opts.itemId}-${opts.modelId}`;
+    const modelSku = opts.modelSku?.trim();
+    if (modelSku) return modelSku;
+    const itemSku = opts.itemSku?.trim();
+    const variant = normalizeVariantName(opts.modelName);
+    if (itemSku && variant) return `${itemSku} (${variant})`;
+    return `SPE-${opts.itemId}-${opts.modelId}`;
   }
   return opts.itemSku?.trim() || `SPE-${opts.itemId}`;
 }

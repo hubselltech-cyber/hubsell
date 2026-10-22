@@ -28,6 +28,7 @@
 - [DON-HOAN-VA-SAO-KE.md](DON-HOAN-VA-SAO-KE.md) — đơn hoàn và đối soát sao kê
 - [VI-TRI-CHUA-HANG.md](VI-TRI-CHUA-HANG.md) — vị trí kho
 - [DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md](DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md) — SKU phân loại con trùng mã
+- [HANG-HOA-CHA-CON-PHAN-LOAI.md](HANG-HOA-CHA-CON-PHAN-LOAI.md) — 22/10/2026 SKU kho có phân loại riêng (variantName/groupKey), bảng Hàng hóa cha–con như Giá vốn, mã dự phòng Shopee dùng mã cha, tự Ngừng bán khi sàn gỡ, hộp Nối SKU bỏ tồn 0 + mã gốc
 - [CASH-FLOW-DESIGN.md](CASH-FLOW-DESIGN.md) — thiết kế trang dòng tiền
 - [CUU-DON-API-NHAN-KHACH-KHAO-SAT.md](CUU-DON-API-NHAN-KHACH-KHAO-SAT.md) — khảo sát API nhắn khách (Cứu đơn, đang ẩn)
 - [THOI-HAN-UY-QUYEN-SAN.md](THOI-HAN-UY-QUYEN-SAN.md) — hạn ủy quyền từng sàn

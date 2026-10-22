@@ -488,6 +488,7 @@ export function aggregateShopeeItems(order: ShopeeOrderDetail) {
       modelId: it.model_id,
       itemSku: it.item_sku,
       modelSku: it.model_sku,
+      modelName: it.model_name,
     });
     const externalId = shopeeLineExternalId(it.item_id, it.model_id);
     const key = lineKey({ channelSku: sku, externalId });

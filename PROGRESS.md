@@ -6,6 +6,57 @@
 
 ---
 
+## Phiên 22/10/2026 chiều–tối — KHÁCH PHÀN NÀN KHO "CHỈ LẤY ID": SKU KHO CÓ PHÂN LOẠI RIÊNG + BẢNG HÀNG HÓA CHA–CON NHƯ GIÁ VỐN (CHƯA PUSH — anh xem local)
+
+- **Anh (ảnh chat khách Mạnh Nguyễn Văn, 302 SKU Shopee):** "sao em lại chỉ lấy id sản phẩm… khách phàn nàn" → khách: không thấy màu/size, 6 phân
+  loại cùng tên, hàng hết tồn / ngừng bán vẫn vào kho, "bên Salework dễ hơn"; rồi "khách muốn dạng cha con giống bên Giá vốn", "thêm ảnh, tên lên
+  đầu, cắt ngắn tooltip, làm local trình anh trước".
+- **Chẩn đoán:** Shopee CÓ trả `model_name`, adapter CÓ lưu `ChannelProduct.variantName`, nhưng tạo SKU kho chỉ lấy tên + `GET /products` không
+  trả phân loại → không chỗ nào trong Hàng hóa hiện màu/size. Mã `SPE-item-model` vì khách không đặt SKU phân loại; khách chỉ điền SKU cấp cha
+  cũng bị coi là không đặt (`shopeeChannelSku` chỉ nhìn model_sku). Trạng thái chỉ đọc cấp sản phẩm; Nối nhanh không lọc tồn 0. Khảo sát
+  Salework / BigSeller / Sapo / Ginee (tài liệu của họ): mỗi phân loại một dòng, mã = mã gốc + phân loại, bảng cha–con, có ẩn/lọc + Ngừng bán.
+- **Code (docs/HANG-HOA-CHA-CON-PHAN-LOAI.md):** (1) `Product.variantName` + `groupKey` + migration `20261022160000_product_variant_name_group_key`
+  (khóa có thử lại, backfill từ dòng sàn đã nối); `lib/product-group.ts` = nơi duy nhất tính khóa gom; POST/PATCH/nhập Excel ("Phân loại") /
+  hộp Thêm sản phẩm có ô Phân loại; Excel xuất thêm cột. (2) `GET /products?view=grouped` phân trang theo MẪU (SQL thô `COALESCE(groupKey,id)`,
+  trả `total` mẫu + `skuTotal`); bảng Hàng hóa: cột Sản phẩm LÊN ĐẦU (ảnh 36px + tên cắt ngắn/tooltip + phân loại xanh + mã SP sàn), Mã SKU cột 2,
+  dòng cha (tổng tồn / có thể bán, khoảng giá, chip Shopee ×6, tích cả mẫu) bung dòng con thụt vào + vạch màu; mặc định thu gọn, tìm kiếm thì bung
+  hết, nút Bung hết/Thu gọn; ảnh hỏng về icon. Tab Sản phẩm trên sàn in phân loại. (3) `shopeeChannelSku` kiểu 2: chỉ có SKU cha →
+  `VAY01 (Đen, M)` (4 chỗ gọi, product-sync đổi khóa theo externalId). (4) product-sync: SKU kho mất hết liên kết ACTIVE → tự `isActive=false`
+  + log, trả `deactivated`. (5) Hộp Tự khớp + tạo SKU: ô "Bỏ qua phân loại tồn 0" (`inStock=yes` + `skipZeroStock`) + bước MÃ GỐC
+  (`GET /mappings/fallback-items`, `rootSkus` → `SHORT01-BE-L`, dòng sàn giữ mã máy, nối "khác mã kho").
+- **Kiểm:** tsc BE + FE sạch, eslint sạch; vitest `shopee-channel-sku` (mới, 3 kiểu đặt mã + product-group) + `sku-key` + `product-sync`
+  (thêm test 5 tự Ngừng bán, giữ SKU còn gian khác bán) = 22 xanh. Migration áp DB local; seed demo `backend/scripts/_seed-variant-demo.ts`
+  (untracked) cho admin@hubsell.vn: váy 6 phân loại + áo 3 size + túi đơn + 2 dòng sàn không mã. Soi local 1440 (built-in browser, backend cổng
+  HTTP 4001 + `NEXT_PUBLIC_API_URL=http://localhost:4001` TẠM — PHẢI HOÀN trước commit): dòng cha/con đúng, bung/thu, tìm "short" tự bung,
+  hộp mã gốc xem trước `SHORT01-BE-L` rồi tạo đúng mã; dark mode soi. Bảng ở 1440 (có sidebar) tràn ngang ~100px trong hộp cuộn (cũ ~55px) — đã hạ tên 14rem→12rem; 1902px như màn khách thì vừa. Bấm "tạo SKU còn lại" trên local đã tạo 1.454 SKU kho demo cho admin local.
+- **Chưa làm / ghi docs mục 4:** thứ tự phân loại theo sàn (tier_index), Shopee `model_status`, mobile chưa hiện phân loại.
+- **Anh (ảnh Salework, khách: "nối thủ công kiểu Salework cũng được") → em: Hubsell có nối thủ công nhưng theo lô (tick → chọn SKU ở thanh dưới),
+  Salework gõ mã ngay từng phân loại; đồng ý với khách → anh "làm lát 6 trên local anh xem trước".** `GET /mappings?view=grouped` (phân trang
+  theo sản phẩm sàn, chưa nối lên đầu) + `POST /mappings/link-by-sku` (mã có → nối, chưa có → tạo SKU kho mang đúng mã, `skuById`);
+  `link-manager.tsx` viết lại: dòng cha (ảnh, tên, ID sàn, N phân loại · n chưa nối, gian, khoảng giá, tổng tồn sàn, nút Tạo SKU kho (n) + ô
+  Mã gốc khi sàn không có mã) bung dòng con (phân loại, mã sàn, tồn sàn, ô "Gõ mã SKU kho…" Enter = nối, gợi ý datalist, "Chọn có sẵn", nút gỡ
+  từng dòng); giữ tick lô + Tự khớp. tsc BE/FE + eslint sạch. Soi local 1440: lọc Chưa liên kết → gõ `at01-l` Enter → "Đã nối L vào AT01-L";
+  Mã gốc `vay01` Enter → tạo 6 SKU VAY01-DEN-S… và nối. Docs mục 2.6.
+- **Anh xem local, hỏi "như thế này vẫn nối tự động à?"** (đang nhìn khối Kho trung tâm) → em: khối đó chỉ là hướng dẫn, không tự nối; nhưng
+  chữ bước 2 vẫn dẫn về Tự khớp → đề xuất đổi lời bước 2 ưu tiên nối tay (CHƯA sửa, chờ anh gật). **Anh: "để nút kết nối bên cạnh giống
+  Salework"** → đổi nút icon thành nút CÓ CHỮ cạnh ô gõ: [Gõ mã SKU kho…][Nối][Tìm]; dòng đã nối: nút "Gỡ nối" có chữ; cột rộng 24rem.
+- **Anh: "phải kéo ngang thì rất mất việc"** → bảng Sản phẩm trên sàn sang `table-fixed` theo % như bảng Giá vốn (không cuộn ngang ở mọi cỡ
+  màn): bỏ cột Gian hàng (chip sàn + tên gian + ID xuống dòng phụ dưới tên), gộp Giá + Tồn sàn một cột, cột Mã SKU kho co giãn (ô gõ `flex-1`).
+  Đo local: overflow 0 ở 1606 và 1024.
+- **Anh: "Em đã test kỹ chưa?"** → chạy bù: (a) vitest `src/integrations src/marketplace src/lib` = 1.513 xanh / 20 đỏ (7 tệp đỏ: 4 tệp hàng đợi pg-boss/webhook cần worker — bẫy môi trường test đã biết; 3 tệp DB channel-delete /
+  order-ledger / realized-pnl: `git stash` về master chạy lại = ĐÚNG 5 ca đỏ y hệt, thiếu index GIN trigram local… → không do đợt này); (b) local: ô gõ mã MỚI `at01-new-m` → "Đã tạo SKU kho AT01-NEW-M và nối M · tồn 12", nút Gỡ nối trả dòng
+  về ô gõ; POST/PATCH `/products` với variantName, nhập Excel cột Phân loại (tạo + cập nhật) đúng variantName/groupKey; API nhóm với
+  search / status=inactive / mappings linked=no / fallback-items đúng. (c) **BẮT ĐƯỢC LỖI backfill migration:** chạy UPDATE qua Prisma raw
+  (`apply-migration-local`) thì `'\s+'` mất gạch chéo → regex `s+` XÓA MỌI CHỮ "s" trong groupKey ("ba ic uni ex") dù
+  standard_conforming_strings=on. Sửa migration dùng `[[:space:]]` (không gạch chéo, đúng ở mọi đường áp); kiểm lại bằng đúng câu UPDATE
+  trong file → groupKey đúng; local không còn groupKey lệch.
+- **Anh: "Commit và push lên anh xem"** → tắt dev server, hoàn env local (comment 4001, https://localhost:4000), xóa script seed demo
+  (untracked), commit cả 6 lát + push. Sau deploy: migration tự áp trên Render (backfill phân loại cho SKU kho cũ); khách shop váy bấm
+  Đồng bộ từ sàn để dòng SPE-… đổi khóa nếu đã điền SKU cha. Kiểm log `[product-sync]` + SQL `COUNT(*) FROM "Product" WHERE "variantName" IS NOT NULL`.
+  CÒN TREO: lời bước 2 khối Kho trung tâm ưu tiên nối tay (anh chưa gật).
+
+---
+
 ## Phiên 22/10/2026 trưa — TRANG MUA GÓI THEO MA TRẬN GÓI × KỲ GIỐNG LANDING + ENTERPRISE CÔNG BỐ 65đ/ĐƠN (anh hỏi "có hợp lý không, có lãi không, so đối thủ")
 
 - **Anh:** "phần cấu hình mua gói của khách cũng để dạng giống như bên Landing cho dễ nhìn… Enterprise 65đ 1 đơn có hợp lý không? mình có lãi

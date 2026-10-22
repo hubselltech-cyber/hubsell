@@ -82,8 +82,9 @@ function fileStamp(): string {
 export function downloadProductTemplate() {
   const sample = [
     {
-      "Mã SKU": "VD-AO-001",
+      "Mã SKU": "VD-AO-001-DEN-M",
       "Tên sản phẩm": "Áo thun ví dụ (xoá dòng này khi nhập thật)",
+      "Phân loại": "Đen, M",
       "Giá vốn": 50000,
       "Giá bán": 120000,
       "Tồn kho": 100,
@@ -91,6 +92,7 @@ export function downloadProductTemplate() {
     {
       "Mã SKU": "VD-QUAN-002",
       "Tên sản phẩm": "Quần jean ví dụ",
+      "Phân loại": "",
       "Giá vốn": 150000,
       "Giá bán": 300000,
       "Tồn kho": 50,
@@ -98,7 +100,7 @@ export function downloadProductTemplate() {
   ];
   downloadSheet(
     sample,
-    [16, 42, 12, 12, 10],
+    [18, 42, 14, 12, 12, 10],
     "Mau nhap san pham",
     "hubsell_file_mau_san_pham.xlsx"
   );
@@ -118,6 +120,8 @@ export function exportProductsToExcel(
   const rows = products.map((p) => ({
     "Mã SKU": p.skuCode,
     "Tên sản phẩm": p.productName,
+    // Phân loại tách cột (22/10/2026) — nhập lại file này thì cột được đọc đúng.
+    "Phân loại": p.variantName ?? "",
     ...(includeCost ? { "Giá vốn": Number(p.costPrice ?? 0) } : {}),
     "Giá bán": Number(p.sellingPrice),
     "Tồn kho": p.quantityInStock,
@@ -126,7 +130,7 @@ export function exportProductsToExcel(
   }));
   downloadSheet(
     rows,
-    includeCost ? [16, 42, 14, 14, 10, 16, 20] : [16, 42, 14, 10, 16, 20],
+    includeCost ? [16, 42, 14, 14, 14, 10, 16, 20] : [16, 42, 14, 14, 10, 16, 20],
     "San pham",
     `hubsell_san_pham_${fileStamp()}.xlsx`
   );

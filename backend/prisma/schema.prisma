@@ -1452,6 +1452,17 @@ model Product {
   /// để lịch sử và Lãi/Lỗ không đứt. Xóa cứng chỉ khi SKU chưa có đơn / liên kết.
   isActive Boolean @default(true)
 
+  /// PHÂN LOẠI (màu / size) của SKU này — tách khỏi tên từ 22/10/2026 (khách
+  /// phàn nàn 6 phân loại váy cùng một tên, chỉ khác dãy id sàn). NULL = sản
+  /// phẩm đơn. Nguồn: ChannelProduct.variantName khi tạo SKU kho từ sàn (đã
+  /// chuẩn hóa "Đen, M"), hoặc khách tự nhập / Excel cột "Phân loại".
+  variantName String?
+  /// KHÓA GOM CHA–CON cho bảng Hàng hóa (như bảng Giá vốn): các SKU có phân
+  /// loại và CÙNG tên sản phẩm gom thành một dòng cha. = lower(trim(tên)) khi
+  /// có phân loại; NULL = dòng đứng một mình. Ghi qua lib/product-group.ts ở
+  /// MỌI chỗ tạo/sửa tên hoặc phân loại — không tính tay.
+  groupKey String?
+
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
   // Tên sản phẩm in trên hóa đơn có thể khác tên bán hàng (theo danh mục hàng hóa).
   taxName  String?
@@ -1487,6 +1498,8 @@ model Product {
 
   @@unique([userId, skuCode]) // mỗi user không trùng mã SKU
   @@index([userId])
+  /// Phân trang theo NHÓM cha–con của bảng Hàng hóa (GROUP BY groupKey).
+  @@index([userId, groupKey])
 }
 
 /// Đơn hàng thuộc về một kênh bán

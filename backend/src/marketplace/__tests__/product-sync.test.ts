@@ -171,5 +171,37 @@ describe("product-sync: externalId là danh tính, mã trùng thêm đuôi phân
     expect(m1?.status).toBe("ACTIVE");
     const gone = await prisma.channelProduct.findFirst({ where: { channelId, externalId: leaf(4) } });
     expect(gone?.status).toBe("DELISTED");
+    // SKU kho vẫn còn liên kết ACTIVE (4 size kia) → KHÔNG tự Ngừng bán.
+    expect(r.deactivated).toBe(0);
+    const prod = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    expect(prod.isActive).toBe(true);
+  });
+
+  it("5. sàn gỡ HẾT phân loại của một SKU kho → SKU kho tự Ngừng bán; SKU còn gian khác bán thì giữ", async () => {
+    // SKU kho thứ hai nối với LT098 (đang DELISTED từ test 4) + một gian khác còn ACTIVE.
+    const other = await prisma.channel.create({
+      data: { userId, channelName: ChannelName.LAZADA, shopName: "TEST-PSYNC-2", externalShopId: `9${stamp}`, status: "ACTIVE" },
+    });
+    const keep = await prisma.product.create({
+      data: { userId, skuCode: `LT098-${stamp}`, productName: "Kho Jumpsuit", variantName: null },
+    });
+    await prisma.channelProduct.update({
+      where: { channelId_channelSku: { channelId, channelSku: "LT098" } },
+      data: { productId: keep.id, status: "ACTIVE" },
+    });
+    await prisma.channelProduct.create({
+      data: { channelId: other.id, channelSku: "LT098", productName: "Jumpsuit LZD", externalId: "l-1", productId: keep.id },
+    });
+    // Lượt kéo mới: sàn bỏ cả 4 size còn lại của LT075-HONG lẫn LT098.
+    fetchProducts.mockResolvedValue({ complete: true, products: [] });
+    const ch = await prisma.channel.findUniqueOrThrow({ where: { id: channelId } });
+    const r = await syncChannelProducts(ch);
+    expect(r.delisted).toBeGreaterThanOrEqual(5);
+    // LT075-HONG: mọi liên kết đều DELISTED → Ngừng bán. LT098: gian Lazada còn ACTIVE → giữ.
+    expect(r.deactivated).toBe(1);
+    const prod = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    expect(prod.isActive).toBe(false);
+    const kept = await prisma.product.findUniqueOrThrow({ where: { id: keep.id } });
+    expect(kept.isActive).toBe(true);
   });
 });

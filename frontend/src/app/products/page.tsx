@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -17,9 +17,13 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   ClipboardCheck,
   ClipboardList,
   Download,
+  Image as ImageIcon,
+  Layers,
   Link2,
   Link2Off,
   Loader2,
@@ -111,6 +115,62 @@ function readPageSize(): number {
 const columnHelper = createColumnHelper<Product>();
 
 type HubTab = "inventory" | "links" | "logs";
+
+/** Một MẪU hàng trên bảng = các SKU kho cùng khóa cha–con (backend xếp liền nhau). */
+interface ProductGroupRows {
+  key: string;
+  name: string;
+  imageUrl: string | null;
+  rows: Product[];
+}
+
+/** Ảnh sản phẩm 36px (lấy từ sàn khi tạo SKU); chưa có ảnh / ảnh hỏng thì ô xám có icon. */
+function ProductThumb({ src, alt }: { src: string | null; alt: string }) {
+  // Link ảnh sàn hết hạn (Shopee đổi CDN) → không hiện khung vỡ, về ô icon.
+  const [broken, setBroken] = useState(false);
+  return src && !broken ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="size-9 shrink-0 rounded-md object-cover"
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
+  ) : (
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <ImageIcon className="size-4" />
+    </div>
+  );
+}
+
+/** Ô tích của dòng cha: chọn cả mẫu; đang chọn một phần thì gạch ngang (indeterminate). */
+function GroupCheckbox({
+  label,
+  checked,
+  indeterminate,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      onChange={onChange}
+      className="size-4 cursor-pointer align-middle accent-primary"
+    />
+  );
+}
 
 /**
  * HUB "HÀNG HÓA" — một trang cho toàn bộ vòng đời hàng hóa của seller, thay ba
@@ -205,15 +265,67 @@ export default function ProductsHubPage() {
 
   // Danh sách SKU kho nằm trong cache React Query — quay lại hub Hàng hóa là
   // thấy ngay bảng cũ, refetch chạy ngầm (401/403/409 hook tự xử).
+  // Bảng CHA–CON (22/10/2026, khách muốn giống bảng Giá vốn): backend phân trang
+  // theo MẪU hàng (view=grouped), các phân loại của một mẫu luôn về cùng trang.
   const productsQ = useApiQuery({
-    queryKey: qk.products({ page, pageSize, search, status, locationFilter }),
+    queryKey: qk.products({ page, pageSize, search, status, locationFilter, view: "grouped" }),
     queryFn: () =>
-      fetchProducts({ page, pageSize, search, status, locationId: locationFilter || undefined }),
+      fetchProducts({
+        page,
+        pageSize,
+        search,
+        status,
+        locationId: locationFilter || undefined,
+        view: "grouped",
+      }),
   });
   const inactiveCount = productsQ.data?.inactiveCount ?? 0;
   const invalidate = useInvalidate();
   const items = useMemo(() => productsQ.data?.items ?? [], [productsQ.data]);
+  // Gom dòng theo khóa cha–con backend đã xếp liền nhau: mẫu có ≥ 2 phân loại
+  // thành một dòng cha (ảnh + tên + tổng tồn) bung ra các dòng con (từng phân loại).
+  const groups = useMemo<ProductGroupRows[]>(() => {
+    const map = new Map<string, ProductGroupRows>();
+    const order: ProductGroupRows[] = [];
+    for (const p of items) {
+      const key = p.groupKey ?? p.id;
+      let g = map.get(key);
+      if (!g) {
+        g = { key, name: p.productName, imageUrl: p.imageUrl ?? null, rows: [] };
+        map.set(key, g);
+        order.push(g);
+      }
+      if (!g.imageUrl && p.imageUrl) g.imageUrl = p.imageUrl;
+      g.rows.push(p);
+    }
+    return order;
+  }, [items]);
+  // Id các dòng CON (thuộc mẫu ≥ 2 phân loại) — ô "Sản phẩm" của chúng chỉ in phân loại.
+  const childIds = useMemo(
+    () => new Set(groups.filter((g) => g.rows.length > 1).flatMap((g) => g.rows.map((p) => p.id))),
+    [groups]
+  );
+  const multiGroupKeys = useMemo(
+    () => groups.filter((g) => g.rows.length > 1).map((g) => g.key),
+    [groups]
+  );
+  // Mẫu đang bung. Mặc định thu gọn (bảng ngắn, dòng cha đã có tổng tồn); đang
+  // TÌM KIẾM thì bung hết — khách tìm là để xem đúng phân loại đó.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (search) setOpenGroups(new Set(multiGroupKeys));
+  }, [search, multiGroupKeys]);
+  const toggleGroup = useCallback((key: string) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const allGroupsOpen = multiGroupKeys.length > 0 && multiGroupKeys.every((k) => openGroups.has(k));
   const total = productsQ.data?.total ?? 0;
+  const skuTotal = productsQ.data?.skuTotal ?? total;
   const pageCount = productsQ.data?.pageCount ?? 0;
   // Khối Kho trung tâm đếm SKU ĐANG BÁN toàn shop — không đổi theo chip lọc /
   // ô tìm (backend cũ chưa trả activeCount thì rơi về total như trước).
@@ -429,11 +541,64 @@ export default function ProductsHubPage() {
             }),
           ]
         : []),
-      // Cả khối làm việc phải nằm gọn một màn hình (anh Trung 05/09): SKU và
-      // tên CẮT NGẮN, rê chuột hiện đầy đủ — không kéo thanh trượt đi kéo lại.
-      // 28/09 (anh Trung): dưới mã SKU kho hiện MÃ PHÂN LOẠI trên sàn, dưới tên
-      // hiện MÃ SẢN PHẨM trên sàn — dãy số dài + nút sao chép một chạm, giống
-      // bảng Giá vốn (nhiều seller tra cứu theo mã sàn hơn tên).
+      // 22/10/2026 (khách phàn nàn 6 phân loại váy cùng tên): cột SẢN PHẨM lên
+      // ĐẦU — ảnh + tên cắt ngắn (rê chuột đủ tên) + phân loại màu/size + mã sản
+      // phẩm sàn; mã SKU kho lùi sang cột 2. Dòng CON của một mẫu chỉ in phân loại
+      // (tên + ảnh đã ở dòng cha, như bảng Giá vốn).
+      columnHelper.accessor("productName", {
+        id: "product",
+        header: "Sản phẩm",
+        cell: ({ row }) => {
+          const p = row.original;
+          const inactive = p.isActive === false;
+          const badge = inactive ? (
+            <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+              Ngừng bán
+            </span>
+          ) : null;
+          if (childIds.has(p.id)) {
+            return (
+              <div className="flex min-w-0 items-center gap-2 pl-9">
+                <span
+                  className={cn(
+                    "min-w-0 max-w-[14rem] truncate text-sm font-medium text-sky-800",
+                    inactive && "text-muted-foreground line-through decoration-slate-300"
+                  )}
+                  title={p.variantName ?? p.productName}
+                >
+                  {p.variantName ?? "—"}
+                </span>
+                {badge}
+              </div>
+            );
+          }
+          return (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <ProductThumb src={p.imageUrl ?? null} alt={p.productName} />
+              <div className="min-w-0 max-w-[12rem] 2xl:max-w-[18rem]">
+                <span
+                  className={cn(
+                    "block truncate font-medium",
+                    inactive && "text-muted-foreground line-through decoration-slate-300"
+                  )}
+                  title={p.productName}
+                >
+                  {p.productName}
+                </span>
+                {p.variantName && (
+                  <span className="block truncate text-xs font-medium text-sky-700" title={p.variantName}>
+                    {p.variantName}
+                  </span>
+                )}
+                <MarketplaceCodes links={p.channelLinks} kind="item" />
+              </div>
+              {badge}
+            </div>
+          );
+        },
+      }),
+      // Dưới mã SKU kho hiện MÃ PHÂN LOẠI trên sàn (anh Trung 28/09) — dãy số dài +
+      // nút sao chép một chạm, giống bảng Giá vốn.
       columnHelper.accessor("skuCode", {
         header: "Mã SKU",
         cell: ({ row }) => (
@@ -443,32 +608,6 @@ export default function ProductsHubPage() {
             </span>
             <MarketplaceCodes links={row.original.channelLinks} kind="model" />
           </div>
-        ),
-      }),
-      columnHelper.accessor("productName", {
-        header: "Tên sản phẩm",
-        cell: (info) => (
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 max-w-[14rem] 2xl:max-w-[18rem]">
-              <span
-                className={cn(
-                  // Cắt ngắn ở MỌI cỡ màn (anh Trung 24/09: đã có SKU + tooltip, tên dài
-                  // đẩy các cột sau ra khỏi màn hình) — không nở 26rem ở 2xl nữa.
-                  "block truncate",
-                  info.row.original.isActive === false && "text-muted-foreground line-through decoration-slate-300"
-                )}
-                title={info.getValue()}
-              >
-                {info.getValue()}
-              </span>
-              <MarketplaceCodes links={info.row.original.channelLinks} kind="item" />
-            </span>
-            {info.row.original.isActive === false && (
-              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
-                Ngừng bán
-              </span>
-            )}
-          </span>
         ),
       }),
       ...(seesCost
@@ -723,7 +862,7 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, expandedId, linkDetails, locations, selected, allOnPage, toggleAllOnPage, toggleOne]
+    [seesCost, isAdmin, expandedId, linkDetails, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds]
   );
 
   const table = useReactTable({
@@ -888,6 +1027,153 @@ export default function ProductsHubPage() {
           khớp.
         </p>
       </div>
+    );
+  }
+
+  /**
+   * DÒNG CHA của một mẫu có ≥ 2 phân loại (22/10/2026, giống bảng Giá vốn): ảnh +
+   * tên + mã sản phẩm sàn + "N phân loại"; cột số = TỔNG tồn / có thể bán của các
+   * phân loại, giá = khoảng; "Bán trên" = chip theo sàn đếm phân loại đã nối. Bấm
+   * dòng để bung/thu các phân loại; ô tích chọn cả mẫu cho thanh xử lý hàng loạt.
+   */
+  function renderGroupRow(g: ProductGroupRows, open: boolean) {
+    const rows = g.rows;
+    const selectedCount = rows.filter((p) => selected.has(p.id)).length;
+    const qty = rows.reduce((s, p) => s + p.quantityInStock, 0);
+    const available = rows.reduce(
+      (s, p) =>
+        s +
+        (p.availableToSell ??
+          Math.max(0, p.quantityInStock - (p.holdQuantity ?? 0) - (p.safetyStockEffective ?? 0))),
+      0
+    );
+    const inactiveCount = rows.filter((p) => p.isActive === false).length;
+    const lowCount = rows.filter((p) => p.isLowStock).length;
+    const links = rows.flatMap((p) => p.channelLinks ?? []);
+    const byChannel = new Map<string, number>();
+    for (const l of links) byChannel.set(l.channelName, (byChannel.get(l.channelName) ?? 0) + 1);
+    const ORDER = ["SHOPEE", "LAZADA", "TIKTOK"];
+    const chips = [...byChannel.entries()].sort(
+      (a, b) => ((ORDER.indexOf(a[0]) + 99) % 100) - ((ORDER.indexOf(b[0]) + 99) % 100)
+    );
+    const range = (nums: number[]) => {
+      const v = nums.filter((n) => n > 0);
+      if (v.length === 0) return <span className={TEXT_SUB}>—</span>;
+      const min = Math.min(...v);
+      const max = Math.max(...v);
+      return min === max ? (
+        <Money value={min} className={TEXT_NUMBER_MUTED} />
+      ) : (
+        <span className={cn(TEXT_NUMBER_MUTED, "whitespace-nowrap")}>
+          <Money value={min} className={TEXT_NUMBER_MUTED} /> – <Money value={max} className={TEXT_NUMBER_MUTED} />
+        </span>
+      );
+    };
+    const toggleAllInGroup = () => {
+      setSelected((cur) => {
+        const next = new Map(cur);
+        if (rows.every((p) => next.has(p.id))) rows.forEach((p) => next.delete(p.id));
+        else rows.forEach((p) => next.set(p.id, p));
+        return next;
+      });
+    };
+    return (
+      <TableRow
+        key={`group-${g.key}`}
+        className={cn(
+          "cursor-pointer bg-muted/25 hover:bg-muted/50",
+          // Đang mở: cả cụm cha + con thành MỘT KHỐI (anh Trung 28/09 ở bảng Giá vốn).
+          open && "bg-slate-200/70! hover:bg-slate-200/90! shadow-[inset_3px_0_0_0_var(--color-primary)]"
+        )}
+        onClick={() => toggleGroup(g.key)}
+      >
+        {isAdmin && (
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            <GroupCheckbox
+              label={`Chọn cả ${rows.length} phân loại của ${g.name}`}
+              checked={selectedCount === rows.length}
+              indeterminate={selectedCount > 0 && selectedCount < rows.length}
+              onChange={toggleAllInGroup}
+            />
+          </TableCell>
+        )}
+        <TableCell>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button
+              type="button"
+              aria-label={open ? "Thu gọn phân loại" : "Xem các phân loại"}
+              aria-expanded={open}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleGroup(g.key);
+              }}
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ChevronRight
+                className={cn("size-4 transition-transform duration-200 motion-reduce:transition-none", open && "rotate-90")}
+              />
+            </button>
+            <ProductThumb src={g.imageUrl} alt={g.name} />
+            <div className="min-w-0 max-w-[12rem] 2xl:max-w-[18rem]">
+              <span className={cn("block truncate", open ? "font-bold" : "font-medium")} title={g.name}>
+                {g.name}
+              </span>
+              <MarketplaceCodes links={links} kind="item" />
+              <span className="flex flex-wrap items-center gap-x-1 text-xs">
+                <Layers className="size-3.5 shrink-0 text-sky-600" />
+                <span className="font-semibold text-sky-700">{formatNumber(rows.length)} phân loại</span>
+                {inactiveCount > 0 && (
+                  <span className="text-muted-foreground">· {formatNumber(inactiveCount)} ngừng bán</span>
+                )}
+                {lowCount > 0 && (
+                  <span className="font-medium text-amber-700">· {formatNumber(lowCount)} sắp hết</span>
+                )}
+              </span>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell className={TEXT_SUB}>—</TableCell>
+        {seesCost && (
+          <TableCell className="text-right">{range(rows.map((p) => Number(p.costPrice ?? 0)))}</TableCell>
+        )}
+        <TableCell className="text-right">{range(rows.map((p) => Number(p.sellingPrice)))}</TableCell>
+        <TableCell className="text-center">
+          <span className="text-sm font-semibold tabular-nums" title="Tổng tồn các phân loại">
+            {formatNumber(qty)}
+          </span>
+        </TableCell>
+        <TableCell className="text-center">
+          <span
+            className={cn("text-sm font-semibold tabular-nums", available === 0 ? "text-rose-700" : "text-foreground")}
+            title="Tổng có thể bán các phân loại"
+          >
+            {formatNumber(available)}
+          </span>
+        </TableCell>
+        {locationsEnabled && <TableCell className={TEXT_SUB}>—</TableCell>}
+        <TableCell>
+          {chips.length === 0 ? (
+            <span className={TEXT_SUB}>Chưa nối</span>
+          ) : (
+            <span className="flex flex-nowrap items-center gap-1.5">
+              {chips.map(([channelName, n]) => {
+                const meta = CHANNEL_META[channelName as keyof typeof CHANNEL_META];
+                return (
+                  <span
+                    key={channelName}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-600"
+                    title={`${meta?.label ?? channelName}: ${formatNumber(n)} phân loại đã nối — bung mẫu để xem từng dòng`}
+                  >
+                    {meta?.label ?? channelName}
+                    <span className="opacity-70">×{n}</span>
+                  </span>
+                );
+              })}
+            </span>
+          )}
+        </TableCell>
+        <TableCell className={cn(TEXT_SUB, "text-center")}>—</TableCell>
+      </TableRow>
     );
   }
 
@@ -1165,24 +1451,34 @@ export default function ProductsHubPage() {
                       ))}
                     </TableHeader>
                     <TableBody>
-                      {table.getRowModel().rows.flatMap((row) => {
-                        const rendered = [
-                          <TableRow key={row.id}>
-                            {row.getVisibleCells().map((cell) => (
-                              <TableCell key={cell.id}>
-                                {flexRender(
-                                  cell.column.columnDef.cell,
-                                  cell.getContext()
-                                )}
-                              </TableCell>
-                            ))}
-                          </TableRow>,
-                        ];
-                        if (expandedId === row.original.id) {
-                          rendered.push(renderExpanded(row.original));
-                        }
-                        return rendered;
-                      })}
+                      {(() => {
+                        const rowById = new Map(table.getRowModel().rows.map((r) => [r.original.id, r]));
+                        return groups.flatMap((g) => {
+                          const multi = g.rows.length > 1;
+                          const open = !multi || openGroups.has(g.key);
+                          const out: ReactNode[] = [];
+                          if (multi) out.push(renderGroupRow(g, open));
+                          if (!open) return out;
+                          for (const p of g.rows) {
+                            const row = rowById.get(p.id);
+                            if (!row) continue;
+                            out.push(
+                              <TableRow
+                                key={row.id}
+                                className={cn(multi && "bg-slate-50/60 shadow-[inset_3px_0_0_0_var(--color-primary)]")}
+                              >
+                                {row.getVisibleCells().map((cell) => (
+                                  <TableCell key={cell.id}>
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            );
+                            if (expandedId === p.id) out.push(renderExpanded(p));
+                          }
+                          return out;
+                        });
+                      })()}
                     </TableBody>
                   </Table>
                 )}
@@ -1216,8 +1512,26 @@ export default function ProductsHubPage() {
                     ))}
                   </NativeSelect>
                   <span className="text-sm text-muted-foreground">
-                    dòng/trang · {formatNumber(total)} SKU · trang {page}/{Math.max(1, pageCount)}
+                    sản phẩm/trang · {formatNumber(total)} sản phẩm · {formatNumber(skuTotal)} SKU · trang{" "}
+                    {page}/{Math.max(1, pageCount)}
                   </span>
+                  {multiGroupKeys.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() =>
+                        setOpenGroups(allGroupsOpen ? new Set() : new Set(multiGroupKeys))
+                      }
+                    >
+                      {allGroupsOpen ? (
+                        <ChevronsDownUp className="size-3.5" />
+                      ) : (
+                        <ChevronsUpDown className="size-3.5" />
+                      )}
+                      {allGroupsOpen ? "Thu gọn phân loại" : "Bung hết phân loại"}
+                    </Button>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button

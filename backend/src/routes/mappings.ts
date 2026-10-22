@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { setStockAbsolute } from "../services/stock-ledger";
 import { syncChannelProducts } from "../marketplace/product-sync";
+import { cleanVariantName, productGroupKey, skuFromRoot } from "../lib/product-group";
 import {
   backfillOrderLinesByProducts,
   invalidateOwnerCostCaches,
@@ -56,6 +57,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const linked = typeof req.query.linked === "string" ? req.query.linked : "";
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
+    // inStock=yes (22/10/2026): bỏ phân loại sàn đang báo tồn 0 — hộp "Tự khớp +
+    // tạo SKU" dùng để lặp đúng tập sẽ tạo khi khách tích "bỏ qua tồn 0".
+    const inStock = req.query.inStock === "yes";
 
     const scope: Prisma.ChannelProductWhereInput = {
       channel: {
@@ -64,11 +68,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
         ...(channelName ? { channelName } : {}),
       },
       ...(channelId ? { channelId } : {}),
+      ...(inStock ? { channelStock: { not: 0 } } : {}),
       ...(search
         ? {
             OR: [
               { channelSku: { contains: search, mode: "insensitive" as const } },
               { productName: { contains: search, mode: "insensitive" as const } },
+              { variantName: { contains: search, mode: "insensitive" as const } },
             ],
           }
         : {}),
@@ -83,19 +89,51 @@ router.get("/", async (req: AuthRequest, res, next) => {
           : {}),
     };
 
+    // ?view=grouped (22/10/2026, tab Sản phẩm trên sàn cha–con kiểu Salework):
+    // phân trang theo SẢN PHẨM SÀN (gian × id sản phẩm), mọi phân loại của một
+    // sản phẩm về cùng trang; sản phẩm còn dòng chưa nối lên đầu.
+    const grouped =
+      req.query.view === "grouped"
+        ? await pageOfChannelProductGroups(
+            req.ownerId!,
+            req.allowedChannelIds ?? null,
+            { channelName, channelId, linked, search, inStock },
+            page,
+            pageSize
+          )
+        : null;
+
     const [total, items, linkedCount, unlinkedCount] = await Promise.all([
-      prisma.channelProduct.count({ where }),
-      prisma.channelProduct.findMany({
-        where,
-        // Chưa liên kết lên đầu — đó là việc đang cần làm
-        orderBy: [
-          { productId: { sort: "asc", nulls: "first" } },
-          { channelSku: "asc" },
-        ],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: INCLUDE,
-      }),
+      grouped ? Promise.resolve(grouped.total) : prisma.channelProduct.count({ where }),
+      grouped
+        ? prisma.channelProduct
+            .findMany({
+              where: {
+                AND: [
+                  where,
+                  {
+                    OR: grouped.keys.flatMap((k) => [
+                      { channelId: k.channelId, externalId: k.itemId },
+                      { channelId: k.channelId, externalId: { startsWith: `${k.itemId}-` } },
+                      { id: k.itemId },
+                    ]),
+                  },
+                ],
+              },
+              include: INCLUDE,
+            })
+            .then((rows) => sortChannelRowsByGroup(rows, grouped.keys))
+        : prisma.channelProduct.findMany({
+            where,
+            // Chưa liên kết lên đầu — đó là việc đang cần làm
+            orderBy: [
+              { productId: { sort: "asc", nulls: "first" } },
+              { channelSku: "asc" },
+            ],
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+            include: INCLUDE,
+          }),
       // Đếm trên `scope` (KHÔNG kèm điều kiện linked) để hai thẻ lọc luôn có
       // số, kể cả khi đang đứng ở một bên.
       prisma.channelProduct.count({ where: { ...scope, productId: { not: null } } }),
@@ -179,6 +217,155 @@ router.post("/link", async (req: AuthRequest, res, next) => {
       product,
       seededStock: seeded.get(product.id) ?? null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Id sản phẩm sàn (phần trước dấu "-" của externalId) — khóa gom cha–con của tab Sản phẩm trên sàn. */
+function channelItemId(externalId: string | null): string | null {
+  const head = (externalId ?? "").split("-")[0];
+  return head || null;
+}
+
+/**
+ * PHÂN TRANG THEO SẢN PHẨM SÀN (22/10/2026). Khóa nhóm = gian × id sản phẩm sàn
+ * (dòng không có externalId đứng một mình theo id). SQL thô vì Prisma groupBy không
+ * gom theo biểu thức; bộ lọc lặp đúng điều kiện của `scope`/`where` phía trên.
+ */
+async function pageOfChannelProductGroups(
+  ownerId: string,
+  allowedChannelIds: string[] | null,
+  f: { channelName?: ChannelName; channelId: string; linked: string; search: string; inStock: boolean },
+  page: number,
+  pageSize: number
+): Promise<{ keys: { channelId: string; itemId: string }[]; total: number }> {
+  const conds: Prisma.Sql[] = [Prisma.sql`c."userId" = ${ownerId}`];
+  if (allowedChannelIds) conds.push(Prisma.sql`c."id" IN (${Prisma.join(allowedChannelIds)})`);
+  if (f.channelName) conds.push(Prisma.sql`c."channelName" = ${f.channelName}::"ChannelName"`);
+  if (f.channelId) conds.push(Prisma.sql`cp."channelId" = ${f.channelId}`);
+  if (f.inStock) conds.push(Prisma.sql`(cp."channelStock" IS NULL OR cp."channelStock" <> 0)`);
+  if (f.linked === "yes") conds.push(Prisma.sql`cp."productId" IS NOT NULL`);
+  if (f.linked === "no") conds.push(Prisma.sql`cp."productId" IS NULL`);
+  if (f.search) {
+    const like = `%${f.search}%`;
+    conds.push(
+      Prisma.sql`(cp."channelSku" ILIKE ${like} OR cp."productName" ILIKE ${like} OR cp."variantName" ILIKE ${like})`
+    );
+  }
+  const whereSql = Prisma.join(conds, " AND ");
+  const gk = Prisma.sql`cp."channelId" || ':' || COALESCE(NULLIF(split_part(COALESCE(cp."externalId", ''), '-', 1), ''), cp."id")`;
+  const [rows, count] = await Promise.all([
+    prisma.$queryRaw<{ gk: string }[]>(
+      Prisma.sql`SELECT ${gk} AS gk,
+                        MIN(CASE WHEN cp."productId" IS NULL THEN 0 ELSE 1 END) AS pending,
+                        MIN(cp."productName") AS name
+                 FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
+                 WHERE ${whereSql}
+                 GROUP BY 1 ORDER BY pending ASC, name ASC, gk
+                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`
+    ),
+    prisma.$queryRaw<{ n: number }[]>(
+      Prisma.sql`SELECT COUNT(DISTINCT ${gk})::int AS n
+                 FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
+                 WHERE ${whereSql}`
+    ),
+  ]);
+  const keys = rows.map((r) => {
+    const i = r.gk.indexOf(":");
+    return { channelId: r.gk.slice(0, i), itemId: r.gk.slice(i + 1) };
+  });
+  return { keys, total: count[0]?.n ?? 0 };
+}
+
+/** Xếp dòng theo thứ tự nhóm của trang; trong nhóm theo tên phân loại (số tự nhiên) rồi mã. */
+function sortChannelRowsByGroup<
+  T extends { id: string; channelId: string; externalId: string | null; variantName: string | null; channelSku: string },
+>(rows: T[], keys: { channelId: string; itemId: string }[]): T[] {
+  const rank = new Map(keys.map((k, i) => [`${k.channelId}:${k.itemId}`, i]));
+  const collator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
+  const keyOf = (r: T) => `${r.channelId}:${channelItemId(r.externalId) ?? r.id}`;
+  return rows.sort((a, b) => {
+    const ra = rank.get(keyOf(a)) ?? Number.MAX_SAFE_INTEGER;
+    const rb = rank.get(keyOf(b)) ?? Number.MAX_SAFE_INTEGER;
+    if (ra !== rb) return ra - rb;
+    return collator.compare(a.variantName ?? a.channelSku, b.variantName ?? b.channelSku);
+  });
+}
+
+/**
+ * POST /api/mappings/link-by-sku — NỐI MỘT DÒNG SÀN BẰNG MÃ GÕ TẠI CHỖ (22/10/2026,
+ * khách: "nối thủ công kiểu Salework cũng được"). Body: { channelProductId, skuCode }.
+ * Mã đã có trong kho → nối vào; chưa có → TẠO SKU kho mới mang đúng mã khách gõ
+ * (tên, phân loại, ảnh, giá lấy từ dòng sàn; tồn ban đầu theo sàn) rồi nối.
+ */
+router.post("/link-by-sku", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelProductId, skuCode } = req.body ?? {};
+    if (typeof channelProductId !== "string" || !channelProductId) {
+      res.status(400).json({ error: "Thiếu sản phẩm sàn" });
+      return;
+    }
+    const sku = typeof skuCode === "string" ? skuCode.trim().toUpperCase() : "";
+    if (!sku) {
+      res.status(400).json({ error: "Gõ mã SKU kho để nối" });
+      return;
+    }
+    if (sku.length > 50) {
+      res.status(400).json({ error: "Mã SKU tối đa 50 ký tự" });
+      return;
+    }
+    const cp = await prisma.channelProduct.findFirst({
+      where: {
+        id: channelProductId,
+        channel: {
+          userId: req.ownerId!,
+          ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+        },
+      },
+      select: { id: true, productId: true },
+    });
+    if (!cp) {
+      res.status(404).json({ error: "Không tìm thấy sản phẩm sàn" });
+      return;
+    }
+    const select = { id: true, skuCode: true, productName: true, variantName: true, quantityInStock: true } as const;
+    let product = await prisma.product.findUnique({
+      where: { userId_skuCode: { userId: req.ownerId!, skuCode: sku } },
+      select,
+    });
+    let created = false;
+    let seededStock: number | null = null;
+    if (product) {
+      if (cp.productId && cp.productId !== product.id) {
+        // Đổi nối sang SKU khác: gỡ trước rồi nối — cùng đường với nút Gỡ.
+        await prisma.channelProduct.update({ where: { id: cp.id }, data: { productId: null } });
+      }
+      await prisma.channelProduct.updateMany({ where: { id: cp.id }, data: { productId: product.id } });
+      await inheritChannelCostPrice([product.id], req.ownerId!);
+      await backfillOrderLinesByProducts(prisma, [product.id], req.ownerId!);
+      await invalidateOwnerCostCaches(req.ownerId!);
+      const seeded = await seedInitialStockFromChannel([product.id], req.ownerId!);
+      seededStock = seeded.get(product.id) ?? null;
+    } else {
+      if (cp.productId) {
+        await prisma.channelProduct.update({ where: { id: cp.id }, data: { productId: null } });
+      }
+      await createProductsFromChannelProducts(req.ownerId!, [cp.id], req.allowedChannelIds, {
+        skuById: { [cp.id]: sku },
+      });
+      product = await prisma.product.findUnique({
+        where: { userId_skuCode: { userId: req.ownerId!, skuCode: sku } },
+        select,
+      });
+      created = true;
+      seededStock = product && product.quantityInStock > 0 ? product.quantityInStock : null;
+    }
+    if (!product) {
+      res.status(500).json({ error: "Không tạo được SKU kho" });
+      return;
+    }
+    res.json({ product, created, seededStock });
   } catch (err) {
     next(err);
   }
@@ -366,15 +553,36 @@ router.post("/auto-match", async (req: AuthRequest, res, next) => {
  * Lõi TẠO SKU KHO từ các dòng sàn chưa nối rồi nối luôn — dùng chung cho
  * /create-products và /quick-link. `channelProductIds` ≤ 200 mỗi lượt.
  */
+export interface CreateProductsOptions {
+  /**
+   * MÃ GỐC khách gõ cho sản phẩm sàn KHÔNG có SKU (hộp Nối SKU nhanh, 22/10/2026,
+   * cách Salework "mã gốc + mã model"): khóa = id sản phẩm sàn (phần trước dấu
+   * "-" của externalId), giá trị = mã gốc. Mã SKU kho = MÃ GỐC-ĐUÔI-PHÂN-LOẠI.
+   * Dòng sàn giữ nguyên channelSku dự phòng (SPE-…), nối "khác mã kho".
+   */
+  rootSkus?: Record<string, string>;
+  /** Bỏ qua phân loại sàn đang báo tồn 0 (khách: "không còn tồn thì khỏi vào kho"). */
+  skipZeroStock?: boolean;
+  /** Mã SKU kho khách gõ cho TỪNG dòng sàn (nối thủ công tại dòng, /link-by-sku). */
+  skuById?: Record<string, string>;
+}
+
+/** Mã dự phòng Hubsell tự sinh khi sàn không có SKU — khách không đọc được. */
+export function isFallbackChannelSku(sku: string): boolean {
+  return /^(SPE|TTK|LZD)-\d/.test(sku);
+}
+
 async function createProductsFromChannelProducts(
   ownerId: string,
   channelProductIds: string[],
-  allowedChannelIds?: string[] | null
+  allowedChannelIds?: string[] | null,
+  options: CreateProductsOptions = {}
 ) {
   const cps = await prisma.channelProduct.findMany({
     where: {
       id: { in: channelProductIds },
       productId: null, // đã liên kết rồi thì bỏ qua, không tạo trùng
+      ...(options.skipZeroStock ? { channelStock: { not: 0 } } : {}),
       channel: {
         userId: ownerId,
         ...(allowedChannelIds ? { id: { in: allowedChannelIds } } : {}),
@@ -390,8 +598,17 @@ async function createProductsFromChannelProducts(
   // Xử lý TUẦN TỰ theo nhóm mã SKU: nhiều dòng sàn (các phân loại đặt chung
   // SellerSku, hay 2 gian cùng bán một mã) quy về MỘT sản phẩm kho.
   const byUpperSku = new Map<string, typeof cps>();
+  const rootSkus = options.rootSkus ?? {};
   for (const cp of cps) {
-    const key = cp.channelSku.trim().toUpperCase();
+    // Khách đã gõ mã gốc cho sản phẩm sàn này → mã kho đọc được thay cho SPE-….
+    const itemId = (cp.externalId ?? "").split("-")[0];
+    const root = itemId ? rootSkus[itemId]?.trim() : "";
+    const typed = options.skuById?.[cp.id]?.trim();
+    const key = typed
+      ? typed.toUpperCase()
+      : root && isFallbackChannelSku(cp.channelSku)
+        ? skuFromRoot(root, cleanVariantName(cp.variantName))
+        : cp.channelSku.trim().toUpperCase();
     const list = byUpperSku.get(key) ?? [];
     list.push(cp);
     byUpperSku.set(key, list);
@@ -411,11 +628,15 @@ async function createProductsFromChannelProducts(
         group.find((g) => Number(g.costPrice ?? 0) > 0) ??
         group.find((g) => g.imageUrl) ??
         group[0];
+      // Tên kho = tên MẪU + phân loại riêng (22/10/2026) — bảng Hàng hóa gom cha–con.
+      const variantName = cleanVariantName(rep.variantName);
       product = await prisma.product.create({
         data: {
           userId: ownerId,
           skuCode,
           productName: rep.productName,
+          variantName,
+          groupKey: productGroupKey(rep.productName, variantName),
           sellingPrice: rep.price,
           costPrice: rep.costPrice ?? 0,
           imageUrl: rep.imageUrl,
@@ -468,6 +689,7 @@ router.post("/quick-link", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Thiếu channelId" });
       return;
     }
+    const options = parseCreateOptions(req.body);
     const channel = await prisma.channel.findFirst({
       where: {
         id: channelId,
@@ -506,7 +728,12 @@ router.post("/quick-link", async (req: AuthRequest, res, next) => {
     let createdLinked = 0;
     for (let guard = 0; guard < 50; guard++) {
       const batch = await prisma.channelProduct.findMany({
-        where: { channelId: channel.id, productId: null, status: "ACTIVE" },
+        where: {
+          channelId: channel.id,
+          productId: null,
+          status: "ACTIVE",
+          ...(options.skipZeroStock ? { channelStock: { not: 0 } } : {}),
+        },
         select: { id: true },
         take: 200,
       });
@@ -514,7 +741,8 @@ router.post("/quick-link", async (req: AuthRequest, res, next) => {
       const r = await createProductsFromChannelProducts(
         req.ownerId!,
         batch.map((b) => b.id),
-        req.allowedChannelIds
+        req.allowedChannelIds,
+        options
       );
       createdProducts += r.createdProducts;
       reusedProducts += r.reusedProducts;
@@ -567,9 +795,98 @@ router.post("/create-products", async (req: AuthRequest, res, next) => {
       await createProductsFromChannelProducts(
         req.ownerId!,
         channelProductIds,
-        req.allowedChannelIds
+        req.allowedChannelIds,
+        parseCreateOptions(req.body)
       )
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Tùy chọn tạo SKU kho từ body: rootSkus {idSảnPhẩmSàn: mãGốc}, skipZeroStock. */
+function parseCreateOptions(body: unknown): CreateProductsOptions {
+  const b = (body ?? {}) as { rootSkus?: unknown; skipZeroStock?: unknown };
+  const rootSkus: Record<string, string> = {};
+  if (b.rootSkus && typeof b.rootSkus === "object") {
+    for (const [k, v] of Object.entries(b.rootSkus as Record<string, unknown>)) {
+      if (typeof v === "string" && v.trim() && k.trim()) rootSkus[k.trim()] = v.trim().slice(0, 40);
+    }
+  }
+  return { rootSkus, skipZeroStock: b.skipZeroStock === true };
+}
+
+/**
+ * GET /api/mappings/fallback-items?channelId= — SẢN PHẨM SÀN KHÔNG CÓ MÃ SKU
+ * (Hubsell đang phải tự sinh "SPE-…"), gom theo sản phẩm sàn, để hộp "Tự khớp +
+ * tạo SKU" hỏi khách MÃ GỐC trước khi tạo (22/10/2026, cách Salework). Chỉ dòng
+ * chưa nối, đang bán. Tối đa 300 sản phẩm — nhiều hơn thì khách nên đặt SKU
+ * ngay trên sàn (lời khuyên gốc).
+ */
+router.get("/fallback-items", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const rows = await prisma.channelProduct.findMany({
+      where: {
+        productId: null,
+        status: "ACTIVE",
+        externalId: { not: null },
+        channel: {
+          userId: req.ownerId!,
+          ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+        },
+        ...(channelId ? { channelId } : {}),
+        OR: [
+          { channelSku: { startsWith: "SPE-" } },
+          { channelSku: { startsWith: "TTK-" } },
+          { channelSku: { startsWith: "LZD-" } },
+        ],
+      },
+      select: {
+        channelSku: true,
+        externalId: true,
+        productName: true,
+        variantName: true,
+        imageUrl: true,
+        channelStock: true,
+        channel: { select: { id: true, channelName: true, shopName: true } },
+      },
+      orderBy: [{ productName: "asc" }, { variantName: "asc" }],
+      take: 5000,
+    });
+    const byItem = new Map<
+      string,
+      {
+        itemId: string;
+        productName: string;
+        imageUrl: string | null;
+        channelName: ChannelName;
+        shopName: string;
+        variants: { variantName: string | null; channelSku: string; channelStock: number | null }[];
+      }
+    >();
+    for (const r of rows) {
+      if (!isFallbackChannelSku(r.channelSku)) continue;
+      const itemId = (r.externalId ?? "").split("-")[0];
+      if (!itemId) continue;
+      const g = byItem.get(itemId) ?? {
+        itemId,
+        productName: r.productName,
+        imageUrl: r.imageUrl,
+        channelName: r.channel.channelName,
+        shopName: r.channel.shopName,
+        variants: [],
+      };
+      if (!g.imageUrl && r.imageUrl) g.imageUrl = r.imageUrl;
+      g.variants.push({
+        variantName: cleanVariantName(r.variantName),
+        channelSku: r.channelSku,
+        channelStock: r.channelStock,
+      });
+      byItem.set(itemId, g);
+    }
+    const items = [...byItem.values()];
+    res.json({ items: items.slice(0, 300), total: items.length });
   } catch (err) {
     next(err);
   }

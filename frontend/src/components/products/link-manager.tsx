@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   ImageIcon,
+  Layers,
   Link2,
   Link2Off,
   Loader2,
@@ -41,6 +43,7 @@ import {
   fetchChannelProducts,
   fetchChannels,
   fetchProducts,
+  linkChannelProductBySku,
   linkChannelProducts,
   unlinkChannelProducts,
   type Channel,
@@ -64,6 +67,9 @@ const LINK_TABS: { key: "" | "no" | "yes"; label: string; countKey: string }[] =
 // Thứ tự sàn hiển thị ở dropdown "Chọn sàn".
 const PLATFORM_OPTIONS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
 
+/** id của <datalist> gợi ý mã SKU kho cho các ô gõ tại dòng. */
+const SKU_LIST_ID = "hubsell-sku-kho-options";
+
 interface LinkManagerProps {
   /** Từ khoá tìm kiếm khởi tạo — hub truyền vào khi bấm "Nối thêm gian" từ một SKU. */
   initialSearch?: string;
@@ -71,14 +77,39 @@ interface LinkManagerProps {
   onChanged?: () => void;
 }
 
+/** Một SẢN PHẨM SÀN (gian × id sản phẩm) = các dòng phân loại backend đã xếp liền nhau. */
+interface ChannelGroup {
+  key: string;
+  itemId: string | null;
+  name: string;
+  imageUrl: string | null;
+  channel: ChannelProduct["channel"];
+  rows: ChannelProduct[];
+}
+
+/** Tên phân loại sàn in cho đẹp: Shopee "Đen,L" → "Đen, L" (cùng cách chuẩn hóa với SKU kho). */
+function variantLabel(raw: string | null): string | null {
+  if (!raw) return null;
+  const parts = raw.split(",").map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+
+/** Mã máy Hubsell tự sinh khi sàn không có SKU — dòng cha cho gõ MÃ GỐC thay vì giữ mã này. */
+function isFallbackSku(sku: string): boolean {
+  return /^(SPE|TTK|LZD)-\d/.test(sku);
+}
+
 /**
  * TRÌNH QUẢN LÝ LIÊN KẾT SÀN — tab "Sản phẩm trên sàn" của hub Hàng hóa.
  *
- * Nguyên trang /mappings cũ chuyển thành component: đọc tầng đệm ChannelProduct,
- * tích nhiều dòng nối chung về một SKU gốc. CHỈ chủ shop (hub đã gác, API cũng
- * chặn adminOnly độc lập). Nút "Tự khớp + tạo SKU" mở CÙNG hộp thoại với bước 2
- * của khối Thiết lập kho (one-click-link-dialog) — một cửa vào duy nhất, trong
- * hộp mới chọn mức "chỉ tự khớp trùng mã" hay "tự khớp + tạo SKU còn lại".
+ * 22/10/2026 — khách: "nối thủ công kiểu Salework cũng được" → bảng CHA–CON theo
+ * SẢN PHẨM SÀN (backend phân trang theo sản phẩm, view=grouped): dòng cha = ảnh +
+ * tên + ID sàn + "N phân loại · n chưa nối" + nút "Tạo SKU kho cho cả sản phẩm"
+ * (sàn không có mã thì gõ MÃ GỐC, Hubsell ghép phân loại); dòng con = phân loại +
+ * mã sàn + Ô GÕ MÃ SKU KHO NGAY TẠI DÒNG (Enter = nối; mã chưa có thì tạo SKU kho
+ * mới mang đúng mã) + nút gỡ. Giữ tick nhiều dòng nối chung một SKU, hộp "Tự khớp
+ * + tạo SKU" (một cửa vào với bước 2 khối Thiết lập kho) cho khách đã đặt mã chuẩn.
+ * CHỈ chủ shop (hub đã gác, API cũng chặn adminOnly độc lập).
  */
 export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
   const router = useRouter();
@@ -97,13 +128,20 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [pageCount, setPageCount] = useState(0);
+  const [total, setTotal] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [targetSku, setTargetSku] = useState("");
   const [linking, setLinking] = useState(false);
+  // Sản phẩm sàn đang THU GỌN (mặc định bung hết — khách đang gõ mã từng phân loại).
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Mã gốc đang gõ ở dòng cha, theo khóa nhóm.
+  const [rootDrafts, setRootDrafts] = useState<Record<string, string>>({});
+  // Nhóm đang tạo SKU kho hàng loạt / dòng đang gỡ.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  // Sản phẩm sàn đang mở hộp thoại nối nhanh (bấm "Chưa liên kết" trên dòng)
+  // Sản phẩm sàn đang mở hộp thoại nối nhanh (bấm "Chọn SKU có sẵn" trên dòng)
   const [linkTarget, setLinkTarget] = useState<ChannelProduct | null>(null);
 
   useEffect(() => {
@@ -124,10 +162,12 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
         search: debounced || undefined,
         page,
         pageSize,
+        view: "grouped",
       });
       setRows(res.items);
       setCounts(res.counts);
       setPageCount(res.pageCount);
+      setTotal(res.total);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -144,13 +184,13 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     load();
   }, [load]);
 
-  // Toàn bộ SKU gốc cho combobox nối về — gọi lại sau khi tạo SKU kho hàng loạt
+  // Toàn bộ SKU gốc cho combobox + gợi ý ô gõ tại dòng — gọi lại sau khi tạo SKU kho
   const loadAllProducts = useCallback(async () => {
     const all: Product[] = [];
     let p = 1;
     try {
       for (;;) {
-        const res = await fetchProducts({ page: p, pageSize: 50 });
+        const res = await fetchProducts({ page: p, pageSize: 100 });
         all.push(...res.items);
         if (p >= res.pageCount || res.pageCount === 0) break;
         p++;
@@ -175,6 +215,25 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     onChanged?.();
   }, [load, onChanged]);
 
+  // Gom dòng theo sản phẩm sàn (backend đã xếp liền nhau theo gian × id sản phẩm).
+  const groups = useMemo<ChannelGroup[]>(() => {
+    const map = new Map<string, ChannelGroup>();
+    const order: ChannelGroup[] = [];
+    for (const r of rows) {
+      const itemId = (r.externalId ?? "").split("-")[0] || null;
+      const key = `${r.channel.id}:${itemId ?? r.id}`;
+      let g = map.get(key);
+      if (!g) {
+        g = { key, itemId, name: r.productName, imageUrl: r.imageUrl, channel: r.channel, rows: [] };
+        map.set(key, g);
+        order.push(g);
+      }
+      if (!g.imageUrl && r.imageUrl) g.imageUrl = r.imageUrl;
+      g.rows.push(r);
+    }
+    return order;
+  }, [rows]);
+
   // Chỉ coi là đang chọn những dòng CÒN hiện trên bảng, nên đổi bộ lọc là lựa
   // chọn cũ tự rơi ra — không thể lỡ tay nối những dòng không còn nhìn thấy.
   const selected = rows.filter((r) => selectedIds.has(r.id));
@@ -195,6 +254,24 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
       const next = new Set(prev);
       if (allOnPageSelected) rows.forEach((r) => next.delete(r.id));
       else rows.forEach((r) => next.add(r.id));
+      return next;
+    });
+  }
+
+  function toggleGroupSelected(g: ChannelGroup) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (g.rows.every((r) => next.has(r.id))) g.rows.forEach((r) => next.delete(r.id));
+      else g.rows.forEach((r) => next.add(r.id));
+      return next;
+    });
+  }
+
+  function toggleCollapsed(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
@@ -242,6 +319,20 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     }
   }
 
+  /** Gỡ MỘT dòng ngay tại chỗ (nút cạnh mã kho đã nối). */
+  async function handleUnlinkOne(r: ChannelProduct) {
+    setBusyKey(`unlink:${r.id}`);
+    try {
+      await unlinkChannelProducts([r.id]);
+      toast.success(`Đã gỡ ${variantLabel(r.variantName) ?? r.channelSku} khỏi ${r.product?.skuCode ?? "SKU kho"}`);
+      afterChange();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không gỡ được");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   // Tạo sản phẩm kho từ các dòng sàn đã chọn (chỉ dòng CHƯA liên kết) rồi nối luôn.
   const selectedUnlinked = selected.filter((s) => !s.productId);
   async function handleCreateProducts() {
@@ -270,6 +361,41 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     }
   }
 
+  /**
+   * "Tạo SKU kho cho cả sản phẩm" ở dòng cha: mọi phân loại CHƯA nối của sản phẩm
+   * sàn này thành SKU kho rồi nối. Sàn không có mã → cần MÃ GỐC khách gõ (mã kho =
+   * MÃ GỐC-ĐUÔI-PHÂN-LOẠI); sàn có mã → lấy đúng mã sàn.
+   */
+  async function handleCreateForGroup(g: ChannelGroup) {
+    const unlinked = g.rows.filter((r) => !r.productId);
+    if (unlinked.length === 0) return;
+    const needsRoot = unlinked.some((r) => isFallbackSku(r.channelSku));
+    const root = (rootDrafts[g.key] ?? "").trim();
+    if (needsRoot && !root) {
+      toast.error("Sản phẩm này chưa có mã SKU trên sàn — gõ mã gốc rồi bấm Tạo");
+      return;
+    }
+    setBusyKey(`create:${g.key}`);
+    try {
+      const r = await createProductsFromMappings(
+        unlinked.map((u) => u.id),
+        needsRoot && g.itemId ? { rootSkus: { [g.itemId]: root } } : {}
+      );
+      toast.success(
+        `${g.name}: tạo ${formatNumber(r.createdProducts)} SKU kho` +
+          (r.reusedProducts > 0 ? ` (dùng lại ${formatNumber(r.reusedProducts)})` : "") +
+          `, nối ${formatNumber(r.linked)} phân loại.`,
+        { duration: 6000 }
+      );
+      afterChange();
+      loadAllProducts();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không tạo được SKU kho");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   // ===== MỘT CỬA VÀO: hộp "Tự khớp + tạo SKU" dùng chung với khối Thiết lập kho =====
   const [oneClickOpen, setOneClickOpen] = useState(false);
 
@@ -295,14 +421,68 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     Boolean(linkTab) ||
     Boolean(search.trim());
 
+  /** Ô "Liên kết" của một dòng sàn: đã nối → mã kho + gỡ; chưa → ô gõ mã tại chỗ. */
+  function renderLinkCell(r: ChannelProduct) {
+    if (r.product) {
+      return (
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 font-medium text-emerald-700">
+              <Link2 className="size-3.5 shrink-0" />
+              <span className="truncate font-mono text-sm">{r.product.skuCode}</span>
+            </p>
+            <p className={cn(TEXT_SUB, "truncate")} title={r.product.productName}>
+              {r.product.productName} · tồn {formatNumber(r.product.quantityInStock)}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto h-8 shrink-0 px-2.5 text-red-700 hover:bg-red-50 hover:text-red-700"
+            onClick={() => handleUnlinkOne(r)}
+            disabled={busyKey === `unlink:${r.id}`}
+            title="Gỡ nối dòng này khỏi SKU kho"
+            aria-label={`Gỡ nối ${variantLabel(r.variantName) ?? r.channelSku}`}
+          >
+            {busyKey === `unlink:${r.id}` ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Link2Off className="size-3.5" />
+            )}
+            Gỡ nối
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <InlineSkuLink
+        row={r}
+        onPick={() => setLinkTarget(r)}
+        onLinked={(created) => {
+          afterChange();
+          if (created) loadAllProducts();
+        }}
+      />
+    );
+  }
+
   return (
     <>
+      {/* Gợi ý mã SKU kho cho mọi ô gõ tại dòng (trình duyệt tự lọc theo chữ đang gõ) */}
+      <datalist id={SKU_LIST_ID}>
+        {products.map((p) => (
+          <option key={p.id} value={p.skuCode}>
+            {p.variantName ? `${p.productName} (${p.variantName})` : p.productName}
+          </option>
+        ))}
+      </datalist>
+
       {/* Chừa đáy cho thanh liên kết nổi */}
       <div className="space-y-5 pb-28">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            Sản phẩm thô kéo từ các gian hàng về. Nối chúng về SKU gốc trong kho
-            để đơn từ bất kỳ shop nào cũng trừ đúng tồn kho.
+            Sản phẩm thô kéo từ các gian hàng về. Gõ mã SKU kho ngay tại từng phân loại
+            (mã chưa có thì Hubsell tạo luôn), hoặc tạo SKU kho cho cả sản phẩm một lần.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {/* Một cửa vào: hộp thoại cho chọn "chỉ tự khớp" hay "tự khớp + tạo SKU" */}
@@ -393,7 +573,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9 pr-9"
-                placeholder="Tìm mã SKU sàn hoặc tên sản phẩm…"
+                placeholder="Tìm mã SKU sàn, tên sản phẩm hoặc phân loại…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -426,7 +606,10 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
               </div>
             ) : (
               <Refreshing active={loading}>
-                <Table>
+                {/* table-fixed theo % như bảng Giá vốn: KHÔNG cuộn ngang ở mọi cỡ màn (anh Trung
+                    22/10: "phải kéo ngang thì rất mất việc"); tên dài tự cắt + tooltip; gian hàng
+                    gộp vào ô tên, giá + tồn sàn chung một cột để nhường chỗ cho ô gõ mã kho. */}
+                <Table className="table-fixed" containerClassName="overflow-visible">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10">
@@ -438,113 +621,110 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                           className="size-4 cursor-pointer accent-primary"
                         />
                       </TableHead>
-                      <TableHead>Sản phẩm trên sàn</TableHead>
-                      <TableHead>Gian hàng</TableHead>
-                      <TableHead className="text-right">Giá sàn</TableHead>
-                      <TableHead>Liên kết SP vào kho vật lý</TableHead>
+                      <TableHead className="w-[38%]">Sản phẩm trên sàn</TableHead>
+                      <TableHead className="w-[14%] text-right">Giá · Tồn sàn</TableHead>
+                      <TableHead>Mã SKU kho (liên kết)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((r, index) => {
-                      const checked = selectedIds.has(r.id);
-                      const meta = CHANNEL_META[r.channel.channelName];
-                      return (
-                        <TableRow
-                          key={r.id}
-                          className={cn(
-                            "transition-colors hover:bg-primary/10",
-                            index % 2 === 1 && "bg-muted/40",
-                            checked &&
-                              "bg-primary/15 hover:bg-primary/20 shadow-[inset_3px_0_0_0_var(--color-primary)]"
-                          )}
-                        >
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              aria-label={`Chọn ${r.channelSku}`}
-                              checked={checked}
-                              onChange={() => toggleOne(r.id)}
-                              className="size-4 cursor-pointer accent-primary"
-                            />
-                          </TableCell>
+                    {groups.flatMap((g) => {
+                      const multi = g.rows.length > 1;
+                      const open = !multi || !collapsed.has(g.key);
+                      const out: React.ReactNode[] = [];
+                      if (multi) out.push(renderGroupRow(g, open));
+                      if (!open) return out;
+                      for (const r of g.rows) {
+                        const checked = selectedIds.has(r.id);
+                        const meta = CHANNEL_META[r.channel.channelName];
+                        out.push(
+                          <TableRow
+                            key={r.id}
+                            className={cn(
+                              "transition-colors hover:bg-primary/10",
+                              multi && "bg-slate-50/60 shadow-[inset_3px_0_0_0_var(--color-primary)]",
+                              checked &&
+                                "bg-primary/15 hover:bg-primary/20 shadow-[inset_3px_0_0_0_var(--color-primary)]"
+                            )}
+                          >
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                aria-label={`Chọn ${variantLabel(r.variantName) ?? r.channelSku}`}
+                                checked={checked}
+                                onChange={() => toggleOne(r.id)}
+                                className="size-4 cursor-pointer accent-primary"
+                              />
+                            </TableCell>
 
-                          <TableCell>
-                            <div className="flex items-center gap-2.5">
-                              {r.imageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={r.imageUrl}
-                                  alt={r.productName}
-                                  className="size-9 shrink-0 rounded-md object-cover"
-                                />
+                            <TableCell>
+                              {multi ? (
+                                // Dòng CON: chỉ phân loại + mã sàn (tên + ảnh đã ở dòng cha)
+                                <div className="min-w-0 pl-9">
+                                  {/* Sàn không trả tên phân loại (Lazada thiếu saleProp) → mã sàn làm nhãn chính */}
+                                  <p
+                                    className={cn(
+                                      "truncate text-sm font-medium",
+                                      r.variantName ? "text-sky-800" : "font-mono text-foreground"
+                                    )}
+                                    title={variantLabel(r.variantName) ?? r.channelSku}
+                                  >
+                                    {variantLabel(r.variantName) ?? r.channelSku}
+                                  </p>
+                                  {r.variantName && (
+                                    <p className={cn(TEXT_SUB, "truncate font-mono")} title={r.channelSku}>
+                                      {r.channelSku}
+                                    </p>
+                                  )}
+                                </div>
                               ) : (
-                                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                                  <ImageIcon className="size-4" />
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <ChannelThumb src={r.imageUrl} alt={r.productName} />
+                                  <div className="min-w-0">
+                                    <p className="truncate" title={r.productName}>
+                                      {r.productName}
+                                    </p>
+                                    <p className={cn(TEXT_SUB, "truncate")}>
+                                      <span className={`mr-1.5 inline-flex items-center rounded-full border px-1.5 py-0 text-[11px] font-medium ${meta.className}`}>
+                                        {meta.label}
+                                      </span>
+                                      {r.channel.shopName}
+                                    </p>
+                                    {r.variantName && (
+                                      <p className="truncate text-xs font-medium text-sky-700" title={variantLabel(r.variantName) ?? undefined}>
+                                        {variantLabel(r.variantName)}
+                                      </p>
+                                    )}
+                                    <p className={cn(TEXT_SUB, "truncate font-mono")} title={r.channelSku}>
+                                      {r.channelSku}
+                                      {r.externalId ? (
+                                        <span className="ml-2 text-muted-foreground/70" title="ID sản phẩm trên sàn">
+                                          ID {r.externalId}
+                                        </span>
+                                      ) : null}
+                                    </p>
+                                  </div>
                                 </div>
                               )}
-                              <div className="min-w-0">
-                                <p className="truncate">
-                                  {r.productName}
-                                </p>
-                                <p className={cn(TEXT_SUB, "font-mono")}>
-                                  {r.channelSku}
-                                  {r.externalId ? (
-                                    <span
-                                      className="ml-2 text-muted-foreground/70"
-                                      title="ID sản phẩm trên sàn"
-                                    >
-                                      ID sàn {r.externalId}
-                                    </span>
-                                  ) : null}
-                                </p>
-                              </div>
-                            </div>
-                          </TableCell>
+                            </TableCell>
 
-                          <TableCell>
-                            <span
-                              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
-                            >
-                              {meta.label}
-                            </span>
-                            <p className={cn(TEXT_SUB, "mt-1")}>
-                              {r.channel.shopName}
-                            </p>
-                          </TableCell>
-
-                          <TableCell className="text-right">
-                            <Money value={r.price} className="text-slate-900" />
-                          </TableCell>
-
-                          <TableCell>
-                            {r.product ? (
-                              <>
-                                <p className="flex items-center gap-1.5 font-medium text-emerald-700">
-                                  <Link2 className="size-3.5 shrink-0" />
-                                  {r.product.skuCode}
-                                </p>
-                                <p className={cn(TEXT_SUB, "truncate")}>
-                                  {r.product.productName} · tồn{" "}
-                                  {formatNumber(r.product.quantityInStock)}
-                                </p>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setLinkTarget(r)}
-                                title="Bấm để nối sản phẩm sàn này về SKU gốc"
-                                className={cn(
-                                  TEXT_SUB,
-                                  "inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 font-medium text-amber-700 transition-colors hover:border-amber-400 hover:bg-amber-100 hover:text-amber-800"
+                            <TableCell className="text-right">
+                              <Money value={r.price} className="text-slate-900" />
+                              <p className={cn(TEXT_SUB, "tabular-nums")}>
+                                {r.channelStock === null || r.channelStock === undefined ? (
+                                  "tồn —"
+                                ) : (
+                                  <span className={cn(r.channelStock === 0 && "font-medium text-rose-700")}>
+                                    tồn {formatNumber(r.channelStock)}
+                                  </span>
                                 )}
-                              >
-                                <Link2Off className="size-3.5 shrink-0" />
-                                Chưa liên kết
-                              </button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
+                              </p>
+                            </TableCell>
+
+                            <TableCell>{renderLinkCell(r)}</TableCell>
+                          </TableRow>
+                        );
+                      }
+                      return out;
                     })}
                   </TableBody>
                 </Table>
@@ -559,7 +739,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
               <span className="text-sm text-muted-foreground">Hiển thị</span>
               <NativeSelect
                 className="w-20"
-                aria-label="Số dòng mỗi trang"
+                aria-label="Số sản phẩm mỗi trang"
                 value={String(pageSize)}
                 onChange={(e) => {
                   setPageSize(Number(e.target.value));
@@ -573,7 +753,8 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                 ))}
               </NativeSelect>
               <span className="text-sm text-muted-foreground">
-                dòng/trang · trang {page}/{Math.max(1, pageCount)}
+                sản phẩm/trang · {formatNumber(total)} sản phẩm sàn · trang {page}/
+                {Math.max(1, pageCount)}
               </span>
             </div>
             <div className="flex gap-2">
@@ -677,7 +858,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
         </div>
       )}
 
-      {/* ===== HỘP THOẠI NỐI NHANH MỘT DÒNG ===== */}
+      {/* ===== HỘP THOẠI NỐI NHANH MỘT DÒNG (chọn SKU có sẵn bằng tìm kiếm) ===== */}
       <LinkOneDialog
         item={linkTarget}
         products={products}
@@ -699,5 +880,256 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
         }}
       />
     </>
+  );
+
+  /**
+   * DÒNG CHA của một sản phẩm sàn có ≥ 2 phân loại: ảnh + tên + ID sàn + "N phân
+   * loại · n chưa nối"; gian; khoảng giá; tổng tồn sàn; cột liên kết = "Tạo SKU kho
+   * cho cả sản phẩm" (kèm ô MÃ GỐC khi sàn không có mã) hoặc "đã nối N/N".
+   */
+  function renderGroupRow(g: ChannelGroup, open: boolean) {
+    const meta = CHANNEL_META[g.channel.channelName];
+    const unlinked = g.rows.filter((r) => !r.productId);
+    const selectedCount = g.rows.filter((r) => selectedIds.has(r.id)).length;
+    const needsRoot = unlinked.some((r) => isFallbackSku(r.channelSku));
+    const prices = g.rows.map((r) => Number(r.price)).filter((n) => n > 0);
+    const min = prices.length ? Math.min(...prices) : 0;
+    const max = prices.length ? Math.max(...prices) : 0;
+    const stocks = g.rows.map((r) => r.channelStock).filter((n): n is number => typeof n === "number");
+    const busy = busyKey === `create:${g.key}`;
+    return (
+      <TableRow
+        key={`group-${g.key}`}
+        className={cn(
+          "cursor-pointer bg-muted/25 hover:bg-muted/50",
+          open && "bg-slate-200/70! hover:bg-slate-200/90! shadow-[inset_3px_0_0_0_var(--color-primary)]"
+        )}
+        onClick={() => toggleCollapsed(g.key)}
+      >
+        <TableCell onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            aria-label={`Chọn cả ${g.rows.length} phân loại của ${g.name}`}
+            checked={selectedCount === g.rows.length}
+            ref={(el) => {
+              if (el) el.indeterminate = selectedCount > 0 && selectedCount < g.rows.length;
+            }}
+            onChange={() => toggleGroupSelected(g)}
+            className="size-4 cursor-pointer accent-primary"
+          />
+        </TableCell>
+        <TableCell>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button
+              type="button"
+              aria-label={open ? "Thu gọn phân loại" : "Xem các phân loại"}
+              aria-expanded={open}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCollapsed(g.key);
+              }}
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ChevronRight
+                className={cn("size-4 transition-transform duration-200 motion-reduce:transition-none", open && "rotate-90")}
+              />
+            </button>
+            <ChannelThumb src={g.imageUrl} alt={g.name} />
+            <div className="min-w-0">
+              <p className={cn("truncate", open ? "font-bold" : "font-medium")} title={g.name}>
+                {g.name}
+              </p>
+              <p className={cn(TEXT_SUB, "truncate")}>
+                <span className={`mr-1.5 inline-flex items-center rounded-full border px-1.5 py-0 text-[11px] font-medium ${meta.className}`}>
+                  {meta.label}
+                </span>
+                {g.channel.shopName}
+                {g.itemId && (
+                  <span className="ml-1.5 font-mono" title="ID sản phẩm trên sàn">
+                    · ID {g.itemId}
+                  </span>
+                )}
+              </p>
+              <p className="flex flex-wrap items-center gap-x-1 text-xs">
+                <Layers className="size-3.5 shrink-0 text-sky-600" />
+                <span className="font-semibold text-sky-700">{formatNumber(g.rows.length)} phân loại</span>
+                {unlinked.length > 0 ? (
+                  <span className="font-medium text-amber-700">· {formatNumber(unlinked.length)} chưa nối</span>
+                ) : (
+                  <span className="text-emerald-700">· đã nối hết</span>
+                )}
+              </p>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell className="text-right">
+          {prices.length === 0 ? (
+            <span className={TEXT_SUB}>—</span>
+          ) : min === max ? (
+            <Money value={min} className="text-slate-900" />
+          ) : (
+            <span className="block truncate text-sm text-slate-900" title={`${formatNumber(min)} – ${formatNumber(max)} ₫`}>
+              <Money value={min} className="text-slate-900" /> – <Money value={max} className="text-slate-900" />
+            </span>
+          )}
+          <p className={cn(TEXT_SUB, "tabular-nums")}>
+            {stocks.length === 0 ? (
+              "tồn —"
+            ) : (
+              <>
+                tồn <b className="font-semibold text-foreground">{formatNumber(stocks.reduce((s, n) => s + n, 0))}</b>
+              </>
+            )}
+          </p>
+        </TableCell>
+        <TableCell onClick={(e) => e.stopPropagation()}>
+          {unlinked.length === 0 ? (
+            <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700">
+              <Check className="size-3.5" />
+              Đã nối {formatNumber(g.rows.length)}/{formatNumber(g.rows.length)}
+            </span>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              {needsRoot && (
+                <Input
+                  className="h-8 w-24 font-mono text-sm uppercase"
+                  placeholder="Mã gốc"
+                  aria-label={`Mã gốc cho ${g.name}`}
+                  maxLength={40}
+                  value={rootDrafts[g.key] ?? ""}
+                  onChange={(e) => setRootDrafts((d) => ({ ...d, [g.key]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleCreateForGroup(g);
+                    }
+                  }}
+                  title="Sàn chưa có mã SKU cho sản phẩm này — gõ mã gốc, Hubsell ghép phân loại: VAY01 → VAY01-DEN-M"
+                />
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={busy}
+                onClick={() => handleCreateForGroup(g)}
+                title={
+                  needsRoot
+                    ? "Tạo SKU kho cho mọi phân loại chưa nối theo mã gốc + tên phân loại"
+                    : "Tạo SKU kho cho mọi phân loại chưa nối theo đúng mã trên sàn"
+                }
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <PackagePlus className="size-3.5" />}
+                Tạo SKU kho ({formatNumber(unlinked.length)})
+              </Button>
+            </div>
+          )}
+        </TableCell>
+      </TableRow>
+    );
+  }
+}
+
+/** Ảnh sản phẩm sàn 36px; thiếu / hỏng → ô icon. */
+function ChannelThumb({ src, alt }: { src: string | null; alt: string }) {
+  const [broken, setBroken] = useState(false);
+  return src && !broken ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="size-9 shrink-0 rounded-md object-cover"
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
+  ) : (
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <ImageIcon className="size-4" />
+    </div>
+  );
+}
+
+/**
+ * Ô GÕ MÃ SKU KHO TẠI DÒNG (kiểu Salework): gõ mã → Enter / nút nối. Mã có trong
+ * kho thì nối vào; chưa có thì tạo SKU kho mới mang đúng mã (tên, phân loại, ảnh,
+ * giá từ sàn; tồn ban đầu theo sàn). Gợi ý mã qua <datalist> dùng chung.
+ */
+function InlineSkuLink({
+  row,
+  onPick,
+  onLinked,
+}: {
+  row: ChannelProduct;
+  /** Mở hộp tìm SKU có sẵn (khi khách không nhớ mã). */
+  onPick: () => void;
+  onLinked: (created: boolean) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const label = variantLabel(row.variantName) ?? row.channelSku;
+
+  async function submit() {
+    const sku = value.trim();
+    if (!sku || busy) return;
+    setBusy(true);
+    try {
+      const res = await linkChannelProductBySku(row.id, sku);
+      toast.success(
+        (res.created
+          ? `Đã tạo SKU kho ${res.product.skuCode} và nối ${label}`
+          : `Đã nối ${label} vào ${res.product.skuCode}`) +
+          (res.seededStock != null ? ` · tồn ban đầu theo sàn: ${formatNumber(res.seededStock)}` : ""),
+        { duration: 5000 }
+      );
+      setValue("");
+      onLinked(res.created);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không nối được");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <Input
+        list={SKU_LIST_ID}
+        className="h-8 min-w-0 flex-1 font-mono text-sm uppercase placeholder:normal-case placeholder:font-sans"
+        placeholder="Gõ mã SKU kho…"
+        aria-label={`Mã SKU kho cho ${label}`}
+        value={value}
+        maxLength={50}
+        disabled={busy}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+        title="Mã có sẵn trong kho → nối vào; mã mới → tạo SKU kho mới rồi nối. Enter để nối."
+      />
+      {/* Nút CÓ CHỮ ngay cạnh ô gõ (anh Trung 22/10: "để nút kết nối bên cạnh giống Salework") */}
+      <Button
+        size="sm"
+        className="h-8 px-3"
+        disabled={busy || !value.trim()}
+        onClick={submit}
+        title="Nối dòng sàn này vào mã vừa gõ (Enter)"
+      >
+        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+        Nối
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8 px-2.5"
+        onClick={onPick}
+        title="Không nhớ mã? Tìm SKU kho có sẵn theo tên"
+      >
+        <Search className="size-3.5" />
+        Tìm
+      </Button>
+    </div>
   );
 }

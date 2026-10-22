@@ -181,7 +181,7 @@ export async function runProductCatalogSync(): Promise<number> {
         await scheduleAfterProductSync(due.id, true);
         done++;
         console.log(
-          `[Catalog-sync] "${due.shopName}" (${due.channelName}): ${r.scanned} SP sàn, +${r.created} mới, ${r.updated} cập nhật, ${r.delisted} gỡ, ${r.costAutoFilled} tự điền giá vốn`
+          `[Catalog-sync] "${due.shopName}" (${due.channelName}): ${r.scanned} SP sàn, +${r.created} mới, ${r.updated} cập nhật, ${r.delisted} gỡ, ${r.deactivated} SKU kho tự Ngừng bán, ${r.costAutoFilled} tự điền giá vốn`
         );
         await repairZeroCostLinesAfterSync(due);
       } catch (err) {

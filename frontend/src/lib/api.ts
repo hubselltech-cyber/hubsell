@@ -256,7 +256,13 @@ export interface AuthResponse {
 export interface Product {
   id: string;
   skuCode: string;
+  /** Tên MẪU hàng (không kèm phân loại). */
   productName: string;
+  /** Phân loại (màu / size) — null = sản phẩm đơn. Tách khỏi tên từ 22/10/2026. */
+  variantName?: string | null;
+  /** Khóa gom cha–con (các phân loại cùng mẫu); null = dòng đứng một mình. */
+  groupKey?: string | null;
+  imageUrl?: string | null;
   /** Vắng mặt khi người đang xem không được phép biết giá vốn (SALES/WAREHOUSE). */
   costPrice?: string | number;
   sellingPrice: string | number;
@@ -297,6 +303,8 @@ export interface Product {
     channelSku: string;
     channelName: ChannelName;
     shopName: string;
+    /** Tên phân loại trên sàn (fallback hiển thị khi SKU kho chưa có phân loại). */
+    variantName?: string | null;
     /** Mã sản phẩm / mã phân loại trên sàn (tách từ externalId như bảng Giá vốn). */
     itemId?: string | null;
     modelId?: string | null;
@@ -376,6 +384,8 @@ export interface ProductListResponse {
   inactiveCount?: number;
   /** Số SKU đang bán toàn shop, không phụ thuộc bộ lọc — cho khối thiết lập. */
   activeCount?: number;
+  /** view=grouped: `total` là số MẪU hàng, đây là số SKU khớp bộ lọc. */
+  skuTotal?: number;
 }
 
 export type ProductStatusFilter = "active" | "inactive" | "all";
@@ -1533,6 +1543,8 @@ export function fetchProducts(params: {
   status?: ProductStatusFilter;
   /** Chỉ SKU đang có hàng tại vị trí này (kể cả kệ / tầng bên trong). */
   locationId?: string;
+  /** "grouped" = phân trang theo NHÓM cha–con (bảng Hàng hóa); mặc định phẳng theo SKU. */
+  view?: "grouped";
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
@@ -1540,6 +1552,7 @@ export function fetchProducts(params: {
   if (params.search) qs.set("search", params.search);
   if (params.status) qs.set("status", params.status);
   if (params.locationId) qs.set("locationId", params.locationId);
+  if (params.view) qs.set("view", params.view);
   return apiFetch<ProductListResponse>(`/api/products?${qs.toString()}`);
 }
 
@@ -1576,6 +1589,8 @@ export function deleteProduct(productId: string) {
 export function createProduct(data: {
   skuCode: string;
   productName: string;
+  /** Phân loại (màu / size) — tùy chọn. */
+  variantName?: string;
   costPrice: number;
   sellingPrice: number;
   initialQuantity: number;
@@ -2757,6 +2772,8 @@ export interface ChannelProduct {
   externalId?: string | null;
   /** null = CHƯA liên kết về kho gốc */
   productId: string | null;
+  /** Tồn trên sàn ở lần đồng bộ gần nhất — null = sàn không trả số. */
+  channelStock?: number | null;
   channel: { id: string; channelName: ChannelName; shopName: string };
   product: {
     id: string;
@@ -3640,11 +3657,17 @@ export function fetchChannelProducts(params: {
   search?: string;
   page?: number;
   pageSize?: number;
+  /** "yes" = bỏ phân loại sàn đang báo tồn 0 (hộp Tự khớp + tạo SKU). */
+  inStock?: "yes";
+  /** "grouped" = phân trang theo SẢN PHẨM SÀN (tab cha–con); mặc định phẳng theo dòng. */
+  view?: "grouped";
 }) {
   const qs = new URLSearchParams();
   if (params.channelName) qs.set("channelName", params.channelName);
   if (params.channelId) qs.set("channelId", params.channelId);
   if (params.linked) qs.set("linked", params.linked);
+  if (params.inStock) qs.set("inStock", params.inStock);
+  if (params.view) qs.set("view", params.view);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
@@ -3661,6 +3684,21 @@ export function linkChannelProducts(channelProductIds: string[], productId: stri
   }>("/api/mappings/link", {
     method: "POST",
     body: JSON.stringify({ channelProductIds, productId }),
+  });
+}
+
+/**
+ * Nối MỘT dòng sàn bằng mã SKU kho gõ tại dòng (22/10/2026, kiểu Salework): mã có
+ * sẵn → nối; chưa có → tạo SKU kho mới mang đúng mã rồi nối (tồn ban đầu theo sàn).
+ */
+export function linkChannelProductBySku(channelProductId: string, skuCode: string) {
+  return apiFetch<{
+    product: { id: string; skuCode: string; productName: string; variantName: string | null; quantityInStock: number };
+    created: boolean;
+    seededStock: number | null;
+  }>("/api/mappings/link-by-sku", {
+    method: "POST",
+    body: JSON.stringify({ channelProductId, skuCode }),
   });
 }
 
@@ -3693,7 +3731,15 @@ export function autoMatchMappings(channelId?: string) {
  * TẠO SẢN PHẨM KHO từ các SKU sàn đã chọn rồi liên kết luôn (≤200/lần).
  * Trùng mã sẵn có trong kho thì nối vào sản phẩm cũ thay vì tạo mới.
  */
-export function createProductsFromMappings(channelProductIds: string[]) {
+export function createProductsFromMappings(
+  channelProductIds: string[],
+  options: {
+    /** Mã gốc khách gõ cho sản phẩm sàn không có SKU: {idSảnPhẩmSàn: "VAY01"} → SKU kho VAY01-DEN-M. */
+    rootSkus?: Record<string, string>;
+    /** Bỏ phân loại sàn đang báo tồn 0. */
+    skipZeroStock?: boolean;
+  } = {}
+) {
   return apiFetch<{
     createdProducts: number;
     reusedProducts: number;
@@ -3703,8 +3749,23 @@ export function createProductsFromMappings(channelProductIds: string[]) {
     seededProducts: number;
   }>("/api/mappings/create-products", {
     method: "POST",
-    body: JSON.stringify({ channelProductIds }),
+    body: JSON.stringify({ channelProductIds, ...options }),
   });
+}
+
+/** Sản phẩm sàn KHÔNG có mã SKU (Hubsell đang tự sinh SPE-…), gom theo sản phẩm, để hỏi mã gốc. */
+export interface FallbackSkuItem {
+  itemId: string;
+  productName: string;
+  imageUrl: string | null;
+  channelName: ChannelName;
+  shopName: string;
+  variants: { variantName: string | null; channelSku: string; channelStock: number | null }[];
+}
+
+export function fetchFallbackSkuItems(channelId?: string) {
+  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+  return apiFetch<{ items: FallbackSkuItem[]; total: number }>(`/api/mappings/fallback-items${qs}`);
 }
 
 // Giả lập một đơn hàng từ sàn gửi về (gọi webhook công khai)

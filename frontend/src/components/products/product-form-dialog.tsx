@@ -46,6 +46,8 @@ const numberString = (message: string) =>
 const productSchema = z.object({
   skuCode: z.string().trim().min(1, "Vui lòng nhập mã SKU").max(50, "SKU tối đa 50 ký tự"),
   productName: z.string().trim().min(1, "Vui lòng nhập tên sản phẩm"),
+  // Phân loại (màu / size) — tùy chọn; cùng tên + có phân loại thì bảng gom cha–con.
+  variantName: z.string().trim().max(120, "Tối đa 120 ký tự").optional(),
   costPrice: numberString("Giá vốn phải là số không âm"),
   sellingPrice: numberString("Giá bán phải là số không âm"),
   initialQuantity: numberString("Số lượng phải là số nguyên không âm").refine(
@@ -70,6 +72,7 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
     defaultValues: {
       skuCode: "",
       productName: "",
+      variantName: "",
       // Ô giá vốn bị ẩn với nhân viên nên phải có sẵn giá trị hợp lệ, nếu không
       // biểu mẫu sẽ báo lỗi ở một ô mà họ không nhìn thấy để sửa.
       costPrice: seesCost ? "" : "0",
@@ -87,6 +90,7 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
       const created = await createProduct({
         skuCode: values.skuCode,
         productName: values.productName,
+        variantName: values.variantName?.trim() || undefined,
         costPrice: Number(values.costPrice),
         sellingPrice: Number(values.sellingPrice),
         initialQuantity: Number(values.initialQuantity),
@@ -144,6 +148,22 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
                   <FormControl>
                     <Input placeholder="VD: Áo khoác gió unisex" {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="variantName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phân loại (tùy chọn)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="VD: Đen, M" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    Màu / size của mã này. Các mã cùng tên sản phẩm sẽ gom thành một dòng cha trên bảng.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
