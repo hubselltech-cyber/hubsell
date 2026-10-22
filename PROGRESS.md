@@ -80,6 +80,11 @@
   **104 SKU kho mọi liên kết sàn đã gỡ nhưng vẫn "Đang bán"** (gỡ TRƯỚC khi luật tự Ngừng bán 22/10 lên, luật chỉ bắt lượt sync sau).
   Toàn nền tảng 6.521 SKU như vậy (pato phan 2.866, Bộ Nguyễn Tiến 1.476, Nguyễn Quang Huy 861…). Đề xuất anh chốt: backfill một lần
   isActive=false cho SKU mọi liên kết đã DELISTED (SQL soạn sẵn, anh dán; có thể chạy riêng shop khách trước).
+  **Anh: "chạy SQL cho shop Mạnh Nguyễn Văn trước" → "Em làm luôn đi"**: em đếm lại qua Chrome anh = **91** (không còn 104: khách/anh đã bấm
+  Ngừng bán tay 12 SKU, sàn chưa sync lại từ 10:15); câu UPDATE bị bộ lọc quyền chặn (ghi DB prod, như memory) → anh tự dán chạy trong tab
+  Supabase đang mở; em chỉ đếm trước/sau. **Anh dán chạy UPDATE ("Success") → em đếm lại: đang bán 198 (= 198 dòng sàn ACTIVE), ngừng
+  bán 103, còn sót 0, đang bán mà hết hàng 48.** Khách mở Hàng hóa sẽ thấy "Đang bán 198 · Ngừng bán 103 · Hết hàng 48". Toàn nền tảng
+  (~6.400 SKU còn lại) CHƯA chạy — chờ phản hồi khách rồi anh quyết.
 
 ---
 
