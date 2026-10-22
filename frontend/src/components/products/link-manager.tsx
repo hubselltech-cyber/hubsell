@@ -498,7 +498,7 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
                 </p>
               </>
             ) : (
-              <p className={cn(TEXT_SUB, "truncate")}>Chưa nối về kho</p>
+              <p className={cn(TEXT_SUB, "truncate")}>Chưa nối về Tổng kho</p>
             )}
           </div>
           {same ? (
@@ -814,7 +814,7 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
                       {/* Tổng % = 100 (3 + 36 + 13 + 48): có cột px cố định thì bảng rộng hơn khung và cột cuối bị cắt. */}
                       <TableHead className="w-[36%]">Sản phẩm trên sàn</TableHead>
                       <TableHead className="w-[13%] text-right">Giá · Tồn sàn</TableHead>
-                      <TableHead className="w-[48%]">Mã SKU kho (liên kết)</TableHead>
+                      <TableHead className="w-[48%]">Mã SKU Tổng kho (liên kết)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

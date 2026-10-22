@@ -112,7 +112,9 @@
   Push `b2aaec50`. **Anh: khách muốn lọc "ngừng bán / đang hoạt động" ở tab Sản phẩm trên sàn (Hubsell kéo cả sản phẩm đã xóa trên sàn)** →
   `GET /mappings?status=active|delisted` (cả SQL nhóm) + counts.active/delisted; tab có cặp chip "Đang bán trên sàn N · Sàn đã gỡ N" (chip gỡ
   chỉ hiện khi có), nhãn "Sàn đã gỡ" cạnh tên / phân loại, dòng cha đếm "n sàn đã gỡ". Kiểm API local: all 1.466 / active 572 / delisted 894 đúng.
-  Push `fc73e047`. **Anh: đổi tên tab lần 2 "Tồn kho đã nối" → "Tổng kho".**
+  Push `fc73e047`. **Anh: đổi tên tab lần 2 "Tồn kho đã nối" → "Tổng kho".** Push `571ba70b`. **Anh: bước 2 "Nối về SKU kho" → "Nối về Tổng kho" cho
+  khớp tab** → đổi đồng bộ các chỗ chỉ ĐÍCH: bước 2 "Nối về Tổng kho", lời bước 1/2 "chưa vào/chưa nối về Tổng kho", khối "Kho trung tâm Hubsell"
+  → "Tổng kho Hubsell", dải kể chuyện + sơ đồ dòng bung "Kho Hubsell" → "Tổng kho", cột tab sàn "Mã SKU Tổng kho (liên kết)". Giữ "SKU kho" = một mã.
 
 ---
 

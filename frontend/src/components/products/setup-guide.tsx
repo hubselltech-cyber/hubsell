@@ -61,7 +61,7 @@ interface SetupGuideProps {
  * bước một nút) → bảng làm việc ở dưới (trang tự render).
  *
  *   Bước 1  Kéo sản phẩm từ sàn về      xong khi có ≥1 sản phẩm sàn
- *   Bước 2  Nối về SKU kho              xong khi không còn sản phẩm sàn chưa nối
+ *   Bước 2  Nối về Tổng kho             xong khi không còn sản phẩm sàn chưa nối
  *   Bước 3  Bật đồng bộ tồn từng gian   xong khi mọi gian Shopee/Lazada/TikTok đã bật
  *
  * Header luôn hiện (tóm tắt số + nút Cài đặt đồng bộ + nút thu/bung). Thân khối
@@ -201,7 +201,7 @@ export function SetupGuide({
     channelCount === 0
       ? "Chưa nối gian hàng nào. Nối Shopee / Lazada / TikTok trước, rồi kéo danh mục về."
       : step1Done
-        ? `${formatNumber(all)} sản phẩm sàn từ ${formatNumber(channelCount)} gian, đang nằm ở tab Sản phẩm trên sàn — chưa vào kho, sang bước 2 để nối. Sàn thêm hàng mới thì kéo lại.`
+        ? `${formatNumber(all)} sản phẩm sàn từ ${formatNumber(channelCount)} gian, đang nằm ở tab Sản phẩm trên sàn — chưa vào Tổng kho, sang bước 2 để nối. Sàn thêm hàng mới thì kéo lại.`
         : `${formatNumber(channelCount)} gian đã nối, chưa kéo sản phẩm nào về.`,
     channelCount === 0 ? (
       <Button size="sm" onClick={() => router.push("/channels")}>
@@ -224,12 +224,13 @@ export function SetupGuide({
   const step2 = stepCard(
     2,
     step2Done,
-    "Nối về SKU kho",
+    // Gọi đúng tên tab (anh Trung 22/10 tối: tab là "Tổng kho" thì bước phải "Nối về Tổng kho").
+    "Nối về Tổng kho",
     !step1Done
       ? "Làm bước 1 trước. Sản phẩm trùng mã SKU với kho sẽ tự nối, phần còn lại Hubsell tạo SKU kho giúp."
       : step2Done
         ? `Đã nối ${formatNumber(linked)} sản phẩm sàn về ${formatNumber(productTotal)} SKU kho. Gian nào bán, kho và mọi gian cùng trừ.`
-        : `Còn ${formatNumber(unlinked)} sản phẩm sàn chưa nối về kho. Chưa nối thì đơn về không trừ được tồn và tồn kho không đẩy lên sàn.`,
+        : `Còn ${formatNumber(unlinked)} sản phẩm sàn chưa nối về Tổng kho. Chưa nối thì đơn về không trừ được tồn và tồn kho không đẩy lên sàn.`,
     step2Done ? (
       <Button size="sm" variant="outline" onClick={onOpenLinks}>
         <Link2 className="size-3.5" />
@@ -295,7 +296,7 @@ export function SetupGuide({
           <span className="inline-flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Warehouse className="size-4" />
           </span>
-          Kho trung tâm Hubsell
+          Tổng kho Hubsell
         </span>
 
         {ready && (

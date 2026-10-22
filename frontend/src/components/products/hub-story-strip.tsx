@@ -33,7 +33,7 @@ export function HubStoryStrip() {
       <div className="shrink-0 text-center">
         <div className={cn(TEXT_SUB, "flex items-center justify-center gap-1")}>
           <Warehouse className="size-3.5" />
-          Kho Hubsell
+          Tổng kho
         </div>
         <div
           className={cn(

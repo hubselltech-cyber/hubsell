@@ -941,7 +941,7 @@ export default function ProductsHubPage() {
           <div className="rounded-lg border bg-background px-3 py-2.5 text-center">
             <div className={cn(TEXT_SUB, "flex items-center justify-center gap-1")}>
               <Warehouse className="size-3.5" />
-              Kho Hubsell
+              Tổng kho
             </div>
             <div className="text-2xl font-semibold tabular-nums leading-tight">
               {formatNumber(available)}
