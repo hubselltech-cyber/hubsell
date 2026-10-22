@@ -3688,6 +3688,8 @@ export function linkChannelProducts(channelProductIds: string[], productId: stri
     product: { id: string; skuCode: string; productName: string };
     /** Sản phẩm tồn 0 vừa nhận tồn ban đầu theo số trên sàn — null nếu không seed. */
     seededStock: number | null;
+    /** SKU kho cũ hết liên kết sau khi chuyển → đã tự Ngừng bán (anh Trung 22/10). */
+    deactivated?: { id: string; skuCode: string }[];
   }>("/api/mappings/link", {
     method: "POST",
     body: JSON.stringify({ channelProductIds, productId }),
@@ -3703,6 +3705,8 @@ export function linkChannelProductBySku(channelProductId: string, skuCode: strin
     product: { id: string; skuCode: string; productName: string; variantName: string | null; quantityInStock: number };
     created: boolean;
     seededStock: number | null;
+    /** SKU kho cũ hết liên kết sau khi đổi → đã tự Ngừng bán. */
+    deactivated?: { id: string; skuCode: string }[];
   }>("/api/mappings/link-by-sku", {
     method: "POST",
     body: JSON.stringify({ channelProductId, skuCode }),

@@ -88,6 +88,8 @@ mỗi phân loại một ô gõ mã kho + nút nối, Tạo SP kho cho cả sả
 - **Nối thêm gian cho SKU X** (22/10 tối): từ Tồn kho bấm "Nối gian" / "Nối thêm gian cho SKU này" → tab sàn mang `targetProduct`:
   dải đích + nút một bấm "Nối vào X" (chưa nối) / "Chuyển sang X" (đang nối SKU khác) / "Đã nối"; ô tìm mồi 4 chữ đầu tên SKU kho,
   dòng trống có nút xóa từ khóa. Dòng đã nối (không có đích) có nút **Đổi** → ô gõ điền sẵn mã cũ.
+- SKU kho cũ trơ lại sau khi chuyển / đổi (không còn liên kết nào) → tự **Ngừng bán** (`deactivateOrphanProducts`,
+  anh chốt 22/10 tối), toast báo; tồn / đơn cũ giữ, khách bật lại ở chip Ngừng bán.
 - Không có cột Combo (Hubsell chưa có SKU combo) — việc riêng nếu khách cần.
 
 ### 2.7 Chỉnh sau khi anh xem prod (22/10 tối)

@@ -105,6 +105,10 @@
   "Đang nối thêm gian cho SKU kho X — tên · Xong"; mỗi dòng có nút một bấm "Nối vào X" (chưa nối) / "Chuyển sang X" (đang nối SKU khác) /
   "Đã nối" (cùng SKU) gọi `/mappings/link` (ghi đè productId); dòng trống có nút "Xóa từ khóa, xem tất cả dòng sàn" vì từ khóa mồi theo tên
   thường không khớp gian khác. Soi local: từ TUI-01 bấm Nối gian → dải đích + 130 nút, bấm "Nối vào TUI-01" ở AT01-M → "đã nối vào SKU này".
+  Push `9b2da7cd`. **Anh: "khách đã nối vào gian nào đâu"** → em giải thích: gian B 116/116 "đã liên kết" vì Tự khớp + tạo SKU từng tự tạo mỗi
+  dòng một SKU kho; "Chuyển sang X" xử lý đúng ca. **Anh chốt: SKU cũ trơ lại sau khi chuyển → "chuyển thẳng sang ngừng bán luôn"** →
+  `deactivateOrphanProducts` trong `/mappings/link` + `/link-by-sku`: SKU cũ không còn liên kết nào → isActive=false, trả `deactivated[]`,
+  toast "SKU cũ Y hết liên kết → đã chuyển Ngừng bán". Kiểm API local: AT01-S nối ORPHAN-TEST → chuyển sang TUI-01 → ORPHAN-TEST isActive=false.
 
 ---
 

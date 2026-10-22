@@ -99,6 +99,13 @@ function variantLabel(raw: string | null): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
+/** Đuôi toast khi SKU kho cũ hết liên kết đã tự Ngừng bán (anh Trung chốt 22/10 tối). */
+function orphanNote(list?: { skuCode: string }[]): string {
+  if (!list || list.length === 0) return "";
+  const names = list.slice(0, 3).map((d) => d.skuCode).join(", ");
+  return ` · SKU cũ ${names}${list.length > 3 ? ` +${list.length - 3}` : ""} hết liên kết → đã chuyển Ngừng bán`;
+}
+
 /** Mã máy Hubsell tự sinh khi sàn không có SKU — dòng cha cho gõ MÃ GỐC thay vì giữ mã này. */
 function isFallbackSku(sku: string): boolean {
   return /^(SPE|TTK|LZD)-\d/.test(sku);
@@ -300,8 +307,9 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
         `Đã nối ${formatNumber(res.linked)} sản phẩm sàn về ${res.product.skuCode} — ${res.product.productName}` +
           (res.seededStock != null
             ? `. Tồn ban đầu lấy theo sàn: ${formatNumber(res.seededStock)}.`
-            : ""),
-        { duration: 6000 }
+            : "") +
+          orphanNote(res.deactivated),
+        { duration: 7000 }
       );
       setSelectedIds(new Set());
       setTargetSku("");
@@ -437,9 +445,12 @@ export function LinkManager({ initialSearch, targetProduct, onClearTarget, onCha
       const res = await linkChannelProducts([r.id], targetProduct.id);
       toast.success(
         `Đã nối ${variantLabel(r.variantName) ?? r.channelSku} (${r.channel.shopName}) vào ${res.product.skuCode}` +
-          (res.seededStock != null ? ` · tồn ban đầu theo sàn: ${formatNumber(res.seededStock)}` : "")
+          (res.seededStock != null ? ` · tồn ban đầu theo sàn: ${formatNumber(res.seededStock)}` : "") +
+          orphanNote(res.deactivated),
+        { duration: 6000 }
       );
       afterChange();
+      if (res.deactivated?.length) loadAllProducts();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không nối được");
     } finally {
@@ -1206,8 +1217,9 @@ function InlineSkuLink({
         (res.created
           ? `Đã tạo SKU kho ${res.product.skuCode} và nối ${label}`
           : `Đã nối ${label} vào ${res.product.skuCode}`) +
-          (res.seededStock != null ? ` · tồn ban đầu theo sàn: ${formatNumber(res.seededStock)}` : ""),
-        { duration: 5000 }
+          (res.seededStock != null ? ` · tồn ban đầu theo sàn: ${formatNumber(res.seededStock)}` : "") +
+          orphanNote(res.deactivated),
+        { duration: 6000 }
       );
       setValue("");
       onLinked(res.created);

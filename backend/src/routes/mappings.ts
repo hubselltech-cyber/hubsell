@@ -190,6 +190,20 @@ router.post("/link", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Dòng đang nối SKU KHÁC (ca "Chuyển sang X" / nối thêm gian) → nhớ SKU cũ để xử lý sau.
+    const prevRows = await prisma.channelProduct.findMany({
+      where: {
+        id: { in: channelProductIds },
+        productId: { not: null },
+        channel: {
+          userId: req.ownerId!,
+          ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+        },
+      },
+      select: { productId: true },
+    });
+    const prevProductIds = [...new Set(prevRows.map((r) => r.productId!).filter((id) => id !== product.id))];
+
     const result = await prisma.channelProduct.updateMany({
       where: {
         id: { in: channelProductIds },
@@ -200,6 +214,7 @@ router.post("/link", async (req: AuthRequest, res, next) => {
       },
       data: { productId: product.id },
     });
+    const deactivated = await deactivateOrphanProducts(req.ownerId!, prevProductIds);
 
     // Giá vốn đã nhập ở cấp SKU sàn (lúc chưa nối kho) không được mất khi nối:
     // sản phẩm gốc chưa có giá vốn thì kế thừa số đã nhập bên sàn.
@@ -216,11 +231,44 @@ router.post("/link", async (req: AuthRequest, res, next) => {
       linked: result.count,
       product,
       seededStock: seeded.get(product.id) ?? null,
+      deactivated,
     });
   } catch (err) {
     next(err);
   }
 });
+
+/**
+ * SKU KHO CŨ TRƠ LẠI SAU KHI "CHUYỂN SANG X" → NGỪNG BÁN (anh Trung chốt 22/10 tối).
+ * Ca khách: Hubsell từng tự tạo mỗi dòng sàn một SKU kho (Tự khớp + tạo SKU); khách nối
+ * dòng gian B vào SKU gian A thì SKU tự tạo của gian B không còn nối gian nào, vẫn hiện
+ * "Đang bán" làm rối kho. Hết liên kết → isActive=false; tồn / đơn cũ giữ nguyên, khách
+ * bật lại được ở chip Ngừng bán. Trả danh sách để UI báo trong toast.
+ */
+async function deactivateOrphanProducts(
+  ownerId: string,
+  productIds: string[]
+): Promise<{ id: string; skuCode: string }[]> {
+  if (productIds.length === 0) return [];
+  const orphans = await prisma.product.findMany({
+    where: {
+      id: { in: productIds },
+      userId: ownerId,
+      isActive: true,
+      channelProducts: { none: {} },
+    },
+    select: { id: true, skuCode: true },
+  });
+  if (orphans.length === 0) return [];
+  await prisma.product.updateMany({
+    where: { id: { in: orphans.map((o) => o.id) } },
+    data: { isActive: false },
+  });
+  console.log(
+    `[mappings] ${orphans.length} SKU kho hết liên kết sau khi chuyển gian → Ngừng bán: ${orphans.map((o) => o.skuCode).join(", ")}`
+  );
+  return orphans;
+}
 
 /** Id sản phẩm sàn (phần trước dấu "-" của externalId) — khóa gom cha–con của tab Sản phẩm trên sàn. */
 function channelItemId(externalId: string | null): string | null {
@@ -336,6 +384,7 @@ router.post("/link-by-sku", async (req: AuthRequest, res, next) => {
     });
     let created = false;
     let seededStock: number | null = null;
+    const prevProductId = cp.productId && cp.productId !== product?.id ? cp.productId : null;
     if (product) {
       if (cp.productId && cp.productId !== product.id) {
         // Đổi nối sang SKU khác: gỡ trước rồi nối — cùng đường với nút Gỡ.
@@ -365,7 +414,12 @@ router.post("/link-by-sku", async (req: AuthRequest, res, next) => {
       res.status(500).json({ error: "Không tạo được SKU kho" });
       return;
     }
-    res.json({ product, created, seededStock });
+    // SKU cũ trơ lại không còn gian nào → Ngừng bán (cùng luật với /link).
+    const deactivated = await deactivateOrphanProducts(
+      req.ownerId!,
+      prevProductId && prevProductId !== product.id ? [prevProductId] : []
+    );
+    res.json({ product, created, seededStock, deactivated });
   } catch (err) {
     next(err);
   }
