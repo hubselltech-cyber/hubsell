@@ -92,7 +92,9 @@ mỗi phân loại một ô gõ mã kho + nút nối, Tạo SP kho cho cả sả
   giờ bị cắt; tiêu đề xuống dòng khi hẹp; tên/mã cắt theo cột + tooltip; chip Bán trên xuống dòng. Đo 1700/1280: tràn 0.
 - Sản phẩm đơn chừa chỗ bằng nút bung → thẳng hàng với sản phẩm nhiều phân loại.
 - **Lọc Hết hàng** (khách xin): `GET /api/products?stock=out` = tồn ≤ 0 (áp cả SQL phân trang nhóm) + `outOfStockCount`
-  (đang bán, tồn ≤ 0). Chip đỏ "Hết hàng N" bật/tắt, kết hợp mọi bộ lọc khác; nhóm chỉ hiện phân loại hết hàng.
+  (đang bán, tồn ≤ 0). Chip đỏ "Hết hàng N" đứng cạnh Đang bán / Ngừng bán, bật/tắt, kết hợp mọi bộ lọc khác. Khi lọc
+  (hết hàng / tìm kiếm) backend trả thêm `groupTotals` (tổng phân loại từng mẫu) → mẫu 6 phân loại mà chỉ 1 khớp vẫn là
+  dòng cha ghi "1/6 phân loại hết hàng" (tìm: "1/6 phân loại khớp"), không rơi thành sản phẩm đơn.
 - Đồng bộ tồn tự động theo gian (bước 3) và Tự khớp GIỮ NGUYÊN — nối tay chỉ là đường thêm.
 
 ## 3. Việc với khách / vận hành

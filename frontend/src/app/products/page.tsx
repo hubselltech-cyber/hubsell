@@ -321,14 +321,21 @@ export default function ProductsHubPage() {
     }
     return order;
   }, [items]);
+  // Tổng phân loại THẬT của mẫu (backend trả khi đang lọc hết hàng / tìm kiếm): mẫu 6
+  // phân loại mà chỉ 1 khớp vẫn là dòng cha "1/6 phân loại", không thành sản phẩm đơn.
+  const groupTotals = useMemo(() => productsQ.data?.groupTotals ?? {}, [productsQ.data]);
+  const groupTotalOf = useCallback(
+    (g: ProductGroupRows) => Math.max(groupTotals[g.key] ?? 0, g.rows.length),
+    [groupTotals]
+  );
   // Id các dòng CON (thuộc mẫu ≥ 2 phân loại) — ô "Sản phẩm" của chúng chỉ in phân loại.
   const childIds = useMemo(
-    () => new Set(groups.filter((g) => g.rows.length > 1).flatMap((g) => g.rows.map((p) => p.id))),
-    [groups]
+    () => new Set(groups.filter((g) => groupTotalOf(g) > 1).flatMap((g) => g.rows.map((p) => p.id))),
+    [groups, groupTotalOf]
   );
   const multiGroupKeys = useMemo(
-    () => groups.filter((g) => g.rows.length > 1).map((g) => g.key),
-    [groups]
+    () => groups.filter((g) => groupTotalOf(g) > 1).map((g) => g.key),
+    [groups, groupTotalOf]
   );
   // Mẫu đang bung. Mặc định thu gọn (bảng ngắn, dòng cha đã có tổng tồn); đang
   // TÌM KIẾM thì bung hết — khách tìm là để xem đúng phân loại đó.
@@ -1145,7 +1152,11 @@ export default function ProductsHubPage() {
               <MarketplaceCodes links={links} kind="item" />
               <span className="flex flex-wrap items-center gap-x-1 text-xs">
                 <Layers className="size-3.5 shrink-0 text-sky-600" />
-                <span className="font-semibold text-sky-700">{formatNumber(rows.length)} phân loại</span>
+                <span className="font-semibold text-sky-700">
+                  {groupTotalOf(g) > rows.length
+                    ? `${formatNumber(rows.length)}/${formatNumber(groupTotalOf(g))} phân loại${stockFilter === "out" ? " hết hàng" : " khớp"}`
+                    : `${formatNumber(rows.length)} phân loại`}
+                </span>
                 {inactiveCount > 0 && (
                   <span className="text-muted-foreground">· {formatNumber(inactiveCount)} ngừng bán</span>
                 )}
@@ -1360,26 +1371,6 @@ export default function ProductsHubPage() {
               outOfStockCount > 0 ||
               stockFilter !== "all") && (
               <div className="flex flex-wrap items-center gap-2">
-                {/* Chip HẾT HÀNG (22/10, khách xin): bật/tắt, đếm SKU đang bán có tồn ≤ 0. */}
-                {(outOfStockCount > 0 || stockFilter !== "all") && (
-                  <button
-                    type="button"
-                    aria-pressed={stockFilter === "out"}
-                    onClick={() => {
-                      setStockFilter((s) => (s === "out" ? "all" : "out"));
-                      setPage(1);
-                    }}
-                    className={cn(
-                      "whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                      stockFilter === "out"
-                        ? "border-rose-600 bg-rose-600 text-white"
-                        : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                    )}
-                    title="Chỉ hiện SKU đang hết hàng (tồn kho ≤ 0)"
-                  >
-                    Hết hàng {formatNumber(outOfStockCount)}
-                  </button>
-                )}
                 {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
                 {locationsEnabled && (
                   <LocationSelect
@@ -1423,6 +1414,27 @@ export default function ProductsHubPage() {
                       </button>
                     ))}
                   </div>
+                )}
+                {/* Chip HẾT HÀNG (22/10, khách xin) — đứng CẠNH Ngừng bán (anh Trung): bật/tắt,
+                    đếm SKU đang bán có tồn ≤ 0; kết hợp với trạng thái / vị trí / tìm kiếm. */}
+                {(outOfStockCount > 0 || stockFilter !== "all") && (
+                  <button
+                    type="button"
+                    aria-pressed={stockFilter === "out"}
+                    onClick={() => {
+                      setStockFilter((s) => (s === "out" ? "all" : "out"));
+                      setPage(1);
+                    }}
+                    className={cn(
+                      "whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      stockFilter === "out"
+                        ? "border-rose-600 bg-rose-600 text-white"
+                        : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    )}
+                    title="Chỉ hiện SKU đang hết hàng (tồn kho ≤ 0)"
+                  >
+                    Hết hàng {formatNumber(outOfStockCount)}
+                  </button>
                 )}
               </div>
             )}
@@ -1511,7 +1523,7 @@ export default function ProductsHubPage() {
                       {(() => {
                         const rowById = new Map(table.getRowModel().rows.map((r) => [r.original.id, r]));
                         return groups.flatMap((g) => {
-                          const multi = g.rows.length > 1;
+                          const multi = groupTotalOf(g) > 1;
                           const open = !multi || openGroups.has(g.key);
                           const out: ReactNode[] = [];
                           if (multi) out.push(renderGroupRow(g, open));

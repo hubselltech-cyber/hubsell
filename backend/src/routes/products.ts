@@ -310,6 +310,27 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const alertSkus = new Set(openAlerts.map((a) => a.channelSku));
     const pendingKeys = new Set(pendingJobs.map((j) => `${j.channelId}:${j.channelSku}`));
 
+    // Chế độ nhóm + đang lọc (hết hàng / tìm kiếm): mẫu 6 phân loại mà chỉ 1 khớp vẫn
+    // phải hiện là DÒNG CHA "1/6 phân loại" chứ không thành sản phẩm đơn (anh Trung
+    // 22/10 tối) → trả TỔNG phân loại của từng mẫu trên trang (cùng trạng thái bán,
+    // không áp lọc tồn / tìm kiếm).
+    let groupTotals: Record<string, number> | undefined;
+    if (grouped && (stock !== "all" || search)) {
+      const keys = [...new Set(items.map((p) => p.groupKey).filter((k): k is string => Boolean(k)))];
+      if (keys.length > 0) {
+        const totals = await prisma.product.groupBy({
+          by: ["groupKey"],
+          where: {
+            userId: req.ownerId!,
+            groupKey: { in: keys },
+            ...(status === "all" ? {} : { isActive: status === "active" }),
+          },
+          _count: { _all: true },
+        });
+        groupTotals = Object.fromEntries(totals.map((t) => [t.groupKey as string, t._count._all]));
+      }
+    }
+
     const seesFinancials = canSeeFinancials(req);
     res.json({
       items: items.map((p) => {
@@ -380,6 +401,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ...(skuTotal !== null ? { skuTotal } : {}),
       stock,
       outOfStockCount,
+      ...(groupTotals ? { groupTotals } : {}),
       status,
       inactiveCount,
       activeCount,

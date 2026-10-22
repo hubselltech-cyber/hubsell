@@ -388,6 +388,8 @@ export interface ProductListResponse {
   skuTotal?: number;
   /** Số SKU đang bán mà hết hàng (tồn ≤ 0) — chip "Hết hàng N". */
   outOfStockCount?: number;
+  /** view=grouped khi đang lọc: TỔNG phân loại của từng mẫu (groupKey → số) để dòng cha ghi "1/6 phân loại". */
+  groupTotals?: Record<string, number>;
 }
 
 export type ProductStatusFilter = "active" | "inactive" | "all";

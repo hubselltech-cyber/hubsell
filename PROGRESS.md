@@ -66,6 +66,10 @@
   bằng nút bung (`size-6`) → ảnh + tên thẳng hàng với dòng cha. (3) Lọc HẾT HÀNG: `GET /products?stock=out` (tồn ≤ 0, cả SQL nhóm) +
   `outOfStockCount` (đang bán, tồn ≤ 0) → chip đỏ "Hết hàng N" bật/tắt, kết hợp Đang bán/Ngừng bán/vị trí/tìm; nhóm chỉ hiện phân loại hết
   hàng. Soi local 1280: chip lọc đúng (1.096 SKU demo), dòng trống nói "Không có SKU nào đang hết hàng". tsc BE/FE + eslint sạch.
+  Push `d3f69b60`. **Anh (xem prod): "chỉ có 1 SKU trong sản phẩm hết hàng thì sao? chuyển chip cạnh Ngừng bán"** → backend chế độ nhóm
+  khi đang lọc (hết hàng / tìm) trả `groupTotals` (tổng phân loại từng mẫu, groupBy groupKey cùng trạng thái bán); dòng cha vẫn là dòng cha
+  dù chỉ 1 phân loại khớp, nhãn "1/6 phân loại hết hàng" (tìm kiếm: "… khớp"); chip Hết hàng dời sau Đang bán / Ngừng bán. Soi local: váy
+  "4/12 phân loại hết hàng". tsc BE/FE + eslint sạch.
 
 ---
 
