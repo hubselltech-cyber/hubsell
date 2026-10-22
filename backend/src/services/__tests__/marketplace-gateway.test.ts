@@ -14,6 +14,8 @@ import {
   gatewayLimits,
   GatewayDeferError,
   MemoryRateStore,
+  DistinctShopStorm,
+  shopEndpointLimit,
   type GatewayCall,
   type GatewayDeps,
 } from "../marketplace-gateway";
@@ -46,14 +48,17 @@ const fail = (msg: string) => async () => {
 };
 
 describe("cổng gọi sàn", () => {
-  it("khóa: app + gian + endpoint; trần chỉ ở nơi có bằng chứng", () => {
+  it("khóa: app + gian + endpoint (+ gian × endpoint cho nhóm Ads Shopee — A2); trần chỉ ở nơi có bằng chứng", () => {
     const ks = gatewayLimits(shopee("1", "/api/v2/ads/get_all_cpc_ads_daily_performance"));
     expect(ks.map((k) => k.key)).toEqual([
       "SHOPEE:2040029",
       "SHOPEE:2040029|shop:1",
       "SHOPEE:2040029|ep:/api/v2/ads/get_all_cpc_ads_daily_performance",
+      "SHOPEE:2040029|shop:1|ep:/api/v2/ads/get_all_cpc_ads_daily_performance",
     ]);
-    expect(ks.map((k) => k.emissionMs)).toEqual([0, 0, 1000]);
+    expect(ks.map((k) => k.emissionMs)).toEqual([0, 0, 1000, 300_000]);
+    // Ngoài nhóm Ads: không có khóa gian × endpoint.
+    expect(gatewayLimits(shopee("1")).map((k) => k.key)).toEqual(["SHOPEE:2040029", "SHOPEE:2040029|shop:1", "SHOPEE:2040029|ep:/api/v2/order/get_order_list"]);
     expect(gatewayLimits({ platform: "TIKTOK", app: "x", shop: "9", endpoint: "/o" })[1].emissionMs).toBeCloseTo(333.33, 1);
   });
 
@@ -69,9 +74,9 @@ describe("cổng gọi sàn", () => {
     await expect(callMarketplace(shopee("A"), async () => "ok", h.deps)).rejects.toMatchObject({ reason: "throttled" });
   });
 
-  it("H4: error_rate_limit (không rõ tầng) → gian lùi + endpoint hạ nhịp AIMD", async () => {
+  it("H4: error_rate_limit (không rõ tầng) trên lệnh KHÔNG có khóa gian × endpoint → gian lùi + endpoint hạ nhịp AIMD", async () => {
     const h = harness();
-    const ep = "/api/v2/ads/get_all_cpc_ads_daily_performance";
+    const ep = "/api/v2/order/get_order_list";
     await expect(callMarketplace(shopee("A", ep), fail("error_rate_limit: HTTP 429"), h.deps)).rejects.toMatchObject({
       reason: "rate_limit",
     });
@@ -112,9 +117,9 @@ describe("cổng gọi sàn", () => {
     h.advance(1_000); // hết lùi (rand = 1 → đúng 1 s)
     expect(await callMarketplace(shopee("A"), async () => 1, h.deps)).toBe(1);
     expect(h.store.keys.get("SHOPEE:2040029|shop:A")!.failures).toBe(0);
-    // Trần endpoint 1/s dồn 2: lượt thứ 3 cùng lúc chờ 1 s ≤ 2 s → ngủ tại chỗ rồi gọi.
+    // Trần endpoint 1/s dồn 2: lượt thứ 3 cùng lúc chờ 1 s ≤ 2 s → ngủ tại chỗ rồi gọi (lệnh không gian → không khóa gian × endpoint).
     const ep = "/api/v2/ads/get_all_cpc_ads_daily_performance";
-    for (let i = 0; i < 3; i++) await callMarketplace(shopee("C", ep), async () => i, h.deps);
+    for (let i = 0; i < 3; i++) await callMarketplace({ platform: "SHOPEE", app: "2040029", endpoint: ep }, async () => i, h.deps);
     expect(h.slept).toEqual([1000]);
   });
 
@@ -152,8 +157,105 @@ describe("13.9 bước A — trần khởi điểm cho MỌI endpoint Ads Shopee
       shop: {},
       endpoint: {},
       endpointPrefix: { "SHOPEE /api/v2/ads/": { perSec: 2, burst: 2 }, "SHOPEE /api/v2/ads/get_gms_": { perSec: 5, burst: 1 } },
+      shopEndpoint: {},
+      shopEndpointPrefix: {},
     };
     expect(endpointLimit("SHOPEE", "/api/v2/ads/get_gms_item_performance", limits)).toEqual({ perSec: 5, burst: 1 });
     expect(gatewayLimits(shopee("1", "/api/v2/ads/get_total_balance"), limits).map((k) => k.emissionMs)).toEqual([0, 0, 500]);
+  });
+});
+
+describe("13.9 bước A2 (22/10/2026) — trần theo GIAN × endpoint cho nhóm Ads Shopee: 429 lùi đúng gian × endpoint, không hạ cả app", () => {
+  const ALL_CPC = "/api/v2/ads/get_all_cpc_ads_daily_performance";
+  const SETTING = "/api/v2/ads/get_product_level_campaign_setting_info";
+  const E429 = "Shopee get_all_cpc_ads_daily_performance lỗi: HTTP 429 — vượt trần gọi API (error_rate_limit Too many requests)";
+
+  it("trần khởi điểm: get_all_cpc 1 lệnh/5' không dồn; endpoint Ads khác 1 lệnh/phút; ngoài nhóm Ads không có", () => {
+    expect(shopEndpointLimit("SHOPEE", ALL_CPC)).toEqual({ perSec: 0.2 / 60, burst: 1 });
+    expect(shopEndpointLimit("SHOPEE", SETTING)).toEqual({ perSec: 1 / 60, burst: 1 });
+    expect(shopEndpointLimit("SHOPEE", "/api/v2/order/get_order_list")).toBeUndefined();
+    expect(shopEndpointLimit("LAZADA", ALL_CPC)).toBeUndefined();
+  });
+
+  it("gian A dính 429 trên get_all_cpc → CHỈ khóa gian A × get_all_cpc lùi 60 s + hạ nhịp 0,5; khóa app × endpoint, khóa gian chung, khóa app KHÔNG đụng", async () => {
+    const h = harness();
+    await expect(callMarketplace(shopee("A", ALL_CPC), fail(E429), h.deps)).rejects.toMatchObject({
+      reason: "rate_limit",
+      key: `SHOPEE:2040029|shop:A|ep:${ALL_CPC}`,
+      waitMs: 60_000,
+    });
+    const se = h.store.keys.get(`SHOPEE:2040029|shop:A|ep:${ALL_CPC}`)!;
+    expect(se.failures).toBe(1);
+    expect(se.factor).toBe(0.5);
+    expect(se.blockedUntilMs).toBe(h.now() + 60_000);
+    expect(h.store.keys.get(`SHOPEE:2040029|ep:${ALL_CPC}`)?.factor ?? 1).toBe(1);
+    expect(h.store.keys.get(`SHOPEE:2040029|ep:${ALL_CPC}`)?.failures ?? 0).toBe(0);
+    expect(h.store.keys.get("SHOPEE:2040029|shop:A")?.failures ?? 0).toBe(0);
+    expect(h.store.keys.get("SHOPEE:2040029")).toBeUndefined();
+  });
+
+  it("gian A đang lùi: gian B gọi cùng endpoint đi ngay; gian A gọi endpoint KHÁC (setting_info) cũng đi ngay — chỉ đúng gian × endpoint bị chặn", async () => {
+    const h = harness();
+    await callMarketplace(shopee("A", ALL_CPC), fail(E429), h.deps).catch(() => {});
+    expect(await callMarketplace(shopee("B", ALL_CPC), async () => "B", h.deps)).toBe("B");
+    expect(await callMarketplace(shopee("A", SETTING), async () => "A-setting", h.deps)).toBe("A-setting");
+    // Gian A gọi lại get_all_cpc trong lúc lùi → cổng trả về cho làn (chờ 60 s > 2 s), KHÔNG gọi sàn.
+    let called = 0;
+    await expect(
+      callMarketplace(shopee("A", ALL_CPC), async () => void called++, h.deps)
+    ).rejects.toMatchObject({ reason: "throttled" });
+    expect(called).toBe(0);
+    expect(h.slept).toEqual([]);
+  });
+
+  it("429 lần 2 liên tiếp → lùi 120 s (gốc × 2), lần 3 → 240 s; thành công → xóa đếm, nhịp hồi dần", async () => {
+    const h = harness();
+    const key = `SHOPEE:2040029|shop:A|ep:${ALL_CPC}`;
+    await callMarketplace(shopee("A", ALL_CPC), fail(E429), h.deps).catch(() => {});
+    // Sau 429 nhịp gian × endpoint còn 1 lệnh/10' (hệ số 0,5) — 60 s sau cổng chỉ bảo chờ, KHÔNG gọi sàn (không sinh 429 mới).
+    h.advance(60_000);
+    await expect(callMarketplace(shopee("A", ALL_CPC), fail(E429), h.deps)).rejects.toMatchObject({ reason: "throttled" });
+    expect(h.store.keys.get(key)!.failures).toBe(1);
+    // Tới lượt (hệ số hồi hết sau 60') mà sàn vẫn 429 → lùi 120 s (gốc × 2), rồi 240 s.
+    h.advance(60 * 60_000);
+    await expect(callMarketplace(shopee("A", ALL_CPC), fail(E429), h.deps)).rejects.toMatchObject({ reason: "rate_limit", waitMs: 120_000 });
+    h.advance(60 * 60_000);
+    await expect(callMarketplace(shopee("A", ALL_CPC), fail(E429), h.deps)).rejects.toMatchObject({ reason: "rate_limit", waitMs: 240_000 });
+    expect(h.store.keys.get(key)!.failures).toBe(3);
+    // Hết lùi + hết nhịp → thành công → failures về 0.
+    h.advance(60 * 60_000);
+    expect(await callMarketplace(shopee("A", ALL_CPC), async () => "ok", h.deps)).toBe("ok");
+    expect(h.store.keys.get(key)!.failures).toBe(0);
+  });
+
+  it("nhịp gian × endpoint: get_all_cpc lần 2 của CÙNG gian trong 5' → cổng bảo chờ (throttled), không gọi sàn, không phải 429", async () => {
+    const h = harness();
+    expect(await callMarketplace(shopee("A", ALL_CPC), async () => 1, h.deps)).toBe(1);
+    h.advance(60_000);
+    await expect(callMarketplace(shopee("A", ALL_CPC), async () => 2, h.deps)).rejects.toMatchObject({ reason: "throttled" });
+    h.advance(4 * 60_000);
+    expect(await callMarketplace(shopee("A", ALL_CPC), async () => 3, h.deps)).toBe(3);
+  });
+
+  it("bão theo GIAN KHÁC NHAU: 2 gian 429 cùng endpoint trong 60 s → app × endpoint chưa hạ; gian thứ 3 → hạ 0,5; một gian dính nhiều lần không tính", async () => {
+    const h = harness();
+    const storm = new DistinctShopStorm(3, 60_000);
+    const deps = { ...h.deps, storm };
+    const epKey = `SHOPEE:2040029|ep:${ALL_CPC}`;
+    await callMarketplace(shopee("A", ALL_CPC), fail(E429), deps).catch(() => {});
+    await callMarketplace(shopee("B", ALL_CPC), fail(E429), deps).catch(() => {});
+    expect(h.store.keys.get(epKey)?.factor ?? 1).toBe(1);
+    // Gian A dính lần 2 (sau khi hết lùi + hết nhịp) vẫn chỉ là 2 gian.
+    expect(storm.note(epKey, "A", h.now() + 10_000)).toEqual({ shops: 2, storm: false });
+    await callMarketplace(shopee("C", ALL_CPC), fail(E429), deps).catch(() => {});
+    expect(h.store.keys.get(epKey)!.factor).toBe(0.5);
+    // Cửa sổ trôi: 71 s sau (A ghi ở +10 s cũng đã quá 60 s) chỉ còn gian mới.
+    expect(storm.note(epKey, "D", h.now() + 71_000)).toEqual({ shops: 1, storm: false });
+  });
+
+  it("mã cứng theo app (exceed_partner_api) trên lệnh Ads vẫn dừng CẢ app — khóa gian × endpoint không thay cầu dao mã cứng", async () => {
+    const h = harness();
+    await expect(callMarketplace(shopee("A", ALL_CPC), fail("ads.rate_limit.exceed_partner_api"), h.deps)).rejects.toMatchObject({ reason: "hard_app" });
+    await expect(callMarketplace(shopee("B", SETTING), async () => "ok", h.deps)).rejects.toMatchObject({ reason: "throttled" });
   });
 });

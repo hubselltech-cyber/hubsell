@@ -6,6 +6,40 @@
 
 ---
 
+## Phiên 22/10/2026 sáng — BƯỚC A2 CẦU DAO ADS 13.9 ĐÃ CODE: CỔNG HỌC TRẦN THEO GIAN × ENDPOINT + XUNG CHẠY TIẾP TỪ BƯỚC DỞ (anh chốt "code luôn")
+
+- **Vì sao:** số đo 22/10 (phiên dưới) — 106 lần 429/7,7 h, một gian dính 4 lần liền cách 60–80 s trong khi gian khác qua → trần Shopee
+  theo GIAN × endpoint, không phải app × endpoint; AIMD khóa app tụt sàn 0,1 là hạ oan cả app. Thiết kế + bằng chứng: `docs/ADS-NHIP-CANH-BAO.md` 13.9.8.
+- **Cổng** (`marketplace-gateway.ts`, `config/marketplace-read.ts`): khóa thứ 4 `SHOPEE:<app>|shop:<id>|ep:<path>` cho lệnh có gian + cấu hình
+  `shopEndpoint`/`shopEndpointPrefix` (nhóm Ads Shopee: get_all_cpc 1 lệnh/5' không dồn, endpoint khác 1 lệnh/phút không dồn); 429 không rõ
+  tầng → phạt đúng khóa ấy 60 s × 2^n + AIMD khóa ấy; khóa app × endpoint CHỈ hạ khi `DistinctShopStorm` thấy ≥ 3 GIAN KHÁC NHAU cùng
+  endpoint trong 60 s (test I9 N = 1.000 chứng minh cần — bỏ hẳn thì 7 % 429). Log `[gateway] 429 shop×ep …` / `+ bão app (N gian/60 s …)`.
+- **Làn + xung** (`ads-tiers.ts`, `ads-lane.ts`, `ads-pulse.ts`, `api-budget.ts`): sàn 429 → xếp lại ≥ 5' (`deferFloorMs`, env `ADS_DEFER_AFTER_429_MIN`);
+  xung Shopee chia 6 bước `SHOPEE_PULSE_STEP`, cổng hoãn ở bước k → `ApiBudgetError.pulseStep` → `Channel.adsPulseStep/adsPulseStepAt`
+  (migration `20261022030000_channel_ads_pulse_step`, khóa có thử lại) → lượt sau `resumeFrom` k nếu mốc ≤ 15' (`ADS_PULSE_RESUME_TTL_MIN`).
+- **Nhu cầu tự co** (`ads-demand.ts`): `shopEndpointPerMin` làm sàn nhịp từng lớp (độc lập số gian), `shopUtilization`, log thêm "mỗi gian dùng x %".
+- **Kiểm:** gateway 18 ca (7 mới), ads-lane +4, ads-demand +3, I9 sàn giả thêm trần thật gian × endpoint (get_all_cpc 1/6' chặt hơn cổng tin)
+  + ca tái hiện HPGear VN (1 lần 429, 0 lệnh phí thay vì 4 + 9) — tất cả xanh; `tsc --noEmit` cả test sạch; toàn bộ backend 1.841 xanh, 5 ca đỏ CÓ SẴN
+  (sổ cái / xóa gian trên DB dev thiếu trigger vì `db push`), không liên quan. DB dev đã `db push` (trước đó thiếu cả cột adsPriority của bước B).
+  **Chưa chạy sàn thật.** `.env.example` thêm 5 biến. Chưa push (anh push).
+- **Sau deploy 24 h:** đọc theo 13.9.8 mục "Đo" (log boot A/A2, `[gateway] 429` ≤ 5/ngày, không chuỗi cùng gian, 3 SQL, tripCount 162). Qua → C1+C2.
+
+## Phiên 22/10/2026 sáng — ĐỌC SỐ 9 H SAU BƯỚC A+B CẦU DAO ADS 13.9: CẦU DAO HẾT ĐÓNG NHƯNG 106 LẦN 429 — TRẦN THẬT THEO GIAN, KHÔNG PHẢI APP×ENDPOINT
+
+- **Lượt tự động 08:40** không đọc được (Chrome tắt, trình duyệt tích hợp đòi đăng nhập). **09:00 anh bật Chrome** → em đọc Supabase SQL
+  + Render log worker (chỉ đọc, không sửa mã, không sửa số). Bảng số thật ở `docs/ADS-NHIP-CANH-BAO.md` 13.9.5.
+- **Đạt:** boot A (23:19) + B (23:44) đúng dòng; `[Ads-demand]` lớp 2: 48 gian, 4 % mức cho phép; adsPriority sau 9 h = 5/45/28;
+  **0 lần `CẦU DAO ĐÓNG`** sau 23:19, tripCount shopee:2044679 **đứng 162** (lần cuối 22:46 21/10).
+- **KHÔNG đạt:** `[gateway] 429` **106 lần** 00:31 → 08:15 (≈ 330/ngày quy đổi, kỳ vọng ≤ 5), 95 trên get_all_cpc; AIMD khóa app×endpoint
+  đã tụt **sàn 0,10** (6 lệnh/phút toàn app) mà vẫn 429 → giả định H4 "trần app × endpoint" SAI.
+- **Bằng chứng trần theo GIAN:** HPGear VN 429 bốn lần liền 04:12:29 → 04:13:29 → 04:14:49 → 04:15:49 (cách 60–80 s) trong khi gian khác
+  xen giữa qua; lặp ở 3 gian nữa; một gian dính cả ở bước 2 (setting_info) và get_shop_toggle_info → xô theo gian cho cả nhóm Ads, cửa sổ
+  > 1'. Cơ chế nuôi 429: hoãn 1–2 s → xếp lại 1' → chạy lại từ bước 1 (3 lệnh phí) → dính lại bước 4. Lát 2 cũ đúng tầng, sai chỗ.
+- **Trình anh (chưa code):** docs **13.9.8 bước A2** — cổng thêm khóa gian×nhóm Ads (khởi điểm 6 lệnh/phút, burst 6, AIMD), `error_rate_limit`
+  phạt khóa gian gốc 60 s và KHÔNG hạ factor app×endpoint, làn hoãn ≥ 5' + chạy tiếp từ bước dính, nhu cầu tự co đọc cả trần gian, test I9
+  sàn giả theo gian, reset factor 2 khóa khi deploy. Đo 24 h → rồi C1+C2 (13.9.7) → D → C3. Chưa mở ticket Shopee. Request_id đã lưu.
+- **Chưa kiểm:** HQ overduePulse (cần đăng nhập điều hành). Không commit (chỉ docs + PROGRESS + memory).
+
 ## Phiên 21/10/2026 đêm — CẦU DAO ADS LẦN 162: ANH YÊU CẦU HỆ THỐNG CHO MỌI GIAN, KHÔNG VÁ THEO SHOP → THIẾT KẾ 13.9 (CHƯA CODE)
 
 - **Anh hỏi:** đã nâng worker Standard, em đã sửa (lát 1+2) sao HQ vẫn báo ĐÓNG shopee:2044679 bậc 2 · 20' · lần 162 (3/9 gian/10').

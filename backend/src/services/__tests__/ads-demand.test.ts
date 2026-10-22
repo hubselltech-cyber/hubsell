@@ -7,10 +7,13 @@ import {
   shopeeAdsCapacity,
   SHOPEE_HISTORY_CALLS,
   SHOPEE_PULSE_CALLS,
+  shopeeShopEndpointPerMin,
+  type AdsPriority,
   type CadenceInput,
 } from "../ads-demand";
 
 const ALL_CPC = "/api/v2/ads/get_all_cpc_ads_daily_performance";
+const SETTING = "/api/v2/ads/get_product_level_campaign_setting_info";
 const ID_LIST = "/api/v2/ads/get_product_level_campaign_id_list";
 
 /** Sức chứa như cấu hình 21/10: get_all_cpc 1/s, endpoint Ads khác 2/s. */
@@ -129,5 +132,39 @@ describe("pulsePastDeadline — đo xung trễ quá hạn chót (nhịp × 2), k
     expect(pulsePastDeadline(new Date(now - 61 * 60_000), now, 30, 2)).toBe(true);
     expect(pulsePastDeadline(new Date(now - 59 * 60_000), now, 30, 2)).toBe(false);
     expect(pulsePastDeadline(null, now, 30, 2)).toBe(false);
+  });
+});
+
+describe("13.9 bước A2 — trần GIAN × endpoint là sàn nhịp của từng lớp (độc lập số gian)", () => {
+  const base = () => ({
+    shops: { 1: 5, 2: 45, 3: 28 } as Record<AdsPriority, number>,
+    pulseCalls: SHOPEE_PULSE_CALLS,
+    historyCalls: SHOPEE_HISTORY_CALLS,
+    historyMin: { 1: 360, 2: 360, 3: 1440 } as Record<AdsPriority, number>,
+    capacityPerSec: { [ALL_CPC]: 1 },
+    baseMin: 30,
+    capMin: { 1: 120, 2: 360, 3: 1440 } as Record<AdsPriority, number>,
+    utilization: 0.8,
+  });
+  it("hôm nay (get_all_cpc 1 lệnh/5' mỗi gian, xung 30'): không lớp nào giãn, mỗi gian dùng ~23 % trần gian", () => {
+    const r = computeCadence({ ...base(), shopEndpointPerMin: shopeeShopEndpointPerMin([ALL_CPC, SETTING]) });
+    expect(r.stretched).toEqual({ 1: false, 2: false, 3: false });
+    expect(r.shopUtilization[2]).toBeCloseTo((1 / 30 + 1 / 360) / (0.8 * 0.2), 2);
+    expect(r.shopUtilization[3]).toBeLessThan(0.1);
+  });
+  it("trần gian get_all_cpc hạ còn 1 lệnh/50' (AIMD sàn) → lớp 1–2 phải giãn tới ≥ 63' bất kể bao nhiêu gian; lớp 3 (không gọi get_all_cpc ở xung) giữ 30'", () => {
+    const r = computeCadence({ ...base(), shops: { 1: 1, 2: 1, 3: 1 }, shopEndpointPerMin: { [ALL_CPC]: 1 / 50 } });
+    expect(r.stretched[1]).toBe(true);
+    expect(r.stretched[2]).toBe(true);
+    expect(r.stretched[3]).toBe(false);
+    // 1/T + 1/360 ≤ 0,8 × 1/50 → T ≥ 1 / (0,016 − 0,00278) ≈ 75,6'
+    expect(r.pulseMin[1]).toBe(76);
+    expect(r.pulseMin[2]).toBe(76);
+    expect(r.pulseMin[3]).toBe(30);
+    expect(r.red).toBe(true); // lớp 1 giãn = đỏ, HQ phải thấy
+  });
+  it("không truyền trần gian → như trước A2 (shopUtilization 0)", () => {
+    const r = computeCadence(base());
+    expect(r.shopUtilization).toEqual({ 1: 0, 2: 0, 3: 0 });
   });
 });

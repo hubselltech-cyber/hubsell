@@ -43,6 +43,19 @@ export const DEFER_MIN_MS = 60 * 1000;
 
 // ---------- Hàm thuần (export cho vitest) ----------
 
+/**
+ * 13.9 A2: xung lượt này chạy tiếp từ bước nào — Channel.adsPulseStep > 1 và mốc dở chưa cũ hơn PULSE_RESUME_TTL_MIN
+ * (số của 3 bước đầu còn tươi); cũ hơn / không có → undefined = từ đầu. Hàm thuần.
+ */
+export function pulseResumeFrom(
+  ch: Pick<Channel, "adsPulseStep" | "adsPulseStepAt">,
+  now: number,
+  ttlMin: number = ADS_CADENCE.PULSE_RESUME_TTL_MIN
+): number | undefined {
+  if (!ch.adsPulseStep || ch.adsPulseStep <= 1 || !ch.adsPulseStepAt) return undefined;
+  return now - ch.adsPulseStepAt.getTime() <= ttlMin * 60_000 ? ch.adsPulseStep : undefined;
+}
+
 /** Hai tầng ads nào đến hạn với một gian tại `now` (null = chưa từng chạy = đến hạn). */
 export function dueAdsTiers(
   ch: Pick<Channel, "nextAdsSyncAt" | "nextAdsPulseAt">,
@@ -118,6 +131,8 @@ export function nextAdsSchedule(
   adsBackoffLevel?: number;
   adsBackoffUntil?: Date | null;
   adsPriority?: number;
+  adsPulseStep?: number;
+  adsPulseStepAt?: Date | null;
 } {
   const historySynced = input.history?.synced === true;
   const fresh = historySynced || input.pulse?.synced === true;
@@ -150,6 +165,12 @@ export function nextAdsSchedule(
     ...(backoff ?? {}),
     // Bước B: lớp ưu tiên xung vừa tính (Shopee) → làn nhặt theo lớp ở lượt sau.
     ...(input.pulse?.priority != null ? { adsPriority: input.pulse.priority } : {}),
+    // 13.9 A2: xung dở ở bước k (cổng hoãn) → ghi mốc để lượt sau chạy tiếp; xung xong → xóa mốc.
+    ...(input.pulse?.resumeStep != null
+      ? input.pulse.resumeStep > 1
+        ? { adsPulseStep: input.pulse.resumeStep, adsPulseStepAt: new Date(now) }
+        : { adsPulseStep: 0, adsPulseStepAt: null }
+      : {}),
   };
 }
 
@@ -176,7 +197,7 @@ export function startAdsLane(): void {
   // Bước B: tính nhịp theo sức chứa ngay sau boot — lần đầu refreshAdsDemand tự log một dòng [Ads-demand], rồi chỉ log khi đổi.
   void refreshAdsDemand();
   console.log(
-    `[Ads-lane] BẬT — làn Ads riêng: Ads Shopee ${ADS_CADENCE.GATEWAY ? "QUA CỔNG GỌI SÀN (GCRA app×endpoint, 13.9 bước A)" : "qua withApiBudget (ADS_GATEWAY=0)"}, nhặt theo lớp ưu tiên + nhịp tự co theo sức chứa (13.9 bước B, trần lớp 1/2/3 = ${ADS_CADENCE.DEMAND_CAP_MIN[1]}'/${ADS_CADENCE.DEMAND_CAP_MIN[2]}'/${ADS_CADENCE.DEMAND_CAP_MIN[3]}', dùng ≤ ${Math.round(ADS_CADENCE.DEMAND_UTILIZATION * 100)} %), song song ${ADS_CADENCE.CONCURRENCY} gian, lùi riêng gian dính 429 ${ADS_CADENCE.SHOP_BACKOFF_MIN}'→${ADS_CADENCE.SHOP_BACKOFF_MAX_MIN}', giãn lệnh trong xung ${ADS_CADENCE.SHOP_CALL_GAP_SEC}s, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
+    `[Ads-lane] BẬT — làn Ads riêng: Ads Shopee ${ADS_CADENCE.GATEWAY ? "QUA CỔNG GỌI SÀN (GCRA app×endpoint + GIAN×endpoint, 13.9 bước A/A2)" : "qua withApiBudget (ADS_GATEWAY=0)"}, nhặt theo lớp ưu tiên + nhịp tự co theo sức chứa (13.9 bước B, trần lớp 1/2/3 = ${ADS_CADENCE.DEMAND_CAP_MIN[1]}'/${ADS_CADENCE.DEMAND_CAP_MIN[2]}'/${ADS_CADENCE.DEMAND_CAP_MIN[3]}', dùng ≤ ${Math.round(ADS_CADENCE.DEMAND_UTILIZATION * 100)} %), sàn 429 xếp lại ≥ ${ADS_CADENCE.DEFER_AFTER_429_MIN}' + chạy tiếp từ bước dở (A2, mốc tươi ${ADS_CADENCE.PULSE_RESUME_TTL_MIN}'), song song ${ADS_CADENCE.CONCURRENCY} gian, lùi riêng gian dính 429 ${ADS_CADENCE.SHOP_BACKOFF_MIN}'→${ADS_CADENCE.SHOP_BACKOFF_MAX_MIN}', giãn lệnh trong xung ${ADS_CADENCE.SHOP_CALL_GAP_SEC}s, XUNG Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử mỗi ${ADS_CADENCE.FULL_HOURS}h (cửa sổ ${ADS_CADENCE.WINDOW_DAYS} ngày, lần đầu ${ADS_CADENCE.BACKFILL_DAYS}), vé mồ côi sau ${ADS_CADENCE.LOCK_STALE_MIN}', trần ${ADS_CADENCE.APP_QPS} call/s mỗi app`
   );
 }
 
@@ -236,10 +257,10 @@ async function processAdsChannel(channel: Channel): Promise<void> {
       // Lịch sử bị 429 tầng shop (lát 2, Lazada) hay cổng bảo "quay lại sau" (bước A) → không gọi tiếp xung;
       // hạn xung giữ nguyên, lượt kế làm cả hai.
       if (tiers.pulse && history.rateLimited !== "shop" && history.deferMs == null) {
-        pulse = await runAdsPulse(channel, { skipToday: history.synced });
+        pulse = await runAdsPulse(channel, { skipToday: history.synced, resumeFrom: pulseResumeFrom(channel, Date.now()) });
       }
     } else if (tiers.pulse) {
-      pulse = await runAdsPulse(channel);
+      pulse = await runAdsPulse(channel, { resumeFrom: pulseResumeFrom(channel, Date.now()) });
     }
   } catch (err) {
     console.error(`[Ads-lane] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
@@ -254,7 +275,7 @@ async function processAdsChannel(channel: Channel): Promise<void> {
     const deferMs = Math.max(pulse?.deferMs ?? 0, history?.deferMs ?? 0);
     if (deferMs > 0) {
       console.log(
-        `[Ads-lane] ${channel.channelName} "${channel.shopName}" cổng bảo quay lại sau ${Math.ceil(deferMs / 1000)} s — xếp lại, không bậc`
+        `[Ads-lane] ${channel.channelName} "${channel.shopName}" cổng bảo quay lại sau ${Math.ceil(deferMs / 1000)} s — xếp lại, không bậc${data.adsPulseStep ? `, lượt sau chạy tiếp từ bước ${data.adsPulseStep}` : ""}`
       );
     }
     if (data.adsBackoffUntil) {

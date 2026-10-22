@@ -54,12 +54,30 @@ export interface AdsPulseResult {
   deferMs?: number;
   /** Bước B: lớp ưu tiên vừa tính (Shopee) → làn ghi Channel.adsPriority. */
   priority?: AdsPriority;
+  /**
+   * 13.9 A2: xung Shopee bị cổng hoãn ở bước này (SHOPEE_PULSE_STEP) → làn ghi Channel.adsPulseStep, lượt sau chạy
+   * tiếp từ đó; 0 = xung xong (xóa mốc dở); undefined = không đụng cột (Lazada/TikTok, lỗi khác).
+   */
+  resumeStep?: number;
 }
 
 /** Bước B: tùy chọn một lượt xung. */
 export interface AdsPulseOptions {
   /** Lượt lịch sử vừa kéo cửa sổ 30 ngày (có hôm nay) ngay trước → xung bỏ 2 lệnh "hôm nay" (gộp lệnh, I6). */
   skipToday?: boolean;
+  /** 13.9 A2: chạy tiếp từ bước này (Channel.adsPulseStep còn tươi). */
+  resumeFrom?: number;
+}
+
+/**
+ * 13.9 A2 — sàn hoãn bao lâu thì làn xếp lại gian bấy lâu, nhưng có SÀN theo lý do (hàm thuần):
+ *   · rate_limit (sàn 429, khóa gian × endpoint đã lùi ≥ 60 s): tối thiểu DEFER_AFTER_429_MIN — trước 22/10 sàn 1' làm
+ *     gian thử lại mỗi phút rồi dính lại (HPGear VN 4 lần liền);
+ *   · throttled (chờ lượt GCRA của chính mình) / hard_app: đúng waitMs (làn còn sàn 1' theo nhịp nhặt vé).
+ */
+export function deferFloorMs(reason: "throttled" | "rate_limit" | "hard_app" | null, waitMs: number, after429Min = ADS_CADENCE.DEFER_AFTER_429_MIN): number {
+  const w = Math.max(0, waitMs);
+  return reason === "rate_limit" ? Math.max(w, after429Min * 60_000) : w;
 }
 
 /** Kết quả một lượt LỊCH SỬ ads: kéo được số (ghi lastAdsSyncAt, hạ cờ backfill) + bị chặn hay không. */
@@ -76,7 +94,7 @@ function budgetScope(err: unknown): AdsRateLimited {
 }
 
 function deferOf(err: unknown): number | undefined {
-  return isApiBudgetError(err) && err.scope === "gateway_defer" ? err.waitMs : undefined;
+  return isApiBudgetError(err) && err.scope === "gateway_defer" ? deferFloorMs(err.deferReason, err.waitMs) : undefined;
 }
 
 /** Gian TikTok CHƯA nối quảng cáo: hạn xung/ads đẩy xa 1 ngày (chỉ để không nhặt mỗi tick). */
@@ -185,6 +203,7 @@ async function runAdsPulseTier(channel: Channel, opts: AdsPulseOptions = {}): Pr
 
   let foundNew = false;
   let synced = false;
+  let resumeStep: number | undefined;
   try {
     if (isLazada) {
       const r = await pulseLazadaAds(channel);
@@ -195,12 +214,13 @@ async function runAdsPulseTier(channel: Channel, opts: AdsPulseOptions = {}): Pr
     } else {
       // Xung nhẹ CHỈ khi DB không còn campaign nào đáng theo dõi — campaign tạm
       // dừng vẫn phải đọc lại cấu hình để thấy người bật lại.
-      const r = await pulseShopeeAds(channel, { light: watching === 0, skipToday: opts.skipToday });
+      const r = await pulseShopeeAds(channel, { light: watching === 0, skipToday: opts.skipToday, resumeFrom: opts.resumeFrom });
       foundNew = r.newCampaigns > 0;
       synced = r.mode === "full";
+      resumeStep = 0;
       if (r.mode === "full") {
         console.log(
-          `[Ads-pulse] Shopee "${channel.shopName}": ${r.liveCampaigns} campaign sống (${r.newCampaigns} mới), ${r.perfTodayUpserted} dòng hôm nay, ví ${r.walletBalance ?? "?"}`
+          `[Ads-pulse] Shopee "${channel.shopName}": ${r.liveCampaigns} campaign sống (${r.newCampaigns} mới), ${r.perfTodayUpserted} dòng hôm nay, ví ${r.walletBalance ?? "?"}${r.resumedFrom > 1 ? ` (chạy tiếp từ bước ${r.resumedFrom})` : ""}`
         );
       }
     }
@@ -208,13 +228,15 @@ async function runAdsPulseTier(channel: Channel, opts: AdsPulseOptions = {}): Pr
     if (isApiBudgetError(err)) {
       // Van an toàn: app đang bị cầu dao / vượt trần → lùi gian, KHÔNG retry. 429 tầng shop: làn Ads (lát 2) tính
       // bậc lùi riêng của gian từ cờ rateLimited; 15' ở đây chỉ còn là đường lui ADS_LANE=0.
-      console.warn(`[Ads-pulse] "${channel.shopName}" lùi lịch (${err.scope}): ${err.message}`);
+      // 13.9 A2: cổng hoãn ở bước k → trả bước để làn ghi, lượt sau chạy tiếp từ k (không hỏi lại số đã có).
+      console.warn(`[Ads-pulse] "${channel.shopName}" lùi lịch (${err.scope}${err.pulseStep ? `, dở ở bước ${err.pulseStep}` : ""}): ${err.message}`);
       return {
         delayMin: err.scope === "shop_rate_limit" ? ADS_CADENCE.SHOP_BACKOFF_MIN : Math.max(ADS_CADENCE.PULSE_MIN, pulseMin ?? 0),
         synced: false,
         rateLimited: budgetScope(err),
         deferMs: deferOf(err),
         priority,
+        ...(isLazada ? {} : { resumeStep: err.pulseStep ?? 0 }),
       };
     }
     console.error(`[Ads-pulse] Lỗi xung gian "${channel.shopName}":`, (err as Error).message);
@@ -255,6 +277,7 @@ async function runAdsPulseTier(channel: Channel, opts: AdsPulseOptions = {}): Pr
     }),
     synced,
     priority,
+    ...(resumeStep != null ? { resumeStep } : {}),
   };
 }
 

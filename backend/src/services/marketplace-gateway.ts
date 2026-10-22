@@ -11,10 +11,15 @@
 //   <SÀN>:<app>               có bằng chứng trần app        lỗi cứng theo app (exceed_partner_api,
 //                                                           Lazada ApiCallLimit) — "cầu dao" chỉ còn ở đây
 //   <SÀN>:<app>|shop:<id>     TikTok (App × gian, docs sàn)  429 tầng gian
-//   <SÀN>:<app>|ep:<path>     Shopee daily_performance (H4)  429 không rõ tầng → lùi + hạ nhịp AIMD
+//   <SÀN>:<app>|ep:<path>     Shopee daily_performance (H4)  429 không rõ tầng (lệnh KHÔNG có khóa gian × endpoint)
+//                                                           → lùi + hạ nhịp AIMD
+//   <SÀN>:<app>|shop:<id>|ep:<path>  nhóm Ads Shopee          429 không rõ tầng → lùi ĐÚNG gian × endpoint 60 s × 2^n
+//                             (13.9 A2, đo 22/10)           + hạ nhịp AIMD khóa ấy; khóa app × endpoint KHÔNG hạ
 //
 // Một gian 429 KHÔNG làm gian khác chờ (khóa gian riêng); "bão vài gian → tắt cả
-// app" (giả dương 12 lần/ngày, H4) không còn.
+// app" (giả dương 12 lần/ngày, H4) không còn. 22/10 (docs ADS-NHIP-CANH-BAO 13.9.5):
+// hạ AIMD khóa app × endpoint vì 429 của MỘT gian = hạ oan cả app (tụt sàn 0,1 vẫn
+// 429) → lệnh có khóa gian × endpoint chỉ lùi + hạ khóa ấy.
 // ============================================================
 
 import { prisma } from "../lib/prisma";
@@ -71,28 +76,67 @@ export interface GatewayDeps {
   store: RateStore;
   sleep: (ms: number) => Promise<void>;
   now: () => number;
+  /** 13.9 A2: bộ đếm "bão theo gian khác nhau" (mặc định một bộ chung của tiến trình). */
+  storm?: DistinctShopStorm;
 }
+
+/**
+ * 13.9 A2 — bằng chứng tầng app cho 429 không rõ tầng: đếm GIAN KHÁC NHAU dính 429 trên cùng khóa endpoint trong cửa
+ * sổ. Một gian dính 4 lần liền (HPGear 22/10) = 1 gian → không phải bão. Trong tiến trình (worker Ads là một tiến trình;
+ * nhiều tiến trình thì mỗi tiến trình tự thấy phần của mình — yếu hơn, không sai). Hàm thuần, test được.
+ */
+export class DistinctShopStorm {
+  private readonly seen = new Map<string, Map<string, number>>();
+  constructor(
+    private readonly shops: number = GATEWAY.UNKNOWN_429_STORM.shops,
+    private readonly windowMs: number = GATEWAY.UNKNOWN_429_STORM.windowMs
+  ) {}
+  /** Ghi một lần 429 của `shop` trên `key`; trả số gian khác nhau trong cửa sổ và có đủ bão không. */
+  note(key: string, shop: string, now: number): { shops: number; storm: boolean } {
+    let m = this.seen.get(key);
+    if (!m) {
+      m = new Map();
+      this.seen.set(key, m);
+    }
+    m.set(shop, now);
+    for (const [s, t] of m) if (now - t > this.windowMs) m.delete(s);
+    return { shops: m.size, storm: m.size >= this.shops };
+  }
+}
+
+const defaultStorm = new DistinctShopStorm();
 
 const keyOf = {
   app: (c: GatewayCall) => `${c.platform}:${c.app}`,
   shop: (c: GatewayCall) => `${c.platform}:${c.app}|shop:${c.shop}`,
   endpoint: (c: GatewayCall) => `${c.platform}:${c.app}|ep:${c.endpoint}`,
+  /** 13.9 A2: gian × endpoint — chỉ khi lệnh có gian VÀ cấu hình có trần cho (sàn, endpoint) ở shopEndpoint*. */
+  shopEndpoint: (c: GatewayCall) => `${c.platform}:${c.app}|shop:${c.shop}|ep:${c.endpoint}`,
 };
 
 function limitOf(key: string, rl: RateLimit | undefined): KeyLimit {
   return rl ? { key, emissionMs: 1000 / rl.perSec, burst: rl.burst } : { key, emissionMs: 0, burst: 1 };
 }
 
-/** Trần của một endpoint: dòng riêng thắng, không có thì tiền tố dài nhất khớp (hàm thuần — test). */
-export function endpointLimit(platform: Platform, endpoint: string, limits = RATE_LIMITS): RateLimit | undefined {
-  const full = `${platform} ${endpoint}`;
-  const exact = limits.endpoint[full];
-  if (exact) return exact;
+/** Dòng riêng thắng, không có thì tiền tố dài nhất khớp. */
+function matchLimit(full: string, exact: Record<string, RateLimit>, prefixes: Record<string, RateLimit> | undefined): RateLimit | undefined {
+  const e = exact[full];
+  if (e) return e;
   let best: { len: number; rl: RateLimit } | undefined;
-  for (const [prefix, rl] of Object.entries(limits.endpointPrefix ?? {})) {
+  for (const [prefix, rl] of Object.entries(prefixes ?? {})) {
     if (full.startsWith(prefix) && (!best || prefix.length > best.len)) best = { len: prefix.length, rl };
   }
   return best?.rl;
+}
+
+/** Trần app × endpoint của một endpoint: dòng riêng thắng, không có thì tiền tố dài nhất khớp (hàm thuần — test). */
+export function endpointLimit(platform: Platform, endpoint: string, limits = RATE_LIMITS): RateLimit | undefined {
+  return matchLimit(`${platform} ${endpoint}`, limits.endpoint, limits.endpointPrefix);
+}
+
+/** 13.9 A2: trần GIAN × endpoint (mỗi gian một xô riêng cho endpoint ấy); undefined = lệnh không lấy khóa này. Hàm thuần. */
+export function shopEndpointLimit(platform: Platform, endpoint: string, limits = RATE_LIMITS): RateLimit | undefined {
+  return matchLimit(`${platform} ${endpoint}`, limits.shopEndpoint ?? {}, limits.shopEndpointPrefix);
 }
 
 /** Các khóa một lệnh phải qua (hàm thuần — test). */
@@ -100,11 +144,17 @@ export function gatewayLimits(c: GatewayCall, limits = RATE_LIMITS): KeyLimit[] 
   const out = [limitOf(keyOf.app(c), limits.app[c.platform])];
   if (c.shop) out.push(limitOf(keyOf.shop(c), limits.shop[c.platform]));
   out.push(limitOf(keyOf.endpoint(c), endpointLimit(c.platform, c.endpoint, limits)));
+  if (c.shop) {
+    const se = shopEndpointLimit(c.platform, c.endpoint, limits);
+    if (se) out.push(limitOf(keyOf.shopEndpoint(c), se));
+  }
   return out;
 }
 
 const SHOP_RULE: PenaltyRule = { ...GATEWAY.SHOP_BACKOFF, jitter: true };
 const ENDPOINT_RULE: PenaltyRule = { ...GATEWAY.ENDPOINT_BACKOFF, jitter: true, decrease: true, minFactor: GATEWAY.AIMD_MIN_FACTOR };
+/** 13.9 A2: gian × endpoint lùi 60 s × 2^n không xáo trộn (làn đã xáo trộn) + hạ nhịp AIMD khóa ấy. */
+const SHOP_ENDPOINT_RULE: PenaltyRule = { ...GATEWAY.SHOP_ENDPOINT_BACKOFF, jitter: false, decrease: true, minFactor: GATEWAY.AIMD_MIN_FACTOR };
 const APP_HARD_RULE: PenaltyRule = { ...GATEWAY.APP_HARD, jitter: false };
 
 /** Gọi MỘT lệnh sàn qua cổng. Lỗi không thuộc rate limit / lỗi cứng app ném nguyên vẹn. */
@@ -140,18 +190,35 @@ export async function callMarketplace<T>(c: GatewayCall, fn: () => Promise<T>, d
     if (k.kind === "rate_limit") {
       const shopKey = c.shop ? keyOf.shop(c) : null;
       const epKey = keyOf.endpoint(c);
+      const shopEpKey = c.shop && shopEndpointLimit(c.platform, c.endpoint) ? keyOf.shopEndpoint(c) : null;
       let until = 0;
       let key = epKey;
-      // shop: chỉ gian đó lùi. endpoint: khóa endpoint lùi + hạ nhịp. unknown (Shopee error_rate_limit,
-      // Lazada 901): cả hai — gian lùi để không đập tiếp, endpoint hạ nhịp vì H4 cho thấy trần app × endpoint.
-      if ((k.scope === "shop" || k.scope === "unknown") && shopKey) {
-        until = await deps.store.penalize(shopKey, SHOP_RULE, k.retryAfterMs, msg);
-        key = shopKey;
+      let scope: string = k.scope;
+      if (k.scope === "unknown" && shopEpKey) {
+        // 13.9 A2 (đo 22/10): lệnh có trần gian × endpoint mà sàn 429 không rõ tầng → đó là xô của ĐÚNG gian × endpoint
+        // này: lùi 60 s × 2^n + hạ nhịp khóa ấy. KHÔNG đụng khóa gian chung (đơn hàng của gian vẫn đi). Khóa app ×
+        // endpoint CHỈ hạ khi có bằng chứng tầng app = ≥ N gian KHÁC NHAU dính cùng endpoint trong 60 s (một gian dính
+        // 4 lần liền không tính — 21–22/10 hạ theo lần làm cả app tụt sàn 0,1 mà vẫn 429).
+        until = await deps.store.penalize(shopEpKey, SHOP_ENDPOINT_RULE, k.retryAfterMs, msg);
+        key = shopEpKey;
+        scope = "shop×ep";
+        const storm = (deps.storm ?? defaultStorm).note(epKey, c.shop!, deps.now());
+        if (storm.storm) {
+          until = Math.max(until, await deps.store.penalize(epKey, ENDPOINT_RULE, k.retryAfterMs, msg));
+          scope = `shop×ep + bão app (${storm.shops} gian/60 s → hạ nhịp ${epKey})`;
+        }
+      } else {
+        // shop: chỉ gian đó lùi. endpoint: khóa endpoint lùi + hạ nhịp. unknown không có khóa gian × endpoint (Lazada
+        // 901, Shopee ngoài nhóm Ads): cả hai — gian lùi để không đập tiếp, endpoint hạ nhịp (H4).
+        if ((k.scope === "shop" || k.scope === "unknown") && shopKey) {
+          until = await deps.store.penalize(shopKey, SHOP_RULE, k.retryAfterMs, msg);
+          key = shopKey;
+        }
+        if (k.scope === "endpoint" || k.scope === "unknown" || !shopKey) {
+          until = Math.max(until, await deps.store.penalize(epKey, ENDPOINT_RULE, k.retryAfterMs, msg));
+        }
       }
-      if (k.scope === "endpoint" || k.scope === "unknown" || !shopKey) {
-        until = Math.max(until, await deps.store.penalize(epKey, ENDPOINT_RULE, k.retryAfterMs, msg));
-      }
-      console.warn(`[gateway] 429 ${k.scope} ${key} — lùi tới ${new Date(until).toISOString()}: ${msg.slice(0, 160)}`);
+      console.warn(`[gateway] 429 ${scope} ${key} — lùi tới ${new Date(until).toISOString()}: ${msg.slice(0, 160)}`);
       throw new GatewayDeferError(Math.max(0, until - deps.now()), "rate_limit", key, err);
     }
     throw err;

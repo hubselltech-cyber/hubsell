@@ -69,6 +69,19 @@ export const GATEWAY = {
   SHOP_BACKOFF: { baseMs: 1_000, capMs: 15 * MIN },
   /** 429 không rõ tầng (Shopee error_rate_limit — H4 rơi vào một endpoint): lùi khóa endpoint + hạ nhịp (AIMD). TỰ CHỌN. */
   ENDPOINT_BACKOFF: { baseMs: 1_000, capMs: 60_000 },
+  /**
+   * 13.9 BƯỚC A2 (22/10/2026): 429 không rõ tầng trên lệnh CÓ trần gian × endpoint (nhóm Ads Shopee) → lùi đúng khóa
+   * gian × endpoint ấy, gốc 60 s × 2^(lần−1) KHÔNG xáo trộn (xáo trộn đã có ở làn), trần 15', + hạ nhịp AIMD khóa ấy.
+   * Căn cứ: đo 22/10 một gian lùi 60–80 s vẫn dính, qua sau ~4' (docs ADS-NHIP-CANH-BAO 13.9.5). Khóa app × endpoint
+   * KHÔNG hạ nữa (hạ oan cả app: 21–22/10 tụt sàn 0,1 mà vẫn 429).
+   */
+  SHOP_ENDPOINT_BACKOFF: { baseMs: envNum("GATEWAY_SHOP_EP_BACKOFF_SEC", 60) * 1000, capMs: 15 * MIN },
+  /**
+   * 13.9 A2: bằng chứng TẦNG APP trên lệnh có khóa gian × endpoint = ≥ `shops` GIAN KHÁC NHAU 429 cùng endpoint trong
+   * `windowMs` → mới hạ nhịp khóa app × endpoint (AIMD, hồi 60'). Một gian dính nhiều lần không tính (bài học 16/10: đếm
+   * theo LẦN đóng oan cả app). Test I9 N = 1.000 chứng minh cần nó để cổng học trần app thật. TỰ CHỌN 3 gian / 60 s.
+   */
+  UNKNOWN_429_STORM: { shops: envNum("GATEWAY_STORM_SHOPS", 3), windowMs: 60_000 },
   /** Lỗi cứng theo app (exceed_partner_api, Lazada ApiCallLimit): dừng cả app, không xáo trộn — như cầu dao cũ 5' × 2^bậc, trần 60'. */
   APP_HARD: { baseMs: 5 * MIN, capMs: 60 * MIN },
   /** AIMD: 429 → nhịp × 0,5 (sàn dưới MIN_FACTOR); hồi tuyến tính +1 sau RECOVER_MS (≈ +10 %/6' — docs TikTok "tăng 20–30 % mỗi 10–15'"). */
@@ -93,6 +106,14 @@ export const RATE_LIMITS: {
   endpoint: Record<string, RateLimit>;
   /** Trần theo TIỀN TỐ đường dẫn cho endpoint không có dòng riêng ở `endpoint` (khớp dài nhất thắng). */
   endpointPrefix: Record<string, RateLimit>;
+  /**
+   * 13.9 BƯỚC A2 (22/10/2026): trần theo GIAN × ENDPOINT (khóa `<SÀN>:<app>|shop:<id>|ep:<path>`) — chỉ lệnh có gian và
+   * có dòng ở đây (hoặc tiền tố) mới lấy khóa này. Căn cứ đo 22/10 (docs ADS-NHIP-CANH-BAO 13.9.5): 106 lần 429/7,7 h
+   * trên app Hubsell Ads dù khóa app × endpoint đã tụt sàn; MỘT gian dính 4 lần liền cách 60–80 s trong khi gian khác
+   * xen giữa qua → trần thật theo gian; 3 lệnh đầu của xung qua rồi get_all_cpc dính ở MỌI lần thử → theo endpoint.
+   */
+  shopEndpoint: Record<string, RateLimit>;
+  shopEndpointPrefix: Record<string, RateLimit>;
 } = {
   app: {},
   shop: {
@@ -108,6 +129,20 @@ export const RATE_LIMITS: {
     // (khóa không trần = hệ số nhân với 0). 2/s burst 2 là TỰ CHỌN — chưa endpoint nào ngoài get_all_cpc thấy 429;
     // cổng tự hạ (× 0,5, hồi 60') nếu sai. Đo lại ở bước A (24 h) rồi Đ1.
     "SHOPEE /api/v2/ads/": { perSec: envNum("GATEWAY_SHOPEE_ADS_PER_SEC", 2), burst: 2 },
+  },
+  shopEndpoint: {
+    // get_all_cpc: 95/106 lần 429 ngày 22/10; một gian thử lại 4 lần trong 3'20" đều dính, qua sau ~4' → khởi điểm
+    // 1 lệnh / 5' mỗi gian, không dồn (burst 1). Cổng tự hạ (× 0,5, sàn 0,1 = 1 lệnh / 50') nếu còn dính. Số đo = HQ `factor`.
+    "SHOPEE /api/v2/ads/get_all_cpc_ads_daily_performance": {
+      perSec: envNum("GATEWAY_SHOPEE_ADS_SHOP_ALLCPC_PER_MIN", 0.2) / 60,
+      burst: 1,
+    },
+  },
+  shopEndpointPrefix: {
+    // Mọi endpoint Ads Shopee khác: Shopee trả lời 10/10/2026 "cấp shop ~1 call/phút" → 1 lệnh / phút mỗi gian mỗi
+    // endpoint, không dồn. Xung (5 endpoint khác nhau) vẫn đi lọt một lượt; lô > 1 lệnh cùng endpoint (gian > 100 chiến
+    // dịch, chiến dịch Nhóm mỗi id một lệnh) tự dàn 1'/lệnh — làn xếp lại và CHẠY TIẾP từ lệnh dở (ads-pulse resumeFrom).
+    "SHOPEE /api/v2/ads/": { perSec: envNum("GATEWAY_SHOPEE_ADS_SHOP_PER_MIN", 1) / 60, burst: 1 },
   },
 };
 

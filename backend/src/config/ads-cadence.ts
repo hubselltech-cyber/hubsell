@@ -68,6 +68,17 @@ export const ADS_CADENCE = {
    * withApiBudget như trước 21/10. Khi qua cổng, lát 2 (adsBackoff*) không còn được ghi cho Shopee.
    */
   GATEWAY: (process.env.ADS_GATEWAY ?? "1").trim() !== "0",
+  /**
+   * 13.9 BƯỚC A2 (22/10/2026): sàn 429 (cổng lùi khóa gian × endpoint) → làn xếp lại gian sau ÍT NHẤT ngần này phút
+   * (trước: 1' → gian thử lại mỗi phút, chạy lại từ bước 1 rồi dính lại bước 4 — HPGear VN 4 lần liền 22/10). Chờ lượt
+   * GCRA (throttled) vẫn tối thiểu 1'. 5 TỰ CHỌN (đo 22/10: gian qua được sau ~4').
+   */
+  DEFER_AFTER_429_MIN: envNum("ADS_DEFER_AFTER_429_MIN", 5),
+  /**
+   * 13.9 BƯỚC A2: xung bị cổng hoãn ở bước k → lượt sau CHẠY TIẾP từ bước k (không hỏi lại 3 bước đã có số — I7),
+   * nếu mốc dở (Channel.adsPulseStepAt) chưa cũ hơn ngần này phút; cũ hơn → chạy lại từ đầu. 15 TỰ CHỌN.
+   */
+  PULSE_RESUME_TTL_MIN: envNum("ADS_PULSE_RESUME_TTL_MIN", 15),
   /** Số gian chạy xung/lịch sử ads SONG SONG trong một worker ads-lane. Đo lại Đ1, Đ2. */
   CONCURRENCY: envNum("ADS_CONCURRENCY", 2),
   /** Vé làn Ads (Channel.adsLockedAt) cũ hơn ngưỡng này (phút) = worker cầm vé đã chết → nhặt lại. Lượt ngày TikTok

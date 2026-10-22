@@ -2,7 +2,8 @@
 // docs/ADS-NHIP-CANH-BAO.md mục 13, 19/10/2026). Không chạm DB / API sàn.
 import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
-import { adsCandidateOrder, adsCandidateWhere, DEFER_MIN_MS, dueAdsTiers, nextAdsSchedule, nextBackoffLevel, shopBackoffMs } from "../ads-lane";
+import { adsCandidateOrder, adsCandidateWhere, DEFER_MIN_MS, dueAdsTiers, nextAdsSchedule, nextBackoffLevel, pulseResumeFrom, shopBackoffMs } from "../ads-lane";
+import { deferFloorMs } from "../ads-tiers";
 import { ADS_CADENCE } from "../../config/ads-cadence";
 
 const noJitter = () => 0.5; // rand=0.5 → factor 1.0
@@ -235,5 +236,42 @@ describe("13.9 bước B — lịch sử theo lớp: lớp 3 (không chiến d�
     const fresh = nextAdsSchedule({ pulse: { delayMin: 30, synced: true, priority: 2 }, history: ok, historyRan: true, priority: 3 }, now, noJitter);
     expect(fresh.nextAdsSyncAt?.getTime()).toBe(now + ADS_CADENCE.FULL_HOURS * 3_600_000);
     expect(fresh.adsPriority).toBe(2);
+  });
+});
+
+describe("13.9 bước A2 (22/10/2026) — sàn 429 xếp lại ≥ 5', chạy tiếp từ bước dở", () => {
+  const now = Date.UTC(2026, 9, 22, 2, 0, 0);
+  const noJitter = () => 0.5;
+  it("deferFloorMs: sàn 429 (rate_limit) chờ 60 s → tối thiểu 5'; chờ 12' → đúng 12'; chờ lượt GCRA (throttled) 90 s → đúng 90 s; mã cứng đúng waitMs", () => {
+    expect(deferFloorMs("rate_limit", 60_000)).toBe(5 * MIN);
+    expect(deferFloorMs("rate_limit", 12 * MIN)).toBe(12 * MIN);
+    expect(deferFloorMs("throttled", 90_000)).toBe(90_000);
+    expect(deferFloorMs("hard_app", 20 * MIN)).toBe(20 * MIN);
+    expect(deferFloorMs("rate_limit", 1_000, 3)).toBe(3 * MIN);
+  });
+  it("xung dở ở bước 4 (cổng hoãn) → ghi adsPulseStep = 4 + mốc; xung xong → về 0 + xóa mốc; Lazada/TikTok không đụng cột", () => {
+    const dở = nextAdsSchedule({ pulse: { delayMin: 30, synced: false, deferMs: 5 * MIN, resumeStep: 4 }, history: null, historyRan: false }, now, noJitter);
+    expect(dở.adsPulseStep).toBe(4);
+    expect(dở.adsPulseStepAt?.getTime()).toBe(now);
+    expect(dở.nextAdsPulseAt?.getTime()).toBe(now + 5 * MIN);
+    const xong = nextAdsSchedule({ pulse: { delayMin: 30, synced: true, resumeStep: 0 }, history: null, historyRan: false }, now, noJitter);
+    expect(xong.adsPulseStep).toBe(0);
+    expect(xong.adsPulseStepAt).toBeNull();
+    const khác = nextAdsSchedule({ pulse: { delayMin: 60, synced: true }, history: null, historyRan: false }, now, noJitter);
+    expect("adsPulseStep" in khác).toBe(false);
+    // Dở ở bước 1 (chưa có số nào) → không có gì để chạy tiếp → xóa mốc.
+    const b1 = nextAdsSchedule({ pulse: { delayMin: 30, synced: false, deferMs: 5 * MIN, resumeStep: 1 }, history: null, historyRan: false }, now, noJitter);
+    expect(b1.adsPulseStep).toBe(0);
+  });
+  it("pulseResumeFrom: mốc dở 4' trước → chạy tiếp từ bước ghi; mốc 16' trước (quá TTL 15') → từ đầu; bước 0/1 → từ đầu", () => {
+    expect(pulseResumeFrom({ adsPulseStep: 4, adsPulseStepAt: new Date(now - 4 * MIN) }, now)).toBe(4);
+    expect(pulseResumeFrom({ adsPulseStep: 4, adsPulseStepAt: new Date(now - 16 * MIN) }, now)).toBeUndefined();
+    expect(pulseResumeFrom({ adsPulseStep: 0, adsPulseStepAt: null }, now)).toBeUndefined();
+    expect(pulseResumeFrom({ adsPulseStep: 1, adsPulseStepAt: new Date(now) }, now)).toBeUndefined();
+    expect(pulseResumeFrom({ adsPulseStep: 3, adsPulseStepAt: new Date(now - 10 * MIN) }, now, 5)).toBeUndefined();
+  });
+  it("config A2: sàn 429 xếp lại 5', mốc dở tươi 15'", () => {
+    expect(ADS_CADENCE.DEFER_AFTER_429_MIN).toBe(5);
+    expect(ADS_CADENCE.PULSE_RESUME_TTL_MIN).toBe(15);
   });
 });

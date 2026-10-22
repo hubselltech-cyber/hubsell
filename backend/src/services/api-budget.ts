@@ -41,6 +41,12 @@ export class ApiBudgetError extends Error {
   ) {
     super(message);
   }
+
+  /**
+   * 13.9 A2: xung Shopee gắn BƯỚC đang chạy lúc bị cổng hoãn (1 id_list · 2 setting · 3 hiệu suất hôm nay · 4 chi hôm
+   * nay · 5 ví · 6 GMS) → làn ghi Channel.adsPulseStep, lượt sau chạy tiếp từ bước ấy (không hỏi lại số đã có).
+   */
+  pulseStep?: number;
 }
 
 export function isApiBudgetError(err: unknown): err is ApiBudgetError {

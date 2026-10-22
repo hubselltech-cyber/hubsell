@@ -26,7 +26,7 @@ import { prisma } from "../lib/prisma";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { GATEWAY } from "../config/marketplace-read";
 import { currentFactor, FRESH_KEY } from "../lib/rate-gate";
-import { endpointLimit } from "./marketplace-gateway";
+import { endpointLimit, shopEndpointLimit } from "./marketplace-gateway";
 import { isHubsellAdsConfigured } from "../integrations/hubsell-ads/config";
 
 export type AdsPriority = 1 | 2 | 3;
@@ -94,6 +94,12 @@ export interface CadenceInput {
   baseMin: number;
   capMin: Record<AdsPriority, number>;
   utilization: number;
+  /**
+   * 13.9 A2: trần theo GIAN × endpoint (lượt/phút cho MỘT gian) — ràng buộc riêng từng lớp, không cộng dồn theo số
+   * gian: lệnh/xung ÷ T_p + lệnh/lịch-sử ÷ T^hist_p ≤ u × trần gian. Thiếu = không ràng buộc. Chỉ chặn nhịp ngắn hơn
+   * trần gian (vd xung 30' với get_all_cpc 1 lệnh/5' ≈ 23 % — không ảnh hưởng hôm nay).
+   */
+  shopEndpointPerMin?: Record<string, number>;
 }
 
 export interface CadenceResult {
@@ -107,6 +113,37 @@ export interface CadenceResult {
   binding: string | null;
   /** Thiếu quota thật: lớp 1 phải giãn, hoặc đã giãn hết trần mà vẫn vượt. */
   red: boolean;
+  /** 13.9 A2: tỷ lệ dùng trần GIAN × endpoint chặt nhất của từng lớp (một gian của lớp ấy) với nhịp đã co. */
+  shopUtilization: Record<AdsPriority, number>;
+}
+
+/** 13.9 A2: tỷ lệ dùng trần gian × endpoint của MỘT gian lớp p với nhịp xung T (phút). Hàm thuần. */
+function shopUtilizationOf(input: CadenceInput, p: AdsPriority, T: number): number {
+  const caps = input.shopEndpointPerMin;
+  if (!caps) return 0;
+  let worst = 0;
+  const eps = new Set([...Object.keys(input.pulseCalls[p]), ...Object.keys(input.historyCalls[p])]);
+  for (const e of eps) {
+    const cap = caps[e];
+    if (cap == null || cap <= 0) continue;
+    const need = (input.pulseCalls[p][e] ?? 0) / T + (input.historyCalls[p][e] ?? 0) / input.historyMin[p];
+    worst = Math.max(worst, need / (input.utilization * cap));
+  }
+  return worst;
+}
+
+/** 13.9 A2: nhịp xung nhỏ nhất (phút) để một gian lớp p không vượt u × trần gian × endpoint; null = không ràng buộc. */
+function shopFloorMin(input: CadenceInput, p: AdsPriority): number | null {
+  const caps = input.shopEndpointPerMin;
+  if (!caps) return null;
+  let floor = 0;
+  for (const [e, n] of Object.entries(input.pulseCalls[p])) {
+    const cap = caps[e];
+    if (cap == null || cap <= 0 || n === 0) continue;
+    const room = input.utilization * cap - (input.historyCalls[p][e] ?? 0) / input.historyMin[p];
+    floor = Math.max(floor, room > 0 ? n / room : Number.POSITIVE_INFINITY);
+  }
+  return floor > 0 ? floor : null;
 }
 
 /** Nhu cầu từng endpoint (lệnh/phút) với bộ nhịp T (phút). */
@@ -132,6 +169,16 @@ function allowedPerMin(input: CadenceInput, e: string): number | null {
 export function computeCadence(input: CadenceInput): CadenceResult {
   const T: Record<AdsPriority, number> = { 1: input.baseMin, 2: input.baseMin, 3: input.baseMin };
   const stretched: Record<AdsPriority, boolean> = { 1: false, 2: false, 3: false };
+  // 13.9 A2: trần GIAN × endpoint là sàn nhịp của từng lớp (độc lập số gian) — áp trước ràng buộc app.
+  for (const p of ADS_PRIORITIES) {
+    const floor = shopFloorMin(input, p);
+    if (floor == null) continue;
+    const next = Math.min(input.capMin[p], Math.ceil(floor));
+    if (next > T[p]) {
+      T[p] = next;
+      stretched[p] = true;
+    }
+  }
   const over = (d: Record<string, number>) => {
     let worst = 0;
     for (const [e, v] of Object.entries(d)) {
@@ -170,7 +217,18 @@ export function computeCadence(input: CadenceInput): CadenceResult {
     if (binding == null || utilization[e] > utilization[binding]) binding = e;
   }
   const stillOver = binding != null && utilization[binding] > 1;
-  return { pulseMin: T, stretched, utilization, binding, red: stretched[1] || stillOver };
+  const shopUtilization: Record<AdsPriority, number> = { 1: shopUtilizationOf(input, 1, T[1]), 2: shopUtilizationOf(input, 2, T[2]), 3: shopUtilizationOf(input, 3, T[3]) };
+  return { pulseMin: T, stretched, utilization, binding, red: stretched[1] || stillOver, shopUtilization };
+}
+
+/** 13.9 A2: trần gian × endpoint (lượt/phút cho một gian) từ cấu hình cổng cho các endpoint Ads Shopee. Hàm thuần. */
+export function shopeeShopEndpointPerMin(endpoints: string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of endpoints) {
+    const rl = shopEndpointLimit("SHOPEE", e);
+    if (rl) out[e] = rl.perSec * 60;
+  }
+  return out;
 }
 
 /** Xung trễ quá hạn chót (nhịp lớp × DEADLINE_X) chưa? Hàm thuần — đo cho HQ, không bỏ xung (13.9.6). */
@@ -252,6 +310,8 @@ async function loadSnapshot(now: number): Promise<AdsDemandSnapshot> {
     baseMin: ADS_CADENCE.PULSE_MIN,
     capMin: ADS_CADENCE.DEMAND_CAP_MIN,
     utilization: ADS_CADENCE.DEMAND_UTILIZATION,
+    // A2: trần gian × endpoint theo cấu hình (hệ số AIMD của từng gian là của riêng gian ấy, không kéo nhịp cả lớp).
+    shopEndpointPerMin: shopeeShopEndpointPerMin(ALL_ENDPOINTS),
   });
   const overdue: Record<AdsPriority, number> = { 1: 0, 2: 0, 3: 0 };
   await Promise.all(
@@ -291,7 +351,7 @@ export async function refreshAdsDemand(now: number = Date.now()): Promise<AdsDem
 
 function baseCadence(): CadenceResult {
   const b = ADS_CADENCE.PULSE_MIN;
-  return { pulseMin: { 1: b, 2: b, 3: b }, stretched: { 1: false, 2: false, 3: false }, utilization: {}, binding: null, red: false };
+  return { pulseMin: { 1: b, 2: b, 3: b }, stretched: { 1: false, 2: false, 3: false }, utilization: {}, binding: null, red: false, shopUtilization: { 1: 0, 2: 0, 3: 0 } };
 }
 
 /** Nhịp xung (phút) của lớp `p` theo snapshot hiện có; chưa có snapshot → nhịp gốc. Đồng bộ (xung gọi trong lượt). */
@@ -309,7 +369,8 @@ export function describeAdsDemand(s: AdsDemandSnapshot): string {
   const ep = (e: string) => e.replace("/api/v2/ads/", "");
   const util = c.binding ? `${Math.round((c.utilization[c.binding] ?? 0) * 100)} % của mức cho phép trên ${ep(c.binding)}` : "không khóa nào có trần";
   const cls = ADS_PRIORITIES.map((p) => `lớp ${p}: ${s.shops[p]} gian, xung ${c.pulseMin[p]}'${c.stretched[p] ? " (GIÃN)" : ""}${s.overdue[p] ? `, ${s.overdue[p]} trễ hạn chót` : ""}`).join(" · ");
-  return `${c.red ? "ĐỎ thiếu quota — " : ""}${cls} · chặt nhất ${util}`;
+  const shopMax = Math.max(c.shopUtilization[1], c.shopUtilization[2], c.shopUtilization[3]);
+  return `${c.red ? "ĐỎ thiếu quota — " : ""}${cls} · chặt nhất ${util} · mỗi gian dùng ${Math.round(shopMax * 100)} % trần gian×endpoint`;
 }
 
 /** Chỉ dùng trong test: xóa cache. */
