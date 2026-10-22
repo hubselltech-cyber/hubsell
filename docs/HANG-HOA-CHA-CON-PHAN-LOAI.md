@@ -104,6 +104,27 @@ mỗi phân loại một ô gõ mã kho + nút nối, Tạo SP kho cho cả sả
 - Kiểm prod sau deploy: log Render `[product-sync]` có dòng "SKU kho tự chuyển Ngừng bán"; SQL
   `SELECT COUNT(*) FROM "Product" WHERE "variantName" IS NOT NULL` > 0.
 
+### 3.1 Backfill "Ngừng bán" cho SKU sàn đã gỡ TRƯỚC 22/10 (chờ anh chốt, anh dán Supabase)
+Luật tự Ngừng bán chỉ bắt dòng DELISTED ở lượt sync SAU deploy. Đo 22/10 tối: toàn nền tảng **6.521** SKU đang bán mà mọi
+liên kết sàn đã DELISTED (khách shop váy 104). Chạy riêng một shop trước (thay tên), xem rồi mới chạy toàn bộ:
+
+```sql
+-- Đếm trước (chỉ đọc)
+SELECT COUNT(*) FROM "Product" p
+WHERE p."isActive"
+  AND EXISTS (SELECT 1 FROM "ChannelProduct" x WHERE x."productId" = p.id)
+  AND NOT EXISTS (SELECT 1 FROM "ChannelProduct" x WHERE x."productId" = p.id AND x.status = 'ACTIVE');
+
+-- Một shop (thay tên) — khách tự bật lại được ở chip Ngừng bán
+UPDATE "Product" p SET "isActive" = false
+FROM "User" u
+WHERE u.id = p."userId" AND u."fullName" = 'Mạnh Nguyễn Văn'
+  AND p."isActive"
+  AND EXISTS (SELECT 1 FROM "ChannelProduct" x WHERE x."productId" = p.id)
+  AND NOT EXISTS (SELECT 1 FROM "ChannelProduct" x WHERE x."productId" = p.id AND x.status = 'ACTIVE');
+```
+Toàn nền tảng = bỏ điều kiện `u."fullName"`. Không đụng tồn / liên kết / đơn; Lãi/Lỗ không đổi.
+
 ## 4. Chưa làm / cân nhắc
 - Thứ tự phân loại trong mẫu theo số tự nhiên (S, M, L xếp L–M–S); muốn đúng thứ tự sàn cần lưu `tier_index`.
 - Shopee `model_status` (phân loại tắt riêng) chưa đọc — chưa đối chiếu được docs open.shopee.com (JS render).
