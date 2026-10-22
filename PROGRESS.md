@@ -74,6 +74,12 @@
   đã nối (productId) + ACTIVE + gian bật; chưa nối thì chưa có SKU kho để up. **Anh: "cho nổi rõ lên giống nút tự động"** → bước 2 khối Kho
   trung tâm: "hoặc nối tay từng dòng" (chữ mờ) thành NÚT outline "Nối tay từng dòng" ngang hàng Tự khớp; lời bước 2 thêm "và tồn kho không
   đẩy lên sàn". Chưa làm: cảnh báo khi bật gian có 0 SKU nối (bước 3) — chờ anh.
+- **Anh: "khách kêu chưa thấy lọc sản phẩm đang hoạt động, sao anh thấy? do màn hình?"** → không phải màn hình: chip Đang bán / Ngừng bán chỉ
+  hiện khi shop có ≥ 1 SKU ngừng bán (ẩn bằng vắng mặt 24/09); khách 0 SKU ngừng bán nên chỉ thấy chip Hết hàng. Sửa: hàng chip luôn hiện,
+  "Đang bán N · Ngừng bán N". **Số thật khách (SQL Supabase):** 302 SKU đang bán / 0 ngừng / 152 tồn 0; dòng sàn 198 ACTIVE + 104 DELISTED;
+  **104 SKU kho mọi liên kết sàn đã gỡ nhưng vẫn "Đang bán"** (gỡ TRƯỚC khi luật tự Ngừng bán 22/10 lên, luật chỉ bắt lượt sync sau).
+  Toàn nền tảng 6.521 SKU như vậy (pato phan 2.866, Bộ Nguyễn Tiến 1.476, Nguyễn Quang Huy 861…). Đề xuất anh chốt: backfill một lần
+  isActive=false cho SKU mọi liên kết đã DELISTED (SQL soạn sẵn, anh dán; có thể chạy riêng shop khách trước).
 
 ---
 

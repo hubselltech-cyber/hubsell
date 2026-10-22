@@ -1365,11 +1365,9 @@ export default function ProductsHubPage() {
                 <ProductFormDialog onCreated={load} />
               </div>
             </div>
-            {(locationsEnabled ||
-              inactiveCount > 0 ||
-              status !== "active" ||
-              outOfStockCount > 0 ||
-              stockFilter !== "all") && (
+            {/* Hàng chip lọc LUÔN hiện khi kho có SKU (anh Trung 22/10 tối: khách shop váy không thấy
+                "Đang bán / Ngừng bán" vì shop họ 0 SKU ngừng bán → chip bị ẩn, tưởng không có bộ lọc). */}
+            {(items.length > 0 || search || status !== "active" || stockFilter !== "all" || locationFilter) && (
               <div className="flex flex-wrap items-center gap-2">
                 {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
                 {locationsEnabled && (
@@ -1386,12 +1384,12 @@ export default function ProductsHubPage() {
                     suffix={(l) => (l.skuCount ? ` · ${l.skuCount} SKU` : "")}
                   />
                 )}
-                {/* Chip Ngừng bán chỉ hiện khi có SKU ngừng bán (ẩn bằng vắng mặt). */}
-                {(inactiveCount > 0 || status !== "active") && (
+                {/* Đang bán / Ngừng bán luôn hiện (Ngừng bán 0 vẫn hiện để khách biết có bộ lọc). */}
+                {(
                   <div className="flex items-center gap-1.5">
                     {(
                       [
-                        { key: "active", label: "Đang bán" },
+                        { key: "active", label: `Đang bán ${formatNumber(productsQ.data?.activeCount ?? 0)}` },
                         { key: "inactive", label: `Ngừng bán ${formatNumber(inactiveCount)}` },
                       ] as { key: ProductStatusFilter; label: string }[]
                     ).map((c) => (
