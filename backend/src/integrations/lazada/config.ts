@@ -60,6 +60,9 @@ export const LAZADA_PATHS = {
    *  sàn: request_type RETURN/ONLY_REFUND, refund_amount từng dòng, tracking
    *  chiều hoàn. Đối chiếu docs open.lazada.com 19/08/2026. */
   reverseOrders: "/reverse/getreverseordersforseller",
+  /** Shop đồng ý / từ chối yêu cầu hủy của người mua (InitReverseOrderCancelDecide,
+   *  docs open.lazada.com 23/10/2026: reverse_order_id + agree_cancel + reason_code). */
+  reverseCancelDecide: "/order/reverse/cancel/seller/decide",
 
   // ── SẮP XẾP VẬN CHUYỂN + VẬN ĐƠN (Fulfillment API mới, GHI — 04/09/2026) ──
   // Luồng: /order/fulfill/pack (pending → packed, sàn cấp package_id + tracking)

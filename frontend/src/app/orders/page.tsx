@@ -7,6 +7,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  Ban,
+  Check,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -43,6 +45,7 @@ import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   ApiError,
   channelFilterToQuery,
+  decideCancelRequest,
   fetchOrders,
   getToken,
   updateOrderStatus,
@@ -259,6 +262,131 @@ function UpdateStatusDialog({
   );
 }
 
+// ---------- Khách xin hủy: nhãn + hộp quyết định (23/10/2026) ----------
+
+/** "còn 31 giờ" / "quá hạn 2 giờ" / null khi sàn không nêu hạn. */
+function cancelDueText(dueAt: string | null | undefined): string | null {
+  if (!dueAt) return null;
+  const hours = Math.round((new Date(dueAt).getTime() - Date.now()) / 36e5);
+  if (hours < 0) return `quá hạn ${Math.abs(hours)} giờ`;
+  if (hours < 1) return "còn dưới 1 giờ";
+  return `còn ${hours} giờ`;
+}
+
+function CancelRequestLabel({ order }: { order: Order }) {
+  if (!order.cancelRequestedAt) return null;
+  const due = cancelDueText(order.cancelRequestDueAt);
+  return (
+    <span
+      className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+      title={[
+        `Khách xin hủy lúc ${formatDateTime(order.cancelRequestedAt)}`,
+        order.cancelRequestReason ? `Lý do: ${order.cancelRequestReason}` : null,
+        due ? `Hạn trả lời: ${due}` : "Sàn không nêu hạn",
+      ]
+        .filter(Boolean)
+        .join(" · ")}
+    >
+      <AlertTriangle className="size-3 shrink-0" />
+      Khách xin hủy{due ? ` · ${due}` : ""}
+    </span>
+  );
+}
+
+function CancelDecideDialog({
+  pending,
+  onOpenChange,
+  onDone,
+}: {
+  pending: { order: Order; accept: boolean } | null;
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const order = pending?.order;
+  const accept = pending?.accept ?? false;
+  const packed = order?.shippingStatus === "PROCESSED" || order?.shippingStatus === "SHIPPING";
+
+  async function handleSubmit() {
+    if (!order) return;
+    setSubmitting(true);
+    try {
+      const r = await decideCancelRequest(order.id, accept);
+      toast.success(
+        accept
+          ? `Đã chấp nhận hủy đơn ${r.orderCode}${r.shippingStatus === "CANCELLED" ? " — sàn đã hủy, tồn kho đã cộng lại" : " — chờ sàn chốt"}`
+          : `Đã từ chối yêu cầu hủy đơn ${r.orderCode} — tiếp tục giao`,
+        { duration: 6000 }
+      );
+      onOpenChange(false);
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ", { duration: 8000 });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={pending !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {accept ? "Chấp nhận hủy" : "Từ chối hủy"} đơn {order?.orderCode}
+          </DialogTitle>
+          <DialogDescription>
+            Khách: {order?.customerName}
+            {order?.cancelRequestReason ? <> · Lý do: {order.cancelRequestReason}</> : null}
+          </DialogDescription>
+        </DialogHeader>
+        <div
+          className={cn(
+            "flex items-start gap-2 rounded-lg border p-3 text-sm",
+            accept
+              ? "border-rose-200 bg-rose-50 text-rose-700"
+              : "border-amber-200 bg-amber-50 text-amber-700"
+          )}
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          {accept ? (
+            <p>
+              Sàn sẽ hủy đơn và hoàn tiền cho khách.
+              {packed ? (
+                <>
+                  {" "}
+                  Đơn này <b>đã chuẩn bị hàng</b>: kiện đã bàn giao sẽ quay đầu về shop, tồn kho được cộng lại
+                  khi sàn báo hủy xong.
+                </>
+              ) : (
+                <> Tồn kho của đơn được cộng lại ngay.</>
+              )}
+            </p>
+          ) : (
+            <p>
+              Đơn tiếp tục giao như bình thường. Khách vẫn có thể từ chối nhận hàng khi shipper tới
+              (đơn sẽ thành giao thất bại), nên chỉ từ chối khi đã gói / đã bàn giao.
+            </p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Đóng
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className={accept ? "bg-rose-600 hover:bg-rose-700" : ""}
+          >
+            {submitting && <Loader2 className="size-4 animate-spin" />}
+            {accept ? "Chấp nhận hủy" : "Từ chối, tiếp tục giao"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------- Trang chính ----------
 
 /** Các tab theo vòng đời đơn hàng TMĐT. `status` rỗng = tab Tất cả. */
@@ -301,6 +429,10 @@ export default function OrdersPage() {
   const [orderTypeFilter, setOrderTypeFilter] = useState<"" | "single" | "multi">("");
   // Bộ lọc con của tab "Hủy / Hoàn" + đơn vừa quét ra để xử lý
   const [returnFilter, setReturnFilter] = useState<ReturnStatus | "">("");
+  // Chỉ đơn KHÁCH ĐANG XIN HỦY chờ shop quyết — áp trên mọi tab; deep-link
+  // /orders?cancelRequested=1 từ chuông thông báo (23/10/2026).
+  const [cancelReqFilter, setCancelReqFilter] = useState(false);
+  const [deciding, setDeciding] = useState<{ order: Order; accept: boolean } | null>(null);
   const [search, setSearch] = useState("");
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
@@ -311,7 +443,17 @@ export default function OrdersPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const q = params.get("q")?.trim();
-    if (!q) return;
+    const cr = params.get("cancelRequested");
+    if (cr === "1" || cr === "true") {
+      setCancelReqFilter(true);
+      params.delete("cancelRequested");
+    }
+    if (!q) {
+      if (cr === null) return;
+      const rest0 = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${rest0 ? `?${rest0}` : ""}`);
+      return;
+    }
     setSearch(q);
     setDebouncedSearch(q);
     params.delete("q");
@@ -349,6 +491,7 @@ export default function OrdersPage() {
     orderType: orderTypeFilter || undefined,
     returnStatus:
       tab === "cancelled" && returnFilter ? returnFilter : undefined,
+    cancelRequested: cancelReqFilter || undefined,
   };
   const ordersQ = useApiQuery({
     queryKey: qk.orders({
@@ -514,6 +657,8 @@ export default function OrdersPage() {
                 meta={STATUS_META[o.shippingStatus]}
                 fallback={o.shippingStatus}
               />
+              {/* Khách xin hủy, sàn chờ shop quyết — trạng thái vận chuyển giữ nguyên */}
+              <CancelRequestLabel order={o} />
               {/* Nhãn đã in phiếu — nhìn là biết đơn nào người khác đang gói */}
               {o.labelPrintedAt && (
                 <span
@@ -562,17 +707,39 @@ export default function OrdersPage() {
         size: 130,
         meta: { label: "Thao tác", align: "center" },
         header: "Thao tác",
-        cell: ({ row }) => (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={row.original.shippingStatus === "CANCELLED"}
-            onClick={() => setEditing(row.original)}
-          >
-            <Pencil className="size-3.5" />
-            Cập nhật
-          </Button>
-        ),
+        cell: ({ row }) =>
+          row.original.cancelRequestedAt ? (
+            // Khách xin hủy: hai nút quyết thay nút Cập nhật — trả lời sàn trước đã.
+            <div className="flex flex-col items-center gap-1">
+              <Button
+                size="sm"
+                className="w-full bg-rose-600 hover:bg-rose-700"
+                onClick={() => setDeciding({ order: row.original, accept: true })}
+              >
+                <Check className="size-3.5" />
+                Chấp nhận hủy
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => setDeciding({ order: row.original, accept: false })}
+              >
+                <Ban className="size-3.5" />
+                Từ chối
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={row.original.shippingStatus === "CANCELLED"}
+              onClick={() => setEditing(row.original)}
+            >
+              <Pencil className="size-3.5" />
+              Cập nhật
+            </Button>
+          ),
       },
     ],
     []
@@ -585,6 +752,7 @@ export default function OrdersPage() {
       tab,
       printedFilter,
       returnFilter,
+      cancelReqFilter,
       channelFilter,
       carrierFilter,
       orderTypeFilter,
@@ -597,6 +765,7 @@ export default function OrdersPage() {
         setPrintedFilter(ex.printedFilter as "" | "no" | "yes");
       if (typeof ex.returnFilter === "string")
         setReturnFilter(ex.returnFilter as ReturnStatus | "");
+      if (typeof ex.cancelReqFilter === "boolean") setCancelReqFilter(ex.cancelReqFilter);
       if (ex.channelFilter && typeof ex.channelFilter === "object")
         setChannelFilter(ex.channelFilter as ChannelFilterValue);
       if (typeof ex.carrierFilter === "string")
@@ -613,6 +782,7 @@ export default function OrdersPage() {
     setTab("all");
     setPrintedFilter("");
     setReturnFilter("");
+    setCancelReqFilter(false);
     setChannelFilter(ALL_CHANNELS);
     setCarrierFilter("");
     setOrderTypeFilter("");
@@ -621,6 +791,7 @@ export default function OrdersPage() {
   }
 
   const isFiltering =
+    cancelReqFilter ||
     Boolean(channelFilter.channelName) ||
     Boolean(carrierFilter) ||
     Boolean(orderTypeFilter) ||
@@ -781,6 +952,39 @@ export default function OrdersPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* ===== KHÁCH XIN HỦY — dải nhắc + bộ lọc nhanh (23/10/2026). Chỉ hiện
+            khi có đơn đang chờ hoặc đang bật lọc; sàn tự hủy nếu shop im lặng. */}
+        {((counts.CANCEL_REQUESTED ?? 0) > 0 || cancelReqFilter) && (
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-3 rounded-lg border px-4 py-2.5 text-sm",
+              "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200"
+            )}
+          >
+            <AlertTriangle className="size-4 shrink-0" />
+            <p className="flex-1">
+              <b>{formatNumber(counts.CANCEL_REQUESTED ?? 0)} đơn</b> khách đang xin hủy, sàn chờ shop
+              trả lời — không trả lời thì sàn tự hủy (TikTok sau 48 giờ).
+            </p>
+            <button
+              type="button"
+              aria-pressed={cancelReqFilter}
+              onClick={() => {
+                setCancelReqFilter((v) => !v);
+                setPage(1);
+              }}
+              className={cn(
+                "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
+                cancelReqFilter
+                  ? "border-rose-600 bg-rose-600 text-white"
+                  : "border-rose-300 bg-background text-rose-700 hover:bg-rose-100"
+              )}
+            >
+              {cancelReqFilter ? "Đang lọc · bỏ lọc" : "Chỉ xem đơn xin hủy"}
+            </button>
+          </div>
         )}
 
         {/* ===== TÌM KIẾM + BỘ LỌC (khối riêng, tách lớp với bảng) ===== */}
@@ -962,6 +1166,13 @@ export default function OrdersPage() {
           onDone={load}
         />
       )}
+      <CancelDecideDialog
+        pending={deciding}
+        onOpenChange={(o) => {
+          if (!o) setDeciding(null);
+        }}
+        onDone={load}
+      />
     </AppShell>
   );
 }

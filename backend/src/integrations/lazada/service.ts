@@ -38,6 +38,7 @@ import { finishStockPush, stageStockPush } from "../inventory-push";
 import { planSettlementWrite } from "../settlement-merge";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import type { SyncCompleteness } from "../sync-contract";
+import { CLEAR_CANCEL_REQUEST } from "../cancel-request";
 import {
   createToken,
   getMultipleOrderItems,
@@ -710,6 +711,7 @@ export const LAZADA_EXISTING_SELECT = {
   deliveredAt: true,
   returnStatus: true,
   returnRequestedAt: true,
+  cancelRequestedAt: true,
   lazadaSettlement: {
     select: { shipFee: true, shipFeeCustomer: true, shipDiscountPlatform: true, shipDiscountSeller: true },
   },
@@ -819,6 +821,11 @@ export function planLazadaOrderUpdate(
     data.returnRequestedAt = now;
   } else if (f.returning && existing.returnStatus === ReturnStatus.AWAITING && !existing.returnRequestedAt) {
     data.returnRequestedAt = now;
+  }
+  // Sàn đã hủy hẳn → yêu cầu hủy (nếu có) đã được chấp nhận: hạ cờ (23/10/2026).
+  // Từ chối / khách rút thì lượt quét reverse order (returns-sync) hạ.
+  if (existing.cancelRequestedAt && f.shippingStatus === ShippingStatus.CANCELLED) {
+    Object.assign(data, CLEAR_CANCEL_REQUEST);
   }
   return data;
 }

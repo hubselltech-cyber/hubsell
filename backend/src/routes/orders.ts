@@ -45,6 +45,7 @@ import {
   describeNoReadyOrders,
   splitByRunningBatches,
 } from "../services/fulfillment/confirm-skip";
+import { CancelDecideError, decideCancelRequest } from "../services/cancel-request-decide";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -93,10 +94,13 @@ function ordersWhere(req: AuthRequest): Prisma.OrderWhereInput {
     typeof req.query.orderType === "string" ? req.query.orderType : "";
   const returnStatusQ =
     typeof req.query.returnStatus === "string" ? req.query.returnStatus : "";
+  // "1" = chỉ đơn KHÁCH ĐANG XIN HỦY chờ shop quyết (deep-link từ chuông, 23/10/2026).
+  const cancelRequested = req.query.cancelRequested === "1" || req.query.cancelRequested === "true";
 
   return {
       channel: channelScope(req),
       ...(isStatus(shippingStatus) ? { shippingStatus } : {}),
+      ...(cancelRequested ? { cancelRequestedAt: { not: null } } : {}),
       // "EXPRESS" = nhóm HỎA TỐC mọi sàn (anh Trung 08/09): lọc theo tên hãng
       // nguyên văn qua expressShippingWhere — cùng luật với badge ⚡ và ghim đầu bảng.
       ...(carrier === "EXPRESS" ? expressShippingWhere() : isCarrier(carrier) ? { carrier } : {}),
@@ -214,10 +218,15 @@ router.get("/", async (req: AuthRequest, res, next) => {
       return [...pinned, ...rest];
     };
 
-    const [total, items, statusCounts, notPrinted, alreadyPrinted] =
+    const [total, items, cancelRequestedCount, statusCounts, notPrinted, alreadyPrinted] =
       await Promise.all([
       prisma.order.count({ where }),
       fetchPage(),
+      // Đơn khách đang xin hủy — đếm trên MỌI tab (bỏ lọc trạng thái + lọc chính
+      // nó) để nút lọc luôn có số; chỉ mục một phần Order_cancel_request_pending_idx.
+      prisma.order.count({
+        where: { ...where, shippingStatus: undefined, cancelRequestedAt: { not: null } },
+      }),
       // Đếm số đơn theo từng trạng thái để hiện badge trên tab.
       // Cố ý BỎ shippingStatus VÀ printed khỏi điều kiện đếm — nếu không thì
       // tab/bộ lọc con đang mở sẽ là chỗ duy nhất có số, các tab khác luôn 0.
@@ -250,6 +259,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
     counts.PROCESSED_NOT_PRINTED = notPrinted;
     counts.PROCESSED_PRINTED = alreadyPrinted;
+    counts.CANCEL_REQUESTED = cancelRequestedCount;
 
     res.json({
       // Gắn ảnh dòng hàng: SP kho gốc → fallback ảnh ChannelProduct
@@ -437,6 +447,33 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
 // PATCH /api/orders/:id/status — chuyển trạng thái vận chuyển của đơn.
 // Đặc biệt: chuyển sang CANCELLED (Đã hủy) sẽ TỰ ĐỘNG CỘNG HOÀN LẠI tồn kho
 // cho các sản phẩm gốc mà đơn này từng trừ, và ghi log hệ thống — trong 1 transaction.
+// POST /api/orders/:id/cancel-request/decide { accept: boolean }
+// Shop CHẤP NHẬN / TỪ CHỐI yêu cầu hủy của khách trên sàn (23/10/2026). Gọi API
+// sàn tương ứng rồi kéo lại đơn (CANCELLED → hoàn kho như webhook). Lỗi sàn trả
+// 502 kèm thông điệp để chủ shop làm tay trên Seller Center nếu cần.
+router.post("/:id/cancel-request/decide", async (req: AuthRequest, res, next) => {
+  try {
+    const accept = req.body?.accept;
+    if (typeof accept !== "boolean") {
+      res.status(400).json({ error: "Thiếu quyết định: accept = true (chấp nhận hủy) hoặc false (từ chối)" });
+      return;
+    }
+    const result = await decideCancelRequest({
+      ownerId: req.ownerId!,
+      allowedChannelIds: req.allowedChannelIds,
+      orderId: req.params.id,
+      accept,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof CancelDecideError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
+
 router.patch("/:id/status", async (req: AuthRequest, res, next) => {
   try {
     const { shippingStatus } = req.body ?? {};

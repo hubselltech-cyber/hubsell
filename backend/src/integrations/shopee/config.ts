@@ -68,6 +68,8 @@ export const SHOPEE_PATHS = {
   orderList: "/api/v2/order/get_order_list",
   /** Chi tiết đơn theo order_sn (≤50 sn/lần). */
   orderDetail: "/api/v2/order/get_order_detail",
+  /** Chấp nhận / từ chối yêu cầu hủy của người mua (đơn IN_CANCEL) — docs 23/10/2026. */
+  handleBuyerCancellation: "/api/v2/order/handle_buyer_cancellation",
   /** Thông tin XUẤT HÓA ĐƠN khách điền khi đặt (VN/TH/PH local seller, POST). */
   buyerInvoiceInfo: "/api/v2/order/get_buyer_invoice_info",
   /** Danh sách item_id của shop (phân trang offset, lọc theo item_status). */

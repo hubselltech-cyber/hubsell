@@ -32,6 +32,7 @@
 - [GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md](GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md) — 22/10/2026 nhận xét khách vài nghìn SKU: giá vốn nhóm theo gian + mã SP sàn, tên phân loại cạnh mã; "N đơn chưa có giá vốn" → lọc SKU bán trong kỳ (`sku-products/missing-cost`); cột Chi tiết sản phẩm + Kiểm toán phí in tên · phân loại (`lib/order-line-names`)
 - [CASH-FLOW-DESIGN.md](CASH-FLOW-DESIGN.md) — thiết kế trang dòng tiền
 - [CUU-DON-API-NHAN-KHACH-KHAO-SAT.md](CUU-DON-API-NHAN-KHACH-KHAO-SAT.md) — khảo sát API nhắn khách (Cứu đơn, đang ẩn)
+- [HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md](HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md) — 23/10/2026 khách xin hủy sau khi đã chuẩn bị hàng / đang giao: khảo sát API 3 sàn + ĐÃ LÀM lát 1+2 web (cờ `cancelRequestedAt` trục riêng, Shopee IN_CANCEL / TikTok cancellations / Lazada reverse CANCEL, nút Chấp nhận–Từ chối gọi sàn, `cancel-request-decide.ts`); lát 3 + app mobile chờ
 - [THOI-HAN-UY-QUYEN-SAN.md](THOI-HAN-UY-QUYEN-SAN.md) — hạn ủy quyền từng sàn
 
 ## Quảng cáo đa sàn

@@ -907,6 +907,152 @@ export async function searchReturns(
 }
 
 // ============================================================
+// YÊU CẦU HỦY ĐƠN (Return & Refund API 202309 — cancellations)
+//
+// Docs đọc 23/10/2026 (docs/HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md): khách chỉ
+// xin hủy được khi đơn còn AWAITING_SHIPMENT; shop có 48 h (24 h nếu trước SLA
+// 2 ngày làm việc), im lặng = sàn tự chấp nhận. BUYER_CANCEL = cần shop duyệt;
+// CANCEL = seller/system hủy thẳng. Hình dạng từng phần tử docs không tải được
+// (trang SPA) → khai phòng thủ + log hình dạng lần đầu (cancel-requests.ts).
+// ============================================================
+
+export interface TikTokCancellation {
+  cancel_id?: string;
+  order_id?: string;
+  /** CANCEL (seller/system) / BUYER_CANCEL (cần shop duyệt). */
+  cancel_type?: string;
+  /** CANCELLATION_REQUEST_PENDING / _SUCCESS / _CANCEL / _COMPLETE. */
+  cancel_status?: string;
+  /** Ai mở yêu cầu: BUYER / SELLER / SYSTEM / OPERATOR — tên trường docs có thể là role. */
+  role?: string;
+  cancel_user?: string;
+  cancel_reason?: string;
+  cancel_reason_text?: string;
+  create_time?: number;
+  update_time?: number;
+  /** Hạn shop phải trả lời (Unix giây) — có trong payload thật thì dùng, không thì tự tính 48 h. */
+  seller_next_response_due_time?: number;
+  [k: string]: unknown;
+}
+
+export interface SearchCancellationsParams {
+  accessToken: string;
+  shopCipher: string;
+  orderIds?: string[];
+  cancelIds?: string[];
+  cancelTypes?: string[];
+  cancelStatus?: string[];
+  updateTimeGe?: number;
+  updateTimeLt?: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+
+/** POST /return_refund/202309/cancellations/search — tối đa 50/trang. */
+export async function searchCancellations(
+  params: SearchCancellationsParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<{ cancellations: TikTokCancellation[]; next_page_token?: string }> {
+  const query: Record<string, string | number> = {
+    page_size: params.pageSize ?? 50,
+    sort_field: "update_time",
+    sort_order: "DESC",
+  };
+  if (params.pageToken) query.page_token = params.pageToken;
+  const body: Record<string, unknown> = {};
+  if (params.orderIds?.length) body.order_ids = params.orderIds;
+  if (params.cancelIds?.length) body.cancel_ids = params.cancelIds;
+  if (params.cancelTypes?.length) body.cancel_types = params.cancelTypes;
+  if (params.cancelStatus?.length) body.cancel_status = params.cancelStatus;
+  if (params.updateTimeGe) body.update_time_ge = params.updateTimeGe;
+  if (params.updateTimeLt) body.update_time_lt = params.updateTimeLt;
+  const d = await callApi<{ cancellations?: TikTokCancellation[]; next_page_token?: string }>(
+    {
+      method: "POST",
+      path: "/return_refund/202309/cancellations/search",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query,
+      body,
+    },
+    cfg
+  );
+  return { cancellations: d.cancellations ?? [], next_page_token: d.next_page_token };
+}
+
+/** POST /return_refund/202309/cancellations/{cancel_id}/approve — chỉ khi yêu cầu còn chờ shop. */
+export async function approveCancellation(
+  params: { accessToken: string; shopCipher: string; cancelId: string; idempotencyKey: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<void> {
+  await callApi<unknown>(
+    {
+      method: "POST",
+      path: `/return_refund/202309/cancellations/${encodeURIComponent(params.cancelId)}/approve`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query: { idempotency_key: params.idempotencyKey },
+      body: {},
+      kind: "write",
+    },
+    cfg
+  );
+}
+
+/** Lý do từ chối sàn cho phép (GET /return_refund/202309/reject_reasons) — đọc phòng thủ. */
+export interface TikTokRejectReason {
+  reason_key?: string;
+  reason_text?: string;
+  [k: string]: unknown;
+}
+
+export async function getRejectReasons(
+  params: { accessToken: string; shopCipher: string; orderId: string; locale?: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokRejectReason[]> {
+  const d = await callApi<{ reasons?: TikTokRejectReason[]; reject_reasons?: TikTokRejectReason[] }>(
+    {
+      method: "GET",
+      path: "/return_refund/202309/reject_reasons",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query: { return_or_order_id: params.orderId, locale: params.locale ?? "vi-VN" },
+    },
+    cfg
+  );
+  return d.reasons ?? d.reject_reasons ?? [];
+}
+
+/** POST /return_refund/202309/cancellations/{cancel_id}/reject — cần reason_key hợp lệ của sàn. */
+export async function rejectCancellation(
+  params: {
+    accessToken: string;
+    shopCipher: string;
+    cancelId: string;
+    idempotencyKey: string;
+    rejectReason: string;
+    comment?: string;
+  },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<void> {
+  await callApi<unknown>(
+    {
+      method: "POST",
+      path: `/return_refund/202309/cancellations/${encodeURIComponent(params.cancelId)}/reject`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query: { idempotency_key: params.idempotencyKey },
+      body: {
+        reject_reason: params.rejectReason,
+        ...(params.comment ? { comment: params.comment } : {}),
+      },
+      kind: "write",
+    },
+    cfg
+  );
+}
+
+// ============================================================
 // THEO DÕI HÀNH TRÌNH GIAO (Fulfillment API 202309)
 //
 // GET /fulfillment/202309/orders/{order_id}/tracking: mốc vận chuyển của đơn

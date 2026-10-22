@@ -65,6 +65,10 @@ import {
   syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
 import { backfillTiktokReturnsByOrder, syncTiktokReturns } from "../integrations/tiktok/returns-sync";
+import { syncTiktokCancelRequests } from "../integrations/tiktok/cancel-requests";
+
+/** Cửa sổ quét yêu cầu hủy TikTok (ngày) — sàn tự chấp nhận sau 48 h nên 3 ngày là dư. */
+const CANCEL_REQUEST_DAYS_BACK = 3;
 import { processTiktokDeliveryTracking } from "../integrations/tiktok/delivery-fail";
 import { syncTiktokPayouts, syncTiktokPendingIncome } from "../integrations/tiktok/payouts";
 import {
@@ -541,6 +545,22 @@ async function runFastTier(
         `[Auto-sync] Lỗi đồng bộ đơn hoàn TikTok "${channel.shopName}":`,
         (err as Error).message
       );
+    }
+    // --- KHÁCH XIN HỦY (cancellations/search, 23/10/2026): lưới đỡ cho webhook
+    // type 11 rơi — quét yêu cầu biến động 3 ngày (sàn tự chấp nhận sau 48 h nên
+    // không có yêu cầu chờ nào già hơn) + hạ cờ đơn sàn không còn báo chờ.
+    try {
+      const c = await syncTiktokCancelRequests(channel, {
+        sinceMs: Date.now() - CANCEL_REQUEST_DAYS_BACK * 24 * 60 * 60 * 1000,
+        historical: opts.backfill,
+      });
+      if (c.flagged > 0 || c.unflagged > 0) {
+        console.log(
+          `[Auto-sync] Khách xin hủy TikTok "${channel.shopName}": +${c.flagged} bật cờ, ${c.unflagged} hạ cờ (${c.scanned} yêu cầu)`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi quét yêu cầu hủy TikTok "${channel.shopName}":`, (err as Error).message);
     }
     // --- CỨU ĐƠN GIAO THẤT BẠI (tracking API, cùng khuôn vé DeliveryTrackingTask).
     try {

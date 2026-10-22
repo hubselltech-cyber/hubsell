@@ -51,6 +51,7 @@ function shopeeExisting(over: Partial<ShopeeExistingOrder> = {}): ShopeeExisting
   return {
     id: "o1",
     orderCode: "SN1",
+    cancelRequestedAt: null,
     createdAt: new Date("2026-10-10T08:00:00+07:00"),
     shippingStatus: ShippingStatus.SHIPPING,
     paymentStatus: "PAID",
@@ -144,6 +145,7 @@ function tiktokExisting(over: Partial<TiktokExistingOrder> = {}): TiktokExisting
   return {
     id: "o2",
     orderCode: "TT1",
+    cancelRequestedAt: null,
     createdAt: new Date("2026-10-10T08:00:00+07:00"),
     shippingStatus: ShippingStatus.SHIPPING,
     paymentStatus: "PAID",
@@ -209,6 +211,7 @@ function lazadaExisting(over: Partial<LazadaExistingOrder> = {}): LazadaExisting
   return {
     id: "o3",
     orderCode: "LZ1",
+    cancelRequestedAt: null,
     createdAt: new Date("2026-10-10T08:00:00+07:00"),
     shippingStatus: ShippingStatus.SHIPPING,
     paymentStatus: "PAID",

@@ -1584,6 +1584,21 @@ model Order {
   /// toán dòng tiền bồi thường. Đừng nhầm sang tồn kho — hàng đã hỏng/mất thật.
   compensationAmount Decimal @default(0) @db.Decimal(12, 2)
 
+  /// ---- KHÁCH XIN HỦY ĐƠN, CHỜ SHOP QUYẾT (23/10/2026) ----
+  /// Trục RIÊNG, không đổi shippingStatus: Shopee IN_CANCEL, TikTok
+  /// BUYER_CANCEL đang CANCELLATION_REQUEST_PENDING, Lazada reverse order
+  /// request_type CANCEL còn sống. Null = không có yêu cầu đang chờ. Sàn chốt
+  /// (chấp nhận → CANCELLED, từ chối → về trạng thái cũ) thì đồng bộ xóa cờ.
+  cancelRequestedAt   DateTime?
+  /// Lý do khách nêu (nguyên văn sàn), để shop quyết nhanh.
+  cancelRequestReason String?
+  /// Mã yêu cầu phía sàn cần khi quyết: TikTok cancel_id, Lazada
+  /// reverse_order_id; Shopee quyết theo order_sn nên null.
+  cancelRequestRef    String?
+  /// Hạn shop phải trả lời (TikTok: sàn tự chấp nhận sau 48 h; Shopee ~2 ngày
+  /// theo blog, chưa thấy docs). Null = sàn không nêu.
+  cancelRequestDueAt  DateTime?
+
   /// Thời điểm SÀN báo đơn bắt đầu hoàn. Đây là mốc đếm ngược để đối soát:
   /// quá 7 ngày chưa quét trúng thì cảnh báo, quá 14 ngày thì coi như chưa về
   /// tay và làm căn cứ khiếu nại bưu cục.

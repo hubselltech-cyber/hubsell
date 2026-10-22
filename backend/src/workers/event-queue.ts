@@ -60,7 +60,7 @@ type FailureAlert = (shopId: string, orderId: string | null, attempts: number, m
 
 const ORDER_HANDLERS: Partial<Record<OrderEventSource, OrderHandler>> = {
   LAZADA: (job) => handleLazadaOrderJob(job.shopId, job.orderId),
-  TIKTOK: (job) => handleTiktokOrderJob(job.shopId, job.orderId),
+  TIKTOK: (job) => handleTiktokOrderJob(job.shopId, job.orderId, job.eventType),
   SHOPEE: (job) => handleShopeeOrderJob(job.shopId, job.orderId, job.trackingNo),
 };
 

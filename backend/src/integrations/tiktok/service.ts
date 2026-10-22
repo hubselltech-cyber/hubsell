@@ -39,6 +39,7 @@ import {
 import { planSettlementWrite, type SettlementWritePlan } from "../settlement-merge";
 import { lineKey, resolveOrderLineRows, tiktokLineExternalId } from "../order-line-keys";
 import type { SyncCompleteness } from "../sync-contract";
+import { CLEAR_CANCEL_REQUEST } from "../cancel-request";
 import {
   describeTiktokFeeTax,
   groupTiktokLinesByOrder,
@@ -458,6 +459,7 @@ export const TIKTOK_EXISTING_SELECT = {
   carrier: true,
   shippingCarrierName: true,
   isSettled: true,
+  cancelRequestedAt: true,
 } satisfies Prisma.OrderSelect;
 
 export type TiktokExistingOrder = Prisma.OrderGetPayload<{ select: typeof TIKTOK_EXISTING_SELECT }>;
@@ -527,6 +529,12 @@ export function planTiktokOrderUpdate(existing: TiktokExistingOrder, order: TikT
   // Tên hãng NGUYÊN VĂN là dữ kiện sàn (nguồn bắt hỏa tốc) — ghi khi khác.
   if (f.carrierName && (always || existing.shippingCarrierName !== f.carrierName)) {
     data.shippingCarrierName = f.carrierName;
+  }
+  // Cờ khách xin hủy chỉ sống khi đơn còn AWAITING_SHIPMENT (docs 23/10/2026:
+  // sang AWAITING_COLLECTION khách hết quyền xin hủy; CANCELLED = đã chấp nhận).
+  // Đơn rời Chờ xử lý → xóa cờ; cancel-requests.ts lo trường hợp sàn từ chối/khách rút.
+  if (existing.cancelRequestedAt && f.shippingStatus !== ShippingStatus.PENDING) {
+    Object.assign(data, CLEAR_CANCEL_REQUEST);
   }
   return data;
 }

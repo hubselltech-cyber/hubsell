@@ -506,6 +506,12 @@ export interface ShopeeOrderDetail {
   item_list?: ShopeeOrderItem[];
   /** Tên hãng vận chuyển sàn gán cho đơn (vd "SPX Express") — map sang enum Carrier. */
   shipping_carrier?: string;
+  /** Lý do khách nêu khi xin hủy (đơn IN_CANCEL) — docs: "could be empty". */
+  buyer_cancel_reason?: string;
+  /** Ai hủy: buyer / seller / system (đơn CANCELLED). */
+  cancel_by?: string;
+  /** Lý do hủy cuối cùng (buyer, seller hay system). */
+  cancel_reason?: string;
 }
 
 export interface ShopeeOrderDetailData extends ShopeeEnvelope {
@@ -513,8 +519,10 @@ export interface ShopeeOrderDetailData extends ShopeeEnvelope {
 }
 
 // Các trường chi tiết cần Shopee trả về (mặc định API chỉ trả tối thiểu).
+// buyer_cancel_reason/cancel_by/cancel_reason (23/10/2026): lý do khách xin hủy
+// cho cờ "khách xin hủy" — đọc docs get_order_detail, cùng lệnh gọi, không tốn call.
 const ORDER_DETAIL_FIELDS =
-  "order_status,create_time,update_time,pay_time,total_amount,currency,buyer_username,recipient_address,item_list,shipping_carrier";
+  "order_status,create_time,update_time,pay_time,total_amount,currency,buyer_username,recipient_address,item_list,shipping_carrier,buyer_cancel_reason,cancel_by,cancel_reason";
 
 /** Lấy chi tiết nhiều đơn theo order_sn (tối đa 50 sn/lần). */
 export async function getOrderDetail(
@@ -535,6 +543,30 @@ export async function getOrderDetail(
     cfg
   );
   return data.response?.order_list ?? [];
+}
+
+/**
+ * Quyết định yêu cầu hủy của NGƯỜI MUA trên đơn đang IN_CANCEL (docs
+ * v2.order.handle_buyer_cancellation, đọc 23/10/2026): ACCEPT = hủy đơn (sàn
+ * hoàn tiền, kiện đã bàn giao sẽ quay đầu), REJECT = tiếp tục giao. Gọi khi đơn
+ * không còn IN_CANCEL → sàn trả order.order_status_invalid.
+ */
+export async function handleBuyerCancellation(
+  accessToken: string,
+  shopId: string,
+  orderSn: string,
+  operation: "ACCEPT" | "REJECT",
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<{ update_time?: number }> {
+  const data = await callShopPost<ShopeeEnvelope & { response?: { update_time?: number } }>(
+    SHOPEE_PATHS.handleBuyerCancellation,
+    accessToken,
+    shopId,
+    { order_sn: orderSn, operation },
+    "handle_buyer_cancellation",
+    cfg
+  );
+  return data.response ?? {};
 }
 
 // ---------- Đơn hoàn (Returns API v2) + mã vận đơn (Logistics) ----------

@@ -53,6 +53,12 @@ export interface OrderEventJob {
    * một lệnh gọi sàn để hỏi lại. KHÔNG nằm trong khóa gộp.
    */
   trackingNo?: string;
+  /**
+   * Loại sự kiện sàn gửi (TikTok `type` 11 = đổi trạng thái yêu cầu hủy) — để
+   * handler biết có phải hỏi thêm API yêu cầu hủy không. KHÔNG nằm trong khóa
+   * gộp; việc gộp giữ loại của sự kiện ĐẦU (đơn vẫn được kéo lại đầy đủ).
+   */
+  eventType?: string;
 }
 
 /** Khóa gộp việc: một đơn của một shop trên một sàn. */
@@ -87,6 +93,7 @@ export async function recordOrderEvent(input: RecordOrderEventInput): Promise<Re
     shopId: input.shopId,
     orderId: input.orderId,
     ...(input.trackingNo ? { trackingNo: input.trackingNo } : {}),
+    eventType: input.eventType,
   };
   return prisma.$transaction(async (tx) => {
     // createMany + skipDuplicates thay cho create + bắt P2002: lỗi trùng khóa

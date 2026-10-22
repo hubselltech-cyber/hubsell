@@ -23,6 +23,7 @@ import {
   processTiktokOrderEvent,
 } from "./service";
 import { finishStockPush } from "../inventory-push";
+import { syncTiktokCancelRequests } from "./cancel-requests";
 import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
 import { HIBERNATED_SKIP_NOTE, isHibernated } from "../../services/plan-hibernation";
@@ -115,6 +116,18 @@ export async function handleTiktokOrderJob(
     JSON.stringify({ ...result, stockTicket: undefined, productIds: result.productIds?.length })
   );
   if (!result.found) return "sàn không trả chi tiết đơn";
+
+  // Type 11 = đổi trạng thái YÊU CẦU HỦY (khách xin / rút / sàn chốt): chi tiết
+  // đơn không nói yêu cầu đang chờ → hỏi cancellations/search đúng đơn này để
+  // bật/hạ cờ "khách xin hủy" (23/10/2026). Lỗi ở đây không làm hỏng việc đơn.
+  if (String(eventType) === String(TIKTOK_WEBHOOK_TYPE.CANCELLATION_STATUS_CHANGE)) {
+    try {
+      const c = await syncTiktokCancelRequests(channel, { orderIds: [orderId] });
+      console.log(`[Webhook TikTok] Yêu cầu hủy đơn ${orderId}: +${c.flagged} bật cờ, ${c.unflagged} hạ cờ (${c.scanned} yêu cầu)`);
+    } catch (err) {
+      console.error(`[Webhook TikTok] Lỗi hỏi yêu cầu hủy đơn ${orderId}:`, (err as Error).message);
+    }
+  }
 
   // Kho biến động → đẩy "có thể bán" mới lên các gian khác đã nối cùng SKU
   // + kiểm tra ngưỡng sắp hết hàng. Dòng chờ đẩy do processTiktokOrderEvent lập

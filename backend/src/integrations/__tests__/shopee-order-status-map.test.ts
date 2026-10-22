@@ -16,7 +16,10 @@ describe("mapShopeeStatus", () => {
     expect(mapShopeeStatus("SHIPPED")).toBe(ShippingStatus.SHIPPING);
     expect(mapShopeeStatus("TO_CONFIRM_RECEIVE")).toBe(ShippingStatus.SHIPPING);
     expect(mapShopeeStatus("COMPLETED")).toBe(ShippingStatus.DELIVERED);
-    expect(mapShopeeStatus("IN_CANCEL")).toBe(ShippingStatus.CANCELLED);
     expect(mapShopeeStatus("CANCELLED")).toBe(ShippingStatus.CANCELLED);
+  });
+
+  it("IN_CANCEL = khách XIN hủy, chưa hủy — không phải Đã hủy (23/10/2026)", () => {
+    expect(mapShopeeStatus("IN_CANCEL")).toBe(ShippingStatus.PENDING);
   });
 });

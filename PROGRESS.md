@@ -6,6 +6,30 @@
 
 ---
 
+## Phiên 23/10/2026 đêm — CỜ "KHÁCH XIN HỦY" + NÚT CHẤP NHẬN/TỪ CHỐI 3 SÀN TRÊN WEB (lát 1+2, chưa commit)
+
+- **Anh chốt:** app sẽ hiện yêu cầu hủy kèm nhạc cảnh báo khi quét đơn nhưng làm sau; đêm nay web trước, xong dọn dẹp nghỉ.
+- **Làm:** migration `20261023010000_order_cancel_request` (4 cột + chỉ mục một phần); `integrations/cancel-request.ts` dùng chung; Shopee IN_CANCEL
+  giữ trạng thái + bật cờ (mapShopeeStatus IN_CANCEL → PENDING, test đổi theo); TikTok `tiktok/cancel-requests.ts` (search theo đơn khi webhook
+  type 11 — job hàng đợi nay mang `eventType` — + quét 3 ngày ở auto-sync) + client approve/reject/reject_reasons; Lazada `planLazadaCancelRequest`
+  trong returns-sync + client `decideReverseOrderCancel`; `services/cancel-request-decide.ts` + `POST /api/orders/:id/cancel-request/decide`
+  (gọi sàn → kéo lại đơn đúng đường webhook → hạ cờ); web: dải đỏ + lọc `?cancelRequested=1` (deep-link chuông), nhãn còn N giờ, 2 nút + hộp xác
+  nhận, Chuẩn bị hàng cảnh báo bằng confirm (không chặn). Chi tiết mục 5 [docs/HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md](docs/HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md).
+- **Kiểm:** tsc BE/FE sạch; `cancel-request-plan.test.ts` 11 ca + 3 file liên quan 41/41; DB dev áp SQL bằng `prisma db execute` (migrate deploy
+  kẹt bản ghi lỗi cũ `fee_audit` 17/09); soi web local 1 đơn seed (dải, nhãn, nút) rồi xóa seed. **Chưa:** API thật 3 sàn, hình dạng
+  cancellations TikTok, Lazada decide; lát 3; mobile. Memory `hubsell-huy-don-sau-chuan-bi-hang` đã cập nhật.
+
+## Phiên 23/10/2026 sáng — KHẢO SÁT: KHÁCH HỦY ĐƠN SAU KHI ĐÃ CHUẨN BỊ HÀNG / ĐANG GIAO (chỉ đọc, chưa code)
+
+- **Anh hỏi:** sàn cho khách hủy đơn đã chuẩn bị hàng, thậm chí đang giao — có API không? Em đọc docs 3 sàn bằng trình duyệt + rà mã.
+- **Kết quả:** cả 3 sàn CÓ API cho shop chấp nhận/từ chối yêu cầu hủy, Hubsell chưa gọi cái nào. Shopee: đơn `IN_CANCEL` chờ shop duyệt
+  (`handle_buyer_cancellation` ACCEPT/REJECT), SPX cho hủy cả khi đang giao (ĐVVC quyết). TikTok: khách KHÔNG hủy được từ `AWAITING_COLLECTION`,
+  chỉ xin hủy ở `AWAITING_SHIPMENT` (shop 48 h, im lặng = tự chấp nhận; `cancellations/search` + `{cancel_id}/approve|reject`); đang giao → đường
+  hoàn tiền. Lazada: yêu cầu hủy = reverse order `request_type CANCEL`, shop quyết bằng `/order/reverse/cancel/seller/decide`.
+- **Lỗ hổng mã:** Shopee `IN_CANCEL` ánh xạ thẳng Đã hủy (shop không biết đang chờ mình duyệt); TikTok webhook 11 chỉ kéo lại đơn nên yêu cầu
+  hủy vô hình; Lazada `returns-sync` cố ý bỏ reverse CANCEL. Chi tiết + 3 lát đề xuất: [docs/HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md](docs/HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md).
+  Memory `hubsell-huy-don-sau-chuan-bi-hang` đã ghi. Chờ anh chốt có làm lát 1+2 không.
+
 ## Phiên 22/10/2026 tối — NHẬN XÉT KHÁCH VÀI NGHÌN SKU: 3 LÁT GIÁ VỐN / TÀI CHÍNH (3 commit local, chờ anh push)
 
 - **Anh gửi Google Doc "FeedBack"** của khách (Shopee + TikTok, vài nghìn phân loại): 4 ý web (đơn thiếu giá vốn không biết đơn nào; lợi nhuận

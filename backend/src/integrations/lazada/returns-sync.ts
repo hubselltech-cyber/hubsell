@@ -17,7 +17,7 @@
 // hủy đơn nằm trên trục shippingStatus, không phải trục hoàn.
 // ============================================================
 
-import type { Channel } from "@prisma/client";
+import type { Channel, Prisma } from "@prisma/client";
 import { ReturnSolution, ReturnStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { notify } from "../../services/notifications";
@@ -31,6 +31,7 @@ import {
 } from "./client";
 import { getValidLazadaAccessToken } from "./service";
 import type { SyncCompleteness } from "../sync-contract";
+import { CLEAR_CANCEL_REQUEST, notifyCancelRequest } from "../cancel-request";
 
 /** Trần trang mỗi lát thời gian (50 yêu cầu/trang). */
 const MAX_PAGES_PER_SLICE = 40;
@@ -58,6 +59,74 @@ export function lazadaReturnSolutionOf(ro: LazadaReverseOrder): ReturnSolution |
   if (t.includes("CANCEL")) return null;
   if (t.includes("RETURN")) return ReturnSolution.RETURN_REFUND;
   if (t.includes("REFUND")) return ReturnSolution.REFUND_ONLY;
+  return null;
+}
+
+/** Yêu cầu HỦY ĐƠN của người mua (request_type CANCEL) — trục cờ riêng, không phải trục hoàn. */
+export function isLazadaCancelRequest(ro: LazadaReverseOrder): boolean {
+  return (ro.request_type ?? "").toUpperCase().includes("CANCEL");
+}
+
+export interface LazadaCancelFlagState {
+  cancelRequestedAt: Date | null;
+  cancelRequestRef: string | null;
+}
+
+export interface LazadaCancelPlan {
+  data: Prisma.OrderUpdateInput;
+  flagged: boolean;
+  unflagged: boolean;
+  reason: string | null;
+}
+
+/**
+ * QUYẾT ĐỊNH thuần cờ "khách xin hủy" cho MỘT đơn từ các reverse order của nó
+ * (23/10/2026): có yêu cầu CANCEL còn dòng SỐNG (chưa CANCEL/REJECT/CLOSED)
+ * → bật cờ với reverse_order_id (thứ /order/reverse/cancel/seller/decide cần);
+ * không còn → hạ cờ. Lazada không nêu hạn trả lời → cancelRequestDueAt null.
+ * Null = không có gì để ghi (idempotent).
+ */
+export function planLazadaCancelRequest(
+  group: LazadaReverseOrder[],
+  order: LazadaCancelFlagState,
+  nowMs: number
+): LazadaCancelPlan | null {
+  const alive = group
+    .filter(isLazadaCancelRequest)
+    .map((ro) => ({
+      ro,
+      lines: (ro.reverse_order_lines ?? ro.reverseOrderLineDTOList ?? []).filter((l) => !isDeadLazadaReturn(l)),
+    }))
+    .filter((x) => x.lines.length > 0);
+  if (alive.length > 0) {
+    const toMs = (v: string | number | undefined) => {
+      const n = Number(v ?? 0) || 0;
+      return n > 0 && n < 1e12 ? n * 1000 : n;
+    };
+    const newest = alive.sort(
+      (a, b) =>
+        Math.max(...b.lines.map((l) => toMs(l.return_order_line_gmt_create))) -
+        Math.max(...a.lines.map((l) => toMs(l.return_order_line_gmt_create)))
+    )[0];
+    const ref = newest.ro.reverse_order_id != null ? String(newest.ro.reverse_order_id) : null;
+    if (order.cancelRequestedAt && order.cancelRequestRef === ref) return null;
+    const reason = newest.lines.map((l) => (l.reason_text ?? "").toString().trim()).find(Boolean) ?? null;
+    const requestedMs = Math.min(...newest.lines.map((l) => toMs(l.return_order_line_gmt_create) || nowMs));
+    return {
+      data: {
+        cancelRequestedAt: new Date(requestedMs || nowMs),
+        cancelRequestReason: reason,
+        cancelRequestRef: ref,
+        cancelRequestDueAt: null,
+      },
+      flagged: !order.cancelRequestedAt,
+      unflagged: false,
+      reason,
+    };
+  }
+  if (order.cancelRequestedAt) {
+    return { data: { ...CLEAR_CANCEL_REQUEST }, flagged: false, unflagged: true, reason: null };
+  }
   return null;
 }
 
@@ -222,6 +291,9 @@ export interface SyncLazadaReturnsResult extends SyncCompleteness {
   trackingSaved: number;
   itemsUpdated: number;
   ordersNotFound: number;
+  /** Cờ khách xin hủy vừa bật / vừa hạ (trục riêng). */
+  cancelFlagged: number;
+  cancelUnflagged: number;
 }
 
 export interface SyncLazadaReturnsOptions {
@@ -251,6 +323,8 @@ export async function syncLazadaReturns(
     trackingSaved: 0,
     itemsUpdated: 0,
     ordersNotFound: 0,
+    cancelFlagged: 0,
+    cancelUnflagged: 0,
   };
 
   // (1) Gom yêu cầu hoàn theo lát 15 ngày; trùng reverse_order_id giữa các lát
@@ -305,12 +379,26 @@ export async function syncLazadaReturns(
         returnSolution: true,
         platformRefundAmount: true,
         platformReturnStatus: true,
+        cancelRequestedAt: true,
+        cancelRequestRef: true,
         items: { select: { id: true, channelSku: true, returnedQuantity: true } },
       },
     });
     if (!order) {
       result.ordersNotFound++;
       continue;
+    }
+
+    // Cờ KHÁCH XIN HỦY (trục riêng, 23/10/2026) — reverse order request_type
+    // CANCEL còn sống; ghi trước phần hoàn vì hai trục không giẫm cột nhau.
+    const cancelPlan = planLazadaCancelRequest(group, order, nowMs);
+    if (cancelPlan) {
+      await prisma.order.update({ where: { id: order.id }, select: { id: true }, data: cancelPlan.data });
+      if (cancelPlan.flagged) {
+        result.cancelFlagged++;
+        await notifyCancelRequest(channel, orderCode, cancelPlan.reason, null);
+      }
+      if (cancelPlan.unflagged) result.cancelUnflagged++;
     }
 
     const plan = planLazadaReturnUpdate(

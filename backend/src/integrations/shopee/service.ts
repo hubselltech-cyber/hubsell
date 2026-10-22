@@ -37,6 +37,7 @@ import { stageStockPush, type StockPushTicket } from "../inventory-push";
 import { lineKey, resolveOrderLineRows, shopeeLineExternalId } from "../order-line-keys";
 import type { StockSyncRequest } from "./inventory-sync";
 import type { SyncCompleteness } from "../sync-contract";
+import { CLEAR_CANCEL_REQUEST, notifyCancelRequest } from "../cancel-request";
 import {
   getAccessToken,
   getOrderDetail,
@@ -445,13 +446,42 @@ export function mapShopeeStatus(status?: string): ShippingStatus {
     case "COMPLETED":
     case "TO_RETURN":
       return ShippingStatus.DELIVERED;
-    case "IN_CANCEL":
     case "CANCELLED":
       return ShippingStatus.CANCELLED;
+    // IN_CANCEL = khách XIN hủy, sàn đang chờ shop chấp nhận/từ chối (docs
+    // handle_buyer_cancellation, 23/10/2026). Trước đây ánh xạ thẳng Đã hủy →
+    // shop tưởng đơn đã hủy trong khi sàn chờ mình. Nay là cờ riêng
+    // (cancelRequestedAt); trạng thái vận chuyển GIỮ NGUYÊN bản đang lưu
+    // (planShopeeOrderUpdate không ghi cột này khi IN_CANCEL) — đơn chưa từng
+    // thấy thì coi là Chờ xử lý (chưa biết đã chuẩn bị hàng chưa).
+    case "IN_CANCEL":
     default:
       return ShippingStatus.PENDING;
   }
 }
+
+/** Đơn Shopee đang có yêu cầu hủy của người mua chờ shop quyết. */
+export function isShopeeCancelRequested(status?: string): boolean {
+  return status === "IN_CANCEL";
+}
+
+/**
+ * Hạn shop trả lời yêu cầu hủy Shopee: ~2 ngày rồi sàn tự hủy — nguồn blog
+ * người bán (chưa thấy trong docs Open Platform), chỉ để hiện "còn N giờ".
+ */
+export const SHOPEE_CANCEL_DECISION_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+
+/** Cột cờ "khách xin hủy" rút từ chi tiết đơn Shopee (thuần). */
+export function shopeeCancelRequestFields(order: ShopeeOrderDetail, now: Date) {
+  const reason = (order.buyer_cancel_reason || order.cancel_reason || "").trim() || null;
+  return {
+    cancelRequestedAt: now,
+    cancelRequestReason: reason,
+    cancelRequestRef: null as string | null,
+    cancelRequestDueAt: new Date(now.getTime() + SHOPEE_CANCEL_DECISION_WINDOW_MS),
+  };
+}
+
 
 /**
  * Đơn Shopee đang HOÀN/TRẢ → cờ trên trục returnStatus (độc lập shippingStatus).
@@ -665,6 +695,7 @@ export const SHOPEE_EXISTING_SELECT = {
   deliveredAt: true,
   returnStatus: true,
   returnRequestedAt: true,
+  cancelRequestedAt: true,
 } satisfies Prisma.OrderSelect;
 
 export type ShopeeExistingOrder = Prisma.OrderGetPayload<{ select: typeof SHOPEE_EXISTING_SELECT }>;
@@ -696,9 +727,19 @@ export function planShopeeOrderUpdate(
       ? correctedDeliveredAt(existing.deliveredAt, platformUpdatedAt, now)
       : null;
   const always = syncWriteAlways();
+  const cancelRequested = isShopeeCancelRequested(order.order_status);
 
   const data: Prisma.OrderUpdateInput = {};
-  if (always || existing.shippingStatus !== shippingStatus) data.shippingStatus = shippingStatus;
+  // IN_CANCEL: GIỮ trạng thái vận chuyển đang lưu (đã chuẩn bị hàng thì vẫn
+  // "Đã xử lý"), chỉ bật cờ khách xin hủy; sàn chốt xong mới đổi trạng thái.
+  if (!cancelRequested && (always || existing.shippingStatus !== shippingStatus)) {
+    data.shippingStatus = shippingStatus;
+  }
+  if (cancelRequested && !existing.cancelRequestedAt) {
+    Object.assign(data, shopeeCancelRequestFields(order, now));
+  } else if (!cancelRequested && existing.cancelRequestedAt) {
+    Object.assign(data, CLEAR_CANCEL_REQUEST);
+  }
   if (always || existing.paymentStatus !== paymentStatus) data.paymentStatus = paymentStatus;
   if (always || decimalDiffers(existing.totalAmount, totalAmount)) data.totalAmount = totalAmount;
   // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí sàn rổ
@@ -763,6 +804,15 @@ export async function upsertShopeeOrderTx(
     const changed = hasPlannedChanges(data);
     if (changed) {
       await tx.order.update({ where: { id: existing.id }, select: { id: true }, data });
+      // Vừa bật cờ khách xin hủy → chuông (ngoài giao dịch, không ném lỗi).
+      if (data.cancelRequestedAt) {
+        void notifyCancelRequest(
+          channel,
+          orderCode,
+          (data.cancelRequestReason as string | null) ?? null,
+          (data.cancelRequestDueAt as Date | null) ?? null
+        );
+      }
     }
     if (needsItemImageBackfill(existing.createdAt)) {
       await backfillOrderItemImagesTx(tx, existing.id, aggregateShopeeItems(order));
@@ -795,6 +845,9 @@ export async function upsertShopeeOrderTx(
         ? { shippingCarrierName: order.shipping_carrier }
         : {}),
       ...(returning ? { returnStatus: returning, returnRequestedAt: new Date() } : {}),
+      ...(isShopeeCancelRequested(order.order_status)
+        ? shopeeCancelRequestFields(order, new Date())
+        : {}),
       itemCount: lines.length,
       createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,
     },
@@ -820,6 +873,11 @@ export async function upsertShopeeOrderTx(
         costPriceAtSale: String(effectiveSkuCost(mp)),
       },
     });
+  }
+
+  if (isShopeeCancelRequested(order.order_status)) {
+    const f = shopeeCancelRequestFields(order, new Date());
+    void notifyCancelRequest(channel, orderCode, f.cancelRequestReason, f.cancelRequestDueAt);
   }
 
   return { created: true, changed: true, itemsCreated: lines.length };

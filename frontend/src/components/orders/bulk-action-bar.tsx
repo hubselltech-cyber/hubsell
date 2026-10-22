@@ -104,7 +104,23 @@ export function BulkActionBar({
         <Button
           size="sm"
           variant="secondary"
-          onClick={() => setArrangeOpen(true)}
+          onClick={() => {
+            // Cảnh báo, không khóa cứng: đơn khách đang xin hủy vẫn chuẩn bị
+            // được, nhưng chủ shop phải biết mình đang gói đơn có thể bị hủy.
+            const asking = packable.filter((o) => o.cancelRequestedAt);
+            if (
+              asking.length > 0 &&
+              !window.confirm(
+                `${formatNumber(asking.length)} đơn đang có KHÁCH XIN HỦY (${asking
+                  .slice(0, 3)
+                  .map((o) => o.orderCode)
+                  .join(", ")}${asking.length > 3 ? "…" : ""}). Chuẩn bị hàng rồi mà sàn hủy thì kiện phải quay đầu.\n\nVẫn chuẩn bị cả các đơn này?`
+              )
+            ) {
+              return;
+            }
+            setArrangeOpen(true);
+          }}
           disabled={busy !== null || packable.length === 0}
           title={
             packable.length === 0

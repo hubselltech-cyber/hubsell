@@ -559,6 +559,30 @@ export async function getReverseOrders(
   };
 }
 
+/**
+ * Quyết định yêu cầu hủy của người mua (reverse order request_type CANCEL):
+ * agree = true → hủy đơn, false → tiếp tục giao. Mô tả docs ghi "Seller
+ * initiates a cancelation" nhưng tham số agree_cancel cho thấy đây là quyết
+ * định trên yêu cầu đã có — CHƯA thử thật (23/10/2026), log lỗi E0131 nếu sai.
+ */
+export async function decideReverseOrderCancel(
+  params: { accessToken: string; reverseOrderId: string; agree: boolean; reasonCode?: number },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<void> {
+  await callLazada<LazadaEnvelope>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.reverseCancelDecide,
+    {
+      access_token: params.accessToken,
+      reverse_order_id: params.reverseOrderId,
+      agree_cancel: params.agree ? "true" : "false",
+      ...(params.reasonCode != null ? { reason_code: String(params.reasonCode) } : {}),
+    },
+    "reverse/cancel/seller/decide",
+    cfg
+  );
+}
+
 // ---------- Cập nhật tồn kho lên sàn ----------
 
 /** Escape 5 ký tự đặc biệt XML — SellerSku người bán đặt có thể chứa "&", "<"... */

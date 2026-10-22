@@ -527,6 +527,12 @@ export interface Order {
   returnedAt: string | null;
   /** Mốc sàn báo đơn bắt đầu hoàn — null khi chưa rõ */
   returnRequestedAt: string | null;
+  /** KHÁCH XIN HỦY, chờ shop quyết (23/10/2026) — null = không có yêu cầu đang chờ */
+  cancelRequestedAt?: string | null;
+  /** Lý do khách nêu (nguyên văn sàn) */
+  cancelRequestReason?: string | null;
+  /** Hạn shop phải trả lời — null khi sàn không nêu */
+  cancelRequestDueAt?: string | null;
   /** Tiền bưu cục/sàn đã đền (chỉ > 0 khi khiếu nại thắng) */
   compensationAmount: string | number;
   /** Mốc đã cộng lại tồn kho — có giá trị nghĩa là không cộng thêm lần nữa */
@@ -1662,8 +1668,11 @@ export function fetchOrders(params: {
   orderType?: "single" | "multi";
   /** Lọc theo tình trạng hàng hoàn (dùng trong tab Hủy / Hoàn) */
   returnStatus?: ReturnStatus;
+  /** Chỉ đơn khách đang xin hủy chờ shop quyết */
+  cancelRequested?: boolean;
 }) {
   const qs = new URLSearchParams(channelFilterToQuery(params.channel));
+  if (params.cancelRequested) qs.set("cancelRequested", "1");
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.shippingStatus) qs.set("shippingStatus", params.shippingStatus);
@@ -2050,6 +2059,19 @@ export function updateOrderStatus(id: string, shippingStatus: string) {
   }>(`/api/orders/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ shippingStatus }),
+  });
+}
+
+/** Shop chấp nhận (accept=true) / từ chối yêu cầu hủy của khách trên sàn (23/10/2026). */
+export function decideCancelRequest(id: string, accept: boolean) {
+  return apiFetch<{
+    orderCode: string;
+    accepted: boolean;
+    shippingStatus: ShippingStatus;
+    cancelRequestedAt: string | null;
+  }>(`/api/orders/${id}/cancel-request/decide`, {
+    method: "POST",
+    body: JSON.stringify({ accept }),
   });
 }
 
