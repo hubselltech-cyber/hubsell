@@ -120,14 +120,16 @@ const columnHelper = createColumnHelper<Product>();
  */
 const COL_HEAD_CLASS: Record<string, string> = {
   select: "w-10",
-  product: "w-[26%]",
-  skuCode: "w-[12%]",
-  costPrice: "w-[9%]",
-  sellingPrice: "w-[9%]",
+  product: "w-[22%]",
+  skuCode: "w-[10%]",
+  // Tiền: "1.294.000 ₫" cần ≥ 84px chữ → 10% của bảng tối thiểu 1.000px (soi 22/10 tối với
+  // dữ liệu khoảng giá + giá 7 chữ số; trước đó 9% làm số tràn sang cột Tồn kho ở 1280).
+  costPrice: "w-[10%]",
+  sellingPrice: "w-[10%]",
   quantityInStock: "w-[7%]",
   availableToSell: "w-[8%]",
-  locations: "w-[11%]",
-  channels: "w-[13%]",
+  locations: "w-[9%]",
+  channels: "w-[12%]",
   actions: "w-[8.5rem]",
 };
 
@@ -1092,11 +1094,19 @@ export default function ProductsHubPage() {
       if (v.length === 0) return <span className={TEXT_SUB}>—</span>;
       const min = Math.min(...v);
       const max = Math.max(...v);
+      // KHOẢNG GIÁ xếp HAI DÒNG (anh Trung 22/10 tối, ảnh prod khách: "214.000 ₫ – 294.000 ₫" một
+      // dòng tràn sang cột Tồn kho ở table-fixed). Dòng dưới "– max" nhỏ hơn, tooltip đủ khoảng.
       return min === max ? (
         <Money value={min} className={TEXT_NUMBER_MUTED} />
       ) : (
-        <span className={cn(TEXT_NUMBER_MUTED, "whitespace-nowrap")}>
-          <Money value={min} className={TEXT_NUMBER_MUTED} /> – <Money value={max} className={TEXT_NUMBER_MUTED} />
+        <span
+          className={cn(TEXT_NUMBER_MUTED, "block leading-tight")}
+          title={`${formatNumber(min)} – ${formatNumber(max)} ₫`}
+        >
+          <Money value={min} className={TEXT_NUMBER_MUTED} />
+          <span className="block text-xs text-muted-foreground">
+            – <Money value={max} className="text-xs text-muted-foreground" />
+          </span>
         </span>
       );
     };
@@ -1498,9 +1508,10 @@ export default function ProductsHubPage() {
                   </div>
                 ) : (
                   // table-fixed theo % (anh Trung 22/10: cột Nhập · Xuất bị cắt ở 1700px khi có cột
-                  // Đang ở): bảng luôn vừa khung, tên / mã tự cắt + tooltip, chip Bán trên xuống dòng
-                  // khi hẹp — không cuộn ngang. Bề rộng từng cột ở COL_HEAD_CLASS.
-                  <Table className="table-fixed" containerClassName="overflow-visible">
+                  // Đang ở): từ 1.000px trở lên bảng vừa khung, tên / mã tự cắt + tooltip, chip Bán trên
+                  // xuống dòng. Dưới 1.000px (laptop 1280 mở sidebar + có cột Đang ở) hộp cuộn ngang
+                  // thay vì để số đè lên nhau — ô số không được phép tràn. Bề rộng cột ở COL_HEAD_CLASS.
+                  <Table className="table-fixed min-w-[1000px]">
                     <TableHeader>
                       {table.getHeaderGroups().map((headerGroup) => (
                         <TableRow key={headerGroup.id}>

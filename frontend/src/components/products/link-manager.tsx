@@ -968,8 +968,12 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
           ) : min === max ? (
             <Money value={min} className="text-slate-900" />
           ) : (
-            <span className="block truncate text-sm text-slate-900" title={`${formatNumber(min)} – ${formatNumber(max)} ₫`}>
-              <Money value={min} className="text-slate-900" /> – <Money value={max} className="text-slate-900" />
+            // Khoảng giá xếp hai dòng — một dòng tràn sang cột bên ở table-fixed (bài học 22/10 tối).
+            <span className="block leading-tight text-sm text-slate-900" title={`${formatNumber(min)} – ${formatNumber(max)} ₫`}>
+              <Money value={min} className="text-slate-900" />
+              <span className="block text-xs text-muted-foreground">
+                – <Money value={max} className="text-xs text-muted-foreground" />
+              </span>
             </span>
           )}
           <p className={cn(TEXT_SUB, "tabular-nums")}>

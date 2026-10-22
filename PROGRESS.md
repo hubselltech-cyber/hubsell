@@ -88,6 +88,12 @@
 - **Anh hỏi "kéo sản phẩm từ sàn về thì về Tồn kho hay Sản phẩm trên sàn?"** → về tab Sản phẩm trên sàn (tầng đệm), nối mới sang kho.
   **Anh chốt đổi tên tab "Tồn kho" → "Tồn kho đã nối"** (em lưu ý tab vẫn chứa SKU tự thêm/Excel chưa nối — anh vẫn chốt); lời bước 1 khối Kho
   trung tâm thêm "đang nằm ở tab Sản phẩm trên sàn — chưa vào kho, sang bước 2 để nối".
+- **Anh (ảnh prod khách): "Em đang không tuân thủ quy tắc co màn hình dẫn tới khách bị lỗi này"** — dòng cha có KHOẢNG GIÁ "214.000 ₫ –
+  294.000 ₫" một dòng tràn đè lên cột Tồn kho. Lỗi của em: soi 1700/1280 nhưng dữ liệu local không có mẫu nào có khoảng giá / giá 7 chữ số
+  nên không bắt được. Sửa: khoảng giá xếp HAI DÒNG (dòng dưới "– max" nhỏ, tooltip đủ) ở cả Tồn kho + Sản phẩm trên sàn; cột tiền 9% → 10%,
+  bảng `min-w-[1000px]` (dưới 1.000px — laptop 1280 mở sidebar + có cột Đang ở — hộp cuộn ngang 57px thay vì số đè nhau). Seed local
+  khoảng giá 214.000–1.294.000 + giá vốn 57.000–157.000 rồi đo: 1366 và 1700 tràn 0, 0 ô tiền tràn; 1280 cuộn 57px, 0 ô tiền tràn.
+  Bài học ghi memory [[feedback-soi-co-man-bang-du-lieu-rong-nhat]].
 
 ---
 
