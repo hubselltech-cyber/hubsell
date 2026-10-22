@@ -211,11 +211,21 @@ export default function CostPricesPage() {
    * Gom dòng đã lọc thành cây Sản phẩm cha → Biến thể con để đưa vào bảng.
    * Giữ nguyên thứ tự xuất hiện đầu tiên của mỗi mẫu, không sắp xếp lại, để
    * người dùng đổi bộ lọc mà các dòng không nhảy lung tung.
+   *
+   * KHÓA NHÓM = gian + MÃ SẢN PHẨM trên sàn (item_id / product_id), tức đúng
+   * cây cha–con của sàn: mỗi phân loại lá (đủ mọi tầng "Hồng, 3-5kg") là một
+   * dòng con dưới đúng mẫu của nó. Không đoán theo tên nữa — tên hai mẫu khác
+   * nhau có thể giống nhau sau khi cắt đuôi, còn tên phân loại sàn trả về thì
+   * không bao giờ nằm trong tên mẫu (sự cố Hi.Bé 15/10). Hàng kho nội bộ không
+   * có mã sàn mới rơi về đoán theo tên như trước.
    */
   const groups = useMemo<ProductGroup[]>(() => {
     const map = new Map<string, ProductGroup>();
     for (const item of filteredItems) {
-      const key = variantGroupKey(item.productName);
+      const byMarketplace = Boolean(item.itemId && item.channelId);
+      const key = byMarketplace
+        ? `${item.channelId}:${item.itemId}`
+        : `name:${variantGroupKey(item.productName)}`;
       const existing = map.get(key);
       if (existing) {
         existing.variants.push(item);
@@ -224,7 +234,7 @@ export default function CostPricesPage() {
       } else {
         map.set(key, {
           key,
-          name: baseProductName(item.productName),
+          name: byMarketplace ? item.productName : baseProductName(item.productName),
           imageUrl: item.imageUrl,
           variants: [item],
         });

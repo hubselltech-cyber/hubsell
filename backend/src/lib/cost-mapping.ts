@@ -49,6 +49,11 @@ export interface MappingTarget {
   productName: string;
   variantName: string | null;
   imageUrl: string | null;
+  /**
+   * Danh tính dòng trên sàn ("item-model" / "product-sku") — để khách dán mã
+   * sản phẩm / mã phân loại của sàn vào ô tìm (khách 22/10). Không dùng để khớp.
+   */
+  externalId?: string | null;
   /** null = chưa nối kho. */
   productId: string | null;
   /** Giá vốn HIỆU LỰC: giá riêng của gian, không có thì giá mặc định ở kho. */
@@ -73,6 +78,12 @@ export interface SkuGroup {
   /** Tên / ảnh đại diện: ưu tiên gian đã có giá (thường là gian chủ shop chăm nhất). */
   productName: string;
   variantName: string | null;
+  /**
+   * Các gian gắn cùng mã này vào những PHÂN LOẠI KHÁC TÊN (sàn cho phép; sau
+   * 15/10 trong một gian mã trùng đã có đuôi tên nên chỉ còn xảy ra giữa các
+   * gian). Giao diện không được lấy tên một dòng làm mặt nhóm — phải nói rõ.
+   */
+  variantMixed: boolean;
   imageUrl: string | null;
   entries: MappingTarget[];
   status: SkuGroupStatus;
@@ -117,10 +128,14 @@ export function groupSkusByCode(
       entries.find((e) => e.currentCost > 0) ??
       entries.find((e) => e.imageUrl) ??
       entries[0];
+    const variantNames = new Set(
+      entries.map((e) => e.variantName?.trim()).filter((v): v is string => Boolean(v))
+    );
     groups.push({
       code,
       productName: face.productName,
       variantName: face.variantName,
+      variantMixed: variantNames.size > 1,
       imageUrl: face.imageUrl ?? entries.find((e) => e.imageUrl)?.imageUrl ?? null,
       entries,
       status,
@@ -251,6 +266,7 @@ async function loadTargets(ownerId: string, channelIds?: string[]): Promise<Mapp
       productName: true,
       variantName: true,
       imageUrl: true,
+      externalId: true,
       productId: true,
       costPrice: true,
       product: { select: { costPrice: true } },
@@ -267,6 +283,7 @@ async function loadTargets(ownerId: string, channelIds?: string[]): Promise<Mapp
     productName: cp.productName,
     variantName: cp.variantName,
     imageUrl: cp.imageUrl,
+    externalId: cp.externalId,
     productId: cp.product ? cp.productId : null,
     currentCost: effectiveSkuCost(cp),
   }));

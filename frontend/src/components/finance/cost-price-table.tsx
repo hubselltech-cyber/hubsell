@@ -52,6 +52,9 @@ import { variantLabel } from "@/lib/variant-group";
  * ĐÂY CHỈ LÀ CÁCH GOM Ở TẦNG HIỂN THỊ. Giá vốn vẫn lưu riêng cho từng SKU con,
  * nên P&L theo SKU và Cảnh báo đơn lỗ ở các trang khác vẫn lấy đúng số của
  * từng phân loại, không bị gộp hay tính trung bình.
+ *
+ * Từ 22/10/2026 nhóm theo gian + mã sản phẩm sàn (trang tự gom, xem page.tsx),
+ * không đoán theo tên; tên phân loại in ra là tên sàn trả về, đủ mọi tầng.
  */
 
 /**
@@ -635,7 +638,9 @@ function DelistedBadge({ status }: { status: SkuProduct["status"] }) {
 
 function ChildRow(props: RowProps) {
   const { item, showItemId } = props;
-  const label = variantLabel(item.productName);
+  // Tên phân loại SÀN trả về (đủ mọi tầng: "Hồng, 3-5kg") là nguồn đúng; chỉ
+  // hàng kho nội bộ (không có) mới đoán đuôi từ tên, rồi cùng lắm là mã SKU.
+  const label = variantTitle(item) ?? variantLabel(item.productName) ?? item.sku;
   return (
     // Nền xám nhạt cùng tông với dòng cha đang mở để cả cụm gom thành một khối,
     // không còn tuột về nền trắng lẫn vào các mẫu hàng khác
@@ -650,8 +655,8 @@ function ChildRow(props: RowProps) {
           <span className="shrink-0 text-muted-foreground">└</span>
           {/* Truncate để tên phân loại dài không kéo tràn ngang cả bảng */}
           <div className="min-w-0">
-            <p className="truncate" title={label ?? item.variantName ?? item.sku}>
-              {label ?? item.variantName ?? item.sku}
+            <p className="truncate" title={label}>
+              {label}
             </p>
             {showItemId && item.itemId && <MarketplaceCode label="Mã SP" code={item.itemId} />}
           </div>
@@ -677,10 +682,28 @@ function ChildRow(props: RowProps) {
   );
 }
 
+/**
+ * Tên phân loại để in: chỉ khi sàn có trả và khác tên sản phẩm (SKU nối kho
+ * đôi khi mang tên kho trùng hệt tên phân loại — in hai lần là thừa).
+ */
+function variantTitle(item: SkuProduct): string | null {
+  const v = item.variantName?.trim();
+  if (!v || v === item.productName.trim()) return null;
+  return v;
+}
+
 /* ──────────────── Dòng đơn lẻ (mẫu chỉ có một phân loại) ──────────────── */
 
+/**
+ * Dòng đơn lẻ cũng là dòng khách thấy khi tìm theo mã: bộ lọc còn đúng một
+ * phân loại của mẫu nhiều phân loại thì mẫu đó rơi vào đây. Vì vậy phải in cả
+ * TÊN PHÂN LOẠI dưới tên sản phẩm — trước đây chỉ in tên cha, khách dán mã
+ * SPE-… từ đơn vào ô tìm rồi vẫn không biết đang nhập giá cho phân loại nào
+ * (khách vài nghìn SKU, 22/10).
+ */
 function SingleRow(props: RowProps) {
   const { item } = props;
+  const variant = variantTitle(item);
   return (
     <TableRow>
       <TableCell>
@@ -700,9 +723,18 @@ function SingleRow(props: RowProps) {
             </div>
           )}
           <div className="min-w-0">
+            {/* Tên dài: cắt theo bề rộng cột + tooltip đủ tên (anh Trung 22/10) */}
             <p className="max-w-[26rem] truncate" title={item.productName}>
               {item.productName}
             </p>
+            {variant && (
+              <p
+                className="max-w-[26rem] truncate text-xs font-medium text-sky-700"
+                title={`Phân loại: ${variant}`}
+              >
+                {variant}
+              </p>
+            )}
             {item.itemId && <MarketplaceCode label="Mã SP" code={item.itemId} />}
           </div>
         </div>

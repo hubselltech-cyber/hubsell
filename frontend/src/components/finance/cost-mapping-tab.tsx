@@ -171,7 +171,8 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
 
   const buckets = React.useMemo<ProductBucket[]>(() => {
     if (!data) return [];
-    const keyword = normalizeText(search.trim());
+    const rawKeyword = search.trim();
+    const keyword = normalizeText(rawKeyword);
     const map = new Map<string, ProductBucket>();
     for (const g of data.groups) {
       if (status !== "all" && g.status !== status) continue;
@@ -179,7 +180,10 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
         keyword &&
         !normalizeText(g.code).includes(keyword) &&
         !normalizeText(g.productName).includes(keyword) &&
-        !normalizeText(g.variantName ?? "").includes(keyword)
+        // Tên phân loại của MỌI gian, không chỉ dòng làm mặt nhóm
+        !g.entries.some((e) => normalizeText(e.variantName ?? "").includes(keyword)) &&
+        // Mã sản phẩm / mã phân loại trên sàn (item-model) — khách quen dán mã sàn từ đơn
+        !g.entries.some((e) => (e.externalId ?? "").includes(rawKeyword))
       ) {
         continue;
       }
@@ -645,6 +649,23 @@ function Thumb({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
+/**
+ * Tên phân loại để in cho một mã: thống nhất giữa các gian thì in thẳng; các gian
+ * gắn mã này vào phân loại khác tên (sàn cho phép) thì liệt kê theo gian để
+ * khách thấy mình đang áp một giá cho những phân loại nào. Trùng tên sản phẩm
+ * thì bỏ (in hai lần là thừa).
+ */
+function variantText(sku: CostSkuGroup): string | null {
+  if (sku.variantMixed) {
+    const parts = sku.entries
+      .filter((e) => e.variantName?.trim())
+      .map((e) => `${e.variantName!.trim()} (${e.shopName})`);
+    return `${formatNumber(parts.length)} phân loại khác tên: ${parts.join(" · ")}`;
+  }
+  const v = sku.variantName?.trim();
+  return v && v !== sku.productName.trim() ? v : null;
+}
+
 function SkuRow({
   sku,
   child,
@@ -689,9 +710,10 @@ function SkuRow({
     }
   }
 
-  const label = child
-    ? variantLabel(sku.productName) || sku.variantName || displaySku
-    : sku.productName;
+  // Tên phân loại: sàn trả về là nguồn đúng (đủ mọi tầng "Hồng, 3-5kg"); các gian
+  // gắn mã này vào phân loại KHÁC TÊN thì liệt kê cả, không lấy tên một gian.
+  const variant = variantText(sku);
+  const label = child ? variant ?? variantLabel(sku.productName) ?? displaySku : sku.productName;
 
   return (
     <TableRow className={cn(child && "bg-muted/40 hover:bg-muted/50")}>
@@ -705,12 +727,24 @@ function SkuRow({
             </span>
           </div>
         ) : (
+          // Dòng không có cha cũng là dòng khách thấy khi tìm theo mã → phải có
+          // tên phân loại dưới tên sản phẩm (khách vài nghìn SKU, 22/10).
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-6 shrink-0" />
             <Thumb src={sku.imageUrl} alt={sku.productName} />
-            <p className="min-w-0 truncate" title={sku.productName}>
-              {sku.productName}
-            </p>
+            <div className="min-w-0">
+              <p className="truncate" title={sku.productName}>
+                {sku.productName}
+              </p>
+              {variant && (
+                <p
+                  className="truncate text-xs font-medium text-sky-700"
+                  title={`Phân loại: ${variant}`}
+                >
+                  {variant}
+                </p>
+              )}
+            </div>
           </div>
         )}
       </TableCell>

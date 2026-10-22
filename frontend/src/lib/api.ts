@@ -2555,6 +2555,8 @@ export interface CostMappingTarget {
   productName: string;
   variantName: string | null;
   imageUrl: string | null;
+  /** Danh tính dòng trên sàn "item-model" — để tìm theo mã sản phẩm / mã phân loại sàn. */
+  externalId?: string | null;
   productId: string | null;
   currentCost: number;
 }
@@ -2568,6 +2570,8 @@ export interface CostSkuGroup {
   code: string;
   productName: string;
   variantName: string | null;
+  /** Các gian gắn mã này vào phân loại KHÁC TÊN — giao diện phải nói rõ thay vì in tên một dòng. */
+  variantMixed?: boolean;
   imageUrl: string | null;
   entries: CostMappingTarget[];
   status: "suggest" | "conflict" | "missing" | "complete";

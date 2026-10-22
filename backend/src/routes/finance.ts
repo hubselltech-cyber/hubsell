@@ -1040,7 +1040,10 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
           productId: cp.productId ?? "",
           sku: cp.channelSku,
           productName: linked ? cp.product!.productName : cp.productName,
-          variantName: cp.variantName ?? cp.productName,
+          // Để null khi sàn không có phân loại — trước đây gán tạm = tên sản
+          // phẩm làm giao diện in tên hai lần và Excel xuất "Phân loại" sai
+          // (khách vài nghìn SKU 22/10: cần thấy đúng tên phân loại cạnh mã).
+          variantName: cp.variantName,
           channelName: cp.channel.channelName,
           channelId: cp.channel.id,
           shopName: cp.channel.shopName,

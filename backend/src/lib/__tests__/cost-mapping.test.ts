@@ -162,4 +162,17 @@ describe("groupSkusByCode", () => {
       ["F6", "suggest", false, 70],
     ]);
   });
+
+  it("cùng mã nhưng các gian gắn vào phân loại KHÁC TÊN → cờ variantMixed, không lấy tên một dòng làm mặt nhóm", () => {
+    const targets = [
+      target({ skuId: "1", sku: "LT075", variantName: "Hồng, 3-5kg", currentCost: 50 }),
+      target({ skuId: "2", sku: "LT075", channelId: "ch2", variantName: "Hồng, 5-7kg" }),
+      // Cùng tên (chỉ khác khoảng trắng đầu đuôi) hoặc thiếu tên thì KHÔNG tính là lệch
+      target({ skuId: "3", sku: "AO01", variantName: "Đen, M", currentCost: 50 }),
+      target({ skuId: "4", sku: "AO01", channelId: "ch2", variantName: " Đen, M " }),
+      target({ skuId: "5", sku: "AO01", channelId: "ch3", variantName: null }),
+    ];
+    const byCode = Object.fromEntries(groupSkusByCode(targets).map((g) => [g.code, g.variantMixed]));
+    expect(byCode).toEqual({ LT075: true, AO01: false });
+  });
 });
