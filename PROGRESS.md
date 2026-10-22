@@ -6,6 +6,27 @@
 
 ---
 
+## Phiên 22/10/2026 tối — NHẬN XÉT KHÁCH VÀI NGHÌN SKU: 3 LÁT GIÁ VỐN / TÀI CHÍNH (3 commit local, chờ anh push)
+
+- **Anh gửi Google Doc "FeedBack"** của khách (Shopee + TikTok, vài nghìn phân loại): 4 ý web (đơn thiếu giá vốn không biết đơn nào; lợi nhuận
+  thực tế âm −4809% không giải thích; chi tiết đơn chỉ có mã; cấu hình giá vốn mất tên phân loại khi tìm theo mã), 2 ý mobile, 1 ý gói miễn phí.
+  Em đọc + 2 agent đối chiếu mã: 3/4 ý web là dữ liệu ĐÃ CÓ, giao diện chưa hiện; ý 2 gốc là công thức (ads + chi phí vận hành trừ hết vào rổ đã
+  đối soát). **Anh chốt:** làm 4 → 1 → 3, **bỏ ý 2**, mobile + gói để đại tu sau, tên dài = cắt + tooltip, chú ý sản phẩm 2–3 tầng phân loại
+  (sự cố Hi.Bé 15/10). Chi tiết: [docs/GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md](docs/GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md).
+- **Ý 4 `3bb3a8b2`:** trang Giá vốn nhóm theo **gian + mã SP sàn** (bỏ đoán theo tên; hàng kho offline vẫn đoán), dòng đơn/con in tên phân loại
+  sàn đủ tầng; tab Mapping thêm dòng phân loại, nhóm mã lệch tên giữa gian (`variantMixed`) liệt kê theo gian, tìm theo externalId; API
+  `sku-products` trả `variantName` null thật + `externalId`. Test cost-mapping 9 xanh.
+- **Ý 1 `30cc5dc2`:** phản biện khách — đơn vị sửa là SKU chứ không phải đơn. Endpoint `GET /api/finance/sku-products/missing-cost` (1 GROUP BY
+  trên `order_line_ledger`, cùng phạm vi countsAsRevenue, trần 5.000); link "Nhập giá vốn" ở dòng nhắc + hộp nhắc (Tổng quan, Dòng tiền) mang
+  kỳ + gian; trang Giá vốn lọc sẵn, dải vàng "N SKU làm M đơn", xếp theo số đơn, nhãn "N đơn chờ giá vốn", nút Xem tất cả SKU.
+- **Ý 3 `d407358b`:** `lib/order-line-names.ts` tra tên phân loại cho dòng đơn (gian+externalId → gian+mã → SKU kho; 2 findMany/trang, test 2
+  xanh); cột Chi tiết sản phẩm = tên (co) · phân loại × SL + mã mono dòng dưới; Kiểm toán phí 3 bảng kèm hàng trong đơn (+N món, tooltip).
+- **Kiểm:** tsc BE/FE sạch; vitest `src/lib/__tests__` 220 xanh; UI soi 1280 bằng trang tạm giả API (đã xóa) — 2 tầng + mã đuôi, tên dài,
+  phân loại đứng lẻ, hàng kho, nhóm khác tên, lọc theo kỳ + nút Xem tất cả; SQL missing-cost chạy thật DB dev (200). Preview đổi tạm sang
+  `backend-http` 4010 + `frontend-http` (cert tự ký chặn built-in browser) — không đổi file env.
+- **Chưa kiểm:** DB dev không có gian nào vừa có đơn vừa có `variantName` → đường tra tên phân loại dòng đơn mới có test unit; ⏳ sau deploy
+  soi prod Lãi/Lỗ cột Chi tiết sản phẩm (gian Shopee có phân loại). Memory `hubsell-feedback-khach-vai-nghin-sku-2026-10` đã ghi.
+
 ## Phiên 22/10/2026 chiều–tối — KHÁCH PHÀN NÀN KHO "CHỈ LẤY ID": SKU KHO CÓ PHÂN LOẠI RIÊNG + BẢNG HÀNG HÓA CHA–CON NHƯ GIÁ VỐN (CHƯA PUSH — anh xem local)
 
 - **Anh (ảnh chat khách Mạnh Nguyễn Văn, 302 SKU Shopee):** "sao em lại chỉ lấy id sản phẩm… khách phàn nàn" → khách: không thấy màu/size, 6 phân
