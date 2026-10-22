@@ -246,14 +246,14 @@ export function ChannelShareCard({
               <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center pb-[2%] text-center">
                 {empty ? (
                   <>
-                    <span className={TEXT_CARD_TITLE}>Doanh thu</span>
+                    <span className={TEXT_CARD_TITLE}>Tổng giá trị SP</span>
                     <span className="mt-1 text-sm text-slate-500">
                       Chưa có đơn trong kỳ này
                     </span>
                   </>
                 ) : (
                   <>
-                    <span className={TEXT_CARD_TITLE}>Doanh thu</span>
+                    <span className={TEXT_CARD_TITLE}>Tổng giá trị SP</span>
                     <Money
                       value={total}
                       className={cn(

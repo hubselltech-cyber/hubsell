@@ -91,8 +91,8 @@ function buildRows(
   const rows: WaterfallRow[] = [];
   rows.push({
     key: "gross",
-    label: "Doanh thu gộp",
-    short: "Doanh thu",
+    label: "Tổng giá trị SP",
+    short: "Tổng giá trị SP",
     kind: "gross",
     signed: gross,
     range: [Math.min(0, gross), Math.max(0, gross)],
@@ -140,6 +140,79 @@ function buildRows(
     tag: formatCompactVND(net),
   });
   return rows;
+}
+
+/* ---------- Nhãn trục X tự xuống dòng ----------
+ * Card 5/12 ở 1280px chỉ rộng ~56px/cột; nhãn "Tổng giá trị SP" (11px ≈ 76px)
+ * sẽ chạm cột kế. Đo chữ thật bằng canvas, bẻ theo từ cho vừa băng cột
+ * (chừa 4px mỗi bên) thay vì cắt bớt hay hạ cỡ chữ. */
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+function textWidth(text: string, fontSize: number): number {
+  if (measureCtx === undefined) {
+    measureCtx =
+      typeof document === "undefined"
+        ? null
+        : document.createElement("canvas").getContext("2d");
+  }
+  if (!measureCtx) return text.length * fontSize * 0.55; // SSR: ước lượng
+  measureCtx.font = `${fontSize}px ${
+    typeof getComputedStyle === "function"
+      ? getComputedStyle(document.body).fontFamily
+      : "sans-serif"
+  }`;
+  return measureCtx.measureText(text).width;
+}
+
+function wrapWords(text: string, maxWidth: number, fontSize: number): string[] {
+  if (textWidth(text, fontSize) <= maxWidth) return [text];
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of text.split(" ")) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (cur && textWidth(next, fontSize) > maxWidth) {
+      lines.push(cur);
+      cur = word;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) lines.push(cur);
+  // Trục X chỉ chừa chỗ cho 2 dòng: dư thì dồn vào dòng 2 (hơi tràn còn hơn bị cắt đáy)
+  return lines.length > 2 ? [lines[0], lines.slice(1).join(" ")] : lines;
+}
+
+interface WrapTickProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  visibleTicksCount?: number;
+  fontSize?: number;
+  fill?: string;
+  payload?: { value?: string | number };
+}
+
+/** Tick trục X: recharts truyền bề rộng trục + số tick → băng cột = width / n. */
+function WrapTick({
+  x = 0,
+  y = 0,
+  width,
+  visibleTicksCount,
+  fontSize = 11,
+  fill,
+  payload,
+}: WrapTickProps) {
+  const band =
+    width && visibleTicksCount ? width / visibleTicksCount : Number.POSITIVE_INFINITY;
+  const lines = wrapWords(String(payload?.value ?? ""), band - 8, fontSize);
+  return (
+    <text x={x} y={y} textAnchor="middle" fontSize={fontSize} fill={fill}>
+      {lines.map((line, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? fontSize : fontSize + 2}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
 }
 
 /** Tooltip: tên khoản · số tiền đầy đủ · % so với doanh thu gộp. */
@@ -248,6 +321,9 @@ export function PnlWaterfall({
             axisLine={{ stroke: "currentColor", strokeOpacity: 0.15 }}
             stroke={COLOR.axis}
             tickMargin={6}
+            // Nhãn dài ("Tổng giá trị SP") tự xuống dòng theo bề rộng cột → tối đa 2 dòng
+            height={rows.length > 6 ? 34 : 36}
+            tick={<WrapTick />}
           />
           {/* Ẩn trục Y để nhường bề ngang cho 6 cột; giá trị đã ghi trên đầu cột */}
           <YAxis hide domain={["auto", "auto"]} />
