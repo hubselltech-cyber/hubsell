@@ -114,6 +114,23 @@ function readPageSize(): number {
 
 const columnHelper = createColumnHelper<Product>();
 
+/**
+ * Bề rộng cột bảng Tồn kho (table-fixed, % của bảng). Cột Nhập · Xuất cố định theo
+ * rem để 3 nút icon không bao giờ bị cắt; phần % còn dư chia cho các cột không ghi.
+ */
+const COL_HEAD_CLASS: Record<string, string> = {
+  select: "w-10",
+  product: "w-[26%]",
+  skuCode: "w-[12%]",
+  costPrice: "w-[9%]",
+  sellingPrice: "w-[9%]",
+  quantityInStock: "w-[7%]",
+  availableToSell: "w-[8%]",
+  locations: "w-[11%]",
+  channels: "w-[13%]",
+  actions: "w-[8.5rem]",
+};
+
 type HubTab = "inventory" | "links" | "logs";
 
 /** Một MẪU hàng trên bảng = các SKU kho cùng khóa cha–con (backend xếp liền nhau). */
@@ -212,6 +229,8 @@ export default function ProductsHubPage() {
   const [exporting, setExporting] = useState(false);
   // Đang bán (mặc định) / Ngừng bán — chip chỉ hiện khi có SKU ngừng bán.
   const [status, setStatus] = useState<ProductStatusFilter>("active");
+  // Lọc HẾT HÀNG (tồn ≤ 0) — khách shop váy 22/10 xin; chip bật/tắt, kết hợp với Đang bán / Ngừng bán.
+  const [stockFilter, setStockFilter] = useState<"all" | "out">("all");
   // Lọc theo vị trí chứa hàng (anh Trung 24/09) — "" = mọi vị trí.
   const [locationFilter, setLocationFilter] = useState("");
   // SKU đang mở hộp Lịch sử kho.
@@ -268,18 +287,20 @@ export default function ProductsHubPage() {
   // Bảng CHA–CON (22/10/2026, khách muốn giống bảng Giá vốn): backend phân trang
   // theo MẪU hàng (view=grouped), các phân loại của một mẫu luôn về cùng trang.
   const productsQ = useApiQuery({
-    queryKey: qk.products({ page, pageSize, search, status, locationFilter, view: "grouped" }),
+    queryKey: qk.products({ page, pageSize, search, status, stockFilter, locationFilter, view: "grouped" }),
     queryFn: () =>
       fetchProducts({
         page,
         pageSize,
         search,
         status,
+        stock: stockFilter === "out" ? "out" : undefined,
         locationId: locationFilter || undefined,
         view: "grouped",
       }),
   });
   const inactiveCount = productsQ.data?.inactiveCount ?? 0;
+  const outOfStockCount = productsQ.data?.outOfStockCount ?? 0;
   const invalidate = useInvalidate();
   const items = useMemo(() => productsQ.data?.items ?? [], [productsQ.data]);
   // Gom dòng theo khóa cha–con backend đã xếp liền nhau: mẫu có ≥ 2 phân loại
@@ -333,7 +354,7 @@ export default function ProductsHubPage() {
 
   useEffect(() => {
     setSelected(new Map());
-  }, [page, search, status, tab, locationFilter]);
+  }, [page, search, status, stockFilter, tab, locationFilter]);
   const pageIds = items.map((p) => p.id);
   const selectedOnPage = pageIds.filter((id) => selected.has(id)).length;
   const allOnPage = items.length > 0 && selectedOnPage === items.length;
@@ -561,7 +582,7 @@ export default function ProductsHubPage() {
               <div className="flex min-w-0 items-center gap-2 pl-9">
                 <span
                   className={cn(
-                    "min-w-0 max-w-[14rem] truncate text-sm font-medium text-sky-800",
+                    "min-w-0 truncate text-sm font-medium text-sky-800",
                     inactive && "text-muted-foreground line-through decoration-slate-300"
                   )}
                   title={p.variantName ?? p.productName}
@@ -574,8 +595,11 @@ export default function ProductsHubPage() {
           }
           return (
             <div className="flex min-w-0 items-center gap-2.5">
+              {/* Chừa chỗ bằng nút bung của dòng cha để ảnh + tên sản phẩm đơn THẲNG HÀNG với
+                  sản phẩm nhiều phân loại (anh Trung 22/10 tối). */}
+              <span className="size-6 shrink-0" aria-hidden />
               <ProductThumb src={p.imageUrl ?? null} alt={p.productName} />
-              <div className="min-w-0 max-w-[12rem] 2xl:max-w-[18rem]">
+              <div className="min-w-0 flex-1">
                 <span
                   className={cn(
                     "block truncate font-medium",
@@ -602,7 +626,7 @@ export default function ProductsHubPage() {
       columnHelper.accessor("skuCode", {
         header: "Mã SKU",
         cell: ({ row }) => (
-          <div className="min-w-0 max-w-[8rem] 2xl:max-w-[14rem]">
+          <div className="min-w-0">
             <span className="block truncate font-mono text-sm font-medium" title={row.original.skuCode}>
               {row.original.skuCode}
             </span>
@@ -620,7 +644,7 @@ export default function ProductsHubPage() {
                   className="text-right"
                   title="Gian nào chưa đặt giá vốn riêng (trang Cấu hình Giá vốn) thì dùng giá này"
                 >
-                  Giá vốn mặc định
+                  Giá vốn
                 </div>
               ),
               cell: (info) => (
@@ -750,7 +774,7 @@ export default function ProductsHubPage() {
             <button
               type="button"
               onClick={() => toggleExpand(row.original)}
-              className="flex flex-nowrap items-center gap-1.5 text-left"
+              className="flex min-w-0 flex-wrap items-center gap-1.5 text-left"
               title="Bấm để xem sơ đồ kho ↔ từng gian"
             >
               {ordered.map(([channelName, group]) => {
@@ -1114,7 +1138,7 @@ export default function ProductsHubPage() {
               />
             </button>
             <ProductThumb src={g.imageUrl} alt={g.name} />
-            <div className="min-w-0 max-w-[12rem] 2xl:max-w-[18rem]">
+            <div className="min-w-0 flex-1">
               <span className={cn("block truncate", open ? "font-bold" : "font-medium")} title={g.name}>
                 {g.name}
               </span>
@@ -1330,8 +1354,32 @@ export default function ProductsHubPage() {
                 <ProductFormDialog onCreated={load} />
               </div>
             </div>
-            {(locationsEnabled || inactiveCount > 0 || status !== "active") && (
+            {(locationsEnabled ||
+              inactiveCount > 0 ||
+              status !== "active" ||
+              outOfStockCount > 0 ||
+              stockFilter !== "all") && (
               <div className="flex flex-wrap items-center gap-2">
+                {/* Chip HẾT HÀNG (22/10, khách xin): bật/tắt, đếm SKU đang bán có tồn ≤ 0. */}
+                {(outOfStockCount > 0 || stockFilter !== "all") && (
+                  <button
+                    type="button"
+                    aria-pressed={stockFilter === "out"}
+                    onClick={() => {
+                      setStockFilter((s) => (s === "out" ? "all" : "out"));
+                      setPage(1);
+                    }}
+                    className={cn(
+                      "whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      stockFilter === "out"
+                        ? "border-rose-600 bg-rose-600 text-white"
+                        : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    )}
+                    title="Chỉ hiện SKU đang hết hàng (tồn kho ≤ 0)"
+                  >
+                    Hết hàng {formatNumber(outOfStockCount)}
+                  </button>
+                )}
                 {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
                 {locationsEnabled && (
                   <LocationSelect
@@ -1406,6 +1454,8 @@ export default function ProductsHubPage() {
                         </b>
                         . Dùng &ldquo;Cất lên kệ&rdquo; để đưa hàng vào đây.
                       </p>
+                    ) : stockFilter === "out" ? (
+                      <p>Không có SKU nào đang hết hàng. Bấm lại chip &ldquo;Hết hàng&rdquo; để xem tất cả.</p>
                     ) : status === "inactive" ? (
                       <p>Chưa có SKU nào ngừng kinh doanh.</p>
                     ) : isAdmin && unlinkedCount > 0 ? (
@@ -1435,12 +1485,19 @@ export default function ProductsHubPage() {
                     )}
                   </div>
                 ) : (
-                  <Table>
+                  // table-fixed theo % (anh Trung 22/10: cột Nhập · Xuất bị cắt ở 1700px khi có cột
+                  // Đang ở): bảng luôn vừa khung, tên / mã tự cắt + tooltip, chip Bán trên xuống dòng
+                  // khi hẹp — không cuộn ngang. Bề rộng từng cột ở COL_HEAD_CLASS.
+                  <Table className="table-fixed" containerClassName="overflow-visible">
                     <TableHeader>
                       {table.getHeaderGroups().map((headerGroup) => (
                         <TableRow key={headerGroup.id}>
                           {headerGroup.headers.map((header) => (
-                            <TableHead key={header.id}>
+                            <TableHead
+                              key={header.id}
+                              // Tiêu đề được xuống dòng khi cột hẹp (1280: "Giá vốn mặc định" từng đè lên "Giá bán").
+                              className={cn("whitespace-normal leading-tight", COL_HEAD_CLASS[header.column.id])}
+                            >
                               {flexRender(
                                 header.column.columnDef.header,
                                 header.getContext()

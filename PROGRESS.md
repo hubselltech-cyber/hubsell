@@ -59,6 +59,13 @@
   không xảy ra trên prod); ChannelProduct mã máy `SPE-` ACTIVE 18.884, trong đó 1.862 dòng có SKU cha + tên phân loại → sẽ đổi khóa ở lượt
   Đồng bộ từ sàn kế (03:00 đêm hoặc khách bấm). Khách shop váy (Mạnh Nguyễn Văn): 302 SKU → 296 có phân loại, 47 mẫu, 198 dòng sàn SPE-.
   Log worker `[product-sync]` 1 giờ qua: chưa có (Catalog-sync BẬT 20:06:11, gian cũ làm mới 03:00) → kiểm lại sáng 23/10.
+- **Anh xem prod (ảnh 1700px, shop có cột Đang ở): "Lỗi, cột Nhập · Xuất bị cắt; co màn hình xem lại", "sản phẩm đơn cho thẳng hàng với sản
+  phẩm nhiều SKU", "khách yêu cầu bộ lọc hết hàng", hỏi "vẫn giữ Bật đồng bộ tự động?" (giữ nguyên, không đụng).** Sửa: (1) bảng Tồn kho
+  `table-fixed` theo % (`COL_HEAD_CLASS`, Nhập · Xuất cố định 8,5rem), tiêu đề cho xuống dòng, "Giá vốn mặc định" → "Giá vốn" (tooltip giữ),
+  chip Bán trên cho xuống dòng, tên/mã cắt theo bề rộng cột; đo 1700/1280 overflow 0, cột cuối luôn hiện. (2) Dòng sản phẩm đơn chừa chỗ
+  bằng nút bung (`size-6`) → ảnh + tên thẳng hàng với dòng cha. (3) Lọc HẾT HÀNG: `GET /products?stock=out` (tồn ≤ 0, cả SQL nhóm) +
+  `outOfStockCount` (đang bán, tồn ≤ 0) → chip đỏ "Hết hàng N" bật/tắt, kết hợp Đang bán/Ngừng bán/vị trí/tìm; nhóm chỉ hiện phân loại hết
+  hàng. Soi local 1280: chip lọc đúng (1.096 SKU demo), dòng trống nói "Không có SKU nào đang hết hàng". tsc BE/FE + eslint sạch.
 
 ---
 

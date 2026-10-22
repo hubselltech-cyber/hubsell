@@ -386,6 +386,8 @@ export interface ProductListResponse {
   activeCount?: number;
   /** view=grouped: `total` là số MẪU hàng, đây là số SKU khớp bộ lọc. */
   skuTotal?: number;
+  /** Số SKU đang bán mà hết hàng (tồn ≤ 0) — chip "Hết hàng N". */
+  outOfStockCount?: number;
 }
 
 export type ProductStatusFilter = "active" | "inactive" | "all";
@@ -1545,6 +1547,8 @@ export function fetchProducts(params: {
   locationId?: string;
   /** "grouped" = phân trang theo NHÓM cha–con (bảng Hàng hóa); mặc định phẳng theo SKU. */
   view?: "grouped";
+  /** "out" = chỉ SKU hết hàng (tồn ≤ 0). */
+  stock?: "out";
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
@@ -1553,6 +1557,7 @@ export function fetchProducts(params: {
   if (params.status) qs.set("status", params.status);
   if (params.locationId) qs.set("locationId", params.locationId);
   if (params.view) qs.set("view", params.view);
+  if (params.stock) qs.set("stock", params.stock);
   return apiFetch<ProductListResponse>(`/api/products?${qs.toString()}`);
 }
 

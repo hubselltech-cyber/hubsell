@@ -87,6 +87,14 @@ mỗi phân loại một ô gõ mã kho + nút nối, Tạo SP kho cho cả sả
   "nút kết nối bên cạnh giống Salework".
 - Không có cột Combo (Hubsell chưa có SKU combo) — việc riêng nếu khách cần.
 
+### 2.7 Chỉnh sau khi anh xem prod (22/10 tối)
+- Bảng Tồn kho `table-fixed` theo % (`COL_HEAD_CLASS` trong `products/page.tsx`): Nhập · Xuất cố định 8,5rem nên không bao
+  giờ bị cắt; tiêu đề xuống dòng khi hẹp; tên/mã cắt theo cột + tooltip; chip Bán trên xuống dòng. Đo 1700/1280: tràn 0.
+- Sản phẩm đơn chừa chỗ bằng nút bung → thẳng hàng với sản phẩm nhiều phân loại.
+- **Lọc Hết hàng** (khách xin): `GET /api/products?stock=out` = tồn ≤ 0 (áp cả SQL phân trang nhóm) + `outOfStockCount`
+  (đang bán, tồn ≤ 0). Chip đỏ "Hết hàng N" bật/tắt, kết hợp mọi bộ lọc khác; nhóm chỉ hiện phân loại hết hàng.
+- Đồng bộ tồn tự động theo gian (bước 3) và Tự khớp GIỮ NGUYÊN — nối tay chỉ là đường thêm.
+
 ## 3. Việc với khách / vận hành
 - Sau deploy, khách bấm **Đồng bộ từ sàn**: dòng `SPE-…` của khách đã điền SKU cha đổi khóa thành `VAY01 (Đen, M)`;
   backfill đã điền phân loại cho SKU kho cũ, bảng gom cha–con ngay.

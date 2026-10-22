@@ -124,12 +124,18 @@ const COLS = {
  */
 async function pageOfProductGroups(
   ownerId: string,
-  f: { status: "active" | "inactive" | "all"; search: string; locationIds: string[] | null },
+  f: {
+    status: "active" | "inactive" | "all";
+    stock: "out" | "all";
+    search: string;
+    locationIds: string[] | null;
+  },
   page: number,
   pageSize: number
 ): Promise<{ keys: string[]; total: number }> {
   const conds: Prisma.Sql[] = [Prisma.sql`p."userId" = ${ownerId}`];
   if (f.status !== "all") conds.push(Prisma.sql`p."isActive" = ${f.status === "active"}`);
+  if (f.stock === "out") conds.push(Prisma.sql`p."quantityInStock" <= 0`);
   if (f.search) {
     const like = `%${f.search}%`;
     conds.push(
@@ -182,6 +188,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // xem riêng SKU đã ngừng; ?status=all cho xuất Excel / tra cứu.
     const statusRaw = typeof req.query.status === "string" ? req.query.status : "active";
     const status = statusRaw === "inactive" || statusRaw === "all" ? statusRaw : "active";
+    // ?stock=out (22/10/2026, khách shop váy): chỉ SKU HẾT HÀNG (tồn ≤ 0) — chip lọc
+    // "Hết hàng N" trên bảng Hàng hóa; kết hợp được với trạng thái / tìm kiếm / vị trí.
+    const stock: "out" | "all" = req.query.stock === "out" ? "out" : "all";
     // LỌC THEO VỊ TRÍ (anh Trung 24/09): chọn một kho = lấy cả hàng ở các kệ / tầng
     // bên trong nó (cả nhánh con), chỉ SKU đang có hàng (≠ 0) ở đó.
     const locationId = typeof req.query.locationId === "string" ? req.query.locationId : "";
@@ -201,6 +210,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const where: Prisma.ProductWhereInput = {
       userId: req.ownerId!,
       ...(status === "all" ? {} : { isActive: status === "active" }),
+      ...(stock === "out" ? { quantityInStock: { lte: 0 } } : {}),
       ...(locationIds
         ? { stockLevels: { some: { locationId: { in: locationIds }, quantity: { not: 0 } } } }
         : {}),
@@ -238,7 +248,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // cắt sang trang sau. Mặc định (Excel, chọn SKU…) vẫn phân trang phẳng theo SKU.
     const grouped =
       req.query.view === "grouped"
-        ? await pageOfProductGroups(req.ownerId!, { status, search, locationIds }, page, pageSize)
+        ? await pageOfProductGroups(req.ownerId!, { status, stock, search, locationIds }, page, pageSize)
         : null;
 
     const [total, items, inactiveCount, activeCount, skuTotal] = await Promise.all([
@@ -267,6 +277,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
       // Số SKU khớp bộ lọc (chế độ nhóm: `total` là số MẪU, cần thêm số SKU cho nhãn).
       grouped ? prisma.product.count({ where }) : Promise.resolve(null),
     ]);
+    // Số SKU đang bán mà HẾT HÀNG (tồn ≤ 0) — chip "Hết hàng N" (ẩn khi 0).
+    const outOfStockCount = await prisma.product.count({
+      where: { userId: req.ownerId!, isActive: true, quantityInStock: { lte: 0 } },
+    });
 
     // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — HAI query
     // cho cả trang: cảnh báo mở (đẩy fail) + job đang chờ (lệch tạm, sắp khớp).
@@ -364,6 +378,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
       pageCount: Math.ceil(total / pageSize),
       // Chế độ nhóm: total = số MẪU hàng; skuTotal = số SKU khớp bộ lọc (nhãn "N sản phẩm · M SKU").
       ...(skuTotal !== null ? { skuTotal } : {}),
+      stock,
+      outOfStockCount,
       status,
       inactiveCount,
       activeCount,
