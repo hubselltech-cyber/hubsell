@@ -33,6 +33,12 @@ import { cn } from "@/lib/utils";
 
 const nf = new Intl.NumberFormat("vi-VN");
 
+/** Ô tiêu đề cột DÍNH dưới header app khi cuộn (anh Trung 22/10 "kéo theo khi cuộn giống
+ *  landing"): header app sticky cao 64px + viền 1px = 65px. Bóng mỏng phía dưới để lúc dính
+ *  thanh vẫn tách khỏi hàng giá đang cuộn qua. Khung bảng KHÔNG được overflow-hidden (vô
+ *  hiệu position: sticky) → bo góc đặt trên từng ô góc. */
+const STICKY_TH = "sticky top-[65px] z-20 shadow-[0_8px_14px_-10px_rgba(15,23,42,0.45)]";
+
 export const CYCLES: {
   value: BillingCycle;
   label: string;
@@ -429,11 +435,16 @@ export function PlanPricingMatrix({
     <>
       {/* ---------- MA TRẬN GÓI × KỲ — bản DESKTOP (lg trở lên) ---------- */}
       <div className="hidden lg:block">
-        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <div className="rounded-2xl border bg-card shadow-sm">
           <table className="w-full border-separate border-spacing-0 text-left">
             <thead>
               <tr>
-                <th className="w-[30%] bg-primary px-5 py-4 align-middle text-primary-foreground">
+                <th
+                  className={cn(
+                    STICKY_TH,
+                    "w-[30%] rounded-tl-2xl bg-primary px-5 py-4 align-middle text-primary-foreground"
+                  )}
+                >
                   <span className="block text-xs font-semibold uppercase tracking-wider opacity-70">
                     Gói dịch vụ
                   </span>
@@ -447,8 +458,11 @@ export function PlanPricingMatrix({
                     <th
                       key={c.value}
                       className={cn(
+                        STICKY_TH,
                         "px-3 py-4 text-center align-middle",
-                        c.best ? "bg-emerald-600 text-white" : "bg-primary text-primary-foreground"
+                        c.best
+                          ? "rounded-tr-2xl bg-emerald-600 text-white"
+                          : "bg-primary text-primary-foreground"
                       )}
                     >
                       <span className="block text-sm font-bold uppercase tracking-wide">Gói {c.label}</span>
@@ -461,10 +475,12 @@ export function PlanPricingMatrix({
               </tr>
             </thead>
             <tbody>
-              {plans.map((p) => {
+              {plans.map((p, idx) => {
                 const row = rowOf(p);
                 const { isBestSeller, badges } = row;
                 const cycle = cycleFor(p);
+                // Hàng cuối bảng (không có Enterprise) nhận bo góc dưới.
+                const isLastRow = !enterprisePlan && idx === plans.length - 1;
                 return (
                   <tr
                     key={p.id}
@@ -476,6 +492,7 @@ export function PlanPricingMatrix({
                     <td
                       className={cn(
                         "px-5 py-5 align-top",
+                        isLastRow && "rounded-bl-2xl",
                         isBestSeller && "shadow-[inset_3px_0_0_0_var(--color-emerald-500)]"
                       )}
                     >
@@ -498,7 +515,8 @@ export function PlanPricingMatrix({
                         key={c.value}
                         className={cn(
                           "relative overflow-hidden border-l p-2 align-middle",
-                          c.best ? "border-l-amber-100 bg-amber-50/70" : "border-l-border/60"
+                          c.best ? "border-l-amber-100 bg-amber-50/70" : "border-l-border/60",
+                          isLastRow && c.best && "rounded-br-2xl"
                         )}
                       >
                         {c.best && priceOf(p, c.value) > 0 && <BestRibbon />}
@@ -516,7 +534,7 @@ export function PlanPricingMatrix({
               })}
               {enterprisePlan && (
                 <tr className="bg-gradient-to-r from-card via-emerald-50/30 to-card [&>td]:border-t [&>td]:border-t-border">
-                  <td className="px-5 py-5 align-top">
+                  <td className="rounded-bl-2xl px-5 py-5 align-top">
                     <PlanHead
                       name={enterprisePlan.name}
                       description={enterpriseDesc}
@@ -524,7 +542,10 @@ export function PlanPricingMatrix({
                       limits={[...enterpriseLimits, "Đầy đủ tính năng + hỗ trợ triển khai riêng"]}
                     />
                   </td>
-                  <td colSpan={CYCLES.length} className="border-l border-l-border/60 px-6 py-5 align-middle">
+                  <td
+                    colSpan={CYCLES.length}
+                    className="rounded-br-2xl border-l border-l-border/60 px-6 py-5 align-middle"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-4">
                       <div className="min-w-0 max-w-xl flex-1">
                         <EnterpriseOffer pricePerOrder={enterprisePlan.pricePerOrder} />
