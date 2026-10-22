@@ -229,7 +229,7 @@ export function SetupGuide({
       ? "Làm bước 1 trước. Sản phẩm trùng mã SKU với kho sẽ tự nối, phần còn lại Hubsell tạo SKU kho giúp."
       : step2Done
         ? `Đã nối ${formatNumber(linked)} sản phẩm sàn về ${formatNumber(productTotal)} SKU kho. Gian nào bán, kho và mọi gian cùng trừ.`
-        : `Còn ${formatNumber(unlinked)} sản phẩm sàn chưa nối về kho. Chưa nối thì đơn về không trừ được tồn.`,
+        : `Còn ${formatNumber(unlinked)} sản phẩm sàn chưa nối về kho. Chưa nối thì đơn về không trừ được tồn và tồn kho không đẩy lên sàn.`,
     step2Done ? (
       <Button size="sm" variant="outline" onClick={onOpenLinks}>
         <Link2 className="size-3.5" />
@@ -241,13 +241,12 @@ export function SetupGuide({
           <Sparkles className="size-3.5" />
           Tự khớp + tạo SKU
         </Button>
-        <button
-          type="button"
-          onClick={onOpenLinks}
-          className={cn(TEXT_SUB, "underline-offset-2 hover:text-foreground hover:underline")}
-        >
-          hoặc nối tay từng dòng
-        </button>
+        {/* Nối tay = NÚT ngang hàng với Tự khớp (anh Trung 22/10 tối: "cho nổi rõ lên giống nút tự
+            động") — khách chưa đặt SKU trên sàn đi đường này (gõ mã từng phân loại ở tab Sản phẩm trên sàn). */}
+        <Button size="sm" variant="outline" onClick={onOpenLinks} disabled={!step1Done}>
+          <Link2 className="size-3.5" />
+          Nối tay từng dòng
+        </Button>
       </>
     )
   );

@@ -70,6 +70,10 @@
   khi đang lọc (hết hàng / tìm) trả `groupTotals` (tổng phân loại từng mẫu, groupBy groupKey cùng trạng thái bán); dòng cha vẫn là dòng cha
   dù chỉ 1 phân loại khớp, nhãn "1/6 phân loại hết hàng" (tìm kiếm: "… khớp"); chip Hết hàng dời sau Đang bán / Ngừng bán. Soi local: váy
   "4/12 phân loại hết hàng". tsc BE/FE + eslint sạch.
+  Push `bdb620c9`. **Anh hỏi "chỉ đồng bộ về mà không nối SKU thì up tồn có đẩy lên sàn không?"** → KHÔNG: enqueueStockPush chỉ nhặt dòng sàn
+  đã nối (productId) + ACTIVE + gian bật; chưa nối thì chưa có SKU kho để up. **Anh: "cho nổi rõ lên giống nút tự động"** → bước 2 khối Kho
+  trung tâm: "hoặc nối tay từng dòng" (chữ mờ) thành NÚT outline "Nối tay từng dòng" ngang hàng Tự khớp; lời bước 2 thêm "và tồn kho không
+  đẩy lên sàn". Chưa làm: cảnh báo khi bật gian có 0 SKU nối (bước 3) — chờ anh.
 
 ---
 
