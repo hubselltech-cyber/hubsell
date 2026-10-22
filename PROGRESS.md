@@ -54,6 +54,11 @@
   (untracked), commit cả 6 lát + push `a6aceaaa` 22/10 tối. Sau deploy: migration tự áp trên Render (backfill phân loại cho SKU kho cũ); khách shop váy bấm
   Đồng bộ từ sàn để dòng SPE-… đổi khóa nếu đã điền SKU cha. Kiểm log `[product-sync]` + SQL `COUNT(*) FROM "Product" WHERE "variantName" IS NOT NULL`.
   CÒN TREO: lời bước 2 khối Kho trung tâm ưu tiên nối tay (anh chưa gật).
+- **Kiểm prod 20:06–20:30 (anh: "deploy xong thì kiểm"):** Render web "Deploy live for a6aceaa" 20:06, /health = a6aceaaa; migration + backfill
+  đã áp. SQL chỉ đọc Supabase (Chrome anh): Product 17.456 SKU, **12.611 có phân loại**, 1.716 mẫu (groupKey), **khóa gom lệch = 0** (lỗi chữ s
+  không xảy ra trên prod); ChannelProduct mã máy `SPE-` ACTIVE 18.884, trong đó 1.862 dòng có SKU cha + tên phân loại → sẽ đổi khóa ở lượt
+  Đồng bộ từ sàn kế (03:00 đêm hoặc khách bấm). Khách shop váy (Mạnh Nguyễn Văn): 302 SKU → 296 có phân loại, 47 mẫu, 198 dòng sàn SPE-.
+  Log worker `[product-sync]` 1 giờ qua: chưa có (Catalog-sync BẬT 20:06:11, gian cũ làm mới 03:00) → kiểm lại sáng 23/10.
 
 ---
 
