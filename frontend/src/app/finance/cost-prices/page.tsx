@@ -37,16 +37,21 @@ import {
   ApiError,
   backfillCostPricesToOrders,
   fetchCatalogPending,
+  fetchMissingCostSkus,
   fetchSkuProducts,
   fillSuggestedCosts,
   getStoredUser,
   getToken,
   updateSkuCostPrice,
   type CatalogPendingChannel,
+  type ChannelFilterQuery,
+  type ChannelName,
   type CostSiblings,
+  type MissingCostSkuList,
   type SkuChannelFilter,
   type SkuProduct,
 } from "@/lib/api";
+import { formatDayVN, type DateRange } from "@/lib/date-range";
 import { exportCostPricesToExcel } from "@/lib/excel";
 import { formatVND, formatNumber } from "@/lib/format";
 import { normalizeText } from "@/lib/text";
@@ -86,6 +91,40 @@ const shopKey = (i: SkuProduct) => i.channelId || OFFLINE_SHOP_KEY;
 
 /** Khoá localStorage nhớ đã tắt dải cảnh báo thiếu giá vốn (nối thêm userId). */
 const BANNER_HIDE_KEY = "hubsell_cost_missing_banner_hidden";
+
+/**
+ * LỌC THEO KỲ: tới từ dòng "N đơn chưa có giá vốn" ở Báo cáo dòng tiền / Tổng
+ * quan (?missing=period&from&to[&channelName][&channelId]). Trang chỉ hiện các
+ * SKU đã BÁN trong kỳ đó mà chưa có giá vốn, xếp SKU gây nhiều đơn lên đầu —
+ * khách vài nghìn SKU (22/10) không phải dò tay xem đơn nào thiếu.
+ */
+interface PeriodFocus {
+  range: DateRange;
+  channel: ChannelFilterQuery;
+  data: MissingCostSkuList;
+  /** Số đơn theo danh tính dòng sàn: "gian|ext:item-model" và "gian|sku:MÃ". */
+  orders: Map<string, number>;
+}
+
+/** "yyyy-mm-dd" (lịch địa phương) → Date đầu ngày; sai khuôn → null. */
+function parseDayKey(raw: string | null): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw ?? "");
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Cùng cách chuẩn hoá mã với máy chủ (lib/cost-mapping normalizeSkuCode). */
+const skuKey = (s: string) => s.normalize("NFC").trim().toUpperCase();
+
+function periodOrdersOf(focus: PeriodFocus, item: SkuProduct): number {
+  if (!item.channelId) return 0;
+  return (
+    (item.externalId ? focus.orders.get(`${item.channelId}|ext:${item.externalId}`) : undefined) ??
+    focus.orders.get(`${item.channelId}|sku:${skuKey(item.sku)}`) ??
+    0
+  );
+}
 
 // Phân trang theo SẢN PHẨM (nhóm cha), KHÔNG theo dòng — anh Trung 28/09: một
 // mẫu 25 phân loại không bị ngắt giữa hai trang. 20 mặc định, tối đa 50.
@@ -183,10 +222,58 @@ export default function CostPricesPage() {
     [shopItems]
   );
 
+  // ----- Lọc theo kỳ (tới từ dòng "N đơn chưa có giá vốn") -----
+  const [periodFocus, setPeriodFocus] = useState<PeriodFocus | null>(null);
+  const [periodLoading, setPeriodLoading] = useState(false);
+  useEffect(() => {
+    // Đọc một lần lúc mount, không cần useSearchParams (cùng cách trang Hàng hóa).
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("missing") !== "period") return;
+    const from = parseDayKey(params.get("from"));
+    const to = parseDayKey(params.get("to"));
+    if (!from || !to) return;
+    const channelName = (params.get("channelName") ?? "") as ChannelName | "";
+    const channelId = params.get("channelId") ?? "";
+    const range = { from, to };
+    const chan: ChannelFilterQuery = { channelName, channelId };
+    // Tab sàn + gian theo đúng bộ lọc của trang gọi tới; SKU sàn đã gỡ vẫn phải
+    // hiện (đơn trong kỳ vẫn chứa nó) nên mở "Tất cả, kể cả đã gỡ".
+    if (channelName) setChannel(channelName.toLowerCase() as SkuChannelFilter);
+    if (channelId) setShop(channelId);
+    setListing("all");
+    setStatusFilter("missing");
+    setPeriodLoading(true);
+    fetchMissingCostSkus(range, chan)
+      .then((data) => {
+        const orders = new Map<string, number>();
+        for (const r of data.items) {
+          if (r.externalId) orders.set(`${r.channelId}|ext:${r.externalId}`, r.orders);
+          const k = `${r.channelId}|sku:${skuKey(r.channelSku)}`;
+          orders.set(k, (orders.get(k) ?? 0) + r.orders);
+        }
+        setPeriodFocus({ range, channel: chan, data, orders });
+      })
+      .catch((err) => {
+        toast.error(
+          err instanceof ApiError ? err.message : "Không tải được danh sách SKU thiếu giá vốn của kỳ"
+        );
+      })
+      .finally(() => setPeriodLoading(false));
+  }, []);
+  function clearPeriodFocus() {
+    setPeriodFocus(null);
+    setStatusFilter("all");
+    setListing("active");
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+
   // Lọc ngay tại màn hình → kết quả cập nhật tức thì khi gõ, không cần chờ API
   const filteredItems = useMemo(() => {
     const keyword = normalizeText(search.trim());
-    return listedItems.filter((item) => {
+    const rows = listedItems.filter((item) => {
+      // Đang lọc theo kỳ: chỉ SKU có đơn trong kỳ đang thiếu giá vốn
+      if (periodFocus && periodOrdersOf(periodFocus, item) <= 0) return false;
+
       // Lọc theo trạng thái giá vốn
       const cost = Number(item.costPrice);
       if (statusFilter === "missing" && cost > 0) return false;
@@ -203,9 +290,22 @@ export default function CostPricesPage() {
         (item.modelId ?? "").includes(keyword)
       );
     });
-  }, [listedItems, search, statusFilter]);
+    // SKU gây nhiều đơn chưa tính lãi lên đầu (sort ổn định: cùng số thì giữ thứ tự cũ)
+    if (periodFocus) {
+      rows.sort((a, b) => periodOrdersOf(periodFocus, b) - periodOrdersOf(periodFocus, a));
+    }
+    return rows;
+  }, [listedItems, search, statusFilter, periodFocus]);
 
-  const isFiltering = search.trim() !== "" || statusFilter !== "all";
+  // Số đơn trong kỳ của từng SKU đang hiển thị — bảng in cạnh tên phân loại
+  const periodOrderCounts = useMemo(() => {
+    if (!periodFocus) return undefined;
+    const out: Record<string, number> = {};
+    for (const item of filteredItems) out[item.skuId] = periodOrdersOf(periodFocus, item);
+    return out;
+  }, [filteredItems, periodFocus]);
+
+  const isFiltering = search.trim() !== "" || statusFilter !== "all" || periodFocus !== null;
 
   /**
    * Gom dòng đã lọc thành cây Sản phẩm cha → Biến thể con để đưa vào bảng.
@@ -584,8 +684,40 @@ export default function CostPricesPage() {
             </div>
           </div>
 
+          {/* Đang lọc theo kỳ (tới từ "N đơn chưa có giá vốn") — nói rõ đang xem gì,
+              còn bao nhiêu, và lối ra về danh sách đầy đủ. */}
+          {(periodFocus || periodLoading) && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {periodLoading ? (
+                <>
+                  <Loader2 className="size-4 shrink-0 animate-spin text-amber-600 motion-reduce:animate-none" />
+                  <p className="min-w-0 flex-1">Đang tìm các SKU đã bán trong kỳ mà chưa có giá vốn…</p>
+                </>
+              ) : periodFocus ? (
+                <>
+                  <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                  <p className="min-w-0 flex-1">
+                    Đang hiện SKU đã bán từ <b>{formatDayVN(periodFocus.range.from)}</b> đến{" "}
+                    <b>{formatDayVN(periodFocus.range.to)}</b> mà chưa có giá vốn:{" "}
+                    <b>{formatNumber(filteredItems.length)}</b> SKU làm{" "}
+                    <b>{formatNumber(periodFocus.data.orderCount)}</b> đơn chưa tính được lãi.
+                    {periodFocus.data.orderCount > 0 && filteredItems.length === 0 && !loading
+                      ? " Các SKU này không còn trong danh mục gian (đã xóa trên sàn) hoặc vừa được nhập giá — bấm “Áp giá vốn cho đơn cũ” để tính lại."
+                      : " Nhập xong, các đơn này tự tính lại."}
+                    {periodFocus.data.ledgerPending > 0 && (
+                      <> Sổ còn {formatNumber(periodFocus.data.ledgerPending)} đơn đang tính, số có thể đổi.</>
+                    )}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={clearPeriodFocus}>
+                    Xem tất cả SKU
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          )}
+
           {/* Dải nhắc còn SKU chưa nhập giá vốn — gọn một dòng, X = không hiện lại */}
-          {!loading && missingCount > 0 && !bannerHidden && (
+          {!loading && missingCount > 0 && !bannerHidden && !periodFocus && (
             <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-800">
               <AlertTriangle className="size-3.5 shrink-0 text-amber-600" />
               <p className="min-w-0 flex-1">
@@ -725,6 +857,15 @@ export default function CostPricesPage() {
                   <PackageSearch className="mx-auto mb-2 size-8" />
                   Không có SKU nào bị sàn gỡ ở kênh này.
                 </div>
+              ) : filteredItems.length === 0 && periodFocus ? (
+                // Lọc theo kỳ mà không còn dòng nào: dải phía trên đã giải thích
+                <div className="py-12 text-center">
+                  <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
+                  <p>Không có SKU nào của kỳ này cần nhập giá vốn</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Bấm “Xem tất cả SKU” để về danh sách đầy đủ.
+                  </p>
+                </div>
               ) : filteredItems.length === 0 && statusFilter === "missing" && !search.trim() ? (
                 // Empty state đặc biệt: đã nhập đủ giá vốn cho tất cả sản phẩm
                 <div className="py-16 text-center">
@@ -751,6 +892,7 @@ export default function CostPricesPage() {
                 <Refreshing active={loading}>
                   <CostPriceTable
                     groups={pagedGroups}
+                    periodOrderCounts={periodOrderCounts}
                     drafts={drafts}
                     onDraftChange={(skuId, digits) =>
                       setDrafts((d) => ({ ...d, [skuId]: digits }))

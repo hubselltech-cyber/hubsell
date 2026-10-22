@@ -18,6 +18,7 @@ import {
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { MissingCostPrompt } from "@/components/finance/missing-cost-prompt";
+import { missingCostHref } from "@/components/finance/missing-cost-note";
 import { LedgerPendingNotice, TruncatedNotice } from "@/components/finance/truncated-notice";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AppShell } from "@/components/shell/app-shell";
@@ -805,7 +806,7 @@ export default function DashboardPage() {
         */}
       </div>
       {/* Hộp nhắc nhập giá vốn — theo đúng số "đơn chưa có giá vốn" của kỳ đang xem. */}
-      <MissingCostPrompt summary={analytics?.missingCost} />
+      <MissingCostPrompt summary={analytics?.missingCost} href={missingCostHref(range, channel)} />
     </AppShell>
   );
 }

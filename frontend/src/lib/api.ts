@@ -2368,6 +2368,36 @@ export interface SkuProduct {
   itemId: string | null;
   /** Mã PHÂN LOẠI trên sàn (model_id / sku_id) — null nếu sàn không tách phân loại. */
   modelId: string | null;
+  /** Danh tính dòng trên sàn nguyên văn ("item-model") — khớp dòng đơn thiếu giá vốn. Thiếu = backend cũ. */
+  externalId?: string | null;
+}
+
+/**
+ * Một SKU đã BÁN TRONG KỲ mà chưa có giá vốn (dòng "N đơn chưa có giá vốn" ở
+ * Báo cáo dòng tiền / Tổng quan bấm vào). Danh tính theo sàn: gian + id lá + mã.
+ */
+export interface MissingCostSku {
+  channelId: string;
+  externalId: string | null;
+  channelSku: string;
+  productName: string;
+  /** Số đơn trong kỳ chứa SKU này đang bị loại khỏi lợi nhuận. */
+  orders: number;
+  quantity: number;
+}
+
+export interface MissingCostSkuList {
+  items: MissingCostSku[];
+  skuCount: number;
+  orderCount: number;
+  truncated: boolean;
+  ledgerPending: number;
+}
+
+export function fetchMissingCostSkus(range?: DateRange, channel?: ChannelFilterQuery) {
+  return apiFetch<MissingCostSkuList>(
+    withRange("/api/finance/sku-products/missing-cost", range, channel)
+  );
 }
 
 /** Gian vừa nối, danh mục sản phẩm chưa kéo xong lần đầu (worker đang kéo nền). */

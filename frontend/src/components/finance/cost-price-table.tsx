@@ -77,6 +77,12 @@ export interface ProductGroup {
 
 interface CostPriceTableProps {
   groups: ProductGroup[];
+  /**
+   * Đang lọc theo kỳ (tới từ "N đơn chưa có giá vốn"): số đơn trong kỳ của từng
+   * skuId đang bị loại khỏi lợi nhuận — in cạnh tên để khách biết nhập mã nào
+   * trước. Không truyền = không in gì.
+   */
+  periodOrderCounts?: Record<string, number>;
   drafts: Record<string, string>;
   onDraftChange: (skuId: string, digits: string) => void;
   onVariantBlur: (item: SkuProduct) => void;
@@ -88,6 +94,7 @@ interface CostPriceTableProps {
 
 export function CostPriceTable({
   groups,
+  periodOrderCounts,
   drafts,
   onDraftChange,
   onVariantBlur,
@@ -138,6 +145,7 @@ export function CostPriceTable({
             <SingleRow
               key={group.key}
               item={group.variants[0]}
+              periodOrders={periodOrderCounts?.[group.variants[0].skuId]}
               drafts={drafts}
               onDraftChange={onDraftChange}
               onVariantBlur={onVariantBlur}
@@ -148,6 +156,10 @@ export function CostPriceTable({
             <React.Fragment key={group.key}>
               <ParentRow
                 group={group}
+                periodOrders={
+                  periodOrderCounts &&
+                  group.variants.reduce((n, v) => n + (periodOrderCounts[v.skuId] ?? 0), 0)
+                }
                 open={expanded.has(group.key)}
                 onToggle={() => toggle(group.key)}
                 onExpand={() =>
@@ -160,6 +172,7 @@ export function CostPriceTable({
                   <ChildRow
                     key={v.skuId}
                     item={v}
+                    periodOrders={periodOrderCounts?.[v.skuId]}
                     showItemId={!singleItemId(group)}
                     drafts={drafts}
                     onDraftChange={onDraftChange}
@@ -192,14 +205,29 @@ function singleItemId(group: ProductGroup): string | null {
   return ids.size === 1 ? ([...ids][0] as string) : null;
 }
 
+/** "· N đơn chờ giá vốn" — chỉ khi đang lọc theo kỳ và SKU có đơn trong kỳ. */
+function PeriodOrdersTag({ count }: { count?: number }) {
+  if (!count || count <= 0) return null;
+  return (
+    <span
+      className="font-medium text-amber-700"
+      title="Số đơn trong kỳ đang xem chứa SKU này nhưng chưa tính được lãi vì thiếu giá vốn"
+    >
+      · {formatNumber(count)} đơn chờ giá vốn
+    </span>
+  );
+}
+
 function ParentRow({
   group,
+  periodOrders,
   open,
   onToggle,
   onExpand,
   onBulkApplied,
 }: {
   group: ProductGroup;
+  periodOrders?: number;
   open: boolean;
   onToggle: () => void;
   onExpand: () => void;
@@ -288,6 +316,7 @@ function ParentRow({
                   · {formatNumber(missing)} chưa có giá vốn
                 </span>
               )}
+              <PeriodOrdersTag count={periodOrders} />
             </p>
           </div>
         </div>
@@ -462,6 +491,8 @@ function QuickFill({
 
 interface RowProps {
   item: SkuProduct;
+  /** Số đơn trong kỳ chờ giá vốn của SKU này (chỉ khi đang lọc theo kỳ). */
+  periodOrders?: number;
   /** Dòng con tự mang mã SẢN PHẨM khi dòng cha gộp nhiều gian / nhiều mã. */
   showItemId?: boolean;
   drafts: Record<string, string>;
@@ -657,6 +688,11 @@ function ChildRow(props: RowProps) {
           <div className="min-w-0">
             <p className="truncate" title={label}>
               {label}
+              {props.periodOrders ? (
+                <span className="ml-1 text-xs">
+                  <PeriodOrdersTag count={props.periodOrders} />
+                </span>
+              ) : null}
             </p>
             {showItemId && item.itemId && <MarketplaceCode label="Mã SP" code={item.itemId} />}
           </div>
@@ -727,12 +763,14 @@ function SingleRow(props: RowProps) {
             <p className="max-w-[26rem] truncate" title={item.productName}>
               {item.productName}
             </p>
-            {variant && (
+            {(variant || props.periodOrders) && (
               <p
                 className="max-w-[26rem] truncate text-xs font-medium text-sky-700"
-                title={`Phân loại: ${variant}`}
+                title={variant ? `Phân loại: ${variant}` : undefined}
               >
                 {variant}
+                {variant && props.periodOrders ? " " : null}
+                <PeriodOrdersTag count={props.periodOrders} />
               </p>
             )}
             {item.itemId && <MarketplaceCode label="Mã SP" code={item.itemId} />}

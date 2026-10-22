@@ -45,7 +45,14 @@ function isQuiet(): boolean {
  * không bao giờ nói hai con số khác nhau. Mỗi lần vào trang hỏi tối đa một lần;
  * chỉ người có quyền Cấu hình Giá vốn mới thấy.
  */
-export function MissingCostPrompt({ summary }: { summary?: MissingCostSummary }) {
+export function MissingCostPrompt({
+  summary,
+  href = "/finance/cost-prices",
+}: {
+  summary?: MissingCostSummary;
+  /** Nơi "Nhập giá vốn" dẫn tới — trang có kỳ truyền missingCostHref(range, channel) để lọc sẵn SKU thiếu. */
+  href?: string;
+}) {
   const router = useRouter();
   const count = summary?.orderCount ?? 0;
   const [open, setOpen] = useState(false);
@@ -77,7 +84,7 @@ export function MissingCostPrompt({ summary }: { summary?: MissingCostSummary })
       // như trên
     }
     setOpen(false);
-    router.push("/finance/cost-prices");
+    router.push(href);
   }
 
   return (

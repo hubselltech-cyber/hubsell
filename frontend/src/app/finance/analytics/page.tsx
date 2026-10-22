@@ -38,7 +38,7 @@ import {
 } from "@/lib/date-range";
 import { BreakdownCard } from "@/components/finance/breakdown-card";
 import { CashFlowTable } from "@/components/finance/cash-flow-table";
-import { MissingCostNote } from "@/components/finance/missing-cost-note";
+import { MissingCostNote, missingCostHref } from "@/components/finance/missing-cost-note";
 import { MissingCostPrompt } from "@/components/finance/missing-cost-prompt";
 import { LedgerPendingNotice, TruncatedNotice } from "@/components/finance/truncated-notice";
 import { Button } from "@/components/ui/button";
@@ -225,6 +225,7 @@ export default function FinanceAnalyticsPage() {
                       % là biên lợi nhuận trên dòng tiền tương ứng
                       <MissingCostNote
                         summary={b.profit.missingCost}
+                        href={missingCostHref(range, channel)}
                         className="mt-1 block text-amber-600 dark:text-amber-400"
                       />
                     </span>
@@ -322,7 +323,10 @@ export default function FinanceAnalyticsPage() {
         </p>
       </div>
       {/* Hộp nhắc nhập giá vốn — theo đúng số "đơn chưa có giá vốn" của kỳ đang xem. */}
-      <MissingCostPrompt summary={data?.breakdown.profit.missingCost} />
+      <MissingCostPrompt
+        summary={data?.breakdown.profit.missingCost}
+        href={missingCostHref(range, channel)}
+      />
     </AppShell>
   );
 }

@@ -94,9 +94,11 @@ import {
   ledgerOpenCashTotals,
   ledgerPnlList,
   ledgerPnlSummary,
+  ledgerScopeSql,
   ledgerSkuAgg,
   ledgerSummary,
 } from "../services/order-ledger";
+import { LEDGER_FORMULA_VERSION } from "../lib/order-ledger";
 
 const router = Router();
 
@@ -1008,6 +1010,8 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
        */
       itemId: string | null;
       modelId: string | null;
+      /** Danh tính dòng trên sàn nguyên văn ("item-model") — khớp với dòng đơn thiếu giá vốn. */
+      externalId: string | null;
     }[] = [];
 
     // 1) SKU trên sàn — CẢ đã lẫn CHƯA liên kết kho gốc. Giá vốn = giá riêng
@@ -1055,6 +1059,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
           status: cp.status,
           itemId: itemId || null,
           modelId: modelId || null,
+          externalId: cp.externalId ?? null,
         });
       }
     }
@@ -1083,6 +1088,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
           status: ChannelProductStatus.ACTIVE,
           itemId: null,
           modelId: null,
+          externalId: null,
         });
       }
     }
@@ -1275,6 +1281,70 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
         ).length,
         missingCostCount: items.filter((i) => i.missingCost).length,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// SKU BÁN TRONG KỲ MÀ CHƯA CÓ GIÁ VỐN (khách vài nghìn SKU, 22/10/2026)
+//
+// Dòng "N đơn chưa có giá vốn" ở Báo cáo dòng tiền / Tổng quan chỉ là con số:
+// khách vài nghìn phân loại không thể dò tay xem đơn nào. Đơn vị để SỬA là SKU
+// (nhập một giá vốn là mọi đơn chứa SKU đó tự tính lại), nên trả về danh sách
+// SKU theo danh tính sàn (gian + id lá + mã), kèm số đơn bị ảnh hưởng để trang
+// Giá vốn lọc đúng những dòng này và xếp dòng gây nhiều đơn lên đầu.
+//
+// NGUỒN SỐ: sổ dòng hàng — cùng phạm vi đơn với số "N đơn" (countsAsRevenue:
+// không tính hủy, đang hoàn) và cùng cột ngày tạo đơn. Một câu GROUP BY, không
+// đọc bảng đơn; trần 5.000 SKU (thực tế mỗi kỳ vài chục–vài trăm mã).
+// ============================================================
+const MISSING_COST_SKU_LIMIT = 5000;
+
+router.get("/sku-products/missing-cost", async (req: AuthRequest, res, next) => {
+  try {
+    const scope = channelScope(req);
+    const range = parseDateRange(req.query);
+    const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
+    const where = Prisma.sql`
+      ${ledgerScopeSql(scope, range, { alias: "l" })}
+      AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+      AND l."countsAsRevenue" = TRUE
+      AND l."quantity" > 0
+      AND l."costPriceAtSale" <= 0`;
+    const [rows, totals] = await Promise.all([
+      prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+        SELECT l."channelId", l."externalId", l."channelSku",
+               (array_agg(l."productName" ORDER BY l."createdAt" DESC, l."orderItemId"))[1] AS "productName",
+               count(DISTINCT l."orderId")::int AS "orders",
+               COALESCE(sum(l."quantity"), 0)::int AS "quantity"
+        FROM "order_line_ledger" l
+        WHERE ${where}
+        GROUP BY 1, 2, 3
+        ORDER BY "orders" DESC, "quantity" DESC
+        LIMIT ${MISSING_COST_SKU_LIMIT}
+      `),
+      prisma.$queryRaw<{ skus: number; orders: number }[]>(Prisma.sql`
+        SELECT count(DISTINCT (l."channelId", l."externalId", l."channelSku"))::int AS "skus",
+               count(DISTINCT l."orderId")::int AS "orders"
+        FROM "order_line_ledger" l
+        WHERE ${where}
+      `),
+    ]);
+    res.json({
+      items: rows.map((r) => ({
+        channelId: String(r.channelId),
+        externalId: (r.externalId as string | null) ?? null,
+        channelSku: String(r.channelSku),
+        productName: String(r.productName ?? r.channelSku),
+        orders: Number(r.orders),
+        quantity: Number(r.quantity),
+      })),
+      skuCount: Number(totals[0]?.skus ?? 0),
+      orderCount: Number(totals[0]?.orders ?? 0),
+      truncated: rows.length >= MISSING_COST_SKU_LIMIT,
+      ledgerPending: fresh.dirty + fresh.staleVersion,
     });
   } catch (err) {
     next(err);
