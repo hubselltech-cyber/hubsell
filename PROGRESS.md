@@ -100,6 +100,11 @@
   (2) gian khách đã nối hết nên dòng nào cũng chỉ có Gỡ nối, và "Nối gian" từ Tồn kho mồi ô tìm bằng MÃ SKU kho (không khớp dòng sàn) → thêm
   nút **Đổi** ở dòng đã nối (ô gõ điền sẵn mã cũ, Enter = nối sang mã khác / tạo mã mới qua link-by-sku, Esc/× thôi), và "Nối gian" mồi bằng
   4 chữ đầu TÊN sản phẩm. eslint + tsc sạch; soi local 1440 bằng JS (ô Đổi điền sẵn TC050-BE, Gỡ nối phải 1376 < khung 1393).
+  Push `8ee190e4`. **Anh làm rõ ca khách:** SKU của gian A ở Tồn kho → "Nối thêm gian cho SKU này" → sang tab sàn chọn gian B (Tiệm Đồ Xinh)
+  để nối thêm, nhưng dòng gian B đã nối hết → không có nút → làm đúng luồng "nối thêm gian": `LinkManager` nhận `targetProduct`; DẢI ĐÍCH
+  "Đang nối thêm gian cho SKU kho X — tên · Xong"; mỗi dòng có nút một bấm "Nối vào X" (chưa nối) / "Chuyển sang X" (đang nối SKU khác) /
+  "Đã nối" (cùng SKU) gọi `/mappings/link` (ghi đè productId); dòng trống có nút "Xóa từ khóa, xem tất cả dòng sàn" vì từ khóa mồi theo tên
+  thường không khớp gian khác. Soi local: từ TUI-01 bấm Nối gian → dải đích + 130 nút, bấm "Nối vào TUI-01" ở AT01-M → "đã nối vào SKU này".
 
 ---
 

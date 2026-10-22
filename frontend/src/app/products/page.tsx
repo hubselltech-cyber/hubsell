@@ -534,9 +534,14 @@ export default function ProductsHubPage() {
     }
   }
 
-  /** "Nối thêm gian" từ một SKU: nhảy sang tab liên kết, mồi sẵn từ khoá. */
-  function jumpToLinks(seedSearch?: string) {
+  // SKU kho ĐÍCH khi bấm "Nối thêm gian cho SKU này" (anh Trung 22/10 tối: khách ở SKU gian A sang
+  // tab sàn chọn gian B để nối thêm, dòng gian B đã nối hết nên không có nút nào) → tab sàn hiện
+  // dải "Đang nối về SKU X" và mỗi dòng có nút "Nối vào X" một bấm, kể cả dòng đang nối gian khác.
+  const [linkTargetProduct, setLinkTargetProduct] = useState<Product | null>(null);
+  /** "Nối thêm gian" từ một SKU: nhảy sang tab liên kết, mồi sẵn từ khoá + SKU đích. */
+  function jumpToLinks(seedSearch?: string, target?: Product) {
     setLinkSeed(seedSearch);
+    setLinkTargetProduct(target ?? null);
     setTab("links");
   }
   /**
@@ -755,7 +760,7 @@ export default function ProductsHubPage() {
             return isAdmin ? (
               <button
                 type="button"
-                onClick={() => jumpToLinks(linkSeedFor(row.original))}
+                onClick={() => jumpToLinks(linkSeedFor(row.original), row.original)}
                 className={cn(
                   TEXT_SUB,
                   "inline-flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 transition-colors hover:border-primary hover:text-foreground"
@@ -1052,7 +1057,7 @@ export default function ProductsHubPage() {
             {isAdmin && (
               <button
                 type="button"
-                onClick={() => jumpToLinks(linkSeedFor(product))}
+                onClick={() => jumpToLinks(linkSeedFor(product), product)}
                 className="inline-flex items-center gap-1 self-start text-xs text-primary underline-offset-2 hover:underline"
               >
                 <Link2 className="size-3" />
@@ -1277,7 +1282,10 @@ export default function ProductsHubPage() {
             tabs={hubTabs}
             value={tab}
             onChange={(key) => {
-              if (key === "links") setLinkSeed(undefined);
+              if (key === "links") {
+                setLinkSeed(undefined);
+                setLinkTargetProduct(null);
+              }
               setTab(key);
             }}
           />
@@ -1287,8 +1295,10 @@ export default function ProductsHubPage() {
           <InventoryLogTable showLocation={locationsEnabled} />
         ) : tab === "links" && isAdmin ? (
           <LinkManager
-            key={linkSeed ?? "all"}
+            key={`${linkSeed ?? "all"}:${linkTargetProduct?.id ?? ""}`}
             initialSearch={linkSeed}
+            targetProduct={linkTargetProduct}
+            onClearTarget={() => setLinkTargetProduct(null)}
             onChanged={() => {
               load();
               loadCounts();

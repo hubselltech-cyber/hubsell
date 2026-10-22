@@ -74,6 +74,10 @@ const SKU_LIST_ID = "hubsell-sku-kho-options";
 interface LinkManagerProps {
   /** Từ khoá tìm kiếm khởi tạo — hub truyền vào khi bấm "Nối thêm gian" từ một SKU. */
   initialSearch?: string;
+  /** SKU kho ĐÍCH khi đến từ "Nối thêm gian cho SKU này": dải đích + nút "Nối vào X" trên từng dòng. */
+  targetProduct?: Product | null;
+  /** Khách bấm "Xong" ở dải đích. */
+  onClearTarget?: () => void;
   /** Gọi sau MỖI thao tác đổi liên kết thành công — hub refresh tab Tồn kho + badge. */
   onChanged?: () => void;
 }
@@ -112,7 +116,7 @@ function isFallbackSku(sku: string): boolean {
  * + tạo SKU" (một cửa vào với bước 2 khối Thiết lập kho) cho khách đã đặt mã chuẩn.
  * CHỈ chủ shop (hub đã gác, API cũng chặn adminOnly độc lập).
  */
-export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
+export function LinkManager({ initialSearch, targetProduct, onClearTarget, onChanged }: LinkManagerProps) {
   const router = useRouter();
 
   const [rows, setRows] = useState<ChannelProduct[]>([]);
@@ -425,8 +429,72 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     Boolean(linkTab) ||
     Boolean(search.trim());
 
+  /** Nối MỘT dòng sàn vào SKU đích (một bấm) — dùng cho cả dòng đang nối gian khác (chuyển). */
+  async function handleLinkToTarget(r: ChannelProduct) {
+    if (!targetProduct) return;
+    setBusyKey(`target:${r.id}`);
+    try {
+      const res = await linkChannelProducts([r.id], targetProduct.id);
+      toast.success(
+        `Đã nối ${variantLabel(r.variantName) ?? r.channelSku} (${r.channel.shopName}) vào ${res.product.skuCode}` +
+          (res.seededStock != null ? ` · tồn ban đầu theo sàn: ${formatNumber(res.seededStock)}` : "")
+      );
+      afterChange();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không nối được");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   /** Ô "Liên kết" của một dòng sàn: đã nối → mã kho + gỡ; chưa → ô gõ mã tại chỗ. */
   function renderLinkCell(r: ChannelProduct) {
+    // Đang "Nối thêm gian cho SKU X": mỗi dòng một nút bấm là xong, không phải gõ mã.
+    if (targetProduct && editingId !== r.id) {
+      const same = r.productId === targetProduct.id;
+      const busy = busyKey === `target:${r.id}`;
+      return (
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1">
+            {r.product ? (
+              <>
+                <p className={cn("flex items-center gap-1.5 font-medium", same ? "text-emerald-700" : "text-foreground")}>
+                  <Link2 className="size-3.5 shrink-0" />
+                  <span className="truncate font-mono text-sm">{r.product.skuCode}</span>
+                </p>
+                <p className={cn(TEXT_SUB, "truncate")} title={r.product.productName}>
+                  {same ? "đã nối vào SKU này" : `đang nối ${r.product.productName}`}
+                </p>
+              </>
+            ) : (
+              <p className={cn(TEXT_SUB, "truncate")}>Chưa nối về kho</p>
+            )}
+          </div>
+          {same ? (
+            <span className="inline-flex shrink-0 items-center gap-1 text-sm text-emerald-700">
+              <Check className="size-3.5" />
+              Đã nối
+            </span>
+          ) : (
+            <Button
+              size="sm"
+              variant={r.product ? "outline" : "default"}
+              className="h-8 shrink-0 px-2.5"
+              disabled={busy}
+              onClick={() => handleLinkToTarget(r)}
+              title={
+                r.product
+                  ? `Chuyển dòng này từ ${r.product.skuCode} sang ${targetProduct.skuCode}`
+                  : `Nối dòng này vào ${targetProduct.skuCode}`
+              }
+            >
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+              {r.product ? "Chuyển sang" : "Nối vào"} {targetProduct.skuCode}
+            </Button>
+          )}
+        </div>
+      );
+    }
     if (r.product && editingId !== r.id) {
       return (
         <div className="flex min-w-0 items-center gap-2">
@@ -497,6 +565,27 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
 
       {/* Chừa đáy cho thanh liên kết nổi */}
       <div className="space-y-5 pb-28">
+        {targetProduct && (
+          // DẢI ĐÍCH: đến từ "Nối thêm gian cho SKU này" — nói rõ đang nối về đâu, chọn gian rồi bấm
+          // "Nối vào X" trên dòng muốn nối (dòng đang nối gian khác thì "Chuyển sang X").
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm">
+            <Link2 className="size-4 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 truncate">
+              Đang nối thêm gian cho SKU kho{" "}
+              <b className="font-mono">{targetProduct.skuCode}</b>
+              {" — "}
+              <span className="text-muted-foreground">{targetProduct.productName}</span>
+              <span className={cn(TEXT_SUB, "block")}>
+                Chọn gian ở bộ lọc, tìm đúng mẫu rồi bấm &ldquo;Nối vào {targetProduct.skuCode}&rdquo; trên dòng phân loại.
+                Dòng đang nối SKU khác sẽ chuyển sang SKU này.
+              </span>
+            </span>
+            <Button size="sm" variant="outline" onClick={onClearTarget}>
+              <Check className="size-3.5" />
+              Xong
+            </Button>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
             Sản phẩm thô kéo từ các gian hàng về. Gõ mã SKU kho ngay tại từng phân loại
@@ -616,11 +705,21 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                 Đang tải danh mục sàn…
               </p>
             ) : rows.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
+              <div className="space-y-3 py-12 text-center text-sm text-muted-foreground">
                 <PackageSearch className="mx-auto mb-2 size-8" />
-                {isFiltering
-                  ? "Không có sản phẩm sàn nào khớp bộ lọc."
-                  : "Chưa có sản phẩm sàn nào. Bấm “Đồng bộ từ sàn” để kéo danh mục về."}
+                <p>
+                  {isFiltering
+                    ? "Không có sản phẩm sàn nào khớp bộ lọc."
+                    : "Chưa có sản phẩm sàn nào. Bấm “Đồng bộ từ sàn” để kéo danh mục về."}
+                </p>
+                {/* Đến từ "Nối thêm gian cho SKU X" mà từ khóa mồi (tên SKU kho) không khớp tên trên gian
+                    khác → một nút xóa từ khóa để thấy toàn bộ dòng sàn rồi chọn gian (22/10 tối). */}
+                {search.trim() && (
+                  <Button size="sm" variant="outline" onClick={() => setSearch("")}>
+                    <X className="size-3.5" />
+                    Xóa từ khóa, xem tất cả dòng sàn
+                  </Button>
+                )}
               </div>
             ) : (
               <Refreshing active={loading}>

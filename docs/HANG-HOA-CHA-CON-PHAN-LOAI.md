@@ -85,6 +85,9 @@ mỗi phân loại một ô gõ mã kho + nút nối, Tạo SP kho cho cả sả
   (38%, kèm chip sàn + tên gian + ID ở dòng phụ) · Giá · Tồn sàn (14%) · Mã SKU kho (phần còn lại, ô gõ co giãn +
   nút **Nối** / **Tìm** có chữ; dòng đã nối: mã kho + **Gỡ nối**). Anh chốt 22/10 tối: "kéo ngang thì mất việc",
   "nút kết nối bên cạnh giống Salework".
+- **Nối thêm gian cho SKU X** (22/10 tối): từ Tồn kho bấm "Nối gian" / "Nối thêm gian cho SKU này" → tab sàn mang `targetProduct`:
+  dải đích + nút một bấm "Nối vào X" (chưa nối) / "Chuyển sang X" (đang nối SKU khác) / "Đã nối"; ô tìm mồi 4 chữ đầu tên SKU kho,
+  dòng trống có nút xóa từ khóa. Dòng đã nối (không có đích) có nút **Đổi** → ô gõ điền sẵn mã cũ.
 - Không có cột Combo (Hubsell chưa có SKU combo) — việc riêng nếu khách cần.
 
 ### 2.7 Chỉnh sau khi anh xem prod (22/10 tối)
