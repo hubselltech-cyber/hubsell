@@ -275,7 +275,7 @@ export function SetupGuide({
         title={!step2Done ? "Nên nối SKU (bước 2) trước để có gì mà đẩy" : undefined}
       >
         <CloudUpload className="size-3.5" />
-        {step3Done ? "Cài đặt đồng bộ" : enabled > 0 ? "Bật gian còn lại" : "Bật đồng bộ"}
+        {step3Done ? "Cài đặt đồng bộ tồn kho" : enabled > 0 ? "Bật gian còn lại" : "Bật đồng bộ tồn kho"}
       </Button>
     ) : null
   );
@@ -344,7 +344,7 @@ export function SetupGuide({
           {isAdmin && (
             <Button variant="outline" size="sm" onClick={onOpenSync}>
               <Settings2 className="size-3.5" />
-              Cài đặt đồng bộ
+              Cài đặt đồng bộ tồn kho
             </Button>
           )}
           <button

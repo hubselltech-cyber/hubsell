@@ -94,6 +94,7 @@
   bảng `min-w-[1000px]` (dưới 1.000px — laptop 1280 mở sidebar + có cột Đang ở — hộp cuộn ngang 57px thay vì số đè nhau). Seed local
   khoảng giá 214.000–1.294.000 + giá vốn 57.000–157.000 rồi đo: 1366 và 1700 tràn 0, 0 ô tiền tràn; 1280 cuộn 57px, 0 ô tiền tràn.
   Bài học ghi memory [[feedback-soi-co-man-bang-du-lieu-rong-nhat]].
+- **Anh: nút header khối Kho trung tâm "Cài đặt đồng bộ" chuẩn phải là "Cài đặt đồng bộ tồn kho"** → đổi (cả nút bước 3 "Bật đồng bộ tồn kho").
 
 ---
 
