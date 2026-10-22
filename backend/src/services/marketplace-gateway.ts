@@ -114,8 +114,9 @@ const keyOf = {
   shopEndpoint: (c: GatewayCall) => `${c.platform}:${c.app}|shop:${c.shop}|ep:${c.endpoint}`,
 };
 
+/** perSec ≤ 0 hoặc không cấu hình = khóa CHỈ ĐO + LÙI KHI 429 (emissionMs 0 — không chặn trước), vẫn có khóa để phạt đúng chỗ. */
 function limitOf(key: string, rl: RateLimit | undefined): KeyLimit {
-  return rl ? { key, emissionMs: 1000 / rl.perSec, burst: rl.burst } : { key, emissionMs: 0, burst: 1 };
+  return rl && rl.perSec > 0 ? { key, emissionMs: 1000 / rl.perSec, burst: rl.burst } : { key, emissionMs: 0, burst: 1 };
 }
 
 /** Dòng riêng thắng, không có thì tiền tố dài nhất khớp. */

@@ -170,11 +170,34 @@ describe("13.9 bước A2 (22/10/2026) — trần theo GIAN × endpoint cho nhó
   const SETTING = "/api/v2/ads/get_product_level_campaign_setting_info";
   const E429 = "Shopee get_all_cpc_ads_daily_performance lỗi: HTTP 429 — vượt trần gọi API (error_rate_limit Too many requests)";
 
-  it("trần khởi điểm: get_all_cpc 1 lệnh/5' không dồn; endpoint Ads khác 1 lệnh/phút; ngoài nhóm Ads không có", () => {
+  it("trần khởi điểm: get_all_cpc 1 lệnh/5' không dồn; endpoint Ads khác CHỈ ĐO (perSec 0, có khóa, không chặn trước); ngoài nhóm Ads không có", () => {
     expect(shopEndpointLimit("SHOPEE", ALL_CPC)).toEqual({ perSec: 0.2 / 60, burst: 1 });
-    expect(shopEndpointLimit("SHOPEE", SETTING)).toEqual({ perSec: 1 / 60, burst: 1 });
+    expect(shopEndpointLimit("SHOPEE", SETTING)).toEqual({ perSec: 0, burst: 1 });
     expect(shopEndpointLimit("SHOPEE", "/api/v2/order/get_order_list")).toBeUndefined();
     expect(shopEndpointLimit("LAZADA", ALL_CPC)).toBeUndefined();
+    // Khóa gian × endpoint vẫn có mặt cho setting_info (để phạt đúng chỗ khi 429) nhưng emission 0.
+    const ks = gatewayLimits(shopee("A", SETTING));
+    expect(ks.map((k) => k.key)).toContain(`SHOPEE:2040029|shop:A|ep:${SETTING}`);
+    expect(ks.find((k) => k.key.endsWith(`|shop:A|ep:${SETTING}`))!.emissionMs).toBe(0);
+  });
+
+  it("★ 22/10 10:00 — bước nhiều trang cùng gian × endpoint (gian > 100 chiến dịch: id_list 2–10 trang) đi liền, KHÔNG bị cổng hoãn → hết vòng lặp 80 s; 429 trên trang nào vẫn phạt đúng khóa gian × endpoint", async () => {
+    const h = harness();
+    const ID_LIST = "/api/v2/ads/get_product_level_campaign_id_list";
+    let pages = 0;
+    for (let i = 0; i < 10; i++) {
+      expect(await callMarketplace(shopee("A", ID_LIST), async () => ++pages, h.deps)).toBe(i + 1);
+      h.advance(300);
+    }
+    expect(pages).toBe(10);
+    // Chỉ còn chờ lượt app × endpoint (2/s) tính bằng trăm ms — không có lần nào bị hoãn 60 s về làn.
+    expect(Math.max(0, ...h.slept)).toBeLessThan(2_000);
+    // Trang 11 bị sàn 429 → khóa gian A × id_list lùi 60 s; gian B vẫn gọi id_list ngay; app × endpoint không hạ.
+    await expect(
+      callMarketplace(shopee("A", ID_LIST), fail("Shopee get_product_level_campaign_id_list lỗi: HTTP 429 — vượt trần gọi API (error_rate_limit)"), h.deps)
+    ).rejects.toMatchObject({ reason: "rate_limit", key: `SHOPEE:2040029|shop:A|ep:${ID_LIST}`, waitMs: 60_000 });
+    expect(await callMarketplace(shopee("B", ID_LIST), async () => "B", h.deps)).toBe("B");
+    expect(h.store.keys.get(`SHOPEE:2040029|ep:${ID_LIST}`)?.factor ?? 1).toBe(1);
   });
 
   it("gian A dính 429 trên get_all_cpc → CHỈ khóa gian A × get_all_cpc lùi 60 s + hạ nhịp 0,5; khóa app × endpoint, khóa gian chung, khóa app KHÔNG đụng", async () => {

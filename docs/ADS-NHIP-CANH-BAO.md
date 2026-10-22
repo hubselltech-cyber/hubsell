@@ -816,6 +816,23 @@ deploy B 23:44 nên quy đổi ra ngày):**
 
 **→ Chưa mở ticket Shopee** (ticket chỉ khi đã tôn trọng trần gian mà vẫn ≥ 20/ngày). Đề xuất bước A2 ở 13.9.8, chờ anh chốt; bước C lùi sau A2.
 
+**22/10 09:30–09:45 — ĐỌC LẠI NGAY TRƯỚC / SAU DEPLOY A2 (lịch nhắc tự động lượt hai; Chrome anh bật; chỉ đọc, không sửa mã, không sửa số):**
+anh push A2 `05971e95` lúc 09:27, worker Render instance `7frss` boot **09:31:14** đúng dòng `[Ads-lane] BẬT … QUA CỔNG GỌI SÀN (GCRA app×endpoint +
+GIAN×endpoint, 13.9 bước A/A2) … sàn 429 xếp lại ≥ 5' + chạy tiếp từ bước dở (A2, mốc tươi 15')`; `[Ads-demand]` 09:31:15: lớp 1: 5 · lớp 2: 37 ·
+lớp 3: 6 gian, xung 30' cả ba, chặt nhất 4 % trên get_all_cpc, **mỗi gian dùng 23 % trần gian×endpoint** (đúng số test ads-demand).
+
+| Số | 09:10 | 09:30 (≈ 1' trước boot A2) | Ghi chú |
+|---|---|---|---|
+| `[gateway] 429` | 106 (00:31 → 08:15) | **+5** (08:15 ×3 gian, 09:18 EQ TECH Kids, 09:22 Ghiền 3D Store – setting_info) = 111 từ boot B; 67' cuối chỉ 2 lần | chậm lại KHÔNG phải vì hết dồn mà vì AIMD app×endpoint đã kìm CẢ APP (factor 0,10 = 6 lệnh/phút) — đúng cái "hạ oan" ở điểm 3 bên trên |
+| hits / factor khóa app×endpoint get_all_cpc | 95 / 0,10 | **96 / 0,50** (tự hồi +0,1 mỗi 6') | setting_info 7 / 0,50 · get_product_recommended_roi_target 4 / 0,32 (lần cuối 01:05) · get_shop_toggle_info 1 / 0,50 · 10 endpoint còn lại 0 / 1,00 |
+| khóa gian (app×gian) có hits | 49 | 36 gian hits > 0, tổng 108, cao nhất 8 (shop 1575931172) | failures = 0 mọi khóa (không mã cứng) |
+| tripCount shopee:2044679 | 162 | **162**, pausedUntil 21/10 23:06 | ✅ đứng yên — 0 `CẦU DAO ĐÓNG` |
+| adsPriority Shopee ACTIVE | 5 / 45 / 28 | **5 / 45 / 28** (78 gian) | ✅ |
+| overduePulse | chưa kiểm | **0** qua SQL cùng điều kiện HQ (`adsLockedAt IS NULL AND nextAdsPulseAt < now() − 2 h`, 3 sàn); Shopee lớp 1–2 = 0; 38/50 gian lớp 1–2 hẹn xung trong 35' | ✅ Trợ lý còn tươi. HQ web không đọc được: tài khoản đang đăng nhập trong Chrome anh không phải điều hành |
+| Sau boot A2 (09:31 → 09:45) | — | `adsPulseStep` = 0 cho cả 78 gian (migration 20261022030000 đã chạy); **17 khóa gian×endpoint đã sinh, hits = 0**; 0 `[gateway] 429` mới; `adsLockedAt` 0 | mới 14' — chưa kết luận; đọc 24 h theo 13.9.8 "Đo" (lịch nhắc 23/10 09:30) |
+
+Kết luận lượt này: A+B **không đạt** tiêu chí 13.9.3 A (như 09:10, không đổi); A2 lên prod đúng dòng boot, chưa đủ số. Bước C (13.9.7) vẫn chờ số A2 24 h.
+
 #### 13.9.6 BƯỚC B ĐÃ LÀM (21/10/2026 đêm, anh Trung "push luôn và tiếp tục làm") — nhu cầu tự co + ưu tiên + gộp lệnh + bằng chứng I9
 
 | Việc | Ở đâu |
@@ -900,3 +917,44 @@ minh bỏ hẳn hạ nhịp app × endpoint thì cổng không còn học đư�
 Qua → C1+C2 (13.9.7) → D → C3. Không qua (≥ 20/ngày dù factor gian × endpoint đã xuống sàn) → ticket Shopee kèm request_id 13.9.5.
 
 **Điều chưa chắc:** (1) cửa sổ thật của trần gian (1' theo Shopee vs ~4' quan sát, get_all_cpc có thể dài hơn) — AIMD học, HQ (C1) hiện `factor` theo khóa gian × endpoint; (2) 1 lệnh/phút không dồn cho endpoint Ads khác là tự chọn — lô > 1 lệnh cùng endpoint (gian > 100 chiến dịch, chiến dịch Nhóm mỗi id một lệnh ở lịch sử) tự dàn 1'/lệnh qua hoãn + chạy tiếp, lịch sử có thể kéo dài vài phút cho gian Nhóm nhiều; (3) có thể trần tính theo access_token thay vì shop (cùng kết quả với một app); (4) bão 3 gian/60 s: giờ đầu sau deploy vài gian có get_all_cpc gọi < 5' trước (mã cũ) có thể dính → hạ app × endpoint 0,5 một lần, hồi trong 30' — chấp nhận.
+
+#### 13.9.9 ĐỌC SỐ THẬT 22/10 09:40–10:00 (Chrome anh) — A2 lặp hoãn 60 s ở gian > 100 chiến dịch → A3 "khóa gian × endpoint chỉ đo"
+
+**Số đo (Supabase + Render, 25' sau deploy A2 09:35):**
+
+| Chỉ số | Kết quả |
+|---|---|
+| `[Ads-lane] BẬT` 09:31 | "QUA CỔNG GỌI SÀN (GCRA app×endpoint + GIAN×endpoint, 13.9 bước A/A2) … nhịp tự co … sàn 429 xếp lại ≥ 5' + chạy tiếp từ bước dở" ✅ |
+| `[Ads-demand]` 09:31 | lớp 1: 5 gian · lớp 2: 37 · lớp 3: 6, xung 30' cả ba; chặt nhất 4 % mức cho phép trên get_all_cpc; mỗi gian dùng 23 % trần gian×endpoint ✅ |
+| `[gateway] 429` giờ qua | 2 lần (09:18, 09:22 — TRƯỚC A2); 0 lần từ 09:35 ✅ (mới 25', chưa kết luận) |
+| `api_rate_keys` từ 02:35 UTC | 52 khóa gian×endpoint được chạm, `sum(hits)` = 0; khóa app×endpoint get_all_cpc hits 96 factor 0,50 (trước A2), setting_info 7, toggle 1 |
+| `api_throttle_states` | shopee:2044679 tripCount **162 đứng yên** (từ 21/10 22:46) ✅ |
+| `adsPriority` | 5 / 45 / 28 ✅ |
+| **`[Ads-lane] … cổng bảo quay lại sau 60 s`** | **~50 dòng / 12 phút**, cùng ~12 gian lặp mỗi ~80 s: BESI FOOD, TAROT ĐỒNG TÂM, Thuốc Nhuộm Tóc Kirei Hair, TIỆM BUÔN HOÀI NIỆM, Tổng kho … đaklak, Cây Giống Chuẩn Top Nông, Kanji (dở ở **bước 1** id_list); Thế Giới Xuyên Thấu, ANO (dở ở **bước 3** daily_performance); Allen Scott (GMS) ❌ |
+
+**Gốc (log `throttled SHOPEE:…|shop:X|ep:get_product_level_campaign_id_list — chờ 60 s` + SQL đếm chiến dịch):** mọi gian lặp đều có
+> 100 chiến dịch (Sổ sách cho HKD 980, Cây Giống 336, Siêu thị 8686 243, Kanji 198, TIỆM BUÔN 175, BESI 169, An Nhiên 144, DarkMan 142,
+Quang Nhật 133, đaklak 128, Kirei 110, TAROT 106) hoặc có chiến dịch Nhóm (ANO). Một BƯỚC xung gồm nhiều lệnh cùng endpoint (lô 100 →
+2+ trang; Nhóm mỗi id một lệnh). Khóa gian × endpoint A2 đặt 1 lệnh/phút không dồn → trang 2 bị chặn trước (chờ 60 s > 2 s trong dòng)
+→ làn xếp lại 60 s → lượt sau chạy lại bước ấy **từ trang 1** → trang 2 lại bị chặn → vòng lặp vô hạn, xung không bao giờ xong, mỗi
+vòng tốn thêm lệnh thật. Lỗi THIẾT KẾ của A2: đơn vị của van (một lệnh HTTP) không khớp đơn vị của việc (một bước nhiều trang); và
+chặn trước 1 lệnh/phút cho các endpoint ngoài get_all_cpc KHÔNG có căn cứ đo (429 theo gian 22/10: get_all_cpc 95, setting_info 7,
+toggle 1, còn lại 0).
+
+**A3 (10:05, sửa mô hình, không chỉnh số):** `RateLimit.perSec = 0` nghĩa là **khóa CHỈ ĐO + LÙI KHI 429, không chặn trước**
+(`limitOf` → emissionMs 0). `shopEndpointPrefix["SHOPEE /api/v2/ads/"]` = 0 (env `GATEWAY_SHOPEE_ADS_SHOP_PER_MIN`, > 0 mới chặn
+trước); `shopEndpoint[get_all_cpc]` giữ 1 lệnh/5' (một lệnh/gian/lượt theo đúng cấu trúc xung + lịch sử, có căn cứ 95/106). Khóa gian ×
+endpoint vẫn có mặt cho mọi endpoint Ads → 429 vẫn phạt đúng khóa ấy 60 s × 2^n và bão theo gian khác nhau vẫn hạ app × endpoint (A2
+giữ nguyên phần đúng). `shopeeShopEndpointPerMin` bỏ khóa chỉ đo khỏi sàn nhịp. Test mới: 10 trang id_list cùng gian đi liền (chỉ
+chờ app × endpoint vài trăm ms), trang 11 bị 429 → phạt đúng gian × id_list, gian khác không ảnh hưởng, app × endpoint không hạ.
+**Bài học thiết kế (I1):** van chặn trước chỉ đặt ở nơi (a) có số đo tầng ấy và (b) đơn vị van = đơn vị việc; chỗ khác để cổng ĐO
+rồi lùi theo 429 — đúng nguyên tắc "trần chỉ bật nơi có bằng chứng" của Pha B mà A2 đã vi phạm.
+
+**5c (bóng đọc sàn, 3 ngày từ ghi danh 19/10 13:12):** ANO 213/213 đơn có webhook đều được bóng thấy, Siêu Thị 8686 2.560/2.560;
+`chi_cu` rỗng, `chi_moi` 0; cả hai `caught_up`, trễ 11–12', 1 trang/lượt, cửa sổ 60'; không khóa đơn hàng nào bị 429. (Chạy cửa sổ
+3 ngày thô ra 122 + 23 "chi_cu" — toàn đơn có sự kiện 09:51–12:34 ngày 19/10, TRƯỚC khi bóng bắt đầu 12:42 → không phải sót.) → ĐẠT
+tiêu chí 5c; đề xuất bật lát 2 trên một gian nhỏ ghi ở docs CUNG-HOA-LOP-GOI-SAN 5c mục Kiểm 22/10 — chờ anh chốt.
+
+**CRM care-auto:** 19 thuê bao hết gói quá 7 ngày ân hạn (trong 44 hết gói / 158 thuê bao / 165 user) = 19 dòng CHURNED AUTO_EXPIRED
++ 19 audit `care.auto` lúc 23:13 ngày 21/10; 5 ACTIVE MANUAL giữ nguyên. Khớp. Docs HQ-CRM mục 6 ước "phần lớn 155 khách" là sai: đa
+số chưa hết gói hoặc chưa quá ân hạn.

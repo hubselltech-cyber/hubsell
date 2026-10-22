@@ -6,6 +6,27 @@
 
 ---
 
+## Phiên 22/10/2026 ~10:00 — ĐỌC SỐ THẬT QUA CHROME (anh mở): 5c ĐẠT, CRM KHỚP, A2 LẶP HOÃN 60 s Ở GIAN > 100 CHIẾN DỊCH → A3 "KHÓA GIAN × ENDPOINT CHỈ ĐO"
+
+- **Anh:** "em vào chrome đi, a mở rồi mà" → em chạy Supabase SQL + đọc log Render cho 3 việc còn treo (docs ADS-NHIP-CANH-BAO **13.9.9**).
+- **5c bóng đọc sàn (3 ngày từ ghi danh):** ANO 213/213, Siêu Thị 8686 2.560/2.560 đơn có webhook đều được bóng thấy, `chi_cu` rỗng,
+  `chi_moi` 0, cả hai `caught_up` trễ 11–12', 1 trang/lượt, 0 lần 429 trên khóa đơn. Cửa sổ 3 ngày thô ra 122 + 23 "chi_cu" nhưng toàn
+  sự kiện TRƯỚC lúc bóng bắt đầu (19/10 12:42) → không phải sót. **ĐẠT** → đề xuất bật lát 2 một gian nhỏ (chờ anh chốt).
+- **CRM care-auto (af569147):** 19 thuê bao hết gói quá 7 ngày = 19 CHURNED AUTO_EXPIRED + 19 audit lúc 23:13 ngày 21/10; 5 ACTIVE
+  MANUAL giữ. Khớp. Ước "phần lớn 155 khách" ở docs mục 6 là sai (44 hết gói / 158 thuê bao, chỉ 19 quá ân hạn).
+- **A+B+A2 (25' sau deploy A2 09:35):** boot `[Ads-lane] BẬT … GIAN×endpoint`, `[Ads-demand]` 5/37/6 gian, 4 % mức cho phép; tripCount
+  **162 đứng yên**; 0 `[gateway] 429` từ 09:35 (2 lần 09:18/09:22 trước A2); adsPriority 5/45/28.
+  **NHƯNG** ~50 dòng `cổng bảo quay lại sau 60 s` / 12' — 12 gian lặp mỗi ~80 s, dở ở bước 1 (id_list) hoặc bước 3 (daily_performance):
+  đều là gian > 100 chiến dịch (BESI 169, TAROT 106, Kirei 110, TIỆM BUÔN 175, đaklak 128, Cây Giống 336, Kanji 198…) hoặc có Nhóm (ANO).
+  **Gốc:** một bước xung = nhiều lệnh cùng endpoint (lô 100 → 2+ trang; Nhóm mỗi id một lệnh); khóa gian×endpoint A2 1 lệnh/phút không
+  dồn chặn trang 2 → hoãn 60 s → lượt sau chạy lại từ trang 1 → vòng lặp vô hạn, xung không bao giờ xong. Lỗi thiết kế A2: đơn vị van
+  (một lệnh) ≠ đơn vị việc (một bước); chặn trước endpoint ngoài get_all_cpc KHÔNG có căn cứ (429 theo gian: get_all_cpc 95, setting 7, toggle 1).
+- **A3 ĐÃ CODE (sửa mô hình, không chỉnh số):** `RateLimit.perSec = 0` = khóa CHỈ ĐO + lùi khi 429, không chặn trước (`limitOf`
+  emission 0); `shopEndpointPrefix["SHOPEE /api/v2/ads/"]` = 0 (env `GATEWAY_SHOPEE_ADS_SHOP_PER_MIN` > 0 mới chặn); get_all_cpc giữ
+  1/5' (một lệnh/gian/lượt, căn cứ 95/106); `shopeeShopEndpointPerMin` bỏ khóa chỉ đo khỏi sàn nhịp. Test gateway mới: 10 trang id_list
+  cùng gian đi liền, trang 11 bị 429 → phạt đúng gian×id_list. tsc sạch, 109 ca xanh 6 bộ. Chờ anh push → theo dõi log hết dòng
+  `quay lại sau 60 s` lặp + gian > 100 chiến dịch có `[Ads-pulse] Shopee "…": N campaign sống` trong 30'.
+
 ## Phiên 22/10/2026 sáng — BƯỚC A2 CẦU DAO ADS 13.9 ĐÃ CODE: CỔNG HỌC TRẦN THEO GIAN × ENDPOINT + XUNG CHẠY TIẾP TỪ BƯỚC DỞ (anh chốt "code luôn")
 
 - **Vì sao:** số đo 22/10 (phiên dưới) — 106 lần 429/7,7 h, một gian dính 4 lần liền cách 60–80 s trong khi gian khác qua → trần Shopee
@@ -23,6 +44,11 @@
   (sổ cái / xóa gian trên DB dev thiếu trigger vì `db push`), không liên quan. DB dev đã `db push` (trước đó thiếu cả cột adsPriority của bước B).
   **Chưa chạy sàn thật.** `.env.example` thêm 5 biến. Chưa push (anh push).
 - **Sau deploy 24 h:** đọc theo 13.9.8 mục "Đo" (log boot A/A2, `[gateway] 429` ≤ 5/ngày, không chuỗi cùng gian, 3 SQL, tripCount 162). Qua → C1+C2.
+- **09:27 anh push `05971e95`; Render `7frss` boot 09:31:14 đúng dòng A/A2 + `[Ads-demand] lớp 1: 5 · lớp 2: 37 · lớp 3: 6 … mỗi gian dùng 23 % trần gian×endpoint`;**
+  migration adsPulseStep đã chạy (78 gian = 0). **Lịch nhắc tự động lượt hai 09:30–09:45 đọc lại** (Chrome anh bật; Supabase + Render chỉ đọc): từ 08:15 → 09:22
+  chỉ thêm 5 lần 429 (111 từ boot B) vì AIMD app×endpoint đang kìm cả app (factor 0,10 → 0,50 tự hồi); tripCount 162 đứng; adsPriority 5/45/28;
+  overduePulse đọc bằng SQL cùng điều kiện HQ = 0 (HQ web không mở được — tài khoản trong Chrome là nhân viên); 17 khóa gian×endpoint đã sinh, hits 0.
+  Bảng ở docs 13.9.5. Đọc 24 h A2: lịch 23/10 09:30 → C1+C2. Không sửa mã. ⚠️ Thẻ Supabase trong Chrome còn kẹt hộp "Leave site?" do em điều hướng — anh đóng giúp.
 
 ## Phiên 22/10/2026 sáng — ĐỌC SỐ 9 H SAU BƯỚC A+B CẦU DAO ADS 13.9: CẦU DAO HẾT ĐÓNG NHƯNG 106 LẦN 429 — TRẦN THẬT THEO GIAN, KHÔNG PHẢI APP×ENDPOINT
 

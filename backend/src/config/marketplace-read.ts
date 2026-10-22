@@ -139,10 +139,16 @@ export const RATE_LIMITS: {
     },
   },
   shopEndpointPrefix: {
-    // Mọi endpoint Ads Shopee khác: Shopee trả lời 10/10/2026 "cấp shop ~1 call/phút" → 1 lệnh / phút mỗi gian mỗi
-    // endpoint, không dồn. Xung (5 endpoint khác nhau) vẫn đi lọt một lượt; lô > 1 lệnh cùng endpoint (gian > 100 chiến
-    // dịch, chiến dịch Nhóm mỗi id một lệnh) tự dàn 1'/lệnh — làn xếp lại và CHẠY TIẾP từ lệnh dở (ads-pulse resumeFrom).
-    "SHOPEE /api/v2/ads/": { perSec: envNum("GATEWAY_SHOPEE_ADS_SHOP_PER_MIN", 1) / 60, burst: 1 },
+    // Mọi endpoint Ads Shopee khác: CHỈ ĐO + LÙI KHI 429 (perSec 0 = không chặn trước), KHÔNG chặn trước.
+    // ★ 22/10/2026 10:00 — bản A2 đầu đặt 1 lệnh/phút/gian/endpoint không dồn (theo câu "cấp shop ~1 call/phút" của Shopee)
+    // và SAI: một BƯỚC xung có thể gồm nhiều lệnh cùng endpoint (id_list / setting_info / daily_performance theo lô 100 → gian
+    // > 100 chiến dịch là 2+ trang; chiến dịch Nhóm mỗi id một lệnh; GMS vài lệnh). Trang 2 bị cổng hoãn 60 s, làn xếp lại,
+    // lượt sau chạy lại bước ấy từ trang 1 → trang 2 lại hoãn → VÒNG LẶP mỗi ~80 s, xung không bao giờ xong (12 gian >100
+    // chiến dịch: BESI FOOD, TAROT ĐỒNG TÂM, Kirei Hair, TIỆM BUÔN HOÀI NIỆM, Cây Giống…, ANO với Nhóm). Bằng chứng tầng gian
+    // chỉ có ở get_all_cpc (95/106 lần 429); setting_info 7, toggle 1, các endpoint khác 0 → không có căn cứ chặn trước.
+    // Khóa gian × endpoint vẫn tồn tại cho mọi endpoint Ads: 429 → lùi đúng khóa ấy 60 s × 2^n (A2), xung chạy tiếp từ bước dở.
+    // Env > 0 để bật chặn trước khi CÓ số đo (đơn vị lệnh/phút/gian/endpoint, cần burst đủ cho một bước nhiều trang).
+    "SHOPEE /api/v2/ads/": { perSec: envNum("GATEWAY_SHOPEE_ADS_SHOP_PER_MIN", 0, -1) / 60, burst: 1 },
   },
 };
 

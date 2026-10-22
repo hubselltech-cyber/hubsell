@@ -226,7 +226,8 @@ export function shopeeShopEndpointPerMin(endpoints: string[]): Record<string, nu
   const out: Record<string, number> = {};
   for (const e of endpoints) {
     const rl = shopEndpointLimit("SHOPEE", e);
-    if (rl) out[e] = rl.perSec * 60;
+    // perSec 0 = khóa chỉ đo (không chặn trước) → không phải trần, không làm sàn nhịp.
+    if (rl && rl.perSec > 0) out[e] = rl.perSec * 60;
   }
   return out;
 }
