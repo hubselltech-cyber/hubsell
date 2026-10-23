@@ -114,6 +114,18 @@ Anh hỏi "API có tác động xác nhận / từ chối được không". Back
 khuôn `cancel-request-decide.ts`; app thêm nút trong hộp chi tiết đơn hoàn. Chưa code vì chưa đọc nguyên văn
 docs 3 sàn (nguyên tắc 23/10 với yêu cầu hủy).
 
+## 6b. Sửa sau khi anh dùng thật (23/10 tối)
+
+Anh thử bản (22) nửa ngày, nêu 3 lỗi — gốc + cách sửa (backend, không cần build app):
+
+| Lỗi | Gốc tìm được | Sửa |
+|---|---|---|
+| Thông báo đơn mới chỉ ghi gian + tiền, không nói là đơn mới cần xử lý | Tiêu đề cũ "N đơn mới" | Tiêu đề **"Có N đơn hàng mới cần xử lý"**; thân mỗi gian một dòng `Sàn · Shop: N đơn · tiền`, nhiều gian thêm `Tổng`, >3 gian "+N gian khác"; đợt cộng dồn đẩy "Thêm N đơn hàng mới cần xử lý". Hỏa tốc: "⚡ Đơn hỏa tốc {mã} cần xử lý ngay". |
+| Tắt "Đơn hàng mới" vẫn nhận tin | Prod: `mutedCategories = ["order_new"]` ghi 12:04 UTC, đúng là đã tắt. Hai đường lọt: (1) đợt cộng dồn 15 phút đi qua `amendNotification` không hỏi mục tắt; (2) cache ưu tiên 60 s ở worker. | `flushOwner` hỏi `isNotificationTypeMuted` trước khi làm gì; `amendNotification` cũng hỏi; cache còn 20 s. Test "khách tắt → cả đợt lẫn cộng dồn im". |
+| Khách hủy đơn đã chuẩn bị mà không có thông báo | Prod CHƯA TỪNG có đơn nào `cancelRequestedAt` ≠ null dù hôm nay 13 đơn hủy (Shopee ANO/DarkMan, TikTok and.not.or). TikTok: `planTiktokCancelFlag` chỉ bật cờ khi đơn còn Chờ xử lý (theo docs "sang AWAITING_COLLECTION khách hết quyền") → đơn đã chuẩn bị bị bỏ. Shopee: pha IN_CANCEL có thể trôi qua giữa hai lượt đọc / sàn hủy thẳng. | (a) TikTok bật cờ khi sàn còn trả yêu cầu chờ, trừ đơn đã hủy / đã giao; service không hạ cờ chỉ vì đơn rời Chờ xử lý. (b) **Lưới đỡ 3 sàn**: đơn đang Đã xử lý / Đang giao chuyển sang Đã hủy → `notifyOrderCancelledAfterPrepare` (type `order_cancelled`, mục "Khách xin hủy, đơn bị hủy"), kèm ai hủy (Shopee `cancel_by`, TikTok `cancellation_initiator`) + lý do; shop tự hủy (seller) thì không báo. |
+
+Chưa kiểm được trên prod vì cần một đơn hủy thật sau deploy — anh để ý đơn hủy kế tiếp; nếu vẫn im, đọc log Render `[cancel` / `notify`.
+
 ## 7. Việc còn lại / rủi ro
 
 - ⏳ Anh: Firebase + FCM V1 (mục 4.1) — push Android chỉ chạy sau bước này; iOS cần build EAS mới.

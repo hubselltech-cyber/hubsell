@@ -6,6 +6,11 @@
 
 ---
 
+## Phiên 23/10/2026 tối — 3 LỖI VẶT THÔNG BÁO SAU KHI ANH DÙNG THẬT + KHÓA APNs
+
+- **Khóa APNs:** tạo qua Chrome anh trên developer.apple.com, gắn EAS bằng GraphQL (không cần `eas credentials` tương tác). Khóa đầu 83ZC87GD8A lưu nhầm env Sandbox (APNs 403 BadEnvironmentKeyInToken) → thu hồi, tạo lại **5927695MVV** Sandbox & Production, đọc lại combobox trước khi Save. Tin thử tới iPhone anh, receipt ok; anh chốt âm báo mặc định là đủ. Route `POST /api/notifications/test-push` + nút "Gửi thử một thông báo" (app bản kế).
+- **Anh nêu 3 lỗi:** (1) chữ đơn mới phải "Có đơn hàng mới cần xử lý" + sàn + shop + tiền; (2) tắt Đơn hàng mới vẫn nhận; (3) khách hủy đơn đã chuẩn bị không có thông báo. Gốc + sửa ở [docs/THONG-BAO-DAY-MOBILE.md](docs/THONG-BAO-DAY-MOBILE.md) mục 6b (SQL prod: chưa từng có đơn cờ xin hủy; mute lọt qua đường cộng dồn + cache 60 s; TikTok chỉ bật cờ khi Chờ xử lý). Sửa backend: wording + dòng theo gian, mute chặn ở flush/amend + cache 20 s, cờ TikTok cho đơn đã chuẩn bị, lưới đỡ `order_cancelled` 3 sàn khi Đã xử lý/Đang giao → Đã hủy. Test 27/27 liên quan, tsc 2 repo sạch. Push master → Render deploy. App chỉ thêm mapping icon + nút gửi thử → build iOS (23) lên TestFlight.
+
 ## Phiên 23/10/2026 ~15:45 — iOS 1.4.0 (22) ĐÃ NỘP APP STORE (reviewSubmission b79fa6b9); Google Play SANG THÁNG (anh chốt)
 
 - Anh: "push luôn và nộp cả 2 bản" → ✅ master đã push 7184993a + 8c7d059c (Render deploy backend); ✅ build 22 lên ASC, tạo 1.4.0 + Có gì mới (`docs/store/whats-new-1.4.0.txt`, script `whats-new` nay đọc `@tệp`), gắn build, **nộp duyệt WAITING_FOR_REVIEW** (submission `b79fa6b9`). Android hết lượt build EAS → anh chốt "nộp sang tháng, khách đa số Apple".
