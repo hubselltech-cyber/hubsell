@@ -76,8 +76,9 @@ export function CancelRequestBar({
               Khách xin hủy · {deadlineText(order.cancelRequestDueAt)}
             </Text>
             {order.cancelRequestReason ? (
-              <Text className="text-[11px] text-red-600/80 dark:text-red-300/80" numberOfLines={2}>
-                Lý do: {order.cancelRequestReason}
+              {/* Lý do = tên chọn sẵn của sàn ("Muốn thay đổi địa chỉ giao hàng") — một dòng là đủ (anh chốt) */}
+              <Text className="text-[11px] text-red-600/80 dark:text-red-300/80" numberOfLines={1}>
+                {order.cancelRequestReason}
               </Text>
             ) : null}
           </View>
@@ -170,7 +171,7 @@ export function CancelDecisionSheet({
               <Text className="text-base font-bold text-slate-900 dark:text-slate-100">
                 Khách xin hủy đơn <Text style={TABULAR}>{order.orderCode}</Text>
               </Text>
-              <Text className="mt-1 text-[12px] text-slate-500 dark:text-slate-400" numberOfLines={2}>
+              <Text className="mt-1 text-[12px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
                 {channel} · {order.channel.shopName} · {deadlineText(order.cancelRequestDueAt)}
                 {order.cancelRequestReason ? ` · ${order.cancelRequestReason}` : ""}
               </Text>
