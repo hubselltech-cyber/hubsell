@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 23/10/2026 tối (đợt 2) — KHÁCH XIN HỦY TRÊN APP: viên + dải đỏ + popup Đồng ý / Từ chối (chưa build, chờ lượt EAS 01/11)
+
+- **Anh:** "update được việc xác nhận hoặc từ chối trên app mobile không" → làm luôn (backend route `POST /api/orders/:id/cancel-request/decide` đã có từ web). Anh chốt khi xem: "popup chỉ Đồng ý – Từ chối, không nói dài".
+- **App:** `components/CancelRequestBar.tsx`: `CancelRequestPill` (viên đỏ cạnh trạng thái trên thẻ đơn), `CancelRequestBar` (dải đỏ "Khách xin hủy · còn N giờ để trả lời" + lý do + nút Trả lời), `CancelDecisionSheet` (hộp trượt: mã đơn · sàn · shop · hạn · lý do, hai nút Từ chối / Đồng ý hủy, bấm là gọi sàn, không có bước xác nhận thứ hai — rủi ro bấm nhầm anh chấp nhận). Dải nằm trên thẻ đơn (orders.tsx) và đầu `OrderDetailPanel` (nên có cả ở chi tiết đơn lẫn màn quét QR); `ScanScreen` quét trúng đơn đang bị xin hủy → tiếng lỗi + rung Error. `api/orders.ts` `decideCancelRequest`. Sàn chốt xong → tải lại danh sách / đóng hộp chi tiết.
+- Soi giả lập web 390 với đơn dev cắm cờ (đã gỡ lại): thẻ, dải, popup đạt; bỏ role button lồng nút (web báo lồng <button>). tsc sạch. Commit + push; ⛔ chưa build (EAS hết lượt tới 01/11) → vào bản 1.4.1.
+
 ## Phiên 23/10/2026 tối — 3 LỖI VẶT THÔNG BÁO SAU KHI ANH DÙNG THẬT + KHÓA APNs
 
 - **Khóa APNs:** tạo qua Chrome anh trên developer.apple.com, gắn EAS bằng GraphQL (không cần `eas credentials` tương tác). Khóa đầu 83ZC87GD8A lưu nhầm env Sandbox (APNs 403 BadEnvironmentKeyInToken) → thu hồi, tạo lại **5927695MVV** Sandbox & Production, đọc lại combobox trước khi Save. Tin thử tới iPhone anh, receipt ok; anh chốt âm báo mặc định là đủ. Route `POST /api/notifications/test-push` + nút "Gửi thử một thông báo" (app bản kế).
