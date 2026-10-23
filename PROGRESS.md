@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 23/10/2026 ~21:30 — TIN ĐẨY ANDROID: FIREBASE + FCM V1 LÊN EAS (anh: "làm luôn, sang tháng chỉ build")
+
+- Qua Chrome anh: Firebase gắn vào GCP `hubsell-play` (tắt Analytics), app Android `vn.hubsell.app`, `google-services.json` vào app (gitignore + `.easignore` để EAS vẫn tải), app.json `googleServicesFile`; khóa Admin SDK đưa lên EAS bằng GraphQL (`createGoogleServiceAccountKey` + `setGoogleServiceAccountKeyForFcmV1`, key d7f74ca6) — không cần `eas credentials` tương tác. Lịch 01/11 cập nhật: Android 1.4.1 có push ngay. Web: nhãn mẫu số hai con số biên đã sửa (`6c2e2f03`). Docs 4.1 cập nhật.
+
 ## Phiên 23/10/2026 ~21:00 — HAI CON SỐ BIÊN Ở TÀI CHÍNH MOBILE (góp ý khách 22/10 mục 3, anh gọi lại)
 
 - Thẻ Lợi nhuận ròng "25,7% biên ròng" = lãi ÷ DOANH THU; dòng chốt thác nước "biên 16,2%" = lãi ÷ TỔNG GIÁ TRỊ SP (web cũng vậy nhưng ở hai trang khác nhau; mobile gộp một màn nên khách tưởng lệch). Sửa mobile: thẻ ghi "25,7% trên doanh thu" (cùng kiểu thẻ Chi phí), thác ghi "biên 16,2% trên giá trị SP". Không đổi công thức. Web giữ nguyên (hai trang riêng). Vào bản 1.4.1.

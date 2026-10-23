@@ -46,3 +46,7 @@ example
 google-play-service-account.json
 asc-api-key*.p8
 build-artifacts/
+
+# Firebase (FCM V1 cho tin đẩy Android, 23/10/2026) — khóa dự án, không commit
+google-services.json
+firebase-adminsdk*.json

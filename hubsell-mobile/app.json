@@ -26,6 +26,7 @@
     },
     "android": {
       "package": "vn.hubsell.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/images/adaptive-icon.png"
