@@ -119,11 +119,16 @@ sync ví; cron giờ `order-auto-sync.ts` gọi sau sync rút ví (Shopee) / pay
   đoán đáy sẽ sai 13.476 ở ca đó — có test). Chưa đối chiếu: nút màu hổ phách
   + tooltip "có thể lệch phần lẻ"; đã đối chiếu: "Đối chiếu lại" xám + tooltip
   ngày. Migration 20261023223000.
-- ⚠️ CHƯA RÕ: gian Siêu Thị 8686 có TRANSFER 229 dòng +839tr (SETTLE chỉ 356tr)
-  → số dư 832tr chắc chắn sai. TRANSFER không thể là trợ cấp với số đó; nghi
-  là chuyển ví ↔ tài khoản quảng cáo / giữa tiểu khoản. Log
-  `[TikTok] Hình dạng dòng sổ cái ví "<gian>" loại TRANSFER: {...}` (mỗi loại
-  một lần/tiến trình) để soi dòng thật rồi quyết luật dấu cho TRANSFER.
+- **TRANSFER = 0 (23/10 ~22:35):** mẫu thật DHK Store
+  `{"amount":"12161665","status":"SUCCESS","type":"TRANSFER"}`; DHK 131 dòng
+  +1,05 tỷ, Siêu Thị 8686 229 dòng +839tr — LỚN HƠN SETTLE của chính gian, toàn
+  dương, không có trường chiều → không thể là tiền vào ví (số dư gần tỷ ở gian
+  rút đều) cũng không thể là tiền ra (âm hơn tỷ). Nghi chuyển qua lại tài khoản
+  quảng cáo / tiểu khoản. Chưa rõ thì KHÔNG cộng/trừ; tóm tắt log vẫn in để soi;
+  gian có TRANSFER mà lệch sàn → chủ shop bấm Đối chiếu.
+- **Dòng cảnh báo "Chưa làm mới được số của: …" đã BỎ** (anh chốt 23/10 ~22:30):
+  lỗi sàn tạm (36009003) làm khách hoang mang; số trên bảng vẫn là lần đồng bộ
+  gần nhất; lỗi vẫn ghi log server. Payload refresh vẫn trả `errors` để HQ dùng.
 
 ## Kế hoạch TikTok (bản 14/08/2026 — giữ làm sử)
 

@@ -3,7 +3,8 @@
 //
 // Luật dấu của tiktokWalletDelta (docs Get Seller Financial Transactions):
 //   SETTLE/REWARD/REVERSE +|a| · WITHDRAW/PAYMENT −|a| (CLOSED = 0) ·
-//   TRANSFER giữ dấu · POLICY_VIOLATION_DEDUCTION −|a| · REFUND/UNKNOWN 0.
+//   POLICY_VIOLATION_DEDUCTION −|a| · TRANSFER/REFUND/UNKNOWN 0 (TRANSFER:
+//   prod 23/10 lớn hơn cả SETTLE, chưa rõ chiều).
 // Mốc đọc: lượt đầu = ủy quyền − 90 ngày; lượt sau = min(dòng mới nhất − 2 ngày,
 // dòng chưa chốt cũ nhất), không lùi quá mốc lượt đầu.
 // ============================================================
@@ -38,9 +39,9 @@ describe("tiktokWalletDelta", () => {
     expect(tiktokWalletDelta(row("WITHDRAW", 300_000, "CLOSED"))).toBe(0);
   });
 
-  it("TRANSFER giữ dấu sàn, khấu trừ vi phạm luôn âm, REFUND/UNKNOWN = 0", () => {
-    expect(tiktokWalletDelta(row("TRANSFER", 80_000))).toBe(80_000);
-    expect(tiktokWalletDelta(row("TRANSFER", -80_000))).toBe(-80_000);
+  it("khấu trừ vi phạm luôn âm; TRANSFER (chưa rõ chiều) / REFUND / UNKNOWN = 0", () => {
+    expect(tiktokWalletDelta(row("TRANSFER", 12_161_665))).toBe(0);
+    expect(tiktokWalletDelta(row("TRANSFER", -80_000))).toBe(0);
     expect(tiktokWalletDelta(row("POLICY_VIOLATION_DEDUCTION", 10_000))).toBe(-10_000);
     expect(tiktokWalletDelta(row("REFUND", 10_000))).toBe(0);
     expect(tiktokWalletDelta(row("UNKNOWN", 10_000))).toBe(0);
@@ -61,7 +62,7 @@ describe("tiktokWalletBalance", () => {
     expect(tiktokWalletRawSum(rows)).toBe(1_000_000);
   });
 
-  it("gian VN sàn tự chuyển: Σ SETTLE − Σ PAYMENT + TRANSFER", () => {
+  it("gian VN sàn tự chuyển: Σ SETTLE − Σ PAYMENT (TRANSFER không tính)", () => {
     const rows = [
       at(row("SETTLE", 2_500_000.5), 1),
       at(row("SETTLE", 1_000_000), 2),
@@ -69,19 +70,19 @@ describe("tiktokWalletBalance", () => {
       at(row("TRANSFER", -20_000), 4),
       at(row("REFUND", 999_999), 5),
     ];
-    expect(tiktokWalletBalance(rows)).toBe(480_000.5);
+    expect(tiktokWalletBalance(rows)).toBe(500_000.5);
     expect(tiktokWalletBalance([])).toBe(0);
   });
 
   it("đầu cửa sổ còn tiền: lệnh rút vượt Σ SETTLE → coi ví cạn tại đáy, không âm (prod 23/10: Samca −128k)", () => {
-    // Ngày 1 rút 9,45tr (gồm tiền cộng trước cửa sổ), sau đó cộng dần 9,21tr + trợ cấp 111k.
+    // Ngày 1 rút 9,45tr (gồm tiền cộng trước cửa sổ), sau đó cộng dần 9,21tr.
     const rows = [
       at(row("WITHDRAW", 9_452_854, "SUCCESS"), 1),
       at(row("SETTLE", 9_213_747), 10),
-      at(row("TRANSFER", 111_200), 20),
+      at(row("TRANSFER", 111_200), 20), // không tính
     ];
-    expect(tiktokWalletRawSum(rows)).toBe(-127_907);
-    expect(tiktokWalletBalance(rows)).toBe(9_324_947);
+    expect(tiktokWalletRawSum(rows)).toBe(-239_107);
+    expect(tiktokWalletBalance(rows)).toBe(9_213_747);
   });
 
   it("rút cạn giữa cửa sổ: số dư = tiền cộng sau lần rút cạn", () => {
@@ -189,6 +190,6 @@ describe("tiktokWalletReadFrom", () => {
 describe("summarizeTiktokWalletRows", () => {
   it("gom theo loại, sắp theo tên, tổng giữ dấu", () => {
     const s = summarizeTiktokWalletRows([row("SETTLE", 100), row("PAYMENT", 60), row("SETTLE", 50), row("TRANSFER", -5)]);
-    expect(s).toBe("PAYMENT 1 dòng 60 · SETTLE 2 dòng 150 · TRANSFER 1 dòng -5");
+    expect(s).toBe("PAYMENT 1 dòng 60 · SETTLE 2 dòng 150 · TRANSFER 1 dòng -5"); // tóm tắt vẫn in TRANSFER để soi
   });
 });

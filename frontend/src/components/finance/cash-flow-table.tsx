@@ -91,8 +91,9 @@ export function CashFlowTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [platform, setPlatform] = useState<ChannelName | "">("");
-  // Gian sync ví lỗi ở lần "Làm mới" gần nhất (token hết hạn, app thiếu quyền…)
-  const [syncErrors, setSyncErrors] = useState<string[]>([]);
+  // Gian sync lỗi ở lần "Làm mới" (token hết hạn, sàn 36009003…) KHÔNG hiện
+  // dưới bảng nữa (anh Trung bỏ 23/10/2026: dòng đỏ làm khách hoang mang, số
+  // trên bảng vẫn là lần đồng bộ gần nhất). Lỗi vẫn ghi log phía server.
 
   // Form "xác nhận đã rút ví" (nhập tay cho kế toán)
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -154,8 +155,7 @@ export function CashFlowTable() {
   async function refresh() {
     setLoading(true);
     try {
-      const r = await refreshCashFlow();
-      setSyncErrors(r.errors);
+      await refreshCashFlow();
     } catch {
       // Sync sàn lỗi toàn phần vẫn tải lại bảng — số cũ trong DB vẫn dùng được.
     }
@@ -168,8 +168,7 @@ export function CashFlowTable() {
     // nhất từ sàn chạy NGẦM (không bật spinner), xong tự thay số trên bảng.
     (async () => {
       try {
-        const r = await refreshCashFlow();
-        setSyncErrors(r.errors);
+        await refreshCashFlow();
         const res = await fetchCashFlow();
         setRows(res.rows);
       } catch {
@@ -475,14 +474,9 @@ export function CashFlowTable() {
           </div>
         )}
 
-        {/* Lỗi sync ví (nếu có) + gợi ý xem tooltip — giải thích cột nằm ở tooltip tiêu đề */}
+        {/* Gợi ý xem tooltip — giải thích cột nằm ở tooltip tiêu đề */}
         {!loading && !error && shown.length > 0 && (
           <div className="px-4 py-2.5">
-            {syncErrors.length > 0 && (
-              <p className="mb-1 text-xs font-medium text-amber-700">
-                Chưa làm mới được số của: {syncErrors.join(" · ")}
-              </p>
-            )}
             <p className="text-left text-xs italic text-slate-500">
               Rê chuột lên tiêu đề cột để xem giải thích. Số liệu tự cập nhật từ
               sàn mỗi khi mở bảng hoặc bấm “Làm mới”.

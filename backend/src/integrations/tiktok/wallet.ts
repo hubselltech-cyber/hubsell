@@ -28,10 +28,16 @@
 // app lưu Channel.walletOpeningBalance = số sàn − Σ thô lúc đó; từ đó số dư =
 // Σ thô + số đầu sổ (reconcileTiktokWallet / tiktokWalletBalanceWith).
 //
-// LUẬT DẤU chưa kiểm với sàn thật (ghi log tổng theo loại ở mỗi lượt có dòng
-// mới để anh đối chiếu Seller Center; đổi luật thì chỉ sửa tiktokWalletDelta,
-// không phải đọc lại sàn): REFUND tạm KHÔNG cộng/trừ vì chưa rõ đã nằm trong
-// SETTLE hay chưa.
+// LUẬT DẤU (đổi luật chỉ sửa tiktokWalletDelta, không phải đọc lại sàn — dòng
+// thô đã lưu; log tổng theo loại ở mỗi lượt có dòng mới):
+//   · SETTLE − WITHDRAW − PAYMENT: ĐÚNG, prod 23/10 hai gian ra 0 từng đồng.
+//   · TRANSFER: KHÔNG cộng/trừ. Prod 23/10: DHK Store 131 dòng +1,05 tỷ, Siêu
+//     Thị 8686 229 dòng +839tr, đều LỚN HƠN tổng sàn cộng (SETTLE) của chính
+//     gian đó và toàn số dương (mẫu: 12.161.665 SUCCESS) → không thể là trợ
+//     cấp vào ví, cũng không thể là tiền ra khỏi ví (sẽ âm hơn tỷ). Nghi là
+//     chuyển qua lại với tài khoản quảng cáo / tiểu khoản, không có trường
+//     chiều. Chưa rõ thì để 0; gian nào có TRANSFER mà lệch sàn → nút Đối chiếu.
+//   · REFUND: tạm 0 (chưa rõ đã nằm trong SETTLE hay chưa).
 //
 // AN TOÀN: chỉ ĐỌC + ghi bản ghi nội bộ. TUYỆT ĐỐI không gọi API rút tiền.
 // ============================================================
@@ -86,9 +92,8 @@ export function mapTiktokWithdrawalStatus(status: string): "SUCCESS" | "PENDING"
  *                               REVERSE riêng, nên WITHDRAW vẫn trừ dù FAILED).
  *   WITHDRAW / PAYMENT        : −|amount|  trừ mọi trạng thái trừ CLOSED
  *                               (lệnh đóng, tiền chưa từng rời ví).
- *   TRANSFER                  : +amount   GIỮ DẤU sàn (trợ cấp dương, khấu trừ âm).
  *   POLICY_VIOLATION_DEDUCTION: −|amount|
- *   REFUND / UNKNOWN / khác   : 0 (chưa rõ, xem chú thích đầu file).
+ *   TRANSFER / REFUND / khác  : 0 (chưa rõ chiều — xem chú thích đầu file).
  */
 export function tiktokWalletDelta(row: TiktokWalletLedgerRow): number {
   const amount = Number(row.amount);
@@ -102,8 +107,6 @@ export function tiktokWalletDelta(row: TiktokWalletLedgerRow): number {
     case "WITHDRAW":
     case "PAYMENT":
       return row.status.toUpperCase() === "CLOSED" ? 0 : -abs;
-    case "TRANSFER":
-      return amount;
     case "POLICY_VIOLATION_DEDUCTION":
       return -abs;
     default:
