@@ -423,7 +423,7 @@ export function CashFlowTable() {
                                 : syncedLabel(r.walletSyncedAt) || undefined
                             }
                           >
-                            <Cash value={r.walletBalance} />
+                            {/* Nút đứng TRƯỚC con số để số vẫn sát mép phải, thẳng cột với dòng khác */}
                             {r.channelName === "TIKTOK" && !r.disconnected && (
                               <button
                                 type="button"
@@ -437,6 +437,7 @@ export function CashFlowTable() {
                                 {r.walletReconciledAt ? "Đối chiếu lại" : "Đối chiếu"}
                               </button>
                             )}
+                            <Cash value={r.walletBalance} />
                           </span>
                         )}
                       </td>
@@ -492,10 +493,8 @@ export function CashFlowTable() {
           <DialogHeader>
             <DialogTitle>Đối chiếu số dư ví TikTok · {rcRow?.shopName}</DialogTitle>
             <DialogDescription>
-              TikTok không cho app đọc số dư, chỉ cho đọc từng giao dịch nên app
-              phải tự cộng dồn và có thể lệch phần lẻ. Mở Seller Center TikTok →
-              Tài chính → Số tiền rút, chép “Số tiền rút khả dụng” vào đây một
-              lần. Từ đó app giữ phần lệch và số dư sẽ khớp sàn.
+              Nhập số dư ví TikTok một lần duy nhất (ô “Số tiền rút khả dụng”
+              trên Seller Center). Từ đó hệ thống tự đối soát, số dư luôn khớp sàn.
             </DialogDescription>
           </DialogHeader>
 
