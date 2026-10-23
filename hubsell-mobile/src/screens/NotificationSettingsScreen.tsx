@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useNotifications, type PushState } from "@/notifications/NotificationsContext";
-import { fetchNotificationPreferences, saveNotificationPreferences } from "@/api/notifications";
+import { fetchNotificationPreferences, saveNotificationPreferences, sendTestPush } from "@/api/notifications";
 import { ApiError } from "@/api/client";
 import { categoryMeta, groupMeta } from "@/lib/notification-meta";
 import { hapticSelect } from "@/lib/haptics";
@@ -29,6 +29,19 @@ export function NotificationSettingsScreen() {
   const [prefs, setPrefs] = useState<NotificationPreferencesResponse | null>(null);
   const [error, setError] = useState("");
   const [pushBusy, setPushBusy] = useState(false);
+  // Nút gửi thử: "" = chưa bấm, "sending", hoặc câu kết quả hiện dưới nút vài giây.
+  const [testState, setTestState] = useState("");
+
+  const testPush = async () => {
+    hapticSelect();
+    setTestState("sending");
+    try {
+      const r = await sendTestPush();
+      setTestState(r.sent > 0 ? `Đã gửi tới ${r.sent} máy — tin sẽ hiện sau vài giây.` : "Chưa có máy nào đăng ký nhận. Gạt công tắc ở trên rồi thử lại.");
+    } catch (err) {
+      setTestState(err instanceof ApiError ? err.message : "Không gửi được, thử lại sau");
+    }
+  };
 
   useEffect(() => {
     fetchNotificationPreferences()
@@ -120,6 +133,24 @@ export function NotificationSettingsScreen() {
               />
             )}
           </View>
+          {push.status === "on" ? (
+            <>
+              <Pressable
+                className="mt-3 flex-row items-center justify-center gap-1.5 rounded-xl bg-emerald-50 py-2.5 active:opacity-70 dark:bg-emerald-500/15"
+                onPress={() => void testPush()}
+                disabled={testState === "sending"}
+                accessibilityRole="button"
+              >
+                <Ionicons name="paper-plane-outline" size={15} color="#059669" />
+                <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                  {testState === "sending" ? "Đang gửi…" : "Gửi thử một thông báo"}
+                </Text>
+              </Pressable>
+              {testState && testState !== "sending" ? (
+                <Text className="mt-2 text-center text-[11px] leading-4 text-slate-500 dark:text-slate-400">{testState}</Text>
+              ) : null}
+            </>
+          ) : null}
           {push.status === "denied" ? (
             <Pressable
               className="mt-3 flex-row items-center justify-center gap-1.5 rounded-xl bg-slate-100 py-2.5 active:opacity-70 dark:bg-slate-800"

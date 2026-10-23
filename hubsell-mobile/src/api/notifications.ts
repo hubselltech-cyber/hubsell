@@ -46,6 +46,11 @@ export function registerPushDevice(input: {
   return api<{ ok: true }>("/api/notifications/devices", { method: "POST", body: input });
 }
 
+/** Gửi một tin đẩy thử tới mọi máy đang bật của chủ shop; trả số máy đã nhận. */
+export function sendTestPush() {
+  return api<{ sent: number }>("/api/notifications/test-push", { method: "POST", body: {} });
+}
+
 /** Gỡ token (đăng xuất / tắt công tắc "Nhận thông báo đẩy"). */
 export function unregisterPushDevice(token: string) {
   return api<{ removed: number }>("/api/notifications/devices", {

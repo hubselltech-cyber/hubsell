@@ -380,6 +380,20 @@ notificationsRouter.post("/devices", async (req: AuthRequest, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * Gửi một tin đẩy THỬ tới mọi máy đang bật của chính chủ shop (nút "Gửi thử một
+ * thông báo" ở Cài đặt thông báo trên app, 23/10/2026) — chỉ push, không ghi
+ * chuông. Trả số máy đã nhận để app báo "Đã gửi tới N máy" / "Chưa có máy nào".
+ */
+notificationsRouter.post("/test-push", async (req: AuthRequest, res) => {
+  const sent = await sendPushToOwner(req.ownerId!, {
+    title: "Thử thông báo đẩy",
+    body: "Hubsell gửi được tin về máy này. Đơn mới, khách xin hủy, hàng hoàn… sẽ báo như vậy.",
+    data: { type: "system", category: "system_other", link: null },
+  });
+  res.json({ sent });
+});
+
 /** Đăng xuất / tắt push trên máy này: body { token }. */
 notificationsRouter.delete("/devices", async (req: AuthRequest, res) => {
   const token = req.body?.token;
