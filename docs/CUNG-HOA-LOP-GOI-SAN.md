@@ -451,7 +451,7 @@ cột `shippingStatus/returnStatus/totalAmount` theo mã — soạn khi bật), 
 ### 5e. Việc SẼ làm — chờ bóng đạt tiêu chí (anh Trung 19/10: "chưa cần làm ngay thì không làm", nhắc 22/10)
 
 Anh hỏi "Pha D có làm luôn không" → **chưa**: bóng mới chạy ~1 giờ, lát 2 chưa bật gian nào, đường mới còn thiếu 3 việc phụ.
-Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc trượt (Chrome tắt), đo tay 22/10 + 23/10: **ĐẠT** (5c.1); nhắc 26/10 08:30 đo lần 3.
+Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc trượt (Chrome tắt), đo tay 22/10 + 23/10: **ĐẠT** (5c.1); anh chốt 23/10 **chưa bật lát 2, chờ lượt đo 26/10 08:30 rồi quyết**.
 
 | Khi nào | Việc | Ghi chú |
 |---|---|---|
