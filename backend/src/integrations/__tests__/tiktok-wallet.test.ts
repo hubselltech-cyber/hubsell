@@ -15,6 +15,7 @@ import {
   summarizeTiktokWalletRows,
   tiktokWalletBalance,
   tiktokWalletDelta,
+  tiktokWalletRawSum,
   tiktokWalletReadFrom,
 } from "../tiktok/wallet";
 import { SETTLE_BACKFILL_FLOOR } from "../tiktok/service";
@@ -51,21 +52,54 @@ describe("tiktokWalletDelta", () => {
 });
 
 describe("tiktokWalletBalance", () => {
+  const at = (r: ReturnType<typeof row>, day: number) => ({ ...r, createTime: Date.UTC(2026, 9, day) });
+
   it("rút hỏng: WITHDRAW FAILED + REVERSE = về 0 (không đếm đôi)", () => {
-    const rows = [row("SETTLE", 1_000_000), row("WITHDRAW", 1_000_000, "FAILED"), row("REVERSE", 1_000_000)];
+    const rows = [at(row("SETTLE", 1_000_000), 1), at(row("WITHDRAW", 1_000_000, "FAILED"), 2), at(row("REVERSE", 1_000_000), 3)];
     expect(tiktokWalletBalance(rows)).toBe(1_000_000);
+    expect(tiktokWalletRawSum(rows)).toBe(1_000_000);
   });
 
   it("gian VN sàn tự chuyển: Σ SETTLE − Σ PAYMENT + TRANSFER", () => {
     const rows = [
-      row("SETTLE", 2_500_000.5),
-      row("SETTLE", 1_000_000),
-      row("PAYMENT", 3_000_000, "PROCESSED"),
-      row("TRANSFER", -20_000),
-      row("REFUND", 999_999),
+      at(row("SETTLE", 2_500_000.5), 1),
+      at(row("SETTLE", 1_000_000), 2),
+      at(row("PAYMENT", 3_000_000, "PROCESSED"), 3),
+      at(row("TRANSFER", -20_000), 4),
+      at(row("REFUND", 999_999), 5),
     ];
     expect(tiktokWalletBalance(rows)).toBe(480_000.5);
     expect(tiktokWalletBalance([])).toBe(0);
+  });
+
+  it("đầu cửa sổ còn tiền: lệnh rút vượt Σ SETTLE → coi ví cạn tại đáy, không âm (prod 23/10: Samca −128k)", () => {
+    // Ngày 1 rút 9,45tr (gồm tiền cộng trước cửa sổ), sau đó cộng dần 9,21tr + trợ cấp 111k.
+    const rows = [
+      at(row("WITHDRAW", 9_452_854, "SUCCESS"), 1),
+      at(row("SETTLE", 9_213_747), 10),
+      at(row("TRANSFER", 111_200), 20),
+    ];
+    expect(tiktokWalletRawSum(rows)).toBe(-127_907);
+    expect(tiktokWalletBalance(rows)).toBe(9_324_947);
+  });
+
+  it("rút cạn giữa cửa sổ: số dư = tiền cộng sau lần rút cạn", () => {
+    const rows = [
+      at(row("SETTLE", 500_000), 1),
+      at(row("SETTLE", 700_000), 2),
+      at(row("WITHDRAW", 1_200_000, "SUCCESS"), 3),
+      at(row("SETTLE", 300_000), 4),
+      at(row("WITHDRAW", 1_300_000, "SUCCESS"), 5), // rút nhiều hơn số có → đáy −1tr
+      at(row("SETTLE", 250_000), 6),
+    ];
+    expect(tiktokWalletBalance(rows)).toBe(250_000);
+  });
+
+  it("cùng thời điểm: tiền vào tính trước tiền ra, không tạo đáy giả", () => {
+    const rows = [at(row("WITHDRAW", 400_000, "SUCCESS"), 1), at(row("SETTLE", 400_000), 1)];
+    expect(tiktokWalletBalance(rows)).toBe(0);
+    // Thiếu createTime → coi như cùng lúc, vẫn vào trước ra.
+    expect(tiktokWalletBalance([row("WITHDRAW", 400_000), row("SETTLE", 400_000)])).toBe(0);
   });
 });
 

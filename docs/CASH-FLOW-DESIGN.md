@@ -98,6 +98,20 @@ sync ví; cron giờ `order-auto-sync.ts` gọi sau sync rút ví (Shopee) / pay
   về bank của gian VN không.
 - Nhãn cột 1 đổi "Chưa thanh toán" → "Tiền đang giao" + tooltip một câu (anh
   chốt 23/10, khách không hiểu chữ của Shopee); cột Về Ngân hàng GIỮ.
+- **Lượt prod đầu 23/10 ~22:00 (11 gian + 3 gian anh):** hình dạng dòng đúng
+  docs (keys amount, create_time, currency, id, status, type; amount chuỗi).
+  Σ thô ra ÂM ở nhiều gian (Samca −128k, Tarot −109k, TOVO 11 −11,5tr,
+  and.not.or −3,03tr, ANO Official −505k): lệnh rút trong cửa sổ rút cả tiền
+  cộng TRƯỚC cửa sổ. Hai gian ra đúng 0 từng đồng (TOVO 21: SETTLE = WITHDRAW;
+  69Minh Đương: SETTLE − WITHDRAW − PAYMENT = 0) → luật dấu SETTLE +,
+  WITHDRAW/PAYMENT − là đúng và shop VN rút cạn ví. → **Số dư = Σ − min(0,
+  prefix thấp nhất theo thời gian)**: coi ví cạn tại đáy cửa sổ, không âm
+  (cùng thời điểm thì tiền vào tính trước). Log in cả "Σ thô" lẫn "số dư".
+- ⚠️ CHƯA RÕ: gian Siêu Thị 8686 có TRANSFER 229 dòng +839tr (SETTLE chỉ 356tr)
+  → số dư 832tr chắc chắn sai. TRANSFER không thể là trợ cấp với số đó; nghi
+  là chuyển ví ↔ tài khoản quảng cáo / giữa tiểu khoản. Log
+  `[TikTok] Hình dạng dòng sổ cái ví "<gian>" loại TRANSFER: {...}` (mỗi loại
+  một lần/tiến trình) để soi dòng thật rồi quyết luật dấu cho TRANSFER.
 
 ## Kế hoạch TikTok (bản 14/08/2026 — giữ làm sử)
 

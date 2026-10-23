@@ -14,9 +14,15 @@
 // Dòng WITHDRAW/PAYMENT ghi thêm WalletWithdrawal để cột "Về Ngân hàng" tự chạy.
 //
 // CỬA SỔ (anh Trung chốt 23/10): đọc từ 90 ngày TRƯỚC ngày ủy quyền — không ai
-// để tiền trên sàn quá 90 ngày nên số dư đầu cửa sổ coi như 0. Nhịp giờ chỉ
-// đọc phần mới: từ dòng mới nhất đã lưu lùi OVERLAP, kéo thêm về dòng chưa
-// chốt cũ nhất (PROCESSING → PROCESSED đổi cột Về Ngân hàng).
+// để tiền trên sàn quá 90 ngày. Nhịp giờ chỉ đọc phần mới: từ dòng mới nhất
+// đã lưu lùi OVERLAP, kéo thêm về dòng chưa chốt cũ nhất (PROCESSING →
+// PROCESSED đổi cột Về Ngân hàng).
+// SỐ DƯ ĐẦU CỬA SỔ không biết: lượt prod đầu 23/10 (11 gian) cho thấy Σ thô ra
+// ÂM ở 3 gian (Samca −128k, Tarot −109k, TOVO 11 −11,5tr: lệnh rút trong cửa
+// sổ rút cả tiền cộng trước cửa sổ) và ra ĐÚNG 0 ở 2 gian (TOVO 21, 69Minh
+// Đương: SETTLE − WITHDRAW − PAYMENT = 0 từng đồng → shop rút cạn). Vì thế
+// số dư = Σ − min(0, prefix thấp nhất theo thời gian): coi ví CẠN (= 0) tại
+// điểm thấp nhất trong cửa sổ — khớp thói quen rút sạch, không bao giờ âm.
 //
 // LUẬT DẤU chưa kiểm với sàn thật (ghi log tổng theo loại ở mỗi lượt có dòng
 // mới để anh đối chiếu Seller Center; đổi luật thì chỉ sửa tiktokWalletDelta,
@@ -48,6 +54,8 @@ export interface TiktokWalletLedgerRow {
   type: string;
   status: string;
   amount: number; // giữ dấu sàn trả
+  /** Thời điểm sàn ghi dòng — để tính prefix theo thời gian (thiếu = coi như cùng lúc). */
+  createTime?: Date | number;
 }
 
 /** Loại dòng = tiền rời ví về ngân hàng (shop tự rút hoặc sàn tự chuyển). */
@@ -99,10 +107,34 @@ export function tiktokWalletDelta(row: TiktokWalletLedgerRow): number {
   }
 }
 
-/** Số dư ví = Σ delta mọi dòng trong cửa sổ (làm tròn 2 chữ số). */
-export function tiktokWalletBalance(rows: readonly TiktokWalletLedgerRow[]): number {
+/** Σ delta thô của mọi dòng (có thể âm khi đầu cửa sổ còn tiền) — chỉ để log đối chiếu. */
+export function tiktokWalletRawSum(rows: readonly TiktokWalletLedgerRow[]): number {
   const sum = rows.reduce((acc, r) => acc + tiktokWalletDelta(r), 0);
   return Math.round(sum * 100) / 100;
+}
+
+function rowTimeMs(r: TiktokWalletLedgerRow): number {
+  if (r.createTime == null) return 0;
+  return typeof r.createTime === "number" ? r.createTime : r.createTime.getTime();
+}
+
+/**
+ * Số dư ví = Σ delta − min(0, prefix thấp nhất theo thời gian).
+ * Tức coi ví CẠN tại điểm thấp nhất trong cửa sổ (xem chú thích đầu file).
+ * Cùng một thời điểm thì tiền VÀO tính trước tiền RA để không tạo đáy giả.
+ * Làm tròn 2 chữ số, không bao giờ âm.
+ */
+export function tiktokWalletBalance(rows: readonly TiktokWalletLedgerRow[]): number {
+  const ordered = rows
+    .map((r) => ({ r, d: tiktokWalletDelta(r), t: rowTimeMs(r) }))
+    .sort((a, b) => a.t - b.t || b.d - a.d);
+  let run = 0;
+  let low = 0;
+  for (const x of ordered) {
+    run += x.d;
+    if (run < low) low = run;
+  }
+  return Math.round((run - low) * 100) / 100;
 }
 
 /** Tóm tắt theo loại để log đối chiếu: "SETTLE 42 dòng 12.345.678 · PAYMENT 40 dòng 12.000.000". */
@@ -157,7 +189,8 @@ export interface SyncTiktokWalletResult {
   more: boolean; // còn trang chưa đọc (quá MAX_PAGES) — lượt sau đọc tiếp
 }
 
-let shapeLogged = false;
+/** Mỗi loại dòng in nguyên văn MỘT lần/tiến trình — để soi luật dấu (TRANSFER, PAYMENT, REFUND…). */
+const shapeLoggedTypes = new Set<string>();
 
 function toSec(d: Date): number {
   return Math.floor(d.getTime() / 1000);
@@ -231,10 +264,11 @@ export async function syncTiktokWallet(channel: Channel): Promise<SyncTiktokWall
     pages++;
     for (const t of page.withdrawals) {
       result.fetched++;
-      if (!shapeLogged && process.env.TIKTOK_SHAPE_LOG !== "0") {
-        shapeLogged = true;
+      const shapeKey = String(t.type ?? "?").toUpperCase();
+      if (!shapeLoggedTypes.has(shapeKey) && process.env.TIKTOK_SHAPE_LOG !== "0") {
+        shapeLoggedTypes.add(shapeKey);
         console.log(
-          `[TikTok] Hình dạng dòng sổ cái ví (withdrawals): keys=[${Object.keys(t).join(",")}] type=${JSON.stringify(t.type)} status=${JSON.stringify(t.status)} amount=${JSON.stringify(t.amount)}`
+          `[TikTok] Hình dạng dòng sổ cái ví "${channel.shopName}" loại ${shapeKey}: ${JSON.stringify(t).slice(0, 400)}`
         );
       }
       const externalId = String(t.id ?? "").trim();
@@ -301,9 +335,9 @@ export async function syncTiktokWallet(channel: Channel): Promise<SyncTiktokWall
   // Số dư = cộng dồn TOÀN BỘ dòng đã lưu của gian (cửa sổ 90 ngày trước ủy quyền → nay).
   const rows = await prisma.tiktokWalletTxn.findMany({
     where: { channelId: channel.id },
-    select: { type: true, status: true, amount: true },
+    select: { type: true, status: true, amount: true, createTime: true },
   });
-  const ledger = rows.map((r) => ({ type: r.type, status: r.status, amount: Number(r.amount) }));
+  const ledger = rows.map((r) => ({ type: r.type, status: r.status, amount: Number(r.amount), createTime: r.createTime }));
   result.walletBalance = tiktokWalletBalance(ledger);
   await prisma.channel.update({
     where: { id: channel.id },
@@ -311,7 +345,7 @@ export async function syncTiktokWallet(channel: Channel): Promise<SyncTiktokWall
   });
   if (result.created > 0 || result.updated > 0) {
     console.log(
-      `[TikTok] Ví "${channel.shopName}": ${summarizeTiktokWalletRows(ledger)} → số dư ${Math.round(result.walletBalance).toLocaleString("vi-VN")}${result.more ? " (còn trang, lượt sau đọc tiếp)" : ""}`
+      `[TikTok] Ví "${channel.shopName}": ${summarizeTiktokWalletRows(ledger)} → Σ thô ${Math.round(tiktokWalletRawSum(ledger)).toLocaleString("vi-VN")}, số dư ${Math.round(result.walletBalance).toLocaleString("vi-VN")}${result.more ? " (còn trang, lượt sau đọc tiếp)" : ""}`
     );
   }
   return result;
