@@ -25,13 +25,14 @@ export function hoursLeft(dueAt: string | null | undefined, now = Date.now()): n
   return Math.round((ms / 36e5) * 10) / 10;
 }
 
+/** Ngắn để vừa một dòng trên màn 320 cạnh nút: "còn 38 giờ" / "quá hạn". */
 function deadlineText(dueAt: string | null | undefined): string {
   const h = hoursLeft(dueAt);
-  if (h === null) return "sàn chờ shop trả lời";
-  if (h <= 0) return "đã quá hạn, sàn có thể tự hủy";
-  if (h < 1) return `còn ${Math.max(1, Math.round(h * 60))} phút để trả lời`;
-  if (h < 48) return `còn ${Math.round(h)} giờ để trả lời`;
-  return `còn ${Math.round(h / 24)} ngày để trả lời`;
+  if (h === null) return "chờ shop trả lời";
+  if (h <= 0) return "quá hạn, sàn có thể tự hủy";
+  if (h < 1) return `còn ${Math.max(1, Math.round(h * 60))} phút`;
+  if (h < 48) return `còn ${Math.round(h)} giờ`;
+  return `còn ${Math.round(h / 24)} ngày`;
 }
 
 /** Viên nhỏ cạnh mã đơn trên thẻ (như viên Hỏa tốc). */
@@ -71,7 +72,7 @@ export function CancelRequestBar({
         <View className="flex-row items-center gap-2">
           <Ionicons name="alert-circle" size={16} color="#ef4444" />
           <View className="min-w-0 flex-1">
-            <Text className="text-[12px] font-semibold text-red-700 dark:text-red-300" numberOfLines={1}>
+            <Text className="text-[12px] font-semibold text-red-700 dark:text-red-300" numberOfLines={2}>
               Khách xin hủy · {deadlineText(order.cancelRequestDueAt)}
             </Text>
             {order.cancelRequestReason ? (
