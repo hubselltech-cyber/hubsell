@@ -6,6 +6,13 @@
 
 ---
 
+## Phiên 23/10/2026 sáng — ĐỌC SỐ 24 h SAU A2/A3 CẦU DAO ADS (lịch nhắc tự động 09:30, Chrome anh; chỉ đọc): KHÔNG ĐẠT — 168 lần 429/24 h, trần KHÔNG theo gian
+
+- **Đo (docs ADS-NHIP-CANH-BAO 13.9.10):** `[gateway] 429` **168/24 h** (151 get_all_cpc, 41 gian khác nhau, gian cao nhất 8 lần) vs kỳ vọng ≤ 5; **21 lần bão ≥ 3 gian/60 s** → khóa app×ep get_all_cpc factor **0,10 sàn**, không hồi; đêm nay 11,8 lần/h (01:30–09:10 VN) ≈ đêm 22/10 trước A2 13,8/h → **pace 1 lệnh/5'/gian không đổi được gì = trần không theo gian**; 39 % dồn 00:00–02:00 VN, đỉnh phụ 04h (sóng lịch sử 6 h), ban ngày 1–8/h.
+- **Phần đúng của A2/A3:** 0 chuỗi 429 cùng gian cách 60–80 s; 51 lần xung chạy tiếp từ bước dở (bước 4 ×40, bước 2 ×10); `CẦU DAO ĐÓNG` 0; tripCount 162 đứng; `[Ads-demand]` 5/39/5 gian 30' 3 %; adsPriority 5/48/27; adsPulseStep dở 1/80; **0 gian trễ xung > 2 h cả 4 sàn** (Trợ lý vẫn tươi).
+- **Thiết kế cần anh chốt (không code):** sàn AIMD 0,1 × 1/s = 6 lệnh/phút > nhu cầu thật ~2 lệnh/phút → cổng không học xuống được (sàn theo tỷ lệ của trần khởi điểm tự chọn) → cần sàn tuyệt đối / học không sàn khi có bằng chứng tầng app. Kèm: ticket Shopee với request_id (mẫu `e3e3e7f35e74662c33951aca17f32500`), C1 thẻ HQ Quota (đã chốt 22/10, chưa làm). Không vá số tay, không mở C2/D/C3.
+- Ghi: memory `hubsell-cau-dao-ads-bao-429-theo-gian`, docs 13.9.10, PROGRESS này. Chưa commit (chờ anh xem).
+
 ## Phiên 23/10/2026 sáng — KIỂM BÓNG ĐỌC SÀN 5c LẦN 2 (4 ngày, anh: "kiểm tra lại đi em"): ĐẠT, chờ anh chốt bật lát 2 gian ANO
 
 - **Nhắc tự động 22/10 08:00 trượt** (Chrome chưa kết nối, máy không có chuỗi DB prod) → dán SQL cho anh; phiên 22/10 ~10:00 đã đo lần 1 (3 ngày, ĐẠT).

@@ -977,3 +977,33 @@ số chưa hết gói hoặc chưa quá ân hạn.
 **Việc kế nhỏ ghi lại (chưa làm):** `callMarketplace` ném Defer khi `attempt >= 3` dù mỗi lần chờ chỉ vài trăm ms (app × endpoint 2/s,
 hai luồng song song) → làn xếp lại tối thiểu 1' cho một việc đáng ra chờ 1 s (log "quay lại sau 1 s"). Sửa đúng chỗ: giới hạn theo TỔNG
 thời gian ngủ trong dòng (≤ MAX_INLINE_WAIT_MS) thay vì số vòng. Đưa vào bước C cùng thẻ HQ.
+
+#### 13.9.10 ĐỌC SỐ 24 h SAU A2/A3 — 23/10/2026 09:30–09:50 (lịch nhắc tự động, Chrome anh: Supabase + Render; CHỈ ĐỌC) — KHÔNG ĐẠT, trần KHÔNG theo gian
+
+Mốc: A2 `05971e95` boot 09:31 22/10, A3 `99691473` boot 10:07 22/10 → cửa sổ đo 10:07 22/10 → 09:45 23/10 (≈ 23,6 h). Tiêu chí 13.9.8 "Đo".
+
+| Chỉ số | Kỳ vọng | Kết quả | |
+|---|---|---|---|
+| `[gateway] 429` 24 h (log Render, khớp `sum(hits)` khóa gian×endpoint) | ≤ 5 | **168** — get_all_cpc 151 · setting_info 12 · get_total_balance 3 · budget_suggestion 1 · roi_target 1; **41 gian khác nhau**; gian cao nhất 8 lần (1359898174, 1883811931), 7 lần (331545740, 453810830, 1250096431, 1932588402) | ❌ |
+| Chuỗi 429 cùng gian cách 60–80 s (lỗi 22/10) | 0 | **0** — gian lặp cách ≥ 5'–30' (làn hoãn sàn 5' + chạy tiếp từ bước dở) | ✅ |
+| `+ bão app (3 gian/60 s → hạ nhịp …)` | hiếm | **21 lần** → khóa app×ep get_all_cpc `hits` 96 → 117, `factor` **0,10 (sàn)**, lùi tới 04:12 23/10 — KHÔNG tự hồi về 1 | ❌ |
+| Phân bố theo giờ (UTC) | đều | 03h 2 · 04h 7 · 06h 1 · 07h 5 · 08h 2 · 09h 4 · 10h 5 · 11h 6 · 12h 5 · 13h 1 · 14h 3 · 15h 8 · 16h 2 · **17h 26 · 18h 39** · 19h 5 · 20h 7 · **21h 22** · 22h 8 · 23h 3 · 00h 5 · 01h 2 → **00:00–02:00 VN = 65 (39 %)**, 04:00 VN = 22; ban ngày 1–8/h | ⚠ |
+| So đêm 22/10 TRƯỚC A2 (A+B, không pace theo gian) | giảm | 106 / 7,7 h = 13,8/h (01:30–09:10 VN) **vs** đêm nay cùng khung 91 / 7,7 h = 11,8/h → pace 1 lệnh/5'/gian **không đổi nhịp 429** | ❌ |
+| `[ApiBudget] CẦU DAO ĐÓNG` | 0 | **0** ("No matching logs") | ✅ |
+| `api_throttle_states` shopee:2044679 | 162 đứng | **162**, updatedAt 21/10 22:46 (2040029: 14, 15/09) | ✅ |
+| `[Ads-demand]` (10 dòng) | — | lớp 1: 5 · lớp 2: 39 · lớp 3: 5 gian, xung 30' cả ba; chặt nhất 3 % (một lần 32 % lúc factor app thấp); gian dùng 23 % trần gian×ep | ✅ |
+| Chạy tiếp từ bước dở (A2) | có | **51 dòng**: bước 4 ×40, bước 2 ×10 (`[Ads-pulse] … (chạy tiếp từ bước 4)`) | ✅ |
+| `cổng bảo quay lại sau` (51 dòng tải được 04:16–09:32) | — | 25 × 300 s (sàn 5' sau 429), 1–47 s ×12 (chờ app×ep quá 3 vòng ngủ — việc kế 13.9.9), 140–421 s ×7 (khóa gian×get_all_cpc 1/5' × factor) | — |
+| `api_rate_keys` gian×endpoint | hits phân tán ≤ 2/gian/ngày | get_all_cpc **50 khóa, 151 hits, 40 khóa factor < 1 (min 0,22)**; setting_info 35 khóa 12 hits; total_balance 24 khóa 3 hits; 0 khóa đang bị chặn lúc đọc | ❌ |
+| `adsPriority` / `adsPulseStep` ≠ 0 / `adsLockedAt` | — | 5 / 48 / 27 (80 gian) · 1/80 · 0 | ✅ |
+| Trợ lý tươi (`nextAdsPulseAt` < now − 2 h, chưa khóa) | 0 | **0** cả 4 sàn (SHOPEE 80, TIKTOK 69, LAZADA 2, OFFLINE 2) | ✅ |
+| `lastAdsSyncAt` / `nextAdsSyncAt` (49 gian nối Ads) | — | 40 gian lịch sử lúc 09h 23/10 (sóng 6 h từ boot 10:07: 16h → 22h → 04h → 10h); `nextAdsSyncAt` dồn 04–05h 24/10 (12) + 09–16h (41) | — |
+| request_id mẫu (`lastError`) | — | gian 1359898174: `e3e3e7f35e74662c33951aca17f32500`; khóa app: `e3e3e7f35e74531d45a62d10a446d600` — mọi dòng 429 trong log đều có `request_id=` | — |
+
+**Kết luận:**
+1. **Cơ chế A2/A3 chạy đúng**: không còn chuỗi 60–80 s, xung chạy tiếp từ bước dở (51 lần), cầu dao app 0, Trợ lý vẫn tươi (0 gian trễ 2 h) — 429 giờ chỉ làm chậm một bước 5' chứ không làm mất số.
+2. **Tiêu chí số KHÔNG ĐẠT**: 168/ngày ≫ 20. Và **giả thuyết A2 "trần theo gian" SAI nốt**: đã pace 1 lệnh/5'/gian mà nhịp 429 ban đêm không đổi (11,8/h vs 13,8/h); 21 lần ≥ 3 gian KHÁC NHAU dính trong 60 s — theo đúng tiêu chí bằng chứng của 13.9.8 đó là **tầng app (partner × endpoint)**. H4 (bước A) đúng tầng nhưng sai mức: trần thật của get_all_cpc thấp hơn nhiều so với 1/s.
+3. **Sàn AIMD chặn học**: khóa app×ep đã xuống sàn 0,10 × 1/s = **6 lệnh/phút**, trong khi nhu cầu thật chỉ ≈ 2 lệnh/phút (49 gian / 30' + lịch sử) → van app×ep không còn pace gì nữa, cổng không thể học xuống thấp hơn. Sàn 0,1 là tỷ lệ của trần khởi điểm TỰ CHỌN (1/s) — chỗ này là thiết kế (sàn phải tuyệt đối theo lệnh/phút, hoặc học không sàn khi có bằng chứng tầng app), không phải chỉnh số. **Chưa sửa** — chờ anh chốt.
+4. **Theo giờ**: 39 % số 429 rơi vào 00:00–02:00 VN, đỉnh phụ 04:00 VN (trùng sóng lịch sử 6 h); ban ngày cùng nhịp xung chỉ 1–8/h. 00–02h VN KHÔNG trùng sóng lịch sử (22h → 04h) → chưa giải thích được bằng tải của mình; nghi Shopee bóp theo giờ đổi ngày / tải đêm phía sàn — **chưa kiểm**, hỏi trong ticket.
+
+**Việc kế (chờ anh chốt, chưa code):** (a) ticket Shopee (mục 11 + yêu cầu 15/09): partner 2044679, endpoint, 168 request_id/24 h, nhịp thật ~2 lệnh/phút cả app · 1 lệnh/5'/gian, hỏi trần thật theo tầng nào + cửa sổ + có bóp theo giờ; (b) thiết kế sàn AIMD tuyệt đối cho khóa app×ep (ghi ở 3); (c) C1 thẻ HQ "Quota Ads theo khóa" (anh đã chốt 22/10, chưa làm) — thẻ chỉ đọc nên làm được ngay cả khi chưa đạt. Không mở C2/D/C3 tới khi 429 ≤ 20/ngày.
