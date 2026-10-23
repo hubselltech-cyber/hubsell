@@ -5,7 +5,7 @@
  *
  *   node scripts/asc-release.mjs status
  *   node scripts/asc-release.mjs create-version 1.1.0
- *   node scripts/asc-release.mjs whats-new 1.1.0 "<nội dung>"       (locale vi)
+ *   node scripts/asc-release.mjs whats-new 1.1.0 "<nội dung>" | @tệp.txt   (locale vi)
  *   node scripts/asc-release.mjs screenshots 1.1.0 <thư mục png> [displayType]   (xóa ảnh cũ trong bộ, tải ảnh mới theo thứ tự tên)
  *   node scripts/asc-release.mjs attach-build 1.1.0 12
  *   node scripts/asc-release.mjs submit 1.1.0
@@ -108,7 +108,9 @@ if (cmd === "status") {
   });
   console.log("Đã tạo", r.data.attributes.versionString, r.data.id, r.data.attributes.appStoreState ?? r.data.attributes.appVersionState);
 } else if (cmd === "whats-new") {
-  const [vs, text] = args;
+  // "@đường/dẫn.txt" = đọc nội dung từ tệp UTF-8 (tránh mojibake khi truyền tiếng Việt qua đối số Git Bash, 23/10).
+  const [vs, rawText] = args;
+  const text = rawText.startsWith("@") ? readFileSync(rawText.slice(1), "utf8").trim() : rawText;
   const v = await versionByString(vs);
   const loc = await localization(v.id);
   await api("PATCH", `/v1/appStoreVersionLocalizations/${loc.id}`, { data: { type: "appStoreVersionLocalizations", id: loc.id, attributes: { whatsNew: text } } });

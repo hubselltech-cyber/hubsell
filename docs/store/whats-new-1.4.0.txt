@@ -1,0 +1,6 @@
+Bản 1.4.0:
+• Chuông thông báo ngay trong app: đơn mới, đơn hỏa tốc, khách xin hủy, hàng hoàn, cảnh báo quảng cáo và kho.
+• Cài đặt thông báo theo nhóm: bật/tắt cả nhóm hoặc từng loại, dùng chung mọi thiết bị.
+• Thông báo đẩy về máy khi có việc cần xử lý (bật trong Cấu hình → Thông báo).
+• Tài chính và Quảng cáo: chọn gian hàng bằng hộp chọn gọn, lọc gian và kỳ xem trên cùng một hàng.
+• Bóc tách dòng tiền: cột đầu đổi tên thành "Tổng giá trị SP" cho đúng bản chất.
