@@ -151,6 +151,27 @@ cớ bắt lỗi "sai kệ". Khách nhìn thấy tên + ảnh + mô tả nói tr
 nhỏ "Quản lý TMĐT › ERP" trên thẻ. Chỉ cần tránh một điều: KHÔNG viết mô tả ngắn / lợi ích
 chỉ toàn quảng cáo mà không nhắc đơn/tài chính ở mô tả dài (đã có).
 
+### 2.3. Anh hỏi 23/10 chiều: "không thể có mặt ở cả 2 hạng mục à?"
+
+- Một app = một hạng mục, khóa. "Cả hai kệ" = **hai app công khai, hai app key, hai listing**
+  (app ERP hiện tại nâng cấp + app mới ở Marketing › Phân tích và Báo cáo). Tài khoản đối tác
+  có thể có nhiều hạng mục (đơn "Hạng mục & thị trường" riêng cho Marketing), trần 3 app/hạng mục lá.
+- Hỏi chatbot Trợ lý đối tác 23/10 (nguyên văn rút gọn): *"A duplicate public listing of the
+  same Hubsell product in two categories is not clearly allowed… two listings should not look
+  like the same app duplicated for category coverage… If the two apps are essentially the same
+  product, same seller-facing workflow, same website, and same value proposition, submitting two
+  public apps only differentiated by category would be review-risky… Create a second app only if
+  it is a distinct seller-facing product/module with separate functionality, separate scopes,
+  separate onboarding… Authorizations and access tokens are app-specific; sellers would need to
+  authorize the second app separately."* Không có trần số app/đối tác được công bố.
+- Hệ quả: muốn có mặt kệ Marketing một cách an toàn thì app thứ hai phải là **sản phẩm riêng**
+  (ví dụ "Hubsell Ads" chỉ có mô-đun Trợ lý quảng cáo, scope ít hơn, onboarding riêng) chứ không
+  phải Hubsell dán nhãn khác. Điều này đi ngược nguyên tắc 17/09 "không làm Ads-only, Ads chỉ
+  trên gian đã nối app chính", và kéo theo: khách muốn dùng phần ads phải ủy quyền cả hai app,
+  backend nuôi hai app key, hai vòng review. **Em không khuyên làm bây giờ**; để dành khi App
+  Store VN mở kệ "Quảng cáo" thật hoặc khi anh quyết tách sản phẩm Ads (đã có app Hubsell Ads
+  phía Shopee làm tiền lệ).
+
 Nếu anh chốt B hoặc C: em làm thêm (1) đơn Hạng mục & thị trường, (2) tạo app công khai mới,
 (3) code `Channel.tiktokAppKey` + đọc cấu hình theo app, (4) hộp nhắc "Ủy quyền lại" cho 15
 gian, (5) nộp app review lần nữa với video/ảnh/gian demo như 16/09.
