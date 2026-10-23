@@ -67,7 +67,7 @@ export const NOTIFICATION_GROUPS: readonly NotificationGroup[] = [
     items: [
       { key: "order_new", label: "Đơn hàng mới", hint: "Gom theo đợt vài phút một lần, không báo từng đơn." },
       { key: "order_express", label: "Đơn hỏa tốc", hint: "Báo ngay từng đơn vì hãng đến lấy trong vài giờ." },
-      { key: "cancel_request", label: "Khách xin hủy đơn", hint: "Sàn chờ shop trả lời, quá hạn sàn tự hủy." },
+      { key: "cancel_request", label: "Khách xin hủy, đơn bị hủy", hint: "Khách xin hủy chờ shop trả lời; đơn đã chuẩn bị hàng bị hủy." },
       { key: "return", label: "Hoàn hàng, trả hàng hoàn tiền", hint: "Sàn báo đơn chuyển sang chờ nhận hàng hoàn." },
       { key: "delivery_fail", label: "Giao không thành công", hint: "Đơn giao hụt nhiều lần, nên gọi khách trước lượt cuối." },
     ],
@@ -179,7 +179,7 @@ export function categoryOf(type: string): NotificationCategoryKey {
   // Đơn hàng
   if (t === "order_new") return "order_new";
   if (t === "order_express") return "order_express";
-  if (t === "cancel_request") return "cancel_request";
+  if (t === "cancel_request" || t === "order_cancelled") return "cancel_request";
   if (t === "return") return "return";
   if (t === "delivery-fail" || ops === "delivery-fail") return "delivery_fail";
 

@@ -129,8 +129,9 @@ describe("TikTok planTiktokCancelFlag", () => {
     expect(planTiktokCancelFlag(ttOrder, [], NOW)).toBeNull();
   });
 
-  it("đơn đã sang Đã xử lý (AWAITING_COLLECTION) → khách hết quyền, không bật cờ", () => {
-    expect(planTiktokCancelFlag({ ...ttOrder, shippingStatus: ShippingStatus.PROCESSED }, [pendingReq], NOW)).toBeNull();
+  it("đơn đã sang Đã xử lý mà sàn vẫn trả yêu cầu chờ → VẪN bật cờ (23/10 tối: khách hủy được sau chuẩn bị); đã hủy/đã giao thì không", () => {
+    expect(planTiktokCancelFlag({ ...ttOrder, shippingStatus: ShippingStatus.PROCESSED }, [pendingReq], NOW)?.flagged).toBe(true);
+    expect(planTiktokCancelFlag({ ...ttOrder, shippingStatus: ShippingStatus.CANCELLED }, [pendingReq], NOW)).toBeNull();
   });
 });
 

@@ -38,7 +38,7 @@ import { lineKey, resolveOrderLineRows, shopeeLineExternalId } from "../order-li
 import type { StockSyncRequest } from "./inventory-sync";
 import type { SyncCompleteness } from "../sync-contract";
 import { noteNewOrder } from "../../services/new-order-notify";
-import { CLEAR_CANCEL_REQUEST, notifyCancelRequest } from "../cancel-request";
+import { CLEAR_CANCEL_REQUEST, notifyCancelRequest, notifyOrderCancelledAfterPrepare } from "../cancel-request";
 import {
   getAccessToken,
   getOrderDetail,
@@ -805,6 +805,15 @@ export async function upsertShopeeOrderTx(
     const changed = hasPlannedChanges(data);
     if (changed) {
       await tx.order.update({ where: { id: existing.id }, select: { id: true }, data });
+      // Đơn ĐÃ chuẩn bị hàng / đang giao mà sàn báo hủy → chuông "hủy sau chuẩn bị"
+      // (lưới đỡ khi pha IN_CANCEL trôi qua giữa hai lượt đọc; anh Trung 23/10 tối).
+      if (data.shippingStatus === ShippingStatus.CANCELLED) {
+        void notifyOrderCancelledAfterPrepare(channel, orderCode, {
+          prevStatus: existing.shippingStatus,
+          by: order.cancel_by ?? null,
+          reason: order.buyer_cancel_reason || order.cancel_reason || null,
+        });
+      }
       // Vừa bật cờ khách xin hủy → chuông (ngoài giao dịch, không ném lỗi).
       if (data.cancelRequestedAt) {
         void notifyCancelRequest(

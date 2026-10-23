@@ -14,7 +14,7 @@ export function categoryOfType(type: string): NotificationCategoryKey {
 
   if (t === "order_new") return "order_new";
   if (t === "order_express") return "order_express";
-  if (t === "cancel_request") return "cancel_request";
+  if (t === "cancel_request" || t === "order_cancelled") return "cancel_request";
   if (t === "return") return "return";
   if (t === "delivery-fail" || ops === "delivery-fail") return "delivery_fail";
 

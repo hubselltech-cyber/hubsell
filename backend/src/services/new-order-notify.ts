@@ -6,15 +6,18 @@
 //     khi vừa nối gian (hàng nghìn đơn cũ) không được nổ chuông.
 //   · HỎA TỐC → một thông báo riêng NGAY (cửa sổ hành động vài giờ).
 //   · Đơn thường → GOM: đợi 45 giây cho lô sync xong rồi một thông báo
-//     "N đơn mới" theo gian; trong 15 phút kế tiếp, đợt mới CỘNG DỒN vào cùng
-//     bản ghi chuông (không đẻ 20 dòng "1 đơn mới") nhưng điện thoại vẫn
-//     rung mỗi đợt với số tăng thêm.
+//     "Có N đơn hàng mới cần xử lý" + từng gian: sàn · shop · số đơn · tiền
+//     (anh Trung 23/10 tối: phải nói rõ là đơn mới cần xử lý, kèm sàn + shop +
+//     doanh thu); trong 15 phút kế tiếp, đợt mới CỘNG DỒN vào cùng bản ghi
+//     chuông (không đẻ 20 dòng) nhưng điện thoại vẫn rung mỗi đợt.
+//   · Khách tắt mục "Đơn hàng mới" → đợt bị bỏ ngay ở flush (kể cả đợt cộng
+//     dồn — trước đây đường amend không hỏi, lọt tin sau khi tắt).
 // Bộ đệm nằm trong RAM của tiến trình worker — mất khi restart chỉ mất một
 // thông báo tiện ích, không phải dữ liệu. Chi phí: O(số chủ shop có đơn
 // trong 45 giây), không phụ thuộc số đơn.
 // ============================================================
 
-import { amendNotification, notify } from "./notifications";
+import { amendNotification, isNotificationTypeMuted, notify } from "./notifications";
 import { isExpressShipping } from "./shipping";
 
 export interface NewOrderNote {
@@ -35,6 +38,8 @@ export const FRESH_WINDOW_MS = 2 * 60 * 60 * 1000;
 export const FLUSH_DELAY_MS = 45_000;
 /** Đợt sau cộng dồn vào bản ghi chuông của đợt trước trong cửa sổ này. */
 export const MERGE_WINDOW_MS = 15 * 60 * 1000;
+/** Số gian liệt kê trong một tin; dư thì "+N gian khác". */
+const SHOPS_SHOWN = 3;
 
 const CHANNEL_LABEL: Record<string, string> = {
   SHOPEE: "Shopee",
@@ -44,8 +49,10 @@ const CHANNEL_LABEL: Record<string, string> = {
 };
 
 interface ShopCount {
+  /** "Shopee · ANO Official Store" */
   label: string;
   count: number;
+  amount: number;
 }
 
 export interface OrderBatch {
@@ -71,9 +78,16 @@ export interface NewOrderDeps {
   now: () => number;
   notify: typeof notify;
   amend: typeof amendNotification;
+  isMuted: (ownerId: string, type: string) => Promise<boolean>;
   flushDelayMs: number;
 }
-const deps: NewOrderDeps = { now: () => Date.now(), notify, amend: amendNotification, flushDelayMs: FLUSH_DELAY_MS };
+const deps: NewOrderDeps = {
+  now: () => Date.now(),
+  notify,
+  amend: amendNotification,
+  isMuted: isNotificationTypeMuted,
+  flushDelayMs: FLUSH_DELAY_MS,
+};
 
 export function _setNewOrderDeps(partial: Partial<NewOrderDeps>): void {
   Object.assign(deps, partial);
@@ -95,32 +109,48 @@ export function compactVnd(v: number): string {
 }
 
 function shopLabel(n: Pick<NewOrderNote, "shopName" | "channelName">): string {
-  return `${CHANNEL_LABEL[n.channelName] ?? n.channelName} ${n.shopName}`;
+  return `${CHANNEL_LABEL[n.channelName] ?? n.channelName} · ${n.shopName}`;
 }
 
 function addToBatch(b: OrderBatch, n: NewOrderNote): void {
+  const amount = Number.isFinite(n.totalAmount) ? n.totalAmount : 0;
   b.count += 1;
-  b.amount += Number.isFinite(n.totalAmount) ? n.totalAmount : 0;
+  b.amount += amount;
   const key = `${n.channelName}:${n.shopName}`;
-  const s = b.byShop.get(key) ?? { label: shopLabel(n), count: 0 };
+  const s = b.byShop.get(key) ?? { label: shopLabel(n), count: 0, amount: 0 };
   s.count += 1;
+  s.amount += amount;
   b.byShop.set(key, s);
 }
 
+function mergeBatch(into: OrderBatch, from: OrderBatch): void {
+  into.count += from.count;
+  into.amount += from.amount;
+  for (const [k, s] of from.byShop) {
+    const cur = into.byShop.get(k) ?? { label: s.label, count: 0, amount: 0 };
+    cur.count += s.count;
+    cur.amount += s.amount;
+    into.byShop.set(k, cur);
+  }
+}
+
+/** "Có 3 đơn hàng mới cần xử lý" */
+export function titleOf(count: number): string {
+  return `Có ${count} đơn hàng mới cần xử lý`;
+}
+
 /**
- * Nội dung một đợt: "Shopee ANO 2 · TikTok Hi.Bé 1 · tổng 2,1 tr".
- * Một gian: "Gian Shopee ANO · tổng 2,1 tr". Quá 3 gian thì "+N gian khác".
+ * Nội dung: mỗi gian một dòng "Shopee · ANO: 2 đơn · 1,2 tr", nhiều gian thì
+ * thêm dòng Tổng; quá 3 gian thì "+N gian khác".
  */
 export function describeBatch(b: OrderBatch): string {
-  const shops = [...b.byShop.values()].sort((x, y) => y.count - x.count);
-  const head =
-    shops.length === 1
-      ? `Gian ${shops[0].label}`
-      : shops
-          .slice(0, 3)
-          .map((s) => `${s.label} ${s.count}`)
-          .join(" · ") + (shops.length > 3 ? ` · +${shops.length - 3} gian khác` : "");
-  return `${head} · tổng ${compactVnd(b.amount)}`;
+  const shops = [...b.byShop.values()].sort((x, y) => y.count - x.count || y.amount - x.amount);
+  const lines = shops
+    .slice(0, SHOPS_SHOWN)
+    .map((s) => `${s.label}: ${s.count} đơn · ${compactVnd(s.amount)}`);
+  if (shops.length > SHOPS_SHOWN) lines.push(`+${shops.length - SHOPS_SHOWN} gian khác`);
+  if (shops.length > 1) lines.push(`Tổng ${compactVnd(b.amount)}`);
+  return lines.join("\n");
 }
 
 export function noteNewOrder(n: NewOrderNote): void {
@@ -129,7 +159,7 @@ export function noteNewOrder(n: NewOrderNote): void {
   if (isExpressShipping(n.carrierName)) {
     void deps.notify(n.ownerId, {
       type: "order_express",
-      title: `⚡ Đơn hỏa tốc ${n.orderCode}`,
+      title: `⚡ Đơn hỏa tốc ${n.orderCode} cần xử lý ngay`,
       body: `${shopLabel(n)} · ${compactVnd(n.totalAmount)}. ${n.carrierName ?? "Hãng"} đến lấy trong vài giờ — chuẩn bị hàng ngay.`,
       link: `/orders?search=${encodeURIComponent(n.orderCode)}`,
       dedupe: false,
@@ -155,21 +185,22 @@ export async function flushOwner(ownerId: string): Promise<void> {
   if (!b || b.count === 0) return;
   if (b.timer) clearTimeout(b.timer);
 
+  // Khách tắt "Đơn hàng mới" → bỏ cả đợt (notify() cũng tự chặn, nhưng đường
+  // cộng dồn phải chặn ở đây).
+  if (await deps.isMuted(ownerId, "order_new")) {
+    rolling.delete(ownerId);
+    return;
+  }
+
   const now = deps.now();
   const r = rolling.get(ownerId);
   if (r && now - r.startedAt < MERGE_WINDOW_MS) {
-    r.count += b.count;
-    r.amount += b.amount;
-    for (const [k, s] of b.byShop) {
-      const cur = r.byShop.get(k) ?? { label: s.label, count: 0 };
-      cur.count += s.count;
-      r.byShop.set(k, cur);
-    }
+    mergeBatch(r, b);
     const amended = await deps.amend(
       ownerId,
       r.notificationId,
-      { title: `${r.count} đơn mới`, body: `${describeBatch(r)} (15 phút gần đây)` },
-      { title: `+${b.count} đơn mới`, body: describeBatch(b), data: { type: "order_new", link: "/orders" } }
+      { title: titleOf(r.count), body: `${describeBatch(r)}\n(15 phút gần đây)` },
+      { title: `Thêm ${b.count} đơn hàng mới cần xử lý`, body: describeBatch(b), data: { type: "order_new", link: "/orders" } }
     );
     if (amended) return;
     // Bản ghi cũ đã được đọc / xóa → mở đợt mới bên dưới.
@@ -178,7 +209,7 @@ export async function flushOwner(ownerId: string): Promise<void> {
 
   const res = await deps.notify(ownerId, {
     type: "order_new",
-    title: `${b.count} đơn mới`,
+    title: titleOf(b.count),
     body: describeBatch(b),
     link: "/orders",
     dedupe: false,
@@ -189,7 +220,7 @@ export async function flushOwner(ownerId: string): Promise<void> {
       startedAt: now,
       count: b.count,
       amount: b.amount,
-      byShop: new Map(b.byShop),
+      byShop: new Map([...b.byShop].map(([k, s]) => [k, { ...s }])),
     });
   }
 }

@@ -39,7 +39,7 @@ import { planSettlementWrite } from "../settlement-merge";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import type { SyncCompleteness } from "../sync-contract";
 import { noteNewOrder } from "../../services/new-order-notify";
-import { CLEAR_CANCEL_REQUEST } from "../cancel-request";
+import { CLEAR_CANCEL_REQUEST, notifyOrderCancelledAfterPrepare } from "../cancel-request";
 import {
   createToken,
   getMultipleOrderItems,
@@ -904,6 +904,15 @@ export async function upsertLazadaOrderTx(
     const orderChanged = hasPlannedChanges(data);
     if (orderChanged) {
       await tx.order.update({ where: { id: existing.id }, select: { id: true }, data });
+      // Đơn đã chuẩn bị / đang giao mà sàn báo hủy → chuông (23/10 tối). Lazada
+      // không trả ai hủy → coi là khách.
+      if (data.shippingStatus === ShippingStatus.CANCELLED) {
+        void notifyOrderCancelledAfterPrepare(channel, orderCode, {
+          prevStatus: existing.shippingStatus,
+          by: null,
+          reason: null,
+        });
+      }
     }
     const shipChanged = lazadaShipDetailDiffers(existing, order, items);
     if (shipChanged) await writeShipDetail(existing.id);

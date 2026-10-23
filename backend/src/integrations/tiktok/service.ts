@@ -40,7 +40,7 @@ import { planSettlementWrite, type SettlementWritePlan } from "../settlement-mer
 import { lineKey, resolveOrderLineRows, tiktokLineExternalId } from "../order-line-keys";
 import type { SyncCompleteness } from "../sync-contract";
 import { noteNewOrder } from "../../services/new-order-notify";
-import { CLEAR_CANCEL_REQUEST } from "../cancel-request";
+import { CLEAR_CANCEL_REQUEST, notifyOrderCancelledAfterPrepare } from "../cancel-request";
 import {
   describeTiktokFeeTax,
   groupTiktokLinesByOrder,
@@ -531,10 +531,14 @@ export function planTiktokOrderUpdate(existing: TiktokExistingOrder, order: TikT
   if (f.carrierName && (always || existing.shippingCarrierName !== f.carrierName)) {
     data.shippingCarrierName = f.carrierName;
   }
-  // Cờ khách xin hủy chỉ sống khi đơn còn AWAITING_SHIPMENT (docs 23/10/2026:
-  // sang AWAITING_COLLECTION khách hết quyền xin hủy; CANCELLED = đã chấp nhận).
-  // Đơn rời Chờ xử lý → xóa cờ; cancel-requests.ts lo trường hợp sàn từ chối/khách rút.
-  if (existing.cancelRequestedAt && f.shippingStatus !== ShippingStatus.PENDING) {
+  // Cờ khách xin hủy hạ khi sàn CHỐT (CANCELLED = đã chấp nhận, DELIVERED = đã giao).
+  // Docs nói sang AWAITING_COLLECTION khách hết quyền, nhưng thực tế 23/10 anh Trung
+  // gặp khách hủy đơn đã chuẩn bị → không hạ cờ chỉ vì đơn rời Chờ xử lý;
+  // cancel-requests.ts (quét sàn) lo trường hợp sàn từ chối / khách rút.
+  if (
+    existing.cancelRequestedAt &&
+    (f.shippingStatus === ShippingStatus.CANCELLED || f.shippingStatus === ShippingStatus.DELIVERED)
+  ) {
     Object.assign(data, CLEAR_CANCEL_REQUEST);
   }
   return data;
@@ -580,6 +584,14 @@ async function upsertOrderTx(
     const changed = hasPlannedChanges(data);
     if (changed) {
       await tx.order.update({ where: { id: existing.id }, select: { id: true }, data });
+      // Đơn đã chuẩn bị / đang giao mà sàn báo hủy → chuông (23/10 tối).
+      if (data.shippingStatus === ShippingStatus.CANCELLED) {
+        void notifyOrderCancelledAfterPrepare(channel, orderCode, {
+          prevStatus: existing.shippingStatus,
+          by: order.cancellation_initiator ?? null,
+          reason: order.cancel_reason ?? null,
+        });
+      }
     }
     if (needsItemImageBackfill(existing.createdAt)) {
       await backfillOrderItemImagesTx(tx, existing.id, aggregateLineItems(order));

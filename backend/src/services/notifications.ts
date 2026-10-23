@@ -58,7 +58,9 @@ export interface NotifyInput {
 // ─────────────────── NHÓM ĐÃ TẮT (cache 60 s mỗi chủ shop) ───────────────────
 // Worker gọi notify() hàng trăm lần một lượt quét → không hỏi DB mỗi lần.
 // Tiến trình web đổi ưu tiên thì tự xóa cache của mình; worker thấy sau ≤ 60 s.
-const PREF_TTL_MS = 60_000;
+// 20 s: khách gạt tắt trên app thì worker (tiến trình khác) im sau tối đa 20 s —
+// 60 s từng để lọt một đợt đơn mới ngay sau khi tắt (anh Trung 23/10 tối).
+const PREF_TTL_MS = 20_000;
 const prefCache = new Map<string, { muted: Set<string>; at: number }>();
 
 export async function getMutedCategories(ownerId: string): Promise<Set<string>> {
@@ -79,6 +81,11 @@ export function invalidateMutedCache(ownerId: string): void {
 
 async function isMuted(ownerId: string, category: NotificationCategoryKey): Promise<boolean> {
   return isCategoryMuted(await getMutedCategories(ownerId), category);
+}
+
+/** Cho nơi gom đợt (đơn mới) hỏi trước khi làm việc nặng / cộng dồn. */
+export async function isNotificationTypeMuted(ownerId: string, type: string): Promise<boolean> {
+  return isMuted(ownerId, categoryOf(type));
 }
 
 /**
@@ -149,9 +156,11 @@ export async function amendNotification(
   try {
     const cur = await prisma.notification.findFirst({
       where: { id, ownerId },
-      select: { id: true, readAt: true },
+      select: { id: true, readAt: true, type: true },
     });
     if (!cur || cur.readAt) return false;
+    // Khách vừa tắt nhóm → đợt cộng dồn cũng im (trước đây lọt qua đường này).
+    if (await isMuted(ownerId, categoryOf(cur.type))) return false;
     const row = await prisma.notification.update({
       where: { id },
       data: { title: patch.title, body: patch.body ?? null },

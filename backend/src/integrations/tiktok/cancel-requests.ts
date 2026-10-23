@@ -73,7 +73,13 @@ export function planTiktokCancelFlag(
     .sort((a, b) => Number(b.create_time ?? 0) - Number(a.create_time ?? 0))[0];
   const base = { orderId: order.id, orderCode: order.orderCode, reason: null, dueAt: null };
 
-  if (pending && order.shippingStatus === ShippingStatus.PENDING) {
+  // Sàn còn trả yêu cầu chờ thì bật cờ dù đơn đã chuẩn bị (23/10 tối: thực tế khách
+  // hủy được sau chuẩn bị; chỉ bỏ qua đơn đã hủy / đã giao).
+  if (
+    pending &&
+    order.shippingStatus !== ShippingStatus.CANCELLED &&
+    order.shippingStatus !== ShippingStatus.DELIVERED
+  ) {
     const ref = pending.cancel_id ? String(pending.cancel_id) : null;
     const reason = (pending.cancel_reason_text || pending.cancel_reason || "").toString().trim() || null;
     const createdMs = Number(pending.create_time ?? 0) > 0 ? Number(pending.create_time) * 1000 : now.getTime();

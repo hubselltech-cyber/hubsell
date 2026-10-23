@@ -16,6 +16,7 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
   let calls: Call[];
   let now: number;
   let amendOk: boolean;
+  let muted: boolean;
   const base = {
     ownerId: "o1",
     shopName: "ANO",
@@ -28,10 +29,12 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     calls = [];
     now = Date.parse("2026-10-23T10:00:00Z");
     amendOk = true;
+    muted = false;
     _resetNewOrderBuffers();
     _setNewOrderDeps({
       now: () => now,
       flushDelayMs: 1_000_000, // test gọi flushOwner thẳng
+      isMuted: async () => muted,
       notify: async (...args: unknown[]) => {
         calls.push({ kind: "notify", args });
         return { id: `n${calls.length}` };
@@ -51,7 +54,7 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     expect(calls).toHaveLength(0);
   });
 
-  it("gom nhiều đơn thường thành một bản ghi 'N đơn mới' theo gian", async () => {
+  it("gom nhiều đơn thường: tiêu đề nói rõ đơn mới cần xử lý, thân = sàn · shop · số đơn · tiền từng gian", async () => {
     noteNewOrder({ ...base, orderCode: "A1", placedAt: new Date(now - 60_000) });
     noteNewOrder({ ...base, orderCode: "A2", placedAt: new Date(now - 30_000) });
     noteNewOrder({ ...base, orderCode: "B1", shopName: "Hi.Bé", channelName: "TIKTOK", totalAmount: 200_000, placedAt: new Date(now) });
@@ -61,9 +64,20 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     const [ownerId, input] = calls[0].args as [string, { type: string; title: string; body: string; dedupe: boolean }];
     expect(ownerId).toBe("o1");
     expect(input.type).toBe("order_new");
-    expect(input.title).toBe("3 đơn mới");
-    expect(input.body).toBe("Shopee ANO 2 · TikTok Hi.Bé 1 · tổng 1,2 tr");
+    expect(input.title).toBe("Có 3 đơn hàng mới cần xử lý");
+    expect(input.body).toBe("Shopee · ANO: 2 đơn · 1 tr\nTikTok · Hi.Bé: 1 đơn · 200 k\nTổng 1,2 tr");
     expect(input.dedupe).toBe(false);
+  });
+
+  it("khách tắt Đơn hàng mới → cả đợt lẫn đợt cộng dồn đều im", async () => {
+    noteNewOrder({ ...base, orderCode: "A1", placedAt: new Date(now) });
+    await flushOwner("o1");
+    expect(calls).toHaveLength(1);
+    muted = true;
+    now += 60_000;
+    noteNewOrder({ ...base, orderCode: "A2", placedAt: new Date(now) });
+    await flushOwner("o1");
+    expect(calls).toHaveLength(1); // không amend, không notify
   });
 
   it("hỏa tốc báo ngay từng đơn, vẫn đếm vào đợt đơn mới", async () => {
@@ -74,7 +88,7 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     expect(input.title).toContain("H1");
     expect(input.link).toBe("/orders?search=H1");
     await flushOwner("o1");
-    expect(calls[1].args[1]).toMatchObject({ type: "order_new", title: "1 đơn mới" });
+    expect(calls[1].args[1]).toMatchObject({ type: "order_new", title: "Có 1 đơn hàng mới cần xử lý" });
   });
 
   it("đợt sau trong 15 phút CỘNG DỒN vào bản ghi cũ, quá 15 phút mở bản ghi mới", async () => {
@@ -87,15 +101,15 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     expect(calls.map((c) => c.kind)).toEqual(["notify", "amend"]);
     const [, id, patch, push] = calls[1].args as [string, string, { title: string; body: string }, { title: string }];
     expect(id).toBe("n1");
-    expect(patch.title).toBe("3 đơn mới");
+    expect(patch.title).toBe("Có 3 đơn hàng mới cần xử lý");
     expect(patch.body).toContain("(15 phút gần đây)");
-    expect(push.title).toBe("+2 đơn mới");
+    expect(push.title).toBe("Thêm 2 đơn hàng mới cần xử lý");
 
     now += MERGE_WINDOW_MS + 1;
     noteNewOrder({ ...base, orderCode: "A4", placedAt: new Date(now) });
     await flushOwner("o1");
     expect(calls[2].kind).toBe("notify");
-    expect((calls[2].args[1] as { title: string }).title).toBe("1 đơn mới");
+    expect((calls[2].args[1] as { title: string }).title).toBe("Có 1 đơn hàng mới cần xử lý");
   });
 
   it("bản ghi cũ đã đọc → không cộng dồn, mở bản ghi mới", async () => {
@@ -112,10 +126,10 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     expect(compactVnd(2_140_000)).toBe("2,1 tr");
     expect(compactVnd(1_200_000_000)).toBe("1,2 tỷ");
     expect(compactVnd(500)).toBe("500 đ");
-    const byShop = new Map<string, { label: string; count: number }>();
-    for (let i = 1; i <= 5; i++) byShop.set(`s${i}`, { label: `Shopee S${i}`, count: 6 - i });
-    expect(describeBatch({ count: 15, amount: 3_000_000, byShop })).toBe(
-      "Shopee S1 5 · Shopee S2 4 · Shopee S3 3 · +2 gian khác · tổng 3 tr"
+    const byShop = new Map<string, { label: string; count: number; amount: number }>();
+    for (let i = 1; i <= 5; i++) byShop.set(`s${i}`, { label: `Shopee · S${i}`, count: 6 - i, amount: (6 - i) * 100_000 });
+    expect(describeBatch({ count: 15, amount: 1_500_000, byShop })).toBe(
+      "Shopee · S1: 5 đơn · 500 k\nShopee · S2: 4 đơn · 400 k\nShopee · S3: 3 đơn · 300 k\n+2 gian khác\nTổng 1,5 tr"
     );
   });
 });
@@ -125,6 +139,7 @@ describe("notification-categories — type kỹ thuật → mục con → nhóm 
     expect(categoryOf("order_new")).toBe("order_new");
     expect(categoryOf("order_express")).toBe("order_express");
     expect(categoryOf("cancel_request")).toBe("cancel_request");
+    expect(categoryOf("order_cancelled")).toBe("cancel_request");
     expect(categoryOf("return")).toBe("return");
     expect(categoryOf("delivery-fail")).toBe("delivery_fail");
     expect(categoryOf("ops-alert:delivery-fail")).toBe("delivery_fail");
