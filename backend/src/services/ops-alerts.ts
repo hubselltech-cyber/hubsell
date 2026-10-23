@@ -1654,8 +1654,10 @@ async function logAlertActivity(ownerId: string, a: DetectedAlert): Promise<void
   // Đẩy lên CHUÔNG THÔNG BÁO (Tầng 3): cảnh báo điều hành mới/tái phát là đúng
   // loại sự kiện chủ shop cần biết ngay cả khi không mở Dashboard. notify tự
   // chống trùng + nuốt lỗi nên không đe dọa vòng quét.
+  // type mang theo LOẠI cảnh báo (ops-alert:stockout…) để app xếp nhóm bật/tắt
+  // (notification-categories.ts); web chỉ đọc title nên không đổi gì.
   await notify(ownerId, {
-    type: "ops-alert",
+    type: `ops-alert:${a.type}`,
     title: a.title,
     body: a.summary,
     link: a.payload.href,

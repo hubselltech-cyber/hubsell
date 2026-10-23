@@ -16,6 +16,8 @@ export interface OrdersFilter {
   channelId?: string;
   /** Hãng vận chuyển (SPX/GHTK/…). */
   carrier?: string;
+  /** Chỉ đơn KHÁCH ĐANG XIN HỦY (cờ cancelRequestedAt, 23/10/2026) — chuông dẫn vào đây. */
+  cancelRequested?: boolean;
 }
 
 function filterParams(params: OrdersFilter): URLSearchParams {
@@ -25,6 +27,7 @@ function filterParams(params: OrdersFilter): URLSearchParams {
   if (params.channelName) q.set("channelName", params.channelName);
   if (params.channelId) q.set("channelId", params.channelId);
   if (params.carrier) q.set("carrier", params.carrier);
+  if (params.cancelRequested) q.set("cancelRequested", "1");
   return q;
 }
 

@@ -30,6 +30,7 @@ import { compactMoney, formatMoney } from "@/lib/format";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { ShopFilterField } from "@/components/ShopFilter";
 import { Card } from "@/components/Card";
 import { AdsRecommendSection } from "@/components/AdsRecommendSection";
 import { TiktokAdsSection } from "@/components/TiktokAdsSection";
@@ -125,6 +126,7 @@ export function AdsPage() {
   const [uiPlatform, setUiPlatform] = useState<UiPlatform>("shopee");
   // Nhánh Shopee / Lazada bên dưới chỉ chạy khi không phải TikTok.
   const platform: AdsPlatform = uiPlatform === "tiktok" ? "shopee" : uiPlatform;
+  const platformChannelName = PLATFORMS.find((p) => p.key === uiPlatform)?.channelName ?? "SHOPEE";
   const isTiktok = uiPlatform === "tiktok";
   const [channelId, setChannelId] = useState("");
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -285,39 +287,16 @@ export function AdsPage() {
         <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
         {header}
 
-        {/* Chọn gian của sàn — một gian vẫn hiện tên để biết đang xem số của shop nào */}
+        {/* Chọn gian của sàn — một ô mở hộp trượt (23/10: nhiều gian không bày chip);
+            một gian vẫn hiện tên để biết đang xem số của shop nào */}
         {data && data.channels.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2">
-            <View className="flex-row gap-2">
-              {data.channels.map((ch) => {
-                const active = ch.id === data.selectedChannelId;
-                return (
-                  <Pressable
-                    key={ch.id}
-                    className={`rounded-full border px-3 py-1.5 ${
-                      active
-                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15"
-                        : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-                    }`}
-                    onPress={() => {
-                      if (!active) hapticSelect();
-                      setChannelId(ch.id);
-                    }}
-                  >
-                    <Text
-                      className={`text-xs font-medium ${
-                        active
-                          ? "text-emerald-700 dark:text-emerald-300"
-                          : "text-slate-600 dark:text-slate-300"
-                      }`}
-                    >
-                      {ch.shopName}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
+          <ShopFilterField
+            mode="single"
+            className="mb-2"
+            channels={data.channels.map((ch) => ({ id: ch.id, shopName: ch.shopName, channelName: platformChannelName }))}
+            value={{ channelName: platformChannelName, channelId: data.selectedChannelId ?? "" }}
+            onChange={(next) => setChannelId(next.channelId)}
+          />
         ) : null}
 
         {loading ? (

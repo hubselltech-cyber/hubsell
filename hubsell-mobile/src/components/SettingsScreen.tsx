@@ -128,6 +128,28 @@ export function SettingsScreen() {
           </Pressable>
         ) : null}
 
+        {/* Thông báo — chuông + tin đẩy, bật/tắt theo nhóm (chỉ chủ shop, GĐ1 chuông) */}
+        {user.role === "ADMIN" ? (
+          <Pressable
+            className="mb-4 flex-row items-center gap-3 rounded-2xl bg-white p-4 active:opacity-70 dark:bg-slate-900"
+            style={{ elevation: 2 }}
+            onPress={() => router.push("/notification-settings")}
+            accessibilityRole="button"
+            accessibilityLabel="Mở Cài đặt thông báo"
+          >
+            <View className="h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-500/15">
+              <Ionicons name="notifications-outline" size={20} color="#059669" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">Thông báo</Text>
+              <Text className="text-[11px] text-slate-500 dark:text-slate-400">
+                Tin đẩy về máy, chọn loại muốn nhận: đơn mới, hỏa tốc, hủy, hoàn, quảng cáo, kho
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+          </Pressable>
+        ) : null}
+
         {/* Giao diện Sáng/Tối — mặc định theo lịch sáng↔tối của hệ điều hành */}
         <View
           className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"

@@ -37,6 +37,7 @@ import { stageStockPush, type StockPushTicket } from "../inventory-push";
 import { lineKey, resolveOrderLineRows, shopeeLineExternalId } from "../order-line-keys";
 import type { StockSyncRequest } from "./inventory-sync";
 import type { SyncCompleteness } from "../sync-contract";
+import { noteNewOrder } from "../../services/new-order-notify";
 import { CLEAR_CANCEL_REQUEST, notifyCancelRequest } from "../cancel-request";
 import {
   getAccessToken,
@@ -880,6 +881,16 @@ export async function upsertShopeeOrderTx(
     void notifyCancelRequest(channel, orderCode, f.cancelRequestReason, f.cancelRequestDueAt);
   }
 
+  // Chuông + push "đơn mới" (gom đợt; hỏa tốc báo ngay) — chỉ đơn đặt gần đây.
+  noteNewOrder({
+    ownerId: channel.userId,
+    shopName: channel.shopName,
+    channelName: channel.channelName,
+    orderCode,
+    totalAmount,
+    carrierName: order.shipping_carrier ?? null,
+    placedAt: order.create_time ? new Date(order.create_time * 1000) : null,
+  });
   return { created: true, changed: true, itemsCreated: lines.length };
 }
 

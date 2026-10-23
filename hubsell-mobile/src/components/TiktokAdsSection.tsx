@@ -15,6 +15,7 @@ import { fetchTiktokAdsDashboard, requestTiktokAdsRefresh } from "@/api/ads-tikt
 import type { TiktokAdsCampaignRow, TiktokAdsDashboard } from "@/types/api";
 import { rangeFor, type DateRange } from "@/lib/dates";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { ShopFilterField } from "@/components/ShopFilter";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { compactMoney } from "@/lib/format";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
@@ -166,39 +167,15 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
         <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
         {header}
 
-        {/* Chọn gian của sàn — một gian vẫn hiện tên để biết đang xem số của shop nào */}
+        {/* Chọn gian TikTok — một ô mở hộp trượt (23/10: nhiều gian không bày chip) */}
         {data && data.channels.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-1">
-            <View className="flex-row gap-2">
-              {data.channels.map((ch) => {
-                const active = ch.id === data.selectedChannelId;
-                return (
-                  <Pressable
-                    key={ch.id}
-                    className={`rounded-full border px-3 py-1.5 ${
-                      active
-                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15"
-                        : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-                    }`}
-                    onPress={() => {
-                      if (!active) hapticSelect();
-                      setChannelId(ch.id);
-                    }}
-                  >
-                    <Text
-                      className={`text-xs font-medium ${
-                        active
-                          ? "text-emerald-700 dark:text-emerald-300"
-                          : "text-slate-600 dark:text-slate-300"
-                      }`}
-                    >
-                      {ch.shopName}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
+          <ShopFilterField
+            mode="single"
+            className="mb-2"
+            channels={data.channels.map((ch) => ({ id: ch.id, shopName: ch.shopName, channelName: "TIKTOK" }))}
+            value={{ channelName: "TIKTOK", channelId: data.selectedChannelId ?? "" }}
+            onChange={(next) => setChannelId(next.channelId)}
+          />
         ) : null}
         {/* Số TikTok trễ (video tới 11 giờ) nên nói rõ số tới lúc nào — thay chỗ nhãn chế độ Trợ lý của Shopee. */}
         {data && adsLinked ? (

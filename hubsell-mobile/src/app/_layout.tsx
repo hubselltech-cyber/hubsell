@@ -6,6 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/auth/AuthContext";
 import { BiometricGate } from "@/auth/BiometricGate";
 import { PlanProvider } from "@/plan/PlanContext";
+import { NotificationsProvider } from "@/notifications/NotificationsContext";
 import { ThemeProvider } from "@/theme/ThemeContext";
 
 export default function RootLayout() {
@@ -14,6 +15,9 @@ export default function RootLayout() {
       <ThemeProvider>
         <AuthProvider>
           <PlanProvider>
+          {/* Chuông + push: ở gốc vì màn Thông báo / Cài đặt nằm ngoài nhóm (admin);
+              tự im khi chưa đăng nhập hoặc không phải chủ shop. */}
+          <NotificationsProvider>
           <BiometricGate>
             {/* style auto: chữ status bar tự đảo theo scheme sáng/tối */}
             <StatusBar style="auto" />
@@ -22,6 +26,7 @@ export default function RootLayout() {
               <Stack.Screen name="assistant" options={{ presentation: "modal" }} />
             </Stack>
           </BiometricGate>
+          </NotificationsProvider>
           </PlanProvider>
         </AuthProvider>
       </ThemeProvider>

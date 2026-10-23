@@ -62,6 +62,8 @@ interface FilterValue {
   status: "" | ShippingStatus;
   carrier: string;
   shopId: string;
+  /** Chỉ đơn khách đang xin hủy (đi kèm mọi trạng thái). */
+  cancelRequested: boolean;
 }
 
 export default function OrdersScreen() {
@@ -73,17 +75,23 @@ export default function OrdersScreen() {
   // (trước đây set trong effect → lượt tải "tất cả" và lượt tải đã lọc chạy
   // song song, lượt nào về sau thắng → chip "Đang giao" mà list đủ mọi trạng
   // thái; anh Trung bắt được 03/10). Kèm reqSeq bên dưới chặn mọi ca đua khác.
-  const { status: statusParam } = useLocalSearchParams<{ status?: string }>();
+  // Chuông thông báo đẩy sang kèm ?cancelRequested=1 (khách xin hủy) / ?search=<mã đơn> (hỏa tốc).
+  const {
+    status: statusParam,
+    cancelRequested: cancelParam,
+    search: searchParam,
+  } = useLocalSearchParams<{ status?: string; cancelRequested?: string; search?: string }>();
   const statusFromParam = (p: unknown): "" | ShippingStatus =>
     typeof p === "string" && STATUS_TABS.some((t) => t.key === p) ? (p as ShippingStatus) : "";
   const [status, setStatus] = useState<"" | ShippingStatus>(() => statusFromParam(statusParam));
   const [carrier, setCarrier] = useState("");
   const [shopId, setShopId] = useState("");
+  const [cancelRequested, setCancelRequested] = useState(cancelParam === "1");
   const [channel, setChannel] = useState<ChannelFilter>("");
   const [channels, setChannels] = useState<ChannelListItem[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(typeof searchParam === "string" ? searchParam : "");
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -91,19 +99,31 @@ export default function OrdersScreen() {
   const [error, setError] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryRef = useRef({
-    search: "",
+    search: typeof searchParam === "string" ? searchParam.trim() : "",
     status: "" as "" | ShippingStatus,
     channel: "" as ChannelFilter,
     carrier: "",
     shopId: "",
+    cancelRequested: cancelParam === "1",
   });
 
-  // Đổi param khi màn này đã mount sẵn (bấm ô khác ở Tổng quan) → đổi lọc.
+  // Đổi param khi màn này đã mount sẵn (bấm ô khác ở Tổng quan / bấm thông báo) → đổi lọc.
   useEffect(() => {
     if (typeof statusParam !== "string") return;
     const next = statusFromParam(statusParam);
     if (next) setStatus(next);
   }, [statusParam]);
+  useEffect(() => {
+    if (cancelParam === "1") setCancelRequested(true);
+  }, [cancelParam]);
+  useEffect(() => {
+    if (typeof searchParam !== "string" || !searchParam) return;
+    setSearch(searchParam);
+    queryRef.current.search = searchParam.trim();
+    // load() khai báo bên dưới — gọi qua ref để effect này không phụ thuộc thứ tự.
+    loadRef.current?.(1, false);
+  }, [searchParam]);
+  const loadRef = useRef<((page: number, append: boolean) => Promise<void>) | null>(null);
   // Số thứ tự lượt tải — phản hồi của lượt CŨ về muộn thì bỏ, không ghi đè.
   const reqSeq = useRef(0);
 
@@ -129,6 +149,7 @@ export default function OrdersScreen() {
           channelName: q.channel || undefined,
           carrier: q.carrier || undefined,
           channelId: q.shopId || undefined,
+          cancelRequested: q.cancelRequested || undefined,
         });
         if (seq !== reqSeq.current) return; // đã có lượt tải mới hơn
         setOrders((prev) => (append ? [...prev, ...res.items] : res.items));
@@ -148,13 +169,15 @@ export default function OrdersScreen() {
     []
   );
 
+  loadRef.current = load;
   useEffect(() => {
     queryRef.current.status = status;
     queryRef.current.channel = channel;
     queryRef.current.carrier = carrier;
     queryRef.current.shopId = shopId;
+    queryRef.current.cancelRequested = cancelRequested;
     void load(1, false);
-  }, [status, channel, carrier, shopId, load]);
+  }, [status, channel, carrier, shopId, cancelRequested, load]);
 
   const onSearch = (text: string) => {
     setSearch(text);
@@ -182,9 +205,10 @@ export default function OrdersScreen() {
     channelName: channel || undefined,
     carrier: carrier || undefined,
     channelId: shopId || undefined,
+    cancelRequested: cancelRequested || undefined,
   };
   const activeFilterCount =
-    (status ? 1 : 0) + (carrier ? 1 : 0) + (shopId ? 1 : 0);
+    (status ? 1 : 0) + (carrier ? 1 : 0) + (shopId ? 1 : 0) + (cancelRequested ? 1 : 0);
 
   // Đơn đang MỞ RỘNG danh sách sản phẩm (mặc định chỉ hiện ITEMS_PREVIEW dòng)
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -432,6 +456,9 @@ export default function OrdersScreen() {
               onClear={() => setShopId("")}
             />
           ) : null}
+          {cancelRequested ? (
+            <ActiveChip label="Khách xin hủy" onClear={() => setCancelRequested(false)} />
+          ) : null}
         </View>
       ) : null}
 
@@ -469,12 +496,13 @@ export default function OrdersScreen() {
         counts={counts}
         channels={channels}
         channel={channel}
-        value={{ status, carrier, shopId }}
+        value={{ status, carrier, shopId, cancelRequested }}
         onClose={() => setFilterOpen(false)}
         onApply={(v) => {
           setStatus(v.status);
           setCarrier(v.carrier);
           setShopId(v.shopId);
+          setCancelRequested(v.cancelRequested);
           setFilterOpen(false);
         }}
       />
@@ -555,6 +583,13 @@ function FilterSheet({
                   onPress={() => setDraft((d) => ({ ...d, status: t.key }))}
                 />
               ))}
+              {/* Cờ đi kèm MỌI trạng thái (anh chốt 23/10): bật/tắt độc lập với tab trạng thái */}
+              <PickChip
+                label="⚠ Khách xin hủy"
+                count={counts.CANCEL_REQUESTED}
+                active={draft.cancelRequested}
+                onPress={() => setDraft((d) => ({ ...d, cancelRequested: !d.cancelRequested }))}
+              />
             </View>
 
             <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -608,7 +643,7 @@ function FilterSheet({
           <View className="mt-2 flex-row gap-2">
             <Pressable
               className="flex-1 items-center rounded-xl bg-slate-100 dark:bg-slate-800 py-3 active:opacity-80"
-              onPress={() => setDraft({ status: "", carrier: "", shopId: "" })}
+              onPress={() => setDraft({ status: "", carrier: "", shopId: "", cancelRequested: false })}
             >
               <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">Bỏ lọc</Text>
             </Pressable>

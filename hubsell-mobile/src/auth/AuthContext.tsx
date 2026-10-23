@@ -48,21 +48,46 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * Việc phải làm TRƯỚC khi xóa phiên (còn Bearer để gọi API): gỡ token push
+ * của máy khỏi backend (NotificationsContext). Tối đa 3 s, lỗi bỏ qua —
+ * đăng xuất không bao giờ bị kẹt vì mạng.
+ */
+const beforeSignOutHooks = new Set<() => Promise<void> | void>();
+export function addBeforeSignOut(fn: () => Promise<void> | void): () => void {
+  beforeSignOutHooks.add(fn);
+  return () => {
+    beforeSignOutHooks.delete(fn);
+  };
+}
+let signingOut = false;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
 
   const signOut = useCallback(async () => {
-    setAuthToken(null);
-    setUser(null);
-    setStatus("signedOut");
-    await Promise.all([storage.deleteItem(TOKEN_KEY), storage.deleteItem(USER_KEY)]);
+    if (signingOut) return;
+    signingOut = true;
+    try {
+      await Promise.race([
+        Promise.allSettled([...beforeSignOutHooks].map((fn) => Promise.resolve().then(fn))),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]);
+    } finally {
+      setAuthToken(null);
+      setUser(null);
+      setStatus("signedOut");
+      await Promise.all([storage.deleteItem(TOKEN_KEY), storage.deleteItem(USER_KEY)]);
+      signingOut = false;
+    }
   }, []);
 
   // Token hết hạn giữa chừng (401) → về màn đăng nhập thay vì mỗi màn tự lo.
+  // Đang đăng xuất mà hook gỡ token push dính 401 thì bỏ qua (tránh gọi vòng).
   useEffect(() => {
     setOnUnauthorized(() => {
-      void signOut();
+      if (!signingOut) void signOut();
     });
     return () => setOnUnauthorized(null);
   }, [signOut]);

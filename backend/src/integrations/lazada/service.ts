@@ -38,6 +38,7 @@ import { finishStockPush, stageStockPush } from "../inventory-push";
 import { planSettlementWrite } from "../settlement-merge";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import type { SyncCompleteness } from "../sync-contract";
+import { noteNewOrder } from "../../services/new-order-notify";
 import { CLEAR_CANCEL_REQUEST } from "../cancel-request";
 import {
   createToken,
@@ -978,6 +979,16 @@ export async function upsertLazadaOrderTx(
   }
 
   const stockSync = await applyLazadaStockTx(tx, created.id, repStatus);
+  // Chuông + push "đơn mới" (gom đợt; hỏa tốc báo ngay) — chỉ đơn đặt gần đây.
+  noteNewOrder({
+    ownerId: channel.userId,
+    shopName: channel.shopName,
+    channelName: channel.channelName,
+    orderCode,
+    totalAmount,
+    carrierName: rawProvider ?? null,
+    placedAt: order.created_at ? new Date(order.created_at) : null,
+  });
   return { created: true, changed: true, itemsCreated: lines.length, stockSync };
 }
 

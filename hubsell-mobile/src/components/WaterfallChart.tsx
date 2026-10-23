@@ -38,7 +38,7 @@ const COLOR = {
 
 /**
  * BÓC TÁCH DÒNG TIỀN — thác nước giống Tổng quan web (PnlWaterfall): cột đầu
- * Doanh thu (gradient xanh), các khoản trừ rơi dần (hồng = giá vốn/sàn, vàng =
+ * Tổng giá trị sản phẩm (gradient xanh), các khoản trừ rơi dần (hồng = giá vốn/sàn, vàng =
  * vận hành; khoản ÂM = sàn trả lại → xanh nhạt), cột cuối Lãi ròng (xanh đậm,
  * đỏ nếu lỗ). Không tự cộng: gross/steps/net nhận từ backend, chart chỉ vẽ.
  *
@@ -66,9 +66,11 @@ export function WaterfallChart({
   const labelColor = dark ? "#94a3b8" : "#64748b";
 
   const bars: Bar[] = [];
+  // Cột đầu là GIÁ TRỊ ĐƠN khách đặt (chưa trừ sàn) — đúng tên thẻ "Tổng giá
+  // trị sản phẩm" ở trên; gọi "Doanh thu" là sai (anh Trung 23/10/2026).
   bars.push({
     key: "gross",
-    short: "Doanh thu",
+    short: "Tổng giá trị sản phẩm",
     lo: Math.min(0, gross),
     hi: Math.max(0, gross),
     level: gross,

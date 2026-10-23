@@ -125,6 +125,10 @@ export interface OrderDto {
   returnNote?: string | null;
   itemCount: number;
   createdAt: string;
+  /** KHÁCH XIN HỦY sau khi shop đã nhận đơn (23/10/2026) — còn null là không. */
+  cancelRequestedAt?: string | null;
+  cancelRequestReason?: string | null;
+  cancelRequestDueAt?: string | null;
   channel: { channelName: ChannelName; shopName: string };
   items: OrderItemDto[];
 }
@@ -969,4 +973,50 @@ export interface TiktokVideoMeta {
   authorName: string;
   caption: string;
   thumbnailUrl: string;
+}
+
+// ───────────────────────── Chuông thông báo (cùng backend với web) ─────────────────────────
+
+/** Nhóm khách bật/tắt — backend services/notification-categories.ts. */
+export type NotificationCategoryKey =
+  | "order_new"
+  | "order_express"
+  | "cancel_request"
+  | "return"
+  | "delivery_fail"
+  | "ads"
+  | "stock"
+  | "ops"
+  | "system";
+
+export interface NotificationCategory {
+  key: NotificationCategoryKey;
+  label: string;
+  hint: string;
+  /** Không cho tắt (hệ thống, gói). */
+  locked?: boolean;
+}
+
+export interface AppNotification {
+  id: string;
+  /** Type kỹ thuật (return, cancel_request, ops-alert:stockout…). */
+  type: string;
+  category: NotificationCategoryKey;
+  title: string;
+  body: string | null;
+  /** Deep-link WEB — app đổi sang màn tương ứng ở lib/notification-links. */
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationListResponse {
+  items: AppNotification[];
+  unread: number;
+  hasMore: boolean;
+}
+
+export interface NotificationPreferencesResponse {
+  categories: NotificationCategory[];
+  muted: string[];
 }

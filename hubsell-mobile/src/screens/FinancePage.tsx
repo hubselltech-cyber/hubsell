@@ -26,8 +26,10 @@ import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { compactMoney, formatMoney } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { hapticSelect, hapticTap } from "@/lib/haptics";
-import { useChannelColors } from "@/theme/channel-colors";
+import { ShopFilterField, type ShopScope } from "@/components/ShopFilter";
+import { fetchChannels } from "@/api/channels";
+import type { ChannelListItem } from "@/types/api";
+import { hapticTap } from "@/lib/haptics";
 import { DonutChart } from "@/components/DonutChart";
 import { ReceiptIcon } from "@/components/ReceiptIcon";
 import { BreakdownTile } from "@/components/BreakdownTile";
@@ -41,19 +43,17 @@ import { TABULAR } from "@/theme/tokens";
  *   1. 4 THẺ của Báo cáo dòng tiền web (/api/finance/analytics): Tổng giá trị
  *      SP · Doanh thu · Chi phí · Lợi nhuận ròng tạm tính — bấm thẻ bung khoản con.
  *   2. BÓC TÁCH DÒNG TIỀN — thác nước như Tổng quan web (/api/analytics):
- *      Doanh thu → Giá vốn → Chi phí sàn → Thuế sàn → Ads → Vận hành → Lãi ròng.
+ *      Tổng giá trị SP → Giá vốn → Chi phí sàn → Thuế sàn → Ads → Vận hành → Lãi ròng
+ *      (cột đầu là giá trị đơn khách đặt, 23/10 anh chốt KHÔNG gọi là Doanh thu).
  *   3. CƠ CẤU CHI PHÍ — donut 12 khoản đúng nhãn/màu Tổng quan web, donut
  *      TRÊN, chú thích DƯỚI.
  *   4. Tiền theo gian hàng (giữ nguyên). Lãi/Lỗ theo ngày đã bỏ (03/10).
  * Mọi bề rộng đo theo màn hình thật (flex + onLayout), không px cố định.
+ * Lọc gian hàng (23/10/2026): ô ShopFilterField mở hộp trượt chọn sàn / đúng
+ * một gian — backend nhận ?channelName / ?channelId (lib/channel-filter.ts).
  */
 
-const CHANNEL_FILTERS: { key: string; label: string }[] = [
-  { key: "", label: "Tất cả sàn" },
-  { key: "SHOPEE", label: "Shopee" },
-  { key: "LAZADA", label: "Lazada" },
-  { key: "TIKTOK", label: "TikTok" },
-];
+const ALL_SHOPS: ShopScope = { channelName: "", channelId: "" };
 
 type TileKey = "gross" | "revenue" | "costs" | "profit";
 
@@ -173,9 +173,9 @@ function BreakdownItems({
 }
 
 export function FinancePage() {
-  const channelColors = useChannelColors();
   const [range, setRange] = useState<DateRange>(defaultRange);
-  const [channel, setChannel] = useState("");
+  const [scope, setScope] = useState<ShopScope>(ALL_SHOPS);
+  const [channels, setChannels] = useState<ChannelListItem[]>([]);
   const [breakdown, setBreakdown] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [prevBreakdown, setPrevBreakdown] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [overview, setOverview] = useState<OverviewAnalytics | null>(null);
@@ -190,15 +190,22 @@ export function FinancePage() {
   const reqSeq = useRef(0);
 
   // asRefresh: true = kéo xuống (vòng xoay) · "silent" = tải nền giữ số cũ.
+  // DS gian hàng cho ô lọc — đổi rất hiếm, nạp 1 lần.
+  useEffect(() => {
+    fetchChannels()
+      .then(setChannels)
+      .catch(() => {});
+  }, []);
+
   const load = useCallback(
-    async ({ from, to }: DateRange, channelName: string, asRefresh: boolean | "silent" = false) => {
+    async ({ from, to }: DateRange, shop: ShopScope, asRefresh: boolean | "silent" = false) => {
       const seq = ++reqSeq.current;
       if (asRefresh === true) setRefreshing(true);
       else if (!asRefresh) setLoading(true);
       if (asRefresh !== "silent") setError("");
       try {
         const prev = previousRange(from, to);
-        const ch = channelName || undefined;
+        const ch = { channelName: shop.channelName || undefined, channelId: shop.channelId || undefined };
         const [ana, prevAna, ov, cash] = await Promise.all([
           // 4 thẻ = Báo cáo dòng tiền web; kỳ trước cho pill ▲/▼
           fetchAnalytics(from, to, ch),
@@ -235,15 +242,15 @@ export function FinancePage() {
   );
 
   useEffect(() => {
-    void load(range, channel);
-  }, [range, channel, load]);
+    void load(range, scope);
+  }, [range, scope, load]);
 
   // Cùng nhịp làm mới nền với Tổng quan (foreground / focus / 60s).
-  useAutoRefresh(() => void load(range, channel, "silent"));
+  useAutoRefresh(() => void load(range, scope, "silent"));
 
-  // Lọc sàn áp cả vào bảng tiền theo gian hàng (client-side — rows đã có sàn)
-  const visibleCashRows = (cashRows ?? []).filter(
-    (r) => !channel || r.channelName === channel
+  // Lọc gian áp cả vào bảng tiền theo gian hàng (client-side — rows đã có sàn + id)
+  const visibleCashRows = (cashRows ?? []).filter((r) =>
+    scope.channelId ? r.channelId === scope.channelId : !scope.channelName || r.channelName === scope.channelName
   );
   const walletTotal = visibleCashRows.reduce((s, r) => s + (r.walletBalance ?? 0), 0);
   const expectedTotal = visibleCashRows.reduce((s, r) => s + r.totalExpected, 0);
@@ -272,52 +279,22 @@ export function FinancePage() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => load(range, channel, true)}
+          onRefresh={() => load(range, scope, true)}
         />
       }
     >
       {/* Bộ lọc ngày chuẩn: mốc nhanh như web + lịch tự chọn, xem được năm cũ */}
       <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
 
-      {/* Lọc theo sàn */}
-      <View className="mb-4 flex-row flex-wrap gap-2">
-        {CHANNEL_FILTERS.map((c) => {
-          const active = channel === c.key;
-          return (
-            <Pressable
-              key={c.key || "ALL"}
-              className={`flex-row items-center gap-1.5 rounded-full px-3 py-1.5 ${
-                active ? "bg-slate-900 dark:bg-slate-100" : "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-              }`}
-              onPress={() => {
-                if (!active) hapticSelect();
-                setChannel(c.key);
-              }}
-            >
-              {c.key ? (
-                <View
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: channelColors[c.key] ?? "#94a3b8" }}
-                />
-              ) : null}
-              <Text
-                className={`text-xs font-semibold ${
-                  active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
-                }`}
-              >
-                {c.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {/* Lọc sàn + gian hàng: một ô, bấm mở hộp trượt (khách nhiều gian không bày chip) */}
+      <ShopFilterField mode="scope" className="mb-4" channels={channels} value={scope} onChange={setScope} />
 
       {loading ? (
         <View className="items-center py-16">
           <ActivityIndicator size="large" color="#64748b" />
         </View>
       ) : planLocked ? (
-        <PlanLockedCard message={planLocked} onRetry={() => void load(range, channel)} />
+        <PlanLockedCard message={planLocked} onRetry={() => void load(range, scope)} />
       ) : error ? (
         <View className="items-center rounded-2xl bg-white dark:bg-slate-900 p-6">
           <Text className="text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
@@ -422,11 +399,11 @@ export function FinancePage() {
                 Bóc tách dòng tiền
               </Text>
               <Text className="mb-3 text-[11px] text-slate-400 dark:text-slate-500">
-                Doanh thu bị bào mòn qua từng khoản tới lợi nhuận ròng.
+                Giá trị sản phẩm bị sàn, giá vốn và chi phí bào mòn tới lợi nhuận ròng.
               </Text>
               {gross <= 0 && net === 0 ? (
                 <Text className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
-                  Chưa có doanh thu trong kỳ này.
+                  Chưa có đơn nào trong kỳ này.
                 </Text>
               ) : (
                 <WaterfallChart gross={gross} steps={steps} net={net} />

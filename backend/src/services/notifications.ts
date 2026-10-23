@@ -23,6 +23,14 @@ import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
+import {
+  NOTIFICATION_CATEGORIES,
+  categoryOf,
+  isLockedCategory,
+  isNotificationCategory,
+  type NotificationCategoryKey,
+} from "./notification-categories";
+import { isExpoPushToken, sendPushToOwner } from "./push";
 
 // Cùng secret với auth.ts (stream không đi qua requireAuth được — xem dưới)
 const JWT_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
@@ -41,28 +49,67 @@ export interface NotifyInput {
   title: string;
   body?: string;
   link?: string;
+  /** false = không khử trùng 24 h (đơn mới gom đợt: mỗi đợt là một bản ghi). */
+  dedupe?: boolean;
+  /** false = chỉ ghi chuông, không đẩy về điện thoại. */
+  push?: boolean;
+}
+
+// ─────────────────── NHÓM ĐÃ TẮT (cache 60 s mỗi chủ shop) ───────────────────
+// Worker gọi notify() hàng trăm lần một lượt quét → không hỏi DB mỗi lần.
+// Tiến trình web đổi ưu tiên thì tự xóa cache của mình; worker thấy sau ≤ 60 s.
+const PREF_TTL_MS = 60_000;
+const prefCache = new Map<string, { muted: Set<string>; at: number }>();
+
+export async function getMutedCategories(ownerId: string): Promise<Set<string>> {
+  const hit = prefCache.get(ownerId);
+  if (hit && Date.now() - hit.at < PREF_TTL_MS) return hit.muted;
+  const row = await prisma.notificationPreference.findUnique({
+    where: { ownerId },
+    select: { mutedCategories: true },
+  });
+  const muted = new Set(row?.mutedCategories ?? []);
+  prefCache.set(ownerId, { muted, at: Date.now() });
+  return muted;
+}
+
+export function invalidateMutedCache(ownerId: string): void {
+  prefCache.delete(ownerId);
+}
+
+async function isMuted(ownerId: string, category: NotificationCategoryKey): Promise<boolean> {
+  if (isLockedCategory(category)) return false;
+  return (await getMutedCategories(ownerId)).has(category);
 }
 
 /**
- * Phát một thông báo cho chủ shop: ghi DB + đẩy SSE. KHÔNG BAO GIỜ ném lỗi —
- * thông báo là tiện ích, không được làm vỡ nghiệp vụ đang gọi nó (đồng bộ
- * đơn hoàn, quét cảnh báo…).
+ * Phát một thông báo cho chủ shop: ghi DB + đẩy SSE (web) + push (app).
+ * KHÔNG BAO GIỜ ném lỗi — thông báo là tiện ích, không được làm vỡ nghiệp vụ
+ * đang gọi nó (đồng bộ đơn hoàn, quét cảnh báo…). Trả id bản ghi để nơi gọi
+ * cộng dồn về sau (đơn mới), null khi bỏ qua / lỗi.
  */
-export async function notify(ownerId: string, input: NotifyInput): Promise<void> {
+export async function notify(ownerId: string, input: NotifyInput): Promise<{ id: string } | null> {
   try {
+    // Khách đã tắt nhóm này (app → Cài đặt → Thông báo) thì không ghi gì cả —
+    // chuông web lẫn push app cùng im, đúng ý "tắt là thôi".
+    const category = categoryOf(input.type);
+    if (await isMuted(ownerId, category)) return null;
+
     // Sự kiện lặp (worker quét lại cùng điều kiện) không nên thành chuỗi
     // thông báo trùng — đã có một bản CHƯA ĐỌC y hệt gần đây thì thôi.
-    const dupe = await prisma.notification.findFirst({
-      where: {
-        ownerId,
-        type: input.type,
-        title: input.title,
-        readAt: null,
-        createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) },
-      },
-      select: { id: true },
-    });
-    if (dupe) return;
+    if (input.dedupe !== false) {
+      const dupe = await prisma.notification.findFirst({
+        where: {
+          ownerId,
+          type: input.type,
+          title: input.title,
+          readAt: null,
+          createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) },
+        },
+        select: { id: true },
+      });
+      if (dupe) return null;
+    }
 
     const row = await prisma.notification.create({
       data: {
@@ -75,8 +122,53 @@ export async function notify(ownerId: string, input: NotifyInput): Promise<void>
     });
 
     pushToClients(row);
+    if (input.push !== false) {
+      void sendPushToOwner(ownerId, {
+        title: input.title,
+        body: input.body,
+        data: { notificationId: row.id, type: input.type, category, link: input.link ?? null },
+      });
+    }
+    return { id: row.id };
   } catch (err) {
     console.error("[notifications] notify lỗi:", (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Sửa nội dung một bản ghi CHƯA ĐỌC (đơn mới cộng dồn trong 15 phút) và đẩy
+ * push với phần tăng thêm. Trả false khi bản ghi đã đọc / không còn — nơi gọi
+ * mở bản ghi mới.
+ */
+export async function amendNotification(
+  ownerId: string,
+  id: string,
+  patch: { title: string; body?: string },
+  push?: { title: string; body?: string; data?: Record<string, unknown> }
+): Promise<boolean> {
+  try {
+    const cur = await prisma.notification.findFirst({
+      where: { id, ownerId },
+      select: { id: true, readAt: true },
+    });
+    if (!cur || cur.readAt) return false;
+    const row = await prisma.notification.update({
+      where: { id },
+      data: { title: patch.title, body: patch.body ?? null },
+    });
+    pushToClients(row);
+    if (push) {
+      void sendPushToOwner(ownerId, {
+        title: push.title,
+        body: push.body,
+        data: { notificationId: row.id, type: row.type, category: categoryOf(row.type), link: row.link, ...(push.data ?? {}) },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.error("[notifications] amend lỗi:", (err as Error).message);
+    return false;
   }
 }
 
@@ -216,18 +308,90 @@ export async function notificationStream(req: AuthRequest, res: Response) {
 
 export const notificationsRouter = Router();
 
-/** Danh sách mới nhất + số chưa đọc — nuôi chuông và badge. */
+/**
+ * Danh sách mới nhất + số chưa đọc — nuôi chuông và badge. App cuộn tiếp bằng
+ * ?before=<createdAt ISO của dòng cuối> (trang 30 dòng). Mỗi dòng kèm `category`
+ * để app vẽ icon theo nhóm.
+ */
 notificationsRouter.get("/", async (req: AuthRequest, res) => {
   const ownerId = req.ownerId!;
+  const beforeRaw = typeof req.query.before === "string" ? new Date(req.query.before) : null;
+  const before = beforeRaw && !Number.isNaN(beforeRaw.getTime()) ? beforeRaw : null;
   const [items, unread] = await Promise.all([
     prisma.notification.findMany({
-      where: { ownerId },
+      where: { ownerId, ...(before ? { createdAt: { lt: before } } : {}) },
       orderBy: { createdAt: "desc" },
       take: 30,
     }),
     prisma.notification.count({ where: { ownerId, readAt: null } }),
   ]);
-  res.json({ items, unread });
+  res.json({
+    items: items.map((n) => ({ ...n, category: categoryOf(n.type) })),
+    unread,
+    hasMore: items.length === 30,
+  });
+});
+
+// ─────────────────────── ƯU TIÊN THEO NHÓM (app Cài đặt) ───────────────────────
+
+/** Danh sách nhóm + nhóm đã tắt của chủ shop. */
+notificationsRouter.get("/preferences", async (req: AuthRequest, res) => {
+  const muted = await getMutedCategories(req.ownerId!);
+  res.json({ categories: NOTIFICATION_CATEGORIES, muted: [...muted] });
+});
+
+/** Ghi đè toàn bộ danh sách nhóm đã tắt: body { muted: string[] }. */
+notificationsRouter.put("/preferences", async (req: AuthRequest, res) => {
+  const ownerId = req.ownerId!;
+  const raw: unknown = req.body?.muted;
+  if (!Array.isArray(raw)) {
+    res.status(400).json({ error: "Thiếu danh sách nhóm đã tắt (muted)" });
+    return;
+  }
+  const muted = [...new Set(raw.map(String))].filter(
+    (k) => isNotificationCategory(k) && !isLockedCategory(k)
+  );
+  await prisma.notificationPreference.upsert({
+    where: { ownerId },
+    create: { ownerId, mutedCategories: muted },
+    update: { mutedCategories: muted },
+  });
+  invalidateMutedCache(ownerId);
+  res.json({ categories: NOTIFICATION_CATEGORIES, muted });
+});
+
+// ─────────────────────── THIẾT BỊ NHẬN PUSH (app mobile) ───────────────────────
+
+/** App đăng ký / làm mới token sau khi đăng nhập. body { token, platform, appVersion?, deviceName? } */
+notificationsRouter.post("/devices", async (req: AuthRequest, res) => {
+  const { token, platform, appVersion, deviceName } = req.body ?? {};
+  if (!isExpoPushToken(token)) {
+    res.status(400).json({ error: "Token thiết bị không hợp lệ" });
+    return;
+  }
+  const plat = platform === "ios" || platform === "android" ? platform : "unknown";
+  const data = {
+    userId: req.userId!,
+    ownerId: req.ownerId!,
+    platform: plat,
+    appVersion: typeof appVersion === "string" ? appVersion.slice(0, 32) : null,
+    deviceName: typeof deviceName === "string" ? deviceName.slice(0, 80) : null,
+    enabled: true,
+    lastSeenAt: new Date(),
+  };
+  await prisma.pushDevice.upsert({ where: { token }, create: { token, ...data }, update: data });
+  res.json({ ok: true });
+});
+
+/** Đăng xuất / tắt push trên máy này: body { token }. */
+notificationsRouter.delete("/devices", async (req: AuthRequest, res) => {
+  const token = req.body?.token;
+  if (!isExpoPushToken(token)) {
+    res.status(400).json({ error: "Token thiết bị không hợp lệ" });
+    return;
+  }
+  const r = await prisma.pushDevice.deleteMany({ where: { token, userId: req.userId! } });
+  res.json({ removed: r.count });
 });
 
 /** Đánh dấu ĐÃ ĐỌC — mặc định toàn bộ; truyền ids để đánh dấu lẻ. */
@@ -250,7 +414,9 @@ notificationsRouter.post("/read", async (req: AuthRequest, res) => {
 if (process.env.NODE_ENV !== "production") {
   notificationsRouter.post("/dev-test", async (req: AuthRequest, res) => {
     await notify(req.ownerId!, {
-      type: "system",
+      // type tùy chọn để thử icon / nhóm trên app (order_express, cancel_request, ops-alert:stockout…)
+      type: typeof req.body?.type === "string" && req.body.type ? req.body.type : "system",
+      dedupe: false,
       title: String(req.body?.title ?? "Thông báo thử nghiệm"),
       body: String(req.body?.body ?? "Phát từ /dev-test để kiểm tra chuông + SSE."),
       link: typeof req.body?.link === "string" ? req.body.link : undefined,

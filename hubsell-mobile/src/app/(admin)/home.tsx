@@ -1,6 +1,7 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
-import { useRouter, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { AssistantOrb } from "@/components/AssistantOrb";
@@ -26,8 +27,11 @@ export default function AdminHome() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [page, setPage] = useState(0);
-  // Ba mục + dãy chấm không vừa màn hẹp (320) — mục đang chọn đã tô đậm nên bỏ chấm.
-  const showDots = useWindowDimensions().width >= 360;
+  // Ba mục + chuông + dãy chấm không vừa màn hẹp — mục đang chọn đã tô đậm nên bỏ chấm dưới 420 px;
+  // dưới 360 px (iPhone SE / 320) nhãn co chữ 13 px + đệm hẹp để chuông không bị đẩy ra ngoài.
+  const { width } = useWindowDimensions();
+  const showDots = width >= 420;
+  const narrow = width < 360;
   const pagerRef = useRef<{ setPage: (i: number) => void } | null>(null);
 
   const go = (i: number) => {
@@ -35,6 +39,14 @@ export default function AdminHome() {
     setPage(i);
     pagerRef.current?.setPage(i);
   };
+
+  // Thông báo đẩy mở thẳng trang Tài chính / Quảng cáo: ?page=1|2.
+  const { page: pageParam } = useLocalSearchParams<{ page?: string }>();
+  useEffect(() => {
+    const i = Number(pageParam);
+    if (Number.isInteger(i) && i >= 0 && i < SECTIONS.length) go(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageParam]);
 
   const pages = [
     <OverviewPage
@@ -52,13 +64,13 @@ export default function AdminHome() {
         {SECTIONS.map((label, i) => (
           <Pressable
             key={label}
-            className={`rounded-full px-3 py-1.5 ${
+            className={`rounded-full py-1.5 ${narrow ? "px-2" : "px-3"} ${
               page === i ? "bg-slate-900 dark:bg-slate-100" : ""
             }`}
             onPress={() => go(i)}
           >
             <Text
-              className={`text-sm font-semibold ${
+              className={`font-semibold ${narrow ? "text-[13px]" : "text-sm"} ${
                 page === i ? "text-white dark:text-slate-900" : "text-slate-400 dark:text-slate-500"
               }`}
             >
@@ -79,6 +91,7 @@ export default function AdminHome() {
             ))}
           </View>
         ) : null}
+        <NotificationBell />
       </View>
 
       {/* Dải nhắc gói: sắp hết hạn (vàng, tắt được) / hết hạn, vượt trần, khóa

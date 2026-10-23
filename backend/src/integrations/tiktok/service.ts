@@ -39,6 +39,7 @@ import {
 import { planSettlementWrite, type SettlementWritePlan } from "../settlement-merge";
 import { lineKey, resolveOrderLineRows, tiktokLineExternalId } from "../order-line-keys";
 import type { SyncCompleteness } from "../sync-contract";
+import { noteNewOrder } from "../../services/new-order-notify";
 import { CLEAR_CANCEL_REQUEST } from "../cancel-request";
 import {
   describeTiktokFeeTax,
@@ -638,6 +639,16 @@ async function upsertOrderTx(
     });
   }
 
+  // Chuông + push "đơn mới" (gom đợt; hỏa tốc báo ngay) — chỉ đơn đặt gần đây.
+  noteNewOrder({
+    ownerId: channel.userId,
+    shopName: channel.shopName,
+    channelName: channel.channelName,
+    orderCode,
+    totalAmount,
+    carrierName: carrierName ?? null,
+    placedAt: order.create_time ? new Date(order.create_time * 1000) : null,
+  });
   return { orderId: created.id, created: true, changed: true, itemsCreated: lines.length };
 }
 
