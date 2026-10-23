@@ -270,7 +270,6 @@ export function FinancePage() {
   const steps = overview ? waterfallSteps(overview) : [];
   const gross = overview?.totalRevenue ?? 0;
   const net = overview?.netProfit ?? 0;
-  const promo = overview?.platformFeeBreakdown?.voucher ?? 0;
   const netMargin = gross > 0 ? Math.round((net / gross) * 1000) / 10 : null;
 
   const toggleTile = (k: TileKey) => {
@@ -417,12 +416,6 @@ export function FinancePage() {
               ) : (
                 <WaterfallChart gross={gross} steps={steps} net={net} />
               )}
-              {/* Trước / sau khuyến mãi — chỉ khi kỳ có voucher shop */}
-              {promo > 0 ? (
-                <Text className="mt-2 text-[11px] text-slate-500 dark:text-slate-400" style={TABULAR}>
-                  Trước khuyến mãi {compactMoney(gross)} · Sau khuyến mãi {compactMoney(gross - promo)}
-                </Text>
-              ) : null}
               {/* Dòng chốt sổ: tên + biên xếp DỌC bên trái để số bên phải không
                   bao giờ phải xuống dòng, kể cả màn 320px */}
               <View className="mt-3 flex-row items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">

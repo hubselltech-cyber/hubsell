@@ -110,13 +110,19 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
   // khít card 5/12; tách nhỏ hơn nữa thì nhãn trục X không còn chỗ.
   const operatingExpense = analytics.totalOperatingExpense - adsExpense;
 
+  // KHUYẾN MÃI = voucher shop tự bỏ, tách thành bậc riêng ngay sau cột giá trị SP
+  // (góp ý khách 22/10, anh Trung chốt 23/10: giữ tên chuẩn GMV / doanh thu, thác
+  // nước thêm bậc này; cùng mobile). Chi phí sàn bỏ phần voucher để không trừ đôi.
+  const promo = analytics.platformFeeBreakdown?.voucher ?? 0;
+
   const steps: WaterfallStep[] = [
+    { key: "promo", label: "Khuyến mãi (voucher shop tự bỏ)", short: "Khuyến mãi", amount: promo, hue: "rose" },
     { key: "cogs", label: "Giá vốn hàng bán (COGS)", short: "Giá vốn", amount: analytics.totalCost, hue: "rose" },
     // Sàn khấu trừ TÁCH 2 CỘT: "Chi phí" = phí dịch vụ/thanh toán/voucher/chênh
     // lệch VC… và "Thuế sàn" = GTGT + TNCN thu hộ. Cộng lại = totalPlatformFee
     // (= Giá trị đơn − "Tổng tiền" sàn báo, cùng thước đo Báo cáo dòng tiền) nên
     // thác vẫn cộng ra đúng Lãi ròng.
-    { key: "fee", label: "Chi phí sàn (phí dịch vụ, thanh toán, voucher, vận chuyển)", short: "Chi phí", amount: analytics.totalPlatformFee - analytics.totalPlatformTax, hue: "rose" },
+    { key: "fee", label: "Chi phí sàn (phí dịch vụ, thanh toán, vận chuyển; voucher tách riêng)", short: "Chi phí", amount: analytics.totalPlatformFee - analytics.totalPlatformTax - promo, hue: "rose" },
     { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN thu hộ)", short: "Thuế sàn", amount: analytics.totalPlatformTax, hue: "rose" },
     { key: "ads", label: "Chi phí quảng cáo", short: "Ads", amount: adsExpense, hue: "amber" },
     { key: "ops", label: "Chi phí vận hành (cố định + biến đổi)", short: "Vận hành", amount: operatingExpense, hue: "amber" },
