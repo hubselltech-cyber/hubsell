@@ -170,7 +170,10 @@ export default function OrdersScreen() {
     []
   );
 
-  loadRef.current = load;
+  // Gán trong effect, không gán lúc render (luật react-compiler của dự án).
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
   useEffect(() => {
     queryRef.current.status = status;
     queryRef.current.channel = channel;
