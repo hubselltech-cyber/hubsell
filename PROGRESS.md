@@ -6,6 +6,11 @@
 
 ---
 
+## Phiên 23/10/2026 ~15:45 — iOS 1.4.0 (22) ĐÃ NỘP APP STORE (reviewSubmission b79fa6b9); Google Play SANG THÁNG (anh chốt)
+
+- Anh: "push luôn và nộp cả 2 bản" → ✅ master đã push 7184993a + 8c7d059c (Render deploy backend); ✅ build 22 lên ASC, tạo 1.4.0 + Có gì mới (`docs/store/whats-new-1.4.0.txt`, script `whats-new` nay đọc `@tệp`), gắn build, **nộp duyệt WAITING_FOR_REVIEW** (submission `b79fa6b9`). Android hết lượt build EAS → anh chốt "nộp sang tháng, khách đa số Apple".
+- ⏳ Anh: khóa APNs (`npx eas-cli credentials -p ios`) — Có gì mới có ghi tin đẩy; Firebase FCM V1 khi làm Android 01/11. Bẫy loop nộp: kiểm thành công bằng **exit code** của asc-release.mjs, đừng grep chữ (lần đầu grep tail -2 trượt).
+
 ## Phiên 23/10/2026 chiều (đợt 3) — MOBILE 1.4.0 (22): anh thử (21) thấy icon chuông toàn chữ "i", màn cài đặt nhóm không hiện
 
 - **Gốc:** app TestFlight gọi backend PROD, mà master đang **15 commit chưa push** (từ 9d76985c) → prod chưa có `category` trong danh sách và chưa có route `/preferences` (404). Anh push master là hết.
