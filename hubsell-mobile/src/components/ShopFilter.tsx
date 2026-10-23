@@ -52,12 +52,15 @@ export function ShopFilterField({
   value,
   onChange,
   className = "",
+  compact = false,
 }: {
   mode: "scope" | "single";
   channels: ShopOption[];
   value: ShopScope;
   onChange: (next: ShopScope) => void;
   className?: string;
+  /** Ô chia đôi hàng với bộ lọc ngày (anh chốt 23/10): nhãn ngắn "Tất cả" / tên sàn / tên shop, không đếm gian. */
+  compact?: boolean;
 }) {
   const colors = useChannelColors();
   const [open, setOpen] = useState(false);
@@ -73,11 +76,11 @@ export function ShopFilterField({
     label = channels.length === 0 ? "Chưa có gian hàng" : "Chọn gian hàng";
   } else if (value.channelName) {
     const n = channels.filter((c) => c.channelName === value.channelName).length;
-    label = `Tất cả gian ${CHANNEL_LABEL[value.channelName] ?? value.channelName}`;
-    if (n > 0) label += ` · ${n}`;
+    const name = CHANNEL_LABEL[value.channelName] ?? value.channelName;
+    label = compact ? name : `Tất cả gian ${name}${n > 0 ? ` · ${n}` : ""}`;
     dotColor = colors[value.channelName] ?? "#94a3b8";
   } else {
-    label = channels.length > 0 ? `Tất cả sàn · ${channels.length} gian hàng` : "Tất cả sàn";
+    label = compact ? "Tất cả" : channels.length > 0 ? `Tất cả sàn · ${channels.length} gian hàng` : "Tất cả sàn";
   }
 
   return (
@@ -104,7 +107,7 @@ export function ShopFilterField({
         >
           {label}
         </Text>
-        {selected && mode === "scope" ? (
+        {selected && mode === "scope" && !compact ? (
           <Text className="text-[11px] text-slate-400 dark:text-slate-500">
             {CHANNEL_LABEL[selected.channelName] ?? selected.channelName}
           </Text>

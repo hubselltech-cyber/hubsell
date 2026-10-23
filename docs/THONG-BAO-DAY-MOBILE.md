@@ -18,30 +18,26 @@
 | Tin đẩy (push) | Không có: app chưa cài `expo-notifications`, backend không lưu token | Làm mới toàn bộ (mục 4). |
 | Cài đặt bật/tắt theo nhóm | Không có (web cũng không) | Làm mới; áp cho cả web lẫn app (mục 2). |
 
-## 2. Nhóm thông báo khách bật/tắt
+## 2. Nhóm thông báo khách bật/tắt — CHA → CON (anh chốt 23/10 chiều)
 
-Một nguồn: `backend/src/services/notification-categories.ts` — `categoryOf(type)` xếp mọi `type` kỹ thuật
-vào 9 nhóm; màn Cài đặt trên app đọc danh sách này (GET `/api/notifications/preferences`).
+Một nguồn: `backend/src/services/notification-categories.ts` — `categoryOf(type)` xếp mọi `type` kỹ thuật vào
+MỤC CON, `groupOfCategory()` lên NHÓM CHA. Màn Cài đặt app: mỗi nhóm một thẻ, hàng đầu công tắc TỔNG, dưới là
+từng mục con. Danh sách tắt (`notification_preferences.mutedCategories`) chứa khóa nhóm và/hoặc khóa mục;
+`isCategoryMuted()` = mục bị tắt HOẶC nhóm của nó bị tắt. Mục `locked` không tắt được.
 
-| Nhóm | Nhãn trên app | Gồm type | Mặc định |
-|---|---|---|---|
-| `order_new` | Đơn hàng mới | `order_new` (gom đợt) | bật |
-| `order_express` | Đơn hỏa tốc | `order_express` | bật |
-| `cancel_request` | Khách xin hủy đơn | `cancel_request` | bật |
-| `return` | Hoàn hàng, trả hàng hoàn tiền | `return` | bật |
-| `delivery_fail` | Giao không thành công | `delivery-fail`, `ops-alert:delivery-fail` | bật |
-| `ads` | Quảng cáo | `tiktok-ads-*`, `ads-*`, `ops-alert:ads-*`, `ops-alert:hubsell-ads*` | bật |
-| `stock` | Kho: hết hàng, sắp hết | `ops-alert:stockout`, `ops-alert:low-stock` | bật |
-| `ops` | Vận hành khác | `ops-alert:*` còn lại (gian mất kết nối, đơn lỗ, sai phí, đồng bộ dừng, KOC) | bật |
-| `system` | Hệ thống và gói dịch vụ | hóa đơn, gói, thanh toán, `system` | **luôn bật, không tắt được** |
+| Nhóm | Mục con | Gồm type |
+|---|---|---|
+| **Đơn hàng** `orders` | Đơn hàng mới · Đơn hỏa tốc · Khách xin hủy đơn · Hoàn hàng, trả hàng hoàn tiền · Giao không thành công | `order_new`, `order_express`, `cancel_request`, `return`, `delivery-fail` |
+| **Tài chính** `finance` | Báo cáo tuần · Đơn lỗ, sai phí sàn · Hóa đơn điện tử · Hạn kê khai thuế | `weekly-report`; `ops-alert:loss-orders / fee-audit-* / shipping-fee-diff`; `INVOICE_*`; `tax-deadline` |
+| **Quảng cáo** `ads` | Nhận định chiến dịch · Trợ lý tự xử lý · Ví quảng cáo sắp cạn · Tổng kết quảng cáo ngày · Kết nối Hubsell Ads | `tiktok-ads-advice`, `ops-alert:ads-roas-risk / ads-zero-order-drain / ads-spend-spike / ads-spike`; `tiktok-ads-auto`, `ops-alert:ads-auto-*`; `ops-alert:ads-low-balance`; `ads-daily-summary`; `ops-alert:ads-app-*` |
+| **Kho** `stock` | Hết hàng · Sắp hết hàng | `ops-alert:stockout`; `ops-alert:low-stock` |
+| **Gian hàng** `channels` | Mất kết nối, hết hạn ủy quyền · Đồng bộ dừng · Mẫu KOC quá hạn | `ops-alert:channel-disconnected`, `lazada-renewal`; `ops-alert:channel-sync-stalled` (+ cảnh báo điều hành loại mới chưa xếp); `ops-alert:koc-*` |
+| **Tài khoản và hệ thống** `system` | Gói dịch vụ, thanh toán (khóa) · Thông báo hệ thống (khóa) | `plan_*`, `PLAN_CHANGED`, `subscription`; mọi type lạ |
 
-- Tắt nhóm = `notify()` **không ghi gì** (chuông web, chuông app, push cùng im). Lưu ở bảng
-  `notification_preferences` (`mutedCategories TEXT[]`, một dòng/chủ shop). Cache 60 s trong mỗi tiến trình
-  (worker thấy thay đổi sau ≤ 60 s).
-- Cảnh báo điều hành đổi type từ `ops-alert` → `ops-alert:<loại>` (`ops-alerts.ts`) để xếp nhóm được; web
-  chỉ đọc `title` nên không ảnh hưởng. Bản ghi cũ `ops-alert` trần rơi về nhóm `ops`.
-- Vì sao áp cả web: khách tắt "Quảng cáo" trên app mà web vẫn kêu thì họ tưởng tắt không ăn. Web chưa có
-  màn cài đặt — thêm sau nếu khách hỏi (route đã sẵn).
+- Anh nhắc "bổ sung hàng" trong nhóm Kho: backend chưa có sự kiện nào kiểu đó (chỉ hết hàng / sắp hết) → chưa có mục.
+- Tắt = `notify()` **không ghi gì** (chuông web, chuông app, push cùng im). Cache 60 s mỗi tiến trình.
+- Cảnh báo điều hành đổi type `ops-alert` → `ops-alert:<loại>` (`ops-alerts.ts`) để xếp mục được; web chỉ đọc `title`.
+- Web chưa có màn cài đặt — thêm sau nếu khách hỏi (route `GET/PUT /api/notifications/preferences` đã sẵn, trả `{groups, muted}`).
 
 ## 3. Đơn mới: gom đợt, hỏa tốc báo ngay (`backend/src/services/new-order-notify.ts`)
 

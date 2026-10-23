@@ -164,19 +164,22 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
         contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
         {header}
 
-        {/* Chọn gian TikTok — một ô mở hộp trượt (23/10: nhiều gian không bày chip) */}
-        {data && data.channels.length > 0 ? (
-          <ShopFilterField
-            mode="single"
-            className="mb-2"
-            channels={data.channels.map((ch) => ({ id: ch.id, shopName: ch.shopName, channelName: "TIKTOK" }))}
-            value={{ channelName: "TIKTOK", channelId: data.selectedChannelId ?? "" }}
-            onChange={(next) => setChannelId(next.channelId)}
-          />
-        ) : null}
+        {/* Một hàng hai ô: gian TikTok (hộp trượt) + kỳ xem (mặc định 7 ngày) */}
+        <View className="mb-2 flex-row gap-2">
+          {data && data.channels.length > 0 ? (
+            <ShopFilterField
+              mode="single"
+              compact
+              className="flex-1"
+              channels={data.channels.map((ch) => ({ id: ch.id, shopName: ch.shopName, channelName: "TIKTOK" }))}
+              value={{ channelName: "TIKTOK", channelId: data.selectedChannelId ?? "" }}
+              onChange={(next) => setChannelId(next.channelId)}
+            />
+          ) : null}
+          <DateRangeFilter compact className="flex-1" value={range} onChange={setRange} />
+        </View>
         {/* Số TikTok trễ (video tới 11 giờ) nên nói rõ số tới lúc nào — thay chỗ nhãn chế độ Trợ lý của Shopee. */}
         {data && adsLinked ? (
           <Text className="mb-2 text-right text-[11px] text-slate-400 dark:text-slate-500">

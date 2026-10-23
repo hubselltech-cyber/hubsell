@@ -24,10 +24,10 @@ import { Role } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import {
-  NOTIFICATION_CATEGORIES,
+  NOTIFICATION_GROUPS,
   categoryOf,
-  isLockedCategory,
-  isNotificationCategory,
+  isCategoryMuted,
+  sanitizeMuted,
   type NotificationCategoryKey,
 } from "./notification-categories";
 import { isExpoPushToken, sendPushToOwner } from "./push";
@@ -78,8 +78,7 @@ export function invalidateMutedCache(ownerId: string): void {
 }
 
 async function isMuted(ownerId: string, category: NotificationCategoryKey): Promise<boolean> {
-  if (isLockedCategory(category)) return false;
-  return (await getMutedCategories(ownerId)).has(category);
+  return isCategoryMuted(await getMutedCategories(ownerId), category);
 }
 
 /**
@@ -334,30 +333,28 @@ notificationsRouter.get("/", async (req: AuthRequest, res) => {
 
 // ─────────────────────── ƯU TIÊN THEO NHÓM (app Cài đặt) ───────────────────────
 
-/** Danh sách nhóm + nhóm đã tắt của chủ shop. */
+/** Cây nhóm cha → mục con + danh sách khóa đã tắt (khóa nhóm hoặc khóa mục). */
 notificationsRouter.get("/preferences", async (req: AuthRequest, res) => {
   const muted = await getMutedCategories(req.ownerId!);
-  res.json({ categories: NOTIFICATION_CATEGORIES, muted: [...muted] });
+  res.json({ groups: NOTIFICATION_GROUPS, muted: [...muted] });
 });
 
-/** Ghi đè toàn bộ danh sách nhóm đã tắt: body { muted: string[] }. */
+/** Ghi đè toàn bộ danh sách đã tắt: body { muted: string[] } — khóa nhóm và/hoặc khóa mục. */
 notificationsRouter.put("/preferences", async (req: AuthRequest, res) => {
   const ownerId = req.ownerId!;
   const raw: unknown = req.body?.muted;
   if (!Array.isArray(raw)) {
-    res.status(400).json({ error: "Thiếu danh sách nhóm đã tắt (muted)" });
+    res.status(400).json({ error: "Thiếu danh sách đã tắt (muted)" });
     return;
   }
-  const muted = [...new Set(raw.map(String))].filter(
-    (k) => isNotificationCategory(k) && !isLockedCategory(k)
-  );
+  const muted = sanitizeMuted(raw);
   await prisma.notificationPreference.upsert({
     where: { ownerId },
     create: { ownerId, mutedCategories: muted },
     update: { mutedCategories: muted },
   });
   invalidateMutedCache(ownerId);
-  res.json({ categories: NOTIFICATION_CATEGORIES, muted });
+  res.json({ groups: NOTIFICATION_GROUPS, muted });
 });
 
 // ─────────────────────── THIẾT BỊ NHẬN PUSH (app mobile) ───────────────────────

@@ -7,17 +7,19 @@ import { useColorScheme } from "nativewind";
 import { useNotifications, type PushState } from "@/notifications/NotificationsContext";
 import { fetchNotificationPreferences, saveNotificationPreferences } from "@/api/notifications";
 import { ApiError } from "@/api/client";
-import { categoryMeta } from "@/lib/notification-meta";
+import { categoryMeta, groupMeta } from "@/lib/notification-meta";
 import { hapticSelect } from "@/lib/haptics";
 import { ICON_TINT } from "@/theme/tokens";
-import type { NotificationPreferencesResponse } from "@/types/api";
+import type { NotificationGroup, NotificationPreferencesResponse } from "@/types/api";
 
 /**
- * CÀI ĐẶT THÔNG BÁO — hai khối: (1) công tắc nhận tin ĐẨY trên máy này
- * (quyền hệ điều hành + token thiết bị), (2) công tắc từng NHÓM — khách chọn
- * loại mình quan tâm (anh Trung 23/10/2026). Nhóm tắt thì cả chuông trong
- * app, chuông web lẫn tin đẩy đều im (backend bỏ qua ngay khi phát).
- * Lưu ngay khi gạt, lỗi mạng thì gạt về như cũ + báo một dòng.
+ * CÀI ĐẶT THÔNG BÁO — anh Trung chốt 23/10/2026 chiều: chia NHÓM cha → con.
+ * Mỗi nhóm (Đơn hàng, Tài chính, Quảng cáo, Kho, Gian hàng, Tài khoản) là một
+ * thẻ: hàng đầu = tên nhóm + công tắc TỔNG; dưới = từng mục con với công tắc
+ * riêng. Tắt tổng → mục con mờ đi (vẫn nhớ trạng thái riêng, bật tổng lại là
+ * như cũ). Mục khóa (gói, hệ thống) luôn bật. Khối "Nhận thông báo đẩy trên
+ * máy này" đứng trên cùng. Lưu ngay khi gạt; lỗi mạng gạt về như cũ + báo.
+ * Danh sách đã tắt gửi backend = khóa nhóm và/hoặc khóa mục.
  */
 export function NotificationSettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -31,15 +33,19 @@ export function NotificationSettingsScreen() {
   useEffect(() => {
     fetchNotificationPreferences()
       .then(setPrefs)
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Không tải được cài đặt"));
+      .catch((err: unknown) =>
+        setError(
+          err instanceof ApiError && err.status === 404
+            ? "Máy chủ chưa cập nhật tính năng này, thử lại sau."
+            : err instanceof ApiError
+              ? err.message
+              : "Không tải được cài đặt"
+        )
+      );
   }, []);
 
-  const toggleCategory = (key: string, on: boolean) => {
-    if (!prefs) return;
-    hapticSelect();
-    const before = prefs.muted;
-    const muted = on ? before.filter((k) => k !== key) : [...new Set([...before, key])];
-    setPrefs({ ...prefs, muted });
+  const save = (muted: string[], before: string[]) => {
+    setPrefs((p) => (p ? { ...p, muted } : p));
     setError("");
     saveNotificationPreferences(muted)
       .then(setPrefs)
@@ -47,6 +53,13 @@ export function NotificationSettingsScreen() {
         setPrefs((p) => (p ? { ...p, muted: before } : p));
         setError(err instanceof ApiError ? err.message : "Chưa lưu được, thử lại");
       });
+  };
+
+  const toggleKey = (key: string, on: boolean) => {
+    if (!prefs) return;
+    hapticSelect();
+    const before = prefs.muted;
+    save(on ? before.filter((k) => k !== key) : [...new Set([...before, key])], before);
   };
 
   const togglePush = async (on: boolean) => {
@@ -64,6 +77,10 @@ export function NotificationSettingsScreen() {
     if (router.canGoBack()) router.back();
     else router.navigate("/notifications");
   };
+
+  // Công tắc máy này: tắt hẳn khi không hỗ trợ / thiếu Firebase; lỗi máy chủ thì
+  // vẫn cho gạt để thử lại.
+  const pushSwitchDisabled = push.status === "unsupported" || (push.status === "error" && push.errorKind === "build");
 
   return (
     <View className="flex-1 bg-slate-50 dark:bg-slate-950" style={{ paddingTop: insets.top + 6 }}>
@@ -90,16 +107,14 @@ export function NotificationSettingsScreen() {
               <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Nhận thông báo đẩy trên máy này
               </Text>
-              <Text className="text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-                {pushHint(push)}
-              </Text>
+              <Text className="text-[11px] leading-4 text-slate-500 dark:text-slate-400">{pushHint(push)}</Text>
             </View>
             {pushBusy ? (
               <ActivityIndicator color="#10b981" />
             ) : (
               <Switch
                 value={push.status === "on"}
-                disabled={push.status === "unsupported" || push.status === "error"}
+                disabled={pushSwitchDisabled}
                 onValueChange={(on) => void togglePush(on)}
                 trackColor={{ true: "#10b981" }}
               />
@@ -119,63 +134,109 @@ export function NotificationSettingsScreen() {
           ) : null}
         </View>
 
-        {/* ===== Loại thông báo ===== */}
-        <Text className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-          Loại thông báo
-        </Text>
-        <View className="rounded-2xl bg-white px-4 dark:bg-slate-900" style={{ elevation: 2 }}>
-          {!prefs ? (
-            <View className="items-center py-10">
-              {error ? (
-                <Text className="text-center text-sm text-red-500">{error}</Text>
-              ) : (
-                <ActivityIndicator color="#64748b" />
-              )}
-            </View>
-          ) : (
-            prefs.categories.map((c, i) => {
-              const meta = categoryMeta(c.key);
-              const tint = ICON_TINT[meta.tint];
-              const on = c.locked || !prefs.muted.includes(c.key);
-              return (
-                <View
-                  key={c.key}
-                  className={`flex-row items-center gap-3 py-3 ${
-                    i < prefs.categories.length - 1 ? "border-b border-slate-100 dark:border-slate-800" : ""
-                  }`}
-                >
-                  <View
-                    className="h-9 w-9 items-center justify-center rounded-xl"
-                    style={{ backgroundColor: dark ? tint.dark : tint.light }}
-                  >
-                    <Ionicons name={meta.icon} size={18} color={tint.icon} />
-                  </View>
-                  <View className="min-w-0 flex-1">
-                    <Text className="text-sm font-medium text-slate-900 dark:text-slate-100" numberOfLines={2}>
-                      {c.label}
-                    </Text>
-                    <Text className="text-[11px] leading-4 text-slate-500 dark:text-slate-400" numberOfLines={2}>
-                      {c.hint}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={on}
-                    disabled={!!c.locked}
-                    onValueChange={(v) => toggleCategory(c.key, v)}
-                    trackColor={{ true: "#10b981" }}
-                    accessibilityLabel={c.label}
-                  />
-                </View>
-              );
-            })
-          )}
-        </View>
-        {error && prefs ? <Text className="mt-2 px-1 text-xs text-red-500">{error}</Text> : null}
-        <Text className="mt-3 px-1 text-[11px] leading-4 text-slate-400 dark:text-slate-500">
-          Tắt nhóm nào thì chuông trong app, bản web và tin đẩy đều không báo nhóm đó. Cài đặt theo tài
-          khoản, dùng chung mọi thiết bị.
+        {/* ===== Nhóm cha → mục con ===== */}
+        {!prefs ? (
+          <View className="items-center rounded-2xl bg-white py-10 dark:bg-slate-900" style={{ elevation: 2 }}>
+            {error ? (
+              <Text className="px-6 text-center text-sm text-red-500">{error}</Text>
+            ) : (
+              <ActivityIndicator color="#64748b" />
+            )}
+          </View>
+        ) : (
+          prefs.groups.map((g) => (
+            <GroupCard key={g.key} group={g} muted={prefs.muted} dark={dark} onToggle={toggleKey} />
+          ))
+        )}
+        {error && prefs ? <Text className="mt-1 px-1 text-xs text-red-500">{error}</Text> : null}
+        <Text className="mt-2 px-1 text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+          Tắt mục nào thì chuông trong app, bản web và tin đẩy đều không báo mục đó. Cài đặt theo tài khoản,
+          dùng chung mọi thiết bị.
         </Text>
       </ScrollView>
+    </View>
+  );
+}
+
+function GroupCard({
+  group,
+  muted,
+  dark,
+  onToggle,
+}: {
+  group: NotificationGroup;
+  muted: string[];
+  dark: boolean;
+  onToggle: (key: string, on: boolean) => void;
+}) {
+  const gm = groupMeta(group.key);
+  const gt = ICON_TINT[gm.tint];
+  const groupLocked = group.items.every((it) => it.locked);
+  const groupOn = groupLocked || !muted.includes(group.key);
+  return (
+    <View className="mb-3 rounded-2xl bg-white px-4 dark:bg-slate-900" style={{ elevation: 2 }}>
+      {/* Hàng tổng của nhóm */}
+      <View className="flex-row items-center gap-3 border-b border-slate-100 py-3 dark:border-slate-800">
+        <View
+          className="h-9 w-9 items-center justify-center rounded-xl"
+          style={{ backgroundColor: dark ? gt.dark : gt.light }}
+        >
+          <Ionicons name={gm.icon} size={18} color={gt.icon} />
+        </View>
+        <View className="min-w-0 flex-1">
+          <Text className="text-base font-bold text-slate-900 dark:text-slate-100" numberOfLines={1}>
+            {group.label}
+          </Text>
+          <Text className="text-[11px] text-slate-400 dark:text-slate-500">
+            {groupLocked ? "Luôn bật" : groupOn ? "Đang nhận" : "Đã tắt cả nhóm"}
+          </Text>
+        </View>
+        <Switch
+          value={groupOn}
+          disabled={groupLocked}
+          onValueChange={(v) => onToggle(group.key, v)}
+          trackColor={{ true: "#10b981" }}
+          accessibilityLabel={`Bật tắt cả nhóm ${group.label}`}
+        />
+      </View>
+      {/* Mục con — mờ đi khi tắt tổng, vẫn giữ trạng thái riêng */}
+      {group.items.map((c, i) => {
+        const meta = categoryMeta(c.key);
+        const tint = ICON_TINT[meta.tint];
+        const itemOn = !!c.locked || !muted.includes(c.key);
+        const dimmed = !groupOn && !c.locked;
+        return (
+          <View
+            key={c.key}
+            className={`flex-row items-center gap-3 py-2.5 ${
+              i < group.items.length - 1 ? "border-b border-slate-100 dark:border-slate-800" : ""
+            }`}
+            style={dimmed ? { opacity: 0.45 } : undefined}
+          >
+            <View
+              className="ml-1 h-8 w-8 items-center justify-center rounded-lg"
+              style={{ backgroundColor: dark ? tint.dark : tint.light }}
+            >
+              <Ionicons name={meta.icon} size={16} color={tint.icon} />
+            </View>
+            <View className="min-w-0 flex-1">
+              <Text className="text-sm font-medium text-slate-900 dark:text-slate-100" numberOfLines={2}>
+                {c.label}
+              </Text>
+              <Text className="text-[11px] leading-4 text-slate-500 dark:text-slate-400" numberOfLines={2}>
+                {c.hint}
+              </Text>
+            </View>
+            <Switch
+              value={itemOn && groupOn}
+              disabled={!!c.locked || !groupOn}
+              onValueChange={(v) => onToggle(c.key, v)}
+              trackColor={{ true: "#10b981" }}
+              accessibilityLabel={c.label}
+            />
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -187,7 +248,9 @@ function pushHint(p: PushState): string {
     case "denied":
       return "Điện thoại đang chặn thông báo của Hubsell. Cho phép trong Cài đặt rồi bật lại.";
     case "error":
-      return "Bản dựng này chưa bật được tin đẩy. Chuông trong app vẫn hoạt động.";
+      return p.errorKind === "build"
+        ? "Bản dựng này chưa bật được tin đẩy. Chuông trong app vẫn hoạt động."
+        : "Chưa đăng ký được với máy chủ. Gạt để thử lại.";
     case "unsupported":
       return "Không hỗ trợ trên nền này.";
     default:

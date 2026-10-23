@@ -977,24 +977,45 @@ export interface TiktokVideoMeta {
 
 // ───────────────────────── Chuông thông báo (cùng backend với web) ─────────────────────────
 
-/** Nhóm khách bật/tắt — backend services/notification-categories.ts. */
+/** NHÓM cha (thẻ trên màn Cài đặt) — backend services/notification-categories.ts. */
+export type NotificationGroupKey = "orders" | "finance" | "ads" | "stock" | "channels" | "system";
+
+/** MỤC con khách bật/tắt — cùng tên với backend. */
 export type NotificationCategoryKey =
   | "order_new"
   | "order_express"
   | "cancel_request"
   | "return"
   | "delivery_fail"
-  | "ads"
-  | "stock"
-  | "ops"
-  | "system";
+  | "weekly_report"
+  | "finance_alert"
+  | "invoice"
+  | "tax_deadline"
+  | "ads_advice"
+  | "ads_auto"
+  | "ads_wallet"
+  | "ads_daily"
+  | "ads_link"
+  | "stockout"
+  | "low_stock"
+  | "channel_disconnected"
+  | "sync_stalled"
+  | "koc"
+  | "plan"
+  | "system_other";
 
 export interface NotificationCategory {
   key: NotificationCategoryKey;
   label: string;
   hint: string;
-  /** Không cho tắt (hệ thống, gói). */
+  /** Không cho tắt (gói, hệ thống). */
   locked?: boolean;
+}
+
+export interface NotificationGroup {
+  key: NotificationGroupKey;
+  label: string;
+  items: NotificationCategory[];
 }
 
 export interface AppNotification {
@@ -1017,6 +1038,7 @@ export interface NotificationListResponse {
 }
 
 export interface NotificationPreferencesResponse {
-  categories: NotificationCategory[];
+  groups: NotificationGroup[];
+  /** Khóa NHÓM (tắt cả nhóm) và/hoặc khóa MỤC đã tắt. */
   muted: string[];
 }

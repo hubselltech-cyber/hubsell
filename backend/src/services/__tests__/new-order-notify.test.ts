@@ -8,7 +8,7 @@ import {
   noteNewOrder,
   MERGE_WINDOW_MS,
 } from "../new-order-notify";
-import { categoryOf } from "../notification-categories";
+import { categoryOf, groupOfCategory, isCategoryMuted, sanitizeMuted } from "../notification-categories";
 
 type Call = { kind: "notify" | "amend"; args: unknown[] };
 
@@ -120,22 +120,45 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
   });
 });
 
-describe("notification-categories — type kỹ thuật → nhóm khách bật/tắt", () => {
-  it("xếp đúng nhóm", () => {
+describe("notification-categories — type kỹ thuật → mục con → nhóm cha", () => {
+  it("xếp đúng mục con", () => {
     expect(categoryOf("order_new")).toBe("order_new");
     expect(categoryOf("order_express")).toBe("order_express");
     expect(categoryOf("cancel_request")).toBe("cancel_request");
     expect(categoryOf("return")).toBe("return");
     expect(categoryOf("delivery-fail")).toBe("delivery_fail");
     expect(categoryOf("ops-alert:delivery-fail")).toBe("delivery_fail");
-    expect(categoryOf("tiktok-ads-advice")).toBe("ads");
-    expect(categoryOf("ads-daily-summary")).toBe("ads");
-    expect(categoryOf("ops-alert:ads-low-balance")).toBe("ads");
-    expect(categoryOf("ops-alert:stockout")).toBe("stock");
-    expect(categoryOf("ops-alert:low-stock")).toBe("stock");
-    expect(categoryOf("ops-alert:channel-disconnected")).toBe("ops");
-    expect(categoryOf("ops-alert")).toBe("ops");
-    expect(categoryOf("invoice-issued")).toBe("system");
-    expect(categoryOf("system")).toBe("system");
+    expect(categoryOf("weekly-report")).toBe("weekly_report");
+    expect(categoryOf("ops-alert:loss-orders")).toBe("finance_alert");
+    expect(categoryOf("ops-alert:fee-audit-shortfall")).toBe("finance_alert");
+    expect(categoryOf("INVOICE_AUTO_ISSUE")).toBe("invoice");
+    expect(categoryOf("tax-deadline")).toBe("tax_deadline");
+    expect(categoryOf("tiktok-ads-advice")).toBe("ads_advice");
+    expect(categoryOf("ops-alert:ads-roas-risk")).toBe("ads_advice");
+    expect(categoryOf("tiktok-ads-auto")).toBe("ads_auto");
+    expect(categoryOf("ops-alert:ads-auto-paused")).toBe("ads_auto");
+    expect(categoryOf("ops-alert:ads-low-balance")).toBe("ads_wallet");
+    expect(categoryOf("ads-daily-summary")).toBe("ads_daily");
+    expect(categoryOf("ops-alert:ads-app-expired")).toBe("ads_link");
+    expect(categoryOf("ops-alert:stockout")).toBe("stockout");
+    expect(categoryOf("ops-alert:low-stock")).toBe("low_stock");
+    expect(categoryOf("ops-alert:channel-disconnected")).toBe("channel_disconnected");
+    expect(categoryOf("lazada-renewal")).toBe("channel_disconnected");
+    expect(categoryOf("ops-alert:channel-sync-stalled")).toBe("sync_stalled");
+    expect(categoryOf("ops-alert:koc-sample-overdue")).toBe("koc");
+    expect(categoryOf("plan_expiry")).toBe("plan");
+    expect(categoryOf("PLAN_CHANGED")).toBe("plan");
+    expect(categoryOf("subscription")).toBe("plan");
+    expect(categoryOf("system")).toBe("system_other");
+    expect(groupOfCategory("return")).toBe("orders");
+    expect(groupOfCategory("ads_wallet")).toBe("ads");
+  });
+
+  it("tắt cả nhóm hoặc từng mục; mục khóa không bao giờ tắt", () => {
+    expect(isCategoryMuted(new Set(["orders"]), "order_express")).toBe(true);
+    expect(isCategoryMuted(new Set(["order_express"]), "order_new")).toBe(false);
+    expect(isCategoryMuted(new Set(["order_express"]), "order_express")).toBe(true);
+    expect(isCategoryMuted(new Set(["system", "plan"]), "plan")).toBe(false);
+    expect(sanitizeMuted(["orders", "plan", "system", "ads_wallet", "rác", "ads_wallet"])).toEqual(["orders", "ads_wallet"]);
   });
 });

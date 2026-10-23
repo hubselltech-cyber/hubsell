@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 23/10/2026 chiều (đợt 2) — MOBILE 1.4.0 (21): CHỈNH THEO ANH THỬ TESTFLIGHT — bộ lọc một hàng, "Tổng giá trị SP", cài đặt thông báo CHA → CON
+
+- **Anh thử bản (20) trên iPhone, chốt 3 điều:** (1) bộ lọc gian hàng đứng TRƯỚC bộ lọc ngày, chia đôi một hàng, nhãn chỉ icon + "Tất cả" (bỏ "N gian hàng"); (2) cột thác nước "Tổng giá trị SP"; (3) cài đặt thông báo phải chia NHÓM: Đơn hàng (tổng + đơn mới / hỏa tốc / hủy / hoàn / giao hụt), Tài chính (báo cáo tuần…), Kho (hết hàng, sắp hết…)… mỗi nhóm công tắc tổng + từng mục con. Ảnh anh gửi báo "Không tìm thấy đường dẫn (route)" ở Loại thông báo = backend prod chưa deploy route mới.
+- **Backend:** `notification-categories.ts` viết lại thành 6 nhóm cha × 21 mục con (`NOTIFICATION_GROUPS`, `groupOfCategory`, `isCategoryMuted` = mục hoặc nhóm bị tắt, `sanitizeMuted`); GET/PUT preferences trả `{groups, muted}`; đã rà hết type thật đang phát (weekly-report, INVOICE_*, tax-deadline, lazada-renewal, plan_*, subscription, PLAN_CHANGED, ads-daily-summary, ops-alert:*). Test 8/8, tsc sạch. Mục "bổ sung hàng" anh nêu: backend chưa có sự kiện → chưa có mục.
+- **App:** `NotificationSettingsScreen` thẻ theo nhóm (hàng tổng + mục con, tắt tổng thì mục con mờ, mục khóa luôn bật; lỗi 404 báo "máy chủ chưa cập nhật"); công tắc máy này phân biệt lỗi bản dựng (Firebase) / lỗi máy chủ (gạt lại để thử); `ShopFilterField compact` + `DateRangeFilter compact` chia đôi một hàng ở Tài chính, Quảng cáo Shopee/Lazada, TikTok; `WaterfallChart` "Tổng giá trị SP". Soi giả lập 390 nền tối: hàng lọc, màn cài đặt, tắt nhóm Đơn hàng → 5 mục mờ — đạt. Docs mục 2 viết lại theo cha → con.
+
 ## Phiên 23/10/2026 chiều — MOBILE 1.4.0: LỌC GIAN HÀNG HỘP TRƯỢT + ĐỔI NHÃN THÁC NƯỚC + CHUÔNG THÔNG BÁO & TIN ĐẨY (chưa commit, chưa build)
 
 - **Anh:** 3 việc trên app: (1) Tài chính lọc theo cả shop, dạng popup trượt lên (nhiều shop bày hết rất rối), áp cho Quảng cáo; (2) cột "Doanh thu" ở Bóc tách dòng tiền → "Tổng giá trị sản phẩm"; (3) chuông thông báo — khảo sát trước: đơn mới / hỏa tốc / khách xin hủy, hoàn & trả hàng (xem API chấp nhận/từ chối), quảng cáo, hết hàng + mục cài đặt bật/tắt từng loại; chú ý cỡ chữ / độ dài trên màn thông báo; test trước khi nộp kho.

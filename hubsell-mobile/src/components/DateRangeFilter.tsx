@@ -27,10 +27,13 @@ export function DateRangeFilter({
   value,
   onChange,
   className = "",
+  compact = false,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   className?: string;
+  /** Ô chia đôi hàng với bộ lọc gian hàng (23/10): giấu dãy ngày phụ cho vừa nửa màn. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -52,7 +55,7 @@ export function DateRangeFilter({
         >
           {formatRangeLabel(value)}
         </Text>
-        {matchPreset(value) && value.from !== value.to ? (
+        {!compact && matchPreset(value) && value.from !== value.to ? (
           <Text className="text-[11px] text-slate-400 dark:text-slate-500" style={TABULAR}>
             {formatDayVN(value.from).slice(0, 5)} - {formatDayVN(value.to).slice(0, 5)}
           </Text>

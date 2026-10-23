@@ -284,20 +284,23 @@ export function AdsPage() {
           />
         }
       >
-        <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
         {header}
 
-        {/* Chọn gian của sàn — một ô mở hộp trượt (23/10: nhiều gian không bày chip);
-            một gian vẫn hiện tên để biết đang xem số của shop nào */}
-        {data && data.channels.length > 0 ? (
-          <ShopFilterField
-            mode="single"
-            className="mb-2"
-            channels={data.channels.map((ch) => ({ id: ch.id, shopName: ch.shopName, channelName: platformChannelName }))}
-            value={{ channelName: platformChannelName, channelId: data.selectedChannelId ?? "" }}
-            onChange={(next) => setChannelId(next.channelId)}
-          />
-        ) : null}
+        {/* Một hàng hai ô: gian của sàn (hộp trượt, 23/10: nhiều gian không bày chip)
+            + kỳ xem; một gian vẫn hiện tên để biết đang xem số của shop nào */}
+        <View className="mb-2 flex-row gap-2">
+          {data && data.channels.length > 0 ? (
+            <ShopFilterField
+              mode="single"
+              compact
+              className="flex-1"
+              channels={data.channels.map((ch) => ({ id: ch.id, shopName: ch.shopName, channelName: platformChannelName }))}
+              value={{ channelName: platformChannelName, channelId: data.selectedChannelId ?? "" }}
+              onChange={(next) => setChannelId(next.channelId)}
+            />
+          ) : null}
+          <DateRangeFilter compact className="flex-1" value={range} onChange={setRange} />
+        </View>
 
         {loading ? (
           <View className="items-center py-16">

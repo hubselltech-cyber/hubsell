@@ -54,6 +54,8 @@ export type PushStatus =
 export interface PushState {
   status: PushStatus;
   error?: string;
+  /** build = bản dựng thiếu Firebase (không sửa được tại chỗ); server = backend chưa nhận, gạt lại để thử. */
+  errorKind?: "build" | "server";
 }
 
 interface NotificationsValue {
@@ -242,9 +244,11 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         }
         await registerToken();
       } catch (err) {
-        // Thiếu Firebase trên Android / rớt mạng lúc xin token — chuông REST vẫn chạy.
+        // Thiếu Firebase trên Android (lỗi "FirebaseApp") / backend chưa có route
+        // hoặc rớt mạng lúc đăng ký — chuông REST vẫn chạy; lỗi máy chủ cho gạt lại.
         const msg = err instanceof Error ? err.message : String(err);
-        setPush({ status: "error", error: msg });
+        const build = /firebase|fcm|google-services/i.test(msg);
+        setPush({ status: "error", error: msg, errorKind: build ? "build" : "server" });
       }
     },
     [registerToken]

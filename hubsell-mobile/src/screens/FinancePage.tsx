@@ -283,11 +283,12 @@ export function FinancePage() {
         />
       }
     >
-      {/* Bộ lọc ngày chuẩn: mốc nhanh như web + lịch tự chọn, xem được năm cũ */}
-      <DateRangeFilter className="mb-2" value={range} onChange={setRange} />
-
-      {/* Lọc sàn + gian hàng: một ô, bấm mở hộp trượt (khách nhiều gian không bày chip) */}
-      <ShopFilterField mode="scope" className="mb-4" channels={channels} value={scope} onChange={setScope} />
+      {/* Một hàng hai ô chia đôi (anh chốt 23/10 chiều): gian hàng TRƯỚC, ngày SAU —
+          nhãn ngắn, không chiếm hai hàng. Mỗi ô bấm mở hộp trượt riêng. */}
+      <View className="mb-4 flex-row gap-2">
+        <ShopFilterField mode="scope" compact className="flex-1" channels={channels} value={scope} onChange={setScope} />
+        <DateRangeFilter compact className="flex-1" value={range} onChange={setRange} />
+      </View>
 
       {loading ? (
         <View className="items-center py-16">

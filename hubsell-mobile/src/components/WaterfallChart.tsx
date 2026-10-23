@@ -70,7 +70,7 @@ export function WaterfallChart({
   // trị sản phẩm" ở trên; gọi "Doanh thu" là sai (anh Trung 23/10/2026).
   bars.push({
     key: "gross",
-    short: "Tổng giá trị sản phẩm",
+    short: "Tổng giá trị SP",
     lo: Math.min(0, gross),
     hi: Math.max(0, gross),
     level: gross,
