@@ -9,6 +9,7 @@
 ## Phiên 23/10/2026 ~21:00 — HAI CON SỐ BIÊN Ở TÀI CHÍNH MOBILE (góp ý khách 22/10 mục 3, anh gọi lại)
 
 - Thẻ Lợi nhuận ròng "25,7% biên ròng" = lãi ÷ DOANH THU; dòng chốt thác nước "biên 16,2%" = lãi ÷ TỔNG GIÁ TRỊ SP (web cũng vậy nhưng ở hai trang khác nhau; mobile gộp một màn nên khách tưởng lệch). Sửa mobile: thẻ ghi "25,7% trên doanh thu" (cùng kiểu thẻ Chi phí), thác ghi "biên 16,2% trên giá trị SP". Không đổi công thức. Web giữ nguyên (hai trang riêng). Vào bản 1.4.1.
+- Anh hỏi "trước/sau khuyến mãi" hay tên của em chuẩn hơn → em: giữ tên chuẩn (GMV / doanh thu thuần, biên ròng trên doanh thu), còn thác nước thêm bậc **Khuyến mãi** (voucher shop, `platformFeeBreakdown.voucher`) ngay sau cột Tổng giá trị SP, Chi phí sàn bỏ phần này ra khỏi để không trừ đôi, dưới biểu đồ thêm dòng "Trước khuyến mãi X · Sau khuyến mãi Y" (chỉ khi kỳ có voucher). Anh chốt "làm như em". DB dev không có voucher → bậc tự ẩn, chưa soi hình; bậc thác dùng chung code cũ. Vào 1.4.1.
 
 ## Phiên 23/10/2026 tối (chốt) — ĐỢI 01/11 BUILD + NỘP 1.4.1 CẢ HAI KHO (lịch tự động 08:30)
 

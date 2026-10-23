@@ -100,9 +100,14 @@ function waterfallSteps(a: OverviewAnalytics): WaterfallStep[] {
   const operatingExpense = (a.totalOperatingExpense ?? 0) - adsExpense;
   const fee = a.totalPlatformFee ?? 0;
   const tax = a.totalPlatformTax ?? 0;
+  // KHUYẾN MÃI = voucher shop tự bỏ (platformFeeBreakdown.voucher) tách thành bậc
+  // riêng ngay sau cột giá trị SP để khách thấy tiền TRƯỚC / SAU khuyến mãi (góp ý
+  // khách 22/10, anh chốt 23/10 tối); Chi phí sàn bỏ phần này ra khỏi để không trừ đôi.
+  const promo = a.platformFeeBreakdown?.voucher ?? 0;
   return [
+    { key: "promo", short: "Khuyến mãi", amount: promo, hue: "rose" },
     { key: "cogs", short: "Giá vốn", amount: a.totalCost ?? 0, hue: "rose" },
-    { key: "fee", short: "Chi phí", amount: fee - tax, hue: "rose" },
+    { key: "fee", short: "Chi phí", amount: fee - tax - promo, hue: "rose" },
     { key: "tax", short: "Thuế sàn", amount: tax, hue: "rose" },
     { key: "ads", short: "Ads", amount: adsExpense, hue: "amber" },
     { key: "ops", short: "Vận hành", amount: operatingExpense, hue: "amber" },
@@ -265,6 +270,7 @@ export function FinancePage() {
   const steps = overview ? waterfallSteps(overview) : [];
   const gross = overview?.totalRevenue ?? 0;
   const net = overview?.netProfit ?? 0;
+  const promo = overview?.platformFeeBreakdown?.voucher ?? 0;
   const netMargin = gross > 0 ? Math.round((net / gross) * 1000) / 10 : null;
 
   const toggleTile = (k: TileKey) => {
@@ -411,6 +417,12 @@ export function FinancePage() {
               ) : (
                 <WaterfallChart gross={gross} steps={steps} net={net} />
               )}
+              {/* Trước / sau khuyến mãi — chỉ khi kỳ có voucher shop */}
+              {promo > 0 ? (
+                <Text className="mt-2 text-[11px] text-slate-500 dark:text-slate-400" style={TABULAR}>
+                  Trước khuyến mãi {compactMoney(gross)} · Sau khuyến mãi {compactMoney(gross - promo)}
+                </Text>
+              ) : null}
               {/* Dòng chốt sổ: tên + biên xếp DỌC bên trái để số bên phải không
                   bao giờ phải xuống dòng, kể cả màn 320px */}
               <View className="mt-3 flex-row items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
