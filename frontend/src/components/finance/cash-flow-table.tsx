@@ -29,6 +29,7 @@ import {
   ApiError,
   createWithdrawal,
   fetchCashFlow,
+  reconcileTiktokWallet,
   refreshCashFlow,
   type CashFlowRow,
   type ChannelName,
@@ -101,6 +102,40 @@ export function CashFlowTable() {
   const [wNote, setWNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Form "Đối chiếu số dư" ví TikTok (23/10/2026): sổ giao dịch TikTok không có
+  // số dư, app cộng dồn nên lệch phần lẻ khi rút chẵn → nhập số Seller Center
+  // một lần, app giữ phần lệch từ đó.
+  const [rcRow, setRcRow] = useState<CashFlowRow | null>(null);
+  const [rcAmount, setRcAmount] = useState("");
+  const [rcSubmitting, setRcSubmitting] = useState(false);
+  const [rcError, setRcError] = useState<string | null>(null);
+
+  function openReconcile(r: CashFlowRow) {
+    setRcRow(r);
+    setRcAmount(r.walletBalance != null && r.walletBalance > 0 ? String(Math.round(r.walletBalance)) : "");
+    setRcError(null);
+  }
+
+  async function submitReconcile() {
+    if (!rcRow) return;
+    const bal = Number(rcAmount);
+    if (!Number.isFinite(bal) || bal < 0) {
+      setRcError("Nhập đúng số đang hiện trên Seller Center (số không âm)");
+      return;
+    }
+    setRcSubmitting(true);
+    setRcError(null);
+    try {
+      await reconcileTiktokWallet({ channelId: rcRow.channelId, platformBalance: bal });
+      setRcRow(null);
+      await load();
+    } catch (err) {
+      setRcError(err instanceof ApiError ? err.message : "Không lưu được số đối chiếu");
+    } finally {
+      setRcSubmitting(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -379,8 +414,30 @@ export function CashFlowTable() {
                             —
                           </span>
                         ) : (
-                          <span title={syncedLabel(r.walletSyncedAt) || undefined}>
+                          <span
+                            className="inline-flex items-center justify-end gap-1.5"
+                            title={
+                              r.channelName === "TIKTOK"
+                                ? r.walletReconciledAt
+                                  ? `Đã đối chiếu với Seller Center ${syncedLabel(r.walletReconciledAt).replace(/^cập nhật /, "")} · ${syncedLabel(r.walletSyncedAt)}`
+                                  : "Số cộng dồn từ sổ giao dịch TikTok, chưa đối chiếu — có thể lệch phần lẻ so với Seller Center. Bấm Đối chiếu để nhập số sàn một lần."
+                                : syncedLabel(r.walletSyncedAt) || undefined
+                            }
+                          >
                             <Cash value={r.walletBalance} />
+                            {r.channelName === "TIKTOK" && !r.disconnected && (
+                              <button
+                                type="button"
+                                onClick={() => openReconcile(r)}
+                                className={cn(
+                                  "rounded px-1 text-[11px] font-normal underline-offset-2 hover:underline",
+                                  r.walletReconciledAt ? "text-slate-400" : "text-amber-600"
+                                )}
+                                aria-label={`Đối chiếu số dư ví TikTok ${r.shopName}`}
+                              >
+                                {r.walletReconciledAt ? "Đối chiếu lại" : "Đối chiếu"}
+                              </button>
+                            )}
                           </span>
                         )}
                       </td>
@@ -434,6 +491,49 @@ export function CashFlowTable() {
         )}
       </CardContent>
       </Card>
+
+      {/* ĐỐI CHIẾU SỐ DƯ VÍ TIKTOK: nhập số Seller Center một lần */}
+      <Dialog open={rcRow != null} onOpenChange={(o) => !o && setRcRow(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Đối chiếu số dư ví TikTok · {rcRow?.shopName}</DialogTitle>
+            <DialogDescription>
+              TikTok không cho app đọc số dư, chỉ cho đọc từng giao dịch nên app
+              phải tự cộng dồn và có thể lệch phần lẻ. Mở Seller Center TikTok →
+              Tài chính → Số tiền rút, chép “Số tiền rút khả dụng” vào đây một
+              lần. Từ đó app giữ phần lệch và số dư sẽ khớp sàn.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="rc-amount">Số tiền rút khả dụng trên Seller Center (₫)</Label>
+              <CurrencyInput
+                id="rc-amount"
+                value={rcAmount}
+                onValueChange={setRcAmount}
+                placeholder="Ví dụ: 445.766"
+                autoFocus
+              />
+              {rcRow?.walletBalance != null && (
+                <p className="text-xs text-slate-500">
+                  App đang tính: <Money value={rcRow.walletBalance} />
+                </p>
+              )}
+            </div>
+            {rcError && <p className="text-sm font-medium text-red-500">{rcError}</p>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRcRow(null)} disabled={rcSubmitting}>
+              Huỷ
+            </Button>
+            <Button onClick={submitReconcile} disabled={rcSubmitting}>
+              {rcSubmitting ? "Đang lưu…" : "Lưu số đối chiếu"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* FORM NHẬP TAY: kế toán xác nhận đã rút ví về ngân hàng */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

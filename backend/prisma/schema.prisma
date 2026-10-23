@@ -454,6 +454,12 @@ model Channel {
   /// (Lazada/Offline) hoặc chưa sync được → bảng hiện "—", không bịa 0.
   pendingIncome         Decimal?  @db.Decimal(14, 2)
   pendingIncomeSyncedAt DateTime?
+  /// Ví TikTok (23/10/2026): "số đầu sổ" = số Seller Center chủ shop nhập khi
+  /// Đối chiếu − Σ thô sổ cái lúc đó. Có giá trị → số dư = Σ thô + số đầu sổ
+  /// (bỏ cách đoán "ví cạn tại đáy"). Sổ giao dịch TikTok không có số dư nên
+  /// đây là cách duy nhất khớp từng đồng.
+  walletOpeningBalance  Decimal?  @db.Decimal(14, 2)
+  walletReconciledAt    DateTime?
 
   // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
   // VD: 0.12 = 12%. Có thể chỉnh riêng cho từng gian hàng.

@@ -23,6 +23,10 @@
 // Đương: SETTLE − WITHDRAW − PAYMENT = 0 từng đồng → shop rút cạn). Vì thế
 // số dư = Σ − min(0, prefix thấp nhất theo thời gian): coi ví CẠN (= 0) tại
 // điểm thấp nhất trong cửa sổ — khớp thói quen rút sạch, không bao giờ âm.
+// Vẫn lệch phần lẻ khi shop rút CHẴN (and.not.or: app 432.290 / sàn 445.766,
+// lẻ 13.476) → nút "Đối chiếu số dư": chủ shop nhập số Seller Center một lần,
+// app lưu Channel.walletOpeningBalance = số sàn − Σ thô lúc đó; từ đó số dư =
+// Σ thô + số đầu sổ (reconcileTiktokWallet / tiktokWalletBalanceWith).
 //
 // LUẬT DẤU chưa kiểm với sàn thật (ghi log tổng theo loại ở mỗi lượt có dòng
 // mới để anh đối chiếu Seller Center; đổi luật thì chỉ sửa tiktokWalletDelta,
@@ -135,6 +139,18 @@ export function tiktokWalletBalance(rows: readonly TiktokWalletLedgerRow[]): num
     if (run < low) low = run;
   }
   return Math.round((run - low) * 100) / 100;
+}
+
+/**
+ * Số dư theo mốc đã biết: có số đầu sổ (đối chiếu) → Σ thô + số đầu sổ, chính
+ * xác từng đồng từ lúc đối chiếu; chưa có → đoán "ví cạn tại đáy".
+ */
+export function tiktokWalletBalanceWith(
+  rows: readonly TiktokWalletLedgerRow[],
+  openingBalance: number | null
+): number {
+  if (openingBalance == null || !Number.isFinite(openingBalance)) return tiktokWalletBalance(rows);
+  return Math.round((tiktokWalletRawSum(rows) + openingBalance) * 100) / 100;
 }
 
 /** Tóm tắt theo loại để log đối chiếu: "SETTLE 42 dòng 12.345.678 · PAYMENT 40 dòng 12.000.000". */
@@ -338,15 +354,48 @@ export async function syncTiktokWallet(channel: Channel): Promise<SyncTiktokWall
     select: { type: true, status: true, amount: true, createTime: true },
   });
   const ledger = rows.map((r) => ({ type: r.type, status: r.status, amount: Number(r.amount), createTime: r.createTime }));
-  result.walletBalance = tiktokWalletBalance(ledger);
+  const opening = channel.walletOpeningBalance == null ? null : Number(channel.walletOpeningBalance);
+  result.walletBalance = tiktokWalletBalanceWith(ledger, opening);
   await prisma.channel.update({
     where: { id: channel.id },
     data: { walletBalance: result.walletBalance, walletBalanceSyncedAt: new Date() },
   });
   if (result.created > 0 || result.updated > 0) {
     console.log(
-      `[TikTok] Ví "${channel.shopName}": ${summarizeTiktokWalletRows(ledger)} → Σ thô ${Math.round(tiktokWalletRawSum(ledger)).toLocaleString("vi-VN")}, số dư ${Math.round(result.walletBalance).toLocaleString("vi-VN")}${result.more ? " (còn trang, lượt sau đọc tiếp)" : ""}`
+      `[TikTok] Ví "${channel.shopName}": ${summarizeTiktokWalletRows(ledger)} → Σ thô ${Math.round(tiktokWalletRawSum(ledger)).toLocaleString("vi-VN")}, số dư ${Math.round(result.walletBalance).toLocaleString("vi-VN")}${opening != null ? ` (đã đối chiếu, số đầu sổ ${Math.round(opening).toLocaleString("vi-VN")})` : ""}${result.more ? " (còn trang, lượt sau đọc tiếp)" : ""}`
     );
   }
   return result;
+}
+
+/**
+ * ĐỐI CHIẾU SỐ DƯ: chủ shop nhập "Số tiền rút khả dụng" đang hiện trên Seller
+ * Center TikTok. Số đầu sổ = số sàn − Σ thô sổ cái hiện có; lưu vào Channel và
+ * đặt luôn số dư = số sàn. Không gọi sàn (dòng mới sẽ được nhịp giờ cộng tiếp).
+ */
+export async function reconcileTiktokWallet(
+  channel: Pick<Channel, "id" | "shopName">,
+  platformBalance: number
+): Promise<{ walletBalance: number; openingBalance: number; rawSum: number }> {
+  const rows = await prisma.tiktokWalletTxn.findMany({
+    where: { channelId: channel.id },
+    select: { type: true, status: true, amount: true, createTime: true },
+  });
+  const ledger = rows.map((r) => ({ type: r.type, status: r.status, amount: Number(r.amount), createTime: r.createTime }));
+  const rawSum = tiktokWalletRawSum(ledger);
+  const openingBalance = Math.round((platformBalance - rawSum) * 100) / 100;
+  const now = new Date();
+  await prisma.channel.update({
+    where: { id: channel.id },
+    data: {
+      walletOpeningBalance: openingBalance,
+      walletReconciledAt: now,
+      walletBalance: platformBalance,
+      walletBalanceSyncedAt: now,
+    },
+  });
+  console.log(
+    `[TikTok] Đối chiếu ví "${channel.shopName}": sàn ${Math.round(platformBalance).toLocaleString("vi-VN")}, Σ thô ${Math.round(rawSum).toLocaleString("vi-VN")} → số đầu sổ ${Math.round(openingBalance).toLocaleString("vi-VN")}`
+  );
+  return { walletBalance: platformBalance, openingBalance, rawSum };
 }

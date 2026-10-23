@@ -991,8 +991,11 @@ export interface CashFlowRow {
    *  TikTok: đợt chi tiền đang xử lý). null = sàn không có ví / chưa sync
    *  được — hiển thị "—", không phải 0. */
   walletBalance: number | null;
-  /** Mốc đồng bộ số dư ví (ISO) — chỉ Shopee có; null với các sàn còn lại. */
+  /** Mốc đồng bộ số dư ví (ISO) — Shopee + TikTok; null với các sàn còn lại. */
   walletSyncedAt: string | null;
+  /** TikTok: lần chủ shop đối chiếu số dư với Seller Center (ISO); null = chưa
+   *  đối chiếu (số dư là ước đoán "ví cạn tại đáy", có thể lệch phần lẻ). */
+  walletReconciledAt?: string | null;
   /** Tiền đã về ngân hàng trong 30 ngày gần nhất. */
   withdrawn30d: number;
   /** Tổng doanh thu DỰ KIẾN = chưa thanh toán + ví sàn (tiền còn nằm ngoài
@@ -1015,6 +1018,14 @@ export function refreshCashFlow() {
   return apiFetch<{ synced: number; errors: string[] }>(
     "/api/finance/cash-flow/refresh",
     { method: "POST" }
+  );
+}
+
+/** Đối chiếu số dư ví TikTok: nhập "Số tiền rút khả dụng" trên Seller Center một lần. */
+export function reconcileTiktokWallet(data: { channelId: string; platformBalance: number }) {
+  return apiFetch<{ walletBalance: number; openingBalance: number; rawSum: number }>(
+    "/api/finance/cash-flow/reconcile",
+    { method: "POST", body: JSON.stringify(data) }
   );
 }
 

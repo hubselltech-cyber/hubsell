@@ -14,6 +14,7 @@ import {
   mapTiktokWithdrawalStatus,
   summarizeTiktokWalletRows,
   tiktokWalletBalance,
+  tiktokWalletBalanceWith,
   tiktokWalletDelta,
   tiktokWalletRawSum,
   tiktokWalletReadFrom,
@@ -100,6 +101,30 @@ describe("tiktokWalletBalance", () => {
     expect(tiktokWalletBalance(rows)).toBe(0);
     // Thiếu createTime → coi như cùng lúc, vẫn vào trước ra.
     expect(tiktokWalletBalance([row("WITHDRAW", 400_000), row("SETTLE", 400_000)])).toBe(0);
+  });
+});
+
+describe("tiktokWalletBalanceWith (đã đối chiếu)", () => {
+  it("có số đầu sổ → Σ thô + số đầu sổ, không đoán đáy nữa (and.not.or: sàn 445.766, app đoán 432.290)", () => {
+    const rows = [
+      { ...row("WITHDRAW", 9_000_000, "SUCCESS"), createTime: 1 },
+      { ...row("SETTLE", 432_290), createTime: 2 },
+    ];
+    expect(tiktokWalletBalance(rows)).toBe(432_290);
+    const opening = 445_766 - tiktokWalletRawSum(rows); // = 9.013.476
+    expect(opening).toBe(9_013_476);
+    expect(tiktokWalletBalanceWith(rows, opening)).toBe(445_766);
+    // Rút sạch 445.766 sau đó → đúng 0 (cách đoán đáy sẽ ra 13.476 sai).
+    const after = [...rows, { ...row("WITHDRAW", 445_766, "SUCCESS"), createTime: 3 }];
+    expect(tiktokWalletBalanceWith(after, opening)).toBe(0);
+    expect(tiktokWalletBalance(after)).toBe(0);
+    const later = [...after, { ...row("SETTLE", 100_000), createTime: 4 }];
+    expect(tiktokWalletBalanceWith(later, opening)).toBe(100_000);
+  });
+
+  it("chưa đối chiếu (null) → dùng cách đoán đáy", () => {
+    const rows = [{ ...row("WITHDRAW", 500, "SUCCESS"), createTime: 1 }, { ...row("SETTLE", 300), createTime: 2 }];
+    expect(tiktokWalletBalanceWith(rows, null)).toBe(300);
   });
 });
 

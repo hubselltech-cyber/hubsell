@@ -63,7 +63,7 @@ import {
 } from "../config/tax-config";
 import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
-import { syncTiktokPendingIncome, syncTiktokWallet } from "../integrations/tiktok/wallet";
+import { reconcileTiktokWallet, syncTiktokPendingIncome, syncTiktokWallet } from "../integrations/tiktok/wallet";
 import { loadAdSpendRows, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
 import {
   cashFlowTotalsFromLedger,
@@ -711,6 +711,7 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
             status: true,
             walletBalance: true,
             walletBalanceSyncedAt: true,
+            walletReconciledAt: true,
             pendingIncome: true,
             pendingIncomeSyncedAt: true,
           },
@@ -795,12 +796,50 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
           c.channelName === ChannelName.SHOPEE || c.channelName === ChannelName.TIKTOK
             ? (c.walletBalanceSyncedAt?.toISOString() ?? null)
             : null,
+        // TikTok: lần chủ shop đối chiếu số dư với Seller Center (null = chưa, số dư đang là ước đoán "ví cạn tại đáy").
+        walletReconciledAt:
+          c.channelName === ChannelName.TIKTOK ? (c.walletReconciledAt?.toISOString() ?? null) : null,
         withdrawn30d: withdrawn30dByChannel.get(c.id) ?? 0,
         totalExpected: (pendingIncome ?? 0) + (walletBalance ?? 0),
       };
     });
 
     res.json({ rows, truncated: openCash.truncated, ledgerPending: openCash.ledgerPending });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/finance/cash-flow/reconcile — ĐỐI CHIẾU SỐ DƯ VÍ TIKTOK (23/10/2026).
+// Sổ giao dịch TikTok không có số dư; app cộng dồn và đoán "ví cạn tại đáy" nên
+// lệch phần lẻ khi shop rút chẵn. Chủ shop nhập "Số tiền rút khả dụng" trên
+// Seller Center một lần → lưu số đầu sổ, từ đó số dư = Σ thô + số đầu sổ.
+router.post("/cash-flow/reconcile", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelId, platformBalance } = req.body ?? {};
+    if (typeof channelId !== "string" || !channelId) {
+      res.status(400).json({ error: "Thiếu gian hàng (channelId)" });
+      return;
+    }
+    const channel = await prisma.channel.findFirst({
+      where: { id: channelId, userId: req.ownerId! },
+      select: { id: true, shopName: true, channelName: true },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+    if (channel.channelName !== ChannelName.TIKTOK) {
+      res.status(400).json({ error: "Chỉ gian TikTok mới cần đối chiếu số dư (Shopee đọc thẳng từ sàn)" });
+      return;
+    }
+    const bal = typeof platformBalance === "string" ? Number(platformBalance) : platformBalance;
+    if (typeof bal !== "number" || !Number.isFinite(bal) || bal < 0) {
+      res.status(400).json({ error: "Số dư trên sàn phải là số không âm" });
+      return;
+    }
+    const r = await reconcileTiktokWallet(channel, bal);
+    res.json(r);
   } catch (err) {
     next(err);
   }

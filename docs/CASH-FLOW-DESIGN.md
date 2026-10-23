@@ -107,6 +107,18 @@ sync ví; cron giờ `order-auto-sync.ts` gọi sau sync rút ví (Shopee) / pay
   WITHDRAW/PAYMENT − là đúng và shop VN rút cạn ví. → **Số dư = Σ − min(0,
   prefix thấp nhất theo thời gian)**: coi ví cạn tại đáy cửa sổ, không âm
   (cùng thời điểm thì tiền vào tính trước). Log in cả "Σ thô" lẫn "số dư".
+- **Đối chiếu số dư (anh chốt 23/10 ~22:20):** cách "ví cạn tại đáy" vẫn lệch
+  phần lẻ khi shop rút CHẴN (and.not.or: app 432.290 / Seller Center 445.766,
+  lẻ 13.476 còn lại sau lệnh rút 9.000.000). Sổ giao dịch không có số dư nên
+  không có cách nào tự biết phần lẻ → nút **Đối chiếu** cạnh số dư gian TikTok
+  (dialog: chép "Số tiền rút khả dụng" ở Seller Center → Tài chính → Số tiền
+  rút). `POST /cash-flow/reconcile {channelId, platformBalance}` →
+  `reconcileTiktokWallet`: `Channel.walletOpeningBalance` = số sàn − Σ thô,
+  `walletReconciledAt`; từ đó số dư = Σ thô + số đầu sổ
+  (`tiktokWalletBalanceWith`), khớp từng đồng kể cả khi rút sạch sau này (cách
+  đoán đáy sẽ sai 13.476 ở ca đó — có test). Chưa đối chiếu: nút màu hổ phách
+  + tooltip "có thể lệch phần lẻ"; đã đối chiếu: "Đối chiếu lại" xám + tooltip
+  ngày. Migration 20261023223000.
 - ⚠️ CHƯA RÕ: gian Siêu Thị 8686 có TRANSFER 229 dòng +839tr (SETTLE chỉ 356tr)
   → số dư 832tr chắc chắn sai. TRANSFER không thể là trợ cấp với số đó; nghi
   là chuyển ví ↔ tài khoản quảng cáo / giữa tiểu khoản. Log
