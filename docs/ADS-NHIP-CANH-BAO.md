@@ -326,6 +326,111 @@ Mỗi bước một commit, không gộp.
 > report/getDiscoveryReportCampaign and adgroup/searchAdgroupList, whether the
 > quota is per app or per seller, and how an ISV can request a higher quota.
 
+
+### 11.2 Ticket Shopee LẦN 2 — 23/10/2026 (anh Trung chốt "soạn ticket xem họ nói gì trước rồi tính"; nháp, CHƯA GỬI)
+
+**Gửi ở đâu:** Shopee Open Platform Console → Raise Ticket, L1 Feature APIs / L2 Ads / API Category V2-Ads, chọn app **Hubsell Ads partner_id 2044679** (ticket 12/09 gửi dưới app 2040029 — lần này đúng app dính lỗi). Anh kéo CAPTCHA; trả lời về hộp thư đăng ký Console. Nhắc ticket cũ 2098790879624904785 (Shopee 15/09: "provide complete and specific API call logs"; 10/10: "shop level once per minute should generally be allowed"). Dán phần A vào thân ticket, phần B (bảng request_id) vào ô mô tả hoặc đính kèm .txt. Câu trả lời ghi vào memory `hubsell-api-quota-san` + mục này.
+
+**A. Thân ticket (tiếng Anh):**
+
+> **Subject:** Persistent HTTP 429 `error_rate_limit` on `v2.ads.get_all_cpc_ads_daily_performance` at ~1 call per shop per 30 min — 168 request_ids in 24 h attached (follow-up to ticket 2098790879624904785)
+>
+> Hello Shopee Open Platform team,
+>
+> We are an approved ISV. Ads Service app **Hubsell Ads, partner_id 2044679** (live), ERP System app partner_id 2040029. About 50 Vietnamese shops have authorized the Ads app.
+>
+> In ticket 2098790879624904785 (Sept/Oct 2026) you asked us to provide complete and specific API call logs when we hit rate limits, and told us that at the shop level one call per minute should generally be allowed. We are now well below that and still receive HTTP 429, so here are the logs.
+>
+> **How we call the API**
+> - `GET /api/v2/ads/get_all_cpc_ads_daily_performance?partner_id=2044679&shop_id=…&access_token=…&timestamp=…&sign=…&start_date=DD-MM-YYYY&end_date=DD-MM-YYYY` (GET, as documented; one window per call: either today only, or a 7-day window once every 6 hours per shop).
+> - Per shop: **at most 1 call to this endpoint every 5 minutes**, in practice 1 call per 30 minutes plus 1 call per 6 hours. Other Ads endpoints per shop per 30 minutes: `get_product_level_campaign_id_list` (1–3 pages), `get_product_level_campaign_setting_info` (1–3 pages of 100), `get_product_campaign_daily_performance` (1–3 pages), `get_total_balance` (1).
+> - App-wide: about **2 calls per minute** in total across all shops for `get_all_cpc_ads_daily_performance`, never more than 1 request per second for this endpoint, at most 2 shops processed concurrently.
+> - On any HTTP 429 we stop calling that shop+endpoint for at least 5 minutes with exponential back-off (60 s × 2ⁿ), and we never retry immediately.
+>
+> **What we observe (22 Oct 2026 03:07 UTC → 23 Oct 2026 02:45 UTC, ~24 h)**
+> - **168 responses HTTP 429** with body `{"error":"error_rate_limit","message":"Too many requests. You have reached the rate limit. Please try again later.","request_id":"…"}`: 151 on `get_all_cpc_ads_daily_performance`, 12 on `get_product_level_campaign_setting_info`, 3 on `get_total_balance`, 1 on `get_product_recommended_roi_target`, 1 on `get_create_product_ad_budget_suggestion`.
+> - Spread over **41 different shops**; the worst shop got 8 × 429 out of ~48 calls in the day. 21 times, three or more *different* shops received 429 within the same 60 seconds.
+> - The error code is the generic `error_rate_limit`, not `ads.rate_limit.exceed_partner_api` / `exceed_shop_api` / `exceed_api`, so we cannot tell which tier is being exceeded.
+> - The rate is strongly **time-of-day dependent** with an unchanged calling pattern: 65 of the 168 errors occurred between **17:00 and 19:00 UTC** (00:00–02:00 Vietnam time), 22 more around 21:00 UTC; during the day we see only 1–8 per hour.
+> - In the previous 24 h, before we added the per-shop 5-minute spacing, we saw 106 errors in 7.7 h in the same night window — the same rate. So slowing down per shop did not change anything, which suggests the limit is not per shop.
+>
+> **Questions**
+> 1. From the request_ids below, which rate-limit tier was hit (partner / shop / global), and what is the effective limit and time window for `get_all_cpc_ads_daily_performance` at the partner level?
+> 2. Is there a scheduled window around 17:00–19:00 UTC where the Ads reporting service throttles more aggressively (e.g. daily aggregation at day change)? If so, what time window should ISVs avoid?
+> 3. What calling pattern do you recommend for an ISV that will serve thousands of shops (calls per minute per partner for this endpoint)? Is `get_product_campaign_daily_performance` or `get_all_cpc_ads_hourly_performance` subject to a higher limit, so we could switch?
+> 4. Can the partner-level limit for app 2044679 be raised, and what is the process?
+>
+> We can provide the full list of 168 request_ids with timestamps, or any other log detail you need.
+>
+> Thank you,
+> Hubsell (CÔNG TY TNHH CÔNG NGHỆ HUBSELL), partner_id 2044679
+
+**B. Bảng request_id (lần 429 GẦN NHẤT của từng cặp shop × endpoint từ 03:07Z 22/10, 57 dòng; cột cuối = tổng số lần 429 của cặp ấy trong 24 h; mốc giờ UTC; nguồn `api_rate_keys.lastError`, log Render có đủ 168 dòng nếu Shopee đòi):**
+
+| Time (UTC) | shop_id | endpoint | request_id | 429 count 24 h |
+|---|---|---|---|---|
+| 2026-10-22 04:12:48Z | 1384641433 | get_product_level_campaign_setting_info | e3e3e7f35e66139cfc1c39c1f8331d00 | 1 |
+| 2026-10-22 04:27:49Z | 1065581055 | get_product_level_campaign_setting_info | e3e3e7f35e664941d8a6843e85c77f00 | 1 |
+| 2026-10-22 04:52:48Z | 1250096431 | get_product_level_campaign_setting_info | e3e3e7f35e66a2a9dfa31025b0e10d00 | 1 |
+| 2026-10-22 09:22:10Z | 73552250 | get_product_level_campaign_setting_info | e3e3e7f35e6a65fb73c7e67cc41af100 | 1 |
+| 2026-10-22 10:22:10Z | 205206314 | get_product_level_campaign_setting_info | e3e3e7f35e6b3c9063ee9229ddc04300 | 1 |
+| 2026-10-22 12:22:10Z | 18571602 | get_product_level_campaign_setting_info | e3e3e7f35e6ce9b7e849170e51ad4c00 | 1 |
+| 2026-10-22 12:31:10Z | 1870873805 | get_total_balance | e3e3e7f35e6d09e556b70e7c3f9db400 | 1 |
+| 2026-10-22 14:06:07Z | 1585463900 | get_all_cpc_ads_daily_performance | e3e3e7f35e6e5d738588ab63b3027c00 | 1 |
+| 2026-10-22 15:46:40Z | 1384641433 | get_create_product_ad_budget_suggestion | e3e3e7f35e6fc511d6e8c0e763409700 | 1 |
+| 2026-10-22 16:24:14Z | 1575931172 | get_all_cpc_ads_daily_performance | e3e3e7f35e704b64e086b4d1aa6b9600 | 2 |
+| 2026-10-22 17:01:05Z | 1930291391 | get_all_cpc_ads_daily_performance | e3e3e7f35e70cf34119d183383cf8200 | 1 |
+| 2026-10-22 17:55:05Z | 876556081 | get_all_cpc_ads_daily_performance | e3e3e7f35e7190500193bd6897e20d00 | 3 |
+| 2026-10-22 17:55:45Z | 1397861848 | get_all_cpc_ads_daily_performance | e3e3e7f35e7192b2816224a4476ee800 | 4 |
+| 2026-10-22 18:00:45Z | 1926744479 | get_all_cpc_ads_daily_performance | e3e3e7f35e71a493ce290effd74bd000 | 3 |
+| 2026-10-22 18:12:43Z | 1652546671 | get_all_cpc_ads_daily_performance | e3e3e7f35e71cf614ed770b195b77b00 | 5 |
+| 2026-10-22 18:16:03Z | 1930588674 | get_all_cpc_ads_daily_performance | e3e3e7f35e71db483365290b035e4000 | 3 |
+| 2026-10-22 18:22:03Z | 1931400145 | get_all_cpc_ads_daily_performance | e3e3e7f35e71f0c43dd40baabaf3df00 | 2 |
+| 2026-10-22 18:31:04Z | 1575931172 | get_total_balance | e3e3e7f35e7210fbcc9a938a4e9e6a00 | 1 |
+| 2026-10-22 18:34:23Z | 1883811931 | get_all_cpc_ads_daily_performance | e3e3e7f35e721cdf1e7a47e027823700 | 8 |
+| 2026-10-22 19:04:03Z | 1235396119 | get_all_cpc_ads_daily_performance | e3e3e7f35e7286f56e3e4fe11478a900 | 1 |
+| 2026-10-22 19:06:03Z | 1913686550 | get_all_cpc_ads_daily_performance | e3e3e7f35e728e1d34fb27f741576200 | 3 |
+| 2026-10-22 20:12:05Z | 311994642 | get_product_level_campaign_setting_info | e3e3e7f35e737a46d9cf2d7250a38f00 | 1 |
+| 2026-10-22 20:30:03Z | 45215540 | get_all_cpc_ads_daily_performance | e3e3e7f35e73ba85681af6b62bc9e200 | 3 |
+| 2026-10-22 20:31:04Z | 73552250 | get_total_balance | e3e3e7f35e73be27b289df83c87f5200 | 1 |
+| 2026-10-22 20:42:03Z | 1651509470 | get_all_cpc_ads_daily_performance | e3e3e7f35e73e5718b481897924bc000 | 6 |
+| 2026-10-22 21:06:16Z | 36477688 | get_all_cpc_ads_daily_performance | e3e3e7f35e743c0acaf4b75753b07000 | 2 |
+| 2026-10-22 21:07:43Z | 1563500543 | get_all_cpc_ads_daily_performance | e3e3e7f35e74413b03d67d6bf9de6500 | 5 |
+| 2026-10-22 21:08:23Z | 1814992595 | get_all_cpc_ads_daily_performance | e3e3e7f35e74439eb0a2ccf5c2a4b200 | 4 |
+| 2026-10-22 21:10:23Z | 1065581055 | get_all_cpc_ads_daily_performance | e3e3e7f35e744ac0b7177491357d7e00 | 4 |
+| 2026-10-22 21:10:43Z | 251437239 | get_all_cpc_ads_daily_performance | e3e3e7f35e744bf664914124677f5000 | 1 |
+| 2026-10-22 21:12:03Z | 71717550 | get_all_cpc_ads_daily_performance | e3e3e7f35e7450b6e6142b9ac4ab8800 | 3 |
+| 2026-10-22 21:14:23Z | 1870873805 | get_all_cpc_ads_daily_performance | e3e3e7f35e7459129106684ffedc7000 | 2 |
+| 2026-10-22 21:18:03Z | 1359898174 | get_all_cpc_ads_daily_performance | e3e3e7f35e74662c33951aca17f32500 | 7 |
+| 2026-10-22 21:18:03Z | 1604677622 | get_all_cpc_ads_daily_performance | e3e3e7f35e746630abc8b32d8a08f000 | 5 |
+| 2026-10-22 21:24:03Z | 1527159701 | get_all_cpc_ads_daily_performance | e3e3e7f35e747ba61bd4f699f58ff000 | 5 |
+| 2026-10-22 21:48:03Z | 1932588402 | get_all_cpc_ads_daily_performance | e3e3e7f35e74d17a0f9831b9ddce7e00 | 6 |
+| 2026-10-22 21:48:03Z | 331545740 | get_all_cpc_ads_daily_performance | e3e3e7f35e74d17ad41d3930a3dfb100 | 7 |
+| 2026-10-22 21:51:45Z | 453810830 | get_all_cpc_ads_daily_performance | e3e3e7f35e74deb5cb2061c364e80e00 | 7 |
+| 2026-10-22 21:51:46Z | 311994642 | get_all_cpc_ads_daily_performance | e3e3e7f35e74debdec7c5e4d3ce5b900 | 4 |
+| 2026-10-22 22:00:03Z | 1231083004 | get_product_level_campaign_setting_info | e3e3e7f35e74fc637f68cc974944e800 | 1 |
+| 2026-10-22 22:01:23Z | 1384641433 | get_all_cpc_ads_daily_performance | e3e3e7f35e750129e4ec6f790ca63e00 | 2 |
+| 2026-10-22 22:05:29Z | 1359898174 | get_product_recommended_roi_target | e3e3e7f35e750fd1734f157d04f0e700 | 1 |
+| 2026-10-22 22:22:43Z | 338432799 | get_product_level_campaign_setting_info | e3e3e7f35e754d72b9f196ac6e32c900 | 1 |
+| 2026-10-22 22:23:03Z | 1932588402 | get_product_level_campaign_setting_info | e3e3e7f35e754ea3595d090a41ae7000 | 1 |
+| 2026-10-22 22:25:03Z | 1613456688 | get_product_level_campaign_setting_info | e3e3e7f35e7555cc036b24a9bd628500 | 1 |
+| 2026-10-22 22:28:23Z | 876556081 | get_product_level_campaign_setting_info | e3e3e7f35e7561b7287c7ef173bcb100 | 1 |
+| 2026-10-22 22:31:43Z | 1250096431 | get_all_cpc_ads_daily_performance | e3e3e7f35e756da0cbf3c3f3ca601600 | 6 |
+| 2026-10-22 23:03:44Z | 1613456688 | get_all_cpc_ads_daily_performance | e3e3e7f35e75e0253758d959bce00200 | 5 |
+| 2026-10-22 23:04:04Z | 239068349 | get_all_cpc_ads_daily_performance | e3e3e7f35e75e14fe3903f5288aa3b00 | 2 |
+| 2026-10-22 23:31:03Z | 1528599948 | get_all_cpc_ads_daily_performance | e3e3e7f35e7641d45945a649c352c600 | 4 |
+| 2026-10-23 00:05:43Z | 55694502 | get_all_cpc_ads_daily_performance | e3e3e7f35e76bdcd12618a0ab221cf00 | 1 |
+| 2026-10-23 00:12:04Z | 73552250 | get_all_cpc_ads_daily_performance | e3e3e7f35e76d486600b995e120d5200 | 3 |
+| 2026-10-23 00:24:04Z | 338432799 | get_all_cpc_ads_daily_performance | e3e3e7f35e76ff6777a0da057f3e1700 | 5 |
+| 2026-10-23 00:24:04Z | 1921831240 | get_all_cpc_ads_daily_performance | e3e3e7f35e76ff689dd34ea546c16600 | 3 |
+| 2026-10-23 00:55:04Z | 18571602 | get_all_cpc_ads_daily_performance | e3e3e7f35e776e4b14fde98fff53c700 | 2 |
+| 2026-10-23 01:04:04Z | 1231083004 | get_all_cpc_ads_daily_performance | e3e3e7f35e778e785f19deee57279600 | 5 |
+| 2026-10-23 01:04:24Z | 321467988 | get_all_cpc_ads_daily_performance | e3e3e7f35e778faca16f7ced23d1a700 | 6 |
+
+Khóa app × endpoint `get_all_cpc_ads_daily_performance` (không có shop): request_id `e3e3e7f35e74531d45a62d10a446d600` lúc 2026-10-22 21:12:43Z — 117 lần tích lũy từ 21/10.
+
+**Ghi chú cho mình (không gửi):** phương thức GET đúng docs (`callShopGet`), loại khả năng Shopee hay viện "sai HTTP method"; mọi dòng 429 đều có request_id (client đọc thân 429 từ 28/09). Trong lúc chờ trả lời: KHÔNG chỉnh số, KHÔNG mở C2/D/C3; C1 thẻ HQ (chỉ đọc) vẫn làm được khi anh gọi.
+
 ---
 
 ## 12. Sửa 01/10/2026 — nhóm quảng cáo: ba việc treo + ba việc phát sinh + dọn dẹp
