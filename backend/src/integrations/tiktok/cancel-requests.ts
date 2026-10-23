@@ -184,7 +184,9 @@ export async function syncTiktokCancelRequests(
     await prisma.order.update({ where: { id: order.id }, select: { id: true }, data: plan.data });
     if (plan.flagged) {
       result.flagged++;
-      if (!opts.historical) await notifyCancelRequest(channel, order.orderCode, plan.reason, plan.dueAt);
+      if (!opts.historical) {
+        await notifyCancelRequest(channel, order.orderCode, plan.reason, plan.dueAt, { prevStatus: order.shippingStatus });
+      }
     }
     if (plan.unflagged) result.unflagged++;
   }

@@ -124,6 +124,13 @@ Anh thử bản (22) nửa ngày, nêu 3 lỗi — gốc + cách sửa (backend,
 | Tắt "Đơn hàng mới" vẫn nhận tin | Prod: `mutedCategories = ["order_new"]` ghi 12:04 UTC, đúng là đã tắt. Hai đường lọt: (1) đợt cộng dồn 15 phút đi qua `amendNotification` không hỏi mục tắt; (2) cache ưu tiên 60 s ở worker. | `flushOwner` hỏi `isNotificationTypeMuted` trước khi làm gì; `amendNotification` cũng hỏi; cache còn 20 s. Test "khách tắt → cả đợt lẫn cộng dồn im". |
 | Khách hủy đơn đã chuẩn bị mà không có thông báo | Prod CHƯA TỪNG có đơn nào `cancelRequestedAt` ≠ null dù hôm nay 13 đơn hủy (Shopee ANO/DarkMan, TikTok and.not.or). TikTok: `planTiktokCancelFlag` chỉ bật cờ khi đơn còn Chờ xử lý (theo docs "sang AWAITING_COLLECTION khách hết quyền") → đơn đã chuẩn bị bị bỏ. Shopee: pha IN_CANCEL có thể trôi qua giữa hai lượt đọc / sàn hủy thẳng. | (a) TikTok bật cờ khi sàn còn trả yêu cầu chờ, trừ đơn đã hủy / đã giao; service không hạ cờ chỉ vì đơn rời Chờ xử lý. (b) **Lưới đỡ 3 sàn**: đơn đang Đã xử lý / Đang giao chuyển sang Đã hủy → `notifyOrderCancelledAfterPrepare` (type `order_cancelled`, mục "Khách xin hủy, đơn bị hủy"), kèm ai hủy (Shopee `cancel_by`, TikTok `cancellation_initiator`) + lý do; shop tự hủy (seller) thì không báo. |
 
+**Ca thật 261023CTJDFRH4 (DarkMan, Shopee) soi 23/10 tối:** đóng gói 16:02, in vận đơn SPX 16:03 (PROCESSED), khách hủy 17:39:53 — Shopee đẩy webhook IN_CANCEL và CANCELLED cách nhau 0,4 giây (sàn chấp nhận ngay, shop không có bước trả lời); Hubsell đọc chi tiết thì đã CANCELLED → bản cũ im. Lưới đỡ `order_cancelled` deploy 17:40 (1 phút sau) bắt đúng ca này.
+
+**Chuẩn chữ anh chốt 23/10 tối (áp cả 3 sàn):**
+- Còn chờ shop trả lời: tiêu đề **"Khách yêu cầu hủy đơn đã chuẩn bị hàng {mã}"** (đơn chưa chuẩn bị: "Khách yêu cầu hủy đơn {mã}"); thân `{Sàn} · {Shop}. Vui lòng xử lý: Chấp nhận hoặc Từ chối trong Đơn hàng trước {hạn}; không trả lời thì sàn tự hủy. Lý do khách: …`.
+- Sàn chốt ngay (không có bước hỏi): tiêu đề **"Khách đã hủy đơn đã chuẩn bị hàng {mã}"**; thân `{Sàn} · {Shop}. Sàn đã chấp nhận hủy ngay khi đơn đã chuẩn bị hàng, không có bước hỏi shop. Lý do: … Vui lòng xử lý: rút kiện khỏi lô giao; hàng về kho thì nhập lại.`
+- Muốn shop được quyền từ chối đơn đã đóng gói: xem cài đặt tự chấp nhận hủy trong Seller Center của gian (Shopee giữ IN_CANCEL thì app báo kèm hạn + web có nút Chấp nhận/Từ chối).
+
 Chưa kiểm được trên prod vì cần một đơn hủy thật sau deploy — anh để ý đơn hủy kế tiếp; nếu vẫn im, đọc log Render `[cancel` / `notify`.
 
 ## 7. Việc còn lại / rủi ro

@@ -379,6 +379,7 @@ export async function syncLazadaReturns(
         returnSolution: true,
         platformRefundAmount: true,
         platformReturnStatus: true,
+        shippingStatus: true,
         cancelRequestedAt: true,
         cancelRequestRef: true,
         items: { select: { id: true, channelSku: true, returnedQuantity: true } },
@@ -396,7 +397,7 @@ export async function syncLazadaReturns(
       await prisma.order.update({ where: { id: order.id }, select: { id: true }, data: cancelPlan.data });
       if (cancelPlan.flagged) {
         result.cancelFlagged++;
-        await notifyCancelRequest(channel, orderCode, cancelPlan.reason, null);
+        await notifyCancelRequest(channel, orderCode, cancelPlan.reason, null, { prevStatus: order.shippingStatus });
       }
       if (cancelPlan.unflagged) result.cancelUnflagged++;
     }

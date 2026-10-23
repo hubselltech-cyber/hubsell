@@ -820,7 +820,8 @@ export async function upsertShopeeOrderTx(
           channel,
           orderCode,
           (data.cancelRequestReason as string | null) ?? null,
-          (data.cancelRequestDueAt as Date | null) ?? null
+          (data.cancelRequestDueAt as Date | null) ?? null,
+          { prevStatus: existing.shippingStatus }
         );
       }
     }

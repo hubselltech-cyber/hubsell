@@ -13,6 +13,9 @@ import type { Channel } from "@prisma/client";
 import { ShippingStatus } from "@prisma/client";
 import { notify } from "../services/notifications";
 
+/** Đơn đã chuẩn bị hàng / đang giao — khách hủy lúc này là ca shop phải xử lý kiện. */
+const PREPARED_STATUSES = new Set<ShippingStatus>([ShippingStatus.PROCESSED, ShippingStatus.SHIPPING]);
+
 /** Bản ghi xóa cờ — sàn đã chốt (hủy hẳn → CANCELLED, hoặc tiếp tục giao). */
 export const CLEAR_CANCEL_REQUEST = {
   cancelRequestedAt: null,
@@ -30,21 +33,35 @@ export const CANCEL_REQUEST_LINK = "/orders?cancelRequested=1";
  * đơn đã ghi, không làm hỏng luồng đồng bộ.
  */
 export async function notifyCancelRequest(
-  channel: Pick<Channel, "userId" | "shopName">,
+  channel: Pick<Channel, "userId" | "shopName" | "channelName">,
   orderCode: string,
   reason: string | null,
-  dueAt: Date | null
+  dueAt: Date | null,
+  opts: { prevStatus?: ShippingStatus | null } = {}
 ): Promise<void> {
-  const parts = [`Gian ${channel.shopName}.`];
+  // Chuẩn chữ anh Trung chốt 23/10 tối: "Khách yêu cầu hủy một đơn hàng đã chuẩn
+  // bị hàng + mã đơn + tên sàn + tên shop, vui lòng xử lý".
+  const prepared = opts.prevStatus != null && PREPARED_STATUSES.has(opts.prevStatus);
+  const parts = [`${channelLabel(channel.channelName)} · ${channel.shopName}.`];
+  parts.push(
+    `Vui lòng xử lý: Chấp nhận hoặc Từ chối trong Đơn hàng${
+      dueAt ? ` trước ${dueAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}` : ""
+    }; không trả lời thì sàn tự hủy.`
+  );
   if (reason) parts.push(`Lý do khách: ${reason}.`);
-  if (dueAt) parts.push(`Hạn trả lời: ${dueAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}.`);
-  parts.push("Vào Đơn hàng → Chấp nhận hoặc Từ chối; không trả lời thì sàn tự hủy.");
   await notify(channel.userId, {
     type: "cancel_request",
-    title: `Khách xin hủy đơn ${orderCode}`,
+    title: prepared
+      ? `Khách yêu cầu hủy đơn đã chuẩn bị hàng ${orderCode}`
+      : `Khách yêu cầu hủy đơn ${orderCode}`,
     body: parts.join(" "),
     link: CANCEL_REQUEST_LINK,
   });
+}
+
+const CHANNEL_LABELS: Record<string, string> = { SHOPEE: "Shopee", LAZADA: "Lazada", TIKTOK: "TikTok", OFFLINE: "Offline" };
+function channelLabel(name: string): string {
+  return CHANNEL_LABELS[name] ?? name;
 }
 
 /** Số giờ còn lại tới hạn (âm = quá hạn), để log/thông báo. */
@@ -61,7 +78,6 @@ export function hoursUntil(dueAt: Date | null, now: Date = new Date()): number |
 // chuyển sang Đã hủy → chuông ngay, kèm ai hủy + lý do nếu sàn trả. Shop tự hủy
 // (seller) thì không báo — chính mình bấm.
 
-const PREPARED_STATUSES = new Set<ShippingStatus>([ShippingStatus.PROCESSED, ShippingStatus.SHIPPING]);
 const STATUS_LABEL: Partial<Record<ShippingStatus, string>> = {
   [ShippingStatus.PROCESSED]: "đã chuẩn bị hàng",
   [ShippingStatus.SHIPPING]: "đang giao",
@@ -82,19 +98,21 @@ export function shouldNotifyOrderCancelled(info: OrderCancelledInfo): boolean {
 }
 
 export async function notifyOrderCancelledAfterPrepare(
-  channel: Pick<Channel, "userId" | "shopName">,
+  channel: Pick<Channel, "userId" | "shopName" | "channelName">,
   orderCode: string,
   info: OrderCancelledInfo
 ): Promise<void> {
   if (!shouldNotifyOrderCancelled(info)) return;
   const by = (info.by ?? "").toLowerCase();
   const who = by === "system" ? "Sàn" : "Khách";
-  const parts = [`Gian ${channel.shopName}. ${who} hủy khi đơn ${STATUS_LABEL[info.prevStatus] ?? "đã xử lý"}.`];
+  const parts = [
+    `${channelLabel(channel.channelName)} · ${channel.shopName}. Sàn đã chấp nhận hủy ngay khi đơn ${STATUS_LABEL[info.prevStatus] ?? "đã xử lý"}, không có bước hỏi shop.`,
+  ];
   if (info.reason) parts.push(`Lý do: ${info.reason}.`);
-  parts.push("Rút kiện khỏi lô giao; hàng về kho thì nhập lại.");
+  parts.push("Vui lòng xử lý: rút kiện khỏi lô giao; hàng về kho thì nhập lại.");
   await notify(channel.userId, {
     type: "order_cancelled",
-    title: `Đơn ${orderCode} bị hủy sau khi đã chuẩn bị hàng`,
+    title: `${who} đã hủy đơn đã chuẩn bị hàng ${orderCode}`,
     body: parts.join(" "),
     link: `/orders?search=${encodeURIComponent(orderCode)}`,
   });
