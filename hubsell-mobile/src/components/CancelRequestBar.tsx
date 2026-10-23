@@ -76,7 +76,7 @@ export function CancelRequestBar({
               Khách xin hủy · {deadlineText(order.cancelRequestDueAt)}
             </Text>
             {order.cancelRequestReason ? (
-              {/* Lý do = tên chọn sẵn của sàn ("Muốn thay đổi địa chỉ giao hàng") — một dòng là đủ (anh chốt) */}
+              // Lý do = tên chọn sẵn của sàn ("Muốn thay đổi địa chỉ giao hàng") — một dòng là đủ (anh chốt).
               <Text className="text-[11px] text-red-600/80 dark:text-red-300/80" numberOfLines={1}>
                 {order.cancelRequestReason}
               </Text>
