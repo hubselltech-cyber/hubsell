@@ -381,6 +381,33 @@ TikTok `orders/search` trả trọn đơn nên không tốn lệnh chi tiết; S
 
 **Lát 2 trở đi (chưa làm):** chi tiết đơn + ghi qua `order-sync-write` theo cờ gian; luồng hoàn / tài chính; thẻ HQ p50/p99; Pha D gỡ đường cũ.
 
+### 5c.1 Kiểm 22/10 (3 ngày) + 23/10 (4 ngày) — ĐẠT tiêu chí, chờ anh chốt bật lát 2
+
+Đo qua Chrome anh (Supabase SQL chỉ đọc + Render Logs worker 7 ngày). **Nhắc 22/10 08:00 không chạy được** (Chrome chưa kết nối) — đo tay
+lúc ~09:50 22/10 rồi anh bảo "kiểm tra lại" sáng 23/10 (02:10 UTC). Số 23/10:
+
+| Tiêu chí 5c | Siêu Thị 8686 (TikTok) | ANO Official Store (Shopee) | Kết luận |
+|---|---|---|---|
+| `chi_cu` rỗng (sự kiện sàn từ mốc ghi danh 19/10 05:42 UTC, chừa 30' sát con trỏ) | 3.054 / 3.054 | 257 / 257 | ✅ cả hai NULL (22/10: 2.560/2.560 và 213/213) |
+| `chi_moi` (bóng thấy mà Order không có) | 0 (bóng 3.692 mã) | 0 (bóng 260 mã) | ✅ |
+| Trễ con trỏ lúc đo (`tre_phut`) | 4' · caught_up · 1 trang · cửa sổ 60' | 5' · caught_up · 1 trang · cửa sổ 60' | ✅ |
+| Trễ phát hiện `firstSeenAt − platformUpdatedAt` (chỉ dòng `seenCount = 1`, từ 19/10 07:00; n = 1.376) | min 2' · p50 7' · p90 11,2' · **p99 11,9'** · max 12,0' | Shopee list không trả update_time → không đo được (chỉ có log "trễ 2'") | ✅ p99 < 15' (nhịp 10' + chừa 2') |
+| `floorOverflows` / co cửa sổ / lệch tổng (H8) | log 7 ngày: 5 dòng `[read-lanes]` đều "co 0, đáy tràn 0, đọc lại 1–2, trang thử lại 0"; **0 dòng `[cursor-reader]`** | không có dòng nào (gian nhỏ, không có gì khác thường) | ✅ |
+| 429 theo khóa | `TIKTOK:<app>|shop:7494607438764411097`: hits 0, factor 1, failures 0 | `SHOPEE:2044679|shop:239068349`: hits 3, factor 1 — cả 3 do **endpoint Ads** (get_product_level_campaign_setting_info 21/10 22:23 UTC), không phải khóa đơn | ✅ không lan; không có khóa endpoint đơn nào bị 429 |
+
+**Ghi chú đọc số:**
+- Câu so khớp 5c với `interval 'N days'` thô cho ra 122 + 23 (22/10) / 140 + 11 (23/10) "chi_cu" — **toàn sự kiện trước 19/10 05:42 UTC** (trước lúc bóng
+  bắt đầu, con trỏ khởi đầu = ghi danh − 30'). Không phải sót. Lần sau thay `w."createdAt" >= now() − interval` bằng `>= timestamp '<cursorAt ban đầu>'`.
+- Khoảng trống không ghi > 20' ở 8686: 20/10 16:08→16:48 UTC (23:08 VN) và 22/10 00:14→00:44 UTC (07:14 VN) — giờ vắng đơn; max trễ phát hiện vẫn 12'
+  nên không phải kẹt. ANO trống tới 4 h là bình thường (ít đơn). Chưa đối chiếu với mốc restart worker (nhiều lần boot 19/10 do deploy; OOM 21/10).
+- Trễ phát hiện tính trên `seenCount = 1`: dòng thấy lại nhiều lần có `platformUpdatedAt` mới hơn `firstSeenAt` (âm) nên loại — 8686 có 2.291 đơn thấy lại.
+- Khóa GCRA theo gian dùng chung giữa Ads và đọc đơn (ANO: 3 lần 429 Ads đã phạt khóa gian) → khi Ads 429, đọc đơn gian đó chậm theo (đúng N5). Để ý khi bật lát 2.
+- Dung lượng cho lát 2: 8686 ≈ 920 mã/ngày qua update_time, 62 % đơn thấy lại; ANO 65 mã/ngày.
+
+**Đề xuất bật lát 2 (chờ anh chốt):** gian nhỏ = **ANO Official Store** (Shopee, `cmshe0487007oiz3pg41t2vb0`) — ít đơn, đã có bóng 4 ngày để so,
+và đi qua nhánh chi tiết `get_order_detail` theo lô 50 (TikTok không cần chi tiết nên không kiểm được nhánh này). SQL bật ở 5d; theo dõi log
+`[read-lanes] … orders: … ghi: tạo/sửa/không đổi/đụng` 7 ngày + so Order hai đường. Nhắc đo lần 3: 26/10 08:30 (`kiem-bong-doc-san-5c-lan-2`).
+
 ## 5d. Pha C lát 2 — "ghi Order qua đường mới" (19/10/2026, anh: "code lát 2 … cờ riêng, chưa bật, trong lúc bóng chạy")
 
 Luồng **`orders`** (cờ gian = dòng `sync_cursors` stream `orders` — tách khỏi `orders-shadow`; **CHƯA bật gian nào**). Khác lát 1 ở
@@ -424,7 +451,7 @@ cột `shippingStatus/returnStatus/totalAmount` theo mã — soạn khi bật), 
 ### 5e. Việc SẼ làm — chờ bóng đạt tiêu chí (anh Trung 19/10: "chưa cần làm ngay thì không làm", nhắc 22/10)
 
 Anh hỏi "Pha D có làm luôn không" → **chưa**: bóng mới chạy ~1 giờ, lát 2 chưa bật gian nào, đường mới còn thiếu 3 việc phụ.
-Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày); chưa đủ số thì 26/10 kiểm lại.
+Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc trượt (Chrome tắt), đo tay 22/10 + 23/10: **ĐẠT** (5c.1); nhắc 26/10 08:30 đo lần 3.
 
 | Khi nào | Việc | Ghi chú |
 |---|---|---|
