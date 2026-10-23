@@ -344,7 +344,9 @@ export function FinancePage() {
                 <BreakdownTile
                   title="Lợi nhuận ròng tạm tính"
                   total={b.profit.total}
-                  share={{ percent: share(b.profit.total, b.revenue.total), label: "biên ròng" }}
+                  // Khách 22/10 thấy "biên ròng 25,7%" ở thẻ và "biên 16,2%" dưới thác nước
+                  // tưởng lệch: thẻ chia cho DOANH THU, thác chia cho GIÁ TRỊ SP → ghi rõ mẫu số.
+                  share={{ percent: share(b.profit.total, b.revenue.total), label: "trên doanh thu" }}
                   delta={deltaOf(b.profit.total, pb?.profit.total)}
                   icon="scale-outline"
                   tint="emerald"
@@ -416,7 +418,7 @@ export function FinancePage() {
                   <Text className="text-sm text-slate-900 dark:text-slate-100">Lợi nhuận ròng</Text>
                   {netMargin !== null ? (
                     <Text className="text-xs text-slate-400 dark:text-slate-500" style={TABULAR}>
-                      biên {String(netMargin).replace(".", ",")}%
+                      biên {String(netMargin).replace(".", ",")}% trên giá trị SP
                     </Text>
                   ) : null}
                 </View>
