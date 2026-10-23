@@ -49,6 +49,7 @@
 ## Sàn & hồ sơ đối tác
 - [SHOPEE-ISV-HO-SO.md](SHOPEE-ISV-HO-SO.md) — hồ sơ ISV Shopee
 - [TIKTOK-TICKET-GIUC-XET-DUYET-APP.md](TIKTOK-TICKET-GIUC-XET-DUYET-APP.md) — ticket xét duyệt app TikTok
+- [TIKTOK-APP-STORE-NIEM-YET.md](TIKTOK-APP-STORE-NIEM-YET.md) — 23/10/2026 niêm yết lên App & Service Store TikTok Shop theo định vị Trợ lý quảng cáo: luật TikTok đã kiểm, quyết định nâng cấp app cũ (kệ ERP) vs app mới kệ Marketing, nội dung listing tiếng Việt, bộ ảnh `store/tiktok/`, luồng cài từ App Store (callback không state)
 
 ## Hóa đơn điện tử & thuế
 - [MISA-TICKET-SANDBOX.md](MISA-TICKET-SANDBOX.md) · [MISA-TICKET-TAI-NGUYEN-HOA-DON.md](MISA-TICKET-TAI-NGUYEN-HOA-DON.md) · [MISA-TICKET-MA-THAM-CHIEU-HOA-DON-DA-XOA.md](MISA-TICKET-MA-THAM-CHIEU-HOA-DON-DA-XOA.md) — hỏi đáp MISA

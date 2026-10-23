@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>Hubsell — ảnh listing App & Service Store TikTok Shop (6 khung 1500×900)</title>
+<!--
+  Ảnh listing TikTok Shop App & Service Store — tỷ lệ 5:3 (TikTok: ảnh chính 5:3 ≤10MB; ảnh bổ sung
+  "300×180" = cùng tỷ lệ 5:3, form Partner Center là nguồn sự thật về cỡ tối đa).
+  Luật TikTok (docs/TIKTOK-APP-STORE-NIEM-YET.md mục 4): KHÔNG dùng ảnh chụp màn hình thô, phải ghép
+  giao diện + câu giải thích; không số điện thoại / email / QR; không logo TikTok trong logo dịch vụ
+  (tên sàn trong ảnh được phép vì thị trường VN); dữ liệu phải là dữ liệu giả ("Hubsell Demo Store").
+  Mở với ?frame=1..6 để hiện đúng một khung. Xuất PNG: node tools/do-hoa/tiktok-store-images.mjs
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1500px; height: 900px; overflow: hidden; background: #0a1424; }
+  body { font-family: "Be Vietnam Pro", system-ui, sans-serif; color: #f4f8f7; }
+  .frame { position: absolute; inset: 0; width: 1500px; height: 900px; overflow: hidden; display: none;
+    background: linear-gradient(135deg, #0a1424 0%, #0c1d2a 55%, #0b2a2a 100%); }
+  .frame.on { display: block; }
+  .frame::before { content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,.055) 1.3px, transparent 1.3px); background-size: 24px 24px;
+    mask-image: linear-gradient(90deg, #000 0%, transparent 55%); -webkit-mask-image: linear-gradient(90deg, #000 0%, transparent 55%); }
+  .glow { position: absolute; border-radius: 50%; filter: blur(90px); pointer-events: none; }
+  .glow.a { width: 700px; height: 700px; right: -120px; top: -260px; background: rgba(16,185,129,.34); }
+  .glow.b { width: 480px; height: 480px; right: 420px; bottom: -330px; background: rgba(13,148,136,.28); }
+
+  .copy { position: absolute; left: 84px; top: 96px; width: 560px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand img { width: 56px; height: 56px; border-radius: 15px; background: #fff; box-shadow: 0 10px 24px -10px rgba(0,0,0,.6); }
+  .brand b { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+  .brand small { display: block; font-size: 15px; font-weight: 500; color: #9fb7b1; margin-top: 2px; }
+  .kicker { margin-top: 56px; font-size: 18px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #34d399; }
+  h1 { margin-top: 14px; font-size: 54px; line-height: 1.12; font-weight: 800; letter-spacing: -.028em; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, #34d399, #2dd4bf); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { margin-top: 22px; font-size: 23px; line-height: 1.5; color: #b7c9c4; }
+  .chips { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 9px; height: 40px; padding: 0 16px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.07); font-size: 17px; font-weight: 600; }
+  .chip i { width: 9px; height: 9px; border-radius: 50%; background: #34d399; }
+  .chip.sp i { background: #f97316; } .chip.lz i { background: #8b5cf6; } .chip.tt i { background: #f8fafc; }
+
+  /* khung giao diện bên phải: thẻ trắng như trong app (nền sáng, chữ slate) */
+  .ui { position: absolute; left: 700px; top: 110px; width: 720px; border-radius: 22px; background: #ffffff; color: #0f172a;
+    box-shadow: 0 50px 90px -30px rgba(0,0,0,.75), 0 0 0 1px rgba(148,163,184,.25); overflow: hidden; }
+  .ui .bar { display: flex; align-items: center; gap: 10px; padding: 16px 22px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+  .ui .bar .dot { width: 11px; height: 11px; border-radius: 50%; background: #cbd5e1; }
+  .ui .bar .t { margin-left: 8px; font-size: 16px; font-weight: 600; color: #475569; }
+  .ui .bar .tag { margin-left: auto; font-size: 13px; font-weight: 600; color: #047857; background: #d1fae5; border-radius: 999px; padding: 4px 10px; }
+  .ui .body { padding: 20px 22px 22px; }
+  .ui h3 { font-size: 20px; font-weight: 700; color: #0f172a; }
+  .ui .note { font-size: 14px; color: #64748b; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 16px; }
+  th { text-align: left; font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; padding: 0 8px 10px; border-bottom: 1px solid #e2e8f0; }
+  td { padding: 13px 8px; border-bottom: 1px solid #f1f5f9; font-variant-numeric: tabular-nums; vertical-align: middle; }
+  td.num, th.num { text-align: right; }
+  .pos { color: #059669; font-weight: 700; } .neg { color: #e11d48; font-weight: 700; } .warn { color: #d97706; font-weight: 700; }
+  .pill { display: inline-block; font-size: 13px; font-weight: 700; border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+  .pill.red { background: #ffe4e6; color: #be123c; } .pill.amber { background: #fef3c7; color: #b45309; }
+  .pill.green { background: #d1fae5; color: #047857; } .pill.slate { background: #e2e8f0; color: #334155; }
+  .btn { display: inline-block; font-size: 14px; font-weight: 700; border-radius: 10px; padding: 8px 14px; background: #0f172a; color: #fff; }
+  .btn.ghost { background: #fff; color: #0f172a; border: 1px solid #cbd5e1; }
+  .callout { position: absolute; border-radius: 14px; padding: 14px 18px; font-size: 17px; font-weight: 600; line-height: 1.35;
+    background: #0f172a; color: #f8fafc; box-shadow: 0 20px 40px -18px rgba(0,0,0,.8); border: 1px solid rgba(52,211,153,.5); max-width: 330px; }
+  .callout b { color: #34d399; }
+  .shot { display: block; width: 100%; }
+  .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 16px; }
+  .kpi { border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
+  .kpi .l { font-size: 13px; color: #64748b; font-weight: 600; } .kpi .v { font-size: 28px; font-weight: 800; margin-top: 4px; letter-spacing: -.02em; }
+  .kpi .s { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+  .alerts { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .alert { display: flex; gap: 14px; align-items: flex-start; border: 1px solid #e2e8f0; border-left-width: 5px; border-radius: 14px; padding: 14px 16px; }
+  .alert.red { border-left-color: #e11d48; } .alert.amber { border-left-color: #f59e0b; } .alert.green { border-left-color: #10b981; }
+  .alert .h { font-size: 17px; font-weight: 700; } .alert .d { font-size: 14px; color: #64748b; margin-top: 3px; line-height: 1.4; }
+  .alert .when { margin-left: auto; font-size: 13px; color: #94a3b8; white-space: nowrap; }
+  .phone { position: absolute; border-radius: 40px; background: #0f172a; padding: 9px; border: 1px solid rgba(148,163,184,.35);
+    box-shadow: 0 50px 90px -30px rgba(0,0,0,.8); overflow: hidden; }
+  .phone .scr { border-radius: 32px; overflow: hidden; background: #0b1b1f; }
+  .phone img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+
+<!-- 01 — ẢNH CHÍNH: ba sàn, một trợ lý -->
+<section class="frame" data-frame="1">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="copy">
+    <div class="brand"><img src="../../../hubsell-landing/public/logo-hubsell.png" alt="" /><div><b>Hubsell</b><small>Trợ lý quảng cáo đa sàn</small></div></div>
+    <div class="kicker">Shopee · Lazada · TikTok Shop</div>
+    <h1>Ba sàn,<br />một <em>trợ lý quảng cáo</em>.</h1>
+    <p class="sub">Đọc từng đơn, từng khoản phí sàn, giá vốn và hàng hoàn để biết chiến dịch nào thật sự có lãi. Biết lỗ trước khi ví cháy.</p>
+    <div class="chips"><span class="chip sp"><i></i>Shopee Ads</span><span class="chip lz"><i></i>Lazada Sponsored</span><span class="chip tt"><i></i>TikTok GMV Max</span></div>
+  </div>
+  <div class="ui" style="top: 150px;">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">Trợ lý quảng cáo · TikTok Shop</span><span class="tag">Hubsell Demo Store</span></div>
+    <div class="body" style="padding: 0;">
+      <img class="shot" src="../../../hubsell-landing/public/screens/tour-ads.webp" alt="" style="margin-top: -8px;" />
+    </div>
+  </div>
+  <div class="callout" style="left: 1040px; top: 640px; max-width: 380px;">Lãi/lỗ ước tính = <b>GMV từ quảng cáo × biên lãi − chi phí</b>, tính từ số thật của shop</div>
+</section>
+
+<!-- 02 — lãi thật, không phải ROAS -->
+<section class="frame" data-frame="2">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="copy">
+    <div class="brand"><img src="../../../hubsell-landing/public/logo-hubsell.png" alt="" /><div><b>Hubsell</b><small>Trợ lý quảng cáo đa sàn</small></div></div>
+    <div class="kicker">Lãi thật, không phải ROAS</div>
+    <h1>ROAS 4 mà cuối tháng<br /><em>không thấy tiền đâu?</em></h1>
+    <p class="sub">Sàn tính ROAS trên doanh thu. Hubsell trừ tiếp phí sàn, giá vốn, đơn hoàn, đơn hủy của từng đơn để ra ROAS hòa vốn của chính sản phẩm và lãi/lỗ thật của chiến dịch.</p>
+    <div class="chips"><span class="chip"><i></i>ROAS hòa vốn từng sản phẩm</span><span class="chip"><i></i>Lãi/lỗ ước tính</span></div>
+  </div>
+  <div class="ui">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">Chiến dịch GMV Max · 7 ngày</span><span class="tag">Hubsell Demo Store</span></div>
+    <div class="body">
+      <h3>Chiến dịch nào đang thật sự có lãi?</h3>
+      <p class="note">ROAS hòa vốn tính từ đơn đã đối soát của gian. Số liệu minh họa.</p>
+      <table>
+        <tr><th>Chiến dịch</th><th class="num">Chi phí</th><th class="num">ROAS sàn</th><th class="num">ROAS hòa vốn</th><th class="num">Lãi/lỗ ước tính</th></tr>
+        <tr><td>Áo sơ mi lụa — GMV Max</td><td class="num">3.420.000</td><td class="num">4,1x</td><td class="num">5,2x</td><td class="num neg">−1.180.000 đ</td></tr>
+        <tr><td>Váy linen xếp ly</td><td class="num">2.150.000</td><td class="num">7,8x</td><td class="num">4,6x</td><td class="num pos">+2.610.000 đ</td></tr>
+        <tr><td>Quần jean ống rộng</td><td class="num">1.980.000</td><td class="num">5,0x</td><td class="num">4,9x</td><td class="num warn">+96.000 đ</td></tr>
+        <tr><td>Túi tote canvas</td><td class="num">860.000</td><td class="num">9,4x</td><td class="num">3,1x</td><td class="num pos">+1.930.000 đ</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="callout" style="left: 1040px; top: 560px; max-width: 380px;">ROAS sàn <b>4,1x</b> nhìn ổn, nhưng hòa vốn của sản phẩm là <b>5,2x</b> → chiến dịch này đang lỗ</div>
+</section>
+
+<!-- 03 — loại video đốt tiền -->
+<section class="frame" data-frame="3">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="copy">
+    <div class="brand"><img src="../../../hubsell-landing/public/logo-hubsell.png" alt="" /><div><b>Hubsell</b><small>Trợ lý quảng cáo đa sàn</small></div></div>
+    <div class="kicker">TikTok GMV Max</div>
+    <h1>Loại video <em>đốt tiền</em><br />không ra đơn.</h1>
+    <p class="sub">Hubsell soi từng video trong chiến dịch GMV Max: video tiêu tiền mà không ra đơn được đánh dấu. Một chạm loại khỏi chiến dịch, khôi phục khi cần, mọi lệnh đều có lịch sử. Bật chế độ tự loại nếu muốn trợ lý làm thay.</p>
+    <div class="chips"><span class="chip"><i></i>Loại / khôi phục video</span><span class="chip"><i></i>Tự loại theo luật</span><span class="chip"><i></i>Sổ lệnh</span></div>
+  </div>
+  <div class="ui">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">Video trong chiến dịch · Áo sơ mi lụa</span><span class="tag">Hubsell Demo Store</span></div>
+    <div class="body">
+      <h3>Video đang tiêu tiền của chiến dịch</h3>
+      <p class="note">Xếp theo chi phí 7 ngày. Số liệu minh họa.</p>
+      <table>
+        <tr><th>Video</th><th class="num">Chi phí</th><th class="num">Đơn</th><th class="num">ROI</th><th>Trợ lý</th><th></th></tr>
+        <tr><td>Thử áo sơ mi lụa 3 màu</td><td class="num">1.260.000</td><td class="num">0</td><td class="num neg">0,0x</td><td><span class="pill red">Đốt tiền</span></td><td><span class="btn">Loại khỏi chiến dịch</span></td></tr>
+        <tr><td>Unbox áo lụa #2</td><td class="num">840.000</td><td class="num">2</td><td class="num warn">1,9x</td><td><span class="pill amber">Dưới hòa vốn</span></td><td><span class="btn ghost">Theo dõi</span></td></tr>
+        <tr><td>Phối đồ đi làm</td><td class="num">720.000</td><td class="num">11</td><td class="num pos">8,4x</td><td><span class="pill green">Đang lãi</span></td><td></td></tr>
+        <tr><td>Review chất vải</td><td class="num">600.000</td><td class="num">0</td><td class="num neg">0,0x</td><td><span class="pill slate">Đã loại 16:20</span></td><td><span class="btn ghost">Khôi phục</span></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="callout" style="left: 1060px; top: 570px; max-width: 360px;"><b>1,26 triệu</b> tiêu trong 7 ngày, <b>0 đơn</b> → trợ lý đề xuất loại, bạn bấm là xong</div>
+</section>
+
+<!-- 04 — ROI hòa vốn từng sản phẩm + gợi ý nên chạy -->
+<section class="frame" data-frame="4">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="copy">
+    <div class="brand"><img src="../../../hubsell-landing/public/logo-hubsell.png" alt="" /><div><b>Hubsell</b><small>Trợ lý quảng cáo đa sàn</small></div></div>
+    <div class="kicker">Gợi ý trước khi bật chiến dịch</div>
+    <h1>Biết <em>nên chạy sản phẩm nào</em><br />và đặt mục tiêu bao nhiêu.</h1>
+    <p class="sub">Mỗi sản phẩm có ROI hòa vốn riêng, tính từ giá bán, phí sàn, giá vốn và tỷ lệ hoàn của chính gian. Hubsell gợi ý sản phẩm nên chạy, ROI mục tiêu và ngân sách ngày nên đặt.</p>
+    <div class="chips"><span class="chip"><i></i>ROI hòa vốn</span><span class="chip"><i></i>ROI mục tiêu đề xuất</span><span class="chip"><i></i>Ngân sách khởi điểm</span></div>
+  </div>
+  <div class="ui">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">Gợi ý · sản phẩm chưa chạy quảng cáo</span><span class="tag">Hubsell Demo Store</span></div>
+    <div class="body">
+      <h3>Sản phẩm nên đưa vào GMV Max</h3>
+      <p class="note">Hòa vốn tính từ đơn đã đối soát 60 ngày. Số liệu minh họa.</p>
+      <table>
+        <tr><th>Sản phẩm</th><th class="num">Biên lãi</th><th class="num">ROI hòa vốn</th><th class="num">ROI nên đặt</th><th class="num">Ngân sách/ngày</th><th>Nhận định</th></tr>
+        <tr><td>Chân váy midi dáng A</td><td class="num">41%</td><td class="num">2,4x</td><td class="num">2,7x</td><td class="num">300.000</td><td><span class="pill green">Nên chạy</span></td></tr>
+        <tr><td>Áo blazer dáng rộng</td><td class="num">33%</td><td class="num">3,0x</td><td class="num">3,3x</td><td class="num">200.000</td><td><span class="pill green">Nên chạy</span></td></tr>
+        <tr><td>Set đồ ngủ lụa</td><td class="num">24%</td><td class="num">4,2x</td><td class="num">4,6x</td><td class="num">150.000</td><td><span class="pill amber">Chạy thử</span></td></tr>
+        <tr><td>Khăn choàng len</td><td class="num">12%</td><td class="num">8,3x</td><td class="num">—</td><td class="num">—</td><td><span class="pill red">Chưa nên</span></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="callout" style="left: 1040px; top: 570px; max-width: 380px;">Biên lãi <b>12%</b> → phải đạt ROI <b>8,3x</b> mới hòa vốn: chưa nên chạy, tăng giá hoặc giảm giá vốn trước</div>
+</section>
+
+<!-- 05 — canh 24/7 -->
+<section class="frame" data-frame="5">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="copy">
+    <div class="brand"><img src="../../../hubsell-landing/public/logo-hubsell.png" alt="" /><div><b>Hubsell</b><small>Trợ lý quảng cáo đa sàn</small></div></div>
+    <div class="kicker">Canh cả ngày lẫn đêm</div>
+    <h1>Biết lỗ<br /><em>trước khi ví cháy</em>.</h1>
+    <p class="sub">Trợ lý đọc chiến dịch của cả ba sàn theo nhịp: ví sắp cạn, mục tiêu ROAS đặt dưới hòa vốn, chiến dịch cắn tiền không ra đơn đều được báo ngay. Trên Shopee và Lazada, bật tự canh để trợ lý hạ mục tiêu từng nấc nhỏ hoặc dừng khi bạn cho phép.</p>
+    <div class="chips"><span class="chip"><i></i>Báo trên web và điện thoại</span><span class="chip"><i></i>Bạn duyệt hoặc bật tự canh</span></div>
+  </div>
+  <div class="ui">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">Cần xử lý hôm nay</span><span class="tag">Hubsell Demo Store</span></div>
+    <div class="body">
+      <h3>Trợ lý vừa phát hiện</h3>
+      <p class="note">Gộp cả ba sàn, mới nhất xếp trên. Số liệu minh họa.</p>
+      <div class="alerts">
+        <div class="alert red"><div><div class="h">Quảng cáo đang lỗ — Áo sơ mi lụa (TikTok)</div><div class="d">Tiêu 1,26 triệu / 7 ngày, ROI 0,8x dưới hòa vốn 5,2x. Đề xuất: loại 2 video không ra đơn.</div></div><div class="when">06:10</div></div>
+        <div class="alert amber"><div><div class="h">Mục tiêu ROAS dưới hòa vốn — Váy linen (Shopee)</div><div class="d">Đang đặt 3,0x, hòa vốn của sản phẩm là 4,6x: đạt mục tiêu vẫn lỗ. Đề xuất nâng lên 5,1x.</div></div><div class="when">05:40</div></div>
+        <div class="alert amber"><div><div class="h">Ví quảng cáo Lazada còn khoảng 2 ngày</div><div class="d">Số dư 1,8 triệu, trung bình tiêu 900 nghìn/ngày. Nạp trước cuối tuần để chiến dịch không ngắt.</div></div><div class="when">05:00</div></div>
+        <div class="alert green"><div><div class="h">Đã hạ mục tiêu 10% và khóa 48 giờ — Túi tote (Shopee)</div><div class="d">Luật tự canh bạn đã bật. Lệnh ghi vào sổ, đảo lại được bất cứ lúc nào.</div></div><div class="when">02:00</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 06 — nền để tính lãi thật -->
+<section class="frame" data-frame="6">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="copy" style="width: 540px;">
+    <div class="brand"><img src="../../../hubsell-landing/public/logo-hubsell.png" alt="" /><div><b>Hubsell</b><small>Trợ lý quảng cáo đa sàn</small></div></div>
+    <div class="kicker">Vì sao trợ lý nói đúng</div>
+    <h1>Vì Hubsell <em>đọc từng đơn</em>.</h1>
+    <p class="sub">Đơn hàng ba sàn, 25 loại phí sàn theo bản kê thật, giá vốn theo gian, hàng hoàn, đơn hủy, dòng tiền ví sàn. Đây là mẫu số để tính lãi thật, và cũng là bảng điều hành hằng ngày của shop, trên web và trên điện thoại.</p>
+    <div class="chips"><span class="chip"><i></i>Đơn hàng</span><span class="chip"><i></i>Tài chính</span><span class="chip"><i></i>Giá vốn</span><span class="chip"><i></i>Hàng hoàn</span><span class="chip"><i></i>Tồn kho</span></div>
+  </div>
+  <div class="ui" style="left: 650px; top: 120px; width: 560px;">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">Tài chính · tháng này</span><span class="tag">Hubsell Demo Store</span></div>
+    <div class="body" style="padding: 0;"><img class="shot" src="../../../hubsell-landing/public/screens/tour-pnl.webp" alt="" /></div>
+  </div>
+  <div class="phone" style="left: 1150px; top: 150px; width: 300px;"><div class="scr"><img src="../screenshots/iphone-6.3/7-quang-cao.png" alt="" style="margin-top: -8px;" /></div></div>
+</section>
+
+<script>
+  const n = Number(new URLSearchParams(location.search).get("frame") || 1);
+  document.querySelector(`.frame[data-frame="${n}"]`)?.classList.add("on");
+</script>
+</body>
+</html>

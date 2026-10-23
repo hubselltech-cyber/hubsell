@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 23/10/2026 chiều — NIÊM YẾT HUBSELL LÊN APP & SERVICE STORE TIKTOK SHOP (định vị Trợ lý quảng cáo): hồ sơ + ảnh + code xong, CHỜ ANH CHỐT kệ
+
+- **Anh:** "nộp lên store của TikTok app Hubsell; định vị trợ lý quảng cáo, không phải phần mềm quản lý bán hàng đa kênh tiếp theo; sắp xếp làm luôn."
+- **Đã kiểm (docs TikTok + Partner Center qua Chrome anh, chỉ đọc):** app Hubsell = Dịch vụ tùy chỉnh, hạng mục ERP **khóa vĩnh viễn** (đổi kệ = tạo app mới, token 15 gian phải ủy quyền lại); nút "Nâng cấp lên Dịch vụ công khai" có sẵn, nâng cấp giữ thị trường VN/người bán trong nước, cần listing review tiếng Việt 3–5 ngày + upgrade/public review; cây hạng mục VN: **Marketing chỉ có "Phân tích và Báo cáo"**, không có mục Quảng cáo; tài khoản đối tác mới được duyệt 1 hạng mục ERP. Trường form + luật ảnh (không chụp thô, không SĐT/QR, dữ liệu giả) + giá (Paid plan từ 99k, trial 14 ngày) ghi ở [docs/TIKTOK-APP-STORE-NIEM-YET.md](docs/TIKTOK-APP-STORE-NIEM-YET.md) mục 1.
+- **Quyết định chờ anh (docs mục 2):** A nâng cấp app cũ (kệ ERP, 1–3 tuần, khách không ảnh hưởng — **em khuyên**) / B app mới Marketing › Phân tích và Báo cáo / C Thúc đẩy bán hàng › Tối ưu hóa (5–8 tuần, 15 gian ủy quyền lại, thêm code đa app key).
+- **Đã làm, dùng được cho cả 3 phương án:** nội dung listing tiếng Việt đếm độ dài (tên 33/100, mô tả ngắn 181/200, 3 lợi ích, mô tả chi tiết 2.072 ký tự, liên hệ, giá) — docs mục 3; bộ ảnh `docs/store/tiktok/` (logo 256 + 6 khung 1500×900 5:3, HTML `listing-images.html`, script `tools/do-hoa/tiktok-store-images.mjs` + `tiktok-store-finish.py`); **code luồng cài từ App Store** (TikTok chỉ gửi `code`, không state, khách có thể chưa có tài khoản): `channels/tiktok/callback/page.tsx` giữ mã → `/login?from=tiktok-store` (dải xanh) → đăng nhập/đăng ký/Google xong quay lại `?resume=1` → màn xác nhận "Kết nối vào tài khoản này" / "Dùng tài khoản khác"; `login/page.tsx` `afterLoginPath`. tsc sạch; preview frontend kiểm đường chưa đăng nhập + màn xác nhận OK; bước đổi token thật chỉ kiểm được sau khi LIVE.
+- **Chưa:** commit; điền form Partner Center (chờ anh chốt A/B/C); cân nhắc đổi Redirect URL sang `app.hubsell.vn` cùng env Render (anh quyết). Memory `hubsell-tiktok-app-store-niem-yet`.
+
 ## Phiên 23/10/2026 sáng — ĐỌC SỐ 24 h SAU A2/A3 CẦU DAO ADS (lịch nhắc tự động 09:30, Chrome anh; chỉ đọc): KHÔNG ĐẠT — 168 lần 429/24 h, trần KHÔNG theo gian
 
 - **Đo (docs ADS-NHIP-CANH-BAO 13.9.10):** `[gateway] 429` **168/24 h** (151 get_all_cpc, 41 gian khác nhau, gian cao nhất 8 lần) vs kỳ vọng ≤ 5; **21 lần bão ≥ 3 gian/60 s** → khóa app×ep get_all_cpc factor **0,10 sàn**, không hồi; đêm nay 11,8 lần/h (01:30–09:10 VN) ≈ đêm 22/10 trước A2 13,8/h → **pace 1 lệnh/5'/gian không đổi được gì = trần không theo gian**; 39 % dồn 00:00–02:00 VN, đỉnh phụ 04h (sóng lịch sử 6 h), ban ngày 1–8/h.

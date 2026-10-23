@@ -503,9 +503,24 @@ const MODE_COPY: Record<Mode, { title: string; description: string }> = {
   },
 };
 
+/** Khóa sessionStorage mà trang /channels/tiktok/callback giữ mã ủy quyền khi người
+ *  bán cài Hubsell từ App Store của Seller Center lúc chưa đăng nhập. Có mã → đăng
+ *  nhập / tạo tài khoản xong quay lại đó hoàn tất kết nối thay vì về Tổng quan. */
+const TIKTOK_STORE_CODE_KEY = "tiktok_store_code";
+
+function afterLoginPath(user: AuthUser): string {
+  if (sessionStorage.getItem(TIKTOK_STORE_CODE_KEY)) {
+    return "/channels/tiktok/callback?resume=1";
+  }
+  return homePathFor(user);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
+  // Đến từ luồng cài app trên App Store TikTok Shop (?from=tiktok-store) → nói rõ
+  // vì sao phải đăng nhập, và mở sẵn form tạo tài khoản khi khách chưa có.
+  const [fromTiktokStore, setFromTiktokStore] = useState(false);
   // Mã giới thiệu Affiliate bắt từ ?ref= — giữ trong sessionStorage để sống
   // sót qua chuyến khứ hồi Google OAuth (backend redirect về /login sạch query).
   const [refCode, setRefCode] = useState<string | null>(null);
@@ -523,11 +538,17 @@ export default function LoginPage() {
     // Thư "Mật khẩu vừa được đổi" dẫn về /login?mode=forgot — mở thẳng form
     // Quên mật khẩu cho người không tự đổi.
     if (params.get("mode") === "forgot") setMode("forgot");
+    if (
+      params.get("from") === "tiktok-store" &&
+      sessionStorage.getItem(TIKTOK_STORE_CODE_KEY)
+    ) {
+      setFromTiktokStore(true);
+    }
   }, []);
 
   function goToDashboard(user: AuthUser) {
     // Nhân viên kho không vào được Tổng quan → đưa thẳng tới Đơn hàng
-    router.replace(homePathFor(user));
+    router.replace(afterLoginPath(user));
   }
 
   // Nhận kết quả đăng nhập Google: backend redirect về ?social=ok&token=...
@@ -548,7 +569,7 @@ export default function LoginPage() {
         .then(({ user }) => {
           setStoredUser(user);
           toast.success(`Chào mừng, ${user.fullName}!`);
-          router.replace(homePathFor(user));
+          router.replace(afterLoginPath(user));
         })
         .catch(() => toast.error("Không lấy được thông tin tài khoản, hãy thử lại."));
     }
@@ -579,6 +600,16 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
+
+        {fromTiktokStore && mode !== "forgot" && (
+          <div
+            role="status"
+            className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+          >
+            Gian TikTok Shop của bạn đã ủy quyền cho Hubsell. Đăng nhập, hoặc tạo tài
+            khoản nếu chưa có, để hoàn tất kết nối.
+          </div>
+        )}
 
         <Card>
           <CardHeader>
