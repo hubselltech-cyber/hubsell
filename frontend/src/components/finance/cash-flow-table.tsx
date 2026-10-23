@@ -47,7 +47,8 @@ function todayKey(): string {
  * BẢNG PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG (thiết kế lại 14/08 — chốt chủ shop)
  *
  * Mỗi cột trả lời "tiền đang ở đâu", KHÔNG mô phỏng:
- *   Chưa thanh toán (SỐ SÀN TỰ CÔNG BỐ — tiền sàn sẽ trả cho mọi đơn đã bàn
+ *   Tiền đang giao (nhãn từ 23/10/2026 — khách hiểu "đang giao" chứ không
+ *   hiểu "chưa thanh toán"; mã vẫn gọi pendingIncome. SỐ SÀN TỰ CÔNG BỐ — tiền sàn sẽ trả cho mọi đơn đã bàn
  *   giao vận chuyển mà sàn chưa chi, gồm cả đang giao lẫn đã giao chờ chi;
  *   Lazada không có API thì tính từ đơn, Offline "—")
  *   → Số dư Ví sàn (SỐ THẬT từ API — sàn không có ví thì "—")
@@ -209,12 +210,12 @@ export function CashFlowTable() {
   // Tooltip viết NGÔN NGỮ ĐỜI THƯỜNG cho chủ shop — không thuật ngữ kỹ thuật.
   const COLS: { label: string; tip: string }[] = [
     {
-      label: "Chưa thanh toán",
-      tip: "Tiền sàn sẽ trả cho mình của các đơn đã đưa cho bên vận chuyển mà sàn chưa chi (gồm cả đơn đang giao lẫn đơn đã giao đang chờ sàn cộng tiền), đã trừ phí sàn. Đọc thẳng từ sàn: Shopee là ô “Chưa thanh toán” ở mục Doanh thu, TikTok là giao dịch chưa quyết toán. Lazada không có số này nên tính từ đơn trong app.",
+      label: "Tiền đang giao",
+      tip: "Tiền sàn sẽ trả nhưng chưa trả: đơn đang giao + đơn đã giao chờ sàn cộng tiền + đơn đang xử lý hoàn, đã trừ phí sàn. Shopee và TikTok đọc thẳng từ sàn; Lazada không có số này nên cộng từ đơn trong app.",
     },
     {
       label: "Số dư Ví sàn",
-      tip: "Tiền sàn đang giữ, đọc thẳng từ sàn. Shopee: số dư ví; Lazada: kỳ sao kê đã chốt nhưng chưa chi; TikTok: các đợt chi tiền đã tạo nhưng chưa chuyển về ngân hàng (0 khi sàn đã trả hết). Sàn không có ví giữ tiền thì hiện dấu —.",
+      tip: "Tiền đang nằm trong ví sàn, chưa về ngân hàng. Shopee: số dư ví; TikTok: cộng dồn các dòng sàn cộng/trừ ví (từ 90 ngày trước khi nối gian); Lazada: kỳ sao kê đã chốt nhưng sàn chưa chi. Sàn không có ví giữ tiền thì hiện dấu —.",
     },
     {
       label: "Về Ngân hàng (30 ngày)",
@@ -236,8 +237,8 @@ export function CashFlowTable() {
             Phân bổ dòng tiền theo gian hàng
           </CardTitle>
           <CardDescription className="mt-1">
-            Tiền của từng gian đang ở đâu: sàn chưa thanh toán → Ví sàn (số
-            THẬT từ API) → về Ngân hàng. Tổng dự kiến = tiền chưa về tay.
+            Tiền của từng gian đang ở đâu: đang giao (sàn chưa trả) → Ví sàn
+            → về Ngân hàng. Tổng dự kiến = tiền chưa về tay.
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -359,7 +360,7 @@ export function CashFlowTable() {
                           <span
                             title={
                               r.pendingIncomeSource === "ORDERS"
-                                ? "Lazada không có số này từ sàn — tính từ đơn đã giao vận chuyển trong app"
+                                ? "Lazada không có số này từ sàn — cộng từ đơn đã giao vận chuyển trong app"
                                 : syncedLabel(r.pendingIncomeSyncedAt) || undefined
                             }
                           >
@@ -422,7 +423,7 @@ export function CashFlowTable() {
           <div className="px-4 py-2.5">
             {syncErrors.length > 0 && (
               <p className="mb-1 text-xs font-medium text-amber-700">
-                Chưa làm mới được số dư của: {syncErrors.join(" · ")}
+                Chưa làm mới được số của: {syncErrors.join(" · ")}
               </p>
             )}
             <p className="text-left text-xs italic text-slate-500">

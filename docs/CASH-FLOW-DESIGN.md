@@ -66,7 +66,7 @@ sync ví; cron giờ `order-auto-sync.ts` gọi sau sync rút ví (Shopee) / pay
 |---|---|---|
 | Shopee | `get_wallet_transaction_list`: KHÔNG có API số dư riêng — lấy `current_balance` của giao dịch MỚI NHẤT (= số dư ngay sau giao dịch đó), lưu `Channel.walletBalance` + `walletBalanceSyncedAt`. Chỉ shop local (VN OK). | Cùng API, lọc `transaction_type` chứa `WITHDRAWAL` → `WalletWithdrawal` (SYNC). |
 | Lazada | KHÔNG có ví giữ tiền — sàn chi thẳng về bank theo kỳ sao kê. "Ví sàn" = Σ kỳ sao kê đã chốt nhưng CHƯA chi: `/finance/payout/status/get` bản ghi `paid=0` → `WalletWithdrawal` status PENDING source SYNC. Vẫn là số THẬT từ API. | Bản ghi `paid=1` (status SUCCESS). |
-| TikTok | null → "—" (chưa làm — xem kế hoạch dưới). | Chưa làm. |
+| TikTok | KHÔNG có API số dư. `GET /finance/202309/withdrawals` ("Get Seller Financial Transactions") = sổ cái từng dòng {id, type, amount chuỗi, currency, status, create_time}; lưu thô vào `TiktokWalletTxn`, số dư = Σ theo luật dấu trong `tiktok/wallet.ts` (SETTLE/REWARD/REVERSE +, WITHDRAW/PAYMENT −, TRANSFER giữ dấu, POLICY_VIOLATION_DEDUCTION −, REFUND 0) → `Channel.walletBalance`. Cửa sổ: 90 ngày trước ngày ủy quyền (anh Trung chốt 23/10/2026: không ai để tiền trên sàn quá 90 ngày), nhịp giờ đọc lùi 2 ngày + dòng chưa chốt. | Dòng `WITHDRAW` (shop rút) + `PAYMENT` (sàn tự chuyển) → `WalletWithdrawal` SYNC; PROCESSED/SUCCESS = SUCCESS, FAILED/REVERSED/CLOSED/EXCEPTION = FAILED, còn lại PENDING. |
 | Offline | null → "—" (không có ví). | Nhập tay "Xác nhận đã rút ví" (MANUAL). |
 
 ## Bẫy API Shopee đã trả giá (đừng dẫm lại)
@@ -82,7 +82,24 @@ sync ví; cron giờ `order-auto-sync.ts` gọi sau sync rút ví (Shopee) / pay
 - Shop "hủy liên kết" trên Hubsell nhưng token sàn còn hạn thì API vẫn trả
   data; `refresh_token_expired` mới là chết thật → chủ shop phải ủy quyền lại.
 
-## Kế hoạch TikTok (làm khi có shop thật — hiện gian sandbox mock)
+## TikTok — ĐÃ LÀM 23/10/2026 (sổ cái withdrawals thay nhánh payments 16/09)
+
+- 16/09 em đi đường tắt: `/finance/202309/payments` (docs ghi "currently
+  unavailable") + Ví = Σ đợt PROCESSING → ba gian thật hiện 0. 23/10 bỏ hẳn.
+- Docs thật (đọc 23/10, workspace API Reference): `types` BẮT BUỘC, gửi
+  "WITHDRAW,SETTLE,TRANSFER,REVERSE,PAYMENT,REFUND" (REWARD /
+  POLICY_VIOLATION_DEDUCTION / UNKNOWN chỉ xuất hiện ở response); trang sau
+  phải gửi lại đúng types + create_time_ge/lt; page_size 1–100; lỗi riêng
+  22005007, 36009003.
+- Luật dấu CHƯA kiểm với sàn thật: lượt có dòng mới ghi log
+  `[TikTok] Ví "<gian>": SETTLE n dòng Σ · PAYMENT … → số dư …` để đối chiếu
+  Seller Center; sai thì sửa `tiktokWalletDelta` (dòng thô đã lưu, không đọc
+  lại sàn). Điểm ngờ nhất: REFUND (tạm 0) và PAYMENT có phải đợt sàn tự chuyển
+  về bank của gian VN không.
+- Nhãn cột 1 đổi "Chưa thanh toán" → "Tiền đang giao" + tooltip một câu (anh
+  chốt 23/10, khách không hiểu chữ của Shopee); cột Về Ngân hàng GIỮ.
+
+## Kế hoạch TikTok (bản 14/08/2026 — giữ làm sử)
 
 Khảo sát docs 14/08/2026 (partner.tiktokshop.com, Finance API, scope
 `seller.finance.info`, data từ 07/2023):

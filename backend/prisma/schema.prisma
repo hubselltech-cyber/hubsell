@@ -502,6 +502,7 @@ model Channel {
   deliveryTrackingTasks DeliveryTrackingTask[] // hàng đợi hỏi tracking cứu đơn giao thất bại
   appAuths              ChannelAppAuth[] // ủy quyền cho app phụ của Hubsell trên cùng gian (Hubsell Ads)
   tiktokAdsStoreLink    TiktokAdsStoreLink? // TKQC TikTok (Marketing API) đang chạy GMV Max cho gian này
+  tiktokWalletTxns      TiktokWalletTxn[] // sổ cái ví TikTok (SETTLE/WITHDRAW/PAYMENT…) → Số dư Ví sàn (23/10)
 
   // ── LỊCH QUÉT THEO TỪNG GIAN của worker auto-sync (12/09/2026, thay vòng
   // for tuần tự qua mọi gian — chịu tải hàng chục ngàn gian, nhiều worker) ──
@@ -919,6 +920,32 @@ model WalletWithdrawal {
   /// nên nhiều bản ghi MANUAL (externalTxnId = NULL) vẫn chèn được bình thường.
   @@unique([channelId, externalTxnId])
   @@index([channelId])
+}
+
+/// SỔ CÁI VÍ TIKTOK (23/10/2026) — từng dòng giao dịch tài chính của gian từ
+/// GET /finance/202309/withdrawals (sàn KHÔNG có API số dư ví). Số dư Ví sàn =
+/// cộng dồn theo loại dòng (lib tiktok/wallet.ts), lưu Channel.walletBalance.
+/// Giữ dòng thô để đổi luật cộng mà không phải đọc lại sàn.
+model TiktokWalletTxn {
+  id         String   @id @default(cuid())
+  channelId  String
+  /// id giao dịch phía sàn — khóa idempotent
+  externalId String
+  /// SETTLE | WITHDRAW | PAYMENT | TRANSFER | REVERSE | REFUND | REWARD | POLICY_VIOLATION_DEDUCTION | UNKNOWN
+  type       String
+  /// SUCCESS | PROCESSING | PROCESSED | FAILED | REVERSED | CLOSED… (nguyên văn sàn)
+  status     String
+  /// Số sàn trả, GIỮ NGUYÊN DẤU (TRANSFER có thể âm = khấu trừ)
+  amount     Decimal  @db.Decimal(14, 2)
+  currency   String?
+  createTime DateTime
+  syncedAt   DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, externalId])
+  @@index([channelId, createTime])
+  @@map("tiktok_wallet_txns")
 }
 
 enum WithdrawalSource {

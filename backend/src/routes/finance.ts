@@ -63,7 +63,7 @@ import {
 } from "../config/tax-config";
 import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
-import { syncTiktokPayouts, syncTiktokPendingIncome } from "../integrations/tiktok/payouts";
+import { syncTiktokPendingIncome, syncTiktokWallet } from "../integrations/tiktok/wallet";
 import { loadAdSpendRows, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
 import {
   cashFlowTotalsFromLedger,
@@ -659,10 +659,12 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 //     TikTok Σ ước tính /orders/unsettled; Lazada không có API → tính từ đơn
 //     (pendingIncomeSource = ORDERS); Offline null. Anh Trung chốt 09/10/2026.
 //   - walletBalance : số dư ví THẬT của sàn. Shopee = current_balance giao dịch
-//     ví mới nhất (sync lưu Channel.walletBalance); Lazada không có ví giữ tiền
-//     → dùng Σ kỳ sao kê đã chốt nhưng CHƯA chi (WalletWithdrawal PENDING từ
+//     ví mới nhất (sync lưu Channel.walletBalance); TikTok = cộng dồn sổ cái
+//     withdrawals từ 90 ngày trước ủy quyền (tiktok/wallet.ts, 23/10/2026, cũng
+//     lưu Channel.walletBalance); Lazada không có ví giữ tiền → dùng Σ kỳ sao
+//     kê đã chốt nhưng CHƯA chi (WalletWithdrawal PENDING từ
 //     /finance/payout/status/get — cùng bản chất "tiền sàn đang giữ", số thật);
-//     TikTok/Offline = null (TikTok chờ shop thật để kiểm chứng ledger).
+//     Offline = null.
 //   - withdrawn30d  : tiền đã về ngân hàng 30 NGÀY GẦN NHẤT (lũy kế all-time
 //     phình mãi, vô nghĩa quản trị) — số đối chiếu sổ bank theo tháng.
 //   - totalExpected : pendingIncome + walletBalance = "Tổng doanh thu dự kiến"
@@ -752,14 +754,13 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
     const rows = channels.map((c) => {
       const inTransit = inTransitByChannel.get(c.id) ?? 0;
       const pendingSettle = pendingSettleByChannel.get(c.id) ?? 0;
-      // Số dư ví theo sàn: Shopee = số đã sync; Lazada = Σ sao kê chưa chi;
-      // TikTok = Σ đợt chi tiền đang PROCESSING (payments API, sync ghi
-      // PENDING — cùng bản chất "tiền sàn đang giữ" như Lazada, 16/09/2026);
-      // Offline = null (frontend hiển thị "—", không phải 0).
+      // Số dư ví theo sàn: Shopee + TikTok = số đã sync vào Channel.walletBalance
+      // (TikTok = cộng dồn sổ cái withdrawals, 23/10/2026; chưa sync → null);
+      // Lazada = Σ sao kê chưa chi; Offline = null (frontend hiển thị "—").
       let walletBalance: number | null = null;
-      if (c.channelName === ChannelName.SHOPEE && c.walletBalance != null) {
-        walletBalance = Number(c.walletBalance);
-      } else if (c.channelName === ChannelName.LAZADA || c.channelName === ChannelName.TIKTOK) {
+      if (c.channelName === ChannelName.SHOPEE || c.channelName === ChannelName.TIKTOK) {
+        if (c.walletBalance != null) walletBalance = Number(c.walletBalance);
+      } else if (c.channelName === ChannelName.LAZADA) {
         walletBalance = pendingByChannel.get(c.id) ?? 0;
       }
       // "Chưa thanh toán": Shopee/TikTok = số sàn đã sync (chưa sync → null,
@@ -789,9 +790,9 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
         pendingIncomeSyncedAt:
           pendingIncomeSource === "PLATFORM" ? (c.pendingIncomeSyncedAt?.toISOString() ?? null) : null,
         walletBalance,
-        // Chỉ ví Shopee có mốc sync (Lazada tính live từ sao kê mỗi request).
+        // Ví Shopee + TikTok có mốc sync (Lazada tính live từ sao kê mỗi request).
         walletSyncedAt:
-          c.channelName === ChannelName.SHOPEE
+          c.channelName === ChannelName.SHOPEE || c.channelName === ChannelName.TIKTOK
             ? (c.walletBalanceSyncedAt?.toISOString() ?? null)
             : null,
         withdrawn30d: withdrawn30dByChannel.get(c.id) ?? 0,
@@ -842,7 +843,7 @@ router.post("/cash-flow/refresh", async (req: AuthRequest, res, next) => {
           await syncShopeeWithdrawals(ch, { daysBack: 30 }).catch(collect);
           await syncShopeePendingIncome(ch).catch(collect);
         } else if (ch.channelName === ChannelName.TIKTOK) {
-          await syncTiktokPayouts(ch, { daysBack: 30 }).catch(collect);
+          await syncTiktokWallet(ch).catch(collect);
           await syncTiktokPendingIncome(ch).catch(collect);
         } else {
           await syncLazadaPayouts(ch, { daysBack: 30 });

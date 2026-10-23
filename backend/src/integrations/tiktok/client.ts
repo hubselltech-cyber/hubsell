@@ -756,55 +756,78 @@ export async function fetchUnsettledTransactions(
 }
 
 // ============================================================
-// ĐỢT CHI TIỀN VỀ NGÂN HÀNG (Finance API 202309 — payments)
+// SỔ CÁI VÍ (Finance API 202309 — "Get Seller Financial Transactions")
 //
-// GET /finance/202309/payments: mỗi dòng = một lần TikTok chuyển tiền về tài
-// khoản ngân hàng của shop (status PROCESSING/PAID/FAILED). Read-only.
+// GET /finance/202309/withdrawals: từng dòng giao dịch tài chính của gian
+// (docs đọc 23/10/2026, workspace API Reference). Sàn KHÔNG có API số dư ví →
+// số dư = cộng dồn các dòng (tiktok/wallet.ts). Read-only.
+//   query : types (BẮT BUỘC, gửi dạng "WITHDRAW,SETTLE,…" — cùng cách nối mảng
+//           như ids của đơn), create_time_ge/lt (giây), page_size 1–100,
+//           page_token (trang sau phải gửi lại đúng types + ge + lt).
+//   data  : withdrawals[] {id, type, amount (CHUỖI), currency, status,
+//           create_time (giây)}, next_page_token, total_count.
+// Mã lỗi riêng: 22005007 (merchant không tồn tại), 36009003 (internal).
+// Lệnh /finance/202309/payments docs ghi "currently unavailable" → KHÔNG dùng.
 // ============================================================
 
-export interface TikTokPayment {
+export interface TikTokWalletTxn {
   id: string;
+  /// WITHDRAW | SETTLE | TRANSFER | REVERSE | PAYMENT | REFUND | REWARD |
+  /// POLICY_VIOLATION_DEDUCTION | UNKNOWN
+  type?: string;
+  /// SUCCESS | INIT | ORDERED | PROCESSING | RECEIVED | PROCESSED | FAILED |
+  /// REVERSED | EXCEPTION | CLOSED | UNKNOWN
+  status?: string;
+  amount?: string | number;
+  currency?: string;
   create_time?: number; // Unix seconds
-  paid_time?: number;
-  status?: string; // PROCESSING | PAID | FAILED
-  amount?: { value?: string; currency?: string };
-  settlement_amount?: { value?: string; currency?: string };
-  reserve_amount?: { value?: string; currency?: string };
-  payment_amount_before_exchange?: { value?: string; currency?: string };
-  bank_account?: string;
   [k: string]: unknown;
 }
 
-export interface FetchPaymentsParams {
+/** 6 loại docs cho phép gửi ở tham số types (REWARD/POLICY_VIOLATION_DEDUCTION chỉ xuất hiện ở response). */
+export const TIKTOK_WALLET_QUERY_TYPES = [
+  "WITHDRAW",
+  "SETTLE",
+  "TRANSFER",
+  "REVERSE",
+  "PAYMENT",
+  "REFUND",
+] as const;
+
+export interface FetchWithdrawalsParams {
   accessToken: string;
   shopCipher: string;
+  types?: readonly string[];
   createTimeGe?: number;
   createTimeLt?: number;
   pageSize?: number;
   pageToken?: string;
 }
 
-export async function fetchPayments(
-  params: FetchPaymentsParams,
+export async function fetchWithdrawals(
+  params: FetchWithdrawalsParams,
   cfg: TikTokConfig = getTikTokConfig()
-): Promise<{ payments: TikTokPayment[]; next_page_token?: string }> {
+): Promise<{ withdrawals: TikTokWalletTxn[]; next_page_token?: string; total_count?: number }> {
   const query: Record<string, string | number> = {
-    page_size: params.pageSize ?? 50,
-    sort_field: "create_time",
-    sort_order: "DESC",
+    types: (params.types ?? TIKTOK_WALLET_QUERY_TYPES).join(","),
+    page_size: params.pageSize ?? 100,
   };
   if (params.createTimeGe) query.create_time_ge = params.createTimeGe;
   if (params.createTimeLt) query.create_time_lt = params.createTimeLt;
   if (params.pageToken) query.page_token = params.pageToken;
-  return callApi<{ payments?: TikTokPayment[]; next_page_token?: string }>(
+  return callApi<{ withdrawals?: TikTokWalletTxn[]; next_page_token?: string; total_count?: number }>(
     {
-      path: "/finance/202309/payments",
+      path: "/finance/202309/withdrawals",
       accessToken: params.accessToken,
       shopCipher: params.shopCipher,
       query,
     },
     cfg
-  ).then((d) => ({ payments: d.payments ?? [], next_page_token: d.next_page_token }));
+  ).then((d) => ({
+    withdrawals: d.withdrawals ?? [],
+    next_page_token: d.next_page_token,
+    total_count: d.total_count,
+  }));
 }
 
 // ============================================================

@@ -70,7 +70,7 @@ import { syncTiktokCancelRequests } from "../integrations/tiktok/cancel-requests
 /** Cửa sổ quét yêu cầu hủy TikTok (ngày) — sàn tự chấp nhận sau 48 h nên 3 ngày là dư. */
 const CANCEL_REQUEST_DAYS_BACK = 3;
 import { processTiktokDeliveryTracking } from "../integrations/tiktok/delivery-fail";
-import { syncTiktokPayouts, syncTiktokPendingIncome } from "../integrations/tiktok/payouts";
+import { syncTiktokPendingIncome, syncTiktokWallet } from "../integrations/tiktok/wallet";
 import {
   syncLazadaOrders,
   syncLazadaSettlements,
@@ -777,16 +777,17 @@ async function runHourlyTier(
     } catch (err) {
       console.error(`[Auto-sync] Lỗi quét bù đơn hoàn TikTok "${channel.shopName}":`, (err as Error).message);
     }
-    // Đợt CHI TIỀN về bank (payments) → WalletWithdrawal, cùng cột với Lazada payout.
+    // Sổ cái ví (withdrawals, 23/10) → Channel.walletBalance + WalletWithdrawal
+    // (dòng WITHDRAW/PAYMENT = tiền về bank, cùng cột với Lazada payout).
     try {
-      const po = await syncTiktokPayouts(channel, { daysBack: PAYOUT_DAYS_BACK });
-      if (po.created > 0 || po.updated > 0) {
+      const w = await syncTiktokWallet(channel);
+      if (w.created > 0 || w.updated > 0 || w.bankCreated > 0) {
         console.log(
-          `[Auto-sync] Payout TikTok "${channel.shopName}": +${po.created} đợt mới, ${po.updated} cập nhật`
+          `[Auto-sync] Ví TikTok "${channel.shopName}": +${w.created} dòng mới, ${w.updated} cập nhật, ${w.bankCreated} đợt về bank mới → số dư ${Math.round(w.walletBalance).toLocaleString("vi-VN")}${w.more ? " (còn trang)" : ""}`
         );
       }
     } catch (err) {
-      console.error(`[Auto-sync] Lỗi sync payout TikTok "${channel.shopName}":`, (err as Error).message);
+      console.error(`[Auto-sync] Lỗi sổ cái ví TikTok "${channel.shopName}":`, (err as Error).message);
     }
     // "Chưa thanh toán" sàn tự công bố (09/10) → Channel.pendingIncome, một call.
     try {

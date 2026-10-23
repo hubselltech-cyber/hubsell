@@ -6,6 +6,13 @@
 
 ---
 
+## Phiên 23/10/2026 ~22:30 — VÍ TIKTOK = SỔ CÁI WITHDRAWALS + NHÃN "TIỀN ĐANG GIAO" (anh: "không quá rủi ro, 90 ngày trước ủy quyền")
+
+- **Anh hỏi** sàn có API lấy tổng tiền đang giao không → có, và cột "Chưa thanh toán" đã là nó từ 09/10 (Shopee get_income_overview, TikTok unsettled, 1 lệnh/gian; Lazada không có API → cộng từ đơn trong DB, cờ quyết toán do tầng giờ sẵn có đặt — KHÔNG thêm lượt gọi). Anh hỏi ví TikTok "chờ xin API" → không: scope Finance bật 15/09; 16/09 em dùng tạm `/finance/202309/payments` (docs ghi unavailable) nên 3 gian hiện 0.
+- **Làm:** đọc docs "Get Seller Financial Transactions" (`GET /finance/202309/withdrawals`, qua API detail workspace 2 vì trang docv2 hiện "No document found") → `fetchWithdrawals` (client.ts, thay mục payments); `integrations/tiktok/wallet.ts` mới (thay `payouts.ts`): bảng `tiktok_wallet_txns` (migration 20261023213000, RLS bật) lưu dòng thô, số dư = `tiktokWalletBalance` (luật dấu có test `tiktok-wallet.test.ts`) → `Channel.walletBalance`; WITHDRAW/PAYMENT → `WalletWithdrawal` (cột Về Ngân hàng). Cửa sổ 90 ngày trước ủy quyền, nhịp giờ lùi 2 ngày + dòng chưa chốt, 100 dòng/trang. finance.ts: TikTok đọc `Channel.walletBalance` + mốc sync; auto-sync nhịp giờ gọi `syncTiktokWallet`.
+- **UI:** cột 1 nhãn "Tiền đang giao", tooltip một câu (kể cả Lazada), mô tả đầu bảng, dòng lỗi "Chưa làm mới được số của" (trước ghi "số dư" dù lỗi 36009003 thường từ lệnh unsettled). Cột Về Ngân hàng giữ.
+- ⏳ **Sau deploy:** đọc log `[TikTok] Hình dạng dòng sổ cái ví` + `[TikTok] Ví "<gian>": …` trên worker, anh đối chiếu số dư 3 gian với Seller Center; lệch thì sửa luật dấu (REFUND / PAYMENT) trong `tiktokWalletDelta`, không đọc lại sàn.
+
 ## Phiên 23/10/2026 ~21:30 — TIN ĐẨY ANDROID: FIREBASE + FCM V1 LÊN EAS (anh: "làm luôn, sang tháng chỉ build")
 
 - Qua Chrome anh: Firebase gắn vào GCP `hubsell-play` (tắt Analytics), app Android `vn.hubsell.app`, `google-services.json` vào app (gitignore + `.easignore` để EAS vẫn tải), app.json `googleServicesFile`; khóa Admin SDK đưa lên EAS bằng GraphQL (`createGoogleServiceAccountKey` + `setGoogleServiceAccountKeyForFcmV1`, key d7f74ca6) — không cần `eas credentials` tương tác. Lịch 01/11 cập nhật: Android 1.4.1 có push ngay. Web: nhãn mẫu số hai con số biên đã sửa (`6c2e2f03`). Docs 4.1 cập nhật.
