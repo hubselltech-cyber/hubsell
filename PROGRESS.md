@@ -6,6 +6,11 @@
 
 ---
 
+## Phiên 23/10/2026 chiều (đợt 3) — MOBILE 1.4.0 (22): anh thử (21) thấy icon chuông toàn chữ "i", màn cài đặt nhóm không hiện
+
+- **Gốc:** app TestFlight gọi backend PROD, mà master đang **15 commit chưa push** (từ 9d76985c) → prod chưa có `category` trong danh sách và chưa có route `/preferences` (404). Anh push master là hết.
+- **Dự phòng phía app:** `lib/notification-category.ts` (bản sao `categoryOf` backend) — dòng thiếu `category` thì app tự xếp, icon không rơi về "i" dù backend cũ. Dọn: bỏ setState trong effect ở `NotificationsContext` (giá trị rỗng khi không phải chủ shop derive khi memo; lượt tải đầu qua microtask); eslint các tệp mới chỉ còn ca baseline react-compiler (DateRangeFilter/ShopFilter reset nháp khi mở hộp, cùng kiểu cũ). Commit + build iOS (22) nộp TestFlight.
+
 ## Phiên 23/10/2026 chiều (đợt 2) — MOBILE 1.4.0 (21): CHỈNH THEO ANH THỬ TESTFLIGHT — bộ lọc một hàng, "Tổng giá trị SP", cài đặt thông báo CHA → CON
 
 - **Anh thử bản (20) trên iPhone, chốt 3 điều:** (1) bộ lọc gian hàng đứng TRƯỚC bộ lọc ngày, chia đôi một hàng, nhãn chỉ icon + "Tất cả" (bỏ "N gian hàng"); (2) cột thác nước "Tổng giá trị SP"; (3) cài đặt thông báo phải chia NHÓM: Đơn hàng (tổng + đơn mới / hỏa tốc / hủy / hoàn / giao hụt), Tài chính (báo cáo tuần…), Kho (hết hàng, sắp hết…)… mỗi nhóm công tắc tổng + từng mục con. Ảnh anh gửi báo "Không tìm thấy đường dẫn (route)" ở Loại thông báo = backend prod chưa deploy route mới.
