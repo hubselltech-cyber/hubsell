@@ -22,7 +22,7 @@ cho người xét duyệt (mục 7).
 | Hạng mục | **Quản lý thương mại điện tử › Lập kế hoạch tài nguyên doanh nghiệp (ERP)** — khóa từ lúc tạo |
 | Thị trường / loại người bán | Việt Nam / Người bán trong nước |
 | Nút có sẵn | **"Nâng cấp lên Dịch vụ công khai"** (hiện trên trang app) |
-| Gian đã ủy quyền | 15 ủy quyền (14 hiệu lực) — token gắn với app key này |
+| Gian đã ủy quyền | **74 ủy quyền, 70 đang có hiệu lực, 4 đã hết hạn** (Quản lý cửa hàng, soi 23/10 chiều; con số 15 là mốc 12/10) — token gắn với app key này |
 | Hạng mục tài khoản đối tác đã được duyệt | chỉ **ERP** (Quản lý đa kênh còn Bản nháp từ 15/09) |
 
 ### 1.2. Luật TikTok ảnh hưởng tới quyết định
@@ -77,6 +77,57 @@ thêm lớp đa app key cho một kệ mà chính anh nhận xét 12/10 là khá
 vào"; (3) A xong trong vài tuần, B/C mất gần hai tháng và lặp lại vòng xét duyệt vừa mới
 qua. Nếu sau này cần kệ Marketing thật sự (khi App Store VN có mục Quảng cáo), lúc đó tạo
 app thứ hai với lớp đa app key đã được thiết kế sẵn, không vội bây giờ.
+
+### 2.1. Anh hỏi 23/10 chiều: "nâng cấp app cũ có ảnh hưởng khách không? trần 25?"
+
+- **Ủy quyền hiện có:** app key + service_id giữ nguyên nên token của 70 gian không đổi; docs ghi
+  app vẫn là custom tới khi qua review; chatbot Trợ lý đối tác (hỏi 23/10, nguyên văn bên dưới)
+  xác nhận docs **không nói** nâng cấp hủy ủy quyền hay vô hiệu token. Token chỉ thiếu scope
+  nếu mình thêm scope mới (giống vụ Product Modify 12/10) — lần này không thêm scope.
+- **Trần 25:** là *trần tạm cho ủy quyền MỚI* trong giai đoạn beta / chờ review, không phải
+  cắt bớt gian đã có. App đã qua app review 12/10 nên dải "giới hạn 25 người dùng beta" đã mất
+  (chatbot 12/10 nói trần 25 = tạm thời, duyệt xong bỏ). Docs **không khẳng định** upgrade review
+  có bật lại trần đó hay không ("Treat any actual limit shown in Partner Center as authoritative").
+  Beta testing chỉ bị kích hoạt cho app Connector nhắm Mỹ/Anh — Hubsell VN không thuộc diện.
+- **Rủi ro thật còn lại:** trong 1–3 tuần review, Partner Center *có thể* tạm chặn gian MỚI
+  ủy quyền (gian cũ vẫn chạy). Hai cách xử lý:
+  1. **Gửi ticket hỏi trước** (nháp mục 2.2) — chắc hơn, chậm vài ngày; nội dung listing đã sẵn
+     nên không mất gì.
+  2. Bấm nâng cấp ngay và nhìn dải thông báo trên trang app ngay sau đó; nếu dải "giới hạn 25"
+     xuất hiện thì chỉ gian mới bị chặn tới khi duyệt xong — chấp nhận hoặc rút bản nộp.
+
+Nguyên văn chatbot Trợ lý đối tác 23/10 (tiếng Anh, rút gọn): *"Upgrading to Public Service
+should not be treated as a token reset or seller deauthorization event by itself… During the
+upgrade, the app type remains custom until the app passes the upgrade review… Existing tokens
+generally remain usable as long as the underlying authorization is still active… The docs do not
+state that an app already having 70 active authorizations will have existing authorizations
+reduced to 25 just because you submit an upgrade. Treat any actual limit shown in Partner Center
+as authoritative… Upgrade to Public Service is not only listing review: upgrade review, market
+language listing reviews, public app review, compliance review, and any required beta testing
+(beta testing only when Partner Center triggers it, commonly Connector apps targeting US/UK)."*
+
+### 2.2. Nháp ticket hỏi TikTok trước khi nâng cấp (anh gửi qua Partner Center → Trợ giúp → Xem các phiếu của tôi / Raise ticket)
+
+```
+Subject: Upgrade custom service to public — impact on existing 70 seller authorizations?
+
+App: Hubsell, service_id 7685556109353699080, app key 6l9tutuffdu4v, market Vietnam (local sellers).
+Status: registration review and app review both approved (12 Oct 2026). The app currently has 74
+seller authorizations (70 active). We plan to click "Upgrade to Public Service" and submit the
+Vietnamese listing.
+
+Please confirm:
+1. Existing seller authorizations and tokens keep working during and after the upgrade review
+   (no re-authorization needed, no scope change on our side).
+2. While the upgrade / listing review is in progress, will NEW seller authorizations be limited
+   (for example the 25-authorization beta limit)? Our sellers connect every day, so a temporary
+   block would affect our customers.
+3. Which reviews apply to this upgrade for a Vietnam local-seller app that already passed app
+   review: upgrade review + language listing review only, or a new app review / beta testing too?
+4. Expected review time for the Vietnam listing.
+
+Thank you.
+```
 
 Nếu anh chốt B hoặc C: em làm thêm (1) đơn Hạng mục & thị trường, (2) tạo app công khai mới,
 (3) code `Channel.tiktokAppKey` + đọc cấu hình theo app, (4) hộp nhắc "Ủy quyền lại" cho 15
