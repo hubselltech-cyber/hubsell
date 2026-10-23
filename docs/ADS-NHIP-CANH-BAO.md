@@ -327,7 +327,11 @@ Mỗi bước một commit, không gộp.
 > quota is per app or per seller, and how an ISV can request a higher quota.
 
 
-### 11.2 Ticket Shopee LẦN 2 — 23/10/2026 (anh Trung chốt "soạn ticket xem họ nói gì trước rồi tính"; nháp, CHƯA GỬI)
+### 11.2 Ticket Shopee LẦN 2 — 23/10/2026 — ✅ ĐÃ GỬI 11:11, Enquiry ID 2113468448421310539 (In Progress)
+
+**Đã gửi 23/10/2026 11:11** (em điền qua Chrome, anh bấm 提交): Enquiry ID **2113468448421310539**, webform 2113468448136294418, app 2044679, L1 Feature APIs / L2 Ads / API Category V2-Ads / API Name v2.ads.get_all_cpc_ads_daily_performance / Shop ID mẫu 1359898174 / Request ID mẫu e3e3e7f35e74662c33951aca17f32500 / Request Time 23/10 04:18 VN. Mô tả gửi = phần A dưới đây rút còn 8.037 ký tự (form giới hạn 9.999) + 57 dòng request_id dạng ngắn (mã ALLCPC/SETTING/BALANCE/ROI/BUDGET có chú giải). Theo dõi: My Enquiries  (zing4teen@gmail.com) + email openapi@support.shopee.com. Lịch nhắc kiểm 27/10 08:30. Trả lời của Shopee ghi ngay dưới đây.
+
+**Trả lời Shopee:** ⏳ chưa có.
 
 **Gửi ở đâu:** Shopee Open Platform Console → Raise Ticket, L1 Feature APIs / L2 Ads / API Category V2-Ads, chọn app **Hubsell Ads partner_id 2044679** (ticket 12/09 gửi dưới app 2040029 — lần này đúng app dính lỗi). Anh kéo CAPTCHA; trả lời về hộp thư đăng ký Console. Nhắc ticket cũ 2098790879624904785 (Shopee 15/09: "provide complete and specific API call logs"; 10/10: "shop level once per minute should generally be allowed"). Dán phần A vào thân ticket, phần B (bảng request_id) vào ô mô tả hoặc đính kèm .txt. Câu trả lời ghi vào memory `hubsell-api-quota-san` + mục này.
 
