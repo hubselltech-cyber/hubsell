@@ -36,6 +36,7 @@ import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
 import { OrderDetailSheet } from "@/components/OrderDetailSheet";
+import { CancelRequestBar, CancelRequestPill } from "@/components/CancelRequestBar";
 import { TABULAR } from "@/theme/tokens";
 
 /** Số dòng hàng hiện sẵn trên card — đơn dài hơn thì bấm "Xem thêm". */
@@ -286,6 +287,8 @@ export default function OrdersScreen() {
               <Text className="text-[10px] font-bold text-white">⚡ Hỏa tốc</Text>
             </View>
           ) : null}
+          {/* Cờ khách xin hủy đi kèm MỌI trạng thái (anh chốt 23/10) — viên đỏ cạnh trạng thái */}
+          {item.cancelRequestedAt ? <CancelRequestPill /> : null}
           <Badge label={ship.label} bg={ship.bg} text={ship.text} />
         </View>
         {/* Tên SHOP thay nhãn sàn (anh Trung chốt 13/08) — nhà nhiều gian
@@ -297,6 +300,8 @@ export default function OrdersScreen() {
           {" · "}
           {formatDateTime(item.createdAt)}
         </Text>
+        {/* Dải đỏ + nút Trả lời sàn — sàn chốt xong thì tải lại danh sách */}
+        <CancelRequestBar order={item} onDecided={() => void load(1, false)} />
 
         {visibleItems.map(renderItemRow)}
         {hiddenCount > 0 ? (
@@ -511,7 +516,14 @@ export default function OrdersScreen() {
         filter={currentFilter}
         onClose={() => setStatsOpen(false)}
       />
-      <OrderDetailSheet order={detailOrder} onClose={() => setDetailOrder(null)} />
+      <OrderDetailSheet
+        order={detailOrder}
+        onClose={() => setDetailOrder(null)}
+        onChanged={() => {
+          setDetailOrder(null);
+          void load(1, false);
+        }}
+      />
     </View>
   );
 }

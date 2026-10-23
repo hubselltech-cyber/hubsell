@@ -64,6 +64,25 @@ export function lookupOrder(code: string, opts: { detail?: boolean } = {}) {
  * CÔNG ĐOẠN 1 của luồng hoàn 2 bước: đánh dấu ĐÃ NHẬN hàng về tay.
  * KHÔNG cộng tồn kho — nhập kho là nút bulk trên web (chốt thiết kế 13/08).
  */
+/** Kết quả trả lời sàn về yêu cầu hủy (backend services/cancel-request-decide.ts). */
+export interface CancelDecideResult {
+  orderCode: string;
+  accepted: boolean;
+  shippingStatus: string;
+  cancelRequestedAt: string | null;
+}
+
+/**
+ * Shop CHẤP NHẬN / TỪ CHỐI yêu cầu hủy của khách — gọi API sàn thật rồi kéo lại
+ * đơn (lỗi sàn trả 502 kèm thông điệp để làm tay trên Seller Center).
+ */
+export function decideCancelRequest(orderId: string, accept: boolean) {
+  return api<CancelDecideResult>(`/api/orders/${encodeURIComponent(orderId)}/cancel-request/decide`, {
+    method: "POST",
+    body: { accept },
+  });
+}
+
 export function receiveReturn(orderId: string) {
   return api<ReceiveReturnResponse>(
     `/api/warehouse/returns/${orderId}/receive`,

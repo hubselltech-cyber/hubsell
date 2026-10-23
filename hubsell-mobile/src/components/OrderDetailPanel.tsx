@@ -14,6 +14,7 @@ import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
 import { useChannelColors } from "@/theme/channel-colors";
 import { TABULAR } from "@/theme/tokens";
+import { CancelRequestBar } from "@/components/CancelRequestBar";
 
 /**
  * CHI TIẾT ĐƠN HÀNG sau khi quét mã ở nút QR giữa thanh tab (anh Trung 04/10).
@@ -24,9 +25,12 @@ import { TABULAR } from "@/theme/tokens";
 export function OrderDetailPanel({
   order,
   payment,
+  onCancelDecided,
 }: {
   order: OrderDto;
   payment?: OrderPaymentDto;
+  /** Sau khi shop Chấp nhận / Từ chối yêu cầu hủy (dải đỏ đầu panel). */
+  onCancelDecided?: () => void;
 }) {
   const ship = SHIPPING_STATUS[order.shippingStatus];
   const ret = order.returnStatus !== "NONE" ? RETURN_STATUS[order.returnStatus] : null;
@@ -49,6 +53,9 @@ export function OrderDetailPanel({
           {formatDateTime(order.createdAt)}
         </Text>
       </View>
+
+      {/* Khách xin hủy: dải đỏ + Trả lời sàn đứng TRÊN mọi dòng (cả màn quét) */}
+      <CancelRequestBar order={order} onDecided={() => onCancelDecided?.()} />
 
       <View className="mt-2">
         <Row label="Shop" value={order.channel.shopName} accent />

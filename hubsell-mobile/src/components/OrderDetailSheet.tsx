@@ -14,9 +14,12 @@ import { OrderDetailPanel } from "@/components/OrderDetailPanel";
 export function OrderDetailSheet({
   order,
   onClose,
+  onChanged,
 }: {
   order: OrderDto | null;
   onClose: () => void;
+  /** Shop vừa trả lời sàn về yêu cầu hủy — màn ngoài tải lại. */
+  onChanged?: () => void;
 }) {
   // Đáy hộp chừa phần nút điều hướng / vạch vuốt của máy.
   const insets = useSafeAreaInsets();
@@ -80,6 +83,7 @@ export function OrderDetailSheet({
               <OrderDetailPanel
                 order={detail?.order ?? order}
                 payment={detail?.payment}
+                onCancelDecided={onChanged}
               />
               {loading ? (
                 <View className="mt-2 flex-row items-center gap-2">

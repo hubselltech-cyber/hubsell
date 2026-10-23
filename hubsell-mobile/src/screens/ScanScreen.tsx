@@ -232,12 +232,19 @@ export function ScanScreen({
         detail ||
         res.order.returnStatus === "AWAITING" ||
         res.order.returnStatus === "NONE";
-      playScanSound(fresh ? "success" : "duplicate");
-      void Haptics.notificationAsync(
-        fresh
-          ? Haptics.NotificationFeedbackType.Success
-          : Haptics.NotificationFeedbackType.Warning
-      );
+      // Đơn đang bị KHÁCH XIN HỦY: kêu tiếng lỗi + rung mạnh để người đóng gói
+      // dừng tay (anh Trung chốt 23/10) — dải đỏ + nút Trả lời sàn nằm trong panel.
+      if (res.order.cancelRequestedAt) {
+        playScanSound("error");
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } else {
+        playScanSound(fresh ? "success" : "duplicate");
+        void Haptics.notificationAsync(
+          fresh
+            ? Haptics.NotificationFeedbackType.Success
+            : Haptics.NotificationFeedbackType.Warning
+        );
+      }
       setPanel({ type: "order", order: res.order, payment: res.payment });
     } catch (err) {
       playScanSound("error");
