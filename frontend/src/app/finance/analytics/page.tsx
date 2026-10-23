@@ -212,7 +212,9 @@ export default function FinanceAnalyticsPage() {
                   total={b.profit.total}
                   share={{
                     percent: share(b.profit.total, b.revenue.total),
-                    label: "biên ròng",
+                    // Ghi rõ mẫu số (anh Trung 23/10, cùng mobile): thẻ chia cho doanh thu,
+                    // dòng chốt thác nước Tổng quan chia cho giá trị SP.
+                    label: "trên doanh thu",
                   }}
                   delta={deltaOf(b.profit.total, pb?.profit.total)}
                   deltaHint={deltaHint}

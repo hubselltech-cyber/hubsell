@@ -390,7 +390,7 @@ export function PnlWaterfallFooter({
         Lợi nhuận ròng
         {margin !== null && (
           <span className={cn(TEXT_SUB, "ml-2 font-normal")}>
-            biên {margin}%
+            biên {margin}% trên giá trị SP
           </span>
         )}
       </span>
