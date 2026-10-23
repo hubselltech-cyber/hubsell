@@ -329,7 +329,7 @@ Mỗi bước một commit, không gộp.
 
 ### 11.2 Ticket Shopee LẦN 2 — 23/10/2026 — ✅ ĐÃ GỬI 11:11, Enquiry ID 2113468448421310539 (In Progress)
 
-**Đã gửi 23/10/2026 11:11** (em điền qua Chrome, anh bấm 提交): Enquiry ID **2113468448421310539**, webform 2113468448136294418, app 2044679, L1 Feature APIs / L2 Ads / API Category V2-Ads / API Name v2.ads.get_all_cpc_ads_daily_performance / Shop ID mẫu 1359898174 / Request ID mẫu e3e3e7f35e74662c33951aca17f32500 / Request Time 23/10 04:18 VN. Mô tả gửi = phần A dưới đây rút còn 8.037 ký tự (form giới hạn 9.999) + 57 dòng request_id dạng ngắn (mã ALLCPC/SETTING/BALANCE/ROI/BUDGET có chú giải). Theo dõi: My Enquiries  (zing4teen@gmail.com) + email openapi@support.shopee.com. Lịch nhắc kiểm 27/10 08:30. Trả lời của Shopee ghi ngay dưới đây.
+**Đã gửi 23/10/2026 11:11** (em điền qua Chrome, anh bấm 提交): Enquiry ID **2113468448421310539**, webform 2113468448136294418, app 2044679, L1 Feature APIs / L2 Ads / API Category V2-Ads / API Name v2.ads.get_all_cpc_ads_daily_performance / Shop ID mẫu 1359898174 / Request ID mẫu e3e3e7f35e74662c33951aca17f32500 / Request Time 23/10 04:18 VN. Mô tả gửi = phần A dưới đây rút còn 8.037 ký tự (form giới hạn 9.999) + 57 dòng request_id dạng ngắn (mã ALLCPC/SETTING/BALANCE/ROI/BUDGET có chú giải). Theo dõi: My Enquiries `https://service.open-platform.cs.shopee.com/` (zing4teen@gmail.com) + email openapi@support.shopee.com. Lịch nhắc kiểm 27/10 08:30. Trả lời của Shopee ghi ngay dưới đây.
 
 **Trả lời Shopee:** ⏳ chưa có.
 
