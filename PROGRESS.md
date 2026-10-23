@@ -10,6 +10,7 @@
 
 - **Anh:** "update được việc xác nhận hoặc từ chối trên app mobile không" → làm luôn (backend route `POST /api/orders/:id/cancel-request/decide` đã có từ web). Anh chốt khi xem: "popup chỉ Đồng ý – Từ chối, không nói dài".
 - **App:** `components/CancelRequestBar.tsx`: `CancelRequestPill` (viên đỏ cạnh trạng thái trên thẻ đơn), `CancelRequestBar` (dải đỏ "Khách xin hủy · còn N giờ để trả lời" + lý do + nút Trả lời), `CancelDecisionSheet` (hộp trượt: mã đơn · sàn · shop · hạn · lý do, hai nút Từ chối / Đồng ý hủy, bấm là gọi sàn, không có bước xác nhận thứ hai — rủi ro bấm nhầm anh chấp nhận). Dải nằm trên thẻ đơn (orders.tsx) và đầu `OrderDetailPanel` (nên có cả ở chi tiết đơn lẫn màn quét QR); `ScanScreen` quét trúng đơn đang bị xin hủy → tiếng lỗi + rung Error. `api/orders.ts` `decideCancelRequest`. Sàn chốt xong → tải lại danh sách / đóng hộp chi tiết.
+- Anh nhắc khung phải co giãn mọi cỡ màn → cắm lý do dài 140 ký tự, đo bằng JS (phần tử nào tràn mép) ở 320 / 360 / 430 / 820 + popup 320: **0 ô tràn** (6dce2129); sửa: hạn rút ngắn "còn N giờ", tiêu đề dải 2 dòng, bỏ viên "Khách xin hủy" trùng ở đầu thẻ để mã đơn không bị cắt ở 320.
 - Soi giả lập web 390 với đơn dev cắm cờ (đã gỡ lại): thẻ, dải, popup đạt; bỏ role button lồng nút (web báo lồng <button>). tsc sạch. Commit + push; ⛔ chưa build (EAS hết lượt tới 01/11) → vào bản 1.4.1.
 
 ## Phiên 23/10/2026 tối — 3 LỖI VẶT THÔNG BÁO SAU KHI ANH DÙNG THẬT + KHÓA APNs
