@@ -9,14 +9,14 @@
 ## Phiên 23/10/2026 sáng — KIỂM BÓNG ĐỌC SÀN 5c LẦN 2 (4 ngày, anh: "kiểm tra lại đi em"): ĐẠT, chờ anh chốt bật lát 2 gian ANO
 
 - **Nhắc tự động 22/10 08:00 trượt** (Chrome chưa kết nối, máy không có chuỗi DB prod) → dán SQL cho anh; phiên 22/10 ~10:00 đã đo lần 1 (3 ngày, ĐẠT).
-  Sáng nay anh bảo kiểm lại → Chrome nối được, chạy SQL Supabase + đọc Render Logs worker 7 ngày (\`q=orders-shadow\`, \`q=cursor-reader\`).
-- **Số 23/10 02:10 UTC (docs CUNG-HOA-LOP-GOI-SAN 5c.1):** \`chi_cu\` từ mốc ghi danh rỗng cả hai (8686 3.054/3.054, ANO 257/257), \`chi_moi\` 0;
+  Sáng nay anh bảo kiểm lại → Chrome nối được, chạy SQL Supabase + đọc Render Logs worker 7 ngày (`q=orders-shadow`, `q=cursor-reader`).
+- **Số 23/10 02:10 UTC (docs CUNG-HOA-LOP-GOI-SAN 5c.1):** `chi_cu` từ mốc ghi danh rỗng cả hai (8686 3.054/3.054, ANO 257/257), `chi_moi` 0;
   trễ con trỏ 4–5' caught_up; trễ phát hiện TikTok (seenCount = 1, n 1.376) p50 7' / p99 11,9' / max 12'; log 7 ngày 5 dòng đều "đáy tràn 0, co 0",
-  0 dòng \`[cursor-reader]\` (không lệch tổng H8); khóa TikTok shop 0 hits; khóa ANO shop 3 hits đều Ads. **ĐẠT 4/4 tiêu chí.**
-- **Lưu ý:** câu so khớp \`interval 'N days'\` thô báo 140 + 11 "chi_cu" toàn trước 19/10 05:42 UTC → sửa cách đọc (mốc cursorAt ban đầu), không phải sót;
+  0 dòng `[cursor-reader]` (không lệch tổng H8); khóa TikTok shop 0 hits; khóa ANO shop 3 hits đều Ads. **ĐẠT 4/4 tiêu chí.**
+- **Lưu ý:** câu so khớp `interval 'N days'` thô báo 140 + 11 "chi_cu" toàn trước 19/10 05:42 UTC → sửa cách đọc (mốc cursorAt ban đầu), không phải sót;
   2 khoảng trống ghi 30–40' ở giờ vắng đơn, max trễ vẫn 12'. Khóa GCRA gian dùng chung Ads ↔ đơn (đúng N5).
-- **Đề xuất:** bật lát 2 cho ANO Official Store (Shopee, \`cmshe0487007oiz3pg41t2vb0\`) bằng SQL 5d — chờ anh chốt. Nhắc 26/10 08:30 giữ (đo lần 3).
-  Không bật gì, không đụng Pha D. Memory \`hubsell-cung-hoa-lop-goi-san\` đã cập nhật.
+- **Đề xuất:** bật lát 2 cho ANO Official Store (Shopee, `cmshe0487007oiz3pg41t2vb0`) bằng SQL 5d — chờ anh chốt. Nhắc 26/10 08:30 giữ (đo lần 3).
+  Không bật gì, không đụng Pha D. Memory `hubsell-cung-hoa-lop-goi-san` đã cập nhật.
 
 ## Phiên 23/10/2026 đêm — CỜ "KHÁCH XIN HỦY" + NÚT CHẤP NHẬN/TỪ CHỐI 3 SÀN TRÊN WEB (lát 1+2, chưa commit)
 
