@@ -106,7 +106,17 @@ as authoritative… Upgrade to Public Service is not only listing review: upgrad
 language listing reviews, public app review, compliance review, and any required beta testing
 (beta testing only when Partner Center triggers it, commonly Connector apps targeting US/UK)."*
 
-### 2.2. Nháp ticket hỏi TikTok trước khi nâng cấp (anh gửi qua Partner Center → Trợ giúp → Xem các phiếu của tôi / Raise ticket)
+### 2.2. Ticket hỏi TikTok trước khi nâng cấp — ĐÃ ĐIỀN SẴN 23/10 chiều, chờ anh bấm Submit
+
+Anh chốt 23/10 chiều: *"gửi ticket trước; nếu dính trần 25 thì bỏ qua luôn (không nâng cấp)"*.
+Đường vào form (Chrome anh): chatbot Trợ lý đối tác → nút "Gửi phiếu" dưới câu trả lời →
+trang `partner.tiktokshop.com/ticket/create` "Nhận hỗ trợ kỹ thuật". Issue category đã chọn
+**Migration / Application Management** (đổi hạng mục làm form trống lại, phải điền lại); tiêu đề
+≤ 50 ký tự `Upgrade custom app to public: impact on sellers` (47); nội dung 1.151 ký tự như dưới;
+ảnh không bắt buộc. Em không bấm Submit (anh bấm). Sau khi gửi: ghi mã phiếu vào đây + PROGRESS,
+kiểm trả lời ở Trợ giúp → Xem các phiếu của tôi (TikTok không mail).
+
+Nội dung đã điền (bản cuối, ngắn hơn nháp trước vì form Application Management không có ô API):
 
 ```
 Subject: Upgrade custom service to public — impact on existing 70 seller authorizations?
@@ -126,8 +136,16 @@ Please confirm:
    review: upgrade review + language listing review only, or a new app review / beta testing too?
 4. Expected review time for the Vietnam listing.
 
-Thank you.
+This is a planning question, not a bug report. Thank you.
 ```
+
+**Kệ ERP có sao không (anh hỏi 23/10 chiều)?** Không. LR-TXT-002: hạng mục chỉ cần "hợp lý với
+mục đích chính", nhiều chức năng hoặc chồng lấn hạng mục bên cạnh vẫn được; G-CAT-001: sản phẩm
+có thể phủ nhiều hạng mục. Hubsell vẫn làm đủ việc của ERP (đơn, tồn, đối soát, tài chính) và
+mô tả chi tiết mục 3.5 có hẳn đoạn "NỀN ĐỂ TÍNH LÃI THẬT" nói việc đó, nên reviewer không có
+cớ bắt lỗi "sai kệ". Khách nhìn thấy tên + ảnh + mô tả nói trợ lý quảng cáo; kệ chỉ là nhãn
+nhỏ "Quản lý TMĐT › ERP" trên thẻ. Chỉ cần tránh một điều: KHÔNG viết mô tả ngắn / lợi ích
+chỉ toàn quảng cáo mà không nhắc đơn/tài chính ở mô tả dài (đã có).
 
 Nếu anh chốt B hoặc C: em làm thêm (1) đơn Hạng mục & thị trường, (2) tạo app công khai mới,
 (3) code `Channel.tiktokAppKey` + đọc cấu hình theo app, (4) hộp nhắc "Ủy quyền lại" cho 15
