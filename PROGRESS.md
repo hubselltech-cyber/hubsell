@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 23/10/2026 ~21:00 — HAI CON SỐ BIÊN Ở TÀI CHÍNH MOBILE (góp ý khách 22/10 mục 3, anh gọi lại)
+
+- Thẻ Lợi nhuận ròng "25,7% biên ròng" = lãi ÷ DOANH THU; dòng chốt thác nước "biên 16,2%" = lãi ÷ TỔNG GIÁ TRỊ SP (web cũng vậy nhưng ở hai trang khác nhau; mobile gộp một màn nên khách tưởng lệch). Sửa mobile: thẻ ghi "25,7% trên doanh thu" (cùng kiểu thẻ Chi phí), thác ghi "biên 16,2% trên giá trị SP". Không đổi công thức. Web giữ nguyên (hai trang riêng). Vào bản 1.4.1.
+
 ## Phiên 23/10/2026 tối (chốt) — ĐỢI 01/11 BUILD + NỘP 1.4.1 CẢ HAI KHO (lịch tự động 08:30)
 
 - Anh chốt không nâng gói Expo, đợi 01/11. Đã đặt lịch `hubsell-mobile-1-4-1-build-nop-01-11` (08:30 01/11): pull, tsc, build iOS + Android, submit iOS + tạo 1.4.1 trên ASC (nếu 1.4.0 còn chờ duyệt thì hỏi anh), submit Android + Có gì mới, ghi PROGRESS/memory. app.json đã lên 1.4.1, ghi chú `docs/store/whats-new-1.4.1.txt`. Android chưa có Firebase FCM V1 → tin đẩy Android chưa chạy sau bản này.
