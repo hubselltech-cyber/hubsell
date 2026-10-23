@@ -106,7 +106,11 @@ as authoritative… Upgrade to Public Service is not only listing review: upgrad
 language listing reviews, public app review, compliance review, and any required beta testing
 (beta testing only when Partner Center triggers it, commonly Connector apps targeting US/UK)."*
 
-### 2.2. Ticket hỏi TikTok trước khi nâng cấp — ĐÃ ĐIỀN SẴN 23/10 chiều, chờ anh bấm Submit
+### 2.2. Ticket hỏi TikTok trước khi nâng cấp — ✅ ĐÃ GỬI 23/10 11:09 (giờ Partner Center), **Ticket ID `2026102304120200004`**, trạng thái Unassigned
+
+Xem tại Trợ giúp → Xem các phiếu của tôi → tab **Hỗ trợ kỹ thuật**
+(`partner.tiktokshop.com/ticket/center?issues=technical`). Lịch kiểm tự động 27/10 08:45; ticket
+cũ 2026100303120200001 (giục app review) đang "Reply received" từ 17/10, chưa đóng.
 
 Anh chốt 23/10 chiều: *"gửi ticket trước; nếu dính trần 25 thì bỏ qua luôn (không nâng cấp)"*.
 Đường vào form (Chrome anh): chatbot Trợ lý đối tác → nút "Gửi phiếu" dưới câu trả lời →
