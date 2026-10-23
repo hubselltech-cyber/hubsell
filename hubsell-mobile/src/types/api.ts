@@ -1022,6 +1022,7 @@ export interface AppNotification {
   id: string;
   /** Type kỹ thuật (return, cancel_request, ops-alert:stockout…). */
   type: string;
+  /** Backend ≥ 23/10 trả sẵn; bản cũ thiếu → app tự xếp (lib/notification-category). */
   category: NotificationCategoryKey;
   title: string;
   body: string | null;

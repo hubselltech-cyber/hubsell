@@ -22,6 +22,7 @@ import {
 } from "@/api/notifications";
 import type { AppNotification } from "@/types/api";
 import { hrefForNotificationLink } from "@/lib/notification-links";
+import { withCategory } from "@/lib/notification-category";
 
 /**
  * CHUÔNG THÔNG BÁO + PUSH của app (23/10/2026) — một nguồn cho cả khu chủ shop:
@@ -135,7 +136,8 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       try {
         const res = await fetchNotifications();
         if (seq !== reqSeq.current) return;
-        setItems(res.items);
+        // Backend cũ chưa trả `category` → app tự xếp để icon không rơi về "i".
+        setItems(res.items.map(withCategory));
         setUnread(res.unread);
         setHasMore(res.hasMore);
         if (Platform.OS === "ios") void Notifications.setBadgeCountAsync(res.unread).catch(() => {});
@@ -155,7 +157,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       const res = await fetchNotifications(last.createdAt);
       setItems((prev) => {
         const seen = new Set(prev.map((n) => n.id));
-        return [...prev, ...res.items.filter((n) => !seen.has(n.id))];
+        return [...prev, ...res.items.filter((n) => !seen.has(n.id)).map(withCategory)];
       });
       setHasMore(res.items.length === PAGE);
     } catch {
@@ -187,13 +189,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   );
 
   // Nạp lần đầu + về foreground + 60 s một lần (chỉ khi app đang mở).
+  // Đăng xuất / không phải chủ shop: không tải; danh sách cũ xóa ở lần đăng nhập sau
+  // qua refresh() (không setState trong effect — luật react-compiler của dự án).
   useEffect(() => {
-    if (!isOwner) {
-      setItems([]);
-      setUnread(0);
-      return;
-    }
-    void refresh();
+    if (!isOwner) return;
+    // Lượt tải đầu đẩy sang microtask để không setState thẳng trong effect (luật react-compiler).
+    queueMicrotask(() => void refresh());
     const sub = AppState.addEventListener("change", (s) => {
       if (s === "active") void refresh(true);
     });
@@ -331,8 +332,20 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   }, [isOwner, router, refresh]);
 
   const value = useMemo<NotificationsValue>(
-    () => ({ items, unread, loading, hasMore, refresh, loadMore, markAllRead, open, push, enablePush, disablePush }),
-    [items, unread, loading, hasMore, refresh, loadMore, markAllRead, open, push, enablePush, disablePush]
+    () => ({
+      items: isOwner ? items : [],
+      unread: isOwner ? unread : 0,
+      loading,
+      hasMore,
+      refresh,
+      loadMore,
+      markAllRead,
+      open,
+      push,
+      enablePush,
+      disablePush,
+    }),
+    [isOwner, items, unread, loading, hasMore, refresh, loadMore, markAllRead, open, push, enablePush, disablePush]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
