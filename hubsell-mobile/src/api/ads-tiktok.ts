@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   TiktokAdsCampaignVideos,
   TiktokAdsDashboard,
+  TiktokAdsVideoHistoryPage,
   TiktokProductBreakevenData,
   TiktokVideoMeta,
 } from "../types/api";
@@ -24,6 +25,18 @@ export function fetchTiktokAdsDashboard(params: { from: string; to: string; chan
 export function fetchTiktokCampaignVideos(campaignRowId: string, range: { from: string; to: string }) {
   return api<TiktokAdsCampaignVideos>(
     `${BASE}/campaigns/${encodeURIComponent(campaignRowId)}/videos?from=${range.from}&to=${range.to}`
+  );
+}
+
+/**
+ * Lịch sử loại / khôi phục CHIA TRANG (24/10/2026): 20 lệnh/trang, chỉ đọc DB — không gọi TikTok,
+ * nên lật trang không tốn quota sàn. Payload /videos vẫn mang `actions` 10 lệnh mới nhất (bản
+ * 1.4.0 đọc), tab Lịch sử từ 1.4.1 đọc route này. `cursor` lấy từ `nextCursor` trang trước.
+ */
+export function fetchTiktokVideoHistory(campaignRowId: string, cursor?: string | null) {
+  const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return api<TiktokAdsVideoHistoryPage>(
+    `${BASE}/campaigns/${encodeURIComponent(campaignRowId)}/videos/history${q}`
   );
 }
 

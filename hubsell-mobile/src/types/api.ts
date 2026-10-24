@@ -933,6 +933,16 @@ export interface TiktokAdsVideoActionLog {
   createdAt: string;
 }
 
+/**
+ * Một trang lịch sử loại / khôi phục (route /videos/history, 24/10/2026 — chỉ đọc DB, không gọi
+ * TikTok). `nextCursor` là chuỗi mờ truyền lại nguyên văn; null = hết sổ. `total` = cả sổ.
+ */
+export interface TiktokAdsVideoHistoryPage {
+  items: TiktokAdsVideoActionLog[];
+  nextCursor: string | null;
+  total: number;
+}
+
 export interface TiktokAdsCampaignVideos {
   campaign: {
     id: string;

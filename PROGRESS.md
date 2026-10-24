@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 24/10/2026 ~11:10 — MOBILE: LỊCH SỬ LOẠI VIDEO TIKTOK THEO BẢN WEB (khôi phục từng video + mã là link + chia trang), vào 1.4.1
+
+- **Việc** (phiên tách từ phiên 10:30, anh: "xong thì làm luôn cho bản mobile"): `hubsell-mobile/src/screens/TiktokVideosScreen.tsx` — `HistoryList` dựng lại + `HistoryCard`: mỗi dòng mã video của lệnh loại thật đã gửi (live, SUCCESS/SENDING) có nút **Khôi phục** riêng khi video đó hiện đang bị loại (`videoById` từ payload /videos); "Khôi phục cả N video" chỉ còn khi lệnh còn ≥ 2 video bị loại; dòng ghi "đang chờ TikTok khôi phục" / "không còn bị loại"; lệnh ghi "TikTok đang áp dụng lệnh…" (< 30 phút) / "TikTok đang khôi phục video của lệnh này"; hộp xác nhận 1 video "Khôi phục video này?" / nhiều "Khôi phục cả N video của lệnh <giờ>?" + liệt kê mã ≤ 5 (`ConfirmModal` thêm `lines`); state `undo = { logId, videoIds | null }`. Mã video bấm → `openTiktokVideo` (`lib/tiktok-ads.ts`, `@/video/<mã>`), sao chép tách riêng. **Chia trang:** `api/ads-tiktok.ts: fetchTiktokVideoHistory` + kiểu `TiktokAdsVideoHistoryPage` (types/api.ts); tab đọc sổ khi mở lần đầu (gọi trong onChange tab, không effect), `onEndReached` + nút "Tải thêm N · còn M lệnh cũ hơn", badge tab = `total`; loại / khôi phục xong hoặc kéo làm mới → trang đầu. Lệnh > 6 video gấp "Xem thêm". Mốc giờ "bây giờ" chốt lúc tải (`clock`) thay `Date.now()` khi vẽ (eslint purity). Backend / web không đụng.
+- **Test local (390px, mock `window.fetch` 47 lệnh trên mobile-web-local + backend local, admin@hubsell.vn):** 1 video → body 1 item, dòng đổi "đang chờ TikTok khôi phục", nút cả lệnh tự ẩn; cả lệnh → đúng 2 item; con trỏ gửi lại nguyên văn `MjA=` → `NDA=`, 20 → 40 → 47, nút tự ẩn khi hết; link `https://www.tiktok.com/@/video/<mã>`; scrollWidth 390, không tràn. tsc sạch; eslint chỉ còn lỗi `set-state-in-effect` có sẵn ở `load()`. ⚠️ Giao diện tối chưa soi bằng mắt (giả lập web không đổi theme khi chưa tải lại). Không gửi lệnh nào lên TikTok thật; KHÔNG build (EAS hết lượt, lịch 08:30 01/11 build 1.4.1 từ master).
+- Docs: ADS-TIKTOK-TREN-MOBILE.md khối 24/10 + mục 4.3 + 6; ADS-TIKTOK-GMV-MAX §7.A.4 dòng mobile → ✅. Memory `hubsell-tiktok-lich-su-khoi-phuc-tung-video` cập nhật.
+
+---
+
 ## Phiên 24/10/2026 ~10:30 — LỊCH SỬ LOẠI VIDEO TIKTOK: KHÔI PHỤC TỪNG VIDEO + MÃ LÀ LINK + NÚT RÕ HƠN (anh: "khôi phục cả 2 video cùng lúc là không ổn")
 
 - **Khảo sát:** nút "Khôi phục cả lệnh" (A4, 18/09) gom mọi video của lệnh còn đang bị loại rồi gửi MỘT lệnh ADD → đúng như anh nghi. Backend `POST /campaigns/:id/videos/action` vốn nhận danh sách video bất kỳ → chỉ sửa FE, không migration, không đụng worker — an toàn cho khách đang dùng.

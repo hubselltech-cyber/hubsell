@@ -318,7 +318,8 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    `tiktokVideoUrl` ở tiktok-ads-format.ts — không cần tên kênh, TikTok tự chuyển hướng theo mã; đã thử 24/10) + nút sao chép
    riêng; nút Khôi phục đậm viền + bóng mỏng (`RESTORE_BUTTON`) vì bản outline cũ bị khách tưởng là chữ. Soi local bằng mock
    fetch trong trình duyệt (DB dev không có lịch sử TikTok): 1 video → gửi đúng 1 item; cả lệnh → đúng 2; sáng/tối/390px OK.
-   ⏳ Mobile `TiktokVideosScreen.tsx` vẫn "Khôi phục cả lệnh" → làm cùng kiểu trong bản 1.4.1 (build 01/11).
+   ✅ 24/10 trưa — Mobile `TiktokVideosScreen.tsx` làm cùng kiểu (nút từng video + mã = link + chia trang đọc
+   /videos/history), vào bản 1.4.1 (build 01/11); chi tiết docs/ADS-TIKTOK-TREN-MOBILE.md khối 24/10.
    **→ 24/10/2026 (tiếp) — CHIA TRANG LỊCH SỬ (anh: "đã chia trang chưa hay dàn hết một trang?"):** trước đó payload /videos
    chỉ mang `take: 10` lệnh mới nhất và web dàn hết — lệnh thứ 11 trở đi MẤT khỏi tab. Nay: route mới
    `GET /campaigns/:id/videos/history?cursor=&limit=` (chỉ đọc DB, KHÔNG gọi TikTok; 20 mục/trang, trần 50; keyset

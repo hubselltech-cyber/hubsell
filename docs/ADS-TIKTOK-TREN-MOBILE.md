@@ -28,6 +28,30 @@ thật), sáng/tối. Khác với phương án ở trên, đã chốt khi soi:
    Diễn tập, tím = Đang loại thật; tránh xanh lá của "Đang chạy" và đỏ / vàng của nhận định.
 4. Soi giả lập web local reviewer@ (6 chiến dịch, 12 SP → Gợi ý 5 nên chạy) ở 320 / 360px, sáng + tối; tsc sạch.
 
+**24/10 — tab Lịch sử theo bản web cùng ngày (anh: "khôi phục cả 2 video cùng lúc là không ổn"; "xong thì làm luôn
+cho bản mobile"), vào bản 1.4.1 (lịch build 08:30 01/11):**
+1. **Khôi phục TỪNG video**: mỗi dòng mã video của lệnh loại thật đã gửi (live, SUCCESS/SENDING) có nút **Khôi phục**
+   riêng khi video đó HIỆN đang bị loại và không chờ sàn (đọc `videoById` từ payload /videos); nút "Khôi phục cả N video"
+   chỉ còn khi lệnh còn ≥ 2 video bị loại. Dòng không khôi phục được ghi "đang chờ TikTok khôi phục" / "không còn bị
+   loại"; cả lệnh: "TikTok đang áp dụng lệnh (khoảng 20 phút)…" (< 30 phút tuổi) / "TikTok đang khôi phục video của lệnh
+   này" / "Các video của lệnh này không còn bị loại". Hộp xác nhận: 1 video → "Khôi phục video này?" nút "Khôi phục";
+   nhiều → "Khôi phục cả N video của lệnh <giờ>?", liệt kê mã (≤ 5). Cùng route `POST …/videos/action` ADD, items chỉ
+   gồm video được chọn. State `undo = { logId, videoIds | null }` thay `undoLog`.
+2. **Mã video = link**: bấm mã → `Linking.openURL(tiktokVideoUrl(mã))` (`lib/tiktok-ads.ts`, `@/video/<mã>` không cần
+   tên kênh — web đã thử); nút sao chép tách riêng, dấu ✓ 1,5 giây.
+3. **Chia trang**: tab đọc `GET …/videos/history?cursor=` (`api/ads-tiktok.ts: fetchTiktokVideoHistory`, kiểu
+   `TiktokAdsVideoHistoryPage`), chỉ khi mở tab lần đầu; cuộn tới đáy tự tải trang kế (`onEndReached`) + nút "Tải thêm N ·
+   còn M lệnh cũ hơn" dự phòng; badge tab + dòng "N lệnh" = `total`; lệnh loại / khôi phục xong hoặc kéo làm mới → về
+   trang đầu. Payload /videos vẫn mang `actions` 10 lệnh (bản 1.4.0 đang dùng; 1.4.1 chỉ dùng làm dữ liệu tạm khi chưa
+   đọc sổ). Lệnh > 6 video gấp lại "Xem thêm N video" để nút Khôi phục không bị cắt.
+4. Nút Khôi phục: viền slate-300 + nền slate-50 (tối: slate-500 / slate-800), chữ semibold — rõ hơn bản viền mảnh cũ,
+   không nút đặc (lệnh 10 video = 10 khối). Không dùng `shadow-*` (RN web báo deprecated, app chưa chỗ nào dùng).
+5. Soi web local 390px bằng mock `window.fetch` cho `/campaigns/mock-cmp/*` (47 lệnh): 1 video → body đúng 1 item, dòng
+   đổi "đang chờ TikTok khôi phục", nút cả lệnh tự ẩn; cả lệnh → đúng 2 item; con trỏ gửi lại nguyên văn 20 → 40 → 47,
+   nút Tải thêm tự ẩn khi hết; link mở `https://www.tiktok.com/@/video/<mã>`; không tràn ngang. tsc sạch; eslint chỉ còn
+   lỗi `set-state-in-effect` có từ trước ở `load()`. Giao diện tối CHƯA soi bằng mắt (giả lập web không đổi được theme
+   khi chưa tải lại trang; lớp `dark:` đặt theo đúng mẫu các nút sẵn có trong màn).
+
 Tài liệu gốc phải đọc trước khi code: [ADS-TIKTOK-GMV-MAX.md](ADS-TIKTOK-GMV-MAX.md) (API, luật,
 bẫy), [KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md](KHAO-SAT-TRO-LY-QUANG-CAO-MOBILE.md) (bố cục Shopee
 trên app đã chốt 04–05/10), [ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md](ADS-KHAO-SAT-ROI-MUC-TIEU-NGAN-SACH.md).
@@ -157,9 +181,10 @@ danh sách dài, chọn nhiều, thanh hành động dính đáy (điểm 8 kh�
   trong 7 ngày. TikTok áp dụng sau ~20 phút." → nút thật. Lệnh thật lên sàn nên luôn xác nhận,
   nhất quán với Shopee và web.
 - **Chân trang** một dòng mờ: "Chi phí từng video cập nhật trễ tới 11 giờ; ROI gồm cả đơn tự nhiên."
-- **Tab Lịch sử** (tab thứ hai, chỉ gọi khi mở; thực tế là 10 dòng đã nằm sẵn trong cùng API):
-  thời gian · Loại/Khôi phục N video · nguồn (thủ công / tự động) · trạng thái (Đã gửi / Đang
-  chờ / Diễn tập — chưa loại / TikTok từ chối) · căn cứ · nút **Khôi phục cả lệnh** có xác nhận.
+- **Tab Lịch sử** (tab thứ hai, chỉ gọi khi mở — từ 1.4.1 đọc `GET …/videos/history` chia trang 20, cuộn tới đáy tải
+  tiếp; 1.4.0 dùng 10 dòng trong payload /videos): thời gian · Loại/Khôi phục N video · nguồn (thủ công / tự động) ·
+  trạng thái (Đã gửi / Đang chờ / Diễn tập — chưa loại / TikTok từ chối) · căn cứ · từng dòng mã video (bấm mở TikTok ·
+  sao chép · nút **Khôi phục** riêng video đó) · nút **Khôi phục cả N video** chỉ khi lệnh còn ≥ 2 video bị loại (24/10).
 - Chỉ chủ shop thấy ô chọn và thanh hành động; chiến dịch không ở trạng thái đang chạy thì
   không có ô chọn (backend trả 409).
 
@@ -200,6 +225,8 @@ xuất đưa cùng luật này lên web sau để hai nơi nói một giọng.
   - `GET /api/quang-cao/tiktok/campaigns/:id/videos?from&to` → video + 10 dòng lịch sử + totals.
     Gọi TikTok 2–3 lượt, chỉ khi mở màn Video; cache theo id + kỳ trong phiên.
   - `POST …/campaigns/:id/videos/action {action: REMOVE|ADD, items[]}` → loại / khôi phục.
+  - `GET …/campaigns/:id/videos/history?cursor=&limit=` (24/10, chỉ đọc DB, 20/trang) → `{ items, nextCursor, total }`
+    cho tab Lịch sử từ 1.4.1; `cursor` là chuỗi mờ, truyền lại nguyên văn.
   - `GET …/video-meta?ids=` ≤ 24 mã, chỉ cho trang đang nhìn; lỗi thì bỏ qua lặng lẽ (đang 503).
   - `POST …/refresh {channelId}` cho kéo-xuống-làm-mới.
   - Chuỗi quyền của route: `ads.tiktok` + `requirePlanUnlocked` → app xử lý 403 PLAN_LOCKED bằng

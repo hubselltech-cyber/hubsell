@@ -25,6 +25,22 @@ export function openSellerCenter() {
   void Linking.openURL(TIKTOK_SELLER_CENTER_URL);
 }
 
+/**
+ * Link mở MỘT video trên TikTok. Phần tên kênh chỉ là "đường đẹp": TikTok tra theo mã video và
+ * tự chuyển sang đúng kênh (web đã thử 24/10/2026 với `@/video/<mã>`), nên tab Lịch sử — chỗ
+ * không có tên kênh, oEmbed lại hay bị chặn — vẫn mở đúng video. Cùng công thức với web
+ * `tiktokVideoUrl` (tiktok-ads-format.ts).
+ */
+export function tiktokVideoUrl(videoId: string, author?: string | null): string {
+  return `https://www.tiktok.com/@${author ?? ""}/video/${videoId}`;
+}
+
+/** Mở video bằng app TikTok / trình duyệt hệ thống (anh Trung 24/10: khách bấm mã là xem được video). */
+export function openTiktokVideo(videoId: string, author?: string | null) {
+  hapticTap();
+  void Linking.openURL(tiktokVideoUrl(videoId, author));
+}
+
 export type TiktokStatusKey = "ongoing" | "paused" | "ended";
 
 export function tiktokStatusKey(raw: string): TiktokStatusKey {
