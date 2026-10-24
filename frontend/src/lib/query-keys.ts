@@ -34,6 +34,7 @@ export const qk = {
     ["tiktok-ads-videos", campaignRowId, from, to] as const,
   tiktokAdsOutsideVideos: (campaignRowId: string, from: string, to: string) =>
     ["tiktok-ads-videos-outside", campaignRowId, from, to] as const,
+  tiktokAdsVideoHistory: (campaignRowId: string) => ["tiktok-ads-video-history", campaignRowId] as const,
   tiktokVideoMeta: (ids: string[]) => ["tiktok-video-meta", ids.join(",")] as const,
   tiktokAdsAutoRule: (campaignRowId: string) => ["tiktok-ads-auto-rule", campaignRowId] as const,
   tiktokAdsBacktest: (campaignRowId: string) => ["tiktok-ads-backtest", campaignRowId] as const,

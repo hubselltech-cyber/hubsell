@@ -319,6 +319,16 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    riêng; nút Khôi phục đậm viền + bóng mỏng (`RESTORE_BUTTON`) vì bản outline cũ bị khách tưởng là chữ. Soi local bằng mock
    fetch trong trình duyệt (DB dev không có lịch sử TikTok): 1 video → gửi đúng 1 item; cả lệnh → đúng 2; sáng/tối/390px OK.
    ⏳ Mobile `TiktokVideosScreen.tsx` vẫn "Khôi phục cả lệnh" → làm cùng kiểu trong bản 1.4.1 (build 01/11).
+   **→ 24/10/2026 (tiếp) — CHIA TRANG LỊCH SỬ (anh: "đã chia trang chưa hay dàn hết một trang?"):** trước đó payload /videos
+   chỉ mang `take: 10` lệnh mới nhất và web dàn hết — lệnh thứ 11 trở đi MẤT khỏi tab. Nay: route mới
+   `GET /campaigns/:id/videos/history?cursor=&limit=` (chỉ đọc DB, KHÔNG gọi TikTok; 20 mục/trang, trần 50; keyset
+   (createdAt, id) DESC — không skip/offset vì máy thêm lệnh mỗi ngày làm trang trôi; con trỏ base64url "ms|id";
+   trả `{ items, nextCursor, total }`). Helper thuần ở action-log.ts: `serializeVideoActionLog` (dùng chung với
+   `actions` của /videos), `encodeHistoryCursor / decodeHistoryCursor / historyCursorWhere / clampHistoryLimit` — 5 test
+   trong tiktok-ads.test.ts. Payload /videos GIỮ `actions` 10 lệnh mới nhất (mobile 1.4.0 đang đọc + web dùng để biết có
+   tab). Web: `useInfiniteQuery` key `tiktokAdsVideoHistory`, chỉ gọi khi mở tab, nút đáy "Tải thêm N / còn M lệnh cũ
+   hơn", tiêu đề "· T lệnh", badge tab = total; lệnh loại/khôi phục xong invalidate cả hai query. Soi local mock 45 lệnh:
+   20 → 40 → 45, nút tự ẩn khi hết, con trỏ gửi đúng.
 
 **B. Nên có, không chặn**
 5. ✅ **XONG 18/09** — `maybeRunTiktokAdsDaily`: tầng xung 60'/120' cũng kiểm `autoRunDue`, tầng 6h chỉ còn là lưới đỡ → lượt

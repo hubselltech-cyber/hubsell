@@ -1,9 +1,65 @@
 import { describe, expect, it } from "vitest";
 import {
+  VIDEO_HISTORY_PAGE_MAX,
+  VIDEO_HISTORY_PAGE_SIZE,
   buildVideoActionReasons,
+  clampHistoryLimit,
+  decodeHistoryCursor,
+  encodeHistoryCursor,
+  historyCursorWhere,
   parseVideoActionReasons,
+  serializeVideoActionLog,
   videoActionNote,
 } from "../tiktok-ads/action-log";
+
+describe("lịch sử loại video chia trang — con trỏ keyset (24/10/2026)", () => {
+  const row = { createdAt: new Date("2026-10-24T03:30:00.000Z"), id: "cmlog000000000000000000002" };
+
+  it("mã hóa rồi giải mã ra đúng (createdAt, id); chuỗi mờ không chứa ký tự cần escape trên URL", () => {
+    const c = encodeHistoryCursor(row);
+    expect(c).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(decodeHistoryCursor(c)).toEqual(row);
+  });
+
+  it("con trỏ rỗng / rác / thiếu id → null (đọc từ đầu, không ném lỗi)", () => {
+    expect(decodeHistoryCursor(undefined)).toBeNull();
+    expect(decodeHistoryCursor("")).toBeNull();
+    expect(decodeHistoryCursor("not-a-cursor")).toBeNull();
+    expect(decodeHistoryCursor(Buffer.from("123|", "utf8").toString("base64url"))).toBeNull();
+    expect(decodeHistoryCursor(Buffer.from("abc|id", "utf8").toString("base64url"))).toBeNull();
+  });
+
+  it("điều kiện sau con trỏ: cũ hơn, hoặc cùng giây mà id nhỏ hơn", () => {
+    expect(historyCursorWhere(row)).toEqual({
+      OR: [{ createdAt: { lt: row.createdAt } }, { createdAt: row.createdAt, id: { lt: row.id } }],
+    });
+  });
+
+  it("limit kẹp [1, max], thiếu/hỏng → mặc định", () => {
+    expect(clampHistoryLimit(undefined)).toBe(VIDEO_HISTORY_PAGE_SIZE);
+    expect(clampHistoryLimit("abc")).toBe(VIDEO_HISTORY_PAGE_SIZE);
+    expect(clampHistoryLimit("0")).toBe(VIDEO_HISTORY_PAGE_SIZE);
+    expect(clampHistoryLimit("7.9")).toBe(7);
+    expect(clampHistoryLimit("999")).toBe(VIDEO_HISTORY_PAGE_MAX);
+  });
+
+  it("serializeVideoActionLog: manual theo verdict, video + căn cứ tách từ reasons", () => {
+    const out = serializeVideoActionLog({
+      id: "l1",
+      action: "exclude_video",
+      mode: "live",
+      verdict: "manual",
+      status: "SUCCESS",
+      error: null,
+      reasons: buildVideoActionReasons([{ videoId: "7001", note: "chi 1.000đ · 0 đơn" }], ["căn cứ A"]),
+      createdAt: row.createdAt,
+    });
+    expect(out.source).toBe("manual");
+    expect(out.videos).toEqual([{ videoId: "7001", note: "chi 1.000đ · 0 đơn" }]);
+    expect(out.grounds).toEqual(["căn cứ A"]);
+    expect(serializeVideoActionLog({ id: "l2", action: "exclude_video", mode: "dry_run", verdict: "auto", status: "PLANNED", error: null, reasons: "", createdAt: row.createdAt }).source).toBe("auto");
+  });
+});
 import { reconcileSendingCommand, soakCheckExclude } from "../tiktok-ads/send-command";
 import { TiktokAdsApiError, isTiktokAdsRateLimited, rateLimitBackoffMs } from "../tiktok-ads/client";
 import { GMV_MAX_MAX_RANGE_DAYS, GMV_MAX_OUTSIDE_VIDEO_STATUSES, clampGmvMaxRange, tallyVideoStatuses } from "../tiktok-ads/report";

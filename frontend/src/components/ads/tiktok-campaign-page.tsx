@@ -31,7 +31,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -58,6 +58,7 @@ import {
   TIKTOK_AUTO_MODE_LABEL,
   fetchTiktokAdsCampaignVideos,
   fetchTiktokAdsOutsideVideos,
+  fetchTiktokAdsVideoHistory,
   fetchTiktokVideoMeta,
   getStoredUser,
   sendTiktokAdsVideoAction,
@@ -277,6 +278,20 @@ export function TiktokCampaignPage() {
     staleTime: 10 * 60_000,
   });
 
+  // LỊCH SỬ CHIA TRANG (anh Trung 24/10): payload trên chỉ mang 10 lệnh mới nhất; tab Lịch sử đọc đủ sổ từ DB theo
+  // trang 20 (keyset), nút "Tải thêm" ở đáy. Chỉ gọi khi mở tab — không gọi TikTok. Lỗi 401/403 đã được query chính
+  // xử lý (cùng chiến dịch, cùng quyền) nên ở đây chỉ cần câu báo ngắn.
+  const historyQ = useInfiniteQuery({
+    queryKey: qk.tiktokAdsVideoHistory(campaignRowId),
+    queryFn: ({ pageParam }) => fetchTiktokAdsVideoHistory(campaignRowId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+    enabled: allowed === true && campaignRowId !== "" && tab === "history",
+    staleTime: 60_000,
+  });
+  const historyItems = useMemo(() => historyQ.data?.pages.flatMap((p) => p.items) ?? [], [historyQ.data]);
+  const historyTotal = historyQ.data?.pages[0]?.total ?? null;
+
   // Chỉ video CÓ tiêu tiền mới đáng soi; phần còn lại sàn chưa phân phối đồng nào.
   const spending = useMemo(() => (data?.videos ?? []).filter((v) => v.cost > 0 && !v.excluded), [data?.videos]);
   // Video đã loại: hiện TẤT CẢ (kể cả không còn chi phí trong khoảng ngày) để còn khôi phục được.
@@ -381,7 +396,10 @@ export function TiktokCampaignPage() {
       toast.success(r.message);
       setPicked(new Set());
       setConfirmOpen(false);
-      await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] }),
+        queryClient.invalidateQueries({ queryKey: qk.tiktokAdsVideoHistory(campaignRowId) }),
+      ]);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không gửi được lệnh lên TikTok");
     } finally {
@@ -396,7 +414,7 @@ export function TiktokCampaignPage() {
     const want = new Set(ids);
     return excludedRows.filter((v) => want.has(v.videoId) && v.pending == null);
   };
-  const undoLog = undo ? ((data?.actions ?? []).find((a) => a.id === undo.logId) ?? null) : null;
+  const undoLog = undo ? (historyItems.find((a) => a.id === undo.logId) ?? (data?.actions ?? []).find((a) => a.id === undo.logId) ?? null) : null;
   const undoRows = undoLog ? undoRowsOf(undo?.videoIds ?? undoLog.videos.map((x) => x.videoId)) : [];
   const undoVideoIds = [...new Set(undoRows.map((v) => v.videoId))];
   // Trạng thái HIỆN TẠI của từng video (tab Lịch sử đọc để biết dòng nào còn khôi phục được). Một video có thể đứng ở
@@ -421,7 +439,10 @@ export function TiktokCampaignPage() {
       );
       toast.success(r.message);
       setUndo(null);
-      await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] }),
+        queryClient.invalidateQueries({ queryKey: qk.tiktokAdsVideoHistory(campaignRowId) }),
+      ]);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không gửi được lệnh lên TikTok");
     } finally {
@@ -458,7 +479,9 @@ export function TiktokCampaignPage() {
   const tabs: { key: "videos" | "backtest" | "history"; label: string; count?: number }[] = [
     { key: "videos", label: "Video" },
     ...(c?.auto?.mode === "dry_run" ? [{ key: "backtest" as const, label: "Đối chiếu diễn tập" }] : []),
-    ...((data?.actions.length ?? 0) > 0 ? [{ key: "history" as const, label: "Lịch sử loại / khôi phục", count: data?.actions.length }] : []),
+    ...((data?.actions.length ?? 0) > 0
+      ? [{ key: "history" as const, label: "Lịch sử loại / khôi phục", count: historyTotal ?? data?.actions.length }]
+      : []),
   ];
   // Tab đang chọn biến mất (vd đổi chế độ khỏi Diễn tập) → về bảng video.
   const activeTab = tabs.some((x) => x.key === tab) ? tab : "videos";
@@ -939,9 +962,14 @@ export function TiktokCampaignPage() {
         {activeTab === "history" && (data?.actions.length ?? 0) > 0 && (
           <Card>
             <CardContent className="space-y-2 py-4">
-              <p className="text-sm font-semibold text-slate-900">Lịch sử loại / khôi phục video</p>
+              <p className="text-sm font-semibold text-slate-900">
+                Lịch sử loại / khôi phục video
+                {historyTotal != null && <span className="ml-1.5 font-normal text-slate-500">· {formatNumber(historyTotal)} lệnh</span>}
+              </p>
+              {historyQ.isPending && <p className={TEXT_SUB}>Đang đọc sổ…</p>}
+              {historyQ.isError && <p className="text-sm text-red-500">Chưa đọc được lịch sử. Hãy thử lại sau ít phút.</p>}
               <ul className="divide-y divide-slate-200/80 text-sm">
-                {data?.actions.map((a) => {
+                {historyItems.map((a) => {
                   const removing = a.action === "exclude_video";
                   // Lệnh loại THẬT đã tới sàn → video của nó khôi phục được (dry_run / FAILED / lệnh khôi phục thì không).
                   const restorableLog = removing && a.mode === "live" && (a.status === "SUCCESS" || a.status === "SENDING");
@@ -1115,6 +1143,16 @@ export function TiktokCampaignPage() {
                   );
                 })}
               </ul>
+              {/* Chia trang kiểu "Tải thêm": sổ chỉ dài dần theo ngày, khách đọc từ mới tới cũ — không cần số trang. */}
+              {historyQ.hasNextPage && historyTotal != null && (
+                <div className="pt-1">
+                  <Button size="sm" variant="outline" onClick={() => void historyQ.fetchNextPage()} disabled={historyQ.isFetchingNextPage}>
+                    {historyQ.isFetchingNextPage
+                      ? "Đang tải…"
+                      : `Tải thêm ${formatNumber(Math.min(20, historyTotal - historyItems.length))} / còn ${formatNumber(historyTotal - historyItems.length)} lệnh cũ hơn`}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

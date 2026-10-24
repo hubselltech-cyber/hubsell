@@ -53,7 +53,12 @@ import {
   VIDEO_HISTORY_ACTIONS,
   VIDEO_VERDICT_MANUAL,
   buildVideoActionReasons,
+  clampHistoryLimit,
+  decodeHistoryCursor,
+  encodeHistoryCursor,
+  historyCursorWhere,
   parseVideoActionReasons,
+  serializeVideoActionLog,
   videoActionNote,
 } from "../integrations/tiktok-ads/action-log";
 import {
@@ -481,6 +486,44 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
   }
 });
 
+// LỊCH SỬ LOẠI / KHÔI PHỤC — CHIA TRANG (anh Trung 24/10/2026: "đã chia trang chưa hay dàn hết một trang?"). Chỉ đọc DB,
+// KHÔNG gọi TikTok (payload /videos là 2–3 lệnh sàn, không nên gọi lại chỉ để lật trang sổ). Keyset theo (createdAt, id)
+// DESC, 20 mục/trang, `total` để FE ghi "Tải thêm N lệnh". Trạng thái HIỆN TẠI của từng video (còn bị loại?) FE lấy từ
+// payload /videos đang có — route này không lặp lại việc đó.
+adsTiktokRouter.get("/campaigns/:id/videos/history", async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await prisma.adsCampaign.findFirst({
+      where: { id: String(req.params.id), channel: { userId: req.ownerId!, channelName: ChannelName.TIKTOK } },
+      select: { id: true },
+    });
+    if (!campaign) {
+      res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    const limit = clampHistoryLimit(req.query.limit);
+    const cursor = decodeHistoryCursor(req.query.cursor);
+    const baseWhere = { adsCampaignId: campaign.id, action: { in: VIDEO_HISTORY_ACTIONS } };
+    const [total, logs] = await Promise.all([
+      prisma.adsActionLog.count({ where: baseWhere }),
+      prisma.adsActionLog.findMany({
+        where: cursor ? { AND: [baseWhere, historyCursorWhere(cursor)] } : baseWhere,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1, // dư 1 để biết còn trang sau mà không đếm lại
+        select: { id: true, action: true, mode: true, verdict: true, status: true, error: true, reasons: true, createdAt: true },
+      }),
+    ]);
+    const page = logs.slice(0, limit);
+    const last = page[page.length - 1];
+    res.json({
+      items: page.map(serializeVideoActionLog),
+      nextCursor: logs.length > limit && last ? encodeHistoryCursor(last) : null,
+      total,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // VIDEO NGOÀI BẢNG SOI (anh Trung 18/09: chiến dịch được bồi video liên tục — cho thấy đủ bức tranh mà không làm rối
 // bảng): đếm theo trạng thái những nhóm Hubsell không đưa vào bảng (TikTok tự ngưng rải, chờ creator cấp quyền, không
 // hoạt động…). Tách endpoint riêng để trang gọi SAU khi bảng đã lên — nhóm này của TC054 là ~1.600 dòng (2 trang report).
@@ -643,7 +686,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         select: { videoId: true, lastVerdict: true, lastReason: true, lastVerdictOn: true, graduatedOn: true },
       });
       const watchOf = new Map(watches.map((w) => [w.videoId, w]));
-      // Sổ thao tác video của chiến dịch (10 lệnh gần nhất) — hiện ngay dưới bảng.
+      // Sổ thao tác video của chiến dịch (10 lệnh gần nhất) — đủ sổ ở route /videos/history.
       const logs = await prisma.adsActionLog.findMany({
         where: { adsCampaignId: campaign.id, action: { in: VIDEO_HISTORY_ACTIONS } },
         orderBy: { createdAt: "desc" },
@@ -720,18 +763,9 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         to: period.endDate,
         products,
         videos: rows,
-        actions: logs.map((l) => ({
-          id: l.id,
-          action: l.action,
-          /** dry_run = lệnh DIỄN TẬP (status PLANNED, chưa gọi sàn); live = đã gửi lên TikTok. */
-          mode: l.mode,
-          status: l.status,
-          error: l.error,
-          /** manual = chủ shop tự bấm; auto = Trợ lý tự động (căn cứ ở grounds). */
-          source: l.verdict === VIDEO_VERDICT_MANUAL ? "manual" : "auto",
-          ...parseVideoActionReasons(l.reasons),
-          createdAt: l.createdAt,
-        })),
+        // 10 lệnh mới nhất — đủ cho app mobile 1.4.0 (đọc `actions`) và để web biết có tab Lịch sử hay không; tab web đọc
+        // đủ sổ qua GET /campaigns/:id/videos/history (chia trang, 24/10/2026).
+        actions: logs.map(serializeVideoActionLog),
         totals: {
           videoCount: active.length,
           spendingCount: active.filter((v) => v.cost > 0).length,

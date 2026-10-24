@@ -3287,6 +3287,22 @@ export function fetchTiktokAdsCampaignVideos(campaignRowId: string, range: { fro
   );
 }
 
+/** Một trang lịch sử loại / khôi phục (đọc DB, không gọi TikTok). `total` = cả sổ, để ghi "Tải thêm N lệnh". */
+export interface TiktokAdsVideoHistoryPage {
+  items: TiktokAdsVideoActionLog[];
+  /** Chuỗi mờ cho trang kế; null = hết sổ. */
+  nextCursor: string | null;
+  total: number;
+}
+
+/** Tab Lịch sử chia trang (24/10/2026) — payload /videos chỉ mang 10 lệnh mới nhất. */
+export function fetchTiktokAdsVideoHistory(campaignRowId: string, cursor?: string | null) {
+  const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return apiFetch<TiktokAdsVideoHistoryPage>(
+    `/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos/history${q}`
+  );
+}
+
 /** LOẠI (REMOVE) / KHÔI PHỤC (ADD) video khỏi chiến dịch — lệnh ghi lên TikTok, chỉ chủ shop. */
 export function sendTiktokAdsVideoAction(
   campaignRowId: string,
