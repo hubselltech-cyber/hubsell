@@ -18,3 +18,12 @@ export const TIKTOK_SELLER_CENTER_ADS_URL = "https://seller-vn.tiktok.com/";
 export function formatPct(v: number): string {
   return `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`;
 }
+
+/**
+ * Link mở một video trên TikTok. Phần tên kênh chỉ là "đường đẹp": TikTok tra theo mã video và tự chuyển sang đúng kênh
+ * (đã thử 24/10/2026 với `@/video/<mã>` → nhảy về `@<kênh thật>/video/<mã>`), nên chỗ không có tên kênh (tab Lịch sử,
+ * oEmbed bị chặn) vẫn mở đúng video.
+ */
+export function tiktokVideoUrl(videoId: string, author?: string | null): string {
+  return `https://www.tiktok.com/@${author ?? ""}/video/${videoId}`;
+}

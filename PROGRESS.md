@@ -6,6 +6,22 @@
 
 ---
 
+## Phiên 24/10/2026 ~10:30 — LỊCH SỬ LOẠI VIDEO TIKTOK: KHÔI PHỤC TỪNG VIDEO + MÃ LÀ LINK + NÚT RÕ HƠN (anh: "khôi phục cả 2 video cùng lúc là không ổn")
+
+- **Khảo sát:** nút "Khôi phục cả lệnh" (A4, 18/09) gom mọi video của lệnh còn đang bị loại rồi gửi MỘT lệnh ADD → đúng như anh nghi. Backend `POST /campaigns/:id/videos/action` vốn nhận danh sách video bất kỳ → chỉ sửa FE, không migration, không đụng worker — an toàn cho khách đang dùng.
+- **Làm (`tiktok-campaign-page.tsx`):** (1) nút **Khôi phục** trên TỪNG dòng mã video của lệnh loại thật đã gửi, chỉ khi video đó hiện đang bị loại; nút "Khôi phục cả N video" chỉ còn khi lệnh còn ≥ 2 video bị loại; dòng không khôi phục được ghi "đang chờ TikTok khôi phục" / "không còn bị loại"; hộp xác nhận liệt kê mã (≤ 5), tiêu đề "Khôi phục video này?" khi 1 video. State `undo = { logId, videoIds | null }` thay `undoLogId`. (2) **Mã video = link** `https://www.tiktok.com/@/video/<mã>` mở tab mới — em đã thử trên trình duyệt: TikTok tự chuyển sang đúng kênh, không cần tên kênh → helper `tiktokVideoUrl` (tiktok-ads-format.ts) dùng chung cho bảng Video, Đối chiếu diễn tập và Lịch sử; nút sao chép tách riêng. (3) Nút rõ hơn, không chói: giữ outline trắng nhưng viền slate-300 + bóng mỏng + chữ medium (`RESTORE_BUTTON`); không dùng nút đặc vì mỗi lệnh có thể 10 video = 10 khối đen.
+- **Test local (anh dặn test trước khi push):** DB dev không có lịch sử/token TikTok → chạy frontend-http + backend-http, đăng nhập admin@hubsell.vn, cài mock `window.fetch` cho 3 đường `/campaigns/mock-cmp/*` + video-meta (7 lệnh: 2 video, 1 video, 3 video còn 2, lệnh có video chờ ADD, lệnh 5 phút tuổi chờ REMOVE, diễn tập, khôi phục tay). Kết quả: bấm Khôi phục 1 video → body gửi đúng 1 item, sau đó dòng chuyển "đang chờ TikTok khôi phục", nút cả lệnh của lệnh đó tự ẩn (còn 1); bấm cả lệnh → hộp liệt kê 2 mã, nhãn "Khôi phục cả 2 video"; link có target _blank + rel noreferrer; giao diện tối OK; 390px không tràn ngang (đo JS scrollWidth = 390). tsc + eslint sạch. Không gửi lệnh nào lên TikTok thật.
+- Docs ADS-TIKTOK-GMV-MAX §7.A.4 ghi bổ sung. ⏳ Mobile `TiktokVideosScreen.tsx` vẫn khôi phục cả lệnh → sửa cùng kiểu vào bản 1.4.1 (lịch build 01/11), tách việc riêng.
+
+---
+
+## Phiên 24/10/2026 ~09:40 — iOS 1.4.0 (22) ĐÃ LÊN APP STORE (READY_FOR_SALE)
+
+- Thư Apple 24/10 00:34 "Review of your submission is complete" (submission `b79fa6b9`). Kiểm bằng `node scripts/asc-release.mjs status`: 1.4.0 **READY_FOR_SALE**, build 22 VALID → đã tự phát hành (releaseType AFTER_APPROVAL), không cần bấm Release. Khách iOS nhận bản chuông + push + lọc gian từ hôm nay; Android vẫn 1.3.x, chờ lịch 08:30 01/11 build 1.4.1 cả 2 kho (lịch đã đặt, mục 1.4.1 không còn nhánh "1.4.0 còn chờ duyệt").
+- Mail digest sáng 24/10: 6 khách mới, 5 gian TikTok nối, 2 khách hết hạn thử Scale, 1 yêu cầu hỗ trợ (MOLINO VIETNAM), 2 thư nhắc dội do email khách gõ sai.
+
+---
+
 ## Phiên 23/10/2026 ~22:30 — VÍ TIKTOK = SỔ CÁI WITHDRAWALS + NHÃN "TIỀN ĐANG GIAO" (anh: "không quá rủi ro, 90 ngày trước ủy quyền")
 
 - **Anh hỏi** sàn có API lấy tổng tiền đang giao không → có, và cột "Chưa thanh toán" đã là nó từ 09/10 (Shopee get_income_overview, TikTok unsettled, 1 lệnh/gian; Lazada không có API → cộng từ đơn trong DB, cờ quyết toán do tầng giờ sẵn có đặt — KHÔNG thêm lượt gọi). Anh hỏi ví TikTok "chờ xin API" → không: scope Finance bật 15/09; 16/09 em dùng tạm `/finance/202309/payments` (docs ghi unavailable) nên 3 gian hiện 0.

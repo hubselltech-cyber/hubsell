@@ -309,6 +309,16 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    loại đã gửi, gom video của lệnh còn đang EXCLUDED từ danh sách "Đã loại" sẵn có → gọi đường khôi phục thủ công (đi qua
    `sendVideoCommand`, gắn `restoredByUserAt`). Mô tả gốc: **Khôi phục MỘT CHẠM cả lệnh tự động** ở Lịch sử — hiện phải lọc chip Đã loại rồi tick tay từng video. Máy loại 10
    video/ngày mà khách thấy sai thì phải hoàn tác được ngay (và `restoredByUserAt` tự bảo vệ 30 ngày).
+   **→ 24/10/2026 — KHÔI PHỤC TỪNG VIDEO (anh Trung: khách chỉ muốn lấy lại MỘT video, nút cả lệnh "không ổn"):** mỗi dòng mã
+   video của lệnh loại thật đã gửi (live, SUCCESS/SENDING) có nút **Khôi phục** riêng khi video đó HIỆN đang bị loại và không chờ
+   sàn; nút "Khôi phục cả N video" chỉ còn khi lệnh còn ≥ 2 video bị loại (1 video thì hai nút làm cùng một việc). Dòng video
+   không khôi phục được ghi trạng thái: "đang chờ TikTok khôi phục" (pending ADD) / "không còn bị loại" (đang phân phối lại);
+   lệnh có video pending ADD → dòng lệnh "TikTok đang khôi phục video của lệnh này". Hộp xác nhận liệt kê mã (≤ 5). Cùng một
+   route `POST /campaigns/:id/videos/action` ADD — backend KHÔNG đổi. Kèm: mã video = link mở thẳng TikTok (helper
+   `tiktokVideoUrl` ở tiktok-ads-format.ts — không cần tên kênh, TikTok tự chuyển hướng theo mã; đã thử 24/10) + nút sao chép
+   riêng; nút Khôi phục đậm viền + bóng mỏng (`RESTORE_BUTTON`) vì bản outline cũ bị khách tưởng là chữ. Soi local bằng mock
+   fetch trong trình duyệt (DB dev không có lịch sử TikTok): 1 video → gửi đúng 1 item; cả lệnh → đúng 2; sáng/tối/390px OK.
+   ⏳ Mobile `TiktokVideosScreen.tsx` vẫn "Khôi phục cả lệnh" → làm cùng kiểu trong bản 1.4.1 (build 01/11).
 
 **B. Nên có, không chặn**
 5. ✅ **XONG 18/09** — `maybeRunTiktokAdsDaily`: tầng xung 60'/120' cũng kiểm `autoRunDue`, tầng 6h chỉ còn là lưới đỡ → lượt

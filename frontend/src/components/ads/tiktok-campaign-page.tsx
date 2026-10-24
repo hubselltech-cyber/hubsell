@@ -35,7 +35,7 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
+import { formatPct, formatRoi, tiktokVideoUrl } from "@/components/ads/tiktok-ads-format";
 import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
 import { TiktokAdviceBadge } from "@/components/ads/tiktok-advice-body";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
@@ -107,6 +107,13 @@ const AUTO_VERDICT_BADGE: Record<string, { label: string; className: string }> =
   learning: { label: "Chờ học xong", className: "bg-sky-50 text-sky-700" },
 };
 const ddmm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+/**
+ * Nút Khôi phục ở tab Lịch sử. Bản outline mặc định (viền slate-200 trên nền trắng) bị khách nhìn lướt tưởng là chữ (anh
+ * Trung 24/10) → viền đậm một bậc + bóng mỏng để nó "nổi" như một nút thật, vẫn trắng – không tô màu cho khỏi chói giữa
+ * danh sách nhiều lệnh. Không dùng nút đặc: mỗi lệnh có thể 10 video = 10 khối đen.
+ */
+const RESTORE_BUTTON = "border-slate-300 font-medium text-slate-900 shadow-xs hover:border-slate-400 hover:bg-slate-50";
 
 /**
  * Câu căn cứ của backend nối các ý bằng " — " (vi phạm gì — vì sao ân hạn — còn mấy ngày). Seller đọc
@@ -224,8 +231,9 @@ export function TiktokCampaignPage() {
   const [owner, setOwner] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
-  // A4 — KHÔI PHỤC MỘT CHẠM cả một lệnh loại (tab Lịch sử): id dòng sổ đang chờ xác nhận.
-  const [undoLogId, setUndoLogId] = useState<string | null>(null);
+  // A4 — KHÔI PHỤC từ tab Lịch sử: lệnh đang chờ xác nhận + video nào của lệnh (null = cả lệnh). Anh Trung 24/10: khách
+  // muốn khôi phục TỪNG video chứ không phải cả lệnh → nút trên từng dòng video; nút cả lệnh chỉ còn khi lệnh ≥ 2 video.
+  const [undo, setUndo] = useState<{ logId: string; videoIds: string[] | null } | null>(null);
   const [sending, setSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [autoOpen, setAutoOpen] = useState(false);
@@ -330,6 +338,7 @@ export function TiktokCampaignPage() {
 
   // Sàn chỉ cho loại/khôi phục khi chiến dịch đang bật; nhân viên chỉ xem.
   const canAct = owner && c?.status === "ongoing";
+  const restoreDisabledTitle = canAct ? undefined : owner ? "TikTok chỉ cho khôi phục khi chiến dịch đang bật" : "Chỉ chủ shop khôi phục được";
   const restoring = quick === "excluded";
   const pickable = (v: TiktokAdsVideoRow) => canAct && v.pending == null;
   const pickedRows = rows.filter((v) => picked.has(rowKey(v)) && pickable(v));
@@ -387,8 +396,19 @@ export function TiktokCampaignPage() {
     const want = new Set(ids);
     return excludedRows.filter((v) => want.has(v.videoId) && v.pending == null);
   };
-  const undoLog = (data?.actions ?? []).find((a) => a.id === undoLogId) ?? null;
-  const undoRows = undoLog ? undoRowsOf(undoLog.videos.map((x) => x.videoId)) : [];
+  const undoLog = undo ? ((data?.actions ?? []).find((a) => a.id === undo.logId) ?? null) : null;
+  const undoRows = undoLog ? undoRowsOf(undo?.videoIds ?? undoLog.videos.map((x) => x.videoId)) : [];
+  const undoVideoIds = [...new Set(undoRows.map((v) => v.videoId))];
+  // Trạng thái HIỆN TẠI của từng video (tab Lịch sử đọc để biết dòng nào còn khôi phục được). Một video có thể đứng ở
+  // nhiều dòng (nhiều sản phẩm) — ưu tiên dòng đang bị loại / đang chờ sàn để không bỏ sót nút Khôi phục.
+  const videoById = useMemo(() => {
+    const m = new Map<string, TiktokAdsVideoRow>();
+    for (const v of data?.videos ?? []) {
+      const cur = m.get(v.videoId);
+      if (!cur || (!cur.excluded && !cur.pending && (v.excluded || v.pending))) m.set(v.videoId, v);
+    }
+    return m;
+  }, [data?.videos]);
 
   async function runUndo() {
     if (undoRows.length === 0) return;
@@ -400,7 +420,7 @@ export function TiktokCampaignPage() {
         undoRows.map((v) => ({ videoId: v.videoId, spuId: v.spuId, cost: v.cost, orders: v.orders }))
       );
       toast.success(r.message);
-      setUndoLogId(null);
+      setUndo(null);
       await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không gửi được lệnh lên TikTok");
@@ -746,7 +766,7 @@ export function TiktokCampaignPage() {
                       const st = STATUS_LABEL[v.deliveryStatus];
                       const m = meta[v.videoId];
                       const bad = v.noOrder || isBelowTarget(v);
-                      const href = `https://www.tiktok.com/@${m?.author ?? ""}/video/${v.videoId}`;
+                      const href = tiktokVideoUrl(v.videoId, m?.author);
                       return (
                         <tr key={rowKey(v)} className={cn("[&>td]:border-b [&>td]:border-slate-200/80", v.noOrder && !v.excluded && "bg-rose-50/60")}>
                           {canAct && (
@@ -923,6 +943,8 @@ export function TiktokCampaignPage() {
               <ul className="divide-y divide-slate-200/80 text-sm">
                 {data?.actions.map((a) => {
                   const removing = a.action === "exclude_video";
+                  // Lệnh loại THẬT đã tới sàn → video của nó khôi phục được (dry_run / FAILED / lệnh khôi phục thì không).
+                  const restorableLog = removing && a.mode === "live" && (a.status === "SUCCESS" || a.status === "SENDING");
                   // Không phải lệnh video — NHẬT KÝ ĐỔI THÔNG SỐ: giờ + từng ô số cũ → số mới (anh Trung 18/09 khuya), chữ trung tính.
                   if (a.action === "config_change") {
                     return (
@@ -976,40 +998,48 @@ export function TiktokCampaignPage() {
                           <Badge className="bg-rose-50 text-red-500">TikTok từ chối</Badge>
                         )}
                       </div>
-                      {/* A4 — KHÔI PHỤC MỘT CHẠM cả lệnh: máy (hay người) loại nhầm thì hoàn tác ngay tại dòng lệnh, khỏi lọc
-                          "Đã loại" rồi tick từng video. Chỉ với lệnh loại ĐÃ gửi lên sàn; đếm đúng số video còn đang bị loại. */}
-                      {removing &&
-                        a.mode === "live" &&
-                        (a.status === "SUCCESS" || a.status === "SENDING") &&
+                      {/* A4 — KHÔI PHỤC từ dòng lệnh: máy (hay người) loại nhầm thì hoàn tác ngay tại đây, khỏi lọc "Đã loại" rồi tick
+                          từng video. Chỉ với lệnh loại ĐÃ gửi lên sàn. Từng video có nút riêng ở dòng mã video bên dưới (anh Trung
+                          24/10: khách chỉ muốn lấy lại MỘT video); nút "cả lệnh" chỉ bày khi còn ≥ 2 video bị loại — 1 video thì hai nút
+                          làm cùng một việc chỉ gây rối. */}
+                      {restorableLog &&
                         (() => {
-                          const left = undoRowsOf(a.videos.map((x) => x.videoId)).length;
+                          const left = new Set(undoRowsOf(a.videos.map((x) => x.videoId)).map((v) => v.videoId)).size;
                           if (left === 0) {
                             // Lệnh vừa gửi: TikTok cần ~20 phút mới đổi trạng thái video → lúc này video CHƯA nằm trong danh sách Đã loại.
                             // Nói "không còn bị loại" là sai (anh Trung 18/09 vừa loại 3 video đã thấy ngay câu đó) — phải nói đang chờ sàn.
                             const waiting = Date.now() - new Date(a.createdAt).getTime() < 30 * 60_000;
+                            // Đã bấm khôi phục (từng video hoặc cả lệnh) mà sàn chưa áp dụng → nói đúng là đang khôi phục.
+                            const restoringNow = a.videos.some((x) => videoById.get(x.videoId)?.pending === "ADD");
                             return (
-                              <p className={cn("text-xs sm:pl-[7.75rem]", waiting ? "text-amber-700" : "text-slate-400")}>
+                              <p className={cn("text-xs sm:pl-[7.75rem]", waiting || restoringNow ? "text-amber-700" : "text-slate-400")}>
                                 {waiting
-                                  ? "TikTok đang áp dụng lệnh (khoảng 20 phút). Xong thì nút Khôi phục cả lệnh hiện tại đây."
-                                  : "Các video của lệnh này không còn bị loại."}
+                                  ? "TikTok đang áp dụng lệnh (khoảng 20 phút). Xong thì nút Khôi phục hiện ở từng video bên dưới."
+                                  : restoringNow
+                                    ? "TikTok đang khôi phục video của lệnh này (khoảng 20 phút)."
+                                    : "Các video của lệnh này không còn bị loại."}
                               </p>
                             );
                           }
+                          if (left < 2) return null;
                           return (
-                            <div className="sm:pl-[7.75rem]">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:pl-[7.75rem]">
                               <Button
                                 size="sm"
                                 variant="outline"
+                                className={RESTORE_BUTTON}
                                 disabled={!canAct}
-                                title={canAct ? undefined : owner ? "TikTok chỉ cho khôi phục khi chiến dịch đang bật" : "Chỉ chủ shop khôi phục được"}
-                                onClick={() => setUndoLogId(a.id)}
+                                title={restoreDisabledTitle}
+                                onClick={() => setUndo({ logId: a.id, videoIds: null })}
                               >
                                 <RotateCcw className="size-4" />
-                                Khôi phục cả lệnh
-                                <span className="text-slate-500">
-                                  {left === a.videos.length ? `${formatNumber(left)} video` : `còn ${formatNumber(left)}/${formatNumber(a.videos.length)} video đang bị loại`}
-                                </span>
+                                Khôi phục cả {formatNumber(left)} video
                               </Button>
+                              {left < a.videos.length && (
+                                <span className="text-xs text-slate-500">
+                                  còn {formatNumber(left)}/{formatNumber(a.videos.length)} video của lệnh đang bị loại
+                                </span>
+                              )}
                             </div>
                           );
                         })()}
@@ -1020,25 +1050,60 @@ export function TiktokCampaignPage() {
                           ))}
                         </ul>
                       )}
-                      <ul className="space-y-0.5 sm:pl-[7.75rem]">
-                        {a.videos.map((x) => (
-                          <li key={x.videoId} className="flex flex-wrap items-center gap-x-2 text-xs">
-                            <button
-                              type="button"
-                              onClick={() => void copyVideoId(x.videoId)}
-                              title="Sao chép mã video"
-                              className="group inline-flex items-center gap-1 tabular-nums text-slate-900 hover:underline"
-                            >
-                              {x.videoId}
-                              {copiedId === x.videoId ? (
-                                <Check className="size-3.5 text-emerald-500" />
-                              ) : (
-                                <Copy className="size-3.5 text-slate-400 group-hover:text-slate-900" />
+                      {/* Từng video của lệnh: MÃ là link mở thẳng video trên TikTok (anh Trung 24/10: khách muốn bấm mã là xem được
+                          video) + nút sao chép riêng + số liệu lúc thao tác + nút Khôi phục RIÊNG video đó (hoặc trạng thái hiện tại). */}
+                      <ul className="space-y-1 sm:pl-[7.75rem]">
+                        {a.videos.map((x) => {
+                          const row = restorableLog ? videoById.get(x.videoId) : undefined;
+                          const state = !row
+                            ? null
+                            : row.pending === "ADD"
+                              ? "waiting"
+                              : row.pending === "REMOVE"
+                                ? null // lệnh loại vừa gửi — dòng chữ hổ phách của lệnh đã nói đang chờ sàn
+                                : row.excluded
+                                  ? "restorable"
+                                  : "back";
+                          return (
+                            <li key={x.videoId} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                              <a
+                                href={tiktokVideoUrl(x.videoId)}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Mở video trên TikTok"
+                                className="inline-flex items-center gap-1 tabular-nums text-slate-900 underline-offset-2 hover:underline"
+                              >
+                                {x.videoId}
+                                <ExternalLink className="size-3.5 text-slate-400" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => void copyVideoId(x.videoId)}
+                                title="Sao chép mã video"
+                                aria-label="Sao chép mã video"
+                                className="rounded p-0.5 text-slate-400 hover:text-slate-900"
+                              >
+                                {copiedId === x.videoId ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                              </button>
+                              {x.note && <span className="text-slate-500">{x.note}</span>}
+                              {state === "restorable" && (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  className={cn(RESTORE_BUTTON, "ml-0.5")}
+                                  disabled={!canAct}
+                                  title={restoreDisabledTitle}
+                                  onClick={() => setUndo({ logId: a.id, videoIds: [x.videoId] })}
+                                >
+                                  <RotateCcw />
+                                  Khôi phục
+                                </Button>
                               )}
-                            </button>
-                            {x.note && <span className="text-slate-500">{x.note}</span>}
-                          </li>
-                        ))}
+                              {state === "waiting" && <span className="text-amber-700">đang chờ TikTok khôi phục</span>}
+                              {state === "back" && <span className="text-slate-400">không còn bị loại</span>}
+                            </li>
+                          );
+                        })}
                       </ul>
                       {a.status === "FAILED" && a.error && <p className="text-xs text-red-500 sm:pl-[7.75rem]">{a.error}</p>}
                       {/* Dòng từng kẹt "đang gửi" rồi được đối chiếu lại: ghi chú cách chốt nằm ở cột error dù kết quả là thành công. */}
@@ -1068,24 +1133,34 @@ export function TiktokCampaignPage() {
         />
       )}
 
-      <Dialog open={undoLog != null} onOpenChange={(open) => !sending && !open && setUndoLogId(null)}>
+      <Dialog open={undoLog != null} onOpenChange={(open) => !sending && !open && setUndo(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Khôi phục {formatNumber(undoRows.length)} video của lệnh{" "}
-              {undoLog && new Date(undoLog.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}?
+              {undoVideoIds.length === 1
+                ? "Khôi phục video này?"
+                : `Khôi phục cả ${formatNumber(undoVideoIds.length)} video của lệnh ${
+                    undoLog ? new Date(undoLog.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : ""
+                  }?`}
             </DialogTitle>
             <DialogDescription>
-              TikTok sẽ đưa các video này trở lại chiến dịch {c?.name} và có thể phân phối tiếp, có hiệu lực sau khoảng 20 phút. Trợ lý tự động
-              sẽ không loại lại các video này trong 30 ngày.
+              TikTok sẽ đưa {undoVideoIds.length === 1 ? "video" : "các video"} này trở lại chiến dịch {c?.name} và có thể phân phối tiếp, có hiệu
+              lực sau khoảng 20 phút. Trợ lý tự động sẽ không loại lại trong 30 ngày.
             </DialogDescription>
           </DialogHeader>
+          {/* Liệt kê mã để khách chắc mình đang lấy lại đúng video (lệnh 10 video thì chỉ in 5 đầu). */}
+          <ul className="space-y-0.5 text-xs tabular-nums text-slate-500">
+            {undoVideoIds.slice(0, 5).map((id) => (
+              <li key={id}>{id}</li>
+            ))}
+            {undoVideoIds.length > 5 && <li>… và {formatNumber(undoVideoIds.length - 5)} video nữa</li>}
+          </ul>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUndoLogId(null)} disabled={sending}>
+            <Button variant="outline" onClick={() => setUndo(null)} disabled={sending}>
               Hủy
             </Button>
             <Button onClick={() => void runUndo()} disabled={sending || undoRows.length === 0}>
-              {sending ? "Đang gửi…" : "Khôi phục cả lệnh"}
+              {sending ? "Đang gửi…" : undoVideoIds.length === 1 ? "Khôi phục" : `Khôi phục cả ${formatNumber(undoVideoIds.length)} video`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -16,7 +16,7 @@ import { useQueries } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatRoi } from "@/components/ads/tiktok-ads-format";
+import { formatRoi, tiktokVideoUrl } from "@/components/ads/tiktok-ads-format";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -185,7 +185,7 @@ export function TiktokDryRunBacktest({ campaignRowId, enabled }: { campaignRowId
               <tbody>
                 {rows.map((v) => {
                   const m = meta[v.videoId];
-                  const href = `https://www.tiktok.com/@${m?.author ?? ""}/video/${v.videoId}`;
+                  const href = tiktokVideoUrl(v.videoId, m?.author);
                   const vd = VERDICT[v.verdict];
                   return (
                     <tr key={v.videoId} className="[&>td]:border-b [&>td]:border-slate-200/80">
