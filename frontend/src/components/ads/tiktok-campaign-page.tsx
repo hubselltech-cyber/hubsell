@@ -128,6 +128,27 @@ function reasonPoints(reason: string): string[] {
     .map((x) => x.charAt(0).toUpperCase() + x.slice(1));
 }
 
+/**
+ * Câu CĂN CỨ của một lệnh tự động (auto-run.ts): "Trợ lý tự động (7 ngày 2026-10-16→2026-10-22, ROI mục tiêu 18, mức loại hòa
+ * vốn 5,32 (214 đơn đã đối soát)): loại 1 video đang ngốn … · gắn cờ 1 video cần xem · mức loại theo hòa vốn …". Dàn một hàng
+ * ngang rất khó đọc (anh Trung 24/10) → tách: phần đầu (ai chấm + cửa sổ + thông số) giữ sau chữ "Căn cứ:", mỗi ý sau dấu "·"
+ * xuống một dòng thụt đầu dòng. Ngày ISO đổi sang dd/mm cho dễ đọc. Câu không theo khuôn (lệnh thủ công, bản cũ) → giữ nguyên.
+ */
+function groundParts(g: string): { head: string; points: string[] } {
+  const pretty = g.replace(/\b\d{4}-(\d{2})-(\d{2})\b/g, "$2/$1");
+  // Phần đầu đóng bằng "): " — ngoặc trong như "(214 đơn đã đối soát)" theo sau là ")" chứ không phải ": " nên không bị cắt nhầm.
+  const cut = pretty.indexOf("): ");
+  if (cut < 0) return { head: pretty, points: [] };
+  const head = pretty.slice(0, cut + 1);
+  const points = pretty
+    .slice(cut + 3)
+    .split(" · ")
+    .map((x) => x.trim().replace(/.$/, ""))
+    .filter(Boolean)
+    .map((x) => x.charAt(0).toUpperCase() + x.slice(1));
+  return points.length > 1 ? { head, points } : { head: pretty, points: [] };
+}
+
 /** Ô cột "Tự động": nhãn kết luận của lượt chấm gần nhất; trỏ chuột hoặc bấm → lý do + ngày chấm. */
 function AutoVerdictCell({ v, live }: { v: TiktokAdsVideoRow; live: boolean }) {
   if (v.excluded || v.pending) return <span className="text-slate-400">—</span>;
@@ -1072,11 +1093,23 @@ export function TiktokCampaignPage() {
                           );
                         })()}
                       {a.grounds.length > 0 && (
-                        <ul className="space-y-0.5 text-xs text-slate-500 sm:pl-[7.75rem]">
-                          {a.grounds.map((g, i) => (
-                            <li key={i}>Căn cứ: {g}</li>
-                          ))}
-                        </ul>
+                        <div className="space-y-1 text-xs text-slate-500 sm:pl-[7.75rem]">
+                          {a.grounds.map((g, i) => {
+                            const { head, points } = groundParts(g);
+                            return (
+                              <div key={i}>
+                                <p>Căn cứ: {head}</p>
+                                {points.length > 0 && (
+                                  <ul className="mt-0.5 list-disc space-y-0.5 pl-9 marker:text-slate-400">
+                                    {points.map((p, j) => (
+                                      <li key={j}>{p}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                       {/* Từng video của lệnh: MÃ là link mở thẳng video trên TikTok (anh Trung 24/10: khách muốn bấm mã là xem được
                           video) + nút sao chép riêng + số liệu lúc thao tác + nút Khôi phục RIÊNG video đó (hoặc trạng thái hiện tại). */}

@@ -329,6 +329,11 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    tab). Web: `useInfiniteQuery` key `tiktokAdsVideoHistory`, chỉ gọi khi mở tab, nút đáy "Tải thêm N / còn M lệnh cũ
    hơn", tiêu đề "· T lệnh", badge tab = total; lệnh loại/khôi phục xong invalidate cả hai query. Soi local mock 45 lệnh:
    20 → 40 → 45, nút tự ẩn khi hết, con trỏ gửi đúng.
+   **→ 24/10/2026 (tiếp 2) — CĂN CỨ TÁCH Ý (anh: "dàn hàng ngang rất khó đọc, tách từng ý xuống dòng, thụt đầu dòng so với chữ
+   Căn cứ"):** chỉ FE, `groundParts()` trong tiktok-campaign-page.tsx cắt câu của auto-run.ts tại "): " đầu tiên (ngoặc trong như
+   "(214 đơn đã đối soát)" theo sau là ")" nên không cắt nhầm) → phần đầu (ai chấm + cửa sổ + thông số) đứng sau "Căn cứ:", các ý
+   nối bằng " · " thành `<ul list-disc pl-9>` mỗi ý một dòng, viết hoa chữ đầu, bỏ chấm cuối; ngày ISO → dd/mm. Câu không theo
+   khuôn (lệnh thủ công, config_change) giữ nguyên một dòng. Backend không đổi chuỗi (chuông + lastRunSummary vẫn dùng dạng " · ").
 
 **B. Nên có, không chặn**
 5. ✅ **XONG 18/09** — `maybeRunTiktokAdsDaily`: tầng xung 60'/120' cũng kiểm `autoRunDue`, tầng 6h chỉ còn là lưới đỡ → lượt
