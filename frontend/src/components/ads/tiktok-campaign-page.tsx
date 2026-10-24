@@ -143,7 +143,7 @@ function groundParts(g: string): { head: string; points: string[] } {
   const points = pretty
     .slice(cut + 3)
     .split(" · ")
-    .map((x) => x.trim().replace(/.$/, ""))
+    .map((x) => x.trim().replace(/\.$/, ""))
     .filter(Boolean)
     .map((x) => x.charAt(0).toUpperCase() + x.slice(1));
   return points.length > 1 ? { head, points } : { head: pretty, points: [] };

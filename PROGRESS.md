@@ -22,6 +22,7 @@
 - Docs ADS-TIKTOK-GMV-MAX §7.A.4 ghi bổ sung. ⏳ Mobile `TiktokVideosScreen.tsx` vẫn khôi phục cả lệnh → sửa cùng kiểu vào bản 1.4.1 (lịch build 01/11), tách việc riêng.
 - **Anh hỏi tiếp "đã chia trang chưa?"** → chưa: backend `take: 10` + web dàn hết → lệnh thứ 11 trở đi mất khỏi tab. Làm: route `GET /campaigns/:id/videos/history` (chỉ DB, keyset (createdAt, id) DESC, 20/trang, trần 50, con trỏ base64url, trả items + nextCursor + total); helper thuần + 5 test (25/25 pass); payload /videos giữ `actions` 10 lệnh cho mobile 1.4.0. Web: `useInfiniteQuery` chỉ gọi khi mở tab, nút "Tải thêm N / còn M lệnh cũ hơn", badge tab = tổng. Soi local mock 45 lệnh: 20 → 40 → 45, nút ẩn khi hết, con trỏ gửi đúng. tsc 2 đầu + eslint FE sạch. Anh bảo làm luôn mobile → tách phiên riêng (brief có cả route history mới).
 - **Anh xem prod, chê câu Căn cứ dàn hàng ngang khó đọc** → `groundParts()` (FE) tách phần đầu sau "Căn cứ:" + từng ý " · " thành gạch đầu dòng thụt vào (list-disc pl-9), ngày ISO → dd/mm; câu không theo khuôn giữ nguyên. Soi local mock với đúng câu của gian anh chụp. Bẫy nhỏ: ghi regex qua node -e + template literal làm mất `\b \d` → kiểm lại dòng sau khi patch bằng script.
+- **Anh báo prod: "đơn" thành "đơ", mọi ý mất ký tự cuối** → regex bỏ chấm cuối ghi qua shell thành `/.$/` (mất ``), xóa ký tự cuối của MỌI ý. Sửa bằng tệp patch .mjs + String.raw, chạy thử hàm trên đúng câu thật trước khi commit. Bài học ghi memory gotcha-regex-mat-gach-cheo-qua-shell.
 
 ---
 
