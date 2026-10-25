@@ -136,3 +136,44 @@ Nếu anh chốt ngược bất kỳ điều nào, em sẽ làm theo và ghi l�
 Việc em làm được ngay sau khi anh chốt: (a) đọc nguyên văn Luật 91/2025/QH15 phần tiếp thị trực tiếp + điều khoản minh bạch AI; (b) kiểm developers.zalo.me luật 48 giờ và danh mục ZNS hiện hành; (c) dựng khung thư mục `hubsell-sales/` (hoặc tên anh chọn) + schema lát 0.
 
 Nguồn đã tra 25/10 (thứ cấp, cần đối chiếu gốc): [eSMS — Zalo OA FAQ](https://helpcenter.esms.vn/cau-hoi-thuong-gap/zalo-oa) · [Infobip — Zalo](https://infobip.com/docs/zalo) · [Luật 91/2025/QH15 hiệu lực](https://luatvietnam.vn/dan-su/luat-bao-ve-du-lieu-ca-nhan-2025-co-hieu-luc-khi-nao-568-103652-article.html) · [Nghị định hướng dẫn 91/2025](https://luatvietnam.vn/dan-su/nghi-dinh-huong-dan-luat-bao-ve-du-lieu-ca-nhan-2025-la-nghi-dinh-nao-568-103658-article.html) · [Mức phạt mua bán dữ liệu](https://lsvn.vn/mua-ban-du-lieu-ca-nhan-trai-phep-co-the-bi-phat-toi-10-lan-doanh-thu-a160473.html) · [Cảnh báo khóa tài khoản khi dùng Zalo cá nhân tự động](https://docs.openclaw.ai/it/channels/zalouser.md).
+
+---
+
+## 4. Bổ sung sau khi anh nêu vấn đề thật (25/10 tối)
+
+Anh nói lại 3 việc đang kẹt: (1) marketing chỉ quay được video TikTok, không có thời gian đăng bài nhóm; (2) khách bình luận / nhắn TikTok → anh tự trả lời, tự xin Zalo, tự add Zalo, không làm mãi được; (3) chat bán qua Zalo khá cơ bản, phần kỹ thuật anh tự làm, phần nói chuyện muốn AI làm thay.
+
+→ Mục 1–2 ở trên vẫn đúng về luật, nhưng **đích đổi**: hệ này không phải để tìm lead mới, mà để **gỡ anh ra khỏi hai nút cổ chai**. Xếp theo mức gỡ được:
+
+### 4.1 Nút cổ chai nặng nhất: trả lời TikTok → xin Zalo → add Zalo (việc 2)
+
+Vấn đề gốc là anh đang kéo khách về **Zalo cá nhân**, kênh không có API hợp lệ, nên mọi bước phải tay. Đảo chiều: kéo khách về **kênh có API** mà vẫn là Zalo.
+
+| Bước hiện tại (tay) | Bước đề xuất (máy) | Đường hợp lệ |
+|---|---|---|
+| Anh đọc bình luận video | Webhook COMMENT đẩy về ≤5 phút, AI phân loại hỏi giá / hỏi cách dùng / rác | TikTok Accounts API (khảo sát 12/10) — cần nộp form Accounts API Access + scope Business Comment; anh đã chốt "tách app riêng" → đây là app đó |
+| Anh gõ trả lời | AI soạn, lát 0 anh duyệt, lát 1 tự trả lời các ý định an toàn; câu trả lời luôn kèm "anh/chị nhắn Zalo OA Hubsell (link ở bio) em gửi hướng dẫn" | `/business/comment/reply/create/` |
+| Anh xin số Zalo, add bạn | **Bỏ hẳn bước này.** Khách tự bấm link/QR → nhắn OA → cửa sổ 48 giờ mở; khách nhắn lại là mở lại | Zalo OA (OA xác thực doanh nghiệp bằng pháp nhân CÔNG TY TNHH CÔNG NGHỆ HUBSELL, MST 0111626360) |
+| Anh chat bán | Sales Agent trả lời trong OA, chuyển anh khi dính kỹ thuật (nối gian lỗi, số ROAS của gian họ) | OA webhook + API tin tư vấn |
+| Inbox TikTok (tin nhắn riêng) | **Chưa thấy API hợp lệ cho DM tài khoản TikTok thường** — em cần kiểm. Nếu không có: AI soạn sẵn 1 câu mẫu, anh dán, mục tiêu đưa khách sang OA | ⏳ kiểm |
+
+Rủi ro thật của đảo chiều: khách TikTok quen inbox TikTok, bắt họ sang OA là thêm một bước → rụng một phần. Giảm bằng: link OA ngay bio + ghim bình luận đầu mỗi video + câu trả lời bình luận có lợi ích cụ thể ("em gửi bảng ROAS hòa vốn cho gian anh"). Đo tỷ lệ bình luận → nhắn OA sau 2 tuần; dưới 20 % (ngưỡng tự chọn) thì xem lại.
+
+### 4.2 Việc 3: chat bán cơ bản → AI làm, kỹ thuật anh làm
+
+Đúng như em đề xuất mục 2, nhưng vì anh xác nhận chat **cơ bản**, lát 0 (nháp anh duyệt) rút còn **1 tuần hoặc 30 hội thoại**, đủ để lấy giọng thật của anh làm mẫu. Luật chuyển anh: nối gian lỗi, hỏi số của gian họ, hỏi thuế cho ca riêng, đòi giảm giá, nổi nóng. Persona vẫn "Trợ lý Hubsell" không giả người (mục 1.4), anh chưa phản hồi điểm này — em coi là chưa chốt.
+
+### 4.3 Việc 1: marketing — chỗ máy gỡ được ít nhất, nói thật
+
+- **Đăng bài vào nhóm Facebook nhà bán: không có cách tự động hợp lệ.** Nhóm không có API đăng bài cho bên thứ ba; tool tự đăng = khóa tài khoản anh. Máy chỉ làm được tới "soạn sẵn bài từ video anh vừa quay (bóc lời → bài số liệu thật), anh dán 2 phút/ngày" hoặc giao cộng tác viên/đối tác người dạy bán hàng đăng (anh đã chốt 17/10 đối tác ăn referral 10 %).
+- **Cái máy làm được thật:** từ **một video anh quay** → tự đăng lên Page Facebook Hubsell (Graph API `pages_manage_posts`, hợp lệ), YouTube Shorts (Data API upload, hợp lệ), bài chữ cho Page + Zalo OA broadcast; đồng thời **đọc bình luận video** để đề xuất chủ đề video tuần sau (mỏ chủ đề thật, không bịa). Anh vẫn chỉ quay video; phủ kênh và chọn đề tài là máy.
+- Kịch bản video: chỉ viết Ý theo luật 24/10, anh tự nói.
+
+### 4.4 Thứ tự làm (đề xuất)
+
+1. **Tuần 1:** nộp hồ sơ TikTok Accounts API (em soạn, anh nộp — bản nháp 12/10 đã có); tạo + xác thực Zalo OA; kiểm 4 giả thuyết: TikTok có DM API không, phí/hạn mức tin tư vấn OA 48 giờ, webhook OA, quyền Page Facebook. Chưa code (luật 12/10: không phơi tính năng chưa chạy; luật "giả thuyết + kiểm trước khi code").
+2. **Tuần 2–3:** Sales Agent trên Zalo OA, lát 0 nháp anh duyệt trong HQ; link OA lên bio + ghim bình luận.
+3. **Khi TikTok duyệt scope:** nối bình luận video → phân loại → trả lời kéo về OA.
+4. **Sau:** phủ kênh từ 1 video (Page FB, YouTube), đề xuất chủ đề từ bình luận.
+
+Việc đăng bài nhóm vẫn là của người: anh dán 2 phút/ngày từ bài máy soạn, hoặc đối tác.
