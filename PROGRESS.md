@@ -11,7 +11,8 @@
 - **Anh yêu cầu (kèm ảnh màn Tài chính):** thêm cột Tiền đang giao, bỏ tiền ngân hàng, giới hạn tên shop bằng "…" theo tỉ lệ màn hình (đo đạc), kết luận dưới bảng theo tổng Ví sàn + tổng Đang giao; giữa chừng chốt thêm **Đang giao ở giữa, Ví sàn ngoài cùng phải** và "làm tí màu cho sinh động". Xong thì push + TestFlight.
 - **Làm:** tách khối thành `hubsell-mobile/src/components/CashByShopTable.tsx` (FinancePage chỉ còn `<CashByShopTable rows={visibleCashRows} />`): bảng 3 cột Gian hàng | Đang giao | Ví sàn, tiêu đề cột, hàng **Tổng** cộng dồn đúng các dòng đang lọc; `types/api.ts` thêm `pendingIncome` + `pendingIncomeSource` (backend trả từ 09/10, cùng định nghĩa cột "Tiền đang giao" web: số sàn công bố, chưa sync → "—"). Tên gian `numberOfLines={1}` flex-1 minWidth 0; hai cột số bề rộng CỐ ĐỊNH `MONEY_COL = 62` (đo: "-999,9 tr" 14 px semibold = 54 px, tiêu đề "Đang giao" = 50 px). Màu theo nghĩa: chấm màu sàn trước tên (cùng `useChannelColors` với bộ lọc Đơn hàng), Ví sàn emerald, Đang giao amber, âm đỏ, "—" xám, gian đã ngắt mờ.
 - **Đo (giả lập web local, route xem thử tạm `cash-preview` với tên 40+ ký tự + số 7–10 chữ số, đã gỡ trước commit):** không tràn ngang ở 320/360/390/430; cột tên còn 122 / 162 / 192 / 232 px → "DARKMAN STORE" (115 px) vừa ở 320, tên dài co "…"; nền tối OK (ép `hubsell.themePref=dark`). Không đăng nhập được backend local vì DB dev thiếu 9 migration (lệnh `prisma migrate deploy` bị chặn) → chỉ soi component với dữ liệu mẫu, CHƯA soi nguyên trang Tài chính với số thật — anh xem trên TestFlight.
-- tsc sạch; lint tệp mới sạch.
+- tsc sạch; lint tệp mới sạch. Push d67fc7ed. EAS build iOS thử 25/10 → từ chối (hết lượt Free, mở lại 01/11) → anh chốt CHỜ lịch 01/11.
+- **Anh xem ảnh rộng, lo hai cột số quá sát:** thêm khe giữa hai cột theo bề rộng màn (`useWindowDimensions`: 12 px, máy < 360 là 6 px) — soi lại 390 và 320: khe rõ, "DARKMAN STORE" vẫn vừa 320 (116 px chỗ / 115 px chữ). Commit riêng.
 
 ---
 

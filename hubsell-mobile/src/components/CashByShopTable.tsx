@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { Text, View, useWindowDimensions } from "react-native";
 import type { CashFlowRow } from "@/types/api";
 import { compactMoney } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
@@ -22,6 +22,11 @@ import { TABULAR } from "@/theme/tokens";
  */
 export function CashByShopTable({ rows }: { rows: CashFlowRow[] }) {
   const channelColors = useChannelColors();
+  // Khe giữa hai cột số (anh 25/10: "để quá sát khó nhìn"): số canh phải trong ô cố định nên khi hai
+  // số cùng dài ("999,9 tr" cạnh "-999,9 tr") chỉ còn 8 px — thêm 12 px; máy 320 chỉ 6 px để tên gian
+  // vẫn đủ chỗ cho "DARKMAN STORE" (115 px).
+  const { width } = useWindowDimensions();
+  const gap = width < 360 ? 6 : 12;
   const walletTotal = rows.reduce((s, r) => s + (r.walletBalance ?? 0), 0);
   const pendingTotal = rows.reduce((s, r) => s + (r.pendingIncome ?? 0), 0);
   return (
@@ -35,7 +40,10 @@ export function CashByShopTable({ rows }: { rows: CashFlowRow[] }) {
         <Text className="text-right text-[11px] text-slate-400 dark:text-slate-500" style={{ width: MONEY_COL }}>
           Đang giao
         </Text>
-        <Text className="text-right text-[11px] text-slate-400 dark:text-slate-500" style={{ width: MONEY_COL }}>
+        <Text
+          className="text-right text-[11px] text-slate-400 dark:text-slate-500"
+          style={{ width: MONEY_COL, marginLeft: gap }}
+        >
           Ví sàn
         </Text>
       </View>
@@ -66,7 +74,7 @@ export function CashByShopTable({ rows }: { rows: CashFlowRow[] }) {
             </View>
           </View>
           <MoneyCell value={r.pendingIncome} tone="transit" muted={r.disconnected} />
-          <MoneyCell value={r.walletBalance} tone="wallet" strong muted={r.disconnected} />
+          <MoneyCell value={r.walletBalance} tone="wallet" strong muted={r.disconnected} gap={gap} />
         </View>
       ))}
       {rows.length === 0 ? (
@@ -77,7 +85,7 @@ export function CashByShopTable({ rows }: { rows: CashFlowRow[] }) {
         <View className="mt-0.5 flex-row items-center border-t border-slate-200 pt-2.5 dark:border-slate-700">
           <Text className="flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Tổng</Text>
           <MoneyCell value={pendingTotal} tone="transit" strong />
-          <MoneyCell value={walletTotal} tone="wallet" strong />
+          <MoneyCell value={walletTotal} tone="wallet" strong gap={gap} />
         </View>
       )}
     </Card>
@@ -87,8 +95,8 @@ export function CashByShopTable({ rows }: { rows: CashFlowRow[] }) {
 /**
  * Bề rộng một cột tiền. Đo 25/10/2026 trên giả lập web (font hệ thống): chuỗi rộng nhất
  * compactMoney cho ra là "-999,9 tr" 14 px semibold tabular = 54 px, tiêu đề "Đang giao" 11 px
- * = 50 px → 62 px đủ + 8 px dư. Hai cột = 124 px; tên gian còn 124 px ở máy 320 ("DARKMAN STORE"
- * 115 px vừa), 164 px ở 360, 194 px ở 390, 234 px ở 430.
+ * = 50 px → 62 px đủ + 8 px dư. Hai cột + khe = 130 px (320) / 136 px; tên gian còn 118 px ở máy 320
+ * ("DARKMAN STORE" 115 px vừa), 152 px ở 360, 182 px ở 390, 222 px ở 430.
  */
 const MONEY_COL = 62;
 
@@ -104,11 +112,14 @@ function MoneyCell({
   tone,
   strong = false,
   muted = false,
+  gap = 0,
 }: {
   value: number | null;
   tone: keyof typeof TONE;
   strong?: boolean;
   muted?: boolean;
+  /** Khe bên trái (cột thứ hai) — xem CashByShopTable. */
+  gap?: number;
 }) {
   const color =
     value == null || muted
@@ -119,7 +130,7 @@ function MoneyCell({
   return (
     <Text
       className={`text-right text-sm ${strong ? "font-semibold" : "font-medium"} ${color}`}
-      style={[TABULAR, { width: MONEY_COL }]}
+      style={[TABULAR, { width: MONEY_COL, marginLeft: gap }]}
       numberOfLines={1}
     >
       {value == null ? "—" : compactMoney(value)}
