@@ -34,6 +34,7 @@ import {
 import { useChannelColors } from "@/theme/channel-colors";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { isExpressShipping } from "@/lib/shipping";
+import { hapticTap } from "@/lib/haptics";
 import { Badge } from "@/components/Badge";
 import { OrderDetailSheet } from "@/components/OrderDetailSheet";
 import { CancelRequestBar } from "@/components/CancelRequestBar";
@@ -76,12 +77,14 @@ export default function OrdersScreen() {
   // (trước đây set trong effect → lượt tải "tất cả" và lượt tải đã lọc chạy
   // song song, lượt nào về sau thắng → chip "Đang giao" mà list đủ mọi trạng
   // thái; anh Trung bắt được 03/10). Kèm reqSeq bên dưới chặn mọi ca đua khác.
-  // Chuông thông báo đẩy sang kèm ?cancelRequested=1 (khách xin hủy) / ?search=<mã đơn> (hỏa tốc).
+  // Chuông thông báo đẩy sang kèm ?cancelRequested=1 (khách xin hủy) / ?search=<mã đơn> (hỏa tốc,
+  // đơn bị hủy) / ?status=SHIPPING (giao không thành công) + ?n=<id tin> (notification-links.ts).
   const {
     status: statusParam,
     cancelRequested: cancelParam,
     search: searchParam,
-  } = useLocalSearchParams<{ status?: string; cancelRequested?: string; search?: string }>();
+    n: nonceParam,
+  } = useLocalSearchParams<{ status?: string; cancelRequested?: string; search?: string; n?: string }>();
   const statusFromParam = (p: unknown): "" | ShippingStatus =>
     typeof p === "string" && STATUS_TABS.some((t) => t.key === p) ? (p as ShippingStatus) : "";
   const [status, setStatus] = useState<"" | ShippingStatus>(() => statusFromParam(statusParam));
@@ -109,21 +112,23 @@ export default function OrdersScreen() {
   });
 
   // Đổi param khi màn này đã mount sẵn (bấm ô khác ở Tổng quan / bấm thông báo) → đổi lọc.
+  // `nonceParam` nằm trong deps để tin thứ hai cùng mã đơn (khách đã bấm X xóa) vẫn áp lại.
   useEffect(() => {
     if (typeof statusParam !== "string") return;
     const next = statusFromParam(statusParam);
     if (next) setStatus(next);
-  }, [statusParam]);
+  }, [statusParam, nonceParam]);
   useEffect(() => {
     if (cancelParam === "1") setCancelRequested(true);
-  }, [cancelParam]);
+  }, [cancelParam, nonceParam]);
   useEffect(() => {
     if (typeof searchParam !== "string" || !searchParam) return;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     setSearch(searchParam);
     queryRef.current.search = searchParam.trim();
     // load() khai báo bên dưới — gọi qua ref để effect này không phụ thuộc thứ tự.
     loadRef.current?.(1, false);
-  }, [searchParam]);
+  }, [searchParam, nonceParam]);
   const loadRef = useRef<((page: number, append: boolean) => Promise<void>) | null>(null);
   // Số thứ tự lượt tải — phản hồi của lượt CŨ về muộn thì bỏ, không ghi đè.
   const reqSeq = useRef(0);
@@ -190,6 +195,14 @@ export default function OrdersScreen() {
       queryRef.current.search = text.trim();
       void load(1, false);
     }, 450);
+  };
+  /** Nút X trong ô tìm: về danh sách đầy đủ NGAY (không chờ 450 ms) — lối ra sau khi
+   *  thông báo đổ sẵn mã đơn vào ô (anh Trung 25/10: "không có nút X để trở ra"). */
+  const clearSearch = () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    setSearch("");
+    queryRef.current.search = "";
+    void load(1, false);
   };
 
   /** Đổi SÀN: gian hàng đang lọc mà thuộc sàn khác thì gỡ luôn — để nguyên
@@ -382,7 +395,22 @@ export default function OrdersScreen() {
           value={search}
           onChangeText={onSearch}
           autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
         />
+        {search ? (
+          <Pressable
+            onPress={() => {
+              hapticTap();
+              clearSearch();
+            }}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Xóa tìm kiếm"
+          >
+            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Bộ lọc sàn — số đếm trạng thái trong panel lọc cũng lọc theo sàn */}

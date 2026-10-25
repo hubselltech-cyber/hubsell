@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
 import { useNotifications } from "@/notifications/NotificationsContext";
-import { hrefForNotificationLink } from "@/lib/notification-links";
+import { destinationFor } from "@/lib/notification-links";
 import { categoryMeta, timeAgo } from "@/lib/notification-meta";
 import { hapticTap } from "@/lib/haptics";
 import { ICON_TINT } from "@/theme/tokens";
@@ -112,7 +112,9 @@ function NotificationRow({ n, onPress }: { n: AppNotification; onPress: () => vo
   const meta = categoryMeta(n.category);
   const tint = ICON_TINT[meta.tint];
   const unread = !n.readAt;
-  const canOpen = hrefForNotificationLink(n.link) !== null;
+  const canOpen = destinationFor(n) !== null;
+  // Có việc để làm nhưng app chưa có màn (hóa đơn, gian hàng…) → nói rõ thay vì im.
+  const webOnly = !canOpen && !!n.link;
   return (
     <Pressable
       className={`flex-row gap-3 rounded-2xl border px-3 py-3 ${
@@ -155,6 +157,11 @@ function NotificationRow({ n, onPress }: { n: AppNotification; onPress: () => vo
             <>
               <Text className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Mở</Text>
               <Ionicons name="chevron-forward" size={12} color="#10b981" />
+            </>
+          ) : webOnly ? (
+            <>
+              <Ionicons name="laptop-outline" size={12} color="#94a3b8" />
+              <Text className="text-[11px] text-slate-400 dark:text-slate-500">Xem trên máy tính</Text>
             </>
           ) : null}
         </View>

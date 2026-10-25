@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AppState, Platform } from "react-native";
+import { AppState, Linking, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -21,7 +21,7 @@ import {
   unregisterPushDevice,
 } from "@/api/notifications";
 import type { AppNotification } from "@/types/api";
-import { hrefForNotificationLink } from "@/lib/notification-links";
+import { destinationFor, type NotificationDestination } from "@/lib/notification-links";
 import { withCategory } from "@/lib/notification-category";
 
 /**
@@ -174,18 +174,31 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     });
   }, [unread]);
 
+  // Một cửa đi tới đích cho cả dòng chuông lẫn tin đẩy: màn app → navigate
+  // (tab đang mở sẵn thì chỉ đổi params); link ngoài (Seller Center) → trình duyệt.
+  const go = useCallback(
+    (dest: NotificationDestination) => {
+      if (dest.kind === "external") {
+        void Linking.openURL(dest.url).catch(() => {});
+        return;
+      }
+      router.navigate(dest.href);
+    },
+    [router]
+  );
+
   const open = useCallback(
     (n: AppNotification): boolean => {
       if (!n.readAt) {
         setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x)));
         markNotificationsRead([n.id]).catch(() => {});
       }
-      const href = hrefForNotificationLink(n.link);
-      if (!href) return false;
-      router.navigate(href);
+      const dest = destinationFor(n);
+      if (!dest) return false;
+      go(dest);
       return true;
     },
-    [router]
+    [go]
   );
 
   // Nạp lần đầu + về foreground + 60 s một lần (chỉ khi app đang mở).
@@ -314,10 +327,14 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       const id = resp.notification.request.identifier;
       if (handledResponse.current === id) return;
       handledResponse.current = id;
-      const data = resp.notification.request.content.data as { link?: string | null } | null;
-      const href = hrefForNotificationLink(data?.link ?? null);
+      const data = resp.notification.request.content.data as {
+        notificationId?: string;
+        type?: string;
+        link?: string | null;
+      } | null;
+      const dest = destinationFor({ id: data?.notificationId, type: data?.type ?? "", link: data?.link ?? null });
       void refresh(true);
-      if (href) router.navigate(href);
+      if (dest) go(dest);
       else router.navigate("/notifications");
       void Notifications.clearLastNotificationResponseAsync().catch(() => {});
     };
@@ -329,7 +346,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       })
       .catch(() => {});
     return () => sub.remove();
-  }, [isOwner, router, refresh]);
+  }, [isOwner, router, refresh, go]);
 
   const value = useMemo<NotificationsValue>(
     () => ({

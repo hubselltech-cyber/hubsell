@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthContext";
@@ -137,6 +137,21 @@ export default function AssistantScreen() {
     },
     [push]
   );
+
+  // Thông báo Báo cáo tuần (web: /?assistant=…) → mở màn này với câu hỏi gửi sẵn
+  // (notification-links.ts: /assistant?prompt=&n=). Mỗi tin hỏi một lần; mở lại
+  // màn từ orb không hỏi lại.
+  const { prompt: promptParam, n: promptNonce } = useLocalSearchParams<{ prompt?: string; n?: string }>();
+  const askedPrompt = useRef<string | null>(null);
+  const canAsk = status === "signedIn" && user?.role === "ADMIN";
+  useEffect(() => {
+    const q = typeof promptParam === "string" ? promptParam.trim() : "";
+    if (!q || !canAsk) return;
+    const key = `${promptNonce ?? ""}#${q}`;
+    if (askedPrompt.current === key) return;
+    askedPrompt.current = key;
+    void ask({ question: q }, q);
+  }, [promptParam, promptNonce, canAsk, ask]);
 
   // ── Giọng nói: transcript tạm hiện live trong ô input, câu chốt tự gửi.
   // Đang chờ trả lời câu trước thì chỉ điền chữ vào ô, khách tự bấm gửi.

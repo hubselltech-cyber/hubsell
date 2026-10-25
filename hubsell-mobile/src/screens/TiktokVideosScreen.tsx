@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { rangeFor } from "@/lib/dates";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Clipboard from "expo-clipboard";
@@ -84,9 +85,23 @@ export function TiktokVideosScreen() {
   const router = useRouter();
   const dark = useColorScheme().colorScheme === "dark";
   const { user } = useAuth();
-  const params = useLocalSearchParams<{ id: string; from: string; to: string; name?: string; filter?: string }>();
+  // Từ danh sách chiến dịch: đủ id/from/to/name. Từ THÔNG BÁO (notification-links.ts): chỉ id + tab
+  // (+ n = id tin) → kỳ xem mặc định 7 ngày như TiktokAdsSection, tên lấy từ dữ liệu về.
+  const params = useLocalSearchParams<{
+    id: string;
+    from?: string;
+    to?: string;
+    name?: string;
+    filter?: string;
+    tab?: string;
+    n?: string;
+  }>();
   const id = String(params.id ?? "");
-  const range = useMemo(() => ({ from: String(params.from ?? ""), to: String(params.to ?? "") }), [params.from, params.to]);
+  const range = useMemo(() => {
+    const from = String(params.from ?? "");
+    const to = String(params.to ?? "");
+    return from && to ? { from, to } : rangeFor("7d");
+  }, [params.from, params.to]);
   const isOwner = user?.role === "ADMIN";
 
   const [data, setData] = useState<TiktokAdsCampaignVideos | null>(null);
@@ -94,7 +109,7 @@ export function TiktokVideosScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [planLocked, setPlanLocked] = useState<string | null>(null);
-  const [tab, setTab] = useState<"videos" | "history">("videos");
+  const [tab, setTab] = useState<"videos" | "history">(() => (params.tab === "history" ? "history" : "videos"));
   const [quick, setQuick] = useState<Quick>(() => {
     const f = String(params.filter ?? "");
     return (QUICK.some((q) => q.key === f) ? f : "all") as Quick;
@@ -185,6 +200,18 @@ export function TiktokVideosScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Thông báo "Trợ lý đã loại N video" mở thẳng tab Lịch sử — kể cả khi màn đang mở sẵn cho
+  // chiến dịch này (n đổi theo từng tin).
+  useEffect(() => {
+    if (params.tab === "history" || params.tab === "videos") setTab(params.tab);
+  }, [params.tab, params.n]);
+  // Mở tab Lịch sử (bấm tay hay từ thông báo) lần đầu mới đọc sổ — không gọi TikTok;
+  // khách chỉ xem video thì không đọc.
+  // Lỗi đọc sổ thì dừng (khách kéo xuống thử lại) — không có historyError ở đây là vòng lặp gọi mãi.
+  useEffect(() => {
+    if (tab === "history" && !history && !historyLoading && !historyError) void loadHistory();
+  }, [tab, history, historyLoading, historyError, loadHistory]);
 
   // oEmbed: hỏi theo lô 24 mã cho tối đa 72 video đầu (đã xếp 0 đơn trước); hỏng thì thôi, không báo.
   useEffect(() => {
@@ -372,11 +399,7 @@ export function TiktokVideosScreen() {
               { key: "history", label: `Lịch sử (${history?.total ?? data.actions.length})` },
             ]}
             value={tab}
-            onChange={(k) => {
-              setTab(k);
-              // Mở tab Lịch sử lần đầu mới đọc sổ (không gọi TikTok; khách chỉ xem video thì không đọc).
-              if (k === "history" && !history && !historyLoading) void loadHistory();
-            }}
+            onChange={setTab}
           />
 
           {tab === "history" ? (

@@ -143,3 +143,46 @@ Chưa kiểm được trên prod vì cần một đơn hủy thật sau deploy �
 - ⏳ Web: màn cài đặt nhóm (route đã có).
 - ⏳ Nút Chấp nhận/Từ chối yêu cầu hủy + trả lời yêu cầu hoàn trên app (mục 6); nhạc cảnh báo khi quét đơn
   đang bị khách xin hủy (anh chốt 23/10 làm sau).
+
+## 8. Điểm đích từng loại thông báo + lối ra (25/10/2026, vào bản 1.4.1)
+
+> Anh Trung 25/10: (1) ngoài đơn hàng, bấm thông báo không tới đúng chỗ — "đã loại 1 video" không tới video nào /
+> màn video loại để xem lý do; (2) bấm thông báo đơn hủy thì ô tìm kiếm điền sẵn mã đơn nhưng không có nút X để trở ra.
+
+**Cấu trúc (hai bước, một chỗ sửa):**
+
+| Bước | Tệp | Làm gì |
+|---|---|---|
+| 1. Link web → **đích có kiểu** | `hubsell-mobile/src/lib/notification-target.ts` | TypeScript thuần, không import gì. `resolveNotificationTarget({type, link})` → `NotificationTarget` (orders / warehouse / finance / ads / tiktok_campaign / assistant / plan / external) hoặc `null`. Cùng link nhưng **type** khác → đích khác: `tiktok-ads-auto` → tab Lịch sử (mã video + lý do loại), `tiktok-ads-advice` → tab Video. |
+| 2. Đích → **màn app** | `hubsell-mobile/src/lib/notification-links.ts` | `hrefForTarget()` biết tên route + tên tham số từng màn; thêm `n` = id thông báo để hai tin cùng đích vẫn đổi params (màn đang mở áp lại bộ lọc). `destinationFor(n)` dùng chung cho dòng chuông (`NotificationsContext.open`), tin đẩy (data `{notificationId, type, link}`) và chữ "Mở" trên màn Thông báo. |
+| Bảng rà | `hubsell-mobile/src/lib/notification-target.test.ts` | 33 ca = mọi `link:` / `href:` backend đang ghi (grep 25/10). Chạy từ `backend/`: `npx tsx --test ../hubsell-mobile/src/lib/notification-target.test.ts`. Thêm `notify()` mới → thêm một dòng. |
+
+**Bảng đích (tóm tắt, chi tiết ở test):**
+
+| Thông báo | Link backend | Đích trên app |
+|---|---|---|
+| Đơn mới / hỏa tốc / đơn bị hủy | `/orders`, `/orders?search=<mã>` | Tab Đơn hàng, ô tìm điền mã, **nút X** về danh sách đầy đủ |
+| Khách xin hủy | `/orders?cancelRequested=1` | Tab Đơn hàng + chip "Khách xin hủy" (có X sẵn) |
+| Giao không thành công | `/operations-assistant/ai-rules?tab=delivery-fail` | Tab Đơn hàng lọc Đang giao |
+| Hoàn hàng | `/warehouse/returns` | Kho › Đơn hoàn |
+| Hết / sắp hết hàng | `/products` | Kho › Tồn kho |
+| Đơn lỗ, sai phí, chênh phí ship | `/operations-assistant/loss-orders`, `/finance/fee-audit`, `/warehouse/shipping-alerts` | Trang Tài chính |
+| Báo cáo tuần | `/?assistant=Báo cáo tuần trước` | Trợ lý Hubsell, câu hỏi gửi sẵn (`/assistant?prompt=`) |
+| Trợ lý TikTok đã loại / sẽ loại / bỏ lượt / sàn từ chối | `/ads/tiktok/campaign?id=` (type `tiktok-ads-auto`) | `/tiktok-campaign?id=&tab=history` — kỳ xem mặc định 7 ngày, tên lấy từ dữ liệu |
+| Nhận định chiến dịch TikTok | cùng link, type `tiktok-ads-advice` | `/tiktok-campaign?id=&tab=videos` |
+| Trợ lý Shopee/Lazada tạm dừng / bật lại / ROAS rủi ro một chiến dịch | `/ads/shopee?channelId=&campaign_id=` | Trang Quảng cáo: đúng sàn + gian, **mở hộp chi tiết chiến dịch** khi danh sách về |
+| Gom nhiều chiến dịch | `…&needs_action=1` | Trang Quảng cáo, tab Cần xử lý |
+| Ví sắp cạn / kết nối Hubsell Ads / tổng kết ngày | `/ads/shopee`, `/ads/lazada?channelId=` | Trang Quảng cáo đúng sàn + gian |
+| Chi Ads tăng đột biến | `https://banhang.shopee.vn` | Mở trình duyệt (Linking) |
+| Gói / thanh toán | `/settings/plan` | `/plan` (iOS); Android chưa có màn |
+| Hóa đơn, hạn thuế, gian hàng, KOC | `/invoicing/*`, `/channels`, `/koc-marketing/*` | **Chưa có màn** → dòng ghi "Xem trên máy tính" (không im lặng như trước) |
+
+**Màn đích nhận tham số:** `AdsPage` đọc `?platform=&channelId=&campaignId=&needsAction=&n=` (ép tải lại rồi mở
+chiến dịch chờ sẵn trong `.then` của lượt tải đúng sàn — không mở nhầm từ dữ liệu sàn cũ); `TiktokVideosScreen`
+chấp nhận thiếu from/to/name + `?tab=`; `assistant.tsx` đọc `?prompt=` hỏi một lần theo `n`; `orders.tsx` effect
+deep-link có `n` trong deps + `clearSearch()` (nút X trong ô tìm, về danh sách ngay không chờ 450 ms).
+
+**Chưa làm / cần kiểm:** chưa thử trên máy thật (em không đăng nhập được backend prod từ giả lập web) — anh thử
+bản 1.4.1: bấm tin "Trợ lý đã loại", tin Shopee "đã tạm dừng chiến dịch", tin đơn hủy rồi bấm X. Lint react-compiler
+vẫn báo setState-trong-effect ở các effect deep-link — cùng kiểu đã có ở `home.tsx` / `KhoScreen.tsx`, không thêm loại
+lỗi mới.

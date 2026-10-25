@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams } from "expo-router";
 import { ApiError, isPlanLockedError } from "@/api/client";
 import { PlanLockedCard } from "@/components/PlanLockedCard";
 import {
@@ -146,6 +147,10 @@ export function AdsPage() {
   const [recoCount, setRecoCount] = useState<number | null>(null);
   // Số thứ tự lượt tải — đổi sàn/kỳ liên tiếp thì chỉ lượt MỚI NHẤT được ghi.
   const reqSeq = useRef(0);
+  // Thông báo quảng cáo Shopee/Lazada đẩy sang (notification-links.ts): sàn + gian
+  // + campaign_id của sàn → mở hộp chi tiết khi danh sách của đúng sàn đó về.
+  // Giữ trong ref (không phải state) vì chỉ dùng một lần trong load().
+  const pendingCampaign = useRef<{ platform: AdsPlatform; campaignId: string } | null>(null);
 
   const load = useCallback(
     async (
@@ -160,16 +165,17 @@ export function AdsPage() {
       if (asRefresh !== "silent") setError("");
       try {
         const res = await fetchAdsOverview(p, { from, to, channelId: chId || undefined });
-        if (seq !== reqSeq.current) return;
+        if (seq !== reqSeq.current) return null;
         setData(res);
         setPlanLocked(null);
+        return res; // lượt mới nhất — nơi gọi dùng để mở chiến dịch chờ sẵn từ thông báo
       } catch (err) {
-        if (seq !== reqSeq.current) return;
+        if (seq !== reqSeq.current) return null;
         if (isPlanLockedError(err)) {
           setPlanLocked(err.message);
-          return;
+          return null;
         }
-        if (asRefresh === "silent") return; // tải nền hỏng thì giữ số cũ
+        if (asRefresh === "silent") return null; // tải nền hỏng thì giữ số cũ
         setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra, kéo xuống thử lại");
       } finally {
         if (seq === reqSeq.current) {
@@ -181,10 +187,41 @@ export function AdsPage() {
     []
   );
 
+  // Deep-link từ thông báo (?page=2&platform=&channelId=&campaignId=&needsAction=1&n=):
+  // áp sàn / gian / tab rồi ép tải lại dù sàn+gian không đổi (n đổi theo từng tin).
+  const deepLink = useLocalSearchParams<{
+    platform?: string;
+    channelId?: string;
+    campaignId?: string;
+    needsAction?: string;
+    n?: string;
+  }>();
+  const [deepLinkSeq, setDeepLinkSeq] = useState(0);
+  useEffect(() => {
+    const p = deepLink.platform;
+    if (p !== "shopee" && p !== "lazada" && p !== "tiktok") return;
+    setUiPlatform(p);
+    setChannelId(typeof deepLink.channelId === "string" ? deepLink.channelId : "");
+    setFilter(deepLink.needsAction === "1" ? "flagged" : "ongoing");
+    setDetail(null);
+    pendingCampaign.current =
+      p !== "tiktok" && typeof deepLink.campaignId === "string" && deepLink.campaignId
+        ? { platform: p, campaignId: deepLink.campaignId }
+        : null;
+    setDeepLinkSeq((s) => s + 1);
+  }, [deepLink.platform, deepLink.channelId, deepLink.campaignId, deepLink.needsAction, deepLink.n]);
+
   useEffect(() => {
     if (isTiktok) return;
-    void load(platform, range, channelId);
-  }, [platform, range, channelId, load, isTiktok]);
+    void load(platform, range, channelId).then((res) => {
+      const want = pendingCampaign.current;
+      if (!res || !want || want.platform !== platform) return;
+      pendingCampaign.current = null;
+      // Không thấy (chiến dịch đã xóa / thuộc gian khác) thì đứng ở danh sách, không báo lỗi.
+      const hit = res.campaigns.find((c) => c.campaignId === want.campaignId || c.id === want.campaignId);
+      if (hit) setDetail(hit);
+    });
+  }, [platform, range, channelId, load, isTiktok, deepLinkSeq]);
 
   useAutoRefresh(() => {
     if (!isTiktok) void load(platform, range, channelId, "silent");

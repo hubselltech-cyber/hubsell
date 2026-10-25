@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 25/10/2026 (khuya) — MOBILE 1.4.1: THÔNG BÁO TỚI ĐÚNG ĐÍCH + NÚT X THOÁT LỌC TỪ THÔNG BÁO
+
+- **Anh yêu cầu:** (1) ngoài đơn hàng, bấm thông báo không tới đúng điểm đích (ví dụ "đã loại 1 video" không tới video / màn lịch sử loại để xem lý do); (2) tin đơn hủy điền mã vào ô tìm kiếm nhưng không có nút X trở ra. Yêu cầu cấu trúc gọn, tư duy senior.
+- **Gốc:** `lib/notification-links.ts` cũ là một chuỗi `startsWith` trên link web: mọi link `/ads/*` của Shopee/Lazada rơi về "Trang chủ trang 2" (bỏ channelId + campaign_id), TikTok chỉ truyền `id` mà màn Video đòi from/to (kỳ rỗng → không tải), báo cáo tuần / gói / Seller Center về null; không phân biệt loại thông báo trên cùng link.
+- **Làm (chỉ app, backend 0 đổi):** tách hai bước — `lib/notification-target.ts` (thuần, link + type → đích có kiểu, 33 ca test `notification-target.test.ts` = mọi link backend đang ghi, chạy `npx tsx --test` từ backend/) và `lib/notification-links.ts` (đích → route + params, thêm `n` = id tin để tin thứ hai cùng đích vẫn áp lại). `destinationFor()` dùng chung cho dòng chuông, tin đẩy và chữ "Mở"; link ngoài mở trình duyệt; không có màn → "Xem trên máy tính". Màn đích nhận tham số: `AdsPage` (sàn + gian + mở hộp chi tiết chiến dịch khi lượt tải đúng sàn về, tab Cần xử lý khi gom), `TiktokVideosScreen` (thiếu from/to → 7 ngày, `?tab=history` cho tin Trợ lý đã loại), `assistant.tsx` (`?prompt=` hỏi một lần), `orders.tsx` (deep-link theo `n` + **nút X** `clearSearch()` về danh sách ngay). Chi tiết + bảng đích: `docs/THONG-BAO-DAY-MOBILE.md` mục 8.
+- **Kiểm:** tsc mobile sạch; test 33/33; lint chỉ còn lỗi react-compiler setState-trong-effect cùng kiểu đã có ở HEAD (home.tsx, KhoScreen) — không thêm loại mới. ⚠️ CHƯA thử máy thật / chưa commit; đi cùng bản 1.4.1 (lịch 08:30 01/11).
+
+---
+
 ## Phiên 25/10/2026 (tối) — PHẢN BIỆN YÊU CẦU HỆ MULTI-AGENT MARKETING & SALES (chưa code)
 
 - Anh đề xuất hệ 2 agent (Marketing cào bình luận FB/TikTok/YouTube → trích SĐT/Zalo → Sales Agent Zalo "Nam" giả người), thư mục riêng, Supabase pgvector + Render Worker + Claude API; bảo em phản biện trước.
