@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 25/10/2026 (khuya, tiếp) — MOBILE 1.4.1: BẢNG "TIỀN THEO GIAN HÀNG" = ĐANG GIAO | VÍ SÀN, BỎ BANK, TÊN SHOP CO "…"
+
+- **Anh yêu cầu (kèm ảnh màn Tài chính):** thêm cột Tiền đang giao, bỏ tiền ngân hàng, giới hạn tên shop bằng "…" theo tỉ lệ màn hình (đo đạc), kết luận dưới bảng theo tổng Ví sàn + tổng Đang giao; giữa chừng chốt thêm **Đang giao ở giữa, Ví sàn ngoài cùng phải** và "làm tí màu cho sinh động". Xong thì push + TestFlight.
+- **Làm:** tách khối thành `hubsell-mobile/src/components/CashByShopTable.tsx` (FinancePage chỉ còn `<CashByShopTable rows={visibleCashRows} />`): bảng 3 cột Gian hàng | Đang giao | Ví sàn, tiêu đề cột, hàng **Tổng** cộng dồn đúng các dòng đang lọc; `types/api.ts` thêm `pendingIncome` + `pendingIncomeSource` (backend trả từ 09/10, cùng định nghĩa cột "Tiền đang giao" web: số sàn công bố, chưa sync → "—"). Tên gian `numberOfLines={1}` flex-1 minWidth 0; hai cột số bề rộng CỐ ĐỊNH `MONEY_COL = 62` (đo: "-999,9 tr" 14 px semibold = 54 px, tiêu đề "Đang giao" = 50 px). Màu theo nghĩa: chấm màu sàn trước tên (cùng `useChannelColors` với bộ lọc Đơn hàng), Ví sàn emerald, Đang giao amber, âm đỏ, "—" xám, gian đã ngắt mờ.
+- **Đo (giả lập web local, route xem thử tạm `cash-preview` với tên 40+ ký tự + số 7–10 chữ số, đã gỡ trước commit):** không tràn ngang ở 320/360/390/430; cột tên còn 122 / 162 / 192 / 232 px → "DARKMAN STORE" (115 px) vừa ở 320, tên dài co "…"; nền tối OK (ép `hubsell.themePref=dark`). Không đăng nhập được backend local vì DB dev thiếu 9 migration (lệnh `prisma migrate deploy` bị chặn) → chỉ soi component với dữ liệu mẫu, CHƯA soi nguyên trang Tài chính với số thật — anh xem trên TestFlight.
+- tsc sạch; lint tệp mới sạch.
+
+---
+
 ## Phiên 25/10/2026 (khuya) — MOBILE 1.4.1: THÔNG BÁO TỚI ĐÚNG ĐÍCH + NÚT X THOÁT LỌC TỪ THÔNG BÁO
 
 - **Anh yêu cầu:** (1) ngoài đơn hàng, bấm thông báo không tới đúng điểm đích (ví dụ "đã loại 1 video" không tới video / màn lịch sử loại để xem lý do); (2) tin đơn hủy điền mã vào ô tìm kiếm nhưng không có nút X trở ra. Yêu cầu cấu trúc gọn, tư duy senior.

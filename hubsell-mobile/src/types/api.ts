@@ -228,6 +228,13 @@ export interface CashFlowRow {
   inTransit: number;
   /** Doanh thu đơn đã giao, sàn chưa quyết toán. */
   pendingSettle: number;
+  /**
+   * "Tiền đang giao" (nhãn web 23/10/2026): tiền sàn SẼ trả mà chưa trả — đơn đang giao
+   * + đã giao chờ sàn cộng tiền, đã trừ phí. Shopee/TikTok = số sàn công bố (chưa sync → null,
+   * hiện "—"); Lazada = cộng từ đơn (source ORDERS). Backend trả từ 09/10/2026.
+   */
+  pendingIncome: number | null;
+  pendingIncomeSource: "PLATFORM" | "ORDERS" | null;
   /** Số dư Ví sàn THẬT từ API — null = sàn không có ví/chưa sync (hiện "—"). */
   walletBalance: number | null;
   /** Mốc đồng bộ số dư ví (ISO) — chỉ Shopee có. */

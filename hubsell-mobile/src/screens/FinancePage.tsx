@@ -35,6 +35,7 @@ import { ReceiptIcon } from "@/components/ReceiptIcon";
 import { BreakdownTile } from "@/components/BreakdownTile";
 import { WaterfallChart, type WaterfallStep } from "@/components/WaterfallChart";
 import { Card } from "@/components/Card";
+import { CashByShopTable } from "@/components/CashByShopTable";
 import { TABULAR } from "@/theme/tokens";
 
 /**
@@ -257,8 +258,6 @@ export function FinancePage() {
   const visibleCashRows = (cashRows ?? []).filter((r) =>
     scope.channelId ? r.channelId === scope.channelId : !scope.channelName || r.channelName === scope.channelName
   );
-  const walletTotal = visibleCashRows.reduce((s, r) => s + (r.walletBalance ?? 0), 0);
-  const expectedTotal = visibleCashRows.reduce((s, r) => s + r.totalExpected, 0);
 
   const b = breakdown;
   const pb = prevBreakdown;
@@ -502,61 +501,11 @@ export function FinancePage() {
             </Card>
           ) : null}
 
-          {/* ===== 4. Tiền theo gian hàng ===== */}
-          <Card className="p-4">
-            <Text className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Tiền theo gian hàng
-            </Text>
-            <Text className="mb-3 text-[11px] text-slate-400 dark:text-slate-500">
-              Ví = số dư THẬT trên sàn · Bank = đã về ngân hàng 30 ngày
-            </Text>
-            {visibleCashRows.map((r) => (
-              <View
-                key={r.channelId}
-                className="flex-row items-center justify-between border-t border-slate-100 dark:border-slate-800 py-2.5"
-              >
-                <View className="flex-1 pr-2">
-                  <Text className="text-sm font-medium text-slate-900 dark:text-slate-100" numberOfLines={1}>
-                    {r.shopName}
-                  </Text>
-                  <Text className="text-[11px] text-slate-400 dark:text-slate-500">
-                    {CHANNEL_LABEL[r.channelName] ?? r.channelName}
-                    {r.disconnected ? " · Đã ngắt" : ""}
-                  </Text>
-                </View>
-                <View className="items-end">
-                  <Text
-                    className="text-sm font-semibold text-slate-900 dark:text-slate-100"
-                    style={TABULAR}
-                  >
-                    Ví {r.walletBalance == null ? "—" : compactMoney(r.walletBalance)}
-                  </Text>
-                  <Text
-                    className="text-[11px] text-emerald-600 dark:text-emerald-400"
-                    style={TABULAR}
-                  >
-                    Bank {compactMoney(r.withdrawn30d)}
-                  </Text>
-                </View>
-              </View>
-            ))}
-            {visibleCashRows.length === 0 ? (
-              <Text className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">
-                Không có gian hàng nào trên sàn này
-              </Text>
-            ) : null}
-            <View className="mt-2 border-t border-slate-200 dark:border-slate-700 pt-2">
-              <Text
-                className="text-right text-[11px] text-slate-400 dark:text-slate-500"
-                style={TABULAR}
-              >
-                Ví sàn: {formatMoney(walletTotal)} · Doanh thu dự kiến:{" "}
-                {formatMoney(expectedTotal)}
-              </Text>
-            </View>
-          </Card>
+          {/* ===== 4. Tiền theo gian hàng — components/CashByShopTable.tsx ===== */}
+          <CashByShopTable rows={visibleCashRows} />
         </>
       )}
     </ScrollView>
   );
 }
+
