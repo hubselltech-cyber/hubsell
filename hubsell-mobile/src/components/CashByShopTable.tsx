@@ -132,6 +132,10 @@ function MoneyCell({
       className={`text-right text-sm ${strong ? "font-semibold" : "font-medium"} ${color}`}
       style={[TABULAR, { width: MONEY_COL, marginLeft: gap }]}
       numberOfLines={1}
+      // Lưới an toàn cho shop rất lớn: "999,9 tỷ" rộng bằng "999,9 tr" (54 px) vẫn lọt; từ 1.000 tỷ
+      // ("1234,5 tỷ" ~60 px) chữ tự co tới 75 % thay vì cắt "…" giữa con số (chỉ native, web bỏ qua).
+      adjustsFontSizeToFit
+      minimumFontScale={0.75}
     >
       {value == null ? "—" : compactMoney(value)}
     </Text>
