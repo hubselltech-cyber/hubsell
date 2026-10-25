@@ -450,34 +450,77 @@ export interface AutoRunNoticeInput {
   spend: number;
   orders: number;
   windowDays: number;
+  /**
+   * Máy BIẾT CHẮC nhóm video này đang lỗ: mọi video 0 đơn, hoặc mức loại là ROI
+   * hòa vốn (dưới hòa vốn = lỗ thật). Loại theo % mục tiêu mà video vẫn có đơn →
+   * false → chỉ dám nói "kém" (anh Trung 25/10: muốn seller thấy "may quá nhờ Trợ
+   * lý", em phản biện chữ "lỗ" phải đúng, sai một lần là mất niềm tin cả Trợ lý).
+   */
+  lossSure: boolean;
   /** summarizeAutoPlan(plan, cfg). */
   summary: string;
 }
 
 const vndShort = vndCompact;
+const vndFull = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
 
 /** "đang chảy mà không ra đơn nào" / "đang chảy mà chỉ ra 2 đơn". */
 function drainText(orders: number): string {
   return orders === 0 ? "không ra đơn nào" : `chỉ ra ${orders} đơn`;
 }
 
+/** Cửa sổ 7 ngày nói "tuần" cho tự nhiên; cửa sổ khác nói số ngày. */
+function periodText(windowDays: number): string {
+  return windowDays === 7 ? "tuần" : `${windowDays} ngày`;
+}
+
+/** Nhận định đáng tin nhất về nhóm video bị loại — quyết định chữ "lỗ" hay "kém". */
+export function excludedVideosLossSure(items: ReadonlyArray<Pick<AutoAssessment, "orders">>, hardBasis: HardBasis): boolean {
+  return hardBasis === "breakeven" || items.every((a) => a.orders === 0);
+}
+
+/**
+ * Vế giá trị trong tiêu đề: lỗ chắc → "chặn ~1,2 tr/tuần không lỗ thêm";
+ * kém → "dồn ~1,2 tr/tuần sang video ra đơn" (GMV Max tự chia lại ngân sách cho
+ * video còn lại — lợi ích thật dù video không lỗ). Dấu ~ vì là nhịp tiêu của
+ * cửa sổ vừa qua chiếu tiếp, không phải số đã đo.
+ */
+function valueClause(i: AutoRunNoticeInput): { adjective: string; clause: string } {
+  const rate = `~${vndShort(i.spend)}/${periodText(i.windowDays)}`;
+  return i.lossSure
+    ? { adjective: "đang lỗ", clause: `chặn ${rate} không lỗ thêm` }
+    : { adjective: "kém", clause: `dồn ${rate} sang video ra đơn` };
+}
+
+/** Câu "nếu không loại…" trong thân tin: cùng một số, nói thành hậu quả. */
+function ifNotExcluded(i: AutoRunNoticeInput): string {
+  return (
+    `Nếu không loại, theo nhịp ${i.windowDays} ngày qua ${i.count} video này tiêu thêm khoảng ` +
+    `${vndFull(i.spend)} mỗi ${periodText(i.windowDays)} mà ${drainText(i.orders)}.`
+  );
+}
+
 /** Trợ lý ĐÃ loại thật (live, không phải chủ shop bấm). */
 export function excludedNotice(i: AutoRunNoticeInput): { title: string; body: string } {
+  const v = valueClause(i);
   return {
-    title: `Trợ lý đã loại ${i.count} video — chặn ${vndShort(i.spend)}/${i.windowDays} ngày đang chảy mà ${drainText(i.orders)}`,
+    title: `Trợ lý đã loại ${i.count} video ${v.adjective} — ${v.clause}`,
     body:
-      `Chiến dịch "${i.campaignName}": ${i.summary}. ` +
-      "Không cần làm gì thêm — mã video và căn cứ ở tab Lịch sử; muốn chạy lại video nào thì bấm Khôi phục.",
+      `Chiến dịch "${i.campaignName}". ${ifNotExcluded(i)} ` +
+      "Không cần làm gì thêm — mã video và căn cứ ở tab Lịch sử; muốn chạy lại video nào thì bấm Khôi phục. " +
+      `Lượt chấm: ${i.summary}.`,
   };
 }
 
 /** Diễn tập: máy ĐỊNH loại nhưng chưa gọi sàn — cho thấy khoản sẽ chặn được nếu bật thật. */
 export function plannedNotice(i: AutoRunNoticeInput, changeLabel: string): { title: string; body: string } {
+  const v = valueClause(i);
   return {
-    title: `Diễn tập: Trợ lý sẽ loại ${i.count} video đang đốt ${vndShort(i.spend)}/${i.windowDays} ngày${changeLabel}`,
+    title: `Diễn tập: sẽ loại ${i.count} video ${v.adjective} — ${v.clause}`,
     body:
-      `Chiến dịch "${i.campaignName}": ${i.summary}. Chưa gọi TikTok. ` +
-      "Bật chế độ thật thì từ lượt mai Trợ lý tự chặn khoản này.",
+      `Chiến dịch "${i.campaignName}"${changeLabel}. Chưa gọi TikTok. ${ifNotExcluded(i)} ` +
+      "Bật chế độ thật thì từ lượt mai Trợ lý tự chặn khoản này. " +
+      `Lượt chấm: ${i.summary}.`,
   };
 }
 
@@ -501,7 +544,7 @@ export function skippedNotice(campaignName: string, skipped: string): { title: s
 /** TikTok từ chối lệnh loại: nói rõ khoản vẫn đang chảy + máy sẽ thử lại. */
 export function refusedNotice(i: AutoRunNoticeInput, error: string): { title: string; body: string } {
   return {
-    title: `TikTok từ chối lệnh loại ${i.count} video — ${vndShort(i.spend)}/${i.windowDays} ngày vẫn đang chảy`,
+    title: `TikTok từ chối lệnh loại ${i.count} video — ~${vndShort(i.spend)}/${periodText(i.windowDays)} vẫn đang chảy`,
     body: `Chiến dịch "${i.campaignName}". Lỗi sàn: ${error} Trợ lý sẽ thử lại ở lượt chấm mai; cần gấp thì loại tay trên TikTok Ads Manager.`,
   };
 }

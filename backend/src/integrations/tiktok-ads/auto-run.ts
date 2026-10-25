@@ -46,6 +46,7 @@ import {
   compareRunDigest,
   daysBetween,
   excludedNotice,
+  excludedVideosLossSure,
   nothingNotice,
   planAutoExclusion,
   plannedNotice,
@@ -638,6 +639,7 @@ export async function applyAutoPlan(
     spend: items.reduce((s, a) => s + a.cost, 0),
     orders: items.reduce((s, a) => s + a.orders, 0),
     windowDays: cfg.windowDays,
+    lossSure: excludedVideosLossSure(items, plan.hard.basis),
     summary,
   };
   const reasons = buildVideoActionReasons(

@@ -8,6 +8,7 @@ import {
   daysBetween,
   describeConfigChanges,
   excludedNotice,
+  excludedVideosLossSure,
   nothingNotice,
   plannedNotice,
   refusedNotice,
@@ -411,24 +412,41 @@ describe("câu chuông lượt chấm", () => {
     spend: 1_240_000,
     orders: 1,
     windowDays: 7,
+    lossSure: false,
     summary: "loại 3 video đang ngốn 1.240.000đ/7 ngày mà ra 1 đơn · 2 video đang ân hạn",
   };
   const TITLE_MAX = 70; // push.ts cắt tiêu đề tin đẩy ở đây
 
-  it("đã loại: tiền chặn được đứng trong tiêu đề, tên chiến dịch xuống thân, có câu 'không cần làm gì'", () => {
-    const n = excludedNotice(input);
-    expect(n.title).toBe("Trợ lý đã loại 3 video — chặn 1,2 tr/7 ngày đang chảy mà chỉ ra 1 đơn");
-    expect(n.title.length).toBeLessThanOrEqual(TITLE_MAX);
-    expect(n.body).toContain('Chiến dịch "GMV Max Tết 2027');
-    expect(n.body).toContain("Không cần làm gì thêm");
-    expect(excludedNotice({ ...input, orders: 0 }).title).toContain("không ra đơn nào");
+  it("chữ 'lỗ' chỉ khi chắc: mọi video 0 đơn hoặc mức loại theo hòa vốn", () => {
+    expect(excludedVideosLossSure([{ orders: 0 }, { orders: 0 }], "pct")).toBe(true);
+    expect(excludedVideosLossSure([{ orders: 0 }, { orders: 2 }], "pct")).toBe(false);
+    expect(excludedVideosLossSure([{ orders: 0 }, { orders: 2 }], "breakeven")).toBe(true);
   });
 
-  it("diễn tập: nói khoản SẼ chặn được + mời bật thật; đuôi so lượt trước giữ nguyên", () => {
-    const n = plannedNotice(input, " (thêm 1 so với lượt trước)");
-    expect(n.title).toBe("Diễn tập: Trợ lý sẽ loại 3 video đang đốt 1,2 tr/7 ngày (thêm 1 so với lượt trước)");
-    expect(n.body).toContain("Chưa gọi TikTok");
+  it("đã loại (kém): dồn tiền sang video ra đơn; thân có câu 'nếu không loại' + 'không cần làm gì'", () => {
+    const n = excludedNotice(input);
+    expect(n.title).toBe("Trợ lý đã loại 3 video kém — dồn ~1,2 tr/tuần sang video ra đơn");
+    expect(n.title.length).toBeLessThanOrEqual(TITLE_MAX);
+    expect(n.body).toContain('Chiến dịch "GMV Max Tết 2027');
+    expect(n.body).toContain("Nếu không loại, theo nhịp 7 ngày qua 3 video này tiêu thêm khoảng 1.240.000₫ mỗi tuần mà chỉ ra 1 đơn.");
+    expect(n.body).toContain("Không cần làm gì thêm");
+  });
+
+  it("đã loại (lỗ chắc): chặn không lỗ thêm; cửa sổ khác 7 ngày nói số ngày", () => {
+    const n = excludedNotice({ ...input, lossSure: true, orders: 0 });
+    expect(n.title).toBe("Trợ lý đã loại 3 video đang lỗ — chặn ~1,2 tr/tuần không lỗ thêm");
+    expect(n.title.length).toBeLessThanOrEqual(TITLE_MAX);
+    expect(n.body).toContain("mà không ra đơn nào");
+    expect(excludedNotice({ ...input, lossSure: true, windowDays: 14 }).title).toContain("~1,2 tr/14 ngày không lỗ thêm");
+  });
+
+  it("diễn tập: cùng vế giá trị, đuôi so lượt trước xuống thân để tiêu đề ≤ 70", () => {
+    const n = plannedNotice({ ...input, lossSure: true }, " (thêm 1 so với lượt trước)");
+    expect(n.title).toBe("Diễn tập: sẽ loại 3 video đang lỗ — chặn ~1,2 tr/tuần không lỗ thêm");
+    expect(n.title.length).toBeLessThanOrEqual(TITLE_MAX);
+    expect(n.body).toContain('Chiến dịch "GMV Max Tết 2027 — bộ quà biếu cao cấp" (thêm 1 so với lượt trước). Chưa gọi TikTok.');
     expect(n.body).toContain("Bật chế độ thật");
+    expect(plannedNotice(input, "").title).toBe("Diễn tập: sẽ loại 3 video kém — dồn ~1,2 tr/tuần sang video ra đơn");
   });
 
   it("không loại: vẫn nói máy ĐÃ rà bao nhiêu video", () => {
@@ -441,7 +459,7 @@ describe("câu chuông lượt chấm", () => {
   it("bỏ lượt / sàn từ chối: nói rõ vì sao và khoản vẫn đang chảy", () => {
     expect(skippedNotice("A", "18/09: bỏ lượt — số liệu lệch.").title.length).toBeLessThanOrEqual(TITLE_MAX);
     const r = refusedNotice(input, "code 40002: advertiser mismatch.");
-    expect(r.title).toBe("TikTok từ chối lệnh loại 3 video — 1,2 tr/7 ngày vẫn đang chảy");
+    expect(r.title).toBe("TikTok từ chối lệnh loại 3 video — ~1,2 tr/tuần vẫn đang chảy");
     expect(r.body).toContain("code 40002");
     expect(r.body).toContain("thử lại");
   });
