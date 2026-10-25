@@ -6,6 +6,13 @@
 
 ---
 
+## Phiên 25/10/2026 (tối) — PHẢN BIỆN YÊU CẦU HỆ MULTI-AGENT MARKETING & SALES (chưa code)
+
+- Anh đề xuất hệ 2 agent (Marketing cào bình luận FB/TikTok/YouTube → trích SĐT/Zalo → Sales Agent Zalo "Nam" giả người), thư mục riêng, Supabase pgvector + Render Worker + Claude API; bảo em phản biện trước.
+- Bản phản biện: `hubsell-marketing/chien-luoc/PHAN-BIEN-HE-MULTI-AGENT-MARKETING-SALE-2026-10-25.md`. Không đồng ý 3 điểm nền: cào MXH + trích SĐT (không có API hợp lệ, Luật BVDLCN 91/2025 hiệu lực 01/01/2026, NĐ 91/2020); Zalo nhắn chủ động (OA chỉ 48 giờ sau khách nhắn, ZNS cấm quảng cáo, Zalo cá nhân tự động bị khóa); persona giả người. Chỉ ra phễu rụng ở nối gian → trả tiền (62 khách chưa nối gian), không rụng đầu phễu; đề bài viết "bóc tách lãi lỗ" lệch định vị 15/10.
+- Đề xuất thay: lắng nghe kênh sở hữu qua webhook (TikTok Accounts API = "app riêng" anh chốt 12/10, FB Page, YouTube, landing, Zalo OA inbound) → Sales Agent trả lời hộp thư hợp nhất, lát 0 nháp anh bấm gửi → lát 1 tự gửi ý định an toàn → lát 2 chăm khách đã đăng ký → lát 3 mở rộng; Supabase project riêng, đọc trạng thái khách qua API HQ.
+- ⏳ CHỜ ANH CHỐT 3 câu cuối tệp. Memory `hubsell-he-marketing-sale-multi-agent`.
+
 ## Phiên 25/10/2026 (chiều) — THƯ NHẮC MỘT LẦN KHÁCH ĐÃ ĐĂNG KÝ LÂU MÀ CHƯA NỐI GIAN HÀNG
 
 - **Anh yêu cầu:** "gửi một email tới những khách hàng chưa liên kết gian hàng, yêu cầu họ liên kết và sử dụng".
