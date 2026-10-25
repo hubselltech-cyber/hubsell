@@ -13,6 +13,8 @@ import {
   welcomeEmailHtml,
   connectReminderEmailHtml,
   CONNECT_REMINDER_SUBJECT,
+  connectNudgeEmailHtml,
+  CONNECT_NUDGE_SUBJECT,
 } from "../customer-mails";
 import { vnDayWindow } from "../../workers/subscription-reminder";
 import { signupWindow } from "../../workers/onboarding-reminder";
@@ -156,6 +158,23 @@ describe("thư nhắc nối gian (khách mới 1 ngày chưa nối gian, 09/10/2
     expect(html).toContain("Nối gian hàng");
     expect(html).toContain("Trả lời thẳng email này");
     expect(CONNECT_REMINDER_SUBJECT).toContain("lãi hay lỗ");
+  });
+});
+
+describe("thư nhắc một lần khách đăng ký lâu chưa nối gian (25/10/2026)", () => {
+  it("nêu ngày đăng ký theo giờ VN, một nút về trang Kênh bán, tên khách được escape, mời trả lời", () => {
+    const html = connectNudgeEmailHtml({
+      fullName: "<b>Lan</b>",
+      signedUpAt: new Date("2026-10-01T17:30:00Z"), // 00:30 02/10 giờ VN
+    });
+    expect(html).toContain("&lt;b&gt;Lan&lt;/b&gt;");
+    expect(html).toContain("02/10/2026");
+    expect(html).not.toContain("Hôm qua");
+    expect(html.match(/<a href=/g)?.length).toBe(1);
+    expect(html).toContain("/channels");
+    expect(html).toContain("Shopee, TikTok Shop hoặc Lazada");
+    expect(html).toContain("Trả lời thẳng email này");
+    expect(CONNECT_NUDGE_SUBJECT).toContain("để trống");
   });
 });
 

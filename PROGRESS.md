@@ -6,6 +6,16 @@
 
 ---
 
+## Phiên 25/10/2026 (chiều) — THƯ NHẮC MỘT LẦN KHÁCH ĐÃ ĐĂNG KÝ LÂU MÀ CHƯA NỐI GIAN HÀNG
+
+- **Anh yêu cầu:** "gửi một email tới những khách hàng chưa liên kết gian hàng, yêu cầu họ liên kết và sử dụng".
+- **Hiện trạng:** worker `onboarding-reminder` (09/10) chỉ nhắc khách đăng ký 24–48 giờ trước; nhóm đăng ký trước 09/10 hoặc đã nhận thư 1 ngày mà vẫn chưa nối chưa ai chạm. Máy em không có SMTP lẫn DB prod nên **không tự gửi được** — làm script một lần để anh chạy trên Render Shell.
+- **Làm:** (1) mẫu thư mới `connectNudgeEmailHtml` + `sendConnectNudgeMail` trong `services/customer-mails.ts` (mục 1c): tiêu đề "Tài khoản của bạn vẫn đang để trống", nêu ngày đăng ký, 3 sàn, một nút "Nối gian hàng ngay" → /channels, chân thư mời trả lời + cho phép trả lời "thôi" để không nhận nữa; gửi từ noreply, Reply-To support@. (2) `backend/scripts/connect-reminder-once.ts`: xem trước mặc định, `--sample=<email>` gửi 1 thư mẫu không giành vé, `--apply` gửi thật, `--limit=N`, `--min-age-days=N` (mặc định 3, trẻ hơn để worker lo); lọc chủ shop có email, không admin, chưa xóa, 0 gian; bỏ email nội bộ/demo/test (@hubsell.vn/.tech/example.com + mọi .test/.local); chống trùng bằng vé `onboarding_reminders` kind `connect-once` (chạy lại không ai nhận hai thư, gửi lỗi nhả vé); đọc trang `id > cursor`, 5 luồng gửi; output ASCII, email che bớt.
+- **Kiểm:** tsc sạch; vitest customer-mails 17/17 (thêm test mẫu 1c); chạy xem trước trên DB dev: 473 chủ shop chưa nối gian, 472 là tài khoản test bị bỏ, còn 1 thật. ⚠️ Chưa gửi thật, chưa biết số prod — anh chạy xem trước trên Render Shell rồi quyết.
+- **Anh cần làm:** push → Render Shell worker: `npx tsx scripts/connect-reminder-once.ts` (xem số) → `--sample=<email anh>` xem thư → `--apply` (hoặc `--apply --limit=20` gửi đợt nhỏ trước).
+
+---
+
 ## Phiên 25/10/2026 (tiếp) — HỘP CẢNH BÁO LẦN ĐẦU VÀO CHI TIẾT CHIẾN DỊCH TIKTOK: "đơn giảm trước, lãi tăng sau"
 
 - **Anh yêu cầu:** popup nổi bật hiện lần đầu khách vào trang chi tiết chiến dịch (nơi đặt Diễn tập / Tự loại thật), có ô tích tắt vĩnh viễn, nói trước rằng Trợ lý làm tổng đơn giảm ngắn hạn (loại video ROI < hòa vốn) nhưng lợi nhuận tăng, sau hơn 1 tháng đơn tăng dần và lãi tăng theo. Anh bảo dựng local xem trước.

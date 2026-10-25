@@ -4,6 +4,7 @@
 //   Sự kiện                     Gửi từ      Trả lời về
 //   Khách đăng ký mới           noreply     support@   (+ báo HQ)
 //   Đăng ký 1 ngày chưa nối gian noreply    support@   (worker onboarding-reminder)
+//   Đăng ký lâu vẫn chưa nối gian noreply   support@   (script connect-reminder-once, 25/10)
 //   Mật khẩu vừa được đổi       noreply     support@
 //   Kích hoạt / gia hạn gói     billing     billing@
 //   Hóa đơn điện tử đã phát hành billing    billing@   (kèm PDF — hq-auto-invoice.ts)
@@ -159,6 +160,45 @@ export function connectReminderEmailHtml(input: { fullName: string }): string {
 }
 
 export const CONNECT_REMINDER_SUBJECT = "Hubsell — Còn một bước nữa là biết tháng này lãi hay lỗ";
+
+// ---------------- 1c. Đã đăng ký lâu mà vẫn chưa nối gian (gửi một lần) ----------------
+// Anh Trung 25/10/2026: "gửi một email tới những khách hàng chưa liên kết gian
+// hàng, yêu cầu họ liên kết và sử dụng". Khác thư 1b ("Hôm qua bạn đã tạo tài
+// khoản"): khách này đăng ký đã lâu — nêu ngày đăng ký, nói thẳng tài khoản
+// đang để trống, vẫn MỘT nút + mời trả lời. Gửi bằng scripts/connect-reminder-once.ts.
+
+export function connectNudgeEmailHtml(input: { fullName: string; signedUpAt: Date }): string {
+  return shell({
+    heading: "Tài khoản Hubsell của bạn vẫn đang để trống",
+    bodyHtml: [
+      p(`Xin chào ${escapeHtml(input.fullName)},`),
+      p(
+        `Bạn đã tạo tài khoản Hubsell ngày <b>${vnDateLabel(input.signedUpAt)}</b> nhưng chưa nối gian hàng nào, nên đến giờ Hubsell vẫn chưa có đơn nào để tính lãi / lỗ cho bạn.`
+      ),
+      p(
+        "Nối gian hàng Shopee, TikTok Shop hoặc Lazada mất khoảng 2 phút: bạn đăng nhập sàn, bấm đồng ý, đơn tự chảy về. Từ lúc đó mỗi đơn về là biết ngay đơn đó lời hay lỗ sau phí sàn, phí ship, giá vốn — không phải nhập gì bằng tay."
+      ),
+      p("Nối xong rồi cứ để đó. Cuối tháng mở lên là có số."),
+    ].join("\n"),
+    cta: { label: "Nối gian hàng ngay", url: `${FRONTEND_URL}/channels` },
+    footnote:
+      "Bạn vướng ở bước nào, hay thấy Hubsell chưa hợp với shop mình? Trả lời thẳng email này, Hubsell đọc và trả lời từng thư. Nếu bạn không còn muốn nhận thư từ Hubsell, cũng chỉ cần trả lời một chữ \"thôi\".",
+  });
+}
+
+export const CONNECT_NUDGE_SUBJECT = "Hubsell — Tài khoản của bạn vẫn đang để trống";
+
+/** Trả về true khi đã gửi — script một lần dựa vào đây để giữ / nhả vé chống trùng. */
+export async function sendConnectNudgeMail(
+  to: string,
+  input: { fullName: string; signedUpAt: Date }
+): Promise<boolean> {
+  return safeSend("connect-nudge", to, {
+    role: "noreply",
+    subject: CONNECT_NUDGE_SUBJECT,
+    html: connectNudgeEmailHtml(input),
+  });
+}
 
 /** Trả về true khi đã gửi — worker dựa vào đây để giữ / nhả vé chống trùng. */
 export async function sendConnectReminderMail(to: string, input: { fullName: string }): Promise<boolean> {
