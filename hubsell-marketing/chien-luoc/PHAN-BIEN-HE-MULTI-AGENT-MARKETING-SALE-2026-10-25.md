@@ -177,3 +177,21 @@ Rủi ro thật của đảo chiều: khách TikTok quen inbox TikTok, bắt h�
 4. **Sau:** phủ kênh từ 1 video (Page FB, YouTube), đề xuất chủ đề từ bình luận.
 
 Việc đăng bài nhóm vẫn là của người: anh dán 2 phút/ngày từ bài máy soạn, hoặc đối tác.
+
+### 4.5 Luồng thật anh mô tả (25/10 tối) và cách ánh xạ sang OA
+
+Anh: trên TikTok anh nhắn tin cho khách, để số Zalo cuối tin cho khách add; hoặc xin số khách rồi anh add. Một số khách dùng luôn qua TikTok không cần Zalo; **đa số thích hỗ trợ qua Zalo, TikTok chỉ là nơi tiếp nhận**.
+
+→ Khách không đòi "Zalo của anh Trung", khách đòi "Zalo". Giữ Zalo, đổi đầu nhận:
+
+| Luồng anh đang làm tay | Luồng OA | Khách thấy gì khác |
+|---|---|---|
+| A. Anh nhắn TikTok, để số Zalo, khách add bạn, anh chấp nhận | Anh dán **một tin mẫu cố định** có link/QR OA (TikTok DM chưa có API, bước này vẫn tay nhưng chỉ còn copy-dán) → khách bấm → chat ngay | **Ít bước hơn**: không gửi lời mời kết bạn, không chờ chấp nhận |
+| B. Khách cho số, anh add | OA không add được ai. Hai cách: (1) đổi câu xin số thành "anh/chị bấm link này nhắn em" (đa số); (2) với người chỉ để số: ZNS mẫu chăm sóc "Hubsell đã nhận yêu cầu hỗ trợ, bấm để chat" có nút mở OA — **⏳ cần kiểm Zalo có duyệt mẫu dạng này** | Thêm 1 chạm với nhóm (2) |
+| C. Khách dùng luôn qua TikTok | Không cần làm gì; trong app đã có Yêu cầu hỗ trợ (LIVE 27/09) | Không đổi |
+
+Hai điều phải giữ để không mất cái đang ăn khách:
+- **Vẫn một người thật ở cuối sợi dây.** OA cho nhiều quản trị viên trả lời trong **cùng một hội thoại**: AI trả lời phần cơ bản, dính kỹ thuật thì chuyển, anh mở app OA Admin trả lời tiếp ngay trong luồng đó, khách không phải đổi chỗ. Đây là lý do chọn OA chứ không phải chatbot web riêng.
+- **OA phải mang mặt anh**: tên kiểu "Hubsell · anh Trung", ảnh anh, lời chào nhắc "anh Trung đọc hết, phần kỹ thuật anh trả lời trực tiếp". Khách đến từ video anh nói, họ muốn thấy đúng người đó.
+
+Rào thật của OA so với Zalo cá nhân: ngoài 48 giờ sau tin cuối của khách, OA **không nhắn lại được** (trừ ZNS mẫu); Zalo cá nhân anh nhắn lúc nào cũng được. Vậy với khách im lặng quá 48 giờ mà đang dùng thử, đường nhắc là ZNS chăm sóc hoặc email (đã có worker nhắc hạn gói / nối gian), không phải tin tự do.
