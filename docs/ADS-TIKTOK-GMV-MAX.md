@@ -335,6 +335,34 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    "(214 đơn đã đối soát)" theo sau là ")" nên không cắt nhầm) → phần đầu (ai chấm + cửa sổ + thông số) đứng sau "Căn cứ:", các ý
    nối bằng " · " thành `<ul list-disc pl-9>` mỗi ý một dòng, viết hoa chữ đầu, bỏ chấm cuối; ngày ISO → dd/mm. Câu không theo
    khuôn (lệnh thủ công, config_change) giữ nguyên một dòng. Backend không đổi chuỗi (chuông + lastRunSummary vẫn dùng dạng " · ").
+10. ✅ **25/10/2026 — HỘP CẢNH BÁO LẦN ĐẦU VÀO TRANG CHIẾN DỊCH** (anh Trung: khách cần biết trước "đơn giảm trước, lãi tăng sau"
+   kẻo thấy đơn tụt là tắt Trợ lý). Chỉ FE: `tiktok-assistant-first-notice.tsx`, gắn trong `tiktok-campaign-page.tsx` cạnh popup
+   cấu hình. Hiện MỘT LẦN khi chủ shop (isAdmin) mở trang chi tiết và chiến dịch đã tải (`c != null`); nhân viên không thấy;
+   nhường khi popup cấu hình đang mở (`suspended={autoOpen}`). Nội dung: tiêu đề "Quan trọng: số đơn giảm trước, lợi nhuận tăng
+   sau"; đoạn dẫn nêu ROI hòa vốn CỦA CHÍNH chiến dịch (chỉ khi `breakeven` tin được: không `problem`, không `negativeMargin`);
+   hai ô "Vài tuần đầu" (đơn giảm · lãi tăng) / "Sau khoảng một tháng" (đơn dần trở lại · lãi tăng tiếp); câu chốt "nhìn vào lợi
+   nhuận, không nhìn số đơn" + nhắc Diễn tập chỉ ghi sổ. Một nút "Đã hiểu" + ô tích "Không hiện lại thông báo này": tích = lưu
+   `localStorage hubsell_tiktok_assistant_notice_dismissed:<userId> = NOTICE_VERSION` (thôi hẳn trên trình duyệt đó, cùng kiểu
+   MissingCostPrompt — app chưa có chỗ lưu tùy chọn giao diện ở server); không tích mà Đã hiểu / X / Esc = `sessionStorage` → lượt
+   làm việc này thôi, mở trình duyệt lần sau hỏi lại. Đổi nội dung lớn → tăng `NOTICE_VERSION`. ⚠️ Câu "sau khoảng một tháng số
+   đơn dần trở lại" là KỲ VỌNG (chữ "dần"), chưa có số prod chứng minh: ca thực tế ANO 25/10 (hubsell-marketing/so-lieu) sau 4
+   tuần tổng đơn gian −6%, lãi sau ads +5%; đo lại 22/11 rồi xem có cần sửa câu. Soi local (mock fetch `/campaigns/mock-cmp/*`):
+   1024px, tối, 375px (hộp 343×704, không tràn ngang; thêm `max-h-[calc(100dvh-2rem)] overflow-y-auto` cho máy thấp hơn);
+   tích + Đã hiểu → key lưu đúng user id, đổi khoảng ngày không hiện lại.
+   **→ 25/10 (tiếp) — LÀM LẠI GIAO DIỆN** (anh: "đẹp hơn, chuẩn đời mới hơn"): DialogContent `p-0 gap-0` tự dàn: dải đầu
+   gradient amber-50 → card với ô icon 40px + nhãn nhỏ "Đọc trước khi bật Trợ lý" + tiêu đề 18px; thẻ BIỂU ĐỒ MINH HỌA (SVG
+   tĩnh `ExpectationChart`, viewBox 320×100, không phải số thật: đường Số đơn slate-400 võng rồi hồi, chấm đỏ ở đáy; đường Lợi
+   nhuận emerald-500 + vùng gradient dưới; vạch đứt "~1 tháng"; legend 2 vạch màu); hai thẻ giai đoạn đánh số 1/2 (pill amber /
+   emerald) với dòng mũi tên TrendingDown đỏ / TrendingUp xanh; câu chốt; chân hộp `border-t bg-muted/50` chứa ô tích + nút.
+   Theo đúng hệ 04/09: chữ thân 400 slate-900, phụ slate-500, không uppercase tracking, màu chỉ emerald-500/red-500 + tint amber,
+   mọi màu SVG qua currentColor → dark tự chạy (đã soi). Rộng `sm:max-w-[min(36rem,calc(100%-2rem))]` để laptop 768px cao
+   không phải cuộn (đo 1024×768: hộp 576×722, cuộn 0); 375px: hộp 343 rộng, cuộn trong hộp (984 nội dung), không tràn ngang.
+   **→ 25/10 (tiếp 2) — TỈ LỆ MÀN HÌNH** (anh: "chú ý tới tỉ lệ màn hình"): từ `md` (≥768px) biểu đồ và hai thẻ giai đoạn xếp
+   CẠNH NHAU (`md:grid-cols-[1.1fr_1fr]`, thẻ giai đoạn xếp dọc cột phải, biểu đồ `md:h-full` căn giữa dọc), hộp rộng
+   `md:max-w-[min(46rem,…)]` → hộp chỉ còn 600px cao, vừa laptop 1366×768 mà trình duyệt chỉ còn ~650px dọc. Đo bằng JS
+   (getBoundingClientRect + scrollHeight + đếm ô tràn): 1366×650 → 736×600 cuộn 0 · 1280×720 → 736×600 · 1536×864 → 736×600 ·
+   1920×1080 → 736×600 · 768×1024 (tablet dọc, 2 cột) → 721×600 · 375×667 → 343×635 cuộn trong hộp (984) · 390×844 → 358×812
+   cuộn trong hộp (968); không cỡ nào tràn ngang (scrollWidth = viewport). Điện thoại vẫn xếp dọc một cột, chân hộp cuộn tới.
 
 **B. Nên có, không chặn**
 5. ✅ **XONG 18/09** — `maybeRunTiktokAdsDaily`: tầng xung 60'/120' cũng kiểm `autoRunDue`, tầng 6h chỉ còn là lưới đỡ → lượt

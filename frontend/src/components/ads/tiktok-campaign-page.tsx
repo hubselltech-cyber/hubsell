@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { formatPct, formatRoi, tiktokVideoUrl } from "@/components/ads/tiktok-ads-format";
 import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
 import { TiktokAdviceBadge } from "@/components/ads/tiktok-advice-body";
+import { TiktokAssistantFirstNotice } from "@/components/ads/tiktok-assistant-first-notice";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { TiktokDryRunBacktest } from "@/components/ads/tiktok-dry-run-backtest";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -1190,6 +1191,9 @@ export function TiktokCampaignPage() {
           </Card>
         )}
       </div>
+
+      {/* Lần đầu chủ shop mở trang: nói trước "đơn giảm trước, lãi tăng sau" (anh Trung 25/10). Nhường khi popup cấu hình đang mở. */}
+      {c && <TiktokAssistantFirstNotice owner={owner} breakeven={c.breakeven} suspended={autoOpen} />}
 
       {c && (
         <TiktokAutoRuleDialog
