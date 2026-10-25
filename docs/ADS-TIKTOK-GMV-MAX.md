@@ -343,8 +343,9 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    hai ô "Vài tuần đầu" (đơn giảm · lãi tăng) / "Sau khoảng một tháng" (đơn dần trở lại · lãi tăng tiếp); câu chốt "nhìn vào lợi
    nhuận, không nhìn số đơn" + nhắc Diễn tập chỉ ghi sổ. Một nút "Đã hiểu" + ô tích "Không hiện lại thông báo này": tích = lưu
    `localStorage hubsell_tiktok_assistant_notice_dismissed:<userId> = NOTICE_VERSION` (thôi hẳn trên trình duyệt đó, cùng kiểu
-   MissingCostPrompt — app chưa có chỗ lưu tùy chọn giao diện ở server); không tích mà Đã hiểu / X / Esc = `sessionStorage` → lượt
-   làm việc này thôi, mở trình duyệt lần sau hỏi lại. Đổi nội dung lớn → tăng `NOTICE_VERSION`. ⚠️ Câu "sau khoảng một tháng số
+   MissingCostPrompt — app chưa có chỗ lưu tùy chọn giao diện ở server); KHÔNG tích mà Đã hiểu / X / Esc → lần sau mở trang
+   chiến dịch (chiến dịch nào cũng vậy) hộp lại hiện. (Bản đầu có thêm `sessionStorage` "lượt này thôi hỏi" → anh Trung 25/10 tối
+   bấm X rồi sang chiến dịch khác không thấy nữa, tưởng hỏng → ĐÃ BỎ: chỉ ô tích mới tắt.) Đổi nội dung lớn → tăng `NOTICE_VERSION`. ⚠️ Câu "sau khoảng một tháng số
    đơn dần trở lại" là KỲ VỌNG (chữ "dần"), chưa có số prod chứng minh: ca thực tế ANO 25/10 (hubsell-marketing/so-lieu) sau 4
    tuần tổng đơn gian −6%, lãi sau ads +5%; đo lại 22/11 rồi xem có cần sửa câu. Soi local (mock fetch `/campaigns/mock-cmp/*`):
    1024px, tối, 375px (hộp 343×704, không tràn ngang; thêm `max-h-[calc(100dvh-2rem)] overflow-y-auto` cho máy thấp hơn);

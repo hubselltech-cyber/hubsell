@@ -14,8 +14,10 @@
 //   bảng, không cần đọc.
 // - Ô tích "Không hiện lại" = thôi hẳn, nhớ theo tài khoản trên trình duyệt này
 //   (cùng kiểu MissingCostPrompt; app chưa có chỗ lưu tùy chọn giao diện ở
-//   server). Không tích mà bấm "Đã hiểu" / X / Esc → lượt làm việc này không
-//   hỏi nữa (sessionStorage), lần mở trình duyệt sau hỏi lại.
+//   server). KHÔNG tích mà bấm "Đã hiểu" / X / Esc → lần sau mở trang chiến
+//   dịch (chiến dịch nào cũng vậy) hộp lại hiện. Anh Trung 25/10 tối: bản đầu
+//   có thêm lớp sessionStorage "lượt này thôi hỏi" → bấm X xong sang chiến
+//   dịch khác không thấy nữa, anh tưởng hỏng → đã bỏ, chỉ ô tích mới tắt.
 // - NOTICE_VERSION: đổi khi nội dung đổi lớn → khách đã tắt bản cũ thấy bản mới.
 // - Một nút duy nhất ("Khách cần đơn giản"); số ROI hòa vốn lấy từ chính chiến
 //   dịch đang mở để câu chữ gắn với số khách nhìn thấy trên trang.
@@ -39,23 +41,18 @@ import { cn } from "@/lib/utils";
 
 const NOTICE_VERSION = "2026-10";
 const DISMISS_PREFIX = "hubsell_tiktok_assistant_notice_dismissed:";
-const SESSION_KEY = "hubsell_tiktok_assistant_notice_seen";
 
-function isQuiet(): boolean {
+function isDismissed(): boolean {
   try {
-    return (
-      sessionStorage.getItem(SESSION_KEY) === "1" ||
-      localStorage.getItem(DISMISS_PREFIX + (getStoredUser()?.id ?? "")) === NOTICE_VERSION
-    );
+    return localStorage.getItem(DISMISS_PREFIX + (getStoredUser()?.id ?? "")) === NOTICE_VERSION;
   } catch {
     return false;
   }
 }
 
-function markSeen(forGood: boolean) {
+function dismissForGood() {
   try {
-    sessionStorage.setItem(SESSION_KEY, "1");
-    if (forGood) localStorage.setItem(DISMISS_PREFIX + (getStoredUser()?.id ?? ""), NOTICE_VERSION);
+    localStorage.setItem(DISMISS_PREFIX + (getStoredUser()?.id ?? ""), NOTICE_VERSION);
   } catch {
     // chế độ riêng tư chặn storage — lần sau hộp lại hiện, chấp nhận
   }
@@ -187,13 +184,13 @@ export function TiktokAssistantFirstNotice({
 
   useEffect(() => {
     if (asked.current || !owner || suspended) return;
-    if (isQuiet()) return;
+    if (isDismissed()) return;
     asked.current = true;
     setOpen(true);
   }, [owner, suspended]);
 
   function close() {
-    markSeen(dontShow);
+    if (dontShow) dismissForGood();
     setOpen(false);
   }
 
