@@ -268,11 +268,12 @@ async function detectStockouts(ownerId: string): Promise<DetectedAlert[]> {
       dedupeKey: channelId,
       tag: "inventory",
       severity: "high",
+      // 25/10/2026: tiêu đề nói VÌ SAO đáng bận tâm (khách vẫn đang mua) + máy sẽ làm gì tiếp (tự đẩy tồn).
       title:
         skus.length > 1
-          ? `${skus.length} SKU đang cháy hàng trên gian "${g.shopName}" (${CHANNEL_LABEL[g.channelName] ?? g.channelName})`
-          : `SKU ${skus[0]} đang cháy hàng trên gian "${g.shopName}"`,
-      summary: `${head}${more} có đơn trong ${SELLING_WINDOW_DAYS} ngày qua nhưng tồn khả dụng đã hết — đang mất doanh thu. Nhập thêm kho để hệ thống tự đẩy tồn mở bán lại.`,
+          ? `${skus.length} SKU hết hàng nhưng khách vẫn đang mua — đang mất đơn trên gian "${g.shopName}"`
+          : `${skus[0]} hết hàng nhưng khách vẫn đang mua — đang mất đơn trên gian "${g.shopName}"`,
+      summary: `${CHANNEL_LABEL[g.channelName] ?? g.channelName}: ${head}${more} có đơn trong ${SELLING_WINDOW_DAYS} ngày qua nhưng tồn khả dụng đã hết. Chỉ cần nhập kho — Hubsell tự đẩy tồn lên sàn mở bán lại, không phải vào sàn sửa tay.`,
       payload: { kind: "navigate", href: "/products", label: "Kiểm tra tồn kho" },
     });
   }
@@ -520,7 +521,7 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
       dedupeKey: "rolling-7d",
       tag: "finance",
       severity: totalLoss >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
-      title: `${lossCount} đơn giao gần đây bị LỖ — tổng ${vnd(totalLoss)}`,
+      title: `Hubsell soi sao kê: ${lossCount} đơn giao gần đây bị LỖ — tổng ${vnd(totalLoss)}`,
       summary: `Trong ${LOSS_WINDOW_DAYS} ngày qua có ${lossCount} đơn Đã giao lợi nhuận âm (phí thật từ sao kê sàn). Bấm xem từng đơn lỗ do giá vốn hay do phí sàn để điều chỉnh giá bán.`,
       refs,
       refTotal: lossCount,
@@ -562,7 +563,7 @@ async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> 
       dedupeKey: "rolling-30d",
       tag: "finance",
       severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
-      title: `${count} đơn bị sàn trừ THÊM phí ship — tổng ${vnd(total)} chờ khiếu nại`,
+      title: `Hubsell phát hiện ${count} đơn bị sàn trừ THÊM phí ship — ${vnd(total)} có thể đòi lại`,
       summary: `${SHIPPING_WINDOW_DAYS} ngày qua sàn khấu trừ phí vận chuyển cao hơn mức báo ban đầu trên ${count} đơn. Khiếu nại sớm để đòi lại tiền trước khi quá hạn đối soát.`,
       refs,
       refTotal: count,
@@ -618,7 +619,7 @@ async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
       severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       // Giọng NGHI VẤN, không phải kết luận (chốt 01/09): xúi seller khiếu nại
       // sai một lần là mất niềm tin cả radar — hướng dẫn đối chiếu trước.
-      title: `${shortAgg._count._all} đơn nghi sàn trả thiếu so với số sàn tự ước tính — tổng ${vnd(total)}`,
+      title: `Hubsell đối soát: ${shortAgg._count._all} đơn nghi sàn trả thiếu so với số sàn ước tính — chênh ${vnd(total)}`,
       summary: `Tiền giải ngân thực tế thấp hơn số Shopee tự ước tính trên ${shortAgg._count._all} đơn, so theo từng loại phí (đã loại đơn hoàn tiền và khoản chỉ chốt lúc quyết toán). Mở Kiểm toán phí sàn xem chênh từng loại phí, đối chiếu chi tiết quyết toán trên Seller Center rồi hãy quyết định khiếu nại.`,
       refs,
       refTotal: shortAgg._count._all,
@@ -674,7 +675,7 @@ async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
       dedupeKey: "overdue",
       tag: "finance",
       severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
-      title: `${pendingCount} đơn giao xong đã lâu mà sàn CHƯA trả tiền — ${vnd(total)} đang treo`,
+      title: `Hubsell đối soát: ${pendingCount} đơn giao xong đã lâu mà sàn CHƯA trả — ${vnd(total)} đang treo`,
       summary: `Đơn giao thành công quá ${FEE_AUDIT_PENDING_DAYS} ngày nhưng chưa thấy sàn giải ngân. Kiểm tra ví sàn/đối soát — tiền treo lâu có thể là đơn bị sàn giữ lại hoặc lỗi đối soát.`,
       refs,
       refTotal: pendingCount,
@@ -1326,9 +1327,11 @@ export function buildAdsAutoPausedAlert(
     dedupeKey: c.campaignRowId,
     tag: "ads",
     severity: "high",
-    title: `Trợ lý đã tạm dừng chiến dịch "${name}" — gian "${c.shopName}"`,
+    // 25/10/2026: nói rõ việc tạm dừng CHẶN ĐƯỢC gì — tiền ads của chiến dịch đang lỗ ngừng chảy từ lúc đó.
+    title: `Trợ lý đã tạm dừng chiến dịch "${name}" đang lỗ — gian "${c.shopName}"`,
     summary:
       `Lúc ${vnTimeText(pausedAt)}. ${reasons.join(" ")} ` +
+      `Tiền quảng cáo của chiến dịch này ngừng chảy từ lúc đó. ` +
       `Hubsell sẽ tự bật lại khi ROAS cửa sổ ${ADS_WINDOW_LABEL[window] ?? window} vượt hòa vốn × ${dangerFactor}. ` +
       `Muốn chạy ngay: bấm Bật lại. Không muốn Trợ lý đụng chiến dịch này nữa: bấm Bỏ qua cảnh báo trong trang Trợ lý quảng cáo, hoặc tắt Quy tắc tương ứng.`,
     payload: {
@@ -1482,8 +1485,8 @@ export function buildAdsActionLogAlert(
       ...base,
       type: "ads-auto-resumed",
       severity: "low",
-      title: `Trợ lý đã bật lại chiến dịch "${name}" — ROAS đã đạt — gian "${c.shopName}"`,
-      summary: `Lúc ${vnTimeText(log.createdAt)}. ${reasons}`,
+      title: `Trợ lý đã bật lại chiến dịch "${name}" khi ROAS vượt hòa vốn — gian "${c.shopName}"`,
+      summary: `Lúc ${vnTimeText(log.createdAt)}. ${reasons} Không cần làm gì — Trợ lý tiếp tục canh, lỗ lại là dừng lại.`,
     };
   }
   return null;

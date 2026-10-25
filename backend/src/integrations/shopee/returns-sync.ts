@@ -534,8 +534,8 @@ async function applyShopeeReturnGroup(
   if (plan.flagged && !ctx.historical) {
     await notify(channel.userId, {
       type: "return",
-      title: `Shopee báo hoàn đơn ${orderSn}`,
-      body: `Gian ${channel.shopName} — đơn chuyển sang "Chờ nhận hàng hoàn". Kho quét mã khi kiện về tay.`,
+      title: `Đơn ${orderSn} đang hoàn về — Hubsell đã chuyển sang Chờ nhận hàng hoàn`,
+      body: `Shopee · gian ${channel.shopName}. Đơn này đã được tách khỏi doanh thu cho tới khi nhận lại hàng; kho chỉ cần quét mã khi kiện về tay.`,
       link: "/warehouse/returns",
     });
   }

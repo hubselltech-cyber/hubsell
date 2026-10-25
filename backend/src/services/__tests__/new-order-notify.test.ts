@@ -64,7 +64,8 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     const [ownerId, input] = calls[0].args as [string, { type: string; title: string; body: string; dedupe: boolean }];
     expect(ownerId).toBe("o1");
     expect(input.type).toBe("order_new");
-    expect(input.title).toBe("Có 3 đơn hàng mới cần xử lý");
+    // 25/10/2026: tiêu đề nói máy ĐÃ nhận đơn + tiền, rồi mới tới việc của chủ shop.
+    expect(input.title).toBe("Hubsell đã nhận 3 đơn mới · 1,2 tr — chờ bạn chuẩn bị hàng");
     expect(input.body).toBe("Shopee · ANO: 2 đơn · 1 tr\nTikTok · Hi.Bé: 1 đơn · 200 k\nTổng 1,2 tr");
     expect(input.dedupe).toBe(false);
   });
@@ -88,7 +89,7 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     expect(input.title).toContain("H1");
     expect(input.link).toBe("/orders?search=H1");
     await flushOwner("o1");
-    expect(calls[1].args[1]).toMatchObject({ type: "order_new", title: "Có 1 đơn hàng mới cần xử lý" });
+    expect(calls[1].args[1]).toMatchObject({ type: "order_new", title: "Hubsell đã nhận 1 đơn mới · 500 k — chờ bạn chuẩn bị hàng" });
   });
 
   it("đợt sau trong 15 phút CỘNG DỒN vào bản ghi cũ, quá 15 phút mở bản ghi mới", async () => {
@@ -101,15 +102,15 @@ describe("new-order-notify — gom đợt đơn mới, hỏa tốc báo ngay", (
     expect(calls.map((c) => c.kind)).toEqual(["notify", "amend"]);
     const [, id, patch, push] = calls[1].args as [string, string, { title: string; body: string }, { title: string }];
     expect(id).toBe("n1");
-    expect(patch.title).toBe("Có 3 đơn hàng mới cần xử lý");
+    expect(patch.title).toBe("Hubsell đã nhận 3 đơn mới · 1,5 tr — chờ bạn chuẩn bị hàng");
     expect(patch.body).toContain("(15 phút gần đây)");
-    expect(push.title).toBe("Thêm 2 đơn hàng mới cần xử lý");
+    expect(push.title).toBe("Thêm 2 đơn mới · 1 tr — chờ bạn chuẩn bị hàng");
 
     now += MERGE_WINDOW_MS + 1;
     noteNewOrder({ ...base, orderCode: "A4", placedAt: new Date(now) });
     await flushOwner("o1");
     expect(calls[2].kind).toBe("notify");
-    expect((calls[2].args[1] as { title: string }).title).toBe("Có 1 đơn hàng mới cần xử lý");
+    expect((calls[2].args[1] as { title: string }).title).toBe("Hubsell đã nhận 1 đơn mới · 500 k — chờ bạn chuẩn bị hàng");
   });
 
   it("bản ghi cũ đã đọc → không cộng dồn, mở bản ghi mới", async () => {

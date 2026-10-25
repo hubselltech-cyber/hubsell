@@ -17,6 +17,7 @@
 // trong 45 giây), không phụ thuộc số đơn.
 // ============================================================
 
+import { vndCompact } from "../lib/ads-format";
 import { amendNotification, isNotificationTypeMuted, notify } from "./notifications";
 import { isExpressShipping } from "./shipping";
 
@@ -98,15 +99,8 @@ export function _resetNewOrderBuffers(): void {
   rolling.clear();
 }
 
-/** "2,1 tr" / "850 k" / "1,2 tỷ" — gọn cho một dòng thông báo. */
-export function compactVnd(v: number): string {
-  const a = Math.abs(v);
-  const f = (x: number, d: number) => x.toFixed(d).replace(/\.0+$/, "").replace(".", ",");
-  if (a >= 1e9) return `${f(v / 1e9, 1)} tỷ`;
-  if (a >= 1e6) return `${f(v / 1e6, 1)} tr`;
-  if (a >= 1e3) return `${Math.round(v / 1e3)} k`;
-  return `${Math.round(v)} đ`;
-}
+/** "2,1 tr" / "850 k" / "1,2 tỷ" — gọn cho một dòng thông báo (bản dùng chung ở lib/ads-format). */
+export const compactVnd = vndCompact;
 
 function shopLabel(n: Pick<NewOrderNote, "shopName" | "channelName">): string {
   return `${CHANNEL_LABEL[n.channelName] ?? n.channelName} · ${n.shopName}`;
@@ -134,9 +128,13 @@ function mergeBatch(into: OrderBatch, from: OrderBatch): void {
   }
 }
 
-/** "Có 3 đơn hàng mới cần xử lý" */
-export function titleOf(count: number): string {
-  return `Có ${count} đơn hàng mới cần xử lý`;
+/**
+ * "Hubsell đã nhận 3 đơn mới · 1,2 tr — chờ bạn chuẩn bị hàng" (25/10/2026, anh
+ * Trung: chuông phải cho thấy GIÁ TRỊ — máy đã kéo đơn về, kèm tiền, rồi mới
+ * tới việc của chủ shop).
+ */
+export function titleOf(count: number, amount: number): string {
+  return `Hubsell đã nhận ${count} đơn mới · ${vndCompact(amount)} — chờ bạn chuẩn bị hàng`;
 }
 
 /**
@@ -199,8 +197,8 @@ export async function flushOwner(ownerId: string): Promise<void> {
     const amended = await deps.amend(
       ownerId,
       r.notificationId,
-      { title: titleOf(r.count), body: `${describeBatch(r)}\n(15 phút gần đây)` },
-      { title: `Thêm ${b.count} đơn hàng mới cần xử lý`, body: describeBatch(b), data: { type: "order_new", link: "/orders" } }
+      { title: titleOf(r.count, r.amount), body: `${describeBatch(r)}\n(15 phút gần đây)` },
+      { title: `Thêm ${b.count} đơn mới · ${vndCompact(b.amount)} — chờ bạn chuẩn bị hàng`, body: describeBatch(b), data: { type: "order_new", link: "/orders" } }
     );
     if (amended) return;
     // Bản ghi cũ đã được đọc / xóa → mở đợt mới bên dưới.
@@ -209,7 +207,7 @@ export async function flushOwner(ownerId: string): Promise<void> {
 
   const res = await deps.notify(ownerId, {
     type: "order_new",
-    title: titleOf(b.count),
+    title: titleOf(b.count, b.amount),
     body: describeBatch(b),
     link: "/orders",
     dedupe: false,

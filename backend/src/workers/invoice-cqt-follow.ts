@@ -450,8 +450,8 @@ export async function runInvoiceCqtFollowOnce(
       if (alert.signedNos.length > 0) {
         await notify(ownerId, {
           type: "INVOICE_DRAFT_SIGNED",
-          title: `Đã nhận ${alert.signedNos.length} hóa đơn bạn vừa ký trên ${l}`,
-          body: `Số ${firstNos(alert.signedNos)}. Xem và tải PDF tại Lịch sử & Báo cáo thuế.`,
+          title: `Hubsell đã nhận ${alert.signedNos.length} hóa đơn bạn vừa ký trên ${l} — PDF đã sẵn`,
+          body: `Số ${firstNos(alert.signedNos)}. Hubsell tự ghép số hóa đơn vào đơn hàng; xem và tải PDF tại Lịch sử & Báo cáo thuế.`,
           link: "/invoicing/history",
         });
       }

@@ -340,13 +340,17 @@ export async function runAutoIssueForShop(
   } else if (issued > 0 || failed > 0) {
     await notify(cfg.ownerId, {
       type: "INVOICE_AUTO_ISSUE",
-      title: `Tự động phát hành ${issued} hóa đơn điện tử`,
+      // 25/10/2026: nói máy ĐÃ làm thay chủ shop việc gì, và họ có phải làm gì không.
+      title:
+        failed > 0
+          ? `Hubsell đã tự xuất ${issued} hóa đơn điện tử — ${failed} đơn cần bạn xem`
+          : `Hubsell đã tự xuất ${issued} hóa đơn điện tử — không cần làm gì thêm`,
       body:
         failed > 0
           ? `${issued} hóa đơn phát hành thành công, ${failed} đơn lỗi — xem chi tiết tại Lịch sử & Báo cáo thuế.`
           : trigger === "SETTLED"
-            ? `Các đơn đã giao & đã đối soát được xuất hóa đơn tự động.`
-            : `Các đơn đã giao thành công được xuất hóa đơn tự động.`,
+            ? `Các đơn đã giao & đã đối soát được xuất hóa đơn tự động, PDF sẵn ở Lịch sử & Báo cáo thuế.`
+            : `Các đơn đã giao thành công được xuất hóa đơn tự động, PDF sẵn ở Lịch sử & Báo cáo thuế.`,
       link: "/invoicing/history",
     });
   }

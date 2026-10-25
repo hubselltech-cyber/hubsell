@@ -99,10 +99,10 @@ export async function noticeLazadaDeliveryFail(
 
     await notify(ownerId, {
       type: "delivery-fail",
-      title: `Đơn ${orderCode} bị Lazada báo giao không thành công`,
+      title: `Đơn ${orderCode} Lazada báo giao không thành công — gọi khách để cứu đơn`,
       body:
         `Gian ${channel.shopName} — khách ${dbOrder.customerName}. ` +
-        "Kiện sẽ quay về; chủ động liên hệ khách để cứu đơn hoặc chốt đặt lại.",
+        "Kiện sẽ quay về (mất phí ship 2 chiều); chủ động liên hệ khách để cứu đơn hoặc chốt đặt lại.",
       link: DELIVERY_FAIL_TAB_HREF,
     });
     return true;

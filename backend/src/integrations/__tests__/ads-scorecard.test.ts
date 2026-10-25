@@ -98,7 +98,7 @@ describe("tóm tắt cuối ngày", () => {
     ]);
     expect(digest).toEqual({ paused: ["A"], resumed: ["B"], planned: ["C"], failed: [] });
     const msg = formatDailyDigest(digest);
-    expect(msg?.title).toBe("🤖 Trợ lý quảng cáo hôm nay: dừng 1, bật lại 1, diễn tập 1");
+    expect(msg?.title).toBe("🤖 Trợ lý quảng cáo hôm nay đã dừng 1 chiến dịch lỗ, bật lại 1 khi ROAS đạt, diễn tập 1");
     expect(msg?.body).toContain('"A"');
     expect(formatDailyDigest({ paused: [], resumed: [], planned: [], failed: [] })).toBeNull();
   });

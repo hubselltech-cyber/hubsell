@@ -178,9 +178,10 @@ export function buildDailyDigest(
 export function formatDailyDigest(d: DailyActionDigest): { title: string; body: string } | null {
   const total = d.paused.length + d.resumed.length + d.planned.length + d.failed.length;
   if (total === 0) return null;
+  // 25/10/2026: tiêu đề nói máy đã làm gì VÀ vì sao (dừng vì lỗ, bật lại vì ROAS đạt).
   const parts: string[] = [];
-  if (d.paused.length) parts.push(`dừng ${d.paused.length}`);
-  if (d.resumed.length) parts.push(`bật lại ${d.resumed.length}`);
+  if (d.paused.length) parts.push(`dừng ${d.paused.length} chiến dịch lỗ`);
+  if (d.resumed.length) parts.push(`bật lại ${d.resumed.length} khi ROAS đạt`);
   if (d.planned.length) parts.push(`diễn tập ${d.planned.length}`);
   if (d.failed.length) parts.push(`${d.failed.length} lệnh sàn từ chối`);
   const list = (names: string[]) =>
@@ -192,7 +193,7 @@ export function formatDailyDigest(d: DailyActionDigest): { title: string; body: 
   if (d.failed.length) lines.push(`Sàn từ chối: ${list(d.failed)} — kiểm tra trên Seller Center.`);
   lines.push("Mọi lệnh có căn cứ trong Sổ hành động; chiến dịch máy dừng có thể bật lại một cú bấm.");
   return {
-    title: `🤖 Trợ lý quảng cáo hôm nay: ${parts.join(", ")}`,
+    title: `🤖 Trợ lý quảng cáo hôm nay đã ${parts.join(", ")}`,
     body: lines.join(" "),
   };
 }

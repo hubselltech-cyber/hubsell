@@ -30,6 +30,8 @@
 // loại mỗi ngày (ưu tiên tốn tiền nhất) và giữ lại tối thiểu N video còn ra đơn.
 // ============================================================
 
+import { vndCompact } from "../../lib/ads-format";
+
 export type AutoRuleMode = "off" | "dry_run" | "live";
 export const AUTO_RULE_MODES: AutoRuleMode[] = ["off", "dry_run", "live"];
 
@@ -428,6 +430,80 @@ export function summarizeAutoPlan(plan: AutoExclusionPlan, cfg: AutoRuleConfig):
   if (cfg.ruleLowRoiOn && plan.hard.basis === "breakeven") parts.push(`mức loại theo ${plan.hard.label}`);
   if (cfg.ruleLowRoiOn && plan.hard.fallbackReason) parts.push(`chưa dùng được hòa vốn làm mức loại (${plan.hard.fallbackReason}) nên tạm theo ${cfg.roiHardPct}% mục tiêu`);
   return parts.join(" · ");
+}
+
+// ------------------------------------------------------------
+// CÂU CHUÔNG CỦA LƯỢT CHẤM — một chỗ, thuần, test được (25/10/2026).
+//
+// Anh Trung 25/10: khách ít vào app vì máy làm hết; chuông phải cho họ THẤY
+// GIÁ TRỊ thay vì chỉ báo sự kiện. Công thức mỗi câu: Trợ lý đã làm gì → chặn /
+// giữ được gì bằng TIỀN THẬT (chi cửa sổ của nhóm video, không ước đoán) →
+// chủ shop cần làm gì (hay "không cần làm gì"). Tiêu đề ≤ 70 ký tự vì tin
+// đẩy cắt ở đó (push.ts TITLE_MAX); tên chiến dịch xuống thân tin.
+// ------------------------------------------------------------
+
+export interface AutoRunNoticeInput {
+  campaignName: string;
+  /** Số video loại / định loại. */
+  count: number;
+  /** Chi cửa sổ của nhóm video đó + số đơn chúng ra. */
+  spend: number;
+  orders: number;
+  windowDays: number;
+  /** summarizeAutoPlan(plan, cfg). */
+  summary: string;
+}
+
+const vndShort = vndCompact;
+
+/** "đang chảy mà không ra đơn nào" / "đang chảy mà chỉ ra 2 đơn". */
+function drainText(orders: number): string {
+  return orders === 0 ? "không ra đơn nào" : `chỉ ra ${orders} đơn`;
+}
+
+/** Trợ lý ĐÃ loại thật (live, không phải chủ shop bấm). */
+export function excludedNotice(i: AutoRunNoticeInput): { title: string; body: string } {
+  return {
+    title: `Trợ lý đã loại ${i.count} video — chặn ${vndShort(i.spend)}/${i.windowDays} ngày đang chảy mà ${drainText(i.orders)}`,
+    body:
+      `Chiến dịch "${i.campaignName}": ${i.summary}. ` +
+      "Không cần làm gì thêm — mã video và căn cứ ở tab Lịch sử; muốn chạy lại video nào thì bấm Khôi phục.",
+  };
+}
+
+/** Diễn tập: máy ĐỊNH loại nhưng chưa gọi sàn — cho thấy khoản sẽ chặn được nếu bật thật. */
+export function plannedNotice(i: AutoRunNoticeInput, changeLabel: string): { title: string; body: string } {
+  return {
+    title: `Diễn tập: Trợ lý sẽ loại ${i.count} video đang đốt ${vndShort(i.spend)}/${i.windowDays} ngày${changeLabel}`,
+    body:
+      `Chiến dịch "${i.campaignName}": ${i.summary}. Chưa gọi TikTok. ` +
+      "Bật chế độ thật thì từ lượt mai Trợ lý tự chặn khoản này.",
+  };
+}
+
+/** Lượt chấm xong, không video nào tới mức loại — vẫn nói máy ĐÃ rà bao nhiêu video. */
+export function nothingNotice(campaignName: string, assessed: number, live: boolean, summary: string): { title: string; body: string } {
+  const who = live ? "Trợ lý" : "Diễn tập";
+  return {
+    title: `${who} đã rà ${assessed} video "${campaignName}": chưa video nào tới mức loại`,
+    body: `${summary}. Không cần làm gì — mai Trợ lý chấm lại.`,
+  };
+}
+
+/** Bỏ lượt vì số liệu TikTok hỏng (A2): thận trọng cũng là giá trị. */
+export function skippedNotice(campaignName: string, skipped: string): { title: string; body: string } {
+  return {
+    title: "Trợ lý tạm không loại video hôm nay — số liệu TikTok chưa đủ tin",
+    body: `Chiến dịch "${campaignName}". ${skipped} Thà chờ một ngày còn hơn loại nhầm video đang ra đơn.`,
+  };
+}
+
+/** TikTok từ chối lệnh loại: nói rõ khoản vẫn đang chảy + máy sẽ thử lại. */
+export function refusedNotice(i: AutoRunNoticeInput, error: string): { title: string; body: string } {
+  return {
+    title: `TikTok từ chối lệnh loại ${i.count} video — ${vndShort(i.spend)}/${i.windowDays} ngày vẫn đang chảy`,
+    body: `Chiến dịch "${i.campaignName}". Lỗi sàn: ${error} Trợ lý sẽ thử lại ở lượt chấm mai; cần gấp thì loại tay trên TikTok Ads Manager.`,
+  };
 }
 
 // ------------------------------------------------------------

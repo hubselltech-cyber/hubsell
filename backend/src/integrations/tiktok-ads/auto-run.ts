@@ -45,9 +45,14 @@ import {
   autoCommandReferenceId,
   compareRunDigest,
   daysBetween,
+  excludedNotice,
+  nothingNotice,
   planAutoExclusion,
+  plannedNotice,
+  refusedNotice,
   runChangeLabel,
   runDigestOf,
+  skippedNotice,
   summarizeAutoPlan,
   videoDataProblem,
   type AutoAssessment,
@@ -555,7 +560,7 @@ export async function applyAutoPlan(
       where: { adsCampaignId: campaign.id },
       data: { lastRunAt: new Date(), lastRunSummary: { mode, summary: skipped, skipped, exclude: 0, windowFrom: bundle.windowFrom, windowTo: bundle.windowTo } },
     });
-    await notify(ownerId, { type: "tiktok-ads-auto", title: `${campaign.name}: Trợ lý bỏ lượt chấm hôm nay`, body: skipped, link });
+    await notify(ownerId, { type: "tiktok-ads-auto", ...skippedNotice(campaign.name, skipped), link });
     console.warn(`[TikTok Ads] "${campaign.name}" bỏ lượt chấm: ${dataProblem}`);
     return "skipped";
   }
@@ -612,8 +617,7 @@ export async function applyAutoPlan(
     if (change.changed && (plan.counts.flag > 0 || plan.counts.grace > 0 || change.removed > 0)) {
       await notify(ownerId, {
         type: "tiktok-ads-auto",
-        title: `${campaign.name}: ${mode === "live" ? "Trợ lý" : "Diễn tập"} hôm nay không loại video nào`,
-        body: summary,
+        ...nothingNotice(campaign.name, plan.assessments.length, mode === "live", summary),
         link,
       });
     }
@@ -627,6 +631,15 @@ export async function applyAutoPlan(
   }
 
   const items = plan.exclude.slice(0, GMV_MAX_CREATIVE_BATCH);
+  // Số cho câu chuông: chi cửa sổ + đơn của ĐÚNG nhóm video gửi đi (sau trần mẻ), không phải cả plan.exclude.
+  const noticeInput = {
+    campaignName: campaign.name,
+    count: items.length,
+    spend: items.reduce((s, a) => s + a.cost, 0),
+    orders: items.reduce((s, a) => s + a.orders, 0),
+    windowDays: cfg.windowDays,
+    summary,
+  };
   const reasons = buildVideoActionReasons(
     items.map((a) => ({ videoId: a.videoId, note: `${videoActionNote(a.cost, a.orders)} · ${a.reason}` })),
     [`${confirmedByOwner ? "Chủ shop bấm Loại ngay theo danh sách Trợ lý chấm" : "Trợ lý tự động"} (${cfg.windowDays} ngày ${bundle.windowFrom}→${bundle.windowTo}, ROI mục tiêu ${cfg.roiTarget}, mức loại ${plan.hard.label}): ${summary}`]
@@ -646,8 +659,7 @@ export async function applyAutoPlan(
     if (change.changed) {
       await notify(ownerId, {
         type: "tiktok-ads-auto",
-        title: `Diễn tập ${campaign.name}: sẽ loại ${items.length} video${runChangeLabel(prevDigest, change)}`,
-        body: summary,
+        ...plannedNotice(noticeInput, runChangeLabel(prevDigest, change)),
         link,
       });
     }
@@ -679,23 +691,13 @@ export async function applyAutoPlan(
   if (!sent.ok) {
     const message = sent.error;
     await saveRun({ error: message });
-    await notify(ownerId, {
-      type: "tiktok-ads-auto",
-      title: `${campaign.name}: TikTok từ chối lệnh loại ${items.length} video`,
-      body: message,
-      link,
-    });
+    await notify(ownerId, { type: "tiktok-ads-auto", ...refusedNotice(noticeInput, message), link });
     return "failed";
   }
   await saveRun({ executedVideoIds: [...excludedIds] });
   // Chủ shop vừa tự bấm và đã thấy kết quả ngay trên màn hình → không chuông "Trợ lý đã loại".
   if (confirmedByOwner) return "executed";
-  await notify(ownerId, {
-    type: "tiktok-ads-auto",
-    title: `${campaign.name}: Trợ lý đã loại ${items.length} video`,
-    body: summary,
-    link,
-  });
+  await notify(ownerId, { type: "tiktok-ads-auto", ...excludedNotice(noticeInput), link });
   return "executed";
 }
 

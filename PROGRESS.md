@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 25/10/2026 (đêm) — CHUÔNG THÔNG BÁO PHẢI CHO THẤY GIÁ TRỊ (web + mobile, chữ sinh ở backend)
+
+- **Anh nêu vấn đề:** Hubsell được đánh giá cao nhưng tự động hóa làm khách "không có việc gì để vào". Em phản biện: ít vào không phải lỗi, rủi ro thật là lúc gia hạn khách không thấy giá trị + không biết tính năng mới; đề xuất đo số trước (2 SQL `lastActiveAt` + CHURNED) rồi làm thư báo cáo tuần. Rà hạ tầng: báo cáo tuần thứ Hai 08:00 **đã có** (`workers/weekly-report.ts`, chuông + push, link mở Trợ lý chat) nhưng không có email; khách chỉ nhận 6 thư thủ tục.
+- **Anh đổi hướng giữa chừng:** báo cáo tuần để sau; làm ngay **câu chữ chuông** — "đã loại một video" phải thành "Trợ lý đã loại 1 video — đã ngăn mất tiền".
+- **Làm:** công thức một câu *[Ai] đã [làm gì] — [chặn/giữ/phát hiện gì bằng số thật] — [cần làm gì | không cần làm gì]*, tiêu đề ≤ 70 ký tự (push cắt). Sửa 17 chuông ở backend (web + app đổi theo, 0 dòng client): TikTok Ads 5 câu thành hàm thuần `excludedNotice/plannedNotice/nothingNotice/skippedNotice/refusedNotice` (`tiktok-ads/auto-rules.ts`, số = chi cửa sổ của đúng nhóm video gửi đi), Shopee/Lazada tạm dừng "đang lỗ" + bật lại "không cần làm gì", tổng kết ads 20h, đơn mới `Hubsell đã nhận N đơn mới · tiền — chờ bạn chuẩn bị hàng`, giao hụt (Shopee đã nhắn khách thì nói trước), hoàn hàng 3 sàn "Hubsell đã chuyển sang Chờ nhận hàng hoàn + tách khỏi doanh thu", hết hàng "khách vẫn đang mua — đang mất đơn", 4 radar tài chính thêm "Hubsell soi sao kê / phát hiện / đối soát", hóa đơn tự xuất "không cần làm gì thêm". `vndCompact` về `lib/ads-format.ts`. **Không đổi** chữ hủy đơn anh chốt 23/10, gói/thanh toán, hỏa tốc. Bảng trước → sau + 4 chỗ máy làm im lặng mà chưa có số: `docs/CHUONG-THONG-BAO-CAU-CHU-GIA-TRI.md`.
+- **Kiểm:** tsc sạch; vitest 4 tệp liên quan 72/72 (thêm 4 test câu chuông, kiểm trần 70 ký tự); web/mobile không khớp chuỗi cũ nào. ⏳ sau deploy đọc log worker + mở chuông app ở 320 px.
+
+---
+
 ## Phiên 25/10/2026 (khuya, tiếp) — MOBILE 1.4.1: BẢNG "TIỀN THEO GIAN HÀNG" = ĐANG GIAO | VÍ SÀN, BỎ BANK, TÊN SHOP CO "…"
 
 - **Anh yêu cầu (kèm ảnh màn Tài chính):** thêm cột Tiền đang giao, bỏ tiền ngân hàng, giới hạn tên shop bằng "…" theo tỉ lệ màn hình (đo đạc), kết luận dưới bảng theo tổng Ví sàn + tổng Đang giao; giữa chừng chốt thêm **Đang giao ở giữa, Ví sàn ngoài cùng phải** và "làm tí màu cho sinh động". Xong thì push + TestFlight.

@@ -745,12 +745,16 @@ export async function processShopeeDeliveryTracking(
       if (cfg.alertEnabled) {
         await notify(ownerId, {
           type: "delivery-fail",
-          title: `Đơn ${order.orderCode} giao ${fails} lần không thành công`,
+          // 25/10/2026: máy đã nhắn khách thì tiêu đề nói việc ĐÃ LÀM trước, việc còn lại sau.
+          title:
+            chatStatus === DeliveryFailChatStatus.SENT
+              ? `Hubsell đã nhắn khách đơn ${order.orderCode} sau ${fails} lần giao hụt — nên gọi thêm`
+              : `Đơn ${order.orderCode} giao ${fails} lần không thành công — gọi khách để cứu đơn`,
           body:
             `Gian ${channel.shopName} — khách ${order.customerName}. ` +
             (chatStatus === DeliveryFailChatStatus.SENT
-              ? "Đã tự nhắn khách qua chat sàn; nên gọi thêm để chắc chắn."
-              : "Chủ động liên hệ khách trước lượt giao cuối kẻo kiện quay đầu."),
+              ? "Tin nhắn qua chat sàn đã gửi tự động; gọi thêm một cuộc là chắc nhất. Kiện quay đầu mất phí ship 2 chiều."
+              : "Chủ động liên hệ khách trước lượt giao cuối kẻo kiện quay đầu, mất phí ship 2 chiều."),
           link: DELIVERY_FAIL_TAB_HREF,
         });
       }

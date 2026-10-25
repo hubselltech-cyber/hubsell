@@ -7,6 +7,11 @@ import {
   compareRunDigest,
   daysBetween,
   describeConfigChanges,
+  excludedNotice,
+  nothingNotice,
+  plannedNotice,
+  refusedNotice,
+  skippedNotice,
   parseRehearsedConfig,
   resolveHardLevel,
   ruleNumbersChanged,
@@ -395,5 +400,49 @@ describe("autoCommandReferenceId — mã chống gửi trùng của lệnh tự 
   });
   it("mã diễn tập vẫn kết thúc bằng ngày — tab Đối chiếu diễn tập đọc ngày của lượt từ 10 ký tự cuối", () => {
     expect(autoCommandReferenceId("c1", "2026-09-18", "dry_run").slice(-10)).toBe("2026-09-18");
+  });
+});
+
+// 25/10/2026 — câu chuông phải cho thấy GIÁ TRỊ: đã làm gì → chặn được bao nhiêu tiền → cần làm gì.
+describe("câu chuông lượt chấm", () => {
+  const input = {
+    campaignName: "GMV Max Tết 2027 — bộ quà biếu cao cấp",
+    count: 3,
+    spend: 1_240_000,
+    orders: 1,
+    windowDays: 7,
+    summary: "loại 3 video đang ngốn 1.240.000đ/7 ngày mà ra 1 đơn · 2 video đang ân hạn",
+  };
+  const TITLE_MAX = 70; // push.ts cắt tiêu đề tin đẩy ở đây
+
+  it("đã loại: tiền chặn được đứng trong tiêu đề, tên chiến dịch xuống thân, có câu 'không cần làm gì'", () => {
+    const n = excludedNotice(input);
+    expect(n.title).toBe("Trợ lý đã loại 3 video — chặn 1,2 tr/7 ngày đang chảy mà chỉ ra 1 đơn");
+    expect(n.title.length).toBeLessThanOrEqual(TITLE_MAX);
+    expect(n.body).toContain('Chiến dịch "GMV Max Tết 2027');
+    expect(n.body).toContain("Không cần làm gì thêm");
+    expect(excludedNotice({ ...input, orders: 0 }).title).toContain("không ra đơn nào");
+  });
+
+  it("diễn tập: nói khoản SẼ chặn được + mời bật thật; đuôi so lượt trước giữ nguyên", () => {
+    const n = plannedNotice(input, " (thêm 1 so với lượt trước)");
+    expect(n.title).toBe("Diễn tập: Trợ lý sẽ loại 3 video đang đốt 1,2 tr/7 ngày (thêm 1 so với lượt trước)");
+    expect(n.body).toContain("Chưa gọi TikTok");
+    expect(n.body).toContain("Bật chế độ thật");
+  });
+
+  it("không loại: vẫn nói máy ĐÃ rà bao nhiêu video", () => {
+    const n = nothingNotice("Chiến dịch A", 42, true, "không có video nào tới mức loại");
+    expect(n.title).toBe('Trợ lý đã rà 42 video "Chiến dịch A": chưa video nào tới mức loại');
+    expect(nothingNotice("A", 1, false, "x").title.startsWith("Diễn tập đã rà")).toBe(true);
+    expect(n.body).toContain("Không cần làm gì");
+  });
+
+  it("bỏ lượt / sàn từ chối: nói rõ vì sao và khoản vẫn đang chảy", () => {
+    expect(skippedNotice("A", "18/09: bỏ lượt — số liệu lệch.").title.length).toBeLessThanOrEqual(TITLE_MAX);
+    const r = refusedNotice(input, "code 40002: advertiser mismatch.");
+    expect(r.title).toBe("TikTok từ chối lệnh loại 3 video — 1,2 tr/7 ngày vẫn đang chảy");
+    expect(r.body).toContain("code 40002");
+    expect(r.body).toContain("thử lại");
   });
 });
