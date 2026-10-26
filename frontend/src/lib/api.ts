@@ -1084,7 +1084,16 @@ export interface AnalyticsResponse {
   operatingVariableExpense: number;
   /** Chi phí vận hành CỐ ĐỊNH ngoài quảng cáo (thuê kho, lương, phần mềm…). */
   operatingFixedExpense: number;
+  /**
+   * Lợi nhuận ròng = LN gộp − phí sàn − chi phí vận hành − LN đơn thiếu vốn
+   * + thu vận hành khác − thuế bổ sung dự phòng — CÙNG đẳng thức với thẻ
+   * "Lợi nhuận ròng tạm tính" của Báo cáo dòng tiền (backend lib/net-profit.ts).
+   */
   netProfit: number;
+  /** Thu vận hành khác nhập tay (đền bù, thưởng…) — bậc CỘNG của thác nước. */
+  operatingIncome?: number;
+  /** Thuế bổ sung dự phòng theo cấu hình shop — bậc TRỪ cuối thác nước. */
+  additionalTax?: number;
   /** Quảng cáo sàn tự đồng bộ — ĐÃ nằm trong totalOperatingExpense và nhóm ADS. */
   platformAdsSpend?: number;
   /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */

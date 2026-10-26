@@ -135,10 +135,10 @@ export function WarehouseHubPage() {
     icon: "time-outline" | "archive-outline" | "alert-circle-outline" | "bandage-outline";
     tint: IconTint;
   }[] = [
-    { label: "Chờ về kho", value: summary?.AWAITING ?? 0, color: "text-amber-600 dark:text-amber-400", icon: "time-outline", tint: "amber" },
-    { label: "Chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600 dark:text-sky-400", icon: "archive-outline", tint: "sky" },
-    { label: "Quá hạn ≥14 ngày", value: summary?.overdue ?? 0, color: "text-red-500 dark:text-red-400", icon: "alert-circle-outline", tint: "red" },
-    { label: "Hàng hỏng chờ khiếu nại", value: summary?.DAMAGED ?? 0, color: "text-red-500 dark:text-red-400", icon: "bandage-outline", tint: "red" },
+    { label: "Chờ hàng về", value: summary?.AWAITING ?? 0, color: "text-amber-600 dark:text-amber-400", icon: "time-outline", tint: "amber" },
+    { label: "Đã nhận · chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600 dark:text-sky-400", icon: "archive-outline", tint: "sky" },
+    { label: "Quá 14 ngày chưa về", value: summary?.overdue ?? 0, color: "text-red-500 dark:text-red-400", icon: "alert-circle-outline", tint: "red" },
+    { label: "Hàng hỏng · chờ khiếu nại sàn", value: summary?.DAMAGED ?? 0, color: "text-red-500 dark:text-red-400", icon: "bandage-outline", tint: "red" },
   ];
   const { colorScheme } = useColorScheme();
   const dark = colorScheme === "dark";
@@ -347,7 +347,13 @@ export function WarehouseHubPage() {
                       <Badge label={ret.label} bg={ret.bg} text={ret.text} />
                     </View>
                     <Text className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
-                      VĐ hoàn: {o.returnTrackingCode ?? o.trackingCode ?? "—"}
+                      {/* Chỉ gọi "VĐ hoàn" khi sàn đã cấp mã hoàn; chưa có thì ghi rõ là
+                          mã vận đơn chiều đi, kho khỏi so nhầm với tem hoàn (rà 26/10). */}
+                      {o.returnTrackingCode
+                        ? `VĐ hoàn: ${o.returnTrackingCode}`
+                        : o.trackingCode
+                          ? `VĐ đi: ${o.trackingCode} · chưa có mã hoàn`
+                          : "Chưa có mã vận đơn hoàn"}
                     </Text>
                     <View className="mt-0.5 flex-row items-center justify-between">
                       <Text className="text-[11px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
@@ -366,7 +372,13 @@ export function WarehouseHubPage() {
                                 : "text-slate-400 dark:text-slate-500"
                           }`}
                         >
-                          {overdue ? "⚠ " : ""}chờ {o.daysWaiting} ngày
+                          {/* AWAITING: số ngày đang chờ; đã nhận/hỏng: backend trả số
+                              ngày hàng ĐI ĐƯỜNG (requestedAt→returnedAt) — không phải
+                              "chờ" nữa. */}
+                          {overdue ? "⚠ " : ""}
+                          {o.returnStatus === "AWAITING"
+                            ? `chờ ${o.daysWaiting} ngày`
+                            : `về sau ${o.daysWaiting} ngày`}
                         </Text>
                       ) : null}
                     </View>

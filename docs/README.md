@@ -10,6 +10,7 @@
 - [MO-HINH-CAY-SAN-PHAM-SAN.md](MO-HINH-CAY-SAN-PHAM-SAN.md) — hợp đồng cây sản phẩm sàn (SPU → lá → dòng đơn), danh tính theo id, 5 lát sửa (18/10/2026)
 - [DONG-BO-GIAI-DOAN-3.md](DONG-BO-GIAI-DOAN-3.md) — giai đoạn 3: hợp đồng đọc sàn, mốc nước quét đơn
 - [CUNG-HOA-LOP-GOI-SAN.md](CUNG-HOA-LOP-GOI-SAN.md) — 18/10/2026 thiết kế lại lớp đọc sàn (bản 2, 7 nguyên lý, mốc 1 gian 4.000 đơn/ngày); Pha A kiểm 7 giả thuyết bằng `backend/scripts/pha-a-san-probe.ts` + SQL mục 3b
+- [RA-CHEO-SO-WEB-MOBILE-BACKEND-2026-10-26.md](RA-CHEO-SO-WEB-MOBILE-BACKEND-2026-10-26.md) — 26/10/2026 rà chéo 65 điểm số liệu web ↔ mobile ↔ backend theo 7 ca; gốc = hai endpoint hai công thức lợi nhuận → `lib/net-profit.ts`; việc chờ anh chốt ở mục 4
 - [QUANG-CAO-GOM-TRONG-DATABASE.md](QUANG-CAO-GOM-TRONG-DATABASE.md) — gom số quảng cáo bằng SQL
 - [BANG-THONG-WORKER-CO-VIEC-THI-GOI.md](BANG-THONG-WORKER-CO-VIEC-THI-GOI.md) + thư mục `bang-thong-worker-do-2026-10-12/` — đo và cắt băng thông worker
 - [HQ-SUC-KHOE.md](HQ-SUC-KHOE.md) — trang Sức khỏe hệ thống cho HQ

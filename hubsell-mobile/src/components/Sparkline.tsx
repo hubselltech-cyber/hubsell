@@ -50,7 +50,10 @@ export function Sparkline({
   const pad = 3; // chừa chỗ cho nét + chấm cuối khỏi bị cắt
   const min = Math.min(...data);
   const max = Math.max(...data);
-  const span = max - min || 1;
+  // 14 ngày bằng nhau (thường là toàn 0) → không vẽ đường "sóng" giả nằm sát
+  // đáy — web KpiSparkline cũng trả null khi min === max (rà 26/10/2026).
+  if (max === min) return <View style={{ height }} />;
+  const span = max - min;
   const stepX = (width - pad * 2) / (data.length - 1);
   const pts = data.map((v, i) => ({
     x: pad + i * stepX,

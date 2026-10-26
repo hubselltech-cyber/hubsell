@@ -56,3 +56,13 @@ export function fetchAnalytics(from: string, to: string, scope?: string | Report
 export function fetchCashFlow() {
   return api<CashFlowResponse>("/api/finance/cash-flow");
 }
+
+/**
+ * Kéo số dư ví / tiền đang giao MỚI NHẤT từ sàn trước khi đọc bảng — web mở
+ * bảng Tiền theo gian hàng là gọi bước này (cash-flow-table refreshCashFlow);
+ * app trước 26/10/2026 chỉ đọc số cron gần nhất nên hai bên lệch thật khi so
+ * cùng lúc. Lỗi từng gian backend gom lại, không ném — nơi gọi vẫn catch cho chắc.
+ */
+export function refreshCashFlow() {
+  return api<unknown>("/api/finance/cash-flow/refresh", { method: "POST" });
+}

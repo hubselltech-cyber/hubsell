@@ -115,6 +115,8 @@ export interface OrderDto {
   customerName: string;
   customerPhone?: string | null;
   totalAmount: string | number;
+  /** PAID | UNPAID | REFUNDED — backend trả sẵn trong danh sách (scalar Order). */
+  paymentStatus?: string | null;
   carrier: string | null;
   /** Tên hãng NGUYÊN VĂN sàn trả — nguồn nhận diện đơn HỎA TỐC (lib/shipping). */
   shippingCarrierName?: string | null;
@@ -311,8 +313,16 @@ export interface OverviewAnalytics {
   operatingFixedExpense?: number;
   /** Chi phí nhập tay theo danh mục — ADS = quảng cáo (gồm cả sàn tự đồng bộ). */
   expensesByCategory?: { category: string; amount: number }[];
-  /** Lợi nhuận DỰ KIẾN sau giá vốn, phí sàn & chi phí vận hành. */
+  /**
+   * Lợi nhuận ròng = LN gộp − phí sàn − chi phí vận hành − LN đơn thiếu vốn
+   * + thu vận hành khác − thuế bổ sung dự phòng — CÙNG số với thẻ "Lợi nhuận
+   * ròng tạm tính" (breakdown.profit.total) từ 26/10/2026.
+   */
   netProfit?: number;
+  /** Thu vận hành khác nhập tay — bậc CỘNG của thác nước (backend cũ không trả). */
+  operatingIncome?: number;
+  /** Thuế bổ sung dự phòng — bậc TRỪ cuối thác nước (backend cũ không trả). */
+  additionalTax?: number;
   /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
   missingCost?: { orderCount: number; excludedProfit: number };
   /** 14 ngày liền trước tính đến cuối kỳ — xem "Hôm nay" vẫn có đường sóng. */

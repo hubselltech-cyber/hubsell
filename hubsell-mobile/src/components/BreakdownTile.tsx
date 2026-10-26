@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import { compactMoney } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import { CARD_SHADOW, ICON_TINT, TABULAR, type IconTint } from "@/theme/tokens";
 
 /**
@@ -57,7 +57,13 @@ export function BreakdownTile({
       ? "text-red-500 dark:text-red-400"
       : "text-slate-900 dark:text-slate-100";
   const deltaGood = delta != null && (deltaInverted ? delta < 0 : delta >= 0);
-  const pct = (v: number) => `${Math.abs(Math.round(v * 10) / 10).toFixed(1).replace(".", ",")}%`;
+  // Tỷ trọng GIỮ DẤU (lợi nhuận âm → "−25,7% trên doanh thu" như web fmtPct);
+  // chỉ pill ▲/▼ mới bỏ dấu vì mũi tên đã nói chiều. Trước 26/10 cả hai đều
+  // Math.abs → thẻ đỏ −66.894 nhưng biên lại ghi dương (rà 26/10/2026).
+  const pct = (v: number) => {
+    const r = Math.round(v * 10) / 10;
+    return `${r < 0 ? "−" : ""}${Math.abs(r).toFixed(1).replace(".", ",")}%`;
+  };
 
   return (
     <Pressable
@@ -72,7 +78,7 @@ export function BreakdownTile({
       style={CARD_SHADOW}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${title}: ${compactMoney(total)}`}
+      accessibilityLabel={`${title}: ${formatMoney(total)}`}
     >
       {/* Icon trái + mũi tên phải trên một hàng, TIÊU ĐỀ xuống hàng riêng
           chiếm trọn bề ngang thẻ — màn 320px vẫn đọc đủ "Lợi nhuận ròng tạm tính" */}
@@ -92,8 +98,17 @@ export function BreakdownTile({
       <Text className="mt-2 text-[11px] font-medium text-slate-500 dark:text-slate-400" numberOfLines={2}>
         {title}
       </Text>
-      <Text className={`mt-1 text-[20px] font-bold ${valueClass}`} style={TABULAR} numberOfLines={1}>
-        {compactMoney(total)}
+      {/* SỐ ĐỦ như web (106.932 ₫), không viết gọn "107 k": khoản con bên dưới
+          và dòng chốt thác nước đều in đủ, thẻ làm tròn thì khách cộng không ra
+          (ảnh khách 26/10). Số 9 chữ số trên thẻ 150 px → tự co chữ tới 70 %. */}
+      <Text
+        className={`mt-1 text-[20px] font-bold ${valueClass}`}
+        style={TABULAR}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        {formatMoney(total)}
       </Text>
       {subtitle ? (
         <Text className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
@@ -119,7 +134,7 @@ export function BreakdownTile({
             }`}
             style={TABULAR}
           >
-            {delta >= 0 ? "▲" : "▼"} {pct(delta)} so kỳ trước
+            {delta >= 0 ? "▲" : "▼"} {pct(Math.abs(delta))} so kỳ trước
           </Text>
         </View>
       ) : null}

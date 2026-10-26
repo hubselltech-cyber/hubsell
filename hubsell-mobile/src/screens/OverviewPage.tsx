@@ -31,7 +31,7 @@ import type {
   ReturnsSummaryResponse,
 } from "@/types/api";
 import { rangeFor, yesterdayRange } from "@/lib/dates";
-import { compactMoney } from "@/lib/format";
+import { compactMoney, groupVN } from "@/lib/format";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { useAuth } from "@/auth/AuthContext";
 import { useChannelColors } from "@/theme/channel-colors";
@@ -221,11 +221,24 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
       revenue: cur.revenue + r.revenue,
     });
   }
-  const channelRows = FIXED_CHANNELS.map((ch) => ({
+  // 3 sàn cố định + kênh NGOÀI danh sách có tiền (Offline, gian đã xoá "KHÁC")
+  // — như ChannelShareCard web; trước đây bỏ qua nên tâm donut + % các sàn
+  // lệch web khi shop có đơn Offline (rà 26/10/2026).
+  const extraChannels = [...byPlatform.keys()].filter(
+    (k) => !(FIXED_CHANNELS as string[]).includes(k) && (byPlatform.get(k)?.revenue ?? 0) > 0
+  );
+  const channelRows: { channel: string; count: number; revenue: number }[] = [
+    ...FIXED_CHANNELS,
+    ...extraChannels,
+  ].map((ch) => ({
     channel: ch,
     count: byPlatform.get(ch)?.count ?? 0,
     revenue: byPlatform.get(ch)?.revenue ?? 0,
   }));
+  const channelLabel = (ch: string) =>
+    (CHANNEL_LABEL as Record<string, string>)[ch] ?? (ch === "OFFLINE" ? "Offline" : "Khác");
+  const channelColor = (ch: string) =>
+    (channelColors as Record<string, string | undefined>)[ch] ?? "#94a3b8";
   const returningTotal = (returns?.AWAITING ?? 0) + (returns?.RECEIVED ?? 0);
   // Ba số TIỀN đọc từ CÙNG một nguồn với 4 thẻ Tài chính (hôm nay):
   //   Doanh thu = thẻ "Doanh thu" (giá trị đơn − sàn khấu trừ), KHÔNG phải
@@ -234,7 +247,9 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const revenue = money?.revenue.total ?? 0;
   const netProfit = money?.profit.total ?? 0;
   const totalExpense = money?.costs.total ?? 0;
-  const prevRevenue = prevMoney?.revenue.total ?? 0;
+  // Hôm qua tải hỏng (mạng/429) → null → DeltaPill ẨN, không được hiện "mới"
+  // như thể hôm qua = 0 (web: previous == null → không vẽ chip).
+  const prevRevenue = prevMoney ? prevMoney.revenue.total : null;
   const orderCount = analytics?.activeOrderCount ?? 0;
   const itemQuantity = analytics?.itemQuantity ?? 0;
   const prevOrders = analytics?.previous?.activeOrderCount ?? 0;
@@ -338,7 +353,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 </Text>
                 <View className="rounded-full bg-white/10 px-2.5 py-1">
                   <Text className="text-[11px] font-semibold text-emerald-300" style={TABULAR}>
-                    {orderCount} đơn{itemQuantity > 0 ? ` · ${itemQuantity} SP` : ""}
+                    {groupVN(orderCount)} đơn{itemQuantity > 0 ? ` · ${groupVN(itemQuantity)} SP` : ""}
                   </Text>
                 </View>
               </View>
@@ -365,28 +380,27 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                   </Text>
                   <Text className="mt-2 text-[10px] text-slate-400" style={TABULAR}>
                     {missingCostOrders > 0
-                      ? `${missingCostOrders} đơn chưa có giá vốn`
+                      ? `${groupVN(missingCostOrders)} đơn chưa có giá vốn, không tính lợi nhuận`
                       : margin !== null
                         ? `Biên lợi nhuận ${margin}%`
                         : "Sau giá vốn & chi phí"}
                   </Text>
                 </View>
               </View>
+              {/* Chỉ vẽ HÌNH DÁNG nhịp lãi như web, KHÔNG in tổng 14 ngày: tổng đó
+                  tính theo lãi/ngày của /api/analytics (không có thu khác, thuế dự
+                  phòng) nên khác số "Lợi nhuận dự kiến" ngay trên — khách cộng tay
+                  thấy lệch (rà 26/10). Màu theo dấu lợi nhuận hôm nay như web. */}
               {trendProfits.length >= 2 ? (
                 <View className="mt-4 border-t border-white/10 pt-3">
-                  <View className="mb-1 flex-row items-center justify-between">
-                    <Text className="text-[10px] text-slate-400">
-                      Nhịp lãi 14 ngày gần nhất
-                    </Text>
-                    <Text className="text-[10px] font-semibold text-emerald-300" style={TABULAR}>
-                      {compactMoney(trendProfits.reduce((s, v) => s + v, 0))}
-                    </Text>
-                  </View>
+                  <Text className="mb-1 text-[10px] text-slate-400">
+                    Nhịp lãi 14 ngày gần nhất
+                  </Text>
                   <Sparkline
                     data={trendProfits}
                     width={sparkW}
                     height={40}
-                    color="#34d399"
+                    color={netProfit < 0 ? "#f87171" : "#34d399"}
                     gradientId="hero-spark"
                   />
                 </View>
@@ -405,11 +419,11 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               <Text className="text-[11px] text-slate-500 dark:text-slate-400">Đơn hàng</Text>
               <View className="mt-1 flex-row flex-wrap items-baseline gap-x-1.5">
                 <Text className="text-xl font-bold text-slate-900 dark:text-slate-100" style={TABULAR}>
-                  {orderCount}
+                  {groupVN(orderCount)}
                 </Text>
                 {itemQuantity > 0 ? (
                   <Text className="text-[11px] text-slate-400 dark:text-slate-500" style={TABULAR}>
-                    · {itemQuantity} sản phẩm
+                    · {groupVN(itemQuantity)} sản phẩm
                   </Text>
                 ) : null}
               </View>
@@ -452,7 +466,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                     <View className="flex-row items-center gap-1.5">
                       <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: st.dot }} />
                       <Text className={`text-lg font-bold ${st.color}`} style={TABULAR}>
-                        {pipeline?.[st.key] ?? 0}
+                        {groupVN(pipeline?.[st.key] ?? 0)}
                       </Text>
                     </View>
                     <Text className="text-[10px] text-slate-500 dark:text-slate-400">{st.label}</Text>
@@ -477,20 +491,22 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 centerLabel={compactMoney(channelTotalRevenue)}
                 centerSub="giá trị đơn hôm nay"
                 slices={channelRows.map((r) => ({
-                  label: CHANNEL_LABEL[r.channel],
+                  label: channelLabel(r.channel),
                   value: r.revenue,
-                  color: channelColors[r.channel] ?? "#94a3b8",
+                  color: channelColor(r.channel),
                 }))}
               />
               <View className="mt-4">
                 {/* Cụm số đứng NGAY CẠNH tên sàn — không kéo giãn hai đầu màn
                     hình bắt mắt người dùng nhảy qua nhảy lại (góp ý 13/08) */}
                 {channelRows.map((r) => {
-                  const idle = r.revenue <= 0;
+                  // "Chưa có đơn" theo SỐ ĐƠN như LegendTile web — sàn có đơn 0 ₫
+                  // (quà tặng) vẫn là có đơn; % lấy 1 chữ số lẻ như web.
+                  const idle = r.count <= 0;
                   const share =
                     channelTotalRevenue > 0
-                      ? Math.round((r.revenue / channelTotalRevenue) * 100)
-                      : 0;
+                      ? String(Math.round((r.revenue / channelTotalRevenue) * 1000) / 10).replace(".", ",")
+                      : "0";
                   // Cùng 3 dòng với LegendTile web: doanh thu · %, số đơn · TB/đơn
                   return (
                     <View
@@ -500,7 +516,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                       <View
                         className="h-2.5 w-2.5 rounded-full"
                         style={{
-                          backgroundColor: channelColors[r.channel] ?? "#94a3b8",
+                          backgroundColor: channelColor(r.channel),
                           opacity: idle ? 0.4 : 1,
                         }}
                       />
@@ -509,7 +525,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                           idle ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-300"
                         }`}
                       >
-                        {CHANNEL_LABEL[r.channel]}
+                        {channelLabel(r.channel)}
                       </Text>
                       <View className="flex-1 items-end">
                         <Text
@@ -523,7 +539,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                         <Text className="text-[11px] text-slate-500 dark:text-slate-400" style={TABULAR}>
                           {idle
                             ? "Chưa có đơn"
-                            : `${share}% · ${r.count} đơn · TB ${compactMoney(Math.round(r.revenue / r.count))}/đơn`}
+                            : `${share}% · ${groupVN(r.count)} đơn · TB ${compactMoney(Math.round(r.revenue / r.count))}/đơn`}
                         </Text>
                       </View>
                     </View>
@@ -546,8 +562,10 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 <Ionicons name="arrow-undo-outline" size={20} color="#d97706" />
               </View>
               <View className="flex-1">
+                {/* Đếm TẤT CẢ đơn hoàn còn treo (mọi ngày), khác ô "Hoàn / Trả" của
+                    phễu chỉ đếm đơn phát sinh hôm nay — ghi rõ để không bị so nhau. */}
                 <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {returningTotal} đơn hoàn đang xử lý
+                  {groupVN(returningTotal)} đơn hoàn đang xử lý (mọi ngày)
                 </Text>
                 <Text className="text-[11px] text-slate-500 dark:text-slate-400">
                   {returns?.AWAITING ?? 0} chờ về kho · {returns?.RECEIVED ?? 0} chờ

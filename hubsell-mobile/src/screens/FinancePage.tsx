@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   fetchAnalytics,
   fetchCashFlow,
+  refreshCashFlow,
   fetchOverview,
 } from "@/api/finance";
 import { ApiError, isPlanLockedError } from "@/api/client";
@@ -23,7 +24,7 @@ import type {
 } from "@/types/api";
 import { defaultRange, previousRange, type DateRange } from "@/lib/dates";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
-import { compactMoney, formatMoney } from "@/lib/format";
+import { compactMoney, formatMoney, groupVN } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { ShopFilterField, type ShopScope } from "@/components/ShopFilter";
@@ -115,6 +116,11 @@ function waterfallSteps(a: OverviewAnalytics): WaterfallStep[] {
     ...(a.missingCost && a.missingCost.orderCount > 0
       ? [{ key: "missingCost", short: "Thiếu vốn", amount: a.missingCost.excludedProfit, hue: "amber" as const }]
       : []),
+    // Thu vận hành khác = bậc CỘNG (amount âm → chart vẽ "+" xanh); thuế bổ sung
+    // dự phòng = bậc trừ cuối — y web, để Lãi ròng dưới thác = thẻ Lợi nhuận
+    // (26/10/2026). amount 0 thì chart tự bỏ bậc.
+    { key: "income", short: "Thu khác", amount: -(a.operatingIncome ?? 0), hue: "amber" },
+    { key: "provisionTax", short: "Thuế DP", amount: a.additionalTax ?? 0, hue: "amber" },
   ];
 }
 
@@ -142,14 +148,18 @@ function BreakdownItems({
       </Text>
     );
   }
+  // Nhóm khấu trừ có ≥ 2 dòng 0 ₫ → gom một dòng "N khoản khác" như web
+  // (kỳ trống không còn 9 dòng "− 0 ₫ 0,0%").
+  const zeroCount = deductions ? items.filter((i) => i.amount === 0).length : 0;
+  const shown = zeroCount >= 2 ? items.filter((i) => i.amount !== 0) : items;
   return (
     <View>
-      {items.map((it) => (
+      {shown.map((it) => (
         <View key={it.key} className="border-t border-slate-100 dark:border-slate-800 py-2">
           <View className="flex-row items-center gap-2">
             <Text className="flex-1 text-xs text-slate-700 dark:text-slate-300" numberOfLines={2}>
               {it.label}
-              {typeof it.count === "number" ? ` (${it.count})` : ""}
+              {typeof it.count === "number" ? ` · ${groupVN(it.count)} đơn` : ""}
             </Text>
             <Text
               className={`text-xs font-semibold ${
@@ -168,8 +178,11 @@ function BreakdownItems({
               {deductions ? (it.amount < 0 ? "+" : "−") : signed ? (it.amount < 0 ? "−" : "+") : ""}
               {formatMoney(Math.abs(it.amount))}
             </Text>
-            <Text className="w-11 text-right text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
-              {signed && it.percent < 0 ? "−" : ""}
+            {/* min-w thay w cố định: biên kiểu "−6689,4%" (1 đơn đối soát nhỏ,
+                chi phí lớn) không bị gãy 2 dòng; % âm luôn có dấu (trợ giá sàn
+                −2,5% cũng như web). */}
+            <Text className="min-w-[44px] shrink-0 text-right text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
+              {it.percent < 0 ? "−" : ""}
               {Math.abs(it.percent).toFixed(1).replace(".", ",")}%
             </Text>
           </View>
@@ -188,6 +201,19 @@ function BreakdownItems({
           ))}
         </View>
       ))}
+      {zeroCount >= 2 ? (
+        <View className="flex-row items-center gap-2 border-t border-slate-100 dark:border-slate-800 py-2">
+          <Text className="flex-1 text-xs text-slate-400 dark:text-slate-500">
+            {zeroCount} khoản khác
+          </Text>
+          <Text className="text-xs font-semibold text-slate-400 dark:text-slate-500" style={TABULAR}>
+            − 0 ₫
+          </Text>
+          <Text className="min-w-[44px] shrink-0 text-right text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
+            0,0%
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -232,7 +258,11 @@ export function FinancePage() {
           fetchAnalytics(prev.from, prev.to, ch).catch(() => null),
           // Thác nước + cơ cấu chi phí = Tổng quan web
           fetchOverview(from, to, ch),
-          fetchCashFlow(),
+          // Kéo số ví/đang giao mới nhất từ sàn rồi mới đọc bảng — như web mở bảng
+          // Tiền theo gian hàng; kéo lỗi vẫn đọc số cron gần nhất.
+          refreshCashFlow()
+            .catch(() => null)
+            .then(() => fetchCashFlow()),
         ]);
         if (seq !== reqSeq.current) return; // đã có lượt tải mới hơn
         setBreakdown(ana.breakdown);
@@ -327,7 +357,7 @@ export function FinancePage() {
                 <BreakdownTile
                   title="Tổng giá trị sản phẩm"
                   total={b.gross.total}
-                  subtitle={`${b.gross.orderCount} đơn (chưa trừ chi phí)`}
+                  subtitle={`${groupVN(b.gross.orderCount)} đơn (chưa trừ chi phí)`}
                   delta={deltaOf(b.gross.total, pb?.gross.total)}
                   icon="bag-handle-outline"
                   tint="sky"
@@ -406,7 +436,7 @@ export function FinancePage() {
                   ) : null}
                   {openTile === "profit" && b.profit.missingCost && b.profit.missingCost.orderCount > 0 ? (
                     <Text className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                      {b.profit.missingCost.orderCount} đơn chưa có giá vốn nên không được tính vào lợi nhuận
+                      {groupVN(b.profit.missingCost.orderCount)} đơn chưa có giá vốn nên không được tính vào lợi nhuận. % mỗi dòng là biên lợi nhuận trên dòng tiền tương ứng, không phải tỷ trọng.
                     </Text>
                   ) : null}
                 </Card>

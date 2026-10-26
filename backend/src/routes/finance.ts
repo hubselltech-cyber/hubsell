@@ -51,8 +51,7 @@ import {
 } from "../lib/pnl-formula";
 import {
   channelScope,
-  readChannelId,
-  readChannelName,
+  manualTxnScope as manualTxnScopeOf,
   type ChannelScope,
 } from "../lib/channel-filter";
 import {
@@ -2356,26 +2355,9 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    // THU/CHI VẬN HÀNH NHẬP TAY — luật lọc theo sàn/gian (khoản gắn 3 mức:
-    // đích danh gian / chung cấp sàn fundPlatform / chung toàn shop):
-    //   - "Tất cả sàn" (không lọc)   → tính HẾT (cả khoản chung mọi mức).
-    //   - Lọc CẤP SÀN (Lazada…)      → khoản gắn gian thuộc sàn đó + khoản
-    //     chung CỦA SÀN đó (fundPlatform); khoản chung toàn shop KHÔNG tính.
-    //   - Lọc đích danh MỘT gian     → CHỈ khoản gắn đúng gian đó; mọi khoản
-    //     chung (cấp sàn lẫn toàn shop) đều KHÔNG tính.
-    // Không chia đều, không gom phí sàn cấn trừ vào đây.
-    const filterChannelId = readChannelId(req);
-    const filterChannelName = readChannelName(req);
-    const manualTxnScope = filterChannelId
-      ? { fundChannelId: { not: null }, fundChannel: scope }
-      : filterChannelName
-        ? {
-            OR: [
-              { fundChannelId: { not: null }, fundChannel: scope },
-              { fundChannelId: null, fundPlatform: filterChannelName },
-            ],
-          }
-        : {};
+    // THU/CHI VẬN HÀNH NHẬP TAY — luật lọc theo sàn/gian dùng chung với Tổng
+    // quan (lib/channel-filter.ts manualTxnScope — xem chú thích ở đó).
+    const manualTxnScope = manualTxnScopeOf(req, scope);
 
     // NGUỒN SỐ: sổ cái đơn (SUM trong database — docs/SO-CAI-DON.md). Cùng tập
     // đơn + cùng công thức với trang Lãi/Lỗ Thực Hiện (tab "Tất cả", đọc ĐỦ kỳ).

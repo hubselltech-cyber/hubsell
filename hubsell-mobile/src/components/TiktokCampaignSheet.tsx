@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "nativewind";
 import { Ionicons } from "@expo/vector-icons";
 import type { TiktokAdsCampaignRow } from "@/types/api";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, groupVN } from "@/lib/format";
 import { hapticTap } from "@/lib/haptics";
 import {
   fmtRoi,
@@ -13,6 +13,8 @@ import {
   TIKTOK_AUTO_MODE_LABEL,
   TIKTOK_STATUS_LABEL,
   tiktokStatusKey,
+  fmtBreakeven,
+  isLosingCampaign,
 } from "@/lib/tiktok-ads";
 import { TABULAR } from "@/theme/tokens";
 
@@ -92,16 +94,20 @@ export function TiktokCampaignSheet({
                 <Row label="Doanh thu GMV Max" value={formatMoney(c.gmv)} />
                 <Row
                   label="Đơn · CPA"
-                  value={`${c.orders}${c.costPerOrder != null ? ` · ${formatMoney(c.costPerOrder)}` : ""}`}
+                  value={`${groupVN(c.orders)}${c.costPerOrder != null ? ` · ${formatMoney(c.costPerOrder)}` : ""}`}
                 />
                 <Row
                   label="ROI thực / mục tiêu"
                   value={`${fmtRoi(c.roi)} / ${
                     c.biddingMethod === "max_delivery" ? "tối đa" : fmtRoi(c.roasTarget)
                   }`}
-                  tone={c.belowTarget ? "red" : undefined}
+                  tone={c.belowTarget || isLosingCampaign(c) ? "red" : undefined}
                 />
-                <Row label={`ROI hòa vốn${beSource}`} value={fmtRoi(c.breakeven?.roi)} />
+                <Row
+                  label={`ROI hòa vốn${beSource}`}
+                  value={fmtBreakeven(c.breakeven)}
+                  tone={c.breakeven?.negativeMargin ? "red" : undefined}
+                />
                 <Row
                   label="Lãi/lỗ ước tính"
                   value={c.estProfit == null ? "—" : formatMoney(c.estProfit)}
@@ -140,10 +146,9 @@ export function TiktokCampaignSheet({
                     </Text>
                     {a.nextTarget != null ? (
                       <Text className="mt-1 text-xs text-slate-700 dark:text-slate-200" style={TABULAR}>
+                        {/* Lãi giữ được ở nấc kế đã nằm trong câu kết luận của backend
+                            (1 số lẻ) — không in lại với cách làm tròn khác (rà 26/10). */}
                         Nấc kế tiếp: ROI mục tiêu {fmtRoi(a.nextTarget)}
-                        {a.keepAtNextTarget != null
-                          ? ` (vẫn giữ lãi ~${Math.round(a.keepAtNextTarget)} đ / 100 đ)`
-                          : ""}
                         {a.safeTarget != null ? ` · không hạ dưới ${fmtRoi(a.safeTarget)}` : ""}
                       </Text>
                     ) : null}

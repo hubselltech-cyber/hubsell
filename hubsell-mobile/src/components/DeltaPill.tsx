@@ -5,7 +5,10 @@ import { useColorScheme } from "nativewind";
 
 /**
  * Pill ▲/▼ % so với kỳ trước. Kỳ trước = 0 mà kỳ này có số → "mới" (không
- * chia 0 ra Infinity); cả hai = 0 → ẩn (trả null).
+ * chia 0 ra Infinity); cả hai = 0 → ẩn; kỳ trước KHÔNG CÓ SỐ (null — tải hỏng,
+ * không lọc ngày) → ẩn, tuyệt đối không coi là 0 rồi báo "mới" (rà 26/10).
+ * % làm tròn 1 chữ số lẻ ở MỌI mức như web (trước đây ≥100% làm tròn số
+ * nguyên → "150%" trong khi web "150,4%").
  * Dark mode dùng lại đúng bảng màu của prop onDark (nền tối = nền card tối).
  */
 export function DeltaPill({
@@ -15,12 +18,13 @@ export function DeltaPill({
   onDark: onDarkProp = false,
 }: {
   current: number;
-  previous: number;
+  previous: number | null | undefined;
   suffix?: string;
   onDark?: boolean;
 }) {
   const { colorScheme } = useColorScheme();
   const onDark = onDarkProp || colorScheme === "dark";
+  if (previous === null || previous === undefined) return null;
   if (current === 0 && previous === 0) return null;
 
   let label: string;
@@ -32,7 +36,7 @@ export function DeltaPill({
     const delta = ((current - previous) / Math.abs(previous)) * 100;
     up = delta >= 0;
     const abs = Math.abs(delta);
-    label = `${abs >= 100 ? Math.round(abs) : abs.toFixed(1).replace(".", ",").replace(/,0$/, "")}%`;
+    label = `${(Math.round(abs * 10) / 10).toFixed(1).replace(".", ",").replace(/,0$/, "")}%`;
   }
 
   const bg = up

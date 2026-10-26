@@ -70,8 +70,9 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 /** Nhãn tình trạng hàng hoàn */
 const STATUS_META: Record<string, { label: string; className: string }> = {
+  // Câu chữ thống nhất với /orders và app mobile (26/10/2026).
   AWAITING: {
-    label: "Chờ về tay",
+    label: "Chờ hàng về",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
   RECEIVED: {
@@ -83,15 +84,15 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   DAMAGED: {
-    label: "Chờ khiếu nại sàn",
+    label: "Hàng hỏng · chờ khiếu nại sàn",
     className: "bg-rose-50 text-rose-700 border-rose-200",
   },
   CLAIM_SETTLED: {
-    label: "Đã đền bù",
+    label: "Đã được đền bù",
     className: "bg-sky-50 text-sky-700 border-sky-200",
   },
   WRITTEN_OFF: {
-    label: "Hao hụt / Thất thoát",
+    label: "Hao hụt / xóa sổ",
     className: "bg-zinc-200 text-zinc-700 border-zinc-300",
   },
 };
@@ -101,7 +102,7 @@ const ISSUE_KEYS = ["DAMAGED", "CLAIM_SETTLED", "WRITTEN_OFF"] as const;
 
 const TABS: { key: string; label: string; countKey: string }[] = [
   { key: "", label: "Tất cả", countKey: "" },
-  { key: "AWAITING", label: "Chờ về tay", countKey: "AWAITING" },
+  { key: "AWAITING", label: "Chờ hàng về", countKey: "AWAITING" },
   { key: "RECEIVED", label: "Đã nhận (Chờ nhập kho)", countKey: "RECEIVED" },
   { key: "RECEIVED_INTACT", label: "Đã nhập kho", countKey: "RECEIVED_INTACT" },
   { key: "ISSUES", label: "Hao hụt/Khiếu nại", countKey: "ISSUES" },
@@ -406,7 +407,7 @@ export default function WarehouseReturnsPage() {
         {/* ===== BỐN CHỈ SỐ ĐỐI SOÁT ===== */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <DashboardCard
-            title="Chờ về tay"
+            title="Chờ hàng về"
             value={formatNumber(summary.AWAITING ?? 0)}
             icon={PackageSearch}
             tone="warning"
@@ -428,7 +429,7 @@ export default function WarehouseReturnsPage() {
             subtitle="Căn cứ khiếu nại bưu cục"
           />
           <DashboardCard
-            title="Chờ khiếu nại sàn"
+            title="Hàng hỏng · chờ khiếu nại sàn"
             value={formatNumber(summary.DAMAGED ?? 0)}
             icon={PackageX}
             tone="negative"

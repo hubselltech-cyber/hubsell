@@ -17,7 +17,7 @@
  *   where: { channel: channelScope(req), ... }
  */
 
-import { ChannelName } from "@prisma/client";
+import { ChannelName, type Prisma } from "@prisma/client";
 import type { AuthRequest } from "../middleware/auth";
 
 export interface ChannelScope {
@@ -78,4 +78,37 @@ export function channelScope(req: AuthRequest): ChannelScope {
  */
 export function hasChannelFilter(req: AuthRequest): boolean {
   return readChannelId(req) !== "" || readChannelName(req) !== undefined;
+}
+
+/**
+ * THU/CHI VẬN HÀNH NHẬP TAY — luật lọc theo sàn/gian (khoản gắn 3 mức: đích
+ * danh gian / chung cấp sàn `fundPlatform` / chung toàn shop):
+ *   - "Tất cả sàn" (không lọc)   → tính HẾT (cả khoản chung mọi mức).
+ *   - Lọc CẤP SÀN (Lazada…)      → khoản gắn gian thuộc sàn đó + khoản chung
+ *     CỦA SÀN đó (fundPlatform); khoản chung toàn shop KHÔNG tính.
+ *   - Lọc đích danh MỘT gian     → CHỈ khoản gắn đúng gian đó; mọi khoản chung
+ *     (cấp sàn lẫn toàn shop) đều KHÔNG tính.
+ * Không chia đều, không gom phí sàn cấn trừ vào đây.
+ *
+ * DÙNG CHUNG cho Báo cáo dòng tiền (/api/finance/analytics) và Tổng quan
+ * (/api/analytics) từ 26/10/2026 — trước đó Tổng quan lấy chi phí nhập tay của
+ * CẢ SHOP khi lọc một gian nên thác nước lệch thẻ Lợi nhuận cùng màn (mobile
+ * xếp hai khối cạnh nhau, khách thấy ngay).
+ */
+export function manualTxnScope(
+  req: AuthRequest,
+  scope: ChannelScope
+): Prisma.OperatingExpenseWhereInput {
+  const filterChannelId = readChannelId(req);
+  const filterChannelName = readChannelName(req);
+  return filterChannelId
+    ? { fundChannelId: { not: null }, fundChannel: scope }
+    : filterChannelName
+      ? {
+          OR: [
+            { fundChannelId: { not: null }, fundChannel: scope },
+            { fundChannelId: null, fundPlatform: filterChannelName },
+          ],
+        }
+      : {};
 }

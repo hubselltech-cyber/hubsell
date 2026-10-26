@@ -183,6 +183,34 @@ export function fmtRoi(v: number | null | undefined): string {
   return `${s.replace(".", ",")}x`;
 }
 
+/**
+ * ROI hòa vốn kèm hai trạng thái đặc biệt như web TiktokBreakevenValue:
+ * tự kiểm không đạt → "Chưa tin được"; biên lãi ≤ 0 → "Lỗ sẵn" (backend trả
+ * roi = null ở cả hai ca nên trước đây app chỉ in "—", mất cảnh báo — rà 26/10).
+ */
+export function fmtBreakeven(
+  b: { roi: number | null; negativeMargin?: boolean; problem?: unknown } | null | undefined
+): string {
+  if (!b) return "—";
+  if (b.problem) return "Chưa tin được";
+  if (b.negativeMargin) return "Lỗ sẵn";
+  return fmtRoi(b.roi);
+}
+
+/** Chiến dịch đang LỖ theo luật web tiktok-ads-page: ROI dưới hòa vốn hoặc sản phẩm lỗ sẵn. */
+export function isLosingCampaign(c: {
+  roi: number | null;
+  spend: number;
+  breakeven?: { roi: number | null; negativeMargin?: boolean } | null;
+}): boolean {
+  const be = c.breakeven?.roi ?? null;
+  return (
+    c.roi != null &&
+    c.spend > 0 &&
+    (c.breakeven?.negativeMargin === true || (be != null && c.roi < be))
+  );
+}
+
 /** "YYYY-MM-DD" → "dd/mm". */
 export function ddmm(d: string): string {
   return `${d.slice(8, 10)}/${d.slice(5, 7)}`;

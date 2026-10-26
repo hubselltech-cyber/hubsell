@@ -9,7 +9,9 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
-import { channelScope, hasChannelFilter, type ChannelScope } from "../lib/channel-filter";
+import { channelScope, manualTxnScope, type ChannelScope } from "../lib/channel-filter";
+import { additionalTaxOn, getShopTaxConfig } from "../config/tax-config";
+import { netProfitAfterProvision } from "../lib/net-profit";
 // NGUỒN SỐ GỐC dùng chung (SSOT): mọi con số tiền của Tổng quan là SUM các
 // trường computePnlRow — không tự tính totalAmount/InventoryLog riêng nữa
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
@@ -96,7 +98,6 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // Bộ lọc khoảng thời gian (?from=&to=) — undefined nghĩa là xem toàn bộ
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
-    const filteredByChannel = hasChannelFilter(req);
     const seesFinancials = canSeeFinancials(req);
     /** Người không được xem tài chính giữ 0 để không rò số. */
     const fin = (v: number) => (seesFinancials ? v : 0);
@@ -224,14 +225,39 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     const grossProfit = totalRevenue - totalCost;
 
-    // 2b) Chi phí hoạt động: tổng + phân bổ theo loại
-    const expenses = seesFinancials
-      ? await prisma.operatingExpense.findMany({
-          // CHỈ khoản CHI mới là chi phí; khoản THU vận hành không tính vào đây.
-          where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
-          select: { category: true, type: true, amount: true, expenseDate: true },
-        })
-      : [];
+    // 2b) Chi phí hoạt động: tổng + phân bổ theo loại.
+    // Từ 26/10/2026 CÙNG luật với Báo cáo dòng tiền: khoản nhập tay lọc theo
+    // sàn/gian (manualTxnScope), cộng THU vận hành khác, trừ THUẾ BỔ SUNG dự
+    // phòng — để Lợi nhuận ròng của thác nước = thẻ "Lợi nhuận ròng tạm tính"
+    // (/api/finance/analytics breakdown.profit.total) trên cùng shop + kỳ + lọc.
+    // Trước đó ba khoản này chỉ có một bên tính → khách thấy hai số lợi nhuận
+    // khác nhau trên cùng một màn (mobile 26/10).
+    const txnScope = manualTxnScope(req, scope);
+    const [expenses, operatingIncomeAgg, taxCfg] = seesFinancials
+      ? await Promise.all([
+          prisma.operatingExpense.findMany({
+            // CHỈ khoản CHI mới là chi phí; khoản THU vận hành cộng riêng bên dưới.
+            where: {
+              userId: ownerId,
+              direction: TransactionDirection.EXPENSE,
+              expenseDate: range,
+              ...txnScope,
+            },
+            select: { category: true, type: true, amount: true, expenseDate: true },
+          }),
+          prisma.operatingExpense.aggregate({
+            _sum: { amount: true },
+            where: {
+              userId: ownerId,
+              direction: TransactionDirection.INCOME,
+              expenseDate: range,
+              ...txnScope,
+            },
+          }),
+          getShopTaxConfig(ownerId),
+        ])
+      : [[], null, null];
+    const operatingIncome = Number(operatingIncomeAgg?._sum.amount ?? 0);
     // QUẢNG CÁO SÀN tự đồng bộ (bảng AdSpend) — cùng hàm, cùng luật "sàn đã trừ
     // trong đơn thì chỉ tham chiếu" với Báo cáo dòng tiền. Trước 30/09/2026 Tổng
     // quan KHÔNG trừ khoản này nên lợi nhuận cao hơn Báo cáo dòng tiền đúng bằng
@@ -273,10 +299,18 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ? { orderCount: active.missingCostCount, excludedProfit: active.missingCostExcludedProfit }
       : { orderCount: 0, excludedProfit: 0 };
 
-    // Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động − phần lợi
-    // nhuận của đơn chưa có giá vốn
-    const netProfit =
-      grossProfit - totalPlatformFee - totalOperatingExpense - missingCost.excludedProfit;
+    // Lợi nhuận ròng = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động − phần lợi
+    // nhuận của đơn chưa có giá vốn + Thu vận hành khác − Thuế bổ sung dự phòng
+    // (lib/net-profit.ts — cùng đẳng thức với cột Lợi nhuận của Báo cáo dòng tiền).
+    const { additionalTax, netProfit } = netProfitAfterProvision({
+      grossProfit,
+      platformFee: totalPlatformFee,
+      operatingExpense: totalOperatingExpense,
+      excludedProfit: missingCost.excludedProfit,
+      operatingIncome,
+      additionalTaxOf: (profit) =>
+        taxCfg ? additionalTaxOn({ grossRevenue: totalRevenue, profit }, taxCfg) : 0,
+    });
 
     // 3) Doanh thu theo ngày (kể cả ngày không có đơn để đường biểu đồ liền mạch)
     //    trên khung trục ngày đã tính ở đầu hàm.
@@ -520,6 +554,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
       operatingVariableExpense,
       operatingFixedExpense,
       netProfit,
+      // Hai bậc cuối của thác nước (26/10/2026): THU vận hành khác (cộng) và
+      // THUẾ BỔ SUNG dự phòng (trừ) — 0 thì giao diện không vẽ bậc.
+      operatingIncome,
+      additionalTax,
       // Phần quảng cáo sàn tự đồng bộ ĐÃ nằm trong totalOperatingExpense + nhóm ADS.
       platformAdsSpend: platformAdsTotal,
       missingCost, // đơn chưa có giá vốn — bị loại khỏi lợi nhuận, UI ghi rõ số đơn
@@ -531,11 +569,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
       pipeline,
       previous,
       financialsHidden: false,
-      // Chi phí vận hành (mặt bằng, lương, marketing…) ghi ở cấp TOÀN SHOP, không
-      // gắn với gian hàng nào. Khi đang lọc một gian, con số này vẫn là của cả
-      // shop nên Lợi nhuận thuần không phải lãi riêng của gian đó — frontend
-      // dựa vào cờ này để cảnh báo, tránh chủ shop đọc nhầm.
-      operatingExpenseIsShopWide: filteredByChannel,
+      // Từ 26/10/2026 chi phí nhập tay đã LỌC theo sàn/gian (manualTxnScope,
+      // cùng luật Báo cáo dòng tiền) nên không còn cảnh "lọc một gian nhưng chi
+      // phí của cả shop" — giữ trường cho giao diện cũ, luôn false.
+      operatingExpenseIsShopWide: false,
     });
   } catch (err) {
     next(err);

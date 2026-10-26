@@ -46,8 +46,11 @@ export const RETURN_STATUS: Record<
     bg: "bg-amber-100 dark:bg-amber-500/15",
     text: "text-amber-700 dark:text-amber-300",
   },
+  // Câu chữ trạng thái hoàn THỐNG NHẤT 3 nơi (app, web /orders, web
+  // /warehouse/returns) từ 26/10/2026 — trước mỗi nơi một kiểu, cùng một đơn
+  // ba tên khác nhau.
   RECEIVED: {
-    label: "Đã quét nhận — chờ nhập kho",
+    label: "Đã nhận · chờ nhập kho",
     bg: "bg-sky-100 dark:bg-sky-500/15",
     text: "text-sky-700 dark:text-sky-300",
   },
@@ -57,7 +60,7 @@ export const RETURN_STATUS: Record<
     text: "text-emerald-700 dark:text-emerald-300",
   },
   DAMAGED: {
-    label: "Hàng hỏng — chờ khiếu nại",
+    label: "Hàng hỏng · chờ khiếu nại sàn",
     bg: "bg-red-100 dark:bg-red-500/15",
     text: "text-red-600 dark:text-red-300",
   },
@@ -67,7 +70,7 @@ export const RETURN_STATUS: Record<
     text: "text-emerald-700 dark:text-emerald-300",
   },
   WRITTEN_OFF: {
-    label: "Đã xóa sổ",
+    label: "Hao hụt / xóa sổ",
     bg: "bg-slate-200 dark:bg-slate-700",
     text: "text-slate-600 dark:text-slate-300",
   },

@@ -17,7 +17,7 @@ import { rangeFor, type DateRange } from "@/lib/dates";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { ShopFilterField } from "@/components/ShopFilter";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
-import { compactMoney } from "@/lib/format";
+import { compactMoney, groupVN } from "@/lib/format";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import {
   attentionAction,
@@ -30,6 +30,7 @@ import {
   TIKTOK_AUTO_MODE_PILL,
   TIKTOK_STATUS_LABEL,
   tiktokStatusKey,
+  fmtBreakeven,
 } from "@/lib/tiktok-ads";
 import { Card } from "@/components/Card";
 import { PlanLockedCard } from "@/components/PlanLockedCard";
@@ -265,12 +266,12 @@ export function TiktokAdsSection({ header }: { header: React.ReactNode }) {
                     label="Chi phí quảng cáo"
                     value={compactMoney(s.spend)}
                     tone="red"
-                    sub={`${s.liveCampaigns} chiến dịch đang chạy`}
+                    sub={`${groupVN(s.liveCampaigns)} chiến dịch đang chạy`}
                   />
                   <Tile
                     label="Doanh thu GMV Max"
                     value={compactMoney(s.gmv)}
-                    sub={`${s.orders} đơn${s.costPerOrder != null ? ` · CPA ${compactMoney(s.costPerOrder)}` : ""}`}
+                    sub={`${groupVN(s.orders)} đơn${s.costPerOrder != null ? ` · CPA ${compactMoney(s.costPerOrder)}` : ""}`}
                   />
                 </View>
                 <View className="mb-4 flex-row gap-3">
@@ -561,10 +562,19 @@ function CampaignCard({
       ) : null}
       <View className="mt-2.5 flex-row border-t border-slate-100 pt-2 dark:border-slate-800">
         <Metric label="Chi phí" value={compactMoney(c.spend)} />
+        {/* Màu ROI như web: ĐỎ khi dưới mục tiêu HOẶC đang lỗ (dưới hòa vốn / sản
+            phẩm lỗ sẵn), còn lại trung tính — không tô xanh để khỏi "xanh ở thẻ,
+            đỏ trong hộp" khi ROI trên hòa vốn nhưng dưới mục tiêu (rà 26/10). */}
         <Metric
           label="ROI / hòa vốn"
-          value={`${fmtRoi(c.roi)} / ${fmtRoi(be)}`}
-          tone={c.roi == null || be == null ? undefined : below ? "red" : "emerald"}
+          value={`${fmtRoi(c.roi)} / ${fmtBreakeven(c.breakeven)}`}
+          tone={
+            c.roi == null
+              ? undefined
+              : c.belowTarget || below || c.breakeven?.negativeMargin
+                ? "red"
+                : undefined
+          }
         />
         <Metric
           label="Lãi ước tính"

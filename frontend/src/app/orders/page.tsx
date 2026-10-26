@@ -83,9 +83,12 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
 };
 
 /** Nhãn tình trạng hàng hoàn — chỉ hiện với đơn thực sự có hoàn (khác NONE) */
+// Câu chữ trạng thái hoàn THỐNG NHẤT với /warehouse/returns và app mobile
+// (hubsell-mobile lib/labels.ts RETURN_STATUS) từ 26/10/2026 — trước mỗi nơi
+// một kiểu và trang này thiếu WRITTEN_OFF (đơn xóa sổ không có huy hiệu).
 const RETURN_META: Record<string, { label: string; className: string }> = {
   AWAITING: {
-    label: "Chờ nhận hàng hoàn",
+    label: "Chờ hàng về",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
   RECEIVED: {
@@ -97,12 +100,16 @@ const RETURN_META: Record<string, { label: string; className: string }> = {
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   DAMAGED: {
-    label: "Chờ khiếu nại sàn",
+    label: "Hàng hỏng · chờ khiếu nại sàn",
     className: "bg-rose-50 text-rose-700 border-rose-200",
   },
   CLAIM_SETTLED: {
-    label: "Đã được đền",
+    label: "Đã được đền bù",
     className: "bg-sky-50 text-sky-700 border-sky-200",
+  },
+  WRITTEN_OFF: {
+    label: "Hao hụt / xóa sổ",
+    className: "bg-zinc-200 text-zinc-700 border-zinc-300",
   },
 };
 
@@ -264,13 +271,20 @@ function UpdateStatusDialog({
 
 // ---------- Khách xin hủy: nhãn + hộp quyết định (23/10/2026) ----------
 
-/** "còn 31 giờ" / "quá hạn 2 giờ" / null khi sàn không nêu hạn. */
+/**
+ * "còn 25 phút" / "còn 31 giờ" / "còn 3 ngày" / "quá hạn 2 giờ" / null khi sàn
+ * không nêu hạn. Cùng nấc với app mobile (CancelRequestBar). Trước 26/10/2026
+ * dùng Math.round giờ: quá hạn 1–29 phút ra −0 → "còn dưới 1 giờ" dù đã quá.
+ */
 function cancelDueText(dueAt: string | null | undefined): string | null {
   if (!dueAt) return null;
-  const hours = Math.round((new Date(dueAt).getTime() - Date.now()) / 36e5);
-  if (hours < 0) return `quá hạn ${Math.abs(hours)} giờ`;
-  if (hours < 1) return "còn dưới 1 giờ";
-  return `còn ${hours} giờ`;
+  const ms = new Date(dueAt).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return null;
+  const h = Math.abs(ms) / 36e5;
+  if (ms <= 0) return h < 1 ? "quá hạn, sàn có thể tự hủy" : `quá hạn ${Math.round(h)} giờ`;
+  if (h < 1) return `còn ${Math.max(1, Math.round(h * 60))} phút`;
+  if (h < 48) return `còn ${Math.round(h)} giờ`;
+  return `còn ${Math.round(h / 24)} ngày`;
 }
 
 /**
@@ -935,7 +949,7 @@ export default function OrdersPage() {
                 {(
                   [
                     { key: "", label: "Tất cả đơn hủy/hoàn" },
-                    { key: "AWAITING", label: "Chờ nhận hàng hoàn" },
+                    { key: "AWAITING", label: "Chờ hàng về" },
                     { key: "RECEIVED", label: "Đã nhận · chờ nhập kho" },
                     { key: "RECEIVED_INTACT", label: "Đã nhập kho" },
                     { key: "DAMAGED", label: "Chờ khiếu nại sàn" },

@@ -152,7 +152,9 @@ export function StockPage() {
           ) : null}
         </View>
         <Text className="mt-2 text-[11px] text-slate-400 dark:text-slate-500" style={TABULAR}>
-          {loading ? " " : `${groupVN(total)} sản phẩm · chạm vào dòng để nhập / xuất`}
+          {/* Đếm theo SKU (phân loại) — web ghi "N sản phẩm · M SKU" với N là số
+              mẫu cha; app liệt kê phẳng nên gọi đúng tên là SKU (rà 26/10). */}
+          {loading ? " " : `${groupVN(total)} SKU · chạm vào dòng để nhập / xuất`}
         </Text>
       </View>
 
@@ -237,9 +239,12 @@ export function StockPage() {
               </View>
               <View className="items-end">
                 <Text className="text-[10px] text-slate-400 dark:text-slate-500">Tồn kho</Text>
+                {/* Đỏ khi KHÔNG CÒN GÌ ĐỂ BÁN = tồn − đang giữ ≤ 0 (cùng luật với ô
+                    tồn web InlineStockEditor và cờ isLowStock backend low-stock.ts);
+                    trước đây chỉ đỏ khi tồn = 0 nên SKU tồn 5 giữ 5 vẫn "Sắp hết". */}
                 <Text
                   className={`text-xl font-bold ${
-                    p.quantityInStock <= 0
+                    p.quantityInStock - p.holdQuantity <= 0
                       ? "text-red-500 dark:text-red-400"
                       : p.isLowStock
                         ? "text-amber-600 dark:text-amber-400"
@@ -249,8 +254,10 @@ export function StockPage() {
                 >
                   {groupVN(p.quantityInStock)}
                 </Text>
-                {p.quantityInStock <= 0 ? (
-                  <Text className="text-[10px] font-semibold text-red-500 dark:text-red-400">Hết hàng</Text>
+                {p.quantityInStock - p.holdQuantity <= 0 ? (
+                  <Text className="text-[10px] font-semibold text-red-500 dark:text-red-400">
+                    {p.quantityInStock > 0 ? `Hết hàng · giữ ${groupVN(p.holdQuantity)}` : "Hết hàng"}
+                  </Text>
                 ) : p.isLowStock ? (
                   <Text className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Sắp hết</Text>
                 ) : null}
@@ -313,9 +320,13 @@ function AdjustSheet({
   const qty = Number(qtyText);
   const validQty = Number.isInteger(qty) && qty > 0;
   const current = product.quantityInStock;
-  const next = current + (type === "IMPORT" ? qty : -qty);
-  const overExport = validQty && type === "EXPORT" && next < 0;
   const location = locations.find((l) => l.id === locationId);
+  // Vị trí "không bán" (kệ lỗi, chờ kiểm) KHÔNG đổi tồn bán: sổ kho chỉ cộng
+  // sellableDelta vào quantityInStock (backend stock-ledger.ts). Trước 26/10 app
+  // báo "10 → 15" rồi lưu xong vẫn 10, khách tưởng nhập hỏng.
+  const nonSellable = location ? !location.sellable : false;
+  const next = nonSellable ? current : current + (type === "IMPORT" ? qty : -qty);
+  const overExport = validQty && type === "EXPORT" && !nonSellable && next < 0;
 
   const step = (d: number) => {
     hapticSelect();
@@ -549,7 +560,9 @@ function AdjustSheet({
           <ActionButton
             label={
               validQty
-                ? `${type === "IMPORT" ? "Nhập" : "Xuất"} ${groupVN(qty)} — tồn còn ${groupVN(Math.max(next, 0))}`
+                ? nonSellable
+                  ? `${type === "IMPORT" ? "Nhập" : "Xuất"} ${groupVN(qty)} kho chờ kiểm — tồn bán giữ ${groupVN(current)}`
+                  : `${type === "IMPORT" ? "Nhập" : "Xuất"} ${groupVN(qty)} — tồn còn ${groupVN(Math.max(next, 0))}`
                 : type === "IMPORT"
                   ? "Nhập kho"
                   : "Xuất kho"

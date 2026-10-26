@@ -1,5 +1,5 @@
 Bản 1.4.1:
 • Khách xin hủy đơn: thẻ đơn và chi tiết đơn hiện dải đỏ kèm thời hạn, bấm Trả lời để Đồng ý hoặc Từ chối ngay trên app.
 • Quét trúng đơn đang bị khách xin hủy: máy báo tiếng và rung để dừng đóng gói.
-• Cài đặt thông báo: thêm nút "Gửi thử một thông báo" để kiểm tra tin đẩy về máy.
-• Thông báo đơn mới ghi rõ số đơn cần xử lý theo từng gian hàng.
+• Số liệu Tài chính, Tổng quan, Quảng cáo, Kho khớp từng đồng với bản web: số đủ trên thẻ, dấu âm rõ, lãi ròng một công thức.
+• Cài đặt thông báo: nút "Gửi thử một thông báo"; thông báo đơn mới ghi rõ số đơn theo từng gian hàng.

@@ -10,7 +10,7 @@ import type {
   TiktokProductBreakevenRow,
   TiktokProductRunAdvice,
 } from "@/types/api";
-import { compactMoney, formatMoney } from "@/lib/format";
+import { compactMoney, formatMoney, groupVN } from "@/lib/format";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { fmtRoi, openSellerCenter } from "@/lib/tiktok-ads";
 import { Card } from "@/components/Card";
@@ -53,8 +53,11 @@ const CHECK: Record<
 
 const PREVIEW_ROWS = 3;
 
-const isActionable = (p: TiktokProductBreakevenRow) =>
-  p.runAdvice?.tier === "run" || p.runAdvice?.tier === "test";
+// "Nên chạy" = CHỈ bậc run như web tiktok-product-breakeven-tab (should_run);
+// "Chạy thử" là lời khuyên khác, không cộng vào số trên tab (rà 26/10).
+const isActionable = (p: TiktokProductBreakevenRow) => p.runAdvice?.tier === "run";
+/** Biên lãi 1 số lẻ kiểu Việt "23,4%" như web. */
+const fmtMargin = (m: number) => `${String(Math.round(m * 1000) / 10).replace(".", ",")}%`;
 const isRunning = (p: TiktokProductBreakevenRow) => p.campaigns.some((c) => c.status === "ongoing");
 const sold = (p: TiktokProductBreakevenRow) => p.revenue + p.missingCostRevenue;
 
@@ -213,7 +216,7 @@ function RecommendCard({ row, onPress }: { row: TiktokProductBreakevenRow; onPre
         </View>
         {row.breakeven.margin != null ? (
           <Text className="text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR} numberOfLines={1}>
-            biên lãi {Math.round(row.breakeven.margin * 100)}%
+            biên lãi {fmtMargin(row.breakeven.margin)}
           </Text>
         ) : null}
         <View className="flex-1" />
@@ -298,11 +301,11 @@ function RecommendSheet({ row, onClose }: { row: TiktokProductBreakevenRow | nul
               <View className="mt-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/60">
                 <Row
                   label="Biên lãi trước quảng cáo"
-                  value={row.breakeven.margin != null ? `${Math.round(row.breakeven.margin * 100)}%` : "—"}
+                  value={row.breakeven.margin != null ? fmtMargin(row.breakeven.margin) : "—"}
                 />
                 <Row label="ROI hòa vốn" value={fmtRoi(row.breakeven.roi)} />
-                <Row label="Bán ra 7 ngày / 30 ngày" value={`${row.units7d} / ${row.units30d}`} />
-                <Row label="Tồn trên sàn" value={row.stock == null ? "chưa đọc được" : String(row.stock)} />
+                <Row label="Bán ra 7 ngày / 30 ngày" value={`${groupVN(row.units7d)} / ${groupVN(row.units30d)}`} />
+                <Row label="Tồn trên sàn" value={row.stock == null ? "chưa đọc được" : groupVN(row.stock)} />
                 <Row
                   label={`Đơn đã đối soát (${row.breakeven.orders})`}
                   value={formatMoney(row.revenue)}

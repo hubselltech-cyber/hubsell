@@ -138,6 +138,12 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
           hue: "amber" as const,
         }]
       : []),
+    // THU vận hành khác (đền bù, thưởng… nhập tay) là bậc CỘNG — amount âm để
+    // thác vẽ xanh "+"; THUẾ BỔ SUNG dự phòng là bậc trừ cuối. Hai khoản này
+    // trước 26/10/2026 chỉ có thẻ Lợi nhuận của Báo cáo dòng tiền tính nên hai
+    // số "lợi nhuận ròng" lệch nhau. amount = 0 thì chart tự bỏ bậc.
+    { key: "income", label: "Thu nhập vận hành khác (đền bù, thưởng…)", short: "Thu khác", amount: -(analytics.operatingIncome ?? 0), hue: "amber" },
+    { key: "provisionTax", label: "Thuế bổ sung dự phòng (theo % bạn cài ở Hóa đơn & Thuế)", short: "Thuế DP", amount: analytics.additionalTax ?? 0, hue: "amber" },
   ];
 
   return (

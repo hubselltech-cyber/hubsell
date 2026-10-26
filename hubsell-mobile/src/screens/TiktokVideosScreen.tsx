@@ -31,7 +31,7 @@ import type {
   TiktokVideoMeta,
 } from "@/types/api";
 import { useAuth } from "@/auth/AuthContext";
-import { compactMoney, formatDateTime, formatMoney } from "@/lib/format";
+import { compactMoney, formatDateTime, formatMoney, groupVN } from "@/lib/format";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import {
   ddmm,
@@ -41,6 +41,7 @@ import {
   TIKTOK_AUTO_VERDICT,
   TIKTOK_DELIVERY_LABEL,
   tiktokStatusKey,
+  fmtBreakeven,
 } from "@/lib/tiktok-ads";
 import { Card } from "@/components/Card";
 import { PlanLockedCard } from "@/components/PlanLockedCard";
@@ -240,15 +241,21 @@ export function TiktokVideosScreen() {
   const ongoing = c ? tiktokStatusKey(c.status) === "ongoing" : false;
   const canAct = isOwner && ongoing;
   const videos = data?.videos ?? [];
-  const spending = videos.filter((v) => !v.excluded);
+  // "Đang tiêu" = CÓ chi phí và chưa bị loại — đúng tập web tiktok-campaign-page
+  // (video chưa tiêu đồng nào không vào "Tất cả" lẫn các chip); trước 26/10 app
+  // đếm cả video 0 ₫ và video đã loại nên "Tất cả 1.240" trong khi web 310.
+  const spending = videos.filter((v) => v.cost > 0 && !v.excluded);
   const target = c?.roasTarget ?? null;
+  // "Cần xem" như web: máy gắn cờ, đang ân hạn, hoặc đã được khôi phục tay.
+  const needsReview = (v: (typeof videos)[number]) =>
+    v.auto != null && ["flag", "grace", "protected"].includes(v.auto.verdict);
 
   const counts: Record<Quick, number> = {
-    all: videos.length,
+    all: spending.length,
     no_order: spending.filter((v) => v.noOrder).length,
     below: target == null ? 0 : spending.filter((v) => v.orders > 0 && v.roi != null && v.roi < target).length,
     exclude: spending.filter((v) => v.auto?.verdict === "exclude").length,
-    flag: spending.filter((v) => v.auto?.verdict === "flag").length,
+    flag: spending.filter(needsReview).length,
     learning: spending.filter((v) => v.deliveryStatus === "LEARNING").length,
     excluded: videos.filter((v) => v.excluded).length,
   };
@@ -258,21 +265,22 @@ export function TiktokVideosScreen() {
       (q.key !== "below" || target != null) && (q.key !== "exclude" && q.key !== "flag" ? true : hasAuto)
   );
   const shown = videos.filter((v) => {
+    const inSpending = v.cost > 0 && !v.excluded;
     switch (quick) {
       case "no_order":
-        return !v.excluded && v.noOrder;
+        return inSpending && v.noOrder;
       case "below":
-        return !v.excluded && v.orders > 0 && v.roi != null && target != null && v.roi < target;
+        return inSpending && v.orders > 0 && v.roi != null && target != null && v.roi < target;
       case "exclude":
-        return !v.excluded && v.auto?.verdict === "exclude";
+        return inSpending && v.auto?.verdict === "exclude";
       case "flag":
-        return !v.excluded && v.auto?.verdict === "flag";
+        return inSpending && needsReview(v);
       case "learning":
-        return !v.excluded && v.deliveryStatus === "LEARNING";
+        return inSpending && v.deliveryStatus === "LEARNING";
       case "excluded":
         return v.excluded;
       default:
-        return true;
+        return inSpending;
     }
   });
 
@@ -362,7 +370,7 @@ export function TiktokVideosScreen() {
               {c.biddingMethod === "max_delivery" ? "Phân phối tối đa" : `ROI mục tiêu ${fmtRoi(c.roasTarget)}`}
               {" · thực "}
               {fmtRoi(c.spend > 0 ? c.gmv / c.spend : null)}
-              {c.breakeven?.roi != null ? ` · hòa vốn ${fmtRoi(c.breakeven.roi)}` : ""}
+              {c.breakeven ? ` · hòa vốn ${fmtBreakeven(c.breakeven)}` : ""}
               {" · "}
               {ddmm(range.from)}–{ddmm(range.to)}
             </Text>
@@ -745,8 +753,9 @@ function VideoRow({
       ) : null}
       <View className="mt-2 flex-row border-t border-slate-100 pt-2 dark:border-slate-800">
         <Num label="Chi phí" value={compactMoney(v.cost)} />
-        <Num label="Đơn" value={String(v.orders)} tone={v.orders === 0 && !v.excluded ? "red" : undefined} />
-        <Num label="CPA" value={cpa == null ? "—" : compactMoney(cpa)} />
+        <Num label="Đơn" value={groupVN(v.orders)} tone={v.noOrder ? "red" : undefined} />
+        {/* CPA in ĐỦ (45.600 ₫) như bảng web — khách so từng đồng; "46 k" là làm tròn. */}
+        <Num label="CPA" value={cpa == null ? "—" : formatMoney(cpa)} />
         <Num label="ROI" value={fmtRoi(v.roi)} right />
       </View>
     </Pressable>

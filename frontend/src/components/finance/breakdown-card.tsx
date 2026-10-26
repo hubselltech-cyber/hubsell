@@ -158,7 +158,9 @@ export function BreakdownCard({
         </>
       ),
       // Tỷ lệ hiển thị bằng text thuần, không vẽ thanh đồ hoạ
-      note: `${item.percent}%${
+      // % kiểu Việt 1 số lẻ (12,3%) — cùng cách viết với share/delta của thẻ và
+      // với app mobile; trước in thô 2 số lẻ dấu chấm "12.34%" (rà 26/10/2026).
+      note: `${fmtPct(item.percent)}${
         item.count !== undefined ? ` · ${formatNumber(item.count)} đơn` : ""
       }`,
       tone: rowTone,

@@ -27,7 +27,7 @@ import type {
 } from "@/types/api";
 import { defaultRange, type DateRange } from "@/lib/dates";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
-import { compactMoney, formatMoney } from "@/lib/format";
+import { compactMoney, formatMoney, groupVN } from "@/lib/format";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 import { useChannelColors } from "@/theme/channel-colors";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
@@ -65,7 +65,9 @@ const PLATFORMS: { key: UiPlatform; label: string; channelName: string }[] = [
 ];
 
 // Cùng nhãn với web (VERDICT_META). Thứ tự mảng = mức nặng, dùng để xếp "Cần xử lý".
-const FLAGGED: AdsVerdict[] = ["spike", "pause_now", "review"];
+// Cùng tập với web shopee-ads-page onlyNeedsAction: spike / pause_now / review /
+// grace (công thần theo dõi sát) — trước thiếu grace nên "Cần xử lý" lệch web.
+const FLAGGED: AdsVerdict[] = ["spike", "pause_now", "review", "grace"];
 const VERDICT: Record<AdsVerdict, { label: string; bg: string; text: string }> = {
   spike: { label: "Vọt chi hôm nay", bg: "bg-red-600", text: "text-white" },
   pause_now: { label: "Đề xuất tạm dừng", bg: "bg-red-500", text: "text-white" },
@@ -105,8 +107,17 @@ const LIST_FILTERS: { key: ListFilter; label: string }[] = [
   { key: "reco", label: "Gợi ý" },
 ];
 
+// "3x" / "3,5x" / "12,5x" — bỏ số 0 thừa như web formatRoas (trước in "3,00x").
 const roas = (v: number | null) =>
-  v == null ? "—" : `${v.toFixed(2).replace(".", ",")}x`;
+  v == null ? "—" : `${v.toFixed(2).replace(/\.?0+$/, "").replace(".", ",")}x`;
+/** Vùng "sát hòa vốn" của web shopee-gms-panel: trên hòa vốn nhưng chưa tới 1,1×. */
+const ROAS_DANGER_FACTOR = 1.1;
+const roasTone = (v: number | null, be: number | null): "red" | "amber" | "emerald" | undefined => {
+  if (v == null || be == null) return undefined;
+  if (v < be) return "red";
+  if (v < be * ROAS_DANGER_FACTOR) return "amber";
+  return "emerald";
+};
 
 /** Cảnh báo còn hiệu lực: máy gắn cờ, chiến dịch đang chạy, chủ shop chưa quyết. */
 function isFlagged(c: AdsCampaignDto): boolean {
@@ -400,7 +411,7 @@ export function AdsPage() {
                   <Tile
                     label="Doanh thu từ quảng cáo"
                     value={compactMoney(s.broadGmv)}
-                    sub={`${s.broadOrder} đơn`}
+                    sub={`${groupVN(s.broadOrder)} đơn`}
                   />
                 </View>
                 <View className="mb-4 flex-row gap-3">
@@ -613,7 +624,7 @@ function CampaignCard({
         <Metric
           label="ROAS / hòa vốn"
           value={`${roas(c.roasBroad)} / ${roas(c.breakevenRoas)}`}
-          tone={c.roasBroad == null || c.breakevenRoas == null ? undefined : below ? "red" : "emerald"}
+          tone={roasTone(c.roasBroad, c.breakevenRoas)}
         />
         <Metric
           label="Lãi ước tính"
@@ -634,15 +645,17 @@ function Metric({
 }: {
   label: string;
   value: string;
-  tone?: "red" | "emerald";
+  tone?: "red" | "amber" | "emerald";
   right?: boolean;
 }) {
   const color =
     tone === "red"
       ? "text-red-500 dark:text-red-400"
-      : tone === "emerald"
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-slate-900 dark:text-slate-100";
+      : tone === "amber"
+        ? "text-amber-600 dark:text-amber-400"
+        : tone === "emerald"
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-slate-900 dark:text-slate-100";
   return (
     <View className={`flex-1 ${right ? "items-end" : ""}`}>
       <Text className="text-[10px] text-slate-400 dark:text-slate-500">{label}</Text>
@@ -737,7 +750,7 @@ function CampaignSheet({
               <View className="mt-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/60">
                 <Row label="Chi phí" value={formatMoney(c.spend)} />
                 <Row label="Doanh thu từ quảng cáo" value={formatMoney(c.broadGmv)} />
-                <Row label="Số đơn" value={String(c.broadOrder)} />
+                <Row label="Số đơn" value={groupVN(c.broadOrder)} />
                 <Row
                   label="Chi phí mỗi đơn (CPA)"
                   value={c.broadOrder > 0 ? formatMoney(Math.round(c.spend / c.broadOrder)) : "—"}
@@ -752,7 +765,7 @@ function CampaignSheet({
                 {c.hubsellBudgetCut ? (
                   <Row
                     label="Ngân sách ngày"
-                    value={`${formatMoney(c.hubsellBudgetCut.before)} → ${formatMoney(c.hubsellBudgetCut.cut)}`}
+                    value={`${c.hubsellBudgetCut.before > 0 ? formatMoney(c.hubsellBudgetCut.before) : "không giới hạn"} → ${formatMoney(c.hubsellBudgetCut.cut)}`}
                   />
                 ) : null}
               </View>

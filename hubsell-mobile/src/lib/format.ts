@@ -15,14 +15,25 @@ export function formatMoney(v: string | number | null | undefined): string {
   return `${groupVN(num(v))} ₫`;
 }
 
-/** Số tiền GỌN cho thẻ chỉ số: 1,23 tỷ / 45,6 tr / 789 k / 999 ₫. */
+/**
+ * Số tiền GỌN cho thẻ chỉ số: 1,23 tỷ / 45,6 tr / 789 k / 999 ₫.
+ * Làm tròn TRƯỚC rồi mới chọn đơn vị: 999.950.000 phải ra "1 tỷ", không phải
+ * "1000 tr"; 999.950 ra "1 tr", không phải "1.000 k" (rà 26/10/2026).
+ */
 export function compactMoney(v: string | number | null | undefined): string {
   const n = num(v);
   const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
+  // Dấu trừ thật (U+2212) như các bậc trừ của thác nước và web formatCompactVND
+  // — trước đây hyphen "-" nên cột Lãi ròng âm khác dấu với bậc kế bên.
+  const sign = n < 0 ? "−" : "";
   const one = (x: number) => x.toFixed(1).replace(".", ",").replace(/,0$/, "");
-  if (abs >= 1_000_000_000) return `${sign}${one(abs / 1_000_000_000)} tỷ`;
-  if (abs >= 1_000_000) return `${sign}${one(abs / 1_000_000)} tr`;
+  const round1 = (x: number) => Math.round(x * 10) / 10;
+  if (abs >= 1_000_000_000 || round1(abs / 1_000_000) >= 1000) {
+    return `${sign}${one(abs / 1_000_000_000)} tỷ`;
+  }
+  if (abs >= 1_000_000 || Math.round(abs / 1000) >= 1000) {
+    return `${sign}${one(abs / 1_000_000)} tr`;
+  }
   if (abs >= 10_000) return `${sign}${groupVN(abs / 1000)} k`;
   return `${sign}${groupVN(abs)} ₫`;
 }

@@ -107,11 +107,14 @@ export function OrderDetailPanel({
         })}
 
         <View className="mt-1 border-t border-slate-200 pt-2 dark:border-slate-700">
-          <Row
-            label="Tổng tiền sản phẩm"
-            value={formatMoney(payment?.productTotal ?? order.totalAmount)}
-            bold
-          />
+          {/* Dòng đậm = TỔNG TIỀN ĐƠN (totalAmount) — đúng số in trên thẻ đơn ngoài
+              danh sách; tiền hàng (Σ giá × SL, chưa ship/voucher) là dòng phụ khi
+              khác. Trước 26/10 dòng đậm là tiền hàng nên thẻ 250.000 / chi tiết
+              230.000 cùng một đơn. */}
+          <Row label="Tổng tiền đơn" value={formatMoney(order.totalAmount)} bold />
+          {payment && payment.productTotal !== order.totalAmount ? (
+            <Row label="Tiền hàng (chưa gồm ship, voucher)" value={formatMoney(payment.productTotal)} />
+          ) : null}
           {payment && payment.status !== "none" ? (
             <>
               {payment.groups.map((g) => (

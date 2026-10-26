@@ -433,7 +433,7 @@ function RecommendSheet({
                   <Text className={`text-[10px] font-bold ${TIER[row.tier].text}`}>{TIER[row.tier].label}</Text>
                 </View>
                 <Text className="text-xs text-slate-500 dark:text-slate-400" style={TABULAR}>
-                  {row.score}/100 điểm · {row.itemSku ?? `#${row.itemId}`} · {compactMoney(row.price)}
+                  {row.score}/100 điểm · {row.itemSku ?? `#${row.itemId}`} · {formatMoney(row.price)}
                 </Text>
               </View>
 

@@ -23,7 +23,7 @@ import type {
   OrderStatsResponse,
   ShippingStatus,
 } from "@/types/api";
-import { compactMoney, formatDateTime, formatMoney } from "@/lib/format";
+import { compactMoney, formatDateTime, formatMoney, groupVN } from "@/lib/format";
 import {
   CARRIER_LABEL,
   CARRIER_SHORT,
@@ -360,12 +360,25 @@ export default function OrdersScreen() {
             </Text>
           </View>
           {/* Tiền đơn xanh dịu — tách khỏi số lượng đỏ (anh Trung 03/10) */}
-          <Text
-            className="text-[13px] font-bold text-emerald-600 dark:text-emerald-400"
-            style={TABULAR}
-          >
-            {formatMoney(item.totalAmount)}
-          </Text>
+          <View className="items-end">
+            <Text
+              className="text-[13px] font-bold text-emerald-600 dark:text-emerald-400"
+              style={TABULAR}
+            >
+              {formatMoney(item.totalAmount)}
+            </Text>
+            {/* Web ghi "Chưa thanh toán" dưới tổng tiền — app trước đây tô xanh
+                mọi đơn kể cả COD chưa thu (rà 26/10). */}
+            {item.paymentStatus === "UNPAID" ? (
+              <Text className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                Chưa thanh toán
+              </Text>
+            ) : item.paymentStatus === "REFUNDED" ? (
+              <Text className="text-[10px] font-medium text-rose-600 dark:text-rose-400">
+                Đã hoàn tiền
+              </Text>
+            ) : null}
+          </View>
         </View>
         {ret ? (
           <View className="mt-1.5 flex-row">
@@ -381,7 +394,15 @@ export default function OrdersScreen() {
       <View className="mb-3 flex-row items-center justify-between px-4">
         <View>
           <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">Đơn hàng</Text>
-          <Text className="text-xs text-slate-500 dark:text-slate-400">{counts.ALL ?? 0} đơn</Text>
+          {/* Số đơn của BỘ LỌC đang xem (tab / khách xin hủy) như web "N đơn khớp
+              bộ lọc" — trước luôn in tổng mọi trạng thái nên tab Đang giao 37 đơn
+              vẫn đề "1.240 đơn" (rà 26/10). */}
+          <Text className="text-xs text-slate-500 dark:text-slate-400" style={TABULAR}>
+            {groupVN(
+              (cancelRequested ? counts.CANCEL_REQUESTED : status ? counts[status] : counts.ALL) ?? 0
+            )}{" "}
+            đơn{cancelRequested || status ? " khớp bộ lọc" : ""}
+          </Text>
         </View>
         {/* Nút quét đã dời xuống thanh tab dưới (tab "Quét đơn hoàn", 03/10) */}
       </View>
