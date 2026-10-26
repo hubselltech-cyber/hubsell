@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 26/10/2026 (trưa) — KHÁCH HỎI "SỐ TAB TÀI CHÍNH KHÔNG KHỚP": LỢI NHUẬN THỰC TẾ ÂM NHƯNG APP IN MẤT DẤU TRỪ → ĐÃ SỬA MOBILE (đi 1.4.1)
+
+- **Ảnh khách (iOS, tab Tài chính):** thẻ Lợi nhuận ròng 107 k · biên ròng 24,3 % — bảng Lợi nhuận theo khoản: Thực tế 66.894 / Dự kiến 173.826 / Thu khác 0 — thác nước Doanh thu 544 k → Lãi ròng 106.932 đ biên 19,7 %.
+- **Gốc 1 (lỗi thật, mọi bản):** `FinancePage.tsx` BreakdownItems in `formatMoney(Math.abs(amount))` KHÔNG dấu cho cột Lợi nhuận. Backend `actualProfit = Σ lãi đơn đã đối soát − Ads − vận hành`; kỳ này 0 đơn đối soát (percent 0,0 %) nên Thực tế = **−66.894** (≈ Ads −67 k). Đúng là 173.826 − 66.894 = 106.932 = thẻ. Web in "+ / −" + màu theo dấu (`breakdown-card` colorBySign) nên không lệch. Sửa: prop `signed` cho thẻ profit → "+ xanh / − đỏ", % âm có dấu. tsc sạch. Commit 27de220d.
+- **Gốc 2 (nhãn, đã sửa trước):** 24,3 % = lãi / DOANH THU 440 k (thẻ); 19,7 % = lãi / GIÁ TRỊ SP 544 k (thác nước). Khách còn thấy chữ "Doanh thu" ở cột đầu thác + "biên ròng" → đang dùng bản < 1.4.0 (cột "Tổng giá trị SP" vào (21) cb629ddf; nhãn "trên doanh thu / trên giá trị SP" 6237b1ca 20:57 23/10 sau khi nộp (22) → chỉ có ở 1.4.1).
+- **Trả lời khách:** 107 k đúng; dòng Thực tế là −66.894 (chi Ads khi chưa có đơn đối soát), app thiếu dấu trừ, bản tới sửa; 24,3 % và 19,7 % là hai mẫu số khác nhau, cập nhật 1.4.0 để thấy nhãn rõ.
+- Chưa push; chưa chạy app thử mắt (Expo Go) — chỉ kiểm kiểu.
+
 ## Phiên 26/10/2026 (sáng) — SHOPEE "CHUẨN BỊ ĐƯỢC NHƯNG KHÔNG IN ĐƯỢC": SÀN CHƯA CẤP MÃ VẬN ĐƠN, KHÔNG PHẢI HUBSELL → SỐ THẬT: HÔM NAY SHOPEE/SPX CẤP MÃ TRỄ, BÌNH THƯỜNG IN TỐT 100% → ANH CHỐT BỎ LÁT SỬA, KHÔNG CODE
 
 - **Anh báo:** đơn Shopee chuẩn bị xong, in báo sàn chưa cấp mã; TikTok bình thường. Giữa chừng anh gửi ảnh Seller Center đơn `261025GA146RB1`: "Chờ lấy hàng · Đang xử lý" → **chính Shopee chưa cấp mã**, Seller Center cũng chưa in được đơn đó.
