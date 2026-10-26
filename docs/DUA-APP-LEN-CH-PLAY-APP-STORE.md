@@ -252,3 +252,23 @@ Tổng cộng **3–6 tuần**, gần như toàn bộ là chờ D-U-N-S và xác
 ## 8. Nguồn
 - Google: [Chọn loại tài khoản](https://support.google.com/googleplay/android-developer/answer/13634885), [Thông tin cần khi tạo tài khoản](https://support.google.com/googleplay/android-developer/answer/13628312), [Yêu cầu thử nghiệm với tài khoản cá nhân](https://support.google.com/googleplay/android-developer/answer/14151465)
 - Apple: [Đăng ký qua app Apple Developer](https://developer.apple.com/help/account/membership/enrolling-in-the-app/), [D-U-N-S](https://developer.apple.com/help/account/membership/D-U-N-S/), [Yêu cầu đăng ký](https://developer.apple.com/help/account/membership/program-enrollment/)
+
+---
+
+## 9. Rà trước khi build kho (bắt buộc từ 26/10/2026)
+
+App trên kho **không vá nóng được** (chưa có expo-updates tới 1.4.0): một lỗi hiển thị = khách nhìn cả tuần (build → duyệt → khách cập nhật). Bài học 26/10: tab Tài chính in `Math.abs` mất dấu trừ ở "Lợi nhuận thực tế" từ 03/10, sống qua 6 bản build vì chỉ thử với kỳ lãi dương; khách phát hiện. Trước **mỗi** `eas build --profile production` phải chạy hết bảng dưới và ghi kết quả + mã build vào PROGRESS; bản nào bỏ qua phải nói rõ với anh Trung.
+
+| # | Màn | Ca phải thử (so với web CÙNG shop + CÙNG kỳ) | Điều phải khớp |
+|---|---|---|---|
+| 1 | Tài chính | Kỳ **0 đơn đối soát** (Lợi nhuận thực tế âm = −Ads − vận hành) | Dòng in "− đỏ", tổng thẻ = Σ dòng có dấu |
+| 2 | Tài chính | Kỳ có **đơn thiếu giá vốn** | Dòng "n đơn chưa có giá vốn" hiện, tổng khớp web |
+| 3 | Tài chính | Shop có **thuế bổ sung** > 0 | Dòng thứ 4 "Thuế bổ sung dự phòng" âm, hiện đúng |
+| 4 | Tài chính | Kỳ **trống** + lọc **một gian** | Không NaN, không "0%" lạ, thác nước báo "Chưa có đơn" |
+| 5 | Tài chính | Thẻ Doanh thu bung: có đơn hủy / đang hoàn | Số (count) + % khớp web |
+| 6 | Tổng quan / Đơn / Kho | Dữ liệu rộng nhất: tiền 7 chữ số, tên dài, khoảng giá | Không cắt "…", không tràn ô (xem memory soi co màn) |
+| 7 | Mọi màn | Giao diện tối + màn 320 px | Chữ đọc được, số không xuống dòng |
+
+Cách so: mở web `/finance/analytics` cùng tài khoản, cùng kỳ, cùng bộ lọc gian; từng dòng của từng thẻ phải bằng nhau **kể cả dấu**. Màn chép từ web thì đối chiếu từng nhánh `if` hiển thị của component web (dấu, màu, ẩn khi 0, count), không đối chiếu bằng ảnh.
+
+---

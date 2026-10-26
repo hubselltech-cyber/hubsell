@@ -13,6 +13,7 @@
 - **Gốc 2 (nhãn, đã sửa trước):** 24,3 % = lãi / DOANH THU 440 k (thẻ); 19,7 % = lãi / GIÁ TRỊ SP 544 k (thác nước). Khách còn thấy chữ "Doanh thu" ở cột đầu thác + "biên ròng" → đang dùng bản < 1.4.0 (cột "Tổng giá trị SP" vào (21) cb629ddf; nhãn "trên doanh thu / trên giá trị SP" 6237b1ca 20:57 23/10 sau khi nộp (22) → chỉ có ở 1.4.1).
 - **Trả lời khách:** 107 k đúng; dòng Thực tế là −66.894 (chi Ads khi chưa có đơn đối soát), app thiếu dấu trừ, bản tới sửa; 24,3 % và 19,7 % là hai mẫu số khác nhau, cập nhật 1.4.0 để thấy nhãn rõ.
 - Chưa push; chưa chạy app thử mắt (Expo Go) — chỉ kiểm kiểu.
+- **Anh chê (chiều):** "Em làm việc kiểu gì thế? lúc build em không rà soát lỗi à" + "khách nào cũng kêu không đúng và bỏ đi không gia hạn gói". Lỗi sống từ 03/10 qua 6 bản build (1.0→1.4.0) vì chỉ thử kỳ lãi dương; app kho không OTA nên khách chờ ~1 tuần. Đã ghi luật: memory `feedback-ra-ca-am-truoc-khi-build-mobile` + docs DUA-APP mục 9 "Rà trước khi build kho" (7 ca bắt buộc, so từng dòng với web cùng shop + kỳ, kể cả dấu). Anh đã mở phiên bật EAS Update (OTA) cho 1.4.1 trở đi. Đề xuất kế: rà chéo TOÀN BỘ số web ↔ mobile ↔ backend theo 7 ca trước build 01/11.
 
 ## Phiên 26/10/2026 (sáng) — SHOPEE "CHUẨN BỊ ĐƯỢC NHƯNG KHÔNG IN ĐƯỢC": SÀN CHƯA CẤP MÃ VẬN ĐƠN, KHÔNG PHẢI HUBSELL → SỐ THẬT: HÔM NAY SHOPEE/SPX CẤP MÃ TRỄ, BÌNH THƯỜNG IN TỐT 100% → ANH CHỐT BỎ LÁT SỬA, KHÔNG CODE
 
