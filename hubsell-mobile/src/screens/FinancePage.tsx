@@ -118,13 +118,22 @@ function waterfallSteps(a: OverviewAnalytics): WaterfallStep[] {
   ];
 }
 
-/** Danh sách khoản con của một thẻ (bung dưới lưới 4 thẻ). */
+/**
+ * Danh sách khoản con của một thẻ (bung dưới lưới 4 thẻ).
+ * - deductions: nhóm khấu trừ (thẻ Giá trị SP) — "−" đỏ, trợ giá "+" xanh.
+ * - signed: cột LỢI NHUẬN — khoản có thể ÂM (Lợi nhuận thực tế = lãi đơn đã
+ *   đối soát − Ads − vận hành; kỳ chưa có đơn đối soát thì âm đúng bằng Ads).
+ *   Trước 26/10 app in Math.abs không dấu → khách thấy 66.894 + 173.826 ≠ 107k
+ *   tưởng lệch số; web in "+ / −" + tô màu theo dấu (breakdown-card colorBySign).
+ */
 function BreakdownItems({
   items,
   deductions = false,
+  signed = false,
 }: {
   items: BreakdownItem[];
   deductions?: boolean;
+  signed?: boolean;
 }) {
   if (items.length === 0) {
     return (
@@ -148,14 +157,19 @@ function BreakdownItems({
                   ? it.amount < 0
                     ? "text-emerald-600 dark:text-emerald-400"
                     : "text-red-500 dark:text-red-400"
-                  : "text-slate-900 dark:text-slate-100"
+                  : signed && it.amount < 0
+                    ? "text-red-500 dark:text-red-400"
+                    : signed && it.amount > 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-slate-900 dark:text-slate-100"
               }`}
               style={TABULAR}
             >
-              {deductions ? (it.amount < 0 ? "+" : "−") : ""}
+              {deductions ? (it.amount < 0 ? "+" : "−") : signed ? (it.amount < 0 ? "−" : "+") : ""}
               {formatMoney(Math.abs(it.amount))}
             </Text>
             <Text className="w-11 text-right text-[10px] text-slate-400 dark:text-slate-500" style={TABULAR}>
+              {signed && it.percent < 0 ? "−" : ""}
               {Math.abs(it.percent).toFixed(1).replace(".", ",")}%
             </Text>
           </View>
@@ -380,6 +394,7 @@ export function FinancePage() {
                   <BreakdownItems
                     items={b[openTile].items}
                     deductions={openTile === "gross"}
+                    signed={openTile === "profit"}
                   />
                   {openTile === "gross" ? (
                     <Text className="mt-1 text-[11px] text-slate-500 dark:text-slate-400" style={TABULAR}>
