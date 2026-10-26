@@ -408,6 +408,48 @@ lúc ~09:50 22/10 rồi anh bảo "kiểm tra lại" sáng 23/10 (02:10 UTC). S�
 và đi qua nhánh chi tiết `get_order_detail` theo lô 50 (TikTok không cần chi tiết nên không kiểm được nhánh này). SQL bật ở 5d; theo dõi log
 `[read-lanes] … orders: … ghi: tạo/sửa/không đổi/đụng` 7 ngày + so Order hai đường. Nhắc đo lần 3: 26/10 08:30 (`kiem-bong-doc-san-5c-lan-2`).
 
+### 5c.2 Kiểm 26/10 (7 ngày, nhắc tự động `kiem-bong-doc-san-5c-lan-2` 08:30) — ĐẠT 4/4, lộ 1 giới hạn sàn đã biết
+
+Đo 26/10 01:41 UTC (08:41 VN) qua Chrome anh: Supabase SQL chỉ đọc (dán bằng JS vào Monaco để né bẫy tự đóng `[`) + Render Logs worker 7 ngày.
+Cửa sổ `interval '7 days'` lùi tới 19/10 01:41 UTC — trước mốc ghi danh 05:42:47, nên câu so khớp dùng `greatest(now − 7 days, mốc ghi danh)`
+(564 + 63 sự kiện trước mốc bị loại đúng như 5c.1 dặn). Luồng `orders` (lát 2) vẫn **0 dòng** — chưa bật gian nào.
+
+| Tiêu chí 5c | Siêu Thị 8686 (TikTok) | ANO Official Store (Shopee) | Kết luận |
+|---|---|---|---|
+| `chi_cu` theo MÃ ĐƠN (sự kiện từ 19/10 05:42 UTC, chừa 30' sát con trỏ) | **4.707 / 4.707**, NULL | 377 / 376 — 1 mã `261016Q0XW7ADR` (TO_RETURN 24/10 16:59 UTC, xem dưới) | ✅ TikTok; ✅ Shopee sau khi loại trả hàng |
+| Soi theo TỪNG SỰ KIỆN (bóng thấy lại đơn sau `update_time` trong payload) | 0 sự kiện hụt (DELIVERED 4.404, UNPAID 2.168 …) | 1.856 sự kiện, hụt 21 → **12 là webhook đến muộn** (Shopee đẩy lại 22–23/10, `update_time` payload sớm hơn lúc nhận 5–33 giờ, bóng đã thấy đơn SAU update_time) + **9 sót thật = 8 TO_RETURN + 1 code 4** (đẩy mã vận đơn, `261022ANPAJCWX`) | ✅ xem ghi chú |
+| `chi_moi` | 0 (bóng 5.790 mã) | 0 (bóng 377 mã) | ✅ |
+| Trễ con trỏ lúc đo | 3' · caught_up · 1 trang · 60' | 5' · caught_up · 1 trang · 60' | ✅ |
+| Trễ phát hiện `firstSeenAt − platformUpdatedAt` 7 ngày (`seenCount = 1`, n = 2.417) | min 2,0' · p50 7,1' · p90 11,2' · **p99 12,0'** · max 29,0' — 8 dòng > 15' đều ở lượt ĐẦU 19/10 06:00 UTC (đọc bù từ ghi danh − 30'); ngoài lượt đầu max ≤ 15' | Shopee list không trả update_time | ✅ |
+| Khoảng trống ghi lớn nhất 7 ngày | 80' kết thúc 21/10 00:40 UTC — trùng chuỗi khởi động lại worker (OOM 21/10, log boot 17:03→00:30 UTC) | 521' kết thúc 25/10 02:15 UTC — đêm vắng đơn | ✅ không kẹt |
+| `floorOverflows` / co / H8 (log) | `[read-lanes]` 5 dòng khác thường (20/10 02:54, 21/10 09:10 · 21:43 · 22:03, 23/10 02:47 VN) đều "co 0, đáy tràn 0, đọc lại 1–2, trang thử lại 0, cửa sổ học 60', trễ 2'"; `[cursor-reader]` **0 dòng** | không có dòng nào | ✅ |
+| 429 theo khóa | `TIKTOK:<app>\|shop:7494607438764411097` hits 0 | `SHOPEE:2044679\|shop:239068349` hits 3 (Ads 21/10, không đổi từ 23/10) | ✅ không có khóa endpoint đơn nào; toàn bộ `[gateway] 429` 7 ngày là Ads (`get_all_cpc_ads_daily_performance`, `get_total_balance`, `get_product_recommended_roi_target`) |
+
+**Giới hạn sàn lộ ra (không phải lỗi đường mới):** yêu cầu Trả hàng/Hoàn tiền Shopee (push code 3 trạng thái `TO_RETURN`) và đẩy mã vận đơn (code 4)
+**không làm đơn xuất hiện lại ở `get_order_list` trục `update_time`** — 8/13 TO_RETURN của ANO trong 7 ngày bóng không thấy lại (5 còn lại thấy
+vì đơn đổi trạng thái khác cùng lúc), dù payload push ghi `update_time` = giờ sự kiện. Mã nguồn đã biết điều này từ 02/10 (`integrations/shopee/returns-sync.ts`
+đầu tệp: "cả webhook order_status_push lẫn get_order_list trục update đều KHÔNG nhìn thấy" → luồng riêng `get_return_list` theo update_time, worker 10'/lần)
+và đường cũ quét đơn cũng dùng đúng API này, nên **lát 2 không mất gì so với hôm nay** (webhook + returns-sync vẫn chạy). Hệ quả cho sau:
+(1) câu SQL so khớp 5c loại sự kiện `status = 'TO_RETURN'` và code 4 (hoặc đọc từ cột `Order.returnStatus`); (2) mục 5e "luồng hoàn qua máy đọc con trỏ"
+phải đi bằng `get_return_list`, không được dựa danh sách đơn; (3) Pha D tắt đường cũ KHÔNG được tắt returns-sync.
+Chưa kiểm chứng bằng `get_order_detail` xem `update_time` của đơn có thật sự không nhảy (cần Render shell) — chỉ suy từ 8 ca + ghi chú mã nguồn 02/10.
+
+**Kết luận:** 7 ngày trên 2 gian — ĐẠT cả 4 tiêu chí (chi_cu rỗng bền sau khi loại giới hạn sàn, p99 12' < 15', 0 đáy tràn, 429 không lan).
+**Đề xuất bật lát 2 trên ANO Official Store** (`cmshe0487007oiz3pg41t2vb0`, đi nhánh `get_order_detail` lô 50 — nhánh TikTok không kiểm được).
+**✅ Anh chốt 26/10 ~09:00: BẬT, theo lịch 20:00 ngày 28/10** — nhắc tự động `hubsell-bat-lat-2-ano-28-10-20h` chạy câu INSERT dưới qua Supabase SQL Editor (Chrome anh),
+kiểm `sync_cursors` sau 2–5′ + dòng log `[read-lanes] … orders … ghi:` đầu tiên, rồi tự đặt 2 nhắc đo (29/10 20:30 đọc 24 giờ; 04/11 08:30 đo 7 ngày + SQL so lệch hai đường → tiêu chí sang Pha D).
+Chỉ bật MỘT gian ANO; không đụng 8686; Pha D vẫn chờ anh gọi.
+```sql
+-- Bật lát 2 (ghi Order qua đường mới) cho ANO — dán Supabase SQL Editor, chạy một lần
+INSERT INTO "sync_cursors" ("channelId","stream","cursorAt","windowMs","lane","dueAt","updatedAt")
+SELECT id, 'orders', (now() AT TIME ZONE 'UTC') - interval '30 minutes', 3600000, 'orders', (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC')
+FROM "Channel" WHERE id = 'cmshe0487007oiz3pg41t2vb0' AND status = 'ACTIVE' ON CONFLICT DO NOTHING;
+-- Kiểm sau 2': SELECT stream, "lastStatus", "lastPages", "lastRunAt" FROM "sync_cursors" WHERE "channelId" = 'cmshe0487007oiz3pg41t2vb0';
+-- Tắt: DELETE FROM "sync_cursors" WHERE stream = 'orders' AND "channelId" = 'cmshe0487007oiz3pg41t2vb0';
+```
+Theo dõi 7 ngày: log `[read-lanes] SHOPEE "ANO Official Store" orders: … ghi: tạo/sửa/không đổi/đụng` (kỳ vọng tạo ≈ 0), `api_rate_keys` thêm khóa
+`ep:/api/v2/order/get_order_detail`, SQL so lệch hai đường (5e lát 0 mục 2). Nhắc đo: lượt bật 28/10 tự tạo (29/10 20:30 + 04/11 08:30).
+
 ## 5d. Pha C lát 2 — "ghi Order qua đường mới" (19/10/2026, anh: "code lát 2 … cờ riêng, chưa bật, trong lúc bóng chạy")
 
 Luồng **`orders`** (cờ gian = dòng `sync_cursors` stream `orders` — tách khỏi `orders-shadow`; **CHƯA bật gian nào**). Khác lát 1 ở
@@ -451,11 +493,11 @@ cột `shippingStatus/returnStatus/totalAmount` theo mã — soạn khi bật), 
 ### 5e. Việc SẼ làm — chờ bóng đạt tiêu chí (anh Trung 19/10: "chưa cần làm ngay thì không làm", nhắc 22/10)
 
 Anh hỏi "Pha D có làm luôn không" → **chưa**: bóng mới chạy ~1 giờ, lát 2 chưa bật gian nào, đường mới còn thiếu 3 việc phụ.
-Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc trượt (Chrome tắt), đo tay 22/10 + 23/10: **ĐẠT** (5c.1); anh chốt 23/10 **chưa bật lát 2, chờ lượt đo 26/10 08:30 rồi quyết**.
+Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc trượt (Chrome tắt), đo tay 22/10 + 23/10: **ĐẠT** (5c.1); anh chốt 23/10 **chưa bật lát 2, chờ lượt đo 26/10 08:30 rồi quyết**. **26/10 08:41 đo lần 3 (7 ngày): ĐẠT 4/4** (5c.2) — lộ giới hạn Shopee TO_RETURN không qua get_order_list (returns-sync bù); SQL bật ANO soạn sẵn ở 5c.2 → **anh chốt 26/10: bật lúc 20:00 ngày 28/10** (nhắc `hubsell-bat-lat-2-ano-28-10-20h`).
 
 | Khi nào | Việc | Ghi chú |
 |---|---|---|
-| Bóng đạt tiêu chí 5c + anh chốt | **Bật lát 2** cho 1 gian nhỏ (SQL 5d) | ghi song song 7 ngày |
+| **28/10 20:00** (anh chốt 26/10) | **Bật lát 2** cho ANO Official Store (SQL 5c.2) | ghi song song 7 ngày; nhắc đo 29/10 20:30 + 04/11 08:30 |
 | Trước Pha D (làm được khi đã quyết bật lát 2) | **Pha D lát 0 — chuẩn bị, chưa bật gì:** (1) chuyển 3 việc phụ vào đường mới: hỏi lại ước tính escrow Shopee cho đơn đổi trạng thái (`changedOrderCodes` → `syncShopeePendingEscrowEstimates`), chuông giao thất bại Lazada (`noticeLazadaDeliveryFail`), thẻ HQ độ trễ đọc `sync_cursors` thay mốc nước cũ; (2) SQL so lệch hai đường theo mã đơn từng gian (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng); (3) công tắc tắt quét đơn đường cũ THEO GIAN (worker `order-auto-sync` bỏ qua tầng đơn của gian có cờ, webhook giữ nguyên), mặc định tắt | không đụng prod cho tới khi bật cờ |
 | 7 ngày song song không lệch | **Pha D**: bật công tắc từng gian → gỡ mã cũ, trần trang rải rác, cờ; docs hợp đồng đọc sàn thay DONG-BO-GIAI-DOAN-3 mục 1 | mỗi bước có số trước–sau |
 | Sau đơn | Luồng hoàn / tài chính (ví, escrow, sao kê) / Ads / sản phẩm qua máy đọc con trỏ | theo thứ tự mục 5 |

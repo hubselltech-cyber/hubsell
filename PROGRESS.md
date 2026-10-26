@@ -6,6 +6,17 @@
 
 ---
 
+## Phiên 26/10/2026 (08:30, nhắc tự động) — KIỂM BÓNG ĐỌC SÀN 5c LẦN 3 (7 NGÀY): ĐẠT 4/4 → ANH CHỐT BẬT LÁT 2 ANO LÚC 20:00 28/10
+
+- **~09:00 anh chốt (sau khi đọc kết quả): "Đặt lịch 20h tối ngày 28/10 làm."** → tạo nhắc tự động `hubsell-bat-lat-2-ano-28-10-20h` (chạy ở chế độ Auto): kiểm gian ACTIVE + chưa có dòng `orders`, chạy INSERT docs 5c.2 qua Supabase SQL Editor (Chrome anh), kiểm `sync_cursors` sau 2–5′ + dòng log `[read-lanes] … orders … ghi:` đầu tiên (lỗi persist lặp → DELETE tắt ngay), ghi docs 5c.2/5e + PROGRESS + memory, commit cục bộ, tự đặt 2 nhắc đo (29/10 20:30 đọc 24 giờ; 04/11 08:30 đo 7 ngày + SQL so lệch hai đường → tiêu chí sang Pha D). Chỉ bật MỘT gian ANO; Pha D vẫn chờ anh gọi. Docs 5c.2 + 5e + memory đã ghi quyết định; commit cục bộ, anh push.
+
+- **Nhắc `kiem-bong-doc-san-5c-lan-2` chạy đúng giờ, Chrome anh kết nối** → đo trên Supabase SQL (chỉ đọc) + Render Logs worker 7 ngày; ghi `docs/CUNG-HOA-LOP-GOI-SAN.md` mục **5c.2** + 5e, memory `hubsell-cung-hoa-lop-goi-san`. Không commit, không bật gì.
+- **Số 7 ngày (từ mốc ghi danh 19/10 05:42 UTC):** TikTok Siêu Thị 8686 `chi_cu` **4.707/4.707** rỗng, `chi_moi` 0, bóng 5.790 mã, trễ phát hiện p50 7,1′ / **p99 12,0′** (max 29′ chỉ ở lượt đọc bù đầu tiên), trễ con trỏ 3′; Shopee ANO 377/376, `chi_moi` 0, trễ con trỏ 5′. Log: 5 dòng `[read-lanes]` đều "đáy tràn 0, co 0", `[cursor-reader]` 0 dòng; `[gateway] 429` toàn endpoint Ads; khóa TikTok shop 0 hits, khóa ANO shop 3 hits (Ads 21/10). Luồng `orders` (lát 2) vẫn 0 dòng.
+- **Soi 1 mã sót ở ANO → lộ giới hạn sàn, không phải lỗi đường mới:** soi theo từng sự kiện webhook, ANO hụt 21/1.856: 12 là webhook Shopee đến muộn 5–33 giờ (bóng đã thấy đơn sau `update_time`), **9 sót thật = 8 TO_RETURN + 1 đẩy mã vận đơn (code 4)** — yêu cầu trả hàng không làm đơn xuất hiện lại ở `get_order_list` trục update_time. Mã nguồn đã biết từ 02/10 (`integrations/shopee/returns-sync.ts`: luồng riêng `get_return_list` 10′/lần) và đường cũ quét cùng API → bật lát 2 không mất gì. Việc kéo theo: SQL so khớp 5c loại TO_RETURN/code 4; luồng hoàn (5e) phải đi `get_return_list`; Pha D không tắt returns-sync. ⚠️ Chưa kiểm `get_order_detail.update_time` thật (cần Render shell).
+- **Kết luận: ĐẠT cả 4 tiêu chí 5c.** Đề xuất bật lát 2 cho **ANO Official Store** (`cmshe0487007oiz3pg41t2vb0`) — SQL dán sẵn ở docs 5c.2; theo dõi 7 ngày log `ghi: tạo/sửa/không đổi/đụng` + so lệch hai đường. → Anh chốt ngay sau đó (xem đầu mục).
+
+---
+
 ## Phiên 25/10/2026 (đêm) — CHUÔNG THÔNG BÁO PHẢI CHO THẤY GIÁ TRỊ (web + mobile, chữ sinh ở backend)
 
 - **Anh nêu vấn đề:** Hubsell được đánh giá cao nhưng tự động hóa làm khách "không có việc gì để vào". Em phản biện: ít vào không phải lỗi, rủi ro thật là lúc gia hạn khách không thấy giá trị + không biết tính năng mới; đề xuất đo số trước (2 SQL `lastActiveAt` + CHURNED) rồi làm thư báo cáo tuần. Rà hạ tầng: báo cáo tuần thứ Hai 08:00 **đã có** (`workers/weekly-report.ts`, chuông + push, link mở Trợ lý chat) nhưng không có email; khách chỉ nhận 6 thư thủ tục.
