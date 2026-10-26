@@ -81,3 +81,42 @@ Anh Trung test 30 đơn Shopee (ANO 21 + DarkMan 9) ngay sau khi bản 14/10 lê
 - Test `fulfillment-confirm-skip.test.ts`: +1 ca câu 409 mới, +6 ca `splitByRunningBatches` (không lượt, bấm lại đúng 30 đơn → reattach, thêm đơn mới → giữ cũ + tự do mới, rải 2 lượt → không reattach, lượt khác đơn, một đơn ở hai lượt).
 
 **Chưa làm / theo dõi:** bước in vẫn là một request đồng bộ `/bulk/labels` (30 đơn: dựng vận đơn + poll + tải gộp); nếu log cho thấy request này bị cắt thì chuyển sang chạy nền giống Chuẩn bị hàng. Lượt chết thật (máy chủ khởi động lại) giữ đơn tối đa 3 phút rồi tự nhả — đúng ý, vì sàn có thể đã nhận một phần.
+
+## 5. Sự cố 26/10/2026 — Shopee chuẩn bị xong nhưng "không in được vì sàn chưa cấp mã vận đơn"
+
+**Hiện tượng anh Trung báo:** đơn Shopee chuẩn bị hàng được, bấm in báo sàn chưa cấp mã vận đơn; TikTok in bình thường. Lúc đầu tưởng Seller Center vẫn in được; sau anh soi đơn `261025GA146RB1` trên Seller Center: **Chờ lấy hàng · "Đang xử lý"** (lấy hàng 26/10) → chính Shopee/đơn vị vận chuyển chưa cấp mã, Seller Center cũng chưa in được đơn đó.
+
+**Kết luận:** không phải Hubsell lấy sai. Luồng `ship_order` → `get_mass_tracking_number` / `get_tracking_number` đúng tài liệu; sàn trả `tracking_number` rỗng vì 3PL chưa phân bổ. Tài liệu Shopee (đọc 26/10, `v2.logistics.get_tracking_number` + `get_mass_tracking_number`): *"The api response can return tracking_number empty, since this info is dependent from the 3PL … keep calling the api within 5 minutes interval"*; mã lỗi `logistics.error_param — The order is being allocated, please wait until the allocate is completed`. TikTok cấp mã ngay trong lệnh ship nên không gặp.
+
+**Hubsell đang xử lý ca này thế nào (đúng thiết kế 05/09 + 14/10):**
+- Hộp thoại đợi `/bulk/label-readiness` mỗi 2,5 s tới 45 s; `fetchLabels` hỏi thêm 3 vòng × 2 s; hết thì đơn giữ **"Chưa in phiếu"** + toast "Sàn chưa cấp mã vận đơn — đợi ít phút rồi in lại".
+- Khi sàn cấp mã muộn: webhook Shopee mã 4 (`tracking_no`) ghi `Order.trackingCode` ngay (`service.ts` processShopeeOrderEvent); lưới đỡ `backfillShopeeTrackingCodes` mỗi lượt auto-sync 30 đơn/gian, mỗi đơn hỏi lại cách nhau 6 giờ. Sau đó lọc "Chưa in" → In là ra.
+
+**Khe hở tìm thấy khi đọc mã + tài liệu (chưa sửa, chờ anh chốt):**
+1. `getMassTrackingNumber` bỏ `hint` (sàn ghi lý do không cấp được mã) và `fail_list.fail_reason`; `getTrackingNumber` cũng bỏ `hint` → giao diện/log chỉ thấy "chưa cấp mã", không biết sàn nói gì. Nên trả hint vào `reason` + 1 dòng log `[fulfillment.shopee]` theo đơn.
+2. `isNotReadyError` không nhận câu "being allocated" → đường từng đơn coi là lỗi thật, báo đỏ thay vì "đang chờ".
+3. Đường từng đơn gọi `get_tracking_number` không kèm `package_number` → đơn tách kiện sàn trả `logistics.package_number_not_exist` (tài liệu). Đường theo mẻ đã đi theo kiện nên chỉ ảnh hưởng khi mass API lỗi.
+4. Kênh **hỏa tốc có `preprint=true`** (`get_channel_list.logistics_capability.preprint`, hướng dẫn "Instant Order Fulfillment Guide" 22/09/2026, có VN): sàn cho in nhãn **trước** khi có mã, `create_shipping_document` không cần `tracking_number`. Hubsell hiện luôn đòi mã trước → với kênh này sẽ đợi vô ích. Chưa có ca thật để kiểm; ghi để làm khi gặp.
+5. Mã lỗi `logistics.can_not_print_jit_order` / `can_not_print_combine_order` = sàn chỉ cho in trên Seller Center → nếu gặp, phải báo câu đó thay vì "chưa cấp mã".
+
+**Câu chữ nên đổi:** "Shopee đang cấp mã vận đơn (Seller Center hiện 'Đang xử lý') — Hubsell tự điền mã khi sàn cấp; lọc Chưa in rồi bấm In lại."
+
+### 5.1 Lát sửa 26/10 — ĐÃ VIẾT RỒI GỠ (anh chốt "Bỏ đi, hôm nay Shopee lỗi")
+
+Trước khi có số thật (5.2), em đã code một lát: `get_channel_list` → kênh `preprint` dựng nhãn không cần `tracking_number`; `getMassTrackingNumber` trả `hints`; câu báo "Shopee đang cấp mã vận đơn…"; `isNotReadyError` nhận "allocat"; `humanizeLabelError` cho lỗi chỉ-in-Seller-Center. Test 38/38, tsc sạch — nhưng là code theo giả thuyết, chưa có ca thật lặp lại. **Anh chốt BỎ**, mã đã trả về bản cũ, không commit. Nếu sau này sàn lỗi kiểu này tái diễn và cần, mô tả trên đủ để dựng lại trong ~1 giờ.
+
+### 5.2 Số thật 26/10 (Supabase chỉ đọc + webhook_events) — KẾT LUẬN CUỐI: hôm nay Shopee/SPX cấp mã trễ, bình thường in tốt
+
+Đơn hỏa tốc anh in trên Seller Center lúc ~08:23: `261026KJWSH01W` (ANO, **SPX Instant**), Hubsell chuẩn bị 08:20:49, Shopee đẩy mã `VN265186119727M` (webhook mã 4) lúc **08:33:14** → 12 phút sau khi ship; Seller Center vẫn in được trước khi có mã. Đơn trong ảnh `261025GA146RB1` (SPX Express, chuẩn bị 08:45) tới ~09:40 vẫn chưa có mã.
+
+| Hãng (Shopee, đơn đã chuẩn bị) | 7 ngày trước 26/10 | Hôm nay 26/10 (tới ~09:40) |
+|---|---|---|
+| SPX Express | 607 đơn, 597 có mã, 386 in trên Hubsell, trễ push mã **trung vị 0 phút** | 25 đơn, **1 có mã**, 0 in được |
+| SPX Instant (hỏa tốc) | 53 đơn, 53 có mã, **53 in trên Hubsell**, trung vị 0 phút (max 38) | 7 đơn, mã về sau **10–16 phút** (trung vị 9,8) |
+| GHN / J&T / VNPost / AhaMove | mã về tức thì | GHN 1 đơn trễ 21 phút |
+
+→ Bình thường sàn cấp mã ngay sau `ship_order` cho cả hai kênh SPX, Hubsell in được 100%. **Hôm nay là sự cố phía Shopee/SPX** (phân bổ mã trễ hoặc không cấp), không phải lỗi luồng Hubsell và cũng không phải ca "kênh in trước" lặp lại hằng ngày. Render Logs web 24 giờ: không có cảnh báo `[fulfillment.shopee]` nào hôm nay (mass API trả mã rỗng là hợp lệ, không phải lỗi).
+
+**Vậy lát 5.1 có cần không?** Không gấp. Phần lộ `hint` + câu báo + `allocat` giữ vì vô hại và lần sau nhìn log là biết ngay sàn lỗi. Phần kênh preprint: chỉ có ích đúng lúc sàn lỗi với đơn hỏa tốc (tài xế đến sớm, chờ 10–16 phút là đau) và chỉ khi Shopee gắn cờ `preprint` cho SPX Instant — **chưa kiểm được**; mã an toàn (không cờ = chạy như cũ). → **Anh chốt BỎ (26/10): mã đã gỡ, không commit; chỉ giữ ghi chép này.**
+
+Lưu ý phụ thấy trong log 25/10: `download_shipping_document` gộp bị sàn từ chối `packages_can_not_download_together` (4 lần, 5–29 đơn) → lùi tải từng đơn, đúng thiết kế nhưng mất lợi thế tải gộp; có thể gom theo (hãng, kênh) trước khi tải gộp — việc riêng, chưa làm.
