@@ -245,7 +245,8 @@ Tổng cộng **3–6 tuần**, gần như toàn bộ là chờ D-U-N-S và xác
 | Google Play Console | 25 USD, một lần |
 | Apple Developer Program | 99 USD/năm |
 | D-U-N-S | miễn phí |
-| EAS Build | gói Free, nâng lên 19 USD/tháng chỉ khi hàng đợi build quá lâu |
+| EAS Build | gói Free (15 iOS + 15 Android/tháng), nâng lên 19 USD/tháng chỉ khi hàng đợi build quá lâu — anh chốt 23/10 KHÔNG nâng |
+| EAS Update (OTA, mục 9) | gói Free 1.000 MAU/tháng, đủ cho ~70 gian; không nâng |
 
 ---
 
@@ -272,3 +273,43 @@ App trên kho **không vá nóng được** (chưa có expo-updates tới 1.4.0)
 Cách so: mở web `/finance/analytics` cùng tài khoản, cùng kỳ, cùng bộ lọc gian; từng dòng của từng thẻ phải bằng nhau **kể cả dấu**. Màn chép từ web thì đối chiếu từng nhánh `if` hiển thị của component web (dấu, màu, ẩn khi 0, count), không đối chiếu bằng ảnh.
 
 ---
+
+---
+
+## 9. Cập nhật OTA bằng EAS Update (thêm 26/10/2026) — sửa JS/giao diện không cần chờ build + duyệt kho
+
+**Vì sao:** 26/10 khách báo tab Tài chính in thiếu dấu trừ (sửa 27de220d) nhưng không cách nào đưa tới khách: app chưa có `expo-updates`, EAS Build hết lượt Free tới 01/11, rồi còn chờ Apple/Google duyệt. Từ bản **1.4.1** trở đi, phần JS (màn hình, câu chữ, công thức, ảnh trong bundle) đẩy thẳng tới máy khách qua EAS Update; chỉ thay đổi **native** (thêm/gỡ module Expo có mã native, đổi quyền, đổi `app.json` phần ios/android/plugins) mới phải build + nộp kho như cũ.
+
+**Đã cấu hình (commit 26/10):**
+
+| Chỗ | Giá trị | Ý nghĩa |
+|---|---|---|
+| `package.json` | `expo-updates ~57.0.26` (cài bằng `npx expo install`) | module nhận cập nhật; vào bản build kế (1.4.1, 01/11) |
+| `app.json` → `updates.url` | `https://u.expo.dev/3182c4de-dbee-40e8-8728-b7149848673f` | máy chủ EAS Update của dự án (projectId sẵn có) |
+| `app.json` → `runtimeVersion` | `{ "policy": "appVersion" }` | runtime = `expo.version` (1.4.1). Cập nhật chỉ tới bản build CÙNG runtime → đổi native thì **phải tăng `version`** rồi build, kẻo bản cũ tải JS gọi module không có |
+| `app.json` → `updates.checkAutomatically` / `fallbackToCacheTimeout` | `ON_LOAD` / `0` | mở app → chạy ngay bản đang có, tải bản mới ngầm, **áp ở lần mở sau** (khách tắt hẳn app rồi mở lại, có thể cần 2 lần) |
+| `eas.json` → `build.production.channel` / `build.preview.channel` | `production` / `preview` | bản build từ profile nào thì nghe kênh đó; build 01/11 dùng profile `production` → tự nghe kênh `production` |
+| `hubsell-mobile/scripts/ota-update.mjs` | lệnh đẩy | gói `eas update` kèm 3 rào: cây git phải sạch, ghim `EXPO_PUBLIC_API_URL` = backend prod (không đọc `.env` máy dev), lời nhắn kèm mã commit |
+
+Không đổi gì ở profile iOS/capability (bẫy `EXPO_ASC_*` ở mục 5 không liên quan: `expo-updates` không thêm capability).
+
+**Cách đẩy một bản sửa (sau khi 1.4.1 lên kho):**
+
+1. Sửa mã, `npx tsc --noEmit` sạch, commit trên master (bản khách nhận phải trùng một commit).
+2. Trong `hubsell-mobile/`:
+   ```bash
+   node scripts/ota-update.mjs "Sửa dấu trừ Lợi nhuận thực tế tab Tài chính"
+   ```
+   Script chạy `npx eas-cli update --channel production --environment production --message "<lời nhắn> (<commit>)" --non-interactive` (cờ `--environment` bắt buộc từ SDK 55; môi trường `production` trên EAS hiện chưa có biến nào — giữ vậy, API URL ghim trong script). Mất ~1–2 phút: `expo export` tạo bundle iOS + Android rồi tải lên.
+3. Kiểm: `npx eas-cli update:list --channel production` (hoặc expo.dev → project → Updates). Trên máy thật: tắt hẳn app, mở lại 2 lần → thấy bản mới. Trong app chưa có nút "kiểm tra cập nhật" (chưa cần; nếu sau này muốn, dùng `Updates.useUpdates()` + `reloadAsync()`).
+4. Thử trước trên APK `preview` nếu bản sửa lớn: `node scripts/ota-update.mjs --channel preview "..."` — chỉ bản build profile preview nhận.
+
+**Khi nào KHÔNG đẩy OTA được (phải build + nộp kho):** thêm/gỡ gói có mã native (`expo-*` có plugin, `react-native-*`), đổi `plugins`/quyền/icon/splash trong `app.json`, nâng SDK Expo, đổi `version`. Dấu hiệu nhầm: `eas update` xong mà máy khách không đổi hoặc app văng khi mở → runtime lệch; rút bản bằng `npx eas-cli update:republish` chọn bản trước, hoặc `npx eas-cli channel:rollout`.
+
+**Rút lại bản lỗi:** `npx eas-cli update:republish --channel production` chọn bản tốt trước đó (chạy tương tác). Khách mở lại app 2 lần là về bản cũ.
+
+**Gói Expo Free đủ dùng, không nâng gói (anh Trung chốt 23/10 và 26/10):** EAS Update Free = **1.000 MAU/tháng**, 100 GiB băng thông, 20 GiB lưu trữ, số lần update không giới hạn, không tính phí vượt (vượt 1.000 thì dừng phục vụ cập nhật, app vẫn chạy bản đang có). Hubsell ~70 gian đang hiệu lực, mỗi gian 1–3 máy → xa trần. Mốc xem lại: khi `expo.dev → Usage` báo MAU vượt ~700 (≈ 250–300 gian) thì mới bàn gói Starter 19 USD/tháng. Bản build vẫn là 15 iOS + 15 Android/tháng Free — OTA không tốn lượt build.
+
+**Chưa kiểm được hôm 26/10:** chưa có bản build chứa `expo-updates` nên chưa đẩy thử được (`eas update` sẽ chạy nhưng không máy nào nhận). Lượt kiểm thật: sau 01/11 khi 1.4.1 có trên TestFlight/máy anh → đẩy một bản sửa nhỏ kênh `production` → mở lại app 2 lần → so sánh. Chưa cấu hình ký mã (code signing) cho update — mặc định EAS ký bằng khóa của Expo, đủ cho hiện tại.
+
+Nguồn: [EAS Update — bắt đầu](https://docs.expo.dev/eas-update/getting-started/), [expo-updates SDK 57](https://docs.expo.dev/versions/v57.0.0/sdk/updates/), [Runtime version](https://docs.expo.dev/eas-update/runtime-versions/), [Biến môi trường với eas update](https://docs.expo.dev/eas-update/environment-variables/), [Giá Expo](https://expo.dev/pricing) (đọc 26/10/2026).

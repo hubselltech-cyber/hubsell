@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 26/10/2026 (chiều) — THÊM CẬP NHẬT OTA (EAS Update) CHO APP MOBILE: SỬA JS SAU NÀY ĐẨY THẲNG TỚI KHÁCH, KHÔNG CHỜ BUILD + DUYỆT KHO
+
+- **Vì sao:** lỗi dấu trừ tab Tài chính (27de220d) không tới được khách — app không có `expo-updates`, EAS Build hết lượt Free tới 01/11, rồi còn chờ kho duyệt. Anh chốt không nâng gói Expo.
+- **Đã làm (hubsell-mobile):** `npx expo install expo-updates` (~57.0.26); `app.json` thêm `runtimeVersion {policy: appVersion}` + `updates.url` (u.expo.dev/<projectId>), `checkAutomatically ON_LOAD`, `fallbackToCacheTimeout 0`; `eas.json` thêm `channel` production/preview cho 2 profile (profile iOS/capability giữ nguyên); script mới `scripts/ota-update.mjs` bọc `eas update --channel production --environment production` với 3 rào: git sạch, ghim `EXPO_PUBLIC_API_URL` prod (không đọc .env máy dev), lời nhắn kèm mã commit. Kiểm `npx expo config` ra đúng runtime 1.4.1 + url; tsc sạch. Không chạy `eas build` (hết lượt), không chạy `eas update` (chưa có bản build nào nhận).
+- **Giới hạn phải nhớ:** OTA chỉ tới bản build CÓ expo-updates và CÙNG runtime = `version` → từ **1.4.1 (build 01/11)** trở đi; đổi module native/quyền/plugin/version thì vẫn build + nộp kho. Gói Free 1.000 MAU/tháng, không tính vượt — ~70 gian còn xa trần, mốc xem lại ~700 MAU. Khách nhận bản mới khi tắt hẳn app mở lại (có thể 2 lần).
+- **Ghi:** docs/DUA-APP-LEN-CH-PLAY-APP-STORE.md mục 9 (cách đẩy, rút bản, khi nào không OTA được) + bảng chi phí mục 7; memory `hubsell-mobile-app`. ⚠️ Chưa sửa được nhắc tự động 01/11 (bộ lọc quyền chặn ghi tệp nhắc) → anh/phiên 01/11 nhớ thêm: sau build `npx eas-cli channel:list` phải có kênh production; khi 1.4.1 cài được trên máy anh thì đẩy thử `node scripts/ota-update.mjs "Thử OTA 1.4.1"`.
+- ⏳ **Sau 01/11:** khi 1.4.1 lên TestFlight/máy anh → đẩy thử một bản sửa nhỏ, mở app 2 lần, xác nhận nhận được rồi mới coi OTA là xong. Chưa push — anh push.
+
 ## Phiên 26/10/2026 (trưa) — KHÁCH HỎI "SỐ TAB TÀI CHÍNH KHÔNG KHỚP": LỢI NHUẬN THỰC TẾ ÂM NHƯNG APP IN MẤT DẤU TRỪ → ĐÃ SỬA MOBILE (đi 1.4.1)
 
 - **Ảnh khách (iOS, tab Tài chính):** thẻ Lợi nhuận ròng 107 k · biên ròng 24,3 % — bảng Lợi nhuận theo khoản: Thực tế 66.894 / Dự kiến 173.826 / Thu khác 0 — thác nước Doanh thu 544 k → Lãi ròng 106.932 đ biên 19,7 %.

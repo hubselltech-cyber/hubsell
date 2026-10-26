@@ -109,6 +109,14 @@
       },
       "googleIosClientId": "266117474182-am79goplhqbpdogcirohc492ucqt33bp.apps.googleusercontent.com",
       "googleWebClientId": "266117474182-q8ik0gt7db03kelrq554bvlfub0c8ebn.apps.googleusercontent.com"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3182c4de-dbee-40e8-8728-b7149848673f",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }
