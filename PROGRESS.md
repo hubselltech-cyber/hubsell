@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 27/10/2026 (10:45–11:30) — ANH: "HPGear VN gặp vấn đề gì, gian khác có bị không, muốn loại bỏ HOÀN TOÀN về sau" → LUẬT MẤT ỦY QUYỀN CHUNG 3 SÀN + HUBSELL ADS
+
+- **HPGear VN:** chủ shop gỡ ủy quyền app Hubsell trên Shopee (hoặc Shopee cắt liên kết) từ 26/10 08:52 → mỗi lần làm mới token Shopee trả `shop_no_linked`; mã chỉ biết `shop_access_expired` nên gian ACTIVE 26 giờ, 158 lượt thử, khách không có nút Kết nối lại, HQ đỏ sai mục.
+- **Gian khác (SQL prod chỉ đọc 10:45):** hiện CHỈ HPGear VN là gian ACTIVE lỗi kéo dài (không gian nào khác trễ > 6 giờ). 12 gian rớt 30 ngày qua đều đã DISCONNECTED đúng. Nhưng đây là lần THỨ BA cùng kiểu (03/10 The White Active 55 lượt + Shopee 321947895 1.069 lượt). TikTok/Lazada còn chưa có nhánh nào → sàn từ chối là gian ACTIVE mãi.
+- **Sửa thiết kế (không thêm mã vào danh sách nữa):** `backend/src/integrations/auth-loss.ts` — phân loại lỗi làm mới theo NGUỒN (tạm thời / mã chắc chắn / sàn từ chối bằng mã bất kỳ), đếm theo gian `authRejectCount/authRejectSince/authLostReason` (migration `20261027110000_channel_auth_reject`, khóa có thử lại), đủ 3 lần trải ≥ 30′ với cùng refresh_token → DISCONNECTED (căn cứ = ngưỡng SYNC_STALL 3 nhịp 10′); lưới thứ hai ở `order-auto-sync`: lỗi lớp quyền khi quét → ép làm mới ở lượt kế; xóa dấu khi làm mới được / ủy quyền lại (5 đường nối lại). Áp Shopee, TikTok, Lazada, Hubsell Ads. Thẻ gian: nhãn "Mất ủy quyền" + câu theo mã ("Shopee báo gian đã gỡ ủy quyền cho Hubsell, bấm Kết nối lại"). HQ: dấu hiệu "Gian rớt kết nối" nêu tên ≤ 3 gian lỗi ≥ 3 lượt + mã.
+- **Kiểm:** `auth-loss-db.test.ts` 9 ca + 3 tệp test token cũ = 29/29; toàn backend 1.915 qua, 5 đỏ có sẵn (sổ cái/xóa gian DB dev); tsc sạch BE + FE; soi trang Kênh bán local (gian Demo Shopee giả lập "Mất ủy quyền", đã trả lại như cũ).
+- **Sau deploy (anh push):** migration chạy lúc boot; cron token-refresh ≤ 30′ hạ HPGear VN, log `[Auth-loss] Shopee "HPGear VN" … → DISCONNECTED`. Chưa email khách HPGear (chuông "Gian mất kết nối" trong app tự bật khi gian hạ). Docs: THOI-HAN-UY-QUYEN-SAN mục 6.
+
 ## Phiên 27/10/2026 (10:20) — ANH HỎI "HQ CÓ GÌ CẦN XỬ LÝ HÔM NAY": 2 MỤC ĐỎ = BELLA LOOK TÁI PHÁT (lần 2) + HPGEAR VN MẤT ỦY QUYỀN SHOPEE 25 GIỜ KHÔNG AI BIẾT
 
 - **Ảnh HQ:** Mốc nước quét đơn đỏ (trễ nhất 1524' SHOPEE · HPGear VN), Hàng đợi bền đỏ (899 việc evt.order chờ, hộp thư đến 1352, cũ nhất 14'); còn lại xanh/vàng, hạ tầng rảnh (DB 40 %, heap 22 %, kết nối 37 %).

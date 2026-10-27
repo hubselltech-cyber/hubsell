@@ -35,7 +35,7 @@ TikTok cũng vậy: trang ủy quyền của TikTok có ô "Thời hạn cấp q
 |---|---|---|
 | Shopee trả `shop_access_expired` khi làm mới token app chính → hạ gian xuống DISCONNECTED ngay. Chỉ nhận đúng mã này; `invalid_refresh_token` không gộp vì có thể do hai luồng đua nhau làm mới. Ghi có điều kiện: gian còn ACTIVE và vẫn cầm đúng refresh_token vừa bị từ chối | `backend/src/integrations/shopee/service.ts` (`isShopeeAccessExpiredError`, `markShopeeAccessExpired`) | `2b19f13` |
 | Cùng luật cho app Hubsell Ads | `backend/src/integrations/hubsell-ads/token.ts` | `c33e107` |
-| **27/10/2026 — thêm mã `shop_no_linked — Partner and shop has no linked`** (chủ shop gỡ app / Shopee cắt liên kết) vào cùng luật hạ gian, cả app chính lẫn Hubsell Ads. Căn cứ: HPGear VN (Shopee) từ 26/10 08:52 làm mới token trả mã này 156 lượt trong 25 giờ, gian vẫn ACTIVE, không nút Kết nối lại, HQ đỏ oan mục mốc nước 1524′ | `shopee/service.ts` (`isShopeeAccessExpiredError`), `hubsell-ads/token.ts`, test `shopee-access-expired-db.test.ts` | (chưa push) |
+| **27/10/2026 — luật mất ủy quyền CHUNG cho 3 sàn + Hubsell Ads** (thay cách nhận diện theo danh sách mã) — xem mục 6 | `backend/src/integrations/auth-loss.ts` + 4 nơi làm mới token | (chưa push) |
 | Lưu ngày hết hạn ủy quyền Shopee (`expire_time` của `get_shop_info`): lúc ủy quyền, và mỗi ngày một lần cho từng gian đang nối, cả app chính lẫn Hubsell Ads. Hỏi không được thì giữ ngày cũ, hôm sau hỏi lại | `backend/src/integrations/shopee/auth-expiry.ts` (gọi từ `workers/token-refresh.ts`), `shopAuthExpireAt` ở `shopee/client.ts` | `133bec9` |
 | Bốn cột `authExpireAt`, `authExpireCheckedAt` trên `Channel` và `channel_app_auths` | migration `20261003230000_shopee_auth_expire` | `133bec9` |
 | Thẻ gian ở trang Kênh bán: dòng "Ủy quyền Shopee / TikTok đến dd/mm/yyyy" (chữ đỏ; còn từ 7 ngày trở xuống kèm nút Ủy quyền lại). Gian ngắt vì hết hạn: nhãn "Hết hạn ủy quyền" + "… báo hết hạn ủy quyền, bấm Kết nối lại". TikTok dùng ngày có sẵn trong token (`refreshTokenExpireAt`), để Không giới hạn thì không hiện dòng | `frontend/src/lib/channel-auth.ts`, `frontend/src/app/channels/page.tsx` | `133bec9`, `ee19e87` |
@@ -57,3 +57,32 @@ Test: `shopee-access-expired-db.test.ts` (6 ca), `shopee-auth-expiry-db.test.ts`
 - Gian KYC 321947895 không lấy được ngày hết hạn (Shopee chặn API của gian này).
 - Dòng TikTok có thời hạn chưa soi được trên trình duyệt (các gian TikTok của tài khoản quản lý đều Không giới hạn).
 - Lượt hỏi ngày hết hạn chạy tối đa 300 gian mỗi app mỗi 30 phút (14.400 gian mỗi ngày); chạm trần thì log `[Auth-expiry] ... CÒN TỒN`.
+
+
+## 6. Luật mất ủy quyền chung (27/10/2026) — loại bỏ hẳn kiểu "gian vẫn đang nối nhưng sàn đã từ chối"
+
+### 6.1 Chuyện gì xảy ra
+HPGear VN (Shopee, chủ nguyenhuuphat1932001@gmail.com) từ 26/10 08:52 VN: mỗi lần làm mới token Shopee trả `shop_no_linked — Partner and shop has no linked` (chủ shop gỡ app Hubsell trên Shopee, hoặc Shopee cắt liên kết). Gian vẫn ACTIVE 26 giờ, 158 lượt thử vô ích, chủ shop không có nút Kết nối lại, HQ đỏ ở mục "Mốc nước quét đơn 1524′" thay vì mục "Gian rớt kết nối".
+
+### 6.2 Gốc
+Lần thứ BA cùng một kiểu (03/10 The White Active 55 lượt, Shopee 321947895 1.069 lượt, 26/10 HPGear VN 158 lượt). Mã chỉ nhận diện mất quyền bằng DANH SÁCH MÃ LỖI đã gặp (`shop_access_expired`), sàn trả mã mới là kẹt. Thêm từng mã khi gặp = vá. TikTok và Lazada còn không có nhánh nào: sàn từ chối làm mới thì chỉ ném lỗi, gian ACTIVE mãi.
+
+### 6.3 Thiết kế (integrations/auth-loss.ts)
+1. **Phân loại theo NGUỒN, không theo mã** (`classifyRefreshFailure`):
+   - *transient* — không tới được sàn, sàn hỏng, trần gọi, câu Hubsell tự ném, hình dạng lạ → không đếm, không bao giờ hạ;
+   - *lost_now* — mã sàn nói thẳng shop không còn ủy quyền (`shop_access_expired`, `shop_no_linked`) → hạ ngay;
+   - *rejected* — sàn TRẢ LỜI và từ chối bằng mã nghiệp vụ BẤT KỲ (tiền tố `Shopee/Lazada refresh token lỗi:`, `TikTok auth lỗi (code …)`) → đếm.
+2. **Đếm theo gian** (`authRejectCount`, `authRejectSince`, `authLostReason` trên `Channel` và `channel_app_auths`, migration `20261027110000_channel_auth_reject`): ghi có điều kiện ngay trong SQL — gian còn ACTIVE và DB vẫn cầm đúng refresh_token vừa bị từ chối. Đủ **3 lần trải ≥ 30′** → DISCONNECTED. Căn cứ ngưỡng: bằng ngưỡng `SYNC_STALL_THRESHOLD` (3 nhịp quét 10′) đã dùng cho thẻ "trễ đồng bộ" từ 09/2026; đua rotate token chỉ kéo dài vài giây và luôn đổi token trong DB nên không thể bị đếm 3 lần trải 30′.
+3. **Lưới thứ hai** (workers/order-auto-sync.ts): lượt quét gặp lỗi LỚP QUYỀN theo bảng phân loại của cổng gọi sàn (`classifierFor(...).kind === "auth"`) → ép access_token "đã hết hạn" để lượt kế phải làm mới và luật 1–2 phán xử. Không chờ access_token tự hết (TikTok 7 ngày).
+4. **Xóa dấu**: làm mới thành công, hoặc ủy quyền lại (5 đường nối lại: Shopee, TikTok, Lazada, nối tay, Hubsell Ads) → đếm về 0, xóa lý do.
+5. **Áp cho**: Shopee app chính, TikTok, Lazada, Hubsell Ads (Ads giữ danh sách hạ ngay cũ, mã lạ đi luật đếm).
+
+### 6.4 Khách thấy gì
+Thẻ gian ở trang Kênh bán: nhãn **"Mất ủy quyền"**, dòng đỏ theo mã: `shop_no_linked` → "Shopee báo gian đã gỡ ủy quyền cho Hubsell, bấm Kết nối lại để nối lại"; mã khác → "<Sàn> từ chối làm mới quyền (<mã>), bấm Kết nối lại"; `shop_access_expired` giữ câu "báo hết hạn ủy quyền" cũ. Chuông "Gian mất kết nối" có sẵn (ops-alerts) tự bật vì gian đã DISCONNECTED. Soi trên máy local 27/10 (gian Demo Shopee giả lập, trả lại như cũ sau khi soi).
+
+HQ: dấu hiệu "Gian rớt kết nối / sàn trễ đồng bộ" nêu tên ≤ 3 gian ACTIVE lỗi ≥ 3 lượt kèm mã lỗi, không phải tra SQL.
+
+### 6.5 Kiểm
+- `auth-loss-db.test.ts` 9 ca (phân loại; HPGear hạ ngay; mã lạ 3 lần < 30′ giữ ACTIVE, ≥ 30′ hạ; mạng/trần gọi không đếm; token đã đổi không đếm; làm mới thành công xóa dấu; TikTok theo cùng luật); `shopee-access-expired-db`, `hubsell-ads`, `shopee-auth-expiry-db` xanh. Toàn bộ backend: 1.915 qua, 5 đỏ có sẵn (sổ cái / xóa gian trên DB dev thiếu trigger). `tsc --noEmit` sạch cả backend lẫn frontend.
+- Quét prod 27/10 10:45: chỉ HPGear VN là gian ACTIVE lỗi kéo dài; 12 gian rớt trong 30 ngày đều đã DISCONNECTED đúng.
+- **Sau deploy:** cron token-refresh (30′) gọi làm mới HPGear VN → log `[Auth-loss] Shopee "HPGear VN" … shop_no_linked — mã chắc chắn → DISCONNECTED`; HQ hết đỏ mục mốc nước. Sau đó mỗi lần sàn từ chối bằng mã lạ sẽ có log `[Auth-loss] … lần n/3` — mã nào lặp nhiều thì cân nhắc thêm vào nhóm hạ ngay (ghi căn cứ).

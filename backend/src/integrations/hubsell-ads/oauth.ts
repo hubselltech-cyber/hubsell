@@ -148,6 +148,10 @@ export async function handleHubsellAdsCallback(
     authExpireCheckedAt: null,
     status: "ACTIVE",
     disconnectedAt: null,
+    // Ủy quyền lại → xóa dấu sàn từ chối + lý do mất quyền (luật mất ủy quyền chung).
+    authRejectCount: 0,
+    authRejectSince: null,
+    authLostReason: null,
   };
   await prisma.channelAppAuth.upsert({
     where: { channelId_app: { channelId: target.id, app: ChannelAppKind.HUBSELL_ADS } },

@@ -43,6 +43,7 @@
 import { ChannelName, type Channel } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { isShopeeConfigured } from "../integrations/shopee/config";
+import { forceTokenRefresh, isAuthClassError } from "../integrations/auth-loss";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import {
   claimDailyEscrowSweep,
@@ -523,6 +524,13 @@ async function runFastTier(
         data: { lastSyncError: message, syncFailCount: { increment: 1 } },
       })
       .catch(() => {});
+    // Lưới thứ hai của luật mất ủy quyền (integrations/auth-loss.ts): lỗi LỚP QUYỀN
+    // (token/quyền bị sàn từ chối) → ép làm mới token ở lượt kế để luật đếm phán xử,
+    // không chờ access_token tự hết hạn (TikTok 7 ngày). Chỉ 3 sàn API, không Offline.
+    const platform = channel.channelName;
+    if ((platform === ChannelName.SHOPEE || platform === ChannelName.TIKTOK || platform === ChannelName.LAZADA) && isAuthClassError(platform, err)) {
+      await forceTokenRefresh(channel.id, `${platform} "${channel.shopName}"`, err);
+    }
     // Gian lỗi coi như "có biến động": giữ nhịp gốc để phục hồi nhanh khi sàn ổn lại.
     changed = true;
   }

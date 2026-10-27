@@ -11,6 +11,7 @@ import { effectiveSkuCost } from "../../lib/cost-price";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { AUTH_REJECT_RESET, recordRefreshFailure } from "../auth-loss";
 import { carrierFromName } from "../../services/shipping";
 import { backfillOrderItemImagesTx } from "../order-item-images";
 import {
@@ -96,7 +97,18 @@ export async function getValidAccessToken(
     );
   }
 
-  const t = await refreshAccessToken(channel.refreshToken);
+  let t;
+  try {
+    t = await refreshAccessToken(channel.refreshToken);
+  } catch (err) {
+    // TikTok từ chối làm mới (token bị thu hồi, shop gỡ app…) → luật mất ủy quyền chung
+    // (integrations/auth-loss.ts): đếm theo gian, đủ ngưỡng thì hạ DISCONNECTED.
+    await recordRefreshFailure(
+      { kind: "channel", id: channel.id, refreshToken: channel.refreshToken, label: `TikTok "${channel.shopName}" (shop ${channel.externalShopId})` },
+      err
+    );
+    throw err;
+  }
   await prisma.channel.update({
     where: { id: channel.id },
     data: {
@@ -104,6 +116,7 @@ export async function getValidAccessToken(
       refreshToken: t.refresh_token,
       accessTokenExpireAt: expireToDate(t.access_token_expire_in),
       refreshTokenExpireAt: expireToDate(t.refresh_token_expire_in),
+      ...AUTH_REJECT_RESET, // sàn đã chấp nhận token → xóa dấu từ chối
     },
   });
 

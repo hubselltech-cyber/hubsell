@@ -66,7 +66,7 @@ import {
   type ChannelProduct,
 } from "@/lib/api";
 import { canManageShop } from "@/lib/permissions";
-import { PLATFORM_AUTH_SOON_DAYS, platformAuthEnd, platformAuthExpired } from "@/lib/channel-auth";
+import { PLATFORM_AUTH_SOON_DAYS, platformAuthEnd, platformAuthExpired, platformAuthLostReason, platformAuthLostText } from "@/lib/channel-auth";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
@@ -1110,9 +1110,11 @@ export default function ChannelsPage() {
                                 />
                                 {active
                                   ? "Đang hoạt động"
-                                  : platformAuthExpired(c)
-                                    ? "Hết hạn ủy quyền"
-                                    : "Đã ngắt kết nối"}
+                                  : platformAuthLostReason(c) && !/shop_access_expired/i.test(platformAuthLostReason(c) ?? "")
+                                    ? "Mất ủy quyền"
+                                    : platformAuthExpired(c)
+                                      ? "Hết hạn ủy quyền"
+                                      : "Đã ngắt kết nối"}
                               </span>
                               {/* Gian vừa nối: worker đang kéo trọn 3 tháng (BE hạ cờ khi xong) */}
                               {c.historyBackfillPending && (
@@ -1210,12 +1212,15 @@ export default function ChannelsPage() {
                                 const endText = end?.toLocaleDateString("vi-VN");
                                 if (!active) {
                                   if (!platformAuthExpired(c)) return null;
+                                  const lost = platformAuthLostReason(c);
                                   return (
                                     <p className={cn(TEXT_SUB, "flex items-center gap-x-1.5 text-red-600")}>
                                       <CalendarClock className="size-3 shrink-0" />
-                                      {endText
-                                        ? `${platform} báo hết hạn ủy quyền ${endText}, bấm Kết nối lại`
-                                        : `${platform} báo hết hạn ủy quyền, bấm Kết nối lại`}
+                                      {lost && !/shop_access_expired/i.test(lost)
+                                        ? platformAuthLostText(platform, lost)
+                                        : endText
+                                          ? `${platform} báo hết hạn ủy quyền ${endText}, bấm Kết nối lại`
+                                          : `${platform} báo hết hạn ủy quyền, bấm Kết nối lại`}
                                     </p>
                                   );
                                 }

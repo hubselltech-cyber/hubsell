@@ -425,6 +425,12 @@ model Channel {
   /// Lần cuối hỏi sàn ngày hết hạn ủy quyền — mỗi gian hỏi lại mỗi ngày một lần
   /// (integrations/shopee/auth-expiry.ts). Nối lại gian thì đặt về NULL.
   authExpireCheckedAt  DateTime?
+  /// MẤT ỦY QUYỀN PHÍA SÀN, luật chung (27/10/2026, integrations/auth-loss.ts): số lần sàn
+  /// từ chối làm mới token với cùng refresh_token + mốc lần đầu; đủ 3 lần trải 30′ (hoặc mã
+  /// chắc chắn) → DISCONNECTED. authLostReason = mã sàn trả, giữ tới khi ủy quyền lại (thẻ gian đọc).
+  authRejectCount      Int       @default(0)
+  authRejectSince      DateTime?
+  authLostReason       String?
   /// shop_cipher của TikTok Shop — BẮT BUỘC gửi kèm mọi request API 202309 trở đi
   shopCipher           String?
   status               String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
@@ -3714,6 +3720,10 @@ model ChannelAppAuth {
   /// Ngày hết hạn ủy quyền của shop với app này (xem Channel.authExpireAt) + lần hỏi cuối.
   authExpireAt         DateTime?
   authExpireCheckedAt  DateTime?
+  /// Luật mất ủy quyền chung (xem Channel.authRejectCount).
+  authRejectCount      Int            @default(0)
+  authRejectSince      DateTime?
+  authLostReason       String?
   /// ACTIVE | DISCONNECTED (refresh_token chết / sàn thu hồi → cần ủy quyền lại)
   status               String         @default("ACTIVE")
   disconnectedAt       DateTime?

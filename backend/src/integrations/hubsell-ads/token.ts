@@ -17,6 +17,7 @@
 import { ChannelAppKind, type Channel, type ChannelAppAuth } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { withDbLock } from "../../lib/db-lock";
+import { AUTH_REJECT_RESET, recordRefreshFailure } from "../auth-loss";
 import { getShopeeConfig, type ShopeeConfig } from "../shopee/config";
 import { refreshAccessToken } from "../shopee/client";
 import { getValidShopeeAccessToken } from "../shopee/service";
@@ -125,6 +126,8 @@ export async function getValidHubsellAdsAccessToken(
  */
 async function refreshLocked(authId: string, minTtlMs: number): Promise<AccessCtx> {
   let disconnect: ChannelAppAuth | null = null;
+  // Shopee từ chối bằng mã KHÔNG nằm trong danh sách chắc chắn → đếm theo luật chung ngoài giao dịch.
+  let rejected: { auth: ChannelAppAuth; err: unknown } | null = null;
   try {
     return await withDbLock(`hubsell-ads-token:${authId}`, async (tx) => {
       const auth = await tx.channelAppAuth.findUnique({ where: { id: authId } });
@@ -154,6 +157,9 @@ async function refreshLocked(authId: string, minTtlMs: number): Promise<AccessCt
           disconnect = auth;
           throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
         }
+        // Mã lạ: luật mất ủy quyền chung (integrations/auth-loss.ts) đếm 3 lần trải 30′ rồi hạ —
+        // không còn phụ thuộc danh sách mã (bài học HPGear VN 27/10).
+        rejected = { auth, err };
         throw err;
       }
       if (!t.access_token || !t.refresh_token) {
@@ -166,12 +172,22 @@ async function refreshLocked(authId: string, minTtlMs: number): Promise<AccessCt
           refreshToken: t.refresh_token,
           accessTokenExpireAt: new Date(now + Number(t.expire_in ?? 0) * 1000),
           refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
+          ...AUTH_REJECT_RESET, // sàn đã chấp nhận token → xóa dấu từ chối
         },
       });
       return { accessToken: t.access_token, shopId: auth.externalShopId };
     });
   } finally {
     if (disconnect) await markDisconnected(disconnect);
+    // Gán trong hàm con của withDbLock → TS thu hẹp nhầm về null; ép kiểu tường minh.
+    const rej = rejected as { auth: ChannelAppAuth; err: unknown } | null;
+    if (rej) {
+      const { auth, err } = rej;
+      await recordRefreshFailure(
+        { kind: "appAuth", id: auth.id, refreshToken: auth.refreshToken, label: `Hubsell Ads gian ${auth.channelId} (shop ${auth.externalShopId})` },
+        err
+      );
+    }
   }
 }
 

@@ -2844,6 +2844,11 @@ export interface Channel {
   authExpireAt?: string | null;
   /** Lỗi của lần đồng bộ đơn gần nhất (null = lần gần nhất thành công). */
   lastSyncError?: string | null;
+  /**
+   * Mã sàn trả khi TỪ CHỐI làm mới quyền (luật mất ủy quyền chung 27/10/2026, vd
+   * "shop_no_linked" = chủ shop gỡ app). Giữ tới khi ủy quyền lại; null = chưa từng bị từ chối.
+   */
+  authLostReason?: string | null;
   /** Thời điểm gian chuyển sang ngắt kết nối (ISO); null khi đang nối. */
   disconnectedAt?: string | null;
   /**

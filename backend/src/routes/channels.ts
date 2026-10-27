@@ -208,6 +208,9 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
         data: {
           status: "ACTIVE",
           disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+          authRejectCount: 0,
+          authRejectSince: null,
+          authLostReason: null,
           apiToken,
           feeRate: PLATFORM_FEE_RATE[name],
         },
@@ -371,6 +374,10 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
         externalShopName: shop.name,
         status: "ACTIVE",
         disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+        // Ủy quyền lại → xóa dấu sàn từ chối + lý do mất quyền (luật mất ủy quyền chung).
+        authRejectCount: 0,
+        authRejectSince: null,
+        authLostReason: null,
       };
 
       if (existing) {

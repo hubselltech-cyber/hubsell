@@ -14,6 +14,7 @@ import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { correctedDeliveredAt, deliveredAtFromPlatform } from "../../lib/delivered-at";
 import { withDbLock } from "../../lib/db-lock";
+import { AUTH_REJECT_RESET, isShopeeAccessExpiredError, recordRefreshFailure } from "../auth-loss";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
 import { backfillOrderItemImagesTx } from "../order-item-images";
@@ -173,7 +174,10 @@ export async function getValidShopeeAccessToken(
     .catch(async (err) => {
       // Ghi dấu hạ NGOÀI giao dịch của khóa: ném trong giao dịch là rollback mất dấu
       // (cùng lý do với markDisconnected ở hubsell-ads/token.ts).
-      if (isShopeeAccessExpiredError(err)) await markShopeeAccessExpired(channel);
+      await recordRefreshFailure(
+        { kind: "channel", id: channel.id, refreshToken: channel.refreshToken, label: `Shopee "${channel.shopName}" (shop ${channel.externalShopId})` },
+        err
+      );
       throw err;
     })
     .finally(() => {
@@ -184,41 +188,12 @@ export async function getValidShopeeAccessToken(
 }
 
 /**
- * Shopee TỪ CHỐI làm mới token vì shop không còn ủy quyền app:
- * - `shop_access_expired — Your access to shop has expired` (hết thời hạn ủy quyền);
- * - `shop_no_linked — Partner and shop has no linked` (chủ shop gỡ app / Shopee cắt liên kết;
- *   HPGear VN prod 26–27/10/2026: 156 lượt thử lại trong 25 giờ, gian vẫn ACTIVE, HQ đỏ oan).
- * Làm mới lại bao nhiêu lần cũng vô ích, chỉ chủ shop ủy quyền lại mới hết. CHỈ nhận hai mã này — không gộp
- * `invalid_refresh_token`, mã đó còn có thể do hai luồng đua nhau làm mới (xem
- * refreshInFlight), hạ nhầm là ngắt một gian đang tốt.
- * Căn cứ: gian 1758390206 trên prod 03/10/2026 — Shopee trả mã này từ 14:09, gian vẫn
- * ACTIVE, 53 lượt thử lại trong 8 giờ, chủ shop không có nút Kết nối lại.
+ * Sàn từ chối làm mới token (shop_access_expired 03/10/2026, shop_no_linked 26/10/2026, mã
+ * khác…): luật chung ở integrations/auth-loss.ts — mã chắc chắn hạ ngay, mã khác đếm 3 lần
+ * trải 30′ với cùng refresh_token rồi hạ; ghi có điều kiện nên chủ shop vừa ủy quyền lại
+ * (token mới) không bị hạ oan. Tên cũ giữ cho nơi đang import.
  */
-export function isShopeeAccessExpiredError(err: unknown): boolean {
-  return /\b(shop_access_expired|shop_no_linked)\b/i.test((err as Error)?.message ?? "");
-}
-
-/**
- * Hạ gian xuống DISCONNECTED để dải "gian mất kết nối" + nút Kết nối lại hiện ra và
- * các worker thôi gọi Shopee cho gian này. Không xoá token (như cron token-refresh).
- * Ghi có điều kiện: chỉ khi gian còn ACTIVE và vẫn cầm đúng refresh_token vừa bị từ
- * chối — chủ shop vừa ủy quyền lại (token mới) thì không bị hạ oan.
- */
-async function markShopeeAccessExpired(channel: Channel): Promise<void> {
-  try {
-    const updated = await prisma.channel.updateMany({
-      where: { id: channel.id, status: "ACTIVE", refreshToken: channel.refreshToken },
-      data: { status: "DISCONNECTED", disconnectedAt: new Date() },
-    });
-    if (updated.count > 0) {
-      console.warn(
-        `[Shopee] Gian "${channel.shopName}" (shop ${channel.externalShopId}): Shopee báo shop không còn ủy quyền app (shop_access_expired / shop_no_linked) → DISCONNECTED, cần kết nối lại`
-      );
-    }
-  } catch (e) {
-    console.error(`[Shopee] Không ghi được trạng thái mất kết nối cho gian ${channel.id}:`, (e as Error).message);
-  }
-}
+export { isShopeeAccessExpiredError };
 
 /**
  * Thân refresh chạy TRONG khóa. Đọc lại channel từ DB trước khi gọi Shopee
@@ -260,6 +235,7 @@ async function refreshShopeeTokenLocked(
         // Number(): expire_in là GIÂY, phòng API trả chuỗi — cộng thẳng chuỗi vào
         // timestamp sẽ ra Invalid Date và Prisma từ chối ghi cột DateTime.
         accessTokenExpireAt: new Date(now + Number(t.expire_in ?? 0) * 1000),
+        ...AUTH_REJECT_RESET, // sàn đã chấp nhận token → xóa dấu từ chối (luật mất ủy quyền chung)
         refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
       },
     });
@@ -346,6 +322,7 @@ export async function handleShopeeCallback(
     authExpireCheckedAt,
     status: "ACTIVE",
     disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+    ...AUTH_REJECT_RESET, // ủy quyền lại → xóa dấu sàn từ chối + lý do mất quyền
   };
 
   // Tên gian mặc định = tên phía Shopee, tránh trùng tên gian đã có trong cùng

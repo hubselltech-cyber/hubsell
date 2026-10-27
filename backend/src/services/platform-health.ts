@@ -137,6 +137,8 @@ export interface WorkerLayer {
   breakersDetail: Array<{ app: string; reason: string | null; pausedUntil: string; level: number; tripCount: number }>;
   breakerTrips24h: number;
   syncStalled: number; // syncFailCount >= 3
+  /** Tên (≤ 3) gian ACTIVE lỗi ≥ 3 lượt kèm lỗi rút gọn — để HQ hành động ngay, không phải tra SQL. */
+  syncStalledNames?: string[];
   adsAuthDisconnected: number;
   /** Hàng đợi bền pg-boss (giai đoạn 2). null = chưa khởi động / không đọc được. */
   durableQueues: QueueStat[] | null;
@@ -339,7 +341,12 @@ export async function collectWorker(): Promise<WorkerLayer> {
         ? safe("deliveryTrackingTask.count", prisma.deliveryTrackingTask.count({ where: { nextRunAt: { lt: t60 } } }), 0)
         : Promise.resolve(0),
       safe("apiThrottleState.findMany", prisma.apiThrottleState.findMany(), []),
-      safe("channel.count", prisma.channel.count({ where: { status: "ACTIVE", syncFailCount: { gte: 3 } } }), 0),
+      safe("channel.findMany", prisma.channel.findMany({
+        where: { status: "ACTIVE", syncFailCount: { gte: 3 } },
+        select: { shopName: true, channelName: true, syncFailCount: true, lastSyncError: true },
+        orderBy: { syncFailCount: "desc" },
+        take: 50,
+      }), [] as { shopName: string; channelName: ChannelName; syncFailCount: number; lastSyncError: string | null }[]),
       safe("channelAppAuth.count", prisma.channelAppAuth.count({ where: { status: "DISCONNECTED" } }), 0),
       safe("tiktokWebhookLog.count", prisma.tiktokWebhookLog.count({ where: { status: WebhookJobStatus.PENDING } }), 0),
       safe("tiktokWebhookLog.findFirst", prisma.tiktokWebhookLog.findFirst({
@@ -387,7 +394,11 @@ export async function collectWorker(): Promise<WorkerLayer> {
         tripCount: b.tripCount,
       })),
     breakerTrips24h: breakers.filter((b) => b.updatedAt.getTime() > d24).reduce((s, b) => s + (b.level + 1), 0),
-    syncStalled,
+    syncStalled: syncStalled.length,
+    syncStalledNames: syncStalled.slice(0, 3).map((c) => {
+      const code = /lỗi: ([a-z_]+)/i.exec(c.lastSyncError ?? "")?.[1] ?? (c.lastSyncError ? c.lastSyncError.slice(0, 40) : "?");
+      return `${c.shopName} · ${c.channelName} · ${c.syncFailCount} lượt · ${code}`;
+    }),
     adsAuthDisconnected,
     durableQueues,
     durableQueueError: durableQueues ? null : queueStartError(),
@@ -631,11 +642,11 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   push(
     "channel.token",
     "Gian rớt kết nối / sàn trễ đồng bộ",
-    `${m.growth.channelsDisconnected24h} mới rớt 24h (tổng ${m.growth.channelsDisconnected}), ${w.syncStalled} lỗi ≥3 lượt, ${w.adsAuthDisconnected} Hubsell Ads rớt`,
+    `${m.growth.channelsDisconnected24h} mới rớt 24h (tổng ${m.growth.channelsDisconnected}), ${w.syncStalled} lỗi ≥3 lượt${w.syncStalledNames?.length ? ` (${w.syncStalledNames.join("; ")})` : ""}, ${w.adsAuthDisconnected} Hubsell Ads rớt`,
     // Rớt lâu ngày (khách chưa nối lại) không tính; rớt DỒN trong 24h hoặc gian đang
     // ACTIVE mà 3 nhịp không kéo được đơn mới là dấu hiệu.
     m.growth.channelsDisconnected24h >= T.disconnectedDelta24h || w.syncStalled > 0 ? "warn" : "ok",
-    "Rớt dồn = token/ủy quyền hỏng hàng loạt; lỗi ≥3 lượt = xem lastSyncError gian đó (KYC, quyền app…)"
+    "Rớt dồn = token/ủy quyền hỏng hàng loạt; lỗi ≥3 lượt = gian đang ACTIVE mà sàn từ chối (KYC, quyền app…) — sàn từ chối làm mới token thì luật mất ủy quyền tự hạ gian sau 3 lần/30′"
   );
   push(
     "infra.db",

@@ -45,6 +45,23 @@ function shopeeAuthExpired(c: Channel, now: number): boolean {
 }
 
 /**
+ * Gian đã ngắt vì SÀN TỪ CHỐI làm mới quyền (luật mất ủy quyền chung, 27/10/2026): mã sàn
+ * trả nằm ở authLostReason. Chủ shop gỡ app trên sàn (Shopee `shop_no_linked`) cũng rơi
+ * vào đây — không phải hết hạn, nhưng cũng chỉ ủy quyền lại mới hết.
+ */
+export function platformAuthLostReason(c: Channel): string | null {
+  if (c.status === "ACTIVE" || !c.authLostReason) return null;
+  return c.authLostReason;
+}
+
+/** Câu cho thẻ gian đã ngắt vì sàn từ chối quyền — theo mã, không lộ mã khi đã có lời. */
+export function platformAuthLostText(platform: string, reason: string): string {
+  if (/shop_no_linked/i.test(reason)) return `${platform} báo gian đã gỡ ủy quyền cho Hubsell, bấm Kết nối lại để nối lại`;
+  if (/shop_access_expired/i.test(reason)) return `${platform} báo hết hạn ủy quyền, bấm Kết nối lại`;
+  return `${platform} từ chối làm mới quyền (${reason}), bấm Kết nối lại`;
+}
+
+/**
  * Gian TikTok đã ngắt vì hết hạn ủy quyền: ngày hết hạn TikTok báo đến TRƯỚC lúc gian bị
  * ngắt. Chủ shop tự bấm ngắt khi quyền còn hạn thì không tính.
  */
@@ -57,5 +74,5 @@ function tiktokAuthExpired(c: Channel, now: number): boolean {
 
 /** Gian (Shopee / TikTok) đã ngắt VÌ HẾT HẠN ỦY QUYỀN phía sàn — không phải Hubsell lỗi, không phải chủ shop bấm ngắt. */
 export function platformAuthExpired(c: Channel, now: number = Date.now()): boolean {
-  return shopeeAuthExpired(c, now) || tiktokAuthExpired(c, now);
+  return shopeeAuthExpired(c, now) || tiktokAuthExpired(c, now) || Boolean(platformAuthLostReason(c));
 }

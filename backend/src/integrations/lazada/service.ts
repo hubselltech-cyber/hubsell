@@ -17,6 +17,7 @@ import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { correctedDeliveredAt, deliveredAtFromPlatform } from "../../lib/delivered-at";
 import { withDbLock } from "../../lib/db-lock";
+import { AUTH_REJECT_RESET, recordRefreshFailure } from "../auth-loss";
 import { backfillOrderItemImagesTx } from "../order-item-images";
 import {
   decimalDiffers,
@@ -148,9 +149,19 @@ export async function getValidLazadaAccessToken(channel: Channel): Promise<strin
   // advisory DB chặn tiến trình khác đua rotate refresh_token cùng gian.
   const inFlight = refreshInFlight.get(channel.id);
   if (inFlight) return inFlight;
-  const job = refreshLazadaTokenLocked(channel.id).finally(() => {
-    refreshInFlight.delete(channel.id);
-  });
+  const job = refreshLazadaTokenLocked(channel.id)
+    .catch(async (err) => {
+      // Ghi dấu NGOÀI giao dịch của khóa (ném trong giao dịch là rollback mất dấu).
+      // Lazada từ chối làm mới → luật mất ủy quyền chung (integrations/auth-loss.ts).
+      await recordRefreshFailure(
+        { kind: "channel", id: channel.id, refreshToken: channel.refreshToken, label: `Lazada "${channel.shopName}" (seller ${channel.externalShopId})` },
+        err
+      );
+      throw err;
+    })
+    .finally(() => {
+      refreshInFlight.delete(channel.id);
+    });
   refreshInFlight.set(channel.id, job);
   return job;
 }
@@ -181,7 +192,7 @@ async function refreshLazadaTokenLocked(channelId: string): Promise<string> {
     }
     await tx.channel.update({
       where: { id: channel.id },
-      data: tokenFields(t, now),
+      data: { ...tokenFields(t, now), ...AUTH_REJECT_RESET }, // sàn đã chấp nhận token → xóa dấu từ chối
     });
     return t.access_token;
   });
@@ -260,6 +271,7 @@ export async function handleLazadaCallback(
     externalShopName,
     status: "ACTIVE",
     disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+    ...AUTH_REJECT_RESET, // ủy quyền lại → xóa dấu sàn từ chối + lý do mất quyền
   };
 
   // ---- Luồng KẾT NỐI LẠI gian cụ thể: verify seller_id khớp gian đích ----
