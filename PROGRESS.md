@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 27/10/2026 (chiều) — HỆ MARKETING-SALE: NHÂN VẬT ZALO HỌC TỪ HỘI THOẠI NGƯỜI THẬT TRƯỚC KHI CHẠY (anh chốt, chưa code)
+
+- Anh hỏi ý tưởng: trước khi nhân vật trả lời Zalo chạy chính thức, cho nó học từ hội thoại người thật (văn phong, nắm ý, thuyết phục dùng thử, lúc gọi kỹ thuật, nhận nội dung hỗ trợ → gửi lại khách). Em đồng ý, chỉnh 4 điểm; anh chốt thêm vào kế hoạch tuần 1.
+- Tệp `hubsell-marketing/chien-luoc/PHAN-BIEN-HE-MULTI-AGENT-MARKETING-SALE-2026-10-25.md` **mục 5**: (5.1) "học" = 4 lớp tài liệu nạp prompt (văn phong / kịch bản theo ý định / lúc chuyển người / kiến thức kỹ thuật), không fine-tune, luật không bịa số đứng trên văn phong; (5.2) chạy bóng trên OA (AI nháp không gửi, ghi nháp – câu anh gửi – kết cục) → lát 0 → cổng mở lát 1 ≥ 80 % gửi nguyên/sửa nhẹ trên 30 hội thoại (tự chọn); mẫu khởi đầu 20–30 hội thoại Zalo cá nhân chốt được, em ẩn danh; (5.3) phiếu kỹ thuật là quy trình cứng — vướng: `SupportRequest` bắt buộc userId, khách OA có thể chưa có tài khoản → khảo sát ánh xạ với `ConsultLead`, tạo qua API HQ; (5.4) rào dữ liệu cá nhân (kiểm Luật 91/2025) + persona vẫn chưa chốt; (5.5) thêm giả thuyết 5–7 cho tuần 1. Mục 4.4 tuần 2–3 trỏ sang mục 5.
+- Tác vụ `hubsell-nhac-2910-he-marketing-sale-tuan-1` (08:30 29/10) đã sửa lời nhắc: 7 giả thuyết, khảo sát phiếu kỹ thuật, việc tay gửi 20–30 hội thoại mẫu, khung 4 lớp bản 0, hỏi persona đầu phiên. Memory `hubsell-he-marketing-sale-multi-agent`.
+
 ## Phiên 27/10/2026 (10:45–11:30) — ANH: "HPGear VN gặp vấn đề gì, gian khác có bị không, muốn loại bỏ HOÀN TOÀN về sau" → LUẬT MẤT ỦY QUYỀN CHUNG 3 SÀN + HUBSELL ADS
 
 - **HPGear VN:** chủ shop gỡ ủy quyền app Hubsell trên Shopee (hoặc Shopee cắt liên kết) từ 26/10 08:52 → mỗi lần làm mới token Shopee trả `shop_no_linked`; mã chỉ biết `shop_access_expired` nên gian ACTIVE 26 giờ, 158 lượt thử, khách không có nút Kết nối lại, HQ đỏ sai mục.

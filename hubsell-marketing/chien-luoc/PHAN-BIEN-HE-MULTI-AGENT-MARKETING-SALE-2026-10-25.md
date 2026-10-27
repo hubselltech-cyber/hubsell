@@ -172,7 +172,7 @@ Rủi ro thật của đảo chiều: khách TikTok quen inbox TikTok, bắt h�
 ### 4.4 Thứ tự làm (đề xuất)
 
 1. **Tuần 1:** nộp hồ sơ TikTok Accounts API (em soạn, anh nộp — bản nháp 12/10 đã có); tạo + xác thực Zalo OA; kiểm 4 giả thuyết: TikTok có DM API không, phí/hạn mức tin tư vấn OA 48 giờ, webhook OA, quyền Page Facebook. Chưa code (luật 12/10: không phơi tính năng chưa chạy; luật "giả thuyết + kiểm trước khi code").
-2. **Tuần 2–3:** Sales Agent trên Zalo OA, lát 0 nháp anh duyệt trong HQ; link OA lên bio + ghim bình luận.
+2. **Tuần 2–3:** Sales Agent trên Zalo OA, lát 0 nháp anh duyệt trong HQ; link OA lên bio + ghim bình luận. *(27/10: đổi thành chạy bóng → lát 0 → cổng mở lát 1, xem mục 5.)*
 3. **Khi TikTok duyệt scope:** nối bình luận video → phân loại → trả lời kéo về OA.
 4. **Sau:** phủ kênh từ 1 video (Page FB, YouTube), đề xuất chủ đề từ bình luận.
 
@@ -195,3 +195,55 @@ Hai điều phải giữ để không mất cái đang ăn khách:
 - **OA phải mang mặt anh**: tên kiểu "Hubsell · anh Trung", ảnh anh, lời chào nhắc "anh Trung đọc hết, phần kỹ thuật anh trả lời trực tiếp". Khách đến từ video anh nói, họ muốn thấy đúng người đó.
 
 Rào thật của OA so với Zalo cá nhân: ngoài 48 giờ sau tin cuối của khách, OA **không nhắn lại được** (trừ ZNS mẫu); Zalo cá nhân anh nhắn lúc nào cũng được. Vậy với khách im lặng quá 48 giờ mà đang dùng thử, đường nhắc là ZNS chăm sóc hoặc email (đã có worker nhắc hạn gói / nối gian), không phải tin tự do.
+
+---
+
+## 5. Nhân vật học từ hội thoại người thật trước khi chạy (anh chốt 27/10)
+
+Anh muốn trước khi nhân vật chính thức trả lời, nó học từ hội thoại thật giữa người với khách: văn phong, cách nắm ý, cách thuyết phục dùng thử, lúc nào gọi kỹ thuật, và cách nhận nội dung hỗ trợ rồi gửi lại khách. Em đồng ý, có 4 chỉnh dưới đây. Phần này **thay** câu "lát 0 rút còn 1 tuần hoặc 30 hội thoại" ở mục 4.2 bằng hai bước: chạy bóng → lát 0.
+
+### 5.1 "Học" = 4 lớp tài liệu nạp vào prompt, không tinh chỉnh mô hình
+
+| Lớp | Rút ra gì | Ai duyệt |
+|---|---|---|
+| 1. Văn phong | Xưng hô, độ dài tin, nhịp 2–3 tin ngắn, câu mở và câu chốt, không dùng chữ chuyên môn khi khách chưa dùng | Anh |
+| 2. Kịch bản theo ý định | Mỗi ý định (hỏi giá, hỏi "có sàn X không", ngại nối gian, so với công cụ khác…) có những câu anh từng dùng mà khách đã chịu; lúc trả lời máy lấy 3–5 hội thoại cũ giống nhất làm mẫu | Anh đánh dấu tốt/xấu |
+| 3. Lúc chuyển người | Điểm anh tự nhảy vào thay vì để nói tiếp → luật chuyển (bổ sung luật mục 4.2) | Anh |
+| 4. Kiến thức kỹ thuật | Câu trả lời kỹ thuật đã được kiểm (lỗi ủy quyền, cách nối từng sàn…), lớn dần từ phiếu kỹ thuật ở 5.3 | Người trả lời phiếu |
+
+Luật "không bịa số" và bảng khả năng từng sàn (định vị 15/10 mục 4) đứng **trên** văn phong: mẫu nào hứa vội hoặc nói số ước chừng thì loại khỏi lớp 2, dù khách đã chịu.
+
+### 5.2 Học bằng chạy bóng trên OA, không lấy lịch sử cũ làm nguồn chính
+
+Lịch sử Zalo cá nhân không có API lấy ra, chỉ copy tay được, và thiếu kết cục (khách có nối gian / trả tiền không). Nên:
+
+- **Mẫu khởi đầu:** anh chọn **20–30 hội thoại Zalo cá nhân chốt được** (số tự chọn, đủ phủ các ý định chính), copy ra; em ẩn danh (bỏ SĐT, email, tên gian, số doanh thu) rồi dựng bản 0 của 4 lớp. Không lấy hết lịch sử.
+- **Bước A — chạy bóng (sau khi OA chạy):** anh vẫn trả lời thật trong OA. Mỗi tin khách, AI soạn một nháp song song nhưng **không gửi**. Máy ghi ba thứ: nháp AI, câu anh thực gửi, kết cục hội thoại (nối gian / trả tiền / im / từ chối). Thời lượng: ~1 tuần hoặc 30 hội thoại, cái nào tới trước (tự chọn).
+- **Bước B — lát 0:** AI soạn, anh bấm Gửi / Sửa / Bỏ trong HQ, như mục 2.
+- **Cổng mở lát 1 (tự gửi ý định an toàn):** tỷ lệ nháp anh gửi nguyên văn hoặc sửa nhẹ ≥ 80 % trên 30 hội thoại gần nhất. **Ngưỡng tự chọn**, chỉnh lại theo số thật sau bước A.
+- Mỗi lần anh sửa nháp, chỗ sửa quay về lớp 1–3 (bản prompt kế viết từ sửa thật).
+
+### 5.3 Phiếu kỹ thuật: quy trình cứng, không để máy tự học
+
+1. AI thấy câu hỏi dính luật chuyển (lớp 3) → báo khách "em chuyển bộ phận kỹ thuật, có trả lời em nhắn ngay trong cuộc này".
+2. AI tạo phiếu ghi sẵn tóm tắt, gian nào, lỗi gì, ảnh khách gửi, link hội thoại OA.
+3. Người kỹ thuật trả lời **ngay trong hội thoại OA** (nhiều quản trị viên, mục 4.5). Nếu trả lời qua phiếu thì AI chỉ viết lại cho dễ hiểu và **người kỹ thuật duyệt trước khi gửi** — AI tự chuyển lời kỹ thuật dễ sai nghĩa.
+4. Câu trả lời đã gửi → vào lớp 4.
+
+**Dùng lại module Yêu cầu hỗ trợ (LIVE 27/09), nhưng có một chỗ vướng:** bảng `SupportRequest` bắt buộc `userId` (khách đã đăng nhập). Khách vào từ OA có thể **chưa có tài khoản**, hoặc có mà chưa khớp được. Cần chọn: khớp theo SĐT/email → `SupportRequest`; không khớp → `ConsultLead` (khách chưa có tài khoản) hay thêm nguồn "OA". Hệ Sales lại ở Supabase project riêng, đọc qua API HQ (mục 2) → phiếu phải tạo qua API HQ, không ghi thẳng DB prod. Tuần 1 chỉ khảo sát và ghi phương án, chưa sửa mã.
+
+### 5.4 Rào
+
+- **Dữ liệu cá nhân:** ẩn danh trước khi vào kho mẫu; lời chào OA báo khách hội thoại được dùng để cải thiện hỗ trợ. ⏳ Kiểm Luật 91/2025/QH15: dùng hội thoại làm mẫu cho AI cần **thông báo** hay **đồng ý** riêng. API thương mại Anthropic mặc định không dùng dữ liệu để huấn luyện, nhưng phần ẩn danh là việc của mình.
+- **Persona:** càng học giống giọng anh, khách càng tưởng đang nói với anh. Em giữ đề xuất: học **cách nói** của anh, vẫn ký "Trợ lý Hubsell", có nút gọi anh Trung. Anh **chưa chốt** điểm này → hỏi đầu phiên 29/10.
+
+### 5.5 Thêm vào tuần 1 (29/10, vẫn không code)
+
+- Giả thuyết 5: webhook OA có trả **cả tin quản trị viên gửi từ app OA Admin** không (bắt buộc để chạy bóng ghi được câu anh thực gửi). Không có → chạy bóng phải ghi bằng cách khác (anh trả lời trong HQ thay vì app OA).
+- Giả thuyết 6: OA có cách **gọi/tag một quản trị viên** trong hội thoại không. Không có → báo người kỹ thuật qua thông báo HQ hoặc nhóm Zalo nội bộ.
+- Giả thuyết 7: Luật 91/2025 về dùng hội thoại làm mẫu (5.4).
+- Khảo sát ánh xạ phiếu kỹ thuật ↔ `SupportRequest` / `ConsultLead` (5.3), ghi phương án.
+- Việc tay cho anh: chọn 20–30 hội thoại Zalo cá nhân chốt được, gửi em (em ẩn danh).
+- Soạn khung 4 lớp bản 0 (khung mục, chưa nội dung tới khi có mẫu).
+
+Tuần 2–3 trong mục 4.4 đổi thành: bước A chạy bóng → bước B lát 0 → cổng 5.2 mới mở lát 1.
