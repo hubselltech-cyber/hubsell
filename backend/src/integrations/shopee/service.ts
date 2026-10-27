@@ -184,16 +184,18 @@ export async function getValidShopeeAccessToken(
 }
 
 /**
- * Shopee TỪ CHỐI làm mới token vì quyền của shop với app đã hết hạn
- * (`shop_access_expired — Your access to shop has expired`): làm mới lại bao nhiêu lần
- * cũng vô ích, chỉ chủ shop ủy quyền lại mới hết. CHỈ nhận đúng mã này — không gộp
+ * Shopee TỪ CHỐI làm mới token vì shop không còn ủy quyền app:
+ * - `shop_access_expired — Your access to shop has expired` (hết thời hạn ủy quyền);
+ * - `shop_no_linked — Partner and shop has no linked` (chủ shop gỡ app / Shopee cắt liên kết;
+ *   HPGear VN prod 26–27/10/2026: 156 lượt thử lại trong 25 giờ, gian vẫn ACTIVE, HQ đỏ oan).
+ * Làm mới lại bao nhiêu lần cũng vô ích, chỉ chủ shop ủy quyền lại mới hết. CHỈ nhận hai mã này — không gộp
  * `invalid_refresh_token`, mã đó còn có thể do hai luồng đua nhau làm mới (xem
  * refreshInFlight), hạ nhầm là ngắt một gian đang tốt.
  * Căn cứ: gian 1758390206 trên prod 03/10/2026 — Shopee trả mã này từ 14:09, gian vẫn
  * ACTIVE, 53 lượt thử lại trong 8 giờ, chủ shop không có nút Kết nối lại.
  */
 export function isShopeeAccessExpiredError(err: unknown): boolean {
-  return /\bshop_access_expired\b/i.test((err as Error)?.message ?? "");
+  return /\b(shop_access_expired|shop_no_linked)\b/i.test((err as Error)?.message ?? "");
 }
 
 /**
@@ -210,7 +212,7 @@ async function markShopeeAccessExpired(channel: Channel): Promise<void> {
     });
     if (updated.count > 0) {
       console.warn(
-        `[Shopee] Gian "${channel.shopName}" (shop ${channel.externalShopId}): Shopee báo quyền của shop với app đã hết hạn (shop_access_expired) → DISCONNECTED, cần kết nối lại`
+        `[Shopee] Gian "${channel.shopName}" (shop ${channel.externalShopId}): Shopee báo shop không còn ủy quyền app (shop_access_expired / shop_no_linked) → DISCONNECTED, cần kết nối lại`
       );
     }
   } catch (e) {

@@ -59,8 +59,10 @@ afterAll(async () => {
 });
 
 describe("Nhận diện lỗi", () => {
-  it("chỉ nhận đúng mã shop_access_expired", () => {
+  it("chỉ nhận đúng mã shop_access_expired / shop_no_linked", () => {
     expect(isShopeeAccessExpiredError(new Error(EXPIRED_MSG))).toBe(true);
+    // HPGear VN prod 26/10/2026: chủ shop gỡ app → Shopee trả shop_no_linked, cùng luật hạ gian.
+    expect(isShopeeAccessExpiredError(new Error("Shopee refresh token lỗi: shop_no_linked — Partner and shop has no linked."))).toBe(true);
     expect(isShopeeAccessExpiredError(new Error("Shopee refresh token lỗi: invalid_refresh_token — Invalid refresh_token."))).toBe(false);
     expect(isShopeeAccessExpiredError(new Error("Shopee get_order_list lỗi: error_kyc_auth — No permission."))).toBe(false);
     expect(isShopeeAccessExpiredError(new Error("fetch failed"))).toBe(false);

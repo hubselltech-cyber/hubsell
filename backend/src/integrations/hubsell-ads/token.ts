@@ -149,7 +149,8 @@ async function refreshLocked(authId: string, minTtlMs: number): Promise<AccessCt
         // shop_access_expired (03/10/2026): Shopee báo quyền của shop với app đã hết hạn —
         // gian "Farm Nuts" trên prod lặp lỗi này mỗi lượt mà không bị hạ, chủ shop không
         // được nhắc kết nối lại. Cùng luật với app chính (shopee/service.ts).
-        if (/invalid_refresh_token|error_auth|invalid_token|shop_access_expired/i.test((err as Error).message)) {
+        // shop_no_linked (27/10/2026): chủ shop gỡ app / Shopee cắt liên kết — HPGear VN app chính.
+        if (/invalid_refresh_token|error_auth|invalid_token|shop_access_expired|shop_no_linked/i.test((err as Error).message)) {
           disconnect = auth;
           throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
         }

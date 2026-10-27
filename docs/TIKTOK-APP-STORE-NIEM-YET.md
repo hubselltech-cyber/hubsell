@@ -112,6 +112,12 @@ Xem tại Trợ giúp → Xem các phiếu của tôi → tab **Hỗ trợ kỹ 
 (`partner.tiktokshop.com/ticket/center?issues=technical`). Lịch kiểm tự động 27/10 08:45; ticket
 cũ 2026100303120200001 (giục app review) đang "Reply received" từ 17/10, chưa đóng.
 
+- **Kiểm 27/10 08:45 (lịch tự động):** ticket vẫn **Unassigned**, cập nhật cuối 23/10 11:09, chỉ
+  có tin của mình — TikTok CHƯA trả lời (2 ngày làm việc). Lịch kiểm kế dự kiến **30/10 08:45** — ⚠️ lượt tự động 27/10 KHÔNG tạo được lịch (cần anh duyệt), anh tạo lại hoặc nhờ em trong phiên có anh. Nếu
+  quá 10 ngày làm việc (~06/11) chưa ai nhận → hỏi lại qua chatbot Trợ lý đối tác nhắc ticket ID.
+- Ticket cũ 2026100303120200001: TikTok trả lời 15/10 20:45 "app review VN đã duyệt 12/10, không
+  cần nộp thêm gì" → không còn việc; **anh bấm "Đánh dấu là đã giải quyết"** để đóng.
+
 Anh chốt 23/10 chiều: *"gửi ticket trước; nếu dính trần 25 thì bỏ qua luôn (không nâng cấp)"*.
 Đường vào form (Chrome anh): chatbot Trợ lý đối tác → nút "Gửi phiếu" dưới câu trả lời →
 trang `partner.tiktokshop.com/ticket/create` "Nhận hỗ trợ kỹ thuật". Issue category đã chọn

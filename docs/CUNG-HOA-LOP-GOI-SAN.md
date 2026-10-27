@@ -436,7 +436,7 @@ Chưa kiểm chứng bằng `get_order_detail` xem `update_time` của đơn có
 
 **Kết luận:** 7 ngày trên 2 gian — ĐẠT cả 4 tiêu chí (chi_cu rỗng bền sau khi loại giới hạn sàn, p99 12' < 15', 0 đáy tràn, 429 không lan).
 **Đề xuất bật lát 2 trên ANO Official Store** (`cmshe0487007oiz3pg41t2vb0`, đi nhánh `get_order_detail` lô 50 — nhánh TikTok không kiểm được).
-**✅ Anh chốt 26/10 ~09:00: BẬT, theo lịch 20:00 ngày 28/10** — nhắc tự động `hubsell-bat-lat-2-ano-28-10-20h` chạy câu INSERT dưới qua Supabase SQL Editor (Chrome anh),
+**✅ Anh chốt 26/10 ~09:00: BẬT, theo lịch 20:00 ngày 28/10 → 26/10 tối anh DỜI sang 22:00 ngày 28/10** (nhường 20:00 cho lượt sửa phép tự kiểm hòa vốn quảng cáo; nhắc đo 24 giờ theo đó là 29/10 22:30) — nhắc tự động `hubsell-bat-lat-2-ano-28-10-20h` chạy câu INSERT dưới qua Supabase SQL Editor (Chrome anh),
 kiểm `sync_cursors` sau 2–5′ + dòng log `[read-lanes] … orders … ghi:` đầu tiên, rồi tự đặt 2 nhắc đo (29/10 20:30 đọc 24 giờ; 04/11 08:30 đo 7 ngày + SQL so lệch hai đường → tiêu chí sang Pha D).
 Chỉ bật MỘT gian ANO; không đụng 8686; Pha D vẫn chờ anh gọi.
 ```sql
@@ -516,6 +516,15 @@ Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc 
   cổng gọi sàn tách sẵn để đổi sau mà không đụng logic.
 - Trần theo app cho đơn/tài chính: chưa từng dính 429 tầng app → chỉ đo.
 - Viết lại webhook: hộp thư đến + pg-boss đang chạy tốt (HQ xanh).
+  - **⚠️ 26/10/2026 — giả định này SAI một nửa (sự cố Bella Look, HQ đỏ 1.755 việc evt.order):** hộp thư đến + pg-boss vẫn đúng, nhưng
+    *việc* webhook (`handleTiktokOrderJob` → `callApi`) vẫn đi qua **làn RAM theo gian × read** của `integrations/tiktok/rate-limit.ts`
+    — đúng cái "trần trong RAM từng tiến trình" mục 0 đã kết án, chưa thay bằng cổng N4/N5 (cổng mới chỉ có `order-read-adapters` +
+    Ads dùng). Quét hoàn/hủy đường cũ (`returns-sync`, `cancel-requests`, cũng `callApi`) dính 429 `returns/search` của gian lớn → hạ cả
+    làn read của gian xuống đáy 0,2/s → việc webhook gian đó ngủ 18 s/việc **ngay trong 4 slot pg-boss** → gian khác đói (trái N6/N7).
+    Kế hoạch ĐÃ có đủ nguyên lý (N4 bộ đếm chung, khóa app×endpoint; N5 lùi theo gian; N6 chia đều; N7 "429 tầng gian không làm gian
+    khác trễ") nhưng xếp luồng hoàn/webhook SAU Pha D đơn (5e "Sau đơn"). Sự cố chứng minh thứ tự đó để hở: hai mảnh đường cũ
+    (quét hoàn + việc webhook) chung một làn RAM. Việc kế do anh chốt — xem memory `hubsell-su-co-hang-doi-ben-bella-look-lan-nhip-2026-10-26`.
+    **27/10 10:20 tái phát lần 2** (980–1.011 việc chờ, Bella Look 9,6 s/việc sau lượt quét 10:03; tự rút ~50′). **Anh chốt 27/10: KHÔNG lát sửa riêng, giữ thứ tự đại tu đã chốt** — mảnh này làm ở 5e "Sau đơn" (sau Pha D); tới đó chấp nhận đơn TikTok ~8 gian trễ 15–45′ mỗi sáng ~10:00. Không nhắc lại.
 
 ## 8. Liên hệ tài liệu khác
 
