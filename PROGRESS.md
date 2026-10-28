@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 29/10/2026 (sáng sớm) — CHUẨN BỊ HỒ SƠ NỘP 1.4.1 (01/11)
+
+- **Anh hỏi:** cần chuẩn bị gì để 01/11 nộp luôn. **Soi:** ASC 1.4.0 READY_FOR_SALE (không bản chờ → tạo 1.4.1 được, không phải rút); Play production 1.3.1 vc7 completed (Android 1.4.0 chưa từng nộp → 1.4.1 gộp); không module native/quyền mới, scheme có sẵn; Data safety/Privacy không đổi.
+- **Đã soạn (anh "Soạn luôn"):** `docs/store/review-notes-1.4.1.txt` Notes người duyệt Apple (3996 ký tự ≤ 4.000): bỏ câu "nút sang website", thêm STORE CONNECTION (nối gian qua ASWebAuthenticationSession, cần tài khoản người bán thật nên reviewer không thử, 3 gian demo đã nối), HOW TO TEST thêm Thiết lập / Giá vốn / hộp nhắc; `docs/store/whats-new-1.4.1.txt` viết lại 5 ý (487 ký tự); LISTING.md khối ★ 29/10 (kèm việc tay Play Console "Hướng dẫn khác").
+- **Lịch:** task `hubsell-mobile-1-4-1-build-nop-01-11` sửa prompt — thêm kiểm kết quả rà 31/10, **CHỐT 1** (iOS lên TestFlight + APK preview → anh thử vòng nối lại gian Shopee thật, Giá vốn gian vài nghìn SKU, hộp nhắc, Tài chính âm → anh gật mới nộp), bước `review-notes 1.4.1` bắt buộc trước submit, kiểm `eas channel:list` production, nhắc Play Console. Task mới `hubsell-nhac-3110-ra-checklist-truoc-build-1-4-1` 08:30 31/10: 7 ca mục 9 + 3 ca mới trên giả lập web nối prod (anh đăng nhập), chỉ đọc.
+- Commit docs 17584a10 + commit này; chưa push (anh push cùng lượt sau).
+
+---
+
 ## Phiên 28/10/2026 (đêm) — MOBILE: NỐI GIAN HÀNG + GIÁ VỐN NGAY TRONG APP (bản dựng local, chưa commit, chờ anh xem)
 
 - **Anh:** "không thể liên kết shop trên app đang gây khó cho khách… 2 mục để icon trên trang chủ, em nghiên cứu + phản biện, dựng local anh xem trước." Phản biện + thiết kế + việc chờ chốt: [docs/MOBILE-NOI-GIAN-GIA-VON.md](docs/MOBILE-NOI-GIAN-GIA-VON.md).
