@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { useRouter, type Href } from "expo-router";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import Svg, {
   Defs,
@@ -22,10 +22,12 @@ import Svg, {
 import { hapticTap } from "@/lib/haptics";
 import { fetchAnalytics, fetchOverview } from "@/api/finance";
 import { fetchReturnsSummary } from "@/api/warehouse";
+import { fetchChannels } from "@/api/channels";
 import { ApiError, isPlanLockedError } from "@/api/client";
 import { PlanLockedCard } from "@/components/PlanLockedCard";
 import type {
   AnalyticsResponse,
+  ChannelListItem,
   ChannelName,
   OverviewAnalytics,
   ReturnsSummaryResponse,
@@ -38,6 +40,7 @@ import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
 import { DeltaPill } from "@/components/DeltaPill";
 import { Card } from "@/components/Card";
+import { MissingCostPrompt } from "@/components/MissingCostPrompt";
 import { Sparkline } from "@/components/Sparkline";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { RAISED_SHADOW, TABULAR } from "@/theme/tokens";
@@ -49,12 +52,9 @@ import { RAISED_SHADOW, TABULAR } from "@/theme/tokens";
  */
 const FIXED_CHANNELS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA"];
 
-/** Mục Kênh bán trên web — nơi duy nhất nối Shopee / Lazada / TikTok Shop. */
-const CHANNELS_URL = "https://app.hubsell.vn/channels";
-
-/* Thẻ "chưa có gian" KHÔNG còn nút mở web app (08/10 tối, Apple 3.1.1 lần 2):
-   người duyệt bấm sang web là thấy dải dùng thử + trang gói → bị coi là dẫn
-   tới cách thanh toán ngoài app. Chỉ còn chữ + nút Tải lại trong app. */
+/* 28/10/2026: nối gian làm NGAY TRONG APP (màn /channels) — thẻ "chưa có gian"
+   không còn mở app.hubsell.vn (08/10 Apple 3.1.1 từng soi link sang web; 1.3.1
+   thêm lại nút web vì chưa có màn nối). Nay app tự nối nên bỏ hẳn link web. */
 
 /**
  * TỔNG QUAN HÔM NAY — trang đầu tiên chủ shop nhìn thấy khi mở app.
@@ -120,9 +120,12 @@ function HeroBackdrop({ width, height }: { width: number; height: number }) {
 
 export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const { user } = useAuth();
+  const router = useRouter();
   const channelColors = useChannelColors();
   const { width } = useWindowDimensions();
   const [analytics, setAnalytics] = useState<OverviewAnalytics | null>(null);
+  // Gian hàng (trạng thái nối) cho ô "Gian hàng" — route nhẹ, không đếm đơn.
+  const [channels, setChannels] = useState<ChannelListItem[] | null>(null);
   // 4 thẻ Báo cáo dòng tiền hôm nay + hôm qua (để tính ▲/▼ doanh thu)
   const [money, setMoney] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [prevMoney, setPrevMoney] = useState<AnalyticsResponse["breakdown"] | null>(null);
@@ -153,7 +156,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
       const { from, to } = rangeFor("today");
       const yd = yesterdayRange();
       let lockedMsg: string | null = null;
-      const [ana, fin, prevFin, ret] = await Promise.all([
+      const [ana, fin, prevFin, ret, chs] = await Promise.all([
         // Số ĐƠN hôm nay + kỳ trước (hôm qua) để tính ▲/▼ số đơn + trend 14
         // ngày cho sparkline + phễu + đơn theo sàn cho donut.
         fetchOverview(from, to),
@@ -167,9 +170,12 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         // Hôm qua chỉ để so ▲/▼ doanh thu — hỏng thì bỏ pill, không che màn.
         fetchAnalytics(yd.from, yd.to).catch(() => null),
         fetchReturnsSummary(),
+        // Hỏng thì giữ ô Gian hàng ở trạng thái "—", không che màn.
+        fetchChannels().catch(() => null),
       ]);
       if (seq !== reqSeq.current) return;
       setAnalytics(ana);
+      if (chs) setChannels(chs);
       setMoney(fin?.breakdown ?? null);
       setPrevMoney(prevFin?.breakdown ?? null);
       setReturns(ret.summary);
@@ -265,6 +271,20 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const channelTotalRevenue = channelRows.reduce((sum, r) => sum + r.revenue, 0);
   const pipeline = analytics?.pipeline;
   const [heroSize, setHeroSize] = useState({ w: 0, h: 0 });
+  // Ô Gian hàng: ưu tiên việc cần làm — rớt kết nối (đỏ) > đang kéo (vàng) > số đang nối.
+  const channelTile = (() => {
+    if (!channels) return { value: "—", tone: "muted" as const };
+    const live = channels.filter((c) => !c.hibernatedAt);
+    const down = live.filter((c) => c.status !== "ACTIVE" || c.needsReauth).length;
+    const pulling = live.filter((c) => c.status === "ACTIVE" && c.historyBackfillPending).length;
+    if (down > 0) return { value: `${groupVN(down)} mất kết nối`, tone: "bad" as const };
+    if (pulling > 0) return { value: `Đang kéo ${groupVN(pulling)} gian`, tone: "warn" as const };
+    return { value: `${groupVN(live.length)} đang nối`, tone: "muted" as const };
+  })();
+  const costTile =
+    missingCostOrders > 0
+      ? { value: `${groupVN(missingCostOrders)} đơn chưa có giá`, tone: "warn" as const }
+      : { value: "Đủ giá vốn", tone: "muted" as const };
   // Bề rộng sparkline = màn hình − padding trang (16×2) − padding hero (20×2)
   const sparkW = Math.min(width, 480) - 72;
 
@@ -294,19 +314,20 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             Chưa có gian hàng nào
           </Text>
           <Text className="mt-1.5 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Chủ shop kết nối Shopee, Lazada hoặc TikTok Shop ở mục Kênh bán trên
-            bản web Hubsell — đơn hàng và số liệu sẽ tự về app, không cần cài gì thêm.
+            Kết nối Shopee, TikTok Shop hoặc Lazada ngay tại đây — đơn hàng, đối soát và
+            danh mục sản phẩm sẽ tự về trong vài phút, không cần cài gì thêm.
           </Text>
-          {/* 1.3.1: thêm MỘT nút mở thẳng mục Kênh bán trên web (chủ shop mới tạo
-              tài khoản trong app / qua Google-Apple không phải tự mò). Nút tải
-              lại giữ nguyên. */}
+          {/* 28/10: nối gian ngay trong app (trước 1.3.1 mở app.hubsell.vn). */}
           <Pressable
             className="mt-4 flex-row items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 active:opacity-80"
-            onPress={() => void Linking.openURL(CHANNELS_URL)}
-            accessibilityRole="link"
+            onPress={() => {
+              hapticTap();
+              router.push("/channels" as Href);
+            }}
+            accessibilityRole="button"
           >
-            <Ionicons name="open-outline" size={16} color="#fff" />
-            <Text className="text-sm font-semibold text-white">Mở app.hubsell.vn</Text>
+            <Ionicons name="link-outline" size={16} color="#fff" />
+            <Text className="text-sm font-semibold text-white">Liên kết gian hàng ngay</Text>
           </Pressable>
           <Pressable className="mt-3" onPress={() => void load("first")} hitSlop={8}>
             <Text className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
@@ -578,8 +599,120 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
             </Card>
           </Animated.View>
+
+          {/* THIẾT LẬP — hai ô Gian hàng + Giá vốn (anh Trung 28/10, dời xuống CUỐI
+              trang theo ý anh: trang chủ là nơi XEM số, việc thiết lập đứng sau).
+              Ô mang TRẠNG THÁI (gian rớt đỏ / đang kéo vàng / thiếu giá vốn vàng /
+              ổn xám) chứ không phải lối tắt chết. Hàng ngang bọc View thường vì
+              Animated.View trên giả lập web không nhận className. */}
+          <Animated.View entering={FadeInDown.duration(280).delay(210)} className="mt-5">
+            <View className="mb-2 flex-row items-baseline justify-between px-1">
+              <Text className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Thiết lập
+              </Text>
+              <Text className="text-[11px] text-slate-400 dark:text-slate-500">
+                Gian hàng · Giá vốn
+              </Text>
+            </View>
+            <View className="flex-row gap-3">
+              <QuickTile
+                icon="storefront"
+                label="Gian hàng"
+                value={channelTile.value}
+                tone={channelTile.tone}
+                onPress={() => router.push("/channels" as Href)}
+              />
+              <QuickTile
+                icon="pricetag"
+                label="Giá vốn"
+                value={costTile.value}
+                tone={costTile.tone}
+                onPress={() => router.push("/cost-prices" as Href)}
+              />
+            </View>
+          </Animated.View>
+
+          {/* Hộp nhắc nhập giá vốn — chỉ khi hôm nay có đơn thiếu giá vốn, hỏi một
+              lần, Bỏ qua = không hiện lại (luật web 02/10, không nhắc lúc nối gian). */}
+          {user && !planLocked ? (
+            <MissingCostPrompt
+              userId={user.id}
+              orderCount={missingCostOrders}
+              onEnter={() => router.push("/cost-prices" as Href)}
+            />
+          ) : null}
         </>
       )}
     </ScrollView>
+  );
+}
+
+/**
+ * Ô THIẾT LẬP cuối Tổng quan: icon trong đĩa tròn tint, nhãn 14 px, dòng trạng
+ * thái dạng viên thuốc có chấm màu (đỏ = rớt, vàng = đang chờ / thiếu, xanh
+ * ngọc = ổn). Cả ô bấm được; mũi tên mờ ở góc chỉ để báo "đi tiếp".
+ */
+function QuickTile({
+  icon,
+  label,
+  value,
+  tone,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  value: string;
+  tone: "bad" | "warn" | "muted";
+  onPress: () => void;
+}) {
+  const look = {
+    bad: {
+      disc: "bg-red-50 dark:bg-red-500/15",
+      icon: "#dc2626",
+      pill: "bg-red-50 dark:bg-red-500/15",
+      text: "text-red-600 dark:text-red-300",
+      dot: "#ef4444",
+    },
+    warn: {
+      disc: "bg-amber-50 dark:bg-amber-500/15",
+      icon: "#d97706",
+      pill: "bg-amber-50 dark:bg-amber-500/15",
+      text: "text-amber-700 dark:text-amber-300",
+      dot: "#f59e0b",
+    },
+    muted: {
+      disc: "bg-emerald-50 dark:bg-emerald-500/15",
+      icon: "#059669",
+      pill: "bg-slate-100 dark:bg-slate-800",
+      text: "text-slate-600 dark:text-slate-300",
+      dot: "#10b981",
+    },
+  }[tone];
+  return (
+    <Card
+      className="flex-1 p-4"
+      onPress={() => {
+        hapticTap();
+        onPress();
+      }}
+    >
+      <View className="flex-row items-start justify-between">
+        <View className={`h-12 w-12 items-center justify-center rounded-full ${look.disc}`}>
+          <Ionicons name={icon} size={22} color={look.icon} />
+        </View>
+        <Ionicons name="arrow-forward" size={15} color="#cbd5e1" />
+      </View>
+      <Text className="mt-3 text-[15px] font-semibold text-slate-900 dark:text-slate-100" numberOfLines={1}>
+        {label}
+      </Text>
+      <View className="mt-1.5 flex-row">
+        <View className={`flex-row items-center gap-1.5 rounded-full py-1 pl-2 pr-2.5 ${look.pill}`} style={{ maxWidth: "100%" }}>
+          <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: look.dot }} />
+          <Text className={`text-[11px] font-medium ${look.text}`} numberOfLines={1} style={[TABULAR, { flexShrink: 1 }]}>
+            {value}
+          </Text>
+        </View>
+      </View>
+    </Card>
   );
 }

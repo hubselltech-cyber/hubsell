@@ -487,12 +487,107 @@ export interface OrderStatsResponse {
   byCarrier?: OrderStatsCarrierRow[];
 }
 
-/** GET /api/channels — chỉ lấy các trường màn lọc cần. */
+/**
+ * GET /api/channels — màn lọc chỉ cần 4 trường đầu; màn Gian hàng (28/10) đọc
+ * thêm cờ trạng thái. Mọi trường thêm đều tùy chọn: backend cũ thiếu vẫn chạy.
+ */
 export interface ChannelListItem {
   id: string;
   channelName: ChannelName;
   shopName: string;
+  /** ACTIVE | DISCONNECTED (chuỗi tự do phía backend). */
   status: string;
+  externalShopId?: string | null;
+  /** Đã nối API thật (OAuth) — gian giả lập/thủ công = false. */
+  apiConnected?: boolean;
+  /** Gian mới: worker đang kéo trọn 3 tháng đơn, xong backend hạ cờ. */
+  historyBackfillPending?: boolean;
+  /** Mã sàn trả khi gian mất ủy quyền (shop_no_linked, shop_access_expired…). */
+  authLostReason?: string | null;
+  /** Hạn ủy quyền phía sàn (Shopee) — ISO. */
+  authExpireAt?: string | null;
+  /** Hạn refresh token (TikTok: "Thời hạn cấp quyền"; Lazada: kỳ gói ISV). */
+  refreshTokenExpireAt?: string | null;
+  /** TikTok ủy quyền trước khi app có quyền sửa tồn → cần ủy quyền lại. */
+  needsReauth?: boolean;
+  lastSyncAt?: string | null;
+  lastSyncError?: string | null;
+  /** Gói hết hạn → gian ngủ đông, worker thôi kéo. */
+  hibernatedAt?: string | null;
+  createdAt?: string;
+}
+
+// ───────────────────────── Giá vốn theo SKU (màn Giá vốn, 28/10) ─────────────────────────
+
+/** Một dòng của GET /api/finance/sku-products — chép từ frontend/src/lib/api.ts SkuProduct. */
+export interface SkuProduct {
+  /** id dùng để cập nhật giá vốn (ChannelProduct id, hoặc Product id với hàng kho). */
+  skuId: string;
+  productId: string;
+  sku: string;
+  productName: string;
+  /** Tên phân loại trên sàn (đủ tầng, "Hồng, 3-5kg") — null khi sàn không tách. */
+  variantName: string | null;
+  channelName: ChannelName;
+  /** "" với hàng kho nội bộ. */
+  channelId: string;
+  shopName: string;
+  imageUrl: string | null;
+  sellingPrice: string;
+  /** Giá vốn HIỆU LỰC trên gian này (Decimal → chuỗi). */
+  costPrice: string;
+  costSource: "shop" | "default" | "none";
+  linked: boolean;
+  status: "ACTIVE" | "DELISTED";
+  /** Mã sản phẩm sàn (item_id / product_id). */
+  itemId: string | null;
+  modelId: string | null;
+  externalId?: string | null;
+}
+
+/** Gian vừa nối, danh mục chưa kéo xong lần đầu (worker đang kéo nền). */
+export interface CatalogPendingChannel {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+}
+
+export interface SkuProductsResponse {
+  channel: string;
+  total: number;
+  /** SKU ĐANG BÁN chưa có giá vốn. */
+  missingCostCount: number;
+  catalogPending?: CatalogPendingChannel[];
+  items: SkuProduct[];
+}
+
+/** Một SKU đã BÁN TRONG KỲ mà chưa có giá vốn (GET sku-products/missing-cost). */
+export interface MissingCostSku {
+  channelId: string;
+  externalId: string | null;
+  channelSku: string;
+  productName: string;
+  /** Số đơn trong kỳ chứa SKU này đang bị loại khỏi lợi nhuận. */
+  orders: number;
+  quantity: number;
+}
+
+export interface MissingCostSkuList {
+  items: MissingCostSku[];
+  skuCount: number;
+  orderCount: number;
+  /** Danh sách bị cắt ở trần 5.000 SKU. */
+  truncated: boolean;
+  ledgerPending: number;
+}
+
+export interface UpdateCostResult {
+  skuId: string;
+  productId: string;
+  productName: string;
+  costPrice: string;
+  /** Dòng hàng đã bán còn giá vốn = 0 vừa được lấp (đơn cũ có giá rồi không đụng). */
+  backfilledOrderLines: number;
 }
 
 // ───────────────────────── Trợ lý Hubsell (hỏi số liệu vận hành) ─────────────────────────
