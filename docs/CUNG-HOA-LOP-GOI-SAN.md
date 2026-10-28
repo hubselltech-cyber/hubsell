@@ -1,4 +1,4 @@
-# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b; Pha B "Nền" ĐÃ CODE 19/10, xem 5b; Pha C lát 1 "đọc bóng đơn" chạy thật 19/10, xem 5c; lát 2 "ghi Order" ĐÃ CODE 19/10 chưa bật, xem 5d)
+# Lớp đọc sàn ở quy mô lớn — thiết kế lại (bản 2, 18/10/2026 đêm — anh chốt; Pha A ĐÃ ĐO xong 7 giả thuyết, xem 3b; Pha B "Nền" ĐÃ CODE 19/10, xem 5b; Pha C lát 1 "đọc bóng đơn" chạy thật 19/10, xem 5c; lát 2 "ghi Order" ĐÃ CODE 19/10, xem 5d — ĐÃ BẬT gian ANO 28/10 21:42, xem 5c.3)
 
 > Bản 1 (18/10 tối) bị anh Trung bác đúng: nó vẫn là mô hình cũ ("quét cửa sổ thời gian,
 > có trần trang, chạm trần thì cắm cờ") được sửa cho đỡ hỏng. Bản 2 đổi mô hình.
@@ -447,8 +447,26 @@ FROM "Channel" WHERE id = 'cmshe0487007oiz3pg41t2vb0' AND status = 'ACTIVE' ON C
 -- Kiểm sau 2': SELECT stream, "lastStatus", "lastPages", "lastRunAt" FROM "sync_cursors" WHERE "channelId" = 'cmshe0487007oiz3pg41t2vb0';
 -- Tắt: DELETE FROM "sync_cursors" WHERE stream = 'orders' AND "channelId" = 'cmshe0487007oiz3pg41t2vb0';
 ```
-Theo dõi 7 ngày: log `[read-lanes] SHOPEE "ANO Official Store" orders: … ghi: tạo/sửa/không đổi/đụng` (kỳ vọng tạo ≈ 0), `api_rate_keys` thêm khóa
-`ep:/api/v2/order/get_order_detail`, SQL so lệch hai đường (5e lát 0 mục 2). Nhắc đo: lượt bật 28/10 tự tạo (29/10 20:30 + 04/11 08:30).
+Theo dõi 7 ngày: log `[read-lanes] SHOPEE "ANO Official Store" orders: … ghi: tạo/sửa/không đổi/đụng` (kỳ vọng tạo ≈ 0), SQL so lệch hai đường (5e lát 0 mục 2).
+~~`api_rate_keys` thêm khóa `ep:/api/v2/order/get_order_detail`~~ — SAI kỳ vọng (sửa 28/10): cổng chỉ ghi dòng `api_rate_keys` cho khóa có trần cấu hình
+(`gcraTake` bỏ qua `emissionMs 0`) hoặc khi bị phạt 429; `get_order_detail`/`get_order_list` không cấu hình trần → **không có dòng = chưa gặp 429**, đúng thiết kế.
+
+### 5c.3 ĐÃ BẬT lát 2 cho ANO — 28/10 21:42:31 VN (anh: "Làm lát 2 ANO em nhé, đẩy sớm lịch 22h")
+
+Làm tay trong phiên (lịch `hubsell-bat-lat-2-ano-28-10-20h` 23:00 đã TẮT để khỏi chạy trùng). Hai lượt đẩy cùng tối đã lên prod và kiểm xong trước
+(6d8ebc4a 20:30 phép hòa vốn TikTok; 4b8d7f1d 21:30 giảm quét đĩa — Render `/health` + /channels đã kiểm 21:50) → tách được nguyên nhân nếu có sự cố.
+
+| Bước | Kết quả đọc được (Supabase SQL Editor + Render Logs, Chrome anh) |
+|---|---|
+| Kiểm trước (21:41) | `Channel` ANO `ACTIVE`; `orders-shadow` `caught_up`, 1 trang, lượt 14:32:09 UTC; **0 dòng** `sync_cursors` stream `orders` toàn hệ |
+| INSERT (14:42:31 UTC) | RETURNING 1 dòng: `cursorAt` 14:12:31 (−30′), `dueAt` 14:42:31, `windowMs` 3.600.000, lane `orders` |
+| Lượt đầu (14:42:34 UTC, 3 s sau) | `orders` **`caught_up`**, 1 trang, `cursorAt` → 14:40:34 (trễ 2′), `dueAt` 14:52:34; **không có dòng log** `[read-lanes] … orders` = `wrote 0` + không co/đáy tràn/đọc lại/thử lại (worker chỉ log khi có ghi hoặc bất thường, `read-lanes.ts:50`). Bóng cùng lúc thấy 2 mã trong 35′; `Order` ANO có 1 đơn tạo sau 21:12 → đường cũ/webhook đã ghi trước, đường mới không đổi gì — đúng kỳ vọng "tạo ≈ 0" |
+| Lượt 2 (14:52:36 UTC, đúng nhịp 10′) | `caught_up`, 1 trang, `cursorAt` → 14:50:36 (trễ 2′), `dueAt` 15:02:36; vẫn không dòng log (0 ghi) — bóng lượt 14:52:16 cùng kết quả |
+| Render Logs 1 giờ | `[read-lanes]` chỉ 2 dòng boot (2 lần deploy 20:30 + 21:30); 0 dòng `cursor-reader`, 0 `persist`, 0 `[gateway] 429` khóa đơn; log ANO còn lại là Ads-pulse/Token-refresh/đối soát TikTok bình thường |
+| `api_rate_keys` | 0 khóa `order` (xem ghi chú trên); khóa gian `SHOPEE:2044679\|shop:239068349` hits 3 (Ads 21/10, không đổi) |
+
+Nhắc đo **CHƯA TẠO ĐƯỢC** (bộ lọc Auto từ chối cả tạo lẫn sửa lịch, 4 lần) — cần anh duyệt ở phiên sau: **29/10 21:45** đọc 24 giờ đầu (sync_cursors caught_up, log `ghi:`, lỗi persist, 429 khóa gian ANO, so số đơn hai đường); **04/11 08:30** đo 7 ngày + SQL so lệch hai đường
+theo mã (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng) → tiêu chí sang Pha D (5d). Tắt khẩn: câu DELETE ở 5c.2.
 
 ## 5d. Pha C lát 2 — "ghi Order qua đường mới" (19/10/2026, anh: "code lát 2 … cờ riêng, chưa bật, trong lúc bóng chạy")
 
@@ -497,7 +515,7 @@ Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc 
 
 | Khi nào | Việc | Ghi chú |
 |---|---|---|
-| **28/10 20:00** (anh chốt 26/10) | **Bật lát 2** cho ANO Official Store (SQL 5c.2) | ghi song song 7 ngày; nhắc đo 29/10 20:30 + 04/11 08:30 |
+| ✅ **28/10 21:42** (anh chốt 26/10, đẩy sớm từ 22:00/23:00) | **ĐÃ BẬT lát 2** cho ANO Official Store (SQL 5c.2, kết quả 5c.3) | ghi song song 7 ngày; nhắc đo 29/10 21:45 + 04/11 08:30 CHƯA tạo được (chờ anh duyệt) |
 | Trước Pha D (làm được khi đã quyết bật lát 2) | **Pha D lát 0 — chuẩn bị, chưa bật gì:** (1) chuyển 3 việc phụ vào đường mới: hỏi lại ước tính escrow Shopee cho đơn đổi trạng thái (`changedOrderCodes` → `syncShopeePendingEscrowEstimates`), chuông giao thất bại Lazada (`noticeLazadaDeliveryFail`), thẻ HQ độ trễ đọc `sync_cursors` thay mốc nước cũ; (2) SQL so lệch hai đường theo mã đơn từng gian (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng); (3) công tắc tắt quét đơn đường cũ THEO GIAN (worker `order-auto-sync` bỏ qua tầng đơn của gian có cờ, webhook giữ nguyên), mặc định tắt | không đụng prod cho tới khi bật cờ |
 | 7 ngày song song không lệch | **Pha D**: bật công tắc từng gian → gỡ mã cũ, trần trang rải rác, cờ; docs hợp đồng đọc sàn thay DONG-BO-GIAI-DOAN-3 mục 1 | mỗi bước có số trước–sau |
 | Sau đơn | Luồng hoàn / tài chính (ví, escrow, sao kê) / Ads / sản phẩm qua máy đọc con trỏ | theo thứ tự mục 5 |

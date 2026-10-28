@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 28/10/2026 (21:41, anh gọi) — ĐÃ BẬT LÁT 2 "GHI ORDER QUA ĐƯỜNG MỚI" CHO ANO (đẩy sớm từ lịch 22:00/23:00)
+
+- **Anh:** "Làm lát 2 ANO em nhé, đẩy sớm lịch 22h" → làm tay ngay (hai lượt đẩy cùng tối 6d8ebc4a 20:30 + 4b8d7f1d 21:30 đều đã kiểm prod xong → tách được nguyên nhân). Lịch `hubsell-bat-lat-2-ano-28-10-20h` (23:00) **đã tắt** để khỏi chạy trùng.
+- **Kiểm trước (21:41, Supabase SQL Editor Chrome anh):** ANO `cmshe0487007oiz3pg41t2vb0` `ACTIVE`; `orders-shadow` caught_up lượt 21:32; 0 dòng `sync_cursors` stream `orders` toàn hệ.
+- **Bật 21:42:31** bằng INSERT docs 5c.2 (RETURNING cursorAt 21:12:31, dueAt 21:42:31). **Lượt đầu 21:42:34** (3 s sau): `orders` **caught_up**, 1 trang, cursorAt → 21:40:34 (trễ 2′), dueAt 21:52:34. Không có dòng log `[read-lanes] … orders` = không ghi gì + không bất thường (worker chỉ log khi có ghi/bất thường). Bóng cùng lúc thấy 2 mã/35′, Order ANO 1 đơn mới sau 21:12 → đường cũ đã ghi trước, đường mới không đổi = đúng kỳ vọng "tạo ≈ 0". Render Logs 1 giờ: 0 `cursor-reader`, 0 `[gateway] 429` khóa đơn. **Lượt 2 21:52:36** đúng nhịp 10′: caught_up, 1 trang, trễ 2′, 0 ghi.
+- **Sửa kỳ vọng docs:** `api_rate_keys` KHÔNG thêm khóa `get_order_detail` — cổng chỉ ghi dòng cho khóa có trần cấu hình (`gcraTake` bỏ `emissionMs 0`) hoặc khi 429; 9 ngày bóng cũng không có khóa `get_order_list` → không có dòng = chưa gặp 429, đúng thiết kế.
+- **Ghi:** docs CUNG-HOA-LOP-GOI-SAN 5c.3 (mới) + 5e + tiêu đề; memory `hubsell-cung-hoa-lop-goi-san`; **2 nhắc đo CHƯA tạo được** (bộ lọc Auto từ chối `create_scheduled_task` 2 lần và `update_scheduled_task` lịch cũ 2 lần) — cần anh duyệt: 29/10 21:45 đọc 24 giờ + 04/11 08:30 đo 7 ngày kèm SQL so lệch hai đường → tiêu chí Pha D (nội dung nhắc đã ghi ở docs 5c.3). Commit cục bộ, anh push. Pha D / lát 0 vẫn chờ anh gọi.
+
 ## Phiên 28/10/2026 (21:00, lịch tự động) — KHẢO SÁT GIẢM QUÉT ĐĨA SAU SỰ CỐ DISK IO (CHỈ ĐỌC, CHƯA SỬA — CHỜ ANH CHỐT)
 
 - **Phạm vi:** không sửa mã, không commit, SQL prod chỉ đọc qua Supabase SQL Editor (Chrome). Ô soạn có sẵn câu `ALTER TABLE "ChannelProduct" ADD COLUMN itemSku` cũ → đã thay bằng câu đọc, không chạy.
