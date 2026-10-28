@@ -17,6 +17,7 @@
   - Micro 1 GB RAM < dữ liệu nóng (Order 521 MB, webhook_events 352, ledger 10/2026 287, settlements 170, ChannelProduct 129, pgboss 158…) ⇒ các lượt quét cả bảng đọc thẳng đĩa ⇒ cạn burst ⇒ bị bóp về mức nền.
 - **08:20** tự đỡ một phần (backend 0,2 s, đăng nhập được, HQ vẫn "Đang tải").
 - **Xử lý:** em đề xuất nâng compute Micro → Small (9,68 → 14,83 USD/tháng, +5,15, khởi động lại vài phút); anh tự bấm nâng ~08:26. DB offline ~2,5′ (backend 500), **lên lại 08:28:33**: Supabase Healthy, compute SMALL, RAM 57%, 22/90 kết nối; IOwait rơi từ ~80% xuống ~10%; backend `/health` + câu đọc DB 0,15–0,25 s; trang HQ tải đủ số. `CURRENT_INFRA` sửa: compute Small 2GB, 90 kết nối, 44 USD/tháng (tsc sạch). Chưa đọc log Render (Chrome chưa đăng nhập Render).
+- **Anh chốt ~08:45:** khảo sát kỹ lại lúc 21:00 tối nay, đánh giá tác động rồi mới làm → lịch `hubsell-khao-sat-giam-quet-dia-28-10-21h` (chỉ đọc + trình, không sửa mã).
 - **Còn lại (chưa làm, chờ anh):** (a) rút `deletion_seconds` của `evt.order` (7 ngày → ~1 ngày) hoặc index `state='active'` cho bảng riêng — giảm quét pg-boss; (b) danh sách gian bỏ `_count` quét `ChannelProduct`; (c) soi vì sao settlements/Order bị UPDATE lặp. Memory `hubsell-su-co-disk-io-supabase-2026-10-28`.
 
 ## Phiên 27/10/2026 (chiều) — HỆ MARKETING-SALE: NHÂN VẬT ZALO HỌC TỪ HỘI THOẠI NGƯỜI THẬT TRƯỚC KHI CHẠY (anh chốt, chưa code)
