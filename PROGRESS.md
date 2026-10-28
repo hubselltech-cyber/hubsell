@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 28/10/2026 (tối, lịch 20:00) — SỬA TRIỆT ĐỂ TỰ KIỂM HÒA VỐN TIKTOK: BỎ PHÉP SO DOANH THU VỚI TIKTOK, LỖI CÂY ĐO TRỰC TIẾP TRÊN DÒNG ĐƠN (đã commit local, CHƯA PUSH — chờ anh)
+
+- **Giờ:** khảo sát 20:03–20:12, code + test 20:12–20:21, chưa push (anh vắng — lượt tự động không được push). Lịch bật lát 2 ANO 22:00 vẫn chạy bình thường, KHÔNG dính bản này.
+- **Khảo sát lại prod (Supabase SQL chỉ đọc, 87 gian TikTok ACTIVE):** gạt "cao hơn 25 %" hôm nay = **63 chiến dịch đang chạy / 31 gian** (26/10: 48/25 — lan rộng), tạm dừng 123/29, kết thúc 14/6; khớp đang chạy 117/38; thấp hơn đang chạy 13/2 gian. hieucon "Cũ led gạo 100 quả sửa 25/10" 253 tr vs 86 tr (+196 %). **Dòng không itemId 60 ngày:** chỉ **LUMI SOLAR** (100 %, 1,34 tỷ) — gian NGỦ ĐÔNG, 0 chiến dịch chạy (Lát 2 bỏ qua theo thiết kế) → bước 1 không làm gian ACTIVE nào tụt dưới 90 %.
+- **Nhóm "thấp hơn" = Bella Look (…amd3pt, 12 chiến dịch 1 SPU) + TORANO (…vpxfpk):** tỷ lệ Hubsell/TikTok đều đặn 0,65–0,80 ở MỌI chiến dịch, SPU có trong danh mục, đơn đủ, lineGross < actualRevenue → không phải id/mã, không phải thiếu đồng bộ ngẫu nhiên. Giả thuyết dẫn đầu: TikTok gross_revenue tính TRƯỚC giảm giá shop (hai gian thời trang giảm sâu; and.not.or giảm ít → 4–9 %). CHƯA chứng minh — chưa quyết.
+- **Sửa (bước 1, anh chốt 26/10):** BỎ hẳn phép so với doanh thu TikTok (không thay ngưỡng khác). Lỗi cây đo trực tiếp: `BreakevenBase.unlinkedRevenue` = doanh thu đã chốt của dòng CHƯA CÓ id lá (chỉ khớp mã thô) → không vào biên lãi, chỉ kéo `costCoveragePct` xuống qua cùng rào 90 % (BREAKEVEN_MIN_COVERAGE_PCT, anh duyệt 18/09). Gỡ breakevenCheckProblem/check/checkProblem/placedRevenue/tiktokCampaignCheckOf/CTE checks; API TikTok bỏ `check`/`problem`, thêm `unlinkedRevenue`; web bỏ "Chưa tin được" + dòng Đối chiếu, popover nói rõ phần chưa nối id là việc Hubsell. Shopee Lát 4 KHÔNG đụng. Chi tiết docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 12 (B6 + Lát 0 sửa theo).
+- **Kiểm:** tsc BE + FE sạch; vitest 28 tệp / 320 test xanh, trong đó `tiktok-breakeven-sql-db` 7/7 THẬT trên DB dev (hai đường rows/sql bằng nhau ở mọi nhóm kể cả unlinkedRevenue; fixture sẵn có dòng không id A2/B/R*). Chưa soi web dev; chưa kiểm prod (chưa push). Mobile đọc `problem` tùy chọn → thiếu trường vẫn chạy, chữ sửa ở 1.4.1.
+- ⏳ **Chờ anh:** (1) duyệt → em push (đã commit local, xem diff bằng git show HEAD); (2) bước 2 trộn theo tỷ trọng SPU trong chiến dịch (chưa đo); (3) Shopee Lát 4 đo lại; (4) kiểm giả thuyết gross_revenue trước giảm giá ở Bella Look.
+
 ## Phiên 28/10/2026 (sáng) — BỎ VIDEO HƯỚNG DẪN Ở MÀN CHÀO MỪNG KHÁCH MỚI
 
 - **Anh báo:** nhiều khách mới kêu không xem được video hướng dẫn chạy trước nút liên kết shop (ảnh anh gửi: "Bước 8/8" khung trắng, chỉ còn con trỏ + nút rỗng) → bỏ video, **chỉ bỏ video**.

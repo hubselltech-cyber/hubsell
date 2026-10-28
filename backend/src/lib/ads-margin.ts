@@ -335,8 +335,10 @@ export function salesPaceByItem(
 // Shopee CPC chỉ báo doanh thu GÁN CHO QUẢNG CÁO: broad_gmv gom cả sản phẩm khác trong gian (không so được), direct_gmv = đơn
 // của chính sản phẩm quảng cáo → là CẬN DƯỚI hợp lệ: doanh thu Hubsell thấy cho các sản phẩm của chiến dịch (mọi đơn đặt, cùng
 // những ngày) không thể thấp hơn số sàn gán trực tiếp cho chúng. Thấp hơn rõ rệt = cây sản phẩm Hubsell thiếu đơn (ca TC025
-// 18/10) → hòa vốn chưa tin được. Chiều cao hơn là bình thường (đơn tự nhiên) → KHÔNG kiểm. TikTok GMV Max báo mọi đơn nên so
-// hai chiều (lib/tiktok-breakeven breakevenCheckProblem).
+// 18/10) → hòa vốn chưa tin được. Chiều cao hơn là bình thường (đơn tự nhiên) → KHÔNG kiểm. TikTok từng so hai chiều với
+// doanh thu gán cho chiến dịch — đã BỎ 28/10/2026 (khách xoay sản phẩm giữa chiến dịch + LIVE thì TikTok lệch 2–6× dù biên
+// lãi đúng); TikTok nay đo lỗi cây trực tiếp bằng unlinkedRevenue (lib/tiktok-breakeven.ts đầu tệp). Shopee giữ phép một
+// chiều này tới khi đo lại (PROGRESS 28/10 tối).
 
 /** Khoảng tự kiểm: mỗi nhóm (chiến dịch) một ngày đầu riêng (ngày đầu có số sàn), chung ngày cuối (hết hôm qua). */
 export interface MarginCheckWindows {
@@ -355,11 +357,10 @@ export interface MarginCheck {
 }
 
 /**
- * Ngưỡng lệch tự kiểm doanh thu cho CẢ HAI sàn (một số, một chỗ): 25% — MẶC ĐỊNH TỰ CHỌN (anh Trung chốt 18/10/2026), chưa có
- * số nào của sàn. Căn cứ đo prod 18/10: TikTok ba chiến dịch khỏe của and.not.or lệch +4,0 / +4,7 / +8,8% (sai số thường của hai
- * cách đếm), chiến dịch hỏng −74%; Shopee 95 chiến dịch đang chạy: 74 ≥ 100%, 8 ở 80–100% (nhiễu gán ngày: sàn ghi đơn về ngày bấm
- * quảng cáo), 3 ở 64–74% (ca thật), còn lại gian ngủ đông. 25% chừa đủ vùng nhiễu mà vẫn bắt được lỗi cây.
- * TikTok so HAI chiều (|lệch|, lib/tiktok-breakeven), Shopee MỘT chiều (Hubsell không thấp hơn direct_gmv, marginCheckProblem).
+ * Ngưỡng lệch tự kiểm doanh thu Shopee (một chiều, marginCheckProblem): 25% — MẶC ĐỊNH TỰ CHỌN (anh Trung chốt 18/10/2026), chưa
+ * có số nào của sàn. Căn cứ đo prod 18/10: Shopee 95 chiến dịch đang chạy: 74 ≥ 100%, 8 ở 80–100% (nhiễu gán ngày: sàn ghi đơn về
+ * ngày bấm quảng cáo), 3 ở 64–74% (ca thật), còn lại gian ngủ đông. 25% chừa đủ vùng nhiễu mà vẫn bắt được lỗi cây.
+ * TikTok không còn dùng số này từ 28/10/2026 (xem chú thích trên).
  */
 export const BREAKEVEN_CHECK_MAX_GAP_PCT = 25;
 

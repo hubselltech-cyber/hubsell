@@ -14,8 +14,8 @@
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
-import { dateKey, vnDateKey } from "../../lib/ads-dates";
-import { buildAdsGroupSets, campaignGroupKey, groupSkusByItemId, type AdsGroupSets } from "../../lib/ads-margin";
+import { vnDateKey } from "../../lib/ads-dates";
+import { buildAdsGroupSets, groupSkusByItemId, type AdsGroupSets } from "../../lib/ads-margin";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import type { DateRangeFilter } from "../../lib/date-range";
 import { prisma } from "../../lib/prisma";
@@ -24,7 +24,6 @@ import {
   TIKTOK_MARGIN_WINDOW_DAYS,
   breakevensFromGroups,
   breakevensFromRows,
-  tiktokCampaignCheckOf,
   tiktokGroupMappingOf,
   tiktokMarginWindowRange,
   type BreakevenPnlRow,
@@ -32,8 +31,6 @@ import {
   type LedgerTiktokBreakevenGroup,
   type LedgerTiktokBreakevenMapping,
   type TiktokBreakevenSource,
-  type TiktokCampaignCheck,
-  type TiktokCheckWindows,
   type TiktokGroupMapping,
 } from "../../lib/tiktok-breakeven";
 import { ensureLedgerFresh, ledgerCompactOrders, ledgerTiktokBreakevenByGroup } from "../../services/order-ledger";
@@ -51,7 +48,7 @@ const scopeOf = (channel: TiktokBreakevenChannel) => ({
 });
 
 // ------------------------------------------------------------
-// Chiến dịch + sản phẩm sàn → bộ nhóm, khoảng tự kiểm
+// Chiến dịch + sản phẩm sàn → bộ nhóm
 // ------------------------------------------------------------
 
 /** Mọi thứ phép tính hòa vốn cần NGOÀI đơn hàng — dùng chung cho hòa vốn chiến dịch lẫn tab Hòa vốn sản phẩm. */
@@ -79,22 +76,9 @@ export async function loadBreakevenInputs(channelId: string) {
   // externalId TikTok = "productId-skuId" (tiktok-adapter) — productId chính là item_group_id của report GMV Max.
   const skusByProductId = groupSkusByItemId(channelProducts);
   const sets: AdsGroupSets = buildAdsGroupSets(skusByProductId, campaigns);
-
-  // Tự kiểm mẫu số trên đúng những ngày Hubsell CÓ số TikTok của chiến dịch (tới hết hôm qua — hôm nay còn dở).
-  const yesterday = vnDateKey(1);
-  const checkByCampaignRowId = new Map<string, TiktokCampaignCheck>();
-  const checkFrom = new Map<string, string>();
-  for (const c of campaigns) {
-    const check = tiktokCampaignCheckOf(
-      c.dailyPerf.map((p) => ({ day: dateKey(p.date), gmv: Number(p.broadGmv) })),
-      yesterday
-    );
-    if (!check) continue;
-    checkByCampaignRowId.set(c.id, check);
-    checkFrom.set(campaignGroupKey(c.id), check.from);
-  }
-  const checks: TiktokCheckWindows = { from: checkFrom, to: yesterday };
-  return { campaigns, channelProducts, skusByProductId, sets, checks, checkByCampaignRowId };
+  // Phép tự kiểm so doanh thu với TikTok theo ngày (Lát 0, 18/10) đã bỏ 28/10/2026 — lỗi cây đo trực tiếp trên dòng đơn
+  // (lib/tiktok-breakeven.ts đầu tệp); số quảng cáo theo ngày vẫn dùng cho nhận định Nên chạy (breakeven.ts).
+  return { campaigns, channelProducts, skusByProductId, sets };
 }
 
 export type TiktokBreakevenInputs = Awaited<ReturnType<typeof loadBreakevenInputs>>;
@@ -221,12 +205,11 @@ const breakevenSqlFailedAt = new Map<string, number>();
  */
 export async function fetchChannelBreakevens(
   channel: TiktokBreakevenChannel,
-  inputs: Pick<TiktokBreakevenInputs, "sets" | "checks">,
+  inputs: Pick<TiktokBreakevenInputs, "sets">,
   source?: TiktokBreakevenSource
 ): Promise<ChannelBreakevens> {
-  const viaRows = async () => breakevensFromRows(await loadBreakevenRows(channel), inputs.sets, inputs.checks);
-  const viaSql = async () =>
-    breakevensFromGroups(await fetchChannelBreakevenGroups(channel, tiktokGroupMappingOf(inputs.sets, inputs.checks)));
+  const viaRows = async () => breakevensFromRows(await loadBreakevenRows(channel), inputs.sets);
+  const viaSql = async () => breakevensFromGroups(await fetchChannelBreakevenGroups(channel, tiktokGroupMappingOf(inputs.sets)));
 
   if (source === "rows") return viaRows();
   if (source === "sql") return viaSql();

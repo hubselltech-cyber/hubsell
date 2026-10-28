@@ -22,11 +22,7 @@ const pct = (x: number) => `${(x * 100).toLocaleString("vi-VN", { maximumFractio
 /** Các căn cứ của con số hòa vốn — mỗi ý một dòng. */
 export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
   const out: string[] = [];
-  if (b.problem) {
-    // Tự kiểm lệch quá ngưỡng (18/10): backend không trả số; nói rõ vì sao và rằng Hubsell đang sửa phía mình, không phải khách.
-    out.push(`Chưa tin được: ${b.problem}`);
-    out.push("Hubsell đang rà lại cách nối đơn hàng với sản phẩm của chiến dịch — không cần khách làm gì; có số đáng tin sẽ hiện lại");
-  } else if (b.negativeMargin && b.margin != null) {
+  if (b.negativeMargin && b.margin != null) {
     out.push(`Bán đang lỗ ${pct(Math.abs(b.margin))} trên doanh thu TRƯỚC cả quảng cáo — ROI nào cũng lỗ`);
     out.push("Xem lại giá bán, giá vốn và phí sàn của sản phẩm trước khi chạy tiếp");
   } else if (b.roi != null && b.margin != null) {
@@ -53,12 +49,12 @@ export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
     );
   }
   if (b.costCoveragePct != null && b.costCoveragePct < 100) {
-    out.push(`Mới ${b.costCoveragePct}% doanh thu có giá vốn — nhập đủ giá vốn thì số này mới đại diện cả chiến dịch`);
-  }
-  if (b.check && b.check.tiktokGmv > 0) {
-    const d = (x: string) => `${x.slice(8, 10)}/${x.slice(5, 7)}`;
+    // 28/10/2026: độ phủ gồm cả dòng đơn chưa nối được sản phẩm bằng id (Hubsell đang bù, khách không cần làm gì) — nói rõ phần
+    // nào là của khách (giá vốn), phần nào là của Hubsell. Dòng "Đối chiếu doanh thu với TikTok" đã bỏ (anh Trung 26/10).
     out.push(
-      `Đối chiếu doanh thu đơn đặt ${d(b.check.from)}–${d(b.check.to)}: Hubsell thấy ${formatVND(b.check.revenuePlaced)} · TikTok báo ${formatVND(b.check.tiktokGmv)}`
+      b.unlinkedRevenue > 0
+        ? `Mới ${b.costCoveragePct}% doanh thu tính được — ${formatVND(b.unlinkedRevenue)} là đơn Hubsell chưa nối được với sản phẩm (đang tự bù, khách không cần làm gì); phần còn lại thiếu giá vốn`
+        : `Mới ${b.costCoveragePct}% doanh thu có giá vốn — nhập đủ giá vốn thì số này mới đại diện cả chiến dịch`
     );
   }
   return out;
@@ -66,7 +62,7 @@ export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
 
 export function TiktokBreakevenValue({ breakeven, className }: { breakeven: TiktokAdsBreakeven | null; className?: string }) {
   if (!breakeven) return <span className={cn("text-slate-400", className)}>—</span>;
-  const label = breakeven.problem ? "Chưa tin được" : breakeven.negativeMargin ? "Lỗ sẵn" : formatRoi(breakeven.roi);
+  const label = breakeven.negativeMargin ? "Lỗ sẵn" : formatRoi(breakeven.roi);
   return (
     <Popover>
       <PopoverTrigger
@@ -78,13 +74,7 @@ export function TiktokBreakevenValue({ breakeven, className }: { breakeven: Tikt
           className={cn(
             "tabular-nums underline decoration-dotted underline-offset-2",
             // Mốc hòa vốn là con số để SO — xanh đậm cho nổi giữa dòng chữ xám (anh Trung 18/09); lỗ sẵn đỏ, chưa có số thì xám.
-            breakeven.problem
-              ? "text-amber-600"
-              : breakeven.negativeMargin
-                ? "text-red-500"
-                : breakeven.roi == null
-                  ? "text-slate-400"
-                  : "text-emerald-700",
+            breakeven.negativeMargin ? "text-red-500" : breakeven.roi == null ? "text-slate-400" : "text-emerald-700",
             className
           )}
         >

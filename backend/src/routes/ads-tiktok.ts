@@ -125,26 +125,24 @@ function parseDays(raw: unknown): number {
 /** ROI hòa vốn gửi cho UI (số làm tròn ở FE). null = gian chưa tính được gì. */
 function breakevenForUi(b: TiktokBreakeven | undefined | null) {
   if (!b) return null;
-  // Tự kiểm lệch quá ngưỡng → KHÔNG trả số ra ngoài (web lẫn mobile đều hiện "—" / "Chưa tin được"), chỉ trả lý do
-  // (Lát 0, 18/10/2026 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 5).
-  const problem = b.checkProblem || null;
+  // Lát 0 (18/10) từng trả `problem` + `check` (so với doanh thu TikTok) — bỏ 28/10/2026: phần chưa nối được sản phẩm nằm trong
+  // costCoveragePct / unlinkedRevenue; mobile đọc `problem` tùy chọn nên thiếu trường vẫn chạy.
   return {
-    roi: problem ? null : b.breakevenRoi,
-    margin: problem ? null : b.margin,
-    negativeMargin: problem ? false : b.negativeMargin,
+    roi: b.breakevenRoi,
+    margin: b.margin,
+    negativeMargin: b.negativeMargin,
     source: b.source,
     orders: b.orders,
     cancelledOrders: b.cancelledOrders,
     pendingOrders: b.pendingOrders,
     costCoveragePct: b.costCoveragePct,
-    check: b.check,
-    problem,
+    unlinkedRevenue: b.unlinkedRevenue,
   };
 }
 
-/** Biên lãi để tính sàn nấc hạ ROI (loadStepChecks) — không dùng biên lãi chưa tin được. */
+/** Biên lãi để tính sàn nấc hạ ROI (loadStepChecks). */
 function trustedMargin(b: TiktokBreakeven | undefined | null): number | null | undefined {
-  return b?.checkProblem ? null : b?.margin;
+  return b?.margin;
 }
 
 async function ownedTiktokChannels(ownerId: string) {

@@ -16,7 +16,6 @@ import type { TiktokBreakevenSource } from "../../lib/tiktok-breakeven";
 import {
   TIKTOK_MARGIN_WINDOW_DAYS,
   TIKTOK_TARGET_STEP_WAIT_HOURS,
-  breakevenCheckProblem,
   toTiktokBreakeven,
   type TiktokBreakeven,
 } from "../../lib/tiktok-breakeven";
@@ -93,16 +92,9 @@ export async function computeTiktokAdsBreakevenUncached(
       byCampaignRowId.set(c.id, shop);
       continue;
     }
-    const check = inputs.checkByCampaignRowId.get(c.id);
-    const fullCheck = check
-      ? { revenuePlaced: breakevens.placedRevenue(groupKey), tiktokGmv: check.tiktokGmv, from: check.from, to: inputs.checks.to }
-      : null;
-    byCampaignRowId.set(c.id, {
-      ...toTiktokBreakeven(own, "campaign"),
-      check: fullCheck,
-      // Tự kiểm lệch quá ngưỡng → hòa vốn chưa tin được (Lát 0 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 5).
-      checkProblem: breakevenCheckProblem(fullCheck),
-    });
+    // Dòng đơn chưa nối được sản phẩm bằng id nằm trong unlinkedRevenue → costCoveragePct thấp → luật tự động tự rơi về %
+    // (breakevenUnusableReason); không còn phép so với doanh thu TikTok (28/10/2026).
+    byCampaignRowId.set(c.id, toTiktokBreakeven(own, "campaign"));
   }
 
   return { shop, byCampaignRowId };

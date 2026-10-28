@@ -21,7 +21,7 @@ const be = (over: Partial<TiktokBreakeven> = {}): TiktokBreakeven => ({
   cancelledOrders: 0,
   pendingOrders: 0,
   costCoveragePct: 100,
-  check: null,
+  unlinkedRevenue: 0,
   ...over,
 });
 const input = (over: Partial<CampaignAdviceInput> = {}): CampaignAdviceInput => ({

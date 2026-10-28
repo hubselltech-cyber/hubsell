@@ -208,11 +208,9 @@ describe("resolveHardLevel — mức loại theo % mục tiêu hay theo hòa v�
     expect(resolveHardLevel(byBe, be({ costCoveragePct: BREAKEVEN_MIN_COVERAGE_PCT - 1 })).fallbackReason).toContain("% doanh thu có giá vốn");
     expect(resolveHardLevel(byBe, be({ costCoveragePct: BREAKEVEN_MIN_COVERAGE_PCT })).basis).toBe("breakeven");
     expect(resolveHardLevel(byBe, be({ breakevenRoi: null })).fallbackReason).toContain("chưa có đơn đã đối soát");
-    // Tự kiểm mẫu số lệch quá ngưỡng (18/10/2026): hòa vốn có số nhưng CHƯA TIN ĐƯỢC → rơi về %, lý do là chính câu của tự kiểm.
-    const bad = resolveHardLevel(byBe, be({ checkProblem: "doanh thu Hubsell thấy thấp hơn TikTok báo 74% — hòa vốn chưa tin được" }));
-    expect(bad).toMatchObject({ hardRoi: 7.5, basis: "pct" });
-    expect(bad.fallbackReason).toContain("thấp hơn TikTok báo 74%");
-    expect(resolveHardLevel(byBe, be({ checkProblem: "" })).basis).toBe("breakeven");
+    // 28/10/2026: không còn phép so với doanh thu TikTok (checkProblem) — dòng đơn chưa nối đúng sản phẩm kéo costCoveragePct
+    // xuống và đi qua cùng rào 90% ở trên; lý do nêu cả hai nguyên nhân để khách hiểu.
+    expect(resolveHardLevel(byBe, be({ costCoveragePct: 60 })).fallbackReason).toContain("nối đúng sản phẩm");
     // Sản phẩm lỗ sẵn: KHÔNG được biến thành "loại mọi video" — rơi về % và báo.
     const neg = resolveHardLevel(byBe, be({ breakevenRoi: null, negativeMargin: true }));
     expect(neg.basis).toBe("pct");

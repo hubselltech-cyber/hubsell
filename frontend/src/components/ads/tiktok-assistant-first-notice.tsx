@@ -195,7 +195,7 @@ export function TiktokAssistantFirstNotice({
   }
 
   // Chỉ nêu số khi chiến dịch đã có ROI hòa vốn tin được; không thì nói chung.
-  const roi = breakeven && !breakeven.problem && !breakeven.negativeMargin ? breakeven.roi : null;
+  const roi = breakeven && !breakeven.negativeMargin ? breakeven.roi : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>

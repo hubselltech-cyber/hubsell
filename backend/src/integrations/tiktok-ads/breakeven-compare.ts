@@ -4,12 +4,11 @@
 //
 // "rows" (duyệt mảng đơn trong RAM) ↔ "sql" (GROUP BY trên sổ dòng hàng), cho
 // MỘT gian, ở hai tầng:
-//   1. Tầng số gốc — cùng một cửa sổ, cùng bộ nhóm, cùng khoảng tự kiểm: từng
-//      nhóm (toàn gian, từng chiến dịch, từng sản phẩm) phải bằng nhau: số đơn đã
-//      đối soát / hủy cùng lứa / chờ kết cục TUYỆT ĐỐI, tiền lệch không quá 1
-//      đồng (làm tròn 2 số lẻ của phần phân bổ theo dòng), độ phủ giá vốn và
-//      việc "có ROI hòa vốn hay không" giống nhau; số tự kiểm mẫu số của từng
-//      chiến dịch lệch không quá 1 đồng; danh sách sản phẩm có đơn giống nhau;
+//   1. Tầng số gốc — cùng một cửa sổ, cùng bộ nhóm: từng nhóm (toàn gian, từng
+//      chiến dịch, từng sản phẩm) phải bằng nhau: số đơn đã đối soát / hủy cùng
+//      lứa / chờ kết cục TUYỆT ĐỐI, tiền (kể cả phần chưa nối id) lệch không quá
+//      1 đồng (làm tròn 2 số lẻ của phần phân bổ theo dòng), độ phủ và việc "có
+//      ROI hòa vốn hay không" giống nhau; danh sách sản phẩm có đơn giống nhau;
 //      đà bán từng sản phẩm bằng tuyệt đối.
 //   2. Tầng kết quả cuối — chạy hai phép tính khách nhìn thấy (hòa vốn gian +
 //      từng chiến dịch, tab Hòa vốn sản phẩm) ở cả hai đường rồi so từng trường.
@@ -29,7 +28,6 @@ import {
   tiktokMarginWindowRange,
   toTiktokBreakeven,
   type BreakevenBase,
-  type TiktokCheckWindows,
 } from "../../lib/tiktok-breakeven";
 import { BREAKEVEN_MIN_COVERAGE_PCT } from "./auto-rules";
 import { computeTiktokAdsBreakevenUncached, computeTiktokProductBreakevensUncached } from "./breakeven";
@@ -55,7 +53,6 @@ export interface BreakevenCompareReport {
   /** Lệch tiền lớn nhất gặp phải trong mọi nhóm (đồng). */
   maxMoneyDiff: number;
   baseMismatches: string[];
-  checkMismatches: string[];
   paceMismatches: string[];
   endToEndMismatches: string[];
   timing: { rowsMs: number; sqlMs: number };
@@ -63,7 +60,7 @@ export interface BreakevenCompareReport {
 }
 
 const COUNT_KEYS = ["settledOrders", "cancelledOrders", "pendingOrders"] as const;
-const MONEY_KEYS = ["revenue", "profitBeforeAds", "adFee", "missingCostRevenue"] as const;
+const MONEY_KEYS = ["revenue", "profitBeforeAds", "adFee", "missingCostRevenue", "unlinkedRevenue"] as const;
 
 function diffBase(key: string, a: BreakevenBase, b: BreakevenBase, out: string[]): number {
   const why: string[] = [];
@@ -85,7 +82,7 @@ function diffBase(key: string, a: BreakevenBase, b: BreakevenBase, out: string[]
 
 /** Kết quả cuối: trường tiền so theo lệch tuyệt đối, các số không nguyên còn lại (biên lãi, ROI) so tương đối. */
 const END_TO_END_DIFF: JsonDiffOptions = {
-  moneyKeys: new Set(["revenue", "profitBeforeAds", "missingCostRevenue", "revenuePlaced", "tiktokGmv"]),
+  moneyKeys: new Set(["revenue", "profitBeforeAds", "missingCostRevenue", "unlinkedRevenue"]),
   moneyTolerance: BREAKEVEN_COMPARE_MONEY_TOLERANCE,
   relativeTolerance: 1e-4,
 };
@@ -102,13 +99,12 @@ async function endToEndSnapshot(channel: TiktokBreakevenChannel, source: TiktokB
 }
 
 /**
- * So hai đường cộng cho một gian TikTok. `extraSets` / `extraCheckFrom`: nhóm thêm
- * và ngày đầu tự kiểm của nhóm thêm, cho test (khóa không được trùng nhóm thật).
- * `endToEnd: false` → chỉ so tầng số gốc.
+ * So hai đường cộng cho một gian TikTok. `extraSets`: nhóm thêm cho test (khóa
+ * không được trùng nhóm thật). `endToEnd: false` → chỉ so tầng số gốc.
  */
 export async function compareBreakevenSources(
   channel: TiktokBreakevenChannel,
-  opts: { extraSets?: AdsGroupSets; extraCheckFrom?: ReadonlyMap<string, string>; endToEnd?: boolean } = {}
+  opts: { extraSets?: AdsGroupSets; endToEnd?: boolean } = {}
 ): Promise<BreakevenCompareReport> {
   const range = tiktokMarginWindowRange();
   const inputs = await loadBreakevenInputs(channel.id);
@@ -117,18 +113,14 @@ export async function compareBreakevenSources(
     if (sets.has(key)) throw new Error(`compareBreakevenSources: nhom them "${key}" trung nhom that`);
     sets.set(key, skus);
   }
-  const checks: TiktokCheckWindows = {
-    from: new Map([...inputs.checks.from, ...(opts.extraCheckFrom ?? [])]),
-    to: inputs.checks.to,
-  };
 
   const t0 = Date.now();
   const rows = await loadBreakevenRows(channel, range);
   const t1 = Date.now();
-  const sqlGroups = await loadBreakevenGroups(channel, tiktokGroupMappingOf(sets, checks), range);
+  const sqlGroups = await loadBreakevenGroups(channel, tiktokGroupMappingOf(sets), range);
   const t2 = Date.now();
 
-  const fromRows = breakevensFromRows(rows, sets, checks, range.lte.getTime());
+  const fromRows = breakevensFromRows(rows, sets, range.lte.getTime());
   const fromSql = breakevensFromGroups(sqlGroups);
 
   const baseMismatches: string[] = [];
@@ -149,15 +141,6 @@ export async function compareBreakevenSources(
     if (!productsRows.has(productId) || !productsSql.has(productId)) {
       baseMismatches.push(`san pham ${productId}: co o rows ${productsRows.has(productId)}, co o sql ${productsSql.has(productId)}`);
     }
-  }
-
-  const checkMismatches: string[] = [];
-  for (const key of checks.from.keys()) {
-    const a = fromRows.placedRevenue(key);
-    const b = fromSql.placedRevenue(key);
-    const d = Math.abs(a - b);
-    if (d > maxMoneyDiff) maxMoneyDiff = d;
-    if (d > BREAKEVEN_COMPARE_MONEY_TOLERANCE) checkMismatches.push(`${key}: ${a.toFixed(2)}/${b.toFixed(2)}`);
   }
 
   // Đà bán: sản phẩm vắng mặt ở một đường = số 0 ở đường kia.
@@ -187,15 +170,9 @@ export async function compareBreakevenSources(
     shop: { rows: fromRows.base(SHOP_GROUP), sql: fromSql.base(SHOP_GROUP) },
     maxMoneyDiff,
     baseMismatches,
-    checkMismatches,
     paceMismatches,
     endToEndMismatches,
     timing: { rowsMs: t1 - t0, sqlMs: t2 - t1 },
-    ok:
-      !capped &&
-      baseMismatches.length === 0 &&
-      checkMismatches.length === 0 &&
-      paceMismatches.length === 0 &&
-      endToEndMismatches.length === 0,
+    ok: !capped && baseMismatches.length === 0 && paceMismatches.length === 0 && endToEndMismatches.length === 0,
   };
 }

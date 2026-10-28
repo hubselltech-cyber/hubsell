@@ -37,11 +37,25 @@
 //      HỦY góp doanh thu vào mẫu số nhưng góp 0 đồng lãi (không lấy "lỗ ảo" bằng
 //      giá vốn của computePnlRow — hàng hủy quay lại kho). Hệ quả: hòa vốn
 //      nghiêng về phía CAO (dè dặt) — đúng hướng "giữ tiền".
-//      ★ GIẢ ĐỊNH chưa kiểm bằng số prod → kết quả trả kèm `check`: doanh thu MỌI
-//      đơn đặt Hubsell thấy vs doanh thu TikTok báo, cùng SKU, cùng khoảng ngày.
+//
+// ★ LỖI CÂY SẢN PHẨM ĐO TRỰC TIẾP, KHÔNG SO VỚI DOANH THU TIKTOK (28/10/2026,
+//   anh Trung chốt 26/10: "cùng sản phẩm thì không cần quan tâm nó ở chiến dịch
+//   nào — quan trọng là lãi bao nhiêu và bao nhiêu thì hòa vốn"). Phép tự kiểm cũ
+//   (Lát 0, 18/10) so doanh thu Hubsell với doanh thu TikTok gán cho chiến dịch
+//   và gạt hòa vốn khi lệch quá 25% — nhưng TikTok chỉ ghi cho chiến dịch phần
+//   đơn của những ngày sản phẩm nằm trong nó (khách xoay sản phẩm giữa nhiều chiến
+//   dịch + LIVE thì lệch 2–6× dù biên lãi sản phẩm vẫn đúng) → 63 chiến dịch đang
+//   chạy / 31 gian bị gạt oan (đo prod 28/10). Nay bỏ hẳn phép so; lỗi cây đo
+//   thẳng trên dòng đơn: biên lãi chỉ cộng dòng khớp sản phẩm bằng ID LÁ
+//   (itemId); dòng CHƯA CÓ ID chỉ khớp được bằng mã thô (ca TC025 18/10) để ngoài
+//   và cộng vào `unlinkedRevenue` → kéo độ phủ `costCoveragePct` xuống, đi qua
+//   cùng một rào 90% (BREAKEVEN_MIN_COVERAGE_PCT) với đơn thiếu giá vốn — không
+//   đặt ngưỡng mới. Mã dùng chung không còn kéo được đơn của sản phẩm khác vì
+//   dòng có id chỉ khớp theo id. Nhóm toàn gian không có khái niệm này (mọi
+//   dòng đều thuộc gian).
 //
 // Đơn thiếu giá vốn (đã có kết cục cuối) bị loại khỏi cả tử lẫn mẫu và cộng vào
-// `missingCostRevenue` để UI nói rõ "tính trên X% doanh thu có giá vốn".
+// `missingCostRevenue` để UI nói rõ "tính trên X% doanh thu".
 // Đơn nhiều SKU phân bổ theo tỷ trọng giá trị hàng của SKU khớp (như Shopee).
 //
 // Hai đường cộng cho cùng một kết quả:
@@ -52,10 +66,9 @@
 // Ghép số thành kết luận: integrations/tiktok-ads/breakeven.ts.
 // ============================================================
 
-import { createHash } from "crypto";
 import { ShippingStatus } from "@prisma/client";
 import { startOfDaysAgo } from "./ads-dates";
-import { BREAKEVEN_CHECK_MAX_GAP_PCT, PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, lineInGroup, placedRevenueOf, type AdsGroupSets } from "./ads-margin";
+import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, type AdsGroupSets } from "./ads-margin";
 import type { DateRangeFilter } from "./date-range";
 
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */
@@ -110,7 +123,7 @@ export interface BreakevenPnlRow {
   shippingStatus: ShippingStatus;
   /** Đã đối soát THẬT (bản kê estimated = false). */
   isSettled: boolean;
-  /** `itemId` = SPU của dòng (sổ dòng hàng, từ OrderItem.externalId — Lát 1a); null/bỏ trống = chưa có id → khớp theo mã (lib/ads-margin AdsGroupSets). */
+  /** `itemId` = SPU của dòng (sổ dòng hàng, từ OrderItem.externalId — Lát 1a); null/bỏ trống = chưa có id → chỉ khớp được bằng mã (lib/ads-margin AdsGroupSets). */
   items: { sku: string; itemId?: string | null; price: number; quantity: number }[];
   actualRevenue: number;
   profit: number;
@@ -132,6 +145,11 @@ export interface BreakevenBase {
   adFee: number;
   /** Doanh thu của đơn đã có kết cục cuối nhưng thiếu giá vốn — để tính độ phủ. */
   missingCostRevenue: number;
+  /**
+   * Doanh thu (đã có kết cục cuối) của dòng đơn CHƯA CÓ ID LÁ, chỉ khớp nhóm bằng mã thô — không biết chắc là sản phẩm nào nên
+   * không vào biên lãi, chỉ kéo độ phủ xuống (28/10/2026). Nhóm toàn gian luôn 0.
+   */
+  unlinkedRevenue: number;
   /** Số đơn CHƯA có kết cục cuối (đang giao, chờ đối soát, đang hoàn, hủy ngoài lứa) — không tính. */
   pendingOrders: number;
 }
@@ -143,6 +161,7 @@ const emptyBreakevenBase = (): BreakevenBase => ({
   profitBeforeAds: 0,
   adFee: 0,
   missingCostRevenue: 0,
+  unlinkedRevenue: 0,
   pendingOrders: 0,
 });
 
@@ -158,6 +177,22 @@ export function settledCohortCutoff(rows: BreakevenPnlRow[]): Date | null {
   return cutoff;
 }
 
+/**
+ * Giá trị hàng của các dòng khớp nhóm, tách theo CÁCH khớp: `linked` = dòng mang id lá khớp khóa "i:<itemId>" (chắc chắn đúng sản
+ * phẩm); `unlinked` = dòng CHƯA có id, khớp bằng mã thô (chưa chắc — mã có thể dùng chung). Dòng có id mà id không thuộc nhóm thì
+ * không khớp dù cùng mã (lineGroupKey: id trước, mã sau). Thuần.
+ */
+function groupMatchOf(items: BreakevenPnlRow["items"], keys: ReadonlySet<string>): { linked: number; unlinked: number } {
+  let linked = 0;
+  let unlinked = 0;
+  for (const it of items) {
+    if (!keys.has(lineGroupKey(it))) continue;
+    if (it.itemId) linked += it.price * it.quantity;
+    else unlinked += it.price * it.quantity;
+  }
+  return { linked, unlinked };
+}
+
 /** Gom nguyên liệu hòa vốn trên một tập SKU (null = toàn gian). `rows` = MỌI đơn của gian trong cửa sổ. Thuần. */
 export function tiktokBreakevenBase(rows: BreakevenPnlRow[], skuSet: ReadonlySet<string> | null): BreakevenBase {
   const base = emptyBreakevenBase();
@@ -165,12 +200,8 @@ export function tiktokBreakevenBase(rows: BreakevenPnlRow[], skuSet: ReadonlySet
   for (const row of rows) {
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     if (itemTotal <= 0) continue;
-    const matchTotal = skuSet
-      ? row.items.filter((it) => lineInGroup(it, skuSet)).reduce((s, it) => s + it.price * it.quantity, 0)
-      : itemTotal;
-    if (matchTotal <= 0) continue;
-    const ratio = matchTotal / itemTotal;
-    const revenue = row.actualRevenue * ratio;
+    const { linked, unlinked } = skuSet ? groupMatchOf(row.items, skuSet) : { linked: itemTotal, unlinked: 0 };
+    if (linked + unlinked <= 0) continue;
 
     const cancelled = isCancelled(row);
     const final = cancelled ? cutoff != null && row.createdAt <= cutoff : isSettledFinal(row);
@@ -178,6 +209,10 @@ export function tiktokBreakevenBase(rows: BreakevenPnlRow[], skuSet: ReadonlySet
       base.pendingOrders++;
       continue;
     }
+    if (unlinked > 0) base.unlinkedRevenue += row.actualRevenue * (unlinked / itemTotal);
+    if (linked <= 0) continue;
+    const ratio = linked / itemTotal;
+    const revenue = row.actualRevenue * ratio;
     if (row.missingCostPrice) {
       base.missingCostRevenue += revenue;
       continue;
@@ -213,23 +248,29 @@ export function tiktokBreakevenBaseByGroup(rows: BreakevenPnlRow[], groupOfKey: 
   for (const row of rows) {
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     if (itemTotal <= 0) continue;
-    const matchByGroup = new Map<string, number>();
+    const matchByGroup = new Map<string, { linked: number; unlinked: number }>();
     for (const it of row.items) {
       const g = groupOfKey.get(lineGroupKey(it));
-      if (g != null) matchByGroup.set(g, (matchByGroup.get(g) ?? 0) + it.price * it.quantity);
+      if (g == null) continue;
+      let m = matchByGroup.get(g);
+      if (!m) matchByGroup.set(g, (m = { linked: 0, unlinked: 0 }));
+      if (it.itemId) m.linked += it.price * it.quantity;
+      else m.unlinked += it.price * it.quantity;
     }
     const cancelled = isCancelled(row);
     const final = cancelled ? cutoff != null && row.createdAt <= cutoff : isSettledFinal(row);
     const feeGmvMax = row.tiktok?.feeGmvMax ?? 0;
-    for (const [g, matchTotal] of matchByGroup) {
-      if (matchTotal <= 0) continue;
+    for (const [g, { linked, unlinked }] of matchByGroup) {
+      if (linked + unlinked <= 0) continue;
       const base = baseOf(g);
-      const ratio = matchTotal / itemTotal;
-      const revenue = row.actualRevenue * ratio;
       if (!final) {
         base.pendingOrders++;
         continue;
       }
+      if (unlinked > 0) base.unlinkedRevenue += row.actualRevenue * (unlinked / itemTotal);
+      if (linked <= 0) continue;
+      const ratio = linked / itemTotal;
+      const revenue = row.actualRevenue * ratio;
       if (row.missingCostPrice) {
         base.missingCostRevenue += revenue;
         continue;
@@ -262,63 +303,24 @@ export interface TiktokBreakeven {
   cancelledOrders: number;
   /** Đơn chưa có kết cục cuối bị để ngoài. */
   pendingOrders: number;
-  /** % doanh thu (trong phạm vi) đã có giá vốn — dưới 100 nghĩa là hòa vốn chỉ đại diện phần đó. */
-  costCoveragePct: number | null;
-  /** Tự kiểm mẫu số (chỉ khi source = campaign): doanh thu MỌI đơn đặt Hubsell thấy vs TikTok báo, cùng SKU, cùng khoảng ngày. */
-  check: TiktokBreakevenCheck | null;
   /**
-   * Lý do hòa vốn CHƯA TIN ĐƯỢC vì tự kiểm lệch quá ngưỡng (breakevenCheckProblem); "" / bỏ trống = ổn. Chỉ nguồn
-   * campaign mới có tự kiểm. Mọi nơi quyết định (luật tự động, nhận định, lãi ước tính, API) phải coi hòa vốn có
-   * checkProblem như CHƯA CÓ hòa vốn — bất biến B6 của docs/MO-HINH-CAY-SAN-PHAM-SAN.md.
+   * % doanh thu (đã có kết cục cuối, trong phạm vi) TÍNH ĐƯỢC — vừa có giá vốn, vừa nối đúng sản phẩm bằng id lá. Dưới 100 nghĩa
+   * là hòa vốn chỉ đại diện phần đó; dưới BREAKEVEN_MIN_COVERAGE_PCT (90) thì luật tự động không dùng. Tên giữ nguyên từ 18/09 (API
+   * web/mobile đang đọc), từ 28/10 gồm cả phần `unlinkedRevenue`.
    */
-  checkProblem?: string;
-}
-
-export interface TiktokBreakevenCheck {
-  revenuePlaced: number;
-  tiktokGmv: number;
-  from: string;
-  to: string;
-}
-
-// ------------------------------------------------------------
-// TỰ KIỂM MẪU SỐ → HÒA VỐN CHƯA TIN ĐƯỢC (Lát 0, 18/10/2026 — docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 5)
-// ------------------------------------------------------------
-//
-// Doanh thu MỌI đơn đặt Hubsell thấy trên tập SKU của chiến dịch phải xấp xỉ doanh thu TikTok báo cho cùng sản phẩm,
-// cùng khoảng ngày. Lệch nhiều là CÂY SẢN PHẨM Hubsell dựng cho chiến dịch không khớp sàn, hai chiều đều hỏng:
-//   · Hubsell THIẾU: dòng đơn chưa nối đúng lá (đơn cũ mang mã thô sau khi mã đổi đuôi — TC025 NEW 18/10: 15,4tr so
-//     với 60,0tr, hòa vốn báo 8,90 trong khi đủ đơn là 7,10);
-//   · Hubsell THỪA: mã người bán dùng chung nhiều sản phẩm kéo đơn của sản phẩm khác vào.
-// Khi đó biên lãi là của một tập đơn khác tập TikTok tính ROI → không được dùng để quyết định (loại video, nấc hạ, lãi
-// ước tính). Thà không có số còn hơn số sai.
-
-/** % lệch có dấu = (Hubsell − TikTok) ÷ TikTok × 100; null khi TikTok chưa báo doanh thu (không có gì để so). Thuần. */
-export function breakevenCheckGapPct(check: TiktokBreakevenCheck | null | undefined): number | null {
-  if (!check || !(check.tiktokGmv > 0)) return null;
-  return ((check.revenuePlaced - check.tiktokGmv) / check.tiktokGmv) * 100;
-}
-
-/** Lý do hòa vốn chưa tin được theo tự kiểm; "" = ổn hoặc không có gì để so. Thuần. */
-export function breakevenCheckProblem(check: TiktokBreakevenCheck | null | undefined): string {
-  const gap = breakevenCheckGapPct(check);
-  if (gap == null || Math.abs(gap) <= BREAKEVEN_CHECK_MAX_GAP_PCT) return "";
-  const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
-  const pct = Math.abs(Math.round(gap));
-  const c = check as TiktokBreakevenCheck;
-  return gap < 0
-    ? `doanh thu Hubsell thấy cho sản phẩm của chiến dịch thấp hơn TikTok báo ${pct}% (${vnd(c.revenuePlaced)} so với ${vnd(c.tiktokGmv)}) — dòng đơn chưa nối đúng sản phẩm, hòa vốn chưa tin được`
-    : `doanh thu Hubsell thấy cho sản phẩm của chiến dịch cao hơn TikTok báo ${pct}% (${vnd(c.revenuePlaced)} so với ${vnd(c.tiktokGmv)}) — mã SKU đang gom cả đơn của sản phẩm khác, hòa vốn chưa tin được`;
+  costCoveragePct: number | null;
+  /** Doanh thu đã có kết cục cuối của dòng đơn chưa nối được sản phẩm bằng id (chỉ khớp mã) — phần "chưa tính được" của độ phủ. */
+  unlinkedRevenue: number;
 }
 
 /** Từ nguyên liệu → kết quả hòa vốn. Thuần. */
 export function toTiktokBreakeven(base: BreakevenBase, source: "campaign" | "shop" | "product"): TiktokBreakeven {
-  const scoped = base.revenue + base.missingCostRevenue;
+  const scoped = base.revenue + base.missingCostRevenue + base.unlinkedRevenue;
   const common = {
     cancelledOrders: base.cancelledOrders,
     pendingOrders: base.pendingOrders,
     costCoveragePct: scoped > 0 ? Math.round((base.revenue / scoped) * 100) : null,
-    check: null,
+    unlinkedRevenue: base.unlinkedRevenue,
   };
   if (base.settledOrders === 0 || base.revenue <= 0) {
     return { breakevenRoi: null, margin: null, negativeMargin: false, source: null, orders: 0, ...common };
@@ -344,28 +346,15 @@ export function toTiktokBreakeven(base: BreakevenBase, source: "campaign" | "sho
 // Không trừ ads hai lần: phí GMV Max sàn trừ trong quyết toán đơn đã được cộng ngược khi tính biên lãi.
 // Là ƯỚC TÍNH vì: biên lãi lấy từ đơn ĐÃ ĐỐI SOÁT 60 ngày (lứa cũ) áp vào doanh thu kỳ xem (đơn chưa đối soát); doanh thu
 // GMV Max gồm cả đơn tự nhiên của sản phẩm trong chiến dịch (định nghĩa của TikTok) nên đây là lãi của SẢN PHẨM sau quảng
-// cáo, không phải phần lãi "quảng cáo đẻ thêm". ★ Mẫu số (gross_revenue có rút đơn hủy hay không) vẫn là giả định chưa kiểm
-// bằng số prod — dòng "Đối chiếu doanh thu" trong ô Hòa vốn là chỗ kiểm (docs/ADS-TIKTOK-GMV-MAX.md mục 8).
+// cáo, không phải phần lãi "quảng cáo đẻ thêm". Mẫu số (gross_revenue có rút đơn hủy hay không) là giả định chưa kiểm bằng
+// số sàn (docs/ADS-TIKTOK-GMV-MAX.md mục 8).
 // Biên lãi ≤ 0 ("lỗ sẵn") vẫn tính: ra số âm sâu hơn cả tiền ads, đúng với thực tế bán đã lỗ trước quảng cáo.
 
-/**
- * Lãi/lỗ ước tính; null khi chưa có biên lãi (chiến dịch lẫn gian đều chưa đủ đơn đã đối soát có giá vốn) hoặc biên lãi
- * chưa tin được vì tự kiểm lệch (checkProblem — 18/10/2026). Thuần.
- */
-export function tiktokEstProfit(
-  gmv: number,
-  spend: number,
-  breakeven: Pick<TiktokBreakeven, "margin" | "checkProblem"> | null | undefined
-): number | null {
+/** Lãi/lỗ ước tính; null khi chưa có biên lãi (chiến dịch lẫn gian đều chưa đủ đơn đã đối soát có giá vốn). Thuần. */
+export function tiktokEstProfit(gmv: number, spend: number, breakeven: Pick<TiktokBreakeven, "margin"> | null | undefined): number | null {
   const margin = breakeven?.margin;
-  if (margin == null || !Number.isFinite(margin) || breakeven?.checkProblem) return null;
+  if (margin == null || !Number.isFinite(margin)) return null;
   return gmv * margin - spend;
-}
-
-/** Doanh thu MỌI đơn đặt (kể cả hủy / đang giao) trên tập SKU, ngày tạo (giờ VN) trong [from, to] — để so với doanh thu TikTok báo. Thuần. */
-export function placedRevenue(rows: BreakevenPnlRow[], skuSet: ReadonlySet<string>, from: string, to: string): number {
-  // Một luật cho hai sàn (Lát 4): lib/ads-margin placedRevenueOf.
-  return placedRevenueOf(rows, skuSet, from, to);
 }
 
 /** Đà bán của một nhóm SKU: số sản phẩm bán ra 7 ngày và 30 ngày gần nhất + doanh thu 30 ngày (mọi đơn đặt trừ hủy). */
@@ -373,8 +362,8 @@ export interface TiktokSalesPace {
   units7d: number;
   units30d: number;
   /**
-   * Doanh thu 30 ngày của nhóm trên MỌI đơn đặt trừ đơn hủy (kể cả chưa đối soát) — cùng cách chia theo tỷ trọng giá trị hàng
-   * với placedRevenue. Là "GMV lịch sử" của công thức ngân sách TikTok (ngân sách = 2 × GMV ÷ ROI mục tiêu — product-run-advice.ts).
+   * Doanh thu 30 ngày của nhóm trên MỌI đơn đặt trừ đơn hủy (kể cả chưa đối soát) — chia theo tỷ trọng giá trị hàng như cột
+   * actualRevenue của sổ dòng hàng. Là "GMV lịch sử" của công thức ngân sách TikTok (ngân sách = 2 × GMV ÷ ROI mục tiêu — product-run-advice.ts).
    */
   revenue30d: number;
 }
@@ -385,7 +374,7 @@ export const TIKTOK_PACE_WINDOW_MS = 30 * 86_400_000;
 
 /**
  * ĐÀ BÁN từng nhóm SKU: số sản phẩm bán ra 7 ngày và 30 ngày gần nhất, tính trên MỌI đơn đặt trừ đơn hủy (đây là nhịp bán,
- * không phải lãi — không cần chờ đối soát). Thuần.
+ * không phải lãi — không cần chờ đối soát, dòng chỉ khớp mã vẫn đếm). Thuần.
  */
 export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfKey: ReadonlyMap<string, string>, now: Date): Map<string, TiktokSalesPace> {
   const out = new Map<string, TiktokSalesPace>();
@@ -395,7 +384,7 @@ export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfKey: ReadonlyMa
     if (isCancelled(row)) continue;
     const t = row.createdAt.getTime();
     if (t < t30 || t > now.getTime()) continue;
-    // Doanh thu chia cho từng dòng hàng theo tỷ trọng giá trị hàng — đúng luật của placedRevenue và cột actualRevenue của sổ dòng hàng.
+    // Doanh thu chia cho từng dòng hàng theo tỷ trọng giá trị hàng — đúng luật của cột actualRevenue của sổ dòng hàng.
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     for (const it of row.items) {
       const g = groupOfKey.get(lineGroupKey(it));
@@ -411,7 +400,7 @@ export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfKey: ReadonlyMa
 }
 
 // ------------------------------------------------------------
-// Bộ nhóm của một gian TikTok + khoảng ngày tự kiểm của từng chiến dịch
+// Bộ nhóm của một gian TikTok
 // ------------------------------------------------------------
 //
 // Bộ nhóm dùng chung khuôn với Shopee/Lazada (lib/ads-margin.ts): nhóm toàn gian
@@ -419,70 +408,27 @@ export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfKey: ReadonlyMa
 // productGroupKey(product id) — externalId TikTok = "productId-skuId", productId
 // chính là item_group_id của report GMV Max.
 
-/**
- * Khoảng ngày (ngày sàn, giờ VN) của phép tự kiểm mẫu số: mỗi chiến dịch một
- * ngày đầu riêng (ngày đầu Hubsell CÓ số TikTok của chiến dịch), chung ngày cuối
- * (hết hôm qua — hôm nay còn dở). Chiến dịch chưa có số thì không có trong `from`.
- */
-export interface TiktokCheckWindows {
-  /** campaignGroupKey → "YYYY-MM-DD" ngày đầu. */
-  from: ReadonlyMap<string, string>;
-  /** "YYYY-MM-DD" ngày cuối, chung mọi chiến dịch. */
-  to: string;
-}
-
-/** Phép tự kiểm của một chiến dịch: ngày đầu Hubsell có số TikTok + doanh thu TikTok báo từ ngày đó tới hết `to`. */
-export interface TiktokCampaignCheck {
-  from: string;
-  tiktokGmv: number;
-}
-
-/** Từ số quảng cáo theo ngày đã lưu của một chiến dịch (ngày sàn "YYYY-MM-DD") → phép tự kiểm tới hết `to`; null = chưa có ngày nào. Thuần. */
-export function tiktokCampaignCheckOf(perf: Iterable<{ day: string; gmv: number }>, to: string): TiktokCampaignCheck | null {
-  let from = "";
-  let tiktokGmv = 0;
-  for (const p of perf) {
-    if (p.day > to) continue;
-    if (from === "" || p.day < from) from = p.day;
-    tiktokGmv += p.gmv;
-  }
-  return from ? { from, tiktokGmv } : null;
-}
-
-/** Bộ nhóm ở dạng gửi được vào câu SQL (LedgerTiktokBreakevenMapping) + dấu vân tay để nhận biết bộ nhóm / khoảng tự kiểm đổi. */
+/** Bộ nhóm ở dạng gửi được vào câu SQL (LedgerTiktokBreakevenMapping) + dấu vân tay để nhận biết bộ nhóm đổi. */
 export interface TiktokGroupMapping extends LedgerTiktokBreakevenMapping {
   groups: string[];
   keys: string[];
-  checkFrom: string[];
   digest: string;
 }
 
-/** Trải bộ nhóm + khoảng tự kiểm thành mảng song song xếp thứ tự cố định — cùng đầu vào luôn ra cùng `digest`. */
-export function tiktokGroupMappingOf(sets: AdsGroupSets, checks: TiktokCheckWindows): TiktokGroupMapping {
+/** Trải bộ nhóm thành hai mảng song song xếp thứ tự cố định — cùng đầu vào luôn ra cùng `digest` (adsGroupMappingOf). */
+export function tiktokGroupMappingOf(sets: AdsGroupSets): TiktokGroupMapping {
   const { groups, keys, digest } = adsGroupMappingOf(sets);
-  const hash = createHash("sha1").update(`${digest}\u0002${checks.to}`);
-  for (const [group, from] of [...checks.from].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
-    hash.update(`\u0002${group}\u0000${from}`);
-  }
-  return {
-    groups,
-    keys,
-    checkFrom: groups.map((g) => checks.from.get(g) ?? ""),
-    checkTo: checks.to,
-    digest: hash.digest("hex"),
-  };
+  return { groups, keys, digest };
 }
 
 // ------------------------------------------------------------
 // Mặt tiền chung của hai đường cộng
 // ------------------------------------------------------------
 
-/** Nguyên liệu hòa vốn + tự kiểm + đà bán của mọi nhóm của một gian — cùng mặt tiền cho hai đường cộng. */
+/** Nguyên liệu hòa vốn + đà bán của mọi nhóm của một gian — cùng mặt tiền cho hai đường cộng. */
 export interface ChannelBreakevens {
   /** SHOP_GROUP, campaignGroupKey(...) hoặc productGroupKey(...). Nhóm không có đơn → toàn 0. */
   base(groupKey: string): BreakevenBase;
-  /** Tự kiểm mẫu số của một chiến dịch: doanh thu mọi đơn đặt của nhóm trong khoảng ngày riêng của nó (0 = không có khoảng). */
-  placedRevenue(groupKey: string): number;
   /** Theo product id; chỉ sản phẩm có dòng hàng CÓ GIÁ trong cửa sổ (kể cả đơn chưa đối soát). */
   productBases(): Map<string, BreakevenBase>;
   /** Theo product id; sản phẩm không bán được gì trong 30 ngày có thể vắng mặt hoặc mang số 0. */
@@ -506,22 +452,12 @@ function productOfKey(sets: AdsGroupSets): Map<string, string> {
 }
 
 /** Đường "rows": cộng trên mảng MỌI đơn của gian trong cửa sổ. `nowMs` = mốc "bây giờ" của đà bán. */
-export function breakevensFromRows(
-  rows: BreakevenPnlRow[],
-  sets: AdsGroupSets,
-  checks: TiktokCheckWindows,
-  nowMs: number = Date.now()
-): ChannelBreakevens {
+export function breakevensFromRows(rows: BreakevenPnlRow[], sets: AdsGroupSets, nowMs: number = Date.now()): ChannelBreakevens {
   return {
     base(groupKey) {
       if (groupKey === SHOP_GROUP) return tiktokBreakevenBase(rows, null);
       const skus = sets.get(groupKey);
       return skus && skus.size > 0 ? tiktokBreakevenBase(rows, skus) : EMPTY_BREAKEVEN_BASE;
-    },
-    placedRevenue(groupKey) {
-      const from = checks.from.get(groupKey);
-      const skus = sets.get(groupKey);
-      return from && skus && skus.size > 0 ? placedRevenue(rows, skus, from, checks.to) : 0;
     },
     productBases: () => tiktokBreakevenBaseByGroup(rows, productOfKey(sets)),
     productPace: () => salesPaceByGroup(rows, productOfKey(sets), new Date(nowMs)),
@@ -536,18 +472,12 @@ export function breakevensFromRows(
 export interface LedgerTiktokBreakevenGroup extends BreakevenBase, TiktokSalesPace {
   /** Nhóm có ít nhất một dòng hàng CÓ GIÁ trong cửa sổ (đường "rows" chỉ liệt kê sản phẩm như vậy). */
   hasPaid: boolean;
-  /** Doanh thu mọi đơn đặt của nhóm trong khoảng tự kiểm của nhóm (0 = nhóm không tự kiểm). */
-  placedRevenue: number;
 }
 
-/** Ba mảng song song (nhóm, khóa dòng hàng "i:<itemId>" | mã SKU thô, ngày đầu tự kiểm của nhóm); một khóa được thuộc nhiều nhóm. */
+/** Hai mảng song song (nhóm, khóa dòng hàng "i:<itemId>" | mã SKU thô); một khóa được thuộc nhiều nhóm. */
 export interface LedgerTiktokBreakevenMapping {
   groups: readonly string[];
   keys: readonly string[];
-  /** "YYYY-MM-DD" ngày đầu tự kiểm của nhóm ở cùng vị trí ("" = nhóm không tự kiểm). */
-  checkFrom: readonly string[];
-  /** "YYYY-MM-DD" ngày cuối tự kiểm, chung mọi nhóm. */
-  checkTo: string;
 }
 
 export interface LedgerTiktokBreakevenOptions {
@@ -569,6 +499,7 @@ export function breakevensFromGroups(groups: ReadonlyMap<string, LedgerTiktokBre
     profitBeforeAds: g.profitBeforeAds,
     adFee: g.adFee,
     missingCostRevenue: g.missingCostRevenue,
+    unlinkedRevenue: g.unlinkedRevenue,
     pendingOrders: g.pendingOrders,
   });
   return {
@@ -576,7 +507,6 @@ export function breakevensFromGroups(groups: ReadonlyMap<string, LedgerTiktokBre
       const g = groups.get(groupKey);
       return g ? baseOf(g) : EMPTY_BREAKEVEN_BASE;
     },
-    placedRevenue: (groupKey) => groups.get(groupKey)?.placedRevenue ?? 0,
     productBases() {
       const out = new Map<string, BreakevenBase>();
       for (const [productId, g] of products()) if (g.hasPaid) out.set(productId, baseOf(g));

@@ -1755,7 +1755,7 @@ export async function ledgerPlacedRevenueByGroup(
  * Nhóm SHOP_GROUP (mọi dòng) tự có, không nằm trong `mapping`.
  * Nhóm không có dòng hàng nào trong cửa sổ thì KHÔNG có trong kết quả.
  *
- * Cùng luật với tiktokBreakevenBase / placedRevenue / salesPaceByGroup
+ * Cùng luật với tiktokBreakevenBase / salesPaceByGroup
  * (lib/tiktok-breakeven.ts):
  *   · "đã đối soát THẬT" = sổ đơn ghi isSettled VÀ đơn không hủy VÀ có bản kê
  *     TikTok không phải số ước tính — CTE "settled", nối bảng bản kê ở cấp ĐƠN;
@@ -1767,8 +1767,11 @@ export async function ledgerPlacedRevenueByGroup(
  *   · trong đơn có kết cục cuối: thiếu giá vốn (cờ cấp đơn) → doanh thu dồn vào
  *     missingCostRevenue; còn lại cộng doanh thu; đơn không hủy cộng thêm lãi
  *     trước quảng cáo (profit − feeGmvMax) và phí quảng cáo (−feeGmvMax);
- *   · tự kiểm mẫu số: doanh thu MỌI đơn đặt của nhóm (kể cả hủy / chưa đối soát)
- *     có ngày tạo (giờ VN) trong [checkFrom của nhóm, checkTo];
+ *   · dòng CHƯA CÓ id lá (itemId NULL) chỉ khớp nhóm bằng mã thô (mapSku): trong
+ *     đơn có kết cục cuối thì doanh thu dồn vào unlinkedRevenue — không vào
+ *     doanh thu / lãi / số đơn đã đối soát hay hủy, chỉ còn đếm vào pendingOrders
+ *     khi đơn chưa có kết cục (28/10/2026 — lỗi cây đo trực tiếp, không so với
+ *     doanh thu TikTok nữa); nhóm toàn gian không tách;
  *   · đà bán: số lượng của mọi dòng (kể cả dòng giá 0) của đơn không hủy, tạo từ
  *     mốc 30 ngày / 7 ngày lùi từ `paceNow`.
  * Như ledgerMarginByGroup, tiền cộng thẳng phần sổ ĐÃ phân bổ về từng dòng, chỉ
@@ -1784,8 +1787,7 @@ export async function ledgerPlacedRevenueByGroup(
  *     vài nghìn dòng) rồi mới nối với bộ nhóm;
  *   · đơn có từ hai dòng có giá thì hai dòng có thể rơi vào cùng một nhóm → phải
  *     đếm mã đơn phân biệt theo nhóm ("multi"), nhưng chỉ trên các dòng của
- *     những đơn đó và chỉ mang theo mã đơn;
- *   · tự kiểm mẫu số có ngày đầu riêng từng chiến dịch → cộng riêng ("checks").
+ *     những đơn đó và chỉ mang theo mã đơn.
  * `share` của một dòng chỉ làm tròn thành 1 khi các dòng có giá còn lại của đơn
  * cộng lại chưa tới 0,5 phần mười tỷ giá trị đơn — tức đơn trên 20 tỷ đồng kèm
  * một dòng 1 đồng; ngoài ca đó "share = 1" đúng bằng "dòng có giá duy nhất".
@@ -1813,7 +1815,7 @@ export async function ledgerTiktokBreakevenByGroup(
       units30d: Number(r.units30d),
       units7d: Number(r.units7d),
       revenue30d: Number(r.revenue30d),
-      placedRevenue: Number(r.placedRevenue),
+      unlinkedRevenue: Number(r.unlinkedRevenue),
     });
   }
   return out;
@@ -1837,10 +1839,8 @@ function tiktokBreakevenByGroupQuery(
   mapping: LedgerTiktokBreakevenMapping,
   opts: LedgerTiktokBreakevenOptions
 ): { sql: Prisma.Sql; groupNames: string[] } {
-  if (mapping.groups.length !== mapping.keys.length || mapping.groups.length !== mapping.checkFrom.length) {
-    throw new Error(
-      `ledgerTiktokBreakevenByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.keys.length} khóa, ${mapping.checkFrom.length} ngày tự kiểm)`
-    );
+  if (mapping.groups.length !== mapping.keys.length) {
+    throw new Error(`ledgerTiktokBreakevenByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.keys.length} khóa)`);
   }
   if (mapping.groups.includes(SHOP_GROUP)) {
     throw new Error(`ledgerTiktokBreakevenByGroup: "${SHOP_GROUP}" là khóa dành riêng cho nhóm toàn gian`);
@@ -1856,7 +1856,7 @@ function tiktokBreakevenByGroupQuery(
     }
     return index;
   });
-  const split = splitGroupKeys(groupIndexes, mapping.keys, mapping.checkFrom);
+  const split = splitGroupKeys(groupIndexes, mapping.keys);
   const since30 = tsParam(new Date(opts.paceNow.getTime() - TIKTOK_PACE_WINDOW_MS));
   const since7 = tsParam(new Date(opts.paceNow.getTime() - TIKTOK_PACE_RECENT_MS));
   const version = Prisma.sql`${LEDGER_FORMULA_VERSION}::int`;
@@ -1876,11 +1876,13 @@ function tiktokBreakevenByGroupQuery(
     "lines" AS (
       -- "cls" = kết cục của ĐƠN: 0 chưa có kết cục cuối, 1 có kết cục nhưng thiếu giá vốn, 2 đơn hủy cùng lứa, 3 đã đối soát thật.
       -- "sku" = KHÓA dòng hàng (lineGroupKey, lib/ads-margin): có SPU → 'i:' || itemId, không → mã SKU thô — id trước, mã sau
-      -- (Lát 1b). Khóa ghép chỉ dùng ở bước gom theo SKU ("bySku", vài nghìn dòng); các mối nối trên 405.000 dòng ("multi",
-      -- "checks") đi bằng HAI CỘT THẬT "itemId" / "channelSku" — nối bằng biểu thức ghép làm planner mất thống kê, đổi Hash Join
-      -- thành Merge Join (đo gian thử 300.000 đơn: 2,8 giây → 4,5 giây).
+      -- (Lát 1b). Khóa ghép chỉ dùng ở bước gom theo SKU ("bySku", vài nghìn dòng); mối nối trên 405.000 dòng ("multi") đi bằng
+      -- HAI CỘT THẬT "itemId" / "channelSku" — nối bằng biểu thức ghép làm planner mất thống kê, đổi Hash Join thành Merge Join
+      -- (đo gian thử 300.000 đơn: 2,8 giây → 4,5 giây).
+      -- "linked" = dòng có id lá; mọi dòng cùng một khóa "sku" đều cùng giá trị linked (khóa 'i:' ⇔ có id).
       SELECT l."orderId", l."itemId", l."channelSku", COALESCE('i:' || l."itemId", l."channelSku") AS "sku",
-             l."quantity", l."actualRevenue", l."createdDate",
+             (l."itemId" IS NOT NULL) AS "linked",
+             l."quantity", l."actualRevenue",
              (l."profit" - l."feeGmvMax") AS "profitBeforeAds",
              (-l."feeGmvMax") AS "adFee",
              (l."lineGross" > 0) AS "paid",
@@ -1899,20 +1901,21 @@ function tiktokBreakevenByGroupQuery(
         AND l."formulaVersion" = ${version}
     ),
     "map" AS (
-      SELECT DISTINCT m."grp", m."sku", NULLIF(m."checkFrom", '')::date AS "checkFrom"
-      FROM unnest(${groupIndexes}::int[], ${[...mapping.keys]}::text[], ${[...mapping.checkFrom]}::text[]) AS m("grp", "sku", "checkFrom")
+      SELECT DISTINCT m."grp", m."sku"
+      FROM unnest(${groupIndexes}::int[], ${[...mapping.keys]}::text[]) AS m("grp", "sku")
     ),
     -- Bộ nhóm tách sẵn hai bảng nhỏ theo loại khóa (splitGroupKeys) để các mối nối lớn đi bằng CỘT: SPU → mapItem, mã → mapSku.
     "mapItem" AS (
-      SELECT DISTINCT m."grp", m."itemId", NULLIF(m."checkFrom", '')::date AS "checkFrom"
-      FROM unnest(${split.item.grp}::int[], ${split.item.ids}::text[], ${split.item.check}::text[]) AS m("grp", "itemId", "checkFrom")
+      SELECT DISTINCT m."grp", m."itemId"
+      FROM unnest(${split.item.grp}::int[], ${split.item.ids}::text[]) AS m("grp", "itemId")
     ),
     "mapSku" AS (
-      SELECT DISTINCT m."grp", m."sku", NULLIF(m."checkFrom", '')::date AS "checkFrom"
-      FROM unnest(${split.sku.grp}::int[], ${split.sku.skus}::text[], ${split.sku.check}::text[]) AS m("grp", "sku", "checkFrom")
+      SELECT DISTINCT m."grp", m."sku"
+      FROM unnest(${split.sku.grp}::int[], ${split.sku.skus}::text[]) AS m("grp", "sku")
     ),
     "bySku" AS (
       SELECT "sku",
+             bool_or("linked") AS "linked",
              bool_or("paid") AS "hasPaid",
              count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 3) AS "settledOrders",
              count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 2) AS "cancelledOrders",
@@ -1945,45 +1948,37 @@ function tiktokBreakevenByGroupQuery(
         JOIN "mapItem" m ON m."itemId" = x."itemId"
         WHERE x."paid" AND NOT x."sole"
         UNION ALL
+        -- Dòng chưa có id chỉ khớp mã: trong nhóm chỉ còn đếm đơn CHƯA có kết cục (cls 0) — đơn đã chốt của nó đi vào unlinkedRevenue.
         SELECT m."grp", x."orderId", x."cls"
         FROM "lines" x
         JOIN "mapSku" m ON m."sku" = x."channelSku"
-        WHERE x."itemId" IS NULL AND x."paid" AND NOT x."sole"
+        WHERE x."itemId" IS NULL AND x."paid" AND NOT x."sole" AND x."cls" = 0
       ) t
       GROUP BY t."grp"
     ),
-    "checks" AS (
-      SELECT t."grp", sum(t."actualRevenue") AS "placedRevenue"
-      FROM (
-        SELECT m."grp", x."actualRevenue"
-        FROM "lines" x
-        JOIN (SELECT "grp", "itemId", "checkFrom" FROM "mapItem" WHERE "checkFrom" IS NOT NULL) m ON m."itemId" = x."itemId"
-        WHERE x."paid" AND x."createdDate" >= m."checkFrom" AND x."createdDate" <= ${dayParam(mapping.checkTo)}
-        UNION ALL
-        SELECT m."grp", x."actualRevenue"
-        FROM "lines" x
-        JOIN (SELECT "grp", "sku", "checkFrom" FROM "mapSku" WHERE "checkFrom" IS NOT NULL) m ON m."sku" = x."channelSku"
-        WHERE x."itemId" IS NULL AND x."paid" AND x."createdDate" >= m."checkFrom" AND x."createdDate" <= ${dayParam(mapping.checkTo)}
-      ) t
-      GROUP BY t."grp"
-    ),
-    -- Ghép ba phần về từng nhóm bằng UNION ALL + GROUP BY (mỗi phần tối đa một dòng cho mỗi nhóm; "multi" và "checks"
-    -- chỉ có nhóm đã có trong hai phần đầu vì cùng đi từ "lines").
+    -- Ghép hai phần về từng nhóm bằng UNION ALL + GROUP BY (mỗi phần tối đa một dòng cho mỗi nhóm; "multi" chỉ có nhóm đã
+    -- có trong hai phần đầu vì cùng đi từ "lines"). Khóa mã thô (NOT linked) trong một nhóm: tiền đơn đã chốt (doanh thu +
+    -- thiếu giá vốn) dồn sang unlinkedRevenue, số đơn đã đối soát / hủy về 0, đơn chờ vẫn đếm — nhóm toàn gian (grp 0) không tách.
     "parts" AS (
       SELECT 0 AS "grp", a."hasPaid", a."settledOrders", a."cancelledOrders", a."pendingOrders", a."revenue",
-             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", a."revenue30d", 0::numeric AS "placedRevenue"
+             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", a."revenue30d", 0::numeric AS "unlinkedRevenue"
       FROM "bySku" a
       UNION ALL
-      SELECT m."grp", a."hasPaid", a."settledOrders", a."cancelledOrders", a."pendingOrders", a."revenue",
-             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", a."revenue30d", 0::numeric
+      SELECT m."grp", a."hasPaid",
+             CASE WHEN a."linked" THEN a."settledOrders" ELSE 0 END,
+             CASE WHEN a."linked" THEN a."cancelledOrders" ELSE 0 END,
+             a."pendingOrders",
+             CASE WHEN a."linked" THEN a."revenue" ELSE 0 END,
+             CASE WHEN a."linked" THEN a."profitBeforeAds" ELSE 0 END,
+             CASE WHEN a."linked" THEN a."adFee" ELSE 0 END,
+             CASE WHEN a."linked" THEN a."missingCostRevenue" ELSE 0 END,
+             a."units30d", a."units7d", a."revenue30d",
+             CASE WHEN a."linked" THEN 0::numeric ELSE a."revenue" + a."missingCostRevenue" END
       FROM "map" m
       JOIN "bySku" a ON a."sku" = m."sku"
       UNION ALL
       SELECT mu."grp", FALSE, mu."settledOrders", mu."cancelledOrders", mu."pendingOrders", 0, 0, 0, 0, 0, 0, 0::numeric, 0::numeric
       FROM "multi" mu
-      UNION ALL
-      SELECT c."grp", FALSE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0::numeric, c."placedRevenue"
-      FROM "checks" c
     )
     SELECT "grp",
            bool_or("hasPaid") AS "hasPaid",
@@ -1997,7 +1992,7 @@ function tiktokBreakevenByGroupQuery(
            sum("units30d") AS "units30d",
            sum("units7d") AS "units7d",
            sum("revenue30d") AS "revenue30d",
-           sum("placedRevenue") AS "placedRevenue"
+           sum("unlinkedRevenue") AS "unlinkedRevenue"
     FROM "parts"
     GROUP BY "grp"
   `;

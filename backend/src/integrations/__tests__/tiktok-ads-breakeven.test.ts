@@ -14,7 +14,7 @@ describe("productBreakevenVerdict — cột Nhận định của tab Hòa vốn 
     cancelledOrders: 0,
     pendingOrders: 0,
     costCoveragePct: 100,
-    check: null,
+    unlinkedRevenue: 0,
     ...over,
   });
   const camp = (roasTarget: number | null, status = "ongoing") => ({ id: "c1", name: "TC054", status, roasTarget });

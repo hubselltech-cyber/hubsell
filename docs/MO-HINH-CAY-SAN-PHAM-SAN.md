@@ -39,7 +39,7 @@ Gian (Channel)
 | B3 | **Dòng đơn nối vào lá bằng id lá**; mã thô chỉ là đường lui khi sàn không cho id (Lazada hiện tại) hoặc danh mục chưa có lá. | `order-line-keys.ts` (lúc tạo) — ⏳ Lát 1: LƯU id vào `OrderItem.externalId` |
 | B4 | **Gom theo sản phẩm / chiến dịch = gom theo item_id** (SPU) của lá, không gom theo chuỗi mã. Chiến dịch → `AdsCampaign.itemIds` (SPU) → lá → dòng đơn. | `lib/ads-margin.ts groupSkusByItemId` (đang đi qua chuỗi — ⏳ Lát 1) |
 | B5 | Nối kho (`productId`) là quan hệ riêng, không thay thế danh tính sàn; **không đặt hồi tố** lên đơn cũ (tránh cộng kho ảo khi hoàn — `lib/cost-price.ts`). | — |
-| B6 | Số liệu cấp sản phẩm phải có **tự kiểm với sàn**; lệch quá ngưỡng thì **không được dùng để quyết định** (hòa vốn, luật tự động, lãi ước tính). | `lib/tiktok-breakeven.ts breakevenCheckProblem` (Lát 0) |
+| B6 | Số liệu cấp sản phẩm chỉ cộng dòng đơn **nối sản phẩm bằng id lá**; dòng chỉ khớp được bằng mã thô là phần **"chưa tính được"** của độ phủ (cùng rào 90 % với thiếu giá vốn), độ phủ thấp thì **không được dùng để quyết định** (hòa vốn, luật tự động, lãi ước tính). *(Bản 18/10 viết "tự kiểm với sàn" — bỏ 28/10, mục 12: doanh thu sàn gán cho chiến dịch không phải thước đo lỗi cây.)* | TikTok: `lib/tiktok-breakeven.ts unlinkedRevenue` (mục 12). Shopee: còn phép một chiều `direct_gmv` (Lát 4) — đo lại sau |
 | B7 | Giá vốn đi theo lá (`costPrice` của dòng gian > giá kho); lá mới tách ra phải có giá vốn ngay, không chờ khách tự nối. | ⏳ Lát 3 |
 
 Giới hạn chấp nhận: khách **đăng lại tin** (item_id mới) → lịch sử tách giữa tin cũ và tin mới. Với hòa vốn
@@ -67,14 +67,18 @@ dòng gộp cũ được **đổi khóa tại chỗ** nên `ChannelProduct.creat
 
 | Lát | Việc | Trạng thái |
 |---|---|---|
-| **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) |
+| **0** | **Chặn tạm**: đối chiếu doanh thu lệch quá ngưỡng → hòa vốn "chưa tin được": không hiện số, luật tự động rơi về % mục tiêu, Lãi/lỗ ước tính "—", nhận định "Chưa kết luận được" kèm lý do. Không đổi dữ liệu. | ✅ code 18/10 (mục 5) → **⛔ BỎ 28/10 cho TikTok** (báo động oan diện rộng — mục 12) |
 | 1 | Nền đúng: `OrderItem.externalId` (id lá) + `itemId` (SPU) trong sổ dòng hàng; 3 luồng tạo đơn ghi id (Lazada: mã trước, id khi có mẫu — anh chốt 18/10); mọi phép gom đổi sang id trước, mã sau; gỡ dần 4 lớp vá chuỗi. Migration thêm cột NULL, lấy khóa có thử lại. | ✅ 1a (mục 6.8) · ✅ 1b (mục 6.9) · ✅ 1c code 18/10 (mục 6.10) |
 | 2 | Bù đơn cũ: HỎI SÀN cho mọi dòng chưa có id của gian ACTIVE trong 90 ngày (mồ côi trước), lô 50, nghỉ 2 s; ghi `externalId` + đổi `channelSku`; GIỮ `costPriceAtSale`, KHÔNG đặt `productId`; gian không gọi được sàn suy luận hẹp (mục 7). | ✅ code 18/10 (mục 7.7) |
 | 3 | Lá mới thừa kế giá vốn THEO LỊCH SỬ khách đã đặt cho cùng mã thô (không bịa, không nhắc — anh chốt 18/10); vá hồi tố 79 dòng. | ✅ chạy xong prod 18/10 (828 lá, mục 8.7–8.8) — việc một lần, **mã đã gỡ** (mục 11), cột `costPriceInheritedAt` giữ làm dấu + đường lui |
 | 4 | Tự kiểm doanh thu cho Shopee — kiểm MỘT CHIỀU theo `direct_gmv` (sàn chỉ báo doanh thu gán cho quảng cáo); cùng lưới B6. | ✅ code 18/10 (mục 10.6) |
 | — | Lượt vá định kỳ dòng đơn giá vốn 0 của lá đã có giá — bước sau mỗi lượt kéo danh mục một gian (mục 9). | ✅ code 18/10 (mục 9.4) |
 
-## 5. Lát 0 — chi tiết (18/10/2026)
+## 5. Lát 0 — chi tiết (18/10/2026) — ⛔ ĐÃ GỠ KHỎI MÃ TikTok 28/10/2026 (mục 12); giữ làm sử
+
+> Phép so doanh thu Hubsell ↔ TikTok dưới đây bắt đúng ca TC025 (Hubsell THIẾU) nhưng gạt oan mọi gian xoay sản phẩm
+> giữa chiến dịch / LIVE (Hubsell "THỪA" giả — mục 12). Hàm `breakevenCheckProblem`, `check`, `checkProblem`, `placedRevenue`
+> phía TikTok đã gỡ; Shopee (Lát 4, mục 10) chưa đụng.
 
 - Luật thuần `lib/tiktok-breakeven.ts`: `breakevenCheckGapPct(check)` = (Hubsell − TikTok) ÷ TikTok;
   `breakevenCheckProblem(check)` trả lý do khi |lệch| > `TIKTOK_BREAKEVEN_CHECK_MAX_GAP_PCT` (**25 — MẶC ĐỊNH
@@ -639,3 +643,48 @@ hai nơi tự đặt cùng một số.
 | Đường "rows" của biên lãi (`marginsFromRows`, `ads-margin-compare`, 3 biến env đường lui — [[hubsell-quang-cao-gom-sql]]) | **chưa đụng** | Việc riêng, có bộ test đối chiếu hai đường làm lưới đỡ cho mọi lát hôm nay; gỡ là một lát riêng sau khi đường SQL chạy đủ lâu. |
 
 Kiểm: tsc BE sạch; bộ test đầy đủ chạy sau khi sửa (kết quả ghi ở PROGRESS). Không đổi dữ liệu, không migration.
+
+## 12. Bỏ phép so doanh thu với TikTok — lỗi cây đo trực tiếp trên dòng đơn (28/10/2026 tối, anh chốt hướng 26/10)
+
+### 12.1 Vì sao Lát 0 sai thiết kế (không phải sai ngưỡng)
+
+- Lát 0 giả định *"doanh thu TikTok gán cho chiến dịch = mọi đơn của các sản phẩm trong chiến dịch, cùng khoảng ngày"*. Thực tế
+  TikTok chỉ ghi cho chiến dịch phần đơn của **những ngày sản phẩm thuộc nó**; ngày sản phẩm nằm trong LIVE GMV Max thì đơn về
+  chiến dịch LIVE. Hubsell lấy `itemIds` **hiện tại** rồi cộng mọi đơn từ ngày đầu có số → gian xoay sản phẩm giữa nhiều chiến dịch
+  lệch 2–6× dù biên lãi từng sản phẩm vẫn đúng (ca hieucon111099, PROGRESS 26/10 tối).
+- Đo prod 28/10 20:05 (SQL xấp xỉ chỉ khớp `itemId`, gian TikTok ACTIVE): "cao hơn" > 25 % — **đang chạy 63 chiến dịch / 31 gian**
+  (26/10: 48/25), tạm dừng 123/29, kết thúc 14/6; "khớp" đang chạy 117/38; "thấp hơn" đang chạy 13/2 gian. hieucon "Cũ led gạo
+  100 quả sửa 25/10" 253 tr so với TikTok 86 tr (+196 %). Lỗi lan rộng theo thời gian, không phải ca lẻ → sửa thiết kế, không chỉnh
+  ngưỡng (luật "không vá ngưỡng lần nữa").
+- Nhóm "thấp hơn" (Bella Look `…amd3pt` 12 chiến dịch 1 SPU, TORANO `…vpxfpk` ~10): Hubsell/TikTok **đều đặn 0,65–0,80 ở mọi
+  chiến dịch**, SPU đều có trong danh mục, đơn có đủ, `lineGross` còn thấp hơn `actualRevenue` → không phải mã/id, không phải
+  thiếu đồng bộ ngẫu nhiên; giả thuyết dẫn đầu: TikTok `gross_revenue` tính trước giảm giá của shop (hai gian thời trang giảm sâu),
+  and.not.or giảm ít nên chỉ lệch 4–9 %. **Chưa chứng minh** (cần so một đơn cụ thể với số TikTok báo) — ghi lại, không quyết.
+
+### 12.2 Cách đo mới (đã code 28/10, test xanh)
+
+- `BreakevenBase.unlinkedRevenue`: doanh thu **đã có kết cục cuối** của dòng đơn **chưa có id lá**, chỉ khớp nhóm bằng mã thô.
+  Không vào biên lãi, không đếm đơn đã đối soát / hủy; đơn chưa chốt vẫn đếm `pendingOrders`; đà bán vẫn đếm (nhịp bán, không
+  phải lãi). Nhóm toàn gian không tách. Dòng **có id** mà id không thuộc nhóm thì không khớp dù cùng mã → mã dùng chung không còn
+  kéo đơn sản phẩm khác (chiều "THỪA" của Lát 0 hết lý do tồn tại).
+- `costCoveragePct = revenue ÷ (revenue + missingCostRevenue + unlinkedRevenue)` — một rào `BREAKEVEN_MIN_COVERAGE_PCT = 90`
+  (anh duyệt 18/09) cho cả thiếu giá vốn lẫn chưa nối id; **không đặt số mới**. Tên trường giữ nguyên (web/mobile đang đọc).
+- Gỡ: `breakevenCheckGapPct`, `breakevenCheckProblem`, `TiktokBreakevenCheck`, `placedRevenue`, `tiktokCampaignCheckOf`,
+  `TiktokCheckWindows`, `TiktokBreakeven.check/checkProblem`, `BreakevenInput.checkProblem`, CTE `checks` + `checkFrom/checkTo`
+  trong `tiktokBreakevenByGroupQuery`, trường `check`/`problem` của API TikTok, dòng "Đối chiếu doanh thu" + nhãn "Chưa tin được"
+  trên web TikTok. `BREAKEVEN_CHECK_MAX_GAP_PCT` chỉ còn Shopee dùng.
+- SQL: `bySku` thêm `bool_or(linked)`; khóa mã thô trong nhóm → tiền đơn đã chốt dồn sang `unlinkedRevenue`, số đơn chốt về 0;
+  nhánh `mapSku` của `multi` chỉ còn `cls = 0`. Đường "rows" cùng luật (`groupMatchOf`). Test DB hai đường bằng nhau ở mọi nhóm
+  (fixture sẵn có A2/B/G/R* không id → bài test tự nhiên có cả hai loại dòng).
+- UI web: popover ô Hòa vốn nói "Mới X % doanh thu tính được — Y đ là đơn Hubsell chưa nối được với sản phẩm (đang tự bù, khách
+  không cần làm gì); phần còn lại thiếu giá vốn". Mobile đọc `problem` tùy chọn → thiếu trường chạy bình thường (1.4.1 sửa chữ sau).
+- Tác động prod dự kiến: 63 chiến dịch đang chạy / 31 gian hết "Chưa tin được"; không gian ACTIVE có chiến dịch nào tụt dưới 90 %
+  vì dòng không id (đo 28/10: chỉ LUMI SOLAR 100 % không id — gian **ngủ đông**, 0 chiến dịch chạy, Lát 2 bỏ qua theo thiết kế).
+
+### 12.3 Còn lại (chưa làm, chờ anh)
+
+- Bước 2: chiến dịch nhiều SPU — trộn lãi từng SPU theo tỷ trọng `gross_revenue` từng SPU của chiến dịch (report `item_group_id`).
+  Chưa đo (tối 28/10 ưu tiên bước 1).
+- Shopee Lát 4 (một chiều `direct_gmv`): cùng bản chất "so với doanh thu sàn gán"; chưa đo lại tối nay — nếu số prod có ca oan
+  tương tự thì áp cùng cách đo bằng id.
+- Nhóm "thấp hơn": kiểm giả thuyết `gross_revenue` trước giảm giá bằng một đơn cụ thể của Bella Look.

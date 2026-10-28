@@ -3103,15 +3103,10 @@ export interface TiktokAdsBreakeven {
   cancelledOrders: number;
   /** Đơn chưa có kết cục cuối (đang giao / chờ đối soát / đang hoàn) bị để ngoài. */
   pendingOrders: number;
-  /** % doanh thu đã có giá vốn. */
+  /** % doanh thu tính được: vừa có giá vốn, vừa nối đúng sản phẩm bằng id (28/10/2026 gồm cả phần unlinkedRevenue). */
   costCoveragePct: number | null;
-  /** Tự kiểm mẫu số: doanh thu MỌI đơn đặt Hubsell thấy vs TikTok báo, cùng SKU, cùng khoảng ngày (chỉ khi source = campaign). */
-  check: { revenuePlaced: number; tiktokGmv: number; from: string; to: string } | null;
-  /**
-   * Tự kiểm lệch quá ngưỡng → hòa vốn CHƯA TIN ĐƯỢC: backend đã xóa roi/margin, đây là lý do để hiện cho khách
-   * (18/10/2026, docs/MO-HINH-CAY-SAN-PHAM-SAN.md). null = ổn.
-   */
-  problem: string | null;
+  /** Doanh thu đã chốt của dòng đơn chưa nối được sản phẩm bằng id (chỉ khớp mã) — phần "chưa tính được" của độ phủ. */
+  unlinkedRevenue: number;
 }
 
 export const TIKTOK_AUTO_MODE_LABEL: Record<TiktokAdsAutoMode, string> = {

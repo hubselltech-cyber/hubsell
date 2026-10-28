@@ -174,9 +174,11 @@ export interface AutoAssessment {
 }
 
 /**
- * Độ phủ giá vốn tối thiểu để hòa vốn được dùng làm mức loại. Sàn không có số nào cho việc này —
+ * Độ phủ tối thiểu để hòa vốn được dùng làm mức loại. Sàn không có số nào cho việc này —
  * 90 là MẶC ĐỊNH CHỌN (anh Trung duyệt 18/09): đơn thiếu giá vốn đã bị loại khỏi phép tính, nhưng
  * nếu phần thiếu quá lớn thì biên lãi của phần còn lại không đại diện được cả chiến dịch.
+ * Từ 28/10/2026 phần "chưa tính được" gồm cả dòng đơn chưa nối được sản phẩm bằng id lá
+ * (lib/tiktok-breakeven unlinkedRevenue) — cùng một rào, không đặt ngưỡng riêng.
  */
 export const BREAKEVEN_MIN_COVERAGE_PCT = 90;
 
@@ -187,8 +189,6 @@ export interface BreakevenInput {
   source: "campaign" | "shop" | "product" | null;
   orders: number;
   costCoveragePct: number | null;
-  /** Tự kiểm mẫu số lệch quá ngưỡng (lib/tiktok-breakeven breakevenCheckProblem); "" / bỏ trống = ổn. */
-  checkProblem?: string;
 }
 
 export interface HardLevel {
@@ -209,10 +209,8 @@ export function breakevenUnusableReason(be: BreakevenInput | null): string {
   if (be.breakevenRoi == null) return "chưa có đơn đã đối soát đủ giá vốn";
   if (be.source !== "campaign") return "chiến dịch chưa đủ đơn đã đối soát nên hòa vốn đang mượn biên lãi toàn gian";
   if (be.costCoveragePct == null || be.costCoveragePct < BREAKEVEN_MIN_COVERAGE_PCT) {
-    return `mới ${be.costCoveragePct ?? 0}% doanh thu có giá vốn (cần từ ${BREAKEVEN_MIN_COVERAGE_PCT}%)`;
+    return `mới ${be.costCoveragePct ?? 0}% doanh thu có giá vốn và nối đúng sản phẩm (cần từ ${BREAKEVEN_MIN_COVERAGE_PCT}%)`;
   }
-  // Cây sản phẩm Hubsell dựng cho chiến dịch lệch sàn (18/10/2026, bất biến B6 docs/MO-HINH-CAY-SAN-PHAM-SAN.md).
-  if (be.checkProblem) return be.checkProblem;
   return "";
 }
 
