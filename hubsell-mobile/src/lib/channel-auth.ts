@@ -13,8 +13,9 @@ import * as WebBrowser from "expo-web-browser";
  * callback như luồng web; backend/web thấy state mang dấu "từ app" thì nảy
  * tiếp về `hubsellmobile://channels?...` để phiên tự đóng và app đọc kết quả.
  *
- * Khi backend CHƯA có bước nảy (lát 2, chưa làm): phiên trình duyệt dừng ở
- * trang Kênh bán web "Đã kết nối…", khách bấm Xong → app tải lại danh sách —
+ * Lát 2 (28/10/2026) đã có bước nảy: Shopee/Lazada ở backend callback,
+ * TikTok ở trang callback web (state tiền tố app_). Backend bản cũ không nảy
+ * thì phiên dừng ở trang Kênh bán web, khách bấm Xong → app tải lại danh sách —
  * vẫn nối được, chỉ không tự đóng. Giả lập web: mở tab mới, khách tự quay lại.
  */
 
@@ -26,7 +27,9 @@ export type AuthReturn =
 
 /** Đường quay về trong app — route /channels (màn Gian hàng) nhận tham số. */
 export function channelReturnUrl(): string {
-  return Linking.createURL("/channels");
+  // Không gạch chéo đầu: bản cài đặt ra "hubsellmobile://channels" — khớp đích
+  // backend/web nảy về (integrations/app-return.ts, APP_MOBILE_SCHEME).
+  return Linking.createURL("channels");
 }
 
 /** Đọc kết quả ủy quyền từ URL quay về (cùng tham số callback web đang dùng). */

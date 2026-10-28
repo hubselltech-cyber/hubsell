@@ -22,6 +22,7 @@ import {
   handleLazadaCallback,
   verifyOauthState as verifyLazadaOauthState,
 } from "../integrations/lazada/service";
+import { appChannelsUrl, decodeOauthStateClient } from "../integrations/app-return";
 import { findReferrerByCode } from "../services/referral-wallet";
 import { ensureDefaultSubscription, getDefaultTrialDays } from "../services/subscription-service";
 import { sendPasswordChangedMail, sendWelcomeMail } from "../services/customer-mails";
@@ -953,7 +954,16 @@ router.post("/social/apple", async (req, res, next) => {
 // đăng nhập. Xử lý xong thì redirect trình duyệt về trang Kênh bán của FE.
 // ============================================================
 router.get("/shopee/callback", async (req, res) => {
+  // Luồng từ app mobile (state mang client=app) → nảy về deep link của app,
+  // cùng bộ tham số với FE web (integrations/app-return.ts).
+  const fromApp = decodeOauthStateClient(
+    typeof req.query.state === "string" ? req.query.state : null
+  ) === "app";
   const done = (params: Record<string, string>) => {
+    if (fromApp) {
+      res.redirect(appChannelsUrl(params));
+      return;
+    }
     const qs = new URLSearchParams(params).toString();
     res.redirect(`${FRONTEND_BASE_URL}/channels?${qs}`);
   };
@@ -988,6 +998,12 @@ router.get("/shopee/callback", async (req, res) => {
     // lọc chặt chỉ nhận localhost — không mở redirect bừa.
     const devOrigin = state ? decodeShopeeStateOrigin(state) : null;
     if (devOrigin && devOrigin !== FRONTEND_BASE_URL) {
+      // App mobile chạy với backend dev local: bật code về app, app gọi
+      // POST /shopee/connect ở backend local (cùng đường dev web).
+      if (fromApp) {
+        done({ shopee: "code", code, shop_id: shopId });
+        return;
+      }
       res.redirect(
         `${devOrigin}/channels?${new URLSearchParams({
           shopee: "code",
@@ -1026,7 +1042,15 @@ router.get("/shopee/callback", async (req, res) => {
 // end-to-end trên bản deploy; test local dùng đường "dán code" ở routes/channels.
 // ============================================================
 router.get("/lazada/callback", async (req, res) => {
+  // Luồng từ app mobile → nảy về deep link của app (như Shopee).
+  const fromApp = decodeOauthStateClient(
+    typeof req.query.state === "string" ? req.query.state : null
+  ) === "app";
   const done = (params: Record<string, string>) => {
+    if (fromApp) {
+      res.redirect(appChannelsUrl(params));
+      return;
+    }
     const qs = new URLSearchParams(params).toString();
     res.redirect(`${FRONTEND_BASE_URL}/channels?${qs}`);
   };
@@ -1055,6 +1079,10 @@ router.get("/lazada/callback", async (req, res) => {
     // tin state. Origin đã lọc chặt chỉ nhận localhost — không mở redirect bừa.
     const devOrigin = state ? decodeLazadaStateOrigin(state) : null;
     if (devOrigin && devOrigin !== FRONTEND_BASE_URL) {
+      if (fromApp) {
+        done({ lazada: "code", code });
+        return;
+      }
       res.redirect(
         `${devOrigin}/channels?${new URLSearchParams({ lazada: "code", code }).toString()}`
       );

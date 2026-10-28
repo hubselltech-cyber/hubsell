@@ -79,14 +79,21 @@ const STATE_FRONTEND_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:300
 export interface OauthStatePayload {
   ownerId: string;
   targetChannelId?: string;
+  /** "app" = luồng khởi phát từ app mobile → callback nảy về deep link (integrations/app-return.ts). */
+  client?: "app";
 }
 
-export function signOauthState(ownerId: string, targetChannelId?: string): string {
+export function signOauthState(
+  ownerId: string,
+  targetChannelId?: string,
+  client?: "app"
+): string {
   return jwt.sign(
     {
       ownerId,
       purpose: "lazada_oauth",
       fe: STATE_FRONTEND_URL,
+      ...(client ? { client } : {}),
       // Gian đích khi bấm "Kết nối lại" từ MỘT dòng shop cụ thể — callback đối
       // chiếu seller_id Lazada trả về với gian này, tránh upsert nhầm gian khác.
       ...(targetChannelId ? { target: targetChannelId } : {}),
@@ -103,6 +110,7 @@ export function verifyOauthState(token: string): OauthStatePayload | null {
     return {
       ownerId: String(payload.ownerId),
       targetChannelId: typeof payload.target === "string" ? payload.target : undefined,
+      ...(payload.client === "app" ? { client: "app" as const } : {}),
     };
   } catch {
     return null;

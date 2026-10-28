@@ -32,7 +32,7 @@ import {
   type TiktokConnectedChannel,
 } from "@/lib/api";
 
-type Phase = "processing" | "confirm" | "success" | "error";
+type Phase = "processing" | "confirm" | "success" | "error" | "app";
 
 /** Khóa sessionStorage giữ mã ủy quyền khi cài từ App Store mà chưa đăng nhập. */
 export const TIKTOK_STORE_CODE_KEY = "tiktok_store_code";
@@ -40,6 +40,12 @@ const STORE_CODE_AT_KEY = "tiktok_store_code_at";
 /** Mã ủy quyền TikTok chỉ dùng được một lần và sống ngắn — quá mốc này thì
  *  đừng thử đổi nữa, bảo người bán cài lại (TikTok không công bố TTL, số tự chọn). */
 const STORE_CODE_MAX_AGE_MS = 15 * 60 * 1000;
+
+/** Deep link màn Gian hàng của app mobile — state tiền tố `app_` do backend
+ *  sinh khi app xin link (lát 2, 28/10/2026; docs MOBILE-NOI-GIAN-GIA-VON.md). */
+const APP_SCHEME = process.env.NEXT_PUBLIC_APP_MOBILE_SCHEME ?? "hubsellmobile";
+const appReturnUrl = (code: string, state: string) =>
+  `${APP_SCHEME}://channels?${new URLSearchParams({ tiktok: "code", code, state }).toString()}`;
 
 const EXPIRED_HINT =
   "Mã ủy quyền có thể đã hết hạn. Hãy mở lại Hubsell trong App Store của Seller Center " +
@@ -51,6 +57,8 @@ export default function TiktokCallbackPage() {
   const [message, setMessage] = useState("Đang xử lý uỷ quyền từ TikTok…");
   const [channels, setChannels] = useState<TiktokConnectedChannel[]>([]);
   const [pendingCode, setPendingCode] = useState<string | null>(null);
+  /** Lối 3 — về app mobile: link để bấm tay nếu trình duyệt không tự mở app. */
+  const [appUrl, setAppUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // React 18 StrictMode gọi effect 2 lần ở dev — auth_code chỉ dùng được MỘT LẦN,
   // nên chốt cờ để không đổi token hai lượt (lần sau sẽ lỗi "code đã dùng").
@@ -119,6 +127,18 @@ export default function TiktokCallbackPage() {
       return;
     }
 
+    // Lối 3 — ủy quyền khởi phát từ APP MOBILE (state tiền tố app_): không đổi
+    // token ở đây (trình duyệt có thể chưa đăng nhập web), nảy nguyên code +
+    // state về app để app gọi POST /api/channels/tiktok/callback bằng JWT của nó.
+    if (state && state.startsWith("app_")) {
+      const url = appReturnUrl(code, state);
+      setAppUrl(url);
+      setPhase("app");
+      setMessage("Đang quay về app Hubsell…");
+      window.location.replace(url);
+      return;
+    }
+
     // Lối 2 — cài từ App Store: TikTok không gửi state.
     if (!state) {
       if (!getToken()) {
@@ -168,6 +188,15 @@ export default function TiktokCallbackPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <Card className="w-full max-w-md">
         <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+          {phase === "app" && (
+            <>
+              <Loader2 className="size-10 animate-spin text-slate-400" />
+              <p className="text-slate-600">{message}</p>
+              {appUrl && (
+                <Button render={<a href={appUrl} />}>Mở app Hubsell</Button>
+              )}
+            </>
+          )}
           {phase === "processing" && (
             <>
               <Loader2 className="size-10 animate-spin text-slate-400" />

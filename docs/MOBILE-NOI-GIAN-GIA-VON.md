@@ -1,7 +1,7 @@
 # Nối gian hàng + Cập nhật giá vốn trên app mobile (28/10/2026)
 
 > Anh Trung 28/10/2026: "Việc không thể liên kết shop trên app đang gây khá nhiều khó khăn cho khách hàng… 2 mục này anh định để icon trên trang chủ. Em dựng trên local anh xem trước."
-> Trạng thái: **anh duyệt 28/10 đêm, ĐÃ COMMIT (chưa push)**; đi bản 1.4.1 build 01/11; còn lát 2 (nảy về app) + lát 3 (phân trang) ở mục 4. Mã chỉ ở `hubsell-mobile/`, backend + web 0 thay đổi.
+> Trạng thái: **anh duyệt 28/10 đêm, ĐÃ COMMIT (chưa push)**; lát 2 (nảy về app) ĐÃ LÀM cùng đêm; đi bản 1.4.1 build 01/11; còn lát 3 (phân trang) ở mục 4. Mã chỉ ở `hubsell-mobile/`, backend + web 0 thay đổi.
 
 ## 1. Phản biện trước khi làm
 
@@ -66,7 +66,7 @@ Trần gói: gian mới chạm trần → backend 409 `PLAN_LIMIT_CHANNELS`; `ap
 - **Chưa kiểm:** vòng ủy quyền thật trên máy (cần lát 2 để phiên tự đóng), giao diện tối (giả lập web không đổi theme), máy 320 px, gian vài nghìn SKU thật.
 
 ## 4. Lát sau (nếu anh chốt)
-- **Lát 2 — backend + web nảy về app:** `signOauthState` Shopee/Lazada thêm `client: "app"` khi `?client=app`; callback `/api/auth/shopee|lazada/callback` thấy `client=app` → `res.redirect("hubsellmobile://channels?...")` thay vì FE; trang `/channels/tiktok/callback` web thấy state tiền tố `app_` → `window.location = "hubsellmobile://channels?code=&state="`. Không đụng hồ sơ sàn. Khoảng 40 dòng.
+- **Lát 2 — backend + web nảy về app: ✅ ĐÃ LÀM 28/10 đêm.** `integrations/app-return.ts` (`APP_MOBILE_SCHEME` env, mặc định `hubsellmobile`; `appChannelsUrl`; `decodeOauthStateClient` đọc dấu không cần chữ ký — chỉ chọn đích, danh tính vẫn qua verify). `signOauthState(ownerId, target?, client?)` Shopee/Lazada ký `client: "app"` khi app xin link `?client=app`; TikTok state tiền tố `app_`. Callback `/api/auth/shopee|lazada/callback` thấy dấu → 302 `hubsellmobile://channels?shopee=connected|error|code…` (cùng tham số FE web; ca dev local bật `code` về app). Trang web `/channels/tiktok/callback` thấy state `app_` → `window.location.replace("hubsellmobile://channels?tiktok=code&code&state")` + nút "Mở app Hubsell" dự phòng (`NEXT_PUBLIC_APP_MOBILE_SCHEME` tùy chọn). Mobile `fetchAuthUrl` gửi `client=app`, `channelReturnUrl` = `Linking.createURL("channels")`. Test `integrations/__tests__/app-return.test.ts` 7 ca; kiểm thật backend local: state app → Location `hubsellmobile://channels?shopee=error…` / `lazada=error…` (code giả), state web → `localhost:3000/channels`, TikTok state `app_…`. Chưa thử vòng thật trên điện thoại (cần build 1.4.1 + backend prod).
 - **Lát 3 — `sku-products?q=&page=`** cho gian vài nghìn SKU (web dùng chung).
 - Bản 1.4.1 build 01/11: hai màn đi JS → có thể OTA sau, nhưng deep link scheme đã có sẵn (`hubsellmobile`) nên không cần build native mới.
 

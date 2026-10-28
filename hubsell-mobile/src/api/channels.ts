@@ -16,9 +16,12 @@ export type OauthPlatform = "SHOPEE" | "TIKTOK" | "LAZADA";
  * gian). Link Shopee luồng cũ sống ~5 phút → xin đúng lúc bấm.
  */
 export function fetchAuthUrl(platform: OauthPlatform, channelId?: string) {
-  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+  // client=app: backend ký dấu vào state → callback nảy về hubsellmobile://channels
+  // (Shopee/Lazada ở backend, TikTok ở trang callback web) — lát 2, 28/10/2026.
+  const q = new URLSearchParams({ client: "app" });
+  if (channelId) q.set("channelId", channelId);
   return api<{ url: string; state?: string }>(
-    `/api/channels/${platform.toLowerCase()}/auth-url${qs}`
+    `/api/channels/${platform.toLowerCase()}/auth-url?${q.toString()}`
   );
 }
 

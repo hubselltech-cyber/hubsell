@@ -65,6 +65,12 @@ import {
   invalidatePlanState,
   respondPlanLimit,
 } from "../services/plan-enforcement";
+import { TIKTOK_APP_STATE_PREFIX } from "../integrations/app-return";
+
+/** `?client=app` = app mobile xin link → callback nảy về deep link của app (lát 2, 28/10/2026). */
+function oauthClient(req: AuthRequest): "app" | undefined {
+  return req.query.client === "app" ? "app" : undefined;
+}
 
 const router = Router();
 
@@ -263,7 +269,9 @@ router.get("/tiktok/auth-url", requireAdmin, (_req: AuthRequest, res, next) => {
       });
       return;
     }
-    const state = crypto.randomBytes(16).toString("hex");
+    // App mobile: tiền tố để trang callback web biết nảy code về app (TikTok
+    // trả state nguyên vẹn; app đối chiếu lại đúng chuỗi này).
+    const state = (oauthClient(_req) ? TIKTOK_APP_STATE_PREFIX : "") + crypto.randomBytes(16).toString("hex");
     res.json({ url: buildAuthorizeUrl(state), state });
   } catch (err) {
     next(err);
@@ -473,7 +481,7 @@ router.get("/shopee/auth-url", requireAdmin, async (req: AuthRequest, res, next)
       }
     }
     const cfg = getShopeeConfig();
-    const state = signShopeeState(req.ownerId!, channelId);
+    const state = signShopeeState(req.ownerId!, channelId, oauthClient(req));
     // Luồng cũ: state nhét trong query của redirect (Shopee chỉ kiểm domain);
     // luồng mới: state đi qua tham số chuẩn. Cả hai đều đổ về callback kèm
     // &code=&shop_id=&state=. Link luồng cũ hết hạn ~5' — FE xin link lúc click.
@@ -567,7 +575,7 @@ router.get("/lazada/auth-url", requireAdmin, async (req: AuthRequest, res, next)
         return;
       }
     }
-    const state = signLazadaState(req.ownerId!, channelId);
+    const state = signLazadaState(req.ownerId!, channelId, oauthClient(req));
     res.json({ url: buildLazadaAuthorizeUrl(state) });
   } catch (err) {
     next(err);
