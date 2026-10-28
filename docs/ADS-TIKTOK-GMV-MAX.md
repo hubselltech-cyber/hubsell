@@ -463,15 +463,16 @@ Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không 
   âm = bị trừ; mapper dồn vào `order.serviceFee`) → `lãi trước ads = profit − feeGmvMax`. Gian trả quảng cáo bằng số dư
   tài khoản quảng cáo (and.not.or: kiểm 26/09, feeGmvMax = 0 ở 692/692 đơn) thì khoản này = 0, lợi nhuận đơn vốn đã là
   lãi trước quảng cáo — phép cộng ngược không đổi gì. Đính chính 18/10 (trước đó chú thích viết như thể sàn luôn trừ).
-- ★ **18/10/2026 — ĐỐI CHIẾU LỆCH QUÁ 25% → HÒA VỐN "CHƯA TIN ĐƯỢC" (Lát 0 của [MO-HINH-CAY-SAN-PHAM-SAN.md](MO-HINH-CAY-SAN-PHAM-SAN.md))**:
-  TC025 NEW (and.not.or) báo 8,90 trong khi đủ đơn là 7,10 vì 193 dòng đơn cũ mang mã thô `TC025-XAM` rơi khỏi tập SKU
-  sau bản đổi đuôi 15/10 — dòng đối chiếu bắt được (−74%). `breakevenCheckProblem` → `TiktokBreakeven.checkProblem`;
-  luật tự động / nhận định / lãi ước tính / sàn nấc hạ đều coi là chưa có hòa vốn; API xóa `roi`/`margin`, trả `problem`.
+- ~~★ **18/10/2026 — ĐỐI CHIẾU LỆCH QUÁ 25% → HÒA VỐN "CHƯA TIN ĐƯỢC"** (Lát 0)~~ → **⛔ GỠ 28/10/2026** (MO-HINH-CAY mục 12):
+  phép so doanh thu Hubsell ↔ TikTok gạt oan 63 chiến dịch đang chạy / 31 gian (khách xoay sản phẩm giữa chiến dịch + LIVE
+  thì TikTok chỉ ghi phần đơn của những ngày sản phẩm thuộc chiến dịch). Nay lỗi cây đo trực tiếp: dòng đơn **chưa có id
+  lá** (chỉ khớp mã thô — ca TC025 18/10) → `unlinkedRevenue`, không vào biên lãi, kéo `costCoveragePct` xuống qua cùng rào
+  90 %. `breakevenCheckProblem` / `check` / `problem` / `placedRevenue` phía TikTok không còn.
 - **Mẫu số theo định nghĩa của TikTok**: gross_revenue đếm đơn ĐẶT, không rút đơn hủy/hoàn → đơn HỦY góp doanh thu,
-  0 đồng lãi (không lấy "lỗ ảo" bằng giá vốn của dòng P&L). ★ GIẢ ĐỊNH chưa kiểm được bằng số prod: nếu TikTok thật ra
-  có rút đơn hủy thì hòa vốn đang bị nâng cao hơn thực (sai về phía dè dặt). Cách kiểm đã cài sẵn: ô căn cứ hiện
-  "Đối chiếu doanh thu đơn đặt dd/mm–dd/mm: Hubsell thấy X · TikTok báo Y" — `placedRevenue` cộng MỌI đơn đặt (kể cả
-  hủy / đang giao) của đúng SKU chiến dịch trên đúng những ngày có số TikTok; hai số sát nhau là mẫu số đúng.
+  0 đồng lãi (không lấy "lỗ ảo" bằng giá vốn của dòng P&L). ★ GIẢ ĐỊNH: and.not.or 18/10 lệch +4,0 / +4,7 / +8,8 % (nếu
+  TikTok rút đơn hủy với ~15–20 % tỷ lệ hủy thì lệch phải lớn hơn nhiều) → đứng được. Dòng "Đối chiếu doanh thu" trên UI
+  đã bỏ 28/10; muốn kiểm lại thì dùng SQL (MO-HINH-CAY mục 12.1). ⚠️ 28/10: hai gian thời trang giảm giá sâu (Bella Look,
+  TORANO) Hubsell/TikTok đều đặn 0,65–0,80 → nghi gross_revenue tính TRƯỚC giảm giá shop — chưa chứng minh.
 - **Giá vốn**: đơn đã có kết cục cuối mà thiếu giá vốn ở bất kỳ dòng hàng nào → loại khỏi cả tử lẫn mẫu, báo
   `costCoveragePct`.
 - **Chiến dịch → SKU**: `AdsCampaign.itemIds` = SPU của chiến dịch (`saveCampaignProductIds`, gọi trong lượt ngày và
@@ -486,8 +487,8 @@ Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không 
   null → thẻ "—"); route chiến dịch cũng trả `estProfit` (FE chi tiết chưa hiện). UI: cột sau ROI thực, thẻ số thứ 5
   (lưới 2/3/5 cột như Shopee), mượn biên lãi gian (`source = shop`) → tô nhạt + title. Giới hạn ghi trong tooltip: biên lãi
   lứa đã đối soát áp vào doanh thu chưa đối soát; doanh thu GMV Max gồm cả đơn tự nhiên → đây là lãi của SẢN PHẨM sau
-  quảng cáo, không phải phần "quảng cáo đẻ thêm". ⏳ Giả định mẫu số (dòng "Đối chiếu doanh thu") VẪN CHƯA kiểm bằng số
-  prod — anh trỏ ô Hòa vốn TC054 đọc X · Y; lệch > 10% thì phải hiệu chỉnh cột này. Phương án "lãi thật từ sổ cái" bị
+  quảng cáo, không phải phần "quảng cáo đẻ thêm". Giả định mẫu số đã kiểm 18/10 (TC054 +4,0 %); dòng "Đối chiếu doanh
+  thu" trên UI đã bỏ 28/10. Phương án "lãi thật từ sổ cái" bị
   gác: đơn kỳ xem chưa đối soát, ra lỗ ảo; hợp cho cột "Lãi thực hiện" khi khoảng xem đã lùi đủ xa. Từng video: để sau.
 - ★ **MỨC LOẠI THEO HÒA VỐN** (anh Trung duyệt 18/09): `AutoRuleConfig.hardBasis` `pct` (mặc định) | `breakeven`.
   `auto-rules.ts` `resolveHardLevel(cfg, breakeven)` → `{hardRoi, basis, fallbackReason, label}`; `planAutoExclusion`

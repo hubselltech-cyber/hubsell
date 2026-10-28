@@ -744,9 +744,10 @@ export interface TiktokAdsBreakeven {
   orders: number;
   cancelledOrders: number;
   pendingOrders: number;
+  /** % doanh thu tính được (có giá vốn + nối đúng sản phẩm bằng id — 28/10/2026). */
   costCoveragePct: number | null;
-  /** Tự kiểm lệch quá ngưỡng → backend đã xóa roi/margin, đây là lý do (18/10/2026). Bỏ trống / null = ổn. */
-  problem?: string | null;
+  /** Doanh thu đã chốt của dòng đơn chưa nối được sản phẩm bằng id (28/10/2026). */
+  unlinkedRevenue?: number;
 }
 
 export type TiktokAdsAdviceKind =

@@ -184,15 +184,13 @@ export function fmtRoi(v: number | null | undefined): string {
 }
 
 /**
- * ROI hòa vốn kèm hai trạng thái đặc biệt như web TiktokBreakevenValue:
- * tự kiểm không đạt → "Chưa tin được"; biên lãi ≤ 0 → "Lỗ sẵn" (backend trả
- * roi = null ở cả hai ca nên trước đây app chỉ in "—", mất cảnh báo — rà 26/10).
+ * ROI hòa vốn kèm trạng thái đặc biệt như web TiktokBreakevenValue: biên lãi ≤ 0 →
+ * "Lỗ sẵn" (backend trả roi = null nên trước đây app chỉ in "—", mất cảnh báo — rà
+ * 26/10). Trạng thái "Chưa tin được" (tự kiểm với TikTok) đã bỏ 28/10/2026: backend
+ * không trả `problem` nữa, phần chưa nối id nằm trong costCoveragePct.
  */
-export function fmtBreakeven(
-  b: { roi: number | null; negativeMargin?: boolean; problem?: unknown } | null | undefined
-): string {
+export function fmtBreakeven(b: { roi: number | null; negativeMargin?: boolean } | null | undefined): string {
   if (!b) return "—";
-  if (b.problem) return "Chưa tin được";
   if (b.negativeMargin) return "Lỗ sẵn";
   return fmtRoi(b.roi);
 }
