@@ -61,7 +61,8 @@ export function ChannelDisconnectedBanner() {
     queryKey: qk.channels(),
     queryFn: () => fetchChannels(),
     // Cron token-refresh phía backend đánh dấu DISCONNECTED theo nhịp 30' —
-    // poll 5' là đủ tươi; refetch-on-focus mặc định lo phần quay lại tab.
+    // poll 5' là đủ tươi (refetchOnWindowFocus đã tắt toàn cục ở query-provider).
+    // Không đếm đơn/SP: banner mount ở MỌI trang, câu đếm chỉ trang Kênh bán cần.
     refetchInterval: 5 * 60 * 1000,
     staleTime: 60 * 1000,
   });

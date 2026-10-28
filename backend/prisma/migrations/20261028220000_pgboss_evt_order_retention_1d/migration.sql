@@ -9,7 +9,7 @@
 -- 1. deletion_seconds 604800 → 86400 trên pgboss.queue: pg-boss CHÉP giá trị này
 --    vào từng dòng lúc ghi, nên câu này chỉ áp việc ghi SAU. Dòng đã có trong
 --    1 ngày gần nhất sửa kèm ở mục 2 để cùng lứa dọn; dòng cũ hơn do script xóa
---    theo lô (backend/scripts/pgboss-evt-order-trim.sql) rồi VACUUM FULL.
+--    theo lô (backend/prisma/manual-migrations/20261028-pgboss-evt-order-trim.sql) rồi VACUUM FULL.
 --    Không chỗ nào trong mã đọc việc completed cũ hơn 1 ngày (tra 28/10):
 --    queueStats đọc cột đếm sẵn ở pgboss.queue, HQ Hàng đợi bền chỉ ready+active,
 --    hasLiveJob chỉ cần việc sống; nguồn tra soát là webhook_events (7/30 ngày).
