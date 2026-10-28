@@ -465,7 +465,7 @@ Làm tay trong phiên (lịch `hubsell-bat-lat-2-ano-28-10-20h` 23:00 đã TẮT
 | Render Logs 1 giờ | `[read-lanes]` chỉ 2 dòng boot (2 lần deploy 20:30 + 21:30); 0 dòng `cursor-reader`, 0 `persist`, 0 `[gateway] 429` khóa đơn; log ANO còn lại là Ads-pulse/Token-refresh/đối soát TikTok bình thường |
 | `api_rate_keys` | 0 khóa `order` (xem ghi chú trên); khóa gian `SHOPEE:2044679\|shop:239068349` hits 3 (Ads 21/10, không đổi) |
 
-Nhắc đo **CHƯA TẠO ĐƯỢC** (bộ lọc Auto từ chối cả tạo lẫn sửa lịch, 4 lần) — cần anh duyệt ở phiên sau: **29/10 21:45** đọc 24 giờ đầu (sync_cursors caught_up, log `ghi:`, lỗi persist, 429 khóa gian ANO, so số đơn hai đường); **04/11 08:30** đo 7 ngày + SQL so lệch hai đường
+Nhắc đo đã tạo (anh duyệt 21:58 sau khi bộ lọc Auto từ chối 4 lần): **29/10 21:45** `hubsell-doc-24h-lat-2-ano-29-10` đọc 24 giờ đầu (sync_cursors caught_up, log `ghi:`, lỗi persist, 429 khóa gian ANO, so số đơn hai đường); **04/11 08:30** `hubsell-do-7-ngay-lat-2-ano-04-11` đo 7 ngày + SQL so lệch hai đường
 theo mã (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng) → tiêu chí sang Pha D (5d). Tắt khẩn: câu DELETE ở 5c.2.
 
 ## 5d. Pha C lát 2 — "ghi Order qua đường mới" (19/10/2026, anh: "code lát 2 … cờ riêng, chưa bật, trong lúc bóng chạy")
@@ -515,7 +515,7 @@ Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc 
 
 | Khi nào | Việc | Ghi chú |
 |---|---|---|
-| ✅ **28/10 21:42** (anh chốt 26/10, đẩy sớm từ 22:00/23:00) | **ĐÃ BẬT lát 2** cho ANO Official Store (SQL 5c.2, kết quả 5c.3) | ghi song song 7 ngày; nhắc đo 29/10 21:45 + 04/11 08:30 CHƯA tạo được (chờ anh duyệt) |
+| ✅ **28/10 21:42** (anh chốt 26/10, đẩy sớm từ 22:00/23:00) | **ĐÃ BẬT lát 2** cho ANO Official Store (SQL 5c.2, kết quả 5c.3) | ghi song song 7 ngày; nhắc đo 29/10 21:45 + 04/11 08:30 đã tạo |
 | Trước Pha D (làm được khi đã quyết bật lát 2) | **Pha D lát 0 — chuẩn bị, chưa bật gì:** (1) chuyển 3 việc phụ vào đường mới: hỏi lại ước tính escrow Shopee cho đơn đổi trạng thái (`changedOrderCodes` → `syncShopeePendingEscrowEstimates`), chuông giao thất bại Lazada (`noticeLazadaDeliveryFail`), thẻ HQ độ trễ đọc `sync_cursors` thay mốc nước cũ; (2) SQL so lệch hai đường theo mã đơn từng gian (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng); (3) công tắc tắt quét đơn đường cũ THEO GIAN (worker `order-auto-sync` bỏ qua tầng đơn của gian có cờ, webhook giữ nguyên), mặc định tắt | không đụng prod cho tới khi bật cờ |
 | 7 ngày song song không lệch | **Pha D**: bật công tắc từng gian → gỡ mã cũ, trần trang rải rác, cờ; docs hợp đồng đọc sàn thay DONG-BO-GIAI-DOAN-3 mục 1 | mỗi bước có số trước–sau |
 | Sau đơn | Luồng hoàn / tài chính (ví, escrow, sao kê) / Ads / sản phẩm qua máy đọc con trỏ | theo thứ tự mục 5 |
