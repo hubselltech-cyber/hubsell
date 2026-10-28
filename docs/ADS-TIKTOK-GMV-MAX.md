@@ -116,6 +116,12 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   UI đánh dấu "đang chờ" 30 phút từ sổ hành động.
 - **Trang ủy quyền** tự điền tài khoản TikTok for Business đang đăng nhập trên trình duyệt; lần đầu ủy quyền
   advertiser phải nhập mã xác minh gửi về email tài khoản quảng cáo (hiệu lực 48h cho cùng app).
+- ★ **Gian không nối được — "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này"** (anh Trung 29/10/2026,
+  ca gian "QA giày công sở giá rẻ"): token không thấy `store_id` của gian ở `getGmvMaxStores` của bất kỳ TKQC nào. HAI nguyên
+  nhân khách hay gặp, phải đủ cả hai mới nối được: (1) đăng nhập nhầm tài khoản TikTok → Switch account ở màn ủy quyền;
+  (2) TKQC đúng nhưng **chưa thêm gian ở Ads Manager → Tài khoản → thẻ Cửa hàng → Thêm cửa hàng** (gian chưa nằm trong tài sản
+  của TKQC thì API không trả về). Lý do backend (`oauth.ts`) nêu cả hai; trang `/ads/tiktok/callback` vẽ hướng dẫn 2 bước
+  (`WrongAccountHint`, bắt theo cụm "không quản lý quảng cáo"); ca "TKQC X đang chạy nhưng token không có quyền" chỉ vẽ bước Switch account.
 
 - ★ **Báo cáo video THỈNH THOẢNG TRẢ THIẾU DÒNG** (probe 18/09/2026 đêm, TC054, 12 lần gọi cùng tham số — 6 lần cửa sổ 30 ngày,
   6 lần 7 ngày: 3 lần thiếu đúng một video `…738631`, các lần khác đủ 54). Không phải phân trang (1 trang), không báo lỗi. Hệ quả

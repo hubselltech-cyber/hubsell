@@ -195,7 +195,16 @@ export async function linkTiktokAdsStores(
     } else if (seen.has(storeId)) {
       skipped.push({ channelId: c.id, shopName: c.shopName, reason: "Gian chưa có tài khoản quảng cáo nào được cấp quyền chạy GMV Max." });
     } else {
-      skipped.push({ channelId: c.id, shopName: c.shopName, reason: "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này." });
+      // Hai nguyên nhân khách hay gặp (anh Trung 29/10/2026, ca gian "QA giày công sở giá rẻ"): đăng nhập nhầm tài khoản
+      // TikTok, HOẶC tài khoản quảng cáo đúng rồi nhưng chưa thêm gian ở Ads Manager → Tài khoản → Cửa hàng. Cụm
+      // "vừa ủy quyền" + "không quản lý quảng cáo" là mốc để trang callback web vẽ hướng dẫn 2 bước — đổi chữ phải đổi cả FE.
+      skipped.push({
+        channelId: c.id,
+        shopName: c.shopName,
+        reason:
+          "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này: đăng nhập nhầm tài khoản, " +
+          "hoặc tài khoản quảng cáo chưa thêm gian ở mục Tài khoản → Cửa hàng trong TikTok Ads Manager.",
+      });
     }
   }
 
@@ -206,8 +215,8 @@ export async function linkTiktokAdsStores(
     throw new Error(
       only
         ? `Gian "${only.shopName}": ${only.reason}`
-        : "Tài khoản TikTok vừa ủy quyền không chạy GMV Max cho gian TikTok nào của anh/chị trên Hubsell. " +
-            "Hãy ủy quyền bằng đúng tài khoản đang chạy quảng cáo cho shop."
+        : "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian TikTok nào của anh/chị trên Hubsell: " +
+            "đăng nhập nhầm tài khoản, hoặc tài khoản quảng cáo chưa thêm gian ở mục Tài khoản → Cửa hàng trong TikTok Ads Manager."
     );
   }
 

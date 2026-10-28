@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 29/10/2026 (sáng) — NỐI TKQC TIKTOK: HƯỚNG DẪN ĐỦ 2 NGUYÊN NHÂN
+
+- **Anh báo (kèm ảnh):** khách bấm Kết nối tài khoản quảng cáo gặp "Gian 'QA giày công sở giá rẻ': Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này", màn lỗi chỉ dạy Switch account. Thực tế cần đủ **2 ý**: (1) đúng tài khoản TikTok; (2) TKQC phải **thêm gian ở TikTok Ads Manager → Tài khoản → thẻ Cửa hàng → Thêm cửa hàng** (ảnh 2: ANO có DARKMAN STORE + and.not.or đã phê duyệt).
+- **Gốc:** nhánh `!seen.has(storeId)` trong `integrations/tiktok-ads/oauth.ts` — token không thấy store_id của gian ở `getGmvMaxStores` của TKQC nào; gian chưa nằm trong tài sản Cửa hàng của TKQC thì API không trả về, nên nhìn giống hệt "nhầm tài khoản".
+- **Sửa:** lý do backend nêu cả 2 nguyên nhân (cả câu chung khi không gian nào nối được); web `/ads/tiktok/callback` tách `WrongAccountHint`: ca "không quản lý quảng cáo" vẽ danh sách 2 bước (Switch account + Tài khoản → Cửa hàng → Thêm cửa hàng), ca "TKQC X đang chạy nhưng token không có quyền" giữ 1 bước Switch account; bỏ state `wrongAccount`. Docs ADS-TIKTOK-GMV-MAX mục lưu ý ủy quyền.
+- **Kiểm:** tsc backend + frontend sạch, eslint tệp callback sạch. **Chưa** soi màn lỗi bằng mắt (cần token thật rơi đúng nhánh); chưa push.
+
+---
+
 ## Phiên 29/10/2026 (sáng sớm) — CHUẨN BỊ HỒ SƠ NỘP 1.4.1 (01/11)
 
 - **Anh hỏi:** cần chuẩn bị gì để 01/11 nộp luôn. **Soi:** ASC 1.4.0 READY_FOR_SALE (không bản chờ → tạo 1.4.1 được, không phải rút); Play production 1.3.1 vc7 completed (Android 1.4.0 chưa từng nộp → 1.4.1 gộp); không module native/quyền mới, scheme có sẵn; Data safety/Privacy không đổi.
