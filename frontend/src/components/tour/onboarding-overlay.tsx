@@ -62,13 +62,13 @@ export function OnboardingOverlay({
             <p className="text-lg font-semibold">Bạn đã sẵn sàng!</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
               Vào trang <span className="text-foreground">Kênh bán</span>,
-              bấm “Kết nối gian hàng” rồi uỷ quyền trên sàn — đơn hàng sẽ tự
+              bấm “Kết nối gian hàng” rồi đăng nhập trên sàn — đơn hàng sẽ tự
               đồng bộ về ngay sau đó.
             </p>
 
             <div className="mx-auto mt-5 grid max-w-md gap-2 text-left text-sm">
               {[
-                { icon: ShieldCheck, text: "Uỷ quyền chính chủ trên trang của sàn — Hubsell không giữ mật khẩu của bạn." },
+                { icon: ShieldCheck, text: "Đăng nhập chính chủ trên trang của sàn — Hubsell không giữ mật khẩu của bạn." },
                 { icon: Zap, text: "Đơn hàng, phí sàn tự về ngay — cùng giá vốn, đây là số để tính ROAS hòa vốn từng sản phẩm." },
                 { icon: Store, text: "Nối xong gian thì nối quảng cáo của sàn đó — trợ lý canh chiến dịch trên cả ba sàn ở một nơi." },
               ].map(({ icon: Icon, text }) => (

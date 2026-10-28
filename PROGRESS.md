@@ -11,6 +11,7 @@
 - **Anh báo:** nhiều khách mới kêu không xem được video hướng dẫn chạy trước nút liên kết shop (ảnh anh gửi: "Bước 8/8" khung trắng, chỉ còn con trỏ + nút rỗng) → bỏ video, **chỉ bỏ video**.
 - **Sửa:** `frontend/src/components/tour/onboarding-overlay.tsx` — gỡ `TourPlayer` + trạng thái `tour/ready` + khóa `hubsell_onboarding_tour_seen` + nút "Bỏ qua hướng dẫn"/"Xem lại hướng dẫn" (nút này chỉ để mở lại video). Chủ shop chưa nối gian vào thẳng thẻ "Bạn đã sẵn sàng" + "Liên kết gian hàng ngay"; câu dưới lời chào luôn là "Nối gian hàng → nhập giá vốn → nối quảng cáo…". Màn của nhân viên giữ nguyên. Chú thích gate ở `app-shell.tsx` sửa theo.
 - **Giữ nguyên:** `CHANNELS_TOUR` + ảnh/mp3 (vẫn dùng ở /guide, /guide/render, nút "Hướng dẫn kết nối" khối Shopee trong /channels — khách tự bấm).
+- **Câu chữ (anh: "ủy quyền" nặng nề, người mới sợ):** thẻ này đổi "ủy quyền" → "đăng nhập" (2 chỗ: "rồi đăng nhập trên sàn", "Đăng nhập chính chủ trên trang của sàn").
 - **Kiểm:** tsc + eslint sạch; soi local (backend-http + frontend-http, DB local, tài khoản thử mới chưa có gian): desktop + 375px không tràn, bấm nút → /channels đúng. Console chỉ có 409 NO_CHANNEL (đúng thiết kế). Chưa push.
 
 ## Phiên 28/10/2026 (08:05–08:30) — SỰ CỐ: 502 + APP KHÔNG TẢI ĐƯỢC → SUPABASE MICRO CẠN DISK IO BUDGET → ANH NÂNG SMALL
