@@ -1,0 +1,35 @@
+Hubsell is a B2B tool for online merchants in Vietnam selling on Shopee, Lazada and TikTok Shop. It is a companion app to our web product: merchants check today's revenue and profit, browse orders, follow ad campaigns, adjust stock, enter cost prices, and (warehouse staff) scan return parcels. The interface is in Vietnamese only.
+
+ACCOUNTS
+PLEASE REVIEW WITH THE DEMO ACCOUNT BELOW. It is already connected to three sample stores ("Hubsell Demo Store" on Shopee, Lazada and TikTok Shop) with orders, returns, stock, cost prices and financial data.
+
+Shop owner (all screens): see the user name / password fields above.
+
+Sign-up: a shop-owner account can be created in the app ("Dang ky": name, e-mail, password, accept Terms and Privacy Policy) or with Google / Apple sign-in; no trial, plan or price is shown. Account deletion: Settings tab ("Cau hinh") -> tap the name row -> "Xoa tai khoan" at the bottom of the Account screen; personal data is erased immediately, the rest within 30 days.
+
+STORE CONNECTION (new in 1.4.1)
+A merchant links their own marketplace store from the "Gian hang" screen (Home -> "Thiet lap" section, or the "Lien ket gian hang ngay" button on an account with no store). Tapping "Ket noi gian hang" and choosing Shopee / TikTok Shop / Lazada opens that marketplace's own seller login page in a system browser session (ASWebAuthenticationSession); after approval the marketplace redirects back and the store appears in the list. This needs a real seller account on the marketplace (a third-party service), so it cannot be completed with the demo account - its stores are already connected. The app never asks for marketplace passwords.
+
+PAYMENTS (In-App Purchase)
+Service plans are purchased inside the app with In-App Purchase (20 non-renewing subscriptions: Starter / Growth / Pro / Business / Scale x 1 / 3 / 6 / 12 months). Entry points: Settings -> "Goi dich vu", and the plan row on the Account screen. Prices come from StoreKit. No other purchase method, external link or price comparison exists in the app. Merchants who bought a plan on our website keep using it (Guideline 3.1.3(b)). To test: Settings -> "Goi dich vu", pick a plan and period, tap "Mua goi", complete the sandbox purchase; the new period shows on the same screen.
+
+HOW TO TEST
+- Home tab: three swipeable pages (Overview, Finance, Ads). At the bottom of Overview, "Thiet lap" has two cards: "Gian hang" (connected stores and status) and "Gia von" (cost prices).
+- "Gia von": "Can nhap" lists products sold in the last 30 days without a cost price; "Tat ca" lists all products. Tap a product to enter a cost price; multi-variant products (colour / size) can be priced per group or all at once.
+- A one-time dialog on Overview may ask to enter cost prices; "Bo qua" dismisses it permanently.
+- Orders tab: orders from all stores with filters; tap an order for details and fees.
+- Round QR button in the tab bar scans an order's tracking barcode. No parcel needed: type at least 3 trailing digits of any order code into the search field on the scan screen.
+- Warehouse tab ("Kho"): "Ton kho" adjusts stock; "Don hoan" lists return parcels with a scan button (typing the last digits works too).
+- Round button at the bottom right of Home opens the Hubsell Assistant (ask "Doanh thu hom nay bao nhieu").
+
+PERMISSIONS
+- Camera: only to scan shipping barcodes; nothing is saved or uploaded. If declined, orders can still be found by typing digits.
+- Microphone / speech recognition: only when the user taps the mic button to ask the Assistant by voice.
+- Face ID: optional app lock.
+
+THIRD-PARTY AI: NONE
+No user data goes to any third-party AI service; no AI/ML SDK. The Hubsell Assistant is our own rule-based query engine (keyword matching over the merchant's own sales data on our backend). Voice input uses the iOS Speech framework; only recognized text reaches our server. Privacy policy: https://hubsell.vn/privacy (sections 3 and 5).
+
+ACCOUNT DELETION: in the app (see ACCOUNTS); https://hubsell.vn/xoa-tai-khoan
+
+Contact: support@hubsell.vn, +84 96 5863292

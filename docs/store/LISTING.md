@@ -189,6 +189,8 @@ ACCOUNT DELETION: inside the app (see ACCOUNTS); policy page https://hubsell.vn/
 Contact: support@hubsell.vn, +84 96 5863292
 ```
 
+**★ 29/10 — bản 1.4.1 (nộp 01/11): Notes người duyệt mới ở `docs/store/review-notes-1.4.1.txt`** (áp bằng `node scripts/asc-release.mjs review-notes 1.4.1 ../docs/store/review-notes-1.4.1.txt` SAU create-version, TRƯỚC submit). Khác bản 19/10: đoạn Sign-up bỏ câu "Home shows an empty state with a button to our website" (app không còn link ra web); thêm đoạn **STORE CONNECTION** — nối gian ngay trong app qua trang đăng nhập của sàn mở bằng ASWebAuthenticationSession, cần tài khoản người bán thật (bên thứ ba) nên người duyệt không thử được, 3 gian demo đã nối sẵn, app không hỏi mật khẩu sàn; HOW TO TEST thêm mục Thiết lập, màn Giá vốn (Cần nhập / Tất cả, giá theo nhóm màu–size), hộp nhắc giá vốn một lần. Gộp hai đoạn PAYMENTS thành một (IAP). Google Play: dán đoạn Sign-up + STORE CONNECTION vào Play Console → Nội dung ứng dụng → Thông tin đăng nhập → "Hướng dẫn khác" (bỏ chữ In-App Purchase; làm tay, API không sửa được ô này). "Có gì mới" 1.4.1 viết lại ở `whats-new-1.4.1.txt` (nối gian, Giá vốn, hủy đơn, số khớp web, thông báo).
+
 **★ 10/10 — build 8 (Apple từ chối lần 3, chuyển sang In-App Purchase, xem `APPLE-REVIEW-REPLY-3.md` + `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md`): với Apple, THAY đoạn PAYMENTS bên dưới bằng đoạn này** (Google giữ nguyên đoạn cũ vì Android chưa bán trong app):
 
 ```

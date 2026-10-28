@@ -1,5 +1,6 @@
 Bản 1.4.1:
-• Khách xin hủy đơn: thẻ đơn và chi tiết đơn hiện dải đỏ kèm thời hạn, bấm Trả lời để Đồng ý hoặc Từ chối ngay trên app.
-• Quét trúng đơn đang bị khách xin hủy: máy báo tiếng và rung để dừng đóng gói.
-• Số liệu Tài chính, Tổng quan, Quảng cáo, Kho khớp từng đồng với bản web: số đủ trên thẻ, dấu âm rõ, lãi ròng một công thức.
-• Cài đặt thông báo: nút "Gửi thử một thông báo"; thông báo đơn mới ghi rõ số đơn theo từng gian hàng.
+• Liên kết gian hàng Shopee, TikTok Shop, Lazada ngay trong app; mục Thiết lập trên Tổng quan báo gian nào mất kết nối.
+• Màn Giá vốn mới: nhập nhanh SKU còn thiếu, một giá cho cả mẫu hoặc theo màu / size.
+• Khách xin hủy đơn: dải đỏ kèm thời hạn, bấm Trả lời để Đồng ý hoặc Từ chối; quét trúng đơn đang bị xin hủy thì máy báo tiếng và rung.
+• Số liệu Tài chính, Tổng quan, Quảng cáo khớp từng đồng với bản web.
+• Thông báo: nút Gửi thử; đơn mới ghi rõ số đơn theo từng gian.
