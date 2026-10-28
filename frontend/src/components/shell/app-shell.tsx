@@ -589,9 +589,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Chưa kết nối gian hàng → chặn các trang khác, hiện màn chào mừng + hướng
-  // dẫn động rồi đưa sang /channels liên kết shop THẬT (đã bỏ nút tạo gian giả
-  // lập ở màn này). TRỪ:
+  // Chưa kết nối gian hàng → chặn các trang khác, hiện màn chào mừng + nút
+  // đưa sang /channels liên kết shop THẬT (đã bỏ nút tạo gian giả lập; 28/10
+  // bỏ luôn video hướng dẫn chạy trước nút). TRỪ:
   //  - trang /channels (kể cả callback OAuth con): phải mở được thì mới kết
   //    nối được — chặn nốt là người dùng không có đường nào thoát;
   //  - khu điều hành Hubsell: văn phòng công ty không bao giờ liên kết sàn —
