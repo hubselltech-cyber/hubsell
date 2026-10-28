@@ -6,6 +6,19 @@
 
 ---
 
+## Phiên 28/10/2026 (08:05–08:30) — SỰ CỐ: 502 + APP KHÔNG TẢI ĐƯỢC → SUPABASE MICRO CẠN DISK IO BUDGET → ANH NÂNG SMALL
+
+- **Triệu chứng:** anh báo 502 liên tục, web lag, app không tải. Render báo `hubsell-backend-sg` **Failed service**; `/health` (không đụng DB) lúc 200 lúc 502 (`x-render-routing: dynamic-paid-error`); `/api/auth/me`, `/api/auth/check-username` treo hoặc 502.
+- **Gốc (Supabase, chỉ đọc qua Chrome):** trang chủ project **Unhealthy**; Observability 60′: CPU 98% gần hết là **IOwait**, vọt từ ~07:40; băng thông đĩa ghim phẳng ~10 MB/s (= mức nền Micro 87 Mbps); trang Infrastructure **Disk IO balance 0%**; Supabase tự báo "Disk IO budget is being consumed". 7 ngày: đọc đĩa tăng dần từ ~26/10. `pg_stat_activity`: autovacuum `order_line_ledger_2026_10` 162 s, còn lại chờ IO DataFileRead/WALWrite/WalSync. Log Postgres: SELECT `Channel` 12–29 s.
+- **Ai ngốn đĩa (`pg_stat_statements`, gom từ 12/10):**
+  1. **pg-boss giám sát mỗi 60 s trên bảng riêng `evt.order`** (`pgboss.jf7f79…`, 379.498 việc completed, giữ 7 ngày theo `deletion_seconds` mặc định, 158 MB): đếm thống kê hàng đợi (lock CTE, ~3.900 khối/lượt) + `failJobsByTimeout` + `failJobsByHeartbeat` (`WHERE state='active'…` — không index nào khớp vì các index một phần đều kèm `policy`/`group_id`), mỗi loại ~22.600 lượt, ~3.650–3.930 khối/lượt ⇒ quét cả bảng 3 lần/phút, cộng ~255 triệu khối. Thêm `findJobs` theo `singleton_key` trên cùng bảng: 4.918 lượt × 7.812 khối.
+  2. **Danh sách gian** (`Channel` + `_count` `ChannelProduct` GROUP BY channelId, `WHERE userId ORDER BY createdAt`): 3 biến thể 2.343 + 1.536 + 746 lượt, TB 3,2–10,3 s, 10–17 nghìn khối/lượt (~118 MB) — quét cả `ChannelProduct` (145.158 dòng, 129 MB).
+  3. Ghi dồn: `tiktok_order_settlements` 8,6 tr lượt UPDATE / 350 nghìn dòng; `Order` 18,7 tr / 547 nghìn dòng (16 ngày, phần lớn HOT).
+  - Micro 1 GB RAM < dữ liệu nóng (Order 521 MB, webhook_events 352, ledger 10/2026 287, settlements 170, ChannelProduct 129, pgboss 158…) ⇒ các lượt quét cả bảng đọc thẳng đĩa ⇒ cạn burst ⇒ bị bóp về mức nền.
+- **08:20** tự đỡ một phần (backend 0,2 s, đăng nhập được, HQ vẫn "Đang tải").
+- **Xử lý:** em đề xuất nâng compute Micro → Small (9,68 → 14,83 USD/tháng, +5,15, khởi động lại vài phút); anh tự bấm nâng ~08:26. DB offline ~2,5′ (backend 500), **lên lại 08:28:33**: Supabase Healthy, compute SMALL, RAM 57%, 22/90 kết nối; IOwait rơi từ ~80% xuống ~10%; backend `/health` + câu đọc DB 0,15–0,25 s; trang HQ tải đủ số. `CURRENT_INFRA` sửa: compute Small 2GB, 90 kết nối, 44 USD/tháng (tsc sạch). Chưa đọc log Render (Chrome chưa đăng nhập Render).
+- **Còn lại (chưa làm, chờ anh):** (a) rút `deletion_seconds` của `evt.order` (7 ngày → ~1 ngày) hoặc index `state='active'` cho bảng riêng — giảm quét pg-boss; (b) danh sách gian bỏ `_count` quét `ChannelProduct`; (c) soi vì sao settlements/Order bị UPDATE lặp. Memory `hubsell-su-co-disk-io-supabase-2026-10-28`.
+
 ## Phiên 27/10/2026 (chiều) — HỆ MARKETING-SALE: NHÂN VẬT ZALO HỌC TỪ HỘI THOẠI NGƯỜI THẬT TRƯỚC KHI CHẠY (anh chốt, chưa code)
 
 - Anh hỏi ý tưởng: trước khi nhân vật trả lời Zalo chạy chính thức, cho nó học từ hội thoại người thật (văn phong, nắm ý, thuyết phục dùng thử, lúc gọi kỹ thuật, nhận nội dung hỗ trợ → gửi lại khách). Em đồng ý, chỉnh 4 điểm; anh chốt thêm vào kế hoạch tuần 1.

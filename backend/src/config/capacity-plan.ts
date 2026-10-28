@@ -30,15 +30,17 @@ export interface InfraPlan {
 // 27/09/2026 — M1 HOÀN TẤT: Render web Starter (HUBSELL_ROLE=web) + Background
 // Worker Starter riêng hubsell-worker-sg (HUBSELL_ROLE=worker, tách 10:50 27/09)
 // + Supabase Pro (nâng sáng 27/09 sau sự cố egress, docs/DEPLOY-RENDER-SUPABASE.md 2d).
+// 28/10/2026 08:28 — compute Micro → Small (2GB RAM, 90 kết nối, +5,15 USD) sau
+// sự cố cạn Disk IO budget 07:40 (PROGRESS 28/10).
 export const CURRENT_INFRA: InfraPlan = {
   webPlan: "Render Starter (512MB, 0.5 CPU, không ngủ, HUBSELL_ROLE=web)",
   workerPlan: "Render Background Worker Starter (512MB, hubsell-worker-sg)",
-  dbPlan: "Supabase Pro (8GB, compute Micro)",
+  dbPlan: "Supabase Pro (8GB, compute Small 2GB)",
   webRamMb: 512,
   workerRamMb: 512,
   dbSizeMb: 8192,
-  dbMaxConnections: 60,
-  monthlyUsd: 39,
+  dbMaxConnections: 90,
+  monthlyUsd: 44,
 };
 
 // ---------- 2. Ngưỡng dấu hiệu (WORKER + INFRA) ----------
