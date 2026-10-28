@@ -16,7 +16,7 @@
 // nguyên query về localhost (chỉ chấp nhận localhost — chặn open-redirect).
 // ============================================================
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
@@ -48,27 +48,33 @@ function devOriginOf(state: string): string | null {
  * có HAI nguyên nhân khách hay gặp (anh Trung 29/10/2026): (1) nhầm tài khoản TikTok, (2) tài khoản quảng cáo chưa
  * thêm gian ở Ads Manager → Tài khoản → Cửa hàng → Thêm cửa hàng. Cụm chữ do backend `tiktok-ads/oauth.ts` phát.
  */
+/** Chữ đậm cho tên nút / mục menu khách phải bấm. */
+function B({ children }: { children: ReactNode }) {
+  return <span className="font-medium text-slate-900">{children}</span>;
+}
+
 function WrongAccountHint({ reason }: { reason: string }) {
   if (!/vừa ủy quyền/.test(reason)) return null;
   const storeMissing = /không quản lý quảng cáo/.test(reason);
   const switchStep = (
     <>
-      Ở màn hình TikTok chọn <span className="font-medium text-slate-900">Switch account</span> (góc phải ô tài khoản) rồi
-      đăng nhập đúng tài khoản đang chạy quảng cáo cho gian.
+      Khi mở lại màn ủy quyền, bấm <B>Switch account</B> (góc phải ô tài khoản) rồi đăng nhập tài khoản TikTok đang chạy
+      quảng cáo cho gian.
     </>
   );
   if (!storeMissing) {
     return <p className="text-sm text-slate-500">Bấm Kết nối lại. {switchStep}</p>;
   }
   return (
-    <div className="space-y-1.5 text-left text-sm text-slate-500">
-      <p>Kiểm đủ hai điều sau rồi bấm Kết nối lại:</p>
-      <ol className="list-decimal space-y-1 pl-5">
-        <li>{switchStep}</li>
+    <div className="space-y-2 text-left text-sm text-slate-500">
+      <p>Kiểm cả hai điều sau, xong bấm Kết nối lại:</p>
+      <ol className="list-decimal space-y-2 pl-5">
         <li>
-          Trong TikTok Ads Manager mở <span className="font-medium text-slate-900">Tài khoản</span> → thẻ{" "}
-          <span className="font-medium text-slate-900">Cửa hàng</span> →{" "}
-          <span className="font-medium text-slate-900">Thêm cửa hàng</span>, thêm gian này vào tài khoản quảng cáo.
+          <B>Đăng nhập đúng tài khoản TikTok.</B> {switchStep}
+        </li>
+        <li>
+          <B>Thêm gian vào tài khoản quảng cáo.</B> Vào TikTok Ads Manager → mục <B>Tài khoản</B> → thẻ <B>Cửa hàng</B> → bấm{" "}
+          <B>Thêm cửa hàng</B> và chọn gian này.
         </li>
       </ol>
     </div>

@@ -11,7 +11,7 @@
 - **Anh báo (kèm ảnh):** khách bấm Kết nối tài khoản quảng cáo gặp "Gian 'QA giày công sở giá rẻ': Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này", màn lỗi chỉ dạy Switch account. Thực tế cần đủ **2 ý**: (1) đúng tài khoản TikTok; (2) TKQC phải **thêm gian ở TikTok Ads Manager → Tài khoản → thẻ Cửa hàng → Thêm cửa hàng** (ảnh 2: ANO có DARKMAN STORE + and.not.or đã phê duyệt).
 - **Gốc:** nhánh `!seen.has(storeId)` trong `integrations/tiktok-ads/oauth.ts` — token không thấy store_id của gian ở `getGmvMaxStores` của TKQC nào; gian chưa nằm trong tài sản Cửa hàng của TKQC thì API không trả về, nên nhìn giống hệt "nhầm tài khoản".
 - **Sửa:** lý do backend nêu cả 2 nguyên nhân (cả câu chung khi không gian nào nối được); web `/ads/tiktok/callback` tách `WrongAccountHint`: ca "không quản lý quảng cáo" vẽ danh sách 2 bước (Switch account + Tài khoản → Cửa hàng → Thêm cửa hàng), ca "TKQC X đang chạy nhưng token không có quyền" giữ 1 bước Switch account; bỏ state `wrongAccount`. Docs ADS-TIKTOK-GMV-MAX mục lưu ý ủy quyền.
-- **Kiểm:** tsc backend + frontend sạch, eslint tệp callback sạch. **Chưa** soi màn lỗi bằng mắt (cần token thật rơi đúng nhánh); chưa push.
+- **Anh "cho anh cái ảnh, đọc xong seller phải hiểu":** ép tạm nhánh lỗi trên FE local (?mock=store, đã gỡ), chụp 659 + 375 px → rút gọn câu lỗi backend (ngoặc đơn 2 nguyên nhân), danh sách 2 bước mỗi dòng mở bằng chữ đậm "Đăng nhập đúng tài khoản TikTok" / "Thêm gian vào tài khoản quảng cáo"; hoisted `B` ra module (eslint static-components). Anh "ok rồi đấy push đi" → tsc BE/FE + eslint sạch, ✅ ĐÃ PUSH 29/10 sáng (3ceb5f16 + commit chữ).
 
 ---
 

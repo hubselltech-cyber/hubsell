@@ -201,9 +201,7 @@ export async function linkTiktokAdsStores(
       skipped.push({
         channelId: c.id,
         shopName: c.shopName,
-        reason:
-          "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này: đăng nhập nhầm tài khoản, " +
-          "hoặc tài khoản quảng cáo chưa thêm gian ở mục Tài khoản → Cửa hàng trong TikTok Ads Manager.",
+        reason: `Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này (nhầm tài khoản, hoặc gian chưa được thêm vào tài khoản quảng cáo).`,
       });
     }
   }
@@ -215,8 +213,7 @@ export async function linkTiktokAdsStores(
     throw new Error(
       only
         ? `Gian "${only.shopName}": ${only.reason}`
-        : "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian TikTok nào của anh/chị trên Hubsell: " +
-            "đăng nhập nhầm tài khoản, hoặc tài khoản quảng cáo chưa thêm gian ở mục Tài khoản → Cửa hàng trong TikTok Ads Manager."
+        : `Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian TikTok nào của anh/chị trên Hubsell (nhầm tài khoản, hoặc gian chưa được thêm vào tài khoản quảng cáo).`
     );
   }
 
