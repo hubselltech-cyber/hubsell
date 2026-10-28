@@ -1,7 +1,8 @@
 import { Router, type Response } from "express";
 import crypto from "crypto";
-import { ChannelName } from "@prisma/client";
+import { ChannelName, type Channel } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { countByChannel } from "../services/channel-counts";
 import { respondHibernated } from "../services/plan-hibernation";
 import { HISTORY_BACKFILL_NOTICE } from "../services/sync-schedule";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
@@ -74,8 +75,43 @@ const CONNECTABLE: ChannelName[] = [
   ChannelName.OFFLINE,
 ];
 
-// GET /api/channels — kênh bán của shop (kèm số đơn + số sản phẩm đã liên kết).
-// Staff cũng được xem (cần cho bộ lọc đơn hàng) nhưng KHÔNG thấy apiToken.
+/**
+ * Hình dạng gian trả ra ngoài. KHÔNG bao giờ trả secret (refreshToken, shopCipher);
+ * apiToken chỉ Admin thấy (giữ hành vi cũ). Còn lại phơi cờ tiện cho giao diện.
+ */
+function publicChannel(c: Channel, isAdmin: boolean) {
+  const {
+    refreshToken: _rt,
+    shopCipher: _sc,
+    accessTokenExpireAt,
+    refreshTokenExpireAt,
+    apiToken,
+    ...safe
+  } = c;
+  return {
+    ...safe,
+    apiToken: isAdmin ? apiToken : null,
+    // Đã nối API thật (OAuth) hay chỉ là gian giả lập/thủ công. Dùng
+    // refreshToken làm dấu hiệu chung cho MỌI sàn (TikTok có shop_cipher,
+    // Shopee thì không — nhưng cả hai đều có refreshToken khi nối thật).
+    apiConnected: Boolean(c.refreshToken),
+    accessTokenExpireAt,
+    // Hạn ủy quyền (ngày, không phải secret) — Lazada app ISV: token sống
+    // theo kỳ đăng ký dịch vụ 6 tháng, FE hiện "Kỳ dịch vụ đến…" + nút Gia hạn.
+    refreshTokenExpireAt,
+    // Gian TikTok ủy quyền TRƯỚC khi app Hubsell bật quyền sửa tồn (12/10/2026):
+    // token cũ không có quyền → trang Kênh bán hiện nút Kết nối lại dù gian
+    // đang hoạt động (integrations/tiktok/scopes.ts).
+    needsReauth: tiktokNeedsReauthForStockPush(c),
+  };
+}
+
+// GET /api/channels — kênh bán của shop. Staff cũng được xem (cần cho bộ lọc
+// đơn hàng) nhưng KHÔNG thấy apiToken.
+// `?withCounts=1` (chỉ trang Kênh bán): kèm `_count` {orders, channelProducts}
+// + `matchedProductCount`, đếm theo chỉ mục channelId (services/channel-counts.ts).
+// Mặc định KHÔNG đếm — banner mất ủy quyền + bộ lọc kênh gọi route này ở mọi
+// trang, trước 28/10/2026 mỗi lượt gom cả bảng Order + ChannelProduct 3–10 s.
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const channels = await prisma.channel.findMany({
@@ -85,55 +121,20 @@ router.get("/", async (req: AuthRequest, res, next) => {
         ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
       },
       orderBy: { createdAt: "desc" },
-      include: { _count: { select: { orders: true, channelProducts: true } } },
     });
-
-    // Số sản phẩm sàn ĐÃ KHỚP mã SKU về kho gốc (productId != null) — khác với
-    // tổng channelProducts (gồm cả sản phẩm sàn chưa liên kết).
-    const matched = await prisma.channelProduct.groupBy({
-      by: ["channelId"],
-      where: {
-        productId: { not: null },
-        channel: {
-          userId: req.ownerId!,
-          ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
-        },
-      },
-      _count: { _all: true },
-    });
-    const matchedByChannel = new Map(
-      matched.map((m) => [m.channelId, m._count._all])
-    );
+    const withCounts = req.query.withCounts === "1";
+    const counts = withCounts ? await countByChannel(channels.map((c) => c.id)) : null;
 
     const isAdmin = req.userRole === "ADMIN";
     res.json(
       channels.map((c) => {
-        // KHÔNG bao giờ trả secret (refreshToken, shopCipher) ra ngoài. apiToken
-        // chỉ Admin thấy (giữ hành vi cũ). Còn lại phơi cờ tiện cho giao diện.
-        const {
-          refreshToken: _rt,
-          shopCipher: _sc,
-          accessTokenExpireAt,
-          refreshTokenExpireAt,
-          apiToken,
-          ...safe
-        } = c;
+        const base = publicChannel(c, isAdmin);
+        if (!counts) return base;
+        const n = counts.get(c.id)!;
         return {
-          ...safe,
-          apiToken: isAdmin ? apiToken : null,
-          // Đã nối API thật (OAuth) hay chỉ là gian giả lập/thủ công. Dùng
-          // refreshToken làm dấu hiệu chung cho MỌI sàn (TikTok có shop_cipher,
-          // Shopee thì không — nhưng cả hai đều có refreshToken khi nối thật).
-          apiConnected: Boolean(c.refreshToken),
-          accessTokenExpireAt,
-          // Hạn ủy quyền (ngày, không phải secret) — Lazada app ISV: token sống
-          // theo kỳ đăng ký dịch vụ 6 tháng, FE hiện "Kỳ dịch vụ đến…" + nút Gia hạn.
-          refreshTokenExpireAt,
-          matchedProductCount: matchedByChannel.get(c.id) ?? 0,
-          // Gian TikTok ủy quyền TRƯỚC khi app Hubsell bật quyền sửa tồn (12/10/2026):
-          // token cũ không có quyền → trang Kênh bán hiện nút Kết nối lại dù gian
-          // đang hoạt động (integrations/tiktok/scopes.ts).
-          needsReauth: tiktokNeedsReauthForStockPush(c),
+          ...base,
+          _count: { orders: n.orders, channelProducts: n.channelProducts },
+          matchedProductCount: n.matchedProducts,
         };
       })
     );
@@ -887,12 +888,10 @@ router.patch("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const updated = await prisma.channel.update({
-      where: { id: channel.id },
-      data,
-      include: { _count: { select: { orders: true, channelProducts: true } } },
-    });
-    res.json(updated);
+    // Giao diện chỉ chờ 200 rồi tải lại danh sách; không đếm đơn/SP (28/10/2026)
+    // và không trả secret (trước đây trả cả refreshToken/shopCipher).
+    const updated = await prisma.channel.update({ where: { id: channel.id }, data });
+    res.json(publicChannel(updated, true));
   } catch (err) {
     next(err);
   }
@@ -935,7 +934,6 @@ router.delete("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     const channel = await prisma.channel.findFirst({
       where: { id: req.params.id, userId: req.ownerId! },
-      include: { _count: { select: { orders: true, channelProducts: true } } },
     });
     if (!channel) {
       res.status(404).json({ error: "Không tìm thấy kênh" });
@@ -948,11 +946,12 @@ router.delete("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
       return;
     }
     const ownerId = req.ownerId!;
+    const counts = (await countByChannel([channel.id])).get(channel.id)!;
     const deleted = {
       id: channel.id,
       shopName: channel.shopName,
-      orders: channel._count.orders,
-      channelProducts: channel._count.channelProducts,
+      orders: counts.orders,
+      channelProducts: counts.channelProducts,
     };
     const result = await deleteChannelWithin(channel.id);
     if (result.pending) {

@@ -80,7 +80,7 @@ export default function FinanceExpensesPage() {
   // Danh sách gian hàng nuôi 2 dialog thêm khoản — cùng ô cache với ChannelFilter.
   const channelsQ = useQuery({
     queryKey: qk.channels(),
-    queryFn: fetchChannels,
+    queryFn: () => fetchChannels(),
     staleTime: 5 * 60_000,
     retry: false,
   });

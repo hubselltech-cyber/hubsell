@@ -52,7 +52,7 @@ export function ChannelFilter({
   // không mất báo cáo.
   const { data } = useQuery({
     queryKey: qk.channels(),
-    queryFn: fetchChannels,
+    queryFn: () => fetchChannels(),
     staleTime: 5 * 60_000,
     retry: false,
   });

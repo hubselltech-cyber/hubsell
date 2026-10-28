@@ -46,7 +46,7 @@ const ALL: ChannelFilterQuery = { channelName: "", channelId: "" };
 function prefetchChannels(qc: QueryClient) {
   qc.prefetchQuery({
     queryKey: qk.channels(),
-    queryFn: fetchChannels,
+    queryFn: () => fetchChannels(),
     staleTime: 5 * 60_000, // khớp staleTime trong ChannelFilter
   });
 }

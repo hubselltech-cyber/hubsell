@@ -188,7 +188,7 @@ Render tính tiền byte worker gửi ra ngoài; database ở Supabase là "ra n
 | Hạn giữ một việc | 5 phút | **Em tự chọn.** Hiện đẩy tồn dùng 15 phút (cũng tự chọn). Sẽ tính lại sau khi có thời hạn gọi sàn |
 | Số việc chạy cùng lúc mỗi worker, `evt.order` | 4 | **Em tự chọn**, đặt bằng biến môi trường. Hiện Shopee 1, TikTok 3; worker có 3 kết nối database |
 | Nhịp hỏi | ~~0,5 giây (`evt.order`, `stock.channel`), 2 giây (còn lại)~~ → từ 08/10: 1 giây (đơn, tồn), 5 giây (ủy quyền, lỗi, đối soát), 0,5 giây (hóa đơn bấm tay); có NOTIFY thì chỉ là lưới đỡ 30 giây | Đổi vì băng thông Render, số đo ở mục 3.5.1. 0,5 giây là mức thấp nhất thư viện cho |
-| Giữ việc đã xong | 7 ngày | Bằng chính sách dọn nhật ký kỹ thuật hiện có |
+| Giữ việc đã xong | ~~7 ngày~~ → **`evt.order` 1 ngày** từ 28/10/2026 (migration `20261028220000_pgboss_evt_order_retention_1d`); hàng đợi khác giữ 7 ngày | 7 ngày là số tự chọn "bằng chính sách dọn nhật ký kỹ thuật". Sự cố Supabase cạn Disk IO 28/10: ba câu giám sát của pg-boss mỗi phút quét cả bảng riêng evt.order (372k việc, 141 MB). Nguồn tra soát thật là `webhook_events` (SUCCESS 7 ngày / còn lại 30 ngày); không chỗ nào đọc việc completed cũ hơn 1 ngày. pg-boss chép `deletion_seconds` vào từng dòng lúc ghi và dọn 1 lần/24 h, nên bảng thực giữ "hạn + tới 24 h"; 12 giờ không hơn 1 ngày. Kèm chỉ mục `(name) WHERE state='active'` trên bảng riêng cho hai câu failJobsBy* |
 | Thời hạn chờ lệnh gọi sàn | **Chưa đề xuất số** | Chưa có số đo. Bước 0 chỉ ghi lại thời gian từng lệnh gọi; sau 3–5 ngày em trình số kèm phân bố thật |
 
 ### 3.7. Quan sát

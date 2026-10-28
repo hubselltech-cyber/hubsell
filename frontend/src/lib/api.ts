@@ -2893,8 +2893,13 @@ export interface ChannelProductListResponse {
   counts: { all: number; linked: number; unlinked: number; active?: number; delisted?: number };
 }
 
-export function fetchChannels() {
-  return apiFetch<Channel[]>("/api/channels");
+/**
+ * Danh sách gian. `withCounts` chỉ cho trang Kênh bán (cần `_count` + `matchedProductCount`);
+ * mọi nơi khác (banner, bộ lọc kênh, prefetch…) KHÔNG đếm — backend bỏ phép gom cả
+ * bảng Order/ChannelProduct 3–10 s mỗi lượt (28/10/2026).
+ */
+export function fetchChannels(opts?: { withCounts?: boolean }) {
+  return apiFetch<Channel[]>(opts?.withCounts ? "/api/channels?withCounts=1" : "/api/channels");
 }
 
 /** Kết nối thêm một gian hàng. Cùng một sàn có thể kết nối nhiều gian. */

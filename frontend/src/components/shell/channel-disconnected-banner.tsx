@@ -59,7 +59,7 @@ export function ChannelDisconnectedBanner() {
   // 403 thì lặng lẽ không hiện, không được kéo cả trang sang màn AccessDenied.
   const { data } = useQuery({
     queryKey: qk.channels(),
-    queryFn: fetchChannels,
+    queryFn: () => fetchChannels(),
     // Cron token-refresh phía backend đánh dấu DISCONNECTED theo nhịp 30' —
     // poll 5' là đủ tươi; refetch-on-focus mặc định lo phần quay lại tab.
     refetchInterval: 5 * 60 * 1000,

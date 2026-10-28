@@ -742,7 +742,7 @@ export default function ChannelsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setChannels(await fetchChannels());
+      setChannels(await fetchChannels({ withCounts: true }));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -814,7 +814,7 @@ export default function ChannelsPage() {
               r.channel.shopName,
               resolveIsNew(r.channel.isNew, Boolean(reconnectId))
             );
-            setChannels(await fetchChannels());
+            setChannels(await fetchChannels({ withCounts: true }));
           })
           .catch((err) =>
             toast.error(
