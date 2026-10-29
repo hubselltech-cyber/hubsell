@@ -582,3 +582,60 @@ export async function backfillTiktokReturnsByOrder(
 
   return result;
 }
+
+// ============================================================
+// HỎI YÊU CẦU HOÀN THEO MÃ ĐƠN NGAY KHI WEBHOOK BÁO (lát B, 29/10/2026)
+// ============================================================
+
+export interface SyncTiktokReturnsForOrdersResult extends SyncTiktokReturnsResult {
+  /** Trong số đơn hỏi, đơn mà sàn có ít nhất một yêu cầu hoàn. */
+  withReturns: number;
+}
+
+/**
+ * Webhook type 12 (đổi trạng thái yêu cầu hoàn) chỉ mang mã đơn; chi tiết đơn
+ * không nói gì về yêu cầu hoàn, nên trước đây cờ "Chờ hàng về" phải chờ lượt
+ * quét `syncTiktokReturns` tầng nhanh (10' → 60' khi gian im ắng; docs
+ * DON-HOAN-VA-SAO-KE.md mục 8.2). Hàm này hỏi `returns/search` lọc `order_ids`
+ * cho đúng các đơn vừa báo rồi ghi bằng cùng bộ quyết định của lượt quét thường
+ * (không phải quét bù lịch sử: yêu cầu đang sống vẫn cắm AWAITING). Cùng khuôn
+ * `syncTiktokCancelRequests({ orderIds })` của webhook type 11.
+ *
+ * Sàn trả yêu cầu của đơn KHÔNG hỏi = bộ lọc vô hiệu → ném lỗi, không ghi
+ * (như quét bù). Lỗi ở đây do tầng gọi nuốt, không làm hỏng việc đơn.
+ */
+export async function syncTiktokReturnsForOrders(
+  channel: Channel,
+  orderIds: string[]
+): Promise<SyncTiktokReturnsForOrdersResult> {
+  const result: SyncTiktokReturnsForOrdersResult = { ...emptyReturnsResult(), withReturns: 0 };
+  const wanted = new Set(orderIds.map((s) => String(s).trim()).filter(Boolean));
+  if (wanted.size === 0) return result;
+
+  const { accessToken, shopCipher } = await getValidAccessToken(channel);
+  const byId = new Map<string, TikTokReturnOrder>();
+  let pageToken: string | undefined;
+  let pages = 0;
+  do {
+    const page = await searchReturns({ accessToken, shopCipher, orderIds: [...wanted], pageSize: 50, pageToken });
+    pages++;
+    for (const ro of page.return_orders) {
+      if (!wanted.has(String(ro.order_id ?? "").trim())) {
+        throw new Error(
+          `returns/search trả yêu cầu hoàn của đơn ${ro.order_id ?? "?"} không nằm trong order_ids đã hỏi`
+        );
+      }
+      byId.set(String(ro.return_id), ro);
+    }
+    pageToken = page.next_page_token || undefined;
+  } while (pageToken && pages < MAX_PAGES);
+  result.pages = pages;
+  if (pageToken) result.truncated = true;
+  result.scanned = byId.size;
+  if (byId.size === 0) return result;
+
+  const byOrder = groupReturnsByOrder(byId.values());
+  result.withReturns = byOrder.size;
+  await applyTiktokReturnGroups(channel, byOrder, result);
+  return result;
+}

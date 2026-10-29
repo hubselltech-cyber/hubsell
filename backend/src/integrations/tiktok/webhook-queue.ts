@@ -24,6 +24,7 @@ import {
 } from "./service";
 import { finishStockPush } from "../inventory-push";
 import { syncTiktokCancelRequests } from "./cancel-requests";
+import { syncTiktokReturnsForOrders } from "./returns-sync";
 import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
 import { HIBERNATED_SKIP_NOTE, isHibernated } from "../../services/plan-hibernation";
@@ -126,6 +127,25 @@ export async function handleTiktokOrderJob(
       console.log(`[Webhook TikTok] Yêu cầu hủy đơn ${orderId}: +${c.flagged} bật cờ, ${c.unflagged} hạ cờ (${c.scanned} yêu cầu)`);
     } catch (err) {
       console.error(`[Webhook TikTok] Lỗi hỏi yêu cầu hủy đơn ${orderId}:`, (err as Error).message);
+    }
+  }
+
+  // Type 12 = đổi trạng thái YÊU CẦU HOÀN (khách xin trả / sàn duyệt / kiện về…):
+  // chi tiết đơn không mang yêu cầu hoàn → hỏi returns/search đúng đơn này để cắm
+  // / hạ cờ Chờ hàng về ngay, thay vì chờ lượt quét 10'–60' (lát B 29/10/2026,
+  // docs DON-HOAN-VA-SAO-KE.md mục 8). Đường lui TIKTOK_RETURN_WEBHOOK_LOOKUP=0.
+  // Lỗi ở đây không làm hỏng việc đơn (đã có lượt quét nền đỡ).
+  if (
+    String(eventType) === String(TIKTOK_WEBHOOK_TYPE.RETURN_STATUS_CHANGE) &&
+    process.env.TIKTOK_RETURN_WEBHOOK_LOOKUP !== "0"
+  ) {
+    try {
+      const r = await syncTiktokReturnsForOrders(channel, [orderId]);
+      console.log(
+        `[Webhook TikTok] Yêu cầu hoàn đơn ${orderId}: ${r.scanned} yêu cầu, +${r.flagged} chờ về tay, ${r.unflagged} hạ cờ, ${r.delivered} kiện về, ${r.itemsUpdated} dòng SKU trả`
+      );
+    } catch (err) {
+      console.error(`[Webhook TikTok] Lỗi hỏi yêu cầu hoàn đơn ${orderId}:`, (err as Error).message);
     }
   }
 

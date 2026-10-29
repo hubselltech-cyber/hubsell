@@ -26,7 +26,7 @@
 
 ## Đơn hàng, kho, vận hành
 - [CHUAN-BI-HANG-THEO-ME.md](CHUAN-BI-HANG-THEO-ME.md) — chuẩn bị hàng theo mẻ, chạy nền
-- [DON-HOAN-VA-SAO-KE.md](DON-HOAN-VA-SAO-KE.md) — đơn hoàn và đối soát sao kê; mục 8 (29/10/2026) khảo sát kho quét kiện về báo "Không hoàn": kiện giao thất bại → sàn hủy không vào trục hoàn, 3 lát A/B/C chờ anh chốt
+- [DON-HOAN-VA-SAO-KE.md](DON-HOAN-VA-SAO-KE.md) — đơn hoàn và đối soát sao kê; mục 8 (29/10/2026) khảo sát kho quét kiện về báo "Không hoàn": kiện giao thất bại → sàn hủy không vào trục hoàn; lát A (hủy sau giao = Chờ hàng về) + B (webhook TikTok type 12 hỏi returns/search) ĐÃ LÀM, C chờ
 - [VI-TRI-CHUA-HANG.md](VI-TRI-CHUA-HANG.md) — vị trí kho
 - [DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md](DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md) — SKU phân loại con trùng mã
 - [HANG-HOA-CHA-CON-PHAN-LOAI.md](HANG-HOA-CHA-CON-PHAN-LOAI.md) — 22/10/2026 SKU kho có phân loại riêng (variantName/groupKey), bảng Hàng hóa cha–con như Giá vốn, mã dự phòng Shopee dùng mã cha, tự Ngừng bán khi sàn gỡ, hộp Nối SKU bỏ tồn 0 + mã gốc
