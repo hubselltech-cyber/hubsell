@@ -5,6 +5,7 @@
 //   Khách đăng ký mới           noreply     support@   (+ báo HQ)
 //   Đăng ký 1 ngày chưa nối gian noreply    support@   (worker onboarding-reminder)
 //   Đăng ký lâu vẫn chưa nối gian noreply   support@   (script connect-reminder-once, 25/10)
+//   Thông báo tính năng mới     noreply     support@   (script feature-announce-once, 29/10)
 //   Mật khẩu vừa được đổi       noreply     support@
 //   Kích hoạt / gia hạn gói     billing     billing@
 //   Hóa đơn điện tử đã phát hành billing    billing@   (kèm PDF — hq-auto-invoice.ts)
@@ -53,6 +54,8 @@ function shell(input: {
   bodyHtml: string;
   cta?: { label: string; url: string };
   footnote?: string;
+  /** Thư có ảnh hướng dẫn cần khung rộng hơn 480 (29/10). */
+  maxWidth?: number;
 }): string {
   const cta = input.cta
     ? `<p style="text-align:center;margin:24px 0">
@@ -66,7 +69,7 @@ function shell(input: {
     ? `<p style="color:#888;font-size:13px">${input.footnote}</p>`
     : "";
   return `
-  <div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+  <div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:${input.maxWidth ?? 480}px;margin:0 auto;padding:24px">
     <h2 style="margin:0 0 8px">${input.heading}</h2>
     ${input.bodyHtml}
     ${cta}
@@ -206,6 +209,61 @@ export async function sendConnectReminderMail(to: string, input: { fullName: str
     role: "noreply",
     subject: CONNECT_REMINDER_SUBJECT,
     html: connectReminderEmailHtml(input),
+  });
+}
+
+// ---------------- 1d. Thông báo tính năng mới: Sao chép sản phẩm (29/10/2026) ----------------
+//
+// Anh Trung 29/10: "gửi email thông báo cập nhật tính năng tới tất cả các tài
+// khoản — Sao chép sản phẩm — tạo hình ảnh hướng dẫn bước 1 → bước 2 cơ bản".
+// Ảnh chụp từ shop demo, đặt ở frontend/public/guide-assets/copy-listing-buoc-*.png
+// (Vercel phục vụ) để mọi trình đọc thư tải được. Gửi bằng script
+// scripts/feature-announce-once.ts (vé chống trùng kind "feature-copy-listing").
+
+const COPY_LISTING_PATH = "/operations-assistant/copy-listing";
+
+export function featureCopyListingEmailHtml(input: { fullName: string }): string {
+  const img = (file: string, alt: string) =>
+    `<p style="margin:8px 0 20px"><img src="${FRONTEND_URL}/guide-assets/${file}" alt="${alt}" width="552" style="display:block;width:100%;max-width:552px;height:auto;border:1px solid #e2e8f0;border-radius:8px" /></p>`;
+  const step = (n: number, text: string) =>
+    `<p style="color:#222;margin:20px 0 4px"><b>Bước ${n}.</b> ${text}</p>`;
+  return shell({
+    maxWidth: 600,
+    heading: "Mới: Sao chép sản phẩm lên nhiều gian hàng trong một lần",
+    bodyHtml: [
+      p(`Xin chào ${escapeHtml(input.fullName)},`),
+      p(
+        "Nhiều chủ shop hỏi Hubsell: <i>“Có cách nào đưa sản phẩm đang bán ở Shopee lên TikTok Shop và Lazada mà không phải nhập lại từng cái không?”</i> Từ hôm nay có. Hubsell vừa thêm mục <b>Sao chép sản phẩm</b> trong <b>Trợ lý vận hành</b>: chọn sản phẩm một lần, đăng lên nhiều gian, nhiều sàn cùng lúc."
+      ),
+      p("Cách dùng chỉ có 2 bước:"),
+      step(1, "<b>Chọn sản phẩm nguồn</b> — chọn gian hàng đang bán (hoặc kho Hubsell), tick những sản phẩm cần chép. Tick được nhiều."),
+      img("copy-listing-buoc-1.png", "Bước 1: chọn gian hàng nguồn và tick sản phẩm"),
+      step(2, "<b>Chọn gian đích</b> — tick các gian muốn đăng lên (Shopee, TikTok Shop, Lazada đều được, nhiều gian cùng lúc) rồi bấm <b>Xem trước</b>."),
+      img("copy-listing-buoc-2.png", "Bước 2: tick gian đích rồi bấm Xem trước"),
+      p(
+        "Ở màn hình xem trước, Hubsell tự gợi ý danh mục của từng sàn và tô vàng những ô sàn đó bắt buộc mà sản phẩm gốc chưa có (cân nặng, kích thước, thương hiệu…). Bạn bổ sung rồi bấm <b>Đăng</b>. Kết quả từng gian hiện ngay: Đã đăng / Chờ sàn duyệt / Lỗi kèm lý do bằng tiếng Việt."
+      ),
+      p(
+        "Sản phẩm đăng xong giữ nguyên mã SKU, nên tự nối với kho Hubsell và tồn kho đồng bộ như các gian khác — không phải làm gì thêm."
+      ),
+      p(
+        "Tính năng vừa ra mắt, Hubsell đang hoàn thiện theo từng góp ý thật. Gặp lỗi ở gian nào, bạn trả lời thư này kèm ảnh màn hình, Hubsell sửa trong ngày."
+      ),
+    ].join("\n"),
+    cta: { label: "Thử sao chép sản phẩm", url: `${FRONTEND_URL}${COPY_LISTING_PATH}` },
+    footnote:
+      "Thư này gửi tới tất cả chủ shop đang dùng Hubsell để báo tính năng mới. Nếu bạn không muốn nhận thư thông báo nữa, chỉ cần trả lời một chữ \"thôi\".",
+  });
+}
+
+export const FEATURE_COPY_LISTING_SUBJECT = "Hubsell — Mới: Sao chép sản phẩm lên nhiều gian hàng trong một lần";
+
+/** Trả về true khi đã gửi — script một lần dựa vào đây để giữ / nhả vé chống trùng. */
+export async function sendFeatureCopyListingMail(to: string, input: { fullName: string }): Promise<boolean> {
+  return safeSend("feature-copy-listing", to, {
+    role: "noreply",
+    subject: FEATURE_COPY_LISTING_SUBJECT,
+    html: featureCopyListingEmailHtml(input),
   });
 }
 

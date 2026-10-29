@@ -373,3 +373,21 @@ Anh: "Em dọn dẹp, commit và push. Anh sẽ test dần và chúng ta sửa s
 `app-shell.tsx` và chú thích `app.ts` đổi theo. Trạng thái tính năng: mở cho mọi chủ shop có lá quyền; 3 sàn đã đăng
 thật ít nhất một lần (Shopee, TikTok); Lazada + ảnh màu (mục 18) + lý do TikTok từ chối (mục 17) còn chờ ca thật.
 
+
+## 20. Thư thông báo tính năng tới mọi chủ shop (29/10/2026 tối, anh yêu cầu)
+
+Anh: *"gửi email thông báo cập nhật tính năng tới tất cả các tài khoản — Sao chép sản phẩm — tạo hình ảnh hướng
+dẫn bước 1 → bước 2 cơ bản cho khách dễ hình dung."*
+
+- **Ảnh hướng dẫn:** chụp Playwright từ shop demo Sunny Closet trên DB local (3 SP tick, 2 gian đích TikTok + Lazada),
+  ghép dải tiêu đề "① Chọn sản phẩm nguồn" / "② Chọn gian đích rồi bấm Xem trước" bằng sharp → 
+  `frontend/public/guide-assets/copy-listing-buoc-1.png` (1200×918) và `copy-listing-buoc-2.png` (1200×542). Vercel
+  phục vụ nên thư trỏ `${APP_FRONTEND_URL}/guide-assets/...`. Script chụp để ở scratchpad (nháp, không commit).
+- **Mẫu thư:** `featureCopyListingEmailHtml` + `FEATURE_COPY_LISTING_SUBJECT` + `sendFeatureCopyListingMail`
+  (customer-mails.ts mục 1d, vai noreply, trả lời về support@); khung `shell` thêm `maxWidth` (600 cho thư có ảnh).
+  Nội dung: câu hỏi khách hay hỏi → 2 bước kèm ảnh → màn xem trước gợi ý danh mục + ô thiếu → giữ SKU tự nối kho →
+  "vừa ra mắt, gặp lỗi trả lời thư kèm ảnh" → nút "Thử sao chép sản phẩm" → chú thích trả lời "thôi". Test +1 ca.
+- **Script gửi một lần:** `backend/scripts/feature-announce-once.ts --feature=copy-listing` (xem trước / `--sample=`
+  / `--apply` / `--limit=`), nhận = chủ shop (ownerId null) có email, không admin, không xóa, bỏ email nội bộ;
+  nhân viên không nhận (cần chủ shop gán lá quyền). Vé chống trùng `onboarding_reminders` kind `feature-copy-listing`.
+  Thông báo tính năng sau = thêm mục vào `FEATURES` trong script. Chạy trên Render Shell worker (có SMTP + DB prod).

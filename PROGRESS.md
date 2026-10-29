@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (tối) — THƯ THÔNG BÁO TÍNH NĂNG "SAO CHÉP SẢN PHẨM" TỚI MỌI CHỦ SHOP (anh yêu cầu; kèm 2 ảnh hướng dẫn bước 1 → bước 2)
+
+- **Anh:** "gửi email thông báo cập nhật tính năng tới tất cả các tài khoản — Sao chép sản phẩm — tạo hình ảnh hướng dẫn bước 1 → bước 2 cơ bản".
+- **Ảnh:** chụp Playwright từ shop demo local (Sunny Closet, 3 SP × 2 gian TikTok + Lazada), ghép dải tiêu đề đánh số bằng sharp → `frontend/public/guide-assets/copy-listing-buoc-1.png` + `copy-listing-buoc-2.png` (Vercel phục vụ cho thư). Script chụp/ghép ở scratchpad, không commit.
+- **Mẫu thư** `featureCopyListingEmailHtml` (customer-mails.ts mục 1d, khung rộng 600, 1 nút → /operations-assistant/copy-listing, chú thích trả lời "thôi") + test (18/18 xanh). **Script** `backend/scripts/feature-announce-once.ts --feature=copy-listing` (xem trước / --sample / --apply; vé chống trùng `onboarding_reminders` kind `feature-copy-listing`; chỉ chủ shop, bỏ email nội bộ). tsc sạch. Docs mục 20.
+- **Gửi:** chạy trên Render Shell worker như đợt 25/10 — xem trước → thư mẫu tới xwearhn@gmail.com → anh duyệt → `--apply`. (Trạng thái thật ghi ở memory `hubsell-thu-nhac-khach-tu-dong`.)
+
+---
 ## Phiên 29/10/2026 (tối muộn) — SAO CHÉP SẢN PHẨM: LỖI THẬT ĐẦU TIÊN TRÊN PROD (Shopee Dimension 0) + VIỆT HÓA CHO NGƯỜI BÁN — ĐÃ KIỂM LOCAL
 
 - **Anh (ảnh prod):** khách chép TikTok → Shopee gặp lỗi đỏ toàn tiếng Anh `invalid Dimension.PackageLength: value must be greater than 0`; khung Bổ sung thuộc tính tiếng Anh (pack type, Region of Origin…), không biết ô nào bắt buộc. Yêu cầu: rà gốc, khắc phục, Việt hóa gần gũi.
