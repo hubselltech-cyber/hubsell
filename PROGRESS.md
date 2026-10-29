@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (chiều muộn) — KHẢO SÁT "SAO CHÉP SẢN PHẨM" + "ĐĂNG HÀNG LOẠT" — CHƯA CODE, CHỜ ANH CHỐT
+
+- Anh báo 4 khách thử đòi tính năng chép 1 SP từ một shop lên các gian chỉ định cả 3 sàn + đăng hàng loạt; nhờ khảo sát Sapo, Ship Xanh, KiotViet, Salework…
+- 5 agent khảo sát song song (4 đối thủ + API 3 sàn) → `docs/KHAO-SAT-SAO-CHEP-SAN-PHAM-DANG-HANG-LOAT-29-10.md`: bảng 10 bên; thị trường chia tool "cào & đăng" (Ship Xanh 1.000đ/SP, BigSeller, AutoShopee) vs phần mềm quản lý (Sapo tự nhận "chưa hỗ trợ đăng hàng loạt", KiotViet/Haravan = xuất Excel tự lên sàn, Salework 1 gian/lượt, Nhanh/Pancake không đẩy SP). Không ai có trọn "nhiều gian nhiều sàn 1 lượt + gợi ý danh mục + tự nối SKU kho".
+- API đủ làm: Shopee `add_item`/`batch_add_item` (app ERP System), TikTok Create Product (Product Modify đã bật 12/10; trần 100 SP/ngày gian mới, PENDING duyệt), Lazada `/product/create` (brand + cân nặng/kích thước bắt buộc; cần kiểm nhóm Product API). Khó ở danh mục/thuộc tính/ảnh tải lại/mô tả HTML.
+- Đề xuất: LÀM, nguồn CHỈ gian đã nối (không cào shop khác — rủi ro ISV), 2 lát (1 SP → N gian; N SP), ≈5–6 lát 2–3 tuần; hỏi lại 4 khách 3 câu (docs mục 7) + 4 việc kiểm (mục 8) trước khi code. Memory `hubsell-sao-chep-san-pham-dang-hang-loat-khao-sat-2026-10-29`.
+
+---
 ## Phiên 29/10/2026 (11:00–11:30) — LÁT 3 + 4: VOUCHER TIKTOK TỪ PRICE DETAIL + 3 CỘT TRÊN GIỎ SHOPEE — SỔ v3, ĐÃ PUSH
 
 - **Lát 3:** `tiktok/price-detail.ts` (fetch + bóc `voucher_deduction_seller` + bù nền ≤200 đơn/gian/lượt sau bản kê, worker + nút tay); `Order.tiktokVoucherSeller/tiktokPriceDetailAt`; `computePnlRow` TikTok `revenueGross = gross + disc + voucher`, `sellerVoucher = voucher` (null → như lát 1); `LEDGER_FORMULA_VERSION = 3`; trigger sổ theo dõi thêm cột; bảng TikTok cột "Trong đó: voucher của shop".
