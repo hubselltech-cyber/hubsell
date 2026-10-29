@@ -184,14 +184,23 @@ export async function claimDirtyLedgerRows(
   const scopeSql = opts.scope
     ? Prisma.sql`AND ${ledgerScopeSql(opts.scope, opts.range, { alias: "l" })}`
     : Prisma.empty;
+  // Lượt CÓ PHẠM VI (báo cáo đang xem, ensureLedgerFresh): nhặt cả dòng còn mang
+  // PHIÊN BẢN CÔNG THỨC CŨ dù chưa được worker đánh bẩn — khi đổi version, sweep
+  // của worker đánh bẩn 5.000 dòng/2 s nên shop lớn phải chờ hàng chục phút mới
+  // tới lượt, trong lúc đó báo cáo cộng thiếu (29/10/2026, sổ v2→v3: khách thấy
+  // "lỗi hết cả báo cáo dòng tiền"). Lượt KHÔNG phạm vi (worker) giữ chỉ dòng bẩn.
+  const v = Prisma.sql`${LEDGER_FORMULA_VERSION}::int`;
+  const pickSql = opts.scope
+    ? Prisma.sql`(l."dirtyAt" IS NOT NULL OR l."formulaVersion" < ${v} OR l."formulaVersion" > ${v})`
+    : Prisma.sql`l."dirtyAt" IS NOT NULL`;
   const rows = await prisma.$queryRaw<{ orderId: string; dirtyAt: Date | null }[]>(Prisma.sql`
     WITH picked AS (
       SELECT l."createdDate", l."orderId"
       FROM "order_ledger" l
-      WHERE l."dirtyAt" IS NOT NULL
+      WHERE ${pickSql}
         AND (l."claimedAt" IS NULL OR l."claimedAt" < now() - (${LEDGER_CLAIM_STALE_MS}::int * INTERVAL '1 millisecond'))
         ${scopeSql}
-      ORDER BY l."dirtyAt"
+      ORDER BY l."dirtyAt" NULLS LAST
       LIMIT ${Math.max(1, Math.floor(limit))}::int
       FOR UPDATE SKIP LOCKED
     )
@@ -504,7 +513,8 @@ export async function ensureLedgerFresh(
   opts: { maxInline?: number; axis?: LedgerDateAxis } = {}
 ): Promise<LedgerFreshness & { recomputed: number }> {
   const before = await ledgerFreshness(scope, range, opts.axis);
-  if (before.dirty === 0) return { ...before, recomputed: 0 };
+  // Sạch = không dòng bẩn VÀ không dòng phiên bản cũ (29/10/2026 — xem claimDirtyLedgerRows).
+  if (before.dirty === 0 && before.staleVersion === 0) return { ...before, recomputed: 0 };
   const max = opts.maxInline ?? 2000;
   let recomputed = 0;
   while (recomputed < max) {
