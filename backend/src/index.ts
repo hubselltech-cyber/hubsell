@@ -12,6 +12,7 @@ import { resolveHubsellRole, startAllWorkers } from "./workers";
 import { registerEventQueueWorkers } from "./workers/event-queue";
 import { registerStockQueueWorkers, stopStockRunners } from "./workers/stock-queue";
 import { registerInvoiceQueueWorkers, stopInvoiceLanes } from "./workers/invoice-lanes";
+import { registerListingCopyQueueWorkers } from "./workers/listing-copy-queue";
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -65,6 +66,7 @@ void startQueue(role)
     await registerEventQueueWorkers();
     await registerStockQueueWorkers();
     await registerInvoiceQueueWorkers();
+    await registerListingCopyQueueWorkers();
   })
   .catch((err) => console.error("[Queue] Không đăng ký được worker:", (err as Error).message));
 

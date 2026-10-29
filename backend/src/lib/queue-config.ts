@@ -31,6 +31,11 @@ export const QUEUES = {
    * đợi lỗi vì mất tín hiệu thì lưới quét invoice_requests nhặt.
    */
   invoiceIssue: "invoice.issue",
+  /**
+   * Sao chép sản phẩm lên gian đích (29/10/2026, docs/SAO-CHEP-SAN-PHAM.md mục 4):
+   * mỗi gian đích một việc {targetId}, policy standard, việc ngắn chạy trong handler.
+   */
+  listingCopy: "listing.copy",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

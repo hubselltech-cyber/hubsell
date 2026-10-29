@@ -8222,3 +8222,216 @@ export function askAssistant(data: { question?: string; intent?: string }) {
 export function fetchAssistantSuggestions() {
   return apiFetch<{ suggestions: string[] }>("/api/assistant/suggestions");
 }
+
+// ============================================================
+// SAO CHÉP SẢN PHẨM — /api/sao-chep-san-pham (docs/SAO-CHEP-SAN-PHAM.md)
+// ============================================================
+
+export interface CopyListingChannel {
+  id: string;
+  shopName: string;
+  channelName: ChannelName;
+  apiConnected: boolean;
+  productCount: number;
+}
+
+export interface CopyListingSource {
+  key: string;
+  title: string;
+  imageUrl: string | null;
+  variantCount: number;
+  minPrice: number;
+  maxPrice: number;
+  skus: string[];
+  linkedCount: number;
+}
+
+export interface CopyListingSourcePage {
+  items: CopyListingSource[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CopyListingVariant {
+  sku: string;
+  name: string | null;
+  price: number;
+  stock: number;
+  imageUrl: string | null;
+}
+
+export interface CopyListingNormalized {
+  title: string;
+  description: string;
+  images: string[];
+  categoryPath: string[] | null;
+  brandName: string | null;
+  weightGrams: number | null;
+  dimensionsCm: { length: number; width: number; height: number } | null;
+  options: { name: string; values: string[] }[];
+  variants: CopyListingVariant[];
+  attributes: { name: string; value: string }[];
+}
+
+export interface CopyListingAttributeDef {
+  id: string;
+  name: string;
+  required: boolean;
+  type: "select" | "text" | "number";
+  options?: string[];
+}
+
+export type CopyListingTargetStatus = "PENDING" | "QUEUED" | "RUNNING" | "LISTED" | "PENDING_REVIEW" | "FAILED";
+export type CopyListingJobStatus = "DRAFT" | "SUBMITTED" | "DONE" | "PARTIAL" | "FAILED";
+
+export interface CopyListingRequirements {
+  brandRequired: boolean;
+  weightRequired: boolean;
+  dimensionsRequired: boolean;
+  logisticsRequired: boolean;
+  titleMin: number;
+  titleMax: number;
+  descriptionMin: number;
+  descriptionMax: number;
+  maxImages: number;
+  maxOptions: number;
+  maxVariants: number;
+}
+
+export interface CopyListingTarget {
+  id: string;
+  channel: { id: string; shopName: string; channelName: ChannelName };
+  categoryId: string | null;
+  categoryName: string | null;
+  categoryConfidence: number | null;
+  attributes: Record<string, string>;
+  attributeDefs: CopyListingAttributeDef[];
+  requirements: CopyListingRequirements | null;
+  brandId: string | null;
+  brandName: string | null;
+  logisticIds: string[];
+  logisticOptions: { id: string; name: string; enabled: boolean }[];
+  weightGrams: number | null;
+  dimensionsCm: { length: number; width: number; height: number } | null;
+  priceAdjustPercent: number;
+  stock: number | null;
+  missing: string[];
+  status: CopyListingTargetStatus;
+  error: string | null;
+  remoteItemId: string | null;
+  remoteUrl: string | null;
+  attempts: number;
+  listedAt: string | null;
+}
+
+export interface CopyListingJob {
+  id: string;
+  sourceType: "CHANNEL" | "PRODUCT";
+  sourceChannel: { id: string; shopName: string; channelName: ChannelName } | null;
+  sourceTitle: string;
+  sourceImageUrl: string | null;
+  source: CopyListingNormalized;
+  status: CopyListingJobStatus;
+  createdAt: string;
+  submittedAt: string | null;
+  finishedAt: string | null;
+  targets: CopyListingTarget[];
+}
+
+export interface CopyListingJobSummary {
+  id: string;
+  sourceType: "CHANNEL" | "PRODUCT";
+  sourceTitle: string;
+  sourceImageUrl: string | null;
+  status: CopyListingJobStatus;
+  createdAt: string;
+  finishedAt: string | null;
+  targets: { status: CopyListingTargetStatus; shopName: string; channelName: ChannelName }[];
+}
+
+export interface CopyListingTargetPatch {
+  categoryId?: string | null;
+  attributes?: Record<string, string>;
+  brandId?: string | null;
+  brandName?: string | null;
+  logisticIds?: string[];
+  weightGrams?: number | null;
+  dimensionsCm?: { length: number; width: number; height: number } | null;
+  priceAdjustPercent?: number;
+  stock?: number | null;
+}
+
+const COPY_LISTING_BASE = "/api/sao-chep-san-pham";
+
+export function fetchCopyListingChannels() {
+  return apiFetch<{ items: CopyListingChannel[] }>(`${COPY_LISTING_BASE}/channels`);
+}
+
+export function fetchCopyListingSources(params: {
+  type: "channel" | "product";
+  channelId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const q = new URLSearchParams({ type: params.type });
+  if (params.channelId) q.set("channelId", params.channelId);
+  if (params.search) q.set("search", params.search);
+  if (params.page) q.set("page", String(params.page));
+  if (params.pageSize) q.set("pageSize", String(params.pageSize));
+  return apiFetch<CopyListingSourcePage>(`${COPY_LISTING_BASE}/sources?${q.toString()}`);
+}
+
+export function createCopyListingJob(body: {
+  sourceType: "CHANNEL" | "PRODUCT";
+  sourceChannelId?: string;
+  sourceItemId?: string;
+  sourceGroupKey?: string;
+  targetChannelIds: string[];
+}) {
+  return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function fetchCopyListingJob(id: string) {
+  return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`);
+}
+
+export function fetchCopyListingJobs(page = 1, pageSize = 20) {
+  return apiFetch<{ items: CopyListingJobSummary[]; total: number; page: number; pageSize: number }>(
+    `${COPY_LISTING_BASE}/jobs?page=${page}&pageSize=${pageSize}`
+  );
+}
+
+export function updateCopyListingSource(id: string, body: { title?: string; description?: string }) {
+  return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export function updateCopyListingTarget(jobId: string, targetId: string, patch: CopyListingTargetPatch) {
+  return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${jobId}/targets/${targetId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function fetchCopyListingCategories(jobId: string, targetId: string, q: string) {
+  return apiFetch<{ items: { id: string; name: string; path: string[]; leaf: boolean }[] }>(
+    `${COPY_LISTING_BASE}/jobs/${jobId}/targets/${targetId}/categories?q=${encodeURIComponent(q)}`
+  );
+}
+
+export function fetchCopyListingBrands(jobId: string, targetId: string, q: string, categoryId?: string | null) {
+  const qs = new URLSearchParams({ q });
+  if (categoryId) qs.set("categoryId", categoryId);
+  return apiFetch<{ items: { id: string; name: string }[] }>(
+    `${COPY_LISTING_BASE}/jobs/${jobId}/targets/${targetId}/brands?${qs.toString()}`
+  );
+}
+
+export function submitCopyListingJob(id: string) {
+  return apiFetch<{
+    queued: number;
+    skipped: { targetId: string; shopName: string; missing: string[] }[];
+    job: CopyListingJob;
+  }>(`${COPY_LISTING_BASE}/jobs/${id}/submit`, { method: "POST" });
+}

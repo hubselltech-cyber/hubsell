@@ -31,6 +31,7 @@ import invoiceConfigRouter from "./routes/invoice-config";
 import taxRouter from "./routes/tax";
 import testMisaSandboxRouter from "./routes/test-misa-sandbox";
 import operationsRouter from "./routes/operations";
+import listingCopyRouter from "./routes/listing-copy";
 import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
@@ -266,6 +267,17 @@ export function createApp() {
   // Cửa mount = có BẤT KỲ lá operations.* nào; route chat/reviews bên trong
   // router tự siết đúng lá của mình.
   app.use("/api/operations", requireAuth, requirePermission("operations"), requirePlanUnlocked, requireChannel, operationsRouter);
+
+  // Sao chép sản phẩm lên nhiều gian 3 sàn (29/10/2026, docs/SAO-CHEP-SAN-PHAM.md).
+  // Đường dẫn không chứa ad/ads để bộ lọc chặn quảng cáo không cắt.
+  app.use(
+    "/api/sao-chep-san-pham",
+    requireAuth,
+    requirePermission("operations.copy-listing"),
+    requirePlanUnlocked,
+    requireChannel,
+    listingCopyRouter
+  );
 
   // Mạng lưới KOC & Affiliate: đọc dữ liệu affiliate THẬT từ đối soát sàn
   // (Order.affiliateFee). Mục nguyên khối trong cây phân quyền — khóa "koc".

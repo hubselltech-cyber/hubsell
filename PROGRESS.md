@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (tối) — SAO CHÉP SẢN PHẨM LÁT 1: DEMO LOCAL CHẠY TRỌN LUỒNG — CHƯA PUSH
+
+- **Anh chốt:** làm cả 2 nguồn (bài trên gian đã nối + sản phẩm kho Hubsell), demo local trước, mục con "Trợ lý vận hành". Thiết kế `docs/SAO-CHEP-SAN-PHAM.md`.
+- **Backend:** migration `20261029180000_listing_copy` (2 bảng + 3 enum + queue `listing.copy` standard; DB dev áp bằng `prisma db execute`); `marketplace/listing/{types,rules,mock-listing-adapter,registry}.ts`; `services/listing-copy/{source,service}.ts`; `routes/listing-copy.ts` → `/api/sao-chep-san-pham` (lá quyền `operations.copy-listing`); worker `workers/listing-copy-queue.ts`. Test `rules.test.ts` 7 ca.
+- **Frontend:** sidebar + PAGE_TITLES + cây quyền; trang `/operations-assistant/copy-listing` (`components/operations/copy-listing/`); API client khối `COPY_LISTING_BASE`; `qk.copyListing*`.
+- **Kiểm local (demo@hubsell.tech, Shopee → Lazada giả lập):** gợi ý danh mục 95 %, thiếu đúng ô Lazada đòi; điền → pg-boss → LISTED, ChannelProduct mới giá +10 % nối kho; `sku_exists` khi chép lại; tên "LỖI" → FAILED có lý do, sửa tên đăng lại OK; nguồn kho báo thiếu mô tả/ảnh. tsc + eslint 2 app sạch; vitest marketplace + queue-config xanh.
+- **Môi trường thử:** Browser pane không nhận cert tự ký :4000 → thêm `backend-http` (:4010, vai web) + `frontend-http` (:3011) vào `.claude/launch.json`.
+- **Còn:** lát 1b adapter thật 3 sàn (kiểm trên gian thật), tìm danh mục theo từ khóa, tải ảnh, trình soạn kho, lát 2 hàng loạt. Memory `hubsell-sao-chep-san-pham-dang-hang-loat-khao-sat-2026-10-29` cập nhật.
+
+---
 ## Phiên 29/10/2026 (chiều muộn) — KHẢO SÁT "SAO CHÉP SẢN PHẨM" + "ĐĂNG HÀNG LOẠT" — CHƯA CODE, CHỜ ANH CHỐT
 
 - Anh báo 4 khách thử đòi tính năng chép 1 SP từ một shop lên các gian chỉ định cả 3 sàn + đăng hàng loạt; nhờ khảo sát Sapo, Ship Xanh, KiotViet, Salework…

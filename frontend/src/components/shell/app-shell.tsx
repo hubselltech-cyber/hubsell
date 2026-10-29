@@ -204,6 +204,8 @@ const NAV_ITEMS: NavItem[] = [
         perm: "operations.loss-orders",
       },
       { href: "/operations-assistant/ai-rules", label: "Cấu hình tự động hóa", perm: "operations.ai-rules" },
+      // 29/10/2026: chép 1 sản phẩm (gian đã nối / kho) lên nhiều gian 3 sàn — docs/SAO-CHEP-SAN-PHAM.md.
+      { href: "/operations-assistant/copy-listing", label: "Sao chép sản phẩm", perm: "operations.copy-listing" },
     ],
   },
   {
@@ -366,6 +368,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/operations-assistant/chat", title: "Trợ lý Chat CSKH" },
   { prefix: "/operations-assistant/reviews", title: "Phản hồi đánh giá đa kênh" },
   { prefix: "/operations-assistant/ai-rules", title: "Cấu hình tự động hóa CSKH" },
+  { prefix: "/operations-assistant/copy-listing", title: "Sao chép sản phẩm lên nhiều gian" },
   { prefix: "/koc-marketing/overview", title: "Tổng quan Net-ROI Đa kênh" },
   { prefix: "/koc-marketing/tiktok", title: "TikTok Affiliate & MCN" },
   { prefix: "/koc-marketing/shopee", title: "Shopee Affiliate (AMS)" },

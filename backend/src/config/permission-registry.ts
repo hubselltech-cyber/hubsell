@@ -60,6 +60,7 @@ export const PERMISSION_TREE: PermissionNode[] = [
       { key: "operations.reviews", label: "Phản hồi đánh giá" },
       { key: "operations.loss-orders", label: "Cảnh báo & P&L Sản phẩm" },
       { key: "operations.ai-rules", label: "Cấu hình kịch bản AI" },
+      { key: "operations.copy-listing", label: "Sao chép sản phẩm" },
     ],
   },
   {

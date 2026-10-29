@@ -70,7 +70,7 @@
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "-e",
-        "process.env.SSL_KEY_FILE='';process.env.SSL_CERT_FILE='';process.env.PORT='4010';process.env.SHOPEE_CALLBACK_HTTP_PORT='4012';require('child_process').spawn('npm',['run','dev','--prefix','backend'],{stdio:'inherit',shell:true})"
+        "process.env.HUBSELL_ROLE='web';process.env.SSL_KEY_FILE='';process.env.SSL_CERT_FILE='';process.env.CORS_ORIGINS='http://localhost:3002,http://localhost:3010,http://localhost:3011,http://localhost:3012,http://localhost:3020';require('child_process').spawn('npm',['run','dev','--prefix','backend'],{stdio:'inherit',shell:true})"
       ],
       "port": 4010
     },
@@ -79,9 +79,10 @@
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "-e",
-        "process.env.NEXT_PUBLIC_API_URL='http://localhost:4010';require('child_process').spawn('npx',['next','dev','-p','3000'],{stdio:'inherit',shell:true,cwd:'frontend'})"
+        "process.env.NEXT_PUBLIC_API_URL='http://localhost:4010';require('child_process').spawn('npm',['run','dev','--prefix','frontend'],{stdio:'inherit',shell:true})"
       ],
-      "port": 3000
+      "port": 3010,
+      "autoPort": true
     },
     {
       "name": "backend-alt",

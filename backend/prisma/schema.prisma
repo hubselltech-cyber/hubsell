@@ -4264,3 +4264,98 @@ model SyncShadowOrder {
   @@index([channelId, firstSeenAt], map: "sync_shadow_orders_channel_seen_idx")
   @@map("sync_shadow_orders")
 }
+
+// ============================================================
+// SAO CHÉP SẢN PHẨM (29/10/2026, docs/SAO-CHEP-SAN-PHAM.md): chép 1 sản phẩm
+// (bài trên gian đã nối HOẶC sản phẩm kho) lên nhiều gian 3 sàn. Job = một lượt
+// chép (chụp nguồn lúc tạo), target = một gian đích với danh mục/thuộc tính
+// riêng + trạng thái đăng. Không khai relation sang Channel/User để tránh đụng
+// hai model lớn; phạm vi lọc bằng userId.
+// ============================================================
+
+enum ListingCopySourceType {
+  CHANNEL
+  PRODUCT
+}
+
+enum ListingCopyJobStatus {
+  DRAFT
+  SUBMITTED
+  DONE
+  PARTIAL
+  FAILED
+}
+
+enum ListingCopyTargetStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  LISTED
+  PENDING_REVIEW
+  FAILED
+}
+
+model ListingCopyJob {
+  id          String               @id @default(cuid())
+  userId      String // chủ shop
+  createdById String
+  sourceType  ListingCopySourceType
+  /// Gian nguồn (sourceType CHANNEL); null khi chép từ kho.
+  sourceChannelId String?
+  /// Id sản phẩm sàn nguồn (phần trước dấu "-" của ChannelProduct.externalId) hoặc id dòng.
+  sourceItemId    String?
+  /// Nhóm cha–con kho (Product.groupKey) hoặc skuCode khi sản phẩm đơn.
+  sourceGroupKey  String?
+  sourceTitle     String
+  sourceImageUrl  String?
+  /// NormalizedListing chụp lúc tạo — nguồn đổi sau đó không ảnh hưởng lượt chép.
+  source      Json
+  status      ListingCopyJobStatus @default(DRAFT)
+  createdAt   DateTime             @default(now())
+  submittedAt DateTime?
+  finishedAt  DateTime?
+
+  targets ListingCopyTarget[]
+
+  @@index([userId, createdAt])
+  @@map("listing_copy_jobs")
+}
+
+model ListingCopyTarget {
+  id        String @id @default(cuid())
+  jobId     String
+  channelId String
+  /// Danh mục lá sàn đích (id phía sàn) + tên đường dẫn để hiển thị.
+  categoryId         String?
+  categoryName       String?
+  /// 0–1: độ tin của gợi ý danh mục; null = khách tự chọn.
+  categoryConfidence Float?
+  /// Thuộc tính danh mục đã điền: { [attributeId]: value }.
+  attributes   Json    @default("{}")
+  brandId      String?
+  brandName    String?
+  /// Kênh vận chuyển bật (Shopee): mảng id.
+  logisticIds  Json    @default("[]")
+  weightGrams  Int?
+  /// { length, width, height } cm.
+  dimensionsCm Json?
+  /// % điều chỉnh giá so với nguồn (−50..100), mặc định 0.
+  priceAdjustPercent Int @default(0)
+  /// Tồn đăng cho mỗi phân loại; null = lấy theo nguồn.
+  stock        Int?
+  /// Mã trường còn thiếu (tính lại mỗi lần sửa): ["category","weight","attr:1234",…].
+  missing      Json    @default("[]")
+  status       ListingCopyTargetStatus @default(PENDING)
+  error        String?
+  remoteItemId String?
+  remoteUrl    String?
+  attempts     Int      @default(0)
+  listedAt     DateTime?
+  updatedAt    DateTime @updatedAt
+
+  job ListingCopyJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([channelId, status])
+  @@map("listing_copy_targets")
+}

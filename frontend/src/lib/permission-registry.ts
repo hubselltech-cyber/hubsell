@@ -53,6 +53,7 @@ export const PERMISSION_TREE: PermissionNode[] = [
       { key: "operations.reviews", label: "Phản hồi đánh giá" },
       { key: "operations.loss-orders", label: "Cảnh báo & P&L Sản phẩm" },
       { key: "operations.ai-rules", label: "Cấu hình tự động hóa" },
+      { key: "operations.copy-listing", label: "Sao chép sản phẩm" },
     ],
   },
   {
@@ -209,6 +210,7 @@ export const HOME_PRIORITY: { key: string; path: string }[] = [
   { key: "operations.reviews", path: "/operations-assistant/reviews" },
   { key: "operations.loss-orders", path: "/operations-assistant/loss-orders" },
   { key: "operations.ai-rules", path: "/operations-assistant/ai-rules" },
+  { key: "operations.copy-listing", path: "/operations-assistant/copy-listing" },
   { key: "finance.analytics", path: "/finance/analytics" },
   { key: "finance.realized-pnl", path: "/finance/realized-pnl" },
   { key: "finance.fee-audit", path: "/finance/fee-audit" },

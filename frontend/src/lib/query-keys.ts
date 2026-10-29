@@ -20,6 +20,12 @@ export const qk = {
   /** Chấm đỏ "trả lời mới" của Yêu cầu hỗ trợ (menu avatar). */
   supportUnread: () => ["support-unread"] as const,
 
+  // ----- Sao chép sản phẩm (docs/SAO-CHEP-SAN-PHAM.md) -----
+  copyListingChannels: () => ["copy-listing-channels"] as const,
+  copyListingSources: (params: Record<string, unknown>) => ["copy-listing-sources", params] as const,
+  copyListingJobs: (page: number) => ["copy-listing-jobs", page] as const,
+  copyListingJob: (id: string) => ["copy-listing-job", id] as const,
+
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,
   analytics: (range?: DateRange, channel?: ChannelFilterQuery) =>
