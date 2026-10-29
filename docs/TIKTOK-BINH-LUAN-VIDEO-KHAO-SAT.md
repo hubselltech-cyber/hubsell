@@ -1,5 +1,7 @@
 # Trả lời bình luận video TikTok — khảo sát API (12/10/2026)
 
+> **29/10/2026:** khảo sát này được dùng lại cho dự án Hệ Marketing-Sale (đích mới: trả lời bình luận video của Hubsell/anh Trung, kéo khách về Zalo OA). Hồ sơ Accounts API Access Application đã soạn cho anh nộp: `hubsell-marketing/kenh/tiktok/HO-SO-ACCOUNTS-API-2026-10-29.md`; kết quả tuần 1 (gồm TikTok Business Messaging API cho DM): `hubsell-marketing/chien-luoc/HE-MARKETING-SALE-TUAN-1-2026-10-29.md`.
+
 Anh Trung hỏi 12/10: shop TikTok gắn 1 tài khoản chính thức + tới 4 tài khoản tiếp
 thị; video đăng lên có bình luận hỏi giá, kích thước… Hubsell có tự nhận biết + trả
 lời được không? Đọc trực tiếp docs business-api.tiktok.com (TikTok API for Business,
