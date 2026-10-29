@@ -32,6 +32,49 @@ export function tierIndexes(variant: ListingVariant, options: ListingOption[]): 
   });
 }
 
+/**
+ * Ảnh theo GIÁ TRỊ của một nhóm phân loại (vd Màu: Đen → ảnh đen): lấy ảnh của phân loại
+ * đầu tiên mang giá trị đó. Sàn chỉ cho ảnh ở MỘT nhóm (Shopee tier 1, TikTok một sales
+ * attribute) nên trả thêm nhóm nào nhiều ảnh nhất.
+ */
+export function optionImages(
+  variants: ListingVariant[],
+  options: ListingOption[]
+): { byOption: Map<string, string>[]; imageOptionIndex: number } {
+  const byOption = options.map(() => new Map<string, string>());
+  for (const v of variants) {
+    if (!v.imageUrl) continue;
+    const idx = tierIndexes(v, options);
+    idx.forEach((i, oi) => {
+      if (i >= 0) {
+        const key = options[oi].values[i];
+        if (!byOption[oi].has(key)) byOption[oi].set(key, v.imageUrl!);
+      }
+    });
+  }
+  // Nhóm "có ảnh" = nhiều ảnh KHÁC NHAU nhất (Size M/L cùng một ảnh đen → không phải nhóm ảnh; Màu Đen/Trắng 2 ảnh → đúng).
+  let imageOptionIndex = -1;
+  let best = 0;
+  byOption.forEach((m, i) => {
+    const distinct = new Set(m.values()).size;
+    if (distinct > best) {
+      best = distinct;
+      imageOptionIndex = i;
+    }
+  });
+  return { byOption, imageOptionIndex };
+}
+
+/**
+ * Đưa nhóm có ảnh lên ĐẦU (Shopee chỉ nhận ảnh ở tier 1, TikTok ở sales attribute đầu).
+ * Không nhóm nào có ảnh → giữ nguyên thứ tự.
+ */
+export function reorderOptionsForImages(options: ListingOption[], variants: ListingVariant[]): ListingOption[] {
+  const { imageOptionIndex } = optionImages(variants, options);
+  if (imageOptionIndex <= 0) return options;
+  return [options[imageOptionIndex], ...options.filter((_, i) => i !== imageOptionIndex)];
+}
+
 /** Cặp tên nhóm → giá trị cho một phân loại (TikTok sales_attributes / Lazada saleProp). */
 export function variantPairs(variant: ListingVariant, options: ListingOption[]): { name: string; value: string }[] {
   const values = splitVariantValues(variant.name);

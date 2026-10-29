@@ -31,7 +31,7 @@ import type {
   NormalizedListing,
   ReviewCheckResult,
 } from "./types";
-import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, normalizeText, textToHtml, variantPairs, vndInt } from "./variant-map";
+import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, normalizeText, optionImages, reorderOptionsForImages, textToHtml, variantPairs, vndInt } from "./variant-map";
 
 async function ctxOf(channel: Channel) {
   if (tiktokNeedsReauthForStockPush(channel)) {
@@ -242,9 +242,27 @@ export const tiktokListingAdapter: ListingAdapter = {
         return { id, values: [found?.id ? { id: found.id, name: found.name } : { name: String(value) }] };
       });
 
-    const options = draft.listing.options.slice(0, 3);
+    // Nhóm có ảnh (Màu) lên đầu; ảnh phân loại gắn sku_img ở sales attribute ĐẦU (TikTok chỉ nhận một nhóm có ảnh).
+    const options = reorderOptionsForImages(draft.listing.options, draft.variants).slice(0, 3);
+    const { byOption } = optionImages(draft.variants, options);
+    const skuImgUris = new Map<string, string>();
+    for (const [value, url] of byOption[0] ?? []) {
+      try {
+        const img = await fetchImageBuffer(url);
+        skuImgUris.set(value, (await api.uploadProductImage(ctx, img, "ATTRIBUTE_IMAGE")).uri);
+      } catch (err) {
+        console.warn(`[listing-copy] ${channel.shopName}: ảnh phân loại "${value}" không tải được (${(err as Error).message}) — bỏ ảnh này`);
+      }
+    }
     const skus: api.TikTokCreateProductBody["skus"] = draft.variants.map((v) => ({
-      ...(options.length ? { sales_attributes: variantPairs(v, options).map((p) => ({ name: p.name, value_name: p.value })) } : {}),
+      ...(options.length
+        ? {
+            sales_attributes: variantPairs(v, options).map((p, i) => {
+              const uri = i === 0 ? skuImgUris.get(p.value) : undefined;
+              return { name: p.name, value_name: p.value, ...(uri ? { sku_img: { uri } } : {}) };
+            }),
+          }
+        : {}),
       ...(v.sku ? { seller_sku: v.sku } : {}),
       price: { amount: String(vndInt(v.price)), currency: "VND" },
       inventory: [{ warehouse_id: wh.id, quantity: Math.max(0, v.stock) }],

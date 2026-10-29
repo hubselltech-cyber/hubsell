@@ -939,7 +939,16 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
                 const stock = variantEdits[i]?.stock ?? v.stock;
                 return (
                   <TableRow key={`${v.sku}-${i}`}>
-                    <TableCell className="text-sm text-slate-900">{v.name ?? "Sản phẩm đơn"}</TableCell>
+                    <TableCell className="text-sm text-slate-900">
+                      <span className="inline-flex items-center gap-2">
+                        {/* Ảnh riêng của phân loại (ảnh màu) — chép sang gian đích: Shopee tier 1, TikTok sku_img, Lazada ảnh SKU. */}
+                        {v.imageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={v.imageUrl} alt="" className="size-8 shrink-0 rounded border border-slate-200 object-cover" loading="lazy" />
+                        )}
+                        {v.name ?? "Sản phẩm đơn"}
+                      </span>
+                    </TableCell>
                     <TableCell>
                       {v.sku ? (
                         <span className="inline-flex items-center gap-1 font-mono text-sm">

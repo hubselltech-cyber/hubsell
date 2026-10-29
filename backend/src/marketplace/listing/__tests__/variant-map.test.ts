@@ -1,5 +1,39 @@
 // Hàm thuần quy đổi phân loại cho 3 adapter thật (docs/SAO-CHEP-SAN-PHAM.md mục 10).
 import { describe, expect, it } from "vitest";
+import { optionImages, reorderOptionsForImages } from "../variant-map";
+
+describe("optionImages / reorderOptionsForImages", () => {
+  const options = [
+    { name: "Size", values: ["M", "L"] },
+    { name: "Màu", values: ["Đen", "Trắng"] },
+  ];
+  const variants = [
+    { sku: "a", name: "M, Đen", price: 1, stock: 1, imageUrl: "https://img/den.jpg" },
+    { sku: "b", name: "L, Đen", price: 1, stock: 1, imageUrl: "https://img/den.jpg" },
+    { sku: "c", name: "M, Trắng", price: 1, stock: 1, imageUrl: "https://img/trang.jpg" },
+    { sku: "d", name: "L, Trắng", price: 1, stock: 1, imageUrl: null },
+  ];
+  it("Màu có 2 ảnh khác nhau, Size 2 giá trị nhưng cùng 1 ảnh → nhóm Màu là nhóm ảnh, đưa lên đầu", () => {
+    const r = optionImages(variants, options);
+    expect([...r.byOption[1].entries()]).toEqual([
+      ["Đen", "https://img/den.jpg"],
+      ["Trắng", "https://img/trang.jpg"],
+    ]);
+    expect(r.imageOptionIndex).toBe(1);
+    expect(reorderOptionsForImages(options, variants).map((o) => o.name)).toEqual(["Màu", "Size"]);
+  });
+  it("không phân loại nào có ảnh → giữ nguyên thứ tự", () => {
+    const plain = variants.map((v) => ({ ...v, imageUrl: null }));
+    expect(reorderOptionsForImages(options, plain)).toEqual(options);
+  });
+  it("chỉ nhóm thứ hai có ảnh khác nhau → đưa lên đầu", () => {
+    const vs = [
+      { sku: "a", name: "M, Đen", price: 1, stock: 1, imageUrl: "https://img/den.jpg" },
+      { sku: "c", name: "M, Trắng", price: 1, stock: 1, imageUrl: "https://img/trang.jpg" },
+    ];
+    expect(reorderOptionsForImages(options, vs).map((o) => o.name)).toEqual(["Màu", "Size"]);
+  });
+});
 import type { ListingOption, ListingVariant } from "../types";
 import {
   appendHtmlImages,

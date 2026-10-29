@@ -170,8 +170,18 @@ export const lazadaListingAdapter: ListingAdapter = {
     for (const [k, v] of Object.entries(draft.attributes)) if (String(v).trim()) attributes[k] = String(v);
 
     const dims = draft.dimensionsCm ?? { length: 0, width: 0, height: 0 };
+    // Ảnh riêng từng phân loại (ảnh màu) → image/migrate, đặt ĐẦU danh sách ảnh của SKU (Lazada ≤ 8 ảnh/SKU).
+    const variantImages = new Map<string, string>();
+    for (const url of new Set(draft.variants.map((v) => v.imageUrl).filter((u): u is string => Boolean(u)))) {
+      try {
+        variantImages.set(url, await api.migrateImage(token, url));
+      } catch (err) {
+        console.warn(`[listing-copy] ${channel.shopName}: ảnh phân loại không chuyển được vào Lazada (${(err as Error).message}) — bỏ ảnh này`);
+      }
+    }
     const skus: api.LazadaCreateSku[] = draft.variants.map((v) => {
       const pairs = variantPairs(v, options);
+      const own = v.imageUrl ? variantImages.get(v.imageUrl) : undefined;
       const saleProp: Record<string, string> = {};
       pairs.forEach((p, i) => {
         if (saleKeys[i]) saleProp[saleKeys[i]] = p.value;
@@ -184,7 +194,7 @@ export const lazadaListingAdapter: ListingAdapter = {
         package_width: dims.width,
         package_height: dims.height,
         package_weight: gramsToKg(draft.weightGrams),
-        ...(v.imageUrl ? { Images: { Image: [images[0]] } } : {}),
+        ...(own ? { Images: { Image: [own, ...images.filter((u) => u !== own)].slice(0, 8) } } : {}),
         ...(Object.keys(saleProp).length ? { saleProp } : {}),
       };
     });

@@ -9,7 +9,7 @@
 
 import type { Channel } from "@prisma/client";
 import { fetchImageBuffer } from "../../lib/image-fetch";
-import type { ShopeeItemBaseInfo } from "../../integrations/shopee/client";
+import type { ShopeeItemBaseInfo, ShopeeModel } from "../../integrations/shopee/client";
 import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
 import { viAttributeName } from "./attribute-names-vi";
@@ -29,7 +29,7 @@ import type {
   LogisticOption,
   NormalizedListing,
 } from "./types";
-import { gramsToKg, htmlToText, normalizeText, splitVariantValues, tierIndexes, vndInt } from "./variant-map";
+import { gramsToKg, htmlToText, normalizeText, optionImages, reorderOptionsForImages, splitVariantValues, tierIndexes, vndInt } from "./variant-map";
 
 const NO_BRAND: Brand = { id: "0", name: "No Brand" };
 const TIER_INIT_DELAY_MS = 5_500;
@@ -81,6 +81,12 @@ export const shopeeListingAdapter: ListingAdapter = {
       name: t.name ?? "Phân loại",
       values: (t.option_list ?? []).map((o) => o.option ?? "").filter(Boolean),
     }));
+    // Ảnh phân loại Shopee nằm ở tier 1 (option_list[].image) — ghép sang model theo tier_index[0].
+    const tier0Images = (extra.tier_variation?.[0]?.option_list ?? []).map((o) => o.image?.image_url ?? null);
+    const modelImage = (m: ShopeeModel) => {
+      const i = m.tier_index?.[0];
+      return typeof i === "number" ? (tier0Images[i] ?? null) : null;
+    };
     const price = (p?: { current_price?: number; original_price?: number }[]) => Number(p?.[0]?.original_price ?? p?.[0]?.current_price ?? 0);
     const stockOf = (s?: { summary_info?: { total_available_stock?: number } }) => Number(s?.summary_info?.total_available_stock ?? 0);
     const variants: ListingVariant[] =
@@ -90,7 +96,7 @@ export const shopeeListingAdapter: ListingAdapter = {
             name: m.model_name ?? null,
             price: price(m.price_info),
             stock: stockOf(m.stock_info_v2 as { summary_info?: { total_available_stock?: number } }),
-            imageUrl: null,
+            imageUrl: modelImage(m),
           }))
         : [{ sku: item.item_sku?.trim() || "", name: null, price: price(item.price_info), stock: stockOf(item.stock_info_v2 as never), imageUrl: null }];
     const categories = await api.getCategories(accessToken, shopId).catch(() => [] as api.ShopeeCategory[]);
@@ -249,7 +255,18 @@ export const shopeeListingAdapter: ListingAdapter = {
     const variants: { sku: string; remoteId: string }[] = [];
     if (draft.variants.length > 1 && draft.listing.options.length > 0) {
       await new Promise((r) => setTimeout(r, TIER_INIT_DELAY_MS));
-      const options = draft.listing.options.slice(0, 2);
+      // Nhóm có ảnh (Màu) lên tier 1 — Shopee chỉ nhận ảnh phân loại ở tier đầu (anh 29/10: "Shopee không lấy được ảnh phân loại").
+      const options = reorderOptionsForImages(draft.listing.options, draft.variants).slice(0, 2);
+      const { byOption } = optionImages(draft.variants, options);
+      const tierImageIds = new Map<string, string>();
+      for (const [value, url] of byOption[0] ?? []) {
+        try {
+          const img = await fetchImageBuffer(url);
+          tierImageIds.set(value, await api.uploadProductImage({ accessToken, shopId, ...img }));
+        } catch (err) {
+          console.warn(`[listing-copy] ${channel.shopName}: ảnh phân loại "${value}" không tải được (${(err as Error).message}) — bỏ ảnh này`);
+        }
+      }
       const models = draft.variants
         .map((v) => ({ v, tier_index: tierIndexes(v, options) }))
         .filter((m) => m.tier_index.every((i) => i >= 0))
@@ -266,7 +283,13 @@ export const shopeeListingAdapter: ListingAdapter = {
       }
       const created = await api.initTierVariation(accessToken, shopId, {
         item_id: itemId,
-        tier_variation: options.map((o) => ({ name: o.name.slice(0, 14), option_list: o.values.map((x) => ({ option: x.slice(0, 20) })) })),
+        tier_variation: options.map((o, ti) => ({
+          name: o.name.slice(0, 14),
+          option_list: o.values.map((x) => {
+            const image_id = ti === 0 ? tierImageIds.get(x) : undefined;
+            return { option: x.slice(0, 20), ...(image_id ? { image: { image_id } } : {}) };
+          }),
+        })),
         model: models,
       });
       for (const m of created) {

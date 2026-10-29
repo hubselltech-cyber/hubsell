@@ -288,7 +288,8 @@ export async function addItem(accessToken: string, shopId: string, body: ShopeeA
 
 export interface ShopeeTierVariationBody {
   item_id: number;
-  tier_variation: { name: string; option_list: { option: string }[] }[];
+  /** Docs: ảnh phân loại chỉ ở TIER ĐẦU (option_list[].image.image_id từ upload_image). */
+  tier_variation: { name: string; option_list: { option: string; image?: { image_id: string } }[] }[];
   model: { tier_index: number[]; original_price: number; seller_stock: { location_id?: string; stock: number }[]; model_sku?: string }[];
 }
 

@@ -979,6 +979,8 @@ export interface ShopeeModel {
   model_id: number;
   model_name?: string;
   model_sku?: string;
+  /** Chỉ số option theo từng tier — ghép ảnh tier 1 (sao chép SP, 29/10). */
+  tier_index?: number[];
   price_info?: { current_price?: number }[];
   stock_info_v2?: ShopeeStockInfoV2;
 }

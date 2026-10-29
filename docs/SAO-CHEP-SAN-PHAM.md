@@ -347,3 +347,23 @@ Nguyên văn đọc từ log worker Render (`[listing-copy]`, Chrome của anh):
 - **Kiểm local:** 3 gian TikTok giả lập chờ duyệt từ 14:52 → mở đợt là cả 3 sang "Đã đăng". tsc + vitest 24 ca sạch.
   ⏳ prod: bài ANO Official đang chờ duyệt sẽ tự lên khi anh mở lại đợt (hoặc ≤ 10 phút); lý do từ chối thật chưa có mẫu.
 
+## 18. Ảnh theo phân loại (ảnh màu) chép sang gian đích (29/10/2026 tối muộn, anh báo) — ĐÃ CODE 3 SÀN, chưa kiểm gian thật
+
+- **Anh (ảnh Seller Center Shopee):** bài TikTok → Shopee lên nhưng cột ảnh từng màu (ĐEN / XÁM / Gold) trống. Gốc: chiều
+  đọc TikTok đã lấy `sku_img` vào `variants[].imageUrl`, nhưng chiều ghi Shopee dựng `tier_variation.option_list` không có
+  `image`; TikTok ghi cũng không gửi `sku_img`; Lazada gửi nhầm ảnh bìa thay ảnh phân loại; Shopee chiều đọc không ghép ảnh
+  tier → `imageUrl: null`.
+- **Hàm thuần (`variant-map.ts`, test +3):** `optionImages(variants, options)` = ảnh theo từng GIÁ TRỊ của mỗi nhóm (lấy
+  ảnh của phân loại đầu tiên mang giá trị đó) + `imageOptionIndex` = nhóm có nhiều ảnh KHÁC NHAU nhất (Size M/L cùng ảnh
+  đen không tính; Màu Đen/Trắng 2 ảnh → đúng); `reorderOptionsForImages` đưa nhóm đó lên ĐẦU vì sàn chỉ nhận ảnh ở một
+  nhóm (Shopee tier 1, TikTok một sales attribute).
+- **Chiều ghi:** Shopee `init_tier_variation` tier 1 `option_list[].image.image_id` (upload_image scene normal từng ảnh
+  màu, lỗi ảnh nào bỏ ảnh đó); TikTok `skus[].sales_attributes[0].sku_img.uri` (upload use_case ATTRIBUTE_IMAGE); Lazada
+  `Skus[].Images.Image` = ảnh phân loại (image/migrate) đứng đầu + ảnh bìa, ≤ 8. Thứ tự nhóm sau khi đảo dùng chung cho
+  `tierIndexes` / `variantPairs` nên model vẫn khớp.
+- **Chiều đọc Shopee:** `ShopeeModel.tier_index` + `tier_variation[0].option_list[].image.image_url` → `variants[].imageUrl`
+  (chép Shopee → TikTok/Lazada cũng mang ảnh màu).
+- **FE:** bảng Phân loại trong Sửa bài đăng hiện ảnh nhỏ 32px cạnh tên phân loại khi có.
+- tsc BE+FE, vitest 27 ca, eslint sạch. ⏳ anh chép lại SP đó TikTok → Shopee xem Seller Center có ảnh từng màu; chiều
+  Shopee → TikTok chưa kiểm.
+
