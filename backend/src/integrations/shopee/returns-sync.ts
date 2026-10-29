@@ -817,3 +817,55 @@ export async function backfillShopeeTrackingCodes(
   }
   return { checked: due.length, saved };
 }
+
+// ============================================================
+// HỎI YÊU CẦU HOÀN CỦA MỘT ĐƠN NGAY (lát C, 29/10/2026 — màn quét đơn hoàn)
+// ============================================================
+
+export interface SyncShopeeReturnsForOrderResult extends SyncShopeeReturnsResult {
+  /** Sàn có ít nhất một yêu cầu hoàn trên đơn này. */
+  withReturns: boolean;
+}
+
+/**
+ * Kho quét kiện mà đơn còn "Không hoàn" → hỏi sàn đúng đơn này một lần trước
+ * khi trả kết quả (docs DON-HOAN-VA-SAO-KE.md mục 8). Cùng đường đi của quét bù
+ * (`get_escrow_detail` → `return_order_sn_list` → `get_return_detail`, vì
+ * `get_return_list` không lọc được theo mã đơn) nhưng KHÔNG phải lịch sử: yêu
+ * cầu đang sống vẫn cắm Chờ hàng về. 1 + N call (N = số yêu cầu hoàn, thường 0–1).
+ */
+export async function syncShopeeReturnsForOrder(
+  channel: Channel,
+  orderCode: string
+): Promise<SyncShopeeReturnsForOrderResult> {
+  const result: SyncShopeeReturnsForOrderResult = { ...emptyReturnsResult(), withReturns: false };
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  const ctx: ShopeeReturnApplyCtx = {
+    channel,
+    accessToken,
+    shopId,
+    nowSec: Math.floor(Date.now() / 1000),
+    feeRate: shopeeFeeRate(channel),
+    result,
+    calls: { detail: 0, escrowRefresh: 0 },
+    details: new Map(),
+  };
+  const escrow = await getEscrowDetail({ accessToken, shopId, orderSn: orderCode });
+  const returnSns = (escrow.response?.return_order_sn_list ?? [])
+    .map((sn) => String(sn ?? "").trim())
+    .filter(Boolean);
+  const group: ShopeeReturnDetail[] = [];
+  for (const sn of returnSns) {
+    const d = await getReturnDetail(accessToken, shopId, sn);
+    if (!d) throw new Error(`get_return_detail ${sn} trả rỗng`);
+    const entry: ShopeeReturnDetail = { ...d, return_sn: d.return_sn ?? sn, order_sn: orderCode };
+    group.push(entry);
+    ctx.details!.set(entry.return_sn!, entry);
+  }
+  result.scanned = group.length;
+  if (group.length > 0) {
+    result.withReturns = true;
+    await applyShopeeReturnGroup(ctx, orderCode, group);
+  }
+  return result;
+}

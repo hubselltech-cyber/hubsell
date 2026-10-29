@@ -302,6 +302,151 @@ export interface SyncLazadaReturnsOptions {
 }
 
 /**
+ * Phản ánh các yêu cầu hoàn của MỘT đơn Lazada vào Order — phần GHI dùng chung
+ * cho lượt quét theo thời gian và lượt hỏi theo mã đơn (lát C 29/10/2026).
+ */
+async function applyLazadaReturnGroup(
+  channel: Channel,
+  orderCode: string,
+  group: LazadaReverseOrder[],
+  nowMs: number,
+  result: SyncLazadaReturnsResult
+): Promise<void> {
+  const order = await prisma.order.findUnique({
+    where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+    select: {
+      id: true,
+      returnStatus: true,
+      returnRequestedAt: true,
+      returnTrackingCode: true,
+      returnSolution: true,
+      platformRefundAmount: true,
+      platformReturnStatus: true,
+      shippingStatus: true,
+      cancelRequestedAt: true,
+      cancelRequestRef: true,
+      items: { select: { id: true, channelSku: true, returnedQuantity: true } },
+    },
+  });
+  if (!order) {
+    result.ordersNotFound++;
+    return;
+  }
+
+  // Cờ KHÁCH XIN HỦY (trục riêng, 23/10/2026) — reverse order request_type
+  // CANCEL còn sống; ghi trước phần hoàn vì hai trục không giẫm cột nhau.
+  const cancelPlan = planLazadaCancelRequest(group, order, nowMs);
+  if (cancelPlan) {
+    await prisma.order.update({ where: { id: order.id }, select: { id: true }, data: cancelPlan.data });
+    if (cancelPlan.flagged) {
+      result.cancelFlagged++;
+      await notifyCancelRequest(channel, orderCode, cancelPlan.reason, null, { prevStatus: order.shippingStatus });
+    }
+    if (cancelPlan.unflagged) result.cancelUnflagged++;
+  }
+
+  const plan = planLazadaReturnUpdate(
+    group,
+    {
+      returnStatus: order.returnStatus,
+      returnRequestedAt: order.returnRequestedAt,
+      returnTrackingCode: order.returnTrackingCode,
+      returnSolution: order.returnSolution,
+      platformRefundAmount: Number(order.platformRefundAmount),
+      platformReturnStatus: order.platformReturnStatus,
+    },
+    nowMs
+  );
+  if (plan.flagged) result.flagged++;
+  if (plan.unflagged) result.unflagged++;
+  if (plan.trackingSaved) result.trackingSaved++;
+
+  // Lát 11 (03/10/2026): trạng thái hoàn sắp CHUYỂN VÀO nhóm đã chốt → ghi yêu cầu điều
+  // chỉnh tự động TRƯỚC khi ghi đơn (ghi-trước + chỉ mục duy nhất: tiến trình chết giữa
+  // chừng thì lượt đồng bộ sau thấy lại đúng lần chuyển này, không mất và không trùng).
+  const returnJustDone =
+    PLATFORM_RETURN_DONE_STATUSES.has(
+      (plan.data.platformReturnStatus !== undefined ? plan.data.platformReturnStatus : order.platformReturnStatus) ?? ""
+    ) && !PLATFORM_RETURN_DONE_STATUSES.has(order.platformReturnStatus ?? "");
+  if (returnJustDone) await autoAdjustOnPlatformReturn(channel.userId, order.id, "before");
+  if (Object.keys(plan.data).length > 0) {
+    await prisma.order.update({ where: { id: order.id }, data: plan.data });
+  }
+
+  if (plan.itemReturns) {
+    for (const it of order.items) {
+      const qty = plan.itemReturns.get(it.channelSku) ?? 0;
+      if (qty !== it.returnedQuantity) {
+        await prisma.orderItem.update({
+          where: { id: it.id },
+          data: { returnedQuantity: qty },
+        });
+        result.itemsUpdated++;
+      }
+    }
+  }
+
+  // TỰ ĐỘNG LẬP HÓA ĐƠN ĐIỀU CHỈNH THEO SÀN (25/08, cùng khuôn Shopee): bắn
+  // đúng lần reverse_status CHUYỂN VÀO tập "hoàn đã chốt" (REFUND_SUCCESS /
+  // CANCEL_REFUND_ISSUED — luồng trả hàng RTM do lưới vét nhập kho gánh).
+  // Đặt SAU khi đã ghi itemReturns để hook đọc được số lượng trả mới nhất.
+  {
+    const prevStatus = order.platformReturnStatus ?? "";
+    const nextStatus =
+      (plan.data.platformReturnStatus !== undefined
+        ? plan.data.platformReturnStatus
+        : prevStatus) ?? "";
+    if (
+      PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
+      !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
+    ) {
+      await autoAdjustOnPlatformReturn(channel.userId, order.id, "after");
+    }
+  }
+
+  if (plan.flagged) {
+    await notify(channel.userId, {
+      type: "return",
+      title: `Đơn ${orderCode} đang hoàn về — Hubsell đã chuyển sang Chờ nhận hàng hoàn`,
+      body: `Lazada · gian ${channel.shopName}. Đơn này đã được tách khỏi doanh thu cho tới khi nhận lại hàng; kho chỉ cần quét mã khi kiện về tay.`,
+      link: "/warehouse/returns",
+    });
+  }
+}
+
+/**
+ * Hỏi yêu cầu hoàn của MỘT đơn ngay (lát C 29/10/2026 — màn quét đơn hoàn):
+ * Reverse Order API lọc `trade_order_id` (= mã đơn Hubsell lưu). 1 call.
+ */
+export async function syncLazadaReturnsForOrder(
+  channel: Channel,
+  orderCode: string
+): Promise<SyncLazadaReturnsResult & { withReturns: boolean }> {
+  const accessToken = await getValidLazadaAccessToken(channel);
+  const result: SyncLazadaReturnsResult & { withReturns: boolean } = {
+    pages: 0,
+    truncated: false,
+    scanned: 0,
+    flagged: 0,
+    unflagged: 0,
+    trackingSaved: 0,
+    itemsUpdated: 0,
+    ordersNotFound: 0,
+    cancelFlagged: 0,
+    cancelUnflagged: 0,
+    withReturns: false,
+  };
+  const page = await getReverseOrders({ accessToken, pageNo: 1, pageSize: 50, tradeOrderId: orderCode });
+  result.pages = 1;
+  const group = page.items.filter((ro) => String(ro.trade_order_id ?? "").trim() === orderCode);
+  result.scanned = group.length;
+  if (group.length === 0) return result;
+  result.withReturns = true;
+  await applyLazadaReturnGroup(channel, orderCode, group, Date.now(), result);
+  return result;
+}
+
+/**
  * Quét Reverse Order API rồi phản ánh số của sàn vào Order. Idempotent —
  * chạy lặp bao nhiêu lần cũng ra cùng trạng thái.
  */
@@ -369,106 +514,7 @@ export async function syncLazadaReturns(
   }
 
   for (const [orderCode, group] of byOrder) {
-    const order = await prisma.order.findUnique({
-      where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-      select: {
-        id: true,
-        returnStatus: true,
-        returnRequestedAt: true,
-        returnTrackingCode: true,
-        returnSolution: true,
-        platformRefundAmount: true,
-        platformReturnStatus: true,
-        shippingStatus: true,
-        cancelRequestedAt: true,
-        cancelRequestRef: true,
-        items: { select: { id: true, channelSku: true, returnedQuantity: true } },
-      },
-    });
-    if (!order) {
-      result.ordersNotFound++;
-      continue;
-    }
-
-    // Cờ KHÁCH XIN HỦY (trục riêng, 23/10/2026) — reverse order request_type
-    // CANCEL còn sống; ghi trước phần hoàn vì hai trục không giẫm cột nhau.
-    const cancelPlan = planLazadaCancelRequest(group, order, nowMs);
-    if (cancelPlan) {
-      await prisma.order.update({ where: { id: order.id }, select: { id: true }, data: cancelPlan.data });
-      if (cancelPlan.flagged) {
-        result.cancelFlagged++;
-        await notifyCancelRequest(channel, orderCode, cancelPlan.reason, null, { prevStatus: order.shippingStatus });
-      }
-      if (cancelPlan.unflagged) result.cancelUnflagged++;
-    }
-
-    const plan = planLazadaReturnUpdate(
-      group,
-      {
-        returnStatus: order.returnStatus,
-        returnRequestedAt: order.returnRequestedAt,
-        returnTrackingCode: order.returnTrackingCode,
-        returnSolution: order.returnSolution,
-        platformRefundAmount: Number(order.platformRefundAmount),
-        platformReturnStatus: order.platformReturnStatus,
-      },
-      nowMs
-    );
-    if (plan.flagged) result.flagged++;
-    if (plan.unflagged) result.unflagged++;
-    if (plan.trackingSaved) result.trackingSaved++;
-
-    // Lát 11 (03/10/2026): trạng thái hoàn sắp CHUYỂN VÀO nhóm đã chốt → ghi yêu cầu điều
-    // chỉnh tự động TRƯỚC khi ghi đơn (ghi-trước + chỉ mục duy nhất: tiến trình chết giữa
-    // chừng thì lượt đồng bộ sau thấy lại đúng lần chuyển này, không mất và không trùng).
-    const returnJustDone =
-      PLATFORM_RETURN_DONE_STATUSES.has(
-        (plan.data.platformReturnStatus !== undefined ? plan.data.platformReturnStatus : order.platformReturnStatus) ?? ""
-      ) && !PLATFORM_RETURN_DONE_STATUSES.has(order.platformReturnStatus ?? "");
-    if (returnJustDone) await autoAdjustOnPlatformReturn(channel.userId, order.id, "before");
-    if (Object.keys(plan.data).length > 0) {
-      await prisma.order.update({ where: { id: order.id }, data: plan.data });
-    }
-
-    if (plan.itemReturns) {
-      for (const it of order.items) {
-        const qty = plan.itemReturns.get(it.channelSku) ?? 0;
-        if (qty !== it.returnedQuantity) {
-          await prisma.orderItem.update({
-            where: { id: it.id },
-            data: { returnedQuantity: qty },
-          });
-          result.itemsUpdated++;
-        }
-      }
-    }
-
-    // TỰ ĐỘNG LẬP HÓA ĐƠN ĐIỀU CHỈNH THEO SÀN (25/08, cùng khuôn Shopee): bắn
-    // đúng lần reverse_status CHUYỂN VÀO tập "hoàn đã chốt" (REFUND_SUCCESS /
-    // CANCEL_REFUND_ISSUED — luồng trả hàng RTM do lưới vét nhập kho gánh).
-    // Đặt SAU khi đã ghi itemReturns để hook đọc được số lượng trả mới nhất.
-    {
-      const prevStatus = order.platformReturnStatus ?? "";
-      const nextStatus =
-        (plan.data.platformReturnStatus !== undefined
-          ? plan.data.platformReturnStatus
-          : prevStatus) ?? "";
-      if (
-        PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
-        !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
-      ) {
-        await autoAdjustOnPlatformReturn(channel.userId, order.id, "after");
-      }
-    }
-
-    if (plan.flagged) {
-      await notify(channel.userId, {
-        type: "return",
-        title: `Đơn ${orderCode} đang hoàn về — Hubsell đã chuyển sang Chờ nhận hàng hoàn`,
-        body: `Lazada · gian ${channel.shopName}. Đơn này đã được tách khỏi doanh thu cho tới khi nhận lại hàng; kho chỉ cần quét mã khi kiện về tay.`,
-        link: "/warehouse/returns",
-      });
-    }
+    await applyLazadaReturnGroup(channel, orderCode, group, nowMs, result);
   }
 
   return result;

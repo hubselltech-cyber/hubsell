@@ -521,6 +521,11 @@ export function ScanScreen({
             Giao thất bại · sàn đã hủy · kiện đang quay về shop
           </Text>
         ) : null}
+        {order.shippingStatus === "CANCELLED" && order.returnStatus === "NONE" ? (
+          <Text className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+            Sàn đã hủy đơn này, chưa có yêu cầu hoàn — kiện về tay thì bấm Quét nhận
+          </Text>
+        ) : null}
         <Text className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           {CHANNEL_LABEL[order.channel.channelName] ?? order.channel.channelName}
           {" · "}

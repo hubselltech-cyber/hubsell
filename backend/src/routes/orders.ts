@@ -53,6 +53,7 @@ import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { syncTiktokOrders } from "../integrations/tiktok/service";
+import { needsReturnRefresh, refreshReturnStateForOrder } from "../integrations/return-refresh";
 import {
   finishStockPush,
   finishStockPushes,
@@ -1327,6 +1328,23 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
     let { order, ambiguous } = await findByCode();
     let resynced = false;
 
+    // LÁT C (29/10/2026, docs/DON-HOAN-VA-SAO-KE.md mục 8): đơn thấy nhưng trục hoàn
+    // còn NONE mà kiện ĐÃ RỜI SHOP (đang giao / đã giao) → hỏi sàn đúng đơn này một
+    // lần (chi tiết đơn + yêu cầu hoàn, nghỉ 5' mỗi đơn) rồi tra lại, thay vì trả
+    // "Không hoàn" trong khi webhook còn nằm hàng đợi / lượt quét chưa tới nhịp.
+    // Chỉ cho lượt quét đơn hoàn (không phải ?detail=1 xem chi tiết).
+    let askedPlatform = false;
+    if (order && !ambiguous && req.query.detail !== "1" && needsReturnRefresh(order)) {
+      const channel = await prisma.channel.findUnique({ where: { id: order.channelId } });
+      if (channel) {
+        const r = await refreshReturnStateForOrder(channel, order);
+        if (r.asked) {
+          askedPlatform = true;
+          ({ order, ambiguous } = await findByCode());
+        }
+      }
+    }
+
     // 3) TỰ CHỮA LÀNH — tra trượt thì hỏi thẳng sàn rồi tra lại một lần.
     if (!order && !ambiguous) {
       const now = Date.now();
@@ -1410,6 +1428,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
     res.json({
       order: (await attachItemImages([order]))[0],
       ...(payment ? { payment } : {}),
+      ...(askedPlatform ? { askedPlatform: true } : {}),
     });
   } catch (err) {
     next(err);
