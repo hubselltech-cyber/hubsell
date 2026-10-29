@@ -302,3 +302,9 @@ bản kê trước 29/10 còn gộp. Test: ca đơn prod 586613690914604995 (Bon
 Phí khác 0, Σ = fee_tax_amount, serviceFee = 29.101). 22 ca TikTok + merge-db qua; tsc BE/FE + eslint sạch. DB dev:
 `prisma migrate deploy` kẹt vì migration cũ `20260830120000_fee_audit` hỏng từ 17/09 (máy em) → áp bằng
 `prisma db execute --file`. ⏳ sau deploy: SQL `sum(feeBonusCashback)` trên bản kê mới đồng bộ > 0; bản kê cũ giữ ở Phí khác.
+
+**✅ PROD 10:22 29/10:** lát 1 — sổ v1 còn **0** dòng (587k dòng tính xong ~35 phút, 09:48 → 10:22); lát 2 — migration
+`20261029110000` đã áp, **1.649 bản kê** đã có số ở `feeBonusCashback`/`feeShipGuarantee` (lượt đồng bộ bản kê sau deploy
+ghi đè bản kê gần đây). Lát 3 bước probe: `backend/scripts/tiktok-price-detail-probe.ts` (chỉ đọc, in không dấu; kiểm
+3 đẳng thức list = gross, dedS + vS = |disc|, list − dedS = giá trong giỏ; chạy `npx tsx scripts/tiktok-price-detail-probe.ts
+[shopName] [limit]` trên Shell worker).

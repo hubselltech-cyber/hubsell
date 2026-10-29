@@ -9,7 +9,7 @@
 
 - **Bước 1 (đọc log prod):** "Phí khác" and.not.or 0 (T8–T9) → −1.665.925 T10/115 đơn; tên thật trong `fee_tax_breakdown.fee`: `bonus_cashback_service_fee_amount` (~1,5 % DT sau CK) + `shipping_fee_guarantee_service_fee` (1.620đ/đơn). KHÔNG có trường "gmv_max_pro" (docs cũng không); `feeGmvMax` 3 gian anh = 0. Docs mục 11.
 - **Bước 2 (anh "Làm đi"):** migration `20261029110000_…` thêm `feeBonusCashback` + `feeShipGuarantee` vào `tiktok_order_settlements` (khóa có thử lại); mapper + `FEE_KNOWN` + cột gộp serviceFee (tổng không đổi); `computePnlRow` trả 2 khóa; FE bảng Lãi/Lỗ TikTok 2 cột nhóm Phí. Test ca đơn prod 586613690914604995; 22 ca qua, tsc + eslint sạch. Bản kê cũ giữ ở Phí khác (anh chọn không đọc lại T10).
-- Lát 1 nền: sổ v2 prod 470k/587k lúc 10:14, kỳ đang xem tự tính inline. ⏳ sau deploy kiểm cột mới có số trên bản kê mới đồng bộ.
+- Lát 1 nền: sổ v2 prod 470k/587k lúc 10:14, kỳ đang xem tự tính inline. ✅ 10:22 prod: migration đã áp, 1.649 bản kê có số ở 2 cột mới; sổ v1 còn 0 (lát 1 tính xong). Lát 3: script probe `tiktok-price-detail-probe.ts` push, chạy trên Shell worker.
 
 ---
 ## Phiên 29/10/2026 (chiều) — LÁT 1 TỔNG GIÁ TRỊ SP: TIKTOK VỀ GIÁ TRONG GIỎ, SỔ CÁI v2 — ĐÃ CODE, CHƯA PUSH
