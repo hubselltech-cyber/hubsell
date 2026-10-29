@@ -54,7 +54,7 @@ import { TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
-import { JOB_STATUS, missingLabel, TARGET_STATUS } from "./labels";
+import { brandLabel, JOB_STATUS, missingLabel, splitListingError, TARGET_STATUS } from "./labels";
 
 type Tab = "new" | "history";
 type SourceType = "CHANNEL" | "PRODUCT";
@@ -1076,8 +1076,22 @@ function TargetRows({
       </TableRow>
       {t.error && (
         <TableRow className={cn("hover:bg-transparent", expanded && ROW_ACTIVE)}>
-          <TableCell colSpan={6} className="bg-rose-50/60 py-2 pl-10 text-sm text-red-500">
-            {t.error}
+          <TableCell colSpan={6} className="bg-rose-50/60 py-2 pl-10">
+            {/* Dòng 1 tiếng Việt nói rõ sửa gì; nguyên văn sàn để nhỏ, mờ — khách gửi cho hỗ trợ khi cần. */}
+            {(() => {
+              const { text, detail } = splitListingError(t.error);
+              return (
+                <>
+                  <div className="whitespace-normal text-sm leading-snug text-red-500">{text}</div>
+                  {detail && (
+                    <details className="mt-0.5">
+                      <summary className="cursor-pointer select-none text-[11px] text-slate-500">Chi tiết kỹ thuật sàn trả về</summary>
+                      <div className="mt-0.5 whitespace-normal break-all font-mono text-[11px] text-slate-500">{detail}</div>
+                    </details>
+                  )}
+                </>
+              );
+            })()}
           </TableCell>
         </TableRow>
       )}
@@ -1169,23 +1183,41 @@ function TargetEditor({
   }
 
   const missing = new Set(t.missing);
-  const field = (label: string, code: string, node: React.ReactNode) => (
+  /**
+   * Ô nhập: nhãn + viên "Bắt buộc" (sàn không cho đăng nếu trống) + ghi chú ngắn nói điền gì.
+   * Thiếu → nhãn vàng "còn thiếu" + viền vàng (đồng bộ cột Còn thiếu ở dòng gian).
+   */
+  const field = (label: string, code: string, node: React.ReactNode, opts?: { required?: boolean; hint?: string }) => (
     <div key={code} className="space-y-1">
-      <div className={cn(TEXT_TABLE_HEAD, missing.has(code) && "text-amber-700")}>
-        {label}
-        {missing.has(code) && " · còn thiếu"}
+      <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-1.5", missing.has(code) && "text-amber-700")}>
+        <span>{label}</span>
+        {opts?.required && (
+          <span className="rounded border border-rose-200 bg-rose-50 px-1 py-px text-[10px] font-medium normal-case tracking-normal text-red-500">
+            Bắt buộc
+          </span>
+        )}
+        {missing.has(code) && <span className="font-normal normal-case">· còn thiếu</span>}
       </div>
       {node}
+      {/* Ô nằm trong TableCell (whitespace-nowrap) → ép xuống dòng, không tràn sang cột bên. */}
+      {opts?.hint && <div className={cn(TEXT_SUB, "whitespace-normal leading-snug")}>{opts.hint}</div>}
     </div>
   );
   const inputCls = (code: string) => cn(missing.has(code) && "border-amber-300 bg-amber-50/40");
+  // Thuộc tính bắt buộc lên đầu để khách thấy ngay phải điền gì; tuỳ chọn xếp sau.
+  const attributeDefs = [...t.attributeDefs].sort((a, b) => Number(b.required) - Number(a.required));
+  const requiredAttrCount = attributeDefs.filter((d) => d.required).length;
+  const platformLabel = CHANNEL_META[t.channel.channelName].label;
 
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <div className={cn(TEXT_TABLE_HEAD, missing.has("category") && "text-amber-700")}>
-          Danh mục trên {CHANNEL_META[t.channel.channelName].label}
-          {missing.has("category") && " · còn thiếu"}
+        <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-1.5", missing.has("category") && "text-amber-700")}>
+          <span>Danh mục trên {platformLabel}</span>
+          <span className="rounded border border-rose-200 bg-rose-50 px-1 py-px text-[10px] font-medium normal-case tracking-normal text-red-500">
+            Bắt buộc
+          </span>
+          {missing.has("category") && <span className="font-normal normal-case">· còn thiếu</span>}
           {t.categoryConfidence != null && draft.categoryId === undefined && (
             <span className="ml-2 font-normal normal-case text-slate-500">Hubsell gợi ý · độ khớp {Math.round(t.categoryConfidence * 100)}%</span>
           )}
@@ -1213,10 +1245,11 @@ function TargetEditor({
               <option value="">— Chọn thương hiệu —</option>
               {brands.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name}
+                  {brandLabel(b.name)}
                 </option>
               ))}
-            </NativeSelect>
+            </NativeSelect>,
+            { required: Boolean(req?.brandRequired), hint: "Hàng không có thương hiệu thì chọn Không có thương hiệu." }
           )}
         {field(
           "Cân nặng (gram)",
@@ -1228,10 +1261,11 @@ function TargetEditor({
             value={value("weightGrams") ?? ""}
             disabled={!canEdit}
             onChange={(e) => setDraft((d) => ({ ...d, weightGrams: e.target.value === "" ? null : Number(e.target.value) }))}
-          />
+          />,
+          { required: req?.weightRequired ?? true, hint: "Cân nặng cả gói hàng, tính phí ship. Ví dụ áo thun: 250." }
         )}
         {field(
-          "Kích thước kiện D × R × C (cm)",
+          "Kích thước kiện hàng (cm)",
           "dimensions",
           <div className="flex gap-2">
             {(["length", "width", "height"] as const).map((k) => (
@@ -1244,19 +1278,27 @@ function TargetEditor({
                 value={dims?.[k] || ""}
                 disabled={!canEdit}
                 onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    dimensionsCm: {
+                  setDraft((d) => {
+                    const next = {
                       length: dims?.length ?? 0,
                       width: dims?.width ?? 0,
                       height: dims?.height ?? 0,
                       [k]: Number(e.target.value) || 0,
-                    },
-                  }))
+                    };
+                    // Xóa hết 3 ô → null (không gửi sàn); sàn từ chối nếu nhận số 0.
+                    const empty = next.length <= 0 && next.width <= 0 && next.height <= 0;
+                    return { ...d, dimensionsCm: empty ? null : next };
+                  })
                 }
               />
             ))}
-          </div>
+          </div>,
+          {
+            required: Boolean(req?.dimensionsRequired),
+            hint: req?.dimensionsRequired
+              ? "Dài × Rộng × Cao của gói hàng khi gửi, đủ cả 3 số."
+              : "Không bắt buộc. Nếu nhập thì phải đủ cả 3 số Dài × Rộng × Cao; để trống cả 3 nếu không rõ.",
+          }
         )}
         {field(
           "Điều chỉnh giá so với nguồn (%)",
@@ -1268,10 +1310,11 @@ function TargetEditor({
             value={value("priceAdjustPercent") ?? 0}
             disabled={!canEdit}
             onChange={(e) => setDraft((d) => ({ ...d, priceAdjustPercent: Number(e.target.value) || 0 }))}
-          />
+          />,
+          { hint: "0 = giữ giá nguồn. Ví dụ 10 = đắt hơn 10%, −5 = rẻ hơn 5%." }
         )}
         {field(
-          "Tồn đăng mỗi phân loại (trống = theo nguồn)",
+          "Tồn đăng mỗi phân loại",
           "stock",
           <Input
             type="number"
@@ -1279,11 +1322,22 @@ function TargetEditor({
             value={value("stock") ?? ""}
             disabled={!canEdit}
             onChange={(e) => setDraft((d) => ({ ...d, stock: e.target.value === "" ? null : Number(e.target.value) }))}
-          />
+          />,
+          { hint: "Để trống = lấy số tồn của nguồn." }
         )}
-        {t.attributeDefs.map((def) =>
+      </div>
+      {attributeDefs.length > 0 && (
+        <div className={cn(TEXT_SUB, "whitespace-normal pt-1 leading-snug")}>
+          Thông tin {platformLabel} hỏi thêm cho danh mục này
+          {requiredAttrCount > 0
+            ? ` — ${requiredAttrCount} ô có nhãn Bắt buộc phải điền mới đăng được; các ô còn lại để trống vẫn đăng được, có thì khách dễ tìm thấy hàng hơn.`
+            : " — không có ô bắt buộc; điền được ô nào thì khách dễ tìm thấy hàng hơn."}
+        </div>
+      )}
+      <div className="grid gap-4 md:grid-cols-3">
+        {attributeDefs.map((def) =>
           field(
-            `${def.name}${def.required ? " *" : ""}`,
+            def.name,
             `attr:${def.id}`,
             def.type === "select" ? (
               <NativeSelect
@@ -1305,9 +1359,11 @@ function TargetEditor({
                 className={inputCls(`attr:${def.id}`)}
                 value={attrs[def.id] ?? ""}
                 disabled={!canEdit}
+                placeholder={def.type === "number" ? "Nhập số" : "Nhập chữ"}
                 onChange={(e) => setDraft((d) => ({ ...d, attributes: { ...(d.attributes ?? {}), [def.id]: e.target.value } }))}
               />
-            )
+            ),
+            { required: def.required }
           )
         )}
       </div>
@@ -1315,6 +1371,9 @@ function TargetEditor({
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className={cn(TEXT_TABLE_HEAD, missing.has("logistics") && "text-amber-700")}>Kênh vận chuyển</span>
+            {req?.logisticsRequired && (
+              <span className="rounded border border-rose-200 bg-rose-50 px-1 py-px text-[10px] font-medium text-red-500">Bắt buộc</span>
+            )}
             <span className={cn(TEXT_SUB, "tabular-nums")}>
               {logisticsOn === logisticEnabled.length
                 ? `theo cài đặt gian — ${logisticEnabled.length} kênh đang bật trên sàn`

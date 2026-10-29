@@ -11,7 +11,8 @@
 import type { Channel } from "@prisma/client";
 import * as api from "../../integrations/lazada/listing-api";
 import { getValidLazadaAccessToken } from "../../integrations/lazada/service";
-import { MAX_DESCRIPTION_IMAGES, PLATFORM_LISTING_RULES } from "./rules";
+import { viAttributeName } from "./attribute-names-vi";
+import { MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
   Brand,
@@ -39,7 +40,7 @@ function truthy(v: number | boolean | undefined): boolean {
 function attrDef(a: api.LazadaAttribute): AttributeDef {
   const options = (a.options ?? []).map((o) => o.name ?? "").filter(Boolean);
   const type: AttributeDef["type"] = options.length > 0 ? "select" : a.input_type === "numeric" ? "number" : "text";
-  return { id: a.name, name: a.label ?? a.name, required: truthy(a.is_mandatory), type, options: options.length ? options : undefined };
+  return { id: a.name, name: viAttributeName(a.label ?? a.name), required: truthy(a.is_mandatory), type, options: options.length ? options : undefined };
 }
 
 export const lazadaListingAdapter: ListingAdapter = {
@@ -82,9 +83,7 @@ export const lazadaListingAdapter: ListingAdapter = {
       categoryPath: null,
       brandName: a.brand ?? null,
       weightGrams: sku0?.package_weight ? Math.round(Number(sku0.package_weight) * 1000) : null,
-      dimensionsCm: sku0?.package_length
-        ? { length: Number(sku0.package_length), width: Number(sku0.package_width ?? 0), height: Number(sku0.package_height ?? 0) }
-        : null,
+      dimensionsCm: normalizeDims({ length: sku0?.package_length, width: sku0?.package_width, height: sku0?.package_height }),
       options,
       variants,
       attributes: Object.entries(a)

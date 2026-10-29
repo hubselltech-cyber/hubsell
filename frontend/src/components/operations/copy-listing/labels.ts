@@ -5,7 +5,7 @@ const MISSING_LABELS: Record<string, string> = {
   category: "Chưa chọn danh mục",
   brand: "Thiếu thương hiệu",
   weight: "Thiếu cân nặng",
-  dimensions: "Thiếu kích thước kiện",
+  dimensions: "Kích thước kiện chưa đủ 3 số (Dài × Rộng × Cao)",
   logistics: "Chưa bật kênh vận chuyển",
   title_short: "Tên quá ngắn",
   title_long: "Tên quá dài",
@@ -25,6 +25,22 @@ export function missingLabel(code: string, attrName?: (id: string) => string | u
     return `Thiếu ${attrName?.(id) ?? "thuộc tính"}`;
   }
   return MISSING_LABELS[code] ?? code;
+}
+
+/**
+ * target.error do backend ghi: dòng 1 = câu tiếng Việt cho người bán, dòng 2 = nguyên văn sàn
+ * (marketplace/listing/error-text.ts). Lỗi ghi trước 29/10 chỉ có một dòng tiếng Anh → text.
+ */
+export function splitListingError(stored: string | null): { text: string; detail: string | null } {
+  if (!stored) return { text: "", detail: null };
+  const idx = stored.indexOf("\n");
+  if (idx < 0) return { text: stored, detail: null };
+  return { text: stored.slice(0, idx), detail: stored.slice(idx + 1).trim() || null };
+}
+
+/** "No Brand" (Shopee id 0 / Lazada) là giá trị sàn đòi — chỉ đổi chữ hiện cho khách. */
+export function brandLabel(name: string): string {
+  return /^no ?brand$/i.test(name.trim()) ? "Không có thương hiệu (No Brand)" : name;
 }
 
 export const TARGET_STATUS: Record<CopyListingTargetStatus, { label: string; className: string }> = {

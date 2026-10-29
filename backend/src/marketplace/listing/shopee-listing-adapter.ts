@@ -12,7 +12,8 @@ import { fetchImageBuffer } from "../../lib/image-fetch";
 import type { ShopeeItemBaseInfo } from "../../integrations/shopee/client";
 import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
-import { MAX_DESCRIPTION_IMAGES, PLATFORM_LISTING_RULES } from "./rules";
+import { viAttributeName } from "./attribute-names-vi";
+import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
   Brand,
@@ -51,7 +52,7 @@ function attrDef(a: api.ShopeeAttribute): AttributeDef {
   const options = (a.attribute_value_list ?? []).map(attrValueName).filter(Boolean);
   const validation = a.attribute_info?.input_validation_type ?? a.input_validation_type;
   const type: AttributeDef["type"] = options.length > 0 ? "select" : validation === "INT_TYPE" || validation === "FLOAT_TYPE" ? "number" : "text";
-  return { id: String(a.attribute_id), name: a.display_name ?? a.name ?? String(a.attribute_id), required: Boolean(a.mandatory), type, options: options.length ? options : undefined };
+  return { id: String(a.attribute_id), name: viAttributeName(a.display_name ?? a.name ?? String(a.attribute_id)), required: Boolean(a.mandatory), type, options: options.length ? options : undefined };
 }
 
 export const shopeeListingAdapter: ListingAdapter = {
@@ -102,9 +103,11 @@ export const shopeeListingAdapter: ListingAdapter = {
       categoryPath: extra.category_id && categories.length ? api.categoryPath(categories, extra.category_id) : null,
       brandName: extra.brand?.original_brand_name ?? null,
       weightGrams: extra.weight ? Math.round(Number(extra.weight) * 1000) : null,
-      dimensionsCm: extra.dimension?.package_length
-        ? { length: Number(extra.dimension.package_length), width: Number(extra.dimension.package_width ?? 0), height: Number(extra.dimension.package_height ?? 0) }
-        : null,
+      dimensionsCm: normalizeDims({
+        length: extra.dimension?.package_length,
+        width: extra.dimension?.package_width,
+        height: extra.dimension?.package_height,
+      }),
       options,
       variants,
       attributes: (item.attribute_list ?? [])
@@ -224,7 +227,8 @@ export const shopeeListingAdapter: ListingAdapter = {
       logistic_info: draft.logisticIds.map((id) => ({ logistic_id: Number(id), enabled: true })),
       ...(attribute_list.length ? { attribute_list } : {}),
       ...(draft.brandId ? { brand: { brand_id: Number(draft.brandId), original_brand_name: draft.brandName ?? undefined } } : {}),
-      ...(draft.dimensionsCm
+      // Chỉ gửi khi đủ 3 số > 0 — Shopee từ chối cả gói nếu có số 0 (sự cố 29/10).
+      ...(dimsComplete(draft.dimensionsCm)
         ? { dimension: { package_length: draft.dimensionsCm.length, package_width: draft.dimensionsCm.width, package_height: draft.dimensionsCm.height } }
         : {}),
       ...(draft.variants.length === 1 && first.sku ? { item_sku: first.sku } : {}),

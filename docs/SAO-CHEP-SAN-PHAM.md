@@ -245,3 +245,54 @@ lấy được không.
 - Test `variant-map.test.ts` +1 ca (tách/ghép ảnh); tsc + vitest 13 ca + eslint sạch; local gian giả lập hiện 2 ảnh mẫu.
 - ⏳ Kiểm gian thật: chạy probe xem `descriptionImages` > 0 trên 1 SP Shopee có mô tả mở rộng; thử đăng 1 SP có ảnh mô tả
   lên gian test từng sàn (Shopee extended có thể đòi text ≥ 25 ký tự mỗi ô và ảnh desc đúng cỡ — sửa theo lỗi thật).
+
+## 14. Lỗi thật đầu tiên trên prod + Việt hóa cho người bán (29/10/2026 tối muộn) — ĐÃ SỬA, kiểm local
+
+**Anh báo (ảnh):** khách chép TikTok → Shopee, dòng gian đích đỏ toàn tiếng Anh
+`Shopee add_item lỗi: product.error_param — invalid AddItemRequest.Dimension … invalid Dimension.PackageLength: value must
+be greater than 0`; khung Bổ sung thuộc tính toàn tiếng Anh (pack type, Region of Origin, Material…), khách không biết ô
+nào bắt buộc.
+
+**Gốc lỗi (đọc mã, không đoán):** TikTok `package_dimensions` trả CHUỖI `"0"` khi gian không khai kích thước; adapter
+kiểm `d?.length ?` — chuỗi `"0"` là truthy → lưu `dimensionsCm {0,0,0}`; `asDims` ở service và route PATCH cũng ép
+`Number(x) || 0` → `{0,0,0}`; adapter Shopee gửi `dimension` hễ object khác null → sàn từ chối cả gói. Màn hình lại
+hiện ô trống (`dims[k] || ""`) nên khách không thấy gì để sửa. Shopee không bắt buộc kích thước (`dimensionsRequired
+false`) nên `computeMissing` cũng im.
+
+**Sửa 3 lớp (`rules.ts`):**
+- `normalizeDims(v)` — chuẩn hóa từ MỌI nguồn (API sàn, JSON bảng, body FE): cả 3 số ≤ 0 / không phải số → `null`; có ít
+  nhất một số > 0 → giữ. Dùng ở `fetchListing` 3 adapter, `asDims` (service — dòng cũ `{0,0,0}` trong bảng tự về null),
+  route PATCH.
+- `dimsComplete(d)` — đủ 3 số > 0 mới gửi `dimension` (Shopee) / `package_dimensions` (TikTok). Lazada vẫn bắt buộc →
+  `computeMissing` chặn trước.
+- `computeMissing`: điền DỞ (1–2 số) → mã `dimensions` dù sàn không bắt buộc; nhãn đổi "Kích thước kiện chưa đủ 3 số
+  (Dài × Rộng × Cao)". FE: xóa hết 3 ô → gửi `null`.
+- Test `rules.test.ts` +2 ca (điền dở / chuỗi "0" / bảng 0,0,0).
+
+**Dịch lỗi sàn — `marketplace/listing/error-text.ts` (thuần, test `error-text.test.ts`):** `humanizeListingError(sàn, raw)`
+khớp TỪ KHÓA trong thông điệp (không theo mã — 3 sàn 3 kiểu mã): ủy quyền → quá tải/mạng → kích thước → cân nặng → ảnh →
+tên → mô tả → thương hiệu → danh mục → vận chuyển → SKU trùng → giá → tồn → thuộc tính bắt buộc → phân loại → tham số
+chung. Ghi `target.error` = dòng 1 câu tiếng Việt "Shopee từ chối: … — sửa ở đâu" + `\n` + nguyên văn sàn. Câu Hubsell tự
+viết (có dấu tiếng Việt sau khi bỏ tiền tố "Shopee add_item lỗi:") giữ nguyên. Không khớp → câu chung + nguyên văn.
+FE `splitListingError` → dòng đỏ tiếng Việt + `<details>` "Chi tiết kỹ thuật sàn trả về" (chữ nhỏ mono, để gửi hỗ trợ).
+Log worker `[listing-copy]` vẫn in nguyên văn.
+
+**Tên thuộc tính tiếng Việt — `attribute-names-vi.ts`:** từ điển ~300 tên Anh → Việt (Region of Origin → Xuất xứ,
+pack type → Kiểu đóng gói, Sleeve Length → Độ dài tay áo, Manufacturer/trader name → Tên nhà sản xuất / đơn vị kinh
+doanh…); áp ở `attrDef` của 3 adapter — chỉ đổi NHÃN, id + giá trị chọn gửi sàn giữ nguyên; tên đã có dấu → giữ; lạ →
+giữ tên sàn. Shopee đã gửi `language=vi` ở get_attribute_tree/get_brand_list/get_category nhưng thuộc tính vẫn về tiếng
+Anh (ảnh anh gửi) → từ điển là lưới đỡ. Giá trị chọn (Cotton, Polyester…) KHÔNG dịch vì phải khớp `value_id` khi đăng.
+
+**Khung Bổ sung (FE `copy-listing-page.tsx`):** viên đỏ nhạt "Bắt buộc" cạnh nhãn Danh mục / Cân nặng / Thương hiệu (khi
+sàn đòi) / Kích thước (Lazada, TikTok theo rule) / Kênh vận chuyển (Shopee) / thuộc tính `required`; thuộc tính bắt buộc
+xếp TRƯỚC; dòng dẫn "Thông tin {sàn} hỏi thêm cho danh mục này — N ô có nhãn Bắt buộc phải điền mới đăng được; ô còn lại để
+trống vẫn đăng được, có thì khách dễ tìm thấy hàng hơn"; ghi chú ngắn dưới ô (cân nặng ví dụ 250, kích thước "không bắt
+buộc, nhập thì đủ 3 số", % giá, tồn); placeholder "Nhập số / Nhập chữ"; "No Brand" hiện "Không có thương hiệu (No Brand)"
+(`brandLabel`, giá trị gửi sàn giữ "No Brand"). Bẫy: ô nằm trong `TableCell` (whitespace-nowrap) → ghi chú + dòng lỗi phải
+`whitespace-normal`, không thì tràn sang cột bên / sinh cuộn ngang (đã gặp, đã sửa).
+
+**Kiểm:** vitest 21 ca (3 tệp), tsc BE + FE, eslint FE sạch; local (backend-http 4010 + frontend-http 3010, demo@) nhập Dài
+20 bỏ Rộng/Cao → chip "Kích thước kiện chưa đủ 3 số"; gán lỗi Shopee thật vào 1 target → dòng đỏ tiếng Việt + chi tiết
+mono xuống dòng, không cuộn ngang. ⏳ Prod: khách thử lại cặp TikTok → Shopee đó (kích thước nay về null → Shopee không
+nhận `dimension`); nếu sàn còn từ chối vì kênh vận chuyển `fee_type SIZE_INPUT` đòi kích thước thì thêm luật
+`dimensionsRequired` theo kênh đã chọn (chưa làm — chưa có bằng chứng).

@@ -14,7 +14,8 @@ import { Prisma, type Channel, type ListingCopyTarget } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { enqueue, QUEUES, QueueUnavailableError } from "../../lib/queue";
 import { getListingAdapter } from "../../marketplace/listing/registry";
-import { adjustPrice, computeMissing, type MissingCode } from "../../marketplace/listing/rules";
+import { humanizeListingError } from "../../marketplace/listing/error-text";
+import { adjustPrice, computeMissing, normalizeDims, type MissingCode } from "../../marketplace/listing/rules";
 import type {
   CategoryRequirements,
   ListingDimensions,
@@ -81,11 +82,9 @@ function asStringArray(v: Prisma.JsonValue): string[] {
   return Array.isArray(v) ? v.map(String) : [];
 }
 
+/** Bảng có thể còn {0,0,0} ghi trước 29/10 → normalizeDims trả null, không gửi sàn. */
 function asDims(v: Prisma.JsonValue | null): ListingDimensions | null {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-  const o = v as Record<string, unknown>;
-  const n = (x: unknown) => (typeof x === "number" ? x : Number(x) || 0);
-  return { length: n(o.length), width: n(o.width), height: n(o.height) };
+  return normalizeDims(v);
 }
 
 async function loadTargetChannels(ownerId: string, allowed: string[] | null, ids: string[]): Promise<Channel[]> {
@@ -600,12 +599,14 @@ export async function processTarget(targetId: string): Promise<void> {
       },
     });
   } catch (err) {
-    const message = String((err as Error)?.message ?? err).slice(0, 1000);
+    const raw = String((err as Error)?.message ?? err).slice(0, 700);
+    // Dòng 1 tiếng Việt cho người bán, dòng 2 nguyên văn sàn (marketplace/listing/error-text.ts).
+    const message = humanizeListingError(channel.channelName, raw).slice(0, 1000);
     await prisma.listingCopyTarget.update({
       where: { id: t.id },
       data: { status: "FAILED", error: message },
     });
-    console.warn(`[listing-copy] ${channel.shopName} (${channel.channelName}) đăng thất bại: ${message}`);
+    console.warn(`[listing-copy] ${channel.shopName} (${channel.channelName}) đăng thất bại: ${raw}`);
   }
   await rollupJob(t.jobId);
 }

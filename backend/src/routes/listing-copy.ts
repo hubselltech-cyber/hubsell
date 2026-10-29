@@ -10,6 +10,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { getListingAdapter } from "../marketplace/listing/registry";
+import { normalizeDims } from "../marketplace/listing/rules";
 import type { AuthRequest } from "../middleware/auth";
 import {
   createJob,
@@ -246,13 +247,8 @@ router.patch("/jobs/:id/targets/:tid", async (req: AuthRequest, res, next) => {
     if (Array.isArray(body.logisticIds)) patch.logisticIds = body.logisticIds.map(String);
     const w = numOrNull(body.weightGrams);
     if (w !== undefined) patch.weightGrams = w === null ? null : Math.max(0, Math.round(w));
-    if (body.dimensionsCm !== undefined) {
-      const d = body.dimensionsCm as Record<string, unknown> | null;
-      patch.dimensionsCm =
-        d && typeof d === "object"
-          ? { length: Number(d.length) || 0, width: Number(d.width) || 0, height: Number(d.height) || 0 }
-          : null;
-    }
+    // Cả 3 ô trống / 0 → null (không gửi sàn); điền dở → giữ để computeMissing báo "chưa đủ 3 số".
+    if (body.dimensionsCm !== undefined) patch.dimensionsCm = normalizeDims(body.dimensionsCm);
     const p = numOrNull(body.priceAdjustPercent);
     if (p !== undefined) patch.priceAdjustPercent = p ?? 0;
     const s = numOrNull(body.stock);

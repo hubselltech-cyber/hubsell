@@ -5,6 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (tối muộn) — SAO CHÉP SẢN PHẨM: LỖI THẬT ĐẦU TIÊN TRÊN PROD (Shopee Dimension 0) + VIỆT HÓA CHO NGƯỜI BÁN — ĐÃ KIỂM LOCAL
+
+- **Anh (ảnh prod):** khách chép TikTok → Shopee gặp lỗi đỏ toàn tiếng Anh `invalid Dimension.PackageLength: value must be greater than 0`; khung Bổ sung thuộc tính tiếng Anh (pack type, Region of Origin…), không biết ô nào bắt buộc. Yêu cầu: rà gốc, khắc phục, Việt hóa gần gũi.
+- **Gốc:** TikTok trả `package_dimensions` chuỗi `"0"` (truthy) → lưu `{0,0,0}` → Shopee nhận `dimension` toàn 0 → từ chối; màn hình hiện ô trống (`|| ""`) nên khách không thấy gì để sửa; Shopee không bắt buộc kích thước nên `computeMissing` im.
+- **Sửa (docs/SAO-CHEP-SAN-PHAM.md mục 14):** `rules.ts` thêm `normalizeDims` (cả 3 ≤ 0 → null; dùng ở fetchListing 3 adapter + asDims service + route PATCH) và `dimsComplete` (đủ 3 số > 0 mới gửi sàn — Shopee/TikTok); điền dở 1–2 số → mã `dimensions` "Kích thước kiện chưa đủ 3 số" dù sàn không bắt buộc; FE xóa hết 3 ô → null.
+- **Dịch lỗi sàn:** `marketplace/listing/error-text.ts` `humanizeListingError` khớp từ khóa (ủy quyền, quá tải, kích thước, cân nặng, ảnh, tên, mô tả, thương hiệu, danh mục, vận chuyển, SKU trùng, giá, tồn, thuộc tính, phân loại, tham số) → `target.error` = câu tiếng Việt + `
+` + nguyên văn; FE dòng đỏ + `<details>` "Chi tiết kỹ thuật sàn trả về". Câu Hubsell tự viết giữ nguyên.
+- **Tên thuộc tính:** `attribute-names-vi.ts` ~300 tên Anh → Việt áp ở `attrDef` 3 adapter (chỉ nhãn; id + giá trị gửi sàn giữ). Khung Bổ sung: viên "Bắt buộc" (danh mục, cân nặng, thương hiệu/kích thước/vận chuyển khi sàn đòi, thuộc tính required), thuộc tính bắt buộc xếp trước, dòng dẫn "N ô Bắt buộc phải điền…", ghi chú ngắn dưới ô, "No Brand" → "Không có thương hiệu (No Brand)". Bẫy: trong `TableCell` phải `whitespace-normal` không thì tràn cột.
+- **Kiểm:** vitest 21 ca (+ `error-text.test.ts`), tsc BE+FE, eslint sạch; local 1366 soi khung Bổ sung + chip thiếu + dòng lỗi thật (gán tay, đã dọn). ⏳ anh/khách thử lại cặp TikTok → Shopee trên prod; nếu Shopee vẫn đòi kích thước theo kênh `SIZE_INPUT` thì thêm luật theo kênh.
+
+---
 ## Phiên 29/10/2026 (tối) — GỘP "CẤU HÌNH TỰ ĐỘNG HÓA" VÀO TRANG PHẢN HỒI ĐÁNH GIÁ — ĐÃ KIỂM LOCAL
 
 - **Anh:** "cấu hình tự động hóa chỉ phục vụ phản hồi đánh giá thì chuyển hẳn vào trong Phản hồi đánh giá cho khách dễ sử dụng".

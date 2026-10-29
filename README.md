@@ -129,6 +129,7 @@ hubsell/
 │       └── marketplace/                 # Lớp trừu tượng sàn + adapter (chiều ĐỌC) + mockMarketplace (giả lập)
 │           └── listing/                 # Chiều GHI — đăng SP lên sàn: types (ListingAdapter), rules, variant-map,
 │                                        #   registry (gian có token → adapter thật), {shopee,tiktok,lazada,mock}-listing-adapter, __tests__/
+│                                        #   error-text (dịch lỗi sàn → câu tiếng Việt cho người bán), attribute-names-vi (từ điển tên thuộc tính)
 │
 ├── hubsell-mobile/                      # Expo — một bản dựng iOS/Android (Google Play đã phát hành)
 │   └── src/{app,screens,components,api,auth,plan,theme,lib,types}

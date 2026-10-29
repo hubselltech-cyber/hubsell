@@ -13,7 +13,8 @@ import { getWarehouses } from "../../integrations/tiktok/client";
 import * as api from "../../integrations/tiktok/listing-api";
 import { tiktokNeedsReauthForStockPush } from "../../integrations/tiktok/scopes";
 import { getValidAccessToken } from "../../integrations/tiktok/service";
-import { MAX_DESCRIPTION_IMAGES, PLATFORM_LISTING_RULES } from "./rules";
+import { viAttributeName } from "./attribute-names-vi";
+import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
   Brand,
@@ -46,7 +47,7 @@ function attrDef(a: api.TikTokAttribute): AttributeDef {
   const options = (a.values ?? []).map((v) => v.name ?? "").filter(Boolean);
   return {
     id: a.id,
-    name: a.name ?? a.id,
+    name: viAttributeName(a.name ?? a.id),
     required: Boolean(a.is_requried ?? a.is_required),
     type: options.length > 0 && !a.is_customizable ? "select" : "text",
     options: options.length ? options : undefined,
@@ -101,7 +102,8 @@ export const tiktokListingAdapter: ListingAdapter = {
       categoryPath: extra.category_chains?.map((c) => c.local_name ?? "").filter(Boolean) ?? null,
       brandName: extra.brand?.name ?? null,
       weightGrams,
-      dimensionsCm: d?.length ? { length: Number(d.length), width: Number(d.width ?? 0), height: Number(d.height ?? 0) } : null,
+      // TikTok trả chuỗi "0" khi gian không khai kích thước → normalizeDims về null (sự cố 29/10).
+      dimensionsCm: normalizeDims(d),
       options,
       variants,
       attributes: (extra.product_attributes ?? [])
@@ -223,7 +225,7 @@ export const tiktokListingAdapter: ListingAdapter = {
       main_images,
       skus,
       package_weight: { value: gramsToKg(draft.weightGrams).toFixed(3), unit: "KILOGRAM" },
-      ...(draft.dimensionsCm
+      ...(dimsComplete(draft.dimensionsCm)
         ? { package_dimensions: { length: String(draft.dimensionsCm.length), width: String(draft.dimensionsCm.width), height: String(draft.dimensionsCm.height), unit: "CENTIMETER" } }
         : {}),
       ...(product_attributes.length ? { product_attributes } : {}),

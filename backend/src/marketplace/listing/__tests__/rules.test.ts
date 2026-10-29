@@ -1,7 +1,7 @@
 // Luật đăng sản phẩm theo sàn — phần thuần (docs/SAO-CHEP-SAN-PHAM.md).
 import { describe, expect, it } from "vitest";
 import { inferOptions } from "../../../services/listing-copy/source";
-import { adjustPrice, computeMissing, PLATFORM_LISTING_RULES } from "../rules";
+import { adjustPrice, computeMissing, dimsComplete, normalizeDims, PLATFORM_LISTING_RULES } from "../rules";
 import type { CategoryRequirements, NormalizedListing } from "../types";
 
 const base: NormalizedListing = {
@@ -50,6 +50,29 @@ describe("computeMissing", () => {
     const listing = { ...base, images: [], variants: [{ ...base.variants[0], price: 0 }] };
     const m = computeMissing("SHOPEE", listing, { ...state, categoryId: null, logisticIds: [] }, null);
     expect(m).toEqual(["category", "images", "price", "logistics"]);
+  });
+
+  it("Shopee không bắt kích thước, nhưng điền dở 1–2 số thì báo thiếu (sàn từ chối số 0)", () => {
+    expect(computeMissing("SHOPEE", base, { ...state, dimensionsCm: { length: 20, width: 0, height: 0 } }, null)).toEqual(["dimensions"]);
+    expect(computeMissing("SHOPEE", base, { ...state, dimensionsCm: { length: 0, width: 0, height: 0 } }, null)).toEqual([]);
+    expect(computeMissing("SHOPEE", base, { ...state, dimensionsCm: { length: 20, width: 10, height: 5 } }, null)).toEqual([]);
+  });
+});
+
+describe("normalizeDims / dimsComplete", () => {
+  it("TikTok trả chuỗi \"0\" hoặc bảng {0,0,0} → null; chuỗi số → số; điền dở giữ lại", () => {
+    expect(normalizeDims({ length: "0", width: "0", height: "0" })).toBeNull();
+    expect(normalizeDims({ length: 0, width: 0, height: 0 })).toBeNull();
+    expect(normalizeDims(null)).toBeNull();
+    expect(normalizeDims("abc")).toBeNull();
+    expect(normalizeDims({ length: "20", width: "10.5", height: 5 })).toEqual({ length: 20, width: 10.5, height: 5 });
+    expect(normalizeDims({ length: 20 })).toEqual({ length: 20, width: 0, height: 0 });
+    expect(normalizeDims({ length: -3, width: "x", height: 2 })).toEqual({ length: 0, width: 0, height: 2 });
+  });
+  it("dimsComplete chỉ đúng khi đủ 3 số > 0", () => {
+    expect(dimsComplete({ length: 20, width: 10, height: 5 })).toBe(true);
+    expect(dimsComplete({ length: 20, width: 0, height: 5 })).toBe(false);
+    expect(dimsComplete(null)).toBe(false);
   });
 });
 

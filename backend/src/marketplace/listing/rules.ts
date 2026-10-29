@@ -89,7 +89,7 @@ export const MISSING_LABELS: Record<Exclude<MissingCode, `attr:${string}`>, stri
   category: "Chưa chọn danh mục",
   brand: "Thiếu thương hiệu",
   weight: "Thiếu cân nặng",
-  dimensions: "Thiếu kích thước kiện",
+  dimensions: "Kích thước kiện chưa đủ 3 số (Dài × Rộng × Cao)",
   logistics: "Chưa bật kênh vận chuyển",
   title_short: "Tên quá ngắn",
   title_long: "Tên quá dài",
@@ -124,6 +124,34 @@ export interface TargetDraftState {
  */
 export const MAX_DESCRIPTION_IMAGES = 12;
 
+export interface Dims {
+  length: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Chuẩn hóa kích thước kiện từ MỌI nguồn (API sàn trả chuỗi "0", JSON bảng, body FE):
+ * cả 3 số ≤ 0 / không phải số → null (= không có). Có ít nhất một số > 0 → giữ để
+ * computeMissing báo "chưa đủ 3 số" thay vì lặng lẽ gửi 0 lên sàn (sự cố 29/10:
+ * TikTok trả package_dimensions "0" → Shopee add_item từ chối Dimension.PackageLength).
+ */
+export function normalizeDims(v: unknown): Dims | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const n = (x: unknown) => {
+    const num = typeof x === "number" ? x : Number(x);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  };
+  const d = { length: n(o.length), width: n(o.width), height: n(o.height) };
+  return d.length > 0 || d.width > 0 || d.height > 0 ? d : null;
+}
+
+/** Đủ 3 số > 0 — chỉ khi đó mới gửi `dimension` lên sàn. */
+export function dimsComplete(d: Dims | null | undefined): d is Dims {
+  return Boolean(d && d.length > 0 && d.width > 0 && d.height > 0);
+}
+
 export function computeMissing(
   platform: ChannelName,
   listing: NormalizedListing,
@@ -146,10 +174,9 @@ export function computeMissing(
   if (target.existingSkus && target.existingSkus.length > 0) out.push("sku_exists");
   if (rules.brandRequired && !target.brandId) out.push("brand");
   if (rules.weightRequired && !(target.weightGrams && target.weightGrams > 0)) out.push("weight");
-  if (rules.dimensionsRequired) {
-    const d = target.dimensionsCm;
-    if (!d || !(d.length > 0 && d.width > 0 && d.height > 0)) out.push("dimensions");
-  }
+  // Bắt buộc mà thiếu, HOẶC không bắt buộc nhưng điền dở (1–2 số) → sàn sẽ từ chối, chặn từ đây.
+  const d = normalizeDims(target.dimensionsCm);
+  if ((rules.dimensionsRequired && !dimsComplete(d)) || (d && !dimsComplete(d))) out.push("dimensions");
   if (rules.logisticsRequired && target.logisticIds.length === 0) out.push("logistics");
   if (requirements) {
     for (const a of requirements.attributes) {
