@@ -114,6 +114,8 @@ export interface TiktokProfitRow {
   feeAffiliateAds: number;
   feeAffiliatePartner: number;
   feeGmvMax: number;
+  feeBonusCashback: number;
+  feeShipGuarantee: number;
   feeOther: number;
   // Thuế
   taxVat: number;
@@ -159,6 +161,8 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
       feeAffiliateAds: d.feeAffiliateAds,
       feeAffiliatePartner: d.feeAffiliatePartner,
       feeGmvMax: d.feeGmvMax,
+      feeBonusCashback: d.feeBonusCashback ?? 0,
+      feeShipGuarantee: d.feeShipGuarantee ?? 0,
       feeOther: d.feeOther,
       taxVat: d.taxVat,
       taxPit: d.taxPit,
@@ -203,6 +207,8 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
     feeAffiliateAds: 0,
     feeAffiliatePartner: 0,
     feeGmvMax: 0,
+    feeBonusCashback: 0,
+    feeShipGuarantee: 0,
     feeOther: 0,
     taxVat: 0,
     taxPit: 0,
@@ -252,7 +258,9 @@ export const TIKTOK_COLUMNS: TiktokColumnDef[] = [
   { key: "feeAffiliateAds", label: "Hoa hồng quảng cáo affiliate", group: "fee", hint: "affiliate_ads_commission_amount — đơn từ quảng cáo (Shop Ads)." },
   { key: "feeAffiliatePartner", label: "Hoa hồng cho đối tác affiliate", group: "fee", hint: "affiliate_partner_commission_amount." },
   { key: "feeGmvMax", label: "Nạp tiền quảng cáo từ đơn hàng", group: "fee", hint: "gmv_max_ad_fee_amount + gmv_max_coupon_fee — chi phí GMV Max trừ ngay trong đơn." },
-  { key: "feeOther", label: "Phí khác của nền tảng", group: "fee", hint: "Phần còn lại của fee_tax_amount sau khi bóc các cột đã đặt tên — chốt chặn để tổng luôn khớp sàn." },
+  { key: "feeBonusCashback", label: "Phí dịch vụ Bonus Cashback", group: "fee", hint: "bonus_cashback_service_fee_amount — phí tham gia chương trình Bonus Cashback (~1,5% doanh thu sau chiết khấu), thấy trên bản kê từ 10/2026." },
+  { key: "feeShipGuarantee", label: "Phí Bảo đảm phí vận chuyển", group: "fee", hint: "shipping_fee_guarantee_service_fee — phí cố định mỗi đơn (1.620đ) của chương trình Bảo đảm phí vận chuyển, thấy trên bản kê từ 10/2026." },
+  { key: "feeOther", label: "Phí khác của nền tảng", group: "fee", hint: "Phần còn lại của fee_tax_amount sau khi bóc các cột đã đặt tên — chốt chặn để tổng luôn khớp sàn. Bản kê đồng bộ trước 29/10/2026 còn gồm Bonus Cashback + Bảo đảm phí VC (chưa có cột riêng lúc đó)." },
   { key: "taxVat", label: "Thuế GTGT do TikTok Shop khấu trừ", group: "tax", always: true, hint: "local_vat_amount — 1% doanh thu, sàn nộp hộ hộ kinh doanh/cá nhân (NĐ 117/2025)." },
   { key: "taxPit", label: "Thuế TNCN do TikTok Shop khấu trừ", group: "tax", always: true, hint: "pit_amount — 0,5% doanh thu, sàn nộp hộ." },
   { key: "taxOther", label: "Thuế khác", group: "tax", hint: "Các sắc thuế vùng khác không áp Việt Nam — chốt chặn." },

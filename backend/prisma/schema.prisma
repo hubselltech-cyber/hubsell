@@ -2458,6 +2458,10 @@ model TiktokOrderSettlement {
   feeAffiliateAds     Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng quảng cáo affiliate
   feeAffiliatePartner Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng cho đối tác affiliate
   feeGmvMax           Decimal @default(0) @db.Decimal(12, 2) /// Nạp tiền quảng cáo từ đơn hàng (GMV Max)
+  /// Phí dịch vụ Bonus Cashback (bonus_cashback_service_fee_amount, ~1,5 % doanh thu sau CK) — thấy trên prod từ 10/2026.
+  feeBonusCashback    Decimal @default(0) @db.Decimal(12, 2)
+  /// Phí Bảo đảm phí vận chuyển (shipping_fee_guarantee_service_fee, 1.620đ/đơn) — thấy trên prod từ 10/2026.
+  feeShipGuarantee    Decimal @default(0) @db.Decimal(12, 2)
   feeOther            Decimal @default(0) @db.Decimal(12, 2) /// Phí khác của nền tảng (chốt chặn)
   feeTaxAmount        Decimal @default(0) @db.Decimal(12, 2) /// fee_tax_amount — tổng phí + thuế sàn ghi
 

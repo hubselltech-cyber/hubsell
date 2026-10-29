@@ -270,3 +270,35 @@ thêm ca đơn hủy prod 586756220458927563: lệch 0, giá trong giỏ 119.200
 sellerDiscount = revenueAmount` lệch **0**; nhóm có hoàn 67.007 dòng: `+ refundGross + sellerDiscountRefund =
 revenueAmount` lệch **0** → "giá trong giỏ" của computePnlRow = đúng số `revenue_amount` sàn ghi ở mọi đơn
 từng lưu, không có đơn ngoại lệ. ⏳ v1 còn ~417k dòng lúc 09:58 (worker tính nền).
+
+## 11. LÁT 2 BƯỚC 1 — PHÍ TIKTOK ĐANG RƠI VÀO "PHÍ KHÁC" (đọc log prod 29/10 10:12, CHƯA CODE)
+
+SQL `tiktok_order_settlements` tài khoản anh (theo tháng tạo đơn): and.not.or `feeOther` = 0 (T8, 1.141 đơn),
+0 (T9, 868 đơn), **−1.665.925 ở T10 trên 115/779 đơn**; ANO Official −8.085 (3 đơn), DARKMAN −345 (1 đơn);
+`feeGmvMax` = 0 cả 3 gian 3 tháng (không chạy GMV Max trừ trong đơn). → phí mới xuất hiện từ tháng 10.
+
+Log `[TikTok] Phí/thuế thật dòng` (Render, 1 giờ) — tên trường thật trong `fee_tax_breakdown.fee` chưa có cột:
+| Trường | Ví dụ thật | Docs (29/10) | Ghi chú |
+|---|---|---|---|
+| `bonus_cashback_service_fee_amount` | −22.481 trên đơn 1.498.762 (1,5 %); −1.328 trên 300.000 (sau CK) | "service fee charged for participation in the bonus cashback program" | % theo doanh thu sau CK; chương trình Bonus Cashback (seller growth) |
+| `shipping_fee_guarantee_service_fee` | −1.620 cố định (2 đơn) | "flat service fee charged for each order under the Shipping Fee Guarantee Program" | phí dịch vụ ship, nằm trong fee |
+Không thấy trường nào tên "gmv_max_pro"; docs cũng không có. Các phí quảng cáo mới khác trong docs
+(`cps_shop_ads_commission_tax_amount`, `smart_promotion_fee_amount`, 3 `*_growth_package_fee`,
+`seller_growth_fee_amount`, `tap_shop_ads_commission`) CHƯA thấy trên 3 gian anh.
+
+**Đề xuất bước 2 (chờ anh gật vì có migration prod):** thêm 2 cột `feeBonusCashback`, `feeShipGuarantee` vào
+`TiktokOrderSettlement` (migration chỉ đụng bảng này, không đụng Order), mapper + `FEE_KNOWN`, cột trong bảng
+Lãi/Lỗ TikTok (nhóm Phí dịch vụ), test chốt chặn Σ = `fee_tax_amount`. Bản kê cũ đã lưu không có dòng thô →
+số cũ vẫn nằm ở "Phí khác" (đúng tổng, chỉ thiếu tên); muốn tách lùi phải đọc lại bản kê tháng 10 qua API
+(statementIds đã lưu) — làm thêm nếu anh cần. Đồng thời đặt lưới: phí lạ ≠ 0 → log tên 1 lần/ngày/gian (đang có
+`describeTiktokFeeTax` theo dòng).
+
+**✅ LÁT 2 BƯỚC 2 ĐÃ CODE 29/10 10:20 (anh "Làm đi"):** migration
+`20261029110000_tiktok_settlement_fee_bonus_cashback_ship_guarantee` (chỉ `tiktok_order_settlements`, khóa có thử lại)
+thêm `feeBonusCashback` + `feeShipGuarantee`; mapper `tiktok/settlements.ts` bóc 2 trường, vào `FEE_KNOWN`, cột gộp
+`serviceFee` (phí dịch vụ sàn, cùng nhóm Voucher Xtra) — tổng payout/Lãi/Lỗ KHÔNG đổi, chỉ tách tên; `computePnlRow`
+trả 2 khóa mới trong `tiktok`; FE `pnl-mappers.ts` 2 cột nhóm Phí trong bảng Lãi/Lỗ TikTok + tooltip "Phí khác" ghi rõ
+bản kê trước 29/10 còn gộp. Test: ca đơn prod 586613690914604995 (Bonus Cashback −22.481, Bảo đảm phí VC −1.620,
+Phí khác 0, Σ = fee_tax_amount, serviceFee = 29.101). 22 ca TikTok + merge-db qua; tsc BE/FE + eslint sạch. DB dev:
+`prisma migrate deploy` kẹt vì migration cũ `20260830120000_fee_audit` hỏng từ 17/09 (máy em) → áp bằng
+`prisma db execute --file`. ⏳ sau deploy: SQL `sum(feeBonusCashback)` trên bản kê mới đồng bộ > 0; bản kê cũ giữ ở Phí khác.

@@ -789,6 +789,8 @@ export interface TiktokSettlementDetail {
   feeAffiliateAds: number; // Hoa hồng quảng cáo affiliate
   feeAffiliatePartner: number; // Hoa hồng cho đối tác affiliate
   feeGmvMax: number; // Nạp tiền quảng cáo từ đơn hàng (GMV Max)
+  feeBonusCashback: number; // Phí dịch vụ Bonus Cashback (bonus_cashback_service_fee_amount)
+  feeShipGuarantee: number; // Phí Bảo đảm phí vận chuyển (shipping_fee_guarantee_service_fee)
   feeOther: number; // Phí khác của nền tảng
   feeTaxAmount: number;
   // Thuế

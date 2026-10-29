@@ -509,7 +509,8 @@ export function computePnlRow(o: PnlOrder) {
                 "shippingCost",
                 "feeCommission", "feeTransaction", "feeOrderProcessing", "feeSfp",
                 "feeVoucherXtra", "feeFlashSale", "feeAffiliate", "feeAffiliateAds",
-                "feeAffiliatePartner", "feeGmvMax", "feeOther", "feeTaxAmount",
+                "feeAffiliatePartner", "feeGmvMax", "feeBonusCashback", "feeShipGuarantee",
+                "feeOther", "feeTaxAmount",
                 "taxVat", "taxPit", "taxOther", "adjustmentAmount", "settlementAmount",
               ] as const
             ).map((k) => [k, Number(o.tiktokSettlement![k])])

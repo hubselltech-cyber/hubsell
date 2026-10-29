@@ -56,6 +56,8 @@ export interface TiktokSettlementDetailCols {
   feeAffiliateAds: number; // affiliate_ads_commission_amount — Hoa hồng quảng cáo affiliate
   feeAffiliatePartner: number; // affiliate_partner_commission_amount — Hoa hồng cho đối tác affiliate
   feeGmvMax: number; // gmv_max_ad_fee_amount + gmv_max_coupon_fee — Nạp tiền quảng cáo từ đơn hàng
+  feeBonusCashback: number; // bonus_cashback_service_fee_amount — Phí dịch vụ Bonus Cashback (prod 10/2026, ~1,5 % DT sau CK)
+  feeShipGuarantee: number; // shipping_fee_guarantee_service_fee — Phí Bảo đảm phí vận chuyển (prod 10/2026, 1.620đ/đơn)
   feeOther: number; // phần còn lại của fee → Σ phí = fee_tax_amount − thuế (chốt chặn)
   feeTaxAmount: number; // fee_tax_amount — tổng phí + thuế sàn ghi
   // ---- Thuế (fee_tax_breakdown.tax) ----
@@ -102,6 +104,8 @@ const FEE_KNOWN = new Set([
   "affiliate_partner_commission_amount",
   "gmv_max_ad_fee_amount",
   "gmv_max_coupon_fee",
+  "bonus_cashback_service_fee_amount",
+  "shipping_fee_guarantee_service_fee",
   // PIT khấu trừ từ hoa hồng creator (unsettled 202507) đã nằm trong before_pit
   "pit_withheld_from_ads_commission_amount",
 ]);
@@ -235,6 +239,9 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   const feeAffiliateAds = sumKey(fee, "affiliate_ads_commission_amount");
   const feeAffiliatePartner = sumKey(fee, "affiliate_partner_commission_amount");
   const feeGmvMax = sumKey(fee, "gmv_max_ad_fee_amount") + sumKey(fee, "gmv_max_coupon_fee");
+  // Hai phí thấy trên bản kê thật từ 10/2026 (docs khảo sát 29/10 mục 11) — trước đó rơi vào feeOther.
+  const feeBonusCashback = sumKey(fee, "bonus_cashback_service_fee_amount");
+  const feeShipGuarantee = sumKey(fee, "shipping_fee_guarantee_service_fee");
   const feeTaxAmount = total(lines, "fee_tax_amount");
   // GTGT sàn nộp hộ: docs 202501 ghi local_vat_amount (đơn nội địa) nhưng payload
   // thật and.not.or 16/09 trả 1% doanh thu dưới tên khác (rơi vào taxOther) →
@@ -247,7 +254,8 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   // trả fee_tax_amount (thiếu tổng) thì cộng các trường fee còn lại.
   const feeNamed =
     feeCommission + feeTransaction + feeOrderProcessing + feeSfp + feeVoucherXtra +
-    feeFlashSale + feeAffiliate + feeAffiliateAds + feeAffiliatePartner + feeGmvMax;
+    feeFlashSale + feeAffiliate + feeAffiliateAds + feeAffiliatePartner + feeGmvMax +
+    feeBonusCashback + feeShipGuarantee;
   const feeOther =
     feeTaxAmount !== 0
       ? feeTaxAmount - feeNamed - taxVat - taxPit - taxOther
@@ -266,7 +274,8 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
     shipActual, shipCustomerPaid, shipPlatformDiscount, shipSubsidy, shipSellerDiscount,
     shipReturn, shipOther, shipReimbursement, shippingCost,
     feeCommission, feeTransaction, feeOrderProcessing, feeSfp, feeVoucherXtra, feeFlashSale,
-    feeAffiliate, feeAffiliateAds, feeAffiliatePartner, feeGmvMax, feeOther, feeTaxAmount,
+    feeAffiliate, feeAffiliateAds, feeAffiliatePartner, feeGmvMax, feeBonusCashback, feeShipGuarantee,
+    feeOther, feeTaxAmount,
     taxVat, taxPit, taxOther,
     adjustmentAmount,
     adjustmentTypes: adjustmentTypeList.length ? adjustmentTypeList.join(",") : null,
@@ -280,7 +289,8 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   const isShipAdj = detail.adjustmentTypes?.includes("SHIPPING_FEE") ?? false;
   const adjCharged = charged(adjustmentAmount);
   const adjCredited = credited(adjustmentAmount);
-  const serviceSigned = feeSfp + feeVoucherXtra + feeFlashSale + feeOther + feeGmvMax;
+  const serviceSigned =
+    feeSfp + feeVoucherXtra + feeFlashSale + feeOther + feeGmvMax + feeBonusCashback + feeShipGuarantee;
   const taxSigned = taxVat + taxPit + taxOther;
   const affiliateSigned = feeAffiliate + feeAffiliateAds + feeAffiliatePartner;
   const fixedSigned = feeCommission;

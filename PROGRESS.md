@@ -5,6 +5,13 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (trưa muộn) — LÁT 2 PHÍ MỚI TIKTOK: 2 CỘT BONUS CASHBACK + BẢO ĐẢM PHÍ VC — ĐÃ PUSH
+
+- **Bước 1 (đọc log prod):** "Phí khác" and.not.or 0 (T8–T9) → −1.665.925 T10/115 đơn; tên thật trong `fee_tax_breakdown.fee`: `bonus_cashback_service_fee_amount` (~1,5 % DT sau CK) + `shipping_fee_guarantee_service_fee` (1.620đ/đơn). KHÔNG có trường "gmv_max_pro" (docs cũng không); `feeGmvMax` 3 gian anh = 0. Docs mục 11.
+- **Bước 2 (anh "Làm đi"):** migration `20261029110000_…` thêm `feeBonusCashback` + `feeShipGuarantee` vào `tiktok_order_settlements` (khóa có thử lại); mapper + `FEE_KNOWN` + cột gộp serviceFee (tổng không đổi); `computePnlRow` trả 2 khóa; FE bảng Lãi/Lỗ TikTok 2 cột nhóm Phí. Test ca đơn prod 586613690914604995; 22 ca qua, tsc + eslint sạch. Bản kê cũ giữ ở Phí khác (anh chọn không đọc lại T10).
+- Lát 1 nền: sổ v2 prod 470k/587k lúc 10:14, kỳ đang xem tự tính inline. ⏳ sau deploy kiểm cột mới có số trên bản kê mới đồng bộ.
+
+---
 ## Phiên 29/10/2026 (chiều) — LÁT 1 TỔNG GIÁ TRỊ SP: TIKTOK VỀ GIÁ TRONG GIỎ, SỔ CÁI v2 — ĐÃ CODE, CHƯA PUSH
 
 - **Anh chốt tư duy** (docs mục 8): Tổng giá trị SP = giá món hàng TRONG GIỎ (đã gồm KM sản phẩm của shop; 200 niêm yết − 50 KM → 150), voucher/xu/combo = khấu trừ âm dưới thẻ. Shopee đúng sẵn; TikTok sai vì bản kê gộp. Kế hoạch 5 lát ở docs mục 9. Anh: "rất quan trọng, tập trung, mapping đúng dòng đúng cột".

@@ -99,9 +99,53 @@ describe("mapTiktokBreakdownToSettlement — dòng ORDER 202501", () => {
     const named =
       detail.feeCommission + detail.feeTransaction + detail.feeOrderProcessing +
       detail.feeSfp + detail.feeVoucherXtra + detail.feeFlashSale + detail.feeAffiliate +
-      detail.feeAffiliateAds + detail.feeAffiliatePartner + detail.feeGmvMax + detail.feeOther +
+      detail.feeAffiliateAds + detail.feeAffiliatePartner + detail.feeGmvMax +
+      detail.feeBonusCashback + detail.feeShipGuarantee + detail.feeOther +
       detail.taxVat + detail.taxPit + detail.taxOther;
     expect(named).toBe(-96000);
+  });
+
+  it("đơn prod 586613690914604995 (29/10/2026): Bonus Cashback + Bảo đảm phí VC có cột riêng, Phí khác về 0", () => {
+    // Log worker "[TikTok] Phí/thuế thật dòng": fee=[bonus_cashback_service_fee_amount:-22481,
+    // platform_commission_amount:-217320, shipping_fee_guarantee_service_fee:-1620, transaction_fee_amount:-89926,
+    // vn_fix_infrastructure_fee:-3000, voucher_xtra_service_fee_amount:-5000] tax=[pit_amount:-7494, vat_amount:-14988]
+    const line: TikTokTxBreakdown = {
+      type: "ORDER",
+      order_id: "586613690914604995",
+      revenue_amount: "1498762",
+      fee_tax_amount: String(-(22481 + 217320 + 1620 + 89926 + 3000 + 5000 + 7494 + 14988)),
+      revenue_breakdown: { subtotal_before_discount_amount: "1498762" },
+      fee_tax_breakdown: {
+        fee: {
+          bonus_cashback_service_fee_amount: "-22481",
+          platform_commission_amount: "-217320",
+          shipping_fee_guarantee_service_fee: "-1620",
+          transaction_fee_amount: "-89926",
+          vn_fix_infrastructure_fee: "-3000",
+          voucher_xtra_service_fee_amount: "-5000",
+        },
+        tax: { pit_amount: "-7494", vat_amount: "-14988" },
+      },
+    };
+    const { detail, order } = mapTiktokBreakdownToSettlement([line]);
+    expect(detail.feeBonusCashback).toBe(-22481);
+    expect(detail.feeShipGuarantee).toBe(-1620);
+    expect(detail.feeOther).toBe(0); // không còn gì rơi vào chốt chặn
+    expect(detail.feeCommission).toBe(-217320);
+    expect(detail.taxVat).toBe(-14988);
+    expect(detail.taxPit).toBe(-7494);
+    // Σ mọi cột phí + thuế = fee_tax_amount sàn ghi (không rơi một đồng)
+    const all =
+      detail.feeCommission + detail.feeTransaction + detail.feeOrderProcessing + detail.feeSfp +
+      detail.feeVoucherXtra + detail.feeFlashSale + detail.feeAffiliate + detail.feeAffiliateAds +
+      detail.feeAffiliatePartner + detail.feeGmvMax + detail.feeBonusCashback + detail.feeShipGuarantee +
+      detail.feeOther + detail.taxVat + detail.taxPit + detail.taxOther;
+    expect(all).toBe(detail.feeTaxAmount);
+    // Cột gộp: hai phí mới là PHÍ DỊCH VỤ của sàn (serviceFee), cùng nhóm Voucher Xtra
+    expect(order.serviceFee).toBe(22481 + 1620 + 5000);
+    expect(order.fixedFee).toBe(217320);
+    expect(order.paymentFee).toBe(89926 + 3000);
+    expect(order.taxWithheld).toBe(7494 + 14988);
   });
 
   it("cột gộp Order lưu DƯƠNG, đúng nhóm; trợ giá KHÔNG gồm chiết khấu nền tảng", () => {
