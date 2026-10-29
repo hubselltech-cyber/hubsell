@@ -163,7 +163,7 @@ Chưa kiểm được trên prod vì cần một đơn hủy thật sau deploy �
 |---|---|---|
 | Đơn mới / hỏa tốc / đơn bị hủy | `/orders`, `/orders?search=<mã>` | Tab Đơn hàng, ô tìm điền mã, **nút X** về danh sách đầy đủ |
 | Khách xin hủy | `/orders?cancelRequested=1` | Tab Đơn hàng + chip "Khách xin hủy" (có X sẵn) |
-| Giao không thành công | `/operations-assistant/ai-rules?tab=delivery-fail` | Tab Đơn hàng lọc Đang giao |
+| Giao không thành công | `/operations-assistant/reviews?tab=delivery-fail` (trước 29/10/2026: `/operations-assistant/ai-rules?tab=…`, route cũ chuyển hướng) | Tab Đơn hàng lọc Đang giao |
 | Hoàn hàng | `/warehouse/returns` | Kho › Đơn hoàn |
 | Hết / sắp hết hàng | `/products` | Kho › Tồn kho |
 | Đơn lỗ, sai phí, chênh phí ship | `/operations-assistant/loss-orders`, `/finance/fee-audit`, `/warehouse/shipping-alerts` | Trang Tài chính |

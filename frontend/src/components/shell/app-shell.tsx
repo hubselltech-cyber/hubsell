@@ -203,7 +203,9 @@ const NAV_ITEMS: NavItem[] = [
         label: "Cảnh báo & P&L Sản phẩm",
         perm: "operations.loss-orders",
       },
-      { href: "/operations-assistant/ai-rules", label: "Cấu hình tự động hóa", perm: "operations.ai-rules" },
+      // 29/10/2026 anh Trung: "Cấu hình tự động hóa" (route ai-rules) chỉ phục vụ
+      // phản hồi đánh giá → gộp thành tab "Tự động trả lời" trong Phản hồi đánh
+      // giá; route cũ chuyển hướng. Lá quyền operations.ai-rules GIỮ để bật tab.
       // 29/10/2026: chép 1 sản phẩm (gian đã nối / kho) lên nhiều gian 3 sàn — docs/SAO-CHEP-SAN-PHAM.md.
       // "(demo)" theo anh Trung 29/10: mở thật trên prod, adapter 3 sàn còn đang kiểm — bỏ chữ demo khi ổn.
       { href: "/operations-assistant/copy-listing", label: "Sao chép sản phẩm (demo)", perm: "operations.copy-listing" },
@@ -368,7 +370,8 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/warehouse/shipping-alerts", title: "Đối soát phí vận chuyển" },
   { prefix: "/operations-assistant/chat", title: "Trợ lý Chat CSKH" },
   { prefix: "/operations-assistant/reviews", title: "Phản hồi đánh giá đa kênh" },
-  { prefix: "/operations-assistant/ai-rules", title: "Cấu hình tự động hóa CSKH" },
+  // ai-rules = route cũ chỉ chuyển hướng (29/10/2026) — giữ tiêu đề cho nửa giây nhấp nháy
+  { prefix: "/operations-assistant/ai-rules", title: "Phản hồi đánh giá đa kênh" },
   { prefix: "/operations-assistant/copy-listing", title: "Sao chép sản phẩm lên nhiều gian" },
   { prefix: "/koc-marketing/overview", title: "Tổng quan Net-ROI Đa kênh" },
   { prefix: "/koc-marketing/tiktok", title: "TikTok Affiliate & MCN" },

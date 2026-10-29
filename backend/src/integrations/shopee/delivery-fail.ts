@@ -111,8 +111,9 @@ export const TASK_ERROR_BACKOFF_MS = 60 * 60 * 1000;
  *  vĩnh viễn — thử mãi chỉ đốt quota; đơn thường lỗi mạng sẽ reset khi qua). */
 export const MAX_TASK_ERROR_STREAK = 8;
 
-/** Deep-link về tab Giao không thành công (Cấu hình kịch bản AI). */
-export const DELIVERY_FAIL_TAB_HREF = "/operations-assistant/ai-rules?tab=delivery-fail";
+/** Deep-link về tab Giao không thành công — 29/10/2026 nằm trong trang Phản hồi
+ *  đánh giá (route ai-rules cũ chỉ còn chuyển hướng về đây). */
+export const DELIVERY_FAIL_TAB_HREF = "/operations-assistant/reviews?tab=delivery-fail";
 
 /**
  * Template mặc định khi chủ shop chưa soạn (hoặc xoá trắng ô).

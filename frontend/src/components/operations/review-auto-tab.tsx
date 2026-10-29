@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { Bot, Loader2, RotateCcw, Save, Star } from "lucide-react";
 import { toast } from "sonner";
 
-import { DeliveryFailTab } from "@/components/operations/delivery-fail-tab";
-import { OperationsFrame } from "@/components/operations/operations-frame";
 import {
   loadReviewAutoReplyConfig,
   TEMPLATE_VARS,
@@ -28,14 +26,17 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * CẤU HÌNH TỰ ĐỘNG HÓA CSKH
+ * TAB "TỰ ĐỘNG TRẢ LỜI" CỦA TRANG PHẢN HỒI ĐÁNH GIÁ
  *
- * Hai tab: (1) Phản hồi đánh giá — bộ mẫu câu theo số sao + công tắc tự động
- * gửi từng mức sao (lưu máy chủ; worker backend tự trả lời mỗi shop 1 lần/ngày,
- * 10/10/2026);
- * (2) Cứu đơn giao thất bại. 09/09/2026: bỏ danh sách "kịch bản AI" và khối
- * "giọng điệu thương hiệu" — chúng chỉ là công tắc mock trong state client,
- * không nối vào đâu; production không bày công tắc không có tác dụng.
+ * 29/10/2026 anh Trung: "cấu hình tự động hóa chỉ phục vụ phản hồi đánh giá
+ * thì chuyển hẳn vào trong Phản hồi đánh giá cho khách dễ dùng" → trang
+ * /operations-assistant/ai-rules bỏ khỏi sidebar, nội dung thành tab thứ hai
+ * của reviews-page.tsx (route cũ chuyển hướng sang ?tab=auto).
+ *
+ * Nội dung: bộ mẫu câu theo số sao + 5 công tắc tự động gửi từng mức sao —
+ * lưu máy chủ, worker backend (workers/review-auto-reply) tự trả lời mỗi shop
+ * 1 lần/ngày (10/10/2026). Tab "Cứu đơn giao thất bại" (delivery-fail-tab)
+ * vẫn ẩn theo cờ DELIVERY_FAIL_FEATURE ở reviews-page.tsx.
  */
 
 /** Thứ tự hiển thị + chấm màu mức độ rủi ro khi bật tự động từng mức sao. */
@@ -47,35 +48,7 @@ const STAR_SWITCH_ROWS: { star: StarLevel; dot: string; note?: string }[] = [
   { star: "1", dot: "bg-red-500", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
 ];
 
-/** Hai tab của màn Cấu hình kịch bản AI (pill-tab tự làm — app chưa có ui/tabs). */
-type AiRulesTab = "reviews" | "delivery-fail";
-
-/**
- * 12/10/2026 anh Trung chốt ẨN tab "Cứu đơn giao thất bại" ("có dùng được
- * đâu mà giữ"): chưa sàn nào nhắn khách được (Shopee từ chối Chat API cho app
- * ISV, TikTok đòi ≥1.000 gian ủy quyền, Lazada chưa có nhóm quyền IM) — không
- * phơi tính năng chưa chạy cho đối thủ. Backend cùng cờ DELIVERY_FAIL_FEATURE
- * (shopee/delivery-fail.ts) tắt worker + chuông + thẻ. Mở lại: đổi 2 cờ.
- */
-const DELIVERY_FAIL_FEATURE = false;
-
-const TAB_ITEMS: { id: AiRulesTab; label: string }[] = [
-  { id: "reviews", label: "Phản hồi đánh giá" },
-  ...(DELIVERY_FAIL_FEATURE
-    ? [{ id: "delivery-fail" as const, label: "Cứu đơn giao thất bại" }]
-    : []),
-];
-
-export function OperationsAiRulesPage() {
-  // Tab đang mở. Deep-link ?tab=delivery-fail (chuông + thẻ Trung tâm điều
-  // hành trỏ tới) đọc ở effect — search param chỉ có phía client, đọc lúc
-  // render đầu sẽ lệch SSR/CSR.
-  const [tab, setTab] = useState<AiRulesTab>("reviews");
-  useEffect(() => {
-    const wanted = new URLSearchParams(window.location.search).get("tab");
-    if (wanted === "delivery-fail" && DELIVERY_FAIL_FEATURE) setTab("delivery-fail");
-  }, []);
-
+export function ReviewAutoTab() {
   // ── Cấu hình tự trả lời đánh giá (MÁY CHỦ — worker chạy mỗi shop 1 lần/ngày) ──
   // Gạt công tắc là lưu ngay; bộ mẫu lưu bằng nút "Lưu bộ mẫu".
   const [cfg, setCfg] = useState<ReviewAutoReplyConfigDTO | null>(null);
@@ -153,45 +126,71 @@ export function OperationsAiRulesPage() {
   const editingList = [...(templates?.[editingStar] ?? [])];
   while (editingList.length < 5) editingList.push("");
 
-  return (
-    <OperationsFrame>
-      {/* ===== THANH PILL-TAB: Phản hồi đánh giá | Cứu đơn giao thất bại =====
-          (chỉ vẽ khi có từ 2 tab — tab Cứu đơn đang ẩn thì trang là một màn) */}
-      {TAB_ITEMS.length > 1 ? (
-      <div className="flex w-fit gap-1 rounded-lg bg-muted p-1">
-        {TAB_ITEMS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors",
-              tab === t.id
-                ? "bg-background text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-900"
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      ) : null}
+  if (!cfg) {
+    return (
+      <Card className="flex min-h-[240px] items-center justify-center">
+        {loadError ? (
+          <p className="text-sm text-red-600">{loadError}</p>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Đang tải cấu hình…
+          </div>
+        )}
+      </Card>
+    );
+  }
 
-      {tab === "delivery-fail" ? (
-        <DeliveryFailTab />
-      ) : !cfg ? (
-        <Card className="flex min-h-[240px] items-center justify-center">
-          {loadError ? (
-            <p className="text-sm text-red-600">{loadError}</p>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              Đang tải cấu hình…
+  return (
+    <>
+      {/* ===== 5 CÔNG TẮC TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (CẤU HÌNH THẬT) =====
+          Đặt TRÊN bộ mẫu: đây là việc khách vào tab này để làm (bật/tắt);
+          bộ mẫu là phần tinh chỉnh. Bật mức nào thì worker backend TỰ GỬI
+          THẬT phản hồi lên sàn cho đánh giá chưa trả lời ở mức đó — mỗi shop
+          1 lần/ngày, không cần mở trang. */}
+      <Card className="border-violet-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="size-4.5 text-violet-600" />
+            Tự động phản hồi đánh giá theo số sao
+          </CardTitle>
+          <CardDescription>
+            Bật mức sao nào, hệ thống tự gửi phản hồi <b>thật</b> sang sàn cho
+            đánh giá chưa trả lời ở mức đó, <b>mỗi ngày một lần</b> — không cần
+            mở trang. Mức đang tắt vẫn được soạn sẵn câu trả lời chờ nhân viên
+            duyệt ở tab Đánh giá.
+          </CardDescription>
+          <RunStatus cfg={cfg} />
+        </CardHeader>
+        <CardContent className="space-y-1">
+          {STAR_SWITCH_ROWS.map(({ star, dot, note }) => (
+            <div
+              key={star}
+              className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50"
+            >
+              <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", dot)} aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">
+                  Tự động trả lời Đánh giá {star} sao
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Khi bật, hệ thống tự chọn 1 mẫu câu trong bộ mẫu [{star} sao]
+                  để gửi phản hồi trực tiếp sang sàn.
+                  {note ? <span className="text-amber-700"> {note}</span> : null}
+                </p>
+              </div>
+              {/* KHÔNG bọc Switch trong <label> — từng dính bug double-toggle */}
+              <Switch
+                checked={cfg.enabledStars.includes(Number(star))}
+                disabled={savingStars}
+                onCheckedChange={(v) => toggleAutoStar(star, v)}
+                aria-label={`Bật/tắt tự động trả lời đánh giá ${star} sao`}
+              />
             </div>
-          )}
-        </Card>
-      ) : (
-        <>
+          ))}
+        </CardContent>
+      </Card>
+
       {/* ===== MẪU CÂU PHẢN HỒI ĐÁNH GIÁ (RANDOMIZER CHỐNG SPAM TRÙNG) ===== */}
       <Card>
         <CardHeader>
@@ -200,8 +199,9 @@ export function OperationsAiRulesPage() {
             Mẫu câu phản hồi đánh giá theo số sao
           </CardTitle>
           <CardDescription>
-            Mỗi mức sao có 5 mẫu — khi gửi phản hồi (kể cả hàng loạt), hệ thống
-            bốc ngẫu nhiên 1 mẫu để sàn không quét trùng nội dung. Biến khả dụng:{" "}
+            Mỗi mức sao có 5 mẫu — khi gửi phản hồi (tự động hay hàng loạt), hệ
+            thống bốc ngẫu nhiên 1 mẫu để sàn không quét trùng nội dung. Biến khả
+            dụng:{" "}
             {TEMPLATE_VARS.map((v, i) => (
               <span key={v}>
                 {i > 0 && ", "}
@@ -260,60 +260,7 @@ export function OperationsAiRulesPage() {
           </div>
         </CardContent>
       </Card>
-
-      <div>
-        <div className="space-y-3">
-          {/* ===== 5 CÔNG TẮC TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (CẤU HÌNH THẬT) =====
-              Bật mức nào thì worker backend TỰ GỬI THẬT phản hồi lên sàn cho
-              đánh giá chưa trả lời ở mức đó — mỗi shop 1 lần/ngày, không cần
-              mở trang. */}
-          <Card className="border-violet-200">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Bot className="size-4.5 text-violet-600" />
-                Tự động phản hồi đánh giá theo số sao
-              </CardTitle>
-              <CardDescription>
-                Bật mức sao nào, hệ thống tự gửi phản hồi <b>thật</b> sang sàn cho
-                đánh giá chưa trả lời ở mức đó, <b>mỗi ngày một lần</b> — không cần
-                mở trang. Mức đang tắt vẫn được soạn sẵn câu trả lời chờ nhân viên
-                duyệt.
-              </CardDescription>
-              <RunStatus cfg={cfg} />
-            </CardHeader>
-            <CardContent className="space-y-1">
-              {STAR_SWITCH_ROWS.map(({ star, dot, note }) => (
-                <div
-                  key={star}
-                  className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50"
-                >
-                  <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", dot)} aria-hidden />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900">
-                      Tự động trả lời Đánh giá {star} sao
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Khi bật, hệ thống tự chọn 1 mẫu câu trong bộ mẫu [{star} sao]
-                      để gửi phản hồi trực tiếp sang sàn.
-                      {note ? <span className="text-amber-700"> {note}</span> : null}
-                    </p>
-                  </div>
-                  {/* KHÔNG bọc Switch trong <label> — từng dính bug double-toggle */}
-                  <Switch
-                    checked={cfg.enabledStars.includes(Number(star))}
-                    disabled={savingStars}
-                    onCheckedChange={(v) => toggleAutoStar(star, v)}
-                    aria-label={`Bật/tắt tự động trả lời đánh giá ${star} sao`}
-                  />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-        </>
-      )}
-    </OperationsFrame>
+    </>
   );
 }
 

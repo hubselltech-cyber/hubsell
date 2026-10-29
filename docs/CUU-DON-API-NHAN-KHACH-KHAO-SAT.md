@@ -119,8 +119,9 @@ Làm cùng phiên, một commit:
   `ops-alerts` không dựng thẻ Trung tâm điều hành. Bảng DeliveryFailConfig/
   Notice/TrackingTask giữ nguyên; routes `/delivery-fail/*` vẫn sống (PUT chỉ ghi
   alertEnabled khi cờ chat tắt, không ghi đè 2 trường chat chủ shop từng lưu).
-- Frontend: `ai-rules-page.tsx` cờ `DELIVERY_FAIL_FEATURE=false` → bỏ tab + thanh
-  pill (trang chỉ còn Phản hồi đánh giá), deep-link `?tab=delivery-fail` bị bỏ qua;
+- Frontend: `reviews-page.tsx` cờ `DELIVERY_FAIL_FEATURE=false` → bỏ tab "Cứu đơn
+  giao thất bại" (29/10/2026 trang Cấu hình tự động hóa đã gộp vào Phản hồi đánh giá;
+  tab Cứu đơn sẽ là tab thứ ba ở đó), deep-link `?tab=delivery-fail` bị bỏ qua;
   `delivery-fail-tab.tsx` cờ `AUTO_CHAT_FEATURE=false` giấu công tắc chat, mẫu tin,
   cột Nhắn khách (sẵn cho lúc mở lại); sidebar `app-shell.tsx` thêm `hidden` cho
   trang con, mục **Trợ lý Chat** ẩn (route + lá quyền `operations.chat` còn, giống

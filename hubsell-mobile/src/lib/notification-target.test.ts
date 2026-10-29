@@ -23,9 +23,9 @@ const CASES: Array<{ name: string; type: string; link: string | null; want: Noti
   },
   { name: "hoàn hàng 3 sàn", type: "return", link: "/warehouse/returns", want: { kind: "warehouse", tab: "returns" } },
   {
-    name: "giao không thành công (tab kịch bản AI trên web)",
+    name: "giao không thành công (tab trong Phản hồi đánh giá trên web)",
     type: "ops-alert:delivery-fail",
-    link: "/operations-assistant/ai-rules?tab=delivery-fail",
+    link: "/operations-assistant/reviews?tab=delivery-fail",
     want: { kind: "orders", status: "SHIPPING" },
   },
 

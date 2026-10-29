@@ -28,8 +28,11 @@ import {
   type ReplyTemplates,
 } from "@/components/operations/reply-templates";
 import { humanizeChannelError } from "@/components/operations/channel-error";
+import { DeliveryFailTab } from "@/components/operations/delivery-fail-tab";
 import { OperationsFrame } from "@/components/operations/operations-frame";
+import { ReviewAutoTab } from "@/components/operations/review-auto-tab";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,10 +46,12 @@ import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   fetchOpsReviews,
+  getStoredUser,
   replyOpsReview,
   type OpsChannelError,
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { can } from "@/lib/permissions";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -60,16 +65,39 @@ import { cn } from "@/lib/utils";
  *     LLM thật sau — hợp đồng giữ nguyên).
  *   · Không có đánh giá → empty state (09/09/2026: bỏ hẳn bộ mock/demo).
  *
- * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (cấu hình ở trang Cấu hình tự động hóa):
+ * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (tab "Tự động trả lời" — review-auto-tab.tsx):
  *   10/10/2026 chuyển hẳn về máy chủ — worker backend (workers/review-auto-reply)
  *   tự trả lời MỖI NGÀY MỘT LẦN cho mức sao đang bật, không cần mở trang này.
- *   Trang chỉ hiển thị: badge "AI Auto" lấy từ sổ review_auto_replies (cờ
- *   autoReplied của API), bộ mẫu lấy từ cấu hình máy chủ để soạn gợi ý.
+ *   Tab Đánh giá chỉ hiển thị: badge "AI Auto" lấy từ sổ review_auto_replies
+ *   (cờ autoReplied của API), bộ mẫu lấy từ cấu hình máy chủ để soạn gợi ý.
+ *   29/10/2026 anh Trung gộp trang "Cấu hình tự động hóa" (route ai-rules) vào
+ *   đây thành tab thứ hai — chỉ phục vụ đánh giá thì để cạnh đánh giá cho khách
+ *   dễ dùng. Tab chỉ hiện với người có lá quyền operations.ai-rules (chủ shop
+ *   luôn có); route cũ chuyển hướng sang ?tab=auto.
  *
- * Bố cục 2 cột: feed đánh giá (trái) + AI Reply Builder sticky (phải).
+ * Bố cục tab Đánh giá: 2 cột — feed (trái) + AI Reply Builder sticky (phải).
  */
 
 type PageMode = "loading" | "real";
+/** Tab cấp trang: Đánh giá | Tự động trả lời | (Cứu đơn giao thất bại — ẩn). */
+type PageTab = "reviews" | "auto" | "delivery-fail";
+
+/**
+ * 12/10/2026 anh Trung chốt ẨN tab "Cứu đơn giao thất bại" ("có dùng được
+ * đâu mà giữ"): chưa sàn nào nhắn khách được (Shopee từ chối Chat API cho app
+ * ISV, TikTok đòi ≥1.000 gian ủy quyền, Lazada chưa có nhóm quyền IM) — không
+ * phơi tính năng chưa chạy cho đối thủ. Backend cùng cờ DELIVERY_FAIL_FEATURE
+ * (shopee/delivery-fail.ts) tắt worker + chuông + thẻ. Mở lại: đổi 2 cờ.
+ */
+const DELIVERY_FAIL_FEATURE = false;
+
+/** Đọc ?tab= trên URL về khóa tab hợp lệ (tab không được phép → Đánh giá). */
+function readTabParam(allowAuto: boolean): PageTab {
+  const wanted = new URLSearchParams(window.location.search).get("tab");
+  if (wanted === "auto" && allowAuto) return "auto";
+  if (wanted === "delivery-fail" && DELIVERY_FAIL_FEATURE && allowAuto) return "delivery-fail";
+  return "reviews";
+}
 type ChannelFilter = "ALL" | "SHOPEE" | "LAZADA" | "TIKTOK";
 type StarFilter = "ALL" | "1" | "2" | "3" | "4" | "5";
 type StatusFilter = "ALL" | "UNREPLIED" | "REPLIED";
@@ -124,6 +152,24 @@ function StarRow({ rating }: { rating: number }) {
 }
 
 export function OperationsReviewsPage() {
+  // ── Tab cấp trang. Quyền + ?tab= chỉ có phía client → đọc ở effect, render
+  // đầu luôn là tab Đánh giá để không lệch SSR/CSR. Đổi tab ghi lại URL
+  // (replaceState) để F5 / chia sẻ link giữ đúng tab. ──
+  const [tab, setTab] = useState<PageTab>("reviews");
+  const [canConfigAuto, setCanConfigAuto] = useState(false);
+  useEffect(() => {
+    const allowed = can(getStoredUser(), "operations.ai-rules");
+    setCanConfigAuto(allowed);
+    setTab(readTabParam(allowed));
+  }, []);
+  function changeTab(next: PageTab) {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "reviews") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(window.history.state, "", url.toString());
+  }
+
   const [mode, setMode] = useState<PageMode>("loading");
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [channelErrors, setChannelErrors] = useState<OpsChannelError[]>([]);
@@ -331,9 +377,53 @@ export function OperationsReviewsPage() {
       );
   }
 
+  const tabs: PageTabItem<PageTab>[] = [
+    {
+      key: "reviews",
+      label: "Đánh giá",
+      count: unreplied.length,
+      countTone: "attention",
+      countTitle: "Đánh giá chưa trả lời",
+    },
+    ...(canConfigAuto ? [{ key: "auto" as const, label: "Tự động trả lời" }] : []),
+    ...(canConfigAuto && DELIVERY_FAIL_FEATURE
+      ? [{ key: "delivery-fail" as const, label: "Cứu đơn giao thất bại" }]
+      : []),
+  ];
+
+  const header = (
+    <PageHeaderBand>
+      <PageTabs
+        ariaLabel="Khu vực Phản hồi đánh giá"
+        className="border-b-0"
+        tabs={tabs}
+        value={tab}
+        onChange={changeTab}
+      />
+    </PageHeaderBand>
+  );
+
+  if (tab === "auto") {
+    return (
+      <OperationsFrame>
+        {header}
+        <ReviewAutoTab />
+      </OperationsFrame>
+    );
+  }
+  if (tab === "delivery-fail") {
+    return (
+      <OperationsFrame>
+        {header}
+        <DeliveryFailTab />
+      </OperationsFrame>
+    );
+  }
+
   if (mode === "loading") {
     return (
       <OperationsFrame>
+        {header}
         <Card className="flex min-h-[420px] items-center justify-center">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
@@ -346,6 +436,8 @@ export function OperationsReviewsPage() {
 
   return (
     <OperationsFrame>
+      {header}
+
       {/* ===== NHÃN NGUỒN DỮ LIỆU + LỖI TỪNG GIAN ===== */}
       <div className="flex flex-wrap items-center gap-2">
         {channelErrors.map((e) => {
@@ -619,8 +711,21 @@ export function OperationsReviewsPage() {
               </Button>
               <p className={cn(TEXT_SUB, "text-center")}>
                 Nút này chỉ áp dụng cho đánh giá 5 sao chưa trả lời — gửi thẳng
-                lên sàn. Muốn hệ thống tự gửi mỗi ngày theo từng mức sao, bật công
-                tắc ở trang Cấu hình tự động hóa.
+                lên sàn.
+                {canConfigAuto ? (
+                  <>
+                    {" "}
+                    Muốn hệ thống tự gửi mỗi ngày theo từng mức sao, bật ở tab{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                      onClick={() => changeTab("auto")}
+                    >
+                      Tự động trả lời
+                    </button>
+                    .
+                  </>
+                ) : null}
               </p>
             </CardContent>
           </Card>

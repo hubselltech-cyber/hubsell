@@ -52,7 +52,9 @@ export const PERMISSION_TREE: PermissionNode[] = [
       { key: "operations.chat", label: "Trợ lý Chat" },
       { key: "operations.reviews", label: "Phản hồi đánh giá" },
       { key: "operations.loss-orders", label: "Cảnh báo & P&L Sản phẩm" },
-      { key: "operations.ai-rules", label: "Cấu hình tự động hóa" },
+      // 29/10/2026: không còn trang riêng — lá này mở tab "Tự động trả lời"
+      // trong Phản hồi đánh giá (+ quyền ghi cấu hình ở backend).
+      { key: "operations.ai-rules", label: "Tự động trả lời đánh giá" },
       { key: "operations.copy-listing", label: "Sao chép sản phẩm" },
     ],
   },
@@ -209,7 +211,7 @@ export const HOME_PRIORITY: { key: string; path: string }[] = [
   { key: "operations.chat", path: "/operations-assistant/chat" },
   { key: "operations.reviews", path: "/operations-assistant/reviews" },
   { key: "operations.loss-orders", path: "/operations-assistant/loss-orders" },
-  { key: "operations.ai-rules", path: "/operations-assistant/ai-rules" },
+  { key: "operations.ai-rules", path: "/operations-assistant/reviews?tab=auto" },
   { key: "operations.copy-listing", path: "/operations-assistant/copy-listing" },
   { key: "finance.analytics", path: "/finance/analytics" },
   { key: "finance.realized-pnl", path: "/finance/realized-pnl" },

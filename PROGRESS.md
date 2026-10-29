@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (tối) — GỘP "CẤU HÌNH TỰ ĐỘNG HÓA" VÀO TRANG PHẢN HỒI ĐÁNH GIÁ — ĐÃ KIỂM LOCAL
+
+- **Anh:** "cấu hình tự động hóa chỉ phục vụ phản hồi đánh giá thì chuyển hẳn vào trong Phản hồi đánh giá cho khách dễ sử dụng".
+- **FE:** `reviews-page.tsx` thêm `PageHeaderBand + PageTabs` 2 tab **Đánh giá** (viên đếm chưa trả lời) | **Tự động trả lời** (= nội dung trang cũ: 5 công tắc theo sao đặt TRÊN, bộ mẫu câu dưới); `ai-rules-page.tsx` → `review-auto-tab.tsx` (`ReviewAutoTab`, không khung trang, không pill-tab). Tab chỉ hiện khi có lá quyền `operations.ai-rules` (chủ shop luôn có). `?tab=auto` đọc ở effect + `replaceState` khi đổi tab (F5 giữ tab). Chú thích dưới nút trả lời hàng loạt trỏ sang tab mới bằng nút chữ.
+- **Route cũ** `/operations-assistant/ai-rules` giữ, chỉ chuyển hướng sang `/operations-assistant/reviews?tab=auto` (mang nguyên query — chuông `?tab=delivery-fail` cũ vẫn tới nơi). Sidebar bỏ mục; tiêu đề header ai-rules = "Phản hồi đánh giá đa kênh".
+- **Quyền:** lá `operations.ai-rules` GIỮ (backend PUT `/review-auto/config` vẫn đòi lá này), đổi nhãn FE+BE "Tự động trả lời đánh giá"; `HOME_PRIORITY` trỏ `reviews?tab=auto`. Cờ `DELIVERY_FAIL_FEATURE` dời sang `reviews-page.tsx` (tab thứ ba khi mở lại); BE `DELIVERY_FAIL_TAB_HREF` → `/operations-assistant/reviews?tab=delivery-fail`, test mobile + docs THONG-BAO-DAY-MOBILE/CUU-DON + README cây + capture-tour cập nhật.
+- **Kiểm local (backend-http 4010 + frontend-http 3010, admin seed):** tab hiện đúng, bấm tab → URL `?tab=auto`; vào route cũ → chuyển hướng về tab auto, tiêu đề đúng; `?tab=delivery-fail` (cờ tắt) rơi về Đánh giá; không tràn ngang 1366. tsc FE/BE + eslint + test mobile sạch. ⏳ chờ anh soi prod sau push.
+
+---
 ## Phiên 29/10/2026 (tối) — SAO CHÉP SẢN PHẨM: DỌN DẸP + CÂY THƯ MỤC TRƯỚC KHI ANH TEST — PUSH
 
 - **Anh:** "dọn dẹp và push lên trước, sắp xếp đúng mô hình tree". Theo luật README "Cấu trúc dự án" (memory giữ cây thư mục gọn).
