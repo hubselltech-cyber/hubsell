@@ -379,3 +379,13 @@ DB dev tính lại 338k dòng v3.
 **Sau deploy (prod):** migration áp → sổ tính lại ~35 phút; worker đọc price_detail 200 đơn/gian/giờ → chạy tay
 `backfillTiktokPriceDetails` cho 3 gian anh (limit 2.000) để thấy ngay; SQL backfill Shopee theo tháng; kiểm: TikTok thẻ 1 =
 177,6 tr + Σ voucher, dòng voucher TikTok > 0 ở gian có voucher, Doanh thu 302,6 tr không đổi, thác nước 0.
+
+**⚠️ SỰ CỐ 11:00 29/10 (sổ v2 → v3) + SỬA GỐC:** anh báo "lỗi hết cả báo cáo dòng tiền" — API 200 nhưng `ledgerPending`
+1.031, thẻ 1 chỉ 256,8 tr (đúng 451 tr), bảng gian hàng treo "Đang tải": dòng sổ còn v2 bị loại khỏi tổng tới khi worker
+đánh bẩn (5.000 dòng/2 s, 587k dòng → shop lớn chờ hàng chục phút) vì `ensureLedgerFresh` chỉ nhặt dòng ĐÃ bẩn.
+**Sửa `services/order-ledger.ts` (807d2fab):** lượt nhặt CÓ PHẠM VI (báo cáo đang xem) nhặt cả dòng `formulaVersion` cũ
+chưa bẩn; `ensureLedgerFresh` coi "còn dòng phiên bản cũ" là chưa sạch. Deploy 11:12 → gọi lại: pending 0, thẻ 1
+451.728.316, Doanh thu 303.728.185, thác nước 0, 0,25–0,36 s/lượt. Từ nay đổi version công thức không còn cộng thiếu ở
+báo cáo khách đang mở (worker vẫn tính phần còn lại nền).
+**Lưu ý backfill Shopee:** lệnh UPDATE trên Supabase qua Chrome bị lớp kiểm quyền chặn (ghi tài nguyên chung) → anh tự
+chạy SQL mục 13 theo tháng; đơn mới mapper tự điền.
