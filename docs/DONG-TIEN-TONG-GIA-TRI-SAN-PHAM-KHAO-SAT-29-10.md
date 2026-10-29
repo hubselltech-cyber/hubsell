@@ -308,3 +308,36 @@ Phí khác 0, Σ = fee_tax_amount, serviceFee = 29.101). 22 ca TikTok + merge-db
 ghi đè bản kê gần đây). Lát 3 bước probe: `backend/scripts/tiktok-price-detail-probe.ts` (chỉ đọc, in không dấu; kiểm
 3 đẳng thức list = gross, dedS + vS = |disc|, list − dedS = giá trong giỏ; chạy `npx tsx scripts/tiktok-price-detail-probe.ts
 [shopName] [limit]` trên Shell worker).
+
+## 12. LÁT 3 — PROBE "Get Order Price Details" 202407 TRÊN ĐƠN THẬT (29/10 10:30–10:40, Shell worker, chỉ đọc)
+
+Script `backend/scripts/tiktok-price-detail-probe.ts` (commit 543809fd), chạy 3 lượt: and.not.or 20 đơn; mọi gian
+TikTok ACTIVE 8 đơn/gian (ước tính + thật); mọi gian 6 đơn ĐÃ GIAO + bản kê THẬT (`settled`).
+
+**Kết quả (đọc màn Shell):**
+- (a) `sku_list_price` = `grossSales` bản kê: **đúng mọi đơn** (0 lệch, cả 3 lượt).
+- (c1) `sku_list_price − subtotal_deduction_seller` = giá trong giỏ của bản kê (`grossSales + sellerDiscount`): **đúng mọi đơn**.
+- (c3) `sku_sale_price` (= list − deduction_seller − deduction_platform) = Σ `OrderItem.price` (sale_price đơn hàng):
+  **đúng mọi đơn** → giá dòng hàng của API đơn đã trừ cả phần SÀN giảm (`subtotal_deduction_platform` = `voucher_deduction_platform`
+  ở mọi đơn thấy), vì thế đơn "tạm tính" thấp hơn bản kê đúng bằng phần sàn giảm (giải thích lệch ~5,6 % mục 3c).
+- (b) `subtotal_deduction_seller + voucher_deduction_seller` so với |`seller_discount_amount`| bản kê: **LỆCH đúng bằng
+  `voucher_deduction_seller` ở MỌI đơn có voucher** (Zestech 26.400 / 3.320 / 585.000; Vo Chuyen 50.000; DEFENIKSA
+  20.000; Dao Em 9.000; đơn ĐÃ GIAO thật 586778701907264518: dedS 355.920, vS 71.114, |disc| 355.920; 586773575986039616
+  dedS 674.677, vS 100.000) và có đơn **vS = dedS** (586814133689157552: 33.272 = 33.272). → `voucher_deduction_seller`
+  là PHẦN NẰM TRONG `subtotal_deduction_seller`, không cộng thêm. Tức **chiết khấu của nhà bán hàng trên bản kê =
+  giảm giá sản phẩm + voucher shop (gộp)**, và price_detail cho biết phần voucher bên trong.
+- Payload VN **không có** `seller_funded_product_promotions` (COUPON/ACTIVITY) → không cần, `voucher_deduction_seller` đủ.
+- Hình dạng dòng hàng VN: `sku_list_price, sku_sale_price, subtotal, subtotal_deduction_seller, subtotal_deduction_platform,
+  voucher_deduction_seller, voucher_deduction_platform, shipping_list_price, shipping_sale_price, shipping_fee_deduction_*,
+  payment, net_price_amount, total, tax_amount, subtotal_tax_amount, sku_gift_original_price`.
+- Lỗi API: 0 (and.not.or 20/20); hạn mức: 1 read/đơn qua `callApi` (làn gian).
+
+**Thiết kế lát 3 (đề xuất, chờ anh gật):** số lên báo cáo = trường sàn, không công thức:
+- Lưu `voucher_deduction_seller` của đơn vào cột mới `Order.tiktokVoucherSeller` (null = chưa đọc) + `tiktokPriceDetailAt`;
+  đọc 1 lần/đơn khi ghi bản kê (ước tính hoặc thật) và bù nền cho đơn có bản kê trong ~90 ngày (nhịp qua cổng rate-limit,
+  ~4k đơn/ngày toàn hệ thống).
+- `computePnlRow` TikTok: Tổng giá trị SP = `grossSales + sellerDiscount + tiktokVoucherSeller` (= list − giảm giá sản phẩm
+  shop, đúng "giá trong giỏ" trước voucher); `sellerVoucher = tiktokVoucherSeller` → dòng "Voucher & xu của shop" có TikTok;
+  đơn chưa đọc price_detail giữ như lát 1 (voucher 0, nhãn tạm). Tăng `LEDGER_FORMULA_VERSION` → 3 (tính lại ~35 phút —
+  nên gộp cùng lát 4 Shopee để chỉ tính lại một lần).
+- Bảng Lãi/Lỗ TikTok: thêm cột "Voucher của shop (trong chiết khấu)" từ cột mới; Doanh thu/payout không đổi.
