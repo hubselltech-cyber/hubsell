@@ -6,6 +6,11 @@ import { Money } from "@/components/ui/money";
 import type { PnlDetailRow, PnlItemLine, PnlReturnType } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+/** Mã yêu cầu hoàn sàn trả → chữ người đọc; CANCELLED_AFTER_SHIP là mã Hubsell tự đặt (sàn hủy sau khi bàn giao, kiện quay đầu — 29/10/2026). */
+function platformReturnLabel(s: string): string {
+  return s === "CANCELLED_AFTER_SHIP" ? "giao thất bại · kiện quay đầu" : s;
+}
+
 /** Nhãn + màu badge cho 4 hình thức hoàn tiền/trả hàng (chấm màu + chữ gọn). */
 const RETURN_TYPE_META: Record<
   PnlReturnType,
@@ -64,12 +69,14 @@ export function ReturnBadge({ row }: { row: PnlDetailRow }) {
       {row.refundSource === "platform" && (
         <span className="block whitespace-nowrap text-[10px] text-slate-400">
           sàn báo · chờ sao kê
-          {row.platformReturnStatus ? ` (${row.platformReturnStatus})` : ""}
+          {row.platformReturnStatus ? ` (${platformReturnLabel(row.platformReturnStatus)})` : ""}
         </span>
       )}
       {row.refundSource === null && row.platformReturnStatus && (
         <span className="block whitespace-nowrap text-[10px] text-slate-400">
-          yêu cầu {row.platformReturnStatus} · sàn chưa báo số
+          {row.platformReturnStatus === "CANCELLED_AFTER_SHIP"
+            ? "giao thất bại · kiện quay đầu · không có yêu cầu hoàn"
+            : `yêu cầu ${row.platformReturnStatus} · sàn chưa báo số`}
         </span>
       )}
       {row.refundSource === "estimate" && (

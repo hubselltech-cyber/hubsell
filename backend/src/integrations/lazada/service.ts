@@ -41,6 +41,7 @@ import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import type { SyncCompleteness } from "../sync-contract";
 import { noteNewOrder } from "../../services/new-order-notify";
 import { CLEAR_CANCEL_REQUEST, notifyOrderCancelledAfterPrepare } from "../cancel-request";
+import { cancelledAfterShipReturnFields } from "../cancelled-after-ship";
 import {
   createToken,
   getMultipleOrderItems,
@@ -822,6 +823,14 @@ export function planLazadaOrderUpdate(
       : null;
   const data: Prisma.OrderUpdateInput = {};
   if (always || existing.shippingStatus !== f.shippingStatus) data.shippingStatus = f.shippingStatus;
+  // Lát A 29/10/2026: đang giao / đã giao mà sàn chuyển Đã hủy (failed_delivery,
+  // shipped_back…) = kiện quay đầu → cắm Chờ hàng về ngay (../cancelled-after-ship.ts).
+  const cancelledReturning = cancelledAfterShipReturnFields(
+    existing,
+    data.shippingStatus === undefined ? null : f.shippingStatus,
+    f.platformUpdatedAt ?? now
+  );
+  if (cancelledReturning) Object.assign(data, cancelledReturning);
   if (always || existing.paymentStatus !== f.paymentStatus) data.paymentStatus = f.paymentStatus;
   if (always || decimalDiffers(existing.totalAmount, f.totalAmount)) data.totalAmount = f.totalAmount;
   // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí sàn rổ
@@ -931,6 +940,7 @@ export async function upsertLazadaOrderTx(
           prevStatus: existing.shippingStatus,
           by: null,
           reason: null,
+          returning: data.returnStatus === "AWAITING",
         });
       }
     }

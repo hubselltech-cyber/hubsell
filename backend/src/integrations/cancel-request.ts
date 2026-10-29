@@ -88,6 +88,8 @@ export interface OrderCancelledInfo {
   /** Shopee cancel_by (buyer/seller/system), TikTok cancellation_initiator (BUYER/SELLER/SYSTEM); Lazada null. */
   by: string | null;
   reason: string | null;
+  /** Lát A 29/10/2026: kiện đã bàn giao sẽ quay đầu — đơn đã được cắm Chờ hàng về. */
+  returning?: boolean;
 }
 
 /** true khi đáng rung chuông: đơn đã chuẩn bị / đang giao, và không phải shop tự hủy. */
@@ -97,23 +99,37 @@ export function shouldNotifyOrderCancelled(info: OrderCancelledInfo): boolean {
   return by !== "seller" && by !== "shop";
 }
 
+/** Chữ chuông (thuần, có test): ai hủy, lý do sàn trả, việc kho cần làm. */
+export function orderCancelledMessage(
+  channel: Pick<Channel, "shopName" | "channelName">,
+  orderCode: string,
+  info: OrderCancelledInfo
+): { title: string; body: string; link: string } {
+  const by = (info.by ?? "").toLowerCase();
+  // Kiện quay đầu mà sàn không nói ai hủy (Lazada) thì là sàn / hãng hủy, không phải khách.
+  const who = by === "system" || (info.returning && !by) ? "Sàn" : "Khách";
+  const parts = [
+    `${channelLabel(channel.channelName)} · ${channel.shopName}. Sàn đã chấp nhận hủy ngay khi đơn ${STATUS_LABEL[info.prevStatus] ?? "đã xử lý"}, không có bước hỏi shop.`,
+  ];
+  if (info.reason) parts.push(`Lý do: ${info.reason}.`);
+  parts.push(
+    info.returning
+      ? "Kiện đã bàn giao vận chuyển sẽ quay về shop — Hubsell đã chuyển đơn sang Chờ hàng về, kho quét mã khi kiện về."
+      : "Vui lòng xử lý: rút kiện khỏi lô giao; hàng về kho thì nhập lại."
+  );
+  return {
+    title: `${who} đã hủy đơn đã chuẩn bị hàng ${orderCode}`,
+    body: parts.join(" "),
+    link: info.returning ? "/warehouse/returns" : `/orders?search=${encodeURIComponent(orderCode)}`,
+  };
+}
+
 export async function notifyOrderCancelledAfterPrepare(
   channel: Pick<Channel, "userId" | "shopName" | "channelName">,
   orderCode: string,
   info: OrderCancelledInfo
 ): Promise<void> {
   if (!shouldNotifyOrderCancelled(info)) return;
-  const by = (info.by ?? "").toLowerCase();
-  const who = by === "system" ? "Sàn" : "Khách";
-  const parts = [
-    `${channelLabel(channel.channelName)} · ${channel.shopName}. Sàn đã chấp nhận hủy ngay khi đơn ${STATUS_LABEL[info.prevStatus] ?? "đã xử lý"}, không có bước hỏi shop.`,
-  ];
-  if (info.reason) parts.push(`Lý do: ${info.reason}.`);
-  parts.push("Vui lòng xử lý: rút kiện khỏi lô giao; hàng về kho thì nhập lại.");
-  await notify(channel.userId, {
-    type: "order_cancelled",
-    title: `${who} đã hủy đơn đã chuẩn bị hàng ${orderCode}`,
-    body: parts.join(" "),
-    link: `/orders?search=${encodeURIComponent(orderCode)}`,
-  });
+  const msg = orderCancelledMessage(channel, orderCode, info);
+  await notify(channel.userId, { type: "order_cancelled", ...msg });
 }

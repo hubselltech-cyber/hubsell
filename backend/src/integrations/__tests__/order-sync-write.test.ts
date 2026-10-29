@@ -14,7 +14,7 @@
 // ============================================================
 import "./load-env";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { Carrier, ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
+import { Carrier, ChannelName, Prisma, ReturnSolution, ReturnStatus, ShippingStatus } from "@prisma/client";
 
 vi.mock("../shopee/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../shopee/client")>();
@@ -37,6 +37,7 @@ import {
 import type { TikTokOrder } from "../tiktok/client";
 import type { LazadaOrder, LazadaOrderItem } from "../lazada/client";
 import { ORDER_ITEM_IMAGE_SINCE, needsItemImageBackfill } from "../order-sync-write";
+import { CANCELLED_AFTER_SHIP, cancelledAfterShipReturnFields } from "../cancelled-after-ship";
 
 const NOW = new Date("2026-10-12T10:00:00+07:00");
 const dec = (n: number) => new Prisma.Decimal(n);
@@ -157,6 +158,8 @@ function tiktokExisting(over: Partial<TiktokExistingOrder> = {}): TiktokExisting
     carrier: Carrier.JT,
     shippingCarrierName: "Standard shipping · J&T Express",
     isSettled: false,
+    returnStatus: ReturnStatus.NONE,
+    returnRequestedAt: null,
     ...over,
   };
 }
@@ -277,6 +280,90 @@ describe("planLazadaOrderUpdate + lazadaShipDetailDiffers — chỉ cột khác"
 });
 
 // ---------- 3. Điền bù ảnh theo mốc ----------
+
+// ---------- 1d. Lát A 29/10/2026: hủy sau khi bàn giao = Chờ hàng về (../cancelled-after-ship.ts) ----------
+
+describe("hủy sau khi đã bàn giao vận chuyển → cắm Chờ hàng về (kiện quay đầu)", () => {
+  const AT = new Date("2026-10-28T10:17:06Z"); // = cancel_time 1793182626 ca thật 586686865006495180
+
+  it("helper thuần: SHIPPING / DELIVERED → CANCELLED cắm cờ kèm mốc sàn, RETURN_REFUND, CANCELLED_AFTER_SHIP", () => {
+    expect(
+      cancelledAfterShipReturnFields({ shippingStatus: ShippingStatus.SHIPPING, returnStatus: ReturnStatus.NONE }, ShippingStatus.CANCELLED, AT)
+    ).toEqual({
+      returnStatus: ReturnStatus.AWAITING,
+      returnRequestedAt: AT,
+      returnSolution: ReturnSolution.RETURN_REFUND,
+      platformReturnStatus: CANCELLED_AFTER_SHIP,
+    });
+    expect(
+      cancelledAfterShipReturnFields({ shippingStatus: ShippingStatus.DELIVERED, returnStatus: ReturnStatus.NONE }, ShippingStatus.CANCELLED, AT)
+    ).not.toBeNull();
+  });
+
+  it("helper thuần: chưa rời shop (PENDING / PROCESSED), không đổi sang hủy, hay trục hoàn đã có cờ → null", () => {
+    for (const prev of [ShippingStatus.PENDING, ShippingStatus.PROCESSED, ShippingStatus.CANCELLED]) {
+      expect(cancelledAfterShipReturnFields({ shippingStatus: prev, returnStatus: ReturnStatus.NONE }, ShippingStatus.CANCELLED, AT)).toBeNull();
+    }
+    expect(cancelledAfterShipReturnFields({ shippingStatus: ShippingStatus.SHIPPING, returnStatus: ReturnStatus.NONE }, undefined, AT)).toBeNull();
+    expect(cancelledAfterShipReturnFields({ shippingStatus: ShippingStatus.SHIPPING, returnStatus: ReturnStatus.NONE }, ShippingStatus.DELIVERED, AT)).toBeNull();
+    for (const rs of [ReturnStatus.AWAITING, ReturnStatus.RECEIVED, ReturnStatus.RECEIVED_INTACT, ReturnStatus.DAMAGED]) {
+      expect(cancelledAfterShipReturnFields({ shippingStatus: ShippingStatus.SHIPPING, returnStatus: rs }, ShippingStatus.CANCELLED, AT)).toBeNull();
+    }
+  });
+
+  it("TikTok: IN_TRANSIT → CANCELLED (Giao gói hàng thất bại, ca 586686865006495180) → Đã hủy + Chờ hàng về, mốc = cancel_time", () => {
+    const data = planTiktokOrderUpdate(
+      tiktokExisting(),
+      tiktokOrder({ status: "CANCELLED", cancel_time: 1793182626, cancellation_initiator: "SYSTEM", cancel_reason: "Giao gói hàng thất bại" }),
+      NOW
+    );
+    expect(data.shippingStatus).toBe(ShippingStatus.CANCELLED);
+    expect(data.returnStatus).toBe(ReturnStatus.AWAITING);
+    expect(data.returnRequestedAt).toEqual(AT);
+    expect(data.returnSolution).toBe(ReturnSolution.RETURN_REFUND);
+    expect(data.platformReturnStatus).toBe(CANCELLED_AFTER_SHIP);
+  });
+
+  it("TikTok: hủy khi chưa lấy hàng (Đã xử lý → CANCELLED, quá hạn lấy hàng) → chỉ Đã hủy, không cắm cờ", () => {
+    const data = planTiktokOrderUpdate(tiktokExisting({ shippingStatus: ShippingStatus.PROCESSED }), tiktokOrder({ status: "CANCELLED" }), NOW);
+    expect(data.shippingStatus).toBe(ShippingStatus.CANCELLED);
+    expect(data.returnStatus).toBeUndefined();
+    expect(data.returnSolution).toBeUndefined();
+  });
+
+  it("Shopee: SHIPPED → CANCELLED (Failed Delivery) → cắm cờ, mốc = update_time; lượt sau CANCELLED y nguyên → bản ghi rỗng", () => {
+    const data = planShopeeOrderUpdate(
+      shopeeExisting(),
+      shopeeOrder({ order_status: "CANCELLED", update_time: 1793182626, cancel_by: "system", cancel_reason: "Failed Delivery" }),
+      NOW
+    );
+    expect(data.shippingStatus).toBe(ShippingStatus.CANCELLED);
+    expect(data.returnStatus).toBe(ReturnStatus.AWAITING);
+    expect(data.returnRequestedAt).toEqual(AT);
+    expect(data.platformReturnStatus).toBe(CANCELLED_AFTER_SHIP);
+    const again = planShopeeOrderUpdate(
+      shopeeExisting({ shippingStatus: ShippingStatus.CANCELLED, returnStatus: ReturnStatus.AWAITING, returnRequestedAt: AT }),
+      shopeeOrder({ order_status: "CANCELLED", update_time: 1793182626 }),
+      NOW
+    );
+    expect(again).toEqual({});
+  });
+
+  it("Lazada: shipped → failed_delivery (Đã hủy) → cắm cờ, mốc = giờ đồng bộ khi sàn không trả updated_at; kho đã quét nhận thì không đụng", () => {
+    const data = planLazadaOrderUpdate(lazadaExisting(), lazadaOrder({ statuses: ["failed_delivery"] }), lazadaItems, NOW);
+    expect(data.shippingStatus).toBe(ShippingStatus.CANCELLED);
+    expect(data.returnStatus).toBe(ReturnStatus.AWAITING);
+    expect(data.returnRequestedAt).toEqual(NOW);
+    const done = planLazadaOrderUpdate(
+      lazadaExisting({ returnStatus: ReturnStatus.RECEIVED, returnRequestedAt: AT }),
+      lazadaOrder({ statuses: ["failed_delivery"] }),
+      lazadaItems,
+      NOW
+    );
+    expect(done.shippingStatus).toBe(ShippingStatus.CANCELLED);
+    expect(done.returnStatus).toBeUndefined();
+  });
+});
 
 describe("needsItemImageBackfill", () => {
   it("chỉ đơn tạo trước 08/09/2026 (trước khi lưu ảnh lúc tạo đơn)", () => {

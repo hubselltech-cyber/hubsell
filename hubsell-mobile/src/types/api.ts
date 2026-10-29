@@ -124,6 +124,8 @@ export interface OrderDto {
   returnTrackingCode: string | null;
   shippingStatus: ShippingStatus;
   returnStatus: ReturnStatus;
+  /** Trạng thái yêu cầu hoàn nguyên văn sàn; "CANCELLED_AFTER_SHIP" = sàn hủy sau khi bàn giao, kiện quay đầu (29/10/2026) */
+  platformReturnStatus?: string | null;
   returnNote?: string | null;
   itemCount: number;
   createdAt: string;

@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (đêm) — ĐỐI SOÁT ĐƠN HOÀN: KHO QUÉT KIỆN VỀ BÁO "KHÔNG HOÀN" — KHẢO SÁT, CHƯA SỬA (chờ anh chốt)
+
+- **Anh (ảnh app Hellokityhh quét `586686865006495180` → "Không hoàn"):** khách phản ánh hệ thống cập nhật đơn hoàn rất chậm, bấm Đồng bộ từ sàn mới có; anh cho rằng đã biết "giao thành công / hoàn thành công" thì hệ thống phải tự biết.
+- **Kiểm prod (Supabase chỉ đọc):** đơn đó `CANCELLED`, `returnStatus NONE`; 3 webhook TikTok (type 11 SYSTEM cancel + type 2 reverse + type 1 CANCEL) về 17:17:06 ngày 28/10, xử lý 17:37 (hàng đợi 20'). 30 ngày kho quét: Shopee 34/110 và TikTok 31/101 kiện báo "Không hoàn" lúc quét — **61/65 ca là đơn CANCELLED**. Chuông "Sàn đã hủy" 30 ngày: TikTok "Giao gói hàng thất bại" 1.029, Shopee "Failed Delivery" 165. Hàng đợi webhook TikTok 7 ngày p50 0 s / p95 10–17' / max ~50'.
+- **Gốc:** (1) kiện giao thất bại → sàn hủy → quay đầu KHÔNG nằm trên trục hoàn (TikTok chỉ `returns/search`, Shopee chỉ TO_RETURN/`get_return_list`) → NONE mãi, nút Đồng bộ cũng không chữa; (2) yêu cầu trả hàng thật: webhook type 12 chỉ kéo chi tiết đơn, cờ chờ quét 10'→60'; lookup chỉ tự hỏi sàn khi KHÔNG thấy đơn; (3) hàng đợi kẹt sáng (đại tu 5e — không mở lát riêng).
+- **Đề xuất (docs/DON-HOAN-VA-SAO-KE.md mục 8):** A luật chung 3 sàn "hủy sau khi bàn giao = Chờ hàng về · giao thất bại" trong plan*OrderUpdate (xóa ~95 % ca); B webhook type 12/2 hỏi `returns/search order_ids` ngay (khuôn type 11); C lookup hỏi sàn đúng đơn trước khi trả "Không hoàn".
+- **Anh hỏi lại "Sàn chuyển CANCELLED là ship đã phát giao không thành công mấy lần rồi?"** → đúng phần lớn (1.029 + 165 đơn lý do giao thất bại; thất lạc/hư hỏng vài đơn; "quá thời gian lấy hàng" 18 + "Seller did not Ship" 3 là chưa rời shop); mã `delivery-fail.ts` ghi có kiện quay đầu chỉ 28 phút sau MỘT lượt giao hỏng → luật dựa trạng thái trước, không đếm lượt. **Anh: "ok em làm đi".**
+- **LÁT A ĐÃ LÀM (docs mục 8.4):** `integrations/cancelled-after-ship.ts` (luật thuần: SHIPPING/DELIVERED → CANCELLED, trục hoàn NONE → AWAITING + mốc sàn + RETURN_REFUND + `platformReturnStatus=CANCELLED_AFTER_SHIP`) nối vào `planTiktokOrderUpdate` (thêm `now`, select thêm returnStatus/returnRequestedAt, mốc cancel_time) / `planShopeeOrderUpdate` (update_time) / `planLazadaOrderUpdate` (updated_at); chuông `orderCancelledMessage` tách thuần + nhánh kiện quay đầu (link /warehouse/returns); web Đối soát đơn hoàn + Lãi/Lỗ dịch mã, app Quét đơn hoàn dòng vàng. Tồn kho / P&L không đổi; phễu Tổng quan: đơn hủy sau giao sang ô Hoàn/Trả (chủ ý). Test +8 (35/35), tsc BE/FE/mobile + eslint sạch; CHƯA soi trình duyệt (cần đơn thật đổi trạng thái). ⏳ sau deploy: soi ca TikTok giao thất bại mới có AWAITING + chuông "Sàn đã hủy…"; lát B (webhook type 12 hỏi returns/search) + C chờ anh.
+
+---
 ## Phiên 29/10/2026 (tối) — THƯ THÔNG BÁO TÍNH NĂNG "SAO CHÉP SẢN PHẨM" TỚI MỌI CHỦ SHOP (anh yêu cầu; kèm 2 ảnh hướng dẫn bước 1 → bước 2)
 
 - **Anh:** "gửi email thông báo cập nhật tính năng tới tất cả các tài khoản — Sao chép sản phẩm — tạo hình ảnh hướng dẫn bước 1 → bước 2 cơ bản".

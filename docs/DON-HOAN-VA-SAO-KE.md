@@ -175,3 +175,50 @@ Bản `356ef42` (mục 3 phần Lazada, mục 4, tệp này) lên prod lúc 21:5
 | Cờ dựng lại sao kê | Chỉ còn gian Dao Em Liên 68 |
 
 Chưa kiểm được: thời gian lượt giờ TRƯỚC khi đưa lên (không có số để so, chỉ biết sau khi đưa lên không nghẽn); có lần nào bị sàn báo quá tải rồi thử lại thành công không (database không để dấu, xem mục 5 điểm 11); phần Lazada (mục 5 điểm 10).
+
+---
+
+## 8. Khảo sát 29/10/2026 — kho quét kiện về mà app báo "Không hoàn" (khách: "cập nhật đơn hoàn rất chậm, bấm Đồng bộ từ sàn mới có")
+
+### 8.1 Ca thật và số prod (Supabase chỉ đọc, 29/10 ~21:30)
+
+Gian Hellokityhh (TikTok) quét kiện đơn `586686865006495180` trên app → bảng kết quả ghi **Không hoàn**.
+
+| Điểm kiểm | Kết quả |
+|---|---|
+| Đơn trong DB | `shippingStatus` CANCELLED, `returnStatus` NONE, `returnRequestedAt` / `returnLookupAt` / `returnTrackingCode` đều NULL |
+| Webhook TikTok của đơn | 3 sự kiện về cùng giây 17:17:06 ngày 28/10 (giờ VN): type 11 `cancellations_role: SYSTEM`, `CANCELLATION_REQUEST_COMPLETE`; type 2 `reverse_type 1`, `reverse_user 4`, `reverse_order_status 100`; type 1 `order_status: CANCEL`. Cả 3 xử lý lúc 17:37:15 — **hàng đợi chờ 20 phút** |
+| Hàng đợi webhook TikTok 7 ngày | p50 0 giây, **p95 10–17 phút, max ~50 phút** (type 1: 325.962 sự kiện; type 12 yêu cầu hoàn: 10.417) |
+| Kho quét 30 ngày (toàn hệ thống) | Shopee 110 kiện, **34 báo "Không hoàn" lúc quét (30 là đơn CANCELLED)**; TikTok 101 kiện, **31 "Không hoàn" (31/31 CANCELLED)**; Lazada 12 kiện, 0 |
+| Chuông "Sàn đã hủy đơn đã chuẩn bị hàng" 30 ngày | TikTok "Giao gói hàng thất bại" **1.029**, "Package delivery failed" 2, "Gói hàng bị thất lạc" 3, "Gói hàng bị hư hỏng" 1, "Tự động hủy do quá thời gian lấy hàng" 18; Shopee "Failed Delivery" **165**, "Parcel lost in transit" 3, "Seller did not Ship" 3 |
+
+### 8.2 Gốc — ba lớp, lớp 1 là chính
+
+1. **Kiện "giao thất bại → sàn hủy → quay đầu" không nằm trên trục hoàn.** TikTok chỉ gắn AWAITING từ `returns/search` (yêu cầu trả hàng của khách); Shopee từ `order_status = TO_RETURN` hoặc `get_return_list`; đơn **CANCELLED sau khi đã bàn giao vận chuyển** không thuộc cả hai nguồn → mãi là NONE. Ước ~1.200 kiện/tháng toàn hệ thống (bảng trên). Nút "Đồng bộ từ sàn" cũng đi đúng hai nguồn đó nên **không chữa được loại này** — khách thấy "có" sau khi bấm là cho yêu cầu trả hàng thật (lớp 2), không phải kiện giao thất bại. Mã: `tiktok/service.ts` không đụng `returnStatus`; `shopee/service.ts shopeeReturnStatus` chỉ TO_RETURN; Lazada `lazadaReturnStatus` bắt chuỗi "return" (Lazada đặt trạng thái `returned` cho kiện giao thất bại nên Lazada 0 ca).
+2. **Yêu cầu trả hàng thật về chậm 10–60 phút.** Webhook TikTok type 12 / type 2 về ngay nhưng `handleTiktokOrderJob` chỉ kéo lại chi tiết đơn (chi tiết đơn không mang yêu cầu hoàn) → cờ chỉ được gắn ở lượt `syncTiktokReturns` tầng nhanh (10' → giãn 60' khi gian im ắng). Shopee: yêu cầu hoàn trên đơn COMPLETED không có push (docs mục 2.2), cũng chờ `syncShopeeReturns` 10'. `GET /api/orders/lookup` chỉ tự hỏi sàn khi **không tìm thấy đơn**; đơn thấy mà NONE thì trả về ngay, không hỏi lại.
+3. **Hàng đợi webhook kẹt ~10:00 mỗi sáng** (p95 10–17 phút) — đã ghi ở PROGRESS 27/10, thuộc đại tu 5e (anh chốt giữ thứ tự đại tu), không mở lát riêng.
+
+### 8.3 Phương án (anh chốt 29/10 đêm: làm A trước; B, C chờ)
+
+| # | Lát | Làm gì | Hiệu quả |
+|---|---|---|---|
+| A — **ĐÃ LÀM 29/10/2026 đêm** (mục 8.4) | Luật chung 3 sàn "hủy sau khi bàn giao = kiện quay đầu" | Trong `plan{Shopee,Tiktok,Lazada}OrderUpdate`: đơn đang SHIPPING / DELIVERED (đã có `trackingCode`, đã bàn giao) mà sàn chuyển CANCELLED → `returnStatus` NONE → AWAITING, `returnRequestedAt` = `cancel_time`/`update_time`, `returnSolution` RETURN_REFUND, `platformReturnStatus` = `CANCELLED_AFTER_SHIP` + lý do sàn. Loại trừ hủy **trước khi lấy hàng** (prev PENDING/PROCESSED: "quá thời gian lấy hàng", "Seller did not Ship" — kiện còn ở shop). Mọi webhook (TikTok 1/2/11, Shopee code 3, Lazada reverse) đều qua upsert này → cờ gắn theo nhịp webhook, không cần quét. Nhãn kho: "Chờ hàng về · giao thất bại". | Xóa ~95 % ca "Không hoàn" lúc quét (61/65 ca 30 ngày là đơn CANCELLED) |
+| B (lớp 2) | Webhook yêu cầu hoàn hỏi đúng đơn | TikTok type 12 / 2 trong `handleTiktokOrderJob` → `searchReturns({ orderIds: [orderId] })` rồi `applyTiktokReturnGroups` (cùng khuôn type 11 đã làm với `cancellations/search` 23/10). Shopee không có push cho return trên đơn COMPLETED → giữ quét 10'. | Yêu cầu trả hàng TikTok lên cờ theo nhịp webhook thay vì 10–60' |
+| C (lưới đỡ) | Lượt quét hỏi sàn đúng đơn | `/orders/lookup`: đơn thấy mà NONE và đã bàn giao → hỏi sàn MỘT lần cho đúng đơn (TikTok `returns/search order_ids`; Shopee `get_order_detail` + `get_escrow_detail → return_order_sn_list`) trước khi trả "Không hoàn"; cooldown theo đơn. | Bịt nốt ca worker/hàng đợi trễ; tốn 1–2 call/lượt quét trượt |
+
+Tồn kho: luật hiện hành `restoreStockTx` cộng lại kho ngay khi sàn báo CANCELLED (kể cả kiện còn đang quay đầu), nhập kho hoàn sau đó bị `stockRestoredAt` chặn cộng trùng → lát A không đổi số kho; chỉ ghi nhận để nếu anh muốn "cộng kho khi kho quét nhận" thì là lát đổi luật kho riêng.
+
+Chưa kiểm: ý nghĩa `reverse_type 1` / `reverse_user 4` của webhook type 2 theo docs (suy từ ca thật: hủy / hệ thống); TikTok Get Package Detail có trạng thái "đang hoàn về" riêng không; chữ `cancel_reason` đổi theo ngôn ngữ shop (đã thấy cả tiếng Việt lẫn tiếng Anh) nên lát A dựa trên **trạng thái trước** chứ không dựa chữ.
+
+### 8.4 Lát A đã làm (29/10/2026 đêm) — anh chốt: "Sàn chuyển CANCELLED là ship đã phát giao không thành công rồi"
+
+| Phần | Mã |
+|---|---|
+| Luật thuần dùng chung | `integrations/cancelled-after-ship.ts`: `cancelledAfterShipReturnFields(existing, nextStatus, at)` → đơn đang SHIPPING / DELIVERED chuyển CANCELLED và trục hoàn còn NONE → `returnStatus` AWAITING, `returnRequestedAt` = mốc sàn, `returnSolution` RETURN_REFUND, `platformReturnStatus` = `CANCELLED_AFTER_SHIP`. Dựa trạng thái TRƯỚC, không dựa chữ `cancel_reason`; hủy khi còn Chờ xử lý / Đã xử lý (chưa lấy hàng) giữ Đã hủy như cũ; kho đã quét / đã có yêu cầu hoàn thì không đụng |
+| Nối 3 planner | `planTiktokOrderUpdate` (thêm tham số `now`, select thêm `returnStatus` + `returnRequestedAt`; mốc = `cancel_time` → `update_time`), `planShopeeOrderUpdate` (mốc = `update_time`), `planLazadaOrderUpdate` (mốc = `updated_at`; `failed_delivery` / `shipped_back` vốn đã ánh xạ CANCELLED). Webhook lẫn quét nền đều đi qua planner → cờ gắn theo nhịp webhook |
+| Chuông | `cancel-request.ts` `orderCancelledMessage` (thuần, có test): có `returning` → "Sàn đã hủy…", câu cuối "Kiện đã bàn giao sẽ quay về shop — Hubsell đã chuyển đơn sang Chờ hàng về", link `/warehouse/returns`; Lazada không nói ai hủy mà kiện quay đầu thì ghi "Sàn" |
+| Giao diện | Web Đối soát đơn hoàn: dòng "Sàn báo hoàn …" thêm "· giao thất bại, kiện quay đầu"; Lãi/Lỗ ô nguồn hoàn dịch mã thành chữ; app Quét đơn hoàn: dòng vàng "Giao thất bại · sàn đã hủy · kiện đang quay về shop" dưới mã đơn (đi bản mobile kế) |
+| Không đổi | Tồn kho (restoreStockTx đã cộng khi hủy, `stockRestoredAt` chặn trùng), P&L (`returnGoodsRecovered` coi đơn hủy không mất vốn; cờ AWAITING không đổi kết quả), quét bù theo mã đơn (`returnSolution` đã có → không hỏi lại) |
+| Đổi có chủ ý | Phễu Tổng quan: đơn hủy sau giao nay nằm ô Hoàn/Trả (RETURNING_STATUSES) tới khi kho nhập kho / chốt khiếu nại, như đơn Shopee TO_RETURN — trước đây nằm ô Đã hủy |
+| Kiểm | vitest `order-sync-write.test.ts` +6 ca (helper thuần, TikTok ca thật 586686865006495180, TikTok hủy trước lấy hàng, Shopee Failed Delivery + lượt sau rỗng, Lazada failed_delivery + kho đã quét), `cancel-request-plan.test.ts` +2 ca → 35/35 xanh; tsc backend / frontend / mobile sạch; eslint sạch. Chưa kiểm trên trình duyệt (cần đơn thật chuyển trạng thái) |
+| Giới hạn | Chỉ áp cho đơn ĐÃ CÓ trong DB rồi mới thấy hủy (planner); đơn lần đầu đọc đã CANCELLED không biết trạng thái trước → giữ Đã hủy. Đơn hủy sau giao TRƯỚC khi đưa lên không được vá ngược (kho quét vẫn nhận được như cũ) |

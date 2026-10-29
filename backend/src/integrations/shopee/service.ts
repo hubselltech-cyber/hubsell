@@ -40,6 +40,7 @@ import type { StockSyncRequest } from "./inventory-sync";
 import type { SyncCompleteness } from "../sync-contract";
 import { noteNewOrder } from "../../services/new-order-notify";
 import { CLEAR_CANCEL_REQUEST, notifyCancelRequest, notifyOrderCancelledAfterPrepare } from "../cancel-request";
+import { cancelledAfterShipReturnFields, platformTimeOr } from "../cancelled-after-ship";
 import {
   getAccessToken,
   getOrderDetail,
@@ -726,6 +727,14 @@ export function planShopeeOrderUpdate(
   if (!cancelRequested && (always || existing.shippingStatus !== shippingStatus)) {
     data.shippingStatus = shippingStatus;
   }
+  // Lát A 29/10/2026: đang giao / đã giao mà sàn hủy (Failed Delivery, Parcel lost…) =
+  // kiện quay đầu → cắm Chờ hàng về ngay trong bản ghi này (../cancelled-after-ship.ts).
+  const cancelledReturning = cancelledAfterShipReturnFields(
+    existing,
+    data.shippingStatus === undefined ? null : shippingStatus,
+    platformTimeOr(order.update_time, now)
+  );
+  if (cancelledReturning) Object.assign(data, cancelledReturning);
   if (cancelRequested && !existing.cancelRequestedAt) {
     Object.assign(data, shopeeCancelRequestFields(order, now));
   } else if (!cancelRequested && existing.cancelRequestedAt) {
@@ -802,6 +811,7 @@ export async function upsertShopeeOrderTx(
           prevStatus: existing.shippingStatus,
           by: order.cancel_by ?? null,
           reason: order.buyer_cancel_reason || order.cancel_reason || null,
+          returning: data.returnStatus === "AWAITING",
         });
       }
       // Vừa bật cờ khách xin hủy → chuông (ngoài giao dịch, không ném lỗi).

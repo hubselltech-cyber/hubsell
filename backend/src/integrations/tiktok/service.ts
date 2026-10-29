@@ -42,6 +42,7 @@ import { lineKey, resolveOrderLineRows, tiktokLineExternalId } from "../order-li
 import type { SyncCompleteness } from "../sync-contract";
 import { noteNewOrder } from "../../services/new-order-notify";
 import { CLEAR_CANCEL_REQUEST, notifyOrderCancelledAfterPrepare } from "../cancel-request";
+import { cancelledAfterShipReturnFields, platformTimeOr } from "../cancelled-after-ship";
 import {
   describeTiktokFeeTax,
   groupTiktokLinesByOrder,
@@ -478,6 +479,8 @@ export const TIKTOK_EXISTING_SELECT = {
   shippingCarrierName: true,
   isSettled: true,
   cancelRequestedAt: true,
+  returnStatus: true,
+  returnRequestedAt: true,
 } satisfies Prisma.OrderSelect;
 
 export type TiktokExistingOrder = Prisma.OrderGetPayload<{ select: typeof TIKTOK_EXISTING_SELECT }>;
@@ -527,11 +530,23 @@ function tiktokOrderFields(order: TikTokOrder) {
  *   · mốc giao thành công ghi MỘT lần; hãng chỉ điền khi trống.
  * SYNC_WRITE_ALWAYS=1 → trả đủ cột như trước (đường lui khi nghi so thiếu).
  */
-export function planTiktokOrderUpdate(existing: TiktokExistingOrder, order: TikTokOrder): Prisma.OrderUpdateInput {
+export function planTiktokOrderUpdate(
+  existing: TiktokExistingOrder,
+  order: TikTokOrder,
+  now: Date = new Date()
+): Prisma.OrderUpdateInput {
   const f = tiktokOrderFields(order);
   const always = syncWriteAlways();
   const data: Prisma.OrderUpdateInput = {};
   if (always || existing.shippingStatus !== f.shippingStatus) data.shippingStatus = f.shippingStatus;
+  // Lát A 29/10/2026: đang giao / đã giao mà sàn hủy (giao thất bại, thất lạc…) = kiện
+  // quay đầu → cắm Chờ hàng về ngay trong bản ghi này (../cancelled-after-ship.ts).
+  const cancelledReturning = cancelledAfterShipReturnFields(
+    existing,
+    data.shippingStatus === undefined ? null : f.shippingStatus,
+    platformTimeOr(order.cancel_time ?? order.update_time, now)
+  );
+  if (cancelledReturning) Object.assign(data, cancelledReturning);
   if (always || existing.paymentStatus !== f.paymentStatus) data.paymentStatus = f.paymentStatus;
   if (always || decimalDiffers(existing.totalAmount, f.totalAmount)) data.totalAmount = f.totalAmount;
   // Đơn đã đối soát: số bản kê là sự thật, đồng bộ lô không ghi đè cột tài chính.
@@ -607,6 +622,7 @@ async function upsertOrderTx(
           prevStatus: existing.shippingStatus,
           by: order.cancellation_initiator ?? null,
           reason: order.cancel_reason ?? null,
+          returning: data.returnStatus === "AWAITING",
         });
       }
     }

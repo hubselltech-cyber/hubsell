@@ -2,7 +2,8 @@
 // Luật chung: trục riêng, KHÔNG đổi shippingStatus; bật cờ khi sàn báo chờ, hạ
 // khi sàn chốt; idempotent (cùng yêu cầu không ghi lại, không rung chuông lần 2).
 import { describe, expect, it } from "vitest";
-import { Carrier, Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
+import { Carrier, ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
+import { orderCancelledMessage } from "../cancel-request";
 import { planShopeeOrderUpdate, type ShopeeExistingOrder } from "../shopee/service";
 import type { ShopeeOrderDetail } from "../shopee/client";
 import { planTiktokCancelFlag } from "../tiktok/cancel-requests";
@@ -169,5 +170,34 @@ describe("Lazada planLazadaCancelRequest", () => {
 
   it("cùng reverse_order_id đã cờ → không ghi lại", () => {
     expect(planLazadaCancelRequest([lzCancel], { cancelRequestedAt: NOW, cancelRequestRef: "777" }, NOW.getTime())).toBeNull();
+  });
+});
+
+// ---------- Chuông "hủy sau chuẩn bị" — lát A 29/10/2026 thêm nhánh kiện quay đầu ----------
+
+describe("orderCancelledMessage", () => {
+  const ch = { shopName: "Hellokityhh", channelName: ChannelName.TIKTOK };
+
+  it("đang giao, sàn hủy, kiện quay đầu → 'Sàn đã hủy…', lý do sàn, câu Chờ hàng về, link kho", () => {
+    const m = orderCancelledMessage(ch, "586686865006495180", {
+      prevStatus: ShippingStatus.SHIPPING,
+      by: "SYSTEM",
+      reason: "Giao gói hàng thất bại",
+      returning: true,
+    });
+    expect(m.title).toBe("Sàn đã hủy đơn đã chuẩn bị hàng 586686865006495180");
+    expect(m.body).toContain("Lý do: Giao gói hàng thất bại.");
+    expect(m.body).toContain("Chờ hàng về");
+    expect(m.body).not.toContain("rút kiện khỏi lô giao");
+    expect(m.link).toBe("/warehouse/returns");
+  });
+
+  it("Lazada không nói ai hủy: kiện quay đầu → 'Sàn'; chưa bàn giao → 'Khách' + câu rút kiện + link đơn như cũ", () => {
+    const lz = { ...ch, channelName: ChannelName.LAZADA };
+    expect(orderCancelledMessage(lz, "LZ1", { prevStatus: ShippingStatus.SHIPPING, by: null, reason: null, returning: true }).title).toMatch(/^Sàn đã hủy/);
+    const m = orderCancelledMessage(lz, "LZ1", { prevStatus: ShippingStatus.PROCESSED, by: null, reason: null });
+    expect(m.title).toMatch(/^Khách đã hủy/);
+    expect(m.body).toContain("rút kiện khỏi lô giao");
+    expect(m.link).toBe("/orders?search=LZ1");
   });
 });

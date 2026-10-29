@@ -527,6 +527,8 @@ export interface Order {
   returnedAt: string | null;
   /** Mốc sàn báo đơn bắt đầu hoàn — null khi chưa rõ */
   returnRequestedAt: string | null;
+  /** Trạng thái yêu cầu hoàn nguyên văn sàn; "CANCELLED_AFTER_SHIP" = sàn hủy sau khi bàn giao, kiện quay đầu (29/10/2026) */
+  platformReturnStatus?: string | null;
   /** KHÁCH XIN HỦY, chờ shop quyết (23/10/2026) — null = không có yêu cầu đang chờ */
   cancelRequestedAt?: string | null;
   /** Lý do khách nêu (nguyên văn sàn) */

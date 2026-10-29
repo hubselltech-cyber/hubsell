@@ -604,6 +604,11 @@ export default function WarehouseReturnsPage() {
                               {o.returnRequestedAt
                                 ? `Sàn báo hoàn ${formatDateTime(o.returnRequestedAt)}`
                                 : "Chưa rõ mốc sàn báo hoàn"}
+                              {o.platformReturnStatus === "CANCELLED_AFTER_SHIP" && (
+                                <span className="ml-1 text-amber-600 dark:text-amber-400">
+                                  · giao thất bại, kiện quay đầu
+                                </span>
+                              )}
                             </p>
                           </TableCell>
 

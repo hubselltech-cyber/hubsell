@@ -516,6 +516,11 @@ export function ScanScreen({
           </Text>
           <Badge label={ret.label} bg={ret.bg} text={ret.text} />
         </View>
+        {order.platformReturnStatus === "CANCELLED_AFTER_SHIP" ? (
+          <Text className="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+            Giao thất bại · sàn đã hủy · kiện đang quay về shop
+          </Text>
+        ) : null}
         <Text className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           {CHANNEL_LABEL[order.channel.channelName] ?? order.channel.channelName}
           {" · "}
