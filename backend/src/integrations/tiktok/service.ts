@@ -1242,6 +1242,13 @@ export async function syncTiktokUnsettledEstimates(
     if (!shapeLogged && lines[0]) {
       shapeLogged = true;
       logShape("giao dịch chưa quyết toán 202507", lines[0]);
+      // Tên + giá trị phí/thuế THẬT của dòng ORDER đầu tiên — 29/10/2026 cột "Phí
+      // khác" ước tính ≈ 5,5 % doanh thu (= phí giao dịch) và TNCN 0 ở and.not.or:
+      // cần tên trường thật của bản ước tính để đặt cột (tắt TIKTOK_SHAPE_LOG=0 khi xong).
+      const orderLine = lines.find((l) => (l.type ?? "ORDER") === "ORDER") ?? lines[0];
+      if (process.env.TIKTOK_SHAPE_LOG !== "0") {
+        console.log(`[TikTok] Phí/thuế ước tính dòng ${orderLine.order_id ?? "?"}: ${describeTiktokFeeTax(orderLine)}`);
+      }
     }
     const { byOrder: grouped, unlinked } = groupTiktokLinesByOrder(lines);
     result.unlinked += unlinked;
