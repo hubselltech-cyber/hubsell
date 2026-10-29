@@ -670,7 +670,7 @@ async function linkNewListing(
   }
 }
 
-async function rollupJob(jobId: string): Promise<void> {
+export async function rollupJob(jobId: string): Promise<void> {
   const targets = await prisma.listingCopyTarget.findMany({ where: { jobId }, select: { status: true } });
   const open = targets.some((t) => t.status === "QUEUED" || t.status === "RUNNING");
   if (open) return;

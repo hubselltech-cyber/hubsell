@@ -330,3 +330,20 @@ Nguyên văn đọc từ log worker Render (`[listing-copy]`, Chrome của anh):
 - **Kiểm local:** đổi 189.000 → 199.000, tồn 0 → 12, lưu → cả 2 dòng gian đích (TikTok, Lazada) hiện 199.000 ₫ · Tồn 12.
   tsc BE+FE, eslint sạch. ⏳ anh thử trên prod.
 
+## 17. Bài TikTok "Chờ sàn duyệt" tự cập nhật khi sàn duyệt xong (29/10/2026 tối muộn, anh báo) — ĐÃ CODE, kiểm local
+
+- **Anh:** "TikTok duyệt bài một lúc rồi nhưng Hubsell vẫn Chờ sàn duyệt". Gốc: trạng thái PENDING_REVIEW ghi một lần lúc
+  create product, không có gì hỏi lại.
+- **Hợp đồng:** `ListingAdapter.checkReviewStatus?(channel, remoteItemId) → {status: LISTED|PENDING_REVIEW|FAILED, reason?}`
+  (tùy chọn — Shopee/Lazada bán ngay nên không có). TikTok: Get Product 202309 `status` → ACTIVATE / SELLER_DEACTIVATED =
+  LISTED; PENDING / DRAFT = còn chờ; FAILED = FAILED kèm `audit_failed_reasons[].reasons + suggestions` (đọc phòng thủ, chưa
+  thấy mẫu thật); PLATFORM_DEACTIVATED / FREEZE / DELETED = FAILED câu riêng. Hàm thuần `mapTikTokReview` có test. Giả lập:
+  duyệt ở lần hỏi đầu.
+- **Hai đường cập nhật (`services/listing-copy/review-check.ts`):** (1) worker `workers/listing-copy-review.ts` quét mỗi
+  `LISTING_COPY_REVIEW_CHECK_SECONDS` (mặc định 600, "0" = tắt) các target PENDING_REVIEW có remoteItemId trong 14 ngày;
+  (2) `getBatch` (khách mở đợt) hỏi ngay tối đa 5 target đến hạn — màn hình không cũ. Mỗi target hỏi thưa nhất 2 phút
+  (`MIN_RECHECK_MS`, mốc = `updatedAt`, mọi lần hỏi đều chạm dòng; sàn lỗi cũng chạm để không dội). Kết quả: LISTED → xóa
+  error, `listedAt`; FAILED → `error` = lý do sàn; rồi `rollupJob` tính lại trạng thái đợt. Log `[listing-copy] … duyệt → …`.
+- **Kiểm local:** 3 gian TikTok giả lập chờ duyệt từ 14:52 → mở đợt là cả 3 sang "Đã đăng". tsc + vitest 24 ca sạch.
+  ⏳ prod: bài ANO Official đang chờ duyệt sẽ tự lên khi anh mở lại đợt (hoặc ≤ 10 phút); lý do từ chối thật chưa có mẫu.
+

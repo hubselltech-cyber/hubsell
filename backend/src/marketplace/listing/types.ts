@@ -133,8 +133,21 @@ export interface CreateListingResult {
   variants: { sku: string; remoteId: string }[];
 }
 
+/** Kết quả hỏi lại sàn về bài đang CHỜ DUYỆT (TikTok). */
+export interface ReviewCheckResult {
+  status: "LISTED" | "PENDING_REVIEW" | "FAILED";
+  /** Lý do sàn từ chối (FAILED) — đã là câu cho người bán. */
+  reason?: string;
+  remoteUrl?: string | null;
+}
+
 export interface ListingAdapter {
   readonly name: string;
+  /**
+   * Hỏi lại sàn bài đã đăng ở trạng thái PENDING_REVIEW đã được duyệt chưa.
+   * Không có (Shopee/Lazada bán ngay) → bỏ. null = sàn không trả lời được, giữ nguyên.
+   */
+  checkReviewStatus?(channel: Channel, remoteItemId: string): Promise<ReviewCheckResult | null>;
   /** Đọc chi tiết một sản phẩm sàn (mọi phân loại) về dạng chuẩn; null = không có. */
   fetchListing(channel: Channel, itemId: string): Promise<NormalizedListing | null>;
   recommendCategory(channel: Channel, listing: NormalizedListing): Promise<CategorySuggestion[]>;

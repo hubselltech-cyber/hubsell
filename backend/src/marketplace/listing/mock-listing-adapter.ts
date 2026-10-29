@@ -24,6 +24,7 @@ import type {
   ListingDraft,
   LogisticOption,
   NormalizedListing,
+  ReviewCheckResult,
 } from "./types";
 
 const PREFIX: Record<ChannelName, string> = { SHOPEE: "SP", TIKTOK: "TT", LAZADA: "LZ", OFFLINE: "OF" };
@@ -193,6 +194,11 @@ export const mockListingAdapter: ListingAdapter = {
   async searchBrands(_channel: Channel, _categoryId: string | null, query: string): Promise<Brand[]> {
     const q = normalize(query.trim());
     return q ? BRANDS.filter((b) => normalize(b.name).includes(q)) : BRANDS;
+  },
+
+  /** Giả lập: sàn duyệt ở lần hỏi lại đầu tiên (≥ 2 phút sau khi đăng). */
+  async checkReviewStatus(): Promise<ReviewCheckResult | null> {
+    return { status: "LISTED" };
   },
 
   async createListing(channel: Channel, draft: ListingDraft): Promise<CreateListingResult> {

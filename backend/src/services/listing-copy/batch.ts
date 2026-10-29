@@ -12,6 +12,7 @@
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { recheckBatchDue } from "./review-check";
 import {
   asListing,
   createJob,
@@ -90,6 +91,10 @@ export async function createBatch(input: CreateBatchInput): Promise<BatchView> {
 }
 
 export async function getBatch(ownerId: string, batchId: string): Promise<BatchView> {
+  // Khách mở đợt có bài "Chờ sàn duyệt" đã lâu chưa hỏi → hỏi sàn ngay (tối đa 5), màn hình không cũ.
+  await recheckBatchDue(ownerId, batchId).catch((err) =>
+    console.warn(`[listing-copy] hỏi lại duyệt khi mở đợt ${batchId} lỗi: ${(err as Error).message}`)
+  );
   const jobs = await prisma.listingCopyJob.findMany({
     where: { userId: ownerId, batchId },
     select: { id: true, createdAt: true },

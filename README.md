@@ -111,7 +111,7 @@ hubsell/
 │       │                                #   date-range, finance-definitions, pnl-formula, cost-price, image-fetch (tải ảnh về buffer), ...
 │       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
-│       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source/service/batch),
+│       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source/service/batch/review-check),
 │       │                                #   cursor-reader + marketplace-gateway + sync-lanes (lớp đọc sàn Pha B,
 │       │                                #   chưa nối worker — docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b), ...
 │       ├── routes/                      # 37 nhóm endpoint /api/*: auth, orders, products, finance, tax,

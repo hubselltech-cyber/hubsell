@@ -44,6 +44,7 @@ import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
+import { startListingCopyReviewWorker } from "./listing-copy-review";
 import { startReadLanes } from "./read-lanes";
 import { startAdsLane } from "./ads-lane";
 
@@ -136,4 +137,6 @@ export function startAllWorkers(): void {
   // Bù id lá sàn cho dòng đơn cũ 90 ngày (Lát 2 cây sản phẩm sàn, anh Trung 18/10) —
   // một gian một lúc, hỏi sàn 50 đơn/lượt, nghỉ 2 s; tắt ORDER_LINE_ID_BACKFILL_OFF=1.
   startLineIdBackfillWorker();
+  // Sao chép sản phẩm: hỏi lại TikTok bài "Chờ sàn duyệt" mỗi 10 phút (anh Trung 29/10).
+  startListingCopyReviewWorker();
 }

@@ -29,6 +29,7 @@ import type {
   ListingVariant,
   LogisticOption,
   NormalizedListing,
+  ReviewCheckResult,
 } from "./types";
 import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, normalizeText, textToHtml, variantPairs, vndInt } from "./variant-map";
 
@@ -54,8 +55,42 @@ function attrDef(a: api.TikTokAttribute): AttributeDef {
   };
 }
 
+/**
+ * Trạng thái TikTok (docs 202309 Get Product `status`): DRAFT / PENDING / FAILED / ACTIVATE /
+ * SELLER_DEACTIVATED / PLATFORM_DEACTIVATED / FREEZE / DELETED. Lý do từ chối nằm ở
+ * `audit_failed_reasons[] {position, reasons[], suggestions[]}` (đọc phòng thủ — chưa thấy mẫu thật).
+ */
+export function mapTikTokReview(p: {
+  status?: string;
+  audit_failed_reasons?: { position?: string; reasons?: string[]; suggestions?: string[] }[];
+  audit?: { status?: string; pre_approved_reasons?: string[] };
+}): ReviewCheckResult {
+  const st = String(p.status ?? "").toUpperCase();
+  if (st === "ACTIVATE" || st === "SELLER_DEACTIVATED") return { status: "LISTED" };
+  if (st === "PENDING" || st === "DRAFT" || st === "") return { status: "PENDING_REVIEW" };
+  const reasons = (p.audit_failed_reasons ?? [])
+    .flatMap((r) => [...(r.reasons ?? []), ...(r.suggestions ?? []).map((s) => `gợi ý: ${s}`)])
+    .filter(Boolean);
+  const why = reasons.length ? reasons.join("; ") : `sàn báo trạng thái ${st}`;
+  const head =
+    st === "FAILED"
+      ? "TikTok Shop từ chối bài đăng khi duyệt"
+      : st === "DELETED"
+        ? "Sản phẩm đã bị xóa trên TikTok Shop"
+        : "TikTok Shop khóa / ẩn sản phẩm sau khi duyệt";
+  return { status: "FAILED", reason: `${head}: ${why} — sửa trên Seller Center hoặc chỉnh bài rồi đăng lại.` };
+}
+
 export const tiktokListingAdapter: ListingAdapter = {
   name: "tiktok",
+
+  async checkReviewStatus(channel: Channel, remoteItemId: string): Promise<ReviewCheckResult | null> {
+    const ctx = await ctxOf(channel);
+    const { getProduct } = await import("../../integrations/tiktok/client");
+    const p = await getProduct({ ...ctx, productId: remoteItemId });
+    if (!p) return null;
+    return mapTikTokReview(p as Parameters<typeof mapTikTokReview>[0]);
+  },
 
   async fetchListing(channel: Channel, productId: string): Promise<NormalizedListing | null> {
     const ctx = await ctxOf(channel);
