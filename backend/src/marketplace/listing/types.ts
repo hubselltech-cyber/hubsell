@@ -17,6 +17,11 @@ export interface ListingVariant {
   price: number;
   stock: number;
   imageUrl: string | null;
+  /**
+   * Khách BỎ phân loại này khỏi bài đăng (30/10/2026: sản phẩm 17 màu × 3 = 51 phân loại
+   * vượt trần 50 của Shopee → bỏ bớt mới đăng được). Vẫn giữ trong source để bật lại.
+   */
+  excluded?: boolean;
 }
 
 export interface ListingOption {
@@ -98,6 +103,8 @@ export interface CategoryRequirements {
   maxImages: number;
   maxOptions: number;
   maxVariants: number;
+  /** Trần số GIÁ TRỊ trong một nhóm phân loại (Shopee/Lazada 20); bỏ trống = không kiểm. */
+  maxOptionValues?: number;
 }
 
 export interface LogisticOption {

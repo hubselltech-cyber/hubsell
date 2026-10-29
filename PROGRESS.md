@@ -5,6 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (đêm) — SAO CHÉP SẢN PHẨM: KHÁCH TEST PROD BÁO 6 Ý (Safari/macOS, KiotViet) — ĐÃ SỬA, KIỂM LOCAL 1280/1440/1700 + TỐI
+
+- **Anh chuyển 6 ý của khách Bunchar + mắng "càng ngày càng ẩu, tỉ lệ kích thước, test giao diện đều không làm".** Docs `docs/SAO-CHEP-SAN-PHAM.md` mục 21.
+- **(1) Thương hiệu:** `brand-combobox.tsx` tìm theo từ khóa hỏi sàn, danh sách cuộn có thanh cuộn luôn hiện (`.scrollbar-always`), phím ↑↓ Enter; thay `<select>` gốc (Safari xổ hàng nghìn dòng không tìm, không thấy cuộn).
+- **(2) SKU:** cột Mã SKU sửa được + nút "Tự đặt mã cho phân loại thiếu"; "17 SKU" thật ra 17 màu × 3 = 51 phân loại > trần Shopee 50 → thêm cột **Đăng** bỏ bớt phân loại (`variants[].excluded`, `activeVariants`/`effectiveOptions` backend), chip ghi rõ "51 / tối đa 50 — bỏ bớt 1"; luật mới `maxOptionValues 20` Shopee/Lazada, `sku_duplicate`, `no_variants`; test rules 13/13.
+- **(4) Giao diện tối:** `bg-white`→`bg-card`, chip chọn `bg-slate-900 text-white`→`bg-primary text-primary-foreground` (trong .dark slate-900 là màu sáng → chip trắng mất chữ như ảnh khách).
+- **(5) Sản phẩm vừa đăng trên sàn KHÔNG tự về (worker kéo đêm 03–05 h)** → nút **Lấy sản phẩm mới từ sàn** ở bước 1, route `POST /sources/sync` dưới quyền sao chép, chặn gọi lại <2 phút.
+- **(6) Tự soi:** phát hiện + sửa 2 lỗi tràn ngang thật ở 1280 (dòng 17 màu nowrap + chip nowrap → bảng cuộn 555 px; nút Sửa bài đăng tràn 19 px) — đo JS 1280/1440/1700 sáng + tối với seed 51 phân loại = 0 tràn. (3) KiotViet: ghi nhận khác cấu trúc, đề xuất lát "khung sửa toàn trang + mục lục neo" chờ anh.
+- tsc BE/FE + eslint sạch; vitest listing 30/30. ⏳ khách thử lại prod gian thật (bỏ phân loại + nhập mã); memory `hubsell-sao-chep…` + feedback soi màn cập nhật.
+
+---
 ## Phiên 29/10/2026 21:45 (tự động, nhắc `hubsell-doc-24h-lat-2-ano-29-10`) — LÁT 2 GHI ORDER QUA ĐƯỜNG MỚI TRÊN ANO: ĐỌC 24 GIỜ ĐẦU — ĐẠT 5/5, KHÔNG SỬA GÌ
 
 - **Cách đo:** Chrome anh kết nối OK → Supabase SQL chỉ đọc (dán Monaco bằng JS, gộp cột thành 1 chuỗi) + Render Logs worker 24 h lọc `read-lanes` / `gateway` / `persist` / `cursor-reader` / `order-write` / `lane orders` + trang Events. Chi tiết số ở docs/CUNG-HOA-LOP-GOI-SAN.md 5c.3 "Đọc 24 giờ 29/10".

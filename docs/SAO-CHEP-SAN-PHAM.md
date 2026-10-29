@@ -387,3 +387,43 @@ dẫn bước 1 → bước 2"*, rồi *"Gửi mail xong thì xóa chứ giữ l
 - **Giữ lại:** 2 ảnh `frontend/public/guide-assets/copy-listing-buoc-{1,2}.png` — thư chỉ chứa link, khách mở
   muộn vẫn cần ảnh.
 - **Bài học:** đợt >150 thư qua Zoho phải chia lô (`--limit=100`, cách ≥1 giờ) hoặc 1 luồng.
+
+## 21. Khách test prod báo 6 ý (30/10/2026, anh chuyển lại kèm ảnh Safari/macOS + KiotViet) — ĐÃ SỬA, kiểm local
+
+Anh: *"(1) ô thương hiệu không tìm kiếm được, không có thanh cuộn (Windows có); (2) thiếu SKU nhưng khách không thêm/sửa
+được SKU, sản phẩm 17 SKU Hubsell không lấy được; (3) KiotViet dễ dùng hơn hẳn; (4) lỗi giao diện tối; (5) sản phẩm vừa
+đăng trên sàn có về ngay không; (6) em làm càng ngày càng ẩu — tỉ lệ kích thước, test giao diện đều không làm."*
+
+- **(1) Thương hiệu → ô tìm kiếm** `copy-listing/brand-combobox.tsx` thay `<select>` gốc: gõ → hỏi `/brands?q=` (TikTok/
+  Lazada tìm phía sàn, Shopee lọc trong 200 đầu), danh sách `max-h-64` cuộn với lớp `.scrollbar-always` (globals.css —
+  macOS ẩn thanh cuộn overlay nên khách tưởng chỉ có vài dòng), ↑↓ Enter Esc, nút ✕ bỏ chọn; lưu cả `brandName`.
+- **(2a) Mã SKU sửa được** trong Sửa bài đăng: cột Mã SKU thành ô nhập khi còn sửa được (`updateJobSource.variants[].sku`),
+  ô trống tô vàng, dòng "n phân loại chưa có mã SKU" + nút **Tự đặt mã cho phân loại thiếu** (chữ cái đầu tên, ≤6 ký tự +
+  số thứ tự, vd `TKBTDG-02`; tránh trùng mã đã có). Mã trùng nhau → `sku_duplicate` chặn đăng. Nguồn sàn không mang
+  seller_sku (TikTok) là lý do "Thiếu SKU"; mã khách nhập đi lên gian đích + nối kho, nguồn trên sàn không đổi.
+- **(2b) "17 SKU" = 17 màu × 3 số lượng = 51 phân loại**, Hubsell lấy đủ 51 (ảnh 5 cho thấy `+48` id); cái chặn là **trần
+  Shopee 50 tổ hợp** (`PLATFORM_LISTING_RULES.SHOPEE.maxVariants`; trợ giúp Shopee: 1 nhóm ≤20, 2 nhóm ≤20/nhóm và ≤50
+  tổ hợp — thêm `maxOptionValues: 20` Shopee/Lazada, mã `too_many_option_values`). Sửa để khách tự xử lý: cột **Đăng** (bỏ
+  tick = `variants[].excluded`), nhãn chip nói rõ số **"Quá số phân loại (51 / tối đa 50 — bỏ bớt 1)"**; backend
+  `activeVariants` + `effectiveOptions` (rút giá trị nhóm không còn ai dùng) áp ở computeMissing, existingSkus, draft gửi
+  sàn; bỏ hết → `no_variants`. Test rules 13/13 (thêm 3 ca).
+- **(3) KiotViet** (ảnh 3–4): một biểu mẫu dài cho MỘT sản phẩm, mục lục neo bên phải, thương hiệu có ô tìm, phần sàn
+  xếp theo khối Shopee → TikTok → Lazada. Khác bản chất với bảng đợt N sản phẩm × M gian của Hubsell. Chưa đổi cấu trúc;
+  đề xuất lát riêng (mục 7): khi đợt chỉ 1 sản phẩm thì mở khung sửa toàn trang có mục lục neo thay vì dòng xổ trong bảng.
+- **(4) Giao diện tối:** trang dùng `bg-white` (5) + chip chọn `bg-slate-900 text-white` (2) + ô tick `bg-slate-900` —
+  `.dark` map slate-900 → gần trắng nên chip chọn thành ô trắng mất chữ (ảnh 5 cạnh "1. Chọn sản phẩm nguồn"). Đổi
+  `bg-card`, `bg-primary text-primary-foreground`, `accent-primary`, nhãn Bìa `bg-black/70`. Soi lại dark ở bước 1 + bảng
+  đợt + khung Bổ sung + danh sách thương hiệu.
+- **(5) Sản phẩm vừa đăng trên sàn:** KHÔNG về ngay — worker `product-catalog-sync` chỉ làm mới mỗi đêm 03:00–05:00 giờ
+  VN (gian mới nối thì kéo ngay). Thêm nút **Lấy sản phẩm mới từ sàn** cạnh ô chọn gian nguồn → `POST
+  /api/sao-chep-san-pham/sources/sync {channelId}` (quyền operations.copy-listing; gian kéo <2 phút trước thì trả luôn
+  không gọi sàn; ghi lịch qua `scheduleAfterProductSync`), xong nạp lại danh sách + số SP.
+- **(6) Tự soi trước khi giao — phát hiện thêm 2 lỗi tràn ngang thật ở 1280:** (a) dòng sản phẩm liệt kê 17 màu nowrap
+  + chip "còn thiếu" nowrap vẽ tràn sang phải → bảng đợt cuộn ngang 555 px (bấm Sửa bài đăng là cả bảng trôi sang trái);
+  sửa `whitespace-normal` cho ô sản phẩm / chip / PANEL, nhóm >4 giá trị chỉ ghi "17 giá trị"; (b) nút "Sửa bài đăng"
+  ~130 px trong cột 12 % (113 px ở 1280) tràn 19 px → cột 15 %, Còn thiếu 22 %. Đo bằng JS (`scrollWidth` của khung
+  `overflow-x-auto` + `td.scrollWidth > clientWidth`) ở **1280 / 1440 / 1700**, sáng + tối, với seed 51 phân loại tên dài:
+  0 tràn. Seed dùng: `prisma.channelProduct` 51 dòng `externalId BIGTEST-n` trên TikTok giả lập demo (1 dòng SKU rỗng vì
+  khóa unique channelId+channelSku không cho nhiều dòng rỗng).
+- Chưa kiểm trên gian thật (Shopee/TikTok thật khi khách bỏ phân loại + nhập mã): ⏳ khách Bunchar thử lại; nếu Shopee vẫn
+  từ chối 50 tổ hợp thì đọc `get_item_limit` của danh mục đó rồi hạ trần theo sàn.

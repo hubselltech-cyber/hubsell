@@ -13,18 +13,52 @@ const MISSING_LABELS: Record<string, string> = {
   images: "Chưa có ảnh",
   too_many_images: "Quá số ảnh cho phép",
   too_many_options: "Quá số nhóm phân loại",
+  too_many_option_values: "Một nhóm phân loại quá nhiều giá trị",
   too_many_variants: "Quá số phân loại",
+  no_variants: "Không còn phân loại nào để đăng",
   sku: "Phân loại thiếu SKU",
+  sku_duplicate: "Mã SKU trùng nhau giữa các phân loại",
   sku_exists: "SKU đã có trên gian đích",
   price: "Giá phải lớn hơn 0",
 };
 
-export function missingLabel(code: string, attrName?: (id: string) => string | undefined): string {
+/** Số liệu để nhãn nói rõ "bao nhiêu / trần bao nhiêu" — khách biết phải bỏ mấy phân loại (30/10/2026). */
+export interface MissingContext {
+  variantCount?: number;
+  maxVariants?: number;
+  optionCount?: number;
+  maxOptions?: number;
+  maxOptionValues?: number;
+  /** Số giá trị của nhóm phân loại đông nhất. */
+  widestOption?: number;
+  skuMissing?: number;
+}
+
+export function missingLabel(code: string, attrName?: (id: string) => string | undefined, ctx?: MissingContext): string {
   if (code.startsWith("attr:")) {
     const id = code.slice(5);
     return `Thiếu ${attrName?.(id) ?? "thuộc tính"}`;
   }
-  return MISSING_LABELS[code] ?? code;
+  const label = MISSING_LABELS[code] ?? code;
+  if (!ctx) return label;
+  if (code === "too_many_variants" && ctx.variantCount != null && ctx.maxVariants != null) {
+    return `${label} (${ctx.variantCount} / tối đa ${ctx.maxVariants} — bỏ bớt ${ctx.variantCount - ctx.maxVariants})`;
+  }
+  if (code === "too_many_options" && ctx.optionCount != null && ctx.maxOptions != null) {
+    return `${label} (${ctx.optionCount} / tối đa ${ctx.maxOptions})`;
+  }
+  if (code === "too_many_option_values" && ctx.widestOption != null && ctx.maxOptionValues != null) {
+    return `${label} (${ctx.widestOption} / tối đa ${ctx.maxOptionValues} mỗi nhóm)`;
+  }
+  if (code === "sku" && ctx.skuMissing != null) {
+    return `${ctx.skuMissing} phân loại thiếu mã SKU`;
+  }
+  return label;
+}
+
+/** Phân loại khách GIỮ để đăng (khớp activeVariants backend). */
+export function activeVariantsOf<T extends { excluded?: boolean }>(variants: T[]): T[] {
+  return variants.filter((v) => !v.excluded);
 }
 
 /**

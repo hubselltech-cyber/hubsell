@@ -1,7 +1,7 @@
 // Luật đăng sản phẩm theo sàn — phần thuần (docs/SAO-CHEP-SAN-PHAM.md).
 import { describe, expect, it } from "vitest";
 import { inferOptions } from "../../../services/listing-copy/source";
-import { adjustPrice, computeMissing, dimsComplete, normalizeDims, PLATFORM_LISTING_RULES } from "../rules";
+import { activeVariants, adjustPrice, computeMissing, dimsComplete, effectiveOptions, normalizeDims, PLATFORM_LISTING_RULES } from "../rules";
 import type { CategoryRequirements, NormalizedListing } from "../types";
 
 const base: NormalizedListing = {
@@ -105,5 +105,47 @@ describe("inferOptions", () => {
       { name: "Phân loại 2", values: ["M", "L"] },
     ]);
     expect(inferOptions([{ sku: "a", name: null, price: 1, stock: 0, imageUrl: null }])).toEqual([]);
+  });
+});
+
+describe("phân loại bỏ đăng + mã SKU (30/10/2026)", () => {
+  const colors = Array.from({ length: 17 }, (_, i) => `Màu ${i + 1}`);
+  const qty = ["3 gói", "5 gói", "1 hộp 10 gói"];
+  const big: NormalizedListing = {
+    ...base,
+    options: [
+      { name: "Màu sắc", values: colors },
+      { name: "Số lượng", values: qty },
+    ],
+    variants: colors.flatMap((c) => qty.map((q) => ({ sku: "", name: `${c}, ${q}`, price: 90000, stock: 10, imageUrl: null }))),
+  };
+
+  it("17 màu × 3 = 51 phân loại không mã → Shopee báo quá số + thiếu SKU", () => {
+    expect(computeMissing("SHOPEE", big, state, null)).toEqual(["too_many_variants", "sku"]);
+  });
+
+  it("bỏ 3 phân loại của một màu + điền mã → đủ; nhóm Màu rút còn 16 giá trị", () => {
+    const l: NormalizedListing = {
+      ...big,
+      variants: big.variants.map((v, i) => ({ ...v, sku: `DG-${i + 1}`, excluded: v.name!.startsWith("Màu 17,") })),
+    };
+    expect(computeMissing("SHOPEE", l, state, null)).toEqual([]);
+    expect(effectiveOptions(l)[0].values).toHaveLength(16);
+    expect(effectiveOptions(l)[1].values).toEqual(qty);
+    expect(activeVariants(l)).toHaveLength(48);
+  });
+
+  it("một nhóm > 20 giá trị → báo riêng (Shopee 20/nhóm); mã trùng → báo trùng; bỏ hết → no_variants", () => {
+    const wide: NormalizedListing = {
+      ...base,
+      options: [{ name: "Màu", values: Array.from({ length: 21 }, (_, i) => `M${i}`) }],
+      variants: Array.from({ length: 21 }, (_, i) => ({ sku: `S${i}`, name: `M${i}`, price: 1000, stock: 1, imageUrl: null })),
+    };
+    expect(computeMissing("SHOPEE", wide, state, null)).toEqual(["too_many_option_values"]);
+    expect(computeMissing("TIKTOK", wide, state, null)).toEqual([]);
+    const dup = { ...base, variants: [{ ...base.variants[0], sku: "cv-m" }, { ...base.variants[1], sku: "CV-M " }] };
+    expect(computeMissing("SHOPEE", dup, state, null)).toEqual(["sku_duplicate"]);
+    const none = { ...base, variants: base.variants.map((v) => ({ ...v, excluded: true })) };
+    expect(computeMissing("SHOPEE", none, state, null)).toEqual(["no_variants"]);
   });
 });

@@ -11,7 +11,9 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { getListingAdapter } from "../marketplace/listing/registry";
 import { normalizeDims } from "../marketplace/listing/rules";
+import { syncChannelProducts } from "../marketplace/product-sync";
 import type { AuthRequest } from "../middleware/auth";
+import { scheduleAfterProductSync } from "../workers/product-catalog-sync";
 import {
   createJob,
   getJob,
@@ -99,6 +101,51 @@ router.get("/sources", async (req: AuthRequest, res, next) => {
       return;
     }
     res.json(await listChannelSources(channelId, search, page, pageSize));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Kéo danh mục sản phẩm của gian nguồn về NGAY (30/10/2026, anh hỏi "sản phẩm vừa đăng trên sàn
+ * có về ngay không?"): bình thường worker product-catalog-sync chỉ làm mới mỗi đêm 03:00–05:00, nên
+ * sản phẩm mới đăng hôm nay chưa có trong bước 1. Cùng việc với nút "Đồng bộ từ sàn" ở Giá vốn /
+ * Liên kết SP nhưng nằm dưới quyền operations.copy-listing (nhân viên chỉ có quyền sao chép vẫn bấm
+ * được). Gian vừa kéo < 2 phút → trả luôn, không gọi sàn lại (giữ quota API).
+ */
+router.post("/sources/sync", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId = str((req.body ?? {}).channelId);
+    if (!channelId) {
+      res.status(400).json({ error: "Thiếu channelId." });
+      return;
+    }
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId,
+        userId: req.ownerId!,
+        status: "ACTIVE",
+        channelName: { not: "OFFLINE" },
+        ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+      },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Gian nguồn không thuộc shop này." });
+      return;
+    }
+    const RECENT_MS = 2 * 60 * 1000;
+    if (channel.lastProductSyncAt && Date.now() - channel.lastProductSyncAt.getTime() < RECENT_MS) {
+      res.json({ skipped: true, lastProductSyncAt: channel.lastProductSyncAt, scanned: 0, created: 0, updated: 0 });
+      return;
+    }
+    try {
+      const r = await syncChannelProducts(channel);
+      await scheduleAfterProductSync(channel.id, true);
+      res.json({ skipped: false, lastProductSyncAt: new Date(), scanned: r.scanned, created: r.created, updated: r.updated });
+    } catch (err) {
+      await scheduleAfterProductSync(channel.id, false, (err as Error).message);
+      res.status(502).json({ error: `Không kéo được danh mục từ sàn: ${(err as Error).message}` });
+    }
   } catch (err) {
     next(err);
   }
@@ -225,6 +272,8 @@ router.patch("/jobs/:id", async (req: AuthRequest, res, next) => {
                     index: Number(e.index),
                     ...(typeof price === "number" ? { price } : {}),
                     ...(typeof stock === "number" ? { stock } : {}),
+                    ...(typeof e.sku === "string" ? { sku: e.sku } : {}),
+                    ...(typeof e.excluded === "boolean" ? { excluded: e.excluded } : {}),
                   };
                 }),
             }

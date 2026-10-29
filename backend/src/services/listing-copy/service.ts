@@ -15,7 +15,7 @@ import { prisma } from "../../lib/prisma";
 import { enqueue, QUEUES, QueueUnavailableError } from "../../lib/queue";
 import { getListingAdapter } from "../../marketplace/listing/registry";
 import { humanizeListingError } from "../../marketplace/listing/error-text";
-import { adjustPrice, computeMissing, normalizeDims, type MissingCode } from "../../marketplace/listing/rules";
+import { activeVariants, adjustPrice, computeMissing, effectiveOptions, normalizeDims, type MissingCode } from "../../marketplace/listing/rules";
 import type {
   CategoryRequirements,
   ListingDimensions,
@@ -126,7 +126,7 @@ async function evaluateTarget(
   const requirements = state.categoryId ? await adapter.getCategoryRequirements(channel, state.categoryId) : null;
   const existingSkus = await existingSkusOn(
     channel.id,
-    listing.variants.map((v) => v.sku)
+    activeVariants(listing).map((v) => v.sku).filter(Boolean)
   );
   const missing = computeMissing(channel.channelName, listing, { ...state, existingSkus }, requirements);
   return { missing, requirements };
@@ -354,8 +354,12 @@ export async function getJob(ownerId: string, jobId: string): Promise<JobView> {
 export interface SourcePatch {
   title?: string;
   description?: string;
-  /** Giá / tồn từng phân loại theo VỊ TRÍ trong source.variants (anh yêu cầu 29/10: khách được sửa giá + tồn nguồn). */
-  variants?: { index: number; price?: number; stock?: number }[];
+  /**
+   * Giá / tồn từng phân loại theo VỊ TRÍ trong source.variants (anh yêu cầu 29/10: khách được sửa giá + tồn nguồn).
+   * 30/10: thêm `sku` (nguồn sàn không có mã người bán → khách nhập để sàn đích nhận + nối kho) và
+   * `excluded` (bỏ phân loại khỏi bài đăng — vượt trần phân loại sàn đích).
+   */
+  variants?: { index: number; price?: number; stock?: number; sku?: string; excluded?: boolean }[];
 }
 
 /**
@@ -381,7 +385,13 @@ export async function updateJobSource(ownerId: string, jobId: string, patch: Sou
     if (!v) continue;
     if (e.price !== undefined) v.price = Math.max(0, Math.round(e.price));
     if (e.stock !== undefined) v.stock = Math.max(0, Math.round(e.stock));
+    if (e.sku !== undefined) v.sku = e.sku.trim().slice(0, 100);
+    if (e.excluded !== undefined) {
+      if (e.excluded) v.excluded = true;
+      else delete v.excluded;
+    }
   }
+  if (activeVariants(listing).length === 0) throw new ListingCopyError("Phải giữ ít nhất một phân loại để đăng.");
   await prisma.listingCopyJob.update({
     where: { id: job.id },
     data: { source: json(listing), sourceTitle: listing.title },
@@ -582,7 +592,10 @@ export async function processTarget(targetId: string): Promise<void> {
     where: { id: t.id },
     data: { status: "RUNNING", attempts: { increment: 1 } },
   });
-  const listing = asListing(t.job.source);
+  const stored = asListing(t.job.source);
+  // Chỉ phân loại khách GIỮ mới lên sàn; nhóm phân loại rút theo (giá trị không còn ai dùng thì bỏ).
+  const active = activeVariants(stored);
+  const listing: NormalizedListing = { ...stored, options: effectiveOptions(stored), variants: active };
   const draft: ListingDraft = {
     listing,
     categoryId: t.categoryId ?? "",
@@ -592,7 +605,7 @@ export async function processTarget(targetId: string): Promise<void> {
     logisticIds: asStringArray(t.logisticIds),
     weightGrams: t.weightGrams,
     dimensionsCm: asDims(t.dimensionsCm),
-    variants: listing.variants.map((v) => ({
+    variants: active.map((v) => ({
       ...v,
       price: adjustPrice(v.price, t.priceAdjustPercent),
       stock: t.stock ?? v.stock,

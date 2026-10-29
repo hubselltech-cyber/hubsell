@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronUp, Pencil, Search } from "lucide-react";
+import { ArrowLeft, Check, ChevronUp, Pencil, RefreshCw, Search } from "lucide-react";
 
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { Button } from "@/components/ui/button";
@@ -31,11 +31,11 @@ import {
   createCopyListingBatch,
   fetchCopyListingBatch,
   fetchCopyListingBatches,
-  fetchCopyListingBrands,
   fetchCopyListingCategoryTree,
   fetchCopyListingChannels,
   fetchCopyListingSources,
   submitCopyListingBatch,
+  syncCopyListingSources,
   updateCopyListingSource,
   updateCopyListingTarget,
   type ChannelName,
@@ -54,7 +54,8 @@ import { TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
-import { brandLabel, JOB_STATUS, missingLabel, splitListingError, TARGET_STATUS } from "./labels";
+import { BrandCombobox } from "./brand-combobox";
+import { activeVariantsOf, JOB_STATUS, missingLabel, splitListingError, TARGET_STATUS, type MissingContext } from "./labels";
 
 type Tab = "new" | "history";
 type SourceType = "CHANNEL" | "PRODUCT";
@@ -68,8 +69,10 @@ const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
  * nổi bên trong để tách khỏi các dòng gian không làm.
  */
 const ROW_ACTIVE = "border-l-[3px] border-l-primary bg-slate-100/80 hover:bg-slate-100/80";
-const PANEL_CELL = "p-3 pl-9";
-const PANEL = "rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm";
+// whitespace-normal: ô bảng mặc định nowrap → mọi dòng dài trong khung sửa (17 màu, ghi chú) phải xuống dòng,
+// không vẽ tràn ra ngoài làm bảng đợt sinh cuộn ngang (soi 30/10 ở 1280: tràn 555px).
+const PANEL_CELL = "p-3 pl-9 whitespace-normal";
+const PANEL = "rounded-xl border border-slate-200/80 bg-card p-5 shadow-sm whitespace-normal";
 
 function ChannelChip({ channelName, className }: { channelName: ChannelName; className?: string }) {
   const meta = CHANNEL_META[channelName];
@@ -154,11 +157,29 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
   const [sourcePlatform, setSourcePlatform] = useState<ChannelName | "">("");
   const [targetPlatform, setTargetPlatform] = useState<ChannelName | "ALL">("ALL");
   const [targetSearch, setTargetSearch] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const invalidate = useInvalidate();
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  /** Kéo danh mục gian nguồn về ngay rồi nạp lại bảng (sản phẩm vừa đăng trên sàn). */
+  async function syncSourceChannel() {
+    if (!sourceChannelId) return;
+    setSyncing(true);
+    try {
+      const r = await syncCopyListingSources(sourceChannelId);
+      await invalidate(qk.copyListingChannels(), qk.copyListingSources({}).slice(0, 1));
+      if (r.skipped) toast.info("Gian này vừa được kéo chưa tới 2 phút — danh sách đã là mới nhất.");
+      else toast.success(`Đã lấy từ sàn: ${formatNumber(r.scanned)} sản phẩm, ${formatNumber(r.created)} mới, ${formatNumber(r.updated)} cập nhật.`);
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const channelsQ = useApiQuery({ queryKey: qk.copyListingChannels(), queryFn: fetchCopyListingChannels });
   const channels = useMemo(
@@ -270,7 +291,7 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                   onClick={() => resetSource(key)}
                   className={cn(
                     "rounded-md px-3 py-1 text-sm transition-colors",
-                    sourceType === key ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                    sourceType === key ? "bg-primary text-primary-foreground" : "text-slate-700 hover:bg-slate-100"
                   )}
                 >
                   {label}
@@ -316,6 +337,16 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                     </option>
                   ))}
                 </NativeSelect>
+                {/* Danh mục gian chỉ tự làm mới mỗi đêm → sản phẩm vừa đăng trên sàn phải bấm mới có (anh hỏi 30/10). */}
+                <Button
+                  variant="outline"
+                  disabled={!sourceChannelId || syncing}
+                  title="Sản phẩm mới đăng trên sàn tự về Hubsell mỗi đêm (3–5 giờ sáng). Vừa đăng xong thì bấm để lấy ngay."
+                  onClick={syncSourceChannel}
+                >
+                  <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
+                  {syncing ? "Đang lấy…" : "Lấy sản phẩm mới từ sàn"}
+                </Button>
               </>
             )}
             <div className="relative w-80">
@@ -340,7 +371,7 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                     <TableHead className="w-[4%]">
                       <input
                         type="checkbox"
-                        className="size-4 accent-slate-900"
+                        className="size-4 accent-primary"
                         aria-label="Chọn tất cả sản phẩm trên trang"
                         checked={allOnPagePicked}
                         onChange={() =>
@@ -371,7 +402,7 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                           <span
                             className={cn(
                               "flex size-4 items-center justify-center rounded border",
-                              active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"
+                              active ? "border-primary bg-primary text-primary-foreground" : "border-slate-300"
                             )}
                           >
                             {active && <Check className="size-3" />}
@@ -458,7 +489,7 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                         onClick={() => setTargetPlatform(p)}
                         className={cn(
                           "rounded-md px-3 py-1 text-sm transition-colors tabular-nums",
-                          targetPlatform === p ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                          targetPlatform === p ? "bg-primary text-primary-foreground" : "text-slate-700 hover:bg-slate-100"
                         )}
                       >
                         {p === "ALL" ? "Tất cả" : CHANNEL_META[p].label} ({n})
@@ -477,7 +508,7 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                 <label className="flex cursor-pointer items-center gap-3 bg-slate-50/60 px-4 py-2">
                   <input
                     type="checkbox"
-                    className="size-4 accent-slate-900"
+                    className="size-4 accent-primary"
                     aria-label="Chọn tất cả gian đang hiện"
                     checked={allShownTargeted}
                     disabled={targetShown.length === 0}
@@ -582,7 +613,7 @@ function PagerFooter({
 function TargetRow({ channel, checked, onToggle }: { channel: CopyListingChannel; checked: boolean; onToggle: () => void }) {
   return (
     <label className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
-      <input type="checkbox" className="size-4 accent-slate-900" checked={checked} onChange={onToggle} />
+      <input type="checkbox" className="size-4 accent-primary" checked={checked} onChange={onToggle} />
       <ChannelChip channelName={channel.channelName} />
       <span className="text-sm text-slate-900">{channel.shopName}</span>
       <span className={cn(TEXT_SUB, "ml-auto tabular-nums")}>
@@ -674,10 +705,11 @@ function BatchView({ batchId, onBack }: { batchId: string; onBack: () => void })
               <TableRow>
                 <TableHead className="w-[20%]">Sản phẩm · Gian hàng</TableHead>
                 <TableHead className="w-[21%]">Danh mục sàn đích</TableHead>
-                <TableHead className="w-[25%]">Còn thiếu</TableHead>
+                <TableHead className="w-[22%]">Còn thiếu</TableHead>
                 <TableHead className="w-[11%] text-right">Giá · Tồn</TableHead>
                 <TableHead className="w-[11%]">Trạng thái</TableHead>
-                <TableHead className="w-[12%]" />
+                {/* 15%: nút "Sửa bài đăng" ~130px — 12% ở 1280 (113px) tràn 19px làm bảng cuộn ngang (đo 30/10). */}
+                <TableHead className="w-[15%]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -719,7 +751,8 @@ function JobRows({
     <>
       {/* Dòng sản phẩm = dải tiêu đề đậm hơn các dòng gian; đang sửa bài → vạch trái accent. */}
       <TableRow className={cn("border-t-2 border-t-slate-200 bg-slate-100/70 hover:bg-slate-100/70", sourceOpen && ROW_ACTIVE)}>
-        <TableCell colSpan={5}>
+        {/* whitespace-normal: ô bảng mặc định nowrap → dòng phân loại dài (17 màu) vẽ tràn sang cột bên, bảng sinh cuộn ngang (soi 30/10 ở 1280). */}
+        <TableCell colSpan={5} className="whitespace-normal">
           <div className="flex items-center gap-3">
             <Thumb src={job.sourceImageUrl} alt={job.sourceTitle} size="size-9" />
             <div className="min-w-0">
@@ -735,7 +768,10 @@ function JobRows({
                 <span>
                   · {s.variants.length} phân loại · {s.images.length} ảnh
                 </span>
-                {s.options.length > 0 && <span>· {s.options.map((o) => `${o.name}: ${o.values.join("/")}`).join(" · ")}</span>}
+                {/* Nhóm đông giá trị (17 màu) chỉ ghi số lượng — chi tiết xem trong Sửa bài đăng. */}
+                {s.options.length > 0 && (
+                  <span>· {s.options.map((o) => `${o.name}: ${o.values.length > 4 ? `${o.values.length} giá trị` : o.values.join("/")}`).join(" · ")}</span>
+                )}
                 <span className="inline-flex items-center gap-1 font-mono">
                   {s.variants[0]?.sku}
                   {s.variants[0]?.sku && <CopyIconButton value={s.variants[0].sku} what="mã SKU" />}
@@ -789,16 +825,77 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
   const invalidate = useInvalidate();
   const [title, setTitle] = useState(job.source.title);
   const [description, setDescription] = useState(job.source.description);
-  /** Giá / tồn từng phân loại đang sửa, theo vị trí trong source.variants (chỉ ô khách đã gõ). */
-  const [variantEdits, setVariantEdits] = useState<Record<number, { price?: number; stock?: number }>>({});
+  /**
+   * Giá / tồn / mã SKU / bỏ đăng từng phân loại đang sửa, theo vị trí trong source.variants (chỉ ô khách đã gõ).
+   * 30/10: mã SKU sửa được (nguồn sàn không có mã người bán → "Thiếu SKU" mà khách không điền được);
+   * ô Đăng bỏ bớt phân loại khi vượt trần sàn đích (17 màu × 3 = 51 > 50 của Shopee).
+   */
+  type VariantEdit = { price?: number; stock?: number; sku?: string; excluded?: boolean };
+  const [variantEdits, setVariantEdits] = useState<Record<number, VariantEdit>>({});
   const [saving, setSaving] = useState(false);
   const s = job.source;
   const variantPatch = Object.entries(variantEdits)
     .map(([i, e]) => ({ index: Number(i), ...e }))
-    .filter((e) => (e.price !== undefined && e.price !== s.variants[e.index]?.price) || (e.stock !== undefined && e.stock !== s.variants[e.index]?.stock));
+    .filter(
+      (e) =>
+        (e.price !== undefined && e.price !== s.variants[e.index]?.price) ||
+        (e.stock !== undefined && e.stock !== s.variants[e.index]?.stock) ||
+        (e.sku !== undefined && e.sku.trim() !== s.variants[e.index]?.sku) ||
+        (e.excluded !== undefined && e.excluded !== Boolean(s.variants[e.index]?.excluded))
+    );
   const dirty = title !== job.source.title || description !== job.source.description || variantPatch.length > 0;
   const setVariant = (i: number, k: "price" | "stock", raw: string) =>
     setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), [k]: raw === "" ? 0 : Math.max(0, Number(raw) || 0) } }));
+  const setVariantSku = (i: number, raw: string) => setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), sku: raw } }));
+  const variantExcluded = (i: number) => variantEdits[i]?.excluded ?? Boolean(s.variants[i]?.excluded);
+  const toggleExcluded = (i: number) => setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), excluded: !variantExcluded(i) } }));
+  const variantSku = (i: number) => variantEdits[i]?.sku ?? s.variants[i]?.sku ?? "";
+  const activeCount = s.variants.filter((_, i) => !variantExcluded(i)).length;
+  const skuMissingCount = s.variants.filter((_, i) => !variantExcluded(i) && !variantSku(i).trim()).length;
+  const skuDuplicate = (() => {
+    const seen = new Set<string>();
+    for (let i = 0; i < s.variants.length; i++) {
+      if (variantExcluded(i)) continue;
+      const k = variantSku(i).trim().toLowerCase();
+      if (!k) continue;
+      if (seen.has(k)) return true;
+      seen.add(k);
+    }
+    return false;
+  })();
+  /**
+   * Tự đặt mã cho phân loại chưa có: chữ cái đầu các từ trong tên (≤6 ký tự, không dấu) + số thứ tự,
+   * vd "TKBTNC-07". Khách sửa lại từng ô được; mã trùng gian đích thì bước xem trước vẫn báo.
+   */
+  function autoFillSkus() {
+    const initials = title
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/đ/gi, "d")
+      .replace(/[^A-Za-z0-9 ]+/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0].toUpperCase())
+      .join("")
+      .slice(0, 6);
+    const prefix = initials || "SP";
+    const taken = new Set(s.variants.map((_, i) => variantSku(i).trim().toLowerCase()).filter(Boolean));
+    setVariantEdits((m) => {
+      const next = { ...m };
+      let n = 0;
+      s.variants.forEach((v, i) => {
+        if ((next[i]?.sku ?? v.sku).trim()) return;
+        let code: string;
+        do {
+          n += 1;
+          code = `${prefix}-${String(n).padStart(2, "0")}`;
+        } while (taken.has(code.toLowerCase()));
+        taken.add(code.toLowerCase());
+        next[i] = { ...(next[i] ?? {}), sku: code };
+      });
+      return next;
+    });
+  }
   const reqs = job.targets.map((t) => t.requirements).filter((r): r is NonNullable<typeof r> => r != null);
   const titleMin = reqs.length ? Math.max(...reqs.map((r) => r.titleMin)) : null;
   const titleMax = reqs.length ? Math.min(...reqs.map((r) => r.titleMax)) : null;
@@ -837,11 +934,11 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
           ) : (
             <div className="grid grid-cols-3 gap-2">
               {s.images.slice(0, 9).map((url, i) => (
-                <div key={url + i} className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <div key={url + i} className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-card">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={url} alt={`Ảnh ${i + 1}`} className="size-full object-cover" loading="lazy" />
                   {i === 0 && (
-                    <span className="absolute bottom-1 left-1 rounded bg-slate-900/80 px-1 text-[10px] font-medium text-white">Bìa</span>
+                    <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-medium text-white">Bìa</span>
                   )}
                 </div>
               ))}
@@ -898,7 +995,7 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
               </div>
               <div className="flex flex-wrap gap-2">
                 {s.descriptionImages.slice(0, 12).map((url, i) => (
-                  <div key={url + i} className="size-16 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  <div key={url + i} className="size-16 overflow-hidden rounded-lg border border-slate-200 bg-card">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={url} alt={`Ảnh mô tả ${i + 1}`} className="size-full object-cover" loading="lazy" />
                   </div>
@@ -917,17 +1014,35 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
       {/* Phân loại: SKU giữ nguyên (luật khớp mã); giá / tồn nguồn SỬA ĐƯỢC từng dòng (anh 29/10) — % giá và Tồn đăng ở dòng gian áp chồng lên. */}
       <div className="space-y-1">
         <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-x-2")}>
-          <span>Phân loại ({s.variants.length})</span>
+          <span>
+            Phân loại ({activeCount} đăng{activeCount < s.variants.length ? ` · ${s.variants.length - activeCount} bỏ` : ""})
+          </span>
           {s.options.length > 0 && (
             <span className="font-normal text-slate-500">{s.options.map((o) => `${o.name}: ${o.values.join(" / ")}`).join(" · ")}</span>
           )}
-          {editable && <span className="font-normal text-slate-500">· gõ thẳng vào ô Giá / Tồn để sửa</span>}
         </div>
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        {editable && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className={TEXT_SUB}>
+              Gõ thẳng vào ô Mã SKU / Giá / Tồn để sửa. Bỏ tick cột Đăng để không đưa phân loại đó lên gian đích (khi vượt trần phân loại của sàn).
+            </span>
+            {skuMissingCount > 0 && (
+              <span className="inline-flex items-center gap-2 text-sm text-amber-700">
+                {skuMissingCount} phân loại chưa có mã SKU
+                <Button size="xs" variant="outline" onClick={autoFillSkus}>
+                  Tự đặt mã cho phân loại thiếu
+                </Button>
+              </span>
+            )}
+            {skuDuplicate && <span className="text-sm text-amber-700">Có mã SKU trùng nhau — mỗi phân loại một mã riêng.</span>}
+          </div>
+        )}
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-card">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[40%]">Phân loại</TableHead>
+                {editable && <TableHead className="w-[6%]">Đăng</TableHead>}
+                <TableHead className={editable ? "w-[34%]" : "w-[40%]"}>Phân loại</TableHead>
                 <TableHead className="w-[28%]">Mã SKU</TableHead>
                 <TableHead className="w-[16%] text-right">Giá nguồn</TableHead>
                 <TableHead className="w-[16%] text-right">Tồn nguồn</TableHead>
@@ -937,9 +1052,22 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
               {(editable ? s.variants : s.variants.slice(0, 12)).map((v, i) => {
                 const price = variantEdits[i]?.price ?? v.price;
                 const stock = variantEdits[i]?.stock ?? v.stock;
+                const excluded = variantExcluded(i);
+                const sku = variantSku(i);
                 return (
-                  <TableRow key={`${v.sku}-${i}`}>
-                    <TableCell className="text-sm text-slate-900">
+                  <TableRow key={i} className={cn(excluded && "opacity-50")}>
+                    {editable && (
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-primary"
+                          aria-label={`Đăng phân loại ${v.name ?? i + 1}`}
+                          checked={!excluded}
+                          onChange={() => toggleExcluded(i)}
+                        />
+                      </TableCell>
+                    )}
+                    <TableCell className="whitespace-normal text-sm text-slate-900">
                       <span className="inline-flex items-center gap-2">
                         {/* Ảnh riêng của phân loại (ảnh màu) — chép sang gian đích: Shopee tier 1, TikTok sku_img, Lazada ảnh SKU. */}
                         {v.imageUrl && (
@@ -947,10 +1075,18 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
                           <img src={v.imageUrl} alt="" className="size-8 shrink-0 rounded border border-slate-200 object-cover" loading="lazy" />
                         )}
                         {v.name ?? "Sản phẩm đơn"}
+                        {excluded && <span className={TEXT_SUB}>· không đăng</span>}
                       </span>
                     </TableCell>
                     <TableCell>
-                      {v.sku ? (
+                      {editable && !excluded ? (
+                        <Input
+                          className={cn("h-8 w-full max-w-56 font-mono", !sku.trim() && "border-amber-300 bg-amber-50/40")}
+                          placeholder="Nhập mã SKU"
+                          value={sku}
+                          onChange={(e) => setVariantSku(i, e.target.value)}
+                        />
+                      ) : v.sku ? (
                         <span className="inline-flex items-center gap-1 font-mono text-sm">
                           {v.sku}
                           <CopyIconButton value={v.sku} what="mã SKU" />
@@ -960,7 +1096,7 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {editable ? (
+                      {editable && !excluded ? (
                         <Input
                           type="number"
                           min={0}
@@ -970,11 +1106,11 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
                           onChange={(e) => setVariant(i, "price", e.target.value)}
                         />
                       ) : (
-                        <Money value={v.price} />
+                        <Money value={price} />
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {editable ? (
+                      {editable && !excluded ? (
                         <Input
                           type="number"
                           min={0}
@@ -983,7 +1119,7 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
                           onChange={(e) => setVariant(i, "stock", e.target.value)}
                         />
                       ) : (
-                        formatNumber(v.stock)
+                        formatNumber(stock)
                       )}
                     </TableCell>
                   </TableRow>
@@ -991,7 +1127,7 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
               })}
               {!editable && s.variants.length > 12 && (
                 <TableRow>
-                  <TableCell colSpan={4} className={cn(TEXT_SUB, "py-2 text-center")}>
+                  <TableCell colSpan={editable ? 5 : 4} className={cn(TEXT_SUB, "py-2 text-center")}>
                     +{s.variants.length - 12} phân loại nữa
                   </TableCell>
                 </TableRow>
@@ -1006,7 +1142,7 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
           <div className={TEXT_TABLE_HEAD}>Thuộc tính nguồn (điền sẵn sang gian đích khi trùng tên)</div>
           <div className="flex flex-wrap gap-1.5">
             {s.attributes.map((a) => (
-              <span key={a.name} className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-900">
+              <span key={a.name} className="rounded-md border border-slate-200 bg-card px-2 py-0.5 text-xs text-slate-900">
                 <span className="text-slate-500">{a.name}:</span> {a.value}
               </span>
             ))}
@@ -1044,9 +1180,22 @@ function TargetRows({
 }) {
   const attrName = (id: string) => t.attributeDefs.find((d) => d.id === id)?.name;
   const canEdit = isOpen(t);
-  const minPrice = Math.min(...job.source.variants.map((v) => v.price));
+  const active = activeVariantsOf(job.source.variants);
+  const priced = active.length ? active : job.source.variants;
+  const minPrice = Math.min(...priced.map((v) => v.price));
   const adjusted = Math.round((minPrice * (1 + t.priceAdjustPercent / 100)) / 100) * 100;
-  const stock = t.stock ?? Math.min(...job.source.variants.map((v) => v.stock));
+  const stock = t.stock ?? Math.min(...priced.map((v) => v.stock));
+  /** Số liệu cho nhãn "còn thiếu" (bao nhiêu / trần bao nhiêu) — luật mặc định sàn khi chưa có danh mục. */
+  const req = t.requirements;
+  const missingCtx: MissingContext = {
+    variantCount: active.length,
+    maxVariants: req?.maxVariants,
+    optionCount: job.source.options.length,
+    maxOptions: req?.maxOptions,
+    maxOptionValues: req?.maxOptionValues,
+    widestOption: Math.max(0, ...job.source.options.map((o) => o.values.length)),
+    skuMissing: active.filter((v) => !v.sku.trim()).length,
+  };
 
   return (
     <>
@@ -1077,10 +1226,10 @@ function TargetRows({
               <span className={TEXT_SUB}>—</span>
             )
           ) : (
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 whitespace-normal">
               {t.missing.map((m) => (
-                <span key={m} className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">
-                  {missingLabel(m, attrName)}
+                <span key={m} className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] leading-snug text-amber-800">
+                  {missingLabel(m, attrName, missingCtx)}
                 </span>
               ))}
             </div>
@@ -1168,22 +1317,11 @@ function TargetEditor({
   canEdit: boolean;
 }) {
   const invalidate = useInvalidate();
-  const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [draft, setDraft] = useState<CopyListingTargetPatch>({});
   /** Kênh vận chuyển: mặc định theo cài đặt gian, chỉ xổ khi khách muốn tuỳ chỉnh hoặc đang thiếu. */
   const [logisticsOpen, setLogisticsOpen] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    fetchCopyListingBrands(job.id, t.id, "", t.categoryId)
-      .then((r) => alive && setBrands(r.items))
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [job.id, t.id, t.categoryId]);
 
   const value = <K extends keyof CopyListingTargetPatch>(k: K): CopyListingTargetPatch[K] =>
     draft[k] !== undefined ? draft[k] : (t as unknown as CopyListingTargetPatch)[k];
@@ -1284,20 +1422,20 @@ function TargetEditor({
           field(
             "Thương hiệu",
             "brand",
-            <NativeSelect
-              className={inputCls("brand")}
-              value={String(value("brandId") ?? "")}
+            <BrandCombobox
+              jobId={job.id}
+              targetId={t.id}
+              categoryId={value("categoryId") ?? null}
+              value={(() => {
+                const id = value("brandId");
+                if (!id) return null;
+                return { id, name: draft.brandId !== undefined ? (draft.brandName ?? id) : (t.brandName ?? id) };
+              })()}
               disabled={!canEdit}
-              onChange={(e) => setDraft((d) => ({ ...d, brandId: e.target.value || null }))}
-            >
-              <option value="">— Chọn thương hiệu —</option>
-              {brands.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {brandLabel(b.name)}
-                </option>
-              ))}
-            </NativeSelect>,
-            { required: Boolean(req?.brandRequired), hint: "Hàng không có thương hiệu thì chọn Không có thương hiệu." }
+              invalid={missing.has("brand")}
+              onChange={(b) => setDraft((d) => ({ ...d, brandId: b?.id ?? null, brandName: b?.name ?? null }))}
+            />,
+            { required: Boolean(req?.brandRequired), hint: "Gõ vài chữ đầu để tìm. Hàng không có thương hiệu thì chọn Không có thương hiệu (No Brand)." }
           )}
         {field(
           "Cân nặng (gram)",
@@ -1439,7 +1577,7 @@ function TargetEditor({
                 <label key={o.id} className="flex items-center gap-1.5 text-sm">
                   <input
                     type="checkbox"
-                    className="size-4 accent-slate-900"
+                    className="size-4 accent-primary"
                     disabled={!canEdit}
                     checked={logistics.includes(o.id)}
                     onChange={(e) =>

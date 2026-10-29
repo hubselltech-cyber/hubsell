@@ -8261,6 +8261,8 @@ export interface CopyListingVariant {
   price: number;
   stock: number;
   imageUrl: string | null;
+  /** Khách bỏ phân loại này khỏi bài đăng (vượt trần phân loại sàn đích). */
+  excluded?: boolean;
 }
 
 export interface CopyListingNormalized {
@@ -8301,6 +8303,8 @@ export interface CopyListingRequirements {
   maxImages: number;
   maxOptions: number;
   maxVariants: number;
+  /** Trần số giá trị trong một nhóm phân loại (Shopee/Lazada 20); thiếu = không kiểm. */
+  maxOptionValues?: number;
 }
 
 export interface CopyListingTarget {
@@ -8379,9 +8383,21 @@ export function fetchCopyListingSources(params: {
 
 export function updateCopyListingSource(
   id: string,
-  body: { title?: string; description?: string; variants?: { index: number; price?: number; stock?: number }[] }
+  body: {
+    title?: string;
+    description?: string;
+    variants?: { index: number; price?: number; stock?: number; sku?: string; excluded?: boolean }[];
+  }
 ) {
   return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+/** Kéo danh mục sản phẩm của gian nguồn về ngay (sản phẩm mới đăng trên sàn chưa về vì worker chỉ kéo mỗi đêm). */
+export function syncCopyListingSources(channelId: string) {
+  return apiFetch<{ skipped: boolean; lastProductSyncAt: string; scanned: number; created: number; updated: number }>(
+    `${COPY_LISTING_BASE}/sources/sync`,
+    { method: "POST", body: JSON.stringify({ channelId }) }
+  );
 }
 
 export function updateCopyListingTarget(jobId: string, targetId: string, patch: CopyListingTargetPatch) {

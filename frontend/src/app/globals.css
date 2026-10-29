@@ -534,3 +534,19 @@ tr[data-selected="true"]:hover > td.dt-pin {
 .dt-pin-right-first {
   box-shadow: inset 1px 0 0 0 var(--color-slate-200);
 }
+
+/* Danh sách xổ xuống dài (thương hiệu…): macOS/iOS ẩn thanh cuộn overlay cho tới khi cuộn → khách
+   tưởng danh sách chỉ có mấy dòng đang thấy. Ép thanh cuộn luôn hiện trong WebKit/Chromium. */
+.scrollbar-always {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-300) transparent;
+}
+.scrollbar-always::-webkit-scrollbar {
+  width: 10px;
+}
+.scrollbar-always::-webkit-scrollbar-thumb {
+  background: var(--color-slate-300);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 8px;
+}

@@ -7,7 +7,8 @@
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
-import type { CategoryRequirements, NormalizedListing } from "./types";
+import type { CategoryRequirements, ListingOption, ListingVariant, NormalizedListing } from "./types";
+import { splitVariantValues } from "./variant-map";
 
 export type PlatformRules = Omit<CategoryRequirements, "attributes">;
 
@@ -23,7 +24,10 @@ export const PLATFORM_LISTING_RULES: Record<ChannelName, PlatformRules> = {
     descriptionMax: 3000,
     maxImages: 9,
     maxOptions: 2,
+    // Trợ giúp Shopee (mẫu tải hàng loạt + app Shopee Channel, đọc 30/10/2026): 1 nhóm → tối đa
+    // 20 phân loại; 2 nhóm → 20 giá trị/nhóm, tổng ≤ 50 tổ hợp. Sản phẩm khách 17 màu × 3 = 51 → bỏ bớt.
     maxVariants: 50,
+    maxOptionValues: 20,
   },
   TIKTOK: {
     brandRequired: false,
@@ -50,6 +54,8 @@ export const PLATFORM_LISTING_RULES: Record<ChannelName, PlatformRules> = {
     maxImages: 8,
     maxOptions: 2,
     maxVariants: 100,
+    // Khảo sát API 29/10 (docs/KHAO-SAT… mục 4): ~2 tầng, 20 option/tầng.
+    maxOptionValues: 20,
   },
   OFFLINE: {
     brandRequired: false,
@@ -79,8 +85,11 @@ export type MissingCode =
   | "images"
   | "too_many_images"
   | "too_many_options"
+  | "too_many_option_values"
   | "too_many_variants"
+  | "no_variants"
   | "sku"
+  | "sku_duplicate"
   | "sku_exists"
   | "price"
   | `attr:${string}`;
@@ -97,8 +106,11 @@ export const MISSING_LABELS: Record<Exclude<MissingCode, `attr:${string}`>, stri
   images: "Chưa có ảnh",
   too_many_images: "Quá số ảnh cho phép",
   too_many_options: "Quá số nhóm phân loại",
+  too_many_option_values: "Một nhóm phân loại quá nhiều giá trị",
   too_many_variants: "Quá số phân loại",
+  no_variants: "Không còn phân loại nào để đăng",
   sku: "Phân loại thiếu SKU",
+  sku_duplicate: "Mã SKU trùng nhau giữa các phân loại",
   sku_exists: "SKU đã có trên gian đích",
   price: "Giá phải lớn hơn 0",
 };
@@ -152,6 +164,27 @@ export function dimsComplete(d: Dims | null | undefined): d is Dims {
   return Boolean(d && d.length > 0 && d.width > 0 && d.height > 0);
 }
 
+/** Phân loại SẼ ĐĂNG = chưa bị khách bỏ. */
+export function activeVariants(listing: Pick<NormalizedListing, "variants">): ListingVariant[] {
+  return listing.variants.filter((v) => !v.excluded);
+}
+
+/**
+ * Nhóm phân loại theo các phân loại SẼ ĐĂNG: bỏ giá trị không còn phân loại nào dùng
+ * (khách bỏ hết "Màu: Đỏ" thì tier Shopee / sales attribute TikTok không được còn "Đỏ"),
+ * nhóm trống thì bỏ hẳn. Không có phân loại bị bỏ → trả nguyên.
+ */
+export function effectiveOptions(listing: NormalizedListing): ListingOption[] {
+  if (!listing.variants.some((v) => v.excluded)) return listing.options;
+  const used = listing.options.map(() => new Set<string>());
+  for (const v of activeVariants(listing)) {
+    splitVariantValues(v.name).forEach((val, i) => used[i]?.add(val.toLowerCase()));
+  }
+  return listing.options
+    .map((o, i) => ({ name: o.name, values: o.values.filter((val) => used[i].has(val.toLowerCase())) }))
+    .filter((o) => o.values.length > 0);
+}
+
 export function computeMissing(
   platform: ChannelName,
   listing: NormalizedListing,
@@ -161,16 +194,22 @@ export function computeMissing(
   const rules: PlatformRules = requirements ?? PLATFORM_LISTING_RULES[platform];
   const out: MissingCode[] = [];
   const title = listing.title.trim();
+  const variants = activeVariants(listing);
+  const options = effectiveOptions(listing);
   if (!target.categoryId) out.push("category");
   if (title.length < rules.titleMin) out.push("title_short");
   if (title.length > rules.titleMax) out.push("title_long");
   if (listing.description.trim().length < rules.descriptionMin) out.push("description");
   if (listing.images.length === 0) out.push("images");
   if (listing.images.length > rules.maxImages) out.push("too_many_images");
-  if (listing.options.length > rules.maxOptions) out.push("too_many_options");
-  if (listing.variants.length > rules.maxVariants) out.push("too_many_variants");
-  if (listing.variants.some((v) => !v.sku.trim())) out.push("sku");
-  if (listing.variants.some((v) => !(v.price > 0))) out.push("price");
+  if (options.length > rules.maxOptions) out.push("too_many_options");
+  if (rules.maxOptionValues && options.some((o) => o.values.length > rules.maxOptionValues!)) out.push("too_many_option_values");
+  if (variants.length === 0) out.push("no_variants");
+  if (variants.length > rules.maxVariants) out.push("too_many_variants");
+  if (variants.some((v) => !v.sku.trim())) out.push("sku");
+  const skus = variants.map((v) => v.sku.trim().toLowerCase()).filter(Boolean);
+  if (new Set(skus).size !== skus.length) out.push("sku_duplicate");
+  if (variants.some((v) => !(v.price > 0))) out.push("price");
   if (target.existingSkus && target.existingSkus.length > 0) out.push("sku_exists");
   if (rules.brandRequired && !target.brandId) out.push("brand");
   if (rules.weightRequired && !(target.weightGrams && target.weightGrams > 0)) out.push("weight");
