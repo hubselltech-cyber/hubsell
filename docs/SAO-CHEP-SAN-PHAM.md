@@ -314,3 +314,19 @@ Nguyên văn đọc từ log worker Render (`[listing-copy]`, Chrome của anh):
 - Test error-text +1 ca (22 ca). ⏳ anh bấm Đăng lại 2 gian đó trên prod sau deploy; TikTok có thể lộ lỗi kế tiếp ở bước
   create product (thuộc tính 3 ô bắt buộc đã điền, kho bán chọn `is_default`); Shopee kiểm tồn vào đúng kho DarkMan muốn.
 
+## 16. Sửa giá + tồn từng phân loại trong khung Sửa bài đăng (29/10/2026 tối muộn, anh yêu cầu) — ĐÃ CODE, kiểm local
+
+- **Kết quả prod sau mục 15:** Shopee DarkMan ĐĂNG ĐƯỢC; TikTok ANO Official sang "Chờ sàn duyệt" (PENDING_REVIEW). Anh
+  khoanh cột Giá nguồn / Tồn nguồn: "cần bổ sung phần này để cho khách quyền được sửa".
+- **Thiết kế:** giá / tồn từng phân loại là thuộc tính của NGUỒN đã chụp (như tên, mô tả) → sửa ở khung Sửa bài đăng,
+  áp cho MỌI gian đích của sản phẩm; "% điều chỉnh giá" và "Tồn đăng" ở dòng gian vẫn áp CHỒNG lên số nguồn đã sửa (gian
+  nào muốn khác thì chỉnh ở đó). SKU KHÔNG sửa (luật khớp mã kho).
+- **Backend:** `updateJobSource` nhận `variants: [{index, price?, stock?}]` theo VỊ TRÍ trong `source.variants` (SKU có thể
+  trống/trùng), làm tròn ≥ 0; route PATCH `/jobs/:id` parse mảng; tính lại missing các gian chờ/lỗi như cũ (giá 0 → mã
+  `price`).
+- **FE:** bảng Phân loại khi còn sửa được: ô Giá (bước 1.000, viền vàng nếu ≤ 0) + ô Tồn gõ thẳng, hiện HẾT phân loại
+  (không cắt 12); nháp theo vị trí, chỉ gửi dòng có đổi; nút Lưu bài đăng gộp tên + mô tả + giá/tồn; dòng chú thích nói rõ
+  áp cho mọi gian và cách chỉnh riêng từng gian. Đã đăng xong → bảng chỉ đọc như cũ.
+- **Kiểm local:** đổi 189.000 → 199.000, tồn 0 → 12, lưu → cả 2 dòng gian đích (TikTok, Lazada) hiện 199.000 ₫ · Tồn 12.
+  tsc BE+FE, eslint sạch. ⏳ anh thử trên prod.
+

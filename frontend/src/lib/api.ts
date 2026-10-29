@@ -8375,7 +8375,10 @@ export function fetchCopyListingSources(params: {
   return apiFetch<CopyListingSourcePage>(`${COPY_LISTING_BASE}/sources?${q.toString()}`);
 }
 
-export function updateCopyListingSource(id: string, body: { title?: string; description?: string }) {
+export function updateCopyListingSource(
+  id: string,
+  body: { title?: string; description?: string; variants?: { index: number; price?: number; stock?: number }[] }
+) {
   return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 

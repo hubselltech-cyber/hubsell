@@ -351,12 +351,19 @@ export async function getJob(ownerId: string, jobId: string): Promise<JobView> {
   };
 }
 
-/** Sửa tên / mô tả của nguồn đã chụp (áp cho mọi gian đích) rồi tính lại missing. */
-export async function updateJobSource(
-  ownerId: string,
-  jobId: string,
-  patch: { title?: string; description?: string }
-): Promise<JobView> {
+export interface SourcePatch {
+  title?: string;
+  description?: string;
+  /** Giá / tồn từng phân loại theo VỊ TRÍ trong source.variants (anh yêu cầu 29/10: khách được sửa giá + tồn nguồn). */
+  variants?: { index: number; price?: number; stock?: number }[];
+}
+
+/**
+ * Sửa tên / mô tả / giá + tồn từng phân loại của nguồn đã chụp (áp cho mọi gian
+ * đích) rồi tính lại missing. % điều chỉnh giá và "Tồn đăng" của từng gian vẫn
+ * áp CHỒNG lên số nguồn đã sửa.
+ */
+export async function updateJobSource(ownerId: string, jobId: string, patch: SourcePatch): Promise<JobView> {
   const job = await prisma.listingCopyJob.findFirst({ where: { id: jobId, userId: ownerId }, include: { targets: true } });
   if (!job) throw new ListingCopyError("Không tìm thấy lượt sao chép.", 404);
   // Sửa được khi không gian nào đang đăng và còn gian chưa đăng xong (chờ / lỗi) —
@@ -369,6 +376,12 @@ export async function updateJobSource(
   const listing = asListing(job.source);
   if (typeof patch.title === "string") listing.title = patch.title.trim();
   if (typeof patch.description === "string") listing.description = patch.description.trim();
+  for (const e of patch.variants ?? []) {
+    const v = listing.variants[e.index];
+    if (!v) continue;
+    if (e.price !== undefined) v.price = Math.max(0, Math.round(e.price));
+    if (e.stock !== undefined) v.stock = Math.max(0, Math.round(e.stock));
+  }
   await prisma.listingCopyJob.update({
     where: { id: job.id },
     data: { source: json(listing), sourceTitle: listing.title },

@@ -214,6 +214,21 @@ router.patch("/jobs/:id", async (req: AuthRequest, res, next) => {
       await updateJobSource(req.ownerId!, req.params.id, {
         ...(typeof body.title === "string" ? { title: body.title } : {}),
         ...(typeof body.description === "string" ? { description: body.description } : {}),
+        ...(Array.isArray(body.variants)
+          ? {
+              variants: (body.variants as Record<string, unknown>[])
+                .filter((e) => e && typeof e === "object" && Number.isInteger(Number(e.index)))
+                .map((e) => {
+                  const price = numOrNull(e.price);
+                  const stock = numOrNull(e.stock);
+                  return {
+                    index: Number(e.index),
+                    ...(typeof price === "number" ? { price } : {}),
+                    ...(typeof stock === "number" ? { stock } : {}),
+                  };
+                }),
+            }
+          : {}),
       })
     );
   } catch (err) {

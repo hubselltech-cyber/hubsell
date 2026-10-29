@@ -789,9 +789,16 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
   const invalidate = useInvalidate();
   const [title, setTitle] = useState(job.source.title);
   const [description, setDescription] = useState(job.source.description);
+  /** Giá / tồn từng phân loại đang sửa, theo vị trí trong source.variants (chỉ ô khách đã gõ). */
+  const [variantEdits, setVariantEdits] = useState<Record<number, { price?: number; stock?: number }>>({});
   const [saving, setSaving] = useState(false);
-  const dirty = title !== job.source.title || description !== job.source.description;
   const s = job.source;
+  const variantPatch = Object.entries(variantEdits)
+    .map(([i, e]) => ({ index: Number(i), ...e }))
+    .filter((e) => (e.price !== undefined && e.price !== s.variants[e.index]?.price) || (e.stock !== undefined && e.stock !== s.variants[e.index]?.stock));
+  const dirty = title !== job.source.title || description !== job.source.description || variantPatch.length > 0;
+  const setVariant = (i: number, k: "price" | "stock", raw: string) =>
+    setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), [k]: raw === "" ? 0 : Math.max(0, Number(raw) || 0) } }));
   const reqs = job.targets.map((t) => t.requirements).filter((r): r is NonNullable<typeof r> => r != null);
   const titleMin = reqs.length ? Math.max(...reqs.map((r) => r.titleMin)) : null;
   const titleMax = reqs.length ? Math.min(...reqs.map((r) => r.titleMax)) : null;
@@ -805,9 +812,10 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
   async function save() {
     setSaving(true);
     try {
-      await updateCopyListingSource(job.id, { title, description });
-      toast.success("Đã cập nhật tên và mô tả cho mọi gian đích của sản phẩm này.");
+      await updateCopyListingSource(job.id, { title, description, ...(variantPatch.length ? { variants: variantPatch } : {}) });
+      toast.success("Đã cập nhật bài đăng cho mọi gian đích của sản phẩm này.");
       await invalidate(qk.copyListingBatch(batchId));
+      setVariantEdits({});
     } catch (err) {
       toast.error(errorText(err));
     } finally {
@@ -906,13 +914,14 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
         </div>
       </div>
 
-      {/* Phân loại: xem nhanh SKU / giá / tồn nguồn — giá thực đăng từng gian chỉnh ở dòng gian. */}
+      {/* Phân loại: SKU giữ nguyên (luật khớp mã); giá / tồn nguồn SỬA ĐƯỢC từng dòng (anh 29/10) — % giá và Tồn đăng ở dòng gian áp chồng lên. */}
       <div className="space-y-1">
         <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-x-2")}>
           <span>Phân loại ({s.variants.length})</span>
           {s.options.length > 0 && (
             <span className="font-normal text-slate-500">{s.options.map((o) => `${o.name}: ${o.values.join(" / ")}`).join(" · ")}</span>
           )}
+          {editable && <span className="font-normal text-slate-500">· gõ thẳng vào ô Giá / Tồn để sửa</span>}
         </div>
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
           <Table>
@@ -925,26 +934,53 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
               </TableRow>
             </TableHeader>
             <TableBody>
-              {s.variants.slice(0, 12).map((v, i) => (
-                <TableRow key={`${v.sku}-${i}`}>
-                  <TableCell className="text-sm text-slate-900">{v.name ?? "Sản phẩm đơn"}</TableCell>
-                  <TableCell>
-                    {v.sku ? (
-                      <span className="inline-flex items-center gap-1 font-mono text-sm">
-                        {v.sku}
-                        <CopyIconButton value={v.sku} what="mã SKU" />
-                      </span>
-                    ) : (
-                      <span className="text-sm text-amber-700">Thiếu SKU</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    <Money value={v.price} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatNumber(v.stock)}</TableCell>
-                </TableRow>
-              ))}
-              {s.variants.length > 12 && (
+              {(editable ? s.variants : s.variants.slice(0, 12)).map((v, i) => {
+                const price = variantEdits[i]?.price ?? v.price;
+                const stock = variantEdits[i]?.stock ?? v.stock;
+                return (
+                  <TableRow key={`${v.sku}-${i}`}>
+                    <TableCell className="text-sm text-slate-900">{v.name ?? "Sản phẩm đơn"}</TableCell>
+                    <TableCell>
+                      {v.sku ? (
+                        <span className="inline-flex items-center gap-1 font-mono text-sm">
+                          {v.sku}
+                          <CopyIconButton value={v.sku} what="mã SKU" />
+                        </span>
+                      ) : (
+                        <span className="text-sm text-amber-700">Thiếu SKU</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {editable ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1000}
+                          className={cn("ml-auto h-8 w-32 text-right", price <= 0 && "border-amber-300 bg-amber-50/40")}
+                          value={price}
+                          onChange={(e) => setVariant(i, "price", e.target.value)}
+                        />
+                      ) : (
+                        <Money value={v.price} />
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {editable ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          className="ml-auto h-8 w-24 text-right"
+                          value={stock}
+                          onChange={(e) => setVariant(i, "stock", e.target.value)}
+                        />
+                      ) : (
+                        formatNumber(v.stock)
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!editable && s.variants.length > 12 && (
                 <TableRow>
                   <TableCell colSpan={4} className={cn(TEXT_SUB, "py-2 text-center")}>
                     +{s.variants.length - 12} phân loại nữa
@@ -970,7 +1006,10 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
       )}
 
       <div className="flex items-center justify-between gap-3">
-        <span className={TEXT_SUB}>Tên và mô tả sửa ở đây áp cho MỌI gian đích của sản phẩm này.</span>
+        <span className={cn(TEXT_SUB, "whitespace-normal")}>
+          Tên, mô tả, giá và tồn sửa ở đây áp cho MỌI gian đích của sản phẩm này; muốn giá / tồn khác cho riêng một gian thì
+          dùng % điều chỉnh giá và Tồn đăng ở dòng gian đó.
+        </span>
         {editable && (
           <Button size="sm" disabled={!dirty || saving} onClick={save}>
             {saving ? "Đang lưu…" : "Lưu bài đăng"}
