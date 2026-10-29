@@ -494,6 +494,8 @@ export function aggregateShopeeItems(order: ShopeeOrderDetail) {
       externalId: string | null;
       productName: string;
       price: number;
+      /** Giá niêm yết (model_original_price) — null khi sàn không trả. */
+      originalPrice: number | null;
       quantity: number;
       imageUrl: string | null;
     }
@@ -512,13 +514,14 @@ export function aggregateShopeeItems(order: ShopeeOrderDetail) {
     const key = lineKey({ channelSku: sku, externalId });
     const qty = it.model_quantity_purchased ?? 1;
     const price = Number(it.model_discounted_price ?? it.model_original_price ?? 0) || 0;
+    const originalPrice = it.model_original_price != null ? Number(it.model_original_price) || 0 : null;
     const name = [it.item_name, it.model_name].filter(Boolean).join(" - ") || sku;
     const imageUrl = it.image_info?.image_url?.trim() || null;
     const ex = agg.get(key);
     if (ex) {
       ex.quantity += qty;
       if (!ex.imageUrl && imageUrl) ex.imageUrl = imageUrl;
-    } else agg.set(key, { channelSku: sku, externalId, productName: name, price, quantity: qty, imageUrl });
+    } else agg.set(key, { channelSku: sku, externalId, productName: name, price, originalPrice, quantity: qty, imageUrl });
   }
   return [...agg.values()];
 }
@@ -866,6 +869,7 @@ export async function upsertShopeeOrderTx(
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,
+        originalPrice: line.originalPrice,
         imageUrl: line.imageUrl,
         // Giá riêng của gian, không có thì giá mặc định ở kho (lib/cost-price).
         costPriceAtSale: String(effectiveSkuCost(mp)),

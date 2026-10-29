@@ -26,6 +26,7 @@ import {
   syncTiktokSettlements,
   syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
+import { backfillTiktokPriceDetails } from "../integrations/tiktok/price-detail";
 import { tiktokNeedsReauthForStockPush } from "../integrations/tiktok/scopes";
 import {
   isLazadaConfigured,
@@ -819,7 +820,14 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
           console.error(`[TikTok] Lỗi ước tính unsettled "${tiktok.shopName}":`, estimatesError);
         }
       }
-      res.json({ message: "Đồng bộ đối soát TikTok xong", ...(summary ?? {}), estimates, estimatesError });
+      // Voucher shop từ price_detail cho đơn vừa có bản kê (lát 3, 29/10/2026) — lỗi không làm hỏng kết quả trên.
+      let priceDetail: Awaited<ReturnType<typeof backfillTiktokPriceDetails>> | null = null;
+      try {
+        priceDetail = await backfillTiktokPriceDetails(tiktok, { limit: 300 });
+      } catch (err) {
+        console.error(`[TikTok] Lỗi price_detail "${tiktok.shopName}":`, (err as Error).message);
+      }
+      res.json({ message: "Đồng bộ đối soát TikTok xong", ...(summary ?? {}), estimates, estimatesError, priceDetail });
       return;
     }
 

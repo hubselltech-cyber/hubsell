@@ -68,6 +68,37 @@ describe("computePnlRow — TikTok giá trong giỏ", () => {
     expect(r.profitAfterTax).toBe(0); // hàng chưa đi → vốn thu hồi
   });
 
+  it("lát 3: có voucher shop từ price_detail (Zestech 586820357201496517): Tổng giá trị SP = giá trong giỏ + voucher, voucher = dòng riêng, doanh thu không đổi", () => {
+    // Probe 29/10: list 440.000, subtotal_deduction_seller 136.400 (= |seller_discount| bản kê, GỒM voucher),
+    // voucher_deduction_seller 26.400 → giá trong giỏ trước voucher 330.000, sau voucher 303.600.
+    const r = computePnlRow(
+      mkOrder({
+        channel: tiktok, isSettled: false, actualPayout: D(0), totalAmount: D(303600),
+        tiktokVoucherSeller: D(26400), tiktokPriceDetailAt: new Date(),
+        items: [{ id: "i1", channelSku: "ZT1", price: D(258060), costPriceAtSale: D(150000) }],
+        tiktokSettlement: ttSettlement({ grossSales: D(440000), sellerDiscount: D(-136400), revenueAmount: D(303600), estimated: true }),
+      })
+    );
+    expect(r.revenueGross).toBe(330000);
+    expect(r.sellerVoucher).toBe(26400);
+    expect(r.actualRevenue).toBe(303600); // = revenue_amount dòng ORDER, không đổi so với lát 1
+    expect(r.tiktokVoucherSeller).toBe(26400);
+    const gd = computeGrossDeductions([r]);
+    expect(gd.feeSellerVoucher).toBe(26400);
+    expect(gd.grossValue - gd.totalDeduction).toBe(gd.actualRevenueTotal);
+    // Chưa đọc price_detail (null) → như lát 1
+    const r0 = computePnlRow(
+      mkOrder({
+        channel: tiktok, isSettled: false, actualPayout: D(0), totalAmount: D(303600),
+        items: [{ id: "i1", channelSku: "ZT1", price: D(258060), costPriceAtSale: D(150000) }],
+        tiktokSettlement: ttSettlement({ grossSales: D(440000), sellerDiscount: D(-136400), revenueAmount: D(303600), estimated: true }),
+      })
+    );
+    expect(r0.revenueGross).toBe(303600);
+    expect(r0.sellerVoucher).toBe(0);
+    expect(r0.tiktokVoucherSeller).toBeNull();
+  });
+
   it("đơn CHƯA có bản kê: giữ giá dòng hàng (sale_price), không đổi so với trước", () => {
     const r = computePnlRow(
       mkOrder({

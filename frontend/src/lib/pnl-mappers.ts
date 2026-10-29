@@ -14,6 +14,12 @@ import type { PnlDetailRow, TiktokSettlementDetail } from "@/lib/api";
 export interface ShopeeProfitRow {
   base: PnlDetailRow;
   // Doanh thu & trợ giá
+  /** Giá gốc trước mọi KM (escrow order_original_price; đơn hủy/chưa escrow: Σ giá niêm yết dòng). null = chưa có. */
+  originalPrice: number | null;
+  /** Giảm giá sản phẩm của shop (escrow order_seller_discount; dự phòng Σ(niêm yết − giá bán) dòng). */
+  sellerDiscountSp: number | null;
+  /** Giảm giá combo / mua kèm (order_selling_price − order_discounted_price). */
+  bundleDiscount: number | null;
   revenueGross: number;
   shopeeSubsidy: number; // Trợ giá Shopee
   // Phí vận chuyển
@@ -48,8 +54,20 @@ export function toShopeeRow(r: PnlDetailRow): ShopeeProfitRow {
   // sàn thì backend rơi về doanh thu − tiền hoàn. Lợi nhuận = profitAfterTax
   // để bảng, thẻ KPI, biểu đồ ngày, bộ lọc Lợi nhuận âm cùng MỘT số (15/09).
   const revenueFromShopee = r.platformRevenue;
+  // Giá gốc / giảm giá SP: số escrow của sàn; đơn hủy (escrow rỗng) hay đơn chưa có
+  // escrow thì cộng từ giá niêm yết dòng hàng (API đơn) — chỉ khi MỌI dòng có số.
+  const linesHaveOriginal = r.items.length > 0 && r.items.every((it) => it.originalPrice != null);
+  const lineOriginal = linesHaveOriginal
+    ? r.items.reduce((s, it) => s + (it.originalPrice ?? 0) * it.quantity, 0)
+    : null;
+  const originalPrice = r.shopeeOriginalPrice ?? lineOriginal;
+  const sellerDiscountSp =
+    r.shopeeSellerDiscount ?? (lineOriginal == null ? null : lineOriginal - r.revenueGross);
   return {
     base: r,
+    originalPrice,
+    sellerDiscountSp,
+    bundleDiscount: r.shopeeBundleDiscount,
     revenueGross: r.revenueGross,
     shopeeSubsidy: r.platformSubsidy,
     shipQuoted: r.shippingFeeQuoted,
@@ -117,6 +135,8 @@ export interface TiktokProfitRow {
   feeBonusCashback: number;
   feeShipGuarantee: number;
   feeOther: number;
+  /** Voucher shop nằm trong Giảm giá của người bán (price_detail) — 0 khi chưa đọc (base.tiktokVoucherSeller null). */
+  voucherSeller: number;
   // Thuế
   taxVat: number;
   taxPit: number;
@@ -134,6 +154,7 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
   if (d) {
     return {
       base: r,
+      voucherSeller: r.tiktokVoucherSeller ?? 0,
       detail: d,
       estimated: d.estimated,
       provisional: false,
@@ -180,6 +201,7 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
   // khấu nền tảng (API đơn hàng), phí/thuế 0 — tuyệt đối không ước %.
   return {
     base: r,
+    voucherSeller: r.tiktokVoucherSeller ?? 0,
     detail: null,
     estimated: false,
     provisional: true,
@@ -236,6 +258,7 @@ export interface TiktokColumnDef {
 export const TIKTOK_COLUMNS: TiktokColumnDef[] = [
   { key: "grossSales", label: "Tổng phụ trước giảm giá", group: "revenue", always: true, hint: "subtotal_before_discount_amount — giá niêm yết mọi dòng hàng, trước chiết khấu của nhà bán hàng lẫn nền tảng." },
   { key: "sellerDiscount", label: "Giảm giá của người bán", group: "revenue", always: true, hint: "seller_discount_amount — giảm giá do shop chịu (Product Discount, Flash Deal, voucher, phần shop trong voucher đồng tài trợ)." },
+  { key: "voucherSeller", label: "Trong đó: voucher của shop", group: "revenue", hint: "voucher_deduction_seller (Get Order Price Details) — phần voucher shop NẰM TRONG Giảm giá của người bán (probe 29/10/2026). Báo cáo dòng tiền: Tổng giá trị SP = Tổng phụ sau giảm giá + số này; dòng Voucher & xu của shop = số này. Đơn chưa đọc hiện —." },
   { key: "revenueAmount", label: "Tổng phụ sau giảm giá của người bán", group: "revenue", always: true, hint: "revenue_amount — số TikTok dùng để tính hoa hồng và trả cho shop; ĐÃ gồm phần sàn bù chiết khấu nền tảng." },
   { key: "platformDiscount", label: "Giảm giá của nền tảng", group: "revenue", hint: "platform_discount_amount — giảm giá do TikTok tài trợ, sàn bù lại cho shop nên không trừ vào doanh thu (tham chiếu)." },
   { key: "refundGross", label: "Doanh thu hoàn trả", group: "revenue", hint: "refund_subtotal_before_discount_amount + seller_discount_refund_amount — phần doanh thu bị đảo do hoàn tiền/trả hàng." },

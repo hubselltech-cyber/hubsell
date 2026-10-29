@@ -5,6 +5,13 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (11:00–11:30) — LÁT 3 + 4: VOUCHER TIKTOK TỪ PRICE DETAIL + 3 CỘT TRÊN GIỎ SHOPEE — SỔ v3, ĐÃ PUSH
+
+- **Lát 3:** `tiktok/price-detail.ts` (fetch + bóc `voucher_deduction_seller` + bù nền ≤200 đơn/gian/lượt sau bản kê, worker + nút tay); `Order.tiktokVoucherSeller/tiktokPriceDetailAt`; `computePnlRow` TikTok `revenueGross = gross + disc + voucher`, `sellerVoucher = voucher` (null → như lát 1); `LEDGER_FORMULA_VERSION = 3`; trigger sổ theo dõi thêm cột; bảng TikTok cột "Trong đó: voucher của shop".
+- **Lát 4:** giữ công thức Shopee (SQL 22.203 đơn: `original − order_seller_discount` = Σ items 97 %); thêm 3 cột HIỂN THỊ Giá gốc / Giảm giá SP của shop / Combo (escrow `order_original_price`, `order_seller_discount`, `selling − discounted`), `OrderItem.originalPrice` cho đơn hủy/chưa escrow. Combo CHƯA vào khấu trừ (bundle Shopee trả discounted_price 0 → trừ hai lần; 213/22k đơn, ANO 0). Migration `20261029130000` (Order + OrderItem, khóa thử lại). Docs mục 13 có SQL backfill Shopee theo tháng.
+- Test 138 thuần + 27/29 DB (2 đỏ sẵn), tsc + eslint sạch. ⏳ sau deploy: sổ tính lại ~35', chạy tay price_detail 3 gian anh, SQL backfill Shopee, kiểm số.
+
+---
 ## Phiên 29/10/2026 (trưa muộn) — LÁT 2 PHÍ MỚI TIKTOK: 2 CỘT BONUS CASHBACK + BẢO ĐẢM PHÍ VC — ĐÃ PUSH
 
 - **Bước 1 (đọc log prod):** "Phí khác" and.not.or 0 (T8–T9) → −1.665.925 T10/115 đơn; tên thật trong `fee_tax_breakdown.fee`: `bonus_cashback_service_fee_amount` (~1,5 % DT sau CK) + `shipping_fee_guarantee_service_fee` (1.620đ/đơn). KHÔNG có trường "gmv_max_pro" (docs cũng không); `feeGmvMax` 3 gian anh = 0. Docs mục 11.

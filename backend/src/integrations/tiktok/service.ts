@@ -177,6 +177,8 @@ export function aggregateLineItems(order: TikTokOrder) {
       externalId: string | null;
       productName: string;
       price: number;
+      /** Giá niêm yết (original_price) — null khi sàn không trả. */
+      originalPrice: number | null;
       quantity: number;
       imageUrl: string | null;
     }
@@ -202,6 +204,7 @@ export function aggregateLineItems(order: TikTokOrder) {
         externalId,
         productName: name,
         price: Number(li.sale_price ?? 0) || 0,
+        originalPrice: li.original_price != null ? Number(li.original_price) || 0 : null,
         quantity: qty,
         imageUrl,
       });
@@ -658,6 +661,7 @@ async function upsertOrderTx(
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,
+        originalPrice: line.originalPrice,
         imageUrl: line.imageUrl,
         // Giá riêng của gian, không có thì giá mặc định ở kho (lib/cost-price).
         costPriceAtSale: String(effectiveSkuCost(mp)),

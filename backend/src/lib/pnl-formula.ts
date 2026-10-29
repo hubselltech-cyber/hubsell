@@ -217,10 +217,16 @@ export function computePnlRow(o: PnlOrder) {
   // tảng). Bảng Lãi/Lỗ tab TikTok vẫn đọc đủ 3 cột gốc từ o.tiktokSettlement.
   // Đơn CHƯA có bản kê: OrderItem.price = sale_price (đã trừ cả CK sàn) — nhãn
   // "tạm tính", sàn trả bản kê thì số thật thay.
+  // LÁT 3 (29/10/2026, docs mục 12): voucher shop TikTok = `voucher_deduction_seller`
+  // của Get Order Price Details — probe đơn thật: là PHẦN NẰM TRONG chiết khấu NBH
+  // của bản kê (không cộng thêm). Tổng giá trị SP = giá trong giỏ TRƯỚC voucher =
+  // revenue_amount dòng ORDER + voucher; dòng "Voucher & xu của shop" = voucher.
+  // Đơn chưa đọc price_detail (null) → như lát 1: voucher 0, không ước.
   const tt = o.channel.channelName === "TIKTOK" ? o.tiktokSettlement : null;
   if (tt && Number(tt.grossSales) > 0) {
-    revenueGross = Number(tt.grossSales) + Number(tt.sellerDiscount);
-    sellerVoucher = 0;
+    const voucher = o.tiktokVoucherSeller == null ? 0 : Math.max(Number(o.tiktokVoucherSeller), 0);
+    revenueGross = Number(tt.grossSales) + Number(tt.sellerDiscount) + voucher;
+    sellerVoucher = voucher;
   }
 
   // Gộp phí theo bucket cột. CẬP NHẬT QUYẾT ĐỊNH CHỦ SHOP 05/08: bảng Lãi/Lỗ
@@ -412,11 +418,18 @@ export function computePnlRow(o: PnlOrder) {
       variation: "",
       quantity: it.quantity,
       price: Number(it.price),
+      // Giá niêm yết dòng (29/10/2026) — null với đơn đồng bộ trước đó.
+      originalPrice: it.originalPrice == null ? null : Number(it.originalPrice),
       costPriceAtSale: Number(it.costPriceAtSale),
     })),
     // Doanh thu & trợ giá
     revenueGross,
     sellerVoucher,
+    // Số "trên giỏ" chỉ để hiển thị (lát 3+4, 29/10/2026): null = sàn chưa trả / chưa đọc.
+    tiktokVoucherSeller: o.tiktokVoucherSeller == null ? null : Number(o.tiktokVoucherSeller),
+    shopeeOriginalPrice: o.shopeeOriginalPrice == null ? null : Number(o.shopeeOriginalPrice),
+    shopeeSellerDiscount: o.shopeeSellerDiscount == null ? null : Number(o.shopeeSellerDiscount),
+    shopeeBundleDiscount: o.shopeeBundleDiscount == null ? null : Number(o.shopeeBundleDiscount),
     // Doanh thu thực tế = Giá trị đơn hàng − voucher/xu Shop (chưa trừ phí/thuế)
     actualRevenue,
     platformSubsidy,

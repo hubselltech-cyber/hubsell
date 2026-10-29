@@ -65,6 +65,7 @@ import {
   syncTiktokSettlements,
   syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
+import { backfillTiktokPriceDetails } from "../integrations/tiktok/price-detail";
 import { backfillTiktokReturnsByOrder, syncTiktokReturns } from "../integrations/tiktok/returns-sync";
 import { syncTiktokCancelRequests } from "../integrations/tiktok/cancel-requests";
 
@@ -770,6 +771,15 @@ async function runHourlyTier(
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi ước tính unsettled TikTok "${channel.shopName}":`, (err as Error).message);
+    }
+    // VOUCHER SHOP TỪ GET ORDER PRICE DETAILS (lát 3, 29/10/2026) — chạy SAU bản kê:
+    // đơn vừa có bản kê (thật/ước tính) mà chưa đọc price_detail được hỏi sàn MỘT
+    // lần, mới nhất trước, tối đa 200 đơn/lượt (90 ngày bù dần). Không có đơn chờ
+    // thì chỉ tốn một câu đọc chỉ mục. Số ghi vào Order → trigger đánh bẩn sổ cái.
+    try {
+      await backfillTiktokPriceDetails(channel, { limit: 200 });
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi price_detail TikTok "${channel.shopName}":`, (err as Error).message);
     }
     // QUÉT BÙ YÊU CẦU HOÀN THEO MÃ ĐƠN (02/10/2026) — chạy SAU bản kê: đơn vừa
     // nhận tiền hoàn từ bản kê mà chưa từng đọc yêu cầu hoàn (hoàn xong trước

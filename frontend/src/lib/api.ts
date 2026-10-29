@@ -662,6 +662,8 @@ export interface PnlItemLine {
   variation: string;
   quantity: number;
   price: number;
+  /** Giá niêm yết dòng (29/10/2026) — null với đơn cũ. */
+  originalPrice?: number | null;
   costPriceAtSale: number;
 }
 
@@ -686,6 +688,11 @@ export interface PnlDetailRow {
   // Doanh thu & trợ giá
   revenueGross: number;
   sellerVoucher: number;
+  /** Số "trên giỏ" chỉ để hiển thị (29/10/2026): null = sàn chưa trả / chưa đọc. */
+  tiktokVoucherSeller: number | null;
+  shopeeOriginalPrice: number | null;
+  shopeeSellerDiscount: number | null;
+  shopeeBundleDiscount: number | null;
   /** Doanh thu thực tế = Giá trị đơn hàng (revenueGross) − voucher/xu của Shop. */
   actualRevenue: number;
   platformSubsidy: number;

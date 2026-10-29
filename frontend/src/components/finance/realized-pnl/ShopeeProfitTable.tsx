@@ -58,7 +58,7 @@ export function ShopeeProfitTable({
             <th className={cn(HEADER_GROUP, "text-center")} colSpan={6}>
               Thông tin đơn &amp; Sản phẩm
             </th>
-            <th className={cn(HEADER_GROUP, "text-center text-emerald-700")} colSpan={2}>
+            <th className={cn(HEADER_GROUP, "text-center text-emerald-700")} colSpan={5}>
               Doanh thu &amp; Trợ giá
             </th>
             <th className={cn(HEADER_GROUP, "text-center text-sky-700")} colSpan={6}>
@@ -80,6 +80,9 @@ export function ShopeeProfitTable({
               ["Ngày tạo", "left"],
               ["ĐVVC", "left"],
               ["Chi tiết sản phẩm", "left"],
+              ["Giá gốc", "right"],
+              ["Giảm giá SP của shop", "right"],
+              ["Combo / mua kèm", "right"],
               ["Tổng giá trị SP", "right"],
               ["Trợ giá Shopee", "right"],
               ["Phí VC Dự kiến", "right"],
@@ -175,7 +178,16 @@ export function ShopeeProfitTable({
                   <ProductLines items={b.items} />
                 </td>
 
-                {/* Doanh thu & trợ giá */}
+                {/* Doanh thu & trợ giá — 3 cột "trên giỏ" (29/10/2026): số escrow/giá niêm yết dòng, chưa có → — */}
+                <td className={cn(cell, BLOCK.revenue, "text-right")}>
+                  {r.originalPrice == null ? <span className="text-slate-400">—</span> : <Amount value={r.originalPrice} tone="text-slate-600" />}
+                </td>
+                <td className={cn(cell, BLOCK.revenue, "text-right")}>
+                  {r.sellerDiscountSp == null ? <span className="text-slate-400">—</span> : <Amount value={r.sellerDiscountSp} tone="text-rose-600" />}
+                </td>
+                <td className={cn(cell, BLOCK.revenue, "text-right")}>
+                  {r.bundleDiscount == null ? <span className="text-slate-400">—</span> : <Amount value={r.bundleDiscount} tone="text-rose-600" />}
+                </td>
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
                   <Amount value={r.revenueGross} tone="text-slate-900" />
                 </td>

@@ -341,3 +341,41 @@ TikTok ACTIVE 8 đơn/gian (ước tính + thật); mọi gian 6 đơn ĐÃ GIAO
   đơn chưa đọc price_detail giữ như lát 1 (voucher 0, nhãn tạm). Tăng `LEDGER_FORMULA_VERSION` → 3 (tính lại ~35 phút —
   nên gộp cùng lát 4 Shopee để chỉ tính lại một lần).
 - Bảng Lãi/Lỗ TikTok: thêm cột "Voucher của shop (trong chiết khấu)" từ cột mới; Doanh thu/payout không đổi.
+
+## 13. LÁT 3 + 4 ĐÃ CODE 29/10 (anh "Làm lát 3+4") — sổ cái v3
+
+**Lát 3 (TikTok voucher):** `integrations/tiktok/price-detail.ts` — `fetchOrderPriceDetail` (GET
+`/order/202407/orders/{id}/price_detail`, làn đọc qua rate-gate), `voucherSellerFromPriceDetail` (ưu tiên số cấp đơn,
+thiếu → Σ dòng, không trường → null không ghi), `backfillTiktokPriceDetails(channel, {limit})`: đơn có bản kê, 90 ngày,
+`tiktokPriceDetailAt` null, mới nhất trước, ≤200 đơn/lượt, dừng sau 5 lỗi. Gọi ở worker `order-auto-sync.ts` (sau ước tính
+unsettled, trước quét bù hoàn) và nút tay `/channels/:id/sync-settlements` (300 đơn). Cột `Order.tiktokVoucherSeller` +
+`tiktokPriceDetailAt`; `computePnlRow`: `revenueGross = grossSales + sellerDiscount + voucher`, `sellerVoucher = voucher`
+(null → 0 như lát 1); `LEDGER_FORMULA_VERSION = 3`; trigger đánh bẩn thêm cột `tiktokVoucherSeller` (bù nền tự tính lại).
+Bảng Lãi/Lỗ TikTok thêm cột "Trong đó: voucher của shop" (— khi chưa đọc). Tooltip dòng "Voucher & xu của shop" ghi TikTok.
+
+**Lát 4 (Shopee "trên giỏ", CHỈ hiển thị, không đổi công thức):** SQL prod 30 ngày 22.203 đơn Shopee không hủy có snapshot
+escrow: `order_original_price − order_seller_discount` = Σ `OrderItem.price` ở 21.547 (97 %) = đúng mức `order_selling_price`
+= Σ items (21.534); 213 đơn có bundle (selling ≠ discounted); đơn HỦY escrow rỗng (33/2.947 khớp). → Giữ `revenueGross`
+Shopee = Σ `model_discounted_price` (đang đúng "giá trong giỏ" 97 %, khớp Seller Center); thêm 3 cột HIỂN THỊ ở tab Shopee:
+Giá gốc (`shopeeOriginalPrice` ← `order_original_price`), Giảm giá SP của shop (`shopeeSellerDiscount` ←
+`order_seller_discount`), Combo/mua kèm (`shopeeBundleDiscount` ← `order_selling_price − order_discounted_price`), ghi ở
+`mapShopeeEscrowFields` (ước tính + thật); đơn hủy/chưa escrow: FE cộng từ `OrderItem.originalPrice` (mapper Shopee ghi
+`model_original_price`, TikTok ghi `original_price` — từ 29/10, đơn cũ null → "—"). **Chưa đưa combo vào Tổng khấu trừ** của
+Báo cáo dòng tiền: với bundle Shopee trả `model_discounted_price = 0` nên Σ items đã thiếu phần đó (rơi vào "Lệch quyết toán
+khác"); cộng combo nữa là trừ hai lần — cần escrow `items[]` (chưa lưu) mới làm đúng; 213/22k đơn, ANO 0. Backfill 3 cột
+Shopee cho đơn cũ: SQL từ `expectedIncome` (không đụng trigger sổ):
+```sql
+UPDATE "Order" SET "shopeeOriginalPrice" = ("expectedIncome"->>'order_original_price')::numeric,
+  "shopeeSellerDiscount" = ("expectedIncome"->>'order_seller_discount')::numeric,
+  "shopeeBundleDiscount" = ("expectedIncome"->>'order_selling_price')::numeric - ("expectedIncome"->>'order_discounted_price')::numeric
+WHERE "shopeeOriginalPrice" IS NULL AND "expectedIncome" ? 'order_original_price' AND "shippingStatus" <> 'CANCELLED'
+  AND "createdAt" >= '2026-MM-01' AND "createdAt" < '2026-MM+1-01';   -- chạy theo tháng
+```
+Migration `20261029130000_order_tiktok_voucher_shopee_original` (Order + OrderItem, khóa có thử lại, trigger sửa WHEN).
+Test: `pnl-formula-tiktok` thêm ca Zestech (voucher 26.400 → gross 330.000, voucher 26.400, actualRevenue 303.600 không đổi;
+null → như lát 1), `tiktok-price-detail.test.ts` 3 ca; 138 ca thuần + 27/29 DB (2 đỏ sẵn) qua; tsc BE/FE + eslint sạch;
+DB dev tính lại 338k dòng v3.
+
+**Sau deploy (prod):** migration áp → sổ tính lại ~35 phút; worker đọc price_detail 200 đơn/gian/giờ → chạy tay
+`backfillTiktokPriceDetails` cho 3 gian anh (limit 2.000) để thấy ngay; SQL backfill Shopee theo tháng; kiểm: TikTok thẻ 1 =
+177,6 tr + Σ voucher, dòng voucher TikTok > 0 ở gian có voucher, Doanh thu 302,6 tr không đổi, thác nước 0.

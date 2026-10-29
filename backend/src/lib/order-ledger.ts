@@ -33,8 +33,10 @@ import { toBusinessDateKey } from "./date-range";
  *   v2 29/10/2026 — TikTok "Giá trị đơn hàng" = giá món hàng trong giỏ
  *      (revenue_amount dòng ORDER = giá gốc + chiết khấu NBH), sellerVoucher
  *      TikTok = 0 (docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md mục 9 lát 1).
+ *   v3 29/10/2026 — lát 3: TikTok revenueGross + voucher shop (Order.tiktokVoucherSeller
+ *      từ Get Order Price Details), sellerVoucher = voucher đó (docs mục 12).
  */
-export const LEDGER_FORMULA_VERSION = 2;
+export const LEDGER_FORMULA_VERSION = 3;
 
 /** Đơn kèm quan hệ để ghi sổ = tập PnlOrder + chủ shop của gian. */
 export const LEDGER_INCLUDE = {

@@ -1527,7 +1527,10 @@ export async function getEscrowList(
  */
 export interface ShopeeOrderIncome {
   // Giá trị hàng & tiền về
-  order_selling_price?: number;
+  order_selling_price?: number; // Σ đơn giá sau KM sản phẩm (trước bundle) — = Σ model_discounted_price × qty (prod 97 %)
+  order_original_price?: number; // giá gốc trước MỌI khuyến mãi
+  order_seller_discount?: number; // tổng giảm giá SẢN PHẨM shop chịu của đơn (prod 29/10: original − này = selling 97 %)
+  order_discounted_price?: number; // sau cả bundle deal → selling − discounted = giảm giá combo
   escrow_amount?: number; // tiền THỰC về ví (sau mọi cấn trừ)
   // Phí sàn
   commission_fee?: number;

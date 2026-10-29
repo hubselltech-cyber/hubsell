@@ -140,6 +140,17 @@ export function mapShopeeEscrowFields(income: ShopeeOrderIncome) {
     // tạm tính — phủ cả 4 kịch bản refund-only/partial/return của Shopee.
     refundedAmount: Math.abs(n(income.seller_return_refund)),
     // adWalletTopup / shipSubsidyShop: escrow không có nguồn — giữ nguyên 0.
+    // Ba số "trên giỏ" CHỈ để hiển thị ở bảng Lãi/Lỗ Shopee (lát 4, 29/10/2026 — docs
+    // DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md mục 13), không vào công thức:
+    // giá gốc, giảm giá SP của shop (order_seller_discount: original − này = selling ở
+    // 97 % đơn prod), combo/mua kèm = selling − discounted. Thiếu trường → null (escrow
+    // đơn hủy rỗng → bảng đọc từ OrderItem.originalPrice).
+    shopeeOriginalPrice: income.order_original_price != null ? n(income.order_original_price) : null,
+    shopeeSellerDiscount: income.order_seller_discount != null ? n(income.order_seller_discount) : null,
+    shopeeBundleDiscount:
+      income.order_selling_price != null && income.order_discounted_price != null
+        ? n(income.order_selling_price) - n(income.order_discounted_price)
+        : null,
   };
 }
 

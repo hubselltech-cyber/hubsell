@@ -117,7 +117,7 @@ export function computeGrossDeductionsFromTotals(t: GrossDeductionTotals) {
     {
       key: "voucher",
       label: "Voucher & xu của shop",
-      hint: "Giảm giá cho khách do shop tự chịu, nằm ngoài giá món hàng trong giỏ. Shopee: voucher + xu shop hoàn; Lazada: giảm giá từ cửa hàng. TikTok: bản kê gộp voucher vào chiết khấu của nhà bán hàng (đã trừ sẵn trong Tổng giá trị SP) nên chưa tách được, dòng này = 0. Không gồm phần sàn tài trợ.",
+      hint: "Giảm giá cho khách do shop tự chịu, nằm ngoài giá món hàng trong giỏ. Shopee: voucher + xu shop hoàn; TikTok: voucher của shop (đọc từ chi tiết giá đơn, đơn chưa đọc tạm 0); Lazada: giảm giá từ cửa hàng. Không gồm phần sàn tài trợ.",
       amount: feeSellerVoucher,
       percent: percent(feeSellerVoucher),
     },

@@ -236,7 +236,9 @@ export function TiktokProfitTable({
                   const v = Number(r[c.key]);
                   const meta = GROUP_META[c.group];
                   let node: React.ReactNode;
-                  if (c.key === "profit") {
+                  if (c.key === "voucherSeller" && r.base.tiktokVoucherSeller == null) {
+                    node = <span className="text-slate-400">—</span>; // chưa đọc price_detail
+                  } else if (c.key === "profit") {
                     node = <ProfitCell value={v} />;
                   } else if (c.key === "costSnapshot") {
                     node = <Deduction value={v} tone="text-slate-600" />;
