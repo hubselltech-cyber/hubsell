@@ -24,7 +24,6 @@ import {
 } from "./service";
 import { finishStockPush } from "../inventory-push";
 import { syncTiktokCancelRequests } from "./cancel-requests";
-import { syncTiktokReturnsForOrders } from "./returns-sync";
 import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
 import { HIBERNATED_SKIP_NOTE, isHibernated } from "../../services/plan-hibernation";
@@ -130,25 +129,10 @@ export async function handleTiktokOrderJob(
     }
   }
 
-  // Type 12 = đổi trạng thái YÊU CẦU HOÀN (khách xin trả / sàn duyệt / kiện về…):
-  // chi tiết đơn không mang yêu cầu hoàn → hỏi returns/search đúng đơn này để cắm
-  // / hạ cờ Chờ hàng về ngay, thay vì chờ lượt quét 10'–60' (lát B 29/10/2026,
-  // docs DON-HOAN-VA-SAO-KE.md mục 8). Đường lui TIKTOK_RETURN_WEBHOOK_LOOKUP=0.
-  // Lỗi ở đây không làm hỏng việc đơn (đã có lượt quét nền đỡ).
-  if (
-    String(eventType) === String(TIKTOK_WEBHOOK_TYPE.RETURN_STATUS_CHANGE) &&
-    process.env.TIKTOK_RETURN_WEBHOOK_LOOKUP !== "0"
-  ) {
-    try {
-      const r = await syncTiktokReturnsForOrders(channel, [orderId]);
-      console.log(
-        `[Webhook TikTok] Yêu cầu hoàn đơn ${orderId}: ${r.scanned} yêu cầu, +${r.flagged} chờ về tay, ${r.unflagged} hạ cờ, ${r.delivered} kiện về, ${r.itemsUpdated} dòng SKU trả`
-      );
-    } catch (err) {
-      console.error(`[Webhook TikTok] Lỗi hỏi yêu cầu hoàn đơn ${orderId}:`, (err as Error).message);
-    }
-  }
-
+  // Type 12 (đổi trạng thái yêu cầu hoàn): KHÔNG hỏi sàn ở đây. Lát B 29/10/2026 từng
+  // gọi returns/search theo đơn cho mỗi sự kiện (~1.500 call/ngày) — anh Trung gỡ cùng
+  // đêm: chậm 30 phút không sao, lượt quét tầng nhanh (10'–60') đã đọc yêu cầu hoàn
+  // của cả gian bằng MỘT call; màn quét kho có lưới đỡ riêng (integrations/return-refresh.ts).
   // Kho biến động → đẩy "có thể bán" mới lên các gian khác đã nối cùng SKU
   // + kiểm tra ngưỡng sắp hết hàng. Dòng chờ đẩy do processTiktokOrderEvent lập
   // phiếu ngay trong giao dịch đơn; ở đây chốt phiếu SAU khi giao dịch đã commit.

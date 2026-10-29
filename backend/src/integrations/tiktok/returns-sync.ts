@@ -584,7 +584,7 @@ export async function backfillTiktokReturnsByOrder(
 }
 
 // ============================================================
-// HỎI YÊU CẦU HOÀN THEO MÃ ĐƠN NGAY KHI WEBHOOK BÁO (lát B, 29/10/2026)
+// HỎI YÊU CẦU HOÀN THEO MÃ ĐƠN (29/10/2026 — màn quét kho, integrations/return-refresh.ts)
 // ============================================================
 
 export interface SyncTiktokReturnsForOrdersResult extends SyncTiktokReturnsResult {
@@ -593,13 +593,11 @@ export interface SyncTiktokReturnsForOrdersResult extends SyncTiktokReturnsResul
 }
 
 /**
- * Webhook type 12 (đổi trạng thái yêu cầu hoàn) chỉ mang mã đơn; chi tiết đơn
- * không nói gì về yêu cầu hoàn, nên trước đây cờ "Chờ hàng về" phải chờ lượt
- * quét `syncTiktokReturns` tầng nhanh (10' → 60' khi gian im ắng; docs
- * DON-HOAN-VA-SAO-KE.md mục 8.2). Hàm này hỏi `returns/search` lọc `order_ids`
- * cho đúng các đơn vừa báo rồi ghi bằng cùng bộ quyết định của lượt quét thường
- * (không phải quét bù lịch sử: yêu cầu đang sống vẫn cắm AWAITING). Cùng khuôn
- * `syncTiktokCancelRequests({ orderIds })` của webhook type 11.
+ * Hỏi `returns/search` lọc `order_ids` cho đúng vài đơn rồi ghi bằng cùng bộ
+ * quyết định của lượt quét thường (không phải quét bù lịch sử: yêu cầu đang sống
+ * vẫn cắm AWAITING). Dùng cho lưới đỡ màn quét kho (lát C, docs mục 8.6). Từng
+ * nối vào webhook type 12 (lát B) — đã gỡ cùng đêm 29/10 vì tốn ~1.500 call/ngày
+ * trong khi lượt quét tầng nhanh đã đọc cả gian bằng một call và chậm 30' là chấp nhận được.
  *
  * Sàn trả yêu cầu của đơn KHÔNG hỏi = bộ lọc vô hiệu → ném lỗi, không ghi
  * (như quét bù). Lỗi ở đây do tầng gọi nuốt, không làm hỏng việc đơn.

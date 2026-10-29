@@ -1,6 +1,6 @@
 // ============================================================
-// HỎI YÊU CẦU HOÀN TIKTOK THEO MÃ ĐƠN NGAY KHI WEBHOOK TYPE 12 BÁO (lát B,
-// 29/10/2026) — chạy trên DB dev với một gian tự dựng; returns/search + token
+// HỎI YÊU CẦU HOÀN TIKTOK THEO MÃ ĐƠN (syncTiktokReturnsForOrders — dùng cho lưới
+// đỡ màn quét kho, lát C 29/10/2026; lát B nối webhook type 12 đã gỡ cùng đêm) — chạy trên DB dev với một gian tự dựng; returns/search + token
 // thay bằng bản giả. Cùng khuôn tiktok-returns-backfill-db.test.ts.
 //
 // Mục tiêu: cờ "Chờ hàng về" lên NGAY theo nhịp webhook thay vì chờ lượt quét

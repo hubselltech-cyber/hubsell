@@ -198,12 +198,12 @@ Gian Hellokityhh (TikTok) quét kiện đơn `586686865006495180` trên app → 
 2. **Yêu cầu trả hàng thật về chậm 10–60 phút.** Webhook TikTok type 12 / type 2 về ngay nhưng `handleTiktokOrderJob` chỉ kéo lại chi tiết đơn (chi tiết đơn không mang yêu cầu hoàn) → cờ chỉ được gắn ở lượt `syncTiktokReturns` tầng nhanh (10' → giãn 60' khi gian im ắng). Shopee: yêu cầu hoàn trên đơn COMPLETED không có push (docs mục 2.2), cũng chờ `syncShopeeReturns` 10'. `GET /api/orders/lookup` chỉ tự hỏi sàn khi **không tìm thấy đơn**; đơn thấy mà NONE thì trả về ngay, không hỏi lại.
 3. **Hàng đợi webhook kẹt ~10:00 mỗi sáng** (p95 10–17 phút) — đã ghi ở PROGRESS 27/10, thuộc đại tu 5e (anh chốt giữ thứ tự đại tu), không mở lát riêng.
 
-### 8.3 Phương án (anh chốt 29/10 đêm: A, B, C đều đã làm)
+### 8.3 Phương án (anh chốt 29/10 đêm: A + C giữ; B đã gỡ — mục 8.7)
 
 | # | Lát | Làm gì | Hiệu quả |
 |---|---|---|---|
 | A — **ĐÃ LÀM 29/10/2026 đêm** (mục 8.4) | Luật chung 3 sàn "hủy sau khi bàn giao = kiện quay đầu" | Trong `plan{Shopee,Tiktok,Lazada}OrderUpdate`: đơn đang SHIPPING / DELIVERED (đã có `trackingCode`, đã bàn giao) mà sàn chuyển CANCELLED → `returnStatus` NONE → AWAITING, `returnRequestedAt` = `cancel_time`/`update_time`, `returnSolution` RETURN_REFUND, `platformReturnStatus` = `CANCELLED_AFTER_SHIP` + lý do sàn. Loại trừ hủy **trước khi lấy hàng** (prev PENDING/PROCESSED: "quá thời gian lấy hàng", "Seller did not Ship" — kiện còn ở shop). Mọi webhook (TikTok 1/2/11, Shopee code 3, Lazada reverse) đều qua upsert này → cờ gắn theo nhịp webhook, không cần quét. Nhãn kho: "Chờ hàng về · giao thất bại". | Xóa ~95 % ca "Không hoàn" lúc quét (61/65 ca 30 ngày là đơn CANCELLED) |
-| B — **ĐÃ LÀM 29/10/2026 đêm** (mục 8.5) | Webhook yêu cầu hoàn hỏi đúng đơn | TikTok type 12 / 2 trong `handleTiktokOrderJob` → `searchReturns({ orderIds: [orderId] })` rồi `applyTiktokReturnGroups` (cùng khuôn type 11 đã làm với `cancellations/search` 23/10). Shopee không có push cho return trên đơn COMPLETED → giữ quét 10'. | Yêu cầu trả hàng TikTok lên cờ theo nhịp webhook thay vì 10–60' |
+| B — **ĐÃ GỠ 29/10/2026 đêm** (mục 8.5, 8.7) | Webhook yêu cầu hoàn hỏi đúng đơn | TikTok type 12 / 2 trong `handleTiktokOrderJob` → `searchReturns({ orderIds: [orderId] })` rồi `applyTiktokReturnGroups` (cùng khuôn type 11 đã làm với `cancellations/search` 23/10). Shopee không có push cho return trên đơn COMPLETED → giữ quét 10'. | Yêu cầu trả hàng TikTok lên cờ theo nhịp webhook thay vì 10–60' |
 | C — **ĐÃ LÀM 29/10/2026 đêm** (mục 8.6) | Lượt quét hỏi sàn đúng đơn | `/orders/lookup`: đơn thấy mà NONE và đã bàn giao → hỏi sàn MỘT lần cho đúng đơn (TikTok `returns/search order_ids`; Shopee `get_order_detail` + `get_escrow_detail → return_order_sn_list`) trước khi trả "Không hoàn"; cooldown theo đơn. | Bịt nốt ca worker/hàng đợi trễ; tốn 1–2 call/lượt quét trượt |
 
 Tồn kho: luật hiện hành `restoreStockTx` cộng lại kho ngay khi sàn báo CANCELLED (kể cả kiện còn đang quay đầu), nhập kho hoàn sau đó bị `stockRestoredAt` chặn cộng trùng → lát A không đổi số kho; chỉ ghi nhận để nếu anh muốn "cộng kho khi kho quét nhận" thì là lát đổi luật kho riêng.
@@ -223,7 +223,7 @@ Chưa kiểm: ý nghĩa `reverse_type 1` / `reverse_user 4` của webhook type 2
 | Kiểm | vitest `order-sync-write.test.ts` +6 ca (helper thuần, TikTok ca thật 586686865006495180, TikTok hủy trước lấy hàng, Shopee Failed Delivery + lượt sau rỗng, Lazada failed_delivery + kho đã quét), `cancel-request-plan.test.ts` +2 ca → 35/35 xanh; tsc backend / frontend / mobile sạch; eslint sạch. Chưa kiểm trên trình duyệt (cần đơn thật chuyển trạng thái) |
 | Giới hạn | Chỉ áp cho đơn ĐÃ CÓ trong DB rồi mới thấy hủy (planner); đơn lần đầu đọc đã CANCELLED không biết trạng thái trước → giữ Đã hủy. Đơn hủy sau giao TRƯỚC khi đưa lên không được vá ngược (kho quét vẫn nhận được như cũ) |
 
-### 8.5 Lát B đã làm (29/10/2026 đêm) — webhook TikTok type 12 hỏi yêu cầu hoàn đúng đơn
+### 8.5 Lát B đã làm rồi GỠ (29/10/2026 đêm) — webhook TikTok type 12 hỏi yêu cầu hoàn đúng đơn (xem 8.7)
 
 | Phần | Mã |
 |---|---|
@@ -243,3 +243,15 @@ Chưa kiểm: ý nghĩa `reverse_type 1` / `reverse_user 4` của webhook type 2
 | Route | `GET /api/orders/lookup`: sau lượt tra đầu, đơn thấy + không nhập nhằng + không phải `?detail=1` + `needsReturnRefresh` → hỏi sàn rồi tra lại; trả thêm `askedPlatform: true` khi có hỏi. Đơn CANCELLED còn NONE (hủy trước khi đưa lát A lên) không hỏi (sàn không có gì mới) — app ghi "Sàn đã hủy đơn này, chưa có yêu cầu hoàn — kiện về tay thì bấm Quét nhận" |
 | Tải sàn | Chỉ phát sinh khi kho quét kiện mà đơn còn NONE (30 ngày prod: 65 ca, nay phần lớn đã được lát A/B bắt trước) → vài call/ngày; 2–3 call mỗi lượt, cooldown 5 phút/đơn |
 | Kiểm | `return-refresh.test.ts` 7 ca (luật đáng hỏi, cooldown, gian hỏi được, thứ tự hai bước TikTok, Shopee/Lazada đúng hàm, lỗi một bước không chặn bước kia, quét lặp không hỏi lại); `lazada-returns-sync` + `shopee-returns-sync` + `shopee-returns-backfill-db` + `tiktok-returns-webhook-db` xanh sau tách hàm; tsc backend + mobile sạch. Chưa kiểm trên máy thật (cần kiện thật về kho) |
+
+### 8.7 Anh Trung gỡ lát B (29/10/2026 đêm) — nguyên tắc: sàn đã gọi rồi thì chỉ lấy về
+
+Anh hỏi: "Cái này có thể ảnh hưởng sức khỏe HQ? Phần này không cần quá nhanh, chậm 30 phút cũng không sao, sao phải gọi API lên sàn nhiều lần trong khi phần đơn hàng đã gọi rồi, mình chỉ lấy về?" Đối chiếu từng lát theo số lượt gọi sàn:
+
+| Lát | Gọi thêm sàn | Kết luận |
+|---|---|---|
+| A | 0 — luật đọc trên chi tiết đơn đã về qua webhook / quét 10 phút | Đúng nguyên tắc, xử lý 61/65 ca → **giữ** |
+| B | ~1.500 call/ngày (`returns/search` mỗi sự kiện type 12), nằm trong việc webhook nên 429 là ngủ trong slot | Chỉ để nhanh hơn 10–60 phút so với lượt quét tầng nhanh (một call đọc cả gian) → **gỡ**: bỏ khối type 12 trong `webhook-queue.ts` + env đường lui; `syncTiktokReturnsForOrders` giữ vì lát C dùng, test giữ |
+| C | 2–3 call chỉ khi kho quét kiện mà đơn còn NONE, nghỉ 5 phút/đơn; sau lát A còn rất ít ca | Tải gần bằng không → **giữ** |
+
+Chi tiết đơn TikTok không mang yêu cầu trả hàng (API riêng) — vì thế yêu cầu hoàn vẫn do lượt quét tầng nhanh đọc, chậm tối đa 10–60 phút, anh chấp nhận.
