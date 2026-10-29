@@ -201,27 +201,24 @@ export function computePnlRow(o: PnlOrder) {
     }
   }
   // TIKTOK (29/10/2026, anh Trung chốt — docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-
-  // KHAO-SAT-29-10.md mục 8–9): "Giá trị đơn hàng" = GIÁ MÓN HÀNG TRONG GIỎ =
-  // revenue_amount của dòng ORDER trên bản kê ("Tổng phụ sau giảm giá của
-  // người bán") = subtotal_before_discount + seller_discount (có dấu) — đẳng
-  // thức của chính TikTok, kiểm lại ở mỗi lượt đồng bộ (tiktokRevenueIdentityGap,
-  // lệch thì log cảnh báo kèm mã đơn, không tự sửa số). KHÔNG đọc cột
-  // revenueAmount đã lưu: cột đó là Σ MỌI dòng (ORDER + REFUND) nên đơn
-  // hoàn/hủy về 0 trong khi tiền hoàn đã có cột riêng (refundedAmount).
-  // Chiết khấu của nhà bán hàng (bản kê gộp KM sản phẩm + voucher, sàn không
-  // tách) đã nằm TRÊN giá trong giỏ → sellerVoucher = 0, thác nước không trừ
-  // lần hai. Bản 16/09–28/10: revenueGross = giá gốc, sellerVoucher = chiết
-  // khấu → thẻ "Tổng giá trị SP" lệch định nghĩa với Shopee (giá sau KM sản
-  // phẩm = model_discounted_price). Tổng sau cấn trừ không đổi; platformSubsidy
-  // của Order vẫn cố ý = 0 ở mapper (revenue_amount đã gồm phần sàn bù CK nền
-  // tảng). Bảng Lãi/Lỗ tab TikTok vẫn đọc đủ 3 cột gốc từ o.tiktokSettlement.
+  // KHAO-SAT-29-10.md mục 8–13): "Giá trị đơn hàng" = GIÁ MÓN HÀNG TRONG GIỎ,
+  // trước voucher, lấy từ hai nguồn sàn:
+  //   · bản kê (202501 / unsettled 202507): revenue_amount dòng ORDER = giá gốc
+  //     (subtotal_before_discount) + chiết khấu NBH (seller_discount, có dấu) —
+  //     đẳng thức của chính TikTok, kiểm mỗi lượt đồng bộ (tiktokRevenueIdentityGap);
+  //     đúng 372.305/372.305 bản kê prod 29/10. KHÔNG đọc cột revenueAmount đã lưu
+  //     (Σ cả dòng REFUND → đơn hoàn/hủy về 0, tiền hoàn đã có refundedAmount).
+  //   · Get Order Price Details 202407: voucher_deduction_seller = phần voucher shop
+  //     NẰM TRONG chiết khấu NBH (probe đơn thật: không cộng thêm) → Order.
+  //     tiktokVoucherSeller (đọc 1 lần/đơn, price-detail.ts). Cộng lại để Tổng giá
+  //     trị SP là giá trước voucher; voucher thành dòng "Voucher & xu của shop".
+  //     Chưa đọc (null) → 0, không ước.
+  // Tổng sau cấn trừ không đổi (actualRevenue = revenue_amount dòng ORDER);
+  // platformSubsidy của Order cố ý = 0 ở mapper (revenue_amount đã gồm phần sàn
+  // bù CK nền tảng). Bảng Lãi/Lỗ tab TikTok đọc đủ cột gốc từ o.tiktokSettlement.
   // Đơn CHƯA có bản kê: OrderItem.price = sale_price (đã trừ cả CK sàn) — nhãn
-  // "tạm tính", sàn trả bản kê thì số thật thay.
-  // LÁT 3 (29/10/2026, docs mục 12): voucher shop TikTok = `voucher_deduction_seller`
-  // của Get Order Price Details — probe đơn thật: là PHẦN NẰM TRONG chiết khấu NBH
-  // của bản kê (không cộng thêm). Tổng giá trị SP = giá trong giỏ TRƯỚC voucher =
-  // revenue_amount dòng ORDER + voucher; dòng "Voucher & xu của shop" = voucher.
-  // Đơn chưa đọc price_detail (null) → như lát 1: voucher 0, không ước.
+  // "tạm tính", sàn trả bản kê thì số thật thay. Bản 16/09–28/10 lấy giá gốc +
+  // sellerVoucher = chiết khấu → lệch định nghĩa với Shopee (model_discounted_price).
   const tt = o.channel.channelName === "TIKTOK" ? o.tiktokSettlement : null;
   if (tt && Number(tt.grossSales) > 0) {
     const voucher = o.tiktokVoucherSeller == null ? 0 : Math.max(Number(o.tiktokVoucherSeller), 0);
