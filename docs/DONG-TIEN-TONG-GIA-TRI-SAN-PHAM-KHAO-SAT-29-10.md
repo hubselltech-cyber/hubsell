@@ -392,3 +392,19 @@ trì khởi động của worker sổ cái: `services/shopee-escrow-columns-back
 `expectedIncome` theo từng NGÀY tạo (150 ngày, đi chỉ mục createdAt, nghỉ 800 ms giữa ngày có dòng, bỏ đơn hủy, idempotent,
 không đánh bẩn sổ); gọi sau `sweepFormulaVersion` (commit 8ec70634). Đơn chưa từng có snapshot escrow (trước khi có ước tính)
 vẫn "—". Cột voucher TikTok "—" tới khi worker đọc price_detail (200 đơn/gian/giờ).
+
+## 14. Anh hỏi 11:20: "Thuế TNCN trong Lãi/Lỗ thực hiện tưởng 0,5%?" — cột trống ở đơn ƯỚC TÍNH
+
+SQL prod (3 gian anh, đơn tạo từ 01/10, revenue > 0):
+| | n | TNCN/DT | GTGT/DT | Phí giao dịch/DT | Phí khác/DT | Hoa hồng/DT |
+|---|---|---|---|---|---|---|
+| and.not.or đã quyết toán | 514 | **−0,50 %** | −1,00 % | −3,60 % | 0,00 % | −14,83 % |
+| and.not.or ước tính | 117 | 0 | −1,00 % | −5,19 % | **−5,50 %** | −14,88 % |
+→ TNCN 0,5 % có đủ ở mọi đơn đã quyết toán. Đơn ước tính: docs API 202507 (đọc 29/10) khối `tax` KHÔNG có `pit_amount`
+(chỉ 202501 có); log `[TikTok] Phí/thuế ước tính dòng 586846943983732399` (web, 11:21, kích đồng bộ ước tính and.not.or):
+`fee=[platform_commission −40.350, transaction_fee −16.236, vn_fix_infrastructure −3.000] tax=[vat −2.690]`, còn
+`est_fee_tax_amount = −77.071` → **sàn báo tổng phí ước tính cao hơn phần bóc tách 14.795 = 5,50 % doanh thu, không nêu
+tên** (gian khác 4,25 % / 1,65 % / 0,50 % / 0) → đúng chỗ chốt chặn "Phí khác", biến mất khi quyết toán (settled: 0 %).
+Hubsell không tự ước TNCN 0,5 % (luật không bịa). Đã sửa tooltip 2 cột (`pnl-mappers.ts`): TNCN trống ở đơn ước tính +
+lý do; Phí khác ước tính = tổng sàn báo − phần bóc tách. Lợi nhuận đơn ước tính vẫn = settlement ước tính của sàn (đã gồm
+khoản này) nên không lệch khi quyết toán theo chiều xấu đi.
