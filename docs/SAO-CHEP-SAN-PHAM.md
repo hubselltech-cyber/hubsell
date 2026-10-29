@@ -134,8 +134,9 @@ Anh chốt "Làm adapter thật". Local không có gian thật (chỉ gian seed 
 
 - **Registry** (`marketplace/listing/registry.ts`): gian có `refreshToken` (TikTok thêm `shopCipher`) → adapter thật
   của sàn; gian không token → giả lập. Gian thật KHÔNG BAO GIỜ rơi vào giả lập.
-- **Cờ bật**: backend `LISTING_COPY_ENABLED=1` mới mở `/api/sao-chep-san-pham` ở production (dev luôn mở); frontend
-  `NEXT_PUBLIC_LISTING_COPY=1` mới hiện mục sidebar ở production. Push code lên vẫn an toàn: khách chưa thấy gì.
+- **Cờ bật**: ~~LISTING_COPY_ENABLED / NEXT_PUBLIC_LISTING_COPY~~ — anh chốt 29/10 chiều *"cứ đẩy thật lên, trên
+  sidebar mở ngoặc demo"* → bỏ cờ, mục sidebar ghi **"Sao chép sản phẩm (demo)"**, prod mở ngay cho mọi chủ shop
+  có lá quyền; bỏ chữ "(demo)" khi 3 sàn kiểm xong.
 - **Shopee** (`integrations/shopee/listing-api.ts` + `shopee-listing-adapter.ts`): get_category (đệm 6 h) ·
   category_recommend · get_attribute_tree (mandatory → thuộc tính bắt buộc; chọn → value_id, gõ tay → value_id 0 +
   tên) · get_brand_list (is_mandatory; No Brand id 0) · logistics/get_channel_list · media_space/upload_image
@@ -164,4 +165,4 @@ Anh chốt "Làm adapter thật". Local không có gian thật (chỉ gian seed 
 2. Shopee: xác nhận app 2040029 (ERP System) gọi được add_item; thử tạo 1 sản phẩm UNLIST trên gian test rồi xóa.
    Lazada: kiểm app có nhóm Product API. TikTok: trần 100 SP/ngày gian mới + chờ duyệt.
 3. Ảnh: thêm đổi cỡ/nén (Lazada ≤1 MB) khi gặp lỗi thật.
-4. Bật `LISTING_COPY_ENABLED=1` + `NEXT_PUBLIC_LISTING_COPY=1` → mở cho 4 khách đã hỏi trước, theo dõi log `[listing-copy]`.
+4. ~~Bật cờ~~ đã mở thật (nhãn demo); theo dõi log `[listing-copy]` + báo 4 khách đã hỏi; bỏ "(demo)" khi ổn.

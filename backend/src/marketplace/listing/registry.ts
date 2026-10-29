@@ -34,12 +34,3 @@ export function getListingAdapter(channel: Channel): ListingAdapter {
       return mockListingAdapter;
   }
 }
-
-/**
- * Cờ bật tính năng ở production (lát 1b chưa kiểm gian thật): đặt
- * LISTING_COPY_ENABLED=1 trên Render mới mở; dev/local luôn bật.
- */
-export function listingCopyEnabled(): boolean {
-  if (process.env.NODE_ENV !== "production") return true;
-  return process.env.LISTING_COPY_ENABLED === "1";
-}

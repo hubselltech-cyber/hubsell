@@ -205,13 +205,8 @@ const NAV_ITEMS: NavItem[] = [
       },
       { href: "/operations-assistant/ai-rules", label: "Cấu hình tự động hóa", perm: "operations.ai-rules" },
       // 29/10/2026: chép 1 sản phẩm (gian đã nối / kho) lên nhiều gian 3 sàn — docs/SAO-CHEP-SAN-PHAM.md.
-      {
-        href: "/operations-assistant/copy-listing",
-        label: "Sao chép sản phẩm",
-        perm: "operations.copy-listing",
-        // Lát 1b chưa kiểm gian thật: production ẩn tới khi đặt NEXT_PUBLIC_LISTING_COPY=1 (Vercel).
-        hidden: process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_LISTING_COPY !== "1",
-      },
+      // "(demo)" theo anh Trung 29/10: mở thật trên prod, adapter 3 sàn còn đang kiểm — bỏ chữ demo khi ổn.
+      { href: "/operations-assistant/copy-listing", label: "Sao chép sản phẩm (demo)", perm: "operations.copy-listing" },
     ],
   },
   {

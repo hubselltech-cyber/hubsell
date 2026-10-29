@@ -11,6 +11,7 @@
 - **Mã:** `integrations/{shopee,tiktok,lazada}/listing-api.ts` (danh mục, gợi ý, thuộc tính, thương hiệu, vận chuyển, upload/migrate ảnh, add_item + init_tier_variation / Create Product / product/create, chi tiết SP) + `marketplace/listing/{shopee,tiktok,lazada}-listing-adapter.ts` + `variant-map.ts` + `lib/image-fetch.ts`; export `callShopGet/Post`, `callLazada/Post`, `escapeXml`, `LazadaEnvelope`.
 - **An toàn khi push:** registry gian có token → adapter thật (không bao giờ rơi vào giả lập); cờ `LISTING_COPY_ENABLED=1` (BE) + `NEXT_PUBLIC_LISTING_COPY=1` (FE) mới mở ở production. Endpoint dò thử CHỈ ĐỌC `/api/sao-chep-san-pham-probe?channelId=` (quản trị nền tảng) để kiểm API thật trước khi mở. Docs mục 10 + việc còn lại 4 bước.
 - Smoke local: gian seed vẫn đi giả lập (đợt 1 SP → TikTok mock OK).
+- **Anh chốt tiếp (15:20):** "Em cứ đẩy thật lên đi. Trên sidebar mở ngoặc demo" → BỎ 2 cờ, mục sidebar "Sao chép sản phẩm (demo)", prod mở ngay; probe vẫn giữ.
 - ✅ **ĐÃ PUSH 6113ea54** (anh "Em push lên đi để tối anh test thử"): 4 commit a488b463 → 6113ea54 lên master; Render chạy migrate deploy 2 migration mới (bảng mới, không khóa Order). Prod CHƯA MỞ: anh phải đặt `LISTING_COPY_ENABLED=1` (Render web + worker) và `NEXT_PUBLIC_LISTING_COPY=1` (Vercel) mới thấy; nên chạy probe trước.
 
 ---

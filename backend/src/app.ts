@@ -34,7 +34,6 @@ import testMisaSandboxRouter from "./routes/test-misa-sandbox";
 import operationsRouter from "./routes/operations";
 import listingCopyRouter from "./routes/listing-copy";
 import listingCopyProbeRouter from "./routes/listing-copy-probe";
-import { listingCopyEnabled } from "./marketplace/listing/registry";
 import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
@@ -276,17 +275,10 @@ export function createApp() {
   // Dò thử CHỈ ĐỌC adapter thật trên một gian (quản trị nền tảng), không qua cờ bật.
   app.use("/api/sao-chep-san-pham-probe", requireAuth, requirePlatformAdmin, listingCopyProbeRouter);
 
-  // Lát 1b (adapter thật) CHƯA kiểm trên gian thật → production chỉ mở khi
-  // LISTING_COPY_ENABLED=1 (registry.listingCopyEnabled); local/dev luôn mở.
+  // Sao chép sản phẩm (29/10/2026): anh chốt mở thật trên prod ngay, nhãn sidebar
+  // "(demo)" — adapter thật 3 sàn chưa kiểm trên gian thật, theo dõi log [listing-copy].
   app.use(
     "/api/sao-chep-san-pham",
-    (_req, res, next) => {
-      if (!listingCopyEnabled()) {
-        res.status(404).json({ error: "Tính năng Sao chép sản phẩm đang thử nghiệm, chưa mở." });
-        return;
-      }
-      next();
-    },
     requireAuth,
     requirePermission("operations.copy-listing"),
     requirePlanUnlocked,
