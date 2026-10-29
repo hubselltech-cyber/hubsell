@@ -45,6 +45,8 @@ export interface CreateJobInput {
   sourceItemId?: string;
   sourceGroupKey?: string;
   targetChannelIds: string[];
+  /** Đợt nhiều sản phẩm (lát 2); bỏ trống = job lẻ, batchId = chính id job. */
+  batchId?: string;
 }
 
 export interface TargetPatch {
@@ -60,11 +62,11 @@ export interface TargetPatch {
 }
 
 /** Kiểu JSON ghi Prisma (InputJsonValue) từ object thường. */
-function json(v: unknown): Prisma.InputJsonValue {
+export function json(v: unknown): Prisma.InputJsonValue {
   return v as Prisma.InputJsonValue;
 }
 
-function asListing(v: Prisma.JsonValue): NormalizedListing {
+export function asListing(v: Prisma.JsonValue): NormalizedListing {
   return v as unknown as NormalizedListing;
 }
 
@@ -218,6 +220,7 @@ export async function createJob(input: CreateJobInput) {
       sourceTitle: listing.title,
       sourceImageUrl: listing.images[0] ?? null,
       source: json(listing),
+      batchId: input.batchId ?? null,
       targets: {
         create: prepared.map((p) => ({
           channelId: p.channel.id,
@@ -236,11 +239,13 @@ export async function createJob(input: CreateJobInput) {
     },
     include: { targets: true },
   });
+  if (!input.batchId) await prisma.listingCopyJob.update({ where: { id: job.id }, data: { batchId: job.id } });
   return getJob(input.ownerId, job.id);
 }
 
 export interface JobView {
   id: string;
+  batchId: string;
   sourceType: "CHANNEL" | "PRODUCT";
   sourceChannel: { id: string; shopName: string; channelName: string } | null;
   sourceTitle: string;
@@ -330,6 +335,7 @@ export async function getJob(ownerId: string, jobId: string): Promise<JobView> {
   const sc = job.sourceChannelId ? byId.get(job.sourceChannelId) : null;
   return {
     id: job.id,
+    batchId: job.batchId ?? job.id,
     sourceType: job.sourceType,
     sourceChannel: sc ? { id: sc.id, shopName: sc.shopName, channelName: sc.channelName } : null,
     sourceTitle: job.sourceTitle,
@@ -407,7 +413,7 @@ export async function updateJobSource(
   return getJob(ownerId, jobId);
 }
 
-async function reevaluate(t: ListingCopyTarget, listing: NormalizedListing): Promise<void> {
+export async function reevaluate(t: ListingCopyTarget, listing: NormalizedListing): Promise<void> {
   const channel = await prisma.channel.findUnique({ where: { id: t.channelId } });
   if (!channel) return;
   const { missing } = await evaluateTarget(channel, listing, {

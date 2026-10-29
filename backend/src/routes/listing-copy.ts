@@ -22,8 +22,17 @@ import {
   type TargetPatch,
 } from "../services/listing-copy/service";
 import { listChannelSources, listProductSources } from "../services/listing-copy/source";
+import { applyTargetToBatch, createBatch, getBatch, listBatches, submitBatch } from "../services/listing-copy/batch";
 
 const router = Router();
+
+function sendError(res: import("express").Response, err: unknown, next: import("express").NextFunction): void {
+  if (err instanceof ListingCopyError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  next(err);
+}
 
 function pageParams(req: AuthRequest): { page: number; pageSize: number } {
   return {
@@ -92,6 +101,68 @@ router.get("/sources", async (req: AuthRequest, res, next) => {
     res.json(await listChannelSources(channelId, search, page, pageSize));
   } catch (err) {
     next(err);
+  }
+});
+
+// ---------- Đợt nhiều sản phẩm (lát 2) ----------
+
+router.get("/batches", async (req: AuthRequest, res, next) => {
+  try {
+    const { page, pageSize } = pageParams(req);
+    res.json(await listBatches(req.ownerId!, page, pageSize));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/batches", async (req: AuthRequest, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const sourceType = body.sourceType === "PRODUCT" ? "PRODUCT" : body.sourceType === "CHANNEL" ? "CHANNEL" : null;
+    if (!sourceType) {
+      res.status(400).json({ error: "sourceType phải là CHANNEL hoặc PRODUCT." });
+      return;
+    }
+    const sourceKeys = Array.isArray(body.sourceKeys) ? body.sourceKeys.map(String) : [];
+    const targetChannelIds = Array.isArray(body.targetChannelIds) ? body.targetChannelIds.map(String) : [];
+    const batch = await createBatch({
+      ownerId: req.ownerId!,
+      userId: req.userId!,
+      allowedChannelIds: req.allowedChannelIds ?? null,
+      sourceType,
+      sourceChannelId: str(body.sourceChannelId) || undefined,
+      sources: sourceKeys.map((key) => ({ key })),
+      targetChannelIds,
+    });
+    res.status(201).json(batch);
+  } catch (err) {
+    sendError(res, err, next);
+  }
+});
+
+router.get("/batches/:id", async (req: AuthRequest, res, next) => {
+  try {
+    res.json(await getBatch(req.ownerId!, req.params.id));
+  } catch (err) {
+    sendError(res, err, next);
+  }
+});
+
+router.post("/batches/:id/submit", async (req: AuthRequest, res, next) => {
+  try {
+    res.json(await submitBatch(req.ownerId!, req.params.id));
+  } catch (err) {
+    sendError(res, err, next);
+  }
+});
+
+/** Áp cấu hình của một gian cho các sản phẩm còn lại cùng gian trong đợt. */
+router.post("/batches/:id/targets/:tid/apply", async (req: AuthRequest, res, next) => {
+  try {
+    const applied = await applyTargetToBatch(req.ownerId!, req.params.id, req.params.tid);
+    res.json({ applied, batch: await getBatch(req.ownerId!, req.params.id) });
+  } catch (err) {
+    sendError(res, err, next);
   }
 });
 

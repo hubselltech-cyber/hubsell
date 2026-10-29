@@ -1,12 +1,14 @@
 "use client";
 
 // ============================================================
-// SAO CHÉP SẢN PHẨM — trang làm việc (docs/SAO-CHEP-SAN-PHAM.md mục 6)
+// SAO CHÉP SẢN PHẨM — trang làm việc (docs/SAO-CHEP-SAN-PHAM.md mục 6, 9)
 //
-// Tab "Sao chép": Bước 1 chọn nguồn (gian đã nối / kho Hubsell) → Bước 2 tick
-// gian đích → "Xem trước" → bảng mỗi gian một dòng (danh mục gợi ý, ô còn thiếu
-// tô vàng, giá/tồn) → "Đăng lên N gian" → trạng thái từng gian tự cập nhật.
-// Tab "Lịch sử": các lượt đã chép, bấm mở lại bảng kết quả.
+// Tab "Sao chép": Bước 1 tick N sản phẩm nguồn (gian đã nối / kho Hubsell) →
+// Bước 2 tick M gian đích (nhiều sàn, có TikTok) → "Xem trước" tạo một ĐỢT →
+// bảng mỗi sản phẩm một khối, mỗi gian một dòng (danh mục gợi ý, ô còn thiếu
+// tô vàng, giá/tồn), sửa một gian rồi "Áp cho sản phẩm còn lại" → "Đăng tất cả
+// đủ điều kiện" → hàng đợi đăng lần lượt, trạng thái từng dòng tự cập nhật.
+// Tab "Lịch sử": các đợt đã tạo, bấm mở lại.
 // ============================================================
 
 import { useEffect, useMemo, useState } from "react";
@@ -25,17 +27,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Refreshing } from "@/components/shared/refreshing";
 import {
   ApiError,
-  createCopyListingJob,
+  applyCopyListingTargetToBatch,
+  createCopyListingBatch,
+  fetchCopyListingBatch,
+  fetchCopyListingBatches,
   fetchCopyListingBrands,
   fetchCopyListingCategories,
   fetchCopyListingChannels,
-  fetchCopyListingJob,
-  fetchCopyListingJobs,
   fetchCopyListingSources,
-  submitCopyListingJob,
+  submitCopyListingBatch,
   updateCopyListingSource,
   updateCopyListingTarget,
   type ChannelName,
+  type CopyListingBatch,
   type CopyListingChannel,
   type CopyListingJob,
   type CopyListingSource,
@@ -82,9 +86,13 @@ function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : String((err as Error)?.message ?? err);
 }
 
+function isOpen(t: CopyListingTarget): boolean {
+  return t.status === "PENDING" || t.status === "FAILED";
+}
+
 export function CopyListingPage() {
   const [tab, setTab] = useState<Tab>("new");
-  const [openJobId, setOpenJobId] = useState<string | null>(null);
+  const [openBatchId, setOpenBatchId] = useState<string | null>(null);
 
   const tabs: PageTabItem<Tab>[] = [
     { key: "new", label: "Sao chép" },
@@ -101,17 +109,17 @@ export function CopyListingPage() {
           value={tab}
           onChange={(key) => {
             setTab(key);
-            setOpenJobId(null);
+            setOpenBatchId(null);
           }}
         />
       </PageHeaderBand>
 
-      {openJobId ? (
-        <JobView jobId={openJobId} onBack={() => setOpenJobId(null)} />
+      {openBatchId ? (
+        <BatchView batchId={openBatchId} onBack={() => setOpenBatchId(null)} />
       ) : tab === "new" ? (
-        <NewCopy onCreated={(id) => setOpenJobId(id)} />
+        <NewCopy onCreated={(id) => setOpenBatchId(id)} />
       ) : (
-        <History onOpen={(id) => setOpenJobId(id)} />
+        <History onOpen={(id) => setOpenBatchId(id)} />
       )}
     </OperationsFrame>
   );
@@ -119,13 +127,16 @@ export function CopyListingPage() {
 
 // ---------------------------------------------------------------- Bước 1 + 2
 
-function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
+function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
   const [sourceType, setSourceType] = useState<SourceType>("CHANNEL");
   const [sourceChannelId, setSourceChannelId] = useState("");
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
-  const [picked, setPicked] = useState<CopyListingSource | null>(null);
+  /** Số sản phẩm mỗi trang — khẩu vị bảng chuẩn: chọn được 10/20/50/100. */
+  const [pageSize, setPageSize] = useState(20);
+  /** Sản phẩm đã tick, giữ qua các trang / lần tìm. */
+  const [picked, setPicked] = useState<Map<string, CopyListingSource>>(new Map());
   const [targets, setTargets] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
 
@@ -143,7 +154,6 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
     [channelsQ.data]
   );
 
-  // Mặc định chọn gian nguồn đầu tiên có sản phẩm.
   useEffect(() => {
     if (!sourceChannelId && channels.length > 0) {
       const first = channels.find((c) => c.productCount > 0) ?? channels[0];
@@ -156,7 +166,7 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
     channelId: sourceType === "CHANNEL" ? sourceChannelId : undefined,
     search: debounced,
     page,
-    pageSize: 10,
+    pageSize,
   };
   const sourcesQ = useApiQuery({
     queryKey: qk.copyListingSources(sourceParams),
@@ -166,19 +176,38 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
 
   const targetChannels = channels.filter((c) => !(sourceType === "CHANNEL" && c.id === sourceChannelId));
   const pageCount = sourcesQ.data ? Math.max(1, Math.ceil(sourcesQ.data.total / sourcesQ.data.pageSize)) : 1;
+  const pageItems = sourcesQ.data?.items ?? [];
+  const allOnPagePicked = pageItems.length > 0 && pageItems.every((s) => picked.has(s.key));
+
+  function togglePick(s: CopyListingSource) {
+    setPicked((prev) => {
+      const next = new Map(prev);
+      if (next.has(s.key)) next.delete(s.key);
+      else next.set(s.key, s);
+      return next;
+    });
+  }
+
+  function resetSource(type: SourceType) {
+    setSourceType(type);
+    setPicked(new Map());
+    setPage(1);
+  }
 
   async function create() {
-    if (!picked) return;
+    if (picked.size === 0) return;
     setCreating(true);
     try {
-      const job = await createCopyListingJob({
+      const batch = await createCopyListingBatch({
         sourceType,
         sourceChannelId: sourceType === "CHANNEL" ? sourceChannelId : undefined,
-        sourceItemId: sourceType === "CHANNEL" ? picked.key : undefined,
-        sourceGroupKey: sourceType === "PRODUCT" ? picked.key : undefined,
+        sourceKeys: [...picked.keys()],
         targetChannelIds: [...targets],
       });
-      onCreated(job.id);
+      if (batch.errors.length > 0) {
+        toast.warning(`${batch.errors.length} sản phẩm không đọc được nguồn, đã bỏ qua.`);
+      }
+      onCreated(batch.id);
     } catch (err) {
       toast.error(errorText(err));
     } finally {
@@ -192,7 +221,7 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
       <Card>
         <CardContent className="space-y-4 p-5">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="text-sm font-semibold text-slate-900">1. Chọn sản phẩm nguồn</div>
+            <div className="text-sm font-semibold text-slate-900">1. Chọn sản phẩm nguồn (tick được nhiều)</div>
             <div className="flex rounded-lg border border-slate-200 p-0.5">
               {(
                 [
@@ -203,11 +232,7 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => {
-                    setSourceType(key);
-                    setPicked(null);
-                    setPage(1);
-                  }}
+                  onClick={() => resetSource(key)}
                   className={cn(
                     "rounded-md px-3 py-1 text-sm transition-colors",
                     sourceType === key ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
@@ -217,6 +242,14 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
                 </button>
               ))}
             </div>
+            {picked.size > 0 && (
+              <span className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">
+                Đã chọn <span className="font-semibold text-slate-900 tabular-nums">{picked.size}</span> sản phẩm
+                <Button size="xs" variant="ghost" onClick={() => setPicked(new Map())}>
+                  Bỏ chọn
+                </Button>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -226,7 +259,7 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
                 value={sourceChannelId}
                 onChange={(e) => {
                   setSourceChannelId(e.target.value);
-                  setPicked(null);
+                  setPicked(new Map());
                   setPage(1);
                   setTargets((prev) => {
                     const next = new Set(prev);
@@ -261,25 +294,40 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[4%]" />
+                    <TableHead className="w-[4%]">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-slate-900"
+                        aria-label="Chọn tất cả sản phẩm trên trang"
+                        checked={allOnPagePicked}
+                        onChange={() =>
+                          setPicked((prev) => {
+                            const next = new Map(prev);
+                            if (allOnPagePicked) pageItems.forEach((s) => next.delete(s.key));
+                            else pageItems.forEach((s) => next.set(s.key, s));
+                            return next;
+                          })
+                        }
+                      />
+                    </TableHead>
                     <TableHead className="w-[56%]">Sản phẩm</TableHead>
                     <TableHead className="w-[12%] text-right">Phân loại</TableHead>
                     <TableHead className="w-[28%] text-right">Giá</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(sourcesQ.data?.items ?? []).map((s) => {
-                    const active = picked?.key === s.key;
+                  {pageItems.map((s) => {
+                    const active = picked.has(s.key);
                     return (
                       <TableRow
                         key={s.key}
                         className={cn("cursor-pointer", active && "bg-slate-50")}
-                        onClick={() => setPicked(s)}
+                        onClick={() => togglePick(s)}
                       >
                         <TableCell>
                           <span
                             className={cn(
-                              "flex size-4 items-center justify-center rounded-full border",
+                              "flex size-4 items-center justify-center rounded border",
                               active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"
                             )}
                           >
@@ -311,7 +359,7 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
                       </TableRow>
                     );
                   })}
-                  {sourcesQ.data && sourcesQ.data.items.length === 0 && (
+                  {sourcesQ.data && pageItems.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={4} className="py-8 text-center text-sm text-slate-500">
                         Không có sản phẩm nào khớp.
@@ -322,19 +370,17 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
               </Table>
             </div>
           </Refreshing>
-          {sourcesQ.data && sourcesQ.data.total > sourcesQ.data.pageSize && (
-            <div className="flex items-center justify-end gap-2">
-              <span className={TEXT_SUB}>
-                Trang {page}/{pageCount} · {formatNumber(sourcesQ.data.total)} sản phẩm
-              </span>
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Trước
-              </Button>
-              <Button size="sm" variant="outline" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
-                Sau
-              </Button>
-            </div>
-          )}
+          <PagerFooter
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={sourcesQ.data?.total ?? 0}
+            onPage={setPage}
+            onPageSize={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+          />
         </CardContent>
       </Card>
 
@@ -343,31 +389,86 @@ function NewCopy({ onCreated }: { onCreated: (jobId: string) => void }) {
         <CardContent className="space-y-3 p-5">
           <div className="text-sm font-semibold text-slate-900">2. Chọn gian đích (được nhiều gian, nhiều sàn)</div>
           {targetChannels.length === 0 ? (
-            <p className="text-sm text-slate-500">Chưa có gian nào khác để đăng — nối thêm gian ở trang Gian hàng.</p>
+            <p className="text-sm text-slate-500">Chưa có gian nào khác để đăng — nối thêm gian ở trang Kênh bán.</p>
           ) : (
             <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {targetChannels.map((c) => (
-                <TargetRow key={c.id} channel={c} checked={targets.has(c.id)} onToggle={() => {
-                  setTargets((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(c.id)) next.delete(c.id);
-                    else next.add(c.id);
-                    return next;
-                  });
-                }} />
+                <TargetRow
+                  key={c.id}
+                  channel={c}
+                  checked={targets.has(c.id)}
+                  onToggle={() => {
+                    setTargets((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(c.id)) next.delete(c.id);
+                      else next.add(c.id);
+                      return next;
+                    });
+                  }}
+                />
               ))}
             </div>
           )}
           <div className="flex items-center justify-between gap-3 pt-1">
             <span className={TEXT_SUB}>
-              {picked ? `Nguồn: ${picked.title}` : "Chưa chọn sản phẩm nguồn"} · {targets.size} gian đích
+              {picked.size} sản phẩm × {targets.size} gian đích = {picked.size * targets.size} lượt đăng
             </span>
-            <Button disabled={!picked || targets.size === 0 || creating} onClick={create}>
+            <Button disabled={picked.size === 0 || targets.size === 0 || creating} onClick={create}>
               {creating ? "Đang chuẩn bị…" : "Xem trước"}
             </Button>
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
+/** Chân bảng: trái = số dòng/trang + tổng, phải = Trang x/y Trước · Sau — luôn hiện. */
+function PagerFooter({
+  page,
+  pageCount,
+  pageSize,
+  total,
+  onPage,
+  onPageSize,
+}: {
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  total: number;
+  onPage: (p: number) => void;
+  onPageSize?: (n: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        {onPageSize && (
+          <>
+            <span className={TEXT_SUB}>Hiển thị</span>
+            <NativeSelect className="w-24" value={String(pageSize)} onChange={(e) => onPageSize(Number(e.target.value))}>
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n} / trang
+                </option>
+              ))}
+            </NativeSelect>
+          </>
+        )}
+        <span className={cn(TEXT_SUB, "tabular-nums")}>Tổng {formatNumber(total)} sản phẩm</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={cn(TEXT_SUB, "tabular-nums")}>
+          Trang {page}/{pageCount}
+        </span>
+        <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          Trước
+        </Button>
+        <Button size="sm" variant="outline" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
+          Sau
+        </Button>
+      </div>
     </div>
   );
 }
@@ -385,16 +486,20 @@ function TargetRow({ channel, checked, onToggle }: { channel: CopyListingChannel
   );
 }
 
-// ---------------------------------------------------------------- Xem trước + kết quả
+// ---------------------------------------------------------------- Đợt: xem trước + kết quả
 
-function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
+function BatchView({ batchId, onBack }: { batchId: string; onBack: () => void }) {
   const invalidate = useInvalidate();
-  const jobQ = useApiQuery({ queryKey: qk.copyListingJob(jobId), queryFn: () => fetchCopyListingJob(jobId), staleTime: 0 });
-  const job = jobQ.data;
-  const running = Boolean(job?.targets.some((t) => t.status === "QUEUED" || t.status === "RUNNING"));
+  const batchQ = useApiQuery({
+    queryKey: qk.copyListingBatch(batchId),
+    queryFn: () => fetchCopyListingBatch(batchId),
+    staleTime: 0,
+  });
+  const batch = batchQ.data;
+  const allTargets = useMemo(() => batch?.jobs.flatMap((j) => j.targets) ?? [], [batch]);
+  const running = allTargets.some((t) => t.status === "QUEUED" || t.status === "RUNNING");
 
-  // Đang đăng → hỏi lại mỗi 2 giây cho tới khi mọi gian có kết quả.
-  const refetch = jobQ.refetch;
+  const refetch = batchQ.refetch;
   useEffect(() => {
     if (!running) return;
     const t = setInterval(() => void refetch(), 2000);
@@ -404,24 +509,27 @@ function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  if (!job) {
-    return <p className="text-sm text-slate-500">{jobQ.error ? errorText(jobQ.error) : "Đang tải…"}</p>;
+  if (!batch) {
+    return <p className="text-sm text-slate-500">{batchQ.error ? batchQ.error : "Đang tải…"}</p>;
   }
 
-  const ready = job.targets.filter((t) => (t.status === "PENDING" || t.status === "FAILED") && t.missing.length === 0);
-  // Sửa tên/mô tả khi không gian nào đang đăng và còn gian chờ/lỗi (khớp luật backend).
-  const editable = !running && job.targets.some((t) => t.status === "PENDING" || t.status === "FAILED");
+  const ready = allTargets.filter((t) => isOpen(t) && t.missing.length === 0);
+  const counts = {
+    listed: allTargets.filter((t) => t.status === "LISTED").length,
+    review: allTargets.filter((t) => t.status === "PENDING_REVIEW").length,
+    failed: allTargets.filter((t) => t.status === "FAILED").length,
+  };
 
   async function submit() {
     setSubmitting(true);
     try {
-      const r = await submitCopyListingJob(job!.id);
+      const r = await submitCopyListingBatch(batch!.id);
       if (r.skipped.length > 0) {
-        toast.warning(`Đã gửi ${r.queued} gian; ${r.skipped.length} gian còn thiếu thông tin nên chưa đăng.`);
+        toast.warning(`Đã gửi ${r.queued} lượt; ${r.skipped.length} lượt còn thiếu thông tin nên chưa đăng.`);
       } else {
-        toast.success(`Đã gửi đăng lên ${r.queued} gian.`);
+        toast.success(`Đã gửi đăng ${r.queued} lượt.`);
       }
-      await invalidate(qk.copyListingJob(job!.id), qk.copyListingJobs(1));
+      await invalidate(qk.copyListingBatch(batch!.id), qk.copyListingBatches(1));
     } catch (err) {
       toast.error(errorText(err));
     } finally {
@@ -435,28 +543,31 @@ function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
         <Button variant="outline" size="sm" onClick={onBack}>
           <ArrowLeft data-icon="inline-start" /> Quay lại
         </Button>
-        <StatusChip {...JOB_STATUS[job.status]} />
-        <span className={TEXT_SUB}>Tạo lúc {formatDateTime(job.createdAt)}</span>
+        <span className="text-sm text-slate-900">
+          Đợt {batch.jobs.length} sản phẩm × {new Set(allTargets.map((t) => t.channel.id)).size} gian ={" "}
+          <span className="font-semibold tabular-nums">{allTargets.length}</span> lượt đăng
+        </span>
+        <span className={TEXT_SUB}>· tạo lúc {formatDateTime(batch.createdAt)}</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {counts.listed > 0 && <StatusChip label={`Đã đăng ${counts.listed}`} className={TARGET_STATUS.LISTED.className} />}
+          {counts.review > 0 && (
+            <StatusChip label={`Chờ sàn duyệt ${counts.review}`} className={TARGET_STATUS.PENDING_REVIEW.className} />
+          )}
+          {counts.failed > 0 && <StatusChip label={`Lỗi ${counts.failed}`} className={TARGET_STATUS.FAILED.className} />}
+          <span className={TEXT_SUB}>{ready.length} lượt đủ điều kiện</span>
+          <Button disabled={ready.length === 0 || submitting || running} onClick={submit}>
+            {submitting ? "Đang gửi…" : running ? "Đang đăng…" : `Đăng ${ready.length} lượt đủ điều kiện`}
+          </Button>
+        </div>
       </div>
-
-      <SourceCard job={job} editable={editable} />
 
       <Card>
         <CardContent className="p-0">
-          <div className="flex items-center justify-between px-5 py-4">
-            <div className="text-sm font-semibold text-slate-900">Gian đích ({job.targets.length})</div>
-            <div className="flex items-center gap-3">
-              <span className={TEXT_SUB}>{ready.length} gian đủ điều kiện</span>
-              <Button disabled={ready.length === 0 || submitting || running} onClick={submit}>
-                {submitting ? "Đang gửi…" : running ? "Đang đăng…" : `Đăng lên ${ready.length} gian`}
-              </Button>
-            </div>
-          </div>
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[20%]">Gian hàng</TableHead>
-                <TableHead className="w-[26%]">Danh mục sàn đích</TableHead>
+                <TableHead className="w-[22%]">Sản phẩm · Gian hàng</TableHead>
+                <TableHead className="w-[24%]">Danh mục sàn đích</TableHead>
                 <TableHead className="w-[26%]">Còn thiếu</TableHead>
                 <TableHead className="w-[12%] text-right">Giá · Tồn</TableHead>
                 <TableHead className="w-[11%]">Trạng thái</TableHead>
@@ -464,13 +575,13 @@ function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {job.targets.map((t) => (
-                <TargetRows
-                  key={t.id}
+              {batch.jobs.map((job) => (
+                <JobRows
+                  key={job.id}
+                  batch={batch}
                   job={job}
-                  target={t}
-                  expanded={expanded === t.id}
-                  onToggle={() => setExpanded((cur) => (cur === t.id ? null : t.id))}
+                  expanded={expanded}
+                  onToggle={(id) => setExpanded((cur) => (cur === id ? null : id))}
                 />
               ))}
             </TableBody>
@@ -481,7 +592,83 @@ function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   );
 }
 
-function SourceCard({ job, editable }: { job: CopyListingJob; editable: boolean }) {
+/** Một sản phẩm trong đợt: dòng tiêu đề (ảnh, tên, SKU, sửa tên/mô tả) + mỗi gian một dòng. */
+function JobRows({
+  batch,
+  job,
+  expanded,
+  onToggle,
+}: {
+  batch: CopyListingBatch;
+  job: CopyListingJob;
+  expanded: string | null;
+  onToggle: (id: string) => void;
+}) {
+  const sourceKey = `src:${job.id}`;
+  const running = job.targets.some((t) => t.status === "QUEUED" || t.status === "RUNNING");
+  const editable = !running && job.targets.some(isOpen);
+  const s = job.source;
+  return (
+    <>
+      <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+        <TableCell colSpan={5}>
+          <div className="flex items-center gap-3">
+            <Thumb src={job.sourceImageUrl} alt={job.sourceTitle} size="size-9" />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-slate-900">{s.title}</div>
+              <div className={cn(TEXT_SUB, "flex flex-wrap items-center gap-x-2")}>
+                {job.sourceChannel ? (
+                  <span>
+                    {CHANNEL_META[job.sourceChannel.channelName].label} · {job.sourceChannel.shopName}
+                  </span>
+                ) : (
+                  <span>Kho Hubsell</span>
+                )}
+                <span>
+                  · {s.variants.length} phân loại · {s.images.length} ảnh
+                </span>
+                {s.options.length > 0 && <span>· {s.options.map((o) => `${o.name}: ${o.values.join("/")}`).join(" · ")}</span>}
+                <span className="inline-flex items-center gap-1 font-mono">
+                  {s.variants[0]?.sku}
+                  {s.variants[0]?.sku && <CopyIconButton value={s.variants[0].sku} what="mã SKU" />}
+                </span>
+              </div>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell className="text-right">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={expanded === sourceKey ? "Thu gọn" : "Sửa tên và mô tả"}
+            onClick={() => onToggle(sourceKey)}
+          >
+            {expanded === sourceKey ? <ChevronUp /> : <ChevronDown />}
+          </Button>
+        </TableCell>
+      </TableRow>
+      {expanded === sourceKey && (
+        <TableRow>
+          <TableCell colSpan={6} className="bg-slate-50/40 p-0">
+            <SourceEditor job={job} batchId={batch.id} editable={editable} />
+          </TableCell>
+        </TableRow>
+      )}
+      {job.targets.map((t) => (
+        <TargetRows
+          key={t.id}
+          batch={batch}
+          job={job}
+          target={t}
+          expanded={expanded === t.id}
+          onToggle={() => onToggle(t.id)}
+        />
+      ))}
+    </>
+  );
+}
+
+function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId: string; editable: boolean }) {
   const invalidate = useInvalidate();
   const [title, setTitle] = useState(job.source.title);
   const [description, setDescription] = useState(job.source.description);
@@ -492,8 +679,8 @@ function SourceCard({ job, editable }: { job: CopyListingJob; editable: boolean 
     setSaving(true);
     try {
       await updateCopyListingSource(job.id, { title, description });
-      toast.success("Đã cập nhật tên và mô tả cho mọi gian đích.");
-      await invalidate(qk.copyListingJob(job.id));
+      toast.success("Đã cập nhật tên và mô tả cho mọi gian đích của sản phẩm này.");
+      await invalidate(qk.copyListingBatch(batchId));
     } catch (err) {
       toast.error(errorText(err));
     } finally {
@@ -501,77 +688,48 @@ function SourceCard({ job, editable }: { job: CopyListingJob; editable: boolean 
     }
   }
 
-  const s = job.source;
   return (
-    <Card>
-      <CardContent className="flex gap-5 p-5">
-        <Thumb src={job.sourceImageUrl} alt={job.sourceTitle} size="size-24" />
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-900">Nguồn</span>
-            {job.sourceChannel ? (
-              <>
-                <ChannelChip channelName={job.sourceChannel.channelName} />
-                <span className="text-sm text-slate-700">{job.sourceChannel.shopName}</span>
-              </>
-            ) : (
-              <span className="text-sm text-slate-700">Kho Hubsell</span>
-            )}
-            <span className={TEXT_SUB}>
-              · {s.variants.length} phân loại · {s.images.length} ảnh
-              {s.options.length > 0 && ` · ${s.options.map((o) => `${o.name}: ${o.values.length}`).join(", ")}`}
-            </span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr]">
-            <div className="space-y-1">
-              <div className={TEXT_TABLE_HEAD}>Tên sản phẩm ({title.trim().length} ký tự)</div>
-              <Input value={title} disabled={!editable} onChange={(e) => setTitle(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <div className={TEXT_TABLE_HEAD}>Mô tả ({description.trim().length} ký tự)</div>
-              <textarea
-                className="min-h-9 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
-                rows={2}
-                value={description}
-                disabled={!editable}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {s.variants.slice(0, 8).map((v) => (
-              <span key={v.sku} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-xs text-slate-700">
-                {v.name ? `${v.name} · ` : ""}
-                <span className="font-mono">{v.sku}</span>
-                <CopyIconButton value={v.sku} what="mã SKU" />
-              </span>
-            ))}
-            {s.variants.length > 8 && <span className={TEXT_SUB}>+{s.variants.length - 8} phân loại</span>}
-            {editable && dirty && (
-              <Button size="sm" className="ml-auto" disabled={saving} onClick={save}>
-                {saving ? "Đang lưu…" : "Lưu tên & mô tả"}
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_1fr_auto]">
+      <div className="space-y-1">
+        <div className={TEXT_TABLE_HEAD}>Tên sản phẩm ({title.trim().length} ký tự)</div>
+        <Input value={title} disabled={!editable} onChange={(e) => setTitle(e.target.value)} />
+      </div>
+      <div className="space-y-1">
+        <div className={TEXT_TABLE_HEAD}>Mô tả ({description.trim().length} ký tự)</div>
+        <textarea
+          className="min-h-9 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
+          rows={2}
+          value={description}
+          disabled={!editable}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+      <div className="flex items-end">
+        {editable && (
+          <Button size="sm" disabled={!dirty || saving} onClick={save}>
+            {saving ? "Đang lưu…" : "Lưu tên & mô tả"}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
 function TargetRows({
+  batch,
   job,
   target: t,
   expanded,
   onToggle,
 }: {
+  batch: CopyListingBatch;
   job: CopyListingJob;
   target: CopyListingTarget;
   expanded: boolean;
   onToggle: () => void;
 }) {
   const attrName = (id: string) => t.attributeDefs.find((d) => d.id === id)?.name;
-  const canEdit = t.status === "PENDING" || t.status === "FAILED";
+  const canEdit = isOpen(t);
   const minPrice = Math.min(...job.source.variants.map((v) => v.price));
   const adjusted = Math.round((minPrice * (1 + t.priceAdjustPercent / 100)) / 100) * 100;
   const stock = t.stock ?? Math.min(...job.source.variants.map((v) => v.stock));
@@ -580,7 +738,7 @@ function TargetRows({
     <>
       <TableRow className={cn(expanded && "bg-slate-50/60")}>
         <TableCell>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pl-6">
             <ChannelChip channelName={t.channel.channelName} />
             <span className="truncate text-sm text-slate-900">{t.channel.shopName}</span>
           </div>
@@ -599,7 +757,11 @@ function TargetRows({
         </TableCell>
         <TableCell>
           {t.missing.length === 0 ? (
-            <span className="text-sm text-emerald-500">Đủ điều kiện</span>
+            isOpen(t) ? (
+              <span className="text-sm text-emerald-500">Đủ điều kiện</span>
+            ) : (
+              <span className={TEXT_SUB}>—</span>
+            )
           ) : (
             <div className="flex flex-wrap gap-1">
               {t.missing.map((m) => (
@@ -634,7 +796,7 @@ function TargetRows({
       </TableRow>
       {t.error && (
         <TableRow>
-          <TableCell colSpan={6} className="bg-rose-50/60 py-2 text-sm text-red-500">
+          <TableCell colSpan={6} className="bg-rose-50/60 py-2 pl-10 text-sm text-red-500">
             {t.error}
           </TableCell>
         </TableRow>
@@ -642,7 +804,7 @@ function TargetRows({
       {expanded && (
         <TableRow>
           <TableCell colSpan={6} className="bg-slate-50/60 p-0">
-            <TargetEditor job={job} target={t} canEdit={canEdit} />
+            <TargetEditor batch={batch} job={job} target={t} canEdit={canEdit} />
           </TableCell>
         </TableRow>
       )}
@@ -650,11 +812,22 @@ function TargetRows({
   );
 }
 
-function TargetEditor({ job, target: t, canEdit }: { job: CopyListingJob; target: CopyListingTarget; canEdit: boolean }) {
+function TargetEditor({
+  batch,
+  job,
+  target: t,
+  canEdit,
+}: {
+  batch: CopyListingBatch;
+  job: CopyListingJob;
+  target: CopyListingTarget;
+  canEdit: boolean;
+}) {
   const invalidate = useInvalidate();
   const [categories, setCategories] = useState<{ id: string; name: string; path: string[] }[]>([]);
   const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [draft, setDraft] = useState<CopyListingTargetPatch>({});
 
   useEffect(() => {
@@ -670,25 +843,45 @@ function TargetEditor({ job, target: t, canEdit }: { job: CopyListingJob; target
     };
   }, [job.id, t.id, t.categoryId]);
 
-  const value = <K extends keyof CopyListingTargetPatch>(k: K): CopyListingTargetPatch[K] | CopyListingTarget[K & keyof CopyListingTarget] =>
+  const value = <K extends keyof CopyListingTargetPatch>(k: K): CopyListingTargetPatch[K] =>
     draft[k] !== undefined ? draft[k] : (t as unknown as CopyListingTargetPatch)[k];
   const attrs = { ...t.attributes, ...(draft.attributes ?? {}) };
   const dims = draft.dimensionsCm !== undefined ? draft.dimensionsCm : t.dimensionsCm;
   const logistics = draft.logisticIds ?? t.logisticIds;
   const req = t.requirements;
   const dirty = Object.keys(draft).length > 0;
+  /** Số gian cùng gian hàng ở sản phẩm khác trong đợt còn chờ — nút "Áp cho sản phẩm còn lại". */
+  const siblings = batch.jobs
+    .filter((j) => j.id !== job.id)
+    .flatMap((j) => j.targets)
+    .filter((x) => x.channel.id === t.channel.id && isOpen(x)).length;
 
   async function save() {
     setSaving(true);
     try {
       await updateCopyListingTarget(job.id, t.id, draft);
       setDraft({});
-      await invalidate(qk.copyListingJob(job.id));
+      await invalidate(qk.copyListingBatch(batch.id));
       toast.success(`Đã lưu ${t.channel.shopName}.`);
     } catch (err) {
       toast.error(errorText(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function applyToOthers() {
+    setApplying(true);
+    try {
+      if (dirty) await updateCopyListingTarget(job.id, t.id, draft);
+      setDraft({});
+      const r = await applyCopyListingTargetToBatch(batch.id, t.id);
+      await invalidate(qk.copyListingBatch(batch.id));
+      toast.success(`Đã áp danh mục, thuộc tính, cân nặng… cho ${r.applied} sản phẩm còn lại trên ${t.channel.shopName}.`);
+    } catch (err) {
+      toast.error(errorText(err));
+    } finally {
+      setApplying(false);
     }
   }
 
@@ -705,7 +898,7 @@ function TargetEditor({ job, target: t, canEdit }: { job: CopyListingJob; target
   const inputCls = (code: string) => cn(missing.has(code) && "border-amber-300 bg-amber-50/40");
 
   return (
-    <div className="space-y-4 px-5 py-4">
+    <div className="space-y-4 px-5 py-4 pl-10">
       <div className="grid gap-4 md:grid-cols-3">
         {field(
           "Danh mục",
@@ -770,7 +963,12 @@ function TargetEditor({ job, target: t, canEdit }: { job: CopyListingJob; target
                 onChange={(e) =>
                   setDraft((d) => ({
                     ...d,
-                    dimensionsCm: { length: dims?.length ?? 0, width: dims?.width ?? 0, height: dims?.height ?? 0, [k]: Number(e.target.value) || 0 },
+                    dimensionsCm: {
+                      length: dims?.length ?? 0,
+                      width: dims?.width ?? 0,
+                      height: dims?.height ?? 0,
+                      [k]: Number(e.target.value) || 0,
+                    },
                   }))
                 }
               />
@@ -855,26 +1053,34 @@ function TargetEditor({ job, target: t, canEdit }: { job: CopyListingJob; target
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <span className={TEXT_SUB}>
           Giới hạn sàn: tên {req?.titleMin ?? "?"}–{req?.titleMax ?? "?"} ký tự · tối đa {req?.maxImages ?? "?"} ảnh ·{" "}
-          {req?.maxOptions ?? "?"} nhóm phân loại · {req?.maxVariants ?? "?"} phân loại. Video, bảng size, chứng chỉ: bổ sung trên sàn sau khi đăng.
+          {req?.maxOptions ?? "?"} nhóm phân loại · {req?.maxVariants ?? "?"} phân loại. Video, bảng size, chứng chỉ: bổ sung trên
+          sàn sau khi đăng.
         </span>
         {canEdit && (
-          <Button size="sm" disabled={!dirty || saving} onClick={save}>
-            {saving ? "Đang lưu…" : "Lưu gian này"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {siblings > 0 && (
+              <Button size="sm" variant="outline" disabled={applying || saving} onClick={applyToOthers}>
+                {applying ? "Đang áp…" : `Áp cho ${siblings} sản phẩm còn lại`}
+              </Button>
+            )}
+            <Button size="sm" disabled={!dirty || saving || applying} onClick={save}>
+              {saving ? "Đang lưu…" : "Lưu gian này"}
+            </Button>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------- Lịch sử
+// ---------------------------------------------------------------- Lịch sử (theo đợt)
 
-function History({ onOpen }: { onOpen: (id: string) => void }) {
+function History({ onOpen }: { onOpen: (batchId: string) => void }) {
   const [page, setPage] = useState(1);
-  const q = useApiQuery({ queryKey: qk.copyListingJobs(page), queryFn: () => fetchCopyListingJobs(page, 20) });
+  const q = useApiQuery({ queryKey: qk.copyListingBatches(page), queryFn: () => fetchCopyListingBatches(page, 20) });
   const data = q.data;
   const pageCount = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
@@ -885,27 +1091,33 @@ function History({ onOpen }: { onOpen: (id: string) => void }) {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[40%]">Sản phẩm nguồn</TableHead>
+                <TableHead className="w-[40%]">Đợt sao chép</TableHead>
                 <TableHead className="w-[32%]">Gian đích</TableHead>
                 <TableHead className="w-[14%]">Trạng thái</TableHead>
                 <TableHead className="w-[14%] text-right">Thời gian</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(data?.items ?? []).map((j) => (
-                <TableRow key={j.id} className="cursor-pointer" onClick={() => onOpen(j.id)}>
+              {(data?.items ?? []).map((b) => (
+                <TableRow key={b.id} className="cursor-pointer" onClick={() => onOpen(b.id)}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <Thumb src={j.sourceImageUrl} alt={j.sourceTitle} />
+                      <Thumb src={b.firstImageUrl} alt={b.firstTitle} />
                       <div className="min-w-0">
-                        <div className="truncate text-sm text-slate-900">{j.sourceTitle}</div>
-                        <div className={TEXT_SUB}>{j.sourceType === "CHANNEL" ? "Từ gian hàng" : "Từ kho Hubsell"}</div>
+                        <div className="truncate text-sm text-slate-900">
+                          {b.firstTitle}
+                          {b.productCount > 1 && <span className="text-slate-500"> +{b.productCount - 1} sản phẩm</span>}
+                        </div>
+                        <div className={TEXT_SUB}>
+                          {b.sourceType === "CHANNEL" ? "Từ gian hàng" : "Từ kho Hubsell"} · {b.productCount} sản phẩm ×{" "}
+                          {b.channelCount} gian
+                        </div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {j.targets.map((t, i) => (
+                      {b.targets.map((t, i) => (
                         <span
                           key={i}
                           className={cn("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px]", TARGET_STATUS[t.status].className)}
@@ -916,34 +1128,24 @@ function History({ onOpen }: { onOpen: (id: string) => void }) {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <StatusChip {...JOB_STATUS[j.status]} />
+                    <StatusChip {...JOB_STATUS[b.status]} />
                   </TableCell>
-                  <TableCell className={cn("text-right", TEXT_SUB)}>{formatDateTime(j.createdAt)}</TableCell>
+                  <TableCell className={cn("text-right", TEXT_SUB)}>{formatDateTime(b.createdAt)}</TableCell>
                 </TableRow>
               ))}
               {data && data.items.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="py-8 text-center text-sm text-slate-500">
-                    Chưa có lượt sao chép nào.
+                    Chưa có đợt sao chép nào.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </Refreshing>
-        {data && data.total > data.pageSize && (
-          <div className="flex items-center justify-end gap-2 px-5 py-3">
-            <span className={TEXT_SUB}>
-              Trang {page}/{pageCount}
-            </span>
-            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              Trước
-            </Button>
-            <Button size="sm" variant="outline" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
-              Sau
-            </Button>
-          </div>
-        )}
+        <div className="border-t border-slate-100 px-5 py-3">
+          <PagerFooter page={page} pageCount={pageCount} pageSize={20} total={data?.total ?? 0} onPage={setPage} />
+        </div>
       </CardContent>
     </Card>
   );

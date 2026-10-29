@@ -8327,6 +8327,7 @@ export interface CopyListingTarget {
 
 export interface CopyListingJob {
   id: string;
+  batchId: string;
   sourceType: "CHANNEL" | "PRODUCT";
   sourceChannel: { id: string; shopName: string; channelName: ChannelName } | null;
   sourceTitle: string;
@@ -8434,4 +8435,59 @@ export function submitCopyListingJob(id: string) {
     skipped: { targetId: string; shopName: string; missing: string[] }[];
     job: CopyListingJob;
   }>(`${COPY_LISTING_BASE}/jobs/${id}/submit`, { method: "POST" });
+}
+
+// ----- Đợt nhiều sản phẩm (lát 2) -----
+
+export interface CopyListingBatch {
+  id: string;
+  createdAt: string;
+  jobs: CopyListingJob[];
+  errors: { key: string; error: string }[];
+}
+
+export interface CopyListingBatchSummary {
+  id: string;
+  createdAt: string;
+  sourceType: "CHANNEL" | "PRODUCT";
+  productCount: number;
+  firstTitle: string;
+  firstImageUrl: string | null;
+  channelCount: number;
+  targets: { status: CopyListingTargetStatus; shopName: string; channelName: ChannelName }[];
+  status: CopyListingJobStatus;
+}
+
+export function fetchCopyListingBatches(page = 1, pageSize = 20) {
+  return apiFetch<{ items: CopyListingBatchSummary[]; total: number; page: number; pageSize: number }>(
+    `${COPY_LISTING_BASE}/batches?page=${page}&pageSize=${pageSize}`
+  );
+}
+
+export function createCopyListingBatch(body: {
+  sourceType: "CHANNEL" | "PRODUCT";
+  sourceChannelId?: string;
+  sourceKeys: string[];
+  targetChannelIds: string[];
+}) {
+  return apiFetch<CopyListingBatch>(`${COPY_LISTING_BASE}/batches`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function fetchCopyListingBatch(id: string) {
+  return apiFetch<CopyListingBatch>(`${COPY_LISTING_BASE}/batches/${id}`);
+}
+
+export function submitCopyListingBatch(id: string) {
+  return apiFetch<{
+    queued: number;
+    skipped: { jobId: string; targetId: string; shopName: string; missing: string[] }[];
+    batch: CopyListingBatch;
+  }>(`${COPY_LISTING_BASE}/batches/${id}/submit`, { method: "POST" });
+}
+
+export function applyCopyListingTargetToBatch(batchId: string, targetId: string) {
+  return apiFetch<{ applied: number; batch: CopyListingBatch }>(
+    `${COPY_LISTING_BASE}/batches/${batchId}/targets/${targetId}/apply`,
+    { method: "POST" }
+  );
 }

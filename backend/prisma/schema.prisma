@@ -4310,6 +4310,8 @@ model ListingCopyJob {
   sourceImageUrl  String?
   /// NormalizedListing chụp lúc tạo — nguồn đổi sau đó không ảnh hưởng lượt chép.
   source      Json
+  /// Đợt (lát 2, 29/10/2026): N sản phẩm chọn cùng lúc = N job chung batchId; job lẻ có batchId = id.
+  batchId     String?
   status      ListingCopyJobStatus @default(DRAFT)
   createdAt   DateTime             @default(now())
   submittedAt DateTime?
@@ -4318,6 +4320,7 @@ model ListingCopyJob {
   targets ListingCopyTarget[]
 
   @@index([userId, createdAt])
+  @@index([userId, batchId])
   @@map("listing_copy_jobs")
 }
 

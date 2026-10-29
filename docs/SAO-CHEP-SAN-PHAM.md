@@ -98,3 +98,31 @@
   HTTPS :4000 (vai all) vẫn chạy để nhận việc hàng đợi.
 - **Chưa làm:** adapter thật 3 sàn (lát 1b), hộp tìm danh mục theo từ khóa (hiện NativeSelect vì cây mock nhỏ),
   tải ảnh thật, trình soạn kho (mô tả + nhiều ảnh), đăng hàng loạt (lát 2).
+
+## 9. Lát 2 — đợt nhiều sản phẩm × nhiều gian (29/10/2026 tối, demo local, chưa push)
+
+Anh chốt: *"Lát 2 là chọn nhiều sản phẩm và nhiều gian hàng, chọn được cả gian hàng TikTok nữa."*
+
+- **Đợt** = N job cùng `listing_copy_jobs.batchId` (migration `20261029210000_listing_copy_batch`; job lẻ cũ có
+  batchId = id). Hàng đợi vẫn từng cặp sản phẩm × gian → đợt 50 sản phẩm × 3 gian = 150 việc chạy lần lượt, sản phẩm
+  thiếu thông tin đứng lại không chặn sản phẩm khác. Mỗi đợt tối đa 50 sản phẩm; tạo job theo lô 3 (mỗi job gọi gợi ý
+  danh mục cho từng gian).
+- **API** (`services/listing-copy/batch.ts`): `POST /batches {sourceType, sourceChannelId?, sourceKeys[],
+  targetChannelIds[]}` · `GET /batches` (nhóm theo batchId, mỗi gian một chip trạng thái "xấu nhất") · `GET /batches/:id`
+  · `POST /batches/:id/submit` · `POST /batches/:id/targets/:tid/apply` = **"Áp cho sản phẩm còn lại"**: chép danh
+  mục / thuộc tính / thương hiệu / vận chuyển / cân nặng / kích thước / % giá / tồn của một gian sang mọi gian cùng
+  gian hàng trong đợt còn chờ hoặc lỗi, rồi tính lại thiếu (mẹo UpBase).
+- **UI**: bước 1 tick nhiều (ô chọn tất cả trang, đếm "Đã chọn N", giữ qua trang/tìm); bước 2 tick nhiều gian (có
+  TikTok); dòng tổng "N sản phẩm × M gian = N×M lượt đăng"; bảng đợt: mỗi sản phẩm một dòng tiêu đề (sửa tên/mô tả
+  mở rộng), dưới là mỗi gian một dòng; ô sửa gian có nút "Áp cho k sản phẩm còn lại"; nút "Đăng k lượt đủ điều kiện";
+  chip đếm Đã đăng / Chờ sàn duyệt / Lỗi; lịch sử theo đợt.
+- **Local thêm gian TikTok giả lập** cho demo@hubsell.tech (`Channel` id `cmvt_demo_tiktok_sunny01`, không token) để
+  thấy đủ 3 sàn.
+- **Đã kiểm qua API**: đợt 3 sản phẩm Shopee → TikTok + Lazada: 6 lượt, gợi ý danh mục đúng cả 6; sửa 1 gian TikTok +
+  1 gian Lazada rồi "áp" → 2 + 2 sản phẩm còn lại nhận cấu hình; đăng lần 1: Lazada 3/3 Đã đăng, TikTok 3 đứng lại vì
+  tên < 25 ký tự (đúng luật); sửa tên 3 sản phẩm → đăng lần 2: TikTok 3/3 Chờ sàn duyệt; lịch sử gom thành 1 đợt
+  "3 SP × 2 gian".
+- **Anh góp ý ngay trên demo (tối 29/10):** dưới bảng nguồn phải có **ô chọn số sản phẩm/trang** (10/20/50/100, mặc
+  định 20) bên trái và **thanh phân trang luôn hiện** (Trang x/y · Trước · Sau) bên phải — `PagerFooter` dùng chung
+  cho bảng nguồn và lịch sử.
+

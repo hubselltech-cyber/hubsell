@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (tối muộn) — SAO CHÉP SẢN PHẨM LÁT 2: ĐỢT NHIỀU SẢN PHẨM × NHIỀU GIAN (CÓ TIKTOK) — DEMO LOCAL, CHƯA PUSH
+
+- **Anh chốt:** "Lát 2 là chọn nhiều sản phẩm và nhiều gian hàng, chọn được cả gian hàng TikTok nữa"; góp ý thêm trên demo: giới hạn số sản phẩm/trang + phân trang luôn hiện dưới bảng nguồn.
+- **Backend:** `listing_copy_jobs.batchId` (migration `20261029210000_listing_copy_batch`, job cũ batchId = id); `services/listing-copy/batch.ts` (createBatch ≤50 SP, lô 3; getBatch; listBatches nhóm SQL; submitBatch; applyTargetToBatch = "Áp cho sản phẩm còn lại" cùng gian); route `/batches*`. Local thêm gian TikTok giả lập `cmvt_demo_tiktok_sunny01` cho demo@hubsell.tech.
+- **Frontend:** bước 1 tick nhiều + chọn tất cả trang + "Đã chọn N"; chân bảng `PagerFooter` (10/20/50/100 + Trang x/y luôn hiện, dùng cả Lịch sử); bảng đợt mỗi SP một dòng tiêu đề + mỗi gian một dòng, nút "Áp cho k sản phẩm còn lại", "Đăng k lượt đủ điều kiện", chip đếm; lịch sử theo đợt.
+- **Kiểm API local:** đợt 3 SP Shopee → TikTok + Lazada = 6 lượt; áp cấu hình 2+2 SP; đăng lần 1 Lazada 3/3 Đã đăng, TikTok đứng vì tên <25 ký tự; sửa tên → lần 2 TikTok 3/3 Chờ sàn duyệt, 3 job DONE; lịch sử gom "3 SP × 2 gian". tsc + eslint sạch. Docs mục 9.
+
+---
 ## Phiên 29/10/2026 (tối) — SAO CHÉP SẢN PHẨM LÁT 1: DEMO LOCAL CHẠY TRỌN LUỒNG — CHƯA PUSH
 
 - **Anh chốt:** làm cả 2 nguồn (bài trên gian đã nối + sản phẩm kho Hubsell), demo local trước, mục con "Trợ lý vận hành". Thiết kế `docs/SAO-CHEP-SAN-PHAM.md`.

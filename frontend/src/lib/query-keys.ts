@@ -25,6 +25,8 @@ export const qk = {
   copyListingSources: (params: Record<string, unknown>) => ["copy-listing-sources", params] as const,
   copyListingJobs: (page: number) => ["copy-listing-jobs", page] as const,
   copyListingJob: (id: string) => ["copy-listing-job", id] as const,
+  copyListingBatches: (page: number) => ["copy-listing-batches", page] as const,
+  copyListingBatch: (id: string) => ["copy-listing-batch", id] as const,
 
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,
