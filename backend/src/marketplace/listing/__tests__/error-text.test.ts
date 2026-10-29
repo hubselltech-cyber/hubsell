@@ -22,6 +22,17 @@ describe("humanizeListingError", () => {
     expect(humanizeListingError("LAZADA", "Lazada product/create lỗi: E501: name length should be less than 255")).toMatch(/Tên sản phẩm/);
   });
 
+  it("2 lỗi thật prod 29/10 tối: TikTok shop_cipher thừa → lỗi phía Hubsell; Shopee multi warehouse → mã kho", () => {
+    const tt = humanizeListingError(
+      "TIKTOK",
+      "TikTok API lỗi (code 36009004): Unexpected identifier. The 'shop_cipher' query parameter is not required for this request. For more details: https://m.tiktok.shop/s/AIu6dbFhs2XW"
+    );
+    expect(splitListingError(tt).text).toMatch(/phía Hubsell/);
+    expect(splitListingError(tt).text).not.toMatch(/thuộc tính/);
+    const sp = humanizeListingError("SHOPEE", "Shopee add_item lỗi: product.error_busi — The merchant/shop has multi warehouse, please input location id");
+    expect(splitListingError(sp).text).toMatch(/nhiều kho/);
+  });
+
   it("câu Hubsell tự viết (tiếng Việt) giữ nguyên, không thêm dòng kỹ thuật", () => {
     const raw = "Không tải được ảnh nào lên Shopee";
     expect(humanizeListingError("SHOPEE", raw)).toBe(raw);

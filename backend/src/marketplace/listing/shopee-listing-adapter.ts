@@ -202,6 +202,16 @@ export const shopeeListingAdapter: ListingAdapter = {
         };
       });
 
+    // Gian bật nhiều kho → seller_stock phải kèm location_id (lỗi thật 29/10).
+    const locationId = api.pickStockLocationId(
+      await api.getWarehouses(accessToken, shopId).catch((err) => {
+        console.warn(`[listing-copy] ${channel.shopName}: không đọc được danh sách kho Shopee (${(err as Error).message}) — đăng tồn không kèm kho`);
+        return [] as api.ShopeeWarehouse[];
+      }),
+      channel.shopName
+    );
+    const sellerStock = (stock: number) => [locationId ? { location_id: locationId, stock } : { stock }];
+
     const first = draft.variants[0];
     const body: api.ShopeeAddItemBody = {
       item_name: draft.listing.title,
@@ -232,7 +242,7 @@ export const shopeeListingAdapter: ListingAdapter = {
         ? { dimension: { package_length: draft.dimensionsCm.length, package_width: draft.dimensionsCm.width, package_height: draft.dimensionsCm.height } }
         : {}),
       ...(draft.variants.length === 1 && first.sku ? { item_sku: first.sku } : {}),
-      seller_stock: [{ stock: Math.max(0, first.stock) }],
+      seller_stock: sellerStock(Math.max(0, first.stock)),
     };
     const itemId = await api.addItem(accessToken, shopId, body);
 
@@ -246,7 +256,7 @@ export const shopeeListingAdapter: ListingAdapter = {
         .map((m) => ({
           tier_index: m.tier_index,
           original_price: vndInt(m.v.price),
-          seller_stock: [{ stock: Math.max(0, m.v.stock) }],
+          seller_stock: sellerStock(Math.max(0, m.v.stock)),
           ...(m.v.sku ? { model_sku: m.v.sku } : {}),
         }));
       if (models.length !== draft.variants.length) {

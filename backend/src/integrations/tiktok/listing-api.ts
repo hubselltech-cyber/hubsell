@@ -157,6 +157,8 @@ export async function getBrands(
 /**
  * Upload ảnh (multipart). Chữ ký TikTok KHÔNG gồm body khi content-type là
  * multipart/form-data → gọi signRequest với body undefined.
+ * ★ KHÔNG gửi shop_cipher: images/upload là API cấp app, gian thật ANO 29/10 trả
+ * code 36009004 "The 'shop_cipher' query parameter is not required for this request".
  */
 export async function uploadProductImage(
   ctx: { accessToken: string; shopCipher: string },
@@ -168,7 +170,6 @@ export async function uploadProductImage(
   const query: Record<string, string | number> = {
     app_key: cfg.appKey,
     timestamp: Math.floor(Date.now() / 1000),
-    shop_cipher: ctx.shopCipher,
   };
   query.sign = signRequest(cfg.appSecret, path, query, undefined);
   const qs = new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)] as [string, string])).toString();

@@ -296,3 +296,21 @@ buộc, nhập thì đủ 3 số", % giá, tồn); placeholder "Nhập số / Nh
 mono xuống dòng, không cuộn ngang. ⏳ Prod: khách thử lại cặp TikTok → Shopee đó (kích thước nay về null → Shopee không
 nhận `dimension`); nếu sàn còn từ chối vì kênh vận chuyển `fee_type SIZE_INPUT` đòi kích thước thì thêm luật
 `dimensionsRequired` theo kênh đã chọn (chưa làm — chưa có bằng chứng).
+
+## 15. Lỗi thật lần 2 trên prod (29/10/2026 ~19:51, anh thử ANO → DarkMan Shopee + ANO Official TikTok) — ĐÃ SỬA
+
+Nguyên văn đọc từ log worker Render (`[listing-copy]`, Chrome của anh):
+- **TikTok** `code 36009004: Unexpected identifier. The 'shop_cipher' query parameter is not required for this request` —
+  `images/upload` là API cấp app, Hubsell gửi thừa `shop_cipher` → sàn từ chối ngay bước upload ảnh (chưa tới create
+  product). Sửa: `tiktok/listing-api.ts uploadProductImage` bỏ `shop_cipher` khỏi query (chữ ký tính lại theo query mới).
+  Bộ dịch lỗi trước đó dịch nhầm thành "thuộc tính bắt buộc" vì khớp chữ `required` trong "not required" → regex
+  `(?<!not )required` + luật mới "Lỗi ở phía Hubsell khi gọi sàn (tham số API)… báo Hubsell" đứng đầu bảng.
+- **Shopee** `product.error_busi — The merchant/shop has multi warehouse, please input location id` — gian DarkMan bật
+  nhiều kho; add_item / init_tier_variation bắt buộc `seller_stock[].location_id`. Sửa: `shopee/listing-api.ts`
+  `getWarehouses()` (shop/get_warehouse_detail, đệm 1 giờ) + `pickStockLocationId()` = kho LẤY HÀNG (type 1) đầu danh
+  sách (docs không có cờ kho mặc định; nhiều kho lấy hàng → log cảnh báo tên+id để dò). Adapter gửi
+  `{location_id, stock}` ở cả add_item lẫn model của init_tier_variation; gian một kho (không location_id) gửi stock trần
+  như cũ. Luật dịch riêng "Gian Shopee bật nhiều kho nên sàn đòi mã kho…".
+- Test error-text +1 ca (22 ca). ⏳ anh bấm Đăng lại 2 gian đó trên prod sau deploy; TikTok có thể lộ lỗi kế tiếp ở bước
+  create product (thuộc tính 3 ô bắt buộc đã điền, kho bán chọn `is_default`); Shopee kiểm tồn vào đúng kho DarkMan muốn.
+

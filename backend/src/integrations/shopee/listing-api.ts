@@ -28,6 +28,7 @@ const P = {
   attributeTree: "/api/v2/product/get_attribute_tree",
   brandList: "/api/v2/product/get_brand_list",
   logisticsChannels: "/api/v2/logistics/get_channel_list",
+  warehouseDetail: "/api/v2/shop/get_warehouse_detail",
   uploadImage: "/api/v2/media_space/upload_image",
   addItem: "/api/v2/product/add_item",
   initTierVariation: "/api/v2/product/init_tier_variation",
@@ -178,6 +179,51 @@ export async function getLogisticsChannels(accessToken: string, shopId: string, 
   return d.response?.logistics_channel_list ?? [];
 }
 
+export interface ShopeeWarehouse {
+  warehouse_id?: number;
+  warehouse_name?: string;
+  /** 1 = kho lấy hàng (pickup), 2 = kho nhận hoàn (return). */
+  warehouse_type?: number;
+  location_id?: string;
+}
+
+interface WarehouseData extends ShopeeEnvelope {
+  /** Docs: response là MẢNG kho; phòng bản bọc trong warehouse_list. */
+  response?: ShopeeWarehouse[] | { warehouse_list?: ShopeeWarehouse[] };
+}
+
+const warehouseCache = new TtlCache<ShopeeWarehouse[]>(60 * 60 * 1000);
+
+/**
+ * Danh sách kho của gian (shop/get_warehouse_detail) — gian bật "nhiều kho" thì
+ * add_item / init_tier_variation bắt buộc seller_stock kèm location_id (lỗi thật
+ * 29/10 DarkMan: product.error_busi "The merchant/shop has multi warehouse, please
+ * input location id"). Gian một kho: mảng rỗng / không có location_id → gửi stock trần.
+ */
+export async function getWarehouses(accessToken: string, shopId: string, cfg = getShopeeConfig()): Promise<ShopeeWarehouse[]> {
+  return warehouseCache.get(`shopee:${shopId}`, async () => {
+    const d = await callShopGet<WarehouseData>(P.warehouseDetail, accessToken, shopId, [], "get_warehouse_detail", cfg);
+    const r = d.response;
+    return Array.isArray(r) ? r : (r?.warehouse_list ?? []);
+  });
+}
+
+/**
+ * location_id để đăng tồn: kho LẤY HÀNG (type 1) có location_id; nhiều kho lấy hàng
+ * → kho đầu danh sách (chưa có căn cứ chọn khác — docs không có cờ mặc định); ghi log
+ * để dò. Không có → null (gian một kho).
+ */
+export function pickStockLocationId(warehouses: ShopeeWarehouse[], shopLabel: string): string | null {
+  const pickup = warehouses.filter((w) => w.location_id && (w.warehouse_type ?? 1) === 1);
+  if (pickup.length === 0) return null;
+  if (pickup.length > 1) {
+    console.warn(
+      `[listing-copy] ${shopLabel}: Shopee có ${pickup.length} kho lấy hàng (${pickup.map((w) => `${w.warehouse_name ?? "?"}=${w.location_id}`).join(", ")}) — đăng tồn vào kho đầu`
+    );
+  }
+  return pickup[0].location_id!;
+}
+
 interface UploadData extends ShopeeEnvelope {
   response?: { image_info?: { image_id?: string; image_url_list?: { image_url?: string }[] } };
 }
@@ -220,7 +266,8 @@ export interface ShopeeAddItemBody {
   brand?: { brand_id: number; original_brand_name?: string };
   dimension?: { package_length: number; package_width: number; package_height: number };
   item_sku?: string;
-  seller_stock: { stock: number }[];
+  /** Gian nhiều kho: bắt buộc location_id (shop/get_warehouse_detail). */
+  seller_stock: { location_id?: string; stock: number }[];
   /** "extended" = mô tả có ảnh chèn: field_list text/image (image_id từ upload_image scene desc). */
   description_type?: "normal" | "extended";
   description_info?: {
@@ -242,7 +289,7 @@ export async function addItem(accessToken: string, shopId: string, body: ShopeeA
 export interface ShopeeTierVariationBody {
   item_id: number;
   tier_variation: { name: string; option_list: { option: string }[] }[];
-  model: { tier_index: number[]; original_price: number; seller_stock: { stock: number }[]; model_sku?: string }[];
+  model: { tier_index: number[]; original_price: number; seller_stock: { location_id?: string; stock: number }[]; model_sku?: string }[];
 }
 
 interface TierData extends ShopeeEnvelope {

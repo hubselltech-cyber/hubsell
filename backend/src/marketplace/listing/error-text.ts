@@ -26,6 +26,16 @@ interface Rule {
 
 /** Thứ tự = ưu tiên: mẫu hẹp (kích thước, cân nặng) đứng trước mẫu rộng (param, attribute). */
 const RULES: Rule[] = [
+  // --- Lỗi phía Hubsell gọi sàn (tham số API) — khách không sửa được, đừng bắt khách mò ---
+  {
+    test: /not required for this request|Unexpected identifier|invalid_signature|sign (is )?invalid|app_key|unsupported api|api not found/i,
+    text: "Lỗi ở phía Hubsell khi gọi sàn (tham số API), không phải do bài đăng — báo Hubsell kèm dòng chi tiết bên dưới; Hubsell sửa xong thì bấm Đăng lại.",
+  },
+  // --- Shopee gian nhiều kho đòi mã kho ---
+  {
+    test: /multi warehouse|location.?id/i,
+    text: "Gian Shopee bật nhiều kho nên sàn đòi mã kho khi đăng tồn — Hubsell tự gửi kho lấy hàng đầu tiên; vẫn lỗi thì báo Hubsell kèm dòng chi tiết bên dưới.",
+  },
   // --- Ủy quyền / quyền ---
   {
     test: /invalid_access_token|access.?token|unauthori[sz]ed|error_auth|auth l[ỗo]i|token (expired|invalid)|refresh_token|error_permission|not allowed|no permission|forbidden/i,
@@ -92,7 +102,7 @@ const RULES: Rule[] = [
   },
   // --- Thuộc tính bắt buộc ---
   {
-    test: /attribute|mandatory|required|missing|is empty|cannot be empty|property/i,
+    test: /attribute|mandatory|(?<!not )required|missing|is empty|cannot be empty|property/i,
     text: "Còn thuộc tính bắt buộc của danh mục chưa điền hoặc điền sai kiểu — mở Bổ sung, điền hết các ô có nhãn Bắt buộc rồi đăng lại.",
   },
   // --- Phân loại ---
