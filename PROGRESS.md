@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 21:45 (tự động, nhắc `hubsell-doc-24h-lat-2-ano-29-10`) — LÁT 2 GHI ORDER QUA ĐƯỜNG MỚI TRÊN ANO: ĐỌC 24 GIỜ ĐẦU — ĐẠT 5/5, KHÔNG SỬA GÌ
+
+- **Cách đo:** Chrome anh kết nối OK → Supabase SQL chỉ đọc (dán Monaco bằng JS, gộp cột thành 1 chuỗi) + Render Logs worker 24 h lọc `read-lanes` / `gateway` / `persist` / `cursor-reader` / `order-write` / `lane orders` + trang Events. Chi tiết số ở docs/CUNG-HOA-LOP-GOI-SAN.md 5c.3 "Đọc 24 giờ 29/10".
+- **Kết quả:** `orders` + `orders-shadow` ANO đều `caught_up`, 1 trang, trễ 2′ sau mỗi lượt, nhịp 10′ đúng; `orders` toàn hệ 1 dòng (chỉ ANO). 13 lượt có ghi trong 24 h: **tạo 0, sửa 15, không đổi 13, đụng 0**, co/đáy tràn/đọc lại/thử lại 0. 0 lỗi persist, 0 `[cursor-reader]`, 0 `[lane orders]`; 19 dòng `[gateway] 429` toàn Ads (0 shop ANO, 0 endpoint đơn). `api_rate_keys` không có khóa đơn (đúng thiết kế). So hai đường: webhook 281 sự kiện/95 đơn, bóng 96 đơn, Order mới 39 = bóng thấy lần đầu 39; 0 đơn webhook mà bóng không thấy, 0 đơn bóng thấy mà Order thiếu; 92 đơn đối chiếu trạng thái webhook ↔ Order **0 lệch**.
+- **Ghi nhận bên lề:** 30 lần worker khởi động trong 24 h = deploy tự động theo ~45 commit push 29/10 (Events chỉ có Auto-Deploy, không crash) — con trỏ trong DB nên không mất lượt. 21:02 có 1 dòng TikTok `returns/search` HTTP 429 thuộc lát B đối soát đơn hoàn (không phải lớp đọc này) — để phiên đối soát hoàn soi.
+- **Không làm gì trên prod**, giữ bóng chạy song song; nhắc 04/11 08:30 đo 7 ngày + SQL so lệch theo mã (tiêu chí Pha D) đã có, không tạo trùng. Pha D / lát 0 chờ anh gọi. Ghi docs 5c.3 + PROGRESS + memory `hubsell-cung-hoa-lop-goi-san`, commit cục bộ (chưa push).
+
+---
 ## Phiên 29/10/2026 (đêm) — ĐỐI SOÁT ĐƠN HOÀN: KHO QUÉT KIỆN VỀ BÁO "KHÔNG HOÀN" — KHẢO SÁT, CHƯA SỬA (chờ anh chốt)
 
 - **Anh (ảnh app Hellokityhh quét `586686865006495180` → "Không hoàn"):** khách phản ánh hệ thống cập nhật đơn hoàn rất chậm, bấm Đồng bộ từ sàn mới có; anh cho rằng đã biết "giao thành công / hoàn thành công" thì hệ thống phải tự biết.
