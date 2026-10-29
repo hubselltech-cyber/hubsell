@@ -155,6 +155,7 @@ export default function FinanceAnalyticsPage() {
               >
                 <BreakdownCard
                   title="Tổng giá trị sản phẩm"
+                  titleHint="Giá món hàng khi nằm trong giỏ của khách (đã gồm chương trình giảm giá sản phẩm của shop), chưa trừ voucher, phí và thuế sàn. Shopee: giá bán sau khuyến mãi; TikTok: Tổng phụ sau giảm giá của người bán; Lazada: giá bán trên sàn."
                   subtitle={`${formatNumber(b.gross.orderCount)} đơn (chưa trừ chi phí)`}
                   total={b.gross.total}
                   delta={deltaOf(b.gross.total, pb?.gross.total)}

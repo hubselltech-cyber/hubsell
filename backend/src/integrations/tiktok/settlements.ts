@@ -319,6 +319,25 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   return { detail, order };
 }
 
+/**
+ * KIỂM CHÉO đẳng thức doanh thu của TikTok trên các dòng ORDER của một đơn:
+ *   revenue_amount (ORDER) = subtotal_before_discount_amount + seller_discount_amount.
+ * computePnlRow (lib/pnl-formula.ts, 29/10/2026) lấy "giá món hàng trong giỏ" =
+ * grossSales + sellerDiscount của sao kê, tức tin vào đẳng thức này. Trả null khi
+ * đơn không có dòng ORDER (chỉ điều chỉnh); khác 0 → nơi gọi ghi log cảnh báo
+ * kèm mã đơn để đọc payload thô — KHÔNG tự sửa số. Dòng thiếu `type` coi là ORDER
+ * (unsettled 202507 dùng est_revenue_amount, `total` đọc cả hai).
+ */
+export function tiktokRevenueIdentityGap(
+  lines: TikTokTxBreakdown[],
+  detail: Pick<TiktokSettlementDetailCols, "grossSales" | "sellerDiscount">
+): number | null {
+  const orderLines = lines.filter((t) => (t.type ?? "ORDER") === "ORDER");
+  if (orderLines.length === 0) return null;
+  const orderRevenue = total(orderLines, "revenue_amount");
+  return Math.round((orderRevenue - (detail.grossSales + detail.sellerDiscount)) * 100) / 100;
+}
+
 /** Mốc quyết toán dự kiến của dòng unsettled (chỉ khi sàn trả unix giây). */
 export function parseEstimatedSettlement(raw: string | undefined): Date | null {
   if (!raw) return null;

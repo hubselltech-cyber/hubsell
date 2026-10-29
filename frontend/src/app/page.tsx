@@ -292,7 +292,7 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "affiliate", label: "Phí tiếp thị liên kết", amount: fee.affiliate, color: "#f59e0b" },
     { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN)", amount: fee.tax, color: "#ef4444" },
     { key: "refund", label: "Tiền hoàn trả khách", amount: fee.refund, color: "#f43f5e" },
-    { key: "voucher", label: "Voucher trợ giá của shop", amount: fee.voucher, color: "#ec4899" },
+    { key: "voucher", label: "Voucher & xu của shop", amount: fee.voucher, color: "#ec4899" },
     { key: "shippingDiff", label: "Chênh lệch phí vận chuyển", amount: fee.shippingDiff, color: "#14b8a6" },
     { key: "adWallet", label: "Nạp ví quảng cáo sàn", amount: fee.adWallet, color: "#6366f1" },
     { key: "feeOther", label: "Khấu trừ khác của sàn", amount: fee.other, color: "#94a3b8" },

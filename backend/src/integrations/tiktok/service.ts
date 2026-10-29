@@ -47,6 +47,7 @@ import {
   groupTiktokLinesByOrder,
   mapTiktokBreakdownToSettlement,
   parseEstimatedSettlement,
+  tiktokRevenueIdentityGap,
 } from "./settlements";
 
 // Làm mới token khi còn dưới 5 phút là hết hạn — chừa biên an toàn cho các call
@@ -1053,6 +1054,15 @@ async function writeTiktokSettlement(
   }
 ): Promise<number> {
   const { detail, order: cols } = mapTiktokBreakdownToSettlement(lines);
+  // Giá trong giỏ của computePnlRow tin đẳng thức revenue_amount(ORDER) = giá gốc
+  // + chiết khấu NBH (29/10/2026). Lệch quá 1đ = bản kê có dòng lạ → cảnh báo
+  // kèm mã đơn sàn để đọc payload thô; số vẫn ghi nguyên như sàn trả.
+  const identityGap = tiktokRevenueIdentityGap(lines, detail);
+  if (identityGap !== null && Math.abs(identityGap) > 1) {
+    console.warn(
+      `[TikTok] Bản kê đơn ${lines[0]?.order_id ?? lines[0]?.adjustment_order_id ?? order.id}: revenue_amount dòng ORDER lệch (giá gốc + chiết khấu NBH) ${identityGap}đ — giá trong giỏ ở Lãi/Lỗ có thể sai, đọc payload thô`
+    );
+  }
   const detailData = {
     ...detail,
     estimated: meta.estimated,

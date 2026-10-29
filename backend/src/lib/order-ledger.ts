@@ -27,8 +27,14 @@ import {
 import { countsAsRevenue, isLossOrder, isReturning } from "./finance-definitions";
 import { toBusinessDateKey } from "./date-range";
 
-/** Phiên bản công thức đang ghi sổ. Đổi công thức → tăng số này. */
-export const LEDGER_FORMULA_VERSION = 1;
+/**
+ * Phiên bản công thức đang ghi sổ. Đổi công thức → tăng số này.
+ *   v1 30/09/2026 — sổ cái lên prod.
+ *   v2 29/10/2026 — TikTok "Giá trị đơn hàng" = giá món hàng trong giỏ
+ *      (revenue_amount dòng ORDER = giá gốc + chiết khấu NBH), sellerVoucher
+ *      TikTok = 0 (docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md mục 9 lát 1).
+ */
+export const LEDGER_FORMULA_VERSION = 2;
 
 /** Đơn kèm quan hệ để ghi sổ = tập PnlOrder + chủ shop của gian. */
 export const LEDGER_INCLUDE = {

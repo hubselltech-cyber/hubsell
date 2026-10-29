@@ -5,6 +5,22 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (chiều) — LÁT 1 TỔNG GIÁ TRỊ SP: TIKTOK VỀ GIÁ TRONG GIỎ, SỔ CÁI v2 — ĐÃ CODE, CHƯA PUSH
+
+- **Anh chốt tư duy** (docs mục 8): Tổng giá trị SP = giá món hàng TRONG GIỎ (đã gồm KM sản phẩm của shop; 200 niêm yết − 50 KM → 150), voucher/xu/combo = khấu trừ âm dưới thẻ. Shopee đúng sẵn; TikTok sai vì bản kê gộp. Kế hoạch 5 lát ở docs mục 9. Anh: "rất quan trọng, tập trung, mapping đúng dòng đúng cột".
+- **Lát 1 đã code** (docs mục 10): `computePnlRow` TikTok `revenueGross = grossSales + sellerDiscount` (= `revenue_amount` dòng ORDER, số sàn; không dùng cột revenueAmount vì Σ cả dòng REFUND), `sellerVoucher = 0`; `tiktokRevenueIdentityGap` kiểm đẳng thức mỗi lượt đồng bộ (lệch > 1đ → warn kèm mã đơn); `LEDGER_FORMULA_VERSION = 2`; nhãn "Voucher & xu của shop" (web + mobile) + tooltip thẻ 1. Test mới `pnl-formula-tiktok.test.ts` + 3 ca mapper; 102 ca thuần qua, tsc BE/FE sạch; DB dev tính lại 335k dòng, 29/31 ca sổ ↔ đơn qua (2 ca đỏ sẵn từ 14/10, kiểm bằng stash).
+- **Sau deploy:** worker tính lại ~42k+ dòng ≈ 15–20 phút (deploy giờ vắng, IO Supabase); số kỳ vọng ANO 30 ngày: TikTok gross 243,2 → ≈178,8 tr, voucher 65,9 → 0, Đã hủy 60,8 → ≈45 tr, Doanh thu 301.981.623 không đổi. Mobile nhãn đi 1.4.1.
+- Memory `hubsell-dong-tien-tong-gia-tri-san-pham-khao-sat-2026-10-29`. Commit, chưa push.
+
+---
+## Phiên 29/10/2026 (trưa) — KHẢO SÁT THẺ "TỔNG GIÁ TRỊ SẢN PHẨM" BÁO CÁO DÒNG TIỀN: SHOPEE SAU KM SẢN PHẨM, TIKTOK GIÁ GỐC — CHƯA SỬA MÃ
+
+- **Anh báo (kèm 3 ảnh):** thẻ 1 cộng Shopee theo giá sau giảm giá của shop (tab Shopee 299.000), TikTok theo giá trước giảm (tab TikTok 500.000 − 151.000 = 349.000) → tổng 514.925.215 là số lai; anh đoán Shopee thiếu cột "Trước khuyến mãi" và TikTok lấy cột đầu bảng Lãi/Lỗ cộng dồn → đúng cả hai ý.
+- **Khảo sát:** [docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md](docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md). Gốc: `OrderItem.price` Shopee = `model_discounted_price`, escrow mapper không lưu `order_original_price`/`seller_discount`; TikTok có bản kê ghi đè `revenueGross = subtotal_before_discount`, `sellerVoucher = seller_discount_amount` (sàn gộp KM sản phẩm + voucher). Docs Shopee đọc 29/10: `order_original_price` = trước MỌI khuyến mãi, công thức escrow của Shopee xuất phát từ giá gốc. Lazada API đơn chưa thấy giá niêm yết (0 đơn để kiểm).
+- **Số prod 30 ngày (Chrome anh + SQL Supabase chỉ đọc):** Shopee 1.161 đơn 271,7tr, voucher 0; TikTok 677 đơn 243,2tr, "Voucher trợ giá của shop" 65,9tr = 100 % TikTok (thực chất giảm giá sản phẩm 27 %). Snapshot `expectedIncome` Shopee 1.196 đơn: giá gốc 359,3tr, `seller_discount` 77,0tr (21,4 %). Đơn hủy lai y hệt (130,9tr). Phụ: TikTok chưa có bản kê dùng `sale_price` thấp hơn `revenue_amount` ~5,6 %.
+- **Đề xuất A (chờ anh chốt, mục 6 docs):** thẻ 1 = giá gốc trước mọi giảm giá của shop (khớp dòng đầu cả hai Seller Center), dòng voucher đổi thành "Giảm giá của shop (sản phẩm + voucher/xu)", Doanh thu không đổi; 3 lát: Shopee lưu giá gốc + giảm giá từ escrow + backfill SQL từ snapshot + tăng version sổ cái; TikTok đơn chưa bản kê ghi `original_price`; nhãn web + mobile. B không làm được cho TikTok; C giấu mức giảm giá. Memory `hubsell-dong-tien-tong-gia-tri-san-pham-khao-sat-2026-10-29`. Không commit.
+
+---
 ## Phiên 29/10/2026 (08:30, lịch tự động) — HỆ MARKETING-SALE TUẦN 1: 7 GIẢ THUYẾT ĐÃ KIỂM, HỒ SƠ ACCOUNTS API, KHUNG 4 LỚP — KHÔNG CODE
 
 - **Bối cảnh:** anh chốt 25/10 "đặt lịch 29/10 thì làm"; 27/10 thêm nhân vật học từ hội thoại người thật (chạy bóng → lát 0 → cổng lát 1). Tuần 1 chỉ kiểm + soạn. Kết quả: [hubsell-marketing/chien-luoc/HE-MARKETING-SALE-TUAN-1-2026-10-29.md](hubsell-marketing/chien-luoc/HE-MARKETING-SALE-TUAN-1-2026-10-29.md); khung 4 lớp [KHUNG-4-LOP-NHAN-VAT-BAN-0.md](hubsell-marketing/chien-luoc/KHUNG-4-LOP-NHAN-VAT-BAN-0.md); hồ sơ TikTok [kenh/tiktok/HO-SO-ACCOUNTS-API-2026-10-29.md](hubsell-marketing/kenh/tiktok/HO-SO-ACCOUNTS-API-2026-10-29.md) (em soạn, anh nộp).

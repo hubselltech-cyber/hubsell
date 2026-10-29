@@ -200,17 +200,27 @@ export function computePnlRow(o: PnlOrder) {
       revenueGross += sellerVoucher; // trả cột "Giá trị đơn hàng" về giá gốc
     }
   }
-  // TIKTOK (16/09/2026): khi đã có bản kê chi tiết (thật hoặc ước tính của
-  // sàn), "Giá trị đơn hàng" = GIÁ GỐC SẢN PHẨM (subtotal_before_discount) và
-  // voucher shop = Chiết khấu của nhà bán hàng — đúng cách TikTok tính hoa hồng
-  // (giá gốc − CK nhà bán hàng). Trước đó OrderItem.price = sale_price đã trừ
-  // cả CK shop lẫn CK nền tảng nên gross/voucher đều là 0 giả. Tổng sau cấn
-  // trừ không đổi: revenue_amount của sàn = giá gốc − CK shop (đã gồm phần sàn
-  // bù chiết khấu nền tảng, nên platformSubsidy của Order cố ý = 0 ở mapper).
+  // TIKTOK (29/10/2026, anh Trung chốt — docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-
+  // KHAO-SAT-29-10.md mục 8–9): "Giá trị đơn hàng" = GIÁ MÓN HÀNG TRONG GIỎ =
+  // revenue_amount của dòng ORDER trên bản kê ("Tổng phụ sau giảm giá của
+  // người bán") = subtotal_before_discount + seller_discount (có dấu) — đẳng
+  // thức của chính TikTok, kiểm lại ở mỗi lượt đồng bộ (tiktokRevenueIdentityGap,
+  // lệch thì log cảnh báo kèm mã đơn, không tự sửa số). KHÔNG đọc cột
+  // revenueAmount đã lưu: cột đó là Σ MỌI dòng (ORDER + REFUND) nên đơn
+  // hoàn/hủy về 0 trong khi tiền hoàn đã có cột riêng (refundedAmount).
+  // Chiết khấu của nhà bán hàng (bản kê gộp KM sản phẩm + voucher, sàn không
+  // tách) đã nằm TRÊN giá trong giỏ → sellerVoucher = 0, thác nước không trừ
+  // lần hai. Bản 16/09–28/10: revenueGross = giá gốc, sellerVoucher = chiết
+  // khấu → thẻ "Tổng giá trị SP" lệch định nghĩa với Shopee (giá sau KM sản
+  // phẩm = model_discounted_price). Tổng sau cấn trừ không đổi; platformSubsidy
+  // của Order vẫn cố ý = 0 ở mapper (revenue_amount đã gồm phần sàn bù CK nền
+  // tảng). Bảng Lãi/Lỗ tab TikTok vẫn đọc đủ 3 cột gốc từ o.tiktokSettlement.
+  // Đơn CHƯA có bản kê: OrderItem.price = sale_price (đã trừ cả CK sàn) — nhãn
+  // "tạm tính", sàn trả bản kê thì số thật thay.
   const tt = o.channel.channelName === "TIKTOK" ? o.tiktokSettlement : null;
   if (tt && Number(tt.grossSales) > 0) {
-    revenueGross = Number(tt.grossSales);
-    sellerVoucher = Math.abs(Number(tt.sellerDiscount));
+    revenueGross = Number(tt.grossSales) + Number(tt.sellerDiscount);
+    sellerVoucher = 0;
   }
 
   // Gộp phí theo bucket cột. CẬP NHẬT QUYẾT ĐỊNH CHỦ SHOP 05/08: bảng Lãi/Lỗ

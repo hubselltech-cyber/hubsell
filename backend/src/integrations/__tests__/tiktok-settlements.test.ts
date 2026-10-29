@@ -9,6 +9,7 @@ import {
   groupTiktokLinesByOrder,
   mapTiktokBreakdownToSettlement,
   parseEstimatedSettlement,
+  tiktokRevenueIdentityGap,
 } from "../tiktok/settlements";
 import type { TikTokTxBreakdown } from "../tiktok/client";
 
@@ -122,6 +123,33 @@ describe("mapTiktokBreakdownToSettlement — dòng ORDER 202501", () => {
       350000 - 16800 - order.fixedFee - order.paymentFee - order.serviceFee -
       order.affiliateFee - order.shippingFeeDiff - order.taxWithheld + order.platformSubsidy;
     expect(est).toBe(order.actualPayout);
+  });
+});
+
+describe("tiktokRevenueIdentityGap — đẳng thức giá trong giỏ (29/10/2026)", () => {
+  it("dòng ORDER docs: revenue_amount = giá gốc + chiết khấu NBH → lệch 0", () => {
+    const { detail } = mapTiktokBreakdownToSettlement([ORDER_LINE]);
+    expect(tiktokRevenueIdentityGap([ORDER_LINE], detail)).toBe(0);
+    expect(detail.grossSales + detail.sellerDiscount).toBe(333200);
+  });
+  it("dòng unsettled 202507 (est_revenue_amount, không có type) cũng kiểm được", () => {
+    const est: TikTokTxBreakdown = {
+      ...ORDER_LINE,
+      type: undefined,
+      revenue_amount: undefined,
+      est_revenue_amount: "333200",
+    };
+    const { detail } = mapTiktokBreakdownToSettlement([est]);
+    expect(tiktokRevenueIdentityGap([est], detail)).toBe(0);
+  });
+  it("bản kê có dòng lạ → lệch ≠ 0 để nơi gọi cảnh báo; chỉ điều chỉnh → null", () => {
+    const odd: TikTokTxBreakdown = { ...ORDER_LINE, revenue_amount: "330000" };
+    const { detail } = mapTiktokBreakdownToSettlement([odd]);
+    expect(tiktokRevenueIdentityGap([odd], detail)).toBe(-3200);
+    const adj: TikTokTxBreakdown = {
+      type: "PLATFORM_PENALTY", adjustment_id: "1", adjustment_order_id: "586000000000000001", adjustment_amount: "-5000",
+    };
+    expect(tiktokRevenueIdentityGap([adj], mapTiktokBreakdownToSettlement([adj]).detail)).toBeNull();
   });
 });
 
