@@ -231,7 +231,7 @@ Chưa kiểm: ý nghĩa `reverse_type 1` / `reverse_user 4` của webhook type 2
 | Nối webhook | `tiktok/webhook-queue.ts` `handleTiktokOrderJob`: sau khi kéo chi tiết đơn, nếu `type = 12` (RETURN_STATUS_CHANGE) thì gọi hàm trên cho đúng mã đơn, cùng khuôn type 11 → `cancellations/search`. Lỗi nuốt + log `[Webhook TikTok] Lỗi hỏi yêu cầu hoàn đơn …`, không làm hỏng việc đơn (lượt quét nền 10–60 phút vẫn là lưới đỡ). Type 2 (bản cũ, bắn cả hủy lẫn hoàn) không nối để khỏi gọi đôi |
 | Đường lui | env `TIKTOK_RETURN_WEBHOOK_LOOKUP=0` trên worker → tắt, về cách cũ |
 | Tải sàn | 7 ngày prod có 10.417 sự kiện type 12 ≈ 1.500/ngày ≈ 1 call/phút toàn hệ thống, mỗi call 1 đơn. Rủi ro đã biết: `returns/search` gian lớn hay 429 `36009002` (docs/CUNG-HOA-LOP-GOI-SAN.md) — call này nằm trong việc webhook nên dính 429 thì việc ngủ trong slot như quét hoàn hiện nay (đại tu 5e); theo dõi log sau deploy, tắt bằng đường lui nếu hàng đợi sáng 10:00 xấu đi |
-| Kiểm | `tiktok-returns-webhook-db.test.ts` 4 ca (cắm cờ + mốc sàn + giải pháp; webhook lặp idempotent + sàn từ chối hạ cờ; không yêu cầu / đơn lạ / mã rỗng; bộ lọc vô hiệu ném lỗi) + `tiktok-returns-backfill-db` + `tiktok-returns-sync` xanh; tsc sạch. `tiktok-webhook-inbox.test.ts` đỏ 1 ca chờ pg-boss quá 12 s — đỏ cả trên bản chưa sửa, test đó không gửi type 12 |
+| Kiểm | `tiktok-returns-for-orders-db.test.ts` 4 ca (cắm cờ + mốc sàn + giải pháp; webhook lặp idempotent + sàn từ chối hạ cờ; không yêu cầu / đơn lạ / mã rỗng; bộ lọc vô hiệu ném lỗi) + `tiktok-returns-backfill-db` + `tiktok-returns-sync` xanh; tsc sạch. `tiktok-webhook-inbox.test.ts` đỏ 1 ca chờ pg-boss quá 12 s — đỏ cả trên bản chưa sửa, test đó không gửi type 12 |
 | Chưa làm | Shopee: yêu cầu hoàn trên đơn COMPLETED không có push → vẫn quét 10 phút. Lát C (lookup hỏi sàn đúng đơn trước khi trả "Không hoàn") chờ anh |
 
 ### 8.6 Lát C đã làm (29/10/2026 đêm) — màn quét hỏi sàn đúng đơn trước khi trả "Không hoàn"
@@ -242,7 +242,7 @@ Chưa kiểm: ý nghĩa `reverse_type 1` / `reverse_user 4` của webhook type 2
 | Hàm hỏi theo đơn | TikTok dùng `syncTiktokReturnsForOrders` (lát B); Shopee mới `syncShopeeReturnsForOrder` (`get_escrow_detail` → `return_order_sn_list` → `get_return_detail`, không phải lịch sử); Lazada mới `syncLazadaReturnsForOrder` (Reverse Order API lọc `trade_order_id`), thân vòng lặp của `syncLazadaReturns` tách thành `applyLazadaReturnGroup` dùng chung |
 | Route | `GET /api/orders/lookup`: sau lượt tra đầu, đơn thấy + không nhập nhằng + không phải `?detail=1` + `needsReturnRefresh` → hỏi sàn rồi tra lại; trả thêm `askedPlatform: true` khi có hỏi. Đơn CANCELLED còn NONE (hủy trước khi đưa lát A lên) không hỏi (sàn không có gì mới) — app ghi "Sàn đã hủy đơn này, chưa có yêu cầu hoàn — kiện về tay thì bấm Quét nhận" |
 | Tải sàn | Chỉ phát sinh khi kho quét kiện mà đơn còn NONE (30 ngày prod: 65 ca, nay phần lớn đã được lát A/B bắt trước) → vài call/ngày; 2–3 call mỗi lượt, cooldown 5 phút/đơn |
-| Kiểm | `return-refresh.test.ts` 7 ca (luật đáng hỏi, cooldown, gian hỏi được, thứ tự hai bước TikTok, Shopee/Lazada đúng hàm, lỗi một bước không chặn bước kia, quét lặp không hỏi lại); `lazada-returns-sync` + `shopee-returns-sync` + `shopee-returns-backfill-db` + `tiktok-returns-webhook-db` xanh sau tách hàm; tsc backend + mobile sạch. Chưa kiểm trên máy thật (cần kiện thật về kho) |
+| Kiểm | `return-refresh.test.ts` 7 ca (luật đáng hỏi, cooldown, gian hỏi được, thứ tự hai bước TikTok, Shopee/Lazada đúng hàm, lỗi một bước không chặn bước kia, quét lặp không hỏi lại); `lazada-returns-sync` + `shopee-returns-sync` + `shopee-returns-backfill-db` + `tiktok-returns-for-orders-db` xanh sau tách hàm; tsc backend + mobile sạch. Chưa kiểm trên máy thật (cần kiện thật về kho) |
 
 ### 8.7 Anh Trung gỡ lát B (29/10/2026 đêm) — nguyên tắc: sàn đã gọi rồi thì chỉ lấy về
 
@@ -255,3 +255,7 @@ Anh hỏi: "Cái này có thể ảnh hưởng sức khỏe HQ? Phần này khô
 | C | 2–3 call chỉ khi kho quét kiện mà đơn còn NONE, nghỉ 5 phút/đơn; sau lát A còn rất ít ca | Tải gần bằng không → **giữ** |
 
 Chi tiết đơn TikTok không mang yêu cầu trả hàng (API riêng) — vì thế yêu cầu hoàn vẫn do lượt quét tầng nhanh đọc, chậm tối đa 10–60 phút, anh chấp nhận.
+
+### 8.8 Dọn dẹp (29/10/2026 đêm, trước khi anh test)
+
+Đổi tên test `tiktok-returns-webhook-db` → `tiktok-returns-for-orders-db` (hàm chỉ còn phục vụ màn quét kho); gỡ mọi nhắc tới lát B trong chú thích mã (`return-refresh.ts`, `tiktok/returns-sync.ts`, `webhook-queue.ts`); kiểm `tsc --noUnusedLocals` trên các tệp đã đụng: sạch. Giữ `withReturns` trong kết quả ba hàm hỏi theo đơn (số liệu log) và `askedPlatform` trong phản hồi lookup (xem được ở tab Network khi test).

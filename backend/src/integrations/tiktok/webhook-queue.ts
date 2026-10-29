@@ -129,10 +129,8 @@ export async function handleTiktokOrderJob(
     }
   }
 
-  // Type 12 (đổi trạng thái yêu cầu hoàn): KHÔNG hỏi sàn ở đây. Lát B 29/10/2026 từng
-  // gọi returns/search theo đơn cho mỗi sự kiện (~1.500 call/ngày) — anh Trung gỡ cùng
-  // đêm: chậm 30 phút không sao, lượt quét tầng nhanh (10'–60') đã đọc yêu cầu hoàn
-  // của cả gian bằng MỘT call; màn quét kho có lưới đỡ riêng (integrations/return-refresh.ts).
+  // Type 12 (yêu cầu hoàn): KHÔNG hỏi sàn theo từng sự kiện (anh Trung 29/10/2026 —
+  // lượt quét tầng nhanh đọc cả gian bằng một call là đủ); màn quét kho có lưới đỡ riêng.
   // Kho biến động → đẩy "có thể bán" mới lên các gian khác đã nối cùng SKU
   // + kiểm tra ngưỡng sắp hết hàng. Dòng chờ đẩy do processTiktokOrderEvent lập
   // phiếu ngay trong giao dịch đơn; ở đây chốt phiếu SAU khi giao dịch đã commit.

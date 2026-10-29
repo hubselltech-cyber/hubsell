@@ -595,9 +595,9 @@ export interface SyncTiktokReturnsForOrdersResult extends SyncTiktokReturnsResul
 /**
  * Hỏi `returns/search` lọc `order_ids` cho đúng vài đơn rồi ghi bằng cùng bộ
  * quyết định của lượt quét thường (không phải quét bù lịch sử: yêu cầu đang sống
- * vẫn cắm AWAITING). Dùng cho lưới đỡ màn quét kho (lát C, docs mục 8.6). Từng
- * nối vào webhook type 12 (lát B) — đã gỡ cùng đêm 29/10 vì tốn ~1.500 call/ngày
- * trong khi lượt quét tầng nhanh đã đọc cả gian bằng một call và chậm 30' là chấp nhận được.
+ * vẫn cắm AWAITING). Chỉ dùng cho lưới đỡ màn quét kho (integrations/return-refresh.ts,
+ * docs mục 8.6) — KHÔNG nối vào webhook: anh Trung 29/10 chốt không gọi thêm sàn
+ * theo từng sự kiện, lượt quét tầng nhanh đọc cả gian bằng một call là đủ.
  *
  * Sàn trả yêu cầu của đơn KHÔNG hỏi = bộ lọc vô hiệu → ném lỗi, không ghi
  * (như quét bù). Lỗi ở đây do tầng gọi nuốt, không làm hỏng việc đơn.

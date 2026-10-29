@@ -1,10 +1,10 @@
 // ============================================================
-// HỎI YÊU CẦU HOÀN TIKTOK THEO MÃ ĐƠN (syncTiktokReturnsForOrders — dùng cho lưới
-// đỡ màn quét kho, lát C 29/10/2026; lát B nối webhook type 12 đã gỡ cùng đêm) — chạy trên DB dev với một gian tự dựng; returns/search + token
-// thay bằng bản giả. Cùng khuôn tiktok-returns-backfill-db.test.ts.
+// HỎI YÊU CẦU HOÀN TIKTOK THEO MÃ ĐƠN (syncTiktokReturnsForOrders — lưới đỡ màn
+// quét kho, integrations/return-refresh.ts, 29/10/2026) — chạy trên DB dev với một
+// gian tự dựng; returns/search + token thay bằng bản giả. Cùng khuôn
+// tiktok-returns-backfill-db.test.ts.
 //
-// Mục tiêu: cờ "Chờ hàng về" lên NGAY theo nhịp webhook thay vì chờ lượt quét
-// 10'–60' (docs DON-HOAN-VA-SAO-KE.md mục 8.2 lớp 2). Khác quét bù: yêu cầu
+// Mục tiêu: kho quét kiện mà đơn còn NONE thì hỏi đúng đơn đó. Khác quét bù: yêu cầu
 // đang sống vẫn cắm AWAITING (không phải lịch sử), KHÔNG đóng/đọc mốc
 // returnLookupAt của đơn khác.
 // ============================================================
@@ -37,7 +37,7 @@ vi.mock("../tiktok/service", async (importOriginal) => {
 
 import { syncTiktokReturnsForOrders } from "../tiktok/returns-sync";
 
-describe("TikTok — webhook type 12 hỏi yêu cầu hoàn đúng đơn", () => {
+describe("TikTok — hỏi yêu cầu hoàn đúng đơn (màn quét kho)", () => {
   let fx: StockFixture;
   let seq = 0;
 

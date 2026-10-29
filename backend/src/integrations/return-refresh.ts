@@ -4,8 +4,8 @@
 // docs/DON-HOAN-VA-SAO-KE.md mục 8: màn Quét đơn hoàn tra đơn trong DB; đơn
 // thấy mà trục hoàn còn NONE thì trước đây trả "Không hoàn" ngay, dù sàn đã báo
 // (webhook còn nằm trong hàng đợi 10–50 phút lúc kẹt, hoặc lượt quét yêu cầu
-// hoàn chưa tới nhịp). Lát A (hủy sau giao = Chờ hàng về) và lát B (webhook
-// type 12 hỏi ngay) đã bịt phần lớn; đây là lưới đỡ cuối: kiện ĐÃ RỜI SHOP
+// hoàn chưa tới nhịp). Lát A (hủy sau giao = Chờ hàng về) đã bịt phần lớn; đây
+// là lưới đỡ cuối: kiện ĐÃ RỜI SHOP
 // (đang giao / đã giao) mà còn NONE → hỏi sàn đúng đơn này MỘT lần rồi tra lại.
 //
 // Hai bước, mỗi sàn 2–3 call: (1) kéo lại chi tiết đơn qua đúng đường webhook
