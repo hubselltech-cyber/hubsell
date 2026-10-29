@@ -10,7 +10,9 @@
 //   (c) sku_sale_price (list - ded_seller - ded_platform) so voi gia trong gio
 //       (grossSales + sellerDiscount) va Σ OrderItem.price (sale_price don hang)
 // CHI DOC. Chay tren Render Shell worker (in KHONG DAU vi shell mat dau):
-//   npx tsx scripts/tiktok-price-detail-probe.ts [shopName] [limit=20]
+//   npx tsx scripts/tiktok-price-detail-probe.ts [shopName] [limit=20] [settled]
+//   (tham so 3 = "settled": chi lay don DA GIAO + ban ke THAT (estimated=false) de
+//   kiem voucher shop co bi tru trong ban ke that hay khong — lan 1 29/10 toan uoc tinh)
 // ============================================================
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
@@ -43,6 +45,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function main() {
   const wantShop = process.argv[2]?.trim();
   const limit = Math.max(1, Math.min(100, Number(process.argv[3] ?? 20) || 20));
+  const settledOnly = (process.argv[4] ?? "").trim() === "settled";
 
   const channels = await prisma.channel.findMany({
     where: {
@@ -71,7 +74,12 @@ async function main() {
     }
     // Don moi nhat co ban ke: tron thuong / huy / hoan de thay du hinh dang.
     const orders = await prisma.order.findMany({
-      where: { channelId: channel.id, tiktokSettlement: { isNot: null } },
+      where: {
+        channelId: channel.id,
+        ...(settledOnly
+          ? { shippingStatus: "DELIVERED", tiktokSettlement: { is: { estimated: false } } }
+          : { tiktokSettlement: { isNot: null } }),
+      },
       orderBy: { createdAt: "desc" },
       take: limit,
       include: {
@@ -79,7 +87,8 @@ async function main() {
         items: { select: { price: true, quantity: true } },
       },
     });
-    console.log(`  ${orders.length} don co ban ke (moi nhat truoc)`);
+    console.log(`  ${orders.length} don co ban ke${settledOnly ? " THAT, da giao" : ""} (moi nhat truoc)`);
+    let rawPrinted = 0;
 
     for (const o of orders) {
       const st = o.tiktokSettlement!;
@@ -131,8 +140,10 @@ async function main() {
           `\n      ban ke: gross ${fmt(gross)} disc ${fmt(disc)} gio ${fmt(gio)} | items sale_price ${fmt(itemsSum)} | psub ${fmt(Number(o.platformSubsidy))}` +
           `\n      (a) list=gross ${aOk ? "OK" : "LECH " + fmt(list - gross)} | (b) dedS+vS=|disc| ${bOk ? "OK" : "LECH " + fmt(dedS + vS - Math.abs(disc))} | (c1) list-dedS=gio ${cGio2Ok ? "OK" : "LECH " + fmt(list - dedS - gio)} | (c2) sale=gio ${cGioOk ? "OK" : "LECH " + fmt(sale - gio)} | (c3) sale=items ${cItemsOk ? "OK" : "LECH " + fmt(sale - itemsSum)}`
       );
-      if (tally.n === 1) {
-        console.log(`      THO: ${JSON.stringify(pd).slice(0, 1500)}`);
+      // In payload tho: don dau tien cua gian + don dau tien CO voucher shop (de doc ten truong).
+      if (rawPrinted === 0 || (rawPrinted === 1 && vS > 0)) {
+        rawPrinted++;
+        console.log(`      THO: ${JSON.stringify(pd).slice(0, 1800)}`);
       }
       await sleep(400);
     }
