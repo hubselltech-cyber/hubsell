@@ -321,21 +321,29 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
 
 /**
  * KIỂM CHÉO đẳng thức doanh thu của TikTok trên các dòng ORDER của một đơn:
- *   revenue_amount (ORDER) = subtotal_before_discount_amount + seller_discount_amount.
+ *   revenue_amount (ORDER) = subtotal_before_discount + seller_discount
+ *                          + refund_subtotal_before_discount + seller_discount_refund.
  * computePnlRow (lib/pnl-formula.ts, 29/10/2026) lấy "giá món hàng trong giỏ" =
- * grossSales + sellerDiscount của sao kê, tức tin vào đẳng thức này. Trả null khi
- * đơn không có dòng ORDER (chỉ điều chỉnh); khác 0 → nơi gọi ghi log cảnh báo
- * kèm mã đơn để đọc payload thô — KHÔNG tự sửa số. Dòng thiếu `type` coi là ORDER
- * (unsettled 202507 dùng est_revenue_amount, `total` đọc cả hai).
+ * grossSales + sellerDiscount của sao kê, tức tin vào đẳng thức này. Prod 29/10
+ * (đơn hủy 586756220458927563…): sàn ghi hoàn NGAY TRONG dòng ORDER (refund_* ≠ 0,
+ * revenue_amount = 0) chứ không tách dòng REFUND như ví dụ docs → bản đầu của
+ * hàm này báo lệch oan đúng bằng số hoàn; nay cộng cả hai trường hoàn CỦA DÒNG
+ * ORDER (dòng REFUND riêng vẫn bị loại). Trả null khi đơn không có dòng ORDER
+ * (chỉ điều chỉnh); khác 0 → nơi gọi ghi log cảnh báo kèm mã đơn để đọc payload
+ * thô — KHÔNG tự sửa số. Dòng thiếu `type` coi là ORDER (unsettled 202507 dùng
+ * est_revenue_amount, `total` đọc cả hai).
  */
-export function tiktokRevenueIdentityGap(
-  lines: TikTokTxBreakdown[],
-  detail: Pick<TiktokSettlementDetailCols, "grossSales" | "sellerDiscount">
-): number | null {
+export function tiktokRevenueIdentityGap(lines: TikTokTxBreakdown[]): number | null {
   const orderLines = lines.filter((t) => (t.type ?? "ORDER") === "ORDER");
   if (orderLines.length === 0) return null;
+  const rb = orderLines.map((t) => t.revenue_breakdown);
+  const expected =
+    sumKey(rb, "subtotal_before_discount_amount") +
+    sumKey(rb, "seller_discount_amount") +
+    sumKey(rb, "refund_subtotal_before_discount_amount") +
+    sumKey(rb, "seller_discount_refund_amount");
   const orderRevenue = total(orderLines, "revenue_amount");
-  return Math.round((orderRevenue - (detail.grossSales + detail.sellerDiscount)) * 100) / 100;
+  return Math.round((orderRevenue - expected) * 100) / 100;
 }
 
 /** Mốc quyết toán dự kiến của dòng unsettled (chỉ khi sàn trả unix giây). */

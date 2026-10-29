@@ -252,3 +252,21 @@ Thứ tự: 1 → 2 (bước 1 chỉ đọc log) → 3 → 4 → 5. Mỗi lát: 
   `&channelName=TIKTOK`: gross ≈ 178,8 tr (trước 243,2), voucher 0 (trước 65,9 tr), revenue 127.737.839 KHÔNG
   đổi, cancelled ≈ 45 tr (trước 60,8); tất cả: gross ≈ 450 tr, revenue 301.981.623 không đổi; thác nước
   `gross − totalDeduction = revenue`. Log worker không có `[TikTok] Bản kê đơn … lệch`.
+
+**✅ PROD 29/10 09:58 VN (58e82360 Live web 09:45; worker tính lại nền):** sổ prod có **587.000 dòng** (không phải
+42k — đã gồm đơn backfill từ 10/2026), worker đánh bẩn 5.000/2 s + tính ~290–385 dòng/giây → 32k (09:50) →
+170k (09:58), ước xong ~10:25. Trong lúc chờ, kỳ đang xem tự tính inline (ensureLedgerFresh) nên tài khoản anh
+30 ngày đã pending 0 ngay lượt gọi đầu. **Số 30/09–29/10 sau lát 1:** Tất cả gross 449.950.316 (trước
+514.925.215), voucher 0, Doanh thu 302.624.025 (sáng 301.981.623 — chênh 642k là đơn/bản kê mới trong ngày:
+Shopee 174,24 → 174,67 tr, TikTok 127,74 → 127,95 tr, cả hai cùng tăng), Đã hủy 115.196.567 (trước 130.889.832);
+TikTok gross **177.605.101** (dự kiến ≈178,8 tr ✓, trước 243,2 tr), voucher 0, Đã hủy **45.113.592** (dự kiến ≈45 tr ✓);
+Shopee gross 272.345.215 (logic không đổi, +647k đơn mới). Thác nước `gross − deduction − revenue = 0` ở cả 3 bộ lọc.
+**Log worker 10:00 (Render, đọc được):** ~20 dòng "[TikTok] Bản kê đơn … lệch −119.200 / −227.998 / −110.999 /
+−164.449" — TOÀN đơn HỦY: sàn ghi hoàn **ngay trong dòng ORDER** (`refund_subtotal_before_discount` −188.000 +
+`seller_discount_refund` +68.800, `revenue_amount` 0) chứ không tách dòng REFUND như ví dụ docs → hàm kiểm bản đầu
+báo lệch oan đúng bằng số hoàn. Sửa `tiktokRevenueIdentityGap` cộng cả hai trường hoàn của dòng ORDER (test
+thêm ca đơn hủy prod 586756220458927563: lệch 0, giá trong giỏ 119.200 = refundedAmount 119.200).
+**★ CHỨNG MINH TRÊN TOÀN PROD (SQL 10:01):** 372.305 bản kê TikTok — nhóm không hoàn 305.298 dòng: `grossSales +
+sellerDiscount = revenueAmount` lệch **0**; nhóm có hoàn 67.007 dòng: `+ refundGross + sellerDiscountRefund =
+revenueAmount` lệch **0** → "giá trong giỏ" của computePnlRow = đúng số `revenue_amount` sàn ghi ở mọi đơn
+từng lưu, không có đơn ngoại lệ. ⏳ v1 còn ~417k dòng lúc 09:58 (worker tính nền).

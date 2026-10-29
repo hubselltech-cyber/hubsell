@@ -129,7 +129,7 @@ describe("mapTiktokBreakdownToSettlement — dòng ORDER 202501", () => {
 describe("tiktokRevenueIdentityGap — đẳng thức giá trong giỏ (29/10/2026)", () => {
   it("dòng ORDER docs: revenue_amount = giá gốc + chiết khấu NBH → lệch 0", () => {
     const { detail } = mapTiktokBreakdownToSettlement([ORDER_LINE]);
-    expect(tiktokRevenueIdentityGap([ORDER_LINE], detail)).toBe(0);
+    expect(tiktokRevenueIdentityGap([ORDER_LINE])).toBe(0);
     expect(detail.grossSales + detail.sellerDiscount).toBe(333200);
   });
   it("dòng unsettled 202507 (est_revenue_amount, không có type) cũng kiểm được", () => {
@@ -139,17 +139,35 @@ describe("tiktokRevenueIdentityGap — đẳng thức giá trong giỏ (29/10/20
       revenue_amount: undefined,
       est_revenue_amount: "333200",
     };
-    const { detail } = mapTiktokBreakdownToSettlement([est]);
-    expect(tiktokRevenueIdentityGap([est], detail)).toBe(0);
+    expect(tiktokRevenueIdentityGap([est])).toBe(0);
   });
   it("bản kê có dòng lạ → lệch ≠ 0 để nơi gọi cảnh báo; chỉ điều chỉnh → null", () => {
     const odd: TikTokTxBreakdown = { ...ORDER_LINE, revenue_amount: "330000" };
-    const { detail } = mapTiktokBreakdownToSettlement([odd]);
-    expect(tiktokRevenueIdentityGap([odd], detail)).toBe(-3200);
+    expect(tiktokRevenueIdentityGap([odd])).toBe(-3200);
     const adj: TikTokTxBreakdown = {
       type: "PLATFORM_PENALTY", adjustment_id: "1", adjustment_order_id: "586000000000000001", adjustment_amount: "-5000",
     };
-    expect(tiktokRevenueIdentityGap([adj], mapTiktokBreakdownToSettlement([adj]).detail)).toBeNull();
+    expect(tiktokRevenueIdentityGap([adj])).toBeNull();
+  });
+  it("đơn hủy prod 29/10: sàn ghi hoàn NGAY TRONG dòng ORDER (revenue_amount 0) → lệch 0, giá trong giỏ 119.200, hoàn 119.200", () => {
+    const cancelled: TikTokTxBreakdown = {
+      type: "ORDER",
+      order_id: "586756220458927563",
+      revenue_amount: "0",
+      settlement_amount: "0",
+      revenue_breakdown: {
+        subtotal_before_discount_amount: "188000",
+        seller_discount_amount: "-68800",
+        refund_subtotal_before_discount_amount: "-188000",
+        seller_discount_refund_amount: "68800",
+      },
+      supplementary_component: { customer_refund_amount: "-119200" },
+    };
+    expect(tiktokRevenueIdentityGap([cancelled])).toBe(0);
+    const { detail, order } = mapTiktokBreakdownToSettlement([cancelled]);
+    expect(detail.grossSales + detail.sellerDiscount).toBe(119200);
+    expect(order.refundedAmount).toBe(119200);
+    expect(detail.revenueAmount).toBe(0);
   });
 });
 
