@@ -275,8 +275,8 @@ export function createApp() {
   // Dò thử CHỈ ĐỌC adapter thật trên một gian (quản trị nền tảng), không qua cờ bật.
   app.use("/api/sao-chep-san-pham-probe", requireAuth, requirePlatformAdmin, listingCopyProbeRouter);
 
-  // Sao chép sản phẩm (29/10/2026): anh chốt mở thật trên prod ngay, nhãn sidebar
-  // "(demo)" — adapter thật 3 sàn chưa kiểm trên gian thật, theo dõi log [listing-copy].
+  // Sao chép sản phẩm (29/10/2026): mở thật trên prod; tối 29/10 đăng thật thành công
+  // Shopee + TikTok, nhãn "(demo)" đã bỏ; theo dõi log [listing-copy].
   app.use(
     "/api/sao-chep-san-pham",
     requireAuth,

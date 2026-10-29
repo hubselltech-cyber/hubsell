@@ -165,7 +165,7 @@ Anh chốt "Làm adapter thật". Local không có gian thật (chỉ gian seed 
 2. Shopee: xác nhận app 2040029 (ERP System) gọi được add_item; thử tạo 1 sản phẩm UNLIST trên gian test rồi xóa.
    Lazada: kiểm app có nhóm Product API. TikTok: trần 100 SP/ngày gian mới + chờ duyệt.
 3. Ảnh: thêm đổi cỡ/nén (Lazada ≤1 MB) khi gặp lỗi thật.
-4. ~~Bật cờ~~ đã mở thật (nhãn demo); theo dõi log `[listing-copy]` + báo 4 khách đã hỏi; bỏ "(demo)" khi ổn.
+4. ~~Bật cờ~~ đã mở thật; ~~nhãn demo~~ BỎ tối 29/10 (Shopee DarkMan + TikTok ANO đăng thật thành công, anh chốt "anh sẽ test dần"); theo dõi log `[listing-copy]` + báo 4 khách đã hỏi.
 
 ## 11. Góp ý của anh sau khi thử prod lần 1 (29/10/2026 chiều) — ĐÃ SỬA
 
@@ -366,4 +366,10 @@ Nguyên văn đọc từ log worker Render (`[listing-copy]`, Chrome của anh):
 - **FE:** bảng Phân loại trong Sửa bài đăng hiện ảnh nhỏ 32px cạnh tên phân loại khi có.
 - tsc BE+FE, vitest 27 ca, eslint sạch. ⏳ anh chép lại SP đó TikTok → Shopee xem Seller Center có ảnh từng màu; chiều
   Shopee → TikTok chưa kiểm.
+
+## 19. Bỏ nhãn "(demo)" (29/10/2026 tối muộn, anh chốt) — sidebar `Sao chép sản phẩm`
+
+Anh: "Em dọn dẹp, commit và push. Anh sẽ test dần và chúng ta sửa sau. Bỏ chữ demo trên sidebar." Mục sidebar
+`app-shell.tsx` và chú thích `app.ts` đổi theo. Trạng thái tính năng: mở cho mọi chủ shop có lá quyền; 3 sàn đã đăng
+thật ít nhất một lần (Shopee, TikTok); Lazada + ảnh màu (mục 18) + lý do TikTok từ chối (mục 17) còn chờ ca thật.
 

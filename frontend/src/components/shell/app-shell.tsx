@@ -207,8 +207,8 @@ const NAV_ITEMS: NavItem[] = [
       // phản hồi đánh giá → gộp thành tab "Cấu hình tự động" trong Phản hồi đánh
       // giá; route cũ chuyển hướng. Lá quyền operations.ai-rules GIỮ để bật tab.
       // 29/10/2026: chép 1 sản phẩm (gian đã nối / kho) lên nhiều gian 3 sàn — docs/SAO-CHEP-SAN-PHAM.md.
-      // "(demo)" theo anh Trung 29/10: mở thật trên prod, adapter 3 sàn còn đang kiểm — bỏ chữ demo khi ổn.
-      { href: "/operations-assistant/copy-listing", label: "Sao chép sản phẩm (demo)", perm: "operations.copy-listing" },
+      // Nhãn "(demo)" đã bỏ tối 29/10 sau khi Shopee DarkMan + TikTok ANO đăng thật thành công (anh Trung chốt).
+      { href: "/operations-assistant/copy-listing", label: "Sao chép sản phẩm", perm: "operations.copy-listing" },
     ],
   },
   {
