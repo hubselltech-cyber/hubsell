@@ -8342,17 +8342,6 @@ export interface CopyListingJob {
   targets: CopyListingTarget[];
 }
 
-export interface CopyListingJobSummary {
-  id: string;
-  sourceType: "CHANNEL" | "PRODUCT";
-  sourceTitle: string;
-  sourceImageUrl: string | null;
-  status: CopyListingJobStatus;
-  createdAt: string;
-  finishedAt: string | null;
-  targets: { status: CopyListingTargetStatus; shopName: string; channelName: ChannelName }[];
-}
-
 export interface CopyListingTargetPatch {
   categoryId?: string | null;
   attributes?: Record<string, string>;
@@ -8386,26 +8375,6 @@ export function fetchCopyListingSources(params: {
   return apiFetch<CopyListingSourcePage>(`${COPY_LISTING_BASE}/sources?${q.toString()}`);
 }
 
-export function createCopyListingJob(body: {
-  sourceType: "CHANNEL" | "PRODUCT";
-  sourceChannelId?: string;
-  sourceItemId?: string;
-  sourceGroupKey?: string;
-  targetChannelIds: string[];
-}) {
-  return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs`, { method: "POST", body: JSON.stringify(body) });
-}
-
-export function fetchCopyListingJob(id: string) {
-  return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`);
-}
-
-export function fetchCopyListingJobs(page = 1, pageSize = 20) {
-  return apiFetch<{ items: CopyListingJobSummary[]; total: number; page: number; pageSize: number }>(
-    `${COPY_LISTING_BASE}/jobs?page=${page}&pageSize=${pageSize}`
-  );
-}
-
 export function updateCopyListingSource(id: string, body: { title?: string; description?: string }) {
   return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 }
@@ -8415,12 +8384,6 @@ export function updateCopyListingTarget(jobId: string, targetId: string, patch: 
     method: "PATCH",
     body: JSON.stringify(patch),
   });
-}
-
-export function fetchCopyListingCategories(jobId: string, targetId: string, q: string) {
-  return apiFetch<{ items: { id: string; name: string; path: string[]; leaf: boolean }[] }>(
-    `${COPY_LISTING_BASE}/jobs/${jobId}/targets/${targetId}/categories?q=${encodeURIComponent(q)}`
-  );
 }
 
 export interface CopyListingCategoryNode {

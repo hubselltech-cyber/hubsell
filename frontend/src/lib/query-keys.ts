@@ -23,8 +23,6 @@ export const qk = {
   // ----- Sao chép sản phẩm (docs/SAO-CHEP-SAN-PHAM.md) -----
   copyListingChannels: () => ["copy-listing-channels"] as const,
   copyListingSources: (params: Record<string, unknown>) => ["copy-listing-sources", params] as const,
-  copyListingJobs: (page: number) => ["copy-listing-jobs", page] as const,
-  copyListingJob: (id: string) => ["copy-listing-job", id] as const,
   copyListingBatches: (page: number) => ["copy-listing-batches", page] as const,
   copyListingBatch: (id: string) => ["copy-listing-batch", id] as const,
 

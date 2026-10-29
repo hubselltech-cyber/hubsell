@@ -82,7 +82,7 @@ hubsell/
 │       │   ├── warehouse/{returns,shipping-alerts,sync}
 │       │   ├── finance/{analytics,expenses,cost-prices,fee-audit,loss-orders,realized-pnl,shipping-alerts}
 │       │   ├── ads/{shopee,lazada,tiktok}          # Trợ lý quảng cáo đa sàn
-│       │   ├── operations-assistant/{chat,reviews,ai-rules,loss-orders}
+│       │   ├── operations-assistant/{chat,reviews,ai-rules,loss-orders,copy-listing}   # copy-listing = Sao chép sản phẩm lên nhiều gian (29/10/2026)
 │       │   ├── invoicing/{connect,history,tax-settings}
 │       │   ├── settings/{general,plan,tax,other} · affiliate/ · koc-marketing/ (ẩn)
 │       │   └── admin/{customers,finance,health,marketing,plans,system}   # HQ điều hành nền tảng
@@ -103,29 +103,32 @@ hubsell/
 │   ├── scripts/                         # 44 script chạy tay: seed-*, probe-*, bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
 │   └── src/
 │       ├── index.ts                     # Khởi động theo HUBSELL_ROLE=all|web|worker
-│       ├── app.ts                       # Express app: mount 35 route + middleware gác quyền/gói
+│       ├── app.ts                       # Express app: mount 37 route + middleware gác quyền/gói
 │       ├── middleware/auth.ts           # JWT, requireAuth, requirePermission, requirePlatformPermission
 │       ├── config/                      # permission-registry, platform-permission-registry, tax-config,
 │       │                                #   ads-cadence, capacity-plan, marketplace-read (lớp đọc sàn Pha B)
 │       ├── lib/                         # Thuần + hạ tầng: prisma, queue (pg-boss), mailer, secret-box,
-│       │                                #   date-range, finance-definitions, pnl-formula, cost-price, ...
+│       │                                #   date-range, finance-definitions, pnl-formula, cost-price, image-fetch (tải ảnh về buffer), ...
 │       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
-│       │                                #   notifications, platform-health, fulfillment/,
+│       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source/service/batch),
 │       │                                #   cursor-reader + marketplace-gateway + sync-lanes (lớp đọc sàn Pha B,
 │       │                                #   chưa nối worker — docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b), ...
-│       ├── routes/                      # 35 nhóm endpoint /api/*: auth, orders, products, finance, tax,
+│       ├── routes/                      # 37 nhóm endpoint /api/*: auth, orders, products, finance, tax,
 │       │                                #   subscription, ads, tiktok-ads, webhooks, admin*, support, ...
-│       ├── workers/                     # 24 tiến trình nền, đăng ký trong workers/index.ts:
+│       ├── workers/                     # 28 tiến trình nền, đăng ký trong workers/index.ts:
 │       │                                #   order-auto-sync (lịch từng gian), event-queue (webhook pg-boss),
 │       │                                #   stock-queue, stock-reconcile, order-ledger, token-refresh,
 │       │                                #   plan-hibernate, subscription-reminder, invoice-*, review-auto-reply,
 │       │                                #   read-lanes (làn đọc sàn mới — đọc bóng đơn theo gian ghi danh), ...
 │       ├── integrations/                # Mỗi đối tác một thư mục: shopee/ lazada/ tiktok/ tiktok-ads/
 │       │                                #   hubsell-ads/ invoice/ (MISA) payos/ apple-iap/ ai/
+│       │                                #   (shopee|tiktok|lazada)/listing-api.ts = API ĐĂNG sản phẩm (danh mục, thuộc tính, ảnh, tạo SP)
 │       │                                #   + lõi dùng chung: order-sync-write, sync-contract, stock-push-worker,
 │       │                                #   order-read-adapters / order-write-adapters (3 adapter đọc bóng / ghi đơn cho máy đọc con trỏ)
-│       └── marketplace/                 # Lớp trừu tượng sàn + adapter + mockMarketplace (giả lập)
+│       └── marketplace/                 # Lớp trừu tượng sàn + adapter (chiều ĐỌC) + mockMarketplace (giả lập)
+│           └── listing/                 # Chiều GHI — đăng SP lên sàn: types (ListingAdapter), rules, variant-map,
+│                                        #   registry (gian có token → adapter thật), {shopee,tiktok,lazada,mock}-listing-adapter, __tests__/
 │
 ├── hubsell-mobile/                      # Expo — một bản dựng iOS/Android (Google Play đã phát hành)
 │   └── src/{app,screens,components,api,auth,plan,theme,lib,types}
@@ -170,6 +173,8 @@ Ký hiệu cột **Gác** (middleware trong `backend/src/middleware/auth.ts`):
 | `/api/assistant` | `assistant` | JWT · chủ shop · gói mở | Trợ lý Hubsell hỏi số liệu (tầng luật + AI) |
 | `/api/command-center` | `command-center` | JWT · chủ shop | Trung tâm điều hành trên Tổng quan |
 | `/api/invoice-config` · `/api/tax` | `invoice-config`, `tax` | JWT · quyền `invoicing` · gói mở | Hóa đơn & Thuế (MISA meInvoice): cấu hình, tờ nháp, phát hành, tờ khai; không gác có gian |
+| `/api/sao-chep-san-pham` | `listing-copy` | JWT · quyền `operations.copy-listing` · gói mở · có gian | Sao chép sản phẩm lên nhiều gian 3 sàn: nguồn (gian đã nối / kho), đợt N SP × M gian, cây danh mục gian đích, đăng qua hàng đợi `listing.copy` (tránh chữ ads — adblock) |
+| `/api/sao-chep-san-pham-probe` | `listing-copy-probe` | JWT · quản trị nền tảng | dò thử CHỈ ĐỌC adapter thật trên một gian (danh mục, thuộc tính, thương hiệu, vận chuyển, chi tiết 1 SP) |
 | `/api/test/misa-sandbox` | `test-misa-sandbox` | JWT · chủ shop · env `MISA_SANDBOX_TEST_ENABLED=1` trên production | cụm thử sandbox MISA, mặc định 503 trên production |
 | `/api/operations` | `operations` | JWT · quyền `operations.*` · gói mở · có gian | Trợ lý vận hành: đánh giá (chat đang ẩn) |
 | `/api/koc` | `koc` | JWT · quyền `koc` · gói mở · có gian | KOC & Affiliate — đang ẩn (25/09) |

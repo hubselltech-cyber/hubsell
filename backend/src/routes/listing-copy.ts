@@ -15,7 +15,6 @@ import {
   createJob,
   getJob,
   ListingCopyError,
-  listJobs,
   submitJob,
   updateJobSource,
   updateTarget,
@@ -166,15 +165,6 @@ router.post("/batches/:id/targets/:tid/apply", async (req: AuthRequest, res, nex
   }
 });
 
-router.get("/jobs", async (req: AuthRequest, res, next) => {
-  try {
-    const { page, pageSize } = pageParams(req);
-    res.json(await listJobs(req.ownerId!, page, pageSize));
-  } catch (err) {
-    next(err);
-  }
-});
-
 router.post("/jobs", async (req: AuthRequest, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -287,19 +277,6 @@ async function targetChannel(req: AuthRequest) {
   if (!channel) throw new ListingCopyError("Gian đích không còn.", 404);
   return channel;
 }
-
-router.get("/jobs/:id/targets/:tid/categories", async (req: AuthRequest, res, next) => {
-  try {
-    const channel = await targetChannel(req);
-    res.json({ items: await getListingAdapter(channel).searchCategories(channel, str(req.query.q)) });
-  } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
-  }
-});
 
 /**
  * Cây danh mục xổ cha → con của gian đích.

@@ -352,44 +352,6 @@ export async function getJob(ownerId: string, jobId: string): Promise<JobView> {
   };
 }
 
-export async function listJobs(ownerId: string, page: number, pageSize: number) {
-  const [total, jobs] = await Promise.all([
-    prisma.listingCopyJob.count({ where: { userId: ownerId } }),
-    prisma.listingCopyJob.findMany({
-      where: { userId: ownerId },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: { targets: { select: { status: true, channelId: true } } },
-    }),
-  ]);
-  const channelIds = [...new Set(jobs.flatMap((j) => j.targets.map((t) => t.channelId)))];
-  const channels = await prisma.channel.findMany({
-    where: { id: { in: channelIds } },
-    select: { id: true, shopName: true, channelName: true },
-  });
-  const byId = new Map(channels.map((c) => [c.id, c]));
-  return {
-    total,
-    page,
-    pageSize,
-    items: jobs.map((j) => ({
-      id: j.id,
-      sourceType: j.sourceType,
-      sourceTitle: j.sourceTitle,
-      sourceImageUrl: j.sourceImageUrl,
-      status: j.status,
-      createdAt: j.createdAt,
-      finishedAt: j.finishedAt,
-      targets: j.targets.map((t) => ({
-        status: t.status,
-        shopName: byId.get(t.channelId)?.shopName ?? "?",
-        channelName: byId.get(t.channelId)?.channelName ?? "OFFLINE",
-      })),
-    })),
-  };
-}
-
 /** Sửa tên / mô tả của nguồn đã chụp (áp cho mọi gian đích) rồi tính lại missing. */
 export async function updateJobSource(
   ownerId: string,

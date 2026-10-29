@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (tối) — SAO CHÉP SẢN PHẨM: DỌN DẸP + CÂY THƯ MỤC TRƯỚC KHI ANH TEST — PUSH
+
+- **Anh:** "dọn dẹp và push lên trước, sắp xếp đúng mô hình tree". Theo luật README "Cấu trúc dự án" (memory giữ cây thư mục gọn).
+- **Cắt mã chết:** FE `api.ts` bỏ `createCopyListingJob` / `fetchCopyListingJob` / `fetchCopyListingJobs` / `fetchCopyListingCategories` + kiểu `CopyListingJobSummary`, `query-keys` bỏ `copyListingJobs`/`copyListingJob` (màn hình chỉ còn đi theo ĐỢT từ lát 2); BE bỏ route `GET /jobs` + `listJobs` và route `/targets/:tid/categories` (đã thay bằng `category-tree`). Giữ POST/GET/PATCH `/jobs/:id` + submit (API đơn lẻ, script curl còn dùng).
+- **Cây thư mục README:** thêm `operations-assistant/copy-listing`, `services/listing-copy/`, `lib/image-fetch`, `integrations/*/listing-api.ts`, nhánh `marketplace/listing/` (chiều GHI); số route 35→37, worker 24→28; bảng "API hiện có" thêm `/api/sao-chep-san-pham` + `-probe`. `docs/README.md` cập nhật 2 dòng SAO-CHEP (hết "CHƯA PUSH"/"CHƯA CODE").
+- Không có tệp lạc ở gốc/docs/prisma; tsc 2 app sạch; eslint FE sạch.
+
+---
 ## Phiên 29/10/2026 (tối) — SAO CHÉP SẢN PHẨM: LÁT ẢNH CHÈN TRONG MÔ TẢ — ĐÃ CODE 3 SÀN, CHƯA KIỂM GIAN THẬT, PUSH
 
 - **Anh "Làm luôn".** `NormalizedListing.descriptionImages` (ảnh trong mô tả của nguồn, theo thứ tự); đăng = upload lại gian đích + ghép CUỐI mô tả; trần 12 ảnh (Shopee docs; TikTok/Lazada tự chọn cùng mức).
