@@ -33,8 +33,14 @@ export interface ListingDimensions {
 /** Sản phẩm ở dạng trung lập — cả nguồn gian sàn lẫn nguồn kho Hubsell đều quy về đây. */
 export interface NormalizedListing {
   title: string;
+  /** Chữ thuần (đã bóc HTML + ảnh); ảnh chèn trong mô tả tách sang descriptionImages. */
   description: string;
   images: string[];
+  /**
+   * Ảnh CHÈN TRONG MÔ TẢ của nguồn (Shopee extended_description, TikTok/Lazada <img>), theo thứ tự.
+   * Khi đăng: upload lại lên gian đích rồi ghép vào CUỐI mô tả (không giữ vị trí xen kẽ chữ–ảnh).
+   */
+  descriptionImages: string[];
   /** Danh mục ở sàn NGUỒN (id + đường dẫn), chỉ để gợi ý; null khi nguồn là kho. */
   categoryId: string | null;
   categoryPath: string[] | null;

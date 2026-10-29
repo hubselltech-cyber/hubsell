@@ -168,6 +168,7 @@ export async function buildListingFromChannelRows(channelId: string, itemKey: st
     // ở đây dựng mô tả tối thiểu để bản xem trước có gì mà sửa.
     description: `${rows[0].productName}. Sản phẩm sao chép từ gian hàng đã nối Hubsell; vui lòng bổ sung mô tả chi tiết trước khi đăng.`,
     images,
+    descriptionImages: [],
     categoryId: null,
     categoryPath: null,
     brandName: null,
@@ -276,6 +277,7 @@ export async function buildListingFromProducts(ownerId: string, groupKey: string
     title: rows[0].productName,
     description: "",
     images,
+    descriptionImages: [],
     categoryId: null,
     categoryPath: null,
     brandName: null,

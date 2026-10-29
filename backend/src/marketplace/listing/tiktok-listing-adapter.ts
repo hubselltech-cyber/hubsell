@@ -13,7 +13,7 @@ import { getWarehouses } from "../../integrations/tiktok/client";
 import * as api from "../../integrations/tiktok/listing-api";
 import { tiktokNeedsReauthForStockPush } from "../../integrations/tiktok/scopes";
 import { getValidAccessToken } from "../../integrations/tiktok/service";
-import { PLATFORM_LISTING_RULES } from "./rules";
+import { MAX_DESCRIPTION_IMAGES, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
   Brand,
@@ -29,7 +29,7 @@ import type {
   LogisticOption,
   NormalizedListing,
 } from "./types";
-import { gramsToKg, normalizeText, textToHtml, variantPairs, vndInt } from "./variant-map";
+import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, normalizeText, textToHtml, variantPairs, vndInt } from "./variant-map";
 
 async function ctxOf(channel: Channel) {
   if (tiktokNeedsReauthForStockPush(channel)) {
@@ -90,10 +90,13 @@ export const tiktokListingAdapter: ListingAdapter = {
     const w = extra.package_weight;
     const weightGrams = w?.value ? Math.round(Number(w.value) * (w.unit === "GRAM" ? 1 : 1000)) : null;
     const d = extra.package_dimensions;
+    // Mô tả TikTok là HTML: tách <img> sang descriptionImages, chữ về text thuần.
+    const descHtml = extractHtmlImages(extra.description ?? "");
     return {
       title: p.title ?? "",
-      description: extra.description ?? "",
+      description: htmlToText(descHtml.html),
       images: (p.main_images ?? []).map(pickUrl).filter((u): u is string => Boolean(u)),
+      descriptionImages: descHtml.images,
       categoryId: leaf?.id ?? null,
       categoryPath: extra.category_chains?.map((c) => c.local_name ?? "").filter(Boolean) ?? null,
       brandName: extra.brand?.name ?? null,
@@ -177,6 +180,14 @@ export const tiktokListingAdapter: ListingAdapter = {
       main_images.push({ uri: up.uri });
     }
     if (main_images.length === 0) throw new Error("Không tải được ảnh nào lên TikTok");
+    // Ảnh chèn trong mô tả: upload use_case DESCRIPTION_IMAGE, lấy url trả về ghép <img> cuối mô tả.
+    const descUrls: string[] = [];
+    for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
+      const img = await fetchImageBuffer(url);
+      const up = await api.uploadProductImage(ctx, img, "DESCRIPTION_IMAGE");
+      if (up.url) descUrls.push(up.url);
+      else console.warn(`[listing-copy] TikTok upload ảnh mô tả không trả url (uri ${up.uri}) — bỏ qua ảnh này`);
+    }
 
     const warehouses = await getWarehouses(ctx);
     const wh =
@@ -205,7 +216,7 @@ export const tiktokListingAdapter: ListingAdapter = {
     const body: api.TikTokCreateProductBody = {
       save_mode: "LISTING",
       title: draft.listing.title,
-      description: textToHtml(draft.listing.description),
+      description: appendHtmlImages(textToHtml(draft.listing.description), descUrls),
       category_id: draft.categoryId,
       category_version: "v2",
       ...(draft.brandId ? { brand_id: draft.brandId } : {}),

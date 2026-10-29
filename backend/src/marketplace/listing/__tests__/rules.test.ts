@@ -8,6 +8,7 @@ const base: NormalizedListing = {
   title: "Chân váy chữ A dáng dài vải tuyết mưa",
   description: "Mô tả đủ dài để qua ngưỡng tối thiểu hai mươi ký tự.",
   images: ["https://img/1.jpg"],
+  descriptionImages: [],
   categoryId: null,
   categoryPath: null,
   brandName: null,

@@ -8265,6 +8265,8 @@ export interface CopyListingNormalized {
   title: string;
   description: string;
   images: string[];
+  /** Ảnh chèn trong mô tả của nguồn — upload lại gian đích, ghép cuối mô tả. */
+  descriptionImages: string[];
   categoryPath: string[] | null;
   brandName: string | null;
   weightGrams: number | null;

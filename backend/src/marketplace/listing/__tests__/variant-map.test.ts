@@ -1,7 +1,17 @@
 // Hàm thuần quy đổi phân loại cho 3 adapter thật (docs/SAO-CHEP-SAN-PHAM.md mục 10).
 import { describe, expect, it } from "vitest";
 import type { ListingOption, ListingVariant } from "../types";
-import { gramsToKg, htmlToText, splitVariantValues, textToHtml, tierIndexes, variantPairs, vndInt } from "../variant-map";
+import {
+  appendHtmlImages,
+  extractHtmlImages,
+  gramsToKg,
+  htmlToText,
+  splitVariantValues,
+  textToHtml,
+  tierIndexes,
+  variantPairs,
+  vndInt,
+} from "../variant-map";
 
 const options: ListingOption[] = [
   { name: "Màu", values: ["Đen", "Trắng"] },
@@ -37,6 +47,14 @@ describe("đổi đơn vị + mô tả", () => {
     expect(gramsToKg(350)).toBe(0.35);
     expect(gramsToKg(null)).toBe(0);
     expect(vndInt(99999.6)).toBe(100000);
+  });
+  it("tách ảnh chèn trong mô tả HTML theo thứ tự, bỏ data URI + trùng, rồi ghép lại cuối", () => {
+    const html = `<p>Mở đầu</p><img src="https://a/1.jpg"><p>Giữa <img alt='x' src='https://a/2.png' /></p><img src="data:image/png;base64,xx"><img src="https://a/1.jpg">`;
+    const r = extractHtmlImages(html);
+    expect(r.images).toEqual(["https://a/1.jpg", "https://a/2.png"]);
+    expect(htmlToText(r.html)).toBe("Mở đầu\nGiữa");
+    expect(appendHtmlImages("<p>a</p>", ["https://b/x.jpg"])).toBe('<p>a</p><p><img src="https://b/x.jpg" /></p>');
+    expect(appendHtmlImages("<p>a</p>", [])).toBe("<p>a</p>");
   });
   it("text ↔ html giữ xuống dòng, escape thẻ", () => {
     expect(textToHtml("a <b>\n\nc\nd")).toBe("<p>a &lt;b&gt;</p><p>c<br>d</p>");

@@ -225,3 +225,23 @@ lấy được không.
 - Kiểm local gian giả lập: đợt Váy hoa nhí → mở Sửa bài đăng (ảnh, tên 20 ký tự · sàn nhận 25–255 tô vàng, mô tả,
   bảng phân loại), mở Bổ sung gian Lazada (vạch trái + thẻ trắng), không tràn ngang (bảng 1284/1285 px); tsc + eslint
   sạch.
+
+## 13. Lát "ảnh chèn trong mô tả" (29/10/2026 tối, anh "Làm luôn") — ĐÃ CODE, CHƯA KIỂM GIAN THẬT
+
+- **Hợp đồng:** `NormalizedListing.descriptionImages: string[]` — ảnh chèn trong mô tả của NGUỒN theo thứ tự; `description`
+  vẫn là chữ thuần. Khi đăng: upload lại từng ảnh lên gian đích rồi ghép vào CUỐI mô tả (chữ trước, ảnh sau — không giữ
+  vị trí xen kẽ chữ–ảnh như bài gốc; đổi lại khách sửa chữ trong một ô text mà không vỡ ảnh). Trần `MAX_DESCRIPTION_IMAGES`
+  = 12 (Shopee docs extended_description ≤12; TikTok/Lazada không nêu → tự chọn cùng mức). Job cũ không có trường → `asListing`
+  đặt `[]`.
+- **Chiều đọc:** Shopee `description_info.extended_description.field_list` (field_type image → image_info.image_url; text gom
+  phần còn lại); TikTok/Lazada mô tả HTML → `extractHtmlImages()` (variant-map.ts) tách `<img src>` (bỏ data URI + trùng) rồi
+  `htmlToText`. Nguồn kho Hubsell + nguồn bảng ChannelProduct: `[]`. Giả lập: 2 ảnh mẫu để soi màn hình.
+- **Chiều ghi:** Shopee `upload_image` scene `desc` → `add_item` `description_type: "extended"` + `description_info.
+  extended_description.field_list = [text, image…]` (vẫn gửi `description` chữ thuần); TikTok `images/upload` use_case
+  `DESCRIPTION_IMAGE` → lấy `url` trả về ghép `<p><img src></p>` cuối mô tả (không có url thì bỏ ảnh + log); Lazada
+  `image/migrate` từng ảnh → `<img src>` cuối mô tả HTML. Hàm `appendHtmlImages()`.
+- **Màn hình:** khung Sửa bài đăng có lưới "Ảnh trong mô tả (n) · chép theo, xếp cuối mô tả trên gian đích"; ghi chú chỉ
+  còn "Video không chép theo". Probe trả thêm `descriptionImages` (số ảnh) ở bước fetchListing.
+- Test `variant-map.test.ts` +1 ca (tách/ghép ảnh); tsc + vitest 13 ca + eslint sạch; local gian giả lập hiện 2 ảnh mẫu.
+- ⏳ Kiểm gian thật: chạy probe xem `descriptionImages` > 0 trên 1 SP Shopee có mô tả mở rộng; thử đăng 1 SP có ảnh mô tả
+  lên gian test từng sàn (Shopee extended có thể đòi text ≥ 25 ký tự mỗi ô và ảnh desc đúng cỡ — sửa theo lỗi thật).

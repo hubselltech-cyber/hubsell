@@ -118,6 +118,12 @@ export interface TargetDraftState {
  * Tính danh sách còn thiếu của một gian đích. `requirements` null = chưa có danh
  * mục (hoặc adapter không trả luật) → chỉ áp luật mặc định của sàn.
  */
+/**
+ * Trần ảnh chèn trong mô tả khi đăng. Shopee docs add_item: extended_description ≤12 ảnh;
+ * TikTok/Lazada docs không nêu trần riêng → tự chọn cùng mức 12 (mặc định, chưa có căn cứ sàn).
+ */
+export const MAX_DESCRIPTION_IMAGES = 12;
+
 export function computeMissing(
   platform: ChannelName,
   listing: NormalizedListing,

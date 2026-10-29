@@ -183,8 +183,9 @@ interface UploadData extends ShopeeEnvelope {
 }
 
 /** Tải ảnh lên không gian media (bắt buộc trước add_item — Shopee không nhận URL ngoài). */
+/** scene "normal" = ảnh sản phẩm; "desc" = ảnh chèn trong mô tả mở rộng (docs media_space/upload_image). */
 export async function uploadProductImage(
-  params: { accessToken: string; shopId: string; buffer: Buffer; filename: string; mime: string },
+  params: { accessToken: string; shopId: string; buffer: Buffer; filename: string; mime: string; scene?: "normal" | "desc" },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<string> {
   const timestamp = Math.floor(Date.now() / 1000);
@@ -197,7 +198,7 @@ export async function uploadProductImage(
     sign,
   }).toString();
   const form = new FormData();
-  form.append("scene", "normal");
+  form.append("scene", params.scene ?? "normal");
   form.append("image", new Blob([new Uint8Array(params.buffer)], { type: params.mime }), params.filename);
   const res = await platformFetch("SHOPEE", `${cfg.apiBase}${P.uploadImage}?${qs}`, { method: "POST", body: form });
   const data = ensureOk((await res.json()) as UploadData, "upload_image");
@@ -220,7 +221,11 @@ export interface ShopeeAddItemBody {
   dimension?: { package_length: number; package_width: number; package_height: number };
   item_sku?: string;
   seller_stock: { stock: number }[];
-  description_type?: "normal";
+  /** "extended" = mô tả có ảnh chèn: field_list text/image (image_id từ upload_image scene desc). */
+  description_type?: "normal" | "extended";
+  description_info?: {
+    extended_description: { field_list: ({ field_type: "text"; text: string } | { field_type: "image"; image_info: { image_id: string } })[] };
+  };
 }
 
 interface AddItemData extends ShopeeEnvelope {

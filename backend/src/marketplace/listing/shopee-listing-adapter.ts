@@ -12,7 +12,7 @@ import { fetchImageBuffer } from "../../lib/image-fetch";
 import type { ShopeeItemBaseInfo } from "../../integrations/shopee/client";
 import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
-import { PLATFORM_LISTING_RULES } from "./rules";
+import { MAX_DESCRIPTION_IMAGES, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
   Brand,
@@ -62,13 +62,20 @@ export const shopeeListingAdapter: ListingAdapter = {
     const { item, models } = await api.getItemDetail(accessToken, shopId, Number(itemId));
     if (!item) return null;
     const extra = item as ShopeeItemBaseInfo & BaseInfoExtra;
+    // Mô tả mở rộng = dãy ô text/image; chữ gom lại, ảnh tách sang descriptionImages.
+    const fields = item.description_info?.extended_description?.field_list ?? [];
     const description =
       item.description?.trim() ||
-      (item.description_info?.extended_description?.field_list ?? [])
+      fields
+        .filter((f) => f.field_type !== "image")
         .map((f) => f.text ?? "")
         .filter(Boolean)
         .join("\n") ||
       "";
+    const descriptionImages = fields
+      .filter((f) => f.field_type === "image")
+      .map((f) => f.image_info?.image_url ?? "")
+      .filter(Boolean);
     const options: ListingOption[] = (extra.tier_variation ?? []).map((t) => ({
       name: t.name ?? "Phân loại",
       values: (t.option_list ?? []).map((o) => o.option ?? "").filter(Boolean),
@@ -90,6 +97,7 @@ export const shopeeListingAdapter: ListingAdapter = {
       title: item.item_name ?? "",
       description,
       images: item.image?.image_url_list ?? [],
+      descriptionImages,
       categoryId: extra.category_id ? String(extra.category_id) : null,
       categoryPath: extra.category_id && categories.length ? api.categoryPath(categories, extra.category_id) : null,
       brandName: extra.brand?.original_brand_name ?? null,
@@ -170,6 +178,13 @@ export const shopeeListingAdapter: ListingAdapter = {
       imageIds.push(await api.uploadProductImage({ accessToken, shopId, ...img }));
     }
     if (imageIds.length === 0) throw new Error("Không tải được ảnh nào lên Shopee");
+    // Ảnh chèn trong mô tả: upload scene "desc" → mô tả mở rộng (chữ trước, ảnh sau).
+    const descImageIds: string[] = [];
+    for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
+      const img = await fetchImageBuffer(url);
+      descImageIds.push(await api.uploadProductImage({ accessToken, shopId, ...img, scene: "desc" }));
+    }
+    const descriptionText = htmlToText(draft.listing.description).slice(0, 3000);
 
     // Thuộc tính: cần value_id cho kiểu chọn; kiểu gõ tay gửi value_id 0 + tên.
     const tree = await api.getAttributeTree(accessToken, shopId, Number(draft.categoryId));
@@ -187,7 +202,20 @@ export const shopeeListingAdapter: ListingAdapter = {
     const first = draft.variants[0];
     const body: api.ShopeeAddItemBody = {
       item_name: draft.listing.title,
-      description: htmlToText(draft.listing.description).slice(0, 3000),
+      description: descriptionText,
+      ...(descImageIds.length
+        ? {
+            description_type: "extended" as const,
+            description_info: {
+              extended_description: {
+                field_list: [
+                  { field_type: "text" as const, text: descriptionText },
+                  ...descImageIds.map((image_id) => ({ field_type: "image" as const, image_info: { image_id } })),
+                ],
+              },
+            },
+          }
+        : {}),
       original_price: vndInt(first.price),
       weight: gramsToKg(draft.weightGrams),
       category_id: Number(draft.categoryId),

@@ -67,7 +67,10 @@ export function json(v: unknown): Prisma.InputJsonValue {
 }
 
 export function asListing(v: Prisma.JsonValue): NormalizedListing {
-  return v as unknown as NormalizedListing;
+  const l = v as unknown as NormalizedListing;
+  // Job tạo trước lát "ảnh trong mô tả" chưa có trường này.
+  if (!Array.isArray(l.descriptionImages)) l.descriptionImages = [];
+  return l;
 }
 
 function asRecord(v: Prisma.JsonValue): Record<string, string> {

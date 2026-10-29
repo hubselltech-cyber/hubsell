@@ -941,7 +941,10 @@ export interface ShopeeItemBaseInfo {
   /** Mô tả sản phẩm — item dùng mô tả mở rộng thì text nằm trong description_info. */
   description?: string;
   description_info?: {
-    extended_description?: { field_list?: { field_type?: string; text?: string }[] };
+    extended_description?: {
+      /** field_type "text" → text; "image" → image_info (ảnh chèn trong mô tả). */
+      field_list?: { field_type?: string; text?: string; image_info?: { image_id?: string; image_url?: string } }[];
+    };
   };
   /** Thuộc tính seller khai trên sàn (Chất liệu, Xuất xứ…) — ngữ cảnh AI Copilot. */
   attribute_list?: {

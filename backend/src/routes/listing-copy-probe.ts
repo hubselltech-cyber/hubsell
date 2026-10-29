@@ -47,7 +47,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       if (!first) throw new Error("Gian chưa có sản phẩm sàn nào để đọc.");
       const l = await adapter.fetchListing(channel, channelItemKey(first));
       return l
-        ? { title: l.title, images: l.images.length, variants: l.variants.length, options: l.options, categoryId: l.categoryId, categoryPath: l.categoryPath, weightGrams: l.weightGrams, brandName: l.brandName, descriptionLen: l.description.length }
+        ? { title: l.title, images: l.images.length, descriptionImages: l.descriptionImages.length, variants: l.variants.length, options: l.options, categoryId: l.categoryId, categoryPath: l.categoryPath, weightGrams: l.weightGrams, brandName: l.brandName, descriptionLen: l.description.length }
         : null;
     });
     steps.push(listing);
@@ -57,6 +57,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         title,
         description: "",
         images: [],
+        descriptionImages: [],
         categoryId: null,
         categoryPath: null,
         brandName: null,

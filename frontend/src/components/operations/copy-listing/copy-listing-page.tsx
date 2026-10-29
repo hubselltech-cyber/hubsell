@@ -875,10 +875,34 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
               onChange={(e) => setDescription(e.target.value)}
             />
             <p className={TEXT_SUB}>
-              Ảnh chèn trong mô tả và video chưa chép theo — bổ sung trên sàn sau khi đăng. Shopee nhận chữ thuần; TikTok, Lazada
-              giữ xuống dòng.
+              Shopee nhận chữ thuần; TikTok, Lazada giữ xuống dòng. Video không chép theo — bổ sung trên sàn sau khi đăng.
             </p>
           </div>
+          {/* Ảnh chèn trong mô tả của nguồn: chép theo, ghép vào CUỐI mô tả trên gian đích. */}
+          {s.descriptionImages.length > 0 && (
+            <div className="space-y-1">
+              <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-x-2")}>
+                <span>Ảnh trong mô tả ({s.descriptionImages.length})</span>
+                <span className="font-normal text-slate-500">
+                  chép theo, xếp cuối mô tả trên gian đích
+                  {s.descriptionImages.length > 12 ? " · sàn nhận 12 ảnh đầu" : ""}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {s.descriptionImages.slice(0, 12).map((url, i) => (
+                  <div key={url + i} className="size-16 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={`Ảnh mô tả ${i + 1}`} className="size-full object-cover" loading="lazy" />
+                  </div>
+                ))}
+                {s.descriptionImages.length > 12 && (
+                  <div className={cn(TEXT_SUB, "flex size-16 items-center justify-center rounded-lg border border-dashed border-slate-200")}>
+                    +{s.descriptionImages.length - 12}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

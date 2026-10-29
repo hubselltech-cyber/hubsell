@@ -11,7 +11,7 @@
 import type { Channel } from "@prisma/client";
 import * as api from "../../integrations/lazada/listing-api";
 import { getValidLazadaAccessToken } from "../../integrations/lazada/service";
-import { PLATFORM_LISTING_RULES } from "./rules";
+import { MAX_DESCRIPTION_IMAGES, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
   Brand,
@@ -27,7 +27,7 @@ import type {
   LogisticOption,
   NormalizedListing,
 } from "./types";
-import { gramsToKg, htmlToText, normalizeText, textToHtml, variantPairs, vndInt } from "./variant-map";
+import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, normalizeText, textToHtml, variantPairs, vndInt } from "./variant-map";
 
 /** Khóa hệ thống của Attributes — không phải thuộc tính khách điền. */
 const SYSTEM_KEYS = new Set(["name", "description", "short_description", "brand", "video", "name_en", "description_en", "short_description_en"]);
@@ -71,10 +71,13 @@ export const lazadaListingAdapter: ListingAdapter = {
     const a = item.attributes ?? {};
     const sku0 = item.skus?.[0] as { package_weight?: number | string; package_length?: number | string; package_width?: number | string; package_height?: number | string } | undefined;
     const known = new Set(["name", "description", "short_description", "brand"]);
+    // Mô tả Lazada là HTML: tách <img> sang descriptionImages, chữ về text thuần.
+    const descHtml = extractHtmlImages(a.description ? String(a.description) : "");
     return {
       title: a.name ?? "",
-      description: a.description ? htmlToText(String(a.description)) : "",
+      description: htmlToText(descHtml.html),
       images: item.images ?? [],
+      descriptionImages: descHtml.images,
       categoryId: item.primary_category != null ? String(item.primary_category) : null,
       categoryPath: null,
       brandName: a.brand ?? null,
@@ -147,6 +150,11 @@ export const lazadaListingAdapter: ListingAdapter = {
       images.push(await api.migrateImage(token, url));
     }
     if (images.length === 0) throw new Error("Không chuyển được ảnh nào vào Lazada");
+    // Ảnh chèn trong mô tả: image/migrate từng ảnh → <img src> ghép cuối mô tả HTML.
+    const descUrls: string[] = [];
+    for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
+      descUrls.push(await api.migrateImage(token, url));
+    }
 
     const attrs = await api.getCategoryAttributes(token, draft.categoryId);
     const saleKeys = attrs.filter((a) => truthy(a.is_sale_prop)).map((a) => a.name);
@@ -156,7 +164,7 @@ export const lazadaListingAdapter: ListingAdapter = {
     }
     const attributes: Record<string, string> = {
       name: draft.listing.title,
-      description: textToHtml(draft.listing.description),
+      description: appendHtmlImages(textToHtml(draft.listing.description), descUrls),
       short_description: `<ul><li>${draft.listing.title.replace(/</g, "&lt;")}</li></ul>`,
       brand: draft.brandName ?? "No Brand",
     };

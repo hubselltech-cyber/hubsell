@@ -137,6 +137,10 @@ export const mockListingAdapter: ListingAdapter = {
     // Gian giả lập (seed dev) thường không có ảnh — sinh ảnh mẫu như mock catalog
     // để bản xem trước không kẹt ở "Chưa có ảnh"; gian thật luôn có ảnh từ API.
     if (listing && listing.images.length === 0) listing.images = [mockImageFor(channel.channelName, listing.title)];
+    // Giả lập "ảnh chèn trong mô tả" (2 ảnh) để màn hình có gì mà soi; gian thật đọc từ API.
+    if (listing && listing.descriptionImages.length === 0) {
+      listing.descriptionImages = [mockImageFor(channel.channelName, `${listing.title} 1`), mockImageFor(channel.channelName, `${listing.title} 2`)];
+    }
     return listing;
   },
 

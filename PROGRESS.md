@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (tối) — SAO CHÉP SẢN PHẨM: LÁT ẢNH CHÈN TRONG MÔ TẢ — ĐÃ CODE 3 SÀN, CHƯA KIỂM GIAN THẬT, PUSH
+
+- **Anh "Làm luôn".** `NormalizedListing.descriptionImages` (ảnh trong mô tả của nguồn, theo thứ tự); đăng = upload lại gian đích + ghép CUỐI mô tả; trần 12 ảnh (Shopee docs; TikTok/Lazada tự chọn cùng mức).
+- **Đọc:** Shopee extended_description field_list image; TikTok/Lazada `extractHtmlImages()` tách `<img>` khỏi HTML. **Ghi:** Shopee upload scene desc + add_item description_type extended; TikTok upload DESCRIPTION_IMAGE → `<img src=url>`; Lazada image/migrate → `<img>`. Job cũ: `asListing` đặt `[]`. Mock: 2 ảnh mẫu.
+- **FE:** lưới "Ảnh trong mô tả (n)" trong khung Sửa bài đăng; ghi chú còn "Video không chép theo". Docs mục 13.
+- Test +1 (13 ca), tsc/eslint sạch, local hiện 2 ảnh mẫu. ⏳ kiểm gian thật bằng probe (`descriptionImages`) + đăng thử 1 SP có ảnh mô tả mỗi sàn.
+
+---
 ## Phiên 29/10/2026 (chiều muộn) — SAO CHÉP SẢN PHẨM: GÓP Ý LẦN 2 TRÊN GIAN THẬT (phẳng, nút mờ, mở rộng bài đăng, ảnh) — ĐÃ SỬA, PUSH
 
 - **Anh thử gian thật ANO → DarkMan + and.not.or, 4 ý:** giao diện phẳng khó nhìn khi 1 SP đi nhiều gian, nút sổ xuống mờ; ghi hẳn "Sửa bài đăng"; mở rộng thông tin bài đăng cho dễ sửa; ảnh kèm bài + ảnh trong mô tả có lấy được không.

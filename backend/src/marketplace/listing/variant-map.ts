@@ -59,6 +59,27 @@ export function textToHtml(text: string): string {
 }
 
 /** HTML → text thuần giữ xuống dòng (Shopee chỉ nhận text). */
+/**
+ * Tách ảnh chèn trong mô tả HTML (TikTok/Lazada): trả danh sách src theo thứ tự + HTML đã bỏ thẻ img.
+ * Bỏ qua data URI và src rỗng; không trùng.
+ */
+export function extractHtmlImages(html: string): { html: string; images: string[] } {
+  const images: string[] = [];
+  const stripped = html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const m = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
+    const src = (m?.[1] ?? m?.[2] ?? m?.[3] ?? "").trim();
+    if (src && !/^data:/i.test(src) && !images.includes(src)) images.push(src);
+    return "";
+  });
+  return { html: stripped, images };
+}
+
+/** Ghép ảnh vào cuối mô tả HTML: mỗi ảnh một đoạn. */
+export function appendHtmlImages(html: string, urls: string[]): string {
+  if (urls.length === 0) return html;
+  return html + urls.map((u) => `<p><img src="${u.replace(/"/g, "&quot;")}" /></p>`).join("");
+}
+
 export function htmlToText(html: string): string {
   return html
     .replace(/<\s*br\s*\/?>/gi, "\n")
