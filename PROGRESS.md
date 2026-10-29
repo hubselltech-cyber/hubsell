@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (đêm) — SAO CHÉP SẢN PHẨM LÁT 1b: ADAPTER THẬT 3 SÀN — ĐÃ CODE, CHƯA KIỂM GIAN THẬT, CHƯA PUSH
+
+- **Anh chốt "Làm adapter thật".** Local không có gian thật → mã theo docs API 29/10; biên dịch sạch; test thuần `variant-map.test.ts` 5 ca (+ rules 7 ca).
+- **Mã:** `integrations/{shopee,tiktok,lazada}/listing-api.ts` (danh mục, gợi ý, thuộc tính, thương hiệu, vận chuyển, upload/migrate ảnh, add_item + init_tier_variation / Create Product / product/create, chi tiết SP) + `marketplace/listing/{shopee,tiktok,lazada}-listing-adapter.ts` + `variant-map.ts` + `lib/image-fetch.ts`; export `callShopGet/Post`, `callLazada/Post`, `escapeXml`, `LazadaEnvelope`.
+- **An toàn khi push:** registry gian có token → adapter thật (không bao giờ rơi vào giả lập); cờ `LISTING_COPY_ENABLED=1` (BE) + `NEXT_PUBLIC_LISTING_COPY=1` (FE) mới mở ở production. Endpoint dò thử CHỈ ĐỌC `/api/sao-chep-san-pham-probe?channelId=` (quản trị nền tảng) để kiểm API thật trước khi mở. Docs mục 10 + việc còn lại 4 bước.
+- Smoke local: gian seed vẫn đi giả lập (đợt 1 SP → TikTok mock OK).
+
+---
 ## Phiên 29/10/2026 (tối muộn) — SAO CHÉP SẢN PHẨM LÁT 2: ĐỢT NHIỀU SẢN PHẨM × NHIỀU GIAN (CÓ TIKTOK) — DEMO LOCAL, CHƯA PUSH
 
 - **Anh chốt:** "Lát 2 là chọn nhiều sản phẩm và nhiều gian hàng, chọn được cả gian hàng TikTok nữa"; góp ý thêm trên demo: giới hạn số sản phẩm/trang + phân trang luôn hiện dưới bảng nguồn.

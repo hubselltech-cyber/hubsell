@@ -126,3 +126,42 @@ Anh chốt: *"Lát 2 là chọn nhiều sản phẩm và nhiều gian hàng, ch�
   định 20) bên trái và **thanh phân trang luôn hiện** (Trang x/y · Trước · Sau) bên phải — `PagerFooter` dùng chung
   cho bảng nguồn và lịch sử.
 
+
+## 10. Lát 1b — adapter thật 3 sàn (29/10/2026 tối, ĐÃ CODE, CHƯA KIỂM TRÊN GIAN THẬT, chưa push)
+
+Anh chốt "Làm adapter thật". Local không có gian thật (chỉ gian seed không token) nên mã viết theo tài liệu API đã
+đọc 29/10 (khảo sát mục 4), biên dịch sạch, hàm thuần có test; **mọi lời gọi sàn thật còn phải kiểm trên prod**.
+
+- **Registry** (`marketplace/listing/registry.ts`): gian có `refreshToken` (TikTok thêm `shopCipher`) → adapter thật
+  của sàn; gian không token → giả lập. Gian thật KHÔNG BAO GIỜ rơi vào giả lập.
+- **Cờ bật**: backend `LISTING_COPY_ENABLED=1` mới mở `/api/sao-chep-san-pham` ở production (dev luôn mở); frontend
+  `NEXT_PUBLIC_LISTING_COPY=1` mới hiện mục sidebar ở production. Push code lên vẫn an toàn: khách chưa thấy gì.
+- **Shopee** (`integrations/shopee/listing-api.ts` + `shopee-listing-adapter.ts`): get_category (đệm 6 h) ·
+  category_recommend · get_attribute_tree (mandatory → thuộc tính bắt buộc; chọn → value_id, gõ tay → value_id 0 +
+  tên) · get_brand_list (is_mandatory; No Brand id 0) · logistics/get_channel_list · media_space/upload_image
+  (multipart "image", scene normal) · add_item (NORMAL, giá/tồn phân loại đầu, weight kg, dimension, logistic_info)
+  → chờ 5,5 s → init_tier_variation (≤2 nhóm, tier_index từ tên phân loại). Mô tả: HTML → text.
+- **TikTok** (`integrations/tiktok/listing-api.ts` + `tiktok-listing-adapter.ts`): categories v2 locale vi-VN (đệm)
+  · categories/recommend (title + mô tả HTML) · attributes (bỏ SALES_PROPERTY; `is_requried` docs viết sai chính tả,
+  nhận cả 2) · rules (package_dimension.is_required) · brands · images/upload multipart (ký KHÔNG gồm body, field
+  `data`, use_case MAIN_IMAGE) · warehouses → kho bán mặc định · products (save_mode LISTING, sales_attributes theo
+  name/value_name, package_weight kg, giá chuỗi VND) → "Chờ sàn duyệt". Gian ủy quyền trước 12/10 → báo nối lại.
+- **Lazada** (`integrations/lazada/listing-api.ts` + `lazada-listing-adapter.ts`): category/tree/get (đệm, duỗi lá)
+  · product/category/suggestion/get · category/attributes/get (is_mandatory, is_sale_prop = khóa nhóm phân loại) ·
+  category/brands/query · image/migrate từng ảnh (≤8) · product/create payload JSON (Attributes name/description
+  HTML/short_description/brand = TÊN, Skus SellerSku/price/quantity/kiện/kg/saleProp) · product/item/get.
+- **Hàm thuần dùng chung** `variant-map.ts` (+ test 5 ca): tách tên phân loại, tier_index, cặp nhóm–giá trị, gram→kg,
+  text↔HTML. Ảnh: `lib/image-fetch.ts` tải về buffer (≤12 MB, data URI OK), chưa đổi cỡ/nén.
+- **Dò thử chỉ đọc trên prod** (quản trị nền tảng, không qua cờ bật): `GET /api/sao-chep-san-pham-probe?channelId=…`
+  chạy fetchListing / recommendCategory / searchCategories / getCategoryRequirements / searchBrands / getLogistics trên
+  một gian thật, trả từng bước ok/lỗi + mẫu dữ liệu. Chạy trong DevTools app.hubsell.tech (tài khoản dev@hubsell.tech):
+  `fetch(location.origin.replace('app.','api.')+'/api/sao-chep-san-pham-probe?channelId=ID',{headers:{Authorization:'Bearer '+localStorage.hubsell_token}}).then(r=>r.json()).then(console.log)`
+  (thay host API đúng của prod nếu khác).
+
+### Việc còn lại trước khi mở cho khách
+1. Push → prod (cờ tắt, khách không thấy). Chạy probe trên 1 gian Shopee (ANO/HPGear), 1 gian TikTok, 1 gian Lazada;
+   sửa tên trường theo phản hồi thật (chắc chắn có lệch — docs với thực tế hay khác).
+2. Shopee: xác nhận app 2040029 (ERP System) gọi được add_item; thử tạo 1 sản phẩm UNLIST trên gian test rồi xóa.
+   Lazada: kiểm app có nhóm Product API. TikTok: trần 100 SP/ngày gian mới + chờ duyệt.
+3. Ảnh: thêm đổi cỡ/nén (Lazada ≤1 MB) khi gặp lỗi thật.
+4. Bật `LISTING_COPY_ENABLED=1` + `NEXT_PUBLIC_LISTING_COPY=1` → mở cho 4 khách đã hỏi trước, theo dõi log `[listing-copy]`.

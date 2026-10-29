@@ -49,7 +49,7 @@ export function signLazada(
 // ---------- Kiểu dữ liệu Lazada trả về ----------
 
 /** Bao ngoài chuẩn của Lazada: `code` "0" là thành công. */
-interface LazadaEnvelope {
+export interface LazadaEnvelope {
   code?: string;
   type?: string;
   message?: string;
@@ -107,7 +107,7 @@ function ensureOk<T extends LazadaEnvelope>(json: T, ctx: string): T {
  * `host` phân biệt máy chủ xác thực (auth.lazada.com/rest) với máy chủ
  * nghiệp vụ (api.lazada.vn/rest) — path token nằm bên auth.
  */
-async function callLazada<T extends LazadaEnvelope>(
+export async function callLazada<T extends LazadaEnvelope>(
   host: string,
   path: string,
   params: Record<string, string>,
@@ -158,7 +158,7 @@ export function classifyLazadaAdsRateLimit(err: unknown): "partner" | "shop" | n
  * trên TOÀN BỘ param, nhưng param gửi trong body x-www-form-urlencoded theo
  * chuẩn LazOP (SDK chính hãng cũng gửi form, không phải JSON).
  */
-async function callLazadaPost<T extends LazadaEnvelope>(
+export async function callLazadaPost<T extends LazadaEnvelope>(
   host: string,
   path: string,
   params: Record<string, string>,
@@ -586,7 +586,7 @@ export async function decideReverseOrderCancel(
 // ---------- Cập nhật tồn kho lên sàn ----------
 
 /** Escape 5 ký tự đặc biệt XML — SellerSku người bán đặt có thể chứa "&", "<"... */
-function escapeXml(s: string): string {
+export function escapeXml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

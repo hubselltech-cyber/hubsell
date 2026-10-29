@@ -140,7 +140,7 @@ export function shopAuthExpireAt(info: Pick<ShopeeShopInfo, "expire_time">): Dat
   return Number.isFinite(sec) && sec > 0 ? new Date(sec * 1000) : null;
 }
 
-function ensureOk<T extends ShopeeEnvelope>(json: T, ctx: string): T {
+export function ensureOk<T extends ShopeeEnvelope>(json: T, ctx: string): T {
   if (json.error) {
     throw new Error(`Shopee ${ctx} lỗi: ${json.error} — ${json.message || "không rõ"}`);
   }
@@ -316,7 +316,7 @@ export async function refreshAccessToken(
  * LẶP như `item_status` của get_item_list. Chữ ký shop KHÔNG gồm các tham số
  * nghiệp vụ nên thêm bao nhiêu param cũng không ảnh hưởng sign.
  */
-async function callShopGet<T extends ShopeeEnvelope>(
+export async function callShopGet<T extends ShopeeEnvelope>(
   path: string,
   accessToken: string,
   shopId: string,
@@ -348,7 +348,7 @@ async function callShopGet<T extends ShopeeEnvelope>(
  * Helper gọi một SHOP API dạng POST (update_stock...): chữ ký y hệt GET (base
  * string KHÔNG gồm body), tham số định danh nằm trên query, nghiệp vụ trong body.
  */
-async function callShopPost<T extends ShopeeEnvelope>(
+export async function callShopPost<T extends ShopeeEnvelope>(
   path: string,
   accessToken: string,
   shopId: string,
