@@ -15,8 +15,6 @@ import {
   CONNECT_REMINDER_SUBJECT,
   connectNudgeEmailHtml,
   CONNECT_NUDGE_SUBJECT,
-  featureCopyListingEmailHtml,
-  FEATURE_COPY_LISTING_SUBJECT,
 } from "../customer-mails";
 import { vnDayWindow } from "../../workers/subscription-reminder";
 import { signupWindow } from "../../workers/onboarding-reminder";
@@ -177,23 +175,6 @@ describe("thư nhắc một lần khách đăng ký lâu chưa nối gian (25/10
     expect(html).toContain("Shopee, TikTok Shop hoặc Lazada");
     expect(html).toContain("Trả lời thẳng email này");
     expect(CONNECT_NUDGE_SUBJECT).toContain("để trống");
-  });
-});
-
-describe("thư thông báo tính năng Sao chép sản phẩm (29/10/2026)", () => {
-  it("2 ảnh hướng dẫn tải từ frontend, một nút về trang Sao chép sản phẩm, tên khách được escape, cho trả lời thôi", () => {
-    const html = featureCopyListingEmailHtml({ fullName: "<i>Minh</i>" });
-    expect(html).toContain("&lt;i&gt;Minh&lt;/i&gt;");
-    expect(html.match(/<img /g)?.length).toBe(2);
-    expect(html).toContain("/guide-assets/copy-listing-buoc-1.png");
-    expect(html).toContain("/guide-assets/copy-listing-buoc-2.png");
-    expect(html.match(/<a href=/g)?.length).toBe(1);
-    expect(html).toContain("/operations-assistant/copy-listing");
-    expect(html).toContain("Bước 1.");
-    expect(html).toContain("Bước 2.");
-    expect(html).toContain("max-width:600px");
-    expect(html).toContain("\"thôi\"");
-    expect(FEATURE_COPY_LISTING_SUBJECT).toContain("Sao chép sản phẩm");
   });
 });
 

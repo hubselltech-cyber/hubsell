@@ -10,7 +10,8 @@
 - **Anh:** "gửi email thông báo cập nhật tính năng tới tất cả các tài khoản — Sao chép sản phẩm — tạo hình ảnh hướng dẫn bước 1 → bước 2 cơ bản".
 - **Ảnh:** chụp Playwright từ shop demo local (Sunny Closet, 3 SP × 2 gian TikTok + Lazada), ghép dải tiêu đề đánh số bằng sharp → `frontend/public/guide-assets/copy-listing-buoc-1.png` + `copy-listing-buoc-2.png` (Vercel phục vụ cho thư). Script chụp/ghép ở scratchpad, không commit.
 - **Mẫu thư** `featureCopyListingEmailHtml` (customer-mails.ts mục 1d, khung rộng 600, 1 nút → /operations-assistant/copy-listing, chú thích trả lời "thôi") + test (18/18 xanh). **Script** `backend/scripts/feature-announce-once.ts --feature=copy-listing` (xem trước / --sample / --apply; vé chống trùng `onboarding_reminders` kind `feature-copy-listing`; chỉ chủ shop, bỏ email nội bộ). tsc sạch. Docs mục 20.
-- **Gửi:** chạy trên Render Shell worker như đợt 25/10 — xem trước → thư mẫu tới xwearhn@gmail.com → anh duyệt → `--apply`. (Trạng thái thật ghi ở memory `hubsell-thu-nhac-khach-tu-dong`.)
+- **Gửi (Render Shell worker, ~20:50):** xem trước 227 chủ shop (2 nội bộ bỏ) → thư mẫu tới xwearhn@gmail.com OK → `--apply`: **200 đã gửi, 25 lỗi** Zoho `550 5.4.6 Unusual sending activity detected` (chặn tạm vì ~200 thư/vài phút, 5 luồng); 25 vé đã nhả → chạy lại `--apply` sau để gửi nốt. Bài học: đợt lớn phải chia lô `--limit=100` cách ≥1 giờ.
+- **Anh chốt:** "Gửi mail xong thì xóa chứ giữ lại làm gì" → thử gửi nốt sau 10 phút vẫn bị Zoho chặn (0/26) → **đã gỡ** mẫu thư + test + script khỏi repo (còn ở commit 850d1fc5 nếu muốn gửi nốt 26 người); GIỮ 2 ảnh guide-assets (thư chỉ chứa link ảnh). Docs mục 20.
 
 ---
 ## Phiên 29/10/2026 (tối muộn) — SAO CHÉP SẢN PHẨM: LỖI THẬT ĐẦU TIÊN TRÊN PROD (Shopee Dimension 0) + VIỆT HÓA CHO NGƯỜI BÁN — ĐÃ KIỂM LOCAL
