@@ -26,7 +26,7 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * TAB "TỰ ĐỘNG TRẢ LỜI" CỦA TRANG PHẢN HỒI ĐÁNH GIÁ
+ * TAB "CẤU HÌNH TỰ ĐỘNG" CỦA TRANG PHẢN HỒI ĐÁNH GIÁ
  *
  * 29/10/2026 anh Trung: "cấu hình tự động hóa chỉ phục vụ phản hồi đánh giá
  * thì chuyển hẳn vào trong Phản hồi đánh giá cho khách dễ dùng" → trang

@@ -204,7 +204,7 @@ const NAV_ITEMS: NavItem[] = [
         perm: "operations.loss-orders",
       },
       // 29/10/2026 anh Trung: "Cấu hình tự động hóa" (route ai-rules) chỉ phục vụ
-      // phản hồi đánh giá → gộp thành tab "Tự động trả lời" trong Phản hồi đánh
+      // phản hồi đánh giá → gộp thành tab "Cấu hình tự động" trong Phản hồi đánh
       // giá; route cũ chuyển hướng. Lá quyền operations.ai-rules GIỮ để bật tab.
       // 29/10/2026: chép 1 sản phẩm (gian đã nối / kho) lên nhiều gian 3 sàn — docs/SAO-CHEP-SAN-PHAM.md.
       // "(demo)" theo anh Trung 29/10: mở thật trên prod, adapter 3 sàn còn đang kiểm — bỏ chữ demo khi ổn.

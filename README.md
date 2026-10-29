@@ -82,7 +82,7 @@ hubsell/
 │       │   ├── warehouse/{returns,shipping-alerts,sync}
 │       │   ├── finance/{analytics,expenses,cost-prices,fee-audit,loss-orders,realized-pnl,shipping-alerts}
 │       │   ├── ads/{shopee,lazada,tiktok}          # Trợ lý quảng cáo đa sàn
-│       │   ├── operations-assistant/{chat,reviews,ai-rules,loss-orders,copy-listing}   # reviews có tab Tự động trả lời (29/10/2026 gộp từ ai-rules — route cũ chỉ chuyển hướng); copy-listing = Sao chép sản phẩm lên nhiều gian
+│       │   ├── operations-assistant/{chat,reviews,ai-rules,loss-orders,copy-listing}   # reviews có tab Cấu hình tự động (29/10/2026 gộp từ ai-rules — route cũ chỉ chuyển hướng); copy-listing = Sao chép sản phẩm lên nhiều gian
 │       │   ├── invoicing/{connect,history,tax-settings}
 │       │   ├── settings/{general,plan,tax,other} · affiliate/ · koc-marketing/ (ẩn)
 │       │   └── admin/{customers,finance,health,marketing,plans,system}   # HQ điều hành nền tảng

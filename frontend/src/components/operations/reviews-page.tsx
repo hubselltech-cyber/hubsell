@@ -65,7 +65,7 @@ import { cn } from "@/lib/utils";
  *     LLM thật sau — hợp đồng giữ nguyên).
  *   · Không có đánh giá → empty state (09/09/2026: bỏ hẳn bộ mock/demo).
  *
- * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (tab "Tự động trả lời" — review-auto-tab.tsx):
+ * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (tab "Cấu hình tự động" — review-auto-tab.tsx):
  *   10/10/2026 chuyển hẳn về máy chủ — worker backend (workers/review-auto-reply)
  *   tự trả lời MỖI NGÀY MỘT LẦN cho mức sao đang bật, không cần mở trang này.
  *   Tab Đánh giá chỉ hiển thị: badge "AI Auto" lấy từ sổ review_auto_replies
@@ -79,7 +79,7 @@ import { cn } from "@/lib/utils";
  */
 
 type PageMode = "loading" | "real";
-/** Tab cấp trang: Đánh giá | Tự động trả lời | (Cứu đơn giao thất bại — ẩn). */
+/** Tab cấp trang: Đánh giá | Cấu hình tự động | (Cứu đơn giao thất bại — ẩn). */
 type PageTab = "reviews" | "auto" | "delivery-fail";
 
 /**
@@ -385,7 +385,7 @@ export function OperationsReviewsPage() {
       countTone: "attention",
       countTitle: "Đánh giá chưa trả lời",
     },
-    ...(canConfigAuto ? [{ key: "auto" as const, label: "Tự động trả lời" }] : []),
+    ...(canConfigAuto ? [{ key: "auto" as const, label: "Cấu hình tự động" }] : []),
     ...(canConfigAuto && DELIVERY_FAIL_FEATURE
       ? [{ key: "delivery-fail" as const, label: "Cứu đơn giao thất bại" }]
       : []),
@@ -721,7 +721,7 @@ export function OperationsReviewsPage() {
                       className="font-medium text-primary underline-offset-2 hover:underline"
                       onClick={() => changeTab("auto")}
                     >
-                      Tự động trả lời
+                      Cấu hình tự động
                     </button>
                     .
                   </>

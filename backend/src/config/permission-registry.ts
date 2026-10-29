@@ -59,9 +59,9 @@ export const PERMISSION_TREE: PermissionNode[] = [
       { key: "operations.chat", label: "Trợ lý Chat" },
       { key: "operations.reviews", label: "Phản hồi đánh giá" },
       { key: "operations.loss-orders", label: "Cảnh báo & P&L Sản phẩm" },
-      // 29/10/2026: không còn trang riêng — lá này mở tab "Tự động trả lời"
+      // 29/10/2026: không còn trang riêng — lá này mở tab "Cấu hình tự động"
       // trong Phản hồi đánh giá + quyền ghi PUT /review-auto/config.
-      { key: "operations.ai-rules", label: "Tự động trả lời đánh giá" },
+      { key: "operations.ai-rules", label: "Cấu hình tự động (đánh giá)" },
       { key: "operations.copy-listing", label: "Sao chép sản phẩm" },
     ],
   },
