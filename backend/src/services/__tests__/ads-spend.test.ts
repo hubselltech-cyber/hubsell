@@ -76,6 +76,19 @@ describe("summarizeAdsSpend", () => {
     expect(s.total).toBe(100_000);
     expect(s.notes).toEqual(["TikTok cần kết nối tài khoản quảng cáo"]);
   });
+
+  it("gian Shopee chưa ủy quyền Hubsell Ads → ghi chú rõ (30/10, khách phamgiathang); đã nối thì im", () => {
+    const base = { rows, gmvMaxChargedByChannel: new Map(), tiktokChannels: [], dateKey: key };
+    const chua = summarizeAdsSpend({
+      ...base,
+      shopeeChannels: [{ id: "sp", shopName: "QA giầy", adsLinked: false }],
+    });
+    expect(chua.notes).toEqual(["Shopee cần kết nối Hubsell Ads (ứng dụng quảng cáo riêng) để lấy tiền ads"]);
+    const da = summarizeAdsSpend({ ...base, shopeeChannels: [{ id: "sp", shopName: "QA giầy", adsLinked: true }] });
+    expect(da.notes).toEqual([]);
+    // Caller cũ không truyền shopeeChannels → không ghi chú (không đổi hành vi).
+    expect(summarizeAdsSpend(base).notes).toEqual([]);
+  });
 });
 
 describe("adSpendDateRange — khoảng giờ VN → khoảng NGÀY cho cột @db.Date", () => {

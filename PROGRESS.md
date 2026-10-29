@@ -5,6 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (rạng sáng) — KHÁCH phamgiathang30101987@gmail.com: SHOPEE KHÔNG CÓ TIỀN QUẢNG CÁO TRONG BÁO CÁO TÀI CHÍNH — GỐC = CHƯA NỐI HUBSELL ADS; ĐÃ SỬA 2 LỖ HỔNG (chuông + tooltip)
+
+- **Anh hỏi:** vì sao gian Shopee của khách này không lấy được tiền quảng cáo vào báo cáo tài chính.
+- **Kiểm prod (Supabase chỉ đọc qua Chrome anh):** chủ shop `cmvqsubgg0vuzif3rjqv30str` tạo 27/10 21:47 VN, có 2 gian: Shopee **"QA giầy công sở giá rẻ"** (`cmvqv9uy10xfnif3rbvoj68vy`, shop_id 515585682, nối 27/10 22:55 VN, ACTIVE, 3.891 đơn đã về — app chính chạy tốt) và TikTok "QA giày công sở giá rẻ" (đã nối TKQC, AdSpend 30 ngày 267,5 tr — khách THẤY tiền ads TikTok, không thấy Shopee).
+- **Gốc:** gian Shopee **chưa ủy quyền app Hubsell Ads** — bảng `channel_app_auths` không có dòng HUBSELL_ADS cho gian này. Ads API Shopee chỉ đi qua app Ads riêng (2044679; docs HUBSELL-ADS.md mục 1), nên `hasShopeeAdsAccess()` trả false → làn Ads bỏ qua lặng lẽ (`lastAdsSyncAt` NULL, `adsPriority` 3) → `AdSpend` 0 dòng, `AdsCampaign` 0 → báo cáo dòng tiền không có dòng Ads Shopee. Không phải lỗi 429/cầu dao (adsBackoff 0, không khóa), không phải token hết hạn (authExpireAt 27/10/2027). Toàn hệ: 84 gian Shopee ACTIVE, 57 đã nối Hubsell Ads.
+- **Cách khắc phục cho khách (không cần sửa mã):** vào Trợ lý quảng cáo → Shopee → chọn gian → bấm **"Kết nối Hubsell Ads"** → đăng nhập đúng tài khoản Shopee của gian → Đồng ý. Worker nhặt vé ≤ 20 s, xung kéo số hôm nay ngay, lịch sử 30 ngày ở lượt kế (docs HUBSELL-ADS.md mục 4).
+- **2 lỗ hổng sản phẩm lộ ra — anh chốt "Sửa cả 2", ĐÃ SỬA cùng phiên:** (1) chuông `ads-app-not-linked` không bao giờ kêu cho gian chưa từng nối — `channelUsesAdsRecently()` đọc `AdSpend`/`AdsCampaign` của chính gian, hai bảng này chỉ có số SAU KHI nối → vòng luẩn quẩn. Sửa `services/ops-alerts.ts`: thêm nhánh `HubsellAdsLinkGap = "new_shop"` — gian Shopee nối app chính trong `HUBSELL_ADS_NEW_SHOP_DAYS = 7` ngày (mặc định tự chọn) mà chưa ủy quyền → thẻ cùng type/dedupe (một thẻ/gian), mức **medium**, chữ nói rõ "Báo cáo dòng tiền chưa có tiền ads… không chạy quảng cáo thì bỏ qua, thẻ tự ẩn sau 7 ngày"; hết cửa sổ điều kiện mất → AUTO_CLOSED theo luật chung; gian cũ không số ads vẫn không bị réo. Logic tách hàm thuần `hubsellAdsNeverLinkedGap(c, newSince, usesAdsRecently)` (tiêm hàm hỏi DB). (2) tooltip dòng Ads ở Báo cáo dòng tiền chỉ ghi chú TikTok chưa nối → `summarizeAdsSpend` nhận thêm `shopeeChannels?` (caller cũ không truyền = không đổi), ghi "Shopee cần kết nối Hubsell Ads (ứng dụng quảng cáo riêng) để lấy tiền ads"; `loadShopeeAdsChannels(scope)` đọc `channel_app_auths` (Hubsell Ads chưa cấu hình env → coi như đã nối, cùng luật `hasShopeeAdsAccess`); nối vào `routes/finance.ts` (Promise.all) và `platformAdsSpend` (Tổng quan + Trợ lý hỏi đáp).
+- **Kiểm:** vitest `ads-spend.test.ts` + `ops-alerts-shopee-ads.test.ts` + `new-order-notify.test.ts` 47/47 (thêm 5 ca: ghi chú Shopee chưa/đã nối/caller cũ; thẻ new_shop; 3 nhánh never-linked); `tsc --noEmit` backend sạch; không vòng import (ads-spend → hubsell-ads/config). CHƯA chạy prod, CHƯA commit (chờ anh). Sau deploy: Trung tâm điều hành của khách phamgiathang phải có thẻ vàng "mới nối — kết nối thêm Hubsell Ads" (gian nối 27/10, còn trong 7 ngày tới 03/11); tooltip dòng Ads ở Báo cáo dòng tiền có gạch đầu dòng Shopee.
+- Ghi: PROGRESS + docs HUBSELL-ADS.md mục "Sự cố khách 30/10" + memory `hubsell-shopee-ads-khach-chua-noi-hubsell-ads-2026-10-30`.
+
+---
 ## Phiên 30/10/2026 (đêm) — SAO CHÉP SẢN PHẨM: KHÁCH TEST PROD BÁO 6 Ý (Safari/macOS, KiotViet) — ĐÃ SỬA, KIỂM LOCAL 1280/1440/1700 + TỐI
 
 - **Anh chuyển 6 ý của khách Bunchar + mắng "càng ngày càng ẩu, tỉ lệ kích thước, test giao diện đều không làm".** Docs `docs/SAO-CHEP-SAN-PHAM.md` mục 21.
@@ -13,7 +24,7 @@
 - **(4) Giao diện tối:** `bg-white`→`bg-card`, chip chọn `bg-slate-900 text-white`→`bg-primary text-primary-foreground` (trong .dark slate-900 là màu sáng → chip trắng mất chữ như ảnh khách).
 - **(5) Sản phẩm vừa đăng trên sàn KHÔNG tự về (worker kéo đêm 03–05 h)** → nút **Lấy sản phẩm mới từ sàn** ở bước 1, route `POST /sources/sync` dưới quyền sao chép, chặn gọi lại <2 phút.
 - **(6) Tự soi:** phát hiện + sửa 2 lỗi tràn ngang thật ở 1280 (dòng 17 màu nowrap + chip nowrap → bảng cuộn 555 px; nút Sửa bài đăng tràn 19 px) — đo JS 1280/1440/1700 sáng + tối với seed 51 phân loại = 0 tràn. (3) KiotViet: ghi nhận khác cấu trúc, đề xuất lát "khung sửa toàn trang + mục lục neo" chờ anh.
-- tsc BE/FE + eslint sạch; vitest listing 30/30. ⏳ khách thử lại prod gian thật (bỏ phân loại + nhập mã); memory `hubsell-sao-chep…` + feedback soi màn cập nhật.
+- tsc BE/FE + eslint sạch; vitest listing 30/30. ✅ PUSH d11a35fb (anh bảo push để test). ⏳ khách thử lại prod gian thật (bỏ phân loại + nhập mã); memory `hubsell-sao-chep…` + feedback soi màn cập nhật.
 
 ---
 ## Phiên 29/10/2026 21:45 (tự động, nhắc `hubsell-doc-24h-lat-2-ano-29-10`) — LÁT 2 GHI ORDER QUA ĐƯỜNG MỚI TRÊN ANO: ĐỌC 24 GIỜ ĐẦU — ĐẠT 5/5, KHÔNG SỬA GÌ

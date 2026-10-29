@@ -14,6 +14,7 @@ import {
 } from "../shopee/ads-assistant-rules";
 import {
   buildHubsellAdsLinkAlert,
+  hubsellAdsNeverLinkedGap,
   buildShopeeAdsAssistantAlerts,
   estimateAdsWalletHoursLeft,
   groupShopeeAdsScenarios,
@@ -438,5 +439,36 @@ describe("buildHubsellAdsLinkAlert", () => {
     expect(a.payload.label).toBe("Kết nối lại Hubsell Ads");
     expect(a.summary).not.toContain("đang đứng");
     expect(a.summary).toContain("KHÔNG tạm dừng được");
+  });
+
+  it("gian MỚI nối chưa ủy quyền → cùng type not-linked (một thẻ/gian), mức medium, nói rõ báo cáo thiếu tiền ads", () => {
+    const a = buildHubsellAdsLinkAlert(SHOP, "new_shop", null);
+    expect(a.type).toBe("ads-app-not-linked");
+    expect(a.severity).toBe("medium");
+    expect(a.dedupeKey).toBe("ch-1");
+    expect(a.title).toContain("mới nối");
+    expect(a.summary).toContain("Báo cáo dòng tiền");
+    expect(a.summary).toContain("tự ẩn sau 7 ngày");
+    expect(a.payload).toMatchObject({ href: "/ads/shopee?channelId=ch-1", label: "Kết nối Hubsell Ads" });
+  });
+});
+
+// ---------- (7) Gian chưa từng nối: chạy ads → not_linked; mới nối → new_shop; cũ không ads → im (30/10) ----------
+
+describe("hubsellAdsNeverLinkedGap", () => {
+  const newSince = new Date("2026-10-23T00:00:00Z");
+  const yes = async () => true;
+  const no = async () => false;
+
+  it("có AdSpend/campaign trong DB → not_linked bất kể ngày nối", async () => {
+    expect(await hubsellAdsNeverLinkedGap({ id: "c", createdAt: new Date("2026-08-01") }, newSince, yes)).toBe("not_linked");
+  });
+
+  it("không có số ads nhưng nối app chính trong cửa sổ → new_shop (ca khách phamgiathang nối 27/10)", async () => {
+    expect(await hubsellAdsNeverLinkedGap({ id: "c", createdAt: new Date("2026-10-27T15:55:11Z") }, newSince, no)).toBe("new_shop");
+  });
+
+  it("gian cũ, không số ads → null, không làm phiền", async () => {
+    expect(await hubsellAdsNeverLinkedGap({ id: "c", createdAt: new Date("2026-08-01") }, newSince, no)).toBeNull();
   });
 });

@@ -67,6 +67,10 @@ const LOSS_WINDOW_DAYS = 7;
 const SHIPPING_WINDOW_DAYS = 30;
 /** Cửa sổ "SKU có bán" — chỉ báo cháy hàng cho SKU phát sinh đơn gần đây. */
 const SELLING_WINDOW_DAYS = 30;
+/** Gian Shopee MỚI nối app chính trong N ngày mà chưa ủy quyền Hubsell Ads → nhắc một
+ *  lần (30/10/2026, ca khách phamgiathang: không nối thì AdSpend trống, không có gì để
+ *  biết gian "đang chạy ads" → chuông cũ không bao giờ kêu). 7 ngày = mặc định tự chọn. */
+const HUBSELL_ADS_NEW_SHOP_DAYS = 7;
 /** Số tiền (lỗ / chênh phí / chi ads) từ mức này trở lên → nâng severity lên high. */
 const HIGH_MONEY_THRESHOLD = 500_000;
 
@@ -398,8 +402,15 @@ async function detectDisconnectedChannels(ownerId: string): Promise<DetectedAler
 // Chỉ réo gian THẬT SỰ chạy ads (có chi ads hoặc campaign trong 30 ngày):
 // gian chưa từng chạy ads thì thẻ mời trên trang Trợ lý là đủ, không làm phiền.
 // Hết hạn (DISCONNECTED) thì luôn réo — đã từng nối tức là có dùng.
+//
+// 30/10/2026 — lỗ hổng: "đang chạy ads" đọc AdSpend/AdsCampaign của gian, hai bảng
+// này chỉ có số SAU KHI nối → gian chưa từng nối không bao giờ được nhắc (khách
+// phamgiathang: Shopee nối 27/10, 3.891 đơn về, không thấy tiền ads trong báo cáo).
+// Thêm nhánh "new_shop": gian Shopee mới nối app chính trong HUBSELL_ADS_NEW_SHOP_DAYS
+// ngày mà chưa ủy quyền → thẻ nhắc mức medium, tự đóng khi hết cửa sổ (điều kiện mất
+// → AUTO_CLOSED theo luật chung). Gian cũ chưa từng nối vẫn không bị réo.
 
-export type HubsellAdsLinkGap = "not_linked" | "expired";
+export type HubsellAdsLinkGap = "not_linked" | "expired" | "new_shop";
 
 /** Thẻ "cần kết nối / kết nối lại Hubsell Ads" — THUẦN, vitest đánh thẳng. */
 export function buildHubsellAdsLinkAlert(
@@ -422,6 +433,20 @@ export function buildHubsellAdsLinkAlert(
         `chiến dịch, ví ads và KHÔNG tạm dừng được chiến dịch cắn tiền.${stale} ` +
         `Kết nối lại một lần (~30 giây), đơn hàng và kho không ảnh hưởng.`,
       payload: { kind: "navigate", href, label: "Kết nối lại Hubsell Ads", source: "Shopee" },
+    };
+  }
+  if (gap === "new_shop") {
+    return {
+      ...base,
+      severity: "medium" as const,
+      type: "ads-app-not-linked",
+      title: `Gian "${shop.shopName}" mới nối — kết nối thêm Hubsell Ads để tiền quảng cáo vào báo cáo`,
+      summary:
+        `Đơn hàng, kho và tài chính của gian đã về. Riêng chi phí quảng cáo Shopee phải đi qua ` +
+        `ứng dụng riêng "Hubsell Ads" (Shopee tách quyền), gian chưa ủy quyền nên Báo cáo dòng tiền ` +
+        `chưa có tiền ads và Trợ lý quảng cáo chưa đọc được chiến dịch. Nếu gian có chạy quảng cáo, ` +
+        `kết nối một lần (~30 giây). Không chạy quảng cáo thì bỏ qua, thẻ tự ẩn sau ${HUBSELL_ADS_NEW_SHOP_DAYS} ngày.`,
+      payload: { kind: "navigate", href, label: "Kết nối Hubsell Ads", source: "Shopee" },
     };
   }
   return {
@@ -464,23 +489,35 @@ async function detectHubsellAdsLinkGaps(ownerId: string): Promise<DetectedAlert[
       id: true,
       shopName: true,
       lastAdsSyncAt: true,
+      createdAt: true,
       appAuths: { where: { app: ChannelAppKind.HUBSELL_ADS }, select: { status: true } },
     },
   });
+  const newSince = daysAgo(HUBSELL_ADS_NEW_SHOP_DAYS);
   const alerts: DetectedAlert[] = [];
   for (const c of channels) {
     const auth = c.appAuths[0];
     if (auth?.status === "ACTIVE") continue;
-    if (!auth && !(await channelUsesAdsRecently(c.id))) continue;
-    alerts.push(
-      buildHubsellAdsLinkAlert(
-        { channelId: c.id, shopName: c.shopName },
-        auth ? "expired" : "not_linked",
-        c.lastAdsSyncAt
-      )
-    );
+    const gap = auth ? "expired" : await hubsellAdsNeverLinkedGap(c, newSince);
+    if (!gap) continue;
+    alerts.push(buildHubsellAdsLinkAlert({ channelId: c.id, shopName: c.shopName }, gap, c.lastAdsSyncAt));
   }
   return alerts;
+}
+
+/**
+ * Gian chưa từng nối Hubsell Ads: đang chạy ads (số còn trong DB từ thời app chính)
+ * → "not_linked" (high); mới nối app chính trong cửa sổ → "new_shop" (medium);
+ * còn lại → null (không làm phiền). Tiêm hàm hỏi DB để vitest đánh thẳng.
+ */
+export async function hubsellAdsNeverLinkedGap(
+  c: { id: string; createdAt: Date },
+  newSince: Date,
+  usesAdsRecently: (channelId: string) => Promise<boolean> = channelUsesAdsRecently
+): Promise<HubsellAdsLinkGap | null> {
+  if (await usesAdsRecently(c.id)) return "not_linked";
+  if (c.createdAt >= newSince) return "new_shop";
+  return null;
 }
 
 /**

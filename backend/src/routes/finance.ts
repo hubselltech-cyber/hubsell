@@ -63,7 +63,7 @@ import {
 import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { reconcileTiktokWallet, syncTiktokPendingIncome, syncTiktokWallet } from "../integrations/tiktok/wallet";
-import { loadAdSpendRows, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
+import { loadAdSpendRows, loadShopeeAdsChannels, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
 import {
   cashFlowTotalsFromLedger,
   computeGrossDeductions,
@@ -2361,7 +2361,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
 
     // NGUỒN SỐ: sổ cái đơn (SUM trong database — docs/SO-CAI-DON.md). Cùng tập
     // đơn + cùng công thức với trang Lãi/Lỗ Thực Hiện (tab "Tất cả", đọc ĐỦ kỳ).
-    const [{ totals, truncated, ledgerPending }, expenses, operatingIncomeAgg, adSpendRows, tiktokAdsChannels, taxCfg] = await Promise.all([
+    const [{ totals, truncated, ledgerPending }, expenses, operatingIncomeAgg, adSpendRows, tiktokAdsChannels, shopeeAdsChannels, taxCfg] = await Promise.all([
       loadCashFlowTotals(scope, range),
       prisma.operatingExpense.findMany({
         where: {
@@ -2393,6 +2393,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       // phí vừa đổ vào chuỗi 14 ngày; gian TikTok để biết chưa nối / tham chiếu.
       loadAdSpendRows(scope, range),
       loadTiktokAdsChannels(scope),
+      // Gian Shopee chưa ủy quyền Hubsell Ads → ghi chú trong tooltip dòng Ads (30/10).
+      loadShopeeAdsChannels(scope),
       // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
       getShopTaxConfig(ownerId),
     ]);
@@ -2450,6 +2452,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       rows: adSpendRows,
       gmvMaxChargedByChannel,
       tiktokChannels: tiktokAdsChannels,
+      shopeeChannels: shopeeAdsChannels,
       dateKey: toBusinessDateKey,
     });
     const adsSpendTotal = adsSpend.total;

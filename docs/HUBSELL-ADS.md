@@ -229,3 +229,38 @@ Nguồn nhịp duy nhất: `backend/src/config/ads-cadence.ts`.
   dòng "Phí Discovery tài trợ" (`feeSponsoredDiscovery`) trong sao kê 90 ngày → AdSpend
   ghi 0 (P&L từng đơn đã gánh). Báo cáo dòng tiền / Tổng quan / Trợ lý hỏi đáp từ đây
   thấy chi phí ads Lazada như Shopee.
+
+## Sự cố khách 30/10/2026 — gian Shopee chưa ủy quyền Hubsell Ads → báo cáo dòng tiền không có tiền ads
+
+Khách `phamgiathang30101987@gmail.com`, gian Shopee "QA giầy công sở giá rẻ" (shop_id
+515585682, nối app chính 27/10/2026, 3.891 đơn về bình thường) hỏi vì sao báo cáo tài
+chính không có tiền quảng cáo Shopee (TikTok cùng chủ thì có, 267,5 tr/30 ngày).
+
+**Gốc (kiểm Supabase chỉ đọc):** `channel_app_auths` không có dòng HUBSELL_ADS cho gian →
+`hasShopeeAdsAccess()` false → làn Ads bỏ qua lặng lẽ (`lastAdsSyncAt` NULL, `AdSpend` 0
+dòng). Không phải 429 / cầu dao / token hết hạn. Khắc phục: khách bấm "Kết nối Hubsell Ads"
+trên trang Trợ lý quảng cáo Shopee (mục 4).
+
+**Hai lỗ hổng lộ ra — anh chốt "Sửa cả 2", ĐÃ SỬA 30/10 (test 47/47, tsc sạch):**
+1. Chuông `ads-app-not-linked` (`detectHubsellAdsLinkGaps`) chỉ réo gian "đang chạy ads"
+   theo `channelUsesAdsRecently()` = đếm `AdSpend`/`AdsCampaign` của gian — hai bảng này
+   chỉ có số SAU KHI nối → gian chưa từng nối không bao giờ được nhắc.
+   **Sửa:** thêm nhánh `HubsellAdsLinkGap = "new_shop"`: gian Shopee nối app chính trong
+   `HUBSELL_ADS_NEW_SHOP_DAYS = 7` ngày (mặc định tự chọn, hằng trong ops-alerts.ts) mà
+   chưa ủy quyền → thẻ cùng type/dedupeKey với not_linked (một thẻ/gian), severity
+   **medium**, chữ nói rõ báo cáo chưa có tiền ads và "không chạy quảng cáo thì bỏ qua, thẻ
+   tự ẩn sau 7 ngày" (hết cửa sổ → điều kiện mất → AUTO_CLOSED theo luật chung). Gian cũ
+   chưa từng nối, không số ads: vẫn im. Hàm thuần `hubsellAdsNeverLinkedGap(c, newSince,
+   usesAdsRecently)` — test `ops-alerts-shopee-ads.test.ts` mục (6)–(7).
+2. Tooltip dòng Ads ở Báo cáo dòng tiền (`summarizeAdsSpend`) chỉ có ghi chú cho TikTok
+   chưa nối TKQC, không có dòng tương đương cho Shopee chưa nối Hubsell Ads.
+   **Sửa:** `summarizeAdsSpend` nhận thêm `shopeeChannels?: ShopeeAdsChannel[]` (caller
+   cũ không truyền = không đổi) → ghi chú "Shopee cần kết nối Hubsell Ads (ứng dụng quảng
+   cáo riêng) để lấy tiền ads". `loadShopeeAdsChannels(scope)` đọc `channel_app_auths`
+   (Hubsell Ads chưa cấu hình env → coi như đã nối, cùng luật `hasShopeeAdsAccess`); nối
+   vào `routes/finance.ts` (Báo cáo dòng tiền) và `platformAdsSpend` (Tổng quan + Trợ lý
+   hỏi đáp). Test `services/__tests__/ads-spend.test.ts`.
+
+Kiểm sau deploy: Trung tâm điều hành của khách trên có thẻ vàng "mới nối — kết nối thêm
+Hubsell Ads" (gian nối 27/10 → còn trong cửa sổ tới 03/11); tooltip dòng Ads có gạch đầu
+dòng Shopee. Khi khách nối xong, thẻ tự đóng và ghi chú biến mất.

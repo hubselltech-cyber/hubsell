@@ -16,9 +16,14 @@
 // TRỌN ads qua đơn: |feeGmvMax| ≈ AdSpend → phần cộng thêm ≈ 0, vẫn không trừ hai lần.
 // Gian TikTok chưa nối quảng cáo: một gạch đầu dòng ngắn trong tooltip dòng Ads
 // (anh Trung 26/09: không nhắc nhở dài trong thẻ, seller tự hiểu).
+// 30/10/2026: gian Shopee chưa ủy quyền app Hubsell Ads cũng ghi chú như vậy —
+// trước đó im lặng, khách phamgiathang nhìn báo cáo không biết vì sao thiếu tiền ads
+// Shopee (Ads API Shopee chỉ đi qua app Ads riêng, chưa nối thì AdSpend trống).
 // ============================================================
 
 import type { Prisma } from "@prisma/client";
+import { ChannelAppKind } from "@prisma/client";
+import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { dateKeyToDbDate } from "../lib/ads-dates";
 import { toBusinessDateKey } from "../lib/date-range";
 import { prisma } from "../lib/prisma";
@@ -35,6 +40,13 @@ export interface TiktokAdsChannel {
   id: string;
   shopName: string;
   /** Đã nối tài khoản quảng cáo TikTok (có tiktokAdsStoreLink). */
+  adsLinked: boolean;
+}
+
+/** Gian Shopee + đã ủy quyền app Hubsell Ads (ChannelAppAuth ACTIVE) hay chưa. */
+export interface ShopeeAdsChannel {
+  id: string;
+  shopName: string;
   adsLinked: boolean;
 }
 
@@ -60,6 +72,8 @@ export function summarizeAdsSpend(input: {
   rows: AdSpendRow[];
   gmvMaxChargedByChannel: Map<string, number>;
   tiktokChannels: TiktokAdsChannel[];
+  /** Gian Shopee trong phạm vi — thiếu = không ghi chú (caller cũ). */
+  shopeeChannels?: ShopeeAdsChannel[];
   dateKey: (d: Date) => string;
 }): AdsSpendSummary {
   const summary: AdsSpendSummary = { total: 0, byDay: new Map(), byChannel: new Map(), notes: [] };
@@ -90,6 +104,9 @@ export function summarizeAdsSpend(input: {
   const hasUnlinked = input.tiktokChannels.some((ch) => !offsetChannels.has(ch.id) && !ch.adsLinked);
   if (hasOffset) summary.notes.push("TikTok đã trừ một phần tiền quảng cáo trong đơn, ở đây chỉ cộng phần còn lại");
   if (hasUnlinked) summary.notes.push("TikTok cần kết nối tài khoản quảng cáo");
+  if ((input.shopeeChannels ?? []).some((ch) => !ch.adsLinked)) {
+    summary.notes.push("Shopee cần kết nối Hubsell Ads (ứng dụng quảng cáo riêng) để lấy tiền ads");
+  }
   return summary;
 }
 
@@ -139,9 +156,10 @@ export async function platformAdsSpend(
   range: { gte: Date; lte: Date } | undefined,
   revenueRows: { channelId: string; feeGmvMax: number }[]
 ): Promise<AdsSpendSummary> {
-  const [rows, tiktokChannels] = await Promise.all([
+  const [rows, tiktokChannels, shopeeChannels] = await Promise.all([
     loadAdSpendRows(scope, range),
     loadTiktokAdsChannels(scope),
+    loadShopeeAdsChannels(scope),
   ]);
   const gmvMaxChargedByChannel = new Map<string, number>();
   for (const r of revenueRows) {
@@ -155,8 +173,30 @@ export async function platformAdsSpend(
     rows,
     gmvMaxChargedByChannel,
     tiktokChannels,
+    shopeeChannels,
     dateKey: toBusinessDateKey,
   });
+}
+
+/**
+ * Gian Shopee trong phạm vi + đã ủy quyền Hubsell Ads hay chưa. Hubsell Ads chưa cấu
+ * hình (env) → Ads API đi app chính → coi như đã nối (cùng luật hasShopeeAdsAccess).
+ */
+export async function loadShopeeAdsChannels(scope: Prisma.ChannelWhereInput): Promise<ShopeeAdsChannel[]> {
+  const configured = isHubsellAdsConfigured();
+  const rows = await prisma.channel.findMany({
+    where: { ...scope, channelName: "SHOPEE" },
+    select: {
+      id: true,
+      shopName: true,
+      appAuths: { where: { app: ChannelAppKind.HUBSELL_ADS }, select: { status: true } },
+    },
+  });
+  return rows.map((c) => ({
+    id: c.id,
+    shopName: c.shopName,
+    adsLinked: !configured || c.appAuths[0]?.status === "ACTIVE",
+  }));
 }
 
 /** Gian TikTok trong phạm vi + đã nối quảng cáo hay chưa. */
