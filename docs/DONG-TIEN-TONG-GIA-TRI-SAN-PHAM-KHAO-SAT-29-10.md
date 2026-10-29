@@ -387,5 +387,8 @@ DB dev tính lại 338k dòng v3.
 chưa bẩn; `ensureLedgerFresh` coi "còn dòng phiên bản cũ" là chưa sạch. Deploy 11:12 → gọi lại: pending 0, thẻ 1
 451.728.316, Doanh thu 303.728.185, thác nước 0, 0,25–0,36 s/lượt. Từ nay đổi version công thức không còn cộng thiếu ở
 báo cáo khách đang mở (worker vẫn tính phần còn lại nền).
-**Lưu ý backfill Shopee:** lệnh UPDATE trên Supabase qua Chrome bị lớp kiểm quyền chặn (ghi tài nguyên chung) → anh tự
-chạy SQL mục 13 theo tháng; đơn mới mapper tự điền.
+**Backfill Shopee (11:25, thay SQL tay):** anh gửi ảnh tab Shopee còn "—" ở đơn tạo trước deploy → chuyển thành bước bảo
+trì khởi động của worker sổ cái: `services/shopee-escrow-columns-backfill.ts` `backfillShopeeEscrowColumns` chép 3 cột từ
+`expectedIncome` theo từng NGÀY tạo (150 ngày, đi chỉ mục createdAt, nghỉ 800 ms giữa ngày có dòng, bỏ đơn hủy, idempotent,
+không đánh bẩn sổ); gọi sau `sweepFormulaVersion` (commit 8ec70634). Đơn chưa từng có snapshot escrow (trước khi có ước tính)
+vẫn "—". Cột voucher TikTok "—" tới khi worker đọc price_detail (200 đơn/gian/giờ).
