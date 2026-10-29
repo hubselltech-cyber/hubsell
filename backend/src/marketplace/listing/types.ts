@@ -61,6 +61,15 @@ export interface CategoryNode {
   leaf: boolean;
 }
 
+/** Một nút trong cây danh mục của sàn (phẳng, có cha) — để màn hình xổ cha → con. */
+export interface CategoryTreeNode {
+  id: string;
+  name: string;
+  /** null = cấp gốc. */
+  parentId: string | null;
+  leaf: boolean;
+}
+
 export interface AttributeDef {
   id: string;
   name: string;
@@ -124,6 +133,8 @@ export interface ListingAdapter {
   fetchListing(channel: Channel, itemId: string): Promise<NormalizedListing | null>;
   recommendCategory(channel: Channel, listing: NormalizedListing): Promise<CategorySuggestion[]>;
   searchCategories(channel: Channel, query: string): Promise<CategoryNode[]>;
+  /** TOÀN BỘ cây danh mục của sàn (phẳng) — adapter đệm theo gian, route cắt theo cha. */
+  getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]>;
   getCategoryRequirements(channel: Channel, categoryId: string): Promise<CategoryRequirements | null>;
   getLogistics(channel: Channel): Promise<LogisticOption[]>;
   searchBrands(channel: Channel, categoryId: string | null, query: string): Promise<Brand[]>;

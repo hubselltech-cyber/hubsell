@@ -301,6 +301,44 @@ router.get("/jobs/:id/targets/:tid/categories", async (req: AuthRequest, res, ne
   }
 });
 
+/**
+ * Cây danh mục xổ cha → con của gian đích.
+ * - ?parentId=X   → levels[0] = các con của X (trống = cấp gốc).
+ * - ?selectedId=Y → path = chuỗi id gốc → Y, levels[i] = anh em ở cấp i (để điền sẵn
+ *   các ô đã chọn); nếu Y chưa phải lá thì thêm một cấp con cuối.
+ */
+router.get("/jobs/:id/targets/:tid/category-tree", async (req: AuthRequest, res, next) => {
+  try {
+    const channel = await targetChannel(req);
+    const all = await getListingAdapter(channel).getCategoryTree(channel);
+    const byId = new Map(all.map((n) => [n.id, n]));
+    const childrenOf = (parentId: string | null) => all.filter((n) => n.parentId === parentId);
+    const selectedId = str(req.query.selectedId);
+    if (selectedId && byId.has(selectedId)) {
+      const path: string[] = [];
+      let cur = byId.get(selectedId);
+      let guard = 0;
+      while (cur && guard++ < 10) {
+        path.unshift(cur.id);
+        cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+      }
+      const levels = path.map((_, i) => childrenOf(i === 0 ? null : path[i - 1]));
+      const last = byId.get(selectedId)!;
+      if (!last.leaf) levels.push(childrenOf(last.id));
+      res.json({ path, levels });
+      return;
+    }
+    const parentId = str(req.query.parentId) || null;
+    res.json({ path: [], levels: [childrenOf(parentId)] });
+  } catch (err) {
+    if (err instanceof ListingCopyError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
+
 router.get("/jobs/:id/targets/:tid/brands", async (req: AuthRequest, res, next) => {
   try {
     const channel = await targetChannel(req);

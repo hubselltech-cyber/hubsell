@@ -156,8 +156,8 @@ Anh chốt "Làm adapter thật". Local không có gian thật (chỉ gian seed 
 - **Dò thử chỉ đọc trên prod** (quản trị nền tảng, không qua cờ bật): `GET /api/sao-chep-san-pham-probe?channelId=…`
   chạy fetchListing / recommendCategory / searchCategories / getCategoryRequirements / searchBrands / getLogistics trên
   một gian thật, trả từng bước ok/lỗi + mẫu dữ liệu. Chạy trong DevTools app.hubsell.tech (tài khoản dev@hubsell.tech):
-  `fetch(location.origin.replace('app.','api.')+'/api/sao-chep-san-pham-probe?channelId=ID',{headers:{Authorization:'Bearer '+localStorage.hubsell_token}}).then(r=>r.json()).then(console.log)`
-  (thay host API đúng của prod nếu khác).
+  `fetch('https://hubsell-backend-sg.onrender.com/api/sao-chep-san-pham-probe?channelId=ID',{headers:{Authorization:'Bearer '+localStorage.hubsell_token}}).then(r=>r.json()).then(d=>console.log(JSON.stringify(d,null,2)))`
+  (backend prod là Render Singapore, KHÔNG phải api.hubsell.tech).
 
 ### Việc còn lại trước khi mở cho khách
 1. Push → prod (cờ tắt, khách không thấy). Chạy probe trên 1 gian Shopee (ANO/HPGear), 1 gian TikTok, 1 gian Lazada;
@@ -166,3 +166,34 @@ Anh chốt "Làm adapter thật". Local không có gian thật (chỉ gian seed 
    Lazada: kiểm app có nhóm Product API. TikTok: trần 100 SP/ngày gian mới + chờ duyệt.
 3. Ảnh: thêm đổi cỡ/nén (Lazada ≤1 MB) khi gặp lỗi thật.
 4. ~~Bật cờ~~ đã mở thật (nhãn demo); theo dõi log `[listing-copy]` + báo 4 khách đã hỏi; bỏ "(demo)" khi ổn.
+
+## 11. Góp ý của anh sau khi thử prod lần 1 (29/10/2026 chiều) — ĐÃ SỬA
+
+Anh gửi 2 ảnh + 4 ý: (1) lọc chọn sàn → chọn shop vì người nhiều shop rất cực; (2) giao diện nuốt chữ (ô "20 / trang"
+cụt); (3) danh mục dồn vào một ô không rõ, mỗi sàn xếp danh mục khác nhau → muốn xổ dạng cha → con; (4) kênh vận
+chuyển "hình như sàn phân chứ không tới lượt shop chọn".
+
+- **(1) Lọc sàn → gian.** Bước 1: hai ô `Sàn` → `Gian` (ô gian chỉ liệt kê gian của sàn đã chọn; "Mọi sàn" thì ghi kèm
+  tên sàn). Bước 2: chip `Tất cả (n) · Shopee (n) · TikTok (n) · Lazada (n)` + ô tìm tên gian (hiện khi >5 gian) +
+  dòng "Chọn tất cả k gian đang hiện" + "Đã chọn N gian · Bỏ chọn".
+- **(2) Nuốt chữ.** `PagerFooter` ô số/trang `w-24` → `w-32` (chữ "100 / trang" + mũi tên không còn cụt).
+- **(3) Danh mục xổ cha → con theo cây của CHÍNH sàn đích.** Adapter thêm `getCategoryTree(channel)` trả TOÀN BỘ cây
+  phẳng `{id, name, parentId, leaf}` (Shopee get_category parent_category_id/has_children; TikTok parent_id/is_leaf;
+  Lazada duỗi `category/tree/get`; giả lập dựng từ đường dẫn mẫu). Route
+  `GET /jobs/:id/targets/:tid/category-tree?parentId=` → con của một nút; `?selectedId=` → `path` + `levels` từng cấp
+  để điền sẵn. FE `CategoryCascade`: mỗi cấp một ô, nút chưa phải lá có dấu `›`, dòng đường dẫn dưới ô, chọn dở →
+  "còn thiếu"; đổi danh mục → thuộc tính nạp lại khi lưu. Gợi ý của Hubsell vẫn điền sẵn (ghi "Hubsell gợi ý · độ khớp
+  x%"). Sửa luôn 2 lỗi: `updateTarget` kiểm danh mục qua `searchCategories` cắt 300 lá → giờ kiểm trên cả cây + bắt
+  buộc lá; ô cấp bị kẹt mờ sau khi lưu (effect huỷ giữa chừng không trả `loading`) → cleanup trả về false, và chỉ xoá
+  nháp SAU khi nạp lại đợt.
+- **(4) Kênh vận chuyển.** Căn cứ API: Shopee `add_item` BẮT BUỘC `logistic_info` theo từng sản phẩm (Seller Centre cũng
+  có mục bật/tắt kênh cho từng SP, mặc định theo cài đặt gian); TikTok và Lazada không có tham số kênh khi tạo SP —
+  sàn tự phân. Nên: Shopee mặc định tick TẤT CẢ kênh gian đã bật, hiện một dòng "theo cài đặt gian — n kênh đang bật
+  trên sàn · Tuỳ chỉnh" (xổ danh sách chỉ khi khách bấm hoặc đang thiếu); kênh chưa bật trên sàn không hiện nữa;
+  TikTok/Lazada không có mục này. Khớp [[feedback-khach-can-don-gian]].
+- **Phát hiện thêm từ ảnh 2 (thuộc tính Shopee tên tiếng Anh, toàn ô gõ tay):** `get_attribute_tree` trả giá trị dưới
+  `attribute_value_list[].display_name/name` (bản cũ `display_value_name/original_value_name`) và gói
+  `input_validation_type` trong `attribute_info` → trước đọc trượt nên mọi thuộc tính thành ô text. Đã nhận cả 2 dạng
+  (`attrValueName`). Tên thuộc tính tiếng Anh dù đã gửi `language=vi` — Shopee tự quyết, chưa xử lý.
+- Kiểm local (gian giả lập): cascade điền sẵn 3 cấp, đổi Túi ví › Túi xách › Túi tote → lưu → dòng hiện đường dẫn mới;
+  Shopee hiện "3 kênh đang bật · Tuỳ chỉnh"; Lazada/TikTok không có mục vận chuyển; tsc + eslint + vitest (12 ca) sạch.

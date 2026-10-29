@@ -18,6 +18,7 @@ import type {
   CategoryNode,
   CategoryRequirements,
   CategorySuggestion,
+  CategoryTreeNode,
   CreateListingResult,
   ListingAdapter,
   ListingDraft,
@@ -101,6 +102,21 @@ export const lazadaListingAdapter: ListingAdapter = {
     const q = normalizeText(query);
     const nodes = leaves.map((l) => ({ ...l, leaf: true }));
     return (q ? nodes.filter((n) => normalizeText(n.path.join(" ")).includes(q)) : nodes).slice(0, 300);
+  },
+
+  async getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]> {
+    const token = await getValidLazadaAccessToken(channel);
+    const out: CategoryTreeNode[] = [];
+    const walk = (nodes: api.LazadaCategoryNode[], parentId: string | null) => {
+      for (const n of nodes) {
+        const id = String(n.category_id);
+        const children = n.children ?? [];
+        out.push({ id, name: n.name ?? id, parentId, leaf: Boolean(n.leaf) || children.length === 0 });
+        if (children.length) walk(children, id);
+      }
+    };
+    walk(await api.getCategoryTree(token), null);
+    return out;
   },
 
   async getCategoryRequirements(channel: Channel, categoryId: string): Promise<CategoryRequirements | null> {

@@ -19,6 +19,7 @@ import type {
   CategoryNode,
   CategoryRequirements,
   CategorySuggestion,
+  CategoryTreeNode,
   CreateListingResult,
   ListingAdapter,
   ListingDraft,
@@ -41,10 +42,15 @@ interface BaseInfoExtra {
   tier_variation?: { name?: string; option_list?: { option?: string; image?: { image_url?: string } }[] }[];
 }
 
+/** Tên giá trị thuộc tính — get_attribute_tree trả `display_name`/`name`, bản cũ get_attributes trả `display_value_name`/`original_value_name`; nhận cả hai. */
+export function attrValueName(v: api.ShopeeAttributeValue): string {
+  return v.display_name ?? v.name ?? v.display_value_name ?? v.original_value_name ?? "";
+}
+
 function attrDef(a: api.ShopeeAttribute): AttributeDef {
-  const options = (a.attribute_value_list ?? []).map((v) => v.display_value_name ?? v.original_value_name ?? "").filter(Boolean);
-  const type: AttributeDef["type"] =
-    options.length > 0 ? "select" : a.input_validation_type === "INT_TYPE" || a.input_validation_type === "FLOAT_TYPE" ? "number" : "text";
+  const options = (a.attribute_value_list ?? []).map(attrValueName).filter(Boolean);
+  const validation = a.attribute_info?.input_validation_type ?? a.input_validation_type;
+  const type: AttributeDef["type"] = options.length > 0 ? "select" : validation === "INT_TYPE" || validation === "FLOAT_TYPE" ? "number" : "text";
   return { id: String(a.attribute_id), name: a.display_name ?? a.name ?? String(a.attribute_id), required: Boolean(a.mandatory), type, options: options.length ? options : undefined };
 }
 
@@ -120,6 +126,17 @@ export const shopeeListingAdapter: ListingAdapter = {
     return (q ? nodes.filter((n) => normalizeText(n.path.join(" ")).includes(q)) : nodes).slice(0, 300);
   },
 
+  async getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]> {
+    const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+    const all = await api.getCategories(accessToken, shopId);
+    return all.map((c) => ({
+      id: String(c.category_id),
+      name: c.display_category_name ?? c.original_category_name ?? String(c.category_id),
+      parentId: c.parent_category_id ? String(c.parent_category_id) : null,
+      leaf: !c.has_children,
+    }));
+  },
+
   async getCategoryRequirements(channel: Channel, categoryId: string): Promise<CategoryRequirements | null> {
     const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
     const [tree, brands] = await Promise.all([
@@ -160,9 +177,7 @@ export const shopeeListingAdapter: ListingAdapter = {
       .filter(([, v]) => String(v).trim())
       .map(([id, value]) => {
         const def = tree.find((a) => String(a.attribute_id) === id);
-        const found = def?.attribute_value_list?.find(
-          (v) => (v.display_value_name ?? v.original_value_name ?? "").toLowerCase() === String(value).toLowerCase()
-        );
+        const found = def?.attribute_value_list?.find((v) => attrValueName(v).toLowerCase() === String(value).toLowerCase());
         return {
           attribute_id: Number(id),
           attribute_value_list: [found?.value_id ? { value_id: found.value_id } : { value_id: 0, original_value_name: String(value) }],

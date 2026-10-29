@@ -86,14 +86,26 @@ export async function recommendCategory(
   return d.response?.category_id ?? [];
 }
 
+export interface ShopeeAttributeValue {
+  value_id?: number;
+  /** get_attribute_tree (v2 mới). */
+  name?: string;
+  display_name?: string;
+  /** get_attributes (v2 cũ) — giữ để không vỡ nếu sàn còn trả. */
+  display_value_name?: string;
+  original_value_name?: string;
+}
+
 export interface ShopeeAttribute {
   attribute_id: number;
   mandatory?: boolean;
   name?: string;
   display_name?: string;
+  /** get_attribute_tree gói input_type/validation trong attribute_info. */
+  attribute_info?: { input_type?: string; input_validation_type?: string; format_type?: string; max_input_value_count?: number };
   input_type?: string; // DROP_DOWN | TEXT_FILED | COMBO_BOX | MULTIPLE_SELECT | MULTIPLE_SELECT_COMBO_BOX
   input_validation_type?: string; // INT_TYPE | STRING_TYPE | FLOAT_TYPE | DATE_TYPE...
-  attribute_value_list?: { value_id?: number; display_value_name?: string; original_value_name?: string }[];
+  attribute_value_list?: ShopeeAttributeValue[];
 }
 
 interface AttributeTreeData extends ShopeeEnvelope {

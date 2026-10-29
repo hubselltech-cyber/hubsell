@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (chiều) — SAO CHÉP SẢN PHẨM: 4 GÓP Ý CỦA ANH SAU THỬ PROD LẦN 1 — ĐÃ SỬA, PUSH
+
+- **Anh gửi 2 ảnh + 4 ý:** lọc sàn → shop (người nhiều shop); giao diện nuốt chữ; danh mục dồn một ô, muốn xổ cha → con theo từng sàn; kênh vận chuyển "sàn phân chứ không tới lượt shop".
+- **Đã sửa (docs/SAO-CHEP-SAN-PHAM.md mục 11):** bước 1 ô `Sàn` → `Gian`; bước 2 chip theo sàn + tìm tên gian + "Chọn tất cả k gian đang hiện"; `PagerFooter` w-32; adapter thêm `getCategoryTree` (4 adapter) + route `category-tree?parentId|selectedId` + FE `CategoryCascade` (mỗi cấp một ô, điền sẵn từ gợi ý); kênh vận chuyển Shopee mặc định theo cài đặt gian, thu gọn "Tuỳ chỉnh", bỏ kênh chưa bật; TikTok/Lazada không có mục (sàn tự phân — đúng API).
+- **Sửa kèm 3 lỗi thật:** `updateTarget` kiểm danh mục qua `searchCategories` cắt 300 lá (gian thật sẽ báo "không hợp lệ" oan) → kiểm trên cả cây + bắt buộc lá; Shopee `get_attribute_tree` trả giá trị `display_name/name` + `attribute_info.input_validation_type` → trước đọc trượt nên mọi thuộc tính thành ô gõ tay (ảnh anh gửi) → nhận cả 2 dạng; ô cấp danh mục kẹt mờ sau khi lưu → cleanup effect trả `loading=false` + xoá nháp sau khi nạp lại đợt.
+- Kiểm local gian giả lập trọn vòng (cascade 3 cấp, lưu, Shopee 3 kênh, TikTok/Lazada không mục vận chuyển); tsc + eslint + vitest 12 ca sạch. Probe prod: host đúng là `https://hubsell-backend-sg.onrender.com` (docs mục 10 đã sửa).
+- ⏳ Chờ anh thử lại trên prod với gian thật: gửi JSON probe từng sàn + ảnh ô danh mục/thuộc tính Shopee (tên tiếng Anh dù `language=vi` — chưa xử lý).
+
+---
 ## Phiên 29/10/2026 (đêm) — SAO CHÉP SẢN PHẨM LÁT 1b: ADAPTER THẬT 3 SÀN — ĐÃ CODE, CHƯA KIỂM GIAN THẬT, CHƯA PUSH
 
 - **Anh chốt "Làm adapter thật".** Local không có gian thật → mã theo docs API 29/10; biên dịch sạch; test thuần `variant-map.test.ts` 5 ca (+ rules 7 ca).

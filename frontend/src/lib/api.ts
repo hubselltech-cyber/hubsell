@@ -8421,6 +8421,27 @@ export function fetchCopyListingCategories(jobId: string, targetId: string, q: s
   );
 }
 
+export interface CopyListingCategoryNode {
+  id: string;
+  name: string;
+  parentId: string | null;
+  leaf: boolean;
+}
+
+/** Cây danh mục xổ cha → con: parentId = con của một nút; selectedId = điền sẵn chuỗi đã chọn. */
+export function fetchCopyListingCategoryTree(
+  jobId: string,
+  targetId: string,
+  params: { parentId?: string | null; selectedId?: string | null }
+) {
+  const qs = new URLSearchParams();
+  if (params.parentId) qs.set("parentId", params.parentId);
+  if (params.selectedId) qs.set("selectedId", params.selectedId);
+  return apiFetch<{ path: string[]; levels: CopyListingCategoryNode[][] }>(
+    `${COPY_LISTING_BASE}/jobs/${jobId}/targets/${targetId}/category-tree?${qs.toString()}`
+  );
+}
+
 export function fetchCopyListingBrands(jobId: string, targetId: string, q: string, categoryId?: string | null) {
   const qs = new URLSearchParams({ q });
   if (categoryId) qs.set("categoryId", categoryId);

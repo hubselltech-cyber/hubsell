@@ -18,6 +18,7 @@ import type {
   CategoryNode,
   CategoryRequirements,
   CategorySuggestion,
+  CategoryTreeNode,
   CreateListingResult,
   ListingAdapter,
   ListingDraft,
@@ -54,6 +55,25 @@ function nodesFor(platform: ChannelName): CategoryNode[] {
     path: c.path,
     leaf: true,
   }));
+}
+
+/** Cây phẳng cha → con dựng từ các đường dẫn mẫu: nút trung gian id theo đường dẫn, lá giữ catId. */
+function treeFor(platform: ChannelName): CategoryTreeNode[] {
+  const out: CategoryTreeNode[] = [];
+  const seen = new Set<string>();
+  CATEGORY_TREE.forEach((c, i) => {
+    let parentId: string | null = null;
+    c.path.forEach((name, depth) => {
+      const last = depth === c.path.length - 1;
+      const id = last ? catId(platform, i) : `${PREFIX[platform]}-N-${c.path.slice(0, depth + 1).join("/")}`;
+      if (!seen.has(id)) {
+        seen.add(id);
+        out.push({ id, name, parentId, leaf: last });
+      }
+      parentId = id;
+    });
+  });
+  return out;
 }
 
 function attributesFor(platform: ChannelName, leafPath: string[]): AttributeDef[] {
@@ -144,6 +164,10 @@ export const mockListingAdapter: ListingAdapter = {
     const all = nodesFor(channel.channelName);
     if (!q) return all;
     return all.filter((n) => normalize(n.path.join(" ")).includes(q));
+  },
+
+  async getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]> {
+    return treeFor(channel.channelName);
   },
 
   async getCategoryRequirements(channel: Channel, categoryId: string): Promise<CategoryRequirements | null> {

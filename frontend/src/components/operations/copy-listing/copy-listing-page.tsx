@@ -32,7 +32,7 @@ import {
   fetchCopyListingBatch,
   fetchCopyListingBatches,
   fetchCopyListingBrands,
-  fetchCopyListingCategories,
+  fetchCopyListingCategoryTree,
   fetchCopyListingChannels,
   fetchCopyListingSources,
   submitCopyListingBatch,
@@ -40,6 +40,7 @@ import {
   updateCopyListingTarget,
   type ChannelName,
   type CopyListingBatch,
+  type CopyListingCategoryNode,
   type CopyListingChannel,
   type CopyListingJob,
   type CopyListingSource,
@@ -139,6 +140,10 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
   const [picked, setPicked] = useState<Map<string, CopyListingSource>>(new Map());
   const [targets, setTargets] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+  /** Lọc gian: nguồn chọn sàn → gian; đích lọc theo sàn + tìm tên (khách nhiều gian). */
+  const [sourcePlatform, setSourcePlatform] = useState<ChannelName | "">("");
+  const [targetPlatform, setTargetPlatform] = useState<ChannelName | "ALL">("ALL");
+  const [targetSearch, setTargetSearch] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300);
@@ -158,8 +163,23 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
     if (!sourceChannelId && channels.length > 0) {
       const first = channels.find((c) => c.productCount > 0) ?? channels[0];
       setSourceChannelId(first.id);
+      setSourcePlatform(first.channelName);
     }
   }, [channels, sourceChannelId]);
+
+  const platformsPresent = PLATFORM_ORDER.filter((p) => channels.some((c) => c.channelName === p));
+  const sourceChoices = channels.filter((c) => !sourcePlatform || c.channelName === sourcePlatform);
+
+  function pickSourceChannel(id: string) {
+    setSourceChannelId(id);
+    setPicked(new Map());
+    setPage(1);
+    setTargets((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
 
   const sourceParams = {
     type: sourceType === "CHANNEL" ? ("channel" as const) : ("product" as const),
@@ -175,6 +195,11 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
   });
 
   const targetChannels = channels.filter((c) => !(sourceType === "CHANNEL" && c.id === sourceChannelId));
+  const targetQ = targetSearch.trim().toLowerCase();
+  const targetShown = targetChannels.filter(
+    (c) => (targetPlatform === "ALL" || c.channelName === targetPlatform) && (!targetQ || c.shopName.toLowerCase().includes(targetQ))
+  );
+  const allShownTargeted = targetShown.length > 0 && targetShown.every((c) => targets.has(c.id));
   const pageCount = sourcesQ.data ? Math.max(1, Math.ceil(sourcesQ.data.total / sourcesQ.data.pageSize)) : 1;
   const pageItems = sourcesQ.data?.items ?? [];
   const allOnPagePicked = pageItems.length > 0 && pageItems.every((s) => picked.has(s.key));
@@ -254,26 +279,34 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
 
           <div className="flex flex-wrap gap-3">
             {sourceType === "CHANNEL" && (
-              <NativeSelect
-                className="w-72"
-                value={sourceChannelId}
-                onChange={(e) => {
-                  setSourceChannelId(e.target.value);
-                  setPicked(new Map());
-                  setPage(1);
-                  setTargets((prev) => {
-                    const next = new Set(prev);
-                    next.delete(e.target.value);
-                    return next;
-                  });
-                }}
-              >
-                {channels.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {CHANNEL_META[c.channelName].label} · {c.shopName} ({formatNumber(c.productCount)} SP)
-                  </option>
-                ))}
-              </NativeSelect>
+              <>
+                <NativeSelect
+                  className="w-40"
+                  aria-label="Chọn sàn nguồn"
+                  value={sourcePlatform}
+                  onChange={(e) => {
+                    const p = e.target.value as ChannelName | "";
+                    setSourcePlatform(p);
+                    const first = channels.find((c) => (!p || c.channelName === p) && c.id === sourceChannelId) ?? channels.find((c) => !p || c.channelName === p);
+                    if (first && first.id !== sourceChannelId) pickSourceChannel(first.id);
+                  }}
+                >
+                  <option value="">Mọi sàn</option>
+                  {platformsPresent.map((p) => (
+                    <option key={p} value={p}>
+                      {CHANNEL_META[p].label}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <NativeSelect className="w-72" aria-label="Chọn gian nguồn" value={sourceChannelId} onChange={(e) => pickSourceChannel(e.target.value)}>
+                  {sourceChoices.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {sourcePlatform ? "" : `${CHANNEL_META[c.channelName].label} · `}
+                      {c.shopName} ({formatNumber(c.productCount)} SP)
+                    </option>
+                  ))}
+                </NativeSelect>
+              </>
             )}
             <div className="relative w-80">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
@@ -387,12 +420,74 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
       {/* Bước 2 — gian đích */}
       <Card>
         <CardContent className="space-y-3 p-5">
-          <div className="text-sm font-semibold text-slate-900">2. Chọn gian đích (được nhiều gian, nhiều sàn)</div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm font-semibold text-slate-900">2. Chọn gian đích (được nhiều gian, nhiều sàn)</div>
+            {targets.size > 0 && (
+              <span className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">
+                Đã chọn <span className="font-semibold text-slate-900 tabular-nums">{targets.size}</span> gian
+                <Button size="xs" variant="ghost" onClick={() => setTargets(new Set())}>
+                  Bỏ chọn
+                </Button>
+              </span>
+            )}
+          </div>
           {targetChannels.length === 0 ? (
             <p className="text-sm text-slate-500">Chưa có gian nào khác để đăng — nối thêm gian ở trang Kênh bán.</p>
           ) : (
-            <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-              {targetChannels.map((c) => (
+            <>
+              {/* Lọc sàn → gian: khách nhiều gian không phải dò cả danh sách. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex rounded-lg border border-slate-200 p-0.5">
+                  {(["ALL", ...platformsPresent] as const).map((p) => {
+                    const n = p === "ALL" ? targetChannels.length : targetChannels.filter((c) => c.channelName === p).length;
+                    if (n === 0) return null;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setTargetPlatform(p)}
+                        className={cn(
+                          "rounded-md px-3 py-1 text-sm transition-colors tabular-nums",
+                          targetPlatform === p ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                        )}
+                      >
+                        {p === "ALL" ? "Tất cả" : CHANNEL_META[p].label} ({n})
+                      </button>
+                    );
+                  })}
+                </div>
+                {targetChannels.length > 5 && (
+                  <div className="relative w-64">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                    <Input className="pl-8" placeholder="Tìm tên gian" value={targetSearch} onChange={(e) => setTargetSearch(e.target.value)} />
+                  </div>
+                )}
+              </div>
+              <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                <label className="flex cursor-pointer items-center gap-3 bg-slate-50/60 px-4 py-2">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-slate-900"
+                    aria-label="Chọn tất cả gian đang hiện"
+                    checked={allShownTargeted}
+                    disabled={targetShown.length === 0}
+                    onChange={() =>
+                      setTargets((prev) => {
+                        const next = new Set(prev);
+                        if (allShownTargeted) targetShown.forEach((c) => next.delete(c.id));
+                        else targetShown.forEach((c) => next.add(c.id));
+                        return next;
+                      })
+                    }
+                  />
+                  <span className={cn(TEXT_TABLE_HEAD, "tabular-nums")}>
+                    Chọn tất cả {targetShown.length} gian đang hiện
+                  </span>
+                </label>
+                {targetShown.length === 0 && (
+                  <p className="px-4 py-3 text-sm text-slate-500">Không có gian nào khớp.</p>
+                )}
+                {targetShown.map((c) => (
                 <TargetRow
                   key={c.id}
                   channel={c}
@@ -407,7 +502,8 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                   }}
                 />
               ))}
-            </div>
+              </div>
+            </>
           )}
           <div className="flex items-center justify-between gap-3 pt-1">
             <span className={TEXT_SUB}>
@@ -447,7 +543,7 @@ function PagerFooter({
         {onPageSize && (
           <>
             <span className={TEXT_SUB}>Hiển thị</span>
-            <NativeSelect className="w-24" value={String(pageSize)} onChange={(e) => onPageSize(Number(e.target.value))}>
+            <NativeSelect className="w-32" value={String(pageSize)} onChange={(e) => onPageSize(Number(e.target.value))}>
               {PAGE_SIZE_OPTIONS.map((n) => (
                 <option key={n} value={n}>
                   {n} / trang
@@ -824,17 +920,15 @@ function TargetEditor({
   canEdit: boolean;
 }) {
   const invalidate = useInvalidate();
-  const [categories, setCategories] = useState<{ id: string; name: string; path: string[] }[]>([]);
   const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [draft, setDraft] = useState<CopyListingTargetPatch>({});
+  /** Kênh vận chuyển: mặc định theo cài đặt gian, chỉ xổ khi khách muốn tuỳ chỉnh hoặc đang thiếu. */
+  const [logisticsOpen, setLogisticsOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    fetchCopyListingCategories(job.id, t.id, "")
-      .then((r) => alive && setCategories(r.items))
-      .catch(() => undefined);
     fetchCopyListingBrands(job.id, t.id, "", t.categoryId)
       .then((r) => alive && setBrands(r.items))
       .catch(() => undefined);
@@ -848,6 +942,8 @@ function TargetEditor({
   const attrs = { ...t.attributes, ...(draft.attributes ?? {}) };
   const dims = draft.dimensionsCm !== undefined ? draft.dimensionsCm : t.dimensionsCm;
   const logistics = draft.logisticIds ?? t.logisticIds;
+  const logisticEnabled = t.logisticOptions.filter((o) => o.enabled);
+  const logisticsOn = logisticEnabled.filter((o) => logistics.includes(o.id)).length;
   const req = t.requirements;
   const dirty = Object.keys(draft).length > 0;
   /** Số gian cùng gian hàng ở sản phẩm khác trong đợt còn chờ — nút "Áp cho sản phẩm còn lại". */
@@ -860,8 +956,9 @@ function TargetEditor({
     setSaving(true);
     try {
       await updateCopyListingTarget(job.id, t.id, draft);
-      setDraft({});
+      // Nạp lại đợt XONG mới xoá nháp — tránh ô danh mục nháy về giá trị cũ một nhịp.
       await invalidate(qk.copyListingBatch(batch.id));
+      setDraft({});
       toast.success(`Đã lưu ${t.channel.shopName}.`);
     } catch (err) {
       toast.error(errorText(err));
@@ -874,9 +971,9 @@ function TargetEditor({
     setApplying(true);
     try {
       if (dirty) await updateCopyListingTarget(job.id, t.id, draft);
-      setDraft({});
       const r = await applyCopyListingTargetToBatch(batch.id, t.id);
       await invalidate(qk.copyListingBatch(batch.id));
+      setDraft({});
       toast.success(`Đã áp danh mục, thuộc tính, cân nặng… cho ${r.applied} sản phẩm còn lại trên ${t.channel.shopName}.`);
     } catch (err) {
       toast.error(errorText(err));
@@ -887,7 +984,7 @@ function TargetEditor({
 
   const missing = new Set(t.missing);
   const field = (label: string, code: string, node: React.ReactNode) => (
-    <div className="space-y-1">
+    <div key={code} className="space-y-1">
       <div className={cn(TEXT_TABLE_HEAD, missing.has(code) && "text-amber-700")}>
         {label}
         {missing.has(code) && " · còn thiếu"}
@@ -899,24 +996,24 @@ function TargetEditor({
 
   return (
     <div className="space-y-4 px-5 py-4 pl-10">
+      <div className="space-y-1">
+        <div className={cn(TEXT_TABLE_HEAD, missing.has("category") && "text-amber-700")}>
+          Danh mục trên {CHANNEL_META[t.channel.channelName].label}
+          {missing.has("category") && " · còn thiếu"}
+          {t.categoryConfidence != null && draft.categoryId === undefined && (
+            <span className="ml-2 font-normal normal-case text-slate-500">Hubsell gợi ý · độ khớp {Math.round(t.categoryConfidence * 100)}%</span>
+          )}
+        </div>
+        <CategoryCascade
+          jobId={job.id}
+          targetId={t.id}
+          value={value("categoryId") ?? null}
+          disabled={!canEdit}
+          invalid={missing.has("category")}
+          onChange={(id) => setDraft((d) => ({ ...d, categoryId: id }))}
+        />
+      </div>
       <div className="grid gap-4 md:grid-cols-3">
-        {field(
-          "Danh mục",
-          "category",
-          <NativeSelect
-            className={inputCls("category")}
-            value={String(value("categoryId") ?? "")}
-            disabled={!canEdit}
-            onChange={(e) => setDraft((d) => ({ ...d, categoryId: e.target.value || null }))}
-          >
-            <option value="">— Chọn danh mục —</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.path.join(" > ")}
-              </option>
-            ))}
-          </NativeSelect>
-        )}
         {(req?.brandRequired || t.brandId) &&
           field(
             "Thương hiệu",
@@ -1028,29 +1125,42 @@ function TargetEditor({
           )
         )}
       </div>
-      {t.logisticOptions.length > 0 && (
+      {logisticEnabled.length > 0 && (
         <div className="space-y-1">
-          <div className={cn(TEXT_TABLE_HEAD, missing.has("logistics") && "text-amber-700")}>Kênh vận chuyển</div>
-          <div className="flex flex-wrap gap-3">
-            {t.logisticOptions.map((o) => (
-              <label key={o.id} className={cn("flex items-center gap-1.5 text-sm", !o.enabled && "text-slate-400")}>
-                <input
-                  type="checkbox"
-                  className="size-4 accent-slate-900"
-                  disabled={!canEdit || !o.enabled}
-                  checked={logistics.includes(o.id)}
-                  onChange={(e) =>
-                    setDraft((d) => ({
-                      ...d,
-                      logisticIds: e.target.checked ? [...logistics, o.id] : logistics.filter((x) => x !== o.id),
-                    }))
-                  }
-                />
-                {o.name}
-                {!o.enabled && " (chưa bật trên sàn)"}
-              </label>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn(TEXT_TABLE_HEAD, missing.has("logistics") && "text-amber-700")}>Kênh vận chuyển</span>
+            <span className={cn(TEXT_SUB, "tabular-nums")}>
+              {logisticsOn === logisticEnabled.length
+                ? `theo cài đặt gian — ${logisticEnabled.length} kênh đang bật trên sàn`
+                : `${logisticsOn}/${logisticEnabled.length} kênh đang bật trên sàn`}
+            </span>
+            {canEdit && (
+              <Button size="xs" variant="ghost" onClick={() => setLogisticsOpen((v) => !v)}>
+                {logisticsOpen || missing.has("logistics") ? "Thu gọn" : "Tuỳ chỉnh"}
+              </Button>
+            )}
           </div>
+          {(logisticsOpen || missing.has("logistics")) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1">
+              {logisticEnabled.map((o) => (
+                <label key={o.id} className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-slate-900"
+                    disabled={!canEdit}
+                    checked={logistics.includes(o.id)}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        logisticIds: e.target.checked ? [...logistics, o.id] : logistics.filter((x) => x !== o.id),
+                      }))
+                    }
+                  />
+                  {o.name}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1072,6 +1182,119 @@ function TargetEditor({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Chọn danh mục xổ cha → con theo cây của CHÍNH sàn đích (mỗi sàn một cây khác
+ * nhau). Mỗi cấp một ô; chọn tới lá mới tính là xong (onChange(id)), chọn nút
+ * giữa chừng → onChange(null) để ô báo "còn thiếu".
+ */
+function CategoryCascade({
+  jobId,
+  targetId,
+  value,
+  disabled,
+  invalid,
+  onChange,
+}: {
+  jobId: string;
+  targetId: string;
+  value: string | null;
+  disabled: boolean;
+  invalid: boolean;
+  onChange: (id: string | null) => void;
+}) {
+  const [levels, setLevels] = useState<CopyListingCategoryNode[][]>([]);
+  const [path, setPath] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  /** Giá trị đã nạp lần cuối — đổi từ ngoài (lưu xong, "Áp cho sản phẩm còn lại") thì nạp lại. */
+  const [loadedFor, setLoadedFor] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (loadedFor !== undefined && (value === loadedFor || path[path.length - 1] === value)) return;
+    let alive = true;
+    setLoading(true);
+    fetchCopyListingCategoryTree(jobId, targetId, { selectedId: value })
+      .then((r) => {
+        if (!alive) return;
+        setLevels(r.levels);
+        setPath(r.path);
+        setLoadedFor(value);
+        setError(null);
+      })
+      .catch((err) => alive && setError(errorText(err)))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+      // Lượt nạp bị huỷ giữa chừng (giá trị đổi tiếp) thì không được kẹt "đang tải".
+      setLoading(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, targetId, value]);
+
+  async function pick(level: number, id: string) {
+    const node = levels[level]?.find((n) => n.id === id);
+    const nextPath = [...path.slice(0, level), ...(id ? [id] : [])];
+    const nextLevels = levels.slice(0, level + 1);
+    setPath(nextPath);
+    setLevels(nextLevels);
+    // Ghi loadedFor TRƯỚC khi báo lên cha: giá trị mới (lá hoặc null khi chọn dở)
+    // khớp loadedFor nên effect không nạp lại và không xoá các ô đang chọn.
+    setLoadedFor(node?.leaf ? id : null);
+    if (!node) {
+      onChange(null);
+      return;
+    }
+    if (node.leaf) {
+      onChange(id);
+      return;
+    }
+    onChange(null);
+    try {
+      const r = await fetchCopyListingCategoryTree(jobId, targetId, { parentId: id });
+      setLevels([...nextLevels, r.levels[0] ?? []]);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  const names = path.map((id, i) => levels[i]?.find((n) => n.id === id)?.name ?? id);
+  const done = path.length > 0 && levels[path.length - 1]?.find((n) => n.id === path[path.length - 1])?.leaf;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-2">
+        {levels.map((nodes, i) => (
+          <NativeSelect
+            key={i}
+            className={cn("w-56", invalid && !done && "[&>select]:border-amber-300 [&>select]:bg-amber-50/40")}
+            aria-label={`Danh mục cấp ${i + 1}`}
+            value={path[i] ?? ""}
+            disabled={disabled || loading}
+            onChange={(e) => void pick(i, e.target.value)}
+          >
+            <option value="">— Cấp {i + 1} —</option>
+            {nodes.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name}
+                {n.leaf ? "" : " ›"}
+              </option>
+            ))}
+          </NativeSelect>
+        ))}
+        {loading && levels.length === 0 && <span className={TEXT_SUB}>Đang tải cây danh mục…</span>}
+      </div>
+      {error ? (
+        <div className="text-sm text-red-600">{error}</div>
+      ) : names.length > 0 ? (
+        <div className={TEXT_SUB}>
+          {names.join(" › ")}
+          {!done && " · chọn tiếp tới cấp cuối"}
+        </div>
+      ) : null}
     </div>
   );
 }

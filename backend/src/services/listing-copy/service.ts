@@ -449,9 +449,20 @@ export async function updateTarget(ownerId: string, jobId: string, targetId: str
     categoryConfidence = null;
     categoryName = null;
     if (categoryId) {
-      const node = (await adapter.searchCategories(channel, "")).find((n) => n.id === categoryId);
+      // Kiểm trên TOÀN BỘ cây (searchCategories cắt 300 lá — sàn thật có hàng nghìn).
+      const all = await adapter.getCategoryTree(channel);
+      const byId = new Map(all.map((n) => [n.id, n]));
+      const node = byId.get(categoryId);
       if (!node) throw new ListingCopyError("Danh mục không hợp lệ với sàn này.");
-      categoryName = node.path.join(" > ");
+      if (!node.leaf) throw new ListingCopyError("Phải chọn tới danh mục cấp cuối (lá).");
+      const path: string[] = [];
+      let cur: (typeof node) | undefined = node;
+      let guard = 0;
+      while (cur && guard++ < 10) {
+        path.unshift(cur.name);
+        cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+      }
+      categoryName = path.join(" > ");
       // Đổi danh mục = bộ thuộc tính khác → giữ lại giá trị trùng id, bỏ phần còn lại.
       const req = await adapter.getCategoryRequirements(channel, categoryId);
       const keep: Record<string, string> = {};

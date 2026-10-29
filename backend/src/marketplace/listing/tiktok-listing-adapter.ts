@@ -20,6 +20,7 @@ import type {
   CategoryNode,
   CategoryRequirements,
   CategorySuggestion,
+  CategoryTreeNode,
   CreateListingResult,
   ListingAdapter,
   ListingDraft,
@@ -131,6 +132,17 @@ export const tiktokListingAdapter: ListingAdapter = {
         return { id: c.id, name: c.local_name ?? c.id, path, leaf: true };
       });
     return (q ? nodes.filter((n) => normalizeText(n.path.join(" ")).includes(q)) : nodes).slice(0, 300);
+  },
+
+  async getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]> {
+    const ctx = await ctxOf(channel);
+    const all = await api.getCategories(ctx);
+    return all.map((c) => ({
+      id: c.id,
+      name: c.local_name ?? c.id,
+      parentId: c.parent_id && c.parent_id !== "0" ? c.parent_id : null,
+      leaf: Boolean(c.is_leaf),
+    }));
   },
 
   async getCategoryRequirements(channel: Channel, categoryId: string): Promise<CategoryRequirements | null> {
