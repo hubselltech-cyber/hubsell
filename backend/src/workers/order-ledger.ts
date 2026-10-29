@@ -16,6 +16,7 @@
 // dùng sổ sẽ tự tính nốt phần bẩn của kỳ mình cần qua ensureLedgerFresh).
 // ============================================================
 
+import { backfillShopeeEscrowColumns } from "../services/shopee-escrow-columns-backfill";
 import {
   auditLedger,
   drainLedgerOnce,
@@ -99,6 +100,9 @@ async function runStartupMaintenance(): Promise<void> {
     const created = await ensureLedgerPartitions(3);
     if (created > 0) console.log(`[Ledger] Tạo ${created} phân mảnh tháng mới`);
     await sweepFormulaVersion();
+    // Lát 4 (29/10/2026): đơn Shopee cũ chép 3 cột trên giỏ từ snapshot escrow —
+    // idempotent, chạy nền theo ngày; hết dòng thì chỉ tốn ~150 câu UPDATE rỗng.
+    await backfillShopeeEscrowColumns();
   } catch (err) {
     console.error("[Ledger] Lỗi bảo trì lúc khởi động:", (err as Error).message);
   }
