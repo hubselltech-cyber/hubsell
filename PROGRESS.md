@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 29/10/2026 (chiều muộn) — SAO CHÉP SẢN PHẨM: GÓP Ý LẦN 2 TRÊN GIAN THẬT (phẳng, nút mờ, mở rộng bài đăng, ảnh) — ĐÃ SỬA, PUSH
+
+- **Anh thử gian thật ANO → DarkMan + and.not.or, 4 ý:** giao diện phẳng khó nhìn khi 1 SP đi nhiều gian, nút sổ xuống mờ; ghi hẳn "Sửa bài đăng"; mở rộng thông tin bài đăng cho dễ sửa; ảnh kèm bài + ảnh trong mô tả có lấy được không.
+- **Đã sửa (docs mục 12):** dòng SP = dải slate-100 semibold; dòng đang mở = vạch trái `border-l-primary` + nền xám, khung sửa = thẻ trắng nổi; nút chữ `Sửa bài đăng`/`Bổ sung` (đặc khi còn thiếu)/`Sửa`/`Xem`/`Thu gọn`, cột nút 12%; khung Sửa bài đăng 2 cột: lưới ảnh (nhãn Bìa) + tên/mô tả có đếm ký tự theo trần sàn đích + bảng phân loại SKU/giá/tồn + chip thuộc tính nguồn.
+- **Ảnh:** ảnh kèm bài ĐÃ chép (tải về → upload gian đích); ảnh chèn trong mô tả + video CHƯA — đọc được (Shopee extended_description, TikTok/Lazada `<img>`), chiều ghi cần upload lại từng sàn → lát riêng nếu anh chốt.
+- Kiểm local gian giả lập, không tràn ngang; tsc + eslint sạch. Chưa kiểm gian thật.
+
+---
 ## Phiên 29/10/2026 (chiều) — SAO CHÉP SẢN PHẨM: 4 GÓP Ý CỦA ANH SAU THỬ PROD LẦN 1 — ĐÃ SỬA, PUSH
 
 - **Anh gửi 2 ảnh + 4 ý:** lọc sàn → shop (người nhiều shop); giao diện nuốt chữ; danh mục dồn một ô, muốn xổ cha → con theo từng sàn; kênh vận chuyển "sàn phân chứ không tới lượt shop".

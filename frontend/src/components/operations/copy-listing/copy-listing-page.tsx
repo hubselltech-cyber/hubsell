@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { ArrowLeft, Check, ChevronUp, Pencil, Search } from "lucide-react";
 
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,16 @@ type Tab = "new" | "history";
 type SourceType = "CHANNEL" | "PRODUCT";
 
 const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
+
+/**
+ * Phân tầng vùng đang làm việc trong bảng đợt (anh góp ý "giao diện phẳng, khó nhìn khi
+ * một sản phẩm đi nhiều gian"): dòng đang mở + khung sửa cùng nhận vạch trái accent
+ * (`border-l-primary` → tự theo 3 theme) trên nền slate-100; khung sửa là thẻ trắng
+ * nổi bên trong để tách khỏi các dòng gian không làm.
+ */
+const ROW_ACTIVE = "border-l-[3px] border-l-primary bg-slate-100/80 hover:bg-slate-100/80";
+const PANEL_CELL = "p-3 pl-9";
+const PANEL = "rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm";
 
 function ChannelChip({ channelName, className }: { channelName: ChannelName; className?: string }) {
   const meta = CHANNEL_META[channelName];
@@ -662,12 +672,12 @@ function BatchView({ batchId, onBack }: { batchId: string; onBack: () => void })
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[22%]">Sản phẩm · Gian hàng</TableHead>
-                <TableHead className="w-[24%]">Danh mục sàn đích</TableHead>
-                <TableHead className="w-[26%]">Còn thiếu</TableHead>
-                <TableHead className="w-[12%] text-right">Giá · Tồn</TableHead>
+                <TableHead className="w-[20%]">Sản phẩm · Gian hàng</TableHead>
+                <TableHead className="w-[21%]">Danh mục sàn đích</TableHead>
+                <TableHead className="w-[25%]">Còn thiếu</TableHead>
+                <TableHead className="w-[11%] text-right">Giá · Tồn</TableHead>
                 <TableHead className="w-[11%]">Trạng thái</TableHead>
-                <TableHead className="w-[5%]" />
+                <TableHead className="w-[12%]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -704,14 +714,16 @@ function JobRows({
   const running = job.targets.some((t) => t.status === "QUEUED" || t.status === "RUNNING");
   const editable = !running && job.targets.some(isOpen);
   const s = job.source;
+  const sourceOpen = expanded === sourceKey;
   return (
     <>
-      <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+      {/* Dòng sản phẩm = dải tiêu đề đậm hơn các dòng gian; đang sửa bài → vạch trái accent. */}
+      <TableRow className={cn("border-t-2 border-t-slate-200 bg-slate-100/70 hover:bg-slate-100/70", sourceOpen && ROW_ACTIVE)}>
         <TableCell colSpan={5}>
           <div className="flex items-center gap-3">
             <Thumb src={job.sourceImageUrl} alt={job.sourceTitle} size="size-9" />
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-slate-900">{s.title}</div>
+              <div className="truncate text-sm font-semibold text-slate-900">{s.title}</div>
               <div className={cn(TEXT_SUB, "flex flex-wrap items-center gap-x-2")}>
                 {job.sourceChannel ? (
                   <span>
@@ -733,20 +745,25 @@ function JobRows({
           </div>
         </TableCell>
         <TableCell className="text-right">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={expanded === sourceKey ? "Thu gọn" : "Sửa tên và mô tả"}
-            onClick={() => onToggle(sourceKey)}
-          >
-            {expanded === sourceKey ? <ChevronUp /> : <ChevronDown />}
+          <Button variant={sourceOpen ? "secondary" : "outline"} size="sm" className="whitespace-nowrap" onClick={() => onToggle(sourceKey)}>
+            {sourceOpen ? (
+              <>
+                <ChevronUp data-icon="inline-start" /> Thu gọn
+              </>
+            ) : (
+              <>
+                <Pencil data-icon="inline-start" /> {editable ? "Sửa bài đăng" : "Xem bài đăng"}
+              </>
+            )}
           </Button>
         </TableCell>
       </TableRow>
-      {expanded === sourceKey && (
-        <TableRow>
-          <TableCell colSpan={6} className="bg-slate-50/40 p-0">
-            <SourceEditor job={job} batchId={batch.id} editable={editable} />
+      {sourceOpen && (
+        <TableRow className={cn("hover:bg-transparent", ROW_ACTIVE)}>
+          <TableCell colSpan={6} className={PANEL_CELL}>
+            <div className={PANEL}>
+              <SourceEditor job={job} batchId={batch.id} editable={editable} />
+            </div>
           </TableCell>
         </TableRow>
       )}
@@ -764,12 +781,26 @@ function JobRows({
   );
 }
 
+/**
+ * Khung "Sửa bài đăng": ảnh (bìa + phụ) bên trái · tên + mô tả rộng bên phải · bảng phân loại
+ * bên dưới — xem tổng quát cả bài một lần rồi sửa. Giới hạn tên/mô tả gom từ luật các sàn đích.
+ */
 function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId: string; editable: boolean }) {
   const invalidate = useInvalidate();
   const [title, setTitle] = useState(job.source.title);
   const [description, setDescription] = useState(job.source.description);
   const [saving, setSaving] = useState(false);
   const dirty = title !== job.source.title || description !== job.source.description;
+  const s = job.source;
+  const reqs = job.targets.map((t) => t.requirements).filter((r): r is NonNullable<typeof r> => r != null);
+  const titleMin = reqs.length ? Math.max(...reqs.map((r) => r.titleMin)) : null;
+  const titleMax = reqs.length ? Math.min(...reqs.map((r) => r.titleMax)) : null;
+  const descMax = reqs.length ? Math.min(...reqs.map((r) => r.descriptionMax)) : null;
+  const maxImages = reqs.length ? Math.min(...reqs.map((r) => r.maxImages)) : null;
+  const titleLen = title.trim().length;
+  const descLen = description.trim().length;
+  const titleBad = (titleMin != null && titleLen < titleMin) || (titleMax != null && titleLen > titleMax);
+  const descBad = descMax != null && descLen > descMax;
 
   async function save() {
     setSaving(true);
@@ -785,25 +816,140 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
   }
 
   return (
-    <div className="grid gap-3 px-5 py-4 md:grid-cols-[1fr_1fr_auto]">
-      <div className="space-y-1">
-        <div className={TEXT_TABLE_HEAD}>Tên sản phẩm ({title.trim().length} ký tự)</div>
-        <Input value={title} disabled={!editable} onChange={(e) => setTitle(e.target.value)} />
+    <div className="space-y-4">
+      <div className="grid gap-5 md:grid-cols-[14rem_1fr]">
+        {/* Ảnh bài đăng: ảnh đầu = bìa, các ảnh sau = ảnh phụ (lấy nguyên từ nguồn). */}
+        <div className="space-y-2">
+          <div className={TEXT_TABLE_HEAD}>
+            Ảnh ({s.images.length}
+            {maxImages != null && s.images.length > maxImages ? ` · sàn nhận ${maxImages} ảnh đầu` : ""})
+          </div>
+          {s.images.length === 0 ? (
+            <p className="text-sm text-amber-700">Chưa có ảnh — sàn sẽ từ chối.</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {s.images.slice(0, 9).map((url, i) => (
+                <div key={url + i} className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt={`Ảnh ${i + 1}`} className="size-full object-cover" loading="lazy" />
+                  {i === 0 && (
+                    <span className="absolute bottom-1 left-1 rounded bg-slate-900/80 px-1 text-[10px] font-medium text-white">Bìa</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {s.images.length > 9 && <div className={TEXT_SUB}>+{s.images.length - 9} ảnh nữa</div>}
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-x-2")}>
+              <span>Tên sản phẩm</span>
+              <span className={cn("font-normal tabular-nums", titleBad ? "text-amber-700" : "text-slate-500")}>
+                {titleLen} ký tự{titleMin != null && titleMax != null ? ` · sàn đích nhận ${titleMin}–${titleMax}` : ""}
+              </span>
+            </div>
+            <Input
+              className={cn(titleBad && "border-amber-300 bg-amber-50/40")}
+              value={title}
+              disabled={!editable}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-x-2")}>
+              <span>Mô tả</span>
+              <span className={cn("font-normal tabular-nums", descBad ? "text-amber-700" : "text-slate-500")}>
+                {formatNumber(descLen)} ký tự{descMax != null ? ` · tối đa ${formatNumber(descMax)}` : ""}
+              </span>
+            </div>
+            <textarea
+              className={cn(
+                "min-h-9 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm leading-6 shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50",
+                descBad && "border-amber-300 bg-amber-50/40"
+              )}
+              rows={Math.min(14, Math.max(6, description.split("\n").length + 1))}
+              value={description}
+              disabled={!editable}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <p className={TEXT_SUB}>
+              Ảnh chèn trong mô tả và video chưa chép theo — bổ sung trên sàn sau khi đăng. Shopee nhận chữ thuần; TikTok, Lazada
+              giữ xuống dòng.
+            </p>
+          </div>
+        </div>
       </div>
+
+      {/* Phân loại: xem nhanh SKU / giá / tồn nguồn — giá thực đăng từng gian chỉnh ở dòng gian. */}
       <div className="space-y-1">
-        <div className={TEXT_TABLE_HEAD}>Mô tả ({description.trim().length} ký tự)</div>
-        <textarea
-          className="min-h-9 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
-          rows={2}
-          value={description}
-          disabled={!editable}
-          onChange={(e) => setDescription(e.target.value)}
-        />
+        <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-x-2")}>
+          <span>Phân loại ({s.variants.length})</span>
+          {s.options.length > 0 && (
+            <span className="font-normal text-slate-500">{s.options.map((o) => `${o.name}: ${o.values.join(" / ")}`).join(" · ")}</span>
+          )}
+        </div>
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[40%]">Phân loại</TableHead>
+                <TableHead className="w-[28%]">Mã SKU</TableHead>
+                <TableHead className="w-[16%] text-right">Giá nguồn</TableHead>
+                <TableHead className="w-[16%] text-right">Tồn nguồn</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {s.variants.slice(0, 12).map((v, i) => (
+                <TableRow key={`${v.sku}-${i}`}>
+                  <TableCell className="text-sm text-slate-900">{v.name ?? "Sản phẩm đơn"}</TableCell>
+                  <TableCell>
+                    {v.sku ? (
+                      <span className="inline-flex items-center gap-1 font-mono text-sm">
+                        {v.sku}
+                        <CopyIconButton value={v.sku} what="mã SKU" />
+                      </span>
+                    ) : (
+                      <span className="text-sm text-amber-700">Thiếu SKU</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    <Money value={v.price} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatNumber(v.stock)}</TableCell>
+                </TableRow>
+              ))}
+              {s.variants.length > 12 && (
+                <TableRow>
+                  <TableCell colSpan={4} className={cn(TEXT_SUB, "py-2 text-center")}>
+                    +{s.variants.length - 12} phân loại nữa
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
-      <div className="flex items-end">
+
+      {s.attributes.length > 0 && (
+        <div className="space-y-1">
+          <div className={TEXT_TABLE_HEAD}>Thuộc tính nguồn (điền sẵn sang gian đích khi trùng tên)</div>
+          <div className="flex flex-wrap gap-1.5">
+            {s.attributes.map((a) => (
+              <span key={a.name} className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-900">
+                <span className="text-slate-500">{a.name}:</span> {a.value}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <span className={TEXT_SUB}>Tên và mô tả sửa ở đây áp cho MỌI gian đích của sản phẩm này.</span>
         {editable && (
           <Button size="sm" disabled={!dirty || saving} onClick={save}>
-            {saving ? "Đang lưu…" : "Lưu tên & mô tả"}
+            {saving ? "Đang lưu…" : "Lưu bài đăng"}
           </Button>
         )}
       </div>
@@ -832,11 +978,11 @@ function TargetRows({
 
   return (
     <>
-      <TableRow className={cn(expanded && "bg-slate-50/60")}>
+      <TableRow className={cn(expanded && ROW_ACTIVE)}>
         <TableCell>
           <div className="flex items-center gap-2 pl-6">
             <ChannelChip channelName={t.channel.channelName} />
-            <span className="truncate text-sm text-slate-900">{t.channel.shopName}</span>
+            <span className={cn("truncate text-sm text-slate-900", expanded && "font-medium")}>{t.channel.shopName}</span>
           </div>
         </TableCell>
         <TableCell>
@@ -885,22 +1031,38 @@ function TargetRows({
           {t.remoteItemId && <div className={cn(TEXT_SUB, "mt-1 font-mono")}>{t.remoteItemId}</div>}
         </TableCell>
         <TableCell className="text-right">
-          <Button variant="ghost" size="icon" aria-label={expanded ? "Thu gọn" : "Mở"} onClick={onToggle}>
-            {expanded ? <ChevronUp /> : <ChevronDown />}
+          {/* Nút chữ rõ: thiếu thông tin → nút đặc "Bổ sung"; đủ → "Sửa"; đã đăng → "Xem". */}
+          <Button
+            variant={expanded ? "secondary" : canEdit && t.missing.length > 0 ? "default" : "outline"}
+            size="sm"
+            className="whitespace-nowrap"
+            onClick={onToggle}
+          >
+            {expanded ? (
+              <>
+                <ChevronUp data-icon="inline-start" /> Thu gọn
+              </>
+            ) : (
+              <>
+                <Pencil data-icon="inline-start" /> {canEdit ? (t.missing.length > 0 ? "Bổ sung" : "Sửa") : "Xem"}
+              </>
+            )}
           </Button>
         </TableCell>
       </TableRow>
       {t.error && (
-        <TableRow>
+        <TableRow className={cn("hover:bg-transparent", expanded && ROW_ACTIVE)}>
           <TableCell colSpan={6} className="bg-rose-50/60 py-2 pl-10 text-sm text-red-500">
             {t.error}
           </TableCell>
         </TableRow>
       )}
       {expanded && (
-        <TableRow>
-          <TableCell colSpan={6} className="bg-slate-50/60 p-0">
-            <TargetEditor batch={batch} job={job} target={t} canEdit={canEdit} />
+        <TableRow className={cn("hover:bg-transparent", ROW_ACTIVE)}>
+          <TableCell colSpan={6} className={PANEL_CELL}>
+            <div className={PANEL}>
+              <TargetEditor batch={batch} job={job} target={t} canEdit={canEdit} />
+            </div>
           </TableCell>
         </TableRow>
       )}
@@ -995,7 +1157,7 @@ function TargetEditor({
   const inputCls = (code: string) => cn(missing.has(code) && "border-amber-300 bg-amber-50/40");
 
   return (
-    <div className="space-y-4 px-5 py-4 pl-10">
+    <div className="space-y-4">
       <div className="space-y-1">
         <div className={cn(TEXT_TABLE_HEAD, missing.has("category") && "text-amber-700")}>
           Danh mục trên {CHANNEL_META[t.channel.channelName].label}

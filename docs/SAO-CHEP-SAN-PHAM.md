@@ -197,3 +197,31 @@ chuyển "hình như sàn phân chứ không tới lượt shop chọn".
   (`attrValueName`). Tên thuộc tính tiếng Anh dù đã gửi `language=vi` — Shopee tự quyết, chưa xử lý.
 - Kiểm local (gian giả lập): cascade điền sẵn 3 cấp, đổi Túi ví › Túi xách › Túi tote → lưu → dòng hiện đường dẫn mới;
   Shopee hiện "3 kênh đang bật · Tuỳ chỉnh"; Lazada/TikTok không có mục vận chuyển; tsc + eslint + vitest (12 ca) sạch.
+
+## 12. Góp ý lần 2 của anh trên prod (29/10/2026 chiều muộn, gian thật ANO → DarkMan + and.not.or) — ĐÃ SỬA
+
+4 ý: (1) giao diện phẳng, vùng đang làm đồng màu với các gian không làm, nút sổ xuống mờ; (2) ghi hẳn "Sửa bài
+đăng"; (3) mở rộng thông tin bài đăng mà vẫn đẹp, nhìn tổng quát để sửa; (4) ảnh kèm bài + ảnh chèn trong mô tả có
+lấy được không.
+
+- **(1) Phân tầng bảng đợt.** Dòng sản phẩm = dải `slate-100` + viền trên 2px + tên semibold (tách từng sản phẩm);
+  dòng gian trắng; dòng ĐANG mở (gian hoặc bài đăng) nhận `ROW_ACTIVE` = vạch trái 3px `border-l-primary` (theo 3
+  theme accent) + nền slate-100; khung sửa là THẺ TRẮNG nổi (`PANEL`: bo 12px, viền, bóng nhẹ) đặt trong ô nền xám
+  → vùng làm việc tách hẳn các dòng còn lại. Dòng lỗi đỏ cũng nhận vạch khi đang mở.
+- **(2) Nút chữ thay mũi tên.** Dòng sản phẩm: `Sửa bài đăng` (hết sửa được → `Xem bài đăng`), mở → `Thu gọn`.
+  Dòng gian: còn thiếu → nút ĐẶC `Bổ sung` (bắt mắt, đúng việc cần làm); đủ → `Sửa`; đã đăng → `Xem`. Cột nút nới
+  5% → 12% (bảng `table-fixed` từng tràn ngang khi đổi sang nút chữ).
+- **(3) Khung "Sửa bài đăng" mở rộng.** 2 cột: trái lưới ảnh 3×3 (ảnh đầu gắn nhãn "Bìa", báo "sàn nhận n ảnh đầu"
+  khi vượt trần thấp nhất của các gian đích); phải tên (đếm ký tự + khoảng cho phép = max(titleMin)–min(titleMax) của
+  các sàn đích, lệch thì tô vàng) + mô tả cao 6–14 dòng kéo được (đếm ký tự + trần). Dưới: bảng phân loại (tên · mã
+  SKU + copy · giá nguồn · tồn nguồn, trần 12 dòng, thiếu SKU tô vàng) + chip thuộc tính nguồn. Nút `Lưu bài đăng`.
+- **(4) Ảnh — trả lời theo API:** ảnh KÈM BÀI (ảnh bìa + ảnh phụ, Shopee ≤9/TikTok ≤9/Lazada ≤8) ĐÃ chép: đọc
+  `image_url_list`/`main_images`/`images` của nguồn, tải về, upload lại lên gian đích. Ảnh CHÈN TRONG MÔ TẢ chưa:
+  Shopee để ở `description_info.extended_description.field_list` (type image, image_id/image_url), TikTok/Lazada là
+  thẻ `<img>` trong HTML mô tả; chiều đọc lấy được, chiều ghi phải upload lại ảnh lên gian đích rồi ghép vào mô tả
+  (Shopee `description_type: extended` + `field_list`, TikTok upload `use_case DESCRIPTION_IMAGE` rồi `<img src>`,
+  Lazada `image/migrate` rồi `<img src>`). Video không chép (3 sàn đều phải upload riêng). → Lát tiếp theo nếu anh
+  chốt; khung Sửa bài đăng đã ghi chú "Ảnh chèn trong mô tả và video chưa chép theo".
+- Kiểm local gian giả lập: đợt Váy hoa nhí → mở Sửa bài đăng (ảnh, tên 20 ký tự · sàn nhận 25–255 tô vàng, mô tả,
+  bảng phân loại), mở Bổ sung gian Lazada (vạch trái + thẻ trắng), không tràn ngang (bảng 1284/1285 px); tsc + eslint
+  sạch.
