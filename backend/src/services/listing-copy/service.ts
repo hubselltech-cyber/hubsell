@@ -463,7 +463,11 @@ export async function updateTarget(ownerId: string, jobId: string, targetId: str
   const brandId = patch.brandId !== undefined ? patch.brandId : t.brandId;
   let brandName = patch.brandName !== undefined ? patch.brandName : t.brandName;
   if (patch.brandId !== undefined && patch.brandName === undefined) {
-    brandName = brandId ? ((await adapter.searchBrands(channel, categoryId, "")).find((b) => b.id === brandId)?.name ?? null) : null;
+    brandName = brandId
+      ? adapter.getBrandName
+        ? await adapter.getBrandName(channel, categoryId, brandId)
+        : ((await adapter.searchBrands(channel, categoryId, "")).find((b) => b.id === brandId)?.name ?? null)
+      : null;
   }
   const logisticIds = patch.logisticIds ?? asStringArray(t.logisticIds);
   const weightGrams = patch.weightGrams !== undefined ? patch.weightGrams : t.weightGrams;

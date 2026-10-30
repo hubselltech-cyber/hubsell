@@ -12,6 +12,7 @@ import type { Channel } from "@prisma/client";
 import * as api from "../../integrations/lazada/listing-api";
 import { getValidLazadaAccessToken } from "../../integrations/lazada/service";
 import { viAttributeName } from "./attribute-names-vi";
+import { rankBrands } from "./brand-search";
 import { MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
@@ -137,9 +138,7 @@ export const lazadaListingAdapter: ListingAdapter = {
   async searchBrands(channel: Channel, categoryId: string | null, query: string): Promise<Brand[]> {
     const token = await getValidLazadaAccessToken(channel);
     const list = await api.queryBrands(token, { categoryId, name: query || undefined });
-    const q = normalizeText(query);
-    const filtered = q ? list.filter((b) => normalizeText(b.name).includes(q)) : list;
-    return [{ id: "No Brand", name: "No Brand" }, ...filtered.filter((b) => b.name !== "No Brand")].slice(0, 200);
+    return [{ id: "No Brand", name: "No Brand" }, ...rankBrands(list.filter((b) => b.name !== "No Brand"), query, 199)];
   },
 
   async createListing(channel: Channel, draft: ListingDraft): Promise<CreateListingResult> {

@@ -8,6 +8,7 @@
 // ============================================================
 
 import { TtlCache } from "../../lib/image-fetch";
+import { collectBrandPages } from "../../marketplace/listing/brand-search";
 import { platformFetch } from "../../lib/platform-http";
 import {
   callShopGet,
@@ -138,27 +139,45 @@ interface BrandData extends ShopeeEnvelope {
   response?: { brand_list?: ShopeeBrand[]; has_next_page?: boolean; next_offset?: number; is_mandatory?: boolean };
 }
 
+const BRAND_PAGE_SIZE = 100;
+/** Danh sách thương hiệu theo danh mục — đệm 6 giờ, khóa theo danh mục (status 1 = hãng chung toàn sàn, không theo shop). */
+const brandCache = new TtlCache<{ brands: ShopeeBrand[]; mandatory: boolean }>(6 * 60 * 60 * 1000);
+
+/**
+ * get_brand_list KHÔNG tìm theo tên, chỉ lật trang 100 dòng A→Z. Trước 30/10/2026 chỉ
+ * đọc trang đầu → gõ "B" chỉ còn hãng dòng A chứa chữ b (khách Bunchar báo). Giờ lật
+ * HẾT trang (trần MAX_BRAND_PAGES) rồi đệm theo danh mục; gọi trùng khi đang lật dùng
+ * chung một promise (TtlCache giữ promise).
+ */
 export async function getBrands(
   accessToken: string,
   shopId: string,
   categoryId: number,
   cfg = getShopeeConfig()
 ): Promise<{ brands: ShopeeBrand[]; mandatory: boolean }> {
-  const d = await callShopGet<BrandData>(
-    P.brandList,
-    accessToken,
-    shopId,
-    [
-      ["category_id", categoryId],
-      ["offset", 0],
-      ["page_size", 100],
-      ["status", 1],
-      ["language", "vi"],
-    ],
-    "get_brand_list",
-    cfg
-  );
-  return { brands: d.response?.brand_list ?? [], mandatory: Boolean(d.response?.is_mandatory) };
+  return brandCache.get(`shopee:brands:${categoryId}`, async () => {
+    let mandatory = false;
+    const { items, truncated, pages } = await collectBrandPages(async (offset) => {
+      const d = await callShopGet<BrandData>(
+        P.brandList,
+        accessToken,
+        shopId,
+        [
+          ["category_id", categoryId],
+          ["offset", offset],
+          ["page_size", BRAND_PAGE_SIZE],
+          ["status", 1],
+          ["language", "vi"],
+        ],
+        "get_brand_list",
+        cfg
+      );
+      if (offset === 0) mandatory = Boolean(d.response?.is_mandatory);
+      return { items: d.response?.brand_list ?? [], hasNext: Boolean(d.response?.has_next_page), nextOffset: d.response?.next_offset };
+    }, BRAND_PAGE_SIZE);
+    if (truncated) console.warn(`[listing-copy] Shopee get_brand_list danh mục ${categoryId} quá ${pages} trang — cắt ở ${items.length} thương hiệu`);
+    return { brands: items, mandatory };
+  });
 }
 
 export interface ShopeeLogisticsChannel {

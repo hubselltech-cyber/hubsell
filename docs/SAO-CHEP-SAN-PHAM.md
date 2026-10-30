@@ -395,7 +395,7 @@ Anh: *"(1) ô thương hiệu không tìm kiếm được, không có thanh cu�
 đăng trên sàn có về ngay không; (6) em làm càng ngày càng ẩu — tỉ lệ kích thước, test giao diện đều không làm."*
 
 - **(1) Thương hiệu → ô tìm kiếm** `copy-listing/brand-combobox.tsx` thay `<select>` gốc: gõ → hỏi `/brands?q=` (TikTok/
-  Lazada tìm phía sàn, Shopee lọc trong 200 đầu), danh sách `max-h-64` cuộn với lớp `.scrollbar-always` (globals.css —
+  Lazada tìm phía sàn, Shopee lọc trong 200 đầu — SAI, thật ra chỉ 1 trang 100 dòng → khách vẫn không tìm được, sửa ở mục 22), danh sách `max-h-64` cuộn với lớp `.scrollbar-always` (globals.css —
   macOS ẩn thanh cuộn overlay nên khách tưởng chỉ có vài dòng), ↑↓ Enter Esc, nút ✕ bỏ chọn; lưu cả `brandName`.
 - **(2a) Mã SKU sửa được** trong Sửa bài đăng: cột Mã SKU thành ô nhập khi còn sửa được (`updateJobSource.variants[].sku`),
   ô trống tô vàng, dòng "n phân loại chưa có mã SKU" + nút **Tự đặt mã cho phân loại thiếu** (chữ cái đầu tên, ≤6 ký tự +
@@ -427,3 +427,37 @@ Anh: *"(1) ô thương hiệu không tìm kiếm được, không có thanh cu�
   khóa unique channelId+channelSku không cho nhiều dòng rỗng).
 - Chưa kiểm trên gian thật (Shopee/TikTok thật khi khách bỏ phân loại + nhập mã): ⏳ khách Bunchar thử lại; nếu Shopee vẫn
   từ chối 50 tổ hợp thì đọc `get_item_limit` của danh mục đó rồi hạ trần theo sàn.
+
+## 22. Khách Bunchar vẫn không tìm được thương hiệu trên macOS: gõ "B" chỉ ra hãng dòng A (30/10/2026 sáng, anh chuyển ảnh) — ĐÃ SỬA, kiểm local
+
+Anh: *"Khách dùng MacOS khi sử dụng phần tìm kiếm thương hiệu vẫn không được."* Ảnh: ô thương hiệu gõ `B` → danh sách
+"Không có thương hiệu, AMBY LONDON, ANASTASIA BEVERLY HILL, ANNABELLE, ANUBIS, AOBERST, AQUALABEL". Khách: *"Gõ B cũng chỉ
+có các hãng dòng A."*
+
+- **Gốc — KHÔNG phải macOS/Safari, là backend:** Shopee `get_brand_list` **không có tham số tìm theo tên**, chỉ lật trang
+  (`offset`/`page_size` ≤100, xếp A→Z). `listing-api.getBrands` chỉ đọc **1 trang đầu** (`offset 0, page_size 100`), adapter
+  lọc "chứa từ khóa" trong 100 dòng đó → với danh mục "Sản phẩm dưỡng tóc" hàng nghìn hãng, 100 dòng đầu toàn chữ A/số;
+  gõ `b` còn đúng các hãng dòng A **chứa chữ b** (AM**B**Y, ANASTASIA **B**EVERLY, ANNA**B**ELLE, ANU**B**IS, AO**B**ERST,
+  AQUALA**B**EL) = y ảnh khách. Mục 21 (1) ghi "Shopee lọc trong 200 đầu" là sai: chỉ 100, và cả 200 cũng vô nghĩa.
+  Cùng gốc: tự khớp thương hiệu nguồn lúc tạo đợt (`service.ts` `searchBrands(listing.brandName)[0]`) và tra tên theo id
+  khi PATCH không kèm `brandName` đều chỉ thấy trang đầu.
+- **Sửa backend (3 việc):**
+  1. `integrations/shopee/listing-api.ts` `getBrands`: lật **hết trang** theo `has_next_page`/`next_offset` (hàm thuần
+     `collectBrandPages` ở `marketplace/listing/brand-search.ts`, trần `MAX_BRAND_PAGES = 100` trang = 10.000 hãng, quá
+     trần → `console.warn [listing-copy]` + trả phần đã có; dừng khi offset không tiến/trang rỗng). Đệm **6 giờ theo
+     danh mục** (`TtlCache` sẵn có, khóa `shopee:brands:<categoryId>` — `status 1` là hãng chung toàn sàn, không theo shop,
+     nên mọi gian Shopee của mọi khách dùng chung một bản; gọi trùng khi đang lật dùng chung promise). `is_mandatory` lấy ở
+     trang đầu. **Số call sàn:** danh mục N hãng = ⌈N/100⌉ call `get_brand_list` một lần / 6 giờ / tiến trình backend
+     (danh mục 3.000 hãng = 30 call, ~5–8 giây lần đầu, mở ô lần sau tức thì); gõ từng phím không gọi sàn thêm.
+     `getCategoryRequirements` (chọn danh mục) gọi cùng hàm → làm ấm đệm trước khi khách mở ô thương hiệu.
+  2. `brand-search.ts` `rankBrands(list, q, limit)`: lọc không dấu/không hoa thường rồi xếp hãng **BẮT ĐẦU bằng** từ khóa
+     trước, hãng chỉ **chứa** sau (gõ `b` → BUNCHAR, Bioderma… rồi mới AMBY); Shopee + Lazada dùng chung (`No Brand` luôn
+     đầu + 199 dòng). TikTok giữ tìm phía sàn.
+  3. `ListingAdapter.getBrandName?(channel, categoryId, id)` (tùy chọn) — Shopee tra trong đủ danh sách đệm; `service.ts`
+     PATCH `brandId` không kèm tên dùng hàm này thay vì `searchBrands("")` bị cắt 200.
+- **Test:** `__tests__/brand-search.test.ts` 8 ca (lật 3 trang theo next_offset, thiếu next_offset tự cộng, chạm trần
+  → truncated, offset kẹt/trang rỗng không lặp, xếp B-trước-A theo ca khách, không dấu `dong a` ↔ `Đông Á`, limit, không
+  khớp) + rules 13 → 21/21; `tsc --noEmit` backend sạch. Frontend `brand-combobox.tsx` không đổi.
+- **Chưa kiểm gian thật** (cần token Shopee thật để lật trang): ⏳ sau deploy, anh hoặc khách Bunchar mở Sửa bài đăng gian
+  Shopee → ô Thương hiệu gõ `bun` phải ra BUNCHAR (nếu Shopee có hãng này) hoặc gõ `b` phải ra hãng dòng B; log Render
+  không có dòng `[listing-copy] Shopee get_brand_list … quá … trang`.

@@ -13,6 +13,7 @@ import type { ShopeeItemBaseInfo, ShopeeModel } from "../../integrations/shopee/
 import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
 import { viAttributeName } from "./attribute-names-vi";
+import { rankBrands } from "./brand-search";
 import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
@@ -53,6 +54,13 @@ function attrDef(a: api.ShopeeAttribute): AttributeDef {
   const validation = a.attribute_info?.input_validation_type ?? a.input_validation_type;
   const type: AttributeDef["type"] = options.length > 0 ? "select" : validation === "INT_TYPE" || validation === "FLOAT_TYPE" ? "number" : "text";
   return { id: String(a.attribute_id), name: viAttributeName(a.display_name ?? a.name ?? String(a.attribute_id)), required: Boolean(a.mandatory), type, options: options.length ? options : undefined };
+}
+
+/** Toàn bộ thương hiệu của danh mục (đệm 6 giờ ở listing-api), đã đổi về dạng chung. */
+async function shopeeBrandList(channel: Channel, categoryId: string): Promise<Brand[]> {
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  const { brands } = await api.getBrands(accessToken, shopId, Number(categoryId));
+  return brands.map((b) => ({ id: String(b.brand_id), name: b.display_brand_name ?? b.original_brand_name ?? String(b.brand_id) }));
 }
 
 export const shopeeListingAdapter: ListingAdapter = {
@@ -171,12 +179,14 @@ export const shopeeListingAdapter: ListingAdapter = {
 
   async searchBrands(channel: Channel, categoryId: string | null, query: string): Promise<Brand[]> {
     if (!categoryId) return [NO_BRAND];
-    const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
-    const { brands } = await api.getBrands(accessToken, shopId, Number(categoryId));
-    const q = normalizeText(query);
-    const list = brands.map((b) => ({ id: String(b.brand_id), name: b.display_brand_name ?? b.original_brand_name ?? String(b.brand_id) }));
-    const filtered = q ? list.filter((b) => normalizeText(b.name).includes(q)) : list;
-    return [NO_BRAND, ...filtered].slice(0, 200);
+    const list = await shopeeBrandList(channel, categoryId);
+    return [NO_BRAND, ...rankBrands(list, query, 199)];
+  },
+
+  async getBrandName(channel: Channel, categoryId: string | null, id: string): Promise<string | null> {
+    if (id === NO_BRAND.id) return NO_BRAND.name;
+    if (!categoryId) return null;
+    return (await shopeeBrandList(channel, categoryId)).find((b) => b.id === id)?.name ?? null;
   },
 
   async createListing(channel: Channel, draft: ListingDraft): Promise<CreateListingResult> {

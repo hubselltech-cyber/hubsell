@@ -164,5 +164,7 @@ export interface ListingAdapter {
   getCategoryRequirements(channel: Channel, categoryId: string): Promise<CategoryRequirements | null>;
   getLogistics(channel: Channel): Promise<LogisticOption[]>;
   searchBrands(channel: Channel, categoryId: string | null, query: string): Promise<Brand[]>;
+  /** Tên thương hiệu theo id (không bị cắt 200 dòng như searchBrands). Không khai → tra trong searchBrands(""). */
+  getBrandName?(channel: Channel, categoryId: string | null, id: string): Promise<string | null>;
   createListing(channel: Channel, draft: ListingDraft): Promise<CreateListingResult>;
 }

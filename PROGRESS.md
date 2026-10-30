@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (trưa) — SAO CHÉP SẢN PHẨM: KHÁCH BUNCHAR GÕ "B" Ô THƯƠNG HIỆU VẪN RA HÃNG DÒNG A (macOS) — GỐC = BACKEND CHỈ ĐỌC 1 TRANG SHOPEE, ĐÃ SỬA
+
+- **Anh gửi ảnh Safari + chat khách:** gõ `B` → "AMBY LONDON, ANASTASIA BEVERLY HILL, ANNABELLE, ANUBIS…"; khách: "Gõ B cũng chỉ có các hãng dòng A".
+- **Gốc KHÔNG ở macOS:** Shopee `get_brand_list` không tìm theo tên, chỉ lật trang ≤100 dòng A→Z; `getBrands` chỉ đọc trang đầu rồi lọc "chứa b" → ra đúng các hãng dòng A có chữ b. Cùng gốc: tự khớp thương hiệu nguồn khi tạo đợt + tra tên theo id khi PATCH chỉ thấy 100 dòng đầu.
+- **Sửa:** `getBrands` lật hết trang (`collectBrandPages`, trần 100 trang, warn khi quá) + đệm 6 giờ theo danh mục (hãng chung toàn sàn, mọi gian dùng chung; ⌈N/100⌉ call một lần/6 giờ/tiến trình, gõ phím không gọi thêm); `rankBrands` xếp hãng BẮT ĐẦU bằng từ khóa trước (Shopee + Lazada); `ListingAdapter.getBrandName?` tra tên theo id đủ danh sách. Test `brand-search.test.ts` 8 ca + rules → 21/21, tsc sạch. Frontend không đổi. Docs `SAO-CHEP-SAN-PHAM.md` mục 22 (sửa luôn câu sai "lọc trong 200 đầu" ở mục 21).
+- ⏳ Chưa kiểm gian thật (cần token Shopee): sau deploy gõ `b` ở gian Shopee phải ra hãng dòng B; soi log Render không có `[listing-copy] Shopee get_brand_list … quá … trang`. Commit chờ anh push.
+
+---
 ## Phiên 30/10/2026 (sáng) — KHÁCH QUÊN MẬT KHẨU THẤY "LỖI MÁY CHỦ NỘI BỘ" — GỐC = ZOHO CHẶN GỬI THƯ SAU ĐỢT 200 THƯ TỐI 29/10; ĐÃ SỬA ROUTE TRẢ 503 RÕ NGHĨA
 
 - **Anh gửi 2 ảnh:** khách `nguyetvu2704@gmail.com` bấm "Gửi link đặt lại mật khẩu" → toast đỏ "Lỗi máy chủ nội bộ".
