@@ -10,7 +10,7 @@
 - **Anh gửi ảnh + hỏi khách đăng kiểu gì:** Shopee Seller Centre nút "Áp dụng cho tất cả phân loại" đổ cùng mã xuống mọi size; Shopee/TikTok không kiểm mã trùng. Hi.Bé = khách sự cố 15/10 (LT075-HONG).
 - **Cái chặn là luật `sku_duplicate` em tự thêm hôm qua (mục 21)**, lý do nối kho không còn đứng vì danh tính dòng = externalId + đuôi tên phân loại từ 15/10 → trái luật "cảnh báo, không khóa cứng". Anh chốt "Làm đi".
 - **Sửa:** `rules.ts` chặn chỉ còn LAZADA (SellerSku duy nhất theo tài liệu API, CHƯA kiểm gian thật); `computeWarnings` + `WARNING_LABELS` → Shopee/TikTok chip xám nét đứt + tooltip hệ quả (đuôi tên `JS051 (4-6kg)`, nối kho từng size cần mã riêng), không lưu DB. FE `warnings[]` ở cột Còn thiếu + đổi dòng ghi chú khung Sửa bài đăng. Test rules +8 khẳng định → listing 38/38, tsc BE+FE sạch. CHƯA soi chip trên trình duyệt. Docs `SAO-CHEP-SAN-PHAM.md` mục 23.
-- ⏳ Sau deploy Hi.Bé bấm Đăng lại → Shopee phải nhận 5 model cùng JS051; nói khách: Lazada có thể từ chối, nối kho từng size đặt mã kho theo đuôi. ✅ Anh bảo push → PUSH 45b63a60, `/health` prod lên code mới ~13:45 30/10; ⏳ Hi.Bé đăng lại.
+- ⏳ Sau deploy Hi.Bé bấm Đăng lại → Shopee phải nhận 5 model cùng JS051; nói khách: Lazada có thể từ chối, nối kho từng size đặt mã kho theo đuôi. ✅ Anh bảo push → PUSH 45b63a60, `/health` prod lên code mới 13:30 30/10; ⏳ Hi.Bé đăng lại.
 
 ---
 ## Phiên 30/10/2026 (trưa) — SAO CHÉP SẢN PHẨM: KHÁCH BUNCHAR GÕ "B" Ô THƯƠNG HIỆU VẪN RA HÃNG DÒNG A (macOS) — GỐC = BACKEND CHỈ ĐỌC 1 TRANG SHOPEE, ĐÃ SỬA
