@@ -561,21 +561,21 @@ export function ManualProductForm({
                   const issue = skuIssue[r.name];
                   return (
                     <tr key={r.name || "__single"} className={cn(r.excluded && "opacity-50")}>
-                      <td className="px-2 py-1.5">
-                        <input type="checkbox" className="size-4 accent-primary" aria-label="Đăng phân loại này" checked={!r.excluded} onChange={() => setEdits((m) => ({ ...m, [r.name]: { ...(m[r.name] ?? {}), excluded: !r.excluded } }))} />
+                      <td className="px-2 py-1.5 align-top">
+                        <input type="checkbox" className="mt-2 size-4 accent-primary" aria-label="Đăng phân loại này" checked={!r.excluded} onChange={() => setEdits((m) => ({ ...m, [r.name]: { ...(m[r.name] ?? {}), excluded: !r.excluded } }))} />
                       </td>
-                      <td className="truncate px-2 py-1.5 text-slate-900" title={r.name}>{r.name || "Sản phẩm (không phân loại)"}</td>
-                      <td className="px-2 py-1.5">
+                      <td className="truncate px-2 py-1.5 align-top leading-8 text-slate-900" title={r.name}>{r.name || "Sản phẩm (không phân loại)"}</td>
+                      <td className="px-2 py-1.5 align-top">
                         <Input className={cn("h-8 px-2 font-mono text-[13px]", issue && !r.excluded && BAD)} value={r.sku} placeholder="6–50 ký tự" onChange={(e) => setEdits((m) => ({ ...m, [r.name]: { ...(m[r.name] ?? {}), sku: e.target.value } }))} />
                         {issue && !r.excluded && <div className="mt-0.5 text-[11px] leading-snug text-red-500">{issue}</div>}
                       </td>
-                      <td className="px-2 py-1.5">
+                      <td className="px-2 py-1.5 align-top">
                         <Input className={cn("h-8 px-2 tabular-nums", !r.excluded && !((toInt(r.price) ?? 0) > 0) && WARN)} inputMode="numeric" value={r.price} onChange={(e) => setEdits((m) => ({ ...m, [r.name]: { ...(m[r.name] ?? {}), price: e.target.value } }))} />
                       </td>
-                      <td className="px-2 py-1.5">
+                      <td className="px-2 py-1.5 align-top">
                         <Input className="h-8 px-2 tabular-nums" inputMode="numeric" value={r.stock} onChange={(e) => setEdits((m) => ({ ...m, [r.name]: { ...(m[r.name] ?? {}), stock: e.target.value } }))} />
                       </td>
-                      <td className="px-2 py-1.5">
+                      <td className="px-2 py-1.5 align-top">
                         {r.imageUrl ? (
                           <button
                             type="button"
@@ -593,6 +593,7 @@ export function ManualProductForm({
                           <Button
                             size="xs"
                             variant="ghost"
+                            className="mt-1"
                             onClick={() => {
                               rowKeyRef.current = r.name;
                               rowInput.current?.click();
