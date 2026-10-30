@@ -207,8 +207,10 @@ export function computeMissing(
   if (variants.length === 0) out.push("no_variants");
   if (variants.length > rules.maxVariants) out.push("too_many_variants");
   if (variants.some((v) => !v.sku.trim())) out.push("sku");
-  const skus = variants.map((v) => v.sku.trim().toLowerCase()).filter(Boolean);
-  if (new Set(skus).size !== skus.length) out.push("sku_duplicate");
+  // Mã SKU trùng giữa các phân loại: Shopee/TikTok CHẤP NHẬN (khách Hi.Bé bấm "Áp dụng cho tất cả
+  // phân loại", 30/10/2026 — docs mục 23) → chỉ cảnh báo (computeWarnings). Lazada SellerSku phải
+  // duy nhất trong gian (tài liệu API; CHƯA kiểm gian thật) → vẫn chặn.
+  if (platform === "LAZADA" && hasDuplicateSkus(variants)) out.push("sku_duplicate");
   if (variants.some((v) => !(v.price > 0))) out.push("price");
   if (target.existingSkus && target.existingSkus.length > 0) out.push("sku_exists");
   if (rules.brandRequired && !target.brandId) out.push("brand");
@@ -222,6 +224,32 @@ export function computeMissing(
       if (a.required && !String(target.attributes[a.id] ?? "").trim()) out.push(`attr:${a.id}`);
     }
   }
+  return out;
+}
+
+function hasDuplicateSkus(variants: ListingVariant[]): boolean {
+  const skus = variants.map((v) => v.sku.trim().toLowerCase()).filter(Boolean);
+  return new Set(skus).size !== skus.length;
+}
+
+/** Mã CẢNH BÁO — không chặn đăng, FE vẽ chip riêng + tooltip hệ quả. */
+export type WarningCode = "sku_duplicate";
+
+export const WARNING_LABELS: Record<WarningCode, { label: string; detail: string }> = {
+  sku_duplicate: {
+    label: "Mã SKU trùng giữa các phân loại",
+    detail:
+      "Sàn này chấp nhận mã trùng, vẫn đăng được. Trên gian đích Hubsell sẽ hiện từng phân loại kèm đuôi tên (vd JS051 (4-6kg)); muốn đồng bộ tồn riêng từng phân loại thì mã kho phải đặt y hệt đuôi đó, hoặc đặt mỗi phân loại một mã riêng.",
+  },
+};
+
+/**
+ * Cảnh báo (không chặn) cho một gian đích — thuần theo sàn + nguồn, không cần API nên
+ * không lưu DB, tính lại mỗi lần trả job.
+ */
+export function computeWarnings(platform: ChannelName, listing: NormalizedListing): WarningCode[] {
+  const out: WarningCode[] = [];
+  if ((platform === "SHOPEE" || platform === "TIKTOK") && hasDuplicateSkus(activeVariants(listing))) out.push("sku_duplicate");
   return out;
 }
 

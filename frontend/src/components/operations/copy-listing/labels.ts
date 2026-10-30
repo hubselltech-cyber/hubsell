@@ -22,6 +22,15 @@ const MISSING_LABELS: Record<string, string> = {
   price: "Giá phải lớn hơn 0",
 };
 
+/** Cảnh báo không chặn đăng — khớp WARNING_LABELS backend (rules.ts). */
+export const WARNING_LABELS: Record<string, { label: string; detail: string }> = {
+  sku_duplicate: {
+    label: "Mã SKU trùng giữa các phân loại",
+    detail:
+      "Sàn này chấp nhận mã trùng, vẫn đăng được. Trên gian đích Hubsell sẽ hiện từng phân loại kèm đuôi tên (vd JS051 (4-6kg)); muốn đồng bộ tồn riêng từng phân loại thì mã kho phải đặt y hệt đuôi đó, hoặc đặt mỗi phân loại một mã riêng.",
+  },
+};
+
 /** Số liệu để nhãn nói rõ "bao nhiêu / trần bao nhiêu" — khách biết phải bỏ mấy phân loại (30/10/2026). */
 export interface MissingContext {
   variantCount?: number;

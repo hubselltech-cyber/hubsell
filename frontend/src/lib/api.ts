@@ -8325,6 +8325,8 @@ export interface CopyListingTarget {
   priceAdjustPercent: number;
   stock: number | null;
   missing: string[];
+  /** Cảnh báo không chặn đăng (vd sku_duplicate trên Shopee/TikTok) — khớp WARNING_LABELS backend. */
+  warnings: string[];
   status: CopyListingTargetStatus;
   error: string | null;
   remoteItemId: string | null;

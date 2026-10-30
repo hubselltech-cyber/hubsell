@@ -55,7 +55,7 @@ import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
 import { BrandCombobox } from "./brand-combobox";
-import { activeVariantsOf, JOB_STATUS, missingLabel, splitListingError, TARGET_STATUS, type MissingContext } from "./labels";
+import { activeVariantsOf, JOB_STATUS, missingLabel, splitListingError, TARGET_STATUS, WARNING_LABELS, type MissingContext } from "./labels";
 
 type Tab = "new" | "history";
 type SourceType = "CHANNEL" | "PRODUCT";
@@ -1034,7 +1034,11 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
                 </Button>
               </span>
             )}
-            {skuDuplicate && <span className="text-sm text-amber-700">Có mã SKU trùng nhau — mỗi phân loại một mã riêng.</span>}
+            {skuDuplicate && (
+              <span className="text-sm text-amber-700" title={WARNING_LABELS.sku_duplicate.detail}>
+                Có mã SKU trùng nhau — Shopee/TikTok vẫn đăng được, Lazada từ chối; nối kho từng phân loại cần mã riêng.
+              </span>
+            )}
           </div>
         )}
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-card">
@@ -1219,21 +1223,31 @@ function TargetRows({
           )}
         </TableCell>
         <TableCell>
-          {t.missing.length === 0 ? (
-            isOpen(t) ? (
-              <span className="text-sm text-emerald-500">Đủ điều kiện</span>
+          <div className="flex flex-wrap items-center gap-1 whitespace-normal">
+            {t.missing.length === 0 ? (
+              isOpen(t) ? (
+                <span className="text-sm text-emerald-500">Đủ điều kiện</span>
+              ) : (
+                <span className={TEXT_SUB}>—</span>
+              )
             ) : (
-              <span className={TEXT_SUB}>—</span>
-            )
-          ) : (
-            <div className="flex flex-wrap gap-1 whitespace-normal">
-              {t.missing.map((m) => (
+              t.missing.map((m) => (
                 <span key={m} className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] leading-snug text-amber-800">
                   {missingLabel(m, attrName, missingCtx)}
                 </span>
+              ))
+            )}
+            {isOpen(t) &&
+              (t.warnings ?? []).map((w) => (
+                <span
+                  key={w}
+                  title={WARNING_LABELS[w]?.detail}
+                  className="cursor-help rounded-md border border-dashed border-slate-300 bg-muted/60 px-1.5 py-0.5 text-[11px] leading-snug text-muted-foreground"
+                >
+                  {WARNING_LABELS[w]?.label ?? w}
+                </span>
               ))}
-            </div>
-          )}
+          </div>
         </TableCell>
         <TableCell className="text-right tabular-nums">
           <div className="text-sm">

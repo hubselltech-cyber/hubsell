@@ -461,3 +461,32 @@ có các hãng dòng A."*
 - **Chưa kiểm gian thật** (cần token Shopee thật để lật trang): ⏳ sau deploy, anh hoặc khách Bunchar mở Sửa bài đăng gian
   Shopee → ô Thương hiệu gõ `bun` phải ra BUNCHAR (nếu Shopee có hãng này) hoặc gõ `b` phải ra hãng dòng B; log Render
   không có dòng `[listing-copy] Shopee get_brand_list … quá … trang`.
+
+## 23. Khách Hi.Bé: 5 phân loại cùng mã SKU JS051, Hubsell chặn "Mã SKU trùng nhau" (30/10/2026 trưa, anh chuyển ảnh) — ĐÃ HẠ THÀNH CẢNH BÁO Shopee/TikTok, kiểm local
+
+Anh: *"Không hiểu khách đăng kiểu gì mà mã SKU giống nhau hết chỉ khác tên phân loại? Khách không muốn sửa SKU, lý do sàn
+chấp nhận như vậy và không muốn trùng 2 lần khi in đơn."* Ảnh: sản phẩm Hi.Bé 5 size 4-6kg … 10-12kg, cột Mã SKU đều `JS051`,
+chip vàng "Mã SKU trùng nhau giữa các phân loại", Chờ đăng.
+
+- **Khách làm được vì Shopee cho phép:** Seller Centre bảng phân loại có nút **"Áp dụng cho tất cả phân loại"** — gõ giá/tồn/mã
+  một lần rồi bấm, Shopee đổ cùng mã xuống mọi dòng; Shopee không kiểm `model_sku` trùng, TikTok cũng không (`seller_sku`
+  tự do). Hi.Bé chính là khách dính sự cố 15/10 (`LT075-HONG` cho 5 size màu Hồng, docs DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md).
+- **Cái chặn là luật `sku_duplicate` Hubsell tự thêm ở mục 21 (2a)**, không phải sàn. Lý do khi thêm (nối kho khớp theo mã)
+  không còn đứng: từ 15/10 danh tính dòng sàn = `externalId`, mã trùng tự thêm đuôi tên phân loại `JS051 (4-6kg)` (sku-key.ts)
+  → Hubsell sống được với mã trùng. Khóa cứng việc sàn chấp nhận là trái luật "cảnh báo, không khóa cứng".
+- **Sửa (anh chốt "Làm đi"):** `rules.ts` — `computeMissing` chỉ còn đẩy `sku_duplicate` cho **LAZADA** (SellerSku phải duy
+  nhất trong gian theo tài liệu API — **CHƯA kiểm gian thật**, Lazada mà nhận thì hạ nốt); thêm `WarningCode` +
+  `WARNING_LABELS` + `computeWarnings(platform, listing)` → Shopee/TikTok mã trùng = **cảnh báo không chặn**. Cảnh báo thuần
+  theo sàn + nguồn, không cần API nên **không lưu DB, không migration**: `getJob` tính lại mỗi lần, `TargetView.warnings[]`
+  (FE `CopyListingTarget.warnings`). FE: cột Còn thiếu vẽ chip xám nét đứt "Mã SKU trùng giữa các phân loại" cạnh "Đủ điều
+  kiện", tooltip (`title`) ghi hệ quả: *sàn này chấp nhận, vẫn đăng được; gian đích Hubsell hiện từng phân loại kèm đuôi tên;
+  muốn đồng bộ tồn riêng từng phân loại thì mã kho phải đặt y hệt đuôi đó hoặc đặt mỗi phân loại một mã riêng*. Dòng ghi chú
+  trong khung Sửa bài đăng đổi "mỗi phân loại một mã riêng" → "Shopee/TikTok vẫn đăng được, Lazada từ chối; nối kho từng
+  phân loại cần mã riêng". Nút "Tự đặt mã cho phân loại thiếu" giữ, chỉ cho ô trống. Nút Đăng không khóa; `submitJob` tính
+  lại missing → Shopee/TikTok qua.
+- **Test:** rules.test.ts thêm 8 khẳng định (Shopee/TikTok [] + Lazada [sku_duplicate]; computeWarnings 3 sàn; bỏ 1 phân
+  loại trùng → hết cảnh báo) → listing 38/38; tsc backend + frontend sạch. **Chưa soi chip trên trình duyệt** (cần đợt có
+  mã trùng trên gian demo local); chip nằm trong ô flex-wrap `whitespace-normal` sẵn có, dùng token `bg-muted`/
+  `text-muted-foreground` nên dark theo hệ. ⏳ sau deploy: Hi.Bé bấm Đăng lại, Shopee phải nhận 5 model cùng `JS051`.
+- **Nói với khách Hi.Bé:** đăng được như cũ; Lazada có thể từ chối mã trùng; trong Hàng hóa Hubsell gian mới sẽ thấy
+  `JS051 (4-6kg)`… — muốn đồng bộ tồn từng size thì mã kho đặt theo đuôi đó.

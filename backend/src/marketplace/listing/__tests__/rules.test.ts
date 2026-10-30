@@ -1,7 +1,7 @@
 // Luật đăng sản phẩm theo sàn — phần thuần (docs/SAO-CHEP-SAN-PHAM.md).
 import { describe, expect, it } from "vitest";
 import { inferOptions } from "../../../services/listing-copy/source";
-import { activeVariants, adjustPrice, computeMissing, dimsComplete, effectiveOptions, normalizeDims, PLATFORM_LISTING_RULES } from "../rules";
+import { activeVariants, adjustPrice, computeMissing, computeWarnings, dimsComplete, effectiveOptions, normalizeDims, PLATFORM_LISTING_RULES } from "../rules";
 import type { CategoryRequirements, NormalizedListing } from "../types";
 
 const base: NormalizedListing = {
@@ -143,8 +143,18 @@ describe("phân loại bỏ đăng + mã SKU (30/10/2026)", () => {
     };
     expect(computeMissing("SHOPEE", wide, state, null)).toEqual(["too_many_option_values"]);
     expect(computeMissing("TIKTOK", wide, state, null)).toEqual([]);
+    // Mã trùng: Shopee/TikTok chấp nhận (chỉ cảnh báo), Lazada chặn (docs mục 23).
     const dup = { ...base, variants: [{ ...base.variants[0], sku: "cv-m" }, { ...base.variants[1], sku: "CV-M " }] };
-    expect(computeMissing("SHOPEE", dup, state, null)).toEqual(["sku_duplicate"]);
+    expect(computeMissing("SHOPEE", dup, state, null)).toEqual([]);
+    expect(computeMissing("TIKTOK", dup, state, null)).toEqual([]);
+    expect(computeMissing("LAZADA", dup, { ...state, brandId: "b1", dimensionsCm: { length: 1, width: 1, height: 1 } }, null)).toEqual(["sku_duplicate"]);
+    expect(computeWarnings("SHOPEE", dup)).toEqual(["sku_duplicate"]);
+    expect(computeWarnings("TIKTOK", dup)).toEqual(["sku_duplicate"]);
+    expect(computeWarnings("LAZADA", dup)).toEqual([]);
+    expect(computeWarnings("SHOPEE", base)).toEqual([]);
+    // Bỏ một phân loại trùng → hết cảnh báo.
+    const dupOneOff = { ...dup, variants: [dup.variants[0], { ...dup.variants[1], excluded: true }] };
+    expect(computeWarnings("SHOPEE", dupOneOff)).toEqual([]);
     const none = { ...base, variants: base.variants.map((v) => ({ ...v, excluded: true })) };
     expect(computeMissing("SHOPEE", none, state, null)).toEqual(["no_variants"]);
   });

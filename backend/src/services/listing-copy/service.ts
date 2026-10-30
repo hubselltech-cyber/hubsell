@@ -15,7 +15,7 @@ import { prisma } from "../../lib/prisma";
 import { enqueue, QUEUES, QueueUnavailableError } from "../../lib/queue";
 import { getListingAdapter } from "../../marketplace/listing/registry";
 import { humanizeListingError } from "../../marketplace/listing/error-text";
-import { activeVariants, adjustPrice, computeMissing, effectiveOptions, normalizeDims, type MissingCode } from "../../marketplace/listing/rules";
+import { activeVariants, adjustPrice, computeMissing, computeWarnings, effectiveOptions, normalizeDims, type MissingCode } from "../../marketplace/listing/rules";
 import type {
   CategoryRequirements,
   ListingDimensions,
@@ -279,6 +279,8 @@ export interface TargetView {
   priceAdjustPercent: number;
   stock: number | null;
   missing: string[];
+  /** Cảnh báo không chặn đăng (rules.computeWarnings) — tính lại mỗi lần, không lưu DB. */
+  warnings: string[];
   status: string;
   error: string | null;
   remoteItemId: string | null;
@@ -296,6 +298,7 @@ export async function getJob(ownerId: string, jobId: string): Promise<JobView> {
   const channelIds = [...new Set([...job.targets.map((t) => t.channelId), job.sourceChannelId].filter(Boolean))] as string[];
   const channels = await prisma.channel.findMany({ where: { id: { in: channelIds } } });
   const byId = new Map(channels.map((c) => [c.id, c]));
+  const sourceListing = asListing(job.source);
   const targets: TargetView[] = await Promise.all(
     job.targets.map(async (t) => {
       const channel = byId.get(t.channelId);
@@ -325,6 +328,7 @@ export async function getJob(ownerId: string, jobId: string): Promise<JobView> {
         priceAdjustPercent: t.priceAdjustPercent,
         stock: t.stock,
         missing: asStringArray(t.missing),
+        warnings: channel ? computeWarnings(channel.channelName, sourceListing) : [],
         status: t.status,
         error: t.error,
         remoteItemId: t.remoteItemId,
