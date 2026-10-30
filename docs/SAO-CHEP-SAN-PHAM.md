@@ -490,3 +490,93 @@ chip vàng "Mã SKU trùng nhau giữa các phân loại", Chờ đăng.
   `text-muted-foreground` nên dark theo hệ. ⏳ sau deploy: Hi.Bé bấm Đăng lại, Shopee phải nhận 5 model cùng `JS051`.
 - **Nói với khách Hi.Bé:** đăng được như cũ; Lazada có thể từ chối mã trùng; trong Hàng hóa Hubsell gian mới sẽ thấy
   `JS051 (4-6kg)`… — muốn đồng bộ tồn từng size thì mã kho đặt theo đuôi đó.
+
+## 24. KHẢO SÁT: nút "Thêm sản phẩm mới" — soạn như sàn → đẩy thẳng lên sàn + ghi Tổng kho, KHÔNG tự nối (30/10/2026 chiều, anh yêu cầu khảo sát, CHƯA CODE)
+
+Anh: *"Làm thêm một nút thêm sản phẩm luôn. Vào thêm sản phẩm thì nhập các yêu cầu cần thiết giống như sàn, thêm xong đẩy
+trực tiếp lên sàn và đồng thời đẩy vào Tổng kho, tuy nhiên không tự ý liên kết sản phẩm này giữa tổng kho với các sàn. Anh
+không biết tác động thế nào và Hubsell có chịu thiệt hại về dung lượng database không."* Ảnh: thanh nguồn "Từ gian hàng
+đã nối / Từ kho Hubsell" (chỗ anh khoanh = nút thứ 3), tab Tổng kho (382 SKU kho · 2.036 SP sàn chưa nối).
+
+### 24.1 Hiện trạng liên quan (đọc mã 30/10)
+
+- **Nguồn đăng hiện có 2:** `ListingCopySourceType` = `CHANNEL` (chụp bài sàn qua adapter `fetchListing`) và `PRODUCT` (kho).
+  Nguồn kho **thiếu gần hết dữ liệu sàn đòi**: `buildListingFromProducts` trả `description: ""`, ảnh chỉ 1 `Product.imageUrl`
+  mỗi phân loại, `weightGrams/dimensionsCm: null` → khách phải gõ mô tả, cân nặng… ngay trong khung Sửa bài đăng. Mục 7 lát 3
+  đã ghi "chép từ kho có trình soạn đầy đủ (mô tả, nhiều ảnh, thuộc tính theo sàn)" = chính cái form anh đang nói.
+- **Bảng Product (kho):** 1 dòng = 1 SKU (phân loại tách dòng, gom cha–con bằng `groupKey`), cột: skuCode, productName,
+  variantName, costPrice, sellingPrice, quantityInStock, imageUrl (1 ảnh), isActive… **Không có** mô tả, nhiều ảnh, cân nặng,
+  kích thước, thương hiệu, danh mục. Tạo SKU kho = `POST /api/products` (có sẵn, dùng ở Hàng hóa + Excel).
+- **Nối kho ↔ sàn hôm nay KHÔNG BAO GIỜ tự chạy:** `product-sync` không gán `productId`; nối chỉ khi khách bấm
+  `/mappings/link` (tay), `/link-by-sku` + `/auto-match` (khớp **trùng mã chính xác**), `/quick-link`, `/create-products`.
+  → Yêu cầu "không tự ý liên kết" đã đúng với luật hiện hành; nhưng khi khách bấm "Tự khớp" sau này thì SP mới **sẽ nối**
+  vì mã kho = mã sàn (đúng luật mã trùng, không phải khớp mềm).
+- **Ảnh:** chưa có chỗ chứa ảnh sản phẩm do khách tải lên. Đã có `lib/supabase-storage.ts` (bucket private + signed URL,
+  gọi REST, không thêm dependency): `support-attachments` (600 KB, xóa sau 7 ngày) và `hq-documents` (15 MB, giữ vĩnh viễn).
+  Gói Supabase Pro đang trả có **100 GB kho tệp + 250 GB egress/tháng**, kho tệp gần như chưa dùng. Backend **chưa có
+  sharp/jimp** (nén ảnh phải làm phía trình duyệt bằng canvas như ảnh hỗ trợ, hoặc thêm sharp ~30 MB vào build Render).
+  Adapter sàn nhận ảnh dạng buffer tải từ URL (`fetchImageBuffer`) → signed URL Supabase dùng được cho cả 3 sàn (Lazada
+  `image/migrate` cần URL công khai → signed URL hạn 1 giờ là đủ).
+- **Trần sàn (docs KHAO-SAT mục 4):** TikTok 100 SP/ngày gian mới, 1.000/ngày sau, bài PENDING chờ duyệt; Shopee
+  `get_item_limit` theo danh mục; đã xử lý trong luồng sao chép.
+
+### 24.2 Dung lượng — DB KHÔNG thiệt nếu KHÔNG nhét ảnh vào Postgres
+
+Số đo prod 28/10 (PROGRESS): đĩa Supabase 4,4 / 8 GB, DB 3,5 GB (Order 578 k dòng, `ChannelProduct` 145.158 dòng = 129 MB
+≈ **0,9 KB/dòng kể cả index**). Ước lượng cho MỘT sản phẩm mới, 5 phân loại, đăng 3 gian:
+
+| Thứ ghi vào DB | Dòng | Ước KB | Ghi chú |
+|---|---|---|---|
+| `Product` kho | 5 | ~5 | 1 dòng/phân loại, cùng cỡ ChannelProduct |
+| `ListingCopyJob.source` Json | 1 | 5–30 | mô tả ≤ 3.000 ký tự Shopee / ≤ 25.000 Lazada + URL ảnh; chính là chỗ "nặng" nhất |
+| `ListingCopyTarget` | 3 | ~3 | danh mục, thuộc tính, missing |
+| `ChannelProduct` (worker kéo về sau khi đăng) | 15 | ~14 | **phát sinh với MỌI bài đăng trên sàn dù đăng bằng gì** — không phải chi phí riêng của nút này |
+| **Cộng** | | **~30–50 KB/SP** | |
+
+→ **1.000 SP mới ≈ 30–50 MB**, bằng ~1 % DB hiện tại; 10.000 SP ≈ 0,5 GB (khi đó đĩa 8 GB mới đáng bàn, và lúc đó Order đã
+lớn hơn nhiều lần). Kết luận: **DB chịu được, không phải chỗ lo.** Điều kiện duy nhất: ảnh KHÔNG vào Postgres (bài học
+ảnh hỗ trợ 27/09: phình WAL/backup + egress DB).
+
+**Ảnh mới là chi phí thật, nhưng rẻ:** nén phía trình duyệt về ≤ 1.600 px / ≤ 400 KB (mặc định tự chọn, Shopee khuyên
+1024×1024, TikTok ≤ 5 MB) → 9 ảnh bìa + ≤ 12 ảnh mô tả ≈ **2–4 MB/SP** (xấu nhất 8 MB). 1.000 SP ≈ 2–4 GB; gói Pro có 100 GB
+→ **~25.000–50.000 SP** mới chạm; vượt thì Supabase tính 0,021 USD/GB/tháng (bảng giá Supabase, anh xác nhận ở Billing) =
+thêm 100 GB ≈ 2 USD/tháng. Egress: mỗi gian đăng kéo ảnh 1 lần (3 gian × 3 MB) — 250 GB/tháng đủ cho ~25.000 lượt đăng.
+Chính sách đề xuất (mặc định tự chọn, chưa có căn cứ khách): giữ ảnh gốc **vĩnh viễn** để sau này "đăng lại gian mới"
+không phải tải lại (đúng mục đích mở gian nhanh), **trần theo gói** (vd Free 50 SP có ảnh, gói trả 5.000) để một khách
+không nuốt kho tệp; cron xóa ảnh của job DRAFT bỏ dở > 30 ngày.
+
+### 24.3 Tác động nghiệp vụ — chỗ em phản biện
+
+1. **"Không tự ý liên kết" — em đề nghị NGƯỢC LẠI cho riêng SP do Hubsell tự đăng.** Luật "chỉ nối khi trùng mã, không
+   khớp mềm" sinh ra vì Hubsell không dám đoán SP sàn nào là SP kho nào. Ở đây **không phải đoán**: Hubsell vừa tạo SKU kho
+   rồi chính nó gửi SKU đó lên sàn và nhận về `remoteItemId` + id phân loại (`createListing` trả `variants[].remoteId`) —
+   nối theo **id sàn trả về**, chắc chắn 100 %, không qua mã. Không nối thì: (a) 2.036 "SP sàn chưa nối" trong ảnh anh lại
+   tăng thêm đúng số SP vừa tạo, khách phải tự bấm Tự khớp lần nữa; (b) tồn/giá vốn/Lãi-Lỗ của SP mới trống cho tới khi
+   nối; (c) đồng bộ tồn vẫn **không** đẩy gì vì gian chưa bật đồng bộ (luật "bật gian = tự đẩy" giữ nguyên) → nối không
+   gây rủi ro ghi đè tồn. Nếu anh vẫn muốn không nối (lý do khách muốn tồn sàn độc lập?), em làm ô tick "Liên kết với Tổng
+   kho" mặc định BẬT để khách tắt được — vẫn một nút Đăng.
+2. **Giá vốn:** SP tạo từ form chưa có giá vốn → rơi đúng hộp nhắc nhập giá vốn sẵn có (`hubsell-hop-chao-nhap-gia-von`),
+   thêm ô "Giá vốn (tùy chọn)" ngay trong form là xong.
+3. **Phân loại:** form phải cho nhóm × giá trị (Màu × Size) → tự sinh tổ hợp, mỗi tổ hợp 1 SKU/giá/tồn/ảnh; trần theo sàn
+   đã có trong `rules.ts` (Shopee 2 nhóm/50 tổ hợp, TikTok 3/100, Lazada 2/100). Mã SKU trùng → cảnh báo (mục 23).
+4. **Tổng kho ghi khi nào:** đề xuất ghi **ngay khi bấm Đăng** (trước khi sàn trả lời) để khách thấy SP trong Hàng hóa
+   kể cả khi sàn PENDING/lỗi; sàn từ chối thì SP kho vẫn còn, khách sửa rồi đăng lại — khỏi tạo trùng (`skuCode` unique
+   theo chủ shop đã chặn).
+5. **Không đụng** Vị trí kho (chốt 24/09), không đổi luật nối theo mã cho SP sàn có sẵn.
+
+### 24.4 Cách làm nếu anh chốt — 3 lát, ước ~3 ngày công
+
+- **Lát A — Form "Tạo mới" (~2 ngày):** nút thứ 3 trên thanh nguồn → form một trang: tên, mô tả (textarea + ảnh mô tả),
+  ảnh bìa ≤ 9 (tải lên → nén canvas → `POST /api/sao-chep-san-pham/images` → bucket mới `product-images`, private, signed
+  URL), nhóm phân loại × giá trị → bảng tổ hợp (SKU/giá/tồn/ảnh), cân nặng, kích thước, giá vốn tùy chọn. Bấm "Tiếp" →
+  `createJob` với `sourceType: MANUAL` (enum thêm 1 giá trị = migration nhỏ, bảng listing_copy_jobs không ai khóa) và
+  `source` Json như hai nguồn kia → **toàn bộ bước 2 (gian, danh mục gợi ý, thuộc tính, thương hiệu, vận chuyển, Đăng,
+  hàng đợi, Chờ sàn duyệt) dùng lại 100 %**.
+- **Lát B — Ghi Tổng kho (~0,5 ngày):** lúc Đăng, tạo `Product` mỗi phân loại qua lõi của `POST /products` (groupKey,
+  variantName, imageUrl = bìa, giá bán, tồn, giá vốn nếu có); nối hay không theo anh chốt ở 24.3-1 (nối theo
+  `remoteId` khi target LISTED, trong worker `listing-copy-queue`).
+- **Lát C — Dọn + trần (~0,5 ngày):** cron xóa ảnh job DRAFT > 30 ngày, trần ảnh theo gói, HQ hiện dung lượng bucket.
+- Gộp luôn mục 7 lát 3 ("chép từ kho có trình soạn đầy đủ"): nguồn kho mở cùng form này với dữ liệu điền sẵn.
+
+**Chờ anh chốt:** (1) nối hay không nối với Tổng kho cho SP Hubsell tự đăng; (2) giữ ảnh vĩnh viễn + trần theo gói, hay xóa
+sau khi đăng xong; (3) làm lát A ngay hay để sau khi khách Bunchar/Hi.Bé test xong đợt sao chép.
