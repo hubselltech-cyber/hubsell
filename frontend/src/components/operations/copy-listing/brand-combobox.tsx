@@ -18,7 +18,8 @@ import { fetchCopyListingBrands } from "@/lib/api";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-import { brandLabel } from "./labels";
+import { WARN_INPUT } from "./primitives";
+import { brandLabel } from "./shared";
 
 export interface BrandValue {
   id: string;
@@ -136,7 +137,7 @@ export function BrandCombobox({
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         ref={inputRef}
-        className={cn("pl-9 pr-16", invalid && "border-amber-300 bg-amber-50/40")}
+        className={cn("pl-9 pr-16", invalid && WARN_INPUT)}
         placeholder="Gõ tên thương hiệu để tìm…"
         value={shown}
         disabled={disabled}

@@ -1,5 +1,5 @@
 // ============================================================
-// ADAPTER ĐĂNG SẢN PHẨM — LAZADA (lát 1b, CHƯA kiểm gian thật)
+// ADAPTER ĐĂNG SẢN PHẨM — LAZADA (theo docs API, CHƯA kiểm trên gian thật)
 //
 // createListing: image/migrate từng ảnh (≤8) → product/create payload JSON:
 // PrimaryCategory lá, Attributes (name, description HTML, short_description,
@@ -17,7 +17,6 @@ import { MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from ".
 import type {
   AttributeDef,
   Brand,
-  CategoryNode,
   CategoryRequirements,
   CategorySuggestion,
   CategoryTreeNode,
@@ -29,7 +28,7 @@ import type {
   LogisticOption,
   NormalizedListing,
 } from "./types";
-import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, normalizeText, textToHtml, variantPairs, vndInt } from "./variant-map";
+import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, textToHtml, variantPairs, vndInt } from "./variant-map";
 
 /** Khóa hệ thống của Attributes — không phải thuộc tính khách điền. */
 const SYSTEM_KEYS = new Set(["name", "description", "short_description", "brand", "video", "name_en", "description_en", "short_description_en"]);
@@ -97,14 +96,6 @@ export const lazadaListingAdapter: ListingAdapter = {
     const token = await getValidLazadaAccessToken(channel);
     const list = await api.suggestCategory(token, listing.title);
     return list.slice(0, 3).map((c, i) => ({ id: c.id, name: c.name || c.path[c.path.length - 1] || c.id, path: c.path, confidence: Math.max(0.5, 0.85 - i * 0.15) }));
-  },
-
-  async searchCategories(channel: Channel, query: string): Promise<CategoryNode[]> {
-    const token = await getValidLazadaAccessToken(channel);
-    const leaves = api.flattenLeaves(await api.getCategoryTree(token));
-    const q = normalizeText(query);
-    const nodes = leaves.map((l) => ({ ...l, leaf: true }));
-    return (q ? nodes.filter((n) => normalizeText(n.path.join(" ")).includes(q)) : nodes).slice(0, 300);
   },
 
   async getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]> {

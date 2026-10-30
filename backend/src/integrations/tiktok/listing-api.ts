@@ -1,22 +1,27 @@
 // ============================================================
-// TIKTOK SHOP — API ĐĂNG SẢN PHẨM (lát 1b, docs/SAO-CHEP-SAN-PHAM.md mục 10)
+// TIKTOK SHOP — API ĐĂNG SẢN PHẨM (docs/SAO-CHEP-SAN-PHAM.md mục 10; đăng thật từ 29/10/2026)
 //
 // Theo docs 202309 đọc 29/10/2026: Get Categories (category_version v2),
 // Recommend Category, Get Attributes, Get Category Rules, Get Brands, Upload
-// Product Image (multipart, KHÔNG ký body), Create Product. CHƯA kiểm gian thật.
+// Product Image (multipart, KHÔNG ký body), Create Product.
 // Phạm vi: seller.product.write (Product Modify, bật 12/10/2026) — gian ủy
-// quyền trước mốc phải nối lại (tiktok/scopes.ts).
+// quyền trước mốc phải nối lại (tiktok/scopes.ts). Cây danh mục / thuộc tính /
+// luật danh mục đệm RAM có trần (lib/ttl-cache).
 // ============================================================
 
-import { TtlCache } from "../../lib/image-fetch";
 import { platformFetch } from "../../lib/platform-http";
+import { pathToRoot } from "../../lib/tree";
+import { TtlCache } from "../../lib/ttl-cache";
 import { callApi, signRequest } from "./client";
 import { getTikTokConfig, TIKTOK_ENDPOINTS, type TikTokConfig } from "./config";
 
 const CATEGORY_VERSION = "v2";
 const LOCALE = "vi-VN";
+const HOUR = 60 * 60 * 1000;
 
-export interface TikTokCategory {
+type Ctx = { accessToken: string; shopCipher: string };
+
+interface TikTokCategory {
   id: string;
   parent_id?: string;
   local_name?: string;
@@ -24,9 +29,9 @@ export interface TikTokCategory {
   permission_statuses?: string[];
 }
 
-const categoryCache = new TtlCache<TikTokCategory[]>(6 * 60 * 60 * 1000);
+const categoryCache = new TtlCache<TikTokCategory[]>(6 * HOUR);
 
-export async function getCategories(ctx: { accessToken: string; shopCipher: string }, cfg = getTikTokConfig()): Promise<TikTokCategory[]> {
+export async function getCategories(ctx: Ctx, cfg = getTikTokConfig()): Promise<TikTokCategory[]> {
   return categoryCache.get(`tiktok:${ctx.shopCipher}`, async () => {
     const d = await callApi<{ categories?: TikTokCategory[] }>(
       {
@@ -43,19 +48,12 @@ export async function getCategories(ctx: { accessToken: string; shopCipher: stri
 
 export function categoryPath(all: TikTokCategory[], id: string): string[] {
   const byId = new Map(all.map((c) => [c.id, c]));
-  const path: string[] = [];
-  let cur = byId.get(id);
-  let guard = 0;
-  while (cur && guard++ < 10) {
-    path.unshift(cur.local_name ?? cur.id);
-    cur = cur.parent_id && cur.parent_id !== "0" ? byId.get(cur.parent_id) : undefined;
-  }
-  return path;
+  return pathToRoot(byId, id, (c) => (c.parent_id && c.parent_id !== "0" ? c.parent_id : null), (c) => c.local_name ?? c.id);
 }
 
 export async function recommendCategory(
-  ctx: { accessToken: string; shopCipher: string },
-  input: { title: string; description?: string; imageUris?: string[] },
+  ctx: Ctx,
+  input: { title: string; description?: string },
   cfg = getTikTokConfig()
 ): Promise<{ id: string; local_name?: string; level?: number; is_leaf?: boolean }[]> {
   const d = await callApi<{ categories?: { id: string; local_name?: string; level?: number; is_leaf?: boolean }[] }>(
@@ -68,7 +66,6 @@ export async function recommendCategory(
       body: {
         product_title: input.title,
         ...(input.description ? { description: input.description } : {}),
-        ...(input.imageUris?.length ? { images: input.imageUris.map((uri) => ({ uri })) } : {}),
       },
       kind: "read",
       retryWhenThrottled: true,
@@ -91,21 +88,22 @@ export interface TikTokAttribute {
   values?: { id?: string; name?: string }[];
 }
 
-export async function getCategoryAttributes(
-  ctx: { accessToken: string; shopCipher: string },
-  categoryId: string,
-  cfg = getTikTokConfig()
-): Promise<TikTokAttribute[]> {
-  const d = await callApi<{ attributes?: TikTokAttribute[] }>(
-    {
-      path: `/product/202309/categories/${categoryId}/attributes`,
-      accessToken: ctx.accessToken,
-      shopCipher: ctx.shopCipher,
-      query: { locale: LOCALE, category_version: CATEGORY_VERSION },
-    },
-    cfg
-  );
-  return d.attributes ?? [];
+const attributeCache = new TtlCache<TikTokAttribute[]>(6 * HOUR);
+
+/** Thuộc tính của danh mục — đệm 6 giờ theo gian + danh mục (getJob hỏi mỗi gian đích mỗi lần mở đợt). */
+export async function getCategoryAttributes(ctx: Ctx, categoryId: string, cfg = getTikTokConfig()): Promise<TikTokAttribute[]> {
+  return attributeCache.get(`tiktok:${ctx.shopCipher}:${categoryId}`, async () => {
+    const d = await callApi<{ attributes?: TikTokAttribute[] }>(
+      {
+        path: `/product/202309/categories/${categoryId}/attributes`,
+        accessToken: ctx.accessToken,
+        shopCipher: ctx.shopCipher,
+        query: { locale: LOCALE, category_version: CATEGORY_VERSION },
+      },
+      cfg
+    );
+    return d.attributes ?? [];
+  });
 }
 
 export interface TikTokCategoryRules {
@@ -116,24 +114,24 @@ export interface TikTokCategoryRules {
   [k: string]: unknown;
 }
 
-export async function getCategoryRules(
-  ctx: { accessToken: string; shopCipher: string },
-  categoryId: string,
-  cfg = getTikTokConfig()
-): Promise<TikTokCategoryRules> {
-  return callApi<TikTokCategoryRules>(
-    {
-      path: `/product/202309/categories/${categoryId}/rules`,
-      accessToken: ctx.accessToken,
-      shopCipher: ctx.shopCipher,
-      query: { category_version: CATEGORY_VERSION },
-    },
-    cfg
+const rulesCache = new TtlCache<TikTokCategoryRules>(6 * HOUR);
+
+export async function getCategoryRules(ctx: Ctx, categoryId: string, cfg = getTikTokConfig()): Promise<TikTokCategoryRules> {
+  return rulesCache.get(`tiktok:${ctx.shopCipher}:${categoryId}`, () =>
+    callApi<TikTokCategoryRules>(
+      {
+        path: `/product/202309/categories/${categoryId}/rules`,
+        accessToken: ctx.accessToken,
+        shopCipher: ctx.shopCipher,
+        query: { category_version: CATEGORY_VERSION },
+      },
+      cfg
+    )
   );
 }
 
 export async function getBrands(
-  ctx: { accessToken: string; shopCipher: string },
+  ctx: Ctx,
   input: { categoryId?: string | null; name?: string },
   cfg = getTikTokConfig()
 ): Promise<{ id: string; name?: string; authorized_status?: string }[]> {
@@ -161,7 +159,7 @@ export async function getBrands(
  * code 36009004 "The 'shop_cipher' query parameter is not required for this request".
  */
 export async function uploadProductImage(
-  ctx: { accessToken: string; shopCipher: string },
+  ctx: Ctx,
   file: { buffer: Buffer; filename: string; mime: string },
   useCase: "MAIN_IMAGE" | "ATTRIBUTE_IMAGE" | "DESCRIPTION_IMAGE" = "MAIN_IMAGE",
   cfg: TikTokConfig = getTikTokConfig()
@@ -207,17 +205,13 @@ export interface TikTokCreateProductBody {
   is_cod_allowed?: boolean;
 }
 
-export interface TikTokCreateProductResult {
+interface TikTokCreateProductResult {
   product_id: string;
   skus?: { id: string; seller_sku?: string; sales_attributes?: { id?: string; value_id?: string }[] }[];
   warnings?: { message?: string }[];
 }
 
-export async function createProduct(
-  ctx: { accessToken: string; shopCipher: string },
-  body: TikTokCreateProductBody,
-  cfg = getTikTokConfig()
-): Promise<TikTokCreateProductResult> {
+export async function createProduct(ctx: Ctx, body: TikTokCreateProductBody, cfg = getTikTokConfig()): Promise<TikTokCreateProductResult> {
   return callApi<TikTokCreateProductResult>(
     {
       method: "POST",

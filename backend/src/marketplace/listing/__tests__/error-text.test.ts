@@ -1,14 +1,18 @@
-// Dịch lỗi sàn khi đăng sản phẩm + tên thuộc tính tiếng Việt (docs/SAO-CHEP-SAN-PHAM.md mục 14).
+// Dịch lỗi sàn khi đăng sản phẩm → câu tiếng Việt + nguyên văn (docs/SAO-CHEP-SAN-PHAM.md mục 14, 28).
 import { describe, expect, it } from "vitest";
-import { viAttributeName } from "../attribute-names-vi";
-import { humanizeListingError, isShopeeDescImageWhitelistError, splitListingError } from "../error-text";
+import { humanizeListingError, isShopeeDescImageWhitelistError } from "../error-text";
+
+/** target.error = dòng 1 tiếng Việt + "\n" + nguyên văn sàn (FE tách ở shared.ts). */
+function split(stored: string): { text: string; detail: string | null } {
+  const idx = stored.indexOf("\n");
+  return idx < 0 ? { text: stored, detail: null } : { text: stored.slice(0, idx), detail: stored.slice(idx + 1) };
+}
 
 describe("humanizeListingError", () => {
   it("lỗi thật 29/10: Shopee Dimension.PackageLength → câu kích thước kiện + giữ nguyên văn", () => {
     const raw =
       "Shopee add_item lỗi: product.error_param — invalid AddItemRequest.Dimension: embedded message failed validation | caused by: invalid Dimension.PackageLength: value must be greater than 0";
-    const out = humanizeListingError("SHOPEE", raw);
-    const { text, detail } = splitListingError(out);
+    const { text, detail } = split(humanizeListingError("SHOPEE", raw));
     expect(text).toMatch(/^Shopee từ chối: Kích thước kiện hàng/);
     expect(text).toContain("đủ cả 3 số");
     expect(detail).toBe(raw);
@@ -27,10 +31,10 @@ describe("humanizeListingError", () => {
       "TIKTOK",
       "TikTok API lỗi (code 36009004): Unexpected identifier. The 'shop_cipher' query parameter is not required for this request. For more details: https://m.tiktok.shop/s/AIu6dbFhs2XW"
     );
-    expect(splitListingError(tt).text).toMatch(/phía Hubsell/);
-    expect(splitListingError(tt).text).not.toMatch(/thuộc tính/);
+    expect(split(tt).text).toMatch(/phía Hubsell/);
+    expect(split(tt).text).not.toMatch(/thuộc tính/);
     const sp = humanizeListingError("SHOPEE", "Shopee add_item lỗi: product.error_busi — The merchant/shop has multi warehouse, please input location id");
-    expect(splitListingError(sp).text).toMatch(/nhiều kho/);
+    expect(split(sp).text).toMatch(/nhiều kho/);
   });
 
   it("câu Hubsell tự viết (tiếng Việt) giữ nguyên, không thêm dòng kỹ thuật", () => {
@@ -41,22 +45,10 @@ describe("humanizeListingError", () => {
   });
 
   it("không khớp mẫu → câu chung + nguyên văn; rỗng → câu không rõ lý do", () => {
-    const out = humanizeListingError("LAZADA", "Lazada product/create lỗi: E9999: Something odd");
-    expect(splitListingError(out).text).toMatch(/^Lazada từ chối bài đăng/);
-    expect(splitListingError(out).detail).toContain("E9999");
+    const out = split(humanizeListingError("LAZADA", "Lazada product/create lỗi: E9999: Something odd"));
+    expect(out.text).toMatch(/^Lazada từ chối bài đăng/);
+    expect(out.detail).toContain("E9999");
     expect(humanizeListingError("SHOPEE", "")).toMatch(/không nói lý do/);
-  });
-});
-
-describe("viAttributeName", () => {
-  it("tên Anh phổ biến → Việt; đã có dấu → giữ; lạ → giữ", () => {
-    expect(viAttributeName("Region of Origin")).toBe("Xuất xứ");
-    expect(viAttributeName("pack type")).toBe("Kiểu đóng gói");
-    expect(viAttributeName("Manufacturer/trader name")).toBe("Tên nhà sản xuất / đơn vị kinh doanh");
-    expect(viAttributeName("Sleeve Length")).toBe("Độ dài tay áo");
-    expect(viAttributeName("Chất liệu")).toBe("Chất liệu");
-    expect(viAttributeName("Material (Outer)")).toBe("Chất liệu (Material (Outer))");
-    expect(viAttributeName("Zorblax Factor")).toBe("Zorblax Factor");
   });
 });
 
@@ -66,7 +58,7 @@ describe("lỗi thật 30/10 Bunchar: Shopee không whitelist ảnh mô tả + U
       "Shopee add_item lỗi: product.error_param — Parameter is not match the constraints, . : You are not in the whitelist to add images in description, can only upload plain text";
     expect(isShopeeDescImageWhitelistError(raw)).toBe(true);
     expect(isShopeeDescImageWhitelistError("Shopee add_item lỗi: product.error_param — image size invalid")).toBe(false);
-    const { text, detail } = splitListingError(humanizeListingError("SHOPEE", raw));
+    const { text, detail } = split(humanizeListingError("SHOPEE", raw));
     expect(text).toMatch(/chèn ảnh vào mô tả/);
     expect(text).not.toMatch(/Sàn không nhận ảnh/);
     expect(detail).toBe(raw);
@@ -81,6 +73,6 @@ describe("lỗi thật 30/10 Bunchar: Shopee không whitelist ảnh mô tả + U
 
   it("lỗi từng ảnh Shopee (image_info_list) vẫn ra câu ảnh", () => {
     const raw = "Shopee upload_image lỗi: error_param — image file too large (a.jpg)";
-    expect(splitListingError(humanizeListingError("SHOPEE", raw)).text).toMatch(/Sàn không nhận ảnh/);
+    expect(split(humanizeListingError("SHOPEE", raw)).text).toMatch(/Sàn không nhận ảnh/);
   });
 });

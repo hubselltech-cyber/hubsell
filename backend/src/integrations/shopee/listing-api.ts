@@ -1,15 +1,18 @@
 // ============================================================
-// SHOPEE — API ĐĂNG SẢN PHẨM (lát 1b, docs/SAO-CHEP-SAN-PHAM.md mục 10)
+// SHOPEE — API ĐĂNG SẢN PHẨM (docs/SAO-CHEP-SAN-PHAM.md mục 10; đăng thật từ 29/10/2026)
 //
 // Tài liệu đọc 29/10/2026 (docs/KHAO-SAT-SAO-CHEP-SAN-PHAM-DANG-HANG-LOAT-29-10.md
 // mục 4): get_category, category_recommend, get_attribute_tree, get_brand_list,
-// logistics/get_channel_list, media_space/upload_image, add_item,
-// init_tier_variation. CHƯA kiểm trên gian thật — mọi tên trường theo docs v2.
+// logistics/get_channel_list, shop/get_warehouse_detail, media_space/upload_image,
+// add_item, init_tier_variation. Dữ liệu ít đổi (cây danh mục, thuộc tính, hãng,
+// kênh vận chuyển, kho) đệm RAM có trần (lib/ttl-cache) để mở đợt 50 SP × M gian
+// không gọi sàn hàng trăm lượt.
 // ============================================================
 
-import { TtlCache } from "../../lib/image-fetch";
-import { collectBrandPages } from "../../marketplace/listing/brand-search";
+import { collectPages } from "../../lib/paginate";
 import { platformFetch } from "../../lib/platform-http";
+import { pathToRoot } from "../../lib/tree";
+import { TtlCache } from "../../lib/ttl-cache";
 import {
   callShopGet,
   callShopPost,
@@ -35,6 +38,8 @@ const P = {
   initTierVariation: "/api/v2/product/init_tier_variation",
 } as const;
 
+const HOUR = 60 * 60 * 1000;
+
 export interface ShopeeCategory {
   category_id: number;
   parent_category_id?: number;
@@ -47,7 +52,7 @@ interface CategoryData extends ShopeeEnvelope {
   response?: { category_list?: ShopeeCategory[] };
 }
 
-const categoryCache = new TtlCache<ShopeeCategory[]>(6 * 60 * 60 * 1000);
+const categoryCache = new TtlCache<ShopeeCategory[]>(6 * HOUR);
 
 /** Cây danh mục (phẳng, có parent) — đệm 6 giờ theo shop. */
 export async function getCategories(accessToken: string, shopId: string, cfg = getShopeeConfig()): Promise<ShopeeCategory[]> {
@@ -60,31 +65,16 @@ export async function getCategories(accessToken: string, shopId: string, cfg = g
 /** Đường dẫn tên từ gốc tới lá. */
 export function categoryPath(all: ShopeeCategory[], id: number): string[] {
   const byId = new Map(all.map((c) => [c.category_id, c]));
-  const path: string[] = [];
-  let cur = byId.get(id);
-  let guard = 0;
-  while (cur && guard++ < 10) {
-    path.unshift(cur.display_category_name ?? cur.original_category_name ?? String(cur.category_id));
-    cur = cur.parent_category_id ? byId.get(cur.parent_category_id) : undefined;
-  }
-  return path;
+  return pathToRoot(byId, id, (c) => c.parent_category_id, (c) => c.display_category_name ?? c.original_category_name ?? String(c.category_id));
 }
 
 interface RecommendData extends ShopeeEnvelope {
   response?: { category_id?: number[] };
 }
 
-/** Gợi ý danh mục theo tên (+ ảnh bìa đã upload nếu có). Trả id lá theo thứ tự ưu tiên. */
-export async function recommendCategory(
-  accessToken: string,
-  shopId: string,
-  itemName: string,
-  coverImageId?: string,
-  cfg = getShopeeConfig()
-): Promise<number[]> {
-  const params: Array<[string, string | number]> = [["item_name", itemName]];
-  if (coverImageId) params.push(["cover_image", coverImageId]);
-  const d = await callShopGet<RecommendData>(P.categoryRecommend, accessToken, shopId, params, "category_recommend", cfg);
+/** Gợi ý danh mục theo tên. Trả id lá theo thứ tự ưu tiên. */
+export async function recommendCategory(accessToken: string, shopId: string, itemName: string, cfg = getShopeeConfig()): Promise<number[]> {
+  const d = await callShopGet<RecommendData>(P.categoryRecommend, accessToken, shopId, [["item_name", itemName]], "category_recommend", cfg);
   return d.response?.category_id ?? [];
 }
 
@@ -114,22 +104,27 @@ interface AttributeTreeData extends ShopeeEnvelope {
   response?: { list?: { category_id: number; attribute_tree?: ShopeeAttribute[] }[] };
 }
 
+const attributeCache = new TtlCache<ShopeeAttribute[]>(6 * HOUR);
+
+/** Thuộc tính của một danh mục — đệm 6 giờ theo shop + danh mục (getJob hỏi mỗi gian đích mỗi lần mở đợt). */
 export async function getAttributeTree(accessToken: string, shopId: string, categoryId: number, cfg = getShopeeConfig()): Promise<ShopeeAttribute[]> {
-  const d = await callShopGet<AttributeTreeData>(
-    P.attributeTree,
-    accessToken,
-    shopId,
-    [
-      ["category_id_list", String(categoryId)],
-      ["language", "vi"],
-    ],
-    "get_attribute_tree",
-    cfg
-  );
-  return d.response?.list?.find((x) => x.category_id === categoryId)?.attribute_tree ?? [];
+  return attributeCache.get(`shopee:${shopId}:${categoryId}`, async () => {
+    const d = await callShopGet<AttributeTreeData>(
+      P.attributeTree,
+      accessToken,
+      shopId,
+      [
+        ["category_id_list", String(categoryId)],
+        ["language", "vi"],
+      ],
+      "get_attribute_tree",
+      cfg
+    );
+    return d.response?.list?.find((x) => x.category_id === categoryId)?.attribute_tree ?? [];
+  });
 }
 
-export interface ShopeeBrand {
+interface ShopeeBrand {
   brand_id: number;
   original_brand_name?: string;
   display_brand_name?: string;
@@ -141,25 +136,25 @@ interface BrandData extends ShopeeEnvelope {
 
 const BRAND_PAGE_SIZE = 100;
 /** Danh sách thương hiệu theo danh mục — đệm 6 giờ, khóa theo danh mục (status 1 = hãng chung toàn sàn, không theo shop). */
-const brandCache = new TtlCache<{ brands: ShopeeBrand[]; mandatory: boolean }>(6 * 60 * 60 * 1000);
+const brandCache = new TtlCache<{ brands: ShopeeBrand[]; mandatory: boolean }>(6 * HOUR);
 
 /**
  * get_brand_list KHÔNG tìm theo tên, chỉ lật trang 100 dòng A→Z. Trước 30/10/2026 chỉ
  * đọc trang đầu → gõ "B" chỉ còn hãng dòng A chứa chữ b (khách Bunchar báo). Giờ lật
- * HẾT trang (trần MAX_BRAND_PAGES) rồi đệm theo danh mục; gọi trùng khi đang lật dùng
- * chung một promise (TtlCache giữ promise).
+ * HẾT trang (lib/paginate, trần 100 trang) rồi đệm theo danh mục; gọi trùng khi đang lật
+ * dùng chung một promise (TtlCache giữ promise).
+ * `status` 1 = hãng thường (mặc định); 2 = hãng CHỜ SHOPEE DUYỆT (chẩn đoán "sàn có mà Hubsell không thấy").
  */
 export async function getBrands(
   accessToken: string,
   shopId: string,
   categoryId: number,
-  cfg = getShopeeConfig(),
-  /** 1 = hãng thường (mặc định); 2 = hãng CHỜ SHOPEE DUYỆT (chẩn đoán khách "sàn có mà Hubsell không thấy", 30/10). */
-  status: 1 | 2 = 1
+  status: 1 | 2 = 1,
+  cfg = getShopeeConfig()
 ): Promise<{ brands: ShopeeBrand[]; mandatory: boolean }> {
   return brandCache.get(`shopee:brands:${categoryId}:${status}`, async () => {
     let mandatory = false;
-    const { items, truncated, pages } = await collectBrandPages(async (offset) => {
+    const { items, truncated, pages } = await collectPages(async (offset) => {
       const d = await callShopGet<BrandData>(
         P.brandList,
         accessToken,
@@ -184,14 +179,9 @@ export async function getBrands(
 }
 
 /** Hãng gian ĐANG DÙNG — đọc brand của ≤ 50 sản phẩm đã đăng (get_item_base_info, 1 call), đệm 6 giờ theo shop. */
-const usedBrandCache = new TtlCache<ShopeeBrand[]>(6 * 60 * 60 * 1000);
+const usedBrandCache = new TtlCache<ShopeeBrand[]>(6 * HOUR);
 
-export async function getShopUsedBrands(
-  accessToken: string,
-  shopId: string,
-  itemIds: number[],
-  cfg = getShopeeConfig()
-): Promise<ShopeeBrand[]> {
+export async function getShopUsedBrands(accessToken: string, shopId: string, itemIds: number[], cfg = getShopeeConfig()): Promise<ShopeeBrand[]> {
   const ids = [...new Set(itemIds.filter((n) => Number.isFinite(n) && n > 0))].slice(0, 50);
   if (ids.length === 0) return [];
   return usedBrandCache.get(`shopee:used-brands:${shopId}`, async () => {
@@ -207,7 +197,7 @@ export async function getShopUsedBrands(
   });
 }
 
-export interface ShopeeLogisticsChannel {
+interface ShopeeLogisticsChannel {
   logistics_channel_id: number;
   logistics_channel_name?: string;
   enabled?: boolean;
@@ -220,9 +210,14 @@ interface LogisticsData extends ShopeeEnvelope {
   response?: { logistics_channel_list?: ShopeeLogisticsChannel[] };
 }
 
+/** Kênh vận chuyển gian đang bật — đệm 15 phút theo shop (khách bật/tắt kênh trên Seller Centre thấy sau ≤ 15 phút). */
+const logisticsCache = new TtlCache<ShopeeLogisticsChannel[]>(15 * 60 * 1000);
+
 export async function getLogisticsChannels(accessToken: string, shopId: string, cfg = getShopeeConfig()): Promise<ShopeeLogisticsChannel[]> {
-  const d = await callShopGet<LogisticsData>(P.logisticsChannels, accessToken, shopId, [], "get_channel_list", cfg);
-  return d.response?.logistics_channel_list ?? [];
+  return logisticsCache.get(`shopee:${shopId}`, async () => {
+    const d = await callShopGet<LogisticsData>(P.logisticsChannels, accessToken, shopId, [], "get_channel_list", cfg);
+    return d.response?.logistics_channel_list ?? [];
+  });
 }
 
 export interface ShopeeWarehouse {
@@ -238,7 +233,7 @@ interface WarehouseData extends ShopeeEnvelope {
   response?: ShopeeWarehouse[] | { warehouse_list?: ShopeeWarehouse[] };
 }
 
-const warehouseCache = new TtlCache<ShopeeWarehouse[]>(60 * 60 * 1000);
+const warehouseCache = new TtlCache<ShopeeWarehouse[]>(HOUR);
 
 /**
  * Danh sách kho của gian (shop/get_warehouse_detail) — gian bật "nhiều kho" thì
@@ -282,8 +277,10 @@ interface UploadData extends ShopeeEnvelope {
   };
 }
 
-/** Tải ảnh lên không gian media (bắt buộc trước add_item — Shopee không nhận URL ngoài). */
-/** scene "normal" = ảnh sản phẩm; "desc" = ảnh chèn trong mô tả mở rộng (docs media_space/upload_image). */
+/**
+ * Tải ảnh lên không gian media (bắt buộc trước add_item — Shopee không nhận URL ngoài).
+ * scene "normal" = ảnh sản phẩm; "desc" = ảnh chèn trong mô tả mở rộng (docs media_space/upload_image).
+ */
 export async function uploadProductImage(
   params: { accessToken: string; shopId: string; buffer: Buffer; filename: string; mime: string; scene?: "normal" | "desc" },
   cfg: ShopeeConfig = getShopeeConfig()
@@ -345,7 +342,7 @@ export async function addItem(accessToken: string, shopId: string, body: ShopeeA
   return id;
 }
 
-export interface ShopeeTierVariationBody {
+interface ShopeeTierVariationBody {
   item_id: number;
   /** Docs: ảnh phân loại chỉ ở TIER ĐẦU (option_list[].image.image_id từ upload_image). */
   tier_variation: { name: string; option_list: { option: string; image?: { image_id: string } }[] }[];

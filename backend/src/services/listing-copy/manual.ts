@@ -20,7 +20,8 @@ import { cleanVariantName, productGroupKey } from "../../lib/product-group";
 import { computeMissing, normalizeDims, type MissingCode } from "../../marketplace/listing/rules";
 import type { ListingOption, ListingVariant, NormalizedListing } from "../../marketplace/listing/types";
 import { applyStockDelta } from "../stock-ledger";
-import { ListingCopyError } from "./service";
+import { ListingCopyError } from "./errors";
+import { num, str as s, urlList } from "./parse";
 
 /** Trần đầu vào của form — rộng hơn mức "đủ 3 sàn" để khách vẫn đăng được riêng TikTok (3 nhóm, 100 tổ hợp). */
 export const MANUAL_LIMITS = {
@@ -50,26 +51,6 @@ const CHECK_PLATFORMS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA"];
 
 /** Mã thuộc BƯỚC 2 (theo từng gian) — không báo ở thẻ "Đạt chuẩn sàn" của form. */
 const STEP2_CODES: ReadonlySet<string> = new Set(["category", "brand", "logistics", "sku_exists"]);
-
-function s(v: unknown, max: number): string {
-  return typeof v === "string" ? v.trim().slice(0, max) : "";
-}
-function urlList(v: unknown, max: number): string[] {
-  if (!Array.isArray(v)) return [];
-  const out: string[] = [];
-  for (const u of v) {
-    if (typeof u !== "string") continue;
-    const t = u.trim();
-    if (!/^https?:\/\//i.test(t) || t.length > 2048) continue;
-    if (!out.includes(t)) out.push(t);
-    if (out.length >= max) break;
-  }
-  return out;
-}
-function num(v: unknown): number | null {
-  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
-  return Number.isFinite(n) ? n : null;
-}
 
 /**
  * Đọc body form → NormalizedListing + meta kho. Ném ListingCopyError 400 khi sai cấu
@@ -165,7 +146,7 @@ export function checkManualDraft(listing: NormalizedListing): Record<ChannelName
   return out;
 }
 
-export interface SkuTaken {
+interface SkuTaken {
   sku: string;
   /** "Tổng kho" hoặc tên gian. */
   where: string;

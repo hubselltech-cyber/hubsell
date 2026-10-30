@@ -10,8 +10,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "../../lib/prisma";
-import { productImages } from "../../lib/supabase-storage";
+import { isStorageConfigured, productImages } from "../../lib/supabase-storage";
 import { getOwnerPlanState } from "../plan-enforcement";
+
+/**
+ * Local chưa cấu hình Supabase Storage → ảnh ghi `backend/.local-uploads`, app.ts phục vụ ở
+ * /local-uploads — KHÔNG BAO GIỜ ở production. Route tải lên, app.ts và cron dọn cùng đọc hai hằng này.
+ */
+export const LOCAL_UPLOAD_DIR = path.resolve(process.cwd(), ".local-uploads");
+export const LOCAL_UPLOAD_ENABLED = !isStorageConfigured() && process.env.NODE_ENV !== "production";
 
 /**
  * Trần SỐ ẢNH đang lưu theo bậc gói (ServicePlan.tier 1..6). Mặc định tự chọn 30/10/2026:
@@ -38,7 +45,7 @@ export function imageQuotaForTier(tier: number | null | undefined): number | nul
   return tier > 6 ? null : PRODUCT_IMAGE_QUOTA[1];
 }
 
-export interface ImageQuota {
+interface ImageQuota {
   used: number;
   max: number | null;
 }
@@ -98,7 +105,7 @@ async function deleteFiles(rows: { storage: string; path: string }[], localDir: 
   return ok;
 }
 
-export interface ImageCleanupResult {
+interface ImageCleanupResult {
   orphanImages: number;
   draftJobs: number;
   draftImages: number;
@@ -141,7 +148,7 @@ export async function cleanupListingImages(localDir: string | null): Promise<Ima
   return out;
 }
 
-export interface ImageStoreStats {
+interface ImageStoreStats {
   count: number;
   mb: number;
   owners: number;

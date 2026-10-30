@@ -1,46 +1,12 @@
 // ============================================================
-// Hàm thuần cho ô tìm THƯƠNG HIỆU (docs/SAO-CHEP-SAN-PHAM.md mục 22, 30/10/2026).
+// Hàm thuần cho ô tìm THƯƠNG HIỆU (docs/SAO-CHEP-SAN-PHAM.md mục 22, 25).
 // Shopee get_brand_list KHÔNG có tham số tìm theo tên, chỉ lật trang 100 dòng xếp
-// theo A→Z. Lỗi khách Bunchar (Safari/macOS): gõ "B" vẫn ra toàn hãng dòng A vì
-// adapter chỉ đọc trang đầu rồi lọc "chứa b" (AMBY, ANASTASIA BEVERLY…). Sửa:
-// lật HẾT trang (đệm 6 giờ theo danh mục) + xếp hãng BẮT ĐẦU bằng từ khóa lên trước.
+// theo A→Z (lật hết trang ở integrations/shopee/listing-api.ts qua lib/paginate).
+// Ở đây: xếp hãng BẮT ĐẦU bằng từ khóa lên trước + gộp hãng gian đang dùng.
 // ============================================================
 
 import type { Brand } from "./types";
 import { normalizeText } from "./variant-map";
-
-export interface BrandPage<T> {
-  items: T[];
-  hasNext: boolean;
-  nextOffset?: number;
-}
-
-/** Trần số trang lật cho một danh mục — 100 trang × 100 = 10.000 thương hiệu. */
-export const MAX_BRAND_PAGES = 100;
-
-/**
- * Lật hết các trang: `loadPage(offset)` trả trang + cờ còn trang sau. Dừng khi hết
- * trang, chạm trần, hoặc sàn trả offset không tiến (tránh lặp vô hạn).
- */
-export async function collectBrandPages<T>(
-  loadPage: (offset: number) => Promise<BrandPage<T>>,
-  pageSize: number,
-  maxPages = MAX_BRAND_PAGES
-): Promise<{ items: T[]; truncated: boolean; pages: number }> {
-  const items: T[] = [];
-  let offset = 0;
-  let pages = 0;
-  for (;;) {
-    const page = await loadPage(offset);
-    pages += 1;
-    items.push(...page.items);
-    if (!page.hasNext || page.items.length === 0) return { items, truncated: false, pages };
-    if (pages >= maxPages) return { items, truncated: true, pages };
-    const next = page.nextOffset ?? offset + pageSize;
-    if (next <= offset) return { items, truncated: false, pages };
-    offset = next;
-  }
-}
 
 /** Nhãn cho hãng lấy từ sản phẩm đã đăng trên gian (không có trong danh sách hãng của danh mục). */
 export const USED_ON_SHOP_NOTE = "đang dùng trên gian này — sàn có thể từ chối nếu hãng chưa gắn với danh mục";

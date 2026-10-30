@@ -65,13 +65,6 @@ export interface CategorySuggestion {
   confidence: number;
 }
 
-export interface CategoryNode {
-  id: string;
-  name: string;
-  path: string[];
-  leaf: boolean;
-}
-
 /** Một nút trong cây danh mục của sàn (phẳng, có cha) — để màn hình xổ cha → con. */
 export interface CategoryTreeNode {
   id: string;
@@ -160,7 +153,6 @@ export interface ListingAdapter {
   /** Đọc chi tiết một sản phẩm sàn (mọi phân loại) về dạng chuẩn; null = không có. */
   fetchListing(channel: Channel, itemId: string): Promise<NormalizedListing | null>;
   recommendCategory(channel: Channel, listing: NormalizedListing): Promise<CategorySuggestion[]>;
-  searchCategories(channel: Channel, query: string): Promise<CategoryNode[]>;
   /** TOÀN BỘ cây danh mục của sàn (phẳng) — adapter đệm theo gian, route cắt theo cha. */
   getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]>;
   getCategoryRequirements(channel: Channel, categoryId: string): Promise<CategoryRequirements | null>;

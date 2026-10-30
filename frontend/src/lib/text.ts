@@ -1,11 +1,16 @@
+/** Bỏ dấu tiếng Việt, GIỮ hoa/thường ("Đen, M" → "Den, M") — sinh mã SKU, chữ cái đầu. */
+export function stripDiacritics(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // bỏ dấu thanh (huyền, sắc, hỏi, ngã, nặng…)
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+}
+
 /// Chuẩn hoá chuỗi để tìm kiếm: bỏ dấu tiếng Việt + đưa về chữ thường.
 /// Nhờ vậy gõ "ao thun" vẫn tìm ra "Áo thun", gõ "mu luoi" ra "Mũ lưỡi".
 export function normalizeText(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // bỏ dấu thanh (huyền, sắc, hỏi, ngã, nặng…)
-    .replace(/đ/g, "d");
+  return stripDiacritics(value).toLowerCase();
 }
 
 /// Kiểm tra từ khoá có khớp với một trong các trường dữ liệu không

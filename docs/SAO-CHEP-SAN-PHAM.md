@@ -50,16 +50,19 @@
 
 ## 5. API `/api/sao-chep-san-pham` (tránh chữ ads — adblock)
 
+Danh sách route HIỆN TẠI (rà lại 30/10/2026 tối, mục 29 — route cũ `GET /jobs`, `GET /jobs/:id`, `POST /jobs/:id/submit`,
+`/categories`, `/requirements`, `/logistics` đã bỏ vì FE không gọi):
+- `GET /channels` gian nguồn + đích (ACTIVE, không Offline, trong phạm vi nhân viên; `apiConnected` = có token).
 - `GET /sources?type=channel&channelId=&search=&page=` → sản phẩm sàn nhóm theo id; `type=product` → nhóm kho.
-- `POST /jobs {sourceType, sourceChannelId?, sourceItemId?, sourceGroupKey?, targetChannelIds[]}` → chụp nguồn, tạo
-  job + target, mỗi target gọi gợi ý danh mục + luật bắt buộc → `missing[]`.
-- `GET /jobs?page=` lịch sử · `GET /jobs/:id` chi tiết.
-- `PATCH /jobs/:id/targets/:tid` sửa danh mục / thuộc tính / cân nặng / kích thước / thương hiệu / vận chuyển / giá / tồn
-  → tính lại `missing`.
-- `GET /jobs/:id/targets/:tid/categories?q=` · `GET .../requirements?categoryId=` · `GET .../logistics` ·
-  `GET .../brands?q=`.
-- `POST /jobs/:id/submit` → target đủ điều kiện → QUEUED + xếp việc; target còn thiếu bị bỏ qua và báo.
-- Quyền: lá `operations.copy-listing` (chủ shop mặc định có; nhân viên phải được gán).
+  `POST /sources/sync {channelId}` kéo danh mục gian về ngay (mục 21).
+- Đợt (mục 9): `GET /batches?page=` lịch sử · `POST /batches {sourceType CHANNEL|PRODUCT, sourceChannelId?, sourceKeys[],
+  targetChannelIds[]}` · `GET /batches/:id` · `POST /batches/:id/submit` · `POST /batches/:id/targets/:tid/apply`.
+- Lượt: `POST /jobs` (FE chỉ dùng cho nguồn MANUAL, mục 24; đợt = chính lượt) · `PATCH /jobs/:id` sửa bài đăng (tên /
+  mô tả / ảnh / giá-tồn-SKU từng phân loại) · `PATCH /jobs/:id/targets/:tid` sửa gian đích → tính lại `missing` ·
+  `GET /jobs/:id/targets/:tid/category-tree?parentId=|selectedId=` · `GET .../brands?q=&categoryId=`.
+- Tạo mới (mục 24): `POST /check` · `POST /sku-check` · `POST /images` · `GET /manual-limits`.
+- Quyền: lá `operations.copy-listing` (chủ shop mặc định có; nhân viên phải được gán). Lỗi nghiệp vụ = `ListingCopyError`
+  (`services/listing-copy/errors.ts`) → `{error}` + mã HTTP qua `sendError` chung của route.
 
 ## 6. Giao diện
 
@@ -153,11 +156,10 @@ Anh chốt "Làm adapter thật". Local không có gian thật (chỉ gian seed 
   HTML/short_description/brand = TÊN, Skus SellerSku/price/quantity/kiện/kg/saleProp) · product/item/get.
 - **Hàm thuần dùng chung** `variant-map.ts` (+ test 5 ca): tách tên phân loại, tier_index, cặp nhóm–giá trị, gram→kg,
   text↔HTML. Ảnh: `lib/image-fetch.ts` tải về buffer (≤12 MB, data URI OK), chưa đổi cỡ/nén.
-- **Dò thử chỉ đọc trên prod** (quản trị nền tảng, không qua cờ bật): `GET /api/sao-chep-san-pham-probe?channelId=…`
-  chạy fetchListing / recommendCategory / searchCategories / getCategoryRequirements / searchBrands / getLogistics trên
-  một gian thật, trả từng bước ok/lỗi + mẫu dữ liệu. Chạy trong DevTools app.hubsell.tech (tài khoản dev@hubsell.tech):
-  `fetch('https://hubsell-backend-sg.onrender.com/api/sao-chep-san-pham-probe?channelId=ID',{headers:{Authorization:'Bearer '+localStorage.hubsell_token}}).then(r=>r.json()).then(d=>console.log(JSON.stringify(d,null,2)))`
-  (backend prod là Render Singapore, KHÔNG phải api.hubsell.tech).
+- **Dò thử chỉ đọc trên một gian** — 30/10 tối (mục 29) chuyển từ route `GET /api/sao-chep-san-pham-probe` thành script
+  `backend/scripts/probe-listing-adapter.ts <channelId> [thương hiệu]` (chạy trên Render shell hoặc local nối DB prod):
+  fetchListing / recommendCategory / getCategoryTree / getCategoryRequirements / searchBrands / getLogistics, in từng
+  bước ok/lỗi + mẫu dữ liệu, KHÔNG tạo/sửa gì trên sàn.
 
 ### Việc còn lại trước khi mở cho khách
 1. Push → prod (cờ tắt, khách không thấy). Chạy probe trên 1 gian Shopee (ANO/HPGear), 1 gian TikTok, 1 gian Lazada;
@@ -588,7 +590,7 @@ khác nhau theo sàn (danh mục, thuộc tính, thương hiệu, vận chuyển
 đọc bảng số.
 
 **Bố cục (theo KiotViet mà khách khen ở mục 21-3, dùng PageHeaderBand + PageTabs, chữ 14 px, dark theo token):** trang
-`/operations-assistant/copy-listing/new` — biểu mẫu dài một cột 720 px, **mục lục neo bên phải** (5 khối, cuộn tới khối
+nút nguồn "Tạo sản phẩm mới" ngay trong Bước 1 của `/operations-assistant/copy-listing` (không có route `/new` riêng) — biểu mẫu dài một cột 720 px, **mục lục neo bên phải** (5 khối, cuộn tới khối
 nào sáng mục đó) + thẻ "Đạt chuẩn sàn" dính dưới mục lục:
 
 | Khối | Ô | Kiểm tra sống (chuẩn chung 3 sàn, số từ `rules.ts` + KHAO-SAT mục 4) |
@@ -802,3 +804,92 @@ Sắc Đẹp > Chăm sóc tóc > Thuốc nhuộm tóc, gian Shopee. Khách: *"Ki
   trước, đừng đoán.
 - **Chưa làm (chờ anh):** báo cho khách ngay trong bảng đợt rằng "ảnh mô tả đã bỏ vì gian chưa được Shopee cho phép" (hiện chỉ log);
   nhớ whitelist bền trong DB thay vì RAM tiến trình (worker restart là thử extended lại 1 lần — chỉ tốn 1 add_item).
+
+## 29. Dọn mã sau 25 commit / 10 ngày (30/10/2026 tối, anh yêu cầu "rà soát cẩn thận, dọn code thừa, cây chuyên nghiệp") — ĐÃ LÀM, kiểm local
+
+Hai subagent rà chỉ đọc backend + frontend (mã chết, trùng, nhập ngược tầng, RAM, test, đặt tên) rồi dọn theo danh sách. Không đổi
+hành vi với khách trừ các điểm ghi rõ ở cuối.
+
+### Backend — cây mới
+```
+lib/            ttl-cache.ts (đệm TTL có TRẦN số khóa 500 + dọn hết hạn — tách khỏi image-fetch), paginate.ts (collectPages — tách
+                khỏi brand-search), tree.ts (pathToRoot — thay 4 bản "đi ngược cha" ở route + 2 listing-api + job-edit)
+marketplace/listing/
+  types.ts        bỏ searchCategories (+ CategoryNode) khỏi ListingAdapter — chỉ probe cũ gọi
+  registry.ts     giữ nguyên luật; header ghi rõ gian demo người duyệt (seed-isv-reviewer, KHÔNG token) cố ý đi mock trên prod
+  upload-images.ts  prepareImage + uploadImages — thay 6 vòng tải→chuẩn hóa→đẩy ảnh ở adapter Shopee/TikTok
+  infer-options.ts  inferOptions tách từ services/source.ts (mock adapter từng nhập ngược services → marketplace)
+  rules.ts        bỏ MISSING_LABELS / WARNING_LABELS (FE là nguồn nhãn duy nhất — shared.ts); bỏ export kiểu nội bộ
+  error-text.ts   bỏ splitListingError (FE có bản riêng); regex whitelist không export
+  mock-listing-adapter.ts  tự dựng listing từ ChannelProduct (buildListingFromChannelRows chuyển vào), normalizeText dùng chung
+  *-listing-adapter.ts     header "lát 1b chưa kiểm" → đã đăng thật (Lazada vẫn ghi chưa kiểm); TikTok nhập tĩnh getProduct
+services/listing-copy/   service.ts 748 dòng TÁCH thành:
+  errors.ts       ListingCopyError (phá vòng nhập manual ↔ service)
+  parse.ts        str / num / urlList (route + manual + job-edit dùng chung — bỏ 2 bản urlList)
+  json-fields.ts  json / asListing / asRecord / asStringArray / targetState (thay 3 bản dựng state gian đích)
+  job-view.ts     JobView + getJob
+  job-edit.ts     createJob / updateJobSource / updateTarget / reevaluate / evaluateTarget
+  job-submit.ts   submitJob + enqueueTarget
+  job-worker.ts   processTarget / linkNewListing / rollupJob + rollupStatus THUẦN (batch.ts dùng chung, có test)
+  images.ts       thêm LOCAL_UPLOAD_DIR / LOCAL_UPLOAD_ENABLED (app.ts + cron dọn từng nhập từ ROUTE — ngược tầng)
+  source.ts       chỉ còn danh sách nguồn + listing từ kho; gom 2 vòng nhóm/tóm tắt thành summarize + groupBy
+integrations/*/listing-api.ts
+  TtlCache từ lib/ttl-cache; Shopee getBrands đổi thứ tự (…, status, cfg); bỏ tham số coverImageId / imageUris không ai truyền;
+  ĐỆM THÊM get_attribute_tree (6h/gian+danh mục), get_channel_list (15 phút/gian), TikTok attributes + rules (6h), Lazada
+  attributes (6h) → mở đợt 50 SP × M gian không còn gọi sàn hàng trăm lượt (getJob hỏi mỗi gian đích mỗi lần mở)
+routes/listing-copy.ts   sendError cho mọi route (bỏ 7 khối if instanceof lặp); bỏ GET /jobs/:id + POST /jobs/:id/submit (FE không gọi);
+  ownChannel() dùng chung; pathToRoot cho category-tree
+routes/listing-copy-probe.ts  XÓA → scripts/probe-listing-adapter.ts (mục 10); app.ts bỏ mount + requirePlatformAdmin không dùng
+```
+Test: đổi tên `review-check.test.ts` → `tiktok-listing-adapter.test.ts` (test hàm của adapter); tách `attribute-names-vi.test.ts`,
+`infer-options.test.ts`; test mới `registry` (4), `job-worker.rollupStatus` (3), `lib/ttl-cache` (3), `lib/paginate` (4),
+`lib/tree` (2), `integrations/shopee-listing-api` (pickStockLocationId + categoryPath). Tổng 16 tệp / 69 ca xanh, tsc sạch.
+
+### Frontend — `components/operations/copy-listing/` (phẳng theo quy ước repo), `copy-listing-page.tsx` 1.964 dòng → 15 tệp
+```
+copy-listing-page.tsx   vỏ: PageTabs + chuyển NewCopyStep / BatchView / BatchHistory (58 dòng)
+new-copy-step.tsx       state dùng chéo 2 bước (gian nguồn, SP đã tick, gian đích) + "Xem trước"; làm tươi Lịch sử sau khi tạo đợt
+source-picker.tsx       bước 1 nguồn gian / kho: chọn sàn→gian, tìm, bảng tick, pager, nút Lấy SP mới (remount theo sourceType)
+target-picker.tsx       bước 2: Segmented lọc sàn + tìm gian + chọn tất cả
+batch-view.tsx          đợt: BatchView (poll 2 s bằng refetchInterval thay setInterval) + BatchJobRows + BatchTargetRows + TargetErrorRow
+source-editor.tsx       Sửa bài đăng (ảnh qua image-grid, tên/mô tả, bảng phân loại, tự đặt mã)
+target-editor.tsx       Bổ sung gian (EditorField cấp module thay closure field())
+category-cascade.tsx    xổ cha → con (giữ nạp tay có chủ đích — loadedFor chặn nạp lại)
+batch-history.tsx       tab Lịch sử
+image-grid.tsx          ImageGrid + useImageUploads + uploadImageFile — DÙNG CHUNG Sửa bài đăng & form Tạo mới (trước 2 bản;
+                        Sửa bài đăng nay cũng revoke objectURL + nhãn "Nhỏ")
+primitives.tsx          StepTitle, ChannelChip, StatusChip, Thumb, PagerFooter, RequiredPill, FieldLabel + hằng class
+                        (ROW_ACTIVE, PANEL, EDIT_BTN_RED, WARN_INPUT, BAD_INPUT…)
+shared.ts               (thay labels.ts) nhãn missing/warning/status, splitListingError, brandLabel, isOpen, anyRunning,
+                        duplicateSkus, SKU_PATTERN, PLATFORM_ORDER, MAX_LISTING_IMAGES
+manual-product-form.tsx  515 dòng (từ 731): trần form đọc từ GET /manual-limits (bỏ HARD chép tay; đợi tải rồi mới dựng)
+manual-variant-table.tsx · manual-platform-check.tsx  tách từ form
+brand-combobox.tsx      giữ
+```
+Dùng chung mới: `components/ui/segmented.tsx` (Segmented control, từng nằm trong trang), `components/ui/textarea.tsx` (shadcn —
+2 bản chuỗi class textarea trùng nguyên văn), `lib/text.ts` thêm `stripDiacritics` (3 bản NFD bỏ dấu), `lib/api.ts` thêm
+`apiErrorMessage(err)` (thay errorText cục bộ; nơi khác dọn dần), `query-keys` thêm `copyListingSourcesAll / BatchesAll /
+ManualLimits`. Bỏ `submitCopyListingJob` (0 chỗ gọi), `createCopyListingBatch.sourceType` chỉ còn CHANNEL|PRODUCT, 2 hằng
+compress-image không export. tsc + eslint sạch.
+
+### Điểm ĐỔI HÀNH VI (nhỏ, đã kiểm local)
+- Tạo đợt / Tạo mới xong làm tươi tab Lịch sử ngay (trước: cache 30 s nên mở Lịch sử chưa thấy đợt vừa tạo).
+- Đợt: job cùng mili-giây xếp thêm theo id → thứ tự ổn định giữa các lần nạp (trước có lúc đảo sau khi Lưu bài đăng).
+- enqueueTarget: hàng đợi chưa sẵn sàng thì chỉ chạy tại chỗ ngoài production; production trả 503 "Hàng đợi đăng chưa sẵn sàng".
+- Cache sàn: thêm đệm attribute tree / logistics (xem trên) — khách bật/tắt kênh vận chuyển trên Seller Centre thấy sau ≤ 15 phút.
+
+### GIỮ nguyên có lý do (agent đề xuất, em không làm)
+- Mock trên prod: gian không token = tài khoản demo người duyệt app (seed-isv-reviewer), gian thật không bao giờ bị xóa token.
+- `processTarget` vẫn nhận RUNNING (thử lại sau crash; không nhận thì target kẹt RUNNING vĩnh viễn) — có thể tạo trùng nếu crash SAU khi
+  sàn đã tạo, hiếm, chấp nhận.
+- `descImageBlockedUntil` 7 ngày trong RAM (mục 28): sai lệch tối đa 1 add_item thừa / tiến trình / 7 ngày.
+- Prisma trong `shopee-listing-adapter` (hãng đang dùng): marketplace/ đã có adapter khác dùng Prisma, không đáng thêm cổng.
+- `CategoryCascade` + `BrandCombobox` nạp tay thay vì useApiQuery: logic loadedFor / debounce có chủ đích, đang chạy đúng.
+- `COMMON` / `PLATFORM_CTX` trong form Tạo mới chép từ rules.ts: nhãn nói số ngay khi gõ, không chờ mạng.
+- Tên 3 kiểu: backend `listing-copy`, FE/quyền `copy-listing`, URL `sao-chep-san-pham` — ghi ở đầu route + khối api.ts, không đổi.
+
+### Kiểm local (demo@hubsell.tech, 3 gian giả lập, 1280 + dark)
+Tạo đợt 2 SP × 2 gian → Sửa bài đăng (đổi tên, Lưu) → Bổ sung gian TikTok (danh mục xổ sẵn, cân nặng, Chất liệu, Lưu → "Đủ điều
+kiện") → Đăng 1 lượt → "Đang xếp hàng" + poll 2 s → chạy processTarget tay (local không có worker) → PENDING_REVIEW, job PARTIAL →
+mở lại đợt: review-check giả lập duyệt → "Đã đăng" → Lịch sử "Xong một phần" ngay → form Tạo mới (trần 9/12 từ server, SKU 5 ký tự
+báo lỗi, blocker). Chưa kiểm gian thật.

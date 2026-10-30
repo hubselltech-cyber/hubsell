@@ -7,7 +7,7 @@
 // ============================================================
 
 import { QUEUES, registerWorker } from "../lib/queue";
-import { processTarget, type ListingCopyJobData } from "../services/listing-copy/service";
+import { processTarget, type ListingCopyJobData } from "../services/listing-copy/job-worker";
 
 export async function registerListingCopyQueueWorkers(): Promise<void> {
   await registerWorker<ListingCopyJobData>(QUEUES.listingCopy, { concurrency: 3, pollSeconds: 2 }, async (job) => {

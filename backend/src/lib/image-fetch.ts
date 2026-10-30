@@ -1,8 +1,7 @@
 // ============================================================
 // TẢI ẢNH TỪ URL VỀ BUFFER — dùng khi đăng sản phẩm lên sàn (3 sàn đều không
 // nhận URL ngoài: Shopee/TikTok phải upload file, Lazada có migrate nhưng kén).
-// Không đổi cỡ/nén (chưa có thư viện ảnh); vượt trần thì báo rõ để khách bổ
-// sung ảnh nhẹ hơn trên sàn.
+// Chỉ tải; đổi cỡ / nén / đổi định dạng theo luật sàn ở lib/image-normalize.ts.
 // ============================================================
 
 export interface FetchedImage {
@@ -43,21 +42,4 @@ function extOf(mime: string): string {
   if (mime.includes("webp")) return "webp";
   if (mime.includes("svg")) return "svg";
   return "jpg";
-}
-
-/** Bộ nhớ đệm ngắn hạn theo khóa (cây danh mục sàn…): TTL mili-giây. */
-export class TtlCache<T> {
-  private readonly map = new Map<string, { at: number; value: Promise<T> }>();
-  constructor(private readonly ttlMs: number) {}
-  get(key: string, load: () => Promise<T>): Promise<T> {
-    const hit = this.map.get(key);
-    const now = Date.now();
-    if (hit && now - hit.at < this.ttlMs) return hit.value;
-    const value = load().catch((err) => {
-      this.map.delete(key);
-      throw err;
-    });
-    this.map.set(key, { at: now, value });
-    return value;
-  }
 }

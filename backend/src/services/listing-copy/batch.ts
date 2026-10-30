@@ -12,22 +12,15 @@
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { ListingCopyError } from "./errors";
+import { createJob, reevaluate, type CreateJobInput } from "./job-edit";
+import { submitJob, type SubmitOptions, type SubmitResult } from "./job-submit";
+import { getJob, type JobView } from "./job-view";
+import { rollupStatus, type RollupStatus } from "./job-worker";
+import { asListing, json } from "./json-fields";
 import { recheckBatchDue } from "./review-check";
-import {
-  asListing,
-  createJob,
-  getJob,
-  json,
-  ListingCopyError,
-  reevaluate,
-  submitJob,
-  type CreateJobInput,
-  type JobView,
-  type SubmitOptions,
-  type SubmitResult,
-} from "./service";
 
-export interface BatchSourceRef {
+interface BatchSourceRef {
   /** Khoá sản phẩm sàn (nguồn gian) hoặc groupKey kho (nguồn kho). */
   key: string;
 }
@@ -42,7 +35,7 @@ export interface CreateBatchInput {
   targetChannelIds: string[];
 }
 
-export interface BatchView {
+interface BatchView {
   id: string;
   createdAt: Date;
   jobs: JobView[];
@@ -96,17 +89,18 @@ export async function getBatch(ownerId: string, batchId: string): Promise<BatchV
   await recheckBatchDue(ownerId, batchId).catch((err) =>
     console.warn(`[listing-copy] hỏi lại duyệt khi mở đợt ${batchId} lỗi: ${(err as Error).message}`)
   );
+  // Job trong đợt tạo song song (cùng mili-giây) → thêm id để thứ tự ổn định giữa các lần nạp.
   const jobs = await prisma.listingCopyJob.findMany({
     where: { userId: ownerId, batchId },
     select: { id: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   if (jobs.length === 0) throw new ListingCopyError("Không tìm thấy đợt sao chép.", 404);
   const views = await Promise.all(jobs.map((j) => getJob(ownerId, j.id)));
   return { id: batchId, createdAt: jobs[0].createdAt, jobs: views, errors: [] };
 }
 
-export interface BatchSummary {
+interface BatchSummary {
   id: string;
   createdAt: Date;
   sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
@@ -116,8 +110,8 @@ export interface BatchSummary {
   /** Số gian đích riêng biệt. */
   channelCount: number;
   targets: { status: string; shopName: string; channelName: string }[];
-  /** Tổng hợp: DRAFT nếu mọi job nháp; SUBMITTED nếu còn gian đang đăng; DONE/PARTIAL/FAILED theo kết quả. */
-  status: "DRAFT" | "SUBMITTED" | "DONE" | "PARTIAL" | "FAILED";
+  /** Tổng hợp theo rollupStatus (job-worker.ts): DRAFT / SUBMITTED / DONE / PARTIAL / FAILED. */
+  status: RollupStatus;
 }
 
 export async function listBatches(ownerId: string, page: number, pageSize: number) {
@@ -148,20 +142,7 @@ export async function listBatches(ownerId: string, page: number, pageSize: numbe
   const items: BatchSummary[] = groups.map((g) => {
     const js = jobs.filter((j) => j.batchId === g.batchId);
     const targets = js.flatMap((j) => j.targets);
-    const statuses = new Set(targets.map((t) => t.status));
-    const running = statuses.has("QUEUED") || statuses.has("RUNNING");
-    const ok = targets.filter((t) => t.status === "LISTED" || t.status === "PENDING_REVIEW").length;
-    const failed = targets.filter((t) => t.status === "FAILED").length;
-    const pending = targets.filter((t) => t.status === "PENDING").length;
-    const status: BatchSummary["status"] = running
-      ? "SUBMITTED"
-      : ok === 0 && failed === 0
-        ? "DRAFT"
-        : failed === 0 && pending === 0
-          ? "DONE"
-          : ok === 0 && pending === 0
-            ? "FAILED"
-            : "PARTIAL";
+    const status = rollupStatus(targets.map((t) => t.status));
     // Mỗi gian một chip, gom trạng thái "xấu nhất" của gian đó trong đợt.
     const perChannel = new Map<string, string>();
     const rank = (st: string) => ["FAILED", "RUNNING", "QUEUED", "PENDING", "PENDING_REVIEW", "LISTED"].indexOf(st);
@@ -188,7 +169,7 @@ export async function listBatches(ownerId: string, page: number, pageSize: numbe
   return { items, total: totalRow[0]?.n ?? 0, page, pageSize };
 }
 
-export interface BatchSubmitResult {
+interface BatchSubmitResult {
   queued: number;
   skipped: { jobId: string; targetId: string; shopName: string; missing: string[] }[];
   batch: BatchView;

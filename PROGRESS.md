@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (tối) — DỌN MÃ SAO CHÉP SẢN PHẨM SAU 25 COMMIT (anh: "rà soát cẩn thận, dọn code thừa, cây chuyên nghiệp"; docs mục 29) — ĐÃ LÀM, kiểm local, test BE 69/69, tsc + eslint sạch
+
+- 2 subagent rà chỉ đọc (backend / frontend) → danh sách mã chết, trùng, nhập ngược tầng, RAM, test, đặt tên; em làm theo, giữ hành vi khách.
+- **Backend:** `services/listing-copy/service.ts` 748 dòng tách 7 tệp theo nhiệm vụ (errors · parse · json-fields · job-view · job-edit · job-submit · job-worker, `rollupStatus` thuần dùng chung với batch); lib mới `ttl-cache` (có trần 500 khóa — hết phình RAM theo số gian), `paginate`, `tree` (pathToRoot thay 4 bản); `upload-images.ts` thay 6 vòng đẩy ảnh; bỏ `searchCategories` khỏi adapter (chỉ probe cũ gọi); route `listing-copy-probe` XÓA → `scripts/probe-listing-adapter.ts`; route `GET /jobs/:id` + `POST /jobs/:id/submit` bỏ (FE không gọi); `sendError` cho mọi route; bỏ ~30 export nội bộ, nhãn missing/warning chỉ còn ở FE; `LOCAL_UPLOAD_*` về images.ts (app.ts + cron từng nhập từ route); mock adapter hết nhập services; đệm thêm attribute tree / logistics / rules theo gian → mở đợt 50 SP không gọi sàn hàng trăm lượt. Test đổi tên/tách đúng chỗ + 6 tệp test mới.
+- **Frontend:** `copy-listing-page.tsx` 1.964 dòng → 15 tệp phẳng (new-copy-step, source/target-picker, batch-view, source/target-editor, category-cascade, batch-history, image-grid DÙNG CHUNG với form Tạo mới, primitives, shared thay labels); `manual-product-form` 731 → 515 + variant-table + platform-check, trần form đọc từ server; `ui/segmented.tsx`, `ui/textarea.tsx`, `lib/text.stripDiacritics`, `api.apiErrorMessage`; poll đợt bằng refetchInterval; làm tươi Lịch sử sau khi tạo đợt.
+- **Đổi hành vi nhỏ:** Lịch sử thấy đợt mới ngay; thứ tự job trong đợt ổn định (thêm id); production hàng đợi chưa sẵn sàng → 503 thay vì đăng trong tiến trình web; kênh vận chuyển Shopee đệm 15 phút.
+- **Giữ có lý do** (docs 29): mock cho gian không token (demo người duyệt), processTarget nhận RUNNING, whitelist RAM 7 ngày, Prisma trong adapter Shopee, cascade/combobox nạp tay, tên 3 kiểu listing-copy / copy-listing / sao-chep-san-pham.
+- Kiểm local demo@hubsell.tech 1280 + dark: tạo đợt → sửa bài → bổ sung gian → đăng → poll → worker giả lập → lịch sử → form Tạo mới. ⏳ Chưa kiểm gian thật; đẩy prod rồi theo dõi log `[listing-copy]`.
+
 ## Phiên 30/10/2026 (~17:45) — BUNCHAR VẪN LỖI ẢNH SAU KHI THÊM ẢNH MỚI: GỐC THẬT = GIAN KHÔNG ĐƯỢC SHOPEE WHITELIST ẢNH MÔ TẢ (docs mục 28) — ĐÃ SỬA, test 46/46, tsc sạch
 
 - Anh chuyển ảnh + tin khách ("thêm ảnh rồi vẫn lỗi, KiotViet đăng được"), nghĩ phải co dung lượng ảnh → việc đó mục 26 đã lên prod 15:21 trước đợt 15:43 của khách, nên không phải gốc.

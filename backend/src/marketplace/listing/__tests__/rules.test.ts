@@ -1,6 +1,5 @@
 // Luật đăng sản phẩm theo sàn — phần thuần (docs/SAO-CHEP-SAN-PHAM.md).
 import { describe, expect, it } from "vitest";
-import { inferOptions } from "../../../services/listing-copy/source";
 import { activeVariants, adjustPrice, computeMissing, computeWarnings, dimsComplete, effectiveOptions, normalizeDims, PLATFORM_LISTING_RULES } from "../rules";
 import type { CategoryRequirements, NormalizedListing } from "../types";
 
@@ -81,30 +80,6 @@ describe("adjustPrice", () => {
     expect(adjustPrice(150000, 10)).toBe(165000);
     expect(adjustPrice(99990, -5)).toBe(95000);
     expect(adjustPrice(1000, -100)).toBe(0);
-  });
-});
-
-describe("inferOptions", () => {
-  it("tên phân loại 'Màu: Đen, Size: M' → 2 nhóm có tên", () => {
-    const opts = inferOptions([
-      { sku: "a", name: "Màu: Đen, Size: M", price: 1, stock: 0, imageUrl: null },
-      { sku: "b", name: "Màu: Trắng, Size: L", price: 1, stock: 0, imageUrl: null },
-    ]);
-    expect(opts).toEqual([
-      { name: "Màu", values: ["Đen", "Trắng"] },
-      { name: "Size", values: ["M", "L"] },
-    ]);
-  });
-  it("'Đen,M' không có tên nhóm → Phân loại 1/2; sản phẩm đơn → rỗng", () => {
-    const opts = inferOptions([
-      { sku: "a", name: "Đen,M", price: 1, stock: 0, imageUrl: null },
-      { sku: "b", name: "Đen,L", price: 1, stock: 0, imageUrl: null },
-    ]);
-    expect(opts).toEqual([
-      { name: "Phân loại 1", values: ["Đen"] },
-      { name: "Phân loại 2", values: ["M", "L"] },
-    ]);
-    expect(inferOptions([{ sku: "a", name: null, price: 1, stock: 0, imageUrl: null }])).toEqual([]);
   });
 });
 

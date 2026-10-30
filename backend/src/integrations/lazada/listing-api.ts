@@ -1,18 +1,19 @@
 // ============================================================
-// LAZADA — API ĐĂNG SẢN PHẨM (lát 1b, docs/SAO-CHEP-SAN-PHAM.md mục 10)
+// LAZADA — API ĐĂNG SẢN PHẨM (docs/SAO-CHEP-SAN-PHAM.md mục 10; CHƯA kiểm trên gian thật)
 //
 // Theo docs open.lazada.com đọc 29/10/2026: /category/tree/get,
 // /product/category/suggestion/get, /category/attributes/get,
 // /category/brands/query, /image/migrate, /product/create (payload JSON),
-// /product/item/get. CHƯA kiểm gian thật. Cần kiểm app 140639 / ISV 142085 có
-// nhóm Product API chưa (docs khảo sát mục 8).
+// /product/item/get. Cần kiểm app 140639 / ISV 142085 có nhóm Product API chưa
+// (docs khảo sát mục 8). Cây danh mục + thuộc tính đệm RAM có trần (lib/ttl-cache).
 // ============================================================
 
-import { TtlCache } from "../../lib/image-fetch";
+import { TtlCache } from "../../lib/ttl-cache";
 import { callLazada, callLazadaPost, escapeXml, type LazadaEnvelope, type LazadaProduct } from "./client";
 import { getLazadaConfig, LAZADA_ENDPOINTS } from "./config";
 
 const LANG = "vi_VN";
+const HOUR = 60 * 60 * 1000;
 
 export interface LazadaCategoryNode {
   category_id: number;
@@ -26,7 +27,8 @@ interface TreeData extends LazadaEnvelope {
   data?: LazadaCategoryNode[];
 }
 
-const treeCache = new TtlCache<LazadaCategoryNode[]>(6 * 60 * 60 * 1000);
+/** Cây danh mục Lazada chung toàn sàn (không theo gian) — một bản, đệm 6 giờ. */
+const treeCache = new TtlCache<LazadaCategoryNode[]>(6 * HOUR);
 
 export async function getCategoryTree(accessToken: string, cfg = getLazadaConfig()): Promise<LazadaCategoryNode[]> {
   return treeCache.get("lazada:tree", async () => {
@@ -39,21 +41,6 @@ export async function getCategoryTree(accessToken: string, cfg = getLazadaConfig
     );
     return d.data ?? [];
   });
-}
-
-/** Duỗi cây thành danh sách lá kèm đường dẫn. */
-export function flattenLeaves(tree: LazadaCategoryNode[]): { id: string; name: string; path: string[] }[] {
-  const out: { id: string; name: string; path: string[] }[] = [];
-  const walk = (nodes: LazadaCategoryNode[], trail: string[]) => {
-    for (const n of nodes) {
-      const name = n.name ?? String(n.category_id);
-      const path = [...trail, name];
-      if (n.leaf || !n.children || n.children.length === 0) out.push({ id: String(n.category_id), name, path });
-      else walk(n.children, path);
-    }
-  };
-  walk(tree, []);
-  return out;
 }
 
 interface SuggestData extends LazadaEnvelope {
@@ -97,15 +84,20 @@ interface AttrData extends LazadaEnvelope {
   data?: LazadaAttribute[];
 }
 
+/** Thuộc tính danh mục chung toàn sàn — đệm 6 giờ theo danh mục. */
+const attributeCache = new TtlCache<LazadaAttribute[]>(6 * HOUR);
+
 export async function getCategoryAttributes(accessToken: string, categoryId: string, cfg = getLazadaConfig()): Promise<LazadaAttribute[]> {
-  const d = await callLazada<AttrData>(
-    LAZADA_ENDPOINTS.api,
-    "/category/attributes/get",
-    { access_token: accessToken, primary_category_id: categoryId, language_code: LANG },
-    "category/attributes/get",
-    cfg
-  );
-  return d.data ?? [];
+  return attributeCache.get(`lazada:${categoryId}`, async () => {
+    const d = await callLazada<AttrData>(
+      LAZADA_ENDPOINTS.api,
+      "/category/attributes/get",
+      { access_token: accessToken, primary_category_id: categoryId, language_code: LANG },
+      "category/attributes/get",
+      cfg
+    );
+    return d.data ?? [];
+  });
 }
 
 interface BrandData extends LazadaEnvelope {
@@ -160,7 +152,7 @@ export interface LazadaCreateSku {
   saleProp?: Record<string, string>;
 }
 
-export interface LazadaCreatePayload {
+interface LazadaCreatePayload {
   Request: {
     Product: {
       PrimaryCategory: string;
@@ -195,7 +187,7 @@ export async function createProduct(
   };
 }
 
-export interface LazadaItemDetail extends LazadaProduct {
+interface LazadaItemDetail extends LazadaProduct {
   attributes?: { name?: string; description?: string; short_description?: string; brand?: string; [k: string]: unknown };
   primary_category?: number | string;
 }

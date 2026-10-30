@@ -58,6 +58,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Câu lỗi để hiện toast: message tiếng Việt của backend (ApiError) hoặc message lỗi thường. */
+export function apiErrorMessage(err: unknown, fallback = "Có lỗi xảy ra, thử lại sau."): string {
+  if (err instanceof ApiError) return err.message;
+  const m = (err as Error)?.message;
+  return typeof m === "string" && m ? m : fallback;
+}
+
 // Hàm gọi API dùng chung: tự gắn token, tự đọc thông báo lỗi tiếng Việt từ backend
 /**
  * Gắn ?from=&to= vào endpoint báo cáo. Không truyền range thì giữ nguyên URL
@@ -8229,6 +8236,9 @@ export function fetchAssistantSuggestions() {
 
 // ============================================================
 // SAO CHÉP SẢN PHẨM — /api/sao-chep-san-pham (docs/SAO-CHEP-SAN-PHAM.md)
+// Tên một tính năng ba cách gọi: FE/quyền `copy-listing`, backend `listing-copy`,
+// URL `sao-chep-san-pham` (tránh chữ ads — adblock). Kiểu dưới đây = hợp đồng
+// dây với JobView/BatchSummary backend; trường chưa vẽ (remoteUrl, attempts…) giữ.
 // ============================================================
 
 export interface CopyListingChannel {
@@ -8442,14 +8452,6 @@ export function fetchCopyListingBrands(jobId: string, targetId: string, q: strin
   );
 }
 
-export function submitCopyListingJob(id: string) {
-  return apiFetch<{
-    queued: number;
-    skipped: { targetId: string; shopName: string; missing: string[] }[];
-    job: CopyListingJob;
-  }>(`${COPY_LISTING_BASE}/jobs/${id}/submit`, { method: "POST" });
-}
-
 // ----- Đợt nhiều sản phẩm (lát 2) -----
 
 export interface CopyListingBatch {
@@ -8477,8 +8479,9 @@ export function fetchCopyListingBatches(page = 1, pageSize = 20) {
   );
 }
 
+/** Đợt từ gian đã nối / kho; nguồn "Tạo mới" đi qua createCopyListingManualJob. */
 export function createCopyListingBatch(body: {
-  sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
+  sourceType: "CHANNEL" | "PRODUCT";
   sourceChannelId?: string;
   sourceKeys: string[];
   targetChannelIds: string[];

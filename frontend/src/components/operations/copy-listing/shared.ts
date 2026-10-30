@@ -1,6 +1,49 @@
-import type { CopyListingJobStatus, CopyListingTargetStatus } from "@/lib/api";
+// ============================================================
+// SAO CHÉP SẢN PHẨM — hằng, nhãn, hàm thuần dùng chung cho các tệp trong thư mục này.
+// Nhãn mã "còn thiếu" / cảnh báo là NGUỒN DUY NHẤT (backend chỉ trả mã —
+// marketplace/listing/rules.ts); thêm mã mới ở backend thì thêm nhãn ở đây.
+// ============================================================
 
-/** Nhãn tiếng Việt của mã "còn thiếu" — khớp MISSING_LABELS backend (marketplace/listing/rules.ts). */
+import type { ChannelName, CopyListingJobStatus, CopyListingTarget, CopyListingTargetStatus } from "@/lib/api";
+
+export type SourceType = "CHANNEL" | "PRODUCT" | "MANUAL";
+
+export const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
+
+/** Trần ảnh bài đăng (Shopee/TikTok 9; Lazada lấy 8 đầu) — khớp MAX_SOURCE_IMAGES backend. */
+export const MAX_LISTING_IMAGES = 9;
+
+/** Mã SKU hợp lệ: chữ/số/-/_/. , 6–50 ký tự — khớp SKU_PATTERN backend (manual.ts). */
+export const SKU_PATTERN = /^[A-Za-z0-9._-]{6,50}$/;
+
+/** Gian đích còn sửa / đăng được. */
+export function isOpen(t: CopyListingTarget): boolean {
+  return t.status === "PENDING" || t.status === "FAILED";
+}
+
+/** Có gian đang xếp hàng / đang đăng. */
+export function anyRunning(targets: { status: CopyListingTargetStatus }[]): boolean {
+  return targets.some((t) => t.status === "QUEUED" || t.status === "RUNNING");
+}
+
+/** Mã SKU (không phân biệt hoa thường) xuất hiện ≥ 2 lần — bỏ chuỗi rỗng. */
+export function duplicateSkus(skus: string[]): Set<string> {
+  const seen = new Set<string>();
+  const dup = new Set<string>();
+  for (const raw of skus) {
+    const k = raw.trim().toLowerCase();
+    if (!k) continue;
+    if (seen.has(k)) dup.add(k);
+    seen.add(k);
+  }
+  return dup;
+}
+
+/** Phân loại khách GIỮ để đăng (khớp activeVariants backend). */
+export function activeVariantsOf<T extends { excluded?: boolean }>(variants: T[]): T[] {
+  return variants.filter((v) => !v.excluded);
+}
+
 const MISSING_LABELS: Record<string, string> = {
   category: "Chưa chọn danh mục",
   brand: "Thiếu thương hiệu",
@@ -22,7 +65,7 @@ const MISSING_LABELS: Record<string, string> = {
   price: "Giá phải lớn hơn 0",
 };
 
-/** Cảnh báo không chặn đăng — khớp WARNING_LABELS backend (rules.ts). */
+/** Cảnh báo không chặn đăng (backend computeWarnings). */
 export const WARNING_LABELS: Record<string, { label: string; detail: string }> = {
   sku_duplicate: {
     label: "Mã SKU trùng giữa các phân loại",
@@ -63,11 +106,6 @@ export function missingLabel(code: string, attrName?: (id: string) => string | u
     return `${ctx.skuMissing} phân loại thiếu mã SKU`;
   }
   return label;
-}
-
-/** Phân loại khách GIỮ để đăng (khớp activeVariants backend). */
-export function activeVariantsOf<T extends { excluded?: boolean }>(variants: T[]): T[] {
-  return variants.filter((v) => !v.excluded);
 }
 
 /**

@@ -5,27 +5,36 @@
 // (3 tầng) với thuộc tính bắt buộc theo lá; Shopee đòi kênh vận chuyển, Lazada
 // đòi thương hiệu + kích thước, TikTok trả "chờ duyệt". Tên chứa "LỖI" → sàn từ
 // chối (để demo nhánh lỗi). Sản phẩm nguồn được đọc từ chính bảng ChannelProduct.
+// Gian demo cho người duyệt app sàn (seed-isv-reviewer) cũng đi qua đây trên prod.
 // ============================================================
 
 import type { Channel } from "@prisma/client";
 import { ChannelName } from "@prisma/client";
-import { buildListingFromChannelRows } from "../../services/listing-copy/source";
+import { prisma } from "../../lib/prisma";
 import { mockImageFor } from "../mockMarketplace";
+import { inferOptions } from "./infer-options";
 import { PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
   Brand,
-  CategoryNode,
   CategoryRequirements,
   CategorySuggestion,
   CategoryTreeNode,
   CreateListingResult,
   ListingAdapter,
   ListingDraft,
+  ListingVariant,
   LogisticOption,
   NormalizedListing,
   ReviewCheckResult,
 } from "./types";
+import { normalizeText } from "./variant-map";
+
+interface CategoryNode {
+  id: string;
+  name: string;
+  path: string[];
+}
 
 const PREFIX: Record<ChannelName, string> = { SHOPEE: "SP", TIKTOK: "TT", LAZADA: "LZ", OFFLINE: "OF" };
 
@@ -50,12 +59,44 @@ function catId(platform: ChannelName, idx: number): string {
 }
 
 function nodesFor(platform: ChannelName): CategoryNode[] {
-  return CATEGORY_TREE.map((c, i) => ({
-    id: catId(platform, i),
-    name: c.path[c.path.length - 1],
-    path: c.path,
-    leaf: true,
+  return CATEGORY_TREE.map((c, i) => ({ id: catId(platform, i), name: c.path[c.path.length - 1], path: c.path }));
+}
+
+/**
+ * Dựng listing từ các dòng ChannelProduct của một sản phẩm sàn (gian giả lập không có API
+ * để đọc chi tiết). Bảng chỉ giữ tên / giá / 1 ảnh / SKU → mô tả dựng tối thiểu.
+ */
+async function buildListingFromChannelRows(channelId: string, itemKey: string): Promise<NormalizedListing | null> {
+  const rows = await prisma.channelProduct.findMany({
+    where: {
+      channelId,
+      OR: [{ externalId: itemKey }, { externalId: { startsWith: `${itemKey}-` } }, { id: itemKey }],
+    },
+    select: { channelSku: true, productName: true, variantName: true, price: true, imageUrl: true, channelStock: true },
+    orderBy: { channelSku: "asc" },
+  });
+  if (rows.length === 0) return null;
+  const variants: ListingVariant[] = rows.map((r) => ({
+    sku: r.channelSku,
+    name: r.variantName?.trim() || null,
+    price: Number(r.price),
+    stock: r.channelStock ?? 0,
+    imageUrl: r.imageUrl,
   }));
+  return {
+    title: rows[0].productName,
+    description: `${rows[0].productName}. Sản phẩm sao chép từ gian hàng đã nối Hubsell; vui lòng bổ sung mô tả chi tiết trước khi đăng.`,
+    images: [...new Set(rows.map((r) => r.imageUrl).filter((u): u is string => Boolean(u)))],
+    descriptionImages: [],
+    categoryId: null,
+    categoryPath: null,
+    brandName: null,
+    weightGrams: null,
+    dimensionsCm: null,
+    options: inferOptions(variants),
+    variants,
+    attributes: [],
+  };
 }
 
 /** Cây phẳng cha → con dựng từ các đường dẫn mẫu: nút trung gian id theo đường dẫn, lá giữ catId. */
@@ -110,14 +151,6 @@ function attributesFor(platform: ChannelName, leafPath: string[]): AttributeDef[
   return base;
 }
 
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/đ/g, "d");
-}
-
 const BRANDS: Brand[] = [
   { id: "0", name: "No Brand" },
   { id: "b-hubsell", name: "Hubsell" },
@@ -146,9 +179,9 @@ export const mockListingAdapter: ListingAdapter = {
   },
 
   async recommendCategory(channel: Channel, listing: NormalizedListing): Promise<CategorySuggestion[]> {
-    const title = normalize(listing.title);
+    const title = normalizeText(listing.title);
     const scored = CATEGORY_TREE.map((c, i) => {
-      const hits = c.keywords.filter((k) => title.includes(normalize(k)));
+      const hits = c.keywords.filter((k) => title.includes(normalizeText(k)));
       const score = hits.reduce((s, k) => s + k.length, 0);
       return { i, score, hits: hits.length };
     })
@@ -162,13 +195,6 @@ export const mockListingAdapter: ListingAdapter = {
       path: CATEGORY_TREE[x.i].path,
       confidence: Math.min(0.95, 0.5 + (0.45 * x.score) / Math.max(top, 1)),
     }));
-  },
-
-  async searchCategories(channel: Channel, query: string): Promise<CategoryNode[]> {
-    const q = normalize(query.trim());
-    const all = nodesFor(channel.channelName);
-    if (!q) return all;
-    return all.filter((n) => normalize(n.path.join(" ")).includes(q));
   },
 
   async getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]> {
@@ -192,8 +218,8 @@ export const mockListingAdapter: ListingAdapter = {
   },
 
   async searchBrands(_channel: Channel, _categoryId: string | null, query: string): Promise<Brand[]> {
-    const q = normalize(query.trim());
-    return q ? BRANDS.filter((b) => normalize(b.name).includes(q)) : BRANDS;
+    const q = normalizeText(query);
+    return q ? BRANDS.filter((b) => normalizeText(b.name).includes(q)) : BRANDS;
   },
 
   /** Giả lập: sàn duyệt ở lần hỏi lại đầu tiên (≥ 2 phút sau khi đăng). */

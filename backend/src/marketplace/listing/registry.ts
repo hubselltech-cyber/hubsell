@@ -1,10 +1,12 @@
 // ============================================================
 // REGISTRY ĐĂNG SẢN PHẨM — gian nào dùng adapter nào (docs/SAO-CHEP-SAN-PHAM.md mục 2, 10).
 //
-// Gian đã ủy quyền API thật (refreshToken; TikTok thêm shopCipher) → adapter
-// THẬT của sàn (lát 1b, chưa kiểm trên gian thật). Gian không token (seed dev,
-// demo) → adapter giả lập. Không bao giờ để gian thật rơi vào giả lập: khách
-// sẽ thấy "Đã đăng" mà sàn không có gì.
+// Gian đã ủy quyền API thật (refreshToken; TikTok thêm shopCipher) → adapter THẬT
+// của sàn (Shopee + TikTok đã đăng thật 29/10/2026; Lazada chưa kiểm gian thật).
+// Gian không token → adapter giả lập: seed dev local và tài khoản DEMO cho người
+// duyệt app sàn (scripts/seed-isv-reviewer.ts cố ý không đặt refreshToken, kể cả
+// trên prod). Gian thật không bao giờ bị xóa refreshToken (mất ủy quyền đổi status,
+// giữ token) nên không rơi vào giả lập.
 // ============================================================
 
 import type { Channel } from "@prisma/client";

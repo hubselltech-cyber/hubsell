@@ -23,8 +23,12 @@ export const qk = {
   // ----- Sao chép sản phẩm (docs/SAO-CHEP-SAN-PHAM.md) -----
   copyListingChannels: () => ["copy-listing-channels"] as const,
   copyListingSources: (params: Record<string, unknown>) => ["copy-listing-sources", params] as const,
+  /** Tiền tố để làm tươi MỌI trang / bộ lọc nguồn sau khi kéo sản phẩm mới từ sàn. */
+  copyListingSourcesAll: () => ["copy-listing-sources"] as const,
   copyListingBatches: (page: number) => ["copy-listing-batches", page] as const,
+  copyListingBatchesAll: () => ["copy-listing-batches"] as const,
   copyListingBatch: (id: string) => ["copy-listing-batch", id] as const,
+  copyListingManualLimits: () => ["copy-listing-manual-limits"] as const,
 
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,

@@ -9,7 +9,6 @@ import {
   requirePermission,
   requirePlatformPermission,
   requireRole,
-  requirePlatformAdmin,
 } from "./middleware/auth";
 import adminRouter from "./routes/admin";
 import authRouter from "./routes/auth";
@@ -32,8 +31,8 @@ import invoiceConfigRouter from "./routes/invoice-config";
 import taxRouter from "./routes/tax";
 import testMisaSandboxRouter from "./routes/test-misa-sandbox";
 import operationsRouter from "./routes/operations";
-import listingCopyRouter, { LOCAL_UPLOAD_DIR, LOCAL_UPLOAD_ENABLED } from "./routes/listing-copy";
-import listingCopyProbeRouter from "./routes/listing-copy-probe";
+import listingCopyRouter from "./routes/listing-copy";
+import { LOCAL_UPLOAD_DIR, LOCAL_UPLOAD_ENABLED } from "./services/listing-copy/images";
 import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
@@ -270,14 +269,10 @@ export function createApp() {
   // router tự siết đúng lá của mình.
   app.use("/api/operations", requireAuth, requirePermission("operations"), requirePlanUnlocked, requireChannel, operationsRouter);
 
-  // Sao chép sản phẩm lên nhiều gian 3 sàn (29/10/2026, docs/SAO-CHEP-SAN-PHAM.md).
-  // Đường dẫn không chứa ad/ads để bộ lọc chặn quảng cáo không cắt.
-  // Dò thử CHỈ ĐỌC adapter thật trên một gian (quản trị nền tảng), không qua cờ bật.
-  app.use("/api/sao-chep-san-pham-probe", requireAuth, requirePlatformAdmin, listingCopyProbeRouter);
-
-  // Sao chép sản phẩm (29/10/2026): mở thật trên prod; tối 29/10 đăng thật thành công
-  // Shopee + TikTok, nhãn "(demo)" đã bỏ; theo dõi log [listing-copy].
-  // Ảnh sản phẩm "Tạo mới" khi local CHƯA cấu hình Supabase Storage (không bao giờ ở production).
+  // Sao chép sản phẩm lên nhiều gian 3 sàn (29/10/2026, docs/SAO-CHEP-SAN-PHAM.md); đường
+  // dẫn không chứa ad/ads để bộ lọc chặn quảng cáo không cắt. Dò thử adapter trên một gian:
+  // scripts/probe-listing-adapter.ts. Ảnh sản phẩm "Tạo mới" khi local CHƯA cấu hình
+  // Supabase Storage (không bao giờ ở production).
   if (LOCAL_UPLOAD_ENABLED) app.use("/local-uploads", express.static(LOCAL_UPLOAD_DIR, { maxAge: "1h" }));
   app.use(
     "/api/sao-chep-san-pham",

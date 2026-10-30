@@ -5,9 +5,9 @@
 // ============================================================
 
 /** Cạnh dài tối đa sau nén — chữ trên màn hình điện thoại vẫn đọc rõ. */
-export const COMPRESS_MAX_SIDE = 1600;
+const COMPRESS_MAX_SIDE = 1600;
 /** Đích dung lượng mỗi ảnh (backend hỗ trợ chặn cứng 600 KB, ảnh sản phẩm 1 MB). */
-export const COMPRESS_TARGET_BYTES = 400 * 1024;
+const COMPRESS_TARGET_BYTES = 400 * 1024;
 
 /**
  * Thu về ≤ maxSide, xuất JPEG, hạ chất lượng rồi hạ kích thước dần tới khi ≤

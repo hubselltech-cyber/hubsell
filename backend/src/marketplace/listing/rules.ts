@@ -10,7 +10,7 @@ import { ChannelName } from "@prisma/client";
 import type { CategoryRequirements, ListingOption, ListingVariant, NormalizedListing } from "./types";
 import { splitVariantValues } from "./variant-map";
 
-export type PlatformRules = Omit<CategoryRequirements, "attributes">;
+type PlatformRules = Omit<CategoryRequirements, "attributes">;
 
 export const PLATFORM_LISTING_RULES: Record<ChannelName, PlatformRules> = {
   SHOPEE: {
@@ -72,7 +72,10 @@ export const PLATFORM_LISTING_RULES: Record<ChannelName, PlatformRules> = {
   },
 };
 
-/** Mã trường còn thiếu — FE dịch bằng MISSING_LABELS. `attr:<id>` = thuộc tính danh mục. */
+/**
+ * Mã trường còn thiếu — nhãn tiếng Việt ở FE (components/operations/copy-listing/shared.ts,
+ * thêm mã mới thì thêm nhãn ở đó). `attr:<id>` = thuộc tính danh mục.
+ */
 export type MissingCode =
   | "category"
   | "brand"
@@ -94,27 +97,6 @@ export type MissingCode =
   | "price"
   | `attr:${string}`;
 
-export const MISSING_LABELS: Record<Exclude<MissingCode, `attr:${string}`>, string> = {
-  category: "Chưa chọn danh mục",
-  brand: "Thiếu thương hiệu",
-  weight: "Thiếu cân nặng",
-  dimensions: "Kích thước kiện chưa đủ 3 số (Dài × Rộng × Cao)",
-  logistics: "Chưa bật kênh vận chuyển",
-  title_short: "Tên quá ngắn",
-  title_long: "Tên quá dài",
-  description: "Mô tả quá ngắn",
-  images: "Chưa có ảnh",
-  too_many_images: "Quá số ảnh cho phép",
-  too_many_options: "Quá số nhóm phân loại",
-  too_many_option_values: "Một nhóm phân loại quá nhiều giá trị",
-  too_many_variants: "Quá số phân loại",
-  no_variants: "Không còn phân loại nào để đăng",
-  sku: "Phân loại thiếu SKU",
-  sku_duplicate: "Mã SKU trùng nhau giữa các phân loại",
-  sku_exists: "SKU đã có trên gian đích",
-  price: "Giá phải lớn hơn 0",
-};
-
 export interface TargetDraftState {
   categoryId: string | null;
   attributes: Record<string, string>;
@@ -127,16 +109,12 @@ export interface TargetDraftState {
 }
 
 /**
- * Tính danh sách còn thiếu của một gian đích. `requirements` null = chưa có danh
- * mục (hoặc adapter không trả luật) → chỉ áp luật mặc định của sàn.
- */
-/**
  * Trần ảnh chèn trong mô tả khi đăng. Shopee docs add_item: extended_description ≤12 ảnh;
  * TikTok/Lazada docs không nêu trần riêng → tự chọn cùng mức 12 (mặc định, chưa có căn cứ sàn).
  */
 export const MAX_DESCRIPTION_IMAGES = 12;
 
-export interface Dims {
+interface Dims {
   length: number;
   width: number;
   height: number;
@@ -185,6 +163,10 @@ export function effectiveOptions(listing: NormalizedListing): ListingOption[] {
     .filter((o) => o.values.length > 0);
 }
 
+/**
+ * Tính danh sách còn thiếu của một gian đích. `requirements` null = chưa có danh
+ * mục (hoặc adapter không trả luật) → chỉ áp luật mặc định của sàn.
+ */
 export function computeMissing(
   platform: ChannelName,
   listing: NormalizedListing,
@@ -232,16 +214,8 @@ function hasDuplicateSkus(variants: ListingVariant[]): boolean {
   return new Set(skus).size !== skus.length;
 }
 
-/** Mã CẢNH BÁO — không chặn đăng, FE vẽ chip riêng + tooltip hệ quả. */
-export type WarningCode = "sku_duplicate";
-
-export const WARNING_LABELS: Record<WarningCode, { label: string; detail: string }> = {
-  sku_duplicate: {
-    label: "Mã SKU trùng giữa các phân loại",
-    detail:
-      "Sàn này chấp nhận mã trùng, vẫn đăng được. Trên gian đích Hubsell sẽ hiện từng phân loại kèm đuôi tên (vd JS051 (4-6kg)); muốn đồng bộ tồn riêng từng phân loại thì mã kho phải đặt y hệt đuôi đó, hoặc đặt mỗi phân loại một mã riêng.",
-  },
-};
+/** Mã CẢNH BÁO — không chặn đăng, FE vẽ chip riêng + tooltip hệ quả (nhãn ở FE shared.ts). */
+type WarningCode = "sku_duplicate";
 
 /**
  * Cảnh báo (không chặn) cho một gian đích — thuần theo sàn + nguồn, không cần API nên

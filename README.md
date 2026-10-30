@@ -82,7 +82,7 @@ hubsell/
 │       │   ├── warehouse/{returns,shipping-alerts,sync}
 │       │   ├── finance/{analytics,expenses,cost-prices,fee-audit,loss-orders,realized-pnl,shipping-alerts}
 │       │   ├── ads/{shopee,lazada,tiktok}          # Trợ lý quảng cáo đa sàn
-│       │   ├── operations-assistant/{chat,reviews,ai-rules,loss-orders,copy-listing}   # reviews có tab Cấu hình tự động (29/10/2026 gộp từ ai-rules — route cũ chỉ chuyển hướng); copy-listing = Sao chép sản phẩm lên nhiều gian
+│       │   ├── operations-assistant/{chat,reviews,ai-rules,loss-orders,copy-listing}   # reviews có tab Cấu hình tự động (29/10/2026 gộp từ ai-rules — route cũ chỉ chuyển hướng); copy-listing = Sao chép sản phẩm lên nhiều gian (components/operations/copy-listing/ 16 tệp phẳng: new-copy-step, source/target-picker, batch-view, source/target-editor, image-grid, primitives, shared…)
 │       │   ├── invoicing/{connect,history,tax-settings}
 │       │   ├── settings/{general,plan,tax,other} · affiliate/ · koc-marketing/ (ẩn)
 │       │   └── admin/{customers,finance,health,marketing,plans,system}   # HQ điều hành nền tảng
@@ -100,21 +100,23 @@ hubsell/
 │   │   ├── schema.prisma · seed.ts
 │   │   ├── migrations/                  # Tự áp khi deploy (migrate deploy)
 │   │   └── manual-migrations/           # SQL áp tay (supabase-schema.sql, ads 08/2026, bật RLS 09/2026, dọn pg-boss evt.order 10/2026) — tư liệu
-│   ├── scripts/                         # 44 script chạy tay: seed-*, probe-*, bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
+│   ├── scripts/                         # 45 script chạy tay: seed-*, probe-* (probe-listing-adapter = dò adapter đăng SP trên 1 gian), bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
 │   └── src/
 │       ├── index.ts                     # Khởi động theo HUBSELL_ROLE=all|web|worker
-│       ├── app.ts                       # Express app: mount 37 route + middleware gác quyền/gói
+│       ├── app.ts                       # Express app: mount 36 route + middleware gác quyền/gói
 │       ├── middleware/auth.ts           # JWT, requireAuth, requirePermission, requirePlatformPermission
 │       ├── config/                      # permission-registry, platform-permission-registry, tax-config,
 │       │                                #   ads-cadence, capacity-plan, marketplace-read (lớp đọc sàn Pha B)
 │       ├── lib/                         # Thuần + hạ tầng: prisma, queue (pg-boss), mailer, secret-box,
-│       │                                #   date-range, finance-definitions, pnl-formula, cost-price, image-fetch (tải ảnh về buffer), ...
+│       │                                #   date-range, finance-definitions, pnl-formula, cost-price, image-fetch (tải ảnh về buffer),
+│       │                                #   image-normalize (sharp theo luật sàn), ttl-cache (đệm TTL có trần), paginate, tree, ...
 │       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
-│       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source/service/batch/review-check),
+│       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source · job-edit ·
+│       │                                #   job-view · job-submit · job-worker · batch · manual · images · review-check — docs/SAO-CHEP-SAN-PHAM.md mục 29),
 │       │                                #   cursor-reader + marketplace-gateway + sync-lanes (lớp đọc sàn Pha B,
 │       │                                #   chưa nối worker — docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b), ...
-│       ├── routes/                      # 37 nhóm endpoint /api/*: auth, orders, products, finance, tax,
+│       ├── routes/                      # 36 nhóm endpoint /api/*: auth, orders, products, finance, tax,
 │       │                                #   subscription, ads, tiktok-ads, webhooks, admin*, support, ...
 │       ├── workers/                     # 28 tiến trình nền, đăng ký trong workers/index.ts:
 │       │                                #   order-auto-sync (lịch từng gian), event-queue (webhook pg-boss),
@@ -175,7 +177,6 @@ Ký hiệu cột **Gác** (middleware trong `backend/src/middleware/auth.ts`):
 | `/api/command-center` | `command-center` | JWT · chủ shop | Trung tâm điều hành trên Tổng quan |
 | `/api/invoice-config` · `/api/tax` | `invoice-config`, `tax` | JWT · quyền `invoicing` · gói mở | Hóa đơn & Thuế (MISA meInvoice): cấu hình, tờ nháp, phát hành, tờ khai; không gác có gian |
 | `/api/sao-chep-san-pham` | `listing-copy` | JWT · quyền `operations.copy-listing` · gói mở · có gian | Sao chép sản phẩm lên nhiều gian 3 sàn: nguồn (gian đã nối / kho), đợt N SP × M gian, cây danh mục gian đích, đăng qua hàng đợi `listing.copy` (tránh chữ ads — adblock) |
-| `/api/sao-chep-san-pham-probe` | `listing-copy-probe` | JWT · quản trị nền tảng | dò thử CHỈ ĐỌC adapter thật trên một gian (danh mục, thuộc tính, thương hiệu, vận chuyển, chi tiết 1 SP) |
 | `/api/test/misa-sandbox` | `test-misa-sandbox` | JWT · chủ shop · env `MISA_SANDBOX_TEST_ENABLED=1` trên production | cụm thử sandbox MISA, mặc định 503 trên production |
 | `/api/operations` | `operations` | JWT · quyền `operations.*` · gói mở · có gian | Trợ lý vận hành: đánh giá (chat đang ẩn) |
 | `/api/koc` | `koc` | JWT · quyền `koc` · gói mở · có gian | KOC & Affiliate — đang ẩn (25/09) |

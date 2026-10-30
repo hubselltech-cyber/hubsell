@@ -4,38 +4,41 @@
 // Đường dẫn tiếng Việt không dấu như /api/quang-cao: tránh các đoạn ad/ads/
 // campaign bị bộ lọc chặn quảng cáo cắt (app.ts gotcha 25/09). Mount ở app.ts
 // với requireAuth + requirePermission("operations.copy-listing") + requirePlanUnlocked
-// + requireChannel.
+// + requireChannel. Tên: backend `listing-copy`, FE/quyền `copy-listing`, URL
+// `sao-chep-san-pham`, hàng đợi `listing.copy` — cùng một tính năng.
 // ============================================================
 
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import express, { Router } from "express";
+import express, { Router, type NextFunction, type Response } from "express";
 import { prisma } from "../lib/prisma";
 import { isStorageConfigured, productImages } from "../lib/supabase-storage";
-import { canSeeFinancials } from "../middleware/auth";
-import { checkManualDraft, findTakenSkus, MANUAL_LIMITS, parseManualListing } from "../services/listing-copy/manual";
-import { attachUploadsToJob, imageQuotaOf, quotaExceeded, recordUpload } from "../services/listing-copy/images";
+import { pathToRoot } from "../lib/tree";
 import { getListingAdapter } from "../marketplace/listing/registry";
 import { normalizeDims } from "../marketplace/listing/rules";
 import { syncChannelProducts } from "../marketplace/product-sync";
-import type { AuthRequest } from "../middleware/auth";
-import { scheduleAfterProductSync } from "../workers/product-catalog-sync";
-import {
-  createJob,
-  getJob,
-  ListingCopyError,
-  submitJob,
-  updateJobSource,
-  updateTarget,
-  type TargetPatch,
-} from "../services/listing-copy/service";
-import { listChannelSources, listProductSources } from "../services/listing-copy/source";
+import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import { applyTargetToBatch, createBatch, getBatch, listBatches, submitBatch } from "../services/listing-copy/batch";
+import { ListingCopyError } from "../services/listing-copy/errors";
+import {
+  attachUploadsToJob,
+  imageQuotaOf,
+  LOCAL_UPLOAD_DIR,
+  LOCAL_UPLOAD_ENABLED,
+  quotaExceeded,
+  recordUpload,
+} from "../services/listing-copy/images";
+import { createJob, updateJobSource, updateTarget, type TargetPatch } from "../services/listing-copy/job-edit";
+import { checkManualDraft, findTakenSkus, MANUAL_LIMITS, parseManualListing } from "../services/listing-copy/manual";
+import { str } from "../services/listing-copy/parse";
+import { listChannelSources, listProductSources } from "../services/listing-copy/source";
+import { scheduleAfterProductSync } from "../workers/product-catalog-sync";
 
 const router = Router();
 
-function sendError(res: import("express").Response, err: unknown, next: import("express").NextFunction): void {
+/** Lỗi nghiệp vụ → mã + câu tiếng Việt; còn lại giao error handler chung. */
+function sendError(res: Response, err: unknown, next: NextFunction): void {
   if (err instanceof ListingCopyError) {
     res.status(err.status).json({ error: err.message });
     return;
@@ -50,9 +53,28 @@ function pageParams(req: AuthRequest): { page: number; pageSize: number } {
   };
 }
 
-function str(v: unknown): string {
-  return typeof v === "string" ? v.trim() : "";
+/** undefined = không gửi; null / "" = xóa; còn lại = số (NaN → null). */
+function numOrNull(v: unknown): number | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
+
+/** Gian hàng của chủ shop trong phạm vi nhân viên — ACTIVE, không Offline. */
+async function ownChannel(req: AuthRequest, channelId: string) {
+  return prisma.channel.findFirst({
+    where: {
+      id: channelId,
+      userId: req.ownerId!,
+      status: "ACTIVE",
+      channelName: { not: "OFFLINE" },
+      ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+    },
+  });
+}
+
+// ---------------------------------------------------------------- Bước 1: nguồn
 
 /** Gian đích khả dụng + gian nguồn: ACTIVE, không Offline, trong phạm vi nhân viên. */
 router.get("/channels", async (req: AuthRequest, res, next) => {
@@ -85,31 +107,16 @@ router.get("/sources", async (req: AuthRequest, res, next) => {
   try {
     const { page, pageSize } = pageParams(req);
     const search = str(req.query.search);
-    const type = str(req.query.type);
-    if (type === "product") {
+    if (str(req.query.type) === "product") {
       res.json(await listProductSources(req.ownerId!, search, page, pageSize));
       return;
     }
     const channelId = str(req.query.channelId);
-    if (!channelId) {
-      res.status(400).json({ error: "Thiếu channelId." });
-      return;
-    }
-    const channel = await prisma.channel.findFirst({
-      where: {
-        id: channelId,
-        userId: req.ownerId!,
-        ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
-      },
-      select: { id: true },
-    });
-    if (!channel) {
-      res.status(404).json({ error: "Gian nguồn không thuộc shop này." });
-      return;
-    }
+    if (!channelId) throw new ListingCopyError("Thiếu channelId.");
+    if (!(await ownChannel(req, channelId))) throw new ListingCopyError("Gian nguồn không thuộc shop này.", 404);
     res.json(await listChannelSources(channelId, search, page, pageSize));
   } catch (err) {
-    next(err);
+    sendError(res, err, next);
   }
 });
 
@@ -123,23 +130,9 @@ router.get("/sources", async (req: AuthRequest, res, next) => {
 router.post("/sources/sync", async (req: AuthRequest, res, next) => {
   try {
     const channelId = str((req.body ?? {}).channelId);
-    if (!channelId) {
-      res.status(400).json({ error: "Thiếu channelId." });
-      return;
-    }
-    const channel = await prisma.channel.findFirst({
-      where: {
-        id: channelId,
-        userId: req.ownerId!,
-        status: "ACTIVE",
-        channelName: { not: "OFFLINE" },
-        ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
-      },
-    });
-    if (!channel) {
-      res.status(404).json({ error: "Gian nguồn không thuộc shop này." });
-      return;
-    }
+    if (!channelId) throw new ListingCopyError("Thiếu channelId.");
+    const channel = await ownChannel(req, channelId);
+    if (!channel) throw new ListingCopyError("Gian nguồn không thuộc shop này.", 404);
     const RECENT_MS = 2 * 60 * 1000;
     if (channel.lastProductSyncAt && Date.now() - channel.lastProductSyncAt.getTime() < RECENT_MS) {
       res.json({ skipped: true, lastProductSyncAt: channel.lastProductSyncAt, scanned: 0, created: 0, updated: 0 });
@@ -154,11 +147,11 @@ router.post("/sources/sync", async (req: AuthRequest, res, next) => {
       res.status(502).json({ error: `Không kéo được danh mục từ sàn: ${(err as Error).message}` });
     }
   } catch (err) {
-    next(err);
+    sendError(res, err, next);
   }
 });
 
-// ---------- Đợt nhiều sản phẩm (lát 2) ----------
+// ---------------------------------------------------------------- Đợt nhiều sản phẩm (lát 2)
 
 router.get("/batches", async (req: AuthRequest, res, next) => {
   try {
@@ -173,10 +166,7 @@ router.post("/batches", async (req: AuthRequest, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const sourceType = body.sourceType === "PRODUCT" ? "PRODUCT" : body.sourceType === "CHANNEL" ? "CHANNEL" : null;
-    if (!sourceType) {
-      res.status(400).json({ error: "sourceType phải là CHANNEL hoặc PRODUCT." });
-      return;
-    }
+    if (!sourceType) throw new ListingCopyError("sourceType phải là CHANNEL hoặc PRODUCT.");
     const sourceKeys = Array.isArray(body.sourceKeys) ? body.sourceKeys.map(String) : [];
     const targetChannelIds = Array.isArray(body.targetChannelIds) ? body.targetChannelIds.map(String) : [];
     const batch = await createBatch({
@@ -220,15 +210,15 @@ router.post("/batches/:id/targets/:tid/apply", async (req: AuthRequest, res, nex
   }
 });
 
+// ---------------------------------------------------------------- Lượt (một sản phẩm) trong đợt
+
+/** Tạo lượt lẻ — FE dùng cho nguồn "Tạo mới" (docs mục 24); CHANNEL/PRODUCT đi qua /batches. */
 router.post("/jobs", async (req: AuthRequest, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const sourceType =
       body.sourceType === "PRODUCT" ? "PRODUCT" : body.sourceType === "CHANNEL" ? "CHANNEL" : body.sourceType === "MANUAL" ? "MANUAL" : null;
-    if (!sourceType) {
-      res.status(400).json({ error: "sourceType phải là CHANNEL, PRODUCT hoặc MANUAL." });
-      return;
-    }
+    if (!sourceType) throw new ListingCopyError("sourceType phải là CHANNEL, PRODUCT hoặc MANUAL.");
     const targetChannelIds = Array.isArray(body.targetChannelIds) ? body.targetChannelIds.map(String) : [];
     let manual: { listing: ReturnType<typeof parseManualListing>["listing"]; meta: ReturnType<typeof parseManualListing>["manual"] } | undefined;
     if (sourceType === "MANUAL") {
@@ -259,26 +249,11 @@ router.post("/jobs", async (req: AuthRequest, res, next) => {
     }
     res.status(201).json(job);
   } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
+    sendError(res, err, next);
   }
 });
 
-router.get("/jobs/:id", async (req: AuthRequest, res, next) => {
-  try {
-    res.json(await getJob(req.ownerId!, req.params.id));
-  } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
-  }
-});
-
+/** Sửa bài đăng (tên / mô tả / ảnh / giá-tồn-SKU từng phân loại) — áp cho mọi gian đích của lượt. */
 router.patch("/jobs/:id", async (req: AuthRequest, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -310,20 +285,9 @@ router.patch("/jobs/:id", async (req: AuthRequest, res, next) => {
       })
     );
   } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
+    sendError(res, err, next);
   }
 });
-
-function numOrNull(v: unknown): number | null | undefined {
-  if (v === undefined) return undefined;
-  if (v === null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
 
 router.patch("/jobs/:id/targets/:tid", async (req: AuthRequest, res, next) => {
   try {
@@ -348,11 +312,7 @@ router.patch("/jobs/:id/targets/:tid", async (req: AuthRequest, res, next) => {
     if (s !== undefined) patch.stock = s === null ? null : Math.max(0, Math.round(s));
     res.json(await updateTarget(req.ownerId!, req.params.id, req.params.tid, patch));
   } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
+    sendError(res, err, next);
   }
 });
 
@@ -380,28 +340,18 @@ router.get("/jobs/:id/targets/:tid/category-tree", async (req: AuthRequest, res,
     const byId = new Map(all.map((n) => [n.id, n]));
     const childrenOf = (parentId: string | null) => all.filter((n) => n.parentId === parentId);
     const selectedId = str(req.query.selectedId);
-    if (selectedId && byId.has(selectedId)) {
-      const path: string[] = [];
-      let cur = byId.get(selectedId);
-      let guard = 0;
-      while (cur && guard++ < 10) {
-        path.unshift(cur.id);
-        cur = cur.parentId ? byId.get(cur.parentId) : undefined;
-      }
+    const selected = selectedId ? byId.get(selectedId) : undefined;
+    if (selected) {
+      const path = pathToRoot(byId, selectedId, (n) => n.parentId, (n) => n.id);
       const levels = path.map((_, i) => childrenOf(i === 0 ? null : path[i - 1]));
-      const last = byId.get(selectedId)!;
-      if (!last.leaf) levels.push(childrenOf(last.id));
+      if (!selected.leaf) levels.push(childrenOf(selected.id));
       res.json({ path, levels });
       return;
     }
     const parentId = str(req.query.parentId) || null;
     res.json({ path: [], levels: [childrenOf(parentId)] });
   } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
+    sendError(res, err, next);
   }
 });
 
@@ -412,24 +362,7 @@ router.get("/jobs/:id/targets/:tid/brands", async (req: AuthRequest, res, next) 
       items: await getListingAdapter(channel).searchBrands(channel, str(req.query.categoryId) || null, str(req.query.q)),
     });
   } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
-  }
-});
-
-router.post("/jobs/:id/submit", async (req: AuthRequest, res, next) => {
-  try {
-    const result = await submitJob(req.ownerId!, req.params.id, { actorId: req.userId ?? null, allowCost: canSeeFinancials(req) });
-    res.json({ ...result, job: await getJob(req.ownerId!, req.params.id) });
-  } catch (err) {
-    if (err instanceof ListingCopyError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    next(err);
+    sendError(res, err, next);
   }
 });
 
@@ -465,10 +398,6 @@ router.post("/sku-check", async (req: AuthRequest, res, next) => {
  * Prod: Supabase Storage bucket công khai product-images. Local chưa cấu hình Storage
  * → ghi `backend/.local-uploads` và phục vụ ở /local-uploads (app.ts), chỉ ngoài production.
  */
-const LOCAL_UPLOAD_DIR = path.resolve(process.cwd(), ".local-uploads");
-export const LOCAL_UPLOAD_ENABLED = !isStorageConfigured() && process.env.NODE_ENV !== "production";
-export { LOCAL_UPLOAD_DIR };
-
 router.post(
   "/images",
   express.raw({ type: [...productImages.mime], limit: productImages.sizeLimit }),
@@ -476,17 +405,11 @@ router.post(
     try {
       const contentType = (req.headers["content-type"] ?? "").split(";")[0].trim();
       const body = req.body as Buffer;
-      if (!Buffer.isBuffer(body) || body.length === 0) {
-        res.status(400).json({ error: "Chỉ nhận ảnh JPG/PNG/WebP (gửi thẳng nội dung ảnh)." });
-        return;
-      }
+      if (!Buffer.isBuffer(body) || body.length === 0) throw new ListingCopyError("Chỉ nhận ảnh JPG/PNG/WebP (gửi thẳng nội dung ảnh).");
       // Trần ảnh theo gói (lát C) — chặn CỨNG tại nút tải lên, như trần gian/nhân viên.
       const quota = await imageQuotaOf(req.ownerId!);
       if (quotaExceeded(quota)) {
-        res.status(403).json({
-          error: `Gói hiện tại cho tối đa ${quota.max} ảnh sản phẩm, đang dùng ${quota.used}. Nâng gói hoặc bỏ bớt ảnh ở lượt tạo mới cũ.`,
-        });
-        return;
+        throw new ListingCopyError(`Gói hiện tại cho tối đa ${quota.max} ảnh sản phẩm, đang dùng ${quota.used}. Nâng gói hoặc bỏ bớt ảnh ở lượt tạo mới cũ.`, 403);
       }
       const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
       const now = new Date();
@@ -497,10 +420,7 @@ router.post(
         res.json({ url });
         return;
       }
-      if (!LOCAL_UPLOAD_ENABLED) {
-        res.status(503).json({ error: "Kho ảnh chưa được cấu hình — báo support@hubsell.vn." });
-        return;
-      }
+      if (!LOCAL_UPLOAD_ENABLED) throw new ListingCopyError("Kho ảnh chưa được cấu hình — báo support@hubsell.vn.", 503);
       const abs = path.join(LOCAL_UPLOAD_DIR, "product-images", rel);
       await fs.mkdir(path.dirname(abs), { recursive: true });
       await fs.writeFile(abs, body);

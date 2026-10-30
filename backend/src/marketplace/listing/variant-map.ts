@@ -101,7 +101,6 @@ export function textToHtml(text: string): string {
   return paras.join("");
 }
 
-/** HTML → text thuần giữ xuống dòng (Shopee chỉ nhận text). */
 /**
  * Tách ảnh chèn trong mô tả HTML (TikTok/Lazada): trả danh sách src theo thứ tự + HTML đã bỏ thẻ img.
  * Bỏ qua data URI và src rỗng; không trùng.
@@ -123,6 +122,7 @@ export function appendHtmlImages(html: string, urls: string[]): string {
   return html + urls.map((u) => `<p><img src="${u.replace(/"/g, "&quot;")}" /></p>`).join("");
 }
 
+/** HTML → text thuần giữ xuống dòng (Shopee chỉ nhận text). */
 export function htmlToText(html: string): string {
   return html
     .replace(/<\s*br\s*\/?>/gi, "\n")
@@ -136,6 +136,7 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
+/** Bỏ dấu, chữ thường, trim — để so tên / tìm không phân biệt dấu. */
 export function normalizeText(s: string): string {
   return s
     .toLowerCase()

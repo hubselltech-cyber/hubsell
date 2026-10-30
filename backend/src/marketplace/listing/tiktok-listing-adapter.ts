@@ -1,16 +1,16 @@
 // ============================================================
-// ADAPTER ĐĂNG SẢN PHẨM — TIKTOK SHOP (lát 1b, CHƯA kiểm gian thật)
+// ADAPTER ĐĂNG SẢN PHẨM — TIKTOK SHOP (đăng thật trên gian từ 29/10/2026)
 //
-// createListing: upload ảnh → kho bán mặc định → Create Product save_mode
-// LISTING → sàn trả product_id, trạng thái PENDING chờ duyệt → ta ghi
-// "Chờ sàn duyệt". Gian ủy quyền trước 12/10/2026 thiếu Product Modify →
-// báo nối lại gian (tiktok/scopes.ts).
+// createListing: upload ảnh (chuẩn hóa sharp) → kho bán mặc định → Create Product
+// save_mode LISTING → sàn trả product_id, trạng thái PENDING chờ duyệt → ta ghi
+// "Chờ sàn duyệt" (review-check.ts hỏi lại). Gian ủy quyền trước 12/10/2026 thiếu
+// Product Modify → báo nối lại gian (tiktok/scopes.ts).
 // ============================================================
 
 import type { Channel } from "@prisma/client";
-import { fetchImageBuffer } from "../../lib/image-fetch";
-import { normalizeImage, TIKTOK_IMAGE } from "../../lib/image-normalize";
-import { getWarehouses } from "../../integrations/tiktok/client";
+import type { FetchedImage } from "../../lib/image-fetch";
+import { TIKTOK_IMAGE } from "../../lib/image-normalize";
+import { getProduct, getWarehouses } from "../../integrations/tiktok/client";
 import * as api from "../../integrations/tiktok/listing-api";
 import { tiktokNeedsReauthForStockPush } from "../../integrations/tiktok/scopes";
 import { getValidAccessToken } from "../../integrations/tiktok/service";
@@ -19,7 +19,6 @@ import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_R
 import type {
   AttributeDef,
   Brand,
-  CategoryNode,
   CategoryRequirements,
   CategorySuggestion,
   CategoryTreeNode,
@@ -32,7 +31,8 @@ import type {
   NormalizedListing,
   ReviewCheckResult,
 } from "./types";
-import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, normalizeText, optionImages, reorderOptionsForImages, textToHtml, variantPairs, vndInt } from "./variant-map";
+import { prepareImage, uploadImages } from "./upload-images";
+import { appendHtmlImages, extractHtmlImages, gramsToKg, htmlToText, optionImages, reorderOptionsForImages, textToHtml, variantPairs, vndInt } from "./variant-map";
 
 async function ctxOf(channel: Channel) {
   if (tiktokNeedsReauthForStockPush(channel)) {
@@ -87,7 +87,6 @@ export const tiktokListingAdapter: ListingAdapter = {
 
   async checkReviewStatus(channel: Channel, remoteItemId: string): Promise<ReviewCheckResult | null> {
     const ctx = await ctxOf(channel);
-    const { getProduct } = await import("../../integrations/tiktok/client");
     const p = await getProduct({ ...ctx, productId: remoteItemId });
     if (!p) return null;
     return mapTikTokReview(p as Parameters<typeof mapTikTokReview>[0]);
@@ -95,7 +94,6 @@ export const tiktokListingAdapter: ListingAdapter = {
 
   async fetchListing(channel: Channel, productId: string): Promise<NormalizedListing | null> {
     const ctx = await ctxOf(channel);
-    const { getProduct } = await import("../../integrations/tiktok/client");
     const p = await getProduct({ ...ctx, productId });
     if (!p) return null;
     const optionMap = new Map<string, Set<string>>();
@@ -162,19 +160,6 @@ export const tiktokListingAdapter: ListingAdapter = {
     });
   },
 
-  async searchCategories(channel: Channel, query: string): Promise<CategoryNode[]> {
-    const ctx = await ctxOf(channel);
-    const all = await api.getCategories(ctx);
-    const q = normalizeText(query);
-    const nodes = all
-      .filter((c) => c.is_leaf)
-      .map((c) => {
-        const path = api.categoryPath(all, c.id);
-        return { id: c.id, name: c.local_name ?? c.id, path, leaf: true };
-      });
-    return (q ? nodes.filter((n) => normalizeText(n.path.join(" ")).includes(q)) : nodes).slice(0, 300);
-  },
-
   async getCategoryTree(channel: Channel): Promise<CategoryTreeNode[]> {
     const ctx = await ctxOf(channel);
     const all = await api.getCategories(ctx);
@@ -211,18 +196,12 @@ export const tiktokListingAdapter: ListingAdapter = {
 
   async createListing(channel: Channel, draft: ListingDraft): Promise<CreateListingResult> {
     const ctx = await ctxOf(channel);
-    const main_images: { uri: string }[] = [];
-    for (const url of draft.listing.images.slice(0, 9)) {
-      const img = await normalizeImage(await fetchImageBuffer(url), TIKTOK_IMAGE);
-      const up = await api.uploadProductImage(ctx, img, "MAIN_IMAGE");
-      main_images.push({ uri: up.uri });
-    }
+    const upload = (useCase: "MAIN_IMAGE" | "ATTRIBUTE_IMAGE" | "DESCRIPTION_IMAGE") => (img: FetchedImage) => api.uploadProductImage(ctx, img, useCase);
+    const main_images = (await uploadImages(draft.listing.images.slice(0, 9), TIKTOK_IMAGE, upload("MAIN_IMAGE"))).map((up) => ({ uri: up.uri }));
     if (main_images.length === 0) throw new Error("Không tải được ảnh nào lên TikTok");
     // Ảnh chèn trong mô tả: upload use_case DESCRIPTION_IMAGE, lấy url trả về ghép <img> cuối mô tả.
     const descUrls: string[] = [];
-    for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
-      const img = await normalizeImage(await fetchImageBuffer(url), TIKTOK_IMAGE);
-      const up = await api.uploadProductImage(ctx, img, "DESCRIPTION_IMAGE");
+    for (const up of await uploadImages(draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES), TIKTOK_IMAGE, upload("DESCRIPTION_IMAGE"))) {
       if (up.url) descUrls.push(up.url);
       else console.warn(`[listing-copy] TikTok upload ảnh mô tả không trả url (uri ${up.uri}) — bỏ qua ảnh này`);
     }
@@ -244,13 +223,13 @@ export const tiktokListingAdapter: ListingAdapter = {
       });
 
     // Nhóm có ảnh (Màu) lên đầu; ảnh phân loại gắn sku_img ở sales attribute ĐẦU (TikTok chỉ nhận một nhóm có ảnh).
+    // Ảnh phân loại thiếu vẫn đăng được → ảnh nào lỗi thì bỏ ảnh đó.
     const options = reorderOptionsForImages(draft.listing.options, draft.variants).slice(0, 3);
     const { byOption } = optionImages(draft.variants, options);
     const skuImgUris = new Map<string, string>();
     for (const [value, url] of byOption[0] ?? []) {
       try {
-        const img = await normalizeImage(await fetchImageBuffer(url), TIKTOK_IMAGE);
-        skuImgUris.set(value, (await api.uploadProductImage(ctx, img, "ATTRIBUTE_IMAGE")).uri);
+        skuImgUris.set(value, (await upload("ATTRIBUTE_IMAGE")(await prepareImage(url, TIKTOK_IMAGE))).uri);
       } catch (err) {
         console.warn(`[listing-copy] ${channel.shopName}: ảnh phân loại "${value}" không tải được (${(err as Error).message}) — bỏ ảnh này`);
       }

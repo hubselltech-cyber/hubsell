@@ -4,7 +4,7 @@
 // Sàn trả lỗi tiếng Anh kỹ thuật ("invalid Dimension.PackageLength: value must
 // be greater than 0"). Khách không đọc được → ghi vào target.error dạng:
 //   dòng 1 = câu tiếng Việt nói rõ thiếu gì / sửa ở đâu;
-//   dòng 2 = nguyên văn sàn trả (FE hiện nhỏ, mờ — để báo hỗ trợ khi cần).
+//   dòng 2 = nguyên văn sàn trả (FE tách hai dòng ở shared.ts, hiện nhỏ, mờ).
 // Thuần, có test (__tests__/error-text.test.ts). Mẫu khớp theo TỪ KHÓA trong
 // thông điệp, không theo mã lỗi — ba sàn ba kiểu mã, từ khóa ổn định hơn.
 // ============================================================
@@ -29,7 +29,7 @@ interface Rule {
  * upload plain text" (product.error_param, lỗi thật gian Bunchar 30/10/2026) — gian chưa được
  * Shopee bật mô tả mở rộng. Adapter bắt lỗi này để đăng lại mô tả chữ thuần.
  */
-export const SHOPEE_DESC_IMAGE_WHITELIST_RE = /whitelist to add images in description|can only upload plain text/i;
+const SHOPEE_DESC_IMAGE_WHITELIST_RE = /whitelist to add images in description|can only upload plain text/i;
 
 export function isShopeeDescImageWhitelistError(message: string): boolean {
   return SHOPEE_DESC_IMAGE_WHITELIST_RE.test(String(message ?? ""));
@@ -153,12 +153,4 @@ export function humanizeListingError(platform: ChannelName, raw: string): string
   const body = original.replace(/^(Shopee|TikTok|Lazada)\b[^:]*:\s*/i, "");
   if (VIETNAMESE_RE.test(body)) return original;
   return `${PLATFORM_LABEL[platform]} từ chối bài đăng — xem dòng chi tiết bên dưới; chưa rõ cách sửa thì gửi dòng đó cho Hubsell.\n${original}`;
-}
-
-/** FE + mobile: tách dòng tiếng Việt / dòng kỹ thuật. */
-export function splitListingError(stored: string | null): { text: string; detail: string | null } {
-  if (!stored) return { text: "", detail: null };
-  const idx = stored.indexOf("\n");
-  if (idx < 0) return { text: stored, detail: null };
-  return { text: stored.slice(0, idx), detail: stored.slice(idx + 1).trim() || null };
 }

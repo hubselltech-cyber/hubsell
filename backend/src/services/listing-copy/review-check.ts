@@ -13,14 +13,14 @@
 
 import { prisma } from "../../lib/prisma";
 import { getListingAdapter } from "../../marketplace/listing/registry";
-import { rollupJob } from "./service";
+import { rollupJob } from "./job-worker";
 
 /** Hỏi lại thưa nhất mỗi 2 phút cho một target (mặc định tự chọn). */
-export const MIN_RECHECK_MS = 2 * 60_000;
+const MIN_RECHECK_MS = 2 * 60_000;
 /** Bài chờ duyệt quá 14 ngày coi như sàn không duyệt nữa — ngừng hỏi (mặc định tự chọn). */
 const MAX_AGE_MS = 14 * 24 * 60 * 60_000;
 
-export interface ReviewCheckStats {
+interface ReviewCheckStats {
   checked: number;
   listed: number;
   failed: number;
@@ -28,7 +28,7 @@ export interface ReviewCheckStats {
 }
 
 /** Hỏi lại MỘT target; trả trạng thái mới (hoặc "PENDING_REVIEW" nếu giữ). */
-export async function recheckTarget(targetId: string): Promise<"LISTED" | "PENDING_REVIEW" | "FAILED"> {
+async function recheckTarget(targetId: string): Promise<"LISTED" | "PENDING_REVIEW" | "FAILED"> {
   const t = await prisma.listingCopyTarget.findUnique({ where: { id: targetId } });
   if (!t || t.status !== "PENDING_REVIEW" || !t.remoteItemId) return "PENDING_REVIEW";
   const channel = await prisma.channel.findUnique({ where: { id: t.channelId } });
@@ -79,6 +79,7 @@ export async function recheckBatchDue(ownerId: string, batchId: string, limit = 
   return changed;
 }
 
+/** Chống chạy chồng TRONG MỘT tiến trình — không phải khóa phân tán: 2 worker song song chỉ trùng vài call, idempotent theo updatedAt. */
 let running = false;
 
 /** Một lượt quét toàn hệ thống (worker). */
