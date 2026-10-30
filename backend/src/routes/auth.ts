@@ -704,12 +704,28 @@ router.post("/forgot-password", async (req, res, next) => {
     });
 
     const resetUrl = `${FRONTEND_BASE_URL}/reset-password?token=${token}`;
-    await sendMail({
-      to: user.email,
-      subject: "Hubsell — Đặt lại mật khẩu",
-      html: resetPasswordEmailHtml(user.fullName, resetUrl),
-      role: "noreply",
-    });
+    try {
+      await sendMail({
+        to: user.email,
+        subject: "Hubsell — Đặt lại mật khẩu",
+        html: resetPasswordEmailHtml(user.fullName, resetUrl),
+        role: "noreply",
+      });
+    } catch (err) {
+      // Máy chủ thư từ chối (30/10/2026: Zoho chặn tạm "550 5.4.6 Unusual
+      // sending activity" sau đợt gửi 200 thư tối hôm trước) → khách thấy
+      // "Lỗi máy chủ nội bộ" vô nghĩa. Trả 503 nói rõ việc cần làm; token đã
+      // ghi tự hết hạn sau 30 phút, không cần dọn.
+      console.error(
+        `[Quên mật khẩu] Gửi thư tới ${user.email} lỗi:`,
+        (err as Error).message
+      );
+      res.status(503).json({
+        error:
+          "Hệ thống gửi thư đang tạm gián đoạn, chưa gửi được link đặt lại mật khẩu. Vui lòng thử lại sau ít phút hoặc nhắn support@hubsell.vn để được đặt lại.",
+      });
+      return;
+    }
     res.json(generic);
   } catch (err) {
     next(err);

@@ -41,6 +41,8 @@
 
 Env Render: `SMTP_HOST=smtppro.zoho.com` (tài khoản tổ chức trả tiền — `smtp.zoho.com` là của tài khoản cá nhân), `SMTP_PORT=465`, `SMTP_USER=dev@hubsell.vn`, `SMTP_PASS` = Mật khẩu ứng dụng (Zoho Accounts → **An ninh** → Mật khẩu theo ứng dụng), `MAIL_FROM`, `MAIL_FROM_NOREPLY`, `MAIL_FROM_BILLING`. Zoho Mail không dành cho gửi số lượng lớn — đông khách thì chuyển thư hệ thống sang dịch vụ thư giao dịch (ZeptoMail), địa chỉ giữ nguyên.
 
+**Sự cố 30/10/2026 — Zoho chặn gửi đi:** tối 29/10 script thông báo tính năng gửi ~200 thư trong vài phút → Zoho trả `550 5.4.6 Unusual sending activity detected` và CHẶN TOÀN BỘ thư gửi đi của `dev@hubsell.vn` (không phải chỉ đợt đó): sáng 30/10 khách bấm Quên mật khẩu thấy "Lỗi máy chủ nội bộ" (route 500 vì `sendMail` ném), thư chào khách mới cũng hỏng âm thầm (log `[Customer mail] … lỗi`). Gỡ chặn: đăng nhập `dev@hubsell.vn` → https://mail.zoho.com/UnblockMe (link Zoho ghi ngay trong lỗi) hoặc Zoho Mail Admin → Security & Compliance. Mã: route `forgot-password` bắt lỗi gửi thư → 503 "Hệ thống gửi thư đang tạm gián đoạn… nhắn support@hubsell.vn" + log `[Quên mật khẩu]`. Luật đợt lớn: ≤100 thư/lô, cách ≥1 giờ (PROGRESS 29/10).
+
 **Điểm đã lường trước ở giai đoạn song song:** vào `app.hubsell.vn` phải đăng nhập lại (phiên lưu theo tên miền); đăng nhập Google / nối gian hàng từ `app.hubsell.vn` bị trả về `app.hubsell.tech` vì mọi luồng quay về đọc `APP_FRONTEND_URL` → **chưa phát link app đuôi `.vn` cho khách**. KHÔNG viết code "quay về đúng tên miền xuất phát" — sau 301 chỉ còn một tên miền, code đó thành đồ bỏ.
 
 ## 3. CHẶNG 3 — buổi cắt (14/10/2026, ban ngày — anh chốt 12/10)

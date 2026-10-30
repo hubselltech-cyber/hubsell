@@ -5,6 +5,23 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (sáng) — KHÁCH QUÊN MẬT KHẨU THẤY "LỖI MÁY CHỦ NỘI BỘ" — GỐC = ZOHO CHẶN GỬI THƯ SAU ĐỢT 200 THƯ TỐI 29/10; ĐÃ SỬA ROUTE TRẢ 503 RÕ NGHĨA
+
+- **Anh gửi 2 ảnh:** khách `nguyetvu2704@gmail.com` bấm "Gửi link đặt lại mật khẩu" → toast đỏ "Lỗi máy chủ nội bộ".
+- **Kiểm:** prod `POST /api/auth/forgot-password` với email không tồn tại → 200 (SMTP có cấu hình, DB ổn) → lỗi nằm ở bước gửi thư. **Log Render backend 10:21:45 + 10:22:00:** `[Lỗi API] Error: Message failed: 550 5.4.6 Unusual sending activity detected … To unblock https://mail.zoho.com/UnblockMe` (stack nodemailer). 10:28:31 thư chào khách mới `girlz2022@gmail.com` cũng lỗi cùng mã (nuốt + log, khách không thấy). Gốc: đợt `feature-announce-once` tối 29/10 gửi 200 thư/vài phút → Zoho chặn TOÀN BỘ gửi đi của `dev@hubsell.vn`, tới sáng 30/10 vẫn chặn.
+- **Sửa mã (`routes/auth.ts`):** bọc `sendMail` trong `forgot-password` → lỗi gửi = log `[Quên mật khẩu] Gửi thư tới … lỗi` + **503** "Hệ thống gửi thư đang tạm gián đoạn, chưa gửi được link… thử lại sau ít phút hoặc nhắn support@hubsell.vn" (FE `ForgotForm` đã hiện `err.message` của ApiError). `support.ts` thư trả lời khách đã có catch sẵn. tsc backend sạch; route chưa có test harness (auth đụng prisma) — không thêm test. CHƯA push.
+- **⏳ ANH LÀM:** đăng nhập `dev@hubsell.vn` → https://mail.zoho.com/UnblockMe gỡ chặn (hoặc Zoho Admin → Security & Compliance); xong thì bảo khách bấm Quên mật khẩu lại. Khách mới đăng ký trong lúc bị chặn không nhận thư chào (không ảnh hưởng dùng app).
+- Ghi: PROGRESS + docs CHUYEN-TEN-MIEN-HUBSELL-VN.md mục 2 (Sự cố 30/10) + memory `hubsell-su-co-zoho-chan-gui-thu-2026-10-30`.
+
+---
+## Phiên 30/10/2026 (sáng) — DỌN Ổ ĐĨA: Ổ D CÒN 2,9 GB → 24 GB TRỐNG (anh: "xem file nào là nháp xóa đi, kiểm kỹ không xóa nhầm")
+
+- **Đo:** `frontend/.next` 19 GB (riêng `.next/dev/cache/turbopack` 16 GB — cache dev Turbopack không tự dọn), `hubsell-landing/.next` 656 MB, thư mục tạm chung `D:\Claude Code\.claude-tmp` 1,2 GB (~1.700 scratchpad phiên cũ, cache Chrome trình duyệt Claude 308 MB, metro-cache, node-compile-cache, bản ghi tour .webm tháng 9), `backend/scripts/out` 1,1 MB nháp probe tháng 9.
+- **Đã xóa (kiểm không node.exe chạy, grep không mã nào tham chiếu):** 2 thư mục `.next` (tự sinh lại ở `npm run dev`); scratchpad phiên cũ hơn 29/10 + cache Metro/Node + hubsell-tour-* + tệp log/tmp lẻ trong `.claude-tmp`; `scripts/out`: 2 json probe TikTok Ads 17/09, `phieu-*.pdf` thử 04/09, 2 html xem trước thư.
+- **GIỮ:** `.claude-tmp/lazada-marketplace-profile` + scratchpad `e8c4f83c` (script chụp Lazada trỏ tới), `Hubsell/.claude-tmp/tools/*.ts` (docs tham chiếu), `scripts/out/tiktok-ads-token.json`, `tools/mail-digest/hoa-don`, mọi thứ git theo dõi. ✅ `hubsell-mobile/build-artifacts/*.aab` 177 MB (1.0.0 + 1.1.0 đã nộp Play) anh chốt xóa, đã xóa.
+- Ghi: PROGRESS + memory `gotcha-next-dev-cache-phinh-o-dia`. Không đụng mã, không commit.
+
+---
 ## Phiên 30/10/2026 (rạng sáng) — KHÁCH phamgiathang30101987@gmail.com: SHOPEE KHÔNG CÓ TIỀN QUẢNG CÁO TRONG BÁO CÁO TÀI CHÍNH — GỐC = CHƯA NỐI HUBSELL ADS; ĐÃ SỬA 2 LỖ HỔNG (chuông + tooltip)
 
 - **Anh hỏi:** vì sao gian Shopee của khách này không lấy được tiền quảng cáo vào báo cáo tài chính.
