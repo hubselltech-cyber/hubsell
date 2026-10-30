@@ -514,6 +514,8 @@ export interface ChannelListItem {
   needsReauth?: boolean;
   lastSyncAt?: string | null;
   lastSyncError?: string | null;
+  /** Lúc gian bị ngắt — TikTok hết hạn trước mốc này = "Hết hạn ủy quyền". */
+  disconnectedAt?: string | null;
   /** Gói hết hạn → gian ngủ đông, worker thôi kéo. */
   hibernatedAt?: string | null;
   createdAt?: string;

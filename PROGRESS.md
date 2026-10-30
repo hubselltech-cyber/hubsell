@@ -5,6 +5,28 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 31/10 — rà trước build 1.4.1 (task hẹn giờ, anh vắng) — CHƯA ĐỦ: 10 ca số thật KHÔNG chạy được vì giả lập web chưa đăng nhập prod; rà tĩnh mã thay thế + sửa 1 lệch nhãn ca 8
+
+- `git pull` (đã mới nhất 6ef71722), `npx tsc --noEmit` hubsell-mobile sạch. Giả lập `mobile-web` (proxy → hubsell-backend-sg) chạy, dừng ở màn Đăng nhập: Browser pane không còn phiên admin@hubsell.vn, anh không có mặt, em không được gõ mật khẩu → **không so được số prod web ↔ app**.
+- Thay thế: rà tĩnh từng nhánh hiển thị mobile ↔ web (mục 9 cho phép với màn chép từ web). Ca 1–5 đã rà chéo 26/10 (b881a8e0); từ đó Tài chính mobile chỉ đổi nhãn "Voucher & xu của shop" (58e82360, khớp web).
+
+| # | Ca | Kết quả 31/10 |
+|---|---|---|
+| 1 | Tài chính kỳ 0 đơn đối soát, LN thực tế âm đỏ | Rà tĩnh: không đổi từ 27de220d (in dấu ±) — **chưa thử số thật** |
+| 2 | Đơn thiếu giá vốn | Rà tĩnh: dòng "n đơn chưa có giá vốn" còn nguyên — **chưa thử số thật** |
+| 3 | Thuế bổ sung dự phòng | Rà tĩnh: không đổi từ 26/10 — **chưa thử số thật** |
+| 4 | Kỳ trống + lọc 1 gian, không NaN | Rà tĩnh: không đổi; Giá vốn % biên chặn `selling > 0` — **chưa thử số thật** |
+| 5 | Doanh thu bung hủy/hoàn | Rà tĩnh: không đổi — **chưa thử số thật** |
+| 6 | Dữ liệu rộng nhất | **Chưa thử** (cần dữ liệu prod) |
+| 7 | Tối + 320 px | **Chưa thử** (cần đăng nhập; giả lập web không đổi tối theo emulate — bẫy 28/10) |
+| 8 | Gian hàng: trạng thái như Kênh bán web | **LỆCH → ĐÃ SỬA**: web (`lib/channel-auth.platformAuthExpired`) ghi "Hết hạn ủy quyền" cả khi Shopee `lastSyncError` shop_access_expired / `authExpireAt` đã qua, TikTok hết hạn trước `disconnectedAt`; app chỉ nhìn `authLostReason` → in "Đã ngắt kết nối". `ChannelsScreen.authExpired` chép luật web + kiểu `disconnectedAt` (backend `publicChannel` đã trả). Kèm: dòng lý do gian Ngủ đông in xám thay vì đỏ. Chưa thử trên gian thật |
+| 9 | Giá vốn gian vài nghìn SKU | **Chưa thử** (thời gian tải cần prod; `sku-products` vẫn chưa phân trang — lát 3) |
+| 10 | Hộp nhắc giá vốn, Bỏ qua không hiện lại | Rà tĩnh: khóa `hubsell_missing_cost_prompt_dismissed:<uid>`, đúng luật — **chưa thử lại trên giả lập** |
+
+- tsc sạch; eslint ChannelsScreen còn 2 lỗi `set-state-in-effect` **có sẵn từ trước** (cùng mẫu OverviewPage), không thêm lỗi mới.
+- ⏳ Trước 08:30 01/11: anh đăng nhập giả lập (hoặc thử ngay trên TestFlight theo CHỐT 1 của task build) để chạy ca 1–10 số thật; nếu không kịp, nộp kèm ghi chú "rà tĩnh, chưa so số prod".
+
+---
 ## Phiên 30/10/2026 (tối muộn) — "TẠO SẢN PHẨM MỚI" VỀ HÀNG HÓA, BỎ HỘP "THÊM SẢN PHẨM MỚI" CŨ (anh chốt; docs mục 30) — ĐÃ LÀM, kiểm local, tsc + eslint sạch
 
 - Anh: hộp Thêm sản phẩm cũ ở Hàng hóa không dùng nữa; nút "Tạo sản phẩm mới" của Sao chép sản phẩm hợp ở khu Hàng hóa hơn.

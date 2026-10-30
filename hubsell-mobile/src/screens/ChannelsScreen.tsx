@@ -85,10 +85,27 @@ function channelState(c: ChannelListItem): {
       reconnect: true,
     };
   }
-  if (lost) {
+  if (lost || authExpired(c)) {
     return { label: "Hết hạn ủy quyền", tone: "bad", reason: `${platform} báo hết hạn ủy quyền`, reconnect: true };
   }
   return { label: "Đã ngắt kết nối", tone: "bad", reconnect: true };
+}
+
+/**
+ * Gian ĐÃ NGẮT vì hết hạn ủy quyền phía sàn — chép shopeeAuthExpired /
+ * tiktokAuthExpired của web (frontend/src/lib/channel-auth.ts). Rà 31/10: thiếu
+ * nhánh này thì gian web ghi "Hết hạn ủy quyền", app ghi "Đã ngắt kết nối".
+ */
+function authExpired(c: ChannelListItem, now: number = Date.now()): boolean {
+  if (c.channelName === "SHOPEE") {
+    if (c.lastSyncError?.includes("shop_access_expired")) return true;
+    return Boolean(c.authExpireAt && new Date(c.authExpireAt).getTime() < now);
+  }
+  if (c.channelName === "TIKTOK" && c.refreshTokenExpireAt) {
+    const cut = c.disconnectedAt ? new Date(c.disconnectedAt).getTime() : now;
+    return new Date(c.refreshTokenExpireAt).getTime() <= cut;
+  }
+  return false;
 }
 
 function fmtDay(iso: string | null | undefined): string | null {
@@ -375,7 +392,13 @@ export function ChannelsScreen() {
                           <Text className={`text-xs font-medium ${textTone}`}>{st.label}</Text>
                         </View>
                         {st.reason ? (
-                          <Text className="mt-1 text-[11px] leading-4 text-red-600 dark:text-red-400">{st.reason}</Text>
+                          <Text
+                            className={`mt-1 text-[11px] leading-4 ${
+                              st.tone === "muted" ? "text-slate-500 dark:text-slate-400" : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {st.reason}
+                          </Text>
                         ) : null}
                         {c.historyBackfillPending && c.status === "ACTIVE" ? (
                           <Text className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
