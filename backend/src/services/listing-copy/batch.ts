@@ -23,6 +23,7 @@ import {
   submitJob,
   type CreateJobInput,
   type JobView,
+  type SubmitOptions,
   type SubmitResult,
 } from "./service";
 
@@ -108,7 +109,7 @@ export async function getBatch(ownerId: string, batchId: string): Promise<BatchV
 export interface BatchSummary {
   id: string;
   createdAt: Date;
-  sourceType: "CHANNEL" | "PRODUCT";
+  sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
   productCount: number;
   firstTitle: string;
   firstImageUrl: string | null;
@@ -193,14 +194,14 @@ export interface BatchSubmitResult {
   batch: BatchView;
 }
 
-export async function submitBatch(ownerId: string, batchId: string): Promise<BatchSubmitResult> {
+export async function submitBatch(ownerId: string, batchId: string, opts: SubmitOptions = {}): Promise<BatchSubmitResult> {
   const jobs = await prisma.listingCopyJob.findMany({ where: { userId: ownerId, batchId }, select: { id: true } });
   if (jobs.length === 0) throw new ListingCopyError("Không tìm thấy đợt sao chép.", 404);
   let queued = 0;
   const skipped: BatchSubmitResult["skipped"] = [];
   for (const j of jobs) {
     try {
-      const r: SubmitResult = await submitJob(ownerId, j.id);
+      const r: SubmitResult = await submitJob(ownerId, j.id, opts);
       queued += r.queued;
       skipped.push(...r.skipped.map((s) => ({ jobId: j.id, ...s })));
     } catch (err) {

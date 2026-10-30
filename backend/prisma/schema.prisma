@@ -4276,6 +4276,8 @@ model SyncShadowOrder {
 enum ListingCopySourceType {
   CHANNEL
   PRODUCT
+  /// Khách tự soạn sản phẩm mới trong Hubsell (docs mục 24) — không có gian/kho nguồn.
+  MANUAL
 }
 
 enum ListingCopyJobStatus {

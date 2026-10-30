@@ -16,6 +16,7 @@ import { enqueue, QUEUES, QueueUnavailableError } from "../../lib/queue";
 import { getListingAdapter } from "../../marketplace/listing/registry";
 import { humanizeListingError } from "../../marketplace/listing/error-text";
 import { activeVariants, adjustPrice, computeMissing, computeWarnings, effectiveOptions, normalizeDims, type MissingCode } from "../../marketplace/listing/rules";
+import { ensureWarehouseProducts, type ManualMeta, type ManualSource } from "./manual";
 import type {
   CategoryRequirements,
   ListingDimensions,
@@ -41,13 +42,21 @@ export interface CreateJobInput {
   ownerId: string;
   userId: string;
   allowedChannelIds: string[] | null;
-  sourceType: "CHANNEL" | "PRODUCT";
+  sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
   sourceChannelId?: string;
   sourceItemId?: string;
   sourceGroupKey?: string;
+  /** Nguồn MANUAL (docs mục 24): sản phẩm khách tự soạn + meta kho. */
+  manual?: { listing: NormalizedListing; meta: ManualMeta };
   targetChannelIds: string[];
   /** Đợt nhiều sản phẩm (lát 2); bỏ trống = job lẻ, batchId = chính id job. */
   batchId?: string;
+}
+
+/** Tùy chọn khi Đăng — ai bấm (ghi sổ kho) và có được ghi giá vốn không (nhân viên: không). */
+export interface SubmitOptions {
+  actorId?: string | null;
+  allowCost?: boolean;
 }
 
 export interface TargetPatch {
@@ -151,11 +160,16 @@ export async function createJob(input: CreateJobInput) {
     if (!sourceChannel) throw new ListingCopyError("Gian nguồn không thuộc shop này.", 404);
     if (targetIds.includes(sourceChannel.id)) throw new ListingCopyError("Gian đích không được trùng gian nguồn.");
     listing = await getListingAdapter(sourceChannel).fetchListing(sourceChannel, input.sourceItemId);
+  } else if (input.sourceType === "MANUAL") {
+    if (!input.manual) throw new ListingCopyError("Thiếu nội dung sản phẩm tạo mới.");
+    listing = input.manual.listing;
   } else {
     if (!input.sourceGroupKey) throw new ListingCopyError("Thiếu sản phẩm kho nguồn.");
     listing = await buildListingFromProducts(input.ownerId, input.sourceGroupKey);
   }
   if (!listing) throw new ListingCopyError("Không đọc được sản phẩm nguồn.", 404);
+  // Job MANUAL lưu kèm meta kho (giá vốn mặc định) ngay trong source — adapter chỉ đọc phần listing.
+  const sourceJson: ManualSource = input.sourceType === "MANUAL" ? { ...listing, manual: input.manual!.meta } : listing;
 
   const channels = await loadTargetChannels(input.ownerId, input.allowedChannelIds, targetIds);
 
@@ -221,7 +235,7 @@ export async function createJob(input: CreateJobInput) {
       sourceGroupKey: input.sourceGroupKey ?? null,
       sourceTitle: listing.title,
       sourceImageUrl: listing.images[0] ?? null,
-      source: json(listing),
+      source: json(sourceJson),
       batchId: input.batchId ?? null,
       targets: {
         create: prepared.map((p) => ({
@@ -248,7 +262,7 @@ export async function createJob(input: CreateJobInput) {
 export interface JobView {
   id: string;
   batchId: string;
-  sourceType: "CHANNEL" | "PRODUCT";
+  sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
   sourceChannel: { id: string; shopName: string; channelName: string } | null;
   sourceTitle: string;
   sourceImageUrl: string | null;
@@ -515,7 +529,7 @@ export interface SubmitResult {
   skipped: { targetId: string; shopName: string; missing: string[] }[];
 }
 
-export async function submitJob(ownerId: string, jobId: string): Promise<SubmitResult> {
+export async function submitJob(ownerId: string, jobId: string, opts: SubmitOptions = {}): Promise<SubmitResult> {
   const job = await prisma.listingCopyJob.findFirst({ where: { id: jobId, userId: ownerId }, include: { targets: true } });
   if (!job) throw new ListingCopyError("Không tìm thấy lượt sao chép.", 404);
   const listing = asListing(job.source);
@@ -545,6 +559,14 @@ export async function submitJob(ownerId: string, jobId: string): Promise<SubmitR
   }
   if (toQueue.length === 0) {
     throw new ListingCopyError("Chưa gian nào đủ điều kiện đăng — điền các ô còn thiếu trước.");
+  }
+  // Nguồn "Tạo mới": ghi Tổng kho TRƯỚC khi vào hàng đợi (SP có trong Hàng hóa kể cả khi sàn
+  // PENDING/lỗi; bấm Đăng lại không tạo trùng). KHÔNG nối gian — docs mục 24.3-1.
+  if (job.sourceType === "MANUAL") {
+    const r = await ensureWarehouseProducts(ownerId, opts.actorId ?? null, asListing(job.source) as ManualSource, {
+      allowCost: opts.allowCost ?? true,
+    });
+    if (r.created > 0) console.log(`[listing-copy] Tạo mới ${job.id}: ghi Tổng kho ${r.created} SKU (bỏ qua ${r.skipped} đã có)`);
   }
   await prisma.$transaction(async (tx) => {
     await tx.listingCopyTarget.updateMany({
@@ -651,16 +673,20 @@ export async function processTarget(targetId: string): Promise<void> {
  * bộ được ngay, không phải đợi lượt đồng bộ sản phẩm kế tiếp.
  */
 async function linkNewListing(
-  job: { userId: string; sourceType: "CHANNEL" | "PRODUCT"; sourceChannelId: string | null },
+  job: { userId: string; sourceType: "CHANNEL" | "PRODUCT" | "MANUAL"; sourceChannelId: string | null },
   channel: Channel,
   draft: ListingDraft,
   result: { remoteItemId: string; variants: { sku: string; remoteId: string }[] }
 ): Promise<void> {
   const skus = draft.variants.map((v) => v.sku);
+  // Nguồn "Tạo mới" (MANUAL): KHÔNG nối gian ↔ Tổng kho (anh chốt 30/10, docs mục 24.3-1) —
+  // khách muốn nối thì bấm Tự khớp, trùng mã chính xác vì cùng một mã.
   const productBySku =
-    job.sourceType === "CHANNEL" && job.sourceChannelId
-      ? await sourceSkuToProductId(job.sourceChannelId, skus)
-      : await productIdsBySku(job.userId, skus);
+    job.sourceType === "MANUAL"
+      ? new Map<string, string>()
+      : job.sourceType === "CHANNEL" && job.sourceChannelId
+        ? await sourceSkuToProductId(job.sourceChannelId, skus)
+        : await productIdsBySku(job.userId, skus);
   const remoteBySku = new Map(result.variants.map((v) => [v.sku, v.remoteId]));
   for (const v of draft.variants) {
     await prisma.channelProduct.upsert({

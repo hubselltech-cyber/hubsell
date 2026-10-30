@@ -7,8 +7,14 @@
 // + requireChannel.
 // ============================================================
 
-import { Router } from "express";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import express, { Router } from "express";
 import { prisma } from "../lib/prisma";
+import { isStorageConfigured, productImages } from "../lib/supabase-storage";
+import { canSeeFinancials } from "../middleware/auth";
+import { checkManualDraft, findTakenSkus, MANUAL_LIMITS, parseManualListing } from "../services/listing-copy/manual";
 import { getListingAdapter } from "../marketplace/listing/registry";
 import { normalizeDims } from "../marketplace/listing/rules";
 import { syncChannelProducts } from "../marketplace/product-sync";
@@ -197,7 +203,7 @@ router.get("/batches/:id", async (req: AuthRequest, res, next) => {
 
 router.post("/batches/:id/submit", async (req: AuthRequest, res, next) => {
   try {
-    res.json(await submitBatch(req.ownerId!, req.params.id));
+    res.json(await submitBatch(req.ownerId!, req.params.id, { actorId: req.userId ?? null, allowCost: canSeeFinancials(req) }));
   } catch (err) {
     sendError(res, err, next);
   }
@@ -216,12 +222,24 @@ router.post("/batches/:id/targets/:tid/apply", async (req: AuthRequest, res, nex
 router.post("/jobs", async (req: AuthRequest, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const sourceType = body.sourceType === "PRODUCT" ? "PRODUCT" : body.sourceType === "CHANNEL" ? "CHANNEL" : null;
+    const sourceType =
+      body.sourceType === "PRODUCT" ? "PRODUCT" : body.sourceType === "CHANNEL" ? "CHANNEL" : body.sourceType === "MANUAL" ? "MANUAL" : null;
     if (!sourceType) {
-      res.status(400).json({ error: "sourceType phải là CHANNEL hoặc PRODUCT." });
+      res.status(400).json({ error: "sourceType phải là CHANNEL, PRODUCT hoặc MANUAL." });
       return;
     }
     const targetChannelIds = Array.isArray(body.targetChannelIds) ? body.targetChannelIds.map(String) : [];
+    let manual: { listing: ReturnType<typeof parseManualListing>["listing"]; meta: ReturnType<typeof parseManualListing>["manual"] } | undefined;
+    if (sourceType === "MANUAL") {
+      const parsed = parseManualListing(body.listing);
+      // Mã đã có ở Tổng kho / gian đã nối → chặn ngay (khách sửa mã trước khi sang bước 2).
+      const taken = await findTakenSkus(req.ownerId!, parsed.listing.variants.filter((v) => !v.excluded).map((v) => v.sku));
+      if (taken.length > 0) {
+        throw new ListingCopyError(`Mã SKU đã có: ${taken.map((t) => `${t.sku} (${t.where})`).join(", ")} — đặt mã khác.`);
+      }
+      if (!canSeeFinancials(req)) parsed.manual.costPrice = null;
+      manual = { listing: parsed.listing, meta: parsed.manual };
+    }
     const job = await createJob({
       ownerId: req.ownerId!,
       userId: req.userId!,
@@ -230,6 +248,7 @@ router.post("/jobs", async (req: AuthRequest, res, next) => {
       sourceChannelId: str(body.sourceChannelId) || undefined,
       sourceItemId: str(body.sourceItemId) || undefined,
       sourceGroupKey: str(body.sourceGroupKey) || undefined,
+      manual,
       targetChannelIds,
     });
     res.status(201).json(job);
@@ -393,7 +412,7 @@ router.get("/jobs/:id/targets/:tid/brands", async (req: AuthRequest, res, next) 
 
 router.post("/jobs/:id/submit", async (req: AuthRequest, res, next) => {
   try {
-    const result = await submitJob(req.ownerId!, req.params.id);
+    const result = await submitJob(req.ownerId!, req.params.id, { actorId: req.userId ?? null, allowCost: canSeeFinancials(req) });
     res.json({ ...result, job: await getJob(req.ownerId!, req.params.id) });
   } catch (err) {
     if (err instanceof ListingCopyError) {
@@ -402,6 +421,79 @@ router.post("/jobs/:id/submit", async (req: AuthRequest, res, next) => {
     }
     next(err);
   }
+});
+
+// ---------------------------------------------------------------- Nguồn "Tạo mới" (docs mục 24)
+
+/** Thẻ "Đạt chuẩn sàn" sống — thuần, không chạm DB/sàn. */
+router.post("/check", (req: AuthRequest, res) => {
+  try {
+    const { listing } = parseManualListing(req.body?.listing);
+    res.json({ byPlatform: checkManualDraft(listing) });
+  } catch (err) {
+    if (err instanceof ListingCopyError) {
+      // Form chưa đủ cấu trúc (chưa có tên, SKU trống…) → trả lý do để thẻ hiện, không phải lỗi HTTP.
+      res.json({ byPlatform: null, reason: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+/** Mã SKU đã có ở Tổng kho / gian đã nối — kiểm sống khi khách gõ. */
+router.post("/sku-check", async (req: AuthRequest, res, next) => {
+  try {
+    const skus = Array.isArray(req.body?.skus) ? (req.body.skus as unknown[]).map(String) : [];
+    res.json({ taken: await findTakenSkus(req.ownerId!, skus) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Tải ảnh sản phẩm (FE đã nén canvas ≤ 400 KB; trần cứng 1 MB) → URL bền.
+ * Prod: Supabase Storage bucket công khai product-images. Local chưa cấu hình Storage
+ * → ghi `backend/.local-uploads` và phục vụ ở /local-uploads (app.ts), chỉ ngoài production.
+ */
+const LOCAL_UPLOAD_DIR = path.resolve(process.cwd(), ".local-uploads");
+export const LOCAL_UPLOAD_ENABLED = !isStorageConfigured() && process.env.NODE_ENV !== "production";
+export { LOCAL_UPLOAD_DIR };
+
+router.post(
+  "/images",
+  express.raw({ type: [...productImages.mime], limit: productImages.sizeLimit }),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const contentType = (req.headers["content-type"] ?? "").split(";")[0].trim();
+      const body = req.body as Buffer;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        res.status(400).json({ error: "Chỉ nhận ảnh JPG/PNG/WebP (gửi thẳng nội dung ảnh)." });
+        return;
+      }
+      const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+      const now = new Date();
+      const rel = `${req.ownerId}/${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}/${randomUUID()}.${ext}`;
+      if (isStorageConfigured()) {
+        res.json({ url: await productImages.upload(rel, body, contentType) });
+        return;
+      }
+      if (!LOCAL_UPLOAD_ENABLED) {
+        res.status(503).json({ error: "Kho ảnh chưa được cấu hình — báo support@hubsell.vn." });
+        return;
+      }
+      const abs = path.join(LOCAL_UPLOAD_DIR, "product-images", rel);
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      await fs.writeFile(abs, body);
+      res.json({ url: `${req.protocol}://${req.get("host")}/local-uploads/product-images/${rel}` });
+    } catch (err) {
+      sendError(res, err, next);
+    }
+  }
+);
+
+/** Trần form cho FE (một nguồn số). */
+router.get("/manual-limits", (_req, res) => {
+  res.json(MANUAL_LIMITS);
 });
 
 export default router;

@@ -3,7 +3,8 @@
 // ============================================================
 // SAO CHÉP SẢN PHẨM — trang làm việc (docs/SAO-CHEP-SAN-PHAM.md mục 6, 9)
 //
-// Tab "Sao chép": Bước 1 tick N sản phẩm nguồn (gian đã nối / kho Hubsell) →
+// Tab "Sao chép": Bước 1 tick N sản phẩm nguồn (gian đã nối / kho Hubsell), hoặc
+// "Tạo mới" soạn một sản phẩm từ đầu (manual-product-form.tsx, docs mục 24) →
 // Bước 2 tick M gian đích (nhiều sàn, có TikTok) → "Xem trước" tạo một ĐỢT →
 // bảng mỗi sản phẩm một khối, mỗi gian một dòng (danh mục gợi ý, ô còn thiếu
 // tô vàng, giá/tồn), sửa một gian rồi "Áp cho sản phẩm còn lại" → "Đăng tất cả
@@ -29,6 +30,9 @@ import {
   ApiError,
   applyCopyListingTargetToBatch,
   createCopyListingBatch,
+  createCopyListingManualJob,
+  getStoredUser,
+  type CopyListingManualPayload,
   fetchCopyListingBatch,
   fetchCopyListingBatches,
   fetchCopyListingCategoryTree,
@@ -54,11 +58,14 @@ import { TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
+import { canSeeFinancials } from "@/lib/permissions";
+
 import { BrandCombobox } from "./brand-combobox";
+import { ManualProductForm, type ManualFormSummary } from "./manual-product-form";
 import { activeVariantsOf, JOB_STATUS, missingLabel, splitListingError, TARGET_STATUS, WARNING_LABELS, type MissingContext } from "./labels";
 
 type Tab = "new" | "history";
-type SourceType = "CHANNEL" | "PRODUCT";
+type SourceType = "CHANNEL" | "PRODUCT" | "MANUAL";
 
 const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
 
@@ -158,6 +165,12 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
   const [targetPlatform, setTargetPlatform] = useState<ChannelName | "ALL">("ALL");
   const [targetSearch, setTargetSearch] = useState("");
   const [syncing, setSyncing] = useState(false);
+  /** Nguồn "Tạo mới": payload hợp lệ (null = chưa gửi được) + tóm tắt từ form. */
+  const [manual, setManual] = useState<{ payload: CopyListingManualPayload | null; summary: ManualFormSummary }>({
+    payload: null,
+    summary: { variantCount: 0, blocker: "Nhập tên sản phẩm" },
+  });
+  const seesFinancials = canSeeFinancials(getStoredUser());
   const invalidate = useInvalidate();
 
   useEffect(() => {
@@ -222,7 +235,7 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
   const sourcesQ = useApiQuery({
     queryKey: qk.copyListingSources(sourceParams),
     queryFn: () => fetchCopyListingSources(sourceParams),
-    enabled: sourceType === "PRODUCT" || Boolean(sourceChannelId),
+    enabled: sourceType === "PRODUCT" || (sourceType === "CHANNEL" && Boolean(sourceChannelId)),
   });
 
   const targetChannels = channels.filter((c) => !(sourceType === "CHANNEL" && c.id === sourceChannelId));
@@ -251,9 +264,14 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
   }
 
   async function create() {
-    if (picked.size === 0) return;
+    if (sourceType === "MANUAL" ? !manual.payload : picked.size === 0) return;
     setCreating(true);
     try {
+      if (sourceType === "MANUAL") {
+        const job = await createCopyListingManualJob({ listing: manual.payload!, targetChannelIds: [...targets] });
+        onCreated(job.batchId);
+        return;
+      }
       const batch = await createCopyListingBatch({
         sourceType,
         sourceChannelId: sourceType === "CHANNEL" ? sourceChannelId : undefined,
@@ -277,12 +295,15 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
       <Card>
         <CardContent className="space-y-4 p-5">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="text-sm font-semibold text-slate-900">1. Chọn sản phẩm nguồn (tick được nhiều)</div>
+            <div className="text-sm font-semibold text-slate-900">
+              {sourceType === "MANUAL" ? "1. Soạn sản phẩm mới" : "1. Chọn sản phẩm nguồn (tick được nhiều)"}
+            </div>
             <div className="flex rounded-lg border border-slate-200 p-0.5">
               {(
                 [
                   ["CHANNEL", "Từ gian hàng đã nối"],
                   ["PRODUCT", "Từ kho Hubsell"],
+                  ["MANUAL", "Tạo mới"],
                 ] as const
               ).map(([key, label]) => (
                 <button
@@ -308,6 +329,10 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
             )}
           </div>
 
+          {sourceType === "MANUAL" ? (
+            <ManualProductForm canSeeCost={seesFinancials} onChange={(payload, summary) => setManual({ payload, summary })} />
+          ) : (
+            <>
           <div className="flex flex-wrap gap-3">
             {sourceType === "CHANNEL" && (
               <>
@@ -455,6 +480,8 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
               setPage(1);
             }}
           />
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -547,11 +574,15 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
             </>
           )}
           <div className="flex items-center justify-between gap-3 pt-1">
-            <span className={TEXT_SUB}>
-              {picked.size} sản phẩm × {targets.size} gian đích = {picked.size * targets.size} lượt đăng
+            <span className={cn(TEXT_SUB, "tabular-nums")}>
+              {sourceType === "MANUAL"
+                ? manual.summary.blocker
+                  ? `Sản phẩm mới: ${manual.summary.blocker}`
+                  : `1 sản phẩm (${manual.summary.variantCount} phân loại) × ${targets.size} gian đích`
+                : `${picked.size} sản phẩm × ${targets.size} gian đích = ${picked.size * targets.size} lượt đăng`}
             </span>
-            <Button disabled={picked.size === 0 || targets.size === 0 || creating} onClick={create}>
-              {creating ? "Đang chuẩn bị…" : "Xem trước"}
+            <Button disabled={(sourceType === "MANUAL" ? !manual.payload : picked.size === 0) || targets.size === 0 || creating} onClick={create}>
+              {creating ? "Đang chuẩn bị…" : sourceType === "MANUAL" ? "Tiếp: xem trước theo gian" : "Xem trước"}
             </Button>
           </div>
         </CardContent>
@@ -763,7 +794,7 @@ function JobRows({
                     {CHANNEL_META[job.sourceChannel.channelName].label} · {job.sourceChannel.shopName}
                   </span>
                 ) : (
-                  <span>Kho Hubsell</span>
+                  <span>{job.sourceType === "MANUAL" ? "Tạo mới trong Hubsell" : "Kho Hubsell"}</span>
                 )}
                 <span>
                   · {s.variants.length} phân loại · {s.images.length} ảnh
@@ -1777,7 +1808,7 @@ function History({ onOpen }: { onOpen: (batchId: string) => void }) {
                           {b.productCount > 1 && <span className="text-slate-500"> +{b.productCount - 1} sản phẩm</span>}
                         </div>
                         <div className={TEXT_SUB}>
-                          {b.sourceType === "CHANNEL" ? "Từ gian hàng" : "Từ kho Hubsell"} · {b.productCount} sản phẩm ×{" "}
+                          {b.sourceType === "CHANNEL" ? "Từ gian hàng" : b.sourceType === "MANUAL" ? "Tạo mới" : "Từ kho Hubsell"} · {b.productCount} sản phẩm ×{" "}
                           {b.channelCount} gian
                         </div>
                       </div>

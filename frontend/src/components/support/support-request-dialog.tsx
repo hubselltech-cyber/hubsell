@@ -45,52 +45,13 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
+import { compressImage } from "@/lib/compress-image";
 
 const STATUS_META: Record<SupportRequestStatus, { label: string; className: string }> = {
   NEW: { label: "Đã tiếp nhận", className: "border-orange-200 bg-orange-50 text-orange-700" },
   IN_PROGRESS: { label: "Đang xử lý", className: "border-sky-200 bg-sky-50 text-sky-700" },
   DONE: { label: "Đã xong", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
 };
-
-/** Cạnh dài tối đa sau nén — chữ trên màn hình điện thoại vẫn đọc rõ. */
-const MAX_SIDE = 1600;
-/** Đích dung lượng mỗi ảnh; backend chặn cứng 600 KB. */
-const TARGET_BYTES = 400 * 1024;
-
-/**
- * Nén ảnh trên trình duyệt: thu về ≤ MAX_SIDE, xuất JPEG, hạ chất lượng rồi
- * hạ kích thước dần tới khi ≤ TARGET_BYTES. Ảnh gốc chục MB không bao giờ
- * rời máy khách.
- */
-async function compressImage(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
-  try {
-    let side = Math.min(MAX_SIDE, Math.max(bitmap.width, bitmap.height));
-    const qualities = [0.82, 0.7, 0.58];
-    for (let round = 0; round < 3; round++) {
-      const scale = side / Math.max(bitmap.width, bitmap.height);
-      const w = Math.max(1, Math.round(bitmap.width * scale));
-      const h = Math.max(1, Math.round(bitmap.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Trình duyệt không hỗ trợ xử lý ảnh");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(bitmap, 0, 0, w, h);
-      for (const q of qualities) {
-        const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", q));
-        if (!blob) throw new Error("Không nén được ảnh");
-        if (blob.size <= TARGET_BYTES) return blob;
-      }
-      side = Math.round(side * 0.75);
-    }
-    throw new Error("Ảnh quá lớn, vui lòng chọn ảnh khác");
-  } finally {
-    bitmap.close();
-  }
-}
 
 interface Picked {
   file: File;

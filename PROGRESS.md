@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (chiều) — SAO CHÉP SẢN PHẨM: NGUỒN "TẠO MỚI" (lát A form + lát B ghi Tổng kho) — ĐÃ CODE + KIỂM LOCAL TRỌN LUỒNG, CHƯA PUSH
+
+- **Anh chốt:** không nối kho ↔ gian; thiết kế trên local trước. Docs `SAO-CHEP-SAN-PHAM.md` mục 24.5 (thiết kế) + 24.6 (đã làm).
+- **Backend:** enum `MANUAL` (migration ADD VALUE, DB dev áp `prisma db execute --schema`); `listing-copy/manual.ts` (parse form, SKU 6–50 ký tự mỗi phân loại một mã chặn hẳn, `checkManualDraft` 3 sàn bỏ mã bước 2, `findTakenSkus` kho + mọi gian, `ensureWarehouseProducts` mỗi phân loại 1 Product + tồn qua sổ kho, mã đã có bỏ qua); `submitJob` ghi kho TRƯỚC hàng đợi; `linkNewListing` MANUAL → KHÔNG nối (productId null); route `POST /jobs` MANUAL, `/check`, `/sku-check`, `/images` (raw ≤ 1 MB → Supabase Storage bucket công khai `product-images`, local chưa cấu hình → `backend/.local-uploads` + `/local-uploads`), `/manual-limits`. Test manual 8 ca + listing 45/45, tsc sạch.
+- **Frontend:** `lib/compress-image.ts` dùng chung (hộp hỗ trợ import lại); api 5 hàm; `manual-product-form.tsx` (form 5 khối + mục lục neo + thẻ Đạt chuẩn sàn sống + ảnh nén/tải + nhóm × giá trị → tổ hợp + mã gốc tự sinh + kiểm trùng sống); nút nguồn thứ 3 "Tạo mới" trong `copy-listing-page.tsx`, bước 2 dùng chung, nhãn "Tạo mới trong Hubsell". tsc + eslint sạch.
+- **Kiểm local trọn luồng (tài khoản seed, gian Demo Shopee giả lập):** điền 6 tổ hợp + 4 ảnh → Tiếp → đợt → Bổ sung thuộc tính → Đăng → log "ghi Tổng kho 6 SKU"; DB 6 Product (variantName, groupKey, cost, tồn 10, ảnh) + target LISTED + 6 ChannelProduct `productId` null. Kiểm trùng sống "Đã có ở Tổng kho" / "Ngắn hơn 6 ký tự". Đo 1280/1440/1700 + tối: 0 tràn sau khi sửa cột bảng phân loại (ô Giá từng cắt ở 1280). Bẫy: cert https local bị pane chặn → dùng backend-http/frontend-http; backend-http vai web không chạy worker → bật thêm backend vai all.
+- ⏳ Chưa push, chưa kiểm gian thật; lát C (dọn ảnh/trần gói) + "Đăng thêm gian" từ Lịch sử chưa làm. Anh xem local rồi chốt push.
+
+---
 ## Phiên 30/10/2026 (chiều) — KHẢO SÁT NÚT "THÊM SẢN PHẨM MỚI" (soạn như sàn → đẩy sàn + ghi Tổng kho, không tự nối) — CHƯA CODE, chờ anh chốt 3 câu
 
 - **Anh hỏi:** tác động + Hubsell có thiệt dung lượng DB không. Docs `SAO-CHEP-SAN-PHAM.md` mục 24.

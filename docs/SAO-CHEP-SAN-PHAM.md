@@ -623,3 +623,60 @@ vốn mặc định) **trước** khi vào hàng đợi; job `sourceType MANUAL`
 
 **Ước công (cập nhật):** form + kiểm sống + tải ảnh ~2 ngày; ghi kho + MANUAL + hàng đợi ~0,5; dọn ảnh + trần gói ~0,5;
 "Đăng thêm gian" từ Lịch sử ~0,5 → **~3,5 ngày**.
+
+### 24.6 ĐÃ LÀM — lát A (form Tạo mới) + lát B (ghi Tổng kho) trên LOCAL (30/10/2026 chiều, anh: "Thiết kế trên local trước") — CHƯA PUSH
+
+**Backend**
+- `prisma` enum `ListingCopySourceType` thêm `MANUAL` (migration `20261030160000_listing_copy_manual_source`, `ADD VALUE IF NOT EXISTS`;
+  DB dev áp bằng `prisma db execute --schema`). Job MANUAL: `sourceChannelId/sourceItemId/sourceGroupKey` null, `source = { ...NormalizedListing,
+  manual: { costPrice } }` (`ManualSource`, adapter chỉ đọc phần listing).
+- `services/listing-copy/manual.ts`: `parseManualListing(body)` (trần `MANUAL_LIMITS`: ảnh 9, ảnh mô tả 12, 3 nhóm, 100 tổ hợp; SKU
+  `SKU_PATTERN` 6–50 ký tự chữ/số/-/_/.; mỗi phân loại một mã — chặn hẳn; số tổ hợp phải khớp nhóm × giá trị; URL ảnh phải http(s)),
+  `checkManualDraft(listing)` (computeMissing 3 sàn, requirements null, bỏ mã bước 2 category/brand/logistics/sku_exists),
+  `findTakenSkus(ownerId, skus)` (Product.skuCode + ChannelProduct.channelSku mọi gian của chủ shop, không phân biệt hoa thường),
+  `ensureWarehouseProducts(ownerId, actorId, source, {allowCost})` (mỗi phân loại ĐANG ĐĂNG = 1 `Product`: skuCode hoa, productName,
+  variantName, groupKey qua `productGroupKey`, costPrice (nhân viên → 0), sellingPrice, imageUrl = ảnh phân loại ?? bìa; tồn ban đầu qua
+  `applyStockDelta` IMPORT "Tạo từ Sao chép sản phẩm (Tạo mới)"; mã đã có → bỏ qua, bấm Đăng lại không tạo trùng).
+- `service.ts`: `CreateJobInput.sourceType` + `manual`; `SubmitOptions {actorId, allowCost}` cho `submitJob`/`submitBatch` (route truyền
+  `req.userId` + `canSeeFinancials`); `submitJob` job MANUAL → ghi Tổng kho **trước** khi vào hàng đợi (log `[listing-copy] Tạo mới <job>: ghi
+  Tổng kho N SKU`); **`linkNewListing` nguồn MANUAL → `productBySku` rỗng = KHÔNG nối** (24.3-1) — dòng ChannelProduct tạo ra `productId` null.
+- `routes/listing-copy.ts`: `POST /jobs` nhận `sourceType MANUAL` + `listing` (kiểm trùng mã với kho/gian ngay, 400 "Mã SKU đã có: … (Tổng kho)");
+  `POST /check` → `{byPlatform}` (form chưa đủ cấu trúc → `{byPlatform: null, reason}`); `POST /sku-check` → `{taken: [{sku, where}]}`;
+  `POST /images` (express.raw image/jpeg|png|webp, trần 1 MB) → Supabase Storage bucket **công khai** `product-images` (`lib/supabase-storage.ts`
+  thêm cờ `public` + `productImages.upload` trả URL bền `…/object/public/product-images/<owner>/<yyyymm>/<uuid>.jpg`); local chưa có
+  `SUPABASE_URL` → ghi `backend/.local-uploads/` (gitignore) và `app.ts` phục vụ `/local-uploads` (chỉ ngoài production); `GET /manual-limits`.
+- Test `__tests__/manual.test.ts` 8 ca (parse đủ trường/bỏ trùng, 3 lỗi cấu trúc, 4 ca SKU, URL/cân nặng/kích thước, chuẩn sàn 3 ca) +
+  listing 45/45; tsc sạch.
+
+**Frontend**
+- `lib/compress-image.ts` tách từ hộp hỗ trợ (`compressImage` ≤ 1.600 px / ≤ 400 KB + `imageDimensions`); support-request-dialog import lại.
+- `lib/api.ts`: `CopyListingManualPayload`, `createCopyListingManualJob`, `checkCopyListingDraft`, `checkCopyListingSkus`, `uploadCopyListingImage`;
+  `sourceType` thêm `"MANUAL"`.
+- `copy-listing/manual-product-form.tsx` (mới): grid `lg:[1fr_240px]`, 5 khối `<section id>` + mục lục neo (IntersectionObserver) + thẻ
+  "Đạt chuẩn sàn" (POST /check debounce 400 ms, nhãn qua `missingLabel` với ctx trần từng sàn) + dòng blocker. Ảnh: input ẩn → nén →
+  upload → lưới 80 px, "Bìa", "Đặt làm bìa", "Nhỏ" (< 500 px), bỏ; ảnh mô tả riêng; ảnh từng phân loại trong bảng. Phân loại: nhóm × chip giá
+  trị (Enter/`,`/blur thêm), tổ hợp sinh tự động; mã gốc → `skuFromRoot` (chép quy tắc backend), sửa tay từng dòng, "Áp lại mã theo mã gốc";
+  lỗi SKU từng dòng (trống / < 6 / > 50 / ký tự / trùng trong bài / "Đã có ở Tổng kho|gian X" qua POST /sku-check debounce 500 ms); giá
+  chung + tồn chung áp dòng chưa sửa; cột Đăng bỏ phân loại. Vận chuyển: cân nặng (nhãn "Bắt buộc 3 sàn"), kích thước ("Lazada bắt
+  buộc"). Tổng kho: giá vốn mặc định (ẩn với nhân viên) + ghi chú "chưa nối với gian — bấm Tự khớp".
+- `copy-listing-page.tsx`: nút nguồn thứ 3 **"Tạo mới"**; `NewCopy` giữ `manual {payload, summary}`; bước 2 chọn gian dùng chung; chân
+  "1 sản phẩm (N phân loại) × M gian đích" / "Sản phẩm mới: <lý do chưa gửi>"; nút "Tiếp: xem trước theo gian" → `createCopyListingManualJob`
+  → BatchView như cũ (nhãn nguồn "Tạo mới trong Hubsell"; Lịch sử "Tạo mới").
+
+**Kiểm local (30/10 14:00–14:15, backend-http 4010 + frontend-http 3010, tài khoản seed, gian "Demo Shopee" adapter giả lập):**
+- Điền form bằng JS (tên 77 ký tự, mô tả, Màu × Size = 6 tổ hợp, mã gốc TC113 → `TC113-DEN-M`…, 3 ảnh bìa + 1 ảnh mô tả nạp qua
+  DataTransfer → 4 tệp vào `/local-uploads`, ảnh 300 px gắn "Nhỏ"), thẻ Đạt chuẩn sàn 3 ✓, chân "1 sản phẩm (6 phân loại) × 1 gian".
+- Tiếp → đợt tạo, nguồn "Tạo mới trong Hubsell · 6 phân loại · 3 ảnh", danh mục gợi ý 95 %, thiếu Chất liệu/Xuất xứ → Bổ sung + Lưu gian →
+  Đăng → `[listing-copy] Tạo mới …: ghi Tổng kho 6 SKU`; DB: 6 `Product` (variantName, cùng groupKey, cost 120.000, giá 199.000, tồn 10,
+  ảnh bìa), target LISTED `SP44258475`, 6 `ChannelProduct` Demo Shopee `externalId SP44258475-n`, **`productId` null** (không nối, đúng chốt).
+- Kiểm trùng sống: quay lại form gõ `TC113-DEN-M` → "Đã có ở Tổng kho"; gõ `TC113` → "Ngắn hơn 6 ký tự (TikTok đòi ≥ 6)"; nút Tiếp khóa
+  "Sửa mã SKU còn lỗi".
+- Đo JS 1280 / 1440 / 1700 + tối (class `.dark`): 0 ô tràn sau khi sửa bảng phân loại `table-fixed` + cột 6/20/30/18/13/13 % + ô `px-2`
+  (trước đó ô Giá 69 px cắt "19900|" ở 1280). Khung chính rộng hơn 32 px là `PageHeaderBand` lề âm sẵn có, không phải lỗi mới. Dưới 1024 px
+  mục lục rơi xuống dưới form (grid 1 cột) — chấp nhận, trang này không dùng trên điện thoại.
+- Bẫy khi test: backend `https://localhost:4000` cert tự ký bị trình duyệt pane chặn → dùng cặp `backend-http`/`frontend-http`; `backend-http`
+  vai `web` KHÔNG chạy worker → bật thêm `backend` (vai all) để hàng đợi `listing.copy` xử lý.
+
+**Chưa làm / chờ anh:** lát C (cron xóa ảnh job DRAFT > 30 ngày, trần ảnh theo gói, HQ hiện dung lượng bucket); "Đăng thêm gian" từ Lịch sử;
+chưa kiểm trên gian thật (Shopee/TikTok/Lazada thật với ảnh từ Supabase Storage — bucket `product-images` tự tạo lần đầu gọi, cần
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` trên Render, đã có cho ảnh hỗ trợ); form chưa soi trên Safari/macOS thật.

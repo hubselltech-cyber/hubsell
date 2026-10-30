@@ -32,7 +32,7 @@ import invoiceConfigRouter from "./routes/invoice-config";
 import taxRouter from "./routes/tax";
 import testMisaSandboxRouter from "./routes/test-misa-sandbox";
 import operationsRouter from "./routes/operations";
-import listingCopyRouter from "./routes/listing-copy";
+import listingCopyRouter, { LOCAL_UPLOAD_DIR, LOCAL_UPLOAD_ENABLED } from "./routes/listing-copy";
 import listingCopyProbeRouter from "./routes/listing-copy-probe";
 import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
@@ -277,6 +277,8 @@ export function createApp() {
 
   // Sao chép sản phẩm (29/10/2026): mở thật trên prod; tối 29/10 đăng thật thành công
   // Shopee + TikTok, nhãn "(demo)" đã bỏ; theo dõi log [listing-copy].
+  // Ảnh sản phẩm "Tạo mới" khi local CHƯA cấu hình Supabase Storage (không bao giờ ở production).
+  if (LOCAL_UPLOAD_ENABLED) app.use("/local-uploads", express.static(LOCAL_UPLOAD_DIR, { maxAge: "1h" }));
   app.use(
     "/api/sao-chep-san-pham",
     requireAuth,

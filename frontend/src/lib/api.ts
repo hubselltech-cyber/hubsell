@@ -8338,7 +8338,7 @@ export interface CopyListingTarget {
 export interface CopyListingJob {
   id: string;
   batchId: string;
-  sourceType: "CHANNEL" | "PRODUCT";
+  sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
   sourceChannel: { id: string; shopName: string; channelName: ChannelName } | null;
   sourceTitle: string;
   sourceImageUrl: string | null;
@@ -8458,7 +8458,7 @@ export interface CopyListingBatch {
 export interface CopyListingBatchSummary {
   id: string;
   createdAt: string;
-  sourceType: "CHANNEL" | "PRODUCT";
+  sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
   productCount: number;
   firstTitle: string;
   firstImageUrl: string | null;
@@ -8474,12 +8474,59 @@ export function fetchCopyListingBatches(page = 1, pageSize = 20) {
 }
 
 export function createCopyListingBatch(body: {
-  sourceType: "CHANNEL" | "PRODUCT";
+  sourceType: "CHANNEL" | "PRODUCT" | "MANUAL";
   sourceChannelId?: string;
   sourceKeys: string[];
   targetChannelIds: string[];
 }) {
   return apiFetch<CopyListingBatch>(`${COPY_LISTING_BASE}/batches`, { method: "POST", body: JSON.stringify(body) });
+}
+
+/** Nguồn "Tạo mới" (docs/SAO-CHEP-SAN-PHAM.md mục 24): sản phẩm khách tự soạn. */
+export interface CopyListingManualPayload {
+  title: string;
+  description: string;
+  images: string[];
+  descriptionImages: string[];
+  brandName?: string | null;
+  weightGrams: number | null;
+  dimensionsCm: { length: number; width: number; height: number } | null;
+  options: { name: string; values: string[] }[];
+  variants: { sku: string; name: string; price: number; stock: number; imageUrl: string | null; excluded?: boolean }[];
+  /** Giá vốn mặc định ghi vào SKU kho (tùy chọn). */
+  costPrice?: number | null;
+}
+
+export function createCopyListingManualJob(body: { listing: CopyListingManualPayload; targetChannelIds: string[] }) {
+  return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs`, {
+    method: "POST",
+    body: JSON.stringify({ sourceType: "MANUAL", ...body }),
+  });
+}
+
+/** Thẻ "Đạt chuẩn sàn" sống — byPlatform null = form chưa đủ cấu trúc (reason nói vì sao). */
+export function checkCopyListingDraft(listing: CopyListingManualPayload) {
+  return apiFetch<{ byPlatform: Record<ChannelName, string[]> | null; reason?: string }>(`${COPY_LISTING_BASE}/check`, {
+    method: "POST",
+    body: JSON.stringify({ listing }),
+  });
+}
+
+/** Mã SKU đã có ở Tổng kho / gian đã nối. */
+export function checkCopyListingSkus(skus: string[]) {
+  return apiFetch<{ taken: { sku: string; where: string }[] }>(`${COPY_LISTING_BASE}/sku-check`, {
+    method: "POST",
+    body: JSON.stringify({ skus }),
+  });
+}
+
+/** Tải ảnh sản phẩm (đã nén) → URL bền. */
+export function uploadCopyListingImage(image: Blob) {
+  return apiFetch<{ url: string }>(`${COPY_LISTING_BASE}/images`, {
+    method: "POST",
+    headers: { "Content-Type": image.type || "image/jpeg" },
+    body: image,
+  });
 }
 
 export function fetchCopyListingBatch(id: string) {

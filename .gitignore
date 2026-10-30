@@ -50,3 +50,6 @@ pgdata/
 
 # Hội thoại khách thô (chưa ẩn danh) cho hệ Marketing-Sale — KHÔNG commit (29/10/2026)
 hubsell-marketing/khach-hang/mau-hoi-thoai-tho/
+
+# Ảnh sản phẩm tải lên khi local chưa cấu hình Supabase Storage (routes/listing-copy.ts)
+backend/.local-uploads/

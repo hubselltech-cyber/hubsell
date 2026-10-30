@@ -22,6 +22,8 @@
 
 interface BucketConfig {
   name: string;
+  /** Bucket công khai (ảnh sản phẩm — sàn và trình duyệt đọc thẳng URL, không cần ký). Mặc định riêng tư. */
+  public?: boolean;
   fileSizeLimit: number;
   allowedMime: readonly string[];
   /** Thông báo lỗi khi sai loại tệp / quá cỡ (ngôn ngữ người dùng). */
@@ -55,6 +57,21 @@ const HQ_BUCKET: BucketConfig = {
   sizeError: "Tệp quá lớn (tối đa 15 MB)",
 };
 
+/**
+ * ẢNH SẢN PHẨM khách tự tải lên ở "Sao chép sản phẩm → Tạo mới" (30/10/2026, docs
+ * SAO-CHEP-SAN-PHAM.md mục 24): bucket CÔNG KHAI vì ảnh đằng nào cũng lên sàn, URL
+ * bền để ghi vào job.source + Product.imageUrl (signed URL hết hạn thì hỏng). Trần
+ * 1 MB — FE đã nén canvas ≤ 400 KB. Giữ vĩnh viễn (đăng lại gian mới sau này).
+ */
+const PRODUCT_IMAGE_BUCKET: BucketConfig = {
+  name: process.env.PRODUCT_IMAGE_BUCKET ?? "product-images",
+  public: true,
+  fileSizeLimit: 1024 * 1024,
+  allowedMime: ["image/jpeg", "image/png", "image/webp"],
+  mimeError: "Chỉ nhận ảnh JPG/PNG/WebP",
+  sizeError: "Ảnh quá lớn (tối đa 1 MB sau nén)",
+};
+
 function base(): { url: string; key: string } | null {
   const url = process.env.SUPABASE_URL?.replace(/\/+$/, "");
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -85,7 +102,7 @@ function ensureBucket(bucket: BucketConfig): Promise<void> {
       body: JSON.stringify({
         id: bucket.name,
         name: bucket.name,
-        public: false,
+        public: Boolean(bucket.public),
         file_size_limit: bucket.fileSizeLimit,
         allowed_mime_types: bucket.allowedMime,
       }),
@@ -204,4 +221,19 @@ export const hqDocuments = {
   signedUrls: (paths: string[], expiresInSec: number) => signIn(HQ_BUCKET, paths, expiresInSec),
   download: (path: string) => downloadFrom(HQ_BUCKET, path),
   remove: (paths: string[]) => deleteIn(HQ_BUCKET, paths),
+};
+
+/** Ảnh sản phẩm (bucket công khai) — trả URL bền. */
+export const productImages = {
+  async upload(path: string, body: Buffer, contentType: string): Promise<string> {
+    const cfg = base();
+    if (!cfg) throw new Error("Supabase Storage chưa cấu hình");
+    await uploadTo(PRODUCT_IMAGE_BUCKET, path, body, contentType);
+    return `${cfg.url}/storage/v1/object/public/${PRODUCT_IMAGE_BUCKET.name}/${encodePath(path)}`;
+  },
+  delete(paths: string[]): Promise<void> {
+    return deleteIn(PRODUCT_IMAGE_BUCKET, paths);
+  },
+  mime: PRODUCT_IMAGE_BUCKET.allowedMime,
+  sizeLimit: PRODUCT_IMAGE_BUCKET.fileSizeLimit,
 };
