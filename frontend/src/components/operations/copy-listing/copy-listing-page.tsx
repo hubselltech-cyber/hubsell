@@ -812,7 +812,8 @@ function JobRows({
           </div>
         </TableCell>
         <TableCell className="text-right">
-          <Button variant={sourceOpen ? "secondary" : "outline"} size="sm" className="whitespace-nowrap" onClick={() => onToggle(sourceKey)}>
+          {/* Anh chốt 30/10: nút sửa phải NỔI BẬT — còn sửa được thì nút đặc, chỉ "Xem" mới viền. */}
+          <Button variant={sourceOpen ? "secondary" : editable ? "default" : "outline"} size="sm" className="whitespace-nowrap" onClick={() => onToggle(sourceKey)}>
             {sourceOpen ? (
               <>
                 <ChevronUp data-icon="inline-start" /> Thu gọn
@@ -1297,9 +1298,9 @@ function TargetRows({
           {t.remoteItemId && <div className={cn(TEXT_SUB, "mt-1 font-mono")}>{t.remoteItemId}</div>}
         </TableCell>
         <TableCell className="text-right">
-          {/* Nút chữ rõ: thiếu thông tin → nút đặc "Bổ sung"; đủ → "Sửa"; đã đăng → "Xem". */}
+          {/* Nút chữ rõ: còn sửa được → nút ĐẶC "Bổ sung"/"Sửa" (anh chốt 30/10: nổi bật); đã đăng → "Xem" viền. */}
           <Button
-            variant={expanded ? "secondary" : canEdit && t.missing.length > 0 ? "default" : "outline"}
+            variant={expanded ? "secondary" : canEdit ? "default" : "outline"}
             size="sm"
             className="whitespace-nowrap"
             onClick={onToggle}

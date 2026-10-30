@@ -298,12 +298,14 @@ export function ManualProductForm({
 
   const blocker = useMemo<string | null>(() => {
     if (!payload.title) return "Nhập tên sản phẩm";
+    // Anh chốt 30/10: mã gốc BẮT BUỘC (chuẩn SKU từ đầu) — không cho qua dù từng dòng đã gõ tay.
+    if (!rootSku.trim()) return "Nhập mã gốc SKU";
     if (activeRows.length === 0) return "Cần ít nhất một phân loại để đăng";
     if (Object.keys(skuIssue).length > 0) return "Sửa mã SKU còn lỗi";
     if (activeRows.some((r) => !((toInt(r.price) ?? 0) > 0))) return "Giá bán phải lớn hơn 0";
     if (images.some((i) => i.uploading) || descImages.some((i) => i.uploading)) return "Đang tải ảnh…";
     return null;
-  }, [payload.title, activeRows, skuIssue, images, descImages]);
+  }, [payload.title, rootSku, activeRows, skuIssue, images, descImages]);
 
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -524,8 +526,10 @@ export function ManualProductForm({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
-              <div className={TEXT_TABLE_HEAD}>Mã gốc SKU</div>
-              <Input placeholder="Vd: TC113" value={rootSku} onChange={(e) => setRootSku(e.target.value)} />
+              <div className={cn(TEXT_TABLE_HEAD, "flex items-center gap-2")}>
+                Mã gốc SKU <span className="rounded bg-amber-50 px-1 text-[10px] font-medium text-amber-700">Bắt buộc</span>
+              </div>
+              <Input className={cn(!rootSku.trim() && WARN)} placeholder="Vd: TC113" value={rootSku} onChange={(e) => setRootSku(e.target.value)} />
               <p className={TEXT_SUB}>{liveOptions.length > 0 ? "Tự sinh MÃ GỐC-ĐUÔI theo phân loại, sửa tay từng dòng được." : "Sản phẩm không phân loại: mã gốc = mã SKU."}</p>
             </div>
             <div className="space-y-1">

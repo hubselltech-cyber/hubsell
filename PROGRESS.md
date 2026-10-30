@@ -21,6 +21,7 @@
 - **Lát C (anh "Làm luôn", cùng chiều):** bảng `listing_image_uploads` (RLS) ghi mỗi ảnh tải lên + gắn job khi tạo đợt; trần ảnh theo bậc gói `PRODUCT_IMAGE_QUOTA` (200/1.000/3.000/10.000/30.000/∞, mặc định tự chọn; không thuê bao = ∞) chặn cứng ở POST /images + form hiện "0/200"; cron trong log-cleanup mỗi 24h: ảnh mồ côi > 2 ngày + job MANUAL DRAFT > 30 ngày (xóa ảnh + job), ảnh lượt đã đăng giữ vĩnh viễn; HQ Sức khỏe thẻ "Kho ảnh sản phẩm". Test images 3 ca → 48/48, tsc + eslint sạch; chạy thật cleanup với dữ liệu giả đúng; tải ảnh → dòng ghi nhận + jobId gắn đúng. Docs 24.7.
 - ✅ **Anh "Push đi" → PUSH 7 commit (45b63a60 → 23741a5c), `/health` prod lên 14:24 30/10, migration MANUAL + listing_image_uploads chạy cùng deploy (deploy thành công = migrate xong), route /manual-limits + /images trả 401 (đã lên).** ⏳ Chưa kiểm gian thật (anh thử Tạo mới trên gian ANO: tải ảnh → bucket product-images tự tạo → đăng Shopee/TikTok thật); "Đăng thêm gian" từ Lịch sử chưa làm.
 
+- **Anh chốt thêm (chiều muộn, sau khi nhắn khách Bunchar):** ô **Mã gốc SKU bắt buộc** — tô vàng khi trống + chip Bắt buộc, nút Tiếp khóa "Nhập mã gốc SKU" dù từng dòng đã gõ tay; **nút sửa nổi bật**: "Sửa bài đăng" (nguồn) và "Bổ sung/Sửa" (gian) còn sửa được = nút đặc, chỉ "Xem" mới viền. Soi local 1440: ô vàng + 2 nút đặc đúng. tsc + eslint sạch. Chưa push.
 ---
 ## Phiên 30/10/2026 (chiều) — KHẢO SÁT NÚT "THÊM SẢN PHẨM MỚI" (soạn như sàn → đẩy sàn + ghi Tổng kho, không tự nối) — CHƯA CODE, chờ anh chốt 3 câu
 
