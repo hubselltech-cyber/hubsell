@@ -360,7 +360,7 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
               items={[
                 { key: "CHANNEL", label: "Từ gian hàng đã nối", icon: <Store className="size-4" /> },
                 { key: "PRODUCT", label: "Từ kho Hubsell", icon: <Warehouse className="size-4" /> },
-                { key: "MANUAL", label: "Tạo mới", icon: <Plus className="size-4" /> },
+                { key: "MANUAL", label: "Tạo sản phẩm mới", icon: <Plus className="size-4" /> },
               ]}
             />
             {picked.size > 0 && (
