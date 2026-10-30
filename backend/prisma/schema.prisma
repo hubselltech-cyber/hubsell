@@ -4320,10 +4320,36 @@ model ListingCopyJob {
   finishedAt  DateTime?
 
   targets ListingCopyTarget[]
+  /// Ảnh khách tải lên cho nguồn "Tạo mới" (docs mục 24.6 lát C) — gắn vào job khi tạo đợt.
+  images  ListingImageUpload[]
 
   @@index([userId, createdAt])
   @@index([userId, batchId])
   @@map("listing_copy_jobs")
+}
+
+/// Ảnh sản phẩm khách tải lên ở "Sao chép sản phẩm → Tạo mới" (30/10/2026, lát C):
+/// biết ảnh thuộc chủ shop nào / job nào để (1) trần ảnh theo gói, (2) cron dọn ảnh
+/// mồ côi (không gắn job sau 2 ngày) + job nháp bỏ dở > 30 ngày, (3) HQ hiện dung lượng.
+/// Ảnh của job đã đăng GIỮ VĨNH VIỄN (anh chốt 30/10: đăng lại gian mới không tải lại).
+model ListingImageUpload {
+  id        String   @id @default(cuid())
+  /// Chủ shop.
+  userId    String
+  /// "supabase" (bucket product-images) hoặc "local" (dev chưa cấu hình Storage).
+  storage   String
+  /// Đường dẫn trong bucket (hoặc đường dẫn tương đối thư mục local) — dùng để xóa.
+  path      String
+  url       String   @unique
+  bytes     Int
+  jobId     String?
+  createdAt DateTime @default(now())
+
+  job ListingCopyJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([jobId])
+  @@map("listing_image_uploads")
 }
 
 model ListingCopyTarget {

@@ -6402,6 +6402,8 @@ export interface PlatformHealthResponse {
     infra: {
       dbSizeMb: number | null;
       dbTopTables: { table: string; mb: number }[];
+      /** Kho ảnh sản phẩm "Tạo mới" (lát C) — thiếu/null ở backend cũ. */
+      productImages?: { count: number; mb: number; owners: number; orphans: number } | null;
       dbConnections: number | null;
       dbMaxConnections: number | null;
       ramMb: number;
@@ -8518,6 +8520,13 @@ export function checkCopyListingSkus(skus: string[]) {
     method: "POST",
     body: JSON.stringify({ skus }),
   });
+}
+
+/** Trần form Tạo mới + trần ảnh theo gói của chủ shop. */
+export function fetchCopyListingManualLimits() {
+  return apiFetch<{ images: number; descriptionImages: number; options: number; variants: number; imageQuota: { used: number; max: number | null } }>(
+    `${COPY_LISTING_BASE}/manual-limits`
+  );
 }
 
 /** Tải ảnh sản phẩm (đã nén) → URL bền. */

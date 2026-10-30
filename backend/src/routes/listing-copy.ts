@@ -15,6 +15,7 @@ import { prisma } from "../lib/prisma";
 import { isStorageConfigured, productImages } from "../lib/supabase-storage";
 import { canSeeFinancials } from "../middleware/auth";
 import { checkManualDraft, findTakenSkus, MANUAL_LIMITS, parseManualListing } from "../services/listing-copy/manual";
+import { attachUploadsToJob, imageQuotaOf, quotaExceeded, recordUpload } from "../services/listing-copy/images";
 import { getListingAdapter } from "../marketplace/listing/registry";
 import { normalizeDims } from "../marketplace/listing/rules";
 import { syncChannelProducts } from "../marketplace/product-sync";
@@ -251,6 +252,11 @@ router.post("/jobs", async (req: AuthRequest, res, next) => {
       manual,
       targetChannelIds,
     });
+    if (manual) {
+      // Gắn ảnh đã tải lên vào job (lát C) — để cron không coi là mồ côi và dọn đúng job nháp.
+      const l = manual.listing;
+      await attachUploadsToJob(req.ownerId!, job.id, [...l.images, ...l.descriptionImages, ...l.variants.map((v) => v.imageUrl ?? "")]);
+    }
     res.status(201).json(job);
   } catch (err) {
     if (err instanceof ListingCopyError) {
@@ -470,11 +476,21 @@ router.post(
         res.status(400).json({ error: "Chỉ nhận ảnh JPG/PNG/WebP (gửi thẳng nội dung ảnh)." });
         return;
       }
+      // Trần ảnh theo gói (lát C) — chặn CỨNG tại nút tải lên, như trần gian/nhân viên.
+      const quota = await imageQuotaOf(req.ownerId!);
+      if (quotaExceeded(quota)) {
+        res.status(403).json({
+          error: `Gói hiện tại cho tối đa ${quota.max} ảnh sản phẩm, đang dùng ${quota.used}. Nâng gói hoặc bỏ bớt ảnh ở lượt tạo mới cũ.`,
+        });
+        return;
+      }
       const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
       const now = new Date();
       const rel = `${req.ownerId}/${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}/${randomUUID()}.${ext}`;
       if (isStorageConfigured()) {
-        res.json({ url: await productImages.upload(rel, body, contentType) });
+        const url = await productImages.upload(rel, body, contentType);
+        await recordUpload({ ownerId: req.ownerId!, storage: "supabase", path: rel, url, bytes: body.length });
+        res.json({ url });
         return;
       }
       if (!LOCAL_UPLOAD_ENABLED) {
@@ -484,16 +500,22 @@ router.post(
       const abs = path.join(LOCAL_UPLOAD_DIR, "product-images", rel);
       await fs.mkdir(path.dirname(abs), { recursive: true });
       await fs.writeFile(abs, body);
-      res.json({ url: `${req.protocol}://${req.get("host")}/local-uploads/product-images/${rel}` });
+      const url = `${req.protocol}://${req.get("host")}/local-uploads/product-images/${rel}`;
+      await recordUpload({ ownerId: req.ownerId!, storage: "local", path: `product-images/${rel}`, url, bytes: body.length });
+      res.json({ url });
     } catch (err) {
       sendError(res, err, next);
     }
   }
 );
 
-/** Trần form cho FE (một nguồn số). */
-router.get("/manual-limits", (_req, res) => {
-  res.json(MANUAL_LIMITS);
+/** Trần form cho FE (một nguồn số) + trần ảnh theo gói của chủ shop. */
+router.get("/manual-limits", async (req: AuthRequest, res, next) => {
+  try {
+    res.json({ ...MANUAL_LIMITS, imageQuota: await imageQuotaOf(req.ownerId!) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

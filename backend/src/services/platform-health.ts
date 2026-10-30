@@ -8,6 +8,7 @@
 // ============================================================
 
 import v8 from "v8";
+import { imageStoreStats } from "./listing-copy/images";
 import { ChannelAppKind, ChannelName, Prisma, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
@@ -153,6 +154,8 @@ export interface WorkerLayer {
 }
 
 export interface InfraLayer {
+  /** Kho ảnh sản phẩm "Tạo mới" (Supabase Storage, lát C 30/10/2026) — null khi không đọc được. */
+  productImages: { count: number; mb: number; owners: number; orphans: number } | null;
   dbSizeMb: number | null;
   dbTopTables: { table: string; mb: number }[];
   dbConnections: number | null;
@@ -435,6 +438,12 @@ export async function collectInfra(): Promise<InfraLayer> {
   } catch {
     // như trên
   }
+  let productImagesStat: InfraLayer["productImages"] = null;
+  try {
+    productImagesStat = await imageStoreStats();
+  } catch {
+    // bảng chưa migrate — HQ hiện "không đọc được"
+  }
   const mem = process.memoryUsage();
   const ramMb = Math.round(mem.rss / 1048576);
   const heapMb = Math.round(mem.heapUsed / 1048576);
@@ -443,6 +452,7 @@ export async function collectInfra(): Promise<InfraLayer> {
   const ramCap = plan.workerRamMb > 0 && (process.env.HUBSELL_ROLE ?? "all") === "worker" ? plan.workerRamMb : plan.webRamMb;
   const connCap = plan.dbMaxConnections || dbMaxConnections;
   return {
+    productImages: productImagesStat,
     dbSizeMb,
     dbTopTables,
     dbConnections,

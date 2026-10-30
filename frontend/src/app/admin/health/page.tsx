@@ -351,6 +351,30 @@ export default function AdminHealthPage() {
                   </CardContent>
                 </Card>
 
+                {m.infra.productImages && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Kho ảnh sản phẩm (Tạo mới)</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-1 text-sm tabular-nums">
+                        <li className="flex justify-between">
+                          <span>Ảnh đang lưu</span>
+                          <span>{formatCount(m.infra.productImages.count)} · {m.infra.productImages.mb} MB</span>
+                        </li>
+                        <li className="flex justify-between">
+                          <span>Chủ shop có ảnh</span>
+                          <span>{formatCount(m.infra.productImages.owners)}</span>
+                        </li>
+                        <li className="flex justify-between">
+                          <span>Ảnh chưa gắn lượt tạo (cron dọn sau 2 ngày)</span>
+                          <span>{formatCount(m.infra.productImages.orphans)}</span>
+                        </li>
+                      </ul>
+                      <p className="mt-2 text-xs text-muted-foreground">Supabase Storage bucket product-images · gói Pro 100 GB · ảnh của lượt đã đăng giữ vĩnh viễn.</p>
+                    </CardContent>
+                  </Card>
+                )}
                 {m.infra.dbTopTables.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2">

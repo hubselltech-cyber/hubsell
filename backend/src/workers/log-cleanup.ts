@@ -24,6 +24,8 @@
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { deleteObjects, isStorageConfigured } from "../lib/supabase-storage";
+import { LOCAL_UPLOAD_DIR, LOCAL_UPLOAD_ENABLED } from "../routes/listing-copy";
+import { cleanupListingImages, DRAFT_JOB_DAYS, ORPHAN_IMAGE_DAYS } from "../services/listing-copy/images";
 
 const DEFAULT_INTERVAL_HOURS = 24;
 /** Thông tin xuất hóa đơn của khách: xóa sau khi HĐ phát hành ngần này ngày. */
@@ -310,6 +312,19 @@ export async function runOnce(): Promise<void> {
           `[Log-cleanup] Ảnh đính kèm hỗ trợ: đã xóa ${purged} ảnh của ${rows.length} yêu cầu DONE quá ${SUPPORT_ATTACHMENT_DAYS} ngày`
         );
       }
+    }
+
+    // Ảnh sản phẩm "Tạo mới" (lát C): ảnh mồ côi không gắn job quá ORPHAN_IMAGE_DAYS ngày và job nháp
+    // bỏ dở quá DRAFT_JOB_DAYS ngày (xóa ảnh + job). Ảnh của job đã đăng giữ vĩnh viễn.
+    try {
+      const r = await cleanupListingImages(LOCAL_UPLOAD_ENABLED ? LOCAL_UPLOAD_DIR : null);
+      if (r.orphanImages + r.draftJobs > 0) {
+        console.log(
+          `[Log-cleanup] Ảnh sản phẩm Tạo mới: xóa ${r.orphanImages} ảnh mồ côi (>${ORPHAN_IMAGE_DAYS} ngày), ${r.draftJobs} job nháp >${DRAFT_JOB_DAYS} ngày (${r.draftImages} ảnh)`
+        );
+      }
+    } catch (err) {
+      console.error("[Log-cleanup] Dọn ảnh sản phẩm Tạo mới lỗi:", (err as Error).message);
     }
   } catch (err) {
     console.error("[Log-cleanup] Lỗi vòng dọn:", err);

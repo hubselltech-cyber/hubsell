@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import {
   checkCopyListingDraft,
   checkCopyListingSkus,
+  fetchCopyListingManualLimits,
   uploadCopyListingImage,
   type ChannelName,
   type CopyListingManualPayload,
@@ -219,6 +220,13 @@ export function ManualProductForm({
   const [checkReason, setCheckReason] = useState<string | null>(null);
   const [taken, setTaken] = useState<Record<string, string>>({});
   const [active, setActive] = useState<string>(SECTIONS[0].id);
+  /** Trần ảnh theo gói (lát C) — null max = không giới hạn. */
+  const [imageQuota, setImageQuota] = useState<{ used: number; max: number | null } | null>(null);
+  useEffect(() => {
+    fetchCopyListingManualLimits()
+      .then((r) => setImageQuota(r.imageQuota))
+      .catch(() => undefined);
+  }, []);
 
   const coverInput = useRef<HTMLInputElement>(null);
   const descInput = useRef<HTMLInputElement>(null);
@@ -446,7 +454,14 @@ export function ManualProductForm({
 
         {/* 2. Ảnh */}
         <section id={SECTIONS[1].id} className="scroll-mt-24 space-y-4">
-          <h3 className="text-sm font-semibold text-slate-900">2. Ảnh</h3>
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-sm font-semibold text-slate-900">2. Ảnh</h3>
+            {imageQuota?.max != null && (
+              <span className={cn(TEXT_SUB, "tabular-nums", imageQuota.used >= imageQuota.max && "text-amber-700")}>
+                Gói của bạn: đã lưu {formatNumber(imageQuota.used)}/{formatNumber(imageQuota.max)} ảnh sản phẩm
+              </span>
+            )}
+          </div>
           <input ref={coverInput} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(e) => void addFiles(e.target.files, "cover").then(() => (e.target.value = ""))} />
           <input ref={descInput} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(e) => void addFiles(e.target.files, "desc").then(() => (e.target.value = ""))} />
           <input ref={rowInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => void addFiles(e.target.files, "row").then(() => (e.target.value = ""))} />

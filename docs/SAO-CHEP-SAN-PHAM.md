@@ -680,3 +680,25 @@ vốn mặc định) **trước** khi vào hàng đợi; job `sourceType MANUAL`
 **Chưa làm / chờ anh:** lát C (cron xóa ảnh job DRAFT > 30 ngày, trần ảnh theo gói, HQ hiện dung lượng bucket); "Đăng thêm gian" từ Lịch sử;
 chưa kiểm trên gian thật (Shopee/TikTok/Lazada thật với ảnh từ Supabase Storage — bucket `product-images` tự tạo lần đầu gọi, cần
 `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` trên Render, đã có cho ảnh hỗ trợ); form chưa soi trên Safari/macOS thật.
+
+### 24.7 ĐÃ LÀM — lát C: ghi nhận ảnh + trần theo gói + cron dọn + HQ (30/10/2026 chiều, anh "Làm luôn lát C") — kiểm local, CHƯA PUSH
+
+- **Bảng `listing_image_uploads`** (migration `20261030170000_listing_image_uploads`, RLS bật): `userId, storage ("supabase"|"local"),
+  path, url (unique), bytes, jobId? (→ listing_copy_jobs ON DELETE SET NULL), createdAt`. `POST /images` ghi một dòng mỗi ảnh;
+  `POST /jobs` MANUAL gắn `jobId` cho mọi URL trong listing (ảnh bìa + mô tả + ảnh phân loại) của chính chủ shop chưa gắn job khác.
+- **Trần ảnh theo gói** (`services/listing-copy/images.ts` `PRODUCT_IMAGE_QUOTA`, **mặc định tự chọn, chưa có căn cứ khách**): bậc 1
+  200 · 2 1.000 · 3 3.000 · 4 10.000 · 5 30.000 · 6 không giới hạn; chưa có thuê bao = không giới hạn (cùng luật plan-enforcement). Đếm
+  = số dòng đang lưu của chủ shop (ảnh của lượt đã đăng giữ vĩnh viễn nên cũng tính). Chặn CỨNG tại `POST /images` → 403 "Gói hiện tại
+  cho tối đa N ảnh sản phẩm, đang dùng M…". `GET /manual-limits` trả thêm `imageQuota {used, max}` → form khối Ảnh hiện "Gói của bạn:
+  đã lưu 0/200 ảnh sản phẩm" (vàng khi chạm trần).
+- **Cron dọn** (`cleanupListingImages`, gọi trong `workers/log-cleanup.ts` mỗi 24 giờ, log `[Log-cleanup] Ảnh sản phẩm Tạo mới: …`):
+  ảnh mồ côi không gắn job quá **2 ngày** → xóa tệp (Supabase `productImages.delete` / đĩa local) + dòng; job MANUAL còn **DRAFT quá 30
+  ngày** → xóa ảnh rồi xóa job (targets cascade). Mỗi lượt ≤ 200 ảnh mồ côi + 50 job nháp. Ảnh của job đã Đăng (mọi trạng thái khác DRAFT)
+  **không bao giờ xóa** (anh chốt 30/10: đăng lại gian mới không tải lại).
+- **HQ Sức khỏe** (`platform-health.collectInfra().productImages`): thẻ "Kho ảnh sản phẩm (Tạo mới)" — ảnh đang lưu · MB, chủ shop có
+  ảnh, ảnh chưa gắn lượt tạo; backend cũ/bảng chưa migrate → null, thẻ ẩn.
+- **Kiểm local:** test `images.test.ts` 3 ca (trần theo bậc, bậc lạ rơi về bậc 1, quotaExceeded) → listing-copy + listing 48/48; tsc BE+FE
+  + eslint sạch. Chạy thật `cleanupListingImages` với dữ liệu giả (1 ảnh mồ côi 40 ngày + 1 ảnh mồ côi mới + 1 job DRAFT 40 ngày có 1 ảnh)
+  → xóa đúng 1 ảnh mồ côi cũ + 1 job + 1 ảnh, giữ ảnh mới. Tải ảnh qua form → dòng `listing_image_uploads` storage local 4.507 byte; bấm
+  Tiếp → `jobId` gắn đúng job "Áo thun nam ANO… AT207". Form hiện "0/200" (tài khoản seed gói bậc 1).
+- Chưa làm: "Đăng thêm gian" từ Lịch sử; chưa kiểm gian thật + bucket Supabase thật (tự tạo public lần gọi đầu).
