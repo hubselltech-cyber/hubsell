@@ -12,7 +12,8 @@
 - **Ảnh = chi phí thật nhưng rẻ:** nén canvas (đã có mẫu ở support-request-dialog) ≤ 400 KB → 2–4 MB/SP vào Supabase Storage bucket mới (lib/supabase-storage.ts sẵn, signed URL đủ cho 3 sàn kể cả Lazada image/migrate); gói Pro 100 GB ≈ 25–50 k SP; vượt 0,021 USD/GB/tháng.
 - **Phản biện:** nối kho ↔ sàn hôm nay không bao giờ tự chạy (chỉ khi khách bấm link/auto-match/link-by-sku) nên "không tự ý nối" đã đúng luật; NHƯNG với SP Hubsell tự đăng thì nối theo remoteId sàn trả về là chắc 100 %, không nối = tự tăng "SP sàn chưa nối" + trống giá vốn/Lãi-Lỗ; đề xuất ô tick "Liên kết với Tổng kho" mặc định bật. Ghi Tổng kho ngay khi bấm Đăng. Không đụng Vị trí kho.
 - **Cách làm:** lát A form Tạo mới (sourceType MANUAL, dùng lại 100 % bước 2) ~2 ngày; lát B ghi kho ~0,5; lát C dọn ảnh + trần theo gói ~0,5; gộp mục 7 lát 3.
-- ⏳ Anh chốt: (1) nối/không nối; (2) giữ ảnh vĩnh viễn + trần gói hay xóa sau đăng; (3) làm ngay hay chờ khách test xong đợt sao chép.
+- **Anh chỉnh:** lưu kho và nối là 2 việc khác nhau; tài chính khách tự nhập giá vốn từng gian ở Mapping giá vốn → em nói sai ý "không nối thì Lãi/Lỗ trống" (giá vốn theo gian từ 11/10, không cần nối). Không nối chỉ ảnh hưởng tồn kho hai chiều + đếm SP chưa nối. ✅ Chốt KHÔNG nối. Docs 24.3-1 đã sửa.
+- ⏳ Anh chốt: (2) giữ ảnh vĩnh viễn + trần gói hay xóa sau đăng; (3) làm ngay hay chờ khách test xong đợt sao chép.
 
 ---
 ## Phiên 30/10/2026 (trưa) — SAO CHÉP SẢN PHẨM: KHÁCH Hi.Bé 5 PHÂN LOẠI CÙNG MÃ SKU JS051 BỊ CHẶN "MÃ SKU TRÙNG" — HẠ THÀNH CẢNH BÁO Shopee/TikTok, GIỮ CHẶN Lazada

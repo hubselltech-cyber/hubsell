@@ -547,16 +547,16 @@ không nuốt kho tệp; cron xóa ảnh của job DRAFT bỏ dở > 30 ngày.
 
 ### 24.3 Tác động nghiệp vụ — chỗ em phản biện
 
-1. **"Không tự ý liên kết" — em đề nghị NGƯỢC LẠI cho riêng SP do Hubsell tự đăng.** Luật "chỉ nối khi trùng mã, không
-   khớp mềm" sinh ra vì Hubsell không dám đoán SP sàn nào là SP kho nào. Ở đây **không phải đoán**: Hubsell vừa tạo SKU kho
-   rồi chính nó gửi SKU đó lên sàn và nhận về `remoteItemId` + id phân loại (`createListing` trả `variants[].remoteId`) —
-   nối theo **id sàn trả về**, chắc chắn 100 %, không qua mã. Không nối thì: (a) 2.036 "SP sàn chưa nối" trong ảnh anh lại
-   tăng thêm đúng số SP vừa tạo, khách phải tự bấm Tự khớp lần nữa; (b) tồn/giá vốn/Lãi-Lỗ của SP mới trống cho tới khi
-   nối; (c) đồng bộ tồn vẫn **không** đẩy gì vì gian chưa bật đồng bộ (luật "bật gian = tự đẩy" giữ nguyên) → nối không
-   gây rủi ro ghi đè tồn. Nếu anh vẫn muốn không nối (lý do khách muốn tồn sàn độc lập?), em làm ô tick "Liên kết với Tổng
-   kho" mặc định BẬT để khách tắt được — vẫn một nút Đăng.
-2. **Giá vốn:** SP tạo từ form chưa có giá vốn → rơi đúng hộp nhắc nhập giá vốn sẵn có (`hubsell-hop-chao-nhap-gia-von`),
-   thêm ô "Giá vốn (tùy chọn)" ngay trong form là xong.
+1. **Lưu kho và nối là HAI việc khác nhau (anh chỉnh lại 30/10 chiều, em ghi nhận):** *lưu kho* = tạo dòng `Product`
+   (mã, tên, phân loại, số lượng, ảnh bìa, giá vốn mặc định); *nối* = `ChannelProduct.productId`, chỉ là cầu để **tồn kho**
+   chảy hai chiều (đơn sàn về trừ tồn kho; bật đồng bộ gian thì đẩy tồn kho lên sàn) và để giá vốn mặc định kho làm dự
+   phòng. **Tài chính KHÔNG cần nối:** giá vốn hiệu lực của SKU sàn = `ChannelProduct.costPrice` khách nhập theo từng
+   gian ở Tài chính → Mapping giá vốn (luật 11/10), kho chỉ quản số lượng. Em đã nói sai ở bản đầu rằng "không nối thì giá
+   vốn/Lãi-Lỗ trống" — sai, Lãi/Lỗ chạy bằng giá vốn của gian. Không nối chỉ còn hai hệ quả: (a) tồn kho và tồn sàn của SP
+   mới sống độc lập cho tới khi khách bấm Tự khớp (trùng mã chắc chắn vì cùng một mã) hoặc nối tay; (b) số "SP sàn chưa
+   nối" tăng thêm đúng số SP vừa tạo. **Chốt theo anh: KHÔNG nối**; khách muốn nối thì bấm Tự khớp như mọi SP khác.
+2. **Giá vốn:** khách nhập theo từng gian ở Tài chính → Mapping giá vốn sau khi SP đã lên sàn (như mọi SP sàn khác); ô
+   "Giá vốn mặc định" trong form chỉ ghi vào SKU kho, tùy chọn.
 3. **Phân loại:** form phải cho nhóm × giá trị (Màu × Size) → tự sinh tổ hợp, mỗi tổ hợp 1 SKU/giá/tồn/ảnh; trần theo sàn
    đã có trong `rules.ts` (Shopee 2 nhóm/50 tổ hợp, TikTok 3/100, Lazada 2/100). Mã SKU trùng → cảnh báo (mục 23).
 4. **Tổng kho ghi khi nào:** đề xuất ghi **ngay khi bấm Đăng** (trước khi sàn trả lời) để khách thấy SP trong Hàng hóa
@@ -573,10 +573,9 @@ không nuốt kho tệp; cron xóa ảnh của job DRAFT bỏ dở > 30 ngày.
   `source` Json như hai nguồn kia → **toàn bộ bước 2 (gian, danh mục gợi ý, thuộc tính, thương hiệu, vận chuyển, Đăng,
   hàng đợi, Chờ sàn duyệt) dùng lại 100 %**.
 - **Lát B — Ghi Tổng kho (~0,5 ngày):** lúc Đăng, tạo `Product` mỗi phân loại qua lõi của `POST /products` (groupKey,
-  variantName, imageUrl = bìa, giá bán, tồn, giá vốn nếu có); nối hay không theo anh chốt ở 24.3-1 (nối theo
-  `remoteId` khi target LISTED, trong worker `listing-copy-queue`).
+  variantName, imageUrl = bìa, giá bán, tồn, giá vốn nếu có); KHÔNG nối (anh chốt 24.3-1).
 - **Lát C — Dọn + trần (~0,5 ngày):** cron xóa ảnh job DRAFT > 30 ngày, trần ảnh theo gói, HQ hiện dung lượng bucket.
 - Gộp luôn mục 7 lát 3 ("chép từ kho có trình soạn đầy đủ"): nguồn kho mở cùng form này với dữ liệu điền sẵn.
 
-**Chờ anh chốt:** (1) nối hay không nối với Tổng kho cho SP Hubsell tự đăng; (2) giữ ảnh vĩnh viễn + trần theo gói, hay xóa
+**Chờ anh chốt:** (1) ~~nối hay không~~ → KHÔNG nối, đã chốt; (2) giữ ảnh vĩnh viễn + trần theo gói, hay xóa
 sau khi đăng xong; (3) làm lát A ngay hay để sau khi khách Bunchar/Hi.Bé test xong đợt sao chép.
