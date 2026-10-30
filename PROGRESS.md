@@ -5,6 +5,13 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (chiều muộn) — KHÁCH BUNCHAR LẦN 3: GÕ "BUNCHAR" Ở THUỐC NHUỘM TÓC RA 0 HÃNG, ENTER MẤT CHỮ — SỬA UX + LOG, GỐC CHƯA CHẮC (docs mục 25)
+
+- Ảnh: hộp đã tìm xong chỉ còn No Brand = Shopee `get_brand_list(danh mục, status 1)` thật sự không có BUNCHAR (không phải lỗi mạng/trang như lần 1–2). 3 giả thuyết chưa kiểm: brand chờ duyệt (status 2), brand chỉ gắn danh mục khác, cắt 10k trang (ít).
+- Sửa chắc: Enter không khớp → không chọn No Brand, giữ chữ, hộp ghi rõ Shopee chỉ nhận thương hiệu đã đăng ký cho đúng danh mục. Log Render số hãng/trang + "không khớp". Commit 7475ca09 chờ anh push.
+- ⏳ Anh/khách kiểm Seller Centre có chọn được BUNCHAR ở danh mục đó không, hoặc anh đăng nhập admin prod để em chạy probe.
+
+---
 ## Phiên 30/10/2026 (chiều) — SAO CHÉP SẢN PHẨM: NGUỒN "TẠO MỚI" (lát A form + lát B ghi Tổng kho) — ĐÃ CODE + KIỂM LOCAL TRỌN LUỒNG, CHƯA PUSH
 
 - **Anh chốt:** không nối kho ↔ gian; thiết kế trên local trước. Docs `SAO-CHEP-SAN-PHAM.md` mục 24.5 (thiết kế) + 24.6 (đã làm).

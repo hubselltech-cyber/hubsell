@@ -702,3 +702,26 @@ chưa kiểm trên gian thật (Shopee/TikTok/Lazada thật với ảnh từ Sup
   → xóa đúng 1 ảnh mồ côi cũ + 1 job + 1 ảnh, giữ ảnh mới. Tải ảnh qua form → dòng `listing_image_uploads` storage local 4.507 byte; bấm
   Tiếp → `jobId` gắn đúng job "Áo thun nam ANO… AT207". Form hiện "0/200" (tài khoản seed gói bậc 1).
 - Chưa làm: "Đăng thêm gian" từ Lịch sử; chưa kiểm gian thật + bucket Supabase thật (tự tạo public lần gọi đầu).
+
+## 25. Khách Bunchar lần 3: gõ "BUNCHAR" ở danh mục Thuốc nhuộm tóc ra 0 hãng, Enter làm mất chữ (30/10/2026 chiều, anh chuyển ảnh Safari tối) — ĐÃ SỬA UX + LOG, GỐC CHƯA CHẮC
+
+Ảnh: ô Thương hiệu gõ `BUNCHAR`, hộp xổ chỉ còn "Không có thương hiệu (No Brand)" (đã tìm xong, không phải đang tải), danh mục
+Sắc Đẹp > Chăm sóc tóc > Thuốc nhuộm tóc, gian Shopee. Khách: *"KiotViet thì có; gõ đủ ký tự rồi Enter thì mất, không đăng được."*
+
+- **Đọc lại mã sau bản 24 (b4a69445):** danh sách đã lật hết trang + đệm 6 giờ; lỗi mạng/sàn thì FE hiện "Không thấy thương hiệu nào",
+  còn ảnh hiện No Brand = backend trả 200 với **0 hãng khớp** → Shopee `get_brand_list(category_id = Thuốc nhuộm tóc, status = 1)`
+  thật sự không có "BUNCHAR". Ba giả thuyết, CHƯA kiểm: (a) thương hiệu khách đăng ký với Shopee đang **chờ duyệt** (status 2, mình
+  chỉ lấy 1); (b) thương hiệu chỉ gắn với danh mục khác (Shopee gắn brand theo danh mục), KiotViet hiện vì ô thương hiệu của họ là
+  danh mục riêng, không phải danh sách Shopee theo lá; (c) danh mục này quá 10.000 hãng bị cắt (ít khả năng, chữ B ở đầu).
+- **Đã sửa chắc chắn:** `brand-combobox.tsx` — không khớp hãng nào thì **Enter không chọn gì** (trước đó chọn No Brand rồi xóa chữ),
+  chữ đã gõ **giữ nguyên** khi đóng hộp (chọn xong mới xóa), dưới danh sách ghi *"Sàn không có thương hiệu “BUNCHAR” trong danh mục
+  này. Shopee chỉ nhận thương hiệu đã đăng ký với sàn cho đúng danh mục — chọn Không có thương hiệu, hoặc đăng ký thương hiệu trên
+  Seller Centre rồi quay lại."*
+- **Log chẩn đoán (Render):** `[listing-copy] Shopee get_brand_list danh mục <id>: N thương hiệu / P trang (đệm 6 giờ)` khi lật xong, và
+  `[listing-copy] Shopee brand "BUNCHAR" không khớp trong danh mục <id> (gian …): danh sách N thương hiệu` khi 0 khớp → lần khách thử
+  tiếp sẽ biết danh sách có đủ không.
+- **Chờ anh:** (1) anh hoặc khách mở Shopee Seller Centre → Thêm sản phẩm → danh mục Thuốc nhuộm tóc → ô Thương hiệu gõ BUNCHAR:
+  Seller Centre có cho chọn không? Có → lỗi phía mình (có thể status 2), em sẽ lấy thêm status 2; Không → Shopee chưa gắn brand cho
+  danh mục này, khách phải đăng ký thương hiệu (Seller Centre → Thương hiệu) hoặc dùng No Brand — KiotViet "có" chỉ là ô nhập của họ.
+  (2) Hoặc anh đăng nhập admin prod để em chạy probe `searchBrands` gian khách đọc thẳng danh sách.
+- tsc BE+FE + eslint sạch; commit chờ anh push.
