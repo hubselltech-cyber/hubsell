@@ -8,7 +8,7 @@
 ## Phiên 30/10/2026 (chiều muộn) — SỬA BÀI ĐĂNG: KHÁCH XÓA ẢNH CŨ / TẢI ẢNH MỚI, TỐI ĐA 9 (anh chốt; docs mục 27) — ĐÃ CODE, kiểm local, CHƯA PUSH
 
 - Anh hỏi có nên cho khách sửa ảnh → em đề xuất chỉ bỏ/thêm/đặt bìa, không chỉnh ảnh; anh chốt "chỉ cần xóa ảnh cũ up ảnh mới, 9 ảnh".
-- Backend `SourcePatch.images` (≤ 9, ≥ 1, http(s), ảnh phân loại trỏ ảnh đã bỏ → null, sourceImageUrl = ảnh đầu), PATCH /jobs/:id gắn ảnh tải lên vào lượt. FE SourceEditor: lưới ảnh ✕ / Đặt làm bìa / Thêm ảnh (nén + /images), nhãn n/9, Lưu khóa khi đang tải. Kiểm local thêm/bỏ/lưu đúng, DB đúng. tsc + eslint sạch.
+- Backend `SourcePatch.images` (≤ 9, ≥ 1, http(s), ảnh phân loại trỏ ảnh đã bỏ → null, sourceImageUrl = ảnh đầu), PATCH /jobs/:id gắn ảnh tải lên vào lượt. FE SourceEditor: lưới ảnh ✕ / Đặt làm bìa / Thêm ảnh (nén + /images), nhãn n/9, Lưu khóa khi đang tải. Kiểm local thêm/bỏ/lưu đúng, DB đúng. tsc + eslint sạch. ✅ PUSH c980bfc7, `/health` prod lên 15:28 30/10.
 
 ---
 ## Phiên 30/10/2026 (15:06) — BUNCHAR CHÉP TIKTOK → SHOPEE: "SÀN KHÔNG NHẬN ẢNH SẢN PHẨM" — CHUẨN HÓA ẢNH BẰNG SHARP (docs mục 26), chi tiết sàn chưa đọc
