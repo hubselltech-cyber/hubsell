@@ -1637,25 +1637,6 @@ export function deleteProduct(productId: string) {
   });
 }
 
-export function createProduct(data: {
-  skuCode: string;
-  productName: string;
-  /** Phân loại (màu / size) — tùy chọn. */
-  variantName?: string;
-  costPrice: number;
-  sellingPrice: number;
-  initialQuantity: number;
-  /** Thuế & Hóa đơn (giữ chỗ) — tuỳ chọn. */
-  taxName?: string;
-  vatRate?: number;
-  unitName?: string;
-}) {
-  return apiFetch<Product>("/api/products", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
 export interface ImportResult {
   created: number;
   updated: number;

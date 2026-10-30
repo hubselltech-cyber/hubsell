@@ -6,8 +6,6 @@
 
 import type { ChannelName, CopyListingJobStatus, CopyListingTarget, CopyListingTargetStatus } from "@/lib/api";
 
-export type SourceType = "CHANNEL" | "PRODUCT" | "MANUAL";
-
 export const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
 
 /** Trần ảnh bài đăng (Shopee/TikTok 9; Lazada lấy 8 đầu) — khớp MAX_SOURCE_IMAGES backend. */

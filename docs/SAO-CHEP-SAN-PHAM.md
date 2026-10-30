@@ -508,7 +508,8 @@ không biết tác động thế nào và Hubsell có chịu thiệt hại về 
   đã ghi "chép từ kho có trình soạn đầy đủ (mô tả, nhiều ảnh, thuộc tính theo sàn)" = chính cái form anh đang nói.
 - **Bảng Product (kho):** 1 dòng = 1 SKU (phân loại tách dòng, gom cha–con bằng `groupKey`), cột: skuCode, productName,
   variantName, costPrice, sellingPrice, quantityInStock, imageUrl (1 ảnh), isActive… **Không có** mô tả, nhiều ảnh, cân nặng,
-  kích thước, thương hiệu, danh mục. Tạo SKU kho = `POST /api/products` (có sẵn, dùng ở Hàng hóa + Excel).
+  kích thước, thương hiệu, danh mục. Tạo SKU kho = `POST /api/products` (hộp "Thêm sản phẩm mới" cũ ở Hàng hóa — 30/10 tối
+  ĐÃ BỎ cả route lẫn hộp, mục 30; Excel dùng `/import`).
 - **Nối kho ↔ sàn hôm nay KHÔNG BAO GIỜ tự chạy:** `product-sync` không gán `productId`; nối chỉ khi khách bấm
   `/mappings/link` (tay), `/link-by-sku` + `/auto-match` (khớp **trùng mã chính xác**), `/quick-link`, `/create-products`.
   → Yêu cầu "không tự ý liên kết" đã đúng với luật hiện hành; nhưng khi khách bấm "Tự khớp" sau này thì SP mới **sẽ nối**
@@ -893,3 +894,22 @@ Tạo đợt 2 SP × 2 gian → Sửa bài đăng (đổi tên, Lưu) → Bổ s
 kiện") → Đăng 1 lượt → "Đang xếp hàng" + poll 2 s → chạy processTarget tay (local không có worker) → PENDING_REVIEW, job PARTIAL →
 mở lại đợt: review-check giả lập duyệt → "Đã đăng" → Lịch sử "Xong một phần" ngay → form Tạo mới (trần 9/12 từ server, SKU 5 ký tự
 báo lỗi, blocker). Chưa kiểm gian thật.
+
+## 30. "Tạo sản phẩm mới" chuyển về Hàng hóa, bỏ hộp "Thêm sản phẩm mới" cũ (30/10/2026 tối, anh chốt) — ĐÃ LÀM, kiểm local
+
+Anh: hộp "Thêm sản phẩm mới" ở Hàng hóa (SKU + giá + tồn + thuế giữ chỗ) không dùng nữa; luồng "Tạo sản phẩm mới" của Sao chép sản
+phẩm hợp ở khu Hàng hóa hơn.
+
+- **Bỏ:** `components/products/product-form-dialog.tsx` (react-hook-form + zod), `lib/api.createProduct`, backend `POST /api/products`
+  (chỉ hộp này gọi; Excel dùng `/import`, mobile chỉ GET). `components/ui/form.tsx`, `lib/invoice-units.ts` còn nơi khác dùng → giữ.
+- **Thêm:** trang `/products/new` (`app/products/new/page.tsx` → `components/operations/copy-listing/manual-create-page.tsx`): đầu trang
+  link quay về Hàng hóa, bước 1 = `ManualProductForm`, bước 2 = `TargetPicker` (gian đích), nút "Tiếp: xem trước theo gian" →
+  `POST /jobs` MANUAL → `router.push('/operations-assistant/copy-listing?batch=<id>')`. Nút ở Hàng hóa đổi thành
+  "Tạo sản phẩm mới" (Link). Quyền: API vẫn đòi `operations.copy-listing` → nhân viên thiếu quyền thấy câu nhắc, không vỡ trang.
+- **Sao chép sản phẩm:** Segmented nguồn còn 2 mục (gian đã nối / kho Hubsell) + nút ghost "Tạo sản phẩm mới ở Hàng hóa" dẫn sang
+  `/products/new` (khách quen chỗ cũ); trang đọc `?batch=<id>` (window.location, không bọc Suspense) để mở thẳng đợt, "Quay lại" /
+  đổi tab xóa param bằng `history.replaceState`.
+- Kiểm local: Hàng hóa → Tạo sản phẩm mới → nhập tên + mã gốc + giá + 3 gian → Tiếp → sang đợt 1 SP × 3 gian với gợi ý danh mục → Quay
+  lại về tab Sao chép (URL sạch, 2 nguồn + link). tsc + eslint sạch, backend tsc sạch.
+- ⏳ Chưa làm (anh chốt sau nếu cần): tạo SKU kho KHÔNG đăng lên gian nào (0 gian đích) — hiện bắt buộc ≥ 1 gian vì Tổng kho chỉ ghi khi
+  Đăng (mục 24.3); nếu khách bán ngoài sàn muốn thêm hàng, hôm nay chỉ còn đường nhập Excel.

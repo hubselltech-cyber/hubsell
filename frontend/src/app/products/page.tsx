@@ -29,6 +29,7 @@ import {
   Loader2,
   MapPin,
   PackageOpen,
+  Plus,
   Search,
   Sparkles,
   Warehouse,
@@ -38,7 +39,6 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/shell/app-shell";
 import { Money } from "@/components/ui/money";
-import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
 import { SetupGuide, type ChannelProductCounts } from "@/components/products/setup-guide";
@@ -1398,7 +1398,12 @@ export default function ProductsHubPage() {
                   )}
                   Xuất Excel
                 </Button>
-                <ProductFormDialog onCreated={load} />
+                {/* 30/10/2026 anh chốt: bỏ hộp "Thêm sản phẩm mới" cũ (SKU + giá + tồn), thay bằng luồng
+                    Tạo sản phẩm mới của Sao chép sản phẩm (soạn đủ chuẩn sàn → đăng lên gian + ghi Tổng kho). */}
+                <Button nativeButton={false} render={<Link href="/products/new" />}>
+                  <Plus className="size-4" />
+                  Tạo sản phẩm mới
+                </Button>
               </div>
             </div>
             {/* Hàng chip lọc LUÔN hiện khi kho có SKU (anh Trung 22/10 tối: khách shop váy không thấy
@@ -1519,15 +1524,15 @@ export default function ProductsHubPage() {
                     ) : isAdmin && channels.length === 0 ? (
                       <p>
                         Chưa có sản phẩm nào. Nối gian hàng để kéo sản phẩm từ sàn về (bước 1
-                        phía trên), hoặc bấm “Thêm sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                        phía trên), hoặc bấm “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
                       </p>
                     ) : isAdmin && (counts?.all ?? 0) === 0 ? (
                       <p>
                         Chưa có sản phẩm nào. Bấm “Kéo sản phẩm về” ở bước 1 phía trên để lấy
-                        hàng từ gian đã nối, hoặc “Thêm sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                        hàng từ gian đã nối, hoặc “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
                       </p>
                     ) : (
-                      <p>Chưa có sản phẩm nào. Bấm “Thêm sản phẩm mới” hoặc nhập Excel để bắt đầu.</p>
+                      <p>Chưa có sản phẩm nào. Bấm “Tạo sản phẩm mới” hoặc nhập Excel để bắt đầu.</p>
                     )}
                   </div>
                 ) : (

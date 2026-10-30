@@ -78,7 +78,7 @@ hubsell/
 │   └── src/
 │       ├── app/                         # Route theo nhóm nghiệp vụ
 │       │   ├── page.tsx · login/ · reset-password/ · guide/
-│       │   ├── orders/ · products/ · channels/ · mappings/ · staff/
+│       │   ├── orders/ · products/{new,putaway,receive,stocktake} · channels/ · mappings/ · staff/   # products/new = Tạo sản phẩm mới (soạn + đăng lên gian, docs/SAO-CHEP-SAN-PHAM.md mục 30)
 │       │   ├── warehouse/{returns,shipping-alerts,sync}
 │       │   ├── finance/{analytics,expenses,cost-prices,fee-audit,loss-orders,realized-pnl,shipping-alerts}
 │       │   ├── ads/{shopee,lazada,tiktok}          # Trợ lý quảng cáo đa sàn

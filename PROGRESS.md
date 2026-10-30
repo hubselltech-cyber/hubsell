@@ -5,6 +5,12 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (tối muộn) — "TẠO SẢN PHẨM MỚI" VỀ HÀNG HÓA, BỎ HỘP "THÊM SẢN PHẨM MỚI" CŨ (anh chốt; docs mục 30) — ĐÃ LÀM, kiểm local, tsc + eslint sạch
+
+- Anh: hộp Thêm sản phẩm cũ ở Hàng hóa không dùng nữa; nút "Tạo sản phẩm mới" của Sao chép sản phẩm hợp ở khu Hàng hóa hơn.
+- Bỏ `product-form-dialog.tsx`, `api.createProduct`, backend `POST /api/products` (chỉ hộp này gọi). Thêm `/products/new` = `manual-create-page.tsx` (form Tạo mới + chọn gian đích → tạo lượt → mở đợt ở Sao chép sản phẩm qua `?batch=<id>`); nút Hàng hóa đổi "Tạo sản phẩm mới" (Link). Sao chép sản phẩm còn 2 nguồn + nút ghost dẫn sang `/products/new`.
+- Kiểm local: Hàng hóa → Tạo sản phẩm mới → tên + mã gốc + giá + 3 gian → Tiếp → đợt 1 × 3 gian → Quay lại URL sạch. ⏳ Chưa có đường "tạo SKU kho không đăng gian nào" (chờ anh chốt nếu cần).
+
 ## Phiên 30/10/2026 (tối) — DỌN MÃ SAO CHÉP SẢN PHẨM SAU 25 COMMIT (anh: "rà soát cẩn thận, dọn code thừa, cây chuyên nghiệp"; docs mục 29) — ĐÃ LÀM, kiểm local, test BE 69/69, tsc + eslint sạch
 
 - 2 subagent rà chỉ đọc (backend / frontend) → danh sách mã chết, trùng, nhập ngược tầng, RAM, test, đặt tên; em làm theo, giữ hành vi khách.
