@@ -9,7 +9,7 @@
 
 - Ảnh: hộp đã tìm xong chỉ còn No Brand = Shopee `get_brand_list(danh mục, status 1)` thật sự không có BUNCHAR (không phải lỗi mạng/trang như lần 1–2). 3 giả thuyết chưa kiểm: brand chờ duyệt (status 2), brand chỉ gắn danh mục khác, cắt 10k trang (ít).
 - Sửa chắc: Enter không khớp → không chọn No Brand, giữ chữ, hộp ghi rõ Shopee chỉ nhận thương hiệu đã đăng ký cho đúng danh mục. Log Render số hãng/trang + "không khớp". Commit 7475ca09 chờ anh push.
-- **Anh: thương hiệu khách đã nộp Shopee và được duyệt.** → thêm (1) hãng ĐANG DÙNG trên gian (get_item_base_info ≤50 SP đã đăng, đệm 6h) ghép vào hộp chọn kèm ghi chú "đang dùng trên gian này" (`mergeUsedBrands` + test), (2) log chẩn đoán sâu: số hãng chữ B mẫu + nhóm chờ duyệt status 2. tsc BE+FE sạch, listing 39/39. Chờ anh push → khách gõ `bun` sẽ thấy BUNCHAR; log Render chốt gốc.
+- **Anh: thương hiệu khách đã nộp Shopee và được duyệt.** → thêm (1) hãng ĐANG DÙNG trên gian (get_item_base_info ≤50 SP đã đăng, đệm 6h) ghép vào hộp chọn kèm ghi chú "đang dùng trên gian này" (`mergeUsedBrands` + test), (2) log chẩn đoán sâu: số hãng chữ B mẫu + nhóm chờ duyệt status 2. tsc BE+FE sạch, listing 39/39. ✅ Anh "Push đi" → PUSH 728f103a, `/health` prod lên code mới ~14:45 30/10; ⏳ khách Bunchar tải lại trang gõ `bun`; đọc log Render `[listing-copy] Shopee brand … không khớp` để chốt gốc.
 
 ---
 ## Phiên 30/10/2026 (chiều) — SAO CHÉP SẢN PHẨM: NGUỒN "TẠO MỚI" (lát A form + lát B ghi Tổng kho) — ĐÃ CODE + KIỂM LOCAL TRỌN LUỒNG, CHƯA PUSH
