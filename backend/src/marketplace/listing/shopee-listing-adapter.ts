@@ -13,7 +13,8 @@ import type { ShopeeItemBaseInfo, ShopeeModel } from "../../integrations/shopee/
 import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
 import { viAttributeName } from "./attribute-names-vi";
-import { rankBrands } from "./brand-search";
+import { mergeUsedBrands, rankBrands } from "./brand-search";
+import { prisma } from "../../lib/prisma";
 import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
@@ -57,10 +58,56 @@ function attrDef(a: api.ShopeeAttribute): AttributeDef {
 }
 
 /** Toàn bộ thương hiệu của danh mục (đệm 6 giờ ở listing-api), đã đổi về dạng chung. */
-async function shopeeBrandList(channel: Channel, categoryId: string): Promise<Brand[]> {
+async function shopeeBrandList(channel: Channel, categoryId: string, status: 1 | 2 = 1): Promise<Brand[]> {
   const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
-  const { brands } = await api.getBrands(accessToken, shopId, Number(categoryId));
+  const { brands } = await api.getBrands(accessToken, shopId, Number(categoryId), undefined, status);
   return brands.map((b) => ({ id: String(b.brand_id), name: b.display_brand_name ?? b.original_brand_name ?? String(b.brand_id) }));
+}
+
+/**
+ * Hãng khách đang dùng trên gian: id sản phẩm Shopee lấy từ ChannelProduct.externalId
+ * ("item-model" → item) của 200 dòng mới nhất, rồi get_item_base_info (≤ 50 item, 1 call, đệm 6 giờ).
+ * Lỗi sàn → coi như không có, không làm hỏng ô tìm.
+ */
+async function shopeeUsedBrands(channel: Channel): Promise<Brand[]> {
+  try {
+    const rows = await prisma.channelProduct.findMany({
+      where: { channelId: channel.id, externalId: { not: null } },
+      select: { externalId: true },
+      orderBy: { lastSyncedAt: "desc" },
+      take: 200,
+    });
+    const itemIds = [...new Set(rows.map((r) => Number(String(r.externalId).split("-")[0])))];
+    const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+    const brands = await api.getShopUsedBrands(accessToken, shopId, itemIds);
+    return brands.map((b) => ({ id: String(b.brand_id), name: b.original_brand_name ?? String(b.brand_id) }));
+  } catch (err) {
+    console.warn(`[listing-copy] đọc hãng đang dùng gian ${channel.shopName} lỗi: ${(err as Error).message.slice(0, 120)}`);
+    return [];
+  }
+}
+
+/**
+ * Khách gõ tên mà danh sách hãng thường của danh mục không khớp (Bunchar 30/10, khách nói
+ * "trên Shopee có") → ghi log đủ để phân định: danh sách có lật đủ không (mẫu tên bắt đầu
+ * bằng chữ cái đầu từ khóa), và hãng có nằm ở nhóm CHỜ DUYỆT (status 2) không. Chỉ chạy khi
+ * không khớp, kết quả đệm 6 giờ — không tốn thêm call khi gõ từng phím.
+ */
+async function logBrandMiss(channel: Channel, categoryId: string, query: string, list: Brand[]): Promise<void> {
+  const q = normalizeText(query);
+  const first = q[0] ?? "";
+  const sameLetter = list.filter((b) => normalizeText(b.name).startsWith(first)).map((b) => b.name);
+  let pendingNote = "không đọc được";
+  try {
+    const pending = await shopeeBrandList(channel, categoryId, 2);
+    const hit = rankBrands(pending, query, 5).map((b) => `${b.name}#${b.id}`);
+    pendingNote = `chờ duyệt ${pending.length} hãng, khớp: ${hit.length ? hit.join(", ") : "không"}`;
+  } catch (err) {
+    pendingNote = `status 2 lỗi: ${(err as Error).message.slice(0, 120)}`;
+  }
+  console.log(
+    `[listing-copy] Shopee brand "${query.trim()}" không khớp trong danh mục ${categoryId} (gian ${channel.shopName}): hãng thường ${list.length}, chữ "${first}" có ${sameLetter.length} hãng (vd ${sameLetter.slice(0, 6).join(" | ") || "—"}); ${pendingNote}`
+  );
 }
 
 export const shopeeListingAdapter: ListingAdapter = {
@@ -179,11 +226,12 @@ export const shopeeListingAdapter: ListingAdapter = {
 
   async searchBrands(channel: Channel, categoryId: string | null, query: string): Promise<Brand[]> {
     if (!categoryId) return [NO_BRAND];
-    const list = await shopeeBrandList(channel, categoryId);
+    const [categoryBrands, used] = await Promise.all([shopeeBrandList(channel, categoryId), shopeeUsedBrands(channel)]);
+    const list = mergeUsedBrands(categoryBrands, used);
     const ranked = rankBrands(list, query, 199);
-    // Chẩn đoán khách "không tìm thấy thương hiệu" (30/10 Bunchar): biết danh sách có đủ không.
-    if (query.trim() && ranked.length === 0) {
-      console.log(`[listing-copy] Shopee brand "${query.trim()}" không khớp trong danh mục ${categoryId} (gian ${channel.shopName}): danh sách ${list.length} thương hiệu`);
+    // Chẩn đoán khách "không tìm thấy thương hiệu" (30/10 Bunchar) — không chặn trả lời.
+    if (query.trim().length >= 3 && ranked.length === 0) {
+      void logBrandMiss(channel, categoryId, query, list).catch(() => undefined);
     }
     return [NO_BRAND, ...ranked];
   },

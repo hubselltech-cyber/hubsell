@@ -725,3 +725,18 @@ Sắc Đẹp > Chăm sóc tóc > Thuốc nhuộm tóc, gian Shopee. Khách: *"Ki
   danh mục này, khách phải đăng ký thương hiệu (Seller Centre → Thương hiệu) hoặc dùng No Brand — KiotViet "có" chỉ là ô nhập của họ.
   (2) Hoặc anh đăng nhập admin prod để em chạy probe `searchBrands` gian khách đọc thẳng danh sách.
 - tsc BE+FE + eslint sạch; commit chờ anh push.
+- **Anh bổ sung (chiều muộn):** *"Khách bảo tìm trên Shopee có thương hiệu này — đây là thương hiệu khách đã nộp cho Shopee và được
+  chấp nhận rồi."* → loại giả thuyết "không có"; còn lại: hãng đã duyệt nhưng Shopee gắn hãng theo **danh mục khách đăng ký** nên
+  danh sách của lá "Thuốc nhuộm tóc" không có, hoặc danh sách mình lật thiếu. **Làm 2 việc (commit chờ push):**
+  1. **Hãng đang dùng trên gian** — `getShopUsedBrands` (listing-api): lấy ≤ 50 item id từ `ChannelProduct.externalId` 200 dòng mới nhất
+     của gian → `get_item_base_info` 1 call → gom `brand {brand_id, original_brand_name}` (bỏ id 0), đệm 6 giờ theo shop;
+     `mergeUsedBrands` (brand-search.ts, test) ghép vào danh sách danh mục: trùng id giữ bản danh mục, hãng chỉ có trên gian thêm cuối
+     kèm `note` "đang dùng trên gian này — sàn có thể từ chối nếu hãng chưa gắn với danh mục"; FE hộp xổ hiện ghi chú mờ cạnh tên.
+     Khách Bunchar đã đăng sản phẩm Shopee mang brand BUNCHAR → gõ "bun" sẽ thấy, chọn được, `brand_id` thật gửi add_item.
+  2. **Log chẩn đoán sâu hơn** (`logBrandMiss`, chỉ chạy khi gõ ≥ 3 ký tự mà 0 khớp, không chặn trả lời): số hãng thường của danh
+     mục, số hãng bắt đầu bằng chữ cái đầu từ khóa + 6 tên mẫu (chứng minh lật đủ), và hỏi thêm nhóm **chờ duyệt** (`status 2`, đệm
+     riêng) xem có khớp không. `getBrands(…, status)` nhận 1|2, khóa đệm theo status.
+  - Chưa kiểm gian thật (cần token Shopee). Sau deploy: khách gõ `bun` ở Thuốc nhuộm tóc; log Render có dòng `get_brand_list danh
+    mục … status 1: N thương hiệu / P trang` và `brand "BUNCHAR" không khớp …` (nếu vẫn không có trong danh mục) → đọc để chốt
+    gốc. Nếu Shopee từ chối add_item vì hãng không gắn danh mục → lỗi sàn hiện ở dòng gian (error-text), khách chọn No Brand hoặc
+    gắn thêm danh mục cho thương hiệu trên Seller Centre.

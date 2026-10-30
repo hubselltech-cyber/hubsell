@@ -116,6 +116,8 @@ export interface LogisticOption {
 export interface Brand {
   id: string;
   name: string;
+  /** Ghi chú ngắn cho FE (vd "đang dùng trên gian này") — không gửi sàn. */
+  note?: string;
 }
 
 /** Bản nháp đã đủ điều kiện để gọi API tạo sản phẩm. */

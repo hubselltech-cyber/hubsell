@@ -8435,7 +8435,7 @@ export function fetchCopyListingCategoryTree(
 export function fetchCopyListingBrands(jobId: string, targetId: string, q: string, categoryId?: string | null) {
   const qs = new URLSearchParams({ q });
   if (categoryId) qs.set("categoryId", categoryId);
-  return apiFetch<{ items: { id: string; name: string }[] }>(
+  return apiFetch<{ items: { id: string; name: string; note?: string }[] }>(
     `${COPY_LISTING_BASE}/jobs/${jobId}/targets/${targetId}/brands?${qs.toString()}`
   );
 }

@@ -23,6 +23,8 @@ import { brandLabel } from "./labels";
 export interface BrandValue {
   id: string;
   name: string;
+  /** Backend ghi chú (vd hãng đang dùng trên gian, không có trong danh sách danh mục). */
+  note?: string;
 }
 
 export function BrandCombobox({
@@ -197,7 +199,10 @@ export function BrandCombobox({
                   )}
                 >
                   <Check className={cn("size-4 shrink-0", active ? "text-primary opacity-100" : "opacity-0")} />
-                  <span className="min-w-0 truncate">{brandLabel(b.name)}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {brandLabel(b.name)}
+                    {b.note && <span className={cn(TEXT_SUB, "ml-1.5")}>· {b.note}</span>}
+                  </span>
                 </button>
               );
             })

@@ -65,3 +65,13 @@ describe("rankBrands", () => {
     expect(rankBrands(list, "zzz")).toEqual([]);
   });
 });
+
+describe("mergeUsedBrands", () => {
+  it("hãng đang dùng trên gian mà danh mục không có → thêm cuối kèm ghi chú; trùng id giữ bản danh mục; bỏ id 0", async () => {
+    const { mergeUsedBrands, USED_ON_SHOP_NOTE } = await import("../brand-search");
+    const cat = [{ id: "1", name: "AMBY" }, { id: "2", name: "BIODERMA" }];
+    const used = [{ id: "2", name: "Bioderma" }, { id: "9", name: "BUNCHAR" }, { id: "0", name: "No Brand" }];
+    expect(mergeUsedBrands(cat, used)).toEqual([...cat, { id: "9", name: "BUNCHAR", note: USED_ON_SHOP_NOTE }]);
+    expect(rankBrands(mergeUsedBrands(cat, used), "bun").map((b) => b.id)).toEqual(["9"]);
+  });
+});

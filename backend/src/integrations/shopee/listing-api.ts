@@ -153,9 +153,11 @@ export async function getBrands(
   accessToken: string,
   shopId: string,
   categoryId: number,
-  cfg = getShopeeConfig()
+  cfg = getShopeeConfig(),
+  /** 1 = hãng thường (mặc định); 2 = hãng CHỜ SHOPEE DUYỆT (chẩn đoán khách "sàn có mà Hubsell không thấy", 30/10). */
+  status: 1 | 2 = 1
 ): Promise<{ brands: ShopeeBrand[]; mandatory: boolean }> {
-  return brandCache.get(`shopee:brands:${categoryId}`, async () => {
+  return brandCache.get(`shopee:brands:${categoryId}:${status}`, async () => {
     let mandatory = false;
     const { items, truncated, pages } = await collectBrandPages(async (offset) => {
       const d = await callShopGet<BrandData>(
@@ -166,7 +168,7 @@ export async function getBrands(
           ["category_id", categoryId],
           ["offset", offset],
           ["page_size", BRAND_PAGE_SIZE],
-          ["status", 1],
+          ["status", status],
           ["language", "vi"],
         ],
         "get_brand_list",
@@ -175,9 +177,33 @@ export async function getBrands(
       if (offset === 0) mandatory = Boolean(d.response?.is_mandatory);
       return { items: d.response?.brand_list ?? [], hasNext: Boolean(d.response?.has_next_page), nextOffset: d.response?.next_offset };
     }, BRAND_PAGE_SIZE);
-    if (truncated) console.warn(`[listing-copy] Shopee get_brand_list danh mục ${categoryId} quá ${pages} trang — cắt ở ${items.length} thương hiệu`);
-    else console.log(`[listing-copy] Shopee get_brand_list danh mục ${categoryId}: ${items.length} thương hiệu / ${pages} trang (đệm 6 giờ)`);
+    if (truncated) console.warn(`[listing-copy] Shopee get_brand_list danh mục ${categoryId} status ${status} quá ${pages} trang — cắt ở ${items.length} thương hiệu`);
+    else console.log(`[listing-copy] Shopee get_brand_list danh mục ${categoryId} status ${status}: ${items.length} thương hiệu / ${pages} trang (đệm 6 giờ)`);
     return { brands: items, mandatory };
+  });
+}
+
+/** Hãng gian ĐANG DÙNG — đọc brand của ≤ 50 sản phẩm đã đăng (get_item_base_info, 1 call), đệm 6 giờ theo shop. */
+const usedBrandCache = new TtlCache<ShopeeBrand[]>(6 * 60 * 60 * 1000);
+
+export async function getShopUsedBrands(
+  accessToken: string,
+  shopId: string,
+  itemIds: number[],
+  cfg = getShopeeConfig()
+): Promise<ShopeeBrand[]> {
+  const ids = [...new Set(itemIds.filter((n) => Number.isFinite(n) && n > 0))].slice(0, 50);
+  if (ids.length === 0) return [];
+  return usedBrandCache.get(`shopee:used-brands:${shopId}`, async () => {
+    const items = await getItemBaseInfo(accessToken, shopId, ids, cfg);
+    const seen = new Map<number, ShopeeBrand>();
+    for (const it of items) {
+      const b = (it as ShopeeItemBaseInfo & { brand?: { brand_id?: number; original_brand_name?: string } }).brand;
+      if (b?.brand_id && b.brand_id > 0 && !seen.has(b.brand_id)) {
+        seen.set(b.brand_id, { brand_id: b.brand_id, original_brand_name: b.original_brand_name, display_brand_name: b.original_brand_name });
+      }
+    }
+    return [...seen.values()];
   });
 }
 
