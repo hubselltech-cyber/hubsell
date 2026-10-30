@@ -5,6 +5,9 @@
 // Safari/macOS xổ danh sách hàng nghìn thương hiệu không gõ tìm được, không thấy
 // thanh cuộn). Gõ → hỏi lại gian đích (`/brands?q=`), danh sách cuộn có thanh
 // cuộn LUÔN HIỆN (macOS ẩn thanh cuộn overlay), chọn bằng chuột hoặc ↑↓ Enter.
+// 30/10 chiều (khách Bunchar lần 3): gõ "BUNCHAR" ra 0 hãng → Enter từng chọn
+// No Brand rồi xóa chữ khách gõ. Nay: không khớp thì Enter KHÔNG chọn gì, chữ
+// giữ nguyên, hộp nói rõ Shopee chỉ nhận thương hiệu đã đăng ký cho đúng danh mục.
 // ============================================================
 
 import { useEffect, useRef, useState } from "react";
@@ -83,14 +86,20 @@ export function BrandCombobox({
     listRef.current?.querySelector<HTMLElement>(`[data-index="${highlight}"]`)?.scrollIntoView({ block: "nearest" });
   }, [highlight, open]);
 
-  function close() {
+  /** Đóng hộp; GIỮ chữ đã gõ (mở lại thấy ngay) trừ khi vừa chọn xong. */
+  function close(clearQuery = false) {
     setOpen(false);
-    setQuery("");
+    if (clearQuery) setQuery("");
   }
+
+  /** Có hãng thật khớp từ khóa (ngoài No Brand)? */
+  const q = query.trim();
+  const realMatches = items.filter((b) => !/^no ?brand$/i.test(b.name));
+  const noMatch = Boolean(q) && !loading && realMatches.length === 0;
 
   function choose(b: BrandValue | null) {
     onChange(b);
-    close();
+    close(true);
     inputRef.current?.blur();
   }
 
@@ -108,6 +117,8 @@ export function BrandCombobox({
       setHighlight((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
+      // Gõ tên mà không khớp hãng nào → Enter không được lặng lẽ chọn No Brand rồi xóa chữ.
+      if (noMatch) return;
       const it = items[highlight];
       if (it) choose(it);
     } else if (e.key === "Escape") {
@@ -116,7 +127,7 @@ export function BrandCombobox({
     }
   }
 
-  const shown = open ? query : value ? brandLabel(value.name) : "";
+  const shown = open ? query : value ? brandLabel(value.name) : query;
 
   return (
     <div ref={boxRef} className="relative min-w-0">
@@ -193,6 +204,12 @@ export function BrandCombobox({
           )}
           {!loading && items.length >= 200 && (
             <div className={cn(TEXT_SUB, "px-3 py-1.5 text-center")}>Chỉ hiện 200 đầu — gõ thêm chữ để thu hẹp.</div>
+          )}
+          {noMatch && items.length > 0 && (
+            <div className={cn(TEXT_SUB, "whitespace-normal border-t px-3 py-2")}>
+              Sàn không có thương hiệu &ldquo;{q}&rdquo; trong danh mục này. Shopee chỉ nhận thương hiệu đã đăng ký với sàn cho đúng danh
+              mục — chọn <span className="text-foreground">Không có thương hiệu</span>, hoặc đăng ký thương hiệu trên Seller Centre rồi quay lại.
+            </div>
           )}
         </div>
       )}

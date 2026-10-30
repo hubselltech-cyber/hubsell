@@ -180,7 +180,12 @@ export const shopeeListingAdapter: ListingAdapter = {
   async searchBrands(channel: Channel, categoryId: string | null, query: string): Promise<Brand[]> {
     if (!categoryId) return [NO_BRAND];
     const list = await shopeeBrandList(channel, categoryId);
-    return [NO_BRAND, ...rankBrands(list, query, 199)];
+    const ranked = rankBrands(list, query, 199);
+    // Chẩn đoán khách "không tìm thấy thương hiệu" (30/10 Bunchar): biết danh sách có đủ không.
+    if (query.trim() && ranked.length === 0) {
+      console.log(`[listing-copy] Shopee brand "${query.trim()}" không khớp trong danh mục ${categoryId} (gian ${channel.shopName}): danh sách ${list.length} thương hiệu`);
+    }
+    return [NO_BRAND, ...ranked];
   },
 
   async getBrandName(channel: Channel, categoryId: string | null, id: string): Promise<string | null> {

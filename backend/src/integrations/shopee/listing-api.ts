@@ -176,6 +176,7 @@ export async function getBrands(
       return { items: d.response?.brand_list ?? [], hasNext: Boolean(d.response?.has_next_page), nextOffset: d.response?.next_offset };
     }, BRAND_PAGE_SIZE);
     if (truncated) console.warn(`[listing-copy] Shopee get_brand_list danh mục ${categoryId} quá ${pages} trang — cắt ở ${items.length} thương hiệu`);
+    else console.log(`[listing-copy] Shopee get_brand_list danh mục ${categoryId}: ${items.length} thương hiệu / ${pages} trang (đệm 6 giờ)`);
     return { brands: items, mandatory };
   });
 }
