@@ -36,6 +36,7 @@
     "nodemailer": "^9.0.4",
     "pdf-lib": "^1.17.1",
     "pg-boss": "12.35.1",
+    "sharp": "^0.34.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {

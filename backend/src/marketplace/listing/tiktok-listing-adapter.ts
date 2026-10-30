@@ -9,6 +9,7 @@
 
 import type { Channel } from "@prisma/client";
 import { fetchImageBuffer } from "../../lib/image-fetch";
+import { normalizeImage, TIKTOK_IMAGE } from "../../lib/image-normalize";
 import { getWarehouses } from "../../integrations/tiktok/client";
 import * as api from "../../integrations/tiktok/listing-api";
 import { tiktokNeedsReauthForStockPush } from "../../integrations/tiktok/scopes";
@@ -212,7 +213,7 @@ export const tiktokListingAdapter: ListingAdapter = {
     const ctx = await ctxOf(channel);
     const main_images: { uri: string }[] = [];
     for (const url of draft.listing.images.slice(0, 9)) {
-      const img = await fetchImageBuffer(url);
+      const img = await normalizeImage(await fetchImageBuffer(url), TIKTOK_IMAGE);
       const up = await api.uploadProductImage(ctx, img, "MAIN_IMAGE");
       main_images.push({ uri: up.uri });
     }
@@ -220,7 +221,7 @@ export const tiktokListingAdapter: ListingAdapter = {
     // Ảnh chèn trong mô tả: upload use_case DESCRIPTION_IMAGE, lấy url trả về ghép <img> cuối mô tả.
     const descUrls: string[] = [];
     for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
-      const img = await fetchImageBuffer(url);
+      const img = await normalizeImage(await fetchImageBuffer(url), TIKTOK_IMAGE);
       const up = await api.uploadProductImage(ctx, img, "DESCRIPTION_IMAGE");
       if (up.url) descUrls.push(up.url);
       else console.warn(`[listing-copy] TikTok upload ảnh mô tả không trả url (uri ${up.uri}) — bỏ qua ảnh này`);
@@ -248,7 +249,7 @@ export const tiktokListingAdapter: ListingAdapter = {
     const skuImgUris = new Map<string, string>();
     for (const [value, url] of byOption[0] ?? []) {
       try {
-        const img = await fetchImageBuffer(url);
+        const img = await normalizeImage(await fetchImageBuffer(url), TIKTOK_IMAGE);
         skuImgUris.set(value, (await api.uploadProductImage(ctx, img, "ATTRIBUTE_IMAGE")).uri);
       } catch (err) {
         console.warn(`[listing-copy] ${channel.shopName}: ảnh phân loại "${value}" không tải được (${(err as Error).message}) — bỏ ảnh này`);

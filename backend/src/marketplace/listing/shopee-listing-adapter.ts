@@ -9,6 +9,7 @@
 
 import type { Channel } from "@prisma/client";
 import { fetchImageBuffer } from "../../lib/image-fetch";
+import { normalizeImage, SHOPEE_IMAGE } from "../../lib/image-normalize";
 import type { ShopeeItemBaseInfo, ShopeeModel } from "../../integrations/shopee/client";
 import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
@@ -246,14 +247,14 @@ export const shopeeListingAdapter: ListingAdapter = {
     const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
     const imageIds: string[] = [];
     for (const url of draft.listing.images.slice(0, 9)) {
-      const img = await fetchImageBuffer(url);
+      const img = await normalizeImage(await fetchImageBuffer(url), SHOPEE_IMAGE);
       imageIds.push(await api.uploadProductImage({ accessToken, shopId, ...img }));
     }
     if (imageIds.length === 0) throw new Error("Không tải được ảnh nào lên Shopee");
     // Ảnh chèn trong mô tả: upload scene "desc" → mô tả mở rộng (chữ trước, ảnh sau).
     const descImageIds: string[] = [];
     for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
-      const img = await fetchImageBuffer(url);
+      const img = await normalizeImage(await fetchImageBuffer(url), SHOPEE_IMAGE);
       descImageIds.push(await api.uploadProductImage({ accessToken, shopId, ...img, scene: "desc" }));
     }
     const descriptionText = htmlToText(draft.listing.description).slice(0, 3000);
@@ -324,7 +325,7 @@ export const shopeeListingAdapter: ListingAdapter = {
       const tierImageIds = new Map<string, string>();
       for (const [value, url] of byOption[0] ?? []) {
         try {
-          const img = await fetchImageBuffer(url);
+          const img = await normalizeImage(await fetchImageBuffer(url), SHOPEE_IMAGE);
           tierImageIds.set(value, await api.uploadProductImage({ accessToken, shopId, ...img }));
         } catch (err) {
           console.warn(`[listing-copy] ${channel.shopName}: ảnh phân loại "${value}" không tải được (${(err as Error).message}) — bỏ ảnh này`);

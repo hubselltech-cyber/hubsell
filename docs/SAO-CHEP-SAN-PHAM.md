@@ -740,3 +740,21 @@ Sắc Đẹp > Chăm sóc tóc > Thuốc nhuộm tóc, gian Shopee. Khách: *"Ki
     mục … status 1: N thương hiệu / P trang` và `brand "BUNCHAR" không khớp …` (nếu vẫn không có trong danh mục) → đọc để chốt
     gốc. Nếu Shopee từ chối add_item vì hãng không gắn danh mục → lỗi sàn hiện ở dòng gian (error-text), khách chọn No Brand hoặc
     gắn thêm danh mục cho thương hiệu trên Seller Centre.
+
+## 26. Khách Bunchar chép TikTok → Shopee: "Shopee từ chối: Sàn không nhận ảnh sản phẩm" (30/10/2026 15:06, anh chuyển ảnh) — CHUẨN HÓA ẢNH TRƯỚC KHI ĐẨY, chi tiết sàn CHƯA đọc
+
+- **Ảnh anh gửi:** dòng gian Shopee "Bunchar Hai…" trạng thái Lỗi, chữ đỏ = bản dịch `error-text.ts` cho lỗi có chữ image
+  ("Sàn không nhận ảnh sản phẩm — ảnh phải tải được, đúng cỡ sàn yêu cầu (Shopee ≤ 2 MB, tối thiểu 500×500)…"), chi tiết sàn gấp
+  dưới "Chi tiết kỹ thuật sàn trả về" — **chưa đọc được nguyên văn**, ⏳ anh bấm mở gửi em. Nguồn: bài TikTok "Kem Ủ Tóc… BUNCHAR"
+  8 ảnh + ảnh mô tả.
+- **Việc chắc chắn cần dù nguyên văn là gì:** `lib/image-fetch.ts` trước nay tải ảnh nguyên trạng, không đổi cỡ/nén (ghi rõ "chưa
+  có thư viện ảnh"); ảnh gốc TikTok thường 3.000–4.000 px, 3–6 MB hoặc WebP, trong khi Shopee `upload_image` chỉ nhận JPG/PNG
+  ≤ 2 MB. → cài **sharp 0.34.3** (prebuilt linux-x64 trên Render), thêm `lib/image-normalize.ts` `normalizeImage(img, rule)`:
+  xoay EXIF, bỏ alpha trên nền trắng, xuất JPEG; cạnh dài > maxSide thu về, cạnh ngắn < minSide phóng lên; nặng hơn maxBytes thì hạ
+  chất lượng 85→60 rồi thu cạnh ×0,8; ảnh JPEG đã đúng chuẩn trả nguyên. Luật: `SHOPEE_IMAGE` ≤ 2 MB, ≤ 2.000 px, ≥ 500;
+  `TIKTOK_IMAGE` ≤ 5 MB, ≤ 4.000, ≥ 300. Áp ở Shopee adapter (ảnh bìa + ảnh mô tả + ảnh phân loại) và TikTok adapter (3 chỗ);
+  Lazada dùng `image/migrate` theo URL nên chưa áp (Lazada tự kéo).
+- Test `lib/__tests__/image-normalize.test.ts` 4 ca (3.200 px > 2 MB → ≤ 2 MB ≤ 2.000 px; WebP 200 px → JPEG 500; JPEG chuẩn trả
+  nguyên; PNG trong suốt → nền trắng + TikTok giữ 3.000) + listing → 43/43; tsc sạch. Chưa kiểm gian thật.
+- **Nếu nguyên văn sàn nói chuyện khác** (vd ảnh mô tả quá nhỏ, quá số ảnh, URL TikTok 403) thì xử lý tiếp theo đúng chữ đó — không
+  đoán thêm.

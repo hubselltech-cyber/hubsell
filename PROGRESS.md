@@ -5,6 +5,13 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (15:06) — BUNCHAR CHÉP TIKTOK → SHOPEE: "SÀN KHÔNG NHẬN ẢNH SẢN PHẨM" — CHUẨN HÓA ẢNH BẰNG SHARP (docs mục 26), chi tiết sàn chưa đọc
+
+- Ảnh anh gửi: dòng gian Shopee Lỗi với bản dịch lỗi ảnh; nguyên văn sàn gấp dưới "Chi tiết kỹ thuật sàn trả về" — ⏳ anh mở gửi em.
+- Làm việc chắc cần: image-fetch trước nay không đổi cỡ/nén; ảnh TikTok gốc 3–6 MB/WebP vs Shopee ≤ 2 MB JPG/PNG → cài sharp 0.34.3 + `lib/image-normalize.ts` (JPEG, ≤ 2 MB, ≤ 2.000 px, ≥ 500 cho Shopee; TikTok ≤ 5 MB/4.000/300), áp 3 chỗ Shopee + 3 chỗ TikTok. Test 4 ca → 43/43, tsc sạch. CHƯA push, chưa kiểm gian thật.
+- Cùng lượt: bảng phân loại Tạo mới căn mép trên (b4c0aba5) — chưa push.
+
+---
 ## Phiên 30/10/2026 (chiều muộn) — KHÁCH BUNCHAR LẦN 3: GÕ "BUNCHAR" Ở THUỐC NHUỘM TÓC RA 0 HÃNG, ENTER MẤT CHỮ — SỬA UX + LOG, GỐC CHƯA CHẮC (docs mục 25)
 
 - Ảnh: hộp đã tìm xong chỉ còn No Brand = Shopee `get_brand_list(danh mục, status 1)` thật sự không có BUNCHAR (không phải lỗi mạng/trang như lần 1–2). 3 giả thuyết chưa kiểm: brand chờ duyệt (status 2), brand chỉ gắn danh mục khác, cắt 10k trang (ít).
