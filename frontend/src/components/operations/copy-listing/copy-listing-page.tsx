@@ -79,6 +79,8 @@ const ROW_ACTIVE = "border-l-[3px] border-l-primary bg-slate-100/80 hover:bg-sla
 // whitespace-normal: ô bảng mặc định nowrap → mọi dòng dài trong khung sửa (17 màu, ghi chú) phải xuống dòng,
 // không vẽ tràn ra ngoài làm bảng đợt sinh cuộn ngang (soi 30/10 ở 1280: tràn 555px).
 const PANEL_CELL = "p-3 pl-9 whitespace-normal";
+/** Nút sửa cần khách bấm — đỏ đặc theo mẫu nút đặc của hệ (bg-*-600 + hover 700, dark giữ 600). */
+const EDIT_BTN_RED = "bg-red-600 text-white hover:bg-red-700";
 const PANEL = "rounded-xl border border-slate-200/80 bg-card p-5 shadow-sm whitespace-normal";
 
 function ChannelChip({ channelName, className }: { channelName: ChannelName; className?: string }) {
@@ -812,8 +814,13 @@ function JobRows({
           </div>
         </TableCell>
         <TableCell className="text-right">
-          {/* Anh chốt 30/10: nút sửa phải NỔI BẬT — còn sửa được thì nút đặc, chỉ "Xem" mới viền. */}
-          <Button variant={sourceOpen ? "secondary" : editable ? "default" : "outline"} size="sm" className="whitespace-nowrap" onClick={() => onToggle(sourceKey)}>
+          {/* Anh chốt 30/10 ("chưa đủ độ, phải cho đỏ lên"): còn sửa được → nút ĐỎ đặc; chỉ "Xem" mới viền. */}
+          <Button
+            variant={sourceOpen ? "secondary" : editable ? "default" : "outline"}
+            size="sm"
+            className={cn("whitespace-nowrap", !sourceOpen && editable && EDIT_BTN_RED)}
+            onClick={() => onToggle(sourceKey)}
+          >
             {sourceOpen ? (
               <>
                 <ChevronUp data-icon="inline-start" /> Thu gọn
@@ -1298,11 +1305,11 @@ function TargetRows({
           {t.remoteItemId && <div className={cn(TEXT_SUB, "mt-1 font-mono")}>{t.remoteItemId}</div>}
         </TableCell>
         <TableCell className="text-right">
-          {/* Nút chữ rõ: còn sửa được → nút ĐẶC "Bổ sung"/"Sửa" (anh chốt 30/10: nổi bật); đã đăng → "Xem" viền. */}
+          {/* Còn thiếu thông tin → "Bổ sung" ĐỎ đặc (cùng độ nổi với Sửa bài đăng); đủ → "Sửa" đặc; đã đăng → "Xem" viền. */}
           <Button
             variant={expanded ? "secondary" : canEdit ? "default" : "outline"}
             size="sm"
-            className="whitespace-nowrap"
+            className={cn("whitespace-nowrap", !expanded && canEdit && t.missing.length > 0 && EDIT_BTN_RED)}
             onClick={onToggle}
           >
             {expanded ? (
