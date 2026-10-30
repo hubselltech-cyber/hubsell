@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronUp, Pencil, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, Check, ChevronUp, Pencil, Plus, RefreshCw, Search, Store, Warehouse } from "lucide-react";
 
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { Button } from "@/components/ui/button";
@@ -79,6 +79,61 @@ const ROW_ACTIVE = "border-l-[3px] border-l-primary bg-slate-100/80 hover:bg-sla
 // whitespace-normal: ô bảng mặc định nowrap → mọi dòng dài trong khung sửa (17 màu, ghi chú) phải xuống dòng,
 // không vẽ tràn ra ngoài làm bảng đợt sinh cuộn ngang (soi 30/10 ở 1280: tràn 555px).
 const PANEL_CELL = "p-3 pl-9 whitespace-normal";
+/** Số bước tròn + tiêu đề — anh chốt 30/10 ("giao diện phẳng, xấu"): tiêu đề bước phải có điểm nhấn. */
+function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-semibold text-primary-foreground tabular-nums">
+        {n}
+      </span>
+      <span className="text-[15px] font-semibold text-slate-900">{children}</span>
+    </div>
+  );
+}
+
+/**
+ * Segmented control (kiểu iOS/YouTube Studio): khay bg-muted, mục đang chọn nổi lên bằng nền card + bóng,
+ * icon + chữ 14 px — thay cho dải viền mảnh "khó nhìn" (anh 30/10).
+ */
+function Segmented<K extends string>({
+  value,
+  items,
+  onChange,
+  ariaLabel,
+}: {
+  value: K;
+  items: { key: K; label: string; icon?: React.ReactNode }[];
+  onChange: (k: K) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div role="tablist" aria-label={ariaLabel} className="inline-flex rounded-lg bg-muted p-1">
+      {items.map((it) => {
+        const active = it.key === value;
+        return (
+          <button
+            key={it.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(it.key)}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm transition-all",
+              active ? "bg-card font-medium text-slate-900 shadow-sm ring-1 ring-black/5" : "text-slate-500 hover:text-slate-900"
+            )}
+          >
+            {it.icon}
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Nút hành động phụ màu xanh (lấy sản phẩm mới từ sàn) — anh chốt 30/10: sang phải, màu xanh. */
+const ACTION_GREEN = "bg-emerald-600 text-white hover:bg-emerald-700";
+
 /** Nút sửa cần khách bấm — đỏ đặc theo mẫu nút đặc của hệ (bg-*-600 + hover 700, dark giữ 600). */
 const EDIT_BTN_RED = "bg-red-600 text-white hover:bg-red-700";
 const PANEL = "rounded-xl border border-slate-200/80 bg-card p-5 shadow-sm whitespace-normal";
@@ -296,31 +351,18 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
       {/* Bước 1 — nguồn */}
       <Card>
         <CardContent className="space-y-4 p-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-sm font-semibold text-slate-900">
-              {sourceType === "MANUAL" ? "1. Soạn sản phẩm mới" : "1. Chọn sản phẩm nguồn (tick được nhiều)"}
-            </div>
-            <div className="flex rounded-lg border border-slate-200 p-0.5">
-              {(
-                [
-                  ["CHANNEL", "Từ gian hàng đã nối"],
-                  ["PRODUCT", "Từ kho Hubsell"],
-                  ["MANUAL", "Tạo mới"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => resetSource(key)}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-sm transition-colors",
-                    sourceType === key ? "bg-primary text-primary-foreground" : "text-slate-700 hover:bg-slate-100"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <StepTitle n={1}>{sourceType === "MANUAL" ? "Soạn sản phẩm mới" : "Chọn sản phẩm nguồn"}</StepTitle>
+            <Segmented<SourceType>
+              ariaLabel="Nguồn sản phẩm"
+              value={sourceType}
+              onChange={resetSource}
+              items={[
+                { key: "CHANNEL", label: "Từ gian hàng đã nối", icon: <Store className="size-4" /> },
+                { key: "PRODUCT", label: "Từ kho Hubsell", icon: <Warehouse className="size-4" /> },
+                { key: "MANUAL", label: "Tạo mới", icon: <Plus className="size-4" /> },
+              ]}
+            />
             {picked.size > 0 && (
               <span className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">
                 Đã chọn <span className="font-semibold text-slate-900 tabular-nums">{picked.size}</span> sản phẩm
@@ -364,16 +406,6 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                     </option>
                   ))}
                 </NativeSelect>
-                {/* Danh mục gian chỉ tự làm mới mỗi đêm → sản phẩm vừa đăng trên sàn phải bấm mới có (anh hỏi 30/10). */}
-                <Button
-                  variant="outline"
-                  disabled={!sourceChannelId || syncing}
-                  title="Sản phẩm mới đăng trên sàn tự về Hubsell mỗi đêm (3–5 giờ sáng). Vừa đăng xong thì bấm để lấy ngay."
-                  onClick={syncSourceChannel}
-                >
-                  <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-                  {syncing ? "Đang lấy…" : "Lấy sản phẩm mới từ sàn"}
-                </Button>
               </>
             )}
             <div className="relative w-80">
@@ -388,6 +420,19 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
                 }}
               />
             </div>
+            {sourceType === "CHANNEL" && (
+              /* Danh mục gian chỉ tự làm mới mỗi đêm → sản phẩm vừa đăng trên sàn phải bấm mới có (anh hỏi 30/10).
+                 Anh chốt 30/10 chiều: nút sang bên phải, màu xanh. */
+              <Button
+                className={cn("ml-auto", ACTION_GREEN)}
+                disabled={!sourceChannelId || syncing}
+                title="Sản phẩm mới đăng trên sàn tự về Hubsell mỗi đêm (3–5 giờ sáng). Vừa đăng xong thì bấm để lấy ngay."
+                onClick={syncSourceChannel}
+              >
+                <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
+                {syncing ? "Đang lấy…" : "Lấy sản phẩm mới từ sàn"}
+              </Button>
+            )}
           </div>
 
           <Refreshing active={sourcesQ.refreshing}>
@@ -491,7 +536,8 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
       <Card>
         <CardContent className="space-y-3 p-5">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="text-sm font-semibold text-slate-900">2. Chọn gian đích (được nhiều gian, nhiều sàn)</div>
+            <StepTitle n={2}>Chọn gian đích</StepTitle>
+            <span className={TEXT_SUB}>được nhiều gian, nhiều sàn</span>
             {targets.size > 0 && (
               <span className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">
                 Đã chọn <span className="font-semibold text-slate-900 tabular-nums">{targets.size}</span> gian
@@ -507,25 +553,18 @@ function NewCopy({ onCreated }: { onCreated: (batchId: string) => void }) {
             <>
               {/* Lọc sàn → gian: khách nhiều gian không phải dò cả danh sách. */}
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex rounded-lg border border-slate-200 p-0.5">
-                  {(["ALL", ...platformsPresent] as const).map((p) => {
-                    const n = p === "ALL" ? targetChannels.length : targetChannels.filter((c) => c.channelName === p).length;
-                    if (n === 0) return null;
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setTargetPlatform(p)}
-                        className={cn(
-                          "rounded-md px-3 py-1 text-sm transition-colors tabular-nums",
-                          targetPlatform === p ? "bg-primary text-primary-foreground" : "text-slate-700 hover:bg-slate-100"
-                        )}
-                      >
-                        {p === "ALL" ? "Tất cả" : CHANNEL_META[p].label} ({n})
-                      </button>
-                    );
-                  })}
-                </div>
+                <Segmented<ChannelName | "ALL">
+                  ariaLabel="Lọc gian đích theo sàn"
+                  value={targetPlatform}
+                  onChange={setTargetPlatform}
+                  items={(["ALL", ...platformsPresent] as const)
+                    .map((p) => ({
+                      key: p,
+                      n: p === "ALL" ? targetChannels.length : targetChannels.filter((c) => c.channelName === p).length,
+                    }))
+                    .filter((x) => x.n > 0)
+                    .map((x) => ({ key: x.key, label: `${x.key === "ALL" ? "Tất cả" : CHANNEL_META[x.key].label} (${x.n})` }))}
+                />
                 {targetChannels.length > 5 && (
                   <div className="relative w-64">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
