@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (~17:45) — BUNCHAR VẪN LỖI ẢNH SAU KHI THÊM ẢNH MỚI: GỐC THẬT = GIAN KHÔNG ĐƯỢC SHOPEE WHITELIST ẢNH MÔ TẢ (docs mục 28) — ĐÃ SỬA, test 46/46, tsc sạch
+
+- Anh chuyển ảnh + tin khách ("thêm ảnh rồi vẫn lỗi, KiotViet đăng được"), nghĩ phải co dung lượng ảnh → việc đó mục 26 đã lên prod 15:21 trước đợt 15:43 của khách, nên không phải gốc.
+- Đọc log Render worker qua Chrome: `add_item product.error_param — You are not in the whitelist to add images in description, can only upload plain text` (2 lượt). Bài TikTok nguồn có ảnh chèn mô tả → Hubsell gửi extended → gian Bunchar chưa được Shopee bật. Bản dịch lỗi khớp chữ "images" → báo nhầm "Sàn không nhận ảnh".
+- Sửa: adapter Shopee rơi về add_item mô tả chữ khi gặp đúng lỗi này (thêm 1 lượt) + nhớ gian 7 ngày (RAM) để lượt sau bỏ ảnh mô tả luôn; error-text luật whitelist riêng + bỏ URL trước khi khớp từ khóa (URL product-images/… từng có thể gán nhầm lỗi ảnh); upload_image đọc `image_info_list` để lộ lỗi từng ảnh. Docs upload_image: ≤ 10 MB/ảnh (giữ trần 2 MB của mình).
+- ⏳ Bunchar bấm Đăng lại dòng Shopee → kỳ vọng LISTED, log "đăng lại mô tả chữ". Chưa làm: báo khách trong bảng đợt là ảnh mô tả đã bỏ; nhớ whitelist trong DB.
+
+---
 ## Phiên 30/10/2026 (chiều muộn) — SỬA BÀI ĐĂNG: KHÁCH XÓA ẢNH CŨ / TẢI ẢNH MỚI, TỐI ĐA 9 (anh chốt; docs mục 27) — ĐÃ CODE, kiểm local, CHƯA PUSH
 
 - Anh hỏi có nên cho khách sửa ảnh → em đề xuất chỉ bỏ/thêm/đặt bìa, không chỉnh ảnh; anh chốt "chỉ cần xóa ảnh cũ up ảnh mới, 9 ảnh".

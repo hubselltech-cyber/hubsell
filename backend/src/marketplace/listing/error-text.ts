@@ -24,6 +24,17 @@ interface Rule {
   text: string;
 }
 
+/**
+ * Shopee add_item: "You are not in the whitelist to add images in description, can only
+ * upload plain text" (product.error_param, lỗi thật gian Bunchar 30/10/2026) — gian chưa được
+ * Shopee bật mô tả mở rộng. Adapter bắt lỗi này để đăng lại mô tả chữ thuần.
+ */
+export const SHOPEE_DESC_IMAGE_WHITELIST_RE = /whitelist to add images in description|can only upload plain text/i;
+
+export function isShopeeDescImageWhitelistError(message: string): boolean {
+  return SHOPEE_DESC_IMAGE_WHITELIST_RE.test(String(message ?? ""));
+}
+
 /** Thứ tự = ưu tiên: mẫu hẹp (kích thước, cân nặng) đứng trước mẫu rộng (param, attribute). */
 const RULES: Rule[] = [
   // --- Lỗi phía Hubsell gọi sàn (tham số API) — khách không sửa được, đừng bắt khách mò ---
@@ -55,6 +66,11 @@ const RULES: Rule[] = [
   {
     test: /weight/i,
     text: "Cân nặng chưa hợp lệ — nhập số gram lớn hơn 0 (ví dụ 250).",
+  },
+  // --- Shopee: gian chưa được whitelist chèn ảnh vào mô tả (lỗi thật Bunchar 30/10) ---
+  {
+    test: SHOPEE_DESC_IMAGE_WHITELIST_RE,
+    text: "Gian Shopee này chưa được Shopee cho phép chèn ảnh vào mô tả (chỉ nhận mô tả chữ) — Hubsell tự đăng lại với mô tả dạng chữ, ảnh mô tả bỏ qua; vẫn lỗi thì báo Hubsell kèm dòng chi tiết bên dưới.",
   },
   // --- Ảnh ---
   {
@@ -127,7 +143,10 @@ const VIETNAMESE_RE = /[À-ỹ]/;
 export function humanizeListingError(platform: ChannelName, raw: string): string {
   const original = String(raw ?? "").trim();
   if (!original) return `${PLATFORM_LABEL[platform]} từ chối bài đăng nhưng không nói lý do — thử đăng lại; vẫn lỗi thì báo Hubsell.`;
-  const rule = RULES.find((r) => r.test.test(original));
+  // Khớp từ khóa trên phần KHÔNG có URL: "Tải ảnh thất bại (HTTP 403): https://…/product-images/…"
+  // từng bị gán nhầm thành "Sàn không nhận ảnh" chỉ vì đường dẫn chứa chữ image.
+  const haystack = original.replace(/https?:\/\/\S+/gi, "");
+  const rule = RULES.find((r) => r.test.test(haystack));
   if (rule) return `${PLATFORM_LABEL[platform]} từ chối: ${rule.text}\n${original}`;
   // Bỏ tiền tố "Shopee add_item lỗi:" / "TikTok API lỗi (code 1):" của client Hubsell rồi mới
   // xét: phần còn lại có dấu tiếng Việt = câu Hubsell tự viết → giữ nguyên.

@@ -774,3 +774,31 @@ Sắc Đẹp > Chăm sóc tóc > Thuốc nhuộm tóc, gian Shopee. Khách: *"Ki
 - **Kiểm local:** lượt nháp AT207 (1 ảnh) → Thêm ảnh 900 px → "Ảnh (2/9)" → Lưu → toast "Đã cập nhật bài đăng…", dòng "2 ảnh"; bỏ ảnh
   cũ → "Ảnh (1/9)" → Lưu → dòng "1 ảnh", thumbnail đổi sang ảnh mới; DB `source.images` 1 URL mới, `sourceImageUrl` = ảnh mới, dòng
   `listing_image_uploads` gắn `jobId`. tsc BE+FE + eslint sạch. Chưa kiểm gian thật.
+
+## 28. Bunchar vẫn lỗi ảnh sau khi thêm ảnh mới (30/10/2026 ~17:45, anh chuyển ảnh + tin nhắn khách) — GỐC THẬT: gian KHÔNG ĐƯỢC SHOPEE WHITELIST ẢNH MÔ TẢ, không phải cỡ ảnh — ĐÃ SỬA
+
+- **Khách nói:** "THÊM ảnh đk rồi nhưng lại báo lỗi ảnh… bên KiotViet xóa hết ảnh, thêm ảnh trên máy vào vẫn đk". Đợt 15:43 (sau khi sharp
+  mục 26 đã lên prod 15:21) vẫn "Sàn không nhận ảnh sản phẩm". Anh nghĩ phải co dung lượng ảnh — việc đó mục 26 đã làm, nên không phải gốc.
+- **Nguyên văn Shopee (log Render worker, đọc qua Chrome của anh, 2 lượt cùng lỗi):**
+  `Shopee add_item lỗi: product.error_param — Parameter is not match the constraints, . : You are not in the whitelist to add images in
+  description, can only upload plain text`. Tức: bài TikTok nguồn có ảnh chèn trong mô tả → Hubsell gửi `description_type: extended`
+  (mục 13) → Shopee từ chối vì **gian Bunchar chưa được Shopee bật mô tả mở rộng** (tính năng theo whitelist seller, không có API hỏi
+  trước). Khách sửa ảnh bài (mục 27) không đụng ảnh mô tả nên sửa mấy lần vẫn lỗi; KiotViet đăng được vì chỉ gửi mô tả chữ. Bản dịch
+  `error-text.ts` khớp chữ "images" → gán nhầm thành lỗi cỡ ảnh, làm cả em lẫn khách đi sai hướng một buổi.
+- **Sửa (backend):**
+  - `shopee-listing-adapter.ts`: `addItemWithPlainTextFallback` — add_item hỏng đúng lỗi whitelist (helper
+    `isShopeeDescImageWhitelistError`) → log `[listing-copy] <gian>: Shopee không cho gian này chèn ảnh mô tả … đăng lại mô tả chữ` rồi
+    gọi lại add_item KHÔNG kèm `description_type/description_info` (thêm đúng 1 lượt). Nhớ gian 7 ngày trong tiến trình
+    (`descImageBlockedUntil`) → lượt sau bỏ qua tải ảnh desc + không thử extended nữa. Ảnh mô tả bị bỏ, bài vẫn lên (giống KiotViet).
+  - `error-text.ts`: luật riêng cho whitelist (đứng trước luật ảnh) + **khớp từ khóa trên chuỗi đã bỏ URL** — "Tải ảnh thất bại (HTTP 403):
+    https://…/product-images/…" hay URL TikTok `…origin-image.image` từng có thể bị gán nhầm "Sàn không nhận ảnh".
+  - `listing-api.ts uploadProductImage`: đọc thêm `response.image_info_list[0]` (Shopee thêm 2022-10: lỗi TỪNG ảnh nằm đây, `error` ngoài
+    rỗng) → ném `Shopee upload_image lỗi: <error> — <message> (<tệp>)` thay vì "không trả image_id". Docs upload_image đọc lại 30/10:
+    JPG/JPEG/PNG, **≤ 10 MB/ảnh** (không phải 2 MB như mục 26 ghi — trần 2 MB của `SHOPEE_IMAGE` vẫn giữ, an toàn hơn), scene normal tự
+    xử lý thành vuông, `ratio` 3:4 chỉ seller whitelist.
+- Test error-text +3 ca (whitelist, URL chứa image, lỗi từng ảnh) → listing + image-normalize 46/46; tsc sạch. Local không có gian Shopee
+  thật nên fallback chưa chạy thật — ⏳ Bunchar bấm **Đăng lại** dòng Shopee: kỳ vọng log 1 dòng "đăng lại mô tả chữ" rồi LISTED; mô tả
+  trên Shopee chỉ có chữ (ảnh mô tả khách tự thêm ở Seller Centre nếu sau này Shopee mở). Nếu Shopee lại báo lỗi khác → đọc nguyên văn
+  trước, đừng đoán.
+- **Chưa làm (chờ anh):** báo cho khách ngay trong bảng đợt rằng "ảnh mô tả đã bỏ vì gian chưa được Shopee cho phép" (hiện chỉ log);
+  nhớ whitelist bền trong DB thay vì RAM tiến trình (worker restart là thử extended lại 1 lần — chỉ tốn 1 add_item).

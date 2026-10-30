@@ -1,7 +1,7 @@
 // Dịch lỗi sàn khi đăng sản phẩm + tên thuộc tính tiếng Việt (docs/SAO-CHEP-SAN-PHAM.md mục 14).
 import { describe, expect, it } from "vitest";
 import { viAttributeName } from "../attribute-names-vi";
-import { humanizeListingError, splitListingError } from "../error-text";
+import { humanizeListingError, isShopeeDescImageWhitelistError, splitListingError } from "../error-text";
 
 describe("humanizeListingError", () => {
   it("lỗi thật 29/10: Shopee Dimension.PackageLength → câu kích thước kiện + giữ nguyên văn", () => {
@@ -57,5 +57,30 @@ describe("viAttributeName", () => {
     expect(viAttributeName("Chất liệu")).toBe("Chất liệu");
     expect(viAttributeName("Material (Outer)")).toBe("Chất liệu (Material (Outer))");
     expect(viAttributeName("Zorblax Factor")).toBe("Zorblax Factor");
+  });
+});
+
+describe("lỗi thật 30/10 Bunchar: Shopee không whitelist ảnh mô tả + URL chứa chữ image", () => {
+  it("whitelist ảnh mô tả → câu riêng (không phải 'Sàn không nhận ảnh') + helper nhận diện", () => {
+    const raw =
+      "Shopee add_item lỗi: product.error_param — Parameter is not match the constraints, . : You are not in the whitelist to add images in description, can only upload plain text";
+    expect(isShopeeDescImageWhitelistError(raw)).toBe(true);
+    expect(isShopeeDescImageWhitelistError("Shopee add_item lỗi: product.error_param — image size invalid")).toBe(false);
+    const { text, detail } = splitListingError(humanizeListingError("SHOPEE", raw));
+    expect(text).toMatch(/chèn ảnh vào mô tả/);
+    expect(text).not.toMatch(/Sàn không nhận ảnh/);
+    expect(detail).toBe(raw);
+  });
+
+  it("câu Hubsell tiếng Việt kèm URL có chữ image/product-images → giữ nguyên, không gán nhầm lỗi ảnh", () => {
+    const raw = "Tải ảnh thất bại (HTTP 403): https://jsys.supabase.co/storage/v1/object/public/product-images/u1/202610/a.jpg";
+    expect(humanizeListingError("SHOPEE", raw)).toBe(raw);
+    const tt = "Tải ảnh thất bại (HTTP 403): https://p16-oec-sg.tiktokcdn.com/tos-alisg/abc~tplv-origin-image.image";
+    expect(humanizeListingError("SHOPEE", tt)).toBe(tt);
+  });
+
+  it("lỗi từng ảnh Shopee (image_info_list) vẫn ra câu ảnh", () => {
+    const raw = "Shopee upload_image lỗi: error_param — image file too large (a.jpg)";
+    expect(splitListingError(humanizeListingError("SHOPEE", raw)).text).toMatch(/Sàn không nhận ảnh/);
   });
 });

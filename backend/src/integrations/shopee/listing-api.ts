@@ -270,8 +270,16 @@ export function pickStockLocationId(warehouses: ShopeeWarehouse[], shopLabel: st
   return pickup[0].location_id!;
 }
 
+interface UploadImageInfo {
+  image_id?: string;
+  image_url_list?: { image_url?: string }[];
+}
 interface UploadData extends ShopeeEnvelope {
-  response?: { image_info?: { image_id?: string; image_url_list?: { image_url?: string }[] } };
+  response?: {
+    image_info?: UploadImageInfo;
+    /** Từ 2022-10: lỗi TỪNG ảnh nằm ở đây (error/message theo chỉ số), image_info có thể rỗng. */
+    image_info_list?: { id?: number; error?: string; message?: string; image_info?: UploadImageInfo }[];
+  };
 }
 
 /** Tải ảnh lên không gian media (bắt buộc trước add_item — Shopee không nhận URL ngoài). */
@@ -294,8 +302,13 @@ export async function uploadProductImage(
   form.append("image", new Blob([new Uint8Array(params.buffer)], { type: params.mime }), params.filename);
   const res = await platformFetch("SHOPEE", `${cfg.apiBase}${P.uploadImage}?${qs}`, { method: "POST", body: form });
   const data = ensureOk((await res.json()) as UploadData, "upload_image");
-  const id = data.response?.image_info?.image_id;
-  if (!id) throw new Error("Shopee upload_image không trả image_id");
+  const first = data.response?.image_info_list?.[0];
+  const id = data.response?.image_info?.image_id ?? first?.image_info?.image_id;
+  if (!id) {
+    // Lỗi từng ảnh (cỡ, định dạng) Shopee trả trong image_info_list, không phải error ngoài.
+    if (first?.error) throw new Error(`Shopee upload_image lỗi: ${first.error} — ${first.message || "không rõ"} (${params.filename})`);
+    throw new Error(`Shopee upload_image không trả image_id (${params.filename})`);
+  }
   return id;
 }
 

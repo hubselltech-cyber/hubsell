@@ -15,6 +15,7 @@ import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
 import { viAttributeName } from "./attribute-names-vi";
 import { mergeUsedBrands, rankBrands } from "./brand-search";
+import { isShopeeDescImageWhitelistError } from "./error-text";
 import { prisma } from "../../lib/prisma";
 import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
@@ -36,6 +37,45 @@ import { gramsToKg, htmlToText, normalizeText, optionImages, reorderOptionsForIm
 
 const NO_BRAND: Brand = { id: "0", name: "No Brand" };
 const TIER_INIT_DELAY_MS = 5_500;
+
+/**
+ * Gian Shopee KHÔNG được whitelist mô tả mở rộng (ảnh chèn trong mô tả) — lỗi thật gian
+ * Bunchar 30/10/2026: add_item product.error_param "You are not in the whitelist to add
+ * images in description, can only upload plain text". Không có API hỏi trước, nên: lần đầu
+ * gặp → đăng lại ngay bằng mô tả chữ (thêm đúng 1 lượt add_item), đồng thời nhớ gian 7 ngày
+ * trong tiến trình để các lượt sau bỏ qua ảnh mô tả luôn (khỏi tải ảnh + khỏi lượt hỏng).
+ */
+const DESC_IMAGE_BLOCK_MS = 7 * 24 * 3600 * 1000;
+const descImageBlockedUntil = new Map<string, number>();
+
+function descImagesBlocked(channelId: string): boolean {
+  const until = descImageBlockedUntil.get(channelId);
+  if (!until) return false;
+  if (until > Date.now()) return true;
+  descImageBlockedUntil.delete(channelId);
+  return false;
+}
+
+async function addItemWithPlainTextFallback(
+  channel: Channel,
+  accessToken: string,
+  shopId: string,
+  body: api.ShopeeAddItemBody,
+  descImageCount: number
+): Promise<number> {
+  try {
+    return await api.addItem(accessToken, shopId, body);
+  } catch (err) {
+    const message = (err as Error)?.message ?? String(err);
+    if (!descImageCount || !isShopeeDescImageWhitelistError(message)) throw err;
+    descImageBlockedUntil.set(channel.id, Date.now() + DESC_IMAGE_BLOCK_MS);
+    console.warn(
+      `[listing-copy] ${channel.shopName}: Shopee không cho gian này chèn ảnh mô tả (${message.slice(0, 160)}) — đăng lại mô tả chữ, bỏ ${descImageCount} ảnh mô tả`
+    );
+    const { description_type: _t, description_info: _i, ...plain } = body;
+    return api.addItem(accessToken, shopId, plain);
+  }
+}
 
 /** Trường add_item/base_info mà kiểu ShopeeItemBaseInfo hiện chưa khai. */
 interface BaseInfoExtra {
@@ -252,10 +292,16 @@ export const shopeeListingAdapter: ListingAdapter = {
     }
     if (imageIds.length === 0) throw new Error("Không tải được ảnh nào lên Shopee");
     // Ảnh chèn trong mô tả: upload scene "desc" → mô tả mở rộng (chữ trước, ảnh sau).
+    // Gian đã biết là KHÔNG được whitelist mô tả mở rộng (lỗi thật Bunchar 30/10) → bỏ qua
+    // luôn, khỏi tải ảnh desc + khỏi một lượt add_item hỏng.
     const descImageIds: string[] = [];
-    for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
-      const img = await normalizeImage(await fetchImageBuffer(url), SHOPEE_IMAGE);
-      descImageIds.push(await api.uploadProductImage({ accessToken, shopId, ...img, scene: "desc" }));
+    if (!descImagesBlocked(channel.id)) {
+      for (const url of draft.listing.descriptionImages.slice(0, MAX_DESCRIPTION_IMAGES)) {
+        const img = await normalizeImage(await fetchImageBuffer(url), SHOPEE_IMAGE);
+        descImageIds.push(await api.uploadProductImage({ accessToken, shopId, ...img, scene: "desc" }));
+      }
+    } else if (draft.listing.descriptionImages.length) {
+      console.warn(`[listing-copy] ${channel.shopName}: gian không được Shopee whitelist ảnh mô tả — đăng mô tả chữ, bỏ ${draft.listing.descriptionImages.length} ảnh mô tả`);
     }
     const descriptionText = htmlToText(draft.listing.description).slice(0, 3000);
 
@@ -283,22 +329,23 @@ export const shopeeListingAdapter: ListingAdapter = {
     const sellerStock = (stock: number) => [locationId ? { location_id: locationId, stock } : { stock }];
 
     const first = draft.variants[0];
+    const extendedDescription = descImageIds.length
+      ? {
+          description_type: "extended" as const,
+          description_info: {
+            extended_description: {
+              field_list: [
+                { field_type: "text" as const, text: descriptionText },
+                ...descImageIds.map((image_id) => ({ field_type: "image" as const, image_info: { image_id } })),
+              ],
+            },
+          },
+        }
+      : {};
     const body: api.ShopeeAddItemBody = {
       item_name: draft.listing.title,
       description: descriptionText,
-      ...(descImageIds.length
-        ? {
-            description_type: "extended" as const,
-            description_info: {
-              extended_description: {
-                field_list: [
-                  { field_type: "text" as const, text: descriptionText },
-                  ...descImageIds.map((image_id) => ({ field_type: "image" as const, image_info: { image_id } })),
-                ],
-              },
-            },
-          }
-        : {}),
+      ...extendedDescription,
       original_price: vndInt(first.price),
       weight: gramsToKg(draft.weightGrams),
       category_id: Number(draft.categoryId),
@@ -314,7 +361,7 @@ export const shopeeListingAdapter: ListingAdapter = {
       ...(draft.variants.length === 1 && first.sku ? { item_sku: first.sku } : {}),
       seller_stock: sellerStock(Math.max(0, first.stock)),
     };
-    const itemId = await api.addItem(accessToken, shopId, body);
+    const itemId = await addItemWithPlainTextFallback(channel, accessToken, shopId, body, descImageIds.length);
 
     const variants: { sku: string; remoteId: string }[] = [];
     if (draft.variants.length > 1 && draft.listing.options.length > 0) {
