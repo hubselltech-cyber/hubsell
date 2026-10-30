@@ -5,6 +5,12 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 30/10/2026 (chiều muộn) — SỬA BÀI ĐĂNG: KHÁCH XÓA ẢNH CŨ / TẢI ẢNH MỚI, TỐI ĐA 9 (anh chốt; docs mục 27) — ĐÃ CODE, kiểm local, CHƯA PUSH
+
+- Anh hỏi có nên cho khách sửa ảnh → em đề xuất chỉ bỏ/thêm/đặt bìa, không chỉnh ảnh; anh chốt "chỉ cần xóa ảnh cũ up ảnh mới, 9 ảnh".
+- Backend `SourcePatch.images` (≤ 9, ≥ 1, http(s), ảnh phân loại trỏ ảnh đã bỏ → null, sourceImageUrl = ảnh đầu), PATCH /jobs/:id gắn ảnh tải lên vào lượt. FE SourceEditor: lưới ảnh ✕ / Đặt làm bìa / Thêm ảnh (nén + /images), nhãn n/9, Lưu khóa khi đang tải. Kiểm local thêm/bỏ/lưu đúng, DB đúng. tsc + eslint sạch.
+
+---
 ## Phiên 30/10/2026 (15:06) — BUNCHAR CHÉP TIKTOK → SHOPEE: "SÀN KHÔNG NHẬN ẢNH SẢN PHẨM" — CHUẨN HÓA ẢNH BẰNG SHARP (docs mục 26), chi tiết sàn chưa đọc
 
 - Ảnh anh gửi: dòng gian Shopee Lỗi với bản dịch lỗi ảnh; nguyên văn sàn gấp dưới "Chi tiết kỹ thuật sàn trả về" — ⏳ anh mở gửi em.

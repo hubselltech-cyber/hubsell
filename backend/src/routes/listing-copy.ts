@@ -282,10 +282,14 @@ router.get("/jobs/:id", async (req: AuthRequest, res, next) => {
 router.patch("/jobs/:id", async (req: AuthRequest, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const images = Array.isArray(body.images) ? (body.images as unknown[]).map(String) : undefined;
+    // Ảnh khách vừa tải lên (lát C) gắn vào lượt để cron không coi là mồ côi.
+    if (images) await attachUploadsToJob(req.ownerId!, req.params.id, images);
     res.json(
       await updateJobSource(req.ownerId!, req.params.id, {
         ...(typeof body.title === "string" ? { title: body.title } : {}),
         ...(typeof body.description === "string" ? { description: body.description } : {}),
+        ...(images ? { images } : {}),
         ...(Array.isArray(body.variants)
           ? {
               variants: (body.variants as Record<string, unknown>[])

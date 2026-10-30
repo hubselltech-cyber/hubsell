@@ -758,3 +758,19 @@ Sắc Đẹp > Chăm sóc tóc > Thuốc nhuộm tóc, gian Shopee. Khách: *"Ki
   nguyên; PNG trong suốt → nền trắng + TikTok giữ 3.000) + listing → 43/43; tsc sạch. Chưa kiểm gian thật.
 - **Nếu nguyên văn sàn nói chuyện khác** (vd ảnh mô tả quá nhỏ, quá số ảnh, URL TikTok 403) thì xử lý tiếp theo đúng chữ đó — không
   đoán thêm.
+
+## 27. Sửa bài đăng: khách XÓA ảnh cũ / TẢI ảnh mới (30/10/2026 chiều muộn, anh chốt "chỉ cần xóa ảnh cũ, up ảnh mới, 9 ảnh") — ĐÃ CODE, kiểm local
+
+- **Vì sao:** ảnh chép TikTok → Shopee thường mang khung sàn, chữ khuyến mãi cũ, tỉ lệ dọc; sàn đích giới hạn 9 (Lazada 8) mà Hubsell
+  tự cắt từ ảnh thứ 10; lỗi ảnh rơi vào một tấm thì khách bỏ tấm đó rồi Đăng lại, không chờ sửa mã. KHÔNG làm công cụ chỉnh ảnh
+  (cắt/ghép chữ). Luật giữ: sửa ở bài nguồn áp cho MỌI gian đích của lượt (như tên/mô tả/giá).
+- **Backend:** `SourcePatch.images?: string[]` thay toàn bộ danh sách (thứ tự = thứ tự đăng, ảnh đầu = bìa), chỉ http(s), bỏ trùng,
+  ≥ 1 và ≤ `MAX_SOURCE_IMAGES = 9` ("Tối đa 9 ảnh (Shopee/TikTok nhận 9, Lazada 8)"); ảnh phân loại trỏ tới ảnh vừa bỏ → `imageUrl`
+  null (sàn dùng bìa); `sourceImageUrl` cập nhật theo ảnh đầu; tính lại missing các gian chờ/lỗi như mọi sửa khác. Route PATCH
+  `/jobs/:id` nhận `images`, gắn ảnh vừa tải (`attachUploadsToJob`) vào lượt trước khi lưu (cron lát C không coi là mồ côi).
+- **FE `SourceEditor`:** lưới 3 cột ảnh có nút ✕ (hiện khi rê chuột), "Đặt làm bìa" cho ảnh không phải đầu, ô "Thêm ảnh" (nén canvas
+  ≤ 400 KB → `POST /images` → chuẩn hóa sharp khi đăng), nhãn "Ảnh (n/9)", chú thích "Bỏ ảnh có chữ khuyến mãi cũ…; Lazada chỉ lấy 8 ảnh
+  đầu"; `dirty` tính cả ảnh; nút Lưu khóa khi đang tải ảnh; chỉ khi `editable` (gian còn chờ/lỗi).
+- **Kiểm local:** lượt nháp AT207 (1 ảnh) → Thêm ảnh 900 px → "Ảnh (2/9)" → Lưu → toast "Đã cập nhật bài đăng…", dòng "2 ảnh"; bỏ ảnh
+  cũ → "Ảnh (1/9)" → Lưu → dòng "1 ảnh", thumbnail đổi sang ảnh mới; DB `source.images` 1 URL mới, `sourceImageUrl` = ảnh mới, dòng
+  `listing_image_uploads` gắn `jobId`. tsc BE+FE + eslint sạch. Chưa kiểm gian thật.

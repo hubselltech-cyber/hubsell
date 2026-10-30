@@ -12,9 +12,9 @@
 // Tab "Lịch sử": các đợt đã tạo, bấm mở lại.
 // ============================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ChevronUp, Pencil, Plus, RefreshCw, Search, Store, Warehouse } from "lucide-react";
+import { ArrowLeft, Check, ChevronUp, ImagePlus, Pencil, Plus, RefreshCw, Search, Store, Warehouse, X } from "lucide-react";
 
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ import {
   submitCopyListingBatch,
   syncCopyListingSources,
   updateCopyListingSource,
+  uploadCopyListingImage,
   updateCopyListingTarget,
   type ChannelName,
   type CopyListingBatch,
@@ -52,6 +53,7 @@ import {
   type CopyListingTargetPatch,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { compressImage } from "@/lib/compress-image";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
 import { TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography";
@@ -912,6 +914,36 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
   const [variantEdits, setVariantEdits] = useState<Record<number, VariantEdit>>({});
   const [saving, setSaving] = useState(false);
   const s = job.source;
+  /**
+   * Ảnh bài đăng đang sửa (anh chốt 30/10: khách xóa ảnh cũ / tải ảnh mới ngay tại đây, tối đa 9).
+   * `url` null = đang tải lên. Lưu → gửi danh sách URL thay toàn bộ, áp cho mọi gian của lượt.
+   */
+  const [images, setImages] = useState<{ id: string; url: string | null; preview: string }[]>(() =>
+    s.images.map((url, i) => ({ id: `src-${i}`, url, preview: url }))
+  );
+  const imageInput = useRef<HTMLInputElement>(null);
+  const imageUrls = images.map((i) => i.url).filter((u): u is string => Boolean(u));
+  const imagesDirty = imageUrls.length !== s.images.length || imageUrls.some((u, i) => u !== s.images[i]);
+  const uploading = images.some((i) => !i.url);
+  async function addImages(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const room = 9 - images.length;
+    const picked = Array.from(files).slice(0, Math.max(0, room));
+    if (picked.length < files.length) toast.warning(`Tối đa 9 ảnh — đã bỏ ${files.length - picked.length} ảnh.`);
+    for (const file of picked) {
+      const id = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const preview = URL.createObjectURL(file);
+      setImages((prev) => [...prev, { id, url: null, preview }]);
+      try {
+        const blob = await compressImage(file);
+        const { url } = await uploadCopyListingImage(blob);
+        setImages((prev) => prev.map((i) => (i.id === id ? { ...i, url } : i)));
+      } catch (err) {
+        toast.error(`${file.name}: ${err instanceof Error ? err.message : "không tải được ảnh"}`);
+        setImages((prev) => prev.filter((i) => i.id !== id));
+      }
+    }
+  }
   const variantPatch = Object.entries(variantEdits)
     .map(([i, e]) => ({ index: Number(i), ...e }))
     .filter(
@@ -921,7 +953,7 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
         (e.sku !== undefined && e.sku.trim() !== s.variants[e.index]?.sku) ||
         (e.excluded !== undefined && e.excluded !== Boolean(s.variants[e.index]?.excluded))
     );
-  const dirty = title !== job.source.title || description !== job.source.description || variantPatch.length > 0;
+  const dirty = title !== job.source.title || description !== job.source.description || variantPatch.length > 0 || imagesDirty;
   const setVariant = (i: number, k: "price" | "stock", raw: string) =>
     setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), [k]: raw === "" ? 0 : Math.max(0, Number(raw) || 0) } }));
   const setVariantSku = (i: number, raw: string) => setVariantEdits((m) => ({ ...m, [i]: { ...(m[i] ?? {}), sku: raw } }));
@@ -987,7 +1019,12 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
   async function save() {
     setSaving(true);
     try {
-      await updateCopyListingSource(job.id, { title, description, ...(variantPatch.length ? { variants: variantPatch } : {}) });
+      await updateCopyListingSource(job.id, {
+        title,
+        description,
+        ...(variantPatch.length ? { variants: variantPatch } : {}),
+        ...(imagesDirty ? { images: imageUrls } : {}),
+      });
       toast.success("Đã cập nhật bài đăng cho mọi gian đích của sản phẩm này.");
       await invalidate(qk.copyListingBatch(batchId));
       setVariantEdits({});
@@ -1001,28 +1038,57 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
   return (
     <div className="space-y-4">
       <div className="grid gap-5 md:grid-cols-[14rem_1fr]">
-        {/* Ảnh bài đăng: ảnh đầu = bìa, các ảnh sau = ảnh phụ (lấy nguyên từ nguồn). */}
+        {/* Ảnh bài đăng: ảnh đầu = bìa; còn sửa được thì bỏ ảnh cũ / thêm ảnh mới (anh chốt 30/10), tối đa 9. */}
         <div className="space-y-2">
-          <div className={TEXT_TABLE_HEAD}>
-            Ảnh ({s.images.length}
-            {maxImages != null && s.images.length > maxImages ? ` · sàn nhận ${maxImages} ảnh đầu` : ""})
+          <div className={cn(TEXT_TABLE_HEAD, "flex flex-wrap items-center gap-x-2")}>
+            <span>Ảnh ({images.length}/9)</span>
+            {maxImages != null && images.length > maxImages && <span className="font-normal text-amber-700">sàn nhận {maxImages} ảnh đầu</span>}
           </div>
-          {s.images.length === 0 ? (
-            <p className="text-sm text-amber-700">Chưa có ảnh — sàn sẽ từ chối.</p>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {s.images.slice(0, 9).map((url, i) => (
-                <div key={url + i} className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-card">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt={`Ảnh ${i + 1}`} className="size-full object-cover" loading="lazy" />
-                  {i === 0 && (
-                    <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-medium text-white">Bìa</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {s.images.length > 9 && <div className={TEXT_SUB}>+{s.images.length - 9} ảnh nữa</div>}
+          <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(e) => void addImages(e.target.files).then(() => (e.target.value = ""))} />
+          {images.length === 0 && <p className="text-sm text-amber-700">Chưa có ảnh — sàn sẽ từ chối.</p>}
+          <div className="grid grid-cols-3 gap-2">
+            {images.map((img, i) => (
+              <div key={img.id} className="group relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-card">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.url ?? img.preview} alt={`Ảnh ${i + 1}`} className={cn("size-full object-cover", !img.url && "opacity-50")} loading="lazy" />
+                {!img.url && <span className="absolute inset-x-0 bottom-0 bg-black/60 text-center text-[10px] text-white">Đang tải…</span>}
+                {i === 0 && img.url && (
+                  <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-medium text-white">Bìa</span>
+                )}
+                {editable && (
+                  <button
+                    type="button"
+                    aria-label="Bỏ ảnh"
+                    title="Bỏ ảnh này"
+                    onClick={() => setImages((prev) => prev.filter((x) => x.id !== img.id))}
+                    className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+                {editable && i > 0 && img.url && (
+                  <button
+                    type="button"
+                    onClick={() => setImages((prev) => [img, ...prev.filter((x) => x.id !== img.id)])}
+                    className="absolute inset-x-0 bottom-0 hidden bg-black/60 py-0.5 text-center text-[10px] text-white group-hover:block"
+                  >
+                    Đặt làm bìa
+                  </button>
+                )}
+              </div>
+            ))}
+            {editable && images.length < 9 && (
+              <button
+                type="button"
+                onClick={() => imageInput.current?.click()}
+                className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 text-slate-500 transition-colors hover:border-slate-400 hover:text-slate-700"
+              >
+                <ImagePlus className="size-5" />
+                <span className="text-[11px]">Thêm ảnh</span>
+              </button>
+            )}
+          </div>
+          {editable && <p className={TEXT_SUB}>Bỏ ảnh có chữ khuyến mãi cũ, khung sàn khác; ảnh mới nén tự động. Lazada chỉ lấy 8 ảnh đầu.</p>}
         </div>
 
         <div className="space-y-3">
@@ -1238,7 +1304,7 @@ function SourceEditor({ job, batchId, editable }: { job: CopyListingJob; batchId
           dùng % điều chỉnh giá và Tồn đăng ở dòng gian đó.
         </span>
         {editable && (
-          <Button size="sm" disabled={!dirty || saving} onClick={save}>
+          <Button size="sm" disabled={!dirty || saving || uploading} onClick={save}>
             {saving ? "Đang lưu…" : "Lưu bài đăng"}
           </Button>
         )}

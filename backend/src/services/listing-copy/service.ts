@@ -378,7 +378,14 @@ export interface SourcePatch {
    * `excluded` (bỏ phân loại khỏi bài đăng — vượt trần phân loại sàn đích).
    */
   variants?: { index: number; price?: number; stock?: number; sku?: string; excluded?: boolean }[];
+  /**
+   * 30/10 (anh chốt): khách XÓA ảnh cũ / TẢI ảnh mới ngay trong Sửa bài đăng — danh sách ảnh thay thế
+   * toàn bộ (thứ tự = thứ tự đăng, ảnh đầu = bìa), tối đa 9 (Shopee/TikTok; Lazada lấy 8 đầu).
+   */
+  images?: string[];
 }
+
+export const MAX_SOURCE_IMAGES = 9;
 
 /**
  * Sửa tên / mô tả / giá + tồn từng phân loại của nguồn đã chụp (áp cho mọi gian
@@ -398,6 +405,18 @@ export async function updateJobSource(ownerId: string, jobId: string, patch: Sou
   const listing = asListing(job.source);
   if (typeof patch.title === "string") listing.title = patch.title.trim();
   if (typeof patch.description === "string") listing.description = patch.description.trim();
+  if (patch.images) {
+    const cleaned: string[] = [];
+    for (const u of patch.images) {
+      const t = String(u).trim();
+      if (/^https?:\/\//i.test(t) && t.length <= 2048 && !cleaned.includes(t)) cleaned.push(t);
+    }
+    if (cleaned.length === 0) throw new ListingCopyError("Bài đăng cần ít nhất một ảnh.");
+    if (cleaned.length > MAX_SOURCE_IMAGES) throw new ListingCopyError(`Tối đa ${MAX_SOURCE_IMAGES} ảnh (Shopee/TikTok nhận 9, Lazada 8).`);
+    listing.images = cleaned;
+    // Ảnh phân loại trỏ tới ảnh vừa bị bỏ → bỏ luôn liên kết (sàn sẽ dùng ảnh bìa).
+    for (const v of listing.variants) if (v.imageUrl && !cleaned.includes(v.imageUrl) && !listing.descriptionImages.includes(v.imageUrl)) v.imageUrl = null;
+  }
   for (const e of patch.variants ?? []) {
     const v = listing.variants[e.index];
     if (!v) continue;
@@ -412,7 +431,7 @@ export async function updateJobSource(ownerId: string, jobId: string, patch: Sou
   if (activeVariants(listing).length === 0) throw new ListingCopyError("Phải giữ ít nhất một phân loại để đăng.");
   await prisma.listingCopyJob.update({
     where: { id: job.id },
-    data: { source: json(listing), sourceTitle: listing.title },
+    data: { source: json(listing), sourceTitle: listing.title, sourceImageUrl: listing.images[0] ?? null },
   });
   await Promise.all(open.map((t) => reevaluate(t, listing)));
   return getJob(ownerId, jobId);
