@@ -13,6 +13,7 @@
 - **Phản biện:** nối kho ↔ sàn hôm nay không bao giờ tự chạy (chỉ khi khách bấm link/auto-match/link-by-sku) nên "không tự ý nối" đã đúng luật; NHƯNG với SP Hubsell tự đăng thì nối theo remoteId sàn trả về là chắc 100 %, không nối = tự tăng "SP sàn chưa nối" + trống giá vốn/Lãi-Lỗ; đề xuất ô tick "Liên kết với Tổng kho" mặc định bật. Ghi Tổng kho ngay khi bấm Đăng. Không đụng Vị trí kho.
 - **Cách làm:** lát A form Tạo mới (sourceType MANUAL, dùng lại 100 % bước 2) ~2 ngày; lát B ghi kho ~0,5; lát C dọn ảnh + trần theo gói ~0,5; gộp mục 7 lát 3.
 - **Anh chỉnh:** lưu kho và nối là 2 việc khác nhau; tài chính khách tự nhập giá vốn từng gian ở Mapping giá vốn → em nói sai ý "không nối thì Lãi/Lỗ trống" (giá vốn theo gian từ 11/10, không cần nối). Không nối chỉ ảnh hưởng tồn kho hai chiều + đếm SP chưa nối. ✅ Chốt KHÔNG nối. Docs 24.3-1 đã sửa.
+- **Anh hỏi giao diện + quy chuẩn sàn (chiều):** docs 24.5 — form dài một trang kiểu KiotViet + mục lục neo + thẻ "Đạt chuẩn sàn" sống (Shopee/TikTok/Lazada ✓/✗ bằng computeMissing); chuẩn chung chặt nhất: tên 25–120, mô tả ≥20 (Shopee ≤3.000 cảnh báo), ảnh ≤8, ≤2 nhóm × 20 giá trị ≤50 tổ hợp, cân nặng bắt buộc; SKU: mã gốc + tự sinh MÃ GỐC-ĐUÔI, mỗi phân loại một mã, 6–50 ký tự, kiểm trùng sống với kho + mọi gian đã nối (anh: chuẩn SKU từ đầu để sau nối thuận tiện); danh mục/thuộc tính/thương hiệu/vận chuyển giữ ở bước 2. Ước ~3,5 ngày.
 - ⏳ Anh chốt: (2) giữ ảnh vĩnh viễn + trần gói hay xóa sau đăng; (3) làm ngay hay chờ khách test xong đợt sao chép.
 
 ---

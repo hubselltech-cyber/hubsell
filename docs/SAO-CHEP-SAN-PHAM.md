@@ -579,3 +579,47 @@ không nuốt kho tệp; cron xóa ảnh của job DRAFT bỏ dở > 30 ngày.
 
 **Chờ anh chốt:** (1) ~~nối hay không~~ → KHÔNG nối, đã chốt; (2) giữ ảnh vĩnh viễn + trần theo gói, hay xóa
 sau khi đăng xong; (3) làm lát A ngay hay để sau khi khách Bunchar/Hi.Bé test xong đợt sao chép.
+
+### 24.5 Giao diện + quy chuẩn sàn cho form "Tạo mới" (30/10/2026 chiều, anh hỏi; anh: "chuẩn SKU từ đầu thì sau này khách muốn liên kết rất thuận tiện")
+
+**Nguyên tắc:** form soạn MỘT lần theo **chuẩn chung chặt nhất của 3 sàn**, không bắt khách biết sàn nào đòi gì; phần
+khác nhau theo sàn (danh mục, thuộc tính, thương hiệu, vận chuyển) để nguyên ở **bước 2 hiện có** theo từng gian. Một nút
+"Tiếp: chọn gian" → bước 2 → "Đăng". Khách thấy sàn nào đạt/chưa đạt qua thẻ "Đạt chuẩn sàn" sống bên phải, không phải
+đọc bảng số.
+
+**Bố cục (theo KiotViet mà khách khen ở mục 21-3, dùng PageHeaderBand + PageTabs, chữ 14 px, dark theo token):** trang
+`/operations-assistant/copy-listing/new` — biểu mẫu dài một cột 720 px, **mục lục neo bên phải** (5 khối, cuộn tới khối
+nào sáng mục đó) + thẻ "Đạt chuẩn sàn" dính dưới mục lục:
+
+| Khối | Ô | Kiểm tra sống (chuẩn chung 3 sàn, số từ `rules.ts` + KHAO-SAT mục 4) |
+|---|---|---|
+| 1. Thông tin | Tên · Mô tả (chữ thuần, giữ xuống dòng) · Ảnh mô tả ≤ 12 | Tên **25–120 ký tự** (Shopee ≤120, TikTok ≥25; bộ đếm "87/120 · Shopee ✓ TikTok ✓ Lazada ✓"); mô tả ≥ 20, ≤ **3.000** nếu muốn Shopee (TikTok 10.000, Lazada 25.000 — quá 3.000 chỉ cảnh báo "Shopee sẽ cắt") |
+| 2. Ảnh | Kéo thả ≤ **8** (Lazada ≤8, Shopee/TikTok ≤9), ảnh 1 = bìa, sắp xếp | Nén canvas ≤ 1.600 px / ≤ 400 KB (mặc định tự chọn); dưới 500×500 → cảnh báo mờ (Shopee khuyên ≥500, TikTok ≥300 — số trợ giúp sàn, chưa kiểm API) |
+| 3. Phân loại | Nhóm × giá trị (≤ **2 nhóm**, ≤ **20 giá trị/nhóm**, ≤ **50 tổ hợp** cho đủ 3 sàn; nhóm 3 / >50 = "chỉ TikTok") → bảng tổ hợp: Đăng · Phân loại · **Mã SKU** · Giá · Tồn · Ảnh phân loại | Không phân loại = 1 dòng; giá > 0 làm tròn 100 đ; tồn ≥ 0 |
+| 4. Vận chuyển | Cân nặng (g) · Dài × Rộng × Cao (cm) | Cân nặng bắt buộc cả 3; kích thước bắt buộc Lazada, Shopee/TikTok "điền thì đủ 3 số" (luật `dimensions` sẵn) |
+| 5. Kho | Giá vốn mặc định (tùy chọn) · ghi chú "SP sẽ có trong Tổng kho, chưa nối gian" | Không nối (24.3-1) |
+
+**Mã SKU — chỗ anh nhấn mạnh, làm chặt ngay từ form:**
+- **Mã gốc** 1 ô (vd `TC113`) + tự sinh mã phân loại theo quy tắc Nối SKU nhanh đã có (`MÃ GỐC-ĐUÔI`, đuôi = chữ cái đầu
+  giá trị không dấu, vd `TC113-DEN-M`), khách sửa tay từng ô được. Mã = `trim`, hoa/thường không phân biệt khi so.
+- **Bắt buộc mỗi phân loại một mã riêng** (ở đây không phải sửa bài sàn có sẵn nên không áp cảnh báo mục 23 — chặn hẳn).
+- **Kiểm trùng sống với kho** (`Product.skuCode` unique theo chủ shop) **và với mọi gian đã nối** (`ChannelProduct.channelSku`):
+  trùng → ô đỏ "Mã đã có ở Tổng kho / gian X" + gợi ý `-2`. Nhờ vậy khi khách bấm Tự khớp sau này, SP khớp trùng mã chính
+  xác, không rơi vào ca mã trùng → đuôi tên (sku-key.ts).
+- Ký tự cho phép: chữ/số/`-`/`_`/`.`; dài **6–50 ký tự** (TikTok seller_sku 6–50 theo KHAO-SAT mục 4; Shopee/Lazada rộng
+  hơn — lấy mức chặt). Mã < 6 ký tự (vd `JS051` = 5) → cảnh báo "TikTok đòi ≥ 6", tự gợi ý thêm đuôi phân loại.
+
+**Thẻ "Đạt chuẩn sàn"** (bên phải, cập nhật mỗi lần gõ): 3 dòng Shopee / TikTok / Lazada, mỗi dòng ✓ xanh hoặc danh sách
+ngắn "Tên < 25 ký tự · Thiếu kích thước"; tính bằng đúng `computeMissing` phần không cần danh mục (tái dùng hàm thuần, FE
+gọi API `POST /sao-chep-san-pham/check` debounce 300 ms, hoặc port nhỏ sang FE). Khách chưa đạt sàn nào vẫn bấm Tiếp được
+— bước 2 chặn như hiện nay (cảnh báo, không khóa cứng).
+
+**Sau khi bấm Đăng ở bước 2:** tạo `Product` kho từng phân loại (groupKey, variantName, imageUrl = bìa, giá bán, tồn, giá
+vốn mặc định) **trước** khi vào hàng đợi; job `sourceType MANUAL`; kết quả từng gian + "Chờ sàn duyệt" như cũ. Khách muốn
+đăng lại gian mới sau này: mở Lịch sử → "Đăng thêm gian" (nguồn Json + ảnh Storage còn nguyên).
+
+**Kiểm trước khi giao (luật 30/10):** seed rộng nhất = tên 120 ký tự, 2 nhóm × 20 giá trị = 50 tổ hợp, 8 ảnh, mô tả 3.000;
+đo JS 1280 / 1440 / 1700 sáng + tối, không `<select>` gốc, mục lục neo không che bảng ở 1280.
+
+**Ước công (cập nhật):** form + kiểm sống + tải ảnh ~2 ngày; ghi kho + MANUAL + hàng đợi ~0,5; dọn ảnh + trần gói ~0,5;
+"Đăng thêm gian" từ Lịch sử ~0,5 → **~3,5 ngày**.
