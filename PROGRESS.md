@@ -8,7 +8,7 @@
 ## Phiên 30/10/2026 (15:06) — BUNCHAR CHÉP TIKTOK → SHOPEE: "SÀN KHÔNG NHẬN ẢNH SẢN PHẨM" — CHUẨN HÓA ẢNH BẰNG SHARP (docs mục 26), chi tiết sàn chưa đọc
 
 - Ảnh anh gửi: dòng gian Shopee Lỗi với bản dịch lỗi ảnh; nguyên văn sàn gấp dưới "Chi tiết kỹ thuật sàn trả về" — ⏳ anh mở gửi em.
-- Làm việc chắc cần: image-fetch trước nay không đổi cỡ/nén; ảnh TikTok gốc 3–6 MB/WebP vs Shopee ≤ 2 MB JPG/PNG → cài sharp 0.34.3 + `lib/image-normalize.ts` (JPEG, ≤ 2 MB, ≤ 2.000 px, ≥ 500 cho Shopee; TikTok ≤ 5 MB/4.000/300), áp 3 chỗ Shopee + 3 chỗ TikTok. Test 4 ca → 43/43, tsc sạch. CHƯA push, chưa kiểm gian thật.
+- Làm việc chắc cần: image-fetch trước nay không đổi cỡ/nén; ảnh TikTok gốc 3–6 MB/WebP vs Shopee ≤ 2 MB JPG/PNG → cài sharp 0.34.3 + `lib/image-normalize.ts` (JPEG, ≤ 2 MB, ≤ 2.000 px, ≥ 500 cho Shopee; TikTok ≤ 5 MB/4.000/300), áp 3 chỗ Shopee + 3 chỗ TikTok. Test 4 ca → 43/43, tsc sạch. ✅ PUSH 2c0d0520, `/health` prod lên ~15:30 30/10 (sharp build OK trên Render). ⏳ khách Bunchar bấm Đăng lại dòng Shopee; anh gửi nguyên văn chi tiết sàn.
 - Cùng lượt: bảng phân loại Tạo mới căn mép trên (b4c0aba5) — chưa push.
 
 ---
