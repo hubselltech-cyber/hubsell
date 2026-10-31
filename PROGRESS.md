@@ -5,10 +5,18 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 31/10 (đêm) — Trợ lý quảng cáo TikTok: link "Xem video" nói rõ bằng chữ ở chi tiết chiến dịch (anh gửi ảnh: khách không nhận ra dòng "Video TikTok / Không lấy được tên video" bấm được)
+
+- Gốc: cột Video vốn ĐÃ là link (ảnh bìa + dòng tên → `tiktokVideoUrl`), nhưng khi oEmbed bị chặn (bẫy 16/10) chỉ còn biểu tượng "ảnh hỏng" + "Video TikTok" + "Không lấy được tên video" → khách đọc như dòng lỗi, không biết bấm.
+- ĐÃ LÀM `components/ads/tiktok-campaign-page.tsx`: (1) ô ảnh bìa thiếu ảnh in nút **Play** thay ImageOff; (2) thêm link chữ **Xem video ↗** (`text-sky-700`; dark tự lật sáng — KHÔNG thêm `dark:text-sky-300` vì globals.css đã lật thang sky 700↔300) cạnh mã video + nút copy, hiện cả khi có / không meta. Tab Lịch sử giữ nguyên (mã video ở đó đã là link ↗).
+- Kiểm local 3011 (demo@hubsell.tech) bằng dữ liệu giả chặn fetch trong trình duyệt — 5 video: 1 có meta (ảnh + @kênh + caption), 3 không, 1 đã loại; sáng + tối, 1.600 px; href đúng `tiktok.com/@<kênh>/video/<mã>` và `@/video/<mã>` khi không có kênh; tsc FE + eslint sạch. Chưa kiểm trên gian TikTok thật.
+- ⏳ Mobile `TiktokVideosScreen` KHÔNG có link mở video (thẻ chỉ copy mã) — lát riêng, chờ anh chốt (đi sau build 1.4.1).
+
+---
 ## Phiên 31/10 (tối) — Đối soát phí vận chuyển: cột "Nguyên nhân" + icon copy + vì sao không thấy Shopee — KHẢO SÁT số prod rồi ĐÃ LÀM (anh "Làm luôn", ràng buộc "mục đích chính vẫn là đối soát") — kiểm local, test 12/12, tsc BE+FE + eslint sạch (docs `DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md` mục 6)
 
 - ĐÃ LÀM: `lib/shipping-diff-reason.ts` (BE phân loại 9 mã, 3 mã khiếu nại được) + test; `GET /shipping-discrepancies?reason=` phân loại lúc đọc 2 bước (cột nhẹ → lọc trong bộ nhớ → trang đủ cột), trả `reason/claimable/coveredFee/trackingCode`, thẻ "cần đòi lại" chỉ cộng ca khiếu nại được + `policyDiscrepancy` + `reasonCounts`; trang: lọc Nguyên nhân mặc định **Cần đối soát**, cột chip + tooltip, 3 cột tiền **Được phủ · Cước thực tế · Shop chịu**, copy mã đơn + mã vận đơn, Excel thêm 3 cột. Bảng 9 cột vừa 1.622 px; ở 1.280 sidebar mở cuộn ngang trong thẻ như bản cũ (1.152 vs 1.025/943). Chưa kiểm số thật trên gian TikTok prod.
-- ⏳ Kiểm toán phí (`/finance/fee-audit`) thẻ "Truy thu phí ship" vẫn cộng cả ca chính sách — chờ anh nếu muốn đồng bộ.
+- ĐÃ PUSH 26df9511 (anh "Push ngay"). ⏳ anh soi gian and.not.or trên prod sau khi Render (backend đổi → có deploy) + Vercel lên; Kiểm toán phí (`/finance/fee-audit`) thẻ "Truy thu phí ship" vẫn cộng cả ca chính sách — chờ anh nếu muốn đồng bộ.
 
 - Anh: khách hỏi "đây là cái gì" nhiều → thêm cột Nguyên nhân (Khách hoàn hàng, Chênh lệch phí VC…), icon copy cạnh mã, và không thấy đơn Shopee.
 - Số prod 30 ngày (SQL chỉ đọc): TikTok 5.049 đơn lệch / 156,4 tr (99 % tiền), Shopee 158 / 0,95 tr, Lazada 77 / 0,42 tr. Tài khoản trong ảnh (chủ and.not.or) có 2 gian Shopee 1.504 đơn, **0 đơn lệch** → không phải lỗi nối: Shopee thu ship của shop qua phí Freeship Xtra (Kiểm toán phí), TikTok trừ thẳng cước vào đơn.

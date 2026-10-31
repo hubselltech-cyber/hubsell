@@ -32,7 +32,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, Play, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatPct, formatRoi, tiktokVideoUrl } from "@/components/ads/tiktok-ads-format";
@@ -839,7 +839,9 @@ export function TiktokCampaignPage() {
                                   // eslint-disable-next-line @next/next/no-img-element -- ảnh CDN TikTok có hạn, không qua tối ưu ảnh của Next
                                   <img src={m.thumbnailUrl} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-full object-cover" />
                                 ) : (
-                                  <ImageOff className="size-4" />
+                                  // Không có ảnh bìa (oEmbed bị chặn) thì ô vẫn phải ĐỌC RA là video bấm được — biểu tượng
+                                  // "ảnh hỏng" cũ làm khách nghĩ dòng lỗi (anh Trung 31/10).
+                                  <Play className="size-4 fill-current" />
                                 )}
                               </a>
                               <div className="min-w-0">
@@ -858,19 +860,34 @@ export function TiktokCampaignPage() {
                                 </p>
                                 {/* Mã video LUÔN hiện + sao chép một chạm (anh Trung 17/09): cần để tra trên
                                     Seller Center / gửi người chạy quảng cáo; bôi đen 19 chữ số trong bảng rất khó. */}
-                                <button
-                                  type="button"
-                                  onClick={() => void copyVideoId(v.videoId)}
-                                  title="Sao chép mã video"
-                                  className="group mt-0.5 inline-flex items-center gap-1 rounded text-xs tabular-nums text-slate-500 hover:text-slate-900"
-                                >
-                                  {v.videoId}
-                                  {copiedId === v.videoId ? (
-                                    <Check className="size-3.5 text-emerald-500" />
-                                  ) : (
-                                    <Copy className="size-3.5 text-slate-400 group-hover:text-slate-900" />
-                                  )}
-                                </button>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyVideoId(v.videoId)}
+                                    title="Sao chép mã video"
+                                    className="group inline-flex items-center gap-1 rounded text-xs tabular-nums text-slate-500 hover:text-slate-900"
+                                  >
+                                    {v.videoId}
+                                    {copiedId === v.videoId ? (
+                                      <Check className="size-3.5 text-emerald-500" />
+                                    ) : (
+                                      <Copy className="size-3.5 text-slate-400 group-hover:text-slate-900" />
+                                    )}
+                                  </button>
+                                  {/* Link xem video NÓI RÕ bằng chữ (anh Trung 31/10): ảnh bìa + dòng tên vốn đã là link
+                                      nhưng khi oEmbed bị chặn chỉ còn "Video TikTok" + "Không lấy được tên video", khách
+                                      đọc như nhãn lỗi, không biết bấm được. text-sky-700 tự lật sáng trong dark (globals.css). */}
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title="Mở video trên TikTok (tab mới)"
+                                    className="inline-flex items-center gap-0.5 text-xs font-medium text-sky-700 underline-offset-2 hover:underline"
+                                  >
+                                    Xem video
+                                    <ExternalLink className="size-3" />
+                                  </a>
+                                </div>
                                 {data && data.products.length > 1 && (
                                   <p className="max-w-72 truncate text-xs text-slate-400">
                                     {data.products.find((p) => p.spuId === v.spuId)?.name}
