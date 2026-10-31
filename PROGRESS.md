@@ -10,7 +10,7 @@
 - Gốc: cột Video vốn ĐÃ là link (ảnh bìa + dòng tên → `tiktokVideoUrl`), nhưng khi oEmbed bị chặn (bẫy 16/10) chỉ còn biểu tượng "ảnh hỏng" + "Video TikTok" + "Không lấy được tên video" → khách đọc như dòng lỗi, không biết bấm.
 - ĐÃ LÀM `components/ads/tiktok-campaign-page.tsx`: (1) ô ảnh bìa thiếu ảnh in nút **Play** thay ImageOff; (2) thêm link chữ **Xem video ↗** (`text-sky-700`; dark tự lật sáng — KHÔNG thêm `dark:text-sky-300` vì globals.css đã lật thang sky 700↔300) cạnh mã video + nút copy, hiện cả khi có / không meta. Tab Lịch sử giữ nguyên (mã video ở đó đã là link ↗).
 - Kiểm local 3011 (demo@hubsell.tech) bằng dữ liệu giả chặn fetch trong trình duyệt — 5 video: 1 có meta (ảnh + @kênh + caption), 3 không, 1 đã loại; sáng + tối, 1.600 px; href đúng `tiktok.com/@<kênh>/video/<mã>` và `@/video/<mã>` khi không có kênh; tsc FE + eslint sạch. Chưa kiểm trên gian TikTok thật.
-- ⏳ Mobile `TiktokVideosScreen` KHÔNG có link mở video (thẻ chỉ copy mã) — lát riêng, chờ anh chốt (đi sau build 1.4.1).
+- Mobile `TiktokVideosScreen` không có link mở video (thẻ chỉ copy mã) — ⛔ anh chốt 31/10: **không cần**, không làm.
 
 ---
 ## Phiên 31/10 (tối) — Đối soát phí vận chuyển: cột "Nguyên nhân" + icon copy + vì sao không thấy Shopee — KHẢO SÁT số prod rồi ĐÃ LÀM (anh "Làm luôn", ràng buộc "mục đích chính vẫn là đối soát") — kiểm local, test 12/12, tsc BE+FE + eslint sạch (docs `DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md` mục 6)
