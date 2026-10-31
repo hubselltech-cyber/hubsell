@@ -421,8 +421,11 @@ NĐ 254/2026 (hiệu lực 01/07/2026) — hóa đơn lập tại thời điểm
 NGÀY LÀM VIỆC TIẾP THEO kể từ ngày lập** (ký trễ hơn: hóa đơn vẫn có hiệu lực nhưng là vi phạm thủ tục). Tờ nháp mang `InvDate` = ngày
 đẩy (≈ ngày giao khi tự động), nên shop phải ký trong ngày hoặc ngày làm việc kế → mọi chỗ (ô chọn phương thức ký, hướng dẫn nhanh, dải
 nhắc, chuông, lời nhắn) đều nói đúng câu này; `signDeadline()` tính hạn theo giờ VN (T2–T5 → hôm sau; T6/T7/CN → Thứ Hai; ngày lễ
-KHÔNG tính — tự chọn, chỉ nhắc không khóa). ⚠️ **Chưa kiểm:** khi ký muộn trên web, MISA giữ `InvDate` của tờ nháp hay đổi sang ngày
-ký — xem ở tờ thật đầu tiên ký khác ngày; nếu MISA giữ ngày đẩy thì `issuedAt` = ngày đẩy (đang ghi vậy) là đúng ngày lập.
+KHÔNG tính — tự chọn, chỉ nhắc không khóa). ✅ **Đã thấy 31/10/2026** (tờ 1C26THB 199.000đ, ngày hóa đơn 30/10, ký 31/10): MISA
+**GIỮ `InvDate` của tờ nháp** và hiện hộp "Ngày ký số (31/10) khác với ngày hóa đơn (30/10), bạn có muốn phát hành không?" (Hủy bỏ /
+Có); cạnh ngày hóa đơn có link "Cập nhật bằng ngày phát hành" để đổi sang ngày ký. Bấm **Có** → `issuedAt` = ngày đẩy (đang ghi vậy) là
+đúng ngày lập. ⚠️ Nếu chủ shop bấm "Cập nhật bằng ngày phát hành" thì ngày trên MISA lệch `issuedAt` của Hubsell một ngày (chưa đọc
+lại `InvDate` sau khi ký) — chưa sửa, ghi để biết.
 
 **Thiết kế (5 mục đã trình đêm 07/10, làm đủ):**
 
