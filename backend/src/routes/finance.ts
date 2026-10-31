@@ -31,6 +31,12 @@ import {
 } from "../lib/cost-price";
 import { findCostSiblings } from "../lib/cost-mapping";
 import { loadVariantNames, type OrderLineRef } from "../lib/order-line-names";
+import {
+  classifyShippingDiff,
+  isClaimableReason,
+  SHIPPING_DIFF_REASONS,
+  type ShippingDiffReason,
+} from "../lib/shipping-diff-reason";
 import { groupByCost, planCostImport, type CostImportRow } from "../lib/cost-import";
 import costMappingRouter from "./cost-mapping";
 import {
@@ -1477,13 +1483,85 @@ const CHANNEL_BY_KEY: Record<string, ChannelName> = {
   offline: ChannelName.OFFLINE,
 };
 
-// GET /api/finance/shipping-discrepancies?page&pageSize&channel&status
+/**
+ * Cột nhẹ để PHÂN LOẠI NGUYÊN NHÂN lệch ship cho mọi đơn khớp bộ lọc (31/10/2026,
+ * docs DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md): Order + vài cột ship có
+ * dấu của bản kê TikTok / sao kê Lazada. Nguyên nhân là cột tính lúc đọc nên lọc
+ * theo nó phải làm trong bộ nhớ — tập này là đơn lệch của MỘT chủ shop trong kỳ
+ * (prod 31/10: gian lớn nhất ~2.000 đơn/30 ngày), không phải toàn bộ đơn.
+ */
+const SHIP_REASON_SELECT = {
+  id: true,
+  shippingStatus: true,
+  returnStatus: true,
+  isSettled: true,
+  shippingFeeDiff: true,
+  shippingDisputeStatus: true,
+  channel: { select: { channelName: true } },
+  tiktokSettlement: {
+    select: {
+      estimated: true,
+      shipCustomerPaid: true,
+      shipPlatformDiscount: true,
+      shipSubsidy: true,
+      shipSellerDiscount: true,
+      shipReturn: true,
+      shipOther: true,
+    },
+  },
+  lazadaSettlement: {
+    select: {
+      shipFeeReturn: true,
+      feeShipSeller: true,
+      shipFeeAdjustment: true,
+      shipDiscountSeller: true,
+    },
+  },
+} satisfies Prisma.OrderSelect;
+
+type ShipReasonRow = Prisma.OrderGetPayload<{ select: typeof SHIP_REASON_SELECT }>;
+
+function reasonOf(o: ShipReasonRow): ShippingDiffReason {
+  const t = o.tiktokSettlement;
+  const l = o.lazadaSettlement;
+  return classifyShippingDiff({
+    channelName: o.channel.channelName,
+    shippingStatus: o.shippingStatus,
+    returnStatus: o.returnStatus,
+    isSettled: o.isSettled,
+    tiktok: t
+      ? {
+          estimated: t.estimated,
+          shipCustomerPaid: Number(t.shipCustomerPaid),
+          shipPlatformDiscount: Number(t.shipPlatformDiscount),
+          shipSubsidy: Number(t.shipSubsidy),
+          shipSellerDiscount: Number(t.shipSellerDiscount),
+          shipReturn: Number(t.shipReturn),
+          shipOther: Number(t.shipOther),
+        }
+      : null,
+    lazada: l
+      ? {
+          shipFeeReturn: Number(l.shipFeeReturn),
+          feeShipSeller: Number(l.feeShipSeller),
+          shipFeeAdjustment: Number(l.shipFeeAdjustment),
+          shipDiscountSeller: Number(l.shipDiscountSeller),
+        }
+      : null,
+  });
+}
+
+// GET /api/finance/shipping-discrepancies?page&pageSize&channel&status&reason
+//   reason: CLAIMABLE (ca khiếu nại được — mặc định trang) | POLICY (shop chịu
+//   theo chính sách sàn) | một mã ShippingDiffReason | rỗng = tất cả.
 router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const statusKey =
       typeof req.query.status === "string" ? req.query.status.toUpperCase() : "";
+    const reasonKey =
+      typeof req.query.reason === "string" ? req.query.reason.toUpperCase() : "";
 
     const where: Prisma.OrderWhereInput = {
       channel: channelScope(req),
@@ -1494,53 +1572,90 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         : {}),
     };
 
-    const [total, rows, allMatching] = await Promise.all([
-      prisma.order.count({ where }),
-      prisma.order.findMany({
+    // Bước 1: mọi đơn khớp bộ lọc DB, cột nhẹ, đã sắp thứ tự → phân loại.
+    const all = (
+      await prisma.order.findMany({
         where,
         orderBy: [{ settledAt: "desc" }, { createdAt: "desc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: AUDIT_ITEMS_INCLUDE,
-      }),
-      // Toàn bộ đơn khớp bộ lọc (không phân trang) để tính tổng tiền cần đòi
-      prisma.order.findMany({
-        where,
-        select: { shippingFeeDiff: true, shippingDisputeStatus: true },
-      }),
-    ]);
-    const itemsOf = await auditItemsOf(rows);
+        select: SHIP_REASON_SELECT,
+      })
+    ).map((o) => {
+      const reason = reasonOf(o);
+      return { o, reason, claimable: isClaimableReason(reason) };
+    });
 
-    const totalDiscrepancy = allMatching.reduce(
-      (s, o) => s + Number(o.shippingFeeDiff),
-      0
-    );
-    const pendingCount = allMatching.filter(
-      (o) => o.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
+    const matchesReason = (r: { reason: ShippingDiffReason; claimable: boolean }) =>
+      reasonKey === "CLAIMABLE"
+        ? r.claimable
+        : reasonKey === "POLICY"
+          ? !r.claimable
+          : (SHIPPING_DIFF_REASONS as readonly string[]).includes(reasonKey)
+            ? r.reason === reasonKey
+            : true;
+    const filtered = all.filter(matchesReason);
+
+    // Hai thẻ tiền KHÔNG theo bộ lọc nguyên nhân: "cần đòi lại" chỉ cộng ca khiếu
+    // nại được, phần còn lại là chi phí ship theo chính sách sàn — để khách thấy
+    // cả hai số dù đang lọc gì.
+    let claimableSum = 0;
+    let policySum = 0;
+    const reasonCounts: Partial<Record<ShippingDiffReason, number>> = {};
+    for (const r of all) {
+      const d = Number(r.o.shippingFeeDiff);
+      if (r.claimable) claimableSum += d;
+      else policySum += d;
+      reasonCounts[r.reason] = (reasonCounts[r.reason] ?? 0) + 1;
+    }
+    const pendingCount = filtered.filter(
+      (r) => r.o.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
     ).length;
+
+    // Bước 2: chỉ trang hiện tại mới đọc đủ cột + dòng hàng.
+    const pageSlice = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const reasonById = new Map(pageSlice.map((r, i) => [r.o.id, { ...r, i }]));
+    const rows = await prisma.order.findMany({
+      where: { id: { in: pageSlice.map((r) => r.o.id) } },
+      include: AUDIT_ITEMS_INCLUDE,
+    });
+    rows.sort((a, b) => reasonById.get(a.id)!.i - reasonById.get(b.id)!.i);
+    const itemsOf = await auditItemsOf(rows);
 
     res.json({
       summary: {
-        totalOrders: total, // tổng số đơn lệch (theo bộ lọc)
-        totalDiscrepancy: -totalDiscrepancy, // ÂM: số tiền cần đòi lại
-        pendingCount, // số đơn chưa gửi khiếu nại
+        totalOrders: filtered.length, // tổng số đơn lệch (theo bộ lọc)
+        totalDiscrepancy: -claimableSum, // ÂM: số tiền cần đòi lại (chỉ ca khiếu nại được)
+        policyDiscrepancy: -policySum, // ÂM: shop chịu theo chính sách sàn, không khiếu nại
+        pendingCount, // số đơn chưa gửi khiếu nại (theo bộ lọc)
+        reasonCounts, // số đơn từng nguyên nhân (không theo bộ lọc nguyên nhân)
       },
       page,
       pageSize,
-      pageCount: Math.ceil(total / pageSize),
-      items: rows.map((o) => ({
-        id: o.id,
-        orderCode: o.orderCode,
-        channelName: o.channel.channelName,
-        shopName: o.channel.shopName,
-        settledAt: o.settledAt,
-        createdAt: o.createdAt,
-        shippingFeeQuoted: Number(o.shippingFeeQuoted), // phí sàn báo
-        shippingFeeActual: Number(o.shippingFeeActual), // phí thực tế bị trừ
-        discrepancy: -Number(o.shippingFeeDiff), // ÂM = shop bị mất tiền
-        status: o.shippingDisputeStatus,
-        items: itemsOf(o),
-      })),
+      pageCount: Math.ceil(filtered.length / pageSize),
+      items: rows.map((o) => {
+        const r = reasonById.get(o.id)!;
+        const actual = Number(o.shippingFeeActual);
+        const diff = Number(o.shippingFeeDiff);
+        return {
+          id: o.id,
+          orderCode: o.orderCode,
+          trackingCode: o.trackingCode,
+          channelName: o.channel.channelName,
+          shopName: o.channel.shopName,
+          settledAt: o.settledAt,
+          createdAt: o.createdAt,
+          shippingFeeQuoted: Number(o.shippingFeeQuoted), // Shopee: cước sàn báo lúc đặt; TikTok: khách trả
+          shippingFeeActual: actual, // cước thực tế sàn trừ
+          // Phần cước ĐÃ ĐƯỢC PHỦ (khách trả + sàn trợ): nhất quán 3 sàn để
+          // dòng nào cũng "được phủ − thực tế = shop chịu" (TikTok quoted chỉ là
+          // khách trả nên không trừ ra nhau được).
+          coveredFee: actual - diff,
+          discrepancy: -diff, // ÂM = shop bị mất tiền
+          status: o.shippingDisputeStatus,
+          reason: r.reason,
+          claimable: r.claimable,
+          items: itemsOf(o),
+        };
+      }),
     });
   } catch (err) {
     next(err);

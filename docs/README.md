@@ -38,6 +38,7 @@
 - [CUU-DON-API-NHAN-KHACH-KHAO-SAT.md](CUU-DON-API-NHAN-KHACH-KHAO-SAT.md) — khảo sát API nhắn khách (Cứu đơn, đang ẩn)
 - [HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md](HUY-DON-SAU-CHUAN-BI-HANG-KHAO-SAT.md) — 23/10/2026 khách xin hủy sau khi đã chuẩn bị hàng / đang giao: khảo sát API 3 sàn + ĐÃ LÀM lát 1+2 web (cờ `cancelRequestedAt` trục riêng, Shopee IN_CANCEL / TikTok cancellations / Lazada reverse CANCEL, nút Chấp nhận–Từ chối gọi sàn, `cancel-request-decide.ts`); lát 3 + app mobile chờ
 - [THOI-HAN-UY-QUYEN-SAN.md](THOI-HAN-UY-QUYEN-SAN.md) — hạn ủy quyền từng sàn
+- [DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md](DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md) — 31/10/2026 khảo sát cột "Nguyên nhân" cho Đối soát phí vận chuyển: số prod 30 ngày (TikTok 5.049 đơn / 156 tr = 99 % tiền, Shopee 158, Lazada 77), vì sao tài khoản ANO không thấy Shopee (0 đơn lệch, không phải lỗi nối), phân loại 8 nhóm theo sao kê TikTok, 3 cột tiền đổi nhãn Khách trả / Cước thực tế / Shop chịu, chỉ "Cước thực tế cao hơn cước báo" là khiếu nại được; anh chốt "mục đích chính vẫn là đối soát" (4d) → ĐÃ LÀM tối 31/10 (mục 6): `lib/shipping-diff-reason.ts` + `?reason=`, lọc mặc định Cần đối soát, cột chip, 3 cột tiền Được phủ/Cước thực tế/Shop chịu, copy mã đơn + vận đơn, Excel; còn 3 việc chờ (tên nhóm Shop chịu cước, Kiểm toán phí, Shopee lưu reverse_shipping_fee)
 
 ## Quảng cáo đa sàn
 - [HUBSELL-ADS.md](HUBSELL-ADS.md) — app Hubsell Ads (Shopee)

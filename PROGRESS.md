@@ -5,6 +5,18 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 31/10 (tối) — Đối soát phí vận chuyển: cột "Nguyên nhân" + icon copy + vì sao không thấy Shopee — KHẢO SÁT số prod rồi ĐÃ LÀM (anh "Làm luôn", ràng buộc "mục đích chính vẫn là đối soát") — kiểm local, test 12/12, tsc BE+FE + eslint sạch (docs `DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md` mục 6)
+
+- ĐÃ LÀM: `lib/shipping-diff-reason.ts` (BE phân loại 9 mã, 3 mã khiếu nại được) + test; `GET /shipping-discrepancies?reason=` phân loại lúc đọc 2 bước (cột nhẹ → lọc trong bộ nhớ → trang đủ cột), trả `reason/claimable/coveredFee/trackingCode`, thẻ "cần đòi lại" chỉ cộng ca khiếu nại được + `policyDiscrepancy` + `reasonCounts`; trang: lọc Nguyên nhân mặc định **Cần đối soát**, cột chip + tooltip, 3 cột tiền **Được phủ · Cước thực tế · Shop chịu**, copy mã đơn + mã vận đơn, Excel thêm 3 cột. Bảng 9 cột vừa 1.622 px; ở 1.280 sidebar mở cuộn ngang trong thẻ như bản cũ (1.152 vs 1.025/943). Chưa kiểm số thật trên gian TikTok prod.
+- ⏳ Kiểm toán phí (`/finance/fee-audit`) thẻ "Truy thu phí ship" vẫn cộng cả ca chính sách — chờ anh nếu muốn đồng bộ.
+
+- Anh: khách hỏi "đây là cái gì" nhiều → thêm cột Nguyên nhân (Khách hoàn hàng, Chênh lệch phí VC…), icon copy cạnh mã, và không thấy đơn Shopee.
+- Số prod 30 ngày (SQL chỉ đọc): TikTok 5.049 đơn lệch / 156,4 tr (99 % tiền), Shopee 158 / 0,95 tr, Lazada 77 / 0,42 tr. Tài khoản trong ảnh (chủ and.not.or) có 2 gian Shopee 1.504 đơn, **0 đơn lệch** → không phải lỗi nối: Shopee thu ship của shop qua phí Freeship Xtra (Kiểm toán phí), TikTok trừ thẳng cước vào đơn.
+- Phân loại TikTok theo `tiktok_order_settlements`: hủy sau gửi 1.838 (60,5 tr) · khách hoàn 835 · phụ phí logistics 417 · voucher ship shop 456 · khách 0 + sàn 0 → shop chịu trọn 1.189 (42,3 tr, ⚠ chưa rõ chính sách) · vượt trợ giá 233 · chưa sao kê 67.
+- Phản biện: trang hứa "khiếu nại đòi lại tiền" nhưng 97 % tiền là chính sách TikTok (mã đã tự đánh DA_DOI_SOAT); cột "Phí dự kiến" với TikTok thực ra là KHÁCH TRẢ → in 0đ. Đề xuất 8 nhãn + đổi 3 cột tiền + thẻ "cần đòi lại" chỉ cộng ca khiếu nại được + `CopyIconButton` có sẵn; phân loại lúc đọc, không migration.
+- ⏳ Chờ anh chốt 5 câu (docs 4c), trong đó nhờ anh xem đơn TikTok `586760074401318566` trên Seller Center để đặt tên nhóm "Shop chịu cước".
+
+---
 ## Phiên 31/10 — rà trước build 1.4.1 (task hẹn giờ, anh vắng) — CHƯA ĐỦ: 10 ca số thật KHÔNG chạy được vì giả lập web chưa đăng nhập prod; rà tĩnh mã thay thế + sửa 1 lệch nhãn ca 8
 
 - `git pull` (đã mới nhất 6ef71722), `npx tsc --noEmit` hubsell-mobile sạch. Giả lập `mobile-web` (proxy → hubsell-backend-sg) chạy, dừng ở màn Đăng nhập: Browser pane không còn phiên admin@hubsell.vn, anh không có mặt, em không được gõ mật khẩu → **không so được số prod web ↔ app**.
@@ -24,7 +36,9 @@
 | 10 | Hộp nhắc giá vốn, Bỏ qua không hiện lại | Rà tĩnh: khóa `hubsell_missing_cost_prompt_dismissed:<uid>`, đúng luật — **chưa thử lại trên giả lập** |
 
 - tsc sạch; eslint ChannelsScreen còn 2 lỗi `set-state-in-effect` **có sẵn từ trước** (cùng mẫu OverviewPage), không thêm lỗi mới.
-- ⏳ Trước 08:30 01/11: anh đăng nhập giả lập (hoặc thử ngay trên TestFlight theo CHỐT 1 của task build) để chạy ca 1–10 số thật; nếu không kịp, nộp kèm ghi chú "rà tĩnh, chưa so số prod".
+- Lượt hẹn giờ thứ 2 (31/10): `git pull` không có commit mới (de6573fa), tsc hubsell-mobile sạch; khởi động giả lập `mobile-web` bị từ chối (không có người duyệt) → 10 ca vẫn **chưa chạy số thật**, bảng trên giữ nguyên.
+- **Anh chốt 31/10 tối: "Thử trên TestFlight"** → 10 ca chạy ở CHỐT 1 của task build 01/11 trên máy thật (đã nới CHỐT 1 từ 4 ca lên đủ 10 ca, so web cùng shop/kỳ). Không hoãn build.
+- ⏳ (cũ) Trước 08:30 01/11: anh đăng nhập giả lập (hoặc thử ngay trên TestFlight theo CHỐT 1 của task build) để chạy ca 1–10 số thật; nếu không kịp, nộp kèm ghi chú "rà tĩnh, chưa so số prod".
 
 ---
 ## Phiên 30/10/2026 (tối muộn) — "TẠO SẢN PHẨM MỚI" VỀ HÀNG HÓA, BỎ HỘP "THÊM SẢN PHẨM MỚI" CŨ (anh chốt; docs mục 30) — ĐÃ LÀM, kiểm local, tsc + eslint sạch

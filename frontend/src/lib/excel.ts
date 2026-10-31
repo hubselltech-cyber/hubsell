@@ -22,6 +22,10 @@ import {
 import { TIKTOK_COLUMNS, toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
 import type { DateRange } from "@/lib/date-range";
 import {
+  SHIPPING_DIFF_REASON_META,
+  type ShippingDiffReasonFilter,
+} from "@/lib/shipping-diff-reason";
+import {
   HQ_EXPENSE_CATEGORY_LABEL,
   displayExpenseCategory,
 } from "@/lib/hq-expense-categories";
@@ -175,25 +179,33 @@ export function exportOrdersToExcel(orders: Order[]) {
 // ---------- XUẤT FILE KHIẾU NẠI PHÍ SHIP ----------
 
 export function exportShippingDisputesToExcel(items: ShippingDiscrepancy[]) {
-  const rows = items.map((o) => ({
-    "Mã đơn hàng": o.orderCode,
-    Sàn: CHANNEL_LABEL[o.channelName] ?? o.channelName,
-    "Gian hàng": o.shopName,
-    "Phí ship sàn báo": o.shippingFeeQuoted,
-    "Phí ship thực tế bị trừ": o.shippingFeeActual,
-    "Số tiền chênh lệch": o.discrepancy, // âm = số tiền cần đòi lại
-  }));
+  const rows = items.map((o) => {
+    const meta = o.reason ? SHIPPING_DIFF_REASON_META[o.reason] : undefined;
+    return {
+      "Mã đơn hàng": o.orderCode,
+      "Mã vận đơn": o.trackingCode ?? "",
+      Sàn: CHANNEL_LABEL[o.channelName] ?? o.channelName,
+      "Gian hàng": o.shopName,
+      "Nguyên nhân": meta?.label ?? "",
+      "Khiếu nại được": meta ? (meta.claimable ? "Có" : "Không — chính sách sàn") : "",
+      "Phí ship đã được phủ (khách trả + sàn trợ)": o.coveredFee,
+      "Phí ship thực tế bị trừ": o.shippingFeeActual,
+      "Số tiền chênh lệch": o.discrepancy, // âm = số tiền cần đòi lại
+    };
+  });
   downloadSheet(
     rows,
-    [24, 12, 22, 18, 22, 20],
+    [24, 20, 12, 22, 30, 24, 34, 22, 20],
     "Khieu nai phi ship",
     `hubsell_khieu_nai_phi_ship_${fileStamp()}.xlsx`
   );
 }
 
-/// Gom TẤT CẢ đơn "Chờ khiếu nại" theo bộ lọc hiện tại rồi xuất file gửi sàn
+/// Gom TẤT CẢ đơn "Chờ khiếu nại" theo bộ lọc hiện tại (gian + nguyên nhân)
+/// rồi xuất file gửi sàn
 export async function exportShippingDisputes(filter: {
   channel?: ChannelFilterQuery;
+  reason?: ShippingDiffReasonFilter;
 }): Promise<number> {
   const all: ShippingDiscrepancy[] = [];
   let page = 1;

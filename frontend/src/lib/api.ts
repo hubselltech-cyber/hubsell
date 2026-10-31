@@ -1,6 +1,7 @@
 // Lớp gọi API tới backend Hubsell (kèm token đăng nhập).
 
 import { rangeToQuery, type DateRange } from "./date-range";
+import type { ShippingDiffReason, ShippingDiffReasonFilter } from "./shipping-diff-reason";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const TOKEN_KEY = "hubsell_token";
@@ -2248,10 +2249,18 @@ export interface ShippingDiscrepancy {
   shopName: string;
   settledAt: string | null;
   createdAt: string;
-  shippingFeeQuoted: number; // phí sàn báo
-  shippingFeeActual: number; // phí thực tế bị trừ
+  shippingFeeQuoted: number; // Shopee: cước sàn báo lúc đặt; TikTok: khách trả
+  shippingFeeActual: number; // cước thực tế sàn trừ
+  /** Phần cước đã được phủ (khách trả + sàn trợ) = thực tế − shop chịu; nhất quán 3 sàn. */
+  coveredFee: number;
   discrepancy: number; // ÂM = số tiền shop bị mất
   status: ShippingDisputeStatus;
+  /** Mã vận đơn chiều đi (null = sàn chưa cấp / đơn offline). */
+  trackingCode: string | null;
+  /** Nguyên nhân lệch (31/10/2026) — nhãn ở lib/shipping-diff-reason.ts. */
+  reason: ShippingDiffReason;
+  /** true = ca khiếu nại đòi lại được; false = chi phí ship theo chính sách sàn. */
+  claimable: boolean;
   /** Thiếu = backend cũ. */
   items?: OrderLineBrief[];
 }
@@ -2259,8 +2268,10 @@ export interface ShippingDiscrepancy {
 export interface ShippingDiscrepancyResponse {
   summary: {
     totalOrders: number;
-    totalDiscrepancy: number; // âm
+    totalDiscrepancy: number; // âm — chỉ ca khiếu nại được
+    policyDiscrepancy: number; // âm — shop chịu theo chính sách sàn
     pendingCount: number;
+    reasonCounts: Partial<Record<ShippingDiffReason, number>>;
   };
   page: number;
   pageSize: number;
@@ -2273,6 +2284,7 @@ export function fetchShippingDiscrepancies(params: {
   pageSize?: number;
   channel?: ChannelFilterQuery;
   status?: string;
+  reason?: ShippingDiffReasonFilter;
   range?: DateRange;
 }) {
   const qs = new URLSearchParams({
@@ -2282,6 +2294,7 @@ export function fetchShippingDiscrepancies(params: {
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.status) qs.set("status", params.status);
+  if (params.reason) qs.set("reason", params.reason);
   return apiFetch<ShippingDiscrepancyResponse>(
     `/api/finance/shipping-discrepancies?${qs.toString()}`
   );

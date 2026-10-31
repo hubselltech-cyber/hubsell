@@ -189,10 +189,12 @@ Ký hiệu cột **Gác** (middleware trong `backend/src/middleware/auth.ts`):
 
 Gom các đơn bị sàn trừ phí ship **cao hơn mức đã báo** để chủ shop đòi lại tiền.
 
-- Lưu `shippingFeeQuoted` (sàn báo) · `shippingFeeActual` (thực tế bị trừ) · `shippingFeeDiff` (chênh lệch)
-- Vòng đời khiếu nại `shippingDisputeStatus`: **CHO_KHIEU_NAI → DANG_KHIEU_NAI → DA_DOI_SOAT** (nút "Đổi trạng thái nhanh" chuyển sang bước kế tiếp)
-- 2 thẻ chỉ số: *Tổng số đơn lệch* · *Tổng số tiền cần đòi lại*
-- Nút **"Xuất file khiếu nại sàn"**: gom các đơn `CHO_KHIEU_NAI` theo bộ lọc, xuất Excel 5 cột — [Mã đơn hàng] [Sàn] [Phí ship sàn báo] [Phí ship thực tế bị trừ] [Số tiền chênh lệch]
+- Lưu `shippingFeeQuoted` (Shopee: sàn báo lúc đặt; TikTok: khách trả) · `shippingFeeActual` (thực tế bị trừ) · `shippingFeeDiff` (shop chịu). Giao diện in 3 cột **Được phủ** (= thực tế − shop chịu, nhất quán 3 sàn) · **Cước thực tế** · **Shop chịu**
+- **Cột Nguyên nhân** (31/10/2026, `lib/shipping-diff-reason.ts` BE + FE, docs `DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md`): phân loại lúc đọc từ bản kê TikTok / sao kê Lazada / cột Order Shopee — 3 mã **khiếu nại được** (Cước thực tế cao hơn cước báo · Phụ phí vận chuyển · Chờ sao kê) và 6 mã **chính sách sàn** (Đơn hủy sau khi gửi · Khách trả hàng · Shop tự trợ giá ship · Shop chịu cước · Cước vượt mức sàn trợ · Khác). Bộ lọc mặc định **Cần đối soát**; `?reason=CLAIMABLE|POLICY|<mã>`
+- Vòng đời khiếu nại `shippingDisputeStatus`: **CHO_KHIEU_NAI → DANG_KHIEU_NAI → DA_DOI_SOAT** (nút "Đổi trạng thái nhanh" chuyển sang bước kế tiếp). TikTok có bản kê thật tự về DA_DOI_SOAT (chính sách)
+- 2 thẻ chỉ số: *Tổng số đơn lệch* (theo bộ lọc) · *Tổng số tiền cần đòi lại* (chỉ ca khiếu nại được; dòng phụ "Shop chịu theo chính sách sàn")
+- Nút copy cạnh mã đơn và mã vận đơn (`CopyIconButton`)
+- Nút **"Xuất file khiếu nại sàn"**: gom các đơn `CHO_KHIEU_NAI` theo bộ lọc gian + nguyên nhân, xuất Excel 9 cột — [Mã đơn hàng] [Mã vận đơn] [Sàn] [Gian hàng] [Nguyên nhân] [Khiếu nại được] [Phí ship đã được phủ] [Phí ship thực tế bị trừ] [Số tiền chênh lệch]
 
 > ⚠️ **Quy ước dấu:** database lưu `shippingFeeDiff` **dương** (số tiền bị trừ thêm — đồng bộ với các trường phí khác), còn API/giao diện trả **số âm màu đỏ** theo góc nhìn "shop bị mất tiền".
 
