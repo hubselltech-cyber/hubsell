@@ -5,6 +5,12 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 31/10 (đêm, sau) — HQ Sức khỏe: anh hỏi "cứ 15 nghìn đơn lại nâng?" và "lên 10.000 có cần nâng không?" → đánh giá, KHÔNG sửa mã; anh chốt ĐỂ NGUYÊN, đợi chạm M3 rồi đo lại (docs/HQ-SUC-KHOE.md mục 31/10)
+
+- Mốc là cấp số nhân (×3–5/bậc), không phải bước 15 nghìn; M3 +95 USD, M4 +769 USD là bậc đắt duy nhất. Ở 8.748 đơn/ngày không dấu hiệu vàng; 3 món tiền M3 chưa món nào có số đo biện minh; đồng hồ thật = % DB (50 %) + Disk IO compute Small (HQ chưa hiện) + % kết nối.
+- Anh: *"người trả phí không nhiều, mình đang phải nuôi hạ tầng là chính"* → chạm mốc đơn ≠ mua; khi chạm M3 chỉ làm phần mã (2 worker claim vé, retention 1 năm, log cleanup 7 ngày) rồi đo. Ghi memory hubsell-hq-suc-khoe + feedback-tim-goc-truoc-khi-de-xuat-nang-goi.
+
+---
 ## Phiên 31/10 (đêm) — Trợ lý quảng cáo TikTok: link "Xem video" nói rõ bằng chữ ở chi tiết chiến dịch (anh gửi ảnh: khách không nhận ra dòng "Video TikTok / Không lấy được tên video" bấm được)
 
 - Gốc: cột Video vốn ĐÃ là link (ảnh bìa + dòng tên → `tiktokVideoUrl`), nhưng khi oEmbed bị chặn (bẫy 16/10) chỉ còn biểu tượng "ảnh hỏng" + "Video TikTok" + "Không lấy được tên video" → khách đọc như dòng lỗi, không biết bấm.

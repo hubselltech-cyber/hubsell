@@ -151,6 +151,15 @@ Anh tự nâng gói trên Render trưa 21/10 (sau 2 lần OOM worker, PROGRESS.m
 | Webhook Lazada vào hàng đợi bền | **Xong 01/10** | `routes/webhooks.ts` ghi `webhook_events` + xếp việc trong một giao dịch rồi ack (docs/HANG-DOI-BEN.md); test `lazada-webhook-queue.test.ts`. |
 | Rà index Order(channelId, createdAt), OrderItem(orderId) | **Đã có** | `schema.prisma`: Order có `@@index([channelId, createdAt])` (kèm `[channelId, isSettled]`, `[channelId, deliveredAt]`), OrderItem có `@@index([orderId])`. Không cần migration. |
 
+## 31/10/2026 — M3 sắp chạm theo số đơn (HQ "≈4 ngày"): anh Trung CHỐT ĐỂ NGUYÊN, đợi chạm rồi đo lại — chạm mốc đơn/ngày KHÔNG phải lệnh mua
+
+- Số HQ 31/10 21:11: M2, 182 gian, 234 chủ shop, 8.748 đơn/ngày (đỉnh 30 ngày 13.066, webhook 68.879/ngày), worker 155/155 đúng nhịp (trễ nhất 61'), webhook chờ 0, DB 4.104 MB (50 % Pro 8 GB, compute Small 2 GB), web heap 84 MB (23 % trần) / RSS 275 MB (54 % gói). Không dấu hiệu nào vàng.
+- Anh hỏi "cứ ~15 nghìn đơn lại nâng?" → không: mốc là cấp số nhân 500 / 2.000 / 10.000 / 30.000 / 100.000 / 300.000, mỗi bậc ×3–5; tổng tiền 44 → 69 → ~164 → ~933 → ~1.333 → ~2.833 USD/tháng. M4 (Supabase Team + replica 599 USD) là bậc duy nhất chi phí trên mỗi đơn tăng — rà lại khi gần 20.000 đơn/ngày (có cần đúng gói Team hay chỉ replica).
+- Anh hỏi "lên 10.000 có cần nâng không, hạ tầng chưa hết nhiều?" → không. Ngưỡng 10.000 là số tự chọn 12/09 để lên kế hoạch, không phải số đo. Ba món tiền M3 soi với số thật: compute Medium (60 USD) — kết nối chưa vàng, Disk IO thiếu hôm 28/10 là do mã; web Standard (25 USD) — RSS 54 %; Redis (10 USD) — chỉ cần khi 2 worker instance, mà worker đang đúng nhịp. Bằng chứng mốc dè dặt hơn thực tế ~1 bậc: M2 ghi Worker Standard, anh giữ Starter, vẫn chạy tới 8.748 đơn/ngày.
+- Đồng hồ THẬT sẽ đuối trước RAM/CPU: (1) % dung lượng DB — tích lũy theo đơn, vàng 60 % = 4,9 GB, M3 70 % = 5,7 GB; retention đơn 1 năm + dọn log 7 ngày (việc mã M3) kéo giãn; (2) Disk IO budget compute Small (bùng rồi cạn → 502 như 28/10) — HQ CHƯA hiện, còn nợ mục "IO balance"; (3) % kết nối.
+- Dự báo "≈4 ngày" là hồi quy tuyến tính 7 ngày trên đà 11/11; điều kiện mốc tính TB 7 ngày nên ngày sale đơn lẻ không chạm, sau 11/11 TB có thể tụt lại.
+- **Anh chốt:** *"đợi khi nào nó chạm rồi đo lại sau. Tại vì bây giờ người trả phí không nhiều, mình đang phải nuôi hạ tầng là chính."* → KHÔNG sửa HQ (em có đề xuất tách "việc mã / việc tiền" trong M3 — anh để nguyên). Khi M3 chạm: làm phần mã trong checklist (2 worker claim vé, retention, log cleanup) + đo 3 đồng hồ trên rồi mới bàn tiền. Cùng luật với mục 19/10.
+
 ## 5. Giao diện `/admin/health` (lá quyền mới `hq.health`, sidebar "Sức khỏe")
 
 1. **Hàng KPI** (StatCard sẵn): Gian hoạt động (chip theo sàn) · Chủ shop hoạt động ·
