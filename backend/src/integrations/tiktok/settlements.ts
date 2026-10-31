@@ -44,6 +44,7 @@ export interface TiktokSettlementDetailCols {
   shipReturn: number; // return_shipping_fee_amount — Phí vận chuyển trả hàng thực tế (âm)
   shipOther: number; // ký nhận/bảo hiểm/logistics_service_fee/shipping_app… (âm)
   shipReimbursement: number; // sfr/guarantee/failed_delivery/free_return subsidy (dương)
+  shipRest: number; // CHỐT CHẶN nhóm ship = shippingCost − Σ 8 cột trên (khoá chưa đặt tên / phần trợ ship ngoài supplementary)
   shippingCost: number; // shipping_cost_amount — Phí vận chuyển của nhà bán hàng (ròng, âm = shop chịu)
   // ---- Phí (fee_tax_breakdown.fee) — tên theo TikTok Shop VN ----
   feeCommission: number; // platform_commission_amount — Phí hoa hồng nền tảng
@@ -54,8 +55,10 @@ export interface TiktokSettlementDetailCols {
   feeFlashSale: number; // flash_sales_service_fee_amount — Phí dịch vụ Flash Sale
   feeAffiliate: number; // affiliate_commission_amount_before_pit (ưu tiên) / affiliate_commission_amount — Hoa hồng affiliate
   feeAffiliateAds: number; // affiliate_ads_commission_amount — Hoa hồng quảng cáo affiliate
-  feeAffiliatePartner: number; // affiliate_partner_commission_amount — Hoa hồng cho đối tác affiliate
-  feeGmvMax: number; // gmv_max_ad_fee_amount + gmv_max_coupon_fee — Nạp tiền quảng cáo từ đơn hàng
+  feeAffiliatePartner: number; // affiliate_partner_commission_amount — Hoa hồng của đối tác liên kết
+  feeAffiliatePartnerAds: number; // tap_shop_ads_commission — Hoa hồng quảng cáo cửa hàng của Đối tác liên kết (31/10/2026, trước đó feeOther)
+  feeGmvMax: number; // gmv_max_ad_fee_amount + gmv_max_coupon_fee — Chi phí GMV Max trừ trong đơn
+  feeGmvMaxVoucher: number; // gmv_max_coupon_fee — "Trong đó: Voucher GMV Max" (cột con của feeGmvMax, không cộng thêm)
   feeBonusCashback: number; // bonus_cashback_service_fee_amount — Phí dịch vụ Bonus Cashback (prod 10/2026, ~1,5 % DT sau CK)
   feeShipGuarantee: number; // shipping_fee_guarantee_service_fee — Phí Bảo đảm phí vận chuyển (prod 10/2026, 1.620đ/đơn)
   feeOther: number; // phần còn lại của fee → Σ phí = fee_tax_amount − thuế (chốt chặn)
@@ -106,6 +109,7 @@ const FEE_KNOWN = new Set([
   "gmv_max_coupon_fee",
   "bonus_cashback_service_fee_amount",
   "shipping_fee_guarantee_service_fee",
+  "tap_shop_ads_commission",
   // PIT khấu trừ từ hoa hồng creator (unsettled 202507) đã nằm trong before_pit
   "pit_withheld_from_ads_commission_amount",
 ]);
@@ -140,6 +144,11 @@ const SHIP_OTHER = [
   "distant_shipping_fee_amount",
   "replacement_shipping_fee_amount",
   "exchange_shipping_fee_amount",
+  // Docs 31/10/2026: kiện hàng nguy hiểm / quá cân / quá khổ — sàn thu thêm của shop
+  "hazmat_noncompliance_fee",
+  "hazmat_handling_fee",
+  "non_standard_weight_fee",
+  "non_standard_dimension_fee",
 ];
 /** Sàn bù ship giao thất bại/hoàn (dương) — gom cột shipReimbursement. */
 const SHIP_REIMBURSE = [
@@ -153,6 +162,19 @@ const SHIP_REIMBURSE = [
   "fbt_overall_merchant_subsidy",
   "fbt_key_merchant_subsidy",
 ];
+/**
+ * Khoá CẤP 1 của shipping_cost_breakdown đã có cột (docs: Σ khoá cấp 1 = shipping_cost_amount;
+ * shipping_fee_discount_amount là tổng trợ ship của sàn, Hubsell tách qua 3 khoá supplementary).
+ * Dùng cho chốt chặn shipRest khi sàn không trả tổng shipping_cost_amount.
+ */
+const SHIP_KNOWN = new Set([
+  "actual_shipping_fee_amount",
+  "customer_paid_shipping_fee_amount",
+  "return_shipping_fee_amount",
+  "shipping_fee_discount_amount",
+  ...SHIP_OTHER,
+  ...SHIP_REIMBURSE,
+]);
 
 /** Tổng có dấu của một khoá qua nhiều khối breakdown. */
 function sumKey(maps: (TikTokAmountMap | undefined)[], key: string): number {
@@ -216,6 +238,15 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   const shipOther = SHIP_OTHER.reduce((s, k) => s + sumKey(sb, k), 0);
   const shipReimbursement = SHIP_REIMBURSE.reduce((s, k) => s + sumKey(sb, k), 0);
   const shippingCost = total(lines, "shipping_cost_amount");
+  // CHỐT CHẶN nhóm ship (31/10/2026, như feeOther): phần của shipping_cost_amount
+  // chưa rơi vào 8 cột trên — khoá cấp 1 chưa đặt tên, hoặc phần trợ ship của sàn
+  // (shipping_fee_discount_amount) nằm ngoài 3 khoá supplementary đang đọc
+  // (vd return_refund_subsidy_amount). Prod 30 ngày: 1.424/370.268 bản kê lệch.
+  // Sàn không trả tổng → cộng các khoá cấp 1 còn lại.
+  const shipNamed =
+    shipActual + shipCustomerPaid + shipPlatformDiscount + shipSubsidy + shipSellerDiscount +
+    shipReturn + shipOther + shipReimbursement;
+  const shipRest = shippingCost !== 0 ? shippingCost - shipNamed : sumRest(sb, SHIP_KNOWN);
 
   // ---- Phí ----
   const feeCommission = sumKey(fee, "platform_commission_amount");
@@ -238,7 +269,11 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
     : sumKey(fee, "affiliate_commission_amount");
   const feeAffiliateAds = sumKey(fee, "affiliate_ads_commission_amount");
   const feeAffiliatePartner = sumKey(fee, "affiliate_partner_commission_amount");
-  const feeGmvMax = sumKey(fee, "gmv_max_ad_fee_amount") + sumKey(fee, "gmv_max_coupon_fee");
+  // Hoa hồng quảng cáo cửa hàng trả cho đối tác liên kết (TAP) — dòng riêng trên
+  // Báo cáo kinh doanh Seller Center (khảo sát 31/10/2026); trước đó rơi vào feeOther.
+  const feeAffiliatePartnerAds = sumKey(fee, "tap_shop_ads_commission");
+  const feeGmvMaxVoucher = sumKey(fee, "gmv_max_coupon_fee");
+  const feeGmvMax = sumKey(fee, "gmv_max_ad_fee_amount") + feeGmvMaxVoucher;
   // Hai phí thấy trên bản kê thật từ 10/2026 (docs khảo sát 29/10 mục 11) — trước đó rơi vào feeOther.
   const feeBonusCashback = sumKey(fee, "bonus_cashback_service_fee_amount");
   const feeShipGuarantee = sumKey(fee, "shipping_fee_guarantee_service_fee");
@@ -254,8 +289,8 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   // trả fee_tax_amount (thiếu tổng) thì cộng các trường fee còn lại.
   const feeNamed =
     feeCommission + feeTransaction + feeOrderProcessing + feeSfp + feeVoucherXtra +
-    feeFlashSale + feeAffiliate + feeAffiliateAds + feeAffiliatePartner + feeGmvMax +
-    feeBonusCashback + feeShipGuarantee;
+    feeFlashSale + feeAffiliate + feeAffiliateAds + feeAffiliatePartner + feeAffiliatePartnerAds +
+    feeGmvMax + feeBonusCashback + feeShipGuarantee;
   const feeOther =
     feeTaxAmount !== 0
       ? feeTaxAmount - feeNamed - taxVat - taxPit - taxOther
@@ -272,9 +307,10 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
     grossSales, sellerDiscount, refundGross, sellerDiscountRefund, revenueAmount,
     platformDiscount, customerRefund,
     shipActual, shipCustomerPaid, shipPlatformDiscount, shipSubsidy, shipSellerDiscount,
-    shipReturn, shipOther, shipReimbursement, shippingCost,
+    shipReturn, shipOther, shipReimbursement, shipRest, shippingCost,
     feeCommission, feeTransaction, feeOrderProcessing, feeSfp, feeVoucherXtra, feeFlashSale,
-    feeAffiliate, feeAffiliateAds, feeAffiliatePartner, feeGmvMax, feeBonusCashback, feeShipGuarantee,
+    feeAffiliate, feeAffiliateAds, feeAffiliatePartner, feeAffiliatePartnerAds,
+    feeGmvMax, feeGmvMaxVoucher, feeBonusCashback, feeShipGuarantee,
     feeOther, feeTaxAmount,
     taxVat, taxPit, taxOther,
     adjustmentAmount,
@@ -292,7 +328,7 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   const serviceSigned =
     feeSfp + feeVoucherXtra + feeFlashSale + feeOther + feeGmvMax + feeBonusCashback + feeShipGuarantee;
   const taxSigned = taxVat + taxPit + taxOther;
-  const affiliateSigned = feeAffiliate + feeAffiliateAds + feeAffiliatePartner;
+  const affiliateSigned = feeAffiliate + feeAffiliateAds + feeAffiliatePartner + feeAffiliatePartnerAds;
   const fixedSigned = feeCommission;
   const paymentSigned = feeTransaction + feeOrderProcessing;
 

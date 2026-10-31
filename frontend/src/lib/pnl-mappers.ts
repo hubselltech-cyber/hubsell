@@ -120,6 +120,7 @@ export interface TiktokProfitRow {
   shipReturn: number;
   shipOther: number;
   shipReimbursement: number;
+  shipRest: number;
   shippingCost: number; // Phí vận chuyển của nhà bán hàng (ròng)
   // Phí
   feeCommission: number;
@@ -131,7 +132,10 @@ export interface TiktokProfitRow {
   feeAffiliate: number;
   feeAffiliateAds: number;
   feeAffiliatePartner: number;
+  feeAffiliatePartnerAds: number;
   feeGmvMax: number;
+  /** Cột con của feeGmvMax (voucher GMV Max) — chỉ để đối chiếu Seller Center, không cộng thêm. */
+  feeGmvMaxVoucher: number;
   feeBonusCashback: number;
   feeShipGuarantee: number;
   feeOther: number;
@@ -171,6 +175,7 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
       shipReturn: d.shipReturn,
       shipOther: d.shipOther,
       shipReimbursement: d.shipReimbursement,
+      shipRest: d.shipRest ?? 0,
       shippingCost: d.shippingCost,
       feeCommission: d.feeCommission,
       feeTransaction: d.feeTransaction,
@@ -181,7 +186,9 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
       feeAffiliate: d.feeAffiliate,
       feeAffiliateAds: d.feeAffiliateAds,
       feeAffiliatePartner: d.feeAffiliatePartner,
+      feeAffiliatePartnerAds: d.feeAffiliatePartnerAds ?? 0,
       feeGmvMax: d.feeGmvMax,
+      feeGmvMaxVoucher: d.feeGmvMaxVoucher ?? 0,
       feeBonusCashback: d.feeBonusCashback ?? 0,
       feeShipGuarantee: d.feeShipGuarantee ?? 0,
       feeOther: d.feeOther,
@@ -218,6 +225,7 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
     shipReturn: 0,
     shipOther: 0,
     shipReimbursement: 0,
+    shipRest: 0,
     shippingCost: 0,
     feeCommission: 0,
     feeTransaction: 0,
@@ -228,7 +236,9 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
     feeAffiliate: 0,
     feeAffiliateAds: 0,
     feeAffiliatePartner: 0,
+    feeAffiliatePartnerAds: 0,
     feeGmvMax: 0,
+    feeGmvMaxVoucher: 0,
     feeBonusCashback: 0,
     feeShipGuarantee: 0,
     feeOther: 0,
@@ -245,7 +255,12 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
 
 /**
  * DANH SÁCH CỘT SỐ của tab TikTok — nguồn duy nhất cho bảng, Excel và luật ẩn
- * cột trống. Nhãn = tên TikTok Shop VN. `always` = luôn hiện dù cả kỳ bằng 0.
+ * cột trống. Nhãn = đúng tên dòng trên Báo cáo kinh doanh của Seller Center
+ * (đối chiếu 31/10/2026, docs TIKTOK-PHI-BAO-CAO-KINH-DOANH-DOI-CHIEU-API-KHAO-SAT-31-10.md).
+ * `always` = luôn hiện dù cả kỳ bằng 0.
+ *
+ * Tooltip (hint) viết cho CHỦ SHOP: ngắn, phổ thông, không tên trường API —
+ * tên trường ghi ở chú thích `// API:` cạnh mỗi cột cho người sửa mã.
  */
 export interface TiktokColumnDef {
   key: keyof TiktokProfitRow;
@@ -256,40 +271,83 @@ export interface TiktokColumnDef {
 }
 
 export const TIKTOK_COLUMNS: TiktokColumnDef[] = [
-  { key: "grossSales", label: "Tổng phụ trước giảm giá", group: "revenue", always: true, hint: "subtotal_before_discount_amount — giá niêm yết mọi dòng hàng, trước chiết khấu của nhà bán hàng lẫn nền tảng." },
-  { key: "sellerDiscount", label: "Giảm giá của người bán", group: "revenue", always: true, hint: "seller_discount_amount — giảm giá do shop chịu (Product Discount, Flash Deal, voucher, phần shop trong voucher đồng tài trợ)." },
-  { key: "voucherSeller", label: "Trong đó: voucher của shop", group: "revenue", hint: "voucher_deduction_seller (Get Order Price Details) — phần voucher shop NẰM TRONG Giảm giá của người bán (probe 29/10/2026). Báo cáo dòng tiền: Tổng giá trị SP = Tổng phụ sau giảm giá + số này; dòng Voucher & xu của shop = số này. Đơn chưa đọc hiện —." },
-  { key: "revenueAmount", label: "Tổng phụ sau giảm giá của người bán", group: "revenue", always: true, hint: "revenue_amount — số TikTok dùng để tính hoa hồng và trả cho shop; ĐÃ gồm phần sàn bù chiết khấu nền tảng." },
-  { key: "platformDiscount", label: "Giảm giá của nền tảng", group: "revenue", hint: "platform_discount_amount — giảm giá do TikTok tài trợ, sàn bù lại cho shop nên không trừ vào doanh thu (tham chiếu)." },
-  { key: "refundGross", label: "Doanh thu hoàn trả", group: "revenue", hint: "refund_subtotal_before_discount_amount + seller_discount_refund_amount — phần doanh thu bị đảo do hoàn tiền/trả hàng." },
-  { key: "shipActual", label: "Phí vận chuyển thực tế", group: "ship", always: true, hint: "actual_shipping_fee_amount — cước hãng tính theo cân nặng/kích thước thật." },
-  { key: "shipCustomerPaid", label: "Phí vận chuyển của khách hàng", group: "ship", hint: "customer_paid_shipping_fee_amount — phần ship khách trả (âm = hoàn lại khách)." },
-  { key: "shipPlatformDiscount", label: "Giảm giá phí vận chuyển của nền tảng", group: "ship", hint: "platform_shipping_fee_discount_amount — sàn giảm ship theo chiến dịch." },
-  { key: "shipSubsidy", label: "Trợ cấp phí vận chuyển", group: "ship", hint: "shipping_fee_subsidy_amount + promo_shipping_incentive_amount — sàn trợ ship cho shop tự giao / đồng tài trợ freeship." },
-  { key: "shipSellerDiscount", label: "Giảm giá phí vận chuyển của người bán", group: "ship", hint: "seller_shipping_fee_discount_amount — shop giảm ship cho khách." },
-  { key: "shipReturn", label: "Phí vận chuyển trả hàng thực tế", group: "ship", hint: "return_shipping_fee_amount — ship hoàn shop chịu khi lỗi thuộc về shop." },
-  { key: "shipOther", label: "Phụ phí logistics khác", group: "ship", hint: "Ký nhận, bảo hiểm vận chuyển, logistics_service_fee, phí app vận chuyển…" },
-  { key: "shipReimbursement", label: "Bồi hoàn phí vận chuyển", group: "ship", hint: "Sàn bồi hoàn ship giao thất bại / trả hàng / bảo đảm phí vận chuyển." },
-  { key: "shippingCost", label: "Phí vận chuyển của người bán", group: "ship", always: true, hint: "shipping_cost_amount — số RÒNG shop thực chịu = thực tế − khách trả − nền tảng trợ (định nghĩa TikTok)." },
-  { key: "feeCommission", label: "Phí hoa hồng của TikTok Shop", group: "fee", always: true, hint: "platform_commission_amount — % theo ngành hàng × (giá gốc − chiết khấu của nhà bán hàng)." },
-  { key: "feeTransaction", label: "Phí giao dịch", group: "fee", always: true, hint: "transaction_fee_amount — 6% (từ 09/05/2026) trên số khách trả + chiết khấu nền tảng − hoàn." },
-  { key: "feeOrderProcessing", label: "Phí xử lý đơn hàng", group: "fee", always: true, hint: "vn_fix_infrastructure_fee — 3.000đ/đơn giao thành công (từ 27/10/2025)." },
-  { key: "feeSfp", label: "Phí dịch vụ Freeship Xtra", group: "fee", hint: "sfp_service_fee_amount — phí Chương trình phí vận chuyển (SFP). Tên hiển thị chưa thấy trên Seller Center của shop mẫu (shop dùng Voucher Xtra) — sẽ khớp khi có đơn thật." },
-  { key: "feeVoucherXtra", label: "Phí dịch vụ Voucher Xtra", group: "fee", hint: "voucher_xtra_service_fee_amount." },
-  { key: "feeFlashSale", label: "Phí dịch vụ Flash Sale", group: "fee", hint: "flash_sales_service_fee_amount." },
-  { key: "feeAffiliate", label: "Hoa hồng affiliate", group: "fee", hint: "affiliate_commission_amount_before_pit — hoa hồng trả creator, gồm cả TNCN của creator mà shop nộp thay." },
-  { key: "feeAffiliateAds", label: "Hoa hồng quảng cáo affiliate", group: "fee", hint: "affiliate_ads_commission_amount — đơn từ quảng cáo (Shop Ads)." },
-  { key: "feeAffiliatePartner", label: "Hoa hồng cho đối tác affiliate", group: "fee", hint: "affiliate_partner_commission_amount." },
-  { key: "feeGmvMax", label: "Nạp tiền quảng cáo từ đơn hàng", group: "fee", hint: "gmv_max_ad_fee_amount + gmv_max_coupon_fee — chi phí GMV Max trừ ngay trong đơn." },
-  { key: "feeBonusCashback", label: "Phí dịch vụ Bonus Cashback", group: "fee", hint: "bonus_cashback_service_fee_amount — phí tham gia chương trình Bonus Cashback (~1,5% doanh thu sau chiết khấu), thấy trên bản kê từ 10/2026." },
-  { key: "feeShipGuarantee", label: "Phí Bảo đảm phí vận chuyển", group: "fee", hint: "shipping_fee_guarantee_service_fee — phí cố định mỗi đơn (1.620đ) của chương trình Bảo đảm phí vận chuyển, thấy trên bản kê từ 10/2026." },
-  { key: "feeOther", label: "Phí khác của nền tảng", group: "fee", hint: "Phần còn lại của fee_tax_amount sau khi bóc các cột đã đặt tên — chốt chặn để tổng luôn khớp sàn. Đơn 'sàn ước tính': TikTok báo tổng phí ước tính (est_fee_tax_amount) cao hơn phần bóc tách, thường 5,5% doanh thu (kiểm prod 29/10/2026: 77.071 tổng − 62.276 bóc tách = 14.795), sàn không nêu tên → nằm ở đây, biến mất khi quyết toán. Bản kê đồng bộ trước 29/10/2026 còn gồm Bonus Cashback + Bảo đảm phí VC (chưa có cột riêng lúc đó)." },
-  { key: "taxVat", label: "Thuế GTGT do TikTok Shop khấu trừ", group: "tax", always: true, hint: "local_vat_amount — 1% doanh thu, sàn nộp hộ hộ kinh doanh/cá nhân (NĐ 117/2025)." },
-  { key: "taxPit", label: "Thuế TNCN do TikTok Shop khấu trừ", group: "tax", always: true, hint: "pit_amount — 0,5% doanh thu, sàn nộp hộ (đơn đã quyết toán: đúng 0,5% ở mọi đơn kiểm prod 29/10/2026). Đơn 'sàn ước tính' trống vì bản ước tính (API 202507) không có trường pit_amount — phần này nằm gộp trong tổng phí ước tính (cột Phí khác); Hubsell không tự ước 0,5%." },
-  { key: "taxOther", label: "Thuế khác", group: "tax", hint: "Các sắc thuế vùng khác không áp Việt Nam — chốt chặn." },
-  { key: "adjustmentAmount", label: "Khoản điều chỉnh", group: "result", hint: "adjustment_amount của các dòng điều chỉnh gắn đơn (loại ghi ở chú thích)." },
-  { key: "settlementAmount", label: "Tổng số tiền quyết toán", group: "result", always: true, hint: "settlement_amount — tiền TikTok trả về ví cho đơn (ước tính khi chưa quyết toán)." },
+  // ---- Doanh thu ----
+  // API: subtotal_before_discount_amount
+  { key: "grossSales", label: "Tổng phụ trước giảm giá", group: "revenue", always: true, hint: "Giá niêm yết của mọi món trong đơn, trước mọi khoản giảm giá." },
+  // API: seller_discount_amount
+  { key: "sellerDiscount", label: "Giảm giá của người bán", group: "revenue", always: true, hint: "Phần giảm giá do shop chịu: giảm giá sản phẩm, Flash Deal, voucher của shop và phần shop góp trong voucher đồng tài trợ." },
+  // API: voucher_deduction_seller (Get Order Price Details)
+  { key: "voucherSeller", label: "Trong đó: voucher của shop", group: "revenue", hint: "Phần voucher của shop đã nằm trong Giảm giá của người bán, tách ra để đối chiếu. Đơn chưa đọc được hiện dấu gạch." },
+  // API: revenue_amount
+  { key: "revenueAmount", label: "Tổng phụ sau giảm giá của người bán", group: "revenue", always: true, hint: "Số TikTok dùng để tính hoa hồng và trả tiền cho shop. Đã gồm phần sàn bù cho giảm giá của nền tảng." },
+  // API: supplementary_component.platform_discount_amount
+  { key: "platformDiscount", label: "Giảm giá của nền tảng", group: "revenue", hint: "Giảm giá do TikTok tài trợ. Sàn bù lại cho shop nên không trừ vào doanh thu, chỉ để tham khảo." },
+  // API: refund_subtotal_before_discount_amount + seller_discount_refund_amount
+  { key: "refundGross", label: "Doanh thu hoàn trả", group: "revenue", hint: "Phần doanh thu bị trừ lại khi đơn hoàn tiền hoặc trả hàng. Seller Center gọi là “Tổng phụ của khoản hoàn tiền sau giảm giá của người bán”." },
+  // ---- Phí vận chuyển ----
+  // API: actual_shipping_fee_amount
+  { key: "shipActual", label: "Phí vận chuyển thực tế", group: "ship", always: true, hint: "Cước đơn vị vận chuyển tính theo cân nặng, kích thước thật của kiện hàng." },
+  // API: customer_paid_shipping_fee_amount (sàn chỉ trả số ròng)
+  { key: "shipCustomerPaid", label: "Chi phí vận chuyển của khách hàng", group: "ship", hint: "Phần phí ship khách thực trả, đã trừ giảm giá ship của TikTok và phần hoàn lại cho khách. Sàn chỉ báo số sau cùng này, không tách “trước giảm giá” hay “giảm của TikTok Shop”." },
+  // API: supplementary_component.platform_shipping_fee_discount_amount
+  { key: "shipPlatformDiscount", label: "Chiết khấu phí vận chuyển của nền tảng", group: "ship", hint: "TikTok bù phí ship cho shop theo chương trình đang chạy." },
+  // API: shipping_fee_subsidy_amount + promo_shipping_incentive_amount
+  { key: "shipSubsidy", label: "Trợ giá vận chuyển", group: "ship", hint: "Sàn trợ thêm phí ship cho shop (shop tự giao hàng, đồng tài trợ freeship)." },
+  // API: supplementary_component.seller_shipping_fee_discount_amount
+  { key: "shipSellerDiscount", label: "Giảm phí vận chuyển của người bán", group: "ship", hint: "Shop tự giảm phí ship cho khách." },
+  // API: return_shipping_fee_amount
+  { key: "shipReturn", label: "Phí vận chuyển trả hàng thực tế", group: "ship", hint: "Cước chiều hàng hoàn về mà shop chịu." },
+  // API: signature_confirmation / shipping_insurance / logistics_service_fee / hazmat / non_standard…
+  { key: "shipOther", label: "Phụ phí vận chuyển", group: "ship", hint: "Các khoản vận chuyển sàn thu thêm: ký nhận, bảo hiểm hàng, phí dịch vụ logistics, kiện quá khổ hoặc quá cân." },
+  // API: failed_delivery_subsidy / free_return_subsidy / shipping_fee_guarantee_reimbursement…
+  { key: "shipReimbursement", label: "Sàn bồi hoàn phí vận chuyển", group: "ship", hint: "Sàn trả lại tiền ship khi giao không thành công, khách trả hàng hoặc theo chương trình Bảo đảm phí vận chuyển." },
+  // Chốt chặn = shippingCost − Σ 8 cột trên (31/10/2026)
+  { key: "shipRest", label: "Khoản vận chuyển khác", group: "ship", hint: "Phần còn lại để các cột vận chuyển cộng đúng bằng Phí vận chuyển của người bán. Thường là khoản sàn trợ thêm hoặc thu thêm mà bản kê chưa đặt tên riêng; bằng 0 ở hầu hết đơn." },
+  // API: shipping_cost_amount
+  { key: "shippingCost", label: "Phí vận chuyển của người bán", group: "ship", always: true, hint: "Số ship shop thực chịu sau khi trừ phần khách trả và phần sàn trợ. Lấy đúng số sàn báo." },
+  // ---- Phí ----
+  // API: platform_commission_amount
+  { key: "feeCommission", label: "Phí hoa hồng của TikTok Shop", group: "fee", always: true, hint: "Tính theo tỷ lệ của ngành hàng trên giá sau giảm giá của người bán." },
+  // API: transaction_fee_amount (sàn chỉ trả số sau khi trừ phần GMV Max tiết kiệm)
+  { key: "feeTransaction", label: "Phí giao dịch", group: "fee", always: true, hint: "Phí xử lý thanh toán tính trên số tiền khách trả. Sàn chỉ báo số sau khi đã trừ phần tiết kiệm nhờ GMV Max, nên không tách được dòng “trước khi giảm”." },
+  // API: vn_fix_infrastructure_fee
+  { key: "feeOrderProcessing", label: "Phí xử lý đơn hàng", group: "fee", always: true, hint: "Khoản cố định cho mỗi đơn giao thành công (3.000đ, áp dụng từ 27/10/2025)." },
+  // API: sfp_service_fee_amount
+  { key: "feeSfp", label: "Phí dịch vụ Freeship Xtra", group: "fee", hint: "Phí tham gia chương trình Freeship Xtra." },
+  // API: voucher_xtra_service_fee_amount
+  { key: "feeVoucherXtra", label: "Phí dịch vụ Voucher Xtra", group: "fee", hint: "Phí tham gia chương trình Voucher Xtra." },
+  // API: flash_sales_service_fee_amount
+  { key: "feeFlashSale", label: "Phí dịch vụ Flash Sale", group: "fee", hint: "Phí tham gia Flash Sale." },
+  // API: affiliate_commission_amount_before_pit (ưu tiên) / affiliate_commission_amount
+  { key: "feeAffiliate", label: "Hoa hồng liên kết", group: "fee", hint: "Hoa hồng trả cho nhà sáng tạo (affiliate), tính trước thuế thu nhập cá nhân của họ." },
+  // API: affiliate_ads_commission_amount
+  { key: "feeAffiliateAds", label: "Hoa hồng liên kết Quảng cáo cửa hàng", group: "fee", hint: "Hoa hồng cho đơn đến từ quảng cáo cửa hàng gắn với nhà sáng tạo." },
+  // API: affiliate_partner_commission_amount
+  { key: "feeAffiliatePartner", label: "Hoa hồng của đối tác liên kết", group: "fee", hint: "Hoa hồng trả cho đối tác liên kết (đơn vị quản lý nhà sáng tạo)." },
+  // API: tap_shop_ads_commission (cột riêng từ 31/10/2026)
+  { key: "feeAffiliatePartnerAds", label: "Hoa hồng quảng cáo cửa hàng của Đối tác liên kết", group: "fee", hint: "Hoa hồng quảng cáo cửa hàng trả cho đối tác liên kết. Bản kê đồng bộ trước tháng 11/2026 còn gộp khoản này vào Phí khác." },
+  // API: gmv_max_ad_fee_amount + gmv_max_coupon_fee
+  { key: "feeGmvMax", label: "Chi phí GMV Max trừ trong đơn", group: "fee", hint: "Tiền quảng cáo GMV Max và voucher GMV Max mà sàn trừ thẳng vào đơn, không qua ví quảng cáo." },
+  // API: gmv_max_coupon_fee (cột con, không cộng thêm)
+  { key: "feeGmvMaxVoucher", label: "Trong đó: Voucher GMV Max", group: "fee", hint: "Phần voucher GMV Max đã nằm trong Chi phí GMV Max, tách ra để đối chiếu với dòng cùng tên trên Seller Center." },
+  // API: bonus_cashback_service_fee_amount
+  { key: "feeBonusCashback", label: "Phí dịch vụ Bonus Cashback", group: "fee", hint: "Phí tham gia chương trình Bonus Cashback, khoảng 1,5% doanh thu sau giảm giá." },
+  // API: shipping_fee_guarantee_service_fee
+  { key: "feeShipGuarantee", label: "Phí Bảo đảm phí vận chuyển", group: "fee", hint: "Khoản cố định mỗi đơn (1.620đ) của chương trình Bảo đảm phí vận chuyển." },
+  // Chốt chặn = fee_tax_amount − Σ cột phí đã đặt tên − thuế
+  { key: "feeOther", label: "Phí khác", group: "fee", hint: "Các khoản phí sàn trừ mà bản kê chưa đặt tên riêng, gom vào đây để tổng phí luôn đúng bằng số sàn báo. Đơn “sàn ước tính”: sàn báo tổng phí tạm cao hơn phần tách được, phần chênh nằm ở đây và biến mất khi quyết toán. Bản kê đồng bộ trước 29/10/2026 còn gộp Bonus Cashback và Bảo đảm phí vận chuyển; trước tháng 11/2026 còn gộp Hoa hồng quảng cáo cửa hàng của Đối tác liên kết." },
+  // ---- Thuế ----
+  // API: local_vat_amount / vat_amount
+  { key: "taxVat", label: "Thuế GTGT do TikTok Shop khấu trừ", group: "tax", always: true, hint: "1% doanh thu, sàn nộp thay hộ kinh doanh và cá nhân theo Nghị định 117/2025." },
+  // API: pit_amount (bản ước tính 202507 không có)
+  { key: "taxPit", label: "Thuế TNCN do TikTok Shop khấu trừ", group: "tax", always: true, hint: "0,5% doanh thu, sàn nộp thay. Đơn “sàn ước tính” chưa có số này; phần đó nằm trong Phí khác cho tới khi quyết toán." },
+  { key: "taxOther", label: "Thuế khác", group: "tax", hint: "Các loại thuế khác (không áp dụng ở Việt Nam), giữ để tổng luôn đúng." },
+  // ---- Điều chỉnh & kết quả ----
+  // API: adjustment_amount của các dòng gắn đơn
+  { key: "adjustmentAmount", label: "Khoản điều chỉnh", group: "result", hint: "Khoản sàn điều chỉnh thêm cho đơn (phạt, bồi thường, chênh phí ship…). Loại điều chỉnh ghi ở dòng nhỏ bên dưới." },
+  // API: settlement_amount
+  { key: "settlementAmount", label: "Tổng số tiền quyết toán", group: "result", always: true, hint: "Tiền TikTok trả về ví cho đơn này. Đơn chưa quyết toán là số sàn ước tính." },
   { key: "costSnapshot", label: "Giá vốn sản phẩm", group: "result", always: true },
-  { key: "profit", label: "LỢI NHUẬN THỰC TẾ", group: "result", always: true, hint: "Số tiền quyết toán − Giá vốn." },
+  { key: "profit", label: "LỢI NHUẬN THỰC TẾ", group: "result", always: true, hint: "Tổng số tiền quyết toán trừ Giá vốn sản phẩm." },
 ];
 

@@ -2458,6 +2458,8 @@ model TiktokOrderSettlement {
   shipReturn           Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển trả hàng thực tế (âm)
   shipOther            Decimal @default(0) @db.Decimal(12, 2) /// Phụ phí logistics khác (ký nhận, bảo hiểm…)
   shipReimbursement    Decimal @default(0) @db.Decimal(12, 2) /// Sàn bồi hoàn ship (giao thất bại, trả hàng…)
+  /// Khoản vận chuyển khác = shippingCost − Σ 8 cột ship đã đặt tên (chốt chặn nhóm ship, 31/10/2026) — phần sàn trợ/thu thêm chưa đặt tên.
+  shipRest             Decimal @default(0) @db.Decimal(12, 2)
   shippingCost         Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển của nhà bán hàng (ròng)
 
   // ===== PHÍ (fee_tax_breakdown.fee) — tên theo TikTok Shop VN =====
@@ -2469,8 +2471,12 @@ model TiktokOrderSettlement {
   feeFlashSale        Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Flash Sale
   feeAffiliate        Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng affiliate
   feeAffiliateAds     Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng quảng cáo affiliate
-  feeAffiliatePartner Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng cho đối tác affiliate
-  feeGmvMax           Decimal @default(0) @db.Decimal(12, 2) /// Nạp tiền quảng cáo từ đơn hàng (GMV Max)
+  feeAffiliatePartner Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng của đối tác liên kết
+  /// Hoa hồng quảng cáo cửa hàng của Đối tác liên kết (tap_shop_ads_commission) — cột riêng từ 31/10/2026, trước đó nằm trong feeOther.
+  feeAffiliatePartnerAds Decimal @default(0) @db.Decimal(12, 2)
+  feeGmvMax           Decimal @default(0) @db.Decimal(12, 2) /// Chi phí GMV Max trừ trong đơn (gmv_max_ad_fee_amount + gmv_max_coupon_fee)
+  /// Trong đó: Voucher GMV Max (gmv_max_coupon_fee) — cột con của feeGmvMax để đối chiếu Seller Center, KHÔNG cộng thêm vào tổng.
+  feeGmvMaxVoucher    Decimal @default(0) @db.Decimal(12, 2)
   /// Phí dịch vụ Bonus Cashback (bonus_cashback_service_fee_amount, ~1,5 % doanh thu sau CK) — thấy trên prod từ 10/2026.
   feeBonusCashback    Decimal @default(0) @db.Decimal(12, 2)
   /// Phí Bảo đảm phí vận chuyển (shipping_fee_guarantee_service_fee, 1.620đ/đơn) — thấy trên prod từ 10/2026.

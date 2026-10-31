@@ -99,10 +99,86 @@ describe("mapTiktokBreakdownToSettlement — dòng ORDER 202501", () => {
     const named =
       detail.feeCommission + detail.feeTransaction + detail.feeOrderProcessing +
       detail.feeSfp + detail.feeVoucherXtra + detail.feeFlashSale + detail.feeAffiliate +
-      detail.feeAffiliateAds + detail.feeAffiliatePartner + detail.feeGmvMax +
+      detail.feeAffiliateAds + detail.feeAffiliatePartner + detail.feeAffiliatePartnerAds + detail.feeGmvMax +
       detail.feeBonusCashback + detail.feeShipGuarantee + detail.feeOther +
       detail.taxVat + detail.taxPit + detail.taxOther;
     expect(named).toBe(-96000);
+    // Nhóm ship: 8 cột đã đặt tên cộng đúng bằng shippingCost → Khoản vận chuyển khác = 0
+    expect(detail.shipRest).toBe(0);
+    expect(detail.feeAffiliatePartnerAds).toBe(0);
+    expect(detail.feeGmvMaxVoucher).toBe(0);
+  });
+
+  it("31/10/2026 — bảng Báo cáo kinh doanh khách gửi: hoa hồng QC cửa hàng của Đối tác liên kết có cột riêng, Voucher GMV Max là cột con, Khoản vận chuyển khác chốt chặn", () => {
+    const line: TikTokTxBreakdown = {
+      type: "ORDER",
+      order_id: "586700000000000031",
+      revenue_amount: "500000",
+      shipping_cost_amount: "-10600", // = Σ khoá cấp 1: −40.000 + 15.000 + 14.400
+      fee_tax_amount: "-61500",
+      settlement_amount: "427900",
+      revenue_breakdown: { subtotal_before_discount_amount: "500000" },
+      shipping_cost_breakdown: {
+        actual_shipping_fee_amount: "-40000",
+        customer_paid_shipping_fee_amount: "15000",
+        shipping_fee_discount_amount: "14400", // tổng sàn trợ, gồm cả khoá con chưa có cột
+        supplementary_component: {
+          platform_shipping_fee_discount_amount: "10000",
+          shipping_fee_subsidy_amount: "3000",
+          return_refund_subsidy_amount: "1400", // "Trợ cấp trả hàng và hoàn tiền" — chưa có cột riêng
+        },
+      },
+      fee_tax_breakdown: {
+        fee: {
+          platform_commission_amount: "-20000",
+          transaction_fee_amount: "-30000",
+          tap_shop_ads_commission: "-1500",
+          affiliate_partner_commission_amount: "-2000",
+          gmv_max_ad_fee_amount: "-3000",
+          gmv_max_coupon_fee: "-5000",
+        },
+        tax: {},
+      },
+    };
+    const { detail, order } = mapTiktokBreakdownToSettlement([line]);
+    expect(detail.feeAffiliatePartnerAds).toBe(-1500);
+    expect(detail.feeAffiliatePartner).toBe(-2000);
+    expect(detail.feeOther).toBe(0); // không còn rơi vào Phí khác
+    expect(detail.feeGmvMax).toBe(-8000); // quảng cáo + voucher, giữ nguyên định nghĩa cũ
+    expect(detail.feeGmvMaxVoucher).toBe(-5000); // cột con, không cộng thêm vào Σ phí
+    const all =
+      detail.feeCommission + detail.feeTransaction + detail.feeOrderProcessing + detail.feeSfp +
+      detail.feeVoucherXtra + detail.feeFlashSale + detail.feeAffiliate + detail.feeAffiliateAds +
+      detail.feeAffiliatePartner + detail.feeAffiliatePartnerAds + detail.feeGmvMax +
+      detail.feeBonusCashback + detail.feeShipGuarantee + detail.feeOther +
+      detail.taxVat + detail.taxPit + detail.taxOther;
+    expect(all).toBe(-61500);
+    // Ship: 8 cột đặt tên = −12.000, sàn ghi −10.600 → phần dư +1.400 (đúng khoá con chưa đọc)
+    expect(detail.shipRest).toBe(1400);
+    const shipAll =
+      detail.shipActual + detail.shipCustomerPaid + detail.shipPlatformDiscount + detail.shipSubsidy +
+      detail.shipSellerDiscount + detail.shipReturn + detail.shipOther + detail.shipReimbursement + detail.shipRest;
+    expect(shipAll).toBe(detail.shippingCost);
+    // Cột gộp: hoa hồng QC cửa hàng của đối tác vào nhóm affiliate; GMV Max vẫn phí dịch vụ; ship ròng không đổi
+    expect(order.affiliateFee).toBe(2000 + 1500);
+    expect(order.serviceFee).toBe(8000);
+    expect(order.shippingFeeDiff).toBe(10600);
+    expect(order.actualPayout).toBe(427900);
+
+    // Sàn không trả tổng shipping_cost_amount → Khoản vận chuyển khác = các khoá cấp 1 chưa đặt tên
+    const noTotal: TikTokTxBreakdown = {
+      type: "ORDER",
+      order_id: "586700000000000032",
+      shipping_cost_breakdown: {
+        actual_shipping_fee_amount: "-20000",
+        some_new_shipping_fee: "-700",
+        supplementary_component: { platform_shipping_fee_discount_amount: "20000" },
+      },
+    };
+    const r2 = mapTiktokBreakdownToSettlement([noTotal]);
+    expect(r2.detail.shipRest).toBe(-700);
+    expect(r2.detail.shipActual).toBe(-20000);
+    expect(r2.detail.shipPlatformDiscount).toBe(20000);
   });
 
   it("đơn prod 586613690914604995 (29/10/2026): Bonus Cashback + Bảo đảm phí VC có cột riêng, Phí khác về 0", () => {
@@ -138,7 +214,8 @@ describe("mapTiktokBreakdownToSettlement — dòng ORDER 202501", () => {
     const all =
       detail.feeCommission + detail.feeTransaction + detail.feeOrderProcessing + detail.feeSfp +
       detail.feeVoucherXtra + detail.feeFlashSale + detail.feeAffiliate + detail.feeAffiliateAds +
-      detail.feeAffiliatePartner + detail.feeGmvMax + detail.feeBonusCashback + detail.feeShipGuarantee +
+      detail.feeAffiliatePartner + detail.feeAffiliatePartnerAds + detail.feeGmvMax +
+      detail.feeBonusCashback + detail.feeShipGuarantee +
       detail.feeOther + detail.taxVat + detail.taxPit + detail.taxOther;
     expect(all).toBe(detail.feeTaxAmount);
     // Cột gộp: hai phí mới là PHÍ DỊCH VỤ của sàn (serviceFee), cùng nhóm Voucher Xtra

@@ -280,10 +280,10 @@ export function TiktokProfitTable({
       </table>
     </div>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
-        Tên cột đúng theo TikTok Shop; số lấy từ <b>bản kê TikTok</b> (Finance
-        API 202501, đồng bộ mỗi giờ). Đơn chờ đối soát hiện <b>số ước tính của
-        chính sàn</b> (Get Unsettled Transactions), chữ nghiêng — không tự ước
-        %. Cột bằng 0 suốt kỳ đang xem tự ẩn; xuất Excel vẫn đủ mọi cột.
+        Tên cột đúng theo Báo cáo kinh doanh của TikTok Shop; số lấy từ{" "}
+        <b>bản kê TikTok</b>, đồng bộ mỗi giờ. Đơn chờ đối soát hiện <b>số ước
+        tính của chính sàn</b>, chữ nghiêng — Hubsell không tự ước %. Cột bằng 0
+        suốt kỳ đang xem tự ẩn; xuất Excel vẫn đủ mọi cột.
       </p>
     </div>
   );

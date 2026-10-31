@@ -90,8 +90,9 @@ export function orderPaymentDetail(o: PaymentOrder): OrderPaymentDetail {
             { label: "Trợ cấp phí vận chuyển", amount: n(t.shipSubsidy) },
             { label: "Nhà bán hàng chiết khấu", amount: n(t.shipSellerDiscount) },
             { label: "Phí vận chuyển trả hàng", amount: n(t.shipReturn) },
-            { label: "Phụ phí logistics khác", amount: n(t.shipOther) },
+            { label: "Phụ phí vận chuyển", amount: n(t.shipOther) },
             { label: "Sàn bồi hoàn phí vận chuyển", amount: n(t.shipReimbursement) },
+            { label: "Khoản vận chuyển khác", amount: n(t.shipRest) },
           ],
           // Các dòng là bóc tách tham chiếu; số shop thực chịu là shippingCost.
           { noTotal: true }
@@ -104,10 +105,15 @@ export function orderPaymentDetail(o: PaymentOrder): OrderPaymentDetail {
           { label: "Phí Freeship Xtra", amount: n(t.feeSfp) },
           { label: "Phí Voucher Xtra", amount: n(t.feeVoucherXtra) },
           { label: "Phí Flash Sale", amount: n(t.feeFlashSale) },
-          { label: "Hoa hồng affiliate", amount: n(t.feeAffiliate) },
-          { label: "Hoa hồng quảng cáo affiliate", amount: n(t.feeAffiliateAds) },
-          { label: "Hoa hồng đối tác affiliate", amount: n(t.feeAffiliatePartner) },
-          { label: "Nạp quảng cáo từ đơn (GMV Max)", amount: n(t.feeGmvMax) },
+          // Tên theo Báo cáo kinh doanh Seller Center (31/10/2026). feeGmvMaxVoucher là
+          // cột con của feeGmvMax → KHÔNG liệt kê kẻo cộng đôi vào tổng nhóm.
+          { label: "Hoa hồng liên kết", amount: n(t.feeAffiliate) },
+          { label: "Hoa hồng liên kết Quảng cáo cửa hàng", amount: n(t.feeAffiliateAds) },
+          { label: "Hoa hồng của đối tác liên kết", amount: n(t.feeAffiliatePartner) },
+          { label: "Hoa hồng quảng cáo cửa hàng của Đối tác liên kết", amount: n(t.feeAffiliatePartnerAds) },
+          { label: "Chi phí GMV Max trừ trong đơn", amount: n(t.feeGmvMax) },
+          { label: "Phí dịch vụ Bonus Cashback", amount: n(t.feeBonusCashback) },
+          { label: "Phí Bảo đảm phí vận chuyển", amount: n(t.feeShipGuarantee) },
           { label: "Phí khác", amount: n(t.feeOther) },
         ]),
         group("Thuế", [

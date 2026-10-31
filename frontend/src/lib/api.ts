@@ -794,6 +794,7 @@ export interface TiktokSettlementDetail {
   shipReturn: number; // Phí vận chuyển trả hàng thực tế
   shipOther: number;
   shipReimbursement: number;
+  shipRest: number; // Khoản vận chuyển khác (chốt chặn nhóm ship, từ 31/10/2026)
   shippingCost: number; // Phí vận chuyển của nhà bán hàng (ròng)
   // Phí
   feeCommission: number; // Phí hoa hồng nền tảng
@@ -804,8 +805,10 @@ export interface TiktokSettlementDetail {
   feeFlashSale: number; // Phí dịch vụ Flash Sale
   feeAffiliate: number; // Hoa hồng affiliate
   feeAffiliateAds: number; // Hoa hồng quảng cáo affiliate
-  feeAffiliatePartner: number; // Hoa hồng cho đối tác affiliate
-  feeGmvMax: number; // Nạp tiền quảng cáo từ đơn hàng (GMV Max)
+  feeAffiliatePartner: number; // Hoa hồng của đối tác liên kết
+  feeAffiliatePartnerAds: number; // Hoa hồng quảng cáo cửa hàng của Đối tác liên kết (từ 31/10/2026)
+  feeGmvMax: number; // Chi phí GMV Max trừ trong đơn (quảng cáo + voucher)
+  feeGmvMaxVoucher: number; // Trong đó: Voucher GMV Max (cột con, không cộng thêm)
   feeBonusCashback: number; // Phí dịch vụ Bonus Cashback (bonus_cashback_service_fee_amount)
   feeShipGuarantee: number; // Phí Bảo đảm phí vận chuyển (shipping_fee_guarantee_service_fee)
   feeOther: number; // Phí khác của nền tảng
