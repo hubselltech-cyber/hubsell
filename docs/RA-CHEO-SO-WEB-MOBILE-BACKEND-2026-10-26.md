@@ -30,7 +30,7 @@ Phần đơn hai bên vốn bằng nhau: `profitAfterTax = platformRevenue − c
 |---|---|---|
 | 1 | Khoản con cột Lợi nhuận in `Math.abs` mất dấu (ảnh khách) | prop `signed`: "− đỏ / + xanh" (commit 27de220d) |
 | 2 | Biên % trên thẻ cũng `Math.abs` (−25,7 % thành 25,7 %) | `BreakdownTile.pct` giữ dấu, chỉ pill ▲/▼ bỏ dấu |
-| 3 | Thẻ in gọn "107 k" nhưng khoản con in đủ 106.932 ₫ | thẻ in **đủ** `formatMoney` + `adjustsFontSizeToFit` 70 % |
+| 3 | Thẻ in gọn "107 k" nhưng khoản con in đủ 106.932 ₫ | thẻ in **đủ** `formatMoney` + `adjustsFontSizeToFit` 70 %. **⚠️ 01/11 anh chốt QUAY VỀ SỐ GỌN** (`compactMoney`, "15,5 tr") sau khi xem TestFlight: số đủ 8 chữ số trên thẻ "nhìn khá dối"; cùng cách viết với nhãn thác nước + thẻ Tổng quan/Quảng cáo (13/08). Khoản con khi bung thẻ vẫn đủ số. Vá OTA. |
 | 4 | % "Trợ giá sàn" (âm) mất dấu | % âm luôn có "−" ở mọi nhóm |
 | 5 | Kỳ trống 9 dòng "− 0 ₫ 0,0%" | ≥ 2 dòng 0 → gom "N khoản khác" như web |
 | 6 | Số đơn "(1234)" không nhóm nghìn, thiếu chữ đơn | "· 1.234 đơn" |

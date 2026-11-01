@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import { formatMoney } from "@/lib/format";
+import { compactMoney, formatMoney } from "@/lib/format";
 import { CARD_SHADOW, ICON_TINT, TABULAR, type IconTint } from "@/theme/tokens";
 
 /**
@@ -98,17 +98,18 @@ export function BreakdownTile({
       <Text className="mt-2 text-[11px] font-medium text-slate-500 dark:text-slate-400" numberOfLines={2}>
         {title}
       </Text>
-      {/* SỐ ĐỦ như web (106.932 ₫), không viết gọn "107 k": khoản con bên dưới
-          và dòng chốt thác nước đều in đủ, thẻ làm tròn thì khách cộng không ra
-          (ảnh khách 26/10). Số 9 chữ số trên thẻ 150 px → tự co chữ tới 70 %. */}
+      {/* SỐ GỌN "15,5 tr" (anh chốt lại 01/11 sau khi xem TestFlight: số đủ
+          15.527.058 ₫ trên thẻ 150 px "nhìn khá dối"; cùng cách viết với nhãn
+          thác nước ngay dưới và thẻ Tổng quan/Quảng cáo chốt 13/08). 26/10 từng
+          đổi sang số đủ vì khoản con in đủ, thẻ làm tròn thì khách cộng không
+          ra — nay chấp nhận: bung thẻ là thấy khoản con đủ số; accessibility
+          vẫn đọc số đủ. */}
       <Text
         className={`mt-1 text-[20px] font-bold ${valueClass}`}
         style={TABULAR}
         numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
       >
-        {formatMoney(total)}
+        {compactMoney(total)}
       </Text>
       {subtitle ? (
         <Text className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
