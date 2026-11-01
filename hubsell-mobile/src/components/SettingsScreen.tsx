@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import Constants from "expo-constants";
+import * as Updates from "expo-updates";
 import { useAuth } from "../auth/AuthContext";
 import { useThemePref, type ThemePref } from "../theme/ThemeContext";
 import { useBiometricLock } from "../auth/BiometricGate";
@@ -50,6 +51,18 @@ const ABOUT_LINKS: { key: string; label: string; hint: string; url: string; icon
 ];
 
 const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
+/** Nhãn bản OTA (EAS Update) đang chạy — chỉ có khi app đã nhận cập nhật, không phải bundle gốc của bản kho. */
+function otaLabel(): string | null {
+  try {
+    if (Updates.isEmbeddedLaunch || !(Updates.createdAt instanceof Date)) return null;
+    const d = Updates.createdAt;
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `cập nhật ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch {
+    return null;
+  }
+}
+const OTA_LABEL = otaLabel();
 
 const THEME_OPTIONS: { key: ThemePref; label: string }[] = [
   { key: "light", label: "Sáng" },
@@ -244,6 +257,7 @@ export function SettingsScreen() {
 
         <Text className="mt-6 text-center text-[11px] text-slate-400">
           Hubsell Mobile · v{APP_VERSION}
+          {OTA_LABEL ? ` · ${OTA_LABEL}` : ""}
         </Text>
       </ScrollView>
     </View>
