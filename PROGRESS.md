@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 01/11 (trưa) — Anh: tab Tài chính trên TestFlight mở mất 15–20 giây → gốc = app CHỜ bước kéo ví từ sàn mới hiện số; sửa mobile hiện số DB ngay + kéo ví ngầm như web, vá OTA (không đụng backend)
+
+- **Gốc (đọc mã, CHƯA đo prod vì em không có phiên đăng nhập):** `FinancePage.load` gom 4 việc vào một `Promise.all`: 2 × `/api/finance/analytics` + `/api/analytics` (đọc sổ cái, nhanh) + `POST /api/finance/cash-flow/refresh` → `GET /cash-flow`. Bước POST (`routes/finance.ts:856`) lặp **tuần tự từng gian ACTIVE có token**, mỗi gian gọi sàn: Shopee ≥ 6 call (30 ngày ví chia cửa sổ 7 ngày = 5 trang + `get_income_overview` + kiểm token), TikTok ≥ 4, Lazada ≥ 2; ~0,5–1,5 s/call từ Render SG → 2–3 gian Shopee = 15–20 giây, màn chỉ có vòng xoay dù lãi lỗ đã về. Thêm vào 26/10 khi rà chéo web ↔ mobile (docs RA-CHEO mục Tài chính #8) nhưng ghép nhầm vào luồng chặn màn; web (`cash-flow-table.tsx:164`) hiện số DB ngay rồi kéo ngầm.
+- **Lỗi kèm nặng hơn về lâu dài:** `useAutoRefresh` (60 giây / quay lại tab / mở app từ nền) gọi lại cả bước kéo ví → mỗi điện thoại mở màn Tài chính bắn N gian × 5–7 call lên sàn **mỗi phút** — trái luật "không gọi thêm sàn khi đã có dữ liệu" (29/10), ăn quota Shopee đang căng.
+- **Anh hỏi "khách thấy số chưa đúng ngay có thắc mắc không?"** → chỉ khối Tiền theo gian hàng lệ thuộc bước này; số DB là cron mỗi giờ (cũ ≤ 60'), ví chỉ nhảy khi sàn quyết toán/rút tiền vài lần/ngày; em đề xuất nhãn "Đang lấy số mới từ sàn… / Số sàn lúc hh:mm" (API đã trả `walletSyncedAt`) → **anh chốt KHÔNG cần nhãn vì khối ví bên dưới ít xem.**
+- **Sửa (chỉ mobile, `src/screens/FinancePage.tsx`):** `Promise.all` đọc `fetchCashFlow()` thẳng → hiện số ngay; `pullWalletInBackground(seq)` = `refreshCashFlow().catch → fetchCashFlow → setCashRows` nếu lượt còn mới nhất, lỗi giữ số cũ, không nhãn/không hộp lỗi, cờ `walletPulling` chặn chồng lượt; chỉ gọi khi `asRefresh !== "silent"` (mở màn, đổi kỳ/gian, kéo xuống) — nhịp nền chỉ đọc DB. Kéo xuống: vòng xoay tắt khi 4 call nhanh xong, ví thay số sau. `tsc` mobile sạch. Chú thích `api/finance.ts` ghi cảnh báo chậm; docs RA-CHEO #8 cập nhật.
+- **Chưa làm (để sau nếu anh muốn):** backend cho vòng `for` refresh chạy song song theo gian (cần deploy Render, tăng call đồng thời lên sàn) — nút Làm mới web và bước ngầm mobile đều nhanh hơn.
+- **Ghi:** PROGRESS (mục này) + docs RA-CHEO #8 + memory `hubsell-ra-cheo-so-web-mobile-2026-10-26` (mục 01/11). OTA publish kênh production runtime 1.4.1 — xem dòng dưới.
+
+---
 ## Phiên 01/11 (~11:00) — Khách CT BOOT (TikTok) nhập giá vốn nhầm rồi sửa đúng → anh bảo áp giá mới cho đơn cũ + tính lại ROI chiến dịch — ✅ ĐÃ VÁ SQL prod 4.089 dòng / 840 đơn, sổ cái tự tính lại trong < 1 phút (lần 4 cùng kiểu, theo luật "vá tay khi khách kêu" 26/10)
 
 - **Gian:** CT BOOT-Giầy Dép Da Cao Cấp, TikTok shop 7496083782963530257, channel `cmvqmm2pf0ohlif3r356ug44c`, chủ Ngô Văn Cường (ngovancuong0412199@gmail.com, +84986530159), nối 27/10; 841 đơn / 4.190 dòng từ 26/04, mọi dòng có id lá; 10 chiến dịch GMV Max (2 đang chạy: "chien dich 1" 30 ngày tiêu 6,1 tr / GMV 77,6 tr, "chiendich 2" 4,1 tr / 42,7 tr; mục tiêu ROAS 15,5).

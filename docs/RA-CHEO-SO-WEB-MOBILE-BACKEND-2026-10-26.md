@@ -35,7 +35,7 @@ Phần đơn hai bên vốn bằng nhau: `profitAfterTax = platformRevenue − c
 | 5 | Kỳ trống 9 dòng "− 0 ₫ 0,0%" | ≥ 2 dòng 0 → gom "N khoản khác" như web |
 | 6 | Số đơn "(1234)" không nhóm nghìn, thiếu chữ đơn | "· 1.234 đơn" |
 | 7 | Cột % cố định 44 px gãy dòng với "−6689,4%" | `min-w-[44px] shrink-0` |
-| 8 | Bảng Tiền theo gian hàng không kéo số mới từ sàn (web có) | `refreshCashFlow()` POST rồi mới GET |
+| 8 | Bảng Tiền theo gian hàng không kéo số mới từ sàn (web có) | `refreshCashFlow()` POST rồi mới GET. **⚠️ 01/11 sửa lại:** bước POST nằm trong `Promise.all` chặn cả màn → TestFlight mở Tài chính 15–20 giây (backend kéo tuần tự N gian × 5–7 call sàn). Nay GET số DB hiện ngay, POST + GET lại chạy NGẦM như web (`pullWalletInBackground`), chỉ ở lượt người dùng chủ động; nhịp 60"/focus/foreground chỉ đọc DB. Anh chốt KHÔNG nhãn "đang cập nhật" (khối ví ít xem). Vá OTA. |
 | 9 | `compactMoney` 999.950.000 → "1000 tr"; dấu "-" hyphen khác "−" của bậc | làm tròn trước rồi chọn đơn vị; dấu U+2212 |
 | 10 | Chú thích thiếu vốn không nói % là biên | thêm câu "% mỗi dòng là biên lợi nhuận…" |
 

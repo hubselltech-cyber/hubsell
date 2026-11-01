@@ -58,10 +58,15 @@ export function fetchCashFlow() {
 }
 
 /**
- * Kéo số dư ví / tiền đang giao MỚI NHẤT từ sàn trước khi đọc bảng — web mở
+ * Kéo số dư ví / tiền đang giao MỚI NHẤT từ sàn rồi đọc lại bảng — web mở
  * bảng Tiền theo gian hàng là gọi bước này (cash-flow-table refreshCashFlow);
  * app trước 26/10/2026 chỉ đọc số cron gần nhất nên hai bên lệch thật khi so
  * cùng lúc. Lỗi từng gian backend gom lại, không ném — nơi gọi vẫn catch cho chắc.
+ *
+ * ⚠️ CHẬM: backend lặp TUẦN TỰ từng gian ACTIVE, mỗi gian 5–7 call sàn (Shopee
+ * 30 ngày ví = 5 cửa sổ 7 ngày + Chưa thanh toán) → 2–3 gian là 15–20 giây.
+ * Chỉ gọi NGẦM sau khi màn đã hiện số DB (FinancePage.pullWalletInBackground),
+ * KHÔNG đặt vào Promise.all chặn màn, KHÔNG gọi theo nhịp tự làm mới 60 giây.
  */
 export function refreshCashFlow() {
   return api<unknown>("/api/finance/cash-flow/refresh", { method: "POST" });

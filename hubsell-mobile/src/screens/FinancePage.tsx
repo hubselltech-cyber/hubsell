@@ -234,6 +234,32 @@ export function FinancePage() {
   const [planLocked, setPlanLocked] = useState<string | null>(null);
   // Số thứ tự lượt tải — đổi kỳ/sàn liên tiếp thì chỉ lượt MỚI NHẤT được ghi.
   const reqSeq = useRef(0);
+  // Đang có một lượt kéo ví sàn chạy nền → không chồng lượt thứ hai (mỗi lượt
+  // là N gian × 5–7 call sàn ở backend, tuần tự, 10–20 giây).
+  const walletPulling = useRef(false);
+
+  /**
+   * Kéo số ví / đang giao MỚI NHẤT từ sàn rồi đọc lại bảng — chạy NGẦM như web
+   * mở bảng Tiền theo gian hàng (cash-flow-table.tsx): màn hình đã hiện số cron
+   * gần nhất (≤ 60') từ trước, xong thì thay số, lỗi thì giữ số cũ, không nhãn,
+   * không hộp lỗi (anh chốt 01/11: khối ví ít xem, không cần nhãn giải thích).
+   * Trước 01/11 bước này nằm trong Promise.all chặn cả màn → TestFlight mở
+   * Tài chính mất 15–20 giây dù lãi lỗ đã về từ lâu.
+   */
+  const pullWalletInBackground = useCallback((seq: number) => {
+    if (walletPulling.current) return;
+    walletPulling.current = true;
+    refreshCashFlow()
+      .catch(() => null)
+      .then(() => fetchCashFlow())
+      .then((cash) => {
+        if (seq === reqSeq.current) setCashRows(cash.rows);
+      })
+      .catch(() => {})
+      .finally(() => {
+        walletPulling.current = false;
+      });
+  }, []);
 
   // asRefresh: true = kéo xuống (vòng xoay) · "silent" = tải nền giữ số cũ.
   // DS gian hàng cho ô lọc — đổi rất hiếm, nạp 1 lần.
@@ -258,11 +284,9 @@ export function FinancePage() {
           fetchAnalytics(prev.from, prev.to, ch).catch(() => null),
           // Thác nước + cơ cấu chi phí = Tổng quan web
           fetchOverview(from, to, ch),
-          // Kéo số ví/đang giao mới nhất từ sàn rồi mới đọc bảng — như web mở bảng
-          // Tiền theo gian hàng; kéo lỗi vẫn đọc số cron gần nhất.
-          refreshCashFlow()
-            .catch(() => null)
-            .then(() => fetchCashFlow()),
+          // Bảng Tiền theo gian hàng: đọc số cron gần nhất trong DB — hiện ngay,
+          // KHÔNG chờ sàn; kéo số mới từ sàn chạy nền bên dưới.
+          fetchCashFlow(),
         ]);
         if (seq !== reqSeq.current) return; // đã có lượt tải mới hơn
         setBreakdown(ana.breakdown);
@@ -270,6 +294,11 @@ export function FinancePage() {
         setOverview(ov);
         setCashRows(cash.rows);
         setPlanLocked(null);
+        // Chỉ lượt NGƯỜI DÙNG chủ động (mở màn, đổi kỳ/gian, kéo xuống) mới hỏi
+        // sàn; nhịp nền 60 giây / quay lại tab / mở app từ nền chỉ đọc lại DB —
+        // không bắn N gian × 5–7 call lên sàn mỗi phút (luật "không gọi thêm sàn
+        // khi đã có dữ liệu"; cron ví mỗi giờ vẫn đuổi kịp).
+        if (asRefresh !== "silent") pullWalletInBackground(seq);
       } catch (err) {
         if (seq !== reqSeq.current) return;
         if (isPlanLockedError(err)) {
@@ -288,7 +317,7 @@ export function FinancePage() {
         }
       }
     },
-    []
+    [pullWalletInBackground]
   );
 
   useEffect(() => {
