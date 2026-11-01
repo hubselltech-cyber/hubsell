@@ -26,6 +26,7 @@
 
 ## Đơn hàng, kho, vận hành
 - [CHUAN-BI-HANG-THEO-ME.md](CHUAN-BI-HANG-THEO-ME.md) — chuẩn bị hàng theo mẻ, chạy nền
+- [DONG-GOI-BAN-GIAO.md](DONG-GOI-BAN-GIAO.md) — 01/11/2026 trạng thái nội bộ "Đã đóng gói" (quét lại kiện sau in, chặn đơn hủy) + Biên bản bàn giao cho ship (mỗi hãng một tờ A4 có mã vạch, `handover_sheets`), trang `/orders/packing`, API `/api/orders/packing/*`; mobile nối sau
 - [DON-HOAN-VA-SAO-KE.md](DON-HOAN-VA-SAO-KE.md) — đơn hoàn và đối soát sao kê; mục 8 (29/10/2026) khảo sát kho quét kiện về báo "Không hoàn": kiện giao thất bại → sàn hủy không vào trục hoàn; lát A (hủy sau giao = Chờ hàng về, 0 call thêm) + C (màn quét hỏi sàn đúng đơn) GIỮ; lát B (webhook type 12 hỏi returns/search) ĐÃ GỠ — anh chốt chậm 30' được, không gọi thêm sàn
 - [VI-TRI-CHUA-HANG.md](VI-TRI-CHUA-HANG.md) — vị trí kho
 - [DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md](DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md) — SKU phân loại con trùng mã

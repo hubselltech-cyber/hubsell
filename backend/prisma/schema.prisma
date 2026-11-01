@@ -1568,6 +1568,18 @@ model Order {
   // cùng soát đơn thì người sau nhìn vào biết ngay phiếu đã được in, khỏi in
   // lại và gói lại đơn người khác đang làm.
   labelPrintedAt      DateTime?
+  /// ĐÃ ĐÓNG GÓI (01/11/2026, khách dùng Ship Xanh đề nghị): mốc seller QUÉT lại
+  /// kiện sau khi in phiếu + gói xong. Bước NỘI BỘ, không gọi sàn, không đổi
+  /// shippingStatus (sàn tự nhảy Đang giao khi shipper quét). Mục đích: biết
+  /// đơn nào đã gói, và lúc quét bắt được đơn ĐÃ HỦY để bỏ lại, không đưa ship.
+  /// Null = chưa quét (seller không dùng bước này thì luôn null).
+  packingDoneAt       DateTime?
+  /// Biên bản bàn giao (HandoverSheet) đã liệt kê đơn này — null = đã đóng gói
+  /// nhưng chưa lập biên bản (hàng còn nằm ở shop chờ ship). Mỗi đơn ở đúng
+  /// MỘT biên bản; lập biên bản = updateMany WHERE handoverSheetId IS NULL nên
+  /// hai nhân viên bấm cùng lúc không in trùng đơn. Chỉ mục một phần
+  /// "Order_packing_pending_handover_idx" (migration 20261101) cho tập chờ.
+  handoverSheetId     String?
   /// Mã KIỆN phía sàn sau khi sắp xếp vận chuyển (Lazada package_id "FP...",
   /// TikTok package id). Lazada cần mã này để RTS + tải vận đơn; Shopee dùng
   /// order_sn nên để null. Không có = chưa sắp xếp qua Hubsell (sẽ hỏi lại sàn).
@@ -4194,6 +4206,33 @@ model FulfillmentBatch {
   //   fulfillment_batches_running_owner_idx (ownerId, updatedAt) WHERE status = 'RUNNING'
   @@index([ownerId, createdAt])
   @@map("fulfillment_batches")
+}
+
+/// BIÊN BẢN BÀN GIAO ĐƠN HÀNG cho nhân viên giao nhận (01/11/2026). Lập từ các
+/// đơn ĐÃ ĐÓNG GÓI (Order.packingDoneAt) chưa nằm ở biên bản nào, MỖI HÃNG VẬN
+/// CHUYỂN MỘT BIÊN BẢN (mỗi shipper ký tờ của hãng mình). PDF A4 có mã vạch
+/// Code 128 cạnh từng đơn để bưu cục đối chiếu. `orders` là ẢNH CHỤP lúc lập
+/// (mã đơn, vận đơn, khách…) để in lại y nguyên dù đơn đổi sau đó. Không khóa
+/// ngoại tới Order để không lấy khóa bảng nóng.
+model HandoverSheet {
+  id           String   @id @default(cuid())
+  ownerId      String
+  /// Số biên bản in trên tờ: BG-yyMMdd-XXXX (4 ký tự cuối id, không đếm tuần tự
+  /// để hai người lập cùng lúc không đụng số).
+  code         String
+  carrier      Carrier?
+  /// Nhãn hãng in trên tờ ("SPX Express", "Chưa rõ hãng").
+  carrierLabel String
+  orderCount   Int
+  /// [{orderId, orderCode, trackingCode, channelName, shopName, customerName, customerPhone, isExpress}]
+  orders       Json     @default("[]")
+  /// Nhân viên bấm lập (User.id) — in "Người lập" trên tờ.
+  createdById  String?
+  createdAt    DateTime @default(now())
+
+  @@unique([ownerId, code])
+  @@index([ownerId, createdAt])
+  @@map("handover_sheets")
 }
 
 // ============================================================

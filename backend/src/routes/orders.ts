@@ -105,11 +105,17 @@ function ordersWhere(req: AuthRequest): Prisma.OrderWhereInput {
       // "EXPRESS" = nhóm HỎA TỐC mọi sàn (anh Trung 08/09): lọc theo tên hãng
       // nguyên văn qua expressShippingWhere — cùng luật với badge ⚡ và ghim đầu bảng.
       ...(carrier === "EXPRESS" ? expressShippingWhere() : isCarrier(carrier) ? { carrier } : {}),
+      // 01/11/2026 thêm nấc "packed" (Đã đóng gói — quét sau in): "yes" nay là
+      // ĐÃ IN NHƯNG CHƯA ĐÓNG GÓI để ba chip con nối nhau thành dây chuyền
+      // Chưa in → Đã in → Đã đóng gói; seller không dùng bước quét thì
+      // packingDoneAt luôn null, chip "Đã in" vẫn như trước.
       ...(printed === "yes"
-        ? { labelPrintedAt: { not: null } }
+        ? { labelPrintedAt: { not: null }, packingDoneAt: null }
         : printed === "no"
           ? { labelPrintedAt: null }
-          : {}),
+          : printed === "packed"
+            ? { packingDoneAt: { not: null } }
+            : {}),
       // Đơn cũ chưa ghi chi tiết dòng hàng có itemCount = 0, cố ý KHÔNG rơi vào
       // nhóm nào — không biết đơn gồm mấy mặt hàng thì đừng đoán bừa cho kho.
       ...(orderType === "single"
@@ -232,7 +238,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       return [...pinned, ...rest];
     };
 
-    const [total, items, cancelRequestedCount, statusCounts, notPrinted, alreadyPrinted] =
+    const [total, items, cancelRequestedCount, statusCounts, notPrinted, alreadyPrinted, packed] =
       await Promise.all([
       prisma.order.count({ where }),
       fetchPage(),
@@ -247,14 +253,16 @@ router.get("/", async (req: AuthRequest, res, next) => {
       prisma.order.groupBy({
         by: ["shippingStatus"],
         _count: { _all: true },
-        where: { ...where, shippingStatus: undefined, labelPrintedAt: undefined },
+        where: { ...where, shippingStatus: undefined, labelPrintedAt: undefined, packingDoneAt: undefined },
       }),
-      // Riêng nhóm "Đã xử lý" cần tách thêm chưa in / đã in cho 2 bộ lọc con
+      // Riêng nhóm "Đã xử lý" cần tách chưa in / đã in (chưa gói) / đã đóng gói
+      // cho 3 bộ lọc con — mỗi đếm bỏ điều kiện in/gói đang lọc để số không về 0.
       prisma.order.count({
         where: {
           ...where,
           shippingStatus: ShippingStatus.PROCESSED,
           labelPrintedAt: null,
+          packingDoneAt: undefined,
         },
       }),
       prisma.order.count({
@@ -262,6 +270,15 @@ router.get("/", async (req: AuthRequest, res, next) => {
           ...where,
           shippingStatus: ShippingStatus.PROCESSED,
           labelPrintedAt: { not: null },
+          packingDoneAt: null,
+        },
+      }),
+      prisma.order.count({
+        where: {
+          ...where,
+          shippingStatus: ShippingStatus.PROCESSED,
+          labelPrintedAt: undefined,
+          packingDoneAt: { not: null },
         },
       }),
     ]);
@@ -273,6 +290,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
     counts.PROCESSED_NOT_PRINTED = notPrinted;
     counts.PROCESSED_PRINTED = alreadyPrinted;
+    counts.PROCESSED_PACKED = packed;
     counts.CANCEL_REQUESTED = cancelRequestedCount;
 
     res.json({

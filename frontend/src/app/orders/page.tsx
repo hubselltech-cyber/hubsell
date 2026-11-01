@@ -16,6 +16,7 @@ import {
   PackageOpen,
   Pencil,
   Printer,
+  PackageCheck,
   ScanLine,
   Search,
   X,
@@ -47,6 +48,7 @@ import {
   channelFilterToQuery,
   decideCancelRequest,
   fetchOrders,
+  fetchHandoverSheetsPdf,
   getToken,
   updateOrderStatus,
   type Order,
@@ -55,6 +57,7 @@ import {
 import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { exportAllOrders } from "@/lib/excel";
+import { openPdfBlob } from "@/lib/print-labels";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
 import { isExpressShipping, isSameDayShipping } from "@/lib/shipping";
 import { CHANNEL_META } from "@/lib/channel-meta";
@@ -451,6 +454,16 @@ const TABS: { key: string; label: string; status: string; countKey: string }[] =
   },
 ];
 
+/** Mở lại PDF biên bản bàn giao của một đơn (nhãn "Đã bàn giao" trong bảng). */
+async function openHandoverSheet(sheetId: string) {
+  try {
+    const blob = await fetchHandoverSheetsPdf([sheetId]);
+    if (!openPdfBlob(blob)) toast.warning("Trình duyệt chặn tab mới — cho phép pop-up rồi bấm lại");
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : "Không mở được biên bản");
+  }
+}
+
 export default function OrdersPage() {
   const router = useRouter();
 
@@ -458,7 +471,7 @@ export default function OrdersPage() {
   const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("all");
   // Bộ lọc con chỉ dùng trong tab "Đã xử lý": "" = tất cả, "no" = chưa in phiếu
-  const [printedFilter, setPrintedFilter] = useState<"" | "no" | "yes">("");
+  const [printedFilter, setPrintedFilter] = useState<"" | "no" | "yes" | "packed">("");
   const [channelFilter, setChannelFilter] =
     useState<ChannelFilterValue>(ALL_CHANNELS);
   const [carrierFilter, setCarrierFilter] = useState("");
@@ -485,8 +498,14 @@ export default function OrdersPage() {
       setCancelReqFilter(true);
       params.delete("cancelRequested");
     }
+    // /orders?tab=processed — nút "Về Đơn hàng" từ trang Đóng gói (01/11/2026)
+    const tabParam = params.get("tab");
+    if (tabParam && TABS.some((t) => t.key === tabParam)) {
+      setTab(tabParam);
+      params.delete("tab");
+    }
     if (!q) {
-      if (cr === null) return;
+      if (cr === null && tabParam === null) return;
       const rest0 = params.toString();
       window.history.replaceState(null, "", `${window.location.pathname}${rest0 ? `?${rest0}` : ""}`);
       return;
@@ -694,8 +713,47 @@ export default function OrdersPage() {
                 meta={STATUS_META[o.shippingStatus]}
                 fallback={o.shippingStatus}
               />
+              {/* Đã đóng gói (quét sau in, 01/11/2026) — thay nhãn Đã in vì là bước sau */}
+              {o.packingDoneAt && o.shippingStatus !== "CANCELLED" && (
+                o.handoverSheetId ? (
+                  // Đã lên biên bản → bấm là mở lại đúng tờ PDF đó (in lại khi kẹt giấy)
+                  <button
+                    type="button"
+                    className={cn(
+                      TEXT_SUB,
+                      "mt-1 flex w-full items-center justify-center gap-1 text-emerald-700 underline-offset-2 hover:underline"
+                    )}
+                    title={`Đã đóng gói lúc ${formatDateTime(o.packingDoneAt)} · bấm để mở biên bản bàn giao`}
+                    onClick={() => openHandoverSheet(o.handoverSheetId!)}
+                  >
+                    <PackageCheck className="size-3 shrink-0" />
+                    Đã bàn giao
+                  </button>
+                ) : (
+                  <span
+                    className={cn(
+                      TEXT_SUB,
+                      "mt-1 flex items-center justify-center gap-1 text-emerald-700"
+                    )}
+                    title={`Đã đóng gói lúc ${formatDateTime(o.packingDoneAt)} · chưa lập biên bản bàn giao`}
+                  >
+                    <PackageCheck className="size-3 shrink-0" />
+                    Đã đóng gói
+                  </span>
+                )
+              )}
+              {/* Gói rồi mà sàn hủy sau đó → kiện đang nằm trong chồng hàng giao, phải lấy ra */}
+              {o.packingDoneAt && o.shippingStatus === "CANCELLED" && !o.handoverSheetId && (
+                <span
+                  className={cn(TEXT_SUB, "mt-1 flex items-center justify-center gap-1 font-medium text-rose-600")}
+                  title={`Đã đóng gói lúc ${formatDateTime(o.packingDoneAt)} rồi sàn mới hủy — lấy kiện ra khỏi chồng hàng giao`}
+                >
+                  <PackageCheck className="size-3 shrink-0" />
+                  Đã gói — lấy kiện ra
+                </span>
+              )}
               {/* Nhãn đã in phiếu — nhìn là biết đơn nào người khác đang gói */}
-              {o.labelPrintedAt && (
+              {o.labelPrintedAt && !o.packingDoneAt && (
                 <span
                   className={cn(
                     TEXT_SUB,
@@ -789,7 +847,7 @@ export default function OrdersPage() {
     apply: (ex: Record<string, unknown>) => {
       if (typeof ex.tab === "string") setTab(ex.tab);
       if (typeof ex.printedFilter === "string")
-        setPrintedFilter(ex.printedFilter as "" | "no" | "yes");
+        setPrintedFilter(ex.printedFilter as "" | "no" | "yes" | "packed");
       if (typeof ex.returnFilter === "string")
         setReturnFilter(ex.returnFilter as ReturnStatus | "");
       if (typeof ex.cancelReqFilter === "boolean") setCancelReqFilter(ex.cancelReqFilter);
@@ -891,6 +949,9 @@ export default function OrdersPage() {
                 { key: "", label: "Tất cả đã xử lý", countKey: null },
                 { key: "no", label: "Chưa in phiếu", countKey: "PROCESSED_NOT_PRINTED" },
                 { key: "yes", label: "Đã in phiếu", countKey: "PROCESSED_PRINTED" },
+                // 01/11/2026: bước nội bộ sau in — quét lại kiện đã gói (trang
+                // /orders/packing); "Đã in phiếu" nay là đã in CHƯA gói.
+                { key: "packed", label: "Đã đóng gói", countKey: "PROCESSED_PACKED" },
               ] as const
             ).map((f) => {
               const active = printedFilter === f.key;
@@ -918,6 +979,16 @@ export default function OrdersPage() {
                 </button>
               );
             })}
+            {/* Màn quét kiện đã gói + in biên bản bàn giao — trang riêng vì là
+                việc đứng quét liên tục bằng điện thoại / máy quét */}
+            <Link
+              href="/orders/packing"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50"
+              title="Quét lại kiện đã gói để đánh dấu Đã đóng gói (chặn đơn hủy) và in biên bản bàn giao cho ship"
+            >
+              <ScanLine className="size-4" />
+              Quét đóng gói · Biên bản bàn giao
+            </Link>
           </div>
         )}
 

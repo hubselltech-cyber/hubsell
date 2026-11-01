@@ -347,6 +347,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/admin/health", title: "Sức khỏe nền tảng" },
   { prefix: "/admin", title: "Điều hành Hubsell" },
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
+  { prefix: "/orders/packing", title: "Đóng gói & bàn giao" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   { prefix: "/products", title: "Hàng hóa" },
   { prefix: "/warehouse/sync", title: "Hàng hóa" }, // redirect về hub — tránh nháy tiêu đề lạ

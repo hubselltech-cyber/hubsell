@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, PackageCheck, Printer } from "lucide-react";
+import { ClipboardList, Loader2, PackageCheck, Printer } from "lucide-react";
 
 import { BulkBar } from "@/components/data-table/bulk-bar";
 import { Button } from "@/components/ui/button";
-import { ApiError, type Order } from "@/lib/api";
+import { ApiError, createHandoverSheets, type Order } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import {
   ArrangeShipmentDialog,
@@ -14,6 +14,7 @@ import {
   waitForLabelsReady,
 } from "@/components/orders/arrange-shipment-dialog";
 import { PrintOptionsDialog } from "@/components/orders/print-options";
+import { HandoverSheetsDialog, type CreatedSheet } from "@/components/orders/handover-sheets-dialog";
 
 /**
  * THANH XỬ LÝ HÀNG LOẠT
@@ -39,11 +40,36 @@ export function BulkActionBar({
   /** Gọi sau khi xử lý xong để trang tải lại danh sách */
   onDone: () => void;
 }) {
-  const [busy, setBusy] = React.useState<"print" | null>(null);
+  const [busy, setBusy] = React.useState<"print" | "handover" | null>(null);
   const [arrangeOpen, setArrangeOpen] = React.useState(false);
   const [printOpen, setPrintOpen] = React.useState(false);
+  const [sheets, setSheets] = React.useState<CreatedSheet[] | null>(null);
+  const [sheetsSkipped, setSheetsSkipped] = React.useState(0);
 
   const packable = selected.filter((o) => o.shippingStatus === "PENDING");
+  // Biên bản bàn giao (01/11/2026): chỉ đơn ĐÃ QUÉT ĐÓNG GÓI và chưa nằm ở biên
+  // bản nào; đơn hủy / chưa quét bị bỏ qua và báo số trong hộp kết quả.
+  const handoverable = selected.filter(
+    (o) =>
+      o.packingDoneAt &&
+      !o.handoverSheetId &&
+      (o.shippingStatus === "PROCESSED" || o.shippingStatus === "SHIPPING")
+  );
+
+  async function handleHandover() {
+    if (handoverable.length === 0) return;
+    setBusy("handover");
+    try {
+      const res = await createHandoverSheets(handoverable.map((o) => o.id));
+      setSheetsSkipped(selected.length - handoverable.length);
+      setSheets(res.sheets);
+      onDone(); // nhãn "Đã bàn giao" hiện ngay trên bảng
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không tạo được biên bản bàn giao");
+    } finally {
+      setBusy(null);
+    }
+  }
   // Vận đơn sàn chỉ có sau khi chuẩn bị; đơn Chờ xử lý vẫn in được phiếu nhặt
   const withLabel = selected.filter(
     (o) => o.shippingStatus === "PROCESSED" || o.shippingStatus === "SHIPPING"
@@ -153,7 +179,35 @@ export function BulkActionBar({
           In phiếu ({formatNumber(selected.length)})
           {reprinting.length > 0 && ` · ${formatNumber(reprinting.length)} in lại`}
         </Button>
+
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={handleHandover}
+          disabled={busy !== null || handoverable.length === 0}
+          title={
+            handoverable.length === 0
+              ? "Chỉ đơn đã quét Đã đóng gói (chưa bàn giao) mới lập được biên bản — lọc chip Đã đóng gói rồi tích"
+              : "Mỗi đơn vị vận chuyển một tờ A4 có mã vạch từng đơn để ship ký; mở hoặc tải PDF về in"
+          }
+        >
+          {busy === "handover" ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <ClipboardList className="size-4" />
+          )}
+          Tạo biên bản bàn giao ({formatNumber(handoverable.length)})
+        </Button>
       </BulkBar>
+
+      <HandoverSheetsDialog
+        sheets={sheets}
+        skipped={sheetsSkipped}
+        onClose={() => {
+          setSheets(null);
+          onClear();
+        }}
+      />
 
       <PrintOptionsDialog
         open={printOpen}

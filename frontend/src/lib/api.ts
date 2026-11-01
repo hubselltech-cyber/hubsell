@@ -528,6 +528,10 @@ export interface Order {
   packedAt: string | null;
   /** Mốc đã in phiếu giao hàng — null nghĩa là chưa in lần nào */
   labelPrintedAt: string | null;
+  /** ĐÃ ĐÓNG GÓI (01/11/2026) — mốc quét kiện sau khi in; bước nội bộ, không liên quan sàn */
+  packingDoneAt?: string | null;
+  /** Biên bản bàn giao đã liệt kê đơn — null = đã gói nhưng chưa bàn giao ship */
+  handoverSheetId?: string | null;
   /** Số dòng hàng của đơn (0 với đơn cũ chưa ghi chi tiết) */
   itemCount: number;
   returnStatus: ReturnStatus;
@@ -1685,8 +1689,8 @@ export function fetchOrders(params: {
   channel?: ChannelFilterQuery;
   carrier?: string;
   search?: string;
-  /** Bộ lọc con của tab "Đã xử lý": "yes" đã in phiếu, "no" chưa in */
-  printed?: "yes" | "no";
+  /** Bộ lọc con của tab "Đã xử lý": "no" chưa in · "yes" đã in chưa đóng gói · "packed" đã đóng gói */
+  printed?: "yes" | "no" | "packed";
   /** Loại đơn theo độ khó đóng gói: 1 dòng hàng hay nhiều dòng */
   orderType?: "single" | "multi";
   /** Lọc theo tình trạng hàng hoàn (dùng trong tab Hủy / Hoàn) */
@@ -2073,6 +2077,106 @@ export function markOrdersPrinted(orderIds: string[]) {
     method: "POST",
     body: JSON.stringify({ orderIds }),
   });
+}
+
+// ===== ĐÓNG GÓI & BÀN GIAO (01/11/2026) — bước nội bộ sau in phiếu, không gọi sàn =====
+
+export type PackingScanResult = "PACKED" | "ALREADY_PACKED" | "REJECTED";
+export type PackingRejectReason = "CANCELLED" | "NOT_CONFIRMED" | "DELIVERED" | "ON_HANDOVER_SHEET";
+export type PackingWarning = "CANCEL_REQUESTED" | "NOT_PRINTED" | "ALREADY_SHIPPING";
+
+/** Đơn rút gọn trả về từ màn quét / danh sách chờ bàn giao (không kèm dòng hàng). */
+export interface PackingOrder {
+  id: string;
+  orderCode: string;
+  customerName: string;
+  customerPhone: string | null;
+  totalAmount: string | number;
+  paymentStatus: string;
+  shippingStatus: ShippingStatus;
+  carrier: Carrier | null;
+  shippingCarrierName: string | null;
+  /** Nhãn hãng để hiện/gom: tên nguyên văn sàn → nhãn enum → "Chưa rõ hãng" */
+  carrierLabel: string;
+  trackingCode: string | null;
+  labelPrintedAt: string | null;
+  packingDoneAt: string | null;
+  handoverSheetId: string | null;
+  cancelRequestedAt: string | null;
+  cancelRequestReason: string | null;
+  itemCount: number;
+  createdAt: string;
+  channel: { channelName: ChannelName; shopName: string };
+}
+
+export interface PackingScanResponse {
+  result: PackingScanResult;
+  reason: PackingRejectReason | null;
+  /** Câu báo in to khi bị chặn (máy chủ soạn sẵn để web/mobile cùng chữ) */
+  reasonText: string | null;
+  warnings: PackingWarning[];
+  warningTexts: string[];
+  order: PackingOrder;
+}
+
+/** Quét một kiện ở bước Đã đóng gói. 404 không thấy, 409 khớp nhiều đơn (ApiError). */
+export function scanPacking(code: string) {
+  return apiFetch<PackingScanResponse>("/api/orders/packing/scan", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+/** Bỏ dấu đã đóng gói (quét nhầm / đơn hủy sau khi gói đã lấy kiện ra). */
+export function unmarkPacking(orderId: string) {
+  return apiFetch<{ ok: true }>("/api/orders/packing/unmark", {
+    method: "POST",
+    body: JSON.stringify({ orderId }),
+  });
+}
+
+export interface HandoverSheetSummary {
+  id: string;
+  code: string;
+  carrier: Carrier | null;
+  carrierLabel: string;
+  orderCount: number;
+  createdAt: string;
+  createdByName: string | null;
+}
+
+/** Lập biên bản bàn giao từ đơn chờ (mặc định tất cả) — mỗi hãng một biên bản. */
+export function createHandoverSheets(orderIds?: string[]) {
+  return apiFetch<{ sheets: Array<Pick<HandoverSheetSummary, "id" | "code" | "carrierLabel" | "orderCount">> }>(
+    "/api/orders/packing/handover-sheets",
+    { method: "POST", body: JSON.stringify(orderIds ? { orderIds } : {}) }
+  );
+}
+
+/** Tải PDF một hoặc nhiều biên bản (mỗi tờ một trang mới). */
+export async function fetchHandoverSheetsPdf(ids: string[]): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/orders/packing/handover-sheets/pdf?ids=${encodeURIComponent(ids.join(","))}`, {
+      cache: "no-store",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, networkErrorMessage(), NETWORK_BLOCKED_CODE);
+  }
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.blob();
 }
 
 export function updateOrderStatus(id: string, shippingStatus: string) {
