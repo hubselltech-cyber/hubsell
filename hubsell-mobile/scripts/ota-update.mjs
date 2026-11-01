@@ -44,7 +44,8 @@ console.log(`API backend ghim: ${PROD_API_URL}`);
 const r = spawnSync(
   "npx",
   ["eas-cli", "update", "--channel", channel, "--environment", channel === "production" ? "production" : "preview",
-   "--message", `${message} (${commit})`, "--non-interactive"],
+   // shell: true (Windows cần cho npx) → lời nhắn phải tự bọc ngoặc kép, không thì dấu cách tách thành nhiều tham số
+   "--message", `"${message.replace(/"/g, "'")} (${commit})"`, "--non-interactive"],
   { stdio: "inherit", shell: true, env: { ...process.env, EXPO_PUBLIC_API_URL: PROD_API_URL } },
 );
 process.exit(r.status ?? 1);
