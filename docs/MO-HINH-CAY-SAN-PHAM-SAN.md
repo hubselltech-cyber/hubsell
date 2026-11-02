@@ -688,3 +688,23 @@ Kiểm: tsc BE sạch; bộ test đầy đủ chạy sau khi sửa (kết quả 
 - Shopee Lát 4 (một chiều `direct_gmv`): cùng bản chất "so với doanh thu sàn gán"; chưa đo lại tối nay — nếu số prod có ca oan
   tương tự thì áp cùng cách đo bằng id.
 - Nhóm "thấp hơn": kiểm giả thuyết `gross_revenue` trước giảm giá bằng một đơn cụ thể của Bella Look.
+
+## 13. Kẽ "id lá mồ côi trước ngày nối gian" — không sửa mô hình, vá tay khi khách kêu (02/11/2026)
+
+**Ca thật:** Foods Nguyệt Ký (TikTok nối 28/10, Shopee nối 01/11) kêu ">300 đơn chưa có giá vốn" dù danh mục nhập đủ.
+Prod: 329 dòng / 328 đơn `costPriceAtSale = 0`, 100 % có `externalId`, nhưng không lá nào của gian mang id đó:
+
+| Sàn | Dòng đơn cũ | Danh mục hiện tại | Vì sao |
+|---|---|---|---|
+| TikTok | `1737453379049457107-17378806…` (3 sku_id), đơn 11/10 → **15/10 13:36** | cùng product_id, sku_id `…17380088303085…`, đơn từ **15/10 18:32** | seller xóa/tạo lại phân loại chiều 15/10 → TikTok cấp sku_id MỚI (đổi tên mã thì id giữ) |
+| Shopee | `55219217590` (item không model), đơn 15/10 → 31/10 | `55219217590-4366868822xx` (3 model), đơn từ 01/11 | seller thêm phân loại cho sản phẩm đơn ~31/10 |
+
+**Vì sao mô hình cây không bắt được:** id trên dòng đơn chép thẳng từ payload sàn (B3 đúng). Gian nối **sau** ngày sàn đổi id
+nên product-sync chưa từng thấy lá cũ (nối trước thì lá cũ ở DELISTED, khớp id vẫn chạy). SKU_MATCH (Lát 1c) không rơi về mã
+cho dòng có id → nút "Áp giá vốn cho đơn cũ" báo "mã không khớp SKU nào", lượt vá đêm bỏ qua. Hòa vốn Ads không hỏng (gom theo SPU).
+
+**Anh Trung chốt 02/11:** GIỮ luật id-trước, KHÔNG thêm nhánh rơi về mã (không đáng đụng đại tu cho ca hẹp: chỉ đơn lịch sử
+trước ngày nối gian). Xử lý = vá SQL một lần khi khách kêu (UPDATE thuần: dòng 0, id không có lá, mã khớp đúng 1 lá có giá trong gian;
+sao lưu `backend/scripts/out/nguyetky-costprice-backup-2026-11-02.txt`) + web thêm lối "gửi yêu cầu hỗ trợ" ở hộp nhắc giá vốn,
+dải lọc theo kỳ và toast "Áp giá vốn cho đơn cũ" khi còn dòng không khớp. Nếu lặp ở gian khác mới tính nhánh hẹp
+"id mồ côi → cùng SPU + cùng mã".

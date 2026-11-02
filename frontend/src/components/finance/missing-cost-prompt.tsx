@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 import { getStoredUser, type MissingCostSummary } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -59,6 +60,10 @@ export function MissingCostPrompt({
   // Số đơn lúc bật hộp — giữ nguyên trong hộp dù trang tính lại ở nền.
   const [shownCount, setShownCount] = useState(0);
   const asked = useRef(false);
+  // Khách đã nhập đủ giá vốn mà hộp vẫn hiện (02/11/2026, Foods Nguyệt Ký: sàn cấp id
+  // phân loại mới trước ngày nối gian nên đơn cũ không khớp lá nào) → có lối gửi yêu
+  // cầu hỗ trợ ngay trong hộp thay vì khách tự nhập lại giá nhiều lần.
+  const [supportOpen, setSupportOpen] = useState(false);
 
   useEffect(() => {
     if (asked.current || count <= 0) return;
@@ -87,7 +92,23 @@ export function MissingCostPrompt({
     router.push(href);
   }
 
+  function askSupport() {
+    try {
+      sessionStorage.setItem(SESSION_KEY, "1");
+    } catch {
+      // như trên
+    }
+    setOpen(false);
+    setSupportOpen(true);
+  }
+
   return (
+    <>
+    <SupportRequestDialog
+      open={supportOpen}
+      onOpenChange={setSupportOpen}
+      initialContent={`Em đã nhập đủ giá vốn nhưng báo cáo vẫn báo ${formatNumber(shownCount)} đơn chưa có giá vốn. Nhờ Hubsell kiểm tra giúp.`}
+    />
     <Dialog
       open={open}
       // Bỏ qua là bỏ hẳn, nên chỉ nhận thao tác CÓ CHỦ Ý (nút, X, Esc) — lỡ tay
@@ -113,6 +134,17 @@ export function MissingCostPrompt({
               <span className="font-medium text-foreground">Nhập giá vốn sản phẩm</span>{" "}
               một lần để Hubsell tính hòa vốn từng SKU và lãi/lỗ từng đơn.
             </DialogDescription>
+            <p className="text-sm text-muted-foreground">
+              Đã nhập đủ giá vốn mà vẫn thấy dòng này?{" "}
+              <button
+                type="button"
+                className="font-medium text-sky-700 underline-offset-2 hover:underline"
+                onClick={askSupport}
+              >
+                Gửi yêu cầu hỗ trợ
+              </button>{" "}
+              để Hubsell kiểm tra giúp.
+            </p>
           </DialogHeader>
         </div>
 
@@ -134,5 +166,6 @@ export function MissingCostPrompt({
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

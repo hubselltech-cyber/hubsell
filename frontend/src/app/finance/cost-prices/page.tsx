@@ -27,6 +27,7 @@ import {
 } from "@/components/finance/cost-price-table";
 import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
+import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -170,6 +171,12 @@ export default function CostPricesPage() {
   const [listing, setListing] = useState<ListingFilter>("active");
   // Đang chạy "Áp giá vốn cho đơn cũ"
   const [backfilling, setBackfilling] = useState(false);
+  // Khách đã nhập đủ mà đơn vẫn "chưa có giá vốn" (mã trên đơn không khớp lá nào — vd sàn
+  // cấp id phân loại mới trước ngày nối gian, Foods Nguyệt Ký 02/11/2026): mở gửi yêu cầu
+  // hỗ trợ ngay tại chỗ, Hubsell vá tay.
+  const [supportOpen, setSupportOpen] = useState(false);
+  const supportContent =
+    "Em đã nhập đủ giá vốn và bấm “Áp giá vốn cho đơn cũ” nhưng vẫn còn đơn báo chưa có giá vốn. Nhờ Hubsell kiểm tra giúp.";
   // Dải "còn X SKU chưa nhập giá vốn": người đã biết bấm X là không hiện lại
   // (nhớ theo tài khoản trong localStorage — anh Trung 28/09 "đỡ ngứa mắt").
   const [bannerHidden, setBannerHidden] = useState(true);
@@ -574,15 +581,20 @@ export default function CostPricesPage() {
       if (r.unmatchedZeroLines > 0)
         leftover.push(`${formatNumber(r.unmatchedZeroLines)} dòng có mã không khớp SKU nào trên sàn`);
       const tail = leftover.length ? ` Còn lại: ${leftover.join("; ")}.` : "";
+      // Còn dòng không khớp SKU nào = khách không tự xử lý được → nút gửi yêu cầu hỗ trợ ngay trên toast.
+      const supportAction =
+        r.unmatchedZeroLines > 0
+          ? { action: { label: "Gửi yêu cầu hỗ trợ", onClick: () => setSupportOpen(true) } }
+          : {};
       if (r.backfilledOrderLines > 0) {
         toast.success(
           `Đã áp giá vốn cho ${formatNumber(r.backfilledOrderLines)} dòng hàng của đơn cũ (mọi đơn, không giới hạn ngày).${tail}`,
-          { duration: 12000 }
+          { duration: 12000, ...supportAction }
         );
       } else if (r.remainingZeroLines === 0) {
         toast("Mọi đơn cũ đã có giá vốn — không có dòng nào cần tính lại.");
       } else {
-        toast.warning(`Không có dòng nào áp được.${tail}`, { duration: 12000 });
+        toast.warning(`Không có dòng nào áp được.${tail}`, { duration: 12000, ...supportAction });
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không áp được giá vốn cho đơn cũ");
@@ -701,9 +713,23 @@ export default function CostPricesPage() {
                     <b>{formatDayVN(periodFocus.range.to)}</b> mà chưa có giá vốn:{" "}
                     <b>{formatNumber(filteredItems.length)}</b> SKU làm{" "}
                     <b>{formatNumber(periodFocus.data.orderCount)}</b> đơn chưa tính được lãi.
-                    {periodFocus.data.orderCount > 0 && filteredItems.length === 0 && !loading
-                      ? " Các SKU này không còn trong danh mục gian (đã xóa trên sàn) hoặc vừa được nhập giá — bấm “Áp giá vốn cho đơn cũ” để tính lại."
-                      : " Nhập xong, các đơn này tự tính lại."}
+                    {periodFocus.data.orderCount > 0 && filteredItems.length === 0 && !loading ? (
+                      <>
+                        {" "}
+                        Các SKU này không còn trong danh mục gian (đã xóa trên sàn) hoặc vừa được nhập giá — bấm
+                        “Áp giá vốn cho đơn cũ” để tính lại. Bấm rồi mà vẫn còn đơn,{" "}
+                        <button
+                          type="button"
+                          className="font-medium text-sky-700 underline-offset-2 hover:underline"
+                          onClick={() => setSupportOpen(true)}
+                        >
+                          gửi yêu cầu hỗ trợ
+                        </button>{" "}
+                        để Hubsell kiểm tra giúp.
+                      </>
+                    ) : (
+                      " Nhập xong, các đơn này tự tính lại."
+                    )}
                     {periodFocus.data.ledgerPending > 0 && (
                       <> Sổ còn {formatNumber(periodFocus.data.ledgerPending)} đơn đang tính, số có thể đổi.</>
                     )}
@@ -969,6 +995,7 @@ export default function CostPricesPage() {
           </p>
         </div>
       </div>
+      <SupportRequestDialog open={supportOpen} onOpenChange={setSupportOpen} initialContent={supportContent} />
     </AppShell>
   );
 }
