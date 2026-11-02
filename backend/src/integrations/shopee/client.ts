@@ -951,6 +951,8 @@ export interface ShopeeItemBaseInfo {
     original_attribute_name?: string;
     attribute_value_list?: { original_value_name?: string }[];
   }[];
+  /** URL ảnh bảng size (docs get_item_base_info) — chép sang gian khác (sao chép SP, 02/11). */
+  size_chart?: string;
 }
 
 export interface ShopeeItemBaseData extends ShopeeEnvelope {

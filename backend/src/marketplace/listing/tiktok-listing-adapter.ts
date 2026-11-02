@@ -120,6 +120,8 @@ export const tiktokListingAdapter: ListingAdapter = {
       package_weight?: { value?: string; unit?: string };
       package_dimensions?: { length?: string; width?: string; height?: string; unit?: string };
       product_attributes?: { id?: string; name?: string; values?: { name?: string }[] }[];
+      /** Docs 202309 Get Product (đọc 02/11/2026): image {uri, urls[], thumb_urls[], width, height} + template {id}. */
+      size_chart?: { image?: { url?: string; urls?: string[] }; template?: { id?: string } };
     };
     const leaf = extra.category_chains?.find((c) => c.is_leaf) ?? extra.category_chains?.[extra.category_chains.length - 1];
     const w = extra.package_weight;
@@ -143,6 +145,7 @@ export const tiktokListingAdapter: ListingAdapter = {
       attributes: (extra.product_attributes ?? [])
         .map((a) => ({ name: a.name ?? "", value: a.values?.[0]?.name ?? "" }))
         .filter((a) => a.name && a.value),
+      sizeChartImageUrl: pickUrl(extra.size_chart?.image),
     };
   },
 

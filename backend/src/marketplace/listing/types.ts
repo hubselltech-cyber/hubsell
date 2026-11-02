@@ -55,6 +55,12 @@ export interface NormalizedListing {
   options: ListingOption[];
   variants: ListingVariant[];
   attributes: { name: string; value: string }[];
+  /**
+   * Ảnh Bảng size của nguồn (TikTok `size_chart.image`, Shopee `size_chart` URL) — 02/11/2026:
+   * Shopee bắt buộc bảng size ở nhiều danh mục thời trang/giày, adapter tải lên gửi kèm add_item.
+   * Tùy chọn vì job cũ / nguồn kho / Lazada không có.
+   */
+  sizeChartImageUrl?: string | null;
 }
 
 export interface CategorySuggestion {

@@ -1,6 +1,6 @@
 // Dịch lỗi sàn khi đăng sản phẩm → câu tiếng Việt + nguyên văn (docs/SAO-CHEP-SAN-PHAM.md mục 14, 28).
 import { describe, expect, it } from "vitest";
-import { humanizeListingError, isShopeeDescImageWhitelistError } from "../error-text";
+import { humanizeListingError, isShopeeDescImageWhitelistError, isShopeeSizeChartRequiredError } from "../error-text";
 
 /** target.error = dòng 1 tiếng Việt + "\n" + nguyên văn sàn (FE tách ở shared.ts). */
 function split(stored: string): { text: string; detail: string | null } {
@@ -49,6 +49,29 @@ describe("humanizeListingError", () => {
     expect(out.text).toMatch(/^Lazada từ chối bài đăng/);
     expect(out.detail).toContain("E9999");
     expect(humanizeListingError("SHOPEE", "")).toMatch(/không nói lý do/);
+  });
+});
+
+describe("lỗi thật 02/11: Shopee đòi Bảng size cho danh mục Giày đế xuồng", () => {
+  const raw = "Shopee add_item lỗi: product.error_busi — Size Chart is required for selected category. Please fill in it or change the category.";
+
+  it("câu 'required for selected category' → luật Bảng size, KHÔNG rơi vào luật Danh mục hay Thuộc tính", () => {
+    const { text, detail } = split(humanizeListingError("SHOPEE", raw));
+    expect(text).toMatch(/Bảng size/);
+    expect(text).toMatch(/Quản lý bảng size/);
+    expect(text).not.toMatch(/Danh mục chưa hợp lệ/);
+    expect(text).not.toMatch(/thuộc tính bắt buộc/);
+    expect(detail).toBe(raw);
+  });
+
+  it("helper nhận diện để adapter thử lại bằng mẫu bảng size của gian; lỗi ảnh bảng size không chuẩn → câu riêng", () => {
+    expect(isShopeeSizeChartRequiredError(raw)).toBe(true);
+    expect(isShopeeSizeChartRequiredError("Size chart is mandatory for this category")).toBe(true);
+    expect(isShopeeSizeChartRequiredError("Shopee add_item lỗi: product.error_param — Invalid category.")).toBe(false);
+    const bad = humanizeListingError("SHOPEE", "Shopee add_item lỗi: product.error_busi — Upload failed, please upload a more standard size chart image.");
+    expect(split(bad).text).toMatch(/không nhận ảnh Bảng size/);
+    expect(split(bad).text).not.toMatch(/Sàn không nhận ảnh sản phẩm/);
+    expect(isShopeeSizeChartRequiredError(bad)).toBe(false);
   });
 });
 

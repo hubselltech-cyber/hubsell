@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 02/11 (~23:40) — Khách QA giày chép TikTok → Shopee báo "Danh mục chưa hợp lệ" dù đã chọn tới lá — GỐC: Shopee đòi BẢNG SIZE cho Giày đế xuồng, Hubsell dịch nhầm; ĐÃ SỬA 2 LÁT (dịch đúng + gửi bảng size), kiểm local, CHƯA PUSH
+
+- **Nguyên văn Shopee:** `product.error_busi — Size Chart is required for selected category`. Câu có chữ "category" nên `error-text.ts` bắt vào luật Danh mục (đứng trước luật "required"). Bài đăng Shopee chưa gửi bảng size.
+- **Docs đọc 02/11 (trình duyệt tích hợp):** Shopee `add_item.size_chart_info { size_chart: image_id | size_chart_id: mẫu }`, `get_size_chart_list(category_id)` (chỉ gian local, không có API hỏi trước danh mục có bắt hay không), `get_item_base_info.size_chart` URL; TikTok Get Product `size_chart.image.urls[]` + `template.id` (đọc qua API JSON của trang docs).
+- **Lát 1 `error-text.ts`:** +2 luật trước Ảnh/Danh mục/Thuộc tính (bắt buộc bảng size → hướng dẫn tạo mẫu ở Kênh Người Bán › Quản lý bảng size hoặc đổi danh mục; ảnh bảng size không chuẩn → câu riêng) + helper `isShopeeSizeChartRequiredError`. Test +2 ca.
+- **Lát 2:** `NormalizedListing.sizeChartImageUrl?` (TikTok `size_chart.image`, Shopee `item.size_chart`); Shopee adapter tải ảnh bảng size nguồn → `size_chart_info.size_chart`; `addItemWithFallbacks` (thay `addItemWithPlainTextFallback`): add_item báo đòi bảng size → `getSizeChartList` (đệm 1 giờ) → có mẫu thì gửi lại kèm `size_chart_id` mẫu đầu (log số mẫu), không có → trả lỗi đã dịch. Bài không dính lỗi = 0 call thêm.
+- Kiểm local: vitest listing 42/42, backend tsc sạch. Docs `SAO-CHEP-SAN-PHAM.md` mục 31; memory sao chép SP cập nhật. ⏳ Anh push → khách bấm Đăng lại dòng Shopee; đọc log worker `q=listing-copy` nếu còn lỗi. Chưa làm: khách tự tải ảnh bảng size trong Sửa bài đăng; TikTok đích chưa gửi size_chart.
+
 ## Phiên 02/11 (~14:30) — Anh muốn tài chính coi đơn thiếu giá vốn = giá vốn 0 + ROI/ROAS loại đơn thiếu giá vốn — ĐÃ KHẢO SÁT (chưa sửa mã): điểm 2 ĐÃ CÓ từ 28/09; phát hiện cờ thiếu giá vốn dính quà 0 đ (28.732 đơn / 44 shop / 801 tr loại oan); em nghiêng GIỮ cách loại, chờ anh chốt
 
 - **Tệp:** `docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md` (7 mục: kết luận, số prod, mã hiện tại, phản biện, phạm vi nếu làm, Lát A, việc chờ).

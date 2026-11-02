@@ -913,3 +913,35 @@ phẩm hợp ở khu Hàng hóa hơn.
   lại về tab Sao chép (URL sạch, 2 nguồn + link). tsc + eslint sạch, backend tsc sạch.
 - ⏳ Chưa làm (anh chốt sau nếu cần): tạo SKU kho KHÔNG đăng lên gian nào (0 gian đích) — hiện bắt buộc ≥ 1 gian vì Tổng kho chỉ ghi khi
   Đăng (mục 24.3); nếu khách bán ngoài sàn muốn thêm hàng, hôm nay chỉ còn đường nhập Excel.
+
+## 31. Khách QA giày (TikTok → Shopee): "Danh mục chưa hợp lệ" dù đã chọn tới lá Giày Dép Nữ › Giày đế xuồng (02/11/2026 tối, anh chuyển ảnh) — GỐC: SHOPEE ĐÒI BẢNG SIZE, Hubsell dịch nhầm — ĐÃ SỬA 2 LÁT, kiểm local
+
+- **Nguyên văn Shopee (dòng kỹ thuật trong ảnh):** `product.error_busi — Size Chart is required for selected category. Please fill in it or
+  change the category.` Shopee bắt buộc Bảng size cho nhiều danh mục thời trang/giày (bên thứ ba ghi nhận áp từ 23/06/2025). Câu có chữ
+  "category" nên `error-text.ts` bắt vào luật Danh mục (đứng trước luật "required") → khách tưởng chọn sai danh mục.
+- **Docs đọc 02/11 (trình duyệt tích hợp, trang open.shopee.com):**
+  - `add_item`: `size_chart_info { size_chart: string (image_id ảnh bảng size, gian local lẫn CB), size_chart_id: int64 (mẫu bảng size,
+    chỉ gian local) }` — gửi cả hai thì Shopee giữ mẫu. Lỗi riêng: `product.error_busi "Upload failed, please upload a more standard
+    size chart image"`.
+  - `get_size_chart_list` (GET, 2023-05, chỉ gian local): `category_id`, `page_size ≤ 50`, `cursor` → `size_chart_list[].size_chart_id`.
+    KHÔNG có `support_size_chart` cho gian thường (chỉ GlobalProduct) → không hỏi trước được danh mục có bắt bảng size hay không.
+  - `get_item_base_info`: trả `size_chart` (URL ảnh) + `size_chart_id`.
+  - TikTok Get Product 202309 (đọc qua API JSON của trang docs vì trang chặn innerText): `size_chart { image {uri, urls[], thumb_urls[],
+    width, height}, template {id} }`.
+- **Lát 1 — dịch lỗi (`error-text.ts`, +2 luật đứng trước luật Ảnh/Danh mục/Thuộc tính):** "required/mandatory … size chart" → "Danh mục này
+  Shopee bắt buộc có Bảng size… vào Kênh Người Bán Shopee › Quản lý bảng size tạo mẫu rồi Đăng lại; hoặc chọn danh mục khác"; chữ
+  "size chart" còn lại (ảnh không chuẩn) → câu riêng. Helper `isShopeeSizeChartRequiredError` cho adapter. Test +2 ca.
+- **Lát 2 — gửi bảng size sang Shopee:**
+  - `types.ts NormalizedListing.sizeChartImageUrl?` (tùy chọn — job cũ/nguồn kho/Lazada không có). Nguồn TikTok đọc
+    `size_chart.image.urls[0]`; nguồn Shopee đọc `item.size_chart` (thêm trường vào `ShopeeItemBaseInfo`).
+  - `shopee-listing-adapter.createListing`: có ảnh bảng size nguồn → `prepareImage` (chuẩn SHOPEE_IMAGE) + `upload_image` scene normal →
+    `size_chart_info.size_chart`; ảnh hỏng thì log và đăng không kèm (không chặn bài).
+  - `addItemWithPlainTextFallback` → `addItemWithFallbacks`: vòng thử lại, mỗi lối tối đa 1 lượt: (1) whitelist ảnh mô tả như mục 28;
+    (2) add_item báo "Size Chart is required" mà bài chưa có `size_chart_id` → `getSizeChartList(category)` (đệm 1 giờ gian × danh mục)
+    → có mẫu thì gửi lại kèm `size_chart_id = mẫu đầu` (chưa có căn cứ chọn mẫu khác, log số mẫu để dò); không có mẫu → ném nguyên lỗi
+    → Lát 1 dịch thành hướng dẫn tạo mẫu. **Số call:** bài không dính lỗi = 0 call thêm; dính = +1 get_size_chart_list +1 add_item.
+- Kiểm local: `vitest src/marketplace/listing` 42/42, backend tsc sạch. Local không có gian Shopee thật → lối mẫu bảng size và
+  `size_chart_info` CHƯA chạy thật. ⏳ Sau deploy: khách bấm **Đăng lại** dòng Shopee; kỳ vọng (a) nguồn TikTok có ảnh bảng size → LISTED
+  ngay, (b) không có → log `[listing-copy] … gửi lại kèm mẫu bảng size …` rồi LISTED, (c) gian chưa có mẫu → câu đỏ mới hướng dẫn tạo mẫu.
+- **Chưa làm:** hiện ảnh bảng size trong khung Sửa bài đăng / cho khách tải ảnh bảng size lên tay (hôm nay chỉ lấy từ nguồn hoặc mẫu gian);
+  TikTok đích (category rules `size_chart.is_required` đã đọc được nhưng chưa gửi `size_chart` khi tạo SP TikTok) — làm khi gặp ca thật.

@@ -35,6 +35,19 @@ export function isShopeeDescImageWhitelistError(message: string): boolean {
   return SHOPEE_DESC_IMAGE_WHITELIST_RE.test(String(message ?? ""));
 }
 
+/**
+ * Shopee add_item: "Size Chart is required for selected category. Please fill in it or change
+ * the category." (product.error_busi, lỗi thật 02/11/2026, danh mục Giày Dép Nữ › Giày đế xuồng;
+ * Shopee bắt buộc bảng size cho nhiều danh mục thời trang/giày từ 23/06/2025). Câu có chữ
+ * "category" nên trước đây rơi vào luật Danh mục → khách tưởng chọn sai danh mục. Adapter bắt
+ * lỗi này để thử lại bằng mẫu bảng size của gian (get_size_chart_list).
+ */
+const SHOPEE_SIZE_CHART_REQUIRED_RE = /size.?chart[^.]*\b(is )?(required|mandatory)|(required|mandatory)[^.]*size.?chart/i;
+
+export function isShopeeSizeChartRequiredError(message: string): boolean {
+  return SHOPEE_SIZE_CHART_REQUIRED_RE.test(String(message ?? ""));
+}
+
 /** Thứ tự = ưu tiên: mẫu hẹp (kích thước, cân nặng) đứng trước mẫu rộng (param, attribute). */
 const RULES: Rule[] = [
   // --- Lỗi phía Hubsell gọi sàn (tham số API) — khách không sửa được, đừng bắt khách mò ---
@@ -71,6 +84,15 @@ const RULES: Rule[] = [
   {
     test: SHOPEE_DESC_IMAGE_WHITELIST_RE,
     text: "Gian Shopee này chưa được Shopee cho phép chèn ảnh vào mô tả (chỉ nhận mô tả chữ) — Hubsell tự đăng lại với mô tả dạng chữ, ảnh mô tả bỏ qua; vẫn lỗi thì báo Hubsell kèm dòng chi tiết bên dưới.",
+  },
+  // --- Shopee: danh mục bắt buộc Bảng size (lỗi thật 02/11) — đứng trước luật Ảnh/Danh mục/Thuộc tính ---
+  {
+    test: SHOPEE_SIZE_CHART_REQUIRED_RE,
+    text: "Danh mục này Shopee bắt buộc có Bảng size (Size Chart) mà sản phẩm nguồn không có ảnh bảng size và gian chưa có mẫu bảng size cho danh mục — vào Kênh Người Bán Shopee › Quản lý bảng size, tạo một mẫu cho danh mục này rồi bấm Đăng lại (Hubsell tự lấy mẫu của gian); hoặc chọn danh mục khác không bắt bảng size.",
+  },
+  {
+    test: /size.?chart/i,
+    text: "Shopee không nhận ảnh Bảng size lấy từ sản phẩm nguồn (ảnh chưa đạt chuẩn bảng size của sàn) — tạo mẫu bảng size trong Kênh Người Bán Shopee › Quản lý bảng size rồi bấm Đăng lại.",
   },
   // --- Ảnh ---
   {

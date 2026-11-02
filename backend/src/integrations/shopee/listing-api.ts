@@ -36,6 +36,7 @@ const P = {
   uploadImage: "/api/v2/media_space/upload_image",
   addItem: "/api/v2/product/add_item",
   initTierVariation: "/api/v2/product/init_tier_variation",
+  sizeChartList: "/api/v2/product/get_size_chart_list",
 } as const;
 
 const HOUR = 60 * 60 * 1000;
@@ -324,6 +325,12 @@ export interface ShopeeAddItemBody {
   item_sku?: string;
   /** Gian nhiều kho: bắt buộc location_id (shop/get_warehouse_detail). */
   seller_stock: { location_id?: string; stock: number }[];
+  /**
+   * Bảng size (docs add_item đọc 02/11/2026): `size_chart` = image_id ảnh bảng size (upload_image
+   * scene normal; gian local lẫn CB); `size_chart_id` = mẫu bảng size tạo trong Seller Centre
+   * (get_size_chart_list; chỉ gian local). Gửi cả hai thì Shopee giữ mẫu.
+   */
+  size_chart_info?: { size_chart?: string; size_chart_id?: number };
   /** "extended" = mô tả có ảnh chèn: field_list text/image (image_id từ upload_image scene desc). */
   description_type?: "normal" | "extended";
   description_info?: {
@@ -340,6 +347,35 @@ export async function addItem(accessToken: string, shopId: string, body: ShopeeA
   const id = d.response?.item_id;
   if (!id) throw new Error("Shopee add_item không trả item_id");
   return id;
+}
+
+interface SizeChartListData extends ShopeeEnvelope {
+  response?: { size_chart_list?: { size_chart_id?: number | string }[]; next_cursor?: string; total_count?: number | string };
+}
+
+const sizeChartCache = new TtlCache<number[]>(HOUR);
+
+/**
+ * Mẫu bảng size của GIAN cho một danh mục (product/get_size_chart_list, docs 2023-05, chỉ gian
+ * local — gian VN đều local). Chỉ gọi khi add_item báo "Size Chart is required" (lỗi thật 02/11)
+ * nên không tốn call ở bài không cần; đệm 1 giờ theo gian × danh mục. Trang đầu 50 mẫu là đủ —
+ * adapter chỉ dùng mẫu đầu.
+ */
+export async function getSizeChartList(accessToken: string, shopId: string, categoryId: number, cfg = getShopeeConfig()): Promise<number[]> {
+  return sizeChartCache.get(`shopee:${shopId}:size-chart:${categoryId}`, async () => {
+    const d = await callShopGet<SizeChartListData>(
+      P.sizeChartList,
+      accessToken,
+      shopId,
+      [
+        ["category_id", String(categoryId)],
+        ["page_size", "50"],
+      ],
+      "get_size_chart_list",
+      cfg
+    );
+    return (d.response?.size_chart_list ?? []).map((s) => Number(s.size_chart_id)).filter((n) => Number.isFinite(n) && n > 0);
+  });
 }
 
 interface ShopeeTierVariationBody {

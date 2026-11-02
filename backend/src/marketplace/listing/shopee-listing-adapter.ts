@@ -17,7 +17,7 @@ import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
 import { viAttributeName } from "./attribute-names-vi";
 import { mergeUsedBrands, rankBrands } from "./brand-search";
-import { isShopeeDescImageWhitelistError } from "./error-text";
+import { isShopeeDescImageWhitelistError, isShopeeSizeChartRequiredError } from "./error-text";
 import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
@@ -59,24 +59,56 @@ function descImagesBlocked(channelId: string): boolean {
   return false;
 }
 
-async function addItemWithPlainTextFallback(
+/**
+ * add_item + hai lối thử lại, mỗi lối tối đa MỘT lượt thêm:
+ *  1. gian không được whitelist ảnh mô tả → đăng lại mô tả chữ (mục 28);
+ *  2. Shopee đòi Bảng size cho danh mục (lỗi thật 02/11/2026 "Size Chart is required for
+ *     selected category") mà bài chưa có mẫu → hỏi get_size_chart_list, có mẫu thì gửi lại
+ *     kèm size_chart_id (mẫu đầu danh sách — chưa có căn cứ chọn khác, ghi log để dò); gian
+ *     chưa tạo mẫu nào → ném nguyên lỗi, error-text dịch thành hướng dẫn tạo mẫu.
+ */
+async function addItemWithFallbacks(
   channel: Channel,
   accessToken: string,
   shopId: string,
   body: api.ShopeeAddItemBody,
   descImageCount: number
 ): Promise<number> {
-  try {
-    return await api.addItem(accessToken, shopId, body);
-  } catch (err) {
-    const message = (err as Error)?.message ?? String(err);
-    if (!descImageCount || !isShopeeDescImageWhitelistError(message)) throw err;
-    descImageBlockedUntil.set(channel.id, Date.now() + DESC_IMAGE_BLOCK_MS);
-    console.warn(
-      `[listing-copy] ${channel.shopName}: Shopee không cho gian này chèn ảnh mô tả (${message.slice(0, 160)}) — đăng lại mô tả chữ, bỏ ${descImageCount} ảnh mô tả`
-    );
-    const { description_type: _t, description_info: _i, ...plain } = body;
-    return api.addItem(accessToken, shopId, plain);
+  let current = body;
+  let triedPlainText = false;
+  let triedSizeChartTemplate = false;
+  for (;;) {
+    try {
+      return await api.addItem(accessToken, shopId, current);
+    } catch (err) {
+      const message = (err as Error)?.message ?? String(err);
+      if (!triedPlainText && descImageCount > 0 && isShopeeDescImageWhitelistError(message)) {
+        triedPlainText = true;
+        descImageBlockedUntil.set(channel.id, Date.now() + DESC_IMAGE_BLOCK_MS);
+        console.warn(
+          `[listing-copy] ${channel.shopName}: Shopee không cho gian này chèn ảnh mô tả (${message.slice(0, 160)}) — đăng lại mô tả chữ, bỏ ${descImageCount} ảnh mô tả`
+        );
+        const { description_type: _t, description_info: _i, ...plain } = current;
+        current = plain;
+        continue;
+      }
+      if (!triedSizeChartTemplate && !current.size_chart_info?.size_chart_id && isShopeeSizeChartRequiredError(message)) {
+        triedSizeChartTemplate = true;
+        const templates = await api.getSizeChartList(accessToken, shopId, current.category_id).catch((e) => {
+          console.warn(`[listing-copy] ${channel.shopName}: không đọc được mẫu bảng size Shopee danh mục ${current.category_id} (${(e as Error).message})`);
+          return [] as number[];
+        });
+        if (templates.length > 0) {
+          console.warn(
+            `[listing-copy] ${channel.shopName}: Shopee đòi Bảng size cho danh mục ${current.category_id}${current.size_chart_info?.size_chart ? " (ảnh bảng size nguồn không đủ)" : ""} — gửi lại kèm mẫu bảng size ${templates[0]} của gian (${templates.length} mẫu)`
+          );
+          current = { ...current, size_chart_info: { size_chart_id: templates[0] } };
+          continue;
+        }
+        console.warn(`[listing-copy] ${channel.shopName}: Shopee đòi Bảng size cho danh mục ${current.category_id} nhưng gian chưa có mẫu nào — trả lỗi cho khách tạo mẫu`);
+      }
+      throw err;
+    }
   }
 }
 
@@ -218,6 +250,7 @@ export const shopeeListingAdapter: ListingAdapter = {
       attributes: (item.attribute_list ?? [])
         .map((a) => ({ name: a.original_attribute_name ?? "", value: a.attribute_value_list?.[0]?.original_value_name ?? "" }))
         .filter((a) => a.name && a.value),
+      sizeChartImageUrl: item.size_chart?.trim() || null,
     };
   },
 
@@ -289,6 +322,15 @@ export const shopeeListingAdapter: ListingAdapter = {
       console.warn(`[listing-copy] ${channel.shopName}: gian không được Shopee whitelist ảnh mô tả — đăng mô tả chữ, bỏ ${draft.listing.descriptionImages.length} ảnh mô tả`);
     }
     const descriptionText = htmlToText(draft.listing.description).slice(0, 3000);
+    // Bảng size của nguồn (TikTok/Shopee) → tải lên gửi kèm; ảnh hỏng thì bỏ qua, còn lối mẫu của gian ở addItemWithFallbacks.
+    let sizeChartImageId: string | null = null;
+    if (draft.listing.sizeChartImageUrl) {
+      try {
+        sizeChartImageId = await upload()(await prepareImage(draft.listing.sizeChartImageUrl, SHOPEE_IMAGE));
+      } catch (err) {
+        console.warn(`[listing-copy] ${channel.shopName}: ảnh bảng size nguồn không tải lên Shopee được (${(err as Error).message}) — đăng không kèm ảnh bảng size`);
+      }
+    }
 
     // Thuộc tính: cần value_id cho kiểu chọn; kiểu gõ tay gửi value_id 0 + tên.
     const tree = await api.getAttributeTree(accessToken, shopId, Number(draft.categoryId));
@@ -344,9 +386,10 @@ export const shopeeListingAdapter: ListingAdapter = {
         ? { dimension: { package_length: draft.dimensionsCm.length, package_width: draft.dimensionsCm.width, package_height: draft.dimensionsCm.height } }
         : {}),
       ...(draft.variants.length === 1 && first.sku ? { item_sku: first.sku } : {}),
+      ...(sizeChartImageId ? { size_chart_info: { size_chart: sizeChartImageId } } : {}),
       seller_stock: sellerStock(Math.max(0, first.stock)),
     };
-    const itemId = await addItemWithPlainTextFallback(channel, accessToken, shopId, body, descImageIds.length);
+    const itemId = await addItemWithFallbacks(channel, accessToken, shopId, body, descImageIds.length);
 
     const variants: { sku: string; remoteId: string }[] = [];
     if (draft.variants.length > 1 && draft.listing.options.length > 0) {
