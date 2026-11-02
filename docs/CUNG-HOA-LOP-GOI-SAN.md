@@ -554,7 +554,7 @@ Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc 
     Kế hoạch ĐÃ có đủ nguyên lý (N4 bộ đếm chung, khóa app×endpoint; N5 lùi theo gian; N6 chia đều; N7 "429 tầng gian không làm gian
     khác trễ") nhưng xếp luồng hoàn/webhook SAU Pha D đơn (5e "Sau đơn"). Sự cố chứng minh thứ tự đó để hở: hai mảnh đường cũ
     (quét hoàn + việc webhook) chung một làn RAM. Việc kế do anh chốt — xem memory `hubsell-su-co-hang-doi-ben-bella-look-lan-nhip-2026-10-26`.
-    **27/10 10:20 tái phát lần 2** (980–1.011 việc chờ, Bella Look 9,6 s/việc sau lượt quét 10:03; tự rút ~50′). **Anh chốt 27/10: KHÔNG lát sửa riêng, giữ thứ tự đại tu đã chốt** — mảnh này làm ở 5e "Sau đơn" (sau Pha D); tới đó chấp nhận đơn TikTok ~8 gian trễ 15–45′ mỗi sáng ~10:00. Không nhắc lại.
+    **27/10 10:20 tái phát lần 2** (980–1.011 việc chờ, Bella Look 9,6 s/việc sau lượt quét 10:03; tự rút ~50′). **Anh chốt 27/10: KHÔNG lát sửa riêng, giữ thứ tự đại tu đã chốt** — mảnh này làm ở 5e "Sau đơn" (sau Pha D); tới đó chấp nhận đơn TikTok ~8 gian trễ 15–45′ mỗi sáng ~10:00. Không nhắc lại. **02/11 10:20 tái phát lần 3** (2.147 chờ, hộp thư 3.325, cả 4 slot Bella Look 4,9 s/việc; log 09:32–10:20: 44 dòng 429 `returns/search`, nhịp gian 0,29–1,5/s; nhịp ra tụt 66–74/5′ lúc 09:20–09:35 = 4 slot × 18 s rồi hồi) — không sửa, theo chốt 27/10; chỉ ghi nhận.
 
 ## 8. Liên hệ tài liệu khác
 
