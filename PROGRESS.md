@@ -6,6 +6,11 @@
 
 ---
 
+## Phiên 03/11 (~17:35) — Tổng kết thật: khách lớn đã nhập được, gốc web chết CHƯA chứng minh
+
+- ✅ Log 17:14:05 `[cost-import]` khách lớn: file 1.228 dòng, khớp 1.228, ghi 1.228 ô, vá 30 dòng đơn, 0 lỗi, 2,9 giây. 17:32 khách vẫn duyệt tab Shopee bình thường. Render: không Instance failed mới từ 15:57 tới 17:33.
+- ❌ Chưa chứng minh route nào làm web chết 14:13–15:45; RSS 389 MB lúc 17:10 còn cao chưa rõ vì sao. ⏳ Lượt làm mới Shopee 17:36 chưa có kết quả; lưu giá tại dòng chưa có log để xác nhận.
+
 ## Phiên 03/11 (~17:20) — Anh: việc khách cần là load sản phẩm mới và nhập giá vốn, Excel đã dẹp → kiểm log thật của khách
 
 - Web, id `cmvxs39r…`: từ 16:49 trang tải được (`CẮT từ 57877`), có lọc tab Shopee (38.889) và sang trang: 114–1.228 dòng/trang, 0,5–2,5 giây. Log không ghi lượt lưu giá nên CHƯA biết khách đã điền được giá. Đường lưu giá đã đọc mã: chỉ đụng đúng dòng đang lưu.
