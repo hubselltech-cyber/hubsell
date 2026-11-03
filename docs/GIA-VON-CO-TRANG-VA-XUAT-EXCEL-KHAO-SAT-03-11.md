@@ -55,3 +55,29 @@ Thời gian thật trên prod lấy từ log `[sku-products]`: 730 dòng 0,45–
 | D. Nâng 500 | 3 file | Như C, thêm rủi ro chạm ngưỡng máy chủ bận |
 
 A giải quyết đúng việc. B có thể đi kèm A vì gần như không tốn gì.
+
+## Up file số lượng lớn có lỗi không (anh hỏi thêm)
+
+Lượt thật lớn nhất: 4.313 dòng lúc 19:32, 0 lỗi, trước bản sửa câu vá nên mất 54 giây. Chưa có lượt thật nào lớn hơn, chưa có lượt thật nào sau bản `a7953626`.
+
+Đo đúng các bước của `POST /cost-prices/import` trên DB dev, cờ heap như prod, 2.775 dòng đơn chưa có giá. Cột RSS là mức tăng đỉnh. Cỡ file "từ Excel" là file có nén, mô phỏng khách mở rồi lưu lại, không phải lưu bằng Excel thật.
+
+| Dòng | File Hubsell xuất | File từ Excel | Tổng thời gian | Chặn cả máy chủ khi đọc file | RSS tăng | Lỗi |
+|---|---|---|---|---|---|---|
+| 4.313 | 2,15 MB | 0,48 MB | 1,1 giây | 0,2 giây | 83 MB | 0 |
+| 13.155 | 6,59 MB | 1,46 MB | 2,1 giây | 0,6 giây | 85 MB | 0 |
+| 30.000 | 15,18 MB | 3,34 MB | 5,6 giây | 1,4 giây | 168 MB | 0 |
+| 52.830 | 26,83 MB | 5,89 MB | 7,4 giây | 2,6 giây | 290 MB | 0 |
+
+Đo prod chỉ đọc, ca rộng nhất trên dữ liệu khách: câu vá theo kho toàn shop 10,3 giây, tìm 44 nghìn mã 1,1 giây. Câu vá chạy sau khi đã lưu giá nên không còn trần 120 giây. Chưa đo được câu UPDATE thật trên prod.
+
+Rủi ro theo cỡ, với RSS web prod 230–330 MB và trần máy 512 MB:
+- Đến khoảng 13.000 dòng: ổn, đỉnh tối đa khoảng 415 MB.
+- 30.000 dòng: sát trần khi web đang ở mức cao, tối đa khoảng 500 MB. 2 file cùng lúc có thể làm web chết vì route nhập không có `heavyRouteGuard`.
+- Trên khoảng 45.000 dòng: file từ Excel vượt 5 MB. File xuất thẳng từ Hubsell không qua Excel vượt 5 MB từ khoảng 9.800 dòng.
+- Lỗi vượt 5 MB: theo đọc mã, multer đẩy lỗi ra bộ xử lý chung nên khách thấy "Lỗi máy chủ nội bộ", không phải "file quá lớn". Route `products.ts` có xử lý riêng, route này không. Chưa chạy thử.
+
+Hướng sửa gốc: trình duyệt đọc file, chỉ gửi 4 cột Mã SKU, Giá vốn, Gian hàng, Kênh bán lên máy chủ. Máy chủ không còn phải giải nén và dựng cả file, hết phần RAM tăng và hết chặn máy chủ, trần 5 MB không còn ý nghĩa. Nên làm cùng hướng A. Không đặt trần số dòng để chặn khách.
+
+Giá trong file vá vào dòng đơn đang 0 nên lãi đơn cũ tính lại đúng; dòng đơn đã có giá giữ nguyên theo thiết kế đóng băng giá vốn.
+

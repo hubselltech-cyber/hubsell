@@ -8,7 +8,7 @@
 
 ## Phiên 03/11 (~20:00) — Khảo sát nâng trang Giá vốn lên 300/500
 
-- Kết luận: không nâng 500. Gian vượt trần chỉ xuất được trang đang xem nên khách đòi trang lớn; đề nghị Xuất Excel theo cả bộ lọc, kèm lựa chọn 100. Số đo ở `docs/GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt, chưa sửa.
+- Kết luận: không nâng 500. Gian vượt trần chỉ xuất được trang đang xem nên khách đòi trang lớn; đề nghị Xuất Excel theo cả bộ lọc, kèm lựa chọn 100. Số đo ở `docs/GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. Up lớn: dev 13.155 dòng 2,1 giây, 52.830 dòng 7,4 giây, 0 lỗi; rủi ro từ 30.000 dòng là RAM web, trên 45.000 dòng vướng trần 5 MB; đề nghị trình duyệt đọc file, chỉ gửi 4 cột. ⏳ Chờ anh chốt, chưa sửa.
 
 ## Phiên 03/11 (~19:50) — Lượt nhập thật 4.313 dòng thành công nhưng 54 giây → sửa câu lấy dòng đơn
 
