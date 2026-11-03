@@ -14,6 +14,10 @@ describe("withTransientRetry", () => {
   it("phân biệt sàn chậm với sàn từ chối", () => {
     expect(isTransientPlatformError(slow())).toBe(true);
     expect(isTransientPlatformError(new Error("fetch failed"))).toBe(true);
+    // Nguyên văn log worker 17:06 03/11/2026.
+    expect(
+      isTransientPlatformError(new Error("Shopee get_model_list lỗi: product.error_internal — system busy,please try again leater"))
+    ).toBe(true);
     expect(isTransientPlatformError(new Error("Shopee lỗi: error_auth"))).toBe(false);
     expect(isTransientPlatformError(new Error("product.error_busi"))).toBe(false);
   });

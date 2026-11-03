@@ -10,7 +10,8 @@
 /** Lỗi do sàn chậm hoặc đứt mạng, không phải sàn từ chối yêu cầu. */
 export function isTransientPlatformError(err: unknown): boolean {
   const message = String((err as Error)?.message ?? err);
-  return /không trả lời trong|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(message);
+  // error_internal / "system busy": Shopee tự báo bận, hãy thử lại (Hy Korea 17:06 03/11/2026).
+  return /không trả lời trong|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|error_internal|system busy/i.test(message);
 }
 
 export const TRANSIENT_MAX_ATTEMPTS = 3;

@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 03/11 (~17:20) — Anh: việc khách cần là load sản phẩm mới và nhập giá vốn, Excel đã dẹp → kiểm log thật của khách
+
+- Web, id `cmvxs39r…`: từ 16:49 trang tải được (`CẮT từ 57877`), có lọc tab Shopee (38.889) và sang trang: 114–1.228 dòng/trang, 0,5–2,5 giây. Log không ghi lượt lưu giá nên CHƯA biết khách đã điền được giá. Đường lưu giá đã đọc mã: chỉ đụng đúng dòng đang lưu.
+- Trang 1.228 dòng lúc 16:52 cộng 1 dòng tiêu đề = file 1.229 dòng khách up lúc 17:00: nhiều khả năng khách bấm Xuất Excel rồi điền và nhập lại. Nút vẫn còn trên trang.
+- Worker: Hy Korea TikTok 18.988 xong 17:05; Hy Korea SHOPEE hỏng 17:06 `product.error_internal — system busy`, bản thử lại `e7fe6da9` bỏ sót lỗi này → sửa. 38.889 dòng Shopee về từ 10:16 vẫn còn, chỉ phần làm mới bị hỏng. ⏳ Lượt tự thử lại ~17:36: lọc log worker `Hy Korea`.
+
 ## Phiên 03/11 (~17:05) — Khách lớn 17:00 nhập Excel 1.229 dòng bị lỗi: DO EM CHẶN NHẦM ở `7a26843e` → sửa: chỉ đọc mã trong file, bỏ chặn (docs DONG-BO mục 6.7)
 
 - Trang Giá vốn của khách lớn đã mở được từ 16:58 (log `CẮT từ 57877`, 0,5–2,5 giây, RSS ~246 MB). Bài học: chắn tính năng phải thử đúng thao tác của khách và hỏi người dùng thật; ghi feedback. ⏳ Khách nhập lại, đọc log `[cost-import]`.
