@@ -418,3 +418,24 @@ Lazada "Vodka Store" vẫn lỗi `ServiceTimeout` mỗi 30 phút cả ngày, ch�
 (so `lower(btrim(normalize()))` hai vế, không dùng LIKE), không còn trần. Log `[cost-import]` ghi số dòng, số ô, thời gian. Test `cost-import-load-db.test.ts` chạy thật trên DB dev. Chưa đo bước ghi trên prod: mỗi mức giá một lượt UPDATE + vá đơn trong MỘT giao dịch, trần 120 giây; file nhiều mức giá trên gian nhiều đơn có thể chạm trần, đọc log `[cost-import]` sau lượt thật đầu tiên.
 Bằng chứng chia trang trên dữ liệu thật: log 16:58–17:02 của khách lớn `CẮT từ 57877`, 114 và 730 dòng/trang, 0,5–2,5 giây, RSS ~246 MB.
 
+### 6.8. Rà lại toàn bộ theo khách lớn (03/11 ~18:00, anh yêu cầu, đọc bằng Chrome): thủ phạm web chết nhiều khả năng là cảnh báo cháy hàng, KHÔNG phải trang Giá vốn
+
+Dòng thời gian (giờ VN, Supabase + log Render):
+| Mốc | Sự kiện |
+|---|---|
+| 01/11 19:49 | Nối gian TikTok; 20:34 danh mục 18.988 dòng |
+| 01/11 21:00–21:20 | Tạo 18.988 sản phẩm kho và nối hết |
+| 01/11 21:28, 21:46, 21:47, 22:45 | Web chết |
+| 03/11 09:51 | Nối gian Shopee; 10:13–10:16 ghi 38.889 dòng |
+| 03/11 10:15–10:40 | Khách bấm Đồng bộ, web kéo cả 2 gian trong request, KHÔNG chết (RSS 359 MB lúc 10:35) |
+| 03/11 12:30–13:45 | Tạo 24.924 sản phẩm kho, nối hết (tổng 43.912 sản phẩm, 57.877 dòng đã nối) |
+| 03/11 14:07 → 15:23 | Web chết liên tục, trước đó log gần như trống, số lệnh gọi sàn thấp (SHOPEE n=12 lúc 13:59) |
+
+Cả hai ngày: vừa nối kho xong là web chết, không phải lúc kéo danh mục. Chuỗi trong mã: `GET /api/command-center/state` (mở Tổng quan) → `scanOpsAlerts` → `detectStockouts` tải MỌI dòng đã nối kèm sản phẩm kho vào RAM web. `lastScanAt` nằm trong RAM nên web lên lại là quét lại: giải thích lần chết 32 giây sau khi lên, không log. `pg_stat_statements` có đúng truy vấn sản phẩm kho 32.766 + 11.146 = 43.912 dòng của detector này.
+
+Đo trên DB dev cùng cỡ dữ liệu, cờ heap như prod (mọi SKU hết hàng nên là ca xấu nhất, prod có 9.377 sản phẩm hết hàng): scan trước sửa 1.865 ms, RSS 168 → 374 MB (+206 MB), còn lỗi quá 32.767 tham số; sau sửa 210 ms, +1 MB. Nền prod ~330 MB + 206 MB = vượt 512 MB.
+Sửa: `detectStockouts`, `detectLowStock` gom và lọc trong SQL; test `ops-alerts-stock-db.test.ts`; câu SQL chạy thử trên dữ liệu thật khách (0 thẻ, đúng vì không có SKU đang bán nào hết hàng).
+
+Mức chắc chắn: khớp giờ 2 ngày + đo tái hiện + khớp mã, nhưng log prod không ghi route lúc chết nên chưa có bằng chứng trực tiếp. Kiểm: khách mở Tổng quan mà web không chết, log `RSS cao` không xuất hiện.
+Việc khác lộ ra, chưa sửa: `POST /sync-channels/:id/preview` gọi `refreshLinkedChannelStock` trong request web (gian 38.889 dòng rất nặng; khách chưa bật đồng bộ tồn gian nào nên chưa nổ); `ownersWithOrdersIn` ở worker dùng `distinct` tải trung bình 248.812 dòng đơn mỗi lần (69 lần từ 12/10, worker 2 GB).
+

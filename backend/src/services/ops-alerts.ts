@@ -200,73 +200,47 @@ async function topOrderRefs(
  * thật) nhưng tồn khả dụng ≤ 0 → đang mất doanh thu từng giờ. Gom theo GIAN để
  * một gian nhiều SKU cháy chỉ chiếm một thẻ.
  */
-async function detectStockouts(ownerId: string): Promise<DetectedAlert[]> {
-  const mappings = await prisma.channelProduct.findMany({
-    where: {
-      productId: { not: null },
-      channel: {
-        userId: ownerId,
-        status: "ACTIVE",
-        channelName: { not: ChannelName.OFFLINE },
-      },
-    },
-    select: {
-      channel: { select: { id: true, shopName: true, channelName: true } },
-      product: {
-        select: {
-          id: true,
-          skuCode: true,
-          quantityInStock: true,
-          holdQuantity: true,
-          isActive: true,
-        },
-      },
-    },
-  });
-
-  const stockouts = mappings.filter(
-    (m) =>
-      m.product &&
-      m.product.isActive &&
-      m.product.quantityInStock - m.product.holdQuantity <= 0
+export async function detectStockouts(ownerId: string): Promise<DetectedAlert[]> {
+  // ★ 03/11/2026 — GỐC WEB CHẾT VÌ KHÁCH NHIỀU SKU: bản cũ tải MỌI SKU đã nối kèm sản phẩm kho vào RAM rồi
+  // lọc, chạy ngay trong GET /command-center/state (mở Tổng quan). Khách 57.877 dòng / 43.912 sản phẩm: đo
+  // lại trên DB dev RSS tăng 206 MB một lượt, cộng nền ~330 MB là vượt trần 512 MB; mốc chống quét lại nằm
+  // trong RAM nên web lên lại là quét lại, thành vòng chết. Nay gom hẳn trong DB, web chỉ nhận mỗi gian một dòng.
+  const rows = await prisma.$queryRaw<
+    { channelId: string; shopName: string; channelName: string; total: number; head: string[] }[]
+  >(Prisma.sql`
+    WITH selling AS (
+      SELECT DISTINCT oi."productId" AS id
+      FROM "OrderItem" oi
+      JOIN "Order" o ON o.id = oi."orderId"
+      JOIN "Channel" oc ON oc.id = o."channelId"
+      WHERE oc."userId" = ${ownerId}
+        AND o."createdAt" >= ${daysAgo(SELLING_WINDOW_DAYS)}::timestamp
+        AND oi."productId" IS NOT NULL
+    )
+    SELECT c.id AS "channelId", c."shopName", c."channelName"::text AS "channelName",
+           count(DISTINCT p."skuCode")::int AS total,
+           (array_agg(DISTINCT p."skuCode"))[1:3] AS head
+    FROM "ChannelProduct" cp
+    JOIN "Channel" c ON c.id = cp."channelId"
+    JOIN "Product" p ON p.id = cp."productId"
+    JOIN selling s ON s.id = p.id
+    WHERE c."userId" = ${ownerId}
+      AND c.status::text = 'ACTIVE'
+      AND c."channelName"::text <> 'OFFLINE'
+      AND p."isActive"
+      AND p."quantityInStock" - p."holdQuantity" <= 0
+    GROUP BY c.id, c."shopName", c."channelName"`);
+  const byChannel = new Map(
+    rows.map((r) => [
+      r.channelId,
+      { shopName: r.shopName, channelName: r.channelName, total: r.total, head: r.head },
+    ])
   );
-  if (stockouts.length === 0) return [];
-
-  // Chỉ giữ SKU có đơn gần đây — SKU ngừng kinh doanh tồn 0 không phải sự cố.
-  const sellingRows = await prisma.orderItem.findMany({
-    where: {
-      productId: { in: [...new Set(stockouts.map((m) => m.product!.id))] },
-      order: {
-        createdAt: { gte: daysAgo(SELLING_WINDOW_DAYS) },
-        channel: { userId: ownerId },
-      },
-    },
-    select: { productId: true },
-    distinct: ["productId"],
-  });
-  const selling = new Set(sellingRows.map((r) => r.productId));
-
-  // Gom theo gian: mỗi gian một thẻ, liệt kê tối đa 3 SKU đầu.
-  const byChannel = new Map<
-    string,
-    { shopName: string; channelName: string; skus: Set<string> }
-  >();
-  for (const m of stockouts) {
-    if (!selling.has(m.product!.id)) continue;
-    const g = byChannel.get(m.channel.id) ?? {
-      shopName: m.channel.shopName,
-      channelName: m.channel.channelName,
-      skus: new Set<string>(),
-    };
-    g.skus.add(m.product!.skuCode);
-    byChannel.set(m.channel.id, g);
-  }
 
   const alerts: DetectedAlert[] = [];
   for (const [channelId, g] of byChannel) {
-    const skus = [...g.skus];
-    const head = skus.slice(0, 3).join(", ");
-    const more = skus.length > 3 ? ` +${skus.length - 3} SKU khác` : "";
+    const head = g.head.join(", ");
+    const more = g.total > 3 ? ` +${g.total - 3} SKU khác` : "";
     alerts.push({
       type: "stockout",
       dedupeKey: channelId,
@@ -274,9 +248,9 @@ async function detectStockouts(ownerId: string): Promise<DetectedAlert[]> {
       severity: "high",
       // 25/10/2026: tiêu đề nói VÌ SAO đáng bận tâm (khách vẫn đang mua) + máy sẽ làm gì tiếp (tự đẩy tồn).
       title:
-        skus.length > 1
-          ? `${skus.length} SKU hết hàng nhưng khách vẫn đang mua — đang mất đơn trên gian "${g.shopName}"`
-          : `${skus[0]} hết hàng nhưng khách vẫn đang mua — đang mất đơn trên gian "${g.shopName}"`,
+        g.total > 1
+          ? `${g.total} SKU hết hàng nhưng khách vẫn đang mua — đang mất đơn trên gian "${g.shopName}"`
+          : `${g.head[0]} hết hàng nhưng khách vẫn đang mua — đang mất đơn trên gian "${g.shopName}"`,
       summary: `${CHANNEL_LABEL[g.channelName] ?? g.channelName}: ${head}${more} có đơn trong ${SELLING_WINDOW_DAYS} ngày qua nhưng tồn khả dụng đã hết. Chỉ cần nhập kho — Hubsell tự đẩy tồn lên sàn mở bán lại, không phải vào sàn sửa tay.`,
       payload: { kind: "navigate", href: "/products", label: "Kiểm tra tồn kho" },
     });
@@ -290,29 +264,30 @@ async function detectStockouts(ownerId: string): Promise<DetectedAlert[]> {
  * nhập thêm vượt ngưỡng là scan tự AUTO_CLOSED. Đường sự kiện checkLowStock()
  * bên dưới báo ngay; detector này là lưới an toàn + dọn thẻ. Ngưỡng 0 = tắt.
  */
-async function detectLowStock(ownerId: string): Promise<DetectedAlert[]> {
+export async function detectLowStock(ownerId: string): Promise<DetectedAlert[]> {
   const setting = await prisma.shopSyncSetting.findUnique({
     where: { userId: ownerId },
     select: { lowStockDefault: true },
   });
   const shopDefault = setting?.lowStockDefault ?? 0;
-  const products = await prisma.product.findMany({
-    where: {
-      userId: ownerId,
-      // SKU đã ngừng kinh doanh thì hết hàng là bình thường, không báo (24/09).
-      isActive: true,
-      // Không có ngưỡng riêng và shop không đặt mặc định → không gì để quét.
-      ...(shopDefault > 0 ? {} : { lowStockThreshold: { gt: 0 } }),
-    },
-    select: {
-      id: true,
-      skuCode: true,
-      productName: true,
-      quantityInStock: true,
-      holdQuantity: true,
-      lowStockThreshold: true,
-    },
-  });
+  // Lọc ngay trong DB, cùng công thức với isLowStock (03/11/2026): shop có đặt mặc định thì bản cũ tải mọi
+  // sản phẩm đang bán vào RAM web. SKU đã ngừng kinh doanh thì hết hàng là bình thường, không báo (24/09).
+  const products = await prisma.$queryRaw<
+    {
+      id: string;
+      skuCode: string;
+      productName: string;
+      quantityInStock: number;
+      holdQuantity: number;
+      lowStockThreshold: number | null;
+    }[]
+  >(Prisma.sql`
+    SELECT id, "skuCode", "productName", "quantityInStock", "holdQuantity", "lowStockThreshold"
+    FROM "Product"
+    WHERE "userId" = ${ownerId}
+      AND "isActive"
+      AND COALESCE("lowStockThreshold", ${shopDefault}::int) > 0
+      AND "quantityInStock" - "holdQuantity" <= COALESCE("lowStockThreshold", ${shopDefault}::int)`);
   return products
     .filter((p) => isLowStock(p, shopDefault))
     .map((p) => buildLowStockAlert(p, effectiveLowStockThreshold(p, shopDefault)));
