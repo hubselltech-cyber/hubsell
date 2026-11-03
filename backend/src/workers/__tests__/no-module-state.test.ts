@@ -44,7 +44,6 @@ const ALLOWED_LET: Record<string, string> = {
   lastSignRemindAt: "mốc nhắc ký gần nhất — chỉ chống nhắc dồn trong tiến trình",
   lastCleanupAt: "mốc dọn gần nhất — chỉ chống dọn dồn trong tiến trình",
   tiktokDailyRunsInFlight: "đếm lượt đang chạy để giới hạn song song trong tiến trình",
-  currentClaim: "gian kéo danh mục đang dở trong tiến trình — để trả lại hàng chờ khi SIGTERM (03/11/2026); nguồn sự thật vẫn là cột lịch trên Channel",
 };
 
 /**
@@ -59,6 +58,7 @@ const ALLOWED_CONTAINERS: Record<string, string> = {
   "stock-queue.ts:waiting": "hàng chờ tới lượt trong tiến trình — dòng việc vẫn ở bảng, lưới quét gọi lại",
   "stock-queue.ts:running": "promise lượt đang chạy theo gian — dòng việc vẫn ở bảng",
   "stock-queue.ts:again": "cờ 'gọi lại trong lúc đang chạy' — dòng việc vẫn ở bảng",
+  "product-catalog-sync.ts:activeClaims": "các gian đang kéo trong tiến trình — để giới hạn số gian cùng lúc và trả hàng chờ khi SIGTERM; lịch thật ở cột Channel.nextProductSyncAt",
 };
 
 const LET_RE = /^(let|var)\s+([A-Za-z_$][\w$]*)/;

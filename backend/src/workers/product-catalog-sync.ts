@@ -9,14 +9,14 @@
 //
 // Cơ chế (một cột lịch, giống nextFastSyncAt của đơn):
 //   · Channel.nextProductSyncAt = now lúc TẠO gian (Shopee/Lazada/TikTok) →
-//     worker kéo ngay lượt kế (poll 1', trước 03/11 là 5').
+//     worker kéo ngay lượt kế (poll 30 giây, trước 03/11 là 5').
 //   · Xong → lastProductSyncAt = now, lịch kế = đêm sau 03:00–05:00 giờ VN
 //     (rải ngẫu nhiên để 13 gian Shopee không cùng lúc đập get_model_list —
 //     sự cố DarkMan 05/09 error_rate_limit khi kéo nguyên danh mục).
 //   · Lỗi (sàn bận, token…) → productSyncError + thử lại sau 30'.
 //   · Nút "Đồng bộ từ sàn" của khách cũng ghi lịch qua scheduleAfterProductSync
 //     để worker không kéo lại ngay sau đó.
-//   · Chạy TUẦN TỰ từng gian, tối đa MAX_PER_CYCLE gian mỗi lượt poll; nhận
+//   · Chạy tối đa MAX_PARALLEL gian cùng lúc (trước 03/11 tuần tự từng gian); nhận
 //     gian bằng updateMany có điều kiện (nhiều worker không đụng nhau).
 // Tắt: PRODUCT_CATALOG_SYNC_OFF=1.
 //
@@ -38,12 +38,12 @@ import { invalidateOwnerCostCaches, repairZeroCostLinesForChannel } from "../lib
 import { prisma } from "../lib/prisma";
 import { syncChannelProducts } from "../marketplace/product-sync";
 
-/** 03/11/2026: 5' → 1' — nút bấm của khách chờ tối đa một nhịp này; truy vấn findFirst theo chỉ mục
+/** 03/11/2026: 5' → 30 giây — nút bấm của khách chờ tối đa một nhịp này (30 giây từ 03/11 tối); truy vấn findFirst theo chỉ mục
  *  (status, nextProductSyncAt) nên rẻ. Anh Trung: chờ 5–6 phút "khó chịu hơn cả báo lỗi". */
-const POLL_MS = 60 * 1000;
+const POLL_MS = 30 * 1000;
 const FIRST_RUN_DELAY_MS = 60 * 1000;
-/** Mỗi lượt poll kéo tối đa N gian (tuần tự) — gian mới nối vẫn được kéo trong ≤5'. */
-const MAX_PER_CYCLE = 5;
+/** Số gian kéo danh mục cùng lúc trong một worker. Tự chọn, chưa đo ngưỡng tải. */
+export const MAX_PARALLEL = 3;
 /** Lỗi → thử lại sau. */
 const RETRY_MS = 30 * 60 * 1000;
 /** Nhận gian = đẩy lịch ra xa để tiến trình khác không nhận trùng; xong ghi lịch thật. */
@@ -266,8 +266,8 @@ export async function findChannelsPendingCatalog(
 let started = false;
 let running = false;
 let stopping = false;
-/** Gian đang kéo dở trong tiến trình này — để trả lại hàng chờ khi nhận SIGTERM (deploy). */
-let currentClaim: { id: string; shopName: string } | null = null;
+/** Các gian đang kéo dở trong tiến trình này — để trả lại hàng chờ khi nhận SIGTERM (deploy). */
+const activeClaims = new Map<string, string>();
 
 /**
  * ★ 03/11/2026 ~16:00 — SỰ CỐ: anh bấm Đồng bộ từ sàn, worker đang kéo dở thì Render deploy bản mới
@@ -283,15 +283,19 @@ let currentClaim: { id: string; shopName: string } | null = null;
  */
 export async function stopProductCatalogSync(): Promise<void> {
   stopping = true;
-  const claim = currentClaim;
-  if (!claim) return;
+  const claims = [...activeClaims];
+  if (claims.length === 0) return;
   const now = new Date();
-  await prisma.channel
-    .updateMany({ where: { id: claim.id, nextProductSyncAt: { gt: now } }, data: { nextProductSyncAt: now } })
-    .then((r) => {
-      if (r.count > 0) console.log(`[Catalog-sync] Tắt giữa chừng — trả gian "${claim.shopName}" về hàng chờ`);
-    })
-    .catch((err) => console.error("[Catalog-sync] Không trả được gian đang dở:", (err as Error).message));
+  await Promise.all(
+    claims.map(([id, shopName]) =>
+      prisma.channel
+        .updateMany({ where: { id, nextProductSyncAt: { gt: now } }, data: { nextProductSyncAt: now } })
+        .then((r) => {
+          if (r.count > 0) console.log(`[Catalog-sync] Tắt giữa chừng — trả gian "${shopName}" về hàng chờ`);
+        })
+        .catch((err) => console.error("[Catalog-sync] Không trả được gian đang dở:", (err as Error).message))
+    )
+  );
 }
 
 /** Tuổi tối thiểu của một lượt nhận để coi tiến trình giữ nó đã chết (Render SIGTERM→SIGKILL 30 giây). */
@@ -323,7 +327,7 @@ export function startProductCatalogSyncWorker(): void {
   setTimeout(() => void runProductCatalogSync(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void runProductCatalogSync(), POLL_MS).unref();
   console.log(
-    `[Catalog-sync] BẬT — poll ${POLL_MS / 60000}', gian mới kéo ngay, làm mới đêm ${String(NIGHTLY_WINDOW.startHour).padStart(2, "0")}:00 giờ VN (rải ${NIGHTLY_WINDOW.spreadMin}'), tối đa ${MAX_PER_CYCLE} gian/lượt`
+    `[Catalog-sync] BẬT — poll ${POLL_MS / 1000} giây, gian mới kéo ngay, làm mới đêm ${String(NIGHTLY_WINDOW.startHour).padStart(2, "0")}:00 giờ VN (rải ${NIGHTLY_WINDOW.spreadMin}'), tối đa ${MAX_PARALLEL} gian cùng lúc`
   );
 }
 
@@ -355,63 +359,79 @@ export async function repairZeroCostLinesAfterSync(channel: {
   }
 }
 
-/** Một lượt poll: nhận + kéo tuần tự tới MAX_PER_CYCLE gian đến hạn. Export để chạy tay/test. */
+/** Nhận một gian đến hạn: khách bấm trước (gian ít dòng trước), rồi tới lịch đêm / thử lại. Null = hết việc. */
+async function claimNextDue() {
+  for (;;) {
+    const now = new Date();
+    const dueWhere = {
+      status: "ACTIVE" as const,
+      refreshToken: { not: null },
+      channelName: { in: ONLINE },
+      nextProductSyncAt: { lte: now },
+    };
+    const due =
+      (await prisma.channel.findFirst({
+        where: { ...dueWhere, productSyncRequestedAt: { not: null } },
+        orderBy: [{ channelProducts: { _count: "asc" } }, { productSyncRequestedAt: "asc" }],
+      })) ??
+      (await prisma.channel.findFirst({ where: dueWhere, orderBy: { nextProductSyncAt: "asc" } }));
+    if (!due) return null;
+    // Nhận gian: chỉ tiến trình đổi được lịch mới chạy (nhiều worker không đụng nhau).
+    const claimed = await prisma.channel.updateMany({
+      where: { id: due.id, nextProductSyncAt: due.nextProductSyncAt },
+      data: { nextProductSyncAt: new Date(now.getTime() + CLAIM_MS) },
+    });
+    if (claimed.count === 1) return due;
+  }
+}
+
+type DueChannel = NonNullable<Awaited<ReturnType<typeof claimNextDue>>>;
+
+async function pullOne(due: DueChannel): Promise<boolean> {
+  try {
+    const r = await syncChannelProducts(due);
+    await scheduleAfterProductSync(due.id, true);
+    console.log(
+      `[Catalog-sync] "${due.shopName}" (${due.channelName})${due.productSyncRequestedAt ? " theo nút bấm" : ""}: ${r.scanned} SP sàn, +${r.created} mới, ${r.updated} cập nhật, ${r.delisted} gỡ, ${r.deactivated} SKU kho tự Ngừng bán, ${r.costAutoFilled} tự điền giá vốn`
+    );
+    await repairZeroCostLinesAfterSync(due);
+    return true;
+  } catch (err) {
+    const message = (err as Error).message;
+    await scheduleAfterProductSync(due.id, false, message);
+    console.error(
+      `[Catalog-sync] Lỗi kéo danh mục "${due.shopName}" (${due.channelName}) — thử lại sau ${RETRY_MS / 60000}':`,
+      message
+    );
+    return false;
+  }
+}
+
+/**
+ * Lấp các chỗ trống tới MAX_PARALLEL gian kéo cùng lúc (03/11/2026, anh thấy nút xoay lâu: 5 gian kéo lần
+ * lượt mất ~4 phút, và một gian đang kéo lâu làm mọi nút bấm khác phải chờ). Một gian xong là lấp chỗ ngay.
+ * Mỗi gian có hạn mức sàn riêng; trần 3 giữ tải DB và RAM worker trong tầm. Export để chạy tay/test.
+ */
 export async function runProductCatalogSync(): Promise<number> {
   if (running) return 0;
   running = true;
-  let done = 0;
+  const runs: Promise<boolean>[] = [];
   try {
-    for (let i = 0; i < MAX_PER_CYCLE; i++) {
-      if (stopping) break;
-      const now = new Date();
-      const dueWhere = {
-        status: "ACTIVE" as const,
-        refreshToken: { not: null },
-        channelName: { in: ONLINE },
-        nextProductSyncAt: { lte: now },
-      };
-      // ★ 03/11 16:05 — Khách bấm (có mốc xin) trước, và trong số đó GIAN NHỎ TRƯỚC (đếm dòng
-      // danh mục đã có): một làn tuần tự mà gian 38.889 SP (≈ 1,5 giờ Shopee) đứng đầu thì mọi
-      // gian vài trăm SP phía sau treo "Đang kéo" cả tiếng (anh thấy 16:00). Hết gian khách bấm
-      // mới tới lịch đêm / thử lại theo hạn.
-      const due =
-        (await prisma.channel.findFirst({
-          where: { ...dueWhere, productSyncRequestedAt: { not: null } },
-          orderBy: [{ channelProducts: { _count: "asc" } }, { productSyncRequestedAt: "asc" }],
-        })) ??
-        (await prisma.channel.findFirst({ where: dueWhere, orderBy: { nextProductSyncAt: "asc" } }));
+    while (!stopping && activeClaims.size < MAX_PARALLEL) {
+      const due = await claimNextDue();
       if (!due) break;
-      // Nhận gian: chỉ tiến trình đổi được lịch mới chạy (nhiều worker không đụng nhau).
-      const claimed = await prisma.channel.updateMany({
-        where: { id: due.id, nextProductSyncAt: due.nextProductSyncAt },
-        data: { nextProductSyncAt: new Date(now.getTime() + CLAIM_MS) },
-      });
-      if (claimed.count === 0) continue;
-      currentClaim = { id: due.id, shopName: due.shopName };
-
-      try {
-        const r = await syncChannelProducts(due);
-        await scheduleAfterProductSync(due.id, true);
-        done++;
-        console.log(
-          `[Catalog-sync] "${due.shopName}" (${due.channelName})${due.productSyncRequestedAt ? " theo nút bấm" : ""}: ${r.scanned} SP sàn, +${r.created} mới, ${r.updated} cập nhật, ${r.delisted} gỡ, ${r.deactivated} SKU kho tự Ngừng bán, ${r.costAutoFilled} tự điền giá vốn`
-        );
-        await repairZeroCostLinesAfterSync(due);
-      } catch (err) {
-        const message = (err as Error).message;
-        await scheduleAfterProductSync(due.id, false, message);
-        console.error(
-          `[Catalog-sync] Lỗi kéo danh mục "${due.shopName}" (${due.channelName}) — thử lại sau ${RETRY_MS / 60000}':`,
-          message
-        );
-      } finally {
-        currentClaim = null;
-      }
+      activeClaims.set(due.id, due.shopName);
+      runs.push(
+        pullOne(due).finally(() => {
+          activeClaims.delete(due.id);
+          if (!stopping) void runProductCatalogSync();
+        })
+      );
     }
   } catch (err) {
     console.error("[Catalog-sync] Lỗi vòng quét:", (err as Error).message);
   } finally {
     running = false;
   }
-  return done;
+  return (await Promise.all(runs)).filter(Boolean).length;
 }

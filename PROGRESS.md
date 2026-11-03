@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~18:40) — Anh: dải xoay lâu hơn trước → kéo danh mục tối đa 3 gian cùng lúc, nhận việc mỗi 30 giây
+
+- Log: Hy Korea Shopee làm mới THÀNH CÔNG 18:00:38 (38.889 mã, +0 mới, khoảng 19 phút). Dải của anh không kẹt: 18:37:48 ANO Official, 18:38:24 DARKMAN STORE, nhưng chạy lần lượt 30–60 giây/gian. Sửa: MAX_PARALLEL = 3 (tự chọn, chưa đo tải), xong gian nào lấp chỗ ngay, poll 30 giây; SIGTERM trả mọi gian đang dở. Test giả 3 ca. ⏳ Đo lại tổng thời gian 5 gian của anh sau deploy.
+
 ## Phiên 03/11 (~18:00) — Anh yêu cầu rà từ lúc ủy quyền tới lúc lỗi: thủ phạm nhiều khả năng là `detectStockouts` trên Tổng quan, em đã kết luận nhầm là trang Giá vốn
 
 - Chi tiết + dòng thời gian: docs/DONG-BO-GIAI-DOAN-3.md mục 6.8. Đo cùng kịch bản trên DB dev: +206 MB trước sửa, +1 MB sau sửa. Sửa SQL + test DB. ⏳ Kiểm khi khách mở Tổng quan.
