@@ -1059,11 +1059,26 @@ router.get("/expenses", async (req: AuthRequest, res, next) => {
 //     câu phổ thông, khách bấm lại sau) — một shop lớn không kéo sập web của người khác;
 //   · log một dòng số dòng + thời gian khi > 2.000 dòng → có số thật để quyết phân
 //     trang (giai đoạn 3). Sửa gốc = phân trang/tìm ở DB, chưa làm ở lát này.
+//
+// ★ 03/11/2026 ~15:50 — LÁT CHẮN TẠM (anh chốt sau khi SQL prod cho thấy chủ shop lớn
+// nhất 57.877 dòng SKU sàn mở trang đúng lúc web chết; anh: "chả có khách nào cập nhật
+// bằng Excel — cái họ muốn là hiện ra và điền"): ĐẾM TRƯỚC; quá SKU_PRODUCTS_MAX_ROWS
+// (mặc định 5.000, tự chọn — mức "khách vài nghìn SKU" 22/10 đã chạy êm) thì KHÔNG tải
+// hết mà trả `limit` dòng đầu ưu tiên ĐANG BÁN + CHƯA CÓ GIÁ RIÊNG, kèm `truncated`,
+// `totalRows`; ô tìm của trang gửi `?q=` để tìm trong TOÀN BỘ danh mục ở DB (mã sàn,
+// tên, phân loại, mã SP sàn). Khách vẫn hiện ra và điền tại chỗ. Sửa gốc = lát 3.8
+// phân trang thật (docs/DONG-BO-GIAI-DOAN-3.md).
 router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthRequest, res, next) => {
   try {
     const startedAt = Date.now();
     const raw = typeof req.query.channel === "string" ? req.query.channel : "all";
     const channel = raw.toLowerCase();
+    const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
+    const envMax = Number(process.env.SKU_PRODUCTS_MAX_ROWS);
+    const maxRows = Number.isFinite(envMax) && envMax > 0 ? Math.floor(envMax) : 5000;
+    let truncated = false;
+    let totalRows = 0;
+    let missingCostDb: number | null = null;
 
     const rows: {
       skuId: string; // id dùng để cập nhật giá vốn (mapping id hoặc product id)
@@ -1106,15 +1121,54 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
     // của gian (ChannelProduct.costPrice), không có thì giá mặc định của sản
     // phẩm kho đã nối — costSource cho trang biết đang dùng giá nào.
     if (channel !== "offline") {
-      const channelProducts = await prisma.channelProduct.findMany({
-        where: {
-          channel: {
-            userId: req.ownerId!,
-            ...(channel !== "all" && CHANNEL_BY_KEY[channel]
-              ? { channelName: CHANNEL_BY_KEY[channel] }
-              : { channelName: { not: ChannelName.OFFLINE } }),
-          },
+      const whereChannel = {
+        channel: {
+          userId: req.ownerId!,
+          ...(channel !== "all" && CHANNEL_BY_KEY[channel]
+            ? { channelName: CHANNEL_BY_KEY[channel] }
+            : { channelName: { not: ChannelName.OFFLINE } }),
         },
+      };
+      // Đếm cả gian (không tính ô tìm) → biết có phải gian lớn không.
+      totalRows = await prisma.channelProduct.count({ where: whereChannel });
+      truncated = totalRows > maxRows;
+      const whereSearch =
+        q !== ""
+          ? {
+              OR: [
+                { channelSku: { contains: q, mode: "insensitive" as const } },
+                { productName: { contains: q, mode: "insensitive" as const } },
+                { variantName: { contains: q, mode: "insensitive" as const } },
+                { itemSku: { contains: q, mode: "insensitive" as const } },
+                { externalId: { contains: q, mode: "insensitive" as const } },
+              ],
+            }
+          : {};
+      if (truncated) {
+        // Số "còn thiếu giá vốn" của CẢ gian tính ở DB (trang không còn đủ dòng để đếm):
+        // đang bán, không có giá riêng, và không nối kho hoặc kho cũng chưa có giá.
+        missingCostDb = await prisma.channelProduct.count({
+          where: {
+            ...whereChannel,
+            status: ChannelProductStatus.ACTIVE,
+            AND: [
+              { OR: [{ costPrice: null }, { costPrice: 0 }] },
+              { OR: [{ productId: null }, { product: { costPrice: 0 } }] },
+            ],
+          },
+        });
+      }
+      const channelProducts = await prisma.channelProduct.findMany({
+        where: { ...whereChannel, ...(truncated ? whereSearch : {}) },
+        // Gian lớn: ưu tiên ĐANG BÁN (ACTIVE < DELISTED theo chữ) rồi CHƯA CÓ GIÁ RIÊNG (null/0 trước), cắt maxRows.
+        orderBy: truncated
+          ? [
+              { status: "asc" as const },
+              { costPrice: { sort: "asc" as const, nulls: "first" as const } },
+              { createdAt: "desc" as const },
+            ]
+          : [{ createdAt: "desc" as const }],
+        take: truncated ? maxRows : undefined,
         select: {
           id: true,
           productId: true,
@@ -1129,7 +1183,6 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
           product: { select: { productName: true, imageUrl: true, sellingPrice: true, costPrice: true } },
           channel: { select: { id: true, channelName: true, shopName: true } },
         },
-        orderBy: { createdAt: "desc" },
       });
 
       for (const cp of channelProducts) {
@@ -1163,7 +1216,8 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
     }
 
     // 2) Sản phẩm kho chưa liên kết sàn nào → coi là hàng bán Offline
-    if (channel === "offline" || channel === "all") {
+    //    (gian lớn đang cắt bớt thì chỉ hiện khi xem riêng tab Offline).
+    if (channel === "offline" || (channel === "all" && !truncated)) {
       const unmapped = await prisma.product.findMany({
         where: { userId: req.ownerId!, channelProducts: { none: {} } },
         select: { id: true, skuCode: true, productName: true, imageUrl: true, sellingPrice: true, costPrice: true },
@@ -1192,19 +1246,25 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
       }
     }
 
-    if (rows.length > 2000) {
+    if (rows.length > 2000 || truncated) {
       console.log(
-        `[sku-products] chủ shop ${req.ownerId}: ${rows.length} dòng (channel=${channel}) trong ${Date.now() - startedAt} ms, RSS ${Math.round(process.memoryUsage().rss / 1048576)} MB`
+        `[sku-products] chủ shop ${req.ownerId}: ${rows.length} dòng${truncated ? ` (CẮT từ ${totalRows}, q="${q}")` : ""} (channel=${channel}) trong ${Date.now() - startedAt} ms, RSS ${Math.round(process.memoryUsage().rss / 1048576)} MB`
       );
     }
     res.json({
       channel,
       total: rows.length,
+      // Gian lớn bị cắt: cho trang biết để hiện dải + chuyển ô tìm sang hỏi máy chủ.
+      truncated,
+      totalRows: truncated ? totalRows : rows.length,
+      limit: maxRows,
       // Chỉ đếm SKU ĐANG BÁN: hàng sàn đã gỡ không cần giá vốn, đếm vào chỉ
       // làm con số "còn thiếu" phình lên vô nghĩa (khách 2.231 mã, 28/09).
-      missingCostCount: rows.filter(
-        (r) => r.status === ChannelProductStatus.ACTIVE && Number(r.costPrice) <= 0
-      ).length,
+      missingCostCount:
+        missingCostDb ??
+        rows.filter(
+          (r) => r.status === ChannelProductStatus.ACTIVE && Number(r.costPrice) <= 0
+        ).length,
       // Gian vừa nối, danh mục chưa kéo xong lần đầu → trang báo "đang kéo" thay
       // vì bảng trống, rồi hỏi nhịp endpoint nhẹ bên dưới để tự nạp lại.
       catalogPending: await findChannelsPendingCatalog(req.ownerId!),

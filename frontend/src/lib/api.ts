@@ -2594,15 +2594,20 @@ export interface CatalogSyncChannelState {
   pending: boolean;
 }
 
-export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
+export function fetchSkuProducts(channel: SkuChannelFilter = "all", q = "") {
   return apiFetch<{
     channel: string;
     total: number;
+    /** Gian lớn (03/11/2026): máy chủ chỉ trả `limit` dòng đầu (ưu tiên đang bán, chưa có giá riêng)
+     *  trong `totalRows`; ô tìm phải gửi `q` để tìm trong toàn bộ danh mục. Thiếu = máy chủ bản cũ. */
+    truncated?: boolean;
+    totalRows?: number;
+    limit?: number;
     missingCostCount: number;
     /** Thiếu = backend bản cũ chưa trả trường này. */
     catalogPending?: CatalogPendingChannel[];
     items: SkuProduct[];
-  }>(`/api/finance/sku-products?channel=${channel}`);
+  }>(`/api/finance/sku-products?channel=${channel}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
 }
 
 /** Bản nhẹ để hỏi theo nhịp trong lúc chờ danh mục về (gian mới / vừa xin kéo). */

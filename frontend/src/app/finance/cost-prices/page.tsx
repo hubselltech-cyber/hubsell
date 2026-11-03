@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -154,6 +154,12 @@ export default function CostPricesPage() {
   const [shop, setShop] = useState<string>("all");
   const [items, setItems] = useState<SkuProduct[]>([]);
   const [missingCount, setMissingCount] = useState(0);
+  // Gian lớn (03/11/2026): máy chủ cắt còn `limit` dòng đầu trong `totalRows`; ô tìm hỏi máy chủ.
+  const [truncated, setTruncated] = useState(false);
+  const [totalRows, setTotalRows] = useState(0);
+  const [rowLimit, setRowLimit] = useState(0);
+  /** Từ khóa đang gửi máy chủ khi gian lớn — giữ qua các lần nạp lại (sau đồng bộ, sau lưu giá). */
+  const serverQRef = useRef("");
   // Gian vừa nối, danh mục chưa kéo xong lần đầu (worker đang kéo nền).
   const [catalogPending, setCatalogPending] = useState<CatalogPendingChannel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -382,9 +388,12 @@ export default function CostPricesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchSkuProducts(channel);
+      const res = await fetchSkuProducts(channel, serverQRef.current);
       setItems(res.items);
       setMissingCount(res.missingCostCount);
+      setTruncated(Boolean(res.truncated));
+      setTotalRows(res.totalRows ?? res.items.length);
+      setRowLimit(res.limit ?? 0);
       setCatalogPending(res.catalogPending ?? []);
       // Nạp giá vốn hiện tại vào ô nhập. Chưa có giá thì để TRỐNG chứ không
       // điền số 0 — để placeholder "Nhập giá vốn" hiện ra, nhìn là biết còn
@@ -438,6 +447,18 @@ export default function CostPricesPage() {
     }
     load();
   }, [load, router]);
+
+  // Gian lớn: ô tìm hỏi MÁY CHỦ (tìm trong toàn bộ danh mục), chờ gõ xong 400 ms.
+  useEffect(() => {
+    if (!truncated) return;
+    const next = search.trim();
+    if (next === serverQRef.current) return;
+    const t = setTimeout(() => {
+      serverQRef.current = next;
+      void load();
+    }, 400);
+    return () => clearTimeout(t);
+  }, [search, truncated, load]);
 
   // Khách bấm "Nhập giá vốn ngay" ở hộp chào sau khi nối gian thường tới đây
   // TRƯỚC khi worker kéo xong danh mục (nhịp quét 5'). Trong lúc chờ: hỏi bản
@@ -769,6 +790,24 @@ export default function CostPricesPage() {
             </div>
           )}
 
+          {/* Gian lớn: máy chủ chỉ trả một phần (03/11/2026) — nói rõ đang xem gì và tìm ở đâu. */}
+          {truncated && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+              <p className="min-w-0 flex-1">
+                Gian của bạn có <strong>{formatNumber(totalRows)}</strong> mã SKU sàn. Đang hiện{" "}
+                <strong>{formatNumber(rowLimit)}</strong> mã đầu, ưu tiên mã đang bán chưa có giá vốn
+                {serverQRef.current ? (
+                  <>
+                    {" "}khớp từ khóa “{serverQRef.current}”
+                  </>
+                ) : null}
+                . Gõ tên, mã SKU hoặc mã sản phẩm sàn vào ô tìm để tìm trong toàn bộ danh mục — vẫn điền giá
+                ngay tại dòng như bình thường.
+              </p>
+            </div>
+          )}
+
           {/* Gian vừa nối đang kéo danh mục — bảng đã có SKU của gian khác nên báo
               bằng một dải gọn; bảng còn trống thì báo ngay trong thân bảng. */}
           {pendingNote && items.length > 0 && (
@@ -878,6 +917,12 @@ export default function CostPricesPage() {
                 <div className="px-4 py-10 text-center text-sm text-muted-foreground">
                   <Loader2 className="mx-auto mb-2 size-8 animate-spin motion-reduce:animate-none" />
                   {pendingNote}
+                </div>
+              ) : items.length === 0 && truncated && serverQRef.current ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  <SearchX className="mx-auto mb-2 size-8" />
+                  Không tìm thấy mã nào khớp “{serverQRef.current}” trong {formatNumber(totalRows)} mã SKU
+                  sàn của gian. Thử gõ ngắn hơn, hoặc mã sản phẩm trên sàn.
                 </div>
               ) : items.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
