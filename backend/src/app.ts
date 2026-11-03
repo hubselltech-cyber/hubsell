@@ -1,3 +1,4 @@
+import { trackInFlight } from "./lib/request-ledger";
 import express from "express";
 import cors from "cors";
 import compression from "compression";
@@ -148,6 +149,9 @@ export function createApp() {
       },
     })
   );
+  // Sổ request đang chạy (lib/request-ledger.ts): memory-watch in sổ này khi RSS
+  // sát trần container → biết route nào đang chạy lúc web sắp chết (03/11/2026).
+  app.use(trackInFlight);
 
   // Kiểm tra sức khỏe máy chủ (công khai). version = SHA commit đang chạy
   // (Render tự đặt RENDER_GIT_COMMIT) — để xác minh deploy đã lên code mới.

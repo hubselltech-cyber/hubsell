@@ -1,4 +1,5 @@
 import v8 from "v8";
+import { describeInFlight } from "./request-ledger";
 
 /**
  * CANH BỘ NHỚ TIẾN TRÌNH (22/09/2026 — sự cố Render sập 5 lần trong 4 ngày vì
@@ -17,6 +18,12 @@ import v8 from "v8";
  * Ngưỡng là MẶC ĐỊNH TỰ CHỌN (không phải số của Render/Node): 70% để thấy sớm,
  * 85% là sát chết (V8 bắt đầu GC dồn dập từ ~90%). Đổi bằng env
  * MEMORY_WATCH_WARN_PCT / MEMORY_WATCH_CRIT_PCT; MEMORY_WATCH_SECONDS=0 tắt.
+ *
+ * ★ 03/11/2026 — CANH THÊM RSS SO VỚI TRẦN CONTAINER: web Render chết "used over
+ * 512MB" 11 lần trong ngày mà heap chỉ 70–80 MB, không dòng cảnh báo nào (phần
+ * phình nằm ngoài heap V8: engine Prisma, bộ đệm). Nay lấy mẫu cả RSS so với
+ * CONTAINER_MEMORY_MB (mặc định 512 = gói Starter), cùng ngưỡng 70/85 %, và khi
+ * vượt thì IN SỔ REQUEST ĐANG CHẠY (lib/request-ledger.ts) → lần chết kế biết route.
  */
 
 const MB = 1024 * 1024;
@@ -47,11 +54,16 @@ export function startMemoryWatch(): void {
   const critPct = pctEnv("MEMORY_WATCH_CRIT_PCT", 85);
   const restPct = Math.max(10, warnPct - 10); // hạ xuống dưới mức này mới "lên đạn" lại
   const limit = v8.getHeapStatistics().heap_size_limit;
+  const containerMb = Number(process.env.CONTAINER_MEMORY_MB);
+  const rssLimit = (Number.isFinite(containerMb) && containerMb > 0 ? containerMb : 512) * MB;
   let armedWarn = true;
   let armedCrit = true;
+  let armedRssWarn = true;
+  let armedRssCrit = true;
 
   const tick = () => {
-    const pct = (process.memoryUsage().heapUsed / limit) * 100;
+    const m = process.memoryUsage();
+    const pct = (m.heapUsed / limit) * 100;
     if (pct >= critPct && armedCrit) {
       armedCrit = false;
       console.error(`[Bộ nhớ] ⚠️ SÁT TRẦN HEAP ${Math.round(pct)}% — ${describeMemory()}`);
@@ -62,6 +74,23 @@ export function startMemoryWatch(): void {
     if (pct < restPct) {
       armedWarn = true;
       armedCrit = true;
+    }
+    // RSS so với trần container — chỗ thật sự chết trên Render (03/11/2026).
+    const rssPct = (m.rss / rssLimit) * 100;
+    if (rssPct >= critPct && armedRssCrit) {
+      armedRssCrit = false;
+      console.error(
+        `[Bộ nhớ] ⚠️ SÁT TRẦN RSS ${Math.round(rssPct)}% của ${Math.round(rssLimit / MB)} MB — ${describeMemory()} — đang chạy: ${describeInFlight()}`
+      );
+    } else if (rssPct >= warnPct && armedRssWarn) {
+      armedRssWarn = false;
+      console.warn(
+        `[Bộ nhớ] RSS cao ${Math.round(rssPct)}% của ${Math.round(rssLimit / MB)} MB — ${describeMemory()} — đang chạy: ${describeInFlight()}`
+      );
+    }
+    if (rssPct < restPct) {
+      armedRssWarn = true;
+      armedRssCrit = true;
     }
   };
   setInterval(tick, seconds * 1000).unref();

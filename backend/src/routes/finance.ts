@@ -20,6 +20,7 @@ import {
   listCatalogSyncState,
   requestProductSyncNow,
 } from "../workers/product-catalog-sync";
+import { heavyRouteGuard } from "../lib/request-ledger";
 import {
   applyChannelCostPrice,
   applyChannelCostPriceIn,
@@ -1047,8 +1048,20 @@ router.get("/expenses", async (req: AuthRequest, res, next) => {
 // - Sàn cụ thể  → các SKU sàn của mọi gian trên sàn đó
 // - offline     → sản phẩm kho chưa liên kết sàn nào (bán tại quầy)
 // - all         → cả hai
-router.get("/sku-products", async (req: AuthRequest, res, next) => {
+//
+// ★ 03/11/2026 — ROUTE NẶNG, CHƯA PHÂN TRANG (trang Giá vốn lọc/nhóm phía trình
+// duyệt): chủ shop 38.889 SP Shopee (Hy Korea Official, kéo về sáng 03/11) mở trang
+// là web ôm nguyên bảng vào RAM. Web Render 512 MB OOM 11 lần trong ngày, lần nhanh
+// nhất 32 giây sau khi khởi động, không dòng log nào — nghi route này. Cứu nhanh:
+//   · chỉ SELECT đúng cột dùng (trước `include: { product: true }` kéo cả sizeChart
+//     JSON / material / careInstructions của sản phẩm kho);
+//   · heavyRouteGuard: tối đa 2 request cùng lúc + từ chối khi RSS > 400 MB (503,
+//     câu phổ thông, khách bấm lại sau) — một shop lớn không kéo sập web của người khác;
+//   · log một dòng số dòng + thời gian khi > 2.000 dòng → có số thật để quyết phân
+//     trang (giai đoạn 3). Sửa gốc = phân trang/tìm ở DB, chưa làm ở lát này.
+router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthRequest, res, next) => {
   try {
+    const startedAt = Date.now();
     const raw = typeof req.query.channel === "string" ? req.query.channel : "all";
     const channel = raw.toLowerCase();
 
@@ -1102,8 +1115,18 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
               : { channelName: { not: ChannelName.OFFLINE } }),
           },
         },
-        include: {
-          product: true,
+        select: {
+          id: true,
+          productId: true,
+          channelSku: true,
+          productName: true,
+          variantName: true,
+          price: true,
+          imageUrl: true,
+          externalId: true,
+          costPrice: true,
+          status: true,
+          product: { select: { productName: true, imageUrl: true, sellingPrice: true, costPrice: true } },
           channel: { select: { id: true, channelName: true, shopName: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -1143,6 +1166,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
     if (channel === "offline" || channel === "all") {
       const unmapped = await prisma.product.findMany({
         where: { userId: req.ownerId!, channelProducts: { none: {} } },
+        select: { id: true, skuCode: true, productName: true, imageUrl: true, sellingPrice: true, costPrice: true },
         orderBy: { createdAt: "desc" },
       });
       for (const p of unmapped) {
@@ -1168,6 +1192,11 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       }
     }
 
+    if (rows.length > 2000) {
+      console.log(
+        `[sku-products] chủ shop ${req.ownerId}: ${rows.length} dòng (channel=${channel}) trong ${Date.now() - startedAt} ms, RSS ${Math.round(process.memoryUsage().rss / 1048576)} MB`
+      );
+    }
     res.json({
       channel,
       total: rows.length,
