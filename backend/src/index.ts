@@ -4,6 +4,7 @@ import http from "http";
 import https from "https";
 import { createApp } from "./app";
 import { backfillInvoiceSecrets } from "./integrations/invoice/config-secrets";
+import { stopProductCatalogSync } from "./workers/product-catalog-sync";
 import { startMemoryWatch } from "./lib/memory-watch";
 import { startQueue, stopQueue } from "./lib/queue";
 import { checkSecretBoxAtBoot, secretBoxEnabled } from "./lib/secret-box";
@@ -94,6 +95,8 @@ if (role === "worker") {
     void Promise.allSettled([
       stopQueue(QUEUE_STOP_TIMEOUT_MS),
       stopStockRunners(QUEUE_STOP_TIMEOUT_MS),
+      // Kéo danh mục (lát 3.7): trả gian đang dở về hàng chờ, khỏi kẹt 60' (03/11/2026).
+      stopProductCatalogSync(),
       // Làn hóa đơn (lát 8): dừng sau tờ đang dở, hẹn lại ngay, trả làn.
       stopInvoiceLanes(QUEUE_STOP_TIMEOUT_MS),
     ]).finally(() =>

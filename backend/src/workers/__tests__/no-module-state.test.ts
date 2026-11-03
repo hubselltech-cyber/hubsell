@@ -44,6 +44,7 @@ const ALLOWED_LET: Record<string, string> = {
   lastSignRemindAt: "mốc nhắc ký gần nhất — chỉ chống nhắc dồn trong tiến trình",
   lastCleanupAt: "mốc dọn gần nhất — chỉ chống dọn dồn trong tiến trình",
   tiktokDailyRunsInFlight: "đếm lượt đang chạy để giới hạn song song trong tiến trình",
+  currentClaim: "gian kéo danh mục đang dở trong tiến trình — để trả lại hàng chờ khi SIGTERM (03/11/2026); nguồn sự thật vẫn là cột lịch trên Channel",
 };
 
 /**

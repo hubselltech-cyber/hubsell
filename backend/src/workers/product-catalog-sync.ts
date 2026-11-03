@@ -57,8 +57,9 @@ const ONLINE = [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK];
 
 /** Vừa kéo xong trong khoảng này → không kéo lại theo nút (giữ quota sàn; cùng số với sao chép SP 30/10). */
 export const REQUEST_RECENT_MS = 2 * 60 * 1000;
-/** Mốc xin kéo quá tuổi này = treo (worker sập giữa chừng) → trang thôi báo "đang kéo", xin lại được. */
-export const REQUEST_STALE_MS = 2 * 60 * 60 * 1000;
+/** Mốc xin kéo quá tuổi này = treo → trang thôi báo "đang kéo", xin lại được. = CLAIM_MS (60'): một mốc xin không
+ *  được sống lâu hơn một lượt nhận việc; worker sập giữa chừng đã có recoverStrandedClaims lúc boot (03/11 16:00). */
+export const REQUEST_STALE_MS = 60 * 60 * 1000;
 
 export type ProductSyncRequestOutcome = "queued" | "already" | "recent" | "ineligible";
 
@@ -264,6 +265,50 @@ export async function findChannelsPendingCatalog(
 
 let started = false;
 let running = false;
+let stopping = false;
+/** Gian đang kéo dở trong tiến trình này — để trả lại hàng chờ khi nhận SIGTERM (deploy). */
+let currentClaim: { id: string; shopName: string } | null = null;
+
+/**
+ * ★ 03/11/2026 ~16:00 — SỰ CỐ: anh bấm Đồng bộ từ sàn, worker đang kéo dở thì Render deploy bản mới
+ * (15:45:18) → gian đã "nhận" (nextProductSyncAt = now + CLAIM_MS) bị bỏ lại 60 phút, mốc xin còn
+ * nguyên → trang treo "Đang kéo danh mục…" cả tiếng. Hai lớp sửa:
+ *   · stopProductCatalogSync(): nhận SIGTERM → dừng sau gian đang dở, trả gian đó về hàng chờ
+ *     (nextProductSyncAt = now) — tiến trình mới kéo lại ngay sau FIRST_RUN_DELAY.
+ *   · recoverStrandedClaims() lúc boot (cả SIGKILL/OOM không kịp trả): gian có mốc xin mà lịch kế
+ *     đang nằm trong cửa sổ nhận việc (now < next ≤ now + CLAIM_MS) và đã nhận từ ≥ 90 giây trước
+ *     (tiến trình cũ chắc chắn đã chết — Render cho 30 giây) → đặt lại now. Gian lịch đêm / thử lại
+ *     30' không có mốc xin nên không bị đụng.
+ *   · Gian khách bấm (có mốc xin) được nhận TRƯỚC gian lịch đêm / thử lại.
+ */
+export async function stopProductCatalogSync(): Promise<void> {
+  stopping = true;
+  const claim = currentClaim;
+  if (!claim) return;
+  const now = new Date();
+  await prisma.channel
+    .updateMany({ where: { id: claim.id, nextProductSyncAt: { gt: now } }, data: { nextProductSyncAt: now } })
+    .then((r) => {
+      if (r.count > 0) console.log(`[Catalog-sync] Tắt giữa chừng — trả gian "${claim.shopName}" về hàng chờ`);
+    })
+    .catch((err) => console.error("[Catalog-sync] Không trả được gian đang dở:", (err as Error).message));
+}
+
+/** Tuổi tối thiểu của một lượt nhận để coi tiến trình giữ nó đã chết (Render SIGTERM→SIGKILL 30 giây). */
+const STRANDED_MIN_AGE_MS = 90 * 1000;
+
+export async function recoverStrandedClaims(): Promise<number> {
+  const now = Date.now();
+  const r = await prisma.channel.updateMany({
+    where: {
+      productSyncRequestedAt: { not: null },
+      nextProductSyncAt: { gt: new Date(now), lte: new Date(now + CLAIM_MS - STRANDED_MIN_AGE_MS) },
+    },
+    data: { nextProductSyncAt: new Date(now) },
+  });
+  if (r.count > 0) console.log(`[Catalog-sync] Khởi động: trả ${r.count} gian kẹt từ tiến trình trước về hàng chờ`);
+  return r.count;
+}
 
 export function startProductCatalogSyncWorker(): void {
   if (started) return;
@@ -272,6 +317,9 @@ export function startProductCatalogSyncWorker(): void {
     console.log("[Catalog-sync] TẮT (PRODUCT_CATALOG_SYNC_OFF=1)");
     return;
   }
+  void recoverStrandedClaims().catch((err) =>
+    console.error("[Catalog-sync] Lỗi trả gian kẹt lúc khởi động:", (err as Error).message)
+  );
   setTimeout(() => void runProductCatalogSync(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void runProductCatalogSync(), POLL_MS).unref();
   console.log(
@@ -314,6 +362,7 @@ export async function runProductCatalogSync(): Promise<number> {
   let done = 0;
   try {
     for (let i = 0; i < MAX_PER_CYCLE; i++) {
+      if (stopping) break;
       const now = new Date();
       const due = await prisma.channel.findFirst({
         where: {
@@ -322,7 +371,8 @@ export async function runProductCatalogSync(): Promise<number> {
           channelName: { in: ONLINE },
           nextProductSyncAt: { lte: now },
         },
-        orderBy: { nextProductSyncAt: "asc" },
+        // Khách bấm (có mốc xin) trước, rồi tới lịch đêm / thử lại theo hạn.
+        orderBy: [{ productSyncRequestedAt: { sort: "asc", nulls: "last" } }, { nextProductSyncAt: "asc" }],
       });
       if (!due) break;
       // Nhận gian: chỉ tiến trình đổi được lịch mới chạy (nhiều worker không đụng nhau).
@@ -331,6 +381,7 @@ export async function runProductCatalogSync(): Promise<number> {
         data: { nextProductSyncAt: new Date(now.getTime() + CLAIM_MS) },
       });
       if (claimed.count === 0) continue;
+      currentClaim = { id: due.id, shopName: due.shopName };
 
       try {
         const r = await syncChannelProducts(due);
@@ -347,6 +398,8 @@ export async function runProductCatalogSync(): Promise<number> {
           `[Catalog-sync] Lỗi kéo danh mục "${due.shopName}" (${due.channelName}) — thử lại sau ${RETRY_MS / 60000}':`,
           message
         );
+      } finally {
+        currentClaim = null;
       }
     }
   } catch (err) {
