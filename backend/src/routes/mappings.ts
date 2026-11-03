@@ -3,7 +3,7 @@ import { ChannelName, InventoryLogType, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { setStockAbsolute } from "../services/stock-ledger";
-import { syncChannelProducts } from "../marketplace/product-sync";
+import { PRODUCT_SYNC_REQUEST_MESSAGE, requestProductSyncNow } from "../workers/product-catalog-sync";
 import { cleanVariantName, productGroupKey, skuFromRoot } from "../lib/product-group";
 import {
   backfillOrderLinesByProducts,
@@ -781,19 +781,30 @@ router.post("/quick-link", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    // 1. Chưa có danh mục → kéo từ sàn. Lỗi sàn (token/rate limit) trả 502 rõ ràng.
-    let pulled: { scanned: number; created: number } | null = null;
+    // 1. Chưa có danh mục → XIN worker kéo rồi dừng (03/11/2026, lát 3.7: web không kéo
+    //    danh mục trong request nữa — OOM ongbocute.vn). Gian mới nối thì worker đã tự kéo
+    //    (28/09) nên nhánh này hiếm; khách bấm Nối nhanh lại sau khi danh mục về.
+    const pulled: { scanned: number; created: number } | null = null;
     const existing = await prisma.channelProduct.count({ where: { channelId: channel.id } });
     if (existing === 0) {
-      try {
-        const r = await syncChannelProducts(channel);
-        pulled = { scanned: r.scanned, created: r.created };
-      } catch (err) {
-        res.status(502).json({
-          error: `Không kéo được danh mục từ sàn: ${err instanceof Error ? err.message : "lỗi không rõ"}`,
-        });
+      const [r] = await requestProductSyncNow(req.ownerId!, [channel.id]);
+      if (!r || r.outcome === "ineligible") {
+        res.status(409).json({ error: PRODUCT_SYNC_REQUEST_MESSAGE.ineligible });
         return;
       }
+      res.status(202).json({
+        queued: true,
+        message: `"${channel.shopName}": đang kéo danh mục trong vài phút — xong rồi bấm Nối nhanh lại.`,
+        channel: { id: channel.id, shopName: channel.shopName, channelName: channel.channelName },
+        pulled,
+        matched: 0,
+        createdProducts: 0,
+        reusedProducts: 0,
+        linked: 0,
+        linkedTotal: 0,
+        stillUnlinked: 0,
+      });
+      return;
     }
 
     // 2. Tự khớp trùng mã.

@@ -549,6 +549,10 @@ model Channel {
   lastProductSyncAt        DateTime?
   /// Lỗi lần kéo danh mục gần nhất (null = lần gần nhất OK).
   productSyncError         String?
+  /// Khách XIN KÉO danh mục (03/11/2026, lát 3.7 GĐ3 — nút "Đồng bộ từ sàn" / "Lấy sản phẩm mới từ sàn" /
+  /// Nối nhanh): web chỉ ghi mốc này + nextProductSyncAt = now, worker kéo xong hay lỗi đều xóa về null.
+  /// Khác null = trang báo "Đang kéo trong vài phút". Quá REQUEST_STALE_MS coi như treo, xin lại được.
+  productSyncRequestedAt   DateTime?
   /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
   syncBackoffLevel         Int       @default(0)
   /// XUNG ads (tầng A, docs/ADS-NHIP-CANH-BAO.md): hạn xung kế tiếp — cấu hình campaign + số hôm nay + ví.

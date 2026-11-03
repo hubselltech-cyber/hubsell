@@ -35,3 +35,80 @@ describe("nextNightlySlot — đêm sau 03:00 giờ VN, rải 120'", () => {
     expect(vnHour(nextNightlySlot(now, 7))).toBe(4);
   });
 });
+
+// ---- Lát 3.7 (03/11/2026): nút bấm chỉ XIN kéo, worker kéo — phần thuần.
+import {
+  classifyProductSyncRequest,
+  isCatalogPending,
+  REQUEST_RECENT_MS,
+  REQUEST_STALE_MS,
+} from "../product-catalog-sync";
+
+const NOW = new Date("2026-11-03T07:40:00Z");
+const ago = (ms: number) => new Date(NOW.getTime() - ms);
+const base = {
+  channelName: "TIKTOK" as const,
+  refreshToken: "rt",
+  hibernatedAt: null,
+  lastProductSyncAt: ago(24 * 3600_000),
+  productSyncRequestedAt: null,
+};
+
+describe("classifyProductSyncRequest — một gian xin kéo thì ra gì", () => {
+  it("gian online có ủy quyền, kéo lần cuối hôm qua → queued", () => {
+    expect(classifyProductSyncRequest(base, NOW)).toBe("queued");
+  });
+  it("chưa từng kéo (lastProductSyncAt null) vẫn queued", () => {
+    expect(classifyProductSyncRequest({ ...base, lastProductSyncAt: null }, NOW)).toBe("queued");
+  });
+  it("vừa kéo xong < 2' → recent (không gọi sàn lại)", () => {
+    expect(classifyProductSyncRequest({ ...base, lastProductSyncAt: ago(REQUEST_RECENT_MS - 1000) }, NOW)).toBe("recent");
+    expect(classifyProductSyncRequest({ ...base, lastProductSyncAt: ago(REQUEST_RECENT_MS + 1000) }, NOW)).toBe("queued");
+  });
+  it("đã xin trước đó (mốc xin 10') → already, không ghi lại", () => {
+    expect(classifyProductSyncRequest({ ...base, productSyncRequestedAt: ago(10 * 60_000) }, NOW)).toBe("already");
+  });
+  it("mốc xin treo quá 2 giờ (worker sập) → cho xin lại = queued", () => {
+    expect(classifyProductSyncRequest({ ...base, productSyncRequestedAt: ago(REQUEST_STALE_MS + 1000) }, NOW)).toBe("queued");
+  });
+  it("'already' thắng 'recent': đang kéo thì báo đang kéo", () => {
+    expect(
+      classifyProductSyncRequest({ ...base, productSyncRequestedAt: ago(30_000), lastProductSyncAt: ago(10_000) }, NOW)
+    ).toBe("already");
+  });
+  it("không đủ điều kiện: Offline / không ủy quyền / ngủ đông → ineligible", () => {
+    expect(classifyProductSyncRequest({ ...base, channelName: "OFFLINE" }, NOW)).toBe("ineligible");
+    expect(classifyProductSyncRequest({ ...base, refreshToken: null }, NOW)).toBe("ineligible");
+    expect(classifyProductSyncRequest({ ...base, hibernatedAt: ago(1000) }, NOW)).toBe("ineligible");
+  });
+});
+
+describe("isCatalogPending — trang báo 'Đang kéo trong vài phút' khi nào", () => {
+  const old = {
+    createdAt: ago(30 * 24 * 3600_000),
+    lastProductSyncAt: ago(24 * 3600_000),
+    nextProductSyncAt: new Date(NOW.getTime() + 12 * 3600_000),
+    productSyncError: null,
+    productSyncRequestedAt: null,
+  };
+  it("gian cũ, lịch đêm bình thường → không pending", () => {
+    expect(isCatalogPending(old, NOW)).toBe(false);
+  });
+  it("gian cũ vừa xin kéo → pending, kể cả khi lần trước lỗi", () => {
+    expect(isCatalogPending({ ...old, productSyncRequestedAt: ago(60_000) }, NOW)).toBe(true);
+    expect(isCatalogPending({ ...old, productSyncRequestedAt: ago(60_000), productSyncError: "token hỏng" }, NOW)).toBe(true);
+  });
+  it("mốc xin quá 2 giờ → hết pending (không treo chữ 'đang kéo' mãi)", () => {
+    expect(isCatalogPending({ ...old, productSyncRequestedAt: ago(REQUEST_STALE_MS + 1) }, NOW)).toBe(false);
+  });
+  it("worker xong xóa mốc xin → hết pending", () => {
+    expect(isCatalogPending({ ...old, lastProductSyncAt: NOW, productSyncRequestedAt: null }, NOW)).toBe(false);
+  });
+  it("gian VỪA NỐI chưa kéo lần đầu (luật 28/09 giữ nguyên): pending trong 60', lỗi/quá hạn thì thôi", () => {
+    const fresh = { ...old, createdAt: ago(5 * 60_000), lastProductSyncAt: null, nextProductSyncAt: NOW };
+    expect(isCatalogPending(fresh, NOW)).toBe(true);
+    expect(isCatalogPending({ ...fresh, productSyncError: "sàn bận" }, NOW)).toBe(false);
+    expect(isCatalogPending({ ...fresh, createdAt: ago(61 * 60_000) }, NOW)).toBe(false);
+    expect(isCatalogPending({ ...fresh, nextProductSyncAt: null }, NOW)).toBe(false);
+  });
+});

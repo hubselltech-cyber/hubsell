@@ -17,7 +17,6 @@ import { isStorageConfigured, productImages } from "../lib/supabase-storage";
 import { pathToRoot } from "../lib/tree";
 import { getListingAdapter } from "../marketplace/listing/registry";
 import { normalizeDims } from "../marketplace/listing/rules";
-import { syncChannelProducts } from "../marketplace/product-sync";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import { applyTargetToBatch, createBatch, getBatch, listBatches, submitBatch } from "../services/listing-copy/batch";
 import { ListingCopyError } from "../services/listing-copy/errors";
@@ -33,7 +32,11 @@ import { createJob, updateJobSource, updateTarget, type TargetPatch } from "../s
 import { checkManualDraft, findTakenSkus, MANUAL_LIMITS, parseManualListing } from "../services/listing-copy/manual";
 import { str } from "../services/listing-copy/parse";
 import { listChannelSources, listProductSources } from "../services/listing-copy/source";
-import { scheduleAfterProductSync } from "../workers/product-catalog-sync";
+import {
+  PRODUCT_SYNC_REQUEST_MESSAGE,
+  isCatalogPending,
+  requestProductSyncNow,
+} from "../workers/product-catalog-sync";
 
 const router = Router();
 
@@ -121,11 +124,15 @@ router.get("/sources", async (req: AuthRequest, res, next) => {
 });
 
 /**
- * Kéo danh mục sản phẩm của gian nguồn về NGAY (30/10/2026, anh hỏi "sản phẩm vừa đăng trên sàn
+ * Xin kéo danh mục sản phẩm của gian nguồn (30/10/2026, anh hỏi "sản phẩm vừa đăng trên sàn
  * có về ngay không?"): bình thường worker product-catalog-sync chỉ làm mới mỗi đêm 03:00–05:00, nên
  * sản phẩm mới đăng hôm nay chưa có trong bước 1. Cùng việc với nút "Đồng bộ từ sàn" ở Giá vốn /
  * Liên kết SP nhưng nằm dưới quyền operations.copy-listing (nhân viên chỉ có quyền sao chép vẫn bấm
  * được). Gian vừa kéo < 2 phút → trả luôn, không gọi sàn lại (giữ quota API).
+ *
+ * ★ 03/11/2026 (lát 3.7 GĐ3): KHÔNG kéo trong request web nữa (OOM ongbocute.vn) — chỉ ghi mốc xin
+ * (requestProductSyncNow), trả 202 {queued}; giao diện hỏi GET /sources/sync-status tới khi xong rồi
+ * nạp lại danh sách. Lỗi kéo (token, sàn bận) đọc ở productSyncError của status.
  */
 router.post("/sources/sync", async (req: AuthRequest, res, next) => {
   try {
@@ -133,19 +140,37 @@ router.post("/sources/sync", async (req: AuthRequest, res, next) => {
     if (!channelId) throw new ListingCopyError("Thiếu channelId.");
     const channel = await ownChannel(req, channelId);
     if (!channel) throw new ListingCopyError("Gian nguồn không thuộc shop này.", 404);
-    const RECENT_MS = 2 * 60 * 1000;
-    if (channel.lastProductSyncAt && Date.now() - channel.lastProductSyncAt.getTime() < RECENT_MS) {
+    const [r] = await requestProductSyncNow(req.ownerId!, [channel.id]);
+    if (!r || r.outcome === "ineligible") throw new ListingCopyError(PRODUCT_SYNC_REQUEST_MESSAGE.ineligible, 409);
+    if (r.outcome === "recent") {
       res.json({ skipped: true, lastProductSyncAt: channel.lastProductSyncAt, scanned: 0, created: 0, updated: 0 });
       return;
     }
-    try {
-      const r = await syncChannelProducts(channel);
-      await scheduleAfterProductSync(channel.id, true);
-      res.json({ skipped: false, lastProductSyncAt: new Date(), scanned: r.scanned, created: r.created, updated: r.updated });
-    } catch (err) {
-      await scheduleAfterProductSync(channel.id, false, (err as Error).message);
-      res.status(502).json({ error: `Không kéo được danh mục từ sàn: ${(err as Error).message}` });
-    }
+    res.status(202).json({
+      queued: true,
+      skipped: false,
+      lastProductSyncAt: channel.lastProductSyncAt,
+      scanned: 0,
+      created: 0,
+      updated: 0,
+    });
+  } catch (err) {
+    sendError(res, err, next);
+  }
+});
+
+/** Lượt xin kéo của gian nguồn xong chưa — giao diện hỏi theo nhịp sau khi POST /sources/sync trả queued. */
+router.get("/sources/sync-status", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId = str(req.query.channelId);
+    if (!channelId) throw new ListingCopyError("Thiếu channelId.");
+    const channel = await ownChannel(req, channelId);
+    if (!channel) throw new ListingCopyError("Gian nguồn không thuộc shop này.", 404);
+    res.json({
+      pending: isCatalogPending(channel, new Date()),
+      lastProductSyncAt: channel.lastProductSyncAt,
+      productSyncError: channel.productSyncError,
+    });
   } catch (err) {
     sendError(res, err, next);
   }

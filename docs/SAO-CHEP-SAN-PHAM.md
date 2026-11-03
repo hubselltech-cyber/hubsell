@@ -419,7 +419,9 @@ Anh: *"(1) ô thương hiệu không tìm kiếm được, không có thanh cu�
 - **(5) Sản phẩm vừa đăng trên sàn:** KHÔNG về ngay — worker `product-catalog-sync` chỉ làm mới mỗi đêm 03:00–05:00 giờ
   VN (gian mới nối thì kéo ngay). Thêm nút **Lấy sản phẩm mới từ sàn** cạnh ô chọn gian nguồn → `POST
   /api/sao-chep-san-pham/sources/sync {channelId}` (quyền operations.copy-listing; gian kéo <2 phút trước thì trả luôn
-  không gọi sàn; ghi lịch qua `scheduleAfterProductSync`), xong nạp lại danh sách + số SP.
+  không gọi sàn; ghi lịch qua `scheduleAfterProductSync`), xong nạp lại danh sách + số SP. **03/11/2026 (lát 3.7 GĐ3,
+  `docs/DONG-BO-GIAI-DOAN-3.md` mục 5):** route KHÔNG kéo trong web nữa — chỉ xin worker kéo, trả 202 `{queued}`; nút hiện
+  "Đang kéo trong vài phút…", hỏi `GET /sources/sync-status?channelId` mỗi 5 giây tới khi xong rồi tự làm mới danh sách.
 - **(6) Tự soi trước khi giao — phát hiện thêm 2 lỗi tràn ngang thật ở 1280:** (a) dòng sản phẩm liệt kê 17 màu nowrap
   + chip "còn thiếu" nowrap vẽ tràn sang phải → bảng đợt cuộn ngang 555 px (bấm Sửa bài đăng là cả bảng trôi sang trái);
   sửa `whitespace-normal` cho ô sản phẩm / chip / PANEL, nhóm >4 giá trị chỉ ghi "17 giá trị"; (b) nút "Sửa bài đăng"

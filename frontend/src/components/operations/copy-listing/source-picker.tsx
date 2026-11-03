@@ -16,9 +16,18 @@ import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Refreshing } from "@/components/shared/refreshing";
-import { apiErrorMessage, fetchCopyListingSources, syncCopyListingSources, type ChannelName, type CopyListingChannel, type CopyListingSource } from "@/lib/api";
+import {
+  apiErrorMessage,
+  fetchCopyListingSources,
+  fetchCopyListingSyncStatus,
+  syncCopyListingSources,
+  type ChannelName,
+  type CopyListingChannel,
+  type CopyListingSource,
+} from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
+import { pollUntil } from "@/lib/poll";
 import { qk } from "@/lib/query-keys";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
@@ -95,15 +104,49 @@ export function SourcePicker({
     onPickedChange(next);
   }
 
-  /** Kéo danh mục gian nguồn về ngay rồi nạp lại bảng (sản phẩm vừa đăng trên sàn). */
+  /**
+   * Xin kéo danh mục gian nguồn (sản phẩm vừa đăng trên sàn). 03/11/2026: máy chủ không kéo ngay
+   * nữa — nút hiện "Đang kéo trong vài phút…", hỏi theo nhịp tới khi xong rồi nạp lại bảng.
+   */
   async function syncSourceChannel() {
-    if (!sourceChannelId) return;
+    const id = sourceChannelId;
+    if (!id) return;
     setSyncing(true);
     try {
-      const r = await syncCopyListingSources(sourceChannelId);
+      const r = await syncCopyListingSources(id);
+      if (r.skipped) {
+        toast.info("Gian này vừa được kéo chưa tới 2 phút — danh sách đã là mới nhất.");
+        return;
+      }
+      if (r.queued) {
+        toast.info("Đang kéo trong vài phút. Danh sách tự làm mới khi xong.", { duration: 5000 });
+        const startedAt = Date.now();
+        const st: { v: Awaited<ReturnType<typeof fetchCopyListingSyncStatus>> | null } = { v: null };
+        const done = await pollUntil(
+          async () => {
+            st.v = await fetchCopyListingSyncStatus(id);
+            return !st.v.pending;
+          },
+          { intervalMs: 5_000, maxMs: 30 * 60_000 }
+        );
+        await invalidate(qk.copyListingChannels(), qk.copyListingSourcesAll());
+        if (!done) {
+          toast.info("Việc kéo đang lâu hơn bình thường — danh sách sẽ mới khi kéo xong, vui lòng quay lại sau ít phút.", {
+            duration: 10000,
+          });
+        } else if (
+          st.v?.productSyncError &&
+          !(st.v.lastProductSyncAt && new Date(st.v.lastProductSyncAt).getTime() >= startedAt)
+        ) {
+          toast.error(`Không kéo được danh mục từ sàn: ${st.v.productSyncError}`);
+        } else {
+          toast.success("Đã lấy sản phẩm mới từ sàn.");
+        }
+        return;
+      }
+      // Máy chủ bản cũ: kéo ngay và trả số đếm.
       await invalidate(qk.copyListingChannels(), qk.copyListingSourcesAll());
-      if (r.skipped) toast.info("Gian này vừa được kéo chưa tới 2 phút — danh sách đã là mới nhất.");
-      else toast.success(`Đã lấy từ sàn: ${formatNumber(r.scanned)} sản phẩm, ${formatNumber(r.created)} mới, ${formatNumber(r.updated)} cập nhật.`);
+      toast.success(`Đã lấy từ sàn: ${formatNumber(r.scanned)} sản phẩm, ${formatNumber(r.created)} mới, ${formatNumber(r.updated)} cập nhật.`);
     } catch (err) {
       toast.error(apiErrorMessage(err));
     } finally {
@@ -167,7 +210,7 @@ export function SourcePicker({
             onClick={syncSourceChannel}
           >
             <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-            {syncing ? "Đang lấy…" : "Lấy sản phẩm mới từ sàn"}
+            {syncing ? "Đang kéo trong vài phút…" : "Lấy sản phẩm mới từ sàn"}
           </Button>
         )}
       </div>

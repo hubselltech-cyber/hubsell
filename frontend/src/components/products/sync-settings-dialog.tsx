@@ -302,6 +302,13 @@ export function SyncSettingsDialog({
     closePreview();
     try {
       const r = await quickLinkChannel(channel.id);
+      if (r.queued) {
+        // Gian chưa có danh mục → máy chủ chỉ xin kéo (03/11/2026), chưa nối gì.
+        toast.info(r.message ?? `"${channel.shopName}": đang kéo danh mục trong vài phút — xong rồi bấm Nối nhanh lại.`, {
+          duration: 8000,
+        });
+        return;
+      }
       const parts: string[] = [];
       if (r.pulled) parts.push(`kéo ${formatNumber(r.pulled.scanned)} SKU từ sàn`);
       if (r.matched) parts.push(`tự khớp ${formatNumber(r.matched)}`);

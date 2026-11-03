@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ApiError, syncProductsFromChannels } from "@/lib/api";
+import { ApiError, fetchCatalogPending, syncProductsFromChannels } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { pollUntil } from "@/lib/poll";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,7 +19,16 @@ import { cn } from "@/lib/utils";
  *
  * Dùng ở trang Liên kết SP (nơi làm việc chính với tầng đệm) và trang Cấu hình
  * Giá vốn (đồng bộ tại chỗ khi đang duyệt tài chính mà thiếu SKU).
+ *
+ * ★ 03/11/2026 (lát 3.7 giai đoạn 3): máy chủ KHÔNG kéo ngay trong lượt bấm nữa
+ * (gian ~600 SP từng làm web sập 7 lần trong 25 phút). Bấm = xin kéo; nút hiện
+ * "Đang kéo trong vài phút…" và hỏi theo nhịp tới khi xong rồi mới nạp lại bảng.
  */
+const WAIT_POLL_MS = 5_000;
+const WAIT_MAX_MS = 30 * 60_000;
+
+type PendingResponse = Awaited<ReturnType<typeof fetchCatalogPending>>;
+
 export function SyncChannelProductsButton({
   channelId,
   onSynced,
@@ -36,28 +46,88 @@ export function SyncChannelProductsButton({
 
   async function handleSync() {
     setSyncing(true);
-    toast.info("Đang kéo danh mục từ các gian hàng về…", { duration: 4000 });
     try {
       const res = await syncProductsFromChannels(channelId);
-      await onSynced();
-      // Gian nào lỗi được trả đích danh (không kéo sập cả lượt) — báo rõ để
-      // chủ shop sửa đúng chỗ (thường là token hết hạn, cần Kết nối lại).
-      const failed = (res.perChannel ?? []).filter((c) => c.error);
-      if (failed.length > 0) {
+      const per = res.perChannel ?? [];
+
+      if (!res.queued) {
+        // Máy chủ bản cũ (chưa deploy lát 3.7): vẫn kéo ngay và trả số đếm.
+        await onSynced();
+        const failed = per.filter((c) => c.error);
+        if (failed.length > 0) {
+          toast.warning(
+            `Có ${failed.length} gian lỗi: ${failed.map((c) => `${c.shopName} (${c.error})`).join("; ")}`,
+            { duration: 10000 }
+          );
+        }
+        toast.success(
+          `Đồng bộ xong: thêm mới ${formatNumber(res.created)} sản phẩm sàn, cập nhật ${formatNumber(res.updated)}.` +
+            (res.costAutoFilled
+              ? ` Tự điền giá vốn cho ${formatNumber(res.costAutoFilled)} SKU mới trùng mã.`
+              : ""),
+          { duration: 6000 }
+        );
+        return;
+      }
+
+      // Gian không đủ điều kiện (chưa ủy quyền / ngủ đông) — báo đích danh, các gian khác vẫn kéo.
+      const ineligible = per.filter((c) => c.outcome === "ineligible");
+      if (ineligible.length > 0) {
         toast.warning(
-          `Có ${failed.length} gian lỗi: ${failed
-            .map((c) => `${c.shopName} (${c.error})`)
-            .join("; ")}`,
+          `${ineligible.map((c) => c.shopName).join(", ")}: ${ineligible[0].message ?? "chưa có ủy quyền sàn."}`,
           { duration: 10000 }
         );
       }
-      toast.success(
-        `Đồng bộ xong: thêm mới ${formatNumber(res.created)} sản phẩm sàn, cập nhật ${formatNumber(res.updated)}.` +
-          (res.costAutoFilled
-            ? ` Tự điền giá vốn cho ${formatNumber(res.costAutoFilled)} SKU mới trùng mã.`
-            : ""),
-        { duration: 6000 }
+      const waitIds = per
+        .filter((c) => c.outcome === "queued" || c.outcome === "already")
+        .map((c) => c.channelId);
+      if (waitIds.length === 0) {
+        if (per.some((c) => c.outcome === "recent")) {
+          toast.info("Vừa kéo xong chưa tới 2 phút — danh sách đã là mới nhất.");
+        }
+        await onSynced();
+        return;
+      }
+
+      toast.info("Đang kéo trong vài phút. Bảng tự cập nhật khi xong.", { duration: 5000 });
+      const startedAt = Date.now();
+      const last: { v: PendingResponse | null } = { v: null };
+      const done = await pollUntil(
+        async () => {
+          last.v = await fetchCatalogPending();
+          const pending = new Set(last.v.pending.map((p) => p.id));
+          return waitIds.every((id) => !pending.has(id));
+        },
+        { intervalMs: WAIT_POLL_MS, maxMs: WAIT_MAX_MS }
       );
+      await onSynced();
+      if (!done) {
+        toast.info(
+          "Việc kéo đang lâu hơn bình thường. Bảng sẽ có dữ liệu mới khi kéo xong — vui lòng quay lại sau ít phút.",
+          { duration: 10000 }
+        );
+        return;
+      }
+      // Lượt vừa xin của gian nào KHÔNG kéo xong sau mốc bấm mà đang mang lỗi → lỗi của lượt này.
+      const failed = (last.v?.channels ?? []).filter(
+        (c) =>
+          waitIds.includes(c.id) &&
+          c.productSyncError &&
+          !(c.lastProductSyncAt && new Date(c.lastProductSyncAt).getTime() >= startedAt)
+      );
+      if (failed.length > 0) {
+        toast.warning(
+          `Có ${failed.length} gian lỗi: ${failed.map((c) => `${c.shopName} (${c.productSyncError})`).join("; ")}`,
+          { duration: 10000 }
+        );
+      }
+      const okCount = waitIds.length - failed.length;
+      if (okCount > 0) {
+        toast.success(
+          okCount === 1 ? "Đã kéo xong danh mục từ sàn." : `Đã kéo xong danh mục từ ${okCount} gian.`,
+          { duration: 6000 }
+        );
+      }
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Không đồng bộ được danh mục"
@@ -74,7 +144,7 @@ export function SyncChannelProductsButton({
       className={cn("bg-teal-600 text-white hover:bg-teal-700", className)}
     >
       <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-      {syncing ? "Đang đồng bộ…" : label}
+      {syncing ? "Đang kéo trong vài phút…" : label}
     </Button>
   );
 }

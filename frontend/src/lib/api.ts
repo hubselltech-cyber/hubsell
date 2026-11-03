@@ -1536,6 +1536,9 @@ export function setChannelSyncEnabled(channelId: string, enabled: boolean) {
  */
 export function quickLinkChannel(channelId: string) {
   return apiFetch<{
+    /** true (03/11/2026): gian chưa có danh mục → máy chủ chỉ xin worker kéo, chưa nối gì; bấm lại sau vài phút. */
+    queued?: boolean;
+    message?: string;
     channel: { id: string; shopName: string; channelName: ChannelName };
     pulled: { scanned: number; created: number } | null;
     matched: number;
@@ -2574,11 +2577,21 @@ export function fetchMissingCostSkus(range?: DateRange, channel?: ChannelFilterQ
   );
 }
 
-/** Gian vừa nối, danh mục sản phẩm chưa kéo xong lần đầu (worker đang kéo nền). */
+/** Gian đang kéo danh mục: vừa nối chưa kéo xong lần đầu, hoặc vừa bấm xin kéo (worker đang kéo nền). */
 export interface CatalogPendingChannel {
   id: string;
   channelName: ChannelName;
   shopName: string;
+}
+
+/** Trạng thái kéo danh mục của một gian online (03/11/2026) — nút "Đồng bộ từ sàn" đọc để báo xong/lỗi. */
+export interface CatalogSyncChannelState {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+  lastProductSyncAt: string | null;
+  productSyncError: string | null;
+  pending: boolean;
 }
 
 export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
@@ -2592,11 +2605,13 @@ export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
   }>(`/api/finance/sku-products?channel=${channel}`);
 }
 
-/** Bản nhẹ để hỏi theo nhịp trong lúc chờ danh mục gian mới về. */
+/** Bản nhẹ để hỏi theo nhịp trong lúc chờ danh mục về (gian mới / vừa xin kéo). */
 export function fetchCatalogPending() {
-  return apiFetch<{ pending: CatalogPendingChannel[] }>(
-    "/api/finance/sku-products/catalog-pending"
-  );
+  return apiFetch<{
+    pending: CatalogPendingChannel[];
+    /** Thiếu = máy chủ bản cũ. */
+    channels?: CatalogSyncChannelState[];
+  }>("/api/finance/sku-products/catalog-pending");
 }
 
 // Chủ động quét sản phẩm từ các sàn đã kết nối về hệ thống (upsert)
@@ -2606,6 +2621,9 @@ export function fetchCatalogPending() {
  */
 export function syncProductsFromChannels(channelId?: string) {
   return apiFetch<{
+    /** true (03/11/2026) = máy chủ chỉ XIN kéo, worker kéo trong vài phút; created/updated = 0.
+     *  Thiếu = máy chủ bản cũ còn kéo ngay và trả số đếm. */
+    queued?: boolean;
     created: number;
     updated: number;
     /** Số SKU mới được tự điền giá vốn vì trùng mã với bảng giá / gian khác. */
@@ -2620,6 +2638,11 @@ export function syncProductsFromChannels(channelId?: string) {
       created: number;
       /** Lỗi riêng của gian này (nếu có) — các gian khác vẫn quét bình thường. */
       error?: string;
+      /** Kết quả xin kéo (khi queued): queued/already = đang kéo, recent = vừa kéo xong < 2',
+       *  ineligible = gian chưa ủy quyền / ngủ đông. */
+      outcome?: "queued" | "already" | "recent" | "ineligible";
+      /** Câu phổ thông đi kèm outcome. */
+      message?: string;
     }[];
   }>("/api/finance/sync-products", {
     method: "POST",
@@ -8509,11 +8532,25 @@ export function updateCopyListingSource(
   return apiFetch<CopyListingJob>(`${COPY_LISTING_BASE}/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
-/** Kéo danh mục sản phẩm của gian nguồn về ngay (sản phẩm mới đăng trên sàn chưa về vì worker chỉ kéo mỗi đêm). */
+/**
+ * Xin kéo danh mục sản phẩm của gian nguồn (sản phẩm mới đăng trên sàn chưa về vì worker chỉ kéo mỗi đêm).
+ * 03/11/2026: máy chủ trả `queued` = worker kéo trong vài phút → hỏi fetchCopyListingSyncStatus tới khi xong.
+ */
 export function syncCopyListingSources(channelId: string) {
-  return apiFetch<{ skipped: boolean; lastProductSyncAt: string; scanned: number; created: number; updated: number }>(
-    `${COPY_LISTING_BASE}/sources/sync`,
-    { method: "POST", body: JSON.stringify({ channelId }) }
+  return apiFetch<{
+    queued?: boolean;
+    skipped: boolean;
+    lastProductSyncAt: string | null;
+    scanned: number;
+    created: number;
+    updated: number;
+  }>(`${COPY_LISTING_BASE}/sources/sync`, { method: "POST", body: JSON.stringify({ channelId }) });
+}
+
+/** Lượt xin kéo danh mục của gian nguồn xong chưa (pending=false), lỗi gì (productSyncError). */
+export function fetchCopyListingSyncStatus(channelId: string) {
+  return apiFetch<{ pending: boolean; lastProductSyncAt: string | null; productSyncError: string | null }>(
+    `${COPY_LISTING_BASE}/sources/sync-status?channelId=${encodeURIComponent(channelId)}`
   );
 }
 

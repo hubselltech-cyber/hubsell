@@ -15,10 +15,10 @@ import {
 } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requirePermission, type AuthRequest } from "../middleware/auth";
-import { syncChannelProducts } from "../marketplace/product-sync";
 import {
-  findChannelsPendingFirstCatalog,
-  scheduleAfterProductSync,
+  findChannelsPendingCatalog,
+  listCatalogSyncState,
+  requestProductSyncNow,
 } from "../workers/product-catalog-sync";
 import {
   applyChannelCostPrice,
@@ -1178,7 +1178,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       ).length,
       // Gian vừa nối, danh mục chưa kéo xong lần đầu → trang báo "đang kéo" thay
       // vì bảng trống, rồi hỏi nhịp endpoint nhẹ bên dưới để tự nạp lại.
-      catalogPending: await findChannelsPendingFirstCatalog(req.ownerId!),
+      catalogPending: await findChannelsPendingCatalog(req.ownerId!),
       items: rows,
     });
   } catch (err) {
@@ -1187,10 +1187,18 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/finance/sku-products/catalog-pending — bản NHẸ để trang Giá vốn hỏi
-// theo nhịp trong lúc chờ danh mục gian mới về (không kéo lại cả danh sách SKU).
+// theo nhịp trong lúc chờ danh mục về (không kéo lại cả danh sách SKU).
+// `pending` = gian đang kéo (gian mới / vừa xin kéo); `channels` = trạng thái mọi gian
+// online để nút "Đồng bộ từ sàn" biết lượt mình xin đã xong hay lỗi (03/11/2026).
 router.get("/sku-products/catalog-pending", async (req: AuthRequest, res, next) => {
   try {
-    res.json({ pending: await findChannelsPendingFirstCatalog(req.ownerId!) });
+    const state = await listCatalogSyncState(req.ownerId!);
+    res.json({
+      pending: state
+        .filter((s) => s.pending)
+        .map(({ id, channelName, shopName }) => ({ id, channelName, shopName })),
+      channels: state,
+    });
   } catch (err) {
     next(err);
   }
@@ -1967,92 +1975,47 @@ router.patch("/fee-audit/:id/status", async (req: AuthRequest, res, next) => {
   }
 });
 
-// POST /api/finance/sync-products — QUÉT SẢN PHẨM TỪ CÁC SÀN ĐÃ KẾT NỐI.
-// Với mỗi gian ACTIVE, gọi marketplace/product-sync (Adapter Pattern): registry
-// chọn adapter (Shopee API thật nếu có refresh_token, còn lại mock), adapter kéo
-// + chuẩn hoá, tầng kho upsert vào bảng đệm ChannelProduct.
-// LƯU Ý: KHÔNG bao giờ ghi đè giá vốn (costPrice) hay productId (liên kết người dùng).
+// POST /api/finance/sync-products — XIN KÉO DANH MỤC TỪ CÁC SÀN ĐÃ KẾT NỐI.
+// Body: { channelId? } — một gian, hoặc bỏ trống để xin cho mọi gian online đang hoạt động.
+//
+// ★ 03/11/2026 (lát 3.7 giai đoạn 3, anh chốt làm trước 3.3): web KHÔNG kéo danh mục trong
+// request nữa. Sự cố: gian TikTok ongbocute.vn (~621 SP) bấm nút này → web Render (512 MB)
+// OOM 7 lần trong 25 phút, mọi khách mất kết nối. Nay route chỉ ghi mốc xin kéo
+// (requestProductSyncNow) → worker product-catalog-sync kéo ở lượt poll kế (≤ 5') rồi xóa
+// mốc; giao diện hỏi /sku-products/catalog-pending để báo "Đang kéo trong vài phút" và tự
+// nạp lại. Trả 202 + perChannel giữ khuôn cũ (scanned/created = 0) kèm outcome + message
+// phổ thông; gian không đủ điều kiện (chưa ủy quyền / ngủ đông) mang `error`.
 router.post("/sync-products", async (req: AuthRequest, res, next) => {
   try {
-    const ownerId = req.ownerId!;
-    // Đồng bộ riêng một gian hàng, hoặc bỏ trống để quét tất cả
     const onlyChannelId =
       typeof req.body?.channelId === "string" ? req.body.channelId : "";
-
-    const channels = await prisma.channel.findMany({
-      where: {
-        userId: ownerId,
-        status: "ACTIVE",
-        channelName: { not: ChannelName.OFFLINE },
-        ...(onlyChannelId ? { id: onlyChannelId } : {}),
-      },
-    });
-
-    if (channels.length === 0) {
+    const results = await requestProductSyncNow(
+      req.ownerId!,
+      onlyChannelId ? [onlyChannelId] : undefined
+    );
+    if (results.length === 0) {
       res.status(409).json({
         error:
           "Chưa có gian hàng online nào đang hoạt động. Hãy kết nối Shopee/TikTok/Lazada trước.",
       });
       return;
     }
-
-    let created = 0;
-    let updated = 0;
-    // SKU mới được tự điền giá vốn theo mã (lib/cost-mapping.ts) — báo ra để chủ
-    // shop biết, không tự điền im lặng.
-    let costAutoFilled = 0;
-    const perChannel: {
-      channelId: string;
-      channelName: ChannelName;
-      shopName: string;
-      scanned: number;
-      created: number;
-      /** Lỗi của RIÊNG gian này (token hết hạn, sàn chập chờn...) — có giá trị
-       *  là gian đó quét hỏng, các gian khác vẫn chạy bình thường. */
-      error?: string;
-    }[] = [];
-
-    for (const channel of channels) {
-      // ADAPTER PATTERN: route KHÔNG biết gian này là Shopee thật hay mock —
-      // registry chọn adapter, marketplace/product-sync lo phần kho (upsert bảng
-      // đệm, giữ nguyên productId/giá vốn, delist SKU cũ). Thêm sàn = thêm adapter.
-      //
-      // MỖI GIAN MỘT try/catch: một gian hỏng (token hết hạn, API sàn lỗi)
-      // KHÔNG được kéo sập cả lượt quét thành 500 — trả lỗi đích danh từng
-      // gian để chủ shop biết sửa đúng chỗ.
-      try {
-        const r = await syncChannelProducts(channel);
-        // Ghi lịch để worker product-catalog-sync không kéo lại ngay sau nút bấm.
-        await scheduleAfterProductSync(channel.id, true);
-        created += r.created;
-        updated += r.updated;
-        costAutoFilled += r.costAutoFilled;
-        perChannel.push({
-          channelId: channel.id,
-          channelName: channel.channelName,
-          shopName: channel.shopName,
-          scanned: r.scanned,
-          created: r.created,
-        });
-      } catch (err) {
-        console.error(
-          `[Sync Products] Gian "${channel.shopName}" (${channel.channelName}) lỗi:`,
-          err
-        );
-        // Sàn bận (28/09: Shopee product.error_internal) → worker tự thử lại sau 30'.
-        await scheduleAfterProductSync(channel.id, false, (err as Error).message);
-        perChannel.push({
-          channelId: channel.id,
-          channelName: channel.channelName,
-          shopName: channel.shopName,
-          scanned: 0,
-          created: 0,
-          error: (err as Error).message,
-        });
-      }
-    }
-
-    res.json({ created, updated, costAutoFilled, perChannel });
+    res.status(202).json({
+      queued: true,
+      created: 0,
+      updated: 0,
+      costAutoFilled: 0,
+      perChannel: results.map((r) => ({
+        channelId: r.channelId,
+        channelName: r.channelName,
+        shopName: r.shopName,
+        scanned: 0,
+        created: 0,
+        outcome: r.outcome,
+        message: r.message,
+        ...(r.outcome === "ineligible" ? { error: r.message } : {}),
+      })),
+    });
   } catch (err) {
     next(err);
   }

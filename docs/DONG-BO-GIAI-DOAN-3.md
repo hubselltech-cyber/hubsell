@@ -13,6 +13,7 @@ Ngày lập: 14/10/2026. Người lập: Claude (Lead Dev). Thiết kế gốc: 
 | 3.4 | Bộ giới hạn tốc độ dùng chung ở DB, áp mọi API sàn | Có (bảng nhỏ) | Chưa |
 | 3.5 | Worker còn vòng for → vé (token-refresh, lazada-renewal, stock-reconcile, weekly-report, ads-daily-summary) | Có (1–2 cột lịch) | Chưa |
 | 3.6 | Chỉ số HQ: gian quá hạn quét, tỷ lệ lần đọc bị cắt, trễ mốc nước lớn nhất; test hàng rào | Không | ✅ 15/10 — mục 3 (làm trước 3.3 để có thước đo trước khi đổi nhịp) |
+| 3.7 | Nút "Đồng bộ từ sàn" / "Lấy sản phẩm mới từ sàn" / Nối nhanh → web chỉ XIN kéo, worker kéo (web không kéo danh mục trong request nữa) | Có: 1 cột NULL `Channel.productSyncRequestedAt` (migration `20261103150000_channel_product_sync_requested`) | ✅ 03/11 — mục 5 (anh chốt làm trước 3.3 sau sự cố web OOM 7 lần); commit chưa push, chưa kiểm prod |
 
 Mỗi lát một lần đẩy (hai lần nếu có công tắc), đường lui = revert commit trừ khi ghi khác.
 
@@ -231,3 +232,86 @@ Log: `[SanHTTP] SHOPEE n=` (mỗi 15', lấy n → lệnh/giờ); `đơn mới (
 1. Sau ~1 ngày SQL 2 có bậc 9 ≈ số gian tuổi > 7 ngày ở SQL 3; HQ Sức khỏe không đỏ vì gian vắng, thẻ Worker ghi "N gian vắng".
 2. `[SanHTTP] SHOPEE n=` mỗi 15' giảm so với 2 ngày trước deploy (ghi số trước/sau vào đây).
 3. Một gian vắng nhận đơn thật: webhook đánh thức, SQL 2 thấy level về 0 trong 1 phút, log `[Auto-sync]` quét gian đó trong ≤ nhịp gốc.
+
+## 5. Lát 3.7 — nút kéo danh mục chuyển sang worker (03/11/2026, anh Trung chốt "Làm trước 3.3")
+
+### 5.1. Vì sao
+
+Chiều 03/11 web `hubsell-backend-sg` (Starter 512 MB) "Ran out of memory" 7 lần (09:35; 14:13, 14:14, 14:30, 14:32,
+14:34, 14:37) → `/health` 502, khách và HQ cùng thấy "Không kết nối được tới máy chủ Hubsell". Log web: mỗi lần boot
+xong 1–2 phút là `[TikTok] Hình dạng sản phẩm (products/search)` → `Bổ sung chi tiết gian ongbocute.vn: 100 ok … còn 211`
+→ `[product-sync] 46 dòng trùng mã` → chết. Kích hoạt = khách gian TikTok ongbocute.vn (~621 SP, gian cũ) bấm **Đồng bộ
+từ sàn** ở Cấu hình Giá vốn; `POST /api/finance/sync-products` chạy `syncChannelProducts` NGAY TRONG web; web chết →
+khách bấm lại → lặp. Heap V8 vẫn 66–80/368 MB, không cảnh báo; RSS nền 327 MB (boot 174 MB) — phần phình ngoài heap
+(ghi ở PROGRESS phiên 03/11 10:30, chưa tìm hết gốc). Worker cùng 512 MB sáng đó kéo gọn 38.889 SP Shopee của Hy Korea →
+web yếu vì nền RSS cao + việc nặng trong request, không phải vì 621 SP.
+
+Đây là dòng "danh mục … chuyển sang hàng đợi" của giai đoạn 3 (`docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, bảng giai đoạn) và
+nguyên tắc tách vai 12/09 (`HUBSELL_ROLE=web` chỉ xếp việc). Nửa đầu đã làm 28/09 (worker `product-catalog-sync` kéo gian
+mới + làm mới đêm); nút bấm là nửa còn sót. Không nâng máy, không chỉnh `NODE_HEAP_MB`.
+
+### 5.2. Thiết kế
+
+- **Trạng thái ở bảng nghiệp vụ, không ở RAM / không pg-boss:** thêm cột NULL `Channel.productSyncRequestedAt`. Việc kéo
+  danh mục kéo dài hàng phút → không nhét vào hàng đợi `stately` (xem gotcha pg-boss, đẩy tồn bước 4 cũng chạy ngoài
+  pg-boss). Cột lịch `nextProductSyncAt` + worker poll 5' đã có sẵn từ 28/09.
+- **Web chỉ xin:** `requestProductSyncNow(ownerId, channelIds?)` (workers/product-catalog-sync.ts) phân loại từng gian
+  bằng hàm thuần `classifyProductSyncRequest`: `ineligible` (Offline / không refreshToken / ngủ đông) → báo "Kết nối lại";
+  `already` (mốc xin < 2 giờ) → không ghi lại; `recent` (kéo xong < 2 phút) → không gọi sàn lại; `queued` → ghi
+  `nextProductSyncAt = productSyncRequestedAt = now`. Một `updateMany` cho cả lô.
+- **Worker:** `runProductCatalogSync` không đổi cách nhận gian; `scheduleAfterProductSync` (xong hay lỗi) xóa
+  `productSyncRequestedAt`. Log thêm chữ "theo nút bấm" để lọc. Gian đang được worker kéo (đã nhận) mà khách xin: lượt đang
+  chạy xong sẽ đặt lịch đêm và xóa mốc xin — danh mục vừa kéo vẫn là mới, chấp nhận.
+- **"Đang kéo":** `isCatalogPending(ch, now)` (thuần) = mốc xin < `REQUEST_STALE_MS` (2 giờ; quá là coi như treo, xin lại
+  được, trang thôi báo) HOẶC luật gian mới 28/09 (chưa kéo lần đầu, trong 60' kể từ lúc tạo). `listCatalogSyncState(ownerId)`
+  một truy vấn trả mọi gian online + `pending`; `findChannelsPendingCatalog` thay `findChannelsPendingFirstCatalog`.
+- **Ba route web** không còn gọi `syncChannelProducts`:
+  - `POST /api/finance/sync-products` → 202 `{queued: true, created: 0, updated: 0, perChannel: [{…, outcome, message,
+    error? (ineligible)}]}` — khuôn cũ giữ nguyên cho giao diện cũ.
+  - `GET /api/finance/sku-products/catalog-pending` → `{pending, channels: [{id, shopName, channelName, lastProductSyncAt,
+    productSyncError, pending}]}` — nút đọc để biết lượt mình xin xong hay lỗi.
+  - `POST /api/mappings/quick-link`: gian 0 SP → xin kéo, 202 `{queued, message}`; khách bấm Nối nhanh lại sau.
+  - `POST /api/sao-chep-san-pham/sources/sync` → 202 `{queued}` (recent vẫn `{skipped}`); thêm
+    `GET …/sources/sync-status?channelId` → `{pending, lastProductSyncAt, productSyncError}` (quyền copy-listing, nhân viên
+    không có quyền tài chính vẫn hỏi được).
+- **Giao diện (câu chữ phổ thông, anh chốt):** nút hiện **"Đang kéo trong vài phút…"**, toast "Đang kéo trong vài phút.
+  Bảng tự cập nhật khi xong."; hỏi `catalog-pending` mỗi 5 giây, tối đa 30 phút (`lib/poll.ts`), xong → nạp lại bảng +
+  "Đã kéo xong danh mục từ sàn." / "Có N gian lỗi: …" (lỗi = gian còn `productSyncError` mà `lastProductSyncAt` không mới
+  hơn lúc bấm); quá 30 phút → "Việc kéo đang lâu hơn bình thường…". Trang Giá vốn vẫn dùng dải "Đang kéo danh mục sản phẩm
+  của gian … thường xong trong vài phút" sẵn có (nay gồm cả gian vừa xin). Máy chủ bản cũ (`queued` thiếu) → giao diện vẫn
+  đi đường cũ. Nối nhanh: toast "đang kéo danh mục trong vài phút — xong rồi bấm Nối nhanh lại". Sao chép SP: nút "Lấy sản
+  phẩm mới từ sàn" cũng chờ theo nhịp rồi tự làm mới danh sách.
+- **Mobile:** không ảnh hưởng (app không có nút đồng bộ danh mục).
+
+### 5.3. Mã + kiểm local
+
+`backend/prisma/migrations/20261103150000_channel_product_sync_requested/migration.sql`, `schema.prisma`,
+`workers/product-catalog-sync.ts`, `routes/finance.ts`, `routes/mappings.ts`, `routes/listing-copy.ts`,
+`workers/__tests__/product-catalog-sync.test.ts` (+14 ca thuần: phân loại xin kéo, pending); frontend `lib/poll.ts` (mới),
+`lib/api.ts`, `components/channels/sync-channel-products-button.tsx` (dùng ở Giá vốn, Liên kết SP, hướng dẫn),
+`components/products/sync-settings-dialog.tsx`, `components/operations/copy-listing/source-picker.tsx`.
+Kiểm local 03/11: vitest workers 48/48, backend + frontend `tsc --noEmit` sạch. **CHƯA chạy thử trên trình duyệt**: lệnh áp
+migration lên Postgres dev (localhost:5432) bị bộ lọc công cụ chặn; muốn thử ở máy anh, chạy trước một câu:
+
+```sql
+ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "productSyncRequestedAt" TIMESTAMP(3);
+```
+
+(hoặc `npx prisma migrate deploy` trong `backend/`). Prod: Render tự áp khi deploy (`migrate deploy` lúc start).
+
+### 5.4. Kiểm sau deploy
+
+1. `/health` mang commit mới; log web boot không lỗi migration.
+2. Bấm Đồng bộ từ sàn ở một gian thật: phản hồi 202 trong < 1 giây, nút đổi "Đang kéo trong vài phút…"; log worker
+   `q=theo nút bấm` có dòng `[Catalog-sync] "…" theo nút bấm:` trong ≤ 5 phút; trang tự nạp lại; SQL chỉ đọc
+   `SELECT "shopName","productSyncRequestedAt","lastProductSyncAt","productSyncError" FROM "Channel" WHERE status='ACTIVE'
+   ORDER BY "productSyncRequestedAt" DESC NULLS LAST LIMIT 20;` → mốc xin về NULL sau khi kéo xong.
+3. Log web KHÔNG còn `[TikTok] Hình dạng sản phẩm (products/search)` / `[product-sync]` từ tiến trình web (chỉ còn ở worker).
+4. Render Events web: không OOM mới kèm dòng product-sync trước đó. (OOM còn lại nếu có = kéo ví / oEmbed → lát đo RSS,
+   PROGRESS 03/11 10:30.)
+
+### 5.5. Đường lui và việc chưa làm
+
+- Đường lui: revert commit (cột thừa vô hại; migration `IF NOT EXISTS`).
+- Chưa làm: đánh thức worker ngay khi khách bấm (tín hiệu pg-boss vài mili-giây như đẩy tồn) — chờ xem khách có kêu chờ
+  ≤ 5 phút không; nút "Đồng bộ từ sàn" trên app mobile (không có, giữ nguyên); lát đo RSS ngoài heap của web vẫn chờ.
