@@ -507,3 +507,15 @@ Sửa: cả hai câu vá lấy danh sách gian trước rồi lọc `o."channelI
 
 Bài học: đo dev 0,63 giây ở mục 6.9 không phát hiện được lỗi này. Câu lọc trên bảng lớn phải EXPLAIN trên prod trước khi đẩy.
 
+Đo prod chỉ đọc sau bản `a7953626`, dữ liệu của khách:
+
+| Việc | Thời gian |
+|---|---|
+| Câu vá theo gian, 4.403 mã | 2,9 giây, lượt thật trước sửa 46,8 giây |
+| Gộp và đếm trạng thái khi mở tab Mapping | 1,55 giây |
+| Tìm theo tên ở tab Mapping | khoảng 7 giây |
+
+Số mã của khách lúc đo: 43.869 mã, 33 đề xuất, 0 khác giá, 17.357 chưa có giá, 26.479 đã đủ.
+
+Tìm chậm vì phải gập dấu từng dòng: đo riêng phần lọc 4,4–4,8 giây, bỏ `normalize` chỉ còn 3,7–3,8 giây, nên không đáng đổi. Sửa thật là cột tìm kiếm đã gập dấu kèm index, cần migration, trang Nhập giá vốn dùng cùng phép gập nên cũng được lợi. Chưa làm.
+

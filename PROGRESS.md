@@ -9,6 +9,7 @@
 ## Phiên 03/11 (~19:50) — Lượt nhập thật 4.313 dòng thành công nhưng 54 giây → sửa câu lấy dòng đơn
 
 - Log 19:32: 4.403 ô, 132 dòng đơn, 0 lỗi, 54 giây. EXPLAIN prod: lọc gian bằng câu con quét 724.223 đơn của mọi khách, 48,8 giây; lọc bằng mảng 0,15 giây. Đã sửa cả 2 câu vá. Chi tiết docs DONG-BO-GIAI-DOAN-3 mục 6.11.
+- Prod chỉ đọc sau `a7953626`: câu vá 4.403 mã 2,9 giây, mở tab Mapping phần SQL 1,55 giây, tìm tên khoảng 7 giây (gập dấu từng dòng, sửa thật cần cột gập sẵn + index, chưa làm).
 - ⏳ Kiểm thời gian ở log `[cost-import]` lượt sau.
 
 ## Phiên 03/11 (~19:45) — Anh: tab Mapping của khách không nhận → bỏ chặn 5.000 mã, tính trong DB
