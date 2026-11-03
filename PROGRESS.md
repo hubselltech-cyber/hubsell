@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 03/11 (~23:10) — Trang Tổng quan HQ chậm: đệm số tổng hợp, báo cáo nhà đầu tư tải khi cuộn tới
+
+- Đo prod: mở `/admin` hết ~8,7 giây, do `investor-report` ~6 giây và `stats` ~2,1 giây quét bảng ~727.000 đơn mỗi lần mở. `overview`, các trang Khách hàng, Kế toán, Gói, Marketing, Sức khỏe đều dưới 1 giây; `webhook-logs` 2,2 giây chưa sửa.
+- Sửa: `lib/stale-cache.ts` trả bản đệm ngay rồi làm mới ở nền. `stats` tươi 5 phút, quá 30 phút thì chờ nạp; báo cáo tươi 1 giờ, quá 24 giờ thì chờ nạp (đều là mặc định tự chọn). Báo cáo chỉ gọi khi cuộn tới và ghi giờ cập nhật. Lượt mở đầu sau khi khởi động lại vẫn chậm như cũ.
+- Kiểm: tsc 2 bên, 6 test mới qua, soi local đúng luồng. Cả bộ test backend 7 đỏ, chạy lại trên bản `e8d29a5c` trước tối nay vẫn đúng 7 đỏ đó (4 tệp sổ đơn, xóa gian, ước tính bản kê). Anh chốt push.
+
 ## Phiên 03/11 (~22:40) — Vercel vượt 10 GB Deployment Storage: bỏ dựng commit không đổi frontend, rút thời hạn giữ
 
 - `hubsell` 19,87 GB, 236 bản, ~84 MB/bản; 55/90 bản gần nhất là commit không đổi `frontend/`. Rà lại không có lý do giữ (không ghi quyết định, frontend không phụ thuộc ngoài thư mục). Anh chốt đổi cả hai: Ignored Build Step so với bản deploy gần nhất; giữ production 1 tuần, các loại khác 1 ngày. Ảnh hướng dẫn 58,7 MB không nén, sau anh thay bằng link video.
@@ -16,7 +22,7 @@
 
 - Anh thấy HQ báo mất kết nối. Tối nay 21:21 gian Shopee lớn nhất vừa về 5.000 chiến dịch (đúng trần, toàn đã kết thúc) và 131.162 dòng số toàn 0. `computeChannelAdsInsights` nạp hết vào RAM: đo DB dev cùng cỡ RSS +532 MB trong 3,4 giây, sau sửa +72 MB, 0,4 giây.
 - Sửa: bỏ chiến dịch đã kết thúc không có số; trang ghi rõ số chiến dịch không hiện. tsc 2 bên, 4 tệp test quảng cáo qua. Chưa chạy cả bộ test, chưa soi giao diện trên trình duyệt. Anh chốt push.
-- Phát hiện thêm, chưa sửa: trần 5.000 cắt mất chiến dịch đang chạy của gian này (shop chi 51,8 triệu/30 ngày). Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 6.12.
+- Đính chính: chưa chứng minh trần 5.000 giấu chiến dịch đang chạy, vì gian đang bật GMV Max cấp shop và 51,8 triệu/30 ngày có thể chi hết cho loại này. Anh chốt chưa làm. Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 6.12.
 
 ## Phiên 03/11 (~21:00) — Dọn mã phần giá vốn (anh: "dọn sạch code thừa, giữ mô hình cây")
 

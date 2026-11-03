@@ -109,7 +109,7 @@ hubsell/
 │       │                                #   ads-cadence, capacity-plan, marketplace-read (lớp đọc sàn Pha B)
 │       ├── lib/                         # Thuần + hạ tầng: prisma, queue (pg-boss), mailer, secret-box,
 │       │                                #   date-range, finance-definitions, pnl-formula, cost-price, image-fetch (tải ảnh về buffer),
-│       │                                #   image-normalize (sharp theo luật sàn), ttl-cache (đệm TTL có trần), paginate, tree,
+│       │                                #   image-normalize (sharp theo luật sàn), ttl-cache (đệm TTL có trần), stale-cache (trả đệm, làm mới nền), paginate, tree,
 │       │                                #   giá vốn gian lớn (03/11): sku-catalog-page (chia trang + tìm ở DB), cost-import-load/-apply
 │       │                                #   (Excel đọc theo mã, ghi một câu), cost-mapping-catalog (tab Mapping gộp ở DB),
 │       │                                #   cost-search-apply (áp giá cho mã vừa tìm); request-ledger + memory-watch (rào route nặng, canh RSS), ...

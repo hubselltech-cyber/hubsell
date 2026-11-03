@@ -551,7 +551,7 @@ Sửa: `campaignsWorthLoading` bỏ chiến dịch ended/closed/deleted không c
 
 Chưa làm:
 
-1. Trần 5.000 đang cắt mất chiến dịch đang chạy của gian này: shop vẫn chi tiền mà cả 5.000 dòng đều đã kết thúc từ tháng 1 trở về trước. Nghi sàn trả chiến dịch cũ trước, chưa kiểm. Khách sẽ thấy trang không có chiến dịch nào.
+1. Trần 5.000: đính chính, CHƯA chứng minh trần giấu chiến dịch đang chạy. Sàn có vẻ trả chiến dịch cũ trước (100 dòng ghi đầu có id nhỏ nhất, 100 dòng cuối có id lớn nhất, chiến dịch mới nhất bắt đầu 13/11/2025), nên chiến dịch tạo sau đó nếu có thì chưa về. Nhưng gian đang bật GMV Max cấp shop, loại này không nằm trong danh sách, nên 51,8 triệu/30 ngày có thể chi hoàn toàn cho GMV Max. Chưa so số và chưa hỏi sàn. Anh chốt 03/11 chưa làm.
 2. Worker vẫn gọi sàn và ghi lại dòng số 0 cho chiến dịch đã kết thúc: ~100 lệnh mỗi lượt với gian này. Có thể là một phần của băng thông worker, chưa đo.
 3. Còn +72 MB mỗi lượt, nghi do nạp 38.889 mã, chưa đo tách. Lọc mã theo chiến dịch sẽ làm Trợ lý và tab Hòa vốn hết dùng chung một bộ đệm.
 4. Rà các gian khác: gian TikTok của cùng khách có 256 chiến dịch, đi đường đọc khác, chưa đo.

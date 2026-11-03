@@ -3,10 +3,10 @@
 // BÁO CÁO NHÀ ĐẦU TƯ (GĐ6) — khối cuối trang Tổng quan điều hành, CHỈ chủ nền
 // tảng thấy (backend gác requirePlatformAdmin). Các chỉ số nhà đầu tư SaaS soi
 // khi thẩm định: tăng trưởng MoM, GMV qua nền tảng, funnel kích hoạt, retention
-// cohort, % tăng trưởng tự nhiên, burn. Tính tươi từ dữ liệu thật + xuất Excel
+// cohort, % tăng trưởng tự nhiên, burn. Tính từ dữ liệu thật + xuất Excel
 // nhiều sheet mang đi pitch — số chưa có ghi thẳng "chờ thương mại hóa".
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FileSpreadsheet, Loader2, TrendingUp } from "lucide-react";
 import {
@@ -139,13 +139,23 @@ export function InvestorReport() {
       setLoading(false);
     }
   }, []);
+  // Khối nằm cuối trang, câu tổng hợp nặng: chỉ tải khi người xem cuộn tới.
+  const placeholderRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
-    load();
+    const el = placeholderRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      observer.disconnect();
+      void load();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [load]);
 
   if (loading && !report) {
     return (
-      <p className="py-6 text-center text-sm text-muted-foreground">
+      <p ref={placeholderRef} className="py-6 text-center text-sm text-muted-foreground">
         Đang tổng hợp Báo cáo nhà đầu tư…
       </p>
     );
@@ -164,8 +174,9 @@ export function InvestorReport() {
             </span>
           </p>
           <p className="text-xs text-muted-foreground">
-            Tính tươi từ dữ liệu thật mỗi lần mở — không phải soạn tay trước
-            buổi pitch. Số chưa có ghi rõ, không vẽ.
+            Tính từ dữ liệu thật, cập nhật lúc{" "}
+            {new Date(report.generatedAt).toLocaleString("vi-VN")} — không phải
+            soạn tay trước buổi pitch. Số chưa có ghi rõ, không vẽ.
           </p>
         </div>
         <Button

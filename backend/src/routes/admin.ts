@@ -12,6 +12,7 @@ import {
 } from "@prisma/client";
 import { parseLedgerPeriod } from "../lib/ledger-period";
 import { prisma } from "../lib/prisma";
+import { StaleCache } from "../lib/stale-cache";
 import {
   requirePlatformAdmin,
   requirePlatformPermission,
@@ -69,84 +70,92 @@ import { getOrderStatementTransactionsV2 } from "../integrations/tiktok/client";
 // ============================================================
 const router = Router();
 
-// GET /api/admin/stats — số liệu tổng quan toàn nền tảng.
-router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res, next) => {
-  try {
-    const now = Date.now();
-    const d7 = new Date(now - 7 * 24 * 60 * 60 * 1000);
-    const d30 = new Date(now - 30 * 24 * 60 * 60 * 1000);
+// Số liệu tổng quan toàn nền tảng.
+async function computePlatformStats() {
+  const now = Date.now();
+  const d7 = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const d30 = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
-    const [
+  const [
+    totalOwners,
+    totalStaff,
+    newOwners7d,
+    newOwners30d,
+    channelsByPlatform,
+    channelsDisconnected,
+    totalOrders,
+    orders24h,
+    shopeeWebhookByStatus,
+    misaWebhookByStatus,
+    tiktokWebhookByStatus,
+  ] = await Promise.all([
+    // Chủ shop = tài khoản gốc (ownerId null); nhân viên tính riêng.
+    prisma.user.count({ where: { ownerId: null } }),
+    prisma.user.count({ where: { ownerId: { not: null } } }),
+    prisma.user.count({ where: { ownerId: null, createdAt: { gte: d7 } } }),
+    prisma.user.count({ where: { ownerId: null, createdAt: { gte: d30 } } }),
+    // 09/10/2026: chỉ đếm gian ĐANG HOẠT ĐỘNG — trước đây gộp cả gian đã
+    // ngắt nên thẻ "Gian hàng đã kết nối" phình số. Gian đã ngắt đếm riêng.
+    prisma.channel.groupBy({
+      by: ["channelName"],
+      where: { status: "ACTIVE" },
+      _count: { _all: true },
+    }),
+    prisma.channel.count({ where: { status: { not: "ACTIVE" } } }),
+    prisma.order.count(),
+    prisma.order.count({
+      where: { createdAt: { gte: new Date(now - 24 * 60 * 60 * 1000) } },
+    }),
+    prisma.shopeeWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.misaWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.tiktokWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
+  ]);
+  // Từ giai đoạn 2 bước 2 (01/10/2026) sự kiện TikTok mới nằm ở webhook_events;
+  // bảng cũ chỉ còn lịch sử tới khi dọn. Cộng hai nguồn để số trên HQ không tụt.
+  const inboxByStatus = await prisma.webhookEvent.groupBy({
+    by: ["source", "status"],
+    where: { source: { in: ["TIKTOK", "SHOPEE"] } },
+    _count: { _all: true },
+  });
+  const mergeCounts = (source: string, legacy: { status: string; _count: { _all: number } }[]) => {
+    const counts = new Map<string, number>();
+    for (const s of [...legacy, ...inboxByStatus.filter((x) => x.source === source)]) {
+      counts.set(s.status, (counts.get(s.status) ?? 0) + s._count._all);
+    }
+    return [...counts].map(([status, count]) => ({ status, count }));
+  };
+
+  return {
+    users: {
       totalOwners,
       totalStaff,
       newOwners7d,
       newOwners30d,
-      channelsByPlatform,
-      channelsDisconnected,
-      totalOrders,
-      orders24h,
-      shopeeWebhookByStatus,
-      misaWebhookByStatus,
-      tiktokWebhookByStatus,
-    ] = await Promise.all([
-      // Chủ shop = tài khoản gốc (ownerId null); nhân viên tính riêng.
-      prisma.user.count({ where: { ownerId: null } }),
-      prisma.user.count({ where: { ownerId: { not: null } } }),
-      prisma.user.count({ where: { ownerId: null, createdAt: { gte: d7 } } }),
-      prisma.user.count({ where: { ownerId: null, createdAt: { gte: d30 } } }),
-      // 09/10/2026: chỉ đếm gian ĐANG HOẠT ĐỘNG — trước đây gộp cả gian đã
-      // ngắt nên thẻ "Gian hàng đã kết nối" phình số. Gian đã ngắt đếm riêng.
-      prisma.channel.groupBy({
-        by: ["channelName"],
-        where: { status: "ACTIVE" },
-        _count: { _all: true },
-      }),
-      prisma.channel.count({ where: { status: { not: "ACTIVE" } } }),
-      prisma.order.count(),
-      prisma.order.count({
-        where: { createdAt: { gte: new Date(now - 24 * 60 * 60 * 1000) } },
-      }),
-      prisma.shopeeWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
-      prisma.misaWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
-      prisma.tiktokWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
-    ]);
-    // Từ giai đoạn 2 bước 2 (01/10/2026) sự kiện TikTok mới nằm ở webhook_events;
-    // bảng cũ chỉ còn lịch sử tới khi dọn. Cộng hai nguồn để số trên HQ không tụt.
-    const inboxByStatus = await prisma.webhookEvent.groupBy({
-      by: ["source", "status"],
-      where: { source: { in: ["TIKTOK", "SHOPEE"] } },
-      _count: { _all: true },
-    });
-    const mergeCounts = (source: string, legacy: { status: string; _count: { _all: number } }[]) => {
-      const counts = new Map<string, number>();
-      for (const s of [...legacy, ...inboxByStatus.filter((x) => x.source === source)]) {
-        counts.set(s.status, (counts.get(s.status) ?? 0) + s._count._all);
-      }
-      return [...counts].map(([status, count]) => ({ status, count }));
-    };
-
-    res.json({
-      users: {
-        totalOwners,
-        totalStaff,
-        newOwners7d,
-        newOwners30d,
-      },
-      channelsByPlatform: channelsByPlatform.map((c) => ({
-        platform: c.channelName,
-        count: c._count._all,
+    },
+    channelsByPlatform: channelsByPlatform.map((c) => ({
+      platform: c.channelName,
+      count: c._count._all,
+    })),
+    channelsDisconnected,
+    orders: { total: totalOrders, last24h: orders24h },
+    webhooks: {
+      shopee: mergeCounts("SHOPEE", shopeeWebhookByStatus),
+      tiktok: mergeCounts("TIKTOK", tiktokWebhookByStatus),
+      misa: misaWebhookByStatus.map((s) => ({
+        status: s.status,
+        count: s._count._all,
       })),
-      channelsDisconnected,
-      orders: { total: totalOrders, last24h: orders24h },
-      webhooks: {
-        shopee: mergeCounts("SHOPEE", shopeeWebhookByStatus),
-        tiktok: mergeCounts("TIKTOK", tiktokWebhookByStatus),
-        misa: misaWebhookByStatus.map((s) => ({
-          status: s.status,
-          count: s._count._all,
-        })),
-      },
-    });
+    },
+  };
+}
+
+// Đếm cả bảng đơn + webhook ~2 giây mỗi lần mở Tổng quan. 5 phút / 30 phút là mặc định tự chọn.
+const platformStatsCache = new StaleCache("số tổng quan HQ", computePlatformStats, 5 * 60_000, 30 * 60_000);
+
+// GET /api/admin/stats
+router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res, next) => {
+  try {
+    res.json(await platformStatsCache.get());
   } catch (err) {
     next(err);
   }
@@ -2571,8 +2580,8 @@ router.get("/marketing", requirePlatformPermission("hq.marketing"), async (_req,
 
 // ============================================================
 // BÁO CÁO NHÀ ĐẦU TƯ (GĐ6) — CHỈ CHỦ NỀN TẢNG: các chỉ số nhà đầu tư SaaS
-// soi khi thẩm định (traction / retention / hiệu quả tăng trưởng), tính TƯƠI
-// từ dữ liệu thật mỗi lần gọi — không soạn tay trước buổi pitch. Số chưa có
+// soi khi thẩm định (traction / retention / hiệu quả tăng trưởng), tính từ dữ
+// liệu thật, đệm tối đa 24 giờ — không soạn tay trước buổi pitch. Số chưa có
 // (MRR/ARPU) trả 0 kèm ghi chú "chờ thương mại hóa", tuyệt đối không vẽ.
 // ============================================================
 
@@ -2582,160 +2591,167 @@ const monthKeyOf = (d: Date) =>
 const monthLabelOf = (d: Date) =>
   `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
 
+async function computeInvestorReport() {
+  const now = new Date();
+  const monthStart = (back: number) =>
+    new Date(now.getFullYear(), now.getMonth() - back, 1);
+  const start12 = monthStart(11); // chuỗi 12 tháng cho đăng ký + GMV
+  const start6 = monthStart(5); // 6 tháng cho cohort + sổ quỹ
+  const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const [
+    signupRows,
+    gmvRows,
+    channelOwners,
+    orderOwners,
+    totalOwners,
+    referredTotal,
+    ledgerRows,
+    orderUserMonths,
+    cohortOwners,
+    mau30d,
+  ] = await Promise.all([
+    prisma.$queryRaw<{ m: Date; count: bigint }[]>`
+      SELECT date_trunc('month', "createdAt") AS m, COUNT(*)::bigint AS count
+      FROM "User" WHERE "ownerId" IS NULL AND "createdAt" >= ${start12}
+      GROUP BY 1`,
+    prisma.$queryRaw<{ m: Date; gmv: Prisma.Decimal | null }[]>`
+      SELECT date_trunc('month', o."createdAt") AS m, SUM(o."totalAmount") AS gmv
+      FROM "Order" o WHERE o."createdAt" >= ${start12}
+      GROUP BY 1`,
+    // Funnel bậc 2: chủ shop đã kết nối ít nhất 1 gian hàng.
+    prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(DISTINCT "userId")::bigint AS count FROM "Channel"`,
+    // Funnel bậc 3: chủ shop đã có đơn chạy qua hệ thống.
+    prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(DISTINCT c."userId")::bigint AS count
+      FROM "Order" o JOIN "Channel" c ON c.id = o."channelId"`,
+    prisma.user.count({ where: { ownerId: null } }),
+    prisma.user.count({ where: { referredById: { not: null } } }),
+    prisma.$queryRaw<{ m: Date; direction: string; total: Prisma.Decimal | null }[]>`
+      SELECT date_trunc('month', "occurredAt") AS m, "direction"::text AS direction,
+             SUM(amount) AS total
+      FROM "platform_ledger_entries" WHERE "occurredAt" >= ${start6}
+      GROUP BY 1, 2`,
+    // Cohort: chủ shop nào CÓ ĐƠN trong tháng nào (distinct, 6 tháng).
+    prisma.$queryRaw<{ userId: string; m: Date }[]>`
+      SELECT DISTINCT c."userId" AS "userId", date_trunc('month', o."createdAt") AS m
+      FROM "Order" o JOIN "Channel" c ON c.id = o."channelId"
+      WHERE o."createdAt" >= ${start6}`,
+    prisma.user.findMany({
+      where: { ownerId: null, createdAt: { gte: start6 } },
+      select: { id: true, createdAt: true },
+    }),
+    // MAU đúng nghĩa (đăng nhập/hoạt động) — dữ liệu tích lũy từ 13/08/2026.
+    prisma.user.count({ where: { ownerId: null, lastActiveAt: { gte: d30 } } }),
+  ]);
+
+  // ----- Chuỗi 12 tháng: đăng ký + GMV, kèm tăng trưởng MoM % -----
+  const signupByKey = new Map(signupRows.map((r) => [monthKeyOf(r.m), Number(r.count)]));
+  const gmvByKey = new Map(gmvRows.map((r) => [monthKeyOf(r.m), toNumber(r.gmv)]));
+  const momPct = (cur: number, prev: number | null) =>
+    prev !== null && prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
+
+  const months12 = Array.from({ length: 12 }, (_, i) => monthStart(11 - i));
+  let prevSignup: number | null = null;
+  let prevGmv: number | null = null;
+  const signupsByMonth = months12.map((d) => {
+    const count = signupByKey.get(monthKeyOf(d)) ?? 0;
+    const row = { month: monthKeyOf(d), label: monthLabelOf(d), count, momPct: momPct(count, prevSignup) };
+    prevSignup = count;
+    return row;
+  });
+  const gmvByMonth = months12.map((d) => {
+    const gmv = gmvByKey.get(monthKeyOf(d)) ?? 0;
+    const row = { month: monthKeyOf(d), label: monthLabelOf(d), gmv, momPct: momPct(gmv, prevGmv) };
+    prevGmv = gmv;
+    return row;
+  });
+
+  // ----- Retention cohort 6 tháng: % cohort còn CÓ ĐƠN sau k tháng -----
+  const activeMonths = new Map<string, Set<string>>();
+  for (const r of orderUserMonths) {
+    const key = monthKeyOf(r.m);
+    if (!activeMonths.has(r.userId)) activeMonths.set(r.userId, new Set());
+    activeMonths.get(r.userId)!.add(key);
+  }
+  const months6 = Array.from({ length: 6 }, (_, i) => monthStart(5 - i));
+  const cohorts = months6.map((cohortMonth, idx) => {
+    const members = cohortOwners.filter(
+      (o) => monthKeyOf(o.createdAt) === monthKeyOf(cohortMonth)
+    );
+    const maxOffset = months6.length - 1 - idx; // chỉ tính tới tháng hiện tại
+    const activePct = Array.from({ length: maxOffset + 1 }, (_, k) => {
+      if (members.length === 0) return null;
+      const target = monthKeyOf(months6[idx + k]);
+      const active = members.filter((m) => activeMonths.get(m.id)?.has(target)).length;
+      return Math.round((active / members.length) * 1000) / 10;
+    });
+    return {
+      month: monthKeyOf(cohortMonth),
+      label: monthLabelOf(cohortMonth),
+      size: members.length,
+      activePct,
+    };
+  });
+
+  // ----- Sổ quỹ 6 tháng: thu/chi + burn trung bình các tháng có phát sinh -----
+  const ledgerByKey = new Map<string, { in: number; out: number }>();
+  for (const r of ledgerRows) {
+    const key = monthKeyOf(r.m);
+    const cur = ledgerByKey.get(key) ?? { in: 0, out: 0 };
+    if (r.direction === "IN") cur.in += toNumber(r.total);
+    else cur.out += toNumber(r.total);
+    ledgerByKey.set(key, cur);
+  }
+  const burnByMonth = months6.map((d) => {
+    const v = ledgerByKey.get(monthKeyOf(d)) ?? { in: 0, out: 0 };
+    return { month: monthKeyOf(d), label: monthLabelOf(d), in: v.in, out: v.out };
+  });
+  const activeBurnMonths = burnByMonth.filter((m) => m.in > 0 || m.out > 0);
+  const avgMonthlyBurn =
+    activeBurnMonths.length > 0
+      ? Math.round(activeBurnMonths.reduce((s, m) => s + m.out, 0) / activeBurnMonths.length)
+      : 0;
+
+  const connectedChannel = Number(channelOwners[0]?.count ?? 0);
+  const hasOrder = Number(orderOwners[0]?.count ?? 0);
+  const pct = (part: number, whole: number) =>
+    whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0;
+
+  return {
+    generatedAt: now.toISOString(),
+    signupsByMonth,
+    gmvByMonth,
+    funnel: {
+      registered: totalOwners,
+      connectedChannel,
+      connectedPct: pct(connectedChannel, totalOwners),
+      hasOrder,
+      hasOrderPct: pct(hasOrder, totalOwners),
+    },
+    retention: cohorts,
+    viral: {
+      totalReferred: referredTotal,
+      pctOfSignups: pct(referredTotal, totalOwners),
+    },
+    burn: { byMonth: burnByMonth, avgMonthlyBurn },
+    activity: {
+      mau30d,
+      // MAU chỉ đáng tin sau khi cột lastActiveAt tích lũy đủ 30 ngày.
+      trackedSince: "2026-08-13",
+    },
+    revenue: { mrr: 0, arpu: 0, note: "MRR/ARPU tính tự động ở GĐ sau — xem tạm Doanh thu gói tại /admin/plans" },
+  };
+}
+
+// Số theo tháng đổi chậm mà mỗi lượt tính quét cả bảng đơn ~6 giây. 1 giờ / 24 giờ là mặc định tự chọn.
+const investorReportCache = new StaleCache("báo cáo nhà đầu tư", computeInvestorReport, 60 * 60_000, 24 * 60 * 60_000);
+
 // GET /api/admin/investor-report
 router.get("/investor-report", requirePlatformAdmin, async (_req, res, next) => {
   try {
-    const now = new Date();
-    const monthStart = (back: number) =>
-      new Date(now.getFullYear(), now.getMonth() - back, 1);
-    const start12 = monthStart(11); // chuỗi 12 tháng cho đăng ký + GMV
-    const start6 = monthStart(5); // 6 tháng cho cohort + sổ quỹ
-    const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-    const [
-      signupRows,
-      gmvRows,
-      channelOwners,
-      orderOwners,
-      totalOwners,
-      referredTotal,
-      ledgerRows,
-      orderUserMonths,
-      cohortOwners,
-      mau30d,
-    ] = await Promise.all([
-      prisma.$queryRaw<{ m: Date; count: bigint }[]>`
-        SELECT date_trunc('month', "createdAt") AS m, COUNT(*)::bigint AS count
-        FROM "User" WHERE "ownerId" IS NULL AND "createdAt" >= ${start12}
-        GROUP BY 1`,
-      prisma.$queryRaw<{ m: Date; gmv: Prisma.Decimal | null }[]>`
-        SELECT date_trunc('month', o."createdAt") AS m, SUM(o."totalAmount") AS gmv
-        FROM "Order" o WHERE o."createdAt" >= ${start12}
-        GROUP BY 1`,
-      // Funnel bậc 2: chủ shop đã kết nối ít nhất 1 gian hàng.
-      prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(DISTINCT "userId")::bigint AS count FROM "Channel"`,
-      // Funnel bậc 3: chủ shop đã có đơn chạy qua hệ thống.
-      prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(DISTINCT c."userId")::bigint AS count
-        FROM "Order" o JOIN "Channel" c ON c.id = o."channelId"`,
-      prisma.user.count({ where: { ownerId: null } }),
-      prisma.user.count({ where: { referredById: { not: null } } }),
-      prisma.$queryRaw<{ m: Date; direction: string; total: Prisma.Decimal | null }[]>`
-        SELECT date_trunc('month', "occurredAt") AS m, "direction"::text AS direction,
-               SUM(amount) AS total
-        FROM "platform_ledger_entries" WHERE "occurredAt" >= ${start6}
-        GROUP BY 1, 2`,
-      // Cohort: chủ shop nào CÓ ĐƠN trong tháng nào (distinct, 6 tháng).
-      prisma.$queryRaw<{ userId: string; m: Date }[]>`
-        SELECT DISTINCT c."userId" AS "userId", date_trunc('month', o."createdAt") AS m
-        FROM "Order" o JOIN "Channel" c ON c.id = o."channelId"
-        WHERE o."createdAt" >= ${start6}`,
-      prisma.user.findMany({
-        where: { ownerId: null, createdAt: { gte: start6 } },
-        select: { id: true, createdAt: true },
-      }),
-      // MAU đúng nghĩa (đăng nhập/hoạt động) — dữ liệu tích lũy từ 13/08/2026.
-      prisma.user.count({ where: { ownerId: null, lastActiveAt: { gte: d30 } } }),
-    ]);
-
-    // ----- Chuỗi 12 tháng: đăng ký + GMV, kèm tăng trưởng MoM % -----
-    const signupByKey = new Map(signupRows.map((r) => [monthKeyOf(r.m), Number(r.count)]));
-    const gmvByKey = new Map(gmvRows.map((r) => [monthKeyOf(r.m), toNumber(r.gmv)]));
-    const momPct = (cur: number, prev: number | null) =>
-      prev !== null && prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
-
-    const months12 = Array.from({ length: 12 }, (_, i) => monthStart(11 - i));
-    let prevSignup: number | null = null;
-    let prevGmv: number | null = null;
-    const signupsByMonth = months12.map((d) => {
-      const count = signupByKey.get(monthKeyOf(d)) ?? 0;
-      const row = { month: monthKeyOf(d), label: monthLabelOf(d), count, momPct: momPct(count, prevSignup) };
-      prevSignup = count;
-      return row;
-    });
-    const gmvByMonth = months12.map((d) => {
-      const gmv = gmvByKey.get(monthKeyOf(d)) ?? 0;
-      const row = { month: monthKeyOf(d), label: monthLabelOf(d), gmv, momPct: momPct(gmv, prevGmv) };
-      prevGmv = gmv;
-      return row;
-    });
-
-    // ----- Retention cohort 6 tháng: % cohort còn CÓ ĐƠN sau k tháng -----
-    const activeMonths = new Map<string, Set<string>>();
-    for (const r of orderUserMonths) {
-      const key = monthKeyOf(r.m);
-      if (!activeMonths.has(r.userId)) activeMonths.set(r.userId, new Set());
-      activeMonths.get(r.userId)!.add(key);
-    }
-    const months6 = Array.from({ length: 6 }, (_, i) => monthStart(5 - i));
-    const cohorts = months6.map((cohortMonth, idx) => {
-      const members = cohortOwners.filter(
-        (o) => monthKeyOf(o.createdAt) === monthKeyOf(cohortMonth)
-      );
-      const maxOffset = months6.length - 1 - idx; // chỉ tính tới tháng hiện tại
-      const activePct = Array.from({ length: maxOffset + 1 }, (_, k) => {
-        if (members.length === 0) return null;
-        const target = monthKeyOf(months6[idx + k]);
-        const active = members.filter((m) => activeMonths.get(m.id)?.has(target)).length;
-        return Math.round((active / members.length) * 1000) / 10;
-      });
-      return {
-        month: monthKeyOf(cohortMonth),
-        label: monthLabelOf(cohortMonth),
-        size: members.length,
-        activePct,
-      };
-    });
-
-    // ----- Sổ quỹ 6 tháng: thu/chi + burn trung bình các tháng có phát sinh -----
-    const ledgerByKey = new Map<string, { in: number; out: number }>();
-    for (const r of ledgerRows) {
-      const key = monthKeyOf(r.m);
-      const cur = ledgerByKey.get(key) ?? { in: 0, out: 0 };
-      if (r.direction === "IN") cur.in += toNumber(r.total);
-      else cur.out += toNumber(r.total);
-      ledgerByKey.set(key, cur);
-    }
-    const burnByMonth = months6.map((d) => {
-      const v = ledgerByKey.get(monthKeyOf(d)) ?? { in: 0, out: 0 };
-      return { month: monthKeyOf(d), label: monthLabelOf(d), in: v.in, out: v.out };
-    });
-    const activeBurnMonths = burnByMonth.filter((m) => m.in > 0 || m.out > 0);
-    const avgMonthlyBurn =
-      activeBurnMonths.length > 0
-        ? Math.round(activeBurnMonths.reduce((s, m) => s + m.out, 0) / activeBurnMonths.length)
-        : 0;
-
-    const connectedChannel = Number(channelOwners[0]?.count ?? 0);
-    const hasOrder = Number(orderOwners[0]?.count ?? 0);
-    const pct = (part: number, whole: number) =>
-      whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0;
-
-    res.json({
-      generatedAt: now.toISOString(),
-      signupsByMonth,
-      gmvByMonth,
-      funnel: {
-        registered: totalOwners,
-        connectedChannel,
-        connectedPct: pct(connectedChannel, totalOwners),
-        hasOrder,
-        hasOrderPct: pct(hasOrder, totalOwners),
-      },
-      retention: cohorts,
-      viral: {
-        totalReferred: referredTotal,
-        pctOfSignups: pct(referredTotal, totalOwners),
-      },
-      burn: { byMonth: burnByMonth, avgMonthlyBurn },
-      activity: {
-        mau30d,
-        // MAU chỉ đáng tin sau khi cột lastActiveAt tích lũy đủ 30 ngày.
-        trackedSince: "2026-08-13",
-      },
-      revenue: { mrr: 0, arpu: 0, note: "MRR/ARPU tính tự động ở GĐ sau — xem tạm Doanh thu gói tại /admin/plans" },
-    });
+    res.json(await investorReportCache.get());
   } catch (err) {
     next(err);
   }
