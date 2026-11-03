@@ -196,7 +196,7 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
     deactivated = await deactivateProductsWithoutActiveLinks(channel, gone.ids);
   } else {
     console.warn(
-      `[product-sync] gian ${channel.shopName} (${channel.id}): danh mục CHƯA đủ (chạm chốt chặn phân trang, đọc được ${products.length} SKU) — bỏ qua bước đánh DELISTED`
+      `[product-sync] gian ${channel.shopName} (${channel.id}): danh mục CHƯA đủ (chạm chốt chặn phân trang hoặc sàn chậm, đọc được ${products.length} SKU) — bỏ qua bước đánh DELISTED`
     );
   }
 

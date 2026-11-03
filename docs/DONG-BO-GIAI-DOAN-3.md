@@ -404,3 +404,11 @@ Tìm chậm vì quét và gập dấu mọi dòng; thử ghép chuỗi không nh
 - Còn các truy vấn không có trần khác chưa rà hết: `inventory.ts:1063`, `services/listing-copy/source.ts`, `services/ops-alerts.ts`.
 - Mỗi lần deploy backend, gian lớn đang kéo phải kéo lại từ đầu.
 - Trang tràn ngang 26 px ở 1280 px do dải quảng bá app, có từ trước, chưa sửa.
+
+### 6.6. Kéo danh mục Shopee không còn hỏng cả lượt vì một lệnh chậm (03/11 ~16:40)
+
+Log worker 16:33:21: Hy Korea Official (Shopee) lỗi "SHOPEE không trả lời trong 30 giây (get_model_list)" sau khoảng 10 phút, chờ 30 phút rồi kéo lại từ đầu.
+`marketplace/transient-retry.ts`: `withTransientRetry` thử lại 3 lần (chờ 2 giây, 4 giây) chỉ với lỗi chậm hoặc đứt mạng; vẫn hỏng thì `SkipBudget` bỏ qua đúng lô hoặc mẫu đó,
+`complete = false` nên không đánh dấu gỡ nhầm; 10 lần hỏng liên tiếp thì dừng để lượt sau thử lại. Số 3 và 10 là mặc định tự chọn. Chỉ áp cho Shopee.
+Lazada "Vodka Store" vẫn lỗi `ServiceTimeout` mỗi 30 phút cả ngày, chưa sửa. Chưa thấy lượt kéo thật nào của Hy Korea Shopee chạy xong với bản này.
+

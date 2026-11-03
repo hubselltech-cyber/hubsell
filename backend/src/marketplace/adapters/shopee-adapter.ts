@@ -25,6 +25,7 @@ import {
   type ShopeeModel,
 } from "../../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
+import { SkipBudget, withTransientRetry } from "../transient-retry";
 import type {
   FetchedProducts,
   MarketplaceProductAdapter,
@@ -106,12 +107,16 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
     let page = 0;
     let complete = true;
     for (;;) {
-      const list = await getItemList({
-        accessToken,
-        shopId,
-        offset,
-        pageSize: ITEM_LIST_PAGE,
-      });
+      const list = await withTransientRetry(
+        () =>
+          getItemList({
+            accessToken,
+            shopId,
+            offset,
+            pageSize: ITEM_LIST_PAGE,
+          }),
+        `Shopee "${channel.shopName}" get_item_list`
+      );
       const batch = list.response?.item ?? [];
       for (const it of batch) itemIds.push(it.item_id);
 
@@ -134,15 +139,40 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
     // (3) Lấy chi tiết theo lô ≤50 + model → chuẩn hoá. Giãn nhịp giữa các
     // call (shop 300-400 SKU = hàng trăm get_model_list) để né error_rate_limit;
     // client còn tự retry khi vẫn bị chặn.
+    //
+    // ★ 03/11/2026: sàn chậm một lệnh không được bỏ cả lượt (Hy Korea 38.889 dòng hỏng sau 10 phút vì
+    // một get_model_list quá 30 giây). Thử lại lệnh đó; vẫn hỏng thì bỏ qua đúng phần đó, dòng cũ giữ
+    // nguyên và danh mục báo chưa đủ để không đánh dấu gỡ nhầm. Hỏng liên tiếp nhiều thì dừng.
     const normalized: NormalizedChannelProduct[] = [];
+    const budget = new SkipBudget();
     for (let i = 0; i < uniqueIds.length; i += BASE_INFO_BATCH) {
       const ids = uniqueIds.slice(i, i + BASE_INFO_BATCH);
       if (i > 0) await sleep(PACE_MS);
-      const infos = await getItemBaseInfo(accessToken, shopId, ids);
+      let infos: Awaited<ReturnType<typeof getItemBaseInfo>>;
+      try {
+        infos = await withTransientRetry(
+          () => getItemBaseInfo(accessToken, shopId, ids),
+          `Shopee "${channel.shopName}" get_item_base_info`
+        );
+        budget.ok();
+      } catch (err) {
+        budget.skip(err);
+        continue;
+      }
       for (const info of infos) {
         if (info.has_model) {
           await sleep(PACE_MS);
-          const models = await getModelList(accessToken, shopId, info.item_id);
+          let models: Awaited<ReturnType<typeof getModelList>>;
+          try {
+            models = await withTransientRetry(
+              () => getModelList(accessToken, shopId, info.item_id),
+              `Shopee "${channel.shopName}" get_model_list`
+            );
+            budget.ok();
+          } catch (err) {
+            budget.skip(err);
+            continue;
+          }
           if (models.length > 0) {
             for (const m of models) normalized.push(transformModel(info, m));
             continue;
@@ -150,6 +180,10 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
         }
         normalized.push(transformItem(info));
       }
+    }
+    if (budget.skipped > 0) {
+      complete = false;
+      console.warn(`[Catalog-sync] Shopee "${channel.shopName}": bỏ qua ${budget.skipped} phần do sàn chậm, lượt này chưa đủ`);
     }
 
     // KHÔNG gộp dòng trùng model_sku (sửa 15/10/2026, sự cố Hi.Bé): người bán bấm
