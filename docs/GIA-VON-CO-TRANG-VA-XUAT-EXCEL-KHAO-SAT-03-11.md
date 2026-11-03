@@ -81,3 +81,25 @@ Hướng sửa gốc: trình duyệt đọc file, chỉ gửi 4 cột Mã SKU, G
 
 Giá trong file vá vào dòng đơn đang 0 nên lãi đơn cũ tính lại đúng; dòng đơn đã có giá giữ nguyên theo thiết kế đóng băng giá vốn.
 
+## Ô tìm SKU: vì sao khách báo tìm không ra (anh hỏi thêm)
+
+Log 24 giờ của khách chỉ có một từ khóa là `tldc`, gõ 22 lần: 19 lần ra khoảng 540–710 dòng mỗi trang, 3 lần ra 0 dòng ở tab TikTok.
+
+| Nguyên nhân | Bằng chứng | Mức |
+|---|---|---|
+| Gõ một phần mã ra rất nhiều trang, sắp theo sản phẩm mới về, không theo độ khớp | `tldc` khớp 1.266 sản phẩm Shopee và 694 sản phẩm TikTok đang bán, tức 40 trang 50 sản phẩm | Đúng giả thuyết của anh |
+| Kết quả là dòng sản phẩm thu gọn, cột Mã SKU hiện "—", phải mở từng dòng mới thấy mã | Dựng lại trên giao diện với dữ liệu giả | Chắc |
+| Bộ lọc đang chọn che mất mã, nhưng câu báo lại nói không có trong cả gian | Dựng lại: mã đã gỡ khi lọc Đang bán và mã đã có giá khi lọc Chưa có giá đều báo "Không tìm thấy mã nào khớp trong 57.877 mã SKU" | Chắc |
+| 3 lượt 0 dòng ở tab TikTok | Có 8.885 dòng `tldc` đang bán ở TikTok, hiện 0 dòng chưa có giá. Khớp với việc khách đang lọc Chưa có giá, log không ghi bộ lọc nên chưa chứng minh được | Nhiều khả năng |
+| Không tìm theo mã kho | Route tìm trên mã sàn, tên, phân loại, mã mẫu, mã sàn, tên kho, không có `Product.skuCode`. 2.196 dòng có mã sàn khác mã kho | Chắc về mã, chưa biết khách có gõ mã kho không |
+
+Mã gõ đủ không bị đẩy ra trang sau: thử 60 mã ngẫu nhiên, mã đúng luôn ở trang 1, nhiều nhất khớp 3 sản phẩm. Mẫu thử nhỏ, chỉ so trên mã SKU.
+
+Tốc độ: log prod 2,5–6 giây mỗi lượt tìm.
+
+Đề nghị sửa, chưa làm:
+1. Sắp kết quả theo độ khớp: trùng đúng mã, rồi bắt đầu bằng từ khóa, rồi chứa từ khóa.
+2. Khi đang tìm, dòng sản phẩm hiện các mã khớp, hoặc tự mở khi ít dòng.
+3. Bộ lọc che kết quả thì nói rõ "có N mã ở Đã gỡ hoặc Đã có giá" kèm nút xem, không báo không tìm thấy. Ở tab sàn khác cũng vậy.
+4. Tìm thêm theo mã kho.
+

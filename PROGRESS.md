@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~20:15) — Khảo sát ô tìm SKU trang Giá vốn: khách báo tìm không ra
+
+- Log chỉ có `tldc`: khớp 1.960 sản phẩm, 40 trang, sắp theo mới nhất, dòng thu gọn không hiện mã. Bộ lọc che kết quả mà câu báo nói không có trong cả gian (dựng lại được). Mã gõ đủ vẫn ở trang 1 (60 mã thử). Đề nghị 4 sửa trong docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt, chưa sửa.
+
 ## Phiên 03/11 (~20:00) — Khảo sát nâng trang Giá vốn lên 300/500
 
 - Kết luận: không nâng 500. Gian vượt trần chỉ xuất được trang đang xem nên khách đòi trang lớn; đề nghị Xuất Excel theo cả bộ lọc, kèm lựa chọn 100. Số đo ở `docs/GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. Up lớn: dev 13.155 dòng 2,1 giây, 52.830 dòng 7,4 giây, 0 lỗi; rủi ro từ 30.000 dòng là RAM web, trên 45.000 dòng vướng trần 5 MB; đề nghị trình duyệt đọc file, chỉ gửi 4 cột. ⏳ Chờ anh chốt, chưa sửa.
