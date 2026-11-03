@@ -109,7 +109,10 @@ hubsell/
 │       │                                #   ads-cadence, capacity-plan, marketplace-read (lớp đọc sàn Pha B)
 │       ├── lib/                         # Thuần + hạ tầng: prisma, queue (pg-boss), mailer, secret-box,
 │       │                                #   date-range, finance-definitions, pnl-formula, cost-price, image-fetch (tải ảnh về buffer),
-│       │                                #   image-normalize (sharp theo luật sàn), ttl-cache (đệm TTL có trần), paginate, tree, ...
+│       │                                #   image-normalize (sharp theo luật sàn), ttl-cache (đệm TTL có trần), paginate, tree,
+│       │                                #   giá vốn gian lớn (03/11): sku-catalog-page (chia trang + tìm ở DB), cost-import-load/-apply
+│       │                                #   (Excel đọc theo mã, ghi một câu), cost-mapping-catalog (tab Mapping gộp ở DB),
+│       │                                #   cost-search-apply (áp giá cho mã vừa tìm); request-ledger + memory-watch (rào route nặng, canh RSS), ...
 │       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
 │       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source · job-edit ·
@@ -486,6 +489,8 @@ AWAITING ──quét, hàng nguyên vẹn──▶ RECEIVED_INTACT   (cộng l�
 | **Tự định dạng số** | Gõ `52000` hiện ngay `52.000`. Dùng `<CurrencyInput>` — **đừng dùng `<input type="number">` cho tiền**: không hiện được dấu phân tách, lại dính lỗi lăn chuột làm đổi giá trị rồi tự lưu. |
 | **Xuất Excel** | Xuất đúng những dòng **đang lọc**. Mẹo: lọc "Chưa nhập giá vốn" rồi xuất → file chỉ chứa mã còn thiếu. |
 | **Nhập Excel** | Đọc `Mã SKU` + `Giá vốn`, tùy chọn `Gian hàng` (+ `Kênh bán` khi 2 gian trùng tên). Có gian → chỉ gian đó; trống → mọi gian có mã + giá mặc định ở kho (luật ở `lib/cost-import.ts`). Ô đã đúng giá thì bỏ qua. Tự bỏ dấu chấm người dùng gõ (`1.234.000` → `1234000`). Dòng lỗi báo rõ số dòng, không chặn dòng hợp lệ. |
+| **Tìm mã** | Gõ mã hoặc tên. Gian lớn tìm ở DB (`lib/sku-catalog-page.ts`): trùng đúng mã → bắt đầu bằng → chứa → tên; tìm cả mã kho; dòng mẫu hiện mã khớp, ít mã thì tự mở. Ra 0 mà bộ lọc đang che thì nói rõ kèm nút xem. |
+| **Áp giá cho tất cả mã vừa tìm** | Dải dưới ô tìm (`components/finance/cost-search-apply.tsx`): máy chủ tự tính theo từ khóa + bộ lọc, mặc định chỉ điền ô trống, ghi đè phải tick, chỉ dòng khớp mã, hộp xác nhận ghi giá cũ → mới. Số lệch với lúc xác nhận thì không ghi (409). |
 | **Bảng phân cấp** | Mỗi mẫu hàng gộp thành 1 dòng cha có mũi tên xổ ra các phân loại con (size M/L/XL). Dòng cha có ô "Nhập cho tất cả" — gõ một lần, áp cho toàn bộ phân loại. |
 
 ⚠️ **Giá vốn theo GIAN (từ 11/10/2026).** Giá hiệu lực của một SKU sàn = giá riêng của gian (`ChannelProduct.costPrice` > 0), không có thì giá MẶC ĐỊNH của sản phẩm kho đã nối (`Product.costPrice`). Kho chỉ quản số lượng. Một nguồn quy tắc: `effectiveSkuCost` trong `backend/src/lib/cost-price.ts`. Mọi ô ở trang này ghi giá riêng của đúng gian đó; xoá trống ô của SKU đã nối kho = về theo giá kho. Trang có ô lọc "Gian hàng"; tab Mapping có ô chọn gian — gộp, đề xuất, áp giá chỉ trong các gian đã chọn.

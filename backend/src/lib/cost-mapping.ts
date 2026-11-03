@@ -384,7 +384,7 @@ async function loadGroups(
   return groupSkusByCode(targets, new Set(dismissed.map((d) => d.code)));
 }
 
-export const SKU_GROUP_PAGE_DEFAULT = 200;
+const SKU_GROUP_PAGE_DEFAULT = 200;
 const SKU_GROUP_PAGE_MAX = 5000;
 
 export interface SkuGroupQuery {
@@ -569,7 +569,7 @@ export async function findCostSiblings(ownerId: string, skuIds: string[]) {
 // ---------- 3. Bảng giá tự nhập ----------
 
 /** Trần mỗi danh sách trả về giao diện khi xem trước; số đếm luôn đủ. */
-export const RULES_PREVIEW_LIST_MAX = 5000;
+const RULES_PREVIEW_LIST_MAX = 5000;
 
 async function loadMatcher(ownerId: string) {
   const rules = await loadRules(ownerId);

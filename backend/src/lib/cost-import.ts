@@ -31,7 +31,7 @@ export interface CostImportPlan {
 }
 
 /** Tên gian dùng trong file xuất cho hàng kho chưa nối sàn nào. */
-export const OFFLINE_SHOP_LABEL = "Kho nội bộ";
+const OFFLINE_SHOP_LABEL = "Kho nội bộ";
 
 const norm = (s: string) => s.normalize("NFC").trim().toLowerCase();
 
@@ -168,15 +168,4 @@ export function planCostImport(
   for (const [id, cost] of productCost) if (productNow.get(id) === cost) productCost.delete(id);
 
   return { productCost, shopCost, errors, matchedRows };
-}
-
-/** Gom map id → giá thành giá → [id] để mỗi giá một lượt ghi. */
-export function groupByCost(m: Map<string, number>): Map<number, string[]> {
-  const out = new Map<number, string[]>();
-  for (const [id, cost] of m) {
-    const list = out.get(cost);
-    if (list) list.push(id);
-    else out.set(cost, [id]);
-  }
-  return out;
 }

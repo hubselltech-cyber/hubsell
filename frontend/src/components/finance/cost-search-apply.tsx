@@ -78,9 +78,9 @@ export function CostSearchApply({
     };
   }, [q, channel, shop, listing, status, reloadTick]);
 
-  if (!summary) return null;
+  // 0 mã khớp: trạng thái trống của bảng đã nói rõ có mã bị bộ lọc ẩn hay không, dải không in trùng.
+  if (!summary || summary.matched === 0) return null;
   const hidden = summary.everywhere - summary.matched;
-  if (summary.matched === 0 && hidden <= 0) return null;
 
   const cost = Number(digits);
   const validCost = digits !== "" && !Number.isNaN(cost) && cost > 0;
@@ -130,8 +130,7 @@ export function CostSearchApply({
 
   return (
     <div className="space-y-2 rounded-lg border bg-card px-3 py-2.5 text-sm">
-      {summary.matched > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="min-w-0 break-words">
             <b className="tabular-nums">{formatNumber(summary.matched)}</b> mã khớp “{q}”
             {" · "}
@@ -171,8 +170,7 @@ export function CostSearchApply({
               Áp cho {formatNumber(planned)} mã
             </Button>
           </div>
-        </div>
-      )}
+      </div>
       {hidden > 0 && (
         <p className={TEXT_SUB}>
           Còn <span className="tabular-nums">{formatNumber(hidden)}</span> mã khớp đang bị bộ lọc ẩn.{" "}

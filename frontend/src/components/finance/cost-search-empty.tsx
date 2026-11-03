@@ -1,33 +1,51 @@
 "use client";
 
+import * as React from "react";
 import { Loader2, SearchX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { fetchSkuSearchCount } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 
 /**
- * Tìm ra 0 kết quả trên trang Giá vốn. Bộ lọc che mất mã thì nói đúng là đang bị che và cho một nút xem, không báo
- * "không tìm thấy" như thể cả gian không có (khách 03/11/2026 báo tìm không ra).
+ * Tìm ra 0 kết quả trên trang Giá vốn (03/11/2026, khách báo tìm không ra). Đang có bộ lọc thì tự hỏi máy chủ xem
+ * toàn gian có mã khớp không: có thì nói rõ bộ lọc đang che và cho một nút xem, không báo "không tìm thấy" như thể
+ * cả gian không có. Đếm này gồm cả dòng khớp theo tên, khác với dải áp giá chỉ đếm dòng khớp mã.
  */
 export function CostSearchEmpty({
   keyword,
-  checking,
+  loading,
   filtersNarrow,
-  rowsEverywhere,
   hiddenBy,
   onShowAll,
 }: {
   keyword: string;
-  /** Đang hỏi máy chủ, chưa kết luận được. */
-  checking: boolean;
+  /** Bảng đang tải lại, chưa kết luận được. */
+  loading: boolean;
   filtersNarrow: boolean;
-  /** Số dòng khớp trong toàn bộ gian; null = không hỏi được. */
-  rowsEverywhere: number | null;
   /** Tên các bộ lọc đang bật. */
   hiddenBy: string[];
   onShowAll: () => void;
 }) {
-  if (checking) {
+  // null = chưa hỏi xong; -1 = hỏi lỗi, chỉ nói được trong phạm vi bộ lọc.
+  const [rowsEverywhere, setRowsEverywhere] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    setRowsEverywhere(null);
+    if (!filtersNarrow) return;
+    let stale = false;
+    fetchSkuSearchCount(keyword)
+      .then((r) => {
+        if (!stale) setRowsEverywhere(r.rows);
+      })
+      .catch(() => {
+        if (!stale) setRowsEverywhere(-1);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [keyword, filtersNarrow]);
+
+  if (loading || (filtersNarrow && rowsEverywhere === null)) {
     return (
       <div className="px-4 py-12 text-center text-sm text-muted-foreground">
         <Loader2 className="mx-auto mb-3 size-8 animate-spin motion-reduce:animate-none" />
@@ -53,7 +71,7 @@ export function CostSearchEmpty({
     <div className="px-4 py-12 text-center text-sm">
       <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
       <p className="break-words">
-        {filtersNarrow && rowsEverywhere === null
+        {filtersNarrow && rowsEverywhere === -1
           ? `Không có mã nào khớp “${keyword}” trong bộ lọc đang chọn.`
           : `Không có mã nào khớp “${keyword}” trong toàn bộ gian hàng.`}
       </p>

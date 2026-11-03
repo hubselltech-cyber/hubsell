@@ -1060,25 +1060,11 @@ router.get("/expenses", async (req: AuthRequest, res, next) => {
 // - offline     → sản phẩm kho chưa liên kết sàn nào (bán tại quầy)
 // - all         → cả hai
 //
-// ★ 03/11/2026 — ROUTE NẶNG, CHƯA PHÂN TRANG (trang Giá vốn lọc/nhóm phía trình
-// duyệt): chủ shop 38.889 SP Shopee (Hy Korea Official, kéo về sáng 03/11) mở trang
-// là web ôm nguyên bảng vào RAM. Web Render 512 MB OOM 11 lần trong ngày, lần nhanh
-// nhất 32 giây sau khi khởi động, không dòng log nào — nghi route này. Cứu nhanh:
-//   · chỉ SELECT đúng cột dùng (trước `include: { product: true }` kéo cả sizeChart
-//     JSON / material / careInstructions của sản phẩm kho);
-//   · heavyRouteGuard: tối đa 2 request cùng lúc + từ chối khi RSS > 400 MB (503,
-//     câu phổ thông, khách bấm lại sau) — một shop lớn không kéo sập web của người khác;
-//   · log một dòng số dòng + thời gian khi > 2.000 dòng → có số thật để quyết phân
-//     trang (giai đoạn 3). Sửa gốc = phân trang/tìm ở DB, chưa làm ở lát này.
-//
-// ★ 03/11/2026 ~15:50 — LÁT CHẮN TẠM (anh chốt sau khi SQL prod cho thấy chủ shop lớn
-// nhất 57.877 dòng SKU sàn mở trang đúng lúc web chết; anh: "chả có khách nào cập nhật
-// bằng Excel — cái họ muốn là hiện ra và điền"): ĐẾM TRƯỚC; quá SKU_PRODUCTS_MAX_ROWS
-// (mặc định 5.000, tự chọn — mức "khách vài nghìn SKU" 22/10 đã chạy êm) thì KHÔNG tải
-// hết mà trả `limit` dòng đầu ưu tiên ĐANG BÁN + CHƯA CÓ GIÁ RIÊNG, kèm `truncated`,
-// `totalRows`; ô tìm của trang gửi `?q=` để tìm trong TOÀN BỘ danh mục ở DB (mã sàn,
-// tên, phân loại, mã SP sàn). Khách vẫn hiện ra và điền tại chỗ. Sửa gốc = lát 3.8
-// phân trang thật (docs/DONG-BO-GIAI-DOAN-3.md).
+// Gian lớn (03/11/2026, lát 3.8 docs/DONG-BO-GIAI-DOAN-3.md mục 6): vượt catalogRowLimit() thì
+//   · `paged=1` → lọc, tìm, đếm và chia trang ở DB (lib/sku-catalog-page.ts), web chỉ giữ một trang;
+//   · không `paged` (lọc theo kỳ) → trả `limit` dòng đầu ưu tiên đang bán chưa có giá, kèm `truncated`;
+//   · chỉ SELECT đúng cột dùng; heavyRouteGuard chặn khi quá 2 request hoặc RSS sát trần (503).
+// Gian nhỏ tải hết, lọc trên trình duyệt như cũ.
 router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthRequest, res, next) => {
   try {
     const startedAt = Date.now();

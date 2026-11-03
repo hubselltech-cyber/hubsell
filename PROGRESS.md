@@ -6,25 +6,29 @@
 
 ---
 
+## Phiên 03/11 (~21:00) — Dọn mã phần giá vốn (anh: "dọn sạch code thừa, giữ mô hình cây")
+
+- Rà bằng knip + grep tay: không tệp giá vốn nào thừa. Bỏ `groupByCost` (chỉ còn test gọi), thu `OFFLINE_SHOP_LABEL`, `SKU_GROUP_PAGE_DEFAULT`, `RULES_PREVIEW_LIST_MAX` về nội bộ; đầu route `sku-products` thay hai đoạn lịch sử "chưa phân trang / chắn tạm" bằng hiện trạng; trạng thái trống tự hỏi máy chủ (bỏ 25 dòng state khỏi `page.tsx`); dải áp giá không in trùng dòng "bị ẩn" khi 0 mã. Tài liệu đổi tên `GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md` cho đúng nội dung, thêm chỉ mục docs/README, README cập nhật cây lib + bảng tính năng trang Giá vốn. 8 bộ test giá vốn xanh, tsc hai bên sạch; eslint backend đang lỗi cấu hình ESLint 9 (có từ trước, không thuộc lát này).
+
 ## Phiên 03/11 (~20:50) — Dải áp giá cho tất cả mã vừa tìm trên trang Giá vốn
 
-- Đặt giữa thanh tìm và bảng. Máy chủ tự tính theo từ khóa + bộ lọc, mặc định chỉ điền ô trống, ghi đè tick riêng, chỉ dòng khớp mã, hộp xác nhận ghi đủ số. Prod chỉ đọc: số trên dải 2,2 giây, xem trước 1,1 giây. Chi tiết docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Soi log `[cost-apply-search]` lượt thật.
+- Đặt giữa thanh tìm và bảng. Máy chủ tự tính theo từ khóa + bộ lọc, mặc định chỉ điền ô trống, ghi đè tick riêng, chỉ dòng khớp mã, hộp xác nhận ghi đủ số. Prod chỉ đọc: số trên dải 2,2 giây, xem trước 1,1 giây. Chi tiết docs `GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md`. ⏳ Soi log `[cost-apply-search]` lượt thật.
 
 ## Phiên 03/11 (~20:25) — Anh hỏi tìm đã ra hết chưa, khách demo ShipXanh áp giá cho cả kết quả tìm
 
-- Không sót mã nhưng `tldc` vẫn 40 trang, 1.620 dòng đã gỡ bị ẩn không báo; chưa có đường áp cho cả kết quả. `tldc` có 19.553 dòng đúng 1 mức giá, 4.992 dòng chưa có giá. Đề nghị thiết kế ở docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt.
+- Không sót mã nhưng `tldc` vẫn 40 trang, 1.620 dòng đã gỡ bị ẩn không báo; chưa có đường áp cho cả kết quả. `tldc` có 19.553 dòng đúng 1 mức giá, 4.992 dòng chưa có giá. Đề nghị thiết kế ở docs `GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md`. ⏳ Chờ anh chốt.
 
 ## Phiên 03/11 (~20:45) — Anh chốt sửa cả 4 điểm ô tìm SKU trang Giá vốn
 
-- Xếp theo độ khớp, hiện mã khớp và tự mở khi ít, báo rõ khi bộ lọc che kèm nút xem, tìm theo mã kho. Từ khóa giống mã chỉ dò cột mã: prod 8 giây còn 0,9 giây. Sửa kèm cột Giá bán 8 px ở khổ 1280. Chi tiết docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Soi log `[sku-products]` lượt tìm thật.
+- Xếp theo độ khớp, hiện mã khớp và tự mở khi ít, báo rõ khi bộ lọc che kèm nút xem, tìm theo mã kho. Từ khóa giống mã chỉ dò cột mã: prod 8 giây còn 0,9 giây. Sửa kèm cột Giá bán 8 px ở khổ 1280. Chi tiết docs `GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md`. ⏳ Soi log `[sku-products]` lượt tìm thật.
 
 ## Phiên 03/11 (~20:15) — Khảo sát ô tìm SKU trang Giá vốn: khách báo tìm không ra
 
-- Log chỉ có `tldc`: khớp 1.960 sản phẩm, 40 trang, sắp theo mới nhất, dòng thu gọn không hiện mã. Bộ lọc che kết quả mà câu báo nói không có trong cả gian (dựng lại được). Mã gõ đủ vẫn ở trang 1 (60 mã thử). Đề nghị 4 sửa trong docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt, chưa sửa.
+- Log chỉ có `tldc`: khớp 1.960 sản phẩm, 40 trang, sắp theo mới nhất, dòng thu gọn không hiện mã. Bộ lọc che kết quả mà câu báo nói không có trong cả gian (dựng lại được). Mã gõ đủ vẫn ở trang 1 (60 mã thử). Đề nghị 4 sửa trong docs `GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md`. ⏳ Chờ anh chốt, chưa sửa.
 
 ## Phiên 03/11 (~20:00) — Khảo sát nâng trang Giá vốn lên 300/500
 
-- Kết luận: không nâng 500. Gian vượt trần chỉ xuất được trang đang xem nên khách đòi trang lớn; đề nghị Xuất Excel theo cả bộ lọc, kèm lựa chọn 100. Số đo ở `docs/GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. Up lớn: dev 13.155 dòng 2,1 giây, 52.830 dòng 7,4 giây, 0 lỗi; rủi ro từ 30.000 dòng là RAM web, trên 45.000 dòng vướng trần 5 MB; đề nghị trình duyệt đọc file, chỉ gửi 4 cột. ⏳ Chờ anh chốt, chưa sửa.
+- Kết luận: không nâng 500. Gian vượt trần chỉ xuất được trang đang xem nên khách đòi trang lớn; đề nghị Xuất Excel theo cả bộ lọc, kèm lựa chọn 100. Số đo ở `docs/GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md`. Up lớn: dev 13.155 dòng 2,1 giây, 52.830 dòng 7,4 giây, 0 lỗi; rủi ro từ 30.000 dòng là RAM web, trên 45.000 dòng vướng trần 5 MB; đề nghị trình duyệt đọc file, chỉ gửi 4 cột. ⏳ Chờ anh chốt, chưa sửa.
 
 ## Phiên 03/11 (~19:50) — Lượt nhập thật 4.313 dòng thành công nhưng 54 giây → sửa câu lấy dòng đơn
 

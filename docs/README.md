@@ -31,6 +31,7 @@
 - [VI-TRI-CHUA-HANG.md](VI-TRI-CHUA-HANG.md) — vị trí kho
 - [DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md](DONG-BO-SAN-PHAM-TRUNG-MA-PHAN-LOAI.md) — SKU phân loại con trùng mã
 - [HANG-HOA-CHA-CON-PHAN-LOAI.md](HANG-HOA-CHA-CON-PHAN-LOAI.md) — 22/10/2026 SKU kho có phân loại riêng (variantName/groupKey), bảng Hàng hóa cha–con như Giá vốn, mã dự phòng Shopee dùng mã cha, tự Ngừng bán khi sàn gỡ, hộp Nối SKU bỏ tồn 0 + mã gốc
+- [GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md](GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md) — 03/11/2026 trang Nhập giá vốn với gian 57.877 dòng: ô tìm xếp theo độ khớp + mã kho + báo bộ lọc che, dải áp một giá cho tất cả mã vừa tìm, khảo sát cỡ trang 300/500 và Excel (chưa làm)
 - [GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md](GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md) — 22/10/2026 nhận xét khách vài nghìn SKU: giá vốn nhóm theo gian + mã SP sàn, tên phân loại cạnh mã; "N đơn chưa có giá vốn" → lọc SKU bán trong kỳ (`sku-products/missing-cost`); cột Chi tiết sản phẩm + Kiểm toán phí in tên · phân loại (`lib/order-line-names`)
 - [CASH-FLOW-DESIGN.md](CASH-FLOW-DESIGN.md) — thiết kế trang dòng tiền
 - [DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md](DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md) — 29/10/2026 thẻ "Tổng giá trị sản phẩm" = giá món hàng TRONG GIỎ (anh chốt), voucher/xu = khấu trừ: khảo sát API 3 sàn + số prod; 4 lát ĐÃ LIVE (TikTok revenue_amount + voucher từ Get Order Price Details; 2 phí mới TikTok; 3 cột trên giỏ Shopee; sổ cái v3 + sửa cộng thiếu khi đổi version); còn Lazada (mục 9) và combo Shopee vào khấu trừ (mục 13)

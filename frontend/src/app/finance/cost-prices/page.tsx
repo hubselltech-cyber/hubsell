@@ -38,7 +38,6 @@ import {
   ApiError,
   backfillCostPricesToOrders,
   fetchCatalogPending,
-  fetchSkuSearchCount,
   fetchMissingCostSkus,
   fetchSkuProducts,
   fillSuggestedCosts,
@@ -362,28 +361,6 @@ export default function CostPricesPage() {
   const activeKeyword = truncated ? serverQ : search.trim();
   const filtersNarrow =
     channel !== "all" || shop !== "all" || listing !== "all" || statusFilter !== "all";
-  const noSearchResult =
-    !loading && activeKeyword !== "" && !periodFocus && filteredItems.length === 0;
-  // Ra 0 kết quả khi đang có bộ lọc: hỏi toàn gian xem có phải bộ lọc đang che không.
-  const [searchElsewhere, setSearchElsewhere] = useState<{
-    key: string;
-    rows: number | null;
-  } | null>(null);
-  const searchKey = `${activeKeyword}|${channel}|${shop}|${listing}|${statusFilter}`;
-  useEffect(() => {
-    if (!noSearchResult || !filtersNarrow) return;
-    let stale = false;
-    fetchSkuSearchCount(activeKeyword)
-      .then((r) => {
-        if (!stale) setSearchElsewhere({ key: searchKey, rows: r.rows });
-      })
-      .catch(() => {
-        if (!stale) setSearchElsewhere({ key: searchKey, rows: null });
-      });
-    return () => {
-      stale = true;
-    };
-  }, [noSearchResult, filtersNarrow, activeKeyword, searchKey]);
   const hiddenBy = [
     channel !== "all" ? `tab ${TABS.find((t) => t.key === channel)?.label ?? channel}` : null,
     shop !== "all" ? "gian đang chọn" : null,
@@ -1047,14 +1024,10 @@ export default function CostPricesPage() {
                 </div>
               ) : activeKeyword && !periodFocus && filteredItems.length === 0 ? (
                 <CostSearchEmpty
+                  key={`${activeKeyword}|${channel}|${shop}|${listing}|${statusFilter}`}
                   keyword={activeKeyword}
-                  checking={
-                    loading || (filtersNarrow && searchElsewhere?.key !== searchKey)
-                  }
+                  loading={loading}
                   filtersNarrow={filtersNarrow}
-                  rowsEverywhere={
-                    searchElsewhere?.key === searchKey ? searchElsewhere.rows : null
-                  }
                   hiddenBy={hiddenBy}
                   onShowAll={showAllFilters}
                 />

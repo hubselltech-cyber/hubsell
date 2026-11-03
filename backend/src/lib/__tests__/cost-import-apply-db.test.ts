@@ -6,7 +6,6 @@ import { ChannelName, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { applyCostPriceIn } from "../cost-price";
 import { backfillCostImport, writeCostImportPlan, type CostImportPlan } from "../cost-import-apply";
-import { groupByCost } from "../cost-import";
 
 const stamp = Date.now();
 const LOAD = process.env.COST_IMPORT_LOAD ?? "";
@@ -247,9 +246,6 @@ describe("ghi giá cả file", () => {
         appendFileSync(LOAD, `${name}: ${Date.now() - t} ms
 `);
       };
-      await rollback("mỗi mức giá một lượt", async (tx) => {
-        for (const [cost, ids] of groupByCost(productCost)) await applyCostPriceIn(tx, ids, cost, userId);
-      });
       await rollback("cả file một lượt", (tx) => applyAll(tx, { productCost, shopCost }, userId));
       await rollback("một ô giá", (tx) => applyCostPriceIn(tx, [products[0].id], 1234, userId));
     },

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
 import { effectiveSkuCost } from "../cost-price";
-import { groupByCost, planCostImport, type CostImportRow } from "../cost-import";
+import { planCostImport, type CostImportRow } from "../cost-import";
 
 describe("effectiveSkuCost", () => {
   it("giá riêng của gian thắng giá kho", () => {
@@ -98,9 +98,10 @@ describe("planCostImport", () => {
     );
     expect(plan.shopCost.get("cpA")).toBe(130);
     expect(plan.shopCost.get("cpB")).toBe(100);
-    expect([...groupByCost(plan.shopCost)].sort()).toEqual([
-      [100, ["cpB", "cpT"]],
-      [130, ["cpA"]],
+    expect([...plan.shopCost].sort()).toEqual([
+      ["cpA", 130],
+      ["cpB", 100],
+      ["cpT", 100],
     ]);
   });
 });

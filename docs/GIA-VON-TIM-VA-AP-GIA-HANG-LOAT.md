@@ -1,4 +1,8 @@
-# Trang Giá vốn: nâng cỡ trang lên 300/500 hay xuất Excel theo cả bộ lọc (khảo sát 03/11/2026)
+# Trang Giá vốn: ô tìm SKU, áp giá cho tất cả mã vừa tìm, cỡ trang và Excel (03/11/2026)
+
+Một khách 57.877 dòng SKU sàn. Tệp này gom các quyết định trên trang Nhập giá vốn trong ngày 03/11/2026: khảo sát nâng cỡ trang và xuất Excel (chưa làm), sửa ô tìm SKU (đã làm, `f77b73b4`), dải áp giá cho tất cả mã vừa tìm (đã làm, `4aae2e56`). Sự cố cùng ngày về nhập Excel, tab Mapping và câu vá đơn cũ ở [DONG-BO-GIAI-DOAN-3.md](DONG-BO-GIAI-DOAN-3.md) mục 6.7–6.11.
+
+## Khảo sát nâng cỡ trang lên 300/500
 
 Anh hỏi có nên nâng trang Giá vốn từ 50 lên 300 hoặc 500 sản phẩm để khách tải về điền giá. Chưa sửa gì.
 
@@ -81,7 +85,7 @@ Hướng sửa gốc: trình duyệt đọc file, chỉ gửi 4 cột Mã SKU, G
 
 Giá trong file vá vào dòng đơn đang 0 nên lãi đơn cũ tính lại đúng; dòng đơn đã có giá giữ nguyên theo thiết kế đóng băng giá vốn.
 
-## Ô tìm SKU: vì sao khách báo tìm không ra (anh hỏi thêm)
+## Ô tìm SKU: vì sao khách báo tìm không ra
 
 Log 24 giờ của khách chỉ có một từ khóa là `tldc`, gõ 22 lần: 19 lần ra khoảng 540–710 dòng mỗi trang, 3 lần ra 0 dòng ở tab TikTok.
 
@@ -128,7 +132,7 @@ Tốc độ tìm theo tên vẫn chậm. Muốn nhanh hơn cần cột gập s�
 
 LIVE 20:15 `f77b73b4`. Kiểm prod: giao diện đã là bản mới, route tìm trả 200 cả hai đường bằng tài khoản công ty không có gian nên 0 dòng. Chưa kiểm được giao diện trên tài khoản có dữ liệu; thời gian trên dữ liệu khách là đo câu lệnh chỉ đọc. Theo dõi log `[sku-products]` lượt tìm thật, không nhờ khách thử.
 
-## Áp giá cho tất cả mã vừa tìm (anh hỏi 03/11 ~20:25, khách demo trên ShipXanh, em chưa xem ShipXanh)
+## Áp giá cho tất cả mã vừa tìm (khách demo ShipXanh, em chưa xem ShipXanh)
 
 Tìm hiện tại: không sót mã khớp, nhưng chưa ra hết trên một màn. `tldc` trải 40 trang, mặc định lọc Đang bán nên 1.620 dòng đã gỡ bị ẩn mà không có lời báo khi vẫn còn kết quả khác. Chưa có lượt tìm thật nào sau bản `f77b73b4` tính tới 20:20.
 
@@ -150,7 +154,7 @@ Chưa làm, chờ anh chốt.
 - Dải `frontend/src/components/finance/cost-search-apply.tsx` nằm giữa thanh tìm và bảng, chỉ hiện khi có từ khóa khớp mã. Hiện số mã khớp, số mã chưa có giá, ô giá, nút áp, tick ghi đè, và dòng báo còn mã bị bộ lọc ẩn.
 - Hộp xác nhận ghi số mã, giá cũ → giá mới (5 mức nhiều dòng nhất), 5 mã mẫu, cảnh báo mã chỉ chứa từ khóa ở giữa, phạm vi bộ lọc.
 - `backend/src/lib/cost-search-apply.ts`: máy chủ tự tính danh sách. Không có từ khóa thì từ chối, không chạm cả gian. Mặc định chỉ ô trống. Chỉ dòng khớp mã. `expectedRows` lệch thì 409, không ghi gì. Log `[cost-apply-search]`.
-- Route: `GET /sku-products/search-summary`, `POST /cost-prices/apply-search/preview`, `POST /cost-prices/apply-search` (có `heavyRouteGuard`). Trần giao dịch ghi giá trong `saveCostPlan` nâng lại 120 giây, vì một lượt có thể tới vài chục nghìn dòng.
+- Route: `GET /sku-products/search-summary`, `POST /cost-prices/apply-search/preview`, `POST /cost-prices/apply-search` (có `heavyRouteGuard`). `GET /sku-products/search-count` là của trạng thái trống: đếm cả dòng khớp tên, bỏ mọi bộ lọc. Trần giao dịch ghi giá trong `saveCostPlan` nâng lại 120 giây, vì một lượt có thể tới vài chục nghìn dòng.
 
 Đo:
 
