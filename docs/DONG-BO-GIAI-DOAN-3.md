@@ -336,6 +336,20 @@ gửi `?q=` tìm ILIKE trong toàn bộ danh mục (channelSku, productName, var
 phân loại bằng SQL, đếm ở DB, xuất Excel theo luồng máy chủ; xong thì bỏ trần. Số đo để chỉnh trần/nhịp: log
 `[sku-products]` (dòng, ms, RSS) + `RSS cao` kèm route.
 
+### 5.4c. Lỗi thiết kế lát 3.7 lộ ra khi deploy liên tiếp (03/11 ~16:00): gian đã nhận bị bỏ lại 60'
+
+Anh bấm Đồng bộ từ sàn ~15:43 (6 gian); worker k6qfd kéo được 4 gian thì Render thay worker (deploy 15:45:18) →
+2 gian đang "đã nhận" (`nextProductSyncAt = now + CLAIM_MS`) không instance nào kéo tiếp trong 60', mốc xin còn →
+trang treo "Đang kéo danh mục của gian DarkMan Store, and.not.or…" cả tiếng (ảnh anh gửi). Sửa gốc (một commit):
+- `stopProductCatalogSync()` gắn vào SIGTERM của vai worker (`index.ts`): dừng sau gian đang dở, trả gian đó về hàng
+  chờ (`nextProductSyncAt = now`), tiến trình mới kéo lại sau FIRST_RUN_DELAY 60 giây.
+- `recoverStrandedClaims()` lúc worker boot (phủ cả SIGKILL/OOM): gian có mốc xin mà lịch kế nằm trong cửa sổ nhận
+  (now < next ≤ now + CLAIM_MS − 90 giây) → đặt lại now. 90 giây = Render SIGTERM→SIGKILL 30 giây có dư, tránh đụng
+  instance cũ còn đang chạy lúc chồng lấn deploy. Gian lịch đêm / thử lại 30' không có mốc xin nên không bị đụng.
+- Gian có mốc xin được nhận TRƯỚC (`orderBy productSyncRequestedAt asc nulls last, nextProductSyncAt asc`).
+- `REQUEST_STALE_MS` 2 giờ → 60' (= CLAIM_MS): một mốc xin không sống lâu hơn một lượt nhận.
+- Biến tiến trình mới `currentClaim` (ghi ALLOWED_LET kèm lý do; nguồn sự thật vẫn là cột lịch trên Channel).
+
 ### 5.5. Đường lui và việc chưa làm
 
 - Đường lui: revert commit (cột thừa vô hại; migration `IF NOT EXISTS`).
