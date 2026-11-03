@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~17:45) — Anh gửi ảnh dải "Đang kéo" 5 gian: không treo, xong 17:41, dải tắt khi kiểm 17:42:55
+
+- Log worker: ANO Official 17:37:53, DARKMAN STORE 17:38:27, and.not.or 17:39:20, ANO Official Store 17:40:06, DarkMan Store 17:41:14 (30–60 giây/gian, chạy từng gian một). ⚠️ Rủi ro chưa sửa: một làn tuần tự, khi Hy Korea Shopee (lần đầu 25 phút) đang kéo thì mọi nút bấm của mọi khách phải chờ. Đề xuất: 2 làn, gian lớn riêng. Chờ anh chốt, deploy sẽ cắt lượt đang chạy.
+
 ## Phiên 03/11 (~17:35) — Tổng kết thật: khách lớn đã nhập được, gốc web chết CHƯA chứng minh
 
 - ✅ Log 17:14:05 `[cost-import]` khách lớn: file 1.228 dòng, khớp 1.228, ghi 1.228 ô, vá 30 dòng đơn, 0 lỗi, 2,9 giây. 17:32 khách vẫn duyệt tab Shopee bình thường. Render: không Instance failed mới từ 15:57 tới 17:33.
