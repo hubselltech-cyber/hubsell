@@ -8185,6 +8185,8 @@ export interface ShopeeAdsDashboard {
   assistant: ShopeeAssistantSummary | null;
   summary: ShopeeAdsSummary | null;
   campaigns: ShopeeAdsCampaignRow[];
+  /** Số chiến dịch đã kết thúc, không có số trong khoảng đang xem nên không có trong `campaigns`. Vắng = backend cũ. */
+  hiddenEndedCount?: number;
   series: { date: string; spend: number; broadGmv: number; directGmv: number }[];
   /** true = số ads cũ >30', worker đang kéo tươi — FE tự nạp lại sau ~45s (12/09). */
   adsRefreshing?: boolean;

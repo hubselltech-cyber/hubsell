@@ -519,3 +519,40 @@ Số mã của khách lúc đo: 43.869 mã, 33 đề xuất, 0 khác giá, 17.35
 
 Tìm chậm vì phải gập dấu từng dòng: đo riêng phần lọc 4,4–4,8 giây, bỏ `normalize` chỉ còn 3,7–3,8 giây, nên không đáng đổi. Sửa thật là cột tìm kiếm đã gập dấu kèm index, cần migration, trang Nhập giá vốn dùng cùng phép gập nên cũng được lợi. Chưa làm.
 
+### 6.12. Web chết lại 21:46–21:55: trang Quảng cáo Shopee nạp 5.000 chiến dịch cũ (03/11 ~22:00)
+
+Anh thấy HQ báo "Không kết nối được tới máy chủ". Render ghi 5 lần vượt 512 MB từ 21:51 đến 21:55, log cho thấy web đã khởi động lại từ 21:46, hồi lúc 22:03.
+
+Số prod chỉ đọc, gian Shopee lớn nhất (`cmw03dkk`):
+
+| Mục | Số |
+|---|---|
+| Mã trên sàn | 38.889 |
+| Chiến dịch, tạo 21:21–21:23 tối nay | 5.000, đúng bằng trần `MAX_CAMPAIGNS` |
+| Trạng thái | 4.359 ended, 641 closed, 0 đang chạy |
+| Dòng số 30 ngày | 131.162, tất cả bằng 0 |
+| Kết thúc muộn nhất | 14/01/2026 |
+| Chi quảng cáo toàn shop (`AdSpend`) | 51,8 triệu/30 ngày, 8,2 triệu/7 ngày |
+
+`computeChannelAdsInsights` nạp mọi chiến dịch của gian kèm dòng số 30 ngày và toàn bộ mã trên sàn vào RAM. Cả trang Quảng cáo lẫn lượt quét cảnh báo đều gọi hàm này.
+
+Đo DB dev, dựng gian cùng cỡ, một lượt gọi:
+
+| | RSS | Heap | Thời gian |
+|---|---|---|---|
+| Trước sửa | +532 MB | +225 MB | 3,4 giây |
+| Sau sửa | +72 MB | +50 MB | 0,4 giây |
+
+Bằng chứng trên prod: dòng duy nhất bắt được là 21:48:24 `RSS cao 73% — đang chạy: GET /api/quang-cao/shopee 1s`, rồi không còn log nào tới lần khởi động kế. Log không ghi gian nên chưa chứng minh trực tiếp request đó là của gian này; giờ dữ liệu về và cỡ tăng RAM đo được đều khớp.
+
+Heap "chỉ 70–80 MB" ở các mục trước có thể là do lấy mẫu mỗi 5 giây, không kịp thấy đỉnh: lần đo này heap tăng 225 MB trong 3,4 giây. Nên không còn kết luận được "phình ngoài heap" từ các dòng mốc nền.
+
+Sửa: `campaignsWorthLoading` bỏ chiến dịch ended/closed/deleted không có số khác 0 trong khoảng đang xem. Chiến dịch được giữ vẫn nạp đủ dòng như cũ nên số của chúng không đổi. Route trả thêm `hiddenEndedCount`, trang ghi rõ số chiến dịch không hiện để khách không tưởng mất dữ liệu.
+
+Chưa làm:
+
+1. Trần 5.000 đang cắt mất chiến dịch đang chạy của gian này: shop vẫn chi tiền mà cả 5.000 dòng đều đã kết thúc từ tháng 1 trở về trước. Nghi sàn trả chiến dịch cũ trước, chưa kiểm. Khách sẽ thấy trang không có chiến dịch nào.
+2. Worker vẫn gọi sàn và ghi lại dòng số 0 cho chiến dịch đã kết thúc: ~100 lệnh mỗi lượt với gian này. Có thể là một phần của băng thông worker, chưa đo.
+3. Còn +72 MB mỗi lượt, nghi do nạp 38.889 mã, chưa đo tách. Lọc mã theo chiến dịch sẽ làm Trợ lý và tab Hòa vốn hết dùng chung một bộ đệm.
+4. Rà các gian khác: gian TikTok của cùng khách có 256 chiến dịch, đi đường đọc khác, chưa đo.
+

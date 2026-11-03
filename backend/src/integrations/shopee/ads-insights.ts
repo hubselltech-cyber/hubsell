@@ -20,7 +20,7 @@
 // các hàm ngày ở lib/ads-dates.ts.
 // ============================================================
 
-import { ChannelName, type AdsCampaign, type AdsCampaignDailyPerf } from "@prisma/client";
+import { ChannelName, type AdsCampaign, type AdsCampaignDailyPerf, type Prisma } from "@prisma/client";
 import { dateKey, dateKeyToDbDate, startOfDaysAgo, vnDateKey, vnDateKeyOf } from "../../lib/ads-dates";
 import {
   MARGIN_MIN_COST_COVERAGE_PCT,
@@ -115,6 +115,31 @@ export interface ChannelAdsInsights {
  * không đổi kết quả dù nạp rộng hơn.
  * `opts.marginSource`: ép đường cộng biên lãi (công cụ đối chiếu); bỏ trống = theo env.
  */
+/** Chiến dịch cần nạp: còn hiệu lực, hoặc đã kết thúc nhưng có số khác 0 từ `perfFloor`. */
+export function campaignsWorthLoading(perfFloor: Date): Prisma.AdsCampaignWhereInput {
+  return {
+    OR: [
+      { status: { notIn: ["ended", "closed", "deleted"] } },
+      {
+        dailyPerf: {
+          some: {
+            date: { gte: perfFloor },
+            OR: [
+              { expense: { not: 0 } },
+              { impression: { not: 0 } },
+              { clicks: { not: 0 } },
+              { broadOrder: { not: 0 } },
+              { broadGmv: { not: 0 } },
+              { directOrder: { not: 0 } },
+              { directGmv: { not: 0 } },
+            ],
+          },
+        },
+      },
+    ],
+  };
+}
+
 export async function computeChannelAdsInsights(
   channel: AdsInsightChannel,
   opts: { perfFromKey?: string; marginSource?: AdsMarginSource } = {}
@@ -124,8 +149,10 @@ export async function computeChannelAdsInsights(
     const wanted = dateKeyToDbDate(opts.perfFromKey);
     if (wanted < perfFloor) perfFloor = wanted;
   }
+  // Chiến dịch đã kết thúc mà không có số nào trong khoảng thì không có gì để tính hay hiển thị, nên không nạp. Gian có 5.000
+  // chiến dịch cũ kèm 131.162 dòng số toàn 0 từng làm RSS tăng 532 MB trong một lượt, web 512 MB chết (03/11/2026).
   const campaignRows = await prisma.adsCampaign.findMany({
-    where: { channelId: channel.id },
+    where: { channelId: channel.id, ...campaignsWorthLoading(perfFloor) },
     include: { dailyPerf: { where: { date: { gte: perfFloor } } } },
   });
 

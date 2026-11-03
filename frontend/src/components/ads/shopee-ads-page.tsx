@@ -1020,6 +1020,11 @@ export function ShopeeAdsPage({
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Chưa có gian {meta.label} nào được kết nối.
               </p>
+            ) : campaigns.length === 0 && !loading && (data?.hiddenEndedCount ?? 0) > 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Gian có {formatNumber(data?.hiddenEndedCount ?? 0)} chiến dịch đã kết thúc, không có số trong khoảng
+                đang xem nên không hiện.
+              </p>
             ) : campaigns.length === 0 && !loading ? (
               <div className="py-10 text-center">
                 <p className="text-sm text-muted-foreground">
@@ -1055,6 +1060,8 @@ export function ShopeeAdsPage({
                   toolbar={
                     <span className="flex flex-wrap items-center gap-3">
                       {formatNumber(visibleCampaigns.length)} chiến dịch khớp bộ lọc
+                      {(data?.hiddenEndedCount ?? 0) > 0 &&
+                        ` (không hiện ${formatNumber(data?.hiddenEndedCount ?? 0)} chiến dịch đã kết thúc, không có số)`}
                       {platform === "shopee" && adsLinked && (
                         <Button
                           size="sm"

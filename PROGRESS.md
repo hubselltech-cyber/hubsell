@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 03/11 (~22:00) — Web chết lại 21:46–21:55: trang Quảng cáo Shopee nạp 5.000 chiến dịch cũ
+
+- Anh thấy HQ báo mất kết nối. Tối nay 21:21 gian Shopee lớn nhất vừa về 5.000 chiến dịch (đúng trần, toàn đã kết thúc) và 131.162 dòng số toàn 0. `computeChannelAdsInsights` nạp hết vào RAM: đo DB dev cùng cỡ RSS +532 MB trong 3,4 giây, sau sửa +72 MB, 0,4 giây.
+- Sửa: bỏ chiến dịch đã kết thúc không có số; trang ghi rõ số chiến dịch không hiện. tsc 2 bên, 4 tệp test quảng cáo qua. Chưa chạy cả bộ test, chưa soi giao diện trên trình duyệt. Anh chốt push.
+- Phát hiện thêm, chưa sửa: trần 5.000 cắt mất chiến dịch đang chạy của gian này (shop chi 51,8 triệu/30 ngày). Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 6.12.
+
 ## Phiên 03/11 (~21:00) — Dọn mã phần giá vốn (anh: "dọn sạch code thừa, giữ mô hình cây")
 
 - Rà bằng knip + grep tay: không tệp giá vốn nào thừa. Bỏ `groupByCost` (chỉ còn test gọi), thu `OFFLINE_SHOP_LABEL`, `SKU_GROUP_PAGE_DEFAULT`, `RULES_PREVIEW_LIST_MAX` về nội bộ; đầu route `sku-products` thay hai đoạn lịch sử "chưa phân trang / chắn tạm" bằng hiện trạng; trạng thái trống tự hỏi máy chủ (bỏ 25 dòng state khỏi `page.tsx`); dải áp giá không in trùng dòng "bị ẩn" khi 0 mã. Tài liệu đổi tên `GIA-VON-TIM-VA-AP-GIA-HANG-LOAT.md` cho đúng nội dung, thêm chỉ mục docs/README, README cập nhật cây lib + bảng tính năng trang Giá vốn. 8 bộ test giá vốn xanh, tsc hai bên sạch; eslint backend đang lỗi cấu hình ESLint 9 (có từ trước, không thuộc lát này).

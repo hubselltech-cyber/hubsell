@@ -148,6 +148,9 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         { id: selected.id, userId: req.ownerId!, channelName },
         { perfFromKey: fromKey }
       );
+      // Chiến dịch đã kết thúc, không có số trong khoảng nên không nạp — FE nói rõ để khách không tưởng mất dữ liệu.
+      const hiddenEndedCount =
+        (await prisma.adsCampaign.count({ where: { channelId: selected.id } })) - insights.items.length;
       const assistantConfig = insights.config;
       const shopMargin = insights.shop.margin;
       const shopBreakeven = insights.shop.breakevenRoas;
@@ -437,6 +440,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           costCoveragePct: insights.shop.costCoveragePct,
         },
         campaigns,
+        hiddenEndedCount,
         series,
       });
     } catch (err) {
