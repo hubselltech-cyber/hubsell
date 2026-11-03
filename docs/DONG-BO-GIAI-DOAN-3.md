@@ -439,3 +439,32 @@ Sửa: `detectStockouts`, `detectLowStock` gom và lọc trong SQL; test `ops-al
 Mức chắc chắn: khớp giờ 2 ngày + đo tái hiện + khớp mã, nhưng log prod không ghi route lúc chết nên chưa có bằng chứng trực tiếp. Kiểm: khách mở Tổng quan mà web không chết, log `RSS cao` không xuất hiện.
 Việc khác lộ ra, chưa sửa: `POST /sync-channels/:id/preview` gọi `refreshLinkedChannelStock` trong request web (gian 38.889 dòng rất nặng; khách chưa bật đồng bộ tồn gian nào nên chưa nổ); `ownersWithOrdersIn` ở worker dùng `distinct` tải trung bình 248.812 dòng đơn mỗi lần (69 lần từ 12/10, worker 2 GB).
 
+### 6.9. Nhập Excel báo "Lỗi máy chủ nội bộ": câu vá đơn cũ chậm, vượt trần giao dịch 120 giây (03/11 ~19:30)
+
+Log web có 4 lượt nhập bị hủy lúc 18:14, 18:21, 18:33, 18:38, cùng lỗi `Transaction already closed ... 120000 ms` trong `applyCostPriceIn`. Cả file bị hủy nên khách không lưu được giá nào ở 4 lượt đó.
+
+Gốc: `backfillOrderLinesByProducts` dùng `SKU_MATCH` gói 4 điều kiện trong OR, cộng thêm `OWN_COST_EXISTS` cho từng dòng đơn. OR buộc Postgres dò: mỗi dòng đơn đi qua hết dòng sàn của gian. Route gọi câu này một lần cho mỗi mức giá.
+
+`pg_stat_statements` prod, câu vá theo sản phẩm kho, mọi khách: 803 lần gọi, trung bình 4.274 ms, tối đa 54.242 ms. Gian của khách lúc đo:
+
+| Gian | Dòng đơn | Dòng đơn chưa có giá | Dòng sàn | Dòng sàn có giá |
+|---|---|---|---|---|
+| Shopee | 9.741 | 2.756 | 38.889 | 16.836 |
+| TikTok | 2.103 | 19 | 18.988 | 17.324 |
+
+Sửa, ghi nhớ thứ tự đã thử:
+1. Gộp một lượt cho cả file chưa đủ: đo trên dev còn chậm hơn gọi theo mức giá, vì gốc nằm ở câu lệnh chứ không ở số lần gọi.
+2. `linesMatchingSku` viết 4 điều kiện thành 4 nhánh bằng nhau nối UNION ALL để Postgres băm được. Hai câu vá nhiều mã đổi sang nhánh này. Luật khớp giữ nguyên, id trước. `SKU_MATCH` vẫn giữ cho các câu khác.
+3. `cost-import-apply.ts` tách làm hai: ghi giá trọn gói trong giao dịch ngắn, rồi vá đơn cũ ngoài giao dịch. Vá lỗi không làm mất giá vừa nhập; lượt kéo danh mục vá lại qua `repairZeroCostLinesForChannel`.
+
+Đo trên DB dev, cùng cỡ gian Shopee ở bảng trên, file 1.228 dòng, 40 mức giá (`COST_IMPORT_LOAD=do.txt npx vitest run src/lib/__tests__/cost-import-apply-db.test.ts`):
+
+| Cách | Trước | Sau |
+|---|---|---|
+| Gọi theo từng mức giá | 21.741 ms | 1.439 ms |
+| Cả file một lượt | 28.414 ms | 631 ms |
+| Một ô giá | 49 ms | 31 ms |
+
+Chưa kiểm được: số mức giá trong file bị lỗi, vì log không ghi lượt thất bại. Số trên là DB dev, prod chậm hơn dev.
+
+Còn lại, chưa sửa: `backfillOwnerCostPrices` (nút tính lại cả shop) và các câu khác vẫn dùng `SKU_MATCH`/`OWN_COST_EXISTS` kiểu cũ.

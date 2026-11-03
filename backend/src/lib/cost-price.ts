@@ -102,6 +102,31 @@ const OWN_COST_EXISTS = Prisma.sql`EXISTS (
 )`;
 
 /**
+ * SKU_MATCH viết thành 4 nhánh bằng nhau, nối UNION ALL, cho câu vá nhiều mã (03/11/2026). Luật khớp giữ nguyên
+ * từng nhánh, thứ tự ưu tiên id trước. SKU_MATCH gói 4 điều kiện trong OR nên Postgres chỉ chạy được kiểu dò:
+ * mỗi dòng đơn đi qua hết các dòng sàn của gian. Gian 38.889 dòng đo trên prod trung bình 4,3 giây một lần gọi,
+ * file nhiều mức giá vượt trần giao dịch 120 giây và khách nhận "Lỗi máy chủ nội bộ". Bằng nhau thì Postgres băm được.
+ *
+ * `lines`: CTE dòng đơn đang 0 (id, productId, externalId, channelSku, channelId).
+ * `source`: bảng con bí danh `cp`, có channelId, channelSku, externalId, cost.
+ */
+const linesMatchingSku = (source: Prisma.Sql) => Prisma.sql`
+  SELECT l."id", cp."cost", 1 AS pri
+    FROM lines AS l JOIN ${source} ON cp."channelId" = l."channelId" AND l."externalId" = cp."externalId"
+  UNION ALL
+  SELECT l."id", cp."cost", 2
+    FROM lines AS l JOIN ${source} ON cp."channelId" = l."channelId" AND l."channelSku" = cp."channelSku"
+    WHERE l."externalId" IS NULL
+  UNION ALL
+  SELECT l."id", cp."cost", 3
+    FROM lines AS l JOIN ${source} ON cp."channelId" = l."channelId" AND l."channelSku" = split_part(cp."externalId", '-', 2)
+    WHERE l."externalId" IS NULL
+  UNION ALL
+  SELECT l."id", cp."cost", 4
+    FROM lines AS l JOIN ${source} ON cp."channelId" = l."channelId" AND l."channelSku" = 'SPE-' || cp."externalId"
+    WHERE l."externalId" IS NULL`;
+
+/**
  * Vá giá vốn cho dòng hàng đã bán của các SẢN PHẨM GỐC cho trước: dòng đang
  * mang productId của sản phẩm, HOẶC dòng khớp (gian, mã SKU sàn) với một SKU
  * sàn đã nối về sản phẩm đó (đơn về trước khi nối kho). Giá lấy từ DB tại thời
@@ -128,26 +153,37 @@ export async function backfillOrderLinesByProducts(
   // dòng này planner quét toàn bộ OrderItem×Order của MỌI khách rồi mới thử
   // EXISTS — prod 28/09 15:00 mất ~8s → transaction 5s hết hạn (P2028), khách
   // nhập giá vốn nhận "Lỗi máy chủ nội bộ" 13 lần.
+  const linked = Prisma.sql`(
+    SELECT c."channelId", c."channelSku", c."externalId", q."costPrice" AS "cost"
+    FROM "ChannelProduct" AS c JOIN "Product" AS q ON q."id" = c."productId"
+    WHERE q."id" = ANY(${productIds}::text[]) AND q."userId" = ${ownerId} AND q."costPrice" > 0
+  ) AS cp`;
+  const ownCost = Prisma.sql`(
+    SELECT c."channelId", c."channelSku", c."externalId", c."costPrice" AS "cost"
+    FROM "ChannelProduct" AS c
+    WHERE c."channelId" IN (SELECT ch."id" FROM "Channel" AS ch WHERE ch."userId" = ${ownerId}) AND c."costPrice" > 0
+  ) AS cp`;
   return db.$executeRaw`
+    WITH lines AS MATERIALIZED (
+      SELECT oi."id", oi."productId", oi."externalId", oi."channelSku", o."channelId"
+      FROM "Order" AS o JOIN "OrderItem" AS oi ON oi."orderId" = o."id"
+      WHERE o."channelId" IN (SELECT ch."id" FROM "Channel" AS ch WHERE ch."userId" = ${ownerId})
+        AND oi."costPriceAtSale" = 0
+    ),
+    own AS MATERIALIZED (${linesMatchingSku(ownCost)}),
+    hit AS (
+      SELECT l."id", p."costPrice" AS "cost", 0 AS pri
+        FROM lines AS l JOIN "Product" AS p ON p."id" = l."productId"
+        WHERE p."id" = ANY(${productIds}::text[]) AND p."userId" = ${ownerId} AND p."costPrice" > 0
+      UNION ALL
+      ${linesMatchingSku(linked)}
+    )
     UPDATE "OrderItem" AS oi
-    SET "costPriceAtSale" = p."costPrice"
-    FROM "Product" AS p, "Order" AS o
-    WHERE oi."orderId" = o."id"
-      AND o."channelId" IN (SELECT ch."id" FROM "Channel" AS ch WHERE ch."userId" = ${ownerId})
-      AND p."id" = ANY(${productIds}::text[])
-      AND p."userId" = ${ownerId}
-      AND p."costPrice" > 0
+    SET "costPriceAtSale" = h."cost"
+    FROM (SELECT DISTINCT ON ("id") "id", "cost" FROM hit ORDER BY "id", pri) AS h
+    WHERE oi."id" = h."id"
       AND oi."costPriceAtSale" = 0
-      AND (
-        oi."productId" = p."id"
-        OR EXISTS (
-          SELECT 1 FROM "ChannelProduct" AS cp
-          WHERE cp."productId" = p."id"
-            AND cp."channelId" = o."channelId"
-            AND ${SKU_MATCH}
-        )
-      )
-      AND NOT ${OWN_COST_EXISTS}`;
+      AND NOT EXISTS (SELECT 1 FROM own WHERE own."id" = h."id")`;
 }
 
 /**
@@ -160,15 +196,23 @@ export async function backfillOrderLinesByChannelProducts(
   channelProductIds: string[]
 ): Promise<number> {
   if (channelProductIds.length === 0) return 0;
+  const chosen = Prisma.sql`(
+    SELECT c."channelId", c."channelSku", c."externalId", c."costPrice" AS "cost"
+    FROM "ChannelProduct" AS c
+    WHERE c."id" = ANY(${channelProductIds}::text[]) AND c."costPrice" > 0
+  ) AS cp`;
   return db.$executeRaw`
+    WITH lines AS MATERIALIZED (
+      SELECT oi."id", oi."externalId", oi."channelSku", o."channelId"
+      FROM "Order" AS o JOIN "OrderItem" AS oi ON oi."orderId" = o."id"
+      WHERE o."channelId" IN (SELECT c."channelId" FROM "ChannelProduct" AS c WHERE c."id" = ANY(${channelProductIds}::text[]))
+        AND oi."costPriceAtSale" = 0
+    ),
+    hit AS (${linesMatchingSku(chosen)})
     UPDATE "OrderItem" AS oi
-    SET "costPriceAtSale" = cp."costPrice"
-    FROM "ChannelProduct" AS cp, "Order" AS o
-    WHERE oi."orderId" = o."id"
-      AND cp."id" = ANY(${channelProductIds}::text[])
-      AND cp."costPrice" > 0
-      AND o."channelId" = cp."channelId"
-      AND ${SKU_MATCH}
+    SET "costPriceAtSale" = h."cost"
+    FROM (SELECT DISTINCT ON ("id") "id", "cost" FROM hit ORDER BY "id", pri) AS h
+    WHERE oi."id" = h."id"
       AND oi."costPriceAtSale" = 0`;
 }
 
