@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~19:00) — Anh chốt: chỉ kéo sản phẩm thay đổi, đặt lịch 20:00 ngày 05/11
+
+- Mỗi lần làm mới hiện kéo toàn bộ và UPDATE mọi dòng (Hy Korea Shopee +0 mới, 38.889 cập nhật, khoảng 19 phút). Lịch `hubsell-keo-san-pham-tang-dan-05-11`: đọc tài liệu 3 sàn, code + test, commit, không push. Việc này chưa có trong kế hoạch cũ.
+
 ## Phiên 03/11 (~18:40) — Anh: dải xoay lâu hơn trước → kéo danh mục tối đa 3 gian cùng lúc, nhận việc mỗi 30 giây
 
 - Log: Hy Korea Shopee làm mới THÀNH CÔNG 18:00:38 (38.889 mã, +0 mới, khoảng 19 phút). Dải của anh không kẹt: 18:37:48 ANO Official, 18:38:24 DARKMAN STORE, nhưng chạy lần lượt 30–60 giây/gian. Sửa: MAX_PARALLEL = 3 (tự chọn, chưa đo tải), xong gian nào lấp chỗ ngay, poll 30 giây; SIGTERM trả mọi gian đang dở. Test giả 3 ca. ⏳ Đo lại tổng thời gian 5 gian của anh sau deploy.
