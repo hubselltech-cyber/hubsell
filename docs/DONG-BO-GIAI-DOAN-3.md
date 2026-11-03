@@ -439,7 +439,7 @@ Sửa: `detectStockouts`, `detectLowStock` gom và lọc trong SQL; test `ops-al
 Mức chắc chắn: khớp giờ 2 ngày + đo tái hiện + khớp mã, nhưng log prod không ghi route lúc chết nên chưa có bằng chứng trực tiếp. Kiểm: khách mở Tổng quan mà web không chết, log `RSS cao` không xuất hiện.
 Việc khác lộ ra, chưa sửa: `POST /sync-channels/:id/preview` gọi `refreshLinkedChannelStock` trong request web (gian 38.889 dòng rất nặng; khách chưa bật đồng bộ tồn gian nào nên chưa nổ); `ownersWithOrdersIn` ở worker dùng `distinct` tải trung bình 248.812 dòng đơn mỗi lần (69 lần từ 12/10, worker 2 GB).
 
-### 6.9. Nhập Excel báo "Lỗi máy chủ nội bộ": câu vá đơn cũ chậm, vượt trần giao dịch 120 giây (03/11 ~19:30)
+### 6.9. Nhập Excel báo "Lỗi máy chủ nội bộ": câu vá đơn cũ chậm, vượt trần giao dịch 120 giây (03/11 ~19:20)
 
 Log web có 4 lượt nhập bị hủy lúc 18:14, 18:21, 18:33, 18:38, cùng lỗi `Transaction already closed ... 120000 ms` trong `applyCostPriceIn`. Cả file bị hủy nên khách không lưu được giá nào ở 4 lượt đó.
 
@@ -465,6 +465,8 @@ Sửa, ghi nhớ thứ tự đã thử:
 | Cả file một lượt | 28.414 ms | 631 ms |
 | Một ô giá | 49 ms | 31 ms |
 
-Chưa kiểm được: số mức giá trong file bị lỗi, vì log không ghi lượt thất bại. Số trên là DB dev, prod chậm hơn dev.
+Đo trên prod bằng EXPLAIN ANALYZE chỉ đọc, phần dò dòng đơn của câu mới, ca rộng nhất là toàn bộ sản phẩm của khách thay vì 1.228 dòng: lần đầu 5,5 giây, phần dò giá riêng chạy lại 0,15 giây. Không có dòng đơn nào cần vá ở lúc đo: 2.775 dòng còn 0 đều thuộc mã chưa có giá.
+
+Chưa kiểm được: chưa có lượt nhập thật sau bản `158376cd`, câu UPDATE chưa chạy trên prod, và không biết số mức giá trong file bị lỗi vì log không ghi lượt thất bại.
 
 Còn lại, chưa sửa: `backfillOwnerCostPrices` (nút tính lại cả shop) và các câu khác vẫn dùng `SKU_MATCH`/`OWN_COST_EXISTS` kiểu cũ.

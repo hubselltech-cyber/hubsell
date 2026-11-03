@@ -6,10 +6,11 @@
 
 ---
 
-## Phiên 03/11 (~19:30) — Nhập file báo lỗi: câu vá đơn cũ quá 120 giây, 4 lượt của khách bị hủy
+## Phiên 03/11 (~19:20) — Nhập file báo lỗi: câu vá đơn cũ quá 120 giây, 4 lượt của khách bị hủy
 
 - Anh hỏi có đo lại không; log web lộ 4 lượt nhập hỏng 18:14, 18:21, 18:33, 18:38. Gốc: câu vá đơn theo sản phẩm kho dò từng dòng đơn qua cả gian, prod trung bình 4,3 giây mỗi lần gọi, tối đa 54 giây, gọi theo từng mức giá.
 - Sửa: viết lại 2 câu vá thành các nhánh bằng nhau (luật khớp giữ nguyên), ghi giá trong giao dịch ngắn, vá đơn sau khi đã lưu. Đo dev cùng cỡ gian: 28,4 giây còn 0,63 giây. Chi tiết `docs/DONG-BO-GIAI-DOAN-3.md` mục 6.9.
+- LIVE 19:19 `158376cd`. Prod chỉ đọc, ca rộng nhất cả danh mục khách: 5,5 giây lần đầu. 4 file lỗi không lưu được giá nào.
 - ⏳ Chưa có lượt nhập thật sau sửa để kiểm; soi log `[cost-import]`, không nhờ khách thử.
 
 ## Phiên 03/11 (~19:00) — Anh chốt: chỉ kéo sản phẩm thay đổi, đặt lịch 20:00 ngày 05/11
