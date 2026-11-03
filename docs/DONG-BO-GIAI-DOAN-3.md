@@ -243,7 +243,7 @@ xong 1–2 phút là `[TikTok] Hình dạng sản phẩm (products/search)` → 
 → `[product-sync] 46 dòng trùng mã` → chết. Kích hoạt = khách gian TikTok ongbocute.vn (~621 SP, gian cũ) bấm **Đồng bộ
 từ sàn** ở Cấu hình Giá vốn; `POST /api/finance/sync-products` chạy `syncChannelProducts` NGAY TRONG web; web chết →
 khách bấm lại → lặp. Heap V8 vẫn 66–80/368 MB, không cảnh báo; RSS nền 327 MB (boot 174 MB) — phần phình ngoài heap
-(ghi ở PROGRESS phiên 03/11 10:30, chưa tìm hết gốc). Worker cùng 512 MB sáng đó kéo gọn 38.889 SP Shopee của Hy Korea →
+(ghi ở PROGRESS phiên 03/11 10:30, chưa tìm hết gốc). Worker cùng 512 MB sáng đó kéo gọn 38. [ĐÍNH CHÍNH 03/11 ~16:15: worker thật là 1 CPU, 2 GB (Render ghi 1c-2g), KHÔNG phải 512 MB; so sánh này sai, không dùng được để nói web yếu vì RSS nền.]889 SP Shopee của Hy Korea →
 web yếu vì nền RSS cao + việc nặng trong request, không phải vì 621 SP.
 
 Đây là dòng "danh mục … chuyển sang hàng đợi" của giai đoạn 3 (`docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, bảng giai đoạn) và
