@@ -412,6 +412,13 @@ export default function CostPricesPage() {
         setDenied(true);
         return;
       }
+      // 503 SERVER_BUSY (03/11/2026, rào route nặng): máy chủ đang tải danh sách lớn cho
+      // người khác → báo đúng câu thay vì bảng trống "Không có SKU nào", tự thử lại sau 30 giây.
+      if (err instanceof ApiError && err.status === 503) {
+        toast.warning(err.message, { duration: 8000 });
+        setTimeout(() => void load(), 30_000);
+        return;
+      }
       // 409 (chưa có kênh) — AppShell overlay xử lý
     } finally {
       setLoading(false);
