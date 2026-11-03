@@ -60,20 +60,29 @@ export function foldedColumn(column: Prisma.Sql): Prisma.Sql {
 }
 
 const GROUP_ITEM = Prisma.sql`COALESCE(NULLIF(split_part(cp."externalId", '-', 1), ''), 'cp:' || cp.id)`;
-const EFFECTIVE_COST = Prisma.sql`CASE WHEN COALESCE(cp."costPrice", 0) > 0 THEN cp."costPrice" ELSE COALESCE(p."costPrice", 0) END`;
+export const EFFECTIVE_COST = Prisma.sql`CASE WHEN COALESCE(cp."costPrice", 0) > 0 THEN cp."costPrice" ELSE COALESCE(p."costPrice", 0) END`;
 
-function buildWhere(f: SkuCatalogFilters): Prisma.Sql {
-  const conds: Prisma.Sql[] = [
-    Prisma.sql`c."userId" = ${f.ownerId}`,
-    Prisma.sql`c."channelName"::text <> 'OFFLINE'`,
-  ];
+/** Phạm vi cứng: đúng chủ shop, không gồm gian Offline. */
+export function catalogScopeConds(ownerId: string): Prisma.Sql[] {
+  return [Prisma.sql`c."userId" = ${ownerId}`, Prisma.sql`c."channelName"::text <> 'OFFLINE'`];
+}
+
+/** Các bộ lọc khách đang chọn trên trang. */
+export function catalogFilterConds(
+  f: Pick<SkuCatalogFilters, "channelName" | "channelId" | "listing" | "status">
+): Prisma.Sql[] {
+  const conds: Prisma.Sql[] = [];
   if (f.channelName) conds.push(Prisma.sql`c."channelName"::text = ${f.channelName}`);
   if (f.channelId) conds.push(Prisma.sql`cp."channelId" = ${f.channelId}`);
   if (f.listing === "active") conds.push(Prisma.sql`cp.status::text = 'ACTIVE'`);
   if (f.listing === "delisted") conds.push(Prisma.sql`cp.status::text <> 'ACTIVE'`);
   if (f.status === "missing") conds.push(Prisma.sql`${EFFECTIVE_COST} <= 0`);
   if (f.status === "filled") conds.push(Prisma.sql`${EFFECTIVE_COST} > 0`);
-  return Prisma.join(conds, " AND ");
+  return conds;
+}
+
+function buildWhere(f: SkuCatalogFilters): Prisma.Sql {
+  return Prisma.join([...catalogScopeConds(f.ownerId), ...catalogFilterConds(f)], " AND ");
 }
 
 /**
@@ -83,7 +92,7 @@ function buildWhere(f: SkuCatalogFilters): Prisma.Sql {
  * Dùng strpos, starts_with thay LIKE: từ khóa có "_" hay "%" vẫn là chữ thường.
  * includeNames = false: chỉ dò các cột mã.
  */
-function searchRank(
+export function searchRank(
   q: string,
   includeNames: boolean
 ): { lateral: Prisma.Sql; rank: Prisma.Sql; code: Prisma.Sql } {

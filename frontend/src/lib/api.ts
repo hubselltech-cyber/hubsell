@@ -2649,6 +2649,56 @@ export function fetchSkuProducts(
 }
 
 /** Bản nhẹ để hỏi theo nhịp trong lúc chờ danh mục về (gian mới / vừa xin kéo). */
+export interface SkuSearchScope {
+  q: string;
+  channel: string;
+  shop: string;
+  listing: string;
+  status: string;
+}
+
+export interface SkuSearchApplySummary {
+  matched: number;
+  missing: number;
+  filled: number;
+  everywhere: number;
+}
+
+export interface SkuSearchApplyPreview {
+  rows: number;
+  fill: number;
+  overwrite: number;
+  levels: { cost: number; rows: number }[];
+  levelCount: number;
+  samples: string[];
+  middleRows: number;
+  middleSamples: string[];
+}
+
+/** Số mã khớp từ khóa + bộ lọc, cho dải áp giá. */
+export function fetchSkuSearchSummary(scope: SkuSearchScope) {
+  const p = new URLSearchParams({ ...scope });
+  return apiFetch<SkuSearchApplySummary>(`/api/finance/sku-products/search-summary?${p.toString()}`);
+}
+
+/** Xem trước đúng những gì sẽ ghi khi áp một giá cho các mã vừa tìm. */
+export function previewCostForSearch(body: SkuSearchScope & { costPrice: number; overwrite: boolean }) {
+  return apiFetch<SkuSearchApplyPreview>("/api/finance/cost-prices/apply-search/preview", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Áp một giá cho tất cả mã vừa tìm. expectedRows = số khách đã thấy; lệch thì máy chủ trả 409, không ghi gì. */
+export function applyCostToSearch(
+  body: SkuSearchScope & { costPrice: number; overwrite: boolean; expectedRows: number }
+) {
+  return apiFetch<{ updated: number; backfilledOrderLines: number }>("/api/finance/cost-prices/apply-search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 /** Từ khóa khớp bao nhiêu dòng trong toàn bộ gian, bỏ qua mọi bộ lọc. */
 export function fetchSkuSearchCount(q: string) {
   return apiFetch<{ rows: number }>(`/api/finance/sku-products/search-count?q=${encodeURIComponent(q)}`);

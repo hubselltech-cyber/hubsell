@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response as ExpressResponse } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import {
@@ -34,6 +34,14 @@ import {
 import { catalogRowLimit, findCostSiblings } from "../lib/cost-mapping";
 import { loadCostImportData } from "../lib/cost-import-load";
 import { saveCostPlan } from "../lib/cost-import-apply";
+import {
+  SearchApplyChangedError,
+  SearchApplyInputError,
+  applySearchCost,
+  previewSearchApply,
+  readSearchApplyFilters,
+  summarizeSearchApply,
+} from "../lib/cost-search-apply";
 import { loadVariantNames, type OrderLineRef } from "../lib/order-line-names";
 import {
   classifyShippingDiff,
@@ -1344,6 +1352,72 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
     });
   } catch (err) {
     next(err);
+  }
+});
+
+// GET /api/finance/sku-products/search-summary — số mã khớp từ khóa + bộ lọc cho dải áp giá trên trang Giá vốn.
+router.get("/sku-products/search-summary", async (req: AuthRequest, res, next) => {
+  try {
+    res.json(await summarizeSearchApply(readSearchApplyFilters(req.ownerId!, req.query)));
+  } catch (err) {
+    if (err instanceof SearchApplyInputError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+// POST /api/finance/cost-prices/apply-search/preview — hộp xác nhận: đúng những gì sẽ ghi với giá này.
+// POST /api/finance/cost-prices/apply-search — ghi. Máy chủ tự tính danh sách theo từ khóa + bộ lọc (lib/cost-search-apply.ts).
+// Body chung: { q, channel, shop, listing, status, costPrice, overwrite }; ghi thêm expectedRows.
+function readSearchApplyCost(raw: unknown): number | null {
+  const cost = typeof raw === "string" ? Number(raw) : raw;
+  return typeof cost === "number" && Number.isFinite(cost) && cost > 0 ? cost : null;
+}
+function sendSearchApplyError(err: unknown, res: ExpressResponse): boolean {
+  if (err instanceof SearchApplyInputError) {
+    res.status(400).json({ error: err.message });
+    return true;
+  }
+  if (err instanceof SearchApplyChangedError) {
+    res.status(409).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+router.post("/cost-prices/apply-search/preview", async (req: AuthRequest, res, next) => {
+  try {
+    const cost = readSearchApplyCost(req.body?.costPrice);
+    if (cost === null) {
+      res.status(400).json({ error: "Giá vốn phải là số lớn hơn 0" });
+      return;
+    }
+    res.json(
+      await previewSearchApply(readSearchApplyFilters(req.ownerId!, req.body ?? {}), cost, req.body?.overwrite === true)
+    );
+  } catch (err) {
+    if (!sendSearchApplyError(err, res)) next(err);
+  }
+});
+router.post("/cost-prices/apply-search", heavyRouteGuard("apply-search"), async (req: AuthRequest, res, next) => {
+  try {
+    const cost = readSearchApplyCost(req.body?.costPrice);
+    const expected = Number(req.body?.expectedRows);
+    if (cost === null || !Number.isInteger(expected) || expected < 0) {
+      res.status(400).json({ error: "Thiếu giá vốn hoặc số mã đã xác nhận" });
+      return;
+    }
+    const filters = readSearchApplyFilters(req.ownerId!, req.body ?? {});
+    const overwrite = req.body?.overwrite === true;
+    const startedAt = Date.now();
+    const r = await applySearchCost(filters, cost, overwrite, expected);
+    console.log(
+      `[cost-apply-search] chủ shop ${req.ownerId}: q="${filters.q}", ghi đè=${overwrite}, ${r.updated} ô, vá ${r.backfilled} dòng đơn, ${Date.now() - startedAt} ms`
+    );
+    res.json({ updated: r.updated, backfilledOrderLines: r.backfilled });
+  } catch (err) {
+    if (!sendSearchApplyError(err, res)) next(err);
   }
 });
 

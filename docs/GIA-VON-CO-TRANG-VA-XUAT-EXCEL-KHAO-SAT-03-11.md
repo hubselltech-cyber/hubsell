@@ -145,3 +145,24 @@ Số thật của khách với `tldc`, dòng đang bán: 19.553 dòng có giá, 
 
 Chưa làm, chờ anh chốt.
 
+### Đã làm 03/11 (anh chốt đặt dải dưới thanh tìm)
+
+- Dải `frontend/src/components/finance/cost-search-apply.tsx` nằm giữa thanh tìm và bảng, chỉ hiện khi có từ khóa khớp mã. Hiện số mã khớp, số mã chưa có giá, ô giá, nút áp, tick ghi đè, và dòng báo còn mã bị bộ lọc ẩn.
+- Hộp xác nhận ghi số mã, giá cũ → giá mới (5 mức nhiều dòng nhất), 5 mã mẫu, cảnh báo mã chỉ chứa từ khóa ở giữa, phạm vi bộ lọc.
+- `backend/src/lib/cost-search-apply.ts`: máy chủ tự tính danh sách. Không có từ khóa thì từ chối, không chạm cả gian. Mặc định chỉ ô trống. Chỉ dòng khớp mã. `expectedRows` lệch thì 409, không ghi gì. Log `[cost-apply-search]`.
+- Route: `GET /sku-products/search-summary`, `POST /cost-prices/apply-search/preview`, `POST /cost-prices/apply-search` (có `heavyRouteGuard`). Trần giao dịch ghi giá trong `saveCostPlan` nâng lại 120 giây, vì một lượt có thể tới vài chục nghìn dòng.
+
+Đo:
+
+| Việc | Máy dev, 57.877 dòng | Prod chỉ đọc, dữ liệu khách |
+|---|---|---|
+| Số trên dải | 173 ms | 2,2 giây |
+| Xem trước | 191 ms | 1,1 giây |
+| Ghi đè 24.545 dòng | 1,4 giây, RSS +47 MB | chưa đo, không ghi thử trên prod |
+
+Số của khách với `tldc` lúc đo: 24.643 mã đang bán khớp, 5.004 chưa có giá, 19.639 đã có giá, thêm 1.620 mã bị lọc Đang bán ẩn. Không có mã nào chỉ chứa `tldc` ở giữa, tất cả đều bắt đầu bằng `tldc`.
+
+Đã soi bằng dữ liệu giả ở 1280, 1366×620, 1700, sáng và tối, gồm luồng áp xong báo kết quả, tải lại bảng và số trên dải.
+
+Chưa kiểm được: chưa có lượt áp thật nào trên prod.
+

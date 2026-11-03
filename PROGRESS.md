@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~20:50) — Dải áp giá cho tất cả mã vừa tìm trên trang Giá vốn
+
+- Đặt giữa thanh tìm và bảng. Máy chủ tự tính theo từ khóa + bộ lọc, mặc định chỉ điền ô trống, ghi đè tick riêng, chỉ dòng khớp mã, hộp xác nhận ghi đủ số. Prod chỉ đọc: số trên dải 2,2 giây, xem trước 1,1 giây. Chi tiết docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Soi log `[cost-apply-search]` lượt thật.
+
 ## Phiên 03/11 (~20:25) — Anh hỏi tìm đã ra hết chưa, khách demo ShipXanh áp giá cho cả kết quả tìm
 
 - Không sót mã nhưng `tldc` vẫn 40 trang, 1.620 dòng đã gỡ bị ẩn không báo; chưa có đường áp cho cả kết quả. `tldc` có 19.553 dòng đúng 1 mức giá, 4.992 dòng chưa có giá. Đề nghị thiết kế ở docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt.

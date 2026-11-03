@@ -68,7 +68,7 @@ export async function saveCostPlan(
   ownerId: string
 ): Promise<{ updated: number; backfilled: number }> {
   const written = await prisma.$transaction((tx) => writeCostImportPlan(tx, plan, ownerId), {
-    timeout: 30_000,
+    timeout: 120_000,
     maxWait: 10_000,
   });
   let backfilled = 0;

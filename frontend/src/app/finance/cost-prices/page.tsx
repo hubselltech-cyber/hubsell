@@ -58,6 +58,7 @@ import { exportCostPricesToExcel } from "@/lib/excel";
 import { formatVND, formatNumber } from "@/lib/format";
 import { skuSearchRank } from "@/lib/sku-search";
 import { normalizeText } from "@/lib/text";
+import { CostSearchApply } from "@/components/finance/cost-search-apply";
 import { CostSearchEmpty } from "@/components/finance/cost-search-empty";
 import { cn } from "@/lib/utils";
 import { baseProductName, variantGroupKey } from "@/lib/variant-group";
@@ -389,6 +390,13 @@ export default function CostPricesPage() {
     listing !== "all" ? LISTING_OPTIONS.find((o) => o.value === listing)?.label : null,
     statusFilter !== "all" ? STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label : null,
   ].filter((x): x is string => Boolean(x));
+
+  const showAllFilters = () => {
+    setChannel("all");
+    setShop("all");
+    setListing("all");
+    setStatusFilter("all");
+  };
 
   const isFiltering = search.trim() !== "" || statusFilter !== "all" || periodFocus !== null;
 
@@ -1010,6 +1018,16 @@ export default function CostPricesPage() {
             </div>
           )}
 
+          {/* Áp một giá cho tất cả mã vừa tìm: ngay dưới thanh tìm, chỉ khi đang có từ khóa. */}
+          {activeKeyword && !periodFocus && channel !== "offline" && (
+            <CostSearchApply
+              scope={{ q: activeKeyword, channel, shop, listing, status: statusFilter }}
+              scopeLabels={hiddenBy}
+              onApplied={() => void load()}
+              onShowAll={showAllFilters}
+            />
+          )}
+
           {/* overflow-visible để tiêu đề bảng bám dính khi cuộn (Card mặc định
               overflow-hidden sẽ chặn position: sticky) */}
           <Card className="overflow-visible">
@@ -1038,12 +1056,7 @@ export default function CostPricesPage() {
                     searchElsewhere?.key === searchKey ? searchElsewhere.rows : null
                   }
                   hiddenBy={hiddenBy}
-                  onShowAll={() => {
-                    setChannel("all");
-                    setShop("all");
-                    setListing("all");
-                    setStatusFilter("all");
-                  }}
+                  onShowAll={showAllFilters}
                 />
               ) : items.length === 0 && serverPaged ? (
                 <div className="py-12 text-center">
