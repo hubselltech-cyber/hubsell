@@ -60,16 +60,28 @@ export function inFlightCount(): number {
   return inFlight.size;
 }
 
-/** Dòng mô tả sổ in-flight: lâu nhất trước, tối đa `limit` mục — memory-watch in khi RSS cao. */
+/** Luồng SSE chuông thông báo: mở hàng giờ, không nặng — đừng để che request thật (đính chính 03/11/2026). */
+const LONG_LIVED_PATHS = new Set(["/api/notifications/stream"]);
+
+/**
+ * Dòng mô tả sổ in-flight: BỎ luồng SSE (chỉ đếm), route nặng trước rồi lâu nhất trước, tối đa `limit`
+ * mục — memory-watch in khi RSS cao. Bản đầu xếp cũ nhất trước nên SSE chiếm hết 8 chỗ, che mất route thật.
+ */
 export function describeInFlight(limit = 8): string {
-  if (inFlight.size === 0) return "không có request nào đang chạy";
+  const all = [...inFlight.values()];
+  const real = all.filter((r) => !LONG_LIVED_PATHS.has(r.path));
+  const streams = all.length - real.length;
+  const suffix = streams > 0 ? ` (+${streams} luồng chuông)` : "";
+  if (real.length === 0) return `không có request thường nào đang chạy${suffix}`;
   const now = Date.now();
-  const items = [...inFlight.values()].sort((a, b) => a.startedAt - b.startedAt).slice(0, limit);
-  const rest = inFlight.size - items.length;
+  const items = real
+    .sort((a, b) => Number(b.heavy !== null) - Number(a.heavy !== null) || a.startedAt - b.startedAt)
+    .slice(0, limit);
+  const rest = real.length - items.length;
   return (
     items
       .map((r) => `${r.method} ${r.path}${r.heavy ? ` [${r.heavy}]` : ""} ${Math.round((now - r.startedAt) / 1000)}s`)
-      .join(" | ") + (rest > 0 ? ` | +${rest} nữa` : "")
+      .join(" | ") + (rest > 0 ? ` | +${rest} nữa` : "") + suffix
   );
 }
 

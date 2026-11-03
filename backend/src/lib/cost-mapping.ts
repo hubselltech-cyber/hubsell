@@ -238,6 +238,53 @@ export function countPlan(plan: MappingPlan) {
 
 export class MappingInputError extends Error {}
 
+/**
+ * ★ 03/11/2026 — CHẮN ĐƯỜNG TẢI NGUYÊN DANH MỤC TRÊN WEB (cùng khuôn GET /sku-products: chủ shop
+ * 57.877 dòng SKU sàn, web 512 MB). Trần = SKU_PRODUCTS_MAX_ROWS (mặc định 5.000, tự chọn). Việc theo
+ * MÃ CỤ THỂ (lưu giá → gợi ý gian khác, "Áp dụng N gian") đã chuyển sang chỉ đọc đúng các mã đó nên
+ * không bị chặn; việc cần CẢ danh mục (tab Mapping, bảng giá tự nhập, Nhập Excel) trả 413 câu rõ.
+ * Sửa gốc = lát 3.8 (docs/DONG-BO-GIAI-DOAN-3.md). autoFillCostForNewSkus chạy ở worker 2 GB, không chặn.
+ */
+export class CatalogTooLargeError extends MappingInputError {
+  constructor(
+    public readonly totalRows: number,
+    public readonly limit: number
+  ) {
+    super(
+      `Phạm vi này có ${totalRows.toLocaleString("vi-VN")} mã SKU sàn, vượt ${limit.toLocaleString("vi-VN")} mã mà tính năng này đang xử lý được một lượt. ` +
+        "Anh/chị vui lòng điền giá ở tab Nhập giá vốn: gõ tên hoặc mã vào ô tìm rồi điền tại dòng."
+    );
+  }
+}
+
+export const CATALOG_TOO_LARGE_CODE = "CATALOG_TOO_LARGE";
+
+/** Trần dòng một lượt tải danh mục trên web (env SKU_PRODUCTS_MAX_ROWS, mặc định 5.000). */
+export function catalogRowLimit(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.SKU_PRODUCTS_MAX_ROWS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000;
+}
+
+/** Đếm dòng trong phạm vi; vượt trần thì ném CatalogTooLargeError TRƯỚC khi tải vào RAM. */
+export async function assertCatalogWithinLimit(ownerId: string, channelIds?: string[]): Promise<void> {
+  const limit = catalogRowLimit();
+  const totalRows = await prisma.channelProduct.count({
+    where: {
+      channel: {
+        userId: ownerId,
+        channelName: { not: ChannelName.OFFLINE },
+        ...(channelIds ? { id: { in: channelIds } } : {}),
+      },
+    },
+  });
+  if (totalRows > limit) throw new CatalogTooLargeError(totalRows, limit);
+}
+
+/** Dạng cần hỏi DB cho một mã đã chuẩn hóa: NFC và NFD (sàn trả cả hai); so khớp chính xác làm lại trong RAM. */
+export function codeLookupVariants(code: string): string[] {
+  return [...new Set([code.normalize("NFC"), code.normalize("NFD")])];
+}
+
 async function loadRules(ownerId: string): Promise<CostRule[]> {
   const rules = await prisma.costPriceRule.findMany({
     where: { userId: ownerId },
@@ -250,7 +297,13 @@ async function loadRules(ownerId: string): Promise<CostRule[]> {
  * Mọi SKU sàn của chủ shop (trong các gian `channelIds` nếu có) kèm giá vốn
  * HIỆU LỰC (giá riêng của gian, không có thì giá mặc định ở kho).
  */
-async function loadTargets(ownerId: string, channelIds?: string[]): Promise<MappingTarget[]> {
+async function loadTargets(
+  ownerId: string,
+  channelIds?: string[],
+  /** Có = CHỈ đọc các mã này (đã chuẩn hóa), không tải cả danh mục. */
+  codes?: ReadonlySet<string>
+): Promise<MappingTarget[]> {
+  if (codes && codes.size === 0) return [];
   const cps = await prisma.channelProduct.findMany({
     where: {
       channel: {
@@ -258,6 +311,13 @@ async function loadTargets(ownerId: string, channelIds?: string[]): Promise<Mapp
         channelName: { not: ChannelName.OFFLINE },
         ...(channelIds ? { id: { in: channelIds } } : {}),
       },
+      ...(codes
+        ? {
+            OR: [...codes].flatMap(codeLookupVariants).map((c) => ({
+              channelSku: { equals: c, mode: "insensitive" as const },
+            })),
+          }
+        : {}),
     },
     select: {
       id: true,
@@ -274,7 +334,9 @@ async function loadTargets(ownerId: string, channelIds?: string[]): Promise<Mapp
     },
     orderBy: [{ channelId: "asc" }, { channelSku: "asc" }],
   });
-  return cps.map((cp) => ({
+  // So khớp chính xác theo normalizeSkuCode: ILIKE của DB coi "_" và "%" là ký tự đại diện.
+  const matched = codes ? cps.filter((cp) => codes.has(normalizeSkuCode(cp.channelSku))) : cps;
+  return matched.map((cp) => ({
     skuId: cp.id,
     channelId: cp.channelId,
     channelName: cp.channel.channelName,
@@ -310,11 +372,15 @@ async function writeRows(
 
 // ---------- 1 + 2. Gộp theo mã: đề xuất + đặt giá một lần ----------
 
-async function loadGroups(ownerId: string, channelIds?: string[]): Promise<SkuGroup[]> {
+async function loadGroups(
+  ownerId: string,
+  channelIds?: string[],
+  codes?: ReadonlySet<string>
+): Promise<SkuGroup[]> {
   const [targets, dismissed] = await Promise.all([
-    loadTargets(ownerId, channelIds),
+    loadTargets(ownerId, channelIds, codes),
     prisma.costConflictDismissal.findMany({
-      where: { userId: ownerId },
+      where: { userId: ownerId, ...(codes ? { code: { in: [...codes] } } : {}) },
       select: { code: true },
     }),
   ]);
@@ -322,6 +388,7 @@ async function loadGroups(ownerId: string, channelIds?: string[]): Promise<SkuGr
 }
 
 export async function listSkuGroups(ownerId: string, channelIds?: string[]) {
+  await assertCatalogWithinLimit(ownerId, channelIds);
   const groups = await loadGroups(ownerId, channelIds);
   const totals = { codes: groups.length, suggest: 0, conflict: 0, missing: 0, complete: 0 };
   let suggestEmptySlots = 0;
@@ -345,10 +412,12 @@ export async function fillSuggested(
   onlyCodes?: string[],
   channelIds?: string[]
 ) {
-  const only = onlyCodes ? new Set(onlyCodes.map(normalizeSkuCode)) : null;
+  const only = onlyCodes ? new Set(onlyCodes.map(normalizeSkuCode).filter(Boolean)) : null;
+  // Có danh sách mã = chỉ đọc đúng các mã đó; "Điền tất cả" mới cần cả danh mục.
+  if (!only) await assertCatalogWithinLimit(ownerId, channelIds);
   const rows: { skuId: string; newCost: number }[] = [];
   let codes = 0;
-  for (const g of await loadGroups(ownerId, channelIds)) {
+  for (const g of await loadGroups(ownerId, channelIds, only ?? undefined)) {
     if (g.status !== "suggest" || g.suggestedCost === null) continue;
     if (only && !only.has(g.code)) continue;
     codes++;
@@ -375,9 +444,7 @@ export async function setCostForCodes(
   channelIds?: string[]
 ) {
   const wanted = new Set(codes.map(normalizeSkuCode).filter(Boolean));
-  const hit = (await loadTargets(ownerId, channelIds)).filter((t) =>
-    wanted.has(normalizeSkuCode(t.sku))
-  );
+  const hit = await loadTargets(ownerId, channelIds, wanted);
   if (hit.length === 0) throw new MappingInputError("Không tìm thấy mã SKU này trên gian nào");
 
   const rows = hit
@@ -428,7 +495,14 @@ export async function findCostSiblings(ownerId: string, skuIds: string[]) {
   const shops = new Set<string>();
   let fillable = 0;
   let conflicting = 0;
-  for (const g of await loadGroups(ownerId)) {
+  // ★ 03/11/2026: hàm này chạy MỖI LẦN khách lưu giá. Trước đây tải cả danh mục (57.877 dòng ở gian
+  // lớn nhất); nay chỉ đọc các dòng cùng mã với SKU vừa lưu.
+  const saved = await prisma.channelProduct.findMany({
+    where: { id: { in: skuIds }, channel: { userId: ownerId } },
+    select: { channelSku: true },
+  });
+  const codes = new Set(saved.map((s) => normalizeSkuCode(s.channelSku)).filter(Boolean));
+  for (const g of await loadGroups(ownerId, undefined, codes)) {
     if (!g.entries.some((e) => ids.has(e.skuId))) continue;
     if (g.status === "suggest") {
       fillCodes.push(g.code);
@@ -451,6 +525,7 @@ export async function buildRulesPlan(ownerId: string): Promise<MappingPlan> {
   if (rules.length === 0) {
     throw new MappingInputError("Bảng giá tự nhập đang trống — hãy thêm mã và giá vốn trước.");
   }
+  await assertCatalogWithinLimit(ownerId);
   return planMapping(await loadTargets(ownerId), buildRuleMatcher(rules));
 }
 
@@ -475,6 +550,7 @@ export async function applyRules(ownerId: string, overwriteSkuIds: string[]) {
  * thấy ngay mã nào gõ sai (phủ 0 SKU) và còn bao nhiêu SKU chưa có mã nào nhận.
  */
 export async function listRulesWithCoverage(ownerId: string) {
+  await assertCatalogWithinLimit(ownerId);
   const [rules, targets] = await Promise.all([
     prisma.costPriceRule.findMany({
       where: { userId: ownerId },

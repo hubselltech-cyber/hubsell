@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
 import {
   buildRuleMatcher,
+  catalogRowLimit,
+  codeLookupVariants,
   countPlan,
   groupSkusByCode,
   normalizeSkuCode,
@@ -174,5 +176,20 @@ describe("groupSkusByCode", () => {
     ];
     const byCode = Object.fromEntries(groupSkusByCode(targets).map((g) => [g.code, g.variantMixed]));
     expect(byCode).toEqual({ LT075: true, AO01: false });
+  });
+});
+
+describe("chắn tải nguyên danh mục (03/11/2026)", () => {
+  it("catalogRowLimit: mặc định 5.000, env hợp lệ thì theo env, env hỏng về mặc định", () => {
+    expect(catalogRowLimit({})).toBe(5000);
+    expect(catalogRowLimit({ SKU_PRODUCTS_MAX_ROWS: "8000" })).toBe(8000);
+    expect(catalogRowLimit({ SKU_PRODUCTS_MAX_ROWS: "abc" })).toBe(5000);
+    expect(catalogRowLimit({ SKU_PRODUCTS_MAX_ROWS: "-1" })).toBe(5000);
+  });
+  it("codeLookupVariants: mã có dấu hỏi cả NFC lẫn NFD, mã thường chỉ một dạng", () => {
+    expect(codeLookupVariants("AO-1")).toEqual(["AO-1"]);
+    const v = codeLookupVariants("V\u00C0NG");
+    expect(v).toHaveLength(2);
+    expect(new Set(v.map((x) => x.normalize("NFC")))).toEqual(new Set(["V\u00C0NG"]));
   });
 });

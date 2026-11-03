@@ -117,11 +117,15 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
   const [visible, setVisible] = React.useState(PAGE_SIZE);
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
+  // Phạm vi quá lớn (03/11/2026): máy chủ trả 413 + câu hướng dẫn, hiện tại chỗ thay vì bảng.
+  const [tooLarge, setTooLarge] = React.useState<string | null>(null);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetchCostSkuGroups(scope ?? undefined);
       setData(res);
+      setTooLarge(null);
       if (!scope) {
         const seen = new Map<string, string>();
         for (const g of res.groups) {
@@ -134,6 +138,11 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
         );
       }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 413) {
+        setData(null);
+        setTooLarge(err.message);
+        return;
+      }
       toast.error(errorMessage(err, "Không tải được danh sách mã SKU"));
     } finally {
       setLoading(false);
@@ -205,6 +214,14 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
   }, [data, search, status]);
 
   React.useEffect(() => setVisible(PAGE_SIZE), [search, status]);
+
+  if (tooLarge) {
+    return (
+      <Card className="border-amber-200 bg-amber-50/60">
+        <CardContent className="p-4 text-sm text-amber-900">{tooLarge}</CardContent>
+      </Card>
+    );
+  }
 
   if (!data) {
     return (

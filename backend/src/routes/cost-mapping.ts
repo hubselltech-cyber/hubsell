@@ -24,6 +24,8 @@ import type { AuthRequest } from "../middleware/auth";
 import {
   applyRules,
   buildRulesPlan,
+  CATALOG_TOO_LARGE_CODE,
+  CatalogTooLargeError,
   countPlan,
   fillSuggested,
   listRulesWithCoverage,
@@ -84,7 +86,7 @@ router.get("/rules", async (req: AuthRequest, res, next) => {
   try {
     res.json(await listRulesWithCoverage(req.ownerId!));
   } catch (err) {
-    next(err);
+    if (!sendMappingError(err, res)) next(err);
   }
 });
 
@@ -213,6 +215,10 @@ router.post("/rules/import", upload.single("file"), async (req: AuthRequest, res
 });
 
 function sendMappingError(err: unknown, res: Response): boolean {
+  if (err instanceof CatalogTooLargeError) {
+    res.status(413).json({ error: err.message, code: CATALOG_TOO_LARGE_CODE });
+    return true;
+  }
   if (err instanceof MappingInputError) {
     res.status(400).json({ error: err.message });
     return true;
@@ -248,7 +254,7 @@ router.get("/mapping/skus", async (req: AuthRequest, res, next) => {
   try {
     res.json(await listSkuGroups(req.ownerId!, readChannelScope(req.query.channelIds)));
   } catch (err) {
-    next(err);
+    if (!sendMappingError(err, res)) next(err);
   }
 });
 
@@ -262,7 +268,7 @@ router.post("/mapping/fill-suggested", async (req: AuthRequest, res, next) => {
       )
     );
   } catch (err) {
-    next(err);
+    if (!sendMappingError(err, res)) next(err);
   }
 });
 

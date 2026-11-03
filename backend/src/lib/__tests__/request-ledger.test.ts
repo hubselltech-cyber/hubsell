@@ -48,6 +48,22 @@ describe("request-ledger — sổ in-flight + rào route nặng", () => {
     expect(inFlightCount()).toBe(before);
   });
 
+  it("luồng SSE chuông không che request thật: request thường vẫn được in dù có nhiều luồng cũ", () => {
+    const opened = Array.from({ length: 10 }, () => {
+      const res = fakeRes();
+      trackInFlight(fakeReq("/api/notifications/stream"), res as unknown as Response, noop);
+      return res;
+    });
+    const res = fakeRes();
+    trackInFlight(fakeReq("/api/finance/cost-prices/mapping/skus"), res as unknown as Response, noop);
+    const line = describeInFlight();
+    expect(line).toContain("/api/finance/cost-prices/mapping/skus");
+    expect(line).not.toContain("GET /api/notifications/stream");
+    expect(line).toContain("+10 luồng chuông");
+    res.emit("close");
+    opened.forEach((r) => r.emit("close"));
+  });
+
   it("rào: quá số request nặng cùng lúc → 503 SERVER_BUSY + Retry-After; xong một cái thì cho vào lại", () => {
     process.env.HEAVY_ROUTE_MAX_CONCURRENT = "1";
     process.env.HEAVY_ROUTE_RSS_MB = "100000"; // không chặn vì RSS trong test

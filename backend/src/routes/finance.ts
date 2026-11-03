@@ -30,7 +30,13 @@ import {
   effectiveSkuCost,
   invalidateOwnerCostCaches,
 } from "../lib/cost-price";
-import { findCostSiblings } from "../lib/cost-mapping";
+import {
+  assertCatalogWithinLimit,
+  CATALOG_TOO_LARGE_CODE,
+  CatalogTooLargeError,
+  catalogRowLimit,
+  findCostSiblings,
+} from "../lib/cost-mapping";
 import { loadVariantNames, type OrderLineRef } from "../lib/order-line-names";
 import {
   classifyShippingDiff,
@@ -1074,8 +1080,7 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
     const raw = typeof req.query.channel === "string" ? req.query.channel : "all";
     const channel = raw.toLowerCase();
     const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
-    const envMax = Number(process.env.SKU_PRODUCTS_MAX_ROWS);
-    const maxRows = Number.isFinite(envMax) && envMax > 0 ? Math.floor(envMax) : 5000;
+    const maxRows = catalogRowLimit();
     let truncated = false;
     let totalRows = 0;
     let missingCostDb: number | null = null;
@@ -2397,6 +2402,17 @@ router.post(
           errors,
         });
         return;
+      }
+
+      // Nhập Excel so khớp trên cả danh mục trong RAM — gian quá lớn thì trả câu rõ, không tải (03/11/2026).
+      try {
+        await assertCatalogWithinLimit(ownerId);
+      } catch (err) {
+        if (err instanceof CatalogTooLargeError) {
+          res.status(413).json({ error: err.message, code: CATALOG_TOO_LARGE_CODE });
+          return;
+        }
+        throw err;
       }
 
       const [products, channels, channelProducts] = await Promise.all([
