@@ -10,7 +10,8 @@
 
 - Phát hiện khi chắn tab Mapping: `findCostSiblings` chạy mỗi lần lưu giá và tải cả danh mục → `7a26843e` chỉ đọc đúng các mã; tab Mapping, Điền tất cả, bảng giá, Nhập Excel vượt 5.000 trả 413. Cũng sửa lỗi của bản chắn: ô tìm mất con trỏ và biến mất khi tìm không ra.
 - Đính chính: em từng nói với anh tìm theo tên "vài chục mili giây"; đo thật 60.006 dòng trên DB dev là 1,2–1,4 giây; duyệt trang/lọc 0,15–0,3 giây. Chưa đo trên Supabase.
-- Đã kiểm: test DB dev, 378 test, tsc, ESLint, giao diện với máy chủ giả 57.877 dòng. ⏳ Chưa kiểm: nhánh paged trên backend thật, dữ liệu khách lớn. Khách lớn chưa tải lại trang lần nào trên các bản đã chắn (log không có dòng nào của id `cmvxs39r…` tới 16:13).
+- Đã kiểm: test DB dev, 378 test, tsc, ESLint, giao diện với máy chủ giả 57.877 dòng. ⏳ Chưa kiểm: nhánh paged trên backend thật, dữ liệu khách lớn. Khách lớn chưa tải lại trang lần nào trên các bản đã chắn (log không có dòng `CẮT từ` tới 16:36).
+- ✅ `99feb981` LIVE 16:34. Kiểm prod tài khoản anh, chỉ đọc, 16:35: trang gửi paged, gian nhỏ 533 sản phẩm chạy như cũ, tab Mapping mở được, dải "Đang kéo" đã tắt, không lỗi. Render Events: từ 15:57 (instance cũ bjrzb) chỉ còn deploy, không Instance failed mới tới 16:36.
 
 ## Phiên 03/11 (~14:40) — Khách + anh thấy "Không kết nối được tới máy chủ Hubsell" (cả app lẫn HQ) — GỐC: web backend OOM 7 lần (09:35; 14:13, 14:14, 14:30, 14:32, 14:34, 14:37), /health trả 502; KÍCH HOẠT: khách gian TikTok ongbocute.vn bấm "Đồng bộ từ sàn" ở Cấu hình Giá vốn → route POST /api/finance/sync-products chạy `syncChannelProducts` NGAY TRONG tiến trình web; web chết → khách bấm lại → vòng lặp. Web tự sống lại 14:43. ✅ ~15:15 anh chốt "Làm trước 3.3" → ĐÃ CODE LÁT 3.7 GĐ3 (nút → chỉ xin kéo, worker kéo), test + tsc sạch, COMMIT CHƯA PUSH, CHƯA thử trình duyệt (migration dev bị chặn)
 
