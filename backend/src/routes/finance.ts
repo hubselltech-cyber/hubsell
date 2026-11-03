@@ -31,13 +31,8 @@ import {
   effectiveSkuCost,
   invalidateOwnerCostCaches,
 } from "../lib/cost-price";
-import {
-  assertCatalogWithinLimit,
-  CATALOG_TOO_LARGE_CODE,
-  CatalogTooLargeError,
-  catalogRowLimit,
-  findCostSiblings,
-} from "../lib/cost-mapping";
+import { catalogRowLimit, findCostSiblings } from "../lib/cost-mapping";
+import { loadCostImportData } from "../lib/cost-import-load";
 import { loadVariantNames, type OrderLineRef } from "../lib/order-line-names";
 import {
   classifyShippingDiff,
@@ -2470,40 +2465,17 @@ router.post(
         return;
       }
 
-      // Nhập Excel so khớp trên cả danh mục trong RAM — gian quá lớn thì trả câu rõ, không tải (03/11/2026).
-      try {
-        await assertCatalogWithinLimit(ownerId);
-      } catch (err) {
-        if (err instanceof CatalogTooLargeError) {
-          res.status(413).json({ error: err.message, code: CATALOG_TOO_LARGE_CODE });
-          return;
-        }
-        throw err;
-      }
-
-      const [products, channels, channelProducts] = await Promise.all([
-        prisma.product.findMany({
-          where: { userId: ownerId },
-          select: { id: true, skuCode: true, costPrice: true },
-        }),
+      const importStartedAt = Date.now();
+      // Chỉ đọc các mã có trong file: số dòng theo cỡ file, không theo cỡ gian (03/11/2026).
+      const [{ products, channelProducts }, channels] = await Promise.all([
+        loadCostImportData(ownerId, parsed.map((r) => r.sku)),
         prisma.channel.findMany({
           where: { userId: ownerId },
           select: { id: true, channelName: true, shopName: true },
         }),
-        prisma.channelProduct.findMany({
-          where: { channel: { userId: ownerId } },
-          select: {
-            id: true,
-            channelId: true,
-            channelSku: true,
-            productId: true,
-            costPrice: true,
-            product: { select: { costPrice: true } },
-          },
-        }),
       ]);
       const plan = planCostImport(parsed, {
-        products: products.map((p) => ({ ...p, costPrice: Number(p.costPrice) })),
+        products,
         channels,
         channelProducts: channelProducts.map((cp) => ({
           id: cp.id,
@@ -2549,6 +2521,9 @@ router.post(
         { timeout: 120_000, maxWait: 10_000 }
       );
       await invalidateOwnerCostCaches(ownerId);
+      console.log(
+        `[cost-import] chủ shop ${ownerId}: file ${rows.length} dòng, khớp ${plan.matchedRows}, ghi ${result.updated} ô, vá ${result.backfilled} dòng đơn, ${errors.length} lỗi, ${Date.now() - importStartedAt} ms`
+      );
 
       res.json({
         updated: result.updated,

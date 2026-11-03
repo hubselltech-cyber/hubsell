@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~17:05) — Khách lớn 17:00 nhập Excel 1.229 dòng bị lỗi: DO EM CHẶN NHẦM ở `7a26843e` → sửa: chỉ đọc mã trong file, bỏ chặn (docs DONG-BO mục 6.7)
+
+- Trang Giá vốn của khách lớn đã mở được từ 16:58 (log `CẮT từ 57877`, 0,5–2,5 giây, RSS ~246 MB). Bài học: chắn tính năng phải thử đúng thao tác của khách và hỏi người dùng thật; ghi feedback. ⏳ Khách nhập lại, đọc log `[cost-import]`.
+
 ## Phiên 03/11 (~16:40) — Anh "em chủ động sửa và test, lát anh quay lại kiểm tra" → LÁT 3.8 Giá vốn chia trang ở DB cho gian > 5.000 mã (docs/DONG-BO-GIAI-DOAN-3.md mục 6)
 
 - Phát hiện khi chắn tab Mapping: `findCostSiblings` chạy mỗi lần lưu giá và tải cả danh mục → `7a26843e` chỉ đọc đúng các mã; tab Mapping, Điền tất cả, bảng giá, Nhập Excel vượt 5.000 trả 413. Cũng sửa lỗi của bản chắn: ô tìm mất con trỏ và biến mất khi tìm không ra.

@@ -412,3 +412,9 @@ Log worker 16:33:21: Hy Korea Official (Shopee) lỗi "SHOPEE không trả lời
 `complete = false` nên không đánh dấu gỡ nhầm; 10 lần hỏng liên tiếp thì dừng để lượt sau thử lại. Số 3 và 10 là mặc định tự chọn. Chỉ áp cho Shopee.
 Lazada "Vodka Store" vẫn lỗi `ServiceTimeout` mỗi 30 phút cả ngày, chưa sửa. Chưa thấy lượt kéo thật nào của Hy Korea Shopee chạy xong với bản này.
 
+### 6.7. Nhập Excel: bỏ chặn, chỉ đọc mã trong file (03/11 ~17:10)
+
+`7a26843e` chặn Nhập Excel với gian trên 5.000 mã là sai: khách 57.877 mã nhập file 1.229 dòng lúc 17:00 bị báo lỗi (em đã giả định không ai dùng Excel mà không thử). Nay `lib/cost-import-load.ts` chỉ đọc các dòng trùng mã trong file
+(so `lower(btrim(normalize()))` hai vế, không dùng LIKE), không còn trần. Log `[cost-import]` ghi số dòng, số ô, thời gian. Test `cost-import-load-db.test.ts` chạy thật trên DB dev. Chưa đo bước ghi trên prod: mỗi mức giá một lượt UPDATE + vá đơn trong MỘT giao dịch, trần 120 giây; file nhiều mức giá trên gian nhiều đơn có thể chạm trần, đọc log `[cost-import]` sau lượt thật đầu tiên.
+Bằng chứng chia trang trên dữ liệu thật: log 16:58–17:02 của khách lớn `CẮT từ 57877`, 114 và 730 dòng/trang, 0,5–2,5 giây, RSS ~246 MB.
+

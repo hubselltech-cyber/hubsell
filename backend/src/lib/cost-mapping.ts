@@ -242,7 +242,7 @@ export class MappingInputError extends Error {}
  * ★ 03/11/2026 — CHẮN ĐƯỜNG TẢI NGUYÊN DANH MỤC TRÊN WEB (cùng khuôn GET /sku-products: chủ shop
  * 57.877 dòng SKU sàn, web 512 MB). Trần = SKU_PRODUCTS_MAX_ROWS (mặc định 5.000, tự chọn). Việc theo
  * MÃ CỤ THỂ (lưu giá → gợi ý gian khác, "Áp dụng N gian") đã chuyển sang chỉ đọc đúng các mã đó nên
- * không bị chặn; việc cần CẢ danh mục (tab Mapping, bảng giá tự nhập, Nhập Excel) trả 413 câu rõ.
+ * không bị chặn; việc cần CẢ danh mục (tab Mapping, bảng giá tự nhập) trả 413 câu rõ. Nhập Excel đọc theo mã trong file (cost-import-load.ts).
  * Sửa gốc = lát 3.8 (docs/DONG-BO-GIAI-DOAN-3.md). autoFillCostForNewSkus chạy ở worker 2 GB, không chặn.
  */
 export class CatalogTooLargeError extends MappingInputError {
