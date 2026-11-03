@@ -275,7 +275,7 @@ const activeClaims = new Map<string, string>();
  * nguyên → trang treo "Đang kéo danh mục…" cả tiếng. Hai lớp sửa:
  *   · stopProductCatalogSync(): nhận SIGTERM → dừng sau gian đang dở, trả gian đó về hàng chờ
  *     (nextProductSyncAt = now) — tiến trình mới kéo lại ngay sau FIRST_RUN_DELAY.
- *   · recoverStrandedClaims() lúc boot (cả SIGKILL/OOM không kịp trả): gian có mốc xin mà lịch kế
+ *   · recoverStrandedClaims() mỗi nhịp poll (cả SIGKILL/OOM không kịp trả): gian có mốc xin mà lịch kế
  *     đang nằm trong cửa sổ nhận việc (now < next ≤ now + CLAIM_MS) và đã nhận từ ≥ 90 giây trước
  *     (tiến trình cũ chắc chắn đã chết — Render cho 30 giây) → đặt lại now. Gian lịch đêm / thử lại
  *     30' không có mốc xin nên không bị đụng.
@@ -301,16 +301,23 @@ export async function stopProductCatalogSync(): Promise<void> {
 /** Tuổi tối thiểu của một lượt nhận để coi tiến trình giữ nó đã chết (Render SIGTERM→SIGKILL 30 giây). */
 const STRANDED_MIN_AGE_MS = 90 * 1000;
 
+/**
+ * Trả gian bị bỏ rơi về hàng chờ: khách đã xin kéo, lịch đang nằm trong cửa sổ nhận việc, lượt nhận đã quá
+ * STRANDED_MIN_AGE_MS và KHÔNG do tiến trình này đang kéo. Chạy MỖI nhịp poll, không chỉ lúc khởi động: 18:43
+ * 03/11/2026 worker cũ nhận gian ngay trước khi bị thay, gian treo "Đang kéo" tới 60 phút (anh thấy). Có
+ * nhiều worker thì gian của worker khác có thể bị kéo trùng một lượt: chỉ tốn lệnh đọc, không sai dữ liệu.
+ */
 export async function recoverStrandedClaims(): Promise<number> {
   const now = Date.now();
   const r = await prisma.channel.updateMany({
     where: {
+      id: { notIn: [...activeClaims.keys()] },
       productSyncRequestedAt: { not: null },
       nextProductSyncAt: { gt: new Date(now), lte: new Date(now + CLAIM_MS - STRANDED_MIN_AGE_MS) },
     },
     data: { nextProductSyncAt: new Date(now) },
   });
-  if (r.count > 0) console.log(`[Catalog-sync] Khởi động: trả ${r.count} gian kẹt từ tiến trình trước về hàng chờ`);
+  if (r.count > 0) console.log(`[Catalog-sync] Trả ${r.count} gian bị bỏ rơi về hàng chờ`);
   return r.count;
 }
 
@@ -321,9 +328,6 @@ export function startProductCatalogSyncWorker(): void {
     console.log("[Catalog-sync] TẮT (PRODUCT_CATALOG_SYNC_OFF=1)");
     return;
   }
-  void recoverStrandedClaims().catch((err) =>
-    console.error("[Catalog-sync] Lỗi trả gian kẹt lúc khởi động:", (err as Error).message)
-  );
   setTimeout(() => void runProductCatalogSync(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void runProductCatalogSync(), POLL_MS).unref();
   console.log(
@@ -417,6 +421,7 @@ export async function runProductCatalogSync(): Promise<number> {
   running = true;
   const runs: Promise<boolean>[] = [];
   try {
+    if (!stopping) await recoverStrandedClaims();
     while (!stopping && activeClaims.size < MAX_PARALLEL) {
       const due = await claimNextDue();
       if (!due) break;

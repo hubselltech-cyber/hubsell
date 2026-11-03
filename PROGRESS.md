@@ -9,6 +9,7 @@
 ## Phiên 03/11 (~18:40) — Anh: dải xoay lâu hơn trước → kéo danh mục tối đa 3 gian cùng lúc, nhận việc mỗi 30 giây
 
 - Log: Hy Korea Shopee làm mới THÀNH CÔNG 18:00:38 (38.889 mã, +0 mới, khoảng 19 phút). Dải của anh không kẹt: 18:37:48 ANO Official, 18:38:24 DARKMAN STORE, nhưng chạy lần lượt 30–60 giây/gian. Sửa: MAX_PARALLEL = 3 (tự chọn, chưa đo tải), xong gian nào lấp chỗ ngay, poll 30 giây; SIGTERM trả mọi gian đang dở. Test giả 3 ca. ⏳ Đo lại tổng thời gian 5 gian của anh sau deploy.
+- Đo `af99540e`: 3 gian xong 18:43:46–18:44:09, nhưng ANO Official Store treo: SQL xin 18:42:24, lịch 19:43:19 = worker cũ nhận 18:43:19 rồi bị thay (khe hở đã biết, lần deploy của em gây ra). Sửa: `recoverStrandedClaims` chạy mỗi nhịp poll, bỏ qua gian đang kéo trong tiến trình; test thêm 1 ca.
 
 ## Phiên 03/11 (~18:00) — Anh yêu cầu rà từ lúc ủy quyền tới lúc lỗi: thủ phạm nhiều khả năng là `detectStockouts` trên Tổng quan, em đã kết luận nhầm là trang Giá vốn
 

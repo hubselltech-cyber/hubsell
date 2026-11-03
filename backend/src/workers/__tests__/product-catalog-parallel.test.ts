@@ -27,7 +27,22 @@ vi.mock("../../lib/prisma", () => ({
             r.nextProductSyncAt <= where.nextProductSyncAt.lte &&
             (where.productSyncRequestedAt === undefined || r.productSyncRequestedAt)
         ) ?? null,
-      updateMany: async ({ where, data }: { where: { id: string; nextProductSyncAt: unknown }; data: { nextProductSyncAt: Date } }) => {
+      updateMany: async ({ where, data }: { where: { id: string | { notIn: string[] }; nextProductSyncAt: unknown }; data: { nextProductSyncAt: Date } }) => {
+        if (typeof where.id !== "string") {
+          // recoverStrandedClaims: có xin kéo + lịch trong cửa sổ + không do tiến trình này giữ.
+          const { notIn } = where.id;
+          const win = where.nextProductSyncAt as { gt: Date; lte: Date };
+          const hit = state.rows.filter(
+            (x) =>
+              !notIn.includes(x.id) &&
+              x.productSyncRequestedAt &&
+              x.nextProductSyncAt &&
+              x.nextProductSyncAt > win.gt &&
+              x.nextProductSyncAt <= win.lte
+          );
+          for (const x of hit) x.nextProductSyncAt = data.nextProductSyncAt;
+          return { count: hit.length };
+        }
         const r = state.rows.find((x) => x.id === where.id);
         if (!r) return { count: 0 };
         // Trả về hàng chờ khi tắt: điều kiện { gt: now }.
@@ -128,6 +143,27 @@ describe("runProductCatalogSync song song", () => {
     expect(loi.productSyncError).toBe("sàn bận");
     expect(loi.productSyncRequestedAt).toBeNull();
     expect(loi.nextProductSyncAt!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("gian bị worker cũ bỏ rơi: nhịp poll kế trả về và kéo; gian mới nhận dưới 90 giây, lịch đêm, gian đang kéo không bị đụng", async () => {
+    const { runProductCatalogSync } = await import("../product-catalog-sync");
+    const inMin = (m: number) => new Date(Date.now() + m * 60_000);
+    state.rows = [
+      { ...row("bo-roi"), nextProductSyncAt: inMin(56) }, // nhận từ 4 phút trước, không ai giữ
+      { ...row("vua-nhan"), nextProductSyncAt: inMin(59.5) }, // nhận 30 giây trước, có thể worker khác đang kéo
+      { ...row("lich-dem"), nextProductSyncAt: inMin(30), productSyncRequestedAt: null },
+    ];
+    void runProductCatalogSync();
+    await tick();
+    expect(state.started).toEqual(["bo-roi"]);
+    // Đang kéo: lịch đã đẩy xa. Giả lịch lọt lại vào cửa sổ, poll kế cũng không được trả về.
+    const running = state.rows.find((r) => r.id === "bo-roi")!;
+    running.nextProductSyncAt = inMin(50);
+    void runProductCatalogSync();
+    await tick();
+    expect(state.started).toEqual(["bo-roi"]);
+    await finish("bo-roi");
+    expect(state.rows.find((r) => r.id === "lich-dem")!.nextProductSyncAt!.getTime()).toBeGreaterThan(Date.now());
   });
 
   it("tắt worker: trả MỌI gian đang kéo về hàng chờ, không nhận gian mới", async () => {
