@@ -119,29 +119,29 @@ export function SourcePicker({
         return;
       }
       if (r.queued) {
-        toast.info("Đang kéo trong vài phút. Danh sách tự làm mới khi xong.", { duration: 5000 });
+        // Nút trả về ngay (anh Trung 03/11: xoay khóa 5–6 phút khó chịu hơn báo lỗi); chờ ở nền.
+        toast.info("Đang kéo trong vài phút. Danh sách tự làm mới khi xong, không cần chờ ở đây.", { duration: 6000 });
         const startedAt = Date.now();
-        const st: { v: Awaited<ReturnType<typeof fetchCopyListingSyncStatus>> | null } = { v: null };
-        const done = await pollUntil(
-          async () => {
-            st.v = await fetchCopyListingSyncStatus(id);
-            return !st.v.pending;
-          },
-          { intervalMs: 5_000, maxMs: 30 * 60_000 }
-        );
-        await invalidate(qk.copyListingChannels(), qk.copyListingSourcesAll());
-        if (!done) {
-          toast.info("Việc kéo đang lâu hơn bình thường — danh sách sẽ mới khi kéo xong, vui lòng quay lại sau ít phút.", {
-            duration: 10000,
-          });
-        } else if (
-          st.v?.productSyncError &&
-          !(st.v.lastProductSyncAt && new Date(st.v.lastProductSyncAt).getTime() >= startedAt)
-        ) {
-          toast.error(`Không kéo được danh mục từ sàn: ${st.v.productSyncError}`);
-        } else {
-          toast.success("Đã lấy sản phẩm mới từ sàn.");
-        }
+        void (async () => {
+          const st: { v: Awaited<ReturnType<typeof fetchCopyListingSyncStatus>> | null } = { v: null };
+          const done = await pollUntil(
+            async () => {
+              st.v = await fetchCopyListingSyncStatus(id);
+              return !st.v.pending;
+            },
+            { intervalMs: 5_000, maxMs: 30 * 60_000 }
+          );
+          await invalidate(qk.copyListingChannels(), qk.copyListingSourcesAll());
+          if (!done) return;
+          if (
+            st.v?.productSyncError &&
+            !(st.v.lastProductSyncAt && new Date(st.v.lastProductSyncAt).getTime() >= startedAt)
+          ) {
+            toast.error(`Không kéo được danh mục từ sàn: ${st.v.productSyncError}`);
+          } else {
+            toast.success("Đã lấy sản phẩm mới từ sàn.");
+          }
+        })().catch(() => {});
         return;
       }
       // Máy chủ bản cũ: kéo ngay và trả số đếm.
@@ -210,7 +210,7 @@ export function SourcePicker({
             onClick={syncSourceChannel}
           >
             <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-            {syncing ? "Đang kéo trong vài phút…" : "Lấy sản phẩm mới từ sàn"}
+            Lấy sản phẩm mới từ sàn
           </Button>
         )}
       </div>

@@ -282,6 +282,10 @@ mới + làm mới đêm); nút bấm là nửa còn sót. Không nâng máy, kh
   đi đường cũ. Nối nhanh: toast "đang kéo danh mục trong vài phút — xong rồi bấm Nối nhanh lại". Sao chép SP: nút "Lấy sản
   phẩm mới từ sàn" cũng chờ theo nhịp rồi tự làm mới danh sách.
 - **Mobile:** không ảnh hưởng (app không có nút đồng bộ danh mục).
+- **Sửa sau khi anh thử (03/11 ~15:30, "xoay 5–6 phút khó chịu hơn cả báo lỗi"):** nút KHÔNG khóa/xoay chờ nữa — xin
+  xong là trả về bình thường, trang Giá vốn hiện dải "Đang kéo danh mục…" (nạp lại ngay qua onSynced), việc hỏi nhịp chạy
+  nền và chỉ nạp lại + báo xong/lỗi khi kéo xong; nút "Lấy sản phẩm mới từ sàn" cùng kiểu. Worker `POLL_MS` 5' → 1' (truy
+  vấn theo chỉ mục, rẻ) nên chờ còn ≤ 1' + thời gian kéo thật.
 
 ### 5.3. Mã + kiểm local
 

@@ -21,8 +21,12 @@ import { cn } from "@/lib/utils";
  * Giá vốn (đồng bộ tại chỗ khi đang duyệt tài chính mà thiếu SKU).
  *
  * ★ 03/11/2026 (lát 3.7 giai đoạn 3): máy chủ KHÔNG kéo ngay trong lượt bấm nữa
- * (gian ~600 SP từng làm web sập 7 lần trong 25 phút). Bấm = xin kéo; nút hiện
- * "Đang kéo trong vài phút…" và hỏi theo nhịp tới khi xong rồi mới nạp lại bảng.
+ * (gian ~600 SP từng làm web sập 7 lần trong 25 phút). Bấm = xin kéo, máy chủ trả
+ * lời trong tích tắc. Anh Trung thử 15:30: nút xoay khóa 5–6 phút "khó chịu hơn
+ * cả báo lỗi" → nút TRẢ VỀ BÌNH THƯỜNG NGAY sau khi xin; việc chờ chạy nền: trang
+ * Giá vốn tự hiện dải "Đang kéo danh mục…" (qua onSynced → nạp lại), nút chỉ hỏi
+ * theo nhịp ở nền để nạp lại bảng + báo xong/lỗi khi kéo xong. Bấm lại trong lúc
+ * đang kéo → máy chủ trả "already", chỉ toast nhắc.
  */
 const WAIT_POLL_MS = 5_000;
 const WAIT_MAX_MS = 30 * 60_000;
@@ -43,6 +47,48 @@ export function SyncChannelProductsButton({
   label?: string;
 }) {
   const [syncing, setSyncing] = React.useState(false);
+  const mounted = React.useRef(true);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  /** Chạy NỀN sau khi xin kéo: chờ worker xong → nạp lại bảng + báo kết quả. Không khóa nút. */
+  async function waitInBackground(waitIds: string[], startedAt: number) {
+    const last: { v: PendingResponse | null } = { v: null };
+    const done = await pollUntil(
+      async () => {
+        last.v = await fetchCatalogPending();
+        const pending = new Set(last.v.pending.map((p) => p.id));
+        return waitIds.every((id) => !pending.has(id));
+      },
+      { intervalMs: WAIT_POLL_MS, maxMs: WAIT_MAX_MS }
+    );
+    if (!mounted.current) return; // đã rời trang — trang khác tự nạp khi mở
+    await onSynced();
+    if (!done) return; // trang Giá vốn vẫn còn dải "đang kéo" và tự nạp khi xong
+    const failed = (last.v?.channels ?? []).filter(
+      (c) =>
+        waitIds.includes(c.id) &&
+        c.productSyncError &&
+        !(c.lastProductSyncAt && new Date(c.lastProductSyncAt).getTime() >= startedAt)
+    );
+    if (failed.length > 0) {
+      toast.warning(
+        `Có ${failed.length} gian lỗi: ${failed.map((c) => `${c.shopName} (${c.productSyncError})`).join("; ")}`,
+        { duration: 10000 }
+      );
+    }
+    const okCount = waitIds.length - failed.length;
+    if (okCount > 0) {
+      toast.success(
+        okCount === 1 ? "Đã kéo xong danh mục từ sàn." : `Đã kéo xong danh mục từ ${okCount} gian.`,
+        { duration: 6000 }
+      );
+    }
+  }
 
   async function handleSync() {
     setSyncing(true);
@@ -89,51 +135,18 @@ export function SyncChannelProductsButton({
         return;
       }
 
-      toast.info("Đang kéo trong vài phút. Bảng tự cập nhật khi xong.", { duration: 5000 });
-      const startedAt = Date.now();
-      const last: { v: PendingResponse | null } = { v: null };
-      const done = await pollUntil(
-        async () => {
-          last.v = await fetchCatalogPending();
-          const pending = new Set(last.v.pending.map((p) => p.id));
-          return waitIds.every((id) => !pending.has(id));
-        },
-        { intervalMs: WAIT_POLL_MS, maxMs: WAIT_MAX_MS }
-      );
+      toast.info("Đang kéo trong vài phút. Bảng tự cập nhật khi xong, không cần chờ ở đây.", {
+        duration: 6000,
+      });
+      // Nạp lại ngay để trang hiện dải "Đang kéo danh mục…" (catalogPending); việc chờ chạy nền.
       await onSynced();
-      if (!done) {
-        toast.info(
-          "Việc kéo đang lâu hơn bình thường. Bảng sẽ có dữ liệu mới khi kéo xong — vui lòng quay lại sau ít phút.",
-          { duration: 10000 }
-        );
-        return;
-      }
-      // Lượt vừa xin của gian nào KHÔNG kéo xong sau mốc bấm mà đang mang lỗi → lỗi của lượt này.
-      const failed = (last.v?.channels ?? []).filter(
-        (c) =>
-          waitIds.includes(c.id) &&
-          c.productSyncError &&
-          !(c.lastProductSyncAt && new Date(c.lastProductSyncAt).getTime() >= startedAt)
-      );
-      if (failed.length > 0) {
-        toast.warning(
-          `Có ${failed.length} gian lỗi: ${failed.map((c) => `${c.shopName} (${c.productSyncError})`).join("; ")}`,
-          { duration: 10000 }
-        );
-      }
-      const okCount = waitIds.length - failed.length;
-      if (okCount > 0) {
-        toast.success(
-          okCount === 1 ? "Đã kéo xong danh mục từ sàn." : `Đã kéo xong danh mục từ ${okCount} gian.`,
-          { duration: 6000 }
-        );
-      }
+      void waitInBackground(waitIds, Date.now()).catch(() => {});
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Không đồng bộ được danh mục"
       );
     } finally {
-      setSyncing(false);
+      if (mounted.current) setSyncing(false);
     }
   }
 
@@ -144,7 +157,7 @@ export function SyncChannelProductsButton({
       className={cn("bg-teal-600 text-white hover:bg-teal-700", className)}
     >
       <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-      {syncing ? "Đang kéo trong vài phút…" : label}
+      {label}
     </Button>
   );
 }

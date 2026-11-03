@@ -9,7 +9,7 @@
 //
 // Cơ chế (một cột lịch, giống nextFastSyncAt của đơn):
 //   · Channel.nextProductSyncAt = now lúc TẠO gian (Shopee/Lazada/TikTok) →
-//     worker kéo ngay lượt kế (poll 5').
+//     worker kéo ngay lượt kế (poll 1', trước 03/11 là 5').
 //   · Xong → lastProductSyncAt = now, lịch kế = đêm sau 03:00–05:00 giờ VN
 //     (rải ngẫu nhiên để 13 gian Shopee không cùng lúc đập get_model_list —
 //     sự cố DarkMan 05/09 error_rate_limit khi kéo nguyên danh mục).
@@ -38,7 +38,9 @@ import { invalidateOwnerCostCaches, repairZeroCostLinesForChannel } from "../lib
 import { prisma } from "../lib/prisma";
 import { syncChannelProducts } from "../marketplace/product-sync";
 
-const POLL_MS = 5 * 60 * 1000;
+/** 03/11/2026: 5' → 1' — nút bấm của khách chờ tối đa một nhịp này; truy vấn findFirst theo chỉ mục
+ *  (status, nextProductSyncAt) nên rẻ. Anh Trung: chờ 5–6 phút "khó chịu hơn cả báo lỗi". */
+const POLL_MS = 60 * 1000;
 const FIRST_RUN_DELAY_MS = 60 * 1000;
 /** Mỗi lượt poll kéo tối đa N gian (tuần tự) — gian mới nối vẫn được kéo trong ≤5'. */
 const MAX_PER_CYCLE = 5;
