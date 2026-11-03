@@ -2521,6 +2521,8 @@ export interface SkuProduct {
   skuId: string; // id dùng để cập nhật giá vốn
   productId: string; // "" nếu SKU sàn chưa liên kết kho gốc
   sku: string;
+  /** Mã kho của sản phẩm đã nối; có thể khác mã SKU sàn. Thiếu = máy chủ bản cũ hoặc chưa nối. */
+  stockSku?: string | null;
   productName: string;
   variantName: string | null; // phân loại (màu/size) theo tên trên sàn
   channelName: ChannelName;
@@ -2647,6 +2649,11 @@ export function fetchSkuProducts(
 }
 
 /** Bản nhẹ để hỏi theo nhịp trong lúc chờ danh mục về (gian mới / vừa xin kéo). */
+/** Từ khóa khớp bao nhiêu dòng trong toàn bộ gian, bỏ qua mọi bộ lọc. */
+export function fetchSkuSearchCount(q: string) {
+  return apiFetch<{ rows: number }>(`/api/finance/sku-products/search-count?q=${encodeURIComponent(q)}`);
+}
+
 export function fetchCatalogPending() {
   return apiFetch<{
     pending: CatalogPendingChannel[];

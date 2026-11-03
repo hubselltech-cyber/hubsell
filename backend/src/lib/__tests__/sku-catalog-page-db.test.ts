@@ -3,7 +3,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../prisma";
-import { foldSearchText, loadSkuCatalogPage, type SkuCatalogFilters } from "../sku-catalog-page";
+import {
+  countSkuSearchEverywhere,
+  foldSearchText,
+  loadSkuCatalogPage,
+  looksLikeSkuCode,
+  type SkuCatalogFilters,
+} from "../sku-catalog-page";
 
 const stamp = Date.now();
 let userId = "";
@@ -90,6 +96,11 @@ describe("loadSkuCatalogPage", () => {
     await prisma.user.deleteMany({ where: { id: userId } });
   }, 300_000);
 
+  it("looksLikeSkuCode: có số, gạch nối hoặc gạch dưới, không có khoảng trắng", () => {
+    for (const s of ["TLDC001", "A-1", "a_b", "12345", " TLDC-1 "]) expect(looksLikeSkuCode(s)).toBe(true);
+    for (const s of ["tldc", "vay dam", "ao 2 day", ""]) expect(looksLikeSkuCode(s)).toBe(false);
+  });
+
   it("foldSearchText: bỏ dấu cả dạng dựng sẵn lẫn tổ hợp", () => {
     expect(foldSearchText("Áo Thun ĐỎ")).toBe("ao thun do");
     expect(foldSearchText("Áo")).toBe("ao");
@@ -122,12 +133,69 @@ describe("loadSkuCatalogPage", () => {
   });
 
   it.skipIf(LOAD_ROWS > 0)("tìm không dấu, tìm tên kho, tìm mã sàn; '_' là chữ thường không phải ký tự đại diện", async () => {
-    expect(await skus((await loadSkuCatalogPage({ ...base(), q: "ao thun" })).ids)).toEqual(["A-XANH", "A-DO"]);
+    expect(await skus((await loadSkuCatalogPage({ ...base(), q: "ao thun" })).ids)).toEqual(["A-DO", "A-XANH"]);
     expect(await skus((await loadSkuCatalogPage({ ...base(), q: "mu luoi" })).ids)).toEqual(["B-1"]);
     expect(await skus((await loadSkuCatalogPage({ ...base(), q: "kho co gia" })).ids)).toEqual(["B-1"]);
     expect(await skus((await loadSkuCatalogPage({ ...base(), q: "333" })).ids)).toEqual(["C_1"]);
     expect(await skus((await loadSkuCatalogPage({ ...base(), q: "c_1" })).ids)).toEqual(["C_1"]);
     expect((await loadSkuCatalogPage({ ...base(), q: "a_do" })).filteredRows).toBe(0);
+  });
+
+  it.skipIf(LOAD_ROWS > 0)("xếp theo độ khớp: trùng đúng, bắt đầu bằng, chứa, tên; tìm được mã kho và mã mẫu", async () => {
+    const kho = await prisma.product.create({
+      data: { userId, skuCode: `MAKHO-${stamp}`, productName: "Sản phẩm kho", sellingPrice: 1 },
+      select: { id: true },
+    });
+    const at = (m: number) => new Date(Date.UTC(2026, 5, 1, 0, m));
+    await prisma.channelProduct.createMany({
+      data: [
+        // Mới về nhất nhưng chỉ khớp ở tên: phải đứng cuối.
+        { channelId: chA, channelSku: "Z-TEN", productName: `Áo ${stamp}XY`, externalId: `71${stamp}-1`, createdAt: at(9) },
+        { channelId: chA, channelSku: `Q${stamp}XY`, productName: "Chứa", externalId: `72${stamp}-1`, createdAt: at(8) },
+        { channelId: chA, channelSku: `${stamp}XY-2`, productName: "Bắt đầu 2", externalId: `73${stamp}-1`, createdAt: at(7) },
+        { channelId: chA, channelSku: `${stamp}XY-1`, productName: "Bắt đầu 1", externalId: `74${stamp}-1`, createdAt: at(6) },
+        { channelId: chB, channelSku: `${stamp}XY`, productName: "Trùng đúng", externalId: `75${stamp}-1`, createdAt: at(1) },
+        { channelId: chB, channelSku: `SAN-${stamp}`, productName: "Có mã kho", externalId: `76${stamp}-1`, productId: kho.id, createdAt: at(2) },
+        { channelId: chB, channelSku: `CON-${stamp}`, productName: "Có mã mẫu", itemSku: `MAU-${stamp}`, externalId: `77${stamp}-1`, createdAt: at(3) },
+      ],
+    });
+    const found = await loadSkuCatalogPage({ ...base(), q: `${stamp}xy` });
+    // Từ khóa giống mã, có mã khớp: không cần dò đến tên.
+    expect(await skus(found.ids)).toEqual([`${stamp}XY`, `${stamp}XY-1`, `${stamp}XY-2`, `Q${stamp}XY`]);
+    // Không mã nào khớp thì dò đến tên, gập được dấu.
+    await prisma.channelProduct.update({
+      where: { channelId_channelSku: { channelId: chA, channelSku: "Z-TEN" } },
+      data: { productName: `Áo Đỏ-${stamp}` },
+    });
+    expect(await skus((await loadSkuCatalogPage({ ...base(), q: `ao do-${stamp}` })).ids)).toEqual(["Z-TEN"]);
+    expect(await skus((await loadSkuCatalogPage({ ...base(), q: `do-${stamp}` })).ids)).toEqual(["Z-TEN"]);
+    // Chữ thường không số: mã khớp đứng trước, tên vẫn được dò chứ không bị che.
+    const word = `zzq${String.fromCharCode(97 + (stamp % 26))}`;
+    await prisma.channelProduct.createMany({
+      data: [
+        { channelId: chA, channelSku: `${word}MA`, productName: "Khớp mã", externalId: `78${stamp}-1`, createdAt: at(1) },
+        { channelId: chA, channelSku: "KHAC-TEN", productName: `Tên có ${word}`, externalId: `79${stamp}-1`, createdAt: at(9) },
+      ],
+    });
+    expect(await skus((await loadSkuCatalogPage({ ...base(), q: word })).ids)).toEqual([`${word}MA`, "KHAC-TEN"]);
+    // Trang 1 của từ khóa rộng vẫn mang mã trùng đúng, dù mã đó về từ lâu.
+    const first = await loadSkuCatalogPage({ ...base(), q: `${stamp}xy`, pageSize: 1 });
+    expect(await skus(first.ids)).toEqual([`${stamp}XY`]);
+
+    expect(await skus((await loadSkuCatalogPage({ ...base(), q: `makho-${stamp}` })).ids)).toEqual([`SAN-${stamp}`]);
+    expect(await skus((await loadSkuCatalogPage({ ...base(), q: `mau-${stamp}` })).ids)).toEqual([`CON-${stamp}`]);
+    expect(await skus((await loadSkuCatalogPage({ ...base(), q: `76${stamp}` })).ids)).toEqual([`SAN-${stamp}`]);
+
+    // Bộ lọc che hết thì đếm toàn gian vẫn thấy.
+    const hidden = await loadSkuCatalogPage({ ...base(), q: "c_1", listing: "active" });
+    expect(hidden.filteredRows).toBe(0);
+    expect(await countSkuSearchEverywhere(userId, "c_1")).toBe(1);
+    expect(await countSkuSearchEverywhere(userId, "khong-co-ma-nay")).toBe(0);
+    expect(await countSkuSearchEverywhere("khong-ton-tai", "c_1")).toBe(0);
+
+    await prisma.channelProduct.deleteMany({
+      where: { channelId: { in: [chA, chB] }, externalId: { contains: `${stamp}-1` } },
+    });
   });
 
   it.skipIf(LOAD_ROWS > 0)("không lộ dữ liệu chủ shop khác", async () => {

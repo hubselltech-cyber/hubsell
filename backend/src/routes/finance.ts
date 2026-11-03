@@ -21,7 +21,7 @@ import {
   requestProductSyncNow,
 } from "../workers/product-catalog-sync";
 import { heavyRouteGuard } from "../lib/request-ledger";
-import { loadSkuCatalogPage } from "../lib/sku-catalog-page";
+import { countSkuSearchEverywhere, loadSkuCatalogPage } from "../lib/sku-catalog-page";
 import {
   applyChannelCostPrice,
   applyChannelCostPriceIn,
@@ -1097,6 +1097,8 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
       skuId: string; // id dùng để cập nhật giá vốn (mapping id hoặc product id)
       productId: string; // "" nếu SKU sàn chưa liên kết kho gốc
       sku: string;
+      /** Mã kho của sản phẩm đã nối; null nếu chưa nối. Có thể khác mã SKU sàn. */
+      stockSku: string | null;
       productName: string;
       variantName: string | null; // phân loại (màu/size) — tên hiển thị trên sàn
       channelName: ChannelName;
@@ -1154,6 +1156,7 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
                 { variantName: { contains: q, mode: "insensitive" as const } },
                 { itemSku: { contains: q, mode: "insensitive" as const } },
                 { externalId: { contains: q, mode: "insensitive" as const } },
+                { product: { skuCode: { contains: q, mode: "insensitive" as const } } },
               ],
             }
           : {};
@@ -1239,7 +1242,7 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
           externalId: true,
           costPrice: true,
           status: true,
-          product: { select: { productName: true, imageUrl: true, sellingPrice: true, costPrice: true } },
+          product: { select: { skuCode: true, productName: true, imageUrl: true, sellingPrice: true, costPrice: true } },
           channel: { select: { id: true, channelName: true, shopName: true } },
         },
       });
@@ -1259,6 +1262,7 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
           skuId: cp.id,
           productId: cp.productId ?? "",
           sku: cp.channelSku,
+          stockSku: linked ? cp.product!.skuCode : null,
           productName: linked ? cp.product!.productName : cp.productName,
           // Để null khi sàn không có phân loại — trước đây gán tạm = tên sản
           // phẩm làm giao diện in tên hai lần và Excel xuất "Phân loại" sai
@@ -1293,6 +1297,7 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
           skuId: p.id,
           productId: p.id,
           sku: p.skuCode,
+          stockSku: null,
           productName: p.productName,
           variantName: null,
           channelName: ChannelName.OFFLINE,
@@ -1337,6 +1342,17 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
       catalogPending: await findChannelsPendingCatalog(req.ownerId!),
       items: rows,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/finance/sku-products/search-count?q= — từ khóa khớp bao nhiêu dòng trong TOÀN BỘ gian, bỏ qua mọi bộ
+// lọc. Trang chỉ hỏi khi đang ra 0 kết quả, để báo "có N mã đang bị bộ lọc che" thay vì "không tìm thấy".
+router.get("/sku-products/search-count", async (req: AuthRequest, res, next) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
+    res.json({ rows: q ? await countSkuSearchEverywhere(req.ownerId!, q) : 0 });
   } catch (err) {
     next(err);
   }

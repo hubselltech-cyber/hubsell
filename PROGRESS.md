@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~20:45) — Anh chốt sửa cả 4 điểm ô tìm SKU trang Giá vốn
+
+- Xếp theo độ khớp, hiện mã khớp và tự mở khi ít, báo rõ khi bộ lọc che kèm nút xem, tìm theo mã kho. Từ khóa giống mã chỉ dò cột mã: prod 8 giây còn 0,9 giây. Sửa kèm cột Giá bán 8 px ở khổ 1280. Chi tiết docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Soi log `[sku-products]` lượt tìm thật.
+
 ## Phiên 03/11 (~20:15) — Khảo sát ô tìm SKU trang Giá vốn: khách báo tìm không ra
 
 - Log chỉ có `tldc`: khớp 1.960 sản phẩm, 40 trang, sắp theo mới nhất, dòng thu gọn không hiện mã. Bộ lọc che kết quả mà câu báo nói không có trong cả gian (dựng lại được). Mã gõ đủ vẫn ở trang 1 (60 mã thử). Đề nghị 4 sửa trong docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt, chưa sửa.

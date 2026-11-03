@@ -103,3 +103,26 @@ Tốc độ: log prod 2,5–6 giây mỗi lượt tìm.
 3. Bộ lọc che kết quả thì nói rõ "có N mã ở Đã gỡ hoặc Đã có giá" kèm nút xem, không báo không tìm thấy. Ở tab sàn khác cũng vậy.
 4. Tìm thêm theo mã kho.
 
+### Đã làm 03/11 ~20:45 (anh chốt "Sửa cả 4 điểm")
+
+1. Xếp theo độ khớp: trùng đúng mã, bắt đầu bằng, chứa, rồi tên. Cùng độ khớp xếp theo mã. `searchRank` trong `backend/src/lib/sku-catalog-page.ts`, gian dưới trần dùng `frontend/src/lib/sku-search.ts`.
+2. Dòng sản phẩm hiện tối đa 3 mã khớp kèm "+N mã". Trang có từ 30 mã trở xuống thì tự mở. Số 3 và 30 là mặc định tự chọn.
+3. Ra 0 kết quả mà có bộ lọc: hỏi `GET /sku-products/search-count`, báo "Có N mã khớp nhưng đang bị ẩn bởi bộ lọc" kèm một nút bỏ lọc. Không có thật thì nói không có trong toàn bộ gian hàng.
+4. Tìm theo mã kho, khớp theo mã kho thì dòng ghi thêm "Kho: mã".
+
+Thêm hai việc để không chậm đi, đo trên prod chỉ đọc trước khi đẩy. Bản đầu mất 5,8–9,5 giây vì gập dấu thêm cột:
+
+| Cách | Gõ `tldc` | Gõ đủ mã | Không khớp gì |
+|---|---|---|---|
+| Bản đầu | 5,8–8,1 giây | chưa đo | 9,5 giây |
+| Bỏ qua gập dấu với giá trị không dấu | 4,7–4,9 giây | 8,0 giây | 8,5 giây |
+| Từ khóa giống mã chỉ dò cột mã | không áp dụng | 0,9 giây | dò tiếp đến tên |
+
+Từ khóa giống mã là có số, gạch nối hoặc gạch dưới, không có khoảng trắng. Có mã khớp thì không dò đến tên, nên tên chứa đúng từ khóa đó sẽ không hiện. Không mã nào khớp mới dò đến tên, tổng tối đa khoảng 9–10 giây. Từ khóa chữ thường như `tldc` vẫn dò cả tên, khoảng 5 giây.
+
+Sửa kèm: cột Giá bán chỉ còn 8 px ở khổ 1280 và làm trang tràn ngang, lỗi có từ trước, nay cột rộng cố định.
+
+Đã soi bằng dữ liệu giả ở 1280 và 1700, sáng và tối. Phần gập dấu dùng chung nên ô tìm tab Mapping cũng nhanh hơn với giá trị không dấu.
+
+Tốc độ tìm theo tên vẫn chậm. Muốn nhanh hơn cần cột gập sẵn kèm index, chưa làm.
+

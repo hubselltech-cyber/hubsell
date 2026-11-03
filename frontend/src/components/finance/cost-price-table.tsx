@@ -35,6 +35,7 @@ import {
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber } from "@/lib/format";
+import { normalizeText } from "@/lib/text";
 import { TABLE_HEAD_EMPHASIS, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { variantLabel } from "@/lib/variant-group";
@@ -67,6 +68,14 @@ const ACTION_SLOT = "flex w-[4.75rem] shrink-0 items-center";
 /** Tiêu đề cột canh phải theo mép Ô NHẬP chứ không theo mép ô bảng (chừa chỗ ACTION_SLOT). */
 const COST_HEAD = "w-64 pr-[6.125rem] text-right";
 
+/** Đang tìm mà trang có từ ngần này mã trở xuống thì tự mở các dòng sản phẩm. Số tự chọn, đủ gọn trong một màn. */
+const AUTO_EXPAND_MAX_SKUS = 30;
+/** Dòng sản phẩm thu gọn hiện tối đa ngần này mã khớp, còn lại ghi "+N mã". */
+const MATCHED_CODES_SHOWN = 3;
+
+/** Từ khóa đang tìm, để ô mã biết khi nào cần nói rõ dòng này khớp theo mã kho. */
+const SearchKeywordContext = React.createContext("");
+
 export interface ProductGroup {
   key: string;
   /** Tên mẫu hàng (đã cắt đuôi phân loại) */
@@ -77,6 +86,8 @@ export interface ProductGroup {
 
 interface CostPriceTableProps {
   groups: ProductGroup[];
+  /** Từ khóa của kết quả đang hiện; rỗng = không tìm. */
+  searchKeyword?: string;
   /**
    * Đang lọc theo kỳ (tới từ "N đơn chưa có giá vốn"): số đơn trong kỳ của từng
    * skuId đang bị loại khỏi lợi nhuận — in cạnh tên để khách biết nhập mã nào
@@ -94,6 +105,7 @@ interface CostPriceTableProps {
 
 export function CostPriceTable({
   groups,
+  searchKeyword = "",
   periodOrderCounts,
   drafts,
   onDraftChange,
@@ -104,6 +116,26 @@ export function CostPriceTable({
 }: CostPriceTableProps) {
   // Mặc định thu gọn hết cho bảng ngắn gọn; mở nhóm nào thì nhớ nhóm đó
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
+
+  // Tìm ra ít mã thì mở sẵn để thấy mã ngay. Chỉ chạy khi đổi từ khóa hoặc đổi trang: lưu giá xong nạp lại
+  // cùng danh sách thì giữ nguyên nhóm khách đang mở hoặc đã thu.
+  const pageKey = groups.map((g) => g.key).join("|");
+  const wasSearching = React.useRef(false);
+  React.useEffect(() => {
+    if (!searchKeyword) {
+      if (wasSearching.current) setExpanded(new Set());
+      wasSearching.current = false;
+      return;
+    }
+    wasSearching.current = true;
+    const total = groups.reduce((n, g) => n + g.variants.length, 0);
+    setExpanded(
+      total <= AUTO_EXPAND_MAX_SKUS
+        ? new Set(groups.filter((g) => g.variants.length > 1).map((g) => g.key))
+        : new Set()
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ theo từ khóa và danh sách mẫu, xem trên
+  }, [searchKeyword, pageKey]);
 
   function toggle(key: string) {
     setExpanded((prev) => {
@@ -121,6 +153,7 @@ export function CostPriceTable({
     // cột đó phải luôn nhìn thấy; Giá bán chỉ để tham khảo nên ra rìa.
     // containerClassName overflow-visible: khung cuộn ngang mặc định sẽ chặn
     // tiêu đề bám dính; bảng table-fixed theo % nên không cần cuộn ngang.
+    <SearchKeywordContext.Provider value={searchKeyword}>
     <Table className="table-fixed" containerClassName="overflow-visible">
       {/* Tiêu đề đậm, chữ 14px, BÁM DÍNH dưới thanh đầu app (h-16) khi khách cuộn
           (anh Trung 28/09) */}
@@ -128,13 +161,13 @@ export function CostPriceTable({
         className={cn(TABLE_HEAD_EMPHASIS, "sticky top-16 z-20 [&_th]:text-sm")}
       >
         <TableRow>
-          <TableHead className="w-[38%]">Sản phẩm</TableHead>
+          <TableHead>Sản phẩm</TableHead>
           {/* Mã phân loại trên sàn đứng dưới mã SKU — seller quen quản theo mã sàn */}
           <TableHead className="w-[16%]">Mã SKU · Mã sàn</TableHead>
           {/* Cửa hàng (tên gian) thay cho Kênh bán — kênh đã có bộ lọc phía trên (anh Trung 28/09) */}
-          <TableHead className="w-[18%]">Cửa hàng</TableHead>
+          <TableHead className="w-[15%]">Cửa hàng</TableHead>
           <TableHead className={COST_HEAD}>Giá vốn (VNĐ)</TableHead>
-          <TableHead className="text-right">Giá bán</TableHead>
+          <TableHead className="w-32 text-right">Giá bán</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -186,6 +219,7 @@ export function CostPriceTable({
         )}
       </TableBody>
     </Table>
+    </SearchKeywordContext.Provider>
   );
 }
 
@@ -323,7 +357,9 @@ function ParentRow({
       </TableCell>
 
       {/* Mã SKU để trống ở dòng cha — chi tiết nằm ở dòng con; cửa hàng hiện khi cả mẫu chung một gian */}
-      <TableCell className={TEXT_SUB}>—</TableCell>
+      <TableCell className={TEXT_SUB}>
+        <MatchedCodes variants={group.variants} />
+      </TableCell>
       <TableCell className={cn(TEXT_SUB, "truncate")} title={shopName ?? undefined}>
         {shopName ?? "—"}
       </TableCell>
@@ -605,17 +641,48 @@ function MarketplaceCode({ label, code }: { label: string; code: string }) {
   );
 }
 
+/** Đang tìm: dòng sản phẩm thu gọn hiện luôn các mã khớp, không bắt khách mở từng dòng để dò. */
+function MatchedCodes({ variants }: { variants: SkuProduct[] }) {
+  const keyword = React.useContext(SearchKeywordContext);
+  if (!keyword) return <>—</>;
+  const shown = variants.slice(0, MATCHED_CODES_SHOWN);
+  const rest = variants.length - shown.length;
+  return (
+    <div className="min-w-0">
+      {shown.map((v) => (
+        <p key={v.skuId} className="truncate font-mono" title={v.sku}>
+          {v.sku}
+        </p>
+      ))}
+      {rest > 0 && <p className="text-xs">+{formatNumber(rest)} mã</p>}
+    </div>
+  );
+}
+
 /**
  * Ô Mã SKU: mã người bán đặt (dòng chính) + mã PHÂN LOẠI trên sàn ở dòng dưới.
  * Mã SẢN PHẨM luôn nằm dưới TÊN sản phẩm (dòng cha / dòng đơn lẻ), không ở đây
  * — anh Trung 28/09. Học Salework: nhiều seller quản theo mã sàn hơn tên.
  */
 function SkuCell({ item }: { item: SkuProduct }) {
+  const keyword = normalizeText(React.useContext(SearchKeywordContext));
+  // Khớp theo mã kho mà mã sàn khác hẳn: nói rõ, không khách tưởng tìm ra nhầm dòng.
+  const stock = item.stockSku ?? "";
+  const matchedByStock =
+    keyword !== "" &&
+    stock !== "" &&
+    normalizeText(stock).includes(keyword) &&
+    !normalizeText(item.sku).includes(keyword);
   return (
     <div className="min-w-0">
       <p className="truncate font-mono" title={item.sku}>
         {item.sku}
       </p>
+      {matchedByStock && (
+        <p className="truncate font-mono text-xs text-muted-foreground" title={`Mã kho: ${stock}`}>
+          Kho: {stock}
+        </p>
+      )}
       {item.modelId && <MarketplaceCode label="PL" code={item.modelId} />}
     </div>
   );

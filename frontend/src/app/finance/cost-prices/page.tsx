@@ -38,6 +38,7 @@ import {
   ApiError,
   backfillCostPricesToOrders,
   fetchCatalogPending,
+  fetchSkuSearchCount,
   fetchMissingCostSkus,
   fetchSkuProducts,
   fillSuggestedCosts,
@@ -55,7 +56,9 @@ import {
 import { formatDayVN, type DateRange } from "@/lib/date-range";
 import { exportCostPricesToExcel } from "@/lib/excel";
 import { formatVND, formatNumber } from "@/lib/format";
+import { skuSearchRank } from "@/lib/sku-search";
 import { normalizeText } from "@/lib/text";
+import { CostSearchEmpty } from "@/components/finance/cost-search-empty";
 import { cn } from "@/lib/utils";
 import { baseProductName, variantGroupKey } from "@/lib/variant-group";
 
@@ -323,6 +326,7 @@ export default function CostPricesPage() {
       return (
         normalizeText(item.productName).includes(keyword) ||
         normalizeText(item.sku).includes(keyword) ||
+        normalizeText(item.stockSku ?? "").includes(keyword) ||
         normalizeText(item.variantName ?? "").includes(keyword) ||
         // Mã sản phẩm / mã phân loại trên sàn — seller quen tra theo mã sàn
         (item.itemId ?? "").includes(keyword) ||
@@ -332,6 +336,15 @@ export default function CostPricesPage() {
     // SKU gây nhiều đơn chưa tính lãi lên đầu (sort ổn định: cùng số thì giữ thứ tự cũ)
     if (periodFocus) {
       rows.sort((a, b) => periodOrdersOf(periodFocus, b) - periodOrdersOf(periodFocus, a));
+    } else if (keyword) {
+      // Khớp sát nhất lên đầu, cùng độ khớp thì theo mã (cùng luật với máy chủ).
+      const ranked = rows.map((item) => ({
+        item,
+        rank: skuSearchRank(item, keyword),
+        code: normalizeText(item.sku),
+      }));
+      ranked.sort((a, b) => a.rank - b.rank || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+      return ranked.map((r) => r.item);
     }
     return rows;
   }, [listedItems, search, statusFilter, periodFocus, serverPaged]);
@@ -343,6 +356,39 @@ export default function CostPricesPage() {
     for (const item of filteredItems) out[item.skuId] = periodOrdersOf(periodFocus, item);
     return out;
   }, [filteredItems, periodFocus]);
+
+  // Từ khóa của kết quả đang hiện: gian lớn là từ khóa máy chủ đã tìm, không phải chữ đang gõ dở.
+  const activeKeyword = truncated ? serverQ : search.trim();
+  const filtersNarrow =
+    channel !== "all" || shop !== "all" || listing !== "all" || statusFilter !== "all";
+  const noSearchResult =
+    !loading && activeKeyword !== "" && !periodFocus && filteredItems.length === 0;
+  // Ra 0 kết quả khi đang có bộ lọc: hỏi toàn gian xem có phải bộ lọc đang che không.
+  const [searchElsewhere, setSearchElsewhere] = useState<{
+    key: string;
+    rows: number | null;
+  } | null>(null);
+  const searchKey = `${activeKeyword}|${channel}|${shop}|${listing}|${statusFilter}`;
+  useEffect(() => {
+    if (!noSearchResult || !filtersNarrow) return;
+    let stale = false;
+    fetchSkuSearchCount(activeKeyword)
+      .then((r) => {
+        if (!stale) setSearchElsewhere({ key: searchKey, rows: r.rows });
+      })
+      .catch(() => {
+        if (!stale) setSearchElsewhere({ key: searchKey, rows: null });
+      });
+    return () => {
+      stale = true;
+    };
+  }, [noSearchResult, filtersNarrow, activeKeyword, searchKey]);
+  const hiddenBy = [
+    channel !== "all" ? `tab ${TABS.find((t) => t.key === channel)?.label ?? channel}` : null,
+    shop !== "all" ? "gian đang chọn" : null,
+    listing !== "all" ? LISTING_OPTIONS.find((o) => o.value === listing)?.label : null,
+    statusFilter !== "all" ? STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label : null,
+  ].filter((x): x is string => Boolean(x));
 
   const isFiltering = search.trim() !== "" || statusFilter !== "all" || periodFocus !== null;
 
@@ -981,12 +1027,24 @@ export default function CostPricesPage() {
                   <Loader2 className="mx-auto mb-2 size-8 animate-spin motion-reduce:animate-none" />
                   {pendingNote}
                 </div>
-              ) : items.length === 0 && truncated && serverQ ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">
-                  <SearchX className="mx-auto mb-2 size-8" />
-                  Không tìm thấy mã nào khớp “{serverQ}” trong {formatNumber(totalRows)} mã SKU
-                  sàn của gian. Thử gõ ngắn hơn, hoặc mã sản phẩm trên sàn.
-                </div>
+              ) : activeKeyword && !periodFocus && filteredItems.length === 0 ? (
+                <CostSearchEmpty
+                  keyword={activeKeyword}
+                  checking={
+                    loading || (filtersNarrow && searchElsewhere?.key !== searchKey)
+                  }
+                  filtersNarrow={filtersNarrow}
+                  rowsEverywhere={
+                    searchElsewhere?.key === searchKey ? searchElsewhere.rows : null
+                  }
+                  hiddenBy={hiddenBy}
+                  onShowAll={() => {
+                    setChannel("all");
+                    setShop("all");
+                    setListing("all");
+                    setStatusFilter("all");
+                  }}
+                />
               ) : items.length === 0 && serverPaged ? (
                 <div className="py-12 text-center">
                   <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
@@ -1041,6 +1099,7 @@ export default function CostPricesPage() {
                 <Refreshing active={loading}>
                   <CostPriceTable
                     groups={pagedGroups}
+                    searchKeyword={activeKeyword}
                     periodOrderCounts={periodOrderCounts}
                     drafts={drafts}
                     onDraftChange={(skuId, digits) =>

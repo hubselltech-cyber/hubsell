@@ -52,7 +52,11 @@ const VN_PLAIN =
 
 /** Biểu thức SQL gập dấu một cột text — cùng kết quả với foldSearchText. */
 export function foldedColumn(column: Prisma.Sql): Prisma.Sql {
-  return Prisma.sql`translate(lower(normalize(COALESCE(${column}, ''), NFC)), ${VN_ACCENTED}, ${VN_PLAIN})`;
+  // Giá trị toàn chữ không dấu (số byte = số ký tự) chỉ cần lower: translate dò từng ký tự qua cả bảng dấu nên rất
+  // đắt. Mã SKU gần như luôn không dấu; đo prod 03/11 trên 52.830 dòng còn dưới 1 giây khi chỉ dò các cột mã.
+  const v = Prisma.sql`COALESCE(${column}, '')`;
+  return Prisma.sql`CASE WHEN octet_length(${v}) = char_length(${v}) THEN lower(${v})
+    ELSE translate(lower(normalize(${v}, NFC)), ${VN_ACCENTED}, ${VN_PLAIN}) END`;
 }
 
 const GROUP_ITEM = Prisma.sql`COALESCE(NULLIF(split_part(cp."externalId", '-', 1), ''), 'cp:' || cp.id)`;
@@ -69,54 +73,114 @@ function buildWhere(f: SkuCatalogFilters): Prisma.Sql {
   if (f.listing === "delisted") conds.push(Prisma.sql`cp.status::text <> 'ACTIVE'`);
   if (f.status === "missing") conds.push(Prisma.sql`${EFFECTIVE_COST} <= 0`);
   if (f.status === "filled") conds.push(Prisma.sql`${EFFECTIVE_COST} > 0`);
-  const needle = foldSearchText(f.q);
-  if (needle) {
-    // strpos thay vì LIKE: từ khóa có "_" hay "%" vẫn là chữ thường, không thành ký tự đại diện.
-    const hit = (col: Prisma.Sql) => Prisma.sql`strpos(${foldedColumn(col)}, ${needle}) > 0`;
-    conds.push(
-      Prisma.sql`(${Prisma.join(
-        [
-          hit(Prisma.sql`cp."channelSku"`),
-          hit(Prisma.sql`cp."productName"`),
-          hit(Prisma.sql`cp."variantName"`),
-          hit(Prisma.sql`cp."itemSku"`),
-          hit(Prisma.sql`cp."externalId"`),
-          hit(Prisma.sql`p."productName"`),
-        ],
-        " OR "
-      )})`
-    );
-  }
   return Prisma.join(conds, " AND ");
 }
 
+/**
+ * Độ khớp của một dòng với từ khóa (03/11/2026, khách gõ `tldc` ra 40 trang xếp theo hàng mới về):
+ * 0 trùng đúng mã, 1 bắt đầu bằng từ khóa, 2 mã có chứa từ khóa, 3 tên hoặc phân loại có chứa, NULL không khớp.
+ * Mã gồm mã SKU sàn, mã kho, mã mẫu và mã sàn. Tên chỉ gập dấu khi các mã không khớp, vì gập tên là bước đắt nhất.
+ * Dùng strpos, starts_with thay LIKE: từ khóa có "_" hay "%" vẫn là chữ thường.
+ * includeNames = false: chỉ dò các cột mã.
+ */
+function searchRank(
+  q: string,
+  includeNames: boolean
+): { lateral: Prisma.Sql; rank: Prisma.Sql; code: Prisma.Sql } {
+  const needle = foldSearchText(q);
+  if (!needle) return { lateral: Prisma.empty, rank: Prisma.sql`0`, code: Prisma.sql`NULL::text` };
+  const raw = q.trim();
+  const hit = (col: Prisma.Sql) => Prisma.sql`strpos(${foldedColumn(col)}, ${needle}) > 0`;
+  return {
+    // OFFSET 0 để Postgres không lặp lại phép gập ở mỗi nhánh CASE.
+    lateral: Prisma.sql`CROSS JOIN LATERAL (
+      SELECT ${foldedColumn(Prisma.sql`cp."channelSku"`)} AS sku,
+             ${foldedColumn(Prisma.sql`p."skuCode"`)} AS kho,
+             ${foldedColumn(Prisma.sql`cp."itemSku"`)} AS mau,
+             lower(COALESCE(cp."externalId", '')) AS ext
+      OFFSET 0
+    ) AS x`,
+    rank: Prisma.sql`CASE
+      WHEN x.sku = ${needle} OR x.kho = ${needle} OR x.mau = ${needle} OR x.ext = ${needle}
+        OR split_part(x.ext, '-', 1) = ${raw} OR split_part(x.ext, '-', 2) = ${raw} THEN 0
+      WHEN starts_with(x.sku, ${needle}) OR starts_with(x.kho, ${needle}) OR starts_with(x.mau, ${needle}) THEN 1
+      WHEN strpos(x.sku, ${needle}) > 0 OR strpos(x.kho, ${needle}) > 0 OR strpos(x.mau, ${needle}) > 0
+        OR strpos(x.ext, ${needle}) > 0 THEN 2
+      ${
+        includeNames
+          ? Prisma.sql`WHEN ${hit(Prisma.sql`cp."productName"`)} OR ${hit(Prisma.sql`cp."variantName"`)} OR ${hit(Prisma.sql`p."productName"`)} THEN 3`
+          : Prisma.empty
+      }
+    END`,
+    code: Prisma.sql`x.sku`,
+  };
+}
+
+/**
+ * Từ khóa trông như mã: có số, gạch nối hoặc gạch dưới, không có khoảng trắng. Loại này dò các cột mã trước, thấy là
+ * trả ngay, không gập tên của cả danh mục (đo prod 03/11, 52.830 dòng: 0,9 giây thay vì 8 giây). Không thấy mã nào
+ * mới dò tiếp đến tên. Chữ thường như "vay dam" hay "tldc" vẫn dò cả tên, vì mã trùng chữ không được che tên sản phẩm.
+ */
+export function looksLikeSkuCode(q: string): boolean {
+  const s = q.trim();
+  return /[0-9_-]/.test(s) && !/\s/.test(s);
+}
+
 export async function loadSkuCatalogPage(f: SkuCatalogFilters): Promise<SkuCatalogPage> {
+  if (looksLikeSkuCode(f.q)) {
+    const byCode = await queryPage(f, false);
+    if (byCode.filteredRows > 0) return byCode;
+  }
+  return queryPage(f, true);
+}
+
+async function queryPage(f: SkuCatalogFilters, includeNames: boolean): Promise<SkuCatalogPage> {
   const offset = (f.page - 1) * f.pageSize;
   // Một câu duy nhất: lọc MỘT lần (MATERIALIZED) rồi đếm + chia trang trên kết quả. Bản đầu chạy 3 câu
   // riêng nên phép gập dấu lặp 3 lần trên cả danh mục (tìm 60.000 dòng mất 1,4–2,9 giây, đo 03/11/2026).
+  const { lateral, rank, code } = searchRank(f.q, includeNames);
   const [row] = await prisma.$queryRaw<{ rows: number; groups: number; ids: string[] }[]>(Prisma.sql`
     WITH f AS MATERIALIZED (
-      SELECT cp.id, cp."createdAt", cp."channelId" || ':' || ${GROUP_ITEM} AS key
-      FROM "ChannelProduct" cp
-      JOIN "Channel" c ON c.id = cp."channelId"
-      LEFT JOIN "Product" p ON p.id = cp."productId"
-      WHERE ${buildWhere(f)}
+      SELECT y.id, y."createdAt", y.key, y.rnk, y.code FROM (
+        SELECT cp.id, cp."createdAt", cp."channelId" || ':' || ${GROUP_ITEM} AS key, ${rank} AS rnk, ${code} AS code
+        FROM "ChannelProduct" cp
+        JOIN "Channel" c ON c.id = cp."channelId"
+        LEFT JOIN "Product" p ON p.id = cp."productId"
+        ${lateral}
+        WHERE ${buildWhere(f)}
+      ) y
+      WHERE y.rnk IS NOT NULL
     ),
     g AS (
-      SELECT key, max("createdAt") AS last FROM f GROUP BY key
+      SELECT key, max("createdAt") AS last, min(rnk) AS rnk, min(code COLLATE "C") AS code FROM f GROUP BY key
     ),
     pg AS (
-      SELECT key, row_number() OVER (ORDER BY last DESC, key) AS rn
+      SELECT key, row_number() OVER (ORDER BY rnk, code, last DESC, key) AS rn
       FROM g
-      ORDER BY last DESC, key
+      ORDER BY rnk, code, last DESC, key
       LIMIT ${f.pageSize}::int OFFSET ${offset}::int
     )
     SELECT (SELECT count(*) FROM f)::int AS rows,
            (SELECT count(*) FROM g)::int AS groups,
            COALESCE(
-             (SELECT json_agg(x.id ORDER BY x.rn, x."createdAt" DESC, x.id)
-              FROM (SELECT f.id, f."createdAt", pg.rn FROM pg JOIN f ON f.key = pg.key) x),
+             (SELECT json_agg(x.id ORDER BY x.rn, x.rnk, x.code COLLATE "C", x."createdAt" DESC, x.id)
+              FROM (SELECT f.id, f."createdAt", f.rnk, f.code, pg.rn FROM pg JOIN f ON f.key = pg.key) x),
              '[]'::json
            ) AS ids`);
   return { ids: row?.ids ?? [], filteredRows: row?.rows ?? 0, totalGroups: row?.groups ?? 0 };
+}
+
+/** Số dòng khớp từ khóa trong toàn bộ gian, bỏ qua mọi bộ lọc: để báo "có N mã đang bị bộ lọc che". */
+export async function countSkuSearchEverywhere(ownerId: string, q: string): Promise<number> {
+  const r = await loadSkuCatalogPage({
+    ownerId,
+    channelName: null,
+    channelId: null,
+    q,
+    status: "all",
+    listing: "all",
+    page: 1,
+    pageSize: 1,
+  });
+  return r.filteredRows;
 }
