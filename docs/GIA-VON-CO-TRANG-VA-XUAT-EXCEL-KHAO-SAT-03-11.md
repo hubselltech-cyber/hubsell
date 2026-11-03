@@ -126,3 +126,5 @@ Sửa kèm: cột Giá bán chỉ còn 8 px ở khổ 1280 và làm trang tràn 
 
 Tốc độ tìm theo tên vẫn chậm. Muốn nhanh hơn cần cột gập sẵn kèm index, chưa làm.
 
+LIVE 20:15 `f77b73b4`. Kiểm prod: giao diện đã là bản mới, route tìm trả 200 cả hai đường bằng tài khoản công ty không có gian nên 0 dòng. Chưa kiểm được giao diện trên tài khoản có dữ liệu; thời gian trên dữ liệu khách là đo câu lệnh chỉ đọc. Theo dõi log `[sku-products]` lượt tìm thật, không nhờ khách thử.
+
