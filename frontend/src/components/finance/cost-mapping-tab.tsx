@@ -40,6 +40,7 @@ import {
   type CostMappingTarget,
   type CostSkuGroup,
   type CostSkuGroupList,
+  type CostSkuGroupQuery,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
@@ -77,6 +78,8 @@ const FILTERS: { key: StatusFilter; label: string }[] = [
 
 /** Số mẫu (dòng cha) vẽ mỗi lượt — shop nghìn mã không dựng cả nghìn ô nhập một lúc. */
 const PAGE_SIZE = 100;
+/** Danh mục lớn: số mã mỗi lượt đọc từ máy chủ. Khớp SKU_GROUP_PAGE_DEFAULT ở backend. */
+const SERVER_PAGE_CODES = 200;
 
 /**
  * Nút áp dụng dài ngắn khác nhau ("Lưu" / "Áp dụng 12 gian" / "Áp dụng cả mẫu") —
@@ -95,7 +98,7 @@ function errorMessage(err: unknown, fallback: string) {
   return err instanceof ApiError ? err.message : fallback;
 }
 
-function shopLabel(e: CostMappingTarget) {
+function shopLabel(e: Pick<CostMappingTarget, "channelName" | "shopName">) {
   return `${CHANNEL_META[e.channelName].label} · ${e.shopName}`;
 }
 
@@ -117,17 +120,22 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
   const [visible, setVisible] = React.useState(PAGE_SIZE);
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
-  // Phạm vi quá lớn (03/11/2026): máy chủ trả 413 + câu hướng dẫn, hiện tại chỗ thay vì bảng.
-  const [tooLarge, setTooLarge] = React.useState<string | null>(null);
+  // Danh mục lớn (03/11/2026): máy chủ lọc và chia trang. null = lượt đầu, chưa lọc gì.
+  const [serverQuery, setServerQuery] = React.useState<CostSkuGroupQuery | null>(null);
+  const serverPaged = data?.serverPaged ?? null;
+  const isServerPaged = serverPaged !== null;
+  const loadSeq = React.useRef(0);
 
   const load = React.useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
-      const res = await fetchCostSkuGroups(scope ?? undefined);
+      const res = await fetchCostSkuGroups(scope ?? undefined, serverQuery ?? undefined);
+      if (seq !== loadSeq.current) return;
       setData(res);
-      setTooLarge(null);
       if (!scope) {
         const seen = new Map<string, string>();
+        for (const s of res.serverPaged?.shops ?? []) seen.set(s.channelId, shopLabel(s));
         for (const g of res.groups) {
           for (const e of g.entries) if (!seen.has(e.channelId)) seen.set(e.channelId, shopLabel(e));
         }
@@ -138,16 +146,24 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
         );
       }
     } catch (err) {
-      if (err instanceof ApiError && err.status === 413) {
-        setData(null);
-        setTooLarge(err.message);
-        return;
-      }
-      toast.error(errorMessage(err, "Không tải được danh sách mã SKU"));
+      if (seq === loadSeq.current) toast.error(errorMessage(err, "Không tải được danh sách mã SKU"));
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
-  }, [scope]);
+  }, [scope, serverQuery]);
+
+  // Danh mục lớn: gõ tìm hoặc đổi nhóm thì hỏi lại máy chủ, đợi gõ xong mới hỏi.
+  React.useEffect(() => {
+    if (!isServerPaged) return;
+    const q = search.trim();
+    const t = setTimeout(() => {
+      setServerQuery((prev) => {
+        if ((prev?.q ?? "") === q && (prev?.status ?? "all") === status) return prev;
+        return { q, status, limit: SERVER_PAGE_CODES };
+      });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [isServerPaged, search, status]);
 
   React.useEffect(() => {
     load();
@@ -180,11 +196,12 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
 
   const buckets = React.useMemo<ProductBucket[]>(() => {
     if (!data) return [];
-    const rawKeyword = search.trim();
+    // Danh mục lớn: máy chủ đã lọc theo đúng từ khóa và nhóm của lượt tải này.
+    const rawKeyword = data.serverPaged ? "" : search.trim();
     const keyword = normalizeText(rawKeyword);
     const map = new Map<string, ProductBucket>();
     for (const g of data.groups) {
-      if (status !== "all" && g.status !== status) continue;
+      if (!data.serverPaged && status !== "all" && g.status !== status) continue;
       if (
         keyword &&
         !normalizeText(g.code).includes(keyword) &&
@@ -210,18 +227,13 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
         });
       }
     }
-    return [...map.values()];
+    const all = [...map.values()];
+    // Còn mã chưa đọc thì mẫu cuối có thể mới về một nửa: để lượt sau hiện đủ, "Giá vốn chung" không áp thiếu.
+    const sp = data.serverPaged;
+    return sp && sp.matchedCodes > sp.limit && all.length > 1 ? all.slice(0, -1) : all;
   }, [data, search, status]);
 
   React.useEffect(() => setVisible(PAGE_SIZE), [search, status]);
-
-  if (tooLarge) {
-    return (
-      <Card className="border-amber-200 bg-amber-50/60">
-        <CardContent className="p-4 text-sm text-amber-900">{tooLarge}</CardContent>
-      </Card>
-    );
-  }
 
   if (!data) {
     return (
@@ -233,6 +245,7 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
 
   const { totals } = data;
   const countOf = (k: StatusFilter) => (k === "all" ? totals.codes : totals[k]);
+  const shownBuckets = isServerPaged ? buckets : buckets.slice(0, visible);
 
   return (
     <div className="space-y-6">
@@ -357,7 +370,7 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {buckets.slice(0, visible).map((b) =>
+                  {shownBuckets.map((b) =>
                     b.skus.length === 1 ? (
                       <SkuRow
                         key={b.key}
@@ -399,7 +412,25 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
                   )}
                 </TableBody>
               </Table>
-              {buckets.length > visible && (
+              {serverPaged?.canLoadMore && (
+                <div className="border-t p-3 text-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={loading}
+                    onClick={() =>
+                      setServerQuery({
+                        q: serverQuery?.q ?? "",
+                        status: serverQuery?.status ?? "all",
+                        limit: serverPaged.limit + SERVER_PAGE_CODES,
+                      })
+                    }
+                  >
+                    Xem thêm, còn {formatNumber(serverPaged.matchedCodes - serverPaged.limit)} mã
+                  </Button>
+                </div>
+              )}
+              {!isServerPaged && buckets.length > visible && (
                 <div className="border-t p-3 text-center">
                   <Button variant="ghost" size="sm" onClick={() => setVisible((v) => v + PAGE_SIZE)}>
                     Xem thêm {formatNumber(Math.min(PAGE_SIZE, buckets.length - visible))} sản phẩm
@@ -779,7 +810,7 @@ function SkuRow({
             type="button"
             disabled={deciding}
             onClick={() => decide(true)}
-            className="mt-1.5 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+            className="mt-1.5 whitespace-normal text-left text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
           >
             Giữ giá riêng từng gian, không nhắc nữa
           </button>
@@ -904,7 +935,7 @@ function BucketRow({
         </div>
       </TableCell>
       <TableCell className={TEXT_SUB}>—</TableCell>
-      <TableCell className="text-xs">
+      <TableCell className="whitespace-normal text-xs">
         {emptySlots === 0 && conflict === 0 ? (
           <span className="text-muted-foreground">Đã đủ giá vốn</span>
         ) : (

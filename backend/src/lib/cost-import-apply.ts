@@ -1,5 +1,10 @@
 import { Prisma } from "@prisma/client";
-import { backfillOrderLinesByChannelProducts, backfillOrderLinesByProducts } from "./cost-price";
+import { prisma } from "./prisma";
+import {
+  backfillOrderLinesByChannelProducts,
+  backfillOrderLinesByProducts,
+  invalidateOwnerCostCaches,
+} from "./cost-price";
 
 type Db = Prisma.TransactionClient;
 export type CostImportPlan = { productCost: Map<string, number>; shopCost: Map<string, number> };
@@ -52,4 +57,26 @@ export async function backfillCostImport(
   const byProduct = await backfillOrderLinesByProducts(db, written.productIds, ownerId);
   const byChannel = await backfillOrderLinesByChannelProducts(db, written.channelProductIds);
   return byProduct + byChannel;
+}
+
+/**
+ * Lưu giá rồi vá đơn cũ. Giá của khách lưu trọn gói trước: hoặc cập nhật hết, hoặc không đổi gì. Vá đơn chạy sau
+ * khi đã lưu, vá lỗi cũng không làm mất giá vừa nhập; lượt kéo danh mục của gian sẽ vá lại.
+ */
+export async function saveCostPlan(
+  plan: CostImportPlan,
+  ownerId: string
+): Promise<{ updated: number; backfilled: number }> {
+  const written = await prisma.$transaction((tx) => writeCostImportPlan(tx, plan, ownerId), {
+    timeout: 30_000,
+    maxWait: 10_000,
+  });
+  let backfilled = 0;
+  try {
+    backfilled = await backfillCostImport(prisma, written, ownerId);
+  } catch (e) {
+    console.error(`[cost-save] chủ shop ${ownerId}: đã lưu giá, vá đơn cũ lỗi: ${(e as Error).message}`);
+  }
+  await invalidateOwnerCostCaches(ownerId);
+  return { updated: written.productIds.length + written.channelProductIds.length, backfilled };
 }

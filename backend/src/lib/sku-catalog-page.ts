@@ -51,7 +51,7 @@ const VN_PLAIN =
   "aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd";
 
 /** Biểu thức SQL gập dấu một cột text — cùng kết quả với foldSearchText. */
-function foldedColumn(column: Prisma.Sql): Prisma.Sql {
+export function foldedColumn(column: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`translate(lower(normalize(COALESCE(${column}, ''), NFC)), ${VN_ACCENTED}, ${VN_PLAIN})`;
 }
 

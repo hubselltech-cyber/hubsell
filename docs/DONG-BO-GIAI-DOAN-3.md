@@ -470,3 +470,30 @@ Sửa, ghi nhớ thứ tự đã thử:
 Chưa kiểm được: chưa có lượt nhập thật sau bản `158376cd`, câu UPDATE chưa chạy trên prod, và không biết số mức giá trong file bị lỗi vì log không ghi lượt thất bại.
 
 Còn lại, chưa sửa: `backfillOwnerCostPrices` (nút tính lại cả shop) và các câu khác vẫn dùng `SKU_MATCH`/`OWN_COST_EXISTS` kiểu cũ.
+
+### 6.10. Tab Mapping giá vốn: bỏ chặn 5.000 mã, tính trong DB (03/11 ~19:45)
+
+Anh báo khách 57.877 dòng mở tab chỉ thấy câu "vượt 5.000 mã". Câu đó do `c5bdeef7`/`7a26843e` thêm chiều nay, cùng kiểu lỗi với mục 6.7: chặn tính năng của khách thay vì sửa đường đọc.
+
+Đã làm:
+- `lib/cost-mapping-catalog.ts`: một câu SQL gộp theo mã, đếm 4 trạng thái, tìm bỏ dấu, lọc nhóm, chọn trang. Luật trạng thái khớp `groupSkusByCode`; test đối chiếu đường DB với đường RAM trên cùng dữ liệu.
+- Danh mục vượt `catalogRowLimit()` đi đường DB, nhỏ hơn giữ đường cũ. Giao diện hỏi lại máy chủ khi gõ tìm (đợi 300 ms) và khi đổi nhóm; "Xem thêm" đọc thêm 200 mã, tối đa 5.000 mã một lượt xem, số 200 và 5.000 là mặc định tự chọn. Mẫu cuối của lượt đọc có thể mới về một nửa nên để lượt sau hiện đủ, "Giá vốn chung" không áp thiếu.
+- "Điền tất cả" tính trong DB. Bảng giá theo mã mẫu đọc theo lô 2.000 dòng, không giữ cả danh mục; xem trước đếm đủ, danh sách hiển thị tối đa 5.000 dòng mỗi loại; file Excel mã chưa khớp cũng tối đa 5.000 và nói rõ trên màn hình.
+- Ghi giá một câu cho cả loạt qua `saveCostPlan`, dùng chung với Nhập Excel (mục 6.9).
+- Bỏ `CatalogTooLargeError`, mã 413 và hộp báo ở giao diện.
+- Soi giao diện bằng dữ liệu giả 1.600 mã, 3 gian, tên và mã dài, khổ 1280 và 1700, sáng và tối: sửa dòng trạng thái mẫu và nút "Giữ giá riêng" tràn cột ở 1280.
+
+Đo trên DB dev, 57.877 dòng, 2 gian (`COST_MAPPING_LOAD=do.txt npx vitest run src/lib/__tests__/cost-mapping-catalog-db.test.ts`):
+
+| Việc | Thời gian | RSS tăng |
+|---|---|---|
+| Mở tab | 998 ms | 1 MB |
+| Lọc nhóm | 675 ms | 0 MB |
+| Tìm theo tên | 2.211 ms | 0 MB |
+| Xem 2.000 mã | 814 ms | 14 MB |
+| Độ phủ bảng giá, đọc theo lô | 1.327 ms | 47 MB |
+| Xem trước bảng giá, đọc theo lô | 1.313 ms | 39 MB |
+| Điền tất cả | 619 ms | 0 MB |
+
+Hạn chế: chia trang theo tên sản phẩm chữ thường, nên mẫu có tên lệch xa nhau có thể tách ở cuối lượt đọc. Chữ hoa trong SQL theo collation của DB, mã có dấu khác collation chỉ ảnh hưởng thứ tự và số đếm chip, nhóm hiển thị vẫn gộp lại bằng `normalizeSkuCode`.
+

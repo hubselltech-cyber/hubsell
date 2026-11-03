@@ -25,9 +25,11 @@
 //   đó — gian không chọn giữ nguyên giá của nó. Không gửi = mọi gian (như cũ).
 // ============================================================
 
-import { ChannelName } from "@prisma/client";
+import { ChannelName, Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
-import { applyChannelCostPrice, effectiveSkuCost } from "./cost-price";
+import { effectiveSkuCost } from "./cost-price";
+import { saveCostPlan } from "./cost-import-apply";
+import { loadSkuGroupPage, loadSuggestedFill, type SkuGroupStatusFilter } from "./cost-mapping-catalog";
 
 /* ───────────────────────── Phần THUẦN (vitest đánh thẳng) ───────────────────────── */
 
@@ -239,25 +241,10 @@ export function countPlan(plan: MappingPlan) {
 export class MappingInputError extends Error {}
 
 /**
- * ★ 03/11/2026 — CHẮN ĐƯỜNG TẢI NGUYÊN DANH MỤC TRÊN WEB (cùng khuôn GET /sku-products: chủ shop
- * 57.877 dòng SKU sàn, web 512 MB). Trần = SKU_PRODUCTS_MAX_ROWS (mặc định 5.000, tự chọn). Việc theo
- * MÃ CỤ THỂ (lưu giá → gợi ý gian khác, "Áp dụng N gian") đã chuyển sang chỉ đọc đúng các mã đó nên
- * không bị chặn; việc cần CẢ danh mục (tab Mapping, bảng giá tự nhập) trả 413 câu rõ. Nhập Excel đọc theo mã trong file (cost-import-load.ts).
- * Sửa gốc = lát 3.8 (docs/DONG-BO-GIAI-DOAN-3.md). autoFillCostForNewSkus chạy ở worker 2 GB, không chặn.
+ * ★ 03/11/2026: danh mục vượt catalogRowLimit() (mặc định 5.000 dòng, tự chọn) không tải vào RAM web mà tính
+ * trong DB (cost-mapping-catalog.ts), bảng giá tự nhập đọc theo lô. Bản đầu chặn hẳn bằng 413 làm khách 57.877
+ * dòng không mở được tab; KHÔNG chặn nữa.
  */
-export class CatalogTooLargeError extends MappingInputError {
-  constructor(
-    public readonly totalRows: number,
-    public readonly limit: number
-  ) {
-    super(
-      `Phạm vi này có ${totalRows.toLocaleString("vi-VN")} mã SKU sàn, vượt ${limit.toLocaleString("vi-VN")} mã mà tính năng này đang xử lý được một lượt. ` +
-        "Anh/chị vui lòng điền giá ở tab Nhập giá vốn: gõ tên hoặc mã vào ô tìm rồi điền tại dòng."
-    );
-  }
-}
-
-export const CATALOG_TOO_LARGE_CODE = "CATALOG_TOO_LARGE";
 
 /** Trần dòng một lượt tải danh mục trên web (env SKU_PRODUCTS_MAX_ROWS, mặc định 5.000). */
 export function catalogRowLimit(env: Record<string, string | undefined> = process.env): number {
@@ -265,19 +252,14 @@ export function catalogRowLimit(env: Record<string, string | undefined> = proces
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000;
 }
 
-/** Đếm dòng trong phạm vi; vượt trần thì ném CatalogTooLargeError TRƯỚC khi tải vào RAM. */
-export async function assertCatalogWithinLimit(ownerId: string, channelIds?: string[]): Promise<void> {
-  const limit = catalogRowLimit();
-  const totalRows = await prisma.channelProduct.count({
-    where: {
-      channel: {
-        userId: ownerId,
-        channelName: { not: ChannelName.OFFLINE },
-        ...(channelIds ? { id: { in: channelIds } } : {}),
-      },
+function catalogScope(ownerId: string, channelIds?: string[]) {
+  return {
+    channel: {
+      userId: ownerId,
+      channelName: { not: ChannelName.OFFLINE },
+      ...(channelIds ? { id: { in: channelIds } } : {}),
     },
-  });
-  if (totalRows > limit) throw new CatalogTooLargeError(totalRows, limit);
+  } satisfies Prisma.ChannelProductWhereInput;
 }
 
 /** Dạng cần hỏi DB cho một mã đã chuẩn hóa: NFC và NFD (sàn trả cả hai); so khớp chính xác làm lại trong RAM. */
@@ -293,6 +275,36 @@ async function loadRules(ownerId: string): Promise<CostRule[]> {
   return rules.map((r) => ({ code: r.code, cost: Number(r.costPrice) }));
 }
 
+const TARGET_SELECT = {
+  id: true,
+  channelId: true,
+  channelSku: true,
+  productName: true,
+  variantName: true,
+  imageUrl: true,
+  externalId: true,
+  productId: true,
+  costPrice: true,
+  product: { select: { costPrice: true } },
+  channel: { select: { channelName: true, shopName: true } },
+} satisfies Prisma.ChannelProductSelect;
+
+function toTarget(cp: Prisma.ChannelProductGetPayload<{ select: typeof TARGET_SELECT }>): MappingTarget {
+  return {
+    skuId: cp.id,
+    channelId: cp.channelId,
+    channelName: cp.channel.channelName,
+    shopName: cp.channel.shopName,
+    sku: cp.channelSku,
+    productName: cp.productName,
+    variantName: cp.variantName,
+    imageUrl: cp.imageUrl,
+    externalId: cp.externalId,
+    productId: cp.product ? cp.productId : null,
+    currentCost: effectiveSkuCost(cp),
+  };
+}
+
 /**
  * Mọi SKU sàn của chủ shop (trong các gian `channelIds` nếu có) kèm giá vốn
  * HIỆU LỰC (giá riêng của gian, không có thì giá mặc định ở kho).
@@ -306,11 +318,7 @@ async function loadTargets(
   if (codes && codes.size === 0) return [];
   const cps = await prisma.channelProduct.findMany({
     where: {
-      channel: {
-        userId: ownerId,
-        channelName: { not: ChannelName.OFFLINE },
-        ...(channelIds ? { id: { in: channelIds } } : {}),
-      },
+      ...catalogScope(ownerId, channelIds),
       ...(codes
         ? {
             OR: [...codes].flatMap(codeLookupVariants).map((c) => ({
@@ -319,55 +327,44 @@ async function loadTargets(
           }
         : {}),
     },
-    select: {
-      id: true,
-      channelId: true,
-      channelSku: true,
-      productName: true,
-      variantName: true,
-      imageUrl: true,
-      externalId: true,
-      productId: true,
-      costPrice: true,
-      product: { select: { costPrice: true } },
-      channel: { select: { channelName: true, shopName: true } },
-    },
+    select: TARGET_SELECT,
     orderBy: [{ channelId: "asc" }, { channelSku: "asc" }],
   });
   // So khớp chính xác theo normalizeSkuCode: ILIKE của DB coi "_" và "%" là ký tự đại diện.
   const matched = codes ? cps.filter((cp) => codes.has(normalizeSkuCode(cp.channelSku))) : cps;
-  return matched.map((cp) => ({
-    skuId: cp.id,
-    channelId: cp.channelId,
-    channelName: cp.channel.channelName,
-    shopName: cp.channel.shopName,
-    sku: cp.channelSku,
-    productName: cp.productName,
-    variantName: cp.variantName,
-    imageUrl: cp.imageUrl,
-    externalId: cp.externalId,
-    productId: cp.product ? cp.productId : null,
-    currentCost: effectiveSkuCost(cp),
-  }));
+  return matched.map(toTarget);
 }
 
-/** Ghi giá riêng của gian cho một loạt SKU sàn, gom theo giá. */
+const TARGET_BATCH = 2000;
+
+/** Duyệt cả danh mục theo lô, không giữ lại trong RAM. Phân trang id > con trỏ, không cursor+skip. */
+async function forEachTargetBatch(ownerId: string, fn: (batch: MappingTarget[]) => void): Promise<void> {
+  let after: string | undefined;
+  for (;;) {
+    const batch = await prisma.channelProduct.findMany({
+      where: { ...catalogScope(ownerId), ...(after ? { id: { gt: after } } : {}) },
+      select: TARGET_SELECT,
+      orderBy: { id: "asc" },
+      take: TARGET_BATCH,
+    });
+    if (batch.length === 0) return;
+    fn(batch.map(toTarget));
+    if (batch.length < TARGET_BATCH) return;
+    after = batch[batch.length - 1].id;
+  }
+}
+
+/** Ghi giá riêng của gian cho một loạt SKU sàn, một câu cho cả loạt. */
 async function writeRows(
   ownerId: string,
   rows: { skuId: string; newCost: number }[]
 ): Promise<{ updatedSkus: number; backfilledOrderLines: number }> {
-  const byCost = new Map<number, string[]>();
-  for (const r of rows) {
-    const list = byCost.get(r.newCost);
-    if (list) list.push(r.skuId);
-    else byCost.set(r.newCost, [r.skuId]);
-  }
-  let backfilledOrderLines = 0;
-  for (const [cost, ids] of byCost) {
-    const r = await applyChannelCostPrice(ids, cost, ownerId);
-    backfilledOrderLines += r.backfilledOrderLines;
-  }
-  return { updatedSkus: rows.length, backfilledOrderLines };
+  if (rows.length === 0) return { updatedSkus: 0, backfilledOrderLines: 0 };
+  const r = await saveCostPlan(
+    { productCost: new Map(), shopCost: new Map(rows.map((x) => [x.skuId, x.newCost])) },
+    ownerId
+  );
+  return { updatedSkus: r.updated, backfilledOrderLines: r.backfilled };
 }
 
 // ---------- 1 + 2. Gộp theo mã: đề xuất + đặt giá một lần ----------
@@ -387,8 +384,55 @@ async function loadGroups(
   return groupSkusByCode(targets, new Set(dismissed.map((d) => d.code)));
 }
 
-export async function listSkuGroups(ownerId: string, channelIds?: string[]) {
-  await assertCatalogWithinLimit(ownerId, channelIds);
+export const SKU_GROUP_PAGE_DEFAULT = 200;
+const SKU_GROUP_PAGE_MAX = 5000;
+
+export interface SkuGroupQuery {
+  q?: string;
+  status?: SkuGroupStatusFilter;
+  limit?: number;
+}
+
+/** Danh mục vượt trần: gộp, đếm, lọc và chia trang trong DB; web chỉ đọc đúng các dòng của trang. */
+async function listSkuGroupsFromDb(ownerId: string, channelIds: string[] | undefined, query: SkuGroupQuery) {
+  const limit = Math.min(Math.max(1, Math.floor(query.limit ?? SKU_GROUP_PAGE_DEFAULT)), SKU_GROUP_PAGE_MAX);
+  const page = await loadSkuGroupPage({
+    ownerId,
+    channelIds,
+    q: query.q ?? "",
+    status: query.status ?? "all",
+    limit,
+  });
+  const [cps, dismissed] = await Promise.all([
+    prisma.channelProduct.findMany({
+      where: { id: { in: page.ids } },
+      select: TARGET_SELECT,
+      orderBy: [{ channelId: "asc" }, { channelSku: "asc" }],
+    }),
+    prisma.costConflictDismissal.findMany({
+      where: { userId: ownerId, code: { in: page.codes } },
+      select: { code: true },
+    }),
+  ]);
+  const order = new Map(page.codes.map((c, i) => [c, i]));
+  const groups = groupSkusByCode(cps.map(toTarget), new Set(dismissed.map((d) => d.code))).sort(
+    (a, b) => (order.get(a.code) ?? Infinity) - (order.get(b.code) ?? Infinity)
+  );
+  return {
+    totals: page.totals,
+    groups,
+    serverPaged: {
+      limit,
+      matchedCodes: page.matchedCodes,
+      canLoadMore: page.matchedCodes > limit && limit < SKU_GROUP_PAGE_MAX,
+      shops: page.shops,
+    },
+  };
+}
+
+export async function listSkuGroups(ownerId: string, channelIds?: string[], query: SkuGroupQuery = {}) {
+  const rows = await prisma.channelProduct.count({ where: catalogScope(ownerId, channelIds) });
+  if (rows > catalogRowLimit()) return listSkuGroupsFromDb(ownerId, channelIds, query);
   const groups = await loadGroups(ownerId, channelIds);
   const totals = { codes: groups.length, suggest: 0, conflict: 0, missing: 0, complete: 0 };
   let suggestEmptySlots = 0;
@@ -413,13 +457,17 @@ export async function fillSuggested(
   channelIds?: string[]
 ) {
   const only = onlyCodes ? new Set(onlyCodes.map(normalizeSkuCode).filter(Boolean)) : null;
-  // Có danh sách mã = chỉ đọc đúng các mã đó; "Điền tất cả" mới cần cả danh mục.
-  if (!only) await assertCatalogWithinLimit(ownerId, channelIds);
+  if (!only) {
+    // "Điền tất cả": tính trong DB, cỡ danh mục nào cũng chạy được.
+    const fill = await loadSuggestedFill(ownerId, channelIds);
+    const w = await writeRows(ownerId, fill.rows);
+    return { codes: fill.codes, filledSkus: w.updatedSkus, backfilledOrderLines: w.backfilledOrderLines };
+  }
   const rows: { skuId: string; newCost: number }[] = [];
   let codes = 0;
-  for (const g of await loadGroups(ownerId, channelIds, only ?? undefined)) {
+  for (const g of await loadGroups(ownerId, channelIds, only)) {
     if (g.status !== "suggest" || g.suggestedCost === null) continue;
-    if (only && !only.has(g.code)) continue;
+    if (!only.has(g.code)) continue;
     codes++;
     for (const e of g.entries) {
       if (e.currentCost <= 0) {
@@ -520,29 +568,67 @@ export async function findCostSiblings(ownerId: string, skuIds: string[]) {
 
 // ---------- 3. Bảng giá tự nhập ----------
 
-export async function buildRulesPlan(ownerId: string): Promise<MappingPlan> {
+/** Trần mỗi danh sách trả về giao diện khi xem trước; số đếm luôn đủ. */
+export const RULES_PREVIEW_LIST_MAX = 5000;
+
+async function loadMatcher(ownerId: string) {
   const rules = await loadRules(ownerId);
   if (rules.length === 0) {
     throw new MappingInputError("Bảng giá tự nhập đang trống — hãy thêm mã và giá vốn trước.");
   }
-  await assertCatalogWithinLimit(ownerId);
-  return planMapping(await loadTargets(ownerId), buildRuleMatcher(rules));
+  return buildRuleMatcher(rules);
+}
+
+const byShopThenSku = (a: MappingTarget, b: MappingTarget) =>
+  a.channelId.localeCompare(b.channelId) || a.sku.localeCompare(b.sku);
+
+/** Xem trước đọc theo lô: đếm đủ cả danh mục, chỉ giữ tối đa RULES_PREVIEW_LIST_MAX dòng mỗi loại để hiển thị. */
+export async function previewRules(ownerId: string) {
+  const match = await loadMatcher(ownerId);
+  const counts = { matched: 0, fill: 0, same: 0, conflict: 0, unmatched: 0 };
+  const fill: MappingRow[] = [];
+  const conflict: MappingRow[] = [];
+  const unmatched: MappingTarget[] = [];
+  await forEachTargetBatch(ownerId, (batch) => {
+    const plan = planMapping(batch, match);
+    const c = countPlan(plan);
+    counts.matched += c.matched;
+    counts.fill += c.fill;
+    counts.same += c.same;
+    counts.conflict += c.conflict;
+    counts.unmatched += c.unmatched;
+    for (const r of plan.rows) {
+      const list = r.status === "fill" ? fill : r.status === "conflict" ? conflict : null;
+      if (list && list.length < RULES_PREVIEW_LIST_MAX) list.push(r);
+    }
+    for (const t of plan.unmatched) {
+      if (unmatched.length < RULES_PREVIEW_LIST_MAX) unmatched.push(t);
+    }
+  });
+  return {
+    counts,
+    // Dòng "same" không cần ai nhìn — chỉ trả những gì sẽ đổi hoặc cần quyết.
+    rows: [...conflict, ...fill].sort(byShopThenSku),
+    unmatched: unmatched.sort(byShopThenSku),
+  };
 }
 
 export async function applyRules(ownerId: string, overwriteSkuIds: string[]) {
-  const plan = await buildRulesPlan(ownerId);
+  const match = await loadMatcher(ownerId);
   const allowed = new Set(overwriteSkuIds);
-  const chosen = plan.rows.filter(
-    (r) =>
-      r.status === "fill" ||
-      (r.status === "conflict" && allowed.has(r.skuId))
-  );
+  const chosen: { skuId: string; newCost: number }[] = [];
+  let filled = 0;
+  let overwritten = 0;
+  await forEachTargetBatch(ownerId, (batch) => {
+    for (const r of planMapping(batch, match).rows) {
+      if (r.status === "fill") filled++;
+      else if (r.status === "conflict" && allowed.has(r.skuId)) overwritten++;
+      else continue;
+      chosen.push({ skuId: r.skuId, newCost: r.newCost });
+    }
+  });
   const result = await writeRows(ownerId, chosen);
-  return {
-    filled: chosen.filter((r) => r.status === "fill").length,
-    overwritten: chosen.filter((r) => r.status === "conflict").length,
-    backfilledOrderLines: result.backfilledOrderLines,
-  };
+  return { filled, overwritten, backfilledOrderLines: result.backfilledOrderLines };
 }
 
 /**
@@ -550,27 +636,29 @@ export async function applyRules(ownerId: string, overwriteSkuIds: string[]) {
  * thấy ngay mã nào gõ sai (phủ 0 SKU) và còn bao nhiêu SKU chưa có mã nào nhận.
  */
 export async function listRulesWithCoverage(ownerId: string) {
-  await assertCatalogWithinLimit(ownerId);
-  const [rules, targets] = await Promise.all([
-    prisma.costPriceRule.findMany({
-      where: { userId: ownerId },
-      orderBy: { code: "asc" },
-    }),
-    loadTargets(ownerId),
-  ]);
-  const match = buildRuleMatcher(
-    rules.map((r) => ({ code: r.code, cost: Number(r.costPrice) }))
-  );
+  const rules = await prisma.costPriceRule.findMany({
+    where: { userId: ownerId },
+    orderBy: { code: "asc" },
+  });
+  const match = buildRuleMatcher(rules.map((r) => ({ code: r.code, cost: Number(r.costPrice) })));
   const hits = new Map<string, number>();
   let covered = 0;
-  for (const t of targets) {
-    const m = match(t.sku);
-    if (!m) continue;
-    covered++;
-    hits.set(m.code, (hits.get(m.code) ?? 0) + 1);
+  let totalSkus = 0;
+  if (rules.length === 0) {
+    totalSkus = await prisma.channelProduct.count({ where: catalogScope(ownerId) });
+  } else {
+    await forEachTargetBatch(ownerId, (batch) => {
+      totalSkus += batch.length;
+      for (const t of batch) {
+        const m = match(t.sku);
+        if (!m) continue;
+        covered++;
+        hits.set(m.code, (hits.get(m.code) ?? 0) + 1);
+      }
+    });
   }
   return {
-    totalSkus: targets.length,
+    totalSkus,
     coveredSkus: covered,
     rules: rules.map((r) => ({
       id: r.id,

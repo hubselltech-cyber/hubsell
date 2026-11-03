@@ -2859,6 +2859,19 @@ export interface CostSkuGroupList {
     suggestEmptySlots: number;
   };
   groups: CostSkuGroup[];
+  /** Có = danh mục lớn, máy chủ đã lọc và chia trang; giao diện không lọc lại. */
+  serverPaged?: {
+    limit: number;
+    matchedCodes: number;
+    canLoadMore: boolean;
+    shops: { channelId: string; channelName: ChannelName; shopName: string }[];
+  };
+}
+
+export interface CostSkuGroupQuery {
+  q: string;
+  status: "all" | CostSkuGroup["status"];
+  limit: number;
 }
 
 export interface CostMappingRow extends CostMappingTarget {
@@ -2944,9 +2957,16 @@ export function applyCostRules(overwriteSkuIds: string[]) {
  * `channelIds` = các gian đang chọn ở tab Mapping (giá vốn theo gian): gộp,
  * đề xuất và áp giá chỉ trong các gian đó. Không truyền = mọi gian.
  */
-export function fetchCostSkuGroups(channelIds?: string[]) {
-  const q = channelIds ? `?channelIds=${encodeURIComponent(channelIds.join(","))}` : "";
-  return apiFetch<CostSkuGroupList>(`/api/finance/cost-prices/mapping/skus${q}`);
+export function fetchCostSkuGroups(channelIds?: string[], query?: CostSkuGroupQuery) {
+  const p = new URLSearchParams();
+  if (channelIds) p.set("channelIds", channelIds.join(","));
+  if (query) {
+    if (query.q) p.set("q", query.q);
+    if (query.status !== "all") p.set("status", query.status);
+    p.set("limit", String(query.limit));
+  }
+  const q = p.toString();
+  return apiFetch<CostSkuGroupList>(`/api/finance/cost-prices/mapping/skus${q ? `?${q}` : ""}`);
 }
 
 /** Nút "Điền tất cả": mọi mã đã có giá ở một gian → điền ô trống ở gian khác. */

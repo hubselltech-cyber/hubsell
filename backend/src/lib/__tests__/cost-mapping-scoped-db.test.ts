@@ -1,9 +1,8 @@
-// Đường theo MÃ CỤ THỂ không tải cả danh mục + chắn đường cần cả danh mục (03/11/2026). Chạy trên DB dev.
+// Đường theo MÃ CỤ THỂ không tải cả danh mục; danh mục vượt trần vẫn chạy, không chặn (03/11/2026). Chạy trên DB dev.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../prisma";
 import {
-  CatalogTooLargeError,
   fillSuggested,
   findCostSiblings,
   listSkuGroups,
@@ -56,10 +55,11 @@ describe("cost-mapping: theo mã cụ thể", () => {
     expect(r.fillShops).toBe(1);
   });
 
-  it("vượt trần: đường theo mã vẫn chạy, đường cả danh mục báo CatalogTooLargeError", async () => {
+  it("vượt trần: tab vẫn mở được, đường theo mã vẫn chạy", async () => {
     process.env.SKU_PRODUCTS_MAX_ROWS = "2";
-    await expect(listSkuGroups(userId)).rejects.toBeInstanceOf(CatalogTooLargeError);
-    await expect(fillSuggested(userId)).rejects.toBeInstanceOf(CatalogTooLargeError);
+    const list = await listSkuGroups(userId);
+    expect("serverPaged" in list).toBe(true);
+    expect(list.totals.codes).toBe(2);
     expect((await findCostSiblings(userId, [savedId])).fillable).toBe(1);
 
     const filled = await fillSuggested(userId, ["AO_1"]);

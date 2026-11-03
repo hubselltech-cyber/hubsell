@@ -6,6 +6,11 @@
 
 ---
 
+## Phiên 03/11 (~19:45) — Anh: tab Mapping của khách không nhận → bỏ chặn 5.000 mã, tính trong DB
+
+- Câu "vượt 5.000 mã" do em thêm chiều nay. Thay bằng một câu SQL gộp, đếm, lọc, tìm, chia trang; Điền tất cả và bảng giá theo mã mẫu cũng không còn chặn. Dev 57.877 dòng: mở tab ~1 giây, RSS +1 MB. Chi tiết `docs/DONG-BO-GIAI-DOAN-3.md` mục 6.10.
+- ⏳ Soi log và SQL prod, không nhờ khách thử.
+
 ## Phiên 03/11 (~19:20) — Nhập file báo lỗi: câu vá đơn cũ quá 120 giây, 4 lượt của khách bị hủy
 
 - Anh hỏi có đo lại không; log web lộ 4 lượt nhập hỏng 18:14, 18:21, 18:33, 18:38. Gốc: câu vá đơn theo sản phẩm kho dò từng dòng đơn qua cả gian, prod trung bình 4,3 giây mỗi lần gọi, tối đa 54 giây, gọi theo từng mức giá.

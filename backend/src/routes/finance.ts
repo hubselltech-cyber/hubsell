@@ -33,7 +33,7 @@ import {
 } from "../lib/cost-price";
 import { catalogRowLimit, findCostSiblings } from "../lib/cost-mapping";
 import { loadCostImportData } from "../lib/cost-import-load";
-import { backfillCostImport, writeCostImportPlan } from "../lib/cost-import-apply";
+import { saveCostPlan } from "../lib/cost-import-apply";
 import { loadVariantNames, type OrderLineRef } from "../lib/order-line-names";
 import {
   classifyShippingDiff,
@@ -2497,20 +2497,7 @@ router.post(
         return;
       }
 
-      // Giá của khách lưu trọn gói trước: hoặc cập nhật hết, hoặc không đổi gì. Vá đơn cũ chạy SAU khi đã lưu, vá
-      // lỗi cũng không làm mất giá vừa nhập; lượt kéo danh mục của gian sẽ vá lại (repairZeroCostLinesForChannel).
-      const written = await prisma.$transaction((tx) => writeCostImportPlan(tx, plan, ownerId), {
-        timeout: 30_000,
-        maxWait: 10_000,
-      });
-      let backfilled = 0;
-      try {
-        backfilled = await backfillCostImport(prisma, written, ownerId);
-      } catch (e) {
-        console.error(`[cost-import] chủ shop ${ownerId}: đã lưu giá, vá đơn cũ lỗi: ${(e as Error).message}`);
-      }
-      const result = { updated: written.productIds.length + written.channelProductIds.length, backfilled };
-      await invalidateOwnerCostCaches(ownerId);
+      const result = await saveCostPlan(plan, ownerId);
       console.log(
         `[cost-import] chủ shop ${ownerId}: file ${rows.length} dòng, khớp ${plan.matchedRows}, ghi ${result.updated} ô, vá ${result.backfilled} dòng đơn, ${errors.length} lỗi, ${Date.now() - importStartedAt} ms`
       );

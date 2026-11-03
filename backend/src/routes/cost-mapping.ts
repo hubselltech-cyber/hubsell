@@ -23,10 +23,7 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import {
   applyRules,
-  buildRulesPlan,
-  CATALOG_TOO_LARGE_CODE,
-  CatalogTooLargeError,
-  countPlan,
+  previewRules,
   fillSuggested,
   listRulesWithCoverage,
   listSkuGroups,
@@ -35,6 +32,7 @@ import {
   setConflictDismissed,
   setCostForCodes,
 } from "../lib/cost-mapping";
+import type { SkuGroupStatusFilter } from "../lib/cost-mapping-catalog";
 
 const router = Router();
 
@@ -214,11 +212,9 @@ router.post("/rules/import", upload.single("file"), async (req: AuthRequest, res
   }
 });
 
+const SKU_GROUP_STATUSES = new Set(["all", "suggest", "conflict", "missing", "complete"]);
+
 function sendMappingError(err: unknown, res: Response): boolean {
-  if (err instanceof CatalogTooLargeError) {
-    res.status(413).json({ error: err.message, code: CATALOG_TOO_LARGE_CODE });
-    return true;
-  }
   if (err instanceof MappingInputError) {
     res.status(400).json({ error: err.message });
     return true;
@@ -228,13 +224,7 @@ function sendMappingError(err: unknown, res: Response): boolean {
 
 router.post("/rules/preview", async (req: AuthRequest, res, next) => {
   try {
-    const plan = await buildRulesPlan(req.ownerId!);
-    res.json({
-      counts: countPlan(plan),
-      // Dòng "same" không cần ai nhìn — chỉ trả những gì sẽ đổi hoặc cần quyết.
-      rows: plan.rows.filter((r) => r.status !== "same"),
-      unmatched: plan.unmatched,
-    });
+    res.json(await previewRules(req.ownerId!));
   } catch (err) {
     if (!sendMappingError(err, res)) next(err);
   }
@@ -252,7 +242,14 @@ router.post("/rules/apply", async (req: AuthRequest, res, next) => {
 
 router.get("/mapping/skus", async (req: AuthRequest, res, next) => {
   try {
-    res.json(await listSkuGroups(req.ownerId!, readChannelScope(req.query.channelIds)));
+    const status = String(req.query.status ?? "all");
+    res.json(
+      await listSkuGroups(req.ownerId!, readChannelScope(req.query.channelIds), {
+        q: typeof req.query.q === "string" ? req.query.q : "",
+        status: SKU_GROUP_STATUSES.has(status) ? (status as SkuGroupStatusFilter) : "all",
+        limit: Number(req.query.limit) > 0 ? Number(req.query.limit) : undefined,
+      })
+    );
   } catch (err) {
     if (!sendMappingError(err, res)) next(err);
   }

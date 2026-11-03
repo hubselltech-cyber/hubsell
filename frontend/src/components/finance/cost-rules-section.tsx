@@ -132,7 +132,10 @@ export function CostRulesSection({ onApplied }: { onApplied: () => void }) {
 
   const fillRows = preview?.rows.filter((r) => r.status === "fill") ?? [];
   const conflictRows = preview?.rows.filter((r) => r.status === "conflict") ?? [];
-  const willChange = fillRows.length + overwrite.size;
+  const fillCount = preview?.counts.fill ?? 0;
+  const conflictCount = preview?.counts.conflict ?? 0;
+  const unmatchedCount = preview?.counts.unmatched ?? 0;
+  const willChange = fillCount + overwrite.size;
 
   return (
     <div className="space-y-6">
@@ -203,7 +206,7 @@ export function CostRulesSection({ onApplied }: { onApplied: () => void }) {
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
                     <p className="text-sm">
                       Điền giá vốn cho{" "}
-                      <b className="tabular-nums">{formatNumber(fillRows.length)}</b> SKU đang trống
+                      <b className="tabular-nums">{formatNumber(fillCount)}</b> SKU đang trống
                       {overwrite.size > 0 && (
                         <>
                           , ghi đè <b className="tabular-nums">{formatNumber(overwrite.size)}</b>{" "}
@@ -221,7 +224,7 @@ export function CostRulesSection({ onApplied }: { onApplied: () => void }) {
 
                 {conflictRows.length > 0 && (
                   <RowSection
-                    title={`Đang có giá khác (${formatNumber(conflictRows.length)})`}
+                    title={`Đang có giá khác (${formatNumber(conflictCount)})`}
                     hint="Mặc định giữ nguyên giá cũ. Tick những SKU bạn muốn ghi đè bằng giá mới."
                     rows={conflictRows}
                     selection={{ selected: overwrite, onChange: setOverwrite }}
@@ -230,7 +233,7 @@ export function CostRulesSection({ onApplied }: { onApplied: () => void }) {
 
                 {fillRows.length > 0 && (
                   <RowSection
-                    title={`Sẽ điền giá vốn (${formatNumber(fillRows.length)})`}
+                    title={`Sẽ điền giá vốn (${formatNumber(fillCount)})`}
                     rows={fillRows}
                   />
                 )}
@@ -238,9 +241,11 @@ export function CostRulesSection({ onApplied }: { onApplied: () => void }) {
                 {preview.unmatched.length > 0 && (
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
                     <p className="text-sm">
-                      Còn <b className="tabular-nums">{formatNumber(preview.unmatched.length)}</b>{" "}
-                      SKU thiếu giá vốn mà bảng giá chưa có mã nào nhận. Xuất ra Excel, điền cột
-                      Giá vốn rồi nhập lại là xong.
+                      Còn <b className="tabular-nums">{formatNumber(unmatchedCount)}</b> SKU thiếu
+                      giá vốn mà bảng giá chưa có mã nào nhận. Xuất ra Excel, điền cột Giá vốn rồi
+                      nhập lại là xong.
+                      {unmatchedCount > preview.unmatched.length &&
+                        ` File gồm ${formatNumber(preview.unmatched.length)} mã đầu tiên.`}
                     </p>
                     <Button
                       variant="outline"
