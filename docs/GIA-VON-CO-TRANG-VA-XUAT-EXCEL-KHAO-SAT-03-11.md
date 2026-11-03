@@ -128,3 +128,20 @@ Tốc độ tìm theo tên vẫn chậm. Muốn nhanh hơn cần cột gập s�
 
 LIVE 20:15 `f77b73b4`. Kiểm prod: giao diện đã là bản mới, route tìm trả 200 cả hai đường bằng tài khoản công ty không có gian nên 0 dòng. Chưa kiểm được giao diện trên tài khoản có dữ liệu; thời gian trên dữ liệu khách là đo câu lệnh chỉ đọc. Theo dõi log `[sku-products]` lượt tìm thật, không nhờ khách thử.
 
+## Áp giá cho tất cả mã vừa tìm (anh hỏi 03/11 ~20:25, khách demo trên ShipXanh, em chưa xem ShipXanh)
+
+Tìm hiện tại: không sót mã khớp, nhưng chưa ra hết trên một màn. `tldc` trải 40 trang, mặc định lọc Đang bán nên 1.620 dòng đã gỡ bị ẩn mà không có lời báo khi vẫn còn kết quả khác. Chưa có lượt tìm thật nào sau bản `f77b73b4` tính tới 20:20.
+
+Đường áp giá hiện có: "Giá vốn chung" áp cho từng sản phẩm, route `update-cost-bulk` trần 500 mã, không có đường áp cho cả kết quả tìm.
+
+Số thật của khách với `tldc`, dòng đang bán: 19.553 dòng có giá, tất cả đúng 1 mức giá; 4.992 dòng chưa có giá. Cả gian: 4.191 sản phẩm, chỉ 2 sản phẩm có từ 2 mức giá trở lên. Nên nhu cầu áp một giá cho cả họ mã là có thật.
+
+Đề nghị nếu làm:
+- Nút áp nằm cạnh kết quả tìm, máy chủ tự tính lại danh sách theo từ khóa và bộ lọc, không tin danh sách trình duyệt gửi, không vướng trần 500.
+- Mặc định chỉ điền ô trống. Ghi đè giá đang có phải tick riêng và thấy hộp số cũ, số mới. Không hoàn tác được.
+- Chỉ áp cho dòng khớp theo mã, không áp dòng chỉ khớp tên, đúng nguyên tắc đã có ở `lib/cost-mapping.ts`. Hộp xác nhận hiện số mã và vài mã mẫu, vì `tldc` cũng khớp mã chứa chữ đó ở giữa.
+- Đơn cũ: chỉ vá dòng đơn chưa có giá, như mọi đường ghi giá khác.
+- Báo thêm một dòng khi còn mã bị bộ lọc ẩn dù đã có kết quả.
+
+Chưa làm, chờ anh chốt.
+

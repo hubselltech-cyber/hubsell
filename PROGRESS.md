@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~20:25) — Anh hỏi tìm đã ra hết chưa, khách demo ShipXanh áp giá cho cả kết quả tìm
+
+- Không sót mã nhưng `tldc` vẫn 40 trang, 1.620 dòng đã gỡ bị ẩn không báo; chưa có đường áp cho cả kết quả. `tldc` có 19.553 dòng đúng 1 mức giá, 4.992 dòng chưa có giá. Đề nghị thiết kế ở docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt.
+
 ## Phiên 03/11 (~20:45) — Anh chốt sửa cả 4 điểm ô tìm SKU trang Giá vốn
 
 - Xếp theo độ khớp, hiện mã khớp và tự mở khi ít, báo rõ khi bộ lọc che kèm nút xem, tìm theo mã kho. Từ khóa giống mã chỉ dò cột mã: prod 8 giây còn 0,9 giây. Sửa kèm cột Giá bán 8 px ở khổ 1280. Chi tiết docs `GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Soi log `[sku-products]` lượt tìm thật.
