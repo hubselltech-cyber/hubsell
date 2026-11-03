@@ -364,16 +364,22 @@ export async function runProductCatalogSync(): Promise<number> {
     for (let i = 0; i < MAX_PER_CYCLE; i++) {
       if (stopping) break;
       const now = new Date();
-      const due = await prisma.channel.findFirst({
-        where: {
-          status: "ACTIVE",
-          refreshToken: { not: null },
-          channelName: { in: ONLINE },
-          nextProductSyncAt: { lte: now },
-        },
-        // Khách bấm (có mốc xin) trước, rồi tới lịch đêm / thử lại theo hạn.
-        orderBy: [{ productSyncRequestedAt: { sort: "asc", nulls: "last" } }, { nextProductSyncAt: "asc" }],
-      });
+      const dueWhere = {
+        status: "ACTIVE" as const,
+        refreshToken: { not: null },
+        channelName: { in: ONLINE },
+        nextProductSyncAt: { lte: now },
+      };
+      // ★ 03/11 16:05 — Khách bấm (có mốc xin) trước, và trong số đó GIAN NHỎ TRƯỚC (đếm dòng
+      // danh mục đã có): một làn tuần tự mà gian 38.889 SP (≈ 1,5 giờ Shopee) đứng đầu thì mọi
+      // gian vài trăm SP phía sau treo "Đang kéo" cả tiếng (anh thấy 16:00). Hết gian khách bấm
+      // mới tới lịch đêm / thử lại theo hạn.
+      const due =
+        (await prisma.channel.findFirst({
+          where: { ...dueWhere, productSyncRequestedAt: { not: null } },
+          orderBy: [{ channelProducts: { _count: "asc" } }, { productSyncRequestedAt: "asc" }],
+        })) ??
+        (await prisma.channel.findFirst({ where: dueWhere, orderBy: { nextProductSyncAt: "asc" } }));
       if (!due) break;
       // Nhận gian: chỉ tiến trình đổi được lịch mới chạy (nhiều worker không đụng nhau).
       const claimed = await prisma.channel.updateMany({
