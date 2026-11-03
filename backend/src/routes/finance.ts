@@ -21,6 +21,7 @@ import {
   requestProductSyncNow,
 } from "../workers/product-catalog-sync";
 import { heavyRouteGuard } from "../lib/request-ledger";
+import { loadSkuCatalogPage } from "../lib/sku-catalog-page";
 import {
   applyChannelCostPrice,
   applyChannelCostPriceIn,
@@ -1084,6 +1085,17 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
     let truncated = false;
     let totalRows = 0;
     let missingCostDb: number | null = null;
+    // ★ Lát 3.8 (03/11/2026): giao diện gửi paged=1 → gian vượt trần được lọc + chia trang ở DB
+    // (lib/sku-catalog-page.ts) thay vì 5.000 dòng đầu. Gian nhỏ không đổi gì.
+    const paged = req.query.paged === "1";
+    let pageInfo: {
+      page: number;
+      pageSize: number;
+      filteredRows: number;
+      totalGroups: number;
+      delistedCount: number;
+      shops: { key: string; name: string }[];
+    } | null = null;
 
     const rows: {
       skuId: string; // id dùng để cập nhật giá vốn (mapping id hoặc product id)
@@ -1163,8 +1175,54 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
           },
         });
       }
+      let pageIds: string[] | null = null;
+      if (truncated && paged) {
+        const num = (v: unknown, fallback: number) => {
+          const n = Math.floor(Number(v));
+          return Number.isFinite(n) && n > 0 ? n : fallback;
+        };
+        const page = num(req.query.page, 1);
+        const pageSize = Math.min(100, num(req.query.pageSize, 20));
+        const statusQ = req.query.status === "missing" || req.query.status === "filled" ? req.query.status : "all";
+        const listingQ = req.query.listing === "delisted" || req.query.listing === "all" ? req.query.listing : "active";
+        const [result, delistedCount, shopRows] = await Promise.all([
+          loadSkuCatalogPage({
+            ownerId: req.ownerId!,
+            channelName: channel !== "all" && CHANNEL_BY_KEY[channel] ? CHANNEL_BY_KEY[channel] : null,
+            channelId: typeof req.query.shop === "string" && req.query.shop !== "all" ? req.query.shop : null,
+            q,
+            status: statusQ,
+            listing: listingQ,
+            page,
+            pageSize,
+          }),
+          prisma.channelProduct.count({
+            where: { ...whereChannel, status: { not: ChannelProductStatus.ACTIVE } },
+          }),
+          prisma.channel.findMany({
+            where: {
+              userId: req.ownerId!,
+              channelProducts: { some: {} },
+              ...(channel !== "all" && CHANNEL_BY_KEY[channel]
+                ? { channelName: CHANNEL_BY_KEY[channel] }
+                : { channelName: { not: ChannelName.OFFLINE } }),
+            },
+            select: { id: true, shopName: true },
+            orderBy: { createdAt: "asc" },
+          }),
+        ]);
+        pageIds = result.ids;
+        pageInfo = {
+          page,
+          pageSize,
+          filteredRows: result.filteredRows,
+          totalGroups: result.totalGroups,
+          delistedCount,
+          shops: shopRows.map((s) => ({ key: s.id, name: s.shopName })),
+        };
+      }
       const channelProducts = await prisma.channelProduct.findMany({
-        where: { ...whereChannel, ...(truncated ? whereSearch : {}) },
+        where: pageIds ? { id: { in: pageIds } } : { ...whereChannel, ...(truncated ? whereSearch : {}) },
         // Gian lớn: ưu tiên ĐANG BÁN (ACTIVE < DELISTED theo chữ) rồi CHƯA CÓ GIÁ RIÊNG (null/0 trước), cắt maxRows.
         orderBy: truncated
           ? [
@@ -1189,6 +1247,12 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
           channel: { select: { id: true, channelName: true, shopName: true } },
         },
       });
+
+      // Trang từ DB: giữ đúng thứ tự mẫu mà SQL đã chia.
+      if (pageIds) {
+        const rank = new Map(pageIds.map((id, i) => [id, i]));
+        channelProducts.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+      }
 
       for (const cp of channelProducts) {
         const linked = Boolean(cp.productId && cp.product);
@@ -1263,6 +1327,8 @@ router.get("/sku-products", heavyRouteGuard("sku-products"), async (req: AuthReq
       truncated,
       totalRows: truncated ? totalRows : rows.length,
       limit: maxRows,
+      // Có = trang này do máy chủ chia; lọc, tìm, đếm đều đã làm ở DB.
+      serverPage: pageInfo,
       // Chỉ đếm SKU ĐANG BÁN: hàng sàn đã gỡ không cần giá vốn, đếm vào chỉ
       // làm con số "còn thiếu" phình lên vô nghĩa (khách 2.231 mã, 28/09).
       missingCostCount:

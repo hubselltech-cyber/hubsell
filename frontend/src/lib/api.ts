@@ -2594,7 +2594,34 @@ export interface CatalogSyncChannelState {
   pending: boolean;
 }
 
-export function fetchSkuProducts(channel: SkuChannelFilter = "all", q = "") {
+/** Bộ lọc gửi máy chủ khi gian lớn được chia trang ở DB (lát 3.8, 03/11/2026). */
+export interface SkuProductsPageQuery {
+  q: string;
+  shop: string;
+  status: string;
+  listing: string;
+  page: number;
+  pageSize: number;
+}
+
+export function fetchSkuProducts(
+  channel: SkuChannelFilter = "all",
+  q = "",
+  /** Có = xin chia trang ở DB nếu gian vượt trần; gian nhỏ vẫn nhận đủ danh sách như cũ. */
+  paged?: SkuProductsPageQuery
+) {
+  const qs = new URLSearchParams({ channel });
+  if (paged) {
+    qs.set("paged", "1");
+    qs.set("q", paged.q);
+    qs.set("shop", paged.shop);
+    qs.set("status", paged.status);
+    qs.set("listing", paged.listing);
+    qs.set("page", String(paged.page));
+    qs.set("pageSize", String(paged.pageSize));
+  } else if (q) {
+    qs.set("q", q);
+  }
   return apiFetch<{
     channel: string;
     total: number;
@@ -2603,11 +2630,20 @@ export function fetchSkuProducts(channel: SkuChannelFilter = "all", q = "") {
     truncated?: boolean;
     totalRows?: number;
     limit?: number;
+    /** Có = trang này do máy chủ chia, `items` chỉ gồm các dòng của trang. */
+    serverPage?: {
+      page: number;
+      pageSize: number;
+      filteredRows: number;
+      totalGroups: number;
+      delistedCount: number;
+      shops: { key: string; name: string }[];
+    } | null;
     missingCostCount: number;
     /** Thiếu = backend bản cũ chưa trả trường này. */
     catalogPending?: CatalogPendingChannel[];
     items: SkuProduct[];
-  }>(`/api/finance/sku-products?channel=${channel}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
+  }>(`/api/finance/sku-products?${qs.toString()}`);
 }
 
 /** Bản nhẹ để hỏi theo nhịp trong lúc chờ danh mục về (gian mới / vừa xin kéo). */

@@ -14,6 +14,7 @@ Ngày lập: 14/10/2026. Người lập: Claude (Lead Dev). Thiết kế gốc: 
 | 3.5 | Worker còn vòng for → vé (token-refresh, lazada-renewal, stock-reconcile, weekly-report, ads-daily-summary) | Có (1–2 cột lịch) | Chưa |
 | 3.6 | Chỉ số HQ: gian quá hạn quét, tỷ lệ lần đọc bị cắt, trễ mốc nước lớn nhất; test hàng rào | Không | ✅ 15/10 — mục 3 (làm trước 3.3 để có thước đo trước khi đổi nhịp) |
 | 3.7 | Nút "Đồng bộ từ sàn" / "Lấy sản phẩm mới từ sàn" / Nối nhanh → web chỉ XIN kéo, worker kéo (web không kéo danh mục trong request nữa) | Có: 1 cột NULL `Channel.productSyncRequestedAt` (migration `20261103150000_channel_product_sync_requested`) | ✅ 03/11 — mục 5 (anh chốt làm trước 3.3 sau sự cố web OOM 7 lần); commit chưa push, chưa kiểm prod |
+| 3.8 | Trang Giá vốn chia trang ở DB cho gian vượt 5.000 mã; lưu giá chỉ đọc đúng các mã liên quan | Không | ✅ 03/11 — mục 6; chưa kiểm trên dữ liệu thật của khách lớn |
 
 Mỗi lát một lần đẩy (hai lần nếu có công tắc), đường lui = revert commit trừ khi ghi khác.
 
@@ -355,3 +356,51 @@ trang treo "Đang kéo danh mục của gian DarkMan Store, and.not.or…" cả 
 - Đường lui: revert commit (cột thừa vô hại; migration `IF NOT EXISTS`).
 - Chưa làm: đánh thức worker ngay khi khách bấm (tín hiệu pg-boss vài mili-giây như đẩy tồn) — chờ xem khách có kêu chờ
   ≤ 5 phút không; nút "Đồng bộ từ sàn" trên app mobile (không có, giữ nguyên); lát đo RSS ngoài heap của web vẫn chờ.
+
+## 6. Lát 3.8 — Giá vốn cho gian lớn (03/11/2026, anh Trung: "Chắn tạm rồi phân trang", "khách muốn hiện ra và điền", "em chủ động sửa và test")
+
+### 6.1. Gốc
+
+Chủ shop lớn nhất 57.877 dòng ChannelProduct (TikTok 18.988 + Shopee 38.889). Ba đường tải nguyên danh mục vào RAM web:
+`GET /sku-products`; `findCostSiblings` chạy **mỗi lần lưu một giá**; tab Mapping (`loadTargets`). Web Render 1 CPU 512 MB;
+worker là 1 CPU 2 GB nên chịu được việc kéo danh mục.
+
+### 6.2. Đã làm
+
+- `7a26843e`: lưu giá, "Áp dụng N gian", "Áp dụng ô trống" chỉ đọc đúng các mã liên quan (`loadTargets(owner, gian, codes)`: OR
+  insensitive dạng NFC/NFD, so khớp lại bằng `normalizeSkuCode` vì ILIKE coi `_` `%` là ký tự đại diện). Tab Mapping, "Điền tất cả",
+  bảng giá tự nhập, Nhập Excel: đếm trước, vượt `SKU_PRODUCTS_MAX_ROWS` (5.000, số tự chọn) trả 413 `CATALOG_TOO_LARGE`, tab Mapping
+  hiện hộp hướng dẫn. Theo bảng SQL 03/11 có ít nhất 9 chủ shop trên 5.000 dòng bị khóa các tính năng này tới khi làm tiếp.
+- `describeInFlight` bỏ luồng SSE chuông, route nặng trước (bản đầu SSE chiếm hết 8 chỗ nên dòng RSS 15:45 không chỉ ra route).
+- Lát 3.8: `lib/sku-catalog-page.ts` một câu SQL (`WITH f AS MATERIALIZED`) lọc, tìm, đếm, chia trang theo MẪU (gian + mã sản phẩm sàn),
+  thứ tự ổn định theo mẫu mới nhất. `GET /sku-products?paged=1&q&shop&status&listing&page&pageSize`: gian vượt trần trả `serverPage`,
+  gian ≤ 5.000 dòng trả đủ như cũ, giao diện cũ không gửi `paged` vẫn nhận 5.000 dòng đầu. Trang: bộ lọc gửi máy chủ, tìm chờ 400 ms,
+  bỏ phản hồi cũ theo số lượt.
+- Sửa lỗi của bản chắn `7b7be3c9`: thanh lọc bị tháo khi đang tải và khi rỗng, nên ô tìm mất con trỏ lúc gõ và biến mất khi tìm không ra.
+
+### 6.3. Số đo (DB dev Postgres trên máy, 60.006 dòng, CHƯA phải prod Supabase)
+
+| Thao tác | ms |
+|---|---|
+| Trang 1 / trang giữa | 170–175 |
+| Lọc thiếu giá | 147 |
+| Lọc một gian | 316 |
+| Tìm theo chữ, 6 cột, gập dấu | 1.230–1.430 |
+
+Tìm chậm vì quét và gập dấu mọi dòng; thử ghép chuỗi không nhanh hơn. Muốn nhanh hơn cần chỉ mục `pg_trgm`, có migration, chưa làm.
+
+### 6.4. Đã kiểm / chưa kiểm
+
+- Đã kiểm: `sku-catalog-page-db.test.ts`, `cost-mapping-scoped-db.test.ts` chạy thật trên DB dev; vitest `src/lib src/workers src/routes` 378 qua;
+  tsc 2 bên; ESLint trang Giá vốn. Giao diện soi trên trình duyệt với máy chủ GIẢ 57.877 dòng ở 1280 px: gõ tìm giữ con trỏ, tìm không ra vẫn
+  còn ô tìm, sang trang, lọc, đổi tab, điền giá lưu xong dòng không nhảy, hộp tab Mapping ở chế độ tối.
+- CHƯA kiểm: nhánh `paged` của route chạy thật (backend dev không chạy được vì DB dev thiếu cột `productSyncRequestedAt`, lệnh áp migration bị chặn);
+  dữ liệu thật của khách lớn; thời gian trên Supabase.
+
+### 6.5. Hạn chế còn lại
+
+- Chế độ chia trang: xuất Excel chỉ ra trang đang xem; hàng Kho nội bộ chỉ thấy ở tab Offline; dòng không có mã sàn đứng riêng thay vì gom theo tên.
+- Mở từ link "đơn thiếu giá vốn trong kỳ" vẫn đi đường cũ (5.000 dòng đầu), kỳ có mã ngoài 5.000 dòng đó sẽ không khớp.
+- Còn các truy vấn không có trần khác chưa rà hết: `inventory.ts:1063`, `services/listing-copy/source.ts`, `services/ops-alerts.ts`.
+- Mỗi lần deploy backend, gian lớn đang kéo phải kéo lại từ đầu.
+- Trang tràn ngang 26 px ở 1280 px do dải quảng bá app, có từ trước, chưa sửa.

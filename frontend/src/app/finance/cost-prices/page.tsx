@@ -160,6 +160,28 @@ export default function CostPricesPage() {
   const [rowLimit, setRowLimit] = useState(0);
   /** Từ khóa đang gửi máy chủ khi gian lớn — giữ qua các lần nạp lại (sau đồng bộ, sau lưu giá). */
   const serverQRef = useRef("");
+  /** Cùng giá trị với serverQRef, để hiện trong dải báo và trạng thái rỗng. */
+  const [serverQ, setServerQ] = useState("");
+  /** Tăng lên khi máy chủ báo bận: hẹn nạp lại sau 30 giây. */
+  const [busyRetry, setBusyRetry] = useState(0);
+  // Lát 3.8 (03/11/2026): gian lớn được chia trang ở DB; `items` chỉ là dòng của trang đang xem.
+  const [serverPage, setServerPage] = useState<{
+    page: number;
+    pageSize: number;
+    filteredRows: number;
+    totalGroups: number;
+    delistedCount: number;
+    shops: { key: string; name: string }[];
+  } | null>(null);
+  const serverPaged = serverPage !== null;
+  /** Bộ lọc hiện tại cho load(): dùng ref để load không đổi danh tính mỗi lần gõ. */
+  const serverFiltersRef = useRef({ shop: "all", status: "all", listing: "active", page: 1, pageSize: 20 });
+  /** Mở từ link "đơn thiếu giá vốn trong kỳ": cần cả danh sách để khớp theo đơn, không chia trang. */
+  const periodModeRef = useRef(
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("missing") === "period"
+  );
+  /** Chỉ nhận phản hồi của lượt gọi mới nhất (đổi trang nhanh không bị trang cũ đè). */
+  const loadSeqRef = useRef(0);
   // Gian vừa nối, danh mục chưa kéo xong lần đầu (worker đang kéo nền).
   const [catalogPending, setCatalogPending] = useState<CatalogPendingChannel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,29 +228,30 @@ export default function CostPricesPage() {
 
   // Các gian có trong danh sách đang tải (đã theo tab sàn) — nguồn của ô lọc Gian hàng.
   const shopOptions = useMemo(() => {
+    if (serverPage) return serverPage.shops;
     const seen = new Map<string, string>();
     for (const i of items) {
       const key = shopKey(i);
       if (!seen.has(key)) seen.set(key, i.shopName);
     }
     return [...seen].map(([key, name]) => ({ key, name }));
-  }, [items]);
+  }, [items, serverPage]);
   // Đổi tab sàn mà gian đang chọn không còn trong danh sách → về Tất cả gian.
   useEffect(() => {
     if (shop !== "all" && !loading && !shopOptions.some((o) => o.key === shop)) setShop("all");
   }, [shop, shopOptions, loading]);
   const shopItems = useMemo(
-    () => (shop === "all" ? items : items.filter((i) => shopKey(i) === shop)),
-    [items, shop]
+    () => (shop === "all" || serverPaged ? items : items.filter((i) => shopKey(i) === shop)),
+    [items, shop, serverPaged]
   );
 
   // Tập nền theo gian + trạng thái trên sàn — các bộ lọc khác và "Hiển thị X/Y" tính trên tập này.
   const listedItems = useMemo(
     () =>
-      listing === "all"
+      listing === "all" || serverPaged
         ? shopItems
         : shopItems.filter((i) => (listing === "active") === (i.status === "ACTIVE")),
-    [shopItems, listing]
+    [shopItems, listing, serverPaged]
   );
   const delistedCount = useMemo(
     () => shopItems.filter((i) => i.status === "DELISTED").length,
@@ -274,6 +297,7 @@ export default function CostPricesPage() {
       .finally(() => setPeriodLoading(false));
   }, []);
   function clearPeriodFocus() {
+    periodModeRef.current = false;
     setPeriodFocus(null);
     setStatusFilter("all");
     setListing("active");
@@ -282,6 +306,8 @@ export default function CostPricesPage() {
 
   // Lọc ngay tại màn hình → kết quả cập nhật tức thì khi gõ, không cần chờ API
   const filteredItems = useMemo(() => {
+    // Máy chủ đã lọc + tìm ở DB: lọc lại ở đây sẽ làm mất dòng khớp theo trường trình duyệt không có.
+    if (serverPaged) return listedItems;
     const keyword = normalizeText(search.trim());
     const rows = listedItems.filter((item) => {
       // Đang lọc theo kỳ: chỉ SKU có đơn trong kỳ đang thiếu giá vốn
@@ -308,7 +334,7 @@ export default function CostPricesPage() {
       rows.sort((a, b) => periodOrdersOf(periodFocus, b) - periodOrdersOf(periodFocus, a));
     }
     return rows;
-  }, [listedItems, search, statusFilter, periodFocus]);
+  }, [listedItems, search, statusFilter, periodFocus, serverPaged]);
 
   // Số đơn trong kỳ của từng SKU đang hiển thị — bảng in cạnh tên phân loại
   const periodOrderCounts = useMemo(() => {
@@ -371,25 +397,37 @@ export default function CostPricesPage() {
   useEffect(() => {
     setPage(1);
   }, [channel, shop, search, statusFilter, listing]);
-  const pageCount = Math.max(1, Math.ceil(groups.length / pageSize));
+  const pageCount = serverPage
+    ? Math.max(1, Math.ceil(serverPage.totalGroups / pageSize))
+    : Math.max(1, Math.ceil(groups.length / pageSize));
   // Đổi bộ lọc / tìm kiếm / kênh làm số trang co lại → kéo về trang cuối còn dữ liệu.
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
   const pagedGroups = useMemo(
-    () => groups.slice((page - 1) * pageSize, page * pageSize),
-    [groups, page, pageSize]
+    () => (serverPaged ? groups : groups.slice((page - 1) * pageSize, page * pageSize)),
+    [groups, page, pageSize, serverPaged]
   );
+  useEffect(() => {
+    serverFiltersRef.current = { shop, status: statusFilter, listing, page, pageSize };
+  }, [shop, statusFilter, listing, page, pageSize]);
   const pageSkuCount = useMemo(
     () => pagedGroups.reduce((n, g) => n + g.variants.length, 0),
     [pagedGroups]
   );
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     try {
-      const res = await fetchSkuProducts(channel, serverQRef.current);
+      const res = await fetchSkuProducts(
+        channel,
+        serverQRef.current,
+        periodModeRef.current ? undefined : { q: serverQRef.current, ...serverFiltersRef.current }
+      );
+      if (seq !== loadSeqRef.current) return;
       setItems(res.items);
+      setServerPage(res.serverPage ?? null);
       setMissingCount(res.missingCostCount);
       setTruncated(Boolean(res.truncated));
       setTotalRows(res.totalRows ?? res.items.length);
@@ -425,12 +463,12 @@ export default function CostPricesPage() {
       // người khác → báo đúng câu thay vì bảng trống "Không có SKU nào", tự thử lại sau 30 giây.
       if (err instanceof ApiError && err.status === 503) {
         toast.warning(err.message, { duration: 8000 });
-        setTimeout(() => void load(), 30_000);
+        setBusyRetry((n) => n + 1);
         return;
       }
       // 409 (chưa có kênh) — AppShell overlay xử lý
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [channel, router]);
 
@@ -455,10 +493,29 @@ export default function CostPricesPage() {
     if (next === serverQRef.current) return;
     const t = setTimeout(() => {
       serverQRef.current = next;
+      setServerQ(next);
       void load();
     }, 400);
     return () => clearTimeout(t);
   }, [search, truncated, load]);
+  // Máy chủ báo bận (503): tự thử lại sau 30 giây.
+  useEffect(() => {
+    if (busyRetry === 0) return;
+    const t = setTimeout(() => void load(), 30_000);
+    return () => clearTimeout(t);
+  }, [busyRetry, load]);
+  // Chia trang ở DB: đổi trang / số dòng / bộ lọc thì hỏi lại máy chủ ngay.
+  const serverFilterKey = `${shop}|${statusFilter}|${listing}|${page}|${pageSize}`;
+  const lastServerKeyRef = useRef(serverFilterKey);
+  useEffect(() => {
+    if (!serverPaged || lastServerKeyRef.current === serverFilterKey) return;
+    // Hoãn một nhịp: đổi bộ lọc ở trang 2 còn kéo theo setPage(1), chỉ gọi máy chủ một lần.
+    const t = setTimeout(() => {
+      lastServerKeyRef.current = serverFilterKey;
+      void load();
+    }, 50);
+    return () => clearTimeout(t);
+  }, [serverFilterKey, serverPaged, load]);
 
   // Khách bấm "Nhập giá vốn ngay" ở hộp chào sau khi nối gian thường tới đây
   // TRƯỚC khi worker kéo xong danh mục (nhịp quét 5'). Trong lúc chờ: hỏi bản
@@ -639,7 +696,11 @@ export default function CostPricesPage() {
       return;
     }
     exportCostPricesToExcel(filteredItems);
-    toast.success(`Đã xuất ${formatNumber(filteredItems.length)} SKU ra Excel`);
+    toast.success(
+      serverPaged
+        ? `Đã xuất ${formatNumber(filteredItems.length)} SKU của trang đang xem ra Excel`
+        : `Đã xuất ${formatNumber(filteredItems.length)} SKU ra Excel`
+    );
   }
 
   if (denied) {
@@ -791,15 +852,15 @@ export default function CostPricesPage() {
           )}
 
           {/* Gian lớn: máy chủ chỉ trả một phần (03/11/2026) — nói rõ đang xem gì và tìm ở đâu. */}
-          {truncated && (
+          {truncated && !serverPaged && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
               <p className="min-w-0 flex-1">
                 Gian của bạn có <strong>{formatNumber(totalRows)}</strong> mã SKU sàn. Đang hiện{" "}
                 <strong>{formatNumber(rowLimit)}</strong> mã đầu, ưu tiên mã đang bán chưa có giá vốn
-                {serverQRef.current ? (
+                {serverQ ? (
                   <>
-                    {" "}khớp từ khóa “{serverQRef.current}”
+                    {" "}khớp từ khóa “{serverQ}”
                   </>
                 ) : null}
                 . Gõ tên, mã SKU hoặc mã sản phẩm sàn vào ô tìm để tìm trong toàn bộ danh mục — vẫn điền giá
@@ -818,7 +879,9 @@ export default function CostPricesPage() {
           )}
 
           {/* ===== THANH BỘ LỌC NÂNG CAO ===== */}
-          {!loading && items.length > 0 && (
+          {/* Gian lớn: giữ thanh lọc khi đang tải và khi không có kết quả, không thì ô tìm mất con
+              trỏ lúc đang gõ và biến mất khi tìm không ra (đã dính ở bản chắn 03/11/2026). */}
+          {((!loading && items.length > 0) || truncated || serverPaged) && (
             <div className="flex flex-wrap items-center gap-3">
               {/* Ô tìm kiếm real-time */}
               <div className="relative min-w-64 flex-1">
@@ -868,8 +931,8 @@ export default function CostPricesPage() {
                 {LISTING_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
-                    {o.value === "delisted" && delistedCount > 0
-                      ? ` (${formatNumber(delistedCount)})`
+                    {o.value === "delisted" && (serverPage ? serverPage.delistedCount : delistedCount) > 0
+                      ? ` (${formatNumber(serverPage ? serverPage.delistedCount : delistedCount)})`
                       : ""}
                   </option>
                 ))}
@@ -894,8 +957,8 @@ export default function CostPricesPage() {
               {/* Số kết quả đang hiển thị */}
               {isFiltering && (
                 <p className="text-sm text-muted-foreground">
-                  Hiển thị <b>{formatNumber(filteredItems.length)}</b>/
-                  {formatNumber(listedItems.length)} SKU
+                  Hiển thị <b>{formatNumber(serverPage ? serverPage.filteredRows : filteredItems.length)}</b>/
+                  {formatNumber(serverPage ? totalRows : listedItems.length)} SKU
                 </p>
               )}
             </div>
@@ -918,11 +981,19 @@ export default function CostPricesPage() {
                   <Loader2 className="mx-auto mb-2 size-8 animate-spin motion-reduce:animate-none" />
                   {pendingNote}
                 </div>
-              ) : items.length === 0 && truncated && serverQRef.current ? (
+              ) : items.length === 0 && truncated && serverQ ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
                   <SearchX className="mx-auto mb-2 size-8" />
-                  Không tìm thấy mã nào khớp “{serverQRef.current}” trong {formatNumber(totalRows)} mã SKU
+                  Không tìm thấy mã nào khớp “{serverQ}” trong {formatNumber(totalRows)} mã SKU
                   sàn của gian. Thử gõ ngắn hơn, hoặc mã sản phẩm trên sàn.
+                </div>
+              ) : items.length === 0 && serverPaged ? (
+                <div className="py-12 text-center">
+                  <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
+                  <p>Không tìm thấy SKU nào phù hợp</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Thử đổi trạng thái giá vốn, gian hàng hoặc chọn “Tất cả, kể cả đã gỡ”.
+                  </p>
                 </div>
               ) : items.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
@@ -1016,7 +1087,7 @@ export default function CostPricesPage() {
                 </NativeSelect>
                 <span className="text-sm text-muted-foreground">
                   sản phẩm/trang · trang này {formatNumber(pageSkuCount)} SKU ·{" "}
-                  {formatNumber(groups.length)} sản phẩm · trang {page}/{pageCount}
+                  {formatNumber(serverPage ? serverPage.totalGroups : groups.length)} sản phẩm · trang {page}/{pageCount}
                 </span>
               </div>
               <div className="flex gap-2">
