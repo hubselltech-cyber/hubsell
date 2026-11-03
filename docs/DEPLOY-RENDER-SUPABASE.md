@@ -232,6 +232,27 @@ KHÔNG restore đè lên project production để thử.
 xem theo dịch vụ); Render → Billing → Bandwidth. Mục tiêu sau sửa: < 500 MB/ngày ở
 quy mô hiện tại.
 
+## Bước 2e — Vercel: chỉ dựng khi `frontend/` đổi (03/11/2026)
+
+Gói Hobby có 10 GB Deployment Storage, vượt hạn có thể bị chặn deploy. 03/11 lên 19,87 GB vì 55/90 bản gần nhất là commit không đổi `frontend/`. Nút "Skip deployments" đang bật nhưng không có tác dụng với repo này.
+
+Project `hubsell` → Settings → Build and Deployment:
+
+- **Ignored Build Step**, Custom:
+
+  ```bash
+  git cat-file -e "$VERCEL_GIT_PREVIOUS_SHA^{commit}" 2>/dev/null && git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- . || exit 1
+  ```
+
+  Lệnh chạy trong Root Directory `frontend`. Thoát 0 là bỏ qua, khác 0 là dựng. So với bản deploy thành công gần nhất, không so `HEAD^`, nên đẩy nhiều commit một lần hoặc lỡ webhook vẫn không mất thay đổi. Vercel clone sâu 10 commit: bản trước nằm ngoài đó thì `cat-file` lỗi và vẫn dựng.
+- **Deployment Retention Policy**: Production 1 tuần; Canceled, Errored, Pre-Production 1 ngày.
+
+Hệ quả khi vận hành:
+
+- Đổi biến môi trường trên Vercel, hoặc muốn dựng lại khi không đổi mã: Redeploy tay và bỏ tick **Use project's Ignore Build Step**. Commit rỗng không còn kích dựng.
+- Bản bị bỏ qua hiện trạng thái Canceled và vẫn tính vào quota deployment mỗi ngày.
+- Chỉ rollback được trong khoảng 1 tuần.
+
 ## Bước 3 — Khai URL webhook vào trang quản trị MISA Sandbox
 
 1. Đăng nhập trang quản trị meInvoice Sandbox (tài khoản MISA cấp kèm kit).

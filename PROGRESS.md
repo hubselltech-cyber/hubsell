@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 03/11 (~22:40) — Vercel vượt 10 GB Deployment Storage: bỏ dựng commit không đổi frontend, rút thời hạn giữ
+
+- `hubsell` 19,87 GB, 236 bản, ~84 MB/bản; 55/90 bản gần nhất là commit không đổi `frontend/`. Rà lại không có lý do giữ (không ghi quyết định, frontend không phụ thuộc ngoài thư mục). Anh chốt đổi cả hai: Ignored Build Step so với bản deploy gần nhất; giữ production 1 tuần, các loại khác 1 ngày. Ảnh hướng dẫn 58,7 MB không nén, sau anh thay bằng link video.
+- Sau khi đổi: đổi env Vercel hoặc muốn dựng lại thì Redeploy tay và bỏ tick dùng Ignore Build Step; commit rỗng không kích dựng nữa. Dung lượng chưa kiểm lại, chờ Vercel xóa bản cũ (tài liệu: trong khoảng 48 giờ).
+- Bản sửa web chết `02d7eebc` LIVE 22:19, máy mới `zlw9g` không khởi động lại tới 22:37; `/health` 45/45 ok 22:20–22:36. Chưa thấy khách lớn mở trang thật.
+
 ## Phiên 03/11 (~22:00) — Web chết lại 21:46–21:55: trang Quảng cáo Shopee nạp 5.000 chiến dịch cũ
 
 - Anh thấy HQ báo mất kết nối. Tối nay 21:21 gian Shopee lớn nhất vừa về 5.000 chiến dịch (đúng trần, toàn đã kết thúc) và 131.162 dòng số toàn 0. `computeChannelAdsInsights` nạp hết vào RAM: đo DB dev cùng cỡ RSS +532 MB trong 3,4 giây, sau sửa +72 MB, 0,4 giây.
