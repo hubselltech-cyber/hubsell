@@ -153,6 +153,11 @@ export async function backfillOrderLinesByProducts(
   // dòng này planner quét toàn bộ OrderItem×Order của MỌI khách rồi mới thử
   // EXISTS — prod 28/09 15:00 mất ~8s → transaction 5s hết hạn (P2028), khách
   // nhập giá vốn nhận "Lỗi máy chủ nội bộ" 13 lần.
+  // Lấy danh sách gian TRƯỚC rồi lọc đơn bằng mảng. Lọc bằng câu con làm Postgres đoán sai và quét hết đơn của
+  // mọi khách: đo prod 03/11 mất 48,8 giây, lọc bằng mảng 0,15 giây (lượt nhập 4.313 dòng của khách mất 54 giây).
+  const channels = await db.channel.findMany({ where: { userId: ownerId }, select: { id: true } });
+  const channelIds = channels.map((c) => c.id);
+  if (channelIds.length === 0) return 0;
   const linked = Prisma.sql`(
     SELECT c."channelId", c."channelSku", c."externalId", q."costPrice" AS "cost"
     FROM "ChannelProduct" AS c JOIN "Product" AS q ON q."id" = c."productId"
@@ -161,13 +166,13 @@ export async function backfillOrderLinesByProducts(
   const ownCost = Prisma.sql`(
     SELECT c."channelId", c."channelSku", c."externalId", c."costPrice" AS "cost"
     FROM "ChannelProduct" AS c
-    WHERE c."channelId" IN (SELECT ch."id" FROM "Channel" AS ch WHERE ch."userId" = ${ownerId}) AND c."costPrice" > 0
+    WHERE c."channelId" = ANY(${channelIds}::text[]) AND c."costPrice" > 0
   ) AS cp`;
   return db.$executeRaw`
     WITH lines AS MATERIALIZED (
       SELECT oi."id", oi."productId", oi."externalId", oi."channelSku", o."channelId"
       FROM "Order" AS o JOIN "OrderItem" AS oi ON oi."orderId" = o."id"
-      WHERE o."channelId" IN (SELECT ch."id" FROM "Channel" AS ch WHERE ch."userId" = ${ownerId})
+      WHERE o."channelId" = ANY(${channelIds}::text[])
         AND oi."costPriceAtSale" = 0
     ),
     own AS MATERIALIZED (${linesMatchingSku(ownCost)}),
@@ -196,6 +201,11 @@ export async function backfillOrderLinesByChannelProducts(
   channelProductIds: string[]
 ): Promise<number> {
   if (channelProductIds.length === 0) return 0;
+  // Danh sách gian lấy trước, cùng lý do với backfillOrderLinesByProducts.
+  const channelRows = await db.$queryRaw<{ channelId: string }[]>`
+    SELECT DISTINCT c."channelId" FROM "ChannelProduct" AS c WHERE c."id" = ANY(${channelProductIds}::text[])`;
+  const channelIds = channelRows.map((c) => c.channelId);
+  if (channelIds.length === 0) return 0;
   const chosen = Prisma.sql`(
     SELECT c."channelId", c."channelSku", c."externalId", c."costPrice" AS "cost"
     FROM "ChannelProduct" AS c
@@ -205,7 +215,7 @@ export async function backfillOrderLinesByChannelProducts(
     WITH lines AS MATERIALIZED (
       SELECT oi."id", oi."externalId", oi."channelSku", o."channelId"
       FROM "Order" AS o JOIN "OrderItem" AS oi ON oi."orderId" = o."id"
-      WHERE o."channelId" IN (SELECT c."channelId" FROM "ChannelProduct" AS c WHERE c."id" = ANY(${channelProductIds}::text[]))
+      WHERE o."channelId" = ANY(${channelIds}::text[])
         AND oi."costPriceAtSale" = 0
     ),
     hit AS (${linesMatchingSku(chosen)})

@@ -497,3 +497,13 @@ Anh báo khách 57.877 dòng mở tab chỉ thấy câu "vượt 5.000 mã". Câ
 
 Hạn chế: chia trang theo tên sản phẩm chữ thường, nên mẫu có tên lệch xa nhau có thể tách ở cuối lượt đọc. Chữ hoa trong SQL theo collation của DB, mã có dấu khác collation chỉ ảnh hưởng thứ tự và số đếm chip, nhóm hiển thị vẫn gộp lại bằng `normalizeSkuCode`.
 
+### 6.11. Lượt nhập thật đầu tiên sau sửa: thành công nhưng 54 giây, sửa tiếp (03/11 ~19:50)
+
+Log 19:32:08: khách nhập file 4.313 dòng, khớp 4.313, ghi 4.403 ô, vá 132 dòng đơn, 0 lỗi, 54.169 ms. Không còn lỗi 120 giây nhưng vẫn quá lâu.
+
+`pg_stat_statements`: câu vá theo gian mới có lần 46.819 ms. EXPLAIN ANALYZE chỉ đọc trên prod với 4.403 id của khách: bước lấy dòng đơn đi Merge Join trên 724.223 đơn của mọi khách, mất 48,8 giây, vì lọc gian bằng câu con làm Postgres đoán sai. Thử lọc bằng mảng gian có sẵn: dùng index theo gian, 0,15 giây, cùng 2.620 dòng.
+
+Sửa: cả hai câu vá lấy danh sách gian trước rồi lọc `o."channelId" = ANY(mảng)`. DB dev quá nhỏ nên không tái hiện được kế hoạch sai này; bằng chứng là đo prod, kiểm lại bằng log lượt nhập sau.
+
+Bài học: đo dev 0,63 giây ở mục 6.9 không phát hiện được lỗi này. Câu lọc trên bảng lớn phải EXPLAIN trên prod trước khi đẩy.
+

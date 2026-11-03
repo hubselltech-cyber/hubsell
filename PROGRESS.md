@@ -6,6 +6,11 @@
 
 ---
 
+## Phiên 03/11 (~19:50) — Lượt nhập thật 4.313 dòng thành công nhưng 54 giây → sửa câu lấy dòng đơn
+
+- Log 19:32: 4.403 ô, 132 dòng đơn, 0 lỗi, 54 giây. EXPLAIN prod: lọc gian bằng câu con quét 724.223 đơn của mọi khách, 48,8 giây; lọc bằng mảng 0,15 giây. Đã sửa cả 2 câu vá. Chi tiết docs DONG-BO-GIAI-DOAN-3 mục 6.11.
+- ⏳ Kiểm thời gian ở log `[cost-import]` lượt sau.
+
 ## Phiên 03/11 (~19:45) — Anh: tab Mapping của khách không nhận → bỏ chặn 5.000 mã, tính trong DB
 
 - Câu "vượt 5.000 mã" do em thêm chiều nay. Thay bằng một câu SQL gộp, đếm, lọc, tìm, chia trang; Điền tất cả và bảng giá theo mã mẫu cũng không còn chặn. Dev 57.877 dòng: mở tab ~1 giây, RSS +1 MB. Chi tiết `docs/DONG-BO-GIAI-DOAN-3.md` mục 6.10.
