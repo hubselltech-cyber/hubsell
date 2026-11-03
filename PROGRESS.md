@@ -6,6 +6,10 @@
 
 ---
 
+## Phiên 03/11 (~20:00) — Khảo sát nâng trang Giá vốn lên 300/500
+
+- Kết luận: không nâng 500. Gian vượt trần chỉ xuất được trang đang xem nên khách đòi trang lớn; đề nghị Xuất Excel theo cả bộ lọc, kèm lựa chọn 100. Số đo ở `docs/GIA-VON-CO-TRANG-VA-XUAT-EXCEL-KHAO-SAT-03-11.md`. ⏳ Chờ anh chốt, chưa sửa.
+
 ## Phiên 03/11 (~19:50) — Lượt nhập thật 4.313 dòng thành công nhưng 54 giây → sửa câu lấy dòng đơn
 
 - Log 19:32: 4.403 ô, 132 dòng đơn, 0 lỗi, 54 giây. EXPLAIN prod: lọc gian bằng câu con quét 724.223 đơn của mọi khách, 48,8 giây; lọc bằng mảng 0,15 giây. Đã sửa cả 2 câu vá. Chi tiết docs DONG-BO-GIAI-DOAN-3 mục 6.11.
