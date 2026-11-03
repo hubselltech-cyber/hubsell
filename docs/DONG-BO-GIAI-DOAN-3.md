@@ -314,6 +314,28 @@ ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "productSyncRequestedAt" TIMESTAM
 4. Render Events web: không OOM mới kèm dòng product-sync trước đó. (OOM còn lại nếu có = kéo ví / oEmbed → lát đo RSS,
    PROGRESS 03/11 10:30.)
 
+### 5.4b. Sau deploy 3.7: GỐC THẬT là trang Giá vốn tải nguyên danh mục (03/11 15:14–15:50)
+
+Instance mới vẫn chết 2 lần (15:14:05, 15:14:45 — 32 giây sau boot) KHÔNG dòng log nào → request không in log. Anh
+chạy SQL chỉ đọc trên Supabase: chủ shop lớn nhất **57.877 dòng ChannelProduct / 2 gian**, `lastActiveAt` 14:22 VN (cột
+chỉ ghi khi quay lại sau > 6 giờ → đúng lúc bắt đầu phiên chiều, trùng cụm chết 14:30–14:45); #3 14.273 dòng online
+01/11 22:47 (trùng cụm OOM 01/11). `GET /api/finance/sku-products` tải nguyên danh mục `include product` không phân
+trang → web 512 MB chết. Sync-trong-web (3.7) chỉ là kích hoạt phụ.
+
+Đã làm cùng chiều (3 commit): `c8eb0901` select gọn + `lib/request-ledger.ts` (sổ in-flight, `heavyRouteGuard`
+≤ 2 cùng lúc / RSS > 400 MB → 503 SERVER_BUSY) + memory-watch canh RSS so 512 MB in sổ in-flight + log
+`[sku-products] N dòng … RSS`; `5573c87f` nút không xoay khóa + worker poll 1'; **lát chắn tạm (anh chốt 15:50,
+"khách muốn hiện ra và điền", không Excel):** route ĐẾM TRƯỚC, quá `SKU_PRODUCTS_MAX_ROWS` (5.000 — tự chọn, mức
+khách vài nghìn SKU 22/10 chạy êm) thì chỉ trả dòng đầu ưu tiên ĐANG BÁN + CHƯA CÓ GIÁ RIÊNG (`orderBy status asc,
+costPrice nulls first, createdAt desc`, `take`), kèm `truncated/totalRows/limit`, `missingCostCount` đếm ở DB; ô tìm
+gửi `?q=` tìm ILIKE trong toàn bộ danh mục (channelSku, productName, variantName, itemSku, externalId); trang hiện dải
+"Gian của bạn có N mã… đang hiện 5.000 mã đầu… gõ ô tìm để tìm toàn bộ", vẫn điền tại dòng. Gian ≤ 5.000 dòng: không
+đổi gì.
+
+**Lát 3.8 (kế, anh chốt làm sau lát chắn): Giá vốn tải theo trang thật** — tìm/lọc gian/trạng thái/thiếu giá vốn/nhóm
+phân loại bằng SQL, đếm ở DB, xuất Excel theo luồng máy chủ; xong thì bỏ trần. Số đo để chỉnh trần/nhịp: log
+`[sku-products]` (dòng, ms, RSS) + `RSS cao` kèm route.
+
 ### 5.5. Đường lui và việc chưa làm
 
 - Đường lui: revert commit (cột thừa vô hại; migration `IF NOT EXISTS`).
