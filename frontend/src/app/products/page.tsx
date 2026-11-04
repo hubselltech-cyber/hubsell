@@ -21,6 +21,7 @@ import {
   ChevronsUpDown,
   ClipboardCheck,
   ClipboardList,
+  Copy,
   Download,
   Image as ImageIcon,
   Layers,
@@ -62,6 +63,7 @@ import {
 } from "@/components/products/sync-settings-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
@@ -96,7 +98,7 @@ import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { locationLabel } from "@/lib/stock-locations";
 import { formatNumber } from "@/lib/format";
-import { canManageShop, canSeeFinancials } from "@/lib/permissions";
+import { can, canManageShop, canSeeFinancials } from "@/lib/permissions";
 import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -288,6 +290,9 @@ export default function ProductsHubPage() {
 
   // Hộp "Tự khớp + tạo SKU" — mở từ bước 2 hoặc từ dòng trống của bảng.
   const [oneClickOpen, setOneClickOpen] = useState(false);
+  // Menu "Tạo sản phẩm kho" (05/11): Tạo mới / Sao chép từ sàn — mục sau theo lá quyền của trang đó.
+  const [createOpen, setCreateOpen] = useState(false);
+  const canCopyListing = can(getStoredUser(), "operations.copy-listing");
 
   // Trạng thái đồng bộ tồn theo gian (chỉ chủ shop) — bước 3 + header khối.
   const [syncOpen, setSyncOpen] = useState(false);
@@ -1429,11 +1434,43 @@ export default function ProductsHubPage() {
                   Xuất Excel
                 </Button>
                 {/* 30/10/2026 anh chốt: bỏ hộp "Thêm sản phẩm mới" cũ (SKU + giá + tồn), thay bằng luồng
-                    Tạo sản phẩm mới của Sao chép sản phẩm (soạn đủ chuẩn sàn → đăng lên gian + ghi Tổng kho). */}
-                <Button nativeButton={false} render={<Link href="/products/new" />}>
-                  <Plus className="size-4" />
-                  Tạo sản phẩm mới
-                </Button>
+                    Tạo sản phẩm mới của Sao chép sản phẩm (soạn đủ chuẩn sàn → đăng lên gian + ghi Tổng kho).
+                    05/11/2026 anh Trung: nút thành MENU "Tạo sản phẩm kho" — hai đường đưa hàng vào kho:
+                    soạn từ đầu (/products/new) hoặc lấy sản phẩm có sẵn trên gian đã nối (Sao chép sản
+                    phẩm, nguồn "gian đã nối" — cùng trang với Trợ lý vận hành, chỉ ai có quyền mới thấy). */}
+                <Popover open={createOpen} onOpenChange={setCreateOpen}>
+                  <PopoverTrigger render={<Button />}>
+                    <Plus className="size-4" />
+                    Tạo sản phẩm kho
+                    <ChevronDown className={cn("size-4 transition-transform", createOpen && "rotate-180")} />
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-1">
+                    <Link
+                      href="/products/new"
+                      className="flex items-start gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted"
+                      onClick={() => setCreateOpen(false)}
+                    >
+                      <Plus className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                      <span className="min-w-0">
+                        <span className="block font-medium">Tạo sản phẩm mới</span>
+                        <span className={cn(TEXT_SUB, "block")}>Soạn từ đầu, đăng lên gian hoặc chỉ lưu vào Tổng kho.</span>
+                      </span>
+                    </Link>
+                    {canCopyListing && (
+                      <Link
+                        href="/operations-assistant/copy-listing"
+                        className="flex items-start gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted"
+                        onClick={() => setCreateOpen(false)}
+                      >
+                        <Copy className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                        <span className="min-w-0">
+                          <span className="block font-medium">Sao chép sản phẩm từ sàn</span>
+                          <span className={cn(TEXT_SUB, "block")}>Lấy sản phẩm đang bán trên gian đã nối, đăng sang gian khác và ghi Tổng kho.</span>
+                        </span>
+                      </Link>
+                    )}
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             {/* Hàng chip lọc LUÔN hiện khi kho có SKU (anh Trung 22/10 tối: khách shop váy không thấy
@@ -1554,15 +1591,15 @@ export default function ProductsHubPage() {
                     ) : isAdmin && channels.length === 0 ? (
                       <p>
                         Chưa có sản phẩm nào. Vào <Link href="/channels" className="font-medium text-primary hover:underline">Kênh bán</Link> nối
-                        gian hàng để kéo sản phẩm từ sàn về, hoặc bấm “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                        gian hàng để kéo sản phẩm từ sàn về, hoặc bấm “Tạo sản phẩm kho” / nhập Excel nếu bán ngoài sàn.
                       </p>
                     ) : isAdmin && (counts?.all ?? 0) === 0 ? (
                       <p>
                         Chưa có sản phẩm nào. Vào <Link href="/products/marketplace" className="font-medium text-primary hover:underline">Sản phẩm trên sàn</Link> bấm
-                        “Đồng bộ từ sàn” để lấy hàng từ gian đã nối, hoặc “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                        “Đồng bộ từ sàn” để lấy hàng từ gian đã nối, hoặc “Tạo sản phẩm kho” / nhập Excel nếu bán ngoài sàn.
                       </p>
                     ) : (
-                      <p>Chưa có sản phẩm nào. Bấm “Tạo sản phẩm mới” hoặc nhập Excel để bắt đầu.</p>
+                      <p>Chưa có sản phẩm nào. Bấm “Tạo sản phẩm kho” hoặc nhập Excel để bắt đầu.</p>
                     )}
                   </div>
                 ) : (
