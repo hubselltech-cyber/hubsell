@@ -14,6 +14,7 @@ import { applyStockDelta } from "../services/stock-ledger";
 import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
+import { summarizePickLines } from "../lib/pick-summary";
 import { attachItemImages } from "../services/item-images";
 import {
   CARRIER_LABEL,
@@ -471,6 +472,72 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
       bySku: topSkus.map(withImage),
       byCarrier: carriers,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// GET /api/orders/pick-summary — THỐNG KÊ BỐC HÀNG của trang Đơn hàng web (04/11/2026).
+//
+// Khác /stats (mobile, cố định Chờ xử lý, top 50, trần 20.000 dòng): route này theo
+// ĐÚNG bộ lọc đang xem trên bảng (chip Chờ đóng gói, sàn, hãng, loại đơn, từ khóa) và
+// trả ĐỦ mọi SKU. Gom bằng SQL nên số dòng về RAM chỉ bằng số SKU, không theo số đơn.
+// ============================================================
+router.get("/pick-summary", async (req: AuthRequest, res, next) => {
+  try {
+    const where = ordersWhere(req);
+    const groupKeys: ["channelSku", "productName"] = ["channelSku", "productName"];
+    const [orderCount, lines, expressLines] = await Promise.all([
+      prisma.order.count({ where }),
+      prisma.orderItem.groupBy({
+        by: groupKeys,
+        where: { order: where },
+        _sum: { quantity: true },
+        _max: { imageUrl: true },
+      }),
+      prisma.orderItem.groupBy({
+        by: groupKeys,
+        where: { order: { AND: [where, expressShippingWhere()] } },
+        _sum: { quantity: true },
+      }),
+    ]);
+
+    const lineKey = (l: { channelSku: string; productName: string }) =>
+      JSON.stringify([l.channelSku, l.productName]);
+    const expressQty = new Map(expressLines.map((l) => [lineKey(l), l._sum.quantity ?? 0]));
+
+    // Ảnh ưu tiên lấy từ dòng đơn (đỡ một lượt truy vấn); dòng đơn cũ chưa có ảnh
+    // mới tra danh mục sàn theo SKU.
+    const missingImageSkus = [
+      ...new Set(lines.filter((l) => !l._max.imageUrl && l.channelSku).map((l) => l.channelSku)),
+    ];
+    const listingImage = new Map<string, string>();
+    if (missingImageSkus.length > 0) {
+      const listings = await prisma.channelProduct.findMany({
+        where: {
+          channel: channelScope(req),
+          channelSku: { in: missingImageSkus },
+          imageUrl: { not: null },
+        },
+        select: { channelSku: true, imageUrl: true },
+      });
+      for (const l of listings) {
+        if (l.imageUrl && !listingImage.has(l.channelSku)) listingImage.set(l.channelSku, l.imageUrl);
+      }
+    }
+
+    const summary = summarizePickLines(
+      lines.map((l) => ({
+        channelSku: l.channelSku,
+        productName: l.productName,
+        qty: l._sum.quantity ?? 0,
+        expressQty: expressQty.get(lineKey(l)) ?? 0,
+        imageUrl: l._max.imageUrl ?? listingImage.get(l.channelSku) ?? null,
+      }))
+    );
+
+    res.json({ ...summary, totals: { ...summary.totals, orders: orderCount } });
   } catch (err) {
     next(err);
   }

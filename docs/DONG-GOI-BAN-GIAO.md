@@ -6,7 +6,7 @@
 
 ## 1. Luồng người dùng (bản chốt)
 
-1. Trang Đơn hàng → tab Đã xử lý → chip **Đã in phiếu** → nút "Quét đóng gói" (hoặc mở thẳng `/orders/packing` trên điện thoại).
+1. Trang Đơn hàng → tab Đã xử lý → chip **Chờ đóng gói** (tên cũ "Đã in phiếu", đổi 04/11, xem mục 5) → nút "Quét đóng gói" (hoặc mở thẳng `/orders/packing` trên điện thoại).
 2. Trang quét: bắn máy quét / camera từng kiện → khung to xanh "ĐÃ ĐÓNG GÓI" + bíp; đơn **đã hủy** → khung đỏ "KHÔNG ĐƯA SHIP · ĐƠN ĐÃ HỦY — bỏ kiện lại" + hai tiếng trầm. Quét nhầm → "Bỏ dấu" ngay dòng vừa quét. Chỉ có vậy, không bảng, không nút in.
 3. Về trang Đơn hàng → chip **Đã đóng gói** → tích "Chọn tất cả" → thanh hàng loạt **"Tạo biên bản bàn giao (N)"** → hộp kết quả liệt kê **mỗi hãng vận chuyển một biên bản** với nút **Mở** / **Tải về**, thêm "Mở tất cả (một file)" khi ≥2 hãng. N chỉ đếm đơn đã quét và chưa bàn giao; đơn khác trong lựa chọn bị bỏ qua và hộp nói rõ số bỏ qua.
 4. Sau khi tạo, dòng đơn in **"Đã bàn giao"** — bấm vào là mở lại đúng tờ PDF đó (in lại khi kẹt giấy). Đơn gói rồi mà sàn hủy sau đó hiện **"Đã gói — lấy kiện ra"** màu đỏ (tab Hủy / Hoàn) và không bao giờ vào biên bản.
@@ -73,5 +73,44 @@ Quét: ghi (xanh) → quét lại (vàng "KIỆN NÀY ĐÃ QUÉT RỒI · đã q
 - Không có nút đánh dấu đóng gói hàng loạt (không quét) — cố ý.
 - Biên bản không có cột COD (sàn thu hộ, không phải shipper thu cho shop).
 - Nếu khách in biên bản sớm rồi quét thêm: hai tờ cùng hãng, ship ký cả hai; có thể thêm "in gộp nhiều biên bản" nếu có ca thật.
+
+## 5. Chờ đóng gói + Thống kê bốc hàng (04/11/2026)
+
+**Anh yêu cầu:** đổi chip "Đã in phiếu" thành "Chờ đóng gói"; thêm nút Thống kê cạnh "Quét đóng gói", mở popup cộng số lượng theo sản phẩm, SKU để bốc hàng.
+
+**Đổi tên:** chip và nhãn dòng đơn đang ở Đã xử lý. Đơn đã qua Đang giao / Đã giao vẫn ghi "Đã in phiếu", vì việc gói đã qua. Lọc vẫn `printed=yes`, đếm vẫn `PROCESSED_PRINTED`; không đổi API.
+
+**Thống kê:** `GET /api/orders/pick-summary`, dùng chung `ordersWhere` với danh sách nên số luôn khớp bảng đang xem.
+
+| Quyết định | Vì sao |
+|---|---|
+| Theo bộ lọc đang xem, không cố định trạng thái | Kho bấm Thống kê ở chip nào thì tính cho chip đó; đầu popup ghi rõ tên chip + số đơn |
+| Route mới, không sửa `/api/orders/stats` | `/stats` của mobile cố định Chờ xử lý, top 50, trần 20.000 dòng; mobile đang dùng nên giữ nguyên |
+| Không cắt danh sách | Thiếu một dòng là kho thiếu hàng mà không biết |
+| Gom bằng `groupBy` trên `OrderItem` | Số dòng về RAM = số cặp SKU + tên, không theo số đơn; hai lượt: tổng và phần hỏa tốc |
+| Cùng SKU ở nhiều gian cộng làm một dòng | Khách đặt SKU giống nhau cho cùng món hàng thật |
+| Dòng không SKU tách theo tên | Tránh dồn nhiều mặt hàng vào một dòng "không có SKU" như `/stats` |
+| Hỏa tốc lên đầu | Kho nhặt trước, cùng luật với mobile |
+| Ảnh lấy từ dòng đơn, thiếu mới tra danh mục sàn | Đỡ một lượt truy vấn khi dòng đơn đã có ảnh |
+| Không có cột số đơn từng dòng | Bốc hàng chỉ cần số lượng; `groupBy` không đếm được đơn phân biệt, thà bỏ còn hơn hiện số gần đúng |
+
+**Anh chốt 04/11:** chip **Đã đóng gói** không hiện nút Thống kê và nút Quét đóng gói, vì hàng đã gói xong; việc còn lại ở chip này là tích đơn → Tạo biên bản bàn giao trên thanh hàng loạt. Ba chip còn lại vẫn có hai nút.
+
+Popup (`components/orders/pick-summary-dialog.tsx`): tab Theo SKU / Theo sản phẩm, sắp xếp ở tiêu đề Mã SKU + Số lượng, nút sao chép mã. Sản phẩm nhiều SKU hiện "N SKU". Điện thoại: mã SKU xuống dưới tên để cột Số lượng luôn thấy. Hộp chỉ gắn lúc mở nên mỗi lần mở đều tính lại và về thứ tự hỏa tốc trước. Web chưa có bảng theo đơn vị vận chuyển như mobile.
+
+**Xuất thống kê để in (anh chốt 04/11):** nút trong popup, luôn theo SKU, 3 cột Mã SKU · Tên sản phẩm · Số lượng, giữ thứ tự seller đang xếp.
+
+| Quyết định | Vì sao |
+|---|---|
+| In ngay trên trình duyệt từ số liệu popup đã tải (`lib/print-pick-summary.ts`), không dựng PDF ở backend | Bản thử pdf-lib ở backend: 5.000 SKU mất 49 giây + 268 MB RAM máy chủ web; trình duyệt dựng cùng cỡ 3,8 giây. Không tốn thêm lượt gọi API |
+| Khung ẩn `iframe srcdoc` + `print()`, `sandbox="allow-same-origin allow-modals"` | In đúng tờ bảng, không in trang app; không script nào trong khung chạy được |
+| Tên và mã SKU escape HTML | Dữ liệu do seller đặt trên sàn, đã thử tên chứa `<script>` / `<img onerror>` → hiện thành chữ thường |
+| Dòng phạm vi in đầu tờ: chip + gian/sàn + hãng + loại đơn + khách xin hủy + từ khóa | Tờ giấy không có thanh lọc, kho đọc là biết của nhóm đơn nào |
+| Tiêu đề cột lặp mỗi trang, dòng không tách qua hai trang, tổng cộng cuối bảng, số trang x/y | Bảng dài nhiều trang vẫn đọc được từng tờ rời |
+| Không có nút Tải về riêng | Hộp thoại in của trình duyệt đã có Lưu thành PDF |
+
+Chưa thử Firefox/Safari và máy in thật.
+
+Tệp mục này: `backend/src/lib/pick-summary.ts` (+ test 9 ca), `backend/src/routes/orders.ts`, `frontend/src/components/orders/pick-summary-dialog.tsx`, `frontend/src/lib/print-pick-summary.ts`, `frontend/src/app/orders/page.tsx`, `frontend/src/lib/api.ts`, `frontend/src/lib/query-keys.ts`.
 
 Tệp: `backend/prisma/migrations/20261101090000_order_packing_handover_sheet/`, `backend/src/lib/packing-scan.ts` (+ test), `backend/src/routes/packing.ts`, `backend/src/services/fulfillment/handover-sheet-pdf.ts`, `backend/src/routes/orders.ts` (lọc + đếm), `backend/src/app.ts`; `frontend/src/lib/api.ts`, `lib/beep.ts`, `components/shared/scan-code-box.tsx`, `components/orders/scan-return-box.tsx`, `components/orders/packing/packing-page.tsx`, `components/orders/bulk-action-bar.tsx`, `components/orders/handover-sheets-dialog.tsx`, `app/orders/packing/page.tsx`, `app/orders/page.tsx`, `components/shell/app-shell.tsx`.

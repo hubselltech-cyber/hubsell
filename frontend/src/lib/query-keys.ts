@@ -37,6 +37,8 @@ export const qk = {
 
   // ----- Đơn hàng -----
   orders: (params: Record<string, unknown>) => ["orders", params] as const,
+  /** Cùng tiền tố "orders" để thao tác ghi trên trang đơn làm tươi luôn popup bốc hàng. */
+  ordersPickSummary: (params: Record<string, unknown>) => ["orders", "pick-summary", params] as const,
 
   // ----- Quảng cáo TikTok (GMV Max) -----
   tiktokAds: (params: Record<string, unknown>) => ["tiktok-ads", params] as const,

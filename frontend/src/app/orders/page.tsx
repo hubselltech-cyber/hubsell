@@ -11,6 +11,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Download,
   Loader2,
   PackageOpen,
@@ -28,6 +29,7 @@ import { InvoiceStatusPanel } from "@/components/invoicing/invoice-status-panel"
 import { Money } from "@/components/ui/money";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
+import { PickSummaryDialog } from "@/components/orders/pick-summary-dialog";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -454,6 +456,18 @@ const TABS: { key: string; label: string; status: string; countKey: string }[] =
   },
 ];
 
+/** Bộ lọc con của tab Đã xử lý: nhãn chip + khóa số đếm (printed=yes là đã in, chưa gói). */
+const PRINTED_FILTERS = [
+  { key: "", label: "Tất cả đã xử lý", countKey: null },
+  { key: "no", label: "Chưa in phiếu", countKey: "PROCESSED_NOT_PRINTED" },
+  { key: "yes", label: "Chờ đóng gói", countKey: "PROCESSED_PRINTED" },
+  { key: "packed", label: "Đã đóng gói", countKey: "PROCESSED_PACKED" },
+] as const;
+
+const PRINTED_FILTER_LABEL = Object.fromEntries(
+  PRINTED_FILTERS.map((f) => [f.key, f.label])
+) as Record<(typeof PRINTED_FILTERS)[number]["key"], string>;
+
 /** Mở lại PDF biên bản bàn giao của một đơn (nhãn "Đã bàn giao" trong bảng). */
 async function openHandoverSheet(sheetId: string) {
   try {
@@ -483,6 +497,7 @@ export default function OrdersPage() {
   // /orders?cancelRequested=1 từ chuông thông báo (23/10/2026).
   const [cancelReqFilter, setCancelReqFilter] = useState(false);
   const [deciding, setDeciding] = useState<Order | null>(null);
+  const [pickSummaryOpen, setPickSummaryOpen] = useState(false);
   const [search, setSearch] = useState("");
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
@@ -752,7 +767,9 @@ export default function OrdersPage() {
                   Đã gói — lấy kiện ra
                 </span>
               )}
-              {/* Nhãn đã in phiếu — nhìn là biết đơn nào người khác đang gói */}
+              {/* Nhãn đã in phiếu — nhìn là biết đơn nào người khác đang gói.
+                  Đơn còn ở Đã xử lý đọc là "Chờ đóng gói" cho khớp chip (04/11/2026);
+                  đơn đã đi giao thì việc gói đã qua nên vẫn ghi đúng dữ kiện "Đã in phiếu". */}
               {o.labelPrintedAt && !o.packingDoneAt && (
                 <span
                   className={cn(
@@ -762,7 +779,7 @@ export default function OrdersPage() {
                   title={`Đã in phiếu lúc ${formatDateTime(o.labelPrintedAt)}`}
                 >
                   <Printer className="size-3 shrink-0" />
-                  Đã in phiếu
+                  {o.shippingStatus === "PROCESSED" ? "Chờ đóng gói" : "Đã in phiếu"}
                 </span>
               )}
               {/* Đơn đã sắp xếp vận chuyển mà chưa in — kho nhìn là biết còn
@@ -944,16 +961,7 @@ export default function OrdersPage() {
             lượt, đơn nào đã in tự rơi sang nhóm kia nên người sau không in lại. */}
         {tab === "processed" && (
           <div className="flex flex-wrap items-center gap-2">
-            {(
-              [
-                { key: "", label: "Tất cả đã xử lý", countKey: null },
-                { key: "no", label: "Chưa in phiếu", countKey: "PROCESSED_NOT_PRINTED" },
-                { key: "yes", label: "Đã in phiếu", countKey: "PROCESSED_PRINTED" },
-                // 01/11/2026: bước nội bộ sau in — quét lại kiện đã gói (trang
-                // /orders/packing); "Đã in phiếu" nay là đã in CHƯA gói.
-                { key: "packed", label: "Đã đóng gói", countKey: "PROCESSED_PACKED" },
-              ] as const
-            ).map((f) => {
+            {PRINTED_FILTERS.map((f) => {
               const active = printedFilter === f.key;
               const count = f.countKey ? counts[f.countKey] : counts.PROCESSED;
               return (
@@ -979,16 +987,33 @@ export default function OrdersPage() {
                 </button>
               );
             })}
-            {/* Màn quét kiện đã gói + in biên bản bàn giao — trang riêng vì là
-                việc đứng quét liên tục bằng điện thoại / máy quét */}
-            <Link
-              href="/orders/packing"
-              className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50"
-              title="Quét lại kiện đã gói để đánh dấu Đã đóng gói (chặn đơn hủy) và in biên bản bàn giao cho ship"
-            >
-              <ScanLine className="size-4" />
-              Quét đóng gói · Biên bản bàn giao
-            </Link>
+            {/* Hai nút đi thành một cụm: màn hẹp thì cùng xuống dòng, vẫn bám mép phải.
+                Chip Đã đóng gói không có cụm này (anh chốt 04/11/2026): hàng đã gói xong
+                thì không còn gì để bốc hay quét, việc còn lại là tạo biên bản ở thanh hàng loạt. */}
+            {printedFilter !== "packed" && (
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {/* Thống kê bốc hàng: cộng số lượng theo SKU / sản phẩm của đúng bộ lọc đang xem */}
+                <button
+                  type="button"
+                  onClick={() => setPickSummaryOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                  title="Xem cần lấy bao nhiêu sản phẩm, SKU cho các đơn đang lọc"
+                >
+                  <ClipboardList className="size-4" />
+                  Thống kê
+                </button>
+                {/* Màn quét kiện đã gói + in biên bản bàn giao — trang riêng vì là
+                    việc đứng quét liên tục bằng điện thoại / máy quét */}
+                <Link
+                  href="/orders/packing"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50"
+                  title="Quét lại kiện đã gói để đánh dấu Đã đóng gói (chặn đơn hủy) và in biên bản bàn giao cho ship"
+                >
+                  <ScanLine className="size-4" />
+                  Quét đóng gói · Biên bản bàn giao
+                </Link>
+              </div>
+            )}
           </div>
         )}
 
@@ -1277,6 +1302,21 @@ export default function OrdersPage() {
         }}
         onDone={load}
       />
+      {pickSummaryOpen && (
+        <PickSummaryDialog
+          onClose={() => setPickSummaryOpen(false)}
+          scopeLabel={PRINTED_FILTER_LABEL[printedFilter]}
+          params={{
+            shippingStatus: statusFilter || undefined,
+            channel: channelFilter,
+            carrier: carrierFilter || undefined,
+            search: debouncedSearch || undefined,
+            printed: printedFilter || undefined,
+            orderType: orderTypeFilter || undefined,
+            cancelRequested: cancelReqFilter || undefined,
+          }}
+        />
+      )}
     </AppShell>
   );
 }

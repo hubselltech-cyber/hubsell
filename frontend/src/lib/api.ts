@@ -1714,6 +1714,44 @@ export function fetchOrders(params: {
   return apiFetch<OrderListResponse>(`/api/orders?${qs.toString()}`);
 }
 
+/** Một dòng thống kê bốc hàng. `sku` null: dòng đơn không có SKU, hoặc sản phẩm có nhiều SKU. */
+export interface PickSummaryRow {
+  name: string;
+  sku: string | null;
+  qty: number;
+  /** Phần số lượng thuộc đơn hỏa tốc — kho nhặt trước. */
+  expressQty: number;
+  imageUrl: string | null;
+  /** Chỉ dòng theo sản phẩm: số SKU khác nhau. */
+  skuCount?: number;
+}
+
+export interface PickSummary {
+  totals: { orders: number; qty: number; expressQty: number; skuCount: number; productCount: number };
+  bySku: PickSummaryRow[];
+  byProduct: PickSummaryRow[];
+}
+
+/** Thống kê bốc hàng theo đúng bộ lọc đang xem của bảng đơn. */
+export function fetchOrderPickSummary(params: {
+  shippingStatus?: string;
+  channel?: ChannelFilterQuery;
+  carrier?: string;
+  search?: string;
+  printed?: "yes" | "no" | "packed";
+  orderType?: "single" | "multi";
+  cancelRequested?: boolean;
+}) {
+  const qs = new URLSearchParams(channelFilterToQuery(params.channel));
+  if (params.shippingStatus) qs.set("shippingStatus", params.shippingStatus);
+  if (params.carrier) qs.set("carrier", params.carrier);
+  if (params.search?.trim()) qs.set("search", params.search.trim());
+  if (params.printed) qs.set("printed", params.printed);
+  if (params.orderType) qs.set("orderType", params.orderType);
+  if (params.cancelRequested) qs.set("cancelRequested", "1");
+  return apiFetch<PickSummary>(`/api/orders/pick-summary?${qs.toString()}`);
+}
+
 // ===== XỬ LÝ ĐƠN TẬP TRUNG (04/09): chuẩn bị hàng THẬT qua API sàn + in vận đơn =====
 
 export type FulfillMethod = "PICKUP" | "DROPOFF";
