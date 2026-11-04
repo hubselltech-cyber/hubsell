@@ -29,6 +29,7 @@ export const qk = {
   copyListingBatchesAll: () => ["copy-listing-batches"] as const,
   copyListingBatch: (id: string) => ["copy-listing-batch", id] as const,
   copyListingManualLimits: () => ["copy-listing-manual-limits"] as const,
+  copyListingSourceDraft: (channelId: string, key: string) => ["copy-listing-source-draft", channelId, key] as const,
 
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,

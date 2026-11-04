@@ -13,6 +13,12 @@ export const MAX_LISTING_IMAGES = 9;
 
 /** Mã SKU hợp lệ: chữ/số/-/_/. , 6–50 ký tự — khớp SKU_PATTERN backend (manual.ts). */
 export const SKU_PATTERN = /^[A-Za-z0-9._-]{6,50}$/;
+/** Sao chép từ sàn (docs mục 34): giữ mã người bán ngắn < 6 ký tự — chỉ còn mẫu ký tự + trần 50. */
+export const SKU_PATTERN_LOOSE = /^[A-Za-z0-9._-]{1,50}$/;
+/** Mã máy Hubsell tự sinh khi sàn không có SKU người bán — không coi là mã chuẩn (cùng luật link-manager). */
+export function isFallbackSku(sku: string): boolean {
+  return /^(SPE|TTK|LZD)-\d/.test(sku);
+}
 
 /** Gian đích còn sửa / đăng được. */
 export function isOpen(t: CopyListingTarget): boolean {

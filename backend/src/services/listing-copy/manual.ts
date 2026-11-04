@@ -57,7 +57,18 @@ const STEP2_CODES: ReadonlySet<string> = new Set(["category", "brand", "logistic
  * trúc; các luật "đủ chuẩn sàn" (tên ngắn, thiếu cân nặng…) KHÔNG chặn ở đây —
  * computeMissing ở bước 2 lo, đúng luật cảnh báo không khóa cứng.
  */
-export function parseManualListing(body: unknown): { listing: NormalizedListing; manual: ManualMeta } {
+export function parseManualListing(
+  body: unknown,
+  opts: {
+    /**
+     * 05/11/2026 (docs mục 34) — sao chép từ sàn: mã người bán trên gian có thể ngắn hơn 6 ký tự; giữ
+     * nguyên để sau này Tự khớp trùng mã, nên hạ sàn độ dài (mẫu ký tự + trần 50 vẫn giữ).
+     */
+    skuMin?: number;
+  } = {}
+): { listing: NormalizedListing; manual: ManualMeta } {
+  const skuMin = Math.max(1, Math.min(opts.skuMin ?? MANUAL_LIMITS.skuMin, MANUAL_LIMITS.skuMin));
+  const skuPattern = skuMin === MANUAL_LIMITS.skuMin ? SKU_PATTERN : new RegExp(`^[A-Za-z0-9._-]{${skuMin},${MANUAL_LIMITS.skuMax}}$`);
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const title = s(b.title, MANUAL_LIMITS.titleMax);
   if (!title) throw new ListingCopyError("Nhập tên sản phẩm.");
@@ -108,7 +119,9 @@ export function parseManualListing(body: unknown): { listing: NormalizedListing;
   for (const v of variants) {
     if (v.excluded) continue;
     if (!v.sku) throw new ListingCopyError(`Phân loại "${v.name || "sản phẩm"}" chưa có mã SKU.`);
-    if (!SKU_PATTERN.test(v.sku)) throw new ListingCopyError(`Mã SKU "${v.sku}" không hợp lệ — 6–50 ký tự, chỉ chữ, số, gạch ngang, gạch dưới, dấu chấm.`);
+    if (!skuPattern.test(v.sku)) {
+      throw new ListingCopyError(`Mã SKU "${v.sku}" không hợp lệ — ${skuMin}–${MANUAL_LIMITS.skuMax} ký tự, chỉ chữ, số, gạch ngang, gạch dưới, dấu chấm.`);
+    }
     const k = v.sku.toUpperCase();
     if (seen.has(k)) throw new ListingCopyError(`Mã SKU "${v.sku}" bị trùng giữa các phân loại — mỗi phân loại một mã riêng.`);
     seen.add(k);
@@ -150,6 +163,11 @@ interface SkuTaken {
   sku: string;
   /** "Tổng kho" hoặc tên gian. */
   where: string;
+  /**
+   * 05/11/2026 (Sao chép sản phẩm từ sàn về Tổng kho, docs mục 34): nguồn là chính gian nên mã
+   * "đã có ở gian" là điều mong muốn (sau này Tự khớp trùng mã) — chỉ `warehouse` mới chặn.
+   */
+  kind: "warehouse" | "channel";
 }
 
 /** Mã đã có ở Tổng kho hoặc trên gian đã nối của chủ shop (so không phân biệt hoa thường). */
@@ -164,10 +182,12 @@ export async function findTakenSkus(ownerId: string, skus: string[]): Promise<Sk
       select: { channelSku: true, channel: { select: { shopName: true } } },
     }),
   ]);
-  const taken = new Map<string, string>();
-  for (const p of products) taken.set(p.skuCode.toUpperCase(), "Tổng kho");
-  for (const r of channelRows) if (!taken.has(r.channelSku.toUpperCase())) taken.set(r.channelSku.toUpperCase(), r.channel.shopName);
-  return wanted.filter((x) => taken.has(x.toUpperCase())).map((x) => ({ sku: x, where: taken.get(x.toUpperCase())! }));
+  const taken = new Map<string, Omit<SkuTaken, "sku">>();
+  for (const p of products) taken.set(p.skuCode.toUpperCase(), { where: "Tổng kho", kind: "warehouse" });
+  for (const r of channelRows) {
+    if (!taken.has(r.channelSku.toUpperCase())) taken.set(r.channelSku.toUpperCase(), { where: r.channel.shopName, kind: "channel" });
+  }
+  return wanted.filter((x) => taken.has(x.toUpperCase())).map((x) => ({ sku: x, ...taken.get(x.toUpperCase())! }));
 }
 
 /**
@@ -178,9 +198,10 @@ export async function ensureWarehouseProducts(
   ownerId: string,
   actorId: string | null,
   source: ManualSource,
-  opts: { allowCost: boolean }
+  opts: { allowCost: boolean; reason?: string }
 ): Promise<{ created: number; skipped: number }> {
   const cost = opts.allowCost ? (source.manual?.costPrice ?? 0) : 0;
+  const reason = opts.reason ?? "Tạo từ Sao chép sản phẩm (Tạo mới)";
   let created = 0;
   let skipped = 0;
   for (const v of source.variants) {
@@ -211,7 +232,7 @@ export async function ensureWarehouseProducts(
           productId: p.id,
           delta: v.stock,
           type: InventoryLogType.IMPORT,
-          reason: "Tạo từ Sao chép sản phẩm (Tạo mới)",
+          reason,
           actorId,
         });
       }
@@ -235,6 +256,12 @@ export async function saveWarehouseOnly(input: {
   listing: NormalizedListing;
   meta: ManualMeta;
   allowCost: boolean;
+  /**
+   * 05/11/2026 (docs mục 34) "Sao chép sản phẩm từ sàn" ở Tổng kho: nguồn là một sản phẩm trên gian
+   * đã nối, khách sửa trong cùng form rồi lưu thành SKU kho ĐỘC LẬP (không nối gian — nối sau ở
+   * Sản phẩm trên sàn). Ghi gian + id nguồn vào job để có vết; lý do nhập kho nêu tên gian.
+   */
+  origin?: { channelId: string; itemId: string; shopName: string };
 }): Promise<{ jobId: string; created: number; skipped: number }> {
   const source: ManualSource = { ...input.listing, manual: input.meta };
   const now = new Date();
@@ -242,7 +269,9 @@ export async function saveWarehouseOnly(input: {
     data: {
       userId: input.ownerId,
       createdById: input.userId,
-      sourceType: "MANUAL",
+      sourceType: input.origin ? "CHANNEL" : "MANUAL",
+      sourceChannelId: input.origin?.channelId ?? null,
+      sourceItemId: input.origin?.itemId ?? null,
       sourceTitle: input.listing.title,
       sourceImageUrl: input.listing.images[0] ?? null,
       source: source as unknown as Prisma.InputJsonValue,
@@ -253,7 +282,12 @@ export async function saveWarehouseOnly(input: {
     },
     select: { id: true },
   });
-  const r = await ensureWarehouseProducts(input.ownerId, input.userId, source, { allowCost: input.allowCost });
-  console.log(`[listing-copy] Chỉ lưu Tổng kho ${job.id}: ghi ${r.created} SKU (bỏ qua ${r.skipped} đã có)`);
+  const r = await ensureWarehouseProducts(input.ownerId, input.userId, source, {
+    allowCost: input.allowCost,
+    reason: input.origin ? `Sao chép từ sàn — gian ${input.origin.shopName}` : undefined,
+  });
+  console.log(
+    `[listing-copy] Chỉ lưu Tổng kho ${job.id}${input.origin ? ` (sao chép từ gian ${input.origin.channelId} / ${input.origin.itemId})` : ""}: ghi ${r.created} SKU (bỏ qua ${r.skipped} đã có)`
+  );
   return { jobId: job.id, ...r };
 }

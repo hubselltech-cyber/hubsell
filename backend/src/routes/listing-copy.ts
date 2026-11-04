@@ -124,6 +124,26 @@ router.get("/sources", async (req: AuthRequest, res, next) => {
 });
 
 /**
+ * Bản nháp đầy đủ của MỘT sản phẩm trên gian nguồn (05/11/2026, docs mục 34 — "Sao chép sản phẩm từ
+ * sàn" ở Tổng kho): hỏi adapter thật (fetchListing: mô tả, mảng ảnh, phân loại, cân nặng) để đổ vào
+ * form Tạo sản phẩm mới rồi khách "Lưu vào Tổng kho" thành SKU kho độc lập. Một lượt gọi sàn mỗi lần mở.
+ */
+router.get("/sources/draft", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId = str(req.query.channelId);
+    const key = str(req.query.key);
+    if (!channelId || !key) throw new ListingCopyError("Thiếu gian nguồn hoặc sản phẩm nguồn.");
+    const channel = await ownChannel(req, channelId);
+    if (!channel) throw new ListingCopyError("Gian nguồn không thuộc shop này.", 404);
+    const listing = await getListingAdapter(channel).fetchListing(channel, key);
+    if (!listing) throw new ListingCopyError("Không đọc được sản phẩm nguồn từ sàn — thử Lấy sản phẩm mới từ sàn rồi chọn lại.", 404);
+    res.json({ channel: { id: channel.id, shopName: channel.shopName, channelName: channel.channelName }, listing });
+  } catch (err) {
+    sendError(res, err, next);
+  }
+});
+
+/**
  * Xin kéo danh mục sản phẩm của gian nguồn (30/10/2026, anh hỏi "sản phẩm vừa đăng trên sàn
  * có về ngay không?"): bình thường worker product-catalog-sync chỉ làm mới mỗi đêm 03:00–05:00, nên
  * sản phẩm mới đăng hôm nay chưa có trong bước 1. Cùng việc với nút "Đồng bộ từ sàn" ở Giá vốn /
@@ -244,14 +264,28 @@ router.post("/batches/:id/targets/:tid/apply", async (req: AuthRequest, res, nex
 router.post("/warehouse-only", async (req: AuthRequest, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const parsed = parseManualListing(body.listing);
-    const taken = await findTakenSkus(req.ownerId!, parsed.listing.variants.filter((v) => !v.excluded).map((v) => v.sku));
+    // 05/11/2026 (docs mục 34) — "Sao chép sản phẩm từ sàn" ở Tổng kho gửi kèm origin {channelId, itemId}:
+    // mã trùng với GIAN không chặn (nguồn chính là gian đó, sau này Tự khớp trùng mã), chỉ chặn mã đã có ở
+    // Tổng kho; mã người bán ngắn < 6 ký tự giữ nguyên.
+    const originRaw = (body.origin ?? null) as { channelId?: unknown; itemId?: unknown } | null;
+    let origin: { channelId: string; itemId: string; shopName: string } | undefined;
+    if (originRaw && typeof originRaw === "object") {
+      const channelId = str(originRaw.channelId);
+      const itemId = str(originRaw.itemId);
+      if (!channelId || !itemId) throw new ListingCopyError("Thiếu gian nguồn hoặc sản phẩm nguồn.");
+      const channel = await ownChannel(req, channelId);
+      if (!channel) throw new ListingCopyError("Gian nguồn không thuộc shop này.", 404);
+      origin = { channelId, itemId, shopName: channel.shopName };
+    }
+    const parsed = parseManualListing(body.listing, { skuMin: origin ? 1 : undefined });
+    const takenAll = await findTakenSkus(req.ownerId!, parsed.listing.variants.filter((v) => !v.excluded).map((v) => v.sku));
+    const taken = origin ? takenAll.filter((t) => t.kind === "warehouse") : takenAll;
     if (taken.length > 0) {
       throw new ListingCopyError(`Mã SKU đã có: ${taken.map((t) => `${t.sku} (${t.where})`).join(", ")} — đặt mã khác.`);
     }
     const allowCost = canSeeFinancials(req);
     if (!allowCost) parsed.manual.costPrice = null;
-    const r = await saveWarehouseOnly({ ownerId: req.ownerId!, userId: req.userId!, listing: parsed.listing, meta: parsed.manual, allowCost });
+    const r = await saveWarehouseOnly({ ownerId: req.ownerId!, userId: req.userId!, listing: parsed.listing, meta: parsed.manual, allowCost, origin });
     const l = parsed.listing;
     await attachUploadsToJob(req.ownerId!, r.jobId, [...l.images, ...l.descriptionImages, ...l.variants.map((v) => v.imageUrl ?? "")]);
     res.status(201).json(r);

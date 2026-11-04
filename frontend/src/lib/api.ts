@@ -8841,12 +8841,25 @@ export function createCopyListingManualJob(body: { listing: CopyListingManualPay
   });
 }
 
-/** "Chỉ lưu vào Tổng kho" (docs mục 33): ghi SKU kho ngay, không đăng gian nào. */
-export function saveCopyListingWarehouseOnly(listing: CopyListingManualPayload) {
+/**
+ * "Chỉ lưu vào Tổng kho" (docs mục 33): ghi SKU kho ngay, không đăng gian nào.
+ * `origin` (docs mục 34, 05/11/2026): sao chép từ một sản phẩm trên gian — máy chủ không chặn mã trùng
+ * với gian, cho mã ngắn < 6 ký tự, ghi vết gian nguồn.
+ */
+export function saveCopyListingWarehouseOnly(listing: CopyListingManualPayload, origin?: { channelId: string; itemId: string }) {
   return apiFetch<{ jobId: string; created: number; skipped: number }>(`${COPY_LISTING_BASE}/warehouse-only`, {
     method: "POST",
-    body: JSON.stringify({ listing }),
+    body: JSON.stringify(origin ? { listing, origin } : { listing }),
   });
+}
+
+/** Bản nháp đầy đủ của một sản phẩm trên gian (hỏi sàn) — đổ vào form Tạo sản phẩm mới (docs mục 34). */
+export function fetchCopyListingSourceDraft(channelId: string, key: string) {
+  const q = new URLSearchParams({ channelId, key });
+  return apiFetch<{
+    channel: { id: string; shopName: string; channelName: ChannelName };
+    listing: CopyListingNormalized & { sizeChartImageUrl?: string | null };
+  }>(`${COPY_LISTING_BASE}/sources/draft?${q.toString()}`);
 }
 
 /** Thẻ "Đạt chuẩn sàn" sống — byPlatform null = form chưa đủ cấu trúc (reason nói vì sao). */
@@ -8857,9 +8870,9 @@ export function checkCopyListingDraft(listing: CopyListingManualPayload) {
   });
 }
 
-/** Mã SKU đã có ở Tổng kho / gian đã nối. */
+/** Mã SKU đã có ở Tổng kho / gian đã nối (`kind` phân biệt — sao chép từ sàn chỉ chặn `warehouse`). */
 export function checkCopyListingSkus(skus: string[]) {
-  return apiFetch<{ taken: { sku: string; where: string }[] }>(`${COPY_LISTING_BASE}/sku-check`, {
+  return apiFetch<{ taken: { sku: string; where: string; kind?: "warehouse" | "channel" }[] }>(`${COPY_LISTING_BASE}/sku-check`, {
     method: "POST",
     body: JSON.stringify({ skus }),
   });

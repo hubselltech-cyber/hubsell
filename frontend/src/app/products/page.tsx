@@ -57,6 +57,7 @@ import { StockLocationsDialog } from "@/components/products/stock-locations-dial
 import { StockTransferDialog } from "@/components/products/stock-transfer-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LocationSelect } from "@/components/products/location-select";
+import { CopyFromChannelDialog } from "@/components/products/copy-from-channel-dialog";
 import {
   SyncSettingsDialog,
   type SyncHeaderState,
@@ -293,6 +294,8 @@ export default function ProductsHubPage() {
   // Menu "Tạo sản phẩm kho" (05/11): Tạo mới / Sao chép từ sàn — mục sau theo lá quyền của trang đó.
   const [createOpen, setCreateOpen] = useState(false);
   const canCopyListing = can(getStoredUser(), "operations.copy-listing");
+  // Hộp chọn MỘT sản phẩm trên gian → /products/new?fromChannel=&item= (docs SAO-CHEP-SAN-PHAM mục 34).
+  const [copyOpen, setCopyOpen] = useState(false);
 
   // Trạng thái đồng bộ tồn theo gian (chỉ chủ shop) — bước 3 + header khối.
   const [syncOpen, setSyncOpen] = useState(false);
@@ -1436,8 +1439,10 @@ export default function ProductsHubPage() {
                 {/* 30/10/2026 anh chốt: bỏ hộp "Thêm sản phẩm mới" cũ (SKU + giá + tồn), thay bằng luồng
                     Tạo sản phẩm mới của Sao chép sản phẩm (soạn đủ chuẩn sàn → đăng lên gian + ghi Tổng kho).
                     05/11/2026 anh Trung: nút thành MENU "Tạo sản phẩm kho" — hai đường đưa hàng vào kho:
-                    soạn từ đầu (/products/new) hoặc lấy sản phẩm có sẵn trên gian đã nối (Sao chép sản
-                    phẩm, nguồn "gian đã nối" — cùng trang với Trợ lý vận hành, chỉ ai có quyền mới thấy). */}
+                    soạn từ đầu (/products/new) hoặc SAO CHÉP một sản phẩm trên gian đã nối thành SKU kho
+                    ĐỘC LẬP (anh chốt cùng ngày: "sản phẩm ở Tổng kho độc lập trước, nối sau; thiếu SKU thì
+                    bắt đặt") — hộp chọn sản phẩm → cùng form Tạo mới đổ sẵn → Lưu vào Tổng kho (docs
+                    SAO-CHEP-SAN-PHAM mục 34). Mục này theo lá quyền operations.copy-listing. */}
                 <Popover open={createOpen} onOpenChange={setCreateOpen}>
                   <PopoverTrigger render={<Button />}>
                     <Plus className="size-4" />
@@ -1457,17 +1462,20 @@ export default function ProductsHubPage() {
                       </span>
                     </Link>
                     {canCopyListing && (
-                      <Link
-                        href="/operations-assistant/copy-listing"
-                        className="flex items-start gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted"
-                        onClick={() => setCreateOpen(false)}
+                      <button
+                        type="button"
+                        className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted"
+                        onClick={() => {
+                          setCreateOpen(false);
+                          setCopyOpen(true);
+                        }}
                       >
                         <Copy className="mt-0.5 size-4 shrink-0 text-slate-500" />
                         <span className="min-w-0">
                           <span className="block font-medium">Sao chép sản phẩm từ sàn</span>
-                          <span className={cn(TEXT_SUB, "block")}>Lấy sản phẩm đang bán trên gian đã nối, đăng sang gian khác và ghi Tổng kho.</span>
+                          <span className={cn(TEXT_SUB, "block")}>Lấy một sản phẩm trên gian đã nối làm SKU kho độc lập — chưa nối gian, nối sau.</span>
                         </span>
-                      </Link>
+                      </button>
                     )}
                   </PopoverContent>
                 </Popover>
@@ -1818,6 +1826,9 @@ export default function ProductsHubPage() {
           onStateChange={setSyncState}
         />
       )}
+
+      {/* Sao chép sản phẩm từ sàn → SKU kho độc lập (docs SAO-CHEP-SAN-PHAM mục 34) */}
+      {canCopyListing && <CopyFromChannelDialog open={copyOpen} onOpenChange={setCopyOpen} />}
 
       {/* Bước 2 "Tự khớp + tạo SKU" — cùng hộp với tab Sản phẩm trên sàn */}
       {isAdmin && (

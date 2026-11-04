@@ -39,7 +39,7 @@ import { ImageGrid, uploadImageFile, useImageUploads } from "./image-grid";
 import { ManualPlatformCheck } from "./manual-platform-check";
 import { ManualVariantTable, type ManualVariantEdit } from "./manual-variant-table";
 import { FieldLabel, RequiredPill, WARN_INPUT } from "./primitives";
-import { SKU_PATTERN, type MissingContext } from "./shared";
+import { isFallbackSku, SKU_PATTERN, SKU_PATTERN_LOOSE, type MissingContext } from "./shared";
 
 // ---------------------------------------------------------------- Chuẩn chung (khớp backend rules.ts)
 
@@ -108,10 +108,99 @@ export interface ManualFormSummary {
   blocker: string | null;
 }
 
+/** Bản nháp đổ sẵn vào form (05/11/2026, docs mục 34 — Sao chép sản phẩm từ sàn về Tổng kho). */
+export interface ManualInitialDraft {
+  title: string;
+  description: string;
+  images: string[];
+  descriptionImages: string[];
+  weightGrams: number | null;
+  dimensionsCm: { length: number; width: number; height: number } | null;
+  options: { name: string; values: string[] }[];
+  variants: { sku: string; name: string | null; price: number; stock: number; imageUrl: string | null; excluded?: boolean }[];
+}
+
 interface FormProps {
   /** Nhân viên không nhập giá vốn (backend cũng bỏ). */
   canSeeCost: boolean;
   onChange: (payload: CopyListingManualPayload | null, summary: ManualFormSummary) => void;
+  /** Đổ sẵn từ một sản phẩm trên gian (chỉ đọc lúc dựng form — đổi nguồn thì remount bằng key). */
+  initial?: ManualInitialDraft;
+  /**
+   * "copy" = nguồn sàn: mã gốc KHÔNG bắt buộc (mỗi dòng đã mang mã sàn; dòng thiếu mã thì gõ mã gốc
+   * để tự sinh hoặc gõ từng dòng), mã trùng với gian không chặn, mã ngắn < 6 ký tự giữ nguyên.
+   */
+  mode?: "new" | "copy";
+}
+
+interface Seed {
+  title: string;
+  description: string;
+  images: string[];
+  descriptionImages: string[];
+  options: OptionDraft[];
+  edits: Record<string, ManualVariantEdit>;
+  weight: string;
+  dims: { length: string; width: string; height: string };
+}
+
+const EMPTY_SEED: Seed = { title: "", description: "", images: [], descriptionImages: [], options: [], edits: {}, weight: "", dims: { length: "", width: "", height: "" } };
+
+/**
+ * Bản nháp sàn → trạng thái form. Nhóm phân loại của sàn chỉ dùng khi tổ hợp sinh ra KHỚP ĐÚNG tên các
+ * phân loại (form sinh dòng từ tổ hợp); không khớp thì gom thành một nhóm "Phân loại" mỗi dòng một giá
+ * trị để không rơi dòng nào. Mã sàn hợp lệ giữ nguyên; mã máy (SPE-/TTK-/LZD-) hoặc sai mẫu → để trống,
+ * khách phải đặt.
+ */
+function buildSeed(initial: ManualInitialDraft | undefined, copyMode: boolean, limits: Limits): Seed {
+  if (!initial) return EMPTY_SEED;
+  const pattern = copyMode ? SKU_PATTERN_LOOSE : SKU_PATTERN;
+  const variants = initial.variants.filter((v) => !v.excluded);
+  const names = variants.map((v) => (v.name ?? "").trim());
+  let options = initial.options.filter((o) => o.name.trim() && o.values.length > 0).map((o) => ({ name: o.name.trim(), values: [...o.values] }));
+  const combos = cartesian(options);
+  const matches = options.length > 0 && combos.length === names.length && names.every((n) => combos.includes(n));
+  if (!matches) {
+    if (variants.length > 1 || names[0]) {
+      const seen = new Map<string, number>();
+      const values = names.map((n, i) => {
+        const base = n || `Phân loại ${i + 1}`;
+        const k = base.toLowerCase();
+        const c = (seen.get(k) ?? 0) + 1;
+        seen.set(k, c);
+        return c > 1 ? `${base} (${c})` : base;
+      });
+      options = [{ name: "Phân loại", values }];
+      names.splice(0, names.length, ...values);
+    } else {
+      options = [];
+    }
+  }
+  const keyed = options.length > 0;
+  const edits: Record<string, ManualVariantEdit> = {};
+  variants.forEach((v, i) => {
+    if (!keyed && i > 0) return;
+    const sku = v.sku.trim();
+    const ok = Boolean(sku) && !isFallbackSku(sku) && pattern.test(sku);
+    edits[keyed ? names[i] : ""] = {
+      sku: ok ? sku : undefined,
+      price: v.price > 0 ? String(v.price) : "",
+      stock: String(Math.max(0, v.stock ?? 0)),
+      imageUrl: v.imageUrl ?? null,
+    };
+  });
+  return {
+    title: initial.title,
+    description: initial.description,
+    images: initial.images.slice(0, limits.images),
+    descriptionImages: initial.descriptionImages.slice(0, limits.descriptionImages),
+    options: options.map((o) => ({ ...o, input: "" })),
+    edits,
+    weight: initial.weightGrams ? String(initial.weightGrams) : "",
+    dims: initial.dimensionsCm
+      ? { length: String(initial.dimensionsCm.length), width: String(initial.dimensionsCm.width), height: String(initial.dimensionsCm.height) }
+      : { length: "", width: "", height: "" },
+  };
 }
 
 /** Đợi trần form từ server rồi mới dựng (hook ảnh cần số trần ngay từ đầu). */
@@ -121,18 +210,22 @@ export function ManualProductForm(props: FormProps) {
   return <ManualProductFormBody {...props} limits={limitsQ.data} />;
 }
 
-function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { limits: Limits }) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const cover = useImageUploads([], limits.images);
-  const desc = useImageUploads([], limits.descriptionImages);
-  const [options, setOptions] = useState<OptionDraft[]>([]);
+function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "new" }: FormProps & { limits: Limits }) {
+  const copyMode = mode === "copy";
+  const skuPattern = copyMode ? SKU_PATTERN_LOOSE : SKU_PATTERN;
+  // Chỉ dựng một lần lúc mount — đổi nguồn thì trang remount form bằng key.
+  const [seed] = useState<Seed>(() => buildSeed(initial, copyMode, limits));
+  const [title, setTitle] = useState(seed.title);
+  const [description, setDescription] = useState(seed.description);
+  const cover = useImageUploads(seed.images, limits.images);
+  const desc = useImageUploads(seed.descriptionImages, limits.descriptionImages);
+  const [options, setOptions] = useState<OptionDraft[]>(seed.options);
   const [rootSku, setRootSku] = useState("");
   const [basePrice, setBasePrice] = useState("");
   const [baseStock, setBaseStock] = useState("0");
-  const [edits, setEdits] = useState<Record<string, ManualVariantEdit>>({});
-  const [weight, setWeight] = useState("");
-  const [dims, setDims] = useState({ length: "", width: "", height: "" });
+  const [edits, setEdits] = useState<Record<string, ManualVariantEdit>>(seed.edits);
+  const [weight, setWeight] = useState(seed.weight);
+  const [dims, setDims] = useState(seed.dims);
   const [costPrice, setCostPrice] = useState("");
 
   const [byPlatform, setByPlatform] = useState<Record<ChannelName, string[]> | null>(null);
@@ -175,13 +268,14 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
     const out: Record<string, string> = {};
     for (const r of activeRows) {
       const k = r.sku.trim();
-      if (!k) out[r.name] = "Chưa có mã";
-      else if (!SKU_PATTERN.test(k)) out[r.name] = k.length < 6 ? "Ngắn hơn 6 ký tự (TikTok đòi ≥ 6)" : k.length > 50 ? "Dài hơn 50 ký tự" : "Chỉ chữ, số, - _ .";
+      if (!k) out[r.name] = copyMode ? "Sàn không có mã chuẩn — đặt mã" : "Chưa có mã";
+      else if (!skuPattern.test(k)) out[r.name] = k.length < 6 ? "Ngắn hơn 6 ký tự (TikTok đòi ≥ 6)" : k.length > 50 ? "Dài hơn 50 ký tự" : "Chỉ chữ, số, - _ .";
       else if ((count.get(k.toUpperCase()) ?? 0) > 1) out[r.name] = "Trùng với phân loại khác";
       else if (taken[k.toUpperCase()]) out[r.name] = `Đã có ở ${taken[k.toUpperCase()]}`;
     }
     return out;
-  }, [activeRows, taken]);
+  }, [activeRows, taken, copyMode, skuPattern]);
+  const missingSkuCount = activeRows.filter((r) => !r.sku.trim()).length;
 
   // ---------------------------------------------------------------- payload
   const payload = useMemo<CopyListingManualPayload>(() => {
@@ -211,13 +305,14 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
   const blocker = useMemo<string | null>(() => {
     if (!payload.title) return "Nhập tên sản phẩm";
     // Anh chốt 30/10: mã gốc BẮT BUỘC (chuẩn SKU từ đầu) — không cho qua dù từng dòng đã gõ tay.
-    if (!rootSku.trim()) return "Nhập mã gốc SKU";
+    // Sao chép từ sàn (05/11): mỗi dòng đã mang mã sàn → không ép mã gốc; dòng thiếu mã bị chặn ở skuIssue.
+    if (!copyMode && !rootSku.trim()) return "Nhập mã gốc SKU";
     if (activeRows.length === 0) return "Cần ít nhất một phân loại để đăng";
     if (Object.keys(skuIssue).length > 0) return "Sửa mã SKU còn lỗi";
     if (activeRows.some((r) => !priceOk(r.price))) return "Giá bán phải lớn hơn 0";
     if (uploading) return "Đang tải ảnh…";
     return null;
-  }, [payload.title, rootSku, activeRows, skuIssue, uploading]);
+  }, [payload.title, rootSku, activeRows, skuIssue, uploading, copyMode]);
 
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -247,7 +342,7 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
   }, [payloadJson]);
 
   // Kiểm trùng mã với Tổng kho + gian đã nối — đợi 500 ms.
-  const skuListJson = JSON.stringify([...new Set(activeRows.map((r) => r.sku.trim()).filter((s) => SKU_PATTERN.test(s)))]);
+  const skuListJson = JSON.stringify([...new Set(activeRows.map((r) => r.sku.trim()).filter((s) => skuPattern.test(s)))]);
   useEffect(() => {
     const skus = JSON.parse(skuListJson) as string[];
     if (skus.length === 0) {
@@ -256,11 +351,12 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
     }
     const t = setTimeout(() => {
       checkCopyListingSkus(skus)
-        .then((r) => setTaken(Object.fromEntries(r.taken.map((x) => [x.sku.toUpperCase(), x.where]))))
+        // Sao chép từ sàn: mã có trên gian là chuyện đương nhiên (nguồn chính là gian) — chỉ báo mã đã có ở Tổng kho.
+        .then((r) => setTaken(Object.fromEntries(r.taken.filter((x) => !copyMode || x.kind !== "channel").map((x) => [x.sku.toUpperCase(), x.where]))))
         .catch(() => undefined);
     }, 500);
     return () => clearTimeout(t);
-  }, [skuListJson]);
+  }, [skuListJson, copyMode]);
 
   // Mục lục neo: mục nào đang trong tầm nhìn thì sáng.
   useEffect(() => {
@@ -379,6 +475,22 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
               Đủ 3 sàn: ≤ {COMMON.options} nhóm × {COMMON.optionValues} giá trị, ≤ {COMMON.variants} tổ hợp (nhóm 3 / &gt; 50 tổ hợp: chỉ TikTok).
             </span>
           </div>
+          {copyMode && (
+            <p
+              className={cn(
+                "rounded-md border px-3 py-2 text-sm",
+                missingSkuCount > 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+              )}
+            >
+              {missingSkuCount > 0 ? (
+                <>
+                  <b>{missingSkuCount}/{activeRows.length}</b> phân loại trên sàn chưa có mã SKU chuẩn (sàn để trống hoặc Hubsell tự đặt mã máy). Gõ <b>mã gốc</b> để tự sinh mã cho các dòng trống, hoặc gõ thẳng từng dòng — mã này sẽ là mã SKU trong Tổng kho.
+                </>
+              ) : (
+                <>Đủ mã SKU cho {activeRows.length} phân loại (mã sàn giữ nguyên) — về sau bấm Tự khớp ở Sản phẩm trên sàn là nối đúng vì trùng mã.</>
+              )}
+            </p>
+          )}
 
           <div className="space-y-3">
             {options.map((opt, i) => (
@@ -427,10 +539,16 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
               <div className={cn(TEXT_TABLE_HEAD, "flex items-center gap-2")}>
-                Mã gốc SKU <RequiredPill tone="amber" />
+                Mã gốc SKU {!copyMode && <RequiredPill tone="amber" />}
               </div>
-              <Input className={cn(!rootSku.trim() && WARN_INPUT)} placeholder="Vd: TC113" value={rootSku} onChange={(e) => setRootSku(e.target.value)} />
-              <p className={TEXT_SUB}>{liveOptions.length > 0 ? "Tự sinh MÃ GỐC-ĐUÔI theo phân loại, sửa tay từng dòng được." : "Sản phẩm không phân loại: mã gốc = mã SKU."}</p>
+              <Input className={cn(!copyMode && !rootSku.trim() && WARN_INPUT)} placeholder="Vd: TC113" value={rootSku} onChange={(e) => setRootSku(e.target.value)} />
+              <p className={TEXT_SUB}>
+                {copyMode
+                  ? "Chỉ áp cho dòng CHƯA có mã (MÃ GỐC-ĐUÔI theo phân loại); dòng đã có mã sàn giữ nguyên."
+                  : liveOptions.length > 0
+                    ? "Tự sinh MÃ GỐC-ĐUÔI theo phân loại, sửa tay từng dòng được."
+                    : "Sản phẩm không phân loại: mã gốc = mã SKU."}
+              </p>
             </div>
             <div className="space-y-1">
               <div className={TEXT_TABLE_HEAD}>Giá bán chung (đ)</div>
@@ -503,7 +621,15 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
               </div>
             )}
             <p className={cn(TEXT_SUB, "self-end")}>
-              Khi bấm Đăng, mỗi phân loại thành một SKU trong Tổng kho với tồn ở trên. <span className="text-slate-900">Chưa nối với gian</span> — muốn đồng bộ tồn thì vào Sản phẩm trên sàn bấm Tự khớp (mã trùng nhau nên khớp đúng).
+              {copyMode ? (
+                <>
+                  Mỗi phân loại thành một SKU <span className="text-slate-900">độc lập</span> trong Tổng kho với tồn ở trên — <span className="text-slate-900">chưa nối với gian</span>, sản phẩm trên sàn vẫn y nguyên. Muốn đồng bộ tồn thì vào Sản phẩm trên sàn bấm Tự khớp (trùng mã nên khớp đúng).
+                </>
+              ) : (
+                <>
+                  Khi bấm Đăng, mỗi phân loại thành một SKU trong Tổng kho với tồn ở trên. <span className="text-slate-900">Chưa nối với gian</span> — muốn đồng bộ tồn thì vào Sản phẩm trên sàn bấm Tự khớp (mã trùng nhau nên khớp đúng).
+                </>
+              )}
             </p>
           </div>
         </section>

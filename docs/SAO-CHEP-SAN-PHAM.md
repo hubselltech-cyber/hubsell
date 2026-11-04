@@ -995,3 +995,39 @@ Anh: "hôm trước anh bảo bỏ qua nút Chỉ đăng vào Tổng Kho thì h�
   gắn ảnh dùng lại hàm cũ), mã trùng (dùng lại `findTakenSkus` đã chạy prod).
 - Ghi chú a11y thấy khi thử: các ô Mã gốc / Giá / Tồn / Cân nặng của form không có label nối (`aria-label`/`htmlFor`) → trình đọc
   màn hình và công cụ tự động không thấy; chưa sửa, không thuộc việc này.
+
+## 34. "Sao chép sản phẩm từ sàn" ở Tổng kho → SKU kho ĐỘC LẬP (05/11/2026 sáng, anh chốt trong đợt nâng cấp Quản lý kho) — ĐÃ LÀM, kiểm local
+
+Bối cảnh: menu "Tạo sản phẩm kho" ở Tổng kho (docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 1) có mục "Sao chép sản phẩm từ sàn". Lúc đầu em
+trỏ sang trang Sao chép sản phẩm (đăng sang gian khác). Anh sửa: **"ở bước này chỉ đơn giản là sao chép thành một sản phẩm mới hoàn toàn
+và được mình quản lý trong Tổng kho, không phải sản phẩm đã nối. Ở Tổng kho sản phẩm độc lập trước, nối sau. Sản phẩm từ sàn chưa có
+SKU đúng thì phải yêu cầu đặt SKU."** Khác với Nối SKU nhanh / Tạo SKU kho ở Sản phẩm trên sàn (tạo + NỐI ngay): đây là **chép dữ liệu
+sàn thành hàng kho độc lập**, không tạo liên kết, sản phẩm trên sàn giữ nguyên.
+
+- **Luồng:** Tổng kho › Tạo sản phẩm kho › Sao chép sản phẩm từ sàn → hộp `components/products/copy-from-channel-dialog.tsx` (dùng lại
+  bảng chọn nguồn bước 1 của Sao chép sản phẩm, `SourcePicker single` — bấm dòng là chọn, không ô chọn cả trang; có nút Lấy sản phẩm
+  mới từ sàn) → `/products/new?fromChannel=<channelId>&item=<key>` → `manual-create-page.tsx` CHẾ ĐỘ SAO CHÉP: hỏi
+  `GET /sources/draft` → đổ vào `ManualProductForm initial mode="copy"` → khách sửa / đặt mã → **"Lưu vào Tổng kho"** (chỉ một nút; bước 2
+  gian đích ẩn) → `POST /warehouse-only { listing, origin }` → về Tổng kho. Mục menu + hộp theo lá quyền `operations.copy-listing`.
+- **Backend:** `GET /api/sao-chep-san-pham/sources/draft?channelId&key` = `ownChannel` + `getListingAdapter(channel).fetchListing` (một
+  lượt gọi sàn mỗi lần mở; mock adapter dựng từ ChannelProduct ở local) trả `{ channel, listing }`. `POST /warehouse-only` nhận thêm
+  `origin {channelId, itemId}`: kiểm gian thuộc shop; `parseManualListing(body, { skuMin: 1 })` (mã người bán trên sàn có thể < 6 ký tự —
+  giữ nguyên để Tự khớp trùng mã; mẫu ký tự + trần 50 vẫn giữ); `findTakenSkus` nay trả `kind: warehouse | channel` → **chỉ chặn mã đã
+  có ở Tổng kho**, mã trùng với gian là đương nhiên (nguồn chính là gian). `saveWarehouseOnly({ origin })` ghi job sourceType CHANNEL +
+  sourceChannelId/sourceItemId (vẫn DONE, batchId null, không hiện Nhật ký đợt), lý do nhập kho "Sao chép từ sàn — gian <shop>".
+- **Form (`manual-product-form.tsx`):** `buildSeed` — nhóm phân loại của sàn chỉ dùng khi tổ hợp sinh ra KHỚP ĐÚNG tên các phân loại
+  (form sinh dòng từ tổ hợp); không khớp (vd 51 phân loại "Màu sắc: X, Số lượng: Y" không đủ lưới) thì gom một nhóm "Phân loại" mỗi dòng
+  một giá trị (tên trùng thì thêm "(2)") để không rơi dòng nào. Mã sàn hợp lệ giữ nguyên; mã máy `SPE-/TTK-/LZD-` hoặc sai mẫu / trống →
+  dòng để trống + lỗi "Sàn không có mã chuẩn — đặt mã" → nút Lưu khóa cho tới khi đủ mã. Mã gốc KHÔNG bắt buộc ở chế độ này (chỉ áp
+  cho dòng chưa có mã); hộp vàng "k/N phân loại chưa có mã SKU chuẩn… gõ mã gốc hoặc từng dòng", xanh khi đủ. Mã trùng gian không báo
+  (lọc `kind === "channel"`), mã có ở Tổng kho vẫn báo "Đã có ở Tổng kho". Giá, tồn, ảnh từng phân loại, ảnh bìa/mô tả, cân nặng, kích
+  thước lấy từ sàn; giá vốn để khách nhập. Mục 5 nói rõ "SKU độc lập, chưa nối gian".
+- **Kiểm local 05/11 (demo@hubsell.tech, cổng 4001, 1440 + khung hẹp):** (1) Shopee "Áo thun trắng cotton nam size M" 1 phân loại mã
+  SH-AO-THUN-TRANG-M (mã này ĐANG có trên gian) → form đổ đủ, hộp xanh, Lưu → về Tổng kho, dòng mới "Nối gian" (chưa nối), gian không
+  đổi; (2) TikTok BIGTEST 51 phân loại, 1 dòng sàn không có mã → hộp vàng "1/51", nút Lưu khóa, "Chưa lưu được: Sửa mã SKU còn lỗi";
+  gõ mã gốc DAUGOI-BOT → dòng trống nhận mã, nút mở, Lưu → 51 Product có variantName, sổ kho lý do "Sao chép từ sàn — gian Sunny
+  Closet", job CHANNEL batchId null, 55 dòng ChannelProduct TikTok vẫn chưa nối. Đã xóa dữ liệu thử. tsc FE/BE, eslint, vitest
+  listing-copy 13/13 sạch. **Chưa thử:** gian thật (adapter Shopee/TikTok/Lazada `fetchListing` đã chạy prod ở luồng Sao chép từ 29/10 —
+  cùng hàm), ảnh sàn là URL ngoài (Product.imageUrl trỏ CDN sàn như Nối SKU nhanh vẫn làm).
+- **Chưa làm / để anh chốt sau:** sao chép NHIỀU sản phẩm một lượt (hộp hiện chọn một — mỗi sản phẩm phải soi mã trước khi lưu);
+  nút ngược "Nối với gian nguồn ngay" sau khi lưu (anh chốt nối là việc sau, làm ở Sản phẩm trên sàn).

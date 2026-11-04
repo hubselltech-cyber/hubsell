@@ -45,7 +45,10 @@ export function SourcePicker({
   onPickChannel,
   picked,
   onPickedChange,
+  single = false,
 }: {
+  /** 05/11/2026 (docs mục 34): chọn MỘT sản phẩm — bấm dòng là chọn ngay, không có ô chọn cả trang. */
+  single?: boolean;
   sourceType: "CHANNEL" | "PRODUCT";
   channels: CopyListingChannel[];
   platformsPresent: ChannelName[];
@@ -91,6 +94,10 @@ export function SourcePicker({
   const allOnPagePicked = pageItems.length > 0 && pageItems.every((s) => picked.has(s.key));
 
   function togglePick(s: CopyListingSource) {
+    if (single) {
+      onPickedChange(new Map([[s.key, s]]));
+      return;
+    }
     const next = new Map(picked);
     if (next.has(s.key)) next.delete(s.key);
     else next.set(s.key, s);
@@ -221,7 +228,9 @@ export function SourcePicker({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[4%]">
-                  <input type="checkbox" className="size-4 accent-primary" aria-label="Chọn tất cả sản phẩm trên trang" checked={allOnPagePicked} onChange={togglePage} />
+                  {!single && (
+                    <input type="checkbox" className="size-4 accent-primary" aria-label="Chọn tất cả sản phẩm trên trang" checked={allOnPagePicked} onChange={togglePage} />
+                  )}
                 </TableHead>
                 <TableHead className="w-[56%]">Sản phẩm</TableHead>
                 <TableHead className="w-[12%] text-right">Phân loại</TableHead>
