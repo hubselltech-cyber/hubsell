@@ -24,8 +24,25 @@ import { ApiError, importProductsExcel, type ImportResult } from "@/lib/api";
 import { downloadProductTemplate } from "@/lib/excel";
 import { cn } from "@/lib/utils";
 
-export function ImportExcelDialog({ onImported }: { onImported: () => void }) {
-  const [open, setOpen] = useState(false);
+export function ImportExcelDialog({
+  onImported,
+  open: openProp,
+  onOpenChange,
+  trigger = true,
+}: {
+  onImported: () => void;
+  /** 05/11/2026: điều khiển từ ngoài (menu "Excel ▾" của Tổng kho) — bỏ trống thì hộp tự quản lý + hiện nút của mình. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** false = không vẽ nút "Nhập Excel" (bên ngoài tự mở qua `open`). */
+  trigger?: boolean;
+}) {
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (o: boolean) => {
+    setOpenState(o);
+    onOpenChange?.(o);
+  };
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -75,10 +92,12 @@ export function ImportExcelDialog({ onImported }: { onImported: () => void }) {
         if (!o) reset();
       }}
     >
-      <DialogTrigger render={<Button variant="outline" />}>
-        <Upload className="size-4" />
-        Nhập Excel
-      </DialogTrigger>
+      {trigger && (
+        <DialogTrigger render={<Button variant="outline" />}>
+          <Upload className="size-4" />
+          Nhập Excel
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Nhập sản phẩm từ Excel</DialogTitle>

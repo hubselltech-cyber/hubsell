@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Copy,
+  FileSpreadsheet,
   Download,
   Image as ImageIcon,
   Layers,
@@ -34,6 +35,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Upload,
   Warehouse,
   XCircle,
 } from "lucide-react";
@@ -154,6 +156,10 @@ type HubTab = "inventory" | "logs";
  * hub-story-strip.tsx, state counts/channels/syncState chỉ còn nuôi dòng trống bảng.
  */
 const SHOW_SETUP_GUIDE: boolean = false;
+
+/** Mục trong các menu thả của thanh công cụ (Tạo sản phẩm kho / Nhập – Xuất – Kiểm kê / Excel). */
+const MENU_ITEM =
+  "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted disabled:opacity-50";
 
 /** Một MẪU hàng trên bảng = các SKU kho cùng khóa cha–con (backend xếp liền nhau). */
 interface ProductGroupRows {
@@ -296,6 +302,13 @@ export default function ProductsHubPage() {
   const canCopyListing = can(getStoredUser(), "operations.copy-listing");
   // Hộp chọn MỘT sản phẩm trên gian → /products/new?fromChannel=&item= (docs SAO-CHEP-SAN-PHAM mục 34).
   const [copyOpen, setCopyOpen] = useState(false);
+  // 05/11/2026 (anh Trung: "một hàng 9 món khó nhìn, màn nhỏ khó thao tác"): thanh công cụ còn 4 nút —
+  // việc tuần (Phiếu nhiều mã / Kiểm kê / Cất lên kệ / Vị trí) gom vào menu "Nhập – Xuất – Kiểm kê",
+  // Nhập / Xuất Excel gom vào menu "Excel". Tên menu trùng mục sidebar dự kiến (docs QUAN-LY-KHO mục 3)
+  // để khi tách trang riêng chỉ việc dời đi.
+  const [opsOpen, setOpsOpen] = useState(false);
+  const [excelOpen, setExcelOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Trạng thái đồng bộ tồn theo gian (chỉ chủ shop) — bước 3 + header khối.
   const [syncOpen, setSyncOpen] = useState(false);
@@ -1389,53 +1402,102 @@ export default function ProductsHubPage() {
                     )}
                   </Button>
                 )}
-                {isAdmin && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setLocationsOpen(true)}
-                    title={
-                      locationsEnabled
-                        ? `${locations.length} vị trí chứa hàng — bấm để quản lý`
-                        : "Thuê thêm kho nhỏ / kệ? Thêm vị trí chứa hàng"
-                    }
-                  >
-                    <MapPin className="size-4" />
-                    {locationsEnabled ? `Vị trí (${locations.length})` : "Thêm vị trí chứa hàng"}
-                  </Button>
-                )}
-                <Button variant="outline" nativeButton={false} render={<Link href="/products/receive" />}>
-                  <ClipboardList className="size-4" />
-                  Phiếu nhiều mã
-                </Button>
-                <Button
-                  variant="outline"
-                  nativeButton={false}
-                  render={<Link href="/products/stocktake" />}
-                  title="Đếm thực tế rồi chốt — mỗi mã lệch một dòng nhật ký"
-                >
-                  <ClipboardCheck className="size-4" />
-                  Kiểm kê
-                </Button>
-                {locationsEnabled && (
-                  <Button
-                    variant="outline"
-                    nativeButton={false}
-                    render={<Link href="/products/putaway" />}
-                    title="Quét tem kệ → quét SKU → chuyển hàng loạt từ Kho chính lên kệ"
-                  >
-                    <PackageOpen className="size-4" />
-                    Cất lên kệ
-                  </Button>
-                )}
-                <ImportExcelDialog onImported={load} />
-                <Button variant="outline" onClick={handleExport} disabled={exporting}>
-                  {exporting ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Download className="size-4" />
-                  )}
-                  Xuất Excel
-                </Button>
+                {/* ===== Nhập – Xuất – Kiểm kê ▾ : việc kho làm theo tuần ===== */}
+                <Popover open={opsOpen} onOpenChange={setOpsOpen}>
+                  <PopoverTrigger render={<Button variant="outline" />}>
+                    <ClipboardList className="size-4" />
+                    <span className="hidden sm:inline">Nhập – Xuất – Kiểm kê</span>
+                    <span className="sm:hidden">Kho</span>
+                    <ChevronDown className={cn("size-4 transition-transform", opsOpen && "rotate-180")} />
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-1">
+                    <Link href="/products/receive" className={MENU_ITEM} onClick={() => setOpsOpen(false)}>
+                      <ClipboardList className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                      <span className="min-w-0">
+                        <span className="block font-medium">Phiếu nhiều mã</span>
+                        <span className={cn(TEXT_SUB, "block")}>Nhập hoặc xuất nhiều mã trong một phiếu, có lý do.</span>
+                      </span>
+                    </Link>
+                    <Link href="/products/stocktake" className={MENU_ITEM} onClick={() => setOpsOpen(false)}>
+                      <ClipboardCheck className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                      <span className="min-w-0">
+                        <span className="block font-medium">Kiểm kê</span>
+                        <span className={cn(TEXT_SUB, "block")}>Đếm thực tế rồi chốt — mỗi mã lệch một dòng nhật ký.</span>
+                      </span>
+                    </Link>
+                    {locationsEnabled && (
+                      <Link href="/products/putaway" className={MENU_ITEM} onClick={() => setOpsOpen(false)}>
+                        <PackageOpen className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                        <span className="min-w-0">
+                          <span className="block font-medium">Cất lên kệ</span>
+                          <span className={cn(TEXT_SUB, "block")}>Quét tem kệ → quét SKU → chuyển hàng loạt từ Kho chính lên kệ.</span>
+                        </span>
+                      </Link>
+                    )}
+                    {isAdmin && (
+                      <>
+                        <div className="my-1 border-t" />
+                        <button
+                          type="button"
+                          className={MENU_ITEM}
+                          onClick={() => {
+                            setOpsOpen(false);
+                            setLocationsOpen(true);
+                          }}
+                        >
+                          <MapPin className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                          <span className="min-w-0">
+                            <span className="block font-medium">{locationsEnabled ? `Vị trí chứa hàng (${locations.length})` : "Thêm vị trí chứa hàng"}</span>
+                            <span className={cn(TEXT_SUB, "block")}>
+                              {locationsEnabled ? "Kho, kệ, tầng — quản lý cây vị trí." : "Thuê thêm kho nhỏ / kệ? Tạo cây Kho › Kệ › Tầng."}
+                            </span>
+                          </span>
+                        </button>
+                      </>
+                    )}
+                  </PopoverContent>
+                </Popover>
+
+                {/* ===== Excel ▾ : nhập / xuất tệp ===== */}
+                <Popover open={excelOpen} onOpenChange={setExcelOpen}>
+                  <PopoverTrigger render={<Button variant="outline" />}>
+                    <FileSpreadsheet className="size-4" />
+                    Excel
+                    <ChevronDown className={cn("size-4 transition-transform", excelOpen && "rotate-180")} />
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-1">
+                    <button
+                      type="button"
+                      className={MENU_ITEM}
+                      onClick={() => {
+                        setExcelOpen(false);
+                        setImportOpen(true);
+                      }}
+                    >
+                      <Upload className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                      <span className="min-w-0">
+                        <span className="block font-medium">Nhập Excel</span>
+                        <span className={cn(TEXT_SUB, "block")}>Theo mẫu: mã đã có thì cập nhật giá, tồn; mã mới thì tạo.</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={MENU_ITEM}
+                      disabled={exporting}
+                      onClick={() => {
+                        setExcelOpen(false);
+                        void handleExport();
+                      }}
+                    >
+                      {exporting ? <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin" /> : <Download className="mt-0.5 size-4 shrink-0 text-slate-500" />}
+                      <span className="min-w-0">
+                        <span className="block font-medium">Xuất Excel</span>
+                        <span className={cn(TEXT_SUB, "block")}>Toàn bộ SKU trong Tổng kho ra tệp .xlsx.</span>
+                      </span>
+                    </button>
+                  </PopoverContent>
+                </Popover>
+                <ImportExcelDialog open={importOpen} onOpenChange={setImportOpen} trigger={false} onImported={load} />
                 {/* 30/10/2026 anh chốt: bỏ hộp "Thêm sản phẩm mới" cũ (SKU + giá + tồn), thay bằng luồng
                     Tạo sản phẩm mới của Sao chép sản phẩm (soạn đủ chuẩn sàn → đăng lên gian + ghi Tổng kho).
                     05/11/2026 anh Trung: nút thành MENU "Tạo sản phẩm kho" — hai đường đưa hàng vào kho:
