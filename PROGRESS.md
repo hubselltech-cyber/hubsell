@@ -6,7 +6,7 @@
 
 ---
 
-## Phiên 05/11 sáng (3) — Nâng cấp Quản lý kho lát 1: tách "Tổng kho" / "Sản phẩm trên sàn" ra sidebar + tạm ẩn khối 3 bước — ĐÃ LÀM, kiểm local, commit (chưa push)
+## Phiên 05/11 sáng (3) — Nâng cấp Quản lý kho lát 1: tách "Tổng kho" / "Sản phẩm trên sàn" ra sidebar + tạm ẩn khối 3 bước + menu Tạo sản phẩm kho + Sao chép từ sàn → SKU độc lập — ĐÃ LÀM, kiểm local, ✅ PUSH 002c218e…ba8e2ac9 ~06:25 (anh "dọn dẹp và push") → Render deploy backend + Vercel; đã xóa 52 SKU thử local, env trả về https
 
 - Anh: khách thấy kho khó dùng; (1) đưa tab Tổng kho ra sidebar ngay trên Hàng hóa, đổi Hàng hóa → "Sản phẩm trên sàn"; (2) tạm ẩn hẳn khối hướng dẫn kết nối, đánh dấu nhắc anh sau. Sổ đợt này: `docs/QUAN-LY-KHO-TAI-CAU-TRUC.md`.
 - **Làm:** `/products` = Tổng kho (tab Tồn kho · Nhật ký kho; giữ route vì deep-link `?search=` + 4 trang con); trang mới `/products/marketplace` = Sản phẩm trên sàn (LinkManager nguyên, chỉ chủ shop, nhận `?search=&target=&targetSku=` từ "Nối thêm gian", invalidate `["products"]` sau khi nối). Sidebar 2 mục con + luật sáng đèn khớp href dài nhất; PAGE_TITLES; `/mappings` + `?tab=links` → trang mới. Khối 3 bước ẩn bằng `SHOW_SETUP_GUIDE=false` (mã giữ nguyên); **thêm nút "Đồng bộ tồn kho" + viên bật/tổng** trên thanh công cụ vì cửa mở hộp đồng bộ trước đó chỉ nằm trong đầu khối. Nguyên tắc "cùng mã SKU" thành một dòng đèn đầu trang Sản phẩm trên sàn. Nhãn theo: lá quyền `warehouse.products` → "Tổng kho & Sản phẩm trên sàn" (FE+BE), chuông "Mở Tổng kho", breadcrumb 4 trang con, câu nhắc Sao chép SP.
