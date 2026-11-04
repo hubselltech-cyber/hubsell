@@ -1535,7 +1535,7 @@ export default function ProductsHubPage() {
                         <Copy className="mt-0.5 size-4 shrink-0 text-slate-500" />
                         <span className="min-w-0">
                           <span className="block font-medium">Sao chép sản phẩm từ sàn</span>
-                          <span className={cn(TEXT_SUB, "block")}>Lấy một sản phẩm trên gian đã nối làm SKU kho độc lập — chưa nối gian, nối sau.</span>
+                          <span className={cn(TEXT_SUB, "block")}>Sao chép một sản phẩm từ gian hàng trên sàn làm một sản phẩm độc lập trong Tổng kho.</span>
                         </span>
                       </button>
                     )}

@@ -58,9 +58,8 @@ export function CopyFromChannelDialog({ open, onOpenChange }: { open: boolean; o
         <DialogHeader>
           <DialogTitle>Sao chép sản phẩm từ sàn</DialogTitle>
           <DialogDescription>
-            Chọn một sản phẩm trên gian đã nối. Hubsell lấy tên, ảnh, mô tả, phân loại, giá về form Tạo sản phẩm mới để bạn
-            kiểm tra, đặt mã SKU còn thiếu rồi lưu thành SKU <b className="text-foreground">độc lập</b> trong Tổng kho. Chưa nối
-            gian — nối sau ở Sản phẩm trên sàn.
+            Chọn một sản phẩm trên gian hàng. Hubsell lấy tên, ảnh, mô tả, phân loại, giá về form Tạo sản phẩm mới để bạn kiểm
+            tra, đặt mã SKU còn thiếu rồi lưu thành một sản phẩm <b className="text-foreground">độc lập</b> trong Tổng kho.
           </DialogDescription>
         </DialogHeader>
         {channelsQ.denied ? (
