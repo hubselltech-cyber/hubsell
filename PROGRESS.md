@@ -6,6 +6,11 @@
 
 ---
 
+## Phiên 04/11 — Đổi video hướng dẫn Trợ lý quảng cáo TikTok
+
+- `TIKTOK_ADS_VIDEO_ID` trong `components/tour/guide-video-dialog.tsx` đổi từ `jaGQEWVCPbs` sang `aw2YXOBquH4`. Một hằng dùng chung cho `/guide` và link "Video hướng dẫn" trên trang `/ads/tiktok`, không còn chỗ nào giữ mã cũ.
+- Kiểm: tsc frontend sạch; YouTube oEmbed trả 200, đúng tiêu đề video trên kênh Hubsell; local `/guide?muc=tiktok-ads` hiện đúng video. Chưa bấm phát thử, chưa mở hộp video trên `/ads/tiktok` (cần đăng nhập + backend, cùng hằng nên không có đường rẽ riêng). Anh chốt push.
+
 ## Phiên 04/11 (~09:25) — Đo 7 ngày lát 2 ANO: SQL sạch, chưa đủ tiêu chí Pha D (nhắc tự động)
 
 - Chỉ đọc, không sửa prod, không bật gian nào. Kỳ đo từ lúc bật mới 6 ngày 11 giờ 24′, đủ 7 ngày lúc 21:42 tối 04/11.
