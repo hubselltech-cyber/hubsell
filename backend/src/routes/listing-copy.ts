@@ -29,7 +29,7 @@ import {
   recordUpload,
 } from "../services/listing-copy/images";
 import { createJob, updateJobSource, updateTarget, type TargetPatch } from "../services/listing-copy/job-edit";
-import { checkManualDraft, findTakenSkus, MANUAL_LIMITS, parseManualListing } from "../services/listing-copy/manual";
+import { checkManualDraft, findTakenSkus, MANUAL_LIMITS, parseManualListing, saveWarehouseOnly } from "../services/listing-copy/manual";
 import { str } from "../services/listing-copy/parse";
 import { listChannelSources, listProductSources } from "../services/listing-copy/source";
 import {
@@ -236,6 +236,30 @@ router.post("/batches/:id/targets/:tid/apply", async (req: AuthRequest, res, nex
 });
 
 // ---------------------------------------------------------------- Lượt (một sản phẩm) trong đợt
+
+/**
+ * "Chỉ lưu vào Tổng kho" (05/11, docs mục 33): cùng form Tạo mới, không gian đích → ghi SKU kho
+ * ngay, không đăng, không vào hàng đợi. Cùng kiểm mã trùng như POST /jobs.
+ */
+router.post("/warehouse-only", async (req: AuthRequest, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = parseManualListing(body.listing);
+    const taken = await findTakenSkus(req.ownerId!, parsed.listing.variants.filter((v) => !v.excluded).map((v) => v.sku));
+    if (taken.length > 0) {
+      throw new ListingCopyError(`Mã SKU đã có: ${taken.map((t) => `${t.sku} (${t.where})`).join(", ")} — đặt mã khác.`);
+    }
+    const allowCost = canSeeFinancials(req);
+    if (!allowCost) parsed.manual.costPrice = null;
+    const r = await saveWarehouseOnly({ ownerId: req.ownerId!, userId: req.userId!, listing: parsed.listing, meta: parsed.manual, allowCost });
+    const l = parsed.listing;
+    await attachUploadsToJob(req.ownerId!, r.jobId, [...l.images, ...l.descriptionImages, ...l.variants.map((v) => v.imageUrl ?? "")]);
+    res.status(201).json(r);
+  } catch (err) {
+    sendError(res, err, next);
+  }
+});
+
 
 /** Tạo lượt lẻ — FE dùng cho nguồn "Tạo mới" (docs mục 24); CHANNEL/PRODUCT đi qua /batches. */
 router.post("/jobs", async (req: AuthRequest, res, next) => {

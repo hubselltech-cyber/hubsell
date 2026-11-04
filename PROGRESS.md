@@ -6,6 +6,12 @@
 
 ---
 
+## Phiên 05/11 sáng (tiếp) — Nút "Chỉ lưu vào Tổng kho" ở Tạo sản phẩm mới (anh mở lại việc gác ở docs mục 30) — ĐÃ LÀM, kiểm local, CHƯA PUSH
+
+- Anh: "hôm trước anh bảo bỏ qua nút Chỉ đăng vào Tổng Kho thì hôm nay em bổ sung". Docs SAO-CHEP-SAN-PHAM **mục 33**.
+- BE `manual.saveWarehouseOnly`: tạo 1 job MANUAL **DONE, batchId null, 0 target** (để ảnh gắn job không bị cron dọn; không hiện Nhật ký đợt) rồi `ensureWarehouseProducts` như khi Đăng (không nối gian). Route `POST /listing-copy/warehouse-only` (cùng quyền, cùng chặn mã trùng). Web: nút outline "Chỉ lưu vào Tổng kho" cạnh "Tiếp", không cần chọn gian; xong → toast + về Hàng hóa.
+- Kiểm local demo@hubsell.tech: KHOTEST-0511 vào kho đúng giá vốn/giá bán/tồn 12, job DONE 0 target, log đúng; đã xóa dữ liệu thử. tsc BE/FE + eslint + vitest listing-copy sạch. Chưa thử ảnh tải lên + Chỉ lưu. ⏳ anh push.
+
 ## Phiên 05/11 sáng — Tạp Hoá Dép 668 lại "Size Chart is required" ở Giày Dép Nam (anh hỏi "sửa chưa hết ngành hàng?") — KHÔNG sót ngành hàng; vá 2 lỗ (đệm rỗng 1 giờ + câu đỏ nêu danh mục), kiểm local, ✅ PUSH 0e1d82ee ~05:15 (anh "push luôn") → Render deploy backend
 
 - **Trả lời anh:** lối mẫu bảng size 02/11 không theo ngành hàng — hỏi mẫu của gian theo đúng lá đang đăng. Mẫu bảng size Shopee gắn với danh mục lúc tạo nên mẫu giày nữ không dùng được cho giày nam; khách tạo mẫu cho lá mới một lần, thời trang cũng vậy. Câu đỏ trong ảnh là ca "gian chưa có mẫu cho lá này", không phải lỗi mã.

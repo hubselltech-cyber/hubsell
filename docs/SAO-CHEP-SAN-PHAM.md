@@ -913,8 +913,7 @@ phẩm hợp ở khu Hàng hóa hơn.
   đổi tab xóa param bằng `history.replaceState`.
 - Kiểm local: Hàng hóa → Tạo sản phẩm mới → nhập tên + mã gốc + giá + 3 gian → Tiếp → sang đợt 1 SP × 3 gian với gợi ý danh mục → Quay
   lại về tab Sao chép (URL sạch, 2 nguồn + link). tsc + eslint sạch, backend tsc sạch.
-- ⏳ Chưa làm (anh chốt sau nếu cần): tạo SKU kho KHÔNG đăng lên gian nào (0 gian đích) — hiện bắt buộc ≥ 1 gian vì Tổng kho chỉ ghi khi
-  Đăng (mục 24.3); nếu khách bán ngoài sàn muốn thêm hàng, hôm nay chỉ còn đường nhập Excel.
+- ~~⏳ Chưa làm: tạo SKU kho KHÔNG đăng lên gian nào~~ → **ĐÃ LÀM 05/11/2026 (mục 33)**: nút "Chỉ lưu vào Tổng kho" ở bước 2.
 
 ## 31. Khách QA giày (TikTok → Shopee): "Danh mục chưa hợp lệ" dù đã chọn tới lá Giày Dép Nữ › Giày đế xuồng (02/11/2026 tối, anh chuyển ảnh) — GỐC: SHOPEE ĐÒI BẢNG SIZE, Hubsell dịch nhầm — ĐÃ SỬA 2 LÁT, kiểm local
 
@@ -970,3 +969,29 @@ phẩm hợp ở khu Hàng hóa hơn.
   chạy thật. ⏳ Sau deploy: khách Tạp Hoá Dép 668 tạo mẫu cho lá Xăng-đan & Dép rồi Đăng lại ngay, kỳ vọng LISTED không phải đợi 1 giờ;
   log `[listing-copy] … gửi lại kèm mẫu bảng size …`. Chưa đọc log Render ca 05/11 (phiên Render trên Chrome hết hạn).
 - **Chưa làm (giữ như mục 31):** khách tự tải ảnh bảng size trong Sửa bài đăng; TikTok đích gửi size_chart; chọn mẫu khác ngoài mẫu đầu.
+
+## 33. Nút "Chỉ lưu vào Tổng kho" ở Tạo sản phẩm mới (05/11/2026 sáng, anh mở lại việc đã gác ở mục 30) — ĐÃ LÀM, kiểm local
+
+Anh: "hôm trước anh bảo bỏ qua nút Chỉ đăng vào Tổng Kho thì hôm nay em bổ sung". Khách soạn xong nhưng chưa muốn đăng gian nào
+(bán ngoài sàn, hoặc đăng sau) → ghi SKU kho ngay, không bắt chọn gian.
+
+- **Backend:** `manual.saveWarehouseOnly({ ownerId, userId, listing, meta, allowCost })` → tạo MỘT dòng `ListingCopyJob` MANUAL
+  **status DONE, batchId null, 0 target**, submittedAt = finishedAt = now, rồi gọi đúng lõi `ensureWarehouseProducts` (mỗi phân loại
+  một Product, tồn qua sổ kho, KHÔNG nối gian — y hệt khi Đăng, mục 24.3-1). Vì sao vẫn tạo job: (a) ảnh khách tải lên gắn vào job
+  (`attachUploadsToJob`) → cron dọn ảnh mồ côi 2 ngày / job nháp 30 ngày KHÔNG xóa mất ảnh mà `Product.imageUrl` đang trỏ tới
+  (lát C mục 24.6 chỉ giữ ảnh có job); (b) có vết ai tạo lúc nào. **batchId null → không hiện ở Nhật ký đợt** (`listBatches` lọc
+  `batchId IS NOT NULL`) — nhật ký chỉ nói chuyện đăng gian. Log `[listing-copy] Chỉ lưu Tổng kho <job>: ghi N SKU (bỏ qua M đã có)`.
+- **Route** `POST /api/listing-copy/warehouse-only { listing }` (cùng router, cùng quyền `operations.copy-listing`): `parseManualListing`
+  + `findTakenSkus` chặn mã trùng kho/gian như POST /jobs; nhân viên không thấy tài chính → giá vốn 0; trả `{ jobId, created, skipped }`.
+- **Web** `manual-create-page.tsx`: bước 2 ghi "được nhiều gian, nhiều sàn — hoặc để trống và chỉ lưu vào Tổng kho"; dòng tóm tắt khi
+  chưa chọn gian "1 sản phẩm (N phân loại) · chưa chọn gian — chỉ lưu vào Tổng kho"; nút outline **Chỉ lưu vào Tổng kho** (bật khi form
+  hợp lệ, không cần gian) cạnh nút chính "Tiếp: xem trước theo gian" (vẫn cần ≥ 1 gian). Thành công → toast "Đã lưu N SKU vào Tổng kho —
+  chưa đăng gian nào, muốn đăng thì dùng Sao chép sản phẩm › Từ kho Hubsell" → về /products (invalidate `products`). Gian chưa nối cũng
+  dùng được (câu "Chưa có gian nào để đăng — … hoặc chỉ lưu vào Tổng kho bên dưới"). `lib/api.saveCopyListingWarehouseOnly`.
+- **Kiểm local 05/11 (demo@hubsell.tech, backend-http 4010 + frontend-http 3010):** điền tên + mô tả + mã gốc KHOTEST-0511 + giá
+  150.000 + tồn 12 + cân nặng 300 + giá vốn 90.000, bỏ chọn gian → nút Chỉ lưu bật, nút Tiếp khóa → bấm → toast + về Hàng hóa, dòng
+  KHOTEST-0511 giá vốn 90.000 / giá bán 150.000 / tồn 12 / "Nối gian"; DB: job DONE batchId null 0 target, Product đủ số; log đúng.
+  Đã xóa dữ liệu thử. Backend tsc + vitest listing-copy sạch; frontend tsc + eslint sạch. **Chưa thử:** ảnh tải lên rồi Chỉ lưu (lối
+  gắn ảnh dùng lại hàm cũ), mã trùng (dùng lại `findTakenSkus` đã chạy prod).
+- Ghi chú a11y thấy khi thử: các ô Mã gốc / Giá / Tồn / Cân nặng của form không có label nối (`aria-label`/`htmlFor`) → trình đọc
+  màn hình và công cụ tự động không thấy; chưa sửa, không thuộc việc này.

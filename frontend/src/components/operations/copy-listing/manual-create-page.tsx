@@ -6,6 +6,8 @@
 // việc tạo hàng ở khu Hàng hóa). Bước 1 soạn sản phẩm đủ chuẩn 3 sàn (manual-product-form),
 // bước 2 chọn gian đích → tạo lượt (POST /jobs MANUAL) → mở đợt ở Sao chép sản phẩm để bổ
 // sung danh mục / thuộc tính từng gian rồi Đăng (khi Đăng mới ghi Tổng kho — docs mục 24).
+// 05/11/2026 (anh mở lại việc gác ở mục 30): nút "Chỉ lưu vào Tổng kho" — không chọn gian,
+// ghi SKU kho ngay (POST /warehouse-only), không đăng, về Hàng hóa (docs mục 33).
 // ============================================================
 
 import { useMemo, useState } from "react";
@@ -17,7 +19,14 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
-import { apiErrorMessage, createCopyListingManualJob, fetchCopyListingChannels, getStoredUser, type CopyListingManualPayload } from "@/lib/api";
+import {
+  apiErrorMessage,
+  createCopyListingManualJob,
+  fetchCopyListingChannels,
+  getStoredUser,
+  saveCopyListingWarehouseOnly,
+  type CopyListingManualPayload,
+} from "@/lib/api";
 import { canSeeFinancials } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
 import { TEXT_PAGE_TITLE, TEXT_SUB } from "@/lib/typography";
@@ -34,6 +43,7 @@ export function ManualCreatePage() {
   const invalidate = useInvalidate();
   const [targets, setTargets] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+  const [savingWarehouse, setSavingWarehouse] = useState(false);
   /** Payload hợp lệ (null = chưa gửi được) + tóm tắt từ form. */
   const [manual, setManual] = useState<{ payload: CopyListingManualPayload | null; summary: ManualFormSummary }>({
     payload: null,
@@ -50,6 +60,26 @@ export function ManualCreatePage() {
   );
   const platformsPresent = PLATFORM_ORDER.filter((p) => channels.some((c) => c.channelName === p));
   const canCreate = Boolean(manual.payload) && targets.size > 0;
+  const busy = creating || savingWarehouse;
+
+  /** Chỉ lưu vào Tổng kho: không gian đích, không hàng đợi — ghi SKU kho rồi về Hàng hóa. */
+  async function saveWarehouseOnly() {
+    if (!manual.payload) return;
+    setSavingWarehouse(true);
+    try {
+      const r = await saveCopyListingWarehouseOnly(manual.payload);
+      await invalidate(["products"], qk.copyListingBatchesAll());
+      toast.success(
+        r.created > 0
+          ? `Đã lưu ${r.created} SKU vào Tổng kho${r.skipped > 0 ? ` (bỏ qua ${r.skipped} mã đã có)` : ""} — chưa đăng gian nào, muốn đăng thì dùng Sao chép sản phẩm › Từ kho Hubsell.`
+          : "Các mã này đã có sẵn trong Tổng kho — không tạo thêm."
+      );
+      router.push("/products");
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+      setSavingWarehouse(false);
+    }
+  }
 
   async function create() {
     if (!manual.payload || targets.size === 0) return;
@@ -74,8 +104,8 @@ export function ManualCreatePage() {
           </Link>
           <h1 className={TEXT_PAGE_TITLE}>Tạo sản phẩm mới</h1>
           <p className={TEXT_SUB}>
-            Soạn một lần đủ chuẩn 3 sàn, chọn gian đích rồi đăng; khi Đăng, mỗi phân loại thành một SKU trong Tổng kho. Muốn chép sản
-            phẩm đã có trên gian / trong kho thì dùng Sao chép sản phẩm.
+            Soạn một lần đủ chuẩn 3 sàn, chọn gian đích rồi đăng; khi Đăng, mỗi phân loại thành một SKU trong Tổng kho. Chưa muốn
+            đăng gian nào thì bấm Chỉ lưu vào Tổng kho. Muốn chép sản phẩm đã có trên gian / trong kho thì dùng Sao chép sản phẩm.
           </p>
         </div>
       </PageHeaderBand>
@@ -95,7 +125,7 @@ export function ManualCreatePage() {
             <CardContent className="space-y-3 p-5">
               <div className="flex flex-wrap items-center gap-3">
                 <StepTitle n={2}>Chọn gian đích</StepTitle>
-                <span className={TEXT_SUB}>được nhiều gian, nhiều sàn</span>
+                <span className={TEXT_SUB}>được nhiều gian, nhiều sàn — hoặc để trống và chỉ lưu vào Tổng kho</span>
                 {targets.size > 0 && (
                   <span className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">
                     Đã chọn <span className="font-semibold text-slate-900 tabular-nums">{targets.size}</span> gian
@@ -106,17 +136,26 @@ export function ManualCreatePage() {
                 )}
               </div>
               {channelsQ.data && channels.length === 0 ? (
-                <p className="text-sm text-slate-500">Chưa có gian nào để đăng — nối gian ở trang Kênh bán trước.</p>
+                <p className="text-sm text-slate-500">Chưa có gian nào để đăng — nối gian ở trang Kênh bán, hoặc chỉ lưu vào Tổng kho bên dưới.</p>
               ) : (
                 <TargetPicker channels={channels} platformsPresent={platformsPresent} targets={targets} onChange={setTargets} />
               )}
               <div className="flex items-center justify-between gap-3 pt-1">
                 <span className={cn(TEXT_SUB, "tabular-nums")}>
-                  {manual.summary.blocker ? `Sản phẩm mới: ${manual.summary.blocker}` : `1 sản phẩm (${manual.summary.variantCount} phân loại) × ${targets.size} gian đích`}
+                  {manual.summary.blocker
+                    ? `Sản phẩm mới: ${manual.summary.blocker}`
+                    : targets.size > 0
+                      ? `1 sản phẩm (${manual.summary.variantCount} phân loại) × ${targets.size} gian đích`
+                      : `1 sản phẩm (${manual.summary.variantCount} phân loại) · chưa chọn gian — chỉ lưu vào Tổng kho`}
                 </span>
-                <Button disabled={!canCreate || creating} onClick={create}>
-                  {creating ? "Đang chuẩn bị…" : "Tiếp: xem trước theo gian"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" disabled={!manual.payload || busy} onClick={saveWarehouseOnly}>
+                    {savingWarehouse ? "Đang lưu…" : "Chỉ lưu vào Tổng kho"}
+                  </Button>
+                  <Button disabled={!canCreate || busy} onClick={create}>
+                    {creating ? "Đang chuẩn bị…" : "Tiếp: xem trước theo gian"}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -8841,6 +8841,14 @@ export function createCopyListingManualJob(body: { listing: CopyListingManualPay
   });
 }
 
+/** "Chỉ lưu vào Tổng kho" (docs mục 33): ghi SKU kho ngay, không đăng gian nào. */
+export function saveCopyListingWarehouseOnly(listing: CopyListingManualPayload) {
+  return apiFetch<{ jobId: string; created: number; skipped: number }>(`${COPY_LISTING_BASE}/warehouse-only`, {
+    method: "POST",
+    body: JSON.stringify({ listing }),
+  });
+}
+
 /** Thẻ "Đạt chuẩn sàn" sống — byPlatform null = form chưa đủ cấu trúc (reason nói vì sao). */
 export function checkCopyListingDraft(listing: CopyListingManualPayload) {
   return apiFetch<{ byPlatform: Record<ChannelName, string[]> | null; reason?: string }>(`${COPY_LISTING_BASE}/check`, {

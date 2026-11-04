@@ -220,3 +220,40 @@ export async function ensureWarehouseProducts(
   }
   return { created, skipped };
 }
+
+/**
+ * "Chỉ lưu vào Tổng kho" (05/11/2026, anh mở lại việc đã gác ở docs mục 30): khách soạn xong
+ * nhưng chưa muốn đăng gian nào (bán ngoài sàn, hoặc đăng sau) → ghi SKU kho ngay, KHÔNG tạo
+ * target, KHÔNG vào hàng đợi. Vẫn tạo một dòng ListingCopyJob MANUAL trạng thái DONE với
+ * batchId null để (a) ảnh tải lên gắn vào job → cron dọn ảnh mồ côi / job nháp không xóa mất
+ * ảnh mà Product.imageUrl đang trỏ tới, (b) có vết ai tạo lúc nào; batchId null nên KHÔNG hiện
+ * ở lịch sử đợt Sao chép sản phẩm (listBatches lọc batchId IS NOT NULL).
+ */
+export async function saveWarehouseOnly(input: {
+  ownerId: string;
+  userId: string;
+  listing: NormalizedListing;
+  meta: ManualMeta;
+  allowCost: boolean;
+}): Promise<{ jobId: string; created: number; skipped: number }> {
+  const source: ManualSource = { ...input.listing, manual: input.meta };
+  const now = new Date();
+  const job = await prisma.listingCopyJob.create({
+    data: {
+      userId: input.ownerId,
+      createdById: input.userId,
+      sourceType: "MANUAL",
+      sourceTitle: input.listing.title,
+      sourceImageUrl: input.listing.images[0] ?? null,
+      source: source as unknown as Prisma.InputJsonValue,
+      batchId: null,
+      status: "DONE",
+      submittedAt: now,
+      finishedAt: now,
+    },
+    select: { id: true },
+  });
+  const r = await ensureWarehouseProducts(input.ownerId, input.userId, source, { allowCost: input.allowCost });
+  console.log(`[listing-copy] Chỉ lưu Tổng kho ${job.id}: ghi ${r.created} SKU (bỏ qua ${r.skipped} đã có)`);
+  return { jobId: job.id, ...r };
+}
