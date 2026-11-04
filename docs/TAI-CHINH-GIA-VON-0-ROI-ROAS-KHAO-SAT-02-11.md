@@ -258,3 +258,17 @@ Test commit 2 (cùng 23 tệp): **214 qua / 2 đỏ** (đúng 2 ca đỏ sẵn).
 3. **OTA mobile** kênh production (runtime 1.4.1) sau khi anh duyệt câu chữ — em chưa publish.
 4. Chưa chạy **cả bộ test backend** (chỉ 23 tệp liên quan); chưa soi giao diện trên trình duyệt (trang Tổng quan, Dòng tiền, Lãi/Lỗ, Thuế) — anh mở local hoặc em soi ở lượt có anh.
 5. Đường lui như 8.7: B = revert một commit; A = revert mã + tăng v5.
+
+### 9.4. Dọn mã sau hai lát (04/11 ~21:00, anh: "dọn sạch code thừa, cấu trúc chuyên nghiệp")
+
+Rà bằng grep toàn bộ tên liên quan + `tsc --noUnusedLocals` trên các tệp đã đụng:
+
+| Thừa | Xử lý |
+|---|---|
+| `missingCostProfit` (trước là `missingCostExcludedProfit`) trong 5 bộ tổng (`LedgerGroupTotals`, `OverviewTotals`, `CashFlowTotals`, `PnlSummaryTotals`, `TaxReportTotals`) + 3 câu SQL (`ledgerSummary` 7 nhóm × 1 cột, `ledgerPnlSummary`, `ledgerTaxReportTotals`) | **Bỏ hẳn**: không màn nào đọc, anh đã bỏ dòng "lãi tạm tính" 30/10 nên không có lý do giữ; `ledgerSummary` bớt 7 cột SUM FILTER. Muốn xem lại Σ lãi đơn thiếu thì một câu SQL trên sổ là ra |
+| `summarizeMissingCost` (chỉ còn oracle test gọi) | **Bỏ**; `lib/finance-definitions.ts` chỉ còn `MissingCostSummary` + `missingCostApiSummary(orderCount)` — một hợp đồng API, 4 route gọi |
+| `summarizePnlRows` nằm trong `routes/finance.ts` nhưng mã chạy thật không gọi từ 30/09 (mốc test) | **Dời** sang `integrations/__tests__/pnl-rows-oracle.ts` (nơi đã chứa đường đối soát cũ cho test DB); 2 test đổi import. Route file bớt 85 dòng |
+| Câu chữ cũ "bị loại khỏi lợi nhuận" còn sót ở phần SKU thiếu giá vốn: `lib/api.ts` (3 chú thích), `cost-price-table.tsx`, mobile `api/cost-prices.ts`, `CostPricesScreen.tsx` (2 chú thích + **1 câu khách thấy** ở tab Cần nhập), `types/api.ts` | Đổi thành "đang tính với giá vốn 0 đ" |
+| Giữ nguyên (không thừa) | `missingCostCount` ở mọi bộ tổng (nguồn số "N đơn"); `MissingCostSummary.excludedProfit` phía web/mobile (hợp đồng API cho app cũ); re-export `computePnlRow`… ở `routes/finance.ts` (test cũ import, có từ 30/09 — ngoài phạm vi hôm nay) |
+
+Không đổi công thức, không đổi sổ, không đổi API. Kiểm: tsc backend/frontend/mobile sạch; `--noUnusedLocals --noUnusedParameters` trên 7 tệp đụng sạch; bộ test 23 tệp chạy lại (kết quả ở PROGRESS 04/11 ~21:10).

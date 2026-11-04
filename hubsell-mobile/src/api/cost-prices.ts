@@ -16,7 +16,7 @@ export function fetchSkuProducts() {
 
 /**
  * SKU đã BÁN trong kỳ mà chưa có giá vốn, xếp theo số đơn bị ảnh hưởng — chính
- * là danh sách "cần nhập ngay" (đơn đang bị loại khỏi lợi nhuận).
+ * là danh sách "cần nhập ngay" (đơn đang tính với giá vốn 0 đ, lãi cao hơn thật).
  */
 export function fetchMissingCostSkus(from: string, to: string) {
   const q = new URLSearchParams({ from, to }).toString();

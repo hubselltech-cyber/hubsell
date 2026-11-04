@@ -571,7 +571,7 @@ export interface MissingCostSku {
   externalId: string | null;
   channelSku: string;
   productName: string;
-  /** Số đơn trong kỳ chứa SKU này đang bị loại khỏi lợi nhuận. */
+  /** Số đơn trong kỳ chứa SKU này — đang tính với giá vốn 0 đ vì thiếu giá vốn. */
   orders: number;
   quantity: number;
 }

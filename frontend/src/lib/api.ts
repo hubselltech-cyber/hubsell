@@ -920,7 +920,7 @@ export interface RealizedPnlResponse {
     /** Thuế bổ sung ước tính của kỳ theo cấu hình trang "Thuế bổ sung". */
     additionalTax: number;
     totalProfitAfterTax: number;
-    /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+    /** Đơn chưa có giá vốn — đang tính với giá vốn 0 đ; số đơn để nhắc nhập. */
     missingCost?: MissingCostSummary;
     taxSettings: {
       calculationBase: TaxCalculationBase;
@@ -1122,7 +1122,7 @@ export interface AnalyticsResponse {
   additionalTax?: number;
   /** Quảng cáo sàn tự đồng bộ — ĐÃ nằm trong totalOperatingExpense và nhóm ADS. */
   platformAdsSpend?: number;
-  /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+  /** Đơn chưa có giá vốn — đang tính với giá vốn 0 đ; số đơn để nhắc nhập. */
   missingCost?: MissingCostSummary;
   expensesByCategory: { category: ExpenseCategory | string; amount: number }[];
   /** `cost` (giá vốn + chi phí vận hành trong ngày) vắng mặt với SALES. */
@@ -2562,7 +2562,7 @@ export interface MissingCostSku {
   externalId: string | null;
   channelSku: string;
   productName: string;
-  /** Số đơn trong kỳ chứa SKU này đang bị loại khỏi lợi nhuận. */
+  /** Số đơn trong kỳ chứa SKU này — đang tính với giá vốn 0 đ vì thiếu giá vốn. */
   orders: number;
   quantity: number;
 }

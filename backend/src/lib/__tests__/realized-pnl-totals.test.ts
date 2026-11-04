@@ -20,7 +20,7 @@ import {
   type LedgerPnlFilter,
   type PnlSummaryTotals,
 } from "../realized-pnl-totals";
-import { summarizePnlRows } from "../../routes/finance";
+import { summarizePnlRows } from "../../integrations/__tests__/pnl-rows-oracle";
 import { DEFAULT_TAX_CONFIG } from "../../config/tax-config";
 import { FIXTURE_ORDERS, mkOrder, D } from "./ledger-order-fixture";
 
@@ -35,7 +35,7 @@ const LEDGER_ROWS = ORDERS.map((o) => buildLedgerRows(o).order);
 function expectSame(a: PnlSummaryTotals, b: PnlSummaryTotals) {
   for (const k of [
     "count", "settledCount", "netRevenue", "returnCount", "refundedAmount", "revenueGross",
-    "platformTax", "profit", "missingCostCount", "missingCostProfit",
+    "platformTax", "profit", "missingCostCount",
   ] as const) {
     expect(a[k], k).toBeCloseTo(b[k], 6);
   }
@@ -58,7 +58,7 @@ describe("pnlSummaryTotals — bằng tổng kết cũ và bằng phép cộng t
     expect(t.profit).toBeCloseTo(old.totalProfit, 6);
     expect(t.revenueGross).toBeCloseTo(old.totalGrossRevenue, 6);
     expect(t.platformTax).toBeCloseTo(old.totalPlatformTax, 6);
-    expect({ orderCount: t.missingCostCount, profitAtZeroCost: t.missingCostProfit }).toEqual(old.missingCost);
+    expect({ orderCount: t.missingCostCount, excludedProfit: 0 }).toEqual(old.missingCost);
     // Đơn thiếu giá vốn tính như giá vốn 0 (04/11/2026): lợi nhuận = Σ profitAfterTax MỌI đơn.
     expect(t.missingCostCount).toBe(2);
     expect(t.profit).toBeCloseTo(PNL_ROWS.reduce((s, r) => s + r.profitAfterTax, 0), 6);

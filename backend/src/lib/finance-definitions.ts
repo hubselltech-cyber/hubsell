@@ -50,30 +50,24 @@ export function isLossOrder(r: { profitAfterTax: number }): boolean {
  * Trước đó (30/09/2026 → 04/11/2026): đơn thiếu giá vốn bị LOẠI khỏi lợi nhuận
  * (Doanh thu − Chi phí − excludedProfit = Lợi nhuận). Lý do đổi + số đo ở docs trên.
  *
- * Hàm trả số đơn + Σ lợi nhuận (đã tính với giá vốn 0) của các đơn đó — chỉ để
- * đếm/tham khảo nội bộ (HQ, Trợ lý), KHÔNG in ra màn khách (anh bỏ dòng "lãi
- * tạm tính" 30/10/2026). API khách vẫn trả `missingCost.excludedProfit = 0` để
- * mobile cũ (1.4.0/1.4.1 chưa OTA) tự đóng bậc thác nước.
+ * Báo cáo chỉ cần SỐ ĐƠN thiếu giá vốn (các bộ tổng đếm `missingCostCount`);
+ * Σ lợi nhuận của chúng không giữ ở đâu vì không in ra màn khách (anh bỏ dòng
+ * "lãi tạm tính" 30/10/2026).
  */
-export function summarizeMissingCost(
-  rows: { missingCostPrice: boolean; profitAfterTax: number }[]
-): { orderCount: number; profitAtZeroCost: number } {
-  let orderCount = 0;
-  let profitAtZeroCost = 0;
-  for (const r of rows) {
-    if (!r.missingCostPrice) continue;
-    orderCount += 1;
-    profitAtZeroCost += r.profitAfterTax;
-  }
-  return { orderCount, profitAtZeroCost };
-}
 
 /**
- * Hợp đồng API cho màn khách (web + mobile): giữ tên trường `excludedProfit`
- * nhưng LUÔN 0 từ 04/11/2026 — không còn phần lợi nhuận nào bị loại. Mobile
- * 1.4.0/1.4.1 dựng bậc "Thiếu vốn" với amount 0 → WaterfallChart tự bỏ bậc.
+ * Hợp đồng API cho màn khách (web + mobile) — `missingCost` của /api/analytics,
+ * /api/finance/analytics, /api/finance/realized-pnl, /api/tax/report. Giữ tên
+ * trường `excludedProfit` nhưng LUÔN 0 từ 04/11/2026: mobile 1.4.0/1.4.1 chưa
+ * OTA dựng bậc "Thiếu vốn" với amount 0 → WaterfallChart tự bỏ bậc, không trừ
+ * hai lần.
  */
-export function missingCostApiSummary(orderCount: number): { orderCount: number; excludedProfit: 0 } {
+export interface MissingCostSummary {
+  orderCount: number;
+  excludedProfit: 0;
+}
+
+export function missingCostApiSummary(orderCount: number): MissingCostSummary {
   return { orderCount, excludedProfit: 0 };
 }
 

@@ -82,7 +82,7 @@ describe.skipIf(!ledgerReady)("Thuế — sổ cái = kéo đơn trên DB dev", 
         for (const k of ["orderCount", "settledCount", "missingCostCount"]) {
           expect(a[k], `${userId} ${label} ${k}`).toBe(b[k]);
         }
-        for (const k of ["grossRevenue", "profit", "platformTaxActual", "unsettledPlatformRevenue", "missingCostProfit"]) {
+        for (const k of ["grossRevenue", "profit", "platformTaxActual", "unsettledPlatformRevenue"]) {
           expect(near(a[k], b[k]), `${userId} ${label} ${k}: sổ ${a[k]} ≠ đơn ${b[k]}`).toBe(true);
         }
         compared += 1;

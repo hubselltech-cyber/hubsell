@@ -195,13 +195,8 @@ export interface CashFlowTotals {
   active: GrossDeductionTotals & {
     count: number;
     costSnapshot: number;
-    /**
-     * Đơn chưa có giá vốn: đếm để nhắc nhập + Σ lợi nhuận của chúng (đã tính với
-     * giá vốn 0 — tham khảo nội bộ, KHÔNG trừ khỏi lợi nhuận từ 04/11/2026,
-     * lib/finance-definitions.ts summarizeMissingCost).
-     */
+    /** Số đơn chưa có giá vốn — chỉ để nhắc nhập; lợi nhuận tính như giá vốn 0 (04/11/2026, lib/finance-definitions.ts). */
     missingCostCount: number;
-    missingCostProfit: number;
   };
   /** Đơn tính doanh thu đã quyết toán. profitAfterTax = Σ profitAfterTax MỌI đơn (đơn thiếu giá vốn = giá vốn 0). */
   settled: { count: number; actualPayout: number; platformTax: number; platformRevenue: number; profitAfterTax: number };
@@ -229,7 +224,6 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
     count: 0,
     costSnapshot: 0,
     missingCostCount: 0,
-    missingCostProfit: 0,
   } as CashFlowTotals["active"];
   for (const c of GROSS_DEDUCTION_COLUMNS) active[c] = 0;
   const t: CashFlowTotals = {
@@ -259,10 +253,7 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
     active.count += 1;
     for (const c of GROSS_DEDUCTION_COLUMNS) active[c] += r[c];
     active.costSnapshot += r.costSnapshot;
-    if (r.missingCostPrice) {
-      active.missingCostCount += 1;
-      active.missingCostProfit += r.profitAfterTax;
-    }
+    if (r.missingCostPrice) active.missingCostCount += 1;
     // Đơn thiếu giá vốn tính như giá vốn 0 (04/11/2026) — cộng nguyên profitAfterTax.
     if (r.isSettled) {
       t.settled.count += 1;
@@ -318,7 +309,6 @@ export function cashFlowTotalsFromLedger(
     count: s.active.count,
     costSnapshot: s.active.costSnapshot,
     missingCostCount: s.active.missingCostCount,
-    missingCostProfit: s.active.missingCostProfit,
   } as CashFlowTotals["active"];
   for (const c of GROSS_DEDUCTION_COLUMNS) active[c] = s.active[c];
   const revenueByDay = new Map<string, number>();

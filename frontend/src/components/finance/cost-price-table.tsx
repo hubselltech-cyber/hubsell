@@ -90,7 +90,7 @@ interface CostPriceTableProps {
   searchKeyword?: string;
   /**
    * Đang lọc theo kỳ (tới từ "N đơn chưa có giá vốn"): số đơn trong kỳ của từng
-   * skuId đang bị loại khỏi lợi nhuận — in cạnh tên để khách biết nhập mã nào
+   * skuId đang tính với giá vốn 0 đ — in cạnh tên để khách biết nhập mã nào
    * trước. Không truyền = không in gì.
    */
   periodOrderCounts?: Record<string, number>;

@@ -58,7 +58,7 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
-import { countsAsRevenue, missingCostApiSummary, summarizeMissingCost } from "../lib/finance-definitions";
+import { countsAsRevenue, missingCostApiSummary } from "../lib/finance-definitions";
 import {
   computePnlRow,
   computeReturnLoss,
@@ -311,90 +311,6 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
 // đối soát" — quyết định chủ shop 30/07: sổ đối soát không bịa phí % kênh).
 // netRevenue = doanh thu sau khi trừ toàn bộ phí sàn; profit = netRevenue − giá vốn.
 // ============================================================
-
-/**
- * TỔNG KẾT KỲ của bảng Lãi/Lỗ — HÀM THUẦN (test được, không DB).
- *
- * CHỐT ANH TRUNG 15/09 "số liệu phải tin cậy": MỌI trục (thẻ KPI, cột ngày,
- * theo sàn, bộ lọc Lợi nhuận âm) dùng ĐÚNG MỘT cột lợi nhuận với bảng chi
- * tiết = profitAfterTax = tiền sàn trả về ví − giá vốn (đơn chờ đối soát: số
- * sàn ước tính). Trước đây tổng kết dùng `profit` (doanh thu ước tính từ cột
- * phí − giá vốn) → đơn hoàn bị trừ phí ảo, KPI lệch bảng; đồng thời trừ thuế
- * sàn thêm lần nữa dù payout đã net thuế (lỗi kép từ 05/08 b3310fd).
- *   - totalProfit        = Σ profitAfterTax (đã trừ phí & thuế sàn)
- *   - totalPlatformTax   = Σ thuế sàn thu hộ — CHỈ để hiển thị "trong đó",
- *                          KHÔNG trừ lại.
- *   - additionalTax      = thuế bổ sung theo cấu hình shop (trên doanh thu
- *                          hoặc lợi nhuận) — khoản ngoài sàn nên trừ riêng.
- *   - totalProfitAfterTax = totalProfit − additionalTax.
- * Bất biến: Σ daily.profit = Σ byPlatform.profit = totalProfit = Σ cột Lợi
- * nhuận của MỌI dòng (đơn chưa có giá vốn tính như giá vốn 0 — anh Trung chốt
- * 02/11/2026, áp 04/11; từ 30/09 tới 04/11 bị loại).
- */
-export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
-  const byPlatform: Record<
-    string,
-    { count: number; profit: number; returnCount: number; returnLoss: number }
-  > = {};
-  const returnLoss = { total: 0, costLoss: 0, platformKept: 0, refundLoss: 0 };
-  const dayAgg = new Map<
-    string,
-    { profit: number; returnLoss: number; orderCount: number; returnCount: number }
-  >();
-  let totalProfit = 0;
-  let totalGrossRevenue = 0;
-  let totalPlatformTax = 0;
-  // Đơn chưa có giá vốn: đếm để nhắc nhập; lợi nhuận của nó cộng như giá vốn 0
-  // (anh Trung chốt 02/11/2026, áp 04/11 — lib/finance-definitions.ts; 30/09 → 04/11 bị loại).
-  const missingCost = summarizeMissingCost(rows);
-  for (const r of rows) {
-    const profit = r.profitAfterTax;
-    totalProfit += profit;
-    totalGrossRevenue += r.revenueGross;
-    totalPlatformTax += r.platformTax;
-    const rl = computeReturnLoss(r);
-    const b = (byPlatform[r.channelName] ??= {
-      count: 0,
-      profit: 0,
-      returnCount: 0,
-      returnLoss: 0,
-    });
-    b.count += 1;
-    b.profit += profit;
-    const key = toBusinessDateKey(r.createdAt);
-    const d =
-      dayAgg.get(key) ??
-      { profit: 0, returnLoss: 0, orderCount: 0, returnCount: 0 };
-    d.profit += profit;
-    d.orderCount += 1;
-    if (r.returnType !== null) {
-      b.returnCount += 1;
-      b.returnLoss += rl.total;
-      returnLoss.total += rl.total;
-      returnLoss.costLoss += rl.costLoss;
-      returnLoss.platformKept += rl.platformKept;
-      returnLoss.refundLoss += rl.refundLoss;
-      d.returnCount += 1;
-      d.returnLoss += rl.total;
-    }
-    dayAgg.set(key, d);
-  }
-  const additionalTax = additionalTaxOn(
-    { grossRevenue: totalGrossRevenue, profit: totalProfit },
-    taxCfg
-  );
-  return {
-    byPlatform,
-    returnLoss,
-    dayAgg,
-    totalProfit,
-    totalGrossRevenue,
-    totalPlatformTax,
-    additionalTax,
-    totalProfitAfterTax: totalProfit - additionalTax,
-    missingCost,
-  };
-}
 
 // ============================================================
 // LÃI/LỖ THỰC HIỆN — CHI TIẾT TỪNG ĐƠN THEO SÀN (Shopee / TikTok / Lazada)

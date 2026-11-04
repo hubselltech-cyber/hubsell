@@ -45,13 +45,8 @@ export interface OverviewTotals {
     totalQuantity: number;
     /** SÀN KHẤU TRỪ = Σ (Giá trị đơn − "Tổng tiền" sàn báo). */
     platformDeduction: number;
-    /**
-     * Đơn chưa có giá vốn: đếm để nhắc nhập + Σ lợi nhuận của chúng (đã tính
-     * với giá vốn 0). Từ 04/11/2026 KHÔNG trừ khỏi lợi nhuận (anh Trung chốt
-     * 02/11, lib/finance-definitions.ts summarizeMissingCost) — chỉ tham khảo nội bộ.
-     */
+    /** Số đơn chưa có giá vốn — chỉ để nhắc nhập; lợi nhuận tính như giá vốn 0 (04/11/2026, lib/finance-definitions.ts). */
     missingCostCount: number;
-    missingCostProfit: number;
   };
   /** Theo GIAN: số đơn, doanh thu, Σ phí GMV Max sàn thu theo đơn (≠ 0 → AdSpend gian đó chỉ tham chiếu). */
   byChannelId: Map<string, { count: number; revenueGross: number; feeGmvMax: number }>;
@@ -65,7 +60,6 @@ function emptyActive(): OverviewTotals["active"] {
     totalQuantity: 0,
     platformDeduction: 0,
     missingCostCount: 0,
-    missingCostProfit: 0,
   } as OverviewTotals["active"];
   for (const c of OVERVIEW_SUM_COLUMNS) a[c] = 0;
   return a;
@@ -85,10 +79,7 @@ export function overviewTotalsFromRows(pnlRows: PnlRow[]): OverviewTotals {
     active.totalQuantity += r.totalQuantity;
     active.platformDeduction += deduction;
     for (const c of OVERVIEW_SUM_COLUMNS) active[c] += r[c];
-    if (r.missingCostPrice) {
-      active.missingCostCount += 1;
-      active.missingCostProfit += r.profitAfterTax;
-    }
+    if (r.missingCostPrice) active.missingCostCount += 1;
     const ch = byChannelId.get(r.channelId) ?? { count: 0, revenueGross: 0, feeGmvMax: 0 };
     ch.count += 1;
     ch.revenueGross += r.revenueGross;
@@ -121,7 +112,6 @@ export function overviewTotalsFromLedger(
   active.totalQuantity = s.active.totalQuantity;
   active.platformDeduction = s.active.platformDeduction;
   active.missingCostCount = s.active.missingCostCount;
-  active.missingCostProfit = s.active.missingCostProfit;
   for (const c of OVERVIEW_SUM_COLUMNS) active[c] = s.active[c];
   return {
     cancelledCount: s.cancelled.count,

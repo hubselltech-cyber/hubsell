@@ -15,7 +15,8 @@ import {
   ShippingStatus,
   TaxCalculationBase,
 } from "@prisma/client";
-import { computeGrossDeductions, computePnlRow, computeReturnLoss, returnGoodsRecovered, summarizePnlRows } from "../../routes/finance";
+import { computeGrossDeductions, computePnlRow, computeReturnLoss, returnGoodsRecovered } from "../../routes/finance";
+import { summarizePnlRows } from "./pnl-rows-oracle";
 import { DEFAULT_TAX_CONFIG } from "../../config/tax-config";
 
 type PnlOrder = Parameters<typeof computePnlRow>[0];
@@ -513,7 +514,7 @@ describe("summarizePnlRows — đơn chưa có giá vốn tính như giá vốn 
     expect(noCost.missingCostPrice).toBe(true);
     expect(sm.totalProfit).toBe(176081 - 131000 + 176081);
     expect(sm.totalGrossRevenue).toBe(269000 * 2);
-    expect(sm.missingCost).toEqual({ orderCount: 1, profitAtZeroCost: 176081 });
+    expect(sm.missingCost).toEqual({ orderCount: 1, excludedProfit: 0 }); // hợp đồng API: không còn phần bị loại
   });
 
   it("ba trục vẫn khớp nhau: Σ ngày = Σ sàn = tổng kỳ", () => {

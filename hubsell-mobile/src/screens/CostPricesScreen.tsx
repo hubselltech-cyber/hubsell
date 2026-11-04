@@ -47,7 +47,7 @@ import { TABULAR } from "@/theme/tokens";
  *     một tầng (mặc định tầng cuối), mỗi nhóm một ô giá chung, mở rộng mới
  *     thấy từng dòng — mẫu 25 phân loại (5 màu × 5 size) chỉ còn 5 ô.
  *   · Tab CẦN NHẬP = mẫu có SKU đã bán 30 ngày chưa có giá vốn, xếp theo số đơn
- *     bị loại khỏi lợi nhuận (missing-cost); tab TẤT CẢ = tìm + chip "Chưa có giá".
+ *     đang tính với giá vốn 0 đ (missing-cost); tab TẤT CẢ = tìm + chip "Chưa có giá".
  *   · Bộ lọc chỉ GIAN HÀNG (chọn gian là biết sàn) — bỏ lọc sàn / đã gỡ của web.
  *   · Tên sản phẩm: danh sách cắt 2 dòng, mã SKU luôn đủ; hộp nhập hiện đủ tên,
  *     phân loại, mã SKU, mã sàn + nút sao chép (web dùng tooltip, mobile không có).
@@ -87,7 +87,7 @@ interface ModelGroup {
   rows: SkuProduct[];
   /** Số phân loại chưa có giá vốn. */
   missing: number;
-  /** Số đơn 30 ngày bị loại khỏi lợi nhuận (tab Cần nhập). */
+  /** Số đơn 30 ngày đang tính với giá vốn 0 đ vì thiếu giá vốn (tab Cần nhập). */
   orders: number;
   /** Mã SKU cho tìm kiếm — gộp mọi phân loại. */
   haystack: string;
@@ -428,7 +428,7 @@ export function CostPricesScreen() {
       {tab === "missing" ? (
         <Text className="mt-2 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
           {missingGroups.length > 0
-            ? `${groupVN(missingOrders)} đơn trong 30 ngày đang bị loại khỏi lợi nhuận vì thiếu giá vốn — nhập từ mẫu nhiều đơn nhất.`
+            ? `${groupVN(missingOrders)} đơn trong 30 ngày đang tính với giá vốn 0 đ vì thiếu giá vốn — nhập từ mẫu nhiều đơn nhất.`
             : missingCount > 0
               ? `Đơn 30 ngày đã đủ giá vốn. Còn ${groupVN(missingCount)} SKU đang bán chưa có giá — xem ở Tất cả.`
               : "Mọi SKU đang bán đã có giá vốn."}

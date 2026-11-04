@@ -28,9 +28,8 @@ export interface TaxReportTotals {
   platformTaxActual: number;
   /** Σ platformRevenue của đơn CHƯA quyết toán — cơ sở ước tính thuế sàn. */
   unsettledPlatformRevenue: number;
-  /** Đơn chưa có giá vốn: đếm để cảnh báo + Σ lợi nhuận của chúng (tham khảo, không trừ). */
+  /** Số đơn chưa có giá vốn — chỉ để cảnh báo. */
   missingCostCount: number;
-  missingCostProfit: number;
 }
 
 type TaxRowInput = Pick<
@@ -47,7 +46,6 @@ function sumTaxReport(rows: Iterable<TaxRowInput>): TaxReportTotals {
     platformTaxActual: 0,
     unsettledPlatformRevenue: 0,
     missingCostCount: 0,
-    missingCostProfit: 0,
   };
   for (const r of rows) {
     if (r.shippingStatus === ShippingStatus.CANCELLED) continue;
@@ -55,10 +53,7 @@ function sumTaxReport(rows: Iterable<TaxRowInput>): TaxReportTotals {
     t.grossRevenue += r.revenueGross;
     // Đơn thiếu giá vốn tính như giá vốn 0 (04/11/2026) — vẫn đếm để cảnh báo.
     t.profit += r.profitAfterTax;
-    if (r.missingCostPrice) {
-      t.missingCostCount += 1;
-      t.missingCostProfit += r.profitAfterTax;
-    }
+    if (r.missingCostPrice) t.missingCostCount += 1;
     if (r.isSettled) {
       t.platformTaxActual += r.platformTax;
       t.settledCount += 1;

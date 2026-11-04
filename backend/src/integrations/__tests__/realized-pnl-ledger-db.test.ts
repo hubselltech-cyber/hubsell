@@ -44,7 +44,7 @@ function expectSameTotals(a: PnlSummaryTotals, b: PnlSummaryTotals, label: strin
   for (const k of ["count", "settledCount", "returnCount", "missingCostCount"] as const) {
     expect(a[k], `${label} ${k}`).toBe(b[k]);
   }
-  for (const k of ["netRevenue", "refundedAmount", "revenueGross", "platformTax", "profit", "missingCostProfit"] as const) {
+  for (const k of ["netRevenue", "refundedAmount", "revenueGross", "platformTax", "profit"] as const) {
     expect(near(a[k], b[k]), `${label} ${k}: sổ ${a[k]} ≠ đơn ${b[k]}`).toBe(true);
   }
   for (const k of ["costLoss", "platformKept", "refundLoss"] as const) {

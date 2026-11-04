@@ -59,9 +59,8 @@ export interface PnlSummaryTotals {
    * (anh Trung chốt 02/11/2026, áp 04/11; trước đó 30/09 → 04/11 bị loại).
    */
   profit: number;
-  /** Đơn chưa có giá vốn: đếm để nhắc + Σ lợi nhuận của chúng (tham khảo, không trừ). */
+  /** Số đơn chưa có giá vốn — chỉ để nhắc nhập. */
   missingCostCount: number;
-  missingCostProfit: number;
   /** Thất thu đơn hoàn — 3 khoản của computeReturnLoss, chỉ trên đơn có hoàn/trả. */
   returnLoss: { costLoss: number; platformKept: number; refundLoss: number };
   byPlatform: Map<string, { count: number; profit: number; returnCount: number; returnLoss: number }>;
@@ -80,7 +79,6 @@ export function emptyPnlSummaryTotals(): PnlSummaryTotals {
     platformTax: 0,
     profit: 0,
     missingCostCount: 0,
-    missingCostProfit: 0,
     returnLoss: { costLoss: 0, platformKept: 0, refundLoss: 0 },
     byPlatform: new Map(),
     byDay: new Map(),
@@ -114,10 +112,7 @@ function addOrder(
   t.revenueGross += o.revenueGross;
   t.platformTax += o.platformTax;
   t.profit += profit;
-  if (o.missingCostPrice) {
-    t.missingCostCount += 1;
-    t.missingCostProfit += o.profitAfterTax;
-  }
+  if (o.missingCostPrice) t.missingCostCount += 1;
   const b = t.byPlatform.get(o.channelName) ?? { count: 0, profit: 0, returnCount: 0, returnLoss: 0 };
   b.count += 1;
   b.profit += profit;

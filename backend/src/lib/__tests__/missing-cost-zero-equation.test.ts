@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { cashFlowTotalsFromRows } from "../cash-flow-totals";
-import { countsAsRevenue, missingCostApiSummary, summarizeMissingCost } from "../finance-definitions";
+import { countsAsRevenue, missingCostApiSummary } from "../finance-definitions";
 import { netProfitAfterProvision } from "../net-profit";
 import { overviewTotalsFromRows } from "../overview-totals";
 import { computePnlRow } from "../pnl-formula";
@@ -22,11 +22,15 @@ const ACTIVE = PNL_ROWS.filter((r) => countsAsRevenue(r));
 const PROFIT_ALL_ACTIVE = ACTIVE.reduce((s, r) => s + r.profitAfterTax, 0);
 
 describe("đơn thiếu giá vốn tính như giá vốn 0 — Doanh thu − Σ chi phí = Lợi nhuận ở mọi báo cáo", () => {
-  const missing = summarizeMissingCost(ACTIVE);
+  const MISSING = ACTIVE.filter((r) => r.missingCostPrice);
+  const missing = { orderCount: MISSING.length, profitAtZeroCost: MISSING.reduce((s, r) => s + r.profitAfterTax, 0) };
 
   it("fixture có đơn thiếu giá vốn và phần lợi nhuận của chúng khác 0 (test mới có ý nghĩa)", () => {
     expect(missing.orderCount).toBe(2);
     expect(missing.profitAtZeroCost).not.toBe(0);
+    // Lợi nhuận mọi đơn − lợi nhuận đơn có giá vốn = đúng phần đơn thiếu góp vào (không còn bị trừ).
+    const costedOnly = ACTIVE.filter((r) => !r.missingCostPrice).reduce((s, r) => s + r.profitAfterTax, 0);
+    expect(PROFIT_ALL_ACTIVE - costedOnly).toBeCloseTo(missing.profitAtZeroCost, 6);
   });
 
   it("Tổng quan: Doanh thu − Giá vốn − Sàn khấu trừ = Σ lợi nhuận mọi đơn (kể cả đơn thiếu giá vốn)", () => {
@@ -42,9 +46,8 @@ describe("đơn thiếu giá vốn tính như giá vốn 0 — Doanh thu − Σ 
       additionalTaxOf: () => 0,
     });
     expect(net.netProfit).toBeCloseTo(PROFIT_ALL_ACTIVE, 6);
-    // Số đơn thiếu vẫn đếm để nhắc; Σ lợi nhuận của chúng chỉ tham khảo, KHÔNG trừ.
+    // Số đơn thiếu vẫn đếm để nhắc, KHÔNG trừ gì.
     expect(a.missingCostCount).toBe(2);
-    expect(a.missingCostProfit).toBeCloseTo(missing.profitAtZeroCost, 6);
   });
 
   it("Báo cáo dòng tiền: Lợi nhuận thực tế + dự kiến = Σ lợi nhuận mọi đơn = số của Tổng quan", () => {
