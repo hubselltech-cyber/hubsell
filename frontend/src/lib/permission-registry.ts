@@ -40,7 +40,7 @@ export const PERMISSION_TREE: PermissionNode[] = [
     key: "warehouse",
     label: "Quản lý Kho",
     children: [
-      { key: "warehouse.products", label: "Kho vật lý" },
+      { key: "warehouse.products", label: "Tổng kho & Sản phẩm trên sàn" },
       { key: "warehouse.returns", label: "Đối soát đơn hoàn" },
       { key: "warehouse.shipping-alerts", label: "Đối soát phí ship" },
     ],

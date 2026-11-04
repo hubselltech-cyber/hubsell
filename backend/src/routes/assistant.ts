@@ -721,7 +721,7 @@ const INTENTS: IntentDef[] = [
           value: `còn ${p.available} (an toàn ${p.safety})`,
           tone: p.available <= 0 ? "neg" : undefined,
         })),
-        link: { href: "/products", label: "Mở Hàng hóa" },
+        link: { href: "/products", label: "Mở Tổng kho" },
       };
     },
   },
@@ -937,7 +937,7 @@ const INTENTS: IntentDef[] = [
           label: `${g.channelSku} — ${g.productName}`.slice(0, 60),
           value: `${g._sum.quantity ?? 0} sp`,
         })),
-        link: { href: "/products", label: "Mở Hàng hóa" },
+        link: { href: "/products", label: "Mở Tổng kho" },
       };
     },
   },

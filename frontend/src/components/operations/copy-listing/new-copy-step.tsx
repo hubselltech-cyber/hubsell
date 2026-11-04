@@ -114,7 +114,7 @@ export function NewCopyStep({ onCreated }: { onCreated: (batchId: string) => voi
             {/* Soạn sản phẩm từ đầu đã chuyển về Hàng hóa (anh chốt 30/10) — để lối đi cho khách quen chỗ cũ. */}
             <Button size="sm" variant="ghost" nativeButton={false} render={<Link href="/products/new" />}>
               <Plus className="size-4" />
-              Tạo sản phẩm mới ở Hàng hóa
+              Tạo sản phẩm mới ở Tổng kho
             </Button>
             {picked.size > 0 && (
               <span className="ml-auto inline-flex items-center gap-2 text-sm text-slate-700">

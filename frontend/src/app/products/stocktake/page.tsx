@@ -226,7 +226,7 @@ export default function StocktakePage() {
             <div className="space-y-1">
               <Link href="/products" className={cn(TEXT_SUB, "inline-flex items-center gap-1 hover:text-foreground")}>
                 <ArrowLeft className="size-3.5" />
-                Hàng hóa
+                Tổng kho
               </Link>
               <p className="text-sm text-muted-foreground">
                 {locationsEnabled

@@ -1,6 +1,8 @@
 # TIẾN ĐỘ DỰ ÁN HUBSELL
 
 ## 🔜 Định hướng phiên sau (Next)
+- [ ] **~19/11/2026 nhắc anh Trung quyết khối "Kho trung tâm Hubsell" (3 bước) đang TẠM ẨN** (cờ `SHOW_SETUP_GUIDE` ở `frontend/src/app/products/page.tsx`, ẩn 05/11 theo lời anh): xóa hẳn / gói thành checklist ở màn chào mừng / mở lại — chi tiết `docs/QUAN-LY-KHO-TAI-CAU-TRUC.md` mục 2. Quyết xong làm lại tour Kho `/guide` + 3 câu mobile "trang Hàng hóa".
+- [ ] **Nâng cấp Quản lý kho lát 2+** — chờ anh chốt thứ tự theo `docs/QUAN-LY-KHO-TAI-CAU-TRUC.md` mục 3 (IA sidebar + mục Nhập–Xuất–Kiểm kê → phiếu nhập NCC + giá vốn bình quân → kiểm kê theo phiên + quyền → đa kho).
 - [ ] **Trung tâm điều hành — Đợt 3 (làm cả thể khi TikTok Shop cấp API):** triển khai theo KHUNG ĐẶC TẢ đã viết sẵn cuối phần detector trong `backend/src/services/ops-alerts.ts` — (7) khách bom hàng `customer-refusal` (dữ liệu `Order.customerPhone` + đơn CANCELLED đã có sẵn), (8) mở rộng `ads-spike` cho Lazada/TikTok (cần client API chi ads theo ngày của 2 sàn), (9) `tax-error` lỗi hóa đơn/ký số (chờ module Invoicing chạy thương mại). Khung OpsAlert/UI dùng chung — chỉ cần viết detector rồi thêm vào mảng `detectors`.
 - [ ] **Module theo dõi lệnh rút ví → ngân hàng:** để cột "Tiền đã thu về" (bảng Cash Flow) có số THẬT thay vì giữ chỗ 0đ.
 - [ ] **Cắm dữ liệu thật cho các cột giữ chỗ** ở bảng Shopee/TikTok (thuế, Flash Sale, chiết khấu PVC, SFR/VAT, trợ giá VC, nạp ví QC…) khi có luồng đồng bộ đối soát từ sàn.

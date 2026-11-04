@@ -169,10 +169,19 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
-      // HUB "HÀNG HÓA" (chốt 15/08): gộp Kho vật lý + Liên kết sản phẩm + Đồng
-      // bộ tồn kho vào MỘT trang — tab Tồn kho / Sản phẩm trên sàn + dialog Cài đặt
-      // đồng bộ. Route cũ /mappings, /warehouse/sync redirect về đây.
-      { href: "/products", label: "Hàng hóa", perm: "warehouse.products" },
+      // 05/11/2026 anh Trung (nâng cấp Quản lý kho, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md):
+      // hub "Hàng hóa" 15/08 (một trang, 3 tab) TÁCH thành hai mục sidebar — "Tổng kho"
+      // (/products: bảng SKU kho + Nhật ký kho; deep-link ?search= từ chuông, các trang
+      // con /receive /stocktake /putaway /new vẫn thuộc đây) và "Sản phẩm trên sàn"
+      // (/products/marketplace: tầng đệm ChannelProduct, chỉ chủ shop — trước là tab).
+      // Route cũ /mappings → /products/marketplace, /warehouse/sync → /products?sync=1.
+      { href: "/products", label: "Tổng kho", perm: "warehouse.products" },
+      {
+        href: "/products/marketplace",
+        label: "Sản phẩm trên sàn",
+        perm: "warehouse.products",
+        adminOnly: true,
+      },
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn", perm: "warehouse.returns" },
       // Điều chuyển từ nhóm Tài chính sang (nghiệp vụ đối soát vận chuyển sát
       // với kho vận); route cũ /finance/shipping-alerts vẫn redirect về đây.
@@ -349,11 +358,13 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
   { prefix: "/orders/packing", title: "Đóng gói & bàn giao" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
-  { prefix: "/products", title: "Hàng hóa" },
-  { prefix: "/warehouse/sync", title: "Hàng hóa" }, // redirect về hub — tránh nháy tiêu đề lạ
+  // Trang con đứng TRƯỚC "/products" (match tiền tố) — 05/11/2026 tách hub Hàng hóa.
+  { prefix: "/products/marketplace", title: "Sản phẩm trên sàn" },
+  { prefix: "/products", title: "Tổng kho" },
+  { prefix: "/warehouse/sync", title: "Tổng kho" }, // redirect về Tổng kho — tránh nháy tiêu đề lạ
   { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
   { prefix: "/channels", title: "Cấu hình kết nối" },
-  { prefix: "/mappings", title: "Hàng hóa" }, // redirect về hub — tránh nháy tiêu đề lạ
+  { prefix: "/mappings", title: "Sản phẩm trên sàn" }, // redirect — tránh nháy tiêu đề lạ
   { prefix: "/staff", title: "Quản lý nhân viên" },
   { prefix: "/affiliate", title: "Kiếm Tiền Cùng Hubsell" },
   { prefix: "/settings/general", title: "Cấu hình chung" },
@@ -624,6 +635,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const groupActive = item.children.some((c) =>
         pathname.startsWith(c.href)
       );
+      // href khớp DÀI NHẤT với đường dẫn hiện tại (khớp đúng hoặc là tiền tố thư mục).
+      const activeChildHref = item.children
+        .filter((c) => pathname === c.href || pathname.startsWith(c.href + "/"))
+        .sort((a, b) => b.href.length - a.href.length)[0]?.href;
       // groupActive chỉ dùng để TÔ MÀU nhãn nhóm; trạng thái xoè/cụp
       // do openMenus quyết định hoàn toàn — trước đây `|| groupActive`
       // ép nhóm chứa trang đang xem luôn mở, bấm không cụp lại được.
@@ -658,7 +673,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {open && (
             <div className="mt-1.5 space-y-1 border-l pl-4 ml-5">
               {item.children.map((child) => {
-                const childActive = pathname.startsWith(child.href);
+                // Mục con sáng đèn = mục có href KHỚP DÀI NHẤT trong nhóm (05/11/2026):
+                // "/products" là cha của "/products/marketplace" — so tiền tố đơn thuần
+                // thì đứng ở Sản phẩm trên sàn cả hai mục cùng sáng.
+                const childActive = activeChildHref === child.href;
                 if (child.locked) {
                   return (
                     <span

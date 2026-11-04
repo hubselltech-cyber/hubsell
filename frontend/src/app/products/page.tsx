@@ -30,6 +30,7 @@ import {
   MapPin,
   PackageOpen,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Warehouse,
@@ -54,7 +55,6 @@ import { StockLevelsCell } from "@/components/products/stock-levels-cell";
 import { StockLocationsDialog } from "@/components/products/stock-locations-dialog";
 import { StockTransferDialog } from "@/components/products/stock-transfer-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
-import { LinkManager } from "@/components/products/link-manager";
 import { LocationSelect } from "@/components/products/location-select";
 import {
   SyncSettingsDialog,
@@ -138,7 +138,19 @@ const COL_HEAD_CLASS: Record<string, string> = {
   actions: "w-[8.5rem]",
 };
 
-type HubTab = "inventory" | "links" | "logs";
+type HubTab = "inventory" | "logs";
+
+/**
+ * ⛔ TẠM ẨN 05/11/2026 (anh Trung, nâng cấp Quản lý kho): khối "Kho trung tâm Hubsell"
+ * (dải kể chuyện Shop A/B/C + 3 bước kéo SP → nối SKU → bật đồng bộ, setup-guide.tsx)
+ * KHÔNG hiện nữa — anh chưa quyết xóa hẳn hay làm lại nên giữ mã, chỉ tắt cờ.
+ * Ba việc của khối vẫn có cửa khác: kéo SP về + Tự khớp = trang Sản phẩm trên sàn;
+ * bật đồng bộ = nút "Đồng bộ tồn kho" trên thanh công cụ (thêm cùng ngày, trước đó
+ * nút này chỉ nằm trong đầu khối). Nhắc anh quyết ~19/11/2026 — xem
+ * docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 2. Xóa hẳn = bỏ cờ này, setup-guide.tsx,
+ * hub-story-strip.tsx, state counts/channels/syncState chỉ còn nuôi dòng trống bảng.
+ */
+const SHOW_SETUP_GUIDE: boolean = false;
 
 /** Một MẪU hàng trên bảng = các SKU kho cùng khóa cha–con (backend xếp liền nhau). */
 interface ProductGroupRows {
@@ -216,15 +228,20 @@ function GroupCheckbox({
  * chip "Ngừng bán N" chỉ hiện khi N > 0; phiếu nhập/xuất NHIỀU MÃ là trang riêng
  * /products/receive. Thanh tab chuyển sang PageTabs + PageHeaderBand (chuẩn 19/09).
  *
- * Route cũ /mappings và /warehouse/sync redirect về đây (?tab=links / ?sync=1).
+ * 05/11/2026 — TÁCH HUB (anh Trung, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md): trang này là
+ * "TỔNG KHO" trên sidebar (tab Tồn kho + Nhật ký kho); tab Sản phẩm trên sàn thành
+ * trang riêng /products/marketplace (mục sidebar cạnh dưới). Tầng 1 (khối 3 bước)
+ * TẠM ẨN — xem SHOW_SETUP_GUIDE. "Nối thêm gian cho SKU này" nay điều hướng sang
+ * trang kia kèm ?search=&target=&targetSku=.
+ *
+ * Route cũ /warehouse/sync redirect về đây (?sync=1); /mappings và ?tab=links →
+ * /products/marketplace.
  */
 export default function ProductsHubPage() {
   const router = useRouter();
   const isAdmin = canManageShop(getStoredUser());
 
   const [tab, setTab] = useState<HubTab>("inventory");
-  // Từ khoá mồi cho tab Sản phẩm trên sàn khi bấm "Nối thêm gian" từ một SKU.
-  const [linkSeed, setLinkSeed] = useState<string | undefined>(undefined);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -450,8 +467,10 @@ export default function ProductsHubPage() {
     // Route cũ redirect về kèm query: ?tab=links mở tab liên kết, ?sync=1 mở
     // dialog cài đặt. Đọc một lần lúc mount — không cần useSearchParams.
     const params = new URLSearchParams(window.location.search);
-    if (params.get("tab") === "links" && canManageShop(getStoredUser())) {
-      setTab("links");
+    // ?tab=links = link cũ tới tab Sản phẩm trên sàn (05/11/2026 đã thành trang riêng).
+    if (params.get("tab") === "links") {
+      router.replace("/products/marketplace");
+      return;
     }
     if (params.get("tab") === "logs") setTab("logs");
     if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
@@ -542,12 +561,18 @@ export default function ProductsHubPage() {
   // SKU kho ĐÍCH khi bấm "Nối thêm gian cho SKU này" (anh Trung 22/10 tối: khách ở SKU gian A sang
   // tab sàn chọn gian B để nối thêm, dòng gian B đã nối hết nên không có nút nào) → tab sàn hiện
   // dải "Đang nối về SKU X" và mỗi dòng có nút "Nối vào X" một bấm, kể cả dòng đang nối gian khác.
-  const [linkTargetProduct, setLinkTargetProduct] = useState<Product | null>(null);
-  /** "Nối thêm gian" từ một SKU: nhảy sang tab liên kết, mồi sẵn từ khoá + SKU đích. */
+  // 05/11/2026: tab đó thành trang riêng → mang từ khoá + SKU đích qua query string
+  // (trang kia tìm lại SKU theo mã vì chưa có GET /api/products/:id).
+  /** "Nối thêm gian" từ một SKU: sang trang Sản phẩm trên sàn, mồi sẵn từ khoá + SKU đích. */
   function jumpToLinks(seedSearch?: string, target?: Product) {
-    setLinkSeed(seedSearch);
-    setLinkTargetProduct(target ?? null);
-    setTab("links");
+    const qs = new URLSearchParams();
+    if (seedSearch) qs.set("search", seedSearch);
+    if (target) {
+      qs.set("target", target.id);
+      qs.set("targetSku", target.skuCode);
+    }
+    const q = qs.toString();
+    router.push(q ? `/products/marketplace?${q}` : "/products/marketplace");
   }
   /**
    * Từ khóa mồi khi bấm "Nối gian" ở một SKU kho: lấy 4 chữ đầu TÊN sản phẩm (anh Trung 22/10
@@ -1262,18 +1287,9 @@ export default function ProductsHubPage() {
     // "Tồn kho đã nối" (anh Trung 22/10 tối): khách kéo hàng về tưởng vào thẳng kho; tab này chỉ
     // có SKU kho — hàng sàn phải nối (bước 2) mới xuất hiện ở đây.
     // Lần 2 (anh Trung 22/10 tối): "Tổng kho" — gọn, bao cả SKU tự thêm / Excel lẫn SKU nối từ sàn.
-    { key: "inventory", label: "Tổng kho" },
-    ...(isAdmin
-      ? [
-          {
-            key: "links" as const,
-            label: "Sản phẩm trên sàn",
-            count: unlinkedCount,
-            countTone: "attention" as const,
-            countTitle: "Sản phẩm trên sàn chưa nối về SKU kho",
-          },
-        ]
-      : []),
+    // Lần 3 (05/11, trang đã mang tên "Tổng kho" trên sidebar + tiêu đề): tab về "Tồn kho"
+    // cho khỏi lặp chữ; tab "Sản phẩm trên sàn" chuyển thành trang riêng /products/marketplace.
+    { key: "inventory", label: "Tồn kho" },
     { key: "logs", label: "Nhật ký kho" },
   ];
 
@@ -1283,39 +1299,24 @@ export default function ProductsHubPage() {
         {/* ===== DẢI ĐẦU TRANG + THANH TAB (chuẩn PageTabs 19/09) ===== */}
         <PageHeaderBand>
           <PageTabs
-            ariaLabel="Khu vực của hub Hàng hóa"
+            ariaLabel="Khu vực của Tổng kho"
             className="border-b-0"
             tabs={hubTabs}
             value={tab}
-            onChange={(key) => {
-              if (key === "links") {
-                setLinkSeed(undefined);
-                setLinkTargetProduct(null);
-              }
-              setTab(key);
-            }}
+            onChange={setTab}
           />
         </PageHeaderBand>
 
         {tab === "logs" ? (
           <InventoryLogTable showLocation={locationsEnabled} />
-        ) : tab === "links" && isAdmin ? (
-          <LinkManager
-            key={`${linkSeed ?? "all"}:${linkTargetProduct?.id ?? ""}`}
-            initialSearch={linkSeed}
-            targetProduct={linkTargetProduct}
-            onClearTarget={() => setLinkTargetProduct(null)}
-            onChanged={() => {
-              load();
-              loadCounts();
-            }}
-          />
         ) : (
           <>
             {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) =====
                 CHỈ ở tab Tồn kho (anh Trung 06/09: tab Sản phẩm trên sàn là chỗ làm
                 việc chi tiết, không kể chuyện hai lần). Cách bảng bên dưới một
-                khoảng lớn hơn nhịp thường để hai khối tách tông. */}
+                khoảng lớn hơn nhịp thường để hai khối tách tông.
+                ⛔ TẠM ẨN 05/11/2026 — xem SHOW_SETUP_GUIDE đầu tệp. */}
+            {SHOW_SETUP_GUIDE && (
             <div className="pb-2">
               <SetupGuide
                 isAdmin={isAdmin}
@@ -1330,6 +1331,7 @@ export default function ProductsHubPage() {
                 onOpenSync={() => setSyncOpen(true)}
               />
             </div>
+            )}
 
             {/* ===== TẦNG 2: BẢNG LÀM VIỆC — thanh công cụ + cảnh báo + bảng ===== */}
             {/* Hai hàng CÓ CHỦ Ý (anh Trung 03/10: lệch hàng xấu): hàng 1 = tìm kiếm (trái) + thao tác (phải);
@@ -1351,6 +1353,34 @@ export default function ProductsHubPage() {
                 </Button>
               </form>
               <div className="flex flex-wrap items-center gap-2">
+                {/* 05/11/2026: cửa vào hộp Đồng bộ tồn kho lên sàn — trước chỉ nằm ở đầu khối
+                    3 bước (đã tạm ẩn); chủ shop phải luôn có chỗ bật/tắt gian + đối soát. */}
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setSyncOpen(true)}
+                    title={
+                      syncState && syncState.totalChannels > 0
+                        ? `Đang đẩy tồn lên ${syncState.enabledCount}/${syncState.totalChannels} gian — bấm để bật / tắt từng gian, đối soát`
+                        : "Bật đồng bộ tồn kho lên từng gian sau khi so số"
+                    }
+                  >
+                    <RefreshCw className="size-4" />
+                    Đồng bộ tồn kho
+                    {syncState && syncState.totalChannels > 0 && (
+                      <span
+                        className={cn(
+                          "ml-0.5 rounded-full px-1.5 text-xs tabular-nums",
+                          syncState.enabledCount === syncState.totalChannels
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                            : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                        )}
+                      >
+                        {syncState.enabledCount}/{syncState.totalChannels}
+                      </span>
+                    )}
+                  </Button>
+                )}
                 {isAdmin && (
                   <Button
                     variant="outline"
@@ -1523,13 +1553,13 @@ export default function ProductsHubPage() {
                       </>
                     ) : isAdmin && channels.length === 0 ? (
                       <p>
-                        Chưa có sản phẩm nào. Nối gian hàng để kéo sản phẩm từ sàn về (bước 1
-                        phía trên), hoặc bấm “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                        Chưa có sản phẩm nào. Vào <Link href="/channels" className="font-medium text-primary hover:underline">Kênh bán</Link> nối
+                        gian hàng để kéo sản phẩm từ sàn về, hoặc bấm “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
                       </p>
                     ) : isAdmin && (counts?.all ?? 0) === 0 ? (
                       <p>
-                        Chưa có sản phẩm nào. Bấm “Kéo sản phẩm về” ở bước 1 phía trên để lấy
-                        hàng từ gian đã nối, hoặc “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                        Chưa có sản phẩm nào. Vào <Link href="/products/marketplace" className="font-medium text-primary hover:underline">Sản phẩm trên sàn</Link> bấm
+                        “Đồng bộ từ sàn” để lấy hàng từ gian đã nối, hoặc “Tạo sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
                       </p>
                     ) : (
                       <p>Chưa có sản phẩm nào. Bấm “Tạo sản phẩm mới” hoặc nhập Excel để bắt đầu.</p>

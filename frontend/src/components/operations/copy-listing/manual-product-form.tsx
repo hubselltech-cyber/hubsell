@@ -503,7 +503,7 @@ function ManualProductFormBody({ canSeeCost, onChange, limits }: FormProps & { l
               </div>
             )}
             <p className={cn(TEXT_SUB, "self-end")}>
-              Khi bấm Đăng, mỗi phân loại thành một SKU trong Tổng kho với tồn ở trên. <span className="text-slate-900">Chưa nối với gian</span> — muốn đồng bộ tồn thì vào Hàng hóa bấm Tự khớp (mã trùng nhau nên khớp đúng).
+              Khi bấm Đăng, mỗi phân loại thành một SKU trong Tổng kho với tồn ở trên. <span className="text-slate-900">Chưa nối với gian</span> — muốn đồng bộ tồn thì vào Sản phẩm trên sàn bấm Tự khớp (mã trùng nhau nên khớp đúng).
             </p>
           </div>
         </section>

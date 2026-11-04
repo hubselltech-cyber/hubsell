@@ -100,7 +100,7 @@ export function ManualCreatePage() {
         <div className="space-y-1">
           <Link href="/products" className={cn(TEXT_SUB, "inline-flex items-center gap-1 hover:text-foreground")}>
             <ArrowLeft className="size-3.5" />
-            Hàng hóa
+            Tổng kho
           </Link>
           <h1 className={TEXT_PAGE_TITLE}>Tạo sản phẩm mới</h1>
           <p className={TEXT_SUB}>

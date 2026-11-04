@@ -245,7 +245,7 @@ export default function ReceiveStockPage() {
                 className={cn(TEXT_SUB, "inline-flex items-center gap-1 hover:text-foreground")}
               >
                 <ArrowLeft className="size-3.5" />
-                Hàng hóa
+                Tổng kho
               </Link>
               <p className="text-sm text-muted-foreground">
                 Gõ hoặc quét mã SKU, mỗi mã một dòng, một lý do chung, một nút. Số cộng

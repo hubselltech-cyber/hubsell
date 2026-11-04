@@ -195,7 +195,7 @@ export default function PutawayPage() {
             <div className="space-y-1">
               <Link href="/products" className={cn(TEXT_SUB, "inline-flex items-center gap-1 hover:text-foreground")}>
                 <ArrowLeft className="size-3.5" />
-                Hàng hóa
+                Tổng kho
               </Link>
               <p className="text-sm text-muted-foreground">
                 Quét tem kệ để chọn nơi cất, rồi quét từng SKU. Một nút chuyển hết lên kệ, nhật ký ghi từng dòng.
@@ -219,7 +219,7 @@ export default function PutawayPage() {
 
         {!enabled && !locationsQ.loading ? (
           <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">
-            Shop chưa có vị trí chứa hàng nào. Vào Hàng hóa → <b>Thêm vị trí chứa hàng</b> để tạo kho / kệ trước.
+            Shop chưa có vị trí chứa hàng nào. Vào Tổng kho → <b>Thêm vị trí chứa hàng</b> để tạo kho / kệ trước.
           </div>
         ) : (
           <>
