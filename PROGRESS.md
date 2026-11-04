@@ -6,12 +6,12 @@
 
 ---
 
-## Phiên 05/11 sáng — Tạp Hoá Dép 668 lại "Size Chart is required" ở Giày Dép Nam (anh hỏi "sửa chưa hết ngành hàng?") — KHÔNG sót ngành hàng; vá 2 lỗ (đệm rỗng 1 giờ + câu đỏ nêu danh mục), kiểm local, CHƯA PUSH
+## Phiên 05/11 sáng — Tạp Hoá Dép 668 lại "Size Chart is required" ở Giày Dép Nam (anh hỏi "sửa chưa hết ngành hàng?") — KHÔNG sót ngành hàng; vá 2 lỗ (đệm rỗng 1 giờ + câu đỏ nêu danh mục), kiểm local, ✅ PUSH 0e1d82ee ~05:15 (anh "push luôn") → Render deploy backend
 
 - **Trả lời anh:** lối mẫu bảng size 02/11 không theo ngành hàng — hỏi mẫu của gian theo đúng lá đang đăng. Mẫu bảng size Shopee gắn với danh mục lúc tạo nên mẫu giày nữ không dùng được cho giày nam; khách tạo mẫu cho lá mới một lần, thời trang cũng vậy. Câu đỏ trong ảnh là ca "gian chưa có mẫu cho lá này", không phải lỗi mã.
 - **Lỗ thật 1:** `sizeChartCache` đệm cả danh sách RỖNG 1 giờ → khách tạo mẫu xong bấm Đăng lại ngay vẫn lỗi cũ. Sửa: `TtlCache.delete` + `getSizeChartList` rỗng thì bỏ khóa.
 - **Lỗ 2:** câu đỏ nói "danh mục này" → adapter gắn `categoryPath` vào lỗi (`attachListingErrorContext`), worker đưa vào `humanizeListingError(…, ctx)`, luật Bảng size thành hàm nêu đích danh «lá» cần tạo mẫu + ghi rõ mẫu gắn theo danh mục.
-- Test 47/47 (+2 ca), tsc sạch. Docs SAO-CHEP-SAN-PHAM mục 32; memory sao chép SP. ⏳ anh push → khách tạo mẫu Xăng-đan & Dép rồi Đăng lại ngay. Chưa đọc log Render ca này.
+- Test 47/47 (+2 ca), tsc sạch. Docs SAO-CHEP-SAN-PHAM mục 32; memory sao chép SP. ✅ đã push 0e1d82ee; ⏳ Render lên → khách tạo mẫu Xăng-đan & Dép trên Shopee rồi Đăng lại ngay. Chưa đọc log Render ca này.
 
 ## Phiên 04/11 khuya — Hellokityhh "Lỗ sẵn" sau Lát A: quà cũ mang giá vốn Kẹo Sâm (mới khảo sát, CHƯA vá dữ liệu)
 
