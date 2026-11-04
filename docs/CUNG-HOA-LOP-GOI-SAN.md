@@ -480,6 +480,65 @@ theo mã (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng) → ti
 
 Đọc thêm: "tạo 0 / sửa 15" nghĩa là đường mới chỉ cập nhật đơn đã có (mốc vận chuyển làm nhảy `update_time` mà sàn không bắn webhook — đúng ghi nhận 5c "5–6× biến động có webhook"), không tạo đơn nào mà đường cũ chưa có. Ghi chú ngoài phạm vi: 21:02 VN có 1 dòng `[TikTok] QUÁ TẢI /return_refund/202309/returns/search HTTP 429` — thuộc lát B đối soát đơn hoàn (DON-HOAN-VA-SAO-KE mục 8.5 — anh gỡ lát B cùng đêm, mục 8.7), không phải lớp đọc này. **Không làm gì thêm**; nhắc 04/11 08:30 (`hubsell-do-7-ngay-lat-2-ano-04-11`) đo 7 ngày + SQL so lệch theo mã → tiêu chí Pha D. Pha D / lát 0 vẫn chờ anh gọi.
 
+**Đo 7 ngày 04/11 (nhắc tự động `hubsell-do-7-ngay-lat-2-ano-04-11`, đọc 09:06–09:25 VN = 02:06–02:25 UTC, Supabase SQL chỉ đọc qua Chrome anh) — CHƯA đủ điều kiện sang Pha D. Phần SQL sạch, phần log CHƯA ĐO vì Render đã đăng xuất.** Không sửa gì, không bật gian nào.
+
+Kỳ đo tính từ lúc bật 28/10 14:42:31 UTC, mới **6 ngày 11 giờ 24′**; đủ 7 ngày lúc 21:42 VN tối 04/11.
+
+| Tiêu chí 5d | Số đọc được | Kết luận |
+|---|---|---|
+| Đủ 7 ngày | 6 ngày 11 giờ 24′ | **CHƯA ĐỦ** |
+| ≥ 2 gian ghi song song | 1 gian (ANO), nhánh TikTok chưa ghi lượt nào | **KHÔNG ĐẠT** |
+| Không lệch Order/OrderItem | 376 đơn: 0 ca lệch chưa giải thích được; 253 đơn mới không đơn nào 0 ₫ hoặc 0 dòng hàng | **ĐẠT trên 1 gian** (giới hạn cách đo ở dưới) |
+| Trễ p99 < 15′ | Cách 5c: **p99 11,8′**. Cách ghi trong lịch: p99 16,8′ | **ĐẠT theo cách 5c**, xem mục 4 |
+| Không lỗi persist lặp | Không đọc được log Render | **CHƯA ĐO** |
+
+**1. `sync_cursors` (đọc 02:06:03 UTC):**
+
+| Luồng | Trạng thái | Trang | Lượt gần nhất | Con trỏ | Trễ lúc đọc | Cửa sổ |
+|---|---|---|---|---|---|---|
+| ANO `orders` | caught_up | 1 | 02:01:34 | 01:59:33 | 6′ | 60′ |
+| ANO `orders-shadow` | caught_up | 1 | 02:01:08 | 01:59:08 | 7′ | 60′ |
+| 8686 `orders-shadow` | caught_up | 2 | 02:03:55 | 02:01:54 | 4′ | 60′ |
+
+**2. Log Render: CHƯA ĐO.** `dashboard.render.com` chuyển về trang đăng nhập (`/login-next`), phiên hết hạn; em không tự đăng nhập. Nên **chưa có**: tổng tạo/sửa/không đổi/đụng 7 ngày, số lượt khác caught_up, co/đáy tràn/đọc lại/thử lại, dòng `cursor-reader`, lỗi persist, `[gateway] 429`. Bộ lọc khi đo lại: `read-lanes`, `cursor-reader`, `persist` (bỏ chữ "If the issue persists" của lỗi TikTok 36009003), `[gateway] 429`.
+Phần đọc được từ DB: `api_rate_keys` **0 khóa đơn, 0 hits** trên 333 khóa. Các khóa ANO đều Ads: `get_all_cpc_ads_daily_performance` hits 35 (29/10 là 22), `get_product_level_campaign_setting_info` 4, `get_total_balance` 1, khóa gian `shop:239068349` hits 3 không đổi từ 21/10 (ngoài Ads = 0).
+
+**3. So lệch hai đường** (1.914 sự kiện webhook ANO trong kỳ, code 4 = 554):
+- **(a) Trạng thái mới nhất trong payload ↔ `Order.shippingStatus`, loại TO_RETURN và code 4: 376 đơn.** Khớp trực tiếp theo `mapShopeeStatus` 357: COMPLETED→DELIVERED 184, TO_CONFIRM_RECEIVE→SHIPPING 67, SHIPPED→SHIPPING 52, CANCELLED→CANCELLED 32, PROCESSED→PROCESSED 20, READY_TO_SHIP→PENDING 2. Khác nhãn 19, đều đọc được nguyên nhân:
+  - IN_CANCEL→CANCELLED **14**: 14/14 có sự kiện CANCELLED lệch `update_time` không quá 60 giây; câu lấy "mới nhất" nhặt phải IN_CANCEL. Không lệch (mẫu `261029UGKYDUUE`, `261029URKAEJDW`).
+  - TO_CONFIRM_RECEIVE→DELIVERED **4**: `261028T4P8EXEC`, `261029UFRD6K72`, `261029USGKY457`, `261029VKURBXP2`. Cả 4 có TO_RETURN sau đó (bị câu so loại) và `returnStatus` AWAITING; `mapShopeeStatus` đưa TO_RETURN về DELIVERED. Không lệch.
+  - COMPLETED→CANCELLED **1**: `26102183NBVE4N`, `returnStatus` DAMAGED, `returnedAt` 31/10 05:15:41 UTC, sau webhook COMPLETED 30/10 17:48 và sau lượt bóng cuối 19:32. Suy từ mã: `routes/orders.ts:1677–1694` (xử lý hàng hoàn hư hỏng) đặt DAMAGED kèm CANCELLED. Không phải lệch giữa hai đường. Đọc mã thấy `planShopeeOrderUpdate` (`shopee/service.ts:727`) không chặn ghi đè trạng thái này nếu đơn được quét lại; chưa thấy xảy ra, chung cho cả hai đường.
+- **TO_RETURN (ngoài câu trên): 10 đơn.** AWAITING/DELIVERED 7; NONE/DELIVERED 2 (`2611016X9MJSP8`, `26110280GPC3HS`, đều có COMPLETED sau TO_RETURN); AWAITING/SHIPPING 1 (`2610313EJMPTBA`: TO_RETURN 01/11 12:54, bóng thấy lần cuối 03:18). Ca cuối `returnStatus` đúng nhưng `shippingStatus` vẫn SHIPPING, **chưa rõ vì sao**, cần xem log hoặc gọi chi tiết đơn.
+- **(b) Bóng `lastSeenAt` trong kỳ 379 đơn, không có trong `Order`: 0.**
+- **(c) `Order` tạo trong kỳ 253 đơn: `totalAmount` = 0: 0; 0 dòng hàng: 0.**
+- **(d) `Order` tạo 253 ↔ bóng thấy lần đầu 254.** `Order` không có trong bóng: 0. Bóng thừa 1 = `261016Q0XW7ADR`: đơn đã có từ trước kỳ, bóng thấy lần đầu 29/10 01:14 (chính là mã sót TO_RETURN ở 5c.2), không phải đơn thiếu.
+
+**Giới hạn cách đo:** hai đường ghi CÙNG bảng qua CÙNG hàm upsert, không có bản sao riêng của từng đường. Nên SQL chỉ phát hiện được `Order` sai so với webhook hoặc bóng, không so được `totalAmount`/số dòng hàng giữa hai đường. So từng cột đúng nghĩa cần ghi lại kết quả đường mới trước khi upsert; hiện không có.
+
+**4. Trễ phát hiện (bóng Shopee không có `update_time`, n = 254):**
+
+| Cách tính | min | p50 | p90 | p99 | max | > 15′ |
+|---|---|---|---|---|---|---|
+| Lịch giao: `firstSeenAt − webhook.createdAt` của sự kiện ĐẦU TIÊN (bảng không có cột `receivedAt`) | −1,4′ | 8,2′ | 15,6′ | **16,8′** | 21,6′ | 35 |
+| Giống 5c: `firstSeenAt − update_time` payload của sự kiện gần nhất trước `firstSeenAt` | 2,0′ | 5,7′ | 11,2′ | **11,8′** | 12,0′ | 0 |
+
+Hai cách lệch nhau vì `get_order_list` đi theo `update_time` MỚI NHẤT: đơn UNPAID sang READY_TO_SHIP sau khoảng 5′ (các đơn đã soi đều thế, chưa đếm riêng) làm đơn nhảy sang cửa sổ sau, và 12′ + 5′ khớp mức 16–17′. Cách 2 cùng định nghĩa với số 8686 ở 5c.2 (12,0′) nên em dùng để xét tiêu chí; cách 1 là số lịch yêu cầu, giữ nguyên để anh thấy. Webhook vẫn ghi đơn sớm hơn trong lúc đường cũ còn chạy, nên đây chỉ là trễ của riêng đường mới, tức mức khách sẽ chịu nếu webhook hỏng sau Pha D.
+
+**Kết luận:** chưa đủ điều kiện sang Pha D (và theo chốt của anh, lát 0 chỉ khi anh gọi). Còn thiếu 3 việc: (1) đọc log Render 7 ngày, cần anh đăng nhập lại; (2) đo lại sau 21:42 tối 04/11 cho đủ 7 ngày; (3) gian thứ hai.
+**Đề xuất, không tự làm:** nếu log ANO sạch thì bật thêm một gian TikTok nhỏ để kiểm nhánh TikTok. Ứng viên theo số đơn 7 ngày (ACTIVE, không ngủ đông): `BeuOne` 30 (`cmvtfv0x2025yhc3ra1zumnp0`), `Nere Lab Giai Phap Da Thong Minh` 34, `HOANGVY JEANS KID` 35. Chọn `BeuOne` chỉ vì nhỏ nhất (mặc định tự chọn, chưa kiểm token). Kỳ 7 ngày của tiêu chí sẽ tính lại từ lúc bật gian này. Lỗi persist lặp hoặc tạo đơn bất thường khi đọc log: câu tắt ở 5c.2.
+
+```sql
+-- So lệch (a): trạng thái payload mới nhất ↔ Order, mẫu cho từng gian Shopee (5e lát 0 mục 2).
+-- Lấy mốc bật làm sàn, loại TO_RETURN và code 4 (giới hạn Shopee 5c.2). IN_CANCEL và CANCELLED sát nhau: đọc thêm sự kiện cùng phút.
+WITH ev AS (SELECT DISTINCT ON (w."entityId") w."entityId" code, w.payload::jsonb #>> '{data,status}' st
+  FROM webhook_events w
+  WHERE w.source='SHOPEE' AND w."shopId"='<externalShopId>' AND w."createdAt" >= timestamp '<mốc bật UTC>' AND w."entityId" IS NOT NULL
+    AND w."eventType"<>'4' AND coalesce(w.payload::jsonb #>> '{data,status}','')<>'TO_RETURN'
+  ORDER BY w."entityId", (w.payload::jsonb #>> '{data,update_time}')::bigint DESC NULLS LAST, w."createdAt" DESC)
+SELECT ev.st, o."shippingStatus"::text, count(*), min(ev.code) mau
+FROM ev LEFT JOIN "Order" o ON o."channelId"='<channelId>' AND o."orderCode"=ev.code GROUP BY 1,2 ORDER BY 3 DESC;
+```
+
 ## 5d. Pha C lát 2 — "ghi Order qua đường mới" (19/10/2026, anh: "code lát 2 … cờ riêng, chưa bật, trong lúc bóng chạy")
 
 Luồng **`orders`** (cờ gian = dòng `sync_cursors` stream `orders` — tách khỏi `orders-shadow`; **CHƯA bật gian nào**). Khác lát 1 ở
@@ -528,6 +587,7 @@ Lịch: **22/10 08:00** nhắc kiểm 3 SQL 5c (bóng đủ 3 ngày) — nhắc 
 | Khi nào | Việc | Ghi chú |
 |---|---|---|
 | ✅ **28/10 21:42** (anh chốt 26/10, đẩy sớm từ 22:00/23:00) | **ĐÃ BẬT lát 2** cho ANO Official Store (SQL 5c.2, kết quả 5c.3) | ghi song song 7 ngày; nhắc đo 29/10 21:45 + 04/11 08:30 đã tạo |
+| ⏳ **04/11 đo được một phần** (5c.3 "Đo 7 ngày 04/11") | SQL ANO sạch, p99 11,8′. **Chưa đủ tiêu chí Pha D:** log Render chưa đọc được (đăng xuất), mới 6 ngày 11 giờ, mới 1 gian | anh đăng nhập Render + đo lại sau 21:42 04/11; gian thứ hai chờ anh chốt |
 | Trước Pha D (làm được khi đã quyết bật lát 2) | **Pha D lát 0 — chuẩn bị, chưa bật gì:** (1) chuyển 3 việc phụ vào đường mới: hỏi lại ước tính escrow Shopee cho đơn đổi trạng thái (`changedOrderCodes` → `syncShopeePendingEscrowEstimates`), chuông giao thất bại Lazada (`noticeLazadaDeliveryFail`), thẻ HQ độ trễ đọc `sync_cursors` thay mốc nước cũ; (2) SQL so lệch hai đường theo mã đơn từng gian (`shippingStatus`/`returnStatus`/`totalAmount`/số dòng hàng); (3) công tắc tắt quét đơn đường cũ THEO GIAN (worker `order-auto-sync` bỏ qua tầng đơn của gian có cờ, webhook giữ nguyên), mặc định tắt | không đụng prod cho tới khi bật cờ |
 | 7 ngày song song không lệch | **Pha D**: bật công tắc từng gian → gỡ mã cũ, trần trang rải rác, cờ; docs hợp đồng đọc sàn thay DONG-BO-GIAI-DOAN-3 mục 1 | mỗi bước có số trước–sau |
 | Sau đơn | Luồng hoàn / tài chính (ví, escrow, sao kê) / Ads / sản phẩm qua máy đọc con trỏ | theo thứ tự mục 5 |

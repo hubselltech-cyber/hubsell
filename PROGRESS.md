@@ -6,6 +6,13 @@
 
 ---
 
+## Phiên 04/11 (~09:25) — Đo 7 ngày lát 2 ANO: SQL sạch, chưa đủ tiêu chí Pha D (nhắc tự động)
+
+- Chỉ đọc, không sửa prod, không bật gian nào. Kỳ đo từ lúc bật mới 6 ngày 11 giờ 24′, đủ 7 ngày lúc 21:42 tối 04/11.
+- Đọc được: 3 dòng `sync_cursors` đều `caught_up`, trễ 4–7′. 376 đơn đối chiếu trạng thái không có ca lệch chưa giải thích được (19 ca khác nhãn đều rõ nguyên nhân). 379 mã bóng đều có trong `Order`. 253 đơn mới không đơn nào 0 ₫ hoặc 0 dòng hàng. `api_rate_keys` 0 khóa đơn. Trễ phát hiện p99 11,8′ theo cách 5c; theo cách ghi trong lịch là 16,8′, do đơn UNPAID sang READY_TO_SHIP làm nhảy `update_time`.
+- **Chưa đo:** log Render 7 ngày (tạo/sửa/không đổi/đụng, lỗi persist, 429), vì Render đã đăng xuất và em không tự đăng nhập. Một ca chưa rõ: `2610313EJMPTBA` có TO_RETURN mà vẫn SHIPPING.
+- Kết luận theo 5d: chưa đủ điều kiện sang Pha D (mới 1 gian, chưa đủ 7 ngày, chưa có log). ⏳ Anh đăng nhập Render để đo lại sau 21:42; gian thứ hai đề xuất `BeuOne`, chờ anh chốt. Chi tiết `docs/CUNG-HOA-LOP-GOI-SAN.md` mục 5c.3.
+
 ## Phiên 03/11 (~23:10) — Trang Tổng quan HQ chậm: đệm số tổng hợp, báo cáo nhà đầu tư tải khi cuộn tới
 
 - Đo prod: mở `/admin` hết ~8,7 giây, do `investor-report` ~6 giây và `stats` ~2,1 giây quét bảng ~727.000 đơn mỗi lần mở. `overview`, các trang Khách hàng, Kế toán, Gói, Marketing, Sức khỏe đều dưới 1 giây; `webhook-logs` 2,2 giây chưa sửa.
