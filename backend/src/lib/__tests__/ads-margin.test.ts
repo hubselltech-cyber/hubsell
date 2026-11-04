@@ -21,6 +21,7 @@ import {
   lowCostCoverage,
   marginBaseFromSums,
   marginOf,
+  giftCostExceedsRevenue,
   marginOverRows,
   marginsFromGroups,
   marginsFromRows,
@@ -36,6 +37,39 @@ function row(p: { sku: string; price: number; qty?: number; revenue: number; pro
     missingCostPrice: p.missing ?? false,
   } as unknown as MarginRow;
 }
+
+describe("giftCostExceedsRevenue — đơn quà bất thường (05/11/2026)", () => {
+  const gift = (cost: number, quantity = 1) => ({ price: 0, quantity, costPriceAtSale: cost });
+  const sold = { price: 159_000, quantity: 1, costPriceAtSale: 32_000 };
+
+  it("ca Hellokityhh: 730.000 đ giá vốn quà trên đơn 159.000 đ → bất thường", () => {
+    expect(giftCostExceedsRevenue({ actualRevenue: 159_000, items: [sold, gift(490_000), gift(128_000), gift(80_000), gift(32_000), gift(0)] })).toBe(true);
+  });
+
+  it("quà thật rẻ hơn doanh thu đơn → không; giá vốn hàng bán không tính vào quà", () => {
+    expect(giftCostExceedsRevenue({ actualRevenue: 159_000, items: [sold, gift(13_000, 5)] })).toBe(false);
+    expect(giftCostExceedsRevenue({ actualRevenue: 100_000, items: [{ price: 100_000, quantity: 1, costPriceAtSale: 900_000 }] })).toBe(false);
+  });
+
+  it("mốc so là LỚN HƠN: bằng doanh thu thì chưa bất thường; số lượng quà có nhân vào", () => {
+    expect(giftCostExceedsRevenue({ actualRevenue: 100_000, items: [sold, gift(100_000)] })).toBe(false);
+    expect(giftCostExceedsRevenue({ actualRevenue: 100_000, items: [sold, gift(50_001, 2)] })).toBe(true);
+  });
+
+  it("đơn doanh thu 0 hoặc dòng không có giá vốn → không kết luận", () => {
+    expect(giftCostExceedsRevenue({ actualRevenue: 0, items: [gift(490_000)] })).toBe(false);
+    expect(giftCostExceedsRevenue({ actualRevenue: 1_000, items: [{ price: 0, quantity: 1 }] })).toBe(false);
+  });
+
+  it("marginOverRows: đơn bất thường đứng ngoài biên lãi, kéo độ phủ xuống, đếm riêng với thiếu giá vốn", () => {
+    const good = { items: [{ sku: "A", price: 100, quantity: 1, costPriceAtSale: 50 }], actualRevenue: 100, profit: 40, missingCostPrice: false } as unknown as MarginRow;
+    const bad = { items: [{ sku: "A", price: 300, quantity: 1, costPriceAtSale: 50 }, { sku: "Q", price: 0, quantity: 1, costPriceAtSale: 500 }], actualRevenue: 300, profit: -300, missingCostPrice: false } as unknown as MarginRow;
+    const base = marginOverRows([good, bad], null);
+    expect(base).toMatchObject({ orders: 1, revenue: 100, profit: 40, missingCostOrders: 0, suspectGiftOrders: 1, suspectGiftRevenue: 300, costCoveragePct: 25 });
+    expect(marginOf(base)).toBeNull();
+    expect(lowCostCoverage(base)).toBe(true);
+  });
+});
 
 describe("marginOverRows — loại đơn thiếu giá vốn", () => {
   it("đơn giá vốn 0 không được cộng vào tử/mẫu; doanh thu của nó vào missingCostRevenue", () => {
@@ -324,6 +358,8 @@ describe("ChannelMargins — mặt tiền chung của hai đường cộng", () 
     const stats = (orders: number, units: number) => ({
       base: marginBaseFromSums({
         orders,
+        suspectGiftOrders: 0,
+        suspectGiftRevenue: 0,
         revenue: orders * 100,
         profit: orders * 20,
         missingCostOrders: 0,
@@ -347,11 +383,11 @@ describe("ChannelMargins — mặt tiền chung của hai đường cộng", () 
 
   it("marginBaseFromSums: độ phủ = doanh thu có giá vốn ÷ tổng doanh thu của nhóm", () => {
     expect(
-      marginBaseFromSums({ orders: 1, revenue: 300, profit: 60, missingCostOrders: 1, missingCostRevenue: 100 })
+      marginBaseFromSums({ orders: 1, revenue: 300, profit: 60, missingCostOrders: 1, missingCostRevenue: 100, suspectGiftOrders: 0, suspectGiftRevenue: 0 })
         .costCoveragePct
     ).toBe(75);
     expect(
-      marginBaseFromSums({ orders: 0, revenue: 0, profit: 0, missingCostOrders: 0, missingCostRevenue: 0 })
+      marginBaseFromSums({ orders: 0, revenue: 0, profit: 0, missingCostOrders: 0, missingCostRevenue: 0, suspectGiftOrders: 0, suspectGiftRevenue: 0 })
         .costCoveragePct
     ).toBeNull();
   });

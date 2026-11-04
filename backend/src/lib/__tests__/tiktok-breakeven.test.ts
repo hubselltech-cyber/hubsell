@@ -179,8 +179,22 @@ describe("toTiktokBreakeven", () => {
   it("bán đã lỗ trước cả quảng cáo → không có ROI hòa vốn, gắn cờ negativeMargin", () => {
     expect(toTiktokBreakeven(tiktokBreakevenBase([row({ profit: -40_000 })], null), "campaign")).toMatchObject({ breakevenRoi: null, negativeMargin: true });
   });
+  it("đơn quà bất thường: đứng ngoài biên lãi, kéo độ phủ, đếm riêng; đơn hủy cùng kiểu cũng ra khỏi mẫu số (05/11/2026)", () => {
+    const giftItem = { sku: "QUA", itemId: "99", price: 0, quantity: 1, costPriceAtSale: 730_000 };
+    const items = [{ sku: "TC054", itemId: "54", price: 250_000, quantity: 1, costPriceAtSale: 50_000 }, giftItem];
+    const rows = [
+      row({ actualRevenue: 250_000, profit: 100_000, tiktok: { feeGmvMax: 0 } }),
+      row({ items, actualRevenue: 250_000, profit: -600_000, tiktok: { feeGmvMax: 0 } }),
+      row({ items, actualRevenue: 250_000, profit: 0, shippingStatus: ShippingStatus.CANCELLED, isSettled: false, tiktok: null }),
+    ];
+    const base = tiktokBreakevenBase(rows, null);
+    expect(base).toMatchObject({ settledOrders: 1, revenue: 250_000, profitBeforeAds: 100_000, suspectGiftOrders: 2, suspectGiftRevenue: 500_000, cancelledOrders: 0 });
+    expect(toTiktokBreakeven(base, "campaign")).toMatchObject({ margin: 0.4, negativeMargin: false, costCoveragePct: 33, suspectGiftOrders: 2 });
+    expect(tiktokBreakevenBaseByGroup(rows, new Map([["i:54", "g"]])).get("g")).toEqual(tiktokBreakevenBase(rows, new Set(["i:54"])));
+  });
+
   it("độ phủ = doanh thu tính được ÷ (tính được + thiếu giá vốn + chưa nối id) — một rào cho cả hai thứ", () => {
-    const base = { settledOrders: 3, cancelledOrders: 0, revenue: 600_000, profitBeforeAds: 60_000, adFee: 0, missingCostRevenue: 200_000, unlinkedRevenue: 200_000, pendingOrders: 0 };
+    const base = { settledOrders: 3, cancelledOrders: 0, revenue: 600_000, profitBeforeAds: 60_000, adFee: 0, missingCostRevenue: 200_000, unlinkedRevenue: 200_000, suspectGiftOrders: 0, suspectGiftRevenue: 0, pendingOrders: 0 };
     expect(toTiktokBreakeven(base, "campaign")).toMatchObject({ breakevenRoi: 10, costCoveragePct: 60, unlinkedRevenue: 200_000 });
   });
 });
@@ -350,6 +364,8 @@ describe("mặt tiền ChannelBreakevens — hai đường cộng cùng một c�
       adFee: 0,
       missingCostRevenue: 0,
       unlinkedRevenue: 0,
+      suspectGiftOrders: 0,
+      suspectGiftRevenue: 0,
       pendingOrders: 0,
       units30d: 0,
       units7d: 0,
@@ -365,7 +381,7 @@ describe("mặt tiền ChannelBreakevens — hai đường cộng cùng một c�
       ])
     );
     expect(be.base(SHOP_GROUP)).toEqual({
-      settledOrders: 2, cancelledOrders: 0, revenue: 500_000, profitBeforeAds: 100_000, adFee: 40_000, missingCostRevenue: 0, unlinkedRevenue: 0, pendingOrders: 1,
+      settledOrders: 2, cancelledOrders: 0, revenue: 500_000, profitBeforeAds: 100_000, adFee: 40_000, missingCostRevenue: 0, unlinkedRevenue: 0, suspectGiftOrders: 0, suspectGiftRevenue: 0, pendingOrders: 1,
     });
     expect(be.base(campaignGroupKey("c1")).unlinkedRevenue).toBe(50_000);
     expect(be.base(campaignGroupKey("c2"))).toMatchObject({ settledOrders: 0, revenue: 0 });
@@ -391,7 +407,7 @@ describe("tiktokEstProfit", () => {
   });
   it("khớp dấu với so sánh ROI thực ↔ hòa vốn của toTiktokBreakeven", () => {
     const be = toTiktokBreakeven(
-      { settledOrders: 5, cancelledOrders: 0, revenue: 1_000_000, profitBeforeAds: 175_000, adFee: 0, missingCostRevenue: 0, unlinkedRevenue: 0, pendingOrders: 0 },
+      { settledOrders: 5, cancelledOrders: 0, revenue: 1_000_000, profitBeforeAds: 175_000, adFee: 0, missingCostRevenue: 0, unlinkedRevenue: 0, suspectGiftOrders: 0, suspectGiftRevenue: 0, pendingOrders: 0 },
       "campaign"
     );
     const spend = 1_218_615;

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
-import { effectiveSkuCost } from "../cost-price";
+import { costAtSaleForLine, effectiveSkuCost, giftLineMatchesLeaf } from "../cost-price";
 import { planCostImport, type CostImportRow } from "../cost-import";
 
 describe("effectiveSkuCost", () => {
@@ -17,6 +17,39 @@ describe("effectiveSkuCost", () => {
   it("chưa nối kho, chưa có giá → 0; không có SKU sàn → 0", () => {
     expect(effectiveSkuCost({ costPrice: null, product: null })).toBe(0);
     expect(effectiveSkuCost(undefined)).toBe(0);
+  });
+});
+
+describe("giftLineMatchesLeaf — dòng quà còn là món của lá không (05/11/2026)", () => {
+  const leaf = (productName: string, variantName: string | null) => ({ productName, variantName });
+  it("ca Hellokityhh: tin quà đổi thành Kẹo Sâm, phân loại khác → không khớp", () => {
+    expect(giftLineMatchesLeaf("[VOUCHER 20%] Kẹo gum - THANK YOU 2", leaf("Kẹo Ngậm Hồng Sâm", "HỘP 32 VIÊN"))).toBe(false);
+  });
+  it("cùng sản phẩm, đổi phân loại → không khớp (THANKU5 → Hộp 32 viên)", () => {
+    expect(giftLineMatchesLeaf("Kẹo Sâm - THANKU5", leaf("Kẹo Sâm", "HỘP 32 VIÊN"))).toBe(false);
+  });
+  it("đổi tên sản phẩm, giữ phân loại → vẫn là món đó", () => {
+    expect(giftLineMatchesLeaf("Gói kiến tha về tổ diệt tận gốc - 10 Gói", leaf("Gói kiến tha về tổ đi cả đàn", "10 Gói"))).toBe(true);
+  });
+  it("TikTok ghi '- Mặc định' cho lá không tên phân loại → khớp theo tên sản phẩm; đổi tên hẳn thì không", () => {
+    expect(giftLineMatchesLeaf("Túi giữ form - Mặc định", leaf("Túi giữ form", null))).toBe(true);
+    expect(giftLineMatchesLeaf("Túi giữ form", leaf("Túi giữ form", ""))).toBe(true);
+    expect(giftLineMatchesLeaf("Thẻ cảm ơn - Mặc định", leaf("Túi giữ form", null))).toBe(false);
+  });
+  it("khác khoảng trắng quanh dấu phẩy vẫn khớp", () => {
+    expect(giftLineMatchesLeaf("Áo B03 - Xanh Than , 40 -60 Kg", leaf("Áo B03", "Xanh Than, 40 -60 Kg"))).toBe(true);
+  });
+});
+
+describe("costAtSaleForLine — giá chụp lúc tạo đơn", () => {
+  const cp = { costPrice: 490_000, product: null, productName: "Kẹo Sâm", variantName: "HỘP 32 VIÊN" };
+  it("dòng có giá bán luôn nhận giá của lá, dù tên khác", () => {
+    expect(costAtSaleForLine({ price: 99_000, productName: "Tên cũ - THANK YOU 2" }, cp)).toBe(490_000);
+  });
+  it("dòng 0 đ khác món → 0; cùng món → nhận giá; không có lá → 0", () => {
+    expect(costAtSaleForLine({ price: 0, productName: "Quà - THANK YOU 2" }, cp)).toBe(0);
+    expect(costAtSaleForLine({ price: 0, productName: "Kẹo Sâm - HỘP 32 VIÊN" }, cp)).toBe(490_000);
+    expect(costAtSaleForLine({ price: 0, productName: "X" }, undefined)).toBe(0);
   });
 });
 

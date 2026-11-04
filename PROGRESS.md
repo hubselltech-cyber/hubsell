@@ -6,6 +6,24 @@
 
 ---
 
+## Phiên 04/11 khuya — Hellokityhh "Lỗ sẵn" sau Lát A: quà cũ mang giá vốn Kẹo Sâm (mới khảo sát, CHƯA vá dữ liệu)
+
+- **Triệu chứng (ảnh anh):** chiến dịch Product GMV Max của Hellokityhh (`cmvew4e8b008oiz3s6a1z2n9x`, thanhthong0207@gmail.com) từ hòa vốn ~2,5 sang "Lỗ sẵn", Lãi/lỗ ước tính −125,2 tr; KẸO SÂM 2 vẫn 3,37.
+- **Gốc (kiểm SQL prod, chỉ đọc):** khách đổi tin đăng quà `1736978348605802179` thành Kẹo Sâm từ ~02/10, GIỮ NGUYÊN sku_id: GIẤY HDSD → 5 VIÊN (80k), THANK YOU → 8 VIÊN (128k), VOUCHER 20% → 2 VIÊN (32k), THANK YOU 2 → HỘP 32 VIÊN (490k). 2.682 đơn 11/08–01/10 có 5 dòng quà giá 0 đ nay mang giá vốn Kẹo Sâm = 730.000 đ/đơn, ~1,96 tỷ giá vốn ảo (60 ngày ~1,09 tỷ). Lá thứ 5 VOUCHER 30% (`…895619`) không còn trong danh mục, giá vốn 0.
+- **Vì sao hôm nay mới lộ:** trước sổ v4, lá 0 đ đó bật cờ thiếu giá vốn → các đơn này bị gạt khỏi biên lãi. Lát A (push 20:25, sổ v4 xong 21:31) bỏ cờ cho dòng quà 0 đ → đơn vào biên lãi kèm giá vốn ảo. Lát A là ngòi nổ, dữ liệu sai là gốc; Lát B không đổi biên lãi quảng cáo.
+- **Số kiểm:** biên Product GMV Max luật cũ 40,4 % (hòa vốn 2,47, độ phủ 57 %) → luật mới −153 % → mô phỏng bỏ giá vốn ảo +42,1 % (hòa vốn ~2,4). KẸO SÂM 2 giữ 29,7 %. Toàn gian 60 ngày: lợi nhuận ~−848 tr, doanh thu 534 tr.
+- **Diện ảnh hưởng:** 22 gian có đơn lật cờ; 18/183 chiến dịch TikTok đang chạy; chỉ Hellokityhh sập, chiến dịch kế tiếp lệch tối đa 3 điểm. Chưa đo cấp chiến dịch cho Shopee/Lazada (cấp gian không có ca nặng).
+- **Cùng triệu chứng nhưng KHÔNG do đợt đổi hôm nay (0 đơn lật cờ, chưa rõ quà thật hay nhập sai):** Vua Trị Côn Trùng (TikTok, chiến dịch "5 MuoI" biên −537 %, bỏ quà +34 %; quà 899 tr/doanh thu 201 tr, 5 lá mỗi lá tới 686.868 đ, đơn mới vẫn phát sinh tới 03/11) và Tạp Hoá Dép 668 (biên −79,5 %, bỏ quà +16,8 %; gian nối 30/10).
+- **05/11 đo lại phương án (docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md mục 11, chưa code):** đề xuất "dòng 0 đ không tự điền" bị bác vì 487 lá / 57 gian tặng đúng món đang bán (166,6 tr giá thật) và không chạm kiểu nhập sai. Đề xuất mới 4 phần: vá dữ liệu; dòng 0 đ khác tên lá thì không nhận giá tự động; cảnh báo lúc nhập có Bỏ qua; rào hòa vốn "giá vốn quà > doanh thu đơn" (chỉ 3/183 chiến dịch đổi ≥ 2 điểm, đúng 3 ca lỗi).
+- **Đính chính:** Lát B làm các đơn này vào lợi nhuận tài chính kèm giá vốn ảo; Lát A làm chúng vào hòa vốn. Vua Trị: thẻ 686.868 đ chỉ ở đơn 23–27/10 (1.425 dòng), lá nay 100 đ. Tạp Hoá: thẻ 70.000 đ, lá vẫn 70.000 đ.
+- Cùng chủ `thanhthong0207@gmail.com`: Hellokityhh, TOVO 7, TOVO 11, TOVO 21; TOVO 7 đã vá tay cùng kiểu ngày 26/10.
+- **05/11 anh duyệt, ĐÃ CODE 3 lớp (chưa commit, chưa push; docs TAI-CHINH-GIA-VON-0 mục 12):** lớp 3 `scripts/sql/ads-margin-impact.sql` (453 chiến dịch, 5 đổi ≥ 2 điểm, 0 dương thành âm); lớp 2 đơn có giá vốn quà > doanh thu đơn đứng ngoài biên lãi 3 sàn; lớp 1a dòng 0 đ khác phân loại với lá không tự nhận giá ở mọi đường; lớp 1b hỏi lại khi nhập giá quà, mới phủ 2 ô trên trang Nhập giá vốn (chưa Excel, Mapping, áp theo ô tìm, popup Lãi/Lỗ SKU, mobile). Đã soi web local sáng + tối. 23 ca đỏ của `src/integrations/__tests__` trùng khít 23 ca đỏ trên mã gốc, không có ca mới; `tsc` hai bên sạch.
+- ⏳ **Prod chưa vá:** bộ phân loại quyền chặn UPDATE `OrderItem`, đã đọc lại, chưa dòng nào đổi. Sao lưu: `backend/scripts/out/quatang-costprice-backup-2026-11-05.txt`. Chờ anh cho phép. Tạp Hoá Dép 668 chờ hỏi khách.
+- **Rà lại theo anh (docs mục 13):** hai đường cộng cùng thứ tự ưu tiên; ngưỡng A "giá quà > doanh thu đơn" bắt 99,4 % tiền quà bất thường, hai luật thay thế chỉ thêm 8 tr + 4 tr nên giữ A; luật so tên thêm không phân biệt hoa thường → ngoài Hellokityhh chỉ chặn 42 lá / 7,9 tr, giữ 719 lá / 1.197 tr; câu lý do nói cả hai phần. Mobile để sau (anh chốt).
+- ⏳ Chờ anh duyệt commit + push mã.
+
+---
+
 ## Phiên 04/11 đêm — ĐÃ LÀM "Tự chuẩn bị hàng" theo gian (anh: "chỉ chuẩn bị, đẩy sang Chưa in phiếu; làm thật cẩn thận")
 
 - **Thiết kế** `docs/TU-CHUAN-BI-HANG.md`: đứng trên khối có sẵn — làn `sync-lanes` (làn mới `fulfill`, 2 luồng), mẻ `batch-runner` (thêm `runFulfillmentBatchNow` chờ xong + cột `source` AUTO/MANUAL), khóa chồng `findLiveRunningBatches` hai chiều, chuông `notify`. Chạy ở worker.

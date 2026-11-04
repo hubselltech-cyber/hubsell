@@ -2884,6 +2884,19 @@ interface UpdateCostResult {
   siblings?: CostSiblings | null;
 }
 
+/** Mã đang là quà mà nhập giá này: số đơn 60 ngày có quà và số đơn giá vốn quà vượt doanh thu (05/11/2026). */
+export interface GiftCostCheck {
+  giftOrders: number;
+  exceedOrders: number;
+}
+
+export function checkGiftCost(skuIds: string[], costPrice: number) {
+  return apiFetch<GiftCostCheck>("/api/finance/cost-prices/gift-check", {
+    method: "POST",
+    body: JSON.stringify({ sku_ids: skuIds, cost_price: costPrice }),
+  });
+}
+
 export function updateSkuCostPrice(skuId: string, costPrice: number) {
   return apiFetch<UpdateCostResult>("/api/finance/update-cost", {
     method: "PATCH",
@@ -3423,6 +3436,8 @@ export interface TiktokAdsBreakeven {
   pendingOrders: number;
   /** % doanh thu tính được: vừa có giá vốn, vừa nối đúng sản phẩm bằng id (28/10/2026 gồm cả phần unlinkedRevenue). */
   costCoveragePct: number | null;
+  /** Số đơn đứng ngoài hòa vốn vì giá vốn quà cao hơn doanh thu đơn (05/11/2026). */
+  suspectGiftOrders: number;
   /** Doanh thu đã chốt của dòng đơn chưa nối được sản phẩm bằng id (chỉ khớp mã) — phần "chưa tính được" của độ phủ. */
   unlinkedRevenue: number;
 }
@@ -8010,6 +8025,8 @@ export interface ShopeeProductBreakevenRow {
   lowCostCoverage: boolean;
   /** Số đơn thiếu giá vốn đã bị loại khỏi biên lãi của sản phẩm. */
   missingCostOrders: number;
+  /** Số đơn có giá vốn quà cao hơn doanh thu đơn đã bị loại khỏi biên lãi của sản phẩm. */
+  suspectGiftOrders?: number;
   runningAds: boolean;
   /** Đợt A: mục tiêu ROAS thấp nhất đang đặt trên campaign chạy có SP này. */
   roasTargetCheck: RoasTargetCheck | null;
@@ -8210,6 +8227,8 @@ export interface ShopeeAdsSummary {
   marginWindowDays: number;
   pnlOrders: number;
   missingCostOrders: number;
+  /** Số đơn có giá vốn quà cao hơn doanh thu đơn đã bị loại khỏi biên lãi. */
+  suspectGiftOrders?: number;
   /** % doanh thu có giá vốn trong mẫu biên lãi; đơn thiếu đã bị loại. */
   costCoveragePct: number | null;
 }

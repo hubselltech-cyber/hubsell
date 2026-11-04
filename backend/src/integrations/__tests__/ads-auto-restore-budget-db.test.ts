@@ -94,7 +94,7 @@ describe("runAdsAutoExecute — tự trả ngân sách gốc", () => {
       return {
         config: normalizeAssistantConfig(LIVE_CONFIG),
         items,
-        shop: { margin: 0.2, breakevenRoas: 5, pnlOrders: 0, missingCostOrders: 0, costCoveragePct: null },
+        shop: { margin: 0.2, breakevenRoas: 5, pnlOrders: 0, missingCostOrders: 0, suspectGiftOrders: 0, costCoveragePct: null },
       };
     });
   });

@@ -10,7 +10,7 @@
 // nghiệp vụ làm sau khi luồng OAuth đã kiểm chứng chạy thật (như trình tự Shopee).
 // ============================================================
 
-import { effectiveSkuCost } from "../../lib/cost-price";
+import { costAtSaleForLine } from "../../lib/cost-price";
 import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
@@ -968,6 +968,8 @@ export async function upsertLazadaOrderTx(
           productId: true,
           costPrice: true,
           product: { select: { costPrice: true } },
+          productName: true,
+          variantName: true,
         },
       })
     : [];
@@ -1011,8 +1013,8 @@ export async function upsertLazadaOrderTx(
         quantity: line.quantity,
         price: line.price,
         imageUrl: line.imageUrl,
-        // Giá riêng của gian, không có thì giá mặc định ở kho (lib/cost-price).
-        costPriceAtSale: String(effectiveSkuCost(mp)),
+        // Giá riêng của gian, không có thì giá mặc định ở kho; dòng quà 0 đ đã khác món với lá thì giữ 0 (lib/cost-price).
+        costPriceAtSale: String(costAtSaleForLine(line, mp)),
       },
     });
   }

@@ -1144,6 +1144,12 @@ export function ShopeeAdsPage({
                   : ""}{" "}
                 — nhập đủ giá vốn để ROAS hòa vốn tính trên đủ đơn.
               </span>
+            )}
+            {(summary.suspectGiftOrders ?? 0) > 0 && (
+              <span className="text-amber-600">
+                {" "}
+                ⚠ {formatNumber(summary.suspectGiftOrders ?? 0)} đơn có giá vốn quà tặng cao hơn cả doanh thu đơn, nghi nhập sai giá vốn quà nên chưa tính vào biên lãi.
+              </span>
             )}{" "}
             {meta.adSpendLabel}: {formatVND(summary.adSpendTotal)}.
             {platform === "shopee" && outsideCampaignSpend(summary) > 0 && (
@@ -1469,7 +1475,7 @@ function ProductBreakevenTab({
               className="text-xs font-medium text-amber-700"
               title={`Mới ${row.original.costCoveragePct ?? 0}% doanh thu của sản phẩm có giá vốn (cần từ ${data?.minCoveragePct ?? 90}%) — ${formatNumber(row.original.missingCostOrders)} đơn thiếu giá vốn đã bị loại. Nhập giá vốn cho các SKU còn thiếu để có ROAS hòa vốn.`}
             >
-              Chưa đủ giá vốn ({row.original.costCoveragePct ?? 0}%)
+              {(row.original.suspectGiftOrders ?? 0) >= Math.max(1, row.original.missingCostOrders) ? "Nghi sai giá vốn quà" : "Chưa đủ giá vốn"} ({row.original.costCoveragePct ?? 0}%)
             </span>
           ) : (
             <span className={TEXT_NUMBER_STRONG}>

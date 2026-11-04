@@ -42,6 +42,7 @@
 // ============================================================
 
 import { Prisma } from "@prisma/client";
+import { LEDGER_FORMULA_VERSION } from "./order-ledger";
 import { prisma } from "./prisma";
 import { invalidateCostCaches } from "./cost-cache-invalidation";
 
@@ -89,6 +90,69 @@ export function effectiveSkuCost(
   if (own > 0) return own;
   return Number(cp.product?.costPrice ?? 0);
 }
+
+/**
+ * DÒNG QUÀ CÓ CÒN LÀ MÓN HÀNG CỦA LÁ KHÔNG (05/11/2026, ca Hellokityhh; docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md mục 12):
+ * khách đổi tin quà thành hàng bán, giữ nguyên id lá ("THANK YOU 2" giá 0 đ → "Hộp 32 viên" giá vốn 490.000 đ) thì giá hiện tại
+ * của lá không phải giá của dòng quà cũ. Dòng GIÁ BÁN 0 Đ chỉ tự nhận giá khi tên dòng trùng tên lá; lệch thì giữ 0 (đơn vẫn tính
+ * như giá vốn 0, cờ thiếu giá vốn không bật vì giá bán 0). Dòng có giá bán KHÔNG áp luật này: đổi tên hàng bán là chuyện thường,
+ * id mới là danh tính (docs/MO-HINH-CAY-SAN-PHAM-SAN.md).
+ *
+ * Khớp theo PHÂN LOẠI, không theo cả chuỗi: đo prod 05/11 cho thấy so cả chuỗi chặn nhầm (khách đổi tên sản phẩm giữ phân loại; TikTok
+ * ghi "… - Mặc định" cho lá không tên phân loại; "Xanh Than , 40" so với "Xanh Than, 40"). Lá có tên phân loại: dòng phải kết thúc bằng
+ * đúng phân loại đó; lá không có: dòng phải bắt đầu bằng tên sản phẩm. So sau khi bỏ mọi khoảng trắng. Kết quả 60 ngày: chặn đúng 4 lá
+ * Hellokityhh 1.118 tr; ngoài ca đó chặn 78 lá / 12,7 tr, giữ 683 lá / 1.192 tr. Đánh đổi: quà thật đổi phân loại rồi mới nhập giá thì
+ * dòng quà cũ giữ 0, lãi đơn cũ cao hơn thật một chút.
+ */
+export function giftLineMatchesLeaf(
+  lineName: string,
+  leaf: { productName?: string | null; variantName?: string | null }
+): boolean {
+  // Bỏ khoảng trắng + không phân biệt hoa thường (khách hay đổi cách viết hoa khi sửa tên) — cùng luật với SQL bên dưới.
+  const squeeze = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, "").toLowerCase();
+  const line = squeeze(lineName);
+  const product = squeeze(leaf.productName);
+  const variant = squeeze(leaf.variantName);
+  if (line === product) return true;
+  return variant !== "" ? line.endsWith(`-${variant}`) : line.startsWith(`${product}-`);
+}
+
+/** Giá vốn chụp vào dòng lúc tạo đơn: giá hiệu lực của lá, trừ dòng giá bán 0 đ đã khác món với lá. Thuần. */
+export function costAtSaleForLine(
+  line: { price: number; productName: string },
+  cp: (NonNullable<Parameters<typeof effectiveSkuCost>[0]> & { productName?: string | null; variantName?: string | null }) | null | undefined
+): number {
+  if (!cp) return 0;
+  if (!(line.price > 0) && !giftLineMatchesLeaf(line.productName, cp)) return 0;
+  return effectiveSkuCost(cp);
+}
+
+/**
+ * Bản SQL của luật trên cho các câu vá đơn cũ (bí danh `oi`, `o`). Tách hai nhánh bằng phép bằng thuần: đi chỉ mục
+ * ChannelProduct(channelId, externalId) / (channelId, channelSku), không dùng OR của SKU_MATCH (mục 03/11 ở dưới). Chỉ chạy với dòng 0 đ.
+ */
+const squeezedSql = (col: Prisma.Sql) => Prisma.sql`lower(regexp_replace(COALESCE(${col}, ''), '[[:space:]]+', '', 'g'))`;
+const lineNameSql = squeezedSql(Prisma.sql`oi."productName"`);
+const leafProductSql = squeezedSql(Prisma.sql`n."productName"`);
+const leafVariantSql = squeezedSql(Prisma.sql`n."variantName"`);
+const leafNameEqual = Prisma.sql`(
+  ${lineNameSql} = ${leafProductSql}
+  OR CASE WHEN ${leafVariantSql} <> ''
+       THEN right(${lineNameSql}, length(${leafVariantSql}) + 1) = '-' || ${leafVariantSql}
+       ELSE left(${lineNameSql}, length(${leafProductSql}) + 1) = ${leafProductSql} || '-'
+     END
+)`;
+const LINE_MAY_TAKE_LEAF_COST = Prisma.sql`(
+  oi."price" > 0
+  OR (oi."externalId" IS NOT NULL AND EXISTS (
+    SELECT 1 FROM "ChannelProduct" AS n
+    WHERE n."channelId" = o."channelId" AND n."externalId" = oi."externalId" AND ${leafNameEqual}
+  ))
+  OR (oi."externalId" IS NULL AND EXISTS (
+    SELECT 1 FROM "ChannelProduct" AS n
+    WHERE n."channelId" = o."channelId" AND n."channelSku" = oi."channelSku" AND ${leafNameEqual}
+  ))
+)`;
 
 /**
  * Dòng đơn `oi` của đơn `o` khớp một SKU sàn CÓ GIÁ RIÊNG của gian → giá mặc
@@ -174,6 +238,7 @@ export async function backfillOrderLinesByProducts(
       FROM "Order" AS o JOIN "OrderItem" AS oi ON oi."orderId" = o."id"
       WHERE o."channelId" = ANY(${channelIds}::text[])
         AND oi."costPriceAtSale" = 0
+        AND ${LINE_MAY_TAKE_LEAF_COST}
     ),
     own AS MATERIALIZED (${linesMatchingSku(ownCost)}),
     hit AS (
@@ -217,6 +282,7 @@ export async function backfillOrderLinesByChannelProducts(
       FROM "Order" AS o JOIN "OrderItem" AS oi ON oi."orderId" = o."id"
       WHERE o."channelId" = ANY(${channelIds}::text[])
         AND oi."costPriceAtSale" = 0
+        AND ${LINE_MAY_TAKE_LEAF_COST}
     ),
     hit AS (${linesMatchingSku(chosen)})
     UPDATE "OrderItem" AS oi
@@ -400,6 +466,7 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCos
       AND p."userId" = ${ownerId}
       AND p."costPrice" > 0
       AND oi."costPriceAtSale" = 0
+      AND ${LINE_MAY_TAKE_LEAF_COST}
       AND NOT ${OWN_COST_EXISTS}`;
 
   // 2) Dòng khớp (gian, mã SKU sàn — có dự phòng sku_id / SPE-): giá riêng của
@@ -415,6 +482,7 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCos
       AND c."userId" = ${ownerId}
       AND ${SKU_MATCH}
       AND oi."costPriceAtSale" = 0
+      AND ${LINE_MAY_TAKE_LEAF_COST}
       AND COALESCE(NULLIF(cp."costPrice", 0), p."costPrice", 0) > 0`;
 
   await invalidateOwnerCostCaches(ownerId);
@@ -433,6 +501,7 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCos
     JOIN "Order" AS o ON o."id" = oi."orderId"
     JOIN "Channel" AS c ON c."id" = o."channelId"
     WHERE c."userId" = ${ownerId}
+      AND oi."price" > 0
       AND oi."costPriceAtSale" = 0`;
 
   return {
@@ -440,6 +509,52 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCos
     remainingZeroLines: Number(diag?.remaining ?? 0),
     unmatchedZeroLines: Number(diag?.unmatched ?? 0),
   };
+}
+
+/**
+ * HỎI LẠI KHI NHẬP GIÁ CAO CHO MÃ ĐANG LÀ QUÀ (05/11/2026, lớp 1): nếu các mã này có giá `cost`, bao nhiêu đơn 60 ngày qua có giá vốn
+ * quà vượt doanh thu đơn. Chỉ xét mã TOÀN dòng giá bán 0 đ trong 60 ngày: mã vừa bán vừa tặng là hàng thật, giá cao là bình thường.
+ * Cùng mốc với đơn quà bất thường của hòa vốn (lib/ads-margin giftCostExceedsRevenue). Chỉ đọc; bên gọi tự quyết định lưu hay không.
+ */
+export async function checkGiftCost(ownerId: string, skuIds: string[], cost: number): Promise<{ giftOrders: number; exceedOrders: number }> {
+  const none = { giftOrders: 0, exceedOrders: 0 };
+  if (skuIds.length === 0 || !(cost > 0)) return none;
+  const leaves = await prisma.channelProduct.findMany({
+    where: { channel: { userId: ownerId }, externalId: { not: null }, OR: [{ id: { in: skuIds } }, { productId: { in: skuIds } }] },
+    select: { channelId: true, externalId: true },
+  });
+  if (leaves.length === 0) return none;
+  const chs = leaves.map((l) => l.channelId);
+  const exts = leaves.map((l) => l.externalId as string);
+  const version = Prisma.sql`${LEDGER_FORMULA_VERSION}::int`;
+  const rows = await prisma.$queryRaw<{ giftOrders: bigint; exceedOrders: bigint }[]>`
+    WITH tgt AS (
+      SELECT DISTINCT t."ch", t."ext" FROM unnest(${chs}::text[], ${exts}::text[]) AS t("ch", "ext")
+    ),
+    ln AS (
+      SELECT l."orderId", l."createdDate", l."channelId", l."externalId", l."lineGross", l."quantity"
+      FROM "order_line_ledger" l
+      JOIN tgt ON tgt."ch" = l."channelId" AND tgt."ext" = l."externalId"
+      WHERE l."ownerId" = ${ownerId}
+        AND l."formulaVersion" = ${version}
+        AND l."createdDate" >= (now() - interval '60 days')::date
+        AND l."shippingStatus" <> 'CANCELLED'
+    ),
+    sold AS (
+      SELECT DISTINCT "channelId", "externalId" FROM ln WHERE "lineGross" > 0
+    ),
+    per AS (
+      SELECT ln."orderId", ln."createdDate", sum(ln."quantity") * ${cost}::numeric AS "giftCost"
+      FROM ln
+      LEFT JOIN sold s ON s."channelId" = ln."channelId" AND s."externalId" = ln."externalId"
+      WHERE s."externalId" IS NULL
+      GROUP BY ln."orderId", ln."createdDate"
+    )
+    SELECT count(*) AS "giftOrders",
+           count(*) FILTER (WHERE o."actualRevenue" > 0 AND per."giftCost" > o."actualRevenue") AS "exceedOrders"
+    FROM per
+    JOIN "order_ledger" o ON o."orderId" = per."orderId" AND o."createdDate" = per."createdDate" AND o."formulaVersion" = ${version}`;
+  return { giftOrders: Number(rows[0]?.giftOrders ?? 0), exceedOrders: Number(rows[0]?.exceedOrders ?? 0) };
 }
 
 /**
@@ -483,7 +598,8 @@ export async function repairZeroCostLinesForChannel(
       AND o."channelId" = ${channelId}
       AND oi."costPriceAtSale" = 0
       AND oi."externalId" IS NOT NULL
-      AND oi."externalId" = l."externalId"`;
+      AND oi."externalId" = l."externalId"
+      AND ${LINE_MAY_TAKE_LEAF_COST}`;
 
   const byCode = await db.$executeRaw`
     WITH keyed AS (
@@ -511,7 +627,8 @@ export async function repairZeroCostLinesForChannel(
       AND o."channelId" = ${channelId}
       AND oi."costPriceAtSale" = 0
       AND oi."externalId" IS NULL
-      AND oi."channelSku" = l.key`;
+      AND oi."channelSku" = l.key
+      AND ${LINE_MAY_TAKE_LEAF_COST}`;
 
   return { byId, byCode };
 }

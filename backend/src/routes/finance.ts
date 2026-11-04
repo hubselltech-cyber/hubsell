@@ -25,6 +25,7 @@ import { countSkuSearchEverywhere, loadSkuCatalogPage } from "../lib/sku-catalog
 import {
   applyChannelCostPrice,
   applyChannelCostPriceIn,
+  checkGiftCost,
   applyCostPrice,
   applyCostPriceIn,
   backfillOwnerCostPrices,
@@ -2289,6 +2290,18 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       backfilledOrderLines,
       siblings: await siblingsOf(skuId, req.ownerId!),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/finance/cost-prices/gift-check — mã đang là quà mà nhập giá này thì bao nhiêu đơn có giá vốn quà vượt doanh thu.
+// Chỉ đọc, để web hỏi lại trước khi lưu (components/finance/gift-cost-guard.tsx). Body: { sku_ids: string[], cost_price: number }
+router.post("/cost-prices/gift-check", async (req: AuthRequest, res, next) => {
+  try {
+    const skuIds = Array.isArray(req.body?.sku_ids) ? req.body.sku_ids.filter((x: unknown): x is string => typeof x === "string").slice(0, 500) : [];
+    const cost = Number(req.body?.cost_price);
+    res.json(await checkGiftCost(req.ownerId!, skuIds, Number.isFinite(cost) ? cost : 0));
   } catch (err) {
     next(err);
   }

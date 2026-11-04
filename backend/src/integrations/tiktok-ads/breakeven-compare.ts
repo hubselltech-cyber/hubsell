@@ -59,8 +59,8 @@ export interface BreakevenCompareReport {
   ok: boolean;
 }
 
-const COUNT_KEYS = ["settledOrders", "cancelledOrders", "pendingOrders"] as const;
-const MONEY_KEYS = ["revenue", "profitBeforeAds", "adFee", "missingCostRevenue", "unlinkedRevenue"] as const;
+const COUNT_KEYS = ["settledOrders", "cancelledOrders", "pendingOrders", "suspectGiftOrders"] as const;
+const MONEY_KEYS = ["revenue", "profitBeforeAds", "adFee", "missingCostRevenue", "unlinkedRevenue", "suspectGiftRevenue"] as const;
 
 function diffBase(key: string, a: BreakevenBase, b: BreakevenBase, out: string[]): number {
   const why: string[] = [];

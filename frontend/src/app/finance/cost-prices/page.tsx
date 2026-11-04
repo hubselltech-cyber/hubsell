@@ -29,6 +29,7 @@ import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 import { Refreshing } from "@/components/shared/refreshing";
+import { useGiftCostGuard } from "@/components/finance/gift-cost-guard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -149,6 +150,7 @@ const TABS: { key: SkuChannelFilter; label: string }[] = [
 ];
 
 export default function CostPricesPage() {
+  const { confirmGiftCost, giftCostDialog } = useGiftCostGuard();
   const router = useRouter();
   const [pageTab, setPageTab] = useState<PageTab>("entry");
   const [channel, setChannel] = useState<SkuChannelFilter>("all");
@@ -659,6 +661,10 @@ export default function CostPricesPage() {
 
     setSavingId(item.skuId);
     try {
+      if (!(await confirmGiftCost([item.skuId], value))) {
+        restore();
+        return;
+      }
       const res = await updateSkuCostPrice(item.skuId, value);
       toast.success(
         `Đã cập nhật giá vốn — ${item.sku}: ${formatVND(value)}` +
@@ -1164,6 +1170,7 @@ export default function CostPricesPage() {
         </div>
       </div>
       <SupportRequestDialog open={supportOpen} onOpenChange={setSupportOpen} initialContent={supportContent} />
+      {giftCostDialog}
     </AppShell>
   );
 }

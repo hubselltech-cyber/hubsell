@@ -161,6 +161,12 @@ export function productBreakevenVerdict(
           : `Chưa có đơn nào đã đối soát trong ${TIKTOK_MARGIN_WINDOW_DAYS} ngày.`,
     };
   }
+  if ((be.costCoveragePct ?? 100) < minCoveragePct && be.suspectGiftOrders > 0) {
+    return {
+      verdict: "no_cost",
+      reason: `Mới ${be.costCoveragePct}% doanh thu đã đối soát tính được: ${be.suspectGiftOrders} đơn có giá vốn quà tặng cao hơn cả doanh thu đơn (nghi nhập sai giá vốn quà) chưa tính; phần còn lại thiếu giá vốn hoặc chưa nối đúng sản phẩm.`,
+    };
+  }
   if ((be.costCoveragePct ?? 100) < minCoveragePct) {
     return { verdict: "no_cost", reason: `Mới ${be.costCoveragePct}% doanh thu đã đối soát có giá vốn — con số chỉ đại diện phần đó, nhập đủ giá vốn để tin được.` };
   }
@@ -207,6 +213,8 @@ export interface ProductBreakevenRow {
   profitBeforeAds: number;
   /** Doanh thu đã có kết cục cuối nhưng THIẾU giá vốn — không vào phép tính, hiện riêng để khách thấy mình đang bỏ sót bao nhiêu. */
   missingCostRevenue: number;
+  /** Doanh thu đã có kết cục cuối của đơn có giá vốn quà cao hơn doanh thu đơn — không vào phép tính. */
+  suspectGiftRevenue: number;
   /** Đà bán: số sản phẩm bán ra (mọi đơn đặt trừ hủy) 7 và 30 ngày gần nhất. */
   units7d: number;
   units30d: number;
@@ -313,6 +321,7 @@ export async function computeTiktokProductBreakevensUncached(
       revenue: base.revenue,
       profitBeforeAds: base.profitBeforeAds,
       missingCostRevenue: base.missingCostRevenue,
+      suspectGiftRevenue: base.suspectGiftRevenue,
       units7d: pace.get(productId)?.units7d ?? 0,
       units30d: pace.get(productId)?.units30d ?? 0,
       revenue30d: pace.get(productId)?.revenue30d ?? 0,
@@ -338,7 +347,7 @@ export async function computeTiktokProductBreakevensUncached(
     });
   }
   // Bán nhiều đứng trước — tính cả phần doanh thu thiếu giá vốn, để sản phẩm bán chạy mà chưa nhập giá vốn không chìm xuống đáy.
-  const sold = (p: ProductBreakevenRow) => p.revenue + p.missingCostRevenue;
+  const sold = (p: ProductBreakevenRow) => p.revenue + p.missingCostRevenue + p.suspectGiftRevenue;
   products.sort((a, b) => sold(b) - sold(a) || b.breakeven.pendingOrders - a.breakeven.pendingOrders);
   return { shop: shopBreakeven, windowDays: TIKTOK_MARGIN_WINDOW_DAYS, products };
 }

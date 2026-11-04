@@ -48,6 +48,12 @@ export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
       }`
     );
   }
+  if (b.suspectGiftOrders > 0) {
+    // 05/11/2026: đơn có giá vốn quà cao hơn doanh thu đơn đứng ngoài biên lãi — nói đúng lý do, đừng để khách tưởng thiếu giá vốn.
+    out.push(
+      `${formatNumber(b.suspectGiftOrders)} đơn có giá vốn quà tặng (dòng giá bán 0 đ) cao hơn cả doanh thu đơn, nghi nhập sai giá vốn quà nên chưa tính — kiểm lại giá vốn các mã quà`
+    );
+  }
   if (b.costCoveragePct != null && b.costCoveragePct < 100) {
     // 28/10/2026: độ phủ gồm cả dòng đơn chưa nối được sản phẩm bằng id (Hubsell đang bù, khách không cần làm gì) — nói rõ phần
     // nào là của khách (giá vốn), phần nào là của Hubsell. Dòng "Đối chiếu doanh thu với TikTok" đã bỏ (anh Trung 26/10).

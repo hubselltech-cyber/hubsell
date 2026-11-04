@@ -174,3 +174,10 @@ nhãn dài nhất xuống 4 dòng ở header (các cột khác 3 dòng), cuộn 
   hơi thấp đúng bằng tiền voucher (dấu vết: ca 69Minh Đương 20/10). Nay đã có cột `feeGmvMaxVoucher` nên tách được nếu cần.
 - **⛔ Anh chốt: "lệch nhỏ không sao cả" — KHÔNG sửa, đừng đề xuất lại.** Nếu sau này khách có voucher GMV Max lớn kêu hòa vốn sai thì
   mở lại: kiểm docs Ads API xem `cost` có gồm coupon không, rồi đổi hai phép trên sang `feeGmvMax − feeGmvMaxVoucher`.
+
+## 9. Anh hỏi 01/11 sáng — "Phí vận chuyển của người bán" là gì (làm video) + sợ cân lại mà không biết
+
+- Định nghĩa: số RÒNG shop gánh = cước thật (cân đo tại kho) − khách trả − TikTok bù ± hoàn/trả/giao thất bại. Bảng khách: −205,9 tr + 188,9 tr + 7,3 tr − 0,36 tr − 3,08 tr + 0,47 tr = −12,72 tr (đúng từng đồng). Trang Đối soát phí ship CÓ số này (cột Shop chịu = shippingCost từng đơn) nhưng bộ lọc mặc định "Cần đối soát" (31/10) giấu nhóm chính sách (97 % tiền) → anh "không thấy"; đổi Nguyên nhân sang "Theo chính sách sàn" / "Tất cả".
+- SQL prod 01/11 (bản kê thật, đơn tạo 60 ngày, TikTok): **TỔNG 271.666 đơn, 10.169 shop chịu ship (3,7 %), −325,5 tr; "cước vượt mức sàn trợ" (proxy cân lại: không hoàn/hủy/phụ phí/freeship shop, có trợ giá) 763 đơn, −10,66 tr = 0,28 % đơn, 3,3 % tiền; cước TB 32.636đ**. Gian anh: and.not.or 1.581 đơn → 52 shop chịu (3,3 %) −1,83 tr, vượt trợ 3 đơn −35.200; ANO Official 50 đơn → 0; DARKMAN 43 → 2 đơn −100.000. (TORANO MENSWEAR dính mẫu "ANO" — không phải gian anh.) → "ANO chưa từng bị" gần đúng: có nhưng nhỏ, chủ yếu hủy/hoàn.
+- Giới hạn: bản kê TikTok KHÔNG có "cước báo ban đầu theo cân khai" (Shopee có estimated vs actual) → Hubsell không tách được "cân lại" khỏi "hàng nặng hơn trần trợ"; chỉ nhìn được qua nhóm OVER_PLATFORM_SUBSIDY.
+- Lỗ hổng cảnh báo: chuông finance_alert `detectShippingFeeDiff` chỉ đếm đơn CHO_KHIEU_NAI, mà service TikTok tự đánh DA_DOI_SOAT khi shippingFeeDiff > 0 → **TikTok không bao giờ có chuông chênh phí ship**, kể cả ca vượt trợ giá. Shopee (FEE_MISMATCH khiếu nại được) vẫn có chuông. Chưa sửa, chờ anh.

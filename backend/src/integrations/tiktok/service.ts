@@ -7,7 +7,7 @@
 //   3) syncTiktokSettlements()— kéo đối soát thật → cập nhật số quyết toán/đơn.
 // ============================================================
 
-import { effectiveSkuCost } from "../../lib/cost-price";
+import { costAtSaleForLine } from "../../lib/cost-price";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
@@ -679,8 +679,8 @@ async function upsertOrderTx(
         price: line.price,
         originalPrice: line.originalPrice,
         imageUrl: line.imageUrl,
-        // Giá riêng của gian, không có thì giá mặc định ở kho (lib/cost-price).
-        costPriceAtSale: String(effectiveSkuCost(mp)),
+        // Giá riêng của gian, không có thì giá mặc định ở kho; dòng quà 0 đ đã khác món với lá thì giữ 0 (lib/cost-price).
+        costPriceAtSale: String(costAtSaleForLine(line, mp)),
       },
     });
   }

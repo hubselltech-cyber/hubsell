@@ -11,6 +11,7 @@ import {
   Loader2,
 } from "lucide-react";
 
+import { useGiftCostGuard } from "@/components/finance/gift-cost-guard";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
@@ -390,6 +391,7 @@ function QuickFill({
   onExpand: () => void;
   onApplied: (siblings?: CostSiblings | null) => void;
 }) {
+  const { confirmGiftCost, giftCostDialog } = useGiftCostGuard();
   const [digits, setDigits] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [confirming, setConfirming] = React.useState(false);
@@ -410,6 +412,8 @@ function QuickFill({
   async function apply() {
     setSaving(true);
     try {
+      setConfirming(false); // đã qua bước ghi đè thì đóng popover trước khi hỏi lại giá quà
+      if (!(await confirmGiftCost(group.variants.map((v) => v.skuId), cost))) return;
       const res = await updateSkuCostPriceBulk(
         group.variants.map((v) => v.skuId),
         cost
@@ -459,7 +463,8 @@ function QuickFill({
       />
 
       <div className={ACTION_SLOT}>
-        <Popover open={confirming} onOpenChange={setConfirming}>
+        {/* Chỉ handleClick mới mở: nút trigger tự bật open, có hộp hỏi lại giá quà thì popover "Ghi đè 0 phân loại" lộ ra phía sau. */}
+        <Popover open={confirming} onOpenChange={(open) => !open && setConfirming(false)}>
           <PopoverTrigger
             disabled={!valid || saving}
             render={
@@ -519,6 +524,7 @@ function QuickFill({
           </PopoverContent>
         </Popover>
       </div>
+      {giftCostDialog}
     </div>
   );
 }

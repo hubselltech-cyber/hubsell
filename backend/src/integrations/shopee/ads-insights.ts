@@ -102,6 +102,8 @@ export interface ChannelAdsInsights {
     breakevenRoas: number | null;
     pnlOrders: number;
     missingCostOrders: number;
+    /** Đơn có giá vốn quà cao hơn doanh thu đơn — đã bị loại khỏi biên lãi. */
+    suspectGiftOrders: number;
     /** % doanh thu 30 ngày có giá vốn (đơn thiếu đã bị loại khỏi biên lãi). */
     costCoveragePct: number | null;
   };
@@ -322,6 +324,7 @@ export async function computeChannelAdsInsights(
       breakevenRoas: shopBreakeven,
       pnlOrders: shopMarginBase.orders,
       missingCostOrders: shopMarginBase.missingCostOrders,
+      suspectGiftOrders: shopMarginBase.suspectGiftOrders,
       costCoveragePct: shopMarginBase.costCoveragePct,
     },
   };
@@ -361,6 +364,8 @@ export interface ProductBreakevenRow {
   lowCostCoverage: boolean;
   /** Số đơn thiếu giá vốn đã bị loại khỏi biên lãi của sản phẩm. */
   missingCostOrders: number;
+  /** Số đơn có giá vốn quà cao hơn doanh thu đơn đã bị loại khỏi biên lãi của sản phẩm. */
+  suspectGiftOrders: number;
   /** Sản phẩm đang nằm trong ít nhất một campaign đang chạy. */
   runningAds: boolean;
   /** Đợt A: mục tiêu ROAS thấp nhất đang đặt trên campaign chạy có SP này so với hòa vốn. */
@@ -510,6 +515,7 @@ export async function computeProductBreakevenWithMargins(
       costCoveragePct: base.costCoveragePct,
       lowCostCoverage: lowCostCoverage(base),
       missingCostOrders: base.missingCostOrders,
+      suspectGiftOrders: base.suspectGiftOrders,
       runningAds: ongoingItemIds.has(itemId),
       roasTargetCheck: assessRoasTarget({
         roasTarget: targetByItemId.get(itemId) ?? null,

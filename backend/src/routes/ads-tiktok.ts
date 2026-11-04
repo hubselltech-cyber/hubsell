@@ -137,6 +137,7 @@ function breakevenForUi(b: TiktokBreakeven | undefined | null) {
     pendingOrders: b.pendingOrders,
     costCoveragePct: b.costCoveragePct,
     unlinkedRevenue: b.unlinkedRevenue,
+    suspectGiftOrders: b.suspectGiftOrders,
   };
 }
 

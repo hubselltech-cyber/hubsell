@@ -280,3 +280,111 @@ Không đổi công thức, không đổi sổ, không đổi API. Kiểm: tsc b
 - **Số đếm 8.6 "sau A" (21:31:42, 60 ngày theo ngày tạo VN, đơn tính doanh thu):** 433.717 đơn, **201.757 đơn cờ thiếu giá vốn**, 118 chủ shop. Kỳ vọng ≈ 196.273 (đo 02/11 trên 409.701 đơn): chênh ~5.500 do cửa sổ 60 ngày trượt 2 ngày + đơn mới về, tỷ lệ cờ 46,5 % so với 55 % trước Lát A — đúng hướng (quà 0 đ không còn gắn cờ). Độ phủ hòa vốn khanhdrop / ledinhhieua / thanhthong chưa mở trang kiểm.
 - **Đính chính Disk IO:** trong lúc theo dõi em đọc nhầm nhãn trục biểu đồ ("25 %") thành giá trị và báo anh "61 % → 25 %". Đọc lại bằng ảnh biểu đồ Supabase Infrastructure lúc 21:33: **Disk IO balance = 0 % liên tục từ 28/10 tới nay** (đường đỏ nằm đáy cả tuần, chưa từng hồi — con số "61 %" lúc 20:40 là MEMORY). Tức DB đã chạy ở băng thông đĩa nền suốt tuần, lượt tính lại tối nay không làm nó tụt thêm vì không còn gì để tụt; app vẫn chạy được vì nền gp3 đủ cho tải hiện tại. Biểu đồ CPU tuần: ~40 % → 45 % → 65 % (03–04/11) → ~100 % nấc cuối ngày 04/11 (trùng giờ tính lại sổ). WAL 2,1 → 1,8 GB sau khi xong.
 - ⏳ Việc còn: nghiệm thu 8.6 phần số tiền (TORANO 60 ngày, demo tháng 8 đã khớp 37.790.374 ở Tổng quan = Dòng tiền = Doanh thu − Chi phí), độ phủ 3 gian quà 0 đ, OTA mobile, soi giao diện 4 trang; **Disk IO balance 0 % cả tuần là việc riêng** (memory `hubsell-su-co-disk-io-supabase-2026-10-28` mục ⏳) — tìm gốc tiêu IO trước khi nói chuyện nâng gói (feedback 03/11).
+
+## 10. Sau khi đổi: ca Hellokityhh "Lỗ sẵn" (04/11/2026 khuya, kiểm SQL prod, chỉ đọc)
+
+Lát A làm lộ giá vốn sai có sẵn trên dòng quà, không phải lỗi công thức.
+
+**Gốc.** Tin quà `1736978348605802179` được khách đổi thành Kẹo Sâm từ ~02/10 và giữ nguyên sku_id. 2.682 đơn 11/08–01/10 có 4 dòng quà giá 0 đ mang giá vốn Kẹo Sâm (32k + 80k + 128k + 490k = 730k/đơn, ~1,96 tỷ; 60 ngày ~1,09 tỷ). Lá thứ 5 `…895619` không còn trong danh mục nên giá vốn 0.
+
+**Cơ chế.** Trước v4, lá giá vốn 0 bật cờ thiếu giá vốn nên cả đơn đứng ngoài biên lãi. Từ v4, dòng quà 0 đ không bật cờ nữa nên đơn vào biên lãi kèm 730k.
+
+| Biên lãi trước quảng cáo | Luật cũ (v3) | Luật mới (v4) | v4 bỏ giá vốn quà ảo |
+|---|---|---|---|
+| Product GMV Max | 40,4 % (hòa vốn 2,47, độ phủ 57 %) | −153 % | +42,1 % |
+| KẸO SÂM 2 | 29,7 % | 29,7 % | 29,7 % |
+| Toàn gian | 39,9 % | −151,7 % | +41,7 % |
+
+**Diện ảnh hưởng của đợt đổi.** 22 gian có đơn lật cờ, 18/183 chiến dịch TikTok đang chạy. Chỉ Hellokityhh sập; chiến dịch kế tiếp lệch tối đa 3 điểm. Chưa đo cấp chiến dịch cho Shopee/Lazada; cấp gian không có ca nặng.
+
+**Cùng triệu chứng, không do đợt đổi (0 đơn lật cờ, chưa xác minh quà thật hay nhập sai).** Vua Trị Côn Trùng (chiến dịch "5 MuoI" −537 %, bỏ quà +34 %) và Tạp Hoá Dép 668 (−79,5 %, bỏ quà +16,8 %).
+
+**Trạng thái.** Chưa vá dữ liệu, chờ anh chốt.
+
+## 11. Hướng sửa giá vốn quà 0 đ: đo phương án trên prod (05/11/2026, SQL chỉ đọc, chưa code)
+
+Phạm vi đo: đơn không hủy 60 ngày. Giá vốn trên dòng quà 0 đ toàn nền tảng ~2,32 tỷ.
+
+**Hai kiểu lỗi, hai nguồn khác nhau**
+
+| Kiểu | Ca | Nguồn | Luật so tên bắt được không |
+|---|---|---|---|
+| 1. Mã quà đổi thành hàng khác, giữ id lá | Hellokityhh ~1,09 tỷ | Hubsell chép giá hiện tại của lá vào dòng quà cũ | Có |
+| 2. Nhập giá quà sai | Vua Trị Côn Trùng: thẻ 686.868 đ, đơn 23–27/10, 1.425 dòng, lá nay 100 đ. Tạp Hoá Dép 668: thẻ 70.000 đ, lá nay vẫn 70.000 đ, chưa hỏi khách | Giá của lá lúc đó sai (Vua Trị đã tự sửa lá; Tạp Hoá chưa rõ) | Không |
+
+**Phép thử cho đề xuất cũ "dòng 0 đ không tự điền giá":** bị bác. 487 lá / 57 gian vừa tặng vừa bán cùng một món, cùng tên, 166,6 tr giá quà thật. Đề xuất này còn không chạm kiểu 2.
+
+**Phép thử so tên, cùng id lá:** tách đúng nhóm đổi hàng.
+
+| Lá vừa là quà vừa bán | Tên quà trùng tên bán | Tên khác |
+|---|---|---|
+| Hết quà rồi mới bán | 65 lá, 7,7 tr | 13 lá / 5 gian, **1.119,2 tr** |
+| Cùng thời gian | 487 lá, 166,6 tr | 15 lá, 1,3 tr |
+
+So tên dòng quà với tên lá hiện tại: khác tên 1.167,5 tr (ngoài Hellokityhh ~50 tr), trùng tên 1.137,1 tr, chỉ đổi phân loại 18,5 tr. Dòng có giá bán KHÔNG áp luật này vì đổi tên hàng bán là chuyện thường.
+
+**Phép thử rào đầu ra "giá vốn quà > doanh thu đơn" (ngưỡng tự chọn theo lý lẽ, chưa có số của sàn):** 2.221 đơn / 11 gian; 3 gian lỗi chiếm 2.197 đơn (99 %). Mô phỏng hòa vốn, loại đơn đó như đơn thiếu giá vốn, 183 chiến dịch TikTok đang chạy:
+
+| Chiến dịch | Biên hiện tại | Biên sau rào | Độ phủ sau rào |
+|---|---|---|---|
+| Hellokityhh Product GMV Max | −155,6 % | +40,4 % | 56 % |
+| Vua Trị Côn Trùng "5 MuoI" | −537,1 % | +33,8 % | 89 % |
+| Tạp Hoá Dép 668 Product GMV Max | −79,5 % | +6,2 % | 6 % |
+
+Chỉ 3/183 chiến dịch đổi từ 2 điểm trở lên, chiến dịch kế tiếp đổi 1,9 điểm. Chiến dịch biên âm 12 → 9; 9 còn lại không do giá quà vượt doanh thu. Cả 3 độ phủ dưới 90 % nên sẽ báo chưa đủ căn cứ, không còn "Lỗ sẵn". Chưa mô phỏng Shopee/Lazada; chưa đo tốc độ câu SQL thật.
+
+**Phương án đã bỏ**
+- Quay lại Lát A: không sửa tài chính vì Lát B vẫn cộng các đơn đó kèm giá vốn; đơn vẫn đứng ngoài hòa vốn mãi.
+- Hòa vốn bỏ hẳn giá quà: giấu giá quà thật.
+- Lưu lịch sử giá theo thời gian: không biết giá của giai đoạn trước khi nối gian; không cứu dữ liệu đã có.
+
+**Đề xuất 4 phần (chờ anh chốt).** (1) Vá dữ liệu: Hellokityhh 10.728 dòng về 1 đ, Vua Trị 1.425 dòng về 100 đ, Tạp Hoá hỏi khách trước. (2) Chặn nguồn: dòng giá bán 0 đ mà tên khác tên lá thì không nhận giá tự động, ở mọi đường (tạo đơn 3 sàn, các hàm vá ở lib/cost-price.ts). (3) Cảnh báo lúc nhập, có nút Bỏ qua: mã đang là quà 0 đ mà giá vốn nhập cao. (4) Rào đầu ra cho hòa vốn, không đổi tài chính.
+Đơn cũ nhập nhầm về sau vẫn vá tay theo chốt 26/10.
+
+## 12. Đã code 3 lớp chặn (05/11/2026, chưa commit, chưa push; dữ liệu prod chưa vá)
+
+Anh duyệt phương án 3 lớp. Thứ tự làm: lớp 3, lớp 2, lớp 1. Mục 11 là số đo lúc chọn; khác biệt so với mục 11 ghi ở lớp 1.
+
+**Lớp 3, đo trước khi push.** `backend/scripts/sql/ads-margin-impact.sql`: dán vào Supabase SQL Editor, chỉ sửa hai dòng luật cũ/mới, ra biên lãi từng chiến dịch đang chạy theo hai luật. Bắt buộc khi đổi `LEDGER_FORMULA_VERSION`, cờ thiếu giá vốn, cách tính tiền hoặc luật chọn đơn của biên lãi. Đây là kỷ luật quy trình, không có gì tự chặn nếu quên chạy. Chạy thử với luật lớp 2: 453 chiến dịch, 5 đổi từ 2 điểm, 0 từ dương sang âm.
+
+**Lớp 2, không báo lỗ oan.** `giftCostExceedsRevenue` (lib/ads-margin.ts) và CTE `suspect` trong hai câu gom (services/order-ledger.ts): đơn có `Σ giá vốn × số lượng` trên dòng giá bán 0 đ lớn hơn doanh thu đơn thì đứng ngoài biên lãi, kéo độ phủ xuống, đếm riêng `suspectGiftOrders` / `suspectGiftRevenue`. Áp cho cả TikTok, Shopee, Lazada; đơn hủy cùng kiểu cũng ra khỏi mẫu số TikTok. Tài chính không dùng luật này. Màn hình nói đúng lý do thay vì "thiếu giá vốn" (popover hòa vốn TikTok, nhận định, ghi chú + nhãn trang Shopee). Không đổi sổ, không cần tính lại nền.
+- Đường SQL = đường duyệt mảng: test `ads-gift-guard-db`, đã đưa trường mới vào `breakeven-compare` và `ads-margin-compare`.
+- Tốc độ đo prod: CTE `suspect` ~0,32 giây trên gian nhiều quà nhất (Giống Cây Top, 30.844 dòng quà). Chưa đo cả câu gom sau khi thêm.
+- Mobile chưa đổi: API thêm trường, mobile vẫn hiện theo độ phủ, chưa có câu lý do riêng.
+
+**Lớp 1a, không tự gắn giá sai vào quà.** `giftLineMatchesLeaf` + `costAtSaleForLine` + `LINE_MAY_TAKE_LEAF_COST` (lib/cost-price.ts): dòng giá bán 0 đ chỉ nhận giá của lá khi còn là món đó, ở mọi đường: tạo đơn 3 sàn, `backfillOrderLinesByProducts`, `backfillOrderLinesByChannelProducts`, `backfillOwnerCostPrices`, `repairZeroCostLinesForChannel`. Dòng có giá bán giữ nguyên.
+- **Khác mục 11:** so cả chuỗi tên chặn nhầm (khách đổi tên sản phẩm giữ phân loại; TikTok ghi "… - Mặc định" cho lá không tên phân loại; "Xanh Than , 40" so với "Xanh Than, 40"). Đổi thành so theo phân loại, sau khi bỏ khoảng trắng: lá có tên phân loại thì dòng phải kết thúc bằng phân loại đó; lá không có thì dòng phải bắt đầu bằng tên sản phẩm.
+- Số đo trước khi bỏ khoảng trắng, 60 ngày: chặn đúng 4 lá Hellokityhh 1.118 tr, giữ 5 lá quà 1 đ của gian đó; ngoài gian đó chặn 78 lá / 12,7 tr, giữ 683 lá / 1.192 tr. Số chặn sau khi bỏ khoảng trắng chưa đo lại, chỉ có thể thấp hơn.
+- Luật này KHÔNG sửa dòng đã có giá. Dữ liệu sai sẵn vẫn phải vá.
+- Đi kèm: "còn dòng chưa có giá vốn" ở nút Áp giá vốn cho đơn cũ không đếm dòng giá bán 0 đ nữa, cùng luật cờ sổ v4.
+
+**Lớp 1b, hỏi lại lúc nhập.** `checkGiftCost` + `POST /api/finance/cost-prices/gift-check` + `components/finance/gift-cost-guard.tsx`: mã TOÀN dòng 0 đ trong 60 ngày mà giá mới làm giá vốn quà vượt doanh thu ít nhất một đơn thì hỏi lại, có Sửa lại / Vẫn lưu; phép kiểm lỗi thì cho lưu. Đã soi thật trên web local (sáng + tối): quà 90.000 đ hỏi lại "12/12 đơn", Sửa lại không lưu, Vẫn lưu lưu và tính lại 24 dòng; hàng bán không hỏi.
+- **Mới phủ:** ô giá vốn từng SKU và "Giá vốn chung" trên trang Nhập giá vốn.
+- **Chưa phủ:** nhập file Excel, tab Mapping giá vốn, dải áp giá theo ô tìm, popup giá vốn ở bảng Lãi/Lỗ theo SKU, mobile. Các đường này vẫn có lớp 2 đỡ ở trang quảng cáo.
+- Tạp Hoá Dép 668 nếu nhập từng thẻ 70.000 đ một sẽ không bị hỏi vì mỗi thẻ thấp hơn doanh thu đơn; nhập chung cả nhóm thì có.
+
+**Test.** Bộ `src/integrations/__tests__`: 23 ca đỏ, đúng 23 ca đó cũng đỏ trên mã gốc chạy song song (DB dev còn dòng bẩn, trigram...), không có ca đỏ mới. Test mới: `ads-gift-guard-db`, `cost-gift-rule-db`, thêm ca trong `ads-margin.test`, `tiktok-breakeven.test`, `cost-per-shop.test`. `tsc` backend + frontend sạch.
+
+**Dữ liệu prod.** Lệnh UPDATE bị bộ phân loại quyền chặn 05/11, chưa dòng nào đổi (đã đọc lại). Sao lưu + cách hoàn tác: `backend/scripts/out/quatang-costprice-backup-2026-11-05.txt` (tệp cục bộ, không vào git).
+
+## 13. Rà lại theo yêu cầu anh (05/11/2026 rạng sáng): thuật toán, mã, phương án khác
+
+**Lớp 2, so lại hai đường cộng bằng mắt.** Thứ tự ưu tiên giống nhau ở cả hai: chưa có kết cục → chờ; thiếu giá vốn → thiếu; quà bất thường → bất thường; hủy cùng lứa → mẫu số; còn lại → tử số. Đơn hủy có quà bất thường ra khỏi mẫu số ở cả hai đường. Phần chưa nối id (`unlinkedRevenue`) cộng cả ba loại đơn đã chốt ở cả hai đường. Khác nhau duy nhất: đường thuần bỏ qua dòng `price > 0`, SQL bỏ qua `lineGross > 0`; dòng giá dương số lượng 0 đóng góp 0 ở cả hai nên không lệch. Cột `multi` 15 cột đúng thứ tự `parts` (test DB có đơn hai dòng có giá xác nhận).
+
+**Lớp 2, ngưỡng.** Đo 60 ngày, đơn không hủy có giá vốn trên dòng quà:
+
+| Luật | Đơn | Gian | Giá vốn quà |
+|---|---|---|---|
+| A, đang dùng: giá vốn quà > doanh thu đơn | 2.221 | 11 | 2.099 tr |
+| B, thêm nếu đổi sang: giá vốn quà > giá vốn hàng bán trong đơn | +285 | 8 | +8 tr |
+| C, thêm nếu đổi sang: giá vốn quà > 50 % doanh thu đơn | +33 | 6 | +4 tr |
+
+A bắt 99,4 % tiền quà bất thường. B và C bắt thêm rất ít nhưng dễ bắt oan (mua 1 tặng 1, quà bằng giá hàng). Giữ A.
+
+**Lớp 1a, luật so tên.** Đổi thêm: không phân biệt hoa thường (JS `toLowerCase`, SQL `lower`). Đo lại 60 ngày với luật cuối: chặn đúng 4 lá Hellokityhh 1.118 tr; ngoài gian đó chặn 42 lá / 15 gian / 7,9 tr, giữ 719 lá / 64 gian / 1.197 tr (mục 12 ghi 78 lá / 12,7 tr là số trước khi bỏ khoảng trắng và hoa thường).
+
+**Đường gắn giá còn lại.** `routes/webhooks.ts /mock-order` (đơn giả lập GĐ1, không phải sàn thật) và `workers/reviewer-demo-topup.ts` (gian demo reviewer) vẫn chụp giá kho thẳng: không đụng vì không có đơn khách thật.
+
+**Câu chữ.** Lý do "chưa tính" của TikTok nay nói cả hai phần (đơn nghi sai giá quà + phần thiếu giá vốn / chưa nối id) thay vì chỉ một; popover hòa vốn hiện cả dòng nghi sai giá quà lẫn dòng độ phủ. Nhãn Shopee "Nghi sai giá vốn quà" chỉ khi số đơn nghi ≥ số đơn thiếu giá vốn.
+
+**Chưa làm được trong lượt rà.** Chưa đo thời gian cả câu gom TikTok sau khi thêm CTE trên gian lớn (chỉ đo CTE riêng 0,32 giây). Mobile để sau theo anh.

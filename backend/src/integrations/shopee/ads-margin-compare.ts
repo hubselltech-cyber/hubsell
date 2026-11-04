@@ -64,9 +64,12 @@ function diffBase(key: string, a: MarginBase, b: MarginBase, out: string[]): num
   if (a.missingCostOrders !== b.missingCostOrders) {
     why.push(`missingCostOrders ${a.missingCostOrders}/${b.missingCostOrders}`);
   }
+  if (a.suspectGiftOrders !== b.suspectGiftOrders) {
+    why.push(`suspectGiftOrders ${a.suspectGiftOrders}/${b.suspectGiftOrders}`);
+  }
   if (a.costCoveragePct !== b.costCoveragePct) why.push(`coverage ${a.costCoveragePct}/${b.costCoveragePct}`);
   let maxDiff = 0;
-  for (const k of ["revenue", "profit", "missingCostRevenue"] as const) {
+  for (const k of ["revenue", "profit", "missingCostRevenue", "suspectGiftRevenue"] as const) {
     const d = Math.abs(a[k] - b[k]);
     if (d > maxDiff) maxDiff = d;
     if (d > MARGIN_COMPARE_MONEY_TOLERANCE) why.push(`${k} ${a[k].toFixed(2)}/${b[k].toFixed(2)}`);

@@ -31,6 +31,9 @@ export interface ResolvedLineRow {
   productId: string | null;
   costPrice: Prisma.Decimal | null;
   product: { costPrice: Prisma.Decimal } | null;
+  /** Tên lá hiện tại — dòng giá bán 0 đ khác tên thì không nhận giá vốn của lá (lib/cost-price giftLineMatchesLeaf). */
+  productName: string;
+  variantName: string | null;
 }
 
 /** externalId dòng đơn Shopee: item_id + model_id (>0 mới là phân loại; 0 = sản phẩm đơn). */
@@ -72,6 +75,8 @@ export async function resolveOrderLineRows(
       productId: true,
       costPrice: true,
       product: { select: { costPrice: true } },
+      productName: true,
+      variantName: true,
     },
   });
   const byExt = new Map<string, (typeof rows)[number]>();

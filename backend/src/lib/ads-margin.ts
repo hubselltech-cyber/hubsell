@@ -94,6 +94,26 @@ export function pnlRowsForMargin<
  */
 export const MARGIN_MIN_COST_COVERAGE_PCT = 90;
 
+/**
+ * ĐƠN QUÀ BẤT THƯỜNG (05/11/2026, docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md mục 11–12): giá vốn trên các dòng giá bán 0 đ
+ * cao hơn cả doanh thu của đơn (doanh thu > 0). Đứng ngoài biên lãi và kéo độ phủ xuống như đơn thiếu giá vốn, để giá quà sai không
+ * thành kết luận "Lỗ sẵn". Tài chính KHÔNG dùng luật này. Mốc so là MẶC ĐỊNH TỰ CHỌN theo lý lẽ, không phải số của sàn. Đo prod
+ * 05/11 bằng scripts/sql/ads-margin-impact.sql: 5/453 chiến dịch đang chạy đổi từ 2 điểm, 0 chiến dịch dương thành âm. Thuần.
+ */
+export function giftCostExceedsRevenue(row: {
+  actualRevenue: number;
+  items: { price: number; quantity: number; costPriceAtSale?: number }[];
+}): boolean {
+  if (!(row.actualRevenue > 0)) return false;
+  let giftCost = 0;
+  for (const it of row.items) {
+    if (it.price > 0) continue;
+    const unit = it.costPriceAtSale ?? 0;
+    if (unit > 0) giftCost += unit * it.quantity;
+  }
+  return giftCost > row.actualRevenue;
+}
+
 export interface MarginBase {
   /** Số đơn CÓ giá vốn được tính vào biên lãi. */
   orders: number;
@@ -103,7 +123,11 @@ export interface MarginBase {
   missingCostOrders: number;
   /** Doanh thu (đã phân bổ theo SKU) của các đơn thiếu giá vốn — để tính độ phủ. */
   missingCostRevenue: number;
-  /** % doanh thu có giá vốn; null = chưa có đơn nào. */
+  /** Đơn có giá vốn quà cao hơn doanh thu đơn (giftCostExceedsRevenue) — bị loại khỏi biên lãi. */
+  suspectGiftOrders: number;
+  /** Doanh thu (đã phân bổ theo SKU) của các đơn đó — để tính độ phủ. */
+  suspectGiftRevenue: number;
+  /** % doanh thu tính được: có giá vốn và không thuộc đơn quà bất thường; null = chưa có đơn nào. */
   costCoveragePct: number | null;
 }
 
@@ -124,6 +148,8 @@ export function marginOverRows(rows: MarginRow[], skuSet: ReadonlySet<string> | 
   let profit = 0;
   let missingCostOrders = 0;
   let missingCostRevenue = 0;
+  let suspectGiftOrders = 0;
+  let suspectGiftRevenue = 0;
   for (const row of rows) {
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     if (itemTotal <= 0) continue;
@@ -139,22 +165,29 @@ export function marginOverRows(rows: MarginRow[], skuSet: ReadonlySet<string> | 
       missingCostRevenue += row.actualRevenue * ratio;
       continue;
     }
+    if (giftCostExceedsRevenue(row)) {
+      suspectGiftOrders++;
+      suspectGiftRevenue += row.actualRevenue * ratio;
+      continue;
+    }
     orders++;
     revenue += row.actualRevenue * ratio;
     profit += row.profit * ratio;
   }
-  return marginBaseFromSums({ orders, revenue, profit, missingCostOrders, missingCostRevenue });
+  return marginBaseFromSums({ orders, revenue, profit, missingCostOrders, missingCostRevenue, suspectGiftOrders, suspectGiftRevenue });
 }
 
-/** Năm tổng của một nhóm → MarginBase (thêm độ phủ giá vốn). Dùng chung cho cả hai đường cộng. */
+/** Các tổng của một nhóm → MarginBase (thêm độ phủ). Dùng chung cho cả hai đường cộng. */
 export function marginBaseFromSums(sums: Omit<MarginBase, "costCoveragePct">): MarginBase {
-  const scoped = sums.revenue + sums.missingCostRevenue;
+  const scoped = sums.revenue + sums.missingCostRevenue + sums.suspectGiftRevenue;
   return {
     orders: sums.orders,
     revenue: sums.revenue,
     profit: sums.profit,
     missingCostOrders: sums.missingCostOrders,
     missingCostRevenue: sums.missingCostRevenue,
+    suspectGiftOrders: sums.suspectGiftOrders,
+    suspectGiftRevenue: sums.suspectGiftRevenue,
     costCoveragePct: scoped > 0 ? Math.round((sums.revenue / scoped) * 100) : null,
   };
 }
@@ -459,6 +492,9 @@ export interface LedgerMarginGroup {
   /** Đơn thiếu giá vốn (cờ cấp đơn) — đứng ngoài biên lãi, chỉ để tính độ phủ. */
   missingCostOrders: number;
   missingCostRevenue: number;
+  /** Đơn quà bất thường (giftCostExceedsRevenue, cấp đơn) — đứng ngoài biên lãi, chỉ để tính độ phủ. */
+  suspectGiftOrders: number;
+  suspectGiftRevenue: number;
   /** Số lượng bán của nhóm: cả cửa sổ / từ mốc `recentSince` / các dòng giá vốn dòng = 0. */
   units: number;
   unitsRecent: number;

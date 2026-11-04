@@ -68,7 +68,7 @@
 
 import { ShippingStatus } from "@prisma/client";
 import { startOfDaysAgo } from "./ads-dates";
-import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, lineGroupKey, type AdsGroupSets } from "./ads-margin";
+import { PRODUCT_GROUP_PREFIX, SHOP_GROUP, adsGroupMappingOf, giftCostExceedsRevenue, lineGroupKey, type AdsGroupSets } from "./ads-margin";
 import type { DateRangeFilter } from "./date-range";
 
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */
@@ -124,7 +124,7 @@ export interface BreakevenPnlRow {
   /** Đã đối soát THẬT (bản kê estimated = false). */
   isSettled: boolean;
   /** `itemId` = SPU của dòng (sổ dòng hàng, từ OrderItem.externalId — Lát 1a); null/bỏ trống = chưa có id → chỉ khớp được bằng mã (lib/ads-margin AdsGroupSets). */
-  items: { sku: string; itemId?: string | null; price: number; quantity: number }[];
+  items: { sku: string; itemId?: string | null; price: number; quantity: number; costPriceAtSale?: number }[];
   actualRevenue: number;
   profit: number;
   missingCostPrice: boolean;
@@ -150,6 +150,10 @@ export interface BreakevenBase {
    * không vào biên lãi, chỉ kéo độ phủ xuống (28/10/2026). Nhóm toàn gian luôn 0.
    */
   unlinkedRevenue: number;
+  /** Đơn đã có kết cục cuối nhưng giá vốn quà cao hơn doanh thu đơn (giftCostExceedsRevenue, 05/11/2026) — không vào biên lãi. */
+  suspectGiftOrders: number;
+  /** Doanh thu của các đơn đó — chỉ kéo độ phủ xuống. */
+  suspectGiftRevenue: number;
   /** Số đơn CHƯA có kết cục cuối (đang giao, chờ đối soát, đang hoàn, hủy ngoài lứa) — không tính. */
   pendingOrders: number;
 }
@@ -162,6 +166,8 @@ const emptyBreakevenBase = (): BreakevenBase => ({
   adFee: 0,
   missingCostRevenue: 0,
   unlinkedRevenue: 0,
+  suspectGiftOrders: 0,
+  suspectGiftRevenue: 0,
   pendingOrders: 0,
 });
 
@@ -215,6 +221,11 @@ export function tiktokBreakevenBase(rows: BreakevenPnlRow[], skuSet: ReadonlySet
     const revenue = row.actualRevenue * ratio;
     if (row.missingCostPrice) {
       base.missingCostRevenue += revenue;
+      continue;
+    }
+    if (giftCostExceedsRevenue(row)) {
+      base.suspectGiftOrders++;
+      base.suspectGiftRevenue += revenue;
       continue;
     }
     base.revenue += revenue;
@@ -275,6 +286,11 @@ export function tiktokBreakevenBaseByGroup(rows: BreakevenPnlRow[], groupOfKey: 
         base.missingCostRevenue += revenue;
         continue;
       }
+      if (giftCostExceedsRevenue(row)) {
+        base.suspectGiftOrders++;
+        base.suspectGiftRevenue += revenue;
+        continue;
+      }
       base.revenue += revenue;
       if (cancelled) {
         base.cancelledOrders++;
@@ -311,16 +327,19 @@ export interface TiktokBreakeven {
   costCoveragePct: number | null;
   /** Doanh thu đã có kết cục cuối của dòng đơn chưa nối được sản phẩm bằng id (chỉ khớp mã) — phần "chưa tính được" của độ phủ. */
   unlinkedRevenue: number;
+  /** Số đơn bị để ngoài vì giá vốn quà cao hơn doanh thu đơn — để màn hình nói rõ lý do thay vì "thiếu giá vốn". */
+  suspectGiftOrders: number;
 }
 
 /** Từ nguyên liệu → kết quả hòa vốn. Thuần. */
 export function toTiktokBreakeven(base: BreakevenBase, source: "campaign" | "shop" | "product"): TiktokBreakeven {
-  const scoped = base.revenue + base.missingCostRevenue + base.unlinkedRevenue;
+  const scoped = base.revenue + base.missingCostRevenue + base.unlinkedRevenue + base.suspectGiftRevenue;
   const common = {
     cancelledOrders: base.cancelledOrders,
     pendingOrders: base.pendingOrders,
     costCoveragePct: scoped > 0 ? Math.round((base.revenue / scoped) * 100) : null,
     unlinkedRevenue: base.unlinkedRevenue,
+    suspectGiftOrders: base.suspectGiftOrders,
   };
   if (base.settledOrders === 0 || base.revenue <= 0) {
     return { breakevenRoi: null, margin: null, negativeMargin: false, source: null, orders: 0, ...common };
@@ -500,6 +519,8 @@ export function breakevensFromGroups(groups: ReadonlyMap<string, LedgerTiktokBre
     adFee: g.adFee,
     missingCostRevenue: g.missingCostRevenue,
     unlinkedRevenue: g.unlinkedRevenue,
+    suspectGiftOrders: g.suspectGiftOrders,
+    suspectGiftRevenue: g.suspectGiftRevenue,
     pendingOrders: g.pendingOrders,
   });
   return {

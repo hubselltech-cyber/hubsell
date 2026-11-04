@@ -39,6 +39,9 @@ import { toBusinessDateKey } from "./date-range";
  *      tặng 0 đ không còn làm đơn "thiếu giá vốn"); tiền không đổi, chỉ cờ cấp
  *      đơn + cờ chép xuống dòng (docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md
  *      mục 8.5). Tính lại nền ~40' giờ thấp điểm, theo dõi Disk IO Supabase.
+ *
+ * Đổi số này, cờ missingCostPrice hoặc cách tính profit/actualRevenue: chạy scripts/sql/ads-margin-impact.sql
+ * và báo anh bảng kết quả TRƯỚC khi push. Đêm 04/11 v4 đổi cờ mà không đo, Hellokityhh sang "Lỗ sẵn".
  */
 export const LEDGER_FORMULA_VERSION = 4;
 

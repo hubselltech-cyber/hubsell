@@ -1561,6 +1561,8 @@ export async function ledgerMarginByGroup(
       profit: Number(r.profit),
       missingCostOrders: Number(r.missingCostOrders),
       missingCostRevenue: Number(r.missingCostRevenue),
+      suspectGiftOrders: Number(r.suspectGiftOrders),
+      suspectGiftRevenue: Number(r.suspectGiftRevenue),
       units: Number(r.units),
       unitsRecent: Number(r.unitsRecent),
       unitsNoCost: Number(r.unitsNoCost),
@@ -1608,6 +1610,25 @@ function splitGroupKeys(groupIndexes: number[], keys: readonly string[], checkFr
   return { item, sku };
 }
 
+/**
+ * ĐƠN QUÀ BẤT THƯỜNG của phạm vi: giá vốn trên dòng giá bán 0 đ cao hơn doanh thu đơn — bản SQL của giftCostExceedsRevenue
+ * (lib/ads-margin). Chỉ đọc dòng quà có giá vốn (ít hơn nhiều so với cả gian) rồi nối sổ đơn theo khóa, nên là một bảng nhỏ để
+ * LEFT JOIN. So cùng cột sổ với đường "rows": costPriceAtSale × quantity, order_ledger.actualRevenue.
+ */
+function suspectGiftOrdersSql(scope: ChannelScope, range: DateRangeFilter): Prisma.Sql {
+  return Prisma.sql`
+    SELECT g."orderId"
+    FROM "order_line_ledger" g
+    JOIN "order_ledger" o ON o."orderId" = g."orderId" AND o."createdDate" = g."createdDate"
+    WHERE ${ledgerScopeSql(scope, range, { alias: "g" })}
+      AND g."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+      AND o."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+      AND g."lineGross" = 0
+      AND g."costPriceAtSale" > 0
+    GROUP BY g."orderId", o."actualRevenue"
+    HAVING o."actualRevenue" > 0 AND sum(g."costPriceAtSale" * g."quantity") > o."actualRevenue"`;
+}
+
 function marginByGroupQuery(
   scope: ChannelScope,
   range: DateRangeFilter,
@@ -1634,18 +1655,21 @@ function marginByGroupQuery(
   });
   const split = splitGroupKeys(groupIndexes, mapping.keys);
   const sql = Prisma.sql`
-    WITH "lines" AS (
+    WITH "suspect" AS (${suspectGiftOrdersSql(scope, range)}),
+    "lines" AS (
       -- Id trước, mã sau (Lát 1b 18/10/2026): dòng có SPU ("itemId") chỉ khớp khóa "i:<itemId>" của bộ nhóm, dòng chưa có id
       -- khớp mã thô — cùng luật với lineGroupKey (lib/ads-margin). Giữ HAI CỘT THẬT để nối (không nối bằng biểu thức ghép:
       -- planner mất thống kê cột, đổi Hash Join thành Merge Join — đo gian thử 300.000 đơn chậm hơn 65%).
       SELECT l."orderId", l."itemId", l."channelSku", l."quantity", l."actualRevenue", l."profit",
              l."missingCostPrice" AS "missing",
+             (NOT l."missingCostPrice" AND sg."orderId" IS NOT NULL) AS "suspect",
              (l."lineGross" > 0) AS "paid",
              (l."createdAt" >= ${tsParam(opts.recentSince)}) AS "recent",
              -- "Sản phẩm chưa có giá vốn" của Gợi ý chạy quảng cáo: cùng luật cờ đơn v4 (04/11/2026) —
              -- chỉ dòng có giá bán > 0; quà 0 đ không đếm (= salesPaceByItem.unitsNoCost, lib/ads-margin).
              (l."costPriceAtSale" <= 0 AND l."lineGross" > 0) AS "noCost"
       FROM "order_line_ledger" l
+      LEFT JOIN "suspect" sg ON sg."orderId" = l."orderId"
       WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
         AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
         AND l."shippingStatus" <> 'CANCELLED'
@@ -1661,22 +1685,24 @@ function marginByGroupQuery(
       FROM unnest(${split.sku.grp}::int[], ${split.sku.skus}::text[]) AS m("grp", "sku")
     ),
     "tagged" AS (
-      SELECT 0 AS "grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
+      SELECT 0 AS "grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."suspect", x."paid", x."recent", x."noCost"
       FROM "lines" x
       UNION ALL
-      SELECT m."grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
+      SELECT m."grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."suspect", x."paid", x."recent", x."noCost"
       FROM "lines" x
       JOIN "mapItem" m ON m."itemId" = x."itemId"
       UNION ALL
-      SELECT m."grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
+      SELECT m."grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."suspect", x."paid", x."recent", x."noCost"
       FROM "lines" x
       JOIN "mapSku" m ON m."sku" = x."channelSku"
       WHERE x."itemId" IS NULL
     )
     SELECT "grp",
-           count(DISTINCT "orderId" COLLATE "C") FILTER (WHERE "paid" AND NOT "missing") AS "orders",
-           COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND NOT "missing"), 0) AS "revenue",
-           COALESCE(sum("profit") FILTER (WHERE "paid" AND NOT "missing"), 0) AS "profit",
+           count(DISTINCT "orderId" COLLATE "C") FILTER (WHERE "paid" AND NOT "missing" AND NOT "suspect") AS "orders",
+           COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND NOT "missing" AND NOT "suspect"), 0) AS "revenue",
+           COALESCE(sum("profit") FILTER (WHERE "paid" AND NOT "missing" AND NOT "suspect"), 0) AS "profit",
+           count(DISTINCT "orderId" COLLATE "C") FILTER (WHERE "paid" AND "suspect") AS "suspectGiftOrders",
+           COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "suspect"), 0) AS "suspectGiftRevenue",
            count(DISTINCT "orderId" COLLATE "C") FILTER (WHERE "paid" AND "missing") AS "missingCostOrders",
            COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "missing"), 0) AS "missingCostRevenue",
            COALESCE(sum("quantity"), 0) AS "units",
@@ -1818,6 +1844,8 @@ export async function ledgerTiktokBreakevenByGroup(
       profitBeforeAds: Number(r.profitBeforeAds),
       adFee: Number(r.adFee),
       missingCostRevenue: Number(r.missingCostRevenue),
+      suspectGiftOrders: Number(r.suspectGiftOrders),
+      suspectGiftRevenue: Number(r.suspectGiftRevenue),
       pendingOrders: Number(r.pendingOrders),
       units30d: Number(r.units30d),
       units7d: Number(r.units7d),
@@ -1880,8 +1908,10 @@ function tiktokBreakevenByGroupQuery(
     "cutoff" AS (
       SELECT max("createdAt") AS "at" FROM "settled"
     ),
+    "suspect" AS (${suspectGiftOrdersSql(scope, range)}),
     "lines" AS (
-      -- "cls" = kết cục của ĐƠN: 0 chưa có kết cục cuối, 1 có kết cục nhưng thiếu giá vốn, 2 đơn hủy cùng lứa, 3 đã đối soát thật.
+      -- "cls" = kết cục của ĐƠN: 0 chưa có kết cục cuối, 1 có kết cục nhưng thiếu giá vốn, 2 đơn hủy cùng lứa, 3 đã đối soát thật,
+      -- 4 có kết cục nhưng giá vốn quà cao hơn doanh thu đơn (đứng ngoài biên lãi như cls 1, đếm riêng để nói đúng lý do).
       -- "sku" = KHÓA dòng hàng (lineGroupKey, lib/ads-margin): có SPU → 'i:' || itemId, không → mã SKU thô — id trước, mã sau
       -- (Lát 1b). Khóa ghép chỉ dùng ở bước gom theo SKU ("bySku", vài nghìn dòng); mối nối trên 405.000 dòng ("multi") đi bằng
       -- HAI CỘT THẬT "itemId" / "channelSku" — nối bằng biểu thức ghép làm planner mất thống kê, đổi Hash Join thành Merge Join
@@ -1898,12 +1928,14 @@ function tiktokBreakevenByGroupQuery(
                                   THEN COALESCE(l."createdAt" <= (SELECT "at" FROM "cutoff"), FALSE)
                                   ELSE st."orderId" IS NOT NULL END) THEN 0
                    WHEN l."missingCostPrice" THEN 1
+                   WHEN sg."orderId" IS NOT NULL THEN 4
                    WHEN l."shippingStatus" = 'CANCELLED' THEN 2
                    ELSE 3 END) AS "cls",
              (l."shippingStatus" <> 'CANCELLED' AND l."createdAt" >= ${since30}) AS "pace30",
              (l."shippingStatus" <> 'CANCELLED' AND l."createdAt" >= ${since7}) AS "pace7"
       FROM "order_line_ledger" l
       LEFT JOIN "settled" st ON st."orderId" = l."orderId"
+      LEFT JOIN "suspect" sg ON sg."orderId" = l."orderId"
       WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
         AND l."formulaVersion" = ${version}
     ),
@@ -1927,10 +1959,12 @@ function tiktokBreakevenByGroupQuery(
              count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 3) AS "settledOrders",
              count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 2) AS "cancelledOrders",
              count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 0) AS "pendingOrders",
-             COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "cls" >= 2), 0) AS "revenue",
+             COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "cls" IN (2, 3)), 0) AS "revenue",
              COALESCE(sum("profitBeforeAds") FILTER (WHERE "paid" AND "cls" = 3), 0) AS "profitBeforeAds",
              COALESCE(sum("adFee") FILTER (WHERE "paid" AND "cls" = 3), 0) AS "adFee",
              COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "cls" = 1), 0) AS "missingCostRevenue",
+             count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 4) AS "suspectGiftOrders",
+             COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "cls" = 4), 0) AS "suspectGiftRevenue",
              COALESCE(sum("quantity") FILTER (WHERE "pace30"), 0) AS "units30d",
              COALESCE(sum("quantity") FILTER (WHERE "pace7"), 0) AS "units7d",
              -- Doanh thu 30 ngày mọi đơn đặt trừ hủy (GMV lịch sử cho công thức ngân sách) — cùng cột actualRevenue (đã chia theo dòng)
@@ -1944,7 +1978,8 @@ function tiktokBreakevenByGroupQuery(
       SELECT t."grp",
              count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 3) AS "settledOrders",
              count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 2) AS "cancelledOrders",
-             count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 0) AS "pendingOrders"
+             count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 0) AS "pendingOrders",
+             count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 4) AS "suspectGiftOrders"
       FROM (
         SELECT 0 AS "grp", x."orderId", x."cls"
         FROM "lines" x
@@ -1968,7 +2003,7 @@ function tiktokBreakevenByGroupQuery(
     -- thiếu giá vốn) dồn sang unlinkedRevenue, số đơn đã đối soát / hủy về 0, đơn chờ vẫn đếm — nhóm toàn gian (grp 0) không tách.
     "parts" AS (
       SELECT 0 AS "grp", a."hasPaid", a."settledOrders", a."cancelledOrders", a."pendingOrders", a."revenue",
-             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", a."revenue30d", 0::numeric AS "unlinkedRevenue"
+             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."suspectGiftOrders", a."suspectGiftRevenue", a."units30d", a."units7d", a."revenue30d", 0::numeric AS "unlinkedRevenue"
       FROM "bySku" a
       UNION ALL
       SELECT m."grp", a."hasPaid",
@@ -1979,12 +2014,14 @@ function tiktokBreakevenByGroupQuery(
              CASE WHEN a."linked" THEN a."profitBeforeAds" ELSE 0 END,
              CASE WHEN a."linked" THEN a."adFee" ELSE 0 END,
              CASE WHEN a."linked" THEN a."missingCostRevenue" ELSE 0 END,
+             CASE WHEN a."linked" THEN a."suspectGiftOrders" ELSE 0 END,
+             CASE WHEN a."linked" THEN a."suspectGiftRevenue" ELSE 0 END,
              a."units30d", a."units7d", a."revenue30d",
-             CASE WHEN a."linked" THEN 0::numeric ELSE a."revenue" + a."missingCostRevenue" END
+             CASE WHEN a."linked" THEN 0::numeric ELSE a."revenue" + a."missingCostRevenue" + a."suspectGiftRevenue" END
       FROM "map" m
       JOIN "bySku" a ON a."sku" = m."sku"
       UNION ALL
-      SELECT mu."grp", FALSE, mu."settledOrders", mu."cancelledOrders", mu."pendingOrders", 0, 0, 0, 0, 0, 0, 0::numeric, 0::numeric
+      SELECT mu."grp", FALSE, mu."settledOrders", mu."cancelledOrders", mu."pendingOrders", 0, 0, 0, 0, mu."suspectGiftOrders", 0, 0, 0, 0::numeric, 0::numeric
       FROM "multi" mu
     )
     SELECT "grp",
@@ -1996,6 +2033,8 @@ function tiktokBreakevenByGroupQuery(
            sum("profitBeforeAds") AS "profitBeforeAds",
            sum("adFee") AS "adFee",
            sum("missingCostRevenue") AS "missingCostRevenue",
+           sum("suspectGiftOrders") AS "suspectGiftOrders",
+           sum("suspectGiftRevenue") AS "suspectGiftRevenue",
            sum("units30d") AS "units30d",
            sum("units7d") AS "units7d",
            sum("revenue30d") AS "revenue30d",
