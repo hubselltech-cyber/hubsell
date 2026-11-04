@@ -34,6 +34,11 @@ export class TtlCache<T> {
     return this.map.size;
   }
 
+  /** Bỏ một khóa trước hạn — dùng khi kết quả vừa nạp không đáng giữ (vd danh sách rỗng mà khách sắp tạo thêm). */
+  delete(key: string): boolean {
+    return this.map.delete(key);
+  }
+
   private evict(now: number): void {
     for (const [k, v] of this.map) if (now - v.at >= this.ttlMs) this.map.delete(k);
     while (this.map.size > this.maxKeys) {

@@ -947,3 +947,26 @@ phẩm hợp ở khu Hàng hóa hơn.
   ngay, (b) không có → log `[listing-copy] … gửi lại kèm mẫu bảng size …` rồi LISTED, (c) gian chưa có mẫu → câu đỏ mới hướng dẫn tạo mẫu.
 - **Chưa làm:** hiện ảnh bảng size trong khung Sửa bài đăng / cho khách tải ảnh bảng size lên tay (hôm nay chỉ lấy từ nguồn hoặc mẫu gian);
   TikTok đích (category rules `size_chart.is_required` đã đọc được nhưng chưa gửi `size_chart` khi tạo SP TikTok) — làm khi gặp ca thật.
+
+## 32. Tạp Hoá Dép 668 lại "Size Chart is required" ở Giày Dép Nam › Xăng-đan & Dép (05/11/2026, anh hỏi "sửa chưa hết ngành hàng?") — KHÔNG sót ngành hàng, nhưng có 2 lỗ: đệm rỗng 1 giờ + câu đỏ không nêu danh mục — ĐÃ SỬA, kiểm local
+
+- **Hiện tượng:** gian đã đăng được giày nữ sau mục 31, nay chép sản phẩm dép nam (lá Giày Dép Nam › Xăng-đan & Dép, Hubsell gợi ý
+  độ khớp 90 %) lại ra câu đỏ bảng size, dòng kỹ thuật vẫn `product.error_busi — Size Chart is required for selected category`.
+- **Đọc lại mã:** lối mẫu bảng size (mục 31) không phân biệt ngành hàng — `addItemWithFallbacks` gọi `get_size_chart_list(category_id)`
+  theo ĐÚNG lá đang đăng. Mẫu bảng size Shopee gắn với danh mục lúc tạo trong Kênh Người Bán, nên mẫu giày nữ không trả về cho lá
+  giày nam → gian "chưa có mẫu" với lá này → câu đỏ đúng. Luật cho khách: **mỗi lá danh mục mới bán lần đầu tạo một mẫu một lần**,
+  thời trang (áo, quần, váy…) cũng vậy; sau đó Hubsell tự lấy. Nguồn TikTok có ảnh bảng size thì Hubsell gửi luôn ảnh, không cần mẫu.
+- **Lỗ 1 — đệm rỗng (sửa):** `sizeChartCache` đệm 1 giờ theo gian × danh mục, kể cả danh sách RỖNG → khách làm đúng hướng dẫn (tạo
+  mẫu rồi bấm Đăng lại trong vòng 1 giờ) worker vẫn dùng danh sách rỗng cũ, báo lỗi cũ, khách tưởng Hubsell không nhận mẫu.
+  Sửa: `TtlCache.delete(key)` mới; `getSizeChartList` trả rỗng thì bỏ khóa ngay (có mẫu vẫn đệm 1 giờ như cũ). Số call không đổi ở
+  bài không dính lỗi; bài dính lỗi mà gian chưa có mẫu: mỗi lần Đăng lại +1 `get_size_chart_list` (khách bấm tay, không tự lặp).
+- **Lỗ 2 — câu đỏ "danh mục này" (sửa):** adapter khi hết mẫu đọc `getCategories` (đệm 6 giờ, đã nạp từ bước gợi ý danh mục) →
+  `categoryPath` gắn vào lỗi (`attachListingErrorContext`), worker chuyển cho `humanizeListingError(platform, raw, ctx)`; luật Bảng
+  size thành hàm: «Danh mục «Giày Dép Nam > Xăng-đan & Dép» Shopee bắt buộc có Bảng size … (mẫu bảng size Shopee gắn theo danh mục —
+  mẫu của danh mục khác, ví dụ giày nữ, không dùng được cho giày nam) — … tạo một mẫu cho đúng danh mục «Xăng-đan & Dép» rồi bấm
+  Đăng lại là Hubsell tự lấy mẫu của gian ngay». Lỗi không gắn ngữ cảnh (job cũ, sàn khác) → câu chung như trước. Log worker in kèm
+  đường dẫn danh mục.
+- Kiểm local: `vitest src/marketplace/listing + ttl-cache` 47/47 (+2 ca), backend tsc sạch. Local không có gian Shopee thật → chưa
+  chạy thật. ⏳ Sau deploy: khách Tạp Hoá Dép 668 tạo mẫu cho lá Xăng-đan & Dép rồi Đăng lại ngay, kỳ vọng LISTED không phải đợi 1 giờ;
+  log `[listing-copy] … gửi lại kèm mẫu bảng size …`. Chưa đọc log Render ca 05/11 (phiên Render trên Chrome hết hạn).
+- **Chưa làm (giữ như mục 31):** khách tự tải ảnh bảng size trong Sửa bài đăng; TikTok đích gửi size_chart; chọn mẫu khác ngoài mẫu đầu.

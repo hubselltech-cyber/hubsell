@@ -18,10 +18,39 @@ const PLATFORM_LABEL: Record<ChannelName, string> = {
   OFFLINE: "Sàn",
 };
 
+/**
+ * Ngữ cảnh adapter gắn thêm vào lỗi để câu dịch nói đúng chỗ (vd tên danh mục cần tạo mẫu
+ * bảng size). Gắn bằng attachListingErrorContext, worker đọc bằng listingErrorContext.
+ */
+export interface ListingErrorContext {
+  /** Đường dẫn danh mục đích, vd "Giày Dép Nam > Xăng-đan & Dép". */
+  categoryPath?: string | null;
+}
+
+const CONTEXT_KEY = "listingErrorContext";
+
+export function attachListingErrorContext<E extends Error>(err: E, ctx: ListingErrorContext): E {
+  return Object.assign(err, { [CONTEXT_KEY]: ctx });
+}
+
+export function listingErrorContext(err: unknown): ListingErrorContext {
+  const ctx = (err as Record<string, unknown> | null)?.[CONTEXT_KEY];
+  return ctx && typeof ctx === "object" ? (ctx as ListingErrorContext) : {};
+}
+
 interface Rule {
   test: RegExp;
-  /** Câu cho người bán: nói rõ ô nào, sửa thế nào. */
-  text: string;
+  /** Câu cho người bán: nói rõ ô nào, sửa thế nào. Hàm khi câu cần ngữ cảnh (tên danh mục…). */
+  text: string | ((ctx: ListingErrorContext) => string);
+}
+
+/** Câu Bảng size: nêu đích danh danh mục vì mẫu bảng size Shopee gắn với danh mục lúc tạo — mẫu giày nữ không dùng được cho giày nam (sự cố 05/11). */
+function sizeChartRequiredText(ctx: ListingErrorContext): string {
+  const path = ctx.categoryPath?.trim();
+  const leaf = path ? path.split(">").pop()?.trim() || path : null;
+  const which = path ? `Danh mục «${path}»` : "Danh mục này";
+  const create = leaf ? `tạo một mẫu cho đúng danh mục «${leaf}»` : "tạo một mẫu cho đúng danh mục này";
+  return `${which} Shopee bắt buộc có Bảng size (Size Chart) mà sản phẩm nguồn không có ảnh bảng size và gian chưa có mẫu bảng size cho danh mục này (mẫu bảng size Shopee gắn theo danh mục — mẫu của danh mục khác, ví dụ giày nữ, không dùng được cho giày nam) — vào Kênh Người Bán Shopee › Quản lý bảng size, ${create} rồi bấm Đăng lại là Hubsell tự lấy mẫu của gian ngay; hoặc chọn danh mục khác không bắt bảng size.`;
 }
 
 /**
@@ -88,7 +117,7 @@ const RULES: Rule[] = [
   // --- Shopee: danh mục bắt buộc Bảng size (lỗi thật 02/11) — đứng trước luật Ảnh/Danh mục/Thuộc tính ---
   {
     test: SHOPEE_SIZE_CHART_REQUIRED_RE,
-    text: "Danh mục này Shopee bắt buộc có Bảng size (Size Chart) mà sản phẩm nguồn không có ảnh bảng size và gian chưa có mẫu bảng size cho danh mục — vào Kênh Người Bán Shopee › Quản lý bảng size, tạo một mẫu cho danh mục này rồi bấm Đăng lại (Hubsell tự lấy mẫu của gian); hoặc chọn danh mục khác không bắt bảng size.",
+    text: sizeChartRequiredText,
   },
   {
     test: /size.?chart/i,
@@ -162,14 +191,14 @@ const VIETNAMESE_RE = /[À-ỹ]/;
  * Thông điệp đã là tiếng Việt do mã Hubsell ném (vd "Không tải được ảnh nào lên
  * Shopee") → giữ nguyên, không thêm dòng kỹ thuật.
  */
-export function humanizeListingError(platform: ChannelName, raw: string): string {
+export function humanizeListingError(platform: ChannelName, raw: string, ctx: ListingErrorContext = {}): string {
   const original = String(raw ?? "").trim();
   if (!original) return `${PLATFORM_LABEL[platform]} từ chối bài đăng nhưng không nói lý do — thử đăng lại; vẫn lỗi thì báo Hubsell.`;
   // Khớp từ khóa trên phần KHÔNG có URL: "Tải ảnh thất bại (HTTP 403): https://…/product-images/…"
   // từng bị gán nhầm thành "Sàn không nhận ảnh" chỉ vì đường dẫn chứa chữ image.
   const haystack = original.replace(/https?:\/\/\S+/gi, "");
   const rule = RULES.find((r) => r.test.test(haystack));
-  if (rule) return `${PLATFORM_LABEL[platform]} từ chối: ${rule.text}\n${original}`;
+  if (rule) return `${PLATFORM_LABEL[platform]} từ chối: ${typeof rule.text === "function" ? rule.text(ctx) : rule.text}\n${original}`;
   // Bỏ tiền tố "Shopee add_item lỗi:" / "TikTok API lỗi (code 1):" của client Hubsell rồi mới
   // xét: phần còn lại có dấu tiếng Việt = câu Hubsell tự viết → giữ nguyên.
   const body = original.replace(/^(Shopee|TikTok|Lazada)\b[^:]*:\s*/i, "");

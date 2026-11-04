@@ -359,23 +359,29 @@ const sizeChartCache = new TtlCache<number[]>(HOUR);
  * Mẫu bảng size của GIAN cho một danh mục (product/get_size_chart_list, docs 2023-05, chỉ gian
  * local — gian VN đều local). Chỉ gọi khi add_item báo "Size Chart is required" (lỗi thật 02/11)
  * nên không tốn call ở bài không cần; đệm 1 giờ theo gian × danh mục. Trang đầu 50 mẫu là đủ —
- * adapter chỉ dùng mẫu đầu.
+ * adapter chỉ dùng mẫu đầu. Danh sách RỖNG thì KHÔNG đệm (sự cố 05/11 Tạp Hoá Dép 668): câu đỏ
+ * bảo khách tạo mẫu rồi bấm Đăng lại — đệm rỗng 1 giờ thì khách vừa tạo xong bấm lại vẫn lỗi cũ.
  */
 export async function getSizeChartList(accessToken: string, shopId: string, categoryId: number, cfg = getShopeeConfig()): Promise<number[]> {
-  return sizeChartCache.get(`shopee:${shopId}:size-chart:${categoryId}`, async () => {
-    const d = await callShopGet<SizeChartListData>(
-      P.sizeChartList,
-      accessToken,
-      shopId,
-      [
-        ["category_id", String(categoryId)],
-        ["page_size", "50"],
-      ],
-      "get_size_chart_list",
-      cfg
-    );
-    return (d.response?.size_chart_list ?? []).map((s) => Number(s.size_chart_id)).filter((n) => Number.isFinite(n) && n > 0);
-  });
+  const key = `shopee:${shopId}:size-chart:${categoryId}`;
+  const ids = await sizeChartCache.get(key, () => loadSizeChartList(accessToken, shopId, categoryId, cfg));
+  if (ids.length === 0) sizeChartCache.delete(key);
+  return ids;
+}
+
+async function loadSizeChartList(accessToken: string, shopId: string, categoryId: number, cfg: ReturnType<typeof getShopeeConfig>): Promise<number[]> {
+  const d = await callShopGet<SizeChartListData>(
+    P.sizeChartList,
+    accessToken,
+    shopId,
+    [
+      ["category_id", String(categoryId)],
+      ["page_size", "50"],
+    ],
+    "get_size_chart_list",
+    cfg
+  );
+  return (d.response?.size_chart_list ?? []).map((s) => Number(s.size_chart_id)).filter((n) => Number.isFinite(n) && n > 0);
 }
 
 interface ShopeeTierVariationBody {

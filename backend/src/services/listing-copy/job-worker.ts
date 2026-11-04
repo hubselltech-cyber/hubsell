@@ -11,7 +11,7 @@
 
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { humanizeListingError } from "../../marketplace/listing/error-text";
+import { humanizeListingError, listingErrorContext } from "../../marketplace/listing/error-text";
 import { getListingAdapter } from "../../marketplace/listing/registry";
 import { activeVariants, adjustPrice, effectiveOptions } from "../../marketplace/listing/rules";
 import type { ListingDraft, NormalizedListing } from "../../marketplace/listing/types";
@@ -100,7 +100,7 @@ export async function processTarget(targetId: string): Promise<void> {
   } catch (err) {
     const raw = String((err as Error)?.message ?? err).slice(0, 700);
     // Dòng 1 tiếng Việt cho người bán, dòng 2 nguyên văn sàn (marketplace/listing/error-text.ts).
-    const message = humanizeListingError(channel.channelName, raw).slice(0, 1000);
+    const message = humanizeListingError(channel.channelName, raw, listingErrorContext(err)).slice(0, 1000);
     await prisma.listingCopyTarget.update({
       where: { id: t.id },
       data: { status: "FAILED", error: message },

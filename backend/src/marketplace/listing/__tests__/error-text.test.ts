@@ -1,6 +1,6 @@
 // Dịch lỗi sàn khi đăng sản phẩm → câu tiếng Việt + nguyên văn (docs/SAO-CHEP-SAN-PHAM.md mục 14, 28).
 import { describe, expect, it } from "vitest";
-import { humanizeListingError, isShopeeDescImageWhitelistError, isShopeeSizeChartRequiredError } from "../error-text";
+import { attachListingErrorContext, humanizeListingError, isShopeeDescImageWhitelistError, isShopeeSizeChartRequiredError, listingErrorContext } from "../error-text";
 
 /** target.error = dòng 1 tiếng Việt + "\n" + nguyên văn sàn (FE tách ở shared.ts). */
 function split(stored: string): { text: string; detail: string | null } {
@@ -72,6 +72,18 @@ describe("lỗi thật 02/11: Shopee đòi Bảng size cho danh mục Giày đ�
     expect(split(bad).text).toMatch(/không nhận ảnh Bảng size/);
     expect(split(bad).text).not.toMatch(/Sàn không nhận ảnh sản phẩm/);
     expect(isShopeeSizeChartRequiredError(bad)).toBe(false);
+  });
+
+  it("05/11 Tạp Hoá Dép 668: adapter gắn tên danh mục → câu đỏ nêu đích danh lá cần tạo mẫu và nói rõ mẫu gắn theo danh mục", () => {
+    const err = attachListingErrorContext(new Error(raw), { categoryPath: "Giày Dép Nam > Xăng-đan & Dép" });
+    const { text, detail } = split(humanizeListingError("SHOPEE", err.message, listingErrorContext(err)));
+    expect(text).toMatch(/Danh mục «Giày Dép Nam > Xăng-đan & Dép» Shopee bắt buộc có Bảng size/);
+    expect(text).toMatch(/tạo một mẫu cho đúng danh mục «Xăng-đan & Dép»/);
+    expect(text).toMatch(/mẫu của danh mục khác, ví dụ giày nữ, không dùng được cho giày nam/);
+    expect(detail).toBe(raw);
+    // Lỗi không gắn ngữ cảnh (job cũ / lỗi khác) → câu chung, không vỡ.
+    expect(listingErrorContext(new Error("x"))).toEqual({});
+    expect(split(humanizeListingError("SHOPEE", raw)).text).toMatch(/^Shopee từ chối: Danh mục này Shopee bắt buộc có Bảng size/);
   });
 });
 

@@ -17,7 +17,7 @@ import * as api from "../../integrations/shopee/listing-api";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
 import { viAttributeName } from "./attribute-names-vi";
 import { mergeUsedBrands, rankBrands } from "./brand-search";
-import { isShopeeDescImageWhitelistError, isShopeeSizeChartRequiredError } from "./error-text";
+import { attachListingErrorContext, isShopeeDescImageWhitelistError, isShopeeSizeChartRequiredError } from "./error-text";
 import { dimsComplete, MAX_DESCRIPTION_IMAGES, normalizeDims, PLATFORM_LISTING_RULES } from "./rules";
 import type {
   AttributeDef,
@@ -105,7 +105,16 @@ async function addItemWithFallbacks(
           current = { ...current, size_chart_info: { size_chart_id: templates[0] } };
           continue;
         }
-        console.warn(`[listing-copy] ${channel.shopName}: Shopee đòi Bảng size cho danh mục ${current.category_id} nhưng gian chưa có mẫu nào — trả lỗi cho khách tạo mẫu`);
+        // Gian chưa có mẫu cho ĐÚNG lá này (mẫu Shopee gắn theo danh mục — sự cố 05/11: có mẫu giày nữ,
+        // đăng giày nam vẫn đòi) → gắn tên danh mục vào lỗi để câu đỏ bảo khách tạo mẫu cho lá nào.
+        const path = await api
+          .getCategories(accessToken, shopId)
+          .then((all) => api.categoryPath(all, current.category_id).join(" > ") || null)
+          .catch(() => null);
+        console.warn(
+          `[listing-copy] ${channel.shopName}: Shopee đòi Bảng size cho danh mục ${current.category_id}${path ? ` (${path})` : ""} nhưng gian chưa có mẫu nào cho lá này — trả lỗi cho khách tạo mẫu`
+        );
+        throw attachListingErrorContext(err as Error, { categoryPath: path });
       }
       throw err;
     }

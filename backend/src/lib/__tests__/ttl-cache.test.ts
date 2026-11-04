@@ -20,6 +20,16 @@ describe("TtlCache", () => {
     expect(await c.get("k", async () => ++n)).toBe(2);
   });
 
+  it("delete(khóa) bỏ kết quả trước hạn → lượt sau nạp lại (mẫu bảng size rỗng không đệm 1 giờ, 05/11)", async () => {
+    const c = new TtlCache<number[]>(60_000);
+    let n = 0;
+    expect(await c.get("k", async () => (++n, []))).toEqual([]);
+    expect(c.delete("k")).toBe(true);
+    expect(c.delete("k")).toBe(false);
+    expect(await c.get("k", async () => (++n, [7]))).toEqual([7]);
+    expect(n).toBe(2);
+  });
+
   it("quá trần số khóa → bỏ khóa cũ nhất, RAM không phình theo số gian", async () => {
     const c = new TtlCache<string>(60_000, 3);
     for (const k of ["a", "b", "c", "d"]) await c.get(k, async () => k);
