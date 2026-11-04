@@ -129,9 +129,15 @@ function orderCost(order: DeliveredOrder): {
       cost += (it.quantity - recoveredQty) * unit;
       recoveredCost += recoveredQty * unit;
     }
-    // Có dòng nào giá vốn = 0 nghĩa là SKU đó chưa được nhập giá vốn
+    // ĐƠN CHƯA CÓ GIÁ VỐN = có dòng GIÁ BÁN > 0 mà giá vốn ≤ 0 (sổ v4, 04/11/2026,
+    // docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md mục 6 + 8.5). Dòng giá
+    // bán 0 đ (quà tặng kèm) không gắn cờ: 60 ngày prod có 28.732 đơn / 44 shop
+    // chỉ thiếu ở quà 0 đ bị coi "thiếu giá vốn" oan, kéo độ phủ hòa vốn quảng
+    // cáo của gian tặng quà xuống dưới 90 %. Đánh đổi: quà có vốn thật mà shop
+    // không nhập → lãi đơn cao hơn thật bằng giá quà (giá vốn là của khách, 26/10).
+    // Trước v4: cờ bật khi BẤT KỲ dòng nào costPriceAtSale ≤ 0.
     const missingCostPrice = order.items.some(
-      (it) => Number(it.costPriceAtSale) <= 0
+      (it) => Number(it.costPriceAtSale) <= 0 && Number(it.price) > 0
     );
     return { cost, recoveredCost, missingCostPrice };
   }

@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 04/11 (20:00, lịch tự động) — Tài chính coi đơn thiếu giá vốn = giá vốn 0 (Lát B) + cờ thiếu giá vốn bỏ quà 0 đ, sổ v4 (Lát A)
+
+- Lượt tự động theo lịch anh đặt 02/11 (`5cf8230f`). Kiểm `git log` + PROGRESS: anh không ghi quyết định khác → mặc định: thuế bổ sung đi theo cùng lợi nhuận, câu chữ 8.3, Lát A cùng đợt. Không mở prod/Supabase.
+- **Commit 1 `ab4d62c9` (Lát B + mobile câu chữ, không đổi sổ):** bỏ phép trừ `excludedProfit`/`withCost` ở net-profit, cash-flow, overview, realized-pnl, tax-totals, routes finance/analytics/tax/assistant; 2 câu SQL `ledgerPnlSummary` + `ledgerTaxReportTotals` bỏ `FILTER (WHERE NOT "missingCostPrice")`; giữ cờ + `missingCostCount`; API giữ `missingCost.excludedProfit` = 0 (hàm `missingCostApiSummary`, mobile cũ tự đóng bậc); web `MissingCostNote` "N đơn chưa có giá vốn — đang tính với giá vốn 0 đ. Nhập giá vốn", Tổng quan bỏ bậc Thiếu vốn, câu thuế, hộp nhắc câu mô tả; Trợ lý 2 câu; mobile FinancePage + OverviewPage câu chữ, **chưa OTA**.
+- **Commit 2 (ngay sau, Lát A, sổ v4):** `orderCost` cờ chỉ khi dòng giá bán > 0 mà vốn ≤ 0; SQL `noCost` + `unitsNoCost` + Lãi/Lỗ theo SKU + lọc trang Giá vốn `/sku-products/missing-cost` thêm `lineGross > 0`; `LEDGER_FORMULA_VERSION` 3 → 4.
+- **Kiểm:** tsc backend + frontend + mobile sạch. 23 tệp test liên quan (12 thuần + 11 DB dev): baseline trước sửa 201 qua / 2 đỏ; sau commit 1 **210 / 2 đỏ**; sau commit 2 **214 / 2 đỏ** — 2 đỏ đúng ca đỏ sẵn (`order-ledger-db` đếm dọn cascade, `realized-pnl-ledger-db` thiếu chỉ mục trigram DB dev). 5 tệp test quảng cáo xanh **không sửa** ở cả hai commit (ROI/ROAS không đổi). Test mới `missing-cost-zero-equation.test.ts` (Doanh thu − Σ chi phí = Lợi nhuận ở Tổng quan, Dòng tiền, Lãi/Lỗ, Thuế) + 4 ca quà 0 đ ở `pnl-returns.test`. Chưa chạy cả bộ test, chưa soi trình duyệt.
+- **Ghi:** docs `TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md` mục 9 (bảng từng tệp, test, lệch so kế hoạch), `KIEN-TRUC-QUY-MO-TRIEU-DON.md` 9a #7 #8, `SO-CAI-DON.md` (trục lọc v4, thuế, lịch sử phiên bản), `docs/README.md`; memory `hubsell-dinh-nghia-tai-chinh`.
+- ⏳ **Anh:** push commit 1 ban ngày → nghiệm thu 8.6 (TORANO ≈ +7,05 tỷ; demo 0 % không đổi; and.not.or hòa vốn giữ); push commit 2 ≥ 22:00 (tính lại sổ ~40', theo dõi Disk IO Supabase + `ledger-backfill.ts status` tới v3 = 0; sau đó khanhdrop/ledinhhieua/thanhthong độ phủ ≥ 90 %); OTA mobile; soi giao diện 4 trang.
+
 ## Phiên 04/11 — Đổi video hướng dẫn Trợ lý quảng cáo TikTok
 
 - `TIKTOK_ADS_VIDEO_ID` trong `components/tour/guide-video-dialog.tsx` đổi từ `jaGQEWVCPbs` sang `aw2YXOBquH4`. Một hằng dùng chung cho `/guide` và link "Video hướng dẫn" trên trang `/ads/tiktok`, không còn chỗ nào giữ mã cũ.

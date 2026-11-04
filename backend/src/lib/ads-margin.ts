@@ -322,7 +322,9 @@ export function salesPaceByItem(
       if (!s) sales.set(itemId, (s = { units30d: 0, units7d: 0, unitsNoCost: 0 }));
       s.units30d += it.quantity;
       if (recent) s.units7d += it.quantity;
-      if (!(it.costPriceAtSale > 0)) s.unitsNoCost += it.quantity;
+      // Cùng luật cờ đơn v4 (04/11/2026): chỉ dòng giá bán > 0 mới là "chưa có giá vốn";
+      // quà 0 đ không đếm — khớp SQL noCost của ledgerMarginByGroup.
+      if (!(it.costPriceAtSale > 0) && it.price > 0) s.unitsNoCost += it.quantity;
     }
   }
   return sales;

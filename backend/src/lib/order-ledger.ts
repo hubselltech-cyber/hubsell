@@ -35,8 +35,12 @@ import { toBusinessDateKey } from "./date-range";
  *      TikTok = 0 (docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md mục 9 lát 1).
  *   v3 29/10/2026 — lát 3: TikTok revenueGross + voucher shop (Order.tiktokVoucherSeller
  *      từ Get Order Price Details), sellerVoucher = voucher đó (docs mục 12).
+ *   v4 04/11/2026 — Lát A: cờ `missingCostPrice` chỉ xét dòng GIÁ BÁN > 0 (quà
+ *      tặng 0 đ không còn làm đơn "thiếu giá vốn"); tiền không đổi, chỉ cờ cấp
+ *      đơn + cờ chép xuống dòng (docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md
+ *      mục 8.5). Tính lại nền ~40' giờ thấp điểm, theo dõi Disk IO Supabase.
  */
-export const LEDGER_FORMULA_VERSION = 3;
+export const LEDGER_FORMULA_VERSION = 4;
 
 /** Đơn kèm quan hệ để ghi sổ = tập PnlOrder + chủ shop của gian. */
 export const LEDGER_INCLUDE = {

@@ -1540,8 +1540,9 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
         //          → tắt/tối ưu chiến dịch là hết lỗ, không phải đụng vào giá.
         //   COST : lỗ ngay từ trước khi tiêu một đồng quảng cáo nào
         //          → phải sửa giá nhập hoặc giá bán, tắt Ads cũng vẫn lỗ.
-        // Mã chưa nhập giá vốn thì chưa kết luận được, để null.
-        const missingCost = r.quantitySold > 0 && r.cogs <= 0;
+        // Mã chưa nhập giá vốn thì chưa kết luận được, để null. SKU bán ra chỉ ở giá 0
+        // (quà tặng kèm) không vào tab "chưa có giá vốn" — cùng luật cờ đơn v4 (04/11/2026).
+        const missingCost = r.quantitySold > 0 && r.cogs <= 0 && r.revenue > 0;
         let lossReason: "ADS" | "COST" | null = null;
         if (profit <= 0 && !missingCost) {
           lossReason = grossBeforeMarketing > 0 ? "ADS" : "COST";
@@ -1613,6 +1614,8 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
 // NGUỒN SỐ: sổ dòng hàng — cùng phạm vi đơn với số "N đơn" (countsAsRevenue:
 // không tính hủy, đang hoàn) và cùng cột ngày tạo đơn. Một câu GROUP BY, không
 // đọc bảng đơn; trần 5.000 SKU (thực tế mỗi kỳ vài chục–vài trăm mã).
+// Cùng luật cờ đơn v4 (04/11/2026): chỉ dòng GIÁ BÁN > 0 (lineGross > 0) mới
+// là "chưa có giá vốn" — quà tặng 0 đ không vào danh sách, khớp số "N đơn".
 // ============================================================
 const MISSING_COST_SKU_LIMIT = 5000;
 
@@ -1626,7 +1629,8 @@ router.get("/sku-products/missing-cost", async (req: AuthRequest, res, next) => 
       AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
       AND l."countsAsRevenue" = TRUE
       AND l."quantity" > 0
-      AND l."costPriceAtSale" <= 0`;
+      AND l."costPriceAtSale" <= 0
+      AND l."lineGross" > 0`;
     const [rows, totals] = await Promise.all([
       prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
         SELECT l."channelId", l."externalId", l."channelSku",

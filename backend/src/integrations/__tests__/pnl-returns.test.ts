@@ -592,3 +592,26 @@ describe("computeGrossDeductions — thác nước Báo cáo dòng tiền đóng
     for (const i of empty.items) expect(i.amount).toBe(0);
   });
 });
+
+describe("orderCost — cờ thiếu giá vốn bỏ qua dòng giá bán 0 đ (quà tặng kèm; sổ v4, 04/11/2026)", () => {
+  const gift = { channelSku: "QUA", price: D(0), costPriceAtSale: D(0) };
+  it("đơn chỉ có quà 0 đ chưa nhập giá vốn → KHÔNG cờ (không có doanh thu để thổi lãi)", () => {
+    const r = computePnlRow(mkOrder({ items: [gift] }));
+    expect(r.missingCostPrice).toBe(false);
+    expect(r.costSnapshot).toBe(0);
+  });
+  it("quà 0 đ kèm hàng ĐÃ có giá vốn → KHÔNG cờ (trước v4 bị gắn cờ oan)", () => {
+    const r = computePnlRow(mkOrder({ items: [{}, gift] }));
+    expect(r.missingCostPrice).toBe(false);
+    expect(r.costSnapshot).toBe(131000); // vốn của dòng hàng, quà góp 0 đ
+  });
+  it("quà 0 đ kèm hàng THIẾU giá vốn → cờ (dòng giá bán > 0 mà vốn 0)", () => {
+    const r = computePnlRow(mkOrder({ items: [{ costPriceAtSale: D(0) }, gift] }));
+    expect(r.missingCostPrice).toBe(true);
+  });
+  it("quà có nhập giá vốn vẫn trừ vốn như thường, không cờ", () => {
+    const r = computePnlRow(mkOrder({ items: [{}, { ...gift, costPriceAtSale: D(5000) }] }));
+    expect(r.missingCostPrice).toBe(false);
+    expect(r.costSnapshot).toBe(131000 + 5000);
+  });
+});

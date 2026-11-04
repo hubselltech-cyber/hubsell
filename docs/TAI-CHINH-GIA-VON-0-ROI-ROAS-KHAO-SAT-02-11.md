@@ -5,6 +5,9 @@
 > khoanh vùng tác động, đưa phương án khả thi (có thể đề xuất không làm). Tệp này là kết quả khảo sát, CHƯA sửa mã.
 > Bối cảnh cũ: anh chốt 30/09/2026 "loại khỏi lợi nhuận, vẫn tính doanh thu" (docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md 9a #7, #8);
 > 30/10 em đã nêu lý do không coi = 0 và anh bỏ dòng phụ "lãi tạm tính".
+>
+> **Trạng thái 04/11/2026 20:00 (lượt tự động):** anh chốt làm theo mục 8 → **ĐÃ CODE** thành 2 commit (Lát B `ab4d62c9` +
+> mobile câu chữ; Lát A sổ v4 = commit kế tiếp), chưa push, chưa OTA — xem **mục 9**. Mục 1–8 giữ nguyên làm hồ sơ khảo sát.
 
 ## 1. Kết luận ngắn
 
@@ -206,3 +209,52 @@ Vận hành: push ≥ 22:00; worker sổ cái tự nhặt dòng v3 (`claimDirtyL
 1. **Thuế bổ sung** đi theo cùng lợi nhuận (đề xuất: có, một đẳng thức) hay giữ loại riêng?
 2. **Câu chữ** "N đơn chưa có giá vốn — đang tính với giá vốn 0 đ. Nhập giá vốn" — anh duyệt chữ này?
 3. **Lát A** làm cùng đợt (đề xuất: có, push 2 giờ thấp điểm) hay để sau?
+
+## 9. ĐÃ LÀM 04/11/2026 (lượt tự động 20:00, lịch anh đặt 02/11 — commit lịch `5cf8230f`)
+
+Trước khi code em kiểm `git log` + đầu PROGRESS: sau `5cf8230f` anh không ghi quyết định nào khác về 3 điểm 8.8 và không đổi ý → làm theo mặc định: **thuế bổ sung đi theo cùng lợi nhuận; câu chữ như 8.3; Lát A cùng đợt.** Không mở trình duyệt prod/Supabase (không có anh); nghiệm thu số thật 8.6 để anh làm sau push.
+
+### 9.1. Commit 1 — Lát B + mobile câu chữ (`ab4d62c9`, chưa push)
+
+| Nơi | Đã đổi |
+|---|---|
+| `lib/finance-definitions.ts` | Chú thích định nghĩa mới theo 8.1 (ghi ngày anh chốt 02/11, áp 04/11, nhắc bản cũ 30/09 → 04/11). `summarizeMissingCost` trả `{ orderCount, profitAtZeroCost }` (đổi tên từ `excludedProfit`). Thêm `missingCostApiSummary(orderCount)` = hợp đồng API `{ orderCount, excludedProfit: 0 }` — một chỗ, 4 route gọi |
+| `lib/net-profit.ts` | Bỏ hẳn tham số `excludedProfit` (chỗ nào còn truyền thì tsc báo — đã sạch) |
+| `lib/cash-flow-totals.ts` | `settled/pending.profitAfterTaxWithCost` → `profitAfterTax` (Σ mọi đơn); `active.missingCostExcludedProfit` → `missingCostProfit` (đếm + tham khảo); bỏ `withCost` |
+| `lib/overview-totals.ts`, `lib/order-ledger.ts` (`LedgerGroupTotals`) | `missingCostExcludedProfit` → `missingCostProfit` |
+| `lib/realized-pnl-totals.ts` | `profitWithCost` → `profit` = Σ profitAfterTax mọi đơn khớp lọc; bỏ nhánh `missing ? 0 : …` |
+| `lib/tax-totals.ts` | `profitWithCost` → `profit` cộng mọi đơn không hủy; đếm thiếu giữ |
+| `services/order-ledger.ts` | `ledgerSummary` alias `__missingCostProfit`; `ledgerPnlSummary` + `ledgerTaxReportTotals` bỏ `FILTER (WHERE NOT "missingCostPrice")`, cột `profit`; `diffLedgerSummaries` đổi tên chỉ số |
+| `routes/finance.ts` | `summarizePnlRows` (mốc test) bỏ nhánh 0; tổng kết Lãi/Lỗ dùng `t.profit`; cột Lợi nhuận Thực tế/Dự kiến của Dòng tiền dùng `settled/pending.profitAfterTax`; `missingCost` = `missingCostApiSummary(...)` |
+| `routes/analytics.ts` | `netProfitAfterProvision` không còn `excludedProfit`; `missingCost` theo hợp đồng |
+| `routes/tax.ts` | `profit = t.profit`; `additionalTaxMissingCost` giữ hình dạng (excludedProfit = 0), ý nghĩa "đang tính với giá vốn 0" |
+| `routes/assistant.ts` | `netOf` bỏ trừ; 2 câu "⚠️ N đơn chưa có giá vốn — đang tính với giá vốn 0 đ, nhập giá vốn để số đúng."; dòng bảng "N đơn chưa có giá vốn (giá vốn tạm 0 đ)" → "Nhập giá vốn" (không in số tiền) |
+| Web | `MissingCostNote`: "N đơn chưa có giá vốn — đang tính với giá vốn 0 đ. Nhập giá vốn"; `app/page.tsx` bỏ bậc "Thiếu vốn" + phụ đề thẻ Lợi nhuận; `invoicing/history` câu thuế; `MissingCostPrompt` câu mô tả "đang tính các đơn này với giá vốn 0 đ (cao hơn thật)" (điều kiện hiện/Bỏ qua KHÔNG đổi); `lib/api.ts` chú thích |
+| Mobile (chưa OTA) | `FinancePage.tsx` bỏ bậc `missingCost` + câu thẻ Lợi nhuận; **thêm ngoài kế hoạch** `OverviewPage.tsx` câu "N đơn chưa có giá vốn — tạm tính giá vốn 0 đ" (cũng đang nói "không tính lợi nhuận"); `types/api.ts` chú thích |
+| Không đụng | Đơn lỗ (`finance-views`), `ops-alerts`, `ads-margin`, `tiktok-breakeven`, SQL gom quảng cáo, trang Giá vốn, hộp nhắc (logic), `LEDGER_FORMULA_VERSION` |
+
+Lệch nhỏ so với 8.3: tên nội bộ dùng `missingCostProfit` / `profit` / `profitAfterTax` (ngắn hơn `profitAtZeroCost`, chỉ `summarizeMissingCost` giữ tên `profitAtZeroCost` theo bảng); SQL `ledgerSummary` đổi alias luôn thay vì "giữ alias, đổi khi map" (map là vòng lặp theo tên trường nên đổi một chỗ là đủ).
+
+Test commit 1 (23 tệp: 12 thuần + 11 DB dev): **210 qua / 2 đỏ**, 2 đỏ **đúng 2 ca đỏ sẵn trước khi sửa** (chạy baseline cùng bộ lúc 20:04 trên `55943924`: 201 qua / 2 đỏ) — `order-ledger-db` "xóa chủ shop cascade" đếm 2 ≠ 0 và `realized-pnl-ledger-db` thiếu chỉ mục GIN trigram trên DB dev. `ads-margin.test`, `tiktok-breakeven.test`, `ads-rows-ledger-db`, `ads-margin-sql-db`, `tiktok-breakeven-sql-db` **xanh không sửa** → quảng cáo không đổi. Test mới `lib/__tests__/missing-cost-zero-equation.test.ts` (6 ca): fixture 2 đơn thiếu giá vốn → Tổng quan `Doanh thu − Giá vốn − Sàn khấu trừ` = Dòng tiền `thực tế + dự kiến` = Lãi/Lỗ tổng = Σ sàn = Σ ngày = Σ profitAfterTax mọi đơn, thuế cộng cả đơn thiếu, API `excludedProfit = 0`. `net-profit.test` viết lại theo đẳng thức mới (228.000 / thuế 22.800 / ròng 205.200) + ca "đơn thiếu giá vốn góp trọn 170.000 tiền về". tsc backend + frontend + mobile sạch.
+
+### 9.2. Commit 2 — Lát A, sổ v4 (commit ngay sau `ab4d62c9`, chưa push)
+
+| Nơi | Đã đổi |
+|---|---|
+| `lib/pnl-formula.ts orderCost` | `missingCostPrice = items.some(cost ≤ 0 && price > 0)`; nhánh đơn cũ theo log kho giữ nguyên; chú thích lý do + đánh đổi |
+| `lib/order-ledger.ts` | `LEDGER_FORMULA_VERSION` 3 → **4** + dòng lịch sử v4 |
+| `services/order-ledger.ts ledgerMarginByGroup` | `noCost = costPriceAtSale ≤ 0 AND lineGross > 0` |
+| `lib/ads-margin.ts salesPaceByItem` | `unitsNoCost` cùng luật (`!(cost > 0) && price > 0`) |
+| `routes/finance.ts` Lãi/Lỗ theo SKU | `missingCost = quantitySold > 0 && cogs ≤ 0 && revenue > 0` |
+| `routes/finance.ts` `/sku-products/missing-cost` (trang Giá vốn lọc "bán trong kỳ chưa có giá vốn") | thêm `AND l."lineGross" > 0` — trước đó lọc `costPriceAtSale ≤ 0` nên quà 0 đ lọt danh sách, lệch số "N đơn" |
+| Test | `pnl-returns.test` thêm 4 ca (đơn chỉ quà → không cờ; quà kèm hàng có vốn → không cờ, vốn 131.000; quà kèm hàng thiếu vốn → cờ; quà có nhập vốn trừ như thường) |
+
+Test commit 2 (cùng 23 tệp): **214 qua / 2 đỏ** (đúng 2 ca đỏ sẵn). **Không tệp test quảng cáo nào phải đổi kỳ vọng**: `ads-margin-sql-db` quà "G" có vốn 5.000 (unitsNoCost 0 từ trước); `tiktok-breakeven-sql-db` S9 (chỉ quà 0 đ, vốn 0) trước mang cờ, nay không — nhưng dòng `lineGross = 0` không "paid" nên không vào doanh thu/độ phủ/tự kiểm ở cả hai bản, số đếm giữ nguyên; `ads-margin.test` dòng B giá 300 vốn 0 vẫn đếm 3 món. Các test DB dev so sổ ↔ đơn (`realized-pnl-ledger-db`, `tax-ledger-db`, `cash-flow-ledger-db`, `overview-ledger-db`, `ads-rows-ledger-db`, `finance-views-ledger-db`) qua với v4 — tức DB dev đã tính lại được bằng công thức mới trong lượt test.
+
+### 9.3. Việc còn (chờ anh)
+
+1. **Push commit 1 (Lát B) ban ngày** — không migration, không đổi sổ; Render deploy backend, Vercel dựng frontend. Sau đó nghiệm thu 8.6 phần "sau B": TORANO ≈ +7,05 tỷ/60 ngày, demo 0 % thiếu không đổi một đồng, and.not.or hòa vốn giữ nguyên, thác nước web + mobile 1.4.1 chưa OTA đóng 0.
+2. **Push commit 2 (Lát A) ≥ 22:00**: worker tự nhặt dòng v3 (`claimDirtyLedgerRows` nhặt cả phiên bản cũ), kỳ đang xem tự tính inline; theo dõi Supabase Disk IO + `npx tsx scripts/ledger-backfill.ts status` tới khi v3 = 0 (~40', 29/10 ~300 dòng/giây). Sau đó kiểm 8.6 phần "sau A": đơn cờ thiếu 60 ngày 225.005 → ≈ 196.273; khanhdrop / ledinhhieua / thanhthong độ phủ ≥ 90 %.
+3. **OTA mobile** kênh production (runtime 1.4.1) sau khi anh duyệt câu chữ — em chưa publish.
+4. Chưa chạy **cả bộ test backend** (chỉ 23 tệp liên quan); chưa soi giao diện trên trình duyệt (trang Tổng quan, Dòng tiền, Lãi/Lỗ, Thuế) — anh mở local hoặc em soi ở lượt có anh.
+5. Đường lui như 8.7: B = revert một commit; A = revert mã + tăng v5.

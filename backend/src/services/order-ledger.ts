@@ -1649,7 +1649,9 @@ function marginByGroupQuery(
              l."missingCostPrice" AS "missing",
              (l."lineGross" > 0) AS "paid",
              (l."createdAt" >= ${tsParam(opts.recentSince)}) AS "recent",
-             (l."costPriceAtSale" <= 0) AS "noCost"
+             -- "Sản phẩm chưa có giá vốn" của Gợi ý chạy quảng cáo: cùng luật cờ đơn v4 (04/11/2026) —
+             -- chỉ dòng có giá bán > 0; quà 0 đ không đếm (= salesPaceByItem.unitsNoCost, lib/ads-margin).
+             (l."costPriceAtSale" <= 0 AND l."lineGross" > 0) AS "noCost"
       FROM "order_line_ledger" l
       WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
         AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int

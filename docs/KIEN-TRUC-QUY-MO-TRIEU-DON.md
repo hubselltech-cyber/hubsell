@@ -273,15 +273,15 @@ Hạ tầng (số worker, cỡ database) nâng theo mốc trong `capacity-plan.t
 | 1 | Duyệt hướng 4 trụ. Hạ tầng nâng dần theo mốc trong HQ; code làm chuẩn cho quy mô lớn ngay | Đang làm |
 | 2 | Đơn lỗ là đơn có lãi < 0 (anh xác nhận lại 30/09) | Đã code: `isLossOrder`, áp cho trang Đơn lỗ, lọc Lợi nhuận âm, chuông cảnh báo, Trợ lý |
 | 6 | Đơn hủy coi như doanh thu bằng 0 | Đã code trong công thức gốc; tiền về âm (phí sàn vẫn trừ) giữ nguyên |
-| 7 | Đơn chưa có giá vốn loại khỏi lợi nhuận, vẫn tính doanh thu, ghi rõ "X đơn chưa có giá vốn…" | Đã code: Báo cáo dòng tiền, Lãi/Lỗ, Tổng quan, Trợ lý |
+| 7 | ~~Đơn chưa có giá vốn loại khỏi lợi nhuận, vẫn tính doanh thu~~ → **ĐỔI 02/11/2026 (anh chốt), áp mã 04/11/2026:** đơn chưa có giá vốn tính như **giá vốn 0 đ**, vẫn đếm và ghi rõ "X đơn chưa có giá vốn — đang tính với giá vốn 0 đ. Nhập giá vốn" | Đã code 04/11 (commit Lát B): Báo cáo dòng tiền, Lãi/Lỗ, Tổng quan, Thuế, Trợ lý; ROI/ROAS hòa vốn quảng cáo KHÔNG đổi (vẫn gạt đơn thiếu giá vốn). Khảo sát + lý do: `docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md` |
 | 3 | Đơn ĐANG hoàn không tính vào doanh thu | Đã code: `lib/finance-definitions.ts`, áp cho Tổng quan, Báo cáo dòng tiền, Trợ lý |
 | 4 | Quyết toán giả lập bỏ hẳn với gian sàn | Đã code: chỉ còn gian Offline |
 | 5 | Tờ khai thuế tính theo ngày sàn báo giao thành công, giống báo cáo thuế của các sàn | Đã code, nằm sau công tắc `TAX_DECLARATION_BY_DELIVERED=1`; bật sau khi sửa mốc giao đơn cũ (xem dưới) |
-| 8 | Báo cáo thuế: đơn chưa có giá vốn loại khỏi thuế bổ sung, có cảnh báo "X đơn chưa có giá vốn nên chưa tính vào thuế bổ sung" | Đã code. Chỉ áp khi thuế bổ sung tính trên lợi nhuận; tính trên doanh thu thì giá vốn không ảnh hưởng nên không loại |
+| 8 | ~~Báo cáo thuế: đơn chưa có giá vốn loại khỏi thuế bổ sung~~ → **ĐỔI 04/11/2026 (đi theo #7, mặc định em đề xuất, anh không chốt khác trước 20:00 04/11):** thuế bổ sung tính trên cùng lợi nhuận kỳ (đơn thiếu giá vốn = giá vốn 0 — trích DƯ, dè dặt); cảnh báo "X đơn chưa có giá vốn đang tính với giá vốn 0 đ trong thuế bổ sung" | Đã code 04/11. Chỉ có nghĩa khi thuế bổ sung tính trên lợi nhuận; tính trên doanh thu thì giá vốn không ảnh hưởng |
 
 **Về quyết định 2.** Đơn thiếu giá vốn mà lãi vẫn âm thì vẫn là đơn lỗ: bổ sung giá vốn chỉ làm số âm thêm. Lãi bằng 0 không phải lỗ.
 
-**Về quyết định 7.** Đẳng thức mới của mọi trang: Doanh thu − Chi phí − phần lợi nhuận của đơn chưa có giá vốn = Lợi nhuận. Báo cáo thuế (`/tax/report`) chưa áp quy tắc này: loại đơn thiếu giá vốn sẽ làm giảm số dự phòng thuế bổ sung, cần anh chốt riêng.
+**Về quyết định 7 (bản 04/11/2026).** Đẳng thức mọi trang: **Doanh thu − Chi phí = Lợi nhuận** (không còn vế "phần lợi nhuận của đơn chưa có giá vốn"; API vẫn trả `missingCost.excludedProfit` nhưng luôn 0 để mobile cũ tự đóng thác nước). Cờ `missingCostPrice` giữ để đếm + nhắc nhập giá vốn, và từ sổ v4 (04/11) chỉ bật khi có dòng giá bán > 0 mà giá vốn ≤ 0 (quà tặng 0 đ không còn làm đơn "thiếu giá vốn"). Quảng cáo (biên lãi, hòa vốn, luật tự động) vẫn gạt đơn có cờ khỏi tử lẫn mẫu, độ phủ < 90 % → không kết luận — không đi qua phép cộng của báo cáo tài chính nên không đổi. Bản 30/09 → 04/11: Doanh thu − Chi phí − phần lợi nhuận của đơn chưa có giá vốn = Lợi nhuận.
 
 **Về quyết định 3.** "Đang hoàn" là đơn có hàng hoàn chưa xử lý xong: đang chờ về kho, đã quét nhận chưa nhập kho, hoặc hỏng/mất đang chờ khiếu nại. Hoàn đã xong (nhập kho, khiếu nại thắng hoặc thua) thì đơn quay lại báo cáo, tiền hoàn nằm ở dòng "Tiền hoàn trả khách". Thẻ Doanh thu có thêm dòng tham khảo "Đang hoàn/trả".
 
