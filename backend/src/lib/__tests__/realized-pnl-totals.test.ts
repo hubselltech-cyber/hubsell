@@ -35,7 +35,7 @@ const LEDGER_ROWS = ORDERS.map((o) => buildLedgerRows(o).order);
 function expectSame(a: PnlSummaryTotals, b: PnlSummaryTotals) {
   for (const k of [
     "count", "settledCount", "netRevenue", "returnCount", "refundedAmount", "revenueGross",
-    "platformTax", "profitWithCost", "missingCostCount", "missingCostExcludedProfit",
+    "platformTax", "profit", "missingCostCount", "missingCostProfit",
   ] as const) {
     expect(a[k], k).toBeCloseTo(b[k], 6);
   }
@@ -55,10 +55,13 @@ describe("pnlSummaryTotals — bằng tổng kết cũ và bằng phép cộng t
   it("pnlSummaryTotalsFromRows = summarizePnlRows (tổng kết trang Lãi/Lỗ trước 30/09/2026)", () => {
     const t = pnlSummaryTotalsFromRows(PNL_ROWS);
     const old = summarizePnlRows(PNL_ROWS, DEFAULT_TAX_CONFIG);
-    expect(t.profitWithCost).toBeCloseTo(old.totalProfit, 6);
+    expect(t.profit).toBeCloseTo(old.totalProfit, 6);
     expect(t.revenueGross).toBeCloseTo(old.totalGrossRevenue, 6);
     expect(t.platformTax).toBeCloseTo(old.totalPlatformTax, 6);
-    expect({ orderCount: t.missingCostCount, excludedProfit: t.missingCostExcludedProfit }).toEqual(old.missingCost);
+    expect({ orderCount: t.missingCostCount, profitAtZeroCost: t.missingCostProfit }).toEqual(old.missingCost);
+    // Đơn thiếu giá vốn tính như giá vốn 0 (04/11/2026): lợi nhuận = Σ profitAfterTax MỌI đơn.
+    expect(t.missingCostCount).toBe(2);
+    expect(t.profit).toBeCloseTo(PNL_ROWS.reduce((s, r) => s + r.profitAfterTax, 0), 6);
     expect(t.returnLoss.costLoss).toBeCloseTo(old.returnLoss.costLoss, 6);
     expect(t.returnLoss.platformKept).toBeCloseTo(old.returnLoss.platformKept, 6);
     expect(t.returnLoss.refundLoss).toBeCloseTo(old.returnLoss.refundLoss, 6);
@@ -68,8 +71,8 @@ describe("pnlSummaryTotals — bằng tổng kết cũ và bằng phép cộng t
     // Bất biến của trang: Σ theo ngày = Σ theo sàn = tổng.
     const sumDay = [...t.byDay.values()].reduce((s, d) => s + d.profit, 0);
     const sumPlatform = [...t.byPlatform.values()].reduce((s, d) => s + d.profit, 0);
-    expect(sumDay).toBeCloseTo(t.profitWithCost, 6);
-    expect(sumPlatform).toBeCloseTo(t.profitWithCost, 6);
+    expect(sumDay).toBeCloseTo(t.profit, 6);
+    expect(sumPlatform).toBeCloseTo(t.profit, 6);
   });
 
   const FILTERS: { name: string; f: LedgerPnlFilter; count: number }[] = [

@@ -41,7 +41,8 @@ function isQuiet(): boolean {
 /**
  * HỘP NHẮC NHẬP GIÁ VỐN ở Tổng quan và Báo cáo dòng tiền (anh Trung 02/10/2026):
  * khách nối gian xong thường về hai trang này xem lãi — đúng lúc đơn đã về và
- * con số lợi nhuận đang thiếu những đơn chưa có giá vốn. Điều kiện hiện = chính
+ * con số lợi nhuận đang tính những đơn chưa có giá vốn với giá vốn 0 đ (từ
+ * 04/11/2026; trước đó bị loại). Điều kiện hiện = chính
  * số `missingCost` trang đang hiển thị (kỳ + gian đang lọc), nên hộp và trang
  * không bao giờ nói hai con số khác nhau. Mỗi lần vào trang hỏi tối đa một lần;
  * chỉ người có quyền Cấu hình Giá vốn mới thấy.
@@ -130,7 +131,8 @@ export function MissingCostPrompt({
             </DialogTitle>
             <DialogDescription>
               Chưa có giá vốn thì trợ lý quảng cáo chưa biết chiến dịch nào đang
-              lỗ, và lợi nhuận kỳ đang xem chưa tính các đơn này.{" "}
+              lỗ, và lợi nhuận kỳ đang xem đang tính các đơn này với giá vốn 0 đ
+              (cao hơn thật).{" "}
               <span className="font-medium text-foreground">Nhập giá vốn sản phẩm</span>{" "}
               một lần để Hubsell tính hòa vốn từng SKU và lãi/lỗ từng đơn.
             </DialogDescription>

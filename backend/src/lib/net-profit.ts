@@ -8,9 +8,13 @@
  * Mobile xếp hai khối đó cạnh nhau nên khách thấy hai số "lợi nhuận ròng"
  * khác nhau trên một màn. Hàm này giữ đẳng thức ở MỘT chỗ:
  *
- *   LN trước thuế = LN gộp − Phí sàn − Chi phí vận hành − LN đơn thiếu giá vốn
- *                   + Thu vận hành khác
+ *   LN trước thuế = LN gộp − Phí sàn − Chi phí vận hành + Thu vận hành khác
  *   LN ròng       = LN trước thuế − Thuế bổ sung dự phòng(LN trước thuế)
+ *
+ * Đơn thiếu giá vốn tính như giá vốn 0 đ (anh Trung chốt 02/11/2026, áp
+ * 04/11/2026 — lib/finance-definitions.ts summarizeMissingCost): LN gộp đã là
+ * Doanh thu − Σ giá vốn (dòng thiếu góp 0 đ) nên KHÔNG còn bậc trừ "LN đơn
+ * thiếu giá vốn" như 30/09 → 04/11.
  *
  * Thuế bổ sung tính trên LN TRƯỚC thuế (hoặc doanh thu, theo cấu hình shop) —
  * nhận qua callback để không lặp công thức vòng.
@@ -19,16 +23,11 @@ export function netProfitAfterProvision(input: {
   grossProfit: number;
   platformFee: number;
   operatingExpense: number;
-  excludedProfit: number;
   operatingIncome: number;
   additionalTaxOf: (provisionalProfit: number) => number;
 }): { provisionalProfit: number; additionalTax: number; netProfit: number } {
   const provisionalProfit =
-    input.grossProfit -
-    input.platformFee -
-    input.operatingExpense -
-    input.excludedProfit +
-    input.operatingIncome;
+    input.grossProfit - input.platformFee - input.operatingExpense + input.operatingIncome;
   const additionalTax = input.additionalTaxOf(provisionalProfit);
   return { provisionalProfit, additionalTax, netProfit: provisionalProfit - additionalTax };
 }

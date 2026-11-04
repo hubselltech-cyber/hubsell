@@ -35,23 +35,46 @@ export function isLossOrder(r: { profitAfterTax: number }): boolean {
 }
 
 /**
- * ĐƠN CHƯA CÓ GIÁ VỐN bị loại khỏi LỢI NHUẬN nhưng vẫn nằm trong DOANH THU (anh
- * Trung chốt 30/09/2026): thiếu giá vốn thì "lợi nhuận" của đơn thực chất là
- * nguyên tiền về, cộng vào làm lãi phình. Trả số đơn + phần lợi nhuận bị loại
- * để báo cáo nói rõ "X đơn chưa có giá vốn nên không được tính vào lợi nhuận"
- * và để đẳng thức đóng: Doanh thu − Chi phí − excludedProfit = Lợi nhuận.
+ * ĐƠN CHƯA CÓ GIÁ VỐN — định nghĩa anh Trung chốt 02/11/2026, áp mã 04/11/2026
+ * (docs/TAI-CHINH-GIA-VON-0-ROI-ROAS-KHAO-SAT-02-11.md mục 8.1):
+ *
+ *   · Lợi nhuận KỲ (Tổng quan, Dòng tiền, Lãi/Lỗ, Thuế bổ sung, Trợ lý) = Σ lợi
+ *     nhuận MỌI đơn tính doanh thu — đơn thiếu giá vốn tính như GIÁ VỐN 0 đ
+ *     (dòng thiếu đã góp 0 đ vốn trong computePnlRow, sổ cái không đổi).
+ *     Đẳng thức mọi trang: Doanh thu − Chi phí = Lợi nhuận.
+ *   · Cờ `missingCostPrice` GIỮ để ĐẾM + NHẮC nhập giá vốn ("N đơn chưa có giá
+ *     vốn — đang tính với giá vốn 0 đ"), không còn trừ ra khỏi lợi nhuận.
+ *   · ROI/ROAS hòa vốn, biên lãi quảng cáo KHÔNG đổi: vẫn gạt đơn có cờ khỏi tử
+ *     lẫn mẫu (lib/ads-margin.ts, lib/tiktok-breakeven.ts đọc cờ riêng từ sổ).
+ *
+ * Trước đó (30/09/2026 → 04/11/2026): đơn thiếu giá vốn bị LOẠI khỏi lợi nhuận
+ * (Doanh thu − Chi phí − excludedProfit = Lợi nhuận). Lý do đổi + số đo ở docs trên.
+ *
+ * Hàm trả số đơn + Σ lợi nhuận (đã tính với giá vốn 0) của các đơn đó — chỉ để
+ * đếm/tham khảo nội bộ (HQ, Trợ lý), KHÔNG in ra màn khách (anh bỏ dòng "lãi
+ * tạm tính" 30/10/2026). API khách vẫn trả `missingCost.excludedProfit = 0` để
+ * mobile cũ (1.4.0/1.4.1 chưa OTA) tự đóng bậc thác nước.
  */
 export function summarizeMissingCost(
   rows: { missingCostPrice: boolean; profitAfterTax: number }[]
-): { orderCount: number; excludedProfit: number } {
+): { orderCount: number; profitAtZeroCost: number } {
   let orderCount = 0;
-  let excludedProfit = 0;
+  let profitAtZeroCost = 0;
   for (const r of rows) {
     if (!r.missingCostPrice) continue;
     orderCount += 1;
-    excludedProfit += r.profitAfterTax;
+    profitAtZeroCost += r.profitAfterTax;
   }
-  return { orderCount, excludedProfit };
+  return { orderCount, profitAtZeroCost };
+}
+
+/**
+ * Hợp đồng API cho màn khách (web + mobile): giữ tên trường `excludedProfit`
+ * nhưng LUÔN 0 từ 04/11/2026 — không còn phần lợi nhuận nào bị loại. Mobile
+ * 1.4.0/1.4.1 dựng bậc "Thiếu vốn" với amount 0 → WaterfallChart tự bỏ bậc.
+ */
+export function missingCostApiSummary(orderCount: number): { orderCount: number; excludedProfit: 0 } {
+  return { orderCount, excludedProfit: 0 };
 }
 
 /**

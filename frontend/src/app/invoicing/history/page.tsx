@@ -610,7 +610,7 @@ export default function TaxHistoryPage() {
               <p className={cn(TEXT_SUB, "flex items-center gap-1 px-1 text-amber-700")}>
                 <AlertTriangle className="size-3.5 shrink-0" />
                 {formatNumber(s?.additionalTaxMissingCost?.orderCount ?? 0)} đơn chưa có giá vốn
-                nên chưa tính vào thuế bổ sung.
+                đang tính với giá vốn 0 đ trong thuế bổ sung — nhập giá vốn để số dự phòng đúng.
               </p>
             )}
 

@@ -18,7 +18,7 @@
 import { ShippingStatus } from "@prisma/client";
 import { toBusinessDateKey } from "./date-range";
 import { countsAsRevenue, isReturning } from "./finance-definitions";
-import type { LedgerGroupTotals, LedgerSummary } from "./order-ledger";
+import type { LedgerSummary } from "./order-ledger";
 import type { PnlRow } from "./pnl-formula";
 
 function pct(amount: number, total: number): number {
@@ -195,14 +195,18 @@ export interface CashFlowTotals {
   active: GrossDeductionTotals & {
     count: number;
     costSnapshot: number;
-    /** Đơn chưa có giá vốn: đếm + phần lợi nhuận bị loại (anh Trung chốt 30/09/2026). */
+    /**
+     * Đơn chưa có giá vốn: đếm để nhắc nhập + Σ lợi nhuận của chúng (đã tính với
+     * giá vốn 0 — tham khảo nội bộ, KHÔNG trừ khỏi lợi nhuận từ 04/11/2026,
+     * lib/finance-definitions.ts summarizeMissingCost).
+     */
     missingCostCount: number;
-    missingCostExcludedProfit: number;
+    missingCostProfit: number;
   };
-  /** Đơn tính doanh thu đã quyết toán. profitAfterTaxWithCost = Σ profitAfterTax của đơn CÓ giá vốn. */
-  settled: { count: number; actualPayout: number; platformTax: number; platformRevenue: number; profitAfterTaxWithCost: number };
+  /** Đơn tính doanh thu đã quyết toán. profitAfterTax = Σ profitAfterTax MỌI đơn (đơn thiếu giá vốn = giá vốn 0). */
+  settled: { count: number; actualPayout: number; platformTax: number; platformRevenue: number; profitAfterTax: number };
   /** Đơn tính doanh thu chờ quyết toán. */
-  pending: { count: number; netRevenue: number; platformTax: number; platformRevenue: number; profitAfterTaxWithCost: number };
+  pending: { count: number; netRevenue: number; platformTax: number; platformRevenue: number; profitAfterTax: number };
   /** Đơn tính doanh thu ở trạng thái Đã giao. platformFee = CĐ + thanh toán + dịch vụ + PiShip + affiliate. */
   delivered: { count: number; revenueGross: number; costSnapshot: number; platformFee: number };
   /** Σ feeGmvMax ≠ 0 theo gian (đơn tính doanh thu) — gian bị sàn thu GMV Max theo đơn. */
@@ -225,7 +229,7 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
     count: 0,
     costSnapshot: 0,
     missingCostCount: 0,
-    missingCostExcludedProfit: 0,
+    missingCostProfit: 0,
   } as CashFlowTotals["active"];
   for (const c of GROSS_DEDUCTION_COLUMNS) active[c] = 0;
   const t: CashFlowTotals = {
@@ -233,8 +237,8 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
     cancelled: { count: 0, revenueGross: 0 },
     returning: { count: 0, revenueGross: 0 },
     active,
-    settled: { count: 0, actualPayout: 0, platformTax: 0, platformRevenue: 0, profitAfterTaxWithCost: 0 },
-    pending: { count: 0, netRevenue: 0, platformTax: 0, platformRevenue: 0, profitAfterTaxWithCost: 0 },
+    settled: { count: 0, actualPayout: 0, platformTax: 0, platformRevenue: 0, profitAfterTax: 0 },
+    pending: { count: 0, netRevenue: 0, platformTax: 0, platformRevenue: 0, profitAfterTax: 0 },
     delivered: { count: 0, revenueGross: 0, costSnapshot: 0, platformFee: 0 },
     gmvMaxByChannelId: new Map(),
     cogsByChannelName: new Map(),
@@ -257,15 +261,15 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
     active.costSnapshot += r.costSnapshot;
     if (r.missingCostPrice) {
       active.missingCostCount += 1;
-      active.missingCostExcludedProfit += r.profitAfterTax;
+      active.missingCostProfit += r.profitAfterTax;
     }
-    const profitWithCost = r.missingCostPrice ? 0 : r.profitAfterTax;
+    // Đơn thiếu giá vốn tính như giá vốn 0 (04/11/2026) — cộng nguyên profitAfterTax.
     if (r.isSettled) {
       t.settled.count += 1;
       t.settled.actualPayout += r.actualPayout;
       t.settled.platformTax += r.platformTax;
       t.settled.platformRevenue += r.platformRevenue;
-      t.settled.profitAfterTaxWithCost += profitWithCost;
+      t.settled.profitAfterTax += r.profitAfterTax;
     } else {
       // "Chờ quyết toán" = sàn chưa giải ngân: đang đi đường HOẶC đã giao
       // nhưng chưa đối soát — đúng trục isSettled của Lãi/Lỗ.
@@ -273,7 +277,7 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
       t.pending.netRevenue += r.netRevenue;
       t.pending.platformTax += r.platformTax;
       t.pending.platformRevenue += r.platformRevenue;
-      t.pending.profitAfterTaxWithCost += profitWithCost;
+      t.pending.profitAfterTax += r.profitAfterTax;
     }
     if (r.shippingStatus === ShippingStatus.DELIVERED) {
       t.delivered.count += 1;
@@ -304,18 +308,17 @@ export interface LedgerCashFlowBreakdown {
  *   all → mẫu số; cancelled; returning (không hủy AND đang hoàn/trả);
  *   active (countsAsRevenue); settled/pending (active × isSettled);
  *   delivered (active AND DELIVERED).
- * "Σ profitAfterTax của đơn CÓ giá vốn" = profitAfterTax − missingCostExcludedProfit.
+ * Lợi nhuận nhóm = Σ profitAfterTax của sổ (đơn thiếu giá vốn = giá vốn 0, 04/11/2026).
  */
 export function cashFlowTotalsFromLedger(
   s: LedgerSummary,
   b: LedgerCashFlowBreakdown
 ): CashFlowTotals {
-  const withCost = (g: LedgerGroupTotals) => g.profitAfterTax - g.missingCostExcludedProfit;
   const active = {
     count: s.active.count,
     costSnapshot: s.active.costSnapshot,
     missingCostCount: s.active.missingCostCount,
-    missingCostExcludedProfit: s.active.missingCostExcludedProfit,
+    missingCostProfit: s.active.missingCostProfit,
   } as CashFlowTotals["active"];
   for (const c of GROSS_DEDUCTION_COLUMNS) active[c] = s.active[c];
   const revenueByDay = new Map<string, number>();
@@ -334,14 +337,14 @@ export function cashFlowTotalsFromLedger(
       actualPayout: s.settled.actualPayout,
       platformTax: s.settled.platformTax,
       platformRevenue: s.settled.platformRevenue,
-      profitAfterTaxWithCost: withCost(s.settled),
+      profitAfterTax: s.settled.profitAfterTax,
     },
     pending: {
       count: s.pending.count,
       netRevenue: s.pending.netRevenue,
       platformTax: s.pending.platformTax,
       platformRevenue: s.pending.platformRevenue,
-      profitAfterTaxWithCost: withCost(s.pending),
+      profitAfterTax: s.pending.profitAfterTax,
     },
     delivered: {
       count: s.delivered.count,

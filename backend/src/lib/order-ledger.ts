@@ -487,9 +487,12 @@ export const LEDGER_GROUP_KEYS = Object.keys(LEDGER_GROUPS) as LedgerGroupKey[];
 /** Tổng một nhóm: đếm + Σ từng cột tiền + vài chỉ số đếm phụ. */
 export interface LedgerGroupTotals extends Record<OrderLedgerMoneyColumn, number> {
   count: number;
-  /** Số đơn chưa có giá vốn và phần lợi nhuận của chúng (bị loại khỏi lợi nhuận). */
+  /**
+   * Số đơn chưa có giá vốn và Σ lợi nhuận của chúng (đã tính với giá vốn 0). Từ
+   * 04/11/2026 KHÔNG trừ khỏi lợi nhuận (lib/finance-definitions.ts) — chỉ đếm để nhắc.
+   */
   missingCostCount: number;
-  missingCostExcludedProfit: number;
+  missingCostProfit: number;
   lossCount: number;
   returnCount: number;
   totalQuantity: number;
@@ -501,7 +504,7 @@ export function emptyGroupTotals(): LedgerGroupTotals {
   const t = {
     count: 0,
     missingCostCount: 0,
-    missingCostExcludedProfit: 0,
+    missingCostProfit: 0,
     lossCount: 0,
     returnCount: 0,
     totalQuantity: 0,
@@ -525,7 +528,7 @@ export function summarizeLedgerRowsInMemory(rows: OrderLedgerRow[]): LedgerSumma
       t.totalQuantity += r.totalQuantity;
       if (r.missingCostPrice) {
         t.missingCostCount += 1;
-        t.missingCostExcludedProfit = round2(t.missingCostExcludedProfit + r.profitAfterTax);
+        t.missingCostProfit = round2(t.missingCostProfit + r.profitAfterTax);
       }
       if (r.isLoss) t.lossCount += 1;
       if (r.returnType !== null) t.returnCount += 1;

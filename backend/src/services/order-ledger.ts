@@ -542,7 +542,7 @@ export async function ledgerSummary(
     selects.push(`count(*) FILTER (WHERE ${cond}) AS "${g}__count"`);
     selects.push(`count(*) FILTER (WHERE ${cond} AND "missingCostPrice") AS "${g}__missingCostCount"`);
     selects.push(
-      `COALESCE(sum("profitAfterTax") FILTER (WHERE ${cond} AND "missingCostPrice"), 0) AS "${g}__missingCostExcludedProfit"`
+      `COALESCE(sum("profitAfterTax") FILTER (WHERE ${cond} AND "missingCostPrice"), 0) AS "${g}__missingCostProfit"`
     );
     selects.push(`count(*) FILTER (WHERE ${cond} AND "isLoss") AS "${g}__lossCount"`);
     selects.push(`count(*) FILTER (WHERE ${cond} AND "returnType" IS NOT NULL) AS "${g}__returnCount"`);
@@ -804,7 +804,7 @@ export interface LedgerCompareDiff {
 export function diffLedgerSummaries(sql: LedgerSummary, mem: LedgerSummary): LedgerCompareDiff[] {
   const out: LedgerCompareDiff[] = [];
   const metrics = [
-    "count", "missingCostCount", "missingCostExcludedProfit", "lossCount", "returnCount", "totalQuantity",
+    "count", "missingCostCount", "missingCostProfit", "lossCount", "returnCount", "totalQuantity",
     ...ORDER_LEDGER_MONEY_COLUMNS,
   ] as const;
   for (const g of LEDGER_GROUP_KEYS) {
@@ -1084,7 +1084,9 @@ export async function ledgerPnlSummary(
   opts: { byDaySince?: string } = {}
 ): Promise<PnlSummaryTotals> {
   const where = ledgerPnlWhere(scope, range, filter);
-  const profit = Prisma.raw(`COALESCE(sum("profitAfterTax") FILTER (WHERE NOT "missingCostPrice"), 0)`);
+  // Lợi nhuận = Σ profitAfterTax MỌI đơn khớp lọc — đơn thiếu giá vốn tính như giá
+  // vốn 0 (04/11/2026, lib/finance-definitions.ts); trước đó FILTER (WHERE NOT "missingCostPrice").
+  const profit = Prisma.raw(`COALESCE(sum("profitAfterTax"), 0)`);
   const returnCount = Prisma.raw(`count(*) FILTER (WHERE "returnType" IS NOT NULL)`);
   const returnLoss = Prisma.raw(
     `COALESCE(sum("returnLossCost" + "returnLossPlatformKept" + "returnLossRefund") FILTER (WHERE "returnType" IS NOT NULL), 0)`
@@ -1098,9 +1100,9 @@ export async function ledgerPnlSummary(
              COALESCE(sum("refundedAmount"), 0) AS "refundedAmount",
              COALESCE(sum("revenueGross"), 0) AS "revenueGross",
              COALESCE(sum("platformTax"), 0) AS "platformTax",
-             ${profit} AS "profitWithCost",
+             ${profit} AS "profit",
              count(*) FILTER (WHERE "missingCostPrice") AS "missingCostCount",
-             COALESCE(sum("profitAfterTax") FILTER (WHERE "missingCostPrice"), 0) AS "missingCostExcludedProfit",
+             COALESCE(sum("profitAfterTax") FILTER (WHERE "missingCostPrice"), 0) AS "missingCostProfit",
              COALESCE(sum("returnLossCost") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlCost",
              COALESCE(sum("returnLossPlatformKept") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlKept",
              COALESCE(sum("returnLossRefund") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlRefund"
@@ -1128,9 +1130,9 @@ export async function ledgerPnlSummary(
   out.refundedAmount = num("refundedAmount");
   out.revenueGross = num("revenueGross");
   out.platformTax = num("platformTax");
-  out.profitWithCost = num("profitWithCost");
+  out.profit = num("profit");
   out.missingCostCount = num("missingCostCount");
-  out.missingCostExcludedProfit = num("missingCostExcludedProfit");
+  out.missingCostProfit = num("missingCostProfit");
   out.returnLoss = { costLoss: num("rlCost"), platformKept: num("rlKept"), refundLoss: num("rlRefund") };
   for (const p of platforms) {
     out.byPlatform.set(p.key, {
@@ -1166,11 +1168,11 @@ export async function ledgerTaxReportTotals(
     SELECT count(*) AS "orderCount",
            count(*) FILTER (WHERE "isSettled") AS "settledCount",
            COALESCE(sum("revenueGross"), 0) AS "grossRevenue",
-           COALESCE(sum("profitAfterTax") FILTER (WHERE NOT "missingCostPrice"), 0) AS "profitWithCost",
+           COALESCE(sum("profitAfterTax"), 0) AS "profit",
            COALESCE(sum("platformTax") FILTER (WHERE "isSettled"), 0) AS "platformTaxActual",
            COALESCE(sum("platformRevenue") FILTER (WHERE NOT "isSettled"), 0) AS "unsettledPlatformRevenue",
            count(*) FILTER (WHERE "missingCostPrice") AS "missingCostCount",
-           COALESCE(sum("profitAfterTax") FILTER (WHERE "missingCostPrice"), 0) AS "missingCostExcludedProfit"
+           COALESCE(sum("profitAfterTax") FILTER (WHERE "missingCostPrice"), 0) AS "missingCostProfit"
     FROM "order_ledger"
     WHERE ${ledgerScopeSql(scope, range)}
       AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
@@ -1182,11 +1184,11 @@ export async function ledgerTaxReportTotals(
     orderCount: num("orderCount"),
     settledCount: num("settledCount"),
     grossRevenue: num("grossRevenue"),
-    profitWithCost: num("profitWithCost"),
+    profit: num("profit"),
     platformTaxActual: num("platformTaxActual"),
     unsettledPlatformRevenue: num("unsettledPlatformRevenue"),
     missingCostCount: num("missingCostCount"),
-    missingCostExcludedProfit: num("missingCostExcludedProfit"),
+    missingCostProfit: num("missingCostProfit"),
   };
 }
 

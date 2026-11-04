@@ -401,7 +401,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                   </Text>
                   <Text className="mt-2 text-[10px] text-slate-400" style={TABULAR}>
                     {missingCostOrders > 0
-                      ? `${groupVN(missingCostOrders)} đơn chưa có giá vốn, không tính lợi nhuận`
+                      ? `${groupVN(missingCostOrders)} đơn chưa có giá vốn — tạm tính giá vốn 0 đ`
                       : margin !== null
                         ? `Biên lợi nhuận ${margin}%`
                         : "Sau giá vốn & chi phí"}

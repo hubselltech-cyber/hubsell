@@ -325,7 +325,7 @@ export interface OverviewAnalytics {
   operatingIncome?: number;
   /** Thuế bổ sung dự phòng — bậc TRỪ cuối thác nước (backend cũ không trả). */
   additionalTax?: number;
-  /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+  /** Đơn chưa có giá vốn — đang tính với giá vốn 0 đ (04/11/2026); excludedProfit backend luôn trả 0. */
   missingCost?: { orderCount: number; excludedProfit: number };
   /** 14 ngày liền trước tính đến cuối kỳ — xem "Hôm nay" vẫn có đường sóng. */
   trend: AnalyticsTrendPoint[];
@@ -371,7 +371,7 @@ export interface AnalyticsResponse {
     profit: {
       total: number;
       items: BreakdownItem[];
-      /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận. Backend cũ có thể vắng. */
+      /** Đơn chưa có giá vốn — đang tính với giá vốn 0 đ (excludedProfit luôn 0 từ 04/11/2026). Backend cũ có thể vắng. */
       missingCost?: { orderCount: number; excludedProfit: number };
     };
   };

@@ -19,7 +19,7 @@ import { netProfitAfterProvision } from "../lib/net-profit";
 // Từ 30/09/2026 các SUM đó đọc từ SỔ CÁI ĐƠN (kết quả computePnlRow đã ghi
 // xuống database — docs/SO-CAI-DON.md). Đường cũ kéo đơn đã gỡ 14/10/2026.
 import { platformAdsSpend } from "../services/ads-spend";
-import { RETURNING_STATUSES } from "../lib/finance-definitions";
+import { missingCostApiSummary, RETURNING_STATUSES } from "../lib/finance-definitions";
 import {
   gmvMaxRowsOf,
   overviewTotalsFromLedger,
@@ -293,20 +293,18 @@ router.get("/", async (req: AuthRequest, res, next) => {
       else operatingVariableExpense += Number(e.amount);
     }
 
-    // ĐƠN CHƯA CÓ GIÁ VỐN không tính vào lợi nhuận (anh Trung chốt 30/09/2026),
-    // vẫn nằm trong doanh thu / phí sàn. Thác nước thêm một bậc để vẫn đóng.
-    const missingCost = seesFinancials
-      ? { orderCount: active.missingCostCount, excludedProfit: active.missingCostExcludedProfit }
-      : { orderCount: 0, excludedProfit: 0 };
+    // ĐƠN CHƯA CÓ GIÁ VỐN tính như giá vốn 0 (anh Trung chốt 02/11/2026, áp 04/11 —
+    // lib/finance-definitions.ts): không còn bậc "Thiếu vốn" trên thác nước; chỉ
+    // trả số đơn để UI nhắc nhập giá vốn (excludedProfit luôn 0 cho mobile cũ).
+    const missingCost = missingCostApiSummary(seesFinancials ? active.missingCostCount : 0);
 
-    // Lợi nhuận ròng = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động − phần lợi
-    // nhuận của đơn chưa có giá vốn + Thu vận hành khác − Thuế bổ sung dự phòng
-    // (lib/net-profit.ts — cùng đẳng thức với cột Lợi nhuận của Báo cáo dòng tiền).
+    // Lợi nhuận ròng = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động + Thu vận hành
+    // khác − Thuế bổ sung dự phòng (lib/net-profit.ts — cùng đẳng thức với cột
+    // Lợi nhuận của Báo cáo dòng tiền).
     const { additionalTax, netProfit } = netProfitAfterProvision({
       grossProfit,
       platformFee: totalPlatformFee,
       operatingExpense: totalOperatingExpense,
-      excludedProfit: missingCost.excludedProfit,
       operatingIncome,
       additionalTaxOf: (profit) =>
         taxCfg ? additionalTaxOn({ grossRevenue: totalRevenue, profit }, taxCfg) : 0,
@@ -560,7 +558,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       additionalTax,
       // Phần quảng cáo sàn tự đồng bộ ĐÃ nằm trong totalOperatingExpense + nhóm ADS.
       platformAdsSpend: platformAdsTotal,
-      missingCost, // đơn chưa có giá vốn — bị loại khỏi lợi nhuận, UI ghi rõ số đơn
+      missingCost, // đơn chưa có giá vốn — đang tính với giá vốn 0, UI ghi rõ số đơn để nhắc nhập
       expensesByCategory,
       revenueByDay,
       trend,

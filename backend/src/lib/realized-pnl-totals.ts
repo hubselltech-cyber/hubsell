@@ -54,10 +54,14 @@ export interface PnlSummaryTotals {
   refundedAmount: number;
   revenueGross: number;
   platformTax: number;
-  /** Σ profitAfterTax của đơn CÓ giá vốn (đơn thiếu giá vốn bị loại — chốt 30/09/2026). */
-  profitWithCost: number;
+  /**
+   * Σ profitAfterTax của MỌI đơn khớp lọc — đơn thiếu giá vốn tính như giá vốn 0
+   * (anh Trung chốt 02/11/2026, áp 04/11; trước đó 30/09 → 04/11 bị loại).
+   */
+  profit: number;
+  /** Đơn chưa có giá vốn: đếm để nhắc + Σ lợi nhuận của chúng (tham khảo, không trừ). */
   missingCostCount: number;
-  missingCostExcludedProfit: number;
+  missingCostProfit: number;
   /** Thất thu đơn hoàn — 3 khoản của computeReturnLoss, chỉ trên đơn có hoàn/trả. */
   returnLoss: { costLoss: number; platformKept: number; refundLoss: number };
   byPlatform: Map<string, { count: number; profit: number; returnCount: number; returnLoss: number }>;
@@ -74,9 +78,9 @@ export function emptyPnlSummaryTotals(): PnlSummaryTotals {
     refundedAmount: 0,
     revenueGross: 0,
     platformTax: 0,
-    profitWithCost: 0,
+    profit: 0,
     missingCostCount: 0,
-    missingCostExcludedProfit: 0,
+    missingCostProfit: 0,
     returnLoss: { costLoss: 0, platformKept: 0, refundLoss: 0 },
     byPlatform: new Map(),
     byDay: new Map(),
@@ -100,7 +104,8 @@ function addOrder(
     rl: { costLoss: number; platformKept: number; refundLoss: number };
   }
 ) {
-  const profit = o.missingCostPrice ? 0 : o.profitAfterTax;
+  // Đơn thiếu giá vốn tính như giá vốn 0 (04/11/2026) — cộng nguyên profitAfterTax.
+  const profit = o.profitAfterTax;
   const rlTotal = o.rl.costLoss + o.rl.platformKept + o.rl.refundLoss;
   t.count += 1;
   if (o.isSettled) t.settledCount += 1;
@@ -108,10 +113,10 @@ function addOrder(
   t.refundedAmount += o.refundedAmount;
   t.revenueGross += o.revenueGross;
   t.platformTax += o.platformTax;
-  t.profitWithCost += profit;
+  t.profit += profit;
   if (o.missingCostPrice) {
     t.missingCostCount += 1;
-    t.missingCostExcludedProfit += o.profitAfterTax;
+    t.missingCostProfit += o.profitAfterTax;
   }
   const b = t.byPlatform.get(o.channelName) ?? { count: 0, profit: 0, returnCount: 0, returnLoss: 0 };
   b.count += 1;

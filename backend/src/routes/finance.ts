@@ -58,7 +58,7 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
-import { countsAsRevenue, summarizeMissingCost } from "../lib/finance-definitions";
+import { countsAsRevenue, missingCostApiSummary, summarizeMissingCost } from "../lib/finance-definitions";
 import {
   computePnlRow,
   computeReturnLoss,
@@ -328,7 +328,8 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
  *                          hoặc lợi nhuận) — khoản ngoài sàn nên trừ riêng.
  *   - totalProfitAfterTax = totalProfit − additionalTax.
  * Bất biến: Σ daily.profit = Σ byPlatform.profit = totalProfit = Σ cột Lợi
- * nhuận của các dòng ĐÃ CÓ GIÁ VỐN (đơn chưa có giá vốn bị loại, 30/09/2026).
+ * nhuận của MỌI dòng (đơn chưa có giá vốn tính như giá vốn 0 — anh Trung chốt
+ * 02/11/2026, áp 04/11; từ 30/09 tới 04/11 bị loại).
  */
 export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
   const byPlatform: Record<
@@ -343,11 +344,11 @@ export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
   let totalProfit = 0;
   let totalGrossRevenue = 0;
   let totalPlatformTax = 0;
-  // Đơn chưa có giá vốn: vẫn đếm đơn, doanh thu, thuế, hoàn — nhưng lợi nhuận
-  // của nó KHÔNG cộng vào trục nào (anh Trung chốt 30/09/2026).
+  // Đơn chưa có giá vốn: đếm để nhắc nhập; lợi nhuận của nó cộng như giá vốn 0
+  // (anh Trung chốt 02/11/2026, áp 04/11 — lib/finance-definitions.ts; 30/09 → 04/11 bị loại).
   const missingCost = summarizeMissingCost(rows);
   for (const r of rows) {
-    const profit = r.missingCostPrice ? 0 : r.profitAfterTax;
+    const profit = r.profitAfterTax;
     totalProfit += profit;
     totalGrossRevenue += r.revenueGross;
     totalPlatformTax += r.platformTax;
@@ -574,9 +575,9 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 
     // ===== TÓM TẮT THEO SÀN + THẤT THU ĐƠN HOÀN + CHUỖI NGÀY + TỔNG KỲ =====
     // (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại) — mọi trục cùng MỘT
-    // cột lợi nhuận với bảng (profitAfterTax của đơn đã có giá vốn).
+    // cột lợi nhuận với bảng (profitAfterTax mọi đơn; đơn thiếu giá vốn = giá vốn 0, 04/11/2026).
     const t = data.totals;
-    const totalProfit = t.profitWithCost;
+    const totalProfit = t.profit;
     const additionalTax = additionalTaxOn(
       { grossRevenue: t.revenueGross, profit: totalProfit },
       taxCfg
@@ -640,11 +641,9 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         totalPlatformTax: t.platformTax,
         additionalTax,
         totalProfitAfterTax: totalProfit - additionalTax,
-        // Đơn chưa có giá vốn: bị loại khỏi lợi nhuận — UI ghi rõ số đơn.
-        missingCost: {
-          orderCount: t.missingCostCount,
-          excludedProfit: t.missingCostExcludedProfit,
-        },
+        // Đơn chưa có giá vốn: đang tính với giá vốn 0 — UI ghi rõ số đơn để nhắc nhập;
+        // excludedProfit luôn 0 (hợp đồng mobile cũ, lib/finance-definitions.ts).
+        missingCost: missingCostApiSummary(t.missingCostCount),
         taxSettings: {
           calculationBase: taxCfg.calculationBase,
           platformTaxPercent: PLATFORM_TAX_RATE * 100,
@@ -2787,22 +2786,19 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // Thực tế = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn ĐÃ QUYẾT TOÁN
     // trên Lãi/Lỗ − chi phí vận hành nhập tay. KHÔNG gồm THU vận hành (tách
     // dòng riêng), không trừ phí sàn lần nữa (netRevenue đã trừ).
-    // ĐƠN CHƯA CÓ GIÁ VỐN không tính vào lợi nhuận (anh Trung chốt 30/09/2026) —
-    // vẫn nằm trong Doanh thu. Đẳng thức: Doanh thu − Chi phí − phần lợi nhuận
-    // bị loại (missingCost.excludedProfit) + Thu khác − Thuế dự phòng = LN ròng.
-    const missingCost = {
-      orderCount: active.missingCostCount,
-      excludedProfit: active.missingCostExcludedProfit,
-    };
+    // ĐƠN CHƯA CÓ GIÁ VỐN tính như giá vốn 0 (anh Trung chốt 02/11/2026, áp 04/11 —
+    // lib/finance-definitions.ts; 30/09 → 04/11 bị loại). Đẳng thức: Doanh thu −
+    // Chi phí + Thu khác − Thuế dự phòng = LN ròng. Số đơn vẫn trả để UI nhắc nhập.
+    const missingCost = missingCostApiSummary(active.missingCostCount);
     const actualProfit =
-      settled.profitAfterTaxWithCost -
+      settled.profitAfterTax -
       variableExpenseTotal -
       fixedExpenseTotal -
       adsSpendTotal;
     // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán.
     // Nhóm này CHƯA bị trừ phí/thuế nào (bucket = 0, chờ đối soát) — cột Chi
     // phí cũng không chứa khoản ước tính nào của nhóm.
-    const expectedProfit = pending.profitAfterTaxWithCost;
+    const expectedProfit = pending.profitAfterTax;
     // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến + THU vận hành khác (chốt
     // chủ shop 31/07 chiều: khoản thu nhập tay PHẢI cộng vào tổng lợi nhuận —
     // dời từ cuối cột Doanh thu về lại cột Lợi nhuận làm dòng thứ 3). Đẳng
@@ -3012,7 +3008,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         // thác nước: Doanh thu − Chi phí + Thu khác − Thuế dự phòng = LN ròng.
         profit: {
           total: netProfitAfterTax,
-          // Đơn chưa có giá vốn: bị loại khỏi lợi nhuận — UI ghi rõ số đơn.
+          // Đơn chưa có giá vốn: đang tính với giá vốn 0 — UI ghi rõ số đơn để nhắc nhập.
           missingCost,
           items: [
             // % ở đây là BIÊN LỢI NHUẬN (lãi / dòng tiền tương ứng),

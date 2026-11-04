@@ -113,9 +113,9 @@ function waterfallSteps(a: OverviewAnalytics): WaterfallStep[] {
     { key: "tax", short: "Thuế sàn", amount: tax, hue: "rose" },
     { key: "ads", short: "Ads", amount: adsExpense, hue: "amber" },
     { key: "ops", short: "Vận hành", amount: operatingExpense, hue: "amber" },
-    ...(a.missingCost && a.missingCost.orderCount > 0
-      ? [{ key: "missingCost", short: "Thiếu vốn", amount: a.missingCost.excludedProfit, hue: "amber" as const }]
-      : []),
+    // Đơn chưa có giá vốn tính như giá vốn 0 (anh chốt 02/11/2026, áp 04/11): bỏ bậc
+    // "Thiếu vốn" (30/09 → 04/11) — backend trả excludedProfit = 0 nên bản cũ chưa OTA
+    // cũng tự đóng thác (WaterfallChart bỏ bậc 0); số đơn thiếu nhắc ở thẻ Lợi nhuận.
     // Thu vận hành khác = bậc CỘNG (amount âm → chart vẽ "+" xanh); thuế bổ sung
     // dự phòng = bậc trừ cuối — y web, để Lãi ròng dưới thác = thẻ Lợi nhuận
     // (26/10/2026). amount 0 thì chart tự bỏ bậc.
@@ -465,7 +465,7 @@ export function FinancePage() {
                   ) : null}
                   {openTile === "profit" && b.profit.missingCost && b.profit.missingCost.orderCount > 0 ? (
                     <Text className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                      {groupVN(b.profit.missingCost.orderCount)} đơn chưa có giá vốn nên không được tính vào lợi nhuận. % mỗi dòng là biên lợi nhuận trên dòng tiền tương ứng, không phải tỷ trọng.
+                      {groupVN(b.profit.missingCost.orderCount)} đơn chưa có giá vốn — đang tính với giá vốn 0 đ, nhập giá vốn để số đúng. % mỗi dòng là biên lợi nhuận trên dòng tiền tương ứng, không phải tỷ trọng.
                     </Text>
                   ) : null}
                 </Card>

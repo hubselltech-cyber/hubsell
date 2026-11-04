@@ -45,9 +45,13 @@ export interface OverviewTotals {
     totalQuantity: number;
     /** SÀN KHẤU TRỪ = Σ (Giá trị đơn − "Tổng tiền" sàn báo). */
     platformDeduction: number;
-    /** Đơn chưa có giá vốn: đếm + phần lợi nhuận bị loại (anh Trung chốt 30/09/2026). */
+    /**
+     * Đơn chưa có giá vốn: đếm để nhắc nhập + Σ lợi nhuận của chúng (đã tính
+     * với giá vốn 0). Từ 04/11/2026 KHÔNG trừ khỏi lợi nhuận (anh Trung chốt
+     * 02/11, lib/finance-definitions.ts summarizeMissingCost) — chỉ tham khảo nội bộ.
+     */
     missingCostCount: number;
-    missingCostExcludedProfit: number;
+    missingCostProfit: number;
   };
   /** Theo GIAN: số đơn, doanh thu, Σ phí GMV Max sàn thu theo đơn (≠ 0 → AdSpend gian đó chỉ tham chiếu). */
   byChannelId: Map<string, { count: number; revenueGross: number; feeGmvMax: number }>;
@@ -61,7 +65,7 @@ function emptyActive(): OverviewTotals["active"] {
     totalQuantity: 0,
     platformDeduction: 0,
     missingCostCount: 0,
-    missingCostExcludedProfit: 0,
+    missingCostProfit: 0,
   } as OverviewTotals["active"];
   for (const c of OVERVIEW_SUM_COLUMNS) a[c] = 0;
   return a;
@@ -83,7 +87,7 @@ export function overviewTotalsFromRows(pnlRows: PnlRow[]): OverviewTotals {
     for (const c of OVERVIEW_SUM_COLUMNS) active[c] += r[c];
     if (r.missingCostPrice) {
       active.missingCostCount += 1;
-      active.missingCostExcludedProfit += r.profitAfterTax;
+      active.missingCostProfit += r.profitAfterTax;
     }
     const ch = byChannelId.get(r.channelId) ?? { count: 0, revenueGross: 0, feeGmvMax: 0 };
     ch.count += 1;
@@ -117,7 +121,7 @@ export function overviewTotalsFromLedger(
   active.totalQuantity = s.active.totalQuantity;
   active.platformDeduction = s.active.platformDeduction;
   active.missingCostCount = s.active.missingCostCount;
-  active.missingCostExcludedProfit = s.active.missingCostExcludedProfit;
+  active.missingCostProfit = s.active.missingCostProfit;
   for (const c of OVERVIEW_SUM_COLUMNS) active[c] = s.active[c];
   return {
     cancelledCount: s.cancelled.count,

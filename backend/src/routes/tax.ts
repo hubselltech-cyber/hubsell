@@ -11,6 +11,7 @@ import type { AuthRequest } from "../middleware/auth";
 import { channelScope, type ChannelScope } from "../lib/channel-filter";
 import { parseDateRange, type DateRangeFilter } from "../lib/date-range";
 import type { TaxReportTotals } from "../lib/tax-totals";
+import { missingCostApiSummary } from "../lib/finance-definitions";
 import { ensureLedgerFresh, ledgerTaxReportTotals } from "../services/order-ledger";
 import {
   decideScopeFromPlatformReturn,
@@ -433,17 +434,15 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     const t = taxData.totals;
     const grossRevenue = t.grossRevenue;
     // Lợi nhuận ước tính của kỳ — cơ sở thuế bổ sung cho DN; cùng công thức
-    // chốt: Doanh thu thực tế − giá vốn. Đơn chưa có giá vốn KHÔNG vào lợi nhuận
-    // tính thuế bổ sung (anh Trung chốt 30/09/2026) — "lợi nhuận" của chúng là
-    // nguyên tiền về, tính thuế trên đó là trích lố. UI phải cảnh báo số đơn bị loại.
-    const profit = t.profitWithCost;
+    // chốt: Doanh thu thực tế − giá vốn. Đơn chưa có giá vốn tính như GIÁ VỐN 0
+    // (anh Trung chốt 02/11/2026, áp 04/11 — thuế đi theo cùng lợi nhuận kỳ, một
+    // đẳng thức; 30/09 → 04/11 bị loại). Hướng này trích DƯ (dè dặt) — UI vẫn
+    // cảnh báo số đơn đang tính với giá vốn 0 để khách nhập cho đúng.
+    const profit = t.profit;
     const platformTaxActual = t.platformTaxActual;
     const estimateBase = t.unsettledPlatformRevenue; // doanh thu thực tế (sau voucher) của đơn chưa quyết toán
     const settledCount = t.settledCount;
-    const missingCost = {
-      orderCount: t.missingCostCount,
-      excludedProfit: t.missingCostExcludedProfit,
-    };
+    const missingCost = missingCostApiSummary(t.missingCostCount);
     // 07/09: shop doanh nghiệp không bị sàn khấu trừ → ước tính = 0 (số thật
     // của đơn đã đối soát vẫn giữ — nếu sàn có trừ nhầm thì seller thấy để đi sửa hồ sơ thuế).
     const platformTaxEstimated = businessShop ? 0 : platformTaxOn(estimateBase);
@@ -470,8 +469,9 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           cfg.calculationBase === TaxCalculationBase.REVENUE
             ? grossRevenue
             : Math.max(0, profit),
-        // Đơn chưa có giá vốn bị loại khỏi thuế bổ sung. Chỉ có nghĩa khi thuế
-        // tính trên LỢI NHUẬN; tính trên doanh thu thì giá vốn không ảnh hưởng.
+        // Đơn chưa có giá vốn ĐANG TÍNH VỚI GIÁ VỐN 0 trong thuế bổ sung (04/11/2026;
+        // giữ tên trường, excludedProfit luôn 0). Chỉ có nghĩa khi thuế tính trên
+        // LỢI NHUẬN; tính trên doanh thu thì giá vốn không ảnh hưởng.
         additionalTaxMissingCost:
           cfg.calculationBase === TaxCalculationBase.REVENUE
             ? { orderCount: 0, excludedProfit: 0 }

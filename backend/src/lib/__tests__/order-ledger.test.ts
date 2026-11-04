@@ -238,7 +238,7 @@ describe("buildLedgerRows — dòng sổ đơn khớp computePnlRow, dòng hàng
     expect(order.returnLossCost).toBe(171000);
   });
 
-  it("thiếu giá vốn → cờ missingCostPrice (báo cáo loại khỏi lợi nhuận, giữ doanh thu)", () => {
+  it("thiếu giá vốn → cờ missingCostPrice (báo cáo đếm để nhắc nhập; lợi nhuận tính như giá vốn 0 từ 04/11/2026)", () => {
     const { order } = buildLedgerRows(
       mkOrder({ items: [{ id: "i1", price: D(369000), costPriceAtSale: D(0) }] })
     );

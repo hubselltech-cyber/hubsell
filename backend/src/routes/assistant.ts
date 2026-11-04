@@ -205,16 +205,16 @@ function pctDelta(current: number, previous: number): string | null {
 
 /**
  * Lãi ròng của một kỳ từ bộ tổng đơn tính doanh thu: Doanh thu − giá vốn − sàn
- * khấu trừ − phần lợi nhuận của đơn chưa có giá vốn (không tính vào lợi nhuận,
- * vẫn tính doanh thu) − chi phí vận hành − quảng cáo sàn.
+ * khấu trừ − chi phí vận hành − quảng cáo sàn. Đơn chưa có giá vốn tính như giá
+ * vốn 0 (anh Trung chốt 02/11/2026, áp 04/11 — lib/finance-definitions.ts), chỉ
+ * đếm để nhắc nhập; không còn trừ riêng như 30/09 → 04/11.
  */
 function netOf(t: OverviewTotals, opex: number, ads: number) {
   const a = t.active;
   return {
     orders: a.count,
     revenue: a.revenueGross,
-    net:
-      a.revenueGross - a.costSnapshot - a.platformDeduction - a.missingCostExcludedProfit - opex - ads,
+    net: a.revenueGross - a.costSnapshot - a.platformDeduction - opex - ads,
   };
 }
 
@@ -342,7 +342,7 @@ export async function buildPeriodReport(
     cur.orders === 0
       ? `${label} chưa có đơn phát sinh nào.`
       : `📊 Báo cáo ${label.toLowerCase()}: doanh thu ${fmtMoney(cur.revenue)}${revDelta ? ` (${revDelta} so kỳ trước)` : ""}, ${cur.net >= 0 ? "lãi ròng" : "lỗ"} ${fmtMoney(Math.abs(cur.net))}.`;
-  if (missing > 0) text += ` ⚠️ ${missing} đơn chưa có giá vốn nên không được tính vào lợi nhuận.`;
+  if (missing > 0) text += ` ⚠️ ${missing} đơn chưa có giá vốn — đang tính với giá vốn 0 đ, nhập giá vốn để số đúng.`;
 
   return {
     outcome: "answered",
@@ -439,19 +439,18 @@ const INTENTS: IntentDef[] = [
           })
         )._sum.amount ?? 0
       );
-      // Đơn chưa có giá vốn không tính vào lợi nhuận (vẫn tính doanh thu).
+      // Đơn chưa có giá vốn tính như giá vốn 0 (04/11/2026) — chỉ đếm để nhắc nhập.
       const missing = totals.active.missingCostCount;
-      const excludedProfit = totals.active.missingCostExcludedProfit;
       // Quảng cáo sàn trừ vào lợi nhuận — cùng luật Tổng quan / Báo cáo dòng tiền.
       const ads = (await platformAdsSpend(scope, period.range, gmvMaxRowsOf(totals))).total;
-      const net = revenue - cost - fee - excludedProfit - opex - ads;
+      const net = revenue - cost - fee - opex - ads;
 
       let text =
         orderCount === 0
           ? `${period.label} chưa có đơn phát sinh nào nên chưa có lãi/lỗ để tính.`
           : `${period.label} shop ${net >= 0 ? "lãi ròng" : "lỗ"} ${fmtMoney(Math.abs(net))} trên ${orderCount} đơn phát sinh.`;
       if (missing > 0) {
-        text += ` ⚠️ ${missing} đơn chưa có giá vốn nên không được tính vào lợi nhuận.`;
+        text += ` ⚠️ ${missing} đơn chưa có giá vốn — đang tính với giá vốn 0 đ, nhập giá vốn để số đúng.`;
       }
       return {
         outcome: "answered",
@@ -466,7 +465,7 @@ const INTENTS: IntentDef[] = [
                 { label: "Chi phí vận hành", value: fmtMoney(opex) },
                 ...(ads > 0 ? [{ label: "Quảng cáo sàn", value: fmtMoney(ads) }] : []),
                 ...(missing > 0
-                  ? [{ label: `Không tính ${missing} đơn chưa có giá vốn`, value: fmtMoney(excludedProfit) }]
+                  ? [{ label: `${missing} đơn chưa có giá vốn (giá vốn tạm 0 đ)`, value: "Nhập giá vốn" }]
                   : []),
                 {
                   label: "Lợi nhuận ròng",

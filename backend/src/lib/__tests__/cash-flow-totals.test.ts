@@ -178,11 +178,14 @@ describe("cashFlowTotals — đường sổ cái = đường kéo đơn từng �
     expect(fromRows.settled.count).toBe(4); // a, e, f, g
     expect(fromRows.pending.count).toBe(3); // b, b2, f2
     expect(fromRows.delivered.count).toBe(6); // active trừ b2 đang giao
-    // Đơn thiếu giá vốn: đếm ở cả hai trục, lợi nhuận bị loại khỏi *WithCost.
+    // Đơn thiếu giá vốn (f đã quyết toán, f2 chờ): đếm để nhắc; lợi nhuận cộng như
+    // giá vốn 0 (04/11/2026) → nhóm quyết toán gồm đủ a, e, f, g.
     expect(fromRows.active.missingCostCount).toBe(2);
-    expect(fromRows.settled.profitAfterTaxWithCost).toBe(
-      computePnlRow(ORDERS[0]).profitAfterTax + computePnlRow(ORDERS[5]).profitAfterTax + computePnlRow(ORDERS[8]).profitAfterTax
+    expect(fromRows.settled.profitAfterTax).toBe(
+      computePnlRow(ORDERS[0]).profitAfterTax + computePnlRow(ORDERS[5]).profitAfterTax +
+      computePnlRow(ORDERS[6]).profitAfterTax + computePnlRow(ORDERS[8]).profitAfterTax
     );
+    expect(computePnlRow(ORDERS[6]).missingCostPrice).toBe(true);
     // Chuỗi ngày theo GIỜ VN: đơn a/… 17:30Z ngày 10 → 11/09; đơn g 09:00Z → 20/09; b 02:00Z ngày 12 → 12/09.
     expect([...fromRows.revenueByDay.keys()].sort()).toEqual(["2026-09-11", "2026-09-12", "2026-09-20"]);
     expect(fromRows.cogsByChannelName.get("TIKTOK")).toBe(171000);

@@ -10,6 +10,7 @@ import {
   countsAsRevenue,
   isLossOrder,
   isReturning,
+  missingCostApiSummary,
   summarizeMissingCost,
 } from "../../lib/finance-definitions";
 
@@ -21,21 +22,25 @@ describe("isLossOrder — đơn lỗ là đơn có lãi < 0 (anh Trung chốt 30
   });
 });
 
-describe("summarizeMissingCost — đơn chưa có giá vốn bị loại khỏi lợi nhuận", () => {
-  it("đếm đúng số đơn và cộng đúng phần lợi nhuận bị loại", () => {
+describe("summarizeMissingCost — đơn chưa có giá vốn: đếm để nhắc, lợi nhuận tính như giá vốn 0 (04/11/2026)", () => {
+  it("đếm đúng số đơn và cộng đúng Σ lợi nhuận (giá vốn 0) của chúng — chỉ tham khảo, không trừ", () => {
     const s = summarizeMissingCost([
       { missingCostPrice: false, profitAfterTax: 45000 },
       { missingCostPrice: true, profitAfterTax: 176081 },
       { missingCostPrice: true, profitAfterTax: -2700 },
     ]);
-    expect(s).toEqual({ orderCount: 2, excludedProfit: 176081 - 2700 });
+    expect(s).toEqual({ orderCount: 2, profitAtZeroCost: 176081 - 2700 });
   });
 
   it("kỳ không có đơn thiếu giá vốn → 0 đơn, 0 đồng", () => {
     expect(summarizeMissingCost([{ missingCostPrice: false, profitAfterTax: 1 }])).toEqual({
       orderCount: 0,
-      excludedProfit: 0,
+      profitAtZeroCost: 0,
     });
+  });
+
+  it("hợp đồng API cho màn khách: giữ tên excludedProfit nhưng luôn 0 (mobile cũ tự đóng bậc thác nước)", () => {
+    expect(missingCostApiSummary(37)).toEqual({ orderCount: 37, excludedProfit: 0 });
   });
 });
 import { correctedDeliveredAt, deliveredAtFromPlatform } from "../../lib/delivered-at";

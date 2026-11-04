@@ -20,9 +20,11 @@ export function missingCostHref(range?: DateRange, channel?: ChannelFilterQuery)
 }
 
 /**
- * Dòng nhắc dùng chung dưới mọi con số LỢI NHUẬN: đơn chưa có giá vốn bị loại
- * khỏi lợi nhuận (vẫn nằm trong doanh thu) — anh Trung chốt 30/09/2026. Kỳ
- * không có đơn nào thiếu giá vốn thì không hiện gì.
+ * Dòng nhắc dùng chung dưới mọi con số LỢI NHUẬN: đơn chưa có giá vốn ĐANG TÍNH
+ * VỚI GIÁ VỐN 0 đ (anh Trung chốt 02/11/2026, áp 04/11 — backend
+ * lib/finance-definitions.ts; từ 30/09 tới 04/11 bị loại khỏi lợi nhuận). Câu
+ * này phải có mặt ở MỌI nơi in Lợi nhuận để khách biết số đang cao hơn thật
+ * chừng nào còn thiếu giá vốn. Kỳ không có đơn nào thiếu giá vốn thì không hiện gì.
  */
 export function MissingCostNote({
   summary,
@@ -37,8 +39,8 @@ export function MissingCostNote({
   if (!summary || summary.orderCount <= 0) return null;
   return (
     <span className={className}>
-      {formatNumber(summary.orderCount)} đơn chưa có giá vốn nên không được tính
-      vào lợi nhuận.{" "}
+      {formatNumber(summary.orderCount)} đơn chưa có giá vốn — đang tính với giá
+      vốn 0 đ.{" "}
       <Link href={href} className="underline underline-offset-2">
         Nhập giá vốn
       </Link>

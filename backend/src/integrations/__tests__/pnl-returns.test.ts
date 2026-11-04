@@ -502,18 +502,18 @@ describe("computePnlRow — đơn hủy doanh thu bằng 0 (anh Trung chốt 30/
   });
 });
 
-describe("summarizePnlRows — đơn chưa có giá vốn không tính vào lợi nhuận (anh Trung chốt 30/09/2026)", () => {
+describe("summarizePnlRows — đơn chưa có giá vốn tính như giá vốn 0 (anh Trung chốt 02/11/2026, áp 04/11)", () => {
   const costed = computePnlRow(mkOrder({ id: "a", orderCode: "A" })); // lãi 176.081 − 131.000
   const noCost = computePnlRow(
     mkOrder({ id: "b", orderCode: "B", items: [{ costPriceAtSale: D(0) }] })
-  ); // thiếu giá vốn: "lãi" = nguyên 176.081 tiền về
+  ); // thiếu giá vốn: lãi = nguyên 176.081 tiền về (giá vốn 0)
 
-  it("lợi nhuận chỉ cộng đơn đã có giá vốn; doanh thu vẫn tính cả hai", () => {
+  it("lợi nhuận cộng cả hai đơn (đơn thiếu giá vốn = giá vốn 0); vẫn đếm đơn thiếu để nhắc nhập", () => {
     const sm = summarizePnlRows([costed, noCost], DEFAULT_TAX_CONFIG);
     expect(noCost.missingCostPrice).toBe(true);
-    expect(sm.totalProfit).toBe(176081 - 131000);
+    expect(sm.totalProfit).toBe(176081 - 131000 + 176081);
     expect(sm.totalGrossRevenue).toBe(269000 * 2);
-    expect(sm.missingCost).toEqual({ orderCount: 1, excludedProfit: 176081 });
+    expect(sm.missingCost).toEqual({ orderCount: 1, profitAtZeroCost: 176081 });
   });
 
   it("ba trục vẫn khớp nhau: Σ ngày = Σ sàn = tổng kỳ", () => {

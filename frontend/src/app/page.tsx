@@ -126,18 +126,9 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN thu hộ)", short: "Thuế sàn", amount: analytics.totalPlatformTax, hue: "rose" },
     { key: "ads", label: "Chi phí quảng cáo", short: "Ads", amount: adsExpense, hue: "amber" },
     { key: "ops", label: "Chi phí vận hành (cố định + biến đổi)", short: "Vận hành", amount: operatingExpense, hue: "amber" },
-    // Đơn chưa có giá vốn không tính vào lợi nhuận (anh Trung 30/09/2026): phần
-    // "lãi" của chúng thực chất là nguyên tiền về → xén thêm một bậc để thác vẫn
-    // đóng. Kỳ không có đơn nào thiếu giá vốn thì không có bậc này.
-    ...(analytics.missingCost && analytics.missingCost.orderCount > 0
-      ? [{
-          key: "missingCost",
-          label: `${formatNumber(analytics.missingCost.orderCount)} đơn chưa có giá vốn — không tính vào lợi nhuận`,
-          short: "Thiếu vốn",
-          amount: analytics.missingCost.excludedProfit,
-          hue: "amber" as const,
-        }]
-      : []),
+    // Đơn chưa có giá vốn tính như giá vốn 0 (anh Trung chốt 02/11/2026, áp 04/11):
+    // không còn bậc "Thiếu vốn" (30/09 → 04/11) — giá vốn 0 đã nằm trong bậc Giá
+    // vốn nên thác tự đóng; số đơn thiếu nhắc ở phụ đề thẻ Lợi nhuận + hộp nhắc.
     // THU vận hành khác (đền bù, thưởng… nhập tay) là bậc CỘNG — amount âm để
     // thác vẽ xanh "+"; THUẾ BỔ SUNG dự phòng là bậc trừ cuối. Hai khoản này
     // trước 26/10/2026 chỉ có thẻ Lợi nhuận của Báo cáo dòng tiền tính nên hai
@@ -737,7 +728,7 @@ export default function DashboardPage() {
                     }
                     subtitle={
                       missingCostOrders > 0
-                        ? `${formatNumber(missingCostOrders)} đơn chưa có giá vốn nên không được tính vào lợi nhuận`
+                        ? `${formatNumber(missingCostOrders)} đơn chưa có giá vốn — đang tính với giá vốn 0 đ`
                         : margin !== undefined
                           ? `Biên lợi nhuận ${margin}%`
                           : "Sau giá vốn & chi phí"

@@ -18,14 +18,19 @@ export interface TaxReportTotals {
   orderCount: number;
   settledCount: number;
   grossRevenue: number;
-  /** Σ profitAfterTax của đơn CÓ giá vốn — cơ sở thuế bổ sung khi tính trên lợi nhuận. */
-  profitWithCost: number;
+  /**
+   * Σ profitAfterTax của MỌI đơn không hủy — cơ sở thuế bổ sung khi tính trên lợi
+   * nhuận. Đơn thiếu giá vốn tính như giá vốn 0 (anh Trung chốt 02/11/2026, áp
+   * 04/11 — thuế đi theo cùng lợi nhuận kỳ, một đẳng thức; trước đó bị loại).
+   */
+  profit: number;
   /** Thuế sàn ĐÃ trích (số thật của đơn đã quyết toán). */
   platformTaxActual: number;
   /** Σ platformRevenue của đơn CHƯA quyết toán — cơ sở ước tính thuế sàn. */
   unsettledPlatformRevenue: number;
+  /** Đơn chưa có giá vốn: đếm để cảnh báo + Σ lợi nhuận của chúng (tham khảo, không trừ). */
   missingCostCount: number;
-  missingCostExcludedProfit: number;
+  missingCostProfit: number;
 }
 
 type TaxRowInput = Pick<
@@ -38,22 +43,21 @@ function sumTaxReport(rows: Iterable<TaxRowInput>): TaxReportTotals {
     orderCount: 0,
     settledCount: 0,
     grossRevenue: 0,
-    profitWithCost: 0,
+    profit: 0,
     platformTaxActual: 0,
     unsettledPlatformRevenue: 0,
     missingCostCount: 0,
-    missingCostExcludedProfit: 0,
+    missingCostProfit: 0,
   };
   for (const r of rows) {
     if (r.shippingStatus === ShippingStatus.CANCELLED) continue;
     t.orderCount += 1;
     t.grossRevenue += r.revenueGross;
-    // Đơn chưa có giá vốn KHÔNG vào lợi nhuận tính thuế bổ sung (anh Trung chốt 30/09/2026).
+    // Đơn thiếu giá vốn tính như giá vốn 0 (04/11/2026) — vẫn đếm để cảnh báo.
+    t.profit += r.profitAfterTax;
     if (r.missingCostPrice) {
       t.missingCostCount += 1;
-      t.missingCostExcludedProfit += r.profitAfterTax;
-    } else {
-      t.profitWithCost += r.profitAfterTax;
+      t.missingCostProfit += r.profitAfterTax;
     }
     if (r.isSettled) {
       t.platformTaxActual += r.platformTax;

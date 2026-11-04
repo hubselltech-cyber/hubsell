@@ -2283,14 +2283,16 @@ export interface FinanceBreakdown {
   profit: {
     total: number;
     items: BreakdownItem[];
-    /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+    /** Đơn chưa có giá vốn — đang tính với giá vốn 0 đ; số đơn để nhắc nhập. */
     missingCost?: MissingCostSummary;
   };
 }
 
 /**
- * Đơn chưa có giá vốn của kỳ: số đơn + phần lợi nhuận bị loại (anh Trung chốt
- * 30/09/2026). Đẳng thức: Doanh thu − Chi phí − excludedProfit = Lợi nhuận.
+ * Đơn chưa có giá vốn của kỳ: số đơn để nhắc nhập giá vốn. Từ 04/11/2026 (anh
+ * Trung chốt 02/11) lợi nhuận tính như giá vốn 0 đ nên đẳng thức mọi trang là
+ * Doanh thu − Chi phí = Lợi nhuận; `excludedProfit` giữ tên cho tương thích
+ * nhưng backend LUÔN trả 0 (30/09 → 04/11 là phần lợi nhuận bị loại).
  */
 export interface MissingCostSummary {
   orderCount: number;

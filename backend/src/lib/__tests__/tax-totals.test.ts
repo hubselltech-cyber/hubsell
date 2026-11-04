@@ -74,19 +74,20 @@ describe("taxReportTotals — đối soát thuế kỳ: sổ = dòng computePnlR
     }
   });
 
-  it("bằng đúng vòng cộng của /api/tax/report trước 30/09/2026", () => {
+  it("bằng đúng vòng cộng của /api/tax/report (đơn thiếu giá vốn tính như giá vốn 0 từ 04/11/2026)", () => {
     const rows = PNL_ROWS.filter((r) => r.shippingStatus !== ShippingStatus.CANCELLED);
     let grossRevenue = 0, profit = 0, platformTaxActual = 0, estimateBase = 0, settledCount = 0;
     for (const r of rows) {
       grossRevenue += r.revenueGross;
-      if (!r.missingCostPrice) profit += r.profitAfterTax;
+      profit += r.profitAfterTax;
       if (r.isSettled) { platformTaxActual += r.platformTax; settledCount += 1; }
       else estimateBase += r.platformRevenue;
     }
+    expect(rows.some((r) => r.missingCostPrice)).toBe(true); // fixture có đơn thiếu giá vốn — vẫn vào lợi nhuận tính thuế
     expect(fromRows.orderCount).toBe(rows.length);
     expect(fromRows.settledCount).toBe(settledCount);
     expect(fromRows.grossRevenue).toBeCloseTo(grossRevenue, 6);
-    expect(fromRows.profitWithCost).toBeCloseTo(profit, 6);
+    expect(fromRows.profit).toBeCloseTo(profit, 6);
     expect(fromRows.platformTaxActual).toBeCloseTo(platformTaxActual, 6);
     expect(fromRows.unsettledPlatformRevenue).toBeCloseTo(estimateBase, 6);
     expect(fromRows.missingCostCount).toBe(rows.filter((r) => r.missingCostPrice).length);
