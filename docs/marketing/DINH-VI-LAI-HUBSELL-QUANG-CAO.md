@@ -76,6 +76,9 @@ Tài liệu này là **đề xuất để anh chốt**. Mỗi mục có phần "
 | Người chạy thuê / agency | Cá nhân, agency nhỏ | Chạy hộ, ăn % | Đắt, không minh bạch, khách không học được gì |
 | Quốc tế (tham chiếu) | Teikametrics, Pacvue, Perpetua (Amazon/Walmart/TikTok Shop) | Nền tảng quảng cáo sàn, Teikametrics gắn chi tiêu với biên lãi + tồn kho | Không vào Việt Nam |
 
+> **Đính chính 03/11/2026:** bảng này thiếu Atosa, đối thủ trực tiếp ở Shopee Ads cho chủ shop Việt, nên câu "không
+> ra sản phẩm nào" bên dưới là sai. Xem `hubsell-marketing/chien-luoc/DOI-THU-ATOSA-2026-11-03.md`.
+
 Nguồn: hồ sơ Epsilo trên Dealroom/Surge/Gartner, bài so sánh Teikametrics–Perpetua,
 G2; tìm kiếm tiếng Việt "phần mềm tối ưu quảng cáo Shopee Lazada TikTok" **không ra
 sản phẩm nào** dành cho chủ shop Việt, chỉ ra công cụ đồng bộ sản phẩm và SEO. Khoảng

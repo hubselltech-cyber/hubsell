@@ -35,7 +35,7 @@
 
 - Đo prod: mở `/admin` hết ~8,7 giây, do `investor-report` ~6 giây và `stats` ~2,1 giây quét bảng ~727.000 đơn mỗi lần mở. `overview`, các trang Khách hàng, Kế toán, Gói, Marketing, Sức khỏe đều dưới 1 giây; `webhook-logs` 2,2 giây chưa sửa.
 - Sửa: `lib/stale-cache.ts` trả bản đệm ngay rồi làm mới ở nền. `stats` tươi 5 phút, quá 30 phút thì chờ nạp; báo cáo tươi 1 giờ, quá 24 giờ thì chờ nạp (đều là mặc định tự chọn). Báo cáo chỉ gọi khi cuộn tới và ghi giờ cập nhật. Lượt mở đầu sau khi khởi động lại vẫn chậm như cũ.
-- Kiểm: tsc 2 bên, 6 test mới qua, soi local đúng luồng. Cả bộ test backend 7 đỏ, chạy lại trên bản `e8d29a5c` trước tối nay vẫn đúng 7 đỏ đó (4 tệp sổ đơn, xóa gian, ước tính bản kê). Anh chốt push.
+- Kiểm: tsc 2 bên, 6 test mới qua, soi local đúng luồng. Cả bộ test backend 7 đỏ, chạy lại trên bản `e8d29a5c` trước tối nay vẫn đúng 7 đỏ đó (4 tệp sổ đơn, xóa gian, ước tính bản kê). Anh chốt push `7b6c1084`, Render LIVE 23:14, Vercel Ready. Đo prod: lượt đầu sau deploy `stats` 3,2 giây, báo cáo 6,6 giây; các lượt sau `stats` ~175 ms, báo cáo ~190 ms. Màn cao 945 px báo cáo vẫn tải ngay khi mở vì đã lọt khung nhìn.
 
 ## Phiên 03/11 (~22:40) — Vercel vượt 10 GB Deployment Storage: bỏ dựng commit không đổi frontend, rút thời hạn giữ
 
@@ -48,6 +48,11 @@
 - Anh thấy HQ báo mất kết nối. Tối nay 21:21 gian Shopee lớn nhất vừa về 5.000 chiến dịch (đúng trần, toàn đã kết thúc) và 131.162 dòng số toàn 0. `computeChannelAdsInsights` nạp hết vào RAM: đo DB dev cùng cỡ RSS +532 MB trong 3,4 giây, sau sửa +72 MB, 0,4 giây.
 - Sửa: bỏ chiến dịch đã kết thúc không có số; trang ghi rõ số chiến dịch không hiện. tsc 2 bên, 4 tệp test quảng cáo qua. Chưa chạy cả bộ test, chưa soi giao diện trên trình duyệt. Anh chốt push.
 - Đính chính: chưa chứng minh trần 5.000 giấu chiến dịch đang chạy, vì gian đang bật GMV Max cấp shop và 51,8 triệu/30 ngày có thể chi hết cho loại này. Anh chốt chưa làm. Chi tiết docs/DONG-BO-GIAI-DOAN-3.md mục 6.12.
+
+## Phiên 03/11 (tối) — Khảo sát đối thủ Atosa, phần quảng cáo
+
+- Chỉ đọc trang công khai, chưa vào app. Atosa mạnh từ khóa và giá thầu Shopee, TikTok (Atame) mỏng hơn, không thấy giá vốn hay hòa vốn trong tài liệu đã đọc. Tài liệu Atosa ghi nối shop bằng tài khoản + mật khẩu + OTP + proxy riêng: suy luận không qua API, chưa kiểm. Đã đính chính câu "không ra sản phẩm nào" trong tài liệu định vị mục 1.1. Chi tiết `hubsell-marketing/chien-luoc/DOI-THU-ATOSA-2026-11-03.md`. Chưa commit. ⏳ Anh xem màn "Thêm Shop" để kiểm, không nhập mật khẩu gian thật.
+- Mẫu quảng cáo: Meta không có quảng cáo nào của trang Atosa, Atame; Google có 2 video (thuế 42.955 lượt xem, Ngân sách theo CIR 3.244 lượt xem), lần hiện gần nhất 22–23/12/2025. Chưa nghe được lời video, chưa đọc được TikTok.
 
 ## Phiên 03/11 (~21:00) — Dọn mã phần giá vốn (anh: "dọn sạch code thừa, giữ mô hình cây")
 
