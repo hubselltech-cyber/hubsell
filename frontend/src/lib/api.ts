@@ -530,6 +530,9 @@ export interface Order {
   labelPrintedAt: string | null;
   /** ĐÃ ĐÓNG GÓI (01/11/2026) — mốc quét kiện sau khi in; bước nội bộ, không liên quan sàn */
   packingDoneAt?: string | null;
+  /** Tự chuẩn bị hàng (04/11/2026): máy đã chặn đơn này vì lỗi cứng, người phải làm tay; có lý do kèm. */
+  autoArrangeBlockedAt?: string | null;
+  autoArrangeBlockedReason?: string | null;
   /** Biên bản bàn giao đã liệt kê đơn — null = đã gói nhưng chưa bàn giao ship */
   handoverSheetId?: string | null;
   /** Số dòng hàng của đơn (0 với đơn cũ chưa ghi chi tiết) */
@@ -3156,6 +3159,16 @@ export interface Channel {
    * đẩy tồn bị sàn từ chối cho tới khi Kết nối lại. Backend cũ không trả.
    */
   needsReauth?: boolean;
+  /** Tự chuẩn bị hàng (04/11/2026): thời điểm bật (ISO); null/thiếu = tắt. */
+  autoArrangeEnabledAt?: string | null;
+}
+
+/** Bật / tắt tự chuẩn bị hàng của một gian (docs/TU-CHUAN-BI-HANG.md). */
+export function setChannelAutoArrange(id: string, enabled: boolean) {
+  return apiFetch<Channel>(`/api/channels/${id}/auto-arrange`, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 /** TẦNG 2 — một sản phẩm thô kéo từ gian hàng về. */

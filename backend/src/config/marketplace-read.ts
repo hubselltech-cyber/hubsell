@@ -153,7 +153,7 @@ export const RATE_LIMITS: {
 };
 
 /** Làn nhặt việc (N6) — mỗi làn số luồng riêng: một làn kẹt không lan sang làn khác (bulkhead). */
-export type SyncLane = "orders" | "finance" | "ads" | "backfill";
+export type SyncLane = "orders" | "finance" | "ads" | "backfill" | "fulfill";
 
 export const LANES: Record<SyncLane, { concurrency: number }> = {
   /** Số luồng mỗi làn mỗi tiến trình — DUNG LƯỢNG, đổi theo gói (docs 1b). TỰ CHỌN, đo ở Pha C. */
@@ -162,7 +162,25 @@ export const LANES: Record<SyncLane, { concurrency: number }> = {
   ads: { concurrency: envNum("LANE_ADS_CONCURRENCY", 2) },
   /** Nạp gian mới: ít luồng để tốc độ ghi DB có kiểm soát (bài học sổ cái đè Nano 30/09). */
   backfill: { concurrency: envNum("LANE_BACKFILL_CONCURRENCY", 1) },
+  /** Tự chuẩn bị hàng (docs/TU-CHUAN-BI-HANG.md): mỗi lượt là một mẻ gọi sàn ghi Order → ít luồng. TỰ CHỌN 2. */
+  fulfill: { concurrency: envNum("LANE_FULFILL_CONCURRENCY", 2) },
 };
+
+/** Tự chuẩn bị hàng theo gian — số TỰ CHỌN, căn cứ ở docs/TU-CHUAN-BI-HANG.md mục 4. */
+export const AUTO_ARRANGE = {
+  /** Nhịp khi gian đã hết đơn đủ điều kiện. Anh Trung chốt 30′ (câu trên popup). */
+  INTERVAL_MS: envNum("AUTO_ARRANGE_INTERVAL_MS", 30 * MIN),
+  /** Lệch nhịp ngẫu nhiên ± để các gian bật cùng lúc không tới hạn cùng giây. */
+  JITTER_MS: envNum("AUTO_ARRANGE_JITTER_MS", 3 * MIN),
+  /** Trần đơn một lượt với sàn có API mẻ (3 mẻ 50 của Shopee/TikTok). */
+  MAX_PER_RUN: envNum("AUTO_ARRANGE_MAX_PER_RUN", 150),
+  /** Trần một lượt với sàn đi từng đơn (Lazada: mỗi đơn 2 lệnh + 300 ms). */
+  MAX_PER_RUN_SEQUENTIAL: envNum("AUTO_ARRANGE_MAX_PER_RUN_SEQ", 40),
+  /** Đơn sàn báo "chưa sẵn sàng" được thử lại tối đa ngần này lần (mỗi lần cách ≥ INTERVAL) rồi chặn + chuông. */
+  MAX_ATTEMPTS: envNum("AUTO_ARRANGE_MAX_ATTEMPTS", 6),
+  /** Lỗi cả gian: mất kết nối → hỏi lại sau 60′; lỗi tạm khác → 5′ (LEASE.ERROR_RETRY_MS). */
+  AUTH_RETRY_MS: envNum("AUTO_ARRANGE_AUTH_RETRY_MS", 60 * MIN),
+} as const;
 
 export const LEASE = {
   /** Thuê bao sống bao lâu nếu không có nhịp tim (thay khóa 15' cứng). TỰ CHỌN 90 s. */

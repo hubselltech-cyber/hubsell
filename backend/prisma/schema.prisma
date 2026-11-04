@@ -476,6 +476,10 @@ model Channel {
   /// "Chuẩn bị hàng". Lần sau mở hộp thoại là điền sẵn — seller nhỏ thao tác
   /// 1 chạm. Hình dạng: { method, addressId?, branchId? } (xem fulfillment/types).
   fulfillmentSettings Json?
+  /// TỰ CHUẨN BỊ HÀNG (04/11/2026, docs/TU-CHUAN-BI-HANG.md): null = tắt. Bật = worker
+  /// làn "fulfill" tự gọi sàn sắp xếp vận chuyển cho đơn Chờ xử lý của gian mỗi ~30′
+  /// (hàng việc = dòng sync_cursors stream "auto-arrange", ghi cùng giao dịch với cột này).
+  autoArrangeEnabledAt DateTime?
 
   // ── ĐỒNG BỘ TỒN KHO THEO TỪNG GIAN (05/09 — thay switch toàn shop) ──
   /// BẬT = Hubsell là nguồn chuẩn tồn của gian này: mọi biến động kho tự đẩy
@@ -1693,6 +1697,15 @@ model Order {
   /// Mốc đã NHẢ hold (khi đơn chốt → chuyển thành trừ thật, hoặc đơn hủy).
   /// Có mốc = holdQuantity đã được trả lại, không nhả lần hai.
   stockHoldReleasedAt DateTime?
+
+  /// ---- TỰ CHUẨN BỊ HÀNG (04/11/2026, docs/TU-CHUAN-BI-HANG.md) ----
+  /// Lần máy thử gần nhất + số lần sàn báo "chưa sẵn sàng" (thử lại sau ≥ 30′, tối đa 6).
+  autoArrangeTriedAt       DateTime?
+  autoArrangeAttempts      Int       @default(0)
+  /// Lỗi cứng từng đơn: máy không thử nữa, tab Chờ xử lý hiện nhãn + lý do để người làm tay.
+  /// Xóa khi bật lại công tắc của gian.
+  autoArrangeBlockedAt     DateTime?
+  autoArrangeBlockedReason String?
   paymentStatus       String         @default("UNPAID") // ví dụ: UNPAID, PAID, REFUNDED
   shippingStatus      ShippingStatus @default(PENDING)
 
@@ -1821,6 +1834,9 @@ model Order {
   // Tờ khai thuế cắt kỳ theo ngày sàn báo giao thành công (30/09/2026); cũng
   // phục vụ tự xuất hóa đơn + Kiểm toán phí sàn đang lọc theo deliveredAt.
   @@index([channelId, deliveredAt])
+  // Chỉ mục MỘT PHẦN "Chờ xử lý của gian" (tự chuẩn bị hàng 04/11/2026) chỉ có trong
+  // SQL migration 20261104230000_auto_arrange:
+  //   Order_auto_arrange_pending_idx (channelId, createdAt) WHERE shippingStatus = 'PENDING'
 }
 
 /// Chi tiết dòng sản phẩm của một đơn hàng.
@@ -4200,6 +4216,8 @@ model FulfillmentBatch {
   failed       Json                   @default("[]")
   notes        Json                   @default("[]")
   error        String?
+  /// MANUAL = người bấm Chuẩn bị hàng; AUTO = làn tự chuẩn bị (04/11/2026).
+  source       String                 @default("MANUAL")
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
   finishedAt   DateTime?

@@ -796,6 +796,17 @@ export default function OrdersPage() {
                   Chưa in phiếu
                 </span>
               )}
+              {/* Tự chuẩn bị hàng (04/11/2026): máy đã thử và bị sàn từ chối — người làm tay,
+                  lý do ở tooltip. Chỉ còn ý nghĩa khi đơn vẫn Chờ xử lý. */}
+              {o.shippingStatus === "PENDING" && o.autoArrangeBlockedReason && (
+                <span
+                  className={cn(TEXT_SUB, "mt-1 flex items-center justify-center gap-1 font-medium text-amber-700")}
+                  title={`Máy không tự chuẩn bị được đơn này${o.autoArrangeBlockedAt ? ` (${formatDateTime(o.autoArrangeBlockedAt)})` : ""}:\n• ${o.autoArrangeBlockedReason}\nShop bấm Chuẩn bị hàng để làm tay.`}
+                >
+                  <AlertTriangle className="size-3 shrink-0" />
+                  Máy không tự chuẩn bị được
+                </span>
+              )}
               {/* Khách xin hủy, sàn chờ shop quyết — trạng thái vận chuyển giữ nguyên,
                   đặt cuối ô vì là VIỆC CẦN LÀM (sau dòng in phiếu là dữ kiện) */}
               <CancelRequestLabel order={o} />

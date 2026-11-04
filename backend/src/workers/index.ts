@@ -47,6 +47,7 @@ import { startLineIdBackfillWorker } from "./order-line-id-backfill";
 import { startListingCopyReviewWorker } from "./listing-copy-review";
 import { startReadLanes } from "./read-lanes";
 import { startAdsLane } from "./ads-lane";
+import { startAutoArrangeLane } from "./auto-arrange-lane";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -79,6 +80,10 @@ export function startAllWorkers(): void {
   // trong sync_cursors — đọc bóng đơn, ghi sync_shadow_orders, không đụng Order.
   // Chưa ghi danh gian nào thì chỉ hỏi DB mỗi 5 s. READ_LANES=0 tắt.
   startReadLanes();
+  // Tự chuẩn bị hàng theo gian (04/11/2026, docs/TU-CHUAN-BI-HANG.md): làn "fulfill"
+  // nhặt gian đã bật công tắc (sync_cursors stream auto-arrange), chạy mẻ Chuẩn bị
+  // hàng như nút bấm tay. Chưa gian nào bật → chỉ hỏi DB 5 s/lần. AUTO_ARRANGE_LANE=0 tắt.
+  startAutoArrangeLane();
   // Ngủ đông gian của chủ shop hết gói quá ân hạn (15/10/2026): đặt cờ để worker
   // trên bỏ qua gian, webhook nhận rồi bỏ; gia hạn là thức lại trong giao dịch
   // thanh toán (services/plan-hibernation.ts). Token vẫn làm mới bên dưới.

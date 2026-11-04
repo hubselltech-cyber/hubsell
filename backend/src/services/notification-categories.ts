@@ -22,6 +22,7 @@ export type NotificationCategoryKey =
   | "cancel_request"
   | "return"
   | "delivery_fail"
+  | "auto_arrange"
   // Tài chính
   | "weekly_report"
   | "finance_alert"
@@ -70,6 +71,7 @@ export const NOTIFICATION_GROUPS: readonly NotificationGroup[] = [
       { key: "cancel_request", label: "Khách xin hủy, đơn bị hủy", hint: "Khách xin hủy chờ shop trả lời; đơn đã chuẩn bị hàng bị hủy." },
       { key: "return", label: "Hoàn hàng, trả hàng hoàn tiền", hint: "Sàn báo đơn chuyển sang chờ nhận hàng hoàn." },
       { key: "delivery_fail", label: "Giao không thành công", hint: "Đơn giao hụt nhiều lần, nên gọi khách trước lượt cuối." },
+      { key: "auto_arrange", label: "Tự chuẩn bị hàng", hint: "Gian bật tự chuẩn bị có đơn máy không làm được, cần làm tay." },
     ],
   },
   {
@@ -182,6 +184,7 @@ export function categoryOf(type: string): NotificationCategoryKey {
   if (t === "cancel_request" || t === "order_cancelled") return "cancel_request";
   if (t === "return") return "return";
   if (t === "delivery-fail" || ops === "delivery-fail") return "delivery_fail";
+  if (t === "auto-arrange") return "auto_arrange";
 
   // Tài chính
   if (t === "weekly-report") return "weekly_report";

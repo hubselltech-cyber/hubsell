@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import crypto from "crypto";
 import { ChannelName, type Channel } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { AUTO_ARRANGE_LANE, AUTO_ARRANGE_STREAM } from "../lib/auto-arrange";
 import { countByChannel } from "../services/channel-counts";
 import { respondHibernated } from "../services/plan-hibernation";
 import { HISTORY_BACKFILL_NOTICE } from "../services/sync-schedule";
@@ -907,6 +908,72 @@ router.patch("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
     // Giao diện chỉ chờ 200 rồi tải lại danh sách; không đếm đơn/SP (28/10/2026)
     // và không trả secret (trước đây trả cả refreshToken/shopCipher).
     const updated = await prisma.channel.update({ where: { id: channel.id }, data });
+    res.json(publicChannel(updated, true));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/channels/:id/auto-arrange — bật / tắt TỰ CHUẨN BỊ HÀNG của một gian
+ * (04/11/2026, docs/TU-CHUAN-BI-HANG.md). Body: { enabled: boolean }
+ *
+ * Bật: cột Channel.autoArrangeEnabledAt + dòng làn sync_cursors (stream
+ * "auto-arrange", lane "fulfill", tới hạn ngay) + xóa cờ thử/chặn của đơn Chờ
+ * xử lý trong gian (bật lại = làm mới từ đầu) — MỘT giao dịch để cột và dòng làn
+ * không lệch nhau. Tắt: xóa dòng làn + cột về null; lượt đang chạy (nếu có) chạy
+ * nốt mẻ rồi thấy công tắc tắt mà dừng.
+ */
+router.post("/:id/auto-arrange", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") {
+      res.status(400).json({ error: "Thiếu enabled (true/false)" });
+      return;
+    }
+    const channel = await prisma.channel.findFirst({ where: { id: req.params.id, userId: req.ownerId! } });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+    if (enabled) {
+      if (channel.channelName === "OFFLINE") {
+        res.status(400).json({ error: "Kênh offline không có sàn để chuẩn bị hàng" });
+        return;
+      }
+      if (channel.status !== "ACTIVE" || !channel.refreshToken) {
+        res.status(400).json({ error: "Gian chưa nối API sàn hoặc đã ngắt kết nối — kết nối lại rồi bật" });
+        return;
+      }
+      if (channel.hibernatedAt) {
+        res.status(400).json({ error: "Gian đang ngủ đông vì gói hết hạn — gia hạn gói rồi bật" });
+        return;
+      }
+    }
+
+    const now = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      if (enabled) {
+        await tx.syncCursor.upsert({
+          where: { channelId_stream: { channelId: channel.id, stream: AUTO_ARRANGE_STREAM } },
+          update: { lane: AUTO_ARRANGE_LANE, dueAt: now },
+          create: { channelId: channel.id, stream: AUTO_ARRANGE_STREAM, lane: AUTO_ARRANGE_LANE, cursorAt: now, windowMs: 0, dueAt: now },
+        });
+        await tx.order.updateMany({
+          where: { channelId: channel.id, shippingStatus: "PENDING" },
+          data: { autoArrangeTriedAt: null, autoArrangeAttempts: 0, autoArrangeBlockedAt: null, autoArrangeBlockedReason: null },
+        });
+      } else {
+        await tx.syncCursor.deleteMany({ where: { channelId: channel.id, stream: AUTO_ARRANGE_STREAM } });
+      }
+      return tx.channel.update({
+        where: { id: channel.id },
+        data: { autoArrangeEnabledAt: enabled ? (channel.autoArrangeEnabledAt ?? now) : null },
+      });
+    });
+    console.log(
+      `[auto-arrange] owner=${req.ownerId} ${enabled ? "BẬT" : "TẮT"} gian ${channel.channelName} "${channel.shopName}" (${channel.id})`
+    );
     res.json(publicChannel(updated, true));
   } catch (err) {
     next(err);

@@ -62,6 +62,8 @@ export interface BatchStartParams {
   choices: Record<string, FulfillChoice>;
   /** Đơn loại trước khi gọi sàn (chưa thanh toán, đã rời Chờ xử lý…). */
   skipped: { orderCode: string; reason: string }[];
+  /** MANUAL (mặc định) = người bấm; AUTO = làn tự chuẩn bị hàng (04/11/2026). */
+  source?: "MANUAL" | "AUTO";
 }
 
 export interface BatchSnapshot {
@@ -81,25 +83,50 @@ function toRef(o: BatchOrderRow): FulfillOrderRef {
   return { id: o.id, orderCode: o.orderCode, trackingCode: o.trackingCode, platformPackageId: o.platformPackageId };
 }
 
-/** Tạo dòng batch rồi chạy nền; trả về ngay để route phản hồi. */
-export async function startFulfillmentBatch(params: BatchStartParams): Promise<{ batchId: string; total: number }> {
+async function createBatchRow(params: BatchStartParams): Promise<{ batchId: string; total: number }> {
   const total = [...params.groups.values()].reduce((s, g) => s + g.length, 0);
   // orderIds: đơn thật sự đem đi gọi sàn — lượt sau đọc để không gọi lại đơn
   // đang được lượt này xử lý (sự cố bấm 2 lần 30 đơn Shopee 15/10).
   const orderIds = [...params.groups.values()].flatMap((g) => g.map((o) => o.id));
   const row = await prisma.fulfillmentBatch.create({
-    data: { ownerId: params.ownerId, total, orderIds, skipped: params.skipped },
+    data: { ownerId: params.ownerId, total, orderIds, skipped: params.skipped, source: params.source ?? "MANUAL" },
     select: { id: true },
   });
-  // Cố ý không await: request trả batchId ngay, việc gọi sàn chạy tiếp.
-  void runBatchWithHeartbeat(row.id, params).catch(async (err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[fulfillment.batch] ${row.id} lỗi ngoài dự kiến:`, message);
-    await prisma.fulfillmentBatch
-      .update({ where: { id: row.id }, data: { status: "FAILED", error: message, finishedAt: new Date() } })
-      .catch(() => undefined);
-  });
   return { batchId: row.id, total };
+}
+
+async function markBatchFailed(batchId: string, err: unknown): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[fulfillment.batch] ${batchId} lỗi ngoài dự kiến:`, message);
+  await prisma.fulfillmentBatch
+    .update({ where: { id: batchId }, data: { status: "FAILED", error: message, finishedAt: new Date() } })
+    .catch(() => undefined);
+}
+
+/** Tạo dòng batch rồi chạy nền; trả về ngay để route phản hồi. */
+export async function startFulfillmentBatch(params: BatchStartParams): Promise<{ batchId: string; total: number }> {
+  const created = await createBatchRow(params);
+  // Cố ý không await: request trả batchId ngay, việc gọi sàn chạy tiếp.
+  void runBatchWithHeartbeat(created.batchId, params).catch((err) => markBatchFailed(created.batchId, err));
+  return created;
+}
+
+/**
+ * Cùng một lượt như trên nhưng CHỜ xong rồi trả kết quả — cho làn tự chuẩn bị
+ * hàng (worker, không có người đứng đợi; cần kết quả để phân loại lỗi từng đơn).
+ * Lỗi ngoài dự kiến: dòng batch đánh FAILED rồi ném tiếp cho làn hẹn lại.
+ */
+export async function runFulfillmentBatchNow(params: BatchStartParams): Promise<BatchSnapshot> {
+  const created = await createBatchRow(params);
+  try {
+    await runBatchWithHeartbeat(created.batchId, params);
+  } catch (err) {
+    await markBatchFailed(created.batchId, err);
+    throw err;
+  }
+  const snap = await getFulfillmentBatch(created.batchId, params.ownerId);
+  if (!snap) throw new Error(`Không đọc lại được lượt ${created.batchId}`);
+  return snap;
 }
 
 /** Chạy lượt + nhịp tim; dừng nhịp tim dù lượt xong hay ném lỗi. */
