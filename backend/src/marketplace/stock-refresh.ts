@@ -11,6 +11,8 @@
 //     (376 sp = 8 trang) và sàn dễ tính → dùng lại adapter, chỉ ghi SKU đã nối.
 // KHÔNG tạo/đánh DELISTED gì — chỉ cập nhật channelStock (+ location Shopee)
 // của các dòng đã nối. Ném lỗi khi không đọc được sàn để nơi gọi tự báo.
+// Từ 05/11/2026 (lát 3.9 GĐ3): chỉ GHI dòng có số tồn / địa điểm kho KHÁC số đang lưu —
+// trước đây mỗi lượt đối soát UPDATE mọi dòng đã nối dù sàn trả đúng số cũ.
 // ============================================================
 
 import { ChannelName, type Channel } from "@prisma/client";
@@ -45,7 +47,7 @@ export async function refreshLinkedChannelStock(channel: Channel): Promise<Stock
       externalId: { not: null },
       status: "ACTIVE",
     },
-    select: { id: true, channelSku: true, externalId: true },
+    select: { id: true, channelSku: true, externalId: true, channelStock: true, channelStockLocationId: true },
   });
   if (linked.length === 0) return { refreshed: 0, missing: 0 };
 
@@ -74,36 +76,51 @@ export async function refreshLinkedChannelStock(channel: Channel): Promise<Stock
       missing++;
       continue;
     }
-    await prisma.channelProduct.update({
-      where: { id: row.id },
-      data: { channelStock: p.channelStock, lastSyncedAt: now },
-    });
+    if (p.channelStock !== row.channelStock) {
+      await prisma.channelProduct.update({
+        where: { id: row.id },
+        data: { channelStock: p.channelStock, lastSyncedAt: now },
+      });
+    }
     refreshed++;
   }
   return { refreshed, missing };
 }
 
-async function refreshShopee(
-  channel: Channel,
-  linked: { id: string; channelSku: string; externalId: string | null }[]
-): Promise<StockRefreshResult> {
+interface LinkedRow {
+  id: string;
+  channelSku: string;
+  externalId: string | null;
+  channelStock: number | null;
+  channelStockLocationId: string | null;
+}
+
+async function refreshShopee(channel: Channel, linked: LinkedRow[]): Promise<StockRefreshResult> {
   const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
 
   // Gom theo item: SKU nối ở cấp item (externalId "123") đọc từ base_info;
   // cấp model ("123-456") phải qua get_model_list của item đó.
-  const itemLevel = new Map<number, string>(); // itemId → row.id
-  const modelLevel = new Map<number, Map<number, string>>(); // itemId → modelId → row.id
+  const itemLevel = new Map<number, LinkedRow>(); // itemId → dòng đã nối
+  const modelLevel = new Map<number, Map<number, LinkedRow>>(); // itemId → modelId → dòng đã nối
   for (const row of linked) {
     const ids = parseShopeeExternalId(row.externalId);
     if (!ids) continue;
     if (ids.modelId) {
-      const m = modelLevel.get(ids.itemId) ?? new Map<number, string>();
-      m.set(ids.modelId, row.id);
+      const m = modelLevel.get(ids.itemId) ?? new Map<number, LinkedRow>();
+      m.set(ids.modelId, row);
       modelLevel.set(ids.itemId, m);
     } else {
-      itemLevel.set(ids.itemId, row.id);
+      itemLevel.set(ids.itemId, row);
     }
   }
+  /** Ghi tồn sàn của một dòng — chỉ khi số hoặc địa điểm kho khác số đang lưu. */
+  const writeStock = async (row: LinkedRow, stock: number, locationId: string | null) => {
+    if (stock === row.channelStock && locationId === row.channelStockLocationId) return;
+    await prisma.channelProduct.update({
+      where: { id: row.id },
+      data: { channelStock: stock, channelStockLocationId: locationId, lastSyncedAt: now },
+    });
+  };
   const itemIds = [...new Set([...itemLevel.keys(), ...modelLevel.keys()])];
 
   const now = new Date();
@@ -115,20 +132,13 @@ async function refreshShopee(
     if (i > 0) await sleep(PACE_MS);
     const infos = await getItemBaseInfo(accessToken, shopId, itemIds.slice(i, i + BASE_INFO_BATCH));
     for (const info of infos) {
-      const rowId = itemLevel.get(info.item_id);
-      if (rowId) {
+      const itemRow = itemLevel.get(info.item_id);
+      if (itemRow) {
         const stock = shopeeSellerStock(info.stock_info_v2);
-        seen.add(rowId);
+        seen.add(itemRow.id);
         if (stock === null) missing++;
         else {
-          await prisma.channelProduct.update({
-            where: { id: rowId },
-            data: {
-              channelStock: stock,
-              channelStockLocationId: shopeeStockLocationId(info.stock_info_v2),
-              lastSyncedAt: now,
-            },
-          });
+          await writeStock(itemRow, stock, shopeeStockLocationId(info.stock_info_v2));
           refreshed++;
         }
       }
@@ -139,20 +149,13 @@ async function refreshShopee(
         for (const m of list) {
           const mRow = models.get(m.model_id);
           if (!mRow) continue;
-          seen.add(mRow);
+          seen.add(mRow.id);
           const stock = shopeeSellerStock(m.stock_info_v2);
           if (stock === null) {
             missing++;
             continue;
           }
-          await prisma.channelProduct.update({
-            where: { id: mRow },
-            data: {
-              channelStock: stock,
-              channelStockLocationId: shopeeStockLocationId(m.stock_info_v2),
-              lastSyncedAt: now,
-            },
-          });
+          await writeStock(mRow, stock, shopeeStockLocationId(m.stock_info_v2));
           refreshed++;
         }
       }

@@ -112,3 +112,16 @@ describe("isCatalogPending — trang báo 'Đang kéo trong vài phút' khi nào
     expect(isCatalogPending({ ...fresh, nextProductSyncAt: null }, NOW)).toBe(false);
   });
 });
+
+// ---- Lát 3.9 (05/11/2026): dòng log nói rõ lượt tăng dần hay toàn bộ.
+import { describeSyncMode } from "../product-catalog-sync";
+
+describe("describeSyncMode — chữ để lọc log", () => {
+  it("tăng dần kèm mốc đọc; toàn bộ kèm lý do", () => {
+    expect(describeSyncMode({ mode: "incremental", since: new Date("2026-11-05T01:00:00Z"), fullReason: null })).toBe(
+      "tăng dần từ 2026-11-05T01:00:00.000Z"
+    );
+    expect(describeSyncMode({ mode: "full", since: null, fullReason: "chạy bóng" })).toBe("toàn bộ (chạy bóng)");
+    expect(describeSyncMode({ mode: "full", since: null, fullReason: null })).toBe("toàn bộ");
+  });
+});

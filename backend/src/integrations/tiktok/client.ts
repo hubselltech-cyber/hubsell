@@ -1259,6 +1259,12 @@ export interface SearchProductsParams {
   status?: string;
   pageSize?: number;
   pageToken?: string;
+  /**
+   * Chỉ sản phẩm sàn báo đổi từ mốc này (giây epoch) — body `update_time_ge`. Docs Search Products
+   * 202309 (đọc 05/11/2026): bỏ trống `update_time_le` thì sàn lấy tới hiện tại; kết quả lọc vượt
+   * 10.000 sản phẩm thì sàn trả lỗi 12052180.
+   */
+  updateTimeGe?: number;
 }
 
 export async function searchProducts(
@@ -1269,6 +1275,7 @@ export async function searchProducts(
   if (params.pageToken) query.page_token = params.pageToken;
   const body: Record<string, unknown> = {};
   if (params.status) body.status = params.status;
+  if (params.updateTimeGe) body.update_time_ge = params.updateTimeGe;
   const d = await callApi<{ products?: TikTokProduct[]; next_page_token?: string; total_count?: number }>(
     {
       method: "POST",

@@ -35,6 +35,18 @@ export interface NormalizedChannelProduct {
   channelStockLocationId: string | null;
   /** ACTIVE = đang bán; DELISTED = đã gỡ/ẩn/khoá. */
   status: "ACTIVE" | "DELISTED";
+  /**
+   * Thời điểm sàn báo SẢN PHẨM CHA đổi lần cuối (giây epoch: Shopee item update_time, TikTok
+   * product update_time, Lazada updated_time). Không lưu DB — chỉ để đo đối chiếu "lượt tăng dần
+   * có thấy dòng này không" (05/11/2026). null / thiếu = sàn không trả.
+   */
+  sourceUpdatedAt?: number | null;
+  /**
+   * Chỉ có ở lượt TOÀN BỘ được xin đo đối chiếu (`opts.shadowSince`), với sàn mà lượt tăng dần chọn
+   * sản phẩm bằng luật riêng chứ không chỉ theo thời điểm cập nhật (Shopee): true = lượt tăng dần
+   * từ mốc đó CŨNG sẽ đọc sản phẩm cha của dòng này. Thiếu = nơi gọi tự so `sourceUpdatedAt` với mốc.
+   */
+  inIncrementalWindow?: boolean;
 }
 
 /**
@@ -46,6 +58,15 @@ export interface NormalizedChannelProduct {
 export interface FetchedProducts {
   products: NormalizedChannelProduct[];
   complete: boolean;
+  /**
+   * true = danh sách CHỈ GỒM sản phẩm thay đổi từ `opts.since` (lượt tăng dần, 05/11/2026). Khi đó
+   * SKU vắng mặt KHÔNG có nghĩa là đã gỡ: nơi gọi TUYỆT ĐỐI không đánh DELISTED theo vắng mặt, kể cả
+   * khi `complete = true` (`complete` lúc này chỉ nói "đã đọc đủ phần thay đổi"). Thiếu / false =
+   * danh sách là toàn bộ danh mục (adapter không lọc, hoặc đã tự lùi về kéo toàn bộ).
+   */
+  incremental?: boolean;
+  /** Số lệnh gọi sàn của lượt này (để log / đo trước–sau). Adapter không đếm thì bỏ trống. */
+  apiCalls?: number;
 }
 
 /**
@@ -58,8 +79,14 @@ export interface MarketplaceProductAdapter {
   /** Tên adapter (để log/nhận diện). */
   readonly name: string;
   /**
-   * Kéo TOÀN BỘ sản phẩm của gian (đã tự phân trang + tự refresh token) và trả
-   * về danh sách đã chuẩn hoá kèm cờ `complete`. Ném lỗi nếu gọi API thất bại.
+   * true = adapter hiểu `opts.since` (đọc tăng dần). Thiếu / false = luôn kéo toàn bộ
+   * (mock, sàn chưa hỗ trợ) — kế hoạch lượt kéo sẽ không bao giờ xin tăng dần.
+   */
+  readonly supportsIncremental?: boolean;
+  /**
+   * Kéo sản phẩm của gian (đã tự phân trang + tự refresh token) và trả về danh sách đã chuẩn
+   * hoá kèm cờ `complete`. Không có `opts.since` = TOÀN BỘ danh mục; có `since` = chỉ sản phẩm
+   * sàn báo đổi từ mốc đó (kết quả mang `incremental: true`). Ném lỗi nếu gọi API thất bại.
    */
   fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<FetchedProducts>;
   /**
@@ -77,4 +104,14 @@ export interface FetchProductsOptions {
    * sung ảnh/phân loại tốn quota (TikTok GET products/{id}). Mặc định true.
    */
   details?: boolean;
+  /**
+   * Đọc TĂNG DẦN: chỉ sản phẩm sàn báo đổi từ thời điểm này (nơi gọi đã lùi khoảng chồng lấn).
+   * Adapter không lọc được thì trả toàn bộ và KHÔNG gắn `incremental` vào kết quả.
+   */
+  since?: Date;
+  /**
+   * Lượt TOÀN BỘ có đo đối chiếu: vẫn kéo toàn bộ, chỉ nhờ adapter đánh dấu `inIncrementalWindow`
+   * cho từng dòng theo đúng luật chọn của lượt tăng dần từ mốc này. Adapter không cần thì bỏ qua.
+   */
+  shadowSince?: Date;
 }

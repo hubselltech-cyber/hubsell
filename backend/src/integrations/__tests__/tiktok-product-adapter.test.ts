@@ -61,6 +61,8 @@ describe("tiktok-adapter transformTiktokSku", () => {
       channelStock: 7,
       channelStockLocationId: "W-B",
       status: "ACTIVE",
+      // Sản phẩm mẫu không có update_time → null (05/11/2026: dùng để đo đối chiếu lượt tăng dần).
+      sourceUpdatedAt: null,
     });
   });
 

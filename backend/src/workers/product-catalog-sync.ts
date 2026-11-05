@@ -31,12 +31,19 @@
 //   nay đã có giá hiệu lực (docs/MO-HINH-CAY-SAN-PHAM-SAN.md mục 9) — chính lượt kéo
 //   danh mục là lúc lá xuất hiện, và nhịp đêm theo gian đã sẵn. Lỗi chỉ ghi log,
 //   không làm hỏng lịch kéo. Tắt riêng: COST_ZERO_REPAIR_OFF=1.
+//
+// ★ 05/11/2026 — LÁT 3.9 GIAI ĐOẠN 3 (anh Trung 03/11: "mỗi lần kéo lại phải kéo lại hết thì quá
+//   gãy"): lượt kéo chỉ ghi dòng khác biệt; có lượt TĂNG DẦN (chỉ sản phẩm sàn báo đổi từ mốc) và
+//   lượt TOÀN BỘ thưa 7–9 ngày ở lượt đêm. Worker chỉ chuyển cờ "khách bấm" vào syncChannelProducts
+//   và ghi mốc nó trả về cùng lịch kế. Luật + cờ mở dần: marketplace/catalog-sync-plan.ts
+//   (PRODUCT_SYNC_INCREMENTAL = off | shadow (mặc định) | on, PRODUCT_SYNC_INCREMENTAL_CHANNELS).
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
 import { invalidateOwnerCostCaches, repairZeroCostLinesForChannel } from "../lib/cost-price";
 import { prisma } from "../lib/prisma";
-import { syncChannelProducts } from "../marketplace/product-sync";
+import type { CatalogMarks } from "../marketplace/catalog-sync-plan";
+import { syncChannelProducts, type ProductSyncResult } from "../marketplace/product-sync";
 
 /** 03/11/2026: 5' → 30 giây — nút bấm của khách chờ tối đa một nhịp này (30 giây từ 03/11 tối); truy vấn findFirst theo chỉ mục
  *  (status, nextProductSyncAt) nên rẻ. Anh Trung: chờ 5–6 phút "khó chịu hơn cả báo lỗi". */
@@ -186,11 +193,16 @@ export function nextNightlySlot(now: Date, rand: number = Math.random()): Date {
   return new Date(slotVn - VN_OFFSET_MS);
 }
 
-/** Ghi kết quả một lượt kéo danh mục (worker hoặc nút "Đồng bộ từ sàn") + lịch kế. */
+/**
+ * Ghi kết quả một lượt kéo danh mục (worker hoặc nút "Đồng bộ từ sàn") + lịch kế. `marks` (05/11/2026):
+ * mốc nước danh mục do `syncChannelProducts` tính — chỉ có giá trị khi lượt đọc ĐỦ; lượt lỗi không bao
+ * giờ đổi mốc (lượt sau đọc lại từ mốc cũ).
+ */
 export async function scheduleAfterProductSync(
   channelId: string,
   ok: boolean,
-  error?: string
+  error?: string,
+  marks: CatalogMarks = {}
 ): Promise<void> {
   const now = new Date();
   await prisma.channel
@@ -198,7 +210,7 @@ export async function scheduleAfterProductSync(
       where: { id: channelId },
       // Xong hay lỗi đều xóa mốc xin kéo — trang thôi báo "Đang kéo", lỗi thì hiện productSyncError.
       data: ok
-        ? { lastProductSyncAt: now, productSyncError: null, nextProductSyncAt: nextNightlySlot(now), productSyncRequestedAt: null }
+        ? { lastProductSyncAt: now, productSyncError: null, nextProductSyncAt: nextNightlySlot(now), productSyncRequestedAt: null, ...marks }
         : { productSyncError: (error ?? "không rõ").slice(0, 500), nextProductSyncAt: new Date(now.getTime() + RETRY_MS), productSyncRequestedAt: null },
     })
     .catch(() => {});
@@ -391,12 +403,22 @@ async function claimNextDue() {
 
 type DueChannel = NonNullable<Awaited<ReturnType<typeof claimNextDue>>>;
 
+/** "tăng dần từ <mốc>" / "toàn bộ (<lý do>)" cho dòng log — lọc log bằng chữ "tăng dần" / "toàn bộ". */
+export function describeSyncMode(r: Pick<ProductSyncResult, "mode" | "since" | "fullReason">): string {
+  if (r.mode === "incremental") return `tăng dần${r.since ? ` từ ${r.since.toISOString()}` : ""}`;
+  return `toàn bộ${r.fullReason ? ` (${r.fullReason})` : ""}`;
+}
+
 async function pullOne(due: DueChannel): Promise<boolean> {
   try {
-    const r = await syncChannelProducts(due);
-    await scheduleAfterProductSync(due.id, true);
+    const t0 = Date.now();
+    const r = await syncChannelProducts(due, { requested: Boolean(due.productSyncRequestedAt) });
+    await scheduleAfterProductSync(due.id, true, undefined, r.marks);
     console.log(
-      `[Catalog-sync] "${due.shopName}" (${due.channelName})${due.productSyncRequestedAt ? " theo nút bấm" : ""}: ${r.scanned} SP sàn, +${r.created} mới, ${r.updated} cập nhật, ${r.delisted} gỡ, ${r.deactivated} SKU kho tự Ngừng bán, ${r.costAutoFilled} tự điền giá vốn`
+      `[Catalog-sync] "${due.shopName}" (${due.channelName})${due.productSyncRequestedAt ? " theo nút bấm" : ""}, ${describeSyncMode(r)}: ` +
+        `${r.scanned} SP sàn, +${r.created} mới, ${r.updated} cập nhật, ${r.unchanged} không đổi, ${r.delisted} gỡ, ${r.deactivated} SKU kho tự Ngừng bán, ${r.costAutoFilled} tự điền giá vốn` +
+        `${r.apiCalls !== null ? `, ${r.apiCalls} lệnh gọi sàn` : ""}, ${Math.round((Date.now() - t0) / 1000)} giây` +
+        `${r.outsideWindow > 0 ? `, ${r.outsideWindow} dòng sàn trả ngoài cửa sổ` : ""}${r.complete ? "" : ", CHƯA đủ (mốc không tiến)"}`
     );
     await repairZeroCostLinesAfterSync(due);
     return true;

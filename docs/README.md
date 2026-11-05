@@ -8,7 +8,7 @@
 - [HANG-DOI-BEN.md](HANG-DOI-BEN.md) — giai đoạn 2: hàng đợi bền pg-boss, webhook, đẩy tồn
 - [SO-CAI-DON.md](SO-CAI-DON.md) — giai đoạn 1: sổ cái đơn, mọi báo cáo đọc sổ
 - [MO-HINH-CAY-SAN-PHAM-SAN.md](MO-HINH-CAY-SAN-PHAM-SAN.md) — hợp đồng cây sản phẩm sàn (SPU → lá → dòng đơn), danh tính theo id, 5 lát sửa (18/10/2026)
-- [DONG-BO-GIAI-DOAN-3.md](DONG-BO-GIAI-DOAN-3.md) — giai đoạn 3: hợp đồng đọc sàn, mốc nước quét đơn
+- [DONG-BO-GIAI-DOAN-3.md](DONG-BO-GIAI-DOAN-3.md) — giai đoạn 3: hợp đồng đọc sàn, mốc nước quét đơn; mục 7 (05/11/2026) kéo danh mục sản phẩm tăng dần, đo trên gian thật bằng `backend/scripts/catalog-incremental-probe.ts`
 - [CUNG-HOA-LOP-GOI-SAN.md](CUNG-HOA-LOP-GOI-SAN.md) — 18/10/2026 thiết kế lại lớp đọc sàn (bản 2, 7 nguyên lý, mốc 1 gian 4.000 đơn/ngày); Pha A kiểm 7 giả thuyết bằng `backend/scripts/pha-a-san-probe.ts` + SQL mục 3b
 - [RA-CHEO-SO-WEB-MOBILE-BACKEND-2026-10-26.md](RA-CHEO-SO-WEB-MOBILE-BACKEND-2026-10-26.md) — 26/10/2026 rà chéo 65 điểm số liệu web ↔ mobile ↔ backend theo 7 ca; gốc = hai endpoint hai công thức lợi nhuận → `lib/net-profit.ts`; việc chờ anh chốt ở mục 4
 - [QUANG-CAO-GOM-TRONG-DATABASE.md](QUANG-CAO-GOM-TRONG-DATABASE.md) — gom số quảng cáo bằng SQL

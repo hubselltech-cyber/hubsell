@@ -1054,7 +1054,8 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
           cp = await prisma.channelProduct.findFirst({
             where: { channel: scope, ...pass, ...cond },
             include: cpInclude,
-            orderBy: { lastSyncedAt: "desc" },
+            // Dòng đang bán trước (05/11/2026: lastSyncedAt chỉ còn đổi khi dòng đổi theo sàn).
+            orderBy: [{ status: "asc" }, { lastSyncedAt: "desc" }],
           });
           if (cp) break;
         }

@@ -18,6 +18,7 @@ import {
 import { getValidLazadaAccessToken } from "../../integrations/lazada/service";
 import type {
   FetchedProducts,
+  FetchProductsOptions,
   MarketplaceProductAdapter,
   NormalizedChannelProduct,
 } from "../types";
@@ -72,25 +73,38 @@ function transformSku(p: LazadaProduct, s: LazadaProductSku): NormalizedChannelP
     channelStock: typeof s.quantity === "number" ? s.quantity : null,
     channelStockLocationId: null, // Lazada VN: sellable update không theo kho
     status: lazadaStatusToNorm(p.status, s.Status),
+    sourceUpdatedAt: lazadaUpdatedAtSec(p.updated_time),
   };
+}
+
+/** updated_time của Lazada là mili-giây epoch (chuỗi hoặc số) → giây; không đọc được = null. */
+export function lazadaUpdatedAtSec(raw: string | number | undefined): number | null {
+  const ms = Number(raw);
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : null;
 }
 
 // ---------- ADAPTER ----------
 
 export const lazadaProductAdapter: MarketplaceProductAdapter = {
   name: "lazada",
+  // Đọc tăng dần bằng `update_after` của /products/get (docs chính thức đọc 05/11/2026). CHƯA đo trên
+  // gian thật: bán hàng làm đổi tồn có làm đổi updated_time không → lượt toàn bộ định kỳ đo đối chiếu.
+  supportsIncremental: true,
 
-  async fetchProducts(channel: Channel): Promise<FetchedProducts> {
+  async fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<FetchedProducts> {
     // (1) Tự refresh token trước khi gọi — token mới được lưu xuống DB.
     const accessToken = await getValidLazadaAccessToken(channel);
+    const updateAfter = opts?.since ? opts.since.toISOString() : undefined;
 
-    // (2) Phân trang /products/get.
+    // (2) Phân trang /products/get. Lượt tăng dần phân trang trong tập đã lọc theo update_after;
+    // chạm chốt chặn (200 trang = 10.000 sản phẩm, cũng là trần offset của sàn) thì báo chưa đủ,
+    // mốc không tiến, lượt sau đọc lại.
     const products: LazadaProduct[] = [];
     let offset = 0;
     let page = 0;
     let complete = true;
     for (;;) {
-      const r = await getProducts(accessToken, offset, PRODUCTS_PAGE);
+      const r = await getProducts(accessToken, offset, PRODUCTS_PAGE, undefined, updateAfter);
       products.push(...r.products);
       page++;
       if (r.products.length < PRODUCTS_PAGE) break;
@@ -116,6 +130,6 @@ export const lazadaProductAdapter: MarketplaceProductAdapter = {
     // KHÔNG gộp dòng trùng SellerSku (15/10/2026, cùng luật 3 sàn): Lazada vốn
     // bắt SellerSku duy nhất trong gian nên hiếm khi trùng; có trùng thì
     // product-sync gán đuôi tên phân loại (marketplace/sku-key.ts).
-    return { products: normalized, complete };
+    return { products: normalized, complete, apiCalls: page, ...(updateAfter ? { incremental: true } : {}) };
   },
 };

@@ -557,6 +557,13 @@ model Channel {
   /// Nối nhanh): web chỉ ghi mốc này + nextProductSyncAt = now, worker kéo xong hay lỗi đều xóa về null.
   /// Khác null = trang báo "Đang kéo trong vài phút". Quá REQUEST_STALE_MS coi như treo, xin lại được.
   productSyncRequestedAt   DateTime?
+  /// MỐC NƯỚC DANH MỤC (05/11/2026, lát 3.9 GĐ3 — kéo tăng dần): thời điểm BẮT ĐẦU của lượt đọc ĐỦ gần
+  /// nhất (toàn bộ hoặc tăng dần). Lượt tăng dần đọc từ (mốc − khoảng chồng lấn); chỉ tiến khi lượt đọc đủ.
+  /// null = chưa có mốc → kéo toàn bộ. Luật ở marketplace/catalog-sync-plan.ts.
+  productSyncWatermark     DateTime?
+  /// Thời điểm bắt đầu của lượt kéo TOÀN BỘ đủ gần nhất — quá nhịp thì lượt đêm kéo toàn bộ (chỉ lượt
+  /// toàn bộ đủ dữ liệu mới được đánh DELISTED sản phẩm vắng mặt).
+  productFullSyncAt        DateTime?
   /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
   syncBackoffLevel         Int       @default(0)
   /// XUNG ads (tầng A, docs/ADS-NHIP-CANH-BAO.md): hạn xung kế tiếp — cấu hình campaign + số hôm nay + ví.

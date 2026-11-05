@@ -15,6 +15,7 @@ Ngày lập: 14/10/2026. Người lập: Claude (Lead Dev). Thiết kế gốc: 
 | 3.6 | Chỉ số HQ: gian quá hạn quét, tỷ lệ lần đọc bị cắt, trễ mốc nước lớn nhất; test hàng rào | Không | ✅ 15/10 — mục 3 (làm trước 3.3 để có thước đo trước khi đổi nhịp) |
 | 3.7 | Nút "Đồng bộ từ sàn" / "Lấy sản phẩm mới từ sàn" / Nối nhanh → web chỉ XIN kéo, worker kéo (web không kéo danh mục trong request nữa) | Có: 1 cột NULL `Channel.productSyncRequestedAt` (migration `20261103150000_channel_product_sync_requested`) | ✅ 03/11 — mục 5 (anh chốt làm trước 3.3 sau sự cố web OOM 7 lần); commit chưa push, chưa kiểm prod |
 | 3.8 | Trang Giá vốn chia trang ở DB cho gian vượt 5.000 mã; lưu giá chỉ đọc đúng các mã liên quan | Không | ✅ 03/11 — mục 6; chưa kiểm trên dữ liệu thật của khách lớn |
+| 3.9 | Kéo danh mục TĂNG DẦN (chỉ sản phẩm sàn báo đổi từ mốc) + chỉ ghi dòng khác biệt; lượt toàn bộ thưa 7–9 ngày mới được gỡ sản phẩm vắng mặt. **Anh bổ sung 03/11, không có trong kế hoạch 7 lát ban đầu** | Có: 2 cột NULL `Channel.productSyncWatermark`, `productFullSyncAt` (migration `20261105200000_channel_product_sync_watermark`) | ✅ code + test 05/11 — mục 7; mặc định CHẠY BÓNG; commit chưa push, chưa chạy gian thật |
 
 Mỗi lát một lần đẩy (hai lần nếu có công tắc), đường lui = revert commit trừ khi ghi khác.
 
@@ -556,3 +557,121 @@ Chưa làm:
 3. Còn +72 MB mỗi lượt, nghi do nạp 38.889 mã, chưa đo tách. Lọc mã theo chiến dịch sẽ làm Trợ lý và tab Hòa vốn hết dùng chung một bộ đệm.
 4. Rà các gian khác: gian TikTok của cùng khách có 256 chiến dịch, đi đường đọc khác, chưa đo.
 
+## 7. Lát 3.9 — kéo danh mục TĂNG DẦN, chỉ ghi dòng khác biệt (05/11/2026, lượt lịch tự động; anh Trung chốt 03/11 "Đặt lịch ngày kia làm")
+
+**Việc này do anh bổ sung ngày 03/11/2026, trước đây KHÔNG có trong kế hoạch 7 lát của giai đoạn 3.** Tình trạng: đã code + test trên máy,
+**commit chưa push, chưa deploy, chưa chạy trên gian thật nào.**
+
+### 7.1. Vì sao
+
+Mỗi lần làm mới danh mục (nút "Đồng bộ từ sàn", "Lấy sản phẩm mới từ sàn", lượt đêm) hệ thống kéo lại TOÀN BỘ danh mục và UPDATE mọi dòng dù
+không đổi (cột `lastSyncedAt` luôn bị ghi). Số thật 03/11: Hy Korea Official (Shopee) `38889 SP sàn, +0 mới, 38889 cập nhật`, khoảng 19 phút,
+không thêm được mã nào. Anh: "Lúc khách liên kết shop thì đã kéo sản phẩm và đơn hàng về rồi. Nếu như mỗi lần kéo lại phải kéo lại hết thì đúng
+là quá gãy thật."
+
+### 7.2. Tài liệu chính thức từng sàn (đọc 05/11/2026) — đã kiểm gì, chưa kiểm gì
+
+| Sàn | API | Đọc tăng dần | Nguồn | Chưa biết |
+|---|---|---|---|---|
+| TikTok | `POST /product/202309/products/search` | **Có.** Body `update_time_ge` / `update_time_le` (giây; bỏ `le` thì sàn lấy tới hiện tại). `status` mặc định `ALL`, danh sách trạng thái có `DELETED` → sản phẩm bị xóa vẫn hiện trong kết quả kèm trạng thái. Kết quả lọc quá 10.000 sản phẩm → lỗi `12052180`. Mỗi sản phẩm trả `update_time`. | Đọc trực tiếp trang partner.tiktokshop.com (Search Products) | Bán hàng làm đổi tồn có làm đổi `update_time` không; sàn có thật sự tôn trọng `update_time_ge` không (với ĐƠN từng nghi sàn bỏ qua, mục 4.4) |
+| Lazada | `GET /products/get` | **Có.** `update_after` / `update_before` (ISO 8601, "updated after or on"). `filter` nhận `all, live, inactive, deleted, pending, rejected, sold-out`. `offset` tối đa 10.000 (tài liệu ghi Deprecated, khuyên cuộn theo ngày), `limit` tối đa 50. Response mẫu có `updated_time` (mili-giây). | Đọc trực tiếp trang open.lazada.com (GetProducts) | `filter=all` có gồm sản phẩm đã xóa không; đổi tồn / đổi giá có làm đổi `updated_time` không |
+| Shopee | `v2.product.get_item_list` | **Không đọc được tài liệu.** Trang open.shopee.com không mở được trong lượt này (công cụ tải trang bị chặn tên miền, quyền đọc trang trong trình duyệt bị từ chối vì không có người bấm cho phép). Nguồn bên thứ ba nói `update_time_from/to` giới hạn 15 ngày nhưng đó là bản v1 → **không dùng**. | — | Giới hạn cửa sổ của `update_time_from/to`; đổi tồn / đổi giá có làm đổi `update_time` của sản phẩm không |
+
+**Không thử được trên gian của anh:** DB dev trên máy không có token của ANO Official Store / ANO Official (token chỉ ở DB prod). Đã viết sẵn script chỉ đọc
+`backend/scripts/catalog-incremental-probe.ts` để chạy trên Render shell worker (mục 7.7).
+
+Vì Shopee chưa đọc được tài liệu, lượt tăng dần của Shopee **không dùng tham số lọc của sàn**: `get_item_list` vẫn đọc đủ danh sách id (100 sản phẩm
+một lệnh, mã hiện tại đã khai `update_time` + `item_status` từng sản phẩm trong response), chỉ gọi chi tiết (`get_item_base_info` + `get_model_list`,
+phần tốn gần hết thời gian) cho sản phẩm: sàn báo đổi từ mốc; chưa có dòng nào trong DB (trừ sản phẩm đã xóa / bị khóa); trạng thái ở danh sách lệch
+trạng thái đang lưu; hoặc sàn không trả `update_time` (không biết thì coi như đổi → khi đó lượt tăng dần tự thành đọc chi tiết toàn bộ, không sai dữ liệu).
+
+### 7.3. Thiết kế
+
+- **Chỉ ghi dòng có khác biệt** (`diffChannelProductRow`, cả lượt toàn bộ lẫn tăng dần): dòng sàn trả giống hệt dòng đang lưu → không có lệnh UPDATE.
+  Hệ quả: `ChannelProduct.lastSyncedAt` nay là "lần cuối dòng ĐỔI theo sàn"; "lần cuối kéo" là `Channel.lastProductSyncAt`. Hai chỗ đang xếp theo
+  `lastSyncedAt` để ưu tiên dòng còn trên sàn (`services/review-auto-reply.ts` chọn 30 sản phẩm Lazada, `routes/operations.ts` tra sản phẩm cho chat)
+  được thêm `status asc` lên trước để dòng đã gỡ không chen lên. `marketplace/stock-refresh.ts` (đối soát tồn) cũng chỉ ghi dòng có số tồn / địa điểm kho khác.
+- **Hai kiểu lượt** — luật thuần ở `marketplace/catalog-sync-plan.ts`:
+  - Gian mới nối / chưa có mốc → kéo TOÀN BỘ.
+  - Có mốc → TĂNG DẦN: adapter chỉ trả sản phẩm sàn báo đổi từ `mốc − 60 phút`. 60 phút chồng lấn là **số tự chọn** (gấp đôi 30 phút của mốc nước đơn, vì
+    chưa đo độ trễ chỉ mục tìm sản phẩm của sàn; lệch đồng hồ cũng nằm trong đây).
+  - Mốc = giờ BẮT ĐẦU của lượt đọc đủ gần nhất, **chỉ tiến khi lượt đọc đủ** (`nextCatalogMarks`). Lượt bị cắt (chốt chặn phân trang, sàn chậm) hoặc lỗi:
+    mốc đứng yên, lượt sau đọc lại từ mốc cũ.
+  - Lượt TOÀN BỘ thưa: 7 ngày + rải 0–2 ngày theo id gian (**số tự chọn**, chưa có số đo tần suất khách gỡ sản phẩm; chỉnh bằng `PRODUCT_FULL_SYNC_DAYS`),
+    chạy ở lượt ĐÊM. Nút bấm của khách luôn tăng dần cho nhanh, trừ khi đã quá 2 nhịp không có lượt toàn bộ nào.
+- **BẤT BIẾN:** lượt tăng dần TUYỆT ĐỐI không đánh DELISTED và không tự "Ngừng bán" SKU kho theo VẮNG MẶT — vắng mặt ở lượt tăng dần chỉ có nghĩa là
+  "không đổi". Chỉ lượt toàn bộ đọc đủ mới gỡ. Hai lớp chắn: lượt được XIN tăng dần thì không gỡ kể cả khi adapter quên gắn cờ `incremental`; adapter gắn cờ
+  thì không gỡ kể cả khi lượt được xin toàn bộ. (Dòng sàn TRẢ VỀ kèm trạng thái ẩn / xóa vẫn được ghi DELISTED ngay — đó là sàn nói, không phải suy từ vắng mặt.)
+- **Khóa SKU ở lượt tăng dần** (mã trùng giữa các sản phẩm chỉ lượt toàn bộ mới thấy đủ): dòng đang mang khóa có đuôi của cùng mã thì giữ khóa
+  (`keepsSuffixedKey`); khóa đang thuộc sản phẩm khác không nằm trong lượt thì KHÔNG chiếm dòng đó, tạo dòng mới mang khóa có đuôi id lá; phân loại bị xóa rồi
+  tạo lại cùng mã trong chính sản phẩm vừa đọc thì dùng lại dòng cũ (giữ liên kết kho + giá vốn) như lượt toàn bộ. Lượt toàn bộ kế chuẩn hóa lại khóa.
+- **Lượt tăng dần chỉ nạp dòng liên quan** (theo `externalId` / khóa của danh sách vừa kéo, lô 2.000), không nạp cả gian; quá 5.000 dòng đổi thì nạp cả gian một lần.
+- **Giữ nguyên:** gian mới nối kéo toàn bộ lần đầu; tự điền giá vốn cho SKU mới; bù ảnh + phân loại TikTok (`enrichMissing`, `DETAIL_PER_RUN`);
+  thử lại khi sàn bận (`withTransientRetry`, `SkipBudget`); `MAX_PARALLEL = 3`; vá dòng đơn giá vốn 0 sau mỗi lượt.
+- **TikTok vượt 10.000 sản phẩm đổi** (`12052180`): adapter lùi về kéo toàn bộ ngay trong lượt (vẫn không gỡ theo vắng mặt vì lượt được xin tăng dần).
+- **Đổi DB:** 2 cột NULL trên `Channel` — `productSyncWatermark`, `productFullSyncAt` (migration `20261105200000_channel_product_sync_watermark`,
+  `ADD COLUMN IF NOT EXISTS`). Đã áp lên DB dev trên máy; **chưa áp prod** (Render tự áp khi deploy).
+
+### 7.4. Mở dần — mặc định CHẠY BÓNG
+
+Chưa đọc được tài liệu Shopee và chưa thử được gian thật nên mặc định KHÔNG bật tăng dần (khẩu vị 18/10: mã mới chạy bóng theo cờ gian, so khớp rồi mới mở):
+
+| Biến môi trường (worker) | Ý nghĩa |
+|---|---|
+| `PRODUCT_SYNC_INCREMENTAL` bỏ trống hoặc `shadow` | **Mặc định.** Vẫn kéo toàn bộ như cũ (số lệnh gọi sàn không đổi), nhưng chỉ ghi dòng khác biệt, và ĐO: dòng nào đổi mà lượt tăng dần sẽ không thấy |
+| `PRODUCT_SYNC_INCREMENTAL=on` | Chạy tăng dần thật cho mọi gian có mốc; lượt toàn bộ 7–9 ngày vẫn đo đối chiếu |
+| `PRODUCT_SYNC_INCREMENTAL=off` | Kéo toàn bộ, không đo |
+| `PRODUCT_SYNC_INCREMENTAL_CHANNELS=id1,id2` | Riêng các gian này chạy tăng dần thật (thử trên ANO trước) |
+| `PRODUCT_FULL_SYNC_DAYS` | Nhịp kéo toàn bộ, mặc định 7 |
+
+Dòng log để đọc (worker): `[product-sync] ĐỐI CHIẾU TĂNG DẦN gian … lượt toàn bộ thấy N dòng đổi — X trong cửa sổ, Y NGOÀI cửa sổ (mới, tồn, giá, trạng thái, khác)`.
+Y = thứ lượt tăng dần sẽ sót tới lượt toàn bộ kế. Dòng kết quả mỗi lượt: `[Catalog-sync] "…" …, tăng dần từ <mốc>` hoặc `toàn bộ (<lý do>)`, kèm
+`N không đổi`, `N lệnh gọi sàn`, `N giây`. Shopee tăng dần in thêm `đọc chi tiết N (sàn báo đổi, chưa có trong DB, lệch trạng thái, sàn không trả update_time)`.
+
+**Đề xuất thứ tự:** push → đợi 1–2 đêm đọc dòng ĐỐI CHIẾU của vài gian từng sàn → Y gần 0 thì bật cho gian ANO bằng `…_CHANNELS` → rồi `on` toàn bộ.
+Nếu Y lớn ở cột "tồn" (sàn không đổi thời điểm cập nhật khi bán hàng): giữ bóng cho sàn đó hoặc rút nhịp toàn bộ; số tồn sàn (`channelStock`) của SKU
+chưa nối sẽ cũ tới 7–9 ngày nếu vẫn bật.
+
+### 7.5. Số đo (DB dev Postgres trên máy, sàn giả — CHƯA phải prod Supabase, CHƯA phải sàn thật)
+
+| Ca (60.000 dòng, 12.000 sản phẩm × 5 phân loại) | Trước | Sau |
+|---|---|---|
+| Kéo toàn bộ, sàn không đổi gì — lệnh ghi | 60.000 lệnh UPDATE (ước 51 giây, từ 2.000 lệnh đo được 1,7 giây) | **0 lệnh ghi**, 1,0 giây (1 lệnh đọc cả gian), RSS tiến trình test 145 → 317 MB |
+| Tăng dần, 0 dòng đổi | không có | 6 ms, 0 lệnh đọc dòng, 0 lệnh ghi |
+| Tăng dần, 60 dòng đổi | không có | 77 ms, 60 lệnh ghi |
+
+Số lệnh gọi sàn (tính từ mã, chưa đo thật): Shopee toàn bộ = ⌈sản phẩm/100⌉ + ⌈sản phẩm/50⌉ + số sản phẩm có phân loại; Shopee tăng dần = ⌈sản phẩm/100⌉ +
+chi tiết của riêng sản phẩm đổi. TikTok / Lazada tăng dần = ⌈sản phẩm đổi/100⌉ / ⌈sản phẩm đổi/50⌉ (tối thiểu 1 lệnh). Với Hy Korea Official chưa biết số sản
+phẩm cha nên chưa quy ra số lệnh cụ thể; thời gian 19 phút → bao lâu phải đo sau khi bật.
+
+### 7.6. Đã kiểm / chưa kiểm
+
+- **Đã kiểm (máy em, 05/11):** `npx tsc --noEmit -p .` sạch; vitest `src/marketplace src/workers src/services src/lib src/routes` + test adapter TikTok: 97 tệp, 837 qua, 5 bỏ qua.
+  Test mới: `catalog-sync-plan.test.ts` (kế hoạch, mốc, cờ, nhịp), `adapters-incremental.test.ts` (3 adapter với sàn giả: tham số gửi đi, chọn sản phẩm Shopee,
+  TikTok vượt 10.000), `product-sync-incremental-db.test.ts` (DB dev: không đổi → 0 lệnh ghi so bằng `xmin` từng dòng; chỉ dòng khác được ghi; tăng dần không gỡ nhầm
+  kể cả khi adapter quên cờ; lượt cắt / lỗi không tiến mốc; sản phẩm đổi giữa lượt và sàn ghi giờ sớm 30 phút vẫn bắt được; 12 vòng đổi ngẫu nhiên tăng dần ra đúng
+  dữ liệu của toàn bộ; trùng mã giữa hai sản phẩm; chạy bóng; đo 60.000 dòng bằng `PRODUCT_SYNC_LOAD_ROWS=60000`), `stock-refresh-db.test.ts`.
+- **CHƯA kiểm:** bất kỳ lệnh gọi sàn thật nào (kể cả `update_time_ge` TikTok, `update_after` Lazada, `update_time` trong `get_item_list` Shopee); đối chiếu tăng dần ↔
+  toàn bộ trên gian ANO (không có token ở máy); thời gian trên Supabase; tải khi 3 gian lớn cùng kéo; RAM worker thật khi nạp 38.889 dòng.
+
+### 7.7. Script đo trên gian thật (chỉ đọc)
+
+```
+npx tsx scripts/catalog-incremental-probe.ts "ANO Official Store" 24
+```
+
+Chạy trên Render shell worker. Gọi adapter hai lần (toàn bộ, rồi tăng dần từ 24 giờ trước), in số dòng / số lệnh gọi sàn / thời gian từng lượt, sàn có trả thời điểm
+cập nhật không, và số dòng lượt toàn bộ thấy khác DB mà lượt tăng dần không trả về (theo tồn / giá / trạng thái). Không ghi bảng nghiệp vụ, không gọi lệnh ghi sàn
+(chỉ làm mới token nếu hết hạn như mọi probe khác).
+
+### 7.8. Rủi ro còn lại và việc chưa làm
+
+1. **Phân loại bị xóa khỏi một sản phẩm còn bán** nay chỉ được gỡ ở lượt toàn bộ (trễ tới 7–9 ngày khi bật `on`, thay vì 1 ngày). Trong lúc đó dòng vẫn ACTIVE, lệnh
+   đẩy tồn cho phân loại đó sẽ lỗi phía sàn. Có thể gỡ sớm hơn mà vẫn an toàn (sản phẩm cha vừa đọc đủ thì phân loại vắng mặt của CHÍNH nó là đã xóa) nhưng việc đó
+   trái câu bất biến anh giao nên chưa làm — cần anh chốt.
+2. **Tồn sàn cũ** nếu sàn không đổi thời điểm cập nhật khi bán hàng (xem 7.4). Đối soát tồn của gian đã bật đồng bộ không bị ảnh hưởng (đọc riêng theo SKU đã nối).
+3. Chạy bóng không giảm lệnh gọi sàn — Hy Korea vẫn 19 phút mỗi lượt cho tới khi bật `on`.
+4. Kéo lần đầu gian lớn vẫn tạo từng dòng một (38.889 lệnh INSERT), chưa gộp lô.
+5. `autoFillCostForNewSkus` vẫn nạp cả danh mục của chủ shop mỗi khi có SKU mới.
+6. TikTok kéo toàn bộ với gian trên 10.000 sản phẩm: chưa biết sàn có trả `12052180` cả khi không lọc hay không.
+7. Đường lui: `PRODUCT_SYNC_INCREMENTAL=off` (hết tăng dần, vẫn chỉ ghi dòng khác); bỏ hẳn = revert commit (2 cột thừa vô hại).

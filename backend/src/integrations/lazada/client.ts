@@ -413,18 +413,25 @@ export interface LazadaProduct {
   attributes?: { name?: string };
   images?: string[];
   skus?: LazadaProductSku[];
+  /** Mili-giây epoch dạng chuỗi (response mẫu docs /products/get: "1611554725000"). */
+  updated_time?: string | number;
 }
 
 interface LazadaProductListData extends LazadaEnvelope {
   data?: { total_products?: number; products?: LazadaProduct[] };
 }
 
-/** Lấy một trang sản phẩm (filter=all để không sót hàng ẩn/hết lượt bán). */
+/**
+ * Lấy một trang sản phẩm (filter=all để không sót hàng ẩn/hết lượt bán).
+ * `updateAfter` (ISO 8601) = chỉ sản phẩm cập nhật từ mốc đó trở đi — docs /products/get (đọc
+ * 05/11/2026): "updated after or on the specified date"; offset tối đa 10.000, limit tối đa 50.
+ */
 export async function getProducts(
   accessToken: string,
   offset: number,
   limit: number,
-  cfg: LazadaConfig = getLazadaConfig()
+  cfg: LazadaConfig = getLazadaConfig(),
+  updateAfter?: string
 ): Promise<{ total: number; products: LazadaProduct[] }> {
   const data = await callLazada<LazadaProductListData>(
     LAZADA_ENDPOINTS.api,
@@ -434,6 +441,7 @@ export async function getProducts(
       filter: "all",
       offset: String(offset),
       limit: String(limit),
+      ...(updateAfter ? { update_after: updateAfter } : {}),
     },
     "products/get",
     cfg

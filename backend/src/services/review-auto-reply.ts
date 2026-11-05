@@ -432,7 +432,9 @@ async function runLazadaChannel(
   const cps = await prisma.channelProduct.findMany({
     where: { channelId: ch.id, externalId: { not: null } },
     select: { externalId: true, productName: true },
-    orderBy: { lastSyncedAt: "desc" },
+    // Dòng đang bán trước (05/11/2026: lastSyncedAt nay chỉ đổi khi dòng đổi theo sàn, không còn là
+    // dấu "còn thấy trên sàn" — dòng đã gỡ không được chen lên trước dòng đang bán).
+    orderBy: [{ status: "asc" }, { lastSyncedAt: "desc" }],
     take: LAZADA_MAX_ITEMS * 10,
   });
   const itemNames = new Map<string, string>();

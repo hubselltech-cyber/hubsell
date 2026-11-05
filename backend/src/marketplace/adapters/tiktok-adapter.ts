@@ -134,7 +134,13 @@ export function transformTiktokSku(p: TikTokProduct, s: TikTokProductSku): Norma
     channelStock: stock,
     channelStockLocationId: warehouseId,
     status: tiktokStatusToNorm(p.status),
+    sourceUpdatedAt: typeof p.update_time === "number" && p.update_time > 0 ? p.update_time : null,
   };
+}
+
+/** Sàn từ chối vì kết quả lọc vượt 10.000 sản phẩm (docs Search Products: mã 12052180). */
+export function isTiktokSearchTooManyError(err: unknown): boolean {
+  return /12052180/.test(String((err as Error)?.message ?? err));
 }
 
 /** Ghép sales_attributes (ảnh SKU + tên phân loại) từ chi tiết vào SKU của search theo id. */
@@ -283,16 +289,39 @@ async function enrichMissingImages(channel: Channel): Promise<void> {
 export const tiktokProductAdapter: MarketplaceProductAdapter = {
   name: "tiktok",
   enrichMissing: enrichMissingImages,
+  // Đọc tăng dần bằng `update_time_ge` của products/search (docs chính thức đọc 05/11/2026; trạng thái
+  // mặc định ALL nên sản phẩm DELETED vẫn hiện). CHƯA đo trên gian thật: bán hàng làm đổi tồn có làm
+  // đổi update_time không → lượt toàn bộ định kỳ đo đối chiếu (product-sync).
+  supportsIncremental: true,
 
   async fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<FetchedProducts> {
     const { accessToken, shopCipher } = await getValidAccessToken(channel);
 
+    let updateTimeGe = opts?.since ? Math.floor(opts.since.getTime() / 1000) : undefined;
+    let apiCalls = 0;
     const products: TikTokProduct[] = [];
     let pageToken: string | undefined;
     let page = 0;
     let shapeLogged = false;
     do {
-      const r = await searchProducts({ accessToken, shopCipher, pageSize: PRODUCTS_PAGE, pageToken });
+      let r: Awaited<ReturnType<typeof searchProducts>>;
+      try {
+        apiCalls++;
+        r = await searchProducts({ accessToken, shopCipher, pageSize: PRODUCTS_PAGE, pageToken, updateTimeGe });
+      } catch (err) {
+        // Phần thay đổi vượt 10.000 sản phẩm (đổi giá hàng loạt ở gian rất lớn): sàn từ chối cả lệnh
+        // lọc → lùi về kéo toàn bộ ngay trong lượt này thay vì hỏng mãi tới lượt toàn bộ kế.
+        if (updateTimeGe === undefined || !isTiktokSearchTooManyError(err)) throw err;
+        console.warn(
+          `[Catalog-sync] TikTok "${channel.shopName}": phần thay đổi vượt 10.000 sản phẩm (12052180), lùi về kéo toàn bộ`
+        );
+        updateTimeGe = undefined;
+        products.length = 0;
+        pageToken = undefined;
+        page = 0;
+        apiCalls++;
+        r = await searchProducts({ accessToken, shopCipher, pageSize: PRODUCTS_PAGE });
+      }
       products.push(...r.products);
       page++;
       if (!shapeLogged && r.products[0] && process.env.TIKTOK_SHAPE_LOG !== "0") {
@@ -332,6 +361,7 @@ export const tiktokProductAdapter: MarketplaceProductAdapter = {
       for (const p of targets) {
         try {
           if (ok + failed > 0) await sleep(DETAIL_PACE_MS);
+          apiCalls++;
           const d = await getProduct({ accessToken, shopCipher, productId: p.id });
           detailCache.set(p.id, { updateTime: p.update_time ?? 0, product: d });
           applyDetail(p, d);
@@ -371,6 +401,6 @@ export const tiktokProductAdapter: MarketplaceProductAdapter = {
     // TikTok bị gộp theo màu, mất size). Mỗi SKU lá = một dòng; khóa duy nhất do
     // product-sync gán (marketplace/sku-key.ts: đuôi tên phân loại, chưa có tên
     // thì "#skuId" rồi đổi khi chi tiết bổ sung xong).
-    return { products: normalized, complete };
+    return { products: normalized, complete, apiCalls, ...(updateTimeGe !== undefined ? { incremental: true } : {}) };
   },
 };
