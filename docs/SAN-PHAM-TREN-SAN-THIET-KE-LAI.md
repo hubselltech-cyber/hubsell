@@ -305,7 +305,7 @@ chưa đo.
 - **Prod 05/11 09:21 (shop công ty):** Render `9c15a9fa`, migration đã chạy, dải Cần nối 402 · Đã nối 125 · Sàn đã gỡ 189 · Bỏ qua 0; hộp nối mở
   đúng trên sản phẩm thật, Lịch sử rỗng. Chưa kiểm prod: bấm nối thật, Tự khớp, nút trên Đơn hàng, giao diện tối, 1280.
 
-## 14. Mã sàn + nút sao chép trên bảng (05/11, anh xem prod: "khá đẹp và hợp lý", hỏi mã là gì, xin icon copy, nhờ khảo sát ngang hay xuống dòng) — ĐÃ LÀM trên local, chưa push
+## 14. Mã sàn + nút sao chép trên bảng (05/11, anh xem prod: "khá đẹp và hợp lý", hỏi mã là gì, xin icon copy, nhờ khảo sát ngang hay xuống dòng) — ĐÃ LÀM, ĐÃ PUSH 05/11 09:37 (5d31435b), prod OK
 
 - **Dãy số cạnh tên gian là MÃ SẢN PHẨM trên sàn (item id / product id), không phải id SKU.** Id SKU (mã phân loại / model id) là của
   từng phân loại → nay hiện ở dòng phân loại khi bấm ▸, cạnh mã SKU người bán, cũng có nút sao chép. Cùng quy ước với bảng Giá vốn và
@@ -325,3 +325,6 @@ chưa đo.
   `min-w-[880px]` + cuộn ngang trong khung (như Tổng kho) cho màn hẹp.
 - **Kiểm local:** 1100 (mã tự xuống dòng) / 1280 / 1366 / 1700 không tràn ngang, không ô nào tràn ở cả 4 nhóm; bấm sao chép thật ra
   "Đã sao chép", dòng không xổ; màu chữ mã trong giao diện tối đọc được; tsc + eslint sạch; không lớp `dark:`. Dữ liệu demo đã trả lại.
+- **Prod 05/11 09:42 (shop công ty, màn 1920, sáng + tối):** 20/20 dòng có nút sao chép, mã cùng dòng với gian ở mọi dòng, không tên
+  gian nào bị cắt, không tràn ngang, ô tên rộng 1.071 px; dòng phân loại hiện mã phân loại + nút sao chép (TUI002 (Đen) · 7235166956).
+  Chỉ commit frontend nên Render giữ SHA cũ — bình thường. Chưa bấm sao chép thật trên prod (đã bấm thật trên local).
