@@ -8,7 +8,7 @@
  * liền trong tệp với cùng luật — sửa luật ở đây thì soát cả bên đó.
  */
 
-export function tiersOf(variantName: string | null | undefined): string[] {
+function tiersOf(variantName: string | null | undefined): string[] {
   return (variantName ?? "")
     .split(",")
     .map((x) => x.trim())

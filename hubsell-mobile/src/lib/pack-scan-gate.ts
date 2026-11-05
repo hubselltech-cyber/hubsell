@@ -8,7 +8,7 @@
  * máy chủ hàng chục lần, kêu "đã quét rồi" ngay sau khi kêu "đã ghi", hoặc kêu "không
  * thấy mã" vì đọc trúng mã phân tuyến của chính tem vừa quét xong.
  *
- * BỐN LUẬT (docs/MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md mục 3):
+ * BỐN LUẬT (docs/MOBILE-DAI-TU-DON-HANG-KHO.md mục 3):
  *   1. Mỗi lúc MỘT lượt gọi — đang gọi thì mã mới chưa được nhận (lượt đọc sau thử lại).
  *   2. Mã đã xử lý mà CÒN trong khung → không bắn lại; rời khung đủ REARM_MS mới nhận lại
  *      (đưa kiện vào lần hai là cố ý → máy chủ trả "đã quét rồi").

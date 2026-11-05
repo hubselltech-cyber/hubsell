@@ -99,14 +99,10 @@ export function ScanScreen({
   const scanLock = useRef(false);
   const isWeb = Platform.OS === "web";
 
-  // BÀN PHÍM CHE Ô NHẬP (anh Trung 04/10, máy Android thật): ô nhập và panel kết
-  // quả đều là lớp NỔI bám đáy (absolute bottom 0) nên padding của
-  // KeyboardAvoidingView không đẩy được chúng. Tự đo: phần đáy màn quét nằm dưới
-  // mép trên bàn phím bao nhiêu thì nâng các lớp nổi lên bấy nhiêu. Đo theo vị
-  // trí thật trên màn nên đúng cả khi màn quét nằm trên thanh tab lẫn khi phủ kín.
-  // Mở phủ kín màn (Kho → Đơn hoàn → quét) thì đáy màn quét chạm nút điều hướng của
-  // máy → chừa thêm; nằm trong tab thì thanh tab đã chừa rồi. Bàn phím đang mở thì
-  // nút điều hướng nằm dưới bàn phím, không cần chừa.
+  // Ô nhập và panel kết quả là lớp NỔI bám đáy → nâng theo bàn phím bằng `kbLift`
+  // (cách đo ở lib/useKeyboardLift.ts). Mở phủ kín màn (Kho → Đơn hoàn → quét) thì đáy
+  // màn quét chạm nút điều hướng của máy → chừa thêm; nằm trong tab thì thanh tab đã
+  // chừa rồi. Bàn phím đang mở thì nút điều hướng nằm dưới bàn phím, không cần chừa.
   const rootRef = useRef<View>(null);
   const { kbLift, kbOpen } = useKeyboardLift(rootRef);
   const navInset = embedded || kbLift > 0 ? 0 : insets.bottom;

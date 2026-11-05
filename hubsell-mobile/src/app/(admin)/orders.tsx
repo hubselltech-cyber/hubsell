@@ -503,44 +503,42 @@ export default function OrdersScreen() {
         </View>
       </View>
 
-      {/* Ô tìm + nút QUÉT ĐÓNG GÓI (anh Trung 05/11): in phiếu, gói xong thì quét lại
-          từng kiện → đơn sang Đã đóng gói, đơn đã hủy kêu báo để bỏ kiện lại. Nút QR
-          giữa thanh tab là việc khác (xem chi tiết đơn) nên nút này có chữ. */}
-      {/* THẲNG CỘT với hàng chip sàn bên dưới (anh Trung 05/11): hàng chip là 4 ô bằng nhau
-          cách nhau 8 px. Nút = đúng một ô (cột Lazada), ô tìm = ba ô + hai khe (16 px) —
-          nên ô tìm lấy gốc 16 px rồi chia phần còn lại theo 3 : 1. Hai ô chia cột KHÔNG
-          được mang viền / đệm ngang (viền + đệm đội gốc lên, đo ra nút rộng hơn chip
-          3 px) → viền và đệm của ô tìm nằm ở lớp trong, nút không có đệm ngang. */}
+      {/* Ô tìm + nút QUÉT ĐÓNG GÓI (anh Trung 05/11). Nút có chữ vì nút QR giữa thanh
+          tab là việc khác (xem chi tiết đơn).
+          Hai ô chia theo lưới 4 cột của hàng chip sàn bên dưới (4 ô bằng nhau, khe 8 px):
+          nút = đúng một ô (cột Lazada), ô tìm = ba ô + hai khe → gốc 16 px rồi chia 3 : 1.
+          Hai ô chia cột không được mang viền / đệm ngang (chúng đội gốc lên, nút sẽ rộng
+          hơn chip) nên viền và đệm của ô tìm nằm ở lớp trong. */}
       <View className="mx-4 mb-2.5 flex-row items-center gap-2">
         <View style={{ flexGrow: 3, flexShrink: 1, flexBasis: 16, minWidth: 0 }}>
-         <View className="flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
-          <Ionicons name="search-outline" size={16} color="#94a3b8" />
-          <TextInput
-            className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
-            // minWidth 0: trên web ô nhập có bề rộng tối thiểu riêng, không ép thì đẩy nút quét ra ngoài màn 320.
-            style={{ minWidth: 0 }}
-            placeholder="Mã đơn, tên khách, SĐT, mã vận đơn…"
-            placeholderTextColor="#94a3b8"
-            value={search}
-            onChangeText={onSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-          {search ? (
-            <Pressable
-              onPress={() => {
-                hapticTap();
-                clearSearch();
-              }}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Xóa tìm kiếm"
-            >
-              <Ionicons name="close-circle" size={18} color="#94a3b8" />
-            </Pressable>
-          ) : null}
-         </View>
+          <View className="flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
+            <Ionicons name="search-outline" size={16} color="#94a3b8" />
+            <TextInput
+              className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
+              // minWidth 0: trên web ô nhập có bề rộng tối thiểu riêng, không ép thì đẩy nút quét ra ngoài màn 320.
+              style={{ minWidth: 0 }}
+              placeholder="Mã đơn, tên khách, SĐT, mã vận đơn…"
+              placeholderTextColor="#94a3b8"
+              value={search}
+              onChangeText={onSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {search ? (
+              <Pressable
+                onPress={() => {
+                  hapticTap();
+                  clearSearch();
+                }}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Xóa tìm kiếm"
+              >
+                <Ionicons name="close-circle" size={18} color="#94a3b8" />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
         <Pressable
           className="flex-row items-center justify-center gap-1 self-stretch rounded-xl bg-emerald-500 active:opacity-80"

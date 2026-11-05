@@ -1,4 +1,4 @@
-# Đại tu app mobile đợt 1 — Đơn hàng + Kho (khảo sát 05/11/2026)
+# Đại tu app mobile đợt 1 — Đơn hàng + Kho (05/11/2026): khảo sát, thiết kế, kết quả bản 1.4.2
 
 **Anh Trung 05/11 chiều, 4 việc:** (1) quét mã ngay trong Đơn hàng để chuyển đơn Chờ đóng gói → Đã đóng gói, chỉ âm thanh + màn báo tự tắt, không popup nút bấm, seller quét nhanh; (2) "Thống kê bốc hàng" → "Phiếu nhặt hàng", tính ở trạng thái Chờ đóng gói; (3) cập nhật số lượng kho theo kiểu màn Giá vốn (cha – con); (4) vuốt xuống làm mới Đơn hàng đang không chạy. "Khảo sát kỹ, làm chậm mà chắc."
 
@@ -136,3 +136,7 @@ Khác bản khảo sát:
 - **Đường thử đề xuất trước khi OTA production:** một bản `eas build -p android --profile preview` (kênh `preview`, runtime 1.4.1) cài lên máy ảo + điện thoại Android của anh → đẩy OTA kênh preview (`eas update --channel preview`) → thử tem thật → ổn mới đẩy kênh production. Tốn 1 lượt build EAS; chờ anh quyết.
 - Tài khoản nhân viên (khu Kho · QR · Cấu hình) chưa đăng nhập thử; mã dùng chung `ScanDetailTab` với khu chủ shop.
 - Dữ liệu thử trên DB local: 13 đơn `PACKDEMO-*` (script seed ở scratchpad phiên, chạy lại với `--clean` để xóa).
+
+### 7.4 Bản 1.4.2 — đã nộp hai kho 05/11 chiều
+
+Anh chốt nộp luôn, thử trên TestFlight, không ổn thì tối thay. iOS 1.4.2 (29): TestFlight + WAITING_FOR_REVIEW (`110cd16d`). Android 1.4.2 [vc 12]: production completed. Bản nộp khi CHƯA thử camera / tem thật; checklist DUA-APP mục 9 ca 1–5 không chạy lại (mã Tài chính không đổi), ca 8–10 mới qua giả lập web. Lỗi JS sau khi thử vá bằng OTA runtime 1.4.2. Chi tiết lượt nộp ở PROGRESS phiên 05/11 chiều (3)–(4).

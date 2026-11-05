@@ -584,7 +584,6 @@ function CampaignCard({
   onPress: () => void;
   attention?: boolean;
 }) {
-  const below = c.roasBroad != null && c.breakevenRoas != null && c.roasBroad < c.breakevenRoas;
   const acted = hubsellActionLabel(c);
   const edge = !attention
     ? ""

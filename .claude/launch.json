@@ -75,15 +75,6 @@
       "port": 8082
     },
     {
-      "name": "mobile-android-http",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "-e",
-        "process.env.HUBSELL_API='http://localhost:4010';process.env.EXPO_PUBLIC_API_URL='http://10.0.2.2:8099';const cp=require('child_process');cp.spawn('node',['hubsell-mobile/scripts/dev-proxy.js'],{stdio:'inherit'});cp.spawn('npx',['expo','start','--android','--port','8082'],{stdio:'inherit',shell:true,cwd:'hubsell-mobile'})"
-      ],
-      "port": 8082
-    },
-    {
       "name": "backend-http",
       "runtimeExecutable": "node",
       "runtimeArgs": [

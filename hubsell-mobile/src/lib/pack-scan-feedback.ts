@@ -1,4 +1,6 @@
 import type { PackingScanResponse } from "../types/api";
+// Chỉ lấy KIỂU: tệp này phải chạy được bằng node (test), không được kéo expo-audio vào.
+import type { ScanSound } from "./scan-sounds";
 
 /**
  * QUÉT ĐÓNG GÓI — kết quả máy chủ → màn báo + âm + rung (05/11/2026). Hàm thuần để test
@@ -8,7 +10,7 @@ import type { PackingScanResponse } from "../types/api";
  * đơn hủy và đơn không hủy phải nghe ra khác nhau. Người gói nhìn kiện chứ không nhìn
  * màn hình nên ÂM là kênh chính, màn là kênh phụ.
  *
- * Bảng (docs/MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md mục 3):
+ * Bảng (docs/MOBILE-DAI-TU-DON-HANG-KHO.md mục 3):
  *   ghi được                    xanh   ting-ting          0,8 s
  *   ghi được + khách xin hủy    vàng   rè trầm            2,5 s   (để riêng kiện)
  *   đã quét rồi                 vàng   boop-boop          1,2 s
@@ -32,7 +34,6 @@ export type PackFlashKind =
   /** Không ghi được: không thấy đơn, mã khớp nhiều đơn, mất mạng. */
   | "failed";
 
-export type PackSound = "success" | "error" | "duplicate" | "cancelled";
 export type PackHaptic = "success" | "warning" | "error" | "errorTwice";
 export type PackCounter = "packed" | "cancelled" | "failed";
 
@@ -46,7 +47,7 @@ export interface PackFlash {
   meta: string | null;
   /** Câu giải thích / việc cần làm. */
   detail: string | null;
-  sound: PackSound;
+  sound: ScanSound;
   haptic: PackHaptic;
   /** Màn báo tự tắt sau chừng này. */
   holdMs: number;

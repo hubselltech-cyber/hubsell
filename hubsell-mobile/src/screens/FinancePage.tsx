@@ -25,7 +25,6 @@ import type {
 import { defaultRange, previousRange, type DateRange } from "@/lib/dates";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { compactMoney, formatMoney, groupVN } from "@/lib/format";
-import { CHANNEL_LABEL } from "@/lib/labels";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { ShopFilterField, type ShopScope } from "@/components/ShopFilter";
 import { fetchChannels } from "@/api/channels";

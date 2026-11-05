@@ -6,7 +6,16 @@
 
 ---
 
-## Phiên 05/11 chiều (3) — BẢN 1.4.2 mobile: anh "Nộp luôn, dựng TestFlight… chiều nay anh test, không ổn thì tối thay" → ĐÃ commit `02b8f8b2` (chưa push), ĐANG BUILD trên Expo; ⏳ còn gắn build + nộp duyệt Apple, ghi "Có gì mới" Google
+## Phiên 05/11 chiều (4) — BẢN 1.4.2 ĐÃ NỘP CẢ HAI KHO + dọn code, cây thư mục (anh: "dọn dẹp code thừa, đảm bảo mô hình tree rồi nghỉ")
+
+- **iOS:** build 1.4.2 (29) xong 14:28, lên ASC 14:29 (VALID, có trên TestFlight — anh xác nhận "bản test lên rồi"); 14:31 `attach-build 1.4.2 29` + `submit 1.4.2` → **WAITING_FOR_REVIEW, reviewSubmission `110cd16d-da9b-42e2-8a10-440ad6badae2`** (thư Apple mang ID này). Phát hành tự động sau duyệt.
+- **Android:** build vc 12 xong 14:35. Lượt nộp hẹn sẵn `a911a859` **HỎNG** (`EAS_GOOGLE_PLAY_EDIT_INVALID`): em chạy `play-status.mjs` đúng lúc Expo đang tải bản lên, script mở một phiên chỉnh sửa mới làm phiên của Expo mất hiệu lực. Nộp lại `b01e6c01` (chờ xong, không đụng Play) → được; `play-release-notes.mjs 12` ghi "Có gì mới" 432 ký tự → **production 1.4.2 [vc 12] completed** (Google duyệt xong tự lên kho).
+- **Mẹo mới:** `eas submit --id <build đang chạy> --no-wait` = hẹn nộp trên máy chủ Expo, không cần giữ máy mở (iOS chạy đúng). **Bẫy mới:** KHÔNG chạy `play-status.mjs` / `play-release-notes.mjs` khi một lượt `eas submit` Android đang chạy.
+- **Dọn:** docs khảo sát đã thành thiết kế + kết quả → đổi tên `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md` → `MOBILE-DAI-TU-DON-HANG-KHO.md` (sửa mọi chỗ trỏ tới); bỏ launch config `mobile-android-http` (app không chạy trong Expo Go); kiểu âm quét dùng một nguồn `ScanSound` (bỏ bản lặp `PackSound`); `tiersOf` thôi export; gộp + rút chú thích dài ở ô tìm Đơn hàng và `ScanScreen`, sửa thụt lề; gỡ 2 biến thừa có từ trước (`below` ở `AdsPage`, import `CHANNEL_LABEL` ở `FinancePage`). tsc sạch, eslint 51 → 49, test 58/58. Các sửa này KHÔNG đổi hành vi nên không cần build / OTA lại (bản 29 / vc 12 dựng từ `02b8f8b2`).
+- **Còn để lại có chủ đích:** `CostPricesScreen` vẫn giữ bản tách tầng phân loại viết liền (chưa gộp với `lib/variant-tiers.ts` — gộp là đụng màn Giá vốn đang chạy, làm khi có lượt thử máy thật); launch config cũ `mobile-android-local` (chỉ dùng lại được khi có dev client).
+- **⏳ Chờ:** anh thử 1.4.2 (29) trên TestFlight chiều 05/11 (6 mục em chưa kiểm được: tem thật, âm + rung, vuốt làm mới, bàn phím màn quét, lưu nhiều phân loại, công tắc tab QR) → lệch JS thì vá OTA runtime 1.4.2 (`node scripts/ota-update.mjs`), lệch native thì build lại tối 05/11. Anh `git push` (3 commit).
+
+## Phiên 05/11 chiều (3) — BẢN 1.4.2 mobile: anh "Nộp luôn, dựng TestFlight… chiều nay anh test, không ổn thì tối thay" → ĐÃ commit `02b8f8b2` (chưa push), ĐANG BUILD trên Expo — ✅ đã nộp xong cả hai kho, xem mục (4) ở trên
 
 - **Trạng thái kho trước khi làm:** iOS 1.4.1 READY_FOR_SALE, Play production 1.4.1 [vc 11] completed → bản mới là **1.4.2** (`app.json`; runtime OTA mới = 1.4.2).
 - **Build EAS 14:20 (production, cả hai nền):** iOS **1.4.2 (29)** `da361b79-e0cc-4512-ad32-b7df1db0b36f`, Android **vc 12** `6bd6ad48-3e3e-4531-945d-e1ae4aaf9601`.
@@ -17,7 +26,7 @@
 - **Lưu ý:** Play để releaseStatus completed → Google duyệt xong là tự lên kho cho mọi khách; Apple cũng phát hành tự động sau duyệt. Lỗi JS sau đó vá OTA (runtime 1.4.2), lỗi native phải build lại.
 - Local đã dọn: tắt backend-http + giả lập web, xóa 13 đơn `PACKDEMO-*` (2 phiếu kho thử PN-261105-139F / PX-261105-52E5 còn trong DB local).
 
-## Phiên 05/11 chiều (2) — ĐẠI TU MOBILE đợt 1: anh "Duyệt, làm đi" → ĐÃ CODE cả 4 việc, kiểm giả lập web local; CHƯA commit, CHƯA thử máy thật; ⏳ anh xem local + quyết bản dựng thử (docs `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md` mục 7)
+## Phiên 05/11 chiều (2) — ĐẠI TU MOBILE đợt 1: anh "Duyệt, làm đi" → ĐÃ CODE cả 4 việc, kiểm giả lập web local; CHƯA commit, CHƯA thử máy thật; ⏳ anh xem local + quyết bản dựng thử (docs `MOBILE-DAI-TU-DON-HANG-KHO.md` mục 7)
 
 - **Anh duyệt cả 4 điểm** (công tắc "Xem đơn · Đóng gói" ở tab QR giữa; bỏ tab Theo ĐVVC + doanh số; âm riêng đơn hủy; lưu nhiều phân loại sinh Phiếu kho).
 - **Việc 2 — Phiếu nhặt hàng:** `PickSheet` gọi `/api/orders/pick-summary?shippingStatus=PROCESSED&printed=yes` (đủ mọi SKU, hết cắt top 50); nút ngoài giữ chữ "Thống kê". Bộ lọc thêm 3 chip con của Đã xử lý; thẻ đơn đọc theo bước đóng gói (Chưa in phiếu / Chờ đóng gói / Đã đóng gói / Đã bàn giao) + dải đỏ "Đã gói — lấy kiện ra".
@@ -29,7 +38,7 @@
 - **Anh xem local, góp ý 1:** nút "Đóng gói" phải thẳng cột với chip Lazada bên dưới → ô tìm + nút chia theo đúng lưới 4 cột của hàng chip sàn (nút = một ô, ô tìm = ba ô + hai khe); đo 320 / 360 / 390 / 430 / 660 px: mép phải lệch 0, mép trái lệch ≤ 0,5 px, cao bằng ô tìm (42 px); dưới 360 px nút bỏ icon để chữ không bị cắt.
 - **Ghi:** docs MOBILE-DAI-TU… mục 7, DUA-APP mục 9 (thêm ca 8–10 vào checklist), docs/README, `docs/store/LISTING.md`, memory `hubsell-mobile-dai-tu-don-hang-kho-2026-11-05` + `gotcha-expo-go-khong-chay-duoc-app` + `hubsell-dong-goi-ban-giao`. Launch config mới: `mobile-web-http`, `mobile-android-http`.
 
-## Phiên 05/11 chiều — ĐẠI TU MOBILE đợt 1 (Đơn hàng + Kho): KHẢO SÁT XONG 4 việc, việc 4 đã sửa (chưa commit); ⏳ CHỜ ANH CHỐT 4 điểm rồi mới code việc 1–3 (docs `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md`) — ✅ anh đã duyệt, xem mục trên
+## Phiên 05/11 chiều — ĐẠI TU MOBILE đợt 1 (Đơn hàng + Kho): KHẢO SÁT XONG 4 việc, việc 4 đã sửa (chưa commit); ⏳ CHỜ ANH CHỐT 4 điểm rồi mới code việc 1–3 (docs `MOBILE-DAI-TU-DON-HANG-KHO.md`) — ✅ anh đã duyệt, xem mục trên
 
 - **Anh (ảnh màn Đơn hàng app, khoanh góc phải ô tìm):** (1) thêm quét mã trong Đơn hàng để chuyển Chờ đóng gói → Đã đóng gói, chỉ âm thanh + màn báo tự tắt, không popup nút bấm; (2) "Thống kê bốc hàng" → "Phiếu nhặt hàng", tính ở Chờ đóng gói; (3) cập nhật số lượng kho theo kiểu Giá vốn (cha – con); (4) vuốt xuống làm mới Đơn hàng không chạy. "Khảo sát kỹ, làm chậm mà chắc."
 - **Kết luận khảo sát:** cả 4 việc không đổi backend, không build kho — API có sẵn từ đợt web (`/api/orders/packing/scan`, `/api/orders/pick-summary`, `/api/products?view=grouped`, `/api/inventory/adjust-bulk`), module native đã nằm trong 1.4.1 → đi OTA.
@@ -38,7 +47,7 @@
 - **Việc 1 (chưa code):** màn mới `PackScanScreen` (không nhét vào `ScanScreen` — màn cũ là luồng chặn, bấm mới quét tiếp); 4 luật chống bắn lặp cho tem nhiều mã vạch; bảng màn / âm / rung; thêm 1 âm riêng cho đơn hủy; dải đếm cố định đáy màn.
 - **Việc 3 (chưa code):** danh sách theo mẫu + hộp trượt từng phân loại; ≥ 2 phân loại lưu bằng `adjust-bulk` (một giao dịch, sinh Phiếu kho); không gõ đè tồn, không ô "số chung cả mẫu".
 - **⏳ Chờ anh chốt (docs mục 5):** (1) nhân viên không có tab Đơn hàng → công tắc "Xem đơn · Đóng gói" ở nút QR giữa; (2) bỏ tab Theo ĐVVC + doanh số; (3) âm riêng đơn hủy, khách xin hủy = vàng + buzz, đỏ giữ 2,5 s; (4) lưu nhiều phân loại sinh Phiếu kho.
-- **Ghi:** docs `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md` (mới) + docs/README, memory `hubsell-mobile-dai-tu-don-hang-kho-2026-11-05`.
+- **Ghi:** docs `MOBILE-DAI-TU-DON-HANG-KHO.md` (mới) + docs/README, memory `hubsell-mobile-dai-tu-don-hang-kho-2026-11-05`.
 
 ## Phiên 05/11 trưa (3) — Đổi tên "Thống kê bốc hàng" → "Phiếu nhặt hàng" (web) — ĐÃ LÀM, kiểm local, ✅ PUSH e89baca4 (anh: "Push trước"); nút ngoài trả về "Thống kê"
 
