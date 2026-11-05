@@ -12,6 +12,7 @@
 - **Đổi 4 chỗ khách nhìn thấy trên web:** tiêu đề popup; nút trên trang Đơn hàng "Thống kê" → "Phiếu nhặt hàng" (em đổi theo cho khớp tên popup); nút trong popup "Xuất thống kê" → "Xuất phiếu nhặt hàng"; tờ in (tiêu đề "PHIẾU NHẶT HÀNG"). Route, tệp, hàm `pick-summary` giữ nguyên.
 - **Kiểm local demo 1280:** chip Chờ đóng gói → nút "Phiếu nhặt hàng" → popup đúng tiêu đề, 102 đơn, nút "Xuất phiếu nhặt hàng" cùng hàng với 2 tab, 0 phần tử tràn hộp, trang không tràn ngang. Ở 1280 cụm hai nút vẫn xuống dòng dưới hàng chip và bám phải — như trước khi đổi tên (cụm vốn đã rộng hơn chỗ trống). tsc FE + eslint sạch. Chưa bấm in thật (khung in không đổi ngoài chữ tiêu đề).
 - **Anh xem rồi chốt lại:** nút ngoài trang Đơn hàng **vẫn để "Thống kê"** ("cho khách hàng quen sử dụng như vậy") → trả chữ nút, giữ "Phiếu nhặt hàng" ở tiêu đề popup, nút Xuất và tờ in.
+- **Push + kiểm prod:** `e89baca4` (đổi tên) rồi `0f3dcfb3` (trả chữ nút). Prod, tài khoản Chủ Shop Hubsell, chỉ xem: chip Chờ đóng gói có cụm nút **"Thống kê"** + "Quét đóng gói · Biên bản bàn giao"; bấm Thống kê → popup tiêu đề **"Phiếu nhặt hàng"**, "Chờ đóng gói · 5 đơn · cần lấy 5 sản phẩm", nút **"Xuất phiếu nhặt hàng"**. Chưa bấm in thật trên prod (tiêu đề tờ in chưa nhìn tận mắt).
 - **Mobile:** anh chốt "phần mobile lát nữa sẽ còn đại tu, làm luôn" → app mobile còn "Thống kê bốc hàng" và `docs/store/LISTING.md` đổi trong đợt đại tu mobile, không đẩy OTA riêng.
 - **Ghi:** docs DONG-GOI-BAN-GIAO mục 5, memory `hubsell-dong-goi-ban-giao`.
 
