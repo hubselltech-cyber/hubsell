@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 05/11 trưa (2) — Chuyển công tắc "Tự chuẩn bị hàng" từ Kênh bán về trang Đơn hàng (nút + popup gian hàng) — ĐÃ LÀM, kiểm local, commit local, CHƯA push
+
+- **Anh (2 ảnh):** chuyển nút bật tự chuẩn bị hàng về Đơn hàng, bấm vào hiện popup các gian hàng và bật hoặc tắt; vị trí khoanh = hàng công cụ bảng đơn, trước Chế độ xem / Cột.
+- **Làm (chỉ frontend, backend không đổi):** `components/orders/auto-arrange-dialog.tsx` mới (nút + viên bật/tổng + popup từng gian có công tắc; bật → cùng hộp đổi sang màn xác nhận câu anh chốt 04/11, tắt → tắt ngay); `DataTable` thêm `toolbarActions`; trang Kênh bán gỡ công tắc, xóa `components/channels/auto-arrange-switch.tsx`. Chỉ chủ shop thấy nút.
+- **Em tự chọn, chờ anh xem:** nút chỉ ở tab **Tất cả + Chờ xử lý** (máy chỉ đụng đơn Chờ xử lý); gian chưa nối API / đã ngắt vẫn liệt kê kèm lý do thay cho công tắc; tab trống vẫn vẽ nút.
+- **Kiểm local (demo, 3010 ↔ 4010; seed tạm 2 gian thành đã nối API + tên gian 80 ký tự):** nút đúng 2 tab; bật → xác nhận → toast → viên 1/2; tắt → 0/2; 0 phần tử tràn hộp; 1280 ba nút cùng hàng; tối bật thật; tab Chờ xử lý trống còn nút; Kênh bán 0 công tắc. tsc FE + eslint sạch. Chưa thử: tài khoản nhân viên, shop rất nhiều gian.
+- **Dữ liệu thử còn trên demo local cho anh xem:** gian Shopee + TikTok của demo có `refreshToken = 'demo-test'` (để hiện công tắc), cả hai đang TẮT, 0 dòng làn; tên gian đã trả. **Dọn trước khi push** (đặt `refreshToken` về null).
+- **Ghi:** docs TU-CHUAN-BI-HANG mục 5.1, README, memory `hubsell-tu-chuan-bi-hang-theo-gian`.
+
 ## Phiên 05/11 trưa — Đơn hàng: cụm nút Thống kê + Quét đóng gói CHỈ hiện ở chip "Chờ đóng gói" — ĐÃ LÀM, kiểm local, commit local, CHƯA push
 
 - **Anh (ảnh khoanh cụm nút):** phần này chỉ xuất hiện ở tab Chờ đóng gói, các tab khác không nên có vì không có nhiều ý nghĩa. Thay cho chốt 04/11 (chỉ ẩn ở chip Đã đóng gói).

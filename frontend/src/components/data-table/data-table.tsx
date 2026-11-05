@@ -109,6 +109,7 @@ export function DataTable<TData>({
   initialPinning,
   striped = true,
   toolbar,
+  toolbarActions,
   rowClassName,
   onRowClick,
   headerEmphasis,
@@ -127,6 +128,8 @@ export function DataTable<TData>({
   striped?: boolean;
   /** Nội dung bên TRÁI hàng nút Cột/Chế độ xem (vd tổng số dòng). */
   toolbar?: React.ReactNode;
+  /** Nút riêng của trang, đứng bên PHẢI ngay trước Chế độ xem / Cột (vd Tự chuẩn bị hàng). */
+  toolbarActions?: React.ReactNode;
   rowClassName?: (row: TData, index: number) => string | undefined;
   /** Bấm dòng (vd mở modal chi tiết) — tự thêm cursor-pointer. */
   onRowClick?: (row: TData) => void;
@@ -271,7 +274,8 @@ export function DataTable<TData>({
       {/* Hàng công cụ của bảng: trái = chú thích trang, phải = 2 menu ERP */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 px-3 py-2">
         <div className="min-w-0 text-sm text-muted-foreground">{toolbar}</div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {toolbarActions}
           <ViewsMenu
             tableId={tableId}
             snapshot={() => ({

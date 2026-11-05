@@ -415,7 +415,7 @@ Tách đôi vì thực tế shop gói hàng buổi sáng nhưng shipper chiều 
 
 **Chống in trùng & đóng gói lặp:** trong tab "Đã xử lý" có 4 bộ lọc con kèm số đếm — *Tất cả / Chưa in phiếu / Chờ đóng gói / Đã đóng gói*. In phiếu xong đơn tự rơi sang nhóm "Chờ đóng gói" và bảng gắn nhãn, trỏ chuột thấy giờ in, nên người sau không in lại đơn người trước đang gói. In lại vẫn được nhưng **giữ nguyên mốc lần đầu** — cái shop cần biết là phiếu đã ra giấy từ lúc nào, không phải lần in gần nhất.
 
-**Tự chuẩn bị hàng theo gian (04/11/2026):** công tắc trên trang Kênh bán; bật là worker tự chạy mẻ Chuẩn bị hàng cho đơn Chờ xử lý đã thanh toán của gian mỗi 30 phút (bỏ qua hỏa tốc, khách xin hủy, đơn người đang bấm), đơn sang Đã xử lý · Chưa in phiếu, việc in vẫn do shop. Đơn sàn từ chối được gắn nhãn + chuông để làm tay. Thiết kế ở [docs/TU-CHUAN-BI-HANG.md](docs/TU-CHUAN-BI-HANG.md).
+**Tự chuẩn bị hàng theo gian (04/11/2026):** nút "Tự chuẩn bị hàng" trên trang Đơn hàng (tab Tất cả / Chờ xử lý) mở hộp bật / tắt từng gian; bật là worker tự chạy mẻ Chuẩn bị hàng cho đơn Chờ xử lý đã thanh toán của gian mỗi 30 phút (bỏ qua hỏa tốc, khách xin hủy, đơn người đang bấm), đơn sang Đã xử lý · Chưa in phiếu, việc in vẫn do shop. Đơn sàn từ chối được gắn nhãn + chuông để làm tay. Thiết kế ở [docs/TU-CHUAN-BI-HANG.md](docs/TU-CHUAN-BI-HANG.md).
 
 ⚠️ **Thêm trạng thái mới phải rà lại `finance.ts`** — "Tiền chờ về" lọc theo `shippingStatus in [PENDING, PROCESSED, SHIPPING]`. Bỏ sót một trạng thái là cả nhóm đơn đó biến mất khỏi báo cáo dòng tiền mà không có dấu hiệu gì.
 

@@ -32,6 +32,7 @@ import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { LinkDrawer } from "@/components/products/channel-products/link-drawer";
 import { groupChannelProducts, type ChannelGroup } from "@/components/products/channel-products/shared";
 import { canManageShop } from "@/lib/permissions";
+import { AutoArrangeButton } from "@/components/orders/auto-arrange-dialog";
 import { PickSummaryDialog } from "@/components/orders/pick-summary-dialog";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
@@ -960,6 +961,12 @@ export default function OrdersPage() {
     }
   }
 
+  // TỰ CHUẨN BỊ HÀNG (05/11/2026, anh Trung chuyển từ trang Kênh bán về đây): nút trên hàng công cụ
+  // của bảng, mở hộp bật / tắt từng gian. Chỉ chủ shop (API requireAdmin); chỉ ở tab Tất cả và Chờ xử
+  // lý — máy chỉ đụng đơn Chờ xử lý, các tab sau không liên quan.
+  const autoArrangeAction =
+    isShopOwner && (tab === "all" || tab === "pending") ? <AutoArrangeButton /> : null;
+
   return (
     <AppShell>
       {/* Chừa chỗ dưới đáy để thanh xử lý hàng loạt không che mất dòng cuối bảng */}
@@ -1239,12 +1246,21 @@ export default function OrdersPage() {
                 Đang tải dữ liệu…
               </p>
             ) : items.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                <PackageOpen className="mx-auto mb-2 size-8" />
-                {isFiltering
-                  ? "Không có đơn hàng nào khớp bộ lọc."
-                  : "Chưa có đơn hàng nào ở trạng thái này."}
-              </div>
+              <>
+                {/* Tab Chờ xử lý trống là chuyện thường khi máy đã chuẩn bị hết — nút vẫn phải còn
+                    để tắt được, nên vẽ lại đúng hàng công cụ của bảng. */}
+                {autoArrangeAction && (
+                  <div className="flex justify-end border-b border-slate-200/70 px-3 py-2">
+                    {autoArrangeAction}
+                  </div>
+                )}
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  <PackageOpen className="mx-auto mb-2 size-8" />
+                  {isFiltering
+                    ? "Không có đơn hàng nào khớp bộ lọc."
+                    : "Chưa có đơn hàng nào ở trạng thái này."}
+                </div>
+              </>
             ) : (
               <Refreshing active={loading}>
                 {/* Bảng chuẩn ERP (Tầng 2): menu Cột (ẩn/hiện + ghim trái),
@@ -1263,6 +1279,7 @@ export default function OrdersPage() {
                   selection={{ selectedIds, onChange: setSelectedIds }}
                   viewExtras={viewExtras}
                   toolbar={`${formatNumber(total)} đơn khớp bộ lọc`}
+                  toolbarActions={autoArrangeAction}
                 />
               </Refreshing>
             )}

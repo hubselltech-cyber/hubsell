@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 
 import { AccessDenied } from "@/components/shared/access-denied";
-import { AutoArrangeSwitch } from "@/components/channels/auto-arrange-switch";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -1150,10 +1149,8 @@ export default function ChannelsPage() {
                               {formatNumber(c.matchedProductCount ?? 0)} SP sàn đã
                               khớp SKU
                             </p>
-                            {/* Tự chuẩn bị hàng (04/11/2026): chỉ gian đang hoạt động, đã nối API sàn */}
-                            {active && c.apiConnected && c.channelName !== "OFFLINE" && (
-                              <AutoArrangeSwitch channel={c} onDone={() => void load()} />
-                            )}
+                            {/* Công tắc Tự chuẩn bị hàng đã chuyển sang trang Đơn hàng (05/11/2026,
+                                components/orders/auto-arrange-dialog.tsx) — trang này chỉ lo kết nối. */}
                             {/* Lazada app ISV: token sống theo kỳ đăng ký gói 6 tháng —
                                 hiện hạn kỳ, sắp hết thì tô vàng + nút Gia hạn (mở trang
                                 đăng ký; gia hạn xong phải ủy quyền lại qua Kết nối gian hàng). */}

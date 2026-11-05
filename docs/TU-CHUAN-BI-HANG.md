@@ -82,8 +82,26 @@ Không giữ trạng thái ở biến tiến trình: cờ, số lần, thuê bao
 ## 5. API + giao diện
 
 - `POST /api/channels/:id/auto-arrange {enabled}` (chủ shop): từ chối gian OFFLINE, gian chưa nối API hoặc đã ngắt. Giao dịch: cột + dòng làn + xóa cờ đơn.
-- Trang Kênh bán: công tắc "Tự chuẩn bị hàng" trên dòng gian đang hoạt động. Gạt bật → hộp xác nhận với câu anh chốt + ba ý ngắn (30′ một lần · bỏ qua hỏa tốc, chưa thanh toán, khách xin hủy · đơn máy không làm được sẽ có chuông). Gạt tắt → tắt ngay.
+- ~~Trang Kênh bán: công tắc trên dòng gian~~ — **05/11 anh chuyển về trang Đơn hàng** (mục 5.1). Trang Kênh bán không còn công tắc.
 - Trang Đơn hàng, tab Chờ xử lý: đơn bị chặn hiện nhãn "Máy không tự chuẩn bị được", trỏ chuột thấy lý do.
+
+### 5.1 Nút "Tự chuẩn bị hàng" trên trang Đơn hàng (05/11/2026)
+
+**Anh yêu cầu:** chuyển nút bật tự chuẩn bị hàng về Đơn hàng; bấm vào hiện popup các gian hàng để bật hoặc tắt. Vị trí anh khoanh: hàng công cụ của bảng đơn, ngay trước Chế độ xem / Cột.
+
+- `components/orders/auto-arrange-dialog.tsx` (`AutoArrangeButton`); `auto-arrange-switch.tsx` ở Kênh bán đã xóa. `DataTable` thêm prop `toolbarActions` (nút riêng của trang, bên phải, trước Chế độ xem).
+- Nút: "Tự chuẩn bị hàng" + viên **bật / tổng gian bật được** (xanh khi có gian đang bật). Chỉ chủ shop thấy (API `requireAdmin`).
+- Popup: mỗi gian một dòng — huy hiệu sàn · tên gian · công tắc. Gian chưa nối API / đã ngắt vẫn liệt kê, thay công tắc bằng lý do, để khách không tưởng gian bị mất. Kênh offline không liệt kê.
+- Gạt bật → **cùng hộp** đổi sang màn xác nhận (câu anh chốt 04/11 + ba ý), nút Quay lại / Bật; không chồng hộp thứ hai. Gạt tắt → tắt ngay.
+
+| Quyết định | Vì sao |
+|---|---|
+| Chỉ hiện ở tab Tất cả và Chờ xử lý (em tự chọn, chờ anh xem) | Máy chỉ đụng đơn Chờ xử lý; cùng tinh thần anh chốt cho cụm Thống kê / Quét đóng gói |
+| Tab trống vẫn vẽ hàng nút | Chờ xử lý trống là chuyện thường khi máy đã chuẩn bị hết — vẫn phải tắt được |
+| Đọc chung bộ đệm `qk.channels()` với bộ lọc sàn | Không thêm lượt gọi API lúc tải trang; đổi xong làm mới bộ đệm |
+| Giữ bước xác nhận khi bật | Bật là máy gọi sàn ngay lượt đầu cho mọi đơn chờ của gian — gạt nhầm phải có một nhịp dừng |
+
+Kiểm local demo (2 gian seed tạm thành đã nối API): nút đúng 2 tab, 4 tab kia không có; bật → xác nhận → toast → viên 1/2; tắt → 0/2; tên gian 80 ký tự cắt gọn, đo JS 0 phần tử tràn hộp; 1280 ba nút cùng hàng, trang không tràn ngang; tối bật thật qua nút giao diện; tab trống còn nút; trang Kênh bán 0 công tắc. Chưa thử: tài khoản nhân viên (nút phải ẩn), shop rất nhiều gian (danh sách cuộn trong hộp, cao tối đa 60vh).
 
 ## 6. Kế hoạch đưa lên
 
@@ -114,4 +132,4 @@ FROM "fulfillment_batches" WHERE "source"='AUTO' ORDER BY "createdAt" DESC LIMIT
 - Không kiểm tồn kho trước khi chuẩn bị (chỉ biết tồn khi khách nối SKU; popup đã cảnh báo). Có thể thêm "bỏ qua đơn có SKU tồn khả dụng ≤ 0" khi có ca thật.
 - Mẻ chưa đi qua cổng gọi sàn (Pha B) — như nút bấm tay. Khi luồng chuẩn bị hàng nối cổng thì máy hưởng theo.
 - Mất thuê bao giữa lượt: mẻ đang chạy vẫn chạy tới xong (batch-runner không nhận tín hiệu hủy); lượt kế của gian bị gian khác nhặt sẽ bỏ qua đơn đang trong mẻ RUNNING nên không gọi trùng.
-- Mobile: chưa có công tắc; chỉ web.
+- Mobile: chưa có công tắc; chỉ web (nút ở trang Đơn hàng).
