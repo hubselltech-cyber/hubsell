@@ -3,6 +3,7 @@ import { ChannelName, InventoryLogType, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { setStockAbsolute } from "../services/stock-ledger";
+import { availableToPush, dropPendingStockPushJobs, enqueueStockPush, getSafetyStockDefault } from "../integrations/inventory-push";
 import { PRODUCT_SYNC_REQUEST_MESSAGE, requestProductSyncNow } from "../workers/product-catalog-sync";
 import { cleanVariantName, productGroupKey, skuFromRoot } from "../lib/product-group";
 import {
@@ -25,9 +26,10 @@ const router = Router();
 
 /** Đưa dữ liệu ra ngoài kèm thông tin gian hàng và sản phẩm gốc đã nối. */
 const INCLUDE = {
-  channel: { select: { id: true, channelName: true, shopName: true } },
+  // stockSyncEnabled của gian + ba số tồn của SKU kho: cho công tắc đồng bộ tồn theo phân loại (06/11/2026).
+  channel: { select: { id: true, channelName: true, shopName: true, stockSyncEnabled: true } },
   product: {
-    select: { id: true, skuCode: true, productName: true, quantityInStock: true },
+    select: { id: true, skuCode: true, productName: true, quantityInStock: true, holdQuantity: true, safetyStock: true },
   },
 } as const;
 
@@ -175,8 +177,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
       prisma.channelProduct.count({ where: { ...baseScope, status: "DELISTED" } }),
     ]);
 
+    const safetyDefault = await getSafetyStockDefault(req.ownerId!);
     res.json({
-      items,
+      items: items.map((r) => ({
+        ...r,
+        product: r.product ? { ...r.product, availableToSell: availableToPush(r.product, safetyDefault) } : null,
+      })),
       total,
       page,
       pageSize,
@@ -1126,7 +1132,7 @@ router.post("/unlink", async (req: AuthRequest, res, next) => {
       await keepCostOnDetach(tx, { channelProductIds: ids }, req.ownerId!);
       return tx.channelProduct.updateMany({
         where: { id: { in: ids } },
-        data: { productId: null },
+        data: { productId: null, stockSyncEnabled: null },
       });
     });
     void logMappings(
@@ -1210,6 +1216,70 @@ async function logMappingsForRows(
 const ownerScope = (req: AuthRequest): Prisma.ChannelWhereInput => ({
   userId: req.ownerId!,
   ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+});
+
+/**
+ * POST /api/mappings/stock-sync — BẬT / TẮT đồng bộ tồn cho TỪNG PHÂN LOẠI đã nối (06/11/2026).
+ * Body: { channelProductIds: string[], enabled: boolean }. Ghi đè riêng lên công tắc của gian;
+ * dòng chưa nối bị bỏ qua. BẬT → xếp việc đẩy tồn ngay cho các SKU kho liên quan trên đúng các
+ * gian đó (không force: chỉ dòng đang bật mới được đẩy). TẮT → rút mọi việc đẩy còn chờ của các
+ * phân loại đó (kể cả việc của lượt bật cả gian trước đó); tồn trên sàn giữ nguyên số đang có.
+ */
+router.post("/stock-sync", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelProductIds, enabled } = req.body ?? {};
+    if (!Array.isArray(channelProductIds) || channelProductIds.length === 0 || channelProductIds.length > 2000) {
+      res.status(400).json({ error: "Chọn 1–2.000 phân loại" });
+      return;
+    }
+    if (typeof enabled !== "boolean") {
+      res.status(400).json({ error: "enabled phải là true/false" });
+      return;
+    }
+    const rows = await prisma.channelProduct.findMany({
+      where: { id: { in: channelProductIds.map(String) }, productId: { not: null }, channel: ownerScope(req) },
+      select: { id: true, channelId: true, channelSku: true, productId: true },
+    });
+    const r = await prisma.channelProduct.updateMany({
+      where: { id: { in: rows.map((x) => x.id) } },
+      data: { stockSyncEnabled: enabled },
+    });
+    let queued = 0;
+    let dropped = 0;
+    if (enabled) {
+      queued = (
+        await enqueueStockPush(
+          rows.map((x) => x.productId!),
+          { source: "bật đồng bộ tồn theo phân loại", channelIds: [...new Set(rows.map((x) => x.channelId))] }
+        )
+      ).queued;
+    } else {
+      dropped = await dropPendingStockPushJobs(rows);
+    }
+    res.json({ updated: r.count, enabled, queued, dropped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/mappings/stock-sync/summary — mỗi gian: bao nhiêu phân loại ĐÃ NỐI (còn bán) và bao nhiêu
+ * trong đó đang bật đồng bộ tồn (ghi đè riêng, không có thì theo công tắc của gian).
+ */
+router.get("/stock-sync/summary", async (req: AuthRequest, res, next) => {
+  try {
+    const rows = await prisma.$queryRaw<{ channelId: string; linked: number; enabled: number }[]>(
+      Prisma.sql`SELECT cp."channelId",
+                        COUNT(*)::int AS linked,
+                        (COUNT(*) FILTER (WHERE COALESCE(cp."stockSyncEnabled", c."stockSyncEnabled")))::int AS enabled
+                 FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
+                 WHERE c."userId" = ${req.ownerId!} AND cp."productId" IS NOT NULL AND cp."status" = 'ACTIVE'
+                 GROUP BY 1`
+    );
+    res.json({ channels: rows });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**

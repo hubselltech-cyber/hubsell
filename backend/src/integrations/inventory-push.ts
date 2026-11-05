@@ -21,6 +21,12 @@
 // có thể niêm yết trên nhiều gian, nhiều sàn; mọi gian luôn hiện CÙNG một số
 // "có thể bán". Gian A bán 1 → kho trừ 1 → A, B, C, D… đều nhận số mới.
 //
+// CÔNG TẮC THEO TỪNG PHÂN LOẠI SÀN (06/11/2026, anh Trung: nút theo gian là nút TỔNG, cần bật /
+// tắt từng sản phẩm và từng phân loại): trạng thái thật của một dòng ChannelProduct =
+// ChannelProduct.stockSyncEnabled ?? Channel.stockSyncEnabled (xem stockSyncOn / STOCK_SYNC_ON_WHERE
+// bên dưới — MỌI chỗ gác dùng chung hai thứ này, đừng tự viết lại điều kiện). Chưa đặt riêng (null)
+// thì y như trước: theo cờ của gian.
+//
 // Cờ BẬT/TẮT theo TỪNG GIAN (Channel.stockSyncEnabled, mặc định TẮT) gác ngay
 // ở cửa enqueue: gian tắt thì biến động tự động không sinh job cho gian đó —
 // chỉ thao tác chủ động trên CHÍNH gian đó (force = true: bật gian lần đầu,
@@ -49,6 +55,22 @@ export interface StockFields {
   safetyStock: number | null;
 }
 
+/**
+ * Phân loại sàn này có đang được kho điều khiển tồn không: công tắc riêng của phân loại; chưa đặt
+ * riêng (null) thì theo công tắc của gian.
+ */
+export function stockSyncOn(
+  link: { stockSyncEnabled: boolean | null },
+  channel: { stockSyncEnabled: boolean }
+): boolean {
+  return link.stockSyncEnabled ?? channel.stockSyncEnabled;
+}
+
+/** Điều kiện Prisma tương đương stockSyncOn — lọc các dòng ChannelProduct đang bật đồng bộ tồn. */
+export const STOCK_SYNC_ON_WHERE = {
+  OR: [{ stockSyncEnabled: true }, { stockSyncEnabled: null, channel: { stockSyncEnabled: true } }],
+} satisfies Prisma.ChannelProductWhereInput;
+
 /** Tồn khả dụng đẩy lên sàn — âm nghĩa là đã bán vượt, đẩy 0 để chặn bán thêm. */
 export function availableToPush(p: StockFields, safetyStockDefault: number): number {
   const safety = p.safetyStock ?? safetyStockDefault;
@@ -70,7 +92,7 @@ export async function getSafetyStockDefault(ownerId: string): Promise<number> {
 export interface EnqueueOptions {
   /** Nguồn biến động để ghi vào nhật ký sync (vd "webhook Shopee đơn X"). */
   source?: string;
-  /** true = người dùng chủ động sync — bỏ qua cờ stockSyncEnabled của gian. */
+  /** true = người dùng chủ động sync cả gian — bỏ qua công tắc (của gian lẫn của từng phân loại). */
   force?: boolean;
   /** Chỉ xếp job cho các gian này (vd bật đồng bộ MỘT gian) — bỏ trống = mọi gian. */
   channelIds?: string[];
@@ -136,12 +158,13 @@ async function writePushRows(
           // SKU đã gỡ niêm yết trên sàn không nhận tồn — đẩy chỉ sinh lỗi + cảnh báo rác.
           status: "ACTIVE",
           ...(opts.channelIds?.length ? { channelId: { in: opts.channelIds } } : {}),
+          // Công tắc gác ngay tại cửa — phân loại đang tắt (tắt riêng, hoặc chưa đặt riêng mà gian tắt)
+          // không sinh job tự động.
+          ...(opts.force ? {} : STOCK_SYNC_ON_WHERE),
           channel: {
             channelName: { in: PUSHABLE_CHANNELS },
             status: "ACTIVE",
             refreshToken: { not: null },
-            // Cờ theo gian gác ngay tại cửa — gian tắt không sinh job tự động.
-            ...(opts.force ? {} : { stockSyncEnabled: true }),
           },
         },
         select: {
@@ -464,6 +487,26 @@ export async function enqueueStockPushForChannel(
     rows.map((r) => r.productId!),
     { source, force: true, channelIds: [channelId] }
   );
+}
+
+/**
+ * Rút MỌI job còn chờ của những phân loại vừa bị TẮT RIÊNG đồng bộ tồn — kể cả job forced của lượt
+ * "bật cả gian" trước đó: tắt riêng một phân loại là ý chí cụ thể nhất, đến sau thì thắng (worker
+ * cũng gác như vậy, xem stock-push-worker). Gom theo gian để mỗi gian một câu lệnh nhỏ.
+ */
+export async function dropPendingStockPushJobs(rows: { channelId: string; channelSku: string }[]): Promise<number> {
+  const byChannel = new Map<string, string[]>();
+  for (const r of rows) byChannel.set(r.channelId, [...(byChannel.get(r.channelId) ?? []), r.channelSku]);
+  let dropped = 0;
+  for (const [channelId, skus] of byChannel) {
+    for (const part of chunks(skus, PUSH_ROW_CHUNK)) {
+      const r = await prisma.stockPushJob.deleteMany({
+        where: { channelId, channelSku: { in: part }, status: "PENDING" },
+      });
+      dropped += r.count;
+    }
+  }
+  return dropped;
 }
 
 /** Số job còn nằm trong hàng đợi của một chủ shop — UI poll để vẽ tiến độ. */

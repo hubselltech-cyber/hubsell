@@ -26,6 +26,7 @@ import {
   enqueueStockPush,
   getSafetyStockDefault,
   PUSHABLE_CHANNELS,
+  stockSyncOn,
 } from "../integrations/inventory-push";
 import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 
@@ -61,6 +62,12 @@ async function runOnce(): Promise<void> {
   try {
     const channels = await prisma.channel.findMany({
       where: {
+        // CHỈ gian đang bật, như trước giờ. Gian TẮT có vài phân loại bật riêng (06/11/2026) CHƯA được
+        // đối soát định kỳ — cố ý: (1) tìm các gian đó phải quét cột stockSyncEnabled của cả bảng
+        // ChannelProduct mỗi 6 giờ (chưa có chỉ mục, Supabase đang hụt Disk IO); (2) đối soát một gian là
+        // hỏi sàn tồn của MỌI SKU đã nối của gian, không riêng dòng đang bật — tốn hạn mức gọi sàn.
+        // Phân loại bật riêng vẫn được đẩy lúc bật và mỗi lần kho biến động. Làm đủ = chỉ mục một phần
+        // + chỉ hỏi sàn các dòng đang bật (docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 7.2).
         stockSyncEnabled: true,
         status: "ACTIVE",
         refreshToken: { not: null },
@@ -90,6 +97,17 @@ async function runOnce(): Promise<void> {
   } finally {
     running = false;
   }
+}
+
+/**
+ * Câu kể kết quả đối soát trên dòng thời gian vận hành. `pushing` = số SKU lệch ĐANG BẬT đồng bộ
+ * (được đẩy lại); phần còn lại đang tắt nên chỉ báo, không đẩy.
+ */
+export function describeReconcile(shopName: string, mismatched: number, scanned: number, pushing: number): string {
+  const head = `🔍 Đối soát tồn gian "${shopName}": ${mismatched}/${scanned} SKU lệch với Hubsell`;
+  if (pushing === mismatched) return `${head} — đã tự đẩy lại số đúng.`;
+  if (pushing === 0) return `${head} — các SKU này đang TẮT đồng bộ nên không đẩy lại.`;
+  return `${head} — đã tự đẩy lại ${pushing} SKU đang bật đồng bộ, ${mismatched - pushing} SKU đang tắt nên giữ nguyên.`;
 }
 
 export interface ReconcileResult {
@@ -135,6 +153,7 @@ export async function reconcileChannelStock(
         channelSku: true,
         channelStock: true,
         productId: true,
+        stockSyncEnabled: true,
         product: {
           select: { quantityInStock: true, holdQuantity: true, safetyStock: true },
         },
@@ -148,7 +167,8 @@ export async function reconcileChannelStock(
   ]);
   const pendingSkus = new Set(pending.map((p) => p.channelSku));
 
-  const mismatches: { channelSku: string; productId: string; hubsell: number; onChannel: number }[] = [];
+  // `syncOn`: phân loại này có đang bật đồng bộ không — dòng lệch mà đang TẮT thì chỉ đếm, không đẩy.
+  const mismatches: { channelSku: string; productId: string; hubsell: number; onChannel: number; syncOn: boolean }[] = [];
   for (const r of rows) {
     if (!r.product || pendingSkus.has(r.channelSku)) continue;
     const hubsell = availableToPush(r.product, safetyDefault);
@@ -158,14 +178,17 @@ export async function reconcileChannelStock(
         productId: r.productId!,
         hubsell,
         onChannel: r.channelStock!,
+        syncOn: stockSyncOn(r, channel),
       });
     }
   }
 
   // 3. Đẩy lại — mỗi SKU một job với ngữ cảnh riêng để nhật ký tự kể chuyện.
-  //    enqueue KHÔNG force: gian tắt sẽ tự bị lọc (không đẩy), gian bật đi qua.
+  //    enqueue KHÔNG force: phân loại đang tắt đồng bộ tự bị lọc ở cửa xếp việc; ở đây cũng bỏ qua
+  //    luôn để khỏi hỏi database vô ích.
   let queued = 0;
   for (const m of mismatches) {
+    if (!m.syncOn) continue;
     const r = await enqueueStockPush([m.productId], {
       source: `${source}: sàn đang ${m.onChannel}, Hubsell ${m.hubsell}`,
       channelIds: [channel.id],
@@ -187,9 +210,7 @@ export async function reconcileChannelStock(
         data: {
           ownerId: channel.userId,
           tag: "channel",
-          message: channel.stockSyncEnabled
-            ? `🔍 Đối soát tồn gian "${channel.shopName}": ${mismatches.length}/${rows.length} SKU lệch với Hubsell — đã tự đẩy lại số đúng.`
-            : `🔍 Đối soát tồn gian "${channel.shopName}": ${mismatches.length}/${rows.length} SKU lệch với Hubsell — gian đang TẮT đồng bộ nên không đẩy lại.`,
+          message: describeReconcile(channel.shopName, mismatches.length, rows.length, mismatches.filter((m) => m.syncOn).length),
         },
       })
       .catch(() => undefined);

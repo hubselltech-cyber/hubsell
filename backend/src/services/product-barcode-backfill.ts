@@ -2,6 +2,7 @@
 // TỰ ĐIỀN MÃ VẠCH QUẢN LÝ cho sản phẩm kho CŨ — từng bước nhỏ (05/11/2026 đêm,
 // docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 6.6; anh Trung chọn "Máy tự điền chậm").
 //
+// Đường DUY NHẤT điền mã cho sản phẩm cũ (script chạy tay scripts/backfill-product-barcode.ts đã bỏ 06/11).
 // Migration 20261105220000_product_barcode chỉ cho sản phẩm MỚI tự có mã (DEFAULT của cột);
 // sản phẩm có từ trước để NULL. Hàm ở đây làm MỘT BƯỚC: duyệt một lô theo khóa chính
 // (`id > con trỏ`, không OFFSET), điền mã cho dòng còn NULL bằng một câu UPDATE, rồi ghi con trỏ

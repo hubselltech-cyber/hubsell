@@ -29,7 +29,7 @@ import type { StockPushJob } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { withDbLock } from "../lib/db-lock";
 import { STOCK_PUSH_LEASE_SECONDS } from "../lib/queue-config";
-import { availableToPush } from "./inventory-push";
+import { availableToPush, stockSyncOn } from "./inventory-push";
 import {
   createSyncAlert,
   parseShopeeExternalId,
@@ -219,13 +219,6 @@ async function pushClaimedJobs(
     if (!first) await sleep(PACE_MS);
     first = false;
 
-    // Chủ shop vừa TẮT đồng bộ gian này giữa chừng → job tự động (không forced)
-    // hủy êm; job forced (sync tay) vẫn đi tiếp vì là ý chí người dùng.
-    if (!job.forced && !channel.stockSyncEnabled) {
-      await prisma.stockPushJob.deleteMany({ where: { id: job.id } });
-      continue;
-    }
-
     // Đọc lại mapping + tồn MỚI NHẤT ngay lúc đẩy.
     const mapping = await prisma.channelProduct.findUnique({
       where: {
@@ -236,10 +229,21 @@ async function pushClaimedJobs(
         productId: true,
         channelSku: true,
         channelStockLocationId: true,
+        stockSyncEnabled: true,
       },
     });
     if (!mapping?.productId || !mapping.externalId) {
       // SKU đã bị gỡ liên kết / mapping mất — không còn gì để đẩy.
+      await prisma.stockPushJob.deleteMany({ where: { id: job.id } });
+      continue;
+    }
+
+    // Chủ shop vừa TẮT đồng bộ giữa chừng (06/11/2026: công tắc theo phân loại, chưa đặt riêng thì
+    // theo gian):
+    //   · tắt RIÊNG phân loại này → hủy êm MỌI job của nó, kể cả forced (tắt riêng là ý chí cụ thể
+    //     nhất, đến sau lượt bật cả gian thì thắng);
+    //   · tắt cả gian → job tự động hủy êm; job forced (sync tay cả gian) vẫn đi tiếp như trước.
+    if (mapping.stockSyncEnabled === false || (!job.forced && !stockSyncOn(mapping, channel))) {
       await prisma.stockPushJob.deleteMany({ where: { id: job.id } });
       continue;
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -12,6 +12,7 @@ import {
   Link2Off,
   Loader2,
   MoreHorizontal,
+  RefreshCw,
   Search,
   Sparkles,
   X,
@@ -25,15 +26,21 @@ import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
+import { SyncSettingsDialog } from "@/components/products/sync-settings-dialog";
 import {
   ApiError,
   fetchChannelProducts,
   fetchChannels,
+  fetchStockSyncSummary,
   ignoreChannelProducts,
+  setChannelProductsStockSync,
   unlinkChannelProducts,
   type Channel,
   type ChannelName,
+  type ChannelProduct,
   type ChannelProductBucket,
+  type StockSyncChannelSummary,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
@@ -45,7 +52,8 @@ import { cn } from "@/lib/utils";
 import { AutoMatchDialog } from "./auto-match-dialog";
 import { LinkDrawer } from "./link-drawer";
 import { MappingHistoryDialog } from "./mapping-history-dialog";
-import { channelModelId, groupChannelProducts, variantLabel, type ChannelGroup } from "./shared";
+import { channelModelId, groupChannelProducts, isStockSyncOn, stockSyncChanges, variantLabel, type ChannelGroup } from "./shared";
+import { StockSyncConfirmDialog } from "./stock-sync-confirm-dialog";
 
 /**
  * SẢN PHẨM TRÊN SÀN — thiết kế lại 05/11/2026 (docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md).
@@ -59,6 +67,10 @@ import { channelModelId, groupChannelProducts, variantLabel, type ChannelGroup }
  *     toàn nằm ở bên Tổng kho") — đã gỡ nút "Đưa vào kho", "Đưa vào Tổng kho…" theo lô và ô "Tạo SKU"
  *     trong ngăn kéo. Đừng thêm lại đường tạo SKU kho ở đây.
  *   · Việc hàng loạt có bước xem lại: "Tự khớp mã trùng" (chỉ nối mã trùng chính xác).
+ *   · ĐỒNG BỘ TỒN BA CẤP (06/11, anh Trung: nút theo gian là nút tổng, cần bật / tắt từng sản phẩm và từng
+ *     phân loại): cột Trạng thái (kết nối) đứng TRƯỚC cột Đồng bộ tồn — nối trước, đồng bộ sau; công tắc thật ở TỪNG PHÂN LOẠI đã nối (dòng xổ); công tắc ở dòng sản phẩm và nút "Đồng bộ tồn
+ *     theo gian" là bật / tắt hàng loạt. Bật mà số sàn sẽ đổi → hộp xác nhận số cũ → số mới. Bật riêng là backend
+ *     xếp việc đẩy tồn ngay; tắt riêng là rút việc đẩy tự động đang chờ (docs QUAN-LY-KHO mục 7).
  *   · MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm sàn về Tổng kho. Luồng ngược "Tổng kho › Nối gian"
  *     (dải "Đang nối thêm gian cho SKU kho X" + nút "Nối vào X") đã gỡ — đừng thêm lại.
  * Thay link-manager.tsx (bảng bung sẵn, ô gõ mã từng dòng kiểu Salework 22/10) — anh Trung 05/11: "quá rối".
@@ -94,6 +106,11 @@ export function ChannelProductsPage({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
+  // Đồng bộ tồn: số tổng theo gian, hộp cài đặt theo gian (nút tổng), hộp xác nhận khi bật mà số sàn đổi.
+  const [syncSummary, setSyncSummary] = useState<StockSyncChannelSummary[] | null>(null);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncBusy, setSyncBusy] = useState<string | null>(null);
+  const [syncConfirm, setSyncConfirm] = useState<{ key: string; title: string; rows: ChannelProduct[] } | null>(null);
 
   useEffect(() => {
     fetchChannels()
@@ -127,9 +144,59 @@ export function ChannelProductsPage({
   const selectedGroups = groups.filter((g) => selected.has(g.key));
   const allOnPage = groups.length > 0 && groups.every((g) => selected.has(g.key));
 
+  const loadSyncSummary = useCallback(() => {
+    fetchStockSyncSummary()
+      .then((r) => setSyncSummary(r.channels))
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    loadSyncSummary();
+  }, [loadSyncSummary]);
+
   async function refresh() {
     setSelected(new Set());
+    loadSyncSummary();
     await invalidate(qk.channelProductsAll(), ["products"]);
+  }
+
+  // Số "đang đồng bộ / đã nối" của gian đang lọc (không lọc gian = cộng mọi gian).
+  const syncScope = (syncSummary ?? []).filter((c) => !channelId || c.channelId === channelId);
+  const syncLinked = syncScope.reduce((n, c) => n + c.linked, 0);
+  const syncEnabled = syncScope.reduce((n, c) => n + c.enabled, 0);
+
+  /** Ghi công tắc cho một loạt phân loại rồi tải lại. */
+  async function applyStockSync(key: string, rows: ChannelProduct[], enabled: boolean) {
+    setSyncBusy(key);
+    try {
+      const r = await setChannelProductsStockSync(rows.map((x) => x.id), enabled);
+      toast.success(
+        enabled
+          ? r.queued > 0
+            ? `Đã bật đồng bộ tồn ${formatNumber(r.updated)} phân loại — đang đẩy tồn kho lên sàn.`
+            : `Đã bật đồng bộ tồn ${formatNumber(r.updated)} phân loại. Chưa có gì để đẩy (gian chưa kết nối đẩy tồn, hoặc sàn đã gỡ sản phẩm).`
+          : `Đã tắt đồng bộ tồn ${formatNumber(r.updated)} phân loại — tồn trên sàn giữ nguyên số đang có.`
+      );
+      setSyncConfirm(null);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không đổi được công tắc đồng bộ tồn");
+    } finally {
+      setSyncBusy(null);
+    }
+  }
+
+  /**
+   * Bật / tắt đồng bộ tồn cho các phân loại ĐÃ NỐI trong `rows` (một phân loại, cả sản phẩm, hay nhiều sản
+   * phẩm đã tick). Tắt thì làm ngay; bật mà có phân loại số sàn khác số kho → hỏi lại kèm số cũ → mới.
+   */
+  function requestStockSync(key: string, title: string, rows: ChannelProduct[], enabled: boolean) {
+    const targets = rows.filter((r) => r.productId && isStockSyncOn(r) !== enabled);
+    if (targets.length === 0) return;
+    if (enabled && stockSyncChanges(targets).length > 0) {
+      setSyncConfirm({ key, title, rows: targets });
+      return;
+    }
+    void applyStockSync(key, targets, enabled);
   }
   function changeBucket(b: ChannelProductBucket) {
     setBucket(b);
@@ -270,6 +337,26 @@ export function ChannelProductsPage({
             </button>
           )}
         </div>
+        {/* NÚT TỔNG theo gian (06/11): bật / tắt cho mọi phân loại đã nối của một gian, qua màn so sánh sẵn có.
+            Viên số = phân loại đang đồng bộ / đã nối của gian đang lọc (không lọc gian = mọi gian). */}
+        <Button
+          variant="outline"
+          className="ml-auto"
+          onClick={() => setSyncDialogOpen(true)}
+          title="Bật / tắt đồng bộ tồn cho CẢ GIAN — mọi phân loại đã nối của gian đó. Bật / tắt riêng từng sản phẩm, từng phân loại thì dùng công tắc trong bảng."
+        >
+          <RefreshCw className="size-4" /> Đồng bộ tồn theo gian
+          {syncSummary && (
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-xs tabular-nums",
+                syncLinked > 0 && syncEnabled === syncLinked ? "bg-emerald-100 text-emerald-800" : syncEnabled > 0 ? "bg-amber-100 text-amber-800" : "bg-muted-foreground/10"
+              )}
+            >
+              {formatNumber(syncEnabled)}/{formatNumber(syncLinked)}
+            </span>
+          )}
+        </Button>
       </div>
 
       {/* ===== Thanh hàng loạt — chỉ hiện khi tick ===== */}
@@ -286,6 +373,26 @@ export function ChannelProductsPage({
             <Button size="sm" variant="outline" onClick={() => void setIgnored(selectedGroups, true)}>
               <EyeOff className="size-4" /> Bỏ qua
             </Button>
+          )}
+          {selectedGroups.some((g) => g.linkedCount > 0) && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={syncBusy !== null}
+                onClick={() => requestStockSync("bulk", `${formatNumber(selectedGroups.length)} sản phẩm đã chọn`, selectedGroups.flatMap((g) => g.rows), true)}
+              >
+                <RefreshCw className="size-4" /> Bật đồng bộ tồn
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={syncBusy !== null}
+                onClick={() => requestStockSync("bulk", `${formatNumber(selectedGroups.length)} sản phẩm đã chọn`, selectedGroups.flatMap((g) => g.rows), false)}
+              >
+                Tắt đồng bộ tồn
+              </Button>
+            </>
           )}
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
             Bỏ chọn
@@ -318,7 +425,8 @@ export function ChannelProductsPage({
           </div>
         ) : (
           <Refreshing active={loading}>
-            <table className="w-full min-w-[880px] table-fixed text-sm">
+            {/* min-w 940: vừa khung 943px của màn 1280 (đo 06/11) — 980 thì cuộn ngang 37px sau khi thêm cột Đồng bộ tồn. */}
+            <table className="w-full min-w-[940px] table-fixed text-sm">
               <thead className="bg-muted/40">
                 <tr className={cn(TEXT_SUB, "text-left")}>
                   <th className="w-10 px-3 py-2.5">
@@ -333,7 +441,15 @@ export function ChannelProductsPage({
                   <th className="px-2 py-2.5 font-medium">Sản phẩm trên sàn</th>
                   <th className="w-[72px] px-2 py-2.5 text-right font-medium">Phân loại</th>
                   <th className="w-36 px-2 py-2.5 text-right font-medium">Giá · Tồn sàn</th>
-                  <th className="w-24 px-2 py-2.5 font-medium">Trạng thái</th>
+                  {/* THỨ TỰ: kết nối trước, đồng bộ sau (anh Trung 06/11) — đúng trình tự khách làm: nối xong mới bật.
+                      Cột Trạng thái rộng 144px vì ở dòng phân loại nó chứa mã SKU kho đã nối + số có thể bán. */}
+                  <th className="w-36 px-2 py-2.5 font-medium">Trạng thái</th>
+                  <th
+                    className="w-[104px] px-2 py-2.5 font-medium"
+                    title="Bật: tồn trên sàn đi theo số có thể bán của Tổng kho. Công tắc ở dòng sản phẩm bật / tắt mọi phân loại đã nối của sản phẩm; xổ dòng để bật / tắt từng phân loại."
+                  >
+                    Đồng bộ tồn
+                  </th>
                   <th className="w-40 px-3 py-2.5" />
                 </tr>
               </thead>
@@ -350,6 +466,9 @@ export function ChannelProductsPage({
                       checked={selected.has(g.key)}
                       onCheck={() => setSelected((s) => toggleSet(s, g.key))}
                       onToggle={() => setExpanded((s) => toggleSet(s, g.key))}
+                      syncBusy={syncBusy !== null}
+                      onSyncGroup={(enabled) => requestStockSync(g.key, g.title, g.rows, enabled)}
+                      onSyncVariant={(r, enabled) => requestStockSync(r.id, `${g.title} · ${variantLabel(r)}`, [r], enabled)}
                       action={
                         <div className="flex items-center justify-end gap-1.5">
                           {p.kind !== "none" && (
@@ -477,6 +596,25 @@ export function ChannelProductsPage({
         group={drawerGroup}
         onDone={() => void refresh()}
       />
+      <SyncSettingsDialog
+        open={syncDialogOpen}
+        onOpenChange={(o) => {
+          setSyncDialogOpen(o);
+          // Đóng hộp = có thể vừa bật / tắt cả gian → tải lại công tắc trong bảng + số tổng.
+          if (!o) void refresh();
+        }}
+      />
+      <StockSyncConfirmDialog
+        open={syncConfirm !== null}
+        title={syncConfirm?.title ?? ""}
+        total={syncConfirm?.rows.length ?? 0}
+        changes={syncConfirm ? stockSyncChanges(syncConfirm.rows) : []}
+        busy={syncBusy !== null}
+        onCancel={() => setSyncConfirm(null)}
+        onConfirm={() => {
+          if (syncConfirm) void applyStockSync(syncConfirm.key, syncConfirm.rows, true);
+        }}
+      />
       <AutoMatchDialog open={autoOpen} onOpenChange={setAutoOpen} channelId={channelId || undefined} onDone={() => void refresh()} />
       <MappingHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
     </div>
@@ -511,6 +649,9 @@ function GroupRows({
   checked,
   onCheck,
   onToggle,
+  syncBusy,
+  onSyncGroup,
+  onSyncVariant,
   action,
 }: {
   g: ChannelGroup;
@@ -518,6 +659,9 @@ function GroupRows({
   checked: boolean;
   onCheck: () => void;
   onToggle: () => void;
+  syncBusy: boolean;
+  onSyncGroup: (enabled: boolean) => void;
+  onSyncVariant: (r: ChannelProduct, enabled: boolean) => void;
   action: React.ReactNode;
 }) {
   const meta = CHANNEL_META[g.channelName];
@@ -581,6 +725,32 @@ function GroupRows({
         <td className="px-2 py-2.5">
           <StatusChip g={g} />
         </td>
+        <td className="px-2 py-2.5">
+          {/* Công tắc CẤP SẢN PHẨM = bật / tắt mọi phân loại ĐÃ NỐI của sản phẩm. Bật một phần → ghi "k/n",
+              bấm là bật nốt. Chưa nối phân loại nào thì không có gì để điều khiển. */}
+          {g.linkedCount === 0 ? (
+            <span className={TEXT_SUB} title="Chưa nối phân loại nào về Tổng kho">
+              —
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <Switch
+                checked={g.syncOnCount === g.linkedCount}
+                disabled={syncBusy}
+                onCheckedChange={(v) => onSyncGroup(v)}
+                aria-label={`Đồng bộ tồn mọi phân loại đã nối của ${g.title}`}
+              />
+              {g.syncOnCount > 0 && g.syncOnCount < g.linkedCount && (
+                <span
+                  className="rounded-full bg-amber-100 px-1.5 text-xs tabular-nums text-amber-800"
+                  title={`${g.syncOnCount}/${g.linkedCount} phân loại đã nối đang bật — bấm công tắc để bật nốt`}
+                >
+                  {g.syncOnCount}/{g.linkedCount}
+                </span>
+              )}
+            </span>
+          )}
+        </td>
         <td className="px-3 py-2.5">{action}</td>
       </tr>
       {open &&
@@ -610,17 +780,39 @@ function GroupRows({
               <Money value={Number(r.price) || 0} />
               <div className={TEXT_SUB}>tồn {r.channelStock ?? "—"}</div>
             </td>
-            <td className="px-2 py-1.5" colSpan={2}>
+            {/* Cột TRẠNG THÁI của phân loại = đã nối về SKU kho nào (dòng trên) + số có thể bán của SKU đó (dòng
+                dưới — con số sàn nhận khi bật đồng bộ). Hai dòng vì cột chỉ 144px. */}
+            <td className="px-2 py-1.5">
               {r.product ? (
-                <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <Link2 className="size-3.5 shrink-0 text-emerald-600" />
-                  <span className="truncate font-mono text-emerald-700">{r.product.skuCode}</span>
-                  <span className={cn(TEXT_SUB, "truncate")}>tồn kho {formatNumber(r.product.quantityInStock)}</span>
-                </span>
+                <>
+                  {/* Mã SKU kho phải đọc ĐỦ: không biểu tượng (màu xanh đã nói "đã nối"), mã dài tự xuống dòng sau dấu
+                      gạch thay vì cắt (đo 06/11: mã 17 ký tự bị cắt ở cột 144px khi còn biểu tượng). */}
+                  <span
+                    className="block font-mono text-xs leading-tight whitespace-normal text-emerald-700 [overflow-wrap:anywhere]"
+                    title={`Đã nối về SKU kho ${r.product.skuCode}`}
+                  >
+                    {r.product.skuCode}
+                  </span>
+                  <span className={cn(TEXT_SUB, "block truncate")} title="Số có thể bán của SKU kho (tồn − đang giữ − tồn an toàn) — con số sàn nhận khi bật đồng bộ">
+                    có thể bán {formatNumber(r.product.availableToSell ?? r.product.quantityInStock)}
+                  </span>
+                </>
               ) : (
                 <span className={TEXT_SUB}>chưa nối{r.status === "DELISTED" ? " · sàn đã gỡ" : ""}</span>
               )}
             </td>
+            {/* Công tắc CỦA PHÂN LOẠI — đứng SAU cột kết nối: nối rồi mới có công tắc. */}
+            <td className="px-2 py-1.5">
+              {r.product && (
+                <Switch
+                  checked={isStockSyncOn(r)}
+                  disabled={syncBusy}
+                  onCheckedChange={(v) => onSyncVariant(r, v)}
+                  aria-label={`Đồng bộ tồn phân loại ${variantLabel(r)}`}
+                />
+              )}
+            </td>
+            <td />
           </tr>
         ))}
     </>

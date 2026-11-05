@@ -12,6 +12,7 @@ import {
   PUSHABLE_CHANNELS,
   stageStockPush,
   type StockPushTicket,
+  stockSyncOn,
 } from "../integrations/inventory-push";
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
@@ -238,6 +239,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
           externalId: true,
           channelStock: true,
           variantName: true,
+          // Công tắc đồng bộ tồn riêng của phân loại (06/11/2026) — null = theo gian.
+          stockSyncEnabled: true,
           channel: {
             select: { channelName: true, shopName: true, stockSyncEnabled: true },
           },
@@ -341,11 +344,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
         const { channelProducts, stockLevels, ...core } = p;
         // "CÓ THỂ BÁN" = số Hubsell đẩy lên mọi gian — cột chính của hub.
         const availableToSell = availableToPush(p, safetyDefault);
-        // Lệch với số sàn đang giữ (theo lần đẩy/đọc gần nhất) ở gian ĐANG BẬT
+        // Lệch với số sàn đang giữ (theo lần đẩy/đọc gần nhất) ở phân loại ĐANG BẬT
         // đồng bộ, và không có job chờ đẩy → lệch thật, cần nhìn tới.
         const stockMismatch = channelProducts.some(
           (c) =>
-            c.channel.stockSyncEnabled &&
+            stockSyncOn(c, c.channel) &&
             c.externalId &&
             PUSHABLE_CHANNELS.includes(c.channel.channelName) &&
             c.channelStock !== null &&
@@ -372,7 +375,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
                 ? "alert"
                 : pendingKeys.has(key)
                   ? "pending"
-                  : !c.channel.stockSyncEnabled
+                  : !stockSyncOn(c, c.channel)
                     ? "off"
                     : c.channelStock === null
                       ? "unknown"
@@ -388,7 +391,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
               shopName: c.channel.shopName,
               itemId: itemId || null,
               modelId: modelId || null,
-              stockSyncEnabled: c.channel.stockSyncEnabled,
+              stockSyncEnabled: stockSyncOn(c, c.channel),
               channelStock: c.channelStock,
               state,
             };

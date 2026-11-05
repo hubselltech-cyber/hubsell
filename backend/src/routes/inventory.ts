@@ -1408,6 +1408,12 @@ router.put("/sync-channels/:id", async (req: AuthRequest, res, next) => {
         ...(enabled && !channel.stockSyncEnabled ? { stockSyncEnabledAt: new Date() } : {}),
       },
     });
+    // Bật / tắt CẢ GIAN là thao tác hàng loạt: xóa mọi ghi đè riêng từng phân loại của gian
+    // (06/11/2026) để sau lượt này mọi phân loại đã nối cùng một trạng thái với gian.
+    await prisma.channelProduct.updateMany({
+      where: { channelId: channel.id, stockSyncEnabled: { not: null } },
+      data: { stockSyncEnabled: null },
+    });
 
     let queued = 0;
     if (enabled) {

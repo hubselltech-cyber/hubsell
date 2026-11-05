@@ -385,5 +385,74 @@ nhiều mã có ô Nhà cung cấp; không tràn ngang ở 1920. **Chưa kiểm 
 - **Theo dõi:** log worker `[barcode-backfill]` (bắt đầu / mỗi 50 bước / XONG); hoặc SQL `SELECT * FROM maintenance_jobs WHERE key = 'product-barcode-backfill'`.
 - **Kiểm local:** test `product-barcode-backfill-db.test.ts` (lô 2: 2 + 2 + 1 dòng, dừng giữa chừng đi tiếp, mã khách tự nhập không bị đụng, xong thì gọi lại không ghi); chạy trọn vòng với khóa thật trên DB dev: đặt NULL 1.514 sản phẩm → 8 bước, 136 ms, 0 sai / 0 trùng, 3 mã có sẵn giữ nguyên, `doneAt` có; tsc sạch; vitest `src/lib src/routes src/marketplace src/services src/workers` 98 tệp / 843 qua.
 - **CHƯA kiểm:** chạy worker như một tiến trình trên máy (chỉ gọi hàm bước); tốc độ và tải Disk IO thật trên Supabase; hàm `product_new_barcode()` dưới vai trò backend trên Supabase sau REVOKE (nếu bị từ chối quyền thì worker ghi lỗi mỗi 5 phút — và khi đó TẠO SẢN PHẨM MỚI trên prod cũng lỗi, phải kiểm ngay sau deploy).
-- `scripts/backfill-product-barcode.ts` vẫn giữ để chạy tay khi cần (không dùng `maintenance_jobs`).
+- `scripts/backfill-product-barcode.ts` ĐÃ XÓA 06/11 lúc dọn (worker là đường duy nhất điền sản phẩm cũ; hai đường cùng làm một việc là thừa).
 - **Kết quả prod (05/11 ~23:45, chỉ xem):** push `3fb49c63` (worker, nhịp 200 / 3 giây) rồi `e01e99df` (giãn 100 / 15 giây); Render `/health` = `e01e99df`. Shop công ty: 405 / 418 sản phẩm ĐÃ có mã vạch (điền trong mấy phút bản đầu chạy nhịp nhanh), sản phẩm cũ nhất mang `2000000000015` = số thứ tự 1 → hàm `product_new_barcode()` chạy được dưới vai trò backend trên Supabase sau REVOKE, tức DEFAULT lúc tạo sản phẩm mới cũng chạy. 13 sản phẩm còn lại là các mã tạo gần nhất (id lớn nhất) — tới lượt khi con trỏ đi tới cuối. Bảng Tổng kho prod 1920: 57 nút in cạnh mã vạch trên trang, mã vạch một dòng, 0 ô tràn. CHƯA làm trên prod: tạo sản phẩm mới, bấm in; chưa đọc log worker / biểu đồ Disk IO.
+
+## 7. Đồng bộ tồn theo từng sản phẩm và từng phân loại (06/11/2026 — bố cục anh duyệt, đã nối vào phần đẩy tồn ở mục 7.1; ĐÃ COMMIT + PUSH 06/11, anh: "Dọn dẹp code thừa, đảm bảo mô hình tree chuyên nghiệp, commit và push")
+
+**Anh Trung:** "Nút đồng bộ kho hiện tại là nút tổng → anh coi đây là nút bật tổng cho các sản phẩm đã liên kết. Vậy cần nút bật cho từng sản phẩm và từng phân loại. Và phần này thì anh đang không biết sắp xếp sao cho hợp lý." → em đề xuất, anh bấm "Dựng thử local".
+
+**Hiện trạng trước lượt này (đã đọc mã):** chỉ nối thì kho CHƯA điều khiển tồn sàn; việc đẩy tồn gác theo cờ của GIAN (`Channel.stockSyncEnabled`, mặc định tắt) ở `inventory-push.ts` (lúc xếp việc), `stock-push-worker.ts` (lúc đẩy), `stock-reconcile.ts` (đối soát 6 giờ), `routes/products.ts` (màu chip). Bật gian = ghi đè tồn mọi SKU đã nối.
+
+**Bố cục (ở trang Sản phẩm trên sàn — Tổng kho vẫn chỉ xem):**
+| Cấp | Chỗ | Ý nghĩa |
+|---|---|---|
+| Phân loại | công tắc trên dòng phân loại (xổ dòng sản phẩm), ở cột "Đồng bộ tồn" — ngay SAU cột "Trạng thái" (SKU kho đã nối + có thể bán) | công tắc THẬT: phân loại này có nhận tồn từ kho không |
+| Sản phẩm | cột mới "Đồng bộ tồn" trên dòng sản phẩm; bật một phần hiện viên "3/6" | bật / tắt mọi phân loại ĐÃ NỐI của sản phẩm |
+| Gian | nút "Đồng bộ tồn theo gian a/b" cạnh ô tìm (a/b = đang bật / đã nối của gian đang lọc) → mở hộp cài đặt + màn so sánh sẵn có | bật / tắt hàng loạt cả gian |
+- **Thứ tự cột — anh Trung chốt 06/11: "Kết nối trước - đồng bộ sau thì em phải hoán đổi vị trí 2 cột đó cho nhau"** → Sản phẩm trên sàn · Phân loại · Giá · Tồn sàn · **Trạng thái (kết nối)** · **Đồng bộ tồn** · thao tác. Bản đầu em đặt công tắc trước cột Trạng thái (giữa "tồn sàn" và "SKU kho") — sai trình tự khách làm, đã đổi. Cột Trạng thái rộng 144px; ở dòng phân loại nó ghi mã SKU kho đã nối (đọc đủ, mã dài xuống dòng sau dấu gạch, không biểu tượng) + "có thể bán N" ở dòng dưới. Đo lại 1280 / 1366 / 1440 / 1700 + tối: 0 ô tràn, không cuộn ngang, mã SKU 17 ký tự vừa một dòng.
+- Thanh hàng loạt (tick nhiều sản phẩm): thêm "Bật đồng bộ tồn" / "Tắt đồng bộ tồn".
+- Bật mà số sàn sẽ đổi → hộp xác nhận liệt kê "sàn 20 → 13" (tối đa 8 dòng), cảnh báo riêng khi có dòng về 0; số sàn đã bằng số kho thì bật thẳng. Tắt thì làm ngay.
+
+**Lưu trữ:** cột mới `ChannelProduct.stockSyncEnabled` cho phép NULL (migration `20261106001000_channel_product_stock_sync_override`): NULL = theo công tắc của gian, true / false = khách đặt riêng; trạng thái thật = `stockSyncEnabled ?? channel.stockSyncEnabled`. Nhờ NULL = theo gian nên KHÔNG phải điền dữ liệu cũ, hành vi hôm nay giữ nguyên. Bật / tắt cả gian (`PUT /inventory/sync-channels/:id`) xóa mọi ghi đè của gian; gỡ nối cũng về NULL. Liên kết mới để NULL → tự theo gian.
+
+**Mã (local):** backend `routes/mappings.ts` (`POST /mappings/stock-sync`, `GET /mappings/stock-sync/summary`, danh sách kèm công tắc gian + "có thể bán" của SKU kho), `routes/inventory.ts`; web `channel-products-page.tsx`, `shared.ts` (`isStockSyncOn`, `stockSyncChanges`), `stock-sync-confirm-dialog.tsx`, `lib/api.ts`.
+
+**(Bản dựng thử đầu chỉ lưu + hiện trạng thái — đã nối thật ở mục 7.1 bên dưới.)**
+
+**Kiểm local (demo, seed 24 dòng sàn `7770…` + SKU kho `WSYNC-*`: áo thun 6 phân loại ở Shopee + Lazada, quần jean tên 130 ký tự 12 phân loại TikTok mã 19 số, tồn 1.234.567):** bật cả sản phẩm → hộp "1 phân loại sẽ đổi số: sàn 30 → 25" → xác nhận → 6/6; tắt một phân loại → 5/6, không hỏi; sản phẩm Lazada → hộp 3 dòng + cảnh báo về 0 → Hủy giữ nguyên; viên số theo gian 5/28 → 7/28. Đo 1280 / 1366 / 1440 / 1700: 0 ô tràn, không cuộn ngang (bảng min-w 880 → 940, vừa khung 943px ở 1280), mọi công tắc thẳng một cột; tối 1440 đọc rõ. tsc BE + FE, eslint sạch. **Chưa kiểm:** nút tổng mở hộp cài đặt theo gian (mới gắn, chưa bấm thử), thanh hàng loạt, backend chưa có test cho hai route mới, sản phẩm từ 50 phân loại.
+- Bẫy gặp: đoạn chữ JSX có `&ldquo;` bị cắt khoảng trắng đầu ("3phân loại") → viết `{" "}` + ký tự ngoặc thật.
+
+**Lát tiếp (khi anh chốt bố cục):** (1) nối bốn chỗ gác sang trạng thái theo phân loại + test, bật riêng thì xếp việc đẩy ngay; (2) chip / hộp nhỏ "Bán trên" ở Tổng kho theo phân loại; (3) dời nút "Đồng bộ tồn kho" khỏi thanh công cụ Tổng kho; (4) lịch sử ai bật / tắt.
+
+**Dọn local:** trong `backend/` chạy bản seed ở scratchpad phiên với `--clean` (xóa SKU kho `WSYNC-*` và dòng sàn externalId `7770…`).
+
+### 7.1 NỐI công tắc phân loại vào phần đẩy tồn (06/11/2026, anh: "Ổn, nối tiếp")
+
+**Một nguồn điều kiện** (`integrations/inventory-push.ts`): `stockSyncOn(dòng, gian)` = `dòng.stockSyncEnabled ?? gian.stockSyncEnabled`, và `STOCK_SYNC_ON_WHERE` (điều kiện Prisma tương đương). Mọi chỗ gác dùng chung, đừng viết lại.
+
+| Chỗ gác | Trước | Nay |
+|---|---|---|
+| Cửa xếp việc `writePushRows` (mọi biến động kho, đối soát, sync tay không force) | lọc gian đang bật | lọc DÒNG đang bật (`STOCK_SYNC_ON_WHERE`); `force` (bật cả gian) vẫn bỏ qua công tắc |
+| Worker đẩy `stock-push-worker.ts` | job tự động hủy khi gian tắt | hủy khi dòng đang tắt; dòng bị TẮT RIÊNG thì hủy cả job forced |
+| Đối soát 6 giờ `stock-reconcile.ts` | chỉ gian đang bật | VẪN chỉ gian đang bật (xem 7.2); trong gian đó dòng lệch đang TẮT RIÊNG chỉ đếm, không đẩy; câu trên dòng thời gian có ca "đẩy một phần" (`describeReconcile`) |
+| Chip Tổng kho `routes/products.ts` | "off" theo gian | "off" theo dòng; `stockMismatch` cũng theo dòng |
+
+**Bật / tắt riêng** (`POST /mappings/stock-sync`): BẬT → xếp việc đẩy ngay cho các SKU kho đó trên đúng các gian đó (không force); TẮT → `dropPendingStockPushJobs` rút MỌI việc đang chờ của các dòng đó, kể cả việc forced của lượt bật cả gian trước đó (tắt riêng là ý chí cụ thể nhất, đến sau thì thắng — worker cũng gác như vậy). Trả `queued` / `dropped`; web báo "đang đẩy tồn kho lên sàn" hoặc "chưa có gì để đẩy".
+**Bật / tắt cả gian** giữ nguyên hành vi cũ + xóa mọi ghi đè của gian. **Chưa đặt riêng dòng nào = y như trước** (có test).
+
+**Test:** `stock-push.test.ts` thêm 7 ca (stockSyncOn; gian tắt + bật riêng; gian bật + tắt riêng; không ghi đè = như cũ; force bỏ qua công tắc; rút job đúng dòng, không giật job worker đang cầm; ba câu đối soát). vitest `src/lib src/routes src/marketplace src/services src/workers` + ba tệp test đẩy tồn: 101 tệp / 877 qua; tsc BE + FE, eslint sạch.
+**11 tệp test khác của `src/integrations` (sổ cái, quảng cáo, dòng tiền, xóa gian, escrow) đang ĐỎ trên DB dev** — đã chạy lại 4 tệp trên mã đã commit (stash) vẫn đỏ y hệt → có từ trước, phụ thuộc dữ liệu DB dev, không do lượt này; CHƯA tìm nguyên nhân.
+
+**Thử trọn đường trên local** (gắn tạm token giả cho gian Shopee demo; máy chủ local vai web không chạy worker nên không gọi sàn): gian tắt, bật riêng một phân loại → đúng 1 việc đẩy "bật đồng bộ tồn theo phân loại", chip Tổng kho của SKU đó sang "đang đẩy", gian Lazada cùng SKU vẫn "chưa bật"; tắt riêng → việc bị rút, chip về "chưa bật". Bật cả gian → 6 việc forced, 0 ghi đè, 6/6; tắt riêng một dòng → rút 1, còn 5. Đã trả lại token rỗng, xóa việc đẩy + nhật ký thử.
+- Bẫy gặp: chạy `vitest stock-queue.test.ts` trên DB dev sẽ NHẶT cả việc đẩy thật đang chờ của DB dev (6 việc thử bị nó xử lý, ghi 6 dòng nhật ký lỗi token) → đừng để việc đẩy thật nằm chờ khi chạy test đẩy tồn.
+
+**CHƯA kiểm:** worker đẩy thật lên sàn với công tắc theo dòng (cửa gác của worker mới đọc mã + qua tsc, không có test tự động vì cần giả lập sàn); đối soát 6 giờ chạy thật; nút tổng theo gian và thanh hàng loạt trên giao diện (chưa bấm); gian thật có token.
+
+**Lên prod cần biết:** migration `20261106001000_channel_product_stock_sync_override` chỉ thêm một cột NULL trên `ChannelProduct` (lấy khóa có thử lại), không điền dữ liệu; không ghi đè nào tồn tại nên ngày đầu hành vi y như cũ. Lát còn lại: lịch sử ai bật / tắt; dời nút "Đồng bộ tồn kho" khỏi thanh công cụ Tổng kho; liên kết MỚI ở gian đang tắt mặc định tắt (theo gian) — đúng ý "nối trước, đồng bộ sau".
+
+### 7.2 Dọn trước khi push + việc còn mở (06/11/2026)
+
+**Dọn:** bỏ trường `overrides` của `GET /mappings/stock-sync/summary` (không nơi nào dùng); xóa `backend/scripts/backfill-product-barcode.ts` (README còn 51 script); docs/README thêm mục 7; DB dev xóa dữ liệu thử `WSYNC-*` / `7770…`.
+
+**Quyết định lúc rà rủi ro — đối soát 6 giờ KHÔNG mở rộng sang gian đang tắt.** Bản nối đầu cho vòng đối soát lấy cả "gian tắt nhưng có phân loại bật riêng". Em rút lại trước khi push vì hai lý do, đều chưa đo được trên prod:
+1. Tìm các gian đó = lọc `ChannelProduct.stockSyncEnabled = true` trên cả bảng mỗi 6 giờ, chưa có chỉ mục → quét bảng lớn trong lúc Supabase hụt Disk IO. Dựng chỉ mục một phần thì phải quét bảng một lượt dưới khóa chặn ghi (dự án không dùng CONCURRENTLY vì Prisma bọc migration trong giao dịch).
+2. Đối soát một gian là hỏi sàn tồn của MỌI SKU đã nối của gian đó (`refreshLinkedChannelStock`), không riêng dòng đang bật → gian 5.000 SKU chỉ bật 2 dòng vẫn tốn 5.000 SKU hạn mức gọi sàn mỗi 6 giờ.
+→ Phân loại bật riêng ở gian đang tắt: được đẩy NGAY lúc bật và mỗi lần kho biến động, nhưng CHƯA có lưới đối soát định kỳ vớt lệch. Ghi rõ trong chú thích `stock-reconcile.ts`.
+
+**⏳ Việc còn mở (theo thứ tự em đề xuất):**
+1. Lưới đối soát cho phân loại bật riêng ở gian tắt: đếm dòng `ChannelProduct` trên prod → chỉ mục một phần `("channelId") WHERE "stockSyncEnabled"` + cho `refreshLinkedChannelStock` chỉ hỏi sàn các dòng đang bật.
+2. Test cho cửa gác của worker đẩy (cần giả lập sàn) và cho hai route `/mappings/stock-sync*`.
+3. Lịch sử ai bật / tắt (ghi vào `mapping_logs`).
+4. Dời nút "Đồng bộ tồn kho" khỏi thanh công cụ Tổng kho sang hẳn trang Sản phẩm trên sàn (anh chưa chốt).
+5. 11 tệp test `src/integrations` đỏ sẵn trên DB dev (sổ cái, quảng cáo, dòng tiền, xóa gian, escrow) — tìm nguyên nhân.

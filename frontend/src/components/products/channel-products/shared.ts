@@ -40,6 +40,43 @@ export function channelModelId(externalId: string | null | undefined): string | 
   return tail && tail !== "0" ? tail : null;
 }
 
+/**
+ * Phân loại này có đang được kho điều khiển tồn không (06/11/2026): phải ĐÃ NỐI, rồi lấy công tắc
+ * riêng của phân loại; chưa đặt riêng thì theo công tắc của gian.
+ */
+export function isStockSyncOn(r: Pick<ChannelProduct, "productId" | "stockSyncEnabled" | "channel">): boolean {
+  if (!r.productId) return false;
+  return r.stockSyncEnabled ?? r.channel.stockSyncEnabled ?? false;
+}
+
+/** Một phân loại sẽ ĐỔI SỐ trên sàn khi bật đồng bộ tồn: số sàn đang hiện → số "có thể bán" của kho. */
+export interface StockSyncChange {
+  id: string;
+  label: string;
+  shopName: string;
+  skuCode: string;
+  from: number;
+  to: number;
+}
+
+/** Trong các dòng sắp bật, dòng nào số sàn khác số kho (sàn chưa trả số thì không tính là đổi). */
+export function stockSyncChanges(rows: ChannelProduct[]): StockSyncChange[] {
+  const out: StockSyncChange[] = [];
+  for (const r of rows) {
+    if (!r.product || r.channelStock == null || r.product.availableToSell == null) continue;
+    if (r.channelStock === r.product.availableToSell) continue;
+    out.push({
+      id: r.id,
+      label: `${r.productName}${r.variantName ? ` · ${r.variantName}` : ""}`,
+      shopName: r.channel.shopName,
+      skuCode: r.product.skuCode,
+      from: r.channelStock,
+      to: r.product.availableToSell,
+    });
+  }
+  return out;
+}
+
 export type GroupLinkStatus = "unlinked" | "partial" | "linked";
 
 export interface ChannelGroup {
@@ -54,6 +91,8 @@ export interface ChannelGroup {
   rows: ChannelProduct[];
   total: number;
   linkedCount: number;
+  /** Số phân loại đã nối đang bật đồng bộ tồn. */
+  syncOnCount: number;
   status: GroupLinkStatus;
   /** Mọi phân loại đều DELISTED (sàn đã gỡ cả sản phẩm). */
   delisted: boolean;
@@ -85,6 +124,7 @@ export function groupChannelProducts(items: ChannelProduct[]): ChannelGroup[] {
         rows: [],
         total: 0,
         linkedCount: 0,
+        syncOnCount: 0,
         status: "unlinked",
         delisted: true,
         ignored: true,
@@ -98,6 +138,7 @@ export function groupChannelProducts(items: ChannelProduct[]): ChannelGroup[] {
     if (!g.imageUrl && r.imageUrl) g.imageUrl = r.imageUrl;
     g.total += 1;
     if (r.productId) g.linkedCount += 1;
+    if (isStockSyncOn(r)) g.syncOnCount += 1;
     if (r.status !== "DELISTED") g.delisted = false;
     if (!r.ignoredAt) g.ignored = false;
     const price = Number(r.price) || 0;

@@ -3190,13 +3190,42 @@ export interface ChannelProduct {
   channelStock?: number | null;
   /** Khách "Bỏ qua" (05/11/2026): không quản tồn món này — ra khỏi hàng đợi Cần nối. */
   ignoredAt?: string | null;
-  channel: { id: string; channelName: ChannelName; shopName: string };
+  /**
+   * Công tắc đồng bộ tồn của RIÊNG phân loại này (06/11/2026): null = theo công tắc của gian;
+   * true / false = khách bật / tắt riêng. Trạng thái thật: lib isStockSyncOn().
+   */
+  stockSyncEnabled?: boolean | null;
+  channel: { id: string; channelName: ChannelName; shopName: string; stockSyncEnabled?: boolean };
   product: {
     id: string;
     skuCode: string;
     productName: string;
     quantityInStock: number;
+    /** "Có thể bán" = tồn − đang giữ − tồn an toàn: con số sàn sẽ nhận khi bật đồng bộ tồn. */
+    availableToSell?: number;
   } | null;
+}
+
+/**
+ * Bật / tắt đồng bộ tồn cho từng phân loại đã nối (ghi đè riêng lên công tắc của gian).
+ * Bật → `queued` = số việc đẩy tồn vừa xếp; tắt → `dropped` = số việc đẩy tự động đang chờ đã rút.
+ */
+export function setChannelProductsStockSync(channelProductIds: string[], enabled: boolean) {
+  return apiFetch<{ updated: number; enabled: boolean; queued: number; dropped: number }>("/api/mappings/stock-sync", {
+    method: "POST",
+    body: JSON.stringify({ channelProductIds, enabled }),
+  });
+}
+
+/** Mỗi gian: số phân loại đã nối và số đang bật đồng bộ tồn. */
+export interface StockSyncChannelSummary {
+  channelId: string;
+  linked: number;
+  enabled: number;
+}
+
+export function fetchStockSyncSummary() {
+  return apiFetch<{ channels: StockSyncChannelSummary[] }>("/api/mappings/stock-sync/summary");
 }
 
 /** Nhóm hàng đợi theo SẢN PHẨM sàn (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 5). */

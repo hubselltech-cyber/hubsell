@@ -1524,7 +1524,7 @@ model Product {
   /// (hàng có sẵn mã nhà sản xuất). Không trùng trong một shop: chỉ mục duy nhất MỘT PHẦN
   /// "Product_userId_barcode_key" (WHERE barcode IS NOT NULL) chỉ khai trong SQL migration
   /// 20261105220000_product_barcode — Prisma không diễn tả được, đừng thêm @@unique ở đây.
-  /// NULL = sản phẩm cũ chưa được điền (scripts/backfill-product-barcode.ts). Mã SKU vẫn là mã để
+  /// NULL = sản phẩm cũ chưa được điền (worker product-barcode-backfill điền dần). Mã SKU vẫn là mã để
   /// KHỚP VỚI SÀN; mã vạch là mã để KHO QUÉT / in tem.
   barcode     String? @default(dbgenerated("product_new_barcode()"))
 
@@ -1951,6 +1951,15 @@ model ChannelProduct {
   /// BỎ QUA (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 5): khách không muốn
   /// quản tồn món này (quà tặng, combo…) → ra khỏi hàng đợi "Cần nối", vẫn nhận đơn.
   ignoredAt DateTime?
+
+  /// CÔNG TẮC ĐỒNG BỘ TỒN CỦA RIÊNG PHÂN LOẠI NÀY (06/11/2026, anh Trung: nút theo gian là nút
+  /// tổng, cần bật / tắt từng sản phẩm và từng phân loại). null = theo công tắc của gian
+  /// (Channel.stockSyncEnabled) — mặc định, không cần điền dữ liệu cũ; true / false = khách ghi
+  /// đè riêng. Trạng thái thật = stockSyncEnabled ?? channel.stockSyncEnabled. Bật / tắt CẢ GIAN
+  /// xóa mọi ghi đè của gian đó (về null). Gỡ nối cũng về null.
+  /// Mọi chỗ gác việc đẩy tồn đọc trạng thái thật qua stockSyncOn / STOCK_SYNC_ON_WHERE
+  /// (integrations/inventory-push.ts): cửa xếp việc, worker đẩy, đối soát 6 giờ, chip Tổng kho.
+  stockSyncEnabled Boolean?
 
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   channel Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
