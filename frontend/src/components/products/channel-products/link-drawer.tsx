@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Check, Link2, Loader2, Search, Sparkles } from "lucide-react";
 
@@ -11,7 +12,6 @@ import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   fetchProducts,
-  linkChannelProductBySku,
   linkMappingPairs,
   unlinkChannelProducts,
   type ChannelProduct,
@@ -25,7 +25,6 @@ import { cn } from "@/lib/utils";
 import {
   groupWarehouseProducts,
   isStandardSku,
-  skuFromRoot,
   suggestVariantMapping,
   variantLabel,
   type ChannelGroup,
@@ -37,13 +36,16 @@ import {
  *
  * Trái = các phân loại của MỘT sản phẩm sàn; phải = chọn MỘT sản phẩm kho (tìm theo tên / mã,
  * gợi ý sẵn theo mã trùng) → máy ghép từng phân loại theo mã rồi theo tên; khách chỉ sửa chỗ lệch
- * bằng dropdown (chỉ liệt kê phân loại của sản phẩm kho đã chọn). Phân loại không có SKU kho tương
- * ứng → ô "Tạo SKU" điền sẵn MÃ-GỐC-ĐUÔI (luật mã chuẩn). Một nút Xác nhận.
+ * bằng dropdown (chỉ liệt kê phân loại của sản phẩm kho đã chọn). Một nút Xác nhận.
+ *
+ * CHỈ NỐI, KHÔNG TẠO SKU KHO (anh Trung 05/11: "việc kiểm soát sản phẩm kho hoàn toàn nằm ở bên
+ * Tổng kho") — ô "Tạo SKU" đã gỡ. Phân loại chưa có SKU kho tương ứng thì để "chưa ghép" + dòng chỉ
+ * sang Tổng kho; đừng thêm lại đường tạo ở đây.
  *
  * Chiều ngược (Tổng kho › Nối gian): mở với `target` = SKU kho cố định; sản phẩm kho đã chọn sẵn.
  * Nối trên đơn hàng: `group` dựng từ /mappings/lookup, `source="order"`.
  */
-type RowChoice = { kind: "keep" } | { kind: "product"; productId: string } | { kind: "create"; sku: string } | { kind: "none" };
+type RowChoice = { kind: "keep" } | { kind: "product"; productId: string } | { kind: "none" };
 
 export function LinkDrawer({
   open,
@@ -148,8 +150,7 @@ export function LinkDrawer({
   }, [picked, rows, target]);
 
   const pendingPairs = rows.filter((r) => choices[r.id]?.kind === "product").map((r) => ({ channelProductId: r.id, productId: (choices[r.id] as { productId: string }).productId }));
-  const pendingCreates = rows.filter((r) => choices[r.id]?.kind === "create" && (choices[r.id] as { sku: string }).sku.trim());
-  const pendingCount = pendingPairs.length + pendingCreates.length;
+  const pendingCount = pendingPairs.length;
   const unresolved = rows.filter((r) => choices[r.id]?.kind === "none").length;
 
   // Cùng một SKU kho gán cho ≥2 dòng → cảnh báo (vẫn cho nối: 2 phân loại sàn cùng về một mã là ca có thật).
@@ -163,30 +164,12 @@ export function LinkDrawer({
     setChoices((m) => ({ ...m, [id]: c }));
   }
 
-  /** Dòng chưa ghép mà mã sàn đã chuẩn → tạo SKU kho mang đúng mã đó (một bấm cho cả loạt). */
-  const creatable = rows.filter((r) => !r.productId && (choices[r.id]?.kind ?? "none") === "none" && isStandardSku(r.channelSku));
-  function createAllUnresolved() {
-    setChoices((m) => {
-      const next = { ...m };
-      for (const r of creatable) next[r.id] = { kind: "create", sku: r.channelSku.trim().toUpperCase() };
-      return next;
-    });
-  }
-
   async function confirm() {
     if (!group || pendingCount === 0) return;
     setBusy(true);
     try {
-      let created = 0;
-      for (const r of pendingCreates) {
-        const sku = (choices[r.id] as { sku: string }).sku.trim().toUpperCase();
-        await linkChannelProductBySku(r.id, sku);
-        created++;
-      }
-      if (pendingPairs.length > 0) await linkMappingPairs(pendingPairs, source);
-      toast.success(
-        `Đã nối ${formatNumber(pendingCount)} phân loại${created ? ` (tạo mới ${formatNumber(created)} SKU kho)` : ""} — ${group.title}`
-      );
+      await linkMappingPairs(pendingPairs, source);
+      toast.success(`Đã nối ${formatNumber(pendingCount)} phân loại — ${group.title}`);
       onDone?.();
       onOpenChange(false);
     } catch (err) {
@@ -220,7 +203,7 @@ export function LinkDrawer({
           <DialogTitle className="flex items-start gap-2 pr-8">
             <Link2 className="mt-0.5 size-4 shrink-0 text-primary" />
             <span className="line-clamp-2" title={group.title}>
-              Nối: {group.title}
+              Nối kho: {group.title}
             </span>
           </DialogTitle>
           <DialogDescription>
@@ -260,7 +243,17 @@ export function LinkDrawer({
                   <p className={cn(TEXT_SUB, "px-3 py-3")}>Đang tìm…</p>
                 ) : results.length === 0 ? (
                   <p className={cn(TEXT_SUB, "px-3 py-3")}>
-                    {debounced ? "Không có sản phẩm kho nào khớp. Đổi từ khóa, hoặc tạo SKU mới ở từng phân loại bên dưới." : "Gõ tên hoặc mã để tìm."}
+                    {debounced ? (
+                      <>
+                        Không có sản phẩm kho nào khớp. Đổi từ khóa, hoặc tạo sản phẩm này ở{" "}
+                        <Link href="/products" target="_blank" className="font-medium text-primary hover:underline">
+                          Tổng kho
+                        </Link>{" "}
+                        trước rồi quay lại nối.
+                      </>
+                    ) : (
+                      "Gõ tên hoặc mã để tìm."
+                    )}
                   </p>
                 ) : (
                   results.map((g) => {
@@ -307,8 +300,6 @@ export function LinkDrawer({
               {rows.map((r) => {
                 const c = choices[r.id] ?? { kind: "none" as const };
                 const std = isStandardSku(r.channelSku);
-                const root = picked?.rootGuess || "";
-                const createGuess = std ? r.channelSku.trim().toUpperCase() : root ? skuFromRoot(root, r.variantName) : "";
                 return (
                   <tr key={r.id} className="border-t align-top">
                     <td className="px-3 py-2">
@@ -338,19 +329,6 @@ export function LinkDrawer({
                             Gỡ
                           </Button>
                         </div>
-                      ) : c.kind === "create" ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            className={cn("h-8 font-mono text-xs", !(c.sku.trim() && /^[A-Za-z0-9._-]{1,50}$/.test(c.sku.trim())) && "border-amber-400")}
-                            value={c.sku}
-                            onChange={(e) => setRow(r.id, { kind: "create", sku: e.target.value })}
-                            placeholder="Mã SKU kho mới"
-                          />
-                          <span className={cn(TEXT_SUB, "shrink-0")}>tạo mới</span>
-                          <Button size="xs" variant="ghost" onClick={() => setRow(r.id, { kind: "none" })}>
-                            Hủy
-                          </Button>
-                        </div>
                       ) : (
                         <div className="flex items-center gap-2">
                           <NativeSelect
@@ -368,16 +346,6 @@ export function LinkDrawer({
                               </option>
                             ))}
                           </NativeSelect>
-                          {!target && (
-                            <Button
-                              size="xs"
-                              variant="outline"
-                              title={createGuess ? `Tạo SKU kho mới ${createGuess} rồi nối` : "Chọn sản phẩm kho để có mã gốc, hoặc gõ mã"}
-                              onClick={() => setRow(r.id, { kind: "create", sku: createGuess })}
-                            >
-                              Tạo SKU
-                            </Button>
-                          )}
                         </div>
                       )}
                     </td>
@@ -387,12 +355,14 @@ export function LinkDrawer({
             </tbody>
           </table>
         </div>
-        {!target && creatable.length > 0 && (
-          <div>
-            <Button size="xs" variant="ghost" onClick={createAllUnresolved}>
-              Tạo SKU kho mới cho {formatNumber(creatable.length)} phân loại chưa ghép (giữ mã sàn)
-            </Button>
-          </div>
+        {unresolved > 0 && (
+          <p className={TEXT_SUB}>
+            Phân loại chưa có SKU kho tương ứng thì tạo ở{" "}
+            <Link href="/products" target="_blank" className="font-medium text-primary hover:underline">
+              Tổng kho
+            </Link>{" "}
+            trước rồi quay lại nối. Trang này chỉ nối, không tạo sản phẩm kho.
+          </p>
         )}
         {dupTargets.size > 0 && (
           <p className="text-xs text-amber-700">Có {dupTargets.size} SKU kho được gán cho nhiều phân loại — vẫn nối được nếu đúng là cùng một mã hàng.</p>

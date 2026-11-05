@@ -1,8 +1,8 @@
-# Sản phẩm trên sàn — thiết kế lại (khảo sát 05/11/2026; cả 4 lát ĐÃ LÀM trên local — mục 12, chưa push)
+# Sản phẩm trên sàn — thiết kế lại (khảo sát 05/11/2026; cả 4 lát ĐÃ LÀM trên local — mục 12 + 13, chưa push)
 
 > Anh Trung 05/11: "Phần sản phẩm sàn đang quá rối. Cần phương án chuyên nghiệp hơn, khảo sát trong và ngoài nước. Suy nghĩ kỹ việc
 > nối sản phẩm sàn vào kho tổng hay làm ngược lại thì hợp lý. Đặc biệt quan tâm trải nghiệm và thao tác của khách."
-> Mục 0–11 là bản khảo sát + thiết kế; **mục 12 là phần đã làm** (anh bảo làm hết trên local, em tự quyết 5 câu mục 10). Đọc mục 0 rồi mục 12.
+> Mục 0–11 là bản khảo sát + thiết kế; **mục 12 là phần đã làm** (anh bảo làm hết trên local, em tự quyết 5 câu mục 10). Đọc mục 0 rồi mục 12. **Mục 13 (anh chốt lại): trang CHỈ NỐI, đã gỡ mọi đường "Đưa vào kho" / "Tạo SKU" — mục 13 thắng các mục trước.**
 > Nguyên tắc nền (docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 0): Tổng kho = hàng của mình, SKU chuẩn là tài sản; nối gian là việc của khách.
 
 ## 0. Kết luận một phút
@@ -281,3 +281,24 @@ tsc FE/BE + eslint sạch; đã dọn dữ liệu thử (10 SKU demo như cũ). 
 **Chưa làm / nợ:** luật tiền/hậu tố mã (câu 4); `one-click-link-dialog.tsx` + `/quick-link` cũ vẫn còn (Tổng kho dòng trống, hộp Cài đặt đồng
 bộ) — nên thay bằng luồng mới ở lát sau; tour Kho `/guide` còn tả UI cũ; mobile chưa có; số liệu prod (tỷ lệ chưa nối / delisted / mã máy)
 chưa đo.
+
+## 13. Anh chốt lại 05/11 (sau khi xem local): trang này CHỈ NỐI, không tạo sản phẩm kho — ĐÃ LÀM trên local, chưa push
+
+> Anh: "Không cần nút đưa vào kho, việc kiểm soát sản phẩm kho hoàn toàn sẽ nằm ở bên Kho tổng, nút Nối nay đổi thành Nối kho."
+
+**Thay cho các ý ở mục 6, 9, 12 có chữ "Đưa vào kho" / "Tạo SKU" — đọc mục này là bản đúng. Đừng đề xuất thêm lại đường tạo SKU kho ở trang này.**
+
+- **Gỡ:** nút chính "Đưa vào kho" / "Đưa vào kho…" trên từng dòng; nút "Đưa vào Tổng kho…" ở thanh hàng loạt; hộp bảng rà mã
+  (`bulk-create-dialog.tsx` đã xóa); trong ngăn kéo nối gỡ ô "Tạo SKU" từng dòng và nút "Tạo SKU kho mới cho N phân loại chưa ghép".
+  Lý do gỡ luôn phần trong ngăn kéo: cùng là tạo sản phẩm kho từ trang sàn, trái câu "hoàn toàn nằm ở bên Kho tổng".
+- **Nút chính nay là "Nối kho"** (trước là nút phụ "Nối"); nối dở vẫn "Nối nốt"; chiều ngược vẫn "Nối vào <mã>". Tiêu đề ngăn kéo
+  "Nối kho: <tên>". Menu ⋯ chỉ còn mục nối khi dòng không có nút chính mở ngăn kéo (Đã nối → "Xem / đổi liên kết"; tab Bỏ qua → "Nối kho…").
+- **Hàng chưa có trong kho:** ngăn kéo báo "tạo sản phẩm này ở Tổng kho trước rồi quay lại nối" (chữ Tổng kho là link mở tab mới);
+  phân loại chưa có SKU kho tương ứng thì để "chưa ghép" + một dòng chỉ sang Tổng kho. Tự khớp mã trùng đổi câu "Không khớp" tương ứng.
+- **Giữ nguyên:** dải 4 số, Bỏ qua, Lịch sử, Tự khớp mã trùng (chỉ nối), nút "Nối kho" trên dòng đơn. Backend KHÔNG đổi:
+  `POST /mappings/create-products` và `/link-by-sku` còn vì hộp "Tự khớp + tạo SKU" cũ (dòng trống Tổng kho, hộp Cài đặt đồng bộ)
+  đang gọi — hộp đó nằm bên Tổng kho nên hợp nguyên tắc. `shared.ts` bỏ `unlinkedAllStandard`, `skuFromRoot`, `variantSkuSuffix`.
+- **Hệ quả cần biết (em đã nói với anh):** khách mới có nghìn listing mà kho trống thì đường tạo hàng loạt từ sàn chỉ còn hộp "Tự khớp +
+  tạo SKU" cũ ở Tổng kho; "Sao chép sản phẩm từ sàn" là từng sản phẩm một. Ngăn kéo chỉ tìm SKU kho ĐANG BÁN (SKU Ngừng bán không ra).
+- **Kiểm local (demo, 1440 sáng + tối):** 7 dòng Cần nối đều một nút "Nối kho"; ngăn kéo không còn ô tạo; nối thật Áo thun → TUI-TOTE-01
+  (Cần nối 7→6, Đã nối 8→9) rồi gỡ + xóa log thử, demo về 7/8/10/0; tsc + eslint sạch; không lớp `dark:`.

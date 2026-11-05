@@ -20,24 +20,6 @@ export function isStandardSku(sku: string): boolean {
   return Boolean(s) && !isFallbackSku(s) && SKU_PATTERN_LOOSE.test(s);
 }
 
-/** "Đen, M" → "DEN-M" (khớp backend lib/product-group.ts variantSkuSuffix). */
-export function variantSkuSuffix(name: string | null | undefined): string {
-  return (name ?? "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-export function skuFromRoot(root: string, variantName: string | null | undefined): string {
-  const base = root.trim().toUpperCase().replace(/\s+/g, "-");
-  const suffix = variantSkuSuffix(variantName);
-  return suffix ? `${base}-${suffix}` : base;
-}
-
 /** Tên phân loại để hiện — sàn không trả tên thì lấy mã sàn. */
 export function variantLabel(r: Pick<ChannelProduct, "variantName" | "channelSku">): string {
   const v = (r.variantName ?? "").trim();
@@ -69,8 +51,6 @@ export interface ChannelGroup {
   delisted: boolean;
   /** Mọi phân loại đều bị Bỏ qua. */
   ignored: boolean;
-  /** Mọi phân loại CHƯA nối đều mang mã sàn chuẩn → "Đưa vào kho" một bấm. */
-  unlinkedAllStandard: boolean;
   minPrice: number;
   maxPrice: number;
   totalStock: number | null;
@@ -100,7 +80,6 @@ export function groupChannelProducts(items: ChannelProduct[]): ChannelGroup[] {
         status: "unlinked",
         delisted: true,
         ignored: true,
-        unlinkedAllStandard: true,
         minPrice: Number.POSITIVE_INFINITY,
         maxPrice: 0,
         totalStock: null,
@@ -111,7 +90,6 @@ export function groupChannelProducts(items: ChannelProduct[]): ChannelGroup[] {
     if (!g.imageUrl && r.imageUrl) g.imageUrl = r.imageUrl;
     g.total += 1;
     if (r.productId) g.linkedCount += 1;
-    else if (!isStandardSku(r.channelSku)) g.unlinkedAllStandard = false;
     if (r.status !== "DELISTED") g.delisted = false;
     if (!r.ignoredAt) g.ignored = false;
     const price = Number(r.price) || 0;

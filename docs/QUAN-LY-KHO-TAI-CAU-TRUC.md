@@ -18,7 +18,10 @@ Hệ quả cho thiết kế:
    trừ khi có số liệu khách kêu.
 3. **Bán offline đi qua kho:** phiếu xuất / sửa tồn / bán tại quầy trừ Tổng kho → với SKU đã nối và gian đã bật đồng bộ, số "Có thể bán"
    tự đẩy lên mọi gian (đường `enqueueStockPush` sẵn có). Vì vậy giá trị của SKU chuẩn là ở đây: khách nối một lần, bán ở đâu cũng khớp.
-4. Lát kế tiếp phải phục vụ (1) và (3) trước: Nhập – Xuất – Kiểm kê thành mục riêng (bán offline hằng ngày), phiếu nhập NCC + giá vốn
+4. **Sản phẩm kho chỉ tạo / sửa ở Tổng kho** (anh 05/11, sau khi xem trang Sản phẩm trên sàn mới: "việc kiểm soát sản phẩm kho hoàn
+   toàn sẽ nằm ở bên Kho tổng"). Trang Sản phẩm trên sàn CHỈ NỐI (nút "Nối kho"), không có nút "Đưa vào kho", không ô "Tạo SKU" —
+   docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 13. Đừng thêm lại đường tạo SKU kho ở ngoài Tổng kho.
+5. Lát kế tiếp phải phục vụ (1) và (3) trước: Nhập – Xuất – Kiểm kê thành mục riêng (bán offline hằng ngày), phiếu nhập NCC + giá vốn
    bình quân; kiểm tra lại các cửa còn cho SKU lỏng (Excel, Nối SKU nhanh với mã máy SPE-/TTK-/LZD-).
 
 ## 1. Lát 1 (05/11/2026, ĐÃ LÀM) — tách hub "Hàng hóa" thành hai mục sidebar

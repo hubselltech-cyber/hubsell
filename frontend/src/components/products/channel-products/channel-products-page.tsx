@@ -13,7 +13,6 @@ import {
   Link2Off,
   Loader2,
   MoreHorizontal,
-  PackagePlus,
   Search,
   Sparkles,
   X,
@@ -28,7 +27,6 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ApiError,
-  createProductsFromMappings,
   fetchChannelProducts,
   fetchChannels,
   ignoreChannelProducts,
@@ -46,7 +44,6 @@ import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
 import { AutoMatchDialog } from "./auto-match-dialog";
-import { BulkCreateDialog } from "./bulk-create-dialog";
 import { LinkDrawer } from "./link-drawer";
 import { MappingHistoryDialog } from "./mapping-history-dialog";
 import { groupChannelProducts, variantLabel, type ChannelGroup } from "./shared";
@@ -57,10 +54,12 @@ import { groupChannelProducts, variantLabel, type ChannelGroup } from "./shared"
  * Nguyên tắc: kho là mỏ neo, sàn là HÀNG ĐỢI. Trang này là danh sách việc theo SẢN PHẨM sàn:
  *   · Dải 4 số = 4 nhóm (Cần nối · Đã nối · Sàn đã gỡ · Bỏ qua) — bấm số là lọc. Mặc định Cần nối:
  *     listing sàn đã gỡ và món khách bỏ qua KHÔNG nằm trong hàng đợi.
- *   · Mỗi sản phẩm MỘT dòng thu gọn, chip trạng thái (Chưa nối / Nối k/n / Đã nối) và MỘT nút chính
- *     theo ngữ cảnh: mã sàn chuẩn → "Đưa vào kho" (tạo hoặc nối theo mã, một bấm); mã máy / lệch →
- *     "Nối" mở ngăn kéo; nối dở → "Nối nốt". Bấm ▸ xem phân loại (chỉ đọc).
- *   · Việc hàng loạt có bước xem lại: "Tự khớp mã trùng" (3 nhóm) và "Đưa vào Tổng kho…" (bảng rà mã).
+ *   · Mỗi sản phẩm MỘT dòng thu gọn, chip trạng thái (Chưa nối / Nối k/n / Đã nối) và MỘT nút chính:
+ *     "Nối kho" mở ngăn kéo nối; nối dở → "Nối nốt". Bấm ▸ xem phân loại (chỉ đọc).
+ *   · TRANG NÀY CHỈ NỐI, KHÔNG TẠO SẢN PHẨM KHO (anh Trung 05/11: "việc kiểm soát sản phẩm kho hoàn
+ *     toàn nằm ở bên Tổng kho") — đã gỡ nút "Đưa vào kho", "Đưa vào Tổng kho…" theo lô và ô "Tạo SKU"
+ *     trong ngăn kéo. Đừng thêm lại đường tạo SKU kho ở đây.
+ *   · Việc hàng loạt có bước xem lại: "Tự khớp mã trùng" (chỉ nối mã trùng chính xác).
  *   · Chiều ngược (Tổng kho › Nối gian): `targetProduct` → dải đích + nút "Nối vào X".
  * Thay link-manager.tsx (bảng bung sẵn, ô gõ mã từng dòng kiểu Salework 22/10) — anh Trung 05/11: "quá rối".
  */
@@ -94,8 +93,6 @@ export function ChannelProductsPage({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drawerGroup, setDrawerGroup] = useState<ChannelGroup | null>(null);
-  /** Các sản phẩm đang mở bảng rà mã "Đưa vào Tổng kho" (lô đã tick, hoặc một sản phẩm cần mã gốc). */
-  const [bulkGroups, setBulkGroups] = useState<ChannelGroup[] | null>(null);
   const [autoOpen, setAutoOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -150,25 +147,6 @@ export function ChannelProductsPage({
     return n;
   }
 
-  /** "Đưa vào kho" một bấm: mọi phân loại chưa nối đều có mã sàn chuẩn → tạo SKU theo mã, mã đã có thì nối. */
-  async function createForGroup(g: ChannelGroup) {
-    const ids = g.rows.filter((r) => !r.productId).map((r) => r.id);
-    if (ids.length === 0) return;
-    setBusyKey(g.key);
-    try {
-      const r = await createProductsFromMappings(ids);
-      toast.success(
-        `${g.title}: ${r.createdProducts > 0 ? `tạo ${formatNumber(r.createdProducts)} SKU kho` : ""}${r.createdProducts > 0 && r.reusedProducts > 0 ? ", " : ""}${
-          r.reusedProducts > 0 ? `nối vào ${formatNumber(r.reusedProducts)} SKU có sẵn` : ""
-        } — ${formatNumber(r.linked)} phân loại đã nối.`
-      );
-      await refresh();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không đưa vào kho được", { duration: 8000 });
-    } finally {
-      setBusyKey(null);
-    }
-  }
   async function setIgnored(list: ChannelGroup[], ignored: boolean) {
     const ids = list.flatMap((g) => g.rows.map((r) => r.id));
     if (ids.length === 0) return;
@@ -196,17 +174,15 @@ export function ChannelProductsPage({
   }
 
   /**
-   * Nút chính theo ngữ cảnh. Chưa nối → "Đưa vào kho": mã sàn chuẩn thì một bấm; có mã máy / trống thì
-   * mở bảng rà mã để điền mã gốc (05/11 soi local: sản phẩm 51 phân loại có 1 mã máy mà mở ngăn kéo thì
-   * phải bấm 51 lần). Nối với hàng kho CÓ SẴN là nút phụ "Nối" cạnh đó. Nối dở → "Nối nốt" (ngăn kéo).
+   * Nút chính theo ngữ cảnh: chưa nối → "Nối kho", nối dở → "Nối nốt" — cả hai mở ngăn kéo nối.
+   * Trang này KHÔNG tạo sản phẩm kho (anh Trung 05/11) — hàng chưa có trong kho thì tạo ở Tổng kho.
    */
-  function primaryOf(g: ChannelGroup): { label: string; kind: "create" | "review" | "drawer" | "unignore" | "none" } {
+  function primaryOf(g: ChannelGroup): { label: string; kind: "drawer" | "unignore" | "none" } {
     if (bucket === "ignored") return { label: "Bỏ cờ bỏ qua", kind: "unignore" };
     if (targetProduct) return { label: `Nối vào ${targetProduct.skuCode}`, kind: "drawer" };
     if (g.status === "linked") return { label: "", kind: "none" };
     if (g.status === "partial") return { label: "Nối nốt", kind: "drawer" };
-    if (g.unlinkedAllStandard) return { label: "Đưa vào kho", kind: "create" };
-    return { label: "Đưa vào kho…", kind: "review" };
+    return { label: "Nối kho", kind: "drawer" };
   }
 
   return (
@@ -321,11 +297,6 @@ export function ChannelProductsPage({
           <span className="tabular-nums">
             Đã chọn <b>{formatNumber(selected.size)}</b> sản phẩm
           </span>
-          {bucket !== "ignored" && bucket !== "linked" && (
-            <Button size="sm" onClick={() => setBulkGroups(selectedGroups)}>
-              <PackagePlus className="size-4" /> Đưa vào Tổng kho…
-            </Button>
-          )}
           {bucket === "ignored" ? (
             <Button size="sm" variant="outline" onClick={() => void setIgnored(selectedGroups, false)}>
               Bỏ cờ bỏ qua
@@ -382,7 +353,7 @@ export function ChannelProductsPage({
                   <th className="w-[9%] px-2 py-2.5 text-right font-medium">Phân loại</th>
                   <th className="w-[15%] px-2 py-2.5 text-right font-medium">Giá · Tồn sàn</th>
                   <th className="w-[11%] px-2 py-2.5 font-medium">Trạng thái</th>
-                  <th className="w-[23%] px-3 py-2.5" />
+                  <th className="w-[20%] px-3 py-2.5" />
                 </tr>
               </thead>
               <tbody>
@@ -403,37 +374,16 @@ export function ChannelProductsPage({
                           {p.kind !== "none" && (
                             <Button
                               size="sm"
-                              variant={p.kind === "create" || p.kind === "review" || targetProduct ? "default" : "outline"}
+                              variant={p.kind === "drawer" ? "default" : "outline"}
                               disabled={busy}
-                              title={
-                                p.kind === "create"
-                                  ? "Mã sàn đã chuẩn: tạo SKU kho theo đúng mã (mã đã có trong kho thì nối vào) — một bấm"
-                                  : p.kind === "review"
-                                    ? "Sàn chưa có mã SKU chuẩn cho sản phẩm này — điền mã gốc rồi tạo SKU kho"
-                                    : p.kind === "drawer"
-                                      ? "Chọn sản phẩm kho rồi ghép từng phân loại"
-                                      : undefined
-                              }
+                              title={p.kind === "drawer" ? "Chọn sản phẩm trong Tổng kho rồi ghép từng phân loại" : undefined}
                               onClick={() => {
-                                if (p.kind === "create") void createForGroup(g);
-                                else if (p.kind === "review") setBulkGroups([g]);
-                                else if (p.kind === "drawer") setDrawerGroup(g);
+                                if (p.kind === "drawer") setDrawerGroup(g);
                                 else if (p.kind === "unignore") void setIgnored([g], false);
                               }}
                             >
-                              {busy ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : p.kind === "create" || p.kind === "review" ? (
-                                <PackagePlus className="size-4" />
-                              ) : p.kind === "drawer" ? (
-                                <Link2 className="size-4" />
-                              ) : null}
+                              {busy ? <Loader2 className="size-4 animate-spin" /> : p.kind === "drawer" ? <Link2 className="size-4" /> : null}
                               <span className="truncate">{p.label}</span>
-                            </Button>
-                          )}
-                          {(p.kind === "create" || p.kind === "review") && (
-                            <Button size="sm" variant="outline" disabled={busy} title="Nối với sản phẩm đã có trong Tổng kho" onClick={() => setDrawerGroup(g)}>
-                              <Link2 className="size-4" /> Nối
                             </Button>
                           )}
                           <Popover open={menuKey === g.key} onOpenChange={(o) => setMenuKey(o ? g.key : null)}>
@@ -441,16 +391,18 @@ export function ChannelProductsPage({
                               <MoreHorizontal className="size-4" />
                             </PopoverTrigger>
                             <PopoverContent align="end" className="w-60 p-1">
-                              <button
-                                type="button"
-                                className={MENU_ITEM}
-                                onClick={() => {
-                                  setMenuKey(null);
-                                  setDrawerGroup(g);
-                                }}
-                              >
-                                <Link2 className="size-4 text-slate-500" /> {g.status === "linked" ? "Xem / đổi liên kết" : "Nối với sản phẩm kho…"}
-                              </button>
+                              {p.kind !== "drawer" && (
+                                <button
+                                  type="button"
+                                  className={MENU_ITEM}
+                                  onClick={() => {
+                                    setMenuKey(null);
+                                    setDrawerGroup(g);
+                                  }}
+                                >
+                                  <Link2 className="size-4 text-slate-500" /> {g.status === "linked" ? "Xem / đổi liên kết" : "Nối kho…"}
+                                </button>
+                              )}
                               {g.ignored ? (
                                 <button
                                   type="button"
@@ -542,14 +494,6 @@ export function ChannelProductsPage({
         }}
         group={drawerGroup}
         target={targetProduct}
-        onDone={() => void refresh()}
-      />
-      <BulkCreateDialog
-        open={bulkGroups !== null}
-        onOpenChange={(o) => {
-          if (!o) setBulkGroups(null);
-        }}
-        groups={bulkGroups ?? []}
         onDone={() => void refresh()}
       />
       <AutoMatchDialog open={autoOpen} onOpenChange={setAutoOpen} channelId={channelId || undefined} onDone={() => void refresh()} />

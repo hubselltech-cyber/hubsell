@@ -117,7 +117,7 @@ export function AutoMatchDialog({
             <MatchGroup title="Khớp chắc" note="mã sàn = đúng một SKU kho" list={data.sure} tone="ok" checked={checked} onToggle={toggle} onToggleGroup={toggleGroup} />
             <MatchGroup title="Cần rà" note="mã trùng nhưng có điều đáng ngờ — bật từng dòng nếu đúng" list={data.review} tone="warn" checked={checked} onToggle={toggle} onToggleGroup={toggleGroup} />
             <p className={TEXT_SUB}>
-              Không khớp: {formatNumber(data.none)} phân loại (trong {formatNumber(data.scanned)} đã quét) — dùng &ldquo;Đưa vào Tổng kho&rdquo; hoặc nối tay.
+              Không khớp: {formatNumber(data.none)} phân loại (trong {formatNumber(data.scanned)} đã quét) — nối tay bằng nút &ldquo;Nối kho&rdquo;; hàng chưa có trong kho thì tạo ở Tổng kho trước.
             </p>
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <span className={cn(TEXT_SUB, "tabular-nums")}>{formatNumber(selected.length)} cặp sẽ nối</span>

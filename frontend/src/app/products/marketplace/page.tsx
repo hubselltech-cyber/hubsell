@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
  * docs/QUAN-LY-KHO-TAI-CAU-TRUC.md): trước là tab thứ hai của hub Hàng hóa, nay là
  * mục sidebar đứng ngay dưới "Tổng kho". Thân trang là ChannelProductsPage — thiết kế lại
  * cùng ngày (docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md): hàng đợi theo SẢN PHẨM sàn, dải 4 số,
- * ngăn kéo nối, đưa vào kho theo lô có bảng rà mã. CHỈ CHỦ SHOP — nhân viên gõ URL thì về Tổng kho
+ * ngăn kéo nối. Trang CHỈ NỐI, không tạo sản phẩm kho (anh Trung 05/11: sản phẩm kho quản ở Tổng kho). CHỈ CHỦ SHOP — nhân viên gõ URL thì về Tổng kho
  * (sidebar đã ẩn mục, API cũng chặn adminOnly độc lập).
  *
  * Query string (đến từ "Nối thêm gian cho SKU này" ở bảng Tổng kho):
