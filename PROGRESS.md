@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 05/11 trưa (3) — Đổi tên "Thống kê bốc hàng" → "Phiếu nhặt hàng" (web) — ĐÃ LÀM, kiểm local, commit local, CHƯA push
+
+- **Anh:** "Thống kê bốc hàng" đổi tên → Phiếu nhặt hàng.
+- **Đổi 4 chỗ khách nhìn thấy trên web:** tiêu đề popup; nút trên trang Đơn hàng "Thống kê" → "Phiếu nhặt hàng" (em đổi theo cho khớp tên popup); nút trong popup "Xuất thống kê" → "Xuất phiếu nhặt hàng"; tờ in (tiêu đề "PHIẾU NHẶT HÀNG"). Route, tệp, hàm `pick-summary` giữ nguyên.
+- **Kiểm local demo 1280:** chip Chờ đóng gói → nút "Phiếu nhặt hàng" → popup đúng tiêu đề, 102 đơn, nút "Xuất phiếu nhặt hàng" cùng hàng với 2 tab, 0 phần tử tràn hộp, trang không tràn ngang. Ở 1280 cụm hai nút vẫn xuống dòng dưới hàng chip và bám phải — như trước khi đổi tên (cụm vốn đã rộng hơn chỗ trống). tsc FE + eslint sạch. Chưa bấm in thật (khung in không đổi ngoài chữ tiêu đề).
+- **Chưa đổi:** app mobile còn "Thống kê bốc hàng" (cần OTA) và `docs/store/LISTING.md` — chờ anh bảo.
+- **Ghi:** docs DONG-GOI-BAN-GIAO mục 5, memory `hubsell-dong-goi-ban-giao`.
+
 ## Phiên 05/11 trưa (2) — Chuyển công tắc "Tự chuẩn bị hàng" từ Kênh bán về trang Đơn hàng (nút + popup gian hàng) — ĐÃ LÀM, kiểm local, ✅ PUSH 9cdf0127 (anh: "Dọn và push"), prod OK
 
 - **Anh (2 ảnh):** chuyển nút bật tự chuẩn bị hàng về Đơn hàng, bấm vào hiện popup các gian hàng và bật hoặc tắt; vị trí khoanh = hàng công cụ bảng đơn, trước Chế độ xem / Cột.

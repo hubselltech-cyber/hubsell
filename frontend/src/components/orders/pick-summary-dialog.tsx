@@ -188,7 +188,7 @@ export function PickSummaryDialog({
     >
       <DialogContent className="flex max-h-[calc(100dvh-4rem)] flex-col sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Thống kê bốc hàng</DialogTitle>
+          <DialogTitle>Phiếu nhặt hàng</DialogTitle>
           <DialogDescription>
             {scope}
             {data && (
@@ -240,7 +240,7 @@ export function PickSummaryDialog({
             title="In bảng theo SKU gồm 3 cột: mã SKU, tên sản phẩm, số lượng"
           >
             <Printer className="size-4" />
-            Xuất thống kê
+            Xuất phiếu nhặt hàng
           </Button>
         </div>
 

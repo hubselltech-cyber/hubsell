@@ -71,8 +71,8 @@ export function buildPickSummaryHtml(input: PickSummaryPrintInput): string {
       ? `<p class="express" style="margin-bottom:0">Có ${formatNumber(input.expressQty)} sản phẩm thuộc đơn hỏa tốc, lấy trước.</p>`
       : "";
 
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Thống kê bốc hàng</title><style>${STYLE}</style></head><body>
-<h1>THỐNG KÊ BỐC HÀNG</h1>
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu nhặt hàng</title><style>${STYLE}</style></head><body>
+<h1>PHIẾU NHẶT HÀNG</h1>
 <div class="scope">${escapeHtml(input.scope)}</div>
 <div class="meta">${formatNumber(input.orders)} đơn · ${formatNumber(input.totalQty)} sản phẩm · ${formatNumber(input.rows.length)} SKU · Xuất lúc ${formatDateTime(new Date().toISOString())}</div>
 ${express}
@@ -88,7 +88,7 @@ export function printPickSummary(input: PickSummaryPrintInput): void {
   document.getElementById(FRAME_ID)?.remove();
   const frame = document.createElement("iframe");
   frame.id = FRAME_ID;
-  frame.title = "In thống kê bốc hàng";
+  frame.title = "In phiếu nhặt hàng";
   // Không cho chạy script bên trong khung; allow-modals để gọi được hộp thoại in.
   frame.setAttribute("sandbox", "allow-same-origin allow-modals");
   // Giữ khổ thật và đẩy ra ngoài màn: khung 0px hoặc ẩn hẳn thì Firefox không in được.

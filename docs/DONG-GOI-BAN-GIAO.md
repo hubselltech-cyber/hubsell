@@ -98,6 +98,8 @@ Quét: ghi (xanh) → quét lại (vàng "KIỆN NÀY ĐÃ QUÉT RỒI · đã q
 
 **Anh chốt lại 05/11:** hai nút **chỉ hiện ở chip Chờ đóng gói**; chip Tất cả đã xử lý và Chưa in phiếu cũng bỏ ("không có nhiều ý nghĩa" — bốc hàng và quét kiện là việc của nhóm đơn đã in phiếu, chưa gói). `orders/page.tsx`: `printedFilter === "yes"`. Hệ quả: popup Thống kê nay luôn tính cho nhóm Chờ đóng gói (vẫn theo sàn / hãng / loại đơn / từ khóa đang lọc); trang `/orders/packing` chỉ còn một cửa vào là nút ở chip này (không có mục sidebar).
 
+**Anh đổi tên 05/11:** "Thống kê bốc hàng" → **"Phiếu nhặt hàng"** (web). Theo đó: nút trên trang Đơn hàng "Thống kê" → "Phiếu nhặt hàng", tiêu đề popup, nút trong popup "Xuất thống kê" → "Xuất phiếu nhặt hàng", tiêu đề tờ in "PHIẾU NHẶT HÀNG". Tên route, tệp, hàm (`pick-summary`) giữ nguyên. Các đoạn bên dưới viết trước ngày đổi vẫn gọi tên cũ. App mobile còn ghi "Thống kê bốc hàng" (màn riêng của mobile, cần OTA) — chưa đổi.
+
 Popup (`components/orders/pick-summary-dialog.tsx`): tab Theo SKU / Theo sản phẩm, sắp xếp ở tiêu đề Mã SKU + Số lượng, nút sao chép mã. Sản phẩm nhiều SKU hiện "N SKU". Điện thoại: mã SKU xuống dưới tên để cột Số lượng luôn thấy. Hộp chỉ gắn lúc mở nên mỗi lần mở đều tính lại và về thứ tự hỏa tốc trước. Web chưa có bảng theo đơn vị vận chuyển như mobile.
 
 **Xuất thống kê để in (anh chốt 04/11):** nút trong popup, luôn theo SKU, 3 cột Mã SKU · Tên sản phẩm · Số lượng, giữ thứ tự seller đang xếp.
