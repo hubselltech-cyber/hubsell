@@ -476,7 +476,7 @@ Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không 
   90 %. `breakevenCheckProblem` / `check` / `problem` / `placedRevenue` phía TikTok không còn.
 - **Mẫu số theo định nghĩa của TikTok**: gross_revenue đếm đơn ĐẶT, không rút đơn hủy/hoàn → đơn HỦY góp doanh thu,
   0 đồng lãi (không lấy "lỗ ảo" bằng giá vốn của dòng P&L). ★ GIẢ ĐỊNH: and.not.or 18/10 lệch +4,0 / +4,7 / +8,8 % (nếu
-  TikTok rút đơn hủy với ~15–20 % tỷ lệ hủy thì lệch phải lớn hơn nhiều) → đứng được. Dòng "Đối chiếu doanh thu" trên UI
+  TikTok rút đơn hủy với ~15–20 % tỷ lệ hủy thì lệch phải lớn hơn nhiều) → đứng được. 05/11: gian thứ hai Tạp Hoá Dép 668 (hủy 24 %) TikTok 29,83 tr = 94,7 % mọi đơn đặt, 126,9 % nếu bỏ hủy; **anh Trung chốt GIỮ đơn hủy trong mẫu số** (TAI-CHINH-GIA-VON-0 mục 14). Dòng "Đối chiếu doanh thu" trên UI
   đã bỏ 28/10; muốn kiểm lại thì dùng SQL (MO-HINH-CAY mục 12.1). ⚠️ 28/10: hai gian thời trang giảm giá sâu (Bella Look,
   TORANO) Hubsell/TikTok đều đặn 0,65–0,80 → nghi gross_revenue tính TRƯỚC giảm giá shop — chưa chứng minh.
 - **Giá vốn**: đơn đã có kết cục cuối mà thiếu giá vốn ở bất kỳ dòng hàng nào → loại khỏi cả tử lẫn mẫu, báo

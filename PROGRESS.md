@@ -6,6 +6,17 @@
 
 ---
 
+## Phiên 05/11 sáng (4) — Tạp Hoá Dép 668: hòa vốn TikTok 26,35 do 3 thẻ tặng kèm mang giá vốn 70.000 đ — ✅ ĐÃ VÁ dữ liệu ~09:57, hòa vốn về 5,97; không đổi mã
+
+- **Anh:** ảnh Trợ lý quảng cáo TikTok của khách, cột Hòa vốn 26,35 (một chiến dịch 18,78); khách yêu cầu sửa. Đây là ca "chờ hỏi khách" từ đêm 04/11.
+- **Gốc (SQL prod chỉ đọc):** gian `cmvv5k27y01zxlq3pnoneq6wd` có tin quà "Thẻ cảm ơn Dép Lê…" 3 phân loại, TikTok gắn cả 3 vào mỗi đơn giá 0 đ; 3 lá mang giá vốn 70.000 đ (bằng giá vốn 483 lá dép) → mỗi đơn +210.000 đ giá vốn ảo, 1.173 đơn 01/08–31/10, 246,33 tr. Lớp 2 đã gạt 380 đơn đối soát + 121 đơn hủy; 26,35 là biên 3,8 % của 7 % doanh thu còn lại (4 đơn mua nhiều đôi vẫn dính thẻ).
+- **Anh hỏi "sao lại cộng 210.000 đ":** giải thích bằng đơn thật `586880374352610829` (dép 146.280 đ + 3 thẻ × 70.000 đ → lỗ 167.837 đ). Anh chốt: khách đã xóa hộp carton và thẻ quà, coi là 0 đ.
+- **Vá (Supabase, 2 UPDATE thuần):** `ChannelProduct.costPrice` 3 lá → 0 (sửa cả lá để lượt vá dòng 0 không ghi lại 70.000); `OrderItem.costPriceAtSale` 3.519 dòng → 0. Hộp carton (12 dòng có giá bán 5.000 đ, giá vốn 3.000 đ) KHÔNG đụng: về 0 sẽ bật cờ thiếu giá vốn ở hòa vốn.
+- **Kiểm sau:** 3 lá × 1.173 dòng đều 0; sổ dirty 0; lợi nhuận từ 06/09 −66,31 → **+15,14 tr**, đơn lỗ 410 → 39; toàn bộ sổ −149,91 → +39,57 tr; hòa vốn toàn gian theo luật đang chạy **5,97** (biên 16,74 %, độ phủ 100 %, 0 đơn nghi), chiến dịch có đơn riêng cũng 5,97. Chưa nhìn màn khách (đệm RAM tối đa 30 phút).
+- **Ghi:** docs TAI-CHINH-GIA-VON-0 mục 14; sao lưu + hoàn tác `backend/scripts/out/tapdep668-costprice-backup-2026-11-05.txt`; memory sửa giá vốn. CHƯA commit.
+- **Anh hỏi "hòa vốn đã bỏ đơn hủy rồi mà?":** lợi nhuận chỉ lấy đơn đã đối soát (đúng anh chốt 18/09); đơn hủy cùng lứa vẫn nằm trong mẫu số doanh thu vì ROI TikTok chia trên đơn đặt (giả định của em từ 18/09, docs ADS-TIKTOK-GMV-MAX mục 8). Đo gian này 29 ngày: TikTok 183 đơn / 29,83 tr; Hubsell mọi đơn đặt 198 / 31,50 tr (94,7 %); bỏ hủy 148 / 23,50 tr (126,9 %) → TikTok không rút đơn hủy. Bỏ đơn hủy thì hòa vốn 4,52 thay vì 5,97. **Anh chốt: GIỮ NGUYÊN.** Kiểm lại 10:12: 3 lá + 3.519 dòng vẫn 0 đ, dirty 0. Không đổi mã; docs TAI-CHINH-GIA-VON-0 mục 14.
+- **Đính chính (anh nhắc "nhãn đó mình có rồi"):** màn TikTok đã có nhãn khi độ phủ < 90 % — cột Nhận định "Chưa kết luận được" (chỉ chiến dịch có tiêu tiền trong kỳ), tab Hòa vốn sản phẩm "Thiếu giá vốn". Phần còn lệch: ô Hòa vốn vẫn xanh, ROI thực vẫn tô đỏ theo mốc đó, Lãi/lỗ ước tính vẫn nhân biên lãi đó, không xét độ phủ. ⏳ chờ anh chốt có làm nhạt ba ô này không.
+
 ## Phiên 05/11 sáng (3) — Nâng cấp Quản lý kho lát 1: tách "Tổng kho" / "Sản phẩm trên sàn" ra sidebar + tạm ẩn khối 3 bước + menu Tạo sản phẩm kho + Sao chép từ sàn → SKU độc lập — ĐÃ LÀM, kiểm local, ✅ PUSH 002c218e…ba8e2ac9 ~06:25 (anh "dọn dẹp và push") → Render deploy backend + Vercel; đã xóa 52 SKU thử local, env trả về https
 
 - Anh: khách thấy kho khó dùng; (1) đưa tab Tổng kho ra sidebar ngay trên Hàng hóa, đổi Hàng hóa → "Sản phẩm trên sàn"; (2) tạm ẩn hẳn khối hướng dẫn kết nối, đánh dấu nhắc anh sau. Sổ đợt này: `docs/QUAN-LY-KHO-TAI-CAU-TRUC.md`.

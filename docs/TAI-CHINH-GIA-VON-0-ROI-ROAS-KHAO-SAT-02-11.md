@@ -388,3 +388,28 @@ A bắt 99,4 % tiền quà bất thường. B và C bắt thêm rất ít nhưng
 **Câu chữ.** Lý do "chưa tính" của TikTok nay nói cả hai phần (đơn nghi sai giá quà + phần thiếu giá vốn / chưa nối id) thay vì chỉ một; popover hòa vốn hiện cả dòng nghi sai giá quà lẫn dòng độ phủ. Nhãn Shopee "Nghi sai giá vốn quà" chỉ khi số đơn nghi ≥ số đơn thiếu giá vốn.
 
 **Chưa làm được trong lượt rà.** Chưa đo thời gian cả câu gom TikTok sau khi thêm CTE trên gian lớn (chỉ đo CTE riêng 0,32 giây). Mobile để sau theo anh.
+
+## 14. Tạp Hoá Dép 668: hòa vốn 26,35 do 3 thẻ tặng kèm mang giá vốn 70.000 đ (05/11/2026 ~09:57, ĐÃ VÁ dữ liệu, không đổi mã)
+
+**Triệu chứng (ảnh anh).** Trợ lý quảng cáo TikTok của gian `cmvv5k27y01zxlq3pnoneq6wd` (phamgiathang30101987@gmail.com, nối 30/10): cột Hòa vốn 26,35 ở hầu hết 45 chiến dịch, một chiến dịch 18,78. Khách yêu cầu sửa.
+
+**Gốc.** Tin quà SPU `1736418802480350665` "Thẻ cảm ơn Dép Lê…" có 3 phân loại (Thẻ hướng dẫn sử dụng, Thẻ hướng dẫn chọn size, Thẻ cảm ơn), TikTok gắn cả 3 vào mỗi đơn với giá bán 0 đ. Ba lá này mang giá vốn 70.000 đ, bằng giá vốn của 483 lá dép / 14 sản phẩm trong gian (nghi nhập giá hàng loạt, chưa kiểm đường nhập). Mỗi đơn gánh 210.000 đ giá vốn ảo: 1.173 đơn 01/08–31/10, 3.519 dòng, 246,33 tr. Ví dụ đơn `586880374352610829`: dép 146.280 đ giá vốn 70.000 đ + 3 thẻ, doanh thu 159.000 đ, lợi nhuận −167.837 đ.
+
+**Vì sao ra 26,35 dù đã có lớp 2.** Lớp 2 gạt 380 đơn đã đối soát + 121 đơn hủy (giá vốn quà > doanh thu đơn). Còn lại 22 đơn đã đối soát + 7 đơn hủy = 7 % doanh thu, trong đó 4 đơn mua nhiều đôi (doanh thu > 210.000 đ) vẫn mang giá vốn thẻ → biên 3,80 %, hòa vốn 26,35. Chiến dịch 18,78 là chiến dịch đủ đơn riêng. Luật tự động không dùng số này (độ phủ < 90 %) và cột Nhận định đã ghi "Chưa kết luận được"; riêng ô Hòa vốn vẫn hiện số màu xanh.
+
+**Sửa (anh chốt: khách đã xóa hộp carton và thẻ quà, coi là 0 đ).** Supabase SQL Editor, hai UPDATE thuần: `ChannelProduct.costPrice` 3 lá 70.000 → 0 (phải sửa cả lá, nếu không lượt vá dòng 0 sẽ ghi lại 70.000 vì tên dòng trùng tên lá); `OrderItem.costPriceAtSale` 3.519 dòng 70.000 → 0. Hộp carton (12 dòng, giá bán 5.000 đ, giá vốn 3.000 đ) không đụng: dòng có giá bán, về 0 sẽ bật cờ thiếu giá vốn ở hòa vốn quảng cáo.
+
+| Sổ cái gian (từ 06/09) | Trước | Sau |
+|---|---|---|
+| Lợi nhuận | −66,31 tr | +15,14 tr |
+| Đơn lỗ | 410 / 566 | 39 / 566 |
+| Hòa vốn toàn gian (luật đang chạy) | 26,35, độ phủ 7 % | **5,97**, độ phủ 100 %, 0 đơn nghi |
+| Lợi nhuận toàn bộ sổ | −149,91 tr | +39,57 tr |
+
+Chiến dịch có đơn riêng (Product GMV Max đang tạm dừng, mục tiêu 5,4): 382 đơn đã đối soát, biên 16,7 %, hòa vốn 5,97. Sổ tự tính lại, dirty 0. Màn khách đổi sau tối đa 30 phút (đệm RAM). Sao lưu + hoàn tác: `backend/scripts/out/tapdep668-costprice-backup-2026-11-05.txt` (tệp cục bộ).
+
+**Kẽ còn lại của lớp 2 (chưa sửa, chờ anh chốt).** Đơn có giá vốn quà sai nhưng thấp hơn doanh thu đơn vẫn vào biên lãi; khi phần lớn đơn bị gạt, số còn lại vừa ít vừa lệch.
+
+**Đính chính (anh nhắc "nhãn đó mình có rồi").** Màn TikTok ĐÃ có nhãn khi độ phủ < 90 %: cột Nhận định ghi "Chưa kết luận được" kèm lý do (campaign-advice `no_breakeven`, chỉ với chiến dịch có tiêu tiền trong kỳ; chiến dịch tạm dừng / chưa tiêu hiện "—"), tab Hòa vốn sản phẩm ghi "Thiếu giá vốn", popover ô Hòa vốn nêu độ phủ. Phần còn lệch nhau trong cùng một dòng: ô Hòa vốn vẫn màu xanh, ô ROI thực vẫn tô đỏ "Dưới ROI hòa vốn", ô Lãi/lỗ ước tính vẫn nhân biên lãi đó, cả ba không xét độ phủ (`tiktok-ads-page.tsx`, `tiktok-breakeven.tsx`). Chưa sửa.
+
+**Anh hỏi lại "hòa vốn đã bỏ đơn hủy rồi mà?" (05/11).** Luật từ 18/09 (commit `1f2e5675`, ADS-TIKTOK-GMV-MAX mục 8): LỢI NHUẬN chỉ lấy đơn đã đối soát (giao thành công + hoàn xong) đúng như anh chốt; đơn hủy cùng lứa góp 0 đ lãi nhưng doanh thu vẫn nằm trong MẪU SỐ, vì ROI của TikTok chia trên doanh thu đơn ĐẶT. Điểm thứ hai là giả định của em, không có ghi nhận anh chốt riêng. Đo thêm trên gian này (29 ngày có số quảng cáo, 28/09–03/11): TikTok ghi 183 đơn / 29,83 tr; Hubsell mọi đơn đặt 198 đơn / 31,50 tr (TikTok = 94,7 %); Hubsell bỏ đơn hủy 148 đơn / 23,50 tr (TikTok = 126,9 %). TikTok không rút đơn hủy khỏi doanh thu GMV Max → giả định đứng được ở gian thứ hai (gian đầu and.not.or 18/10). Nếu bỏ đơn hủy khỏi mẫu số, hòa vốn gian này ra 4,52 thay vì 5,97; khách đặt ROI theo 4,52 trên số của TikTok sẽ lỗ. **Anh chốt 05/11: GIỮ NGUYÊN đơn hủy trong mẫu số.** Không đổi mã. Kiểm lại 10:12: 3 lá 0 đ, 3.519 dòng 0 đ, dirty 0.
