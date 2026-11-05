@@ -4353,9 +4353,13 @@ export function setInventoryQuantity(productId: string, quantity: number) {
 /** PHIẾU NHẬP / XUẤT NHIỀU MÃ (24/09): cộng thêm / trừ bớt, một transaction, ≤ 200 mã. */
 export function adjustInventoryBulk(data: {
   type: "IMPORT" | "EXPORT";
-  items: { productId: string; quantity: number }[];
+  /** purchasePrice (đ) chỉ có nghĩa với phiếu NHẬP và người thấy tài chính (05/11/2026). */
+  items: { productId: string; quantity: number; purchasePrice?: number }[];
   reason?: string;
   locationId?: string;
+  /** Nhà cung cấp của phiếu NHẬP: chọn nhà đã có (id) hoặc gõ tên mới (tạo tại chỗ). */
+  supplierId?: string;
+  supplierName?: string;
 }) {
   return apiFetch<{
     type: "IMPORT" | "EXPORT";
@@ -4364,6 +4368,7 @@ export function adjustInventoryBulk(data: {
     products: { productId: string; skuCode: string; quantityInStock: number }[];
     /** Phiếu kho vừa lập (05/11/2026) — in ngay / in lại ở tab Phiếu kho. */
     voucher: { id: string; code: string };
+    supplier: { id: string; name: string } | null;
   }>("/api/inventory/adjust-bulk", { method: "POST", body: JSON.stringify(data) });
 }
 
@@ -4383,6 +4388,9 @@ export interface StockVoucherSummary {
   totalCost: number | null;
   createdAt: string;
   createdByName: string | null;
+  /** Nhà cung cấp của phiếu nhập (05/11/2026) — tên chụp lúc lập. */
+  supplierId: string | null;
+  supplierName: string | null;
 }
 
 export interface StockVoucherLine {
@@ -4393,17 +4401,152 @@ export interface StockVoucherLine {
   quantity: number;
   unitCost: number | null;
   balanceAfter: number;
+  /** Giá nhập của dòng (đ) — chỉ phiếu nhập; null = chưa ghi hoặc tài khoản không thấy tài chính. */
+  purchasePrice?: number | null;
 }
 
 export interface StockVoucherDetail {
   voucher: Omit<StockVoucherSummary, "createdByName"> & { lines: StockVoucherLine[] };
+  supplier: { name: string; phone: string | null; taxCode: string | null; address: string | null } | null;
   shop: { name: string; phone: string | null; email: string | null };
   createdByName: string | null;
 }
 
-export function fetchStockVouchers(params: { type?: StockVoucherType; q?: string; from?: string; to?: string; page?: number; pageSize?: number }) {
+/** Sửa nhà cung cấp / giá nhập trên phiếu NHẬP đã lập (không sửa số lượng). supplierId: null = bỏ nhà cung cấp. */
+export function updateStockVoucher(
+  id: string,
+  data: { supplierId?: string | null; supplierName?: string; prices?: { productId: string; purchasePrice: number | null }[] }
+) {
+  return apiFetch<{ ok: true; supplier: { id: string; name: string } | null; priceCount: number }>(
+    `/api/inventory/vouchers/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+}
+
+// ----- NHÀ CUNG CẤP + BÁO CÁO NHẬP HÀNG (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 5) -----
+
+export interface SupplierBrief {
+  id: string;
+  name: string;
+}
+
+export interface SupplierRow extends SupplierBrief {
+  phone: string | null;
+  taxCode: string | null;
+  address: string | null;
+  note: string | null;
+  isActive: boolean;
+  voucherCount: number;
+  totalQuantity: number;
+  /** Σ số lượng × giá nhập trên các dòng CÓ giá; null = chưa dòng nào có giá / không thấy tài chính. */
+  totalValue: number | null;
+  lastImportAt: string | null;
+}
+
+export interface SupplierListResponse {
+  items: SupplierRow[];
+  unassigned: { voucherCount: number; totalQuantity: number };
+  costHidden: boolean;
+}
+
+export function fetchSupplierOptions() {
+  return apiFetch<{ items: SupplierBrief[] }>("/api/inventory/suppliers?brief=1");
+}
+
+export function fetchSuppliers(params: { search?: string; from?: string; to?: string }) {
+  const qs = new URLSearchParams({ includeInactive: "1" });
+  if (params.search) qs.set("search", params.search);
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  return apiFetch<SupplierListResponse>(`/api/inventory/suppliers?${qs.toString()}`);
+}
+
+export interface SupplierInput {
+  name: string;
+  phone?: string | null;
+  taxCode?: string | null;
+  address?: string | null;
+  note?: string | null;
+  isActive?: boolean;
+}
+
+export function createSupplier(data: SupplierInput) {
+  return apiFetch<{ supplier: SupplierBrief }>("/api/inventory/suppliers", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateSupplier(id: string, data: Partial<SupplierInput>) {
+  return apiFetch<{ supplier: SupplierBrief }>(`/api/inventory/suppliers/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export interface PurchaseStatSupplier {
+  /** null = phiếu nhập không ghi nhà cung cấp. */
+  supplierId: string | null;
+  supplierName: string | null;
+  quantity: number;
+  voucherCount: number;
+  avgPrice: number | null;
+  lastPrice: number | null;
+  lastPriceAt: string | null;
+  lastImportAt: string;
+}
+
+export interface PurchaseStatProduct {
+  productId: string;
+  skuCode: string;
+  productName: string;
+  variantName: string | null;
+  imageUrl: string | null;
+  /** Giá vốn đang dùng của SKU (cấu hình Giá vốn). */
+  costPrice: number | null;
+  totalQuantity: number;
+  /** Số lượng nằm trên các dòng CÓ giá nhập — mẫu số của giá trung bình. */
+  pricedQuantity: number;
+  voucherCount: number;
+  /** Bình quân theo số lượng; null = chưa dòng nào có giá. */
+  avgPrice: number | null;
+  lastImportAt: string;
+  suppliers: PurchaseStatSupplier[];
+}
+
+export type PurchaseStatSort = "recent" | "quantity" | "avg";
+
+export function fetchPurchaseStatsByProduct(params: {
+  search?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+  sort?: PurchaseStatSort;
+  dir?: "asc" | "desc";
+}) {
+  const qs = new URLSearchParams();
+  if (params.search) qs.set("search", params.search);
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params.sort) qs.set("sort", params.sort);
+  if (params.dir) qs.set("dir", params.dir);
+  return apiFetch<{ items: PurchaseStatProduct[]; total: number; page: number; pageSize: number; pageCount: number }>(
+    `/api/inventory/purchase-stats/products?${qs.toString()}`
+  );
+}
+
+export function fetchStockVouchers(params: {
+  type?: StockVoucherType;
+  q?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+  supplierId?: string;
+}) {
   const qs = new URLSearchParams();
   if (params.type) qs.set("type", params.type);
+  if (params.supplierId) qs.set("supplierId", params.supplierId);
   if (params.q) qs.set("q", params.q);
   if (params.from) qs.set("from", params.from);
   if (params.to) qs.set("to", params.to);

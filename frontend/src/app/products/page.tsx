@@ -52,6 +52,7 @@ import { MarketplaceCodes } from "@/components/products/marketplace-codes";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
 import { StockVoucherTable } from "@/components/products/stock-voucher-table";
+import { SuppliersTab } from "@/components/products/suppliers/suppliers-tab";
 import { ProductBulkBar } from "@/components/products/product-bulk-bar";
 import { ProductHistoryDialog } from "@/components/products/product-history-dialog";
 import { ProductRowMenu } from "@/components/products/product-row-menu";
@@ -144,7 +145,7 @@ const COL_HEAD_CLASS: Record<string, string> = {
   actions: "w-[8.5rem]",
 };
 
-type HubTab = "inventory" | "logs" | "vouchers";
+type HubTab = "inventory" | "logs" | "vouchers" | "suppliers";
 
 /**
  * ⛔ TẠM ẨN 05/11/2026 (anh Trung, nâng cấp Quản lý kho): khối "Kho trung tâm Hubsell"
@@ -252,6 +253,8 @@ export default function ProductsHubPage() {
   const isAdmin = canManageShop(getStoredUser());
 
   const [tab, setTab] = useState<HubTab>("inventory");
+  // Bấm một nhà cung cấp ở tab Nhà cung cấp → sang Phiếu kho lọc sẵn theo nhà đó (05/11, mục 5).
+  const [voucherSupplier, setVoucherSupplier] = useState<{ id: string; name: string } | null>(null);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -496,6 +499,7 @@ export default function ProductsHubPage() {
     }
     if (params.get("tab") === "logs") setTab("logs");
     if (params.get("tab") === "vouchers") setTab("vouchers");
+    if (params.get("tab") === "suppliers") setTab("suppliers");
     if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
       setSyncOpen(true);
     }
@@ -1316,6 +1320,9 @@ export default function ProductsHubPage() {
     { key: "logs", label: "Nhật ký kho" },
     // 05/11/2026 (anh Trung: doanh nghiệp cần in phiếu nhập / xuất): cấp PHIẾU, khác Nhật ký (cấp bút toán).
     { key: "vouchers", label: "Phiếu kho" },
+    // 05/11/2026 (anh Trung: doanh nghiệp quản cả nhà cung cấp; "đây là phần thống kê thôi"): báo cáo nhập
+    // hàng đọc từ phiếu nhập — Theo nhà cung cấp / Theo sản phẩm. docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 5.
+    { key: "suppliers", label: "Nhà cung cấp" },
   ];
 
   return (
@@ -1335,7 +1342,19 @@ export default function ProductsHubPage() {
         {tab === "logs" ? (
           <InventoryLogTable showLocation={locationsEnabled} />
         ) : tab === "vouchers" ? (
-          <StockVoucherTable showLocation={locationsEnabled} />
+          <StockVoucherTable
+            key={voucherSupplier?.id ?? "all"}
+            showLocation={locationsEnabled}
+            supplierFilter={voucherSupplier}
+            onClearSupplierFilter={() => setVoucherSupplier(null)}
+          />
+        ) : tab === "suppliers" ? (
+          <SuppliersTab
+            onOpenVouchers={(s) => {
+              setVoucherSupplier(s);
+              setTab("vouchers");
+            }}
+          />
         ) : (
           <>
             {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) =====

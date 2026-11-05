@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Printer, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Printer, Search, X } from "lucide-react";
 
+import { VoucherEditDialog } from "@/components/products/suppliers/voucher-edit-dialog";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,9 @@ import { cn } from "@/lib/utils";
  * Phiếu nhiều mã là một chứng từ có số (PN-/PX-yyMMdd-XXXX), tra lại và in lại được. Khác tab
  * Nhật ký kho (từng bút toán): đây là cấp PHIẾU — kế toán hỏi "phiếu số mấy, ai lập, bao nhiêu
  * tiền" thì vào đây. In = mở bản A4 ở tab mới (in trong trình duyệt, không PDF backend).
+ *
+ * 05/11 (mục 5): thêm cột Nhà cung cấp (phiếu nhập), lọc theo một nhà cung cấp khi đi từ tab Nhà cung
+ * cấp sang (`supplierFilter`), và nút sửa nhà cung cấp / giá nhập trên phiếu nhập cho người thấy tài chính.
  */
 
 type TypeFilter = "" | StockVoucherType;
@@ -53,8 +57,18 @@ export function openVoucherPrint(id: string) {
   window.open(stockVoucherPrintUrl(id), "_blank", "noopener");
 }
 
-export function StockVoucherTable({ showLocation = false }: { showLocation?: boolean }) {
+export function StockVoucherTable({
+  showLocation = false,
+  supplierFilter = null,
+  onClearSupplierFilter,
+}: {
+  showLocation?: boolean;
+  /** Đang xem phiếu của MỘT nhà cung cấp (bấm từ tab Nhà cung cấp). Đổi nhà → cha đổi `key` để về trang 1. */
+  supplierFilter?: { id: string; name: string } | null;
+  onClearSupplierFilter?: () => void;
+}) {
   const seesCost = canSeeFinancials(getStoredUser());
+  const [editId, setEditId] = useState<string | null>(null);
   const [range, setRange] = useState<DateRange | null>(null);
   const [type, setType] = useState<TypeFilter>("");
   const [searchInput, setSearchInput] = useState("");
@@ -69,12 +83,13 @@ export function StockVoucherTable({ showLocation = false }: { showLocation?: boo
     to: range ? dayEndIso(range.to) : undefined,
     page,
     pageSize,
+    supplierId: supplierFilter?.id,
   };
   const vq = useApiQuery({ queryKey: qk.stockVouchers(params), queryFn: () => fetchStockVouchers(params) });
   const rows = vq.data?.items ?? [];
   const pageCount = vq.data?.pageCount ?? 0;
   const loading = vq.refreshing;
-  const filtersActive = Boolean(range || type || search);
+  const filtersActive = Boolean(range || type || search || supplierFilter);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -103,11 +118,26 @@ export function StockVoucherTable({ showLocation = false }: { showLocation?: boo
               {c.label}
             </button>
           ))}
+          {supplierFilter && (
+            <span className="inline-flex max-w-xs items-center gap-1 rounded-full border border-primary/40 bg-primary/5 py-1 pl-3 pr-1.5 text-xs font-medium">
+              <span className="truncate" title={supplierFilter.name}>
+                Nhà cung cấp: {supplierFilter.name}
+              </span>
+              <button
+                type="button"
+                aria-label="Bỏ lọc nhà cung cấp"
+                className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={onClearSupplierFilter}
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <form onSubmit={submitSearch} className="relative">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input className="h-8 w-56 pl-8 text-sm" placeholder="Tìm số phiếu hoặc lý do…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+            <Input className="h-8 w-64 pl-8 text-sm" placeholder="Tìm số phiếu, lý do, nhà cung cấp…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
           </form>
           <DateRangePicker
             allowAll
@@ -146,16 +176,17 @@ export function StockVoucherTable({ showLocation = false }: { showLocation?: boo
                     <TableHead className="w-36">Thời gian</TableHead>
                     <TableHead className="w-28">Loại</TableHead>
                     <TableHead>Lý do</TableHead>
+                    <TableHead className="w-40">Nhà cung cấp</TableHead>
                     {showLocation && <TableHead className="w-32">Vị trí</TableHead>}
                     <TableHead className="w-20 text-right">Số mã</TableHead>
                     <TableHead className="w-24 text-right">Số lượng</TableHead>
                     {seesCost && (
-                      <TableHead className="w-32 text-right" title="Σ số lượng × giá vốn mặc định lúc lập">
+                      <TableHead className="w-32 text-right" title="Σ số lượng × đơn giá. Phiếu nhập: đơn giá = giá nhập ghi trên dòng; dòng chưa ghi lấy giá vốn mặc định lúc lập">
                         Giá trị
                       </TableHead>
                     )}
                     <TableHead className="w-36">Người lập</TableHead>
-                    <TableHead className="w-16 text-right">In</TableHead>
+                    <TableHead className="w-24" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -171,6 +202,9 @@ export function StockVoucherTable({ showLocation = false }: { showLocation?: boo
                         <TableCell className="max-w-[28rem] truncate text-sm" title={r.reason}>
                           {r.reason}
                         </TableCell>
+                        <TableCell className="max-w-40 truncate text-sm" title={r.supplierName ?? undefined}>
+                          {r.supplierName ?? <span className="text-muted-foreground">—</span>}
+                        </TableCell>
                         {showLocation && <TableCell className="text-sm text-muted-foreground">{r.locationName ?? "—"}</TableCell>}
                         <TableCell className="text-right tabular-nums">{formatNumber(r.lineCount)}</TableCell>
                         <TableCell className="text-right font-medium tabular-nums">{formatNumber(r.totalQuantity)}</TableCell>
@@ -178,7 +212,22 @@ export function StockVoucherTable({ showLocation = false }: { showLocation?: boo
                           <TableCell className="text-right tabular-nums">{r.totalCost != null ? <Money value={r.totalCost} /> : "—"}</TableCell>
                         )}
                         <TableCell className="text-sm text-muted-foreground">{r.createdByName ?? "—"}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="whitespace-nowrap text-right">
+                          {seesCost && r.type === "IMPORT" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              title={`Sửa nhà cung cấp / giá nhập của ${r.code}`}
+                              aria-label={`Sửa nhà cung cấp và giá nhập của phiếu ${r.code}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditId(r.id);
+                              }}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -237,6 +286,13 @@ export function StockVoucherTable({ showLocation = false }: { showLocation?: boo
           </div>
         </div>
       )}
+
+      <VoucherEditDialog
+        voucherId={editId}
+        onOpenChange={(o) => {
+          if (!o) setEditId(null);
+        }}
+      />
     </div>
   );
 }

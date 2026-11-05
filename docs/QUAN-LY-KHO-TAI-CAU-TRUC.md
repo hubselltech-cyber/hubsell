@@ -109,7 +109,7 @@ Nguyên tắc: mỗi mục sidebar = một **việc** seller gọi tên được
 
 Thứ tự em đề xuất: (1) IA sidebar + mục Nhập – Xuất – Kiểm kê → (2) phiếu nhập NCC + giá vốn bình quân → (4) kiểm kê theo phiên + quyền → (3) đa kho. Trước khi làm (1) nên soi log 30 ngày xem khách bấm gì nhiều nhất ở Tổng kho (ít tốn, tránh gom theo cảm tính).
 
-## 5. Nhà cung cấp + giá nhập theo sản phẩm (05/11/2026 — THIẾT KẾ, CHƯA CODE, chờ anh gật)
+## 5. Nhà cung cấp + giá nhập theo sản phẩm (05/11/2026 — ĐÃ LÀM trên local, mục 5.7 là bản đúng; chưa push)
 
 **Diễn biến:** anh hỏi "đúng chuẩn thì Tổng kho có cần nhà cung cấp không" → em: cần, gắn vào PHIẾU NHẬP chứ không gắn cứng vào sản phẩm
 (một mã nhập nhiều nguồn, mỗi lần một giá); chia lát A (danh bạ + NCC trên phiếu, không đụng tài chính) và lát B (giá nhập → giá vốn bình
@@ -189,3 +189,45 @@ bình" có tiền lệ (Zoho, Odoo), tính trong kỳ đang chọn; (4) phiếu 
 Nguồn (đọc 05/11/2026): sapo.vn/cap-nhat-tinh-nang/bao-cap-nhap-hang · helpact.misa.vn/?p=76333 ·
 zoho.com/inventory/help/reports/purchase-reports.html · odoo.com/documentation/17.0 (vendor_costs_report) · help.linnworks.com 7000064721 ·
 help.bigseller.pro (Role - Purchasing, 1688 Purchase Order).
+
+### 5.7 ĐÃ LÀM trên local (05/11 ~11:00, anh: "Làm đi") — commit local, CHƯA push
+
+**Schema** (migration `20261105110000_suppliers_purchase_lines`, không khóa bảng nóng, RLS bật): bảng `suppliers`; `stock_vouchers` thêm
+`supplierId` + `supplierName` + chỉ mục (ownerId, supplierId, createdAt); bảng hẹp **`purchase_lines`** (model `PurchaseLine` — tên khác bản
+thiết kế `stock_voucher_lines` để khỏi trùng kiểu `StockVoucherLine` của ảnh chụp JSON): ownerId, voucherId, supplierId, productId, quantity,
+purchasePrice, createdAt; ghi cho MỌI phiếu NHẬP (kể cả chưa ghi nhà cung cấp / giá — bổ sung sau được).
+
+**Backend** — `routes/inventory-suppliers.ts` (gắn vào `/api/inventory`, cùng quyền kho):
+- `GET /suppliers` (`brief=1` cho ô chọn; mặc định kèm số phiếu · số lượng · giá trị nhập · lần nhập gần nhất trong khoảng ngày + `unassigned`),
+  `POST /suppliers`, `PATCH /suppliers/:id` (trùng tên không phân hoa thường → 409; `isActive=false` = ngừng dùng; trần 500 nhà / shop).
+- `GET /purchase-stats/products` (CHỈ người thấy tài chính, còn lại 403): trang theo SKU, sắp `recent | quantity | avg`, kèm từng nhà cung cấp
+  (giá gần nhất + ngày, số lượng, số phiếu, giá TB). Cột ngày không múi giờ → so bằng chuỗi UTC `::timestamp` (`utcTimestampLiteral`).
+- `PATCH /vouchers/:id` — sửa nhà cung cấp / giá nhập trên phiếu NHẬP (không sửa số lượng), chỉ người thấy tài chính; cập nhật ảnh chụp JSON +
+  `purchase_lines` + `totalCost`. Phiếu lập trước khi có bảng thì dựng dòng từ ảnh chụp lúc sửa.
+- `POST /adjust-bulk`: nhận `supplierId | supplierName` (tên mới tạo tại chỗ) và `items[].purchasePrice` (người không thấy tài chính gửi lên cũng bỏ).
+- **Giá trị phiếu** (`sumVoucherCost`): đơn giá = giá nhập của dòng nếu có, không thì giá vốn mặc định lúc lập — MỘT luật cho cột Giá trị ở
+  Phiếu kho và bản in (lúc soi thấy hai màn ra hai số: 14.350.000 và 18.440.000).
+- Test `lib/__tests__/stock-voucher.test.ts` (9 ca: đọc giá, bình quân theo số lượng 51.822, giá trị phiếu, mốc ngày UTC).
+
+**Web:**
+- Phiếu nhiều mã (Nhập hàng): ô **Nhà cung cấp** (`suppliers/supplier-picker.tsx` — gõ là lọc, tên chưa có tự lưu khi ghi phiếu) + cột **Giá
+  nhập** (chỉ người thấy tài chính) + tổng "giá trị nhập"; dải kết quả ghi "từ <nhà cung cấp>".
+- Tổng kho thêm tab **Nhà cung cấp** (`suppliers/suppliers-tab.tsx`, `?tab=suppliers`), hai góc nhìn:
+  **Theo nhà cung cấp** (tên · SĐT/MST/ghi chú · Số phiếu · Số lượng · Giá trị nhập · Lần nhập gần nhất; sắp tại tiêu đề cột; bấm dòng → tab
+  Phiếu kho lọc sẵn; thêm / sửa / ngừng dùng) và **Theo sản phẩm** (`purchase-by-product.tsx`). Chung: tìm, `DateRangePicker` chuẩn, Xuất Excel.
+- Phiếu kho: cột Nhà cung cấp, viên lọc "Nhà cung cấp: X ✕", tìm cả tên nhà cung cấp, nút bút chì sửa nhà cung cấp / giá nhập
+  (`voucher-edit-dialog.tsx`). Bản in: dòng Nhà cung cấp (tên · ĐT · MST · địa chỉ), đơn giá = giá nhập.
+
+**Chỉnh so với thiết kế sau khi anh xem local:**
+- Anh khoanh hàng viên giá trên dòng SKU: "khu vực này có cần thiết không, mình đã tô xanh bên dưới rồi … nhường không gian để ghi rõ các phần
+  như số lượng". → **Bỏ hàng viên.** Bảng Theo sản phẩm là bảng hai tầng dùng CHUNG một bộ cột có tên cho dòng SKU và dòng từng nhà:
+  `Sản phẩm · Nhà cung cấp | Số phiếu | Số lượng | Giá gần nhất (kèm ngày nhập) | Giá nhập TB | Giá vốn đang dùng`. Nhà rẻ nhất: giá xanh +
+  nhãn "rẻ nhất" ở dòng con; dòng SKU chỉ ghi "N nhà cung cấp" cạnh mã. Đừng thêm lại hàng viên.
+- Mặc định khoảng ngày = **Toàn bộ thời gian** (không phải 90 ngày như 5.2): bộ chọn ngày chuẩn không có nút 90 ngày, tự chế thì trái luật bảng.
+- CHƯA điền sẵn giá gần nhất của nhà đó vào phiếu nhập (để phiếu đơn giản); chưa có nút "Dùng làm giá vốn"; Nhật ký kho chưa hiện nhà cung cấp.
+
+**Kiểm local (demo, cổng 4001):** 8 phiếu thử, 6 nhà cung cấp (tên dài 60 ký tự), một SKU 7 nguồn; giá TB 51.822 khớp tính tay; lập phiếu thật
+trên UI (gõ mã → giá → chọn nhà → Nhập kho), sửa giá trong hộp sửa (giá trị phiếu 18.440.000 → 18.540.000, báo cáo đổi theo), bản in, hộp thêm
+nhà cung cấp, trùng tên 409, ngừng dùng thì biến khỏi ô chọn; 1280 + 1440 sáng + tối không tràn; tsc FE/BE + eslint + 586 test sạch; không lớp
+`dark:`. **Chưa kiểm:** tệp Excel tải về (khung trình duyệt thử không tải được tệp), tài khoản nhân viên không thấy tài chính trên UI (đã chặn ở
+API), dữ liệu nghìn SKU. **Dữ liệu thử còn nguyên trên demo để anh xem** — dọn trước khi push (trả tồn 5 SKU, xóa phiếu / dòng / nhà cung cấp thử).

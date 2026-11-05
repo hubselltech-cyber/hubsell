@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import {
   fetchOrders,
   fetchProducts,
+  fetchPurchaseStatsByProduct,
   fetchRealizedPnlRows,
   fetchShippingDiscrepancies,
   type ChannelFilterQuery,
@@ -15,7 +16,9 @@ import {
   type TaxDeclarationRowDTO,
   type PlatformLedgerEntry,
   type Product,
+  type PurchaseStatProduct,
   type ReconciliationStatus,
+  type SupplierRow,
   type ShippingDiscrepancy,
   type SkuProduct,
 } from "@/lib/api";
@@ -725,4 +728,62 @@ export function exportTaxDeclarationToExcel(d: TaxDeclarationResponse) {
     "So lieu ke khai",
     `so-lieu-ke-khai-thue_${d.period.key}_${fileStamp()}.xlsx`
   );
+}
+
+// ----- BÁO CÁO NHẬP HÀNG (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 5) -----
+
+/** Tab Nhà cung cấp › Theo nhà cung cấp — đúng các dòng đang lọc. Cột giá trị chỉ có khi thấy tài chính. */
+export function exportSuppliersToExcel(items: SupplierRow[], includeValue: boolean) {
+  const rows = items.map((s) => ({
+    "Nhà cung cấp": s.name,
+    "Số điện thoại": s.phone ?? "",
+    "Mã số thuế": s.taxCode ?? "",
+    "Địa chỉ": s.address ?? "",
+    "Ghi chú": s.note ?? "",
+    "Trạng thái": s.isActive ? "Đang dùng" : "Ngừng dùng",
+    "Số phiếu nhập": s.voucherCount,
+    "Số lượng nhập": s.totalQuantity,
+    ...(includeValue ? { "Giá trị nhập": s.totalValue ?? "" } : {}),
+    "Lần nhập gần nhất": s.lastImportAt ? toDateTimeText(s.lastImportAt) : "",
+  }));
+  downloadSheet(
+    rows,
+    includeValue ? [30, 14, 14, 36, 30, 12, 13, 13, 16, 18] : [30, 14, 14, 36, 30, 12, 13, 13, 18],
+    "Nha cung cap",
+    `hubsell_nha_cung_cap_${fileStamp()}.xlsx`
+  );
+}
+
+const PURCHASE_EXPORT_PAGE = 500;
+const PURCHASE_EXPORT_MAX_PAGES = 20; // trần 10.000 SKU một tệp
+
+/**
+ * Tab Nhà cung cấp › Theo sản phẩm — gom mọi trang, mỗi SKU × nhà cung cấp MỘT dòng (tệp là dữ liệu
+ * để lọc / pivot tiếp, nên không gom viên như trên màn hình). Trả về số dòng đã xuất.
+ */
+export async function exportPurchaseStatsToExcel(params: { search?: string; from?: string; to?: string }): Promise<number> {
+  const all: PurchaseStatProduct[] = [];
+  for (let page = 1; page <= PURCHASE_EXPORT_MAX_PAGES; page++) {
+    const res = await fetchPurchaseStatsByProduct({ ...params, page, pageSize: PURCHASE_EXPORT_PAGE });
+    all.push(...res.items);
+    if (page >= res.pageCount) break;
+  }
+  const rows = all.flatMap((p) =>
+    p.suppliers.map((s) => ({
+      "Mã SKU": p.skuCode,
+      "Tên sản phẩm": p.productName,
+      "Phân loại": p.variantName ?? "",
+      "Nhà cung cấp": s.supplierName ?? "(chưa ghi nhà cung cấp)",
+      "Số lượng nhập": s.quantity,
+      "Số phiếu": s.voucherCount,
+      "Giá gần nhất": s.lastPrice ?? "",
+      "Ngày nhập giá đó": s.lastPriceAt ? toDateTimeText(s.lastPriceAt) : "",
+      "Giá TB của nhà này": s.avgPrice ?? "",
+      "Giá nhập TB của SKU": p.avgPrice ?? "",
+      "Giá vốn đang dùng": p.costPrice ?? "",
+    }))
+  );
+  if (rows.length === 0) return 0;
+  downloadSheet(rows, [18, 40, 16, 28, 13, 9, 13, 18, 16, 18, 16], "Gia nhap", `hubsell_gia_nhap_theo_san_pham_${fileStamp()}.xlsx`);
+  return rows.length;
 }

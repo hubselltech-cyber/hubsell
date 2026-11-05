@@ -43,7 +43,11 @@ export default function StockVoucherPrintPage() {
 
   const v = data?.voucher;
   const isImport = v?.type === "IMPORT";
-  const showCost = Boolean(v?.lines.some((l) => l.unitCost != null));
+  // Đơn giá trên phiếu NHẬP = giá nhập ghi trên dòng (05/11, mục 5); dòng chưa ghi thì lấy giá vốn mặc định như trước.
+  const priceOf = (l: StockVoucherLine): number | null => (isImport && l.purchasePrice != null ? l.purchasePrice : l.unitCost);
+  const showCost = Boolean(v?.lines.some((l) => priceOf(l) != null));
+  const hasPurchasePrice = Boolean(isImport && v?.lines.some((l) => l.purchasePrice != null));
+  const totalValue = v ? v.lines.reduce((a, l) => a + (priceOf(l) ?? 0) * l.quantity, 0) : 0;
   const title = isImport ? "PHIẾU NHẬP KHO" : "PHIẾU XUẤT KHO";
   const at = v ? new Date(v.createdAt) : null;
 
@@ -94,6 +98,14 @@ export default function StockVoucherPrintPage() {
           </div>
 
           <div style={{ marginTop: 14, fontSize: 12.5, lineHeight: 1.6 }}>
+            {data.supplier && (
+              <div>
+                <b>Nhà cung cấp:</b> {data.supplier.name}
+                {data.supplier.phone ? ` · ĐT: ${data.supplier.phone}` : ""}
+                {data.supplier.taxCode ? ` · MST: ${data.supplier.taxCode}` : ""}
+                {data.supplier.address ? ` · ${data.supplier.address}` : ""}
+              </div>
+            )}
             <div>
               <b>Lý do {isImport ? "nhập" : "xuất"}:</b> {v.reason}
             </div>
@@ -126,8 +138,8 @@ export default function StockVoucherPrintPage() {
                   <td>{l.variantName ?? ""}</td>
                   <td className="ctr">chiếc</td>
                   <td className="num">{fmt(l.quantity)}</td>
-                  {showCost && <td className="num">{l.unitCost != null ? fmt(l.unitCost) : ""}</td>}
-                  {showCost && <td className="num">{l.unitCost != null ? fmt(l.unitCost * l.quantity) : ""}</td>}
+                  {showCost && <td className="num">{priceOf(l) != null ? fmt(priceOf(l) as number) : ""}</td>}
+                  {showCost && <td className="num">{priceOf(l) != null ? fmt((priceOf(l) as number) * l.quantity) : ""}</td>}
                 </tr>
               ))}
               <tr>
@@ -140,7 +152,7 @@ export default function StockVoucherPrintPage() {
                 {showCost && <td />}
                 {showCost && (
                   <td className="num" style={{ fontWeight: 700 }}>
-                    {v.totalCost != null ? fmt(v.totalCost) : ""}
+                    {fmt(totalValue)}
                   </td>
                 )}
               </tr>
@@ -148,7 +160,10 @@ export default function StockVoucherPrintPage() {
           </table>
           {showCost && (
             <div style={{ marginTop: 6, fontSize: 12 }}>
-              Đơn giá = giá vốn mặc định của SKU tại thời điểm lập phiếu (đồng). Tổng giá trị: <b>{fmt(v.totalCost ?? 0)} đ</b>.
+              {hasPurchasePrice
+                ? "Đơn giá = giá nhập ghi trên phiếu (đồng); dòng chưa ghi giá nhập lấy giá vốn mặc định của SKU lúc lập phiếu."
+                : "Đơn giá = giá vốn mặc định của SKU tại thời điểm lập phiếu (đồng)."}{" "}
+              Tổng giá trị: <b>{fmt(totalValue)} đ</b>.
             </div>
           )}
 

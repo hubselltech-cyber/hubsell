@@ -4307,10 +4307,52 @@ model StockVoucher {
   lines         Json             @default("[]")
   createdById   String?
   createdAt     DateTime         @default(now())
+  /// Nhà cung cấp của phiếu NHẬP (05/11/2026, mục 5) — tùy chọn; tên chụp lúc lập để in lại y nguyên.
+  supplierId    String?
+  supplierName  String?
 
   @@unique([ownerId, code])
   @@index([ownerId, createdAt])
+  @@index([ownerId, supplierId, createdAt])
   @@map("stock_vouchers")
+}
+
+/// NHÀ CUNG CẤP (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 5): danh bạ gọn để gắn vào
+/// phiếu nhập và đọc báo cáo nhập hàng. KHÔNG có công nợ / đơn đặt hàng (việc của phần mềm kế toán).
+model Supplier {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  phone     String?
+  taxCode   String?
+  address   String?
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([ownerId, name])
+  @@map("suppliers")
+}
+
+/// DÒNG NHẬP HÀNG (05/11/2026, mục 5): mỗi dòng của một phiếu NHẬP — sản phẩm × nhà cung cấp ×
+/// số lượng × giá nhập (giá tùy chọn). Bảng hẹp để báo cáo "Theo nhà cung cấp" / "Theo sản phẩm"
+/// GROUP BY được; ảnh chụp JSON trên phiếu vẫn là thứ để in. KHÔNG tự đổi giá vốn.
+model PurchaseLine {
+  id            String   @id @default(cuid())
+  ownerId       String
+  voucherId     String
+  supplierId    String?
+  productId     String
+  quantity      Int
+  purchasePrice Decimal? @db.Decimal(14, 2)
+  /// = createdAt của phiếu (lọc theo khoảng ngày).
+  createdAt     DateTime @default(now())
+
+  @@index([ownerId, productId, createdAt])
+  @@index([ownerId, supplierId, createdAt])
+  @@index([voucherId])
+  @@map("purchase_lines")
 }
 
 // ============================================================

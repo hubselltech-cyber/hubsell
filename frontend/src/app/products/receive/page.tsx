@@ -15,10 +15,13 @@ import {
 } from "lucide-react";
 
 import { LocationSelect } from "@/components/products/location-select";
+import { SupplierPicker, supplierChoiceToParams, type SupplierChoice } from "@/components/products/suppliers/supplier-picker";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Money } from "@/components/ui/money";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -34,10 +37,12 @@ import {
   ApiError,
   fetchProducts,
   fetchStockLocations,
+  getStoredUser,
   getToken,
   type Product,
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { canSeeFinancials } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
 import { TEXT_SUB } from "@/lib/typography";
@@ -51,6 +56,11 @@ import { cn } from "@/lib/utils";
  * Luồng một ô: gõ hoặc QUÉT mã → Enter → dòng tự thêm (quét trùng thì cộng
  * dồn) → sửa số lượng nếu cần → một lý do chung → MỘT nút. Cộng thêm / trừ
  * bớt trên tồn hiện có, không đè tổng như Excel. Tối đa 200 mã một phiếu.
+ *
+ * 05/11/2026 (docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 5): phiếu NHẬP thêm hai thứ, đều KHÔNG bắt buộc —
+ * ô Nhà cung cấp (chọn / gõ tên mới) và cột Giá nhập từng dòng. Giá nhập là số tài chính: chỉ người
+ * thấy tài chính mới có cột này; thủ kho lập phiếu ghi số lượng, chủ shop bổ sung giá sau ở Phiếu kho.
+ * Chỉ để đọc báo cáo ở tab Nhà cung cấp — KHÔNG tự đổi giá vốn.
  */
 
 type SheetType = "IMPORT" | "EXPORT";
@@ -58,6 +68,8 @@ type SheetType = "IMPORT" | "EXPORT";
 interface Line {
   product: Product;
   quantity: string;
+  /** Giá nhập (chuỗi chữ số thô, "" = không ghi) — chỉ phiếu nhập. */
+  price: string;
 }
 
 const MAX_LINES = 200;
@@ -71,7 +83,16 @@ export default function ReceiveStockPage() {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   // PHIẾU KHO (05/11/2026): phiếu vừa ghi — dải kết quả với nút In, giữ tới khi lập phiếu mới / ẩn.
-  const [lastVoucher, setLastVoucher] = useState<{ id: string; code: string; type: SheetType; count: number; totalQuantity: number } | null>(null);
+  const [lastVoucher, setLastVoucher] = useState<{
+    id: string;
+    code: string;
+    type: SheetType;
+    count: number;
+    totalQuantity: number;
+    supplierName: string | null;
+  } | null>(null);
+  const [supplier, setSupplier] = useState<SupplierChoice | null>(null);
+  const [seesCost] = useState(() => canSeeFinancials(getStoredUser()));
 
   // Vị trí chứa hàng (đợt B): có thì hiện ô chọn, nhớ lần chọn cuối.
   const locationsQ = useApiQuery({
@@ -134,7 +155,7 @@ export default function ReceiveStockPage() {
         toast.error(`Một phiếu tối đa ${MAX_LINES} mã — lập phiếu mới cho phần còn lại`);
         return cur;
       }
-      return [...cur, { product: p, quantity: String(qty) }];
+      return [...cur, { product: p, quantity: String(qty), price: "" }];
     });
     setQuery("");
     setSuggestions([]);
@@ -175,6 +196,9 @@ export default function ReceiveStockPage() {
   function setQty(id: string, value: string) {
     setLines((cur) => cur.map((l) => (l.product.id === id ? { ...l, quantity: value } : l)));
   }
+  function setPrice(id: string, digits: string) {
+    setLines((cur) => cur.map((l) => (l.product.id === id ? { ...l, price: digits } : l)));
+  }
   function removeLine(id: string) {
     setLines((cur) => cur.filter((l) => l.product.id !== id));
   }
@@ -190,6 +214,8 @@ export default function ReceiveStockPage() {
     : lines.filter((l) => (Number(l.quantity) || 0) > l.product.quantityInStock);
   const canSubmit =
     lines.length > 0 && invalid.length === 0 && insufficient.length === 0 && !submitting;
+  const showPrice = isImport && seesCost;
+  const totalValue = showPrice ? lines.reduce((a, l) => a + (l.price ? Number(l.price) * (Number(l.quantity) || 0) : 0), 0) : 0;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -197,17 +223,31 @@ export default function ReceiveStockPage() {
     try {
       const res = await adjustInventoryBulk({
         type,
-        items: lines.map((l) => ({ productId: l.product.id, quantity: Number(l.quantity) })),
+        items: lines.map((l) => ({
+          productId: l.product.id,
+          quantity: Number(l.quantity),
+          ...(showPrice && l.price ? { purchasePrice: Number(l.price) } : {}),
+        })),
         reason: reason.trim() || undefined,
         locationId: effectiveLocationId || undefined,
+        ...(isImport ? supplierChoiceToParams(supplier) : {}),
       });
       if (effectiveLocationId) rememberLocation(effectiveLocationId);
       // Kết quả nằm ở dải dưới đầu trang (có nút In phiếu) thay cho toast tự tắt (05/11).
-      setLastVoucher({ id: res.voucher.id, code: res.voucher.code, type, count: res.count, totalQuantity: res.totalQuantity });
+      setLastVoucher({
+        id: res.voucher.id,
+        code: res.voucher.code,
+        type,
+        count: res.count,
+        totalQuantity: res.totalQuantity,
+        supplierName: res.supplier?.name ?? null,
+      });
       setLines([]);
       setReason("");
+      setSupplier(null);
       invalidate(["products"]);
       invalidate(["inventory-logs"]);
+      invalidate(qk.stockVouchersAll(), qk.suppliersAll(), qk.purchaseStatsAll());
       searchRef.current?.focus();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ", {
@@ -274,7 +314,8 @@ export default function ReceiveStockPage() {
           >
             <span className="min-w-0 flex-1">
               Đã ghi phiếu <b className="font-mono">{lastVoucher.code}</b> — {formatNumber(lastVoucher.totalQuantity)} chiếc của{" "}
-              {formatNumber(lastVoucher.count)} mã. Có thể bán mới đang đẩy lên các gian đã nối. In lại sau ở Tổng kho › Phiếu kho.
+              {formatNumber(lastVoucher.count)} mã{lastVoucher.supplierName ? ` từ ${lastVoucher.supplierName}` : ""}. Có thể bán mới đang đẩy lên các
+              gian đã nối. In lại sau ở Tổng kho › Phiếu kho.
             </span>
             <Button size="sm" onClick={() => window.open(stockVoucherPrintUrl(lastVoucher.id), "_blank", "noopener")}>
               <Printer className="size-4" />
@@ -360,6 +401,11 @@ export default function ReceiveStockPage() {
                     {isImport ? "Nhập thêm" : "Xuất ra"}
                   </TableHead>
                   <TableHead className="w-28 text-right">Tồn sau</TableHead>
+                  {showPrice && (
+                    <TableHead className="w-36 text-right" title="Giá mua một chiếc của lần nhập này — không bắt buộc, không đổi giá vốn">
+                      Giá nhập
+                    </TableHead>
+                  )}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -410,6 +456,17 @@ export default function ReceiveStockPage() {
                       >
                         {formatNumber(after)}
                       </TableCell>
+                      {showPrice && (
+                        <TableCell className="text-right">
+                          <CurrencyInput
+                            value={l.price}
+                            onValueChange={(d) => setPrice(l.product.id, d)}
+                            placeholder="—"
+                            className="ml-auto h-8 w-28 text-right tabular-nums"
+                            aria-label={`Giá nhập ${l.product.skuCode}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="text-center">
                         <Button
                           variant="ghost"
@@ -443,6 +500,12 @@ export default function ReceiveStockPage() {
               />
             </div>
           )}
+          {isImport && (
+            <div className="grid w-64 gap-1.5">
+              <Label htmlFor="bulk-supplier">Nhà cung cấp (không bắt buộc)</Label>
+              <SupplierPicker id="bulk-supplier" value={supplier} onChange={setSupplier} />
+            </div>
+          )}
           <div className="grid w-full max-w-md gap-1.5">
             <Label htmlFor="bulk-reason">Lý do (không bắt buộc)</Label>
             <Input
@@ -458,6 +521,11 @@ export default function ReceiveStockPage() {
             {lines.length > 0 && (
               <span className="text-sm text-muted-foreground tabular-nums">
                 {formatNumber(lines.length)} mã · {formatNumber(totalQty)} chiếc
+                {totalValue > 0 && (
+                  <span className="ml-2">
+                    · giá trị nhập <Money value={totalValue} />
+                  </span>
+                )}
                 {insufficient.length > 0 && (
                   <span className="ml-2 text-rose-700">
                     · {insufficient.length} mã không đủ hàng
