@@ -109,7 +109,7 @@ Nguyên tắc: mỗi mục sidebar = một **việc** seller gọi tên được
 
 Thứ tự em đề xuất: (1) IA sidebar + mục Nhập – Xuất – Kiểm kê → (2) phiếu nhập NCC + giá vốn bình quân → (4) kiểm kê theo phiên + quyền → (3) đa kho. Trước khi làm (1) nên soi log 30 ngày xem khách bấm gì nhiều nhất ở Tổng kho (ít tốn, tránh gom theo cảm tính).
 
-## 5. Nhà cung cấp + giá nhập theo sản phẩm (05/11/2026 — ĐÃ LÀM trên local, mục 5.7 là bản đúng; chưa push)
+## 5. Nhà cung cấp + giá nhập theo sản phẩm (05/11/2026 — ĐÃ LÀM, mục 5.7 là bản đúng; ĐÃ PUSH 11:02, prod OK)
 
 **Diễn biến:** anh hỏi "đúng chuẩn thì Tổng kho có cần nhà cung cấp không" → em: cần, gắn vào PHIẾU NHẬP chứ không gắn cứng vào sản phẩm
 (một mã nhập nhiều nguồn, mỗi lần một giá); chia lát A (danh bạ + NCC trên phiếu, không đụng tài chính) và lát B (giá nhập → giá vốn bình
@@ -190,7 +190,7 @@ Nguồn (đọc 05/11/2026): sapo.vn/cap-nhat-tinh-nang/bao-cap-nhap-hang · hel
 zoho.com/inventory/help/reports/purchase-reports.html · odoo.com/documentation/17.0 (vendor_costs_report) · help.linnworks.com 7000064721 ·
 help.bigseller.pro (Role - Purchasing, 1688 Purchase Order).
 
-### 5.7 ĐÃ LÀM trên local (05/11 ~11:00, anh: "Làm đi") — commit local, CHƯA push
+### 5.7 ĐÃ LÀM (05/11 ~11:00, anh: "Làm đi") — ĐÃ PUSH 11:02 (6f069f94), prod OK 11:05
 
 **Schema** (migration `20261105110000_suppliers_purchase_lines`, không khóa bảng nóng, RLS bật): bảng `suppliers`; `stock_vouchers` thêm
 `supplierId` + `supplierName` + chỉ mục (ownerId, supplierId, createdAt); bảng hẹp **`purchase_lines`** (model `PurchaseLine` — tên khác bản
@@ -230,4 +230,9 @@ purchasePrice, createdAt; ghi cho MỌI phiếu NHẬP (kể cả chưa ghi nhà
 trên UI (gõ mã → giá → chọn nhà → Nhập kho), sửa giá trong hộp sửa (giá trị phiếu 18.440.000 → 18.540.000, báo cáo đổi theo), bản in, hộp thêm
 nhà cung cấp, trùng tên 409, ngừng dùng thì biến khỏi ô chọn; 1280 + 1440 sáng + tối không tràn; tsc FE/BE + eslint + 586 test sạch; không lớp
 `dark:`. **Chưa kiểm:** tệp Excel tải về (khung trình duyệt thử không tải được tệp), tài khoản nhân viên không thấy tài chính trên UI (đã chặn ở
-API), dữ liệu nghìn SKU. **Dữ liệu thử còn nguyên trên demo để anh xem** — dọn trước khi push (trả tồn 5 SKU, xóa phiếu / dòng / nhà cung cấp thử).
+API), dữ liệu nghìn SKU. Dữ liệu thử trên demo ĐÃ DỌN trước khi push (trả tồn 5 SKU, xóa 8 phiếu / 13 dòng / 7 nhà cung cấp thử), env local đã trả https.
+
+**Prod 05/11 11:05 (shop công ty, chỉ xem, KHÔNG ghi gì):** Render `/health` = `6f069f94`, migration `20261105110000_suppliers_purchase_lines` đã
+chạy (tab Nhà cung cấp đọc được `suppliers` + `purchase_lines`, đang trống đúng câu); Vercel lên; Phiếu kho có cột Nhà cung cấp; trang Phiếu
+nhiều mã có ô Nhà cung cấp; không tràn ngang ở 1920. **Chưa kiểm trên prod:** lập phiếu nhập thật có nhà cung cấp + giá (anh / khách lập lần
+đầu thì soi log `[stock-voucher]`), hộp sửa phiếu, tệp Excel tải về, tài khoản nhân viên không thấy tài chính.
