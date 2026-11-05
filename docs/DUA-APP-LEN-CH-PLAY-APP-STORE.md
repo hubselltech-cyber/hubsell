@@ -276,6 +276,9 @@ App trên kho **không vá nóng được** (chưa có expo-updates tới 1.4.0)
 | 5 | Tài chính | Thẻ Doanh thu bung: có đơn hủy / đang hoàn | Số (count) + % khớp web |
 | 6 | Tổng quan / Đơn / Kho | Dữ liệu rộng nhất: tiền 7 chữ số, tên dài, khoảng giá | Không cắt "…", không tràn ô (xem memory soi co màn) |
 | 7 | Mọi màn | Giao diện tối + màn 320 px | Chữ đọc được, số không xuống dòng |
+| 8 | Quét đóng gói (05/11) | Tem thật có 2–3 mã vạch, quét liền 10 kiện; một đơn ĐÃ HỦY; một đơn khách đang xin hủy; quét lại kiện đã quét; tắt mạng giữa chừng | Mỗi kiện kêu ĐÚNG MỘT lần; đơn hủy ra còi riêng + màn đỏ; mất mạng báo "CHƯA ghi" rồi tự thử lại; ba ô đếm khớp số kiện |
+| 9 | Phiếu nhặt hàng (05/11) | Shop có đơn Chờ đóng gói; shop KHÔNG in phiếu trên Hubsell (nhóm trống) | Số món / số đơn bằng popup "Phiếu nhặt hàng" của web cùng bộ lọc; nhóm trống ghi rõ lý do + số đơn chưa in phiếu |
+| 10 | Tồn kho (05/11) | Mẫu ≥ 12 phân loại 2 tầng; nhập 2 phân loại một lượt; xuất vượt tồn; vị trí "không bán" | Một Phiếu kho cho cả lượt; xuất thiếu một mã thì không mã nào bị trừ; tổng tồn + Có thể bán đúng sau khi lưu |
 
 Cách so: mở web `/finance/analytics` cùng tài khoản, cùng kỳ, cùng bộ lọc gian; từng dòng của từng thẻ phải bằng nhau **kể cả dấu**. Màn chép từ web thì đối chiếu từng nhánh `if` hiển thị của component web (dấu, màu, ẩn khi 0, count), không đối chiếu bằng ảnh.
 

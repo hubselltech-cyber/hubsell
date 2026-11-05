@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -14,7 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,6 +26,8 @@ import { playScanSound } from "@/lib/scan-sounds";
 import { Badge } from "@/components/Badge";
 import { ActionButton } from "@/components/ActionButton";
 import { OrderDetailPanel } from "@/components/OrderDetailPanel";
+import { CameraPermissionPrompt, CircleControl, GLASS, SCANNABLE } from "@/components/ScanChrome";
+import { useKeyboardLift } from "@/lib/useKeyboardLift";
 
 /**
  * MÀN QUÉT MÃ dùng chung — mode "returns": quét xử lý đơn hoàn (mở từ Kho →
@@ -64,47 +65,6 @@ type Candidate = {
 const MIN_SEARCH_CHARS = 3;
 const SEARCH_PAGE = 20;
 
-const SCANNABLE = [
-  "qr",
-  "code128",
-  "code39",
-  "code93",
-  "itf14",
-  "ean13",
-  "datamatrix",
-] as const;
-
-// Liquid Glass (trend 2026) CHỈ cho lớp điều khiển nổi trên camera — panel
-// dữ liệu vẫn nền đặc cho dễ đọc. Máy không hỗ trợ (Android/iOS cũ/web)
-// fallback về đen mờ như cũ.
-const GLASS = isLiquidGlassAvailable();
-
-/** Nút tròn trên nền camera: Liquid Glass khi máy hỗ trợ, fallback đen mờ. */
-function CircleControl({ children }: { children: React.ReactNode }) {
-  if (GLASS) {
-    return (
-      <GlassView
-        glassEffectStyle="regular"
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: 20,
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-        }}
-      >
-        {children}
-      </GlassView>
-    );
-  }
-  return (
-    <View className="h-10 w-10 items-center justify-center rounded-full bg-black/40">
-      {children}
-    </View>
-  );
-}
-
 /**
  * embedded = đang nằm trong một TAB (nút QR giữa thanh tab) → không có mũi tên
  * quay lại kiểu stack, thay bằng nút X góc trái gọi `onClose` (về tab đầu).
@@ -116,11 +76,14 @@ export function ScanScreen({
   embedded = false,
   mode = "returns",
   onClose,
+  modeSwitch,
 }: {
   embedded?: boolean;
   mode?: "returns" | "detail";
   /** Chỉ dùng khi embedded: nút X góc trái. */
   onClose?: () => void;
+  /** Công tắc "Xem đơn · Đóng gói" của tab QR giữa — hiện ngay dưới thanh tiêu đề. */
+  modeSwitch?: React.ReactNode;
 }) {
   const detail = mode === "detail";
   const { height: winHeight } = useWindowDimensions();
@@ -145,29 +108,8 @@ export function ScanScreen({
   // máy → chừa thêm; nằm trong tab thì thanh tab đã chừa rồi. Bàn phím đang mở thì
   // nút điều hướng nằm dưới bàn phím, không cần chừa.
   const rootRef = useRef<View>(null);
-  const [kbLift, setKbLift] = useState(0);
-  const [kbOpen, setKbOpen] = useState(false);
+  const { kbLift, kbOpen } = useKeyboardLift(rootRef);
   const navInset = embedded || kbLift > 0 ? 0 : insets.bottom;
-  useEffect(() => {
-    if (isWeb) return;
-    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const show = Keyboard.addListener(showEvt, (e) => {
-      setKbOpen(true);
-      const kbTop = e.endCoordinates.screenY;
-      rootRef.current?.measureInWindow((_x, y, _w, h) => {
-        setKbLift(Math.max(0, Math.round(y + h - kbTop)));
-      });
-    });
-    const hide = Keyboard.addListener(hideEvt, () => {
-      setKbOpen(false);
-      setKbLift(0);
-    });
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, [isWeb]);
 
   const reset = useCallback(() => {
     setPanel(null);
@@ -329,36 +271,11 @@ export function ScanScreen({
   if (!isWeb) {
     if (!permission) return <View className="flex-1 bg-slate-950" />;
     if (!permission.granted) {
-      // Apple 5.1.1(iv) (06/10/2026): màn giải thích TRƯỚC hộp xin quyền không
-      // được "thúc" người dùng cấp quyền — nút phải là "Tiếp tục"/"Tiếp theo",
-      // không phải "Cấp quyền". Hộp quyền của hệ thống mới là nơi họ quyết.
-      // iOS chỉ hỏi MỘT lần: đã từ chối thì requestPermission() về ngay không
-      // hiện gì (2.1.0 cũ) → canAskAgain=false: nói rõ và mở Cài đặt của app.
-      const mustOpenSettings = !permission.canAskAgain;
       return (
-        <View className="flex-1 items-center justify-center bg-slate-950 px-8">
-          <Ionicons name="camera-outline" size={48} color="#64748b" />
-          <Text className="mt-4 text-center text-base font-semibold text-white">
-            Quét mã vận đơn bằng camera
-          </Text>
-          <Text className="mt-2 text-center text-sm text-slate-400 dark:text-slate-500">
-            {mustOpenSettings
-              ? "Camera đang tắt cho Hubsell. Bạn có thể bật lại trong Cài đặt → Hubsell → Camera."
-              : "Màn hình này dùng camera để đọc mã trên tem kiện hàng. Ở bước tiếp theo, hệ thống sẽ hỏi bạn có cho phép hay không."}
-          </Text>
-          <ActionButton
-            label={mustOpenSettings ? "Mở Cài đặt" : "Tiếp tục"}
-            icon={mustOpenSettings ? "settings-outline" : "arrow-forward"}
-            className="mt-6 min-w-[220px]"
-            onPress={() => {
-              if (mustOpenSettings) void Linking.openSettings();
-              else void requestPermission();
-            }}
-          />
-          <Text className="mt-6 text-center text-xs text-slate-500">
-            Không dùng camera? Vào tab Đơn hàng để tìm đơn theo mã vận đơn / mã đơn.
-          </Text>
-        </View>
+        <CameraPermissionPrompt
+          permission={permission}
+          onRequest={() => void requestPermission()}
+        />
       );
     }
   }
@@ -714,6 +631,7 @@ export function ScanScreen({
             </Pressable>
           ) : null}
         </View>
+        {modeSwitch}
         {!isWeb && !panel ? (
           <View className="flex-1 items-center justify-center">
             <View className="h-40 w-72 rounded-2xl border-2 border-white/80" />

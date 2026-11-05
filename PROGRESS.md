@@ -6,6 +6,29 @@
 
 ---
 
+## Phiên 05/11 chiều (2) — ĐẠI TU MOBILE đợt 1: anh "Duyệt, làm đi" → ĐÃ CODE cả 4 việc, kiểm giả lập web local; CHƯA commit, CHƯA thử máy thật; ⏳ anh xem local + quyết bản dựng thử (docs `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md` mục 7)
+
+- **Anh duyệt cả 4 điểm** (công tắc "Xem đơn · Đóng gói" ở tab QR giữa; bỏ tab Theo ĐVVC + doanh số; âm riêng đơn hủy; lưu nhiều phân loại sinh Phiếu kho).
+- **Việc 2 — Phiếu nhặt hàng:** `PickSheet` gọi `/api/orders/pick-summary?shippingStatus=PROCESSED&printed=yes` (đủ mọi SKU, hết cắt top 50); nút ngoài giữ chữ "Thống kê". Bộ lọc thêm 3 chip con của Đã xử lý; thẻ đơn đọc theo bước đóng gói (Chưa in phiếu / Chờ đóng gói / Đã đóng gói / Đã bàn giao) + dải đỏ "Đã gói — lấy kiện ra".
+- **Việc 1 — Quét đóng gói:** màn mới `PackScanScreen` (route `/pack-scan`, nút "Đóng gói" cạnh ô tìm); quét liên tục, màn báo tự tắt, không nút; âm mới `scan-cancelled.wav` (còi hai tông) cho đơn hủy; dải đáy "Vừa quét" + 3 ô đếm; cửa chống bắn lặp `lib/pack-scan-gate.ts` + bảng phản hồi `lib/pack-scan-feedback.ts` là hàm thuần có test; phần chung hai màn quét tách ra `components/ScanChrome.tsx` + `lib/useKeyboardLift.ts`.
+- **Việc 3 — Tồn kho cha–con:** danh sách theo mẫu (`view=grouped`), chip Hết hàng, hộp `StockSheet` mỗi phân loại một ô số, chia mục theo tầng; 1 dòng → `/adjust`, từ 2 dòng → `/adjust-bulk` (một giao dịch, sinh Phiếu kho). 3 câu "trang Hàng hóa" đổi sang Tổng kho / Sản phẩm trên sàn.
+- **Kiểm:** tsc sạch; eslint toàn app 52 → 51; test 58/58 (`pack-scan-gate` 12, `pack-scan-feedback` 13, `notification-target` 33). Giả lập web local (backend 4010 + `mobile-web-http`, tài khoản seed, 13 đơn mẫu `PACKDEMO-*`) soi 320 / 360 / 390 + tối: số Phiếu nhặt hàng khớp tay (15 món · 7 đơn · 4 hỏa tốc), đủ 11 ca quét ra đúng màn + ô đếm, nhập 2 phân loại = một phiếu `PN-…` rồi xuất trả lại (kho local nguyên; 2 phiếu thử còn trong DB local).
+- **⛔ CHƯA kiểm được:** camera + tem thật, âm, rung, cử chỉ vuốt làm mới, bàn phím che dải đáy, tài khoản nhân viên. **Phát hiện:** app KHÔNG còn chạy trong Expo Go từ 1.3.0 (module native Google Sign-In nạp lúc khởi động) → máy ảo Android theo cách cũ không dùng được; không có bản dựng thử nào cùng runtime 1.4.1.
+- **⏳ Chờ anh:** (1) xem local (giả lập đang mở sẵn màn Đơn hàng); (2) quyết có dựng một bản thử Android `--profile preview` (1 lượt build EAS) để em đẩy OTA kênh preview cho anh thử tem thật trước khi lên production; (3) commit.
+- **Anh xem local, góp ý 1:** nút "Đóng gói" phải thẳng cột với chip Lazada bên dưới → ô tìm + nút chia theo đúng lưới 4 cột của hàng chip sàn (nút = một ô, ô tìm = ba ô + hai khe); đo 320 / 360 / 390 / 430 / 660 px: mép phải lệch 0, mép trái lệch ≤ 0,5 px, cao bằng ô tìm (42 px); dưới 360 px nút bỏ icon để chữ không bị cắt.
+- **Ghi:** docs MOBILE-DAI-TU… mục 7, DUA-APP mục 9 (thêm ca 8–10 vào checklist), docs/README, `docs/store/LISTING.md`, memory `hubsell-mobile-dai-tu-don-hang-kho-2026-11-05` + `gotcha-expo-go-khong-chay-duoc-app` + `hubsell-dong-goi-ban-giao`. Launch config mới: `mobile-web-http`, `mobile-android-http`.
+
+## Phiên 05/11 chiều — ĐẠI TU MOBILE đợt 1 (Đơn hàng + Kho): KHẢO SÁT XONG 4 việc, việc 4 đã sửa (chưa commit); ⏳ CHỜ ANH CHỐT 4 điểm rồi mới code việc 1–3 (docs `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md`) — ✅ anh đã duyệt, xem mục trên
+
+- **Anh (ảnh màn Đơn hàng app, khoanh góc phải ô tìm):** (1) thêm quét mã trong Đơn hàng để chuyển Chờ đóng gói → Đã đóng gói, chỉ âm thanh + màn báo tự tắt, không popup nút bấm; (2) "Thống kê bốc hàng" → "Phiếu nhặt hàng", tính ở Chờ đóng gói; (3) cập nhật số lượng kho theo kiểu Giá vốn (cha – con); (4) vuốt xuống làm mới Đơn hàng không chạy. "Khảo sát kỹ, làm chậm mà chắc."
+- **Kết luận khảo sát:** cả 4 việc không đổi backend, không build kho — API có sẵn từ đợt web (`/api/orders/packing/scan`, `/api/orders/pick-summary`, `/api/products?view=grouped`, `/api/inventory/adjust-bulk`), module native đã nằm trong 1.4.1 → đi OTA.
+- **Việc 4 ĐÃ SỬA** (`hubsell-mobile/src/app/(admin)/orders.tsx`): gốc = `FlatList` chưa từng có `refreshControl`. Thêm `RefreshControl` + chế độ tải `asRefresh`; lỗi tải nay nằm đầu danh sách (vuốt là thử lại) thay vì thay cả danh sách bằng dòng chữ; danh sách rỗng vẫn vuốt được. tsc sạch, eslint 7 = 7 (nền cũ). **Chưa thử cử chỉ trên máy** (giả lập web không có vuốt làm mới), chưa commit.
+- **Việc 2 (chưa code):** đổi hộp sang `pick-summary?shippingStatus=PROCESSED&printed=yes` — đủ mọi SKU (hết cắt top 50), mất tab Theo ĐVVC + doanh số; nút ngoài giữ chữ "Thống kê"; kèm 3 chip con của Đã xử lý trong Bộ lọc. `/api/orders/stats` giữ cho bản app cũ.
+- **Việc 1 (chưa code):** màn mới `PackScanScreen` (không nhét vào `ScanScreen` — màn cũ là luồng chặn, bấm mới quét tiếp); 4 luật chống bắn lặp cho tem nhiều mã vạch; bảng màn / âm / rung; thêm 1 âm riêng cho đơn hủy; dải đếm cố định đáy màn.
+- **Việc 3 (chưa code):** danh sách theo mẫu + hộp trượt từng phân loại; ≥ 2 phân loại lưu bằng `adjust-bulk` (một giao dịch, sinh Phiếu kho); không gõ đè tồn, không ô "số chung cả mẫu".
+- **⏳ Chờ anh chốt (docs mục 5):** (1) nhân viên không có tab Đơn hàng → công tắc "Xem đơn · Đóng gói" ở nút QR giữa; (2) bỏ tab Theo ĐVVC + doanh số; (3) âm riêng đơn hủy, khách xin hủy = vàng + buzz, đỏ giữ 2,5 s; (4) lưu nhiều phân loại sinh Phiếu kho.
+- **Ghi:** docs `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md` (mới) + docs/README, memory `hubsell-mobile-dai-tu-don-hang-kho-2026-11-05`.
+
 ## Phiên 05/11 trưa (3) — Đổi tên "Thống kê bốc hàng" → "Phiếu nhặt hàng" (web) — ĐÃ LÀM, kiểm local, ✅ PUSH e89baca4 (anh: "Push trước"); nút ngoài trả về "Thống kê"
 
 - **Anh:** "Thống kê bốc hàng" đổi tên → Phiếu nhặt hàng.

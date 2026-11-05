@@ -133,6 +133,12 @@ export interface OrderDto {
   cancelRequestedAt?: string | null;
   cancelRequestReason?: string | null;
   cancelRequestDueAt?: string | null;
+  /** Đã in phiếu trên Hubsell — còn null là chưa in. */
+  labelPrintedAt?: string | null;
+  /** Đã quét "Đã đóng gói" (bước nội bộ sau in, 01/11/2026) — còn null là chưa quét. */
+  packingDoneAt?: string | null;
+  /** Đã nằm trong một biên bản bàn giao cho ship. */
+  handoverSheetId?: string | null;
   channel: { channelName: ChannelName; shopName: string };
   items: OrderItemDto[];
 }
@@ -452,41 +458,56 @@ export interface OpsChannelErrorDto {
 
 // ============================================================
 
-export interface OrderStatsRow {
-  name: string;
-  /** SKU đại diện (nhóm sản phẩm) / mã SKU (nhóm SKU) — null nếu không có. */
-  sku: string | null;
-  qty: number;
-  /** Số món thuộc đơn HỎA TỐC — kho nhặt TRƯỚC, hiện đỏ. */
-  expressQty: number;
-  revenue: number;
-  orders: number;
-  /** Ảnh ChannelProduct theo sku — cùng luật ưu tiên ảnh sàn. */
-  imageUrl: string | null;
-}
-
 /**
- * GET /api/orders/stats — PHIẾU BỐC HÀNG. Backend CỐ ĐỊNH phạm vi trạng
- * thái = Chờ xử lý + Đã xử lý (đè mọi lựa chọn từ query); days=0 = toàn bộ.
+ * PHIẾU NHẶT HÀNG — GET /api/orders/pick-summary (chép từ frontend/src/lib/api.ts
+ * PickSummary). Trả ĐỦ mọi SKU của bộ lọc gửi lên, hỏa tốc xếp đầu. App luôn gửi
+ * shippingStatus=PROCESSED&printed=yes = nhóm Chờ đóng gói (05/11/2026).
  */
-/** Một hãng vận chuyển trong phiếu bốc hàng — carrier = "EXPRESS" | mã enum Carrier. */
-export interface OrderStatsCarrierRow {
-  carrier: string;
-  qty: number;
-  expressQty: number;
-  revenue: number;
-  orders: number;
+export interface PickSummaryRow {
+  name: string;
+  /** null = dòng đơn không có SKU (gom theo tên). Dòng theo sản phẩm: mã khi chỉ có đúng một SKU. */
   sku: string | null;
+  qty: number;
+  /** Phần số lượng thuộc đơn HỎA TỐC — kho nhặt TRƯỚC, hiện đỏ. */
+  expressQty: number;
+  imageUrl: string | null;
+  /** Chỉ dòng theo sản phẩm: số SKU khác nhau. */
+  skuCount?: number;
 }
 
-export interface OrderStatsResponse {
-  days: number;
-  /** Dòng tổng cho kho: cần bốc tổng bao nhiêu món, thuộc mấy đơn. */
-  totals: { qty: number; expressQty: number; orders: number; revenue: number };
-  byProduct: OrderStatsRow[];
-  bySku: OrderStatsRow[];
-  /** Theo hãng VC — Hỏa tốc đứng đầu, còn lại theo số đơn. Vắng với backend cũ. */
-  byCarrier?: OrderStatsCarrierRow[];
+export interface PickSummaryResponse {
+  totals: { orders: number; qty: number; expressQty: number; skuCount: number; productCount: number };
+  bySku: PickSummaryRow[];
+  byProduct: PickSummaryRow[];
+}
+
+// ───────── Quét đóng gói — POST /api/orders/packing/scan (chép từ frontend/src/lib/api.ts) ─────────
+
+export type PackingScanResult = "PACKED" | "ALREADY_PACKED" | "REJECTED";
+export type PackingRejectReason = "CANCELLED" | "NOT_CONFIRMED" | "DELIVERED" | "ON_HANDOVER_SHEET";
+export type PackingWarning = "CANCEL_REQUESTED" | "NOT_PRINTED" | "ALREADY_SHIPPING";
+
+/** Đơn rút gọn máy chủ trả về cho màn quét (không kèm dòng hàng). */
+export interface PackingOrder {
+  id: string;
+  orderCode: string;
+  customerName: string;
+  shippingStatus: ShippingStatus;
+  /** Nhãn hãng: tên nguyên văn sàn → nhãn enum → "Chưa rõ hãng". */
+  carrierLabel: string;
+  trackingCode: string | null;
+  packingDoneAt: string | null;
+  channel: { channelName: ChannelName; shopName: string };
+}
+
+export interface PackingScanResponse {
+  result: PackingScanResult;
+  reason: PackingRejectReason | null;
+  /** Câu báo khi bị chặn — máy chủ soạn sẵn để web và app cùng chữ. */
+  reasonText: string | null;
+  warnings: PackingWarning[];
+  warningTexts: string[];
+  order: PackingOrder;
 }
 
 /**
@@ -631,16 +652,27 @@ export interface ProductDto {
   /** Số Hubsell đẩy lên mọi gian = max(0, tồn − giữ − tồn an toàn). */
   availableToSell: number;
   isLowStock: boolean;
+  /** Phân loại (màu / size) — null = sản phẩm đơn. */
+  variantName?: string | null;
+  /** Khóa gom cha–con: các phân loại cùng mẫu chung một khóa; null = đứng một mình. */
+  groupKey?: string | null;
   /** Các gian đã nối với SKU này — rỗng = chưa nối gian nào (nối trên web). */
   channelLinks?: { shopName: string; channelName: string; stockSyncEnabled: boolean }[];
 }
 
 export interface ProductsListResponse {
   items: ProductDto[];
+  /** ?view=grouped: số MẪU khớp bộ lọc (trang đếm theo mẫu); mặc định: số SKU. */
   total: number;
   page: number;
   pageSize: number;
   pageCount: number;
+  /** Chỉ ?view=grouped: số SKU khớp bộ lọc. */
+  skuTotal?: number;
+  /** Số SKU đang bán mà tồn ≤ 0 của cả shop — số trên chip "Hết hàng". */
+  outOfStockCount?: number;
+  /** Chỉ khi đang lọc / tìm ở ?view=grouped: TỔNG phân loại của từng mẫu trên trang (khóa = groupKey). */
+  groupTotals?: Record<string, number>;
 }
 
 /** GET /api/stock-locations — rỗng (enabled=false) khi shop chưa dùng vị trí. */
@@ -659,6 +691,15 @@ export interface StockLocationsResponse {
 /** POST /api/inventory/adjust — nhập / xuất theo SỐ LƯỢNG (không gõ đè tồn). */
 export interface AdjustStockResponse {
   product: { id: string; quantityInStock: number };
+}
+
+/** POST /api/inventory/adjust-bulk — nhiều mã MỘT giao dịch, sinh một Phiếu kho (PN- / PX-). */
+export interface AdjustStockBulkResponse {
+  type: "IMPORT" | "EXPORT";
+  count: number;
+  totalQuantity: number;
+  products: { productId: string; skuCode: string; quantityInStock: number }[];
+  voucher: { id: string; code: string };
 }
 
 // ============================================================

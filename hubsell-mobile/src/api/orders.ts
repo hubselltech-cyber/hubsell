@@ -2,7 +2,8 @@ import { api } from "./client";
 import type {
   LookupResponse,
   OrdersListResponse,
-  OrderStatsResponse,
+  PackingScanResponse,
+  PickSummaryResponse,
   ReceiveReturnResponse,
   OrderDto,
 } from "../types/api";
@@ -18,6 +19,12 @@ export interface OrdersFilter {
   carrier?: string;
   /** Chỉ đơn KHÁCH ĐANG XIN HỦY (cờ cancelRequestedAt, 23/10/2026) — chuông dẫn vào đây. */
   cancelRequested?: boolean;
+  /**
+   * Bộ lọc con của Đã xử lý: "no" = chưa in phiếu, "yes" = đã in CHƯA đóng gói (Chờ đóng
+   * gói), "packed" = đã quét đóng gói. Backend KHÔNG tự kèm trạng thái — gửi printed mà
+   * thiếu shippingStatus=PROCESSED là dính cả đơn Đang giao / Đã giao cũ.
+   */
+  printed?: "yes" | "no" | "packed";
 }
 
 function filterParams(params: OrdersFilter): URLSearchParams {
@@ -28,6 +35,7 @@ function filterParams(params: OrdersFilter): URLSearchParams {
   if (params.channelId) q.set("channelId", params.channelId);
   if (params.carrier) q.set("carrier", params.carrier);
   if (params.cancelRequested) q.set("cancelRequested", "1");
+  if (params.printed) q.set("printed", params.printed);
   return q;
 }
 
@@ -39,13 +47,27 @@ export function fetchOrders(params: OrdersFilter & { page?: number; pageSize?: n
 }
 
 /**
- * Thống kê SP/SKU bán ra — cùng phạm vi lọc với danh sách.
- * days=0 = TOÀN BỘ (không giới hạn ngày) cho kịch bản bốc hàng.
+ * PHIẾU NHẶT HÀNG (05/11/2026, tên cũ "Thống kê bốc hàng"): số lượng cần lấy theo SKU /
+ * sản phẩm của nhóm CHỜ ĐÓNG GÓI (Đã xử lý, đã in phiếu, chưa quét đóng gói), trong
+ * phạm vi sàn / gian / hãng / từ khóa đang lọc. Cùng route với popup của web nên hai
+ * nơi một số; trả ĐỦ mọi SKU (route cũ /api/orders/stats cắt top 50 — thiếu dòng là
+ * kho nhặt thiếu). Trạng thái + printed bị ĐÈ ở đây, không lấy từ bộ lọc đang xem.
  */
-export function fetchOrderStats(params: OrdersFilter & { days?: number }) {
-  const q = filterParams(params);
-  q.set("days", String(params.days ?? 30));
-  return api<OrderStatsResponse>(`/api/orders/stats?${q.toString()}`);
+export function fetchPickSummary(params: OrdersFilter) {
+  const q = filterParams({ ...params, shippingStatus: "PROCESSED", printed: "yes" });
+  return api<PickSummaryResponse>(`/api/orders/pick-summary?${q.toString()}`);
+}
+
+/**
+ * QUÉT ĐÓNG GÓI: bắn một kiện đã gói → máy chủ ghi "Đã đóng gói" hoặc chặn (đơn đã
+ * hủy…). Không hỏi sàn nên trả lời nhanh. 404 = không thấy đơn, 409 = mã khớp nhiều đơn
+ * (ApiError); lỗi mạng ném ApiError status 0.
+ */
+export function scanPacking(code: string) {
+  return api<PackingScanResponse>("/api/orders/packing/scan", {
+    method: "POST",
+    body: { code },
+  });
 }
 
 /**

@@ -4,26 +4,28 @@ import {
   FlatList,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
-import { fetchOrders, fetchOrderStats, type OrdersFilter } from "@/api/orders";
+import { fetchOrders, fetchPickSummary, type OrdersFilter } from "@/api/orders";
 import { fetchChannels } from "@/api/channels";
 import { ApiError } from "@/api/client";
 import type {
   ChannelListItem,
   OrderDto,
   OrderItemDto,
-  OrderStatsResponse,
+  PickSummaryResponse,
   ShippingStatus,
 } from "@/types/api";
-import { compactMoney, formatDateTime, formatMoney, groupVN } from "@/lib/format";
+import { formatDateTime, formatMoney, groupVN } from "@/lib/format";
 import {
   CARRIER_LABEL,
   CARRIER_SHORT,
@@ -59,9 +61,48 @@ const STATUS_TABS: { key: "" | ShippingStatus; label: string }[] = [
 
 const CARRIER_KEYS = Object.keys(CARRIER_SHORT);
 
+/**
+ * Bộ lọc con của ĐÃ XỬ LÝ — cùng nhãn, cùng khóa đếm với chip trên trang Đơn hàng web
+ * (frontend/src/app/orders/page.tsx PRINTED_FILTERS): dây chuyền Chưa in phiếu → Chờ
+ * đóng gói (đã in, chưa quét) → Đã đóng gói (đã quét kiện).
+ */
+type PrintedFilter = "" | "no" | "yes" | "packed";
+const PRINTED_FILTERS: { key: PrintedFilter; label: string; countKey: string | null }[] = [
+  { key: "", label: "Tất cả đã xử lý", countKey: null },
+  { key: "no", label: "Chưa in phiếu", countKey: "PROCESSED_NOT_PRINTED" },
+  { key: "yes", label: "Chờ đóng gói", countKey: "PROCESSED_PRINTED" },
+  { key: "packed", label: "Đã đóng gói", countKey: "PROCESSED_PACKED" },
+];
+
+const TONE_AMBER = {
+  bg: "bg-amber-100 dark:bg-amber-500/15",
+  text: "text-amber-700 dark:text-amber-300",
+};
+const TONE_EMERALD = {
+  bg: "bg-emerald-100 dark:bg-emerald-500/15",
+  text: "text-emerald-700 dark:text-emerald-300",
+};
+
+/**
+ * Nhãn trạng thái trên thẻ đơn. Đơn còn ở Đã xử lý thì đọc theo BƯỚC ĐÓNG GÓI (cùng chữ
+ * với nhãn phụ ở cột Trạng thái web): Chưa in phiếu → Chờ đóng gói → Đã đóng gói → Đã
+ * bàn giao. Đơn đã đi giao / đã giao / hủy giữ nhãn vận chuyển — việc gói đã qua.
+ */
+function statusBadgeOf(o: OrderDto): { label: string; bg: string; text: string } {
+  const ship = SHIPPING_STATUS[o.shippingStatus];
+  if (o.shippingStatus !== "PROCESSED") return ship;
+  if (o.packingDoneAt) {
+    return { label: o.handoverSheetId ? "Đã bàn giao" : "Đã đóng gói", ...TONE_EMERALD };
+  }
+  if (o.labelPrintedAt) return { ...ship, label: "Chờ đóng gói" };
+  return { label: "Chưa in phiếu", ...TONE_AMBER };
+}
+
 /** Bộ giá trị của panel Bộ lọc — trạng thái + hãng VC + gian hàng. */
 interface FilterValue {
   status: "" | ShippingStatus;
+  /** Chỉ có nghĩa khi status = PROCESSED. */
+  printed: PrintedFilter;
   carrier: string;
   shopId: string;
   /** Chỉ đơn khách đang xin hủy (đi kèm mọi trạng thái). */
@@ -71,6 +112,8 @@ interface FilterValue {
 export default function OrdersScreen() {
   const channelColors = useChannelColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { width: winWidth } = useWindowDimensions();
   const [orders, setOrders] = useState<OrderDto[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   // Thẻ/phễu ở Tổng quan đẩy sang kèm ?status= → khởi tạo NGAY từ param
@@ -88,6 +131,11 @@ export default function OrdersScreen() {
   const statusFromParam = (p: unknown): "" | ShippingStatus =>
     typeof p === "string" && STATUS_TABS.some((t) => t.key === p) ? (p as ShippingStatus) : "";
   const [status, setStatus] = useState<"" | ShippingStatus>(() => statusFromParam(statusParam));
+  // Bộ lọc con của Đã xử lý. Chỉ GỬI khi đang ở Đã xử lý (`printedInUse`): backend không
+  // tự kèm trạng thái, gửi trần là dính cả đơn Đang giao / Đã giao đã in từ trước.
+  const [printed, setPrinted] = useState<PrintedFilter>("");
+  const printedInUse: PrintedFilter = status === "PROCESSED" ? printed : "";
+  const [total, setTotal] = useState(0);
   const [carrier, setCarrier] = useState("");
   const [shopId, setShopId] = useState("");
   const [cancelRequested, setCancelRequested] = useState(cancelParam === "1");
@@ -100,11 +148,15 @@ export default function OrdersScreen() {
   const [pageCount, setPageCount] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Vuốt xuống làm mới (anh Trung 05/11): danh sách GIỮ NGUYÊN trong lúc tải, chỉ
+  // hiện vòng quay của RefreshControl — không đổi cả màn sang vòng chờ như lượt tải đầu.
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryRef = useRef({
     search: typeof searchParam === "string" ? searchParam.trim() : "",
     status: "" as "" | ShippingStatus,
+    printed: "" as PrintedFilter,
     channel: "" as ChannelFilter,
     carrier: "",
     shopId: "",
@@ -116,7 +168,11 @@ export default function OrdersScreen() {
   useEffect(() => {
     if (typeof statusParam !== "string") return;
     const next = statusFromParam(statusParam);
-    if (next) setStatus(next);
+    if (next) {
+      setStatus(next);
+      // Thẻ ở Tổng quan / chuông dẫn tới CẢ trạng thái — bộ lọc con đang bật sẽ giấu bớt đơn.
+      setPrinted("");
+    }
   }, [statusParam, nonceParam]);
   useEffect(() => {
     if (cancelParam === "1") setCancelRequested(true);
@@ -141,10 +197,11 @@ export default function OrdersScreen() {
   }, []);
 
   const load = useCallback(
-    async (nextPage: number, append: boolean) => {
+    async (nextPage: number, append: boolean, asRefresh = false) => {
       const q = queryRef.current;
       const seq = ++reqSeq.current;
       if (append) setLoadingMore(true);
+      else if (asRefresh) setRefreshing(true);
       else setLoading(true);
       setError("");
       try {
@@ -156,19 +213,25 @@ export default function OrdersScreen() {
           carrier: q.carrier || undefined,
           channelId: q.shopId || undefined,
           cancelRequested: q.cancelRequested || undefined,
+          printed: q.printed || undefined,
         });
         if (seq !== reqSeq.current) return; // đã có lượt tải mới hơn
         setOrders((prev) => (append ? [...prev, ...res.items] : res.items));
         setCounts(res.counts);
+        setTotal(res.total);
         setPage(res.page);
         setPageCount(res.pageCount);
       } catch (err) {
         if (seq !== reqSeq.current) return;
+        // Đổi bộ lọc mà tải hỏng: bỏ danh sách của bộ lọc CŨ, kẻo đơn cũ nằm dưới
+        // chip lọc mới. Vuốt làm mới / tải thêm hỏng thì giữ danh sách đang xem.
+        if (!append && !asRefresh) setOrders([]);
         setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra");
       } finally {
         if (seq === reqSeq.current) {
           setLoading(false);
           setLoadingMore(false);
+          setRefreshing(false);
         }
       }
     },
@@ -181,12 +244,13 @@ export default function OrdersScreen() {
   }, [load]);
   useEffect(() => {
     queryRef.current.status = status;
+    queryRef.current.printed = printedInUse;
     queryRef.current.channel = channel;
     queryRef.current.carrier = carrier;
     queryRef.current.shopId = shopId;
     queryRef.current.cancelRequested = cancelRequested;
     void load(1, false);
-  }, [status, channel, carrier, shopId, cancelRequested, load]);
+  }, [status, printedInUse, channel, carrier, shopId, cancelRequested, load]);
 
   const onSearch = (text: string) => {
     setSearch(text);
@@ -215,17 +279,39 @@ export default function OrdersScreen() {
     }
   };
 
-  /** Bộ lọc hiện hành — truyền nguyên cho màn Thống kê để cùng phạm vi. */
-  const currentFilter: OrdersFilter = {
+  /**
+   * Phạm vi của Phiếu nhặt hàng: sàn / gian / hãng / từ khóa / khách xin hủy đang lọc.
+   * KHÔNG mang trạng thái — phiếu luôn tính cho nhóm Chờ đóng gói (api/orders.ts đè).
+   */
+  const pickScope: OrdersFilter = {
     search: search.trim() || undefined,
-    shippingStatus: status || undefined,
     channelName: channel || undefined,
     carrier: carrier || undefined,
     channelId: shopId || undefined,
     cancelRequested: cancelRequested || undefined,
   };
   const activeFilterCount =
-    (status ? 1 : 0) + (carrier ? 1 : 0) + (shopId ? 1 : 0) + (cancelRequested ? 1 : 0);
+    (status ? 1 : 0) +
+    (printedInUse ? 1 : 0) +
+    (carrier ? 1 : 0) +
+    (shopId ? 1 : 0) +
+    (cancelRequested ? 1 : 0);
+
+  // Mở màn Quét đóng gói (route gốc, phủ thanh tab). Quay về thì tải lại danh sách: kiện
+  // vừa quét đã đổi nhóm (Chờ đóng gói → Đã đóng gói), số trên chip cũng đổi.
+  const packScanOpened = useRef(false);
+  const openPackScan = () => {
+    hapticTap();
+    packScanOpened.current = true;
+    router.push("/pack-scan");
+  };
+  useFocusEffect(
+    useCallback(() => {
+      if (!packScanOpened.current) return;
+      packScanOpened.current = false;
+      void load(1, false, true);
+    }, [load])
+  );
 
   // Đơn đang MỞ RỘNG danh sách sản phẩm (mặc định chỉ hiện ITEMS_PREVIEW dòng)
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -274,7 +360,10 @@ export default function OrdersScreen() {
   };
 
   const renderOrder = ({ item }: { item: OrderDto }) => {
-    const ship = SHIPPING_STATUS[item.shippingStatus];
+    const ship = statusBadgeOf(item);
+    // Gói rồi sàn mới hủy, chưa lên biên bản → kiện còn nằm trong chồng hàng chờ giao.
+    const pullParcel =
+      item.shippingStatus === "CANCELLED" && Boolean(item.packingDoneAt) && !item.handoverSheetId;
     const ret = item.returnStatus !== "NONE" ? RETURN_STATUS[item.returnStatus] : null;
     const express = isExpressShipping(item.shippingCarrierName);
     const isExpanded = expanded.has(item.id);
@@ -314,6 +403,14 @@ export default function OrdersScreen() {
           {" · "}
           {formatDateTime(item.createdAt)}
         </Text>
+        {pullParcel ? (
+          <View className="mt-1.5 flex-row items-center gap-1.5 rounded-lg bg-red-50 px-2 py-1.5 dark:bg-red-500/10">
+            <Ionicons name="cube" size={13} color="#ef4444" />
+            <Text className="flex-1 text-[11px] font-semibold text-red-600 dark:text-red-300">
+              Đã gói — lấy kiện ra, không đưa ship
+            </Text>
+          </View>
+        ) : null}
         {/* Dải đỏ + nút Trả lời sàn — sàn chốt xong thì tải lại danh sách */}
         <CancelRequestBar order={item} onDecided={() => void load(1, false)} />
 
@@ -397,41 +494,67 @@ export default function OrdersScreen() {
           {/* Số đơn của BỘ LỌC đang xem (tab / khách xin hủy) như web "N đơn khớp
               bộ lọc" — trước luôn in tổng mọi trạng thái nên tab Đang giao 37 đơn
               vẫn đề "1.240 đơn" (rà 26/10). */}
+          {/* `total` = đúng số đơn của lượt tải đang xem (mọi bộ lọc, kể cả bộ lọc con
+              Chờ đóng gói) — trước đây suy từ bảng đếm theo trạng thái nên bật hai bộ
+              lọc cùng lúc là lệch. */}
           <Text className="text-xs text-slate-500 dark:text-slate-400" style={TABULAR}>
-            {groupVN(
-              (cancelRequested ? counts.CANCEL_REQUESTED : status ? counts[status] : counts.ALL) ?? 0
-            )}{" "}
-            đơn{cancelRequested || status ? " khớp bộ lọc" : ""}
+            {groupVN(total)} đơn{activeFilterCount > 0 ? " khớp bộ lọc" : ""}
           </Text>
         </View>
-        {/* Nút quét đã dời xuống thanh tab dưới (tab "Quét đơn hoàn", 03/10) */}
       </View>
 
-      <View className="mx-4 mb-2.5 flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
-        <Ionicons name="search-outline" size={16} color="#94a3b8" />
-        <TextInput
-          className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
-          placeholder="Mã đơn, tên khách, SĐT, mã vận đơn…"
-          placeholderTextColor="#94a3b8"
-          value={search}
-          onChangeText={onSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-        />
-        {search ? (
-          <Pressable
-            onPress={() => {
-              hapticTap();
-              clearSearch();
-            }}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Xóa tìm kiếm"
-          >
-            <Ionicons name="close-circle" size={18} color="#94a3b8" />
-          </Pressable>
-        ) : null}
+      {/* Ô tìm + nút QUÉT ĐÓNG GÓI (anh Trung 05/11): in phiếu, gói xong thì quét lại
+          từng kiện → đơn sang Đã đóng gói, đơn đã hủy kêu báo để bỏ kiện lại. Nút QR
+          giữa thanh tab là việc khác (xem chi tiết đơn) nên nút này có chữ. */}
+      {/* THẲNG CỘT với hàng chip sàn bên dưới (anh Trung 05/11): hàng chip là 4 ô bằng nhau
+          cách nhau 8 px. Nút = đúng một ô (cột Lazada), ô tìm = ba ô + hai khe (16 px) —
+          nên ô tìm lấy gốc 16 px rồi chia phần còn lại theo 3 : 1. Hai ô chia cột KHÔNG
+          được mang viền / đệm ngang (viền + đệm đội gốc lên, đo ra nút rộng hơn chip
+          3 px) → viền và đệm của ô tìm nằm ở lớp trong, nút không có đệm ngang. */}
+      <View className="mx-4 mb-2.5 flex-row items-center gap-2">
+        <View style={{ flexGrow: 3, flexShrink: 1, flexBasis: 16, minWidth: 0 }}>
+         <View className="flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
+          <Ionicons name="search-outline" size={16} color="#94a3b8" />
+          <TextInput
+            className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
+            // minWidth 0: trên web ô nhập có bề rộng tối thiểu riêng, không ép thì đẩy nút quét ra ngoài màn 320.
+            style={{ minWidth: 0 }}
+            placeholder="Mã đơn, tên khách, SĐT, mã vận đơn…"
+            placeholderTextColor="#94a3b8"
+            value={search}
+            onChangeText={onSearch}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {search ? (
+            <Pressable
+              onPress={() => {
+                hapticTap();
+                clearSearch();
+              }}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Xóa tìm kiếm"
+            >
+              <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            </Pressable>
+          ) : null}
+         </View>
+        </View>
+        <Pressable
+          className="flex-row items-center justify-center gap-1 self-stretch rounded-xl bg-emerald-500 active:opacity-80"
+          style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}
+          onPress={openPackScan}
+          accessibilityRole="button"
+          accessibilityLabel="Quét đóng gói"
+        >
+          {/* Màn dưới 360 px một ô chip chỉ ~66 px: bỏ icon để chữ không bị cắt. */}
+          {winWidth >= 360 ? <Ionicons name="qr-code-outline" size={16} color="#fff" /> : null}
+          <Text className="text-xs font-bold text-white" numberOfLines={1}>
+            Đóng gói
+          </Text>
+        </Pressable>
       </View>
 
       {/* Bộ lọc sàn — số đếm trạng thái trong panel lọc cũng lọc theo sàn */}
@@ -464,8 +587,9 @@ export default function OrdersScreen() {
         })}
       </View>
 
-      {/* Hai nút thay dãy tab trạng thái cũ: Bộ lọc (gom trạng thái + hãng
-          VC + shop, học Salework) và Thống kê SP/SKU trong phạm vi đang lọc */}
+      {/* Hai nút thay dãy tab trạng thái cũ: Bộ lọc (gom trạng thái + hãng VC + shop,
+          học Salework) và Thống kê = mở PHIẾU NHẶT HÀNG của nhóm Chờ đóng gói. Chữ trên
+          nút GIỮ "Thống kê" như web (anh chốt 05/11: khách đã quen). */}
       <View className="mb-2 flex-row gap-2 px-4">
         <Pressable
           className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-2 active:bg-slate-50 dark:active:bg-slate-800"
@@ -496,7 +620,16 @@ export default function OrdersScreen() {
           {status ? (
             <ActiveChip
               label={SHIPPING_STATUS[status].label}
-              onClear={() => setStatus("")}
+              onClear={() => {
+                setStatus("");
+                setPrinted("");
+              }}
+            />
+          ) : null}
+          {printedInUse ? (
+            <ActiveChip
+              label={PRINTED_FILTERS.find((f) => f.key === printedInUse)?.label ?? ""}
+              onClear={() => setPrinted("")}
             />
           ) : null}
           {carrier ? (
@@ -521,27 +654,45 @@ export default function OrdersScreen() {
         <View className="items-center py-16">
           <ActivityIndicator size="large" color="#64748b" />
         </View>
-      ) : error ? (
-        <Text className="px-6 py-10 text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
       ) : (
+        // Lỗi nằm TRONG danh sách (không thay cả danh sách bằng dòng chữ như trước):
+        // vuốt xuống là thử lại được, và lượt làm mới hỏng không làm mất đơn đang xem.
         <FlatList
           data={orders}
           keyExtractor={(o) => o.id}
           renderItem={renderOrder}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+          // flexGrow: danh sách rỗng / ít đơn vẫn vuốt được ở bất kỳ chỗ nào của vùng trống.
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingBottom: 24 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void load(1, false, true)}
+              tintColor="#64748b"
+              colors={["#10b981"]}
+            />
+          }
           onEndReachedThreshold={0.4}
           onEndReached={() => {
-            if (!loadingMore && page < pageCount) void load(page + 1, true);
+            if (!loadingMore && !refreshing && !error && page < pageCount) void load(page + 1, true);
           }}
+          ListHeaderComponent={
+            error ? (
+              <Text className="px-2 pb-3 pt-1 text-center text-sm text-red-500 dark:text-red-400">
+                {error} — vuốt xuống để thử lại
+              </Text>
+            ) : null
+          }
           ListFooterComponent={
             loadingMore ? (
               <ActivityIndicator className="py-4" color="#64748b" />
             ) : null
           }
           ListEmptyComponent={
-            <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
-              Không có đơn nào khớp bộ lọc
-            </Text>
+            error ? null : (
+              <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                Không có đơn nào khớp bộ lọc
+              </Text>
+            )
           }
         />
       )}
@@ -551,19 +702,21 @@ export default function OrdersScreen() {
         counts={counts}
         channels={channels}
         channel={channel}
-        value={{ status, carrier, shopId, cancelRequested }}
+        value={{ status, printed: printedInUse, carrier, shopId, cancelRequested }}
         onClose={() => setFilterOpen(false)}
         onApply={(v) => {
           setStatus(v.status);
+          setPrinted(v.status === "PROCESSED" ? v.printed : "");
           setCarrier(v.carrier);
           setShopId(v.shopId);
           setCancelRequested(v.cancelRequested);
           setFilterOpen(false);
         }}
       />
-      <StatsSheet
+      <PickSheet
         visible={statsOpen}
-        filter={currentFilter}
+        scope={pickScope}
+        notPrintedCount={counts.PROCESSED_NOT_PRINTED ?? 0}
         onClose={() => setStatsOpen(false)}
       />
       <OrderDetailSheet
@@ -642,7 +795,8 @@ function FilterSheet({
                   label={t.label}
                   count={t.key === "" ? counts.ALL : counts[t.key]}
                   active={draft.status === t.key}
-                  onPress={() => setDraft((d) => ({ ...d, status: t.key }))}
+                  // Đổi trạng thái thì bỏ bộ lọc con — nó chỉ thuộc về Đã xử lý.
+                  onPress={() => setDraft((d) => ({ ...d, status: t.key, printed: "" }))}
                 />
               ))}
               {/* Cờ đi kèm MỌI trạng thái (anh chốt 23/10): bật/tắt độc lập với tab trạng thái */}
@@ -653,6 +807,27 @@ function FilterSheet({
                 onPress={() => setDraft((d) => ({ ...d, cancelRequested: !d.cancelRequested }))}
               />
             </View>
+
+            {/* Bộ lọc con của Đã xử lý — chỉ hiện khi đang chọn Đã xử lý, như hàng chip
+                dưới tab Đã xử lý trên web. Số đếm theo đúng sàn / gian / hãng đang lọc. */}
+            {draft.status === "PROCESSED" ? (
+              <>
+                <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  In phiếu và đóng gói
+                </Text>
+                <View className="mb-3 flex-row flex-wrap gap-1.5">
+                  {PRINTED_FILTERS.map((f) => (
+                    <PickChip
+                      key={f.key || "ALL"}
+                      label={f.label}
+                      count={f.countKey ? counts[f.countKey] : undefined}
+                      active={draft.printed === f.key}
+                      onPress={() => setDraft((d) => ({ ...d, printed: f.key }))}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : null}
 
             <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
               Đơn vị vận chuyển
@@ -705,7 +880,9 @@ function FilterSheet({
           <View className="mt-2 flex-row gap-2">
             <Pressable
               className="flex-1 items-center rounded-xl bg-slate-100 dark:bg-slate-800 py-3 active:opacity-80"
-              onPress={() => setDraft({ status: "", carrier: "", shopId: "", cancelRequested: false })}
+              onPress={() =>
+                setDraft({ status: "", printed: "", carrier: "", shopId: "", cancelRequested: false })
+              }
             >
               <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">Bỏ lọc</Text>
             </Pressable>
@@ -723,21 +900,29 @@ function FilterSheet({
 }
 
 // ============================================================
-// Panel THỐNG KÊ — top sản phẩm / SKU bán ra trong phạm vi đang lọc
+// PHIẾU NHẶT HÀNG (05/11/2026, tên cũ "Thống kê bốc hàng") — số lượng cần lấy theo SKU /
+// sản phẩm của nhóm CHỜ ĐÓNG GÓI (Đã xử lý, đã in phiếu, chưa quét đóng gói), trong
+// phạm vi sàn / gian / hãng / từ khóa đang lọc. Cùng nguồn số với popup của web
+// (GET /api/orders/pick-summary) và trả ĐỦ mọi SKU — bản cũ đọc /api/orders/stats
+// (đơn Chờ xử lý, cắt top 50). Không còn bảng theo hãng vận chuyển và doanh số: route
+// này không trả, nhặt hàng cũng không cần.
 // ============================================================
-function StatsSheet({
+function PickSheet({
   visible,
-  filter,
+  scope,
+  notPrintedCount,
   onClose,
 }: {
   visible: boolean;
-  filter: OrdersFilter;
+  scope: OrdersFilter;
+  /** Số đơn Đã xử lý CHƯA in phiếu trong cùng phạm vi — gợi ý khi phiếu trống. */
+  notPrintedCount: number;
   onClose: () => void;
 }) {
   // Đáy hộp chừa phần nút điều hướng / vạch vuốt của máy.
   const sheetInsets = useSafeAreaInsets();
-  const [mode, setMode] = useState<"product" | "sku" | "carrier">("product");
-  const [data, setData] = useState<OrderStatsResponse | null>(null);
+  const [mode, setMode] = useState<"product" | "sku">("product");
+  const [data, setData] = useState<PickSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -745,20 +930,28 @@ function StatsSheet({
     if (!visible) return;
     setLoading(true);
     setError("");
-    // days=0: phiếu bốc hàng đếm TRỌN đơn đang chờ, backend đã cố định
-    // trạng thái Chờ xử lý nên không cần chọn kỳ
-    fetchOrderStats({ ...filter, days: 0 })
-      .then(setData)
-      .catch((err) =>
-        setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra")
-      )
-      .finally(() => setLoading(false));
-    // filter dựng mới mỗi render — nạp lại khi MỞ panel là đủ
+    // Lượt mở trước có thể là phạm vi khác — không để số cũ nằm dưới vòng chờ.
+    setData(null);
+    let stale = false;
+    fetchPickSummary(scope)
+      .then((res) => {
+        if (!stale) setData(res);
+      })
+      .catch((err) => {
+        if (!stale) setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra");
+      })
+      .finally(() => {
+        if (!stale) setLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
+    // scope dựng mới mỗi render — nạp lại khi MỞ panel là đủ
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const rows = mode === "product" ? (data?.byProduct ?? []) : (data?.bySku ?? []);
-  const carrierRows = data?.byCarrier ?? [];
+  const totals = data?.totals;
 
   return (
     <Modal visible={visible} transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
@@ -773,17 +966,16 @@ function StatsSheet({
           </View>
           <View className="mb-1 flex-row items-center justify-between">
             <Text className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Thống kê bốc hàng
+              Phiếu nhặt hàng
             </Text>
             <Pressable onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={20} color="#64748b" />
             </Pressable>
           </View>
           <Text className="mb-2 text-[11px] text-slate-400 dark:text-slate-500">
-            Chỉ tính đơn CHỜ XỬ LÝ (vừa về, chưa bốc) — hỏa tốc đỏ, nhặt trước
+            Đơn CHỜ ĐÓNG GÓI: đã in phiếu, chưa quét đóng gói — hỏa tốc đỏ, nhặt trước
           </Text>
 
-          {/* 3 cách xem (anh Trung 03/10): sản phẩm · SKU · hãng vận chuyển */}
           <View className="mb-2 flex-row gap-2">
             <PickChip
               label="Theo sản phẩm"
@@ -795,28 +987,18 @@ function StatsSheet({
               active={mode === "sku"}
               onPress={() => setMode("sku")}
             />
-            <PickChip
-              label="Theo ĐVVC"
-              active={mode === "carrier"}
-              onPress={() => setMode("carrier")}
-            />
           </View>
 
-          {/* Dòng TỔNG cho kho: cần bốc bao nhiêu món, thuộc mấy đơn.
-              Check cả totals — backend cũ (đang chờ deploy) chưa trả trường này */}
-          {data?.totals && !loading ? (
+          {/* Dòng TỔNG cho kho: cần lấy bao nhiêu món, thuộc mấy đơn, mấy mã. */}
+          {totals && totals.orders > 0 && !loading ? (
             <View className="mb-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2">
-              <View className="flex-row items-center justify-between">
-                <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Tổng cần: {data.totals.qty} sản phẩm · {data.totals.orders} đơn
-                </Text>
-                <Text className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                  {compactMoney(data.totals.revenue)}
-                </Text>
-              </View>
-              {data.totals.expressQty > 0 ? (
-                <Text className="mt-0.5 text-xs font-bold text-red-500 dark:text-red-400">
-                  ⚡ Trong đó {data.totals.expressQty} món HỎA TỐC — nhặt trước!
+              <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300" style={TABULAR}>
+                Cần lấy {groupVN(totals.qty)} sản phẩm · {groupVN(totals.orders)} đơn ·{" "}
+                {groupVN(totals.skuCount)} SKU
+              </Text>
+              {totals.expressQty > 0 ? (
+                <Text className="mt-0.5 text-xs font-bold text-red-500 dark:text-red-400" style={TABULAR}>
+                  ⚡ Trong đó {groupVN(totals.expressQty)} món HỎA TỐC — nhặt trước!
                 </Text>
               ) : null}
             </View>
@@ -828,66 +1010,32 @@ function StatsSheet({
             </View>
           ) : error ? (
             <Text className="py-10 text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
-          ) : mode === "carrier" ? (
-            /* THEO HÃNG VẬN CHUYỂN — mỗi hãng: số đơn (kiện) + số món + doanh số;
-               Hỏa tốc đứng đầu, đỏ. Kho xếp hàng theo từng hãng đến lấy. */
-            <FlatList
-              data={carrierRows}
-              keyExtractor={(r) => r.carrier}
-              ListEmptyComponent={
-                <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
-                  {data?.byCarrier ? "Không có đơn chờ xử lý" : "Backend chưa hỗ trợ bảng này"}
-                </Text>
-              }
-              renderItem={({ item, index }) => {
-                const express = item.carrier === "EXPRESS";
-                return (
-                  <View className="flex-row items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 py-3">
-                    <Text className="w-5 text-center text-xs font-bold text-slate-400 dark:text-slate-500">
-                      {index + 1}
-                    </Text>
-                    <View
-                      className={`h-10 w-10 items-center justify-center rounded-lg ${
-                        express ? "bg-red-100 dark:bg-red-500/15" : "bg-slate-100 dark:bg-slate-800"
-                      }`}
-                    >
-                      <Ionicons
-                        name={express ? "flash" : "car-outline"}
-                        size={18}
-                        color={express ? "#ef4444" : "#64748b"}
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <Text
-                        className={`text-sm font-semibold ${
-                          express ? "text-red-500 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
-                        }`}
-                      >
-                        {CARRIER_LABEL[item.carrier] ?? item.carrier}
-                      </Text>
-                      <Text className="text-[11px] text-slate-500 dark:text-slate-400">
-                        {item.orders} đơn · {item.qty} sản phẩm
-                      </Text>
-                    </View>
-                    <Text className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                      {compactMoney(item.revenue)}
-                    </Text>
-                  </View>
-                );
-              }}
-            />
           ) : (
             <FlatList
               data={rows}
-              keyExtractor={(r, i) => `${r.sku ?? r.name}-${i}`}
+              keyExtractor={(r, i) => `${mode}-${r.sku ?? ""}-${r.name}-${i}`}
+              initialNumToRender={14}
+              windowSize={7}
               ListEmptyComponent={
-                <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
-                  Không có dữ liệu trong phạm vi này
-                </Text>
+                // Trống có hai nghĩa khác nhau: gói hết rồi, hoặc shop chưa in phiếu trên
+                // Hubsell (in ở Seller Center thì đơn không bao giờ vào nhóm này).
+                <View className="items-center px-4 py-10">
+                  <Ionicons name="checkmark-circle-outline" size={30} color="#94a3b8" />
+                  <Text className="mt-2 text-center text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Không có đơn nào chờ đóng gói
+                  </Text>
+                  <Text className="mt-1 text-center text-xs leading-[18px] text-slate-400 dark:text-slate-500">
+                    Đơn vào phiếu này sau khi in phiếu trên Hubsell và ra khỏi phiếu khi được quét
+                    đóng gói.
+                    {notPrintedCount > 0
+                      ? ` Đang có ${groupVN(notPrintedCount)} đơn Đã xử lý chưa in phiếu.`
+                      : ""}
+                  </Text>
+                </View>
               }
               renderItem={({ item, index }) => (
                 <View className="flex-row items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 py-2.5">
-                  <Text className="w-5 text-center text-xs font-bold text-slate-400 dark:text-slate-500">
+                  <Text className="w-6 text-center text-xs font-bold text-slate-400 dark:text-slate-500" style={TABULAR}>
                     {index + 1}
                   </Text>
                   <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
@@ -901,34 +1049,36 @@ function StatsSheet({
                       <Ionicons name="cube-outline" size={16} color="#94a3b8" />
                     )}
                   </View>
-                  <View className="flex-1">
-                    {/* SỐ LƯỢNG đứng NGAY CẠNH phân loại: "TC025-DEN × 3"
-                        (anh Trung 03/10) — kho đọc một dòng là biết nhặt mấy */}
-                    <Text className="text-[13px] text-slate-800 dark:text-slate-200" numberOfLines={2}>
-                      <Text className="font-semibold">
-                        {mode === "sku" && item.sku ? item.sku : item.name}
-                      </Text>
-                      <Text
-                        className={`font-bold ${
-                          item.expressQty > 0 ? "text-red-500 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
-                        }`}
-                      >
-                        {"  × "}
-                        {item.qty}
-                      </Text>
+                  <View className="min-w-0 flex-1">
+                    <Text className="text-[13px] font-semibold text-slate-800 dark:text-slate-200" numberOfLines={2}>
+                      {mode === "sku" && item.sku ? item.sku : item.name}
                     </Text>
+                    {/* Dòng phụ: theo SKU → tên sản phẩm; theo sản phẩm → mã SKU, hoặc "N SKU"
+                        khi sản phẩm có nhiều phân loại (kho biết phải lấy mấy loại). */}
                     <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
-                      {mode === "sku" ? item.name + " · " : ""}
-                      {item.orders} đơn
+                      {mode === "sku"
+                        ? item.sku
+                          ? item.name
+                          : "Không có mã SKU"
+                        : (item.skuCount ?? 1) > 1
+                          ? `${item.skuCount} SKU`
+                          : (item.sku ?? "Không có mã SKU")}
                     </Text>
                     {item.expressQty > 0 ? (
-                      <Text className="text-[10px] font-bold text-red-500 dark:text-red-400">
-                        ⚡ {item.expressQty} món hỏa tốc
+                      <Text className="text-[10px] font-bold text-red-500 dark:text-red-400" style={TABULAR}>
+                        ⚡ {groupVN(item.expressQty)} món hỏa tốc
                       </Text>
                     ) : null}
                   </View>
-                  <Text className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                    {compactMoney(item.revenue)}
+                  {/* SỐ LƯỢNG to bên phải, một cột thẳng hàng — kho liếc dọc là đọc được
+                      (đỏ khi có món hỏa tốc). */}
+                  <Text
+                    className={`min-w-[44px] text-right text-lg font-bold ${
+                      item.expressQty > 0 ? "text-red-500 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
+                    }`}
+                    style={TABULAR}
+                  >
+                    ×{groupVN(item.qty)}
                   </Text>
                 </View>
               )}

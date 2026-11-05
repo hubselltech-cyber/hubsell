@@ -7,17 +7,20 @@ import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-aud
  *   success   → "ting-ting" đi LÊN: tra thấy đơn hợp lệ / thao tác xong
  *   error     → buzz TRẦM đi xuống: mã không thấy, lỗi mạng, sàn từ chối
  *   duplicate → "boop-boop" 2 nhịp cùng tông: đơn ĐÃ xử lý rồi (quét trùng)
+ *   cancelled → còi HAI TÔNG cao–thấp lặp 3 lần, ~1 giây: ĐƠN ĐÃ HỦY ở màn Quét đóng
+ *               gói — bỏ kiện lại (05/11/2026; tạo bằng scripts/gen-scan-cancelled-sound.mjs)
  *
  * Player tạo lười 1 lần rồi giữ suốt phiên app (createAudioPlayer sống ngoài
  * React) — mỗi lượt phát seekTo(0) để bấm liên tục vẫn kêu.
  */
 
-export type ScanSound = "success" | "error" | "duplicate";
+export type ScanSound = "success" | "error" | "duplicate" | "cancelled";
 
 const SOURCES: Record<ScanSound, number> = {
   success: require("../../assets/sounds/scan-success.wav"),
   error: require("../../assets/sounds/scan-error.wav"),
   duplicate: require("../../assets/sounds/scan-duplicate.wav"),
+  cancelled: require("../../assets/sounds/scan-cancelled.wav"),
 };
 
 const players: Partial<Record<ScanSound, AudioPlayer>> = {};

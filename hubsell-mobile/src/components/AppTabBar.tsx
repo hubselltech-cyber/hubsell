@@ -62,7 +62,7 @@ export function AppTabBar({
               key={tab.name}
               onPress={onPress}
               accessibilityRole="button"
-              accessibilityLabel="Quét mã xem chi tiết đơn hàng"
+              accessibilityLabel="Quét mã: xem chi tiết đơn hoặc quét đóng gói"
               className="flex-1 items-center justify-center active:opacity-80"
             >
               <View className="h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500">

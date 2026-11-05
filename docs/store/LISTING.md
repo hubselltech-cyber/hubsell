@@ -55,7 +55,7 @@ DÀNH CHO CHỦ SHOP
 • Quảng cáo: theo dõi chiến dịch đang chạy của các gian đã nối, thấy chiến dịch cần xử lý kèm đề xuất, tạm dừng hoặc bật lại ngay trên máy.
 • Đơn hàng của mọi gian trong một danh sách: lọc theo trạng thái, hãng vận chuyển, gian hàng; đơn hỏa tốc được đánh dấu riêng để xử lý trước; bấm vào đơn xem chi tiết và các khoản phí.
 • Quét mã bất kỳ đơn nào bằng camera để mở ngay chi tiết đơn: shop, trạng thái, đơn vị vận chuyển, sản phẩm, phí và doanh thu ước tính.
-• Thống kê bốc hàng: cộng sẵn số lượng cần lấy theo từng sản phẩm, từng SKU cho các đơn đang chờ.
+• Phiếu nhặt hàng: cộng sẵn số lượng cần lấy theo từng sản phẩm, từng SKU cho các đơn đang chờ đóng gói.
 • Trợ lý Hubsell: hỏi bằng tiếng Việt, gõ hoặc nói, nhận câu trả lời bằng số liệu của chính shop.
 
 DÀNH CHO KHO

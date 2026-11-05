@@ -1,0 +1,5 @@
+Bản 1.4.2:
+• Quét đóng gói: gói xong quét lại từng kiện, đơn sang Đã đóng gói; đơn đã hủy báo còi và màn đỏ để bỏ kiện lại. Mở từ nút Đóng gói ở Đơn hàng hoặc nút quét giữa.
+• Phiếu nhặt hàng: cộng số lượng cần lấy theo sản phẩm, SKU cho đơn chờ đóng gói; lọc Chưa in phiếu, Chờ đóng gói, Đã đóng gói.
+• Tồn kho theo mẫu: nhập, xuất nhiều phân loại (màu, size) trong một lần lưu; lọc Hết hàng.
+• Vuốt xuống để làm mới danh sách đơn.
