@@ -160,3 +160,32 @@ bình) mà bảng luôn 4 cột. Nếu anh vẫn muốn cột riêng từng nhà
 1. Danh bạ NCC + NCC / số chứng từ trên phiếu nhập + cột & lọc ở Phiếu kho + bản in.
 2. Giá nhập trên dòng phiếu + sửa giá sau + bảng "Giá nhập theo sản phẩm".
 3. (chờ anh) Nút "Dùng làm giá vốn"; NCC ở Nhật ký kho.
+
+### 5.6 Khảo sát "chỗ khác làm thế nào" (05/11, anh: "thực ra đây là phần thống kê thôi, còn phiếu nhập thì cũng đơn giản") → RÚT GỌN thiết kế
+
+| Nền tảng | Nhà cung cấp trên phiếu | Thống kê |
+|---|---|---|
+| Sapo | Đơn nhập có NCC + giá nhập | "Báo cáo nhập hàng" 6 góc nhìn: Thời gian · Nhà cung cấp · Sản phẩm · Đơn nhập · Chi nhánh · Nhân viên; lọc ngày, thêm cột, xuất file; góc NCC = số lượng + giá trị nhập |
+| MISA | Chứng từ mua hàng có NCC + đơn giá | "Tổng hợp mua hàng theo mặt hàng và nhà cung cấp" — hai chiều nhưng xếp thành DÒNG (Mã hàng · Tên hàng · Mã NCC · Tên NCC · ĐVT · SL mua · Giá trị mua); không có cột đơn giá bình quân, đơn giá chỉ ở sổ chi tiết từng chứng từ |
+| Zoho Inventory | Bill / PO có vendor + đơn giá | "Purchases by Item": tên hàng · số lượng mua · thành tiền · **giá trung bình** trong kỳ; "Purchases by Vendor" riêng |
+| Odoo | PO có vendor; sản phẩm có danh sách giá theo vendor (mỗi vendor một DÒNG ở tab Purchase) | "Vendor costs report" = pivot nhóm Vendor rồi Product, đo Average Cost, so kỳ trước; bảng vendor đứng cạnh nhau thành cột chỉ có ở module trả tiền bên thứ ba |
+| Linnworks / Sage 200 / Pickware | — | Mỗi mã hàng có tab Suppliers: mỗi nhà một DÒNG (giá mua, nhà mặc định) |
+| BigSeller | PO có supplier + đơn giá, sửa có ghi vết | Quan hệ "nguồn cung" SKU ↔ supplier, supplier mặc định điền sẵn khi lập PO |
+| KiotViet | CHƯA kiểm được (không tìm ra trang hướng dẫn chính thức) | — |
+
+**Kết luận:** (1) anh nói đúng — ở đâu đây cũng là BÁO CÁO đọc từ phiếu nhập, không phải dữ liệu nhập tay riêng; (2) không nền tảng nào
+mặc định bày "NCC 1 … NCC N" thành cột — nhà cung cấp luôn là dòng / nhóm dòng (cột chỉ có ở pivot tự kéo hoặc module ngoài); (3) "giá trung
+bình" có tiền lệ (Zoho, Odoo), tính trong kỳ đang chọn; (4) phiếu chỉ cần NCC + đơn giá từng dòng.
+
+**Thiết kế rút gọn (thay 5.1–5.5 chỗ nào khác):**
+- **Phiếu nhập:** thêm đúng hai thứ — ô Nhà cung cấp (chọn / gõ tên mới) và ô Giá nhập từng dòng, đều không bắt buộc. Bỏ ô Số chứng từ.
+  Em vẫn đề nghị giữ MỘT đường "sửa nhà cung cấp / giá nhập" trên phiếu đã lập (không sửa số lượng) vì mình chưa có hủy phiếu — anh quyết.
+- **Tab "Nhà cung cấp" = báo cáo nhập hàng**, hai góc nhìn như Sapo: **Theo nhà cung cấp** (tên · SĐT · số phiếu · số lượng · giá trị nhập ·
+  lần nhập gần nhất; bấm → Phiếu kho lọc theo nhà đó; thêm / sửa nhà cung cấp ngay tại đây) và **Theo sản phẩm** (ý anh: mỗi SKU một dòng,
+  giá các nhà gom viên, Giá nhập TB, Giá vốn đang dùng; xổ ra từng nhà). Chung: lọc khoảng ngày, xuất Excel.
+- Dữ liệu giữ nguyên 5.4 (`suppliers`, `stock_voucher_lines`, 2 cột trên phiếu — bỏ `documentNo`). Hai lát: (1) phiếu + danh sách NCC;
+  (2) báo cáo hai góc nhìn.
+
+Nguồn (đọc 05/11/2026): sapo.vn/cap-nhat-tinh-nang/bao-cap-nhap-hang · helpact.misa.vn/?p=76333 ·
+zoho.com/inventory/help/reports/purchase-reports.html · odoo.com/documentation/17.0 (vendor_costs_report) · help.linnworks.com 7000064721 ·
+help.bigseller.pro (Role - Purchasing, 1688 Purchase Order).
