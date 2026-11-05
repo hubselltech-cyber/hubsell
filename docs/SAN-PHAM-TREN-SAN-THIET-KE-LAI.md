@@ -1,4 +1,4 @@
-# Sản phẩm trên sàn — thiết kế lại (khảo sát 05/11/2026; cả 4 lát ĐÃ LÀM trên local — mục 12 + 13, chưa push)
+# Sản phẩm trên sàn — thiết kế lại (khảo sát 05/11/2026; cả 4 lát ĐÃ LÀM trên local — mục 12 + 13; ĐÃ PUSH 05/11 09:15, prod OK)
 
 > Anh Trung 05/11: "Phần sản phẩm sàn đang quá rối. Cần phương án chuyên nghiệp hơn, khảo sát trong và ngoài nước. Suy nghĩ kỹ việc
 > nối sản phẩm sàn vào kho tổng hay làm ngược lại thì hợp lý. Đặc biệt quan tâm trải nghiệm và thao tác của khách."
@@ -282,7 +282,7 @@ tsc FE/BE + eslint sạch; đã dọn dữ liệu thử (10 SKU demo như cũ). 
 bộ) — nên thay bằng luồng mới ở lát sau; tour Kho `/guide` còn tả UI cũ; mobile chưa có; số liệu prod (tỷ lệ chưa nối / delisted / mã máy)
 chưa đo.
 
-## 13. Anh chốt lại 05/11 (sau khi xem local): trang này CHỈ NỐI, không tạo sản phẩm kho — ĐÃ LÀM trên local, chưa push
+## 13. Anh chốt lại 05/11 (sau khi xem local): trang này CHỈ NỐI, không tạo sản phẩm kho — ĐÃ LÀM, ĐÃ PUSH 05/11 09:15 (9c15a9fa)
 
 > Anh: "Không cần nút đưa vào kho, việc kiểm soát sản phẩm kho hoàn toàn sẽ nằm ở bên Kho tổng, nút Nối nay đổi thành Nối kho."
 
@@ -302,3 +302,5 @@ chưa đo.
   tạo SKU" cũ ở Tổng kho; "Sao chép sản phẩm từ sàn" là từng sản phẩm một. Ngăn kéo chỉ tìm SKU kho ĐANG BÁN (SKU Ngừng bán không ra).
 - **Kiểm local (demo, 1440 sáng + tối):** 7 dòng Cần nối đều một nút "Nối kho"; ngăn kéo không còn ô tạo; nối thật Áo thun → TUI-TOTE-01
   (Cần nối 7→6, Đã nối 8→9) rồi gỡ + xóa log thử, demo về 7/8/10/0; tsc + eslint sạch; không lớp `dark:`.
+- **Prod 05/11 09:21 (shop công ty):** Render `9c15a9fa`, migration đã chạy, dải Cần nối 402 · Đã nối 125 · Sàn đã gỡ 189 · Bỏ qua 0; hộp nối mở
+  đúng trên sản phẩm thật, Lịch sử rỗng. Chưa kiểm prod: bấm nối thật, Tự khớp, nút trên Đơn hàng, giao diện tối, 1280.
