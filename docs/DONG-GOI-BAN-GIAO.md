@@ -96,6 +96,8 @@ Quét: ghi (xanh) → quét lại (vàng "KIỆN NÀY ĐÃ QUÉT RỒI · đã q
 
 **Anh chốt 04/11:** chip **Đã đóng gói** không hiện nút Thống kê và nút Quét đóng gói, vì hàng đã gói xong; việc còn lại ở chip này là tích đơn → Tạo biên bản bàn giao trên thanh hàng loạt. Ba chip còn lại vẫn có hai nút.
 
+**Anh chốt lại 05/11:** hai nút **chỉ hiện ở chip Chờ đóng gói**; chip Tất cả đã xử lý và Chưa in phiếu cũng bỏ ("không có nhiều ý nghĩa" — bốc hàng và quét kiện là việc của nhóm đơn đã in phiếu, chưa gói). `orders/page.tsx`: `printedFilter === "yes"`. Hệ quả: popup Thống kê nay luôn tính cho nhóm Chờ đóng gói (vẫn theo sàn / hãng / loại đơn / từ khóa đang lọc); trang `/orders/packing` chỉ còn một cửa vào là nút ở chip này (không có mục sidebar).
+
 Popup (`components/orders/pick-summary-dialog.tsx`): tab Theo SKU / Theo sản phẩm, sắp xếp ở tiêu đề Mã SKU + Số lượng, nút sao chép mã. Sản phẩm nhiều SKU hiện "N SKU". Điện thoại: mã SKU xuống dưới tên để cột Số lượng luôn thấy. Hộp chỉ gắn lúc mở nên mỗi lần mở đều tính lại và về thứ tự hỏa tốc trước. Web chưa có bảng theo đơn vị vận chuyển như mobile.
 
 **Xuất thống kê để in (anh chốt 04/11):** nút trong popup, luôn theo SKU, 3 cột Mã SKU · Tên sản phẩm · Số lượng, giữ thứ tự seller đang xếp.

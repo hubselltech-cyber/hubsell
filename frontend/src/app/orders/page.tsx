@@ -1030,9 +1030,10 @@ export default function OrdersPage() {
               );
             })}
             {/* Hai nút đi thành một cụm: màn hẹp thì cùng xuống dòng, vẫn bám mép phải.
-                Chip Đã đóng gói không có cụm này (anh chốt 04/11/2026): hàng đã gói xong
-                thì không còn gì để bốc hay quét, việc còn lại là tạo biên bản ở thanh hàng loạt. */}
-            {printedFilter !== "packed" && (
+                CHỈ chip Chờ đóng gói có cụm này (anh chốt 05/11/2026): bốc hàng và quét
+                kiện là việc của đúng nhóm đơn đã in phiếu, chưa gói. Chip Tất cả / Chưa in
+                phiếu chưa tới bước đó, chip Đã đóng gói thì đã xong (chốt 04/11). */}
+            {printedFilter === "yes" && (
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                 {/* Thống kê bốc hàng: cộng số lượng theo SKU / sản phẩm của đúng bộ lọc đang xem */}
                 <button

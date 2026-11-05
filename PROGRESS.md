@@ -6,6 +6,14 @@
 
 ---
 
+## Phiên 05/11 trưa — Đơn hàng: cụm nút Thống kê + Quét đóng gói CHỈ hiện ở chip "Chờ đóng gói" — ĐÃ LÀM, kiểm local, commit local, CHƯA push
+
+- **Anh (ảnh khoanh cụm nút):** phần này chỉ xuất hiện ở tab Chờ đóng gói, các tab khác không nên có vì không có nhiều ý nghĩa. Thay cho chốt 04/11 (chỉ ẩn ở chip Đã đóng gói).
+- **Sửa:** `frontend/src/app/orders/page.tsx` điều kiện `printedFilter !== "packed"` → `printedFilter === "yes"`. Không đổi backend, popup, trang quét.
+- **Kiểm local (demo@hubsell.tech, 3010 ↔ 4010):** bấm lần lượt 4 chip, đọc DOM — Tất cả đã xử lý 148: không nút; Chưa in phiếu 37: không nút; **Chờ đóng gói 102: đủ hai nút**; Đã đóng gói 9: không nút. tsc FE + eslint sạch. Không soi dark / co màn vì chỉ đổi điều kiện hiện, không đổi bố cục.
+- **Hệ quả đã nói với anh:** `/orders/packing` chỉ còn một cửa vào là nút ở chip Chờ đóng gói (không có mục sidebar); popup Thống kê nay luôn tính cho nhóm Chờ đóng gói.
+- **Ghi:** docs DONG-GOI-BAN-GIAO mục 5, memory `hubsell-dong-goi-ban-giao`.
+
 ## Phiên 05/11 sáng (4) — Tạp Hoá Dép 668: hòa vốn TikTok 26,35 do 3 thẻ tặng kèm mang giá vốn 70.000 đ — ✅ ĐÃ VÁ dữ liệu ~09:57, hòa vốn về 5,97; không đổi mã
 
 - **Anh:** ảnh Trợ lý quảng cáo TikTok của khách, cột Hòa vốn 26,35 (một chiến dịch 18,78); khách yêu cầu sửa. Đây là ca "chờ hỏi khách" từ đêm 04/11.
