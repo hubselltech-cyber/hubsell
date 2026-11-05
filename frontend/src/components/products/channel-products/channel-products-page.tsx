@@ -21,6 +21,7 @@ import {
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
+import { CopyIconButton } from "@/components/ui/copy-icon-button";
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -46,7 +47,7 @@ import { cn } from "@/lib/utils";
 import { AutoMatchDialog } from "./auto-match-dialog";
 import { LinkDrawer } from "./link-drawer";
 import { MappingHistoryDialog } from "./mapping-history-dialog";
-import { groupChannelProducts, variantLabel, type ChannelGroup } from "./shared";
+import { channelModelId, groupChannelProducts, variantLabel, type ChannelGroup } from "./shared";
 
 /**
  * SẢN PHẨM TRÊN SÀN — thiết kế lại 05/11/2026 (docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md).
@@ -313,7 +314,7 @@ export function ChannelProductsPage({
       )}
 
       {/* ===== BẢNG THEO SẢN PHẨM ===== */}
-      <div className="overflow-hidden rounded-lg border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         {q.error ? (
           <p className="py-10 text-center text-sm text-amber-700">{q.error}</p>
         ) : q.loading ? (
@@ -337,7 +338,7 @@ export function ChannelProductsPage({
           </div>
         ) : (
           <Refreshing active={loading}>
-            <table className="w-full table-fixed text-sm">
+            <table className="w-full min-w-[880px] table-fixed text-sm">
               <thead className="bg-muted/40">
                 <tr className={cn(TEXT_SUB, "text-left")}>
                   <th className="w-10 px-3 py-2.5">
@@ -350,10 +351,10 @@ export function ChannelProductsPage({
                     />
                   </th>
                   <th className="px-2 py-2.5 font-medium">Sản phẩm trên sàn</th>
-                  <th className="w-[9%] px-2 py-2.5 text-right font-medium">Phân loại</th>
-                  <th className="w-[15%] px-2 py-2.5 text-right font-medium">Giá · Tồn sàn</th>
-                  <th className="w-[11%] px-2 py-2.5 font-medium">Trạng thái</th>
-                  <th className="w-[20%] px-3 py-2.5" />
+                  <th className="w-[72px] px-2 py-2.5 text-right font-medium">Phân loại</th>
+                  <th className="w-36 px-2 py-2.5 text-right font-medium">Giá · Tồn sàn</th>
+                  <th className="w-24 px-2 py-2.5 font-medium">Trạng thái</th>
+                  <th className="w-40 px-3 py-2.5" />
                 </tr>
               </thead>
               <tbody>
@@ -374,6 +375,7 @@ export function ChannelProductsPage({
                           {p.kind !== "none" && (
                             <Button
                               size="sm"
+                              className="min-w-0"
                               variant={p.kind === "drawer" ? "default" : "outline"}
                               disabled={busy}
                               title={p.kind === "drawer" ? "Chọn sản phẩm trong Tổng kho rồi ghép từng phân loại" : undefined}
@@ -547,25 +549,44 @@ function GroupRows({
           <input type="checkbox" className="size-4 accent-primary" aria-label={`Chọn ${g.title}`} checked={checked} onChange={onCheck} />
         </td>
         <td className="px-2 py-2.5">
-          <button type="button" className="flex w-full items-center gap-2.5 text-left" onClick={onToggle} aria-expanded={open}>
-            <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
-            {g.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={g.imageUrl} alt="" className="size-10 shrink-0 rounded-md border object-cover" />
-            ) : (
-              <span className="size-10 shrink-0 rounded-md border border-dashed bg-muted/40" />
-            )}
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium" title={g.title}>
+          {/* Vùng bấm xổ/thu = mũi tên + ảnh + tên. Dòng phụ nằm NGOÀI nút vì có nút sao chép (không lồng button trong button). */}
+          <div className="flex items-center gap-2.5">
+            <button type="button" className="flex shrink-0 items-center gap-2.5" onClick={onToggle} aria-expanded={open} aria-label={`${open ? "Thu" : "Xem"} phân loại của ${g.title}`}>
+              <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
+              {g.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={g.imageUrl} alt="" className="size-10 shrink-0 rounded-md border object-cover" />
+              ) : (
+                <span className="size-10 shrink-0 rounded-md border border-dashed bg-muted/40" />
+              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <button type="button" className="block w-full truncate text-left font-medium" title={g.title} onClick={onToggle}>
                 {g.title}
-              </span>
-              <span className={cn(TEXT_SUB, "flex items-center gap-1.5 truncate")}>
-                <span className={cn("rounded border px-1.5 py-px text-[11px] font-medium", meta.className)}>{meta.label}</span>
-                <span className="truncate">{g.shopName}</span>
-                {g.itemId && <span className="font-mono">· {g.itemId}</span>}
-              </span>
-            </span>
-          </button>
+              </button>
+              {/* Mã sản phẩm trên sàn (item id) + nút sao chép — anh Trung 05/11. CÙNG DÒNG với gian khi đủ chỗ (bảng là
+                  hàng đợi, giữ dòng thấp 61px; tách dòng riêng thì mọi dòng cao 76px, +25 %). Chật (màn < 1280, tên gian
+                  dài + mã TikTok 19 số) thì khối mã TỰ XUỐNG DÒNG nhờ flex-wrap — không cắt tên gian, không cắt mã.
+                  Đo 05/11: "ANO Official Store" + mã 19 số vừa một dòng từ 1280. */}
+              <div className={cn(TEXT_SUB, "flex min-w-0 flex-wrap items-center gap-x-1.5")}>
+                <span className={cn("shrink-0 rounded border px-1.5 py-px text-[11px] font-medium", meta.className)}>{meta.label}</span>
+                <span className="min-w-0 max-w-full truncate" title={g.shopName}>
+                  {g.shopName}
+                </span>
+                {g.itemId && (
+                  <>
+                    <span aria-hidden className="shrink-0">
+                      ·
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1 font-mono" title={`Mã sản phẩm trên sàn: ${g.itemId}`}>
+                      <span className="select-all">{g.itemId}</span>
+                      <CopyIconButton value={g.itemId} what="mã sản phẩm" className="size-4" />
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
         </td>
         <td className="px-2 py-2.5 text-right tabular-nums">{g.total}</td>
         <td className="px-2 py-2.5 text-right tabular-nums">
@@ -591,7 +612,19 @@ function GroupRows({
               <span className="block truncate" title={variantLabel(r)}>
                 {variantLabel(r)}
               </span>
-              <span className={cn(TEXT_SUB, "block truncate font-mono")}>{r.channelSku}</span>
+              <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1 font-mono")}>
+                <span className="min-w-0 truncate" title={r.channelSku ? `Mã SKU người bán đặt trên sàn: ${r.channelSku}` : undefined}>
+                  {r.channelSku}
+                </span>
+                {/* Mã phân loại sàn (model / SKU id) + sao chép — cùng quy ước với bảng Giá vốn và Tổng kho. */}
+                {channelModelId(r.externalId) && (
+                  <span className="flex shrink-0 items-center gap-1" title={`Mã phân loại trên sàn: ${channelModelId(r.externalId)}`}>
+                    <span aria-hidden>·</span>
+                    <span className="select-all">{channelModelId(r.externalId)}</span>
+                    <CopyIconButton value={channelModelId(r.externalId)!} what="mã phân loại" className="size-4" />
+                  </span>
+                )}
+              </span>
             </td>
             <td />
             <td className="px-2 py-1.5 text-right tabular-nums">

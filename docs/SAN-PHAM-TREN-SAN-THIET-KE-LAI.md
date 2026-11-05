@@ -304,3 +304,24 @@ chưa đo.
   (Cần nối 7→6, Đã nối 8→9) rồi gỡ + xóa log thử, demo về 7/8/10/0; tsc + eslint sạch; không lớp `dark:`.
 - **Prod 05/11 09:21 (shop công ty):** Render `9c15a9fa`, migration đã chạy, dải Cần nối 402 · Đã nối 125 · Sàn đã gỡ 189 · Bỏ qua 0; hộp nối mở
   đúng trên sản phẩm thật, Lịch sử rỗng. Chưa kiểm prod: bấm nối thật, Tự khớp, nút trên Đơn hàng, giao diện tối, 1280.
+
+## 14. Mã sàn + nút sao chép trên bảng (05/11, anh xem prod: "khá đẹp và hợp lý", hỏi mã là gì, xin icon copy, nhờ khảo sát ngang hay xuống dòng) — ĐÃ LÀM trên local, chưa push
+
+- **Dãy số cạnh tên gian là MÃ SẢN PHẨM trên sàn (item id / product id), không phải id SKU.** Id SKU (mã phân loại / model id) là của
+  từng phân loại → nay hiện ở dòng phân loại khi bấm ▸, cạnh mã SKU người bán, cũng có nút sao chép. Cùng quy ước với bảng Giá vốn và
+  Tổng kho (`CopyIconButton` dùng chung). `shared.ts` thêm `channelModelId` (phần sau dấu "-" đầu của externalId; rỗng / "0" → không hiện).
+- **Nút sao chép** cạnh cả hai mã; bấm không làm xổ/thu dòng. Vì nút nằm trong ô tên nên tách vùng bấm xổ/thu thành hai nút
+  (mũi tên + ảnh, và tên) — không lồng button trong button.
+- **Khảo sát ngang hay xuống dòng (đo local, ca rộng: gian TikTok "ANO Official Store" + mã 19 số):**
+  | Cách bày | Cao mỗi dòng | 20 dòng | Tên gian bị cắt? |
+  |---|---|---|---|
+  | Cùng dòng với gian | 61 px | 1.220 px | Không từ 1280 trở lên (sau khi siết cột) |
+  | Mã xuống dòng riêng | 76 px (+25 %) | 1.520 px | Không bao giờ |
+  **Chốt: cùng dòng khi đủ chỗ, chật thì khối mã TỰ XUỐNG DÒNG** (`flex-wrap`): màn < 1280 hoặc tên gian rất dài → riêng dòng đó
+  cao 76 px, không cắt tên gian, không cắt mã. Lý do giữ ngang: trang là hàng đợi (shop anh 402 sản phẩm) nên dòng thấp đáng giá hơn;
+  ba dòng chữ (56 px) cao hơn ảnh 40 px nên muốn xuống dòng đẹp phải nâng ảnh lên 56 px = đổi cả mật độ bảng.
+- **Siết cột để ô tên rộng ra:** các cột nhỏ đổi từ % sang px cố định (Phân loại 72 · Giá/Tồn 144 · Trạng thái 96 · Thao tác 160) —
+  trước đây chia %, màn rộng thì trống giữa các cột mà tên vẫn bị cắt (ảnh anh gửi). Màn 1700: ô tên 842 px (trước ~690). Bảng thêm
+  `min-w-[880px]` + cuộn ngang trong khung (như Tổng kho) cho màn hẹp.
+- **Kiểm local:** 1100 (mã tự xuống dòng) / 1280 / 1366 / 1700 không tràn ngang, không ô nào tràn ở cả 4 nhóm; bấm sao chép thật ra
+  "Đã sao chép", dòng không xổ; màu chữ mã trong giao diện tối đọc được; tsc + eslint sạch; không lớp `dark:`. Dữ liệu demo đã trả lại.

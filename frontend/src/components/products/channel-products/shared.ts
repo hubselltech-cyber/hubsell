@@ -32,6 +32,14 @@ export function channelItemId(externalId: string | null | undefined): string | n
   return head || null;
 }
 
+/** Id phân loại sàn (model / SKU id — phần sau dấu "-" đầu tiên của externalId); sản phẩm không phân loại → null. */
+export function channelModelId(externalId: string | null | undefined): string | null {
+  const s = externalId ?? "";
+  const i = s.indexOf("-");
+  const tail = i >= 0 ? s.slice(i + 1) : "";
+  return tail && tail !== "0" ? tail : null;
+}
+
 export type GroupLinkStatus = "unlinked" | "partial" | "linked";
 
 export interface ChannelGroup {
