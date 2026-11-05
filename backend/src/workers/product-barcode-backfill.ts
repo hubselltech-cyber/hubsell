@@ -2,13 +2,15 @@
 // WORKER TỰ ĐIỀN MÃ VẠCH cho sản phẩm kho cũ — NHỊP CHẬM (05/11/2026 đêm,
 // docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 6.6; anh Trung chọn "Máy tự điền chậm").
 //
-// Lúc làm việc này Supabase đang hụt Disk IO (IO balance 0 % từ 28/10) nên chủ ý đi chậm:
-// mỗi bước 200 dòng rồi nghỉ 3 giây (≈ 4.000 dòng / phút); bắt đầu sau khi khởi động 3 phút
-// để không tranh với lúc worker vừa lên. Hai con số là TỰ CHỌN — chỉnh bằng env, không cần
-// deploy lại mã:
-//   PRODUCT_BARCODE_BACKFILL_OFF=1        tắt hẳn
-//   PRODUCT_BARCODE_BACKFILL_BATCH=200    số dòng mỗi bước (1–2000)
-//   PRODUCT_BARCODE_BACKFILL_PAUSE_MS=3000  nghỉ giữa hai bước
+// Lúc làm việc này Supabase đang hụt Disk IO (IO balance 0 % từ 28/10) nên chủ ý đi RẤT chậm:
+// mỗi bước 100 dòng rồi nghỉ 15 giây (≈ 400 dòng / phút, 24.000 dòng / giờ); bắt đầu sau khi
+// khởi động 3 phút để không tranh với lúc worker vừa lên. Anh Trung 05/11 đêm: "phần này cứ
+// làm chậm giãn cách ra cũng được, chỉ cần tức thì cho sản phẩm mới tạo" — sản phẩm MỚI có mã
+// ngay nhờ DEFAULT của cột, không phụ thuộc worker này. Hai con số là TỰ CHỌN — chỉnh bằng
+// env, không cần deploy lại mã:
+//   PRODUCT_BARCODE_BACKFILL_OFF=1         tắt hẳn
+//   PRODUCT_BARCODE_BACKFILL_BATCH=100     số dòng mỗi bước (1–2000)
+//   PRODUCT_BARCODE_BACKFILL_PAUSE_MS=15000  nghỉ giữa hai bước
 // Tiến độ nằm ở bảng maintenance_jobs (khóa "product-barcode-backfill"): worker khởi động lại
 // thì đi tiếp từ con trỏ; xong hẳn (doneAt) thì các lần sau chỉ đọc một dòng rồi thôi.
 // Việc dài nên KHÔNG qua pg-boss (bẫy stately). Lỗi một bước → nghỉ 5 phút rồi thử lại.
@@ -18,7 +20,7 @@ import { runBarcodeBackfillStep } from "../services/product-barcode-backfill";
 const TAG = "[barcode-backfill]";
 const FIRST_RUN_DELAY_MS = 3 * 60 * 1000;
 const ERROR_RETRY_MS = 5 * 60 * 1000;
-/** In tiến độ mỗi 50 bước (≈ 10.000 dòng với lô 200). */
+/** In tiến độ mỗi 50 bước (≈ 5.000 dòng với lô 100, khoảng 12 phút một dòng log). */
 const LOG_EVERY_STEPS = 50;
 
 function envInt(name: string, fallback: number, min: number, max: number): number {
@@ -36,8 +38,8 @@ let running = false;
 async function runLoop(): Promise<void> {
   if (running) return;
   running = true;
-  const batch = envInt("PRODUCT_BARCODE_BACKFILL_BATCH", 200, 1, 2000);
-  const pauseMs = envInt("PRODUCT_BARCODE_BACKFILL_PAUSE_MS", 3000, 0, 600_000);
+  const batch = envInt("PRODUCT_BARCODE_BACKFILL_BATCH", 100, 1, 2000);
+  const pauseMs = envInt("PRODUCT_BARCODE_BACKFILL_PAUSE_MS", 15_000, 0, 600_000);
   let steps = 0;
   let scanned = 0;
   try {
