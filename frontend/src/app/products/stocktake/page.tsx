@@ -29,6 +29,7 @@ import {
   submitStocktake,
   type StocktakeRow,
 } from "@/lib/api";
+import { productMatchesCode } from "@/lib/product-code";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
 import { locationLabel } from "@/lib/stock-locations";
@@ -150,7 +151,7 @@ export default function StocktakePage() {
   async function handleScan() {
     const q = query.trim();
     if (!q) return;
-    const hit = rows.find((r) => r.skuCode.toUpperCase() === q.toUpperCase());
+    const hit = rows.find((r) => productMatchesCode(r, q));
     if (hit) {
       const cur = Number(counts[hit.productId] ?? 0) || 0;
       setCount(hit.productId, String(cur + 1));
@@ -162,7 +163,7 @@ export default function StocktakePage() {
     try {
       const res = await fetchProducts({ page: 1, pageSize: 5, search: q, status: "all" });
       const p =
-        res.items.find((x) => x.skuCode.toUpperCase() === q.toUpperCase()) ??
+        res.items.find((x) => productMatchesCode(x, q)) ??
         (res.items.length === 1 ? res.items[0] : undefined);
       if (!p) {
         toast.error(`Không có SKU nào khớp "${q}"`);
@@ -171,7 +172,7 @@ export default function StocktakePage() {
       // Mã không nằm trong phiếu (sổ 0 ở vị trí này) → thêm dòng, đếm 1.
       setRows((cur) => [
         ...cur,
-        { productId: p.id, skuCode: p.skuCode, productName: p.productName, isActive: p.isActive !== false, book: 0 },
+        { productId: p.id, skuCode: p.skuCode, barcode: p.barcode, productName: p.productName, isActive: p.isActive !== false, book: 0 },
       ]);
       setCount(p.id, "1");
       setQuery("");
@@ -259,7 +260,7 @@ export default function StocktakePage() {
             <Input
               ref={scanRef}
               className="pl-9"
-              placeholder="Quét hoặc gõ mã SKU rồi Enter: cộng 1 vào ô đếm…"
+              placeholder="Quét mã vạch, hoặc gõ mã SKU rồi Enter: cộng 1 vào ô đếm…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {

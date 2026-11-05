@@ -17,6 +17,7 @@ import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
 import { subtreeIds } from "../lib/location-tree";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
+import { parseBarcodeInput } from "../lib/product-barcode";
 
 const router = Router();
 
@@ -139,7 +140,7 @@ async function pageOfProductGroups(
   if (f.search) {
     const like = `%${f.search}%`;
     conds.push(
-      Prisma.sql`(p."skuCode" ILIKE ${like} OR p."productName" ILIKE ${like} OR p."variantName" ILIKE ${like})`
+      Prisma.sql`(p."skuCode" ILIKE ${like} OR p."barcode" ILIKE ${like} OR p."productName" ILIKE ${like} OR p."variantName" ILIKE ${like})`
     );
   }
   if (f.locationIds && f.locationIds.length > 0) {
@@ -177,7 +178,7 @@ function sortRowsByGroup<
 }
 
 // GET /api/products?page=1&pageSize=10&search=...&view=grouped
-// Danh sách sản phẩm của user đang đăng nhập, có phân trang + tìm theo SKU/Tên/Phân loại.
+// Danh sách sản phẩm của user đang đăng nhập, có phân trang + tìm theo SKU/Mã vạch/Tên/Phân loại.
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -218,6 +219,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
         ? {
             OR: [
               { skuCode: { contains: search, mode: "insensitive" } },
+              // Mã vạch quản lý (05/11/2026): các ô quét tra qua cùng ô tìm này.
+              { barcode: { contains: search, mode: "insensitive" } },
               { productName: { contains: search, mode: "insensitive" } },
               { variantName: { contains: search, mode: "insensitive" } },
             ],
@@ -225,7 +228,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
         : {}),
     };
     // Tóm tắt liên kết sàn cho cột "Bán trên" của hub Hàng hóa — mỗi dòng
-    // vài chip nhỏ, chi tiết đầy đủ lấy lazy qua /:id/channel-links.
+    // vài chip nhỏ; bấm chip là hộp nhỏ từng gian dựng từ chính dữ liệu này (route chi tiết
+    // /:id/channel-links của dòng bung cũ đã gỡ 05/11/2026 cùng dòng bung).
     const include = {
       channelProducts: {
         select: {
@@ -414,139 +418,6 @@ router.get("/", async (req: AuthRequest, res, next) => {
   }
 });
 
-// GET /api/products/:id/channel-links — chi tiết các SKU sàn đã nối vào một
-// sản phẩm kho (dòng bung của hub Hàng hóa): gian nào, SKU sàn nào, lượt đẩy
-// tồn gần nhất ra sao, có đang lệch tồn không. Lấy LAZY khi người dùng bung
-// dòng — không tải theo trang danh sách.
-router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
-  try {
-    const product = await prisma.product.findFirst({
-      where: { id: req.params.id, userId: req.ownerId! },
-      select: { id: true, quantityInStock: true, holdQuantity: true, safetyStock: true },
-    });
-    if (!product) {
-      res.status(404).json({ error: "Không tìm thấy sản phẩm" });
-      return;
-    }
-    const expected = availableToPush(product, await getSafetyStockDefault(req.ownerId!));
-
-    const links = await prisma.channelProduct.findMany({
-      where: { productId: product.id },
-      select: {
-        id: true,
-        channelId: true,
-        channelSku: true,
-        productName: true,
-        externalId: true,
-        channelStock: true,
-        lastSyncedAt: true,
-        channel: {
-          select: { channelName: true, shopName: true, status: true, stockSyncEnabled: true },
-        },
-      },
-      orderBy: [{ channel: { channelName: "asc" } }, { channelSku: "asc" }],
-    });
-
-    // Lượt đẩy tồn gần nhất + cờ lệch + job chờ của TỪNG SKU sàn — ba query cho cả cụm.
-    const skus = links.map((l) => l.channelSku);
-    const pendingJobs = skus.length
-      ? await prisma.stockPushJob.findMany({
-          where: { channelSku: { in: skus }, channel: { userId: req.ownerId! } },
-          select: { channelId: true, channelSku: true },
-        })
-      : [];
-    const pendingKeys = new Set(pendingJobs.map((j) => `${j.channelId}:${j.channelSku}`));
-    const [logs, alerts] = skus.length
-      ? await Promise.all([
-          prisma.inventorySyncLog.findMany({
-            where: {
-              channelSku: { in: skus },
-              channel: { userId: req.ownerId! },
-            },
-            orderBy: { createdAt: "desc" },
-            take: 100,
-            select: {
-              channelId: true,
-              channelSku: true,
-              status: true,
-              newQuantity: true,
-              createdAt: true,
-            },
-          }),
-          prisma.inventorySyncAlert.findMany({
-            where: {
-              resolvedAt: null,
-              channelSku: { in: skus },
-              channel: { userId: req.ownerId! },
-            },
-            select: { channelId: true, channelSku: true },
-          }),
-        ])
-      : [[], []];
-
-    const latestByKey = new Map<string, (typeof logs)[number]>();
-    for (const l of logs) {
-      const key = `${l.channelId}:${l.channelSku}`;
-      if (!latestByKey.has(key)) latestByKey.set(key, l); // đã sort desc — bản đầu là mới nhất
-    }
-    const alertKeys = new Set(alerts.map((a) => `${a.channelId}:${a.channelSku}`));
-
-    res.json(
-      links.map((l) => {
-        const key = `${l.channelId}:${l.channelSku}`;
-        const last = latestByKey.get(key);
-        const pushable = Boolean(l.externalId);
-        const hasAlert = alertKeys.has(key);
-        // Trạng thái khớp của gian với "có thể bán" Hubsell — một chữ cho UI:
-        //   off      = gian chưa bật đồng bộ (số sàn là của sàn, không so)
-        //   pending  = đang có job chờ đẩy (sắp khớp)
-        //   alert    = đẩy thất bại, cảnh báo đang mở
-        //   match / mismatch / unknown (sàn chưa từng trả số)
-        const state = !pushable
-          ? "unknown"
-          : hasAlert
-            ? "alert"
-            : pendingKeys.has(key)
-              ? "pending"
-              : !l.channel.stockSyncEnabled
-                ? "off"
-                : l.channelStock === null
-                  ? "unknown"
-                  : l.channelStock === expected
-                    ? "match"
-                    : "mismatch";
-        return {
-          id: l.id,
-          channelSku: l.channelSku,
-          productName: l.productName,
-          channelName: l.channel.channelName,
-          shopName: l.channel.shopName,
-          channelActive: l.channel.status === "ACTIVE",
-          /// Sàn này có đẩy tồn được không (TikTok chưa có externalId thì không).
-          pushable,
-          stockSyncEnabled: l.channel.stockSyncEnabled,
-          /// Tồn sàn theo lần đẩy/đọc gần nhất + mốc đọc (null = chưa từng biết).
-          channelStock: l.channelStock,
-          channelStockAt: l.lastSyncedAt,
-          /// Số Hubsell muốn sàn giữ ("có thể bán").
-          expected,
-          state,
-          lastSync: last
-            ? {
-                status: last.status,
-                newQuantity: last.newQuantity,
-                at: last.createdAt,
-              }
-            : null,
-          hasAlert,
-        };
-      })
-    );
-  } catch (err) {
-    next(err);
-  }
-});
-
 // PATCH /api/products/:id — Cập nhật thông tin sản phẩm (không chỉnh tồn kho ở đây)
 router.patch("/:id", async (req: AuthRequest, res, next) => {
   try {
@@ -702,6 +573,44 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       }
     }
 
+    // ── MÃ VẠCH QUẢN LÝ (05/11/2026) — khách gõ mã có sẵn (mã nhà sản xuất, mã từ phần mềm cũ);
+    // để trống = nhờ máy sinh mã 13 số mới. Không trùng mã vạch SKU khác, và không trùng MÃ SKU
+    // của SKU khác — ô quét nhận cả hai loại mã nên trùng là quét ra hai sản phẩm.
+    const { barcode } = req.body ?? {};
+    if (barcode !== undefined) {
+      const parsed = parseBarcodeInput(barcode);
+      if (!parsed.ok) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      if (parsed.value === null) {
+        const [row] = await prisma.$queryRaw<{ code: string }[]>`SELECT public.product_new_barcode() AS code`;
+        data.barcode = row.code;
+      } else if (parsed.value !== product.barcode) {
+        const clash = await prisma.product.findFirst({
+          where: {
+            userId: req.ownerId!,
+            id: { not: product.id },
+            OR: [
+              { barcode: { equals: parsed.value, mode: "insensitive" } },
+              { skuCode: { equals: parsed.value, mode: "insensitive" } },
+            ],
+          },
+          select: { skuCode: true, barcode: true },
+        });
+        if (clash) {
+          const asSku = clash.skuCode.toUpperCase() === parsed.value.toUpperCase();
+          res.status(409).json({
+            error: asSku
+              ? `"${parsed.value}" đang là mã SKU của một sản phẩm khác — quét sẽ ra hai sản phẩm`
+              : `Mã vạch "${parsed.value}" đang dùng cho SKU ${clash.skuCode}`,
+          });
+          return;
+        }
+        data.barcode = parsed.value;
+      }
+    }
+
     // ── Ngừng kinh doanh / bán lại (24/09) — chỉ chủ shop; tồn, đơn cũ, liên
     // kết sàn giữ nguyên. Không đẩy tồn lên sàn vì số Có thể bán không đổi.
     const { isActive } = req.body ?? {};
@@ -717,7 +626,20 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       data.isActive = isActive;
     }
 
-    const updated = await prisma.product.update({ where: { id }, data });
+    let updated;
+    try {
+      updated = await prisma.product.update({ where: { id }, data });
+    } catch (err) {
+      if (
+        data.barcode !== undefined &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        res.status(409).json({ error: "Mã vạch này vừa được dùng cho một SKU khác" });
+        return;
+      }
+      throw err;
+    }
 
     // Đổi tồn an toàn làm đổi TỒN KHẢ DỤNG → đẩy số mới lên các sàn đã liên kết.
     // Đổi ngưỡng cảnh báo → cùng cửa đó kiểm tra lại ngưỡng ngay (mở/đóng thẻ).

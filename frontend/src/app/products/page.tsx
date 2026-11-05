@@ -11,9 +11,7 @@ import {
 } from "@tanstack/react-table";
 import {
   ArrowDownToLine,
-  ArrowLeftRight,
   ArrowUpFromLine,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -26,18 +24,15 @@ import {
   Download,
   Image as ImageIcon,
   Layers,
-  Link2,
-  Link2Off,
   Loader2,
   MapPin,
   PackageOpen,
   Plus,
+  Printer,
   RefreshCw,
   Search,
   Sparkles,
   Upload,
-  Warehouse,
-  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,7 +43,8 @@ import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
 import { SetupGuide, type ChannelProductCounts } from "@/components/products/setup-guide";
 import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog";
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
-import { MarketplaceCodes } from "@/components/products/marketplace-codes";
+import { ChannelLinksPopover } from "@/components/products/channel-links-popover";
+import { PrintLabelsDialog } from "@/components/products/print-labels-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
 import { StockVoucherTable } from "@/components/products/stock-voucher-table";
@@ -81,19 +77,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ApiError,
   fetchChannelProducts,
   fetchChannels,
-  fetchProductChannelLinks,
   fetchProducts,
   fetchStockLocations,
   fetchSyncSettings,
   getStoredUser,
   getToken,
-  unlinkChannelProducts,
   type Channel,
   type Product,
-  type ProductChannelLink,
   type ProductStatusFilter,
   type StockLocation,
 } from "@/lib/api";
@@ -128,7 +120,13 @@ const columnHelper = createColumnHelper<Product>();
 const COL_HEAD_CLASS: Record<string, string> = {
   select: "w-10",
   product: "w-[20%]",
-  skuCode: "w-[9%]",
+  // Cột MÃ = mã SKU (dòng trên) + mã vạch quản lý 13 số kèm nút in (dòng dưới), phải đọc ĐỦ trên MỘT
+  // dòng: mã vạch cỡ 11px (86px) + khe 2px + nút in 14px = 102px. 13% + đệm px-2 (xem CELL_PAD) cho
+  // 114px chữ ở bảng 1.000px khi không có cột Đang ở. CÓ cột Đang ở thì tổng % vượt 100, mọi cột bị
+  // ép: đo 05/11 bảng 1.060px cột này còn 125px (109px chữ) → cỡ 12px rớt dòng, cỡ 11px vừa; bảng
+  // tối thiểu 1.040px (xem TABLE_MIN_W) giữ hai cột tiền ≥ 95px như trước. Mã SKU dài tự xuống
+  // dòng sau dấu gạch chứ không cắt. Trước 05/11 cột 9% đệm 16px chỉ còn 58px chữ.
+  skuCode: "w-[13%] px-2",
   // Tiền: "1.294.000 ₫" cần ≥ 84px chữ → 10% của bảng tối thiểu 1.000px (soi 22/10 tối với
   // dữ liệu khoảng giá + giá 7 chữ số; trước đó 9% làm số tràn sang cột Tồn kho ở 1280).
   costPrice: "w-[10%]",
@@ -140,10 +138,18 @@ const COL_HEAD_CLASS: Record<string, string> = {
   // Đang ở: "Kho chính  20" cần ≥ 80px chữ (tên 55 + khe 8 + số) → 12% của 1.000px; ở 9% (22/10
   // xem prod) ô "Kho chính" chỉ còn 29px chữ, tên cụt "K…" và số từng tràn sang cột Bán trên.
   locations: "w-[12%]",
-  // Bán trên: chip "Shopee ×3" tự xuống dòng nên nhường 1% được.
-  channels: "w-[11%]",
+  // Bán trên: chip "Shopee ×3" tự xuống dòng nên nhường 1% được. Đệm ngang px-2 (ô + tiêu đề, xem
+  // CELL_PAD): ở 1280 cột 110px, đệm mặc định 16px chỉ còn 78px chữ — chip có biểu tượng
+  // trạng thái "TikTok ×1 ⊗" cần 87px, "Shopee ×9 ⊗" cần 94px (đo 05/11).
+  channels: "w-[11%] px-2",
   actions: "w-[8.5rem]",
 };
+
+/** Bề rộng tối thiểu của bảng: có cột Đang ở thì rộng hơn 40px bù cho cột mã (xem COL_HEAD_CLASS.skuCode). */
+const TABLE_MIN_W = { plain: "min-w-[1000px]", withLocations: "min-w-[1040px]" } as const;
+
+/** Đệm ngang riêng của Ô theo cột — phải khớp với tiêu đề cột ở COL_HEAD_CLASS. */
+const CELL_PAD: Record<string, string> = { skuCode: "px-2", channels: "px-2" };
 
 type HubTab = "inventory" | "logs" | "vouchers" | "suppliers";
 
@@ -228,8 +234,9 @@ function GroupCheckbox({
  *      dải kể chuyện Kho ↔ Shop A/B/C rồi 3 bước (kéo SP từ sàn → nối SKU →
  *      bật đồng bộ), mỗi bước một nút. Tự thu gọn khi đã xong.
  *   2. BẢNG LÀM VIỆC — tab TỒN KHO: bảng SKU kho + cột "Bán trên" (các gian đã
- *      nối, badge lệch tồn) — bấm dòng bung sơ đồ kho ↔ từng gian, gỡ nối/nối
- *      thêm tại chỗ. Cảnh báo lệch tồn ngay trên bảng, chỉ hiện khi có lỗi.
+ *      nối, chip đổi màu khi lệch tồn) — bấm chip mở hộp nhỏ từng gian, CHỈ XEM
+ *      (05/11/2026 anh Trung bỏ dòng bung sơ đồ kho ↔ gian: nối / gỡ nối là việc
+ *      của trang Sản phẩm trên sàn). Cảnh báo lệch tồn ngay trên bảng, chỉ hiện khi có lỗi.
  *   3. Tab SẢN PHẨM TRÊN SÀN (chỉ chủ shop): tầng đệm ChannelProduct để nối tay
  *      từng dòng / theo lô; cùng một hộp "Tự khớp + tạo SKU" với bước 2.
  *   4. Tab NHẬT KÝ KHO (24/09): sổ biến động toàn shop — vì sao tồn đổi, ai làm,
@@ -242,8 +249,8 @@ function GroupCheckbox({
  * 05/11/2026 — TÁCH HUB (anh Trung, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md): trang này là
  * "TỔNG KHO" trên sidebar (tab Tồn kho + Nhật ký kho); tab Sản phẩm trên sàn thành
  * trang riêng /products/marketplace (mục sidebar cạnh dưới). Tầng 1 (khối 3 bước)
- * TẠM ẨN — xem SHOW_SETUP_GUIDE. "Nối thêm gian cho SKU này" nay điều hướng sang
- * trang kia kèm ?search=&target=&targetSku=.
+ * TẠM ẨN — xem SHOW_SETUP_GUIDE. NỐI MỘT CHIỀU (05/11 tối): Tổng kho không còn nút
+ * nối gian nào — nối chỉ làm ở trang Sản phẩm trên sàn (sản phẩm sàn nối VÀO Tổng kho).
  *
  * Route cũ /warehouse/sync redirect về đây (?sync=1); /mappings và ?tab=links →
  * /products/marketplace.
@@ -318,11 +325,8 @@ export default function ProductsHubPage() {
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncState, setSyncState] = useState<SyncHeaderState | null>(null);
 
-  // Dòng đang bung + cache chi tiết liên kết theo productId.
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [linkDetails, setLinkDetails] = useState<
-    Record<string, ProductChannelLink[] | "loading">
-  >({});
+  // Hộp "In mã vạch": mở từ nút máy in cạnh mã vạch (một mã) hoặc thanh hàng loạt (nhiều mã).
+  const [printing, setPrinting] = useState<Product[] | null>(null);
 
   const [adjusting, setAdjusting] = useState<{
     product: Product;
@@ -439,9 +443,8 @@ export default function ProductsHubPage() {
   const error = productsQ.error;
 
   // Gọi sau mọi thao tác GHI (tạo SKU, nhập Excel, nối/gỡ liên kết, chỉnh
-  // tồn): làm tươi mọi trang cache + xoá cache chi tiết liên kết đã đổi.
+  // tồn): làm tươi mọi trang cache.
   const load = useCallback(() => {
-    setLinkDetails({});
     invalidate(["products"]);
     invalidate(["inventory-logs"]);
     invalidate(["stock-locations"]);
@@ -543,73 +546,6 @@ export default function ProductsHubPage() {
     }
   }
 
-  /** Bung/cụp một dòng — chi tiết liên kết do effect bên dưới tải. */
-  const toggleExpand = useCallback((product: Product) => {
-    setExpandedId((cur) => (cur === product.id ? null : product.id));
-  }, []);
-
-  // Dòng đang bung mà chưa có chi tiết (lần đầu bung, HOẶC cache vừa bị load()
-  // xoá sau khi nối/gỡ gian ở tab Sản phẩm trên sàn) → tải lại. Trước đây chỉ tải
-  // lúc bấm bung nên sau khi nối thêm gian rồi quay về, dòng treo spinner
-  // "Đang tải chi tiết liên kết…" vô hạn cho tới khi cụp/bung lại.
-  useEffect(() => {
-    if (!expandedId || linkDetails[expandedId]) return;
-    const id = expandedId;
-    setLinkDetails((prev) => ({ ...prev, [id]: "loading" }));
-    fetchProductChannelLinks(id)
-      .then((links) => setLinkDetails((prev) => ({ ...prev, [id]: links })))
-      .catch(() => {
-        toast.error("Không tải được chi tiết liên kết — thử bung lại dòng");
-        setExpandedId((cur) => (cur === id ? null : cur));
-        setLinkDetails((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-      });
-  }, [expandedId, linkDetails]);
-
-  async function handleUnlinkOne(link: ProductChannelLink, productId: string) {
-    try {
-      await unlinkChannelProducts([link.id]);
-      toast.success(`Đã gỡ ${link.channelSku} khỏi SKU kho`);
-      setLinkDetails((prev) => {
-        const next = { ...prev };
-        delete next[productId];
-        return next;
-      });
-      load();
-      loadCounts();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không gỡ được");
-    }
-  }
-
-  // SKU kho ĐÍCH khi bấm "Nối thêm gian cho SKU này" (anh Trung 22/10 tối: khách ở SKU gian A sang
-  // tab sàn chọn gian B để nối thêm, dòng gian B đã nối hết nên không có nút nào) → tab sàn hiện
-  // dải "Đang nối về SKU X" và mỗi dòng có nút "Nối vào X" một bấm, kể cả dòng đang nối gian khác.
-  // 05/11/2026: tab đó thành trang riêng → mang từ khoá + SKU đích qua query string
-  // (trang kia tìm lại SKU theo mã vì chưa có GET /api/products/:id).
-  /** "Nối thêm gian" từ một SKU: sang trang Sản phẩm trên sàn, mồi sẵn từ khoá + SKU đích. */
-  function jumpToLinks(seedSearch?: string, target?: Product) {
-    const qs = new URLSearchParams();
-    if (seedSearch) qs.set("search", seedSearch);
-    if (target) {
-      qs.set("target", target.id);
-      qs.set("targetSku", target.skuCode);
-    }
-    const q = qs.toString();
-    router.push(q ? `/products/marketplace?${q}` : "/products/marketplace");
-  }
-  /**
-   * Từ khóa mồi khi bấm "Nối gian" ở một SKU kho: lấy 4 chữ đầu TÊN sản phẩm (anh Trung 22/10
-   * tối: mồi bằng mã SKU kho thì hầu như không khớp dòng sàn nào — dòng sàn mang mã sàn khác —
-   * khách nhảy sang thấy bảng trống, tưởng không có nút nối).
-   */
-  function linkSeedFor(p: Product): string {
-    return p.productName.trim().split(/\s+/).slice(0, 4).join(" ");
-  }
-
   // Nhân viên không được biết giá vốn — backend đã cắt trường, bỏ luôn cột.
   const seesCost = canSeeFinancials(getStoredUser());
 
@@ -693,23 +629,52 @@ export default function ProductsHubPage() {
                     {p.variantName}
                   </span>
                 )}
-                <MarketplaceCodes links={p.channelLinks} kind="item" />
               </div>
               {badge}
             </div>
           );
         },
       }),
-      // Dưới mã SKU kho hiện MÃ PHÂN LOẠI trên sàn (anh Trung 28/09) — dãy số dài +
-      // nút sao chép một chạm, giống bảng Giá vốn.
+      // HAI MÃ CỦA SẢN PHẨM KHO (anh Trung 05/11/2026: sản phẩm Tổng kho là sản phẩm RIÊNG):
+      //   · mã SKU — mã để KHỚP VỚI SÀN (khách đặt cùng mã trên mọi gian);
+      //   · mã vạch quản lý — mã để KHO QUÉT / in tem, 13 số hệ thống tự sinh (sửa ở ⋯ › Cài đặt SKU).
+      // KHÔNG bày mã sản phẩm / mã phân loại của sàn ở đây nữa (bản 28/09) — mã sàn nằm trong hộp nhỏ
+      // "Bán trên", cạnh từng gian.
       columnHelper.accessor("skuCode", {
-        header: "Mã SKU",
+        header: () => (
+          <span className="block leading-tight">
+            Mã SKU
+            <span className="block font-normal text-muted-foreground">Mã vạch</span>
+          </span>
+        ),
         cell: ({ row }) => (
           <div className="min-w-0">
-            <span className="block truncate font-mono text-sm font-medium" title={row.original.skuCode}>
+            <span
+              className="block font-mono text-sm leading-tight font-medium whitespace-normal [overflow-wrap:anywhere]"
+              title={`Mã SKU: ${row.original.skuCode}`}
+            >
               {row.original.skuCode}
             </span>
-            <MarketplaceCodes links={row.original.channelLinks} kind="model" />
+            {row.original.barcode && (
+              <span className="mt-0.5 flex items-center gap-0.5 font-mono text-[11px] text-muted-foreground">
+                <span
+                  className="min-w-0 whitespace-normal select-all [overflow-wrap:anywhere]"
+                  title={`Mã vạch quản lý: ${row.original.barcode} — kho quét mã này`}
+                >
+                  {row.original.barcode}
+                </span>
+                {/* Nút in NGAY CẠNH mã vạch (anh Trung 05/11) — mở hộp chọn khổ tem + số tem. */}
+                <button
+                  type="button"
+                  onClick={() => setPrinting([row.original])}
+                  aria-label={`In mã vạch ${row.original.skuCode}`}
+                  title="In mã vạch"
+                  className="flex size-3.5 shrink-0 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                >
+                  <Printer className="size-3.5" />
+                </button>
+              </span>
+            )}
           </div>
         ),
       }),
@@ -810,116 +775,25 @@ export default function ProductsHubPage() {
         : []),
       columnHelper.display({
         id: "channels",
-        header: "Bán trên",
+        // Câu nguyên lý trước nằm cuối mỗi dòng bung — nay là chú thích của tiêu đề cột.
+        header: () => (
+          <span title="Gian nào bán 1 chiếc, kho và mọi gian còn lại cùng trừ 1. Nhập kho, mọi gian cùng lên. Cùng một sản phẩm trên nhiều shop thì đặt cùng mã SKU để Hubsell tự khớp.">
+            Bán trên
+          </span>
+        ),
         cell: ({ row }) => {
           const links = row.original.channelLinks ?? [];
-          if (links.length === 0) {
-            return isAdmin ? (
-              <button
-                type="button"
-                onClick={() => jumpToLinks(linkSeedFor(row.original), row.original)}
-                className={cn(
-                  TEXT_SUB,
-                  "inline-flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 transition-colors hover:border-primary hover:text-foreground"
-                )}
-              >
-                <Link2 className="size-3.5" />
-                Nối gian
-              </button>
-            ) : (
-              <span className={TEXT_SUB}>Chưa nối</span>
-            );
-          }
-          // MỖI SÀN MỘT CHIP "Shopee ×3": seller lớn 10 gian vẫn tối đa 3 chip,
-          // không bao giờ xuống dòng. Màu chip = trạng thái XẤU NHẤT trong nhóm
-          // (đỏ có gian lệch/đẩy fail, vàng đang đẩy, xanh mọi gian khớp, xám
-          // chưa bật). Tên từng shop + số từng gian đã có ở dòng bung bên dưới
-          // (anh Trung chốt 05/09: cột chỉ cần vậy, không thêm gì).
-          const available = row.original.availableToSell ?? 0;
-          const RANK: Record<string, number> = {
-            alert: 5, mismatch: 4, pending: 3, off: 2, unknown: 1, match: 0,
-          };
-          const groups = new Map<string, typeof links>();
-          for (const l of links) {
-            const g = groups.get(l.channelName) ?? [];
-            g.push(l);
-            groups.set(l.channelName, g);
-          }
-          const ORDER = ["SHOPEE", "LAZADA", "TIKTOK"];
-          const ordered = [...groups.entries()].sort(
-            (a, b) => (ORDER.indexOf(a[0]) + 99) % 100 - ((ORDER.indexOf(b[0]) + 99) % 100)
-          );
+          // NỐI MỘT CHIỀU (anh Trung 05/11 tối): việc nối chỉ làm từ sản phẩm sàn (trang Sản phẩm trên sàn)
+          // nối VÀO Tổng kho — ở đây không còn nút "Nối gian" hay đường dẫn nối / gỡ nối; cột chỉ để xem.
+          if (links.length === 0) return <span className={TEXT_SUB}>Chưa nối</span>;
+          // Chip theo sàn, bấm mở hộp nhỏ từng gian (05/11/2026, anh Trung: nối / gỡ nối là việc của
+          // trang Sản phẩm trên sàn → bỏ dòng bung sơ đồ kho ↔ gian; ở Tổng kho chỉ còn xem).
           return (
-            <button
-              type="button"
-              onClick={() => toggleExpand(row.original)}
-              className="flex min-w-0 flex-wrap items-center gap-1.5 text-left"
-              title="Bấm để xem sơ đồ kho ↔ từng gian"
-            >
-              {ordered.map(([channelName, group]) => {
-                const meta = CHANNEL_META[channelName as keyof typeof CHANNEL_META];
-                const worst = group.reduce(
-                  (acc, l) => ((RANK[l.state ?? "unknown"] ?? 1) > (RANK[acc] ?? 1) ? (l.state ?? "unknown") : acc),
-                  "match" as string
-                );
-                const tone =
-                  worst === "match"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : worst === "mismatch" || worst === "alert"
-                      ? "border-red-200 bg-red-50 text-red-700"
-                      : worst === "pending"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-slate-200 bg-slate-50 text-slate-600";
-                const lines = group.map((l) => {
-                  const st = l.state ?? "unknown";
-                  const num =
-                    st === "pending"
-                      ? available
-                      : l.channelStock === null || l.channelStock === undefined
-                        ? null
-                        : l.channelStock;
-                  const hint =
-                    st === "match"
-                      ? "khớp"
-                      : st === "mismatch"
-                        ? `lệch, kho muốn ${formatNumber(available)}`
-                        : st === "alert"
-                          ? "đẩy thất bại"
-                          : st === "pending"
-                            ? "đang đẩy"
-                            : st === "off"
-                              ? "chưa bật đồng bộ"
-                              : "sàn chưa trả số";
-                  return `${l.shopName}: ${num === null ? "?" : formatNumber(num)} (${hint})`;
-                });
-                return (
-                  <span
-                    key={channelName}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums",
-                      tone
-                    )}
-                    title={`${meta?.label ?? channelName} — ${group.length} gian\n${lines.join("\n")}`}
-                  >
-                    {meta?.label ?? channelName}
-                    <span className="opacity-70">×{group.length}</span>
-                    {worst === "pending" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : worst === "match" ? (
-                      <CheckCircle2 className="size-3" />
-                    ) : worst === "mismatch" || worst === "alert" ? (
-                      <XCircle className="size-3" />
-                    ) : null}
-                  </span>
-                );
-              })}
-              <ChevronDown
-                className={cn(
-                  "size-4 text-muted-foreground transition-transform",
-                  expandedId === row.original.id && "rotate-180"
-                )}
-              />
-            </button>
+            <ChannelLinksPopover
+              links={links}
+              available={row.original.availableToSell ?? 0}
+              skuCode={row.original.skuCode}
+            />
           );
         },
       }),
@@ -965,7 +839,7 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, expandedId, linkDetails, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds]
+    [seesCost, isAdmin, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds]
   );
 
   const table = useReactTable({
@@ -975,164 +849,6 @@ export default function ProductsHubPage() {
     manualPagination: true,
     pageCount,
   });
-  const colCount = table.getAllColumns().length;
-
-  /** Chi tiết liên kết của dòng đang bung. */
-  /**
-   * SƠ ĐỒ KHO ↔ GIAN (dòng bung): thẻ Kho bên trái với "Có thể bán" to + công
-   * thức, mũi tên hai chiều, bên phải mỗi gian một thẻ cùng cỡ số. Gian lệch tô
-   * đỏ và có nút xử lý ngay tại chỗ. Câu chốt một dòng ở dưới — seller nhìn là
-   * hiểu "mọi gian cùng một số", không phải ghép chữ.
-   */
-  function renderHubDiagram(product: Product, detail: ProductChannelLink[]) {
-    const qty = product.quantityInStock;
-    const held = product.holdQuantity ?? 0;
-    const safety = product.safetyStockEffective ?? 0;
-    const available = product.availableToSell ?? Math.max(0, qty - held - safety);
-    const skuUpper = product.skuCode.trim().toUpperCase();
-
-    return (
-      <div className="space-y-2">
-        <div className="grid items-center gap-2 md:grid-cols-[11rem_2.5rem_minmax(0,1fr)]">
-          {/* Thẻ KHO */}
-          <div className="rounded-lg border bg-background px-3 py-2.5 text-center">
-            <div className={cn(TEXT_SUB, "flex items-center justify-center gap-1")}>
-              <Warehouse className="size-3.5" />
-              Tổng kho
-            </div>
-            <div className="text-2xl font-semibold tabular-nums leading-tight">
-              {formatNumber(available)}
-            </div>
-            <div className={TEXT_SUB}>có thể bán</div>
-            <div className={cn(TEXT_SUB, "mt-1 tabular-nums")}>
-              {formatNumber(qty)} tồn − {formatNumber(held)} giữ − {formatNumber(safety)} an toàn
-            </div>
-          </div>
-          <div className="hidden justify-center text-muted-foreground md:flex">
-            <ArrowLeftRight className="size-5" />
-          </div>
-
-          {/* Thẻ TỪNG GIAN */}
-          <div className="grid gap-1.5">
-            {detail.map((l) => {
-              const meta = CHANNEL_META[l.channelName];
-              const bad = l.state === "mismatch" || l.state === "alert";
-              const off = l.state === "off";
-              const differentSku = l.channelSku.trim().toUpperCase() !== skuUpper;
-              const num =
-                l.state === "pending" ? l.expected : l.channelStock === null ? null : l.channelStock;
-              return (
-                <div
-                  key={l.id}
-                  className={cn(
-                    "flex flex-wrap items-center gap-2 rounded-md border px-3 py-1.5 text-sm",
-                    bad
-                      ? "border-red-200 bg-red-50/60"
-                      : off
-                        ? "border-dashed bg-background"
-                        : "bg-background"
-                  )}
-                >
-                  <span
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta?.className ?? ""}`}
-                  >
-                    {meta?.label ?? l.channelName}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">
-                    {l.shopName}
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">{l.channelSku}</span>
-                    {differentSku && (
-                      <span
-                        className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
-                        title="SKU trên sàn khác mã SKU kho — vẫn chạy được vì đã nối tay, nhưng đặt CÙNG MÃ trên mọi shop thì Hubsell tự khớp, không lo nối nhầm."
-                      >
-                        khác mã kho
-                      </span>
-                    )}
-                    {!l.channelActive && (
-                      <span className={cn(TEXT_SUB, "ml-2")}>(gian đã ngắt)</span>
-                    )}
-                  </span>
-                  <span
-                    className={cn(
-                      "text-base font-semibold tabular-nums",
-                      bad ? "text-red-700" : off ? "text-muted-foreground" : "text-foreground"
-                    )}
-                  >
-                    {num === null ? "?" : formatNumber(num)}
-                  </span>
-                  {l.state === "match" ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
-                      <CheckCircle2 className="size-3.5" />
-                      khớp
-                    </span>
-                  ) : l.state === "pending" ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-amber-700">
-                      <Loader2 className="size-3.5 animate-spin" />
-                      đang đẩy
-                    </span>
-                  ) : l.state === "mismatch" ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700">
-                      <XCircle className="size-3.5" />
-                      lệch, kho muốn {formatNumber(l.expected)}
-                    </span>
-                  ) : l.state === "alert" ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700">
-                      <XCircle className="size-3.5" />
-                      đẩy thất bại — xem cảnh báo
-                    </span>
-                  ) : off ? (
-                    <span className={cn(TEXT_SUB, "text-xs")}>chưa bật đồng bộ</span>
-                  ) : (
-                    <span className={cn(TEXT_SUB, "text-xs")}>
-                      {l.pushable ? "sàn chưa trả số" : "sàn chưa hỗ trợ đẩy tồn"}
-                    </span>
-                  )}
-                  {isAdmin && off && l.pushable && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => setSyncOpen(true)}
-                    >
-                      Bật gian này
-                    </Button>
-                  )}
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => handleUnlinkOne(l, product.id)}
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-red-600 hover:underline"
-                    >
-                      <Link2Off className="size-3" />
-                      gỡ nối
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => jumpToLinks(linkSeedFor(product), product)}
-                className="inline-flex items-center gap-1 self-start text-xs text-primary underline-offset-2 hover:underline"
-              >
-                <Link2 className="size-3" />
-                Nối thêm gian cho SKU này
-              </button>
-            )}
-          </div>
-        </div>
-        <p className={cn(TEXT_SUB, "flex items-center gap-1.5")}>
-          <ArrowLeftRight className="size-3.5" />
-          Gian nào bán 1 chiếc, kho và mọi gian còn lại cùng trừ 1. Nhập kho, mọi gian
-          cùng lên. Cùng một sản phẩm trên nhiều shop thì đặt cùng mã SKU để Hubsell tự
-          khớp.
-        </p>
-      </div>
-    );
-  }
-
   /**
    * DÒNG CHA của một mẫu có ≥ 2 phân loại (22/10/2026, giống bảng Giá vốn): ảnh +
    * tên + mã sản phẩm sàn + "N phân loại"; cột số = TỔNG tồn / có thể bán của các
@@ -1229,7 +945,6 @@ export default function ProductsHubPage() {
               <span className={cn("block truncate", open ? "font-bold" : "font-medium")} title={g.name}>
                 {g.name}
               </span>
-              <MarketplaceCodes links={links} kind="item" />
               <span className="flex flex-wrap items-center gap-x-1 text-xs">
                 <Layers className="size-3.5 shrink-0 text-sky-600" />
                 <span className="font-semibold text-sky-700">
@@ -1247,7 +962,7 @@ export default function ProductsHubPage() {
             </div>
           </div>
         </TableCell>
-        <TableCell className={TEXT_SUB}>—</TableCell>
+        <TableCell className={cn(TEXT_SUB, CELL_PAD.skuCode)}>—</TableCell>
         {seesCost && (
           <TableCell className="text-right">{range(rows.map((p) => Number(p.costPrice ?? 0)))}</TableCell>
         )}
@@ -1266,7 +981,7 @@ export default function ProductsHubPage() {
           </span>
         </TableCell>
         {locationsEnabled && <TableCell className={TEXT_SUB}>—</TableCell>}
-        <TableCell>
+        <TableCell className={CELL_PAD.channels}>
           {chips.length === 0 ? (
             <span className={TEXT_SUB}>Chưa nối</span>
           ) : (
@@ -1288,24 +1003,6 @@ export default function ProductsHubPage() {
           )}
         </TableCell>
         <TableCell className={cn(TEXT_SUB, "text-center")}>—</TableCell>
-      </TableRow>
-    );
-  }
-
-  function renderExpanded(product: Product) {
-    const detail = linkDetails[product.id];
-    return (
-      <TableRow key={`${product.id}-links`} className="bg-muted/30 hover:bg-muted/30">
-        <TableCell colSpan={colCount} className="py-2 pl-8">
-          {!detail || detail === "loading" ? (
-            <p className={cn(TEXT_SUB, "flex items-center gap-2 py-1")}>
-              <Loader2 className="size-3.5 animate-spin" />
-              Đang tải chi tiết liên kết…
-            </p>
-          ) : (
-            renderHubDiagram(product, detail)
-          )}
-        </TableCell>
       </TableRow>
     );
   }
@@ -1373,7 +1070,7 @@ export default function ProductsHubPage() {
                 syncState={syncState}
                 onSynced={loadCounts}
                 onOpenOneClick={() => setOneClickOpen(true)}
-                onOpenLinks={() => jumpToLinks()}
+                onOpenLinks={() => router.push("/products/marketplace")}
                 onOpenSync={() => setSyncOpen(true)}
               />
             </div>
@@ -1389,7 +1086,7 @@ export default function ProductsHubPage() {
                   <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     className="pl-9"
-                    placeholder="Tìm theo mã SKU hoặc tên sản phẩm…"
+                    placeholder="Tìm theo mã SKU, mã vạch hoặc tên sản phẩm…"
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                   />
@@ -1702,7 +1399,7 @@ export default function ProductsHubPage() {
                   // Đang ở): từ 1.000px trở lên bảng vừa khung, tên / mã tự cắt + tooltip, chip Bán trên
                   // xuống dòng. Dưới 1.000px (laptop 1280 mở sidebar + có cột Đang ở) hộp cuộn ngang
                   // thay vì để số đè lên nhau — ô số không được phép tràn. Bề rộng cột ở COL_HEAD_CLASS.
-                  <Table className="table-fixed min-w-[1000px]">
+                  <Table className={cn("table-fixed", locationsEnabled ? TABLE_MIN_W.withLocations : TABLE_MIN_W.plain)}>
                     <TableHeader>
                       {table.getHeaderGroups().map((headerGroup) => (
                         <TableRow key={headerGroup.id}>
@@ -1739,13 +1436,15 @@ export default function ProductsHubPage() {
                                 className={cn(multi && "bg-slate-50/60 shadow-[inset_3px_0_0_0_var(--color-primary)]")}
                               >
                                 {row.getVisibleCells().map((cell) => (
-                                  <TableCell key={cell.id}>
+                                  <TableCell
+                                    key={cell.id}
+                                    className={CELL_PAD[cell.column.id]}
+                                  >
                                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                   </TableCell>
                                 ))}
                               </TableRow>
                             );
-                            if (expandedId === p.id) out.push(renderExpanded(p));
                           }
                           return out;
                         });
@@ -1836,6 +1535,18 @@ export default function ProductsHubPage() {
           selected={[...selected.values()]}
           onClear={() => setSelected(new Map())}
           onDone={load}
+          onPrintLabels={(rows) => setPrinting(rows)}
+        />
+      )}
+
+      {/* Hộp In mã vạch */}
+      {printing && (
+        <PrintLabelsDialog
+          products={printing}
+          open
+          onOpenChange={(o) => {
+            if (!o) setPrinting(null);
+          }}
         />
       )}
 

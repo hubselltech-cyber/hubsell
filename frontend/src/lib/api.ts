@@ -288,6 +288,11 @@ export interface Product {
   unitName?: string | null;
   /** Tồn an toàn riêng của SKU — null/vắng = dùng mặc định toàn shop. */
   safetyStock?: number | null;
+  /**
+   * MÃ VẠCH QUẢN LÝ (05/11/2026): mã để kho quét / in tem — 13 số hệ thống tự sinh, hoặc mã khách
+   * nhập (hàng có sẵn mã nhà sản xuất). null = sản phẩm cũ chưa được điền. Mã SKU là mã khớp với sàn.
+   */
+  barcode?: string | null;
   /** false = NGỪNG KINH DOANH (24/09): ẩn khỏi bảng mặc định, không cảnh báo hết hàng. */
   isActive?: boolean;
   /** Tồn theo vị trí (đợt B) — chỉ các vị trí có số ≠ 0; rỗng khi shop chưa dùng vị trí. */
@@ -336,27 +341,6 @@ export type ChannelStockState =
   | "mismatch"
   | "unknown";
 
-/** Chi tiết MỘT liên kết sàn của sản phẩm kho — dòng bung của hub Hàng hóa. */
-export interface ProductChannelLink {
-  id: string; // id ChannelProduct — dùng để gỡ nối
-  channelSku: string;
-  productName: string;
-  channelName: ChannelName;
-  shopName: string;
-  channelActive: boolean;
-  /** Sàn này có đẩy tồn được không (SKU đã có externalId của sàn). */
-  pushable: boolean;
-  stockSyncEnabled: boolean;
-  /** Tồn sàn theo lần đẩy/đọc gần nhất (null = chưa từng biết). */
-  channelStock: number | null;
-  channelStockAt: string | null;
-  /** Số Hubsell muốn sàn giữ ("có thể bán"). */
-  expected: number;
-  state: ChannelStockState;
-  lastSync: { status: "SUCCESS" | "FAILED"; newQuantity: number; at: string } | null;
-  hasAlert: boolean;
-}
-
 /**
  * Cài đặt riêng của một SKU kho: tồn an toàn + ngưỡng cảnh báo sắp hết hàng.
  * null = quay về dùng mặc định toàn shop.
@@ -369,13 +353,6 @@ export function updateProductStockSettings(
     method: "PATCH",
     body: JSON.stringify(data),
   });
-}
-
-/** Các SKU sàn đã nối vào một sản phẩm kho + trạng thái đẩy tồn gần nhất. */
-export function fetchProductChannelLinks(productId: string) {
-  return apiFetch<ProductChannelLink[]>(
-    `/api/products/${productId}/channel-links`
-  );
 }
 
 export interface ProductListResponse {
@@ -1621,6 +1598,14 @@ export function fetchProducts(params: {
   if (params.view) qs.set("view", params.view);
   if (params.stock) qs.set("stock", params.stock);
   return apiFetch<ProductListResponse>(`/api/products?${qs.toString()}`);
+}
+
+/** Đổi mã vạch quản lý của một SKU kho; chuỗi rỗng = nhờ máy sinh mã 13 số mới. */
+export function updateProductBarcode(productId: string, barcode: string) {
+  return apiFetch<Product>(`/api/products/${productId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ barcode }),
+  });
 }
 
 /** Ngừng kinh doanh / bán lại một SKU (chỉ chủ shop). */
@@ -4729,6 +4714,8 @@ export async function fetchStockLocationLabelsPdf(ids?: string[]): Promise<Blob>
 export interface StocktakeRow {
   productId: string;
   skuCode: string;
+  /** Mã vạch quản lý — để ô quét của phiếu kiểm kê khớp ngay trên máy. */
+  barcode?: string | null;
   productName: string;
   isActive: boolean;
   /** Số sổ (tại vị trí, hoặc tồn bán toàn kho khi chưa dùng vị trí). */

@@ -135,7 +135,7 @@ export function ProductRowMenu({
                 <BellRing
                   className={cn("size-4", product.isLowStock ? "text-amber-600" : "text-slate-500")}
                 />
-                Cảnh báo & tồn an toàn
+                Mã vạch, cảnh báo & tồn an toàn
               </button>
               <div className="my-1 border-t" />
               <button type="button" className={item} disabled={busy} onClick={toggleActive}>

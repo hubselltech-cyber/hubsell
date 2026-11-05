@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Loader2, PauseCircle, PlayCircle, Trash2 } from "lucide-react";
+import { Loader2, PauseCircle, PlayCircle, Printer, Trash2 } from "lucide-react";
 
 import { BulkBar } from "@/components/data-table/bulk-bar";
 import { Button } from "@/components/ui/button";
@@ -27,10 +27,13 @@ export function ProductBulkBar({
   selected,
   onClear,
   onDone,
+  onPrintLabels,
 }: {
   selected: Product[];
   onClear: () => void;
   onDone: () => void;
+  /** Mở hộp "In mã vạch" cho các SKU đang tích (05/11/2026). */
+  onPrintLabels?: (rows: Product[]) => void;
 }) {
   const [busy, setBusy] = useState<"deactivate" | "activate" | "delete" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -79,6 +82,12 @@ export function ProductBulkBar({
   return (
     <>
       <BulkBar count={selected.length} unitLabel="SKU" onClear={onClear}>
+        {onPrintLabels && (
+          <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => onPrintLabels(selected)}>
+            <Printer className="size-4" />
+            In mã vạch ({formatNumber(selected.length)})
+          </Button>
+        )}
         <Button
           size="sm"
           variant="secondary"

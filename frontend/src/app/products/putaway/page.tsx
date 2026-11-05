@@ -29,6 +29,7 @@ import {
   type Product,
   type StockLocation,
 } from "@/lib/api";
+import { productMatchesCode } from "@/lib/product-code";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
 import { locationLabel } from "@/lib/stock-locations";
@@ -109,7 +110,7 @@ export default function PutawayPage() {
     try {
       const res = await fetchProducts({ page: 1, pageSize: 5, search: q, status: "all" });
       const p =
-        res.items.find((x) => x.skuCode.toUpperCase() === up) ??
+        res.items.find((x) => productMatchesCode(x, up)) ??
         (res.items.length === 1 ? res.items[0] : undefined);
       if (!p) {
         toast.error(`Không có SKU hay mã kệ nào khớp "${q}"`);
@@ -230,7 +231,7 @@ export default function PutawayPage() {
                 ref={scanRef}
                 autoFocus
                 className="pl-9"
-                placeholder={effectiveTo ? `Quét SKU để cất vào ${labelOf(effectiveTo)}… (quét tem kệ khác để đổi)` : "Quét tem kệ (VD: KE-A1-T1) rồi quét SKU…"}
+                placeholder={effectiveTo ? `Quét mã vạch sản phẩm để cất vào ${labelOf(effectiveTo)}… (quét tem kệ khác để đổi)` : "Quét tem kệ (VD: KE-A1-T1) rồi quét SKU…"}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {

@@ -15,7 +15,6 @@ import {
   linkMappingPairs,
   unlinkChannelProducts,
   type ChannelProduct,
-  type Product,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
@@ -42,7 +41,8 @@ import {
  * Tổng kho") — ô "Tạo SKU" đã gỡ. Phân loại chưa có SKU kho tương ứng thì để "chưa ghép" + dòng chỉ
  * sang Tổng kho; đừng thêm lại đường tạo ở đây.
  *
- * Chiều ngược (Tổng kho › Nối gian): mở với `target` = SKU kho cố định; sản phẩm kho đã chọn sẵn.
+ * MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm sàn về Tổng kho — luồng ngược "Tổng kho › Nối gian"
+ * (mở ngăn kéo với SKU kho cố định) đã gỡ; đừng thêm lại.
  * Nối trên đơn hàng: `group` dựng từ /mappings/lookup, `source="order"`.
  */
 type RowChoice = { kind: "keep" } | { kind: "product"; productId: string } | { kind: "none" };
@@ -51,15 +51,12 @@ export function LinkDrawer({
   open,
   onOpenChange,
   group,
-  target,
   source = "manual",
   onDone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   group: ChannelGroup | null;
-  /** SKU kho đích cố định (chiều ngược từ Tổng kho). */
-  target?: Product | null;
   source?: "manual" | "order";
   onDone?: () => void;
 }) {
@@ -85,11 +82,7 @@ export function LinkDrawer({
     setQuery(seed);
     setDebounced(seed);
     setChoices({});
-    if (target) {
-      setPicked({ key: target.groupKey ?? target.id, title: target.productName, imageUrl: target.imageUrl ?? null, variants: [target], rootGuess: target.skuCode });
-    } else {
-      setPicked(null);
-    }
+    setPicked(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, group?.key]);
 
@@ -111,7 +104,7 @@ export function LinkDrawer({
         const groups = groupWarehouseProducts(res.items);
         setResults(groups.slice(0, 8));
         // Chưa chọn gì mà có đúng MỘT nhóm trùng mã với dòng sàn → chọn luôn (gợi ý chắc).
-        if (!picked && !target) {
+        if (!picked) {
           const skus = new Set(rows.map((r) => r.channelSku.trim().toUpperCase()));
           const hits = groups.filter((g) => g.variants.some((v) => skus.has(v.skuCode.toUpperCase())));
           if (hits.length === 1) setPicked(hits[0]);
@@ -141,13 +134,12 @@ export function LinkDrawer({
     );
     const next: Record<string, RowChoice> = {};
     for (const r of rows) {
-      if (r.productId && !target) next[r.id] = { kind: "keep" };
+      if (r.productId) next[r.id] = { kind: "keep" };
       else if (sug.has(r.id)) next[r.id] = { kind: "product", productId: sug.get(r.id)! };
-      else if (target) next[r.id] = r.productId === target.id ? { kind: "keep" } : { kind: "product", productId: target.id };
       else next[r.id] = { kind: "none" };
     }
     setChoices(next);
-  }, [picked, rows, target]);
+  }, [picked, rows]);
 
   const pendingPairs = rows.filter((r) => choices[r.id]?.kind === "product").map((r) => ({ channelProductId: r.id, productId: (choices[r.id] as { productId: string }).productId }));
   const pendingCount = pendingPairs.length;
@@ -208,83 +200,75 @@ export function LinkDrawer({
           </DialogTitle>
           <DialogDescription>
             {meta.label} · {group.shopName} · {formatNumber(group.total)} phân loại
-            {target ? (
-              <>
-                {" "}
-                → SKU kho <b className="font-mono text-foreground">{target.skuCode}</b>
-              </>
-            ) : null}
           </DialogDescription>
         </DialogHeader>
 
         {/* ===== Chọn sản phẩm kho ===== */}
-        {!target && (
-          <div className="space-y-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-8" placeholder="Tìm sản phẩm kho theo tên hoặc mã SKU…" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
-            </div>
-            {picked ? (
-              <div className="flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
-                <Check className="size-4 shrink-0 text-primary" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{picked.title}</span>
-                  <span className={cn(TEXT_SUB, "block truncate font-mono")}>
-                    {picked.variants.length === 1 ? picked.variants[0].skuCode : `${picked.rootGuess || picked.variants[0].skuCode}… · ${picked.variants.length} phân loại`}
-                  </span>
-                </span>
-                <Button size="xs" variant="ghost" onClick={() => setPicked(null)}>
-                  Chọn khác
-                </Button>
-              </div>
-            ) : (
-              <div className="max-h-56 overflow-y-auto rounded-lg border">
-                {searching && results.length === 0 ? (
-                  <p className={cn(TEXT_SUB, "px-3 py-3")}>Đang tìm…</p>
-                ) : results.length === 0 ? (
-                  <p className={cn(TEXT_SUB, "px-3 py-3")}>
-                    {debounced ? (
-                      <>
-                        Không có sản phẩm kho nào khớp. Đổi từ khóa, hoặc tạo sản phẩm này ở{" "}
-                        <Link href="/products" target="_blank" className="font-medium text-primary hover:underline">
-                          Tổng kho
-                        </Link>{" "}
-                        trước rồi quay lại nối.
-                      </>
-                    ) : (
-                      "Gõ tên hoặc mã để tìm."
-                    )}
-                  </p>
-                ) : (
-                  results.map((g) => {
-                    const skuHit = g.variants.some((v) => rows.some((r) => r.channelSku.trim().toUpperCase() === v.skuCode.toUpperCase()));
-                    return (
-                      <button
-                        key={g.key}
-                        type="button"
-                        className="flex w-full items-center gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
-                        onClick={() => setPicked(g)}
-                      >
-                        <Thumb src={g.imageUrl} alt={g.title} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{g.title}</span>
-                          <span className={cn(TEXT_SUB, "block truncate font-mono")}>
-                            {g.variants.length === 1 ? g.variants[0].skuCode : `${g.rootGuess || g.variants[0].skuCode}… · ${g.variants.length} phân loại`}
-                          </span>
-                        </span>
-                        {skuHit && (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
-                            <Sparkles className="size-3" /> trùng mã
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input className="pl-8" placeholder="Tìm sản phẩm kho theo tên hoặc mã SKU…" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
           </div>
-        )}
+          {picked ? (
+            <div className="flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+              <Check className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{picked.title}</span>
+                <span className={cn(TEXT_SUB, "block truncate font-mono")}>
+                  {picked.variants.length === 1 ? picked.variants[0].skuCode : `${picked.rootGuess || picked.variants[0].skuCode}… · ${picked.variants.length} phân loại`}
+                </span>
+              </span>
+              <Button size="xs" variant="ghost" onClick={() => setPicked(null)}>
+                Chọn khác
+              </Button>
+            </div>
+          ) : (
+            <div className="max-h-56 overflow-y-auto rounded-lg border">
+              {searching && results.length === 0 ? (
+                <p className={cn(TEXT_SUB, "px-3 py-3")}>Đang tìm…</p>
+              ) : results.length === 0 ? (
+                <p className={cn(TEXT_SUB, "px-3 py-3")}>
+                  {debounced ? (
+                    <>
+                      Không có sản phẩm kho nào khớp. Đổi từ khóa, hoặc tạo sản phẩm này ở{" "}
+                      <Link href="/products" target="_blank" className="font-medium text-primary hover:underline">
+                        Tổng kho
+                      </Link>{" "}
+                      trước rồi quay lại nối.
+                    </>
+                  ) : (
+                    "Gõ tên hoặc mã để tìm."
+                  )}
+                </p>
+              ) : (
+                results.map((g) => {
+                  const skuHit = g.variants.some((v) => rows.some((r) => r.channelSku.trim().toUpperCase() === v.skuCode.toUpperCase()));
+                  return (
+                    <button
+                      key={g.key}
+                      type="button"
+                      className="flex w-full items-center gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
+                      onClick={() => setPicked(g)}
+                    >
+                      <Thumb src={g.imageUrl} alt={g.title} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{g.title}</span>
+                        <span className={cn(TEXT_SUB, "block truncate font-mono")}>
+                          {g.variants.length === 1 ? g.variants[0].skuCode : `${g.rootGuess || g.variants[0].skuCode}… · ${g.variants.length} phân loại`}
+                        </span>
+                      </span>
+                      {skuHit && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
+                          <Sparkles className="size-3" /> trùng mã
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ===== Bảng ghép phân loại ===== */}
         <div className="overflow-hidden rounded-lg border">
@@ -320,7 +304,7 @@ export function LinkDrawer({
                             <span className="font-mono text-emerald-700">{r.product.skuCode}</span>
                             <span className={cn(TEXT_SUB, "ml-1")}>đã nối</span>
                           </span>
-                          {picked && !target && (
+                          {picked && (
                             <Button size="xs" variant="ghost" onClick={() => setRow(r.id, { kind: "none" })}>
                               Đổi
                             </Button>

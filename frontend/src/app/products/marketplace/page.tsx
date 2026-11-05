@@ -7,7 +7,7 @@ import { Lightbulb } from "lucide-react";
 import { AppShell } from "@/components/shell/app-shell";
 import { ChannelProductsPage } from "@/components/products/channel-products/channel-products-page";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
-import { fetchProducts, getStoredUser, type Product } from "@/lib/api";
+import { getStoredUser } from "@/lib/api";
 import { canManageShop } from "@/lib/permissions";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -20,11 +20,8 @@ import { cn } from "@/lib/utils";
  * ngăn kéo nối. Trang CHỈ NỐI, không tạo sản phẩm kho (anh Trung 05/11: sản phẩm kho quản ở Tổng kho). CHỈ CHỦ SHOP — nhân viên gõ URL thì về Tổng kho
  * (sidebar đã ẩn mục, API cũng chặn adminOnly độc lập).
  *
- * Query string (đến từ "Nối thêm gian cho SKU này" ở bảng Tổng kho):
- *   ?search=   từ khoá mồi (4 chữ đầu tên SP kho)
- *   ?target=   id SKU kho ĐÍCH + ?targetSku= mã của nó — chưa có GET /api/products/:id
- *              nên tìm lại qua danh sách theo mã rồi khớp id; không thấy thì bỏ qua đích,
- *              vẫn mở trang với từ khoá.
+ * Query string: ?search= từ khoá mồi cho ô tìm. NỐI MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm
+ * sàn về Tổng kho — ?target= / ?targetSku= (luồng ngược từ Tổng kho) đã gỡ.
  * Route cũ /mappings và /products?tab=links đều chuyển về đây.
  */
 export default function MarketplaceProductsPage() {
@@ -32,41 +29,17 @@ export default function MarketplaceProductsPage() {
   const isAdmin = canManageShop(getStoredUser());
 
   // Đọc query MỘT LẦN lúc mount (cùng cách Tổng kho — không cần useSearchParams/Suspense).
-  const [init, setInit] = useState<{ search?: string; target: Product | null } | null>(null);
+  const [init, setInit] = useState<{ search?: string } | null>(null);
 
   useEffect(() => {
     if (!isAdmin) {
       router.replace("/products");
       return;
     }
-    const params = new URLSearchParams(window.location.search);
-    const search = params.get("search")?.trim() || undefined;
-    const targetId = params.get("target")?.trim();
-    const targetSku = params.get("targetSku")?.trim();
-    if (!targetId || !targetSku) {
-      setInit({ search, target: null });
-      return;
-    }
-    let cancelled = false;
-    fetchProducts({ search: targetSku, page: 1, pageSize: 20, status: "all" })
-      .then((res) => {
-        if (cancelled) return;
-        const found = res.items.find((p) => p.id === targetId) ?? null;
-        setInit({ search, target: found });
-      })
-      .catch(() => {
-        if (!cancelled) setInit({ search, target: null });
-      });
-    return () => {
-      cancelled = true;
-    };
+    const search = new URLSearchParams(window.location.search).get("search")?.trim() || undefined;
+    setInit({ search });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const [target, setTarget] = useState<Product | null>(null);
-  useEffect(() => {
-    if (init) setTarget(init.target);
-  }, [init]);
 
   return (
     <AppShell>
@@ -83,10 +56,8 @@ export default function MarketplaceProductsPage() {
 
         {init && isAdmin && (
           <ChannelProductsPage
-            key={`${init.search ?? "all"}:${init.target?.id ?? ""}`}
+            key={init.search ?? "all"}
             initialSearch={init.search}
-            targetProduct={target}
-            onClearTarget={() => setTarget(null)}
           />
         )}
       </div>

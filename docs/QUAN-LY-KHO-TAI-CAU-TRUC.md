@@ -236,3 +236,135 @@ API), dữ liệu nghìn SKU. Dữ liệu thử trên demo ĐÃ DỌN trước k
 chạy (tab Nhà cung cấp đọc được `suppliers` + `purchase_lines`, đang trống đúng câu); Vercel lên; Phiếu kho có cột Nhà cung cấp; trang Phiếu
 nhiều mã có ô Nhà cung cấp; không tràn ngang ở 1920. **Chưa kiểm trên prod:** lập phiếu nhập thật có nhà cung cấp + giá (anh / khách lập lần
 đầu thì soi log `[stock-voucher]`), hộp sửa phiếu, tệp Excel tải về, tài khoản nhân viên không thấy tài chính.
+
+## 6. Tổng kho — bỏ dòng bung "sơ đồ kho ↔ gian", chip "Bán trên" mở hộp nhỏ (05/11/2026 chiều → tối; ĐÃ COMMIT + PUSH 05/11 đêm, anh: "dọn dẹp trước cho sạch sẽ đi rồi commit và push cả 2")
+
+> Mục 6–6.4 ghi theo từng bước trong ngày; bản cuối cùng lên prod là: cột "Bán trên" chỉ xem (6 + 6.3A), không mã sàn trong bảng (6.1), mã vạch quản lý 13 số (6.3B), in tem (6.4). Các câu "CHƯA commit" bên dưới là trạng thái lúc ghi.
+
+**Anh Trung:** "mình có cần giữ phần liên kết gian hàng không khi mà thao tác này vốn phải được thực hiện từ phía sản phẩm của gian hàng đó?" → em soi mã: mọi thứ trong dòng bung đã có chỗ khác, anh bấm "Dựng thử local".
+
+| Thứ trong dòng bung cũ | Nay ở đâu |
+|---|---|
+| Tồn từng gian + khớp / lệch / chưa bật | Hộp nhỏ khi bấm chip "Bán trên" (dữ liệu `channelLinks` có sẵn trên dòng, không gọi thêm API) |
+| Cảnh báo lệch tồn | `SyncAlertBanner` trên bảng (không đổi) |
+| "Bật gian này" | Nút "Đồng bộ tồn kho" trên thanh công cụ (cùng một hộp) |
+| "gỡ nối", "Nối thêm gian cho SKU này" | Trang Sản phẩm trên sàn; hộp nhỏ có một dòng "Nối thêm / gỡ nối gian" (chỉ chủ shop) dẫn sang kèm `?search=&target=&targetSku=` |
+| Thẻ "Tổng kho N có thể bán" | Bỏ (lặp số của dòng); hộp nhỏ ghi một câu "Kho có thể bán N" |
+| Câu "Gian nào bán 1 chiếc…" | `title` của tiêu đề cột "Bán trên" |
+
+**Mã:** `components/products/channel-links-popover.tsx` (mới — chip + hộp nhỏ); `app/products/page.tsx` gỡ `expandedId`, `linkDetails`, `toggleExpand`, effect tải chi tiết, `handleUnlinkOne`, `renderHubDiagram`, `renderExpanded` (−300 dòng). `fetchProductChannelLinks` + kiểu `ProductChannelLink` trong `lib/api.ts` và route backend `GET /products/:id/channel-links` ĐÃ GỠ lúc dọn trước khi push (web và mobile đều không còn gọi).
+
+**Sửa kèm (lộ ra khi đo ca rộng):** cột "Bán trên" ở 1280 chỉ 110px, đệm mặc định 16px còn 78px chữ trong khi chip có biểu tượng trạng thái cần 87–97px (trước đây chip lấn vào phần đệm). Nay ô + tiêu đề cột dùng `px-2` (`CHANNELS_CELL_PAD`), chip `px-1.5`, tên sàn tự cắt khi vẫn thiếu chỗ (chỉ gặp từ ×10 gian cùng sàn ở 1280/1366).
+
+**Kiểm local (demo@hubsell.tech, 3010 ↔ 4010; seed 13 gian thử `cmvt_wide_*` nối vào AO-LEN-M → 15 liên kết: Shopee ×12, Lazada ×2, TikTok ×1; đủ khớp / lệch / chưa bật / sàn chưa trả số / khác mã kho; tên gian 54 ký tự; tồn sàn 1.234.567):** đo JS ở 1280 / 1366 / 1440 / 1700 — 0 ô bảng tràn, hộp nhỏ nằm trọn trong màn, 0 số bị cắt, danh sách cuộn dọc (15 dòng, cao tối đa 256px), chữ 14/12px; giao diện tối ở 1280 đọc rõ (chip, chữ trạng thái, dòng liên kết); bấm dòng cuối sang đúng trang Sản phẩm trên sàn với dải "Đang nối thêm gian cho SKU kho AO-LEN-M". `tsc` FE + eslint 2 tệp sạch, không lớp `dark:`.
+
+**CHƯA kiểm:** tài khoản nhân viên (không có dòng "Nối thêm / gỡ nối gian"); trạng thái "đang đẩy" và "đẩy thất bại" (cần job / cảnh báo thật); cột "Đang ở" bật (bề rộng cột Bán trên là % cố định của bảng nên không đổi, nhưng chưa đo); mobile web.
+
+**Thấy khi làm, CHƯA sửa (chờ anh):**
+- Dòng CHA của mẫu nhiều phân loại xếp chip `flex-nowrap` — nối cả 3 sàn thì 3 chip (~210px) rộng hơn ô 110px. Chỉ đọc mã, chưa có dữ liệu local để đo.
+- Cột Mã SKU liệt kê MỌI mã phân loại sàn: SKU nối 15 gian thành 15 dòng mã, dòng cao ~330px. Em đề xuất dời mã sàn vào hộp nhỏ (cạnh tên gian) — anh từng yêu cầu mã sàn + nút copy ở đây nên chỉ dời khi anh gật.
+- Thứ tự chip đang là Lazada → TikTok → Shopee (công thức sắp xếp cũ, giữ nguyên).
+- Dòng "Nối thêm / gỡ nối gian" mở trang kia ở ngăn "Cần nối"; muốn gỡ phải tự sang ngăn "Đã nối".
+
+**Bàn cùng lượt, chưa làm:** gộp cột "Có thể bán" vào "Tồn kho" (chỉ hiện dòng nhỏ khi hai số khác nhau); in tem mã vạch bằng chính mã SKU (đã có `code128.ts`), trường mã vạch riêng để sau — khách dùng Salework gửi ảnh có cột mã vạch tự sinh 2200000001 + nút "In mã vạch"; anh không thích kiểu Salework tách nhập / xuất / vị trí thành tab riêng.
+
+**Dữ liệu thử local:** ĐÃ XÓA trước khi push (gian `cmvt_wide_*`, sản phẩm `TESTMOI-*` / `TESTCHEP-*`, vị trí thử).
+
+### 6.1 Nguyên tắc anh Trung chốt thêm 05/11 chiều — sản phẩm Tổng kho là sản phẩm RIÊNG, mã quản lý = mã SKU kho
+
+**Lời anh:** "Sản phẩm trong tổng kho là sản phẩm riêng, nó dùng để điều khiển các sản phẩm trên các sàn với điều kiện các sàn liên kết vào → nên tất nhiên nó cần có mã quản lý để kho quét hàng. Việc em lấy mã của sàn để áp cho sản phẩm riêng đó có vẻ là chưa hợp lý ở Tổng kho."
+
+**Mô hình (đọc trước khi đụng Tổng kho):**
+- Sản phẩm kho đứng độc lập; danh tính của nó là **mã SKU kho** (`Product.skuCode`, không trùng trong một shop) — đây là mã quản lý: kho quét, in tem, tìm kiếm đều theo mã này.
+- Sản phẩm sàn (`ChannelProduct`) có mã riêng của sàn (mã sản phẩm / mã phân loại = `externalId`). Nó chỉ dính vào sản phẩm kho qua LIÊN KẾT; sản phẩm kho điều khiển tồn của sản phẩm sàn đã nối.
+- Hệ quả giao diện: ở Tổng kho KHÔNG bày mã sàn như thuộc tính của sản phẩm kho. Mã sàn chỉ hiện trong ngữ cảnh "gian nào" (hộp nhỏ Bán trên, trang Sản phẩm trên sàn).
+
+**Rà mã 05/11 (chỗ nào mã sàn dính vào sản phẩm kho):**
+| Chỗ | Hiện trạng |
+|---|---|
+| Bảng Tổng kho — dưới tên sản phẩm (mã sản phẩm sàn), dưới mã SKU (mã phân loại sàn), dòng cha | **Vi phạm → ĐÃ GỠ trên local** (bản 28/09 anh từng yêu cầu; nay anh đổi ý cho riêng Tổng kho) |
+| Tìm kiếm Tổng kho (`GET /products?search=`) | Chỉ mã SKU + tên + phân loại — đúng |
+| Quét ở Phiếu nhiều mã / Kiểm kê / Cất lên kệ | So trùng mã SKU — đúng |
+| Khóa gom cha–con (`groupKey`) | Tính từ tên + phân loại, không dùng mã sàn — đúng |
+| Kho trên mobile | Không hiện mã sàn — đúng |
+| Bảng Cấu hình Giá vốn | VẪN hiện mã sàn (bảng đó theo từng gian) — không đụng |
+
+**Đã làm trên local (CHƯA commit):** xóa `components/products/marketplace-codes.tsx` (hết nơi dùng) + 3 chỗ gọi; mã sản phẩm / mã phân loại sàn kèm nút sao chép chuyển vào hộp nhỏ, dưới tên từng gian (`channel-links-popover.tsx`). Cột Mã SKU: mã quản lý phải đọc đủ → đệm `px-2` + mã tự xuống dòng thay vì cắt (trước đó ở 1280–1440 cả 5/5 mã demo bị cắt "GIAY-SN…"). `CHANNELS_CELL_PAD` đổi thành bảng `CELL_PAD` theo cột.
+
+**Kiểm local lại (cùng bộ seed 15 liên kết, TikTok mã 19 chữ số):** 1280 / 1366 / 1440 / 1700 — 0 ô tràn, 0 nút sao chép còn trong bảng, mã SKU đủ trong ≤ 2 dòng (1 dòng ở 1700), dòng AO-LEN-M từ ~330px còn 111px; hộp nhỏ 29 mã + 29 nút sao chép, 0 mã bị cắt, mã TikTok tự xuống 2 dòng; tối 1280 đọc rõ. tsc + eslint sạch. Chưa bấm thử nút sao chép trong hộp nhỏ (cùng `CopyIconButton` đang dùng nơi khác).
+
+**Còn mở (chờ anh):**
+- Khách không còn tra được sản phẩm kho bằng mã sàn ngay trên bảng Tổng kho — muốn tra theo mã sàn thì sang Sản phẩm trên sàn. (Ô tìm Tổng kho vốn không tìm theo mã sàn.)
+- Mã quản lý để QUÉT: hiện quét = gõ / quét đúng mã SKU. Chưa có in tem mã vạch và chưa có trường mã vạch riêng (hàng có sẵn mã nhà sản xuất) — đề xuất: in tem bằng chính mã SKU trước.
+- Backend cho ĐỔI mã SKU (`PATCH /products/:id`, giữ id nên liên kết + lịch sử đi theo); tem đã in theo mã cũ sẽ quét không ra — cần quyết khi làm in tem.
+- Cột Mã SKU 9% vẫn hẹp; nếu gộp "Có thể bán" vào "Tồn kho" thì dư 7,5% cho cột này.
+
+### 6.2 Mã vạch quản lý cho sản phẩm kho (05/11 chiều — anh yêu cầu, CHƯA LÀM, em mới đề xuất, chờ anh chốt)
+
+**Lời anh** (kèm ảnh sản phẩm vừa tạo trên prod, SKU `TESTMOI-DEN-L`…): "Làm gì có mã quản lý đâu em, nên khách cần sinh ra cái mã vạch quản lý đó." → mã SKU KHÔNG được coi là mã quản lý; em rút lại ý "mã SKU là đủ" ở mục 6.1.
+
+**Vì sao mã vạch riêng là đúng (em đồng ý):** mã số ngắn in vừa tem nhỏ và quét nhanh hơn mã SKU chữ dài; mã SKU đổi được nên tem đã in sẽ hỏng, mã vạch thì cố định; hàng có sẵn mã nhà sản xuất nhập thẳng vào cùng trường.
+
+**Đề xuất của em (chưa được duyệt):**
+- Trường `barcode` trên `Product` (mỗi phân loại một mã), không trùng trong một shop. Máy TỰ SINH ở mọi cửa tạo sản phẩm kho (tạo mới, sao chép từ sàn, Excel, tự khớp + tạo SKU); khách sửa tay được khi hàng đã có mã nhà sản xuất. Sản phẩm cũ: điền một lượt theo lô.
+- Định dạng: số thuần, sinh từ một dãy số tăng dần của Postgres (không tranh chấp khi nhiều người tạo cùng lúc). Em nghiêng về 13 chữ số bắt đầu bằng 2 kèm số kiểm tra (theo trí nhớ, GS1 dành đầu số 2 cho mã nội bộ — PHẢI kiểm lại nguồn trước khi code); phương án kia là dãy 10 chữ số như Salework.
+- Quét: Phiếu nhiều mã, Kiểm kê, Cất lên kệ, kho trên mobile nhận mã vạch HOẶC mã SKU.
+- Hiển thị: dòng nhỏ dưới mã SKU ở Tổng kho, kèm nút sao chép.
+- In tem: nút "In mã vạch" theo dòng và hàng loạt, số tem theo số lượng.
+- Lát: (1) trường + tự sinh + điền sản phẩm cũ + hiển thị + ô quét web; (2) in tem; (3) mobile.
+- ⚠️ Lát 1 có migration trên `Product` + sửa `schema.prisma` — lúc ghi mục này cây làm việc đang có thay đổi `schema.prisma` chưa commit của việc khác (lát 3.9 mốc nước danh mục); phải đợi việc đó commit rồi mới thêm.
+
+### 6.3 ĐÃ LÀM TRÊN LOCAL 05/11 tối — nối MỘT CHIỀU + mã vạch quản lý 13 số (CHƯA commit, anh đang xem local)
+
+**Anh chốt:** "Vậy dùng 13 số. Và anh cũng quyết định bỏ luôn phần nối gian này nữa. Việc nối sẽ dành cho sản phẩm trên sàn nối vào Tổng Kho, anh chỉ cần 1 chiều thôi cho khách dễ hình dung và quản lý. Em làm local trước nhé."
+
+**A. Nối một chiều (sàn → Tổng kho) — ⛔ đừng thêm lại chiều ngược**
+- Tổng kho: bỏ chip "Nối gian" ở SKU chưa nối (nay chỉ ghi "Chưa nối"), bỏ dòng "Nối thêm / gỡ nối gian" trong hộp nhỏ, bỏ `jumpToLinks` / `linkSeedFor`. Cột "Bán trên" chỉ để XEM — **anh chốt 05/11 tối: "Giữ để xem"** (khách cần biết số tồn đang được đẩy lên gian nào); đừng bỏ cột, đừng thêm lại nút nối vào cột.
+- Trang Sản phẩm trên sàn: gỡ luồng ngược — `?target=` / `?targetSku=`, dải "Đang nối thêm gian cho SKU kho X", nút "Nối vào X", và `target` trong ngăn kéo nối (`link-drawer.tsx`). Còn `?search=`.
+- Chưa đụng: hộp cũ "Tự khớp + tạo SKU" (`one-click-link-dialog.tsx`, chỉ còn mở từ khối 3 bước đang ẩn); tour Kho `/guide` còn tả nút nối ở Tổng kho.
+
+**B. Mã vạch quản lý — lát 1**
+- **DB** (migration `20261105220000_product_barcode`): dãy `product_barcode_seq` + hàm `product_new_barcode()` = "2" + 11 số thứ tự + số kiểm tra EAN-13; cột `"Product"."barcode"` có DEFAULT gọi hàm → MỌI cửa tạo sản phẩm kho tự có mã, không sửa từng nơi; chỉ mục duy nhất MỘT PHẦN `(userId, barcode) WHERE barcode IS NOT NULL` (dựng tức thời); REVOKE hàm khỏi PUBLIC / anon / authenticated; lấy khóa `Product` có thử lại. ADD COLUMN không kèm DEFAULT nên không viết lại bảng — sản phẩm cũ NULL.
+- **Điền sản phẩm cũ:** `backend/scripts/backfill-product-barcode.ts` (`status` / `run --batch --pause --max`), duyệt `id > con trỏ`, mỗi lô một UPDATE, chạy lại an toàn; không chạm `costPrice` nên trigger sổ cái không chạy.
+- **Backend:** `lib/product-barcode.ts` (số kiểm tra, chuẩn hóa mã gõ tay 4–32 ký tự chữ/số/._-) + test 12 ca; `GET /products` (cả `view=grouped`) và Nhật ký kho tìm thêm theo mã vạch; `PATCH /products/:id` nhận `barcode` — rỗng = sinh mã mới, chặn trùng mã vạch SKU khác và trùng MÃ SKU của SKU khác (409); phiếu kiểm kê trả kèm `barcode`.
+- **Web:** cột "Mã SKU / Mã vạch" ở Tổng kho (12% + px-2; có cột Đang ở thì bảng tối thiểu 1.040px để hai cột tiền không hẹp hơn trước); mã SKU dài xuống dòng sau dấu gạch, không cắt; ô "Mã vạch quản lý" trong ⋯ › "Mã vạch, cảnh báo & tồn an toàn"; ô tìm Tổng kho nhận mã vạch; ba ô quét (Phiếu nhiều mã, Kiểm kê, Cất lên kệ) so khớp qua `lib/product-code.ts` — mã vạch HOẶC mã SKU.
+- **Quyết định em tự chọn (chưa hỏi anh):** dãy số chung toàn hệ thống (đơn giản, không tranh chấp; đổi lại khách suy được tổng số sản phẩm đã tạo trên Hubsell từ mã của mình — muốn kín thì đổi sang bộ đếm theo shop TRƯỚC khi lên prod); không ép số kiểm tra với mã khách gõ tay; nhân viên cũng sửa được mã vạch (cùng quyền PATCH hiện có).
+
+**Kiểm local (demo, 3010 ↔ 4010):**
+- DB: điền 1.517 sản phẩm cũ → 0 sai định dạng, 0 trùng trong shop; tạo sản phẩm không truyền `barcode` → tự có mã hợp lệ; gán trùng → P2002.
+- API (gọi thật): đặt mã nhà sản xuất 200; trùng mã vạch 409; trùng mã SKU khác 409; quá ngắn / có dấu 400; tìm theo mã vạch ra đúng SKU (phẳng + theo nhóm); xóa trắng → sinh mã mới; phiếu kiểm kê có `barcode`.
+- Giao diện: 1280 / 1366 / 1440 / 1700, CẢ hai ca có và không có cột Đang ở — 0 ô tràn, mã vạch 1 dòng, mã SKU ≤ 2 dòng; tối 1280 đọc rõ; hộp Cài đặt SKU hiện đúng mã; quét mã vạch ở Phiếu nhiều mã → thêm đúng dòng AO-LEN-M (phiếu nháp, không lưu). tsc BE + FE, eslint sạch.
+- **CHƯA kiểm:** ô quét Kiểm kê + Cất lên kệ trên giao diện (cùng hàm so khớp, chưa bấm thử); bấm Lưu trong hộp Cài đặt SKU (mới thử qua API); máy quét thật; tài khoản nhân viên; dữ liệu giá 7 chữ số / khoảng giá ở bề rộng cột mới (bề rộng hai cột tiền không đổi so với trước); mobile.
+
+**⏳ TRƯỚC KHI LÊN PROD (chờ anh):**
+1. Chốt dãy số chung hay theo shop.
+2. Cách điền sản phẩm cũ trên prod: script chạy ở Render Shell của worker (hay bị chặn) hoặc việc chạy một lần lúc khởi động — em chưa chọn.
+3. `SELECT product_new_barcode()` chạy bằng vai trò backend trên Supabase sau REVOKE — chưa thử trên Supabase thật.
+4. Lát 2: in tem mã vạch (EAN-13 cần bộ vẽ riêng — `code128.ts` hiện có chỉ vẽ Code 128; mã 13 số in bằng Code 128 vẫn quét ra đúng số). Lát 3: kho trên mobile quét mã vạch; cột mã vạch trong Excel nhập / xuất.
+
+**Dữ liệu thử còn trong DB local:** 6 gian `cmvt_wide_*` nối vào AO-LEN-M; sản phẩm `TESTMOI-*` (9 phân loại, chưa nối); GIAY-SNK-38 đã bị đổi mã vạch khi thử (2000000015194). Vị trí thử đã xóa.
+
+### 6.4 In tem mã vạch — ĐÃ LÀM TRÊN LOCAL 05/11 tối (lát 2 của mã vạch; CHƯA commit, CHƯA in / quét thật)
+
+**Anh chốt cùng lượt:**
+- Dãy số dùng chung toàn hệ thống: "Mã này nội bộ thì dùng chung chắc cũng chẳng sao" → giữ dãy chung, KHÔNG làm bộ đếm theo shop.
+- "Khi sao chép sản phẩm từ sàn vào tổng kho cũng coi như là sinh ra một sản phẩm mới" → phải có mã vạch. Đã chạy thật `POST /api/sao-chep-san-pham/warehouse-only` kèm `origin` (đúng cửa "Sao chép sản phẩm từ sàn"): 2 phân loại `TESTCHEP-M` / `TESTCHEP-L` chép về đều có mã 13 số. Ba cửa tạo trong mã (`listing-copy/manual.ts`, `routes/mappings.ts` create-products, `routes/products.ts` nhập Excel) đều `product.create` không truyền `barcode` → DEFAULT của cột lo. Mới chạy thật cửa thứ nhất; hai cửa kia đọc mã.
+- "Phần in mã vạch… làm ngay bên cạnh mã vạch" → nút máy in nằm ngay sau mã vạch trong cột "Mã SKU / Mã vạch".
+
+**Đã làm:**
+- `lib/barcode.ts`: vẽ EAN-13 (mã 13 số hợp lệ) và Code 128 bộ B (mã khách tự nhập khác); bảng Code 128 chép nguyên từ `backend/…/fulfillment/code128.ts` bằng script — sửa bảng thì sửa cả hai nơi. `components/products/barcode-svg.tsx` vẽ SVG kèm vùng trắng hai bên.
+- `lib/label-print.ts`: 3 khổ tem (em TỰ CHỌN, chưa in thử): cuộn 50×30 mm; cuộn 35×22 mm ×3 tem/hàng (giấy 110 mm); A4 65 tem 38,1×21,2 mm (lề 4,75 / 10,7, khe 2,5). Trần 2.000 tem/lượt (tự chọn). Ngưỡng cảnh báo vạch mảnh 0,25 mm = 2 chấm máy in nhiệt 203 dpi.
+- `components/products/print-labels-dialog.tsx`: chọn khổ (nhớ lần trước), số tem từng mã, nút "Mỗi mã 1 tem" / "Theo tồn kho", cảnh báo (không chặn) khi mã quá dài so với khổ tem.
+- `app/print/product-labels/page.tsx`: in bằng trình duyệt như phiếu kho — hộp ghi lệnh in vào localStorage, trang in đọc lại, dựng tem theo mm, tự gọi hộp in; `?preview=1` chỉ xem.
+- Tổng kho: nút in cạnh mã vạch từng dòng + "In mã vạch (N)" trên thanh hàng loạt. Cột mã 13%, mã vạch cỡ 11px; có cột Đang ở thì bảng tối thiểu 1.040px.
+
+**Kiểm local:**
+- Bộ vẽ: EAN-13 giải mã ngược bằng bảng độ rộng gõ độc lập đúng 5/5 mã; Code 128 trùng từng mô-đun với bộ vẽ backend 8/8 chuỗi. Frontend KHÔNG có bộ chạy test → đây là kiểm một lần bằng script tạm, không có test lưu lại.
+- Trang in (xem trước, 70 tem gồm tên 90 ký tự, mã tự nhập 24 ký tự, mã nhà sản xuất): 50×30 → 70 trang, tem đúng 50×30 mm; 35×22×3 → 24 trang, trang 109×22 mm; A4 → 2 trang 65 + 5, lề đo được 4,7 / 10,7 mm; 0 tem tràn. Bề rộng mô-đun mã 13 số: 0,416 / 0,283 / 0,311 mm (đều ≥ 0,25).
+- Hộp in: mở từ nút cạnh mã vạch và từ thanh hàng loạt; "Theo tồn kho" điền đúng 100; lệnh in ghi đúng; sáng + tối đọc rõ (ô xem trước dùng màu cố định).
+- Bảng Tổng kho có nút in: 1280 / 1366 / 1440 / 1700, có + không cột Đang ở — 0 ô tràn, mã vạch 1 dòng. Có cột Đang ở: hai cột tiền 94px (trước 95px), bảng 1.040px nên ở 1366 xuất hiện cuộn ngang 11px (trước không cuộn). tsc + eslint sạch.
+- **CHƯA kiểm:** in ra giấy thật trên máy in tem / A4 và QUÉT thử tem in ra (lệch lề, vạch nhòe chỉ lộ khi in thật); hộp in của trình duyệt (trong khung xem thử em chỉ dùng `?preview=1`); tài khoản nhân viên; tem cho mã tự nhập dài (chỉ có cảnh báo).
+
+**⏳ Trước khi lên prod:** anh in thử 3 khổ trên máy thật rồi quét; chọn cách điền mã cho sản phẩm cũ trên prod; thử hàm `product_new_barcode()` trên Supabase sau REVOKE. Còn lại: mobile quét mã vạch, cột mã vạch trong Excel.
+
+**Dữ liệu thử thêm trong DB local:** `TESTCHEP-M` / `TESTCHEP-L` (chép qua cửa Sao chép từ sàn).

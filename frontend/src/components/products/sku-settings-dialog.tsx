@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, updateProductStockSettings, type Product } from "@/lib/api";
+import { ApiError, updateProductBarcode, updateProductStockSettings, type Product } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -29,8 +29,10 @@ interface SkuSettingsDialogProps {
 }
 
 /**
- * CÀI ĐẶT RIÊNG CỦA MỘT SKU: ngưỡng cảnh báo sắp hết hàng + tồn an toàn.
- * Ô để trống = dùng mặc định toàn shop (Cài đặt đồng bộ); nhập 0 = tắt/không đệm.
+ * CÀI ĐẶT RIÊNG CỦA MỘT SKU: mã vạch quản lý + ngưỡng cảnh báo sắp hết hàng + tồn an toàn.
+ * Ô ngưỡng / tồn an toàn để trống = dùng mặc định toàn shop (Cài đặt đồng bộ); nhập 0 = tắt/không đệm.
+ * Ô mã vạch (05/11/2026): hệ thống đã tự sinh 13 số; khách thay bằng mã có sẵn trên hàng, xóa trắng
+ * = nhờ máy sinh mã mới. Chỉ gọi lưu mã vạch khi ô thật sự đổi.
  */
 export function SkuSettingsDialog({
   product,
@@ -41,12 +43,14 @@ export function SkuSettingsDialog({
 }: SkuSettingsDialogProps) {
   const [lowStock, setLowStock] = useState("");
   const [safety, setSafety] = useState("");
+  const [barcode, setBarcode] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setLowStock(product.lowStockThreshold == null ? "" : String(product.lowStockThreshold));
     setSafety(product.safetyStock == null ? "" : String(product.safetyStock));
+    setBarcode(product.barcode ?? "");
   }, [open, product]);
 
   function parse(raw: string, label: string): number | null | false {
@@ -67,6 +71,10 @@ export function SkuSettingsDialog({
     if (safe === false) return;
     setSaving(true);
     try {
+      // Mã vạch lưu TRƯỚC: trùng mã thì dừng ở đây, chưa đổi gì khác.
+      if (barcode.trim() !== (product.barcode ?? "")) {
+        await updateProductBarcode(product.id, barcode.trim());
+      }
       await updateProductStockSettings(product.id, {
         lowStockThreshold: low,
         safetyStock: safe,
@@ -99,6 +107,24 @@ export function SkuSettingsDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="sku-barcode">Mã vạch quản lý</Label>
+            <Input
+              id="sku-barcode"
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              placeholder="để trống = hệ thống sinh mã 13 số mới"
+              className="font-mono"
+              maxLength={32}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className={TEXT_SUB}>
+              Mã để kho quét và in tem. Hệ thống đã tự sinh sẵn; hàng có mã in trên bao bì thì nhập mã
+              đó vào đây. Đổi mã thì tem đã in theo mã cũ sẽ quét không ra.
+            </p>
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="sku-low-stock">Ngưỡng cảnh báo sắp hết hàng</Label>
             <div className="flex items-center gap-2">

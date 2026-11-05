@@ -546,7 +546,7 @@ router.get("/stocktake/sheet", async (req: AuthRequest, res, next) => {
         take: STOCKTAKE_SHEET_MAX,
         select: {
           quantity: true,
-          product: { select: { id: true, skuCode: true, productName: true, isActive: true } },
+          product: { select: { id: true, skuCode: true, barcode: true, productName: true, isActive: true } },
         },
       });
       res.json({
@@ -554,6 +554,7 @@ router.get("/stocktake/sheet", async (req: AuthRequest, res, next) => {
         rows: levels.map((l) => ({
           productId: l.product.id,
           skuCode: l.product.skuCode,
+          barcode: l.product.barcode,
           productName: l.product.productName,
           isActive: l.product.isActive,
           book: l.quantity,
@@ -566,13 +567,14 @@ router.get("/stocktake/sheet", async (req: AuthRequest, res, next) => {
       where: { userId: ownerId, isActive: true },
       orderBy: { skuCode: "asc" },
       take: STOCKTAKE_SHEET_MAX,
-      select: { id: true, skuCode: true, productName: true, quantityInStock: true },
+      select: { id: true, skuCode: true, barcode: true, productName: true, quantityInStock: true },
     });
     res.json({
       location: null,
       rows: products.map((p) => ({
         productId: p.id,
         skuCode: p.skuCode,
+        barcode: p.barcode,
         productName: p.productName,
         isActive: true,
         book: p.quantityInStock,
@@ -738,6 +740,7 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
           ? {
               OR: [
                 { skuCode: { contains: search, mode: "insensitive" } },
+                { barcode: { contains: search, mode: "insensitive" } },
                 { productName: { contains: search, mode: "insensitive" } },
               ],
             }

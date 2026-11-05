@@ -41,6 +41,7 @@ import {
   getToken,
   type Product,
 } from "@/lib/api";
+import { productMatchesCode } from "@/lib/product-code";
 import { formatNumber } from "@/lib/format";
 import { canSeeFinancials } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
@@ -166,7 +167,7 @@ export default function ReceiveStockPage() {
   async function handleEnter() {
     const q = query.trim();
     if (!q) return;
-    const exact = suggestions.find((p) => p.skuCode.toUpperCase() === q.toUpperCase());
+    const exact = suggestions.find((p) => productMatchesCode(p, q));
     if (exact) {
       addProduct(exact);
       return;
@@ -181,7 +182,7 @@ export default function ReceiveStockPage() {
     try {
       const res = await fetchProducts({ page: 1, pageSize: 8, search: q });
       const hit =
-        res.items.find((p) => p.skuCode.toUpperCase() === q.toUpperCase()) ??
+        res.items.find((p) => productMatchesCode(p, q)) ??
         (res.items.length === 1 ? res.items[0] : undefined);
       if (hit) addProduct(hit);
       else if (res.items.length === 0) toast.error(`Không có SKU nào khớp "${q}" trong kho`);
@@ -334,7 +335,7 @@ export default function ReceiveStockPage() {
             ref={searchRef}
             autoFocus
             className="pl-9"
-            placeholder="Gõ hoặc quét mã SKU rồi Enter…"
+            placeholder="Quét mã vạch, hoặc gõ mã SKU rồi Enter…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {

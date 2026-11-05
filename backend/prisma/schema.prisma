@@ -1518,6 +1518,16 @@ model Product {
   /// MỌI chỗ tạo/sửa tên hoặc phân loại — không tính tay.
   groupKey    String?
 
+  /// MÃ VẠCH QUẢN LÝ (05/11/2026, anh Trung: sản phẩm Tổng kho là sản phẩm RIÊNG, cần mã quản lý để
+  /// kho quét hàng). 13 số chuẩn EAN-13, DB tự sinh qua hàm product_new_barcode() ("2" + 11 số thứ tự
+  /// + số kiểm tra) ở MỌI cửa tạo sản phẩm — code KHÔNG truyền trường này khi tạo. Khách sửa tay được
+  /// (hàng có sẵn mã nhà sản xuất). Không trùng trong một shop: chỉ mục duy nhất MỘT PHẦN
+  /// "Product_userId_barcode_key" (WHERE barcode IS NOT NULL) chỉ khai trong SQL migration
+  /// 20261105220000_product_barcode — Prisma không diễn tả được, đừng thêm @@unique ở đây.
+  /// NULL = sản phẩm cũ chưa được điền (scripts/backfill-product-barcode.ts). Mã SKU vẫn là mã để
+  /// KHỚP VỚI SÀN; mã vạch là mã để KHO QUÉT / in tem.
+  barcode     String? @default(dbgenerated("product_new_barcode()"))
+
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
   // Tên sản phẩm in trên hóa đơn có thể khác tên bán hàng (theo danh mục hàng hóa).
   taxName  String?

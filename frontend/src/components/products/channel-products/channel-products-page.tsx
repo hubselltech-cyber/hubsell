@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -35,7 +34,6 @@ import {
   type Channel,
   type ChannelName,
   type ChannelProductBucket,
-  type Product,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
@@ -61,7 +59,8 @@ import { channelModelId, groupChannelProducts, variantLabel, type ChannelGroup }
  *     toàn nằm ở bên Tổng kho") — đã gỡ nút "Đưa vào kho", "Đưa vào Tổng kho…" theo lô và ô "Tạo SKU"
  *     trong ngăn kéo. Đừng thêm lại đường tạo SKU kho ở đây.
  *   · Việc hàng loạt có bước xem lại: "Tự khớp mã trùng" (chỉ nối mã trùng chính xác).
- *   · Chiều ngược (Tổng kho › Nối gian): `targetProduct` → dải đích + nút "Nối vào X".
+ *   · MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm sàn về Tổng kho. Luồng ngược "Tổng kho › Nối gian"
+ *     (dải "Đang nối thêm gian cho SKU kho X" + nút "Nối vào X") đã gỡ — đừng thêm lại.
  * Thay link-manager.tsx (bảng bung sẵn, ô gõ mã từng dòng kiểu Salework 22/10) — anh Trung 05/11: "quá rối".
  */
 
@@ -76,12 +75,8 @@ const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-le
 
 export function ChannelProductsPage({
   initialSearch,
-  targetProduct,
-  onClearTarget,
 }: {
   initialSearch?: string;
-  targetProduct?: Product | null;
-  onClearTarget?: () => void;
 }) {
   const invalidate = useInvalidate();
   const [bucket, setBucket] = useState<ChannelProductBucket>("queue");
@@ -180,7 +175,6 @@ export function ChannelProductsPage({
    */
   function primaryOf(g: ChannelGroup): { label: string; kind: "drawer" | "unignore" | "none" } {
     if (bucket === "ignored") return { label: "Bỏ cờ bỏ qua", kind: "unignore" };
-    if (targetProduct) return { label: `Nối vào ${targetProduct.skuCode}`, kind: "drawer" };
     if (g.status === "linked") return { label: "", kind: "none" };
     if (g.status === "partial") return { label: "Nối nốt", kind: "drawer" };
     return { label: "Nối kho", kind: "drawer" };
@@ -188,20 +182,6 @@ export function ChannelProductsPage({
 
   return (
     <div className="space-y-4 pb-10">
-      {targetProduct && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm">
-          <Link2 className="size-4 shrink-0 text-primary" />
-          <span className="min-w-0 flex-1">
-            Đang nối thêm gian cho SKU kho <b className="font-mono">{targetProduct.skuCode}</b>
-            <span className="text-muted-foreground"> — {targetProduct.productName}</span>
-            <span className={cn(TEXT_SUB, "block")}>Chọn gian, tìm đúng sản phẩm rồi bấm &ldquo;Nối vào {targetProduct.skuCode}&rdquo;.</span>
-          </span>
-          <Button size="sm" variant="outline" onClick={onClearTarget}>
-            <Check className="size-3.5" /> Xong
-          </Button>
-        </div>
-      )}
-
       {/* ===== DẢI 4 SỐ (bấm = lọc) + thao tác trang ===== */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="Nhóm sản phẩm trên sàn">
@@ -495,7 +475,6 @@ export function ChannelProductsPage({
           if (!o) setDrawerGroup(null);
         }}
         group={drawerGroup}
-        target={targetProduct}
         onDone={() => void refresh()}
       />
       <AutoMatchDialog open={autoOpen} onOpenChange={setAutoOpen} channelId={channelId || undefined} onDone={() => void refresh()} />
