@@ -4572,3 +4572,20 @@ model ListingCopyTarget {
   @@index([channelId, status])
   @@map("listing_copy_targets")
 }
+
+/// SỔ TIẾN ĐỘ VIỆC BẢO TRÌ CHẠY MỘT LẦN (05/11/2026 đêm) — việc điền dữ liệu cũ chạy dần ở worker
+/// phải nhớ đã làm tới đâu qua các lần khởi động lại. Một dòng / một việc (`key`). Hiện dùng cho
+/// "product-barcode-backfill" (services/product-barcode-backfill.ts). `doneAt` có giá trị = xong
+/// hẳn, lần khởi động sau chỉ đọc đúng dòng này rồi thôi — không quét lại bảng lớn.
+model MaintenanceJob {
+  key       String    @id
+  /// id dòng cuối đã duyệt (duyệt theo khóa chính tăng dần); null = chưa bắt đầu.
+  cursor    String?
+  /// Số dòng đã ghi (không phải số dòng đã duyệt).
+  processed Int       @default(0)
+  doneAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now())
+
+  @@map("maintenance_jobs")
+}

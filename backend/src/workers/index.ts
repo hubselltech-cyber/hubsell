@@ -44,6 +44,7 @@ import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
+import { startProductBarcodeBackfillWorker } from "./product-barcode-backfill";
 import { startListingCopyReviewWorker } from "./listing-copy-review";
 import { startReadLanes } from "./read-lanes";
 import { startAdsLane } from "./ads-lane";
@@ -144,4 +145,7 @@ export function startAllWorkers(): void {
   startLineIdBackfillWorker();
   // Sao chép sản phẩm: hỏi lại TikTok bài "Chờ sàn duyệt" mỗi 10 phút (anh Trung 29/10).
   startListingCopyReviewWorker();
+  // Tự điền mã vạch quản lý cho sản phẩm kho có từ trước 05/11/2026 (anh Trung: "Máy tự điền chậm") —
+  // 200 dòng / 3 giây, nhớ tiến độ ở maintenance_jobs, xong là thôi; tắt PRODUCT_BARCODE_BACKFILL_OFF=1.
+  startProductBarcodeBackfillWorker();
 }

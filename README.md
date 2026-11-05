@@ -121,7 +121,7 @@ hubsell/
 │       │                                #   chưa nối worker — docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b), ...
 │       ├── routes/                      # 36 nhóm endpoint /api/*: auth, orders, products, finance, tax,
 │       │                                #   subscription, ads, tiktok-ads, webhooks, admin*, support, ...
-│       ├── workers/                     # 28 tiến trình nền, đăng ký trong workers/index.ts:
+│       ├── workers/                     # 31 tiến trình nền, đăng ký trong workers/index.ts:
 │       │                                #   order-auto-sync (lịch từng gian), event-queue (webhook pg-boss),
 │       │                                #   stock-queue, stock-reconcile, order-ledger, token-refresh,
 │       │                                #   plan-hibernate, subscription-reminder, invoice-*, review-auto-reply,
