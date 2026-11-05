@@ -88,6 +88,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ...baseScope,
       ...(cpStatus ? { status: cpStatus } : {}),
     };
+    // bucket (05/11/2026, trang Sản phẩm trên sàn thiết kế lại — docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md
+    // mục 5): hàng đợi theo SẢN PHẨM: queue = còn phân loại chưa nối (đang bán, không bỏ qua) ·
+    // linked = nối đủ · delisted = sàn đã gỡ · ignored = khách bỏ qua. Chỉ dùng với view=grouped;
+    // khi có bucket thì bỏ qua linked/status cũ và trả MỌI phân loại của sản phẩm (kể cả dòng đã nối).
+    const bucket = parseBucket(req.query.bucket);
 
     const where: Prisma.ChannelProductWhereInput = {
       ...scope,
@@ -106,20 +111,38 @@ router.get("/", async (req: AuthRequest, res, next) => {
         ? await pageOfChannelProductGroups(
             req.ownerId!,
             req.allowedChannelIds ?? null,
-            { channelName, channelId, linked, search, inStock, cpStatus },
+            bucket
+              ? { channelName, channelId, linked: "", search, inStock, cpStatus: undefined, bucket }
+              : { channelName, channelId, linked, search, inStock, cpStatus },
             page,
             pageSize
           )
         : null;
+    // Có bucket: dòng trả về là MỌI phân loại của sản phẩm (không lọc linked/status) để chip k/n đúng.
+    const rowWhere: Prisma.ChannelProductWhereInput = bucket ? baseScope : where;
+    const bucketCounts = bucket
+      ? await countChannelProductGroupBuckets(req.ownerId!, req.allowedChannelIds ?? null, {
+          channelName,
+          channelId,
+          linked: "",
+          search,
+          inStock,
+          cpStatus: undefined,
+        })
+      : null;
 
     const [total, items, linkedCount, unlinkedCount, activeCount, delistedCount] = await Promise.all([
       grouped ? Promise.resolve(grouped.total) : prisma.channelProduct.count({ where }),
-      grouped
+      // Trang không có nhóm nào (vd tab Bỏ qua trống) → KHÔNG hỏi dòng: `OR: []` của Prisma không lọc gì,
+      // sẽ trả cả bảng (05/11/2026 soi local: tab "Bỏ qua 0" hiện mọi sản phẩm).
+      grouped && grouped.keys.length === 0
+        ? Promise.resolve([])
+        : grouped
         ? prisma.channelProduct
             .findMany({
               where: {
                 AND: [
-                  where,
+                  rowWhere,
                   {
                     OR: grouped.keys.flatMap((k) => [
                       { channelId: k.channelId, externalId: k.itemId },
@@ -165,6 +188,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
         active: activeCount,
         delisted: delistedCount,
       },
+      /** Đếm theo SẢN PHẨM sàn cho 4 nhóm (chỉ khi gọi với bucket). */
+      buckets: bucketCounts,
+      bucket: bucket ?? "",
       status: req.query.status === "active" || req.query.status === "delisted" ? req.query.status : "",
     });
   } catch (err) {
@@ -229,6 +255,7 @@ router.post("/link", async (req: AuthRequest, res, next) => {
       },
       data: { productId: product.id },
     });
+    void logMappingsForRows(req.ownerId!, req.userId ?? null, channelProductIds, "LINK", "manual", product);
     const deactivated = await deactivateOrphanProducts(req.ownerId!, prevProductIds);
 
     // Giá vốn đã nhập ở cấp SKU sàn (lúc chưa nối kho) không được mất khi nối:
@@ -299,17 +326,61 @@ function channelItemId(externalId: string | null): string | null {
 async function pageOfChannelProductGroups(
   ownerId: string,
   allowedChannelIds: string[] | null,
-  f: {
-    channelName?: ChannelName;
-    channelId: string;
-    linked: string;
-    search: string;
-    inStock: boolean;
-    cpStatus?: "ACTIVE" | "DELISTED";
-  },
+  f: GroupFilter,
   page: number,
   pageSize: number
 ): Promise<{ keys: { channelId: string; itemId: string }[]; total: number }> {
+  const { whereSql, havingSql } = groupSql(ownerId, allowedChannelIds, f);
+  const gk = GROUP_KEY_SQL;
+  const [rows, count] = await Promise.all([
+    prisma.$queryRaw<{ gk: string }[]>(
+      Prisma.sql`SELECT ${gk} AS gk,
+                        MIN(CASE WHEN cp."productId" IS NULL THEN 0 ELSE 1 END) AS pending,
+                        MIN(cp."productName") AS name
+                 FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
+                 WHERE ${whereSql}
+                 GROUP BY 1 ${havingSql} ORDER BY pending ASC, name ASC, gk
+                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`
+    ),
+    prisma.$queryRaw<{ n: number }[]>(
+      Prisma.sql`SELECT COUNT(*)::int AS n FROM (
+                   SELECT ${gk} AS gk FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
+                   WHERE ${whereSql} GROUP BY 1 ${havingSql}) g`
+    ),
+  ]);
+  const keys = rows.map((r) => {
+    const i = r.gk.indexOf(":");
+    return { channelId: r.gk.slice(0, i), itemId: r.gk.slice(i + 1) };
+  });
+  return { keys, total: count[0]?.n ?? 0 };
+}
+
+type GroupBucket = "queue" | "linked" | "delisted" | "ignored";
+interface GroupFilter {
+  channelName?: ChannelName;
+  channelId: string;
+  linked: string;
+  search: string;
+  inStock: boolean;
+  cpStatus?: "ACTIVE" | "DELISTED";
+  bucket?: GroupBucket;
+}
+
+function parseBucket(v: unknown): GroupBucket | null {
+  return v === "queue" || v === "linked" || v === "delisted" || v === "ignored" ? v : null;
+}
+
+/** Khóa nhóm = gian × id sản phẩm sàn (dòng không có externalId đứng một mình theo id). */
+const GROUP_KEY_SQL = Prisma.sql`cp."channelId" || ':' || COALESCE(NULLIF(split_part(COALESCE(cp."externalId", ''), '-', 1), ''), cp."id")`;
+
+/**
+ * WHERE + HAVING cho phân trang / đếm theo nhóm. Bucket (05/11/2026):
+ *   queue    = đang bán, không bỏ qua, CÒN phân loại chưa nối   (HAVING MIN(linked) = 0)
+ *   linked   = đang bán, không bỏ qua, nối đủ                   (HAVING MIN(linked) = 1)
+ *   delisted = có dòng sàn đã gỡ (bất kể nối)                   (lọc status DELISTED)
+ *   ignored  = khách bỏ qua
+ */
+function groupSql(ownerId: string, allowedChannelIds: string[] | null, f: GroupFilter): { whereSql: Prisma.Sql; havingSql: Prisma.Sql } {
   const conds: Prisma.Sql[] = [Prisma.sql`c."userId" = ${ownerId}`];
   if (allowedChannelIds) conds.push(Prisma.sql`c."id" IN (${Prisma.join(allowedChannelIds)})`);
   if (f.channelName) conds.push(Prisma.sql`c."channelName" = ${f.channelName}::"ChannelName"`);
@@ -324,29 +395,45 @@ async function pageOfChannelProductGroups(
       Prisma.sql`(cp."channelSku" ILIKE ${like} OR cp."productName" ILIKE ${like} OR cp."variantName" ILIKE ${like})`
     );
   }
-  const whereSql = Prisma.join(conds, " AND ");
-  const gk = Prisma.sql`cp."channelId" || ':' || COALESCE(NULLIF(split_part(COALESCE(cp."externalId", ''), '-', 1), ''), cp."id")`;
-  const [rows, count] = await Promise.all([
-    prisma.$queryRaw<{ gk: string }[]>(
-      Prisma.sql`SELECT ${gk} AS gk,
-                        MIN(CASE WHEN cp."productId" IS NULL THEN 0 ELSE 1 END) AS pending,
-                        MIN(cp."productName") AS name
-                 FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
-                 WHERE ${whereSql}
-                 GROUP BY 1 ORDER BY pending ASC, name ASC, gk
-                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`
-    ),
-    prisma.$queryRaw<{ n: number }[]>(
-      Prisma.sql`SELECT COUNT(DISTINCT ${gk})::int AS n
-                 FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
-                 WHERE ${whereSql}`
-    ),
-  ]);
-  const keys = rows.map((r) => {
-    const i = r.gk.indexOf(":");
-    return { channelId: r.gk.slice(0, i), itemId: r.gk.slice(i + 1) };
-  });
-  return { keys, total: count[0]?.n ?? 0 };
+  let havingSql = Prisma.empty;
+  switch (f.bucket) {
+    case "queue":
+      conds.push(Prisma.sql`cp.status = 'ACTIVE'::"ChannelProductStatus" AND cp."ignoredAt" IS NULL`);
+      havingSql = Prisma.sql`HAVING MIN(CASE WHEN cp."productId" IS NULL THEN 0 ELSE 1 END) = 0`;
+      break;
+    case "linked":
+      conds.push(Prisma.sql`cp.status = 'ACTIVE'::"ChannelProductStatus" AND cp."ignoredAt" IS NULL`);
+      havingSql = Prisma.sql`HAVING MIN(CASE WHEN cp."productId" IS NULL THEN 0 ELSE 1 END) = 1`;
+      break;
+    case "delisted":
+      conds.push(Prisma.sql`cp.status = 'DELISTED'::"ChannelProductStatus"`);
+      break;
+    case "ignored":
+      conds.push(Prisma.sql`cp."ignoredAt" IS NOT NULL`);
+      break;
+    default:
+      break;
+  }
+  return { whereSql: Prisma.join(conds, " AND "), havingSql };
+}
+
+/** Đếm số SẢN PHẨM sàn trong từng nhóm — nuôi dải 4 số đầu trang. */
+async function countChannelProductGroupBuckets(
+  ownerId: string,
+  allowedChannelIds: string[] | null,
+  f: Omit<GroupFilter, "bucket">
+): Promise<Record<GroupBucket, number>> {
+  const one = async (bucket: GroupBucket) => {
+    const { whereSql, havingSql } = groupSql(ownerId, allowedChannelIds, { ...f, bucket });
+    const r = await prisma.$queryRaw<{ n: number }[]>(
+      Prisma.sql`SELECT COUNT(*)::int AS n FROM (
+                   SELECT ${GROUP_KEY_SQL} AS gk FROM "ChannelProduct" cp JOIN "Channel" c ON c."id" = cp."channelId"
+                   WHERE ${whereSql} GROUP BY 1 ${havingSql}) g`
+    );
+    return r[0]?.n ?? 0;
+  };
+  const [queue, linked, delisted, ignored] = await Promise.all([one("queue"), one("linked"), one("delisted"), one("ignored")]);
+  return { queue, linked, delisted, ignored };
 }
 
 /** Xếp dòng theo thứ tự nhóm của trang; trong nhóm theo tên phân loại (số tự nhiên) rồi mã. */
@@ -442,6 +529,7 @@ router.post("/link-by-sku", async (req: AuthRequest, res, next) => {
       req.ownerId!,
       prevProductId && prevProductId !== product.id ? [prevProductId] : []
     );
+    void logMappingsForRows(req.ownerId!, req.userId ?? null, [cp.id], created ? "CREATE" : "LINK", "manual", product);
     res.json({ product, created, seededStock, deactivated });
   } catch (err) {
     next(err);
@@ -683,7 +771,9 @@ async function createProductsFromChannelProducts(
     const typed = options.skuById?.[cp.id]?.trim();
     const key = typed
       ? typed.toUpperCase()
-      : root && isFallbackChannelSku(cp.channelSku)
+      : // Mã máy HOẶC sàn để trống mã (05/11/2026: phân loại TikTok không có seller_sku về với chuỗi rỗng →
+        // trước đây bị bỏ qua lặng lẽ dù khách đã gõ mã gốc) → dùng MÃ GỐC-ĐUÔI.
+        root && (isFallbackChannelSku(cp.channelSku) || !cp.channelSku.trim())
         ? skuFromRoot(root, cleanVariantName(cp.variantName))
         : cp.channelSku.trim().toUpperCase();
     const list = byUpperSku.get(key) ?? [];
@@ -879,14 +969,33 @@ router.post("/create-products", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Tối đa 200 sản phẩm mỗi lần tạo" });
       return;
     }
-    res.json(
-      await createProductsFromChannelProducts(
-        req.ownerId!,
-        channelProductIds,
-        req.allowedChannelIds,
-        parseCreateOptions(req.body)
-      )
+    const result = await createProductsFromChannelProducts(
+      req.ownerId!,
+      channelProductIds,
+      req.allowedChannelIds,
+      parseCreateOptions(req.body)
     );
+    // Lịch sử liên kết (05/11/2026): mỗi dòng sàn vừa được tạo SKU / nối theo mã.
+    void (async () => {
+      const rows = await prisma.channelProduct.findMany({
+        where: { id: { in: channelProductIds.map(String) }, productId: { not: null }, channel: ownerScope(req) },
+        select: { id: true, channelId: true, channelSku: true, productId: true, product: { select: { skuCode: true } } },
+      });
+      await logMappings(
+        req.ownerId!,
+        req.userId ?? null,
+        rows.map((r) => ({
+          channelId: r.channelId,
+          channelProductId: r.id,
+          channelSku: r.channelSku,
+          productId: r.productId,
+          productSku: r.product?.skuCode ?? null,
+          action: "CREATE" as const,
+          source: "batch",
+        }))
+      );
+    })().catch(() => undefined);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -1009,6 +1118,10 @@ router.post("/unlink", async (req: AuthRequest, res, next) => {
 
     // Gian đang dùng giá mặc định của kho → chép giá đó xuống thành giá riêng
     // TRƯỚC khi tháo, để giá vốn không tụt về 0 (giá vốn theo gian, 11/10/2026).
+    const before = await prisma.channelProduct.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, channelId: true, channelSku: true, productId: true, product: { select: { skuCode: true } } },
+    });
     const result = await prisma.$transaction(async (tx) => {
       await keepCostOnDetach(tx, { channelProductIds: ids }, req.ownerId!);
       return tx.channelProduct.updateMany({
@@ -1016,8 +1129,332 @@ router.post("/unlink", async (req: AuthRequest, res, next) => {
         data: { productId: null },
       });
     });
+    void logMappings(
+      req.ownerId!,
+      req.userId ?? null,
+      before.map((b) => ({
+        channelId: b.channelId,
+        channelProductId: b.id,
+        channelSku: b.channelSku,
+        productId: b.productId,
+        productSku: b.product?.skuCode ?? null,
+        action: "UNLINK" as const,
+        source: "manual",
+      }))
+    );
 
     res.json({ unlinked: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// THIẾT KẾ LẠI "SẢN PHẨM TRÊN SÀN" (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md):
+// bỏ qua · nối theo cặp (ngăn kéo / tự khớp đã duyệt) · xem trước tự khớp · tra theo đơn · lịch sử.
+// ============================================================
+
+type MappingAction = "LINK" | "UNLINK" | "CREATE" | "IGNORE" | "UNIGNORE";
+interface MappingLogEntry {
+  channelId: string | null;
+  channelProductId: string | null;
+  channelSku: string | null;
+  productId: string | null;
+  productSku: string | null;
+  action: MappingAction;
+  source: string;
+}
+
+/** Ghi lịch sử liên kết — best-effort, không bao giờ làm hỏng thao tác chính. */
+async function logMappings(ownerId: string, actorId: string | null, entries: MappingLogEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  try {
+    await prisma.mappingLog.createMany({ data: entries.map((e) => ({ ...e, ownerId, actorId })) });
+  } catch (err) {
+    console.warn(`[mappings] không ghi được lịch sử liên kết: ${(err as Error).message}`);
+  }
+}
+
+/** Ghi lịch sử cho một lô dòng sàn vừa nối/tạo về một sản phẩm kho. */
+async function logMappingsForRows(
+  ownerId: string,
+  actorId: string | null,
+  channelProductIds: string[],
+  action: MappingAction,
+  source: string,
+  product: { id: string; skuCode: string } | null
+): Promise<void> {
+  try {
+    const rows = await prisma.channelProduct.findMany({
+      where: { id: { in: channelProductIds } },
+      select: { id: true, channelId: true, channelSku: true },
+    });
+    await logMappings(
+      ownerId,
+      actorId,
+      rows.map((r) => ({
+        channelId: r.channelId,
+        channelProductId: r.id,
+        channelSku: r.channelSku,
+        productId: product?.id ?? null,
+        productSku: product?.skuCode ?? null,
+        action,
+        source,
+      }))
+    );
+  } catch (err) {
+    console.warn(`[mappings] không ghi được lịch sử liên kết: ${(err as Error).message}`);
+  }
+}
+
+const ownerScope = (req: AuthRequest): Prisma.ChannelWhereInput => ({
+  userId: req.ownerId!,
+  ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+});
+
+/**
+ * POST /api/mappings/ignore — BỎ QUA / BỎ CỜ BỎ QUA các dòng sàn (quà tặng, combo…).
+ * Body: { channelProductIds: string[], ignored: boolean }. Bỏ qua không gỡ liên kết, không đổi đơn.
+ */
+router.post("/ignore", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelProductIds, ignored } = req.body ?? {};
+    if (!Array.isArray(channelProductIds) || channelProductIds.length === 0 || channelProductIds.length > 2000) {
+      res.status(400).json({ error: "Chọn 1–2.000 sản phẩm sàn" });
+      return;
+    }
+    const rows = await prisma.channelProduct.findMany({
+      where: { id: { in: channelProductIds.map(String) }, channel: ownerScope(req) },
+      select: { id: true, channelId: true, channelSku: true },
+    });
+    const ids = rows.map((r) => r.id);
+    const r = await prisma.channelProduct.updateMany({
+      where: { id: { in: ids } },
+      data: { ignoredAt: ignored === false ? null : new Date() },
+    });
+    void logMappings(
+      req.ownerId!,
+      req.userId ?? null,
+      rows.map((x) => ({
+        channelId: x.channelId,
+        channelProductId: x.id,
+        channelSku: x.channelSku,
+        productId: null,
+        productSku: null,
+        action: (ignored === false ? "UNIGNORE" : "IGNORE") as MappingAction,
+        source: "manual",
+      }))
+    );
+    res.json({ updated: r.count, ignored: ignored !== false });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/mappings/link-batch — NỐI THEO CẶP (ngăn kéo nối: mỗi phân loại sàn → một SKU kho;
+ * tự khớp đã duyệt). Body: { pairs: [{channelProductId, productId}], source?: "manual"|"auto" }.
+ * Cùng hậu xử lý với /link: SKU cũ trơ lại → Ngừng bán; giá vốn kế thừa; vá đơn cũ; gieo tồn ban đầu.
+ */
+router.post("/link-batch", async (req: AuthRequest, res, next) => {
+  try {
+    const rawPairs = Array.isArray(req.body?.pairs) ? (req.body.pairs as unknown[]) : [];
+    const source = req.body?.source === "auto" ? "auto" : req.body?.source === "order" ? "order" : "manual";
+    const pairs = rawPairs
+      .map((p) => {
+        const o = (p ?? {}) as { channelProductId?: unknown; productId?: unknown };
+        return { channelProductId: typeof o.channelProductId === "string" ? o.channelProductId : "", productId: typeof o.productId === "string" ? o.productId : "" };
+      })
+      .filter((p) => p.channelProductId && p.productId);
+    if (pairs.length === 0 || pairs.length > 500) {
+      res.status(400).json({ error: "Cần 1–500 cặp phân loại sàn → SKU kho" });
+      return;
+    }
+    const productIds = [...new Set(pairs.map((p) => p.productId))];
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds }, userId: req.ownerId! },
+      select: { id: true, skuCode: true, productName: true },
+    });
+    const productById = new Map(products.map((p) => [p.id, p]));
+    if (productById.size !== productIds.length) {
+      res.status(404).json({ error: "Có SKU kho không thuộc shop này" });
+      return;
+    }
+    const cpIds = [...new Set(pairs.map((p) => p.channelProductId))];
+    const rows = await prisma.channelProduct.findMany({
+      where: { id: { in: cpIds }, channel: ownerScope(req) },
+      select: { id: true, channelId: true, channelSku: true, productId: true },
+    });
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    const prevProductIds = new Set<string>();
+    const byProduct = new Map<string, string[]>();
+    for (const p of pairs) {
+      const row = rowById.get(p.channelProductId);
+      if (!row) continue;
+      if (row.productId && row.productId !== p.productId) prevProductIds.add(row.productId);
+      const list = byProduct.get(p.productId) ?? [];
+      list.push(row.id);
+      byProduct.set(p.productId, list);
+    }
+    let linked = 0;
+    const entries: MappingLogEntry[] = [];
+    for (const [pid, ids] of byProduct) {
+      const r = await prisma.channelProduct.updateMany({ where: { id: { in: ids } }, data: { productId: pid } });
+      linked += r.count;
+      const product = productById.get(pid)!;
+      for (const id of ids) {
+        const row = rowById.get(id)!;
+        entries.push({ channelId: row.channelId, channelProductId: id, channelSku: row.channelSku, productId: pid, productSku: product.skuCode, action: "LINK", source });
+      }
+    }
+    const touched = [...byProduct.keys()];
+    const deactivated = await deactivateOrphanProducts(req.ownerId!, [...prevProductIds].filter((id) => !byProduct.has(id)));
+    await inheritChannelCostPrice(touched, req.ownerId!);
+    await backfillOrderLinesByProducts(prisma, touched, req.ownerId!);
+    await invalidateOwnerCostCaches(req.ownerId!);
+    const seeded = await seedInitialStockFromChannel(touched, req.ownerId!);
+    void logMappings(req.ownerId!, req.userId ?? null, entries);
+    res.json({ linked, products: touched.length, seededProducts: seeded.size, deactivated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/mappings/auto-match/preview?channelId= — XEM TRƯỚC tự khớp theo mã (chỉ trùng mã chính
+ * xác, luật anh Trung 22/10). Ba nhóm: sure (một dòng sàn ↔ một SKU kho, trong gian không có dòng
+ * khác cùng mã) · review (cùng gian có ≥2 dòng mang cùng mã → không rõ dòng nào là thật; học Sapo
+ * "chế độ an toàn") · không khớp (chỉ đếm). Không ghi gì — khách duyệt rồi gọi /link-batch.
+ */
+router.get("/auto-match/preview", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const [products, unlinked] = await Promise.all([
+      prisma.product.findMany({ where: { userId: req.ownerId! }, select: { id: true, skuCode: true, productName: true, variantName: true, isActive: true } }),
+      prisma.channelProduct.findMany({
+        where: { productId: null, status: "ACTIVE", ignoredAt: null, ...(channelId ? { channelId } : {}), channel: ownerScope(req) },
+        select: { id: true, channelId: true, channelSku: true, productName: true, variantName: true, channelStock: true, channel: { select: { channelName: true, shopName: true } } },
+        take: 5000,
+      }),
+    ]);
+    const productBySku = new Map(products.map((p) => [p.skuCode.toUpperCase(), p]));
+    const dupInShop = new Map<string, number>();
+    for (const cp of unlinked) {
+      const k = `${cp.channelId}:${cp.channelSku.trim().toUpperCase()}`;
+      dupInShop.set(k, (dupInShop.get(k) ?? 0) + 1);
+    }
+    const sure: unknown[] = [];
+    const review: unknown[] = [];
+    let none = 0;
+    for (const cp of unlinked) {
+      const key = cp.channelSku.trim().toUpperCase();
+      const p = key ? productBySku.get(key) : undefined;
+      if (!p) {
+        none++;
+        continue;
+      }
+      const item = {
+        channelProductId: cp.id,
+        channelId: cp.channelId,
+        channelName: cp.channel.channelName,
+        shopName: cp.channel.shopName,
+        channelSku: cp.channelSku,
+        productName: cp.productName,
+        variantName: cp.variantName,
+        channelStock: cp.channelStock,
+        productId: p.id,
+        productSku: p.skuCode,
+        productTitle: p.productName,
+        productVariant: p.variantName,
+        reason: null as string | null,
+      };
+      const dup = dupInShop.get(`${cp.channelId}:${key}`) ?? 0;
+      if (dup > 1) {
+        item.reason = `Gian này có ${dup} phân loại cùng mã ${cp.channelSku}`;
+        review.push(item);
+      } else if (p.isActive === false) {
+        item.reason = "SKU kho đang Ngừng bán";
+        review.push(item);
+      } else {
+        sure.push(item);
+      }
+    }
+    res.json({ sure, review, none, scanned: unlinked.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/mappings/lookup?channelId=&sku= — tìm SẢN PHẨM sàn chứa phân loại (gian, mã sàn) — dùng cho
+ * "Nối ngay trên đơn hàng": từ dòng đơn chưa nối mở đúng ngăn kéo. Trả mọi phân loại của sản phẩm đó.
+ */
+router.get("/lookup", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const sku = typeof req.query.sku === "string" ? req.query.sku.trim() : "";
+    if (!channelId || !sku) {
+      res.status(400).json({ error: "Thiếu gian hoặc mã sàn" });
+      return;
+    }
+    const hit = await prisma.channelProduct.findFirst({
+      where: { channelId, channelSku: sku, channel: ownerScope(req) },
+      select: { id: true, externalId: true },
+    });
+    if (!hit) {
+      res.json({ items: [] });
+      return;
+    }
+    const itemId = channelItemId(hit.externalId);
+    const items = await prisma.channelProduct.findMany({
+      where: {
+        channelId,
+        ...(itemId ? { OR: [{ externalId: itemId }, { externalId: { startsWith: `${itemId}-` } }] } : { id: hit.id }),
+      },
+      include: INCLUDE,
+      orderBy: [{ variantName: "asc" }, { channelSku: "asc" }],
+    });
+    res.json({ items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/mappings/logs?page&pageSize — lịch sử liên kết, mới nhất trước, kèm tên người làm. */
+router.get("/logs", async (req: AuthRequest, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
+    const where: Prisma.MappingLogWhereInput = { ownerId: req.ownerId! };
+    const [total, rows] = await Promise.all([
+      prisma.mappingLog.count({ where }),
+      prisma.mappingLog.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize }),
+    ]);
+    const actorIds = [...new Set(rows.map((r) => r.actorId).filter((x): x is string => Boolean(x)))];
+    const channelIds = [...new Set(rows.map((r) => r.channelId).filter((x): x is string => Boolean(x)))];
+    const [actors, channels] = await Promise.all([
+      actorIds.length ? prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, fullName: true } }) : [],
+      channelIds.length ? prisma.channel.findMany({ where: { id: { in: channelIds } }, select: { id: true, shopName: true, channelName: true } }) : [],
+    ]);
+    const actorName = new Map(actors.map((a) => [a.id, a.fullName]));
+    const channelOf = new Map(channels.map((c) => [c.id, c]));
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        action: r.action,
+        source: r.source,
+        channelSku: r.channelSku,
+        productSku: r.productSku,
+        shopName: r.channelId ? (channelOf.get(r.channelId)?.shopName ?? null) : null,
+        channelName: r.channelId ? (channelOf.get(r.channelId)?.channelName ?? null) : null,
+        actorName: r.actorId ? (actorName.get(r.actorId) ?? null) : null,
+        createdAt: r.createdAt,
+      })),
+      total,
+      page,
+      pageSize,
+      pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    });
   } catch (err) {
     next(err);
   }

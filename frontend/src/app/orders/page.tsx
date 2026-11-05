@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -29,6 +29,9 @@ import { InvoiceStatusPanel } from "@/components/invoicing/invoice-status-panel"
 import { Money } from "@/components/ui/money";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
+import { LinkDrawer } from "@/components/products/channel-products/link-drawer";
+import { groupChannelProducts, type ChannelGroup } from "@/components/products/channel-products/shared";
+import { canManageShop } from "@/lib/permissions";
 import { PickSummaryDialog } from "@/components/orders/pick-summary-dialog";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
@@ -51,9 +54,12 @@ import {
   decideCancelRequest,
   fetchOrders,
   fetchHandoverSheetsPdf,
+  getStoredUser,
   getToken,
+  lookupChannelProductGroup,
   updateOrderStatus,
   type Order,
+  type OrderItemLine,
   type ReturnStatus,
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
@@ -597,6 +603,26 @@ export default function OrdersPage() {
   // hàng loạt" lên đơn không còn hiện — mà không cần effect xoá thủ công.
   const selectedOrders = items.filter((o) => selectedIds.has(o.id));
 
+  // NỐI NGAY TRÊN ĐƠN (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 6.5): dòng đơn chưa nối
+  // SKU kho → nút "Nối kho" mở đúng ngăn kéo của trang Sản phẩm trên sàn. Chỉ chủ shop (API mappings
+  // là adminOnly). Handler ổn định (useCallback []) nên cột bảng vẫn chỉ dựng một lần.
+  const [linkGroup, setLinkGroup] = useState<ChannelGroup | null>(null);
+  const [isShopOwner] = useState(() => canManageShop(getStoredUser()));
+  // Chỉ hiện nút khi shop CÓ DÙNG Tổng kho: trang đơn đang xem có ít nhất một dòng đã nối. Shop không nối
+  // gì (đa số khách chỉ dùng tài chính / quảng cáo) thì mọi dòng đều "chưa nối" — hiện nút ở đó là nhắc
+  // việc khách không làm, trái nguyên tắc "nối là việc của khách" (docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 0).
+  const pageHasLinkedLine = items.some((o) => (o.items ?? []).some((l) => Boolean(l.productId)));
+  const canLinkOrders = isShopOwner && pageHasLinkedLine;
+  const openLinkForLine = useCallback((order: Order, line: OrderItemLine) => {
+    lookupChannelProductGroup(order.channelId, line.channelSku)
+      .then((r) => {
+        const g = groupChannelProducts(r.items)[0];
+        if (g) setLinkGroup(g);
+        else toast.info("Chưa thấy sản phẩm này trong danh mục của gian — vào Sản phẩm trên sàn bấm Lấy sản phẩm mới từ sàn rồi nối.");
+      })
+      .catch((err) => toast.error(err instanceof ApiError ? err.message : "Không mở được hộp nối"));
+  }, []);
+
   // ===== ĐỊNH NGHĨA CỘT cho DataTable (Tầng 2) =====
   // `size` chỉ có tác dụng khi cột được GHIM (ép bề rộng để offset sticky
   // khớp); bình thường bảng vẫn tự co giãn. `meta.label` là tên trong menu Cột.
@@ -651,7 +677,12 @@ export default function OrdersPage() {
           cellClassName: "w-72 max-w-72 whitespace-normal",
         },
         header: "Sản phẩm",
-        cell: ({ row }) => <OrderProductsCell lines={row.original.items ?? []} />,
+        cell: ({ row }) => (
+          <OrderProductsCell
+            lines={row.original.items ?? []}
+            onLink={canLinkOrders ? (line) => openLinkForLine(row.original, line) : undefined}
+          />
+        ),
       },
       {
         id: "shipping",
@@ -855,7 +886,7 @@ export default function OrdersPage() {
           ),
       },
     ],
-    []
+    [canLinkOrders, openLinkForLine]
   );
 
   // Chế độ xem của bảng đóng gói CẢ bộ lọc trang — áp view là quay lại đúng
@@ -1328,6 +1359,15 @@ export default function OrdersPage() {
           }}
         />
       )}
+      <LinkDrawer
+        open={linkGroup !== null}
+        onOpenChange={(o) => {
+          if (!o) setLinkGroup(null);
+        }}
+        group={linkGroup}
+        source="order"
+        onDone={() => void invalidate(["orders"], ["channel-products"], ["products"])}
+      />
     </AppShell>
   );
 }

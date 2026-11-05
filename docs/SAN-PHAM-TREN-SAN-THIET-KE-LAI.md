@@ -1,8 +1,8 @@
-# Sản phẩm trên sàn — thiết kế lại (khảo sát 05/11/2026, chờ anh Trung chốt)
+# Sản phẩm trên sàn — thiết kế lại (khảo sát 05/11/2026; cả 4 lát ĐÃ LÀM trên local — mục 12, chưa push)
 
 > Anh Trung 05/11: "Phần sản phẩm sàn đang quá rối. Cần phương án chuyên nghiệp hơn, khảo sát trong và ngoài nước. Suy nghĩ kỹ việc
 > nối sản phẩm sàn vào kho tổng hay làm ngược lại thì hợp lý. Đặc biệt quan tâm trải nghiệm và thao tác của khách."
-> Tệp này là bản khảo sát + thiết kế, CHƯA code. Đọc mục 0 là đủ để chốt; mục 6 là màn hình; mục 10 là 5 câu cần anh trả lời.
+> Mục 0–11 là bản khảo sát + thiết kế; **mục 12 là phần đã làm** (anh bảo làm hết trên local, em tự quyết 5 câu mục 10). Đọc mục 0 rồi mục 12.
 > Nguyên tắc nền (docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 0): Tổng kho = hàng của mình, SKU chuẩn là tài sản; nối gian là việc của khách.
 
 ## 0. Kết luận một phút
@@ -238,3 +238,46 @@ Lát 1 là lát thay đổi cảm nhận nhiều nhất; lát 2 là lát cứu s
 - UpBase — [Sản phẩm sàn](https://upbase.gitbook.io/ups/tinh-nang-san-pham/van-hanh/san-pham/san-pham-san)
 - Salework — mẫu khách gửi 22/10/2026 (docs/HANG-HOA-CHA-CON-PHAN-LOAI.md mục 2.6)
 - Hubsell hiện tại — `frontend/src/components/products/link-manager.tsx`, `backend/src/routes/mappings.ts`, docs/HANG-HOA-CHA-CON-PHAN-LOAI.md mục 2.5–2.7, docs/KHAO-SAT-SAO-CHEP-SAN-PHAM-DANG-HANG-LOAT-29-10.md (đối thủ 29/10)
+
+## 12. ĐÃ LÀM cả 4 lát trên local (05/11/2026, anh: "làm tất cả các lát trên local không cần hỏi lại") — commit local, CHƯA push
+
+**Năm câu mục 10 em tự quyết theo đề xuất:** (1) giữ hướng sàn = hàng đợi, kho = đích; (2) giữ hai nghĩa — ở đây "Đưa vào kho" = tạo + nối,
+ở Tổng kho "Sao chép từ sàn" = độc lập; (3) ẩn Sàn đã gỡ mặc định + cờ Bỏ qua; (4) CHƯA làm luật tiền/hậu tố mã; (5) bỏ chế độ gõ mã từng dòng.
+
+**Mã (web):** `components/products/channel-products/` thay `link-manager.tsx` (đã xóa): `channel-products-page.tsx` (dải 4 số, lọc sàn/gian/tìm,
+thanh hàng loạt, bảng theo sản phẩm thu gọn, ▸ bung phân loại chỉ đọc, menu ⋯), `link-drawer.tsx` (ngăn kéo nối), `bulk-create-dialog.tsx`
+(bảng rà mã), `auto-match-dialog.tsx` (xem lại 2 nhóm + đếm không khớp), `mapping-history-dialog.tsx`, `shared.ts` (gom nhóm, trạng thái,
+luật mã chuẩn, gợi ý ghép phân loại). Trang `/products/marketplace` bọc `ChannelProductsPage`. Trang Đơn hàng: `order-products-cell.tsx` có nút
+"Nối kho" trên dòng `productId null`, mở cùng ngăn kéo (`source="order"`).
+
+**Mã (backend, `routes/mappings.ts`):** `GET /mappings?view=grouped&bucket=queue|linked|delisted|ignored` (HAVING theo nhóm; trả mọi phân loại
+của sản phẩm + `buckets` đếm 4 nhóm theo SẢN PHẨM); `POST /ignore`; `POST /link-batch {pairs}` (≤ 500, cùng hậu xử lý với /link); `GET
+/auto-match/preview`; `GET /lookup?channelId&sku`; `GET /logs`; ghi lịch sử ở /link, /link-by-sku, /unlink, /create-products, /ignore,
+/link-batch. Schema: `ChannelProduct.ignoredAt`, bảng `mapping_logs` (migration `20261105090000_channel_product_ignore_mapping_logs`, khóa
+ChannelProduct có thử lại, RLS). `GET /orders` trả thêm `items.productId`.
+
+**Chỉnh so với bản thiết kế sau khi soi local:**
+- **Nút chính của sản phẩm chưa nối luôn là "Đưa vào kho"**: mã sàn chuẩn → một bấm; có mã máy / sàn để trống mã → "Đưa vào kho…" mở bảng rà
+  mã cho riêng sản phẩm đó. Nút phụ **"Nối"** (nối với hàng kho có sẵn) đứng cạnh. Lý do: sản phẩm 51 phân loại có 1 mã trống mà mở ngăn kéo
+  thì phải bấm 51 lần. Nối một phần → "Nối nốt" (ngăn kéo, phân loại chưa nối xếp lên đầu).
+- **"Cần rà" của tự khớp** = cùng một gian có ≥ 2 phân loại mang cùng mã, hoặc SKU kho đang Ngừng bán (mã kho là duy nhất theo shop nên không
+  có ca "một mã sàn ↔ hai SKU kho").
+- **Nút "Nối kho" trên đơn chỉ hiện khi shop CÓ dùng kho** (trang đơn đang xem có ít nhất một dòng đã nối). Shop không nối gì thì mọi dòng đều
+  chưa nối — hiện nút ở đó là nhắc việc khách không làm (mục 0 QUAN-LY-KHO).
+- Ngăn kéo là hộp thoại rộng (chưa có primitive Sheet trượt phải) — cùng nội dung như mục 6.2.
+
+**Lỗi tìm ra khi soi (đã sửa):** (a) sàn để TRỐNG mã (TikTok không có seller_sku về chuỗi rỗng) bị `createProductsFromChannelProducts` bỏ qua
+lặng lẽ dù khách đã gõ mã gốc → nay dùng MÃ GỐC-ĐUÔI như mã máy; (b) `OR: []` của Prisma không lọc gì → tab trống ("Bỏ qua 0") hiện cả
+bảng → trang không có nhóm thì không hỏi dòng; (c) **em đã thêm lớp `dark:` thủ công trái luật màu** (globals.css đã lật thang trong .dark) ở
+cả mã mới lẫn 3 chỗ đã push sáng nay (viên số Đồng bộ tồn kho, dải kết quả phiếu kho, hộp vàng form sao chép) → gỡ hết 53 lớp, soi lại tối.
+
+**Kiểm local (demo@hubsell.tech, cổng 4001, 1440 sáng + tối):** dải Cần nối 7 · Đã nối 8 · Sàn đã gỡ 10 · Bỏ qua 0; "Đưa vào kho…" sản phẩm 51
+phân loại: thiếu mã gốc thì nút khóa, gõ DGB → tạo & nối, sang "Nối 50/51" (lộ lỗi a) → "Nối nốt": ngăn kéo tự chọn đúng sản phẩm kho, dòng
+còn lại bấm Tạo SKU ra `DGB-MAU-SAC-DEN-TUYEN-SO-LUONG-3-GOI` → Đã nối 9; tick 2 → Bỏ qua → tab Bỏ qua 2 → Bỏ cờ; Lịch sử ghi đủ CREATE /
+IGNORE / UNIGNORE; Tự khớp (0 khớp, 6 không khớp); tab trống đúng câu; trang Đơn hàng có nút Nối kho, dòng không có trong danh mục báo đúng.
+tsc FE/BE + eslint sạch; đã dọn dữ liệu thử (10 SKU demo như cũ). **Chưa thử:** ca tự khớp có cặp thật (demo không có mã trùng), chiều ngược
+"Nối vào X" từ Tổng kho bằng tay trên UI (đã soi mã + tsc), gian thật, 1280.
+
+**Chưa làm / nợ:** luật tiền/hậu tố mã (câu 4); `one-click-link-dialog.tsx` + `/quick-link` cũ vẫn còn (Tổng kho dòng trống, hộp Cài đặt đồng
+bộ) — nên thay bằng luồng mới ở lát sau; tour Kho `/guide` còn tả UI cũ; mobile chưa có; số liệu prod (tỷ lệ chưa nối / delisted / mã máy)
+chưa đo.

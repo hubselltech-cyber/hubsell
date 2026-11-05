@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ImageIcon } from "lucide-react";
+import { ImageIcon, Link2 } from "lucide-react";
 
 import type { OrderItemLine } from "@/lib/api";
 import { TEXT_SUB } from "@/lib/typography";
@@ -40,20 +40,38 @@ function Thumb({ line }: { line: OrderItemLine }) {
   );
 }
 
-function Line({ line }: { line: OrderItemLine }) {
+function Line({ line, onLink }: { line: OrderItemLine; onLink?: (line: OrderItemLine) => void }) {
+  // NỐI NGAY TRÊN ĐƠN (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 6.5): dòng chưa nối
+  // SKU kho (productId null) → nút nhỏ mở ngăn kéo nối. Chỉ hiện khi trang truyền onLink (chủ shop).
+  const unlinked = onLink && line.productId === null;
   return (
     <div className="flex items-center gap-2.5">
       <Thumb line={line} />
       <div className="min-w-0 flex-1">
         <p className="line-clamp-2 break-words" title={line.productName}>{line.productName}</p>
-        <p className={cn(TEXT_SUB, "truncate font-mono")}>{line.channelSku}</p>
+        <p className={cn(TEXT_SUB, "flex items-center gap-1.5 truncate font-mono")}>
+          <span className="truncate">{line.channelSku}</span>
+          {unlinked && (
+            <button
+              type="button"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-px font-sans text-[11px] font-medium text-amber-800 transition-colors hover:bg-amber-100"
+              title="Dòng này chưa nối SKU kho — đơn không trừ tồn. Bấm để nối."
+              onClick={(e) => {
+                e.stopPropagation();
+                onLink(line);
+              }}
+            >
+              <Link2 className="size-3" /> Nối kho
+            </button>
+          )}
+        </p>
       </div>
       <span className="shrink-0 font-semibold tabular-nums">×{line.quantity}</span>
     </div>
   );
 }
 
-export function OrderProductsCell({ lines }: { lines: OrderItemLine[] }) {
+export function OrderProductsCell({ lines, onLink }: { lines: OrderItemLine[]; onLink?: (line: OrderItemLine) => void }) {
   const [open, setOpen] = React.useState(false);
 
   if (lines.length === 0) {
@@ -64,7 +82,7 @@ export function OrderProductsCell({ lines }: { lines: OrderItemLine[] }) {
 
   return (
     <div className="space-y-1.5">
-      <Line line={lines[0]} />
+      <Line line={lines[0]} onLink={onLink} />
 
       {hidden > 0 && !open && (
         <button
@@ -80,7 +98,7 @@ export function OrderProductsCell({ lines }: { lines: OrderItemLine[] }) {
       )}
 
       {open &&
-        lines.slice(1).map((l) => <Line key={l.id} line={l} />)}
+        lines.slice(1).map((l) => <Line key={l.id} line={l} onLink={onLink} />)}
 
       {open && (
         <button

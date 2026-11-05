@@ -1931,6 +1931,10 @@ model ChannelProduct {
   /// NULL = chưa liên kết về kho gốc. Đây là cốt lõi của tầng đệm.
   productId String?
 
+  /// BỎ QUA (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 5): khách không muốn
+  /// quản tồn món này (quà tặng, combo…) → ra khỏi hàng đợi "Cần nối", vẫn nhận đơn.
+  ignoredAt DateTime?
+
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   channel Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
@@ -4259,6 +4263,27 @@ model HandoverSheet {
   @@unique([ownerId, code])
   @@index([ownerId, createdAt])
   @@map("handover_sheets")
+}
+
+/// LỊCH SỬ LIÊN KẾT SẢN PHẨM SÀN ↔ KHO (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md
+/// mục 6.5): ai nối / gỡ / tạo SKU / bỏ qua gì, lúc nào, từ đâu (manual | batch | auto |
+/// quick-link | order). Chỉ ghi vết, không khóa ngoại — xóa sản phẩm vẫn còn dòng.
+model MappingLog {
+  id               String   @id @default(cuid())
+  ownerId          String
+  channelId        String?
+  channelProductId String?
+  channelSku       String?
+  productId        String?
+  productSku       String?
+  /// LINK | UNLINK | CREATE | IGNORE | UNIGNORE
+  action           String
+  source           String
+  actorId          String?
+  createdAt        DateTime @default(now())
+
+  @@index([ownerId, createdAt])
+  @@map("mapping_logs")
 }
 
 /// PHIẾU NHẬP / XUẤT KHO (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 4): chứng từ

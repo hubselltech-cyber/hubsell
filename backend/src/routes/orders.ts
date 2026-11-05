@@ -201,6 +201,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
           quantity: true,
           price: true,
           imageUrl: true, // ảnh chụp từ payload đơn của sàn (08/09)
+          // productId (05/11/2026): null = dòng chưa nối kho → bảng đơn hiện nút "Nối" (nối ngay trên đơn).
+          productId: true,
           // Ảnh lấy từ sản phẩm gốc để bảng hiện thumbnail; sản phẩm đã bị
           // xoá thì productId là null nên phải cho phép thiếu.
           product: { select: { imageUrl: true } },
@@ -1371,6 +1373,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
           quantity: true,
           price: true,
           imageUrl: true,
+          productId: true,
           product: { select: { imageUrl: true } },
         },
       },

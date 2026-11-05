@@ -501,6 +501,8 @@ export interface OrderItemLine {
   channelSku: string;
   quantity: number;
   price: string | number;
+  /** null = dòng chưa nối kho (05/11/2026) → nút "Nối" ngay trên bảng đơn. Vắng mặt ở payload cũ. */
+  productId?: string | null;
   /**
    * Ảnh PHẲNG backend đã chọn sẵn (listing sàn → payload đơn → kho gốc) —
    * đọc trường này trước; `product.imageUrl` chỉ là fallback cho web cũ.
@@ -3201,6 +3203,8 @@ export interface ChannelProduct {
   productId: string | null;
   /** Tồn trên sàn ở lần đồng bộ gần nhất — null = sàn không trả số. */
   channelStock?: number | null;
+  /** Khách "Bỏ qua" (05/11/2026): không quản tồn món này — ra khỏi hàng đợi Cần nối. */
+  ignoredAt?: string | null;
   channel: { id: string; channelName: ChannelName; shopName: string };
   product: {
     id: string;
@@ -3210,6 +3214,9 @@ export interface ChannelProduct {
   } | null;
 }
 
+/** Nhóm hàng đợi theo SẢN PHẨM sàn (05/11/2026, docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md mục 5). */
+export type ChannelProductBucket = "queue" | "linked" | "delisted" | "ignored";
+
 export interface ChannelProductListResponse {
   items: ChannelProduct[];
   total: number;
@@ -3217,6 +3224,8 @@ export interface ChannelProductListResponse {
   pageSize: number;
   pageCount: number;
   counts: { all: number; linked: number; unlinked: number; active?: number; delisted?: number };
+  /** Đếm theo SẢN PHẨM sàn cho 4 nhóm — chỉ có khi gọi kèm `bucket`. */
+  buckets?: Record<ChannelProductBucket, number> | null;
 }
 
 /**
@@ -4108,8 +4117,11 @@ export function fetchChannelProducts(params: {
   view?: "grouped";
   /** Trạng thái TRÊN SÀN: đang bán / sàn đã gỡ (dòng DELISTED giữ lại để không mất liên kết). */
   status?: "active" | "delisted";
+  /** Nhóm theo SẢN PHẨM (chỉ với view=grouped): bỏ qua linked/status, trả mọi phân loại của sản phẩm. */
+  bucket?: ChannelProductBucket;
 }) {
   const qs = new URLSearchParams();
+  if (params.bucket) qs.set("bucket", params.bucket);
   if (params.channelName) qs.set("channelName", params.channelName);
   if (params.channelId) qs.set("channelId", params.channelId);
   if (params.linked) qs.set("linked", params.linked);
@@ -4203,6 +4215,80 @@ export function createProductsFromMappings(
     method: "POST",
     body: JSON.stringify({ channelProductIds, ...options }),
   });
+}
+
+// ----- Thiết kế lại Sản phẩm trên sàn (05/11/2026): bỏ qua · nối theo cặp · xem trước tự khớp · tra theo đơn · lịch sử -----
+
+export function ignoreChannelProducts(channelProductIds: string[], ignored: boolean) {
+  return apiFetch<{ updated: number; ignored: boolean }>("/api/mappings/ignore", {
+    method: "POST",
+    body: JSON.stringify({ channelProductIds, ignored }),
+  });
+}
+
+export interface MappingPair {
+  channelProductId: string;
+  productId: string;
+}
+
+/** Nối theo cặp phân loại sàn → SKU kho (ngăn kéo nối, tự khớp đã duyệt, nối trên đơn). ≤ 500 cặp. */
+export function linkMappingPairs(pairs: MappingPair[], source: "manual" | "auto" | "order" = "manual") {
+  return apiFetch<{ linked: number; products: number; seededProducts: number; deactivated: { id: string; skuCode: string }[] }>(
+    "/api/mappings/link-batch",
+    { method: "POST", body: JSON.stringify({ pairs, source }) }
+  );
+}
+
+export interface AutoMatchCandidate {
+  channelProductId: string;
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  channelSku: string;
+  productName: string;
+  variantName: string | null;
+  channelStock: number | null;
+  productId: string;
+  productSku: string;
+  productTitle: string;
+  productVariant: string | null;
+  /** Vì sao phải rà tay (nhóm review). */
+  reason: string | null;
+}
+
+/** Xem trước tự khớp theo mã: sure (áp được) · review (cần rà) · none (không khớp, chỉ đếm). */
+export function previewAutoMatch(channelId?: string) {
+  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+  return apiFetch<{ sure: AutoMatchCandidate[]; review: AutoMatchCandidate[]; none: number; scanned: number }>(
+    `/api/mappings/auto-match/preview${qs}`
+  );
+}
+
+/** Mọi phân loại của SẢN PHẨM sàn chứa (gian, mã sàn) — mở ngăn kéo nối từ một dòng đơn. */
+export function lookupChannelProductGroup(channelId: string, sku: string) {
+  const qs = new URLSearchParams({ channelId, sku });
+  return apiFetch<{ items: ChannelProduct[] }>(`/api/mappings/lookup?${qs.toString()}`);
+}
+
+export interface MappingLogEntry {
+  id: string;
+  action: "LINK" | "UNLINK" | "CREATE" | "IGNORE" | "UNIGNORE";
+  source: string;
+  channelSku: string | null;
+  productSku: string | null;
+  shopName: string | null;
+  channelName: ChannelName | null;
+  actorName: string | null;
+  createdAt: string;
+}
+
+export function fetchMappingLogs(params: { page?: number; pageSize?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  return apiFetch<{ items: MappingLogEntry[]; total: number; page: number; pageSize: number; pageCount: number }>(
+    `/api/mappings/logs?${qs.toString()}`
+  );
 }
 
 /** Sản phẩm sàn KHÔNG có mã SKU (Hubsell đang tự sinh SPE-…), gom theo sản phẩm, để hỏi mã gốc. */
