@@ -6,6 +6,17 @@
 
 ---
 
+## Phiên 05/11 chiều (3) — BẢN 1.4.2 mobile: anh "Nộp luôn, dựng TestFlight… chiều nay anh test, không ổn thì tối thay" → ĐÃ commit `02b8f8b2` (chưa push), ĐANG BUILD trên Expo; ⏳ còn gắn build + nộp duyệt Apple, ghi "Có gì mới" Google
+
+- **Trạng thái kho trước khi làm:** iOS 1.4.1 READY_FOR_SALE, Play production 1.4.1 [vc 11] completed → bản mới là **1.4.2** (`app.json`; runtime OTA mới = 1.4.2).
+- **Build EAS 14:20 (production, cả hai nền):** iOS **1.4.2 (29)** `da361b79-e0cc-4512-ad32-b7df1db0b36f`, Android **vc 12** `6bd6ad48-3e3e-4531-945d-e1ae4aaf9601`.
+- **Đã hẹn sẵn bước nộp trên máy chủ Expo** (`eas submit --id … --no-wait` khi build còn đang chạy, Expo báo "Scheduled"): iOS → TestFlight, submission `1df9275d-6a4c-48dc-9b00-09c09a05689e`; Android → kênh production (releaseStatus completed), submission `a911a859-c9e8-436d-a13c-40c93938af82`. Chưa xác nhận hai lượt này chạy xong.
+- **ASC:** đã tạo phiên bản 1.4.2 (`80b2fc43`, PREPARE_FOR_SUBMISSION) + ghi "Có gì mới" (`docs/store/whats-new-1.4.2.txt`, 432 ký tự); Notes người duyệt tự mang từ 1.4.1 sang.
+- **⏳ CÒN (cần chạy sau khi build 29 lên ASC và ở trạng thái VALID):** trong `hubsell-mobile`: `node scripts/asc-release.mjs attach-build 1.4.2 29` → `node scripts/asc-release.mjs submit 1.4.2`; Android: `node scripts/play-release-notes.mjs 12 ../docs/store/whats-new-1.4.2.txt` → `node scripts/play-status.mjs`. Rồi ghi kết quả + reviewSubmission id vào đây và memory `hubsell-mobile-len-store`.
+- **Checklist DUA-APP mục 9 — NÓI RÕ:** ca 1–5 (Tài chính) KHÔNG chạy lại (mã Tài chính không đổi từ lượt OTA 04/11); ca 6–7 chỉ soi các màn mới trên giả lập web; ca 8–10 (mới) mới qua giả lập web, **chưa qua máy thật** — bản 1.4.2 nộp khi CHƯA thử camera / tem thật, anh thử trên TestFlight chiều 05/11.
+- **Lưu ý:** Play để releaseStatus completed → Google duyệt xong là tự lên kho cho mọi khách; Apple cũng phát hành tự động sau duyệt. Lỗi JS sau đó vá OTA (runtime 1.4.2), lỗi native phải build lại.
+- Local đã dọn: tắt backend-http + giả lập web, xóa 13 đơn `PACKDEMO-*` (2 phiếu kho thử PN-261105-139F / PX-261105-52E5 còn trong DB local).
+
 ## Phiên 05/11 chiều (2) — ĐẠI TU MOBILE đợt 1: anh "Duyệt, làm đi" → ĐÃ CODE cả 4 việc, kiểm giả lập web local; CHƯA commit, CHƯA thử máy thật; ⏳ anh xem local + quyết bản dựng thử (docs `MOBILE-DAI-TU-DON-HANG-KHO-KHAO-SAT-05-11.md` mục 7)
 
 - **Anh duyệt cả 4 điểm** (công tắc "Xem đơn · Đóng gói" ở tab QR giữa; bỏ tab Theo ĐVVC + doanh số; âm riêng đơn hủy; lưu nhiều phân loại sinh Phiếu kho).
