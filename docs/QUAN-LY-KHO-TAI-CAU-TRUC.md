@@ -59,6 +59,40 @@ Anh chốt: (a) đưa tab "Tổng kho" ra sidebar, đứng ngay trên "Hàng hó
 - **Ba hướng để anh chốt:** (A) xóa hẳn (bỏ cờ + 2 tệp + state `counts/channels/syncState` chỉ còn nuôi dòng trống; làm lại tour Kho); (B) gói thành "Checklist thiết lập kho" chỉ hiện ở màn chào mừng / `/guide`, trang làm việc sạch; (C) mở lại như cũ. Em nghiêng (B): seller mới vẫn cần 3 bước, seller cũ không cần nhìn mỗi ngày.
 - Lịch nhắc: memory `hubsell-quan-ly-kho-nang-cap-2026-11-05` + TODO.md mục Next.
 
+## 4. Phiếu nhập / xuất kho in được (05/11/2026, anh: "doanh nghiệp cần nút in phiếu") — ĐÃ LÀM lát 1, kiểm local
+
+**Hiện trạng trước đó:** Hubsell không lưu "phiếu" — Phiếu nhiều mã khi Ghi chỉ tạo N dòng `InventoryLog` cùng lý do, không số phiếu,
+không gom lại được → không in lúc lập, không in lại, kế toán không tra "phiếu số mấy ai lập". Anh gật 2 điểm: số phiếu theo ngày + 4 ký tự
+(không đếm 1, 2, 3 liên tục) và nhập/xuất lẻ từng SKU không sinh phiếu.
+
+**Làm theo đúng khuôn Biên bản bàn giao (01/11):**
+- **Bảng `stock_vouchers`** (model `StockVoucher`, migration `20261105070000_stock_vouchers`): `code` PN-/PX-yyMMdd-XXXX (4 ký tự cuối id, giờ
+  VN — `lib/stock-voucher.ts`), `type` IMPORT|EXPORT (enum sổ kho), `reason`, `locationId/locationName`, `lineCount`, `totalQuantity`,
+  `totalCost` (Σ SL × giá vốn mặc định lúc lập), `lines` JSONB **ảnh chụp** `{productId, skuCode, productName, variantName, quantity,
+  unitCost, balanceAfter}` để in lại y nguyên, `createdById`. RLS bật. Cột `InventoryLog.voucherId` (NULL = bút toán lẻ) — không chỉ mục,
+  không khóa ngoại; migration lấy khóa InventoryLog có thử lại (bảng bị webhook INSERT liên tục).
+- **Ghi phiếu cùng giao dịch với sổ** trong `POST /api/inventory/adjust-bulk`: khóa FOR UPDATE đọc thêm tên / phân loại / giá vốn, mỗi
+  `applyStockDelta` mang `voucherId`, rồi `stockVoucher.create` trong cùng `$transaction` → sổ ghi được thì phiếu có. Trả thêm
+  `voucher {id, code}`. Log `[stock-voucher] PN-… : N mã, M chiếc`.
+- **API đọc** `GET /api/inventory/vouchers?type&q&from&to&page&pageSize` (danh sách + tên người lập) và `GET /vouchers/:id` (đủ dòng +
+  tên / SĐT / email chủ shop để in). Ai có quyền kho đều xem; `unitCost` / `totalCost` trả `null` cho tài khoản không thấy tài chính.
+- **Web:** (1) Phiếu nhiều mã: sau khi Ghi, thay toast bằng **dải kết quả** "Đã ghi phiếu PN-… — N chiếc của M mã" + nút **In phiếu**
+  (mở tab mới) + Ẩn; (2) tab **Phiếu kho** ở Tổng kho (`stock-voucher-table.tsx`): chip Tất cả / Phiếu nhập / Phiếu xuất, tìm số phiếu
+  hoặc lý do, khoảng ngày, cột Số phiếu · Thời gian · Loại · Lý do · (Vị trí) · Số mã · Số lượng · (Giá trị) · Người lập · In; bấm dòng =
+  in; (3) bản in `/print/stock-voucher/[id]` — A4 in trong trình duyệt (không PDF backend, đúng chốt 04/11), tự mở hộp in khi tải xong
+  (`?preview=1` = chỉ xem), màu hex cố định nên trắng – đen kể cả khi app ở giao diện tối. Mẫu theo 01-VT / 02-VT (TT200) lược bớt: đơn
+  vị + số phiếu + ngày giờ, lý do, người lập, bảng STT · Mã · Tên · Phân loại · ĐVT · SL · Đơn giá · Thành tiền, dòng Cộng, 4 ô ký (Người
+  lập · Người giao/nhận · Thủ kho · Kế toán). Nhân viên không thấy tài chính: ẩn 2 cột tiền.
+- **Kiểm local 05/11 (demo@hubsell.tech, cổng 4001):** phiếu nhập 2 mã AO-LEN-M + GIAY-SNK-38 → `PN-261105-0799`, 2 chiếc, giá trị
+  293.000 (88.000 + 205.000) đúng; dải kết quả + nút In; bản in đúng mẫu (đã nới cột Tên hàng); tab Phiếu kho liệt kê đúng. Đã xóa dữ liệu
+  thử. tsc FE/BE, eslint, vitest lib + stock-ledger 346/346 sạch. Migration áp local bằng `prisma db execute` + `migrate resolve`.
+- **Chưa làm (lát 2, chờ anh):** "Biên bản kiểm kê" in được (mẫu khác: tồn sổ · tồn đếm · chênh lệch); số tiền bằng chữ trên phiếu;
+  cột Số phiếu trong tab Nhật ký kho (dữ liệu `voucherId` đã có, chỉ thiếu hiển thị); phiếu cho nhập/xuất nhanh một SKU (anh chốt
+  KHÔNG — bút toán lẻ).
+- **Hạ tầng (anh hỏi):** mỗi lần ghi phiếu thêm 1 dòng `stock_vouchers` + cột trên dòng sổ sẵn có; đọc theo (ownerId, createdAt) có chỉ
+  mục; không worker, không gọi sàn. Không đáng kể. Các thay đổi kho hôm nay toàn bộ là giao diện + 1 endpoint đọc do người bấm — không
+  đổi số lượt gọi nền, không ảnh hưởng HQ Sức khỏe.
+
 ## 3. Em đề xuất kiến trúc thông tin Quản lý kho cho doanh nghiệp lớn (CHƯA LÀM — trình anh chốt từng lát)
 
 Nguyên tắc: mỗi mục sidebar = một **việc** seller gọi tên được; trang làm việc chỉ còn bảng + lọc + thao tác; "thiết lập một lần" tách khỏi "làm hằng ngày".

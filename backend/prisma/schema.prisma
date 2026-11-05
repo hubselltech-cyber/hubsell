@@ -2008,6 +2008,10 @@ model InventoryLog {
   /// TỒN TỔNG của SKU ngay sau bút toán này — sổ kho đọc được "còn bao nhiêu"
   /// mà không phải cộng dồn. NULL ở dòng cũ trước 24/09.
   balanceAfter   Int?
+  /// PHIẾU KHO (05/11/2026): dòng này thuộc phiếu nhập / xuất nào (stock_vouchers.id).
+  /// NULL = bút toán lẻ (đơn sàn, sửa tồn, nhập/xuất nhanh một SKU, kiểm kê). Không
+  /// khóa ngoại, không chỉ mục — tra phiếu → dòng đi qua ảnh chụp JSON của phiếu.
+  voucherId      String?
   createdAt      DateTime         @default(now())
 
   product  Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -4255,6 +4259,33 @@ model HandoverSheet {
   @@unique([ownerId, code])
   @@index([ownerId, createdAt])
   @@map("handover_sheets")
+}
+
+/// PHIẾU NHẬP / XUẤT KHO (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 4): chứng từ
+/// của một lần ghi "Phiếu nhiều mã" — có số phiếu, in được lúc lập và in lại sau.
+/// Cùng khuôn HandoverSheet: ảnh chụp JSON các dòng, không khóa ngoại tới Product.
+model StockVoucher {
+  id            String           @id
+  ownerId       String
+  /// PN-yyMMdd-XXXX (nhập) / PX-yyMMdd-XXXX (xuất) — 4 ký tự cuối id, không đếm tuần tự.
+  code          String
+  /// IMPORT | EXPORT (dùng lại enum sổ kho).
+  type          InventoryLogType
+  reason        String
+  locationId    String?
+  locationName  String?
+  lineCount     Int
+  totalQuantity Int
+  /// Σ số lượng × giá vốn mặc định lúc lập (đ) — nhân viên không có quyền tài chính thì API cắt.
+  totalCost     Decimal          @default(0) @db.Decimal(14, 2)
+  /// [{productId, skuCode, productName, variantName, quantity, unitCost, balanceAfter}] — lib/stock-voucher.ts
+  lines         Json             @default("[]")
+  createdById   String?
+  createdAt     DateTime         @default(now())
+
+  @@unique([ownerId, code])
+  @@index([ownerId, createdAt])
+  @@map("stock_vouchers")
 }
 
 // ============================================================

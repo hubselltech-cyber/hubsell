@@ -4276,7 +4276,65 @@ export function adjustInventoryBulk(data: {
     count: number;
     totalQuantity: number;
     products: { productId: string; skuCode: string; quantityInStock: number }[];
+    /** Phiếu kho vừa lập (05/11/2026) — in ngay / in lại ở tab Phiếu kho. */
+    voucher: { id: string; code: string };
   }>("/api/inventory/adjust-bulk", { method: "POST", body: JSON.stringify(data) });
+}
+
+// ----- PHIẾU NHẬP / XUẤT KHO (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 4) -----
+
+export type StockVoucherType = "IMPORT" | "EXPORT";
+
+export interface StockVoucherSummary {
+  id: string;
+  code: string;
+  type: StockVoucherType;
+  reason: string;
+  locationName: string | null;
+  lineCount: number;
+  totalQuantity: number;
+  /** null = tài khoản không được xem tài chính. */
+  totalCost: number | null;
+  createdAt: string;
+  createdByName: string | null;
+}
+
+export interface StockVoucherLine {
+  productId: string;
+  skuCode: string;
+  productName: string;
+  variantName: string | null;
+  quantity: number;
+  unitCost: number | null;
+  balanceAfter: number;
+}
+
+export interface StockVoucherDetail {
+  voucher: Omit<StockVoucherSummary, "createdByName"> & { lines: StockVoucherLine[] };
+  shop: { name: string; phone: string | null; email: string | null };
+  createdByName: string | null;
+}
+
+export function fetchStockVouchers(params: { type?: StockVoucherType; q?: string; from?: string; to?: string; page?: number; pageSize?: number }) {
+  const qs = new URLSearchParams();
+  if (params.type) qs.set("type", params.type);
+  if (params.q) qs.set("q", params.q);
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  return apiFetch<{ items: StockVoucherSummary[]; total: number; page: number; pageSize: number; pageCount: number }>(
+    `/api/inventory/vouchers?${qs.toString()}`
+  );
+}
+
+export function fetchStockVoucher(id: string) {
+  return apiFetch<StockVoucherDetail>(`/api/inventory/vouchers/${encodeURIComponent(id)}`);
+}
+
+/** Mở bản in phiếu kho (A4, in trong trình duyệt) ở tab mới. */
+export function stockVoucherPrintUrl(id: string): string {
+  return `/print/stock-voucher/${encodeURIComponent(id)}`;
 }
 
 /** NHẬT KÝ KHO — sổ toàn shop hoặc theo một SKU, có lọc + phân trang (24/09). */

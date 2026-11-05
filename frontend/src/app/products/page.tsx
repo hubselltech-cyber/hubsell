@@ -51,6 +51,7 @@ import { InlineStockEditor } from "@/components/products/inline-stock-editor";
 import { MarketplaceCodes } from "@/components/products/marketplace-codes";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
+import { StockVoucherTable } from "@/components/products/stock-voucher-table";
 import { ProductBulkBar } from "@/components/products/product-bulk-bar";
 import { ProductHistoryDialog } from "@/components/products/product-history-dialog";
 import { ProductRowMenu } from "@/components/products/product-row-menu";
@@ -143,7 +144,7 @@ const COL_HEAD_CLASS: Record<string, string> = {
   actions: "w-[8.5rem]",
 };
 
-type HubTab = "inventory" | "logs";
+type HubTab = "inventory" | "logs" | "vouchers";
 
 /**
  * ⛔ TẠM ẨN 05/11/2026 (anh Trung, nâng cấp Quản lý kho): khối "Kho trung tâm Hubsell"
@@ -494,6 +495,7 @@ export default function ProductsHubPage() {
       return;
     }
     if (params.get("tab") === "logs") setTab("logs");
+    if (params.get("tab") === "vouchers") setTab("vouchers");
     if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
       setSyncOpen(true);
     }
@@ -1312,6 +1314,8 @@ export default function ProductsHubPage() {
     // cho khỏi lặp chữ; tab "Sản phẩm trên sàn" chuyển thành trang riêng /products/marketplace.
     { key: "inventory", label: "Tồn kho" },
     { key: "logs", label: "Nhật ký kho" },
+    // 05/11/2026 (anh Trung: doanh nghiệp cần in phiếu nhập / xuất): cấp PHIẾU, khác Nhật ký (cấp bút toán).
+    { key: "vouchers", label: "Phiếu kho" },
   ];
 
   return (
@@ -1330,6 +1334,8 @@ export default function ProductsHubPage() {
 
         {tab === "logs" ? (
           <InventoryLogTable showLocation={locationsEnabled} />
+        ) : tab === "vouchers" ? (
+          <StockVoucherTable showLocation={locationsEnabled} />
         ) : (
           <>
             {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) =====

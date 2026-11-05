@@ -33,6 +33,8 @@ export interface StockWrite {
   orderId?: string | null;
   /** Vị trí chỉ định (nhập tay chọn kho, hoàn về đúng chỗ đã trừ, sửa số tại vị trí). */
   locationId?: string | null;
+  /** Phiếu nhập / xuất kho chứa bút toán này (05/11/2026) — bỏ trống = bút toán lẻ. */
+  voucherId?: string | null;
   /** Hàng hoàn không biết về đâu → vị trí nhận hoàn mặc định, không có thì gốc. */
   useReturnDefault?: boolean;
 }
@@ -118,6 +120,7 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
         reason: w.reason,
         orderId: w.orderId ?? null,
         actorId: w.actorId ?? null,
+        voucherId: w.voucherId ?? null,
         balanceAfter,
       },
       select: { id: true },
@@ -181,6 +184,7 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
         orderId: w.orderId ?? null,
         actorId: w.actorId ?? null,
         locationId: a.locationId,
+        voucherId: w.voucherId ?? null,
         balanceAfter,
       },
       select: { id: true },

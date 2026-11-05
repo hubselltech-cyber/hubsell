@@ -11,6 +11,7 @@ import {
   Loader2,
   ScanBarcode,
   Trash2,
+  Printer,
 } from "lucide-react";
 
 import { LocationSelect } from "@/components/products/location-select";
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import {
   adjustInventoryBulk,
+  stockVoucherPrintUrl,
   ApiError,
   fetchProducts,
   fetchStockLocations,
@@ -68,6 +70,8 @@ export default function ReceiveStockPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // PHIẾU KHO (05/11/2026): phiếu vừa ghi — dải kết quả với nút In, giữ tới khi lập phiếu mới / ẩn.
+  const [lastVoucher, setLastVoucher] = useState<{ id: string; code: string; type: SheetType; count: number; totalQuantity: number } | null>(null);
 
   // Vị trí chứa hàng (đợt B): có thì hiện ô chọn, nhớ lần chọn cuối.
   const locationsQ = useApiQuery({
@@ -198,9 +202,8 @@ export default function ReceiveStockPage() {
         locationId: effectiveLocationId || undefined,
       });
       if (effectiveLocationId) rememberLocation(effectiveLocationId);
-      toast.success(
-        `${isImport ? "Đã nhập" : "Đã xuất"} ${formatNumber(res.totalQuantity)} chiếc của ${formatNumber(res.count)} mã — Có thể bán mới đang đẩy lên các gian đã nối`
-      );
+      // Kết quả nằm ở dải dưới đầu trang (có nút In phiếu) thay cho toast tự tắt (05/11).
+      setLastVoucher({ id: res.voucher.id, code: res.voucher.code, type, count: res.count, totalQuantity: res.totalQuantity });
       setLines([]);
       setReason("");
       invalidate(["products"]);
@@ -258,6 +261,30 @@ export default function ReceiveStockPage() {
             </div>
           </div>
         </PageHeaderBand>
+
+        {/* ===== KẾT QUẢ PHIẾU VỪA GHI + IN (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 4) ===== */}
+        {lastVoucher && (
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm",
+              lastVoucher.type === "IMPORT"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
+                : "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100"
+            )}
+          >
+            <span className="min-w-0 flex-1">
+              Đã ghi phiếu <b className="font-mono">{lastVoucher.code}</b> — {formatNumber(lastVoucher.totalQuantity)} chiếc của{" "}
+              {formatNumber(lastVoucher.count)} mã. Có thể bán mới đang đẩy lên các gian đã nối. In lại sau ở Tổng kho › Phiếu kho.
+            </span>
+            <Button size="sm" onClick={() => window.open(stockVoucherPrintUrl(lastVoucher.id), "_blank", "noopener")}>
+              <Printer className="size-4" />
+              In phiếu
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setLastVoucher(null)}>
+              Ẩn
+            </Button>
+          </div>
+        )}
 
         {/* ===== Ô MÃ + GỢI Ý ===== */}
         <div className="relative max-w-xl">

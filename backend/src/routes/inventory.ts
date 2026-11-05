@@ -20,6 +20,8 @@ import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { shortReasonFromMessage } from "../services/sync-alert-text";
 import { findInsufficient, normalizeBulkItems } from "../lib/inventory-bulk";
+import { newVoucherId, stockVoucherCode, sumVoucherCost, type StockVoucherLine } from "../lib/stock-voucher";
+import { canSeeFinancials } from "../middleware/auth";
 import { applyStockDelta, setLevelAbsolute, setStockAbsolute } from "../services/stock-ledger";
 
 /** Đọc `locationId` tuỳ chọn từ body: chuỗi không rỗng hoặc undefined; kiểu khác → null (lỗi). */
@@ -217,13 +219,22 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
           : "Xuất kho theo phiếu nhiều mã";
     const ids = parsed.items.map((it) => it.productId);
 
+    // PHIẾU KHO (05/11/2026): số phiếu + ảnh chụp dòng, ghi cùng giao dịch với sổ kho —
+    // sổ ghi được thì phiếu có, phiếu có thì sổ đã ghi. In ngay sau khi lưu / in lại ở tab Phiếu kho.
+    const voucherId = newVoucherId();
+    const voucherAt = new Date();
+    const voucherCode = stockVoucherCode(type, voucherId, voucherAt);
+    const locationName = locationId
+      ? (await prisma.stockLocation.findFirst({ where: { id: locationId, userId: req.ownerId! }, select: { name: true } }))?.name ?? null
+      : null;
+
     // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
     let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
       // Khoá theo thứ tự id để hai phiếu chạy song song không deadlock nhau.
       const rows = await tx.$queryRaw<
-        { id: string; skuCode: string; quantityInStock: number }[]
-      >`SELECT "id", "skuCode", "quantityInStock" FROM "Product" WHERE "userId" = ${req.ownerId!} AND "id" IN (${Prisma.join(ids)}) ORDER BY "id" FOR UPDATE`;
+        { id: string; skuCode: string; quantityInStock: number; productName: string; variantName: string | null; costPrice: Prisma.Decimal | null }[]
+      >`SELECT "id", "skuCode", "quantityInStock", "productName", "variantName", "costPrice" FROM "Product" WHERE "userId" = ${req.ownerId!} AND "id" IN (${Prisma.join(ids)}) ORDER BY "id" FOR UPDATE`;
       const byId = new Map(rows.map((r) => [r.id, r]));
       const missing = ids.filter((id) => !byId.has(id));
       if (missing.length) {
@@ -248,6 +259,7 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
         }
       }
       const updated: { productId: string; skuCode: string; quantityInStock: number }[] = [];
+      const voucherLines: StockVoucherLine[] = [];
       for (const it of parsed.items) {
         const delta = isImport ? it.quantity : -it.quantity;
         const p = await applyStockDelta(tx, {
@@ -257,13 +269,37 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
           reason: note,
           actorId: req.userId ?? null,
           locationId,
+          voucherId,
         });
-        updated.push({
+        const row = byId.get(it.productId)!;
+        updated.push({ productId: p.productId, skuCode: row.skuCode, quantityInStock: p.quantityInStock });
+        voucherLines.push({
           productId: p.productId,
-          skuCode: byId.get(it.productId)!.skuCode,
-          quantityInStock: p.quantityInStock,
+          skuCode: row.skuCode,
+          productName: row.productName,
+          variantName: row.variantName,
+          quantity: it.quantity,
+          unitCost: Number(row.costPrice ?? 0),
+          balanceAfter: p.quantityInStock,
         });
       }
+      await tx.stockVoucher.create({
+        data: {
+          id: voucherId,
+          ownerId: req.ownerId!,
+          code: voucherCode,
+          type: isImport ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
+          reason: note,
+          locationId,
+          locationName,
+          lineCount: voucherLines.length,
+          totalQuantity: voucherLines.reduce((a, l) => a + l.quantity, 0),
+          totalCost: new Prisma.Decimal(sumVoucherCost(voucherLines)),
+          lines: voucherLines as unknown as Prisma.InputJsonValue,
+          createdById: req.userId ?? null,
+          createdAt: voucherAt,
+        },
+      });
       stockTicket = await stageStockPush(tx, ids, {
         source: isImport ? "phiếu nhập nhiều mã" : "phiếu xuất nhiều mã",
       });
@@ -271,12 +307,14 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
     });
 
     await finishStockPush(stockTicket);
+    console.log(`[stock-voucher] ${voucherCode}: ${result.length} mã, ${parsed.items.reduce((a, it) => a + it.quantity, 0)} chiếc (${req.userId ?? "?"})`);
 
     res.json({
       type,
       count: result.length,
       totalQuantity: parsed.items.reduce((a, it) => a + it.quantity, 0),
       products: result,
+      voucher: { id: voucherId, code: voucherCode },
     });
   } catch (err) {
     const e = err as Error & { statusCode?: number };
@@ -284,6 +322,127 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
       res.status(e.statusCode).json({ error: e.message });
       return;
     }
+    next(err);
+  }
+});
+
+// ============================================================
+// PHIẾU KHO (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 4) — danh sách + chi tiết
+// để in. Mọi người có quyền kho đều xem; giá vốn / giá trị chỉ trả cho ai thấy tài chính.
+// ============================================================
+const VOUCHER_PAGE_SIZES = [20, 50, 100];
+
+function voucherTypeOf(v: unknown): InventoryLogType | null {
+  return v === "IMPORT" || v === "EXPORT" ? (v as InventoryLogType) : null;
+}
+
+// GET /api/inventory/vouchers?type=&q=&from=&to=&page=&pageSize=
+router.get("/vouchers", async (req: AuthRequest, res, next) => {
+  try {
+    const q = req.query;
+    const type = voucherTypeOf(q.type);
+    const search = typeof q.q === "string" ? q.q.trim() : "";
+    const from = typeof q.from === "string" && q.from ? new Date(q.from) : null;
+    const to = typeof q.to === "string" && q.to ? new Date(q.to) : null;
+    if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+      res.status(400).json({ error: "Khoảng ngày không hợp lệ" });
+      return;
+    }
+    const page = Math.max(1, Number(q.page) || 1);
+    const sizeRaw = Number(q.pageSize) || 20;
+    const pageSize = VOUCHER_PAGE_SIZES.includes(sizeRaw) ? sizeRaw : 20;
+    const where: Prisma.StockVoucherWhereInput = {
+      ownerId: req.ownerId!,
+      ...(type ? { type } : {}),
+      ...(search
+        ? { OR: [{ code: { contains: search, mode: "insensitive" } }, { reason: { contains: search, mode: "insensitive" } }] }
+        : {}),
+      ...(from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
+    };
+    const seesCost = canSeeFinancials(req);
+    const [total, rows] = await Promise.all([
+      prisma.stockVoucher.count({ where }),
+      prisma.stockVoucher.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          code: true,
+          type: true,
+          reason: true,
+          locationName: true,
+          lineCount: true,
+          totalQuantity: true,
+          totalCost: true,
+          createdById: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+    const creatorIds = [...new Set(rows.map((r) => r.createdById).filter((x): x is string => Boolean(x)))];
+    const creators = creatorIds.length
+      ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, fullName: true } })
+      : [];
+    const nameOf = new Map(creators.map((u) => [u.id, u.fullName]));
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        type: r.type,
+        reason: r.reason,
+        locationName: r.locationName,
+        lineCount: r.lineCount,
+        totalQuantity: r.totalQuantity,
+        totalCost: seesCost ? Number(r.totalCost) : null,
+        createdAt: r.createdAt,
+        createdByName: r.createdById ? (nameOf.get(r.createdById) ?? null) : null,
+      })),
+      total,
+      page,
+      pageSize,
+      pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/inventory/vouchers/:id — đủ dòng để in (ảnh chụp lúc lập).
+router.get("/vouchers/:id", async (req: AuthRequest, res, next) => {
+  try {
+    const v = await prisma.stockVoucher.findFirst({ where: { id: String(req.params.id), ownerId: req.ownerId! } });
+    if (!v) {
+      res.status(404).json({ error: "Không tìm thấy phiếu kho" });
+      return;
+    }
+    const seesCost = canSeeFinancials(req);
+    const [owner, creator] = await Promise.all([
+      prisma.user.findUnique({ where: { id: v.ownerId }, select: { fullName: true, phone: true, email: true } }),
+      v.createdById ? prisma.user.findUnique({ where: { id: v.createdById }, select: { fullName: true } }) : null,
+    ]);
+    const lines = (Array.isArray(v.lines) ? (v.lines as unknown as StockVoucherLine[]) : []).map((l) => ({
+      ...l,
+      unitCost: seesCost ? l.unitCost : null,
+    }));
+    res.json({
+      voucher: {
+        id: v.id,
+        code: v.code,
+        type: v.type,
+        reason: v.reason,
+        locationName: v.locationName,
+        lineCount: v.lineCount,
+        totalQuantity: v.totalQuantity,
+        totalCost: seesCost ? Number(v.totalCost) : null,
+        createdAt: v.createdAt,
+        lines,
+      },
+      shop: { name: owner?.fullName ?? "Shop", phone: owner?.phone ?? null, email: owner?.email ?? null },
+      createdByName: creator?.fullName ?? null,
+    });
+  } catch (err) {
     next(err);
   }
 });
