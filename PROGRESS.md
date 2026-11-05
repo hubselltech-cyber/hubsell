@@ -6,16 +6,17 @@
 
 ---
 
-## Phiên 05/11 trưa (2) — Chuyển công tắc "Tự chuẩn bị hàng" từ Kênh bán về trang Đơn hàng (nút + popup gian hàng) — ĐÃ LÀM, kiểm local, commit local, CHƯA push
+## Phiên 05/11 trưa (2) — Chuyển công tắc "Tự chuẩn bị hàng" từ Kênh bán về trang Đơn hàng (nút + popup gian hàng) — ĐÃ LÀM, kiểm local, ✅ PUSH 9cdf0127 (anh: "Dọn và push"), prod OK
 
 - **Anh (2 ảnh):** chuyển nút bật tự chuẩn bị hàng về Đơn hàng, bấm vào hiện popup các gian hàng và bật hoặc tắt; vị trí khoanh = hàng công cụ bảng đơn, trước Chế độ xem / Cột.
 - **Làm (chỉ frontend, backend không đổi):** `components/orders/auto-arrange-dialog.tsx` mới (nút + viên bật/tổng + popup từng gian có công tắc; bật → cùng hộp đổi sang màn xác nhận câu anh chốt 04/11, tắt → tắt ngay); `DataTable` thêm `toolbarActions`; trang Kênh bán gỡ công tắc, xóa `components/channels/auto-arrange-switch.tsx`. Chỉ chủ shop thấy nút.
 - **Em tự chọn, chờ anh xem:** nút chỉ ở tab **Tất cả + Chờ xử lý** (máy chỉ đụng đơn Chờ xử lý); gian chưa nối API / đã ngắt vẫn liệt kê kèm lý do thay cho công tắc; tab trống vẫn vẽ nút.
 - **Kiểm local (demo, 3010 ↔ 4010; seed tạm 2 gian thành đã nối API + tên gian 80 ký tự):** nút đúng 2 tab; bật → xác nhận → toast → viên 1/2; tắt → 0/2; 0 phần tử tràn hộp; 1280 ba nút cùng hàng; tối bật thật; tab Chờ xử lý trống còn nút; Kênh bán 0 công tắc. tsc FE + eslint sạch. Chưa thử: tài khoản nhân viên, shop rất nhiều gian.
-- **Dữ liệu thử còn trên demo local cho anh xem:** gian Shopee + TikTok của demo có `refreshToken = 'demo-test'` (để hiện công tắc), cả hai đang TẮT, 0 dòng làn; tên gian đã trả. **Dọn trước khi push** (đặt `refreshToken` về null).
+- **ĐÃ DỌN + PUSH (anh: "Dọn và push"):** demo local trả `refreshToken` 2 gian về null, 0 gian bật, 0 dòng làn, tắt 2 máy chủ local; push `c43beab4..9cdf0127` (kèm `cbab1789` cụm nút chip Chờ đóng gói). Chỉ đổi frontend → Render không deploy lại.
+- **Kiểm prod (Chrome của anh, tài khoản Chủ Shop Hubsell, CHỈ XEM — không gạt công tắc nào):** nút "Tự chuẩn bị hàng **2/5**" có ở tab Tất cả + Chờ xử lý, 4 tab kia không có; popup 5 gian: Shopee ANO Official Store + DarkMan Store đang BẬT, 3 gian TikTok tắt, 0 phần tử tràn hộp; trang Kênh bán 5 gian, 0 công tắc; tab Đã xử lý: chỉ chip Chờ đóng gói (5 đơn) có Thống kê + Quét đóng gói. **Chưa kiểm prod:** bấm bật / tắt thật từ popup, giao diện tối, tài khoản nhân viên.
 - **Ghi:** docs TU-CHUAN-BI-HANG mục 5.1, README, memory `hubsell-tu-chuan-bi-hang-theo-gian`.
 
-## Phiên 05/11 trưa — Đơn hàng: cụm nút Thống kê + Quét đóng gói CHỈ hiện ở chip "Chờ đóng gói" — ĐÃ LÀM, kiểm local, commit local, CHƯA push
+## Phiên 05/11 trưa — Đơn hàng: cụm nút Thống kê + Quét đóng gói CHỈ hiện ở chip "Chờ đóng gói" — ĐÃ LÀM, kiểm local, ✅ PUSH cbab1789 cùng đợt 9cdf0127, prod OK
 
 - **Anh (ảnh khoanh cụm nút):** phần này chỉ xuất hiện ở tab Chờ đóng gói, các tab khác không nên có vì không có nhiều ý nghĩa. Thay cho chốt 04/11 (chỉ ẩn ở chip Đã đóng gói).
 - **Sửa:** `frontend/src/app/orders/page.tsx` điều kiện `printedFilter !== "packed"` → `printedFilter === "yes"`. Không đổi backend, popup, trang quét.
