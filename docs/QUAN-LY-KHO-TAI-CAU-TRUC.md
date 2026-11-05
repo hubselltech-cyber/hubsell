@@ -108,3 +108,55 @@ Nguyên tắc: mỗi mục sidebar = một **việc** seller gọi tên được
 6. **Nhập hàng loạt lớn**: Excel vài chục nghìn dòng chạy nền có tiến độ (cùng khuôn hàng đợi bền), không treo trình duyệt.
 
 Thứ tự em đề xuất: (1) IA sidebar + mục Nhập – Xuất – Kiểm kê → (2) phiếu nhập NCC + giá vốn bình quân → (4) kiểm kê theo phiên + quyền → (3) đa kho. Trước khi làm (1) nên soi log 30 ngày xem khách bấm gì nhiều nhất ở Tổng kho (ít tốn, tránh gom theo cảm tính).
+
+## 5. Nhà cung cấp + giá nhập theo sản phẩm (05/11/2026 — THIẾT KẾ, CHƯA CODE, chờ anh gật)
+
+**Diễn biến:** anh hỏi "đúng chuẩn thì Tổng kho có cần nhà cung cấp không" → em: cần, gắn vào PHIẾU NHẬP chứ không gắn cứng vào sản phẩm
+(một mã nhập nhiều nguồn, mỗi lần một giá); chia lát A (danh bạ + NCC trên phiếu, không đụng tài chính) và lát B (giá nhập → giá vốn bình
+quân TỰ cập nhật). Anh: "chỉ làm lát A", rồi nêu ý: *"gõ một sản phẩm trong nhà cung cấp thì hiện cột sản phẩm, cột NCC 1, NCC 2 … NCC N và
+cột Giá trung bình; giá trung bình phục vụ họ nhập giá vốn trong tài chính NẾU HỌ MUỐN. Đây là ý tưởng, vẫn dựa vào em thiết kế hợp lý, giao
+diện dễ nhìn, chuyên nghiệp."*
+
+**Hệ quả của ý anh:** phiếu nhập phải ghi **giá nhập từng dòng** (tùy chọn). KHÔNG tự đổi giá vốn — giá trung bình chỉ để tham khảo, khách tự
+nhập ở Giá vốn. Vậy phạm vi = lát A + giá nhập trên phiếu + bảng so giá; **không đụng sổ tài chính, không cần mô phỏng quảng cáo.**
+
+### 5.1 Tab "Nhà cung cấp" trong Tổng kho (cạnh Tồn kho · Nhật ký kho · Phiếu kho), hai chế độ
+1. **Nhà cung cấp** (danh bạ): tên · SĐT · MST · số phiếu · tổng số lượng · ngày nhập gần nhất; thêm / sửa / ngừng dùng. Bấm một dòng →
+   tab Phiếu kho lọc sẵn theo nhà đó (đối chiếu cuối tháng: lọc NCC + khoảng ngày, có dòng cộng, in từng phiếu).
+2. **Giá nhập theo sản phẩm** (ý anh): ô tìm tên / mã SKU + chọn khoảng thời gian. Mỗi SKU kho MỘT dòng, 4 cột:
+   Sản phẩm · **Giá gần nhất theo nhà cung cấp** (các viên "tên NCC + giá", viên rẻ nhất tô xanh, quá 2–3 viên thì "+N") ·
+   **Giá nhập TB** (kèm tổng số lượng · số phiếu, có nút sao chép) · **Giá vốn đang dùng** (kèm "khớp" / "thấp hơn 1.822" / "chưa nhập giá vốn").
+   Bấm ▸ xổ ra mỗi nhà cung cấp một dòng: giá gần nhất · ngày nhập · đã nhập (số lượng · số phiếu) · giá TB của riêng nhà đó.
+
+**Vì sao KHÔNG làm đúng "cột NCC 1 … NCC N":** N cột chạy ngang theo số nhà cung cấp (10 nhà = 10 cột, tràn màn 1280), mà mỗi mã thường chỉ
+nhập của 1–3 nhà → đa số ô trống. Gom giá các nhà vào MỘT cột viên + xổ chi tiết giữ nguyên thông tin anh cần (so giá cạnh nhau, giá trung
+bình) mà bảng luôn 4 cột. Nếu anh vẫn muốn cột riêng từng nhà: chỉ khả thi khi giới hạn ≤ 4 nhà nhập nhiều nhất + cột "Khác".
+
+### 5.2 "Giá nhập TB" tính thế nào
+- **Bình quân theo số lượng**: Σ(số lượng × giá nhập) / Σ số lượng, trên các dòng phiếu CÓ giá nhập trong khoảng thời gian đang chọn.
+  Không lấy trung bình cộng giá các nhà (nhà nhập 10 cái sẽ kéo lệch nhà nhập 1.000 cái).
+- Mặc định khoảng thời gian **90 ngày** — số em TỰ CHỌN (giá nhập trôi theo thời gian, lấy cả đời thì lệch giá hiện tại), chưa có số liệu
+  khách; có lựa chọn "Tất cả".
+- Gọi là **"Giá nhập trung bình"**, KHÔNG gọi "giá vốn bình quân": đây là trung bình các lần MUA, không tính tồn đầu kỳ như kế toán.
+- v1 chỉ hiện + nút sao chép + so với giá vốn đang dùng. Nút "Dùng làm giá vốn" (một bấm, hộp cảnh báo số cũ → mới) để anh quyết sau.
+
+### 5.3 Phiếu nhập
+- Thêm ô **Nhà cung cấp** (chọn / gõ tên mới tạo tại chỗ) + **Số chứng từ**, đều không bắt buộc. Phiếu xuất không có.
+- Mỗi dòng thêm ô **Giá nhập** (không bắt buộc; điền sẵn giá gần nhất của đúng nhà đó cho mã đó). Dòng không có giá không vào trung bình.
+- **Quyền:** giá nhập là số tài chính → chỉ người thấy tài chính mới thấy / nhập (cùng luật cắt `unitCost` của phiếu kho). Thủ kho lập phiếu
+  chỉ ghi số lượng; chủ shop **bổ sung / sửa giá nhập, nhà cung cấp, số chứng từ sau** trên phiếu (KHÔNG sửa số lượng), có ghi vết —
+  không có đường sửa thì một lần gõ nhầm giá làm sai trung bình mãi.
+- Bản in phiếu nhập hiện tên nhà cung cấp + số chứng từ; Nhật ký kho dòng nhập hiện số phiếu + nhà cung cấp.
+
+### 5.4 Dữ liệu + hạ tầng
+- Bảng `suppliers` (ownerId, name, phone, taxCode, address, note, isActive) — RLS.
+- `stock_vouchers` thêm `supplierId`, `supplierName` (ảnh chụp), `documentNo` (nullable).
+- Bảng HẸP `stock_voucher_lines` (ownerId, voucherId, supplierId, productId, quantity, purchasePrice, createdAt; chỉ mục (ownerId, productId)
+  và (ownerId, supplierId)) — chỉ ghi cho phiếu NHẬP. Lý do không gom từ `lines` JSONB hay InventoryLog: bảng so giá phải GROUP BY sản phẩm ×
+  nhà cung cấp cho cả trang; JSONB không chỉ mục được, InventoryLog là bảng nóng lẫn hàng nghìn dòng trừ đơn mỗi mã.
+- Không đụng Order / sổ tài chính / hàng đợi; migration chỉ khóa `stock_vouchers` (bảng nhỏ).
+
+### 5.5 Lát
+1. Danh bạ NCC + NCC / số chứng từ trên phiếu nhập + cột & lọc ở Phiếu kho + bản in.
+2. Giá nhập trên dòng phiếu + sửa giá sau + bảng "Giá nhập theo sản phẩm".
+3. (chờ anh) Nút "Dùng làm giá vốn"; NCC ở Nhật ký kho.
