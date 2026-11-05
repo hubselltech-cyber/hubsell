@@ -368,3 +368,10 @@ nhiều mã có ô Nhà cung cấp; không tràn ngang ở 1920. **Chưa kiểm 
 **⏳ Trước khi lên prod:** anh in thử 3 khổ trên máy thật rồi quét; chọn cách điền mã cho sản phẩm cũ trên prod; thử hàm `product_new_barcode()` trên Supabase sau REVOKE. Còn lại: mobile quét mã vạch, cột mã vạch trong Excel.
 
 **Dữ liệu thử thêm trong DB local:** `TESTCHEP-M` / `TESTCHEP-L` (chép qua cửa Sao chép từ sàn).
+
+### 6.5 Push + kiểm prod (05/11 đêm)
+
+- Commit `7aff59f6` (Tổng kho sản phẩm riêng, nối một chiều, mã vạch, in tem), push cùng commit lát 3.9 `ebbf64b2` theo lời anh ("dọn dẹp trước cho sạch sẽ đi rồi commit và push cả 2"). Render `/health` = `7aff59f6` → migration `20261105220000_product_barcode` đã áp.
+- Prod shop công ty (màn 1920, chỉ xem): cột "Mã SKU / Mã vạch" có, không còn nút "Nối gian" / mã sàn trong bảng, chip "Bán trên" mở hộp nhỏ chỉ xem, trang `/print/product-labels` có. Sản phẩm cũ chưa có mã vạch (đúng thiết kế, chờ điền).
+- Sửa kèm sau khi đo prod: chip ở dòng CHA tự xuống dòng + đệm px-1.5 (trước tràn 3px ở ô 168px). Mục "Thấy khi làm, CHƯA sửa" ở mục 6 về dòng cha coi như đã xong.
+- ⏳ **Chờ anh:** (1) cách điền mã vạch cho sản phẩm cũ trên prod — `npx tsx scripts/backfill-product-barcode.ts run` trên Render Shell của worker, hoặc em thêm việc chạy một lần lúc khởi động với nhịp chậm; (2) in thử 3 khổ tem trên máy thật rồi quét; (3) mobile quét mã vạch + cột mã vạch trong Excel.

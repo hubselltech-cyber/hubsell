@@ -985,13 +985,15 @@ export default function ProductsHubPage() {
           {chips.length === 0 ? (
             <span className={TEXT_SUB}>Chưa nối</span>
           ) : (
-            <span className="flex flex-nowrap items-center gap-1.5">
+            // Chip tự xuống dòng + đệm px-1.5 như dòng con (đo prod 05/11 đêm, màn 1920: hai chip
+            // "TikTok ×1 Shopee ×3" một hàng với đệm px-2 tràn 3px khỏi ô 168px).
+            <span className="flex flex-wrap items-center gap-1.5">
               {chips.map(([channelName, n]) => {
                 const meta = CHANNEL_META[channelName as keyof typeof CHANNEL_META];
                 return (
                   <span
                     key={channelName}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-600"
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs font-medium tabular-nums text-slate-600"
                     title={`${meta?.label ?? channelName}: ${formatNumber(n)} phân loại đã nối — bung mẫu để xem từng dòng`}
                   >
                     {meta?.label ?? channelName}
