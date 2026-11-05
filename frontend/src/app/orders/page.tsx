@@ -1042,8 +1042,9 @@ export default function OrdersPage() {
                 phiếu chưa tới bước đó, chip Đã đóng gói thì đã xong (chốt 04/11). */}
             {printedFilter === "yes" && (
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                {/* Phiếu nhặt hàng (tên cũ: Thống kê bốc hàng, anh đổi 05/11/2026): cộng số lượng theo SKU /
-                    sản phẩm của đúng bộ lọc đang xem */}
+                {/* Mở popup Phiếu nhặt hàng (tên cũ: Thống kê bốc hàng, anh đổi 05/11/2026): cộng số lượng theo
+                    SKU / sản phẩm của đúng bộ lọc đang xem. NÚT vẫn ghi "Thống kê" — anh chốt 05/11: khách
+                    đã quen bấm chữ này, chỉ đổi tên bên trong popup và tờ in. */}
                 <button
                   type="button"
                   onClick={() => setPickSummaryOpen(true)}
@@ -1051,7 +1052,7 @@ export default function OrdersPage() {
                   title="Xem cần lấy bao nhiêu sản phẩm, SKU cho các đơn đang lọc"
                 >
                   <ClipboardList className="size-4" />
-                  Phiếu nhặt hàng
+                  Thống kê
                 </button>
                 {/* Màn quét kiện đã gói + in biên bản bàn giao — trang riêng vì là
                     việc đứng quét liên tục bằng điện thoại / máy quét */}
