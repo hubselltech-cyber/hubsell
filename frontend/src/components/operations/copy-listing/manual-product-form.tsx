@@ -479,7 +479,7 @@ function ManualProductFormBody({ canSeeCost, onChange, limits, initial, mode = "
             <p
               className={cn(
                 "rounded-md border px-3 py-2 text-sm",
-                missingSkuCount > 0 ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                missingSkuCount > 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"
               )}
             >
               {missingSkuCount > 0 ? (

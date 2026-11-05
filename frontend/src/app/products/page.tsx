@@ -1399,8 +1399,8 @@ export default function ProductsHubPage() {
                         className={cn(
                           "ml-0.5 rounded-full px-1.5 text-xs tabular-nums",
                           syncState.enabledCount === syncState.totalChannels
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                            : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-800"
                         )}
                       >
                         {syncState.enabledCount}/{syncState.totalChannels}
