@@ -37,7 +37,7 @@ import {
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber } from "@/lib/format";
 import { normalizeText } from "@/lib/text";
-import { TABLE_HEAD_EMPHASIS, TEXT_SUB } from "@/lib/typography";
+import { PRODUCT_NAME_CLAMP, TABLE_HEAD_EMPHASIS, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { variantLabel } from "@/lib/variant-group";
 
@@ -328,7 +328,7 @@ function ParentRow({
           <div className="min-w-0">
             {/* Tên cắt ngắn (tối đa ~26rem) + tooltip đủ tên; đang mở thì đậm hẳn làm điểm neo */}
             <p
-              className={cn("max-w-[26rem] truncate", open ? "font-bold" : "font-medium")}
+              className={cn(PRODUCT_NAME_CLAMP, open ? "font-bold" : "font-medium")}
               title={group.name}
             >
               {group.name}
@@ -833,12 +833,12 @@ function SingleRow(props: RowProps) {
           )}
           <div className="min-w-0">
             {/* Tên dài: cắt theo bề rộng cột + tooltip đủ tên (anh Trung 22/10) */}
-            <p className="max-w-[26rem] truncate" title={item.productName}>
+            <p className={PRODUCT_NAME_CLAMP} title={item.productName}>
               {item.productName}
             </p>
             {(variant || props.periodOrders) && (
               <p
-                className="max-w-[26rem] truncate text-xs font-medium text-sky-700"
+                className={cn(PRODUCT_NAME_CLAMP, "text-xs font-medium text-sky-700")}
                 title={variant ? `Phân loại: ${variant}` : undefined}
               >
                 {variant}

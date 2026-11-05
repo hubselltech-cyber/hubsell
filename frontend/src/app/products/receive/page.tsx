@@ -46,7 +46,7 @@ import { formatNumber } from "@/lib/format";
 import { canSeeFinancials } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
-import { TEXT_SUB } from "@/lib/typography";
+import { PRODUCT_NAME_CLAMP, TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
@@ -427,7 +427,7 @@ export default function ReceiveStockPage() {
                       </TableCell>
                       <TableCell className="font-mono text-sm">{l.product.skuCode}</TableCell>
                       <TableCell>
-                        <span className="block max-w-[26rem] truncate" title={l.product.productName}>
+                        <span className={cn("block", PRODUCT_NAME_CLAMP)} title={l.product.productName}>
                           {l.product.productName}
                         </span>
                       </TableCell>

@@ -45,7 +45,7 @@ import {
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
-import { TEXT_SUB } from "@/lib/typography";
+import { PRODUCT_NAME_CLAMP, TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
@@ -684,7 +684,7 @@ function GroupRows({
               )}
             </button>
             <div className="min-w-0 flex-1">
-              <button type="button" className="block w-full truncate text-left font-medium" title={g.title} onClick={onToggle}>
+              <button type="button" className={cn("block w-full text-left font-medium", PRODUCT_NAME_CLAMP)} title={g.title} onClick={onToggle}>
                 {g.title}
               </button>
               {/* Mã sản phẩm trên sàn (item id) + nút sao chép — anh Trung 05/11. CÙNG DÒNG với gian khi đủ chỗ (bảng là
@@ -758,7 +758,7 @@ function GroupRows({
           <tr key={r.id} className="border-t border-dashed bg-muted/20 text-sm">
             <td />
             <td className="py-1.5 pl-14 pr-2">
-              <span className="block truncate" title={variantLabel(r)}>
+              <span className={cn("block", PRODUCT_NAME_CLAMP)} title={variantLabel(r)}>
                 {variantLabel(r)}
               </span>
               <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1 font-mono")}>

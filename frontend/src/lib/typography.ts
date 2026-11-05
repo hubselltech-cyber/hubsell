@@ -43,6 +43,14 @@ export const TEXT_NUMBER_MUTED = "text-sm text-slate-700 tabular-nums";
  */
 export const TEXT_NUMBER_STRONG = "text-sm font-semibold tabular-nums";
 
+/**
+ * CHUẨN CẮT TÊN SẢN PHẨM DÀI trong bảng (anh Trung 22/10/2026, docs/GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md:
+ * "cắt theo bề rộng + tooltip đủ tên"; nhắc lại 06/11 ở trang Sản phẩm trên sàn: "tên sản phẩm dài quá…
+ * mình đã có chuẩn rồi"): tên chiếm tối đa 26rem (416px, khoảng 55–60 ký tự) rồi "…", kể cả khi cột còn
+ * rộng — màn to không vì thế mà tên chạy dài hết dòng. Phần tử dùng lớp này PHẢI kèm `title` = tên đủ.
+ */
+export const PRODUCT_NAME_CLAMP = "max-w-[26rem] truncate";
+
 /** Dòng phụ (sub-info) xếp chồng dưới số liệu — 12px */
 export const TEXT_SUB = "text-xs text-slate-500";
 
