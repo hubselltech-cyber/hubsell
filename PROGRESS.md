@@ -6,6 +6,15 @@
 
 ---
 
+## Phiên 06/11 chiều (13) — Thư báo tính năng app điện thoại 1.4.2 tới mọi chủ shop, kể cả khách đã rời bỏ (anh: "gửi email cập nhật tính năng mới trên app mobile, gửi cả cho những người rời bỏ")
+
+- **Đã kiểm:** 1.4.2 READY_FOR_SALE trên App Store (`asc-release.mjs status`), Android production completed từ 05/11.
+- **Mẫu thư** `featureMobileAppEmailHtml` / `sendFeatureMobileAppMail` (`backend/src/services/customer-mails.ts` mục 1e): 4 ý (Quét đóng gói, Phiếu nhặt hàng, Tồn kho theo mẫu, Nối gian + giá vốn trên app), đoạn riêng cho khách lâu không vào, 2 nút App Store / CH Play, cuối thư mời trả lời "thôi" để thôi nhận.
+- **3 ảnh** `frontend/public/guide-assets/mobile-{quet-dong-goi,phieu-nhat-hang,ton-kho-theo-mau}.png` (520 px, 38–60 KB, ảnh là link, hiện ngay trong thân thư). Anh dặn: chụp **túi ví của shop mình (gian DarkMan, túi ANO TC113)**, ⛔ không dùng ảnh shop Hi.Bé. Chụp bằng giả lập web local; công cụ chặn ghi DB local nên phiếu nhặt hàng hiện số đơn Chờ xử lý của DarkMan, màn quét dùng câu trả lời mẫu đúng khuôn app (hãng "LEX VN" tự điền).
+- **Script** `backend/scripts/feature-announce-once.ts` khôi phục từ 850d1fc5, key `mobile-1-4-2` (vé `onboarding_reminders` kind `feature-mobile-1-4-2`). Chống Zoho chặn như 29/10: 1 luồng, nghỉ 3 giây/thư, `--apply` BẮT BUỘC `--limit` ≤ 100, các lô cách nhau ≥ 1 giờ.
+- **Người nhận:** mọi chủ shop có email, không xét gói / hết hạn / ngủ đông → khách rời bỏ đều nhận; tài khoản đã tự xóa có email = null nên không gửi được. ⏳ Người trả lời "thôi" sau thư 29/10 chỉ nằm trong hộp support@ Zoho, anh soi rồi báo em loại.
+- **Kiểm:** tsc sạch, test customer-mails 17/17. Gửi: Render Shell → xem trước → thư mẫu tới xwearhn@gmail.com → anh duyệt → 3 lô. Gửi xong gỡ mẫu thư + script như lần 29/10 (giữ ảnh).
+
 ## Phiên 06/11 chiều (10) — Rà trang HQ Sức khỏe (anh: "check xem trang sức khỏe gặp vấn đề gì nhé. Việc gì có thể đẩy lên sớm làm trước thì làm trước"); ĐÃ PUSH `75019dca` 14:10, prod đã kiểm
 
 - **Ba dấu hiệu vượt ngưỡng, thật ra hai việc:** (1) đỏ "Mốc nước quét đơn 1424′" + vàng "Gian rớt kết nối" là CÙNG một gian TikTok "TORANO MENSWEAR"; (2) vàng "Dung lượng DB 64 %".

@@ -209,6 +209,77 @@ export async function sendConnectReminderMail(to: string, input: { fullName: str
   });
 }
 
+// ---------------- 1e. Thông báo tính năng mới trên app điện thoại (06/11/2026) ----------------
+//
+// Anh Trung 06/11: "gửi email về cập nhật tính năng mới của Hubsell trên app
+// mobile, gửi cả cho những người rời bỏ rồi". Bản 1.4.2 đã lên App Store +
+// CH Play (READY_FOR_SALE 06/11). Một hành động (tải / cập nhật app) nên hai
+// nút kho đứng cạnh nhau. Gửi bằng scripts/feature-announce-once.ts
+// --feature=mobile-1-4-2 (vé chống trùng kind "feature-mobile-1-4-2").
+
+const APP_STORE_URL = "https://apps.apple.com/vn/app/id6819512670";
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=vn.hubsell.app";
+
+// Ảnh chụp app giả lập web bằng gian túi ví DarkMan của Hubsell (anh dặn 06/11: KHÔNG
+// dùng ảnh shop khách, ví dụ Hi.Bé) — frontend/public/guide-assets/mobile-*.png, Vercel phục vụ.
+export function featureMobileAppEmailHtml(input: { fullName: string }): string {
+  const feature = (title: string, text: string, img?: { file: string; alt: string }) =>
+    `<p style="color:#222;margin:22px 0 4px"><b>${title}</b></p>
+      <p style="color:#444;margin:0 0 10px">${text}</p>${
+        img
+          ? `<p style="text-align:center;margin:0 0 8px"><img src="${FRONTEND_URL}/guide-assets/${img.file}" alt="${img.alt}" width="260" style="display:inline-block;width:260px;max-width:100%;height:auto;border:1px solid #e2e8f0;border-radius:16px" /></p>`
+          : ""
+      }`;
+  const storeBtn = (label: string, url: string) =>
+    `<a href="${url}" style="background:#18181b;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block;margin:4px">${label}</a>`;
+  return shell({
+    heading: "Đóng hàng ngay trên điện thoại, không cần ngồi máy tính",
+    bodyHtml: [
+      p(`Xin chào ${escapeHtml(input.fullName)},`),
+      p(
+        "Giờ cao điểm đóng hàng, nhiều chủ shop phải chạy qua chạy lại giữa bàn gói và máy tính chỉ để bấm từng đơn. App Hubsell bản mới (1.4.2) đưa việc đó lên điện thoại — cầm máy đứng ngay tại bàn gói là làm được."
+      ),
+      feature(
+        "1. Quét đóng gói",
+        "Gói xong, đưa camera quét tem vận đơn — đơn tự sang Đã đóng gói. Đơn khách vừa hủy thì máy kêu còi, màn hình đỏ để bạn bỏ kiện lại, không gửi nhầm.",
+        { file: "mobile-quet-dong-goi.png", alt: "Quét đóng gói: đơn đã hủy hiện màn đỏ" }
+      ),
+      feature(
+        "2. Phiếu nhặt hàng",
+        "Cộng sẵn mỗi sản phẩm, mỗi phân loại cần lấy bao nhiêu cho toàn bộ đơn chờ đóng gói. Cầm điện thoại đi nhặt một vòng là đủ.",
+        { file: "mobile-phieu-nhat-hang.png", alt: "Phiếu nhặt hàng: số lượng cần lấy theo sản phẩm" }
+      ),
+      feature(
+        "3. Sửa tồn kho theo mẫu",
+        "Mở một sản phẩm, nhập / xuất nhiều màu, nhiều size trong một lần lưu. Lọc nhanh những mẫu đã hết hàng.",
+        { file: "mobile-ton-kho-theo-mau.png", alt: "Tồn kho theo mẫu: nhập nhiều phân loại một lần" }
+      ),
+      feature(
+        "4. Nối gian hàng và nhập giá vốn ngay trên app",
+        "Shopee, TikTok Shop, Lazada nối trong vài chạm; SKU nào còn thiếu giá vốn, app chỉ ra để nhập luôn."
+      ),
+      p("Số liệu Tài chính, Quảng cáo trên app khớp từng đồng với bản web. Vuốt xuống ở màn Đơn hàng là có đơn mới nhất."),
+      p(
+        "Đã lâu bạn chưa mở Hubsell? Tài khoản của bạn vẫn còn đó — tải app, đăng nhập bằng chính email nhận thư này là dùng tiếp. Đã cài app rồi thì chỉ cần bấm <b>Cập nhật</b> trên App Store hoặc CH Play."
+      ),
+      `<p style="text-align:center;margin:24px 0">${storeBtn("Tải trên App Store", APP_STORE_URL)}${storeBtn("Tải trên CH Play", PLAY_STORE_URL)}</p>`,
+    ].join("\n"),
+    footnote:
+      "Dùng thử thấy chỗ nào vướng, bạn trả lời thư này kèm ảnh màn hình, Hubsell đọc và sửa từng góp ý. Nếu không muốn nhận thư thông báo nữa, chỉ cần trả lời một chữ \"thôi\".",
+  });
+}
+
+export const FEATURE_MOBILE_APP_SUBJECT = "Hubsell — Đóng hàng ngay trên điện thoại: quét đóng gói, phiếu nhặt hàng, sửa tồn kho";
+
+/** Trả về true khi đã gửi — script một lần dựa vào đây để giữ / nhả vé chống trùng. */
+export async function sendFeatureMobileAppMail(to: string, input: { fullName: string }): Promise<boolean> {
+  return safeSend("feature-mobile-app", to, {
+    role: "noreply",
+    subject: FEATURE_MOBILE_APP_SUBJECT,
+    html: featureMobileAppEmailHtml(input),
+  });
+}
+
 // ---------------- 2. Mật khẩu vừa được đổi ----------------
 
 export function passwordChangedEmailHtml(input: { fullName: string; changedAt: Date }): string {
