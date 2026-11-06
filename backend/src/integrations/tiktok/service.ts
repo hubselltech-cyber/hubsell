@@ -94,6 +94,9 @@ export async function getValidAccessToken(
   // Sắp/đã hết hạn → phải refresh. Nếu refresh_token cũng hết hạn thì bó tay.
   const refreshExp = channel.refreshTokenExpireAt?.getTime() ?? 0;
   if (refreshExp && refreshExp < now) {
+    // Ủy quyền đã quá hạn → không lượt nào cứu được nữa: hạ gian ngay tại đây để chủ shop
+    // có nút Kết nối lại (trước 06/11 chỉ ném lỗi, gian ACTIVE mãi).
+    await disconnectExpiredTiktokAuths({ onlyChannelId: channel.id });
     throw new Error(
       "Phiên uỷ quyền TikTok đã hết hạn (refresh_token). Vui lòng kết nối lại gian hàng."
     );
@@ -123,6 +126,48 @@ export async function getValidAccessToken(
   });
 
   return { accessToken: t.access_token, shopCipher: channel.shopCipher };
+}
+
+/**
+ * ỦY QUYỀN TIKTOK ĐÃ QUÁ HẠN → DISCONNECTED (06/11/2026, TORANO MENSWEAR).
+ *
+ * TikTok trả ngày hết hạn ủy quyền trong token (refreshTokenExpireAt; làm mới token KHÔNG
+ * dời ngày này — prod: TORANO ủy quyền 22/10 07:09, hạn đúng 06/11 07:09 dù token được làm
+ * mới tới 05/11). Qua ngày đó chỉ ủy quyền lại mới chạy tiếp, nên hạ gian là chắc chắn,
+ * không cần hỏi sàn. Trước đây bước này chỉ chạy cho gian có access_token sắp hết
+ * (cron token-refresh) → access_token vừa làm mới (sống 7 ngày) thì gian quá hạn vẫn
+ * ACTIVE thêm tới 7 ngày, worker thử lại vô ích (TORANO 152 lượt), HQ đỏ mục mốc nước.
+ *
+ * Ghi có điều kiện trong SQL (còn ACTIVE + hạn đã qua) — chủ shop vừa ủy quyền lại thì hạn
+ * mới nằm ở tương lai nên không bị hạ oan. Không xóa token. Thẻ gian tự hiện "hết hạn ủy
+ * quyền" vì refreshTokenExpireAt ≤ disconnectedAt (frontend lib/channel-auth.ts).
+ */
+export async function disconnectExpiredTiktokAuths(opts: { onlyChannelId?: string; now?: Date } = {}): Promise<number> {
+  const now = opts.now ?? new Date();
+  const expired = await prisma.channel.findMany({
+    where: {
+      channelName: ChannelName.TIKTOK,
+      status: "ACTIVE",
+      refreshToken: { not: null },
+      refreshTokenExpireAt: { lt: now },
+      ...(opts.onlyChannelId ? { id: opts.onlyChannelId } : {}),
+    },
+    select: { id: true, shopName: true, externalShopId: true },
+  });
+  let dropped = 0;
+  for (const c of expired) {
+    const r = await prisma.channel.updateMany({
+      where: { id: c.id, status: "ACTIVE", refreshTokenExpireAt: { lt: now } },
+      data: { status: "DISCONNECTED", disconnectedAt: now },
+    });
+    if (r.count > 0) {
+      dropped += 1;
+      console.warn(
+        `[Token-refresh] Gian TikTok "${c.shopName}" (shop ${c.externalShopId}) hết hạn uỷ quyền → DISCONNECTED, cần kết nối lại`
+      );
+    }
+  }
+  return dropped;
 }
 
 // ---------- Ánh xạ trạng thái đơn TikTok → vòng đời của Hubsell ----------

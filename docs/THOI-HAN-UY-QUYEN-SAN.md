@@ -87,3 +87,29 @@ HQ: dấu hiệu "Gian rớt kết nối / sàn trễ đồng bộ" nêu tên �
 - Quét prod 27/10 10:45: chỉ HPGear VN là gian ACTIVE lỗi kéo dài; 12 gian rớt trong 30 ngày đều đã DISCONNECTED đúng.
 - **✅ Kiểm prod 27/10 11:00:** migration xong 10:58:59; HPGear VN tự hạ DISCONNECTED 10:59:21 (authLostReason shop_no_linked); không gian nào khác bị đếm; 0 gian ACTIVE lỗi ≥ 3 lượt.
 - **Sau deploy:** cron token-refresh (30′) gọi làm mới HPGear VN → log `[Auth-loss] Shopee "HPGear VN" … shop_no_linked — mã chắc chắn → DISCONNECTED`; HQ hết đỏ mục mốc nước. Sau đó mỗi lần sàn từ chối bằng mã lạ sẽ có log `[Auth-loss] … lần n/3` — mã nào lặp nhiều thì cân nhắc thêm vào nhóm hạ ngay (ghi căn cứ).
+
+## 7. Hai lỗ hổng của luật chung lộ ra ở TORANO MENSWEAR (06/11/2026)
+
+### 7.1 Chuyện gì xảy ra (số prod, SQL chỉ đọc 06/11 13:59)
+- Gian TikTok "TORANO MENSWEAR" ủy quyền 22/10 07:09 UTC, hạn ủy quyền (`refreshTokenExpireAt`) **06/11 07:09 UTC** — đúng 15 ngày; làm mới token không dời ngày này.
+- TikTok gửi sự kiện loại 7 (sắp hết hạn ủy quyền) mỗi ngày từ 30/10 tới 05/11; sự kiện loại 6 (thu hồi ủy quyền) lúc **05/11 07:16:47 UTC**, 2 phút sau lượt quét đơn thành công cuối (07:14:49).
+- Việc xử lý sự kiện loại 6 chạy xong sau 71 ms, kết quả gian vẫn ACTIVE: lượt hỏi lại sàn (`getAuthorizedShops`) ngay lúc đó vẫn thấy gian — sàn chưa kịp vô hiệu token. Chưa đọc log Render để xem nguyên văn dòng `[Webhook TikTok] Ủy quyền shop … →`; suy ra từ mã (chỉ có hai kết cục) + trạng thái trong DB.
+- Từ đó mọi lượt quét trả `TikTok API lỗi (code 36009005): Invalid credentials. The 'access_token' header is invalid.` — 152 lượt, `authRejectCount` = 0, HQ đỏ mục "Mốc nước quét đơn 1424′" + vàng mục "Gian rớt kết nối".
+
+### 7.2 Gốc — hai chỗ vẫn còn "theo danh sách / theo điều kiện phụ"
+1. **Lưới thứ hai vẫn theo danh sách mã.** `isAuthClassError` dựa vào `AUTH_RE` của cổng gọi sàn; `36009005` không có trong đó → không ép làm mới → access_token còn "hạn" tới 12/11 nên luật đếm không bao giờ được hỏi.
+2. **Bước hạ gian khi ủy quyền quá hạn bị gắn vào điều kiện access_token sắp hết.** Cron token-refresh chỉ lôi gian TikTok có `accessTokenExpireAt` < 20 phút nữa; TORANO vừa được làm mới 05/11 06:34 nên phải tới 12/11 mới được xét, dù hạn ủy quyền đã qua từ 06/11.
+
+### 7.3 Sửa (không thêm mã lỗi nào vào danh sách)
+- `integrations/tiktok/service.ts` — `disconnectExpiredTiktokAuths()`: gian TikTok ACTIVE có `refreshTokenExpireAt` đã qua → DISCONNECTED, không hỏi sàn, không xóa token; ghi có điều kiện trong SQL. Cron token-refresh gọi đầu mỗi lượt (30′), không phụ thuộc access_token. `getValidAccessToken` gặp ủy quyền quá hạn cũng hạ ngay thay vì chỉ ném lỗi. Thẻ gian tự hiện "hết hạn ủy quyền" (hạn ≤ lúc ngắt, `frontend/src/lib/channel-auth.ts` — không đổi).
+- `integrations/auth-loss.ts` — `shouldForceRefreshAfterScanFailure()`: mã lớp quyền đã biết → ép ngay như cũ; lỗi tạm thời / trần gọi / chặn theo app → không ép; **mọi lỗi còn lại → ép đúng một lần khi chuỗi lỗi chạm `SCAN_FAIL_FORCE_AT` = 3 lượt liên tiếp** (bằng `SYNC_STALL_THRESHOLD` của thẻ "trễ đồng bộ"). Sàn từ chối làm mới thì token giữ trạng thái "đã hết", các lượt sau tự hỏi lại, luật đếm 3 lần / 30′ hạ gian. Chi phí: một lệnh làm mới cho mỗi chuỗi lỗi.
+- `workers/order-auto-sync.ts` dùng hàm mới, lấy số lượt lỗi từ chính lệnh ghi `syncFailCount`.
+
+### 7.4 Kiểm
+- `auth-loss-db.test.ts` 16 ca (7 ca mới: mã 36009005 ép ở lượt 3 và chỉ lượt 3; mã lớp quyền ép ngay; lỗi tạm thời không ép; TORANO quá hạn với access_token còn 6 ngày → hạ, giữ token, không gọi sàn; hạn còn → không đụng; gian đã ngắt → không ghi đè mốc; bị ép làm mới khi quá hạn → hạ trong lượt gọi). `src/workers` + cổng gọi sàn + ủy quyền Shopee / Hubsell Ads: 153 qua. `tsc --noEmit` backend sạch.
+- Quét prod 06/11 13:59: TORANO là gian ACTIVE duy nhất lỗi ≥ 3 lượt. Gian TikTok kế tiếp tới hạn ủy quyền: "Thuỷ Gốm Store" 13/11 01:48 UTC.
+- **CHƯA kiểm:** TikTok trả gì khi làm mới token của gian vừa bị thu hồi ủy quyền (nếu sàn vẫn chấp nhận thì lưới thứ hai không hạ được, gian chờ tới ngày hết hạn); chưa chạy trên prod.
+- **Sau deploy cần thấy:** log worker `[Token-refresh] Gian TikTok "TORANO MENSWEAR" … hết hạn uỷ quyền → DISCONNECTED` trong ≤ 30 phút; HQ hết đỏ mục mốc nước.
+
+### 7.5 Chưa làm
+- Sự kiện loại 6 hỏi lại sàn quá sớm: chưa đổi. Sau bản sửa này gian bị thu hồi sẽ được lưới thứ hai xử lý trong khoảng 1–1,5 giờ (3 lượt quét lỗi + 30′ đếm) nếu TikTok từ chối làm mới.

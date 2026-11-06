@@ -21,7 +21,10 @@ import { prisma } from "../lib/prisma";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
-import { getValidAccessToken as getValidTiktokAccessToken } from "../integrations/tiktok/service";
+import {
+  disconnectExpiredTiktokAuths,
+  getValidAccessToken as getValidTiktokAccessToken,
+} from "../integrations/tiktok/service";
 import { refreshExpiringHubsellAdsTokens } from "../integrations/hubsell-ads";
 import { refreshShopeeAuthExpiry } from "../integrations/shopee/auth-expiry";
 
@@ -149,6 +152,12 @@ async function refreshMainAppTokens(): Promise<void> {
  */
 async function refreshTiktokTokens(): Promise<void> {
   if (!isTikTokConfigured()) return;
+  // Ủy quyền đã quá hạn → hạ ngay, KHÔNG phụ thuộc access_token còn hạn hay không
+  // (06/11/2026: TORANO quá hạn nhưng access_token vừa làm mới nên không lọt vào danh
+  // sách "sắp hết hạn" bên dưới, gian ACTIVE thêm nhiều ngày).
+  await disconnectExpiredTiktokAuths().catch((err) =>
+    console.error("[Token-refresh] Lỗi hạ gian TikTok quá hạn ủy quyền:", (err as Error).message)
+  );
   const soon = new Date(Date.now() + EXPIRING_SOON_MS);
   const channels = await prisma.channel.findMany({
     where: {

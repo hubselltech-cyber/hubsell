@@ -6,6 +6,17 @@
 
 ---
 
+## Phiên 06/11 chiều (10) — Rà trang HQ Sức khỏe (anh: "check xem trang sức khỏe gặp vấn đề gì nhé. Việc gì có thể đẩy lên sớm làm trước thì làm trước"); đã sửa mã trên máy, CHƯA commit / push
+
+- **Ba dấu hiệu vượt ngưỡng, thật ra hai việc:** (1) đỏ "Mốc nước quét đơn 1424′" + vàng "Gian rớt kết nối" là CÙNG một gian TikTok "TORANO MENSWEAR"; (2) vàng "Dung lượng DB 64 %".
+- **TORANO (SQL chỉ đọc prod 13:59):** ủy quyền 22/10, hạn ủy quyền 06/11 07:09 UTC (15 ngày); TikTok báo thu hồi 05/11 07:16 UTC nhưng lượt hỏi lại sàn chạy 71 ms sau vẫn thấy gian → giữ ACTIVE; sau đó mọi lượt quét lỗi `36009005 Invalid credentials` (152 lượt, `authRejectCount` 0). Gốc: lưới thứ hai của luật mất ủy quyền vẫn theo danh sách mã (`AUTH_RE` không có 36009005); bước hạ gian quá hạn ủy quyền chỉ chạy cho gian có access_token sắp hết (TORANO phải tới 12/11).
+- **Đã sửa (chưa commit):** `disconnectExpiredTiktokAuths()` (tiktok/service.ts) — quá hạn ủy quyền là hạ ngay, cron token-refresh gọi đầu mỗi lượt, `getValidAccessToken` cũng hạ; `shouldForceRefreshAfterScanFailure()` (auth-loss.ts) — mã lạ lặp 3 lượt liên tiếp thì ép làm mới token một lần, lỗi tạm thời / trần gọi không ép; order-auto-sync dùng hàm mới. Không thêm mã lỗi nào vào danh sách. Chi tiết: `docs/THOI-HAN-UY-QUYEN-SAN.md` mục 7.
+- **Đã kiểm:** `auth-loss-db.test.ts` 16/16 (7 ca mới), `src/workers` + cổng gọi sàn + ủy quyền Shopee / Hubsell Ads 153/153, `tsc --noEmit` backend sạch. **CHƯA kiểm:** chạy trên prod; TikTok trả gì khi làm mới token của gian vừa bị thu hồi; log Render dòng `[Webhook TikTok] Ủy quyền shop`.
+- **Sau push cần thấy:** log worker `[Token-refresh] Gian TikTok "TORANO MENSWEAR" … → DISCONNECTED` trong ≤ 30 phút, HQ hết đỏ. Gian TikTok kế tiếp tới hạn ủy quyền: "Thuỷ Gốm Store" 13/11 01:48 UTC.
+- **Dung lượng DB (chỉ đọc, chưa sửa gì):** tăng đều ~194 MB / ngày (2.165 MB ngày 21/10 → 5.263 MB ngày 06/11); bảng lớn: OrderItem 810, Order 757, webhook_events 515 (dọn 7 ngày đang chạy, dòng cũ nhất 29/10), sổ tháng 10 455 + 388 MB. Chưa tìm bảng nào tăng nhanh nhất theo ngày.
+- **Supabase báo "Exceeding usage limits" = Disk Size:** ổ đĩa đã cấp 12 GB (gói kèm 8 GB), vượt 164 GB-giờ trong kỳ 27/10–27/11, Spend Cap đang BẬT; trang Usage ghi "Reduce the disk size or disable the spend cap". Tài liệu Supabase: muốn ổ tự nở quá 8 GB phải tắt Spend Cap; 4 GB thêm giá 0,125 USD / GB / tháng. Chưa rõ Supabase hạn chế gì khi để nguyên. HQ vẫn tính mẫu số 8.192 MB. ⏳ anh quyết tắt Spend Cap hay không (em không đổi cài đặt thanh toán).
+- **Cây làm việc:** có thay đổi CHƯA commit của phiên khác (docs/store/tiktok, `docs/DONG-BO-GIAI-DOAN-3.md`, `docs/TIKTOK-APP-STORE-NIEM-YET.md`, `tools/do-hoa/`) — lượt này không đụng.
+
 ## Phiên 05/11 tối (20:00, lượt lịch tự động `hubsell-keo-san-pham-tang-dan-05-11`) — Kéo danh mục TĂNG DẦN + chỉ ghi dòng khác biệt (lát 3.9 GĐ3); commit `ebbf64b2` — ĐÃ PUSH 05/11 đêm theo lời anh ("commit và push cả 2", xem phiên tối (6)), mặc định chạy bóng
 
 - **Việc do anh bổ sung 03/11** ("mỗi lần kéo lại phải kéo lại hết thì quá gãy" — Hy Korea Shopee 38.889 dòng, +0 mới, 38.889 UPDATE, ~19 phút), trước đây không có trong kế hoạch 7 lát GĐ3. Chi tiết: `docs/DONG-BO-GIAI-DOAN-3.md` mục 7.

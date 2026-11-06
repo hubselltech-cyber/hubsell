@@ -18,7 +18,9 @@
 //      AUTH_REJECT_MIN_SPAN_MS → DISCONNECTED, lưu mã ở authLostReason cho thẻ gian.
 //   3. Lưới thứ hai (workers/order-auto-sync.ts): lượt quét gặp lỗi LỚP QUYỀN (gateway
 //      classify kind "auth") → ép làm mới token ở lượt kế (forceTokenRefresh) để luật 1–2
-//      phán xử, không chờ access_token tự hết hạn (TikTok 7 ngày).
+//      phán xử, không chờ access_token tự hết hạn (TikTok 7 ngày). Từ 06/11/2026 lưới này
+//      cũng KHÔNG theo mã: lỗi bất kỳ không thuộc lớp tạm thời / trần gọi lặp đủ
+//      SCAN_FAIL_FORCE_AT lượt liên tiếp → ép một lần (shouldForceRefreshAfterScanFailure).
 //   4. Làm mới thành công / ủy quyền lại → AUTH_REJECT_RESET.
 //
 // Ngưỡng (căn cứ ghi rõ, không chọn bừa): AUTH_REJECT_MAX = 3 và 30 phút = đúng ngưỡng
@@ -147,6 +149,33 @@ export async function recordRefreshFailure(subject: AuthSubject, err: unknown): 
 /** Lỗi của một lượt quét/gọi API thuộc LỚP QUYỀN theo bảng phân loại của cổng gọi sàn. */
 export function isAuthClassError(platform: Platform, err: unknown): boolean {
   return classifierFor(platform)(err).kind === "auth";
+}
+
+/**
+ * Số lượt quét lỗi LIÊN TIẾP thì ép làm mới token dù mã lỗi không nằm trong bảng lớp quyền.
+ * Căn cứ: bằng SYNC_STALL_THRESHOLD (services/ops-alerts.ts) — mốc đã dùng để coi một gian
+ * là "trễ đồng bộ" từ 09/2026.
+ */
+export const SCAN_FAIL_FORCE_AT = 3;
+
+/**
+ * Lưới thứ hai có ép làm mới token sau lượt quét lỗi này không (06/11/2026).
+ *
+ * Trước đây chỉ ép khi mã lỗi khớp bảng lớp quyền của cổng gọi sàn (AUTH_RE) — lại là một
+ * DANH SÁCH MÃ: TORANO MENSWEAR (TikTok) bị sàn trả `36009005 Invalid credentials` sau khi
+ * thu hồi ủy quyền, mã không có trong bảng → không ép, access_token còn "hạn" 7 ngày nên
+ * luật đếm không bao giờ được hỏi, 152 lượt lỗi. Nay không phụ thuộc mã:
+ *   - mã lớp quyền đã biết → ép ngay (như cũ);
+ *   - lỗi tạm thời / trần gọi / chặn theo app → không ép (không phải sàn từ chối quyền);
+ *   - MỌI lỗi còn lại → ép đúng MỘT lần khi chuỗi lỗi chạm SCAN_FAIL_FORCE_AT lượt. Sàn từ
+ *     chối làm mới thì access_token vẫn ở trạng thái "đã hết" nên các lượt sau tự hỏi lại
+ *     và luật đếm hạ gian; sàn chấp nhận thì chỉ tốn một lệnh làm mới cho cả chuỗi lỗi.
+ */
+export function shouldForceRefreshAfterScanFailure(platform: Platform, err: unknown, failCount: number): boolean {
+  const kind = classifierFor(platform)(err).kind;
+  if (kind === "auth") return true;
+  if (kind !== "other") return false;
+  return failCount === SCAN_FAIL_FORCE_AT;
 }
 
 /**

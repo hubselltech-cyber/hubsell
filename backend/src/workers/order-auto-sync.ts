@@ -43,7 +43,7 @@
 import { ChannelName, type Channel } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { isShopeeConfigured } from "../integrations/shopee/config";
-import { forceTokenRefresh, isAuthClassError } from "../integrations/auth-loss";
+import { forceTokenRefresh, shouldForceRefreshAfterScanFailure } from "../integrations/auth-loss";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import {
   claimDailyEscrowSweep,
@@ -519,17 +519,24 @@ async function runFastTier(
     const message = (err as Error).message;
     console.error(`[Auto-sync] Lỗi đồng bộ đơn gian "${channel.shopName}":`, message);
     // Đếm lượt lỗi LIÊN TIẾP — detector Trung tâm điều hành báo khi ≥ 3.
-    await prisma.channel
+    const failed = await prisma.channel
       .update({
         where: { id: channel.id },
         data: { lastSyncError: message, syncFailCount: { increment: 1 } },
+        select: { syncFailCount: true },
       })
-      .catch(() => {});
+      .catch(() => null);
     // Lưới thứ hai của luật mất ủy quyền (integrations/auth-loss.ts): lỗi LỚP QUYỀN
     // (token/quyền bị sàn từ chối) → ép làm mới token ở lượt kế để luật đếm phán xử,
-    // không chờ access_token tự hết hạn (TikTok 7 ngày). Chỉ 3 sàn API, không Offline.
+    // không chờ access_token tự hết hạn (TikTok 7 ngày). Mã lỗi LẠ lặp đủ 3 lượt liên
+    // tiếp cũng ép một lần (06/11/2026 — TORANO, TikTok 36009005 không có trong bảng mã).
+    // Chỉ 3 sàn API, không Offline.
     const platform = channel.channelName;
-    if ((platform === ChannelName.SHOPEE || platform === ChannelName.TIKTOK || platform === ChannelName.LAZADA) && isAuthClassError(platform, err)) {
+    const failCount = failed?.syncFailCount ?? channel.syncFailCount + 1;
+    if (
+      (platform === ChannelName.SHOPEE || platform === ChannelName.TIKTOK || platform === ChannelName.LAZADA) &&
+      shouldForceRefreshAfterScanFailure(platform, err, failCount)
+    ) {
       await forceTokenRefresh(channel.id, `${platform} "${channel.shopName}"`, err);
     }
     // Gian lỗi coi như "có biến động": giữ nhịp gốc để phục hồi nhanh khi sàn ổn lại.
