@@ -108,8 +108,8 @@ HQ: dấu hiệu "Gian rớt kết nối / sàn trễ đồng bộ" nêu tên �
 ### 7.4 Kiểm
 - `auth-loss-db.test.ts` 16 ca (7 ca mới: mã 36009005 ép ở lượt 3 và chỉ lượt 3; mã lớp quyền ép ngay; lỗi tạm thời không ép; TORANO quá hạn với access_token còn 6 ngày → hạ, giữ token, không gọi sàn; hạn còn → không đụng; gian đã ngắt → không ghi đè mốc; bị ép làm mới khi quá hạn → hạ trong lượt gọi). `src/workers` + cổng gọi sàn + ủy quyền Shopee / Hubsell Ads: 153 qua. `tsc --noEmit` backend sạch.
 - Quét prod 06/11 13:59: TORANO là gian ACTIVE duy nhất lỗi ≥ 3 lượt. Gian TikTok kế tiếp tới hạn ủy quyền: "Thuỷ Gốm Store" 13/11 01:48 UTC.
-- **CHƯA kiểm:** TikTok trả gì khi làm mới token của gian vừa bị thu hồi ủy quyền (nếu sàn vẫn chấp nhận thì lưới thứ hai không hạ được, gian chờ tới ngày hết hạn); chưa chạy trên prod.
-- **Sau deploy cần thấy:** log worker `[Token-refresh] Gian TikTok "TORANO MENSWEAR" … hết hạn uỷ quyền → DISCONNECTED` trong ≤ 30 phút; HQ hết đỏ mục mốc nước.
+- **CHƯA kiểm:** TikTok trả gì khi làm mới token của gian vừa bị thu hồi ủy quyền (nếu sàn vẫn chấp nhận thì lưới thứ hai không hạ được, gian chờ tới ngày hết hạn); lưới thứ hai chưa có ca thật nào trên prod.
+- **✅ Kiểm prod 06/11 14:15 (commit `75019dca`, push 14:10):** `/health` lên bản mới 14:14:39; TORANO MENSWEAR tự hạ DISCONNECTED 07:14:45 UTC ở lượt token-refresh đầu sau khi worker khởi động; 0 gian ACTIVE lỗi ≥ 3 lượt; 0 gian TikTok ACTIVE quá hạn ủy quyền; trong 2 giờ chỉ gian này bị hạ. Chưa đọc lại trang HQ và log Render.
 
 ### 7.5 Chưa làm
 - Sự kiện loại 6 hỏi lại sàn quá sớm: chưa đổi. Sau bản sửa này gian bị thu hồi sẽ được lưới thứ hai xử lý trong khoảng 1–1,5 giờ (3 lượt quét lỗi + 30′ đếm) nếu TikTok từ chối làm mới.
