@@ -150,6 +150,12 @@ Nguồn: `partner.tiktokshop.com/docv2/page/6506bc942f024f02be400315`, `.../docv
 
 ### 8.4 Kết luận và việc nên làm
 
+> **Anh Trung chốt 06/11 đêm — KHÔNG làm thêm việc xóa nào:** "Shopee che hết thông tin sđt, email, tên rồi mà xóa gì nữa, các bên
+> hình như cũng không xóa đâu. Gian ngắt kết nối em cứ để sau 60 ngày hệ thống tự xóa, làm vậy hạ tầng của mình càng thoáng."
+> → Mục 1, 3 và 6 bên dưới GIỮ LẠI CHỈ ĐỂ BIẾT, không làm: gian ngắt kết nối / tắt công tắc thì tệp cứ nằm tới hết 60 ngày rồi
+> cron dọn như mọi tệp khác; không thêm bước che / xóa dữ liệu người mua trên bảng đơn. Việc Shopee đã che sẵn tên, SĐT, email là
+> anh xác nhận, em chưa tự kiểm trên vận đơn thật.
+
 Không tìm thấy điều khoản nào cấm bên thứ ba giữ bản vận đơn; cả hai sàn cho giữ có thời hạn, gắn với giao dịch, và phải xóa đúng lúc. 60 ngày nằm trong mọi con số đã đọc. Các chỗ còn hở, xếp theo mức nên làm:
 
 1. **Xóa bản lưu khi gian ngắt kết nối / hủy ủy quyền / xóa tài khoản / tắt công tắc** (Shopee DPP 10.4: ≤ 30 ngày; TikTok DSPR). Hiện chưa có. Làm được không cần bảng mới: dò ≤ 62 thư mục ngày, lọc tệp theo tiền tố `{channelId}.`.
