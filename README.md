@@ -100,7 +100,7 @@ hubsell/
 │   │   ├── schema.prisma · seed.ts
 │   │   ├── migrations/                  # Tự áp khi deploy (migrate deploy)
 │   │   └── manual-migrations/           # SQL áp tay (supabase-schema.sql, ads 08/2026, bật RLS 09/2026, dọn pg-boss evt.order 10/2026) — tư liệu
-│   ├── scripts/                         # 51 script chạy tay: seed-*, probe-* (probe-listing-adapter = dò adapter đăng SP trên 1 gian), bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
+│   ├── scripts/                         # 53 script chạy tay: seed-*, probe-* (probe-listing-adapter = dò adapter đăng SP trên 1 gian; label-delivered-probe = sàn còn trả vận đơn cho đơn đã giao không), bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
 │   └── src/
 │       ├── index.ts                     # Khởi động theo HUBSELL_ROLE=all|web|worker
 │       ├── app.ts                       # Express app: mount 36 route + middleware gác quyền/gói
