@@ -454,14 +454,16 @@ describe("kho thư mục máy (chỉ khi phát triển)", () => {
 });
 
 describe("ai được thấy công tắc (chỗ gắn thu phí về sau)", () => {
-  it("production chưa đặt env = chưa ai; '*' = mọi chủ shop; danh sách = đúng người", () => {
+  it("production chưa đặt env hoặc '*' = mọi chủ shop; 'off' = không ai; danh sách = đúng người", () => {
     vi.stubEnv("SUPABASE_URL", "https://x.supabase.co");
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "k");
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("LABEL_ARCHIVE_OWNERS", "");
-    expect(labelArchiveAllowed("u1")).toBe(false);
+    expect(labelArchiveAllowed("u1")).toBe(true);
     vi.stubEnv("LABEL_ARCHIVE_OWNERS", "*");
     expect(labelArchiveAllowed("u1")).toBe(true);
+    vi.stubEnv("LABEL_ARCHIVE_OWNERS", "off");
+    expect(labelArchiveAllowed("u1")).toBe(false);
     vi.stubEnv("LABEL_ARCHIVE_OWNERS", "u2, u3");
     expect(labelArchiveAllowed("u1")).toBe(false);
     expect(labelArchiveAllowed("u3")).toBe(true);

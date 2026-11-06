@@ -1,6 +1,6 @@
 # Lưu vận đơn đã in 60 ngày (06/11/2026)
 
-> Trạng thái: **dựng xong trên local, CHƯA push, chưa bật cho gian nào trên prod.**
+> Trạng thái: **ĐÃ PUSH 06/11 tối (anh: "cứ push lên đi… anh sẽ tự test"); chưa gian nào bật — anh tự thử trên prod.**
 > Mã: `backend/src/services/label-archive.ts` (+ test), `backend/src/lib/supabase-storage.ts` (bucket `order-labels`),
 > `backend/src/routes/orders.ts` (xếp hàng lúc in + `GET /:id/saved-label`), `backend/src/routes/channels.ts`
 > (`POST /:id/label-archive`), `backend/src/workers/log-cleanup.ts` (dọn), `frontend/src/components/orders/label-archive-dialog.tsx`.
@@ -35,7 +35,7 @@ Cỡ phiếu Shopee đo thật (mẫu 2 đơn): tải riêng 108,5 KB và 107,7 
 | Ngày thư mục | Ngày của `Order.labelPrintedAt` (mốc in lần đầu); chưa có mốc thì hôm nay. Lúc tìm thử ngày của mốc rồi ngày liền trước | — (frontend đánh dấu đã in vài giây SAU khi nhận tệp) |
 | Tệp gộp Shopee (≤ 50 đơn, chỉ khi in không kèm phiếu nhặt) | Lưu NGUYÊN tệp `{ngày}/{channelId}.lo-{khóa}.pdf` + tệp chỉ đường `{ngày in}/{channelId}.{orderId}.json` cho từng đơn. Tách trang LÚC IN LẠI, chỉ khi số trang = số đơn; không khớp thì trả cả tệp gộp kèm cờ `wholeBatch` | Tách lúc in: tốn CPU tiến trình web ở mọi lượt in. Tải từng đơn khi công tắc bật: in chậm ~10 lần, gọi thêm sàn |
 | Công tắc | Cột `Channel.labelArchiveEnabledAt` (NULL = tắt), gạt ở hộp "Lưu vận đơn" trên trang Đơn hàng, chỉ chủ shop | Env danh sách gian: HQ / khách không gạt được, không có mốc "bật từ lúc nào". Khóa trong `fulfillmentSettings`: `batch-runner.ts` ghi đè cả cột JSON |
-| Ai được gạt | `labelArchiveAllowed(ownerId)` — MỘT hàm, chỗ gắn thu phí về sau. Hiện đọc env `LABEL_ARCHIVE_OWNERS` (`*` hoặc danh sách id chủ shop); production để trống = chưa ai thấy nút | — |
+| Ai được gạt | `labelArchiveAllowed(ownerId)` — MỘT hàm, chỗ gắn thu phí về sau. Hiện MỞ cho mọi chủ shop khi đã có kho tệp (anh chốt 06/11 lúc cho push: "người ta vẫn có thói quen in trên Seller Center, không để ý đâu"); thu hẹp bằng env `LABEL_ARCHIVE_OWNERS` = `off` hoặc danh sách id chủ shop. Công tắc từng gian vẫn mặc định TẮT | Bản đầu để trống = chưa ai thấy (anh bỏ) |
 | Chép lên kho | Lượt in chỉ XẾP HÀNG (`LabelArchiveSpool`) sau khi đã trả PDF; tải lên nhỏ giọt ở nền | Tải ngay trong lượt in (bản đầu, anh bảo đổi). Hàng đợi bền trong Postgres: phải nhét PDF vào DB |
 | Nút In lại phiếu | Trong ô Trạng thái của bảng Đơn hàng, dưới dòng "Đã in phiếu"; chỉ hiện khi gian đang bật, đơn in SAU mốc bật, chưa quá 60 ngày, và đơn đã qua Đã xử lý (Đang giao / Đã giao / Hủy · hoàn) | Cột Thao tác: phải nới cột, bảng đang chật ở 1280. Hỏi kho từng đơn để biết có tệp: thêm lệnh gọi mỗi lần tải bảng |
 | Dọn 60 ngày | Cron `log-cleanup` (worker, 24 giờ): liệt kê gốc bucket → thư mục ngày nào `< ngày(bây giờ − 60 ngày)` thì liệt kê 1.000 tệp → xóa → lặp tới rỗng | Quét bảng Order |
@@ -97,7 +97,7 @@ lạ, dọn theo lô, kho thư mục máy, ai được gạt); vitest `src/servi
 ## 7. Trước khi lên prod
 
 1. Migration `20261106203000_channel_label_archive` (một cột NULL trên `Channel`, không đụng `Order`) tự áp khi deploy.
-2. Đặt env web: `LABEL_ARCHIVE_OWNERS` = id chủ shop của khách thử (hoặc `*`). Để trống = nút không hiện với ai.
+2. Không cần đặt env: nút "Lưu vận đơn" hiện với mọi chủ shop, gian nào cũng TẮT cho tới khi chủ shop tự gạt. Muốn ẩn: `LABEL_ARCHIVE_OWNERS=off` (hoặc danh sách id chủ shop) trên dịch vụ web.
 3. Bật công tắc cho một gian, in thử vài đơn, soi log `[label-archive] lưu …` rồi bấm In lại phiếu sau khi kiện bị lấy.
 4. Thêm một dòng về tệp vận đơn vào chính sách quyền riêng tư (`hubsell-landing/src/app/privacy`, mục 8).
 5. Việc còn mở: cách bán + giá (thay thân hàm `labelArchiveAllowed`), tên gian của khách, HQ có cần trang bật hộ không.

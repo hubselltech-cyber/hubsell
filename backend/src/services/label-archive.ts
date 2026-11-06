@@ -113,14 +113,16 @@ export function getLabelStore(): LabelStore | null {
  * Chủ shop này có được thấy / gạt công tắc Lưu vận đơn không. ĐÂY LÀ CHỖ GẮN THU PHÍ VỀ SAU
  * (anh Trung 06/11: "dùng chính công tắc gạt này để thu thêm phí") — đổi thân hàm thành kiểm
  * quyền lợi đã mua là xong, nơi gọi không đổi.
- * Hiện tại: env LABEL_ARCHIVE_OWNERS = "*" (mọi chủ shop) hoặc danh sách id chủ shop cách nhau
- * dấu phẩy. Trống: production = chưa ai thấy (mặc định TẮT khi lên prod), ngoài production = mở.
+ * Hiện tại (anh Trung 06/11 lúc cho push: "người ta vẫn có thói quen in trên Seller Center, không để
+ * ý đâu"): MỞ cho mọi chủ shop khi đã có kho tệp — công tắc từng gian vẫn mặc định TẮT. Thu hẹp
+ * bằng env LABEL_ARCHIVE_OWNERS: "off" = không ai, hoặc danh sách id chủ shop cách nhau dấu phẩy
+ * ("*" / để trống = mọi chủ shop).
  */
 export function labelArchiveAllowed(ownerId: string): boolean {
   if (!getLabelStore()) return false;
   const raw = (process.env.LABEL_ARCHIVE_OWNERS ?? "").trim();
-  if (!raw) return process.env.NODE_ENV !== "production";
-  if (raw === "*") return true;
+  if (!raw || raw === "*") return true;
+  if (raw.toLowerCase() === "off") return false;
   return raw.split(",").map((s) => s.trim()).includes(ownerId);
 }
 
