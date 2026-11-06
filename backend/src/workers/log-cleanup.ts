@@ -24,6 +24,7 @@
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { deleteObjects, isStorageConfigured } from "../lib/supabase-storage";
+import { getLabelStore, LABEL_ARCHIVE_DAYS, purgeExpiredLabels } from "../services/label-archive";
 import { cleanupListingImages, DRAFT_JOB_DAYS, LOCAL_UPLOAD_DIR, LOCAL_UPLOAD_ENABLED, ORPHAN_IMAGE_DAYS } from "../services/listing-copy/images";
 
 const DEFAULT_INTERVAL_HOURS = 24;
@@ -311,6 +312,23 @@ export async function runOnce(): Promise<void> {
           `[Log-cleanup] Ảnh đính kèm hỗ trợ: đã xóa ${purged} ảnh của ${rows.length} yêu cầu DONE quá ${SUPPORT_ATTACHMENT_DAYS} ngày`
         );
       }
+    }
+
+    // Vận đơn đã in (06/11/2026, docs/LUU-VAN-DON-DA-IN.md): xóa các thư mục ngày đã quá 60 ngày.
+    // Chỉ liệt kê kho theo thư mục ngày — không đọc bảng Order.
+    try {
+      const labelStore = getLabelStore();
+      if (labelStore) {
+        const r = await purgeExpiredLabels(labelStore);
+        if (r.files > 0 || r.truncated) {
+          console.log(
+            `[label-archive] dọn: xóa ${r.files} tệp của ${r.days} ngày đã quá ${LABEL_ARCHIVE_DAYS} ngày` +
+              (r.truncated ? " — CHƯA HẾT, lượt sau dọn tiếp" : "")
+          );
+        }
+      }
+    } catch (err) {
+      console.error("[label-archive] LỖI dọn tệp vận đơn:", (err as Error).message);
     }
 
     // Ảnh sản phẩm "Tạo mới" (lát C): ảnh mồ côi không gắn job quá ORPHAN_IMAGE_DAYS ngày và job nháp

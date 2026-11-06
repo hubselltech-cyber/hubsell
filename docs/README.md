@@ -26,6 +26,7 @@
 
 ## Đơn hàng, kho, vận hành
 - [CHUAN-BI-HANG-THEO-ME.md](CHUAN-BI-HANG-THEO-ME.md) — chuẩn bị hàng theo mẻ, chạy nền
+- [LUU-VAN-DON-DA-IN.md](LUU-VAN-DON-DA-IN.md) — 06/11/2026 công tắc "Lưu vận đơn" theo gian: chép phiếu khách in vào kho tệp (bucket riêng tư `order-labels`), giữ 60 ngày, nút "In lại phiếu" cho đơn hãng đã lấy kiện; hàng chờ nhỏ giọt, dọn theo thư mục ngày; kết quả thăm dò prod (Shopee + TikTok không trả phiếu sau khi lấy kiện). Local xong, CHƯA push
 - [TU-CHUAN-BI-HANG.md](TU-CHUAN-BI-HANG.md) — 04/11/2026 công tắc "Tự chuẩn bị hàng" theo gian: worker làn `fulfill` tự chạy mẻ Chuẩn bị hàng 30′/lần (đơn sang Đã xử lý · Chưa in phiếu), luật chọn đơn + 5 nhóm kết cục, `POST /api/channels/:id/auto-arrange`, chạy bóng bằng SQL
 - [DONG-GOI-BAN-GIAO.md](DONG-GOI-BAN-GIAO.md) — 01/11/2026 trạng thái nội bộ "Đã đóng gói" (quét lại kiện sau in, chặn đơn hủy) + Biên bản bàn giao cho ship (mỗi hãng một tờ A4 có mã vạch, `handover_sheets`), trang `/orders/packing`, API `/api/orders/packing/*`; mobile nối sau
 - [MOBILE-DAI-TU-DON-HANG-KHO.md](MOBILE-DAI-TU-DON-HANG-KHO.md) — 05/11/2026 đại tu app mobile đợt 1: quét đóng gói trong Đơn hàng (màn `PackScanScreen`, luật chống bắn lặp, bảng màn / âm / rung), Phiếu nhặt hàng ở Chờ đóng gói (`pick-summary`), Tồn kho cha – con (`view=grouped` + `adjust-bulk`), vuốt xuống làm mới; không đổi backend, đi OTA; **cả 4 việc ĐÃ CODE 05/11, kiểm giả lập web local, chưa commit (mục 7)**; app không còn chạy trong Expo Go → thử máy thật cần bản dựng thử + OTA kênh preview (mục 7.3)

@@ -534,7 +534,8 @@ export interface Order {
   /** Mốc đã cộng lại tồn kho — có giá trị nghĩa là không cộng thêm lần nữa */
   stockRestoredAt: string | null;
   createdAt: string;
-  channel: { channelName: ChannelName; shopName: string };
+  /** labelArchiveEnabledAt: mốc gian bật Lưu vận đơn đã in (06/11/2026); null/thiếu = tắt. */
+  channel: { channelName: ChannelName; shopName: string; labelArchiveEnabledAt?: string | null };
   items?: OrderItemLine[];
 }
 
@@ -3161,6 +3162,61 @@ export interface Channel {
   needsReauth?: boolean;
   /** Tự chuẩn bị hàng (04/11/2026): thời điểm bật (ISO); null/thiếu = tắt. */
   autoArrangeEnabledAt?: string | null;
+  /** Lưu vận đơn đã in (06/11/2026, docs/LUU-VAN-DON-DA-IN.md): thời điểm bật (ISO); null/thiếu = tắt. */
+  labelArchiveEnabledAt?: string | null;
+  /** Chủ shop này có được thấy / gạt công tắc Lưu vận đơn không (kho tệp đã cấu hình + đã mở cho shop). */
+  labelArchiveAvailable?: boolean;
+}
+
+/** Bật / tắt Lưu vận đơn đã in của một gian (docs/LUU-VAN-DON-DA-IN.md). */
+export function setChannelLabelArchive(id: string, enabled: boolean) {
+  return apiFetch<Channel>(`/api/channels/${id}/label-archive`, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export interface SavedLabelMeta {
+  /** true = phiếu nằm trong tệp gộp không tách được trang → tệp trả về gồm CẢ `count` đơn. */
+  wholeBatch: boolean;
+  count: number;
+}
+
+/**
+ * Tải bản vận đơn Hubsell đã lưu lúc in (đơn Đang giao / Đã giao — sàn không trả phiếu nữa).
+ * Lỗi (chưa có bản lưu, quá 60 ngày, gian tắt công tắc) ném ApiError kèm câu của máy chủ.
+ */
+export async function fetchSavedLabelPdf(orderId: string): Promise<{ blob: Blob; meta: SavedLabelMeta | null }> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/orders/${orderId}/saved-label`, {
+      cache: "no-store",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new ApiError(0, networkErrorMessage(), NETWORK_BLOCKED_CODE);
+  }
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  let meta: SavedLabelMeta | null = null;
+  const raw = res.headers.get("X-Hubsell-Saved-Label");
+  if (raw) {
+    try {
+      meta = JSON.parse(atob(raw));
+    } catch {
+      meta = null;
+    }
+  }
+  return { blob: await res.blob(), meta };
 }
 
 /** Bật / tắt tự chuẩn bị hàng của một gian (docs/TU-CHUAN-BI-HANG.md). */

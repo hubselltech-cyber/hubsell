@@ -33,6 +33,7 @@ import { LinkDrawer } from "@/components/products/channel-products/link-drawer";
 import { groupChannelProducts, type ChannelGroup } from "@/components/products/channel-products/shared";
 import { canManageShop } from "@/lib/permissions";
 import { AutoArrangeButton } from "@/components/orders/auto-arrange-dialog";
+import { LabelArchiveButton, ReprintSavedLabelButton } from "@/components/orders/label-archive-dialog";
 import { PickSummaryDialog } from "@/components/orders/pick-summary-dialog";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
@@ -814,6 +815,9 @@ export default function OrdersPage() {
                   {o.shippingStatus === "PROCESSED" ? "Chờ đóng gói" : "Đã in phiếu"}
                 </span>
               )}
+              {/* Lưu vận đơn đã in (06/11/2026): hãng đã lấy kiện thì sàn không trả phiếu nữa —
+                  đơn có bản lưu (gian bật công tắc, in chưa quá 60 ngày) in lại từ bản Hubsell giữ. */}
+              <ReprintSavedLabelButton order={o} />
               {/* Đơn đã sắp xếp vận chuyển mà chưa in — kho nhìn là biết còn
                   việc, khỏi phải mở bộ lọc con (anh Trung 04/09) */}
               {!o.labelPrintedAt && o.shippingStatus === "PROCESSED" && (
@@ -966,6 +970,14 @@ export default function OrdersPage() {
   // lý — máy chỉ đụng đơn Chờ xử lý, các tab sau không liên quan.
   const autoArrangeAction =
     isShopOwner && (tab === "all" || tab === "pending") ? <AutoArrangeButton /> : null;
+  // LƯU VẬN ĐƠN ĐÃ IN (06/11/2026, docs/LUU-VAN-DON-DA-IN.md): công tắc theo gian, cùng kiểu nút + hộp
+  // với Tự chuẩn bị hàng. Nút tự ẩn khi shop chưa được mở tính năng (LabelArchiveButton trả null).
+  const toolbarActions = isShopOwner ? (
+    <>
+      <LabelArchiveButton />
+      {autoArrangeAction}
+    </>
+  ) : null;
 
   return (
     <AppShell>
@@ -1251,9 +1263,9 @@ export default function OrdersPage() {
               <>
                 {/* Tab Chờ xử lý trống là chuyện thường khi máy đã chuẩn bị hết — nút vẫn phải còn
                     để tắt được, nên vẽ lại đúng hàng công cụ của bảng. */}
-                {autoArrangeAction && (
-                  <div className="flex justify-end border-b border-slate-200/70 px-3 py-2">
-                    {autoArrangeAction}
+                {toolbarActions && (
+                  <div className="flex justify-end gap-2 border-b border-slate-200/70 px-3 py-2 empty:hidden">
+                    {toolbarActions}
                   </div>
                 )}
                 <div className="py-12 text-center text-sm text-muted-foreground">
@@ -1281,7 +1293,7 @@ export default function OrdersPage() {
                   selection={{ selectedIds, onChange: setSelectedIds }}
                   viewExtras={viewExtras}
                   toolbar={`${formatNumber(total)} đơn khớp bộ lọc`}
-                  toolbarActions={autoArrangeAction}
+                  toolbarActions={toolbarActions}
                 />
               </Refreshing>
             )}

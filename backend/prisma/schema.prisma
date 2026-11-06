@@ -480,6 +480,10 @@ model Channel {
   /// làn "fulfill" tự gọi sàn sắp xếp vận chuyển cho đơn Chờ xử lý của gian mỗi ~30′
   /// (hàng việc = dòng sync_cursors stream "auto-arrange", ghi cùng giao dịch với cột này).
   autoArrangeEnabledAt DateTime?
+  /// LƯU VẬN ĐƠN ĐÃ IN 60 NGÀY (06/11/2026, docs/LUU-VAN-DON-DA-IN.md): null = tắt. Bật = mỗi lần
+  /// khách in vận đơn qua Hubsell, tệp được chép vào kho tệp (bucket riêng tư) để in lại sau khi
+  /// hãng vận chuyển đã lấy kiện. Công tắc theo gian — về sau là công tắc thu phí.
+  labelArchiveEnabledAt DateTime?
 
   // ── ĐỒNG BỘ TỒN KHO THEO TỪNG GIAN (05/09 — thay switch toàn shop) ──
   /// BẬT = Hubsell là nguồn chuẩn tồn của gian này: mọi biến động kho tự đẩy

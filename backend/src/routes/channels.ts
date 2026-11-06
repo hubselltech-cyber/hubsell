@@ -68,6 +68,7 @@ import {
   respondPlanLimit,
 } from "../services/plan-enforcement";
 import { TIKTOK_APP_STATE_PREFIX } from "../integrations/app-return";
+import { labelArchiveAllowed } from "../services/label-archive";
 
 /** `?client=app` = app mobile xin link → callback nảy về deep link của app (lát 2, 28/10/2026). */
 function oauthClient(req: AuthRequest): "app" | undefined {
@@ -111,6 +112,9 @@ function publicChannel(c: Channel, isAdmin: boolean) {
     // token cũ không có quyền → trang Kênh bán hiện nút Kết nối lại dù gian
     // đang hoạt động (integrations/tiktok/scopes.ts).
     needsReauth: tiktokNeedsReauthForStockPush(c),
+    // Lưu vận đơn đã in (06/11/2026): chủ shop này có được thấy / gạt công tắc không — kho tệp đã
+    // cấu hình VÀ được mở cho chủ shop (services/label-archive.ts, chỗ gắn thu phí về sau).
+    labelArchiveAvailable: labelArchiveAllowed(c.userId),
   };
 }
 
@@ -973,6 +977,50 @@ router.post("/:id/auto-arrange", requireAdmin, async (req: AuthRequest, res, nex
     });
     console.log(
       `[auto-arrange] owner=${req.ownerId} ${enabled ? "BẬT" : "TẮT"} gian ${channel.channelName} "${channel.shopName}" (${channel.id})`
+    );
+    res.json(publicChannel(updated, true));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/channels/:id/label-archive — bật / tắt LƯU VẬN ĐƠN ĐÃ IN của một gian
+ * (06/11/2026, docs/LUU-VAN-DON-DA-IN.md). Body: { enabled: boolean }
+ *
+ * Bật: ghi mốc Channel.labelArchiveEnabledAt — từ đó mỗi lượt in vận đơn qua Hubsell của gian
+ * được chép vào kho tệp, giữ 60 ngày. Tắt: mốc về null — ngừng chép và ngừng cho in lại; tệp đã
+ * lưu vẫn tự xóa đúng hạn. Bật lại = mốc mới (phiếu in trong lúc tắt không có bản lưu).
+ * Chỗ kiểm "được dùng không" là labelArchiveAllowed — về sau thành kiểm đã trả phí.
+ */
+router.post("/:id/label-archive", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") {
+      res.status(400).json({ error: "Thiếu enabled (true/false)" });
+      return;
+    }
+    const channel = await prisma.channel.findFirst({ where: { id: req.params.id, userId: req.ownerId! } });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+    if (enabled) {
+      if (!labelArchiveAllowed(req.ownerId!)) {
+        res.status(403).json({ error: "Tài khoản chưa được mở tính năng Lưu vận đơn đã in" });
+        return;
+      }
+      if (channel.channelName === "OFFLINE") {
+        res.status(400).json({ error: "Kênh offline không có vận đơn của sàn để lưu" });
+        return;
+      }
+    }
+    const updated = await prisma.channel.update({
+      where: { id: channel.id },
+      data: { labelArchiveEnabledAt: enabled ? (channel.labelArchiveEnabledAt ?? new Date()) : null },
+    });
+    console.log(
+      `[label-archive] owner=${req.ownerId} ${enabled ? "BẬT" : "TẮT"} gian ${channel.channelName} "${channel.shopName}" (${channel.id})`
     );
     res.json(publicChannel(updated, true));
   } catch (err) {

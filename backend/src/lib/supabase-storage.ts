@@ -237,3 +237,84 @@ export const productImages = {
   mime: PRODUCT_IMAGE_BUCKET.allowedMime,
   sizeLimit: PRODUCT_IMAGE_BUCKET.fileSizeLimit,
 };
+
+// ---------- Tệp vận đơn đã in (giữ 60 ngày, 06/11/2026) ----------
+
+/**
+ * VẬN ĐƠN ĐÃ IN (docs/LUU-VAN-DON-DA-IN.md): bucket RIÊNG TƯ, không bao giờ ký link công khai —
+ * tệp chỉ đi ra qua endpoint in lại của backend (đã kiểm chủ gian + quyền nhân viên). Nhận PDF
+ * (phiếu sàn trả, kể cả tệp gộp 50 đơn của Shopee) và JSON (tệp chỉ đường của đơn nằm trong tệp
+ * gộp). Trần 20 MB — số tự chọn: tệp gộp 2 đơn Shopee đo thật 06/11 là 184,7 KB (~92 KB / đơn),
+ * 50 đơn ≈ 4,6 MB. Dọn sau 60 ngày do cron log-cleanup gọi services/label-archive.
+ */
+const ORDER_LABEL_BUCKET: BucketConfig = {
+  name: process.env.ORDER_LABEL_BUCKET ?? "order-labels",
+  fileSizeLimit: 20 * 1024 * 1024,
+  allowedMime: ["application/pdf", "application/json"],
+  mimeError: "Chỉ nhận PDF hoặc JSON",
+  sizeError: "Tệp vận đơn quá lớn (tối đa 20 MB)",
+};
+
+/** Một dòng của lệnh liệt kê: thư mục (sàn trả id null) hay tệp. */
+export interface StorageListEntry {
+  name: string;
+  isFolder: boolean;
+}
+
+export const orderLabels = {
+  /** Tải lên nếu CHƯA có. Đã có sẵn (in lại cùng phiếu) → "exists", không ghi đè, không lỗi. */
+  async putIfAbsent(path: string, body: Buffer, contentType: string): Promise<"created" | "exists"> {
+    const cfg = base();
+    if (!cfg) throw new Error("Supabase Storage chưa cấu hình");
+    if (!ORDER_LABEL_BUCKET.allowedMime.includes(contentType)) throw new Error(ORDER_LABEL_BUCKET.mimeError);
+    if (body.length > ORDER_LABEL_BUCKET.fileSizeLimit) throw new Error(ORDER_LABEL_BUCKET.sizeError);
+    await ensureBucket(ORDER_LABEL_BUCKET);
+    const res = await fetch(`${cfg.url}/storage/v1/object/${ORDER_LABEL_BUCKET.name}/${encodePath(path)}`, {
+      method: "POST",
+      headers: headers(cfg.key, { "Content-Type": contentType, "x-upsert": "false" }),
+      body: new Uint8Array(body),
+    });
+    if (res.ok) return "created";
+    const text = await res.text().catch(() => "");
+    // Kho trả 409 (hoặc 400 kèm "Duplicate" / "already exists" ở vài phiên bản) khi tệp đã có.
+    if (res.status === 409 || /duplicate|already exists/i.test(text)) return "exists";
+    throw new Error(`Tải tệp vận đơn lên kho lỗi: ${res.status} ${text.slice(0, 200)}`);
+  },
+
+  /** Đọc một tệp; không có (chưa từng lưu / đã dọn) → null. Lỗi khác thì ném. */
+  async get(path: string): Promise<Buffer | null> {
+    const cfg = base();
+    if (!cfg) throw new Error("Supabase Storage chưa cấu hình");
+    const res = await fetch(`${cfg.url}/storage/v1/object/${ORDER_LABEL_BUCKET.name}/${encodePath(path)}`, {
+      headers: headers(cfg.key),
+    });
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+    const text = await res.text().catch(() => "");
+    // Bucket chưa từng được tạo (chưa gian nào in khi bật) cũng là "không có tệp".
+    if (res.status === 404 || /not.?found/i.test(text)) return null;
+    throw new Error(`Tải tệp vận đơn từ kho lỗi: ${res.status} ${text.slice(0, 200)}`);
+  },
+
+  /**
+   * Liệt kê MỘT cấp dưới `prefix` ("" = gốc bucket), tối đa `limit` dòng, xếp theo tên. Luôn đọc
+   * từ đầu (offset 0): nơi gọi xóa xong mới liệt kê tiếp nên không phân trang trên tập tự co.
+   */
+  async list(prefix: string, limit: number): Promise<StorageListEntry[]> {
+    const cfg = base();
+    if (!cfg) throw new Error("Supabase Storage chưa cấu hình");
+    const res = await fetch(`${cfg.url}/storage/v1/object/list/${ORDER_LABEL_BUCKET.name}`, {
+      method: "POST",
+      headers: headers(cfg.key, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ prefix, limit, offset: 0, sortBy: { column: "name", order: "asc" } }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      if (res.status === 404 || /not.?found/i.test(text)) return []; // bucket chưa tạo = chưa có gì để dọn
+      throw new Error(`Liệt kê tệp vận đơn lỗi: ${res.status} ${text.slice(0, 200)}`);
+    }
+    const rows = (await res.json()) as { name?: string; id?: string | null }[];
+    return rows.filter((r) => typeof r.name === "string" && r.name).map((r) => ({ name: r.name!, isFolder: !r.id }));
+  },
+
+  remove: (paths: string[]) => deleteIn(ORDER_LABEL_BUCKET, paths),
+};

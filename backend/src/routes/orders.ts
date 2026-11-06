@@ -14,6 +14,7 @@ import { applyStockDelta } from "../services/stock-ledger";
 import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
+import { getLabelArchiveSpool, getLabelStore, loadSavedLabel, LABEL_ARCHIVE_DAYS } from "../services/label-archive";
 import { summarizePickLines } from "../lib/pick-summary";
 import { attachItemImages } from "../services/item-images";
 import {
@@ -191,7 +192,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ],
     };
     const listInclude = {
-      channel: { select: { channelName: true, shopName: true } },
+      // labelArchiveEnabledAt (06/11/2026): để bảng biết đơn nào có bản lưu vận đơn → nút "In lại phiếu".
+      channel: { select: { channelName: true, shopName: true, labelArchiveEnabledAt: true } },
       // Kèm dòng hàng để bảng hiện được tên + SKU + số lượng sản phẩm
       items: {
         select: {
@@ -1188,6 +1190,8 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
     /** PDF gộp nhiều đơn của sàn, đặt ở vị trí đơn đầu tiên của phần gộp. */
     const combinedByFirst = new Map<string, Buffer>();
     const inCombined = new Set<string>();
+    /** Nguyên các tệp gộp sàn trả — để chép vào kho vận đơn đã in (gian bật công tắc). */
+    const combinedParts: { orderIds: string[]; pdf: Buffer }[] = [];
     const failed: { orderCode: string; reason: string }[] = [];
 
     if (wantLabels) {
@@ -1218,6 +1222,7 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
             for (const part of r.combined ?? []) {
               if (part.orderIds.length === 0) continue;
               combinedByFirst.set(part.orderIds[0], part.pdf);
+              combinedParts.push(part);
               for (const id of part.orderIds) inCombined.add(id);
             }
             for (const f of r.failed) failed.push({ orderCode: f.orderCode, reason: f.reason });
@@ -1283,6 +1288,103 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
     res.setHeader("Content-Disposition", `inline; filename="hubsell-phieu-${orders.length}-don.pdf"`);
     res.setHeader("X-Hubsell-Labels", Buffer.from(JSON.stringify(summary), "utf8").toString("base64"));
     res.send(merged.pdf);
+
+    // LƯU VẬN ĐƠN ĐÃ IN (06/11/2026, docs/LUU-VAN-DON-DA-IN.md): SAU khi đã trả tệp cho khách, XẾP
+    // HÀNG phiếu của các gian bật công tắc để chép vào kho. enqueue không chờ mạng, không ném —
+    // tải lên chạy nhỏ giọt ở nền, lỗi chỉ ghi log [label-archive], không đụng tới lượt in.
+    const archiveOrders = orders.filter((o) => o.channel.labelArchiveEnabledAt);
+    if (archiveOrders.length > 0 && (labelPdfs.size > 0 || combinedParts.length > 0)) {
+      try {
+        getLabelArchiveSpool()?.enqueue({
+          orders: archiveOrders.map((o) => ({
+            id: o.id,
+            channelId: o.channelId,
+            platform: o.channel.channelName,
+            labelPrintedAt: o.labelPrintedAt,
+          })),
+          single: labelPdfs,
+          combined: combinedParts,
+        });
+      } catch (err) {
+        console.error("[label-archive] LỖI xếp hàng lưu phiếu:", err);
+      }
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/orders/:id/saved-label — IN LẠI vận đơn từ bản đã lưu (06/11/2026,
+ * docs/LUU-VAN-DON-DA-IN.md). Sàn không trả phiếu nữa sau khi hãng vận chuyển lấy kiện, nên
+ * đơn Đang giao / Đã giao chỉ in lại được từ bản Hubsell đã chép lúc khách in.
+ *
+ * Trả application/pdf. Header X-Hubsell-Saved-Label (base64 JSON { wholeBatch, count }):
+ * wholeBatch = true khi phiếu nằm trong tệp gộp mà không tách được đúng trang → trả CẢ tệp
+ * gộp `count` đơn để giao diện nói rõ. Không có link công khai: tệp chỉ đi ra qua đây, sau khi
+ * đã kiểm đúng chủ gian + quyền nhân viên theo gian (channelScope) và công tắc của gian đang bật.
+ */
+router.get("/:id/saved-label", async (req: AuthRequest, res, next) => {
+  try {
+    const store = getLabelStore();
+    if (!store) {
+      res.status(404).json({ error: "Hệ thống chưa bật lưu vận đơn đã in" });
+      return;
+    }
+    const order = await prisma.order.findFirst({
+      where: { id: req.params.id, channel: channelScope(req) },
+      select: {
+        id: true,
+        channelId: true,
+        orderCode: true,
+        labelPrintedAt: true,
+        channel: { select: { labelArchiveEnabledAt: true } },
+      },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+      return;
+    }
+    if (!order.channel.labelArchiveEnabledAt) {
+      res.status(403).json({ error: "Gian này chưa bật Lưu vận đơn đã in" });
+      return;
+    }
+    let found;
+    try {
+      found = await loadSavedLabel(store, order);
+    } catch (err) {
+      console.error(`[label-archive] LỖI đọc phiếu đơn ${order.id}: ${(err as Error).message}`);
+      res.status(502).json({ error: "Kho tệp đang lỗi, chưa lấy được vận đơn đã lưu — thử lại sau ít phút" });
+      return;
+    }
+    if (found.kind === "not-printed") {
+      res.status(404).json({ error: "Đơn này chưa in vận đơn qua Hubsell nên không có bản lưu" });
+      return;
+    }
+    if (found.kind === "expired") {
+      res
+        .status(410)
+        .json({ error: `Vận đơn của đơn này đã in quá ${LABEL_ARCHIVE_DAYS} ngày nên hệ thống đã xóa bản lưu` });
+      return;
+    }
+    if (found.kind === "missing") {
+      res.status(404).json({
+        error:
+          "Không có bản lưu vận đơn của đơn này — phiếu được in trước khi gian bật Lưu vận đơn, hoặc lần in đó lưu bị lỗi",
+      });
+      return;
+    }
+    console.log(
+      `[label-archive] in lại đơn ${order.id} gian ${order.channelId}: ${(found.pdf.length / 1024).toFixed(1)} KB` +
+        (found.wholeBatch ? ` — trả CẢ tệp gộp ${found.count} đơn (số trang khác số đơn)` : "")
+    );
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="hubsell-van-don-${order.orderCode}.pdf"`);
+    res.setHeader(
+      "X-Hubsell-Saved-Label",
+      Buffer.from(JSON.stringify({ wholeBatch: found.wholeBatch, count: found.count }), "utf8").toString("base64")
+    );
+    res.send(found.pdf);
   } catch (err) {
     next(err);
   }
