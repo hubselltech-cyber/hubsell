@@ -100,4 +100,5 @@ lạ, dọn theo lô, kho thư mục máy, ai được gạt); vitest `src/servi
 2. Không cần đặt env: nút "Lưu vận đơn" hiện với mọi chủ shop, gian nào cũng TẮT cho tới khi chủ shop tự gạt. Muốn ẩn: `LABEL_ARCHIVE_OWNERS=off` (hoặc danh sách id chủ shop) trên dịch vụ web.
 3. Bật công tắc cho một gian, in thử vài đơn, soi log `[label-archive] lưu …` rồi bấm In lại phiếu sau khi kiện bị lấy.
 4. Thêm một dòng về tệp vận đơn vào chính sách quyền riêng tư (`hubsell-landing/src/app/privacy`, mục 8).
-5. Việc còn mở: cách bán + giá (thay thân hàm `labelArchiveAllowed`), tên gian của khách, HQ có cần trang bật hộ không.
+5. **Cách bán — anh chốt 06/11 tối: KHÔNG thu phí riêng cho tính năng này lúc này** ("thà sau này nhích gói lên một tí còn hơn là thu nhiều lần làm khách khó chịu"; thu riêng còn kéo theo cổng thanh toán và việc gán kỳ của gói phụ theo kỳ gói chính). Tính năng mở miễn phí cho mọi chủ shop; hộp công tắc không ghi gì về phí. Hàm `labelArchiveAllowed` giữ nguyên làm chỗ chặn nếu sau này cần.
+6. Việc còn mở: tên gian của khách đã hỏi (để báo họ bật), HQ có cần trang bật hộ không.
