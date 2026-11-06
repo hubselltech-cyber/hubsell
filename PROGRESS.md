@@ -6,6 +6,13 @@
 
 ---
 
+## Phiên 06/11 chiều (14) — Lô 1 thư app 1.4.2: Zoho chặn sau 51 thư → anh chốt "đặt lịch gửi nốt, mỗi lần 50, giãn cách"
+
+- **Đã gửi (Render Shell worker, `bc608b5c`):** thư mẫu tới xwearhn@gmail.com, anh duyệt. Xem trước: 254 chủ shop có email, 2 nội bộ → 252 cần gửi. Lô 1 `--apply --limit=100`: **51 đã gửi, 49 lỗi `550 5.4.6 Unusual sending activity detected`** dù đã 1 luồng + nghỉ 3 giây → Zoho Mail Lite chặn ở ~50 thư liên tiếp, giãn nhịp không cứu. 49 vé đã nhả; còn **201** người. Hộp Zoho bị chặn thì thư hệ thống (quên mật khẩu, chào khách mới, hóa đơn) hỏng theo → anh gỡ ở mail.zoho.com/UnblockMe.
+- **Gửi nốt tự động:** `workers/feature-announce-drip.ts` (đăng ký ở `workers/index.ts`): từ **9h VN mỗi ngày gửi tối đa 50 thư** `mobile-1-4-2`, quét mỗi 30 phút; số đã gửi trong ngày đếm bằng vé tạo từ 0h VN (06/11 đã 51 → hôm nay không gửi thêm; lô đầu 07/11 9h). Thư lỗi đầu tiên → dừng, ghi vé `drip-pause:<kind>:<ngày>` ở DB, nghỉ tới mai (không giữ cờ RAM — luật `no-module-state`). Hết người thì tự thôi; quá 20/11 thôi hẳn. Tắt bằng env `FEATURE_DRIP_OFF=1`. Dự kiến 07–10/11 mỗi ngày 50, 11/11 thư cuối cùng.
+- **Dùng chung:** phần chọn người + gửi tách sang `services/feature-announce.ts` (gửi từng người, giành vé ngay trước khi gửi, thư lỗi đầu tiên là dừng); `scripts/feature-announce-once.ts` gọi lại phần này.
+- **Kiểm:** tsc sạch; test `feature-announce-drip` 7 ca + `no-module-state` + customer-mails xanh (59/59); script xem trước chạy local được. ⏳ Sau 9h 07/11 soi log worker `[Feature-drip]`. Xong đợt (≈ 11/11) gỡ worker + mẫu thư + script, giữ ảnh.
+
 ## Phiên 06/11 chiều (13) — Thư báo tính năng app điện thoại 1.4.2 tới mọi chủ shop, kể cả khách đã rời bỏ (anh: "gửi email cập nhật tính năng mới trên app mobile, gửi cả cho những người rời bỏ")
 
 - **Đã kiểm:** 1.4.2 READY_FOR_SALE trên App Store (`asc-release.mjs status`), Android production completed từ 05/11.

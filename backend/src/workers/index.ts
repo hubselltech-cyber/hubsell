@@ -34,6 +34,7 @@ import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
 import { startSubscriptionReminderWorker } from "./subscription-reminder";
 import { startOnboardingReminderWorker } from "./onboarding-reminder";
+import { startFeatureAnnounceDripWorker } from "./feature-announce-drip";
 import { startHqInvoiceAutoWorker } from "./hq-invoice-auto";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
@@ -125,6 +126,8 @@ export function startAllWorkers(): void {
   startSubscriptionReminderWorker();
   // Nhắc khách mới đăng ký 1 ngày mà chưa nối gian (thư noreply@, anh Trung 09/10).
   startOnboardingReminderWorker();
+  // Gửi nốt thư báo tính năng app 1.4.2 mỗi ngày 50 thư (anh Trung 06/11 — Zoho chặn khi gửi dồn).
+  startFeatureAnnounceDripWorker();
   // Lưới an toàn tự xuất HĐĐT bán gói + gửi PDF cho khách (06/10): nhặt bút
   // toán lỡ sau restart / MISA lỗi tạm / chờ cấp số / mail lỗi.
   startHqInvoiceAutoWorker();
