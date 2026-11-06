@@ -113,7 +113,7 @@ function publicChannel(c: Channel, isAdmin: boolean) {
     // đang hoạt động (integrations/tiktok/scopes.ts).
     needsReauth: tiktokNeedsReauthForStockPush(c),
     // Lưu vận đơn đã in (06/11/2026): chủ shop này có được thấy / gạt công tắc không — kho tệp đã
-    // cấu hình VÀ được mở cho chủ shop (services/label-archive.ts, chỗ gắn thu phí về sau).
+    // cấu hình VÀ được mở cho chủ shop (labelArchiveAllowed — chỗ chặn duy nhất của tính năng).
     labelArchiveAvailable: labelArchiveAllowed(c.userId),
   };
 }
@@ -991,7 +991,7 @@ router.post("/:id/auto-arrange", requireAdmin, async (req: AuthRequest, res, nex
  * Bật: ghi mốc Channel.labelArchiveEnabledAt — từ đó mỗi lượt in vận đơn qua Hubsell của gian
  * được chép vào kho tệp, giữ 60 ngày. Tắt: mốc về null — ngừng chép và ngừng cho in lại; tệp đã
  * lưu vẫn tự xóa đúng hạn. Bật lại = mốc mới (phiếu in trong lúc tắt không có bản lưu).
- * Chỗ kiểm "được dùng không" là labelArchiveAllowed — về sau thành kiểm đã trả phí.
+ * Chỗ kiểm "được dùng không" là labelArchiveAllowed (hiện mở miễn phí cho mọi chủ shop).
  */
 router.post("/:id/label-archive", requireAdmin, async (req: AuthRequest, res, next) => {
   try {

@@ -15,7 +15,6 @@ import {
   labelArchiveAllowed,
   loadSavedLabel,
   lookupDays,
-  mayHaveSavedLabel,
   parsePointer,
   pointerPath,
   purgeCutoffDay,
@@ -24,7 +23,7 @@ import {
   type ArchiveOrder,
   type LabelStore,
   type SpoolOptions,
-} from "./label-archive";
+} from "../label-archive";
 
 const DAY = 24 * 3600_000;
 const NOW = new Date("2026-11-06T13:00:00.000Z");
@@ -142,16 +141,6 @@ describe("luật ngày và đường dẫn", () => {
     expect(parsePointer(Buffer.from(JSON.stringify({ ...ok, index: 3 })))).toBeNull();
     expect(parsePointer(Buffer.from(JSON.stringify({ ...ok, v: 2 })))).toBeNull();
     expect(parsePointer(Buffer.from(JSON.stringify({ ...ok, batch: "" })))).toBeNull();
-  });
-
-  it("nút In lại chỉ hiện với đơn in sau mốc bật công tắc và chưa quá 60 ngày", () => {
-    const on = { labelArchiveEnabledAt: new Date("2026-10-01T00:00:00Z") };
-    expect(mayHaveSavedLabel({ labelPrintedAt: new Date("2026-10-02T00:00:00Z") }, on, NOW)).toBe(true);
-    expect(mayHaveSavedLabel({ labelPrintedAt: new Date("2026-09-30T00:00:00Z") }, on, NOW)).toBe(false); // in trước khi bật
-    expect(mayHaveSavedLabel({ labelPrintedAt: null }, on, NOW)).toBe(false);
-    expect(mayHaveSavedLabel({ labelPrintedAt: new Date("2026-10-02T00:00:00Z") }, { labelArchiveEnabledAt: null }, NOW)).toBe(false);
-    const old = { labelArchiveEnabledAt: new Date("2026-01-01T00:00:00Z") };
-    expect(mayHaveSavedLabel({ labelPrintedAt: new Date("2026-09-01T00:00:00Z") }, old, NOW)).toBe(false); // quá 60 ngày
   });
 });
 
@@ -453,7 +442,7 @@ describe("kho thư mục máy (chỉ khi phát triển)", () => {
   });
 });
 
-describe("ai được thấy công tắc (chỗ gắn thu phí về sau)", () => {
+describe("ai được thấy công tắc (chỗ chặn duy nhất của tính năng)", () => {
   it("production chưa đặt env hoặc '*' = mọi chủ shop; 'off' = không ai; danh sách = đúng người", () => {
     vi.stubEnv("SUPABASE_URL", "https://x.supabase.co");
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "k");

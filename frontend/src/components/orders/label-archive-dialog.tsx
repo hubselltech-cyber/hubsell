@@ -32,17 +32,18 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /** Giữ bản lưu ngần này ngày kể từ lúc in — khớp LABEL_ARCHIVE_DAYS ở backend/src/services/label-archive.ts. */
-export const LABEL_ARCHIVE_DAYS = 60;
+const LABEL_ARCHIVE_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK"];
 
 /**
- * Đơn này có bản lưu vận đơn để in lại không — cùng luật với backend (mayHaveSavedLabel):
- * gian đang bật công tắc, phiếu in SAU mốc bật và chưa quá 60 ngày. Chỉ vẽ nút khi hãng vận
- * chuyển đã lấy kiện (Đang giao / Đã giao / Hủy · hoàn): đơn Đã xử lý vẫn in thẳng từ sàn được.
+ * Đơn này có bản lưu vận đơn để in lại không. Không hỏi kho: gian đang bật công tắc, phiếu in SAU
+ * mốc bật và chưa quá 60 ngày thì coi là có; ca lệch (lần in đó lưu lỗi) endpoint trả câu báo rõ.
+ * Chỉ vẽ nút khi hãng vận chuyển đã lấy kiện (Đang giao / Đã giao / Hủy · hoàn): đơn Đã xử lý vẫn
+ * in thẳng từ sàn được.
  */
-export function hasSavedLabel(o: Order, now: number = Date.now()): boolean {
+function hasSavedLabel(o: Order, now: number = Date.now()): boolean {
   const enabledAt = o.channel.labelArchiveEnabledAt;
   if (!enabledAt || !o.labelPrintedAt) return false;
   if (o.shippingStatus === "PENDING" || o.shippingStatus === "PROCESSED") return false;
@@ -108,8 +109,8 @@ function canArchive(c: Channel): boolean {
 
 /**
  * NÚT + HỘP "LƯU VẬN ĐƠN" trên trang Đơn hàng (06/11/2026, anh Trung: "để cái công tắc gạt cho việc
- * giữ lịch sử vận đơn… sau này dùng chính công tắc này để thu thêm phí"). Cùng kiểu với nút Tự
- * chuẩn bị hàng: bấm nút hiện danh sách gian, gạt bật / tắt từng gian.
+ * giữ lịch sử vận đơn"). Cùng kiểu với nút Tự chuẩn bị hàng: bấm nút hiện danh sách gian, gạt bật /
+ * tắt từng gian. Tính năng miễn phí (anh chốt không thu phí riêng) — hộp không nói gì về phí.
  *
  * - Đọc chung bộ đệm `qk.channels()` với bộ lọc sàn của trang → không thêm lượt gọi API lúc tải trang.
  * - Nút TỰ ẨN khi máy chủ báo shop chưa được mở tính năng (`labelArchiveAvailable`) — kho tệp chưa

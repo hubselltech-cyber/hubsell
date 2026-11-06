@@ -1,7 +1,7 @@
 # Lưu vận đơn đã in 60 ngày (06/11/2026)
 
 > Trạng thái: **ĐÃ PUSH 06/11 tối (anh: "cứ push lên đi… anh sẽ tự test"); chưa gian nào bật — anh tự thử trên prod.**
-> Mã: `backend/src/services/label-archive.ts` (+ test), `backend/src/lib/supabase-storage.ts` (bucket `order-labels`),
+> Mã: `backend/src/services/label-archive.ts` (+ `__tests__/label-archive.test.ts`), `backend/src/lib/supabase-storage.ts` (bucket `order-labels`),
 > `backend/src/routes/orders.ts` (xếp hàng lúc in + `GET /:id/saved-label`), `backend/src/routes/channels.ts`
 > (`POST /:id/label-archive`), `backend/src/workers/log-cleanup.ts` (dọn), `frontend/src/components/orders/label-archive-dialog.tsx`.
 
@@ -9,7 +9,7 @@
 
 Một khách hỏi in lại vận đơn của đơn đã giao thành công (ca khách trả hàng). Anh Trung chốt 06/11: làm, giữ 60 ngày rồi tự
 xóa, kho tệp = Supabase Storage, không lưu tệp trong Postgres, mục đích khách dùng phiếu không phải việc của mình.
-Tối 06/11 anh chốt thêm: có **công tắc gạt theo gian** ("sau này dùng chính công tắc này để thu thêm phí") và phần lưu
+Tối 06/11 anh chốt thêm: có **công tắc gạt theo gian** (lúc đầu định dùng làm công tắc thu phí, sau đó anh chốt không thu phí riêng — mục 7) và phần lưu
 **không cần tức thì, xếp hàng lưu từ từ, không được ảnh hưởng hệ thống**.
 
 ## 2. Vì sao phải lưu, không gọi lại sàn — thăm dò prod 06/11
@@ -35,7 +35,7 @@ Cỡ phiếu Shopee đo thật (mẫu 2 đơn): tải riêng 108,5 KB và 107,7 
 | Ngày thư mục | Ngày của `Order.labelPrintedAt` (mốc in lần đầu); chưa có mốc thì hôm nay. Lúc tìm thử ngày của mốc rồi ngày liền trước | — (frontend đánh dấu đã in vài giây SAU khi nhận tệp) |
 | Tệp gộp Shopee (≤ 50 đơn, chỉ khi in không kèm phiếu nhặt) | Lưu NGUYÊN tệp `{ngày}/{channelId}.lo-{khóa}.pdf` + tệp chỉ đường `{ngày in}/{channelId}.{orderId}.json` cho từng đơn. Tách trang LÚC IN LẠI, chỉ khi số trang = số đơn; không khớp thì trả cả tệp gộp kèm cờ `wholeBatch` | Tách lúc in: tốn CPU tiến trình web ở mọi lượt in. Tải từng đơn khi công tắc bật: in chậm ~10 lần, gọi thêm sàn |
 | Công tắc | Cột `Channel.labelArchiveEnabledAt` (NULL = tắt), gạt ở hộp "Lưu vận đơn" trên trang Đơn hàng, chỉ chủ shop | Env danh sách gian: HQ / khách không gạt được, không có mốc "bật từ lúc nào". Khóa trong `fulfillmentSettings`: `batch-runner.ts` ghi đè cả cột JSON |
-| Ai được gạt | `labelArchiveAllowed(ownerId)` — MỘT hàm, chỗ gắn thu phí về sau. Hiện MỞ cho mọi chủ shop khi đã có kho tệp (anh chốt 06/11 lúc cho push: "người ta vẫn có thói quen in trên Seller Center, không để ý đâu"); thu hẹp bằng env `LABEL_ARCHIVE_OWNERS` = `off` hoặc danh sách id chủ shop. Công tắc từng gian vẫn mặc định TẮT | Bản đầu để trống = chưa ai thấy (anh bỏ) |
+| Ai được gạt | `labelArchiveAllowed(ownerId)` — MỘT hàm, chỗ chặn duy nhất của tính năng. Hiện MỞ cho mọi chủ shop khi đã có kho tệp (anh chốt 06/11 lúc cho push: "người ta vẫn có thói quen in trên Seller Center, không để ý đâu"); thu hẹp bằng env `LABEL_ARCHIVE_OWNERS` = `off` hoặc danh sách id chủ shop. Công tắc từng gian vẫn mặc định TẮT | Bản đầu để trống = chưa ai thấy (anh bỏ) |
 | Chép lên kho | Lượt in chỉ XẾP HÀNG (`LabelArchiveSpool`) sau khi đã trả PDF; tải lên nhỏ giọt ở nền | Tải ngay trong lượt in (bản đầu, anh bảo đổi). Hàng đợi bền trong Postgres: phải nhét PDF vào DB |
 | Nút In lại phiếu | Trong ô Trạng thái của bảng Đơn hàng, dưới dòng "Đã in phiếu"; chỉ hiện khi gian đang bật, đơn in SAU mốc bật, chưa quá 60 ngày, và đơn đã qua Đã xử lý (Đang giao / Đã giao / Hủy · hoàn) | Cột Thao tác: phải nới cột, bảng đang chật ở 1280. Hỏi kho từng đơn để biết có tệp: thêm lệnh gọi mỗi lần tải bảng |
 | Dọn 60 ngày | Cron `log-cleanup` (worker, 24 giờ): liệt kê gốc bucket → thư mục ngày nào `< ngày(bây giờ − 60 ngày)` thì liệt kê 1.000 tệp → xóa → lặp tới rỗng | Quét bảng Order |
@@ -76,7 +76,7 @@ Cỡ phiếu Shopee đo thật (mẫu 2 đơn): tải riêng 108,5 KB và 107,7 
 
 ## 6. Đã kiểm / chưa kiểm
 
-**Đã kiểm (local, 06/11):** vitest `label-archive.test.ts` 28 ca (luật ngày + đường dẫn, lượt in → việc, hàng chờ: lưu / in
+**Đã kiểm (local, 06/11):** vitest `label-archive.test.ts` 27 ca (luật ngày + đường dẫn, lượt in → việc, hàng chờ: lưu / in
 lại / thử lại / lỗi hẳn / hàng đầy / giới hạn song song, đọc lại: phiếu riêng / tách đúng trang / trả cả tệp gộp / chỉ đường
 lạ, dọn theo lô, kho thư mục máy, ai được gạt); vitest `src/services src/lib src/workers src/routes` 85 tệp / 767 qua;
 `npx tsc --noEmit` backend + frontend sạch; eslint hai tệp frontend sạch. Chạy thật trên local qua kho thư mục máy

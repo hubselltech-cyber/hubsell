@@ -16,8 +16,11 @@
 //  - support-attachments: ảnh hỗ trợ, trần 600 KB, cron xóa sau 7 ngày.
 //  - hq-documents: HÓA ĐƠN ĐẦU VÀO của công ty (XML/PDF/ảnh, trần 15 MB) —
 //    giữ VĨNH VIỄN, là chứng từ kế toán; không cron nào được đụng.
+// Thêm về sau (cấu hình + chú thích ngay tại khai báo từng bucket bên dưới):
+//  - product-images (30/10/2026): ảnh sản phẩm khách tải lên, bucket CÔNG KHAI, giữ vĩnh viễn.
+//  - order-labels (06/11/2026): vận đơn đã in, riêng tư, cron xóa sau 60 ngày.
 // Cùng một bộ hàm, khác cấu hình bucket — export tên cũ giữ nguyên cho ảnh
-// hỗ trợ, bucket HQ dùng `hqDocuments.*`.
+// hỗ trợ; các bucket khác dùng `hqDocuments.*`, `productImages.*`, `orderLabels.*`.
 // ============================================================
 
 interface BucketConfig {

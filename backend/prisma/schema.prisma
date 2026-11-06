@@ -482,7 +482,7 @@ model Channel {
   autoArrangeEnabledAt DateTime?
   /// LƯU VẬN ĐƠN ĐÃ IN 60 NGÀY (06/11/2026, docs/LUU-VAN-DON-DA-IN.md): null = tắt. Bật = mỗi lần
   /// khách in vận đơn qua Hubsell, tệp được chép vào kho tệp (bucket riêng tư) để in lại sau khi
-  /// hãng vận chuyển đã lấy kiện. Công tắc theo gian — về sau là công tắc thu phí.
+  /// hãng vận chuyển đã lấy kiện (sàn không trả phiếu nữa). Công tắc theo gian, chủ shop tự gạt.
   labelArchiveEnabledAt DateTime?
 
   // ── ĐỒNG BỘ TỒN KHO THEO TỪNG GIAN (05/09 — thay switch toàn shop) ──

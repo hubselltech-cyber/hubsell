@@ -54,7 +54,7 @@ export interface LabelStore {
 }
 
 /** Thư mục máy thay kho khi phát triển (cùng chỗ với ảnh sản phẩm Tạo mới). KHÔNG BAO GIỜ ở production. */
-export const LOCAL_LABEL_DIR = path.resolve(process.cwd(), ".local-uploads", "order-labels");
+const LOCAL_LABEL_DIR = path.resolve(process.cwd(), ".local-uploads", "order-labels");
 
 export function createLocalLabelStore(root: string): LabelStore {
   const full = (p: string) => path.join(root, ...p.split("/"));
@@ -110,13 +110,12 @@ export function getLabelStore(): LabelStore | null {
 }
 
 /**
- * Chủ shop này có được thấy / gạt công tắc Lưu vận đơn không. ĐÂY LÀ CHỖ GẮN THU PHÍ VỀ SAU
- * (anh Trung 06/11: "dùng chính công tắc gạt này để thu thêm phí") — đổi thân hàm thành kiểm
- * quyền lợi đã mua là xong, nơi gọi không đổi.
- * Hiện tại (anh Trung 06/11 lúc cho push: "người ta vẫn có thói quen in trên Seller Center, không để
- * ý đâu"): MỞ cho mọi chủ shop khi đã có kho tệp — công tắc từng gian vẫn mặc định TẮT. Thu hẹp
- * bằng env LABEL_ARCHIVE_OWNERS: "off" = không ai, hoặc danh sách id chủ shop cách nhau dấu phẩy
- * ("*" / để trống = mọi chủ shop).
+ * Chủ shop này có được thấy / gạt công tắc Lưu vận đơn không — CHỖ CHẶN DUY NHẤT của tính năng
+ * (route công tắc và danh sách gian đều hỏi hàm này; muốn giới hạn theo gói thì đổi thân hàm).
+ * Anh Trung chốt 06/11: mở MIỄN PHÍ cho mọi chủ shop, không thu phí riêng ("thà sau này nhích gói
+ * lên một tí còn hơn là thu nhiều lần") — công tắc từng gian vẫn mặc định TẮT.
+ * Thu hẹp bằng env LABEL_ARCHIVE_OWNERS: "off" = không ai, hoặc danh sách id chủ shop cách nhau
+ * dấu phẩy ("*" / để trống = mọi chủ shop). Chưa có kho tệp = không ai.
  */
 export function labelArchiveAllowed(ownerId: string): boolean {
   if (!getLabelStore()) return false;
@@ -189,21 +188,6 @@ export function parsePointer(raw: Buffer): LabelPointer | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Giao diện có nên vẽ nút "In lại phiếu" cho đơn này không — cùng luật ở backend (endpoint in lại
- * từ chối đúng các ca này) và frontend (lib/label-archive.ts). Không hỏi kho: đơn in SAU mốc bật
- * công tắc và chưa quá 60 ngày thì coi là có tệp; ca lệch (lúc lưu lỗi) endpoint báo rõ.
- */
-export function mayHaveSavedLabel(
-  o: { labelPrintedAt: Date | null },
-  channel: { labelArchiveEnabledAt: Date | null },
-  now: Date
-): boolean {
-  if (!channel.labelArchiveEnabledAt || !o.labelPrintedAt) return false;
-  if (o.labelPrintedAt.getTime() < channel.labelArchiveEnabledAt.getTime()) return false;
-  return !isLabelExpired(o.labelPrintedAt, now);
 }
 
 // ---------- Lưu lúc in: HÀNG CHỜ NHỎ GIỌT ----------
@@ -349,6 +333,7 @@ export interface SpoolStats {
   failed: number;
   /** Số đơn không được xếp hàng vì hàng chờ đầy. */
   dropped: number;
+  /** Số đơn bỏ qua vì mốc in lần đầu đã quá 60 ngày (in lại phiếu rất cũ). */
   skippedExpired: number;
   /** Byte PDF MỚI ghi vào kho. */
   bytes: number;
@@ -370,7 +355,15 @@ export function defaultSpoolOptions(): SpoolOptions {
   };
 }
 
-const freshStats = (): SpoolStats => ({ saved: 0, created: 0, existed: 0, failed: 0, dropped: 0, skippedExpired: 0, bytes: 0 });
+const freshStats = (): SpoolStats => ({
+  saved: 0,
+  created: 0,
+  existed: 0,
+  failed: 0,
+  dropped: 0,
+  skippedExpired: 0,
+  bytes: 0,
+});
 const jobBytes = (j: ArchiveJob): number => j.body.length + j.followUps.reduce((n, f) => n + f.body.length, 0);
 const unrefSleep = (ms: number) =>
   new Promise<void>((r) => {
