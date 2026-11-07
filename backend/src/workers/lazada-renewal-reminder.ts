@@ -23,6 +23,7 @@
 
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { DISCONNECT_REASON } from "../integrations/channel-disconnect";
 import { BUSINESS_TZ_OFFSET_MS } from "../lib/date-range";
 import { notify } from "../services/notifications";
 
@@ -173,7 +174,7 @@ export async function runLazadaRenewalReminders(force = false, now: Date = new D
           // Quá hạn: token chết hẳn → DISCONNECTED để UI nhắc nối lại (không xoá token).
           await prisma.channel.update({
             where: { id: c.id },
-            data: { status: "DISCONNECTED", disconnectedAt: now },
+            data: { status: "DISCONNECTED", disconnectedAt: now, disconnectReason: DISCONNECT_REASON.AUTH_EXPIRED },
           });
           console.warn(
             `[Lazada-renewal] Gian "${c.shopName}" (seller ${c.externalShopId}) hết kỳ dịch vụ → DISCONNECTED, cần gia hạn + ủy quyền lại`

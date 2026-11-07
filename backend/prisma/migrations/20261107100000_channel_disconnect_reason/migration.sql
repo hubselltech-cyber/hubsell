@@ -1,0 +1,11 @@
+-- LY DO GIAN ROT KET NOI (07/11/2026, anh Trung: "tach ly do de anh phan loai, do hoi lai em").
+--   disconnectReason — ma ly do gian chuyen DISCONNECTED, ghi TAI NGUON o moi duong ha gian
+--                      (integrations/channel-disconnect.ts): ACCOUNT_DELETED (khach xoa tai khoan),
+--                      MANUAL (khach bam Ngat ket noi), AUTH_EXPIRED (het han uy quyen / ky dich vu),
+--                      AUTH_REVOKED (san tu choi lam moi token hoac bao thu hoi qua webhook).
+--                      NULL = gian ACTIVE, hoac dong cu truoc 07/11 (HQ tu suy tu cot khac).
+-- Su co goc 07/11: HQ "Gian rot ket noi" vang vi 2 gian rot cung mili-giay do khach xoa tai khoan
+-- + 1 gian het han uy quyen = 3 >= nguong, du 0 token hong; anh phai hoi lai moi biet.
+-- Mot cot NULL tren Channel, khong mac dinh, khong chi muc (chi doc theo disconnectedAt 24h).
+-- ADD COLUMN NULL khong ghi lai dong. IF NOT EXISTS de chay lai em. Duong lui: revert commit (cot thua vo hai).
+ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "disconnectReason" TEXT;

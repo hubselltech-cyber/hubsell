@@ -129,6 +129,7 @@ describe("Shopee: luật hạ gian khi sàn từ chối làm mới", () => {
     expect(after.status).toBe("DISCONNECTED");
     expect(after.disconnectedAt).not.toBeNull();
     expect(after.authLostReason).toBe("shop_no_linked");
+    expect(after.disconnectReason).toBe("AUTH_REVOKED"); // lý do ghi tại nguồn cho thẻ HQ (07/11/2026)
     expect(after.refreshToken).toBe("refresh-cu"); // không xóa token
   });
 
@@ -275,6 +276,7 @@ describe("TikTok: ủy quyền quá hạn → hạ gian, không chờ access_tok
     const after = await row();
     expect(after.status).toBe("DISCONNECTED");
     expect(after.disconnectedAt).not.toBeNull();
+    expect(after.disconnectReason).toBe("AUTH_EXPIRED"); // lý do ghi tại nguồn cho thẻ HQ (07/11/2026)
     // Thẻ gian nhận ra "hết hạn ủy quyền" khi hạn ≤ lúc ngắt (frontend lib/channel-auth.ts).
     expect(after.refreshTokenExpireAt!.getTime()).toBeLessThanOrEqual(after.disconnectedAt!.getTime());
     expect(after.refreshToken).toBe("refresh-cu");

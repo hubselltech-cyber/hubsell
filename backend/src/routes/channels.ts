@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import crypto from "crypto";
 import { ChannelName, type Channel } from "@prisma/client";
+import { DISCONNECT_REASON } from "../integrations/channel-disconnect";
 import { prisma } from "../lib/prisma";
 import { AUTO_ARRANGE_LANE, AUTO_ARRANGE_STREAM } from "../lib/auto-arrange";
 import { countByChannel } from "../services/channel-counts";
@@ -221,6 +222,7 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
         data: {
           status: "ACTIVE",
           disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+          disconnectReason: null,
           authRejectCount: 0,
           authRejectSince: null,
           authLostReason: null,
@@ -389,6 +391,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
         externalShopName: shop.name,
         status: "ACTIVE",
         disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+        disconnectReason: null,
         // Ủy quyền lại → xóa dấu sàn từ chối + lý do mất quyền (luật mất ủy quyền chung).
         authRejectCount: 0,
         authRejectSince: null,
@@ -1041,7 +1044,7 @@ router.post("/:id/disconnect", requireAdmin, async (req: AuthRequest, res, next)
     const updated = await prisma.channel.update({
       where: { id: channel.id },
       // disconnectedAt mở đồng hồ 30 ngày ẩn gian khỏi bảng Phân bổ dòng tiền.
-      data: { status: "DISCONNECTED", disconnectedAt: new Date() },
+      data: { status: "DISCONNECTED", disconnectedAt: new Date(), disconnectReason: DISCONNECT_REASON.MANUAL },
     });
     invalidatePlanState(req.ownerId!); // trần gói chỉ đếm gian ACTIVE — trống một chỗ
     res.json(updated);

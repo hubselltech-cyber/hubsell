@@ -25,7 +25,11 @@ nâng cấp gói CPU."* Lý do: *"làm sao tự nhiên anh nhớ được việc
 ### 2.1 Tăng trưởng (GROWTH)
 - Chủ shop: tổng, hoạt động 30 ngày (có đơn), mới 7 ngày.
 - Gian ACTIVE theo sàn (Shopee/Lazada/TikTok/Offline); gian **đang chạy ads** (có
-  campaign `ongoing`); gian DISCONNECTED (token chết).
+  campaign `ongoing`); gian DISCONNECTED (tổng) + gian MỚI rớt 24h **tách theo lý do**
+  (`channelsDisconnected24hDetail`, 07/11/2026: sàn từ chối / hết hạn ủy quyền / chưa ghi lý do /
+  khách ngắt tay / khách xóa tài khoản — cột `Channel.disconnectReason` ghi tại nguồn ở mọi
+  đường hạ gian, `integrations/channel-disconnect.ts`; dòng cũ suy từ User.deletedAt /
+  authLostReason / hạn ủy quyền ≤ lúc ngắt).
 - **Gian Shopee nối app Hubsell Ads** (`channelsHubsellAds`, 19/10/2026): ChannelAppAuth
   HUBSELL_ADS ACTIVE của gian Shopee ACTIVE không ngủ đông — MẪU SỐ QUOTA Ads API (quota
   tính theo app). Lưu cột `adsShops` trên snapshot để dự báo; là đại lượng `shopeeAdsShops`
@@ -102,6 +106,20 @@ nhất. Ít hơn 7 điểm dữ liệu → "chưa đủ dữ liệu".
   ngày khách chưa nối lại) → vàng mãi. Nay đếm gian MỚI rớt trong 24h
   (`disconnectedAt`) theo đúng `disconnectedDelta24h = 3`; gian ACTIVE lỗi ≥3
   nhịp vẫn vàng (việc thật, VD KYC Shopee).
+  - **07/11/2026 (kiểm prod theo ảnh anh gửi):** số "mới rớt 24h" gộp cả gian bị hạ vì
+    **khách tự xóa tài khoản** (`services/account-deletion.ts` hạ mọi gian của chủ shop
+    trong một `updateMany` → nhiều gian cùng một mốc `disconnectedAt`) và gian khách
+    ngắt tay. Ca 07/11: 2 gian TikTok rớt cùng mili-giây 18:28:36 UTC = một khách đăng
+    ký, nối gian, kéo 183 đơn rồi xóa tài khoản sau 35 phút; cộng TORANO (ca 06/11)
+    = 3 → vàng, dù 0 gian hỏng token. "N Hubsell Ads rớt" là lũy kế không cửa sổ thời
+    gian (7 gian từ 03/10–27/10), không kéo màu thẻ.
+  - **ĐÃ LÀM 07/11 chiều (anh chốt: "tách lý do đi để anh phân loại, đỡ phải hỏi lại"):**
+    cột `Channel.disconnectReason` ghi TẠI NGUỒN ở 8 đường hạ gian (ACCOUNT_DELETED /
+    MANUAL / AUTH_EXPIRED / AUTH_REVOKED, `integrations/channel-disconnect.ts`), nối lại → null;
+    thẻ in "N mới rớt 24h: 1 hết hạn ủy quyền (TORANO · TIKTOK) · 2 khách xóa tài khoản (…)"
+    và chỉ nhóm PHÍA SÀN (sàn từ chối / hết hạn / dòng cũ chưa ghi) so với
+    `disconnectedDelta24h`; Hubsell Ads in "x rớt 24h (tổng y)" thay vì một số lũy kế. Ảnh
+    chụp cũ không có detail → đếm tất như trước. Docs THOI-HAN-UY-QUYEN-SAN mục 8.
 - Dấu hiệu *Cầu dao*: đỏ khi đang đóng (giữ); vàng khi đóng liên tiếp ≥
   `breakerTripsWarn24h = 3` (trước: >0 — một lần 429 lẻ của sàn cũng vàng).
 - Gốc của dải đỏ 28/09 không phải ngưỡng mà là cầu dao Ads coi HTTP 429 lẻ trên

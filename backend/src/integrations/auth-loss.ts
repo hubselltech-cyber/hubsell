@@ -30,6 +30,7 @@
 // ============================================================
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { DISCONNECT_REASON } from "./channel-disconnect";
 import { classifierFor, type Platform } from "../services/marketplace-gateway";
 
 export const AUTH_REJECT_MAX = 3;
@@ -131,8 +132,10 @@ export async function recordRefreshFailure(subject: AuthSubject, err: unknown): 
       );
       return { kind, disconnected: false, count };
     }
+    // Lý do rớt chỉ có trên Channel (channel_app_auths không có cột này; thẻ HQ Ads đếm theo status).
+    const reasonSql = subject.kind === "channel" ? Prisma.sql`, "disconnectReason" = ${DISCONNECT_REASON.AUTH_REVOKED}` : Prisma.empty;
     const n = await prisma.$executeRaw`
-      UPDATE ${t} SET "status" = 'DISCONNECTED', "disconnectedAt" = now() AT TIME ZONE 'UTC'
+      UPDATE ${t} SET "status" = 'DISCONNECTED', "disconnectedAt" = now() AT TIME ZONE 'UTC'${reasonSql}
       WHERE "id" = ${subject.id} AND "status" = 'ACTIVE' AND "refreshToken" = ${subject.refreshToken}`;
     if (n > 0) {
       console.warn(

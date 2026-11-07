@@ -10,6 +10,7 @@
 import { costAtSaleForLine } from "../../lib/cost-price";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/client";
+import { DISCONNECT_REASON } from "../channel-disconnect";
 import { prisma } from "../../lib/prisma";
 import { AUTH_REJECT_RESET, recordRefreshFailure } from "../auth-loss";
 import { carrierFromName } from "../../services/shipping";
@@ -158,7 +159,7 @@ export async function disconnectExpiredTiktokAuths(opts: { onlyChannelId?: strin
   for (const c of expired) {
     const r = await prisma.channel.updateMany({
       where: { id: c.id, status: "ACTIVE", refreshTokenExpireAt: { lt: now } },
-      data: { status: "DISCONNECTED", disconnectedAt: now },
+      data: { status: "DISCONNECTED", disconnectedAt: now, disconnectReason: DISCONNECT_REASON.AUTH_EXPIRED },
     });
     if (r.count > 0) {
       dropped += 1;
@@ -1492,7 +1493,7 @@ export async function processTiktokAuthorizationEvent(
   if (channel.status !== status) {
     await prisma.channel.update({
       where: { id: channel.id },
-      data: { status, disconnectedAt: ok ? null : new Date() },
+      data: { status, disconnectedAt: ok ? null : new Date(), disconnectReason: ok ? null : DISCONNECT_REASON.AUTH_REVOKED },
     });
   }
   return { status };

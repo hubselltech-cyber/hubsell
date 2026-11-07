@@ -438,6 +438,11 @@ model Channel {
   /// hồi) — null khi ACTIVE. Bảng Phân bổ dòng tiền ẨN gian đã ngắt quá 30 ngày
   /// (giữ 30 ngày cho tiền đang giao/chờ đối soát về nốt).
   disconnectedAt       DateTime?
+  /// LÝ DO gian chuyển DISCONNECTED (07/11/2026, integrations/channel-disconnect.ts), ghi tại nguồn:
+  /// ACCOUNT_DELETED (khách xóa tài khoản) / MANUAL (khách bấm ngắt) / AUTH_EXPIRED (hết hạn ủy quyền)
+  /// / AUTH_REVOKED (sàn từ chối làm mới hoặc báo thu hồi). null = ACTIVE, hoặc dòng cũ trước 07/11
+  /// (HQ tự suy từ cột khác). Nối lại → null.
+  disconnectReason     String?
 
   // ── Bookkeeping của worker order-auto-sync (nguồn cho cảnh báo "sàn trễ
   // đồng bộ" trên Trung tâm điều hành) ──

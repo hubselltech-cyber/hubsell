@@ -19,6 +19,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
+import { DISCONNECT_REASON } from "../integrations/channel-disconnect";
 import { decryptSecret } from "../lib/secret-box";
 import { revokeAppleToken } from "./social-login";
 
@@ -116,7 +117,7 @@ export async function deleteOwnAccount(
     if (isOwner) {
       await tx.channel.updateMany({
         where: { userId: user.id, status: { not: "DISCONNECTED" } },
-        data: { status: "DISCONNECTED", disconnectedAt: now },
+        data: { status: "DISCONNECTED", disconnectedAt: now, disconnectReason: DISCONNECT_REASON.ACCOUNT_DELETED },
       });
       await tx.subscription.updateMany({
         where: { userId: user.id, status: "ACTIVE" },

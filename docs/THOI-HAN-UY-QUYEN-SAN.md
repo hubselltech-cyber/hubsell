@@ -113,3 +113,28 @@ HQ: dấu hiệu "Gian rớt kết nối / sàn trễ đồng bộ" nêu tên �
 
 ### 7.5 Chưa làm
 - Sự kiện loại 6 hỏi lại sàn quá sớm: chưa đổi. Sau bản sửa này gian bị thu hồi sẽ được lưới thứ hai xử lý trong khoảng 1–1,5 giờ (3 lượt quét lỗi + 30′ đếm) nếu TikTok từ chối làm mới.
+
+## 8. Lý do gian rớt ghi tại nguồn — `Channel.disconnectReason` (07/11/2026)
+
+**Vì sao:** 07/11 HQ "Gian rớt kết nối" vàng: 3 gian rớt 24h ≥ ngưỡng 3, nhưng 2 gian là khách
+TỰ XÓA TÀI KHOẢN (account-deletion hạ mọi gian của chủ shop một lượt → cùng mili-giây) + 1 gian
+TORANO hết hạn ủy quyền. Không token nào hỏng, anh phải hỏi lại mới biết. Anh chốt: *"tách lý do
+đi để anh phân loại đỡ phải hỏi lại em"*.
+
+**Luật:** mỗi đường hạ gian ghi một mã, không suy đoán sau (`integrations/channel-disconnect.ts`):
+
+| Mã | Ai ghi | Phía |
+|---|---|---|
+| `ACCOUNT_DELETED` | `services/account-deletion.ts` (chủ shop xóa tài khoản trong app) | khách |
+| `MANUAL` | `POST /api/channels/:id/disconnect` | khách |
+| `AUTH_EXPIRED` | `workers/token-refresh.ts` (Shopee + TikTok), `disconnectExpiredTiktokAuths`, `workers/lazada-renewal-reminder.ts` (hết kỳ dịch vụ) | sàn |
+| `AUTH_REVOKED` | `auth-loss.ts` (sàn từ chối làm mới — chỉ bảng Channel, channel_app_auths không có cột), webhook thu hồi Shopee code 5 / TikTok type 6 | sàn |
+
+- Nối lại (channels.ts ×2, shopee/lazada upsert, webhook trả OK) → `disconnectReason = null`.
+- Dòng cũ (trước 07/11) cột trống → HQ suy: User.deletedAt → khách xóa; authLostReason → sàn từ
+  chối; `shop_access_expired` / hạn ủy quyền ≤ lúc ngắt → hết hạn; còn lại "chưa ghi lý do" (tính
+  phía sàn để không giấu ca thật).
+- Thẻ HQ "Gian rớt kết nối": in theo nhóm kèm ≤ 3 tên gian; chỉ nhóm PHÍA SÀN so với
+  `disconnectedDelta24h`. Hubsell Ads in "x rớt 24h (tổng y)" — số tổng là lũy kế khách chưa nối lại.
+- Thẻ gian trên FE (`lib/channel-auth.ts`) chưa đọc cột này, vẫn tự suy như cũ — đổi khi có ca cần.
+- Không thêm mã mới nếu chưa có ca thật cần phân biệt (cùng tinh thần mục 6: không nuôi danh sách).

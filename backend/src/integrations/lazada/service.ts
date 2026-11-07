@@ -280,6 +280,7 @@ export async function handleLazadaCallback(
     externalShopName,
     status: "ACTIVE",
     disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+    disconnectReason: null,
     ...AUTH_REJECT_RESET, // ủy quyền lại → xóa dấu sàn từ chối + lý do mất quyền
   };
 

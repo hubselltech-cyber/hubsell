@@ -74,10 +74,12 @@ export const HEALTH_THRESHOLDS = {
   connPctWarn: 60,
   connPctCrit: 80,
   /**
-   * Gian MỚI rớt kết nối (disconnectedAt) trong 24h ≥ N → cảnh báo token/ủy quyền.
-   * Đếm theo 24h, KHÔNG đếm tổng: gian rớt lâu ngày chủ shop chưa nối lại (Hi.Bé
-   * 27/09…) là việc của khách, không phải dấu hiệu nền tảng — trước 28/09 dấu
-   * hiệu này vàng mãi vì đếm tổng 4 gian cũ.
+   * Gian MỚI rớt kết nối (disconnectedAt) trong 24h VÌ LÝ DO PHÍA SÀN ≥ N → cảnh báo
+   * token/ủy quyền. Đếm theo 24h, KHÔNG đếm tổng: gian rớt lâu ngày chủ shop chưa nối
+   * lại (Hi.Bé 27/09…) là việc của khách, không phải dấu hiệu nền tảng — trước 28/09
+   * dấu hiệu này vàng mãi vì đếm tổng 4 gian cũ. Từ 07/11/2026 chỉ đếm lý do phía sàn
+   * (hết hạn / sàn từ chối / dòng cũ chưa ghi lý do — integrations/channel-disconnect.ts):
+   * khách ngắt tay hoặc xóa tài khoản (2 gian cùng lúc 07/11) chỉ liệt kê, không kéo màu.
    */
   disconnectedDelta24h: 3,
   /**

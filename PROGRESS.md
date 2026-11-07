@@ -5,6 +5,19 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 07/11 (2) — Kiểm HQ "Gian rớt kết nối" vàng (anh lo "lỗi ủy quyền hỏng hàng loạt") → anh chốt TÁCH LÝ DO RỚT ghi tại nguồn (code, chưa commit)
+
+- **Kết luận: KHÔNG có hỏng ủy quyền hàng loạt.** 3 gian "mới rớt 24h" = (1) TORANO MENSWEAR 07:14 UTC 06/11 — ca đã sửa phiên trước (`75019dca`), còn nằm trong cửa sổ 24h; (2)+(3) hai gian TikTok "ĐIỆN CƠ NAM SƠN" + "Shop Điện Cơ Kim Khí Nam Loan" DISCONNECTED **cùng mili-giây 18:28:36.395 UTC** = chủ tài khoản **tự xóa tài khoản trong app** (`User.deletedAt` trùng đúng mốc, email đã ẩn danh; `services/account-deletion.ts` hạ mọi gian trong một `updateMany`). Khách này đăng ký 17:53 UTC (00:53 VN 07/11), nối 2 gian lúc 17:59 + 18:05, kéo về 174 + 9 đơn, rồi xóa tài khoản sau 35 phút — luồng xóa (`POST /me/delete`) chỉ hỏi mật khẩu, không hỏi lý do nên không biết vì sao.
+- **"7 Hubsell Ads rớt"** = tổng `channel_app_auths` DISCONNECTED từ 03/10 → 27/10 (Farm Nuts, Lyin.shop, Hanoinest, Hoàng Ngân, HPGear, Print & Stick, Ghiền 3D), 6/7 gian gốc cũng đã ngắt, không có ca mới; số này là lũy kế không có cửa sổ thời gian, không kéo màu thẻ.
+- 0 gian ACTIVE lỗi ≥3 lượt; 0 webhook TikTok loại 6/7 trong 48h. Thẻ vàng vì 3 ≥ `disconnectedDelta24h = 3`, trong đó 2 ca là khách xóa tài khoản chứ không phải token hỏng.
+- **Anh chốt: "Tách lý do đi để anh phân loại đỡ phải hỏi lại em."** Làm theo hướng ghi tại nguồn, không suy đoán sau:
+  - Cột mới `Channel.disconnectReason` (migration `20261107100000_channel_disconnect_reason`, ADD COLUMN NULL) + module `integrations/channel-disconnect.ts` (4 mã ACCOUNT_DELETED / MANUAL / AUTH_EXPIRED / AUTH_REVOKED, nhãn, nhóm PHÍA SÀN, `inferDisconnectReason` cho dòng cũ theo đúng luật thẻ gian FE, `summarizeDisconnects`/`describeDisconnects` cho HQ).
+  - 8 đường hạ gian ghi mã: account-deletion (ACCOUNT_DELETED), POST /channels/:id/disconnect (MANUAL), token-refresh Shopee + TikTok, `disconnectExpiredTiktokAuths`, lazada-renewal-reminder (AUTH_EXPIRED), auth-loss raw SQL chỉ khi bảng Channel + webhook thu hồi Shopee code 5 / TikTok type 6 (AUTH_REVOKED). 5 chỗ nối lại (channels.ts ×2, shopee, lazada, webhook OK) xóa mã.
+  - HQ: `collectGrowth` đọc gian rớt 24h kèm `user.deletedAt` → `channelsDisconnected24hDetail`; thẻ "Gian rớt kết nối" in theo nhóm kèm ≤3 tên, chỉ `platformSide` so với ngưỡng; thêm `adsAuthDisconnected24h`, số cũ ghi rõ là lũy kế. `capacity-plan.ts` sửa chú thích ngưỡng.
+  - Test: `channel-disconnect.test.ts` 11 ca thuần (ca 07/11 → tổng 3, phía sàn 1), `platform-health-disconnects-db.test.ts` 3 ca DB (cột ghi tại nguồn, suy từ User.deletedAt qua join, hạn ≤ lúc ngắt), `auth-loss-db.test.ts` thêm 2 assert mã; tsc BE + FE sạch. DB dev áp cột bằng `prisma db execute` (migrate deploy kẹt migration cũ 20260830 như mọi khi). `channel-delete-db.test.ts` đỏ 3 ca về `order_line_ledger` không dọn theo đơn — có từ trước, không đụng tới Channel, chưa truy.
+  - CHƯA: FE thẻ gian không đổi (vẫn tự suy); prod sau deploy mới có cột, dòng cũ HQ tự suy.
+
+
 
 ## Phiên 06/11 chiều (14) — Lô 1 thư app 1.4.2: Zoho chặn sau 51 thư → anh chốt "đặt lịch gửi nốt, mỗi lần 50, giãn cách"
 

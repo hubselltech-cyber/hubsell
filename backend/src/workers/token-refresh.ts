@@ -18,6 +18,7 @@
 
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { DISCONNECT_REASON } from "../integrations/channel-disconnect";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
@@ -112,7 +113,7 @@ async function refreshMainAppTokens(): Promise<void> {
       if (refreshExp && refreshExp < Date.now()) {
         await prisma.channel.update({
           where: { id: channel.id },
-          data: { status: "DISCONNECTED", disconnectedAt: new Date() },
+          data: { status: "DISCONNECTED", disconnectedAt: new Date(), disconnectReason: DISCONNECT_REASON.AUTH_EXPIRED },
         });
         console.warn(
           `[Token-refresh] Gian "${channel.shopName}" (shop ${channel.externalShopId}) hết hạn uỷ quyền → DISCONNECTED, cần kết nối lại`
@@ -174,7 +175,7 @@ async function refreshTiktokTokens(): Promise<void> {
     if (refreshExp && refreshExp < Date.now()) {
       await prisma.channel.update({
         where: { id: channel.id },
-        data: { status: "DISCONNECTED", disconnectedAt: new Date() },
+        data: { status: "DISCONNECTED", disconnectedAt: new Date(), disconnectReason: DISCONNECT_REASON.AUTH_EXPIRED },
       });
       console.warn(
         `[Token-refresh] Gian TikTok "${channel.shopName}" (shop ${channel.externalShopId}) hết hạn uỷ quyền → DISCONNECTED, cần kết nối lại`

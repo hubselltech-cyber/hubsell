@@ -10,6 +10,7 @@
 import v8 from "v8";
 import { imageStoreStats } from "./listing-copy/images";
 import { ChannelAppKind, ChannelName, Prisma, WebhookJobStatus } from "@prisma/client";
+import { describeDisconnects, summarizeDisconnects, type DisconnectSummary } from "../integrations/channel-disconnect";
 import { prisma } from "../lib/prisma";
 import { queueStartError, queueStats, type QueueStat } from "../lib/queue";
 import { DEAD_QUEUES } from "../lib/queue-config";
@@ -70,6 +71,18 @@ export function breakerSignalLevel(
  * Một truy vấn hỏng (bảng chưa có ở môi trường này, quyền pg_* bị chặn...) không
  * được làm vỡ cả trang Sức khỏe — trả giá trị dự phòng + log một dòng.
  */
+type Disconnected24hRow = {
+  shopName: string;
+  channelName: ChannelName;
+  disconnectReason: string | null;
+  disconnectedAt: Date | null;
+  authLostReason: string | null;
+  lastSyncError: string | null;
+  refreshTokenExpireAt: Date | null;
+  authExpireAt: Date | null;
+  user: { deletedAt: Date | null };
+};
+
 async function safe<T>(label: string, p: Promise<T>, fallback: T): Promise<T> {
   try {
     return await p;
@@ -93,7 +106,10 @@ export interface GrowthLayer {
    *  docs/ADS-NHIP-CANH-BAO.md 13.5: mốc Đ2 200 / Đ3 500 / Đ4 800). Vắng ở ảnh chụp trước 19/10/2026. */
   channelsHubsellAds: number;
   channelsDisconnected: number; // tổng gian DISCONNECTED (kể cả rớt lâu ngày)
-  channelsDisconnected24h: number; // gian MỚI rớt trong 24h — dấu hiệu token/ủy quyền
+  channelsDisconnected24h: number; // gian MỚI rớt trong 24h (mọi lý do)
+  /** Rớt 24h tách theo lý do (07/11/2026): chỉ `platformSide` (hết hạn / sàn từ chối / chưa ghi) so với ngưỡng;
+   *  khách ngắt tay / xóa tài khoản chỉ liệt kê. Vắng ở ảnh chụp trước 07/11. */
+  channelsDisconnected24hDetail?: DisconnectSummary;
   ordersTotal: number;
   ordersPerDay7d: number;
   ordersPeakDay30d: number;
@@ -140,7 +156,9 @@ export interface WorkerLayer {
   syncStalled: number; // syncFailCount >= 3
   /** Tên (≤ 3) gian ACTIVE lỗi ≥ 3 lượt kèm lỗi rút gọn — để HQ hành động ngay, không phải tra SQL. */
   syncStalledNames?: string[];
-  adsAuthDisconnected: number;
+  adsAuthDisconnected: number; // ủy quyền Hubsell Ads DISCONNECTED — LŨY KẾ (khách chưa nối lại)
+  /** Ủy quyền Hubsell Ads MỚI rớt trong 24h (07/11/2026). Vắng ở ảnh chụp cũ. */
+  adsAuthDisconnected24h?: number;
   /** Hàng đợi bền pg-boss (giai đoạn 2). null = chưa khởi động / không đọc được. */
   durableQueues: QueueStat[] | null;
   durableQueueError: string | null;
@@ -206,7 +224,16 @@ export async function collectGrowth(): Promise<GrowthLayer> {
         _count: { _all: true },
       }), []),
       safe("channel.count", prisma.channel.count({ where: { status: "DISCONNECTED" } }), 0),
-      safe("channel.count", prisma.channel.count({ where: { status: "DISCONNECTED", disconnectedAt: { gte: d1 } } }), 0),
+      // Gian mới rớt 24h kèm cột để tách lý do (integrations/channel-disconnect.ts); 200 là trần đọc, không phải kỳ vọng.
+      safe("channel.findMany", prisma.channel.findMany({
+        where: { status: "DISCONNECTED", disconnectedAt: { gte: d1 } },
+        select: {
+          shopName: true, channelName: true, disconnectReason: true, disconnectedAt: true, authLostReason: true,
+          lastSyncError: true, refreshTokenExpireAt: true, authExpireAt: true, user: { select: { deletedAt: true } },
+        },
+        orderBy: { disconnectedAt: "desc" },
+        take: 200,
+      }), [] as Disconnected24hRow[]),
       safe("order.count", prisma.order.count(), 0),
       safe("order.count", prisma.order.count({ where: { createdAt: { gte: d7 } } }), 0),
       safe("adsCampaign.findMany", prisma.adsCampaign.findMany({
@@ -260,7 +287,10 @@ export async function collectGrowth(): Promise<GrowthLayer> {
     channelsAds: adsChannels.length,
     channelsHubsellAds: hubsellAdsShops,
     channelsDisconnected: disconnected,
-    channelsDisconnected24h: disconnected24h,
+    channelsDisconnected24h: disconnected24h.length,
+    channelsDisconnected24hDetail: summarizeDisconnects(
+      disconnected24h.map((c) => ({ ...c, channelName: String(c.channelName), ownerDeletedAt: c.user.deletedAt }))
+    ),
     ordersTotal,
     ordersPerDay7d: Math.round(orders7d / 7),
     ordersPeakDay30d: Number(peak[0]?.n ?? 0),
@@ -320,7 +350,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
     hibernatedAt: null, // gian ngủ đông (hết gói quá ân hạn) không tính là "trễ quét"
     channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
-  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark, adsBackingOff] =
+  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, adsAuthDisconnected24h, tiktokPending, tiktokOldest, durableQueues, inbox, invoice, watermark, adsBackingOff] =
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
@@ -351,6 +381,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
         take: 50,
       }), [] as { shopName: string; channelName: ChannelName; syncFailCount: number; lastSyncError: string | null }[]),
       safe("channelAppAuth.count", prisma.channelAppAuth.count({ where: { status: "DISCONNECTED" } }), 0),
+      safe("channelAppAuth.count", prisma.channelAppAuth.count({ where: { status: "DISCONNECTED", disconnectedAt: { gte: new Date(Date.now() - DAY_MS) } } }), 0),
       safe("tiktokWebhookLog.count", prisma.tiktokWebhookLog.count({ where: { status: WebhookJobStatus.PENDING } }), 0),
       safe("tiktokWebhookLog.findFirst", prisma.tiktokWebhookLog.findFirst({
         where: { status: WebhookJobStatus.PENDING },
@@ -403,6 +434,7 @@ export async function collectWorker(): Promise<WorkerLayer> {
       return `${c.shopName} · ${c.channelName} · ${c.syncFailCount} lượt · ${code}`;
     }),
     adsAuthDisconnected,
+    adsAuthDisconnected24h,
     durableQueues,
     durableQueueError: durableQueues ? null : queueStartError(),
     inboxPending: Number(inbox[0]?.n ?? 0),
@@ -649,14 +681,19 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
     `${w.stockPushPending} tồn, ${DELIVERY_FAIL_FEATURE ? `${w.deliveryOverdue} vé cứu đơn quá hạn` : "cứu đơn đang ẩn"}, ${w.misaPending} MISA`,
     w.stockPushPending > 500 || (DELIVERY_FAIL_FEATURE && w.deliveryOverdue > 100) ? "warn" : "ok"
   );
+  const dropSummary = m.growth.channelsDisconnected24hDetail;
+  const dropDetail = dropSummary ? describeDisconnects(dropSummary) : "";
+  const dropPlatformSide = dropSummary ? dropSummary.platformSide : m.growth.channelsDisconnected24h;
   push(
     "channel.token",
     "Gian rớt kết nối / sàn trễ đồng bộ",
-    `${m.growth.channelsDisconnected24h} mới rớt 24h (tổng ${m.growth.channelsDisconnected}), ${w.syncStalled} lỗi ≥3 lượt${w.syncStalledNames?.length ? ` (${w.syncStalledNames.join("; ")})` : ""}, ${w.adsAuthDisconnected} Hubsell Ads rớt`,
-    // Rớt lâu ngày (khách chưa nối lại) không tính; rớt DỒN trong 24h hoặc gian đang
-    // ACTIVE mà 3 nhịp không kéo được đơn mới là dấu hiệu.
-    m.growth.channelsDisconnected24h >= T.disconnectedDelta24h || w.syncStalled > 0 ? "warn" : "ok",
-    "Rớt dồn = token/ủy quyền hỏng hàng loạt; lỗi ≥3 lượt = gian đang ACTIVE mà sàn từ chối (KYC, quyền app…) — sàn từ chối làm mới token thì luật mất ủy quyền tự hạ gian sau 3 lần/30′"
+    `${m.growth.channelsDisconnected24h} mới rớt 24h${dropDetail ? `: ${dropDetail}` : ""} (tổng ${m.growth.channelsDisconnected}); ${w.syncStalled} lỗi ≥3 lượt${w.syncStalledNames?.length ? ` (${w.syncStalledNames.join("; ")})` : ""}; Hubsell Ads ${w.adsAuthDisconnected24h ?? "?"} rớt 24h (tổng ${w.adsAuthDisconnected})`,
+    // Rớt lâu ngày (khách chưa nối lại) không tính; rớt DỒN trong 24h VÌ PHÍA SÀN (hết hạn /
+    // sàn từ chối / dòng cũ chưa ghi lý do) hoặc gian đang ACTIVE mà 3 nhịp không kéo được
+    // đơn mới là dấu hiệu. Khách ngắt tay / xóa tài khoản chỉ liệt kê (07/11/2026: 2 gian rớt
+    // cùng lúc vì khách xóa tài khoản từng kéo thẻ vàng oan). Ảnh cũ không có detail → đếm tất.
+    dropPlatformSide >= T.disconnectedDelta24h || w.syncStalled > 0 ? "warn" : "ok",
+    "Chỉ lý do phía sàn tính vào ngưỡng rớt dồn (token/ủy quyền hỏng hàng loạt); lỗi ≥3 lượt = gian đang ACTIVE mà sàn từ chối (KYC, quyền app…) — sàn từ chối làm mới token thì luật mất ủy quyền tự hạ gian sau 3 lần/30′. Hubsell Ads: số tổng là lũy kế khách chưa nối lại"
   );
   push(
     "infra.db",

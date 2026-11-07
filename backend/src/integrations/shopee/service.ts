@@ -9,6 +9,7 @@
 
 import { costAtSaleForLine } from "../../lib/cost-price";
 import jwt from "jsonwebtoken";
+import { DISCONNECT_REASON } from "../channel-disconnect";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
@@ -331,6 +332,7 @@ export async function handleShopeeCallback(
     authExpireCheckedAt,
     status: "ACTIVE",
     disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+    disconnectReason: null,
     ...AUTH_REJECT_RESET, // ủy quyền lại → xóa dấu sàn từ chối + lý do mất quyền
   };
 
@@ -1155,7 +1157,7 @@ export async function processShopeeAuthorizationEvent(
     await prisma.channel.update({
       where: { id: channel.id },
       // Guard status đổi thật mới ghi → không reset đồng hồ 30 ngày mỗi event.
-      data: { status, disconnectedAt: ok ? null : new Date() },
+      data: { status, disconnectedAt: ok ? null : new Date(), disconnectReason: ok ? null : DISCONNECT_REASON.AUTH_REVOKED },
     });
   }
   return { status };
