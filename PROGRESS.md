@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 07/11 (3) — HQ "Cộng tác viên đặc biệt": tab mới trên Marketing & Giới thiệu, đặt % hoa hồng riêng + thời hạn cho tài khoản đã đăng ký (anh: "đây đã được coi là cộng tác viên rồi, mình chỉ thêm tab cho cộng tác viên đặc biệt để nâng hoặc hạ mức hoa hồng và thời gian thôi") — CHƯA COMMIT
+## Phiên 07/11 (3) — HQ "Cộng tác viên đặc biệt": tab mới trên Marketing & Giới thiệu, đặt % hoa hồng riêng + thời hạn cho tài khoản đã đăng ký (anh: "đây đã được coi là cộng tác viên rồi, mình chỉ thêm tab cho cộng tác viên đặc biệt để nâng hoặc hạ mức hoa hồng và thời gian thôi") — ĐÃ PUSH `d80b4791` (anh: "Em push lên đi")
 
 - **Bối cảnh:** anh hỏi HQ có chỗ tạo tài khoản CTV + % + thời hạn không. Kiểm mã: chương trình giới thiệu 10% vĩnh viễn đã LIVE cho mọi tài khoản (mã HUBSELL<số>, Ví Hubsell, duyệt rút ở Kế toán), nối thật vào `recordPackagePayment`; thiếu % theo người và thời hạn. Em đề xuất trang riêng + thư mời; anh chốt gọn hơn: chọn từ tài khoản đã đăng ký, một tab trong trang Marketing.
 - **Luật chốt:** khách thường giữ 10% vĩnh viễn; CTV đặc biệt = % riêng (0–100) trong `[startsAt, endsAt)`, endsAt null = không hạn; % đọc TẠI LÚC khách thanh toán; hết hạn / gỡ → về 10%; hoa hồng đã cộng không tính lại. Tài liệu: `docs/HQ-CONG-TAC-VIEN-DAC-BIET.md`.
