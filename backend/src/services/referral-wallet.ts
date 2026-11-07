@@ -15,8 +15,54 @@
 
 import { prisma } from "../lib/prisma";
 
-/** Tỷ lệ hoa hồng affiliate — 10% trên mọi lượt thanh toán thành công. */
+/** Tỷ lệ hoa hồng affiliate MẶC ĐỊNH — 10% trên mọi lượt thanh toán thành công. */
 export const REFERRAL_COMMISSION_RATE = 0.1;
+/** Cùng con số trên, dạng phần trăm — để ghép chuỗi hiển thị và so với mức riêng. */
+export const DEFAULT_COMMISSION_PERCENT = 10;
+
+/**
+ * Dòng Cộng tác viên đặc biệt rút gọn — đủ để quyết định % (bảng referral_partners,
+ * 07/11/2026). Tách kiểu riêng để hàm thuần dưới test được không cần DB.
+ */
+export interface PartnerRateRow {
+  commissionPercent: number;
+  startsAt: Date;
+  endsAt: Date | null;
+}
+
+/**
+ * PHẦN TRĂM HOA HỒNG HIỆU LỰC của một người giới thiệu tại thời điểm `at`.
+ *
+ * Luật (anh Trung 07/11): mọi tài khoản vốn là CTV 10% vĩnh viễn; HQ đặt mức
+ * riêng trong một khoảng [startsAt, endsAt). Trong khoảng → % riêng (kể cả khi
+ * HQ cố tình HẠ dưới 10%); chưa tới ngày, đã hết hạn, hoặc không có dòng → 10%.
+ * Hàm thuần, không đụng DB — creditReferralCommission và /summary cùng dùng.
+ */
+/** Mức riêng có ĐANG trong khoảng hiệu lực tại `at` không (chưa tới ngày / hết hạn = false). */
+export function isPartnerRateActive(partner: PartnerRateRow | null | undefined, at: Date = new Date()): boolean {
+  if (!partner) return false;
+  if (at < partner.startsAt) return false;
+  if (partner.endsAt && at >= partner.endsAt) return false;
+  return true;
+}
+
+export function resolveCommissionPercent(partner: PartnerRateRow | null | undefined, at: Date = new Date()): number {
+  if (!isPartnerRateActive(partner, at)) return DEFAULT_COMMISSION_PERCENT;
+  const pct = Number(partner!.commissionPercent);
+  return Number.isFinite(pct) && pct >= 0 ? pct : DEFAULT_COMMISSION_PERCENT;
+}
+
+/**
+ * Đọc dòng CTV đặc biệt của một user (null nếu chưa được HQ đặt) — một câu theo
+ * khóa unique, dùng ở cả lúc cộng hoa hồng lẫn trang Affiliate của khách.
+ */
+export async function getPartnerRate(userId: string): Promise<PartnerRateRow | null> {
+  const row = await prisma.referralPartner.findUnique({
+    where: { userId },
+    select: { commissionPercent: true, startsAt: true, endsAt: true },
+  });
+  return row ? { ...row, commissionPercent: Number(row.commissionPercent) } : null;
+}
 
 /** Rút tối thiểu 100.000₫ — tránh lệnh chuyển khoản lắt nhắt khi duyệt tay. */
 export const MIN_WITHDRAWAL_AMOUNT = 100_000;
@@ -59,8 +105,11 @@ export async function findReferrerByCode(rawCode: unknown) {
 }
 
 /**
- * CỘNG HOA HỒNG 10% cho người giới thiệu khi `payerUserId` THANH TOÁN THÀNH
- * CÔNG `paidAmount` (VNĐ). Không có người giới thiệu thì trả null (không lỗi).
+ * CỘNG HOA HỒNG cho người giới thiệu khi `payerUserId` THANH TOÁN THÀNH CÔNG
+ * `paidAmount` (VNĐ). Không có người giới thiệu thì trả null (không lỗi).
+ * % lấy theo resolveCommissionPercent() TẠI THỜI ĐIỂM thanh toán: 10% mặc định,
+ * hoặc mức riêng nếu người giới thiệu là CTV đặc biệt còn hạn. Bút toán ghi rõ
+ * % đã áp để sau này đối soát không phải suy ngược.
  *
  * Nguyên tử trong một transaction: upsert ví + increment balance + ghi sổ cái.
  */
@@ -77,10 +126,11 @@ export async function creditReferralCommission(
   });
   if (!payer?.referredById) return null;
 
-  const commission = Math.round(paidAmount * REFERRAL_COMMISSION_RATE);
+  const referrerId = payer.referredById;
+  const percent = resolveCommissionPercent(await getPartnerRate(referrerId));
+  const commission = Math.round((paidAmount * percent) / 100);
   if (commission <= 0) return null;
 
-  const referrerId = payer.referredById;
   const [, txn] = await prisma.$transaction([
     prisma.hubsellWallet.upsert({
       where: { userId: referrerId },
@@ -96,7 +146,7 @@ export async function creditReferralCommission(
         sourceUserId: payer.id,
         note:
           note ??
-          `Hoa hồng 10% từ thanh toán ${paidAmount.toLocaleString("vi-VN")}₫ của ${payer.email}`,
+          `Hoa hồng ${percent}% từ thanh toán ${paidAmount.toLocaleString("vi-VN")}₫ của ${payer.email}`,
       },
     }),
   ]);

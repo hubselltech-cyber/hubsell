@@ -19,6 +19,10 @@ import {
   type AuthRequest,
 } from "../middleware/auth";
 import { writeAuditLog } from "../services/platform-audit";
+import {
+  DEFAULT_COMMISSION_PERCENT,
+  isPartnerRateActive,
+} from "../services/referral-wallet";
 import { notifyCustomerSupportUpdate } from "./support";
 import { createSignedUrls } from "../lib/supabase-storage";
 import {
@@ -2571,6 +2575,287 @@ router.get("/marketing", requirePlatformPermission("hq.marketing"), async (_req,
     next(err);
   }
 });
+
+// ============================================================
+// CỘNG TÁC VIÊN ĐẶC BIỆT (07/11/2026 — lá hq.marketing, tab 2 của trang
+// Marketing & Giới thiệu). Anh Trung: "đây đã được coi là cộng tác viên rồi,
+// mình chỉ thêm tab cho cộng tác viên đặc biệt để nâng hoặc hạ mức hoa hồng và
+// thời gian thôi". Mọi tài khoản vốn là CTV 10% vĩnh viễn; ở đây HQ chọn một
+// tài khoản đã đăng ký và đặt % riêng trong một khoảng thời gian (bảng
+// referral_partners). % áp lúc KHÁCH THANH TOÁN (services/referral-wallet.ts);
+// hoa hồng đã cộng không tính lại. Mọi lần lưu/gỡ ghi Nhật ký thao tác.
+// ============================================================
+
+/** Tối đa 100% (HQ có thể trả trọn gói đầu cho CTV lớn); làm tròn 2 chữ số. */
+function parseCommissionPercent(raw: unknown): number | null {
+  const n = typeof raw === "string" ? Number(raw.replace(",", ".")) : Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** "YYYY-MM-DD" (ô ngày của trình duyệt) hoặc ISO → Date; rỗng/null → null; sai → undefined. */
+function parseDateInput(raw: unknown): Date | null | undefined {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string") return undefined;
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+/** Dòng CTV đặc biệt kèm số liệu để HQ nhìn một hàng là đủ. */
+async function listReferralPartners() {
+  const partners = await prisma.referralPartner.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      user: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          referralCode: true,
+          deletedAt: true,
+          hubsellWallet: { select: { balance: true } },
+        },
+      },
+    },
+  });
+  if (partners.length === 0) return [];
+  const ids = partners.map((p) => p.userId);
+  const [referredGroups, commissionGroups] = await Promise.all([
+    prisma.user.groupBy({
+      by: ["referredById"],
+      where: { referredById: { in: ids } },
+      _count: { _all: true },
+    }),
+    prisma.walletTransaction.groupBy({
+      by: ["userId"],
+      where: { userId: { in: ids }, type: "COMMISSION", status: { not: "REJECTED" } },
+      _sum: { amount: true },
+    }),
+  ]);
+  const referredMap = new Map(referredGroups.map((g) => [g.referredById!, g._count._all]));
+  const commissionMap = new Map(commissionGroups.map((g) => [g.userId, toNumber(g._sum.amount)]));
+  const now = new Date();
+  return partners.map((p) => {
+    const row = {
+      commissionPercent: toNumber(p.commissionPercent),
+      startsAt: p.startsAt,
+      endsAt: p.endsAt,
+    };
+    return {
+      userId: p.userId,
+      fullName: p.user.deletedAt ? "(đã xoá tài khoản)" : p.user.fullName,
+      email: p.user.email,
+      referralCode: p.user.referralCode,
+      commissionPercent: row.commissionPercent,
+      startsAt: p.startsAt,
+      endsAt: p.endsAt,
+      note: p.note,
+      /** active = đang áp % riêng; upcoming = chưa tới ngày; expired = đã hết hạn (đang về 10%). */
+      status: isPartnerRateActive(row, now)
+        ? "active"
+        : now < p.startsAt
+          ? "upcoming"
+          : "expired",
+      referredCount: referredMap.get(p.userId) ?? 0,
+      totalCommission: commissionMap.get(p.userId) ?? 0,
+      walletBalance: toNumber(p.user.hubsellWallet?.balance),
+      updatedAt: p.updatedAt,
+    };
+  });
+}
+
+// GET /api/admin/marketing/partners — danh sách CTV đặc biệt + số liệu.
+router.get(
+  "/marketing/partners",
+  requirePlatformPermission("hq.marketing"),
+  async (_req, res, next) => {
+    try {
+      res.json({
+        defaultCommissionPercent: DEFAULT_COMMISSION_PERCENT,
+        partners: await listReferralPartners(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /api/admin/marketing/partners/search?q= — tìm CHỦ SHOP đã đăng ký để chọn
+// làm CTV đặc biệt (email / tên / username / mã giới thiệu). Tối đa 8 dòng.
+router.get(
+  "/marketing/partners/search",
+  requirePlatformPermission("hq.marketing"),
+  async (req, res, next) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      if (q.length < 2) {
+        res.json({ users: [] });
+        return;
+      }
+      const users = await prisma.user.findMany({
+        where: {
+          ownerId: null,
+          deletedAt: null,
+          OR: [
+            { email: { contains: q, mode: "insensitive" } },
+            { fullName: { contains: q, mode: "insensitive" } },
+            { username: { contains: q, mode: "insensitive" } },
+            { referralCode: { equals: q.toUpperCase() } },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          referralCode: true,
+          createdAt: true,
+          referralPartner: { select: { commissionPercent: true } },
+        },
+      });
+      res.json({
+        users: users.map((u) => ({
+          id: u.id,
+          fullName: u.fullName,
+          email: u.email,
+          referralCode: u.referralCode,
+          createdAt: u.createdAt,
+          currentPercent: u.referralPartner ? toNumber(u.referralPartner.commissionPercent) : null,
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PUT /api/admin/marketing/partners/:userId — đặt / sửa mức riêng (upsert).
+router.put(
+  "/marketing/partners/:userId",
+  requirePlatformPermission("hq.marketing"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { commissionPercent, startsAt, endsAt, note } = req.body ?? {};
+      const user = await prisma.user.findFirst({
+        where: { id: req.params.userId, ownerId: null, deletedAt: null },
+        select: { id: true, email: true, fullName: true },
+      });
+      if (!user) {
+        res.status(404).json({ error: "Không tìm thấy chủ shop này" });
+        return;
+      }
+      const percent = parseCommissionPercent(commissionPercent);
+      if (percent === null) {
+        res.status(400).json({ error: "Phần trăm hoa hồng phải từ 0 đến 100" });
+        return;
+      }
+      const starts = parseDateInput(startsAt);
+      const ends = parseDateInput(endsAt);
+      if (starts === undefined || ends === undefined) {
+        res.status(400).json({ error: "Ngày không hợp lệ" });
+        return;
+      }
+      if (starts && ends && ends <= starts) {
+        res.status(400).json({ error: "Ngày hết hạn phải sau ngày bắt đầu" });
+        return;
+      }
+      if (note !== undefined && note !== null && typeof note !== "string") {
+        res.status(400).json({ error: "Ghi chú không hợp lệ" });
+        return;
+      }
+      const noteValue = typeof note === "string" && note.trim() ? note.trim().slice(0, 500) : null;
+
+      const before = await prisma.referralPartner.findUnique({
+        where: { userId: user.id },
+        select: { commissionPercent: true, startsAt: true, endsAt: true, note: true },
+      });
+      if (before && ends && !starts && ends <= before.startsAt) {
+        res.status(400).json({ error: "Ngày hết hạn phải sau ngày bắt đầu" });
+        return;
+      }
+      const saved = await prisma.referralPartner.upsert({
+        where: { userId: user.id },
+        create: {
+          userId: user.id,
+          commissionPercent: percent,
+          ...(starts ? { startsAt: starts } : {}),
+          endsAt: ends,
+          note: noteValue,
+          createdById: req.userId!,
+          updatedById: req.userId!,
+        },
+        update: {
+          commissionPercent: percent,
+          // Không gửi ngày bắt đầu khi sửa = giữ mốc cũ (đừng tự dời về hôm nay).
+          ...(starts ? { startsAt: starts } : {}),
+          endsAt: ends,
+          note: noteValue,
+          updatedById: req.userId!,
+        },
+      });
+      await writeAuditLog(req, {
+        action: before ? "referral-partner.update" : "referral-partner.create",
+        targetUserId: user.id,
+        targetLabel: user.email ?? user.fullName,
+        detail: {
+          before: before
+            ? {
+                commissionPercent: toNumber(before.commissionPercent),
+                startsAt: before.startsAt,
+                endsAt: before.endsAt,
+                note: before.note,
+              }
+            : null,
+          after: {
+            commissionPercent: percent,
+            startsAt: saved.startsAt,
+            endsAt: saved.endsAt,
+            note: noteValue,
+          },
+        },
+      });
+      res.json({ ok: true, partners: await listReferralPartners() });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// DELETE /api/admin/marketing/partners/:userId — gỡ mức riêng → về 10% từ giờ.
+router.delete(
+  "/marketing/partners/:userId",
+  requirePlatformPermission("hq.marketing"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const existing = await prisma.referralPartner.findUnique({
+        where: { userId: req.params.userId },
+        include: { user: { select: { email: true, fullName: true } } },
+      });
+      if (!existing) {
+        res.status(404).json({ error: "Tài khoản này không có mức hoa hồng riêng" });
+        return;
+      }
+      await prisma.referralPartner.delete({ where: { userId: existing.userId } });
+      await writeAuditLog(req, {
+        action: "referral-partner.delete",
+        targetUserId: existing.userId,
+        targetLabel: existing.user.email ?? existing.user.fullName,
+        detail: {
+          before: {
+            commissionPercent: toNumber(existing.commissionPercent),
+            startsAt: existing.startsAt,
+            endsAt: existing.endsAt,
+            note: existing.note,
+          },
+        },
+      });
+      res.json({ ok: true, partners: await listReferralPartners() });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ============================================================
 // NHẬT KÝ THAO TÁC (GĐ4) — CHỈ CHỦ NỀN TẢNG (requirePlatformAdmin, không có

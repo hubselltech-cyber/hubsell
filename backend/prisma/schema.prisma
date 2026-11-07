@@ -355,6 +355,7 @@ model User {
   costPriceRules         CostPriceRule[]
   costConflictDismissals CostConflictDismissal[]
   tiktokAdsAuths         TiktokAdsAuth[]
+  referralPartner        ReferralPartner?
 
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
@@ -428,7 +429,7 @@ model Channel {
   /// MẤT ỦY QUYỀN PHÍA SÀN, luật chung (27/10/2026, integrations/auth-loss.ts): số lần sàn
   /// từ chối làm mới token với cùng refresh_token + mốc lần đầu; đủ 3 lần trải 30′ (hoặc mã
   /// chắc chắn) → DISCONNECTED. authLostReason = mã sàn trả, giữ tới khi ủy quyền lại (thẻ gian đọc).
-  authRejectCount      Int       @default(0)
+  authRejectCount      Int         @default(0)
   authRejectSince      DateTime?
   authLostReason       String?
   /// shop_cipher của TikTok Shop — BẮT BUỘC gửi kèm mọi request API 202309 trở đi
@@ -480,11 +481,11 @@ model Channel {
   /// pickup/dropoff + address_id + branch_id lần gần nhất seller chọn khi bấm
   /// "Chuẩn bị hàng". Lần sau mở hộp thoại là điền sẵn — seller nhỏ thao tác
   /// 1 chạm. Hình dạng: { method, addressId?, branchId? } (xem fulfillment/types).
-  fulfillmentSettings Json?
+  fulfillmentSettings   Json?
   /// TỰ CHUẨN BỊ HÀNG (04/11/2026, docs/TU-CHUAN-BI-HANG.md): null = tắt. Bật = worker
   /// làn "fulfill" tự gọi sàn sắp xếp vận chuyển cho đơn Chờ xử lý của gian mỗi ~30′
   /// (hàng việc = dòng sync_cursors stream "auto-arrange", ghi cùng giao dịch với cột này).
-  autoArrangeEnabledAt DateTime?
+  autoArrangeEnabledAt  DateTime?
   /// LƯU VẬN ĐƠN ĐÃ IN 60 NGÀY (06/11/2026, docs/LUU-VAN-DON-DA-IN.md): null = tắt. Bật = mỗi lần
   /// khách in vận đơn qua Hubsell, tệp được chép vào kho tệp (bucket riêng tư) để in lại sau khi
   /// hãng vận chuyển đã lấy kiện (sàn không trả phiếu nữa). Công tắc theo gian, chủ shop tự gạt.
@@ -1535,7 +1536,7 @@ model Product {
   /// 20261105220000_product_barcode — Prisma không diễn tả được, đừng thêm @@unique ở đây.
   /// NULL = sản phẩm cũ chưa được điền (worker product-barcode-backfill điền dần). Mã SKU vẫn là mã để
   /// KHỚP VỚI SÀN; mã vạch là mã để KHO QUÉT / in tem.
-  barcode     String? @default(dbgenerated("product_new_barcode()"))
+  barcode String? @default(dbgenerated("product_new_barcode()"))
 
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
   // Tên sản phẩm in trên hóa đơn có thể khác tên bán hàng (theo danh mục hàng hóa).
@@ -1727,13 +1728,13 @@ model Order {
   /// ---- TỰ CHUẨN BỊ HÀNG (04/11/2026, docs/TU-CHUAN-BI-HANG.md) ----
   /// Lần máy thử gần nhất + số lần sàn báo "chưa sẵn sàng" (thử lại sau ≥ 30′, tối đa 6).
   autoArrangeTriedAt       DateTime?
-  autoArrangeAttempts      Int       @default(0)
+  autoArrangeAttempts      Int            @default(0)
   /// Lỗi cứng từng đơn: máy không thử nữa, tab Chờ xử lý hiện nhãn + lý do để người làm tay.
   /// Xóa khi bật lại công tắc của gian.
   autoArrangeBlockedAt     DateTime?
   autoArrangeBlockedReason String?
-  paymentStatus       String         @default("UNPAID") // ví dụ: UNPAID, PAID, REFUNDED
-  shippingStatus      ShippingStatus @default(PENDING)
+  paymentStatus            String         @default("UNPAID") // ví dụ: UNPAID, PAID, REFUNDED
+  shippingStatus           ShippingStatus @default(PENDING)
 
   /// Trạng thái HÓA ĐƠN ĐIỆN TỬ mới nhất của đơn (denormalize từ InvoiceLog để
   /// danh sách đơn lọc "đã/chưa xuất hóa đơn" không phải join). NULL = chưa từng
@@ -1803,14 +1804,14 @@ model Order {
   /// TikTok "Get Order Price Details" 202407: voucher shop (voucher_deduction_seller) — PHẦN NẰM TRONG
   /// chiết khấu NBH của bản kê (probe 29/10/2026, docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md mục 12).
   /// null = chưa đọc (đọc 1 lần/đơn, integrations/tiktok/price-detail.ts). Vào sổ cái: revenueGross + sellerVoucher.
-  tiktokVoucherSeller   Decimal?  @db.Decimal(12, 2)
+  tiktokVoucherSeller   Decimal?              @db.Decimal(12, 2)
   tiktokPriceDetailAt   DateTime?
   /// Escrow Shopee (cả ước tính lẫn thật): giá gốc order_original_price, giảm giá SP của shop order_seller_discount,
   /// combo/mua kèm = order_selling_price − order_discounted_price. null = chưa có snapshot (đơn hủy: escrow rỗng →
   /// đọc từ OrderItem.originalPrice). CHỈ hiển thị (bảng Lãi/Lỗ Shopee), không vào công thức/sổ cái.
-  shopeeOriginalPrice   Decimal?  @db.Decimal(12, 2)
-  shopeeSellerDiscount  Decimal?  @db.Decimal(12, 2)
-  shopeeBundleDiscount  Decimal?  @db.Decimal(12, 2)
+  shopeeOriginalPrice   Decimal?              @db.Decimal(12, 2)
+  shopeeSellerDiscount  Decimal?              @db.Decimal(12, 2)
+  shopeeBundleDiscount  Decimal?              @db.Decimal(12, 2)
   /// Kết quả buộc tội "sàn trả thiếu", GHI MỘT LẦN lúc quyết toán: tổng các
   /// thành phần phí CÓ mẫu số ước tính bị thu vượt (computePayoutShortfall),
   /// chặn trần bằng mức tụt escrow thật. Tách cột thay vì tính lúc query vì
@@ -1846,6 +1847,9 @@ model Order {
   deliveryFailNotice   DeliveryFailNotice? // cảnh báo "giao 2 lần không thành công" (nếu có)
   deliveryTrackingTask DeliveryTrackingTask? // vé xếp hàng hỏi tracking (cứu đơn giao thất bại)
   kocAttribution       KocOrderAttribution? // đơn affiliate quy cho KOC nào (Sổ KOC)
+  // Chỉ mục MỘT PHẦN "Chờ xử lý của gian" (tự chuẩn bị hàng 04/11/2026) chỉ có trong
+  // SQL migration 20261104230000_auto_arrange:
+  //   Order_auto_arrange_pending_idx (channelId, createdAt) WHERE shippingStatus = 'PENDING'
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -1860,25 +1864,22 @@ model Order {
   // Tờ khai thuế cắt kỳ theo ngày sàn báo giao thành công (30/09/2026); cũng
   // phục vụ tự xuất hóa đơn + Kiểm toán phí sàn đang lọc theo deliveredAt.
   @@index([channelId, deliveredAt])
-  // Chỉ mục MỘT PHẦN "Chờ xử lý của gian" (tự chuẩn bị hàng 04/11/2026) chỉ có trong
-  // SQL migration 20261104230000_auto_arrange:
-  //   Order_auto_arrange_pending_idx (channelId, createdAt) WHERE shippingStatus = 'PENDING'
 }
 
 /// Chi tiết dòng sản phẩm của một đơn hàng.
 /// costPriceAtSale = GIÁ VỐN GỐC tại thời điểm phát sinh đơn (snapshot) —
 /// dù sau này giá vốn sản phẩm thay đổi, báo cáo lãi/lỗ của đơn cũ vẫn chính xác.
 model OrderItem {
-  id               String  @id @default(cuid())
+  id               String   @id @default(cuid())
   orderId          String
   productId        String? // sản phẩm gốc (SetNull nếu sản phẩm bị xoá)
   channelSku       String // SKU trên sàn
   productName      String // tên sản phẩm tại thời điểm bán
   quantity         Int
-  price            Decimal @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
+  price            Decimal  @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
   /// Giá niêm yết của dòng (Shopee model_original_price / TikTok original_price) — ghi từ 29/10/2026, null = đơn cũ.
   originalPrice    Decimal? @db.Decimal(12, 2)
-  costPriceAtSale  Decimal @default(0) @db.Decimal(12, 2) // giá vốn gốc tại thời điểm phát sinh đơn
+  costPriceAtSale  Decimal  @default(0) @db.Decimal(12, 2) // giá vốn gốc tại thời điểm phát sinh đơn
   /// Ảnh dòng hàng LẤY TỪ PAYLOAD ĐƠN của sàn lúc đồng bộ (Shopee image_info,
   /// Lazada product_main_image, TikTok sku_image) — 08/09: trước đó ảnh chỉ tra
   /// ChannelProduct (đồng bộ danh mục bằng tay) nên gian chưa đồng bộ danh mục
@@ -1892,10 +1893,10 @@ model OrderItem {
   externalId       String?
   /// HOÀN/TRẢ CẤP DÒNG SKU (kịch bản trả 1 vài SP trong đơn nhiều SP):
   /// số lượng bị khách trả của riêng dòng này — 0 = dòng không bị trả.
-  returnedQuantity Int     @default(0)
+  returnedQuantity Int      @default(0)
   /// Hàng trả của dòng này ĐÃ nhập lại kho nguyên vẹn → giá vốn phần trả được
   /// thu hồi (không tính vào COGS nữa). false = chưa về kho / hư hỏng.
-  returnRestocked  Boolean @default(false)
+  returnRestocked  Boolean  @default(false)
 
   order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -2538,26 +2539,26 @@ model TiktokOrderSettlement {
   shippingCost         Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển của nhà bán hàng (ròng)
 
   // ===== PHÍ (fee_tax_breakdown.fee) — tên theo TikTok Shop VN =====
-  feeCommission       Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng nền tảng
-  feeTransaction      Decimal @default(0) @db.Decimal(12, 2) /// Phí giao dịch
-  feeOrderProcessing  Decimal @default(0) @db.Decimal(12, 2) /// Phí xử lý đơn hàng (vn_fix_infrastructure_fee)
-  feeSfp              Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Freeship Xtra (SFP)
-  feeVoucherXtra      Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Voucher Xtra
-  feeFlashSale        Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Flash Sale
-  feeAffiliate        Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng affiliate
-  feeAffiliateAds     Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng quảng cáo affiliate
-  feeAffiliatePartner Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng của đối tác liên kết
+  feeCommission          Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng nền tảng
+  feeTransaction         Decimal @default(0) @db.Decimal(12, 2) /// Phí giao dịch
+  feeOrderProcessing     Decimal @default(0) @db.Decimal(12, 2) /// Phí xử lý đơn hàng (vn_fix_infrastructure_fee)
+  feeSfp                 Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Freeship Xtra (SFP)
+  feeVoucherXtra         Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Voucher Xtra
+  feeFlashSale           Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Flash Sale
+  feeAffiliate           Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng affiliate
+  feeAffiliateAds        Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng quảng cáo affiliate
+  feeAffiliatePartner    Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng của đối tác liên kết
   /// Hoa hồng quảng cáo cửa hàng của Đối tác liên kết (tap_shop_ads_commission) — cột riêng từ 31/10/2026, trước đó nằm trong feeOther.
   feeAffiliatePartnerAds Decimal @default(0) @db.Decimal(12, 2)
-  feeGmvMax           Decimal @default(0) @db.Decimal(12, 2) /// Chi phí GMV Max trừ trong đơn (gmv_max_ad_fee_amount + gmv_max_coupon_fee)
+  feeGmvMax              Decimal @default(0) @db.Decimal(12, 2) /// Chi phí GMV Max trừ trong đơn (gmv_max_ad_fee_amount + gmv_max_coupon_fee)
   /// Trong đó: Voucher GMV Max (gmv_max_coupon_fee) — cột con của feeGmvMax để đối chiếu Seller Center, KHÔNG cộng thêm vào tổng.
-  feeGmvMaxVoucher    Decimal @default(0) @db.Decimal(12, 2)
+  feeGmvMaxVoucher       Decimal @default(0) @db.Decimal(12, 2)
   /// Phí dịch vụ Bonus Cashback (bonus_cashback_service_fee_amount, ~1,5 % doanh thu sau CK) — thấy trên prod từ 10/2026.
-  feeBonusCashback    Decimal @default(0) @db.Decimal(12, 2)
+  feeBonusCashback       Decimal @default(0) @db.Decimal(12, 2)
   /// Phí Bảo đảm phí vận chuyển (shipping_fee_guarantee_service_fee, 1.620đ/đơn) — thấy trên prod từ 10/2026.
-  feeShipGuarantee    Decimal @default(0) @db.Decimal(12, 2)
-  feeOther            Decimal @default(0) @db.Decimal(12, 2) /// Phí khác của nền tảng (chốt chặn)
-  feeTaxAmount        Decimal @default(0) @db.Decimal(12, 2) /// fee_tax_amount — tổng phí + thuế sàn ghi
+  feeShipGuarantee       Decimal @default(0) @db.Decimal(12, 2)
+  feeOther               Decimal @default(0) @db.Decimal(12, 2) /// Phí khác của nền tảng (chốt chặn)
+  feeTaxAmount           Decimal @default(0) @db.Decimal(12, 2) /// fee_tax_amount — tổng phí + thuế sàn ghi
 
   // ===== THUẾ (fee_tax_breakdown.tax) =====
   taxVat   Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT khấu trừ
@@ -3256,6 +3257,37 @@ enum WithdrawalRequestStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+/// CỘNG TÁC VIÊN ĐẶC BIỆT (07/11/2026, anh Trung: "đây đã được coi là cộng tác
+/// viên rồi, mình chỉ thêm tab cho cộng tác viên đặc biệt để nâng hoặc hạ mức
+/// hoa hồng và thời gian thôi"). Mọi tài khoản vốn đã là CTV với 10% vĩnh viễn;
+/// HQ (lá hq.marketing) chọn một tài khoản đã đăng ký và đặt MỨC % RIÊNG trong
+/// một KHOẢNG THỜI GIAN. Lúc khách được giới thiệu thanh toán, service đọc dòng
+/// này: còn trong khoảng → dùng % riêng; chưa tới / đã hết / không có → về 10%.
+/// Hoa hồng ĐÃ cộng vào ví không tính lại khi đổi % hay gỡ dòng (sổ cái bất biến).
+/// Lịch sử thay đổi nằm ở PlatformAuditLog (action "referral-partner.*").
+model ReferralPartner {
+  id                String    @id @default(cuid())
+  /// Chủ shop được đặt mức riêng (1-1).
+  userId            String    @unique
+  /// Phần trăm hoa hồng riêng, vd 20.00 = 20% — thay cho 10% mặc định.
+  commissionPercent Decimal   @db.Decimal(5, 2)
+  /// Bắt đầu áp dụng (mặc định lúc tạo).
+  startsAt          DateTime  @default(now())
+  /// Hết hạn mức riêng — null = không thời hạn. Sau mốc này tự về 10%.
+  endsAt            DateTime?
+  /// Ghi chú nội bộ (thỏa thuận, kênh của CTV...).
+  note              String?
+  /// Nhân viên HQ tạo / sửa lần cuối — hiển thị; chi tiết tra PlatformAuditLog.
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("referral_partners")
 }
 
 /// VÍ HUBSELL — số dư khả dụng của một user (1-1). Tạo lười khi phát sinh
@@ -4498,10 +4530,10 @@ enum ListingCopyTargetStatus {
 }
 
 model ListingCopyJob {
-  id          String               @id @default(cuid())
-  userId      String // chủ shop
-  createdById String
-  sourceType  ListingCopySourceType
+  id              String                @id @default(cuid())
+  userId          String // chủ shop
+  createdById     String
+  sourceType      ListingCopySourceType
   /// Gian nguồn (sourceType CHANNEL); null khi chép từ kho.
   sourceChannelId String?
   /// Id sản phẩm sàn nguồn (phần trước dấu "-" của ChannelProduct.externalId) hoặc id dòng.
@@ -4511,13 +4543,13 @@ model ListingCopyJob {
   sourceTitle     String
   sourceImageUrl  String?
   /// NormalizedListing chụp lúc tạo — nguồn đổi sau đó không ảnh hưởng lượt chép.
-  source      Json
+  source          Json
   /// Đợt (lát 2, 29/10/2026): N sản phẩm chọn cùng lúc = N job chung batchId; job lẻ có batchId = id.
-  batchId     String?
-  status      ListingCopyJobStatus @default(DRAFT)
-  createdAt   DateTime             @default(now())
-  submittedAt DateTime?
-  finishedAt  DateTime?
+  batchId         String?
+  status          ListingCopyJobStatus  @default(DRAFT)
+  createdAt       DateTime              @default(now())
+  submittedAt     DateTime?
+  finishedAt      DateTime?
 
   targets ListingCopyTarget[]
   /// Ảnh khách tải lên cho nguồn "Tạo mới" (docs mục 24.6 lát C) — gắn vào job khi tạo đợt.
@@ -4553,36 +4585,36 @@ model ListingImageUpload {
 }
 
 model ListingCopyTarget {
-  id        String @id @default(cuid())
-  jobId     String
-  channelId String
+  id                 String                  @id @default(cuid())
+  jobId              String
+  channelId          String
   /// Danh mục lá sàn đích (id phía sàn) + tên đường dẫn để hiển thị.
   categoryId         String?
   categoryName       String?
   /// 0–1: độ tin của gợi ý danh mục; null = khách tự chọn.
   categoryConfidence Float?
   /// Thuộc tính danh mục đã điền: { [attributeId]: value }.
-  attributes   Json    @default("{}")
-  brandId      String?
-  brandName    String?
+  attributes         Json                    @default("{}")
+  brandId            String?
+  brandName          String?
   /// Kênh vận chuyển bật (Shopee): mảng id.
-  logisticIds  Json    @default("[]")
-  weightGrams  Int?
+  logisticIds        Json                    @default("[]")
+  weightGrams        Int?
   /// { length, width, height } cm.
-  dimensionsCm Json?
+  dimensionsCm       Json?
   /// % điều chỉnh giá so với nguồn (−50..100), mặc định 0.
-  priceAdjustPercent Int @default(0)
+  priceAdjustPercent Int                     @default(0)
   /// Tồn đăng cho mỗi phân loại; null = lấy theo nguồn.
-  stock        Int?
+  stock              Int?
   /// Mã trường còn thiếu (tính lại mỗi lần sửa): ["category","weight","attr:1234",…].
-  missing      Json    @default("[]")
-  status       ListingCopyTargetStatus @default(PENDING)
-  error        String?
-  remoteItemId String?
-  remoteUrl    String?
-  attempts     Int      @default(0)
-  listedAt     DateTime?
-  updatedAt    DateTime @updatedAt
+  missing            Json                    @default("[]")
+  status             ListingCopyTargetStatus @default(PENDING)
+  error              String?
+  remoteItemId       String?
+  remoteUrl          String?
+  attempts           Int                     @default(0)
+  listedAt           DateTime?
+  updatedAt          DateTime                @updatedAt
 
   job ListingCopyJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 

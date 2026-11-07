@@ -84,7 +84,7 @@ const TXN_META: Record<
   { label: string; className: string }
 > = {
   COMMISSION: {
-    label: "Hoa hồng 10%",
+    label: "Hoa hồng",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   PACKAGE_RENEWAL: {
@@ -253,17 +253,22 @@ export default function AffiliatePage() {
                       <Gem className="size-5" />
                     </span>
                     <span>
-                      Kiếm Tiền Cùng Hubsell — hoa hồng 10% vĩnh viễn
+                      Kiếm Tiền Cùng Hubsell — hoa hồng {summary.commissionPercent}%
+                      {summary.partnerRate?.endsAt
+                        ? ` đến ${new Date(summary.partnerRate.endsAt).toLocaleDateString("vi-VN")}`
+                        : " vĩnh viễn"}
                       <span className="mt-0.5 flex items-center gap-1 text-xs font-normal text-emerald-700">
                         <Sparkles className="size-3.5" />
-                        Giới thiệu càng nhiều, ví càng dày — không giới hạn số lần
+                        {summary.partnerRate
+                          ? `Mức riêng dành cho bạn (mặc định ${summary.defaultCommissionPercent}%) — không giới hạn số lần`
+                          : "Giới thiệu càng nhiều, ví càng dày — không giới hạn số lần"}
                       </span>
                     </span>
                   </CardTitle>
                   <p className={cn(TEXT_SUB, "!text-slate-600")}>
                     Bạn bè đăng ký qua link/mã của bạn, mỗi lần họ thanh toán
-                    hay gia hạn Hubsell, 10% giá trị chảy thẳng vào Ví Hubsell
-                    của bạn — mãi mãi.
+                    hay gia hạn Hubsell, {summary.commissionPercent}% giá trị chảy thẳng vào Ví Hubsell
+                    của bạn{summary.partnerRate?.endsAt ? "" : " — mãi mãi"}.
                   </p>
                 </CardHeader>
               </div>
@@ -307,7 +312,7 @@ export default function AffiliatePage() {
                     { step: "2", text: "Bạn bè đăng ký (chưa tính hoa hồng)" },
                     {
                       step: "3",
-                      text: "Bạn bè thanh toán/gia hạn → bạn nhận ngay 10%",
+                      text: `Bạn bè thanh toán/gia hạn → bạn nhận ngay ${summary.commissionPercent}%`,
                       highlight: true,
                     },
                   ].map((s) => (
@@ -401,7 +406,7 @@ export default function AffiliatePage() {
               </StatCard>
               <StatCard
                 icon={BadgePercent}
-                label="Tổng hoa hồng tích lũy (10%)"
+                label="Tổng hoa hồng tích lũy"
                 chipClassName="bg-amber-50 text-amber-600"
               >
                 <span className="text-emerald-600">

@@ -13,9 +13,13 @@ import { BillingCycle, PackagePaymentMethod, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import {
+  DEFAULT_COMMISSION_PERCENT,
   MIN_WITHDRAWAL_AMOUNT,
   creditReferralCommission,
   ensureReferralCode,
+  getPartnerRate,
+  isPartnerRateActive,
+  resolveCommissionPercent,
 } from "../services/referral-wallet";
 import {
   CYCLE_LABEL,
@@ -96,7 +100,7 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
     const userId = req.userId!;
     const referralCode = await ensureReferralCode(userId);
 
-    const [wallet, referredCount, commissionAgg] = await Promise.all([
+    const [wallet, referredCount, commissionAgg, partner] = await Promise.all([
       prisma.hubsellWallet.findUnique({ where: { userId } }),
       prisma.user.count({ where: { referredById: userId } }),
       prisma.walletTransaction.aggregate({
@@ -104,11 +108,23 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
         _sum: { amount: true },
         _count: true,
       }),
+      getPartnerRate(userId),
     ]);
+    // Cộng tác viên đặc biệt (07/11/2026): % đang hiệu lực + hạn của mức riêng
+    // để trang Affiliate hiện đúng con số thay vì "10%" ghi cứng.
+    const commissionPercent = resolveCommissionPercent(partner);
 
     res.json({
       referralCode,
       referralLink: `${REFERRAL_LINK_BASE}?ref=${referralCode}`,
+      /** % hoa hồng ĐANG hiệu lực của tôi (10 mặc định; CTV đặc biệt còn hạn thì mức riêng). */
+      commissionPercent,
+      defaultCommissionPercent: DEFAULT_COMMISSION_PERCENT,
+      /** Mức riêng do HQ đặt (null = không có / đã hết hạn → đang hưởng mặc định). */
+      partnerRate:
+        partner && isPartnerRateActive(partner)
+          ? { percent: partner.commissionPercent, endsAt: partner.endsAt }
+          : null,
       stats: {
         /** Tổng số người đăng ký qua link/mã của tôi. */
         referredCount,
@@ -393,7 +409,7 @@ router.post("/mock/payment", async (req: AuthRequest, res, next) => {
     const txn = await creditReferralCommission(
       payer.id,
       value,
-      `[DEMO] Hoa hồng 10% từ thanh toán ${value.toLocaleString("vi-VN")}₫ của ${payerEmail.trim()}`
+      `[DEMO] Hoa hồng từ thanh toán ${value.toLocaleString("vi-VN")}₫ của ${payerEmail.trim()}`
     );
     res.json({ ok: true, commission: txn ? Number(txn.amount) : 0 });
   } catch (err) {

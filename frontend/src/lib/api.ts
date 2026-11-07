@@ -6714,6 +6714,72 @@ export function fetchPlatformMarketing() {
   return apiFetch<PlatformMarketingResponse>("/api/admin/marketing");
 }
 
+// ---------- Cộng tác viên đặc biệt (hq.marketing, 07/11/2026) ----------
+// Mọi tài khoản vốn là CTV 10% vĩnh viễn; HQ chọn tài khoản đã đăng ký và đặt
+// % riêng trong một khoảng thời gian. Hết hạn / gỡ → tự về mặc định.
+
+export type ReferralPartnerStatus = "active" | "upcoming" | "expired";
+
+export interface ReferralPartnerRow {
+  userId: string;
+  fullName: string;
+  email: string | null;
+  referralCode: string | null;
+  commissionPercent: number;
+  startsAt: string;
+  endsAt: string | null;
+  note: string | null;
+  status: ReferralPartnerStatus;
+  referredCount: number;
+  totalCommission: number;
+  walletBalance: number;
+  updatedAt: string;
+}
+
+export interface ReferralPartnersResponse {
+  defaultCommissionPercent: number;
+  partners: ReferralPartnerRow[];
+}
+
+export interface ReferralPartnerCandidate {
+  id: string;
+  fullName: string;
+  email: string | null;
+  referralCode: string | null;
+  createdAt: string;
+  /** Đã có mức riêng thì là % hiện tại, chưa thì null. */
+  currentPercent: number | null;
+}
+
+export function fetchReferralPartners() {
+  return apiFetch<ReferralPartnersResponse>("/api/admin/marketing/partners");
+}
+
+export function searchReferralPartnerCandidates(q: string, signal?: AbortSignal) {
+  return apiFetch<{ users: ReferralPartnerCandidate[] }>(
+    `/api/admin/marketing/partners/search?q=${encodeURIComponent(q)}`,
+    { signal }
+  );
+}
+
+/** Đặt / sửa mức riêng. startsAt bỏ trống khi sửa = giữ mốc cũ; endsAt null = không thời hạn. */
+export function upsertReferralPartner(
+  userId: string,
+  data: { commissionPercent: number; startsAt?: string | null; endsAt: string | null; note?: string | null }
+) {
+  return apiFetch<{ ok: true; partners: ReferralPartnerRow[] }>(
+    `/api/admin/marketing/partners/${userId}`,
+    { method: "PUT", body: JSON.stringify(data) }
+  );
+}
+
+export function deleteReferralPartner(userId: string) {
+  return apiFetch<{ ok: true; partners: ReferralPartnerRow[] }>(
+    `/api/admin/marketing/partners/${userId}`,
+    { method: "DELETE" }
+  );
+}
+
 // ---------- Gói của tôi (GĐ2 cưỡng chế trần — phía KHÁCH, mọi vai trò) ----------
 
 /** Trạng thái trần đơn tháng: ok → warn (≥80%) → over (≥100%, trong ân hạn)
@@ -7959,6 +8025,11 @@ export interface RenewalPackage {
 export interface ReferralSummary {
   referralCode: string;
   referralLink: string;
+  /** % hoa hồng ĐANG hiệu lực của tôi (10 mặc định; CTV đặc biệt còn hạn thì mức riêng). */
+  commissionPercent: number;
+  defaultCommissionPercent: number;
+  /** Mức riêng HQ đặt đang hiệu lực — null = đang hưởng mặc định. */
+  partnerRate: { percent: number; endsAt: string | null } | null;
   stats: {
     referredCount: number;
     paidCount: number;
