@@ -24,7 +24,8 @@
 //                             chạy. Chỉ thêm URL .vn khi có dịp nộp lại app.
 // ============================================================
 
-export const TIKTOK_ADS_API_BASE = "https://business-api.tiktok.com/open_api/v1.3";
+/** Gốc API Marketing. Dev local có thể trỏ sang stub (TIKTOK_ADS_API_BASE=http://localhost:4099/open_api/v1.3) để màn có số mà không gọi sàn. */
+export const TIKTOK_ADS_API_BASE = process.env.TIKTOK_ADS_API_BASE || "https://business-api.tiktok.com/open_api/v1.3";
 const TIKTOK_ADS_AUTHORIZE_URL = "https://business-api.tiktok.com/portal/auth";
 const DEFAULT_REDIRECT_URI = "https://app.hubsell.tech/ads/tiktok/callback";
 

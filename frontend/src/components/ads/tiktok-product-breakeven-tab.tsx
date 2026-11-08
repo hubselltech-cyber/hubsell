@@ -48,7 +48,20 @@ type RowVerdict = TiktokProductBreakevenVerdict;
 type AdsOf = TiktokProductAdsData["products"][string] | undefined;
 
 /** Chẩn đoán ĐÃ kết luận được lãi / lỗ (các loại còn lại để nhận định của dòng sản phẩm nói — vd "Thiếu giá vốn" rõ hơn "Chưa kết luận được"). */
-const DECIDED_ADVICE = new Set(["losing", "target_below", "budget_capped", "target_binding", "target_watching", "target_hold", "healthy", "learning", "no_delivery", "no_orders"]);
+const DECIDED_ADVICE = new Set([
+  "losing",
+  "target_below",
+  "budget_capped",
+  "target_binding",
+  "target_watching",
+  "target_hold",
+  "healthy",
+  "learning",
+  "no_delivery",
+  "no_orders",
+  "max_delivery_learning",
+  "max_delivery_review",
+]);
 function decidedAdvice(ads: AdsOf) {
   const a = ads?.advice;
   return a && DECIDED_ADVICE.has(a.kind) ? a : null;
@@ -63,17 +76,51 @@ const VERDICT: Record<RowVerdict, { label: string; className: string }> = {
   no_settled: { label: "Chưa có đơn đối soát", className: "bg-slate-100 text-slate-500" },
 };
 
-// Chip lọc theo VIỆC CẦN LÀM (anh Trung 19/09: bảng cũ 11 cột rối, không biết nhìn đâu) — "Cần xem ngay" trống = không có gì phải lo.
-type QuickKey = "all" | "attention" | "should_run" | "running" | "no_cost" | "waiting";
-const isRunning = (p: TiktokProductBreakevenRow) => p.campaigns.some((c) => c.status === "ongoing");
-const inQuick = (k: QuickKey, v: RowVerdict, p: TiktokProductBreakevenRow, ads: AdsOf) =>
-  k === "all" ||
-  (k === "attention" && (v === "target_below" || v === "loss" || decidedAdvice(ads)?.tone === "warn")) ||
-  (k === "should_run" && p.runAdvice?.tier === "run") ||
-  (k === "running" && isRunning(p)) ||
-  (k === "no_cost" && v === "no_cost") ||
-  (k === "waiting" && (v === "low_sample" || v === "no_settled"));
+// Ô THỐNG KÊ THEO VIỆC (08/11/2026 — anh Trung: 3 ô cũ chỉ dùng được "Hòa vốn toàn gian", muốn ô "Nên chạy / Chưa nên / Theo dõi"; khảo sát
+// Google Merchant Center "Needs attention" 3 thẻ vấn đề tác động lớn nhất kèm số sản phẩm, bấm thẻ = lọc — docs/ADS-TIKTOK-GMV-MAX.md mục 9).
+// Ô THAY chip lọc (không là nơi thứ ba nói cùng một điều — luật 19/09): bốn ô theo việc, đỏ đứng trước, phủ CẢ HAI nửa:
+//   · đang chạy  → chẩn đoán chiến dịch (campaign-advice): Cần sửa ngay (lỗ / mục tiêu dưới hòa vốn) · Có thể tăng (ngân sách chặn, mục tiêu
+//                  ghìm, không phân phối) · Theo dõi (khởi động, vừa đổi mục tiêu, giữ mục tiêu, Phân phối tối đa chưa đủ ngày / đến lúc đánh giá);
+//   · chưa chạy  → bộ chấm product-run-advice: Nên chạy · Theo dõi (Chạy thử, ít đơn). "Chưa nên" không có việc để làm → chỉ là nhãn dòng.
+// Chất lượng dữ liệu (thiếu giá vốn, chưa đủ đơn đối soát) không phải việc quảng cáo → dòng chữ nhỏ dưới ô, vẫn bấm lọc được.
+type QuickKey = "all" | "attention" | "should_run" | "can_scale" | "watch" | "no_cost" | "waiting";
+const SCALE_ADVICE = new Set(["budget_capped", "target_binding", "no_delivery"]);
+const WATCH_ADVICE = new Set(["learning", "target_watching", "target_hold", "max_delivery_learning", "max_delivery_review"]);
+const inQuick = (k: QuickKey, v: RowVerdict, p: TiktokProductBreakevenRow, ads: AdsOf) => {
+  if (k === "all") return true;
+  const a = decidedAdvice(ads);
+  switch (k) {
+    case "attention":
+      return v === "target_below" || v === "loss" || a?.tone === "warn";
+    case "can_scale":
+      return !!a && SCALE_ADVICE.has(a.kind) && a.tone !== "warn";
+    case "watch":
+      return a ? WATCH_ADVICE.has(a.kind) && a.tone !== "warn" : p.runAdvice?.tier === "test" || v === "low_sample";
+    case "should_run":
+      return !a && p.runAdvice?.tier === "run";
+    case "no_cost":
+      return v === "no_cost";
+    case "waiting":
+      return v === "no_settled";
+  }
+};
 const hasBreakeven = (v: RowVerdict) => v === "ok" || v === "target_below";
+/** Lãi/lỗ ước tính 30 ngày của phần quảng cáo = doanh thu GMV Max × biên lãi trước quảng cáo − chi phí (cùng công thức tiktokEstProfit backend). */
+const estAdsProfit = (p: TiktokProductBreakevenRow, ads: AdsOf): number | null =>
+  ads && ads.cost > 0 && p.breakeven.margin != null ? ads.gmv * p.breakeven.margin - ads.cost : null;
+
+const ACTION_CARDS: { key: Exclude<QuickKey, "all" | "no_cost" | "waiting">; label: string; hint: string; tone: "warn" | "ok" | "info" | "muted" }[] = [
+  { key: "attention", label: "Cần sửa ngay", hint: "Đang chạy mà lỗ hoặc mục tiêu đặt dưới hòa vốn.", tone: "warn" },
+  { key: "should_run", label: "Nên chạy quảng cáo", hint: "Chưa chạy, hòa vốn tin được, tồn và đà bán đủ.", tone: "ok" },
+  { key: "can_scale", label: "Có thể tăng", hint: "Đang lãi nhưng ngân sách chặn hoặc mục tiêu đang ghìm.", tone: "info" },
+  { key: "watch", label: "Theo dõi", hint: "Chạy thử, đang khởi động, vừa đổi mục tiêu, ít đơn.", tone: "muted" },
+];
+const CARD_TONE: Record<(typeof ACTION_CARDS)[number]["tone"], { num: string; active: string }> = {
+  warn: { num: "text-red-500", active: "border-red-300 ring-2 ring-red-100 dark:ring-red-900/40" },
+  ok: { num: "text-emerald-600", active: "border-emerald-300 ring-2 ring-emerald-100 dark:ring-emerald-900/40" },
+  info: { num: "text-sky-600", active: "border-sky-300 ring-2 ring-sky-100 dark:ring-sky-900/40" },
+  muted: { num: "text-slate-700", active: "border-slate-400 ring-2 ring-slate-200 dark:ring-slate-700" },
+};
 
 type SortKey = "revenue" | "margin" | "roi" | "adCost";
 const SORT_COLUMNS: { key: SortKey; label: string; title?: string }[] = [
@@ -119,12 +166,26 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
 
   useEffect(() => setPage(0), [quick, search, sort, channelId]);
 
+  // Số đếm + số tiền của từng ô: Cần sửa ngay = lỗ ước tính 30 ngày của phần quảng cáo; Có thể tăng = lãi ước tính 30 ngày; Nên chạy = số
+  // sản phẩm bán ra 30 ngày của nhóm (tiềm năng); Theo dõi chỉ đếm.
   const counts = useMemo(() => {
-    const c: Record<QuickKey, number> = { all: products.length, attention: 0, should_run: 0, running: 0, no_cost: 0, waiting: 0 };
-    for (const p of products) for (const k of ["attention", "should_run", "running", "no_cost", "waiting"] as QuickKey[]) if (inQuick(k, p.verdict, p, ads?.products[p.productId])) c[k]++;
-    return c;
+    const c: Record<QuickKey, number> = { all: products.length, attention: 0, should_run: 0, can_scale: 0, watch: 0, no_cost: 0, waiting: 0 };
+    const money = { attention: 0, can_scale: 0, should_run_units: 0 };
+    for (const p of products) {
+      const a = ads?.products[p.productId];
+      for (const k of ["attention", "should_run", "can_scale", "watch", "no_cost", "waiting"] as QuickKey[]) {
+        if (!inQuick(k, p.verdict, p, a)) continue;
+        c[k]++;
+        if (k === "attention") money.attention += Math.min(0, estAdsProfit(p, a) ?? 0);
+        if (k === "can_scale") money.can_scale += Math.max(0, estAdsProfit(p, a) ?? 0);
+        if (k === "should_run") money.should_run_units += p.units30d;
+      }
+    }
+    return { ...c, money };
   }, [products, ads]);
   const withBreakeven = useMemo(() => products.filter((p) => hasBreakeven(p.verdict)).length, [products]);
+  /** Nửa "đang chạy" chỉ có số sau khi gọi TikTok xong → ô Cần sửa / Có thể tăng hiện dấu chờ trong lúc đó. */
+  const adsPending = !!data?.selectedChannelId && adsQ.loading && !ads;
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -158,14 +219,13 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
   if (q.error) return <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">{q.error}</div>;
   if (!data) return <p className="py-10 text-center text-sm text-muted-foreground">Đang tính hòa vốn từ Lãi/Lỗ thực hiện…</p>;
 
-  const chips: { key: QuickKey; label: string }[] = [
-    { key: "all", label: "Tất cả" },
-    { key: "attention", label: "Cần xem ngay" },
-    { key: "should_run", label: "Nên chạy quảng cáo" },
-    { key: "running", label: "Đang chạy quảng cáo" },
-    { key: "no_cost", label: "Thiếu giá vốn" },
-    { key: "waiting", label: "Chưa đủ đơn đối soát" },
-  ];
+  const toggleQuick = (k: QuickKey) => setQuick((cur) => (cur === k ? "all" : k));
+  const cardMoney = (k: (typeof ACTION_CARDS)[number]["key"]): string | null => {
+    if (k === "attention") return counts.money.attention < 0 ? `lỗ ước tính ${formatVND(-counts.money.attention)} / 30 ngày` : null;
+    if (k === "can_scale") return counts.money.can_scale > 0 ? `đang lãi ${formatVND(counts.money.can_scale)} / 30 ngày` : null;
+    if (k === "should_run") return counts.should_run > 0 ? `bán ${formatNumber(counts.money.should_run_units)} sản phẩm / 30 ngày` : null;
+    return null;
+  };
 
   return (
     <div className="space-y-4">
@@ -186,62 +246,78 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
         )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-slate-500">Hòa vốn toàn gian</p>
-            <p className="mt-1 text-2xl">
-              <TiktokBreakevenValue breakeven={data.shop} className="font-semibold" />
-            </p>
-            <p className={cn(TEXT_SUB, "mt-1")}>Mốc chung khi sản phẩm chưa đủ đơn để có số riêng.</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-slate-500">Sản phẩm đã có mốc hòa vốn</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">
-              {formatNumber(withBreakeven)}
-              <span className="text-base font-normal text-slate-400"> / {formatNumber(products.length)} sản phẩm có đơn</span>
-            </p>
-            <p className={cn(TEXT_SUB, "mt-1")}>Từ {data.minOrders} đơn đã đối soát và đủ giá vốn trở lên.</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-slate-500">Thiếu giá vốn</p>
-            <p className={cn("mt-1 text-2xl font-semibold tabular-nums", counts.no_cost > 0 ? "text-amber-600" : "text-slate-900")}>
-              {formatNumber(counts.no_cost)} <span className="text-base font-normal text-slate-400">sản phẩm</span>
-            </p>
-            <p className={cn(TEXT_SUB, "mt-1")}>
-              Chưa có giá vốn thì chưa tính được hòa vốn.{" "}
-              <Link href="/finance/cost-prices" className="font-medium text-slate-900 underline underline-offset-2">
-                Nhập giá vốn
-              </Link>
-            </p>
-          </CardContent>
-        </Card>
+      {/* BỐN Ô THEO VIỆC — bấm ô = lọc bảng, bấm lại = bỏ lọc; ô 0 mờ đi chứ không ẩn ("không có gì phải sửa" cũng là một kết quả). */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {ACTION_CARDS.map((card) => {
+          const n = counts[card.key];
+          const active = quick === card.key;
+          const pending = adsPending && (card.key === "attention" || card.key === "can_scale" || card.key === "watch");
+          const money = cardMoney(card.key);
+          return (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => toggleQuick(card.key)}
+              aria-pressed={active}
+              className={cn(
+                "rounded-xl border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted/60",
+                active ? CARD_TONE[card.tone].active : "border-border",
+                n === 0 && !pending && !active && "opacity-60"
+              )}
+            >
+              <p className="text-sm text-slate-500">{card.label}</p>
+              <p className={cn("mt-1 text-2xl font-semibold tabular-nums", n > 0 ? CARD_TONE[card.tone].num : "text-slate-400")}>
+                {formatNumber(n)} <span className="text-base font-normal text-slate-400">sản phẩm</span>
+                {pending && <span className="ml-1.5 text-xs font-normal text-slate-400">đang đọc TikTok…</span>}
+              </p>
+              <p className={cn(TEXT_SUB, "mt-1 truncate")} title={card.hint}>
+                {money ?? card.hint}
+              </p>
+            </button>
+          );
+        })}
       </div>
 
       <Card>
         <CardContent className="space-y-3 py-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {chips
-              .filter((x) => x.key === "all" || counts[x.key] > 0)
-              .map((x) => (
-                <button
-                  key={x.key}
-                  onClick={() => setQuick(x.key)}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
-                    quick === x.key
-                      ? "border-slate-900 bg-slate-900 text-white dark:border-slate-200 dark:bg-slate-200 dark:text-slate-900"
-                      : "border-slate-200 bg-card text-slate-600 hover:bg-muted"
-                  )}
-                >
-                  {x.label}
-                  <span className={cn("ml-1.5 tabular-nums", quick === x.key ? "opacity-80" : "text-slate-400")}>{formatNumber(counts[x.key])}</span>
-                </button>
-              ))}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/* Chất lượng dữ liệu — không phải việc quảng cáo nên để chữ nhỏ, vẫn bấm lọc được. */}
+            <p className={cn(TEXT_SUB, "flex flex-wrap items-center gap-x-3 gap-y-1")}>
+              <span>
+                Hòa vốn toàn gian <TiktokBreakevenValue breakeven={data.shop} className="font-semibold text-slate-900" />
+              </span>
+              <span className="text-slate-300">·</span>
+              <span>
+                {formatNumber(withBreakeven)}/{formatNumber(products.length)} sản phẩm đã có mốc riêng (từ {data.minOrders} đơn đã đối soát)
+              </span>
+              {(counts.no_cost > 0 || quick === "no_cost") && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <button type="button" onClick={() => toggleQuick("no_cost")} className={cn("underline decoration-dotted underline-offset-2", quick === "no_cost" ? "font-semibold text-slate-900" : "text-amber-700")}>
+                    {formatNumber(counts.no_cost)} thiếu giá vốn
+                  </button>
+                  <Link href="/finance/cost-prices" className="font-medium text-slate-900 underline underline-offset-2">
+                    Nhập giá vốn
+                  </Link>
+                </>
+              )}
+              {(counts.waiting > 0 || quick === "waiting") && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <button type="button" onClick={() => toggleQuick("waiting")} className={cn("underline decoration-dotted underline-offset-2", quick === "waiting" ? "font-semibold text-slate-900" : "text-slate-500")}>
+                    {formatNumber(counts.waiting)} chưa đủ đơn đối soát
+                  </button>
+                </>
+              )}
+              {quick !== "all" && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <button type="button" onClick={() => setQuick("all")} className="font-medium text-slate-900 underline underline-offset-2">
+                    Bỏ lọc, xem tất cả {formatNumber(products.length)}
+                  </button>
+                </>
+              )}
+            </p>
             <div className="relative ml-auto w-full sm:w-64">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-400" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm tên hoặc mã sản phẩm" className="pl-8" />

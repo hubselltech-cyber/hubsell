@@ -608,6 +608,33 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
   2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.
 
+- ★ **08/11/2026 — KHẢO SÁT "Ô THỐNG KÊ THEO VIỆC" thay 3 ô số (anh Trung: chỉ dùng ô Hòa vốn toàn gian; muốn ô "Nên chạy / Chưa nên / Nên theo dõi" — CHỜ ANH CHỐT, chưa code):**
+  · Ngoài thế giới trình bày theo VIỆC + SỐ ẢNH HƯỞNG, không theo chất lượng dữ liệu: Google Merchant Center tab Needs attention = "3 summary cards
+    describe issues having the biggest impact… along with the number of products impacted", bấm thẻ = lọc danh sách, có "Priority fixes" lọc bớt
+    việc ít tác động (support.google.com/merchants/answer/12476548). Amazon Ads: gợi ý gom theo LOẠI trong "Quick tasks", áp theo loại hoặc tất cả,
+    hết hạn sau 14 ngày; khi tạo chiến dịch gắn nhãn sản phẩm nên quảng cáo (advertising.amazon.com guides). Shopee Ads (SG): nhãn sản phẩm đề
+    xuất Best Selling / Good ROAS / Top Searched + nút "Select All Recommended Products" ≤ 50 (ads.shopee.sg/news/853). Teikametrics: Recommendation
+    Hub gom 3 nhóm, danh sách "Unadvertised Products" = SKU có bán 30 ngày và tồn > 10 (help.teikametrics.com). sellerboard: tiles theo KỲ (hôm nay,
+    tháng…) với lãi ròng, không có ô theo việc (blog.sellerboard.com 28/06/2025).
+  · Phản biện: (1) 2 ô cũ trùng chip "Thiếu giá vốn" / "Chưa đủ đơn đối soát" → bỏ được; (2) ô mới KHÔNG được là nơi thứ ba nói cùng một điều
+    (luật anh 19/09) → ô THAY chip, bấm ô = lọc bảng; (3) "Chưa nên chạy" không có việc để làm → không đáng một ô, đưa vào Theo dõi/nhãn dòng;
+    (4) ô chỉ có số đếm thì chưa "hiệu quả hơn" — phải kèm tiền (đang lỗ bao nhiêu / doanh thu nhóm nên chạy); (5) sản phẩm ĐANG chạy mới là
+    nơi mất tiền, bộ ô phải phủ cả hai nửa (đang chạy: campaignAdvice · chưa chạy: runAdvice tier).
+  · Đề xuất 4 ô theo việc, đỏ trước: **Cần sửa ngay** (đang chạy: losing / target_below / Phân phối tối đa lỗ — kèm lỗ ước tính 30 ngày) ·
+    **Nên chạy quảng cáo** (chưa chạy, tier run — kèm doanh thu 30 ngày nhóm) · **Có thể tăng** (đang chạy, budget_capped / target_binding — đang
+    lãi mà bị chặn) · **Theo dõi** (chạy thử, learning, target_watching, max_delivery_learning, ít đơn). Hòa vốn toàn gian GIỮ nhưng thành dòng
+    chữ cạnh ô chọn gian; thiếu giá vốn / chưa đủ đơn = dòng chữ nhỏ dưới ô (link Nhập giá vốn). Ô 0 = mờ, không ẩn. Phương án B theo đúng lời
+    anh: Nên chạy · Chạy thử · Chưa nên · Theo dõi (chỉ nửa chưa chạy) — em không khuyên vì bỏ sót nửa đang mất tiền.
+
+  · ✅ **08/11 tối — ĐÃ CODE phương án 4 ô (anh: "Làm trên local trước anh xem" → "Em push lên đi"):** `tiktok-product-breakeven-tab.tsx` bỏ 3 ô số +
+    hàng chip; 4 ô theo việc là nút lọc (bấm lại = bỏ lọc, ô 0 mờ không ẩn): Cần sửa ngay (verdict target_below/loss hoặc chẩn đoán tông warn; kèm Σ lỗ
+    ước tính 30 ngày = GMV × biên − chi, cùng công thức tiktokEstProfit) · Nên chạy (runAdvice run; kèm Σ bán 30 ngày) · Có thể tăng (budget_capped /
+    target_binding / no_delivery không warn; kèm Σ lãi ước tính) · Theo dõi (learning / target_watching / target_hold / max_delivery_* không warn;
+    chưa chạy: tier test hoặc ít đơn). Hòa vốn toàn gian + "N/M có mốc riêng" + thiếu giá vốn (link Nhập giá vốn) + chưa đủ đơn đối soát = dòng
+    chữ nhỏ trên ô tìm, hai cái sau vẫn bấm lọc. Ô nửa đang chạy hiện "đang đọc TikTok…" tới khi `/product-breakeven/ads` về. ⚠️ CHƯA soi UI
+    bằng mắt (bộ lọc an toàn chặn em đăng nhập tài khoản demo trên khung trình duyệt) — tsc sạch, số API local đủ 4 ô (1·2·3·3).
+    Dev local: `TIKTOK_ADS_API_BASE` (config.ts, env) trỏ stub để nửa đang chạy có số; gian demo đã dịch ngày đơn + bù id dòng đơn + dựng lại sổ.
+
 ## 10. HẠ TẦNG RIÊNG CỦA TIKTOK ADS (18/09/2026 đêm — anh Trung: "làm riêng ra, không chung đụng gì nhau")
 
 Anh hỏi: seller chạy cả trăm chiến dịch, mỗi chiến dịch vài nghìn video thì có thành vấn đề không. Soi code ra số thật:

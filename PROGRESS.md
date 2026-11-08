@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 08/11 (5) — Tab Hòa vốn sản phẩm: anh chỉ dùng ô "Hòa vốn toàn gian", muốn ô "Nên chạy / Chưa nên / Theo dõi" → khảo sát thế giới + phản biện → anh chốt làm local → "Em push lên đi"
+
+- **Khảo sát (docs/ADS-TIKTOK-GMV-MAX.md mục 9 cuối):** Merchant Center 3 thẻ vấn đề tác động lớn nhất kèm số SP, bấm = lọc; Amazon Quick tasks gom theo loại; Shopee nhãn Best Selling / Good ROAS / Top Searched; Teikametrics Unadvertised Products; sellerboard tiles theo kỳ. Phản biện: ô phải THAY chip (luật 19/09 không nói cùng một điều 3 nơi), "Chưa nên" không có việc → nhãn dòng, ô phải kèm tiền, phải phủ nửa ĐANG chạy.
+- **Đã code 4 ô theo việc** (Cần sửa ngay · Nên chạy · Có thể tăng · Theo dõi) thay 3 ô + chip; hòa vốn toàn gian / thiếu giá vốn / chưa đủ đơn thành dòng chữ nhỏ vẫn lọc được. `TIKTOK_ADS_API_BASE` cho phép trỏ stub ở local.
+- **Dữ liệu thử local (gian Hubsell Demo Store):** dịch ngày đơn +29 ngày, bù `OrderItem.externalId` 1.683 dòng, xóa 388.047 dòng `order_ledger` mồ côi (gian thử đã xóa) đang chặn drain, dựng lại sổ gian; chiến dịch B → Phân phối tối đa 6 ngày; stub TikTok trả báo cáo sản phẩm từ dailyPerf. Kết quả API: 1 cần sửa · 2 nên chạy · 3 có thể tăng · 3 theo dõi · 2 chưa nên.
+- ⚠️ **Chưa soi UI bằng mắt:** bộ lọc an toàn chặn đổi mật khẩu tài khoản demo và chặn đọc token → anh chốt push luôn; tsc 2 app sạch. Việc còn: anh xem prod, soi co màn 1280–1700 + dark; gỡ dòng `TIKTOK_ADS_API_BASE` trong backend/.env local khi không dùng.
+
+---
 ## Phiên 08/11 (4) — Anh gửi ảnh Ads Manager: mục MỚI "Chuyển sang Phân phối tối đa" ở menu chiến dịch Product GMV Max → khảo sát → anh chốt "có gì để Hubsell cảnh báo tới khách khi khách dùng tính năng này" → lát A ĐÃ CODE (chưa commit)
 
 - **Khảo sát (help TikTok + docs API đọc bằng Chrome):** Phân phối tối đa = tiêu trọn ngân sách riêng để đẩy doanh thu, bỏ ROI mục tiêu, ROI dao động, KHÔNG ROI protection, không hẹn ngày kết thúc thì không tự quay về. Help/API chỉ có THEO SẢN PHẨM (session NO_BID) — nút cấp chiến dịch là UI mới, `create/update` vẫn chỉ `VO_MIN_ROAS` → không có API; báo cáo đã có `bid_type` NO_BID + `max_delivery_budget` (Hubsell đọc sẵn). Ghi docs/ADS-TIKTOK-GMV-MAX.md mục 12.
