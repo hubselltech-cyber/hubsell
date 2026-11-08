@@ -921,6 +921,138 @@ export interface RealizedPnlResponse {
 /** Kiểu phần summary của Lãi/Lỗ Thực Hiện — dashboard Tổng quan nhận nguyên khối. */
 export type RealizedPnlSummary = RealizedPnlResponse["summary"];
 
+// ===== TỔNG QUAN LỢI NHUẬN — GET /api/finance/realized-pnl/insights (08/11/2026) =====
+// Số liệu phân tích của tab đầu trang Lãi/Lỗ: kỳ này so kỳ liền trước, chuỗi
+// ngày hai kỳ, theo sàn, top sản phẩm theo lãi, phân bố biên lãi, giờ vàng và
+// cầu nối sang Lợi nhuận ròng của Báo cáo dòng tiền. Cùng bộ lọc với bảng.
+
+export interface PnlPeriodTotals {
+  count: number;
+  settledCount: number;
+  /** Doanh thu thực nhận = Σ netRevenue (đã trừ tiền hoàn). */
+  netRevenue: number;
+  /** Lãi đơn hàng = Σ profitAfterTax — sau phí/thuế sàn, TRƯỚC quảng cáo & chi phí vận hành. */
+  profit: number;
+  returnCount: number;
+  returnLoss: ReturnLossBreakdown;
+  lossCount: number;
+  /** Σ lãi (âm) của các đơn lỗ. */
+  lossAmount: number;
+  missingCostCount: number;
+}
+
+export interface PnlInsightDaily {
+  date: string;
+  label: string;
+  profit: number;
+  netRevenue: number;
+  orderCount: number;
+  returnLoss: number;
+  /** Ngày cùng thứ tự của kỳ trước — null khi không có kỳ trước. */
+  prevDate: string | null;
+  prevProfit: number | null;
+  prevOrderCount: number | null;
+}
+
+export interface PnlPlatformInsightBase {
+  key: string;
+  count: number;
+  profit: number;
+  netRevenue: number;
+  returnCount: number;
+  returnLoss: number;
+  lossCount: number;
+}
+export interface PnlPlatformInsight extends PnlPlatformInsightBase {
+  prev: PnlPlatformInsightBase | null;
+}
+
+export type PnlMarginBucketKey = "loss" | "m0" | "m10" | "m20" | "m30" | "m50" | "none";
+export interface PnlMarginBucket {
+  key: PnlMarginBucketKey;
+  label: string;
+  count: number;
+  profit: number;
+  netRevenue: number;
+}
+
+export interface PnlHeatCell {
+  /** 1 = Thứ Hai … 7 = Chủ Nhật (giờ VN). */
+  dow: number;
+  hour: number;
+  count: number;
+  profit: number;
+}
+
+export interface PnlTopProductRow {
+  sku: string;
+  productName: string;
+  imageUrl: string | null;
+  orders: number;
+  quantity: number;
+  returnedQuantity: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  /** Kỳ trước của cùng mã — null = mã không bán kỳ trước ("Mới"). */
+  prev: { orders: number; quantity: number; revenue: number; profit: number } | null;
+}
+export interface PnlTopProducts {
+  byProfit: PnlTopProductRow[];
+  byLoss: PnlTopProductRow[];
+  rising: PnlTopProductRow[];
+  falling: PnlTopProductRow[];
+  skuCount: number;
+}
+
+/** Cầu nối Lãi đơn hàng (thẻ) → Lợi nhuận ròng (Báo cáo dòng tiền) — chỉ khi bộ lọc là "Tất cả". */
+export interface PnlProfitBridge {
+  orderProfit: number;
+  /** Phần lãi của đơn hủy + đơn đang hoàn (Lãi/Lỗ cộng, Dòng tiền không) — thường nhỏ, có thể âm. */
+  nonRevenueOrdersProfit: number;
+  activeOrderProfit: number;
+  adsSpend: number;
+  adsNotes: string[];
+  operatingExpense: number;
+  operatingIncome: number;
+  additionalTax: number;
+  netProfit: number;
+}
+
+export interface RealizedPnlInsights {
+  ledgerPending?: number;
+  range: { from: string; to: string } | null;
+  previousRange: { from: string; to: string } | null;
+  current: PnlPeriodTotals;
+  previous: PnlPeriodTotals | null;
+  missingCost: MissingCostSummary;
+  daily: PnlInsightDaily[];
+  byPlatform: PnlPlatformInsight[];
+  marginBuckets: PnlMarginBucket[];
+  heatmap: PnlHeatCell[];
+  topProducts: PnlTopProducts;
+  bridge: PnlProfitBridge | null;
+}
+
+export function fetchRealizedPnlInsights(params: {
+  range?: DateRange;
+  channel?: ChannelFilterQuery;
+  status?: ReconciliationStatus;
+  lossOnly?: boolean;
+  search?: string;
+}) {
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params.range),
+    ...channelFilterToQuery(params.channel),
+    ...(params.status && params.status !== "all" ? { status: params.status } : {}),
+    ...(params.lossOnly ? { lossOnly: "true" } : {}),
+    ...(params.search ? { search: params.search } : {}),
+  }).toString();
+  return apiFetch<RealizedPnlInsights>(
+    `/api/finance/realized-pnl/insights${qs ? `?${qs}` : ""}`
+  );
+}
+
 /**
  * Đọc DÒNG Lãi/Lỗ theo CON TRỎ (mới nhất trước), không kèm tóm tắt — cho xuất
  * Excel: mỗi lượt 100 dòng, lượt nào cũng nhẹ như lượt đầu dù kỳ có bao nhiêu đơn.

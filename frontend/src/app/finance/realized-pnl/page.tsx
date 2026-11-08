@@ -29,6 +29,7 @@ import { TiktokProfitTable } from "@/components/finance/realized-pnl/TiktokProfi
 import { LedgerPendingNotice, TruncatedNotice } from "@/components/finance/truncated-notice";
 import {
   fetchRealizedPnl,
+  fetchRealizedPnlInsights,
   getStoredUser,
   getToken,
   type ChannelFilterQuery,
@@ -121,7 +122,33 @@ export default function RealizedPnlPage() {
   const data = pnlQ.data ?? null;
   const loading = pnlQ.refreshing;
   const denied = !allowed || pnlQ.denied;
-  const load = () => pnlQ.refetch();
+
+  // Tab Tổng quan Lợi nhuận: số liệu phân tích (kỳ trước, top sản phẩm, phân
+  // bố biên lãi, giờ vàng, cầu nối Lợi nhuận ròng) — CÙNG bộ lọc với bảng,
+  // không phụ thuộc trang; chỉ gọi khi đang mở tab này.
+  const insightsQ = useApiQuery({
+    queryKey: qk.realizedPnlInsights({
+      ...rangeToQuery(range),
+      platform,
+      status,
+      lossOnly,
+      search,
+    }),
+    queryFn: () =>
+      fetchRealizedPnlInsights({
+        range,
+        channel: channelOf(platform),
+        status,
+        lossOnly,
+        search,
+      }),
+    enabled: allowed && tab === "overview",
+  });
+  const insights = insightsQ.data ?? null;
+  const load = () => {
+    pnlQ.refetch();
+    if (tab === "overview") insightsQ.refetch();
+  };
 
   // Debounce ô tìm kiếm → cập nhật search sau 400ms ngừng gõ, về trang 1.
   useEffect(() => {
@@ -339,7 +366,7 @@ export default function RealizedPnlPage() {
             bảng đối soát chi tiết + phân trang. Cùng một state lọc/nạp dùng
             chung nên chuyển tab không vỡ ngữ cảnh. */}
         {tab === "overview" ? (
-          loading && !summary ? (
+          (loading && !summary) || (insightsQ.refreshing && !insights) ? (
             <Card className="shadow-sm">
               <CardContent>
                 <p className="py-12 text-center text-sm text-muted-foreground">
@@ -357,8 +384,14 @@ export default function RealizedPnlPage() {
               </CardContent>
             </Card>
           ) : (
-            <Refreshing active={loading}>
-              <OverviewDashboard summary={summary} />
+            <Refreshing active={loading || insightsQ.refreshing}>
+              <OverviewDashboard
+                summary={summary}
+                insights={insights}
+                range={range}
+                lossOnly={lossOnly}
+                onToggleLossOnly={toggleLossOnly}
+              />
             </Refreshing>
           )
         ) : (

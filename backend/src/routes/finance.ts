@@ -82,7 +82,14 @@ import {
 import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { reconcileTiktokWallet, syncTiktokPendingIncome, syncTiktokWallet } from "../integrations/tiktok/wallet";
-import { loadAdSpendRows, loadShopeeAdsChannels, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
+import { loadOffOrderCostInputs } from "../services/off-order-costs";
+import { cashFlowNetProfit } from "../lib/net-profit";
+import {
+  alignDaily,
+  MARGIN_BUCKETS,
+  previousRangeOf,
+  rangeDays,
+} from "../lib/realized-pnl-insights";
 import {
   cashFlowTotalsFromLedger,
   computeGrossDeductions,
@@ -111,8 +118,14 @@ import {
   ledgerLossOrders,
   ledgerOpenCashByChannel,
   ledgerOpenCashTotals,
+  ledgerPnlByPlatform,
+  ledgerPnlDaily,
+  ledgerPnlHeatmap,
   ledgerPnlList,
+  ledgerPnlMarginBuckets,
+  ledgerPnlPeriodTotals,
   ledgerPnlSummary,
+  ledgerPnlTopProducts,
   ledgerScopeSql,
   ledgerSkuAgg,
   ledgerSummary,
@@ -568,6 +581,177 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         },
         byPlatform: Object.fromEntries(t.byPlatform),
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// TỔNG QUAN LỢI NHUẬN (tab đầu của trang Lãi/Lỗ thực hiện) — 08/11/2026,
+// docs/LAI-LO-TONG-QUAN-LOI-NHUAN.md. Mọi số là SUM/GROUP BY trên sổ cái với
+// ĐÚNG bộ lọc của bảng; kỳ liền trước cùng độ dài để so tăng/giảm. Khối "cầu
+// nối" dựng từ cùng bộ tổng + chi phí ngoài đơn của Báo cáo dòng tiền nên
+// Lợi nhuận ròng ở đây = thẻ Lợi nhuận ròng bên đó (cashFlowNetProfit).
+// ============================================================
+
+/**
+ * Bộ lọc của bảng Lãi/Lỗ từ query — cùng luật với GET /realized-pnl: tab trạng
+ * thái giao, "Hoàn/Trả" theo trục returnType, "Lợi nhuận âm", tìm mã đơn.
+ */
+function pnlFilterFromQuery(q: AuthRequest["query"]): LedgerPnlFilter {
+  const statusKey = typeof q.status === "string" ? q.status.toLowerCase() : "";
+  const shippingStatus = RECON_STATUS[statusKey];
+  const lossOnly = q.lossOnly === "true" || q.lossOnly === "1";
+  const search = typeof q.search === "string" ? q.search.trim().toLowerCase() : "";
+  return {
+    ...(shippingStatus ? { shippingStatus } : {}),
+    ...(statusKey === "returning" ? { returnsOnly: true } : {}),
+    ...(lossOnly ? { lossOnly: true } : {}),
+    ...(search ? { search } : {}),
+  };
+}
+
+// GET /api/finance/realized-pnl/insights — số liệu cho tab Tổng quan Lợi nhuận
+router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const scope = channelScope(req);
+    const range = parseDateRange(req.query);
+    const filter = pnlFilterFromQuery(req.query);
+    const prevRange = previousRangeOf(range);
+    const manualTxnScope = manualTxnScopeOf(req, scope);
+    // Cầu nối sang Lợi nhuận ròng chỉ có nghĩa khi xem ĐỦ đơn của kỳ (chip "Tất
+    // cả", không tìm mã, không chỉ đơn lỗ) — lọc hẹp thì thẻ chỉ là một phần kỳ.
+    const plainFilter =
+      !filter.shippingStatus && !filter.returnsOnly && !filter.lossOnly && !filter.search;
+
+    // Trục ngày của biểu đồ — cùng luật với GET /realized-pnl (mốc 00:00 giờ VN,
+    // không lọc ngày → 30 ngày gần nhất, kỳ dài cắt còn 92 điểm cuối).
+    const DAY_MS = 86_400_000;
+    const PNL_MAX_POINTS = 92;
+    const chartEnd = businessDayStart(range ? range.lte : new Date());
+    const spanDays = range ? rangeDays(range) : 30;
+    const days = Math.min(spanDays, PNL_MAX_POINTS);
+    const chartStart = new Date(chartEnd.getTime() - (days - 1) * DAY_MS);
+    const prevStart = prevRange ? new Date(chartStart.getTime() - spanDays * DAY_MS) : null;
+    const dailyRange: DateRangeFilter = range ?? {
+      gte: chartStart,
+      lte: new Date(chartEnd.getTime() + DAY_MS - 1),
+    };
+
+    const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
+    const [
+      current,
+      previous,
+      dailyCur,
+      dailyPrev,
+      platCur,
+      platPrev,
+      bucketRows,
+      heatmap,
+      topProducts,
+      cash,
+      offOrder,
+      taxCfg,
+    ] = await Promise.all([
+      ledgerPnlPeriodTotals(scope, range, filter),
+      prevRange ? ledgerPnlPeriodTotals(scope, prevRange, filter) : Promise.resolve(null),
+      ledgerPnlDaily(scope, dailyRange, filter),
+      prevRange ? ledgerPnlDaily(scope, prevRange, filter) : Promise.resolve(new Map()),
+      ledgerPnlByPlatform(scope, range, filter),
+      prevRange ? ledgerPnlByPlatform(scope, prevRange, filter) : Promise.resolve([]),
+      ledgerPnlMarginBuckets(scope, range, filter),
+      ledgerPnlHeatmap(scope, range, filter),
+      ledgerPnlTopProducts(scope, range, prevRange, filter),
+      plainFilter ? loadCashFlowTotals(scope, range) : Promise.resolve(null),
+      plainFilter
+        ? loadOffOrderCostInputs({ ownerId, scope, manualTxnScope, range })
+        : Promise.resolve(null),
+      getShopTaxConfig(ownerId),
+    ]);
+
+    const daily = alignDaily({
+      days,
+      dateKeyOf: (i) => toBusinessDateKey(new Date(chartStart.getTime() + i * DAY_MS)),
+      prevKeyOf: prevStart
+        ? (i) => toBusinessDateKey(new Date(prevStart.getTime() + i * DAY_MS))
+        : null,
+      labelOf: dateKeyLabel,
+      current: dailyCur,
+      previous: dailyPrev,
+    });
+
+    const prevPlat = new Map(platPrev.map((p) => [p.key, p]));
+    const byPlatform = platCur
+      .map((p) => ({ ...p, prev: prevPlat.get(p.key) ?? null }))
+      .sort((a, b) => b.profit - a.profit);
+
+    const bucketMap = new Map(bucketRows.map((b) => [b.key, b]));
+    const marginBuckets = MARGIN_BUCKETS.map((b) => ({
+      key: b.key,
+      label: b.label,
+      count: bucketMap.get(b.key)?.count ?? 0,
+      profit: bucketMap.get(b.key)?.profit ?? 0,
+      netRevenue: bucketMap.get(b.key)?.netRevenue ?? 0,
+    }));
+
+    // CẦU NỐI: Lãi đơn hàng (thẻ) → Lợi nhuận ròng (Báo cáo dòng tiền), cùng
+    // bộ tổng + cùng chi phí ngoài đơn + cùng phép tính với /analytics.
+    let bridge: null | {
+      orderProfit: number;
+      nonRevenueOrdersProfit: number;
+      activeOrderProfit: number;
+      adsSpend: number;
+      adsNotes: string[];
+      operatingExpense: number;
+      operatingIncome: number;
+      additionalTax: number;
+      netProfit: number;
+    } = null;
+    if (cash && offOrder) {
+      const t = cash.totals;
+      const ads = offOrder.adsSummary(t.gmvMaxByChannelId);
+      const gd = computeGrossDeductionsFromTotals(t.active);
+      const activeOrderProfit = t.settled.profitAfterTax + t.pending.profitAfterTax;
+      const operatingExpense = offOrder.fixedExpenseTotal + offOrder.variableExpenseTotal;
+      const np = cashFlowNetProfit({
+        orderProfit: activeOrderProfit,
+        adsSpend: ads.total,
+        operatingExpense,
+        operatingIncome: offOrder.operatingIncomeTotal,
+        additionalTaxOf: (p) => additionalTaxOn({ grossRevenue: gd.grossValue, profit: p }, taxCfg),
+      });
+      bridge = {
+        orderProfit: current.profit,
+        // Lãi/Lỗ "Tất cả" cộng cả đơn hủy + đơn đang hoàn; Dòng tiền chỉ cộng
+        // đơn tính doanh thu → phần chênh là của hai nhóm đó (thường nhỏ, có thể âm).
+        nonRevenueOrdersProfit: current.profit - activeOrderProfit,
+        activeOrderProfit,
+        adsSpend: ads.total,
+        adsNotes: ads.notes,
+        operatingExpense,
+        operatingIncome: offOrder.operatingIncomeTotal,
+        additionalTax: np.additionalTax,
+        netProfit: np.netProfit,
+      };
+    }
+
+    res.json({
+      ledgerPending: fresh.dirty + fresh.staleVersion,
+      range: range ? { from: toBusinessDateKey(range.gte), to: toBusinessDateKey(range.lte) } : null,
+      previousRange: prevRange
+        ? { from: toBusinessDateKey(prevRange.gte), to: toBusinessDateKey(prevRange.lte) }
+        : null,
+      current,
+      previous,
+      missingCost: missingCostApiSummary(current.missingCostCount),
+      daily,
+      byPlatform,
+      marginBuckets,
+      heatmap,
+      topProducts,
+      bridge,
     });
   } catch (err) {
     next(err);
@@ -2570,44 +2754,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
 
     // NGUỒN SỐ: sổ cái đơn (SUM trong database — docs/SO-CAI-DON.md). Cùng tập
     // đơn + cùng công thức với trang Lãi/Lỗ Thực Hiện (tab "Tất cả", đọc ĐỦ kỳ).
-    const [{ totals, truncated, ledgerPending }, expenses, operatingIncomeAgg, adSpendRows, tiktokAdsChannels, shopeeAdsChannels, taxCfg] = await Promise.all([
+    const [{ totals, truncated, ledgerPending }, offOrder, taxCfg] = await Promise.all([
       loadCashFlowTotals(scope, range),
-      prisma.operatingExpense.findMany({
-        where: {
-          userId: ownerId,
-          direction: TransactionDirection.EXPENSE,
-          expenseDate: range,
-          ...manualTxnScope,
-        },
-        select: {
-          amount: true,
-          type: true,
-          category: true,
-          expenseDate: true,
-        },
-      }),
-      // Tổng THU vận hành nhập tay trong kỳ (đền bù, thưởng…) — cùng luật lọc
-      // sàn/gian với chi phí nhập tay (manualTxnScope).
-      prisma.operatingExpense.aggregate({
-        _sum: { amount: true },
-        where: {
-          userId: ownerId,
-          direction: TransactionDirection.INCOME,
-          expenseDate: range,
-          ...manualTxnScope,
-        },
-      }),
-      // CHI PHÍ QUẢNG CÁO SÀN theo ngày (bảng AdSpend — ba sàn cùng ghi, xem
-      // services/ads-spend.ts): TỪNG DÒNG (date, amount) để vừa cộng cột Chi
-      // phí vừa đổ vào chuỗi 14 ngày; gian TikTok để biết chưa nối / tham chiếu.
-      loadAdSpendRows(scope, range),
-      loadTiktokAdsChannels(scope),
-      // Gian Shopee chưa ủy quyền Hubsell Ads → ghi chú trong tooltip dòng Ads (30/10).
-      loadShopeeAdsChannels(scope),
+      // CHI PHÍ NGOÀI ĐƠN — quảng cáo sàn (AdSpend) + thu/chi vận hành nhập tay
+      // (services/off-order-costs.ts). Tổng quan Lợi nhuận của trang Lãi/Lỗ đọc
+      // cùng hàm này nên cầu nối "Lãi đơn hàng → Lợi nhuận ròng" không lệch trang này.
+      loadOffOrderCostInputs({ ownerId, scope, manualTxnScope, range }),
       // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
       getShopTaxConfig(ownerId),
     ]);
-    const operatingIncomeTotal = Number(operatingIncomeAgg._sum.amount ?? 0);
+    const { expenses, operatingIncomeTotal } = offOrder;
 
     // ============================================================
     // VIEW TỔNG HỢP TỪ NGUỒN SỐ GỐC — mọi con số bên dưới CHỈ là SUM() các
@@ -2656,14 +2812,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // + Chi phí quảng cáo sàn (AdSpend — sync tự động, tách khỏi khoản nhập
     // tay). Gian TikTok bị sàn thu GMV Max theo đơn (feeGmvMax ≠ 0 — khoản đó
     // đã nằm trong Phí nền tảng) thì chỉ tham chiếu, không cộng — không trừ hai lần.
-    const gmvMaxChargedByChannel = totals.gmvMaxByChannelId;
-    const adsSpend = summarizeAdsSpend({
-      rows: adSpendRows,
-      gmvMaxChargedByChannel,
-      tiktokChannels: tiktokAdsChannels,
-      shopeeChannels: shopeeAdsChannels,
-      dateKey: toBusinessDateKey,
-    });
+    const adsSpend = offOrder.adsSummary(totals.gmvMaxByChannelId);
     const adsSpendTotal = adsSpend.total;
     const adsByDay = adsSpend.byDay;
     const totalCostColumn =
@@ -2736,7 +2885,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // chủ shop 31/07 chiều: khoản thu nhập tay PHẢI cộng vào tổng lợi nhuận —
     // dời từ cuối cột Doanh thu về lại cột Lợi nhuận làm dòng thứ 3). Đẳng
     // thức thác nước thành: thẻ Lợi nhuận = Doanh thu − Chi phí + Thu khác.
-    const provisionalProfit = actualProfit + expectedProfit + operatingIncomeTotal;
+    // Một phép tính cho cả trang này lẫn cầu nối của Tổng quan Lợi nhuận
+    // (lib/net-profit.ts cashFlowNetProfit): thuế bổ sung tính trên LN trước thuế.
+    const netBridge = cashFlowNetProfit({
+      orderProfit: settled.profitAfterTax + pending.profitAfterTax,
+      adsSpend: adsSpendTotal,
+      operatingExpense: variableExpenseTotal + fixedExpenseTotal,
+      operatingIncome: operatingIncomeTotal,
+      additionalTaxOf: (p) => additionalTaxOn({ grossRevenue: grossValue, profit: p }, taxCfg),
+    });
+    const provisionalProfit = netBridge.provisionalProfit;
 
     // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao) — cùng các
     // trường dòng Lãi/Lỗ: doanh thu gốc, giá vốn snapshot, 3 bucket phí sàn + affiliate.
@@ -2783,17 +2941,14 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // từ 31/07 là dòng khấu trừ của thẻ Tổng giá trị SP.)
     // ============================================================
     // Thuế bổ sung: cơ sở tính theo cấu hình (lợi nhuận tạm tính / doanh thu).
-    const additionalTax = additionalTaxOn(
-      { grossRevenue: grossValue, profit: provisionalProfit },
-      taxCfg
-    );
+    const additionalTax = netBridge.additionalTax;
 
     // LỢI NHUẬN RÒNG SAU THUẾ = Tổng lợi nhuận tạm tính − Thuế bổ sung dự
     // phòng. KHÔNG trừ thuế sàn nữa: thuế THẬT đã nằm sẵn trong actualPayout
     // (tức trong provisionalProfit) — trừ thêm là trừ trùng.
     // Cơ sở tính thuế là LN TRƯỚC thuế (provisionalProfit) — không lấy số sau
     // thuế kẻo thành công thức vòng lặp.
-    const netProfitAfterTax = provisionalProfit - additionalTax;
+    const netProfitAfterTax = netBridge.netProfit;
 
     // Từ 07/08 (chốt nghiệp vụ kế toán): thuế bổ sung KHÔNG nằm trong cột
     // CHI PHÍ nữa — thuế thu nhập không phải chi phí vận hành, để chung làm

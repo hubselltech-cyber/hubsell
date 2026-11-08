@@ -63,6 +63,9 @@ export const qk = {
     ] as const,
   realizedPnl: (params: Record<string, unknown>) =>
     ["realized-pnl", params] as const,
+  /** Tab Tổng quan Lợi nhuận — cùng bộ lọc với bảng, không phụ thuộc trang. */
+  realizedPnlInsights: (params: Record<string, unknown>) =>
+    ["realized-pnl-insights", params] as const,
   feeAudit: (params: Record<string, unknown>) => ["fee-audit", params] as const,
   /** Rổ #1 Kiểm toán phí sàn + trang Đối soát phí ship của kho dùng chung. */
   shippingDiscrepancies: (params: Record<string, unknown>) =>

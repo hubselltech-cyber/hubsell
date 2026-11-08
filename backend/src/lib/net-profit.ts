@@ -31,3 +31,29 @@ export function netProfitAfterProvision(input: {
   const additionalTax = input.additionalTaxOf(provisionalProfit);
   return { provisionalProfit, additionalTax, netProfit: provisionalProfit - additionalTax };
 }
+
+/**
+ * LỢI NHUẬN RÒNG của Báo cáo dòng tiền (08/11/2026) — một chỗ cho cả
+ * /api/finance/analytics lẫn Tổng quan Lợi nhuận của trang Lãi/Lỗ (cầu nối
+ * "Lãi đơn hàng → Lợi nhuận ròng"):
+ *
+ *   LN trước thuế = Σ lãi đơn tính doanh thu (đã quyết toán + chờ)
+ *                   − Quảng cáo sàn − Chi phí vận hành nhập tay + Thu vận hành khác
+ *   LN ròng       = LN trước thuế − Thuế bổ sung dự phòng(LN trước thuế)
+ *
+ * Khác netProfitAfterProvision (Tổng quan, đi từ LN gộp − phí sàn): ở đây lãi
+ * đơn đã net phí/thuế sàn trong payout nên không trừ phí sàn lần nữa.
+ */
+export function cashFlowNetProfit(input: {
+  /** Σ profitAfterTax của đơn tính doanh thu (settled + pending). */
+  orderProfit: number;
+  adsSpend: number;
+  operatingExpense: number;
+  operatingIncome: number;
+  additionalTaxOf: (provisionalProfit: number) => number;
+}): { provisionalProfit: number; additionalTax: number; netProfit: number } {
+  const provisionalProfit =
+    input.orderProfit - input.adsSpend - input.operatingExpense + input.operatingIncome;
+  const additionalTax = input.additionalTaxOf(provisionalProfit);
+  return { provisionalProfit, additionalTax, netProfit: provisionalProfit - additionalTax };
+}

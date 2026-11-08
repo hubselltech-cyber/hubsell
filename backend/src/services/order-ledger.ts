@@ -64,6 +64,17 @@ import {
   type PnlListCursor,
   type PnlSummaryTotals,
 } from "../lib/realized-pnl-totals";
+import {
+  TOP_PRODUCT_LIMIT,
+  TOP_PRODUCT_MIN_ORDERS,
+  type DailyPoint,
+  type PnlHeatCell,
+  type PnlMarginBucketRow,
+  type PnlPeriodTotals,
+  type PnlPlatformTotals,
+  type PnlTopProductRow,
+  type PnlTopProducts,
+} from "../lib/realized-pnl-insights";
 import type { DeclarationRawRow, TaxReportTotals } from "../lib/tax-totals";
 import type {
   LossOrderBasis,
@@ -1028,18 +1039,21 @@ export async function ledgerOverviewBreakdown(
 function ledgerPnlWhere(
   scope: ChannelScope,
   range: DateRangeFilter | undefined,
-  f: LedgerPnlFilter
+  f: LedgerPnlFilter,
+  /** Bí danh bảng khi câu có JOIN (Tổng quan Lợi nhuận nối sổ dòng hàng). */
+  alias?: string
 ): Prisma.Sql {
+  const a = alias ? Prisma.raw(`${alias}.`) : Prisma.empty;
   const parts: Prisma.Sql[] = [
-    ledgerScopeSql(scope, range),
-    Prisma.sql`"formulaVersion" = ${LEDGER_FORMULA_VERSION}::int`,
+    ledgerScopeSql(scope, range, { alias }),
+    Prisma.sql`${a}"formulaVersion" = ${LEDGER_FORMULA_VERSION}::int`,
   ];
-  if (f.shippingStatus) parts.push(Prisma.sql`"shippingStatus" = ${f.shippingStatus}::"ShippingStatus"`);
-  if (f.returnsOnly) parts.push(Prisma.sql`"returnType" IS NOT NULL`);
-  if (f.lossOnly) parts.push(Prisma.sql`"isLoss"`);
+  if (f.shippingStatus) parts.push(Prisma.sql`${a}"shippingStatus" = ${f.shippingStatus}::"ShippingStatus"`);
+  if (f.returnsOnly) parts.push(Prisma.sql`${a}"returnType" IS NOT NULL`);
+  if (f.lossOnly) parts.push(Prisma.sql`${a}"isLoss"`);
   // Chứa chuỗi, không phân biệt hoa thường — chỉ mục GIN trigram
   // "order_ledger_orderCode_trgm_idx" phục vụ mẫu từ 3 ký tự trở lên.
-  if (f.search) parts.push(Prisma.sql`"orderCode" ILIKE ${`%${escapeLike(f.search)}%`}`);
+  if (f.search) parts.push(Prisma.sql`${a}"orderCode" ILIKE ${`%${escapeLike(f.search)}%`}`);
   return Prisma.join(parts, " AND ");
 }
 
@@ -1147,6 +1161,261 @@ export async function ledgerPnlSummary(
     });
   }
   return out;
+}
+
+// ------------------------------------------------------------
+// TỔNG QUAN LỢI NHUẬN của trang Lãi/Lỗ (lib/realized-pnl-insights.ts,
+// docs/LAI-LO-TONG-QUAN-LOI-NHUAN.md, 08/11/2026): mọi khối đều là một câu
+// SUM/GROUP BY trên sổ với ĐÚNG bộ lọc của bảng (ledgerPnlWhere) — kỳ này và
+// kỳ liền trước gọi cùng hàm với range khác nhau.
+// ------------------------------------------------------------
+
+const PNL_RETURN_LOSS = Prisma.raw(
+  `COALESCE(sum("returnLossCost" + "returnLossPlatformKept" + "returnLossRefund") FILTER (WHERE "returnType" IS NOT NULL), 0)`
+);
+
+/** Bộ tổng một kỳ cho thẻ KPI (count, lãi, doanh thu thực nhận, hoàn, lỗ). */
+export async function ledgerPnlPeriodTotals(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter
+): Promise<PnlPeriodTotals> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT count(*) AS "count",
+           count(*) FILTER (WHERE "isSettled") AS "settledCount",
+           COALESCE(sum("netRevenue"), 0) AS "netRevenue",
+           COALESCE(sum("profitAfterTax"), 0) AS "profit",
+           count(*) FILTER (WHERE "returnType" IS NOT NULL) AS "returnCount",
+           COALESCE(sum("returnLossCost") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlCost",
+           COALESCE(sum("returnLossPlatformKept") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlKept",
+           COALESCE(sum("returnLossRefund") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlRefund",
+           count(*) FILTER (WHERE "isLoss") AS "lossCount",
+           COALESCE(sum("profitAfterTax") FILTER (WHERE "isLoss"), 0) AS "lossAmount",
+           count(*) FILTER (WHERE "missingCostPrice") AS "missingCostCount"
+    FROM "order_ledger" WHERE ${ledgerPnlWhere(scope, range, filter)}
+  `);
+  const r = rows[0] ?? {};
+  const num = (k: string) => Number(r[k] ?? 0);
+  const rl = { costLoss: num("rlCost"), platformKept: num("rlKept"), refundLoss: num("rlRefund") };
+  return {
+    count: num("count"),
+    settledCount: num("settledCount"),
+    netRevenue: num("netRevenue"),
+    profit: num("profit"),
+    returnCount: num("returnCount"),
+    returnLoss: { ...rl, total: rl.costLoss + rl.platformKept + rl.refundLoss },
+    lossCount: num("lossCount"),
+    lossAmount: num("lossAmount"),
+    missingCostCount: num("missingCostCount"),
+  };
+}
+
+/** Theo NGÀY PHÁT SINH (giờ VN) — khóa "yyyy-mm-dd". */
+export async function ledgerPnlDaily(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter
+): Promise<Map<string, DailyPoint>> {
+  const rows = await prisma.$queryRaw<{ key: Date | string; n: unknown; profit: unknown; net: unknown; rl: unknown }[]>(Prisma.sql`
+    SELECT "createdDate" AS key, count(*) AS n, COALESCE(sum("profitAfterTax"), 0) AS profit,
+           COALESCE(sum("netRevenue"), 0) AS net, ${PNL_RETURN_LOSS} AS rl
+    FROM "order_ledger" WHERE ${ledgerPnlWhere(scope, range, filter)}
+    GROUP BY "createdDate"
+  `);
+  const out = new Map<string, DailyPoint>();
+  for (const d of rows) {
+    const key = d.key instanceof Date ? d.key.toISOString().slice(0, 10) : String(d.key).slice(0, 10);
+    out.set(key, {
+      date: key,
+      profit: Number(d.profit),
+      netRevenue: Number(d.net),
+      orderCount: Number(d.n),
+      returnLoss: Number(d.rl),
+    });
+  }
+  return out;
+}
+
+/** Theo SÀN: đơn, lãi, doanh thu thực nhận, hoàn, thất thu, đơn lỗ. */
+export async function ledgerPnlByPlatform(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter
+): Promise<PnlPlatformTotals[]> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT "channelName"::text AS key, count(*) AS n,
+           COALESCE(sum("profitAfterTax"), 0) AS profit,
+           COALESCE(sum("netRevenue"), 0) AS "netRevenue",
+           count(*) FILTER (WHERE "returnType" IS NOT NULL) AS rc,
+           ${PNL_RETURN_LOSS} AS rl,
+           count(*) FILTER (WHERE "isLoss") AS "lossCount"
+    FROM "order_ledger" WHERE ${ledgerPnlWhere(scope, range, filter)}
+    GROUP BY "channelName"
+  `);
+  return rows.map((r) => ({
+    key: String(r.key),
+    count: Number(r.n),
+    profit: Number(r.profit),
+    netRevenue: Number(r.netRevenue),
+    returnCount: Number(r.rc),
+    returnLoss: Number(r.rl),
+    lossCount: Number(r.lossCount),
+  }));
+}
+
+/**
+ * Phân bố đơn theo BẬC BIÊN LÃI (lãi / doanh thu thực nhận) — CÙNG luật với
+ * marginBucketKey (lib/realized-pnl-insights.ts; test khóa hai bên bằng nhau).
+ * So bằng phép nhân để không chia cho 0 và không mất số lẻ.
+ */
+export async function ledgerPnlMarginBuckets(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter
+): Promise<PnlMarginBucketRow[]> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT CASE
+             WHEN "netRevenue" <= 0 THEN 'none'
+             WHEN "profitAfterTax" < 0 THEN 'loss'
+             WHEN "profitAfterTax" * 10 < "netRevenue" THEN 'm0'
+             WHEN "profitAfterTax" * 5 < "netRevenue" THEN 'm10'
+             WHEN "profitAfterTax" * 10 < "netRevenue" * 3 THEN 'm20'
+             WHEN "profitAfterTax" * 2 < "netRevenue" THEN 'm30'
+             ELSE 'm50'
+           END AS key,
+           count(*) AS n,
+           COALESCE(sum("profitAfterTax"), 0) AS profit,
+           COALESCE(sum("netRevenue"), 0) AS "netRevenue"
+    FROM "order_ledger" WHERE ${ledgerPnlWhere(scope, range, filter)}
+    GROUP BY 1
+  `);
+  return rows.map((r) => ({
+    key: String(r.key) as PnlMarginBucketRow["key"],
+    count: Number(r.n),
+    profit: Number(r.profit),
+    netRevenue: Number(r.netRevenue),
+  }));
+}
+
+/** Đơn phát sinh theo THỨ × GIỜ (giờ VN) — "giờ vàng". createdAt lưu UTC. */
+export async function ledgerPnlHeatmap(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter
+): Promise<PnlHeatCell[]> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT extract(isodow FROM ("createdAt" + INTERVAL '7 hours'))::int AS dow,
+           extract(hour FROM ("createdAt" + INTERVAL '7 hours'))::int AS hour,
+           count(*) AS n,
+           COALESCE(sum("profitAfterTax"), 0) AS profit
+    FROM "order_ledger" WHERE ${ledgerPnlWhere(scope, range, filter)}
+    GROUP BY 1, 2
+  `);
+  return rows.map((r) => ({
+    dow: Number(r.dow),
+    hour: Number(r.hour),
+    count: Number(r.n),
+    profit: Number(r.profit),
+  }));
+}
+
+/**
+ * TOP SẢN PHẨM theo LÃI, kỳ này so kỳ trước — một câu trên sổ DÒNG HÀNG nối sổ
+ * đơn để áp đúng bộ lọc của bảng. Mã = mã kho (Product.skuCode) khi dòng đã
+ * nối, không thì mã sàn — cùng khóa với Lãi/Lỗ theo SKU (ledgerSkuAgg). Lãi
+ * của dòng = profitAfterTax đã phân bổ theo tỷ trọng giá trị dòng (cột sổ).
+ * FULL JOIN để mã bán kỳ trước mà kỳ này im (tụt hẳn) vẫn vào bảng "Giảm mạnh".
+ * Xếp hạng bằng window TRONG database, chỉ trả về ≤ 4 × TOP_PRODUCT_LIMIT dòng.
+ */
+export async function ledgerPnlTopProducts(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  prevRange: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter
+): Promise<PnlTopProducts> {
+  const limit = TOP_PRODUCT_LIMIT;
+  const minOrders = TOP_PRODUCT_MIN_ORDERS;
+  const agg = (r: DateRangeFilter | undefined) => Prisma.sql`
+    SELECT COALESCE(p."skuCode", l."channelSku") AS key,
+           (array_agg(l."productName" ORDER BY l."createdAt" DESC, l."orderId" DESC, l."orderItemId"))[1] AS name,
+           max(p."imageUrl") AS img,
+           count(DISTINCT l."orderId") AS orders,
+           COALESCE(sum(l."quantity"), 0) AS qty,
+           COALESCE(sum(l."returnedQuantity"), 0) AS retqty,
+           COALESCE(sum(l."lineGross"), 0) AS revenue,
+           COALESCE(sum(l."lineCost"), 0) AS cost,
+           COALESCE(sum(l."profitAfterTax"), 0) AS profit
+    FROM "order_line_ledger" l
+    JOIN "order_ledger" o ON o."createdDate" = l."createdDate" AND o."orderId" = l."orderId"
+    LEFT JOIN "Product" p ON p."id" = l."productId"
+    WHERE ${ledgerPnlWhere(scope, r, filter, "o")}
+      AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+    GROUP BY 1`;
+  const prevSql = prevRange
+    ? agg(prevRange)
+    : Prisma.sql`SELECT NULL::text AS key, NULL::text AS name, NULL::text AS img, 0::bigint AS orders,
+                        0::numeric AS qty, 0::numeric AS retqty, 0::numeric AS revenue, 0::numeric AS cost, 0::numeric AS profit
+                 WHERE FALSE`;
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    WITH cur AS (${agg(range)}),
+         prev AS (${prevSql}),
+         j AS (
+           SELECT COALESCE(cur.key, prev.key) AS key,
+                  COALESCE(cur.name, prev.name) AS name,
+                  COALESCE(cur.img, prev.img) AS img,
+                  COALESCE(cur.orders, 0) AS orders, COALESCE(cur.qty, 0) AS qty, COALESCE(cur.retqty, 0) AS retqty,
+                  COALESCE(cur.revenue, 0) AS revenue, COALESCE(cur.cost, 0) AS cost, COALESCE(cur.profit, 0) AS profit,
+                  (prev.key IS NOT NULL) AS has_prev,
+                  COALESCE(prev.orders, 0) AS p_orders, COALESCE(prev.qty, 0) AS p_qty,
+                  COALESCE(prev.revenue, 0) AS p_revenue, COALESCE(prev.profit, 0) AS p_profit,
+                  COALESCE(cur.profit, 0) - COALESCE(prev.profit, 0) AS delta
+           FROM cur FULL JOIN prev ON prev.key = cur.key
+         ),
+         r AS (
+           SELECT j.*,
+                  row_number() OVER (ORDER BY profit DESC, revenue DESC) AS rk_profit,
+                  row_number() OVER (ORDER BY profit ASC, revenue DESC) AS rk_loss,
+                  row_number() OVER (ORDER BY delta DESC, profit DESC) AS rk_rise,
+                  row_number() OVER (ORDER BY delta ASC, p_profit DESC) AS rk_fall,
+                  count(*) FILTER (WHERE orders > 0) OVER () AS sku_count
+           FROM j
+         )
+    SELECT * FROM r
+    WHERE (rk_profit <= ${limit}::int AND orders > 0)
+       OR (rk_loss <= ${limit}::int AND profit < 0)
+       OR (rk_rise <= ${limit}::int AND delta > 0 AND orders >= ${minOrders}::int)
+       OR (rk_fall <= ${limit}::int AND delta < 0 AND (orders >= ${minOrders}::int OR p_orders >= ${minOrders}::int))
+  `);
+  const toRow = (r: Record<string, unknown>): PnlTopProductRow => ({
+    sku: String(r.key),
+    productName: String(r.name ?? r.key),
+    imageUrl: (r.img as string | null) ?? null,
+    orders: Number(r.orders),
+    quantity: Number(r.qty),
+    returnedQuantity: Number(r.retqty),
+    revenue: Number(r.revenue),
+    cost: Number(r.cost),
+    profit: Number(r.profit),
+    prev: r.has_prev
+      ? { orders: Number(r.p_orders), quantity: Number(r.p_qty), revenue: Number(r.p_revenue), profit: Number(r.p_profit) }
+      : null,
+  });
+  const num = (r: Record<string, unknown>, k: string) => Number(r[k] ?? 0);
+  const pick = (rank: string, keep: (r: Record<string, unknown>) => boolean) =>
+    rows
+      .filter((r) => num(r, rank) <= limit && keep(r))
+      .sort((a, b) => num(a, rank) - num(b, rank))
+      .map(toRow);
+  return {
+    byProfit: pick("rk_profit", (r) => num(r, "orders") > 0),
+    byLoss: pick("rk_loss", (r) => num(r, "profit") < 0),
+    rising: pick("rk_rise", (r) => num(r, "delta") > 0 && num(r, "orders") >= minOrders),
+    falling: pick(
+      "rk_fall",
+      (r) => num(r, "delta") < 0 && (num(r, "orders") >= minOrders || num(r, "p_orders") >= minOrders)
+    ),
+    skuCount: rows.length ? Number(rows[0].sku_count) : 0,
+  };
 }
 
 // ------------------------------------------------------------
