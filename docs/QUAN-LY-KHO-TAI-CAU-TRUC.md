@@ -534,3 +534,8 @@ cho cột Giá trị, bản in và công nợ.
 - **Chưa kiểm:** tệp Excel tải về; tài khoản nhân viên không thấy tài chính trên UI (API đã chặn 403); mobile (không đụng).
 - Lập phiếu thật trên UI Phiếu nhiều mã với "Trả một phần" 1.000.000 / 2.300.000 → PN-261108-81CE, dải kết quả "Còn nợ nhà cung cấp 1.300.000 đ", DB đúng (paid 1tr, debt 1,3tr, 1 dòng supplier_payments "Trả một phần khi nhập hàng").
 - **Đã dọn (anh: "Dọn seed, commit, push"):** xóa 8 phiếu / 11 dòng nhập / 5 lần trả / 6 NCC / 11 dòng nhật ký, trả tồn 10 SKU về đúng số gốc (kiểm lại từng mã); `frontend/.env.local` đã trả về https:4000.
+
+**Anh chốt 08/11 khuya (sau khi lập phiếu thật PN-261108-2EC8 trên prod, trả 100.000 / 180.000):**
+- Bản in phiếu GIỮ cột Mã SKU, KHÔNG in mã vạch 13 số, không in cả hai (mã vạch là mã nội bộ cho tem / máy quét; NCC và kế toán chỉ biết SKU; A4 không dư chỗ). Đừng đề xuất lại.
+- KHÔNG chặn hộp Ghi trả tiền với phiếu chưa ghi giá nhập ("chắc không cần"): công nợ phiếu không có giá nhập tính trên giá vốn mặc định theo đúng luật một con số; khách muốn chuẩn thì gõ giá nhập.
+
