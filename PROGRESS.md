@@ -5,6 +5,18 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 08/11 (1) — Kiểm HQ Sức khỏe theo ảnh anh gửi (anh: "Kiểm tra trang sức khỏe đi em"): M3 ĐÃ CHẠM từ 04/11 (đơn/ngày), vàng Hàng đợi bền = nhịp TikTok 429 lần 4 (nhẹ), vàng DB 68 % chạm 70 % ≈ 09–10/11; sửa CURRENT_INFRA worker 2 GB — CHƯA PUSH
+
+- **Nguồn:** HQ /admin/health 15:50 VN (Chrome anh đăng nhập được HQ), SQL Supabase chỉ đọc 15:52–16:05, Render Logs worker (q=36009002, 1 giờ), Supabase Settings → Infrastructure (ảnh + tooltip). Chi tiết số: `docs/HQ-SUC-KHOE.md` mục 08/11.
+- **Hàng đợi bền vàng:** không tắc — việc cũ nhất ~1', nhịp ra 186–556/5' cả giờ, 0 lỗi/retry; 4 slot Bella Look 2,2 s/việc; gian chậm nhất Sỉ Nghi 85 Store 10 s/việc; 23 dòng 429 `36009002` 15:00–15:41 (17 `returns/search`), nhịp gian đáy 0,2/s. = cơ chế 26/10 lặp **lần 4** (chiều, nhẹ). Thuộc 5e — chỉ ghi, không sửa/restart.
+- **DB 68 %:** 5.536 MB, đà ~138 MB/ngày (04/11 → 08/11); 70 % (M3) ≈ 09–10/11, 80 % (đỏ) ≈ 15/11. Ổ 6,62/12 GB, Spend Cap vẫn bật (⏳ anh từ 06/11).
+- **M3:** `reachedAt` 04/11 21:05 VN. Ba đồng hồ anh dặn 31/10: DB 68 % (vàng) · **Disk IO balance 99 %** (01–07/11 luôn sát 100 % → hết mâu thuẫn memory 04/11 "0 %": đó là đọc nhầm) · kết nối 23–26 %. Thêm: CPU compute DB biểu đồ tuần 55 → 100 % (05/11) → 67 % (07/11), live 10–23 % — chưa rõ TB hay đỉnh ngày, ghi để so. Soi 4 ô checklist M3 với luật 06/11: 2 worker instance = +25 USD; retention + log cleanup = giai đoạn 4; Redis = tiền → **không còn việc mã thuần**; ⏳ anh chốt: giữ nguyên chờ DB chạm 70 % hay làm món nào.
+- **Gian rớt 24h = KhogiaydepHoaiAnh (TikTok)**, `AUTH_REVOKED` 11:49 VN, code 36004006 "authorization is cancelled" (chủ shop tự hủy); cột lý do ghi tại nguồn chạy đúng ca đầu. Shopee cùng chủ vẫn đồng bộ.
+- **RAM worker** RSS 240 → 616 → 1.008 MB trong ~1 ngày (heap 339/1.584 MB, 21 %) = 49 % gói 2 GB; dưới điều kiện nâng 80 % (19/10) nhưng đà leo cần theo dõi ở snapshot tới. `CURRENT_INFRA` còn ghi worker Starter 512 MB → snapshot `ramPct=197` sai → **sửa** `backend/src/config/capacity-plan.ts`: workerPlan Standard 2 GB, `workerRamMb 2048`, `monthlyUsd 62` (web 7 + worker 25 + Supabase Pro 25 + compute Small ~5). Chỉ đổi hằng số; tsc BE sạch (xem dưới).
+- **Memory:** cập nhật `hubsell-hq-suc-khoe`, `hubsell-su-co-hang-doi-ben-bella-look-lan-nhip-2026-10-26` (lần 4), `hubsell-su-co-disk-io-supabase-2026-10-28` (IO balance 99 %, bỏ dòng 0 %).
+- **Công cụ:** `browser_batch` của Chrome bị bộ lọc chặn; từng lệnh lẻ (javascript_tool đặt câu qua monaco + Ctrl+Enter + đọc `[role=gridcell]`) chạy được; Render Logs + trang Deploys đọc được bằng get_page_text/screenshot (JS trên dashboard.render.com bị chặn).
+
+---
 ## Phiên 07/11 (3) — HQ "Cộng tác viên đặc biệt": tab mới trên Marketing & Giới thiệu, đặt % hoa hồng riêng + thời hạn cho tài khoản đã đăng ký (anh: "đây đã được coi là cộng tác viên rồi, mình chỉ thêm tab cho cộng tác viên đặc biệt để nâng hoặc hạ mức hoa hồng và thời gian thôi") — ĐÃ PUSH `d80b4791` (anh: "Em push lên đi")
 
 - **Bối cảnh:** anh hỏi HQ có chỗ tạo tài khoản CTV + % + thời hạn không. Kiểm mã: chương trình giới thiệu 10% vĩnh viễn đã LIVE cho mọi tài khoản (mã HUBSELL<số>, Ví Hubsell, duyệt rút ở Kế toán), nối thật vào `recordPackagePayment`; thiếu % theo người và thời hạn. Em đề xuất trang riêng + thư mời; anh chốt gọn hơn: chọn từ tài khoản đã đăng ký, một tab trong trang Marketing.

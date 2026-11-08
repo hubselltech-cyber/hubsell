@@ -34,13 +34,13 @@ export interface InfraPlan {
 // sự cố cạn Disk IO budget 07:40 (PROGRESS 28/10).
 export const CURRENT_INFRA: InfraPlan = {
   webPlan: "Render Starter (512MB, 0.5 CPU, không ngủ, HUBSELL_ROLE=web)",
-  workerPlan: "Render Background Worker Starter (512MB, hubsell-worker-sg)",
+  workerPlan: "Render Background Worker Standard (2GB, 1 CPU, hubsell-worker-sg — anh nâng 21/10/2026, Render ghi 1c-2g)",
   dbPlan: "Supabase Pro (8GB, compute Small 2GB)",
   webRamMb: 512,
-  workerRamMb: 512,
+  workerRamMb: 2048,
   dbSizeMb: 8192,
   dbMaxConnections: 90,
-  monthlyUsd: 44,
+  monthlyUsd: 62, // web 7 + worker Standard 25 + Supabase Pro 25 + compute Small ~5 (08/11/2026)
 };
 
 // ---------- 2. Ngưỡng dấu hiệu (WORKER + INFRA) ----------

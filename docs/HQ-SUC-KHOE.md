@@ -178,6 +178,23 @@ Anh tự nâng gói trên Render trưa 21/10 (sau 2 lần OOM worker, PROGRESS.m
 - Dự báo "≈4 ngày" là hồi quy tuyến tính 7 ngày trên đà 11/11; điều kiện mốc tính TB 7 ngày nên ngày sale đơn lẻ không chạm, sau 11/11 TB có thể tụt lại.
 - **Anh chốt:** *"đợi khi nào nó chạm rồi đo lại sau. Tại vì bây giờ người trả phí không nhiều, mình đang phải nuôi hạ tầng là chính."* → KHÔNG sửa HQ (em có đề xuất tách "việc mã / việc tiền" trong M3 — anh để nguyên). Khi M3 chạm: làm phần mã trong checklist (2 worker claim vé, retention, log cleanup) + đo 3 đồng hồ trên rồi mới bàn tiền. Cùng luật với mục 19/10.
 
+## 08/11/2026 — Rà HQ theo ảnh anh gửi (15:50 VN): M3 ĐÃ CHẠM từ 04/11 21:05 theo đơn/ngày; vàng Hàng đợi bền là nhịp TikTok 429 quen, vàng DB 68 %; đo 3 đồng hồ thật
+
+Số HQ 15:50: 221 gian (TikTok 116 · Shopee 102 · Lazada 3), 272 chủ shop (+33 tuần này), **10.484 đơn/ngày** (đỉnh 30 ngày 15.016, webhook 79.684/ngày, hôm nay tới 15:55 đã 5.598 đơn), worker đúng nhịp 168/168 gian (trễ nhất 57', 48 ngủ đông), webhook Shopee chờ 0, cầu dao mở, hóa đơn 0 việc, kết nối 23/90 (26 %). Hai thẻ vàng + một dòng mốc:
+
+**1. Hàng đợi bền vàng (153 chờ → lúc đo 150–170, 4 chạy, hộp thư đến 343 → 198, cũ nhất 4' → 1').** SQL prod 15:52–15:56 (chỉ đọc): việc cũ nhất chỉ ~1 phút, nhịp ra 186–556 việc / 5' suốt 1 giờ (không tắc), 0 retry / 0 lỗi; cả 4 slot đều Bella Look nhưng 2,2 s/việc (276 việc / 10'), gian chậm nhất là **Sỉ Nghi 85 Store 10,0 s/việc** (119 việc / 10'), GUMAX 4,4 s, Shop Nghi 85 5,6 s, Nghi Clothings85 5,7 s; gian còn lại 0,7–1,3 s. Render log worker 15:00–15:41: 23 dòng 429 `36009002`, 17 ở `returns/search`, 4 `cancellations/search`, 2 `statement_transactions`, nhịp gian xuống đáy 0,2/s. Vàng vì `waiting > 50` (crit mới cần ≥ 200 chờ hoặc cũ nhất ≥ 30'). **= cơ chế Bella Look 26/10 lặp lần 4, mức nhẹ, buổi chiều**: làn nhịp RAM theo gian hạ theo 429 của quét hoàn/hủy, việc webhook ngủ trong slot. Thuộc 5e đại tu lớp gọi sàn — CHỈ GHI NHẬN, không sửa, không restart (anh chốt 27/10). Không mất dữ liệu.
+
+**2. Dung lượng DB 68 % (5.536 MB / 8.192).** Snapshot: 04/11 21:05 5.093 → 08/11 01:43 5.536 MB = **~138 MB / ngày** (chậm hơn 194–200 MB/ngày tuần trước). Mốc M3 70 % = 5.734 MB → còn ~200 MB ≈ **chạm 09–10/11**; đỏ 80 % = 6.554 MB ≈ 15/11 nếu giữ đà. Ổ Supabase 6,62 / 12 GB (DB 5,3 + WAL 1 + hệ 0,2), Spend Cap vẫn BẬT (ổ muốn tự nở lên 18 GB ở mốc 90 % phải tắt) — ⏳ anh quyết từ 06/11, chưa đổi.
+
+**3. Mốc M3 "Đang ở"**: `platform_capacity_milestones` ghi `reachedAt` **04/11 21:05 VN** (đơn/ngày TB 7 ngày vượt 10.000; snapshot 04/11 21:05 opd=10.003), HQ hiện 4 ô checklist chưa tick. Theo anh chốt 31/10: chạm thì ĐO 3 đồng hồ thật trước khi bàn tiền:
+- % dung lượng DB: 68 % (vàng; xem mục 2).
+- **Disk IO balance (Supabase Settings → Infrastructure, đọc tooltip ảnh): 99 %** — suốt 01–07/11 đường đỏ sát 100 %. Kết luận cho dứt mâu thuẫn 04/11 vs 06/11 trong memory: **IO không cạn**, dòng "0 % cả tuần" 04/11 là đọc nhầm. Memory 62 %, ổ 55 %.
+- % kết nối: 21–23 / 90 (23–26 %).
+- Thêm một đồng hồ chưa có trong kế hoạch: **CPU compute DB** biểu đồ tuần theo ngày 55 % (01/11) → 75 → 80 → 75 → **~100 % (05/11)** → 75 → 67 % (07/11); thẻ hiện 95 %; bong bóng live 23 %, Observability 60 phút 10,4 % (chiều Chủ nhật). Chưa rõ biểu đồ tuần là trung bình hay đỉnh ngày — ghi lại để so các ngày sau, chưa kết luận.
+- Bốn việc mã trong checklist M3 soi với luật 06/11 (không kéo việc giai đoạn 4 lên): "2 worker instance" = thêm instance Standard thứ hai (+25 USD, là tiền chứ không phải mã); "retention đơn 1 năm + rollup" và "log cleanup 7 ngày" = giai đoạn 4 Vòng đời dữ liệu của kiến trúc triệu đơn; "Redis" = tiền. → không còn "việc mã thuần" nào trong M3; ⏳ chờ anh chốt (xem PROGRESS 08/11).
+
+**Việc khác đã kiểm:** thẻ Gian rớt "1 mới rớt 24h: sàn từ chối / thu hồi" = **KhogiaydepHoaiAnh (TikTok)** `disconnectReason=AUTH_REVOKED` 11:49 VN 08/11, TikTok code 36004006 "authorization is cancelled" = chủ shop tự hủy ủy quyền trên TikTok; gian Shopee cùng chủ vẫn ACTIVE, mốc nước 15:54 — cột lý do ghi tại nguồn (3441334d) chạy đúng ca đầu tiên. **RAM worker** (snapshot vai worker): RSS 240 MB (07/11 00:36) → 616 (13:42) → **1.008 MB** (08/11 01:43, uptime 24 h), heap 339 / 1.584 MB (21 %) — 49 % gói 2 GB, dưới điều kiện nâng 80 % (19/10) nhưng đà leo trong 1 ngày đáng theo dõi; `CURRENT_INFRA` còn ghi worker Starter 512 MB nên snapshot tính `ramPct=197` sai → **đã sửa 08/11**: workerPlan Standard 2 GB, `workerRamMb: 2048`, `monthlyUsd: 62`.
+
 ## 5. Giao diện `/admin/health` (lá quyền mới `hq.health`, sidebar "Sức khỏe")
 
 1. **Hàng KPI** (StatCard sẵn): Gian hoạt động (chip theo sàn) · Chủ shop hoạt động ·
