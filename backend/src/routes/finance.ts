@@ -83,6 +83,7 @@ import { syncShopeePendingIncome, syncShopeeWithdrawals } from "../integrations/
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { reconcileTiktokWallet, syncTiktokPendingIncome, syncTiktokWallet } from "../integrations/tiktok/wallet";
 import { loadOffOrderCostInputs } from "../services/off-order-costs";
+import { fillMissingSkuImages } from "../lib/sku-images";
 import { cashFlowNetProfit } from "../lib/net-profit";
 import {
   alignDaily,
@@ -669,6 +670,15 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
         ? loadOffOrderCostInputs({ ownerId, scope, manualTxnScope, range })
         : Promise.resolve(null),
       getShopTaxConfig(ownerId),
+    ]);
+
+    // Ảnh: SQL chỉ lấy được ảnh kho qua productId — dòng chưa nối kho (đa số)
+    // tra ảnh sản phẩm trên sàn / ảnh dòng đơn theo mã sàn (lib/sku-images.ts, 08/11).
+    await fillMissingSkuImages(scope, [
+      ...topProducts.byProfit,
+      ...topProducts.byLoss,
+      ...topProducts.rising,
+      ...topProducts.falling,
     ]);
 
     const daily = alignDaily({
@@ -1670,6 +1680,8 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
       })
       // "Gà đẻ trứng vàng" lên đầu, mã gánh lỗ xuống cuối
       .sort((a, b) => b.profit - a.profit);
+    // Ảnh cho mã chưa nối kho: tra ảnh sàn / ảnh dòng đơn (lib/sku-images.ts, 08/11/2026).
+    await fillMissingSkuImages(channelScope(req), items);
 
     // Chi phí cố định KHÔNG phân bổ vào SKU — trừ vào tổng lợi nhuận toàn shop
     const fixedTotal = await prisma.operatingExpense.aggregate({

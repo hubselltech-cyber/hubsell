@@ -65,6 +65,10 @@ Thứ tự trên trang: 1 → (3 | 2) → 4 → 5 → (6 | 7) → 8.
 - Đo JS 1280 / 1440 / 1700: 0 ô `td/th` tràn, không cuộn ngang trang; ở 1280 lượt đầu KPI 4 cột ô số 46 px → đổi 2 × 2 tới 2xl; bảng top 10 cột cuộn ngang 319 px → gộp cột (Đã bán + đơn, Doanh thu + vốn) + tên 15 rem → vừa. Giao diện tối soi 4 khung (KPI, bảng, thanh, heatmap) bằng nút đổi giao diện của app. Chip Đang lỗ / Giảm mạnh, nút "Xem N đơn lỗ" bật/tắt chip Lợi nhuận âm (cầu nối tự ẩn), đều chạy.
 - tsc backend + frontend, eslint sạch; vitest backend 646 qua, 3 đỏ có sẵn (chỉ mục trigram / đếm dọn trên DB dev).
 
+## 5b. Ảnh sản phẩm trống (anh báo trên prod 08/11 chiều, sau push)
+
+Ảnh ở bảng Top sản phẩm (và Lãi/Lỗ theo SKU) lấy từ `Product.imageUrl` qua `productId` của dòng sổ — dòng chưa nối kho (prod đa số; DB dev 414.816/433.316 dòng) thì trống. Gốc không phải thiếu ảnh: ảnh món hàng có ở `ChannelProduct.imageUrl` (sản phẩm trên sàn) và `OrderItem.imageUrl` (chụp từ payload đơn 08/09) — đúng nguồn danh sách đơn đang dùng. Sửa triệt để: `lib/sku-images.ts` `fillMissingSkuImages(scope, rows)` — ảnh kho → ảnh sản phẩm sàn theo mã sàn → ảnh dòng đơn theo mã sàn, chỉ tra mã còn thiếu, theo lô 500; áp cho `/realized-pnl/insights` (≤ 40 dòng) và `/sku-pnl`. Kiểm DB dev tài khoản admin local (1.469 sản phẩm sàn có ảnh): top 10 theo lãi 3/10 → 10/10 có ảnh. Không đổi sổ cái (không thêm cột ảnh vào sổ để khỏi tính lại 738k dòng vì một cái ảnh).
+
 ## 6. Chưa làm / để sau (chưa trình anh)
 
 - "Lãi vs chi quảng cáo theo ngày" (khối 6 của khảo sát) — cần AdSpend theo gian khớp bộ lọc.
