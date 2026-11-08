@@ -20,7 +20,15 @@ import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { shortReasonFromMessage } from "../services/sync-alert-text";
 import { findInsufficient, normalizeBulkItems } from "../lib/inventory-bulk";
-import { newVoucherId, parsePurchasePrice, stockVoucherCode, sumVoucherCost, type StockVoucherLine } from "../lib/stock-voucher";
+import {
+  newVoucherId,
+  parsePurchasePrice,
+  parseVoucherPayment,
+  payableFields,
+  stockVoucherCode,
+  sumVoucherCost,
+  type StockVoucherLine,
+} from "../lib/stock-voucher";
 import { resolveSupplier, supplierRouter } from "./inventory-suppliers";
 import { canSeeFinancials } from "../middleware/auth";
 import { applyStockDelta, setLevelAbsolute, setStockAbsolute } from "../services/stock-ledger";
@@ -315,6 +323,16 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
           ...(isImport ? { purchasePrice: priceById.get(it.productId) ?? null } : {}),
         });
       }
+      const totalCost = sumVoucherCost(voucherLines);
+      // CÔNG NỢ NCC (08/11/2026, mục 8 — bản hẹp): chỉ phiếu NHẬP có nhà cung cấp, người thấy tài chính
+      // chọn ở ô "Thanh toán" (trả đủ / chưa trả / một phần). Không gửi → không theo dõi (null).
+      let paid: number | null = null;
+      if (isImport && supplier && seesCost) {
+        const pay = parseVoucherPayment(req.body?.payment, totalCost);
+        if (!pay.ok) throw Object.assign(new Error(pay.error), { statusCode: 400 });
+        paid = pay.paid;
+      }
+      const payable = payableFields(totalCost, paid);
       await tx.stockVoucher.create({
         data: {
           id: voucherId,
@@ -326,14 +344,30 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
           locationName,
           lineCount: voucherLines.length,
           totalQuantity: voucherLines.reduce((a, l) => a + l.quantity, 0),
-          totalCost: new Prisma.Decimal(sumVoucherCost(voucherLines)),
+          totalCost: new Prisma.Decimal(totalCost),
           lines: voucherLines as unknown as Prisma.InputJsonValue,
           createdById: req.userId ?? null,
           createdAt: voucherAt,
           supplierId: supplier?.id ?? null,
           supplierName: supplier?.name ?? null,
+          paidAmount: payable.paidAmount != null ? new Prisma.Decimal(payable.paidAmount) : null,
+          debtAmount: payable.debtAmount != null ? new Prisma.Decimal(payable.debtAmount) : null,
         },
       });
+      // Trả ngay lúc lập cũng là một lần trả — để lịch sử trả tiền của phiếu đủ dòng.
+      if (payable.paidAmount != null && payable.paidAmount > 0) {
+        await tx.supplierPayment.create({
+          data: {
+            ownerId: req.ownerId!,
+            voucherId,
+            supplierId: supplier?.id ?? null,
+            amount: new Prisma.Decimal(payable.paidAmount),
+            paidAt: voucherAt,
+            note: payable.debtAmount === 0 ? "Trả đủ khi nhập hàng" : "Trả một phần khi nhập hàng",
+            createdById: req.userId ?? null,
+          },
+        });
+      }
       // Dòng nhập hàng cho báo cáo (mọi phiếu NHẬP, kể cả chưa ghi nhà cung cấp / giá — bổ sung sau được).
       if (isImport) {
         await tx.purchaseLine.createMany({
@@ -401,10 +435,13 @@ router.get("/vouchers", async (req: AuthRequest, res, next) => {
     const sizeRaw = Number(q.pageSize) || 20;
     const pageSize = VOUCHER_PAGE_SIZES.includes(sizeRaw) ? sizeRaw : 20;
     const supplierId = typeof q.supplierId === "string" && q.supplierId ? q.supplierId : null;
+    // debt=1: chỉ phiếu nhập còn nợ nhà cung cấp (08/11/2026, mục 8).
+    const onlyDebt = q.debt === "1";
     const where: Prisma.StockVoucherWhereInput = {
       ownerId: req.ownerId!,
       ...(type ? { type } : {}),
       ...(supplierId ? { supplierId } : {}),
+      ...(onlyDebt ? { debtAmount: { gt: 0 } } : {}),
       ...(search
         ? {
             OR: [
@@ -417,7 +454,7 @@ router.get("/vouchers", async (req: AuthRequest, res, next) => {
       ...(from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
     };
     const seesCost = canSeeFinancials(req);
-    const [total, rows] = await Promise.all([
+    const [total, rows, debtAgg] = await Promise.all([
       prisma.stockVoucher.count({ where }),
       prisma.stockVoucher.findMany({
         where,
@@ -437,8 +474,18 @@ router.get("/vouchers", async (req: AuthRequest, res, next) => {
           createdAt: true,
           supplierId: true,
           supplierName: true,
+          paidAmount: true,
+          debtAmount: true,
         },
       }),
+      // Số phiếu còn nợ + tổng nợ cho chip lọc "Còn nợ NCC" (theo nhà cung cấp đang lọc, bỏ qua các lọc khác).
+      seesCost
+        ? prisma.stockVoucher.aggregate({
+            where: { ownerId: req.ownerId!, ...(supplierId ? { supplierId } : {}), debtAmount: { gt: 0 } },
+            _count: { _all: true },
+            _sum: { debtAmount: true },
+          })
+        : null,
     ]);
     const creatorIds = [...new Set(rows.map((r) => r.createdById).filter((x): x is string => Boolean(x)))];
     const creators = creatorIds.length
@@ -459,11 +506,15 @@ router.get("/vouchers", async (req: AuthRequest, res, next) => {
         createdByName: r.createdById ? (nameOf.get(r.createdById) ?? null) : null,
         supplierId: r.supplierId,
         supplierName: r.supplierName,
+        // Công nợ NCC (mục 8): null = không theo dõi hoặc tài khoản không thấy tài chính.
+        paidAmount: seesCost && r.paidAmount != null ? Number(r.paidAmount) : null,
+        debt: seesCost && r.debtAmount != null ? Number(r.debtAmount) : null,
       })),
       total,
       page,
       pageSize,
       pageCount: Math.max(1, Math.ceil(total / pageSize)),
+      debtSummary: debtAgg ? { voucherCount: debtAgg._count._all, total: Number(debtAgg._sum.debtAmount ?? 0) } : null,
     });
   } catch (err) {
     next(err);
@@ -479,13 +530,20 @@ router.get("/vouchers/:id", async (req: AuthRequest, res, next) => {
       return;
     }
     const seesCost = canSeeFinancials(req);
-    const [owner, creator, supplier] = await Promise.all([
+    const [owner, creator, supplier, payments] = await Promise.all([
       prisma.user.findUnique({ where: { id: v.ownerId }, select: { fullName: true, phone: true, email: true } }),
       v.createdById ? prisma.user.findUnique({ where: { id: v.createdById }, select: { fullName: true } }) : null,
       v.supplierId
         ? prisma.supplier.findFirst({ where: { id: v.supplierId, ownerId: v.ownerId }, select: { phone: true, taxCode: true, address: true } })
         : null,
+      // Lịch sử trả tiền NCC (mục 8) — chỉ người thấy tài chính.
+      seesCost && v.paidAmount != null
+        ? prisma.supplierPayment.findMany({ where: { voucherId: v.id, ownerId: v.ownerId }, orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }] })
+        : [],
     ]);
+    const payerIds = [...new Set(payments.map((p) => p.createdById).filter((x): x is string => Boolean(x)))];
+    const payers = payerIds.length ? await prisma.user.findMany({ where: { id: { in: payerIds } }, select: { id: true, fullName: true } }) : [];
+    const payerName = new Map(payers.map((u) => [u.id, u.fullName]));
     const lines = (Array.isArray(v.lines) ? (v.lines as unknown as StockVoucherLine[]) : []).map((l) => ({
       ...l,
       unitCost: seesCost ? l.unitCost : null,
@@ -504,8 +562,17 @@ router.get("/vouchers/:id", async (req: AuthRequest, res, next) => {
         createdAt: v.createdAt,
         supplierId: v.supplierId,
         supplierName: v.supplierName,
+        paidAmount: seesCost && v.paidAmount != null ? Number(v.paidAmount) : null,
+        debt: seesCost && v.debtAmount != null ? Number(v.debtAmount) : null,
         lines,
       },
+      payments: payments.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        paidAt: p.paidAt,
+        note: p.note,
+        createdByName: p.createdById ? (payerName.get(p.createdById) ?? null) : null,
+      })),
       // Tên trên phiếu là ảnh chụp lúc lập; SĐT / MST / địa chỉ đọc bản hiện hành của danh bạ.
       supplier: v.supplierName
         ? { name: v.supplierName, phone: supplier?.phone ?? null, taxCode: supplier?.taxCode ?? null, address: supplier?.address ?? null }

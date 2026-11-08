@@ -4382,6 +4382,12 @@ model StockVoucher {
   /// Nhà cung cấp của phiếu NHẬP (05/11/2026, mục 5) — tùy chọn; tên chụp lúc lập để in lại y nguyên.
   supplierId    String?
   supplierName  String?
+  /// CÔNG NỢ NHÀ CUNG CẤP (08/11/2026, mục 8 — bản hẹp): Σ đã trả cho phiếu NHẬP có nhà cung cấp (đ).
+  /// NULL = không theo dõi (phiếu xuất, phiếu không ghi nhà cung cấp, phiếu lập trước 08/11 chưa ai ghi).
+  /// Luôn = Σ supplier_payments.amount của phiếu. Không đụng Dòng tiền: tiền trả NCC đã nằm trong giá vốn.
+  paidAmount    Decimal?         @db.Decimal(14, 2)
+  /// = totalCost − paidAmount (≥ 0), ghi sẵn để lọc "còn nợ" và cộng theo nhà cung cấp; NULL khi không theo dõi.
+  debtAmount    Decimal?         @db.Decimal(14, 2)
 
   @@unique([ownerId, code])
   @@index([ownerId, createdAt])
@@ -4389,8 +4395,28 @@ model StockVoucher {
   @@map("stock_vouchers")
 }
 
+/// LẦN TRẢ TIỀN NHÀ CUNG CẤP (08/11/2026, mục 8): mỗi lần trả cho MỘT phiếu nhập một dòng (kể cả
+/// trả ngay lúc lập phiếu). Chỉ là sổ theo dõi công nợ phải trả theo phiếu — KHÔNG định khoản,
+/// KHÔNG tuổi nợ, KHÔNG vào Dòng tiền (anh Trung chốt 08/11: "làm bản hẹp NCC").
+model SupplierPayment {
+  id          String   @id @default(cuid())
+  ownerId     String
+  voucherId   String
+  supplierId  String?
+  amount      Decimal  @db.Decimal(14, 2)
+  paidAt      DateTime @default(now())
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([voucherId])
+  @@index([ownerId, supplierId, paidAt])
+  @@map("supplier_payments")
+}
+
 /// NHÀ CUNG CẤP (05/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 5): danh bạ gọn để gắn vào
-/// phiếu nhập và đọc báo cáo nhập hàng. KHÔNG có công nợ / đơn đặt hàng (việc của phần mềm kế toán).
+/// phiếu nhập và đọc báo cáo nhập hàng. Công nợ phải trả theo dõi trên TỪNG PHIẾU NHẬP (stock_vouchers.paidAmount,
+/// 08/11/2026 mục 8), không có đơn đặt hàng.
 model Supplier {
   id        String   @id @default(cuid())
   ownerId   String

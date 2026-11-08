@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { parsePurchasePrice, PURCHASE_PRICE_MAX, sumVoucherCost, utcTimestampLiteral, weightedAveragePrice } from "../stock-voucher";
+import {
+  parsePaymentAmount,
+  parsePurchasePrice,
+  parseVoucherPayment,
+  payableFields,
+  PURCHASE_PRICE_MAX,
+  sumVoucherCost,
+  utcTimestampLiteral,
+  weightedAveragePrice,
+} from "../stock-voucher";
 
 describe("sumVoucherCost — giá trị phiếu", () => {
   it("dòng có giá nhập dùng giá nhập, dòng chưa ghi lấy giá vốn mặc định", () => {
@@ -54,5 +63,52 @@ describe("weightedAveragePrice — bình quân theo số lượng", () => {
 describe("utcTimestampLiteral — mốc ngày cho SQL thô trên cột không múi giờ", () => {
   it("giữ nguyên giờ UTC, bỏ chữ T và Z", () => {
     expect(utcTimestampLiteral(new Date("2026-11-04T17:00:00.000Z"))).toBe("2026-11-04 17:00:00.000");
+  });
+});
+
+describe("payableFields — đã trả / còn nợ trên phiếu nhập (08/11/2026 mục 8)", () => {
+  it("không theo dõi (null) → cả hai null", () => {
+    expect(payableFields(18_440_000, null)).toEqual({ paidAmount: null, debtAmount: null });
+  });
+  it("trả một phần → còn nợ = giá trị − đã trả", () => {
+    expect(payableFields(18_440_000, 10_000_000)).toEqual({ paidAmount: 10_000_000, debtAmount: 8_440_000 });
+  });
+  it("trả đủ → còn nợ 0; sửa giá nhập làm giá trị phiếu thấp hơn đã trả thì còn nợ kẹp về 0, không âm", () => {
+    expect(payableFields(18_440_000, 18_440_000)).toEqual({ paidAmount: 18_440_000, debtAmount: 0 });
+    expect(payableFields(15_000_000, 18_440_000)).toEqual({ paidAmount: 18_440_000, debtAmount: 0 });
+  });
+  it("ghi nợ toàn bộ (đã trả 0) vẫn là theo dõi", () => {
+    expect(payableFields(2_500_000, 0)).toEqual({ paidAmount: 0, debtAmount: 2_500_000 });
+  });
+});
+
+describe("parsePaymentAmount — một lần trả", () => {
+  it("dương hữu hạn → làm tròn đồng; 0 / âm / chữ / rỗng → null", () => {
+    expect(parsePaymentAmount(1_200_000.4)).toBe(1_200_000);
+    expect(parsePaymentAmount("500000")).toBe(500_000);
+    expect(parsePaymentAmount(0)).toBeNull();
+    expect(parsePaymentAmount(-5)).toBeNull();
+    expect(parsePaymentAmount("abc")).toBeNull();
+    expect(parsePaymentAmount("")).toBeNull();
+    expect(parsePaymentAmount(PURCHASE_PRICE_MAX + 1)).toBeNull();
+  });
+});
+
+describe("parseVoucherPayment — ô Thanh toán lúc lập phiếu", () => {
+  it("không gửi → không theo dõi (client cũ / nhân viên không thấy tài chính)", () => {
+    expect(parseVoucherPayment(undefined, 1_000_000)).toEqual({ ok: true, paid: null });
+  });
+  it("full = trả đủ, none = ghi nợ toàn bộ", () => {
+    expect(parseVoucherPayment({ mode: "full" }, 1_000_000)).toEqual({ ok: true, paid: 1_000_000 });
+    expect(parseVoucherPayment({ mode: "none" }, 1_000_000)).toEqual({ ok: true, paid: 0 });
+  });
+  it("partial phải có số tiền > 0 và < giá trị phiếu", () => {
+    expect(parseVoucherPayment({ mode: "partial", amount: 400_000 }, 1_000_000)).toEqual({ ok: true, paid: 400_000 });
+    expect(parseVoucherPayment({ mode: "partial", amount: 1_000_000 }, 1_000_000).ok).toBe(false);
+    expect(parseVoucherPayment({ mode: "partial" }, 1_000_000).ok).toBe(false);
+  });
+  it("mode lạ / không phải object → lỗi", () => {
+    expect(parseVoucherPayment({ mode: "later" }, 1).ok).toBe(false);
+    expect(parseVoucherPayment("full", 1).ok).toBe(false);
   });
 });

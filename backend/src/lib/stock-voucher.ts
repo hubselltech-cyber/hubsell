@@ -72,3 +72,52 @@ export function stockVoucherCode(type: VoucherType, id: string, at: Date): strin
 export function sumVoucherCost(lines: Pick<StockVoucherLine, "quantity" | "unitCost" | "purchasePrice">[]): number {
   return Math.round(lines.reduce((a, l) => a + l.quantity * (l.purchasePrice ?? l.unitCost), 0));
 }
+
+// ============================================================
+// CÔNG NỢ NHÀ CUNG CẤP — bản hẹp (08/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 8).
+// Khảo sát 10 phần mềm: ở phần mềm bán hàng, công nợ NCC = ĐUÔI CỦA PHIẾU NHẬP ("đã trả / còn nợ")
+// cộng dồn theo nhà cung cấp; không định khoản, không tuổi nợ. Anh Trung chốt "Làm bản hẹp NCC":
+// chỉ phải trả theo phiếu nhập có nhà cung cấp, KHÔNG đụng Dòng tiền (tiền trả NCC đã nằm trong giá vốn).
+// Giá trị phiếu dùng CÙNG luật sumVoucherCost — một con số cho cột Giá trị, bản in và công nợ.
+// ============================================================
+
+/** Hai cột ghi sẵn trên phiếu: đã trả + còn nợ. paidAmount null = không theo dõi → cả hai null. */
+export function payableFields(totalCost: number, paidAmount: number | null): { paidAmount: number | null; debtAmount: number | null } {
+  if (paidAmount === null) return { paidAmount: null, debtAmount: null };
+  const paid = Math.max(0, Math.round(paidAmount));
+  return { paidAmount: paid, debtAmount: Math.max(0, Math.round(totalCost) - paid) };
+}
+
+/** Số tiền một lần trả: số dương hữu hạn trong trần → làm tròn đồng; còn lại null. */
+export function parsePaymentAmount(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n > PURCHASE_PRICE_MAX) return null;
+  return Math.round(n);
+}
+
+export type VoucherPaymentMode = "full" | "none" | "partial";
+
+/**
+ * Cách thanh toán lúc LẬP phiếu nhập (ô "Thanh toán" trên Phiếu nhiều mã): `full` = trả đủ ngay,
+ * `none` = ghi nợ toàn bộ, `partial` = trả một phần (amount < giá trị phiếu). Không gửi → không theo dõi
+ * (null): client cũ / app mobile / nhân viên không thấy tài chính không bị gán "đã trả đủ" oan.
+ */
+export function parseVoucherPayment(
+  raw: unknown,
+  totalCost: number
+): { ok: true; paid: number | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, paid: null };
+  if (typeof raw !== "object") return { ok: false, error: "Thông tin thanh toán không hợp lệ" };
+  const mode = (raw as { mode?: unknown }).mode;
+  const total = Math.round(totalCost);
+  if (mode === "full") return { ok: true, paid: total };
+  if (mode === "none") return { ok: true, paid: 0 };
+  if (mode === "partial") {
+    const amount = parsePaymentAmount((raw as { amount?: unknown }).amount);
+    if (amount === null) return { ok: false, error: "Nhập số tiền đã trả nhà cung cấp (lớn hơn 0)" };
+    if (amount >= total) return { ok: false, error: "Số đã trả bằng hoặc vượt giá trị phiếu — chọn \"Đã trả đủ\"" };
+    return { ok: true, paid: amount };
+  }
+  return { ok: false, error: "Cách thanh toán không hợp lệ" };
+}

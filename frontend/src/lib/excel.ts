@@ -743,12 +743,12 @@ export function exportSuppliersToExcel(items: SupplierRow[], includeValue: boole
     "Trạng thái": s.isActive ? "Đang dùng" : "Ngừng dùng",
     "Số phiếu nhập": s.voucherCount,
     "Số lượng nhập": s.totalQuantity,
-    ...(includeValue ? { "Giá trị nhập": s.totalValue ?? "" } : {}),
+    ...(includeValue ? { "Giá trị nhập": s.totalValue ?? "", "Còn nợ": s.debt ?? 0 } : {}),
     "Lần nhập gần nhất": s.lastImportAt ? toDateTimeText(s.lastImportAt) : "",
   }));
   downloadSheet(
     rows,
-    includeValue ? [30, 14, 14, 36, 30, 12, 13, 13, 16, 18] : [30, 14, 14, 36, 30, 12, 13, 13, 18],
+    includeValue ? [30, 14, 14, 36, 30, 12, 13, 13, 16, 14, 18] : [30, 14, 14, 36, 30, 12, 13, 13, 18],
     "Nha cung cap",
     `hubsell_nha_cung_cap_${fileStamp()}.xlsx`
   );

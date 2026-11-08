@@ -164,6 +164,19 @@ export default function StockVoucherPrintPage() {
                 ? "Đơn giá = giá nhập ghi trên phiếu (đồng); dòng chưa ghi giá nhập lấy giá vốn mặc định của SKU lúc lập phiếu."
                 : "Đơn giá = giá vốn mặc định của SKU tại thời điểm lập phiếu (đồng)."}{" "}
               Tổng giá trị: <b>{fmt(totalValue)} đ</b>.
+              {/* Công nợ NCC (08/11/2026, mục 8): chỉ phiếu nhập đang theo dõi; "Đã thanh toán đủ" khi hết nợ. */}
+              {isImport && v.paidAmount != null && (
+                <>
+                  {" "}
+                  {(v.debt ?? 0) > 0 ? (
+                    <>
+                      Đã thanh toán: <b>{fmt(v.paidAmount)} đ</b> · Còn nợ nhà cung cấp: <b>{fmt(v.debt ?? 0)} đ</b>.
+                    </>
+                  ) : (
+                    <>Đã thanh toán đủ.</>
+                  )}
+                </>
+              )}
             </div>
           )}
 

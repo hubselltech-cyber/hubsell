@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, Printer, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, HandCoins, Pencil, Printer, Search, X } from "lucide-react";
 
+import { SupplierPaymentDialog, VoucherPayStatus } from "@/components/products/suppliers/supplier-payment-dialog";
 import { VoucherEditDialog } from "@/components/products/suppliers/voucher-edit-dialog";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
@@ -28,6 +29,8 @@ import { cn } from "@/lib/utils";
  *
  * 05/11 (mục 5): thêm cột Nhà cung cấp (phiếu nhập), lọc theo một nhà cung cấp khi đi từ tab Nhà cung
  * cấp sang (`supplierFilter`), và nút sửa nhà cung cấp / giá nhập trên phiếu nhập cho người thấy tài chính.
+ * 08/11 (mục 8, công nợ NCC bản hẹp): cột Thanh toán (Đã trả đủ / Còn nợ X / Chưa ghi), chip lọc "Còn nợ NCC"
+ * có số đếm, nút Ghi trả tiền mở hộp thanh toán từng phiếu. Chỉ người thấy tài chính.
  */
 
 type TypeFilter = "" | StockVoucherType;
@@ -69,6 +72,8 @@ export function StockVoucherTable({
 }) {
   const seesCost = canSeeFinancials(getStoredUser());
   const [editId, setEditId] = useState<string | null>(null);
+  const [payId, setPayId] = useState<string | null>(null);
+  const [onlyDebt, setOnlyDebt] = useState(false);
   const [range, setRange] = useState<DateRange | null>(null);
   const [type, setType] = useState<TypeFilter>("");
   const [searchInput, setSearchInput] = useState("");
@@ -84,12 +89,14 @@ export function StockVoucherTable({
     page,
     pageSize,
     supplierId: supplierFilter?.id,
+    debt: seesCost && onlyDebt ? true : undefined,
   };
   const vq = useApiQuery({ queryKey: qk.stockVouchers(params), queryFn: () => fetchStockVouchers(params) });
   const rows = vq.data?.items ?? [];
   const pageCount = vq.data?.pageCount ?? 0;
   const loading = vq.refreshing;
-  const filtersActive = Boolean(range || type || search || supplierFilter);
+  const debtSummary = vq.data?.debtSummary ?? null;
+  const filtersActive = Boolean(range || type || search || supplierFilter || onlyDebt);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -118,6 +125,23 @@ export function StockVoucherTable({
               {c.label}
             </button>
           ))}
+          {seesCost && (debtSummary?.voucherCount || onlyDebt) ? (
+            <button
+              type="button"
+              aria-pressed={onlyDebt}
+              title="Chỉ phiếu nhập còn nợ nhà cung cấp"
+              onClick={() => {
+                setOnlyDebt((v) => !v);
+                setPage(1);
+              }}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-medium tabular-nums transition-colors",
+                onlyDebt ? "border-amber-600 bg-amber-600 text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+              )}
+            >
+              Còn nợ NCC · {formatNumber(debtSummary?.voucherCount ?? 0)}
+            </button>
+          ) : null}
           {supplierFilter && (
             <span className="inline-flex max-w-xs items-center gap-1 rounded-full border border-primary/40 bg-primary/5 py-1 pl-3 pr-1.5 text-xs font-medium">
               <span className="truncate" title={supplierFilter.name}>
@@ -185,8 +209,13 @@ export function StockVoucherTable({
                         Giá trị
                       </TableHead>
                     )}
+                    {seesCost && (
+                      <TableHead className="w-36" title="Công nợ nhà cung cấp theo phiếu nhập: đã trả đủ, còn nợ bao nhiêu, hay chưa ghi">
+                        Thanh toán
+                      </TableHead>
+                    )}
                     <TableHead className="w-36">Người lập</TableHead>
-                    <TableHead className="w-24" />
+                    <TableHead className={seesCost ? "w-32" : "w-24"} />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -211,8 +240,28 @@ export function StockVoucherTable({
                         {seesCost && (
                           <TableCell className="text-right tabular-nums">{r.totalCost != null ? <Money value={r.totalCost} /> : "—"}</TableCell>
                         )}
+                        {seesCost && (
+                          <TableCell>
+                            <VoucherPayStatus type={r.type} supplierId={r.supplierId} paidAmount={r.paidAmount} debt={r.debt} />
+                          </TableCell>
+                        )}
                         <TableCell className="text-sm text-muted-foreground">{r.createdByName ?? "—"}</TableCell>
                         <TableCell className="whitespace-nowrap text-right">
+                          {seesCost && r.type === "IMPORT" && r.supplierId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={cn("h-8 w-8 p-0", r.debt != null && r.debt > 0 && "text-amber-700 hover:text-amber-800")}
+                              title={`Ghi trả tiền nhà cung cấp cho ${r.code}`}
+                              aria-label={`Ghi trả tiền nhà cung cấp cho phiếu ${r.code}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPayId(r.id);
+                              }}
+                            >
+                              <HandCoins className="size-4" />
+                            </Button>
+                          )}
                           {seesCost && r.type === "IMPORT" && (
                             <Button
                               variant="ghost"
@@ -291,6 +340,12 @@ export function StockVoucherTable({
         voucherId={editId}
         onOpenChange={(o) => {
           if (!o) setEditId(null);
+        }}
+      />
+      <SupplierPaymentDialog
+        voucherId={payId}
+        onOpenChange={(o) => {
+          if (!o) setPayId(null);
         }}
       />
     </div>

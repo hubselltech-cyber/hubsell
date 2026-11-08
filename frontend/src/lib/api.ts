@@ -4568,6 +4568,11 @@ export function adjustInventoryBulk(data: {
   /** Nhà cung cấp của phiếu NHẬP: chọn nhà đã có (id) hoặc gõ tên mới (tạo tại chỗ). */
   supplierId?: string;
   supplierName?: string;
+  /**
+   * Thanh toán nhà cung cấp lúc lập phiếu NHẬP (08/11/2026, mục 8 — công nợ bản hẹp): trả đủ / chưa trả /
+   * trả một phần. Không gửi = không theo dõi công nợ cho phiếu này.
+   */
+  payment?: { mode: "full" | "none" } | { mode: "partial"; amount: number };
 }) {
   return apiFetch<{
     type: "IMPORT" | "EXPORT";
@@ -4599,6 +4604,18 @@ export interface StockVoucherSummary {
   /** Nhà cung cấp của phiếu nhập (05/11/2026) — tên chụp lúc lập. */
   supplierId: string | null;
   supplierName: string | null;
+  /** Công nợ NCC (08/11/2026, mục 8): đã trả / còn nợ; null = không theo dõi hoặc tài khoản không thấy tài chính. */
+  paidAmount: number | null;
+  debt: number | null;
+}
+
+/** Một lần trả tiền nhà cung cấp cho một phiếu nhập (08/11/2026, mục 8). */
+export interface SupplierPaymentRow {
+  id: string;
+  amount: number;
+  paidAt: string;
+  note: string | null;
+  createdByName: string | null;
 }
 
 export interface StockVoucherLine {
@@ -4615,6 +4632,8 @@ export interface StockVoucherLine {
 
 export interface StockVoucherDetail {
   voucher: Omit<StockVoucherSummary, "createdByName"> & { lines: StockVoucherLine[] };
+  /** Lịch sử trả tiền NCC, mới nhất trước — rỗng khi không theo dõi / không thấy tài chính. */
+  payments: SupplierPaymentRow[];
   supplier: { name: string; phone: string | null; taxCode: string | null; address: string | null } | null;
   shop: { name: string; phone: string | null; email: string | null };
   createdByName: string | null;
@@ -4628,6 +4647,34 @@ export function updateStockVoucher(
   return apiFetch<{ ok: true; supplier: { id: string; name: string } | null; priceCount: number }>(
     `/api/inventory/vouchers/${encodeURIComponent(id)}`,
     { method: "PATCH", body: JSON.stringify(data) }
+  );
+}
+
+// ----- CÔNG NỢ NHÀ CUNG CẤP — bản hẹp (08/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 8) -----
+
+export interface VoucherPayable {
+  totalCost: number;
+  paidAmount: number | null;
+  debt: number | null;
+}
+
+/** Bắt đầu theo dõi công nợ cho phiếu nhập chưa theo dõi: "chưa trả" = ghi nợ toàn bộ. */
+export function markVoucherUnpaid(voucherId: string) {
+  return apiFetch<{ ok: true } & VoucherPayable>(`/api/inventory/vouchers/${encodeURIComponent(voucherId)}/payable`, { method: "POST" });
+}
+
+/** Ghi MỘT lần trả tiền nhà cung cấp cho phiếu nhập. paidAt = ISO; không gửi = bây giờ. */
+export function recordSupplierPayment(voucherId: string, data: { amount: number; paidAt?: string; note?: string }) {
+  return apiFetch<{ ok: true; paymentId: string } & VoucherPayable>(`/api/inventory/vouchers/${encodeURIComponent(voucherId)}/payments`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteSupplierPayment(voucherId: string, paymentId: string) {
+  return apiFetch<{ ok: true } & VoucherPayable>(
+    `/api/inventory/vouchers/${encodeURIComponent(voucherId)}/payments/${encodeURIComponent(paymentId)}`,
+    { method: "DELETE" }
   );
 }
 
@@ -4649,12 +4696,17 @@ export interface SupplierRow extends SupplierBrief {
   /** Σ số lượng × giá nhập trên các dòng CÓ giá; null = chưa dòng nào có giá / không thấy tài chính. */
   totalValue: number | null;
   lastImportAt: string | null;
+  /** Còn nợ HIỆN TẠI trên mọi phiếu nhập đang theo dõi (không theo khoảng ngày); null = không thấy tài chính. */
+  debt: number | null;
+  debtVoucherCount: number | null;
 }
 
 export interface SupplierListResponse {
   items: SupplierRow[];
   unassigned: { voucherCount: number; totalQuantity: number };
   costHidden: boolean;
+  /** Σ còn nợ mọi nhà cung cấp; null = không thấy tài chính. */
+  totalDebt: number | null;
 }
 
 export function fetchSupplierOptions() {
@@ -4751,18 +4803,27 @@ export function fetchStockVouchers(params: {
   page?: number;
   pageSize?: number;
   supplierId?: string;
+  /** Chỉ phiếu nhập còn nợ nhà cung cấp (08/11/2026, mục 8). */
+  debt?: boolean;
 }) {
   const qs = new URLSearchParams();
   if (params.type) qs.set("type", params.type);
   if (params.supplierId) qs.set("supplierId", params.supplierId);
+  if (params.debt) qs.set("debt", "1");
   if (params.q) qs.set("q", params.q);
   if (params.from) qs.set("from", params.from);
   if (params.to) qs.set("to", params.to);
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
-  return apiFetch<{ items: StockVoucherSummary[]; total: number; page: number; pageSize: number; pageCount: number }>(
-    `/api/inventory/vouchers?${qs.toString()}`
-  );
+  return apiFetch<{
+    items: StockVoucherSummary[];
+    total: number;
+    page: number;
+    pageSize: number;
+    pageCount: number;
+    /** Số phiếu còn nợ + tổng nợ (theo nhà cung cấp đang lọc); null = không thấy tài chính. */
+    debtSummary: { voucherCount: number; total: number } | null;
+  }>(`/api/inventory/vouchers?${qs.toString()}`);
 }
 
 export function fetchStockVoucher(id: string) {

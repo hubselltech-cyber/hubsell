@@ -459,3 +459,78 @@ nhiều mã có ô Nhà cung cấp; không tràn ngang ở 1920. **Chưa kiểm 
 
 - **Push + kiểm prod (06/11):** commit `cad2c404`, Render `/health` = `cad2c404` → migration `20261106001000_…` đã áp. Prod shop công ty (màn 1920, CHỈ XEM, không bấm công tắc nào): trang Sản phẩm trên sàn có cột Trạng thái rồi Đồng bộ tồn, nút "Đồng bộ tồn theo gian 0/357", 0 ô tràn, không cuộn ngang; `/mappings/stock-sync/summary` 200 (2 gian, 357 phân loại đã nối, 0 đang bật); danh sách trả `stockSyncEnabled: null` + "có thể bán"; Tổng kho tải được, chip đều "chưa bật" (shop chưa bật gian nào). Chưa làm trên prod: bật / tắt thật, worker đẩy thật.
 - **Chuẩn cắt tên sản phẩm (anh xem prod 06/11: "Tên sản phẩm dài quá, rút ngắn ký tự đi em. Mình đã có chuẩn rồi"):** trên màn 1920 cột tên rộng 919px nên tên dài 886px hiện trọn. Chuẩn đã có ở bảng Giá vốn (22/10: "cắt theo bề rộng + tooltip đủ tên", `max-w-[26rem] truncate`) nhưng viết rải rác bằng chữ → gom thành hằng `PRODUCT_NAME_CLAMP` trong `lib/typography.ts`, áp cho tên sản phẩm + tên phân loại ở trang Sản phẩm trên sàn, và thay 4 chỗ viết tay (bảng Giá vốn ×3, Phiếu nhiều mã ×1). Bảng mới có cột tên sản phẩm: dùng hằng này + `title` tên đủ.
+
+## 8. Khách xin "công nợ" trong Tổng kho — khảo sát đối thủ 08/11/2026 (anh: "như vậy không khác gì phần mềm kế toán"; CHƯA LÀM, chờ anh chốt)
+
+**Câu hỏi:** phần mềm quản lý bán hàng / kho khác có làm công nợ không, đặt ở đâu? (Đọc help chính thức bằng WebFetch; ba trang help.nhanh.vn / help.haravan.com / support.kiotviet.vn không tải được nên Haravan CHƯA xác nhận, Nhanh đọc qua bảng giá.)
+
+| Phần mềm | Công nợ NCC (phải trả) | Đặt ở đâu | Công nợ khách (phải thu) |
+|---|---|---|---|
+| KiotViet | Có | Đối tác/Mua hàng → **Nhà cung cấp → tab "Nợ cần trả NCC"**: từng phiếu nhập, ô "Trả cho NCC" → tạo phiếu chi (Sổ quỹ), nút "Điều chỉnh", chiết khấu NCC | Có, ở hồ sơ Khách hàng |
+| Sapo | Có | Help xếp trong **"Sản phẩm và kho hàng" → "Đơn nhập hàng và hoàn trả"**: "Khởi tạo & ghi nhận công nợ NCC", "Thanh toán công nợ đơn nhập hàng"; tổng hợp ở Báo cáo công nợ NCC; 2025 thêm app "Quản lý công nợ" riêng (KH + NCC + ĐVVC) | Có |
+| MISA eShop | Có | **Nhập hàng** (ghi nợ / trả ngay, "đã trả bao nhiêu, còn nợ bao nhiêu") + hồ sơ **Nhà cung cấp**; trả hàng mua = giảm trừ công nợ | Có |
+| Pancake POS | Có | Menu **Tài chính → Công nợ** (không nằm trong Sản phẩm/Kho); phải trả TỰ SINH khi phiếu nhập kho có NCC chuyển "Đã nhập hàng", phải thu tự sinh khi đơn "Đã gửi hàng" | Có |
+| Nhanh.vn | Có | **Gói Kế toán** bán thêm 100k/cửa hàng/tháng: thu chi + công nợ NCC / KH / nhân viên / đối tác trả góp — module riêng | Có |
+| Salework | **Không** | Kho vận → NCC chỉ có thông tin + số đơn đặt + hàng nhập; "Công nợ" nằm ở Salework Tài chính và CHỈ là phải thu từ sàn Shopee/Lazada/TikTok/Tiki | Chỉ sàn |
+| UPOS | Có | Mục Nhà cung cấp ("lô hàng đã nhập → công nợ cần đối soát"), không trong kho | Có |
+| Odoo | Không trong Inventory | Purchase tạo Vendor bill → **Accounting** (Aged Payable); Inventory không có số nợ | Accounting |
+| Zoho Inventory | Có | Ngay trong app Inventory: Bills, Payments Made, Vendor Balance report (mục Purchases) | Có (Invoices) |
+| Cin7 Core | Có | Suppliers → Supplier Deposits / Bulk Supplier Payments; có module kế toán cơ bản | Có |
+
+**Kết luận rút ra**
+1. Không ai gọi đây là "kế toán". Mọi phần mềm bán hàng VN đều có công nợ NCC, nhưng ở dạng **ĐUÔI CỦA PHIẾU NHẬP**: phiếu nhập ghi "đã trả X, còn nợ Y", hồ sơ NCC cộng dồn "còn nợ". Không có định khoản, TK 331, đối trừ chứng từ, tuổi nợ — những thứ đó mới là phần mềm kế toán (MISA SME, Odoo Accounting).
+2. Hai trường phái vị trí: gắn vào **Nhập hàng / Nhà cung cấp** (KiotViet, Sapo, MISA eShop, UPOS, Zoho) hoặc tách menu **Tài chính** (Pancake, Nhanh, Salework). Đa số đặt cạnh phiếu nhập.
+3. Phần mềm thuần đa sàn (Salework) KHÔNG làm công nợ NCC — nhưng Salework cũng chưa có phiếu nhập có giá nhập theo NCC như Hubsell đã làm 05/11 (mục 5.7).
+4. Hubsell đã có 80 % nền: `stock_vouchers.supplierId`, `purchase_lines` giá nhập, tab Nhà cung cấp 2 góc nhìn. Thiếu đúng 2 số trên phiếu nhập (đã trả / còn nợ) + cột "Còn nợ" ở tab Nhà cung cấp + nút "Ghi trả tiền". Phải thu từ sàn đã có sẵn (Dòng tiền, ví sàn, escrow).
+
+**Em đề xuất ranh giới nếu anh gật (chưa làm):** chỉ công nợ **phải trả NCC theo phiếu nhập**, đặt trong tab Nhà cung cấp sẵn có + phiếu nhập; KHÔNG menu "Công nợ" riêng, KHÔNG công nợ khách lẻ / nhân viên / đối tác, KHÔNG định khoản hay tuổi nợ, KHÔNG đụng Dòng tiền (tiền trả NCC đã là chi phí nhập hàng qua giá vốn — cộng thêm là đếm hai lần). Câu cần hỏi khách trước: "công nợ" khách nói là nợ NCC hay nợ khách sỉ lấy hàng? Nếu là khách sỉ offline thì đó là bán hàng/CRM, không phải kho.
+
+### 8.1 ĐÃ LÀM (08/11/2026 đêm, anh: "Làm bản hẹp NCC") — local, CHƯA commit / CHƯA push
+
+**Nguyên tắc giữ đúng ranh giới ở trên:** công nợ = đuôi của TỪNG PHIẾU NHẬP có nhà cung cấp; không menu Công nợ, không công nợ
+khách / nhân viên / đối tác, không định khoản, không tuổi nợ, KHÔNG ghi vào Dòng tiền (tiền trả NCC đã nằm trong giá vốn — cộng
+thêm là đếm hai lần). Giá trị phiếu dùng CÙNG luật `sumVoucherCost` (giá nhập dòng, không có thì giá vốn lúc lập) — một con số
+cho cột Giá trị, bản in và công nợ.
+
+**Dữ liệu** (migration `20261108230000_supplier_payments`, RLS bật, không đụng bảng nóng):
+- `stock_vouchers.paidAmount` (Σ đã trả) + `debtAmount` (= totalCost − paidAmount, ≥ 0, ghi sẵn để lọc / cộng). **NULL = không
+  theo dõi**: phiếu xuất, phiếu không ghi NCC, phiếu lập trước 08/11, phiếu do người không thấy tài chính lập. Không gán "đã trả
+  đủ" oan cho phiếu cũ — chủ shop tự ghi khi cần.
+- Bảng `supplier_payments`: mỗi lần trả tiền cho MỘT phiếu một dòng (kể cả trả ngay lúc lập — ghi chú "Trả đủ / Trả một phần khi
+  nhập hàng"), có người ghi. Bất biến: `paidAmount` = Σ amount của phiếu.
+
+**Backend** (`lib/stock-voucher.ts` + 12 test mới, `routes/inventory.ts`, `routes/inventory-suppliers.ts`; chỉ `canSeeFinancials`):
+- `POST /adjust-bulk` nhận `payment: {mode: full | none | partial, amount?}` — chỉ phiếu NHẬP có NCC; không gửi → không theo dõi.
+  `partial` phải 0 < amount < giá trị phiếu.
+- `GET /vouchers` thêm `paidAmount`, `debt`, lọc `debt=1`, `debtSummary` (số phiếu + tổng nợ theo NCC đang lọc).
+  `GET /vouchers/:id` thêm `payments[]` (mới nhất trước).
+- `POST /vouchers/:id/payable` = bắt đầu theo dõi "chưa trả" (ghi nợ toàn bộ) cho phiếu chưa theo dõi.
+- `POST /vouchers/:id/payments {amount, paidAt?, note?}` = ghi một lần trả, khóa dòng `FOR UPDATE`, **không cho trả quá số còn
+  nợ** (400 nêu số còn nợ). `DELETE /vouchers/:id/payments/:pid` = xóa lần ghi nhầm, đã trả tính lại = Σ còn lại.
+- `PATCH /vouchers/:id` (sửa giá nhập) tính lại `debtAmount` theo giá trị mới (còn nợ kẹp về 0, không âm); bỏ NCC khi phiếu đã có
+  lần trả → 400 "xóa các lần trả trước".
+- `GET /suppliers` thêm `debt` + `debtVoucherCount` từng nhà (groupBy `debtAmount > 0`, **không theo khoảng ngày** — nợ là số dư)
+  và `totalDebt`.
+
+**Web:**
+- Phiếu nhiều mã: khối **"Thanh toán nhà cung cấp"** (Segmented Đã trả đủ · Chưa trả · Trả một phần + ô tiền) chỉ hiện khi đã
+  chọn NCC và có giá nhập (giá trị > 0); mặc định **Đã trả đủ** (như KiotViet / Sapo — ghi nợ là việc chủ động). Dải kết quả
+  ghi "Còn nợ nhà cung cấp X đ — ghi trả tiền sau ở Tổng kho › Phiếu kho".
+- Phiếu kho: cột **Thanh toán** (chip "Đã trả đủ" xanh / "Còn nợ X" vàng / "Chưa ghi" / "—"), chip lọc **"Còn nợ NCC · n"** có số
+  đếm, nút **Ghi trả tiền** (icon bàn tay tiền, vàng khi còn nợ) mở `suppliers/supplier-payment-dialog.tsx`: ba ô Giá trị · Đã trả ·
+  Còn nợ, ô tiền (điền sẵn số còn nợ) + ngày + ghi chú, lịch sử các lần trả (xóa 2 bước), nút "Ghi nợ toàn bộ" cho phiếu chưa theo dõi.
+- Tab Nhà cung cấp: cột **Còn nợ** (vàng, tooltip số phiếu), sắp xếp được; chip **"Còn nợ · n"** + dòng "Tổng còn nợ nhà cung
+  cấp"; Excel thêm cột Còn nợ. Bấm dòng NCC vẫn sang Phiếu kho lọc theo nhà đó → ghi trả tiền ở đó.
+- Bản in phiếu nhập: dòng "Đã thanh toán: X · Còn nợ nhà cung cấp: Y" hoặc "Đã thanh toán đủ" (chỉ phiếu đang theo dõi).
+
+**Kiểm local (DB dev, tài khoản reviewer@hubsell.vn "Hubsell Demo Store", backend-http :4010, web :3000 tạm trỏ http):**
+- Seed qua API thật: 6 NCC (một tên 60 ký tự), 7 phiếu nhập (trả đủ 8 chữ số, chưa trả 26.650.000, trả một phần 10/24,8tr, không
+  gửi payment → "Chưa ghi", không NCC → "—"); 2 lần trả + xóa 1 lần trên API; lỗi mong đợi đúng: partial ≥ tổng (400), trả quá
+  số nợ (400 "chỉ còn nợ 18.650.000"), phiếu không NCC (400). Tổng nợ 45.050.000 = 21,65 + 7,92 + 14,8 + 0,68 khớp tính tay.
+- UI: ghi trả 1.650.000 qua hộp → toast + ba ô đổi (6.650.000 / 20.000.000) + lịch sử 2 dòng; xóa lần trả → về 21.650.000; chip
+  lọc Còn nợ 4/6 nhà; bản in có dòng Đã thanh toán / Còn nợ. Đo JS ô tràn: tab Nhà cung cấp **0** ở 1280 / 1440 / 1700; Phiếu kho
+  cuộn ngang trong hộp (bảng 1.598 px, đã rộng sẵn từ trước — cột mới +144), ô tiền không tràn; dark soi bảng + hộp OK (không lớp `dark:`).
+- tsc backend + frontend sạch, eslint 7 tệp sạch, vitest `stock-voucher` 18/18.
+- **Chưa kiểm:** tệp Excel tải về; tài khoản nhân viên không thấy tài chính trên UI (API đã chặn 403); mobile (không đụng).
+- Lập phiếu thật trên UI Phiếu nhiều mã với "Trả một phần" 1.000.000 / 2.300.000 → PN-261108-81CE, dải kết quả "Còn nợ nhà cung cấp 1.300.000 đ", DB đúng (paid 1tr, debt 1,3tr, 1 dòng supplier_payments "Trả một phần khi nhập hàng").
+- **Đã dọn (anh: "Dọn seed, commit, push"):** xóa 8 phiếu / 11 dòng nhập / 5 lần trả / 6 NCC / 11 dòng nhật ký, trả tồn 10 SKU về đúng số gốc (kiểm lại từng mã); `frontend/.env.local` đã trả về https:4000.

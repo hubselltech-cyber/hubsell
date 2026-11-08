@@ -29,10 +29,14 @@ import { SupplierFormDialog } from "./supplier-form-dialog";
  * đọc từ phiếu nhập (anh Trung: "đây là phần thống kê thôi, phiếu nhập cũng đơn giản"). Hai góc nhìn như
  * Sapo: Theo nhà cung cấp (kiêm danh bạ — thêm / sửa tại đây; bấm một dòng sang Phiếu kho đã lọc theo
  * nhà đó để đối chiếu) và Theo sản phẩm (giá từng nhà + giá nhập trung bình, chỉ người thấy tài chính).
- * Chung: tìm, khoảng ngày chuẩn, xuất Excel. KHÔNG có công nợ, KHÔNG tự đổi giá vốn.
+ * Chung: tìm, khoảng ngày chuẩn, xuất Excel. KHÔNG tự đổi giá vốn.
+ *
+ * 08/11 (mục 8, công nợ NCC bản hẹp — anh chốt "Làm bản hẹp NCC"): cột "Còn nợ" = số dư hiện tại trên mọi phiếu
+ * nhập đang theo dõi (không theo khoảng ngày), chip lọc "Còn nợ" có số đếm, dòng tổng nợ dưới bảng. Trả tiền ghi
+ * trên từng phiếu ở tab Phiếu kho (bấm dòng nhà cung cấp → sang đó). Không có menu Công nợ riêng.
  */
 type View = "suppliers" | "products";
-type SupplierSort = "name" | "vouchers" | "quantity" | "value" | "last";
+type SupplierSort = "name" | "vouchers" | "quantity" | "value" | "debt" | "last";
 
 function dayStartIso(d: Date) {
   const x = new Date(d);
@@ -55,6 +59,7 @@ export function SuppliersTab({ onOpenVouchers }: { onOpenVouchers: (supplier: { 
   const [exporting, setExporting] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SupplierRow | null>(null);
+  const [onlyDebt, setOnlyDebt] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -149,6 +154,8 @@ export function SuppliersTab({ onOpenVouchers }: { onOpenVouchers: (supplier: { 
           from={from}
           to={to}
           seesCost={seesCost}
+          onlyDebt={seesCost && onlyDebt}
+          onToggleDebt={() => setOnlyDebt((v) => !v)}
           onOpenVouchers={onOpenVouchers}
           onEdit={(s) => {
             setEditing(s);
@@ -169,6 +176,8 @@ function SupplierList({
   from,
   to,
   seesCost,
+  onlyDebt,
+  onToggleDebt,
   onOpenVouchers,
   onEdit,
 }: {
@@ -176,6 +185,8 @@ function SupplierList({
   from?: string;
   to?: string;
   seesCost: boolean;
+  onlyDebt: boolean;
+  onToggleDebt: () => void;
   onOpenVouchers: (supplier: { id: string; name: string }) => void;
   onEdit: (s: SupplierRow) => void;
 }) {
@@ -183,9 +194,10 @@ function SupplierList({
   const params = { search: search || undefined, from, to };
   const q = useApiQuery({ queryKey: qk.suppliers(params), queryFn: () => fetchSuppliers(params) });
   const data = q.data;
+  const debtCount = useMemo(() => (data?.items ?? []).filter((s) => (s.debt ?? 0) > 0).length, [data]);
 
   const rows = useMemo(() => {
-    const list = [...(data?.items ?? [])];
+    const list = (data?.items ?? []).filter((s) => !onlyDebt || (s.debt ?? 0) > 0);
     const val = (s: SupplierRow): number | string | null =>
       sort.key === "name"
         ? s.name.toLowerCase()
@@ -195,7 +207,9 @@ function SupplierList({
             ? s.totalQuantity
             : sort.key === "value"
               ? s.totalValue
-              : s.lastImportAt;
+              : sort.key === "debt"
+                ? s.debt
+                : s.lastImportAt;
     // Giá trị không có (chưa nhập lần nào / chưa có giá) luôn xếp cuối ở cả hai chiều.
     list.sort((a, b) => {
       const x = val(a);
@@ -207,12 +221,32 @@ function SupplierList({
       return (sort.dir === "asc" ? c : -c) || a.name.localeCompare(b.name, "vi");
     });
     return list;
-  }, [data, sort]);
+  }, [data, sort, onlyDebt]);
 
   const unassigned = data?.unassigned;
+  const totalDebt = data?.totalDebt ?? 0;
 
   return (
     <div className="space-y-2">
+      {seesCost && (debtCount > 0 || onlyDebt) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={onlyDebt}
+            title="Chỉ nhà cung cấp đang còn nợ"
+            onClick={onToggleDebt}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium tabular-nums transition-colors",
+              onlyDebt ? "border-amber-600 bg-amber-600 text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+            )}
+          >
+            Còn nợ · {formatNumber(debtCount)}
+          </button>
+          <span className={cn(TEXT_SUB, "tabular-nums")}>
+            Tổng còn nợ nhà cung cấp: <b className="text-foreground">{formatNumber(totalDebt)} đ</b>
+          </span>
+        </div>
+      )}
       <div className="overflow-hidden rounded-lg border bg-card">
         {q.error ? (
           <p className="py-8 text-center text-sm text-amber-700">{q.error}</p>
@@ -220,13 +254,13 @@ function SupplierList({
           <p className="py-8 text-center text-sm text-muted-foreground">Đang tải nhà cung cấp…</p>
         ) : rows.length === 0 ? (
           <div className="space-y-1 py-8 text-center text-sm text-muted-foreground">
-            <p>{search ? "Không có nhà cung cấp nào khớp từ khóa." : "Chưa có nhà cung cấp nào."}</p>
-            {!search && <p className={TEXT_SUB}>Thêm tại đây, hoặc cứ gõ tên ở ô Nhà cung cấp khi lập phiếu nhập — tên mới tự lưu vào danh bạ.</p>}
+            <p>{onlyDebt ? "Không còn nhà cung cấp nào đang nợ." : search ? "Không có nhà cung cấp nào khớp từ khóa." : "Chưa có nhà cung cấp nào."}</p>
+            {!search && !onlyDebt && <p className={TEXT_SUB}>Thêm tại đây, hoặc cứ gõ tên ở ô Nhà cung cấp khi lập phiếu nhập — tên mới tự lưu vào danh bạ.</p>}
           </div>
         ) : (
           <Refreshing active={q.refreshing}>
             <div className="max-h-[calc(100dvh-16rem)] overflow-auto">
-              <table className="w-full min-w-[820px] table-fixed text-sm">
+              <table className={cn("w-full table-fixed text-sm", seesCost ? "min-w-[960px]" : "min-w-[820px]")}>
                 <thead className="sticky top-0 z-10 bg-card">
                   <tr className={cn(TEXT_SUB, "border-b text-left")}>
                     <th className="px-3 py-2.5">
@@ -247,6 +281,18 @@ function SupplierList({
                           onSort={setSort}
                           align="right"
                           title="Σ số lượng × giá nhập trên các dòng phiếu có ghi giá"
+                        />
+                      </th>
+                    )}
+                    {seesCost && (
+                      <th className="w-32 px-2 py-2.5 text-right">
+                        <SortHeader
+                          label="Còn nợ"
+                          sortKey="debt"
+                          sort={sort}
+                          onSort={setSort}
+                          align="right"
+                          title="Số còn nợ hiện tại trên mọi phiếu nhập đang theo dõi — không theo khoảng ngày. Trả tiền ghi trên từng phiếu ở tab Phiếu kho"
                         />
                       </th>
                     )}
@@ -282,6 +328,17 @@ function SupplierList({
                       {seesCost && (
                         <td className="px-2 py-2.5 text-right tabular-nums">
                           {s.totalValue != null ? <Money value={s.totalValue} /> : <span className="text-muted-foreground">—</span>}
+                        </td>
+                      )}
+                      {seesCost && (
+                        <td className="px-2 py-2.5 text-right tabular-nums">
+                          {s.debt != null && s.debt > 0 ? (
+                            <span className="font-medium text-amber-700" title={`${formatNumber(s.debtVoucherCount ?? 0)} phiếu còn nợ`}>
+                              <Money value={s.debt} />
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </td>
                       )}
                       <td className="px-2 py-2.5 text-xs tabular-nums text-muted-foreground">{s.lastImportAt ? formatDateTime(s.lastImportAt) : "—"}</td>

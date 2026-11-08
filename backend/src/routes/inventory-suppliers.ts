@@ -4,7 +4,9 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { canSeeFinancials } from "../middleware/auth";
 import {
+  parsePaymentAmount,
   parsePurchasePrice,
+  payableFields,
   sumVoucherCost,
   utcTimestampLiteral,
   weightedAveragePrice,
@@ -112,9 +114,22 @@ supplierRouter.get("/suppliers", async (req: AuthRequest, res, next) => {
       GROUP BY l."supplierId"`;
     const byId = new Map(stats.map((s) => [s.supplierId, s]));
     const none = byId.get(null);
+    // CÒN NỢ theo nhà cung cấp (08/11/2026, mục 8): số dư HIỆN TẠI trên mọi phiếu nhập đang theo dõi —
+    // KHÔNG lọc theo khoảng ngày (nợ là số dư, không phải lưu lượng). Chỉ người thấy tài chính.
+    const debts = seesCost
+      ? await prisma.stockVoucher.groupBy({
+          by: ["supplierId"],
+          where: { ownerId: req.ownerId!, type: InventoryLogType.IMPORT, supplierId: { not: null }, debtAmount: { gt: 0 } },
+          _sum: { debtAmount: true },
+          _count: { _all: true },
+        })
+      : [];
+    const debtById = new Map(debts.map((d) => [d.supplierId, { total: Number(d._sum.debtAmount ?? 0), count: d._count._all }]));
+    const totalDebt = debts.reduce((a, d) => a + Number(d._sum.debtAmount ?? 0), 0);
     res.json({
       items: rows.map((s) => {
         const st = byId.get(s.id);
+        const debt = debtById.get(s.id);
         return {
           id: s.id,
           name: s.name,
@@ -128,11 +143,15 @@ supplierRouter.get("/suppliers", async (req: AuthRequest, res, next) => {
           // Giá trị nhập = Σ số lượng × giá nhập trên các dòng CÓ giá. Chưa dòng nào có giá → null.
           totalValue: seesCost ? (st?.value ?? null) : null,
           lastImportAt: st?.last ?? null,
+          // Còn nợ hiện tại (mọi thời gian); null = không thấy tài chính. 0 = không nợ.
+          debt: seesCost ? (debt?.total ?? 0) : null,
+          debtVoucherCount: seesCost ? (debt?.count ?? 0) : null,
         };
       }),
       // Phiếu nhập không ghi nhà cung cấp trong khoảng ngày — một dòng nhắc nhẹ dưới bảng.
       unassigned: { voucherCount: none?.vouchers ?? 0, totalQuantity: none?.qty ?? 0 },
       costHidden: !seesCost,
+      totalDebt: seesCost ? totalDebt : null,
     });
   } catch (err) {
     next(err);
@@ -419,6 +438,18 @@ supplierRouter.patch("/vouchers/:id", async (req: AuthRequest, res, next) => {
       }
     }
     const nextLines = lines.map((l) => (priceChanges.has(l.productId) ? { ...l, purchasePrice: priceChanges.get(l.productId) ?? null } : l));
+    const nextTotal = sumVoucherCost(nextLines);
+    // Công nợ (mục 8): sửa giá nhập → còn nợ tính lại theo giá trị mới; bỏ nhà cung cấp → thôi theo dõi,
+    // nhưng không được bỏ khi phiếu đã có lần trả tiền (xóa lần trả trước).
+    const removingSupplier = touchSupplier && !supplier && v.supplierId;
+    if (removingSupplier) {
+      const paid = await prisma.supplierPayment.count({ where: { voucherId: v.id } });
+      if (paid > 0) {
+        res.status(400).json({ error: "Phiếu đã có lần trả tiền cho nhà cung cấp này — xóa các lần trả trước khi bỏ nhà cung cấp" });
+        return;
+      }
+    }
+    const payable = payableFields(nextTotal, removingSupplier ? null : v.paidAmount != null ? Number(v.paidAmount) : null);
 
     await prisma.$transaction(async (tx) => {
       // Phiếu lập trước khi có bảng purchase_lines (sáng 05/11) → dựng dòng từ ảnh chụp rồi mới sửa.
@@ -452,7 +483,9 @@ supplierRouter.patch("/vouchers/:id", async (req: AuthRequest, res, next) => {
           supplierId: supplier?.id ?? null,
           supplierName: supplier?.name ?? null,
           lines: nextLines as unknown as Prisma.InputJsonValue,
-          totalCost: new Prisma.Decimal(sumVoucherCost(nextLines)),
+          totalCost: new Prisma.Decimal(nextTotal),
+          paidAmount: payable.paidAmount != null ? new Prisma.Decimal(payable.paidAmount) : null,
+          debtAmount: payable.debtAmount != null ? new Prisma.Decimal(payable.debtAmount) : null,
         },
       });
     });
@@ -461,6 +494,165 @@ supplierRouter.patch("/vouchers/:id", async (req: AuthRequest, res, next) => {
     );
     res.json({ ok: true, supplier, priceCount: priceChanges.size });
   } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// CÔNG NỢ NHÀ CUNG CẤP — BẢN HẸP (08/11/2026, docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 8).
+// Anh Trung chốt "Làm bản hẹp NCC": chỉ phải trả theo TỪNG PHIẾU NHẬP có nhà cung cấp; ghi trả tiền
+// từng lần; không menu Công nợ riêng, không công nợ khách / nhân viên, không định khoản, không tuổi nợ,
+// KHÔNG vào Dòng tiền (tiền trả NCC đã nằm trong giá vốn — cộng thêm là đếm hai lần).
+// Chỉ người thấy tài chính (canSeeFinancials). Phiếu đổi trong giao dịch có khóa dòng (FOR UPDATE).
+// ============================================================
+const PAYMENT_NOTE_MAX = 200;
+
+async function loadPayableVoucher(req: AuthRequest, res: import("express").Response) {
+  if (!canSeeFinancials(req)) {
+    res.status(403).json({ error: "Chỉ người được xem tài chính mới ghi được công nợ nhà cung cấp" });
+    return null;
+  }
+  const v = await prisma.stockVoucher.findFirst({ where: { id: String(req.params.id), ownerId: req.ownerId! } });
+  if (!v) {
+    res.status(404).json({ error: "Không tìm thấy phiếu kho" });
+    return null;
+  }
+  if (v.type !== InventoryLogType.IMPORT) {
+    res.status(400).json({ error: "Chỉ phiếu nhập mới có công nợ nhà cung cấp" });
+    return null;
+  }
+  if (!v.supplierId) {
+    res.status(400).json({ error: "Ghi nhà cung cấp cho phiếu trước (nút sửa phiếu), rồi mới theo dõi công nợ" });
+    return null;
+  }
+  return v;
+}
+
+function payableOf(v: { totalCost: Prisma.Decimal; paidAmount: Prisma.Decimal | null; debtAmount: Prisma.Decimal | null }) {
+  return {
+    totalCost: Number(v.totalCost),
+    paidAmount: v.paidAmount != null ? Number(v.paidAmount) : null,
+    debt: v.debtAmount != null ? Number(v.debtAmount) : null,
+  };
+}
+
+// POST /api/inventory/vouchers/:id/payable  — bắt đầu theo dõi: "chưa trả" (ghi nợ toàn bộ) cho phiếu
+// lập trước 08/11 hoặc do nhân viên không thấy tài chính lập. Đã theo dõi rồi thì trả nguyên trạng.
+supplierRouter.post("/vouchers/:id/payable", async (req: AuthRequest, res, next) => {
+  try {
+    const v = await loadPayableVoucher(req, res);
+    if (!v) return;
+    if (v.paidAmount != null) {
+      res.json({ ok: true, ...payableOf(v) });
+      return;
+    }
+    const payable = payableFields(Number(v.totalCost), 0);
+    const updated = await prisma.stockVoucher.update({
+      where: { id: v.id },
+      data: { paidAmount: new Prisma.Decimal(0), debtAmount: new Prisma.Decimal(payable.debtAmount ?? 0) },
+    });
+    console.log(`[supplier-debt] ${v.code}: bắt đầu theo dõi, còn nợ ${payable.debtAmount} (${req.userId ?? "?"})`);
+    res.json({ ok: true, ...payableOf(updated) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/inventory/vouchers/:id/payments  { amount, paidAt?, note? } — ghi MỘT lần trả tiền.
+// Không cho trả quá số còn nợ (nhầm số là chuyện thường; trả thừa thật thì ghi đúng số còn nợ).
+supplierRouter.post("/vouchers/:id/payments", async (req: AuthRequest, res, next) => {
+  try {
+    const v0 = await loadPayableVoucher(req, res);
+    if (!v0) return;
+    const b = req.body ?? {};
+    const amount = parsePaymentAmount(b.amount);
+    if (amount === null) {
+      res.status(400).json({ error: "Số tiền trả phải lớn hơn 0" });
+      return;
+    }
+    const paidAt = typeof b.paidAt === "string" && b.paidAt ? new Date(b.paidAt) : new Date();
+    if (Number.isNaN(paidAt.getTime()) || paidAt.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+      res.status(400).json({ error: "Ngày trả không hợp lệ" });
+      return;
+    }
+    const note = text(b.note, PAYMENT_NOTE_MAX) ?? null;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const [v] = await tx.$queryRaw<{ id: string; totalCost: Prisma.Decimal; paidAmount: Prisma.Decimal | null }[]>`
+        SELECT "id", "totalCost", "paidAmount" FROM "stock_vouchers" WHERE "id" = ${v0.id} FOR UPDATE`;
+      if (!v) throw Object.assign(new Error("Không tìm thấy phiếu kho"), { statusCode: 404 });
+      const total = Number(v.totalCost);
+      const paidBefore = v.paidAmount != null ? Number(v.paidAmount) : 0;
+      const remaining = Math.max(0, Math.round(total) - Math.round(paidBefore));
+      if (amount > remaining) {
+        throw Object.assign(
+          new Error(remaining > 0 ? `Phiếu chỉ còn nợ ${remaining.toLocaleString("vi-VN")} đ — số trả không được lớn hơn` : "Phiếu này đã trả đủ"),
+          { statusCode: 400 }
+        );
+      }
+      const payment = await tx.supplierPayment.create({
+        data: {
+          ownerId: v0.ownerId,
+          voucherId: v0.id,
+          supplierId: v0.supplierId,
+          amount: new Prisma.Decimal(amount),
+          paidAt,
+          note,
+          createdById: req.userId ?? null,
+        },
+      });
+      const payable = payableFields(total, paidBefore + amount);
+      const updated = await tx.stockVoucher.update({
+        where: { id: v0.id },
+        data: {
+          paidAmount: new Prisma.Decimal(payable.paidAmount ?? 0),
+          debtAmount: new Prisma.Decimal(payable.debtAmount ?? 0),
+        },
+      });
+      return { payment, updated };
+    });
+    console.log(
+      `[supplier-debt] ${v0.code}: trả ${amount} cho ${v0.supplierName ?? "—"}, còn nợ ${Number(result.updated.debtAmount ?? 0)} (${req.userId ?? "?"})`
+    );
+    res.json({ ok: true, paymentId: result.payment.id, ...payableOf(result.updated) });
+  } catch (err) {
+    const e = err as Error & { statusCode?: number };
+    if (e.statusCode) {
+      res.status(e.statusCode).json({ error: e.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+// DELETE /api/inventory/vouchers/:id/payments/:paymentId — xóa một lần trả ghi nhầm; đã trả = Σ còn lại.
+supplierRouter.delete("/vouchers/:id/payments/:paymentId", async (req: AuthRequest, res, next) => {
+  try {
+    const v0 = await loadPayableVoucher(req, res);
+    if (!v0) return;
+    const pid = String(req.params.paymentId);
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "stock_vouchers" WHERE "id" = ${v0.id} FOR UPDATE`;
+      const removed = await tx.supplierPayment.deleteMany({ where: { id: pid, voucherId: v0.id, ownerId: v0.ownerId } });
+      if (removed.count === 0) throw Object.assign(new Error("Không tìm thấy lần trả này"), { statusCode: 404 });
+      const agg = await tx.supplierPayment.aggregate({ where: { voucherId: v0.id }, _sum: { amount: true } });
+      const payable = payableFields(Number(v0.totalCost), Number(agg._sum.amount ?? 0));
+      return tx.stockVoucher.update({
+        where: { id: v0.id },
+        data: {
+          paidAmount: new Prisma.Decimal(payable.paidAmount ?? 0),
+          debtAmount: new Prisma.Decimal(payable.debtAmount ?? 0),
+        },
+      });
+    });
+    console.log(`[supplier-debt] ${v0.code}: xóa lần trả ${pid}, còn nợ ${Number(result.debtAmount ?? 0)} (${req.userId ?? "?"})`);
+    res.json({ ok: true, ...payableOf(result) });
+  } catch (err) {
+    const e = err as Error & { statusCode?: number };
+    if (e.statusCode) {
+      res.status(e.statusCode).json({ error: e.message });
+      return;
+    }
     next(err);
   }
 });

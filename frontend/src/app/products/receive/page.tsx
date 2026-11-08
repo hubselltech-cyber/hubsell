@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money } from "@/components/ui/money";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
+import { Segmented } from "@/components/ui/segmented";
 import {
   Table,
   TableBody,
@@ -91,9 +92,15 @@ export default function ReceiveStockPage() {
     count: number;
     totalQuantity: number;
     supplierName: string | null;
+    /** Còn nợ nhà cung cấp sau phiếu này (tính tại chỗ) — null = không theo dõi. */
+    debt: number | null;
   } | null>(null);
   const [supplier, setSupplier] = useState<SupplierChoice | null>(null);
   const [seesCost] = useState(() => canSeeFinancials(getStoredUser()));
+  // CÔNG NỢ NCC bản hẹp (08/11/2026, mục 8): ô "Thanh toán" chỉ hiện khi phiếu nhập có nhà cung cấp và có
+  // giá nhập (giá trị > 0). Mặc định "Đã trả đủ" như KiotViet / Sapo — ghi nợ là việc chủ động.
+  const [payMode, setPayMode] = useState<"full" | "none" | "partial">("full");
+  const [payAmount, setPayAmount] = useState("");
 
   // Vị trí chứa hàng (đợt B): có thì hiện ô chọn, nhớ lần chọn cuối.
   const locationsQ = useApiQuery({
@@ -213,10 +220,13 @@ export default function ReceiveStockPage() {
   const insufficient = isImport
     ? []
     : lines.filter((l) => (Number(l.quantity) || 0) > l.product.quantityInStock);
-  const canSubmit =
-    lines.length > 0 && invalid.length === 0 && insufficient.length === 0 && !submitting;
   const showPrice = isImport && seesCost;
   const totalValue = showPrice ? lines.reduce((a, l) => a + (l.price ? Number(l.price) * (Number(l.quantity) || 0) : 0), 0) : 0;
+  const showPayment = showPrice && supplier !== null && totalValue > 0;
+  const partialAmount = Number(payAmount) || 0;
+  const partialInvalid = showPayment && payMode === "partial" && !(partialAmount > 0 && partialAmount < totalValue);
+  const canSubmit =
+    lines.length > 0 && invalid.length === 0 && insufficient.length === 0 && !partialInvalid && !submitting;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -232,6 +242,7 @@ export default function ReceiveStockPage() {
         reason: reason.trim() || undefined,
         locationId: effectiveLocationId || undefined,
         ...(isImport ? supplierChoiceToParams(supplier) : {}),
+        ...(showPayment ? { payment: payMode === "partial" ? { mode: "partial" as const, amount: partialAmount } : { mode: payMode } } : {}),
       });
       if (effectiveLocationId) rememberLocation(effectiveLocationId);
       // Kết quả nằm ở dải dưới đầu trang (có nút In phiếu) thay cho toast tự tắt (05/11).
@@ -242,10 +253,13 @@ export default function ReceiveStockPage() {
         count: res.count,
         totalQuantity: res.totalQuantity,
         supplierName: res.supplier?.name ?? null,
+        debt: showPayment ? (payMode === "full" ? 0 : payMode === "none" ? totalValue : totalValue - partialAmount) : null,
       });
       setLines([]);
       setReason("");
       setSupplier(null);
+      setPayMode("full");
+      setPayAmount("");
       invalidate(["products"]);
       invalidate(["inventory-logs"]);
       invalidate(qk.stockVouchersAll(), qk.suppliersAll(), qk.purchaseStatsAll());
@@ -315,8 +329,15 @@ export default function ReceiveStockPage() {
           >
             <span className="min-w-0 flex-1">
               Đã ghi phiếu <b className="font-mono">{lastVoucher.code}</b> — {formatNumber(lastVoucher.totalQuantity)} chiếc của{" "}
-              {formatNumber(lastVoucher.count)} mã{lastVoucher.supplierName ? ` từ ${lastVoucher.supplierName}` : ""}. Có thể bán mới đang đẩy lên các
-              gian đã nối. In lại sau ở Tổng kho › Phiếu kho.
+              {formatNumber(lastVoucher.count)} mã{lastVoucher.supplierName ? ` từ ${lastVoucher.supplierName}` : ""}.
+              {lastVoucher.debt != null && lastVoucher.debt > 0 ? (
+                <>
+                  {" "}
+                  Còn nợ nhà cung cấp <b className="tabular-nums">{formatNumber(lastVoucher.debt)} đ</b> — ghi trả tiền sau ở Tổng kho › Phiếu kho.
+                </>
+              ) : (
+                " Có thể bán mới đang đẩy lên các gian đã nối. In lại sau ở Tổng kho › Phiếu kho."
+              )}
             </span>
             <Button size="sm" onClick={() => window.open(stockVoucherPrintUrl(lastVoucher.id), "_blank", "noopener")}>
               <Printer className="size-4" />
@@ -505,6 +526,38 @@ export default function ReceiveStockPage() {
             <div className="grid w-64 gap-1.5">
               <Label htmlFor="bulk-supplier">Nhà cung cấp (không bắt buộc)</Label>
               <SupplierPicker id="bulk-supplier" value={supplier} onChange={setSupplier} />
+            </div>
+          )}
+          {showPayment && (
+            <div className="grid gap-1.5">
+              <Label>Thanh toán nhà cung cấp</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Segmented
+                  ariaLabel="Thanh toán nhà cung cấp"
+                  value={payMode}
+                  onChange={setPayMode}
+                  items={[
+                    { key: "full", label: "Đã trả đủ" },
+                    { key: "none", label: "Chưa trả" },
+                    { key: "partial", label: "Trả một phần" },
+                  ]}
+                />
+                {payMode === "partial" && (
+                  <CurrencyInput
+                    value={payAmount}
+                    onValueChange={setPayAmount}
+                    placeholder="Số đã trả"
+                    aria-label="Số tiền đã trả nhà cung cấp"
+                    aria-invalid={partialInvalid || undefined}
+                    className={cn("h-8 w-36 text-right tabular-nums", partialInvalid && payAmount && "border-rose-400")}
+                  />
+                )}
+                {payMode !== "full" && (
+                  <span className={cn(TEXT_SUB, "tabular-nums")}>
+                    Còn nợ {formatNumber(Math.max(0, totalValue - (payMode === "partial" ? partialAmount : 0)))} đ
+                  </span>
+                )}
+              </div>
             </div>
           )}
           <div className="grid w-full max-w-md gap-1.5">
