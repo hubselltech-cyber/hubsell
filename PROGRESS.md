@@ -5,6 +5,13 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 08/11 (4) — Anh gửi ảnh Ads Manager: mục MỚI "Chuyển sang Phân phối tối đa" ở menu chiến dịch Product GMV Max → khảo sát → anh chốt "có gì để Hubsell cảnh báo tới khách khi khách dùng tính năng này" → lát A ĐÃ CODE (chưa commit)
+
+- **Khảo sát (help TikTok + docs API đọc bằng Chrome):** Phân phối tối đa = tiêu trọn ngân sách riêng để đẩy doanh thu, bỏ ROI mục tiêu, ROI dao động, KHÔNG ROI protection, không hẹn ngày kết thúc thì không tự quay về. Help/API chỉ có THEO SẢN PHẨM (session NO_BID) — nút cấp chiến dịch là UI mới, `create/update` vẫn chỉ `VO_MIN_ROAS` → không có API; báo cáo đã có `bid_type` NO_BID + `max_delivery_budget` (Hubsell đọc sẵn). Ghi docs/ADS-TIKTOK-GMV-MAX.md mục 12.
+- **Em phản biện "không làm A thì sao":** chuông "Quảng cáo đang lỗ" đã chạy sẵn cho chiến dịch không mục tiêu; thiếu là câu hành động sai hướng (bảo nâng mục tiêu), cửa sổ 7 ngày trộn ngày cũ, không ai nhắc hẹn ngày kết thúc. Anh chốt làm.
+- **Lát A (chi tiết docs mục 12 cuối):** cột `maxDeliverySince` + migration; `maxDeliverySinceOf()` trong sync + chuông ngay khi chuyển; 2 loại kết luận mới `max_delivery_learning` / `max_delivery_review` + losing/healthy/no_breakeven có lời riêng; chuông chấm bằng số từ ngày chuyển; web in "từ dd/mm". 16 test mới + 49 bộ ads xanh; tsc backend + frontend sạch; test *-db đỏ vì không có Postgres local (không liên quan). Chưa commit, chưa có chiến dịch thật chuyển để kiểm số; ⏳ anh mở thử hộp thoại trên TC076 (đang tắt), đừng xác nhận.
+
+---
 ## Phiên 08/11 (3) — Anh: "anh vừa xuất 2 hóa đơn, kiểm tra khách đã nhận email chưa" → "email gửi không thành công, xem lỗi" → gốc Zoho CHẶN hộp gửi từ 16:18 06/11 (ngay sau lô 51 thư app 1.4.2) tới ≥20:22 08/11; anh chốt "Hạ 25/ngày" cho drip
 
 - **Kiểm (SQL Supabase chỉ đọc + Render Logs web/worker qua Claude in Chrome, 20:15–20:30 VN):** hóa đơn 00000013 (Growth 199k, phanchat069@gmail.com) + 00000014 (Scale 1.199k, hieucon111099@gmail.com) `invoiceEmailSentAt` null, `einvoiceAutoError` = "Gửi email thất bại (SMTP…)", attempts 0 (anh bấm tay 20:22). Log web cùng phút: `[Customer mail] invoice-issued → … 550 5.4.6 Unusual sending activity detected … UnblockMe`.

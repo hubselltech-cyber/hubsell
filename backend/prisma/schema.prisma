@@ -672,6 +672,11 @@ model AdsCampaign {
   /// Mục tiêu ROAS NGAY TRƯỚC lần đổi gần nhất (08/10/2026): biết lần đổi là HẠ hay NÂNG để so lãi tuyệt đối trước/sau
   /// nấc hạ (stepProfitCheck) — nấc hạ không ra thêm lãi thì khuyên giữ, không hạ tiếp. NULL = chưa từng thấy đổi.
   roasTargetPrev      Decimal?  @db.Decimal(8, 2)
+  /// TikTok GMV Max (08/11/2026): lúc Hubsell thấy chiến dịch chuyển sang PHÂN PHỐI TỐI ĐA (báo cáo bid_type NO_BID — không còn ROI
+  /// mục tiêu chặn, không ROI protection). NULL = đang ROI mục tiêu / chưa từng thấy. Đồng bộ đặt khi chuyển, xóa khi quay về;
+  /// chiến dịch thấy lần đầu đã là NO_BID → ngày sớm nhất có dòng NO_BID trong báo cáo (cận dưới). Mốc tính "N ngày trọn" cho
+  /// campaign-advice (khởi động < 3 ngày, lỗ từ 3 ngày, đánh giá từ 5 ngày).
+  maxDeliverySince    DateTime?
   startTime           DateTime? // campaign_duration.start_time
   endTime             DateTime? // campaign_duration.end_time; NULL = không hẹn ngày tắt
   /// item_id_list của campaign, nối bằng dấu phẩy ("8027...,8031...") — dùng để

@@ -204,7 +204,7 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
       where: { channelId: selected.id, status: "ongoing", adType: { not: TIKTOK_AD_TYPE_LIVE } },
       orderBy: { lastSyncedAt: "desc" },
       take: PRODUCT_ADS_MAX_CAMPAIGNS,
-      select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true, roasTargetChangedAt: true, roasTargetPrev: true },
+      select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true, roasTargetChangedAt: true, roasTargetPrev: true, maxDeliverySince: true },
     });
     const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: from, endDate: to };
     const products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null; advice: CampaignAdvice | null; adviceCampaign: string }> = {};
@@ -282,6 +282,8 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
         roasTargetChangedAt: main.roasTargetChangedAt,
         minKeepPer100,
         stepCheck: stepChecks.get(main.id) ?? null,
+        maxDeliverySince: main.maxDeliverySince,
+        roasTargetPrev: main.roasTargetPrev != null ? Number(main.roasTargetPrev) : null,
       });
     }
     res.json({ linked: true, from, to, campaigns: campaigns.length, products, minKeepPer100 });
@@ -407,6 +409,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         /** true = LIVE GMV Max (quảng cáo phiên live): có số chiến dịch × ngày, KHÔNG soi video / luật tự động / hòa vốn SP. */
         live,
         biddingMethod: c.biddingMethod,
+        /** Lúc Hubsell thấy chiến dịch chuyển sang Phân phối tối đa (08/11/2026); null = ROI mục tiêu / chưa có mốc. */
+        maxDeliverySince: c.maxDeliverySince,
         roasTarget,
         budget: Number(c.budget),
         spend,
@@ -440,6 +444,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
           roasTargetChangedAt: c.roasTargetChangedAt,
           minKeepPer100,
           stepCheck: stepChecks.get(c.id) ?? null,
+          maxDeliverySince: c.maxDeliverySince,
+          roasTargetPrev: c.roasTargetPrev != null ? Number(c.roasTargetPrev) : null,
         }),
       };
     });
@@ -609,6 +615,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         roasTarget: true,
         roasTargetChangedAt: true,
         roasTargetPrev: true,
+        maxDeliverySince: true,
         budget: true,
         biddingMethod: true,
         itemIds: true,
@@ -727,6 +734,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           channelId: campaign.channelId,
           status: campaign.status,
           biddingMethod: campaign.biddingMethod,
+          maxDeliverySince: campaign.maxDeliverySince,
           roasTarget: campaign.roasTarget != null ? Number(campaign.roasTarget) : null,
           spend: products.reduce((s, x) => s + x.cost, 0),
           orders: products.reduce((s, x) => s + x.orders, 0),
@@ -756,6 +764,8 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
             roasTargetChangedAt: campaign.roasTargetChangedAt,
             minKeepPer100,
             stepCheck: stepChecks.get(campaign.id) ?? null,
+            maxDeliverySince: campaign.maxDeliverySince,
+            roasTargetPrev: campaign.roasTargetPrev != null ? Number(campaign.roasTargetPrev) : null,
           }),
         },
         from: period.startDate,

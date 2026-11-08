@@ -536,7 +536,10 @@ export function TiktokCampaignPage() {
               </h1>
               {c && (
                 <p className="text-sm text-muted-foreground">
-                  {target != null ? `ROI mục tiêu ${formatRoi(target)}` : "Phân phối tối đa"} · Hòa vốn{" "}
+                  {target != null
+                    ? `ROI mục tiêu ${formatRoi(target)}`
+                    : `Phân phối tối đa${c.maxDeliverySince ? ` từ ${new Date(c.maxDeliverySince).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}` : ""}`}{" "}
+                  · Hòa vốn{" "}
                   <TiktokBreakevenValue breakeven={c.breakeven} className="font-semibold" /> · ROI thực{" "}
                   <span
                     className={cn(

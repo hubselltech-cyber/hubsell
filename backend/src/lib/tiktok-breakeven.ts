@@ -101,6 +101,19 @@ export const TIKTOK_MIN_DAILY_BUDGET = 100_000;
 export const TIKTOK_MIN_FULL_DAYS = 3;
 export const TIKTOK_NO_DELIVERY_BUDGET_PCT = 20;
 
+/**
+ * PHÂN PHỐI TỐI ĐA (Max delivery) — 08/11/2026, anh Trung: "có gì để Hubsell cảnh báo tới khách khi khách dùng tính năng này".
+ * Nguồn: TikTok "Best practices for Max delivery optimization" (ads.tiktok.com/help, đọc 08/11/2026):
+ *   · "Start with Max Delivery for the first 3-5 days" + "Evaluate after the first 5-7 days" → TIKTOK_MAX_DELIVERY_REVIEW_DAYS 5:
+ *     đủ 5 ngày trọn mà vẫn lãi thì nhắc khách tự quyết (quay về ROI mục tiêu cho ổn định / đẩy tiếp). Dưới hòa vốn thì không đợi
+ *     tới 5 — báo ngay khi đủ TIKTOK_MIN_FULL_DAYS (3 ngày trọn, cùng mốc "ROI dao động mấy ngày đầu").
+ *   · "setting your Max Delivery budget between 1 to 5 times the actual spending under Target ROI mode"; ">5x … ROI may drastically
+ *     decrease" → TIKTOK_MAX_DELIVERY_BUDGET_MAX_MULT 5.
+ * Không có ROI mục tiêu nên TikTok không có gì chặn lỗ và không áp ROI protection cho phần này (help "About Max delivery").
+ */
+export const TIKTOK_MAX_DELIVERY_REVIEW_DAYS = 5;
+export const TIKTOK_MAX_DELIVERY_BUDGET_MAX_MULT = 5;
+
 /** Cửa sổ hòa vốn tính tới lúc gọi: TIKTOK_MARGIN_WINDOW_DAYS ngày, theo ngày tạo đơn. */
 export function tiktokMarginWindowRange(): DateRangeFilter {
   return { gte: startOfDaysAgo(TIKTOK_MARGIN_WINDOW_DAYS), lte: new Date() };

@@ -12,7 +12,7 @@
 // Không gọi sàn: số quảng cáo theo ngày đã có trong DB (xung đồng bộ), hòa vốn đọc DB (có nhớ đệm), cấu hình lãi mong muốn của gian.
 // ============================================================
 
-import { dateKey, vnDateKey } from "../../lib/ads-dates";
+import { dateKey, vnDateKey, vnDateKeyOf } from "../../lib/ads-dates";
 import { prisma } from "../../lib/prisma";
 import { notify } from "../../services/notifications";
 import { loadCampaignFullDays, loadMinKeepPer100, loadStepChecks } from "./advice-inputs";
@@ -32,6 +32,8 @@ export const ADVICE_ALERT_KINDS: ReadonlySet<CampaignAdviceKind> = new Set<Campa
   // 15/10 đêm — ca không ra đơn: hạ ROI (không phân phối) / tạm dừng (tiêu tiền không ra đơn).
   "no_delivery",
   "no_orders",
+  // 08/11 — Phân phối tối đa đủ 5 ngày trọn vẫn lãi: khách phải tự quyết quay về ROI mục tiêu hay đẩy tiếp (lỗ thì đã là "losing").
+  "max_delivery_review",
 ]);
 
 export const NOTIFY_TYPE_TIKTOK_ADVICE = "tiktok-ads-advice";
@@ -76,6 +78,7 @@ export async function runTiktokAdviceAlerts(
       budget: true,
       roasTargetChangedAt: true,
       roasTargetPrev: true,
+      maxDeliverySince: true,
       adviceKind: true,
       dailyPerf: {
         where: { date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${yesterday}T00:00:00Z`) } },
@@ -103,10 +106,14 @@ export async function runTiktokAdviceAlerts(
   );
 
   for (const c of rows) {
+    // Phân phối tối đa (08/11): chấm bằng số TỪ NGÀY CHUYỂN, không trộn những ngày còn ROI mục tiêu trong cửa sổ 7 ngày — nếu không
+    // thì mấy ngày lãi cũ che mất mấy ngày lỗ mới (ngân sách Phân phối tối đa thường gấp 1–5 lần). Chuyển trước cửa sổ thì cả 7 ngày.
+    const sinceKey = c.maxDeliverySince && c.roasTarget == null ? vnDateKeyOf(c.maxDeliverySince) : "";
+    const perf = sinceKey ? c.dailyPerf.filter((p) => dateKey(p.date) >= sinceKey) : c.dailyPerf;
     let spend = 0;
     let gmv = 0;
     let orders = 0;
-    for (const p of c.dailyPerf) {
+    for (const p of perf) {
       spend += Number(p.expense);
       gmv += Number(p.broadGmv);
       orders += p.broadOrder;
@@ -121,12 +128,14 @@ export async function runTiktokAdviceAlerts(
       orders,
       fullDaysRunning: fullDays.get(c.id) ?? 0,
       avgDailySpend: avgDailySpendOf(
-        c.dailyPerf.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
+        perf.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
         today
       ),
       roasTargetChangedAt: c.roasTargetChangedAt,
       minKeepPer100,
       stepCheck: stepChecks.get(c.id) ?? null,
+      maxDeliverySince: c.maxDeliverySince,
+      roasTargetPrev: c.roasTargetPrev != null ? Number(c.roasTargetPrev) : null,
     });
     const plan = adviceAlertPlan(c.adviceKind, advice.kind);
     if (!plan.changed) continue;

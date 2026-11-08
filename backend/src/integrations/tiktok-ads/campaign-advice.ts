@@ -29,6 +29,8 @@ import { breakevenUnusableReason } from "./auto-rules";
 import {
   TIKTOK_BUDGET_STEP_PCT,
   TIKTOK_BUDGET_USED_PCT,
+  TIKTOK_MAX_DELIVERY_BUDGET_MAX_MULT,
+  TIKTOK_MAX_DELIVERY_REVIEW_DAYS,
   TIKTOK_MIN_DAILY_BUDGET,
   TIKTOK_MIN_FULL_DAYS,
   TIKTOK_NO_DELIVERY_BUDGET_PCT,
@@ -102,6 +104,9 @@ export type CampaignAdviceKind =
   | "target_binding" // lãi, ROI bám mục tiêu, tiêu ít ngân sách → mục tiêu đang ghìm phân phối, còn nấc để hạ
   | "target_watching" // như target_binding nhưng mục tiêu vừa đổi < TARGET_STEP_WAIT_HOURS → giữ nguyên, theo dõi
   | "target_hold" // nấc hạ gần nhất không ra thêm lãi → giữ mục tiêu, không hạ tiếp
+  // 08/11/2026 — PHÂN PHỐI TỐI ĐA (bid_type NO_BID, mốc AdsCampaign.maxDeliverySince): không có ROI mục tiêu chặn lỗ.
+  | "max_delivery_learning" // < MIN_FULL_DAYS ngày trọn từ lúc chuyển → ROI còn dao động, chưa kết luận; nhắc hẹn ngày kết thúc
+  | "max_delivery_review" // ≥ MAX_DELIVERY_REVIEW_DAYS ngày trọn mà vẫn lãi → đến lúc khách tự quyết: quay về ROI mục tiêu / đẩy tiếp
   | "healthy";
 
 export interface CampaignAdviceInput {
@@ -130,9 +135,34 @@ export interface CampaignAdviceInput {
   minKeepPer100?: number;
   /** So lãi tuyệt đối trước / sau nấc hạ gần nhất (stepProfitCheck của shopee/ads-assistant-rules). */
   stepCheck?: StepProfitCheck | null;
+  /**
+   * 08/11/2026 — lúc Hubsell thấy chiến dịch chuyển sang PHÂN PHỐI TỐI ĐA (AdsCampaign.maxDeliverySince). Có mốc + roasTarget null
+   * → nhánh riêng: khởi động / lỗ / đánh giá theo số ngày trọn kể từ mốc. Bỏ trống = ROI mục tiêu (hoặc dòng cũ chưa có mốc → luật cũ).
+   */
+  maxDeliverySince?: Date | null;
+  /** ROI mục tiêu NGAY TRƯỚC lần đổi gần nhất (AdsCampaign.roasTargetPrev) — mức để khuyên "quay về" sau Phân phối tối đa. */
+  roasTargetPrev?: number | null;
   /** Mốc "bây giờ" (test truyền vào). */
   now?: Date;
 }
+
+/** Số ngày trọn (theo ngày VN) từ lúc chuyển sang Phân phối tối đa tới hôm nay: chuyển hôm nay = 0, hôm qua = 1. Thuần. */
+export function maxDeliveryFullDays(since: Date, now: Date): number {
+  const dayMs = 86_400_000;
+  const sinceDay = Math.floor((since.getTime() + 7 * 3_600_000) / dayMs);
+  const today = Math.floor((now.getTime() + 7 * 3_600_000) / dayMs);
+  return Math.max(0, today - sinceDay);
+}
+
+/** "dd/mm" theo giờ VN của mốc chuyển — in trong dữ kiện. */
+function vnShortDate(d: Date): string {
+  const vn = new Date(d.getTime() + 7 * 3_600_000);
+  return `${String(vn.getUTCDate()).padStart(2, "0")}/${String(vn.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Số ngày trọn tối thiểu rồi mới nhắc khách đánh giá Phân phối tối đa đang lãi (TikTok "evaluate after the first 5-7 days"). */
+export const MAX_DELIVERY_REVIEW_DAYS = TIKTOK_MAX_DELIVERY_REVIEW_DAYS;
+export const MAX_DELIVERY_END_DATE_NOTE = "Kiểm tra đã hẹn ngày kết thúc chưa — không hẹn thì TikTok không tự quay về ROI mục tiêu.";
 
 export interface CampaignAdvice {
   kind: CampaignAdviceKind;
@@ -287,15 +317,23 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
     return `ROI mục tiêu đang đặt ${num(i.roasTarget)} — ${word}.`;
   };
 
+  // PHÂN PHỐI TỐI ĐA (08/11/2026): có mốc chuyển + không còn ROI mục tiêu → dòng dữ kiện riêng, dùng ở mọi kết luận bên dưới.
+  const md = i.maxDeliverySince && i.roasTarget == null ? { days: maxDeliveryFullDays(i.maxDeliverySince, i.now ?? new Date()), since: vnShortDate(i.maxDeliverySince) } : null;
+  const mdLine = md
+    ? `Phân phối tối đa từ ${md.since} (${md.days} ngày trọn): TikTok tiêu trọn ${i.budget > 0 ? vnd(i.budget) + "/ngày" : "ngân sách"} để đẩy doanh thu, không có ROI mục tiêu chặn, không được bảo vệ ROI.`
+    : "";
+
   const why = i.breakevenProblem ?? breakevenUnusableReason(i.breakeven);
   const be = i.breakeven;
   if (why || !be || be.breakevenRoi == null || be.margin == null) {
     return make(
       "no_breakeven",
       "Chưa kết luận được",
-      "muted",
-      [`ROI thực ${num(roi)}.`, `Chưa có mốc hòa vốn đủ tin: ${why || "chưa tính được hòa vốn"}.`],
-      "Chưa nói được chiến dịch đang lãi hay lỗ. Nhập đủ giá vốn cho sản phẩm của chiến dịch là có kết luận."
+      md ? "info" : "muted",
+      [mdLine, `ROI thực ${num(roi)}.`, `Chưa có mốc hòa vốn đủ tin: ${why || "chưa tính được hòa vốn"}.`].filter(Boolean),
+      md
+        ? `Đang Phân phối tối đa mà chưa có hòa vốn thì không ai biết đang lỗ hay lãi — nhập đủ giá vốn cho sản phẩm của chiến dịch ngay. ${MAX_DELIVERY_END_DATE_NOTE}`
+        : "Chưa nói được chiến dịch đang lãi hay lỗ. Nhập đủ giá vốn cho sản phẩm của chiến dịch là có kết luận."
     );
   }
 
@@ -309,6 +347,60 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
   // Sàn an toàn: giữ lãi mong muốn, không dưới hòa vốn. null = biên không đủ cho mức lãi mong muốn.
   const profitFloor = profitFloorRoas(margin, minKeepPer100);
   const safeTarget = profitFloor != null ? Math.max(profitFloor, Math.ceil(beRoi * 10 - 1e-9) / 10) : null;
+
+  // ===== PHÂN PHỐI TỐI ĐA (08/11/2026 — anh Trung: "có gì để Hubsell cảnh báo tới khách khi khách dùng tính năng này") =====
+  // TikTok tiêu trọn ngân sách riêng, không có mục tiêu nào chặn lỗ, không ROI protection → hòa vốn của Hubsell là lưới duy nhất.
+  // Mốc TikTok (Best practices for Max delivery): ROI dao động mấy ngày đầu, chạy 3–5 ngày, đánh giá sau 5–7 ngày, lỗ thì giảm ngân
+  // sách / quay về ROI mục tiêu, ngân sách không quá 5 lần chi tiêu lúc còn ROI mục tiêu, hết lịch mới tự quay về (không hẹn = không về).
+  if (md) {
+    const mdFacts = (...more: string[]) => [mdLine, roiPoint, keepPoint, ...more].filter(Boolean);
+    // Mức quay về: mục tiêu cũ nếu còn trên sàn an toàn; không thì sàn an toàn; không có sàn thì hòa vốn làm tròn lên.
+    const beCeil = Math.ceil(beRoi * 10 - 1e-9) / 10;
+    const backTarget = i.roasTargetPrev != null && i.roasTargetPrev >= (safeTarget ?? beCeil) ? i.roasTargetPrev : (safeTarget ?? beCeil);
+    const backNote = i.roasTargetPrev != null && backTarget === i.roasTargetPrev ? ` (mức trước khi chuyển)` : "";
+    if (md.days < MIN_FULL_DAYS) {
+      const early = roi < beRoi ? ` Hiện ROI thực đang dưới hòa vốn — lỗ sâu thì giảm ngân sách ngay, không cần đợi; Hubsell báo lại khi đủ ${MIN_FULL_DAYS} ngày.` : "";
+      return make(
+        "max_delivery_learning",
+        "Phân phối tối đa — đang khởi động",
+        roi < beRoi ? "warn" : "info",
+        mdFacts(),
+        `Chưa đủ ${MIN_FULL_DAYS} ngày trọn để kết luận — ROI thường dao động mạnh mấy ngày đầu Phân phối tối đa.${early} ${MAX_DELIVERY_END_DATE_NOTE}`,
+        { keepPer100: keep, safeTarget, editInSellerCenter: roi < beRoi }
+      );
+    }
+    if (roi < beRoi) {
+      return make(
+        "losing",
+        "Phân phối tối đa đang lỗ",
+        "warn",
+        mdFacts(),
+        `Không có ROI mục tiêu nào chặn nên TikTok cứ tiêu dù đang lỗ. Quay về ROI mục tiêu, đặt ${num(backTarget)}${backNote}, hoặc giảm ngân sách ngày; loại bớt video tiêu tiền mà ROI thấp trong bảng video.`,
+        { keepPer100: keep, editInSellerCenter: true, safeTarget, nextTarget: backTarget }
+      );
+    }
+    if (md.days >= MAX_DELIVERY_REVIEW_DAYS) {
+      const nextBudget = nextBudgetStep(i.budget);
+      return make(
+        "max_delivery_review",
+        "Phân phối tối đa — đến lúc đánh giá",
+        "info",
+        mdFacts(budgetPoint),
+        `Đã chạy ${md.days} ngày trọn và vẫn lãi — TikTok khuyên đánh giá sau 5–7 ngày. Muốn ổn định: quay về ROI mục tiêu, đặt ${num(backTarget)}${backNote}. Muốn đẩy tiếp: giữ Phân phối tối đa, tăng ngân sách tối đa ${Math.round(BUDGET_STEP_PCT * 100)}%/ngày` +
+          (nextBudget != null ? ` (${vnd(i.budget)} → ${vnd(nextBudget)})` : "") +
+          ` và không quá ${TIKTOK_MAX_DELIVERY_BUDGET_MAX_MULT} lần mức chi tiêu lúc còn ROI mục tiêu. ${MAX_DELIVERY_END_DATE_NOTE}`,
+        { keepPer100: keep, editInSellerCenter: true, safeTarget, nextTarget: backTarget, nextBudget }
+      );
+    }
+    return make(
+      "healthy",
+      "Phân phối tối đa — đang lãi",
+      "ok",
+      mdFacts(budgetPoint),
+      `Đang lãi. Giữ nguyên tới đủ ${MAX_DELIVERY_REVIEW_DAYS} ngày trọn rồi đánh giá (TikTok khuyên 5–7 ngày). ${MAX_DELIVERY_END_DATE_NOTE}`,
+      { keepPer100: keep, safeTarget }
+    );
+  }
 
   if (roi < beRoi) {
     const raise = i.roasTarget != null && i.roasTarget < beRoi ? `Nâng ROI mục tiêu lên ít nhất ${num(beRoi)}. ` : "";

@@ -663,3 +663,53 @@ Muốn ĐỌC phiên boost phải xin thêm scope này + khách ủy quyền l�
 **Nhận định (Claude 23/09, chờ anh chốt):** boost = "mua thêm lượt hiển thị cho video mình chọn, không được ROI bảo vệ" → hợp với video ĐÃ chứng minh ROI cao
 mà đang bị chiến dịch phân phối ít (hoặc video mới muốn thử nhanh). Với hướng "chỉ gợi ý": có thể thêm gợi ý "Video X đáng tăng cường" (ROI thực ≥ hòa vốn,
 tỷ trọng chi tiêu thấp so với ROI) + ghi rõ tiền boost không được ROI bảo vệ, khách tự bấm ở Seller Center. Chưa code — đợi anh chốt có làm không; nếu làm, xin thêm scope Session để hiển thị video đang được boost (tránh gợi ý boost video đã boost).
+
+## 12. "CHUYỂN SANG PHÂN PHỐI TỐI ĐA" Ở CẤP CHIẾN DỊCH — khảo sát 08/11/2026 (anh Trung thấy mục mới "Mới" trong menu ⋯ của chiến dịch ở Ads Manager)
+
+**Phân phối tối đa (Max delivery) là gì (help TikTok, nguyên văn):** chế độ tối ưu cho chiến dịch GMV Max ĐANG CÓ, "chi tiêu toàn bộ ngân sách
+để đạt được tổng doanh thu hoặc mức phân phối quảng cáo cao nhất có thể" — không có ROI mục tiêu, "có thể làm biến động các chỉ số liên quan
+đến ROI"; TikTok khuyên ROI mục tiêu vẫn là "chiến lược nền luôn bật", Phân phối tối đa chỉ cho ca: sản phẩm/gian mới chưa có lịch sử,
+xả tồn nhanh, dịp sale ngắn. Best practices: ngân sách ≥ 10 × AOV (SP mới) hoặc 1–5 × chi tiêu thực ở chế độ ROI mục tiêu (>5× "ROI có
+thể giảm mạnh"); tăng dần 30%/ngày; chạy 3–5 ngày, đánh giá sau 5–7 ngày; ROI không đạt → giảm ngân sách hoặc quay về ROI mục tiêu.
+Hết lịch → tự quay về ROI mục tiêu; KHÔNG đặt ngày kết thúc thì KHÔNG tự quay về. ROI protection chỉ áp cho ROI mục tiêu, không áp cho
+phần Phân phối tối đa.
+
+**Cái gì MỚI so với mục 11:** help + API (đọc lại 08/11 bằng trình duyệt) chỉ có Phân phối tối đa THEO SẢN PHẨM (session `NO_BID`, mỗi
+phiên đúng 1 SPU) cho Product GMV Max và theo chiến dịch cho LIVE. Nút "Chuyển sang Phân phối tối đa" ở menu chiến dịch Product là
+giao diện mới, chưa có trang help riêng; `/campaign/gmv_max/create|update/` vẫn chỉ nhận `deep_bid_type = VO_MIN_ROAS` → **không có API
+cấp chiến dịch**. Báo cáo `/gmv_max/report/get/` tầng chiến dịch đã có `bid_type` CUSTOM | NO_BID + `target_roi_budget` / `max_delivery_budget`
+(report.ts đọc sẵn từ 10/2026) → chiến dịch bấm nút này nhiều khả năng hiện `bid_type = NO_BID` ở lượt đồng bộ kế — CHƯA KIỂM bằng số thật
+(chưa có chiến dịch nào của gian nhà chuyển). Chưa rõ hộp thoại sau nút hỏi gì (ngân sách riêng? ngày kết thúc? áp cho mọi SP?) — anh mở
+thử trên chiến dịch đang tắt (TC076) rồi chụp, ĐỪNG xác nhận.
+
+**Hubsell hiện xử lý ra sao (đọc code 08/11):** sync.ts `NO_BID → biddingMethod max_delivery, roasTarget NULL, budget = max_delivery_budget`;
+đổi sang/đổi về đều ghi `roasTargetChangedAt` (khóa 48 giờ như đổi mục tiêu); campaign-advice nói "Chiến dịch chạy phân phối tối đa (không
+đặt ROI mục tiêu)" rồi vẫn so ROI thực với hòa vốn → đây là lưới duy nhất khi TikTok không còn mục tiêu nào chặn. Lỗ hổng: (1) chiến dịch
+LAI (vài SP Phân phối tối đa, còn lại ROI mục tiêu) — chưa biết report tầng chiến dịch trả bid_type gì, `budget` có thể chỉ là phần ROI
+mục tiêu → % ngân sách > 100 % / budget_capped oan; (2) `defaultAutoRuleFor(null)` rơi về ROI 10 mặc định cho luật loại video — nên nhắc
+khách chuyển `hardBasis = breakeven`; (3) tab Hòa vốn sản phẩm bỏ qua chiến dịch không có mục tiêu (`running` chỉ tìm roasTarget != null)
+→ không có dòng cảnh báo nào cho SP đang Phân phối tối đa; (4) chưa có chuông "đã chạy Phân phối tối đa N ngày, ROI thực dưới hòa vốn /
+không hẹn ngày kết thúc".
+
+**Đề xuất (chờ anh chốt, chưa code):** A. Lưới hòa vốn cho Phân phối tối đa (nhãn + chuông ngày 3/5/7 + nhắc "không hẹn ngày kết thúc");
+B. Gợi ý ĐÚNG CA dùng dữ liệu riêng của Hubsell: SP mới không phân phối (đã có ở no_delivery), tồn kho ngày-đủ-bán dài → "xả hàng", số
+ngân sách cụ thể = max(10 × AOV, 1–5 × chi tiêu thực); C. Đo trước/sau như TC054 (lãi/100đ, GMV, chi tiêu). ⛔ Không lệnh ghi (anh chốt
+23/09); session scope đã duyệt 24/09 nhưng để dành; cấp chiến dịch không có API nên dù muốn cũng không bấm hộ được.
+
+**✅ ĐÃ CODE 08/11 tối (anh chốt: "thứ anh mong muốn là có gì để Hubsell cảnh báo tới khách khi khách dùng tính năng này") — lát A, chưa commit:**
+- Cột `AdsCampaign.maxDeliverySince` (migration `20261108213000_ads_campaign_max_delivery_since`, ADD COLUMN nullable, chạy lúc start Render).
+  `sync.ts` → `maxDeliverySinceOf()` (thuần, có test): ROI mục tiêu → NO_BID = mốc bây giờ + **chuông ngay** "vừa chuyển sang Phân phối tối đa"
+  (ngân sách/ngày, mục tiêu cũ, không ROI protection, nhớ hẹn ngày kết thúc); quay về ROI mục tiêu = xóa mốc; dòng cũ / thấy lần đầu đã
+  NO_BID = cận dưới (ngày NO_BID sớm nhất trong báo cáo), không chuông. Chuyển sang NO_BID cũng là một lần đổi mục tiêu → `roasTargetPrev`
+  giữ mức cũ = mức "quay về".
+- `campaign-advice.ts` nhánh riêng khi có mốc + roasTarget null (sau hòa vốn, TRƯỚC losing/budget_capped — tiêu trọn ngân sách là đúng thiết
+  kế, không còn báo "ngân sách đang chặn"): `max_delivery_learning` < 3 ngày trọn (info; dưới hòa vốn → warn + "lỗ sâu thì giảm ngân sách
+  ngay"); `losing` nhãn "Phân phối tối đa đang lỗ", khuyên QUAY VỀ ROI mục tiêu = max(mục tiêu cũ, sàn an toàn) hoặc giảm ngân sách (không
+  còn "nâng mục tiêu"); `healthy` 3–4 ngày "giữ tới đủ 5 ngày"; `max_delivery_review` ≥ 5 ngày vẫn lãi (CHUÔNG, khách tự quyết: về ROI
+  mục tiêu / đẩy tiếp +30%/ngày, ≤ 5× chi tiêu cũ); `no_breakeven` khi đang Phân phối tối đa → info + thúc nhập giá vốn. Mọi kết luận kèm
+  dòng "Phân phối tối đa từ dd/mm (N ngày trọn)… không được bảo vệ ROI" + câu hẹn ngày kết thúc. Hằng số nguồn ở `lib/tiktok-breakeven.ts`
+  (`TIKTOK_MAX_DELIVERY_REVIEW_DAYS` 5, `TIKTOK_MAX_DELIVERY_BUDGET_MAX_MULT` 5).
+- `advice-alerts.ts`: chấm bằng số TỪ NGÀY CHUYỂN (lọc dailyPerf ≥ mốc) để ngày lãi cũ không che ngày lỗ mới; `max_delivery_review` vào
+  bộ chuông. 3 route truyền `maxDeliverySince` + `roasTargetPrev`; JSON thêm `maxDeliverySince`; web in "phân phối tối đa từ dd/mm" ở bảng
+  + đầu trang chiến dịch. Test: `tiktok-ads-max-delivery.test.ts` (16) + bộ chuông; tsc 2 app sạch. CHƯA kiểm bằng chiến dịch thật
+  (chưa chiến dịch nào chuyển) — còn treo: chiến dịch LAI (vài SP Phân phối tối đa) báo cáo trả gì; luật loại video mặc định ROI 10.

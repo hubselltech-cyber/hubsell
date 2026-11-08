@@ -3594,6 +3594,8 @@ export interface TiktokAdsCampaignRow {
   live?: boolean;
   /** target_roi = đặt ROI mục tiêu; max_delivery = phân phối tối đa; "" = chưa biết (chiến dịch chưa tiêu tiền, chỉ có từ danh sách). */
   biddingMethod: string;
+  /** Lúc Hubsell thấy chiến dịch chuyển sang Phân phối tối đa (ISO); null = ROI mục tiêu. Vắng = backend cũ. */
+  maxDeliverySince?: string | null;
   roasTarget: number | null;
   budget: number;
   spend: number;
@@ -3767,6 +3769,8 @@ export interface TiktokAdsCampaignAdvice {
     | "target_binding"
     | "target_watching"
     | "target_hold"
+    | "max_delivery_learning" // 08/11: Phân phối tối đa < 3 ngày trọn → chưa kết luận, nhắc hẹn ngày kết thúc
+    | "max_delivery_review" // 08/11: Phân phối tối đa ≥ 5 ngày trọn vẫn lãi → khách tự quyết quay về ROI mục tiêu / đẩy tiếp
     | "healthy";
   label: string;
   /** Dữ kiện, mỗi ý một dòng. Vắng = backend cũ (chỉ có `text`). */
@@ -3803,6 +3807,8 @@ export interface TiktokAdsCampaignVideos {
     channelId: string;
     status: string;
     biddingMethod: string;
+    /** Lúc Hubsell thấy chiến dịch chuyển sang Phân phối tối đa (ISO); null = ROI mục tiêu. Vắng = backend cũ. */
+    maxDeliverySince?: string | null;
     roasTarget: number | null;
     /** Cộng dồn khoảng ngày đang xem (từ tầng sản phẩm của báo cáo). */
     spend: number;

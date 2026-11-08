@@ -26,7 +26,10 @@ describe("adviceAlertPlan — ghi khi đổi, chuông khi đổi sang loại có
   });
 
   it("bộ loại có việc = bốn loại sửa mục tiêu / ngân sách + hai loại không ra đơn (15/10 đêm)", () => {
-    expect([...ADVICE_ALERT_KINDS].sort()).toEqual(["budget_capped", "losing", "no_delivery", "no_orders", "target_below", "target_binding"]);
+    // 08/11: + max_delivery_review (Phân phối tối đa đủ 5 ngày vẫn lãi → khách tự quyết); max_delivery_learning chỉ ghi, không chuông.
+    expect([...ADVICE_ALERT_KINDS].sort()).toEqual(["budget_capped", "losing", "max_delivery_review", "no_delivery", "no_orders", "target_below", "target_binding"]);
+    expect(adviceAlertPlan("max_delivery_learning", "max_delivery_review")).toEqual({ changed: true, alert: true });
+    expect(adviceAlertPlan("", "max_delivery_learning")).toEqual({ changed: true, alert: false });
     expect(adviceAlertPlan("learning", "no_delivery")).toEqual({ changed: true, alert: true });
     expect(adviceAlertPlan("no_delivery", "no_orders")).toEqual({ changed: true, alert: true });
     expect(adviceAlertPlan("", "learning")).toEqual({ changed: true, alert: false });

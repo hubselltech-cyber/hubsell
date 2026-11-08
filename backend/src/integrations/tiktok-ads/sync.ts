@@ -33,7 +33,9 @@
 
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { dateKeyToDbDate, vnDateKey } from "../../lib/ads-dates";
+import { dateKeyToDbDate, vnDateKey, vnDayStart } from "../../lib/ads-dates";
+import { notify } from "../../services/notifications";
+import { NOTIFY_TYPE_TIKTOK_ADVICE } from "./advice-alerts";
 import {
   TIKTOK_AD_TYPE_LIVE,
   TIKTOK_AD_TYPE_PRODUCT,
@@ -303,35 +305,58 @@ export async function syncTiktokAdsCampaigns(
   // Mục tiêu ROI đang lưu của từng chiến dịch — để nhận ra lần khách đổi trong Seller Center (Hubsell không sửa
   // được GMV Max qua API) và ghi mốc roasTargetChangedAt: gợi ý hạ mục tiêu khóa 48 giờ sau mỗi lần đổi (cùng luật Shopee).
   const prevTargetOf = new Map<string, number | null>();
+  const prevModeOf = new Map<string, MaxDeliveryPrev>();
   if (latest.size > 0) {
     const prevRows = await prisma.adsCampaign.findMany({
       where: { channelId: channel.id, campaignId: { in: [...latest.keys()] } },
-      select: { campaignId: true, roasTarget: true },
+      select: { campaignId: true, roasTarget: true, biddingMethod: true, maxDeliverySince: true },
     });
-    for (const r of prevRows) prevTargetOf.set(r.campaignId, r.roasTarget != null ? Number(r.roasTarget) : null);
+    for (const r of prevRows) {
+      prevTargetOf.set(r.campaignId, r.roasTarget != null ? Number(r.roasTarget) : null);
+      prevModeOf.set(r.campaignId, { biddingMethod: r.biddingMethod, maxDeliverySince: r.maxDeliverySince });
+    }
   }
+  // Ngày sớm nhất báo cáo trả NO_BID cho từng chiến dịch — cận dưới của mốc chuyển khi chiến dịch thấy lần đầu đã Phân phối tối đa.
+  const firstNoBidDay = new Map<string, string>();
+  for (const r of rows) {
+    if (r.bidType !== "NO_BID" || !r.campaignId || !r.date) continue;
+    const cur = firstNoBidDay.get(r.campaignId);
+    if (!cur || r.date < cur) firstNoBidDay.set(r.campaignId, r.date);
+  }
+  const now = new Date();
+  const switchedToMaxDelivery: { rowId: string; name: string; budget: number; prevTarget: number | null }[] = [];
   const rowIdByCampaignId = new Map<string, string>();
   for (const [campaignId, c] of latest) {
+    const biddingMethod = c.bidType === "NO_BID" ? "max_delivery" : "target_roi";
+    // PHÂN PHỐI TỐI ĐA (08/11/2026): giữ mốc chuyển để campaign-advice đếm ngày trọn; khách bấm "Chuyển sang Phân phối tối đa" trong
+    // Seller Center / Ads Manager → lượt đồng bộ kế thấy bid_type NO_BID → chuông ngay (không đợi lượt chấm ngày).
+    const md = maxDeliverySinceOf(prevModeOf.get(campaignId) ?? null, biddingMethod, now, firstNoBidDay.get(campaignId));
     const data = {
       name: c.name,
       adType: tiktokAdTypeOf(c.promotionType),
       status: tiktokCampaignStatusOf(c),
-      biddingMethod: c.bidType === "NO_BID" ? "max_delivery" : "target_roi",
+      biddingMethod,
       budget: c.budget,
       roasTarget: c.roasBid,
+      maxDeliverySince: md.since,
     };
     // Chiến dịch thấy lần đầu không tính là "đổi".
     const targetChanged = prevTargetOf.has(campaignId) && prevTargetOf.get(campaignId) !== (c.roasBid ?? null);
     const row = await prisma.adsCampaign.upsert({
       where: { channelId_campaignId: { channelId: channel.id, campaignId } },
-      // Giữ cả mục tiêu CŨ (roasTargetPrev) để biết lần đổi là hạ hay nâng (so lãi trước/sau nấc hạ).
-      update: targetChanged ? { ...data, roasTargetChangedAt: new Date(), roasTargetPrev: prevTargetOf.get(campaignId) ?? null } : data,
+      // Giữ cả mục tiêu CŨ (roasTargetPrev) để biết lần đổi là hạ hay nâng (so lãi trước/sau nấc hạ) — và là mức "quay về" sau
+      // Phân phối tối đa (chuyển sang NO_BID cũng là một lần đổi: roasTarget số → NULL).
+      update: targetChanged ? { ...data, roasTargetChangedAt: now, roasTargetPrev: prevTargetOf.get(campaignId) ?? null } : data,
       create: { channelId: channel.id, campaignId, ...data },
     });
     rowIdByCampaignId.set(campaignId, row.id);
     result.campaignsUpserted++;
     if (data.status === "ongoing") result.liveCampaigns++;
+    if (md.switched && data.status === "ongoing") {
+      switchedToMaxDelivery.push({ rowId: row.id, name: c.name, budget: c.budget, prevTarget: prevTargetOf.get(campaignId) ?? null });
+    }
   }
+  if (switchedToMaxDelivery.length > 0) await notifyMaxDeliverySwitch(channel.id, switchedToMaxDelivery);
 
   // ĐỐI SOÁT với danh sách chiến dịch còn tồn tại: chiến dịch tắt lâu không tiêu tiền
   // vẫn hiện (tạm dừng), chiến dịch TikTok không còn liệt kê → "ended". Hỏng (thiếu
@@ -389,6 +414,51 @@ export async function syncTiktokAdsCampaigns(
     data: { lastSyncedAt: new Date(), lastSyncError: "" },
   });
   return result;
+}
+
+export interface MaxDeliveryPrev {
+  biddingMethod: string;
+  maxDeliverySince: Date | null;
+}
+
+/**
+ * Mốc Phân phối tối đa của một chiến dịch sau lượt đồng bộ (thuần — có test). `prev` = dòng đang lưu (null = thấy lần đầu),
+ * `next` = chế độ báo cáo vừa trả, `firstNoBidDay` = ngày sớm nhất báo cáo trả NO_BID ("YYYY-MM-DD" VN).
+ *   · không phải max_delivery            → since null (quay về ROI mục tiêu thì xóa mốc), không chuông.
+ *   · đang max_delivery từ trước         → giữ mốc cũ; dòng cũ chưa có mốc (trước 08/11) → cận dưới = ngày NO_BID sớm nhất, không chuông.
+ *   · vừa từ ROI mục tiêu chuyển sang    → mốc = bây giờ, CHUÔNG (khách vừa bấm "Chuyển sang Phân phối tối đa").
+ *   · thấy lần đầu đã max_delivery       → cận dưới = ngày NO_BID sớm nhất trong báo cáo (lần nối đầu kéo 30 ngày), không chuông.
+ */
+export function maxDeliverySinceOf(
+  prev: MaxDeliveryPrev | null,
+  next: string,
+  now: Date,
+  firstNoBidDay: string | undefined
+): { since: Date | null; switched: boolean } {
+  if (next !== "max_delivery") return { since: null, switched: false };
+  const lowerBound = firstNoBidDay ? vnDayStart(firstNoBidDay) : now;
+  if (!prev) return { since: lowerBound, switched: false };
+  if (prev.biddingMethod === "max_delivery") return { since: prev.maxDeliverySince ?? lowerBound, switched: false };
+  return { since: now, switched: prev.biddingMethod === "target_roi" };
+}
+
+/** Chuông ngay khi thấy chiến dịch chuyển sang Phân phối tối đa (08/11/2026) — một bản mỗi chiến dịch, link vào trang chiến dịch. */
+async function notifyMaxDeliverySwitch(channelId: string, items: { rowId: string; name: string; budget: number; prevTarget: number | null }[]): Promise<void> {
+  const owner = await prisma.channel.findUnique({ where: { id: channelId }, select: { userId: true } });
+  if (!owner) return;
+  const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
+  for (const it of items) {
+    await notify(owner.userId, {
+      type: NOTIFY_TYPE_TIKTOK_ADVICE,
+      title: `${it.name || "Chiến dịch GMV Max"}: vừa chuyển sang Phân phối tối đa`,
+      body:
+        `TikTok sẽ tiêu trọn ${it.budget > 0 ? vnd(it.budget) + "/ngày" : "ngân sách"} để đẩy doanh thu — không còn ROI mục tiêu` +
+        `${it.prevTarget != null ? ` (trước đó ${it.prevTarget.toLocaleString("vi-VN")})` : ""} chặn lỗ và không được bảo vệ ROI. ` +
+        `TikTok khuyên chạy 3–5 ngày rồi đánh giá; Hubsell chấm lại mỗi ngày theo hòa vốn sản phẩm và báo khi lỗ. ` +
+        `Nhớ hẹn ngày kết thúc — không hẹn thì TikTok không tự quay về ROI mục tiêu.`,
+      link: `/ads/tiktok/campaign?id=${it.rowId}`,
+    }).catch((err) => console.warn(`[TikTok Ads] Chuông Phân phối tối đa lỗi (${it.name}): ${(err as Error).message}`));
+  }
 }
 
 /**

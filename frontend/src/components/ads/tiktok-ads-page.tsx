@@ -142,7 +142,8 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
           <p className="max-w-60 truncate text-sm text-slate-900">{c.name || `Chiến dịch #${c.campaignId}`}</p>
           <p className="text-xs text-slate-500">
             {c.live ? "LIVE GMV Max" : "GMV Max"}
-            {c.biddingMethod === "max_delivery" && " · phân phối tối đa"}
+            {c.biddingMethod === "max_delivery" &&
+              ` · phân phối tối đa${c.maxDeliverySince ? ` từ ${new Date(c.maxDeliverySince).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}` : ""}`}
             {c.biddingMethod === "target_roi" && " · ROI mục tiêu"}
             {c.budget > 0 && ` · ngân sách ${formatVND(c.budget)}/ngày`}
           </p>
