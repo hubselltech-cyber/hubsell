@@ -15,6 +15,9 @@
 //   dài thời gian thư hệ thống (quên mật khẩu, chào khách mới, hóa đơn) bị chặn theo.
 // - 50 / ngày và giờ gửi là số anh chốt + mặc định em chọn (sau giờ mở hộp thư buổi
 //   sáng), không phải ngưỡng Zoho công bố; Zoho chặn ở ~51 thư liên tiếp ngày 06/11.
+// - 08/11 anh chốt HẠ 25 / ngày: lô 51 thư 06/11 làm Zoho chặn hộp gửi suốt 06–08/11
+//   (28 thư hệ thống hỏng, kể cả 2 hóa đơn) — 50/ngày đúng bằng con số đã sập. Hạn
+//   dời 30/11 vì 201 người còn lại / 25 = 9 ngày gửi, cộng ngày Zoho còn chặn.
 //
 // Tắt: env FEATURE_DRIP_OFF=1. Gửi xong đợt này thì gỡ cả file (như mẫu thư 29/10).
 // ============================================================
@@ -27,11 +30,11 @@ import { ANNOUNCE_FEATURES, sendAnnounceBatch } from "../services/feature-announ
 
 export const DRIP = {
   feature: "mobile-1-4-2",
-  perDay: 50,
+  perDay: 25,
   /** Giờ VN bắt đầu gửi mỗi ngày. */
   fromHourVN: 9,
   /** Quá ngày này (giờ VN) thì thôi hẳn, kể cả còn người chưa nhận. */
-  until: "2026-11-20",
+  until: "2026-11-30",
   pauseMs: 3000,
 } as const;
 

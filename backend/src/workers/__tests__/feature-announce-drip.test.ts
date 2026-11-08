@@ -26,8 +26,8 @@ describe("dripBudget — gửi nốt thư báo tính năng mỗi ngày một lô
   });
 
   it("quá hạn đợt gửi: thôi hẳn", () => {
-    expect(dripBudget({ now: vn("2026-11-21T10:00:00"), sentToday: 0, pausedToday: false })).toBe(0);
-    expect(dripBudget({ now: vn("2026-11-20T23:30:00"), sentToday: 0, pausedToday: false })).toBe(DRIP.perDay);
+    expect(dripBudget({ now: vn("2026-12-01T10:00:00"), sentToday: 0, pausedToday: false })).toBe(0);
+    expect(dripBudget({ now: vn("2026-11-30T23:30:00"), sentToday: 0, pausedToday: false })).toBe(DRIP.perDay);
   });
 
   it("dấu nghỉ theo ngày VN, khác kind vé gửi thư", () => {

@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 08/11 (3) — Anh: "anh vừa xuất 2 hóa đơn, kiểm tra khách đã nhận email chưa" → "email gửi không thành công, xem lỗi" → gốc Zoho CHẶN hộp gửi từ 16:18 06/11 (ngay sau lô 51 thư app 1.4.2) tới ≥20:22 08/11; anh chốt "Hạ 25/ngày" cho drip
+
+- **Kiểm (SQL Supabase chỉ đọc + Render Logs web/worker qua Claude in Chrome, 20:15–20:30 VN):** hóa đơn 00000013 (Growth 199k, phanchat069@gmail.com) + 00000014 (Scale 1.199k, hieucon111099@gmail.com) `invoiceEmailSentAt` null, `einvoiceAutoError` = "Gửi email thất bại (SMTP…)", attempts 0 (anh bấm tay 20:22). Log web cùng phút: `[Customer mail] invoice-issued → … 550 5.4.6 Unusual sending activity detected … UnblockMe`.
+- **Phạm vi:** log web `?r=7d&q=Unusual`: **28 thư hỏng** từ 16:18 06/11 → 20:22 08/11 = 17 chào khách mới, 3 quên mật khẩu (1 khách bấm 3 lần), 3 tự trả lời support, 1 đổi mật khẩu, 2 kích hoạt gói, 2 hóa đơn. Worker: drip 9h 07/11 và 9h 08/11 đều "gửi 0, lỗi 1 — DỪNG tới mai" (vé `drip-pause:feature-mobile-1-4-2:2026-11-07/08`) ⇒ anh chưa gỡ chặn từ 06/11. Thư chào + quên mật khẩu KHÔNG tự gửi lại (mất hẳn); 2 hóa đơn worker `hq-invoice-auto` tự gửi lại sau khi gỡ (lọc ISSUED + chưa gửi, attempts < 5, cách 20'), nhưng mỗi lượt lỗi đốt 1/5 lượt → gỡ muộn thì bấm "Gửi lại email hóa đơn" tay.
+- **⚠️ Bẫy đọc giờ:** cột DateTime Prisma là `timestamp` không múi giờ (UTC) — trong Supabase `at time zone 'Asia/Ho_Chi_Minh'` bị TRỪ 7 h; đọc thô rồi cộng tay +7 h.
+- **Anh chốt "Hạ 25/ngày":** `workers/feature-announce-drip.ts` `perDay` 50 → **25**, `until` 20/11 → **30/11** (201 người / 25 = 9 ngày gửi + ngày Zoho còn chặn); test `feature-announce-drip` dời mốc hạn (42/42 xanh cùng `no-module-state`), tsc sạch. ⏳ **Anh gỡ chặn tại mail.zoho.com/UnblockMe (CAPTCHA)** → sáng 09/11 9h drip 25 thư; soi log `[Feature-drip]` + `invoiceEmailSentAt` 2 hóa đơn. Đề xuất còn treo: chuyển thư hệ thống khỏi Zoho (Resend/SES). Memory: `hubsell-su-co-zoho-chan-gui-thu-2026-10-30` (lần 2).
+
+---
 ## Phiên 08/11 (2) — Khảo sát "Lãi/Lỗ thực hiện lệch Báo cáo dòng tiền" (anh: khách thắc mắc, cân nhắc bỏ tab; anh nghĩ do quảng cáo) → anh chốt "giữ, sửa nhãn" + "trình bày biểu đồ đẹp, phân tích sâu hơn, khảo sát chuẩn báo cáo" — ĐÃ LÀM tab Tổng quan Lợi nhuận mới; anh xem local rồi chốt "Dọn dẹp và push đi em" → ĐÃ PUSH `c5d2b9c8`
 
 - **Đo prod cùng kỳ 10/10–08/11 (hai trang dùng chung `defaultRange`, tài khoản Chủ Shop Hubsell):** Lãi/Lỗ tab Tất cả 92.028.975 (2.386 đơn) vs Dòng tiền Lợi nhuận ròng 53.132.779. **Lệch 38.896.196 = Ads 20.009.899 + chi phí cố định nhập tay 18.385.000 + 501.297 (đơn hủy −961.400 + đơn đang hoàn, Dòng tiền chỉ cộng đơn tính doanh thu)** — khớp từng đồng. Quảng cáo đúng là một nửa, nửa kia là chi phí vận hành anh nhập tay.
