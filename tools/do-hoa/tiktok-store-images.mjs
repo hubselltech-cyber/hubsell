@@ -17,12 +17,12 @@ const require = createRequire(join(here, "../../hubsell-landing/package.json"));
 const { chromium } = require("playwright-core");
 
 const FRAMES = [
-  "01-ba-san-mot-tro-ly",
-  "02-lai-that-khong-phai-roas",
-  "03-loai-video-dot-tien",
-  "04-roi-hoa-von-san-pham",
-  "05-canh-24-7",
-  "06-nen-tinh-lai-that",
+  "01-quan-ly-da-san-lai-that",
+  "02-don-ba-san-mot-man-hinh",
+  "03-ton-kho-mot-noi",
+  "04-lai-that-khong-chi-roas",
+  "05-loai-video-dot-tien",
+  "06-canh-quang-cao-24-7",
 ];
 
 const browser = await chromium.launch({ channel: "chrome" });

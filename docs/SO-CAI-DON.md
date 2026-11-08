@@ -59,6 +59,21 @@ Mỗi lượt đối soát đêm một dòng: số mẫu, số lệch, số dòn
 
 `(ownerId, createdDate)`, `(channelId, createdDate)`, `(channelId, deliveredDate)`, `(channelId, settledDate)`, `(orderId)`, và chỉ mục một phần `(dirtyAt) WHERE dirtyAt IS NOT NULL` làm hàng đợi việc của worker (nhỏ dù sổ lớn). Bảng dòng hàng thêm `(productId)`, `(channelId, channelSku)`.
 
+**06/11/2026 — đã ĐO, KHÔNG bỏ chỉ mục GIN trigram tìm mã đơn; hoãn tới giai đoạn 4.** Khi rà dung lượng database (PROGRESS phiên 06/11 chiều (11) + (12)) em từng viết migration bỏ `order_ledger_orderCode_trgm_idx`, rồi rút lại cùng ngày theo lời anh Trung ("chúng ta đang đi vá lẻ"): gỡ chỉ mục là việc của giai đoạn 4 "Vòng đời dữ liệu" (`docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md` mục 6.8 + phụ lục B), và chỉ mục này là quyết định "mô hình shop lớn" 30/09 (mục 9.3). Số đo prod 06/11 giữ lại để giai đoạn 4 quyết một lần cùng các chỉ mục khác:
+
+- Chỉ mục nặng 137 MB, lớn nhất trong 12 chỉ mục của sổ đơn (611 MB chỉ mục trên 434 MB dữ liệu); bộ đếm cộng dồn 466 lượt quét. 137 MB bằng khoảng 16 giờ tăng trưởng của database lúc đo (~200 MB / ngày).
+- Chủ shop lớn nhất (125.650 đơn / 90 ngày, `EXPLAIN ANALYZE` chỉ đọc; "không chỉ mục" mô phỏng bằng `("orderCode"||'') ILIKE`):
+
+| Câu | Có chỉ mục | Không chỉ mục |
+|---|---|---|
+| Danh sách có tìm (50 dòng) | 28 ms | 758 ms |
+| Tổng kết có tìm | 256 ms | 373 ms |
+| Tổng kết KHÔNG tìm (chạy mỗi lần mở trang) | — | 373 ms nóng, 3.369 ms nguội |
+
+- Ngoại suy tuyến tính (ƯỚC, chưa đo) cho shop 360.000 đơn / 90 ngày: danh sách có tìm ~2,2 giây khi không có chỉ mục — vượt tiêu chí "dưới 2 giây" của giai đoạn 1. Đây là lý do giữ chỉ mục.
+
+**Chỉ mục rỗng (ước, chưa dựng lại):** ba chỉ mục `pkey`, `(orderId)`, `(ownerId, createdAt, orderId)` của sổ đơn đang ~100–170 byte / dòng, gấp đôi cỡ sạch ước tính (~45–85 byte) → ước ~150 MB; `pkey` + `(orderId)` của sổ dòng ước ~100 MB. Các chỉ mục hai cột theo ngày (~40 byte / dòng) không rỗng. Không dựng lại lúc này: chừng nào bản kê còn bị ghi lại mỗi giờ (đại tu lớp gọi sàn, mục 5e "Sau đơn") thì chỉ mục sẽ rỗng lại. Prod không có `pgstattuple` nên đây là ước theo byte / dòng.
+
 ---
 
 ## 3. Giữ sổ luôn đúng: trigger

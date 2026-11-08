@@ -1,7 +1,7 @@
 # Product Marketing Context — Hubsell
 
-**Document version:** v4
-**Last updated:** 2026-11-02
+**Document version:** v5
+**Last updated:** 2026-11-06
 
 > Tệp nền mà MỌI skill marketing trong `hubsell-marketing/.claude/skills/` đọc trước khi làm.
 > Nguồn: `docs/marketing/DINH-VI-LAI-HUBSELL-QUANG-CAO.md` (định vị anh Trung chốt 15/10/2026),
@@ -144,7 +144,7 @@ cho); thuật ngữ tiếng Anh khi có từ Việt.
 ## Goals
 **Business goal:** Có khách trả tiền đều, tăng trưởng được đo hàng tuần. [Mục tiêu số cụ thể: CHỜ ANH CHỐT]
 **Conversion action:** Đăng ký → nối gian → nhập giá vốn → nối quảng cáo → thấy "N chiến dịch dưới hòa vốn" (aha) → trả tiền.
-**Current metrics:** [CHƯA CÓ SỐ — chạy SQL khối 1–6]
+**Current metrics (06/11/2026, `so-lieu/KET-QUA-2026-11-06.md`):** 255 chủ shop đăng ký · 153 nối gian (60 %) · 111 có chi ads 30 ngày · 12 đang trả tiền, MRR ≈ 3,1 triệu ₫ · 77 đang dùng thử · 1 khách qua giới thiệu · đăng ký đỉnh 86/tuần (video 1017) rồi về ~20–25/tuần · chưa đo được nguồn khách.
 
 ## Paid Ads (optional)
 Hubsell chưa có ngân sách quảng cáo trả tiền cho chính mình. [CHỜ ANH] Nếu chạy: ngân sách tháng, CAC chấp
@@ -168,6 +168,7 @@ nhận được (gợi ý tính từ giá gói × số tháng khách ở lại �
 
 ## Changelog
 *Newest first.*
+- v5 (2026-11-06): điền Current metrics bằng số thật prod (SQL khối 1, 3, 5, 6 + khối 2 theo tuần).
 - v4 (2026-11-02) — Learnings: anh chốt tạm bỏ đăng bài nhóm nhà bán.
 - v3 (2026-10-17) — Learnings: chính sách hoa hồng đối tác 10 % trọn đời + bậc 15 % từ khách thứ 100.
 - v2 (2026-10-17) — Learnings: anh chốt kênh chính (bài nhóm), đội tiếp thị (người dạy YouTube/TikTok), máy tính ROAS hòa vốn dẫn về đăng nhập.

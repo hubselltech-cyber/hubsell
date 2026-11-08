@@ -235,7 +235,7 @@ BẮT ĐẦU
 2. Đăng nhập hoặc tạo tài khoản Hubsell; gian hàng được nối ngay sau đó.
 3. Nhập giá vốn sản phẩm, nối tài khoản quảng cáo. Trợ lý bắt đầu đọc chiến dịch.
 
-Dùng thử đầy đủ tính năng 14 ngày. Gói từ 99.000 đồng/tháng theo số đơn, không giới hạn người dùng. Hỗ trợ bằng tiếng Việt qua email và ngay trong ứng dụng.
+Dùng thử đầy đủ tính năng 14 ngày. Gói từ 99.000 đồng/tháng theo số đơn, mọi gói đủ tính năng. Hỗ trợ bằng tiếng Việt qua email và ngay trong ứng dụng.
 <!-- LONG-END -->
 
 Câu chữ bám đúng khả năng thật từng sàn (anh dặn 15/10): TikTok = đọc GMV Max + loại/khôi
@@ -266,12 +266,14 @@ canh khi khách bật. Không "đối tác chính thức", không "số 1".
 | Tệp | Dùng ở | Nội dung |
 |---|---|---|
 | `logo-256.png` | Service logo (256×256) | logo Hubsell nền trắng, không chữ |
-| `01-ba-san-mot-tro-ly.png` | **Ảnh chính** 5:3 (1500×900) | "Ba sàn, một trợ lý quảng cáo." + biểu đồ Chi phí vs GMV từ Ads (ảnh thật app, data demo) |
-| `02-lai-that-khong-phai-roas.png` | Ảnh bổ sung 1 | bảng chiến dịch: ROAS sàn vs ROAS hòa vốn → lãi/lỗ ước tính |
-| `03-loai-video-dot-tien.png` | Ảnh bổ sung 2 | bảng video GMV Max: Đốt tiền → Loại khỏi chiến dịch / Khôi phục |
-| `04-roi-hoa-von-san-pham.png` | Ảnh bổ sung 3 | gợi ý sản phẩm nên chạy: biên lãi, ROI hòa vốn, ROI nên đặt, ngân sách/ngày |
-| `05-canh-24-7.png` | Ảnh bổ sung 4 | danh sách cảnh báo ba sàn (lỗ, mục tiêu dưới hòa vốn, ví cạn, đã hạ 10% khóa 48 giờ) |
-| `06-nen-tinh-lai-that.png` | Ảnh bổ sung 5 | "Vì Hubsell đọc từng đơn" + trang Tài chính (ảnh thật) + màn Quảng cáo trên điện thoại (ảnh thật) |
+| `01-quan-ly-da-san-lai-that.png` | **Ảnh chính** 5:3 (1500×900) | "Quản lý đa sàn, biết lãi thật từng chiến dịch" + thẻ lãi thật hôm nay của 3 gian |
+| `02-don-ba-san-mot-man-hinh.png` | Ảnh bổ sung 1 | 271 đơn chờ xử lý của ba sàn, nút Chuẩn bị 128 đơn / In phiếu |
+| `03-ton-kho-mot-noi.png` | Ảnh bổ sung 2 | một mã 240 cái trong kho, ba gian "Đã đồng bộ" |
+| `04-lai-that-khong-chi-roas.png` | Ảnh bổ sung 3 | bảng chiến dịch: ROAS, hòa vốn, lãi / lỗ; dòng dưới hòa vốn tô đỏ |
+| `05-loai-video-dot-tien.png` | Ảnh bổ sung 4 | video GMV Max: chi tiền, số đơn, nút Loại |
+| `06-canh-quang-cao-24-7.png` | Ảnh bổ sung 5 | điện thoại: 4 việc cần xử lý hôm nay |
+
+**Bản 06/11/2026 (thay bộ nền tối 23/10; anh Trung: "làm đẹp, hấp dẫn một chút, ít nhất phải hơn các bên khác"):** trang chi tiết App Store bày 3 ảnh một hàng, mỗi ảnh chỉ rộng khoảng 320px (đo ở trang Sapo, Nhanh.vn 06/11: họ dùng sơ đồ, ảnh đội ngũ, ảnh chụp màn hình chữ li ti). Vì vậy: nền sáng mỗi ảnh một tông, MỘT ý mỗi ảnh, tiêu đề 80px, giao diện VẼ LẠI bằng HTML chữ to thay cho ảnh chụp app thu nhỏ. Số liệu trong 6 ảnh khớp nhau (128 + 46 + 97 = 271 đơn; 1.240.000 + 385.000 + 1.220.000 = 2.845.000 ₫).
 
 - Nguồn: `listing-images.html` (6 khung, mở `?frame=N`), chụp bằng
   `node tools/do-hoa/tiktok-store-images.mjs` rồi `python tools/do-hoa/tiktok-store-finish.py`.
@@ -304,6 +306,22 @@ canh khi khách bật. Không "đối tác chính thức", không "số 1".
 
 **Trước khi bấm Gửi: push code mục 6 lên prod** (reviewer sẽ cài từ App Store → về callback
 không có state → phải vào được).
+
+---
+
+## 5b. ĐÃ BẮT ĐẦU NÂNG CẤP 06/11/2026 10:50 — bài niêm yết tiếng Việt đã LƯU NHÁP 10:56, CHƯA bấm "Công bố thay đổi"
+
+- **TikTok trả lời ticket `2026102304120200004` ngày 05/11:** ủy quyền cũ giữ nếu không đổi scope; trần 25 không khẳng định, căn cứ là checklist trên trang nâng cấp; listing tiếng Việt 7–10 ngày làm việc. Anh Trung 06/11: "cứ nộp app như một app vận hành giống các bên cũng được. em mở chrome làm luôn đi".
+- **Hộp nâng cấp (đọc 06/11):** không nhắc trần 25; cảnh báo: mất vài ngày, bị chặn nếu thị trường nào từ chối, trong lúc nâng cấp KHÔNG vô hiệu hóa được dịch vụ. Đã bấm "Bắt đầu nâng cấp" 10:50:37. Trang app hiện dải "Đang nâng cấp — Danh sách cần điền và công bố"; loại vẫn Tùy chỉnh, hạng mục vẫn Lập kế hoạch tài nguyên doanh nghiệp.
+- **Checklist thật chỉ có MỘT mục:** Việt Nam / Người bán trong nước → "Điền biểu mẫu xem xét bài niêm yết theo ngôn ngữ". Không thấy mục Beta, Compliance hay trần ủy quyền.
+- **Biểu mẫu thật khác mục 1.3 / 3.7:** không có ô giá (Price tag) và không có ô số điện thoại bắt buộc; ảnh / video nổi bật mặc định chọn Video, phải chuyển sang Ảnh; Nền tảng tích hợp là danh sách chọn sẵn (không có TikTok for Business, MISA) → đã chọn Lazada + Shopee; mô tả chi tiết là ô soạn thảo, dán vào thì mất dòng trống giữa các đoạn.
+- **Đã điền (đúng mục 3 + 4):** tên `Hubsell - Trợ lý quảng cáo đa sàn`, logo 256, mô tả ngắn 181 ký tự, ảnh chính `01`, 3 lợi ích, 5 ảnh bổ sung `02`–`06`, mô tả chi tiết (2.067 ký tự; đổi câu "không giới hạn người dùng" thành "mọi gói đủ tính năng" vì bảng giá hiện có trần nhân viên theo gói), email support@hubsell.vn, website, FAQ; điện thoại để trống.
+- **11:00 đổi theo anh chốt "Tên ghép hai vế" + "đa sàn":** tên `Hubsell - Quản lý đa sàn & trợ lý quảng cáo` (43), mô tả ngắn mới 199 ký tự (vận hành trước, quảng cáo sau), câu mở đầu mô tả chi tiết viết lại, lợi ích 3 đổi thành "Đơn và tồn kho ba sàn một nơi".
+- **11:10 thay bộ ảnh mới** (mục 4, bản 06/11): ảnh chính + 5 ảnh bổ sung, đã LƯU NHÁP.
+- **✅ 11:12 ĐÃ NỘP DUYỆT** (anh xem bộ ảnh: "Được, nộp đi"): bấm "Công bố thay đổi" → hộp xác nhận chỉ liệt kê Việt Nam / Danh sách Tiếng Việt (bản lưu 11:10) → TikTok báo "Đã gửi… Sau khi hoàn tất đánh giá ứng dụng và xét duyệt danh sách, ứng dụng sẽ tự động hoạt động và danh sách sẽ được đăng lên Cửa hàng ứng dụng. Quá trình này thường mất 10–12 ngày làm việc", kết quả báo qua thư từ `partner@email.tiktok.com`. Kiểm lại sau khi tải lại trang: dòng Việt Nam ghi **"Đang xem xét bài niêm yết"**, cập nhật 2026-11-06 11:12.
+- **Lưu ý khi đọc trang app:** dải "Đang nâng cấp" ghi "Đã gửi đơn đăng ký thành công vào 2026-10-12 11:40" — đó là mốc lần duyệt app 12/10, không phải lần nộp này.
+- **✅ 06/11 14:34 — TikTok báo "Nâng cấp lên Dịch vụ công khai thành công"** (anh Trung chụp trang app): nhãn đổi thành **Công khai**, trạng thái **Bật**, hạng mục vẫn Lập kế hoạch tài nguyên doanh nghiệp. Duyệt xong sau ~3 giờ 20 phút, không phải 10–12 ngày như TikTok hẹn. Commit callback không state `35908697` đã có trên origin/master (kiểm 06/11). Chỗ xem: App Store công khai `seller-vn.tiktok.com/appstore/vn/` (không cần đăng nhập) hoặc Seller Center → Cửa hàng ứng dụng; trên Partner Center: `partner.tiktokshop.com/service/list`.
+- **⏳ Còn lại (cũ, trước 14:34):** chờ 10–12 ngày làm việc (khoảng 20–24/11); thư kết quả về hộp thư của tài khoản đối tác, kiểm thêm bằng trang app (Xem chi tiết → dòng Việt Nam). Bị từ chối thì đọc lý do, sửa bài niêm yết, công bố lại. Qua rồi: huy hiệu landing + bài fanpage (mục 5 bước 6), và theo dõi khách đầu tiên cài từ App Store (mục 6).
 
 ---
 

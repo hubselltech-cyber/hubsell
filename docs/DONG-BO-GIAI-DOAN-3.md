@@ -675,3 +675,14 @@ cập nhật không, và số dòng lượt toàn bộ thấy khác DB mà lư�
 5. `autoFillCostForNewSkus` vẫn nạp cả danh mục của chủ shop mỗi khi có SKU mới.
 6. TikTok kéo toàn bộ với gian trên 10.000 sản phẩm: chưa biết sàn có trả `12052180` cả khi không lọc hay không.
 7. Đường lui: `PRODUCT_SYNC_INCREMENTAL=off` (hết tăng dần, vẫn chỉ ghi dòng khác); bỏ hẳn = revert commit (2 cột thừa vô hại).
+
+### 7.9. Đọc log prod sau đêm chạy bóng đầu tiên (06/11/2026 sáng, chỉ đọc)
+
+Nguồn: Render `hubsell-worker-sg` trang Logs 24 giờ (từ khóa `Catalog-sync`, `NGOÀI cửa sổ`, `chạy bóng`) + 2 câu SELECT trên Supabase.
+
+- **Chưa đủ số để quyết bật.** Trong 24 giờ chỉ có MỘT dòng `ĐỐI CHIẾU TĂNG DẦN` (GUMAX thời trang Nam Nữ, TikTok, 04:37 06/11). Các gian khác đêm qua mới chạy lượt toàn bộ đầu tiên sau deploy (`gian chưa có mốc`) nên chưa có gì để so; dòng đối chiếu của chúng bắt đầu từ lượt toàn bộ kế. Không có lượt `tăng dần` nào, không lượt nào `CHƯA đủ`.
+- **GUMAX:** 5.385 SP sàn, 2.493 dòng đổi, 0 trong cửa sổ, **2.493 NGOÀI cửa sổ** (tồn 47, khác 2.465, mới / giá / trạng thái 0), 102 lệnh gọi sàn, 61 giây. Tức nếu đã bật thật thì lượt tăng dần không thấy dòng nào trong số này.
+- **Vì sao "khác" nhiều thế (SELECT trên prod):** 2.493 dòng đó thuộc 69 sản phẩm cha (≤ `DETAIL_PER_RUN` = 100) và 100 % có `imageUrl` mang chuỗi tham số (`dr`, `from`, `idc`, `ps`, `shcp`, `shp`, `t`). Cả gian: 5.535 dòng, 1.285 URL ảnh khác nhau trên 1.198 đường dẫn ảnh → 87 đường dẫn đang lưu ≥ 2 biến thể chỉ khác tham số. Kết luận: sàn trả cùng một ảnh với tham số đổi theo lần gọi, phép so `imageUrl` nguyên chuỗi coi là "khác" và ghi lại mọi SKU của các sản phẩm vừa được đọc chi tiết. CHƯA bắt được hai lần gọi liên tiếp cùng một sản phẩm để so trực tiếp; chưa biết tham số cũ có hết hạn không.
+- **Hệ quả:** (1) "chỉ ghi dòng khác biệt" chưa tiết kiệm được với TikTok — mẫu 31 lượt 04:37–05:06: Shopee 12 gian 40.627 dòng chỉ 265 cập nhật (0,65 %), TikTok 18 gian 17.741 dòng tới 5.696 cập nhật (32 %); (2) số `NGOÀI cửa sổ` của TikTok đang lẫn nhiễu ảnh nên không dùng để quyết bật được; 47 dòng lệch tồn mới là phần đáng xem.
+- **Đề xuất (chưa làm, chờ anh):** so ảnh theo đường dẫn bỏ phần tham số (sau dấu `?`) trong `diffChannelProductRow`, có test; rồi đọc lại đối chiếu 1–2 đêm. Trước khi sửa cần biết URL cũ có hết hạn không (mở thử một URL lưu từ tháng 10).
+- **Lỗi lặp không do lát 3.9:** Lazada "Vodka Store" `ServiceTimeout` mỗi 30 phút, có từ 09:09 05/11 (trước deploy 23:00), 49 lần trong 50 dòng Lazada gần nhất; TikTok "TORANO MENSWEAR" `36009005 Invalid credentials` (khách hủy ủy quyền 05/11 14:16) vẫn bị thử lại mỗi 30 phút.
