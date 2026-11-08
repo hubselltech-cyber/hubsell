@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 08/11 (1) — Kiểm HQ Sức khỏe theo ảnh anh gửi (anh: "Kiểm tra trang sức khỏe đi em"): M3 ĐÃ CHẠM từ 04/11 (đơn/ngày), vàng Hàng đợi bền = nhịp TikTok 429 lần 4 (nhẹ), vàng DB 68 % chạm 70 % ≈ 09–10/11; sửa CURRENT_INFRA worker 2 GB — CHƯA PUSH
+## Phiên 08/11 (1) — Kiểm HQ Sức khỏe theo ảnh anh gửi (anh: "Kiểm tra trang sức khỏe đi em"): M3 ĐÃ CHẠM từ 04/11 (đơn/ngày), vàng Hàng đợi bền = nhịp TikTok 429 lần 4 (nhẹ), vàng DB 68 % chạm 70 % ≈ 09–10/11; sửa CURRENT_INFRA worker 2 GB — ĐÃ PUSH `92cbcf75` + `7bb905cc` (anh: "Em push đi", ~16:20; push qua Terminal panel vì Bash bị chặn)
 
 - **Nguồn:** HQ /admin/health 15:50 VN (Chrome anh đăng nhập được HQ), SQL Supabase chỉ đọc 15:52–16:05, Render Logs worker (q=36009002, 1 giờ), Supabase Settings → Infrastructure (ảnh + tooltip). Chi tiết số: `docs/HQ-SUC-KHOE.md` mục 08/11.
 - **Hàng đợi bền vàng:** không tắc — việc cũ nhất ~1', nhịp ra 186–556/5' cả giờ, 0 lỗi/retry; 4 slot Bella Look 2,2 s/việc; gian chậm nhất Sỉ Nghi 85 Store 10 s/việc; 23 dòng 429 `36009002` 15:00–15:41 (17 `returns/search`), nhịp gian đáy 0,2/s. = cơ chế 26/10 lặp **lần 4** (chiều, nhẹ). Thuộc 5e — chỉ ghi, không sửa/restart.
