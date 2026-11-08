@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 08/11 (2) — Khảo sát "Lãi/Lỗ thực hiện lệch Báo cáo dòng tiền" (anh: khách thắc mắc, cân nhắc bỏ tab; anh nghĩ do quảng cáo) → anh chốt "giữ, sửa nhãn" + "trình bày biểu đồ đẹp, phân tích sâu hơn, khảo sát chuẩn báo cáo" — ĐÃ LÀM tab Tổng quan Lợi nhuận mới; anh xem local rồi chốt "Dọn dẹp và push đi em" → ĐÃ PUSH (hash bên dưới)
+## Phiên 08/11 (2) — Khảo sát "Lãi/Lỗ thực hiện lệch Báo cáo dòng tiền" (anh: khách thắc mắc, cân nhắc bỏ tab; anh nghĩ do quảng cáo) → anh chốt "giữ, sửa nhãn" + "trình bày biểu đồ đẹp, phân tích sâu hơn, khảo sát chuẩn báo cáo" — ĐÃ LÀM tab Tổng quan Lợi nhuận mới; anh xem local rồi chốt "Dọn dẹp và push đi em" → ĐÃ PUSH `c5d2b9c8`
 
 - **Đo prod cùng kỳ 10/10–08/11 (hai trang dùng chung `defaultRange`, tài khoản Chủ Shop Hubsell):** Lãi/Lỗ tab Tất cả 92.028.975 (2.386 đơn) vs Dòng tiền Lợi nhuận ròng 53.132.779. **Lệch 38.896.196 = Ads 20.009.899 + chi phí cố định nhập tay 18.385.000 + 501.297 (đơn hủy −961.400 + đơn đang hoàn, Dòng tiền chỉ cộng đơn tính doanh thu)** — khớp từng đồng. Quảng cáo đúng là một nửa, nửa kia là chi phí vận hành anh nhập tay.
 - **Gốc:** theo thiết kế, không phải lỗi số — `realized-pnl` chỉ cộng sổ cái đơn (tiền về ví − giá vốn), ba khoản ngoài đơn (AdSpend, thu chi nhập tay, thu khác) chỉ có ở `/api/finance/analytics`; docs/SO-CAI-DON.md mục 169 đã ghi phép bù này từ 30/09. Vấn đề là NHÃN thẻ "Lợi nhuận ròng thực nhận" trùng tên với Dòng tiền (bài học 26/10).
