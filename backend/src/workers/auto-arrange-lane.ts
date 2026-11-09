@@ -19,13 +19,16 @@ import {
   AUTO_ARRANGE_LANE,
   AUTO_ARRANGE_SHADOW_STREAM,
   AUTO_ARRANGE_STREAM,
+  carrierNameRequired,
   classifyArrangeFailure,
   isAuthFailure,
+  isCarrierUnknown,
   isChannelWideFailure,
   jittered,
   selectAutoArrangeCandidates,
   type SkipReason,
 } from "../lib/auto-arrange";
+import { refreshShopeeCarrierNames } from "../integrations/shopee/carrier-names";
 import { getFulfillmentAdapter } from "../services/fulfillment";
 import { findLiveRunningBatches, runFulfillmentBatchNow, type BatchOrderRow } from "../services/fulfillment/batch-runner";
 import { notify } from "../services/notifications";
@@ -37,6 +40,7 @@ const SKIP_LABEL: Record<SkipReason, string> = {
   unpaid: "chưa thanh toán",
   cancel_requested: "khách xin hủy",
   express: "hỏa tốc",
+  carrier_unknown: "chưa rõ hãng",
   blocked: "đã chặn",
   max_attempts: "quá số lần",
   tried_recently: "vừa thử",
@@ -100,6 +104,31 @@ export async function handleAutoArrangeItem(item: LeaseItem, _signal: AbortSigna
     take: maxPerRun * 2 + 50,
   });
 
+  // Sàn phải biết hãng mới được chuẩn bị (Shopee): đơn chưa rõ hãng có thể là hỏa
+  // tốc → hỏi lại sàn tên hãng (một lệnh đọc, ≤ 50 đơn cũ nhất) rồi mới chọn đơn.
+  // Hỏi không được / vẫn chưa rõ → đơn chờ lượt sau. Luồng bóng không gọi sàn.
+  const requireCarrierName = carrierNameRequired(channel.channelName);
+  if (requireCarrierName && !shadow) {
+    const unknown = pending.filter(
+      (o) => o.paymentStatus !== "UNPAID" && !o.cancelRequestedAt && isCarrierUnknown(o.shippingCarrierName)
+    );
+    if (unknown.length > 0) {
+      try {
+        const r = await refreshShopeeCarrierNames(channel, unknown);
+        for (const o of pending) {
+          const name = r.names.get(o.id);
+          if (name) o.shippingCarrierName = name;
+        }
+        console.log(
+          `${tag}: ${unknown.length} đơn chưa rõ hãng, hỏi sàn ${r.asked} → biết ${r.names.size}` +
+            ` (hãng ${r.fromCarrier}, kênh khách chọn ${r.fromCheckout})${r.samples.length ? `: ${r.samples.join(", ")}` : ""}`
+        );
+      } catch (err) {
+        console.warn(`${tag}: không hỏi được tên hãng ${unknown.length} đơn, để chờ lượt sau — ${(err as Error).message}`);
+      }
+    }
+  }
+
   const running = await findLiveRunningBatches(channel.userId);
   const runningOrderIds = new Set(running.flatMap((b) => b.orderIds));
   const sel = selectAutoArrangeCandidates(pending, {
@@ -108,6 +137,7 @@ export async function handleAutoArrangeItem(item: LeaseItem, _signal: AbortSigna
     maxAttempts: AUTO_ARRANGE.MAX_ATTEMPTS,
     retryAfterMs: AUTO_ARRANGE.INTERVAL_MS,
     maxPerRun,
+    requireCarrierName,
   });
   const nextIdle = () => jittered(AUTO_ARRANGE.INTERVAL_MS, AUTO_ARRANGE.JITTER_MS);
 

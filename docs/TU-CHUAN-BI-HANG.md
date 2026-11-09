@@ -45,6 +45,7 @@ Bật lại công tắc = xóa cờ thử/chặn của mọi đơn Chờ xử l�
 | Chưa thanh toán | Bỏ qua, không gọi sàn, không đếm | Sàn không cho; webhook báo đã trả là lượt sau tự vào |
 | Khách đang xin hủy | Bỏ qua | Người phải trả lời sàn trước |
 | **Hỏa tốc** | **Bỏ qua, để người làm** | Hãng tới lấy trong vài giờ, phải chọn khung giờ và có hàng sẵn — đúng câu cảnh báo trên popup. Đổi thành "làm trước" chỉ cần sửa một dòng |
+| **Shopee, chưa rõ hãng** (tên trống / "Đang Điều Phối ĐVVC") — từ 09/11 | **Chờ**, không gọi sắp xếp, không đếm lần; lượt nào cũng hỏi lại sàn tên hãng (mục 3.1) | Chưa rõ hãng = chưa chứng minh được không phải hỏa tốc |
 | Đã bị chặn (lỗi cứng) | Bỏ qua tới khi bật lại công tắc | Không thử lại vô hạn |
 | Đã thử ≥ 6 lần hoặc thử < 30′ trước | Bỏ qua | Giãn nhịp, có trần |
 | Đang nằm trong mẻ RUNNING (người đang bấm) | Bỏ qua | Khóa chồng |
@@ -65,6 +66,44 @@ Chuông: type `auto-arrange`, mục mới "Tự chuẩn bị hàng" nhóm Đơn 
 5. Hẹn lượt kế: còn đơn chưa tới lượt (quá N) → `0` (tới hạn ngay, xếp sau gian chờ lâu hơn); hết → 30′ ± 3′ ngẫu nhiên (lệch nhịp giữa các gian). Lỗi ném ra → 5′.
 
 Không giữ trạng thái ở biến tiến trình: cờ, số lần, thuê bao đều trong DB (worker khởi động lại không mất gì).
+
+### 3.1 Sự cố 09/11/2026: máy chuẩn bị cả đơn hỏa tốc — đơn Shopee chưa rõ hãng thì chờ
+
+**Anh Trung báo 09/11 sáng:** tự chuẩn bị hàng đã chuẩn bị cả đơn hỏa tốc, trong khi chốt 04/11 là hỏa tốc để người làm.
+
+**Số prod (SQL chỉ đọc, 09/11 ~08:30):** trong các mẻ `source = 'AUTO'` 6 ngày gần nhất có 2 đơn Shopee "SPX Instant" của gian ANO Official Store:
+
+| Mã đơn | Đơn về (giờ VN) | Máy chuẩn bị |
+|---|---|---|
+| `261108PF8GKH0B` | 00:38 08/11 | sau 46 giây |
+| `261109S4UPRA7X` | 02:10 09/11 | sau ~3 phút |
+
+**Nguyên nhân (suy luận, chưa chứng minh trực tiếp — DB không lưu tên hãng tại lúc chuẩn bị):** máy nhận diện hỏa tốc bằng `shippingCarrierName`. Đơn Shopee vừa về có lúc chưa kèm `shipping_carrier`; luật cũ coi "không có tên" là "không phải hỏa tốc" (test cũ ghi rõ ý này) nên đem đi luôn, lượt đồng bộ sau mới điền "SPX Instant". Bằng chứng phụ: cùng lúc đó prod có 45/316 đơn Shopee đã thanh toán đang Chờ xử lý không có tên hãng (11 gian), 2 đơn tên "Đang Điều Phối ĐVVC"; 11 đơn SPX Instant đã có tên thì luật chặn đúng.
+
+**Sửa (anh: "Sửa đi"):**
+
+1. **Luật** (`lib/auto-arrange.ts`): lý do bỏ qua mới `carrier_unknown` ("chưa rõ hãng"), xét sau hỏa tốc, trước đã chặn. Chỉ bật cho sàn `carrierNameRequired` = **Shopee**. `isCarrierUnknown` = tên trống hoặc chứa "điều phối".
+2. **Hỏi lại tên hãng** (`integrations/shopee/carrier-names.ts`, làn gọi trước khi chọn đơn): đơn đã thanh toán, không xin hủy, chưa rõ hãng → **một** lệnh `get_order_detail` cho tối đa 50 đơn cũ nhất, chỉ xin `shipping_carrier,checkout_shipping_carrier`. Tên dùng = hãng sàn đã gán; chưa có thì kênh khách chọn lúc đặt. Ghi xuống `shippingCarrierName` rồi mới áp luật hỏa tốc. Vẫn chưa rõ / hỏi lỗi → đơn chờ lượt sau. Luồng bóng không hỏi.
+
+| Quyết định | Vì sao |
+|---|---|
+| Chưa rõ hãng thì **chờ vô hạn**, không chặn, không chuông | Chặn là máy thôi hẳn đơn đó dù lát sau sàn trả tên đơn thường. Đơn vẫn nằm ở Chờ xử lý cho người thấy |
+| Số lệnh gọi thêm: 0 khi gian không có đơn chưa rõ hãng; **tối đa 1 lệnh đọc / lượt / gian** (30′) khi có | 50 = trần order_sn một lệnh `get_order_detail` |
+| `checkout_shipping_carrier` chỉ xin ở lệnh hỏi lại này, **không** thêm vào `ORDER_DETAIL_FIELDS` của đồng bộ chung | **Chưa soi payload thật** của trường này (không đọc được tài liệu Shopee, DB local không có gian Shopee thật). Sàn từ chối tham số → tự hỏi lại chỉ `shipping_carrier`. Sai giả thuyết thì chỉ lệnh hỏi lại bị ảnh hưởng, đồng bộ đơn của mọi khách không đổi |
+| Kênh khách chọn chỉ là **tên tạm**: chỉ ghi khi ô tên còn trống, không suy ra enum `carrier` | "Nhanh" → `carrierFromName` ra KHAC, mà enum chỉ điền một lần; hãng thật về sau vẫn đè tên |
+| Chỉ Shopee | TikTok ghi tên phương thức lúc tạo đơn (prod: 3/3.333 đơn không tên). Lazada: prod không có đơn Chờ xử lý để đo — **chưa kiểm**. Hai sàn này chưa có đường hỏi lại tên nên bật luật là đơn không tên kẹt hẳn |
+
+**Soi sau khi lên prod** — log worker, tìm `chưa rõ hãng`:
+
+```
+[auto-arrange] SHOPEE "…": N đơn chưa rõ hãng, hỏi sàn N → biết M (hãng a, kênh khách chọn b): hãng "SPX Express", kênh khách chọn "Hỏa Tốc"
+```
+
+- `kênh khách chọn b` > 0 kèm tên kiểu "Hỏa Tốc" / "Nhanh" → giả thuyết về `checkout_shipping_carrier` đúng; khi đó có thể đưa trường này vào đồng bộ chung để huy hiệu Hỏa tốc + chuông đơn mới bắt được sớm (việc riêng, chưa làm).
+- Dòng `Shopee từ chối checkout_shipping_carrier` → trường không dùng được, bỏ.
+- `biết 0` lặp nhiều lượt trên cùng số đơn → Shopee không trả tên cho nhóm đơn đó; xem đơn cụ thể rồi mới quyết (đừng tự thêm ngưỡng "quá X phút thì coi là đơn thường").
+
+Test: 4 ca thuần mới (`auto-arrange.test.ts`), 5 ca làn trên DB (`auto-arrange-lane-db.test.ts`), 7 ca hỏi lại tên (`shopee-carrier-names.test.ts`). Chưa chạy với sàn thật.
 
 ## 4. Dung lượng (số tự chọn, đổi bằng env)
 
@@ -129,6 +168,8 @@ FROM "fulfillment_batches" WHERE "source"='AUTO' ORDER BY "createdAt" DESC LIMIT
 ## 8. Hạn chế / để sau
 
 - Hỏa tốc bỏ qua (mục 3) — nếu khách muốn máy làm cả hỏa tốc, cần cho chọn khung giờ lấy hàng theo gian trước.
+- Nhận diện hỏa tốc vẫn dựa vào TÊN (không sàn nào có cờ). Shopee đã có lưới "chưa rõ hãng thì chờ" (mục 3.1); TikTok / Lazada chưa có.
+- "Giao trong ngày" / "Next-day delivery" KHÔNG phải hỏa tốc (anh chốt 08/09) nên máy vẫn chuẩn bị.
 - Không kiểm tồn kho trước khi chuẩn bị (chỉ biết tồn khi khách nối SKU; popup đã cảnh báo). Có thể thêm "bỏ qua đơn có SKU tồn khả dụng ≤ 0" khi có ca thật.
 - Mẻ chưa đi qua cổng gọi sàn (Pha B) — như nút bấm tay. Khi luồng chuẩn bị hàng nối cổng thì máy hưởng theo.
 - Mất thuê bao giữa lượt: mẻ đang chạy vẫn chạy tới xong (batch-runner không nhận tín hiệu hủy); lượt kế của gian bị gian khác nhặt sẽ bỏ qua đơn đang trong mẻ RUNNING nên không gọi trùng.

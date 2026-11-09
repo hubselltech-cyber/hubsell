@@ -29,6 +29,7 @@ export type SkipReason =
   | "unpaid"
   | "cancel_requested"
   | "express"
+  | "carrier_unknown"
   | "blocked"
   | "max_attempts"
   | "tried_recently"
@@ -42,6 +43,38 @@ export interface SelectOptions {
   /** Thử lại một đơn "chưa sẵn sàng" sớm nhất sau ngần này ms. */
   retryAfterMs: number;
   maxPerRun: number;
+  /**
+   * true = đơn CHƯA RÕ HÃNG (isCarrierUnknown) thì máy chờ, không coi là đơn thường.
+   * Bật cho sàn mà tên hãng là nguồn duy nhất nhận diện hỏa tốc và có lúc về trễ
+   * (carrierNameRequired). Không truyền = như trước 09/11 (đơn không tên vẫn đem đi).
+   */
+  requireCarrierName?: boolean;
+}
+
+/**
+ * Chữ Shopee ghi vào shipping_carrier khi CHƯA gán hãng ("Đang Điều Phối ĐVVC",
+ * thấy trên prod 09/11/2026) — coi như chưa có tên.
+ */
+const CARRIER_PENDING_KEYWORDS = ["điều phối", "dieu phoi"] as const;
+
+/** Chưa biết hãng: tên trống hoặc là chữ giữ chỗ "đang điều phối". */
+export function isCarrierUnknown(name?: string | null): boolean {
+  const s = (name ?? "").trim().toLowerCase();
+  if (!s) return true;
+  return CARRIER_PENDING_KEYWORDS.some((k) => s.includes(k));
+}
+
+/**
+ * Sàn nào máy PHẢI biết hãng rồi mới chuẩn bị (09/11/2026, anh Trung: máy đã chuẩn
+ * bị cả đơn hỏa tốc). Chỉ Shopee: đơn vừa về có lúc chưa kèm shipping_carrier, vài
+ * phút sau mới thành "SPX Instant" — 2 đơn gian ANO lọt theo đường này; prod 09/11:
+ * 45/316 đơn Shopee đã thanh toán đang Chờ xử lý không có tên hãng.
+ * Chưa bật cho hai sàn kia vì chưa có đường hỏi lại tên (bật là đơn không tên kẹt hẳn):
+ *   · TikTok ghi tên phương thức ngay lúc tạo đơn — prod 09/11: 3/3.333 đơn không tên;
+ *   · Lazada: prod 09/11 không có đơn Chờ xử lý nào để đo — CHƯA KIỂM.
+ */
+export function carrierNameRequired(channelName: string): boolean {
+  return channelName === "SHOPEE";
 }
 
 export interface Selection<T extends AutoArrangeCandidate> {
@@ -58,6 +91,9 @@ function skipReasonOf(o: AutoArrangeCandidate, opts: SelectOptions): SkipReason 
   // Hỏa tốc để người làm: hãng tới lấy trong vài giờ, phải chọn khung giờ và có hàng
   // sẵn — đúng câu cảnh báo trên popup. Muốn máy làm cả hỏa tốc thì bỏ dòng này.
   if (isExpressShipping(o.shippingCarrierName)) return "express";
+  // Chưa rõ hãng = chưa chứng minh được KHÔNG phải hỏa tốc → chờ (làn hỏi lại sàn
+  // tên hãng mỗi lượt, docs/TU-CHUAN-BI-HANG.md mục 3.1). Không đếm lần thử.
+  if (opts.requireCarrierName && isCarrierUnknown(o.shippingCarrierName)) return "carrier_unknown";
   if (o.autoArrangeBlockedAt) return "blocked";
   if (o.autoArrangeAttempts >= opts.maxAttempts) return "max_attempts";
   if (o.autoArrangeTriedAt && opts.now.getTime() - o.autoArrangeTriedAt.getTime() < opts.retryAfterMs) {
@@ -75,6 +111,7 @@ export function selectAutoArrangeCandidates<T extends AutoArrangeCandidate>(
     unpaid: 0,
     cancel_requested: 0,
     express: 0,
+    carrier_unknown: 0,
     blocked: 0,
     max_attempts: 0,
     tried_recently: 0,

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  carrierNameRequired,
   classifyArrangeFailure,
   isAuthFailure,
+  isCarrierUnknown,
   isChannelWideFailure,
   jittered,
   selectAutoArrangeCandidates,
@@ -71,9 +73,39 @@ describe("selectAutoArrangeCandidates", () => {
     expect(r.skipped.express).toBe(2);
   });
 
-  it("đơn không có tên hãng vẫn đem đi (sàn chưa gán, không phải hỏa tốc)", () => {
+  it("sàn không bắt buộc tên hãng (Lazada/TikTok): đơn không có tên vẫn đem đi", () => {
     const r = selectAutoArrangeCandidates([order({ id: "X", shippingCarrierName: null })], opts());
     expect(r.ready).toHaveLength(1);
+  });
+
+  // Sự cố 09/11/2026: đơn Shopee vừa về chưa kèm tên hãng, máy chuẩn bị luôn, vài
+  // phút sau tên mới thành "SPX Instant".
+  it("sàn bắt buộc tên hãng (Shopee): đơn chưa rõ hãng thì chờ, không đem đi, không đếm lần thử", () => {
+    const r = selectAutoArrangeCandidates(
+      [
+        order({ id: "N1", shippingCarrierName: null }),
+        order({ id: "N2", shippingCarrierName: "   " }),
+        order({ id: "N3", shippingCarrierName: "Đang Điều Phối ĐVVC" }),
+        order({ id: "OK", shippingCarrierName: "SPX Express" }),
+        order({ id: "H", shippingCarrierName: "SPX Instant" }),
+      ],
+      opts({ requireCarrierName: true })
+    );
+    expect(r.ready.map((o) => o.id)).toEqual(["OK"]);
+    expect(r.skipped.carrier_unknown).toBe(3);
+    expect(r.skipped.express).toBe(1);
+  });
+
+  it("chưa rõ hãng xét SAU chưa thanh toán / xin hủy, TRƯỚC đã chặn", () => {
+    const r = selectAutoArrangeCandidates(
+      [
+        order({ id: "U", shippingCarrierName: null, paymentStatus: "UNPAID" }),
+        order({ id: "C", shippingCarrierName: null, cancelRequestedAt: NOW }),
+        order({ id: "B", shippingCarrierName: null, autoArrangeBlockedAt: NOW }),
+      ],
+      opts({ requireCarrierName: true })
+    );
+    expect(r.skipped).toMatchObject({ unpaid: 1, cancel_requested: 1, carrier_unknown: 1, blocked: 0 });
   });
 
   it("đơn đã chặn không bao giờ thử lại", () => {
@@ -122,6 +154,23 @@ describe("selectAutoArrangeCandidates", () => {
     expect(r.skipped.unpaid).toBe(1);
     expect(r.skipped.express).toBe(0);
     expect(r.skipped.blocked).toBe(0);
+  });
+});
+
+describe("isCarrierUnknown / carrierNameRequired", () => {
+  it("trống, toàn dấu cách, chữ giữ chỗ 'đang điều phối' = chưa rõ; tên thật thì không", () => {
+    for (const n of [null, undefined, "", "  ", "Đang Điều Phối ĐVVC", "đang điều phối đvvc", "Dang dieu phoi DVVC"]) {
+      expect(isCarrierUnknown(n), String(n)).toBe(true);
+    }
+    for (const n of ["SPX Express", "SPX Instant", "Nhanh", "Hỏa Tốc", "Giao Hàng Nhanh", "Điểm nhận hàng"]) {
+      expect(isCarrierUnknown(n), n).toBe(false);
+    }
+  });
+
+  it("chỉ Shopee bắt buộc biết hãng trước khi máy chuẩn bị", () => {
+    expect(carrierNameRequired("SHOPEE")).toBe(true);
+    expect(carrierNameRequired("TIKTOK")).toBe(false);
+    expect(carrierNameRequired("LAZADA")).toBe(false);
   });
 });
 

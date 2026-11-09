@@ -19,6 +19,13 @@ vi.mock("../../services/fulfillment/batch-runner", () => ({
   runFulfillmentBatchNow: (p: BatchStartParams) => runBatch(p),
   findLiveRunningBatches: () => liveBatches(),
 }));
+// Hỏi lại tên hãng Shopee (09/11/2026) — giả lập, không gọi sàn, không ghi DB.
+type RefreshResult = { asked: number; names: Map<string, string>; fromCarrier: number; fromCheckout: number; samples: string[] };
+const noNames = (asked: number): RefreshResult => ({ asked, names: new Map(), fromCarrier: 0, fromCheckout: 0, samples: [] });
+const refreshCarriers = vi.fn<(channel: unknown, orders: readonly { id: string; orderCode: string }[]) => Promise<RefreshResult>>();
+vi.mock("../../integrations/shopee/carrier-names", () => ({
+  refreshShopeeCarrierNames: (channel: unknown, orders: readonly { id: string; orderCode: string }[]) => refreshCarriers(channel, orders),
+}));
 vi.mock("../../services/notifications", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../services/notifications")>()),
   notify: (ownerId: string, input: { type: string; title: string; body?: string; link?: string }) => notify(ownerId, input),
@@ -62,6 +69,8 @@ async function mkOrder(code: string, over: Record<string, unknown> = {}) {
       totalAmount: 1,
       paymentStatus: "PAID",
       shippingStatus: ShippingStatus.PENDING,
+      // Gian test là Shopee: máy chỉ đụng đơn ĐÃ RÕ hãng (09/11/2026).
+      shippingCarrierName: "SPX Express",
       createdAt: new Date(Date.now() - 60 * 60_000),
       ...over,
     },
@@ -104,6 +113,7 @@ describe("handleAutoArrangeItem (DB dev + mẻ giả lập)", () => {
     runBatch.mockReset();
     liveBatches.mockReset().mockResolvedValue([]);
     notify.mockReset();
+    refreshCarriers.mockReset().mockImplementation(async (_c, orders) => noNames(orders.length));
     await prisma.order.deleteMany({ where: { channelId } });
     await prisma.syncCursor.deleteMany({ where: { channelId } });
     await prisma.channel.update({ where: { id: channelId }, data: { autoArrangeEnabledAt: new Date() } });
@@ -222,6 +232,70 @@ describe("handleAutoArrangeItem (DB dev + mẻ giả lập)", () => {
     await handleAutoArrangeItem({ ...item, stream: AUTO_ARRANGE_SHADOW_STREAM }, signal);
     expect(runBatch).not.toHaveBeenCalled();
     expect((await prisma.order.findUnique({ where: { id: o.id } }))?.autoArrangeTriedAt).toBeNull();
+  });
+
+  // ---- Sự cố 09/11/2026: đơn Shopee vừa về chưa kèm tên hãng bị máy chuẩn bị, sau mới lộ là SPX Instant ----
+
+  it("đơn chưa rõ hãng: hỏi sàn, sàn chưa trả tên → KHÔNG đem đi, không đánh dấu, đơn rõ hãng vẫn đi", async () => {
+    const unknown = await mkOrder("NONAME", { shippingCarrierName: null });
+    const placeholder = await mkOrder("ALLOC", { shippingCarrierName: "Đang Điều Phối ĐVVC" });
+    const normal = await mkOrder("NORMAL");
+    runBatch.mockImplementation(async (p) => snapshot(p, []));
+    await handleAutoArrangeItem(item, signal);
+    expect(refreshCarriers).toHaveBeenCalledTimes(1);
+    expect(refreshCarriers.mock.calls[0][1].map((o) => o.id).sort()).toEqual([unknown.id, placeholder.id].sort());
+    const sent = [...runBatch.mock.calls[0][0].groups.values()].flat().map((o) => o.id);
+    expect(sent).toEqual([normal.id]);
+    const rows = await prisma.order.findMany({ where: { id: { in: [unknown.id, placeholder.id] } } });
+    expect(rows.every((o) => o.autoArrangeTriedAt === null && o.autoArrangeAttempts === 0 && o.autoArrangeBlockedAt === null)).toBe(true);
+  });
+
+  it("đơn chưa rõ hãng: sàn trả tên hỏa tốc → để người làm; trả tên thường → đem đi", async () => {
+    const instant = await mkOrder("INSTANT", { shippingCarrierName: null });
+    const viaCheckout = await mkOrder("HOATOC", { shippingCarrierName: null });
+    const normal = await mkOrder("NHANH", { shippingCarrierName: null });
+    refreshCarriers.mockImplementation(async (_c, orders) => ({
+      asked: orders.length,
+      names: new Map([
+        [instant.id, "SPX Instant"],
+        [viaCheckout.id, "Hỏa Tốc"],
+        [normal.id, "Nhanh"],
+      ]),
+      fromCarrier: 1,
+      fromCheckout: 2,
+      samples: [],
+    }));
+    runBatch.mockImplementation(async (p) => snapshot(p, []));
+    await handleAutoArrangeItem(item, signal);
+    const sent = [...runBatch.mock.calls[0][0].groups.values()].flat().map((o) => o.id);
+    expect(sent).toEqual([normal.id]);
+  });
+
+  it("hỏi tên hãng lỗi (sàn 429) → đơn chưa rõ hãng chờ, lượt vẫn chạy cho đơn rõ hãng", async () => {
+    await mkOrder("NONAME2", { shippingCarrierName: null });
+    const normal = await mkOrder("NORMAL2");
+    refreshCarriers.mockRejectedValue(new Error("HTTP 429 Too Many Requests"));
+    runBatch.mockImplementation(async (p) => snapshot(p, []));
+    await handleAutoArrangeItem(item, signal);
+    const sent = [...runBatch.mock.calls[0][0].groups.values()].flat().map((o) => o.id);
+    expect(sent).toEqual([normal.id]);
+  });
+
+  it("không có đơn chưa rõ hãng, hoặc đơn chưa rõ hãng còn chưa thanh toán / xin hủy → không hỏi sàn", async () => {
+    await mkOrder("OKAY");
+    await mkOrder("UNPAIDNONAME", { shippingCarrierName: null, paymentStatus: "UNPAID" });
+    await mkOrder("CANCELNONAME", { shippingCarrierName: null, cancelRequestedAt: new Date() });
+    runBatch.mockImplementation(async (p) => snapshot(p, []));
+    await handleAutoArrangeItem(item, signal);
+    expect(refreshCarriers).not.toHaveBeenCalled();
+  });
+
+  it("luồng bóng: đơn chưa rõ hãng cũng không hỏi sàn", async () => {
+    await mkOrder("SHADOWNONAME", { shippingCarrierName: null });
+    await enroll(AUTO_ARRANGE_SHADOW_STREAM);
+    await handleAutoArrangeItem({ ...item, stream: AUTO_ARRANGE_SHADOW_STREAM }, signal);
+    expect(refreshCarriers).not.toHaveBeenCalled();
+    expect(runBatch).not.toHaveBeenCalled();
   });
 
   it("quá trần lượt → vẫn chỉ gửi tối đa trần và hẹn lại ngay (0)", async () => {

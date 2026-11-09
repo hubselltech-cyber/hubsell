@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 09/11 (1) — Anh: "Tự chuẩn bị hàng đã chuẩn bị cả các đơn hỏa tốc" → em soi prod, tìm ra đơn Shopee chưa rõ hãng lọt luật → anh: "Sửa đi" — ĐÃ COMMIT, CHƯA push
+
+- **Số prod (Supabase SQL chỉ đọc, ~08:30):** mẻ AUTO 6 ngày có 2 đơn "SPX Instant" gian ANO Official Store: `261108PF8GKH0B` (về 00:38 08/11 VN, máy làm sau 46 giây — sáng 09/11 vẫn "Đã xử lý", chưa giao cho hãng) và `261109S4UPRA7X` (về 02:10 09/11, sau ~3 phút). 45/316 đơn Shopee đã thanh toán đang Chờ xử lý không có tên hãng (11 gian); TikTok 3/3.333; Lazada không có đơn Chờ xử lý để đo.
+- **Nguyên nhân (suy luận, DB không lưu tên hãng lúc chuẩn bị):** đơn Shopee vừa về chưa kèm `shipping_carrier` → luật cũ coi "không tên" = "không phải hỏa tốc" → đem đi; lát sau mới thành "SPX Instant".
+- **Sửa (docs/TU-CHUAN-BI-HANG.md mục 3.1):** `lib/auto-arrange.ts` thêm lý do bỏ qua `carrier_unknown` (chỉ Shopee) + `isCarrierUnknown` (trống / "Đang Điều Phối ĐVVC"); tệp mới `integrations/shopee/carrier-names.ts` + `getOrderCarrierNames` ở client: làn hỏi lại sàn tên hãng của đơn chưa rõ (1 lệnh `get_order_detail` ≤ 50 đơn / lượt / gian, xin `shipping_carrier,checkout_shipping_carrier`), ghi `shippingCarrierName` rồi mới áp luật hỏa tốc; vẫn chưa rõ → chờ lượt sau, không chặn, không chuông. Luồng đồng bộ đơn chung KHÔNG đổi.
+- **Chưa chắc, đã rào:** chưa soi được payload thật của `checkout_shipping_carrier` (Chrome không được cấp quyền đọc open.shopee.com, tìm web không ra tài liệu gốc, DB local không có gian Shopee thật) → chỉ xin ở lệnh hỏi lại; sàn từ chối tham số thì tự lùi về chỉ `shipping_carrier`. Sau khi lên prod soi log worker `chưa rõ hãng` (docs 3.1 nêu cách đọc).
+- **Kiểm:** vitest 3 tệp liên quan 43/43 (4 ca thuần + 5 ca làn DB + 7 ca hỏi lại tên là mới); tsc backend sạch; cả bộ 2.377 qua, 10 ca đỏ ở 6 tệp (`ads-margin-sql-db`, `ads-rows-ledger-db`, `channel-delete-db`, `escrow-estimate-sweep`, `order-ledger-db`, `realized-pnl-ledger-db`) — chạy lại trên mã gốc (stash) vẫn đỏ đúng 10 ca đó, không thuộc thay đổi này. Chưa chạy với sàn thật.
+- **Không đổi:** "Next-day delivery" TikTok (3 đơn gian and.not.or máy đã chuẩn bị) không phải hỏa tốc theo chốt 08/09. Chưa làm: đưa `checkout_shipping_carrier` vào đồng bộ chung để huy hiệu Hỏa tốc / chuông đơn mới bắt sớm — chờ log prod xác nhận trường này.
+
+---
 ## Phiên 08/11 (6) — Anh: khách xin "công nợ" trong Tổng kho, anh thấy "không khác gì phần mềm kế toán" → em khảo sát đối thủ (CHƯA code, chờ anh chốt)
 
 - **Khảo sát 10 phần mềm (docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 8):** KiotViet (NCC → tab "Nợ cần trả NCC"), Sapo (help xếp công nợ NCC trong "Sản phẩm và kho hàng → Đơn nhập hàng"), MISA eShop (Nhập hàng ghi nợ / trả ngay), Pancake POS (Tài chính → Công nợ, tự sinh từ phiếu nhập), Nhanh (gói Kế toán 100k/tháng riêng), UPOS, Zoho Inventory (Bills ngay trong Inventory), Cin7 Core đều CÓ công nợ NCC; Salework KHÔNG (chỉ phải thu từ sàn); Odoo để ở Accounting. Haravan chưa xác nhận (help không tải được).

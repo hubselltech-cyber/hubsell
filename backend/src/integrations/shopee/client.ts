@@ -784,6 +784,45 @@ export async function getOrderBuyerUserId(
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
+/** Một đơn trong câu hỏi lại tên hãng (getOrderCarrierNames). */
+export interface ShopeeOrderCarrierInfo {
+  order_sn: string;
+  /** Hãng sàn gán cho đơn — có lúc trống / "Đang Điều Phối ĐVVC" khi đơn vừa về. */
+  shipping_carrier?: string;
+  /** Kênh vận chuyển khách chọn lúc đặt ("Hỏa Tốc", "Nhanh"…) theo docs Shopee. */
+  checkout_shipping_carrier?: string;
+}
+
+/**
+ * Hỏi lại TÊN HÃNG của tối đa 50 đơn (làn tự chuẩn bị hàng, 09/11/2026): đơn
+ * Shopee vừa về có lúc chưa kèm shipping_carrier nên máy không biết có phải hỏa
+ * tốc không. Một lệnh get_order_detail chỉ xin hai trường tên.
+ *
+ * `withCheckout` xin thêm checkout_shipping_carrier. CHƯA soi payload thật của
+ * trường này (09/11) nên KHÔNG thêm vào ORDER_DETAIL_FIELDS của luồng đồng bộ
+ * chung; nơi gọi tự lùi về `withCheckout = false` nếu sàn từ chối tham số.
+ */
+export async function getOrderCarrierNames(
+  accessToken: string,
+  shopId: string,
+  orderSnList: string[],
+  withCheckout = true,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeOrderCarrierInfo[]> {
+  const data = await callShopGet<ShopeeOrderDetailData>(
+    SHOPEE_PATHS.orderDetail,
+    accessToken,
+    shopId,
+    [
+      ["order_sn_list", orderSnList.join(",")],
+      ["response_optional_fields", withCheckout ? "shipping_carrier,checkout_shipping_carrier" : "shipping_carrier"],
+    ],
+    "get_order_detail",
+    cfg
+  );
+  return (data.response?.order_list ?? []) as ShopeeOrderCarrierInfo[];
+}
+
 // ---------- Thông tin XUẤT HÓA ĐƠN khách điền khi đặt hàng ----------
 
 /**
