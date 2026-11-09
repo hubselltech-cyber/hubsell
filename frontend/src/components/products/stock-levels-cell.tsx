@@ -70,7 +70,7 @@ export function StockLevelsCell({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
-          // Rộng THEO Ô (bảng Hàng hóa là table-fixed, cột Đang ở 9%): bề rộng cứng
+          // Rộng THEO Ô (bảng Hàng hóa là table-fixed, cột Vị trí 9%): bề rộng cứng
           // 11rem từng đẩy số tồn canh phải tràn sang cột Bán trên, "20" chen giữa hai
           // chip gian (anh Trung 22/10 xem prod). Tên vị trí cắt (…), số luôn giữ nguyên.
           <button
@@ -103,7 +103,7 @@ export function StockLevelsCell({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-2">
         <p className={cn(TEXT_SUB, "px-1 pb-1")}>
-          Đang ở · tồn bán <b className="text-foreground">{formatNumber(product.quantityInStock)}</b>
+          Vị trí · tồn bán <b className="text-foreground">{formatNumber(product.quantityInStock)}</b>
           {locations.some((l) => !l.sellable && (qtyById.get(l.id) ?? 0) !== 0) && (
             <>
               {" "}

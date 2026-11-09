@@ -12,6 +12,7 @@ import {
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  BellRing,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -40,6 +41,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { Money } from "@/components/ui/money";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
+import { BulkStockSettingsDialog } from "@/components/products/bulk-stock-settings-dialog";
 import { SetupGuide, type ChannelProductCounts } from "@/components/products/setup-guide";
 import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog";
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
@@ -94,7 +96,7 @@ import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { locationLabel } from "@/lib/stock-locations";
-import { formatNumber } from "@/lib/format";
+import { formatCompactVND, formatNumber } from "@/lib/format";
 import { can, canManageShop, canSeeFinancials } from "@/lib/permissions";
 import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -122,7 +124,7 @@ const COL_HEAD_CLASS: Record<string, string> = {
   product: "w-[20%]",
   // Cột MÃ = mã SKU (dòng trên) + mã vạch quản lý 13 số kèm nút in (dòng dưới), phải đọc ĐỦ trên MỘT
   // dòng: mã vạch cỡ 11px (86px) + khe 2px + nút in 14px = 102px. 13% + đệm px-2 (xem CELL_PAD) cho
-  // 114px chữ ở bảng 1.000px khi không có cột Đang ở. CÓ cột Đang ở thì tổng % vượt 100, mọi cột bị
+  // 114px chữ ở bảng 1.000px khi không có cột Vị trí. CÓ cột Vị trí thì tổng % vượt 100, mọi cột bị
   // ép: đo 05/11 bảng 1.060px cột này còn 125px (109px chữ) → cỡ 12px rớt dòng, cỡ 11px vừa; bảng
   // tối thiểu 1.040px (xem TABLE_MIN_W) giữ hai cột tiền ≥ 95px như trước. Mã SKU dài tự xuống
   // dòng sau dấu gạch chứ không cắt. Trước 05/11 cột 9% đệm 16px chỉ còn 58px chữ.
@@ -135,21 +137,69 @@ const COL_HEAD_CLASS: Record<string, string> = {
   // 28px sang Có thể bán tại 1280. TỔNG % giữ 88 — tăng tổng là hai cột tiền bị ép và tràn.
   quantityInStock: "w-[8.5%]",
   availableToSell: "w-[7.5%]",
-  // Đang ở: "Kho chính  20" cần ≥ 80px chữ (tên 55 + khe 8 + số) → 12% của 1.000px; ở 9% (22/10
+  // Vị trí: "Kho chính  20" cần ≥ 80px chữ (tên 55 + khe 8 + số) → 12% của 1.000px; ở 9% (22/10
   // xem prod) ô "Kho chính" chỉ còn 29px chữ, tên cụt "K…" và số từng tràn sang cột Bán trên.
   locations: "w-[12%]",
   // Bán trên: chip "Shopee ×3" tự xuống dòng nên nhường 1% được. Đệm ngang px-2 (ô + tiêu đề, xem
   // CELL_PAD): ở 1280 cột 110px, đệm mặc định 16px chỉ còn 78px chữ — chip có biểu tượng
   // trạng thái "TikTok ×1 ⊗" cần 87px, "Shopee ×9 ⊗" cần 94px (đo 05/11).
   channels: "w-[11%] px-2",
+  // Giá trị tồn = tồn × giá vốn (09/11/2026). Cố định theo rem như cột Nhập · Xuất để KHÔNG ăn vào
+  // % của các cột đã đo: "298.400.000 ₫" (mẫu 2.984 chiếc × 100.000 ₫) cần ~93px chữ → 7rem (112px)
+  // với đệm px-2 còn 96px chữ. Từ 1 tỷ trở lên ô tự hạ cỡ chữ (xem cột stockValue).
+  stockValue: "w-[7rem] px-2",
   actions: "w-[8.5rem]",
 };
 
-/** Bề rộng tối thiểu của bảng: có cột Đang ở thì rộng hơn 40px bù cho cột mã (xem COL_HEAD_CLASS.skuCode). */
+/** Bề rộng tối thiểu của bảng: có cột Vị trí thì rộng hơn 40px bù cho cột mã (xem COL_HEAD_CLASS.skuCode). */
 const TABLE_MIN_W = { plain: "min-w-[1000px]", withLocations: "min-w-[1040px]" } as const;
+/**
+ * CỘT GIÁ TRỊ TỒN CO THEO BỀ RỘNG KHUNG BẢNG (anh Trung 09/11: "chú ý tới tỉ lệ màn hình"). Thêm
+ * hẳn một cột 112px thì laptop 1366–1440 phải cuộn ngang, cột Nhập · Xuất bị cắt. Nên:
+ *   · khung bảng ĐỦ rộng → hiện cột riêng (đứng giữa Bán trên và Nhập · Xuất như ảnh anh khoanh);
+ *   · khung hẹp hơn → ẩn cột, giá trị tồn thành DÒNG NHỎ dưới số Tồn kho (như "an toàn N" ở Có thể bán).
+ * Ngưỡng = bề rộng tối thiểu cũ + 112px của cột mới − 24px dư sẵn ở bảng 1.000px (không có cột Vị
+ * trí); có cột Vị trí thì bảng cũ vốn đã bị ép sát nên cộng đủ 112px → mọi cột cũ giữ ≥ bề rộng đã
+ * đo. Khung bảng = `@container` ở CardContent. Chuỗi class phải viết LIỀN để Tailwind nhận ra.
+ */
+const VALUE_COL_SHOW = {
+  plain: "hidden @min-[1088px]:table-cell",
+  withLocations: "hidden @min-[1152px]:table-cell",
+} as const;
+const VALUE_SUBLINE_SHOW = {
+  plain: "@min-[1088px]:hidden",
+  withLocations: "@min-[1152px]:hidden",
+} as const;
+
+/**
+ * GIÁ TRỊ TỒN của một SKU = tồn kho × giá vốn. Tồn âm (bán vượt) tính 0 — không có hàng thì không
+ * có giá trị, và không để một mã âm kéo tụt tổng của cả mẫu. null = chưa nhập giá vốn.
+ */
+function stockValueOf(p: Product): number | null {
+  const cost = Number(p.costPrice ?? 0);
+  if (!(cost > 0)) return null;
+  return Math.max(0, p.quantityInStock) * cost;
+}
+
+/**
+ * Giá trị tồn dạng dòng nhỏ dưới số Tồn kho — chỉ hiện khi khung bảng hẹp, cột riêng đang ẩn.
+ * Số RÚT GỌN ("≈ 298,4tr ₫"): cột Tồn kho chỉ 80px, "298.400.000 ₫" đủ chữ dài ~110px, đè sang hai
+ * cột bên (đo 09/11 ở 1280–1440). Số đủ nằm trong chú thích khi rê chuột.
+ */
+function StockValueSubline({ value, className }: { value: number | null; className: string }) {
+  if (value === null) return null;
+  return (
+    <p
+      className={cn("mt-0.5 text-[11px] leading-tight whitespace-nowrap tabular-nums text-muted-foreground", className)}
+      title={`Giá trị tồn = tồn kho × giá vốn: ${formatNumber(value)} ₫`}
+    >
+      ≈ {formatCompactVND(value)} ₫
+    </p>
+  );
+}
 
 /** Đệm ngang riêng của Ô theo cột — phải khớp với tiêu đề cột ở COL_HEAD_CLASS. */
-const CELL_PAD: Record<string, string> = { skuCode: "px-2", channels: "px-2" };
+const CELL_PAD: Record<string, string> = { skuCode: "px-2", channels: "px-2", stockValue: "px-2" };
 
 type HubTab = "inventory" | "logs" | "vouchers" | "suppliers";
 
@@ -287,7 +337,7 @@ export default function ProductsHubPage() {
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   // VỊ TRÍ CHỨA HÀNG (đợt B): rỗng = shop chưa dùng, giao diện y hệt cũ (ẩn bằng
-  // sự vắng mặt — không công tắc cài đặt). Cột "Đang ở" + ô chọn vị trí chỉ
+  // sự vắng mặt — không công tắc cài đặt). Cột "Vị trí" + ô chọn vị trí chỉ
   // xuất hiện khi có ≥ 1 vị trí.
   const locationsQ = useApiQuery({
     queryKey: qk.stockLocations(),
@@ -334,6 +384,8 @@ export default function ProductsHubPage() {
   } | null>(null);
   // SKU đang mở hộp cài đặt riêng (ngưỡng cảnh báo + tồn an toàn).
   const [skuSettings, setSkuSettings] = useState<Product | null>(null);
+  // Cài nhanh cảnh báo + tồn an toàn cho các SKU đang tích (09/11/2026).
+  const [bulkSettingsOpen, setBulkSettingsOpen] = useState(false);
 
   // Danh sách SKU kho nằm trong cache React Query — quay lại hub Hàng hóa là
   // thấy ngay bảng cũ, refetch chạy ngầm (401/403/409 hook tự xử).
@@ -548,6 +600,8 @@ export default function ProductsHubPage() {
 
   // Nhân viên không được biết giá vốn — backend đã cắt trường, bỏ luôn cột.
   const seesCost = canSeeFinancials(getStoredUser());
+  const valueColShow = VALUE_COL_SHOW[locationsEnabled ? "withLocations" : "plain"];
+  const valueSublineShow = VALUE_SUBLINE_SHOW[locationsEnabled ? "withLocations" : "plain"];
 
   const columns = useMemo(
     () => [
@@ -711,13 +765,16 @@ export default function ProductsHubPage() {
         header: () => <div className="text-center">Tồn kho</div>,
         // Bấm vào số là sửa trực tiếp (Enter lưu) — màu theo ngưỡng cảnh báo của SKU.
         cell: ({ row }) => (
-          <InlineStockEditor
-            product={row.original}
-            low={row.original.isLowStock ?? false}
-            threshold={row.original.lowStockThresholdEffective ?? 0}
-            editable
-            onSaved={load}
-          />
+          <>
+            <InlineStockEditor
+              product={row.original}
+              low={row.original.isLowStock ?? false}
+              threshold={row.original.lowStockThresholdEffective ?? 0}
+              editable
+              onSaved={load}
+            />
+            {seesCost && <StockValueSubline value={stockValueOf(row.original)} className={valueSublineShow} />}
+          </>
         ),
       }),
       // ===== CÓ THỂ BÁN — số Hubsell đẩy lên MỌI gian đã nối (trung tâm điều
@@ -760,7 +817,8 @@ export default function ProductsHubPage() {
         ? [
             columnHelper.display({
               id: "locations",
-              header: "Đang ở",
+              // Trước 09/11/2026 cột này tên "Đang ở" — anh Trung đổi thành "Vị trí".
+              header: "Vị trí",
               cell: ({ row }) => (
                 <StockLevelsCell
                   product={row.original}
@@ -797,6 +855,38 @@ export default function ProductsHubPage() {
           );
         },
       }),
+      // GIÁ TRỊ TỒN (09/11/2026, khách xin) — đứng giữa Bán trên và Nhập · Xuất theo ảnh anh Trung
+      // khoanh. Chỉ người thấy giá vốn mới có cột.
+      ...(seesCost
+        ? [
+            columnHelper.display({
+              id: "stockValue",
+              header: () => (
+                <div className="text-right" title="Tồn kho × giá vốn. Tồn âm tính 0.">
+                  Giá trị tồn
+                </div>
+              ),
+              cell: ({ row }) => {
+                const v = stockValueOf(row.original);
+                return (
+                  <div className="text-right">
+                    {v === null ? (
+                      <span className={TEXT_SUB} title="Chưa nhập giá vốn">
+                        —
+                      </span>
+                    ) : (
+                      <span
+                        title={`${formatNumber(Math.max(0, row.original.quantityInStock))} × ${formatNumber(Number(row.original.costPrice))} ₫`}
+                      >
+                        <Money value={v} className={cn("text-slate-900", v >= 1_000_000_000 && "text-xs")} />
+                      </span>
+                    )}
+                  </div>
+                );
+              },
+            }),
+          ]
+        : []),
       columnHelper.display({
         id: "actions",
         header: () => <div className="text-center">Nhập · Xuất</div>,
@@ -839,7 +929,7 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds]
+    [seesCost, isAdmin, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, valueSublineShow]
   );
 
   const table = useReactTable({
@@ -868,6 +958,10 @@ export default function ProductsHubPage() {
     );
     const inactiveCount = rows.filter((p) => p.isActive === false).length;
     const lowCount = rows.filter((p) => p.isLowStock).length;
+    // Giá trị tồn của cả mẫu = tổng các phân loại ĐÃ có giá vốn; chưa phân loại nào có giá → "—".
+    const values = rows.map(stockValueOf);
+    const noCostCount = values.filter((v) => v === null).length;
+    const groupValue = noCostCount === rows.length ? null : values.reduce<number>((s, v) => s + (v ?? 0), 0);
     const links = rows.flatMap((p) => p.channelLinks ?? []);
     const byChannel = new Map<string, number>();
     for (const l of links) byChannel.set(l.channelName, (byChannel.get(l.channelName) ?? 0) + 1);
@@ -971,6 +1065,7 @@ export default function ProductsHubPage() {
           <span className="text-sm font-semibold tabular-nums" title="Tổng tồn các phân loại">
             {formatNumber(qty)}
           </span>
+          {seesCost && <StockValueSubline value={groupValue} className={valueSublineShow} />}
         </TableCell>
         <TableCell className="text-center">
           <span
@@ -1004,6 +1099,24 @@ export default function ProductsHubPage() {
             </span>
           )}
         </TableCell>
+        {seesCost && (
+          <TableCell className={cn("text-right", CELL_PAD.stockValue, valueColShow)}>
+            {groupValue === null ? (
+              <span className={TEXT_SUB} title="Chưa phân loại nào có giá vốn">
+                —
+              </span>
+            ) : (
+              <span
+                title={
+                  `Tổng giá trị tồn của ${formatNumber(rows.length)} phân loại` +
+                  (noCostCount > 0 ? ` — ${formatNumber(noCostCount)} phân loại chưa nhập giá vốn nên chưa tính` : "")
+                }
+              >
+                <Money value={groupValue} className={cn("text-slate-900", groupValue >= 1_000_000_000 && "text-xs")} />
+              </span>
+            )}
+          </TableCell>
+        )}
         <TableCell className={cn(TEXT_SUB, "text-center")}>—</TableCell>
       </TableRow>
     );
@@ -1336,6 +1449,27 @@ export default function ProductsHubPage() {
                     Hết hàng {formatNumber(outOfStockCount)}
                   </button>
                 )}
+                {/* CÀI NHANH cho các SKU đang tích (09/11/2026, khách xin; vị trí theo ảnh anh Trung
+                    khoanh — góc phải hàng lọc). Luôn hiện để khách biết có tính năng; chưa tích gì
+                    thì bấm vào được nhắc tích trước. */}
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => {
+                      if (selected.size === 0) {
+                        toast.info("Tích ô đầu dòng của các sản phẩm cần cài, rồi bấm lại nút này.");
+                        return;
+                      }
+                      setBulkSettingsOpen(true);
+                    }}
+                  >
+                    <BellRing className="size-3.5" />
+                    Cài cảnh báo &amp; tồn an toàn
+                    {selected.size > 0 && <span className="tabular-nums">({formatNumber(selected.size)})</span>}
+                  </Button>
+                )}
               </div>
             )}
             </div>
@@ -1344,7 +1478,8 @@ export default function ProductsHubPage() {
             <SyncAlertBanner />
 
             <Card>
-              <CardContent className="p-0">
+              {/* @container: cột Giá trị tồn hiện / ẩn theo bề rộng KHUNG BẢNG này (xem VALUE_COL_SHOW). */}
+              <CardContent className="@container p-0">
                 {error ? (
                   <p className="py-10 text-center text-sm text-amber-700">{error}</p>
                 ) : loading ? (
@@ -1398,8 +1533,8 @@ export default function ProductsHubPage() {
                   </div>
                 ) : (
                   // table-fixed theo % (anh Trung 22/10: cột Nhập · Xuất bị cắt ở 1700px khi có cột
-                  // Đang ở): từ 1.000px trở lên bảng vừa khung, tên / mã tự cắt + tooltip, chip Bán trên
-                  // xuống dòng. Dưới 1.000px (laptop 1280 mở sidebar + có cột Đang ở) hộp cuộn ngang
+                  // Vị trí): từ 1.000px trở lên bảng vừa khung, tên / mã tự cắt + tooltip, chip Bán trên
+                  // xuống dòng. Dưới 1.000px (laptop 1280 mở sidebar + có cột Vị trí) hộp cuộn ngang
                   // thay vì để số đè lên nhau — ô số không được phép tràn. Bề rộng cột ở COL_HEAD_CLASS.
                   <Table className={cn("table-fixed", locationsEnabled ? TABLE_MIN_W.withLocations : TABLE_MIN_W.plain)}>
                     <TableHeader>
@@ -1409,7 +1544,11 @@ export default function ProductsHubPage() {
                             <TableHead
                               key={header.id}
                               // Tiêu đề được xuống dòng khi cột hẹp (1280: "Giá vốn mặc định" từng đè lên "Giá bán").
-                              className={cn("whitespace-normal leading-tight", COL_HEAD_CLASS[header.column.id])}
+                              className={cn(
+                                "whitespace-normal leading-tight",
+                                COL_HEAD_CLASS[header.column.id],
+                                header.column.id === "stockValue" && valueColShow
+                              )}
                             >
                               {flexRender(
                                 header.column.columnDef.header,
@@ -1440,7 +1579,7 @@ export default function ProductsHubPage() {
                                 {row.getVisibleCells().map((cell) => (
                                   <TableCell
                                     key={cell.id}
-                                    className={CELL_PAD[cell.column.id]}
+                                    className={cn(CELL_PAD[cell.column.id], cell.column.id === "stockValue" && valueColShow)}
                                   >
                                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                   </TableCell>
@@ -1615,6 +1754,23 @@ export default function ProductsHubPage() {
             if (!open) setSkuSettings(null);
           }}
           onSaved={load}
+        />
+      )}
+
+      {/* Cài nhanh ngưỡng cảnh báo + tồn an toàn cho các SKU đang tích */}
+      {isAdmin && (
+        <BulkStockSettingsDialog
+          selected={[...selected.values()]}
+          shopDefaults={{
+            safetyStock: productsQ.data?.safetyStockDefault ?? 0,
+            lowStock: productsQ.data?.lowStockDefault ?? 0,
+          }}
+          open={bulkSettingsOpen}
+          onOpenChange={setBulkSettingsOpen}
+          onSaved={() => {
+            setSelected(new Map());
+            load();
+          }}
         />
       )}
 

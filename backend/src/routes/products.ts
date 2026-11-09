@@ -695,6 +695,10 @@ function deleteBlockReason(p: DeleteGuardRow): { code: string; reason: string } 
 // xóa hàng loạt). Body: { action: "deactivate" | "activate" | "delete", ids[] } ≤ 500.
 // Ngừng/bán lại: một updateMany. Xóa: xoá SKU đủ điều kiện, SKU dính đơn / liên kết /
 // còn tồn thì bỏ qua và trả lý do từng mã (không vỡ cả lô).
+// action "stockSettings" (09/11/2026, khách xin cài nhanh cho nhiều sản phẩm): kèm
+// lowStockThreshold và/hoặc safetyStock — số nguyên ≥ 0, null = về mặc định toàn shop, KHÔNG gửi
+// trường nào thì trường đó giữ nguyên. Chỉ đẩy tồn lên sàn cho SKU có tồn an toàn THẬT SỰ đổi
+// (đổi riêng ngưỡng cảnh báo không làm đổi số "Có thể bán" → không tốn lượt gọi sàn nào).
 router.post("/bulk", async (req: AuthRequest, res, next) => {
   try {
     if (req.userRole !== Role.ADMIN) {
@@ -702,7 +706,7 @@ router.post("/bulk", async (req: AuthRequest, res, next) => {
       return;
     }
     const { action, ids } = req.body ?? {};
-    if (action !== "deactivate" && action !== "activate" && action !== "delete") {
+    if (action !== "deactivate" && action !== "activate" && action !== "delete" && action !== "stockSettings") {
       res.status(400).json({ error: "Hành động không hợp lệ" });
       return;
     }
@@ -712,6 +716,69 @@ router.post("/bulk", async (req: AuthRequest, res, next) => {
     }
     const ownerId = req.ownerId!;
     const idList = [...new Set(ids as string[])];
+
+    if (action === "stockSettings") {
+      const parseSetting = (v: unknown): number | null | undefined | false => {
+        if (v === undefined) return undefined;
+        if (v === null || v === "") return null;
+        const n = Number(v);
+        return Number.isInteger(n) && n >= 0 && n <= 1_000_000 ? n : false;
+      };
+      const low = parseSetting(req.body?.lowStockThreshold);
+      const safety = parseSetting(req.body?.safetyStock);
+      if (low === false) {
+        res.status(400).json({ error: "Ngưỡng cảnh báo phải là số nguyên không âm" });
+        return;
+      }
+      if (safety === false) {
+        res.status(400).json({ error: "Tồn an toàn phải là số nguyên không âm" });
+        return;
+      }
+      if (low === undefined && safety === undefined) {
+        res.status(400).json({ error: "Nhập ngưỡng cảnh báo hoặc tồn an toàn" });
+        return;
+      }
+      // SKU có tồn an toàn thật sự đổi — đọc TRƯỚC khi ghi, để chỉ đẩy lại sàn đúng những mã đó.
+      const safetyChanged =
+        safety === undefined
+          ? []
+          : (
+              await prisma.product.findMany({
+                where: {
+                  userId: ownerId,
+                  id: { in: idList },
+                  // `not: n` trong SQL bỏ sót dòng NULL (đang dùng mặc định shop) — phải kể riêng.
+                  ...(safety === null
+                    ? { safetyStock: { not: null } }
+                    : { OR: [{ safetyStock: null }, { safetyStock: { not: safety } }] }),
+                },
+                select: { id: true },
+              })
+            ).map((p) => p.id);
+      const r = await prisma.product.updateMany({
+        where: { userId: ownerId, id: { in: idList } },
+        data: {
+          ...(low !== undefined ? { lowStockThreshold: low } : {}),
+          ...(safety !== undefined ? { safetyStock: safety } : {}),
+        },
+      });
+      if (safetyChanged.length) {
+        // enqueueStockPush tự kiểm lại ngưỡng cảnh báo cho các mã này.
+        await enqueueStockPush(safetyChanged, { source: "đổi tồn an toàn hàng loạt" });
+      }
+      if (low !== undefined) {
+        // Đổi ngưỡng → mở / đóng thẻ "sắp hết hàng" ngay, không cần đụng tới sàn. Best-effort.
+        const pushed = new Set(safetyChanged);
+        const rest = idList.filter((x) => !pushed.has(x));
+        if (rest.length) {
+          void import("../services/ops-alerts")
+            .then((m) => m.checkLowStock(rest))
+            .catch((err) => console.error("[Low-stock] Không kiểm tra được ngưỡng:", err));
+        }
+      }
+      res.json({ action, affected: r.count, skipped: [], pushed: safetyChanged.length });
+      return;
+    }
 
     if (action !== "delete") {
       const r = await prisma.product.updateMany({

@@ -1765,6 +1765,22 @@ export function bulkProducts(data: {
   }>("/api/products/bulk", { method: "POST", body: JSON.stringify(data) });
 }
 
+/**
+ * Cài nhanh cho NHIỀU SKU đã tích: ngưỡng cảnh báo sắp hết và/hoặc tồn an toàn (≤ 500 SKU mỗi lần).
+ * Trường không gửi = giữ nguyên; null = về mặc định toàn shop. `pushed` = số SKU có tồn an toàn
+ * thật sự đổi nên được đẩy lại lên sàn.
+ */
+export function bulkProductStockSettings(data: {
+  ids: string[];
+  lowStockThreshold?: number | null;
+  safetyStock?: number | null;
+}) {
+  return apiFetch<{ action: string; affected: number; pushed: number }>("/api/products/bulk", {
+    method: "POST",
+    body: JSON.stringify({ action: "stockSettings", ...data }),
+  });
+}
+
 export function deleteProduct(productId: string) {
   return apiFetch<{ ok: true; id: string; skuCode: string }>(`/api/products/${productId}`, {
     method: "DELETE",

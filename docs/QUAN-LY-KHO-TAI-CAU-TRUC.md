@@ -599,3 +599,37 @@ Trước đó CHƯA phân trang: phiếu (tối đa 2.000 mã) vẽ hết trong 
 - **Đã thử nút Chốt với máy chủ giả:** 1.033 mã lệch → 3 lượt 500 / 500 / 33, báo "điều chỉnh 1.033 mã", phiếu tải lại với sổ mới, nháp xóa sạch, con trỏ về ô quét. Lỗi giả ở lượt 2 của 700 mã lệch → "Đã chốt 500/700…", 500 mã thành "khớp", còn 200 lệch, số đếm giữ nguyên.
 - **Đã thử thật trên backend local:** `POST /inventory/stocktake` với số đếm 10.000.000 → 400, tồn không đổi.
 - **CHƯA:** bấm Chốt THẬT vào DB local (sẽ đổi tồn + xếp việc đẩy tồn lên sàn; tài khoản demo có 18 sản phẩm sàn đang nối nên em không bấm); máy quét thật; đo bản build; trần 2.000 mã của phiếu giữ nguyên.
+
+## 10. Tổng kho: cài nhanh cảnh báo / tồn an toàn cho nhiều SKU + cột Giá trị tồn + đổi tên cột "Đang ở" → "Vị trí" (09/11/2026; local, CHƯA commit / CHƯA push)
+
+Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh hai chỗ): (1) "một nút cài đặt nhanh — tích vào nhiều sản phẩm và cài đặt cảnh báo, số lượng an toàn" thay vì mở ⋯ từng dòng; (2) "thêm cột tổng giá trị tồn = số lượng × giá vốn". Trong lúc làm anh nhắn thêm: **"Đang ở" đổi tên thành "Vị trí"** và **"phần này em chú ý tới tỉ lệ màn hình"**.
+
+### 10.1 Nút "Cài cảnh báo & tồn an toàn"
+
+- **Vị trí:** góc phải hàng chip lọc (chỗ anh khoanh), chỉ chủ shop. Luôn hiện để khách biết có tính năng; chưa tích dòng nào mà bấm → nhắc "Tích ô đầu dòng của các sản phẩm cần cài, rồi bấm lại nút này". Đã tích → nhãn kèm số "(N)". Không thêm nút thứ năm vào thanh xử lý hàng loạt ở đáy màn (thanh đó đã 4 nút).
+- **Hộp** (`components/products/bulk-stock-settings-dialog.tsx`): hai ô giống hộp cài đặt một SKU — Ngưỡng cảnh báo sắp hết hàng, Tồn an toàn. **Ô nào để trống thì GIỮ NGUYÊN số đang có của từng SKU** (khác hộp một SKU, nơi để trống = về mặc định toàn shop). Hai ô cùng trống thì nút Áp bị khóa. Có nhập Tồn an toàn và có SKU đang nối sàn → dòng cảnh báo vàng "N SKU đang nối sàn sẽ được đẩy lại số Có thể bán". Áp xong bỏ tích hết, tải lại bảng.
+- **Backend** `POST /api/products/bulk` thêm `action: "stockSettings"` kèm `lowStockThreshold` / `safetyStock` (số nguyên 0 … 1.000.000; `null` = về mặc định shop; không gửi = giữ nguyên), ≤ 500 SKU mỗi lần (frontend tự chia lượt 500), chỉ chủ shop. **Số lượt gọi sàn:** chỉ SKU có tồn an toàn THẬT SỰ đổi mới được xếp việc đẩy tồn (đọc trước khi ghi; trả về `pushed`); đổi riêng ngưỡng cảnh báo KHÔNG đẩy sàn (số Có thể bán không đổi), chỉ kiểm lại thẻ "sắp hết hàng". Khác đường sửa một SKU (`PATCH /products/:id`) vốn đẩy sàn cả khi chỉ đổi ngưỡng — chưa đụng đường đó.
+
+### 10.2 Cột "Giá trị tồn" — co theo bề rộng KHUNG BẢNG
+
+- Giá trị tồn = tồn kho × giá vốn; tồn âm tính 0; chưa có giá vốn → "—". Dòng cha của mẫu nhiều phân loại = tổng các phân loại đã có giá vốn (chú thích ghi mấy phân loại chưa tính). Chỉ người thấy giá vốn mới có.
+- **Bản đầu em thêm hẳn một cột → laptop 1366–1440 phải cuộn ngang, cột Nhập · Xuất bị cắt; số 8–9 chữ số đè sang cột Bán trên.** Sau lời nhắc về tỉ lệ màn hình, đổi thành:
+  - khung bảng ĐỦ rộng → cột riêng "Giá trị tồn" giữa Bán trên và Nhập · Xuất (chỗ anh khoanh), bề rộng cố định 7rem (112px) để không ăn vào % các cột đã đo; từ 1 tỷ trở lên hạ cỡ chữ;
+  - khung hẹp hơn → ẩn cột, giá trị thành DÒNG NHỎ rút gọn dưới số Tồn kho ("≈ 298,4tr ₫", số đủ trong chú thích khi rê chuột) — cùng kiểu dòng "an toàn N" ở cột Có thể bán.
+  - Ngưỡng theo container query trên khung bảng (`@container` ở CardContent; `VALUE_COL_SHOW` / `VALUE_SUBLINE_SHOW` trong `app/products/page.tsx`): 1.088px khi không có cột Vị trí, 1.152px khi có. Bề rộng tối thiểu của bảng GIỮ như cũ (1.000 / 1.040px).
+- **Đo trên local** (JS đo chữ tràn khỏi ô; số bơm thử 298.400.000 và 998.888.888; dòng nhỏ "≈ 998,9tr ₫", "≈ 12,35 tỷ ₫"):
+
+  | Màn | Có cột Vị trí (admin) | Không có cột Vị trí (demo) |
+  |---|---|---|
+  | 1280 | dòng nhỏ · cuộn ngang 97px (như trước khi sửa) | chưa đo |
+  | 1366 | dòng nhỏ · cuộn 11px (như trước) | dòng nhỏ · không cuộn |
+  | 1440 | dòng nhỏ · không cuộn | CỘT · không cuộn |
+  | 1536 / 1700 / 1920 | CỘT · không cuộn | chưa đo (rộng hơn 1440 nên chắc chắn là cột) |
+
+  Không ô nào của cột mới / dòng mới tràn sang ô bên. Cột Giá bán tràn 1,4px ở 1280–1366 có cột Vị trí — có từ trước, không do đợt này. Chế độ tối: bảng + hộp cài nhanh đọc được.
+
+### 10.3 Đã thử / chưa thử
+
+- **Đã thử local:** chưa tích mà bấm → nhắc; tích 2 SKU → nhãn "(2)", hộp mở, ô ngưỡng nhận con trỏ sẵn; nhập ngưỡng 7, để trống tồn an toàn → "Đã cài ngưỡng cảnh báo 7 cho 2 SKU", API đọc lại ngưỡng 7 và tồn an toàn KHÔNG đổi, bỏ tích hết (đã trả 2 SKU về như cũ). Gọi API thẳng trên 3 SKU CHƯA nối sàn: đặt tồn an toàn 2 + ngưỡng 4 → `pushed: 3`, Có thể bán 7 → 8; gửi lại y hệt → `pushed: 0`; trả về mặc định → như cũ. Thiếu cả hai trường → 400; số âm → 400. `tsc` hai phía + `eslint` sạch.
+- **CHƯA thử:** bấm Áp có đổi tồn an toàn trên SKU ĐANG nối sàn (sẽ xếp việc đẩy tồn trong DB local — không bấm); > 500 SKU; tài khoản nhân viên (không thấy giá vốn → không có cột; không phải chủ shop → không có nút — theo mã, chưa mở thử); màn 1280 không có cột Vị trí; mobile (app mobile chưa có hai thứ này).
+- **Chưa làm (không ai xin):** tổng giá trị tồn của CẢ kho (một con số ở đầu / cuối bảng); cột Giá trị tồn trong file Excel xuất ra; sắp xếp theo giá trị tồn.

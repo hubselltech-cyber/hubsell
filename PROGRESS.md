@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 09/11 (5) — Anh: khách xin (1) nút cài nhanh cảnh báo / tồn an toàn cho nhiều sản phẩm đã tích, (2) cột tổng giá trị tồn = số lượng × giá vốn; thêm: "Đang ở" đổi thành "Vị trí", "chú ý tới tỉ lệ màn hình" → ĐÃ LÀM + COMMIT, CHƯA push
+
+- **Nút "Cài cảnh báo & tồn an toàn"** ở góc phải hàng chip lọc Tổng kho (chỗ anh khoanh): tích nhiều dòng → một hộp hai ô, ô để trống = giữ nguyên. Backend `POST /api/products/bulk` thêm `action: "stockSettings"`; chỉ SKU có tồn an toàn thật sự đổi mới đẩy lại sàn, đổi riêng ngưỡng cảnh báo không gọi sàn.
+- **Cột "Giá trị tồn"** co theo bề rộng khung bảng: đủ rộng (≥ 1.088px, có cột Vị trí thì ≥ 1.152px) là cột riêng giữa Bán trên và Nhập · Xuất; hẹp hơn thì thành dòng nhỏ rút gọn dưới số Tồn kho. Bản đầu thêm hẳn một cột làm laptop 1366–1440 phải cuộn ngang → sửa sau lời anh nhắc. Bảng đo 1280 → 1920 ở docs mục 10.2.
+- **Đổi tên cột "Đang ở" → "Vị trí"** (tiêu đề cột + tiêu đề hộp chi tiết vị trí của SKU).
+- **Đã thử local** (chi tiết docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 10.3); `tsc` + `eslint` sạch. **CHƯA:** push / kiểm prod; bấm Áp đổi tồn an toàn trên SKU đang nối sàn; tài khoản nhân viên; mobile. Chưa làm vì không ai xin: tổng giá trị tồn cả kho, cột trong Excel.
+- Tệp: `frontend/src/app/products/page.tsx`, `frontend/src/components/products/bulk-stock-settings-dialog.tsx` (mới), `frontend/src/components/products/stock-levels-cell.tsx`, `frontend/src/lib/api.ts`, `backend/src/routes/products.ts`.
+
+---
 ## Phiên 09/11 (4) — Anh: khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét, số nhảy sai + mỗi lần quét phải chỏ chuột lại → ĐÃ SỬA + COMMIT 2 đợt (đợt một `8315c2f3`), CHƯA push
 
 - **Khách báo:** quét 1 lần ô đếm nhảy "số gì ấy", quét lần 2 không cộng mà ra số cam, quét mã khác thì không nhảy đúng dòng; mỗi lần quét phải chỏ chuột về ô quét. Muốn: đặt con trỏ một lần, quét mã nào nhảy mã đó.
