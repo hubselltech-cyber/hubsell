@@ -42,6 +42,13 @@ import { Money } from "@/components/ui/money";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
 import { BulkStockSettingsDialog } from "@/components/products/bulk-stock-settings-dialog";
+import {
+  STOCK_VALUE_SHOW,
+  StockValueAmount,
+  StockValueSubline,
+  groupStockValue,
+  stockValueOf,
+} from "@/components/products/stock-value";
 import { SetupGuide, type ChannelProductCounts } from "@/components/products/setup-guide";
 import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog";
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
@@ -96,7 +103,7 @@ import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { locationLabel } from "@/lib/stock-locations";
-import { formatCompactVND, formatNumber } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 import { can, canManageShop, canSeeFinancials } from "@/lib/permissions";
 import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -153,50 +160,6 @@ const COL_HEAD_CLASS: Record<string, string> = {
 
 /** Bề rộng tối thiểu của bảng: có cột Vị trí thì rộng hơn 40px bù cho cột mã (xem COL_HEAD_CLASS.skuCode). */
 const TABLE_MIN_W = { plain: "min-w-[1000px]", withLocations: "min-w-[1040px]" } as const;
-/**
- * CỘT GIÁ TRỊ TỒN CO THEO BỀ RỘNG KHUNG BẢNG (anh Trung 09/11: "chú ý tới tỉ lệ màn hình"). Thêm
- * hẳn một cột 112px thì laptop 1366–1440 phải cuộn ngang, cột Nhập · Xuất bị cắt. Nên:
- *   · khung bảng ĐỦ rộng → hiện cột riêng (đứng giữa Bán trên và Nhập · Xuất như ảnh anh khoanh);
- *   · khung hẹp hơn → ẩn cột, giá trị tồn thành DÒNG NHỎ dưới số Tồn kho (như "an toàn N" ở Có thể bán).
- * Ngưỡng = bề rộng tối thiểu cũ + 112px của cột mới − 24px dư sẵn ở bảng 1.000px (không có cột Vị
- * trí); có cột Vị trí thì bảng cũ vốn đã bị ép sát nên cộng đủ 112px → mọi cột cũ giữ ≥ bề rộng đã
- * đo. Khung bảng = `@container` ở CardContent. Chuỗi class phải viết LIỀN để Tailwind nhận ra.
- */
-const VALUE_COL_SHOW = {
-  plain: "hidden @min-[1088px]:table-cell",
-  withLocations: "hidden @min-[1152px]:table-cell",
-} as const;
-const VALUE_SUBLINE_SHOW = {
-  plain: "@min-[1088px]:hidden",
-  withLocations: "@min-[1152px]:hidden",
-} as const;
-
-/**
- * GIÁ TRỊ TỒN của một SKU = tồn kho × giá vốn. Tồn âm (bán vượt) tính 0 — không có hàng thì không
- * có giá trị, và không để một mã âm kéo tụt tổng của cả mẫu. null = chưa nhập giá vốn.
- */
-function stockValueOf(p: Product): number | null {
-  const cost = Number(p.costPrice ?? 0);
-  if (!(cost > 0)) return null;
-  return Math.max(0, p.quantityInStock) * cost;
-}
-
-/**
- * Giá trị tồn dạng dòng nhỏ dưới số Tồn kho — chỉ hiện khi khung bảng hẹp, cột riêng đang ẩn.
- * Số RÚT GỌN ("≈ 298,4tr ₫"): cột Tồn kho chỉ 80px, "298.400.000 ₫" đủ chữ dài ~110px, đè sang hai
- * cột bên (đo 09/11 ở 1280–1440). Số đủ nằm trong chú thích khi rê chuột.
- */
-function StockValueSubline({ value, className }: { value: number | null; className: string }) {
-  if (value === null) return null;
-  return (
-    <p
-      className={cn("mt-0.5 text-[11px] leading-tight whitespace-nowrap tabular-nums text-muted-foreground", className)}
-      title={`Giá trị tồn = tồn kho × giá vốn: ${formatNumber(value)} ₫`}
-    >
-      ≈ {formatCompactVND(value)} ₫
-    </p>
-  );
-}
 
 /** Đệm ngang riêng của Ô theo cột — phải khớp với tiêu đề cột ở COL_HEAD_CLASS. */
 const CELL_PAD: Record<string, string> = { skuCode: "px-2", channels: "px-2", stockValue: "px-2" };
@@ -600,8 +563,9 @@ export default function ProductsHubPage() {
 
   // Nhân viên không được biết giá vốn — backend đã cắt trường, bỏ luôn cột.
   const seesCost = canSeeFinancials(getStoredUser());
-  const valueColShow = VALUE_COL_SHOW[locationsEnabled ? "withLocations" : "plain"];
-  const valueSublineShow = VALUE_SUBLINE_SHOW[locationsEnabled ? "withLocations" : "plain"];
+  // Cột Giá trị tồn hiện / ẩn theo bề rộng khung bảng — xem components/products/stock-value.tsx.
+  const { column: valueColShow, subline: valueSublineShow } =
+    STOCK_VALUE_SHOW[locationsEnabled ? "withLocations" : "plain"];
 
   const columns = useMemo(
     () => [
@@ -866,24 +830,15 @@ export default function ProductsHubPage() {
                   Giá trị tồn
                 </div>
               ),
-              cell: ({ row }) => {
-                const v = stockValueOf(row.original);
-                return (
-                  <div className="text-right">
-                    {v === null ? (
-                      <span className={TEXT_SUB} title="Chưa nhập giá vốn">
-                        —
-                      </span>
-                    ) : (
-                      <span
-                        title={`${formatNumber(Math.max(0, row.original.quantityInStock))} × ${formatNumber(Number(row.original.costPrice))} ₫`}
-                      >
-                        <Money value={v} className={cn("text-slate-900", v >= 1_000_000_000 && "text-xs")} />
-                      </span>
-                    )}
-                  </div>
-                );
-              },
+              cell: ({ row }) => (
+                <div className="text-right">
+                  <StockValueAmount
+                    value={stockValueOf(row.original)}
+                    title={`${formatNumber(Math.max(0, row.original.quantityInStock))} × ${formatNumber(Number(row.original.costPrice))} ₫`}
+                    emptyTitle="Chưa nhập giá vốn"
+                  />
+                </div>
+              ),
             }),
           ]
         : []),
@@ -958,10 +913,7 @@ export default function ProductsHubPage() {
     );
     const inactiveCount = rows.filter((p) => p.isActive === false).length;
     const lowCount = rows.filter((p) => p.isLowStock).length;
-    // Giá trị tồn của cả mẫu = tổng các phân loại ĐÃ có giá vốn; chưa phân loại nào có giá → "—".
-    const values = rows.map(stockValueOf);
-    const noCostCount = values.filter((v) => v === null).length;
-    const groupValue = noCostCount === rows.length ? null : values.reduce<number>((s, v) => s + (v ?? 0), 0);
+    const { value: groupValue, noCostCount } = groupStockValue(rows);
     const links = rows.flatMap((p) => p.channelLinks ?? []);
     const byChannel = new Map<string, number>();
     for (const l of links) byChannel.set(l.channelName, (byChannel.get(l.channelName) ?? 0) + 1);
@@ -1101,20 +1053,14 @@ export default function ProductsHubPage() {
         </TableCell>
         {seesCost && (
           <TableCell className={cn("text-right", CELL_PAD.stockValue, valueColShow)}>
-            {groupValue === null ? (
-              <span className={TEXT_SUB} title="Chưa phân loại nào có giá vốn">
-                —
-              </span>
-            ) : (
-              <span
-                title={
-                  `Tổng giá trị tồn của ${formatNumber(rows.length)} phân loại` +
-                  (noCostCount > 0 ? ` — ${formatNumber(noCostCount)} phân loại chưa nhập giá vốn nên chưa tính` : "")
-                }
-              >
-                <Money value={groupValue} className={cn("text-slate-900", groupValue >= 1_000_000_000 && "text-xs")} />
-              </span>
-            )}
+            <StockValueAmount
+              value={groupValue}
+              title={
+                `Tổng giá trị tồn của ${formatNumber(rows.length)} phân loại` +
+                (noCostCount > 0 ? ` — ${formatNumber(noCostCount)} phân loại chưa nhập giá vốn nên chưa tính` : "")
+              }
+              emptyTitle="Chưa phân loại nào có giá vốn"
+            />
           </TableCell>
         )}
         <TableCell className={cn(TEXT_SUB, "text-center")}>—</TableCell>
@@ -1478,7 +1424,7 @@ export default function ProductsHubPage() {
             <SyncAlertBanner />
 
             <Card>
-              {/* @container: cột Giá trị tồn hiện / ẩn theo bề rộng KHUNG BẢNG này (xem VALUE_COL_SHOW). */}
+              {/* @container: cột Giá trị tồn hiện / ẩn theo bề rộng KHUNG BẢNG này (xem STOCK_VALUE_SHOW). */}
               <CardContent className="@container p-0">
                 {error ? (
                   <p className="py-10 text-center text-sm text-amber-700">{error}</p>

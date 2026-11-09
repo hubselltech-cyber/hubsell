@@ -690,7 +690,8 @@ router.post("/stocktake/rows", async (req: AuthRequest, res, next) => {
         productName: true,
         isActive: true,
         quantityInStock: true,
-        ...(locationId ? { stockLevels: { where: { locationId }, select: { quantity: true } } } : {}),
+        // Không dùng vị trí thì lọc theo id rỗng → không dòng nào, sổ lấy từ quantityInStock.
+        stockLevels: { where: { locationId: locationId ?? "" }, select: { quantity: true } },
       },
     });
     res.json({
@@ -700,9 +701,7 @@ router.post("/stocktake/rows", async (req: AuthRequest, res, next) => {
         barcode: p.barcode,
         productName: p.productName,
         isActive: p.isActive,
-        book: locationId
-          ? ((p as { stockLevels?: { quantity: number }[] }).stockLevels?.[0]?.quantity ?? 0)
-          : p.quantityInStock,
+        book: locationId ? (p.stockLevels[0]?.quantity ?? 0) : p.quantityInStock,
       })),
     });
   } catch (err) {

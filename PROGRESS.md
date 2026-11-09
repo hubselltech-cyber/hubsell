@@ -5,7 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 09/11 (5) — Anh: khách xin (1) nút cài nhanh cảnh báo / tồn an toàn cho nhiều sản phẩm đã tích, (2) cột tổng giá trị tồn = số lượng × giá vốn; thêm: "Đang ở" đổi thành "Vị trí", "chú ý tới tỉ lệ màn hình" → ĐÃ LÀM + COMMIT, CHƯA push
+## Phiên 09/11 (6) — Anh: "Em push hết lên nhé" → ĐÃ PUSH 3 commit, kiểm prod OK; rồi "Dọn dẹp code thừa đi em nhé, đảm bảo mô hình tree chuyên nghiệp" → ĐÃ DỌN, COMMIT + PUSH (anh: "Commit + push")
+
+- **Push:** `b4ec6c7b..b1a71642` (Kiểm kê `8315c2f3` + `dbb672c9`, Tổng kho `b1a71642`), không migration. Backend `/health` = `b1a71642`.
+- **Kiểm prod** (mở app bằng Chrome của anh, tài khoản chủ shop, CHỈ XEM): Tổng kho màn 1920 có cột "Vị trí" + "Giá trị tồn" (số dài nhất 298.400.000 ₫, không tràn, không cuộn ngang) + nút cài nhanh; Kiểm kê 187 mã, 50 dòng/trang, con trỏ sẵn ô quét. Chưa quét thật / chưa Chốt / chưa Áp cài hàng loạt trên prod.
+- **Dọn mã (không đổi hành vi; chi tiết docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 10.4):** luật + bản nháp Kiểm kê → `frontend/src/lib/stocktake.ts`; phần Giá trị tồn → `frontend/src/components/products/stock-value.tsx`; backend gom kiểm tra cài đặt tồn về `parseStockSettings`, dùng lại `checkLowStockLater`; xóa `components/mappings/link-one-dialog.tsx` + 2 hàm API nối SKU cũ (mã chết từ 05/11). Chỉ mục `docs/README.md` thêm mục 8–10; sửa các dòng trạng thái cũ trong docs kho (8.1, 9, 10).
+- **Kiểm sau dọn:** `tsc` frontend + backend, `eslint` tệp sửa sạch; chạy lại các ca chính trên local đều đúng. Chưa chạy vitest (đợt này không đụng tệp có test).
+- **Còn chờ:** nhắn khách nguyenvanmanh1120 xóa 2 ô số rác ở Kiểm kê trước khi Chốt (prod nay đã khóa nút Chốt khi còn ô sai số); máy quét thật.
+- Tệp `hubsell-marketing/so-lieu/SQL-DANG-KY-THEO-MA-KENH.sql` chưa theo dõi từ trước phiên — em không đụng.
+
+---
+## Phiên 09/11 (5) — Anh: khách xin (1) nút cài nhanh cảnh báo / tồn an toàn cho nhiều sản phẩm đã tích, (2) cột tổng giá trị tồn = số lượng × giá vốn; thêm: "Đang ở" đổi thành "Vị trí", "chú ý tới tỉ lệ màn hình" → ĐÃ PUSH `b1a71642`, prod OK
 
 - **Nút "Cài cảnh báo & tồn an toàn"** ở góc phải hàng chip lọc Tổng kho (chỗ anh khoanh): tích nhiều dòng → một hộp hai ô, ô để trống = giữ nguyên. Backend `POST /api/products/bulk` thêm `action: "stockSettings"`; chỉ SKU có tồn an toàn thật sự đổi mới đẩy lại sàn, đổi riêng ngưỡng cảnh báo không gọi sàn.
 - **Cột "Giá trị tồn"** co theo bề rộng khung bảng: đủ rộng (≥ 1.088px, có cột Vị trí thì ≥ 1.152px) là cột riêng giữa Bán trên và Nhập · Xuất; hẹp hơn thì thành dòng nhỏ rút gọn dưới số Tồn kho. Bản đầu thêm hẳn một cột làm laptop 1366–1440 phải cuộn ngang → sửa sau lời anh nhắc. Bảng đo 1280 → 1920 ở docs mục 10.2.
@@ -14,7 +24,7 @@
 - Tệp: `frontend/src/app/products/page.tsx`, `frontend/src/components/products/bulk-stock-settings-dialog.tsx` (mới), `frontend/src/components/products/stock-levels-cell.tsx`, `frontend/src/lib/api.ts`, `backend/src/routes/products.ts`.
 
 ---
-## Phiên 09/11 (4) — Anh: khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét, số nhảy sai + mỗi lần quét phải chỏ chuột lại → ĐÃ SỬA + COMMIT 2 đợt (đợt một `8315c2f3`), CHƯA push
+## Phiên 09/11 (4) — Anh: khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét, số nhảy sai + mỗi lần quét phải chỏ chuột lại → ĐÃ PUSH `8315c2f3` + `dbb672c9`, prod OK
 
 - **Khách báo:** quét 1 lần ô đếm nhảy "số gì ấy", quét lần 2 không cộng mà ra số cam, quét mã khác thì không nhảy đúng dòng; mỗi lần quét phải chỏ chuột về ô quét. Muốn: đặt con trỏ một lần, quét mã nào nhảy mã đó.
 - **Gốc lỗi:** trang Kiểm kê (`frontend/src/app/products/stocktake/page.tsx`) quét trúng xong lại chuyển con trỏ sang ô "Thực đếm" → lần quét kế gõ nguyên 13 số mã vạch vào ô đếm, Enter của máy quét đẩy con trỏ xuống dòng dưới. Phiếu nhiều mã + Cất lên kệ không dính (vốn giữ con trỏ ở ô quét).

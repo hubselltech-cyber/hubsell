@@ -35,6 +35,21 @@ import { productMatchesCode } from "@/lib/product-code";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
 import { locationLabel } from "@/lib/stock-locations";
+import {
+  SCAN_CODE_RE,
+  STOCKTAKE_PAGE_SIZE_DEFAULT,
+  STOCKTAKE_PAGE_SIZES,
+  STOCKTAKE_SUBMIT_CHUNK,
+  clearStocktakeDraft,
+  isCounted,
+  readStocktakeDraft,
+  readStocktakePageSize,
+  stocktakeDraftId,
+  validCount,
+  writeStocktakeDraft,
+  writeStocktakePageSize,
+  type StocktakeCounts,
+} from "@/lib/stocktake";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
@@ -58,60 +73,6 @@ import { cn } from "@/lib/utils";
  * về số cũ rồi cộng 1 cho đúng mã.
  */
 
-type Counts = Record<string, string>;
-
-/**
- * Mã vạch bán lẻ ngắn nhất là EAN-8 (8 chữ số); mã vạch quản lý của Hubsell 13 số.
- * Một mã kho không thể tồn ≥ 10 triệu cái, nên dãy ≥ 8 chữ số ở ô đếm = mã quét nhầm chỗ.
- */
-const SCAN_CODE_RE = /^\d{8,}$/;
-
-// 20 / 50 / 100 dòng/trang — chuẩn bảng số liệu của app; nhớ lựa chọn theo trình duyệt.
-// Mặc định 50 (em tự chọn): kiểm kê đọc liền một mạch theo kệ, 20 dòng thì lật trang quá dày.
-const PAGE_SIZES = [20, 50, 100];
-const PAGE_SIZE_DEFAULT = 50;
-const PAGE_SIZE_KEY = "hubsell_stocktake_page_size";
-
-/** Số mã tối đa mỗi lần gọi Chốt — PHẢI khớp `STOCKTAKE_MAX` ở backend/src/routes/inventory.ts. */
-const SUBMIT_CHUNK = 500;
-const COUNT_MAX = 9_999_999;
-
-function validCount(raw: string | undefined): number | null {
-  if (raw === undefined || raw === "") return null;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 && n <= COUNT_MAX ? n : null;
-}
-
-function draftKey(locationId: string) {
-  return `hubsell_stocktake_draft_${locationId || "all"}`;
-}
-/** Dòng THÊM BẰNG QUÉT (mã ngoài phiếu, sổ 0) — lưu riêng để tải lại trang không mất. */
-function extraKey(locationId: string) {
-  return `hubsell_stocktake_extra_${locationId || "all"}`;
-}
-
-function readExtraRows(locationId: string): StocktakeRow[] {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(extraKey(locationId)) ?? "[]");
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .filter(
-        (x): x is StocktakeRow =>
-          !!x && typeof x.productId === "string" && typeof x.skuCode === "string" && typeof x.productName === "string"
-      )
-      .map((x) => ({
-        productId: x.productId,
-        skuCode: x.skuCode,
-        barcode: typeof x.barcode === "string" ? x.barcode : null,
-        productName: x.productName,
-        isActive: x.isActive !== false,
-        book: Number.isInteger(x.book) ? x.book : 0,
-      }));
-  } catch {
-    return [];
-  }
-}
-
 export default function StocktakePage() {
   const router = useRouter();
   const invalidate = useInvalidate();
@@ -127,7 +88,7 @@ export default function StocktakePage() {
   const [rows, setRows] = useState<StocktakeRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [truncated, setTruncated] = useState(false);
-  const [counts, setCounts] = useState<Counts>({});
+  const [counts, setCounts] = useState<StocktakeCounts>({});
   const [onlyDiff, setOnlyDiff] = useState(false);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -149,7 +110,7 @@ export default function StocktakePage() {
   /** Tăng để tải lại phiếu tại chỗ (sau khi chốt / chốt dở / có mã đã bị xóa khỏi kho). */
   const [reloadTick, setReloadTick] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
+  const [pageSize, setPageSize] = useState(STOCKTAKE_PAGE_SIZE_DEFAULT);
   /** Dòng chờ cuộn vào giữa khung / ô chờ nhận con trỏ — làm sau khi trang chứa nó vẽ xong. */
   const pendingScroll = useRef<string | null>(null);
   const pendingFocus = useRef<string | null>(null);
@@ -168,16 +129,9 @@ export default function StocktakePage() {
         if (cancelled) return;
         // Nạp bản nháp đang đếm dở (nếu có) — chỉ giữ mã còn trong phiếu, cộng các dòng
         // đã thêm bằng quét mà vẫn còn số đếm (mã nay đã vào phiếu thì dùng dòng của phiếu).
-        let draft: Counts = {};
-        try {
-          draft = JSON.parse(localStorage.getItem(draftKey(effectiveLocationId)) ?? "{}");
-        } catch {
-          draft = {};
-        }
+        const draft = readStocktakeDraft(effectiveLocationId);
         const ids = new Set(r.rows.map((x) => x.productId));
-        const stored = readExtraRows(effectiveLocationId).filter(
-          (x) => !ids.has(x.productId) && draft[x.productId] !== undefined && draft[x.productId] !== ""
-        );
+        const stored = draft.extraRows.filter((x) => !ids.has(x.productId) && isCounted(draft.counts, x.productId));
         // Dòng thêm bằng quét: hỏi lại máy chủ số sổ HIỆN TẠI (sổ nhớ trong máy có thể đã cũ,
         // mà "lệch" = đếm ≠ sổ — sổ sai là sót điều chỉnh). Mã đã bị xóa khỏi kho thì máy chủ
         // không trả về → bỏ dòng. Hỏi không được (mất mạng…) thì tạm dùng sổ đã nhớ.
@@ -198,9 +152,9 @@ export default function StocktakePage() {
         sheetIds.current = new Set(ids);
         for (const x of extra) ids.add(x.productId);
         setRows([...r.rows, ...extra]);
-        setCounts(Object.fromEntries(Object.entries(draft).filter(([id]) => ids.has(id))));
+        setCounts(Object.fromEntries(Object.entries(draft.counts).filter(([id]) => ids.has(id))));
         setLastScan(null);
-        hydratedKey.current = draftKey(effectiveLocationId);
+        hydratedKey.current = stocktakeDraftId(effectiveLocationId);
       })
       .catch((err) => toast.error(err instanceof ApiError ? err.message : "Không tải được phiếu"))
       .finally(() => !cancelled && setLoading(false));
@@ -213,18 +167,10 @@ export default function StocktakePage() {
   // Trước 09/11/2026 hiệu ứng này chạy ngay lúc mở trang với `counts` còn rỗng, ghi đè
   // bản nháp trước khi kịp đọc → tải lại trang là mất hết số đang đếm.
   useEffect(() => {
-    if (hydratedKey.current !== draftKey(effectiveLocationId)) return;
-    try {
-      localStorage.setItem(draftKey(effectiveLocationId), JSON.stringify(counts));
-      // Dòng thêm bằng quét: chỉ nhớ dòng còn số đếm (xóa trắng ô đếm = bỏ dòng ở lần tải sau).
-      const extra = rows.filter(
-        (r) => !sheetIds.current.has(r.productId) && counts[r.productId] !== undefined && counts[r.productId] !== ""
-      );
-      if (extra.length) localStorage.setItem(extraKey(effectiveLocationId), JSON.stringify(extra));
-      else localStorage.removeItem(extraKey(effectiveLocationId));
-    } catch {
-      // bị chặn — bỏ qua
-    }
+    if (hydratedKey.current !== stocktakeDraftId(effectiveLocationId)) return;
+    // Dòng thêm bằng quét: chỉ nhớ dòng còn số đếm (xóa trắng ô đếm = bỏ dòng ở lần tải sau).
+    const extra = rows.filter((r) => !sheetIds.current.has(r.productId) && isCounted(counts, r.productId));
+    writeStocktakeDraft(effectiveLocationId, counts, extra);
   }, [counts, rows, effectiveLocationId]);
 
   // Phiếu tải xong → con trỏ vào sẵn ô quét (máy có chuột; điện thoại thì không bật bàn phím).
@@ -250,16 +196,11 @@ export default function StocktakePage() {
 
   // Nhớ số dòng/trang theo trình duyệt (đọc sau khi gắn trang để khỏi lệch với bản dựng sẵn).
   useEffect(() => {
-    try {
-      const n = Number(localStorage.getItem(PAGE_SIZE_KEY));
-      if (PAGE_SIZES.includes(n)) setPageSize(n);
-    } catch {
-      // bị chặn — bỏ qua
-    }
+    setPageSize(readStocktakePageSize());
   }, []);
 
   const counted = useMemo(
-    () => rows.filter((r) => counts[r.productId] !== undefined && counts[r.productId] !== ""),
+    () => rows.filter((r) => isCounted(counts, r.productId)),
     [rows, counts]
   );
   const diffs = useMemo(
@@ -409,8 +350,8 @@ export default function StocktakePage() {
     try {
       // Máy chủ nhận tối đa 500 mã mỗi lần chốt (mỗi lần một giao dịch). Phiếu lệch nhiều hơn
       // — lần kiểm kê đầu của shop vài nghìn mã — thì gửi nối tiếp từng lượt 500.
-      for (let i = 0; i < items.length; i += SUBMIT_CHUNK) {
-        const part = items.slice(i, i + SUBMIT_CHUNK);
+      for (let i = 0; i < items.length; i += STOCKTAKE_SUBMIT_CHUNK) {
+        const part = items.slice(i, i + STOCKTAKE_SUBMIT_CHUNK);
         const res = await submitStocktake({
           locationId: effectiveLocationId || undefined,
           items: part,
@@ -422,12 +363,7 @@ export default function StocktakePage() {
       toast.success(
         `Đã chốt kiểm kê: điều chỉnh ${formatNumber(adjusted)} mã — mỗi mã một dòng trong Nhật ký kho, sàn nhận số mới`
       );
-      try {
-        localStorage.removeItem(draftKey(effectiveLocationId));
-        localStorage.removeItem(extraKey(effectiveLocationId));
-      } catch {
-        // bỏ qua
-      }
+      clearStocktakeDraft(effectiveLocationId);
       setCounts({});
       setNote("");
       setOnlyDiff(false);
@@ -668,7 +604,7 @@ export default function StocktakePage() {
           )}
         </div>
         {/* Phân trang — chọn 20/50/100 dòng/trang như các bảng khác; phiếu ngắn thì không bày ra */}
-        {!loading && visible.length > PAGE_SIZES[0] && (
+        {!loading && visible.length > STOCKTAKE_PAGE_SIZES[0] && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Hiển thị</span>
@@ -680,16 +616,12 @@ export default function StocktakePage() {
                   const n = Number(e.target.value);
                   setPageSize(n);
                   setPage(1);
-                  try {
-                    localStorage.setItem(PAGE_SIZE_KEY, String(n));
-                  } catch {
-                    // bị chặn — bỏ qua
-                  }
+                  writeStocktakePageSize(n);
                   // Trả con trỏ về ô quét: để ở ô chọn thì số máy quét bắn ra sẽ đổi lựa chọn.
                   scanRef.current?.focus();
                 }}
               >
-                {PAGE_SIZES.map((n) => (
+                {STOCKTAKE_PAGE_SIZES.map((n) => (
                   <option key={n} value={n}>
                     {n}
                   </option>

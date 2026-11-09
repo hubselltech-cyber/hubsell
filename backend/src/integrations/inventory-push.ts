@@ -259,7 +259,7 @@ async function wakeChannels(channelIds: string[], tx?: Prisma.TransactionClient)
  * không kéo cả cụm detector điều hành vào luồng đơn hàng lúc nạp module;
  * best-effort, không chờ, không ném.
  */
-function checkLowStockLater(ids: string[]): void {
+export function checkLowStockLater(ids: string[]): void {
   void import("../services/ops-alerts")
     .then((m) => m.checkLowStock(ids))
     .catch((err) => console.error("[Low-stock] Không kiểm tra được ngưỡng:", err));

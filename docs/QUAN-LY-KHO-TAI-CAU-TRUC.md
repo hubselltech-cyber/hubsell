@@ -485,7 +485,7 @@ nhiều mã có ô Nhà cung cấp; không tràn ngang ở 1920. **Chưa kiểm 
 
 **Em đề xuất ranh giới nếu anh gật (chưa làm):** chỉ công nợ **phải trả NCC theo phiếu nhập**, đặt trong tab Nhà cung cấp sẵn có + phiếu nhập; KHÔNG menu "Công nợ" riêng, KHÔNG công nợ khách lẻ / nhân viên / đối tác, KHÔNG định khoản hay tuổi nợ, KHÔNG đụng Dòng tiền (tiền trả NCC đã là chi phí nhập hàng qua giá vốn — cộng thêm là đếm hai lần). Câu cần hỏi khách trước: "công nợ" khách nói là nợ NCC hay nợ khách sỉ lấy hàng? Nếu là khách sỉ offline thì đó là bán hàng/CRM, không phải kho.
 
-### 8.1 ĐÃ LÀM (08/11/2026 đêm, anh: "Làm bản hẹp NCC") — local, CHƯA commit / CHƯA push
+### 8.1 ĐÃ LÀM (08/11/2026 đêm, anh: "Làm bản hẹp NCC") — ĐÃ PUSH 08/11, prod OK
 
 **Nguyên tắc giữ đúng ranh giới ở trên:** công nợ = đuôi của TỪNG PHIẾU NHẬP có nhà cung cấp; không menu Công nợ, không công nợ
 khách / nhân viên / đối tác, không định khoản, không tuổi nợ, KHÔNG ghi vào Dòng tiền (tiền trả NCC đã nằm trong giá vốn — cộng
@@ -540,7 +540,7 @@ cho cột Giá trị, bản in và công nợ.
 - KHÔNG chặn hộp Ghi trả tiền với phiếu chưa ghi giá nhập ("chắc không cần"): công nợ phiếu không có giá nhập tính trên giá vốn mặc định theo đúng luật một con số; khách muốn chuẩn thì gõ giá nhập.
 
 
-## 9. Kiểm kê bằng máy quét — quét liên tục, con trỏ ở lại ô quét (09/11/2026; local, CHƯA commit / CHƯA push)
+## 9. Kiểm kê bằng máy quét — quét liên tục, con trỏ ở lại ô quét (09/11/2026; ĐÃ PUSH `8315c2f3` + `dbb672c9`, prod OK — xem 10.4)
 
 Khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét thật (ca đầu tiên có máy quét thật — mục 6.3 ghi "CHƯA kiểm: máy quét thật") và báo: quét xong ô đếm nhảy số lạ, quét lần 2 không cộng mà ra số cam nghìn tỷ, quét mã khác thì số rơi vào dòng dưới; mỗi lần quét phải chỏ chuột lại ô quét. Khách muốn: đặt con trỏ MỘT lần, quét mã nào số mã đó nhảy.
 
@@ -567,9 +567,9 @@ Khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét thật (ca
   - Mã có trong Tổng kho nhưng không nằm trong phiếu (vị trí này sổ 0) → thêm một dòng cuối bảng, Sổ 0, đếm 1; quét lần 2 → 2 (vẫn một dòng).
   - Gõ tay mã SKU chữ thường (`vay01-den-l`) → nhận, thêm dòng, đếm 1.
 - **Kẽ hở tìm ra và đã vá:** mã vạch đọc THIẾU một số (12 số) mà máy chủ tìm ra đúng một sản phẩm "gần giống" thì bản cũ cộng luôn vào sản phẩm đó (nhánh "chỉ ra một kết quả thì nhận", vốn để gõ tay một phần mã SKU). Nay dãy ≥ 8 chữ số phải trùng khít mã vạch / mã SKU mới được cộng; gõ tay mã có chữ vẫn giữ sự tiện tay cũ. Đã thử: 12 số → báo "Không có SKU nào khớp", không cộng.
-- **Dòng thêm bằng quét mất khi tải lại trang — ĐÃ SỬA (anh: "Sửa luôn"):** bản nháp trước chỉ nhớ số của mã có trong phiếu. Nay các dòng thêm bằng quét còn số đếm được lưu riêng (`hubsell_stocktake_extra_<vị trí>`), tải lại trang nạp lại sau các dòng của phiếu. Luật: xóa trắng ô đếm của dòng đó = lần tải sau bỏ dòng; mã nay đã vào phiếu (vừa có hàng ở vị trí) thì dùng dòng của phiếu, giữ số đếm; Chốt xong xóa cả hai khóa nháp; Chốt báo 404 (có mã bị xóa khỏi kho giữa chừng) thì thôi nhớ dòng thêm bằng quét để tải lại không kẹt ở mã hỏng. Đã thử local: quét 2 mã ngoài phiếu → tải lại còn đủ dòng + số, quét tiếp cộng đúng; xóa trắng một ô → tải lại dòng đó biến mất, dòng kia còn. CHƯA thử: bấm Chốt có dòng thêm bằng quét và nhánh 404 — em không bấm Chốt trên local vì chốt sẽ đổi tồn và xếp việc đẩy tồn lên sàn trong DB local.
+- **Dòng thêm bằng quét mất khi tải lại trang — ĐÃ SỬA (anh: "Sửa luôn"):** bản nháp trước chỉ nhớ số của mã có trong phiếu. Nay các dòng thêm bằng quét còn số đếm được lưu riêng (`hubsell_stocktake_extra_<vị trí>`), tải lại trang nạp lại sau các dòng của phiếu. Luật: xóa trắng ô đếm của dòng đó = lần tải sau bỏ dòng; mã nay đã vào phiếu (vừa có hàng ở vị trí) thì dùng dòng của phiếu, giữ số đếm; Chốt xong xóa cả hai khóa nháp; Chốt báo 404 (có mã bị xóa khỏi kho giữa chừng): bản đầu thôi nhớ dòng thêm bằng quét; từ 9.4 phiếu tự tải lại và mã đã xóa tự rời phiếu. Đã thử local: quét 2 mã ngoài phiếu → tải lại còn đủ dòng + số, quét tiếp cộng đúng; xóa trắng một ô → tải lại dòng đó biến mất, dòng kia còn. CHƯA thử: bấm Chốt có dòng thêm bằng quét và nhánh 404 — em không bấm Chốt trên local vì chốt sẽ đổi tồn và xếp việc đẩy tồn lên sàn trong DB local.
 
-### 9.2 Phân trang bảng Kiểm kê (09/11, anh: "Phần này em đã phân trang ra chưa") — local, CHƯA commit
+### 9.2 Phân trang bảng Kiểm kê (09/11, anh: "Phần này em đã phân trang ra chưa")
 
 Trước đó CHƯA phân trang: phiếu (tối đa 2.000 mã) vẽ hết trong một khung cuộn, mỗi phím gõ / lần quét vẽ lại cả bảng. Nay theo chuẩn bảng số liệu (20 / 50 / 100 dòng/trang, nhớ theo trình duyệt `hubsell_stocktake_page_size`):
 
@@ -581,7 +581,7 @@ Trước đó CHƯA phân trang: phiếu (tối đa 2.000 mã) vẽ hết trong 
 - **Đã thử local** (25 mã, 20 mã/trang): đang trang 1 quét mã trang 2 → sang trang 2, đúng dòng +1; đang trang 2 quét mã trang 1 → về trang 1; mã lạ → báo đỏ, không lật trang; Enter ô cuối trang 1 → con trỏ vào ô đầu trang 2; ô rác ở trang 2, đứng trang 1 bấm "1 ô sai số" → tới đúng ô; tải lại trang → nhớ 20 mã/trang. `tsc` + `eslint` sạch.
 - **CHƯA:** đo độ mượt với phiếu 2.000 mã thật (local chỉ dựng được 25 dòng); trần 2.000 mã của phiếu giữ nguyên (mã thứ 2.001 trở đi vẫn quét vào được như mã ngoài phiếu, nay với số Sổ thật — mục 9.3).
 
-### 9.3 Số Sổ thật cho mã quét ngoài phiếu (09/11, anh: "Sửa luôn") — local, CHƯA commit
+### 9.3 Số Sổ thật cho mã quét ngoài phiếu (09/11, anh: "Sửa luôn")
 
 - **Lỗi cũ:** dòng thêm bằng quét luôn ghi cứng Sổ = 0. Đúng với shop dùng vị trí (mã ngoài phiếu = vị trí đó không có), SAI với shop không dùng vị trí: mã ngừng bán / mã ngoài 2.000 dòng đầu vẫn có tồn. Hệ quả không chỉ là hiển thị: trang chỉ gửi lên mã có "đếm ≠ Sổ", nên đếm ra đúng 0 (hết hàng thật) mà Sổ hiện 0 thì mã đó KHÔNG được gửi → sót điều chỉnh.
 - **Sửa:** lúc quét, Sổ lấy từ kết quả tra sản phẩm — không dùng vị trí = `quantityInStock`; dùng vị trí = tồn của mã ở đúng vị trí đang kiểm (không có thì 0). Lúc tải lại trang, các dòng thêm bằng quét hỏi lại máy chủ số Sổ hiện tại qua `POST /api/inventory/stocktake/rows` `{ locationId?, productIds[≤500] }` (chỉ đọc; POST vì danh sách id dài). Mã đã bị xóa khỏi kho thì máy chủ không trả về → trang tự bỏ dòng. Hỏi không được (mất mạng, backend chưa lên bản mới) → tạm dùng Sổ đã nhớ trong máy.
@@ -592,7 +592,7 @@ Trước đó CHƯA phân trang: phiếu (tối đa 2.000 mã) vẽ hết trong 
 ### 9.4 Đợt hai (09/11, anh: "commit phần này rồi tiếp tục sửa") — đợt một đã commit `8315c2f3`
 
 - **Tem in MÃ SKU có chữ bắn nhầm vào ô đếm (lớp chặn 3b).** Ô số nuốt mất chữ nên lớp 3 (≥ 8 chữ số) không bắt được. Nay ở ô đếm, một phím in được KHÁC chữ số (chữ cái, gạch, chấm…) = mã quét: chuyển sang ô quét kèm phần chữ số vừa gõ vào ô đó (đầu mã), ô đếm về lại số cũ. Ca hay gặp: gõ tay một số đếm + Enter → con trỏ sang ô đếm kế → cầm máy quét bắn tiếp. Đánh đổi (không dùng ngưỡng thời gian): gõ tay số đếm mà CHƯA Enter rồi bắn tem có chữ thì số vừa gõ bị coi là đầu mã → báo đỏ "Không có SKU nào khớp", ô về số cũ.
-- **Chốt phiếu > 500 mã lệch.** Máy chủ nhận tối đa 500 mã mỗi lần (`STOCKTAKE_MAX`); trước đây trang gửi hết một lần → lần kiểm kê đầu của shop vài nghìn mã (sổ 0, đếm ra hết) bị từ chối "Phiếu kiểm kê cần 1–500 mã" sau khi đã đếm xong. Nay trang gửi nối tiếp từng lượt 500 (`SUBMIT_CHUNK`, phải khớp `STOCKTAKE_MAX`), mỗi lượt một giao dịch. Hỏng giữa chừng: báo "Đã chốt X/Y mã lệch thì gặp lỗi… bấm Chốt lần nữa cho phần còn lại", phiếu tự tải lại — mã đã ghi thành "khớp", số đếm còn lại vẫn giữ.
+- **Chốt phiếu > 500 mã lệch.** Máy chủ nhận tối đa 500 mã mỗi lần (`STOCKTAKE_MAX`); trước đây trang gửi hết một lần → lần kiểm kê đầu của shop vài nghìn mã (sổ 0, đếm ra hết) bị từ chối "Phiếu kiểm kê cần 1–500 mã" sau khi đã đếm xong. Nay trang gửi nối tiếp từng lượt 500 (`STOCKTAKE_SUBMIT_CHUNK` trong `frontend/src/lib/stocktake.ts`, phải khớp `STOCKTAKE_MAX`), mỗi lượt một giao dịch. Hỏng giữa chừng: báo "Đã chốt X/Y mã lệch thì gặp lỗi… bấm Chốt lần nữa cho phần còn lại", phiếu tự tải lại — mã đã ghi thành "khớp", số đếm còn lại vẫn giữ.
 - **Phiếu tự tải lại tại chỗ** (`reloadTick`) sau khi chốt, chốt dở, hoặc Chốt báo 404 (có mã bị xóa khỏi kho giữa lúc đếm — tải lại là mã đó tự rời phiếu, kể cả dòng thêm bằng quét vì `/stocktake/rows` không trả về). Bỏ cờ `forgetExtras` của mục 9.1.
 - **Ô quét không còn giữ chữ đang gõ trong state** (đọc / xóa thẳng trên ô nhập): trước đó mỗi phím máy quét bắn ra vẽ lại cả bảng.
 - **Đo trên local, phiếu GIẢ 2.000 mã, 100 mã/trang, bản DEV** (máy chủ giả ngay trong trình duyệt — không ghi DB): bảng chỉ vẽ 100 dòng; phím gõ ở ô quét ~7 ms xử lý (không vẽ lại bảng); Enter của một lần quét ~90–100 ms, kể cả khi phải lật từ trang 1 sang trang 20; gõ một chữ số ở ô đếm ~70–130 ms. Bản dev chậm hơn bản build nhiều lần; CHƯA đo bản build / prod. Nếu prod còn ì khi gõ ô đếm: tách dòng thành component có `memo` để mỗi lần chỉ vẽ lại một dòng (chưa làm).
@@ -600,7 +600,7 @@ Trước đó CHƯA phân trang: phiếu (tối đa 2.000 mã) vẽ hết trong 
 - **Đã thử thật trên backend local:** `POST /inventory/stocktake` với số đếm 10.000.000 → 400, tồn không đổi.
 - **CHƯA:** bấm Chốt THẬT vào DB local (sẽ đổi tồn + xếp việc đẩy tồn lên sàn; tài khoản demo có 18 sản phẩm sàn đang nối nên em không bấm); máy quét thật; đo bản build; trần 2.000 mã của phiếu giữ nguyên.
 
-## 10. Tổng kho: cài nhanh cảnh báo / tồn an toàn cho nhiều SKU + cột Giá trị tồn + đổi tên cột "Đang ở" → "Vị trí" (09/11/2026; local, CHƯA commit / CHƯA push)
+## 10. Tổng kho: cài nhanh cảnh báo / tồn an toàn cho nhiều SKU + cột Giá trị tồn + đổi tên cột "Đang ở" → "Vị trí" (09/11/2026; ĐÃ PUSH `b1a71642`, prod OK — xem 10.4)
 
 Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh hai chỗ): (1) "một nút cài đặt nhanh — tích vào nhiều sản phẩm và cài đặt cảnh báo, số lượng an toàn" thay vì mở ⋯ từng dòng; (2) "thêm cột tổng giá trị tồn = số lượng × giá vốn". Trong lúc làm anh nhắn thêm: **"Đang ở" đổi tên thành "Vị trí"** và **"phần này em chú ý tới tỉ lệ màn hình"**.
 
@@ -616,7 +616,7 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
 - **Bản đầu em thêm hẳn một cột → laptop 1366–1440 phải cuộn ngang, cột Nhập · Xuất bị cắt; số 8–9 chữ số đè sang cột Bán trên.** Sau lời nhắc về tỉ lệ màn hình, đổi thành:
   - khung bảng ĐỦ rộng → cột riêng "Giá trị tồn" giữa Bán trên và Nhập · Xuất (chỗ anh khoanh), bề rộng cố định 7rem (112px) để không ăn vào % các cột đã đo; từ 1 tỷ trở lên hạ cỡ chữ;
   - khung hẹp hơn → ẩn cột, giá trị thành DÒNG NHỎ rút gọn dưới số Tồn kho ("≈ 298,4tr ₫", số đủ trong chú thích khi rê chuột) — cùng kiểu dòng "an toàn N" ở cột Có thể bán.
-  - Ngưỡng theo container query trên khung bảng (`@container` ở CardContent; `VALUE_COL_SHOW` / `VALUE_SUBLINE_SHOW` trong `app/products/page.tsx`): 1.088px khi không có cột Vị trí, 1.152px khi có. Bề rộng tối thiểu của bảng GIỮ như cũ (1.000 / 1.040px).
+  - Ngưỡng theo container query trên khung bảng (`@container` ở CardContent; `STOCK_VALUE_SHOW` trong `components/products/stock-value.tsx`): 1.088px khi không có cột Vị trí, 1.152px khi có. Bề rộng tối thiểu của bảng GIỮ như cũ (1.000 / 1.040px).
 - **Đo trên local** (JS đo chữ tràn khỏi ô; số bơm thử 298.400.000 và 998.888.888; dòng nhỏ "≈ 998,9tr ₫", "≈ 12,35 tỷ ₫"):
 
   | Màn | Có cột Vị trí (admin) | Không có cột Vị trí (demo) |
@@ -633,3 +633,15 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
 - **Đã thử local:** chưa tích mà bấm → nhắc; tích 2 SKU → nhãn "(2)", hộp mở, ô ngưỡng nhận con trỏ sẵn; nhập ngưỡng 7, để trống tồn an toàn → "Đã cài ngưỡng cảnh báo 7 cho 2 SKU", API đọc lại ngưỡng 7 và tồn an toàn KHÔNG đổi, bỏ tích hết (đã trả 2 SKU về như cũ). Gọi API thẳng trên 3 SKU CHƯA nối sàn: đặt tồn an toàn 2 + ngưỡng 4 → `pushed: 3`, Có thể bán 7 → 8; gửi lại y hệt → `pushed: 0`; trả về mặc định → như cũ. Thiếu cả hai trường → 400; số âm → 400. `tsc` hai phía + `eslint` sạch.
 - **CHƯA thử:** bấm Áp có đổi tồn an toàn trên SKU ĐANG nối sàn (sẽ xếp việc đẩy tồn trong DB local — không bấm); > 500 SKU; tài khoản nhân viên (không thấy giá vốn → không có cột; không phải chủ shop → không có nút — theo mã, chưa mở thử); màn 1280 không có cột Vị trí; mobile (app mobile chưa có hai thứ này).
 - **Chưa làm (không ai xin):** tổng giá trị tồn của CẢ kho (một con số ở đầu / cuối bảng); cột Giá trị tồn trong file Excel xuất ra; sắp xếp theo giá trị tồn.
+
+### 10.4 Push + kiểm prod + dọn mã (09/11/2026 chiều)
+
+**Push (anh: "Em push hết lên nhé"):** `8315c2f3` + `dbb672c9` (Kiểm kê) + `b1a71642` (Tổng kho), không có migration. **Kiểm prod:** backend `/health` = `b1a71642`; mở app prod bằng tài khoản chủ shop (chỉ xem, không lưu gì), màn 1920: Tổng kho có cột "Vị trí", cột "Giá trị tồn" (100 dòng, số dài nhất 298.400.000 ₫, không ô nào tràn, không cuộn ngang) và nút "Cài cảnh báo & tồn an toàn"; Kiểm kê 187 mã vẽ 50 dòng/trang, con trỏ nằm sẵn ô quét, hết dòng chú thích. CHƯA làm trên prod: quét thật, bấm Chốt, bấm Áp cài hàng loạt.
+
+**Dọn mã (anh: "Dọn dẹp code thừa … đảm bảo mô hình tree chuyên nghiệp") — không đổi hành vi, đã commit + push cùng ngày:**
+- Trang Kiểm kê chỉ còn điều phối giao diện: luật (mã quét ≥ 8 chữ số, trần số đếm, lượt chốt 500, cỡ trang) + đọc / ghi bản nháp trình duyệt → `frontend/src/lib/stocktake.ts`. Trang không còn gọi `localStorage` trực tiếp.
+- Giá trị tồn: `stockValueOf`, `groupStockValue`, ngưỡng hiện / ẩn `STOCK_VALUE_SHOW`, ô `StockValueAmount` (dùng chung cho dòng lá và dòng cha, trước lặp hai lần), dòng nhỏ `StockValueSubline` → `frontend/src/components/products/stock-value.tsx` (luật: helper của trang ở `components/<nhóm>/`).
+- Backend: một hàm `parseStockSettings` (`routes/products.ts`) đọc tồn an toàn + ngưỡng cảnh báo cho cả `PATCH /products/:id` và `POST /products/bulk` (trước mỗi nơi tự kiểm một kiểu) — hệ quả duy nhất: sửa một SKU nay cũng có trần 1.000.000 như cài hàng loạt; cài hàng loạt gọi lại `checkLowStockLater` có sẵn của `integrations/inventory-push.ts` thay vì chép đoạn nạp `ops-alerts`; `POST /inventory/stocktake/rows` bỏ ép kiểu.
+- Xóa mã chết (knip + grep): `frontend/src/components/mappings/link-one-dialog.tsx` (hộp nối một SKU, không ai gọi từ 05/11 khi chuyển sang nối một chiều; thư mục `components/mappings/` hết tệp) và hai hàm `linkChannelProducts` / `linkChannelProductBySku` trong `lib/api.ts`. Route backend `/api/mappings/link*` GIỮ nguyên (chưa rà app mobile).
+- Kiểm sau dọn: `tsc` hai phía + `eslint` tệp sửa sạch; chạy lại local: sửa một SKU (số âm / số lẻ → 400, đặt rồi trả về mặc định), cài hàng loạt, `/stocktake/rows` có / không vị trí, cột ↔ dòng nhỏ ở 1536 / 1366, quét + tải lại trang Kiểm kê giữ số.
+- knip còn báo nhưng KHÔNG đụng (ngoài phạm vi phiên, phần lớn chỉ thừa từ khóa `export`): `startBulkConfirm` / `fetchBulkConfirmProgress` trong `lib/api.ts`, 4 hàm `exportXxxToExcel`, vài hàm ở `channel-products/shared.ts`.

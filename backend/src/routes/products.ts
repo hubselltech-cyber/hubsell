@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import {
   availableToPush,
+  checkLowStockLater,
   enqueueStockPush,
   finishStockPush,
   getSafetyStockDefault,
@@ -549,32 +550,16 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
 
     // ── Tồn an toàn per-SKU (Đồng bộ tồn kho đa sàn) — null/rỗng = dùng mặc
     // định toàn shop (ShopSyncSetting.safetyStockDefault) ──
-    const { safetyStock, lowStockThreshold } = req.body ?? {};
-    if (safetyStock !== undefined) {
-      if (safetyStock === null || safetyStock === "") {
-        data.safetyStock = null;
-      } else {
-        const n = Number(safetyStock);
-        if (!Number.isInteger(n) || n < 0) {
-          res.status(400).json({ error: "Tồn an toàn phải là số nguyên không âm" });
-          return;
-        }
-        data.safetyStock = n;
-      }
-    }
     // ── Ngưỡng cảnh báo sắp hết hàng per-SKU — null/rỗng = mặc định shop, 0 = tắt ──
-    if (lowStockThreshold !== undefined) {
-      if (lowStockThreshold === null || lowStockThreshold === "") {
-        data.lowStockThreshold = null;
-      } else {
-        const n = Number(lowStockThreshold);
-        if (!Number.isInteger(n) || n < 0) {
-          res.status(400).json({ error: "Ngưỡng cảnh báo phải là số nguyên không âm" });
-          return;
-        }
-        data.lowStockThreshold = n;
-      }
+    // (luật đọc hai trường: parseStockSettings)
+    const stockSettings = parseStockSettings(req.body);
+    if ("error" in stockSettings) {
+      res.status(400).json({ error: stockSettings.error });
+      return;
     }
+    const { safetyStock, lowStockThreshold } = stockSettings;
+    if (safetyStock !== undefined) data.safetyStock = safetyStock;
+    if (lowStockThreshold !== undefined) data.lowStockThreshold = lowStockThreshold;
 
     // ── MÃ VẠCH QUẢN LÝ (05/11/2026) — khách gõ mã có sẵn (mã nhà sản xuất, mã từ phần mềm cũ);
     // để trống = nhờ máy sinh mã 13 số mới. Không trùng mã vạch SKU khác, và không trùng MÃ SKU
@@ -659,6 +644,29 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
   }
 });
 
+/**
+ * Hai cài đặt tồn của SKU trong body: tồn an toàn + ngưỡng cảnh báo sắp hết hàng. Mỗi trường:
+ * vắng = không đổi (undefined) · null / rỗng = về mặc định toàn shop · số nguyên 0 … 1.000.000.
+ * Dùng chung cho sửa một SKU (PATCH /:id) và cài hàng loạt (POST /bulk, action "stockSettings").
+ */
+const STOCK_SETTING_MAX = 1_000_000;
+function parseStockSettings(
+  body: unknown
+): { safetyStock?: number | null; lowStockThreshold?: number | null } | { error: string } {
+  const src = (body ?? {}) as { safetyStock?: unknown; lowStockThreshold?: unknown };
+  const one = (v: unknown): number | null | undefined | false => {
+    if (v === undefined) return undefined;
+    if (v === null || v === "") return null;
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 0 && n <= STOCK_SETTING_MAX ? n : false;
+  };
+  const safetyStock = one(src.safetyStock);
+  if (safetyStock === false) return { error: "Tồn an toàn phải là số nguyên không âm" };
+  const lowStockThreshold = one(src.lowStockThreshold);
+  if (lowStockThreshold === false) return { error: "Ngưỡng cảnh báo phải là số nguyên không âm" };
+  return { safetyStock, lowStockThreshold };
+}
+
 const DELETE_GUARD_SELECT = {
   id: true,
   skuCode: true,
@@ -718,22 +726,12 @@ router.post("/bulk", async (req: AuthRequest, res, next) => {
     const idList = [...new Set(ids as string[])];
 
     if (action === "stockSettings") {
-      const parseSetting = (v: unknown): number | null | undefined | false => {
-        if (v === undefined) return undefined;
-        if (v === null || v === "") return null;
-        const n = Number(v);
-        return Number.isInteger(n) && n >= 0 && n <= 1_000_000 ? n : false;
-      };
-      const low = parseSetting(req.body?.lowStockThreshold);
-      const safety = parseSetting(req.body?.safetyStock);
-      if (low === false) {
-        res.status(400).json({ error: "Ngưỡng cảnh báo phải là số nguyên không âm" });
+      const stockSettings = parseStockSettings(req.body);
+      if ("error" in stockSettings) {
+        res.status(400).json({ error: stockSettings.error });
         return;
       }
-      if (safety === false) {
-        res.status(400).json({ error: "Tồn an toàn phải là số nguyên không âm" });
-        return;
-      }
+      const { lowStockThreshold: low, safetyStock: safety } = stockSettings;
       if (low === undefined && safety === undefined) {
         res.status(400).json({ error: "Nhập ngưỡng cảnh báo hoặc tồn an toàn" });
         return;
@@ -770,11 +768,7 @@ router.post("/bulk", async (req: AuthRequest, res, next) => {
         // Đổi ngưỡng → mở / đóng thẻ "sắp hết hàng" ngay, không cần đụng tới sàn. Best-effort.
         const pushed = new Set(safetyChanged);
         const rest = idList.filter((x) => !pushed.has(x));
-        if (rest.length) {
-          void import("../services/ops-alerts")
-            .then((m) => m.checkLowStock(rest))
-            .catch((err) => console.error("[Low-stock] Không kiểm tra được ngưỡng:", err));
-        }
+        checkLowStockLater(rest);
       }
       res.json({ action, affected: r.count, skipped: [], pushed: safetyChanged.length });
       return;

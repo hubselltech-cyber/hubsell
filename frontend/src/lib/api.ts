@@ -4358,38 +4358,6 @@ export function fetchChannelProducts(params: {
   return apiFetch<ChannelProductListResponse>(`/api/mappings?${qs.toString()}`);
 }
 
-/** Nối nhiều sản phẩm sàn về CÙNG một SKU gốc. */
-export function linkChannelProducts(channelProductIds: string[], productId: string) {
-  return apiFetch<{
-    linked: number;
-    product: { id: string; skuCode: string; productName: string };
-    /** Sản phẩm tồn 0 vừa nhận tồn ban đầu theo số trên sàn — null nếu không seed. */
-    seededStock: number | null;
-    /** SKU kho cũ hết liên kết sau khi chuyển → đã tự Ngừng bán (anh Trung 22/10). */
-    deactivated?: { id: string; skuCode: string }[];
-  }>("/api/mappings/link", {
-    method: "POST",
-    body: JSON.stringify({ channelProductIds, productId }),
-  });
-}
-
-/**
- * Nối MỘT dòng sàn bằng mã SKU kho gõ tại dòng (22/10/2026, kiểu Salework): mã có
- * sẵn → nối; chưa có → tạo SKU kho mới mang đúng mã rồi nối (tồn ban đầu theo sàn).
- */
-export function linkChannelProductBySku(channelProductId: string, skuCode: string) {
-  return apiFetch<{
-    product: { id: string; skuCode: string; productName: string; variantName: string | null; quantityInStock: number };
-    created: boolean;
-    seededStock: number | null;
-    /** SKU kho cũ hết liên kết sau khi đổi → đã tự Ngừng bán. */
-    deactivated?: { id: string; skuCode: string }[];
-  }>("/api/mappings/link-by-sku", {
-    method: "POST",
-    body: JSON.stringify({ channelProductId, skuCode }),
-  });
-}
-
 /** Gỡ liên kết — sản phẩm sàn vẫn còn ở tầng đệm, chỉ bỏ nối về kho gốc. */
 export function unlinkChannelProducts(channelProductIds: string[]) {
   return apiFetch<{ unlinked: number }>("/api/mappings/unlink", {
