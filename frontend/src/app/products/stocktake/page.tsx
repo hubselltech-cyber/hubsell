@@ -71,6 +71,9 @@ const SCAN_CODE_RE = /^\d{8,}$/;
 const PAGE_SIZES = [20, 50, 100];
 const PAGE_SIZE_DEFAULT = 50;
 const PAGE_SIZE_KEY = "hubsell_stocktake_page_size";
+
+/** Số mã tối đa mỗi lần gọi Chốt — PHẢI khớp `STOCKTAKE_MAX` ở backend/src/routes/inventory.ts. */
+const SUBMIT_CHUNK = 500;
 const COUNT_MAX = 9_999_999;
 
 function validCount(raw: string | undefined): number | null {
@@ -128,7 +131,8 @@ export default function StocktakePage() {
   const [onlyDiff, setOnlyDiff] = useState(false);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [query, setQuery] = useState("");
+  // Ô quét KHÔNG giữ chữ đang gõ trong state: máy quét bắn 13 phím liền nhau, mỗi phím mà vẽ lại
+  // cả bảng thì phiếu vài nghìn mã bị trễ thấy rõ. Đọc / xóa thẳng trên ô nhập qua `scanRef`.
   const [pending, setPending] = useState(0);
   const searching = pending > 0;
   /** Dòng vừa quét — `tick` đổi mỗi lần quét để cuộn lại cả khi quét trùng mã. */
@@ -137,13 +141,13 @@ export default function StocktakePage() {
   const tableBoxRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   /** Số trong ô đếm lúc con trỏ vào — để trả lại khi máy quét bắn nhầm vào ô đó. */
-  const focusValue = useRef<{ id: string; value: string } | null>(null);
+  const focusValue = useRef<{ id: string; value: string; typed: boolean } | null>(null);
   /** Khóa bản nháp đã nạp xong — chưa nạp thì chưa được ghi đè (xem "Nhớ bản nháp"). */
   const hydratedKey = useRef<string | null>(null);
   /** Mã do máy chủ trả trong phiếu — dòng nào ngoài tập này là dòng thêm bằng quét. */
   const sheetIds = useRef<Set<string>>(new Set());
-  /** Bật sau khi Chốt báo 404 (có mã đã bị xóa): thôi nhớ dòng thêm bằng quét tới lần tải phiếu kế. */
-  const forgetExtras = useRef(false);
+  /** Tăng để tải lại phiếu tại chỗ (sau khi chốt / chốt dở / có mã đã bị xóa khỏi kho). */
+  const [reloadTick, setReloadTick] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
   /** Dòng chờ cuộn vào giữa khung / ô chờ nhận con trỏ — làm sau khi trang chứa nó vẽ xong. */
@@ -192,7 +196,6 @@ export default function StocktakePage() {
         }
         setTruncated(r.truncated);
         sheetIds.current = new Set(ids);
-        forgetExtras.current = false;
         for (const x of extra) ids.add(x.productId);
         setRows([...r.rows, ...extra]);
         setCounts(Object.fromEntries(Object.entries(draft).filter(([id]) => ids.has(id))));
@@ -204,7 +207,7 @@ export default function StocktakePage() {
     return () => {
       cancelled = true;
     };
-  }, [effectiveLocationId, locationsQ.loading]);
+  }, [effectiveLocationId, locationsQ.loading, reloadTick]);
 
   // Nhớ bản nháp — CHỈ ghi sau khi phiếu của đúng vị trí này đã nạp xong bản nháp cũ.
   // Trước 09/11/2026 hiệu ứng này chạy ngay lúc mở trang với `counts` còn rỗng, ghi đè
@@ -214,11 +217,9 @@ export default function StocktakePage() {
     try {
       localStorage.setItem(draftKey(effectiveLocationId), JSON.stringify(counts));
       // Dòng thêm bằng quét: chỉ nhớ dòng còn số đếm (xóa trắng ô đếm = bỏ dòng ở lần tải sau).
-      const extra = forgetExtras.current
-        ? []
-        : rows.filter(
-            (r) => !sheetIds.current.has(r.productId) && counts[r.productId] !== undefined && counts[r.productId] !== ""
-          );
+      const extra = rows.filter(
+        (r) => !sheetIds.current.has(r.productId) && counts[r.productId] !== undefined && counts[r.productId] !== ""
+      );
       if (extra.length) localStorage.setItem(extraKey(effectiveLocationId), JSON.stringify(extra));
       else localStorage.removeItem(extraKey(effectiveLocationId));
     } catch {
@@ -356,7 +357,7 @@ export default function StocktakePage() {
   async function handleScan(code: string) {
     const q = code.trim();
     if (!q) return;
-    setQuery("");
+    if (scanRef.current) scanRef.current.value = "";
     scanRef.current?.focus();
     const hit = rows.find((r) => productMatchesCode(r, q));
     if (hit) {
@@ -402,14 +403,24 @@ export default function StocktakePage() {
   async function handleSubmit() {
     if (invalid.length || diffs.length === 0) return;
     setSubmitting(true);
+    const items = diffs.map((d) => ({ productId: d.row.productId, counted: d.n }));
+    let adjusted = 0;
+    let sent = 0;
     try {
-      const res = await submitStocktake({
-        locationId: effectiveLocationId || undefined,
-        items: diffs.map((d) => ({ productId: d.row.productId, counted: d.n })),
-        note: note.trim() || undefined,
-      });
+      // Máy chủ nhận tối đa 500 mã mỗi lần chốt (mỗi lần một giao dịch). Phiếu lệch nhiều hơn
+      // — lần kiểm kê đầu của shop vài nghìn mã — thì gửi nối tiếp từng lượt 500.
+      for (let i = 0; i < items.length; i += SUBMIT_CHUNK) {
+        const part = items.slice(i, i + SUBMIT_CHUNK);
+        const res = await submitStocktake({
+          locationId: effectiveLocationId || undefined,
+          items: part,
+          note: note.trim() || undefined,
+        });
+        adjusted += res.adjusted;
+        sent += part.length;
+      }
       toast.success(
-        `Đã chốt kiểm kê: điều chỉnh ${formatNumber(res.adjusted)} mã — mỗi mã một dòng trong Nhật ký kho, sàn nhận số mới`
+        `Đã chốt kiểm kê: điều chỉnh ${formatNumber(adjusted)} mã — mỗi mã một dòng trong Nhật ký kho, sàn nhận số mới`
       );
       try {
         localStorage.removeItem(draftKey(effectiveLocationId));
@@ -418,33 +429,30 @@ export default function StocktakePage() {
         // bỏ qua
       }
       setCounts({});
-      setLastScan(null);
       setNote("");
       setOnlyDiff(false);
       setPage(1);
-      invalidate(["products"]);
-      invalidate(["inventory-logs"]);
-      invalidate(["stock-locations"]);
-      // Tải lại sổ sau khi chốt
-      const r = await fetchStocktakeSheet(effectiveLocationId || undefined);
-      sheetIds.current = new Set(r.rows.map((x) => x.productId));
-      setRows(r.rows);
     } catch (err) {
-      // 404 = có mã đã bị xóa khỏi kho trong lúc đếm (máy chủ không nói mã nào). Nếu đó là
-      // dòng thêm bằng quét thì "tải lại phiếu" sẽ nạp lại đúng mã hỏng và kẹt mãi → thôi
-      // nhớ các dòng thêm bằng quét cho tới lần tải phiếu kế. Số đếm của mã trong phiếu vẫn giữ.
-      if (err instanceof ApiError && err.status === 404) {
-        forgetExtras.current = true;
-        try {
-          localStorage.removeItem(extraKey(effectiveLocationId));
-        } catch {
-          // bỏ qua
-        }
-      }
-      toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ", { duration: 8000 });
+      const msg = err instanceof ApiError ? err.message : "Không kết nối được máy chủ";
+      // Hỏng giữa chừng: các lượt trước ĐÃ ghi. Số đếm vẫn giữ nguyên trong máy; phiếu tải lại
+      // bên dưới sẽ cho các mã đã ghi thành "khớp", phần còn lại vẫn lệch để bấm Chốt tiếp.
+      toast.error(
+        sent > 0
+          ? `Đã chốt ${formatNumber(sent)}/${formatNumber(items.length)} mã lệch thì gặp lỗi: ${msg}. Số đếm còn lại vẫn giữ — bấm Chốt lần nữa cho phần còn lại.`
+          : msg,
+        { duration: sent > 0 ? 15000 : 8000 }
+      );
+      // Chưa ghi được gì và không phải lỗi "mã không còn trong kho" → giữ nguyên màn, khỏi tải lại.
+      if (sent === 0 && !(err instanceof ApiError && err.status === 404)) return;
     } finally {
       setSubmitting(false);
     }
+    // Tải lại phiếu: sau khi chốt (sổ mới), sau khi chốt dở, hoặc khi có mã đã bị xóa khỏi kho
+    // giữa lúc đếm (404 — tải lại là mã đó tự rời phiếu, số đếm các mã khác vẫn giữ).
+    invalidate(["products"]);
+    invalidate(["inventory-logs"]);
+    invalidate(["stock-locations"]);
+    setReloadTick((t) => t + 1);
   }
 
   const lastScanRow = lastScan ? rows.find((r) => r.productId === lastScan.id) : undefined;
@@ -495,8 +503,6 @@ export default function StocktakePage() {
                 ref={scanRef}
                 className="pl-9"
                 placeholder="Quét mã vạch, hoặc gõ mã SKU rồi Enter: cộng 1 vào ô đếm…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -604,12 +610,31 @@ export default function StocktakePage() {
                             step={1}
                             placeholder="—"
                             value={raw ?? ""}
-                            onChange={(e) => setCount(r.productId, e.target.value)}
+                            onChange={(e) => {
+                              if (focusValue.current?.id === r.productId) focusValue.current.typed = true;
+                              setCount(r.productId, e.target.value);
+                            }}
                             onFocus={(e) => {
-                              focusValue.current = { id: r.productId, value: raw ?? "" };
+                              focusValue.current = { id: r.productId, value: raw ?? "", typed: false };
                               e.currentTarget.select();
                             }}
                             onKeyDown={(e) => {
+                              // Lớp chặn 3b: số đếm chỉ gồm chữ số. Một phím in được KHÁC chữ số (chữ
+                              // cái, gạch, chấm…) ở ô đếm = máy quét đang bắn tem in MÃ SKU có chữ
+                              // (vd AT-DT-CT-NAU-L) — ô số sẽ nuốt mất chữ. Chuyển sang ô quét: phần
+                              // chữ số vừa gõ vào ô này (nếu có) là đầu mã, ô đếm về lại số cũ.
+                              if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !/\d/.test(e.key)) {
+                                e.preventDefault();
+                                const before = focusValue.current;
+                                const mine = before?.id === r.productId ? before : null;
+                                const head = mine?.typed ? e.currentTarget.value : "";
+                                if (mine?.typed) setCount(r.productId, mine.value);
+                                if (scanRef.current) {
+                                  scanRef.current.value = head + e.key;
+                                  scanRef.current.focus();
+                                }
+                                return;
+                              }
                               if (e.key !== "Enter") return;
                               e.preventDefault();
                               const typed = e.currentTarget.value.trim();

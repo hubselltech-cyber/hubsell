@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 09/11 (4) — Anh: khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét, số nhảy sai + mỗi lần quét phải chỏ chuột lại → ĐÃ SỬA trên local, CHƯA commit / CHƯA push
+## Phiên 09/11 (4) — Anh: khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét, số nhảy sai + mỗi lần quét phải chỏ chuột lại → ĐÃ SỬA + COMMIT 2 đợt (đợt một `8315c2f3`), CHƯA push
 
 - **Khách báo:** quét 1 lần ô đếm nhảy "số gì ấy", quét lần 2 không cộng mà ra số cam, quét mã khác thì không nhảy đúng dòng; mỗi lần quét phải chỏ chuột về ô quét. Muốn: đặt con trỏ một lần, quét mã nào nhảy mã đó.
 - **Gốc lỗi:** trang Kiểm kê (`frontend/src/app/products/stocktake/page.tsx`) quét trúng xong lại chuyển con trỏ sang ô "Thực đếm" → lần quét kế gõ nguyên 13 số mã vạch vào ô đếm, Enter của máy quét đẩy con trỏ xuống dòng dưới. Phiếu nhiều mã + Cất lên kệ không dính (vốn giữ con trỏ ở ô quét).
@@ -19,6 +19,9 @@
 - **Anh (lượt 4): "Phần này em đã phân trang ra chưa"** → chưa; ĐÃ LÀM trên local: phân trang 20/50/100 (mặc định 50) chỉ ở phần vẽ, quét mã ở trang khác tự lật tới trang đó, Enter cuối trang sang trang sau, "N ô sai số" bấm được để tới ô sai. Đã thử local 25 mã / 20 mã-trang. CHƯA: đo phiếu 2.000 mã; trần 2.000 mã + cột Sổ hiện 0 cho mã ngoài phiếu ở shop không dùng vị trí (chờ anh). Chi tiết mục 9.2.
 
 - **Anh (lượt 5): "Sửa luôn"** cột Sổ hiện 0 cho mã quét ngoài phiếu → ĐÃ SỬA trên local: Sổ lấy tồn thật lúc quét; tải lại trang hỏi lại máy chủ qua endpoint mới `POST /api/inventory/stocktake/rows` (chỉ đọc). Lỗi cũ còn làm SÓT điều chỉnh khi đếm ra 0. Đã thử bằng tài khoản không dùng vị trí (demo@hubsell.tech): mã ngừng bán tồn 140 → Sổ 140, Lệch −139, tải lại còn nguyên. Chi tiết mục 9.3. Tệp đụng cả đợt: `frontend/src/app/products/stocktake/page.tsx`, `frontend/src/lib/api.ts`, `backend/src/routes/inventory.ts`.
+
+- **Anh (lượt 6): "commit phần này rồi tiếp tục sửa"** → commit đợt một `8315c2f3`; đợt hai: tem mã SKU có chữ bắn nhầm ô đếm nay bắt được; Chốt phiếu > 500 mã lệch gửi từng lượt 500 (trước bị máy chủ từ chối); phiếu tự tải lại sau chốt / chốt dở / mã bị xóa; gõ ô quét không vẽ lại bảng. Đo phiếu GIẢ 2.000 mã bản dev: quét ~90–100 ms/lần, gõ ô đếm ~70–130 ms/phím (chưa đo bản build). Chốt mới thử với máy chủ giả trong trình duyệt, CHƯA chốt thật vào DB local. Chi tiết mục 9.4.
+- **CHƯA (cả phiên):** push + kiểm prod; máy quét thật; chốt thật; đo bản build; nhắn khách xóa 2 ô rác trước khi Chốt (em chưa kiểm prod xem khách đã chốt chưa).
 
 ---
 ## Phiên 09/11 (3) — Anh: "chạy áp giá vốn cho các đơn cũ đúng với giá vốn hiện tại họ nhập" cho khách saigonkidhr@gmail.com → ĐÃ VÁ 296 dòng TikTok trên prod (SQL Supabase), còn 51 dòng có giá bán + 231 dòng 0 đ chờ anh / khách
