@@ -5,6 +5,22 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 09/11 (4) — Anh: khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét, số nhảy sai + mỗi lần quét phải chỏ chuột lại → ĐÃ SỬA trên local, CHƯA commit / CHƯA push
+
+- **Khách báo:** quét 1 lần ô đếm nhảy "số gì ấy", quét lần 2 không cộng mà ra số cam, quét mã khác thì không nhảy đúng dòng; mỗi lần quét phải chỏ chuột về ô quét. Muốn: đặt con trỏ một lần, quét mã nào nhảy mã đó.
+- **Gốc lỗi:** trang Kiểm kê (`frontend/src/app/products/stocktake/page.tsx`) quét trúng xong lại chuyển con trỏ sang ô "Thực đếm" → lần quét kế gõ nguyên 13 số mã vạch vào ô đếm, Enter của máy quét đẩy con trỏ xuống dòng dưới. Phiếu nhiều mã + Cất lên kệ không dính (vốn giữ con trỏ ở ô quét).
+- **Đã sửa (chi tiết: docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 9):** con trỏ ở lại ô quét + cuộn/tô dòng vừa quét + dòng "Vừa quét: MÃ · đã đếm N"; phím gõ khi con trỏ ở nút/chỗ trống tự về ô quét; bắn nhầm ≥ 8 chữ số vào ô đếm → trả số cũ, cộng 1 đúng mã; số đếm > 9.999.999 = ô sai số, khóa Chốt (frontend + backend `routes/inventory.ts`).
+- **Sửa kèm lỗi có sẵn:** bản nháp đếm dở mất khi tải lại trang (lưu nháp ghi đè rỗng trước khi đọc) → nay giữ được.
+- **Đã thử local** bằng gõ phím thật + Enter (không phải máy quét thật): 7 ca ở mục 9 đều đúng, sáng + tối, `tsc` hai phía sạch.
+- **CHƯA:** commit / push / kiểm prod; máy quét thật; tem in mã SKU có chữ bắn nhầm vào ô đếm; nhánh mã chưa có trong phiếu; bấm Chốt; mobile. Khách đang có 2 ô rác nghìn tỷ trong nháp trên máy họ — sau khi lên prod hai ô đó hiện viền đỏ, khóa nút Chốt; quét lại mã đó hoặc xóa tay là hết. Trước khi lên prod khách ĐỪNG bấm Chốt với hai ô đó (em chưa kiểm prod xem khách đã chốt chưa).
+
+- **Anh xem local (lượt 2): "Em thử bấm vào mã không có trong tổng kho xem có ra không hoặc báo lỗi gì không. Phần chú thích nhỏ này cũng không cần đâu"** → bỏ dòng chú thích dưới ô quét (giữ dòng "Vừa quét"). Thử: mã lạ → thông báo đỏ "Không có SKU nào khớp …", không đổi gì, quét tiếp được; mã có trong kho nhưng ngoài phiếu → thêm dòng Sổ 0, đếm 1. Vá thêm: mã vạch đọc thiếu số không còn bị cộng nhầm vào sản phẩm gần giống (dãy ≥ 8 chữ số phải trùng khít). Dòng thêm bằng quét mất khi tải lại trang: anh "Sửa luôn" → ĐÃ SỬA (lưu riêng các dòng còn số đếm, tải lại nạp lại; đã thử local, CHƯA bấm Chốt trên local). Chi tiết mục 9.1.
+
+- **Anh (lượt 4): "Phần này em đã phân trang ra chưa"** → chưa; ĐÃ LÀM trên local: phân trang 20/50/100 (mặc định 50) chỉ ở phần vẽ, quét mã ở trang khác tự lật tới trang đó, Enter cuối trang sang trang sau, "N ô sai số" bấm được để tới ô sai. Đã thử local 25 mã / 20 mã-trang. CHƯA: đo phiếu 2.000 mã; trần 2.000 mã + cột Sổ hiện 0 cho mã ngoài phiếu ở shop không dùng vị trí (chờ anh). Chi tiết mục 9.2.
+
+- **Anh (lượt 5): "Sửa luôn"** cột Sổ hiện 0 cho mã quét ngoài phiếu → ĐÃ SỬA trên local: Sổ lấy tồn thật lúc quét; tải lại trang hỏi lại máy chủ qua endpoint mới `POST /api/inventory/stocktake/rows` (chỉ đọc). Lỗi cũ còn làm SÓT điều chỉnh khi đếm ra 0. Đã thử bằng tài khoản không dùng vị trí (demo@hubsell.tech): mã ngừng bán tồn 140 → Sổ 140, Lệch −139, tải lại còn nguyên. Chi tiết mục 9.3. Tệp đụng cả đợt: `frontend/src/app/products/stocktake/page.tsx`, `frontend/src/lib/api.ts`, `backend/src/routes/inventory.ts`.
+
+---
 ## Phiên 09/11 (3) — Anh: "chạy áp giá vốn cho các đơn cũ đúng với giá vốn hiện tại họ nhập" cho khách saigonkidhr@gmail.com → ĐÃ VÁ 296 dòng TikTok trên prod (SQL Supabase), còn 51 dòng có giá bán + 231 dòng 0 đ chờ anh / khách
 
 - **Khách:** user `cmw7ckg041bd8n53szb24hkig`, 2 gian "Trái Cây Sấy Sao Khuê SG" nối 08/11: TikTok `cmw7cn6d51bjgn53sis5gca9j`, Shopee `cmw7o1d7q006hkq3rfem6maf6`.

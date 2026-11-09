@@ -592,6 +592,8 @@ router.get("/vouchers/:id", async (req: AuthRequest, res, next) => {
 // ============================================================
 const STOCKTAKE_MAX = 500;
 const STOCKTAKE_SHEET_MAX = 2000;
+// Số đếm ≥ 8 chữ số = mã vạch bị máy quét bắn nhầm vào ô đếm (EAN-8 ngắn nhất là 8 số), không phải tồn thật.
+const STOCKTAKE_COUNT_MAX = 9_999_999;
 
 // GET /api/inventory/stocktake/sheet?locationId= — danh sách mã cần đếm + số sổ.
 router.get("/stocktake/sheet", async (req: AuthRequest, res, next) => {
@@ -653,6 +655,61 @@ router.get("/stocktake/sheet", async (req: AuthRequest, res, next) => {
   }
 });
 
+// POST /api/inventory/stocktake/rows — số sổ HIỆN TẠI của một nhóm mã (chỉ đọc; POST vì danh sách
+// id dài). Body: { locationId?, productIds: string[] }. Dùng khi tải lại trang kiểm kê: các dòng
+// khách đã thêm bằng quét (mã ngoài phiếu) phải lấy lại số sổ thật — trang chỉ gửi lên mã có
+// "đếm ≠ sổ", sổ cũ/sai là sót điều chỉnh. Mã đã bị xóa khỏi kho thì không trả về (trang tự bỏ dòng).
+router.post("/stocktake/rows", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const locationId = readLocationId(req.body?.locationId);
+    if (locationId === null) {
+      res.status(400).json({ error: "Vị trí không hợp lệ" });
+      return;
+    }
+    const raw = req.body?.productIds;
+    if (!Array.isArray(raw) || raw.length === 0 || raw.length > STOCKTAKE_MAX || raw.some((v) => typeof v !== "string" || !v)) {
+      res.status(400).json({ error: `Cần 1–${STOCKTAKE_MAX} mã` });
+      return;
+    }
+    const ids = [...new Set(raw as string[])];
+    if (locationId) {
+      const loc = await prisma.stockLocation.findFirst({ where: { id: locationId, userId: ownerId }, select: { id: true } });
+      if (!loc) {
+        res.status(404).json({ error: "Không tìm thấy vị trí" });
+        return;
+      }
+    }
+    const products = await prisma.product.findMany({
+      where: { userId: ownerId, id: { in: ids } },
+      orderBy: { skuCode: "asc" },
+      select: {
+        id: true,
+        skuCode: true,
+        barcode: true,
+        productName: true,
+        isActive: true,
+        quantityInStock: true,
+        ...(locationId ? { stockLevels: { where: { locationId }, select: { quantity: true } } } : {}),
+      },
+    });
+    res.json({
+      rows: products.map((p) => ({
+        productId: p.id,
+        skuCode: p.skuCode,
+        barcode: p.barcode,
+        productName: p.productName,
+        isActive: p.isActive,
+        book: locationId
+          ? ((p as { stockLevels?: { quantity: number }[] }).stockLevels?.[0]?.quantity ?? 0)
+          : p.quantityInStock,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/inventory/stocktake — CHỐT KIỂM KÊ. Body: { locationId?, items: [{productId, counted}], note? }
 router.post("/stocktake", async (req: AuthRequest, res, next) => {
   try {
@@ -671,7 +728,13 @@ router.post("/stocktake", async (req: AuthRequest, res, next) => {
     for (let i = 0; i < items.length; i++) {
       const it = items[i] as { productId?: unknown; counted?: unknown };
       const counted = Number(it.counted);
-      if (typeof it.productId !== "string" || !it.productId || !Number.isInteger(counted) || counted < 0) {
+      if (
+        typeof it.productId !== "string" ||
+        !it.productId ||
+        !Number.isInteger(counted) ||
+        counted < 0 ||
+        counted > STOCKTAKE_COUNT_MAX
+      ) {
         res.status(400).json({ error: `Dòng ${i + 1}: thiếu mã hoặc số đếm không hợp lệ` });
         return;
       }

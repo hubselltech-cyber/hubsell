@@ -4,13 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, ClipboardCheck, Loader2, ScanBarcode } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, ScanBarcode } from "lucide-react";
 
 import { LocationSelect } from "@/components/products/location-select";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -24,6 +25,7 @@ import {
   ApiError,
   fetchProducts,
   fetchStockLocations,
+  fetchStocktakeRows,
   fetchStocktakeSheet,
   getToken,
   submitStocktake,
@@ -46,12 +48,65 @@ import { cn } from "@/lib/utils";
  * thành một dòng ADJUST "Kiểm kê …: sổ a → đếm b" trong Nhật ký kho, sàn nhận
  * số mới. Số đang gõ dở được nhớ trong trình duyệt theo vị trí (kiểm kho lâu,
  * lỡ tải lại trang không mất công đếm).
+ *
+ * QUÉT LIÊN TỤC (09/11/2026, khách thử máy quét thật): con trỏ LUÔN ở lại ô quét.
+ * Bản đầu nhảy con trỏ sang ô "Thực đếm" sau mỗi lần quét → lần quét kế gõ nguyên
+ * 13 số mã vạch vào ô đếm (thành số tồn nghìn tỷ) rồi Enter đẩy xuống dòng dưới.
+ * Ba lớp chặn: (1) quét xong không chuyển con trỏ, chỉ cuộn + tô dòng vừa quét;
+ * (2) con trỏ đang ở nút bấm / chỗ trống mà có phím gõ → tự về ô quét;
+ * (3) con trỏ đang ở ô đếm mà Enter một dãy ≥ 8 chữ số → coi là mã quét, trả ô đếm
+ * về số cũ rồi cộng 1 cho đúng mã.
  */
 
 type Counts = Record<string, string>;
 
+/**
+ * Mã vạch bán lẻ ngắn nhất là EAN-8 (8 chữ số); mã vạch quản lý của Hubsell 13 số.
+ * Một mã kho không thể tồn ≥ 10 triệu cái, nên dãy ≥ 8 chữ số ở ô đếm = mã quét nhầm chỗ.
+ */
+const SCAN_CODE_RE = /^\d{8,}$/;
+
+// 20 / 50 / 100 dòng/trang — chuẩn bảng số liệu của app; nhớ lựa chọn theo trình duyệt.
+// Mặc định 50 (em tự chọn): kiểm kê đọc liền một mạch theo kệ, 20 dòng thì lật trang quá dày.
+const PAGE_SIZES = [20, 50, 100];
+const PAGE_SIZE_DEFAULT = 50;
+const PAGE_SIZE_KEY = "hubsell_stocktake_page_size";
+const COUNT_MAX = 9_999_999;
+
+function validCount(raw: string | undefined): number | null {
+  if (raw === undefined || raw === "") return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= COUNT_MAX ? n : null;
+}
+
 function draftKey(locationId: string) {
   return `hubsell_stocktake_draft_${locationId || "all"}`;
+}
+/** Dòng THÊM BẰNG QUÉT (mã ngoài phiếu, sổ 0) — lưu riêng để tải lại trang không mất. */
+function extraKey(locationId: string) {
+  return `hubsell_stocktake_extra_${locationId || "all"}`;
+}
+
+function readExtraRows(locationId: string): StocktakeRow[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(extraKey(locationId)) ?? "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(
+        (x): x is StocktakeRow =>
+          !!x && typeof x.productId === "string" && typeof x.skuCode === "string" && typeof x.productName === "string"
+      )
+      .map((x) => ({
+        productId: x.productId,
+        skuCode: x.skuCode,
+        barcode: typeof x.barcode === "string" ? x.barcode : null,
+        productName: x.productName,
+        isActive: x.isActive !== false,
+        book: Number.isInteger(x.book) ? x.book : 0,
+      }));
+  } catch {
+    return [];
+  }
 }
 
 export default function StocktakePage() {
@@ -74,9 +129,26 @@ export default function StocktakePage() {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
+  const [pending, setPending] = useState(0);
+  const searching = pending > 0;
+  /** Dòng vừa quét — `tick` đổi mỗi lần quét để cuộn lại cả khi quét trùng mã. */
+  const [lastScan, setLastScan] = useState<{ id: string; tick: number } | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
+  const tableBoxRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  /** Số trong ô đếm lúc con trỏ vào — để trả lại khi máy quét bắn nhầm vào ô đó. */
+  const focusValue = useRef<{ id: string; value: string } | null>(null);
+  /** Khóa bản nháp đã nạp xong — chưa nạp thì chưa được ghi đè (xem "Nhớ bản nháp"). */
+  const hydratedKey = useRef<string | null>(null);
+  /** Mã do máy chủ trả trong phiếu — dòng nào ngoài tập này là dòng thêm bằng quét. */
+  const sheetIds = useRef<Set<string>>(new Set());
+  /** Bật sau khi Chốt báo 404 (có mã đã bị xóa): thôi nhớ dòng thêm bằng quét tới lần tải phiếu kế. */
+  const forgetExtras = useRef(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
+  /** Dòng chờ cuộn vào giữa khung / ô chờ nhận con trỏ — làm sau khi trang chứa nó vẽ xong. */
+  const pendingScroll = useRef<string | null>(null);
+  const pendingFocus = useRef<string | null>(null);
 
   useEffect(() => {
     if (!getToken()) router.replace("/login");
@@ -88,11 +160,10 @@ export default function StocktakePage() {
     let cancelled = false;
     setLoading(true);
     fetchStocktakeSheet(effectiveLocationId || undefined)
-      .then((r) => {
+      .then(async (r) => {
         if (cancelled) return;
-        setRows(r.rows);
-        setTruncated(r.truncated);
-        // Nạp bản nháp đang đếm dở (nếu có) — chỉ giữ mã còn trong phiếu.
+        // Nạp bản nháp đang đếm dở (nếu có) — chỉ giữ mã còn trong phiếu, cộng các dòng
+        // đã thêm bằng quét mà vẫn còn số đếm (mã nay đã vào phiếu thì dùng dòng của phiếu).
         let draft: Counts = {};
         try {
           draft = JSON.parse(localStorage.getItem(draftKey(effectiveLocationId)) ?? "{}");
@@ -100,7 +171,33 @@ export default function StocktakePage() {
           draft = {};
         }
         const ids = new Set(r.rows.map((x) => x.productId));
+        const stored = readExtraRows(effectiveLocationId).filter(
+          (x) => !ids.has(x.productId) && draft[x.productId] !== undefined && draft[x.productId] !== ""
+        );
+        // Dòng thêm bằng quét: hỏi lại máy chủ số sổ HIỆN TẠI (sổ nhớ trong máy có thể đã cũ,
+        // mà "lệch" = đếm ≠ sổ — sổ sai là sót điều chỉnh). Mã đã bị xóa khỏi kho thì máy chủ
+        // không trả về → bỏ dòng. Hỏi không được (mất mạng…) thì tạm dùng sổ đã nhớ.
+        let extra = stored;
+        if (stored.length) {
+          try {
+            const fresh = await fetchStocktakeRows(
+              effectiveLocationId || undefined,
+              stored.map((x) => x.productId)
+            );
+            extra = fresh.rows.filter((x) => !ids.has(x.productId));
+          } catch {
+            extra = stored;
+          }
+          if (cancelled) return;
+        }
+        setTruncated(r.truncated);
+        sheetIds.current = new Set(ids);
+        forgetExtras.current = false;
+        for (const x of extra) ids.add(x.productId);
+        setRows([...r.rows, ...extra]);
         setCounts(Object.fromEntries(Object.entries(draft).filter(([id]) => ids.has(id))));
+        setLastScan(null);
+        hydratedKey.current = draftKey(effectiveLocationId);
       })
       .catch((err) => toast.error(err instanceof ApiError ? err.message : "Không tải được phiếu"))
       .finally(() => !cancelled && setLoading(false));
@@ -109,14 +206,56 @@ export default function StocktakePage() {
     };
   }, [effectiveLocationId, locationsQ.loading]);
 
-  // Nhớ bản nháp
+  // Nhớ bản nháp — CHỈ ghi sau khi phiếu của đúng vị trí này đã nạp xong bản nháp cũ.
+  // Trước 09/11/2026 hiệu ứng này chạy ngay lúc mở trang với `counts` còn rỗng, ghi đè
+  // bản nháp trước khi kịp đọc → tải lại trang là mất hết số đang đếm.
   useEffect(() => {
+    if (hydratedKey.current !== draftKey(effectiveLocationId)) return;
     try {
       localStorage.setItem(draftKey(effectiveLocationId), JSON.stringify(counts));
+      // Dòng thêm bằng quét: chỉ nhớ dòng còn số đếm (xóa trắng ô đếm = bỏ dòng ở lần tải sau).
+      const extra = forgetExtras.current
+        ? []
+        : rows.filter(
+            (r) => !sheetIds.current.has(r.productId) && counts[r.productId] !== undefined && counts[r.productId] !== ""
+          );
+      if (extra.length) localStorage.setItem(extraKey(effectiveLocationId), JSON.stringify(extra));
+      else localStorage.removeItem(extraKey(effectiveLocationId));
     } catch {
       // bị chặn — bỏ qua
     }
-  }, [counts, effectiveLocationId]);
+  }, [counts, rows, effectiveLocationId]);
+
+  // Phiếu tải xong → con trỏ vào sẵn ô quét (máy có chuột; điện thoại thì không bật bàn phím).
+  useEffect(() => {
+    if (loading) return;
+    if (typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches) scanRef.current?.focus();
+  }, [loading]);
+
+  // Lớp chặn 2: con trỏ không nằm trong ô nhập nào (vừa bấm chip lọc, nút Chốt, chỗ trống…)
+  // mà có phím gõ → đưa về ô quét TRƯỚC khi ký tự được nhập. Không có lớp này, Enter của
+  // máy quét sẽ "bấm" luôn cái nút đang giữ con trỏ.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1 || e.key === " ") return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable)) return;
+      if (document.querySelector('[role="dialog"], [role="listbox"], [role="menu"]')) return;
+      scanRef.current?.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Nhớ số dòng/trang theo trình duyệt (đọc sau khi gắn trang để khỏi lệch với bản dựng sẵn).
+  useEffect(() => {
+    try {
+      const n = Number(localStorage.getItem(PAGE_SIZE_KEY));
+      if (PAGE_SIZES.includes(n)) setPageSize(n);
+    } catch {
+      // bị chặn — bỏ qua
+    }
+  }, []);
 
   const counted = useMemo(
     () => rows.filter((r) => counts[r.productId] !== undefined && counts[r.productId] !== ""),
@@ -125,61 +264,138 @@ export default function StocktakePage() {
   const diffs = useMemo(
     () =>
       counted
-        .map((r) => ({ row: r, n: Number(counts[r.productId]) }))
-        .filter((x) => Number.isInteger(x.n) && x.n >= 0 && x.n !== x.row.book),
+        .map((r) => ({ row: r, n: validCount(counts[r.productId]) }))
+        .filter((x): x is { row: StocktakeRow; n: number } => x.n !== null && x.n !== x.row.book),
     [counted, counts]
   );
-  const invalid = counted.filter((r) => {
-    const n = Number(counts[r.productId]);
-    return !Number.isInteger(n) || n < 0;
-  });
+  const invalid = counted.filter((r) => validCount(counts[r.productId]) === null);
   const visible = onlyDiff ? diffs.map((d) => d.row) : rows;
+
+  // PHÂN TRANG CHỈ Ở PHẦN VẼ: số đếm, số lệch, dò mã quét vẫn tính trên TOÀN phiếu (dữ liệu
+  // nằm sẵn trên máy), bảng chỉ vẽ một trang — quét mã ở trang khác thì tự lật tới trang đó.
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Quét xong: lật tới trang chứa dòng vừa quét, rồi (hiệu ứng dưới) cuộn dòng đó vào giữa khung.
+  useEffect(() => {
+    if (!lastScan) return;
+    const idx = visible.findIndex((r) => r.productId === lastScan.id);
+    if (idx < 0) return; // đang "Chỉ hiện lệch" mà mã vừa quét khớp sổ — không có dòng để nhảy tới
+    pendingScroll.current = lastScan.id;
+    setPage(Math.floor(idx / pageSize) + 1);
+    // Chỉ chạy theo LẦN QUÉT; `visible` / `pageSize` đọc giá trị của đúng lượt vẽ đó.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastScan]);
+
+  // Sau mỗi lượt vẽ: dòng đang chờ cuộn / ô đang chờ nhận con trỏ đã lên màn thì làm ngay.
+  // Cuộn TRONG khung bảng, không cuộn trang — ô quét phải luôn nằm trong tầm mắt.
+  useEffect(() => {
+    if (pendingScroll.current) {
+      const box = tableBoxRef.current;
+      const tr = inputRefs.current.get(pendingScroll.current)?.closest("tr");
+      if (box && tr) {
+        const b = box.getBoundingClientRect();
+        const t = tr.getBoundingClientRect();
+        box.scrollTop += t.top - b.top - box.clientHeight / 2 + t.height / 2;
+        pendingScroll.current = null;
+      }
+    }
+    if (pendingFocus.current) {
+      const el = inputRefs.current.get(pendingFocus.current);
+      if (el) {
+        el.focus();
+        pendingFocus.current = null;
+      }
+    }
+  });
+
+  /** Tới ô sai số đầu tiên (có thể đang nằm ở trang khác) — không thì khách không biết vì sao nút Chốt khóa. */
+  function goToInvalid() {
+    const first = invalid[0];
+    if (!first) return;
+    const idx = rows.findIndex((r) => r.productId === first.productId);
+    pendingFocus.current = first.productId;
+    setOnlyDiff(false);
+    setPage(Math.floor(idx / pageSize) + 1);
+  }
 
   function setCount(id: string, v: string) {
     setCounts((c) => ({ ...c, [id]: v }));
+  }
+
+  /** Cộng 1 cho một mã. Ô đang chứa số sai (rác do quét nhầm, số âm…) thì đếm lại từ 0. */
+  function bump(id: string) {
+    setCounts((c) => ({ ...c, [id]: String((validCount(c[id]) ?? 0) + 1) }));
+    setLastScan((s) => ({ id, tick: (s?.tick ?? 0) + 1 }));
   }
 
   /** Enter ở ô đếm: nhảy sang ô kế tiếp trong danh sách đang hiện. */
   function focusNext(id: string) {
     const idx = visible.findIndex((r) => r.productId === id);
     const next = visible[idx + 1];
-    if (next) inputRefs.current.get(next.productId)?.focus();
-    else scanRef.current?.focus();
-  }
-
-  /** Quét/gõ mã: mã có trong phiếu → nhảy tới ô và cộng 1; chưa có → thêm dòng sổ 0. */
-  async function handleScan() {
-    const q = query.trim();
-    if (!q) return;
-    const hit = rows.find((r) => productMatchesCode(r, q));
-    if (hit) {
-      const cur = Number(counts[hit.productId] ?? 0) || 0;
-      setCount(hit.productId, String(cur + 1));
-      setQuery("");
-      inputRefs.current.get(hit.productId)?.focus();
+    if (!next) {
+      scanRef.current?.focus();
       return;
     }
-    setSearching(true);
+    const el = inputRefs.current.get(next.productId);
+    if (el) {
+      el.focus();
+      return;
+    }
+    // Ô kế tiếp nằm ở trang sau → lật trang, vẽ xong thì nhận con trỏ.
+    pendingFocus.current = next.productId;
+    setPage(Math.floor((idx + 1) / pageSize) + 1);
+  }
+
+  /**
+   * Quét/gõ mã: mã có trong phiếu → cộng 1; chưa có → thêm dòng sổ 0 rồi cộng 1.
+   * Con trỏ Ở LẠI ô quét và ô quét được xóa NGAY (trước khi tra máy chủ) để lần quét
+   * kế tiếp không nối vào mã cũ.
+   */
+  async function handleScan(code: string) {
+    const q = code.trim();
+    if (!q) return;
+    setQuery("");
+    scanRef.current?.focus();
+    const hit = rows.find((r) => productMatchesCode(r, q));
+    if (hit) {
+      bump(hit.productId);
+      return;
+    }
+    setPending((n) => n + 1);
     try {
       const res = await fetchProducts({ page: 1, pageSize: 5, search: q, status: "all" });
+      // Gõ tay một phần mã SKU mà chỉ ra đúng một sản phẩm thì nhận luôn (tiện tay). Dãy số
+      // kiểu mã vạch thì PHẢI trùng khít: mã đọc thiếu / mã lạ không được cộng nhầm vào
+      // sản phẩm "gần giống" — kiểm kê đếm sai mà không ai hay.
       const p =
         res.items.find((x) => productMatchesCode(x, q)) ??
-        (res.items.length === 1 ? res.items[0] : undefined);
+        (!SCAN_CODE_RE.test(q) && res.items.length === 1 ? res.items[0] : undefined);
       if (!p) {
         toast.error(`Không có SKU nào khớp "${q}"`);
         return;
       }
-      // Mã không nằm trong phiếu (sổ 0 ở vị trí này) → thêm dòng, đếm 1.
-      setRows((cur) => [
-        ...cur,
-        { productId: p.id, skuCode: p.skuCode, barcode: p.barcode, productName: p.productName, isActive: p.isActive !== false, book: 0 },
-      ]);
-      setCount(p.id, "1");
-      setQuery("");
+      // Mã không nằm trong phiếu → thêm dòng với số sổ THẬT: theo vị trí thì là tồn ở vị trí
+      // đó (thường 0), không dùng vị trí thì là tồn của mã (mã ngừng bán / mã ngoài 2.000 dòng
+      // đầu vẫn có tồn — trước 09/11 ghi cứng 0 nên cột Sổ, Lệch sai và đếm đúng bằng 0 bị bỏ sót).
+      // Quét dồn dập cùng một mã mới có thể về hai lượt tra — chỉ thêm MỘT dòng, mỗi lượt vẫn cộng 1.
+      const book = effectiveLocationId
+        ? (p.stockLevels?.find((l) => l.locationId === effectiveLocationId)?.quantity ?? 0)
+        : p.quantityInStock;
+      setRows((cur) =>
+        cur.some((r) => r.productId === p.id)
+          ? cur
+          : [
+              ...cur,
+              { productId: p.id, skuCode: p.skuCode, barcode: p.barcode, productName: p.productName, isActive: p.isActive !== false, book },
+            ]
+      );
+      bump(p.id);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
     } finally {
-      setSearching(false);
+      setPending((n) => n - 1);
     }
   }
 
@@ -197,25 +413,41 @@ export default function StocktakePage() {
       );
       try {
         localStorage.removeItem(draftKey(effectiveLocationId));
+        localStorage.removeItem(extraKey(effectiveLocationId));
       } catch {
         // bỏ qua
       }
       setCounts({});
+      setLastScan(null);
       setNote("");
       setOnlyDiff(false);
+      setPage(1);
       invalidate(["products"]);
       invalidate(["inventory-logs"]);
       invalidate(["stock-locations"]);
       // Tải lại sổ sau khi chốt
       const r = await fetchStocktakeSheet(effectiveLocationId || undefined);
+      sheetIds.current = new Set(r.rows.map((x) => x.productId));
       setRows(r.rows);
     } catch (err) {
+      // 404 = có mã đã bị xóa khỏi kho trong lúc đếm (máy chủ không nói mã nào). Nếu đó là
+      // dòng thêm bằng quét thì "tải lại phiếu" sẽ nạp lại đúng mã hỏng và kẹt mãi → thôi
+      // nhớ các dòng thêm bằng quét cho tới lần tải phiếu kế. Số đếm của mã trong phiếu vẫn giữ.
+      if (err instanceof ApiError && err.status === 404) {
+        forgetExtras.current = true;
+        try {
+          localStorage.removeItem(extraKey(effectiveLocationId));
+        } catch {
+          // bỏ qua
+        }
+      }
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ", { duration: 8000 });
     } finally {
       setSubmitting(false);
     }
   }
 
+  const lastScanRow = lastScan ? rows.find((r) => r.productId === lastScan.id) : undefined;
   const locFound = locations.find((l) => l.id === effectiveLocationId);
   const locName = locFound ? locationLabel(locFound) : undefined;
 
@@ -245,6 +477,7 @@ export default function StocktakePage() {
                   onChange={(v) => {
                     setLocationId(v);
                     setOnlyDiff(false);
+                    setPage(1);
                   }}
                   suffix={(l) => ` · ${formatNumber(l.skuCount)} SKU`}
                 />
@@ -254,24 +487,34 @@ export default function StocktakePage() {
         </PageHeaderBand>
 
         {/* ===== Ô QUÉT + CHIP LỌC ===== */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="relative w-full max-w-md">
-            <ScanBarcode className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              ref={scanRef}
-              className="pl-9"
-              placeholder="Quét mã vạch, hoặc gõ mã SKU rồi Enter: cộng 1 vào ô đếm…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void handleScan();
-                }
-              }}
-            />
-            {searching && (
-              <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="w-full max-w-md space-y-1.5">
+            <div className="relative">
+              <ScanBarcode className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={scanRef}
+                className="pl-9"
+                placeholder="Quét mã vạch, hoặc gõ mã SKU rồi Enter: cộng 1 vào ô đếm…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleScan(e.currentTarget.value);
+                  }
+                }}
+              />
+              {searching && (
+                <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+            </div>
+            {lastScanRow && (
+              <p className={cn(TEXT_SUB, "truncate")} aria-live="polite">
+                Vừa quét: <span className="font-mono font-medium text-foreground">{lastScanRow.skuCode}</span> · đã đếm{" "}
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatNumber(validCount(counts[lastScanRow.productId]) ?? 0)}
+                </span>
+              </p>
             )}
           </div>
           <div className="flex items-center gap-1.5">
@@ -285,7 +528,10 @@ export default function StocktakePage() {
                 key={String(c.key)}
                 type="button"
                 aria-pressed={onlyDiff === c.key}
-                onClick={() => setOnlyDiff(c.key)}
+                onClick={() => {
+                  setOnlyDiff(c.key);
+                  setPage(1);
+                }}
                 className={cn(
                   "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                   onlyDiff === c.key
@@ -312,7 +558,7 @@ export default function StocktakePage() {
                   : "Chưa có SKU nào để đếm."}
             </p>
           ) : (
-            <div className="max-h-[calc(100dvh-20rem)] overflow-auto">
+            <div ref={tableBoxRef} className="max-h-[calc(100dvh-20rem)] overflow-auto">
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
@@ -324,13 +570,17 @@ export default function StocktakePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visible.map((r) => {
+                  {pageRows.map((r) => {
                     const raw = counts[r.productId];
-                    const n = raw === undefined || raw === "" ? null : Number(raw);
-                    const bad = n !== null && (!Number.isInteger(n) || n < 0);
-                    const diff = n === null || bad ? null : n - r.book;
+                    const n = validCount(raw);
+                    const bad = raw !== undefined && raw !== "" && n === null;
+                    const diff = n === null ? null : n - r.book;
+                    const justScanned = lastScan?.id === r.productId;
                     return (
-                      <TableRow key={r.productId} className={cn(diff ? "bg-amber-50/60" : undefined)}>
+                      <TableRow
+                        key={r.productId}
+                        className={cn(justScanned ? "bg-sky-100" : diff ? "bg-amber-50/60" : undefined)}
+                      >
                         <TableCell className="font-mono text-sm">
                           {r.skuCode}
                           {!r.isActive && <span className={cn(TEXT_SUB, "ml-1")}>(ngừng bán)</span>}
@@ -355,12 +605,22 @@ export default function StocktakePage() {
                             placeholder="—"
                             value={raw ?? ""}
                             onChange={(e) => setCount(r.productId, e.target.value)}
-                            onFocus={(e) => e.currentTarget.select()}
+                            onFocus={(e) => {
+                              focusValue.current = { id: r.productId, value: raw ?? "" };
+                              e.currentTarget.select();
+                            }}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                focusNext(r.productId);
+                              if (e.key !== "Enter") return;
+                              e.preventDefault();
+                              const typed = e.currentTarget.value.trim();
+                              // Lớp chặn 3: máy quét bắn vào ô đếm → trả số cũ, cộng 1 cho đúng mã.
+                              if (SCAN_CODE_RE.test(typed)) {
+                                const before = focusValue.current;
+                                setCount(r.productId, before?.id === r.productId ? before.value : "");
+                                void handleScan(typed);
+                                return;
                               }
+                              focusNext(r.productId);
                             }}
                             className={cn("ml-auto h-8 w-24 text-right tabular-nums", bad && "border-rose-400")}
                             aria-label={`Thực đếm ${r.skuCode}`}
@@ -382,6 +642,55 @@ export default function StocktakePage() {
             </div>
           )}
         </div>
+        {/* Phân trang — chọn 20/50/100 dòng/trang như các bảng khác; phiếu ngắn thì không bày ra */}
+        {!loading && visible.length > PAGE_SIZES[0] && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Hiển thị</span>
+              <NativeSelect
+                className="w-20"
+                aria-label="Số dòng mỗi trang"
+                value={String(pageSize)}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setPageSize(n);
+                  setPage(1);
+                  try {
+                    localStorage.setItem(PAGE_SIZE_KEY, String(n));
+                  } catch {
+                    // bị chặn — bỏ qua
+                  }
+                  // Trả con trỏ về ô quét: để ở ô chọn thì số máy quét bắn ra sẽ đổi lựa chọn.
+                  scanRef.current?.focus();
+                }}
+              >
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </NativeSelect>
+              <span className="text-sm text-muted-foreground tabular-nums">
+                mã/trang · {formatNumber(visible.length)} mã · trang {safePage}/{pageCount}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
+                <ChevronLeft className="size-4" />
+                Trang trước
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={safePage >= pageCount}
+                onClick={() => setPage(safePage + 1)}
+              >
+                Trang sau
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        )}
         {truncated && (
           <p className={TEXT_SUB}>Phiếu chỉ hiện 2.000 mã đầu — kiểm theo từng vị trí để đủ.</p>
         )}
@@ -401,7 +710,16 @@ export default function StocktakePage() {
             <span className="text-sm text-muted-foreground tabular-nums">
               {formatNumber(counted.length)}/{formatNumber(rows.length)} mã đã đếm ·{" "}
               <span className={diffs.length ? "text-amber-700" : ""}>{formatNumber(diffs.length)} lệch</span>
-              {invalid.length > 0 && <span className="ml-2 text-rose-700">· {invalid.length} ô sai số</span>}
+              {invalid.length > 0 && (
+                <button
+                  type="button"
+                  onClick={goToInvalid}
+                  className="ml-2 text-rose-700 underline underline-offset-2 hover:text-rose-800"
+                  title="Tới ô sai số đầu tiên"
+                >
+                  · {invalid.length} ô sai số
+                </button>
+              )}
             </span>
             <Button
               size="lg"

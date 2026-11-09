@@ -5016,6 +5016,14 @@ export function fetchStocktakeSheet(locationId?: string) {
   }>(`/api/inventory/stocktake/sheet${qs}`);
 }
 
+/** Số sổ hiện tại của một nhóm mã (dòng thêm bằng quét, khi tải lại trang kiểm kê). Mã đã xóa không trả về. */
+export function fetchStocktakeRows(locationId: string | undefined, productIds: string[]) {
+  return apiFetch<{ rows: StocktakeRow[] }>("/api/inventory/stocktake/rows", {
+    method: "POST",
+    body: JSON.stringify({ locationId, productIds }),
+  });
+}
+
 /** Chốt kiểm kê: mỗi mã lệch một dòng ADJUST "Kiểm kê …: sổ a → đếm b". */
 export function submitStocktake(data: {
   locationId?: string;

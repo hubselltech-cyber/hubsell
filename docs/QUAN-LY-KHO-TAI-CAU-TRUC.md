@@ -539,3 +539,52 @@ cho cột Giá trị, bản in và công nợ.
 - Bản in phiếu GIỮ cột Mã SKU, KHÔNG in mã vạch 13 số, không in cả hai (mã vạch là mã nội bộ cho tem / máy quét; NCC và kế toán chỉ biết SKU; A4 không dư chỗ). Đừng đề xuất lại.
 - KHÔNG chặn hộp Ghi trả tiền với phiếu chưa ghi giá nhập ("chắc không cần"): công nợ phiếu không có giá nhập tính trên giá vốn mặc định theo đúng luật một con số; khách muốn chuẩn thì gõ giá nhập.
 
+
+## 9. Kiểm kê bằng máy quét — quét liên tục, con trỏ ở lại ô quét (09/11/2026; local, CHƯA commit / CHƯA push)
+
+Khách nguyenvanmanh1120@gmail.com thử Kiểm kê bằng máy quét thật (ca đầu tiên có máy quét thật — mục 6.3 ghi "CHƯA kiểm: máy quét thật") và báo: quét xong ô đếm nhảy số lạ, quét lần 2 không cộng mà ra số cam nghìn tỷ, quét mã khác thì số rơi vào dòng dưới; mỗi lần quét phải chỏ chuột lại ô quét. Khách muốn: đặt con trỏ MỘT lần, quét mã nào số mã đó nhảy.
+
+**Gốc lỗi** (`frontend/src/app/products/stocktake/page.tsx`): sau mỗi lần quét trúng, mã cũ chuyển con trỏ sang ô "Thực đếm" của dòng đó. Máy quét là bàn phím — lần quét kế gõ nguyên 13 số mã vạch vào ô đếm (số tồn nghìn tỷ, cột Lệch màu cam), rồi phím Enter của máy quét đẩy con trỏ xuống ô đếm dòng dưới; lần quét thứ ba gõ tiếp vào dòng dưới. Hai trang quét kia (Phiếu nhiều mã, Cất lên kệ) vốn giữ con trỏ ở ô quét nên không dính.
+
+**Đã sửa — ba lớp chặn:**
+1. Quét xong con trỏ Ở LẠI ô quét; ô quét xóa ngay (trước khi tra máy chủ) để lần quét kế không nối vào mã cũ. Dòng vừa quét được cuộn vào giữa khung bảng (chỉ cuộn khung bảng, không cuộn trang) + tô nền `bg-sky-100`; dưới ô quét có dòng "Vừa quét: MÃ · đã đếm N". Mở trang là con trỏ vào sẵn ô quét (chỉ máy có chuột).
+2. Con trỏ không nằm trong ô nhập nào (vừa bấm chip lọc, nút Chốt, chỗ trống) mà có phím gõ → tự về ô quét trước khi ký tự được nhập. Thiếu lớp này, Enter của máy quét sẽ "bấm" cái nút đang giữ con trỏ (kể cả nút Chốt kiểm kê).
+3. Con trỏ đang ở một ô "Thực đếm" mà Enter một dãy ≥ 8 chữ số → coi là mã quét: trả ô đó về số trước khi con trỏ vào, cộng 1 cho đúng mã, con trỏ về ô quét.
+
+**Ngưỡng 8 chữ số / trần 9.999.999** (mặc định em chọn, có căn cứ): mã vạch bán lẻ ngắn nhất là EAN-8 = 8 chữ số, mã vạch quản lý Hubsell 13 số; một mã kho không tồn ≥ 10 triệu cái. Số đếm > 9.999.999 tính là "ô sai số" (viền đỏ, khóa nút Chốt) — để bản nháp rác khách đang có không chốt nhầm; quét lại mã đó thì ô rác đếm lại từ 1. Backend `POST /inventory/stocktake` từ chối `counted > 9.999.999` (trước đây không có trần; số 13 chữ số sẽ tràn cột int và trả 500).
+
+**Sửa kèm (lỗi có sẵn, lộ ra khi thử):** bản nháp "số đang đếm dở" bị mất mỗi lần tải lại trang — hiệu ứng lưu nháp chạy ngay lúc mở trang với bảng đếm rỗng, ghi đè bản nháp trước khi kịp đọc. Nay chỉ lưu sau khi phiếu của đúng vị trí đã nạp xong nháp cũ (`hydratedKey`). Kèm: cộng dồn dùng cập nhật hàm (quét dồn dập không mất lượt), quét hai lần liền một mã chưa có trong phiếu chỉ thêm một dòng.
+
+**Đã thử trên local** (giả lập máy quét = gõ phím thật + Enter trong khung trình duyệt, 6 mã có mã vạch 13 số): quét cùng mã 2 lần → 2; mã khác → đúng dòng, con trỏ vẫn ở ô quét; bắn vào ô đếm trống và ô đếm đang có số → ô giữ số cũ, đúng mã +1; bấm chip "Chỉ hiện lệch" rồi quét → chip không bị bật/tắt, đúng mã +1; tải lại trang → nháp còn; nháp rác 14 chữ số → "1 ô sai số", nút Chốt khóa, quét lại → về 1; sáng + tối. `tsc` frontend + backend sạch.
+
+**CHƯA kiểm:** máy quét thật (máy quét cấu hình hậu tố Tab thay cho Enter sẽ không chạy — chưa gặp); tem in MÃ SKU có chữ (vd `AT-DT-CT-NAU-L`) bắn nhầm vào ô đếm — ô số không nhận chữ nên lớp 3 không bắt được, chỉ lớp 1 + 2 che; mã chưa có trong phiếu (nhánh tra máy chủ, mã không đổi logic); bấm Chốt sau khi quét; trần backend (chưa gọi thử); mobile.
+
+### 9.1 Anh xem local 09/11: bỏ dòng chú thích + thử mã không có trong Tổng kho
+
+- **Anh: "Phần chú thích nhỏ này cũng không cần đâu"** → bỏ dòng "Cứ quét liên tục — …" dưới ô quét. Dòng "Vừa quét: MÃ · đã đếm N" GIỮ (chỉ hiện sau lần quét đầu) — đây là phản hồi của lần quét, không phải chú thích; anh chưa nói bỏ.
+- **Thử trên local (gõ phím thật + Enter):**
+  - Mã vạch không có trong Tổng kho (`8934567890123`) → thông báo đỏ `Không có SKU nào khớp "8934567890123"`, không thêm dòng, không đổi số nào, ô quét xóa trắng, con trỏ vẫn ở ô quét — quét tiếp được ngay.
+  - Mã có trong Tổng kho nhưng không nằm trong phiếu (vị trí này sổ 0) → thêm một dòng cuối bảng, Sổ 0, đếm 1; quét lần 2 → 2 (vẫn một dòng).
+  - Gõ tay mã SKU chữ thường (`vay01-den-l`) → nhận, thêm dòng, đếm 1.
+- **Kẽ hở tìm ra và đã vá:** mã vạch đọc THIẾU một số (12 số) mà máy chủ tìm ra đúng một sản phẩm "gần giống" thì bản cũ cộng luôn vào sản phẩm đó (nhánh "chỉ ra một kết quả thì nhận", vốn để gõ tay một phần mã SKU). Nay dãy ≥ 8 chữ số phải trùng khít mã vạch / mã SKU mới được cộng; gõ tay mã có chữ vẫn giữ sự tiện tay cũ. Đã thử: 12 số → báo "Không có SKU nào khớp", không cộng.
+- **Dòng thêm bằng quét mất khi tải lại trang — ĐÃ SỬA (anh: "Sửa luôn"):** bản nháp trước chỉ nhớ số của mã có trong phiếu. Nay các dòng thêm bằng quét còn số đếm được lưu riêng (`hubsell_stocktake_extra_<vị trí>`), tải lại trang nạp lại sau các dòng của phiếu. Luật: xóa trắng ô đếm của dòng đó = lần tải sau bỏ dòng; mã nay đã vào phiếu (vừa có hàng ở vị trí) thì dùng dòng của phiếu, giữ số đếm; Chốt xong xóa cả hai khóa nháp; Chốt báo 404 (có mã bị xóa khỏi kho giữa chừng) thì thôi nhớ dòng thêm bằng quét để tải lại không kẹt ở mã hỏng. Đã thử local: quét 2 mã ngoài phiếu → tải lại còn đủ dòng + số, quét tiếp cộng đúng; xóa trắng một ô → tải lại dòng đó biến mất, dòng kia còn. CHƯA thử: bấm Chốt có dòng thêm bằng quét và nhánh 404 — em không bấm Chốt trên local vì chốt sẽ đổi tồn và xếp việc đẩy tồn lên sàn trong DB local.
+
+### 9.2 Phân trang bảng Kiểm kê (09/11, anh: "Phần này em đã phân trang ra chưa") — local, CHƯA commit
+
+Trước đó CHƯA phân trang: phiếu (tối đa 2.000 mã) vẽ hết trong một khung cuộn, mỗi phím gõ / lần quét vẽ lại cả bảng. Nay theo chuẩn bảng số liệu (20 / 50 / 100 dòng/trang, nhớ theo trình duyệt `hubsell_stocktake_page_size`):
+
+- **Phân trang CHỈ Ở PHẦN VẼ.** Dữ liệu cả phiếu vẫn nằm trên máy: số đã đếm, số lệch, dò mã quét, "Chỉ hiện lệch", nút Chốt đều tính trên TOÀN phiếu — không gọi thêm máy chủ khi lật trang.
+- **Quét mã nằm ở trang khác → tự lật tới trang đó**, cuộn dòng vào giữa khung, tô xanh; con trỏ vẫn ở ô quét. Dòng thêm bằng quét nằm cuối phiếu → lật tới trang cuối.
+- Enter ở ô đếm cuối trang → sang ô đầu trang sau. Đổi chip lọc / vị trí / số dòng mỗi trang → về trang 1. Đổi số dòng xong con trỏ về ô quét (để ở ô chọn thì số máy quét bắn ra sẽ đổi lựa chọn).
+- "· N ô sai số" ở chân trang thành nút: bấm là tới đúng ô sai đầu tiên (có thể đang ở trang khác) — không thì khách không biết vì sao nút Chốt khóa.
+- Thanh phân trang chỉ hiện khi phiếu > 20 mã. Mặc định 50 dòng/trang (em tự chọn: kiểm kê đọc liền theo kệ, 20 thì lật quá dày; Tổng kho mặc định 20).
+- **Đã thử local** (25 mã, 20 mã/trang): đang trang 1 quét mã trang 2 → sang trang 2, đúng dòng +1; đang trang 2 quét mã trang 1 → về trang 1; mã lạ → báo đỏ, không lật trang; Enter ô cuối trang 1 → con trỏ vào ô đầu trang 2; ô rác ở trang 2, đứng trang 1 bấm "1 ô sai số" → tới đúng ô; tải lại trang → nhớ 20 mã/trang. `tsc` + `eslint` sạch.
+- **CHƯA:** đo độ mượt với phiếu 2.000 mã thật (local chỉ dựng được 25 dòng); trần 2.000 mã của phiếu giữ nguyên (mã thứ 2.001 trở đi vẫn quét vào được như mã ngoài phiếu, nay với số Sổ thật — mục 9.3).
+
+### 9.3 Số Sổ thật cho mã quét ngoài phiếu (09/11, anh: "Sửa luôn") — local, CHƯA commit
+
+- **Lỗi cũ:** dòng thêm bằng quét luôn ghi cứng Sổ = 0. Đúng với shop dùng vị trí (mã ngoài phiếu = vị trí đó không có), SAI với shop không dùng vị trí: mã ngừng bán / mã ngoài 2.000 dòng đầu vẫn có tồn. Hệ quả không chỉ là hiển thị: trang chỉ gửi lên mã có "đếm ≠ Sổ", nên đếm ra đúng 0 (hết hàng thật) mà Sổ hiện 0 thì mã đó KHÔNG được gửi → sót điều chỉnh.
+- **Sửa:** lúc quét, Sổ lấy từ kết quả tra sản phẩm — không dùng vị trí = `quantityInStock`; dùng vị trí = tồn của mã ở đúng vị trí đang kiểm (không có thì 0). Lúc tải lại trang, các dòng thêm bằng quét hỏi lại máy chủ số Sổ hiện tại qua `POST /api/inventory/stocktake/rows` `{ locationId?, productIds[≤500] }` (chỉ đọc; POST vì danh sách id dài). Mã đã bị xóa khỏi kho thì máy chủ không trả về → trang tự bỏ dòng. Hỏi không được (mất mạng, backend chưa lên bản mới) → tạm dùng Sổ đã nhớ trong máy.
+- **Đã thử local:** tài khoản demo@hubsell.tech (không dùng vị trí, 5 mã đang bán): quét mã ngừng bán VAY-HOA-S (tồn thật 140) → dòng mới Sổ 140, đếm 1, Lệch −139; tải lại trang → gọi `/stocktake/rows` 200, dòng còn với Sổ 140. Tài khoản admin (có vị trí): tải lại vẫn đủ 24 dòng, dòng thêm bằng quét Sổ 0. `tsc` hai phía + `eslint` sạch.
+- **Thứ tự deploy:** frontend lên trước backend vẫn chạy (gọi `/rows` lỗi thì lùi về Sổ đã nhớ).
+- **CHƯA:** bấm Chốt trên local; mã đã bị xóa giữa chừng (nhánh máy chủ không trả về); máy quét thật.
