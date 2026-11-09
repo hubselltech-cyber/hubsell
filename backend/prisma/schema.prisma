@@ -1911,6 +1911,9 @@ model OrderItem {
   @@index([channelSku])
   /// Tra dòng đơn theo id lá sàn (vá giá vốn theo id — Lát 1c; bù đơn cũ — Lát 2).
   @@index([externalId])
+  /// Chỉ mục MỘT PHẦN "OrderItem_productId_idx" ("productId") WHERE "productId" IS NOT NULL chỉ khai
+  /// trong SQL migration 20261109091500_order_item_product_idx (Prisma không diễn tả được) — để khóa
+  /// ngoại SET NULL không quét cả bảng mỗi lần xóa một Product. ĐỪNG thêm @@index([productId]) ở đây.
 }
 
 /// Liên kết (mapping): một Sản phẩm kho gốc ↔ nhiều SKU trên các sàn.
