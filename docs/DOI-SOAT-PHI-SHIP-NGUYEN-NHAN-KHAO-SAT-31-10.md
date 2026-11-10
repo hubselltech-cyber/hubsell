@@ -138,7 +138,57 @@ Không biến trang thành bảng "chi phí ship shop chịu". Điều chỉnh �
 
 Kiểm local (demo@hubsell.tech, backend-http 4010 + frontend-http 3010): 35 đơn lệch, Shopee → "Cước thực tế cao hơn cước báo", Lazada seed (không có sao kê chi tiết) → cùng nhãn, 10 đơn chưa quyết toán → "Chờ sao kê"; tổng cần đòi 333.500 = tổng cũ vì seed không có ca chính sách; dark OK; bảng 9 cột **vừa 1.622 px** (1.285/1.285), ở **1.280 px sidebar mở vẫn cuộn ngang trong thẻ** (1.152/943 — bản cũ 8 cột cũng đã 1.025/943, không mới). Chưa kiểm số thật trên gian TikTok (ca chính sách) — cần prod.
 
-⏳ Còn lại: (1) tên nhóm "Shop chịu cước" chờ anh xem Seller Center; (2) thẻ "Truy thu phí ship" ở Kiểm toán phí (`/finance/fee-audit`, cùng `shippingFeeDiff`) vẫn cộng cả ca chính sách — lát sau nếu anh muốn đồng bộ; (3) Shopee lưu thêm `reverse_shipping_fee`/`buyer_paid_shipping_fee` để tách "Khách trả hàng" (mục 2d).
+⏳ Còn lại: (1) tên nhóm "Shop chịu cước" chờ anh xem Seller Center; (2) thẻ "Truy thu phí ship" ở Kiểm toán phí (`/finance/fee-audit`, cùng `shippingFeeDiff`) vẫn cộng cả ca chính sách — 10/11/2026 đã sửa chữ gợi ý cho đúng nghĩa + thêm bảng theo sản phẩm (mục 7), con số thẻ GIỮ là tổng shop chịu thêm; (3) Shopee lưu thêm `reverse_shipping_fee`/`buyer_paid_shipping_fee` để tách "Khách trả hàng" (mục 2d).
+
+## 7. Kiểm toán phí › Truy thu phí ship › THEO SẢN PHẨM + xuất Excel (10/11/2026)
+
+> Khách bán sữa (TikTok, ~4.700 đơn/tháng) thấy thẻ "Truy thu phí ship" 29,6 tr nhưng trang chỉ liệt kê từng đơn — không biết sản phẩm nào gây ra, nhân viên phải chép tay. Em bóc bằng SQL (hubsell-marketing/so-lieu/KET-QUA-2026-11-10-TRUY-THU-SHIP.md) mới ra: phụ phí từ 12/10 dồn vào MỘT sản phẩm (thùng sữa nước, 20 % đơn dính so với 1 % ở sản phẩm khác), hơn nửa đơn trả hàng dồn vào hai mã sữa bột. Anh Trung: đưa bảng đó vào app ("khảo sát và code thật chuẩn"), rồi thêm "xuất file excel… chọn thời gian và xuất được ra file".
+
+### 7.1 Khách thấy gì
+
+- Tab **Truy thu phí ship** có nút chuyển **Theo đơn | Theo sản phẩm** (đường dẫn `?tab=ship&view=product`). Mặc định vẫn là Theo đơn. Trang Đối soát phí ship của kho KHÔNG có góc nhìn này (giữ ràng buộc 4d: trang kho là để đối soát / khiếu nại).
+- Bảng theo sản phẩm, 6 cột: **Sản phẩm** (ảnh, tên cắt theo chuẩn, sàn + gian, mã sản phẩm trên sàn + nút chép) · **Shop chịu thêm** · **Đơn lệch** · **TB mỗi đơn** · **Tỷ lệ đơn lệch** (đơn lệch / tổng đơn của sản phẩm trong kỳ) · **Nguyên nhân chính** (viên nhãn; trỏ chuột hoặc bấm ra đủ các nguyên nhân kèm tiền + số đơn và lời giải thích). Sắp xếp tại tiêu đề 3 cột tiền / đơn; 20 / 50 / 100 sản phẩm mỗi trang.
+- **Chip lọc nguyên nhân** xếp theo tiền, in tiền rút gọn (số đơn ở tooltip). Số trên chip không đổi theo chip đang chọn.
+- Dòng tổng của bảng ("N sản phẩm · M đơn lệch · shop chịu thêm X") **bằng số trên thẻ** khi không lọc nguyên nhân.
+- Nút **Xuất Excel** (cả hai góc nhìn): một tệp `hubsell_truy_thu_phi_ship_<từ>_<đến>_<giờ xuất>.xlsx` theo gian + khoảng ngày đang chọn, hai trang tính — "Theo don" (mọi đơn: mã đơn, vận đơn, sàn, gian, ngày đặt, ngày quyết toán, sản phẩm, nguyên nhân, khiếu nại được, được phủ, cước thực tế, shop chịu thêm, trạng thái khiếu nại) và "Theo san pham" (mỗi sản phẩm một dòng + mỗi nguyên nhân có phát sinh một cột tiền). Tệp là bản đầy đủ của kỳ, không theo bộ lọc trạng thái / chip nguyên nhân.
+- Sửa chữ gợi ý của thẻ và của cột "Bị trừ thêm": trước ghi "Khiếu nại được", sai với phần lớn số tiền (ca chính sách sàn).
+
+### 7.2 Luật tính (một chỗ: `backend/src/lib/shipping-diff-products.ts`, thuần, 13 test)
+
+| Điểm | Quyết định | Vì sao |
+|---|---|---|
+| Đơn vị gom | sản phẩm trên sàn của một gian = (gian + `itemId`), `itemId` cắt từ `OrderItem.externalId` bằng `ledgerItemIdOf` | việc cần làm tiếp (xem cân nặng khai báo, lý do trả) nằm ở sản phẩm trên Seller Center; gom theo phân loại sẽ xé vụn shop thời trang 17 màu. Cùng id với cột `itemId` của sổ dòng hàng nên mẫu số tra thẳng chỉ mục |
+| Dòng chưa có id sàn | gom theo (gian + mã SKU sàn, giữ nguyên chữ) | đơn cũ trước 18/10, Lazada |
+| Đơn nhiều sản phẩm | chia tiền theo tỷ trọng giá trị dòng (số lượng × giá) bằng `allocateByWeight` của sổ cái | một luật phân bổ cho cả app; quà tặng 0 đ không gánh và không thành dòng |
+| Số lẻ | mỗi phần là số đồng chẵn; phần lẻ dưới một đồng của chính đơn dồn về dòng giá trị lớn nhất; cộng bằng xu | tiền Việt không có số lẻ; Σ dòng = Σ đơn đúng từng xu |
+| Đơn không có dòng hàng | một dòng "Đơn chưa rõ sản phẩm" cho mỗi gian | giữ Σ bảng = thẻ |
+| Nguyên nhân | dùng nguyên `classifyShippingDiff` (mục 6), lọc bằng `shippingDiffReasonMatcher` chung với danh sách đơn | không có bản phân loại thứ hai |
+| Tỷ lệ đơn lệch | mẫu số = đơn KHÔNG hủy của sản phẩm trong kỳ (đếm ở `order_line_ledger`) + đơn hủy có phát sinh cước; mẫu số < tử số (sổ chưa kịp có dòng) thì in "—" | đơn hủy trước khi gửi không tốn cước; không in tỷ lệ sai |
+
+Hạn chế biết trước: (a) đơn có 2 sản phẩm mà phụ phí do món nặng gây ra thì món nhẹ vẫn gánh phần theo giá trị (Hubsell không lưu cân nặng khai báo); (b) nhãn "Phụ phí vận chuyển" vẫn nằm trong nhóm khiếu nại được — số của khách 10/11 cho thấy có thể là phí theo chính sách (mức cố định 27k / 39k / 65k từ 12/10), ⏳ chờ anh xem tên dòng phí trên Seller Center rồi mới đổi nhóm; (c) cột Tỷ lệ không sắp xếp được (mẫu số chỉ đếm cho sản phẩm của trang đang xem).
+
+### 7.3 Mã
+
+| Lớp | Tệp | Việc |
+|---|---|---|
+| Phần thuần | `backend/src/lib/shipping-diff-products.ts` + `__tests__/shipping-diff-products.test.ts` | khóa gom, chia tiền, gom dần (`createShipDiffProductFold`), sắp xếp, tỷ lệ |
+| Bộ lọc nguyên nhân | `backend/src/lib/shipping-diff-reason.ts` `shippingDiffReasonMatcher` | CLAIMABLE / POLICY / mã / tất cả — danh sách đơn và bảng sản phẩm dùng chung |
+| Đọc DB | `backend/src/services/shipping-diff.ts` (mới) | `shipDiffWhere` (thẻ, danh sách đơn, bảng sản phẩm cùng một bộ lọc), `SHIP_REASON_SELECT` + `shipReasonOf` (dời từ `routes/finance.ts`), `loadShipDiffByProduct` |
+| Test DB | `backend/src/services/__tests__/shipping-diff-db.test.ts` | Σ dòng sản phẩm = `aggregate(shippingFeeDiff)`; CLAIMABLE + POLICY = tất cả; gian lạ → rỗng |
+| API | `routes/finance.ts` `GET /api/finance/shipping-discrepancies/by-product` — `reason`, `sort` (amount, orders, avg), `dir`, `page`, `pageSize` + bộ lọc gian / ngày chung | quyền `warehouse.shipping-alerts` hoặc `finance.fee-audit` (router.use sẵn có) |
+| Trang | `frontend/src/app/finance/fee-audit/page.tsx` | nút chuyển góc nhìn, nút Xuất Excel, chữ gợi ý |
+| Bảng | `frontend/src/components/finance/ship-diff-by-product.tsx` (mới), `ship-diff-reason-chip.tsx` (mới — trang kho dùng chung) | DataTable chung của trang; không lớp `dark:` |
+| Dùng chung | `frontend/src/components/shared/sort-header.tsx` | dời từ `products/suppliers/` vì nay 2 nhóm cùng dùng |
+| Excel | `frontend/src/lib/excel.ts` `exportShipDiffAudit` + `downloadSheets` (tệp nhiều trang tính) | gom mọi trang 100 dòng của hai API rồi dựng tệp ở trình duyệt, như các nút xuất khác |
+
+Cách đọc (`loadShipDiffByProduct`): bước 1 MỘT câu đọc đầu đơn lệch của phạm vi (cột phân loại, không dòng hàng — cùng dạng câu với danh sách đơn, đi `Order_channelId_idx`); bước 2 dòng hàng theo lô 1.000 mã đơn (`OrderItem.orderId`), gom dần rồi bỏ → bộ nhớ theo số đơn lệch (cột nhẹ) + số sản phẩm; bước 3 chỉ với sản phẩm của trang đang xem: đếm mẫu số ở sổ dòng hàng + tra ảnh (`loadSkuImages`). Bản đầu em viết đọc theo khóa `id > con trỏ … LIMIT 1000` — đã bỏ: không có chỉ mục (gian, id) cho tập lệch nên mỗi lô quét lại toàn bộ đơn của gian, và `ORDER BY id LIMIT` trên bảng đơn nhiều chủ dễ khiến planner chọn quét khóa chính.
+
+### 7.4 Đo
+
+- **Prod, tài khoản khách trên (chỉ đọc, 10/11):** 14.071 đơn, 1.023 đơn lệch, 17 sản phẩm có tiền. Bước 1: quét chỉ mục gian 23 ms (13.050 dòng bị lọc bỏ), nối bản kê TikTok 0,39 s lúc bộ đệm nguội. Mẫu số 17 sản phẩm trên `order_line_ledger` (toàn bộ thời gian, mọi phân mảnh tháng): 1,28 s nguội → 85 ms nóng. Chọn khoảng ngày thì Postgres cắt phân mảnh, nhanh hơn.
+- Chi phí bước 1 tỷ lệ với TỔNG số đơn của gian (không có chỉ mục cho `shippingFeeDiff > 0`) — đúng như thẻ và danh sách đơn đang chạy từ trước. Nếu sau này shop vài trăm nghìn đơn thấy chậm: thêm chỉ mục một phần `Order(channelId, createdAt) WHERE shippingFeeDiff > 0` (một migration, dùng chung cho cả ba nơi). CHƯA làm vì chưa đo thấy cần và migration trên bảng đơn có rủi ro riêng.
+- Xuất Excel gọi lần lượt các trang 100 dòng; mỗi lần gọi máy chủ phân loại lại cả tập lệch (như nút "Xuất file khiếu nại sàn" sẵn có). Khách trên: 11 + 1 lượt gọi.
+- **Local** (tài khoản thử tạo riêng cho lượt soi, đã xóa khỏi DB dev sau khi xong; seed ca rộng: 1.965 đơn, 475 đơn lệch 23.211.680 đ, 30 sản phẩm, đủ 9 nguyên nhân, tên 130 ký tự, tiền 8 chữ số, đơn 2 sản phẩm + quà 0 đ, đơn không dòng hàng, đơn Shopee không id sàn): thẻ = dòng tổng bảng = tổng cột Excel; lọc Tháng trước 306 đơn 14.377.466 đ khớp cả ba; tràn ô = 0 và không cuộn ngang ở 1280 / 1366 / 1440 / 1520 / 1700 / 1920; giao diện tối đã soi (chip lọc, viên nguyên nhân, ô mở); trang kho vẫn hiện viên nhãn đúng. Tệp Excel mới đọc nội dung trong trình duyệt (chặn lượt tải), chưa mở bằng Excel thật.
 
 ## 5. SQL đã chạy (chỉ đọc, chạy lại được)
 

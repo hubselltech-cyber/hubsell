@@ -70,6 +70,9 @@ export const qk = {
   /** Rổ #1 Kiểm toán phí sàn + trang Đối soát phí ship của kho dùng chung. */
   shippingDiscrepancies: (params: Record<string, unknown>) =>
     ["shipping-discrepancies", params] as const,
+  /** Lệch ship gom theo sản phẩm — chung tiền tố để "Làm mới" của trang xóa cả hai. */
+  shipDiffByProduct: (params: Record<string, unknown>) =>
+    ["shipping-discrepancies", "by-product", params] as const,
   cashFlow: () => ["cash-flow"] as const,
   expenses: (range?: DateRange) => ["expenses", rangeToQuery(range)] as const,
 

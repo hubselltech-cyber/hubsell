@@ -2599,6 +2599,82 @@ export function updateShippingDisputeStatus(
   );
 }
 
+// Lệch ship THEO SẢN PHẨM (Kiểm toán phí › Truy thu phí ship › Theo sản phẩm, 10/11/2026).
+
+export type ShipDiffProductSort = "amount" | "orders" | "avg";
+
+export interface ShipDiffReasonTotal {
+  reason: ShippingDiffReason;
+  /** Số đơn lệch vì nguyên nhân này. */
+  orders: number;
+  /** Tiền ship shop chịu thêm (dương). */
+  amount: number;
+}
+
+export interface ShipDiffProductRow {
+  key: string;
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  /** Id sản phẩm trên sàn; null = đơn cũ chưa có id (gom theo mã SKU) hoặc dòng "chưa rõ sản phẩm". */
+  itemId: string | null;
+  sku: string | null;
+  productName: string;
+  imageUrl: string | null;
+  /** true = các đơn không có dữ liệu dòng hàng. */
+  unattributed: boolean;
+  /** Tiền ship shop chịu thêm đã chia cho sản phẩm theo giá trị dòng (dương). */
+  amount: number;
+  orders: number;
+  avgPerOrder: number;
+  /** Tổng đơn của sản phẩm trong kỳ, không tính đơn hủy trước khi gửi; null = chưa đếm được. */
+  totalOrders: number | null;
+  /** % đơn của sản phẩm bị lệch; null = chưa đếm được. */
+  rate: number | null;
+  topReason: ShippingDiffReason;
+  /** Tiền nhiều trước. */
+  reasons: ShipDiffReasonTotal[];
+}
+
+export interface ShipDiffByProductResponse {
+  summary: {
+    /** Theo bộ lọc nguyên nhân; bằng tổng cột "Shop chịu" của mọi trang. */
+    totalAmount: number;
+    orders: number;
+    productCount: number;
+    /** Mọi đơn trong phạm vi + kỳ, KHÔNG theo bộ lọc nguyên nhân (chip lọc). */
+    reasons: (ShipDiffReasonTotal & { claimable: boolean })[];
+  };
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  total: number;
+  items: ShipDiffProductRow[];
+}
+
+export function fetchShipDiffByProduct(params: {
+  page: number;
+  pageSize: number;
+  sort: ShipDiffProductSort;
+  dir: "asc" | "desc";
+  reason?: ShippingDiffReasonFilter;
+  channel?: ChannelFilterQuery;
+  range?: DateRange;
+}) {
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params.range),
+    ...channelFilterToQuery(params.channel),
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+    sort: params.sort,
+    dir: params.dir,
+  });
+  if (params.reason) qs.set("reason", params.reason);
+  return apiFetch<ShipDiffByProductResponse>(
+    `/api/finance/shipping-discrepancies/by-product?${qs.toString()}`
+  );
+}
+
 // ----- Kiểm toán phí sàn (trang /finance/fee-audit) -----
 // Rổ #1 (truy thu ship) tái dùng fetchShippingDiscrepancies phía trên — một
 // nguồn số với trang Đối soát phí ship của kho, chỉ khác góc nhìn.

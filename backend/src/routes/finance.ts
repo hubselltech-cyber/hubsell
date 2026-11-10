@@ -45,11 +45,17 @@ import {
 } from "../lib/cost-search-apply";
 import { loadVariantNames, type OrderLineRef } from "../lib/order-line-names";
 import {
-  classifyShippingDiff,
   isClaimableReason,
-  SHIPPING_DIFF_REASONS,
+  shippingDiffReasonMatcher,
   type ShippingDiffReason,
 } from "../lib/shipping-diff-reason";
+import {
+  loadShipDiffByProduct,
+  SHIP_REASON_SELECT,
+  shipDiffWhere,
+  shipReasonOf,
+} from "../services/shipping-diff";
+import type { ShipDiffProductSort } from "../lib/shipping-diff-products";
 import { planCostImport, type CostImportRow } from "../lib/cost-import";
 import costMappingRouter from "./cost-mapping";
 import {
@@ -1839,74 +1845,6 @@ const CHANNEL_BY_KEY: Record<string, ChannelName> = {
   offline: ChannelName.OFFLINE,
 };
 
-/**
- * Cột nhẹ để PHÂN LOẠI NGUYÊN NHÂN lệch ship cho mọi đơn khớp bộ lọc (31/10/2026,
- * docs DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md): Order + vài cột ship có
- * dấu của bản kê TikTok / sao kê Lazada. Nguyên nhân là cột tính lúc đọc nên lọc
- * theo nó phải làm trong bộ nhớ — tập này là đơn lệch của MỘT chủ shop trong kỳ
- * (prod 31/10: gian lớn nhất ~2.000 đơn/30 ngày), không phải toàn bộ đơn.
- */
-const SHIP_REASON_SELECT = {
-  id: true,
-  shippingStatus: true,
-  returnStatus: true,
-  isSettled: true,
-  shippingFeeDiff: true,
-  shippingDisputeStatus: true,
-  channel: { select: { channelName: true } },
-  tiktokSettlement: {
-    select: {
-      estimated: true,
-      shipCustomerPaid: true,
-      shipPlatformDiscount: true,
-      shipSubsidy: true,
-      shipSellerDiscount: true,
-      shipReturn: true,
-      shipOther: true,
-    },
-  },
-  lazadaSettlement: {
-    select: {
-      shipFeeReturn: true,
-      feeShipSeller: true,
-      shipFeeAdjustment: true,
-      shipDiscountSeller: true,
-    },
-  },
-} satisfies Prisma.OrderSelect;
-
-type ShipReasonRow = Prisma.OrderGetPayload<{ select: typeof SHIP_REASON_SELECT }>;
-
-function reasonOf(o: ShipReasonRow): ShippingDiffReason {
-  const t = o.tiktokSettlement;
-  const l = o.lazadaSettlement;
-  return classifyShippingDiff({
-    channelName: o.channel.channelName,
-    shippingStatus: o.shippingStatus,
-    returnStatus: o.returnStatus,
-    isSettled: o.isSettled,
-    tiktok: t
-      ? {
-          estimated: t.estimated,
-          shipCustomerPaid: Number(t.shipCustomerPaid),
-          shipPlatformDiscount: Number(t.shipPlatformDiscount),
-          shipSubsidy: Number(t.shipSubsidy),
-          shipSellerDiscount: Number(t.shipSellerDiscount),
-          shipReturn: Number(t.shipReturn),
-          shipOther: Number(t.shipOther),
-        }
-      : null,
-    lazada: l
-      ? {
-          shipFeeReturn: Number(l.shipFeeReturn),
-          feeShipSeller: Number(l.feeShipSeller),
-          shipFeeAdjustment: Number(l.shipFeeAdjustment),
-          shipDiscountSeller: Number(l.shipDiscountSeller),
-        }
-      : null,
-  });
-}
-
 // GET /api/finance/shipping-discrepancies?page&pageSize&channel&status&reason
 //   reason: CLAIMABLE (ca khiếu nại được — mặc định trang) | POLICY (shop chịu
 //   theo chính sách sàn) | một mã ShippingDiffReason | rỗng = tất cả.
@@ -1920,9 +1858,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
       typeof req.query.reason === "string" ? req.query.reason.toUpperCase() : "";
 
     const where: Prisma.OrderWhereInput = {
-      channel: channelScope(req),
-      shippingFeeDiff: { gt: 0 }, // chỉ đơn bị trừ thêm
-      createdAt: parseDateRange(req.query),
+      ...shipDiffWhere(channelScope(req), parseDateRange(req.query)), // chỉ đơn bị trừ thêm
       ...(DISPUTE_STATUSES.includes(statusKey as ShippingDisputeStatus)
         ? { shippingDisputeStatus: statusKey as ShippingDisputeStatus }
         : {}),
@@ -1936,19 +1872,12 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         select: SHIP_REASON_SELECT,
       })
     ).map((o) => {
-      const reason = reasonOf(o);
+      const reason = shipReasonOf(o);
       return { o, reason, claimable: isClaimableReason(reason) };
     });
 
-    const matchesReason = (r: { reason: ShippingDiffReason; claimable: boolean }) =>
-      reasonKey === "CLAIMABLE"
-        ? r.claimable
-        : reasonKey === "POLICY"
-          ? !r.claimable
-          : (SHIPPING_DIFF_REASONS as readonly string[]).includes(reasonKey)
-            ? r.reason === reasonKey
-            : true;
-    const filtered = all.filter(matchesReason);
+    const matchesReason = shippingDiffReasonMatcher(reasonKey);
+    const filtered = all.filter((r) => matchesReason(r.reason));
 
     // Hai thẻ tiền KHÔNG theo bộ lọc nguyên nhân: "cần đòi lại" chỉ cộng ca khiếu
     // nại được, phần còn lại là chi phí ship theo chính sách sàn — để khách thấy
@@ -2013,6 +1942,31 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         };
       }),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/finance/shipping-discrepancies/by-product?page&pageSize&channel&from&to&reason&sort&dir
+//   Tiền ship shop chịu thêm GOM THEO SẢN PHẨM trên sàn, kèm nguyên nhân (Kiểm toán
+//   phí › Truy thu phí ship › Theo sản phẩm, 10/11/2026). Cùng bộ lọc DB với thẻ
+//   "Truy thu phí ship" nên Σ các dòng = số trên thẻ. sort: amount | orders | avg.
+const SHIP_DIFF_PRODUCT_SORTS: readonly ShipDiffProductSort[] = ["amount", "orders", "avg"];
+
+router.get("/shipping-discrepancies/by-product", async (req: AuthRequest, res, next) => {
+  try {
+    const sortKey = typeof req.query.sort === "string" ? req.query.sort : "";
+    res.json(
+      await loadShipDiffByProduct({
+        scope: channelScope(req),
+        range: parseDateRange(req.query),
+        reasonKey: typeof req.query.reason === "string" ? req.query.reason : "",
+        sort: SHIP_DIFF_PRODUCT_SORTS.find((s) => s === sortKey) ?? "amount",
+        dir: req.query.dir === "asc" ? "asc" : "desc",
+        page: Math.max(1, Number(req.query.page) || 1),
+        pageSize: Math.min(100, Math.max(1, Number(req.query.pageSize) || 20)),
+      })
+    );
   } catch (err) {
     next(err);
   }
@@ -2154,11 +2108,8 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
 
-    const shipWhere: Prisma.OrderWhereInput = {
-      channel: channelScope(req),
-      shippingFeeDiff: { gt: 0 },
-      createdAt: parseDateRange(req.query),
-    };
+    // Cùng bộ lọc với danh sách đơn lệch và bảng theo sản phẩm → thẻ = Σ hai bảng đó.
+    const shipWhere = shipDiffWhere(channelScope(req), parseDateRange(req.query));
     const payoutWhere = payoutShortfallWhere(req);
     const pendingWhere = pendingSettleWhere(req);
 

@@ -4,6 +4,7 @@ import {
   fetchProducts,
   fetchPurchaseStatsByProduct,
   fetchRealizedPnlRows,
+  fetchShipDiffByProduct,
   fetchShippingDiscrepancies,
   type ChannelFilterQuery,
   type ChannelName,
@@ -19,13 +20,16 @@ import {
   type PurchaseStatProduct,
   type ReconciliationStatus,
   type SupplierRow,
+  type ShipDiffProductRow,
   type ShippingDiscrepancy,
+  type ShippingDisputeStatus,
   type SkuProduct,
 } from "@/lib/api";
 import { TIKTOK_COLUMNS, toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
-import type { DateRange } from "@/lib/date-range";
+import { rangeToQuery, type DateRange } from "@/lib/date-range";
 import {
   SHIPPING_DIFF_REASON_META,
+  SHIPPING_DIFF_REASON_ORDER,
   type ShippingDiffReasonFilter,
 } from "@/lib/shipping-diff-reason";
 import {
@@ -61,17 +65,30 @@ const SHIPPING_LABEL: Record<string, string> = {
 };
 
 // Ghi workbook 1 sheet ra file .xlsx và tự tải về
+interface SheetSpec {
+  rows: Record<string, string | number>[];
+  colWidths: number[];
+  sheetName: string;
+}
+
+/** Một tệp nhiều trang tính (tên trang tính không dấu, tối đa 31 ký tự theo giới hạn Excel). */
+function downloadSheets(sheets: SheetSpec[], fileName: string) {
+  const wb = XLSX.utils.book_new();
+  for (const sh of sheets) {
+    const ws = XLSX.utils.json_to_sheet(sh.rows);
+    ws["!cols"] = sh.colWidths.map((w) => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, sh.sheetName);
+  }
+  XLSX.writeFile(wb, fileName);
+}
+
 function downloadSheet(
   rows: Record<string, string | number>[],
   colWidths: number[],
   sheetName: string,
   fileName: string
 ) {
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = colWidths.map((w) => ({ wch: w }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  XLSX.writeFile(wb, fileName);
+  downloadSheets([{ rows, colWidths, sheetName }], fileName);
 }
 
 // Ngày giờ dạng gọn cho tên file: 20260718_1530
@@ -225,6 +242,106 @@ export async function exportShippingDisputes(filter: {
   }
   if (all.length > 0) exportShippingDisputesToExcel(all);
   return all.length;
+}
+
+// ---------- TRUY THU PHÍ SHIP (Kiểm toán phí) — theo đơn + theo sản phẩm ----------
+
+const SHIP_DISPUTE_LABEL: Record<ShippingDisputeStatus, string> = {
+  CHO_KHIEU_NAI: "Chờ khiếu nại",
+  DANG_KHIEU_NAI: "Đang khiếu nại",
+  DA_DOI_SOAT: "Đã đối soát",
+};
+
+const SHIP_AUDIT_PAGE = 100;
+
+/** Gọi lần lượt mọi trang của một danh sách phân trang (trang đầu luôn gọi). */
+async function fetchEveryPage<T>(load: (page: number) => Promise<{ items: T[]; pageCount: number }>): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 1; ; page++) {
+    const res = await load(page);
+    all.push(...res.items);
+    if (page >= res.pageCount) break;
+  }
+  return all;
+}
+
+/**
+ * Xuất rổ "Truy thu phí ship" của Kiểm toán phí theo GIAN + KHOẢNG NGÀY đang chọn (khách 10/11/2026: chọn
+ * thời gian rồi xuất ra file, khỏi cho nhân viên chép tay). Một tệp hai trang tính, cùng nguồn với màn hình:
+ *   · "Theo don": mọi đơn shop chịu thêm phí ship, kèm sản phẩm, nguyên nhân, trạng thái khiếu nại;
+ *   · "Theo san pham": mỗi sản phẩm một dòng, tiền tách thành một cột cho từng nguyên nhân.
+ * Không theo bộ lọc trạng thái / nguyên nhân trên màn: tệp là bản đầy đủ của kỳ, lọc tiếp trong Excel.
+ * Số tiền là số DƯƠNG = phần shop chịu thêm. Trả số dòng mỗi trang tính; không có đơn nào thì không tạo tệp.
+ */
+export async function exportShipDiffAudit(filter: {
+  channel?: ChannelFilterQuery;
+  range?: DateRange;
+}): Promise<{ orders: number; products: number }> {
+  const orders = await fetchEveryPage<ShippingDiscrepancy>((page) =>
+    fetchShippingDiscrepancies({ ...filter, page, pageSize: SHIP_AUDIT_PAGE })
+  );
+  if (orders.length === 0) return { orders: 0, products: 0 };
+  const products = await fetchEveryPage<ShipDiffProductRow>((page) =>
+    fetchShipDiffByProduct({ ...filter, page, pageSize: SHIP_AUDIT_PAGE, sort: "amount", dir: "desc" })
+  );
+
+  const orderRows = orders.map((o) => {
+    const meta = SHIPPING_DIFF_REASON_META[o.reason];
+    return {
+      "Mã đơn hàng": o.orderCode,
+      "Mã vận đơn": o.trackingCode ?? "",
+      Sàn: CHANNEL_LABEL[o.channelName] ?? o.channelName,
+      "Gian hàng": o.shopName,
+      "Ngày đặt": toDateTimeText(o.createdAt),
+      "Ngày quyết toán": o.settledAt ? toDateTimeText(o.settledAt) : "",
+      "Sản phẩm": (o.items ?? [])
+        .map((it) => `${it.name || it.sku}${it.variation ? ` (${it.variation})` : ""} x${it.quantity}`)
+        .join("; "),
+      "Nguyên nhân": meta.label,
+      "Khiếu nại được": meta.claimable ? "Có" : "Không — chính sách sàn",
+      "Phí ship đã được phủ (khách trả + sàn trợ)": o.coveredFee,
+      "Phí ship thực tế": o.shippingFeeActual,
+      "Shop chịu thêm": -o.discrepancy,
+      "Trạng thái khiếu nại": SHIP_DISPUTE_LABEL[o.status] ?? o.status,
+    };
+  });
+
+  // Mỗi nguyên nhân CÓ phát sinh trong kỳ một cột tiền, theo thứ tự chuẩn (ca khiếu nại được trước).
+  const present = new Set(products.flatMap((p) => p.reasons.map((r) => r.reason)));
+  const reasonCols = SHIPPING_DIFF_REASON_ORDER.filter((r) => present.has(r));
+  const productRows = products.map((p) => {
+    const row: Record<string, string | number> = {
+      "Sản phẩm": p.unattributed ? "Đơn chưa rõ sản phẩm" : p.productName,
+      "Mã sản phẩm trên sàn": p.itemId ?? p.sku ?? "",
+      Sàn: CHANNEL_LABEL[p.channelName] ?? p.channelName,
+      "Gian hàng": p.shopName,
+      "Shop chịu thêm": p.amount,
+      "Số đơn lệch": p.orders,
+      "Trung bình mỗi đơn": p.avgPerOrder,
+      "Tổng đơn trong kỳ": p.totalOrders ?? "",
+      "Tỷ lệ đơn lệch (%)": p.rate ?? "",
+      "Nguyên nhân chính": SHIPPING_DIFF_REASON_META[p.topReason].label,
+    };
+    for (const r of reasonCols) {
+      row[SHIPPING_DIFF_REASON_META[r].label] = p.reasons.find((x) => x.reason === r)?.amount ?? 0;
+    }
+    return row;
+  });
+
+  const { from, to } = rangeToQuery(filter.range);
+  const period = from && to ? `${from}_${to}` : "toan_bo";
+  downloadSheets(
+    [
+      { rows: orderRows, colWidths: [22, 18, 10, 26, 18, 18, 60, 30, 24, 22, 18, 16, 18], sheetName: "Theo don" },
+      {
+        rows: productRows,
+        colWidths: [60, 24, 10, 26, 16, 12, 18, 16, 16, 30, ...reasonCols.map(() => 22)],
+        sheetName: "Theo san pham",
+      },
+    ],
+    `hubsell_truy_thu_phi_ship_${period}_${fileStamp()}.xlsx`
+  );
+  return { orders: orderRows.length, products: productRows.length };
 }
 
 // Lấy TẤT CẢ đơn hàng theo bộ lọc hiện tại (gom mọi trang) rồi xuất

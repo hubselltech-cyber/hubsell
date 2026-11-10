@@ -4,6 +4,8 @@ import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import {
   classifyShippingDiff,
   isClaimableReason,
+  SHIPPING_DIFF_REASONS,
+  shippingDiffReasonMatcher,
   type TiktokShipCols,
 } from "../shipping-diff-reason";
 
@@ -149,5 +151,24 @@ describe("classifyShippingDiff — Shopee / Lazada", () => {
 
   it("đơn offline không có sàn → OTHER", () => {
     expect(classifyShippingDiff({ ...base, channelName: ChannelName.OFFLINE })).toBe("OTHER");
+  });
+});
+
+describe("shippingDiffReasonMatcher — bộ lọc ?reason= dùng chung", () => {
+  it("CLAIMABLE / POLICY chia đôi 9 mã, không phân biệt hoa thường", () => {
+    const claimable = shippingDiffReasonMatcher("claimable");
+    const policy = shippingDiffReasonMatcher("POLICY");
+    for (const r of SHIPPING_DIFF_REASONS) {
+      expect(claimable(r)).toBe(isClaimableReason(r));
+      expect(policy(r)).toBe(!isClaimableReason(r));
+    }
+  });
+
+  it("một mã → đúng mã đó; rỗng / giá trị lạ → tất cả", () => {
+    const one = shippingDiffReasonMatcher("customer_return");
+    expect(one("CUSTOMER_RETURN")).toBe(true);
+    expect(one("LOGISTICS_SURCHARGE")).toBe(false);
+    expect(SHIPPING_DIFF_REASONS.every(shippingDiffReasonMatcher(""))).toBe(true);
+    expect(SHIPPING_DIFF_REASONS.every(shippingDiffReasonMatcher("khong-co"))).toBe(true);
   });
 });

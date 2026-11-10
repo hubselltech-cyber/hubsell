@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 10/11 (1) — Khách bán sữa thấy thẻ Truy thu phí ship 29,6 tr → anh muốn làm video; em bóc số prod ra nguyên nhân theo sản phẩm → anh: "khảo sát và code thật chuẩn… Senior… mô hình tree" + "thêm phần xuất file excel… chọn thời gian và xuất được ra file" → ĐÃ CODE + SOI LOCAL; anh: "Dọn dẹp, commit và push nhé" → ĐÃ COMMIT + PUSH 10/11
+
+- **Số prod của khách (SQL chỉ đọc):** `hubsell-marketing/so-lieu/KET-QUA-2026-11-10-TRUY-THU-SHIP.md` — 01/09–10/11 = 29,68 tr khớp thẻ; khách trả hàng 13,0 tr (108,5k/đơn), phụ phí mới từ 12/10 11,2 tr (dồn vào thùng sữa nước: 20 % đơn dính), vượt mức sàn trợ 6,8 tr; chương trình bồi hoàn có lời (+11,5 tr), 30 tr là phần không được bù. Ý kịch bản video: `hubsell-marketing/kenh/tiktok/KICH-BAN-TRUY-THU-SHIP-NGANH-NANG-2026-11-10.md` (nháp, không commit).
+- **Tính năng (docs/DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md mục 7):** Kiểm toán phí › Truy thu phí ship có nút **Theo đơn | Theo sản phẩm** + nút **Xuất Excel**.
+  - Backend: `lib/shipping-diff-products.ts` (thuần: gom theo sản phẩm sàn, chia tiền đơn theo giá trị dòng, đồng chẵn, Σ dòng = Σ đơn) · `services/shipping-diff.ts` (mới: bộ lọc chung `shipDiffWhere`, phân loại dời từ route, `loadShipDiffByProduct` đọc hai bước) · `GET /api/finance/shipping-discrepancies/by-product` · `shippingDiffReasonMatcher` dùng chung cho `?reason=`. Không migration.
+  - Frontend: `components/finance/ship-diff-by-product.tsx` + `ship-diff-reason-chip.tsx` (trang kho dùng chung) · `components/shared/sort-header.tsx` (dời từ products/suppliers) · `lib/excel.ts` `exportShipDiffAudit` (một tệp hai trang tính theo gian + khoảng ngày) · sửa chữ gợi ý thẻ / cột từng ghi "Khiếu nại được".
+- **Kiểm:** vitest 30 ca (13 phần thuần + 14 phân loại / bộ lọc + 3 test DB Σ dòng = aggregate) xanh; `tsc` backend + frontend sạch; eslint tệp sửa sạch. Local tài khoản thử riêng, đã xóa sau khi soi (seed 1.965 đơn, 475 lệch, 30 sản phẩm, đủ 9 nguyên nhân): thẻ = tổng bảng = tổng Excel (23.211.680 đ; Tháng trước 14.377.466 đ), tràn ô = 0 ở 1280–1920, giao diện tối đã soi. Prod chỉ ĐO câu lệnh (bước đọc đơn 23 ms + nối bản kê 0,39 s nguội; mẫu số 1,28 s nguội → 85 ms nóng).
+- **Dọn trước khi commit:** xóa tài khoản thử + đơn seed + dòng sổ của nó ở DB dev; tắt hai máy chủ local; bỏ email khách khỏi tệp SQL mẫu (`hubsell-marketing/so-lieu/SQL-TRUY-THU-SHIP-THEO-NGUYEN-NHAN.sql`); kịch bản video là nháp nên KHÔNG commit.
+- **⏳ Chờ anh:** (1) soi prod bằng tài khoản khách sau khi Render + Vercel lên (em không có tài khoản khách; số chờ đợi: 17 sản phẩm, sản phẩm đầu ≈ 9,85 tr / 644 đơn, toàn bộ thời gian); (2) mở một đơn có phụ phí 65.000 đ của khách trên Seller Center — nếu là phí chính sách thì chuyển "Phụ phí vận chuyển" khỏi nhóm khiếu nại được; (3) xin khách đồng ý dùng ảnh tin nhắn, video không nêu tên gian / hãng.
+
 ## Phiên 09/11 (6) — Anh: "Em push hết lên nhé" → ĐÃ PUSH 3 commit, kiểm prod OK; rồi "Dọn dẹp code thừa đi em nhé, đảm bảo mô hình tree chuyên nghiệp" → ĐÃ DỌN, COMMIT + PUSH (anh: "Commit + push")
 
 - **Push:** `b4ec6c7b..b1a71642` (Kiểm kê `8315c2f3` + `dbb672c9`, Tổng kho `b1a71642`), không migration. Backend `/health` = `b1a71642`.

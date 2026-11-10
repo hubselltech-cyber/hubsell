@@ -28,6 +28,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Download,
   Hourglass,
   Loader2,
   SearchCheck,
@@ -47,10 +48,12 @@ import {
   type ChannelFilterValue,
 } from "@/components/shared/channel-filter";
 import { HintIcon, HintText } from "@/components/finance/hint-icon";
+import { ShipDiffByProduct } from "@/components/finance/ship-diff-by-product";
 import { Money } from "@/components/ui/money";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Segmented } from "@/components/ui/segmented";
 import {
   channelFilterToQuery,
   fetchFeeAudit,
@@ -72,6 +75,7 @@ import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { can } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { exportShipDiffAudit } from "@/lib/excel";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { MONEY_NEGATIVE, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -79,6 +83,14 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 type AuditTab = "ship" | "payout" | "pending";
+
+/** Rổ #1 có hai cách gom: từng đơn (để khiếu nại) và từng sản phẩm (để biết sửa ở đâu). */
+type ShipView = "order" | "product";
+
+const SHIP_VIEWS: { key: ShipView; label: string }[] = [
+  { key: "order", label: "Theo đơn" },
+  { key: "product", label: "Theo sản phẩm" },
+];
 
 const TABS: { key: AuditTab; label: string }[] = [
   { key: "ship", label: "Truy thu phí ship" },
@@ -246,6 +258,7 @@ function ShortfallBreakdown({
 export default function FeeAuditPage() {
   const router = useRouter();
   const [tab, setTab] = useState<AuditTab>("ship");
+  const [shipView, setShipView] = useState<ShipView>("order");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [channelFilter, setChannelFilter] =
@@ -257,17 +270,21 @@ export default function FeeAuditPage() {
   const [range, setRange] = useState<DateRange | null>(null);
   /** Đơn đang chờ PATCH trạng thái — khóa đúng một ô select thay vì cả bảng. */
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!getToken()) router.replace("/login");
   }, [router]);
 
-  // Deep-link từ chuông cảnh báo: /finance/fee-audit?tab=payout|pending.
+  // Deep-link từ chuông cảnh báo: /finance/fee-audit?tab=payout|pending; thêm
+  // &view=product để mở thẳng bảng Truy thu phí ship theo sản phẩm.
   // Đặt tab trong effect (không phải useState initializer) để bản render đầu
   // giống hệt server — tránh lệch hydration vì window chỉ có ở client.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
+    const qs = new URLSearchParams(window.location.search);
+    const t = qs.get("tab");
     if (t === "ship" || t === "payout" || t === "pending") setTab(t);
+    if (qs.get("view") === "product") setShipView("product");
   }, []);
 
   const allowed = can(getStoredUser(), "finance.fee-audit");
@@ -302,7 +319,9 @@ export default function FeeAuditPage() {
     enabled: allowed,
   });
 
-  // Rổ #1 tái dùng endpoint của trang Đối soát phí ship — chỉ gọi khi mở tab.
+  // Rổ #1 tái dùng endpoint của trang Đối soát phí ship — chỉ gọi khi mở tab ở
+  // góc nhìn theo đơn (góc theo sản phẩm tự gọi trong ShipDiffByProduct).
+  const byProduct = tab === "ship" && shipView === "product";
   const shipQ = useApiQuery({
     queryKey: qk.shippingDiscrepancies({
       page,
@@ -319,7 +338,7 @@ export default function FeeAuditPage() {
         channel: channelFilter,
         range: range ?? undefined,
       }),
-    enabled: allowed && tab === "ship",
+    enabled: allowed && tab === "ship" && !byProduct,
   });
 
   useEffect(() => {
@@ -348,6 +367,20 @@ export default function FeeAuditPage() {
         : pendingItems.length;
 
   const refreshAll = () => invalidate(["fee-audit"], ["shipping-discrepancies"]);
+
+  /** Xuất rổ Truy thu phí ship (theo đơn + theo sản phẩm) của gian + khoảng ngày đang chọn. */
+  async function exportShip() {
+    setExporting(true);
+    try {
+      const n = await exportShipDiffAudit({ channel: channelFilter, range: range ?? undefined });
+      if (n.orders === 0) toast.info("Không có đơn nào bị truy thu phí ship trong bộ lọc đang chọn");
+      else toast.success(`Đã xuất ${formatNumber(n.orders)} đơn và ${formatNumber(n.products)} sản phẩm ra Excel`);
+    } catch {
+      toast.error("Không xuất được file Excel");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function changeShipStatus(id: string, status: ShippingDisputeStatus) {
     setBusyId(id);
@@ -409,7 +442,7 @@ export default function FeeAuditPage() {
         header: () => (
           <span className="inline-flex items-center gap-1">
             Bị trừ thêm
-            <HintIcon hint="Phần phí vận chuyển shop THỰC CHỊU sau khi trừ phần khách trả + sàn trợ giá. Dương là tiền có thể khiếu nại đòi lại — thường do khai sai cân nặng/kích thước kiện." />
+            <HintIcon hint="Phần phí vận chuyển shop THỰC CHỊU sau khi trừ phần khách trả + sàn trợ giá. Gồm cả khoản theo chính sách sàn (khách trả hàng, đơn hủy sau khi gửi, vượt mức sàn trợ…) — chỉ một phần khiếu nại được; xem nguyên nhân từng đơn ở Quản lý Kho › Đối soát phí ship." />
           </span>
         ),
         cell: ({ row }) => (
@@ -609,7 +642,7 @@ export default function FeeAuditPage() {
             title={
               <span className="inline-flex items-center gap-1">
                 Truy thu phí ship
-                <HintIcon hint="Tổng phí vận chuyển shop bị trừ THÊM so với phần khách trả + sàn trợ. Khiếu nại được — thường do sai cân nặng/kích thước." />
+                <HintIcon hint="Tổng phí vận chuyển shop chịu THÊM ngoài phần khách trả + sàn trợ. Gồm cả khoản theo chính sách sàn (khách trả hàng, phụ phí, vượt mức sàn trợ…) nên chỉ một phần khiếu nại được. Bấm Theo sản phẩm ở bảng bên dưới để biết sản phẩm nào gánh nhiều nhất và vì sao." />
               </span>
             }
             value={<Money value={summary?.ship.totalMissing ?? 0} />}
@@ -664,6 +697,17 @@ export default function FeeAuditPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {tab === "ship" && (
+              <Segmented
+                ariaLabel="Gom truy thu phí ship theo"
+                value={shipView}
+                items={SHIP_VIEWS}
+                onChange={(v) => {
+                  setShipView(v);
+                  setPage(1);
+                }}
+              />
+            )}
+            {tab === "ship" && !byProduct && (
               <NativeSelect
                 className="w-44"
                 aria-label="Lọc trạng thái khiếu nại"
@@ -731,62 +775,78 @@ export default function FeeAuditPage() {
                 "Làm mới"
               )}
             </Button>
+            {tab === "ship" && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={exporting}
+                onClick={() => void exportShip()}
+                title="Xuất mọi đơn bị truy thu phí ship và bảng theo sản phẩm của gian + khoảng ngày đang chọn"
+              >
+                {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                Xuất Excel
+              </Button>
+            )}
           </div>
         </div>
 
+        {byProduct && <ShipDiffByProduct channel={channelFilter} range={range} />}
+
         {/* ── Bảng của tab đang mở ── */}
-        <Card className="shadow-sm">
-          <CardContent className="p-0">
-            {loading && rowCount === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                Đang tải dữ liệu…
-              </p>
-            ) : rowCount === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                <SearchCheck className="mx-auto mb-2 size-8" />
-                {tab === "ship" &&
-                  "Không có đơn nào bị truy thu phí ship — phí vận chuyển đang được sàn trừ đúng."}
-                {tab === "payout" &&
-                  "Chưa phát hiện đơn nào bị trả thiếu. Hubsell bắt đầu chụp số ước tính của sàn từ khi tính năng lên sóng — đơn mới sẽ được soi tự động ở mỗi nhịp đối soát."}
-                {tab === "pending" &&
-                  "Không có đơn giao xong nào quá hạn chờ tiền — sàn đang giải ngân đúng nhịp."}
-              </div>
-            ) : (
-              <Refreshing active={loading}>
-                {tab === "ship" && (
-                  <DataTable
-                    tableId="fee-audit-ship"
-                    columns={shipColumns}
-                    data={shipItems}
-                    getRowId={(o) => o.id}
-                    toolbar={`${formatNumber(summary?.ship.orders ?? 0)} đơn bị truy thu`}
-                  />
-                )}
-                {tab === "payout" && (
-                  <DataTable
-                    tableId="fee-audit-payout"
-                    columns={payoutColumns}
-                    data={payoutItems}
-                    getRowId={(o) => o.id}
-                    toolbar={`${formatNumber(summary?.payout.orders ?? 0)} đơn sàn trả thiếu`}
-                  />
-                )}
-                {tab === "pending" && (
-                  <DataTable
-                    tableId="fee-audit-pending"
-                    columns={pendingColumns}
-                    data={pendingItems}
-                    getRowId={(o) => o.id}
-                    toolbar={`${formatNumber(summary?.pending.orders ?? 0)} đơn đang chờ tiền`}
-                  />
-                )}
-              </Refreshing>
-            )}
-          </CardContent>
-        </Card>
+        {!byProduct && (
+          <Card className="shadow-sm">
+            <CardContent className="p-0">
+              {loading && rowCount === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Đang tải dữ liệu…
+                </p>
+              ) : rowCount === 0 ? (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  <SearchCheck className="mx-auto mb-2 size-8" />
+                  {tab === "ship" &&
+                    "Không có đơn nào bị truy thu phí ship — phí vận chuyển đang được sàn trừ đúng."}
+                  {tab === "payout" &&
+                    "Chưa phát hiện đơn nào bị trả thiếu. Hubsell bắt đầu chụp số ước tính của sàn từ khi tính năng lên sóng — đơn mới sẽ được soi tự động ở mỗi nhịp đối soát."}
+                  {tab === "pending" &&
+                    "Không có đơn giao xong nào quá hạn chờ tiền — sàn đang giải ngân đúng nhịp."}
+                </div>
+              ) : (
+                <Refreshing active={loading}>
+                  {tab === "ship" && (
+                    <DataTable
+                      tableId="fee-audit-ship"
+                      columns={shipColumns}
+                      data={shipItems}
+                      getRowId={(o) => o.id}
+                      toolbar={`${formatNumber(summary?.ship.orders ?? 0)} đơn bị truy thu`}
+                    />
+                  )}
+                  {tab === "payout" && (
+                    <DataTable
+                      tableId="fee-audit-payout"
+                      columns={payoutColumns}
+                      data={payoutItems}
+                      getRowId={(o) => o.id}
+                      toolbar={`${formatNumber(summary?.payout.orders ?? 0)} đơn sàn trả thiếu`}
+                    />
+                  )}
+                  {tab === "pending" && (
+                    <DataTable
+                      tableId="fee-audit-pending"
+                      columns={pendingColumns}
+                      data={pendingItems}
+                      getRowId={(o) => o.id}
+                      toolbar={`${formatNumber(summary?.pending.orders ?? 0)} đơn đang chờ tiền`}
+                    />
+                  )}
+                </Refreshing>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Phân trang ── */}
-        {rowCount > 0 && (
+        {!byProduct && rowCount > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Hiển thị</span>

@@ -58,6 +58,7 @@ import { exportShippingDisputes } from "@/lib/excel";
 import { formatNumber } from "@/lib/format";
 import { CopyIconButton } from "@/components/ui/copy-icon-button";
 import { HintIcon, HintText } from "@/components/finance/hint-icon";
+import { ShipDiffReasonChip } from "@/components/finance/ship-diff-reason-chip";
 import {
   SHIPPING_DIFF_REASON_META,
   SHIPPING_DIFF_REASON_ORDER,
@@ -416,17 +417,7 @@ export default function ShippingAlertsPage() {
                         <TableCell className="max-w-44">
                           {rm ? (
                             <HintText hint={rm.hint}>
-                              <span
-                                className={cn(
-                                  // cho xuống dòng: 9 cột phải vừa 1280 px, nhãn dài nhất 29 ký tự
-                                  "inline-flex items-center rounded-2xl border px-2.5 py-0.5 text-left text-xs font-medium leading-tight whitespace-normal",
-                                  rm.claimable
-                                    ? "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-700 dark:bg-teal-950 dark:text-teal-200"
-                                    : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                                )}
-                              >
-                                {rm.label}
-                              </span>
+                              <ShipDiffReasonChip reason={o.reason} />
                             </HintText>
                           ) : (
                             <span className="text-muted-foreground">—</span>

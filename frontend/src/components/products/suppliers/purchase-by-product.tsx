@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Refreshing } from "@/components/shared/refreshing";
+import { SortHeader, type SortState } from "@/components/shared/sort-header";
 import { Button } from "@/components/ui/button";
 import { CopyIconButton } from "@/components/ui/copy-icon-button";
 import { Money } from "@/components/ui/money";
@@ -15,8 +16,6 @@ import { qk } from "@/lib/query-keys";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
-
-import { SortHeader, type SortState } from "./sort-header";
 
 /**
  * GIÁ NHẬP THEO SẢN PHẨM — góc nhìn thứ hai của tab Nhà cung cấp (ý anh Trung 05/11: gõ một sản phẩm →

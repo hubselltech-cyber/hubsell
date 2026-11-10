@@ -44,6 +44,19 @@ export function isClaimableReason(reason: ShippingDiffReason): boolean {
   return CLAIMABLE.has(reason);
 }
 
+/**
+ * Bộ lọc `?reason=` dùng chung cho danh sách đơn lệch và bảng lệch theo sản phẩm:
+ * CLAIMABLE (ca khiếu nại được) | POLICY (shop chịu theo chính sách sàn) | một mã
+ * ShippingDiffReason | giá trị khác / rỗng = tất cả. Không phân biệt hoa thường.
+ */
+export function shippingDiffReasonMatcher(reasonKey: string): (reason: ShippingDiffReason) => boolean {
+  const key = reasonKey.trim().toUpperCase();
+  if (key === "CLAIMABLE") return isClaimableReason;
+  if (key === "POLICY") return (reason) => !isClaimableReason(reason);
+  if ((SHIPPING_DIFF_REASONS as readonly string[]).includes(key)) return (reason) => reason === key;
+  return () => true;
+}
+
 /** Số có dấu nguyên bản của bản kê TikTok (âm = sàn trừ). */
 export interface TiktokShipCols {
   estimated: boolean;

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Download, Loader2, Pencil, Plus, Search, X } from "lucide-react";
 
 import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { SortHeader, type SortState } from "@/components/shared/sort-header";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,6 @@ import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
 import { PurchaseByProduct } from "./purchase-by-product";
-import { SortHeader, type SortState } from "./sort-header";
 import { SupplierFormDialog } from "./supplier-form-dialog";
 
 /**
