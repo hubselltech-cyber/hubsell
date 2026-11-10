@@ -63,14 +63,15 @@ export interface AdsSpendSummary {
 
 /**
  * Gom AdSpend cho dòng "Chi phí quảng cáo sàn (Ads)" — thuần, có test.
- * gmvMaxChargedByChannel: Σ phí GMV Max trên bản kê theo channelId (số có
- * dấu, ≠ 0 nghĩa là sàn đã thu theo đơn trong kỳ). Gian có khoản này chỉ cộng
+ * chargedInOrderByChannel: Σ adsChargedInOrder theo channelId (lib/finance-definitions.ts
+ * — TikTok: phí GMV Max trên bản kê; Shopee: tiền sàn trích từ đơn nạp ví quảng
+ * cáo; số có dấu, ≠ 0 nghĩa là sàn đã thu trong đơn của kỳ). Gian có khoản này chỉ cộng
  * phần AdSpend vượt khoản đã thu, chia đều theo tỷ lệ lên từng ngày (chuỗi
  * Doanh thu vs Chi phí vẫn khớp tổng).
  */
 export function summarizeAdsSpend(input: {
   rows: AdSpendRow[];
-  gmvMaxChargedByChannel: Map<string, number>;
+  chargedInOrderByChannel: Map<string, number>;
   tiktokChannels: TiktokAdsChannel[];
   /** Gian Shopee trong phạm vi — thiếu = không ghi chú (caller cũ). */
   shopeeChannels?: ShopeeAdsChannel[];
@@ -83,7 +84,7 @@ export function summarizeAdsSpend(input: {
   for (const r of input.rows) spendByChannel.set(r.channelId, (spendByChannel.get(r.channelId) ?? 0) + r.amount);
   const factorOf = new Map<string, number>();
   const offsetChannels = new Set<string>();
-  for (const [channelId, fee] of input.gmvMaxChargedByChannel) {
+  for (const [channelId, fee] of input.chargedInOrderByChannel) {
     if (fee === 0) continue;
     offsetChannels.add(channelId);
     const spend = spendByChannel.get(channelId) ?? 0;
@@ -101,9 +102,13 @@ export function summarizeAdsSpend(input: {
   }
 
   const hasOffset = input.tiktokChannels.some((ch) => offsetChannels.has(ch.id));
+  const hasShopeeOffset = (input.shopeeChannels ?? []).some((ch) => offsetChannels.has(ch.id));
   const hasUnlinked = input.tiktokChannels.some((ch) => !offsetChannels.has(ch.id) && !ch.adsLinked);
   if (hasOffset) summary.notes.push("TikTok đã trừ một phần tiền quảng cáo trong đơn, ở đây chỉ cộng phần còn lại");
   if (hasUnlinked) summary.notes.push("TikTok cần kết nối tài khoản quảng cáo");
+  if (hasShopeeOffset) {
+    summary.notes.push("Shopee đã trích một phần tiền đơn để nạp ví quảng cáo, ở đây chỉ cộng phần còn lại");
+  }
   if ((input.shopeeChannels ?? []).some((ch) => !ch.adsLinked)) {
     summary.notes.push("Shopee cần kết nối Hubsell Ads (ứng dụng quảng cáo riêng) để lấy tiền ads");
   }
@@ -149,29 +154,30 @@ export async function loadAdSpendRows(
 /**
  * Tiền quảng cáo sàn của kỳ trên ĐÚNG tập đơn tính doanh thu — MỘT cách gom cho
  * Tổng quan và Trợ lý hỏi đáp, cùng luật với Báo cáo dòng tiền: gian bị sàn thu
- * GMV Max ngay trong đơn thì khoản đó đã nằm trong phí sàn, không cộng lần nữa.
+ * tiền quảng cáo ngay trong đơn (TikTok GMV Max, Shopee nạp ví quảng cáo) thì
+ * khoản đó đã nằm trong tiền về ví, không cộng lần nữa.
  */
 export async function platformAdsSpend(
   scope: Prisma.ChannelWhereInput,
   range: { gte: Date; lte: Date } | undefined,
-  revenueRows: { channelId: string; feeGmvMax: number }[]
+  revenueRows: { channelId: string; adsCharged: number }[]
 ): Promise<AdsSpendSummary> {
   const [rows, tiktokChannels, shopeeChannels] = await Promise.all([
     loadAdSpendRows(scope, range),
     loadTiktokAdsChannels(scope),
     loadShopeeAdsChannels(scope),
   ]);
-  const gmvMaxChargedByChannel = new Map<string, number>();
+  const chargedInOrderByChannel = new Map<string, number>();
   for (const r of revenueRows) {
-    if (r.feeGmvMax === 0) continue;
-    gmvMaxChargedByChannel.set(
+    if (r.adsCharged === 0) continue;
+    chargedInOrderByChannel.set(
       r.channelId,
-      (gmvMaxChargedByChannel.get(r.channelId) ?? 0) + r.feeGmvMax
+      (chargedInOrderByChannel.get(r.channelId) ?? 0) + r.adsCharged
     );
   }
   return summarizeAdsSpend({
     rows,
-    gmvMaxChargedByChannel,
+    chargedInOrderByChannel,
     tiktokChannels,
     shopeeChannels,
     dateKey: toBusinessDateKey,

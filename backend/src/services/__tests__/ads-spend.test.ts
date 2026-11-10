@@ -14,7 +14,7 @@ describe("summarizeAdsSpend", () => {
   it("cộng ads TikTok như Shopee khi sàn KHÔNG trừ GMV Max trong đơn (ANO 26/09)", () => {
     const s = summarizeAdsSpend({
       rows,
-      gmvMaxChargedByChannel: new Map([["tt", 0]]),
+      chargedInOrderByChannel: new Map([["tt", 0]]),
       tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
       dateKey: key,
     });
@@ -28,7 +28,7 @@ describe("summarizeAdsSpend", () => {
   it("gian bị sàn thu TRỌN ads theo đơn → không cộng lại (không trừ hai lần)", () => {
     const s = summarizeAdsSpend({
       rows,
-      gmvMaxChargedByChannel: new Map([["tt", -843_529]]),
+      chargedInOrderByChannel: new Map([["tt", -843_529]]),
       tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
       dateKey: key,
     });
@@ -41,7 +41,7 @@ describe("summarizeAdsSpend", () => {
   it("gian trả ads bằng tài khoản quảng cáo nhưng có phí coupon GMV Max trong đơn → chỉ trừ đúng phần đã thu, không bỏ cả gian (69Minh Đương 20/10)", () => {
     const s = summarizeAdsSpend({
       rows,
-      gmvMaxChargedByChannel: new Map([["tt", -120_000]]),
+      chargedInOrderByChannel: new Map([["tt", -120_000]]),
       tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
       dateKey: key,
     });
@@ -58,7 +58,7 @@ describe("summarizeAdsSpend", () => {
   it("khoản thu trong đơn lớn hơn AdSpend (lệch kỳ quyết toán) → kẹp 0, không ra số âm", () => {
     const s = summarizeAdsSpend({
       rows,
-      gmvMaxChargedByChannel: new Map([["tt", -2_000_000]]),
+      chargedInOrderByChannel: new Map([["tt", -2_000_000]]),
       tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
       dateKey: key,
     });
@@ -69,7 +69,7 @@ describe("summarizeAdsSpend", () => {
   it("gian TikTok chưa nối quảng cáo → ghi chú rõ, không im lặng", () => {
     const s = summarizeAdsSpend({
       rows: rows.filter((r) => r.channelId !== "tt"),
-      gmvMaxChargedByChannel: new Map(),
+      chargedInOrderByChannel: new Map(),
       tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: false }],
       dateKey: key,
     });
@@ -78,7 +78,7 @@ describe("summarizeAdsSpend", () => {
   });
 
   it("gian Shopee chưa ủy quyền Hubsell Ads → ghi chú rõ (30/10, khách phamgiathang); đã nối thì im", () => {
-    const base = { rows, gmvMaxChargedByChannel: new Map(), tiktokChannels: [], dateKey: key };
+    const base = { rows, chargedInOrderByChannel: new Map(), tiktokChannels: [], dateKey: key };
     const chua = summarizeAdsSpend({
       ...base,
       shopeeChannels: [{ id: "sp", shopName: "QA giầy", adsLinked: false }],
@@ -88,6 +88,28 @@ describe("summarizeAdsSpend", () => {
     expect(da.notes).toEqual([]);
     // Caller cũ không truyền shopeeChannels → không ghi chú (không đổi hành vi).
     expect(summarizeAdsSpend(base).notes).toEqual([]);
+  });
+
+  it("Shopee trích tiền đơn nạp ví quảng cáo → dòng Ads chỉ cộng phần tiêu VƯỢT số đã trích, có ghi chú (10/11, gian Mẹ mua đi)", () => {
+    const base = {
+      rows,
+      tiktokChannels: [{ id: "tt", shopName: "ANO", adsLinked: true }],
+      shopeeChannels: [{ id: "sp", shopName: "DarkMan", adsLinked: true }],
+      dateKey: key,
+    };
+    // Trích 60.000 trong đơn, tiêu 100.000 → cộng thêm 40.000; TikTok không bị ảnh hưởng.
+    const motPhan = summarizeAdsSpend({ ...base, chargedInOrderByChannel: new Map([["sp", -60_000]]) });
+    expect(motPhan.byChannel.get("SHOPEE")).toBeCloseTo(40_000, 6);
+    expect(motPhan.total).toBeCloseTo(883_529, 6);
+    expect(motPhan.notes).toEqual(["Shopee đã trích một phần tiền đơn để nạp ví quảng cáo, ở đây chỉ cộng phần còn lại"]);
+    // Kỳ nạp nhiều hơn tiêu → kẹp 0, không ra số âm.
+    const nhieuHon = summarizeAdsSpend({ ...base, chargedInOrderByChannel: new Map([["sp", -250_000]]) });
+    expect(nhieuHon.byChannel.has("SHOPEE")).toBe(false);
+    expect(nhieuHon.total).toBe(843_529);
+    // Gian không bật nạp ví từ đơn → cộng đủ như cũ, không ghi chú.
+    const khong = summarizeAdsSpend({ ...base, chargedInOrderByChannel: new Map() });
+    expect(khong.total).toBe(943_529);
+    expect(khong.notes).toEqual([]);
   });
 });
 

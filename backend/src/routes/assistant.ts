@@ -39,7 +39,7 @@ import {
 // RAM (docs/SO-CAI-DON.md 9.6); đường cũ đã gỡ 14/10/2026.
 import { loadLossOrders, loadOpenCashTotals } from "./finance";
 import { loadOverviewTotals } from "./analytics";
-import { gmvMaxRowsOf, type OverviewTotals } from "../lib/overview-totals";
+import { adsChargedRowsOf, type OverviewTotals } from "../lib/overview-totals";
 import { platformAdsSpend } from "../services/ads-spend";
 import {
   assistantDecisionActive,
@@ -285,8 +285,8 @@ export async function buildPeriodReport(
   const curTotals = curData.totals;
   const prevTotals = prevData.totals;
   const [curAds, prevAds] = await Promise.all([
-    platformAdsSpend(scope, range, gmvMaxRowsOf(curTotals)),
-    platformAdsSpend(scope, prevRange, gmvMaxRowsOf(prevTotals)),
+    platformAdsSpend(scope, range, adsChargedRowsOf(curTotals)),
+    platformAdsSpend(scope, prevRange, adsChargedRowsOf(prevTotals)),
   ]);
 
   const cur = netOf(curTotals, Number(opexAgg._sum.amount ?? 0), curAds.total);
@@ -442,7 +442,7 @@ const INTENTS: IntentDef[] = [
       // Đơn chưa có giá vốn tính như giá vốn 0 (04/11/2026) — chỉ đếm để nhắc nhập.
       const missing = totals.active.missingCostCount;
       // Quảng cáo sàn trừ vào lợi nhuận — cùng luật Tổng quan / Báo cáo dòng tiền.
-      const ads = (await platformAdsSpend(scope, period.range, gmvMaxRowsOf(totals))).total;
+      const ads = (await platformAdsSpend(scope, period.range, adsChargedRowsOf(totals))).total;
       const net = revenue - cost - fee - opex - ads;
 
       let text =

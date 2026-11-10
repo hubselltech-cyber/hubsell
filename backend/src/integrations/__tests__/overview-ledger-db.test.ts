@@ -43,7 +43,7 @@ function expectSameTotals(a: OverviewTotals, b: OverviewTotals, label: string, d
     const w = b.byChannelId.get(k)!;
     expect(v.count, `${label} gian ${k} count`).toBe(w.count);
     expect(near(v.revenueGross, w.revenueGross), `${label} gian ${k} revenue`).toBe(true);
-    expect(near(v.feeGmvMax, w.feeGmvMax), `${label} gian ${k} gmv`).toBe(true);
+    expect(near(v.adsCharged, w.adsCharged), `${label} gian ${k} ads thu trong đơn`).toBe(true);
   }
   // Chuỗi ngày: đường sổ chỉ trả từ mốc daySince → so trên các ngày ≥ mốc của cả hai phía.
   const days = new Set([...a.byDay.keys(), ...[...b.byDay.keys()].filter((d) => !daySince || d >= daySince)]);

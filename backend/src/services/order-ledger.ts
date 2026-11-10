@@ -954,8 +954,8 @@ export async function ledgerCashFlowBreakdown(
       GROUP BY "channelName"
     `),
     prisma.$queryRaw<{ key: string; v: unknown }[]>(Prisma.sql`
-      SELECT "channelId" AS key, COALESCE(sum("feeGmvMax"), 0) AS v
-      FROM "order_ledger" WHERE ${where} AND "feeGmvMax" <> 0
+      SELECT "channelId" AS key, COALESCE(sum("feeGmvMax" - "adWalletTopup"), 0) AS v
+      FROM "order_ledger" WHERE ${where} AND ("feeGmvMax" <> 0 OR "adWalletTopup" <> 0)
       GROUP BY "channelId"
     `),
     prisma.$queryRaw<{ key: Date; rev: unknown; cogs: unknown }[]>(Prisma.sql`
@@ -973,7 +973,7 @@ export async function ledgerCashFlowBreakdown(
   }
   return {
     cogsByChannelName: new Map(cogs.map((r) => [r.key, Number(r.v)])),
-    gmvMaxByChannelId: new Map(gmv.map((r) => [r.key, Number(r.v)])),
+    adsChargedByChannelId: new Map(gmv.map((r) => [r.key, Number(r.v)])),
     byDay,
   };
 }
@@ -998,7 +998,7 @@ export async function ledgerOverviewBreakdown(
   const [channels, days] = await Promise.all([
     prisma.$queryRaw<{ key: string; n: unknown; rev: unknown; gmv: unknown }[]>(Prisma.sql`
       SELECT "channelId" AS key, count(*) AS n,
-             COALESCE(sum("revenueGross"), 0) AS rev, COALESCE(sum("feeGmvMax"), 0) AS gmv
+             COALESCE(sum("revenueGross"), 0) AS rev, COALESCE(sum("feeGmvMax" - "adWalletTopup"), 0) AS gmv
       FROM "order_ledger" WHERE ${where}
       GROUP BY "channelId"
     `),
@@ -1024,7 +1024,7 @@ export async function ledgerOverviewBreakdown(
   }
   return {
     byChannelId: new Map(
-      channels.map((r) => [r.key, { count: Number(r.n), revenueGross: Number(r.rev), feeGmvMax: Number(r.gmv) }])
+      channels.map((r) => [r.key, { count: Number(r.n), revenueGross: Number(r.rev), adsCharged: Number(r.gmv) }])
     ),
     byDay,
   };

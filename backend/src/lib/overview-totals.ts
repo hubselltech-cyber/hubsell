@@ -13,7 +13,7 @@
 
 import { toBusinessDateKey } from "./date-range";
 import { ShippingStatus } from "@prisma/client";
-import { countsAsRevenue } from "./finance-definitions";
+import { adsChargedInOrder, countsAsRevenue } from "./finance-definitions";
 import type { LedgerSummary } from "./order-ledger";
 import type { PnlRow } from "./pnl-formula";
 
@@ -48,8 +48,8 @@ export interface OverviewTotals {
     /** Số đơn chưa có giá vốn — chỉ để nhắc nhập; lợi nhuận tính như giá vốn 0 (04/11/2026, lib/finance-definitions.ts). */
     missingCostCount: number;
   };
-  /** Theo GIAN: số đơn, doanh thu, Σ phí GMV Max sàn thu theo đơn (≠ 0 → AdSpend gian đó chỉ tham chiếu). */
-  byChannelId: Map<string, { count: number; revenueGross: number; feeGmvMax: number }>;
+  /** Theo GIAN: số đơn, doanh thu, Σ tiền quảng cáo sàn thu trong đơn (adsChargedInOrder; ≠ 0 → AdSpend gian đó chỉ cộng phần vượt). */
+  byChannelId: Map<string, { count: number; revenueGross: number; adsCharged: number }>;
   /** Theo NGÀY PHÁT SINH giờ VN: số đơn, doanh thu, giá vốn, sàn khấu trừ. */
   byDay: Map<string, { count: number; revenueGross: number; costSnapshot: number; platformDeduction: number }>;
 }
@@ -80,10 +80,10 @@ export function overviewTotalsFromRows(pnlRows: PnlRow[]): OverviewTotals {
     active.platformDeduction += deduction;
     for (const c of OVERVIEW_SUM_COLUMNS) active[c] += r[c];
     if (r.missingCostPrice) active.missingCostCount += 1;
-    const ch = byChannelId.get(r.channelId) ?? { count: 0, revenueGross: 0, feeGmvMax: 0 };
+    const ch = byChannelId.get(r.channelId) ?? { count: 0, revenueGross: 0, adsCharged: 0 };
     ch.count += 1;
     ch.revenueGross += r.revenueGross;
-    ch.feeGmvMax += r.feeGmvMax;
+    ch.adsCharged += adsChargedInOrder(r);
     byChannelId.set(r.channelId, ch);
     const key = toBusinessDateKey(r.createdAt);
     const d = byDay.get(key) ?? { count: 0, revenueGross: 0, costSnapshot: 0, platformDeduction: 0 };
@@ -122,9 +122,9 @@ export function overviewTotalsFromLedger(
 }
 
 /**
- * Dạng mà platformAdsSpend cần để biết gian nào bị sàn thu GMV Max theo đơn:
- * mỗi gian một dòng (Σ feeGmvMax của gian) — cùng kết quả với đưa từng đơn.
+ * Dạng mà platformAdsSpend cần để biết gian nào bị sàn thu tiền quảng cáo trong
+ * đơn: mỗi gian một dòng (Σ adsChargedInOrder của gian) — cùng kết quả với đưa từng đơn.
  */
-export function gmvMaxRowsOf(t: OverviewTotals): { channelId: string; feeGmvMax: number }[] {
-  return [...t.byChannelId].map(([channelId, v]) => ({ channelId, feeGmvMax: v.feeGmvMax }));
+export function adsChargedRowsOf(t: OverviewTotals): { channelId: string; adsCharged: number }[] {
+  return [...t.byChannelId].map(([channelId, v]) => ({ channelId, adsCharged: v.adsCharged }));
 }

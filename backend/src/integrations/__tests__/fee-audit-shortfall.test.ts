@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computePayoutShortfall,
+  mapShopeeEscrowFields,
   snapshotIncome,
 } from "../shopee/settlements";
 import type { ShopeeOrderIncome } from "../shopee/client";
@@ -134,6 +135,53 @@ describe("computePayoutShortfall", () => {
     );
     expect(r.shortfall).toBe(5_000);
     expect(r.detail?.find((d) => d.key === "unexplained")).toBeUndefined();
+  });
+
+  // Đơn thật 261106KHPHJ67F (gian "Mẹ mua đi, Bố trả tiền Store", kiểm prod 10/11/2026):
+  // giá bán 185.000, ước tính sàn trích 5.994 nạp ví quảng cáo (3 % × 1,08), lúc
+  // quyết toán trích 15.984 (8 % × 1,08) → tiền về tụt 9.990. Trước 10/11 khoản
+  // này không có cột, rơi vào "unexplained" và làm Dòng tiền trừ quảng cáo hai lần.
+  const EST_NAP_VI: ShopeeOrderIncome = {
+    order_selling_price: 185_000,
+    commission_fee: 24_975,
+    service_fee: 13_175,
+    seller_transaction_fee: 11_100,
+    credit_card_transaction_fee: 11_100,
+    shipping_seller_protection_fee_amount: 2_700,
+    withholding_vat_tax: 1_850,
+    withholding_pit_tax: 925,
+    actual_shipping_fee: 48_100,
+    shopee_shipping_rebate: 48_100,
+    ads_escrow_top_up_fee_or_technical_support_fee: 5_994,
+    escrow_amount: 124_281,
+  };
+
+  it("sàn trích tiền đơn nạp ví quảng cáo → cột adWalletTopup, tiền về ví giữ nguyên số sàn báo", () => {
+    const row = mapShopeeEscrowFields(EST_NAP_VI);
+    expect(row.adWalletTopup).toBe(5_994);
+    expect(row.actualPayout).toBe(124_281);
+    // Gian không bật nạp ví từ đơn (trường vắng) → 0, không NaN.
+    expect(mapShopeeEscrowFields(EST_26082480).adWalletTopup).toBe(0);
+  });
+
+  it("mức trích nạp ví tăng lúc quyết toán → có dòng tên riêng, không buộc tội, hết \"chưa bóc tách được\"", () => {
+    const r = computePayoutShortfall(
+      snapshotIncome(EST_NAP_VI),
+      snapshotIncome({
+        ...EST_NAP_VI,
+        ads_escrow_top_up_fee_or_technical_support_fee: 15_984,
+        escrow_amount: 114_291,
+      })
+    );
+    expect(r.shortfall).toBe(0);
+    expect(r.detail).toHaveLength(1);
+    expect(r.detail?.[0]).toMatchObject({
+      key: "ads_wallet_topup",
+      expected: 5_994,
+      actual: 15_984,
+      lost: 9_990,
+      accused: false,
+    });
   });
 
   it("trường LẠ ngoài danh mục (sàn đẻ phí mới) → ghi nhận, không buộc tội", () => {

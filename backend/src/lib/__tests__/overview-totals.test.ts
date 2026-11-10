@@ -13,7 +13,7 @@ import {
 } from "../order-ledger";
 import { computePnlRow } from "../pnl-formula";
 import {
-  gmvMaxRowsOf,
+  adsChargedRowsOf,
   overviewTotalsFromLedger,
   overviewTotalsFromRows,
   type LedgerOverviewBreakdown,
@@ -27,10 +27,10 @@ function breakdownInMemory(rows: OrderLedgerRow[]): LedgerOverviewBreakdown {
   const byDay: LedgerOverviewBreakdown["byDay"] = new Map();
   for (const r of rows) {
     if (!r.countsAsRevenue) continue;
-    const ch = byChannelId.get(r.channelId) ?? { count: 0, revenueGross: 0, feeGmvMax: 0 };
+    const ch = byChannelId.get(r.channelId) ?? { count: 0, revenueGross: 0, adsCharged: 0 };
     ch.count += 1;
     ch.revenueGross += r.revenueGross;
-    ch.feeGmvMax += r.feeGmvMax;
+    ch.adsCharged += r.feeGmvMax - r.adWalletTopup; // như câu SQL của sổ
     byChannelId.set(r.channelId, ch);
     const d = byDay.get(r.createdDate) ?? { count: 0, revenueGross: 0, costSnapshot: 0, platformDeduction: 0 };
     d.count += 1;
@@ -93,10 +93,11 @@ describe("overviewTotals — đường sổ cái = đường kéo đơn từng �
     expect(sumCount).toBe(fromLedger.active.count);
   });
 
-  it("gmvMaxRowsOf: mỗi gian một dòng Σ feeGmvMax (đầu vào của platformAdsSpend)", () => {
-    const rows = gmvMaxRowsOf(fromLedger);
+  it("adsChargedRowsOf: mỗi gian một dòng Σ tiền quảng cáo sàn thu trong đơn (đầu vào của platformAdsSpend)", () => {
+    const rows = adsChargedRowsOf(fromLedger);
     expect(rows.map((r) => r.channelId).sort()).toEqual(["c1", "c2"]);
-    for (const r of rows) expect(r.feeGmvMax).toBe(0);
+    // c1 không bị thu; đơn g của c2 có 5.000 đ nạp ví quảng cáo trích từ đơn (âm = sàn đã thu).
+    expect(Object.fromEntries(rows.map((r) => [r.channelId, r.adsCharged]))).toEqual({ c1: 0, c2: -5000 });
   });
 
   it("tập rỗng → mọi số 0", () => {

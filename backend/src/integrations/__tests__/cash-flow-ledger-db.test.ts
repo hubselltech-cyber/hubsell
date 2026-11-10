@@ -44,7 +44,7 @@ function expectSameTotals(a: CashFlowTotals, b: CashFlowTotals, label: string) {
       expect(Math.abs(ga[k] - gb[k]), `${label} ${g}.${k}: sổ ${ga[k]} ≠ đơn ${gb[k]}`).toBeLessThanOrEqual(1);
     }
   }
-  for (const m of ["gmvMaxByChannelId", "cogsByChannelName"] as const) {
+  for (const m of ["adsChargedByChannelId", "cogsByChannelName"] as const) {
     expect([...a[m].keys()].sort(), `${label} ${m} keys`).toEqual([...b[m].keys()].sort());
     for (const [k, v] of a[m]) expect(Math.abs(v - b[m].get(k)!), `${label} ${m}.${k}`).toBeLessThanOrEqual(1);
   }

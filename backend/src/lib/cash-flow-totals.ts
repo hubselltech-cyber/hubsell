@@ -17,7 +17,7 @@
 
 import { ShippingStatus } from "@prisma/client";
 import { toBusinessDateKey } from "./date-range";
-import { countsAsRevenue, isReturning } from "./finance-definitions";
+import { adsChargedInOrder, countsAsRevenue, isReturning } from "./finance-definitions";
 import type { LedgerSummary } from "./order-ledger";
 import type { PnlRow } from "./pnl-formula";
 
@@ -138,7 +138,7 @@ export function computeGrossDeductionsFromTotals(t: GrossDeductionTotals) {
     {
       key: "adWallet",
       label: "Nạp ví quảng cáo",
-      hint: "Tiền sàn giữ lại từ đơn hàng để nạp vào ví quảng cáo của shop (Shopee).",
+      hint: "Tiền Shopee trích từ đơn hàng để nạp vào ví quảng cáo của shop (shop tự bật, mức % shop đặt). Khoản này đã là tiền quảng cáo, nên dòng Chi phí quảng cáo sàn chỉ cộng phần tiêu vượt số đã nạp ở đây.",
       amount: adWalletTotal,
       percent: percent(adWalletTotal),
     },
@@ -204,8 +204,8 @@ export interface CashFlowTotals {
   pending: { count: number; netRevenue: number; platformTax: number; platformRevenue: number; profitAfterTax: number };
   /** Đơn tính doanh thu ở trạng thái Đã giao. platformFee = CĐ + thanh toán + dịch vụ + PiShip + affiliate. */
   delivered: { count: number; revenueGross: number; costSnapshot: number; platformFee: number };
-  /** Σ feeGmvMax ≠ 0 theo gian (đơn tính doanh thu) — gian bị sàn thu GMV Max theo đơn. */
-  gmvMaxByChannelId: Map<string, number>;
+  /** Σ adsChargedInOrder ≠ 0 theo gian (đơn tính doanh thu) — gian bị sàn thu tiền quảng cáo ngay trong đơn. */
+  adsChargedByChannelId: Map<string, number>;
   /** Σ giá vốn theo sàn (đơn tính doanh thu). */
   cogsByChannelName: Map<string, number>;
   /** Doanh thu (platformRevenue) và giá vốn của đơn tính doanh thu theo NGÀY PHÁT SINH giờ VN. */
@@ -234,7 +234,7 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
     settled: { count: 0, actualPayout: 0, platformTax: 0, platformRevenue: 0, profitAfterTax: 0 },
     pending: { count: 0, netRevenue: 0, platformTax: 0, platformRevenue: 0, profitAfterTax: 0 },
     delivered: { count: 0, revenueGross: 0, costSnapshot: 0, platformFee: 0 },
-    gmvMaxByChannelId: new Map(),
+    adsChargedByChannelId: new Map(),
     cogsByChannelName: new Map(),
     revenueByDay: new Map(),
     cogsByDay: new Map(),
@@ -277,7 +277,8 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
       t.delivered.platformFee +=
         r.feeFixedPayment + r.feeService + r.feeSellerProtection + r.feeAffiliate;
     }
-    if (r.feeGmvMax !== 0) sumInto(t.gmvMaxByChannelId, r.channelId, r.feeGmvMax);
+    const adsCharged = adsChargedInOrder(r);
+    if (adsCharged !== 0) sumInto(t.adsChargedByChannelId, r.channelId, adsCharged);
     sumInto(t.cogsByChannelName, r.channelName, r.costSnapshot);
     const day = toBusinessDateKey(r.createdAt);
     sumInto(t.revenueByDay, day, r.platformRevenue);
@@ -289,7 +290,7 @@ export function cashFlowTotalsFromRows(pnlRows: PnlRow[]): CashFlowTotals {
 /** Ba bảng bóc đọc từ sổ (GROUP BY trong database) — services/order-ledger.ts cung cấp. */
 export interface LedgerCashFlowBreakdown {
   cogsByChannelName: Map<string, number>;
-  gmvMaxByChannelId: Map<string, number>;
+  adsChargedByChannelId: Map<string, number>;
   byDay: Map<string, { platformRevenue: number; costSnapshot: number }>;
 }
 
@@ -344,7 +345,7 @@ export function cashFlowTotalsFromLedger(
         s.delivered.feeFixedPayment + s.delivered.feeService +
         s.delivered.feeSellerProtection + s.delivered.feeAffiliate,
     },
-    gmvMaxByChannelId: new Map(b.gmvMaxByChannelId),
+    adsChargedByChannelId: new Map(b.adsChargedByChannelId),
     cogsByChannelName: new Map(b.cogsByChannelName),
     revenueByDay,
     cogsByDay,

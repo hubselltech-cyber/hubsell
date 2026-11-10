@@ -1593,6 +1593,12 @@ export interface ShopeeOrderIncome {
    * trừ sẵn trong escrow_amount. Thư báo ghi "số âm trong Fees & Charges", dấu
    * của trường chưa kiểm trên đơn thật → nơi đọc lấy trị tuyệt đối. */
   pay_per_sale?: number;
+  /** Sàn TRÍCH tiền đơn để NẠP VÍ QUẢNG CÁO của shop (shop tự bật trong Quảng cáo
+   * Shopee, mức % shop đặt, đã gồm VAT) — đã trừ sẵn trong escrow_amount. Số
+   * DƯƠNG. Kiểm prod 10/11/2026: đơn 185.000 đ ước tính 5.994, quyết toán 15.984
+   * (= 8 % × 1,08) — một phần chỉ chốt lúc giải ngân. Vế "technical support fee"
+   * trong tên là của thị trường khác. → cột Order.adWalletTopup. */
+  ads_escrow_top_up_fee_or_technical_support_fee?: number;
   // Voucher / xu
   voucher_from_seller?: number;
   seller_coin_cash_back?: number;

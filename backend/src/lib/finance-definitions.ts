@@ -72,6 +72,22 @@ export function missingCostApiSummary(orderCount: number): MissingCostSummary {
 }
 
 /**
+ * TIỀN QUẢNG CÁO SÀN ĐÃ THU NGAY TRONG ĐƠN (anh Trung chốt 10/11/2026 "làm theo
+ * hướng A" — cùng luật TikTok 20/10): khoản đã nằm trong tiền về ví nên cột Chi
+ * phí chỉ cộng phần AdSpend VƯỢT nó, không trừ hai lần.
+ *   · TikTok: phí GMV Max trên bản kê (`feeGmvMax`, số ÂM).
+ *   · Shopee: tiền sàn trích từ đơn để nạp ví quảng cáo (`adWalletTopup`, lưu DƯƠNG).
+ * Trả số CÓ DẤU (âm = sàn đã thu) để cộng dồn theo gian; nơi dùng lấy trị tuyệt
+ * đối của TỔNG (services/ads-spend.ts). Một gian chỉ thuộc một sàn nên hai vế
+ * không bao giờ cùng khác 0.
+ * Giới hạn đã báo anh: tiền Shopee là NẠP ví, không phải tiêu — kỳ nào nạp nhiều
+ * hơn tiêu thì chi phí tính theo số nạp (cao hơn thực, không bao giờ thấp hơn).
+ */
+export function adsChargedInOrder(r: { feeGmvMax: number; adWalletTopup: number }): number {
+  return r.feeGmvMax - r.adWalletTopup;
+}
+
+/**
  * ĐƠN TÍNH DOANH THU (anh Trung chốt 30/09/2026): không hủy VÀ không đang
  * hoàn/trả. Áp cho Tổng quan, Báo cáo dòng tiền, Trợ lý hỏi đáp, báo cáo tuần.
  */

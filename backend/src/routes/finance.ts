@@ -727,7 +727,7 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
     } = null;
     if (cash && offOrder) {
       const t = cash.totals;
-      const ads = offOrder.adsSummary(t.gmvMaxByChannelId);
+      const ads = offOrder.adsSummary(t.adsChargedByChannelId);
       const gd = computeGrossDeductionsFromTotals(t.active);
       const activeOrderProfit = t.settled.profitAfterTax + t.pending.profitAfterTax;
       const operatingExpense = offOrder.fixedExpenseTotal + offOrder.variableExpenseTotal;
@@ -2773,9 +2773,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       .filter((e) => e.type === ExpenseType.FIXED)
       .reduce((s, e) => s + Number(e.amount), 0);
     // + Chi phí quảng cáo sàn (AdSpend — sync tự động, tách khỏi khoản nhập
-    // tay). Gian TikTok bị sàn thu GMV Max theo đơn (feeGmvMax ≠ 0 — khoản đó
-    // đã nằm trong Phí nền tảng) thì chỉ tham chiếu, không cộng — không trừ hai lần.
-    const adsSpend = offOrder.adsSummary(totals.gmvMaxByChannelId);
+    // tay). Gian bị sàn thu tiền quảng cáo ngay trong đơn (TikTok GMV Max, Shopee
+    // nạp ví quảng cáo — đã nằm trong cột Khấu trừ) thì chỉ cộng phần AdSpend vượt
+    // khoản đó — không trừ hai lần (lib/finance-definitions.ts adsChargedInOrder).
+    const adsSpend = offOrder.adsSummary(totals.adsChargedByChannelId);
     const adsSpendTotal = adsSpend.total;
     const adsByDay = adsSpend.byDay;
     const totalCostColumn =

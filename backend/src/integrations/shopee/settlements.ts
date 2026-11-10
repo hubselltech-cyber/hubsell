@@ -139,7 +139,13 @@ export function mapShopeeEscrowFields(income: ShopeeOrderIncome) {
     // DƯƠNG như mọi cột khác). computePnlRow dùng làm số hoàn THẬT thay cho
     // tạm tính — phủ cả 4 kịch bản refund-only/partial/return của Shopee.
     refundedAmount: Math.abs(n(income.seller_return_refund)),
-    // adWalletTopup / shipSubsidyShop: escrow không có nguồn — giữ nguyên 0.
+    // "Nạp ví quảng cáo": sàn trích tiền đơn nạp ví ads của shop — đã nằm trong
+    // escrow_amount nên lãi đơn không đổi; tách cột để (1) thác nước Dòng tiền /
+    // bảng Lãi-Lỗ gọi đúng tên thay vì rơi vào "Lệch quyết toán khác", (2) dòng
+    // "Chi phí quảng cáo sàn" chỉ cộng phần AdSpend VƯỢT khoản này — không trừ
+    // hai lần (10/11/2026, lib/finance-definitions.ts adsChargedInOrder).
+    adWalletTopup: n(income.ads_escrow_top_up_fee_or_technical_support_fee),
+    // shipSubsidyShop: escrow không có nguồn — giữ nguyên 0.
     // Ba số "trên giỏ" CHỈ để hiển thị ở bảng Lãi/Lỗ Shopee (lát 4, 29/10/2026 — docs
     // DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md mục 13), không vào công thức:
     // giá gốc, giảm giá SP của shop (order_seller_discount: original − này = selling ở
@@ -296,6 +302,16 @@ const INCOME_COMPONENTS: IncomeComponent[] = [
     direction: "fee",
     accusable: false,
     note: "Phí quảng cáo CPS shop tự bật, sàn chỉ tính sau khi đơn hoàn tất — chi phí quảng cáo của shop, không phải sàn trả thiếu.",
+  },
+  {
+    // Kiểm prod 10/11/2026: mức trích có thể tăng giữa ước tính và quyết toán
+    // (shop đổi % nạp) — trước khi có dòng này phần tăng rơi vào "unexplained".
+    key: "ads_wallet_topup",
+    label: "Nạp ví quảng cáo (trích từ tiền đơn)",
+    read: (i) => gv(i, "ads_escrow_top_up_fee_or_technical_support_fee"),
+    direction: "fee",
+    accusable: false,
+    note: "Shop tự bật nạp ví quảng cáo bằng tiền đơn — tiền chuyển sang ví quảng cáo của shop, không phải sàn trả thiếu.",
   },
   {
     key: "campaign_fee",
@@ -618,6 +634,12 @@ const ESCROW_ESTIMATE_SELECT = {
   taxWithheld: true,
   actualPayout: true,
   refundedAmount: true,
+  adWalletTopup: true,
+  // Ba cột "trên giỏ" thêm 29/10 nhưng sót ở đây → rowDiffers thấy thiếu khóa, lần hỏi nào
+  // cũng ghi lại dù số không đổi (2 ca test escrow-estimate-sweep đỏ từ đó). Bổ sung 10/11.
+  shopeeOriginalPrice: true,
+  shopeeSellerDiscount: true,
+  shopeeBundleDiscount: true,
   expectedPayout: true,
   expectedIncome: true,
 } satisfies Prisma.OrderSelect;

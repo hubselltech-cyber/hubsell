@@ -6,8 +6,8 @@
 // giờ lệch nhau về "tiền ngoài đơn" (08/11/2026: khách thắc mắc Lãi/Lỗ ≠ Dòng
 // tiền, gốc là 2 khoản này + đơn hủy/đang hoàn — docs/LAI-LO-TONG-QUAN-LOI-NHUAN.md).
 //
-// Nạp đầu vào song song; phần gom AdSpend cần Σ phí GMV Max theo gian (đọc từ
-// sổ cái) nên để `adsSummary(gmvMaxByChannel)` gọi sau khi có bộ tổng.
+// Nạp đầu vào song song; phần gom AdSpend cần Σ tiền quảng cáo sàn đã thu
+// trong đơn theo gian (đọc từ sổ cái) nên để `adsSummary(adsChargedByChannel)` gọi sau khi có bộ tổng.
 // ============================================================
 
 import { ExpenseType, TransactionDirection, type Prisma } from "@prisma/client";
@@ -43,8 +43,8 @@ export interface OffOrderCostInputs {
   adSpendRows: AdSpendRow[];
   tiktokChannels: TiktokAdsChannel[];
   shopeeChannels: ShopeeAdsChannel[];
-  /** Gom AdSpend theo luật summarizeAdsSpend (gian TikTok bị thu GMV Max trong đơn chỉ cộng phần vượt). */
-  adsSummary: (gmvMaxChargedByChannel: Map<string, number>) => AdsSpendSummary;
+  /** Gom AdSpend theo luật summarizeAdsSpend (gian bị sàn thu tiền quảng cáo trong đơn chỉ cộng phần vượt). */
+  adsSummary: (chargedInOrderByChannel: Map<string, number>) => AdsSpendSummary;
 }
 
 export async function loadOffOrderCostInputs(input: {
@@ -91,10 +91,10 @@ export async function loadOffOrderCostInputs(input: {
     adSpendRows,
     tiktokChannels,
     shopeeChannels,
-    adsSummary: (gmvMaxChargedByChannel) =>
+    adsSummary: (chargedInOrderByChannel) =>
       summarizeAdsSpend({
         rows: adSpendRows,
-        gmvMaxChargedByChannel,
+        chargedInOrderByChannel,
         tiktokChannels,
         shopeeChannels,
         dateKey: toBusinessDateKey,

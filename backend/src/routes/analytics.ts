@@ -21,7 +21,7 @@ import { netProfitAfterProvision } from "../lib/net-profit";
 import { platformAdsSpend } from "../services/ads-spend";
 import { missingCostApiSummary, RETURNING_STATUSES } from "../lib/finance-definitions";
 import {
-  gmvMaxRowsOf,
+  adsChargedRowsOf,
   overviewTotalsFromLedger,
   type OverviewTotals,
 } from "../lib/overview-totals";
@@ -264,7 +264,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // tiền quảng cáo sàn (tháng 8 tài khoản demo lệch 617.858 ₫). Gộp vào nhóm
     // ADS của chi phí hoạt động để thác nước, donut và thẻ Tổng Chi phí cùng đổi.
     const platformAds = seesFinancials
-      ? await platformAdsSpend(scope, range, gmvMaxRowsOf(totals))
+      ? await platformAdsSpend(scope, range, adsChargedRowsOf(totals))
       : null;
     const platformAdsTotal = platformAds?.total ?? 0;
 
@@ -397,7 +397,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       const bump = (m: Map<string, number>, k: string, v: number) =>
         m.set(k, (m.get(k) ?? 0) + v);
       if (seesFinancials) {
-        const trendAds = await platformAdsSpend(scope, trendRange, gmvMaxRowsOf(trendTotals));
+        const trendAds = await platformAdsSpend(scope, trendRange, adsChargedRowsOf(trendTotals));
         for (const [day, amount] of trendAds.byDay) bump(tCost, day, amount);
         // Cùng công thức chi phí/ngày với costMap phía trên
         for (const [day, d] of trendTotals.byDay) bump(tCost, day, d.costSnapshot + d.platformDeduction);

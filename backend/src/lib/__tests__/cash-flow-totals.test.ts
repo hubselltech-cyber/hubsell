@@ -130,18 +130,21 @@ const ORDERS: LedgerOrder[] = [
 /** Bảng bóc GROUP BY như services/order-ledger.ts làm trong database, nhưng cộng trong RAM từ dòng sổ. */
 function breakdownInMemory(rows: OrderLedgerRow[]): LedgerCashFlowBreakdown {
   const cogsByChannelName = new Map<string, number>();
-  const gmvMaxByChannelId = new Map<string, number>();
+  const adsChargedByChannelId = new Map<string, number>();
   const byDay = new Map<string, { platformRevenue: number; costSnapshot: number }>();
   for (const r of rows) {
     if (!r.countsAsRevenue) continue;
     cogsByChannelName.set(r.channelName, (cogsByChannelName.get(r.channelName) ?? 0) + r.costSnapshot);
-    if (r.feeGmvMax !== 0) gmvMaxByChannelId.set(r.channelId, (gmvMaxByChannelId.get(r.channelId) ?? 0) + r.feeGmvMax);
+    // Cùng biểu thức với câu SQL: sum("feeGmvMax" - "adWalletTopup") WHERE một trong hai ≠ 0.
+    if (r.feeGmvMax !== 0 || r.adWalletTopup !== 0) {
+      adsChargedByChannelId.set(r.channelId, (adsChargedByChannelId.get(r.channelId) ?? 0) + r.feeGmvMax - r.adWalletTopup);
+    }
     const d = byDay.get(r.createdDate) ?? { platformRevenue: 0, costSnapshot: 0 };
     d.platformRevenue += r.platformRevenue;
     d.costSnapshot += r.costSnapshot;
     byDay.set(r.createdDate, d);
   }
-  return { cogsByChannelName, gmvMaxByChannelId, byDay };
+  return { cogsByChannelName, adsChargedByChannelId, byDay };
 }
 
 function expectSameTotals(a: CashFlowTotals, b: CashFlowTotals) {
@@ -153,7 +156,7 @@ function expectSameTotals(a: CashFlowTotals, b: CashFlowTotals) {
     expect(Object.keys(ga).sort(), g).toEqual(Object.keys(gb).sort());
     for (const k of Object.keys(ga)) expect(ga[k], `${g}.${k}`).toBeCloseTo(gb[k], 6);
   }
-  const maps = ["gmvMaxByChannelId", "cogsByChannelName", "revenueByDay", "cogsByDay"] as const;
+  const maps = ["adsChargedByChannelId", "cogsByChannelName", "revenueByDay", "cogsByDay"] as const;
   for (const m of maps) {
     expect([...a[m].keys()].sort(), m).toEqual([...b[m].keys()].sort());
     for (const [k, v] of a[m]) expect(v, `${m}.${k}`).toBeCloseTo(b[m].get(k)!, 6);
@@ -189,7 +192,8 @@ describe("cashFlowTotals — đường sổ cái = đường kéo đơn từng �
     // Chuỗi ngày theo GIỜ VN: đơn a/… 17:30Z ngày 10 → 11/09; đơn g 09:00Z → 20/09; b 02:00Z ngày 12 → 12/09.
     expect([...fromRows.revenueByDay.keys()].sort()).toEqual(["2026-09-11", "2026-09-12", "2026-09-20"]);
     expect(fromRows.cogsByChannelName.get("TIKTOK")).toBe(171000);
-    expect(fromRows.gmvMaxByChannelId.size).toBe(0);
+    // Đơn g có 5.000 đ sàn trích nạp ví quảng cáo → gian c2 bị thu ads trong đơn (số có dấu, âm = đã thu).
+    expect([...fromRows.adsChargedByChannelId]).toEqual([["c2", -5000]]);
   });
 
   it("thác nước từ bộ tổng = thác nước từ dòng (computeGrossDeductions cũ) và luôn đóng", () => {

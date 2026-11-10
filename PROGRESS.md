@@ -5,6 +5,30 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 10/11 (3) — Khách gian Shopee "Mẹ mua đi, Bố trả tiền Store" kêu bị trừ quảng cáo HAI lần → em kiểm prod: KHÁCH ĐÚNG, CHƯA SỬA MÃ, chờ anh chốt hướng
+
+- **Gốc:** Shopee có trường `ads_escrow_top_up_fee_or_technical_support_fee` trong `order_income` (sàn trích % tiền đơn để nạp ví quảng cáo, có VAT 8 %). Hubsell KHÔNG đọc trường này (`mapShopeeEscrowFields` ghi "adWalletTopup: escrow không có nguồn — giữ 0") → tiền trích đã nằm trong `escrow_amount` (giảm Doanh thu, rơi vào dòng "Lệch quyết toán khác"), rồi `AdSpend` (expense của Ads API = tiền TIÊU từ chính ví đó) lại cộng vào Chi phí. Không liên quan `pay_per_sale` (gian này vẫn 0).
+- **Số prod (SQL chỉ đọc, 10/11 chiều):** đơn 185.000 đ: ước tính 5.994 (3 % × 1,08), quyết toán giữ thêm 9.990 (5 % × 1,08) = 15.984 = đúng 8 % × 1,08 như khách nói. Hôm nay 30 đơn / 4.440.000 đ: trường này 287.712 đ; AdSpend hôm nay 484.425 đ. Từ 28/10: trích ≈ 590k (ước tính 560.636 + chốt muộn 29.816), AdSpend 936.706 → ví ads còn nguồn nạp khác, phần trùng = phần trích qua đơn.
+- **Phạm vi:** từ 10/10 có **48 gian Shopee, 12.362 đơn, 33,1 triệu đ** có trường này ≠ 0 trong bản ước tính (chưa kể phần chốt muộn lúc quyết toán — bản income thật không lưu).
+- **Khung sẵn có:** cột `Order.adWalletTopup`, cột sổ cái, dòng "Nạp ví quảng cáo" ở Dòng tiền / Lãi-Lỗ Shopee / Tổng quan đều có sẵn nhưng luôn 0; chốt chặn tính chồng mới chỉ có cho TikTok (`feeGmvMax` trong `summarizeAdsSpend`).
+- **Anh chốt tối 10/11: "em làm theo hướng A" → ĐÃ CODE, CHƯA COMMIT / CHƯA PUSH.** Chi tiết `docs/SHOPEE-NAP-VI-QUANG-CAO-TRU-TRUNG.md`.
+  - Backend: `mapShopeeEscrowFields` ghi `adWalletTopup`; Kiểm toán phí thêm dòng "Nạp ví quảng cáo (trích từ tiền đơn)" không buộc tội; `adsChargedInOrder` ở `lib/finance-definitions.ts` (TikTok GMV Max + Shopee nạp ví, một định nghĩa); `summarizeAdsSpend` cộng phần AdSpend vượt số đã trích + ghi chú Shopee; đổi tên `gmvMax…` → `adsCharged…` ở cash-flow-totals / overview-totals / order-ledger (2 câu GROUP BY) / 3 route. KHÔNG tăng phiên bản sổ, không migration (trigger sổ đã theo dõi cột).
+  - Sửa kèm: `ESCROW_ESTIMATE_SELECT` thiếu 3 cột "trên giỏ" từ 29/10 → mọi lần hỏi lại ước tính đều ghi DB dù số không đổi; bổ sung, 2 ca `escrow-estimate-sweep` đỏ sẵn xanh lại.
+  - Frontend: chữ chú thích bảng Lãi/Lỗ Shopee; tooltip dòng "Nạp ví quảng cáo".
+  - Bù đơn cũ KHÔNG gọi sàn: `backend/scripts/shopee-ad-wallet-topup-backfill.ts` (mặc định xem trước, `--apply` mới ghi); đơn quyết toán ≤ 7 ngày worker tự ghi số thật.
+  - **Mô phỏng prod (11/10 → 10/11, 46 gian):** dòng Ads 425,15 tr → 399,02 tr, gỡ 26,13 tr trừ trùng; 10 gian AdSpend 0 chỉ đổi tên dòng; 2 gian trích nhiều hơn tiêu → Ads về 0. Trường có từ 07/2026, tháng 11 mới 10 ngày đã 19,14 tr.
+  - **Kiểm:** vitest các tệp liên quan xanh (order-ledger-db còn 1 ca đỏ sẵn "đếm dọn"); tsc backend + frontend sạch; đầu-cuối DB local qua trigger + sổ cái ra đúng số rồi trả lại nguyên trạng. CHƯA soi giao diện bằng mắt, CHƯA chạy prod.
+  - **⏳ Chờ anh:** commit + push; sau khi Render lên thì chạy script bù trong Render Shell (xem trước → `--apply`).
+
+---
+## Phiên 10/11 (2) — Anh: sổ quỹ HQ có khoản THU 829.000 đ "Hệ thống (App Store)" lạ → khoản mua gói trong app iOS THẬT đầu tiên; anh đã gửi đăng ký Small Business Program
+
+- **Kiểm prod (SQL chỉ đọc):** `apple:230003797496288`, Business 1 tháng, storefront VNM, 829.000 VND, Production, 14:58 10/11; gói kích hoạt tới 10/12. 829.000 = giá App Store (web 699.000 ÷ 0,85, anh chốt 10/10).
+- **Small Business Program:** trước đó CHƯA đăng ký (Apple đang trừ 30%). Em điền mẫu, anh tích cam kết + gửi 10/11; Apple báo đã nhận, ⏳ chờ thư duyệt về dev@hubsell.vn.
+- **Chưa sửa mã.** ⏳ Chờ kế toán của anh chốt: hạch toán gộp (hóa đơn 829.000 + chi phí hoa hồng Apple) hay thuần; chứng từ hoa hồng có được trừ TNDN không; thuế nhà thầu trên hoa hồng. Sau đó mới sửa: sổ quỹ đang ghi THU đủ 829.000 ngay ngày mua (tiền thật về sau ~45 ngày, đã trừ hoa hồng) và hóa đơn 829.000 tự đẩy meinvoice (anh chưa ký).
+- Ghi ở `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md` mục giá. Không commit.
+
+---
 ## Phiên 10/11 (1) — Khách bán sữa thấy thẻ Truy thu phí ship 29,6 tr → anh muốn làm video; em bóc số prod ra nguyên nhân theo sản phẩm → anh: "khảo sát và code thật chuẩn… Senior… mô hình tree" + "thêm phần xuất file excel… chọn thời gian và xuất được ra file" → ĐÃ CODE + SOI LOCAL; anh: "Dọn dẹp, commit và push nhé" → ĐÃ PUSH `41107ed9`, prod OK
 
 - **Số prod của khách (SQL chỉ đọc):** `hubsell-marketing/so-lieu/KET-QUA-2026-11-10-TRUY-THU-SHIP.md` — 01/09–10/11 = 29,68 tr khớp thẻ; khách trả hàng 13,0 tr (108,5k/đơn), phụ phí mới từ 12/10 11,2 tr (dồn vào thùng sữa nước: 20 % đơn dính), vượt mức sàn trợ 6,8 tr; chương trình bồi hoàn có lời (+11,5 tr), 30 tr là phần không được bù. Ý kịch bản video: `hubsell-marketing/kenh/tiktok/KICH-BAN-TRUY-THU-SHIP-NGANH-NANG-2026-11-10.md` (nháp, không commit).
