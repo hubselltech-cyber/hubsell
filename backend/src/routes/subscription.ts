@@ -14,7 +14,7 @@ import { isMailerConfigured, sendMail } from "../lib/mailer";
 import { getOwnerPlanState } from "../services/plan-enforcement";
 import { TAX_CODE_RE } from "../integrations/invoice/misa-einvoice";
 import { CYCLE_LABEL, planPriceFor } from "../services/subscription-service";
-import { OVERAGE_DUE_DAY, isPerOrderPlan } from "../services/per-order-plan";
+import { isPerOrderPlan } from "../services/per-order-plan";
 import {
   cancelCheckout,
   CheckoutError,
@@ -22,7 +22,15 @@ import {
   findOpenCheckout,
   gatewayInfo,
   getCheckoutStatus,
+  createOverageCheckout,
 } from "../services/gateway-checkout";
+import {
+  OVERAGE_DUE_DAY,
+  OVERAGE_START_MONTH,
+  overageFloorPrice,
+  overageUnitPrice,
+  vnMonthKey,
+} from "../services/plan-overage";
 import { localPhone } from "../integrations/invoice/hq-auto-invoice";
 import { AppleIapError, appleCatalogFor, redeemAppleJws } from "../services/apple-iap";
 import { AppleVerifyError } from "../integrations/apple-iap/verifier";
@@ -82,7 +90,7 @@ async function notifyHqUpgradeRequest(input: {
       <p style="color:#444;margin:4px 0"><b>SĐT liên hệ:</b> ${input.contactPhone}</p>
       <p style="color:#444;margin:4px 0"><b>Gói:</b> ${input.planName}${isConsult ? " — báo giá riêng" : ` — ${input.cycleLabel}, giá niêm yết ${input.listedPrice.toLocaleString("vi-VN")}₫`}</p>
       <p style="text-align:center;margin:24px 0">
-        <a href="${FRONTEND_URL}/admin/plans"
+        <a href="${FRONTEND_URL}/admin/customers?tab=upgrade"
            style="background:#18181b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;display:inline-block">
           Mở hàng chờ xử lý
         </a>
@@ -305,6 +313,10 @@ router.get("/me", async (req: AuthRequest, res, next) => {
       },
     });
 
+    // Đơn giá vượt ₫/đơn của TỪNG gói trên bảng giá — khách thấy trước khi mua câu trả
+    // lời cho "lỡ vượt thì sao" (phí vượt tính thẳng, 11/11/2026).
+    const overageFloor = await overageFloorPrice().catch(() => null);
+
     res.json({
       // Tài khoản điều hành nền tảng: FE ẩn banner/màn khóa (backend cũng đã
       // miễn ở middleware requirePlanUnlocked).
@@ -318,10 +330,16 @@ router.get("/me", async (req: AuthRequest, res, next) => {
       expiry: state.expiry,
       locked: state.locked,
       lockedReason: state.lockedReason,
-      // Hạn trả phần vượt của gói tính theo đơn (ngày trong tháng sau) — FE in câu thông báo.
+      // Phí vượt: đơn giá gói đang dùng, số tạm tính tháng này, phiếu chờ trả.
+      overage: state.overage,
+      // Hạn trả phần vượt (ngày trong tháng sau) — FE in câu thông báo.
       overageDueDay: OVERAGE_DUE_DAY,
+      // Gói thường bắt đầu tính phí vượt từ tháng này; null = đã áp dụng. FE ghi "(từ 12/2026)"
+      // cạnh đơn giá vượt trên bảng giá cho tới lúc đó, để không hứa điều chưa chạy.
+      overageStartMonth: vnMonthKey(new Date()) < OVERAGE_START_MONTH ? OVERAGE_START_MONTH : null,
       upgradePlans: upgradePlans.map((p) => ({
         ...p,
+        overageUnitPrice: overageUnitPrice({ ...p, minOrdersPerMonth: null }, overageFloor),
         priceMonthly: Number(p.priceMonthly),
         priceQuarterly: Number(p.priceQuarterly),
         priceSemiannual: Number(p.priceSemiannual),
@@ -458,6 +476,24 @@ function sendCheckoutError(res: import("express").Response, err: unknown, next: 
   }
   next(err);
 }
+
+// POST /overage/:id/checkout — link payOS trả MỘT phiếu phí vượt (số tiền lấy từ phiếu).
+router.post("/overage/:id/checkout", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const buyer = await prisma.user.findUnique({
+      where: { id: req.ownerId! },
+      select: { fullName: true, email: true, phone: true },
+    });
+    const checkout = await createOverageCheckout({
+      userId: req.ownerId!,
+      chargeId: String(req.params.id),
+      buyer: { name: buyer?.fullName, email: buyer?.email, phone: buyer?.phone },
+    });
+    res.status(201).json({ checkout });
+  } catch (err) {
+    sendCheckoutError(res, err, next);
+  }
+});
 
 router.post("/checkout", requireAdmin, async (req: AuthRequest, res, next) => {
   try {

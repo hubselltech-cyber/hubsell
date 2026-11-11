@@ -19,6 +19,7 @@ import {
 } from "../../services/per-order-plan";
 import { getOwnerPlanState, invalidatePlanState } from "../../services/plan-enforcement";
 import { recordPackagePayment } from "../../services/subscription-service";
+import { vnMonthBounds, vnMonthKey } from "../../services/plan-overage";
 
 const ENTERPRISE = {
   priceMonthly: 1_300_000,
@@ -148,11 +149,23 @@ describe("recordPackagePayment + getOwnerPlanState — gói tính theo đơn", (
     invalidatePlanState(ownerId);
     const st = await getOwnerPlanState(ownerId);
     expect(st.committedOrders).toBe(12);
-    expect(st.orders.limit).toBe(12);
+    expect(st.orders.planCap).toBe(12);
+    // Mua giữa tháng: trần THÁNG ĐẦU chia theo phần tháng kỳ đã trả phủ (phí vượt "tính
+    // thẳng" 11/11/2026) — số khách thấy là đúng số sẽ chốt đầu tháng sau.
+    const pay = await prisma.packagePayment.findFirstOrThrow({ where: { userId: ownerId }, orderBy: { createdAt: "asc" } });
+    const { start, end } = vnMonthBounds(vnMonthKey(pay.periodStart));
+    const monthCap = Math.ceil((12 * (end.getTime() - pay.periodStart.getTime())) / (end.getTime() - start.getTime()));
+    expect(st.orders.limit).toBe(monthCap);
     expect(st.orders.used).toBe(18);
     expect(st.orders.state).toBe("over");
     expect(st.orders.graceDeadline).toBeNull();
     expect(st.locked).toBe(false);
+    expect(st.overage).toMatchObject({
+      billable: true,
+      unitPrice: 65,
+      estOverOrders: 18 - monthCap,
+      estAmount: (18 - monthCap) * 65,
+    });
   });
 
   it("gia hạn sớm với số mới: kỳ đang chạy giữ số cũ, kỳ nối tiếp mang số mới", async () => {

@@ -338,6 +338,7 @@ model User {
   billingIdNumber     String?
   planUpgradeRequests PlanUpgradeRequest[]
   gatewayOrders       GatewayPaymentOrder[]
+  planOverageCharges  PlanOverageCharge[]   @relation("PlanOverageOwner")
 
   // Khu điều hành Hubsell (CRM nội bộ + nhật ký thao tác + sổ quỹ).
   careProfile        PlatformCustomerCare?  @relation("CareCustomer")
@@ -3580,6 +3581,9 @@ model GatewayPaymentOrder {
   cycle             BillingCycle
   /// Số đơn/tháng khách chọn — chỉ gói tính theo đơn; chuyển sang PackagePayment khi PAID.
   committedOrders   Int?
+  /// Đơn này trả PHÍ VƯỢT của phiếu nào (plan_overage_charges.id) — khác null thì tiền về
+  /// ghi khoản kind OVERAGE, không gia hạn thuê bao; planId/planCode/cycle chỉ là snapshot.
+  overageChargeId   String?
   /// Số tiền PHẢI THU (giá niêm yết snapshot) — webhook lệch số này → MISMATCH.
   amount            Decimal            @db.Decimal(14, 2)
   status            GatewayOrderStatus @default(PENDING)
@@ -3636,6 +3640,17 @@ model PackagePayment {
   /// Mỗi kỳ một số: gia hạn với số mới thì số mới áp từ kỳ mới. null ở gói tính
   /// theo đơn = mức tối thiểu của gói (khoản HQ ghi tay trước 11/11/2026).
   committedOrders Int?
+  /// PLAN = mua / gia hạn gói (gia hạn thuê bao). OVERAGE = trả phí vượt trần đơn của
+  /// một tháng ("mua thêm N đơn hàng", 11/11/2026) — đi chung chứng từ → sổ quỹ → HĐĐT →
+  /// hoa hồng nhưng KHÔNG gia hạn thuê bao; periodStart/End khi đó là hai đầu tháng bị vượt.
+  kind            PackagePaymentKind   @default(PLAN)
+  /// Chụp lúc mua (kind PLAN): trần đơn/tháng của kỳ này + đơn giá vượt ₫/đơn
+  /// (= giá 1 tháng ÷ trần, services/plan-overage.ts). HQ sửa bảng giá sau đó không đổi
+  /// điều đã bán. null = khoản trước 11/11/2026 → lúc chốt đọc bảng giá hiện hành.
+  orderCap        Int?
+  overageUnitPrice Decimal?            @db.Decimal(10, 2)
+  /// kind OVERAGE: phiếu phí vượt được trả bằng khoản này (unique = một phiếu một khoản).
+  overageChargeId String?              @unique
   /// Ngày THỰC NHẬN tiền (kế toán chọn — khớp sao kê ngân hàng).
   occurredAt      DateTime             @default(now())
   /// Mã giao dịch bên ngoài (webhook cổng thanh toán sau này) — unique chống
@@ -3654,6 +3669,54 @@ model PackagePayment {
   @@index([userId, createdAt])
   @@index([occurredAt])
   @@map("package_payments")
+}
+
+enum PackagePaymentKind {
+  PLAN
+  OVERAGE
+}
+
+enum PlanOverageStatus {
+  NONE // tháng đó không vượt — dòng chỉ để đánh dấu "đã chốt" + giữ số đối chiếu
+  OPEN // có vượt, chờ khách trả (quá dueAt thì khóa tính năng nâng cao)
+  PAID
+  WAIVED // HQ miễn (ghi lý do)
+}
+
+/// PHIẾU PHÍ VƯỢT TRẦN ĐƠN theo tháng (anh Trung chốt 11/11/2026 "tính thẳng": vượt bao
+/// nhiêu đơn × đơn giá của gói đang dùng, không nấc, không trần phí). Worker chốt tháng
+/// trước lúc 06:00 mùng 2 giờ VN bằng MỘT câu INSERT … SELECT (services/plan-overage.ts);
+/// mỗi (chủ shop, tháng) đúng một dòng — chạy lại vô hại. Mọi con số là SNAPSHOT lúc chốt:
+/// đơn về trễ sau đó không tính thêm. Thiết kế: docs/GOI-VUOT-TRAN-TINH-THEO-DON-GIA-GOI.md.
+model PlanOverageCharge {
+  id               String            @id @default(cuid())
+  ownerId          String
+  /// Tháng dương lịch giờ VN bị vượt, "yyyy-MM".
+  month            String
+  planCode         String
+  planName         String
+  /// Trần áp cho tháng (đã nhân phần tháng kỳ đã trả phủ) + số đơn đếm trong phần đó.
+  orderCap         Int
+  ordersCounted    Int
+  overOrders       Int
+  unitPrice        Decimal           @db.Decimal(10, 2)
+  amount           Decimal           @db.Decimal(14, 2)
+  status           PlanOverageStatus @default(OPEN)
+  /// Qua mốc này mà còn OPEN thì khóa tính năng nâng cao (00:00 ngày sau hạn trả, giờ VN).
+  dueAt            DateTime
+  paidAt           DateTime?
+  packagePaymentId String?
+  waivedAt         DateTime?
+  waivedByName     String?
+  waivedNote       String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  owner User @relation("PlanOverageOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, month])
+  @@index([status, dueAt])
+  @@map("plan_overage_charges")
 }
 
 /// THÔNG BÁO TRONG APP — chuông trên header (Tầng 3 kế hoạch UI).

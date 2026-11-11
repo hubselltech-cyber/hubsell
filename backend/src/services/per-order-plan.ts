@@ -19,19 +19,6 @@ const CYCLE_PRICE_KEY = {
   YEARLY: "priceYearly",
 } as const satisfies Record<BillingCycle, string>;
 
-/**
- * Hạn thanh toán PHẦN VƯỢT: hết ngày này của tháng sau (anh Trung chốt 11/11/2026:
- * "vượt trần gói đã mua thì tính 65đ/1 đơn vượt và thanh toán vào mùng 5 của tháng
- * tiếp theo"). Một chỗ duy nhất — /me trả số này cho mọi câu chữ ở FE.
- */
-export const OVERAGE_DUE_DAY = 5;
-
-/** Câu thông báo phần vượt dùng chung cho chuông (FE có bản riêng đọc cùng số từ /me). */
-export function overageNoticeText(pricePerOrder: number | null): string {
-  const price = pricePerOrder != null ? `${pricePerOrder.toLocaleString("vi-VN")} ₫` : "theo giá gói";
-  return `Vượt số đơn đã mua: tính ${price} cho mỗi đơn vượt, thanh toán trước hết ngày mùng ${OVERAGE_DUE_DAY} tháng sau. Mọi tính năng vẫn dùng bình thường.`;
-}
-
 /** Lưới an toàn nhập liệu (không phải giá trần bán hàng) — chặn số gõ nhầm thừa chữ số. */
 export const PER_ORDER_MAX_ORDERS = 1_000_000;
 

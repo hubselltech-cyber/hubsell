@@ -1,6 +1,8 @@
 # Enterprise tự phục vụ + phần vượt trần — bản thiết kế TRÌNH ANH (11/11/2026)
 
-> Trạng thái: **KHẢO SÁT + THIẾT KẾ, CHƯA CODE.** Anh dặn "khảo sát lại, trình anh rồi mới làm".
+> Trạng thái (cập nhật 11/11/2026 tối): **lát 1 — mua Enterprise tự phục vụ — ĐÃ LÊN PROD** (commit `85add773`, mục 9).
+> **Phần vượt (mục 4, 5, 5b, lát 2–3 ở mục 7) ĐÃ ĐƯỢC THAY** bằng luật "tính thẳng" cho mọi gói — đọc
+> `docs/GOI-VUOT-TRAN-TINH-THEO-DON-GIA-GOI.md`; các mục đó ở đây chỉ còn là tư liệu lúc khảo sát.
 > Bối cảnh: khách Tran Văn Long chốt Enterprise qua Zalo 11/11, muốn tự trả trên app (memory
 > `hubsell-yeu-cau-mua-goi-bi-lot-2026-11-11`). Giá gốc: `docs/GIA-ENTERPRISE-THEO-DON.md`.
 > Anh chốt: (1) khách tự nhập số đơn (tối thiểu 20.000) → ra tiền; (2) phần vượt: tới khoảng

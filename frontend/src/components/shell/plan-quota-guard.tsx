@@ -26,6 +26,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpCircle,
   Check,
+  CreditCard,
   Lock,
   TriangleAlert,
   Wallet,
@@ -33,9 +34,11 @@ import {
 } from "lucide-react";
 
 import { fetchMySubscription, type MySubscriptionResponse } from "@/lib/api";
+import { OVERAGE_PAY_HREF, overageLastPayDay, overageMonthLabel } from "@/lib/overage";
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { overageNotice } from "@/components/settings/order-volume-picker";
+import { OverageChargePopup } from "@/components/shell/overage-charge-popup";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -102,6 +105,12 @@ interface BannerContent {
   /** Mức đỏ tự bật popup một lần. */
   autoPopup: boolean;
   dismissible: boolean;
+  /**
+   * Nút của dải — đúng MỘT hành động theo việc khách cần làm (11/11/2026): trả phí vượt
+   * → sang khối thanh toán; gói còn theo luật khóa mềm → mở bảng nâng gói; đang vượt mà
+   * chưa tới mức nâng gói rẻ hơn → chỉ xem chi tiết. Vắng mặt = nút "Nâng gói" như cũ.
+   */
+  action?: { kind: "upgrade" | "pay" | "detail"; label: string };
 }
 
 function bannerContentOf(data: MySubscriptionResponse): BannerContent | null {
@@ -122,6 +131,19 @@ function bannerContentOf(data: MySubscriptionResponse): BannerContent | null {
         "Đồng bộ đơn hàng và tồn kho cũng tạm ngừng. Gia hạn là nối lại ngay và tự kéo bù đơn phát sinh trong lúc ngừng; dữ liệu đã có giữ nguyên.",
       autoPopup: true,
       dismissible: false,
+    };
+  }
+  const overage = data.overage;
+  const overdueCharge = overage?.openCharges.find((c) => c.overdue) ?? null;
+  if (data.locked && data.lockedReason === "OVERAGE_UNPAID" && overdueCharge) {
+    return {
+      key: `${overdueCharge.month}:locked-overage`,
+      tone: "red",
+      lead: `Phần đơn vượt gói tháng ${overageMonthLabel(overdueCharge.month)} chưa thanh toán — tính năng nâng cao tạm khóa`,
+      detail: `${nf.format(overdueCharge.overOrders)} đơn × ${nf.format(overdueCharge.unitPrice)} ₫ = ${nf.format(overdueCharge.amount)} ₫. Thanh toán là mở lại ngay; đơn hàng và tồn kho vẫn được đồng bộ đầy đủ.`,
+      autoPopup: false,
+      dismissible: false,
+      action: { kind: "pay", label: "Thanh toán" },
     };
   }
   if (data.locked) {
@@ -146,24 +168,55 @@ function bannerContentOf(data: MySubscriptionResponse): BannerContent | null {
       dismissible: false,
     };
   }
-  // Gói TÍNH THEO ĐƠN (Enterprise tự phục vụ 11/11/2026): vượt không khóa, không mời
-  // nâng gói — chỉ báo phần vượt tính thêm, vàng + tắt được (không tự bật popup).
-  const perOrder = data.plan.minOrdersPerMonth != null;
-  if (perOrder && (orders.state === "over" || orders.state === "warn")) {
+  // Phiếu phí vượt tháng trước còn trong hạn: nhắc trả, vàng, KHÔNG tắt được (có hạn).
+  const openCharge = overage?.openCharges[0] ?? null;
+  if (openCharge) {
     return {
-      key: `${month}:per-order-${orders.state}`,
+      key: `${openCharge.month}:overage-open`,
+      tone: "amber",
+      lead: `Tháng ${overageMonthLabel(openCharge.month)} vượt ${nf.format(openCharge.overOrders)} đơn × ${nf.format(openCharge.unitPrice)} ₫ = ${nf.format(openCharge.amount)} ₫`,
+      detail: `Thanh toán trước hết ngày ${overageLastPayDay(openCharge.dueAt)}. Quá hạn chưa thanh toán thì các tính năng nâng cao tạm dừng; đơn hàng và tồn kho vẫn đồng bộ.`,
+      autoPopup: false,
+      dismissible: false,
+      action: { kind: "pay", label: "Thanh toán" },
+    };
+  }
+  // PHÍ VƯỢT "tính thẳng" (11/11/2026): kỳ đã trả tiền thì vượt không khóa, không ép nâng
+  // gói — báo phần vượt tạm tính, vàng + tắt được. Gói tính theo đơn chưa có kỳ trả tiền
+  // (HQ ghi tay kiểu cũ) cũng đi nhánh này với số ước theo giá công bố.
+  const perOrder = data.plan.minOrdersPerMonth != null;
+  if ((overage?.billable || perOrder) && (orders.state === "over" || orders.state === "warn")) {
+    const unit = overage?.unitPrice ?? data.plan.pricePerOrder ?? null;
+    const overOrders = overage?.billable
+      ? overage.estOverOrders
+      : orders.limit != null
+        ? Math.max(0, orders.used - orders.limit)
+        : 0;
+    const estAmount = overage?.billable ? overage.estAmount : unit != null ? Math.round(overOrders * unit) : 0;
+    // Tới mốc này thì nâng gói rẻ hơn trả phần vượt → nút đổi thành "Nâng lên …".
+    const cheaperToUpgrade =
+      overage?.breakEvenOrder != null && orders.used >= overage.breakEvenOrder && overage.nextPlanName != null;
+    return {
+      key: `${month}:overage-${cheaperToUpgrade ? "upgrade" : orders.state}`,
       tone: "amber",
       lead:
         orders.state === "over"
-          ? `Đã vượt số đơn đã chọn tháng này (${usedOfLimit}, gói ${planName})`
-          : `Đã dùng ${Math.floor((orders.ratio ?? 0) * 100)}% số đơn đã chọn tháng này (${usedOfLimit}, gói ${planName})`,
+          ? `Đã vượt số đơn của gói tháng này (${usedOfLimit}, gói ${planName})`
+          : `Đã dùng ${Math.floor((orders.ratio ?? 0) * 100)}% số đơn của gói tháng này (${usedOfLimit}, gói ${planName})`,
       detail: `${
-        orders.state === "over" && orders.limit != null && data.plan.pricePerOrder != null
-          ? `Đang vượt ${nf.format(orders.used - orders.limit)} đơn ≈ ${nf.format((orders.used - orders.limit) * data.plan.pricePerOrder)} ₫. `
+        orders.state === "over" && overOrders > 0
+          ? `Đang vượt ${nf.format(overOrders)} đơn ≈ ${nf.format(estAmount)} ₫ (tạm tính). `
           : ""
-      }${overageNotice(data.plan.pricePerOrder, data.overageDueDay)} Trong tháng mọi tính năng vẫn dùng bình thường.`,
+      }${
+        cheaperToUpgrade
+          ? `Từ mức này nâng lên gói ${overage!.nextPlanName} rẻ hơn trả phần vượt — nâng trong tháng thì số đơn của gói mới áp cho cả tháng. `
+          : ""
+      }${overageNotice(unit, overage?.dueDay ?? data.overageDueDay)} Trong tháng mọi tính năng vẫn dùng bình thường.`,
       autoPopup: false,
       dismissible: true,
+      action: cheaperToUpgrade
+        ? { kind: "upgrade", label: `Nâng lên ${overage!.nextPlanName}` }
+        : { kind: "detail", label: "Xem chi tiết" },
     };
   }
   if (orders.state === "over") {
@@ -241,11 +294,14 @@ export function PlanQuotaBanner() {
     setDialogOpen(true);
   }, [content?.autoPopup, content?.key]);
 
-  if (!content) return null;
-  if (content.dismissible && dismissed.includes(content.key)) return null;
+  // Popup phiếu phí vượt sống độc lập với dải: dải có bị tắt / không có thì popup vẫn hiện.
+  const overagePopup = data ? <OverageChargePopup data={data} /> : null;
+  if (!content) return overagePopup;
+  if (content.dismissible && dismissed.includes(content.key)) return overagePopup;
 
   return (
     <>
+      {overagePopup}
       <div
         className={cn(
           "flex items-center gap-3 border-b px-4 py-2 text-sm md:px-6",
@@ -259,19 +315,29 @@ export function PlanQuotaBanner() {
           <span className="font-semibold">{content.lead}</span>
           <span className="hidden lg:inline"> — {content.detail}</span>
         </p>
-        <button
-          type="button"
-          onClick={() => setDialogOpen(true)}
-          className={cn(
+        {(() => {
+          const action = content.action ?? { kind: "upgrade" as const, label: "Nâng gói" };
+          const cls = cn(
             "flex shrink-0 items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 font-medium transition-colors",
             content.tone === "red"
               ? "border-red-300 hover:bg-red-100 dark:border-red-800 dark:hover:bg-red-900/40"
               : "border-amber-400 hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/40"
-          )}
-        >
-          <ArrowUpCircle className="size-3.5" />
-          Nâng gói
-        </button>
+          );
+          if (action.kind === "upgrade") {
+            return (
+              <button type="button" onClick={() => setDialogOpen(true)} className={cls}>
+                <ArrowUpCircle className="size-3.5" />
+                {action.label}
+              </button>
+            );
+          }
+          return (
+            <Link href={action.kind === "pay" ? OVERAGE_PAY_HREF : "/settings/plan"} className={cls}>
+              {action.kind === "pay" && <CreditCard className="size-3.5" />}
+              {action.label}
+            </Link>
+          );
+        })()}
         {content.dismissible && (
           <button
             type="button"
@@ -534,13 +600,62 @@ export function PlanLockedScreen({
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const expired = data.lockedReason === "EXPIRED";
+  const unpaid =
+    data.lockedReason === "OVERAGE_UNPAID"
+      ? (data.overage?.openCharges.find((c) => c.overdue) ?? data.overage?.openCharges[0] ?? null)
+      : null;
+
+  // Huy hiệu ổ khóa dùng chung cho cả hai màn khóa bên dưới.
+  const lockBadge = (
+    <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/50">
+      <Lock className="size-6 text-amber-600 dark:text-amber-400" />
+    </div>
+  );
+
+  // Nợ phí vượt quá hạn (11/11/2026): lời mời là THANH TOÁN phần vượt — một nút, sang đúng
+  // khối trả tiền; không bày bảng nâng gói vì nâng gói không gỡ được khóa này.
+  if (data.lockedReason === "OVERAGE_UNPAID") {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="mx-auto max-w-md space-y-4 text-center">
+          {lockBadge}
+          <div className="space-y-1.5">
+            <h2 className="text-lg font-semibold">
+              {unpaid
+                ? `Phần đơn vượt gói tháng ${overageMonthLabel(unpaid.month)} chưa được thanh toán`
+                : "Phần đơn vượt gói chưa được thanh toán"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {unpaid && (
+                <>
+                  <span className="tabular-nums">
+                    {nf.format(unpaid.overOrders)} đơn × {nf.format(unpaid.unitPrice)} ₫ ={" "}
+                    <span className="font-semibold text-foreground">{nf.format(unpaid.amount)} ₫</span>
+                  </span>
+                  .{" "}
+                </>
+              )}
+              Tính năng này tạm khóa cho tới khi thanh toán — trả xong là mở lại ngay. Đơn hàng và
+              tồn kho vẫn được đồng bộ đầy đủ phía sau, dữ liệu đã có không mất gì.
+            </p>
+          </div>
+          {isShopAdmin ? (
+            <Button nativeButton={false} render={<Link href={OVERAGE_PAY_HREF} />}>
+              <CreditCard className="size-4" />
+              Thanh toán phần vượt
+            </Button>
+          ) : (
+            <p className="text-sm">Liên hệ chủ shop để thanh toán phần đơn vượt gói.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
       <div className="mx-auto max-w-md space-y-4 text-center">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/50">
-          <Lock className="size-6 text-amber-600 dark:text-amber-400" />
-        </div>
+        {lockBadge}
         <div className="space-y-1.5">
           <h2 className="text-lg font-semibold">
             {expired

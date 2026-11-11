@@ -22,6 +22,11 @@ import {
   effectiveSubscriptionStatus,
   recordPackagePayment,
 } from "../services/subscription-service";
+import {
+  OverageChargeError,
+  recordOveragePayment,
+  waiveOverageCharge,
+} from "../services/plan-overage-payment";
 
 const router = Router();
 
@@ -388,6 +393,8 @@ router.get(
             take: 20,
             select: {
               id: true,
+              kind: true,
+              committedOrders: true,
               planName: true,
               cycle: true,
               amount: true,
@@ -424,7 +431,8 @@ router.get(
       const ownerIds = [...new Set(subs.map((s) => s.user.id))];
       const ownerChannels = ownerIds.length
         ? await prisma.channel.findMany({
-            where: { userId: { in: ownerIds } },
+            // Cùng định nghĩa với trần phía khách: đơn gian OFFLINE (bán tại quầy) không tính.
+            where: { userId: { in: ownerIds }, channelName: { not: "OFFLINE" } },
             select: { id: true, userId: true },
           })
         : [];
@@ -485,12 +493,51 @@ router.get(
   }
 );
 
+// GET /api/admin/upgrade-requests — danh sách + số đếm yêu cầu mua/tư vấn ĐANG
+// CHỜ cho tab "Mua gói" ở HQ Khách hàng (11/11/2026: yêu cầu tư vấn Enterprise
+// của khách bị lọt một ngày vì chỉ hiện ở trang Gói dịch vụ). Endpoint nhẹ riêng:
+// một truy vấn trên chỉ mục status, không kéo theo thuê bao / doanh thu. Sale
+// (hq.customers) xem được — đây là việc gọi khách, không có số tiền đã thu.
+router.get(
+  "/upgrade-requests",
+  requirePlatformPermission("hq.customers", "hq.finance"),
+  async (_req: AuthRequest, res, next) => {
+    try {
+      const where = { status: "PENDING" as const };
+      const [pendingCount, requests] = await Promise.all([
+        prisma.planUpgradeRequest.count({ where }),
+        prisma.planUpgradeRequest.findMany({
+          where,
+          orderBy: { createdAt: "asc" }, // ai chờ lâu nhất lên đầu
+          take: 100,
+          select: {
+            id: true,
+            planId: true,
+            planName: true,
+            cycle: true,
+            listedPrice: true,
+            contactPhone: true,
+            createdAt: true,
+            user: { select: { id: true, email: true, fullName: true, phone: true } },
+          },
+        }),
+      ]);
+      res.json({
+        pendingCount,
+        requests: requests.map((r) => ({ ...r, listedPrice: toNumber(r.listedPrice) })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // POST /api/admin/upgrade-requests/:id/cancel — HQ hủy một yêu cầu mua đang
 // chờ (khách đổi ý qua điện thoại). Chốt thành công thì KHÔNG cần nút riêng:
 // "Ghi nhận thanh toán" tự đóng DONE mọi PENDING của khách.
 router.post(
   "/upgrade-requests/:id/cancel",
-  requirePlatformPermission("hq.finance"),
+  requirePlatformPermission("hq.customers", "hq.finance"),
   async (req: AuthRequest, res, next) => {
     try {
       const actor = await prisma.user.findUnique({
@@ -512,6 +559,128 @@ router.post(
       res.json({ ok: true });
     } catch (err) {
       next(err);
+    }
+  }
+);
+
+// ============================================================
+// PHÍ VƯỢT TRẦN ĐƠN (11/11/2026) — HQ xem phiếu, MIỄN (ghi lý do) hoặc GHI NHẬN chuyển
+// khoản tay. Khách tự trả qua payOS thì không cần vào đây.
+// ============================================================
+
+// GET /api/admin/overage-charges?status=OPEN|PAID|WAIVED — phiếu có tiền (bỏ dòng NONE),
+// chờ trả lên đầu, quá hạn trước.
+router.get(
+  "/overage-charges",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const raw = String(req.query.status ?? "");
+      const status = raw === "OPEN" || raw === "PAID" || raw === "WAIVED" ? raw : null;
+      const now = new Date();
+      const [rows, openAgg] = await Promise.all([
+        prisma.planOverageCharge.findMany({
+          where: { status: status ?? { in: ["OPEN", "PAID", "WAIVED"] } },
+          orderBy: [{ status: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
+          take: 100,
+          include: { owner: { select: { id: true, email: true, fullName: true, phone: true } } },
+        }),
+        prisma.planOverageCharge.aggregate({
+          where: { status: "OPEN" },
+          _sum: { amount: true },
+          _count: true,
+        }),
+      ]);
+      res.json({
+        openCount: openAgg._count,
+        openAmount: toNumber(openAgg._sum.amount),
+        charges: rows.map((c) => ({
+          id: c.id,
+          month: c.month,
+          planName: c.planName,
+          orderCap: c.orderCap,
+          ordersCounted: c.ordersCounted,
+          overOrders: c.overOrders,
+          unitPrice: toNumber(c.unitPrice),
+          amount: toNumber(c.amount),
+          status: c.status,
+          dueAt: c.dueAt,
+          overdue: c.status === "OPEN" && c.dueAt.getTime() <= now.getTime(),
+          paidAt: c.paidAt,
+          waivedAt: c.waivedAt,
+          waivedByName: c.waivedByName,
+          waivedNote: c.waivedNote,
+          owner: c.owner,
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+function sendOverageError(res: import("express").Response, err: unknown, next: import("express").NextFunction) {
+  if (err instanceof OverageChargeError) {
+    res.status(400).json({ error: err.message });
+    return;
+  }
+  next(err);
+}
+
+// POST /api/admin/overage-charges/:id/waive { note } — miễn, bắt buộc lý do, có nhật ký.
+router.post(
+  "/overage-charges/:id/waive",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const actor = await prisma.user.findUnique({ where: { id: req.userId! }, select: { fullName: true } });
+      const charge = await waiveOverageCharge({
+        chargeId: String(req.params.id),
+        note: typeof req.body?.note === "string" ? req.body.note : "",
+        actorName: actor?.fullName ?? "Hubsell HQ",
+      });
+      await writeAuditLog(req, {
+        action: "overage.waive",
+        detail: { ownerId: charge.ownerId, month: charge.month, overOrders: charge.overOrders, amount: toNumber(charge.amount), note: charge.waivedNote },
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      sendOverageError(res, err, next);
+    }
+  }
+);
+
+// POST /api/admin/overage-charges/:id/record-payment { amount?, occurredAt?, note? } —
+// khách chuyển khoản tay: cùng lõi với payOS (chứng từ → sổ quỹ → HĐĐT → hoa hồng).
+router.post(
+  "/overage-charges/:id/record-payment",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const actor = await prisma.user.findUnique({ where: { id: req.userId! }, select: { fullName: true } });
+      const amountRaw = req.body?.amount;
+      const amount = amountRaw === undefined || amountRaw === null || amountRaw === "" ? undefined : Number(amountRaw);
+      if (amount !== undefined && (!Number.isFinite(amount) || amount < 0)) {
+        res.status(400).json({ error: "Số tiền không hợp lệ" });
+        return;
+      }
+      const occurredAt = req.body?.occurredAt ? new Date(String(req.body.occurredAt)) : undefined;
+      if (occurredAt && Number.isNaN(occurredAt.getTime())) {
+        res.status(400).json({ error: "Ngày nhận tiền không hợp lệ" });
+        return;
+      }
+      const r = await recordOveragePayment({
+        chargeId: String(req.params.id),
+        amount,
+        method: PackagePaymentMethod.BANK_TRANSFER,
+        occurredAt,
+        note: typeof req.body?.note === "string" ? req.body.note : null,
+        actorId: req.userId!,
+        actorName: actor?.fullName ?? "Hubsell HQ",
+      });
+      res.json({ ok: true, paymentId: r.payment.id });
+    } catch (err) {
+      sendOverageError(res, err, next);
     }
   }
 );

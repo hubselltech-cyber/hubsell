@@ -10,7 +10,17 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { HeartHandshake, LifeBuoy, PhoneCall, PhoneOff, Search } from "lucide-react";
+import Link from "next/link";
+import { toast } from "sonner";
+import {
+  CircleDollarSign,
+  HeartHandshake,
+  LifeBuoy,
+  PhoneCall,
+  PhoneOff,
+  Search,
+  ShoppingBag,
+} from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -25,7 +35,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  ApiError,
+  cancelPlatformUpgradeRequest,
   fetchAdminSupportRequests,
+  fetchPlatformUpgradeRequests,
+  type BillingCycle,
+  type PlatformUpgradeRequest,
   fetchConsultLeads,
   fetchHqStaff,
   fetchPlatformUsers,
@@ -41,6 +56,7 @@ import {
   type PlatformUsersResponse,
 } from "@/lib/api";
 import { formatDateTime, formatVND } from "@/lib/format";
+import { looksLikeVnPhone, phoneDigitCount } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import { CareDialog } from "@/components/admin/care-dialog";
 import { LeadDialog } from "@/components/admin/lead-dialog";
@@ -65,17 +81,33 @@ interface CustomersData {
   users: PlatformUsersResponse;
   leads: ConsultLeadsResponse;
   support: AdminSupportRequestsResponse;
+  upgrade: { pendingCount: number; requests: PlatformUpgradeRequest[] };
   members: HqMember[];
 }
 
-type ViewTab = "customers" | "leads" | "support";
+type ViewTab = "customers" | "leads" | "support" | "upgrade";
+
+const CYCLE_LABEL: Record<BillingCycle, string> = {
+  MONTHLY: "1 tháng",
+  QUARTERLY: "3 tháng",
+  SEMIANNUAL: "6 tháng",
+  YEARLY: "12 tháng",
+};
+
+/** "đã chờ 3 giờ" / "đã chờ 2 ngày" — yêu cầu mua gói để lâu là mất khách. */
+function waitedLabel(iso: string): { text: string; late: boolean } {
+  const hours = Math.max(0, (Date.now() - new Date(iso).getTime()) / 3_600_000);
+  if (hours < 1) return { text: "vừa gửi", late: false };
+  if (hours < 24) return { text: `đã chờ ${Math.floor(hours)} giờ`, late: false };
+  return { text: `đã chờ ${Math.floor(hours / 24)} ngày`, late: true };
+}
 
 /** Email báo HQ trỏ ?tab=support — mở thẳng tab Yêu cầu hỗ trợ. Đọc từ
  *  window để khỏi bọc Suspense của useSearchParams. */
 function initialTab(): ViewTab {
   if (typeof window === "undefined") return "customers";
   const t = new URLSearchParams(window.location.search).get("tab");
-  return t === "support" || t === "leads" ? t : "customers";
+  return t === "support" || t === "leads" || t === "upgrade" ? t : "customers";
 }
 
 export default function PlatformCustomersPage() {
@@ -102,11 +134,13 @@ export default function PlatformCustomersPage() {
   const [supportPage, setSupportPage] = useState(1);
   const [supportFilter, setSupportFilter] = useState<"" | SupportRequestStatus>("");
   const [supportFor, setSupportFor] = useState<AdminSupportRequestRow | null>(null);
+  // Tab Mua gói (11/11/2026): yêu cầu mua / tư vấn khách gửi từ trang Gói dịch vụ.
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   // Nạp cả 2 tab một lượt — bảng còn nhỏ, đổi tab là thấy ngay không chờ,
   // và badge "n chưa gọi" luôn đúng kể cả đang đứng ở tab khách hàng.
   const fetcher = useCallback(async (): Promise<CustomersData> => {
-    const [users, leads, support, staff] = await Promise.all([
+    const [users, leads, support, staff, upgrade] = await Promise.all([
       fetchPlatformUsers({
         page,
         pageSize: 20,
@@ -125,8 +159,9 @@ export default function PlatformCustomersPage() {
         status: supportFilter || undefined,
       }),
       fetchHqStaff(),
+      fetchPlatformUpgradeRequests(),
     ]);
-    return { users, leads, support, members: staff.members };
+    return { users, leads, support, upgrade, members: staff.members };
   }, [page, careFilter, noPhone, q, leadPage, leadFilter, supportPage, supportFilter]);
   const { data, loading, denied, error, reload } = useAdminPage(fetcher);
 
@@ -141,6 +176,20 @@ export default function PlatformCustomersPage() {
   const users = data?.users;
   const leads = data?.leads;
   const support = data?.support;
+  const upgrade = data?.upgrade;
+
+  async function handleCancelUpgrade(id: string) {
+    setCancellingId(id);
+    try {
+      await cancelPlatformUpgradeRequest(id);
+      toast.success("Đã hủy yêu cầu mua gói");
+      reload();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không hủy được yêu cầu");
+    } finally {
+      setCancellingId(null);
+    }
+  }
 
   return (
     <AppShell>
@@ -160,6 +209,7 @@ export default function PlatformCustomersPage() {
               ["customers", "Khách đã đăng ký", HeartHandshake],
               ["leads", "Lead tư vấn", PhoneCall],
               ["support", "Yêu cầu hỗ trợ", LifeBuoy],
+              ["upgrade", "Mua gói", ShoppingBag],
             ] as const
           ).map(([value, label, Icon]) => (
             <button
@@ -197,6 +247,12 @@ export default function PlatformCustomersPage() {
                   )}
                 >
                   {formatCount(support!.newCount)} chưa xử lý
+                </span>
+              )}
+              {/* Đỏ, không đổi màu khi đang đứng ở tab: khách đang chờ mua là việc gấp nhất trang */}
+              {value === "upgrade" && (upgrade?.pendingCount ?? 0) > 0 && (
+                <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white tabular-nums">
+                  {formatCount(upgrade!.pendingCount)}
                 </span>
               )}
             </button>
@@ -612,6 +668,130 @@ export default function PlatformCustomersPage() {
               </CardContent>
             </Card>
           </>
+        ) : tab === "upgrade" ? (
+          <Card>
+            <CardContent className="p-0">
+              {loading && !upgrade ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Đang tải dữ liệu…
+                </p>
+              ) : upgrade && upgrade.requests.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Không có yêu cầu mua gói nào đang chờ — khách bấm &quot;Đăng ký mua&quot; hoặc
+                  &quot;Đăng ký tư vấn&quot; ở trang Gói dịch vụ sẽ đổ về đây.
+                </p>
+              ) : upgrade ? (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Gửi lúc</TableHead>
+                        <TableHead>Khách hàng</TableHead>
+                        <TableHead>SĐT để lại</TableHead>
+                        <TableHead>Muốn mua</TableHead>
+                        <TableHead className="text-right">Giá niêm yết</TableHead>
+                        <TableHead className="text-right">Thao tác</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {upgrade.requests.map((r) => {
+                        const waited = waitedLabel(r.createdAt);
+                        // Ưu tiên số khách ĐỂ LẠI lúc gửi; không có thì số trong hồ sơ.
+                        const phone = r.contactPhone ?? r.user.phone;
+                        return (
+                          <TableRow key={r.id}>
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {formatDateTime(r.createdAt)}
+                              <p
+                                className={cn(
+                                  "text-xs",
+                                  waited.late ? "font-semibold text-rose-600" : "text-muted-foreground"
+                                )}
+                              >
+                                {waited.text}
+                              </p>
+                            </TableCell>
+                            {/* Tên / email dài: cắt + tooltip để bảng không cuộn ngang ở màn 1280 */}
+                            <TableCell className="max-w-[15rem]">
+                              <p className="truncate text-sm" title={r.user.fullName}>
+                                {r.user.fullName}
+                              </p>
+                              <p
+                                className="truncate text-xs text-muted-foreground"
+                                title={r.user.email ?? undefined}
+                              >
+                                {r.user.email ?? "—"}
+                              </p>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {phone ? (
+                                <>
+                                  <a
+                                    href={`tel:${phone}`}
+                                    className="font-mono text-sm font-semibold text-primary hover:underline"
+                                  >
+                                    {phone}
+                                  </a>
+                                  {!looksLikeVnPhone(phone) && (
+                                    <p className="text-xs text-amber-700">
+                                      {phoneDigitCount(phone)} chữ số, dễ gõ nhầm
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">chưa có SĐT</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm">
+                              {r.planName}
+                              <p className="text-xs text-muted-foreground">
+                                {r.listedPrice === 0 ? "Tư vấn" : `Kỳ ${CYCLE_LABEL[r.cycle]}`}
+                              </p>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-right text-sm font-semibold tabular-nums">
+                              {r.listedPrice === 0 ? (
+                                <span className="font-normal text-muted-foreground">Báo giá riêng</span>
+                              ) : (
+                                formatVND(r.listedPrice)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                {/* Ghi nhận thanh toán GIỮ ở trang Gói dịch vụ (khu kế toán) —
+                                    nút này chỉ dẫn sang và mở sẵn hộp với gói + kỳ khách chọn. */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  nativeButton={false}
+                                  title="Mở hộp Ghi nhận thanh toán ở trang Gói dịch vụ, điền sẵn gói + kỳ khách chọn"
+                                  render={<Link href={`/admin/plans?request=${r.id}`} />}
+                                >
+                                  <CircleDollarSign className="size-4" />
+                                  Ghi nhận
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={cancellingId === r.id}
+                                  onClick={() => handleCancelUpgrade(r.id)}
+                                >
+                                  Hủy
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  <div className="border-t px-4 py-3 text-sm text-muted-foreground">
+                    {formatCount(upgrade.pendingCount)} yêu cầu đang chờ · chờ lâu nhất ở trên cùng ·
+                    tiền về thì Ghi nhận thanh toán, yêu cầu tự đóng
+                  </div>
+                </>
+              ) : null}
+            </CardContent>
+          </Card>
         ) : (
           <>
             {/* Yêu cầu hỗ trợ từ khách đã đăng nhập — lọc theo trạng thái */}

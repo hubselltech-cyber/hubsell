@@ -90,17 +90,19 @@ hubsell/
 │       │   │                            #   invoicing/ koc/ mappings/ operations/ orders/ products/
 │       │   │                            #   settings/ support/ warehouse/
 │       │   ├── shell/                   # Mount MỘT lần: app-shell, query-provider, command-palette,
-│       │   │                            #   notification-bell, plan-quota-guard (cưỡng chế gói)
+│       │   │                            #   notification-bell, plan-quota-guard (cưỡng chế gói),
+│       │   │                            #   overage-charge-popup (popup phiếu phí vượt trần đơn)
 │       │   ├── shared/ · tour/ · data-table/ · ui/ (shadcn)
 │       └── lib/                         # api.ts (gọi API + token), format.ts, excel.ts, permissions.ts,
-│                                        #   guide-tours.ts, query-keys.ts, use-api-query.ts, pnl-mappers.ts, hq-expense-categories.ts, ...
+│                                        #   guide-tours.ts, query-keys.ts, use-api-query.ts, pnl-mappers.ts, hq-expense-categories.ts,
+│                                        #   overage.ts (chữ + mốc phí vượt dùng chung), phone.ts (soi SĐT khách gõ, chỉ cảnh báo), ...
 │
 ├── backend/                             # Express + Prisma — Render SG: web (API) + worker (nền)
 │   ├── prisma/
 │   │   ├── schema.prisma · seed.ts
 │   │   ├── migrations/                  # Tự áp khi deploy (migrate deploy)
 │   │   └── manual-migrations/           # SQL áp tay (supabase-schema.sql, ads 08/2026, bật RLS 09/2026, dọn pg-boss evt.order 10/2026) — tư liệu
-│   ├── scripts/                         # 53 script chạy tay: seed-*, probe-* (probe-listing-adapter = dò adapter đăng SP trên 1 gian; label-delivered-probe = sàn còn trả vận đơn cho đơn đã giao không), bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
+│   ├── scripts/                         # 55 script chạy tay: dev-payos-mock.mjs (cổng payOS GIẢ LẬP cho dev local — chạy qua cấu hình backend-http-payos trong .claude/launch.json), seed-*, probe-* (probe-listing-adapter = dò adapter đăng SP trên 1 gian; label-delivered-probe = sàn còn trả vận đơn cho đơn đã giao không), bench-*, ledger-backfill, shadow-enroll (rà 21/10/2026: script một lần đã chạy xong thì xóa, git giữ lịch sử)
 │   └── src/
 │       ├── index.ts                     # Khởi động theo HUBSELL_ROLE=all|web|worker
 │       ├── app.ts                       # Express app: mount 36 route + middleware gác quyền/gói
@@ -114,6 +116,8 @@ hubsell/
 │       │                                #   (Excel đọc theo mã, ghi một câu), cost-mapping-catalog (tab Mapping gộp ở DB),
 │       │                                #   cost-search-apply (áp giá cho mã vừa tìm); request-ledger + memory-watch (rào route nặng, canh RSS), ...
 │       ├── services/                    # Nghiệp vụ dùng chung: subscription-service, plan-enforcement,
+│       │                                #   plan-overage (phí vượt trần đơn "tính thẳng": một câu SQL cho tạm tính + chốt tháng) +
+│       │                                #   plan-overage-payment (thu / miễn phiếu) — docs/GOI-VUOT-TRAN-TINH-THEO-DON-GIA-GOI.md,
 │       │                                #   plan-hibernation, order-ledger, order-watermark, sync-schedule,
 │       │                                #   notifications, platform-health, fulfillment/, listing-copy/ (sao chép SP: source · job-edit ·
 │       │                                #   job-view · job-submit · job-worker · batch · manual · images · review-check — docs/SAO-CHEP-SAN-PHAM.md mục 29),
@@ -121,10 +125,10 @@ hubsell/
 │       │                                #   chưa nối worker — docs/CUNG-HOA-LOP-GOI-SAN.md mục 5b), ...
 │       ├── routes/                      # 36 nhóm endpoint /api/*: auth, orders, products, finance, tax,
 │       │                                #   subscription, ads, tiktok-ads, webhooks, admin*, support, ...
-│       ├── workers/                     # 31 tiến trình nền, đăng ký trong workers/index.ts:
+│       ├── workers/                     # 32 tiến trình nền, đăng ký trong workers/index.ts:
 │       │                                #   order-auto-sync (lịch từng gian), event-queue (webhook pg-boss),
 │       │                                #   stock-queue, stock-reconcile, order-ledger, token-refresh,
-│       │                                #   plan-hibernate, subscription-reminder, invoice-*, review-auto-reply,
+│       │                                #   plan-hibernate, plan-overage-close (chốt phí vượt từ 06:00 mùng 2), subscription-reminder, invoice-*, review-auto-reply,
 │       │                                #   read-lanes (làn đọc sàn mới — đọc bóng đơn theo gian ghi danh), ...
 │       ├── integrations/                # Mỗi đối tác một thư mục: shopee/ lazada/ tiktok/ tiktok-ads/
 │       │                                #   hubsell-ads/ invoice/ (MISA) payos/ apple-iap/ ai/

@@ -84,6 +84,15 @@
       "port": 4010
     },
     {
+      "name": "backend-http-payos",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "Object.assign(process.env,{HUBSELL_ROLE:'web',SSL_KEY_FILE:'',SSL_CERT_FILE:'',CORS_ORIGINS:'http://localhost:3002,http://localhost:3010,http://localhost:3011,http://localhost:3012,http://localhost:3020',APP_FRONTEND_URL:'http://localhost:3010',PAYOS_API_BASE:'http://localhost:4099',PAYOS_CLIENT_ID:'mock-client',PAYOS_API_KEY:'mock-key',PAYOS_CHECKSUM_KEY:'mock-checksum',PAYOS_DESCRIPTION_MAX:'25',PAYOS_TRANSFER_PREFIX:'HS'});const cp=require('child_process');cp.spawn('node',['backend/scripts/dev-payos-mock.mjs'],{stdio:'inherit'});cp.spawn('npm',['run','dev','--prefix','backend'],{stdio:'inherit',shell:true})"
+      ],
+      "port": 4010
+    },
+    {
       "name": "frontend-http",
       "runtimeExecutable": "node",
       "runtimeArgs": [

@@ -6822,6 +6822,9 @@ export interface PlatformSubscription {
 
 export interface PlatformPackagePayment {
   id: string;
+  /** OVERAGE = khoản trả phí vượt trần đơn (committedOrders = số đơn mua thêm), không gia hạn gói. */
+  kind?: "PLAN" | "OVERAGE";
+  committedOrders?: number | null;
   planName: string;
   cycle: BillingCycle;
   amount: number;
@@ -6863,6 +6866,56 @@ export interface PlatformSubscriptionsResponse {
   subscriptions: PlatformSubscription[];
   recentPayments: PlatformPackagePayment[];
   upgradeRequests: PlatformUpgradeRequest[];
+}
+
+// ---- HQ: phí vượt trần đơn (11/11/2026) ----
+export interface PlatformOverageCharge {
+  id: string;
+  month: string;
+  planName: string;
+  orderCap: number;
+  ordersCounted: number;
+  overOrders: number;
+  unitPrice: number;
+  amount: number;
+  status: "OPEN" | "PAID" | "WAIVED";
+  dueAt: string;
+  overdue: boolean;
+  paidAt: string | null;
+  waivedAt: string | null;
+  waivedByName: string | null;
+  waivedNote: string | null;
+  owner: { id: string; email: string | null; fullName: string; phone: string | null };
+}
+
+export function fetchPlatformOverageCharges() {
+  return apiFetch<{ openCount: number; openAmount: number; charges: PlatformOverageCharge[] }>(
+    "/api/admin/overage-charges"
+  );
+}
+
+export function waivePlatformOverageCharge(id: string, note: string) {
+  return apiFetch<{ ok: true }>(`/api/admin/overage-charges/${id}/waive`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
+export function recordPlatformOveragePayment(
+  id: string,
+  data: { amount?: number; occurredAt?: string; note?: string }
+) {
+  return apiFetch<{ ok: true; paymentId: string }>(`/api/admin/overage-charges/${id}/record-payment`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+/** Tab "Mua gói" ở HQ Khách hàng: yêu cầu mua/tư vấn đang chờ + số đếm huy hiệu. */
+export function fetchPlatformUpgradeRequests() {
+  return apiFetch<{ pendingCount: number; requests: PlatformUpgradeRequest[] }>(
+    "/api/admin/upgrade-requests"
+  );
 }
 
 export function cancelPlatformUpgradeRequest(id: string) {
@@ -7068,6 +7121,8 @@ export interface MyPlanInfo {
   minOrdersPerMonth?: number | null;
   /** Gói tính theo đơn: đơn giá phần vượt ₫/đơn. */
   pricePerOrder?: number | null;
+  /** Đơn giá vượt ₫/đơn của gói (= giá 1 tháng ÷ trần đơn) — bày trên bảng giá; null/vắng = không có. */
+  overageUnitPrice?: number | null;
 }
 
 export interface MyUpgradePlan extends MyPlanInfo {
@@ -7077,6 +7132,19 @@ export interface MyUpgradePlan extends MyPlanInfo {
   priceQuarterly: number;
   priceSemiannual: number;
   priceYearly: number;
+}
+
+/** Phiếu phí vượt trần đơn của một tháng, đang chờ trả. */
+export interface MyOverageCharge {
+  id: string;
+  /** "yyyy-MM" */
+  month: string;
+  overOrders: number;
+  unitPrice: number;
+  amount: number;
+  /** Qua mốc này còn chưa trả thì tính năng nâng cao tạm khóa (00:00 ngày sau hạn). */
+  dueAt: string;
+  overdue: boolean;
 }
 
 export interface MySubscriptionResponse {
@@ -7097,6 +7165,9 @@ export interface MySubscriptionResponse {
   usage: { channels: number; staff: number; ordersThisMonth: number };
   orders: {
     limit: number | null;
+    /** Trần TRỌN THÁNG của gói. Khác `limit` ở tháng đầu mua giữa chừng: `limit` đã chia
+     *  theo phần tháng kỳ đã trả phủ (đúng số sẽ dùng để tính phí vượt). */
+    planCap?: number | null;
     used: number;
     ratio: number | null;
     state: OrderQuotaState;
@@ -7105,9 +7176,26 @@ export interface MySubscriptionResponse {
   };
   expiry: { expired: boolean; lockDeadline: string | null; locked: boolean };
   locked: boolean;
-  lockedReason: "ORDERS" | "EXPIRED" | null;
-  /** Hạn trả phần vượt của gói tính theo đơn: hết ngày này của tháng sau (anh chốt mùng 5). */
+  lockedReason: "ORDERS" | "EXPIRED" | "OVERAGE_UNPAID" | null;
+  /**
+   * PHÍ VƯỢT "tính thẳng" (11/11/2026): billable = kỳ đang chạy đã trả tiền → vượt không
+   * khóa, tính tiền đầu tháng sau theo đơn giá của gói. Vắng mặt = backend bản cũ.
+   */
+  overage?: {
+    billable: boolean;
+    unitPrice: number | null;
+    estOverOrders: number;
+    estAmount: number;
+    dueDay: number;
+    /** Đơn thứ mấy trong tháng thì tiền vượt bằng mức chênh lên gói trên. */
+    breakEvenOrder: number | null;
+    nextPlanName: string | null;
+    openCharges: MyOverageCharge[];
+  };
+  /** Hạn trả phần vượt: hết ngày này của tháng sau (anh chốt mùng 5). */
   overageDueDay: number;
+  /** Gói thường bắt đầu tính phí vượt từ tháng này ("yyyy-MM"); null/vắng = đã áp dụng. */
+  overageStartMonth?: string | null;
   /** Các gói đang bán bậc cao hơn — nội dung bảng chọn của popup nâng gói. */
   upgradePlans: MyUpgradePlan[];
   /** STK nhận tiền (env backend) — null khi chưa cấu hình → FE mời liên hệ. */
@@ -7219,6 +7307,8 @@ export interface GatewayCheckout {
   cycle: BillingCycle;
   /** Gói tính theo đơn: số đơn/tháng khách chọn; null = gói thường. */
   committedOrders: number | null;
+  /** Đơn trả PHÍ VƯỢT của phiếu này (committedOrders khi đó = số đơn mua thêm); null = mua gói. */
+  overageChargeId?: string | null;
   amount: number;
   /** Trang thanh toán hosted của payOS — dự phòng khi khách không quét được QR. */
   checkoutUrl: string | null;
@@ -7244,6 +7334,14 @@ export function createPlanCheckout(params: {
     method: "POST",
     body: JSON.stringify(params),
   });
+}
+
+/** Link + QR trả MỘT phiếu phí vượt — số tiền máy chủ lấy từ phiếu. */
+export function createOverageCheckout(chargeId: string) {
+  return apiFetch<{ checkout: GatewayCheckout }>(
+    `/api/subscription/overage/${encodeURIComponent(chargeId)}/checkout`,
+    { method: "POST" }
+  );
 }
 
 /** Trạng thái đơn — poll khi QR đang mở; backend tự hỏi payOS nếu webhook lạc. */

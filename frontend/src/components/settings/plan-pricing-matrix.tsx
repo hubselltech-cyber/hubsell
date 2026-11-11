@@ -33,6 +33,7 @@ import type {
   MySubscriptionResponse,
   MyUpgradePlan,
 } from "@/lib/api";
+import { overageMonthLabel } from "@/lib/overage";
 import { cn } from "@/lib/utils";
 
 const nf = new Intl.NumberFormat("vi-VN");
@@ -258,9 +259,16 @@ const BADGE_CONSULT: Badge = {
 };
 
 /** Hạn mức 3 trục nói RÕ dưới từng gói — chưa đặt số = Không giới hạn (gói VẪN SẼ giới hạn cả 3 trục). */
-function limitsOf(p: MyPlanInfo): string[] {
+function limitsOf(p: MyPlanInfo, overageFrom?: string | null): string[] {
   return [
-    p.maxOrdersPerMonth != null ? `${nf.format(p.maxOrdersPerMonth)} đơn / tháng` : "Không giới hạn đơn hàng",
+    p.maxOrdersPerMonth != null
+      ? // Kèm đơn giá vượt — câu trả lời "lỡ vượt thì sao" nằm ngay dưới gói (11/11/2026).
+        `${nf.format(p.maxOrdersPerMonth)} đơn / tháng${
+          p.overageUnitPrice != null
+            ? ` · vượt ${nf.format(p.overageUnitPrice)} ₫/đơn${overageFrom ? ` (từ ${overageMonthLabel(overageFrom)})` : ""}`
+            : ""
+        }`
+      : "Không giới hạn đơn hàng",
     p.maxChannels != null ? `${nf.format(p.maxChannels)} gian hàng trên sàn` : "Không giới hạn gian hàng",
     p.maxStaff != null ? `${nf.format(p.maxStaff)} tài khoản nhân viên` : "Không giới hạn nhân viên",
   ];
@@ -286,6 +294,8 @@ export type PlanPricingMatrixProps = {
   enterpriseDefaultOrders?: number | null;
   /** Hạn trả phần vượt (ngày trong tháng sau) — từ /me, anh chốt mùng 5. */
   overageDueDay?: number;
+  /** Gói thường bắt đầu tính phí vượt từ tháng này ("yyyy-MM") — null = đã áp dụng, khỏi ghi chú. */
+  overageStartMonth?: string | null;
   /** Enterprise tự phục vụ: mua kỳ `cycle` cho `orders` đơn/tháng. */
   onEnterpriseCheckout?: (cycle: BillingCycle, orders: number) => void;
 };
@@ -438,6 +448,7 @@ export function PlanPricingMatrix({
   enterpriseDefaultOrders,
   onEnterpriseCheckout,
   overageDueDay = 5,
+  overageStartMonth = null,
 }: PlanPricingMatrixProps) {
   // Kỳ đã chọn theo TỪNG gói (mặc định 1 tháng) — khách so giá kỳ dài tự do.
   const [cycleByPlan, setCycleByPlan] = useState<Record<string, BillingCycle>>({});
@@ -672,7 +683,7 @@ export function PlanPricingMatrix({
                         name={p.name}
                         description={p.description ?? null}
                         badges={badges}
-                        limits={[...limitsOf(p), "Đầy đủ mọi tính năng Hubsell"]}
+                        limits={[...limitsOf(p, overageStartMonth), "Đầy đủ mọi tính năng Hubsell"]}
                       />
                       <PlanActions
                         p={p}
@@ -759,7 +770,7 @@ export function PlanPricingMatrix({
                 name={p.name}
                 description={p.description ?? null}
                 badges={badges}
-                limits={[...limitsOf(p), "Đầy đủ mọi tính năng Hubsell"]}
+                limits={[...limitsOf(p, overageStartMonth), "Đầy đủ mọi tính năng Hubsell"]}
               />
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {CYCLES.map((c) => (

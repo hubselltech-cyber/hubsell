@@ -40,6 +40,7 @@ import { PLAN_FEATURES, useMyPlan } from "@/components/shell/plan-quota-guard";
 import { GatewayCheckoutDialog } from "@/components/settings/gateway-checkout-dialog";
 import { CYCLES, PlanPricingMatrix, priceOf } from "@/components/settings/plan-pricing-matrix";
 import { overageNotice } from "@/components/settings/order-volume-picker";
+import { OveragePanel } from "@/components/settings/overage-panel";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +56,7 @@ import { Label } from "@/components/ui/label";
 import {
   ApiError,
   cancelMyPlanUpgradeRequest,
+  createOverageCheckout,
   createPlanCheckout,
   fetchPlanCheckout,
   getStoredUser,
@@ -67,6 +69,7 @@ import {
   type MyUpgradePlan,
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
+import { looksLikeVnPhone, phoneDigitCount } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import { TEXT_SUB } from "@/lib/typography";
 
@@ -450,6 +453,11 @@ export default function SettingsPlanPage() {
     isConsult: boolean;
   } | null>(null);
   const [phone, setPhone] = useState("");
+  // Số vừa bị cảnh báo "không giống số Việt Nam" (11/11/2026: khách gõ thừa chữ số, sale
+  // không gọi được). Chỉ cảnh báo một lần cho đúng số đó — bấm "Vẫn gửi" là gửi, sửa số thì
+  // soi lại. Không khóa cứng, không tự sửa số.
+  const [warnedPhone, setWarnedPhone] = useState<string | null>(null);
+  const phoneWarning = warnedPhone !== null && warnedPhone === phone;
   // Bước hóa đơn trong luồng mua (07/10): giữ hành động mua để chạy tiếp sau khi
   // khách Lưu hoặc Bỏ qua.
   const [billingStep, setBillingStep] = useState<{ proceed: () => void } | null>(null);
@@ -484,6 +492,7 @@ export default function SettingsPlanPage() {
 
   function openBuyDialog(intent: NonNullable<typeof buyIntent>) {
     setPhone(data?.contactPhone ?? "");
+    setWarnedPhone(null);
     setBuyIntent(intent);
   }
 
@@ -646,7 +655,9 @@ export default function SettingsPlanPage() {
         </CardHeader>
         {data && data.hasSubscription && (
           <CardContent className="space-y-4 pt-4">
-            {data.locked && (
+            {/* Phí vượt: phiếu chờ trả (một nút Thanh toán) + số tạm tính tháng này */}
+            <OveragePanel data={data} canPay={data.billingProfile !== null} onCheckout={setCheckout} />
+            {data.locked && data.lockedReason !== "OVERAGE_UNPAID" && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
                 {data.lockedReason === "EXPIRED"
                   ? "Gói đã hết hạn quá ân hạn — các tính năng nâng cao đang tạm khóa, đồng bộ đơn hàng và tồn kho tạm ngừng. Gia hạn là nối lại ngay và tự kéo bù đơn; dữ liệu đã có giữ nguyên."
@@ -679,8 +690,16 @@ export default function SettingsPlanPage() {
               />
             </div>
             <p className={TEXT_SUB}>
-              {data.committedOrders != null
-                ? `Số đơn tính theo tháng dương lịch trên mọi gian hàng của shop, gồm mọi đơn phát sinh trên sàn (kể cả đơn hủy). ${overageNotice(data.plan?.pricePerOrder, data.overageDueDay)} Trong tháng mọi tính năng vẫn dùng bình thường.`
+              {/* Tháng đầu mua giữa chừng: số đơn của gói chia theo số ngày gói có hiệu lực
+                  trong tháng — nói rõ để khách không tưởng bị cắt bớt. */}
+              {data.overage?.billable &&
+              data.orders.planCap != null &&
+              data.orders.limit != null &&
+              data.orders.limit !== data.orders.planCap
+                ? `Gói ${nf.format(data.orders.planCap)} đơn/tháng; tháng này gói chỉ có hiệu lực một phần tháng nên tính ${nf.format(data.orders.limit)} đơn, và chỉ đếm đơn phát sinh từ lúc gói có hiệu lực. `
+                : ""}
+              {data.committedOrders != null || data.overage?.billable
+                ? `Số đơn tính theo tháng dương lịch trên mọi gian hàng của shop, gồm mọi đơn phát sinh trên sàn (kể cả đơn hủy). ${overageNotice(data.overage?.unitPrice ?? data.plan?.pricePerOrder, data.overageDueDay)} Trong tháng mọi tính năng vẫn dùng bình thường.`
                 : "Trần đơn tính theo tháng dương lịch trên mọi gian hàng của shop. Vượt trần đơn vẫn được đồng bộ đầy đủ — chỉ các tính năng nâng cao tạm khóa sau thời gian ân hạn nếu chưa nâng gói."}
             </p>
           </CardContent>
@@ -725,8 +744,11 @@ export default function SettingsPlanPage() {
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
               <QrCode className="size-4 shrink-0" />
               <p className="min-w-0 flex-1">
-                Bạn có mã thanh toán đang chờ cho gói {openCheckout.planName} —{" "}
-                {CYCLE_LABEL[openCheckout.cycle]} (
+                Bạn có mã thanh toán đang chờ cho{" "}
+                {openCheckout.overageChargeId
+                  ? `phần đơn vượt gói — mua thêm ${nf.format(openCheckout.committedOrders ?? 0)} đơn hàng`
+                  : `gói ${openCheckout.planName} — ${CYCLE_LABEL[openCheckout.cycle]}`}{" "}
+                (
                 <span className="tabular-nums">{nf.format(openCheckout.amount)}₫</span>).
               </p>
               <Button size="sm" variant="outline" onClick={() => setCheckout(openCheckout)}>
@@ -819,6 +841,7 @@ export default function SettingsPlanPage() {
               guardPlanChange(p, cycle, () => withBillingStep(() => setWalletBuy({ plan: p, cycle })))
             }
             overageDueDay={data.overageDueDay}
+            overageStartMonth={data.overageStartMonth}
             enterpriseDefaultOrders={
               data.enterprisePlan && data.plan?.id === data.enterprisePlan.id ? data.committedOrders : null
             }
@@ -891,6 +914,11 @@ export default function SettingsPlanPage() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!buyIntent) return;
+              // Số lạ → hỏi lại MỘT lần; khách bấm "Vẫn gửi" (cùng nút) thì gửi nguyên số đó.
+              if (!looksLikeVnPhone(phone) && warnedPhone !== phone) {
+                setWarnedPhone(phone);
+                return;
+              }
               requestMutation.mutate({
                 planId: buyIntent.planId,
                 cycle: buyIntent.cycle,
@@ -908,9 +936,20 @@ export default function SettingsPlanPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
-                Hubsell chỉ dùng số này để liên hệ về yêu cầu của bạn.
-              </p>
+              {phoneWarning ? (
+                <p
+                  role="alert"
+                  className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"
+                >
+                  Số này có <b className="tabular-nums">{phoneDigitCount(phone)}</b>
+                  {" "}chữ số, bạn kiểm lại giúp? Số di động Việt Nam thường có 10 chữ số. Nếu số đã đúng, bấm
+                  &ldquo;Vẫn gửi&rdquo;.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Hubsell chỉ dùng số này để liên hệ về yêu cầu của bạn.
+                </p>
+              )}
             </div>
             <div className="flex justify-end gap-2">
               <Button
@@ -923,7 +962,7 @@ export default function SettingsPlanPage() {
               </Button>
               <Button type="submit" size="sm" disabled={requestMutation.isPending}>
                 <ShoppingCart className="size-4" />
-                {requestMutation.isPending ? "Đang gửi…" : "Gửi yêu cầu"}
+                {requestMutation.isPending ? "Đang gửi…" : phoneWarning ? "Vẫn gửi" : "Gửi yêu cầu"}
               </Button>
             </div>
           </form>
@@ -947,9 +986,22 @@ export default function SettingsPlanPage() {
           setCheckout(null);
           refresh();
         }}
-        onRetry={(planId, cycle) => {
+        onRetry={(c) => {
           setCheckout(null);
-          checkoutMutation.mutate({ planId, cycle });
+          if (c.overageChargeId) {
+            // Mã trả phí vượt hết hạn → tạo lại mã cho đúng phiếu đó, không phải mua gói.
+            createOverageCheckout(c.overageChargeId)
+              .then((res) => setCheckout(res.checkout))
+              .catch((err) =>
+                toast.error(err instanceof ApiError ? err.message : "Không tạo được mã thanh toán — thử lại sau.")
+              );
+            return;
+          }
+          checkoutMutation.mutate({
+            planId: c.planId,
+            cycle: c.cycle,
+            committedOrders: c.committedOrders ?? undefined,
+          });
         }}
       />
 

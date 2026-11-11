@@ -32,8 +32,19 @@ import type { NextFunction, Response } from "express";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { notify } from "./notifications";
+import { mailHq } from "./hq-mail";
 import type { AuthRequest } from "../middleware/auth";
-import { isPerOrderPlan, overageNoticeText } from "./per-order-plan";
+import { isPerOrderPlan } from "./per-order-plan";
+import {
+  OVERAGE_DUE_DAY,
+  OVERAGE_START_MONTH,
+  monthLabel as overageMonthLabel,
+  monthOverageFor,
+  overageFloorPrice,
+  overageNoticeText,
+  overageUnitPrice,
+  upgradeBreakEvenOrder,
+} from "./plan-overage";
 
 // ---- Ngưỡng (đề xuất 22/08, anh Trung chưa phán khác — đổi số tại đây) ----
 /** Chạm mốc này bắt đầu cảnh báo vàng + chuông. */
@@ -52,7 +63,20 @@ const cache = new Map<string, { state: OwnerPlanState; expires: number }>();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type OrderQuotaState = "ok" | "warn" | "over" | "locked";
-export type LockedReason = "ORDERS" | "EXPIRED" | null;
+export type LockedReason = "ORDERS" | "EXPIRED" | "OVERAGE_UNPAID" | null;
+
+/** Phiếu phí vượt còn chờ trả của chủ shop (thường 0–1 dòng). */
+export interface OpenOverageCharge {
+  id: string;
+  /** "yyyy-MM" */
+  month: string;
+  overOrders: number;
+  unitPrice: number;
+  amount: number;
+  /** Qua mốc này còn chưa trả thì khóa tính năng nâng cao. */
+  dueAt: Date;
+  overdue: boolean;
+}
 
 export interface OwnerPlanState {
   /** false = chưa có thuê bao → mọi trần coi như không giới hạn. */
@@ -82,6 +106,9 @@ export interface OwnerPlanState {
   usage: { channels: number; staff: number; ordersThisMonth: number };
   orders: {
     limit: number | null;
+    /** Trần TRỌN THÁNG của gói / số đơn cam kết. Khác `limit` khi kỳ đã trả chỉ phủ một phần
+     *  tháng (tháng đầu mua giữa chừng): `limit` đã chia theo phần tháng — FE giải thích. */
+    planCap: number | null;
     used: number;
     /** used/limit — null khi không giới hạn. */
     ratio: number | null;
@@ -94,6 +121,25 @@ export interface OwnerPlanState {
     /** Quá mốc này thì khóa vì hết hạn — null khi còn hạn / vô thời hạn. */
     lockDeadline: Date | null;
     locked: boolean;
+  };
+  /**
+   * PHÍ VƯỢT "tính thẳng" (11/11/2026, services/plan-overage.ts). `billable` = kỳ đang
+   * chạy đã trả tiền và gói có trần đơn → vượt KHÔNG khóa, tính tiền đầu tháng sau.
+   * Khi billable, `orders.limit/used` là trần + số đơn của ĐÚNG phép tính sẽ chốt (mua
+   * giữa tháng thì trần đã chia theo phần tháng) — số khách thấy = số trên phiếu.
+   */
+  overage: {
+    billable: boolean;
+    /** Đơn giá vượt ₫/đơn của gói đang dùng (cả khi chưa billable — để bày lúc mua). */
+    unitPrice: number | null;
+    estOverOrders: number;
+    estAmount: number;
+    /** Hạn trả: hết ngày này của tháng sau. */
+    dueDay: number;
+    /** Đơn thứ mấy trong tháng thì tiền vượt bằng mức chênh lên gói trên (mốc BÁO, không chặn). */
+    breakEvenOrder: number | null;
+    nextPlanName: string | null;
+    openCharges: OpenOverageCharge[];
   };
   /** Tổng hợp: có khóa tầng giá trị gia tăng không. */
   locked: boolean;
@@ -159,7 +205,7 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
   const monthStart = vnMonthStart(now);
   const monthKey = monthKeyOf(now);
 
-  const [sub, channels, staff, ordersThisMonth] = await Promise.all([
+  const [sub, channels, staff, ordersThisMonth, openChargeRows] = await Promise.all([
     prisma.subscription.findUnique({
       where: { userId: ownerId },
       include: {
@@ -174,6 +220,7 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
             maxStaff: true,
             minOrdersPerMonth: true,
             pricePerOrder: true,
+            priceMonthly: true,
           },
         },
       },
@@ -181,12 +228,34 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
     // Cùng định nghĩa với assertChannelSlot (countedChannelWhere).
     prisma.channel.count({ where: countedChannelWhere(ownerId) }),
     prisma.user.count({ where: { ownerId } }),
+    // Đơn tính vào trần = đơn của gian TRÊN SÀN. Đơn bán tại quầy (gian OFFLINE) không tính
+    // (anh Trung chốt 11/11/2026 khi làm phí vượt) — một định nghĩa cho thanh mức dùng,
+    // luật khóa mềm và câu SQL phí vượt (services/plan-overage.ts).
     prisma.order.count({
-      where: { channel: { userId: ownerId }, createdAt: { gte: monthStart } },
+      where: {
+        channel: { userId: ownerId, channelName: { not: ChannelName.OFFLINE } },
+        createdAt: { gte: monthStart },
+      },
+    }),
+    // Nợ phí vượt đi theo CHỦ SHOP, không theo gói: hạ gói / hết hạn vẫn còn.
+    prisma.planOverageCharge.findMany({
+      where: { ownerId, status: "OPEN" },
+      orderBy: { month: "asc" },
+      select: { id: true, month: true, overOrders: true, unitPrice: true, amount: true, dueAt: true },
     }),
   ]);
 
   const usage = { channels, staff, ordersThisMonth };
+  const openCharges: OpenOverageCharge[] = openChargeRows.map((c) => ({
+    id: c.id,
+    month: c.month,
+    overOrders: c.overOrders,
+    unitPrice: Number(c.unitPrice),
+    amount: Number(c.amount),
+    dueAt: c.dueAt,
+    overdue: c.dueAt.getTime() <= now.getTime(),
+  }));
+  const overageLocked = openCharges.some((c) => c.overdue);
 
   // Chưa có thuê bao (khách cũ chưa backfill --assign) → không giới hạn gì.
   if (!sub) {
@@ -196,10 +265,20 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
       committedOrders: null,
       subscription: null,
       usage,
-      orders: { limit: null, used: ordersThisMonth, ratio: null, state: "ok", graceDeadline: null },
+      orders: { limit: null, planCap: null, used: ordersThisMonth, ratio: null, state: "ok", graceDeadline: null },
       expiry: { expired: false, lockDeadline: null, locked: false },
-      locked: false,
-      lockedReason: null,
+      overage: {
+        billable: false,
+        unitPrice: null,
+        estOverOrders: 0,
+        estAmount: 0,
+        dueDay: OVERAGE_DUE_DAY,
+        breakEvenOrder: null,
+        nextPlanName: null,
+        openCharges,
+      },
+      locked: overageLocked,
+      lockedReason: overageLocked ? "OVERAGE_UNPAID" : null,
     };
   }
 
@@ -231,6 +310,7 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
     const covering = await prisma.packagePayment.findFirst({
       where: {
         userId: ownerId,
+        kind: "PLAN", // khoản trả phí vượt (OVERAGE) không phải kỳ hạn gói
         planCode: sub.plan.code,
         periodStart: { lte: now },
         periodEnd: { gt: now },
@@ -241,13 +321,43 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
     committedOrders = covering?.committedOrders ?? sub.plan.minOrdersPerMonth;
   }
 
+  // ---- PHÍ VƯỢT "tính thẳng" (anh Trung chốt 11/11/2026): kỳ ĐÃ TRẢ TIỀN của gói có
+  // trần đơn thì vượt không khóa — tính tiền đầu tháng sau theo đơn giá của gói. Trần +
+  // số đơn lấy từ ĐÚNG câu SQL sẽ chốt (monthOverageFor) nên số khách thấy trong tháng
+  // khớp phiếu. Dùng thử / gói thường trước OVERAGE_START_MONTH / thuê bao HQ đổi tay
+  // không có kỳ trả tiền nào → est = null → giữ luật khóa mềm cũ bên dưới. ----
+  const overageEligible = !sub.isTrial && (perOrder || monthKey >= OVERAGE_START_MONTH);
+  const [est, floor] = await Promise.all([
+    overageEligible ? monthOverageFor(ownerId, { month: monthKey }).catch(() => null) : Promise.resolve(null),
+    overageFloorPrice().catch(() => null),
+  ]);
+  const billable = est !== null;
+  const planUnitPrice = overageUnitPrice(sub.plan, floor);
+  const unitPrice = est?.unitPrice ?? planUnitPrice;
+
+  // Mốc BÁO "từ đây nâng gói rẻ hơn" — chỉ gói thường còn gói trên đang bán.
+  let breakEvenOrder: number | null = null;
+  let nextPlanName: string | null = null;
+  if (billable && !perOrder && unitPrice) {
+    const next = await prisma.servicePlan.findFirst({
+      where: { isActive: true, minOrdersPerMonth: null, tier: { gt: sub.plan.tier }, priceMonthly: { gt: sub.plan.priceMonthly } },
+      orderBy: { tier: "asc" },
+      select: { name: true, priceMonthly: true },
+    });
+    if (next) {
+      breakEvenOrder = upgradeBreakEvenOrder(est!.orderCap, unitPrice, Number(sub.plan.priceMonthly), Number(next.priceMonthly));
+      nextPlanName = next.name;
+    }
+  }
+
   // ---- Trần đơn tháng: reset lười khi sang tháng, ghi mốc ân hạn khi chạm 100%. ----
-  const limit = perOrder ? committedOrders : sub.plan.maxOrdersPerMonth;
+  const limit = billable ? est!.orderCap : perOrder ? committedOrders : sub.plan.maxOrdersPerMonth;
+  const usedOrders = billable ? est!.ordersCounted : ordersThisMonth;
   const sameMonth = sub.quotaMonth === monthKey;
   let overSince = sameMonth ? sub.overQuotaSince : null;
   let notifiedLevel = sameMonth ? sub.quotaNotifiedLevel : 0;
 
-  const ratio = limit && limit > 0 ? ordersThisMonth / limit : null;
+  const ratio = limit && limit > 0 ? usedOrders / limit : null;
   if (ratio !== null) {
     if (ratio >= 1 && !overSince) overSince = now;
     if (ratio < 1 && overSince) overSince = null; // nâng gói/sang tháng → tự lành
@@ -255,8 +365,9 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
     overSince = null;
   }
 
+  const noOrderLock = perOrder || billable; // vượt tính tiền, không khóa
   const orderLocked =
-    !perOrder &&
+    !noOrderLock &&
     ratio !== null &&
     (ratio >= ORDER_HARD_RATIO ||
       (overSince !== null && now.getTime() - overSince.getTime() >= ORDER_GRACE_DAYS * DAY_MS));
@@ -271,27 +382,56 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
             ? "warn"
             : "ok";
   const graceDeadline =
-    overSince && !orderLocked && !perOrder ? new Date(overSince.getTime() + ORDER_GRACE_DAYS * DAY_MS) : null;
+    overSince && !orderLocked && !noOrderLock ? new Date(overSince.getTime() + ORDER_GRACE_DAYS * DAY_MS) : null;
 
   // ---- Chuông theo mốc (80/100/120) — mỗi mốc đúng MỘT lần mỗi tháng. ----
-  const targetLevel = orderState === "locked" ? 120 : orderState === "over" ? 100 : orderState === "warn" ? 80 : 0;
-  const overagePrice = sub.plan.pricePerOrder === null ? null : Number(sub.plan.pricePerOrder);
-  if (perOrder && targetLevel > notifiedLevel && limit) {
-    // Gói tính theo đơn: không bao giờ khóa vì vượt — chỉ báo phần vượt tính thêm.
+  // Mốc 110 chỉ có ở gói tính tiền phần vượt: tiền vượt đã bằng mức chênh lên gói trên.
+  const pastBreakEven = billable && breakEvenOrder !== null && usedOrders >= breakEvenOrder;
+  const targetLevel =
+    orderState === "locked" ? 120 : pastBreakEven ? 110 : orderState === "over" ? 100 : orderState === "warn" ? 80 : 0;
+  const overagePrice = unitPrice;
+  const estOverOrders = billable ? est!.overOrders : 0;
+  const estAmount = billable ? est!.amount : 0;
+  if (noOrderLock && targetLevel > notifiedLevel && limit) {
+    // Gói tính tiền phần vượt: không bao giờ khóa vì vượt — chỉ báo phần vượt tính thêm.
     const monthLabel = monthLabelOf(now);
-    const base = `${ordersThisMonth.toLocaleString("vi-VN")}/${limit.toLocaleString("vi-VN")} đơn — gói ${sub.plan.name}`;
+    const base = `${usedOrders.toLocaleString("vi-VN")}/${limit.toLocaleString("vi-VN")} đơn — gói ${sub.plan.name}`;
     void notify(ownerId, {
       type: "plan_quota",
       title:
         targetLevel === 80
-          ? `Đã dùng ${Math.floor(ratio! * 100)}% số đơn đã chọn tháng ${monthLabel}`
-          : `Đã vượt số đơn đã chọn tháng ${monthLabel}`,
+          ? `Đã dùng ${Math.floor(ratio! * 100)}% số đơn của gói tháng ${monthLabel}`
+          : targetLevel === 110
+            ? `Nâng lên gói ${nextPlanName} từ giờ sẽ rẻ hơn trả phần vượt`
+            : `Đã vượt số đơn của gói tháng ${monthLabel}`,
       body:
-        targetLevel === 80
-          ? `${base}. ${overageNoticeText(overagePrice)}`
+        targetLevel === 110
+          ? `${base}. Phần vượt tạm tính ${estAmount.toLocaleString("vi-VN")} ₫ đã bằng mức chênh lên gói ${nextPlanName}. Nâng gói trong tháng này thì số đơn của gói mới áp cho cả tháng.`
           : `${base}. ${overageNoticeText(overagePrice)}`,
       link: "/settings/plan",
     });
+    // BÁO SALE (thư HQ, mỗi mốc một lần mỗi tháng — cùng cờ quotaNotifiedLevel với chuông):
+    // gói tính theo đơn chạm 80 % / vượt, và gói thường tới mốc "nâng gói rẻ hơn" — đây là
+    // lúc gọi khách (bán số đơn lớn hơn / mời nâng gói) trước khi phiếu phí vượt ra.
+    if (perOrder || targetLevel === 110) {
+      const what =
+        targetLevel === 110
+          ? `đã tới mốc nâng lên gói ${nextPlanName} rẻ hơn trả phần vượt`
+          : targetLevel === 80
+            ? `đã dùng ${Math.floor(ratio! * 100)}% số đơn đã mua`
+            : "đã vượt số đơn đã mua";
+      void prisma.user
+        .findUnique({ where: { id: ownerId }, select: { fullName: true, email: true, phone: true } })
+        .then((u) =>
+          mailHq({
+            subject: `[Hubsell] Khách ${u?.fullName ?? ownerId} ${what} (gói ${sub.plan.name})`,
+            html: `<p><b>${u?.fullName ?? ownerId}</b> (${u?.email ?? "—"}${u?.phone ? ` · ${u.phone}` : ""}) — gói ${sub.plan.name}, tháng ${monthLabel}: <b>${base.split(" — ")[0]}</b>.</p>${
+              estAmount > 0 ? `<p>Phần vượt tạm tính: ${estOverOrders.toLocaleString("vi-VN")} đơn ≈ <b>${estAmount.toLocaleString("vi-VN")}₫</b>.</p>` : ""
+            }<p>Gợi ý: gọi khách ${targetLevel === 110 ? `mời nâng gói ${nextPlanName} (nâng trong tháng thì số đơn gói mới áp cả tháng)` : "tư vấn số đơn cho kỳ sau"}.</p>`,
+          })
+        )
+        .catch(() => {});
+    }
   } else if (targetLevel > notifiedLevel && limit) {
     const monthLabel = monthLabelOf(now);
     const base = `${ordersThisMonth.toLocaleString("vi-VN")}/${limit.toLocaleString("vi-VN")} đơn — gói ${sub.plan.name}`;
@@ -357,10 +497,12 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
       .catch(() => {}); // theo dõi trần là tiện ích — không được làm vỡ request đang gọi
   }
 
-  const locked = orderLocked || expiryLocked;
+  const locked = orderLocked || expiryLocked || overageLocked;
+  const { priceMonthly: _priceMonthly, ...planOut } = sub.plan;
+  void _priceMonthly;
   return {
     hasSubscription: true,
-    plan: { ...sub.plan, pricePerOrder: overagePrice },
+    plan: { ...planOut, pricePerOrder: sub.plan.pricePerOrder === null ? null : Number(sub.plan.pricePerOrder) },
     committedOrders,
     subscription: {
       status,
@@ -370,12 +512,29 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
       daysLeft,
     },
     usage,
-    orders: { limit: limit ?? null, used: ordersThisMonth, ratio, state: orderState, graceDeadline },
+    orders: {
+      limit: limit ?? null,
+      planCap: (perOrder ? committedOrders : sub.plan.maxOrdersPerMonth) ?? null,
+      used: usedOrders,
+      ratio,
+      state: orderState,
+      graceDeadline,
+    },
     expiry: { expired, lockDeadline: expiryLockDeadline, locked: expiryLocked },
+    overage: {
+      billable,
+      unitPrice,
+      estOverOrders,
+      estAmount,
+      dueDay: OVERAGE_DUE_DAY,
+      breakEvenOrder,
+      nextPlanName,
+      openCharges,
+    },
     locked,
-    // Hết hạn "thắng" khi cả hai cùng khóa — lời mời đúng là "gia hạn" chứ
-    // không phải "nâng gói".
-    lockedReason: expiryLocked ? "EXPIRED" : orderLocked ? "ORDERS" : null,
+    // Thứ tự ưu tiên: hết hạn (lời mời "gia hạn") > nợ phí vượt quá hạn (lời mời "thanh
+    // toán phần vượt") > vượt trần của gói còn theo luật khóa mềm (lời mời "nâng gói").
+    lockedReason: expiryLocked ? "EXPIRED" : overageLocked ? "OVERAGE_UNPAID" : orderLocked ? "ORDERS" : null,
   };
 }
 
@@ -502,6 +661,8 @@ export async function requirePlanUnlocked(
       error:
         st.lockedReason === "EXPIRED"
           ? `Gói ${st.plan?.name ?? "dịch vụ"} đã hết hạn — gia hạn để tiếp tục dùng các tính năng nâng cao và nối lại đồng bộ đơn hàng, tồn kho (đang tạm ngừng). Dữ liệu đã có giữ nguyên.`
+          : st.lockedReason === "OVERAGE_UNPAID"
+            ? `Phần đơn vượt gói tháng ${overageMonthLabel(st.overage.openCharges.find((c) => c.overdue)?.month ?? "")} chưa được thanh toán — thanh toán ở trang Gói dịch vụ để mở lại các tính năng nâng cao. Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ.`
           : `Shop đã vượt trần đơn của gói ${st.plan?.name ?? "hiện tại"} — nâng gói để mở lại các tính năng nâng cao. Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ.`,
       code: "PLAN_LOCKED",
       reason: st.lockedReason,

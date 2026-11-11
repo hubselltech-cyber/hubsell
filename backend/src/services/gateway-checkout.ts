@@ -30,6 +30,8 @@ import {
 } from "../integrations/payos/client";
 import { notify } from "./notifications";
 import { CYCLE_LABEL, planPriceFor, recordPackagePayment } from "./subscription-service";
+import { monthLabel } from "./plan-overage";
+import { OverageChargeError, recordOveragePayment } from "./plan-overage-payment";
 import { PerOrderInputError, isPerOrderPlan, perOrderPlanPrice, validateCommittedOrders } from "./per-order-plan";
 
 /** Link sống bao lâu — quét QR là chuyện vài phút, 60' đủ rộng cho khách mở app ngân hàng. */
@@ -56,6 +58,8 @@ export interface CheckoutView {
   cycle: BillingCycle;
   /** Gói tính theo đơn: số đơn/tháng khách chọn; null = gói thường. */
   committedOrders: number | null;
+  /** Đơn trả PHÍ VƯỢT của phiếu này (null = đơn mua gói) — FE đổi chữ trong hộp thanh toán. */
+  overageChargeId: string | null;
   amount: number;
   checkoutUrl: string | null;
   qrCode: string | null;
@@ -79,6 +83,7 @@ function toView(o: OrderRow): CheckoutView {
     planName: o.planName,
     cycle: o.cycle,
     committedOrders: o.committedOrders,
+    overageChargeId: o.overageChargeId,
     amount: Number(o.amount),
     checkoutUrl: o.checkoutUrl,
     qrCode: o.qrCode,
@@ -151,41 +156,111 @@ export async function createCheckout(input: {
   // payOS nhận số nguyên VND.
   const amount = Math.round(price);
 
-  const now = new Date();
-  const open = await prisma.gatewayPaymentOrder.findMany({
-    where: { userId: input.userId, status: "PENDING", expiresAt: { gt: now } },
-  });
-  const reusable = open.find(
-    (o) =>
-      o.planId === plan.id &&
-      o.cycle === input.cycle &&
-      o.committedOrders === committedOrders &&
-      Number(o.amount) === amount
-  );
-  if (reusable) return toView(reusable);
-
-  // Đổi ý gói/kỳ: hủy link cũ (best-effort) để không có 2 QR sống song song.
-  for (const o of open) {
-    await cancelPayosPaymentLink(cfg, Number(o.orderCode), "Khách chọn gói khác").catch(() => {});
-    await prisma.gatewayPaymentOrder.update({
-      where: { id: o.id },
-      data: { status: "CANCELLED" },
-    });
-  }
-
   const pendingRequest = await prisma.planUpgradeRequest.findFirst({
     where: { userId: input.userId, status: "PENDING" },
     select: { id: true },
   });
+
+  return openGatewayOrder(cfg, {
+    userId: input.userId,
+    requestId: pendingRequest?.id ?? null,
+    plan: { id: plan.id, code: plan.code, name: plan.name },
+    cycle: input.cycle,
+    committedOrders,
+    overageChargeId: null,
+    amount,
+    descriptionCode: plan.code,
+    itemName: `Gói ${plan.name}${committedOrders ? ` ${committedOrders.toLocaleString("vi-VN")} đơn/tháng` : ""} — ${CYCLE_LABEL[input.cycle]}`,
+    buyer: input.buyer,
+  });
+}
+
+/**
+ * Link thanh toán cho MỘT phiếu phí vượt (khách bấm "Thanh toán" trên dải phí vượt).
+ * Số tiền lấy từ phiếu — FE không gửi tiền lên. Nội dung CK "HS VUOT1126 <mã đơn>".
+ */
+export async function createOverageCheckout(input: {
+  userId: string;
+  chargeId: string;
+  buyer?: { name?: string | null; email?: string | null; phone?: string | null };
+}): Promise<CheckoutView> {
+  const cfg = getPayosConfig();
+  if (!cfg) throw new CheckoutError("Cổng thanh toán chưa được kích hoạt", 503);
+  const charge = await prisma.planOverageCharge.findUnique({ where: { id: input.chargeId } });
+  if (!charge || charge.ownerId !== input.userId) throw new CheckoutError("Không tìm thấy phiếu phí vượt", 404);
+  if (charge.status !== "OPEN") throw new CheckoutError("Phiếu này đã được thanh toán hoặc đã được miễn");
+  const amount = Math.round(Number(charge.amount));
+  if (!(amount > 0)) throw new CheckoutError("Phiếu này không có gì phải thanh toán");
+  // Cột planId của đơn cổng là bắt buộc → lấy gói thuê bao hiện tại làm snapshot.
+  const sub = await prisma.subscription.findUnique({ where: { userId: input.userId }, select: { planId: true } });
+  if (!sub) throw new CheckoutError("Tài khoản chưa có thuê bao");
+  const [y, m] = charge.month.split("-");
+
+  return openGatewayOrder(cfg, {
+    userId: input.userId,
+    requestId: null,
+    plan: { id: sub.planId, code: charge.planCode, name: charge.planName },
+    cycle: BillingCycle.MONTHLY,
+    committedOrders: charge.overOrders,
+    overageChargeId: charge.id,
+    amount,
+    descriptionCode: `VUOT${m}${y.slice(2)}`,
+    itemName: `Mua thêm ${charge.overOrders.toLocaleString("vi-VN")} đơn hàng tháng ${monthLabel(charge.month)}`,
+    buyer: input.buyer,
+  });
+}
+
+type PayosCfg = NonNullable<ReturnType<typeof getPayosConfig>>;
+
+/**
+ * Mở MỘT đơn cổng + link payOS — dùng chung cho mua gói và trả phí vượt. Đơn PENDING còn
+ * hạn y hệt (gói/kỳ/số đơn/phiếu/số tiền) thì trả lại luôn — bấm 2 lần không đẻ 2 link;
+ * đơn PENDING khác thì hủy ở payOS để không có 2 QR sống song song.
+ */
+async function openGatewayOrder(
+  cfg: PayosCfg,
+  o: {
+    userId: string;
+    requestId: string | null;
+    plan: { id: string; code: string; name: string };
+    cycle: BillingCycle;
+    committedOrders: number | null;
+    overageChargeId: string | null;
+    amount: number;
+    /** Phần mã trong nội dung chuyển khoản (mã gói, hoặc VUOTmmyy). */
+    descriptionCode: string;
+    itemName: string;
+    buyer?: { name?: string | null; email?: string | null; phone?: string | null };
+  }
+): Promise<CheckoutView> {
+  const now = new Date();
+  const open = await prisma.gatewayPaymentOrder.findMany({
+    where: { userId: o.userId, status: "PENDING", expiresAt: { gt: now } },
+  });
+  const reusable = open.find(
+    (x) =>
+      x.planId === o.plan.id &&
+      x.cycle === o.cycle &&
+      x.committedOrders === o.committedOrders &&
+      x.overageChargeId === o.overageChargeId &&
+      Number(x.amount) === o.amount
+  );
+  if (reusable) return toView(reusable);
+
+  // Đổi ý: hủy link cũ (best-effort) để không có 2 QR sống song song.
+  for (const x of open) {
+    await cancelPayosPaymentLink(cfg, Number(x.orderCode), "Khách chọn thanh toán khác").catch(() => {});
+    await prisma.gatewayPaymentOrder.update({ where: { id: x.id }, data: { status: "CANCELLED" } });
+  }
 
   const expiresAt = new Date(now.getTime() + LINK_TTL_MINUTES * 60_000);
 
   // orderCode unique — trúng số (cực hiếm) thì thử lại vài lần.
   for (let attempt = 0; attempt < 3; attempt++) {
     const orderCode = generateOrderCode();
-    // Nội dung CK = tiền tố sản phẩm (env) + mã gói [+ đuôi mã đơn khi TK đã
-    // liên kết, trần 25 ký tự] — lưu vào dòng để FE bày đúng chuỗi đã gửi.
-    const description = buildPayosDescription(plan.code, {
+    // Nội dung CK = tiền tố sản phẩm (env) + mã [+ đuôi mã đơn khi TK đã liên kết, trần
+    // 25 ký tự] — lưu vào dòng để FE bày đúng chuỗi đã gửi.
+    const description = buildPayosDescription(o.descriptionCode, {
       prefix: cfg.transferPrefix,
       maxLen: cfg.descriptionMaxLen,
       orderCode,
@@ -195,14 +270,15 @@ export async function createCheckout(input: {
       const row = await prisma.gatewayPaymentOrder.create({
         data: {
           orderCode: BigInt(orderCode),
-          userId: input.userId,
-          requestId: pendingRequest?.id ?? null,
-          planId: plan.id,
-          planCode: plan.code,
-          planName: plan.name,
-          cycle: input.cycle,
-          committedOrders,
-          amount: new Prisma.Decimal(amount),
+          userId: o.userId,
+          requestId: o.requestId,
+          planId: o.plan.id,
+          planCode: o.plan.code,
+          planName: o.plan.name,
+          cycle: o.cycle,
+          committedOrders: o.committedOrders,
+          overageChargeId: o.overageChargeId,
+          amount: new Prisma.Decimal(o.amount),
           description,
           expiresAt,
         },
@@ -210,21 +286,15 @@ export async function createCheckout(input: {
       try {
         const link = await createPayosPaymentLink(cfg, {
           orderCode,
-          amount,
+          amount: o.amount,
           description,
           returnUrl: `${FRONTEND_URL}/settings/plan?checkout=${orderCode}&result=success`,
           cancelUrl: `${FRONTEND_URL}/settings/plan?checkout=${orderCode}&result=cancel`,
           expiredAt: Math.floor(expiresAt.getTime() / 1000),
-          buyerName: input.buyer?.name ?? undefined,
-          buyerEmail: input.buyer?.email ?? undefined,
-          buyerPhone: input.buyer?.phone ?? undefined,
-          items: [
-            {
-              name: `Gói ${plan.name}${committedOrders ? ` ${committedOrders.toLocaleString("vi-VN")} đơn/tháng` : ""} — ${CYCLE_LABEL[input.cycle]}`,
-              quantity: 1,
-              price: amount,
-            },
-          ],
+          buyerName: o.buyer?.name ?? undefined,
+          buyerEmail: o.buyer?.email ?? undefined,
+          buyerPhone: o.buyer?.phone ?? undefined,
+          items: [{ name: o.itemName, quantity: 1, price: o.amount }],
         });
         const updated = await prisma.gatewayPaymentOrder.update({
           where: { id: row.id },
@@ -379,6 +449,67 @@ export async function settleGatewayOrder(input: SettleInput): Promise<OrderRow> 
 
   const externalRef = `payos:${input.reference}`;
   let settled: OrderRow = row;
+
+  // ---- Đơn trả PHÍ VƯỢT: ghi khoản "mua thêm N đơn hàng", KHÔNG gia hạn thuê bao. ----
+  if (row.overageChargeId) {
+    const paidData = {
+      gatewayReference: input.reference,
+      paidAmount: new Prisma.Decimal(input.paidAmount),
+      paidAt: input.paidAt,
+      lastWebhook: rawJson,
+    };
+    try {
+      await recordOveragePayment(
+        {
+          chargeId: row.overageChargeId,
+          amount: input.paidAmount,
+          method: PackagePaymentMethod.GATEWAY,
+          occurredAt: input.paidAt,
+          externalRef,
+          note: `payOS đơn ${row.orderCode}`,
+          actorName: "Hệ thống (payOS)",
+        },
+        async (tx, result) => {
+          settled = await tx.gatewayPaymentOrder.update({
+            where: { id: row.id },
+            data: { status: "PAID", packagePaymentId: result.payment.id, ...paidData },
+          });
+        }
+      );
+    } catch (err) {
+      const dup = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+      if (dup || err instanceof OverageChargeError) {
+        // Khoản này đã ghi rồi (webhook + poll đua nhau) → đồng bộ đơn là xong. Còn nếu
+        // phiếu đã đóng bằng đường KHÁC (HQ ghi tay / miễn) mà tiền vẫn về → tiền thừa,
+        // báo HQ xử lý tay, không ghi thêm chứng từ.
+        const existing = await prisma.packagePayment.findUnique({ where: { externalRef } });
+        settled = await prisma.gatewayPaymentOrder.update({
+          where: { id: row.id },
+          data: { status: existing ? "PAID" : "MISMATCH", packagePaymentId: existing?.id ?? null, ...paidData },
+        });
+        if (!existing) {
+          void mailHq({
+            subject: `[Hubsell] ⚠️ payOS: tiền về cho phiếu phí vượt ĐÃ ĐÓNG — đơn ${row.orderCode}`,
+            html: `<p>Khách ${row.userId} chuyển <b>${input.paidAmount.toLocaleString("vi-VN")}₫</b> cho phiếu phí vượt đã được thanh toán / miễn trước đó.</p><p>Chưa ghi chứng từ. Mã GD ngân hàng: ${input.reference}. Liên hệ khách để hoàn hoặc trừ vào kỳ sau.</p>`,
+          });
+        }
+        return settled;
+      }
+      throw err;
+    }
+    void notify(row.userId, {
+      type: "subscription",
+      title: "Đã nhận thanh toán phần đơn vượt gói",
+      body: `Đã nhận ${input.paidAmount.toLocaleString("vi-VN")}₫ — mua thêm ${(row.committedOrders ?? 0).toLocaleString("vi-VN")} đơn hàng. Cảm ơn bạn đã đồng hành cùng Hubsell.`,
+      link: "/settings/plan",
+    });
+    void mailHq({
+      subject: `[Hubsell] 💰 payOS: +${input.paidAmount.toLocaleString("vi-VN")}₫ — phí vượt gói ${row.planName}`,
+      html: `<p>Khách trả phí vượt trần đơn qua payOS, đã ghi sổ quỹ (không gia hạn thuê bao).</p><p>Khách: ${row.userId}<br/>Đơn: ${row.orderCode} — mã GD: ${input.reference}</p><p><a href="${FRONTEND_URL}/admin/plans">Xem ở HQ</a></p>`,
+    });
+    return settled;
+  }
+
   try {
     await recordPackagePayment(
       {

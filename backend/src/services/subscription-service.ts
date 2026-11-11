@@ -29,6 +29,7 @@ import { creditReferralCommission } from "./referral-wallet";
 import { sendPlanActivatedMail } from "./customer-mails";
 import { kickHqAutoInvoice } from "../integrations/invoice/hq-auto-invoice";
 import { isPerOrderPlan, perOrderPlanPrice } from "./per-order-plan";
+import { overageFloorPrice, overageUnitPrice } from "./plan-overage";
 
 type Tx = Prisma.TransactionClient;
 
@@ -178,6 +179,11 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
     throw new Error("Số tiền thanh toán không hợp lệ");
   }
 
+  // Chụp trần đơn + đơn giá vượt của kỳ này lên chứng từ (phí vượt "tính thẳng",
+  // services/plan-overage.ts) — HQ sửa bảng giá sau đó không đổi điều đã bán.
+  const orderCap = perOrder ? committedOrders : plan.maxOrdersPerMonth;
+  const unitPrice = overageUnitPrice(plan, await overageFloorPrice());
+
   const occurredAt = input.occurredAt ?? new Date();
   const existing = await tx.subscription.findUnique({ where: { userId: input.userId } });
 
@@ -236,6 +242,8 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
       periodStart,
       periodEnd,
       committedOrders,
+      orderCap,
+      overageUnitPrice: orderCap ? unitPrice : null,
       occurredAt,
       externalRef: input.externalRef ?? null,
       note: input.note?.trim() ? input.note.trim() : null,

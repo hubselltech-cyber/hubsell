@@ -10,9 +10,11 @@
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowLeftRight,
+  ArrowRight,
   BadgeCheck,
   CircleDollarSign,
   Loader2,
@@ -24,6 +26,7 @@ import {
 
 import { AppShell } from "@/components/shell/app-shell";
 import { AccessDenied } from "@/components/shared/access-denied";
+import { OverageChargesSection } from "@/components/admin/overage-charges-section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -48,7 +51,6 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
-  cancelPlatformUpgradeRequest,
   changeSubscriptionPlan,
   createPlatformPlan,
   deletePlatformPlan,
@@ -800,19 +802,27 @@ export default function PlatformPlansPage() {
   const [changePlanFor, setChangePlanFor] = useState<PlatformSubscription | null>(null);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
 
-  // HQ hủy một yêu cầu mua khách gửi (khách đổi ý qua điện thoại) — chốt
-  // thành công thì không cần nút: Ghi nhận thanh toán tự đóng yêu cầu.
-  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
-  async function handleCancelRequest(id: string) {
-    setCancellingRequestId(id);
-    try {
-      await cancelPlatformUpgradeRequest(id);
-      toast.success("Đã hủy yêu cầu mua gói");
-      reload();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không hủy được yêu cầu");
-    } finally {
-      setCancellingRequestId(null);
+  // Tab "Mua gói" ở HQ Khách hàng dẫn sang đây bằng ?request=<id>: mở sẵn hộp Ghi nhận
+  // thanh toán với gói + kỳ khách ĐÃ CHỌN (chạy cả khi khách chưa có thuê bao — backend
+  // upsert tạo mới). Đọc URL trong effect: khi chuyển trang trong app, Next đổi địa chỉ SAU
+  // lượt render đầu nên đọc lúc khởi tạo state sẽ ra địa chỉ trang cũ (đã dẫm 11/11).
+  const [openRequestId, setOpenRequestId] = useState<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("request");
+    if (!id) return;
+    // Gỡ tham số để F5 / Tải lại không bật hộp lần nữa.
+    window.history.replaceState(null, "", window.location.pathname);
+    setOpenRequestId(id);
+  }, []);
+  if (openRequestId && data) {
+    const r = data.subs.upgradeRequests.find((x) => x.id === openRequestId);
+    setOpenRequestId(null);
+    if (r) {
+      setPaymentFor({
+        user: { id: r.user.id, email: r.user.email, fullName: r.user.fullName },
+        defaultPlanId: r.planId,
+        defaultCycle: r.listedPrice === 0 ? undefined : r.cycle,
+      });
     }
   }
 
@@ -1025,108 +1035,26 @@ export default function PlatformPlansPage() {
 
         <Separator />
 
-        {/* ===== Yêu cầu mua/nâng gói đang chờ (GĐ3) — hàng nóng nhất trang:
-            khách ĐÃ bấm mua và đang chờ được liên hệ hướng dẫn thanh toán.
-            Chốt xong bấm "Ghi nhận thanh toán" ở bảng thuê bao bên dưới là
-            yêu cầu tự đóng. ===== */}
+        {/* ===== Yêu cầu mua/nâng gói đang chờ: bảng đã chuyển sang HQ Khách hàng › Mua gói
+            (11/11/2026 — nằm ở đây thì sale không thấy, lọt mất một yêu cầu tư vấn). Trang này
+            chỉ còn một dòng nhắc; Ghi nhận thanh toán vẫn làm ở bảng thuê bao bên dưới, hoặc
+            mở sẵn từ nút trên tab Mua gói (?request=). ===== */}
         {data && data.subs.upgradeRequests.length > 0 && (
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm font-semibold">
-                Yêu cầu mua gói đang chờ{" "}
-                <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">
-                  {data.subs.upgradeRequests.length}
-                </span>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Khách tự bấm &ldquo;Đăng ký mua&rdquo; trên trang Gói dịch vụ — gọi/nhắn hướng
-                dẫn chuyển khoản, tiền về thì Ghi nhận thanh toán ở bảng thuê bao (yêu cầu
-                tự đóng).
-              </p>
-            </div>
-            <Card className="border-amber-300">
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Khách hàng</TableHead>
-                      <TableHead>Muốn mua</TableHead>
-                      <TableHead className="text-right">Giá niêm yết</TableHead>
-                      <TableHead>Gửi lúc</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.subs.upgradeRequests.map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="text-sm">
-                          {r.user.fullName}
-                          <p className="text-xs text-muted-foreground">
-                            {r.user.email ?? "—"}
-                            {/* SĐT khách ĐỂ LẠI lúc gửi yêu cầu — ưu tiên gọi số này */}
-                            {(r.contactPhone ?? r.user.phone) && (
-                              <span className="font-semibold text-foreground">
-                                {" "}· {r.contactPhone ?? r.user.phone}
-                              </span>
-                            )}
-                          </p>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {r.planName}
-                          <p className="text-xs font-normal text-muted-foreground">
-                            {r.listedPrice === 0 ? "Tư vấn" : `Kỳ ${CYCLE_LABEL[r.cycle]}`}
-                          </p>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right text-sm font-semibold tabular-nums">
-                          {r.listedPrice === 0 ? (
-                            <span className="text-muted-foreground">Báo giá riêng</span>
-                          ) : (
-                            formatMoney(r.listedPrice)
-                          )}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {formatDate(r.createdAt)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            {/* Mở dialog với gói + kỳ khách ĐÃ CHỌN điền sẵn — chạy
-                                cả khi khách chưa có thuê bao (backend upsert tạo mới) */}
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                setPaymentFor({
-                                  user: {
-                                    id: r.user.id,
-                                    email: r.user.email,
-                                    fullName: r.user.fullName,
-                                  },
-                                  defaultPlanId: r.planId,
-                                  defaultCycle:
-                                    r.listedPrice === 0 ? undefined : r.cycle,
-                                })
-                              }
-                            >
-                              <CircleDollarSign className="size-4" />
-                              Ghi nhận thanh toán
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={cancellingRequestId === r.id}
-                              onClick={() => handleCancelRequest(r.id)}
-                            >
-                              Hủy yêu cầu
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </div>
+          <Link
+            href="/admin/customers?tab=upgrade"
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 transition-colors hover:bg-amber-100"
+          >
+            <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-bold leading-none text-white tabular-nums">
+              {data.subs.upgradeRequests.length}
+            </span>
+            <span className="font-semibold">yêu cầu mua gói đang chờ gọi lại</span>
+            <span>— xem ở Khách hàng › Mua gói</span>
+            <ArrowRight className="ml-auto size-4 shrink-0" />
+          </Link>
         )}
+
+        {/* ===== Phí vượt trần đơn (11/11/2026) — tự ẩn khi chưa có phiếu nào ===== */}
+        <OverageChargesSection />
 
         {/* ===== Khối 2: Thuê bao ===== */}
         <div className="space-y-4">
@@ -1392,7 +1320,12 @@ export default function PlatformPlansPage() {
                         </TableCell>
                         <TableCell className="text-sm">
                           {p.planName}
-                          <p className="text-xs text-muted-foreground">{CYCLE_LABEL[p.cycle]}</p>
+                          {/* Khoản trả phí vượt không phải một kỳ mua gói: nói rõ "mua thêm N đơn" */}
+                          <p className="text-xs text-muted-foreground">
+                            {p.kind === "OVERAGE"
+                              ? `Phí vượt — mua thêm ${(p.committedOrders ?? 0).toLocaleString("vi-VN")} đơn`
+                              : CYCLE_LABEL[p.cycle]}
+                          </p>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {METHOD_LABEL[p.method] ?? p.method}
@@ -1401,7 +1334,7 @@ export default function PlatformPlansPage() {
                           +{formatMoney(p.amount)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {formatDate(p.periodEnd)}
+                          {p.kind === "OVERAGE" ? "—" : formatDate(p.periodEnd)}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {p.confirmedByName}

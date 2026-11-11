@@ -238,7 +238,14 @@ export function hqItemNameFor(p: {
   periodEnd: Date;
   /** Gói tính theo đơn (Enterprise tự phục vụ 11/11/2026): số đơn/tháng đã mua. */
   committedOrders?: number | null;
+  /** OVERAGE = khách trả phí vượt trần đơn; committedOrders khi đó là số đơn MUA THÊM. */
+  kind?: "PLAN" | "OVERAGE";
 }): string {
+  // Anh Trung chốt 11/11/2026: trả phần vượt = khách MUA THÊM một gói N đơn, hóa đơn xuất
+  // lúc tiền về, tên dòng đúng câu này (không ghi tháng, không ghi "phí vượt").
+  if (p.kind === "OVERAGE") {
+    return `Gói phần mềm Hubsell - mua thêm ${(p.committedOrders ?? 0).toLocaleString("vi-VN")} đơn hàng`;
+  }
   const orders = p.committedOrders ? ` ${p.committedOrders.toLocaleString("vi-VN")} đơn/tháng` : "";
   return `Phần mềm Hubsell - gói ${p.planName}${orders}, ${CYCLE_LABEL[p.cycle]} (${vnDateLabel(p.periodStart)} - ${vnDateLabel(p.periodEnd)})`;
 }
@@ -293,7 +300,7 @@ const ENTRY_SELECT = {
   invoiceEmailSentAt: true,
   occurredAt: true,
   packagePayment: {
-    select: { planName: true, cycle: true, periodStart: true, periodEnd: true, committedOrders: true },
+    select: { planName: true, cycle: true, periodStart: true, periodEnd: true, committedOrders: true, kind: true },
   },
   customer: { select: { fullName: true, email: true } },
 } satisfies Prisma.PlatformLedgerEntrySelect;

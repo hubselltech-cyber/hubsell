@@ -44,6 +44,7 @@ import { startOrderLedgerWorker } from "./order-ledger";
 import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
 import { startPlanHibernateWorker } from "./plan-hibernate";
+import { startPlanOverageCloseWorker } from "./plan-overage-close";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
 import { startProductBarcodeBackfillWorker } from "./product-barcode-backfill";
 import { startListingCopyReviewWorker } from "./listing-copy-review";
@@ -91,6 +92,8 @@ export function startAllWorkers(): void {
   // thanh toán (services/plan-hibernation.ts). Token vẫn làm mới bên dưới.
   // Cùng lượt: CRM HQ chuyển hồ sơ chăm sóc "Đã rời bỏ" (services/care-auto-status.ts, 22/10).
   startPlanHibernateWorker();
+  // Chốt phí vượt trần đơn tháng trước từ 06:00 mùng 2 (11/11/2026, một câu INSERT … SELECT).
+  startPlanOverageCloseWorker();
   // Cron refresh token Shopee (app chính + Hubsell Ads) — lưới an toàn cạnh
   // lazy-refresh, quét DB lọc token sắp hết hạn rồi làm mới có giãn cách.
   startTokenRefreshWorker();

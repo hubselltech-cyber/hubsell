@@ -48,6 +48,8 @@ export function classify(m) {
   if (subject.includes('[hubsell]') && (from.includes('@hubsell.') || from.includes('hubselltech@gmail.com'))) {
     // Khach gui yeu cau ho tro trong app = nguoi that dang hoi -> P1, khong de chim giua thu bao khach moi (anh Trung chot 19/10/2026)
     if (subject.includes('yêu cầu hỗ trợ mới')) return { level: 'P1', group: 'Khách hàng hỏi (yêu cầu hỗ trợ trong app)' };
+    // Khach bam mua goi / xin tu van = tien dang cho -> P1 (yeu cau tu van Enterprise 10/11/2026 bi lot vi nam o P3)
+    if (subject.includes('yêu cầu tư vấn') || subject.includes('yêu cầu mua')) return { level: 'P1', group: 'Khách hàng muốn mua gói (gọi lại ngay)' };
     return { level: 'P3', group: 'Hệ thống Hubsell' };
   }
 
