@@ -1856,6 +1856,10 @@ model Order {
   // Chỉ mục MỘT PHẦN "Chờ xử lý của gian" (tự chuẩn bị hàng 04/11/2026) chỉ có trong
   // SQL migration 20261104230000_auto_arrange:
   //   Order_auto_arrange_pending_idx (channelId, createdAt) WHERE shippingStatus = 'PENDING'
+  // Chỉ mục MỘT PHẦN "đơn đã trừ kho, chưa giao ship" (cột Chờ giao ở Tổng kho 11/11/2026) chỉ có
+  // trong SQL migration 20261111230000_order_stock_awaiting_ship_idx:
+  //   Order_stock_awaiting_ship_idx (channelId) WHERE shippingStatus IN ('PENDING','PROCESSED')
+  //     AND stockRestoredAt IS NULL AND stockDeductedAt IS NOT NULL
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.

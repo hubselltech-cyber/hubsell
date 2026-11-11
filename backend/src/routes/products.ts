@@ -17,6 +17,7 @@ import {
 } from "../integrations/inventory-push";
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
+import { awaitingShipByProduct } from "../services/stock-awaiting-ship";
 import { subtreeIds } from "../lib/location-tree";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
 import { parseBarcodeInput } from "../lib/product-barcode";
@@ -194,6 +195,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // ?stock=out (22/10/2026, khách shop váy): chỉ SKU HẾT HÀNG (tồn ≤ 0) — chip lọc
     // "Hết hàng N" trên bảng Hàng hóa; kết hợp được với trạng thái / tìm kiếm / vị trí.
     const stock: "out" | "all" = req.query.stock === "out" ? "out" : "all";
+    // ?awaiting=1 (11/11/2026): kèm số CHỜ GIAO từng mã cho cột cùng tên ở Tổng kho. Phải xin mới có —
+    // các nơi khác gọi danh sách này (ô chọn mã, app mobile) không trả thêm một câu SQL.
+    const withAwaiting = req.query.awaiting === "1";
     // LỌC THEO VỊ TRÍ (anh Trung 24/09): chọn một kho = lấy cả hàng ở các kệ / tầng
     // bên trong nó (cả nhánh con), chỉ SKU đang có hàng (≠ 0) ở đó.
     const locationId = typeof req.query.locationId === "string" ? req.query.locationId : "";
@@ -339,6 +343,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
       }
     }
 
+    const awaiting = withAwaiting
+      ? await awaitingShipByProduct(prisma, req.ownerId!, items.map((p) => p.id))
+      : null;
+
     const seesFinancials = canSeeFinancials(req);
     res.json({
       items: items.map((p) => {
@@ -360,6 +368,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
           ...hideCost(core, seesFinancials),
           stockLevels: stockLevels.filter((l) => l.quantity !== 0),
           availableToSell,
+          // Chờ giao: đã trừ sổ cho đơn đã chốt, chưa giao ship (chỉ có khi ?awaiting=1).
+          ...(awaiting
+            ? {
+                awaitingShip: awaiting.get(p.id)?.quantity ?? 0,
+                awaitingShipOrders: awaiting.get(p.id)?.orders ?? 0,
+              }
+            : {}),
           safetyStockEffective: p.safetyStock ?? safetyDefault,
           // Cảnh báo sắp hết hàng: ngưỡng đang áp (riêng ?? shop) + cờ đang dưới ngưỡng.
           lowStockThresholdEffective: effectiveLowStockThreshold(p, lowStockDefault),

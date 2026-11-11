@@ -54,6 +54,13 @@ import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog"
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
 import { ChannelLinksPopover } from "@/components/products/channel-links-popover";
 import { PrintLabelsDialog } from "@/components/products/print-labels-dialog";
+import {
+  AWAITING_SHIP_GROUP_TITLE,
+  AWAITING_SHIP_SHOW,
+  AwaitingShip,
+  awaitingShipTitle,
+  groupAwaitingShip,
+} from "@/components/products/awaiting-ship";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
 import { StockVoucherTable } from "@/components/products/stock-voucher-table";
@@ -143,7 +150,13 @@ const COL_HEAD_CLASS: Record<string, string> = {
   // Tồn kho: viên "9.998" ≈ 62px (bút chì chỉ hiện khi rê) → 8,5%; ở 7% viên (có bút chì) tràn
   // 28px sang Có thể bán tại 1280. TỔNG % giữ 88 — tăng tổng là hai cột tiền bị ép và tràn.
   quantityInStock: "w-[8.5%]",
-  availableToSell: "w-[7.5%]",
+  // Đệm px-2 (11/11/2026): dòng nhỏ "xe tải + số chờ giao" dưới số Có thể bán cần 54px chữ, đệm mặc
+  // định 16px chỉ còn 43px ở bảng 1.000px. Nội dung ô căn giữa nên số chính không xê dịch.
+  availableToSell: "w-[7.5%] px-2",
+  // Chờ giao (11/11/2026): cố định theo rem như Giá trị tồn để KHÔNG ăn vào % các cột đã đo. Tiêu đề
+  // "Chờ giao" 12px ≈ 50px, số "9.998" ≈ 38px → 4.75rem (76px) với đệm px-2 còn 60px chữ. Khung bảng
+  // hẹp thì cột ẩn, số thành dòng nhỏ dưới Có thể bán (xem AWAITING_SHIP_SHOW).
+  awaitingShip: "w-[4.75rem] px-2",
   // Vị trí: "Kho chính  20" cần ≥ 80px chữ (tên 55 + khe 8 + số) → 12% của 1.000px; ở 9% (22/10
   // xem prod) ô "Kho chính" chỉ còn 29px chữ, tên cụt "K…" và số từng tràn sang cột Bán trên.
   locations: "w-[12%]",
@@ -162,7 +175,13 @@ const COL_HEAD_CLASS: Record<string, string> = {
 const TABLE_MIN_W = { plain: "min-w-[1000px]", withLocations: "min-w-[1040px]" } as const;
 
 /** Đệm ngang riêng của Ô theo cột — phải khớp với tiêu đề cột ở COL_HEAD_CLASS. */
-const CELL_PAD: Record<string, string> = { skuCode: "px-2", channels: "px-2", stockValue: "px-2" };
+const CELL_PAD: Record<string, string> = {
+  skuCode: "px-2",
+  channels: "px-2",
+  stockValue: "px-2",
+  availableToSell: "px-2",
+  awaitingShip: "px-2",
+};
 
 type HubTab = "inventory" | "logs" | "vouchers" | "suppliers";
 
@@ -365,6 +384,7 @@ export default function ProductsHubPage() {
         stock: stockFilter === "out" ? "out" : undefined,
         locationId: locationFilter || undefined,
         view: "grouped",
+        awaiting: true,
       }),
   });
   const inactiveCount = productsQ.data?.inactiveCount ?? 0;
@@ -566,6 +586,19 @@ export default function ProductsHubPage() {
   // Cột Giá trị tồn hiện / ẩn theo bề rộng khung bảng — xem components/products/stock-value.tsx.
   const { column: valueColShow, subline: valueSublineShow } =
     STOCK_VALUE_SHOW[locationsEnabled ? "withLocations" : "plain"];
+  // Cột Chờ giao cũng co theo khung bảng; người không thấy giá vốn không có cột Giá trị tồn nên đủ chỗ sớm hơn.
+  const { column: awaitColShow, subline: awaitSublineShow } =
+    AWAITING_SHIP_SHOW[
+      locationsEnabled
+        ? seesCost
+          ? "withLocationsAndValue"
+          : "withLocations"
+        : seesCost
+          ? "plainWithValue"
+          : "plain"
+    ];
+  // Cột nào ẩn / hiện theo bề rộng khung bảng (tiêu đề + ô dùng chung).
+  const colShow: Record<string, string> = { stockValue: valueColShow, awaitingShip: awaitColShow };
 
   const columns = useMemo(
     () => [
@@ -769,9 +802,34 @@ export default function ProductsHubPage() {
               {safety > 0 && (
                 <p className="mt-0.5 text-xs text-muted-foreground">an toàn {formatNumber(safety)}</p>
               )}
+              <AwaitingShip
+                quantity={p.awaitingShip ?? 0}
+                title={awaitingShipTitle(p)}
+                variant="subline"
+                className={awaitSublineShow}
+              />
             </div>
           );
         },
+      }),
+      // ===== CHỜ GIAO (11/11/2026, khách xin "đơn đang ra 10 con thì hiện 10 con bị giữ lại") — đã trừ
+      // khỏi Tồn kho cho đơn đã chốt, chưa giao ship. Đứng SAU Có thể bán: nó không nằm trong phép
+      // "Tồn − giữ − an toàn = Có thể bán". Chỉ là con số + chú thích; đơn xem ở trang Đơn hàng. =====
+      columnHelper.display({
+        id: "awaitingShip",
+        header: () => (
+          <div
+            className="text-center"
+            title="Hàng của đơn đã chốt nhưng chưa giao cho đơn vị vận chuyển. Đã trừ khỏi Tồn kho, hàng vẫn còn trong kho."
+          >
+            Chờ giao
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="text-center">
+            <AwaitingShip quantity={row.original.awaitingShip ?? 0} title={awaitingShipTitle(row.original)} />
+          </div>
+        ),
       }),
       // ===== CỘT MỚI: BÁN TRÊN — trái tim của hub. Gom chip theo sàn + badge
       // lệch tồn; bấm vào là bung chi tiết từng gian ngay dưới dòng. =====
@@ -884,7 +942,7 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, valueSublineShow]
+    [seesCost, isAdmin, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, valueSublineShow, awaitSublineShow]
   );
 
   const table = useReactTable({
@@ -914,6 +972,7 @@ export default function ProductsHubPage() {
     const inactiveCount = rows.filter((p) => p.isActive === false).length;
     const lowCount = rows.filter((p) => p.isLowStock).length;
     const { value: groupValue, noCostCount } = groupStockValue(rows);
+    const awaitingTotal = groupAwaitingShip(rows);
     const links = rows.flatMap((p) => p.channelLinks ?? []);
     const byChannel = new Map<string, number>();
     for (const l of links) byChannel.set(l.channelName, (byChannel.get(l.channelName) ?? 0) + 1);
@@ -1019,13 +1078,22 @@ export default function ProductsHubPage() {
           </span>
           {seesCost && <StockValueSubline value={groupValue} className={valueSublineShow} />}
         </TableCell>
-        <TableCell className="text-center">
+        <TableCell className={cn("text-center", CELL_PAD.availableToSell)}>
           <span
             className={cn("text-sm font-semibold tabular-nums", available === 0 ? "text-rose-700" : "text-foreground")}
             title="Tổng có thể bán các phân loại"
           >
             {formatNumber(available)}
           </span>
+          <AwaitingShip
+            quantity={awaitingTotal}
+            title={AWAITING_SHIP_GROUP_TITLE}
+            variant="subline"
+            className={awaitSublineShow}
+          />
+        </TableCell>
+        <TableCell className={cn("text-center", CELL_PAD.awaitingShip, awaitColShow)}>
+          <AwaitingShip quantity={awaitingTotal} title={AWAITING_SHIP_GROUP_TITLE} />
         </TableCell>
         {locationsEnabled && <TableCell className={TEXT_SUB}>—</TableCell>}
         <TableCell className={CELL_PAD.channels}>
@@ -1493,7 +1561,7 @@ export default function ProductsHubPage() {
                               className={cn(
                                 "whitespace-normal leading-tight",
                                 COL_HEAD_CLASS[header.column.id],
-                                header.column.id === "stockValue" && valueColShow
+                                colShow[header.column.id]
                               )}
                             >
                               {flexRender(
@@ -1525,7 +1593,7 @@ export default function ProductsHubPage() {
                                 {row.getVisibleCells().map((cell) => (
                                   <TableCell
                                     key={cell.id}
-                                    className={cn(CELL_PAD[cell.column.id], cell.column.id === "stockValue" && valueColShow)}
+                                    className={cn(CELL_PAD[cell.column.id], colShow[cell.column.id])}
                                   >
                                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                   </TableCell>

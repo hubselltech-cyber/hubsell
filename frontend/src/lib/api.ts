@@ -303,6 +303,13 @@ export interface Product {
    * đã nối. Cột chính của hub Hàng hóa (mô hình trung tâm điều tiết).
    */
   availableToSell?: number;
+  /**
+   * CHỜ GIAO (11/11/2026): số đã trừ khỏi Tồn kho cho đơn đã chốt nhưng CHƯA giao cho đơn vị vận
+   * chuyển — hàng vẫn nằm trong kho. Chỉ có khi gọi danh sách với `awaiting: true`.
+   */
+  awaitingShip?: number;
+  /** Số đơn đang giữ phần chờ giao đó. */
+  awaitingShipOrders?: number;
   /** Tồn an toàn đang áp cho SKU (riêng hoặc mặc định toàn shop). */
   safetyStockEffective?: number;
   /** Ngưỡng cảnh báo sắp hết hàng riêng SKU — null/vắng = dùng mặc định shop, 0 = tắt. */
@@ -1721,6 +1728,8 @@ export function fetchProducts(params: {
   view?: "grouped";
   /** "out" = chỉ SKU hết hàng (tồn ≤ 0). */
   stock?: "out";
+  /** Kèm số Chờ giao từng mã (thêm một câu SQL — chỉ bảng Tổng kho xin). */
+  awaiting?: boolean;
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
@@ -1730,6 +1739,7 @@ export function fetchProducts(params: {
   if (params.locationId) qs.set("locationId", params.locationId);
   if (params.view) qs.set("view", params.view);
   if (params.stock) qs.set("stock", params.stock);
+  if (params.awaiting) qs.set("awaiting", "1");
   return apiFetch<ProductListResponse>(`/api/products?${qs.toString()}`);
 }
 

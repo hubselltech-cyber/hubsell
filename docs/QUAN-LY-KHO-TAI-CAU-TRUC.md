@@ -645,3 +645,31 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
 - Xóa mã chết (knip + grep): `frontend/src/components/mappings/link-one-dialog.tsx` (hộp nối một SKU, không ai gọi từ 05/11 khi chuyển sang nối một chiều; thư mục `components/mappings/` hết tệp) và hai hàm `linkChannelProducts` / `linkChannelProductBySku` trong `lib/api.ts`. Route backend `/api/mappings/link*` GIỮ nguyên (chưa rà app mobile).
 - Kiểm sau dọn: `tsc` hai phía + `eslint` tệp sửa sạch; chạy lại local: sửa một SKU (số âm / số lẻ → 400, đặt rồi trả về mặc định), cài hàng loạt, `/stocktake/rows` có / không vị trí, cột ↔ dòng nhỏ ở 1536 / 1366, quét + tải lại trang Kiểm kê giữ số.
 - knip còn báo nhưng KHÔNG đụng (ngoài phạm vi phiên, phần lớn chỉ thừa từ khóa `export`): `startBulkConfirm` / `fetchBulkConfirmProgress` trong `lib/api.ts`, 4 hàm `exportXxxToExcel`, vài hàm ở `channel-products/shared.ts`.
+
+## 11. Khách xin cột "Giữ lại" (đơn đang ra 10 con thì hiện 10 con bị giữ) — khảo sát 11/11/2026 (CHƯA LÀM, chờ anh chốt)
+
+**Khách nói:** cột "Có thể bán" ở Tổng kho nên là "giữ lại" — đơn đang ra 10 con thì hiện 10 con bị giữ.
+
+**Vì sao khách thấy cột vô dụng (đọc mã, chưa đo prod):**
+- Đơn sàn bị trừ THẲNG vào `quantityInStock` ngay khi sang Chờ lấy hàng: Shopee `READY_TO_SHIP/PROCESSED/RETRY_SHIP…` (`shopee/service.ts` `shouldDeductShopeeStock`), TikTok `AWAITING_SHIPMENT/AWAITING_COLLECTION…` (`tiktok/service.ts` `shouldDeductStock`), Lazada tương tự.
+- `holdQuantity` chỉ cộng cho đơn CHƯA THANH TOÁN (`UNPAID/INVOICE_PENDING`, `order-stock.ts`). Đơn COD bỏ qua bước này → giữ ≈ 0 → "Có thể bán" (= tồn − giữ − an toàn) ≈ "Tồn kho". Ảnh khách: 34/34, 2.984/2.984.
+- Hệ quả: "Tồn kho" của Hubsell KHÔNG phải số trên kệ — hàng đã đóng gói chưa bàn giao vẫn nằm trên kệ nhưng đã bị trừ. Khách nghĩ kiểu: trên kệ 44, giữ 10, bán được 34; Hubsell hiện 34 / 34, 10 con kia không thấy ở đâu.
+- Bán vượt: `deductStockTx` CHO PHÉP `quantityInStock` âm (cố ý, để lộ bán vượt); số đẩy lên sàn = `max(0, …)` nên sàn nhận 0, không nhận số âm.
+- **Rủi ro thấy kèm (đọc mã, chưa thử):** Kiểm kê (`POST /api/inventory/stocktake`) ghi đè số sổ bằng số đếm, không trừ hàng chờ giao. Đếm kệ lúc còn N con đã đóng gói chưa bàn giao → cộng lại N con → đẩy lên sàn → bán vượt.
+
+**Khảo sát đối thủ (11/11):**
+
+| Bên | Cách làm | Nguồn |
+|---|---|---|
+| **Sapo** | Ba / bốn số: **Tồn kho = Có thể bán + Đang giao dịch + Đang đóng gói**. Tạo đơn: Có thể bán giảm, Đang giao dịch tăng; đóng gói: sang Đang đóng gói; **chỉ trừ Tồn kho khi xuất kho vật lý** (đổi từ "trừ khi tạo yêu cầu vận chuyển"). Cột Đang đóng gói bấm mở danh sách đơn. | Tài liệu chính thức: sapo.vn/cap-nhat-tinh-nang/thay-doi-thoi-diem-tru-ton-kho-cua-don-hang |
+| **KiotViet** | Danh sách hàng hóa có cột **"Khách đặt"** cạnh "Tồn kho" (đơn đặt chưa thành hóa đơn chưa trừ tồn) + cột "Dự kiến hết hàng" theo tốc độ bán. | "Dự kiến hết hàng" có tài liệu chính thức; "Khách đặt" chỉ thấy ở nguồn phụ + trí nhớ, CHƯA có trang chính thức |
+| **Salework** | Tài liệu công khai chỉ nói "bán 10 sản phẩm thì kho trừ ngay", đồng bộ "tồn kho" lên sàn; không thấy khái niệm tạm giữ / khả dụng. | docs.salework.net (quy-tac-kho, dong-bo-ton-kho) — CHƯA xác minh màn thật |
+
+> **11/11 tối — đã rà lại và ĐỔI kết luận dưới đây:** không đổi nghĩa Tồn kho, chỉ thêm cột "Chờ giao". Bản đang có hiệu lực ở [TONG-KHO-DANG-GIU-CHO-DON.md](TONG-KHO-DANG-GIU-CHO-DON.md).
+
+**Kết luận em (bản đầu, đã thay):** khách đúng về nhu cầu, Sapo (đối thủ lớn nhất cùng phân khúc) làm đúng kiểu khách nghĩ. KHÔNG đổi tên "Có thể bán" (số đẩy lên sàn, hướng dẫn + hộp đồng bộ dựa vào nó). Đề xuất theo công thức Sapo, giữ nguyên lúc trừ kho:
+- Thêm bộ đếm "Đang giữ cho đơn" = hàng của đơn đã chốt CHƯA bàn giao (theo trạng thái sàn có sẵn qua webhook — không gọi thêm sàn) + đơn chưa thanh toán. Bộ đếm duy trì ở đúng các điểm trừ / bàn giao / hủy như `holdQuantity` (không quét đơn mỗi lần mở trang — quy mô triệu đơn).
+- Bảng hiện: **Tồn kho (trên kệ) = Có thể bán + Đang giữ**; cột Đang giữ bấm mở danh sách đơn. Ví dụ khách: 44 = 34 + 10.
+- Sửa tay ô Tồn kho và Kiểm kê nhập số TRÊN KỆ → máy trừ phần đang giữ trước khi ghi sổ (vá luôn rủi ro Kiểm kê ở trên).
+- Không làm kiểu Sapo đổi lúc trừ kho sang xuất kho vật lý — đụng toàn bộ mô hình trừ / hoàn / đối soát, rủi ro lớn.
+- Cần thiết kế + test riêng trước khi code (đụng mô hình kho): điểm tăng / giảm bộ đếm cho cả 3 sàn + đơn tại quầy, đơn hủy sau chuẩn bị hàng, đơn giao thất bại quay về.

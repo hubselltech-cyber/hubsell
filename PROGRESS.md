@@ -5,6 +5,31 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 11/11 (tối) — Khách xin cột "Giữ lại" ở Tổng kho → đọc mã + khảo sát Sapo / KiotViet / Salework (CHƯA CODE, chờ anh chốt)
+
+- Gốc: đơn sàn trừ thẳng Tồn kho từ lúc Chờ lấy hàng; "giữ" chỉ cho đơn chưa thanh toán → Có thể bán ≈ Tồn kho, khách không thấy hàng đang chờ giao. Bán vượt thì Tồn kho âm (cố ý), sàn nhận 0.
+- Rủi ro thấy kèm (đọc mã, chưa thử): Kiểm kê ghi đè bằng số đếm kệ, không trừ hàng chờ giao → có thể cộng lại hàng đã bán.
+- Sapo: Tồn kho = Có thể bán + Đang giao dịch + Đang đóng gói (tài liệu chính thức). Đề xuất làm theo công thức đó, giữ nguyên lúc trừ kho. Chi tiết: `docs/QUAN-LY-KHO-TAI-CAU-TRUC.md` mục 11.
+- Anh: "Viết thiết kế đi" → `docs/TONG-KHO-DANG-GIU-CHO-DON.md`: Tồn kho hiện số trong kho = sổ + chờ giao; Đang giữ = chờ giao + giữ đơn chưa thanh toán; Có thể bán KHÔNG đổi. Chờ giao tính từ nhật ký trừ của đơn chưa giao (không thêm bộ đếm), chỉ mục bán phần mới; sửa tay / vị trí / Kiểm kê / Excel đè nhận số trong kho qua `basis: "onHand"` (client cũ giữ nghĩa cũ). Đã kiểm mã: đơn offline không bao giờ vào chờ giao. CHƯA đo prod (lát 0), CHƯA code; ⏳ 4 câu chờ anh ở mục 10.
+- Anh "Chốt theo em" rồi hỏi lại: "Có cần khảo sát lại một lần nữa cho chắc không… ảnh hưởng lan ra" → **RÀ LẠI, ĐẢO bản 1 thành bản 2** (cùng tệp docs, mục 2 + 8):
+  - Sổ (`quantityInStock`) vốn là "tồn bán", không phải số trong kho: thiếu hàng chờ giao, thiếu ô "không bán", và THỪA đơn hủy sau giao (`restoreStockTx` cộng ngay khi kiện còn quay về) → "Tồn kho = sổ + chờ giao" không ra được số trong kho.
+  - Sổ được đọc ở 16 tệp web + 2 mobile + 23 backend (Nhật ký "tồn sau", phiếu kho, vị trí, hộp đồng bộ, Excel, Giá trị tồn…) → đổi nghĩa một cột là lệch với tất cả.
+  - Gian DISCONNECTED / ngủ đông bỏ webhook → đơn kẹt PENDING làm chờ giao phình (local có 26 đơn đúng ca này).
+  - Bản 2: GIỮ NGUYÊN Tồn kho + Có thể bán + sửa tay + Excel + mobile; chỉ THÊM cột "Chờ giao" (đặt sau Có thể bán, chỉ gian ACTIVE không ngủ đông); Kiểm kê thêm cột Chờ giao + công tắc "số đếm gồm kiện đã gói chưa giao" rồi mới trừ.
+  - Đo local bằng dữ liệu giả trong giao dịch rồi ROLLBACK (400.000 đơn, 8.000 chờ giao, 600.000 dòng nhật ký): có chỉ mục bán phần mới 65 ms, không có 204 ms + đọc 9.294 trang đĩa → chỉ mục là bắt buộc. Tệp thử tạm đã xóa.
+  - CHƯA kiểm: số prod (đơn kẹt theo tuổi / trạng thái gian, shop dùng ô không bán, đơn hủy sau giao kiện chưa về). ⏳ 3 câu chờ anh ở mục 10.
+- ✅ Anh: "Chốt bản 2" → giữ nguyên Tồn kho, thêm cột "Chờ giao". ⛔ Đừng đề xuất lại "Tồn kho = số trong kho". Còn hỏi: công tắc Kiểm kê mặc định bật; đọc số prod.
+- **Lát 1 + 2 ĐÃ CODE + SOI LOCAL, CHƯA commit** (chi tiết + bảng đo ở docs mục 11):
+  - Backend: migration chỉ mục bán phần `20261111230000_order_stock_awaiting_ship_idx`, `services/stock-awaiting-ship.ts`, `GET /products?awaiting=1` (phải xin mới tính); test DB thật, chạy kèm stock-locations + inventory-race 20/20; tsc sạch.
+  - Web: `components/products/awaiting-ship.tsx`, cột "Chờ giao" sau Có thể bán, co theo khung bảng (hẹp thì thành dòng nhỏ xe tải + số dưới Có thể bán), dòng cha cộng tổng, Excel thêm cột; tsc + eslint sạch.
+  - Đo JS 1280 → 1920, sáng (không vị trí) + tối (có vị trí): không ô nào của cột mới tràn. Bẫy đã dẫm: dòng nhỏ viết chữ "chờ giao 9.998" tràn cột 75px ở 1280 → đổi sang biểu tượng + số, ô Có thể bán đệm px-2.
+  - Thấy kèm, có từ trước, chưa sửa: tài khoản có vị trí ở 1280 / 1366 ô giá 7 chữ số tràn 3px.
+  - Soi thêm trước khi push: nhân viên kho (không thấy giá vốn) trên tài khoản có vị trí, 1280 → 1536 không ô nào tràn. Chưa kiểm: tệp Excel, mobile.
+  - ✅ Chỉ mục prod ĐÃ DỰNG 23:19 11/11 (anh: "Em chạy qua Chrome") bằng CREATE INDEX CONCURRENTLY ở Supabase SQL Editor: hợp lệ, 80 kB; bảng Order ~884.000 dòng / 503 MB.
+  - Số prod 23:20 (qua chỉ mục mới): gian đang hoạt động 3.680 đơn đã trừ kho chưa giao / 62 chủ shop, KHÔNG đơn nào quá 7 ngày; bị loại 4.120 đơn (ngủ đông 3.479, mất kết nối 641) → luật chỉ tính gian đang hoạt động là cần thật. Bảng ở docs mục 11.
+  - DB local: đã xóa tài khoản thử + tệp seed tạm trước khi commit.
+  - ✅ Anh: "kích vào hiện lên mã đơn có thực sự cần thiết không… 1.000 đơn thì cũng mệt" → "Bỏ hộp đi" → ĐÃ GỠ hộp danh sách đơn (endpoint `awaiting-orders`, `awaitingShipOrdersOf`, kiểu + hàm ở `lib/api.ts`, phần hộp trong `awaiting-ship.tsx`, 1 ca test). Số Chờ giao chỉ để xem + chú thích rê chuột. Sau gỡ: tsc hai phía + eslint sạch, test 8/8, soi lại local. ⛔ Đừng đề xuất lại hộp này.
+
 ## Phiên 11/11 (lịch 20:00) — Yêu cầu mua gói dễ thấy (3 bước) + PHÍ VƯỢT TRẦN ĐƠN "TÍNH THẲNG" cho mọi gói (anh: "vượt thì tính theo giá tiền của gói tương ứng, ví dụ 99K/300 × số đơn vượt" → "Chốt tính thẳng" → "Thêm popup") → ĐÃ CODE, dọn, commit + push theo lời anh
 
 - Đầu phiên: `pay.payos.vn` trả 200 (đã sống lại sau lỗi 522 chiều 11/11).
@@ -42,6 +67,8 @@
   - Toàn bộ backend lần cuối: **2.441 qua, 6 đỏ ở 4 tệp** (`channel-delete-db` 3, `order-ledger-db` 1, `realized-pnl-ledger-db` 1 — thiếu chỉ mục trigram trên DB local, `ads-rows-ledger-db` 1) — đều thuộc nền đỏ cũ, không dính tệp sửa. Lưu ý DB local: script seed thử của em xóa đơn trực tiếp nên để lại dòng sổ cái mồ côi làm đỏ thêm các test sổ cái; em đã xóa mọi dòng `order_ledger` / `order_line_ledger` không còn đơn trên DB LOCAL (kể cả rác mồ côi có từ trước, ~420 nghìn dòng hàng) rồi cho sổ tính lại — sau đó `ads-margin-sql-db` cũng xanh lại.
   - Kiểm lần cuối: tsc 2 phía + eslint tệp sửa sạch; `next build` qua; 5 tệp test gói 58 ca xanh; sau khi tách tệp chạy lại popup → QR → giả lập tiền về trên local: phiếu PAID, chứng từ `GATEWAY:payos:…`.
   - KHÔNG đưa vào commit (việc dở của phiên khác / việc cục bộ): `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md`, `docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md`, `tools/mail-digest/unflag.js`, 2 tệp `hubsell-marketing/…` chưa theo dõi.
+- **Sau push `13e29426`:** `/health` của web prod báo đúng bản `13e29426…` (trước đó `85add773`), `/api/subscription/me` trả 401 khi chưa đăng nhập (dịch vụ sống). CHƯA kiểm: dịch vụ worker đã lên bản mới chưa (log `[plan-overage] BẬT`), bảng `plan_overage_charges` trên Supabase, trang Gói dịch vụ prod bằng tài khoản khách (dòng "vượt … ₫/đơn (từ 12/2026)"), nút Thanh toán với payOS thật. (Dòng ghi chú này chưa commit.)
+- Anh thử trên prod ~22:00 11/11 (ảnh hộp QR): Enterprise 100.000 đơn × 12 tháng = **64.950.000 ₫**, payOS vẫn cấp mã (đơn 1794409208172704, nội dung `HS ENTERPRISE 08172704`). Rút ra: (1) payOS không chặn tạo mã ở mức ~65 tr; (2) prod đang cho nội dung CK 25 ký tự → mã phí vượt ra đủ; (3) giá máy chủ tính đúng (12.990.000 × 100.000 ÷ 20.000). Chưa kiểm tiền thật mức lớn có chuyển lọt không (tùy hạn mức app ngân hàng của khách). Chiều nay em KHÔNG đưa con số hạn mức nào — docs chỉ ghi "chưa kiểm".
 - ⏳ Việc còn: thư cho khách khi có phiếu, thư HQ khi quá hạn, mốc báo sale hiện ở HQ Khách hàng; sửa chữ landing + FAQ + Điều khoản + Quy chế cùng ngày bật; soạn thông báo luật mới cho khách đang trả tiền.
 - ⏳ Chờ anh xem lại nếu muốn đổi: 3 mặc định em tự chọn (Scale 59,95 hay 65; khách cũ áp từ tháng 12; dùng thử giữ khóa mềm); sau đó làm việc 1 (3 bước) → thu phần vượt dựng chung cho mọi gói.
 
