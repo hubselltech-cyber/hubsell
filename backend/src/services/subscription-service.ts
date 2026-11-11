@@ -28,6 +28,7 @@ import { markCarePaidTx } from "./care-auto-status";
 import { creditReferralCommission } from "./referral-wallet";
 import { sendPlanActivatedMail } from "./customer-mails";
 import { kickHqAutoInvoice } from "../integrations/invoice/hq-auto-invoice";
+import { isPerOrderPlan, perOrderPlanPrice } from "./per-order-plan";
 
 type Tx = Prisma.TransactionClient;
 
@@ -143,6 +144,9 @@ export interface RecordPaymentInput {
   cycle: BillingCycle;
   /** Số tiền THỰC THU — vắng mặt thì lấy giá niêm yết của gói theo chu kỳ. */
   amount?: number;
+  /** Gói tính theo đơn (Enterprise): số đơn/tháng khách chọn cho kỳ này — lưu trên
+   *  chứng từ. Vắng mặt = mức tối thiểu của gói (HQ ghi tay theo cách cũ). */
+  committedOrders?: number | null;
   method: PackagePaymentMethod;
   /** Ngày thực nhận tiền (khớp sao kê) — mặc định bây giờ. */
   occurredAt?: Date;
@@ -165,7 +169,11 @@ export interface RecordPaymentInput {
 export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) {
   const plan = await tx.servicePlan.findUniqueOrThrow({ where: { id: input.planId } });
 
-  const amount = input.amount ?? planPriceFor(plan, input.cycle);
+  const perOrder = isPerOrderPlan(plan);
+  const committedOrders = perOrder ? (input.committedOrders ?? plan.minOrdersPerMonth) : null;
+  const amount =
+    input.amount ??
+    (perOrder ? perOrderPlanPrice(plan, input.cycle, committedOrders!) : planPriceFor(plan, input.cycle));
   if (!Number.isFinite(amount) || amount < 0) {
     throw new Error("Số tiền thanh toán không hợp lệ");
   }
@@ -227,6 +235,7 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
       method: input.method,
       periodStart,
       periodEnd,
+      committedOrders,
       occurredAt,
       externalRef: input.externalRef ?? null,
       note: input.note?.trim() ? input.note.trim() : null,
@@ -253,7 +262,7 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
         direction: LedgerDirection.IN,
         source: LedgerSource.SUBSCRIPTION,
         amount,
-        note: `Thu phí gói ${plan.name} — ${cycleLabel}`,
+        note: `Thu phí gói ${plan.name}${committedOrders ? ` ${committedOrders.toLocaleString("vi-VN")} đơn/tháng` : ""} — ${cycleLabel}`,
         customerId: input.userId,
         packagePaymentId: payment.id,
         occurredAt,

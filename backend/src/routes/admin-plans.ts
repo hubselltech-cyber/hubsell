@@ -38,6 +38,7 @@ const PLAN_SELECT = {
   priceSemiannual: true,
   priceYearly: true,
   pricePerOrder: true,
+  minOrdersPerMonth: true,
   maxChannels: true,
   maxOrdersPerMonth: true,
   maxStaff: true,
@@ -60,6 +61,7 @@ function serializePlan(p: {
   priceSemiannual: Prisma.Decimal;
   priceYearly: Prisma.Decimal;
   pricePerOrder: Prisma.Decimal | null;
+  minOrdersPerMonth: number | null;
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
   maxStaff: number | null;
@@ -81,6 +83,7 @@ function serializePlan(p: {
     priceSemiannual: toNumber(p.priceSemiannual),
     priceYearly: toNumber(p.priceYearly),
     pricePerOrder: p.pricePerOrder === null ? null : Number(p.pricePerOrder),
+    minOrdersPerMonth: p.minOrdersPerMonth,
     maxChannels: p.maxChannels,
     maxOrdersPerMonth: p.maxOrdersPerMonth,
     maxStaff: p.maxStaff,
@@ -140,6 +143,18 @@ function parsePlanBody(body: Record<string, unknown>, partial: boolean) {
       const v = Number(body.pricePerOrder);
       if (!Number.isFinite(v) || v <= 0) errors.push("Giá công bố ₫/đơn phải > 0 hoặc để trống");
       else out.pricePerOrder = Math.round(v * 100) / 100;
+    }
+  }
+
+  // Gói TÍNH THEO ĐƠN tự phục vụ (Enterprise, 11/11/2026): số đơn tối thiểu khách
+  // phải chọn; null/rỗng = gói thường. Có số này thì 4 ô giá là giá Ở ĐÚNG mức đó.
+  if (body.minOrdersPerMonth !== undefined) {
+    if (body.minOrdersPerMonth === null || body.minOrdersPerMonth === "") {
+      out.minOrdersPerMonth = null;
+    } else {
+      const v = Math.floor(Number(body.minOrdersPerMonth));
+      if (!Number.isFinite(v) || v <= 0) errors.push("Số đơn tối thiểu phải > 0 hoặc để trống");
+      else out.minOrdersPerMonth = v;
     }
   }
 

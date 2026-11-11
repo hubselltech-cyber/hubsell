@@ -6787,6 +6787,8 @@ export interface ServicePlan {
   priceYearly: number;
   /** Giá CÔNG BỐ ₫/đơn cho gói bán bằng tư vấn (Enterprise 65đ, 22/10/2026) — chỉ hiện, null = "Liên hệ". */
   pricePerOrder: number | null;
+  /** Gói tính theo đơn tự phục vụ (11/11/2026); null = gói thường. */
+  minOrdersPerMonth: number | null;
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
   maxStaff: number | null;
@@ -6883,6 +6885,7 @@ export interface PlanInput {
   priceSemiannual?: number;
   priceYearly?: number;
   pricePerOrder?: number | null;
+  minOrdersPerMonth?: number | null;
   maxChannels?: number | null;
   maxOrdersPerMonth?: number | null;
   maxStaff?: number | null;
@@ -7061,6 +7064,10 @@ export interface MyPlanInfo {
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
   maxStaff: number | null;
+  /** Gói TÍNH THEO ĐƠN (Enterprise tự phục vụ 11/11/2026): mức tối thiểu; null/vắng = gói thường. */
+  minOrdersPerMonth?: number | null;
+  /** Gói tính theo đơn: đơn giá phần vượt ₫/đơn. */
+  pricePerOrder?: number | null;
 }
 
 export interface MyUpgradePlan extends MyPlanInfo {
@@ -7078,6 +7085,8 @@ export interface MySubscriptionResponse {
   /** false = khách cũ chưa được gán thuê bao → không giới hạn gì. */
   hasSubscription: boolean;
   plan: MyPlanInfo | null;
+  /** Gói tính theo đơn: số đơn/tháng đã mua cho kỳ đang chạy (= trần đơn); null = gói thường. */
+  committedOrders: number | null;
   subscription: {
     status: SubscriptionEffectiveStatus;
     isTrial: boolean;
@@ -7097,6 +7106,8 @@ export interface MySubscriptionResponse {
   expiry: { expired: boolean; lockDeadline: string | null; locked: boolean };
   locked: boolean;
   lockedReason: "ORDERS" | "EXPIRED" | null;
+  /** Hạn trả phần vượt của gói tính theo đơn: hết ngày này của tháng sau (anh chốt mùng 5). */
+  overageDueDay: number;
   /** Các gói đang bán bậc cao hơn — nội dung bảng chọn của popup nâng gói. */
   upgradePlans: MyUpgradePlan[];
   /** STK nhận tiền (env backend) — null khi chưa cấu hình → FE mời liên hệ. */
@@ -7128,6 +7139,16 @@ export interface MySubscriptionResponse {
     name: string;
     description: string | null;
     pricePerOrder: number | null;
+    /** 11/11/2026: true = khách tự nhập số đơn (≥ minOrdersPerMonth) + tự thanh toán;
+     *  4 giá dưới là giá Ở ĐÚNG mức tối thiểu, giá thật = làm tròn nghìn(giá × N ÷ mức). */
+    selfServe: boolean;
+    minOrdersPerMonth: number | null;
+    maxChannels: number | null;
+    maxStaff: number | null;
+    priceMonthly: number;
+    priceQuarterly: number;
+    priceSemiannual: number;
+    priceYearly: number;
   } | null;
 }
 
@@ -7196,6 +7217,8 @@ export interface GatewayCheckout {
   planCode: string;
   planName: string;
   cycle: BillingCycle;
+  /** Gói tính theo đơn: số đơn/tháng khách chọn; null = gói thường. */
+  committedOrders: number | null;
   amount: number;
   /** Trang thanh toán hosted của payOS — dự phòng khi khách không quét được QR. */
   checkoutUrl: string | null;
@@ -7211,7 +7234,12 @@ export interface GatewayCheckout {
 }
 
 /** Tạo (hoặc dùng lại) link + QR thanh toán cho (gói, kỳ). */
-export function createPlanCheckout(params: { planId: string; cycle: BillingCycle }) {
+export function createPlanCheckout(params: {
+  planId: string;
+  cycle: BillingCycle;
+  /** Bắt buộc với gói tính theo đơn (Enterprise) — máy chủ tính giá từ số này. */
+  committedOrders?: number;
+}) {
   return apiFetch<{ checkout: GatewayCheckout }>("/api/subscription/checkout", {
     method: "POST",
     body: JSON.stringify(params),

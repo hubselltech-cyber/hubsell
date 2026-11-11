@@ -39,6 +39,7 @@ import {
 import { PLAN_FEATURES, useMyPlan } from "@/components/shell/plan-quota-guard";
 import { GatewayCheckoutDialog } from "@/components/settings/gateway-checkout-dialog";
 import { CYCLES, PlanPricingMatrix, priceOf } from "@/components/settings/plan-pricing-matrix";
+import { overageNotice } from "@/components/settings/order-volume-picker";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -517,7 +518,8 @@ export default function SettingsPlanPage() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: (p: { planId: string; cycle: BillingCycle }) => createPlanCheckout(p),
+    mutationFn: (p: { planId: string; cycle: BillingCycle; committedOrders?: number }) =>
+      createPlanCheckout(p),
     onSuccess: (res) => {
       setCheckout(res.checkout);
       refresh();
@@ -654,7 +656,11 @@ export default function SettingsPlanPage() {
             {/* 3 thanh nằm ngang trên desktop — trang full-bleed không để trống sườn */}
             <div className="grid gap-x-8 gap-y-4 md:grid-cols-3">
               <UsageBar
-                label="Đơn hàng tháng này"
+                label={
+                  data.committedOrders != null
+                    ? `Đơn hàng tháng này (đã chọn ${nf.format(data.committedOrders)} đơn)`
+                    : "Đơn hàng tháng này"
+                }
                 used={data.orders.used}
                 limit={data.orders.limit}
                 unit="đơn"
@@ -673,9 +679,9 @@ export default function SettingsPlanPage() {
               />
             </div>
             <p className={TEXT_SUB}>
-              Trần đơn tính theo tháng dương lịch trên mọi gian hàng của shop. Vượt trần
-              đơn vẫn được đồng bộ đầy đủ — chỉ các tính năng nâng cao tạm khóa sau thời
-              gian ân hạn nếu chưa nâng gói.
+              {data.committedOrders != null
+                ? `Số đơn tính theo tháng dương lịch trên mọi gian hàng của shop, gồm mọi đơn phát sinh trên sàn (kể cả đơn hủy). ${overageNotice(data.plan?.pricePerOrder, data.overageDueDay)} Trong tháng mọi tính năng vẫn dùng bình thường.`
+                : "Trần đơn tính theo tháng dương lịch trên mọi gian hàng của shop. Vượt trần đơn vẫn được đồng bộ đầy đủ — chỉ các tính năng nâng cao tạm khóa sau thời gian ân hạn nếu chưa nâng gói."}
             </p>
           </CardContent>
         )}
@@ -812,6 +818,20 @@ export default function SettingsPlanPage() {
             onWalletBuy={(p, cycle) =>
               guardPlanChange(p, cycle, () => withBillingStep(() => setWalletBuy({ plan: p, cycle })))
             }
+            overageDueDay={data.overageDueDay}
+            enterpriseDefaultOrders={
+              data.enterprisePlan && data.plan?.id === data.enterprisePlan.id ? data.committedOrders : null
+            }
+            onEnterpriseCheckout={(cycle, orders) => {
+              const ep = data.enterprisePlan!;
+              // guardPlanChange chỉ cần id/name để cảnh báo đổi gói giữa kỳ đã trả tiền.
+              const asPlan = { ...ep, code: "ENTERPRISE", tier: 99, maxOrdersPerMonth: orders } as MyUpgradePlan;
+              guardPlanChange(asPlan, cycle, () =>
+                withBillingStep(() =>
+                  checkoutMutation.mutate({ planId: ep.id, cycle, committedOrders: orders })
+                )
+              );
+            }}
             onConsult={() =>
               openBuyDialog({
                 planId: data.enterprisePlan!.id,

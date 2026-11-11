@@ -30,6 +30,7 @@ import {
 } from "../integrations/payos/client";
 import { notify } from "./notifications";
 import { CYCLE_LABEL, planPriceFor, recordPackagePayment } from "./subscription-service";
+import { PerOrderInputError, isPerOrderPlan, perOrderPlanPrice, validateCommittedOrders } from "./per-order-plan";
 
 /** Link sống bao lâu — quét QR là chuyện vài phút, 60' đủ rộng cho khách mở app ngân hàng. */
 const LINK_TTL_MINUTES = 60;
@@ -53,6 +54,8 @@ export interface CheckoutView {
   planCode: string;
   planName: string;
   cycle: BillingCycle;
+  /** Gói tính theo đơn: số đơn/tháng khách chọn; null = gói thường. */
+  committedOrders: number | null;
   amount: number;
   checkoutUrl: string | null;
   qrCode: string | null;
@@ -75,6 +78,7 @@ function toView(o: OrderRow): CheckoutView {
     planCode: o.planCode,
     planName: o.planName,
     cycle: o.cycle,
+    committedOrders: o.committedOrders,
     amount: Number(o.amount),
     checkoutUrl: o.checkoutUrl,
     qrCode: o.qrCode,
@@ -117,6 +121,8 @@ export async function createCheckout(input: {
   userId: string;
   planId: string;
   cycle: BillingCycle;
+  /** Bắt buộc với gói tính theo đơn (Enterprise) — bỏ qua với gói thường. */
+  committedOrders?: unknown;
   buyer?: { name?: string | null; email?: string | null; phone?: string | null };
 }): Promise<CheckoutView> {
   const cfg = getPayosConfig();
@@ -124,10 +130,23 @@ export async function createCheckout(input: {
 
   const plan = await prisma.servicePlan.findUnique({ where: { id: input.planId } });
   if (!plan || !plan.isActive) throw new CheckoutError("Gói này hiện không mở bán");
-  if (plan.code === "ENTERPRISE") {
+  // Gói tính theo đơn (Enterprise tự phục vụ, 11/11/2026): MÁY CHỦ tính giá từ số
+  // đơn khách nhập — FE chỉ hiện giá, không bao giờ gửi số tiền lên.
+  const perOrder = isPerOrderPlan(plan);
+  let committedOrders: number | null = null;
+  if (perOrder) {
+    try {
+      committedOrders = validateCommittedOrders(plan, input.committedOrders);
+    } catch (err) {
+      if (err instanceof PerOrderInputError) throw new CheckoutError(err.message);
+      throw err;
+    }
+  } else if (plan.code === "ENTERPRISE") {
     throw new CheckoutError("Gói Enterprise bán theo báo giá riêng — vui lòng đăng ký tư vấn");
   }
-  const price = planPriceFor(plan, input.cycle);
+  const price = perOrder
+    ? perOrderPlanPrice(plan, input.cycle, committedOrders!)
+    : planPriceFor(plan, input.cycle);
   if (!(price > 0)) throw new CheckoutError("Gói này không bán kỳ đã chọn");
   // payOS nhận số nguyên VND.
   const amount = Math.round(price);
@@ -137,7 +156,11 @@ export async function createCheckout(input: {
     where: { userId: input.userId, status: "PENDING", expiresAt: { gt: now } },
   });
   const reusable = open.find(
-    (o) => o.planId === plan.id && o.cycle === input.cycle && Number(o.amount) === amount
+    (o) =>
+      o.planId === plan.id &&
+      o.cycle === input.cycle &&
+      o.committedOrders === committedOrders &&
+      Number(o.amount) === amount
   );
   if (reusable) return toView(reusable);
 
@@ -178,6 +201,7 @@ export async function createCheckout(input: {
           planCode: plan.code,
           planName: plan.name,
           cycle: input.cycle,
+          committedOrders,
           amount: new Prisma.Decimal(amount),
           description,
           expiresAt,
@@ -194,7 +218,13 @@ export async function createCheckout(input: {
           buyerName: input.buyer?.name ?? undefined,
           buyerEmail: input.buyer?.email ?? undefined,
           buyerPhone: input.buyer?.phone ?? undefined,
-          items: [{ name: `Gói ${plan.name} — ${CYCLE_LABEL[input.cycle]}`, quantity: 1, price: amount }],
+          items: [
+            {
+              name: `Gói ${plan.name}${committedOrders ? ` ${committedOrders.toLocaleString("vi-VN")} đơn/tháng` : ""} — ${CYCLE_LABEL[input.cycle]}`,
+              quantity: 1,
+              price: amount,
+            },
+          ],
         });
         const updated = await prisma.gatewayPaymentOrder.update({
           where: { id: row.id },
@@ -355,6 +385,7 @@ export async function settleGatewayOrder(input: SettleInput): Promise<OrderRow> 
         userId: row.userId,
         planId: row.planId,
         cycle: row.cycle,
+        committedOrders: row.committedOrders,
         amount: input.paidAmount,
         method: PackagePaymentMethod.GATEWAY,
         occurredAt: input.paidAt,

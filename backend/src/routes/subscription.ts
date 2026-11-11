@@ -14,6 +14,7 @@ import { isMailerConfigured, sendMail } from "../lib/mailer";
 import { getOwnerPlanState } from "../services/plan-enforcement";
 import { TAX_CODE_RE } from "../integrations/invoice/misa-einvoice";
 import { CYCLE_LABEL, planPriceFor } from "../services/subscription-service";
+import { OVERAGE_DUE_DAY, isPerOrderPlan } from "../services/per-order-plan";
 import {
   cancelCheckout,
   CheckoutError,
@@ -239,13 +240,41 @@ router.get("/me", async (req: AuthRequest, res, next) => {
     // khách vẫn đăng ký tư vấn; null = "Liên hệ".
     const enterprisePlanRow = await prisma.servicePlan.findUnique({
       where: { code: "ENTERPRISE" },
-      select: { id: true, name: true, description: true, pricePerOrder: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        pricePerOrder: true,
+        isActive: true,
+        minOrdersPerMonth: true,
+        maxChannels: true,
+        maxStaff: true,
+        priceMonthly: true,
+        priceQuarterly: true,
+        priceSemiannual: true,
+        priceYearly: true,
+      },
     });
+    // 11/11/2026: Enterprise TỰ PHỤC VỤ khi gói đang bán + có mức tối thiểu + giá tháng —
+    // FE hiện ô nhập số đơn + 4 ô giá + Thanh toán ngay; thiếu một trong ba = tư vấn như cũ.
     const enterprisePlan = enterprisePlanRow
       ? {
-          ...enterprisePlanRow,
+          id: enterprisePlanRow.id,
+          name: enterprisePlanRow.name,
+          description: enterprisePlanRow.description,
           pricePerOrder:
             enterprisePlanRow.pricePerOrder === null ? null : Number(enterprisePlanRow.pricePerOrder),
+          selfServe:
+            enterprisePlanRow.isActive &&
+            isPerOrderPlan(enterprisePlanRow) &&
+            Number(enterprisePlanRow.priceMonthly) > 0,
+          minOrdersPerMonth: enterprisePlanRow.minOrdersPerMonth,
+          maxChannels: enterprisePlanRow.maxChannels,
+          maxStaff: enterprisePlanRow.maxStaff,
+          priceMonthly: Number(enterprisePlanRow.priceMonthly),
+          priceQuarterly: Number(enterprisePlanRow.priceQuarterly),
+          priceSemiannual: Number(enterprisePlanRow.priceSemiannual),
+          priceYearly: Number(enterprisePlanRow.priceYearly),
         }
       : null;
 
@@ -256,7 +285,9 @@ router.get("/me", async (req: AuthRequest, res, next) => {
     // gói khi chạm trần tự lọc bậc cao hơn ở FE. FE nhận diện gói hiện tại
     // qua id === plan.id; hạ gói giữa kỳ đã trả tiền thì FE cảnh báo mất ngày.
     const upgradePlans = await prisma.servicePlan.findMany({
-      where: { isActive: true },
+      // Gói tính theo đơn (Enterprise tự phục vụ) đi riêng ở enterprisePlan — không
+      // lẫn vào thang gói thường kẻo bảng giá có hai hàng Enterprise.
+      where: { isActive: true, minOrdersPerMonth: null, NOT: { code: "ENTERPRISE" } },
       orderBy: [{ tier: "asc" }, { priceMonthly: "asc" }],
       select: {
         id: true,
@@ -280,12 +311,15 @@ router.get("/me", async (req: AuthRequest, res, next) => {
       exempt: req.isPlatformAdmin === true,
       hasSubscription: state.hasSubscription,
       plan: state.plan,
+      committedOrders: state.committedOrders,
       subscription: state.subscription,
       usage: state.usage,
       orders: state.orders,
       expiry: state.expiry,
       locked: state.locked,
       lockedReason: state.lockedReason,
+      // Hạn trả phần vượt của gói tính theo đơn (ngày trong tháng sau) — FE in câu thông báo.
+      overageDueDay: OVERAGE_DUE_DAY,
       upgradePlans: upgradePlans.map((p) => ({
         ...p,
         priceMonthly: Number(p.priceMonthly),
@@ -427,7 +461,7 @@ function sendCheckoutError(res: import("express").Response, err: unknown, next: 
 
 router.post("/checkout", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
-    const { planId, cycle: cycleRaw } = req.body ?? {};
+    const { planId, cycle: cycleRaw, committedOrders } = req.body ?? {};
     const cycle = (Object.values(BillingCycle) as string[]).includes(String(cycleRaw))
       ? (cycleRaw as BillingCycle)
       : null;
@@ -443,6 +477,7 @@ router.post("/checkout", requireAdmin, async (req: AuthRequest, res, next) => {
       userId: req.ownerId!,
       planId,
       cycle,
+      committedOrders,
       buyer: { name: buyer?.fullName, email: buyer?.email, phone: buyer?.phone },
     });
     res.status(201).json({ checkout });

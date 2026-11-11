@@ -3407,6 +3407,10 @@ model ServicePlan {
   /// chốt 65đ/đơn): chỉ để hiện trên bảng giá — khách vẫn phải liên hệ, HQ tạo gói
   /// riêng + ghi nhận thanh toán số thỏa thuận. null = không công bố ("Liên hệ").
   pricePerOrder     Decimal? @db.Decimal(10, 2)
+  /// GÓI TÍNH THEO ĐƠN tự phục vụ (Enterprise, 11/11/2026 anh Trung chốt): khác null =
+  /// khách tự nhập số đơn/tháng ≥ mức này; 4 cột giá ở trên là giá Ở ĐÚNG MỨC NÀY, máy
+  /// chủ nhân tỷ lệ N ÷ mức (services/per-order-plan.ts). null = gói thường.
+  minOrdersPerMonth Int?
   /// Giới hạn sử dụng — null = không giới hạn. GĐ1 chỉ LƯU và hiển thị;
   /// cưỡng chế (chặn mềm + mời nâng gói) là việc của GĐ2.
   maxChannels       Int?
@@ -3574,6 +3578,8 @@ model GatewayPaymentOrder {
   planCode          String
   planName          String
   cycle             BillingCycle
+  /// Số đơn/tháng khách chọn — chỉ gói tính theo đơn; chuyển sang PackagePayment khi PAID.
+  committedOrders   Int?
   /// Số tiền PHẢI THU (giá niêm yết snapshot) — webhook lệch số này → MISMATCH.
   amount            Decimal            @db.Decimal(14, 2)
   status            GatewayOrderStatus @default(PENDING)
@@ -3626,6 +3632,10 @@ model PackagePayment {
   /// Kỳ hạn được cộng nhờ khoản thanh toán này.
   periodStart     DateTime
   periodEnd       DateTime
+  /// Số đơn/tháng khách cam kết cho kỳ này — chỉ gói tính theo đơn (Enterprise).
+  /// Mỗi kỳ một số: gia hạn với số mới thì số mới áp từ kỳ mới. null ở gói tính
+  /// theo đơn = mức tối thiểu của gói (khoản HQ ghi tay trước 11/11/2026).
+  committedOrders Int?
   /// Ngày THỰC NHẬN tiền (kế toán chọn — khớp sao kê ngân hàng).
   occurredAt      DateTime             @default(now())
   /// Mã giao dịch bên ngoài (webhook cổng thanh toán sau này) — unique chống

@@ -19,6 +19,7 @@
 
 ## Gói dịch vụ, thanh toán, thuê bao
 - [GIA-ENTERPRISE-THEO-DON.md](GIA-ENTERPRISE-THEO-DON.md) — Enterprise 65đ/đơn: lãi/lỗ theo đơn, so đối thủ, cách cấu hình giá công bố (22/10/2026)
+- [ENTERPRISE-TU-PHUC-VU-PHAN-VUOT.md](ENTERPRISE-TU-PHUC-VU-PHAN-VUOT.md) — Enterprise tự phục vụ (khách nhập số đơn) + tính/thu/khóa phần vượt: thiết kế trình anh, chưa code (11/11/2026)
 - [GOI-NGU-DONG-GIAN-HET-HAN.md](GOI-NGU-DONG-GIAN-HET-HAN.md) — ngủ đông gian khi hết gói quá ân hạn (15/10/2026)
 - [HQ-CONG-TAC-VIEN-DAC-BIET.md](HQ-CONG-TAC-VIEN-DAC-BIET.md) — tab Cộng tác viên đặc biệt trên HQ Marketing: % hoa hồng riêng + thời hạn cho tài khoản đã đăng ký, khách thường giữ 10% vĩnh viễn (07/11/2026)
 - [HQ-CRM-TU-CHUYEN-TRANG-THAI.md](HQ-CRM-TU-CHUYEN-TRANG-THAI.md) — CRM HQ tự chuyển trạng thái chăm sóc theo thuê bao: thanh toán → Đang dùng ổn định, hết gói quá ân hạn → Đã rời bỏ (22/10/2026)

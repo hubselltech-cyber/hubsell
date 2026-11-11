@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 11/11 (lịch 13:30) — Enterprise tự phục vụ + phần vượt: khảo sát → anh duyệt → LÁT 1 (khách tự mua) code + PUSH chiều 11/11
+
+- Anh dặn "khảo sát lại, trình anh rồi mới làm". Bản thiết kế: `docs/ENTERPRISE-TU-PHUC-VU-PHAN-VUOT.md`.
+- **Chỗ hướng sáng nay sai/thiếu:** (1) khóa trần đơn hiện có (120 % / 7 ngày) sẽ khóa khách Enterprise giữa tháng → gói tính theo đơn phải tắt nhánh khóa ORDERS; (2) số cam kết phải lưu trên từng PackagePayment, không trên Subscription (gia hạn nối kỳ sẽ đè); (3) mua giữa tháng phải chia trần theo thời gian phủ kỳ; (4) payOS đang chặn ENTERPRISE cứng; (5) bật Enterprise "Đang bán" sẽ hiện thành hàng gói thường; (6) phần vượt cần `PackagePayment.kind = OVERAGE` để tự có sổ quỹ + HĐĐT + hoa hồng; (7) khách Tran Văn Long (1 gian, ≈13k đơn) trả Enterprise 1,3 tr đắt hơn Scale 1,199 tr cùng trần 20k — anh quyết có nói với khách không.
+- Công thức giá: làm tròn nghìn(giá kỳ ở mức tối thiểu × N ÷ 20.000) → ra đúng 1,3 / 3,69 / 6,99 / 12,99 tr ở 20.000 đơn. Đề xuất trần tự phục vụ 50.000 đơn (trên đó tư vấn).
+- Chia 4 lát; lát 1 (mua tự phục vụ) ~5 giờ. Tối nay chưa kịp thì khách chuyển khoản, anh Ghi nhận tay.
+- **Anh bổ sung cùng ngày:** vượt 100 đơn vẫn thu (bỏ ngưỡng miễn 20.000 đ của em); kỳ 3/6/12 tháng vẫn thu phần vượt từng tháng. Em trình bản hóa đơn "xuất chậm nhất ngày 07 dù chưa trả" → **anh gạt: phức tạp**. Chốt: trả phần vượt = mua thêm gói N đơn, hóa đơn xuất lúc tiền về, tên "Gói phần mềm Hubsell - mua thêm N đơn hàng" (docs mục 5b). Giá kỳ đầu tự tính theo N + tự áp mức giảm 3/6/12 tháng (đúng công thức mục 4). Anh còn ý 3 chưa gửi hết.
+- **Chiều 11/11 anh: "trước mắt làm trên local, mục tiêu chiều nay khách thanh toán được" → LÁT 1 ĐÃ CODE, anh bảo "Commit + push" → ĐÃ PUSH.** Chi tiết + checklist bật prod ở docs mục 9 (⏳ sau push: HQ prod Sửa gói Enterprise → Đang bán + 4 giá + Số đơn tối thiểu 20000, rồi kiểm /settings/plan bằng tài khoản khách). Migration `20261111140000_enterprise_tu_phuc_vu` (3 cột null); `services/per-order-plan.ts`; payOS nhận số đơn; trần = số cam kết, vượt không khóa; ô chọn số đơn dùng lại `components/settings/order-volume-picker.tsx` (anh duyệt hướng "dễ nhập, nhân rộng cho gói trên"; anh hỏi thêm "để số tháng bên dưới" → dải 3 bước số đơn · số tháng · tổng + nút; rồi anh bỏ hẳn 4 ô giá + tick của Enterprise trong bảng, tick xuống dưới dải, dưới 20K báo "Gói Enterprise chỉ áp dụng từ 20.000 đơn/tháng"; anh chốt hạn phần vượt = HẾT MÙNG 5 tháng sau (trước đó mùng 4) → hằng số `OVERAGE_DUE_DAY`, ô thông báo xanh trên bảng giá + cùng câu ở thẻ gói / thanh cảnh báo / chuông); HQ Sửa gói có ô Số đơn tối thiểu. Kiểm: vitest 42/42 tệp liên quan, toàn bộ backend 2409 qua / 8 đỏ sổ cái chạy song song (riêng lẻ qua), tsc sạch; luồng payOS giả lập 25.000 × 3 tháng = 4.613.000 ₫ ra đúng; soi 1280/1440/1700/tối/375.
+
+---
 ## Phiên 10/11 (3) — Khách gian Shopee "Mẹ mua đi, Bố trả tiền Store" kêu bị trừ quảng cáo HAI lần → em kiểm prod: KHÁCH ĐÚNG, CHƯA SỬA MÃ, chờ anh chốt hướng
 
 - **Gốc:** Shopee có trường `ads_escrow_top_up_fee_or_technical_support_fee` trong `order_income` (sàn trích % tiền đơn để nạp ví quảng cáo, có VAT 8 %). Hubsell KHÔNG đọc trường này (`mapShopeeEscrowFields` ghi "adWalletTopup: escrow không có nguồn — giữ 0") → tiền trích đã nằm trong `escrow_amount` (giảm Doanh thu, rơi vào dòng "Lệch quyết toán khác"), rồi `AdSpend` (expense của Ads API = tiền TIÊU từ chính ví đó) lại cộng vào Chi phí. Không liên quan `pay_per_sale` (gian này vẫn 0).
@@ -18,7 +28,8 @@
   - Bù đơn cũ KHÔNG gọi sàn: `backend/scripts/shopee-ad-wallet-topup-backfill.ts` (mặc định xem trước, `--apply` mới ghi); đơn quyết toán ≤ 7 ngày worker tự ghi số thật.
   - **Mô phỏng prod (11/10 → 10/11, 46 gian):** dòng Ads 425,15 tr → 399,02 tr, gỡ 26,13 tr trừ trùng; 10 gian AdSpend 0 chỉ đổi tên dòng; 2 gian trích nhiều hơn tiêu → Ads về 0. Trường có từ 07/2026, tháng 11 mới 10 ngày đã 19,14 tr.
   - **Kiểm:** vitest các tệp liên quan xanh (order-ledger-db còn 1 ca đỏ sẵn "đếm dọn"); tsc backend + frontend sạch; đầu-cuối DB local qua trigger + sổ cái ra đúng số rồi trả lại nguyên trạng. CHƯA soi giao diện bằng mắt, CHƯA chạy prod.
-  - **⏳ Chờ anh:** commit + push; sau khi Render lên thì chạy script bù trong Render Shell (xem trước → `--apply`).
+  - **Commit `9add799a`, anh push ~21:15 10/11, worker + web lên bản mới.** Em chạy script trong Render Shell worker (anh: "Push rồi chạy"): xem trước 56 gian / 15.561 đơn / 66.118.881 đ → `--apply` ghi đúng số đó.
+  - **Kiểm prod sau khi ghi (SQL chỉ đọc):** cột đơn = sổ cái từng đồng (15.563 đơn, 66.139.012 đ; +2 đơn mới worker ghi bằng mã mới); dòng sổ bẩn 24 (nền bình thường). Gian "Mẹ mua đi" hôm nay (24 đơn tính doanh thu): Nạp ví quảng cáo 287.712; dòng Ads 504.812 → 217.100; lợi nhuận trước chi phí nhập tay −287.793 → −81 đ. Lệch quyết toán khác còn −32.300 (sàn trả thêm; chưa bóc, nhỏ). CHƯA xem màn của khách bằng mắt (không có tài khoản khách).
 
 ---
 ## Phiên 10/11 (2) — Anh: sổ quỹ HQ có khoản THU 829.000 đ "Hệ thống (App Store)" lạ → khoản mua gói trong app iOS THẬT đầu tiên; anh đã gửi đăng ký Small Business Program

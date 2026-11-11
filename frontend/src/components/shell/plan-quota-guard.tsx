@@ -35,6 +35,7 @@ import {
 import { fetchMySubscription, type MySubscriptionResponse } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
+import { overageNotice } from "@/components/settings/order-volume-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -143,6 +144,26 @@ function bannerContentOf(data: MySubscriptionResponse): BannerContent | null {
         : "Gia hạn để tiếp tục sử dụng đầy đủ tính năng.",
       autoPopup: true,
       dismissible: false,
+    };
+  }
+  // Gói TÍNH THEO ĐƠN (Enterprise tự phục vụ 11/11/2026): vượt không khóa, không mời
+  // nâng gói — chỉ báo phần vượt tính thêm, vàng + tắt được (không tự bật popup).
+  const perOrder = data.plan.minOrdersPerMonth != null;
+  if (perOrder && (orders.state === "over" || orders.state === "warn")) {
+    return {
+      key: `${month}:per-order-${orders.state}`,
+      tone: "amber",
+      lead:
+        orders.state === "over"
+          ? `Đã vượt số đơn đã chọn tháng này (${usedOfLimit}, gói ${planName})`
+          : `Đã dùng ${Math.floor((orders.ratio ?? 0) * 100)}% số đơn đã chọn tháng này (${usedOfLimit}, gói ${planName})`,
+      detail: `${
+        orders.state === "over" && orders.limit != null && data.plan.pricePerOrder != null
+          ? `Đang vượt ${nf.format(orders.used - orders.limit)} đơn ≈ ${nf.format((orders.used - orders.limit) * data.plan.pricePerOrder)} ₫. `
+          : ""
+      }${overageNotice(data.plan.pricePerOrder, data.overageDueDay)} Trong tháng mọi tính năng vẫn dùng bình thường.`,
+      autoPopup: false,
+      dismissible: true,
     };
   }
   if (orders.state === "over") {

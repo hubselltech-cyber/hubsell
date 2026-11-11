@@ -11,18 +11,22 @@
 // "Thanh toán ngay / Đăng ký mua / Trả bằng Ví" của hàng đó mua đúng kỳ ấy.
 // Dưới lg (điện thoại/tablet) bảng gập thành thẻ từng gói với 4 ô kỳ 2 × 2.
 //
-// Enterprise = hàng cuối, bán bằng TƯ VẤN: hiện giá CÔNG BỐ ₫/đơn (DATA
-// `service_plans.pricePerOrder`, anh Trung chốt 65đ 22/10; null = "Liên hệ") và
-// nút Đăng ký tư vấn — khách KHÔNG tự mua được, HQ tạo gói riêng.
+// Enterprise = hàng cuối. 11/11/2026 anh Trung chốt TỰ PHỤC VỤ: khi backend báo
+// `enterprisePlan.selfServe` thì khách nhập số đơn/tháng (≥ mức tối thiểu), 4 ô giá
+// tự nhảy theo số đó (giá ở mức tối thiểu × N ÷ mức, tròn nghìn — CÙNG công thức
+// backend `services/per-order-plan.ts`; máy chủ vẫn là nơi tính số tiền thu thật)
+// và nút Thanh toán ngay. Không selfServe = bán bằng TƯ VẤN như 22/10: giá CÔNG BỐ
+// ₫/đơn (`pricePerOrder`, null = "Liên hệ") + nút Đăng ký tư vấn.
 //
 // Màu: dùng token (bg-primary / bg-card / muted) thay slate-900 của landing vì
 // app có giao diện tối (thang slate bị lật trong .dark — xem memory UI).
 // ============================================================
 
 import { useState } from "react";
-import { Check, Clock, QrCode, ShoppingCart, Wallet } from "lucide-react";
+import { Check, Clock, Info, QrCode, ShoppingCart, Wallet } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { CyclePicker, OrderVolumePicker, overageNotice } from "@/components/settings/order-volume-picker";
 import type {
   BillingCycle,
   MyPlanInfo,
@@ -278,7 +282,42 @@ export type PlanPricingMatrixProps = {
   onRequestBuy: (plan: MyUpgradePlan, cycle: BillingCycle, price: number) => void;
   onWalletBuy: (plan: MyUpgradePlan, cycle: BillingCycle) => void;
   onConsult: () => void;
+  /** Enterprise tự phục vụ: số đơn/tháng điền sẵn (đang dùng Enterprise = số đã mua). */
+  enterpriseDefaultOrders?: number | null;
+  /** Hạn trả phần vượt (ngày trong tháng sau) — từ /me, anh chốt mùng 5. */
+  overageDueDay?: number;
+  /** Enterprise tự phục vụ: mua kỳ `cycle` cho `orders` đơn/tháng. */
+  onEnterpriseCheckout?: (cycle: BillingCycle, orders: number) => void;
 };
+
+type EnterprisePlan = NonNullable<MySubscriptionResponse["enterprisePlan"]>;
+
+/** Giá trọn kỳ của Enterprise cho N đơn — bản FE của `perOrderPlanPrice` (chỉ để HIỆN). */
+export function enterprisePriceFor(ep: EnterprisePlan, cycle: BillingCycle, orders: number): number {
+  const c = CYCLES.find((x) => x.value === cycle)!;
+  const base = Number(ep[c.key as "priceMonthly"]) || 0;
+  const min = ep.minOrdersPerMonth ?? 0;
+  if (!(base > 0) || min <= 0) return base;
+  return Math.round((base * orders) / min / 1000) * 1000;
+}
+
+/** Enterprise dựng thành "gói" giá theo N đơn để dùng lại PriceCell/dealOf (nhãn % tự đúng). */
+function enterpriseAsPlan(ep: EnterprisePlan, orders: number): MyUpgradePlan {
+  return {
+    id: ep.id,
+    code: "ENTERPRISE",
+    name: ep.name,
+    tier: 99,
+    maxChannels: ep.maxChannels,
+    maxOrdersPerMonth: orders,
+    maxStaff: ep.maxStaff,
+    priceMonthly: enterprisePriceFor(ep, "MONTHLY", orders),
+    priceQuarterly: enterprisePriceFor(ep, "QUARTERLY", orders),
+    priceSemiannual: enterprisePriceFor(ep, "SEMIANNUAL", orders),
+    priceYearly: enterprisePriceFor(ep, "YEARLY", orders),
+  };
+}
+
 
 type RowInfo = { isCurrent: boolean; isLower: boolean; isBestSeller: boolean; badges: Badge[] };
 
@@ -396,6 +435,9 @@ export function PlanPricingMatrix({
   onRequestBuy,
   onWalletBuy,
   onConsult,
+  enterpriseDefaultOrders,
+  onEnterpriseCheckout,
+  overageDueDay = 5,
 }: PlanPricingMatrixProps) {
   // Kỳ đã chọn theo TỪNG gói (mặc định 1 tháng) — khách so giá kỳ dài tự do.
   const [cycleByPlan, setCycleByPlan] = useState<Record<string, BillingCycle>>({});
@@ -431,6 +473,136 @@ export function PlanPricingMatrix({
     "Số nhân viên theo thỏa thuận",
   ];
 
+  // ---- Enterprise TỰ PHỤC VỤ (11/11/2026) ----
+  const selfServe = Boolean(enterprisePlan?.selfServe && onEnterpriseCheckout);
+  const epMin = enterprisePlan?.minOrdersPerMonth ?? 0;
+  const [epOrders, setEpOrders] = useState<number | null>(
+    Math.max(epMin, enterpriseDefaultOrders ?? 0) || null
+  );
+  const [epCycle, setEpCycle] = useState<BillingCycle>("MONTHLY");
+  const epValid = epOrders !== null && epOrders >= epMin;
+  // Số dưới mức tối thiểu: ô giá vẫn hiện giá ở mức tối thiểu (khách thấy giá sàn), nút tắt.
+  const epPlan =
+    enterprisePlan && selfServe ? enterpriseAsPlan(enterprisePlan, epValid ? epOrders! : epMin) : null;
+  const epIsCurrent = enterprisePlan != null && currentPlan?.id === enterprisePlan.id;
+  const epPrice = epPlan ? priceOf(epPlan, epCycle) : 0;
+  // Quyền lợi (anh Trung 11/11: "phần thuyết minh không giới hạn… cho xuống dưới") —
+  // một hàng tick ngay dưới dải chọn, không còn cột tên gói kèm 4 ô giá như gói thường.
+  const epLimits = epPlan
+    ? [...limitsOf(epPlan).slice(1), "Đầy đủ tính năng + hỗ trợ triển khai riêng"]
+    : [];
+  const epMinMessage = `Gói ${enterprisePlan?.name ?? "Enterprise"} chỉ áp dụng từ ${nf.format(epMin)} đơn/tháng`;
+  const epBadges: Badge[] = [
+    { label: "Tự chọn số đơn", cls: "border border-emerald-200 bg-emerald-50 text-emerald-700" },
+    ...(epIsCurrent ? [BADGE_CURRENT] : []),
+  ];
+  const epMonths = CYCLES.find((c) => c.value === epCycle)!.months;
+  // Khối CHỌN SỐ ĐƠN + TỔNG TIỀN + NÚT (anh Trung 11/11: "thiết kế lại cho khách dễ
+  // nhập") — một dải rộng riêng thay vì nhét vào cột tên gói: trái chọn số đơn, phải
+  // tổng tiền to + một nút. Desktop nằm dưới hàng giá, điện thoại nằm trên 4 ô kỳ.
+  const epSummary = (compact?: boolean) => (
+    <div className={cn(compact ? "mt-5 text-center" : "min-w-[220px] text-right")}>
+      <p className="text-sm text-muted-foreground">
+        {epValid ? `${nf.format(epOrders!)} đơn/tháng · ` : ""}kỳ{" "}
+        {CYCLES.find((c) => c.value === epCycle)!.label.toLowerCase()}
+      </p>
+      <p className="mt-0.5 text-3xl font-extrabold tabular-nums tracking-tight">
+        {epValid ? `${nf.format(epPrice)} ₫` : "—"}
+      </p>
+      {epValid && epPrice > 0 && (
+        <p className="text-xs text-muted-foreground">
+          ≈ {nf.format(Math.round((epPrice / (epOrders! * epMonths)) * 10) / 10)} ₫ / đơn
+        </p>
+      )}
+      <div className="mt-3">
+        {gateway ? (
+          <Button
+            size="lg"
+            className={cn("w-full", !compact && "sm:w-auto sm:min-w-[220px]")}
+            disabled={checkoutPending || !epValid || epPrice <= 0}
+            onClick={() => epValid && onEnterpriseCheckout!(epCycle, epOrders!)}
+          >
+            <QrCode className="size-4" />
+            {checkoutPending
+              ? "Đang mở trang thanh toán…"
+              : epIsCurrent
+                ? "Gia hạn — thanh toán ngay"
+                : "Thanh toán ngay"}
+          </Button>
+        ) : (
+          <ConsultButton onClick={onConsult} className={cn(!compact && "sm:w-auto sm:min-w-[240px]")} />
+        )}
+      </div>
+      {gateway && (
+        <button
+          type="button"
+          onClick={onConsult}
+          className="mt-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Cần báo giá riêng? Đăng ký tư vấn
+        </button>
+      )}
+    </div>
+  );
+  const epPicker = (idSuffix: string, step?: number) => (
+    <OrderVolumePicker
+      id={`ep-orders${idSuffix}`}
+      step={step}
+      value={epOrders}
+      min={epMin}
+      onChange={setEpOrders}
+      minMessage={epMinMessage}
+    />
+  );
+  // Bước 2 — số tháng. 11/11 anh Trung bỏ 4 ô giá của Enterprise trên bảng → đây là chỗ
+  // chọn kỳ DUY NHẤT (cả desktop lẫn điện thoại).
+  const epCycleOptions = CYCLES.filter((c) => epPlan && priceOf(epPlan, c.value) > 0).map((c) => {
+    const d = dealOf(epPlan!, c.months, priceOf(epPlan!, c.value));
+    return { value: c.value, label: c.label, note: d.pct > 0 ? `Tiết kiệm ${d.pct}%` : null };
+  });
+  const epHead = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <p className="text-lg font-bold">{enterprisePlan?.name}</p>
+      {epBadges.map((b) => (
+        <span key={b.label} className={cn("whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold", b.cls)}>
+          {b.label}
+        </span>
+      ))}
+      {enterpriseDesc && <p className="text-[13px] text-muted-foreground">{enterpriseDesc}</p>}
+    </div>
+  );
+  const epFoot = (
+    <>
+      <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-[13px]">
+        {epLimits.map((row) => (
+          <li key={row} className="flex items-center gap-1.5">
+            <Check className="size-4 shrink-0 text-emerald-600" />
+            {row}
+          </li>
+        ))}
+      </ul>
+      {/* Thông báo PHẦN VƯỢT (anh Trung 11/11) — ô nổi, không phải chữ xám nhỏ: khách phải
+          đọc được trước khi trả tiền rằng vượt là tính thêm + có hạn trả. */}
+      <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-3.5 py-2.5 text-[13px] text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-100">
+        <Info className="mt-0.5 size-4 shrink-0" />
+        <div className="space-y-0.5">
+          <p className="font-semibold">{overageNotice(enterprisePlan?.pricePerOrder, overageDueDay)}</p>
+          <p className="opacity-85">
+            Trong tháng mọi tính năng vẫn dùng bình thường. Quá hạn chưa thanh toán thì các tính năng
+            nâng cao tạm dừng tới khi thanh toán. Số đơn tính mọi đơn phát sinh trên sàn trong tháng
+            (kể cả đơn hủy).
+          </p>
+        </div>
+      </div>
+    </>
+  );
+  const epPanel = () => (
+    <div className="grid grid-cols-[minmax(360px,auto)_minmax(190px,1fr)_auto] items-start gap-x-6 xl:gap-x-8 rounded-xl border bg-muted/40 px-5 py-4">
+      {epPicker("", 1)}
+      <CyclePicker step={2} options={epCycleOptions} value={epCycle} onChange={setEpCycle} />
+      {epSummary(false)}
+    </div>
+  );
   return (
     <>
       {/* ---------- MA TRẬN GÓI × KỲ — bản DESKTOP (lg trở lên) ---------- */}
@@ -532,7 +704,16 @@ export function PlanPricingMatrix({
                   </tr>
                 );
               })}
-              {enterprisePlan && (
+              {enterprisePlan && epPlan && (
+                <tr className="[&>td]:border-t [&>td]:border-t-border">
+                  <td colSpan={CYCLES.length + 1} className="rounded-b-2xl px-5 pb-5 pt-5">
+                    {epHead}
+                    <div className="mt-3">{epPanel()}</div>
+                    {epFoot}
+                  </td>
+                </tr>
+              )}
+              {enterprisePlan && !epPlan && (
                 <tr className="bg-gradient-to-r from-card via-emerald-50/30 to-card [&>td]:border-t [&>td]:border-t-border">
                   <td className="rounded-bl-2xl px-5 py-5 align-top">
                     <PlanHead
@@ -613,7 +794,18 @@ export function PlanPricingMatrix({
             </div>
           );
         })}
-        {enterprisePlan && (
+        {enterprisePlan && epPlan && (
+          <div className="relative flex flex-col rounded-2xl border border-slate-300 bg-card p-5 shadow-sm sm:col-span-2 dark:border-slate-700">
+            {epHead}
+            <div className="mt-4 space-y-5 rounded-xl border bg-muted/40 p-4">
+              {epPicker("-m", 1)}
+              <CyclePicker step={2} options={epCycleOptions} value={epCycle} onChange={setEpCycle} />
+            </div>
+            <div className="pt-4">{epSummary(true)}</div>
+            {epFoot}
+          </div>
+        )}
+        {enterprisePlan && !epPlan && (
           <div className="relative flex flex-col rounded-2xl border border-slate-300 bg-card p-5 shadow-sm dark:border-slate-700">
             <PlanHead
               name={enterprisePlan.name}

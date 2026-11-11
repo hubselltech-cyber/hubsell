@@ -33,6 +33,7 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { notify } from "./notifications";
 import type { AuthRequest } from "../middleware/auth";
+import { isPerOrderPlan, overageNoticeText } from "./per-order-plan";
 
 // ---- Ngưỡng (đề xuất 22/08, anh Trung chưa phán khác — đổi số tại đây) ----
 /** Chạm mốc này bắt đầu cảnh báo vàng + chuông. */
@@ -64,7 +65,13 @@ export interface OwnerPlanState {
     maxChannels: number | null;
     maxOrdersPerMonth: number | null;
     maxStaff: number | null;
+    /** Gói tính theo đơn (Enterprise tự phục vụ): mức tối thiểu; null = gói thường. */
+    minOrdersPerMonth: number | null;
+    /** Gói tính theo đơn: đơn giá phần vượt ₫/đơn (= giá công bố); null = gói thường/chưa đặt. */
+    pricePerOrder: number | null;
   } | null;
+  /** Gói tính theo đơn: số đơn/tháng khách cam kết cho kỳ đang chạy (cũng là trần đơn). */
+  committedOrders: number | null;
   subscription: {
     status: "ACTIVE" | "EXPIRED" | "CANCELLED";
     isTrial: boolean;
@@ -165,6 +172,8 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
             maxChannels: true,
             maxOrdersPerMonth: true,
             maxStaff: true,
+            minOrdersPerMonth: true,
+            pricePerOrder: true,
           },
         },
       },
@@ -184,6 +193,7 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
     return {
       hasSubscription: false,
       plan: null,
+      committedOrders: null,
       subscription: null,
       usage,
       orders: { limit: null, used: ordersThisMonth, ratio: null, state: "ok", graceDeadline: null },
@@ -211,8 +221,28 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
     : null;
   const expiryLocked = expiryLockDeadline !== null && now.getTime() > expiryLockDeadline.getTime();
 
+  // ---- Gói TÍNH THEO ĐƠN (Enterprise tự phục vụ, 11/11/2026): trần = số đơn khách
+  // cam kết trên khoản thanh toán đang phủ hôm nay (mỗi kỳ một số); không có khoản
+  // nào (HQ đổi gói tay / khoản ghi tay cũ) = mức tối thiểu của gói. Vượt KHÔNG khóa —
+  // anh Trung chốt phần vượt thu vào tháng sau (lát 2), chỉ giữ chuông/thanh mức. ----
+  const perOrder = isPerOrderPlan(sub.plan);
+  let committedOrders: number | null = null;
+  if (perOrder) {
+    const covering = await prisma.packagePayment.findFirst({
+      where: {
+        userId: ownerId,
+        planCode: sub.plan.code,
+        periodStart: { lte: now },
+        periodEnd: { gt: now },
+      },
+      orderBy: { periodStart: "desc" },
+      select: { committedOrders: true },
+    });
+    committedOrders = covering?.committedOrders ?? sub.plan.minOrdersPerMonth;
+  }
+
   // ---- Trần đơn tháng: reset lười khi sang tháng, ghi mốc ân hạn khi chạm 100%. ----
-  const limit = sub.plan.maxOrdersPerMonth;
+  const limit = perOrder ? committedOrders : sub.plan.maxOrdersPerMonth;
   const sameMonth = sub.quotaMonth === monthKey;
   let overSince = sameMonth ? sub.overQuotaSince : null;
   let notifiedLevel = sameMonth ? sub.quotaNotifiedLevel : 0;
@@ -226,6 +256,7 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
   }
 
   const orderLocked =
+    !perOrder &&
     ratio !== null &&
     (ratio >= ORDER_HARD_RATIO ||
       (overSince !== null && now.getTime() - overSince.getTime() >= ORDER_GRACE_DAYS * DAY_MS));
@@ -240,11 +271,28 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
             ? "warn"
             : "ok";
   const graceDeadline =
-    overSince && !orderLocked ? new Date(overSince.getTime() + ORDER_GRACE_DAYS * DAY_MS) : null;
+    overSince && !orderLocked && !perOrder ? new Date(overSince.getTime() + ORDER_GRACE_DAYS * DAY_MS) : null;
 
   // ---- Chuông theo mốc (80/100/120) — mỗi mốc đúng MỘT lần mỗi tháng. ----
   const targetLevel = orderState === "locked" ? 120 : orderState === "over" ? 100 : orderState === "warn" ? 80 : 0;
-  if (targetLevel > notifiedLevel && limit) {
+  const overagePrice = sub.plan.pricePerOrder === null ? null : Number(sub.plan.pricePerOrder);
+  if (perOrder && targetLevel > notifiedLevel && limit) {
+    // Gói tính theo đơn: không bao giờ khóa vì vượt — chỉ báo phần vượt tính thêm.
+    const monthLabel = monthLabelOf(now);
+    const base = `${ordersThisMonth.toLocaleString("vi-VN")}/${limit.toLocaleString("vi-VN")} đơn — gói ${sub.plan.name}`;
+    void notify(ownerId, {
+      type: "plan_quota",
+      title:
+        targetLevel === 80
+          ? `Đã dùng ${Math.floor(ratio! * 100)}% số đơn đã chọn tháng ${monthLabel}`
+          : `Đã vượt số đơn đã chọn tháng ${monthLabel}`,
+      body:
+        targetLevel === 80
+          ? `${base}. ${overageNoticeText(overagePrice)}`
+          : `${base}. ${overageNoticeText(overagePrice)}`,
+      link: "/settings/plan",
+    });
+  } else if (targetLevel > notifiedLevel && limit) {
     const monthLabel = monthLabelOf(now);
     const base = `${ordersThisMonth.toLocaleString("vi-VN")}/${limit.toLocaleString("vi-VN")} đơn — gói ${sub.plan.name}`;
     if (targetLevel === 80) {
@@ -312,7 +360,8 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
   const locked = orderLocked || expiryLocked;
   return {
     hasSubscription: true,
-    plan: sub.plan,
+    plan: { ...sub.plan, pricePerOrder: overagePrice },
+    committedOrders,
     subscription: {
       status,
       isTrial: sub.isTrial,

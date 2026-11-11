@@ -236,8 +236,11 @@ export function hqItemNameFor(p: {
   cycle: keyof typeof CYCLE_LABEL;
   periodStart: Date;
   periodEnd: Date;
+  /** Gói tính theo đơn (Enterprise tự phục vụ 11/11/2026): số đơn/tháng đã mua. */
+  committedOrders?: number | null;
 }): string {
-  return `Phần mềm Hubsell - gói ${p.planName}, ${CYCLE_LABEL[p.cycle]} (${vnDateLabel(p.periodStart)} - ${vnDateLabel(p.periodEnd)})`;
+  const orders = p.committedOrders ? ` ${p.committedOrders.toLocaleString("vi-VN")} đơn/tháng` : "";
+  return `Phần mềm Hubsell - gói ${p.planName}${orders}, ${CYCLE_LABEL[p.cycle]} (${vnDateLabel(p.periodStart)} - ${vnDateLabel(p.periodEnd)})`;
 }
 
 // ---------------- Lõi xử lý một bút toán ----------------
@@ -290,7 +293,7 @@ const ENTRY_SELECT = {
   invoiceEmailSentAt: true,
   occurredAt: true,
   packagePayment: {
-    select: { planName: true, cycle: true, periodStart: true, periodEnd: true },
+    select: { planName: true, cycle: true, periodStart: true, periodEnd: true, committedOrders: true },
   },
   customer: { select: { fullName: true, email: true } },
 } satisfies Prisma.PlatformLedgerEntrySelect;

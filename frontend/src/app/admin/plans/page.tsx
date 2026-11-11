@@ -200,6 +200,8 @@ function PlanDialog({
   // Giá CÔNG BỐ ₫/đơn cho gói bán bằng tư vấn (22/10 anh Trung chốt Enterprise 65đ):
   // chỉ để hiện trên bảng giá, không tự tính tiền; trống = "Liên hệ".
   const [pricePerOrder, setPricePerOrder] = useState(plan?.pricePerOrder?.toString() ?? "");
+  // 11/11/2026: gói TÍNH THEO ĐƠN tự phục vụ — số đơn tối thiểu khách phải chọn; trống = gói thường.
+  const [minOrdersPerMonth, setMinOrdersPerMonth] = useState(plan?.minOrdersPerMonth?.toString() ?? "");
   const [maxChannels, setMaxChannels] = useState(plan?.maxChannels?.toString() ?? "");
   const [maxOrdersPerMonth, setMaxOrdersPerMonth] = useState(
     plan?.maxOrdersPerMonth?.toString() ?? ""
@@ -227,6 +229,7 @@ function PlanDialog({
         priceSemiannual: Math.floor(Number(priceSemiannual)) || 0,
         priceYearly: Math.floor(Number(priceYearly)) || 0,
         pricePerOrder: pricePerOrder.trim() === "" ? null : Number(pricePerOrder),
+        minOrdersPerMonth: limit(minOrdersPerMonth),
         maxChannels: limit(maxChannels),
         maxOrdersPerMonth: limit(maxOrdersPerMonth),
         maxStaff: limit(maxStaff),
@@ -333,6 +336,23 @@ function PlanDialog({
           <p className="text-xs text-muted-foreground">
             Chỉ để hiện trên bảng giá (landing + Gói dịch vụ của khách) cho gói giá kỳ = 0 như
             Enterprise. Khách vẫn phải đăng ký tư vấn — tiền thật ghi nhận theo số thỏa thuận.
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <Label>Số đơn tối thiểu (gói khách tự chọn số đơn)</Label>
+          <Input
+            type="number"
+            min={0}
+            className="w-32"
+            placeholder="Trống = gói thường"
+            value={minOrdersPerMonth}
+            onChange={(e) => setMinOrdersPerMonth(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Có số này (vd 20000) + gói Đang bán + có giá 1 tháng → khách tự nhập số đơn ≥ mức này
+            và tự thanh toán; giá = 4 ô giá ở trên (là giá ĐÚNG mức tối thiểu) × số đơn ÷ mức tối
+            thiểu, làm tròn nghìn. Giá công bố ₫/đơn là đơn giá phần vượt.
           </p>
         </div>
 
