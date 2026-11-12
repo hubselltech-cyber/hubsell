@@ -138,7 +138,9 @@ export function BatchSheet({
           ) : null}
 
           {/* TAB + cách gom / xóa lô */}
-          <View className="mb-1 mt-3 flex-row items-center gap-2">
+          {/* flex-wrap: máy 320 px không đủ chỗ cho hai công tắc một hàng → công tắc phải xuống dòng,
+              không tràn mép. */}
+          <View className="mb-1 mt-3 flex-row flex-wrap items-center justify-between gap-2">
             <View className="flex-row rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
               <Seg label={`Hàng (${groupVN(lines.length)})`} active={tab === "goods"} onPress={() => onTab("goods")} />
               <Seg
@@ -147,7 +149,6 @@ export function BatchSheet({
                 onPress={() => onTab("parcels")}
               />
             </View>
-            <View className="flex-1" />
             {tab === "goods" ? (
               <View className="flex-row rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
                 <Seg small label="Sản phẩm" active={mode === "product"} onPress={() => setMode("product")} />

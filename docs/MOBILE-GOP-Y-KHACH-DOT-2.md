@@ -197,4 +197,6 @@ Anh Trung: "Dọn dẹp sạch code thừa, đảm bảo cấu trúc tree chuyê
 
 **Kiểm:** tsc + eslint sạch; test mobile 79/79. Giả lập web: thêm 3 kiện + 1 đơn hủy → 2 kiện / 1 đơn hủy / 3 món, hộp Lô đã quét đúng hai tab; quét lại mã đã có → "đã có trong lô", số không đổi; Quét đóng gói sau khi tách phần dùng chung vẫn báo đơn hủy.
 
-**Chưa kiểm:** camera + tem thật (cả màn này lẫn cửa chống bắn lặp vừa viết lại); máy 320 px và giao diện tối của hộp Lô đã quét; lô vài trăm kiện. Trên giả lập web, đổi chế độ hiện lỗi dev "wake lock … has not activated yet" của `expo-keep-awake` — chưa xác minh có từ trước hay không, bản web không phát hành.
+**Soi thêm trước khi build:** 320 px + giao diện tối — công tắc ba chế độ vừa một hàng; trong hộp Lô đã quét hai công tắc (Hàng / Kiện và Sản phẩm / SKU) không vừa một hàng nên cho tự xuống dòng (`flex-wrap`), không còn tràn mép.
+
+**Chưa kiểm:** camera + tem thật (cả màn này lẫn cửa chống bắn lặp vừa viết lại); lô vài trăm kiện. Trên giả lập web, đổi chế độ hiện lỗi dev "wake lock … has not activated yet" của `expo-keep-awake` — chưa xác minh có từ trước hay không, bản web không phát hành.
