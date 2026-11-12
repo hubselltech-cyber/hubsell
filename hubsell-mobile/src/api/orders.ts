@@ -47,14 +47,48 @@ export function fetchOrders(params: OrdersFilter & { page?: number; pageSize?: n
 }
 
 /**
- * PHIẾU NHẶT HÀNG (05/11/2026, tên cũ "Thống kê bốc hàng"): số lượng cần lấy theo SKU /
- * sản phẩm của nhóm CHỜ ĐÓNG GÓI (Đã xử lý, đã in phiếu, chưa quét đóng gói), trong
- * phạm vi sàn / gian / hãng / từ khóa đang lọc. Cùng route với popup của web nên hai
- * nơi một số; trả ĐỦ mọi SKU (route cũ /api/orders/stats cắt top 50 — thiếu dòng là
- * kho nhặt thiếu). Trạng thái + printed bị ĐÈ ở đây, không lấy từ bộ lọc đang xem.
+ * Nhóm đơn của popup Thống kê ở màn Đơn hàng (12/11/2026, khách xin xem SKU của cả đơn
+ * mới ra / đang giao / thành công):
+ *   PENDING     = Chờ xử lý (đơn mới về)
+ *   NOT_PRINTED = Chưa in phiếu (đã chuẩn bị hàng, chưa in phiếu trên Hubsell)
+ *   PACK        = Chờ đóng gói (đã in phiếu, chưa quét đóng gói) — PHIẾU NHẶT HÀNG
+ *   PACKED      = Đã đóng gói (đã quét, chưa giao cho đơn vị vận chuyển)
+ *   SHIPPING    = Đang giao
+ *   DELIVERED   = Đã giao thành công TRONG KỲ (bắt buộc có kỳ — không thì là cả lịch sử)
+ * Sáu nhóm nối nhau thành MỘT dây chuyền: đơn chưa hủy nào cũng nằm ở đúng một nhóm
+ * (anh Trung 12/11: "chuẩn bị hàng mà chưa in đơn thì thuộc phần nào?" — bản 4 nhóm bỏ
+ * sót Chưa in phiếu và Đã đóng gói).
  */
-export function fetchPickSummary(params: OrdersFilter) {
-  const q = filterParams({ ...params, shippingStatus: "PROCESSED", printed: "yes" });
+export type PickGroup = "PENDING" | "NOT_PRINTED" | "PACK" | "PACKED" | "SHIPPING" | "DELIVERED";
+
+/** Ba nhóm con của trạng thái Đã xử lý → giá trị `printed` gửi máy chủ. */
+const PROCESSED_GROUP: Partial<Record<PickGroup, "yes" | "no" | "packed">> = {
+  NOT_PRINTED: "no",
+  PACK: "yes",
+  PACKED: "packed",
+};
+
+/**
+ * THỐNG KÊ SẢN PHẨM theo nhóm đơn (05/11/2026 chỉ có Phiếu nhặt hàng của Chờ đóng gói):
+ * số lượng theo SKU / sản phẩm, trong phạm vi sàn / gian / hãng / từ khóa đang lọc. Cùng
+ * route với popup của web nên hai nơi một số; trả ĐỦ mọi SKU (route cũ /api/orders/stats
+ * cắt top 50 — thiếu dòng là kho nhặt thiếu). Trạng thái + printed bị ĐÈ theo `group`,
+ * không lấy từ bộ lọc đang xem.
+ */
+export function fetchPickSummary(
+  params: OrdersFilter,
+  group: PickGroup = "PACK",
+  delivered?: { from: string; to: string }
+) {
+  const q = filterParams({
+    ...params,
+    shippingStatus: PROCESSED_GROUP[group] ? "PROCESSED" : group,
+    printed: PROCESSED_GROUP[group],
+  });
+  if (group === "DELIVERED" && delivered) {
+    q.set("deliveredFrom", delivered.from);
+    q.set("deliveredTo", delivered.to);
+  }
   return api<PickSummaryResponse>(`/api/orders/pick-summary?${q.toString()}`);
 }
 
@@ -118,4 +152,31 @@ export function markDamaged(orderId: string, note?: string) {
     method: "POST",
     body: { condition: "DAMAGED", ...(note?.trim() ? { note: note.trim() } : {}) },
   });
+}
+
+// ───────── Hành trình vận chuyển — GET /api/orders/:id/tracking (12/11/2026) ─────────
+
+export interface TrackingEventDto {
+  /** ISO; null khi sàn không trả thời điểm. */
+  at: string | null;
+  description: string;
+  kind: "normal" | "delivered" | "failed" | "returning";
+}
+
+export interface OrderTrackingDto {
+  /** ok = có hành trình · not_shipped = chưa giao cho vận chuyển · unsupported = sàn / gian chưa lấy được. */
+  state: "ok" | "not_shipped" | "unsupported";
+  carrier: string | null;
+  trackingCode: string | null;
+  /** Mới nhất trước. */
+  events: TrackingEventDto[];
+  fetchedAt: string | null;
+}
+
+/**
+ * Hành trình của bên vận chuyển, máy chủ hỏi sàn theo yêu cầu (1 call sàn / lượt, nhớ 10
+ * phút). Chỉ gọi khi người dùng thật sự xem — xem components/OrderTrackingSection.tsx.
+ */
+export function fetchOrderTracking(orderId: string) {
+  return api<OrderTrackingDto>(`/api/orders/${encodeURIComponent(orderId)}/tracking`);
 }

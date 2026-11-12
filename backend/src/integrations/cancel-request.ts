@@ -120,7 +120,11 @@ export function orderCancelledMessage(
   return {
     title: `${who} đã hủy đơn đã chuẩn bị hàng ${orderCode}`,
     body: parts.join(" "),
-    link: info.returning ? "/warehouse/returns" : `/orders?search=${encodeURIComponent(orderCode)}`,
+    // Kiện quay đầu: web mở Đối soát đơn hoàn. Vẫn kèm mã đơn (12/11/2026) để app mobile
+    // mở đúng đơn — link trơn khiến chủ shop tới tab Đơn hoàn mà không biết đơn nào.
+    link: info.returning
+      ? `/warehouse/returns?search=${encodeURIComponent(orderCode)}`
+      : `/orders?search=${encodeURIComponent(orderCode)}`,
   };
 }
 

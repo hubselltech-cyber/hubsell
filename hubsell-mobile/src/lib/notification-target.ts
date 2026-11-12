@@ -22,7 +22,14 @@ export type AdsPlatformTarget = "shopee" | "lazada" | "tiktok";
 
 export type NotificationTarget =
   /** Tab Đơn hàng, lọc sẵn theo mã / trạng thái / khách xin hủy. */
-  | { kind: "orders"; search?: string; status?: "SHIPPING"; cancelRequested?: boolean }
+  | {
+      kind: "orders";
+      search?: string;
+      status?: "SHIPPING";
+      cancelRequested?: boolean;
+      /** Mở thẳng hộp Chi tiết của đơn có mã = `search` (thông báo đơn bị hủy ngang, 12/11/2026). */
+      openOrder?: boolean;
+    }
   /** Tab Kho: Tồn kho (hết hàng, sắp hết) hoặc Đơn hoàn. */
   | { kind: "warehouse"; tab: "stock" | "returns" }
   /** Trang Tài chính của pager Trang chủ (đơn lỗ, sai phí, chênh phí ship, báo cáo). */
@@ -50,6 +57,31 @@ export interface NotificationLike {
   /** Type kỹ thuật backend ghi (tiktok-ads-auto, ops-alert:stockout…). */
   type: string;
   link: string | null | undefined;
+  /** Tiêu đề — chỉ dùng để đọc mã đơn của thông báo hủy CŨ (link chưa kèm mã). */
+  title?: string | null;
+}
+
+/**
+ * MÃ ĐƠN mà thông báo nói tới (để hiện nút sao chép và mở đúng đơn); null = thông báo
+ * không gắn với một đơn cụ thể. Nguồn: `?search=` trên link /orders và /warehouse/returns.
+ * Riêng thông báo "đã hủy đơn đã chuẩn bị hàng <mã>" ghi trước 12/11/2026 cho kiện đã bàn
+ * giao có link trơn /warehouse/returns → đọc mã ở cuối tiêu đề (câu do backend mình ghi,
+ * integrations/cancel-request.ts orderCancelledMessage).
+ */
+export function notificationOrderCode(n: NotificationLike): string | null {
+  const link = (n.link ?? "").trim();
+  if (link && !/^https?:\/\//i.test(link)) {
+    const [rawPath, rawQuery = ""] = link.split("?");
+    if (rawPath.startsWith("/orders") || rawPath.startsWith("/warehouse/returns") || rawPath.startsWith("/returns")) {
+      const code = new URLSearchParams(rawQuery).get("search")?.trim();
+      if (code) return code;
+    }
+  }
+  if (n.type === "order_cancelled") {
+    const m = /đơn đã chuẩn bị hàng\s+(\S+)\s*$/.exec((n.title ?? "").trim());
+    if (m) return m[1];
+  }
+  return null;
 }
 
 function str(v: string | null): string | undefined {
@@ -65,6 +97,13 @@ export function resolveNotificationTarget(n: NotificationLike): NotificationTarg
   const link = (n.link ?? "").trim();
   if (!link) return null;
   if (/^https?:\/\//i.test(link)) return { kind: "external", url: link };
+
+  // Đơn đã chuẩn bị / đã bàn giao bị hủy ngang: việc của chủ shop là XEM ĐÚNG ĐƠN ĐÓ
+  // (rút kiện, đối chiếu) → mở thẳng chi tiết đơn, dù link web trỏ về Đơn hoàn.
+  if (n.type === "order_cancelled") {
+    const code = notificationOrderCode(n);
+    if (code) return { kind: "orders", search: code, openOrder: true };
+  }
 
   const [rawPath, rawQuery = ""] = link.split("?");
   const path = rawPath.replace(/\/+$/, "") || "/";

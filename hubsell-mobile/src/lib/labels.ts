@@ -32,6 +32,36 @@ export const SHIPPING_STATUS: Record<
   },
 };
 
+/**
+ * Nhãn trạng thái của MỘT ĐƠN — dùng chung cho thẻ đơn ngoài danh sách và dòng Trạng
+ * thái trong chi tiết đơn (12/11/2026: trước đó thẻ ghi "Chờ đóng gói" mà mở ra lại ghi
+ * "Đã xử lý"). Đơn còn ở Đã xử lý thì đọc theo BƯỚC ĐÓNG GÓI (cùng chữ với nhãn phụ ở
+ * cột Trạng thái web): Chưa in phiếu → Chờ đóng gói → Đã đóng gói → Đã bàn giao. Đơn
+ * đã đi giao / đã giao / hủy giữ nhãn vận chuyển — việc gói đã qua.
+ */
+export function orderStatusBadge(o: {
+  shippingStatus: ShippingStatus;
+  labelPrintedAt?: string | null;
+  packingDoneAt?: string | null;
+  handoverSheetId?: string | null;
+}): { label: string; bg: string; text: string } {
+  const ship = SHIPPING_STATUS[o.shippingStatus];
+  if (o.shippingStatus !== "PROCESSED") return ship;
+  if (o.packingDoneAt) {
+    return {
+      label: o.handoverSheetId ? "Đã bàn giao" : "Đã đóng gói",
+      bg: "bg-emerald-100 dark:bg-emerald-500/15",
+      text: "text-emerald-700 dark:text-emerald-300",
+    };
+  }
+  if (o.labelPrintedAt) return { ...ship, label: "Chờ đóng gói" };
+  return {
+    label: "Chưa in phiếu",
+    bg: "bg-amber-100 dark:bg-amber-500/15",
+    text: "text-amber-700 dark:text-amber-300",
+  };
+}
+
 export const RETURN_STATUS: Record<
   ReturnStatus,
   { label: string; bg: string; text: string }

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Keyboard, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { Keyboard, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,8 +48,6 @@ const REQUEST_TIMEOUT_MS = 8000;
  * mã vận đơn thì trong lúc hoãn, mã vận đơn ra đơn → bỏ luôn báo lỗi oan. Mặc định tự chọn.
  */
 const UNKNOWN_GRACE_MS = 700;
-/** Máy chủ trả lời lần nữa cho đúng đơn vừa xử lý trong chừng này (mã vạch khác của cùng tem) → im. Mặc định tự chọn. */
-const SAME_ORDER_QUIET_MS = 10_000;
 
 /** Màu màn báo — cố định, không theo giao diện sáng / tối (phải nhận ra từ khóe mắt). */
 const FLASH_STYLE: Record<
@@ -100,6 +99,16 @@ export function PackScanScreen({
   /** Kết quả gần nhất — nằm lại ở dải đáy sau khi màn báo tắt. */
   const [last, setLast] = useState<PackFlash | null>(null);
   const [counts, setCounts] = useState({ packed: 0, cancelled: 0, failed: 0 });
+  /**
+   * Ô đếm tính theo ĐƠN, không theo lượt quét (12/11/2026, khách báo "đơn hủy bị tính
+   * nhiều lần"): một kiện hủy bắn lại sau 10 giây vẫn kêu còi nhưng không cộng thêm.
+   * Khóa = ô đếm + id đơn (hoặc mã vừa quét khi không ra đơn).
+   */
+  const [counted] = useState(() => new Set<string>());
+  /** Đơn ĐÃ HỦY gặp trong lượt quét — mới nhất trước; bấm ô "Đơn hủy" để xem lại và chép mã. */
+  const [cancelledList, setCancelledList] = useState<CancelledHit[]>([]);
+  const [showCancelled, setShowCancelled] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const rootRef = useRef<View>(null);
   const { kbLift, kbOpen } = useKeyboardLift(rootRef);
@@ -110,8 +119,6 @@ export function PackScanScreen({
   const flashSeq = useRef(0);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Đơn vừa có kết quả trong phiên: id → lúc xử lý. */
-  const [recentOrders] = useState(() => new Map<string, number>());
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -122,14 +129,21 @@ export function PackScanScreen({
     };
   }, []);
 
-  /** Hiện màn báo + kêu + rung + cộng ô đếm. */
-  const announce = useCallback((f: PackFlash) => {
+  /** Hiện màn báo + kêu + rung + cộng ô đếm (mỗi đơn / mỗi mã chỉ cộng MỘT lần). */
+  const announce = useCallback((f: PackFlash, orderId?: string) => {
     if (!alive.current) return;
     playScanSound(f.sound);
     vibrate(f.haptic);
     if (f.counter) {
       const key = f.counter;
-      setCounts((c) => ({ ...c, [key]: c[key] + 1 }));
+      const once = `${key}:${orderId ?? f.code}`;
+      if (!counted.has(once)) {
+        counted.add(once);
+        setCounts((c) => ({ ...c, [key]: c[key] + 1 }));
+        if (f.kind === "cancelled") {
+          setCancelledList((list) => [{ key: once, code: f.code, meta: f.meta, at: Date.now() }, ...list]);
+        }
+      }
     }
     setLast(f);
     const id = ++flashSeq.current;
@@ -138,7 +152,7 @@ export function PackScanScreen({
     flashTimer.current = setTimeout(() => {
       if (alive.current) setFlash((cur) => (cur?.id === id ? null : cur));
     }, f.holdMs);
-  }, []);
+  }, [counted]);
 
   /** Gửi một mã lên máy chủ. `fromCamera` = qua cửa chống bắn lặp, áp luật im lặng / hoãn báo. */
   const submit = useCallback(
@@ -154,22 +168,18 @@ export function PackScanScreen({
             )
           ),
         ]);
-        gate.resolved(code);
+        const seen = gate.resolved(code, res.order.id, Date.now());
         // Đã ra đơn → báo lỗi "không thấy mã" đang hoãn (mã vạch khác của cùng tem) là oan.
         if (graceTimer.current) {
           clearTimeout(graceTimer.current);
           graceTimer.current = null;
         }
-        const now = Date.now();
-        const seenAt = recentOrders.get(res.order.id);
-        recentOrders.set(res.order.id, now);
-        if (recentOrders.size > 300) {
-          for (const [id, at] of recentOrders) if (now - at > SAME_ORDER_QUIET_MS) recentOrders.delete(id);
-        }
-        // Luật 4: camera đọc sang mã vạch khác của CÙNG kiện (mã đơn cạnh mã vận đơn) →
-        // máy chủ trả lời lần hai cho đúng đơn đó. Im lặng, không kêu "đã quét rồi" oan.
-        if (fromCamera && seenAt !== undefined && now - seenAt < SAME_ORDER_QUIET_MS) return;
-        announce(flashOfResponse(res));
+        // Luật 5: camera đọc sang mã vạch khác của tem ĐANG nằm trong khung (mã đơn cạnh mã
+        // vận đơn) → máy chủ trả lời lần hai cho đúng đơn đó: im, không kêu "đã quét rồi" oan.
+        // Còn kiện được đưa vào LẦN NỮA ("repeat") thì luôn báo — bản 05/11 im lặng 10 giây
+        // theo id đơn nên quét lại là màn hình đơ (anh Trung thử máy thật 12/11).
+        if (fromCamera && seen === "alias") return;
+        announce(flashOfResponse(res, seen === "repeat"), res.order.id);
       } catch (err) {
         const status = err instanceof ApiError ? err.status : 0;
         const message = err instanceof ApiError ? err.message : "Có lỗi xảy ra, thử lại";
@@ -193,7 +203,7 @@ export function PackScanScreen({
         if (alive.current) setBusy(false);
       }
     },
-    [announce, gate, recentOrders]
+    [announce, gate]
   );
 
   const onBarcodeScanned = useCallback(
@@ -414,7 +424,12 @@ export function PackScanScreen({
 
           <View className="mt-2.5 flex-row gap-2">
             <CountTile label="Đã gói" value={counts.packed} color="#34d399" />
-            <CountTile label="Đơn hủy" value={counts.cancelled} color="#f87171" />
+            <CountTile
+              label="Đơn hủy"
+              value={counts.cancelled}
+              color="#f87171"
+              onPress={counts.cancelled > 0 ? () => setShowCancelled(true) : undefined}
+            />
             <CountTile label="Lỗi" value={counts.failed} color="#cbd5e1" />
           </View>
 
@@ -445,20 +460,137 @@ export function PackScanScreen({
           </View>
         </View>
       </View>
+
+      {/* DANH SÁCH ĐƠN HỦY của lượt quét — để người gói rút đúng các kiện đó ra. */}
+      <Modal
+        visible={showCancelled}
+        transparent
+        statusBarTranslucent
+        navigationBarTranslucent
+        animationType="slide"
+        onRequestClose={() => setShowCancelled(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <Pressable className="flex-1" onPress={() => setShowCancelled(false)} />
+          <View
+            className="max-h-[70%] rounded-t-3xl bg-white px-4 pt-3 dark:bg-slate-900"
+            style={{ paddingBottom: 16 + insets.bottom }}
+          >
+            <View className="mb-1 flex-row items-center gap-2">
+              <View className="h-8 w-8 items-center justify-center rounded-full bg-red-100 dark:bg-red-500/15">
+                <Ionicons name="ban" size={16} color="#dc2626" />
+              </View>
+              <Text className="flex-1 text-base font-bold text-slate-900 dark:text-slate-100">
+                Đơn hủy đã quét ({groupVN(cancelledList.length)})
+              </Text>
+              <Pressable
+                className="h-9 w-9 items-center justify-center rounded-full active:opacity-60"
+                onPress={() => setShowCancelled(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Đóng"
+              >
+                <Ionicons name="close" size={22} color="#64748b" />
+              </Pressable>
+            </View>
+            <Text className="mb-2 text-xs leading-[18px] text-slate-500 dark:text-slate-400">
+              Bỏ các kiện này lại, không đưa cho đơn vị vận chuyển. Danh sách chỉ tính trong lượt quét này.
+            </Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {cancelledList.map((c) => (
+                <View
+                  key={c.key}
+                  className="mb-2 flex-row items-center gap-3 rounded-2xl border border-slate-100 px-3 py-2.5 dark:border-slate-800"
+                >
+                  <View className="min-w-0 flex-1">
+                    <Text
+                      className="text-sm font-bold text-slate-900 dark:text-slate-100"
+                      style={TABULAR}
+                      numberOfLines={1}
+                      selectable
+                    >
+                      {c.code}
+                    </Text>
+                    <Text className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
+                      {[c.meta, `quét lúc ${clock(c.at)}`].filter(Boolean).join(" · ")}
+                    </Text>
+                  </View>
+                  <Pressable
+                    className="flex-row items-center gap-1 rounded-full bg-slate-100 px-3 py-2 active:opacity-70 dark:bg-slate-800"
+                    onPress={() => {
+                      void Clipboard.setStringAsync(c.code).catch(() => {});
+                      setCopiedCode(c.code);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Sao chép mã đơn ${c.code}`}
+                  >
+                    <Ionicons
+                      name={copiedCode === c.code ? "checkmark" : "copy-outline"}
+                      size={14}
+                      color={copiedCode === c.code ? "#059669" : "#64748b"}
+                    />
+                    <Text
+                      className={`text-xs font-semibold ${
+                        copiedCode === c.code
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-slate-600 dark:text-slate-300"
+                      }`}
+                    >
+                      {copiedCode === c.code ? "Đã chép" : "Sao chép"}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
+interface CancelledHit {
+  key: string;
+  code: string;
+  meta: string | null;
+  at: number;
+}
+
+function clock(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** Một ô đếm của phiên quét — số to, nhãn nhỏ, ba ô chia đều. */
-function CountTile({ label, value, color }: { label: string; value: number; color: string }) {
+function CountTile({
+  label,
+  value,
+  color,
+  onPress,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  /** Có = ô bấm được (mở danh sách), hiện mũi tên nhỏ. */
+  onPress?: () => void;
+}) {
   return (
-    <View className="flex-1 flex-row items-baseline justify-center gap-1.5 rounded-xl bg-slate-800 py-1.5">
+    <Pressable
+      className={`flex-1 flex-row items-baseline justify-center gap-1.5 rounded-xl bg-slate-800 py-1.5 ${
+        onPress ? "active:opacity-70" : ""
+      }`}
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? "button" : "text"}
+      accessibilityLabel={onPress ? `${label}: ${value}, bấm để xem danh sách` : undefined}
+    >
       <Text className="text-lg font-extrabold" style={[TABULAR, { color }]}>
         {groupVN(value)}
       </Text>
       <Text className="text-[11px] font-medium text-slate-300" numberOfLines={1}>
         {label}
       </Text>
-    </View>
+      {onPress ? <Ionicons name="chevron-forward" size={11} color="#94a3b8" /> : null}
+    </Pressable>
   );
 }

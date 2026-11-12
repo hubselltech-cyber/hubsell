@@ -65,8 +65,12 @@ function hhmm(iso: string | null): string | null {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** Máy chủ trả 200: đã nhận ra đơn. */
-export function flashOfResponse(res: PackingScanResponse): PackFlash {
+/**
+ * Máy chủ trả 200: đã nhận ra đơn. `again` = kiện này đã được quét trong phiên rồi
+ * (12/11/2026, anh Trung: "quét lần 2 phải hiện lên là đã quét trùng") — đơn hủy vẫn
+ * kêu còi hủy (việc phải làm không đổi) nhưng nói rõ là quét lại.
+ */
+export function flashOfResponse(res: PackingScanResponse, again = false): PackFlash {
   const o = res.order;
   const code = o.orderCode;
   const meta = [o.channel.shopName, o.carrierLabel].filter(Boolean).join(" · ") || null;
@@ -78,12 +82,12 @@ export function flashOfResponse(res: PackingScanResponse): PackFlash {
         title: "ĐƠN ĐÃ HỦY",
         code,
         meta,
-        detail: "Bỏ kiện lại — không đưa ship",
+        detail: again ? "Kiện này đã quét rồi — vẫn bỏ lại, không đưa ship" : "Bỏ kiện lại — không đưa ship",
         sound: "cancelled",
         haptic: "errorTwice",
         holdMs: 2500,
         counter: "cancelled",
-        short: "ĐƠN ĐÃ HỦY, bỏ kiện lại",
+        short: again ? "ĐƠN ĐÃ HỦY, đã quét rồi — bỏ kiện lại" : "ĐƠN ĐÃ HỦY, bỏ kiện lại",
       };
     }
     return {

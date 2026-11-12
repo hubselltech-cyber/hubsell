@@ -20,6 +20,7 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 import { hapticTap } from "@/lib/haptics";
+import { fetchExpenses } from "@/api/expenses";
 import { fetchAnalytics, fetchOverview } from "@/api/finance";
 import { fetchReturnsSummary } from "@/api/warehouse";
 import { fetchChannels } from "@/api/channels";
@@ -130,6 +131,9 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const [money, setMoney] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [prevMoney, setPrevMoney] = useState<AnalyticsResponse["breakdown"] | null>(null);
   const [returns, setReturns] = useState<ReturnsSummaryResponse["summary"] | null>(null);
+  // Tổng CHI vận hành tháng này cho ô "Chi phí vận hành" (12/11/2026); null = chưa biết
+  // (đang tải, gói khóa, không có quyền) → ô vẫn bấm được, chỉ không khoe số.
+  const [opexMonth, setOpexMonth] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -156,7 +160,8 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
       const { from, to } = rangeFor("today");
       const yd = yesterdayRange();
       let lockedMsg: string | null = null;
-      const [ana, fin, prevFin, ret, chs] = await Promise.all([
+      const month = rangeFor("month");
+      const [ana, fin, prevFin, ret, chs, opex] = await Promise.all([
         // Số ĐƠN hôm nay + kỳ trước (hôm qua) để tính ▲/▼ số đơn + trend 14
         // ngày cho sparkline + phễu + đơn theo sàn cho donut.
         fetchOverview(from, to),
@@ -172,10 +177,15 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
         fetchReturnsSummary(),
         // Hỏng thì giữ ô Gian hàng ở trạng thái "—", không che màn.
         fetchChannels().catch(() => null),
+        // Khoản chi vận hành tháng này — hỏng / bị khóa thì ô chỉ mất con số.
+        fetchExpenses(month.from, month.to).catch(() => null),
       ]);
       if (seq !== reqSeq.current) return;
       setAnalytics(ana);
       if (chs) setChannels(chs);
+      setOpexMonth(
+        opex ? opex.reduce((sum, e) => (e.direction === "EXPENSE" ? sum + e.amount : sum), 0) : null
+      );
       setMoney(fin?.breakdown ?? null);
       setPrevMoney(prevFin?.breakdown ?? null);
       setReturns(ret.summary);
@@ -611,7 +621,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 Thiết lập
               </Text>
               <Text className="text-[11px] text-slate-400 dark:text-slate-500">
-                Gian hàng · Giá vốn
+                Gian hàng · Giá vốn · Chi phí
               </Text>
             </View>
             <View className="flex-row gap-3">
@@ -629,6 +639,27 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 tone={costTile.tone}
                 onPress={() => router.push("/cost-prices" as Href)}
               />
+            </View>
+            {/* CHI PHÍ VẬN HÀNH — ô CÙNG CỠ với Gian hàng, nằm ngay dưới nó (anh Trung 12/11:
+                "cùng kích thước khối với Gian hàng, về sau còn thêm các mục khác bên cạnh").
+                Ô trống bên phải giữ chỗ cho mục sau — đừng kéo ô này ra hết hàng. */}
+            <View className="mt-3 flex-row gap-3">
+              <QuickTile
+                icon="wallet"
+                label="Chi phí vận hành"
+                value={
+                  opexMonth === null
+                    ? "Đóng gói, lương…"
+                    : opexMonth > 0
+                      ? `Tháng này ${compactMoney(opexMonth)}`
+                      : "Chưa nhập tháng này"
+                }
+                tone="muted"
+                onPress={() => router.push("/expenses" as Href)}
+              />
+              {/* Ô giữ chỗ mang CÙNG đệm + viền với ô thật: phần chia đều tính sau khi trừ đệm,
+                  ô trống không đệm sẽ hẹp hơn và làm ô Chi phí rộng hơn ô Gian hàng 17 px. */}
+              <View className="flex-1 border border-transparent p-4" />
             </View>
           </Animated.View>
 
@@ -702,7 +733,13 @@ function QuickTile({
         </View>
         <Ionicons name="arrow-forward" size={15} color="#cbd5e1" />
       </View>
-      <Text className="mt-3 text-[15px] font-semibold text-slate-900 dark:text-slate-100" numberOfLines={1}>
+      {/* Máy 320 px: nhãn dài tự co chữ một chút thay vì bị cắt "…" (chỉ có tác dụng trên máy thật). */}
+      <Text
+        className="mt-3 text-[15px] font-semibold text-slate-900 dark:text-slate-100"
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
+      >
         {label}
       </Text>
       <View className="mt-1.5 flex-row">

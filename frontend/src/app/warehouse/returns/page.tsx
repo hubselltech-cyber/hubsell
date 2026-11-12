@@ -143,6 +143,13 @@ export default function WarehouseReturnsPage() {
   const [inboundingId, setInboundingId] = useState<string | null>(null);
   const [bulkInbounding, setBulkInbounding] = useState(false);
 
+  // Chuông "đơn đã bàn giao bị hủy" dẫn tới đây kèm ?search=<mã đơn> (12/11/2026) → đổ sẵn
+  // vào ô tìm để thấy ngay đúng đơn. Đọc sau khi mount (trang dựng sẵn không có query).
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("search")?.trim();
+    if (code) queueMicrotask(() => setSearch(code));
+  }, []);
+
   useEffect(() => {
     const t = setTimeout(() => {
       setDebounced(search);

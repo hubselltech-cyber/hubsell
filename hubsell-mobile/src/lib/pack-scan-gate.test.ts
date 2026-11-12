@@ -129,3 +129,127 @@ test("ca dài 1.000 kiện: mã cũ được dọn, kiện mới vẫn quét bì
     t += 1500; // 1,5 giây một kiện
   }
 });
+
+// ───────── 12/11/2026 — anh Trung thử máy thật: quét lần hai vào cùng một đơn thì "đơ",
+// đơn hủy quét lần hai còn báo "không thấy đơn". Các ca dưới mô phỏng CÓ ĐỘ TRỄ máy chủ
+// (lượt gọi mất 200 ms) — bản cũ chỉ test với máy chủ trả lời tức thì nên không lộ. ─────────
+
+/**
+ * Giữ `codes` trong khung từ `from` tới `to`, máy chủ trả lời sau `latency` ms:
+ * `server(code)` = id đơn, hoặc null khi không ra đơn (404). Trả về các mã đã gửi.
+ */
+function present(
+  gate: PackScanGate,
+  codes: string[],
+  from: number,
+  to: number,
+  server: (code: string) => string | null,
+  latency = 200
+): string[] {
+  const fired: string[] = [];
+  const pending: { at: number; code: string }[] = [];
+  for (let t = from; t < to; t += 100) {
+    for (let i = pending.length - 1; i >= 0; i--) {
+      if (pending[i].at <= t) {
+        const { code } = pending.splice(i, 1)[0];
+        const orderId = server(code);
+        if (orderId) gate.resolved(code, orderId);
+        else gate.unknown(code);
+      }
+    }
+    for (const c of codes) {
+      if (gate.admit(c, t) === "fire") {
+        fired.push(c);
+        pending.push({ at: t + latency, code: c });
+      }
+    }
+  }
+  for (const p of pending) {
+    const orderId = server(p.code);
+    if (orderId) gate.resolved(p.code, orderId);
+    else gate.unknown(p.code);
+  }
+  return fired;
+}
+
+const TEM = (code: string) => (code === "VD1" || code === "MADON1" ? "don-1" : null);
+
+test("quét LẠI kiện: mã phân tuyến đọc trước, mã vận đơn vẫn phải tới máy chủ (không báo 'không thấy đơn' oan)", () => {
+  const gate = new PackScanGate();
+  present(gate, ["TUYEN-9", "VD1"], 0, 1000, TEM);
+  // Cất kiện đi 4 giây rồi đưa lại — camera đọc mã phân tuyến trước.
+  const again = present(gate, ["TUYEN-9", "VD1"], 5000, 7000, TEM);
+  assert.deepEqual(again, ["VD1"]);
+});
+
+test("đưa lại kiện đúng lúc đang có lượt gọi khác: mã không bị khóa 'đã xử lý' oan", () => {
+  const gate = new PackScanGate();
+  assert.equal(gate.admit("VD1", 0), "fire");
+  gate.resolved("VD1", "don-1");
+  // 5 giây sau: đang gõ tay một mã khác thì đưa lại kiện VD1.
+  assert.equal(gate.admitManual("GO-TAY"), true);
+  assert.equal(gate.admit("VD1", 5000), "busy");
+  assert.equal(gate.admit("VD1", 5100), "busy");
+  gate.unknown("GO-TAY");
+  assert.equal(gate.admit("VD1", 5200), "fire"); // bản cũ: "same" mãi → màn hình đơ
+});
+
+test("tem hai mã vạch CÙNG ra một đơn: mỗi lần đưa kiện vào chỉ gửi một mã, lần nào cũng gửi", () => {
+  const gate = new PackScanGate();
+  assert.deepEqual(present(gate, ["VD1", "MADON1"], 0, 1500, TEM), ["VD1", "MADON1"].slice(0, 1));
+  // Lần hai, lần ba: vẫn đúng một lượt gọi mỗi lần, không khóa chéo nhau.
+  assert.equal(present(gate, ["MADON1", "VD1"], 5000, 6500, TEM).length, 1);
+  assert.equal(present(gate, ["VD1", "MADON1"], 10000, 11500, TEM).length, 1);
+});
+
+test("hai mã của cùng đơn đưa lại đúng lúc máy chủ đang bận: không khóa chéo nhau", () => {
+  const gate = new PackScanGate();
+  for (const c of ["VD1", "MADON1"]) {
+    assert.equal(gate.admitManual(c), true);
+    gate.resolved(c, "don-1");
+  }
+  assert.equal(gate.admitManual("GO-TAY"), true);
+  for (let t = 5000; t < 5300; t += 100) {
+    assert.notEqual(gate.admit("VD1", t), "fire");
+    assert.notEqual(gate.admit("MADON1", t), "fire");
+  }
+  gate.unknown("GO-TAY");
+  const fired = present(gate, ["VD1", "MADON1"], 5300, 6500, TEM);
+  assert.equal(fired.length, 1);
+});
+
+test("tem chỉ còn đọc được mã không ra đơn: đưa lại vẫn được hỏi máy chủ (chậm hơn một nhịp)", () => {
+  const gate = new PackScanGate();
+  assert.deepEqual(present(gate, ["LA-1"], 0, 1000, TEM), ["LA-1"]);
+  assert.equal(gate.admit("LA-1", 5000), "hold");
+  assert.equal(gate.admit("LA-1", 5000 + COMPANION_MS), "fire");
+});
+
+test("resolved: lần đầu của đơn → first; mã vạch khác khi tem còn trong khung → alias (im)", () => {
+  const gate = new PackScanGate();
+  assert.equal(gate.admit("VD1", 0), "fire");
+  assert.equal(gate.resolved("VD1", "don-1", 200), "first");
+  // VD1 khuất 700 ms (ngón tay che) nhưng tem chưa rời khung → mã đơn lọt qua luật 3.
+  assert.equal(gate.admit("MADON1", 900), "fire");
+  assert.equal(gate.resolved("MADON1", "don-1", 1100), "alias");
+});
+
+test("resolved: đưa kiện vào LẦN NỮA → repeat, kể cả khi camera đọc trúng mã vạch chưa từng gửi", () => {
+  const gate = new PackScanGate();
+  assert.equal(gate.admit("VD1", 0), "fire");
+  assert.equal(gate.resolved("VD1", "don-1", 200), "first");
+  // 5 giây sau đưa lại, lần này camera bắt mã đơn trước (lần đầu nó bị luật 3 bỏ qua).
+  assert.equal(gate.admit("MADON1", 5000), "fire");
+  assert.equal(gate.resolved("MADON1", "don-1", 5200), "repeat"); // bản cũ: im lặng 10 giây → đơ
+  // Lần ba, đọc lại đúng mã vận đơn.
+  assert.equal(gate.admit("VD1", 10000), "fire");
+  assert.equal(gate.resolved("VD1", "don-1", 10200), "repeat");
+});
+
+test("resolved: gõ tay lại mã của đơn đã quét → repeat (không có mã nào đang trong khung)", () => {
+  const gate = new PackScanGate();
+  assert.equal(gate.admitManual("VD1"), true);
+  assert.equal(gate.resolved("VD1", "don-1", 0), "first");
+  assert.equal(gate.admitManual("VD1"), true);
+  assert.equal(gate.resolved("VD1", "don-1", 100), "repeat");
+});

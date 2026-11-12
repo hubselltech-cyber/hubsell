@@ -4,11 +4,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useColorScheme } from "nativewind";
+import * as Clipboard from "expo-clipboard";
 import { useNotifications } from "@/notifications/NotificationsContext";
 import { destinationFor } from "@/lib/notification-links";
+import { notificationOrderCode } from "@/lib/notification-target";
 import { categoryMeta, timeAgo } from "@/lib/notification-meta";
 import { hapticTap } from "@/lib/haptics";
-import { ICON_TINT } from "@/theme/tokens";
+import { ICON_TINT, TABULAR } from "@/theme/tokens";
 import type { AppNotification } from "@/types/api";
 
 /**
@@ -16,7 +18,10 @@ import type { AppNotification } from "@/types/api";
  * mở màn = đã liếc toàn bộ → badge về 0; chấm xanh trên từng dòng giữ theo dữ
  * liệu lúc mở để biết dòng nào vừa tới. Bấm dòng có màn tương ứng thì nhảy
  * sang (đơn hàng, đơn hoàn, quảng cáo…); dòng hệ thống chỉ để đọc.
- * Chữ: tiêu đề 2 dòng, nội dung 3 dòng — máy 320 px không tràn.
+ * Chữ: tiêu đề 2 dòng, nội dung 3 dòng — máy 320 px không tràn. Riêng thông báo đơn
+ * bị hủy thì nội dung hiện ĐỦ (lý do + việc kho cần làm nằm ở cuối câu). Thông báo gắn
+ * với một đơn có dải mã đơn + nút Sao chép (12/11/2026, khách: "copy được mã đơn hàng
+ * để kiểm tra").
  */
 export function NotificationsScreen() {
   const insets = useSafeAreaInsets();
@@ -115,6 +120,9 @@ function NotificationRow({ n, onPress }: { n: AppNotification; onPress: () => vo
   const canOpen = destinationFor(n) !== null;
   // Có việc để làm nhưng app chưa có màn (hóa đơn, gian hàng…) → nói rõ thay vì im.
   const webOnly = !canOpen && !!n.link;
+  const orderCode = notificationOrderCode(n);
+  const [copied, setCopied] = useState(false);
+  const fullBody = n.type === "order_cancelled";
   return (
     <Pressable
       className={`flex-row gap-3 rounded-2xl border px-3 py-3 ${
@@ -147,15 +155,58 @@ function NotificationRow({ n, onPress }: { n: AppNotification; onPress: () => vo
           {unread ? <View className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500" /> : null}
         </View>
         {n.body ? (
-          <Text className="mt-0.5 text-[13px] leading-[18px] text-slate-500 dark:text-slate-400" numberOfLines={3}>
+          <Text
+            className="mt-0.5 text-[13px] leading-[18px] text-slate-500 dark:text-slate-400"
+            numberOfLines={fullBody ? undefined : 3}
+          >
             {n.body}
           </Text>
+        ) : null}
+        {orderCode ? (
+          <View className="mt-2 flex-row items-center gap-2 rounded-xl bg-slate-50 py-1.5 pl-3 pr-1.5 dark:bg-slate-800/70">
+            <Text className="text-[11px] text-slate-400 dark:text-slate-500">Mã đơn</Text>
+            <Text
+              className="min-w-0 flex-1 text-[13px] font-bold text-slate-800 dark:text-slate-100"
+              style={TABULAR}
+              numberOfLines={1}
+              selectable
+            >
+              {orderCode}
+            </Text>
+            <Pressable
+              className="flex-row items-center gap-1 rounded-full bg-white px-2.5 py-1.5 active:opacity-70 dark:bg-slate-700"
+              hitSlop={6}
+              onPress={() => {
+                hapticTap();
+                void Clipboard.setStringAsync(orderCode).catch(() => {});
+                setCopied(true);
+              }}
+              // Không đặt accessibilityRole="button": dòng thông báo bên ngoài đã là nút, trên web
+              // hai <button> lồng nhau là HTML sai (React báo lỗi). Nhãn đọc màn hình vẫn có.
+              accessibilityLabel={`Sao chép mã đơn ${orderCode}`}
+            >
+              <Ionicons
+                name={copied ? "checkmark" : "copy-outline"}
+                size={13}
+                color={copied ? "#059669" : "#64748b"}
+              />
+              <Text
+                className={`text-[11px] font-semibold ${
+                  copied ? "text-emerald-600 dark:text-emerald-400" : "text-slate-600 dark:text-slate-200"
+                }`}
+              >
+                {copied ? "Đã chép" : "Sao chép"}
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
         <View className="mt-1.5 flex-row items-center gap-1">
           <Text className="flex-1 text-[11px] text-slate-400 dark:text-slate-500">{timeAgo(n.createdAt)}</Text>
           {canOpen ? (
             <>
-              <Text className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Mở</Text>
+              <Text className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                {n.type === "order_cancelled" && orderCode ? "Xem đơn" : "Mở"}
+              </Text>
               <Ionicons name="chevron-forward" size={12} color="#10b981" />
             </>
           ) : webOnly ? (

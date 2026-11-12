@@ -60,8 +60,21 @@ Mức Apple: dưới ~1,3 triệu bước 1.000₫; trên đó thưa dần (vd 2
 2.595.000 / 2.599.000) → lấy mức đầu tiên ≥ web ÷ 0,85. Bẫy ASC: ô tìm giá khớp CHUỖI CON
 ("4.390.000" ra cả 439.000 và 1.439.000) → luôn chọn đúng dòng, kiểm lại bằng hộp "Current Price".
 
-⏳ Đăng ký **App Store Small Business Program** (doanh thu < 1 triệu USD/năm → 15%) tại
-developer.apple.com → Account → Small Business Program, Account Holder (anh) tự bấm.
+**App Store Small Business Program** (doanh thu < 1 triệu USD/năm → 15%): ✅ anh ĐÃ GỬI mẫu
+đăng ký 10/11/2026 tại developer.apple.com/app-store/small-business-program/enroll (Team ID
+BF6Y7D47P5; khai: đã chấp nhận Paid Applications Agreement, không có tài khoản liên kết). Apple
+báo "We've received your enrollment and will email you about your status soon". ⏳ Chờ thư duyệt
+về dev@hubsell.vn. Tới khi được duyệt Apple vẫn trừ 30%; ngày bắt đầu 15% xem trong thư duyệt /
+FAQ của Apple (em CHƯA xác minh ngày hiệu lực).
+
+### Khoản thật đầu tiên — 10/11/2026
+
+14:58 10/11 khách mua Business 1 tháng trong app iOS: `apple:230003797496288`, storefront VNM,
+829.000 VND, môi trường Production (các khoản trước đều sandbox, 0 đ). Gói tự kích hoạt tới 10/12.
+Lộ hai chỗ chưa ổn, ⏳ chờ kế toán của anh chốt cách hạch toán (gộp hay thuần) rồi mới sửa mã:
+- Sổ quỹ ghi THU đủ 829.000 đ ngay ngày mua, trong khi Apple trả sau (khoảng 45 ngày sau tháng
+  tài chính) và đã trừ hoa hồng → lệch sao kê; chưa có dòng chi phí hoa hồng Apple.
+- Hóa đơn 829.000 đ tự đẩy lên meinvoice chờ ký; anh CHƯA ký tới khi kế toán trả lời.
 
 ## 3. Luồng kỹ thuật
 
@@ -149,3 +162,19 @@ Sửa: `PlanStoreScreen` gọi `type:"all"` + đọc gộp `[...products, ...sub
 `requestPurchase` giữ `type:"in-app"` (native iOS chỉ nhìn `request.apple`). Backend không đổi.
 Chi tiết + thư trả lời: `docs/store/APPLE-REVIEW-REPLY-6.md`. Bài học: luồng StoreKit PHẢI thử
 trên iPhone thật qua TestFlight + Sandbox Tester trước khi nộp; web không có StoreKit nên không lộ.
+
+## Phụ lục hợp đồng Apple nói gì về Việt Nam (đọc 12/11/2026)
+
+Nguồn: *Exhibits to Schedule 2 and 3*, bản ghi ngày **27/08/2026**, tải từ developer.apple.com. Anh Trung hỏi: "hóa đơn mình xuất bao gồm cả phần tiền của Apple".
+
+- **Exhibit A mục 2:** Việt Nam thuộc danh sách Apple Distribution International Ltd. làm *commissionaire* — "an agent who purports to act on their own behalf and concludes agreements in their own name but acts on behalf of other persons".
+- **Exhibit B, chú thích của Việt Nam:** việc Apple thu và nộp thuế "Solely applicable to non-resident Developers and local individual Developers. Apple shall not collect and remit taxes for local corporate Developers, and such Developers shall be solely responsible for the collection and remittance of such taxes". Riêng để tính hoa hồng, Apple ước lượng VAT theo *tax category* nhà phát triển chọn và trừ khỏi giá khách trả trước khi tính hoa hồng.
+- **Exhibit C mục 17 (Vietnam):** "If You are a resident of Vietnam, Apple will apply Vietnamese Foreign Contractor Tax on the commission payable by You to Apple to be deducted from Your remittance".
+
+Hệ quả cho Hubsell (công ty trong nước):
+
+1. Thuế trên khoản bán cho khách là việc của Hubsell → hóa đơn theo ĐỦ giá khách trả là khớp với hợp đồng; phần Apple giữ là **hoa hồng (chi phí)**, không phải khoản giảm doanh thu.
+2. Thuế nhà thầu trên hoa hồng: Apple tự trừ vào tiền chuyển về — Hubsell không kê khai thêm (chứng từ = báo cáo tài chính Apple; kế toán xác nhận).
+3. Cần kiểm trong App Store Connect: *tax category* đang chọn (ảnh hưởng số hoa hồng).
+
+Đây là đọc hợp đồng, CHƯA phải ý kiến kế toán — cách hạch toán vẫn chờ kế toán của anh chốt.

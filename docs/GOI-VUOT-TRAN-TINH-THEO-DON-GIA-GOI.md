@@ -191,7 +191,8 @@ tiền vẫn về → đơn MISMATCH + thư HQ, không ghi chứng từ. `waiveO
   phiếu sang quá hạn; một nút "Thanh toán <số tiền>" mở thẳng mã QR tại trang đang đứng. Gạt đi là thôi (dải nhắc
   vẫn còn); không đè lên hộp khác của trang (đợi hộp kia đóng). Trong tháng đang vượt thì KHÔNG có popup, chỉ dải.
 - Nội dung chuyển khoản: `HS VUOT<mm><yy> <8 số cuối mã đơn>` (vd `HS VUOT1026 62868206`); mã đơn payOS 16 chữ số như
-  mua gói. Cần `PAYOS_DESCRIPTION_MAX=25` — nếu prod còn 9 thì bị cắt thành `HS VUOT10` (chưa mở prod kiểm).
+  mua gói. Cần `PAYOS_DESCRIPTION_MAX=25` — ✅ prod đang là 25: ảnh anh chụp 11/11 ~22:00 hiện nội dung
+  `HS ENTERPRISE 08172704` (22 ký tự, có đuôi mã đơn) nên phí vượt sẽ ra đủ `HS VUOT1126 <8 số>`.
 - Dev: cổng payOS giả lập `backend/scripts/dev-payos-mock.mjs` + cấu hình `backend-http-payos` (`.claude/launch.json`);
   `GET http://localhost:4099/mock/pay/<mã đơn>` = giả lập tiền về.
 - HQ `/admin/plans`: khối "Phí vượt trần đơn" (`components/admin/overage-charges-section.tsx`, tự ẩn khi chưa có

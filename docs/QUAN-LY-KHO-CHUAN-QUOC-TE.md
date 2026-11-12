@@ -2,7 +2,7 @@
 
 > Anh Trung 12/11: "lên phương án khảo sát phần Quản lý kho bản chuẩn quốc tế… khảo sát kỹ cách thức hiển thị, thuật toán tính, phạm vi tác động liên quan tới kiểm kê, nhập/xuất".
 > Nối tiếp [TONG-KHO-DANG-GIU-CHO-DON.md](TONG-KHO-DANG-GIU-CHO-DON.md) (11/11: cột "Chờ giao", bản 2). Đối thủ Việt (Sapo, KiotViet, Salework) đã khảo sát ở [QUAN-LY-KHO-TAI-CAU-TRUC.md](QUAN-LY-KHO-TAI-CAU-TRUC.md) mục 11, không làm lại.
-> Trạng thái: **CHƯA CODE.** Số prod đã đo 12/11 (chỉ đọc) ở mục 11. Anh chốt 12/11: "Chia theo shop" + "Chuẩn quốc tế như thế nào thì em cứ làm như vậy" → bảng chốt ở đầu mục 9. Thiết kế lát 1 (chạy bóng) ở mục 13; **lát 1 ĐÃ CODE + COMMIT 12/11 (mục 13.9); prod đã thêm cột + dựng chỉ mục tay (mục 13.10); CHƯA push.**
+> Trạng thái: **CHƯA CODE.** Số prod đã đo 12/11 (chỉ đọc) ở mục 11. Anh chốt 12/11: "Chia theo shop" + "Chuẩn quốc tế như thế nào thì em cứ làm như vậy" → bảng chốt ở đầu mục 9. Thiết kế lát 1 (chạy bóng) ở mục 13; **lát 1 ĐÃ PUSH 12/11 `6bf5eaf6`, đang chạy bóng trên prod — ngày chuyển 3.776 đơn, đối chiếu lần đầu lệch 0 (mục 13.11); soi mỗi ngày tới ~19/11 rồi mới sang lát 2.**
 
 ## 0. Tóm tắt
 
@@ -564,6 +564,37 @@ Chạy qua Supabase SQL Editor trong Chrome. Trước khi chạy: Postgres 17.6,
 **Thấy kèm trên trang Supabase (chỉ đọc, em không đổi gì):** tổ chức đang gắn nhãn "Exceeding usage limits". Trang Usage ghi: gói Pro, kỳ 27/10 → 27/11, "You have exceeded your Pro Plan quota in this billing cycle. Disable your spend cap to continue using Supabase without restrictions." Các mục em đọc được: Egress 147 / 250 GB (59 %), Disk Size 740 GB-Hrs, Small Compute 365 giờ ($7,52), Micro Compute 26 giờ ($0,35); các mục khác gần 0. Em CHƯA xác định mục nào vượt và Supabase sẽ hạn chế gì — cần anh xem.
 
 **Còn lại:** anh push master → sau ~2 phút soi log worker `[stock-committed]` (dòng "ngày chuyển XONG: đưa N đơn…", N kỳ vọng quanh 3.700; rồi dòng "đối chiếu").
+
+### 13.11. ĐÃ PUSH 12/11/2026 ~15:17 (anh: "Em push luôn lên nhé") — lát 1 ĐANG CHẠY BÓNG trên prod
+
+- Push `5b17d56b..6bf5eaf6`. Backend `/health` báo đúng bản `6bf5eaf6` sau 120 giây. Migration `20261112210000_stock_committed_shadow` ghi hoàn tất, không rollback (cột và chỉ mục đã có nên các lệnh bỏ qua).
+- **15:21** (trước nhịp đầu của worker): đã có 1 đơn mới tự vào bộ đếm → đường ghi lúc đơn chốt chạy trên prod.
+- **15:22:00 ngày chuyển XONG: 3.776 đơn** đang chờ giao vào bộ đếm (số đo 12/11 sáng là 3.702).
+- **15:22:02 đối chiếu lần đầu** (đọc từ `maintenance_jobs`, chỉ đọc):
+
+  | Phép so | Kết quả |
+  |---|---|
+  | Bộ đếm ↔ tính lại từ đơn đang giữ | 520 = 520, lệch 0 mã |
+  | Theo vị trí | lệch 0 |
+  | Bộ đếm ↔ cách tính của cột "Chờ giao" | 520 = 520, lệch 0 mã |
+  | Đơn đang giữ | 3.778 đơn của 52 chủ shop |
+  | Đơn đã hủy còn giữ | 0 |
+  | Đơn giữ lâu nhất | 118 giờ (gần 5 ngày) |
+  | Bộ đếm âm | 0 mã |
+
+  520 sản phẩm trên 3.778 đơn: phần lớn đơn thuộc shop chưa nối sản phẩm kho nên không có nhật ký trừ (khớp với nhận xét 11/11).
+- Em đọc kết quả qua bảng `maintenance_jobs` và bộ đếm trên Supabase; CHƯA đọc log Render của worker, CHƯA thấy lượt quét bù nào chạy thật (mới 1 nhịp), CHƯA có Biên bản bàn giao nào đi qua đường mới.
+- **Từ đây:** mỗi 24 giờ worker tự đối chiếu và ghi đè dòng `stock-committed-check` (cột `processed` = số chỗ lệch cứng, `cursor` = chi tiết). Đủ 7 lần liên tiếp lệch cứng 0 (tức khoảng 19/11) thì sang lát 2. Lưu ý bảng chỉ giữ LẦN ĐỐI CHIẾU CUỐI, không giữ lịch sử: muốn chắc "7 đêm liên tiếp" phải soi mỗi ngày hoặc đọc log `[stock-committed] đối chiếu` trên Render.
+
+### 13.12. Nhật ký đối chiếu hằng ngày (lịch tự soi `kho-chuan-quoc-te-soi-doi-chieu`, 16:00 mỗi ngày 13 → 19/11/2026)
+
+Bảng `maintenance_jobs` chỉ giữ lần đối chiếu cuối, nên mỗi ngày ghi lại một dòng ở đây. "Lệch cứng" = lệch mã + lệch vị trí, PHẢI bằng 0. "Đã giao chưa quét" = đơn đang giữ mà trạng thái đã Đang giao / Đã giao tại lúc soi; quét bù chạy 2 phút một lần nên số này phải nhỏ (vài đơn), lớn và không giảm là worker không chạy.
+
+| Ngày soi | Lần đối chiếu (giờ VN) | Lệch cứng | Bộ đếm = từ đơn | Lệch với "Chờ giao" | Đơn đang giữ | Đã hủy còn giữ | Đã giao chưa quét | Bộ đếm âm | Ghi chú |
+|---|---|---|---|---|---|---|---|---|---|
+| 12/11 | 12/11 15:22 | 0 | 520 = 520 | 0 | 3.778 | 0 | chưa đo | 0 | lần đầu, ngay sau ngày chuyển |
+
+Đủ 7 dòng liên tiếp lệch cứng 0 (dòng 12/11 tính là dòng 1) → trình anh lát 2. Có dòng lệch cứng khác 0 → dừng đếm, soi nguyên nhân trước, KHÔNG tự sửa số trên prod.
 
 ## 12. Nguồn
 

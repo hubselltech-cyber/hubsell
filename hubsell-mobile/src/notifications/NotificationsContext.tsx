@@ -332,7 +332,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         type?: string;
         link?: string | null;
       } | null;
-      const dest = destinationFor({ id: data?.notificationId, type: data?.type ?? "", link: data?.link ?? null });
+      const dest = destinationFor({
+        id: data?.notificationId,
+        type: data?.type ?? "",
+        link: data?.link ?? null,
+        title: resp.notification.request.content.title,
+      });
       void refresh(true);
       if (dest) go(dest);
       else router.navigate("/notifications");

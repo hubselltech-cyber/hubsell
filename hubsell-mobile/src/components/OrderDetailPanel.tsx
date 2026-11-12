@@ -1,20 +1,23 @@
-import React from "react";
-import { Text, View } from "react-native";
+import React, { useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import * as Clipboard from "expo-clipboard";
 import type { OrderDto, OrderPaymentDto } from "@/types/api";
 import {
   CARRIER_LABEL,
   CHANNEL_LABEL,
   RETURN_STATUS,
-  SHIPPING_STATUS,
+  orderStatusBadge,
 } from "@/lib/labels";
 import { formatDateTime, formatMoney, groupVN } from "@/lib/format";
+import { hapticTap } from "@/lib/haptics";
 import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
 import { useChannelColors } from "@/theme/channel-colors";
 import { TABULAR } from "@/theme/tokens";
 import { CancelRequestBar } from "@/components/CancelRequestBar";
+import { OrderTrackingSection } from "@/components/OrderTrackingSection";
 
 /**
  * CHI TIẾT ĐƠN HÀNG sau khi quét mã ở nút QR giữa thanh tab (anh Trung 04/10).
@@ -26,13 +29,20 @@ export function OrderDetailPanel({
   order,
   payment,
   onCancelDecided,
+  loadTracking = true,
 }: {
   order: OrderDto;
   payment?: OrderPaymentDto;
+  /**
+   * Tự tải Hành trình vận chuyển (1 call sàn). Màn quét truyền false cho tới khi người
+   * dùng vuốt xuống — nhân viên quét liên tục không tốn call.
+   */
+  loadTracking?: boolean;
   /** Sau khi shop Chấp nhận / Từ chối yêu cầu hủy (dải đỏ đầu panel). */
   onCancelDecided?: () => void;
 }) {
-  const ship = SHIPPING_STATUS[order.shippingStatus];
+  // Cùng nhãn với thẻ đơn ngoài danh sách (theo bước đóng gói khi đơn còn ở Đã xử lý).
+  const ship = orderStatusBadge(order);
   const ret = order.returnStatus !== "NONE" ? RETURN_STATUS[order.returnStatus] : null;
   const express = isExpressShipping(order.shippingCarrierName);
   const carrier =
@@ -41,6 +51,8 @@ export function OrderDetailPanel({
   const channel = CHANNEL_LABEL[order.channel.channelName] ?? order.channel.channelName;
   const channelColors = useChannelColors();
   const channelColor = channelColors[order.channel.channelName] ?? channelColors.OFFLINE;
+  // Gắn theo mã đơn: đổi sang đơn khác (quét tiếp) thì dấu "đã chép" tự mất.
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   return (
     <View>
@@ -59,7 +71,37 @@ export function OrderDetailPanel({
 
       <View className="mt-2">
         <Row label="Shop" value={order.channel.shopName} accent />
-        <Row label="Mã đơn hàng" value={order.orderCode} selectable bold />
+        {/* Mã đơn + nút sao chép (12/11/2026, khách: "copy được mã đơn hàng để kiểm tra") */}
+        <View className="flex-row items-center justify-between gap-3 py-[3px]">
+          <Text className="text-[13px] text-slate-500 dark:text-slate-400">Mã đơn hàng</Text>
+          <View className="min-w-0 flex-1 flex-row items-center justify-end gap-1.5">
+            <Text
+              selectable
+              numberOfLines={1}
+              className="min-w-0 shrink text-right text-[13px] font-bold text-slate-900 dark:text-slate-100"
+              style={TABULAR}
+            >
+              {order.orderCode}
+            </Text>
+            <Pressable
+              className="h-7 w-7 items-center justify-center rounded-full bg-slate-100 active:opacity-60 dark:bg-slate-800"
+              hitSlop={8}
+              onPress={() => {
+                hapticTap();
+                void Clipboard.setStringAsync(order.orderCode).catch(() => {});
+                setCopiedCode(order.orderCode);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Sao chép mã đơn hàng"
+            >
+              <Ionicons
+                name={copiedCode === order.orderCode ? "checkmark" : "copy-outline"}
+                size={13}
+                color={copiedCode === order.orderCode ? "#059669" : "#64748b"}
+              />
+            </Pressable>
+          </View>
+        </View>
         <View className="flex-row items-center justify-between gap-3 py-[3px]">
           <Text className="text-[13px] text-slate-500 dark:text-slate-400">Trạng thái</Text>
           <View className="flex-row flex-wrap justify-end gap-1">
@@ -148,6 +190,8 @@ export function OrderDetailPanel({
           ) : null}
         </View>
       </Section>
+
+      <OrderTrackingSection order={order} load={loadTracking} />
     </View>
   );
 }

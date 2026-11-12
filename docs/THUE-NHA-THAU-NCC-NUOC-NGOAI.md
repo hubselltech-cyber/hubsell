@@ -60,8 +60,8 @@ mềm & hạ tầng); sửa khoản THU 99.000 ₫ ngày 17/09/2026 (test payOS)
 
 | NCC (pháp nhân trên hóa đơn) | Dịch vụ · nhịp | Trong danh sách NCCNN? | Cách khai | Căn cứ đã kiểm |
 |---|---|---|---|---|
-| **Anthropic, PBC** | Claude API (HQ đọc hóa đơn) + Claude Max — hàng tháng | ✅ MST 9000020034, đăng ký 06/03/2026 | **Công ty mua · không khai thay** | Dòng 97 danh sách. ✅ Đã kiểm hóa đơn API XSX3Y4AB-0001 (28/09/2026): ghi "VAT Registration: Vietnam VAT 9000020034", thu VAT Việt Nam 10% ($0,56 trên $5), Bill to có VN TIN 0111626360. ⏳ Tên Bill to còn là "TRUNGHIEUMMO's Individual Org" → anh đổi thành CÔNG TY TNHH CÔNG NGHỆ HUBSELL trong console Anthropic (Settings → Organization) |
-| **Hostinger PTE Ltd.** | Tên miền hubsell.tech — 1 năm, hết hạn 16/07/2027 | ✅ MST 9000000302 (27/05/2022) | **Công ty mua · không khai thay** | RDAP: registrar HOSTINGER operations UAB (IANA 1636). Thư Hostinger 16/07/2026, hóa đơn H_47006397: 182.900 + 5.230 ICANN + **28.220 thuế** = 216.350₫ → Hostinger đã thu thuế VN. ⚠️ Chưa thấy PDF hóa đơn — kiểm pháp nhân ghi trên PDF đúng là Hostinger PTE Ltd. |
+| **Anthropic, PBC** | Claude API (HQ đọc hóa đơn) + Claude Max — hàng tháng | ✅ MST 9000020034, đăng ký 06/03/2026 | **Công ty mua · không khai thay** | Dòng 97 danh sách. ✅ Đã kiểm hóa đơn API XSX3Y4AB-0001 (28/09/2026): ghi "VAT Registration: Vietnam VAT 9000020034", thu VAT Việt Nam 10% ($0,56 trên $5), Bill to có VN TIN 0111626360. ✅ 09/11/2026 kiểm lại: tổ chức console đã đổi tên HUBSELL TECHNOLOGY CO., LTD. + địa chỉ công ty; hóa đơn Claude Ultra K2U9SLOU-0010 ngày 07/11/2026 (200 + VAT VN 10% 22,22 = 222,22 USD, thẻ công ty Visa 5692) ghi "Đến Cong Ty TNHH Cong Nghe Hubsell" |
+| **Hostinger PTE Ltd.** | Tên miền hubsell.tech — 1 năm, hết hạn 16/07/2027 | ✅ MST 9000000302 (27/05/2022) | **Kỳ 2026 mua tài khoản cá nhân (anh nhớ, 09/11/2026) → không đưa lên HQ.** Gia hạn 2027 muốn vào công ty thì đổi tên + MST trước khi trả · không khai thay | RDAP: registrar HOSTINGER operations UAB (IANA 1636). Thư Hostinger 16/07/2026, hóa đơn H_47006397: 182.900 + 5.230 ICANN + **28.220 thuế** = 216.350₫ → Hostinger đã thu thuế VN. ⚠️ Chưa thấy PDF hóa đơn — kiểm pháp nhân ghi trên PDF đúng là Hostinger PTE Ltd. |
 | **Render** | Backend + worker SG — hàng tháng | ❌ | **Mua cá nhân · không khai** | Không có tên nào chứa "Render". 08/10 đã đổi billing tên cá nhân + thẻ cá nhân |
 | **Supabase** | Database Pro — hàng tháng | ❌ | **Mua cá nhân · không khai** | Không có. 08/10 đã đổi tên cá nhân, xóa Tax ID, thẻ cá nhân |
 | **Vercel** | Frontend app + landing — gói miễn phí | ❌ | **Mua cá nhân · không khai** | Không có. Tài khoản cá nhân, chưa trả tiền |
@@ -76,7 +76,17 @@ phiếu chi "chi hộ"), payOS.
 
 ## Việc còn treo
 
-1. ⏳ Anh đổi tên tổ chức Anthropic sang CÔNG TY TNHH CÔNG NGHỆ HUBSELL (giữ MST, thẻ công ty).
+1. ✅ Tên Anthropic đã là công ty (kiểm 09/11/2026). Mỗi tháng nạp hóa đơn Claude Ultra vào Hóa đơn đầu vào HQ + phiếu chi sổ quỹ; VAT 10% trên đó KHÔNG đưa vào [23] 01/GTGT (không phải hóa đơn điện tử VN). ✅ 09/11/2026 đã đặt Visa 5692 (thẻ công ty) làm mặc định trên claude.ai thay cho 9998 (thẻ đã trả các kỳ tên cá nhân). claude.ai không hiện tên trên từng thẻ; tên + MST trên hóa đơn lấy từ thông tin thanh toán của tài khoản (Bill to), không theo thẻ — 0009/0010 trả bằng 5692 đều đã ra tên công ty.
+   Đối chiếu 09/11/2026 toàn bộ hóa đơn claude.ai: K2U9SLOU-0001 → 0007 (11/06 → 05/10/2026, Claude
+   Pro → Max, cộng 533,97 USD) ghi Bill to "xwearhn@gmail.com's Organization", KHÔNG MST, trả Visa 9998
+   → KHÔNG đưa lên HQ (không đủ căn cứ chi phí công ty). Từ 0008 (07/10) đứng tên công ty + MST:
+   0008 đã có, 0009 (18/10, 100 USD extra usage, Visa 5692) + 0010 (07/11, 222,22 USD Ultra, Visa 5692)
+   em up lên HQ 09/11, chờ anh duyệt. API XSX3Y4AB-0001 (28/09) đã ở quý 3.
+   Đối chiếu sao kê MB 10/10→09/11 (09/11/2026): sửa số VND 0009/0010 theo số MB trừ thật
+   (2.598.003 / 5.691.061) + 2 phiếu chi "Phí giao dịch thẻ Visa nước ngoài" (34.294 / 75.122, khoản
+   mục Phí ngân hàng — MB tách dòng phí ≈1,32 %) + phiếu thu lãi 366. Quy tắc: khoản trả thẻ nước ngoài
+   ghi ĐÚNG số VND trên sổ phụ, phí thẻ ghi dòng riêng, không ghi phiếu "chênh lệch" gộp.
+   ⏳ Còn 157.602 lệch thuộc 23/09→09/10 — chờ sao kê đoạn đó.
 2. ⏳ Anh chuyển hoàn tạm ứng 4.107.563₫ + dọn HQ (xem mục chính sách ở đầu).
 3. ⏳ Hostinger: kiểm PDF hóa đơn ghi pháp nhân PTE Ltd. khi gia hạn 07/2027.
 4. ⏳ 28/10/2026 kiểm Supabase + Render kỳ tới trừ đúng thẻ cá nhân; 05/09/2027 Zoho; 20/09/2027

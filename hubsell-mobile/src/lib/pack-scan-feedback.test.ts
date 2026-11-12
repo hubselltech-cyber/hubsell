@@ -128,3 +128,14 @@ test("lỗi phía người dùng (thiếu quyền…) không bị coi là mất 
   assert.equal(f.title, "KHÔNG GHI ĐƯỢC");
   assert.equal(f.detail, "Bạn không có quyền Đơn hàng");
 });
+
+test("đơn hủy quét LẠI: vẫn còi hủy + ô Đơn hủy, nhưng nói rõ là kiện đã quét rồi", () => {
+  const first = flashOfResponse(res({ result: "REJECTED", reason: "CANCELLED" }));
+  const again = flashOfResponse(res({ result: "REJECTED", reason: "CANCELLED" }), true);
+  assert.equal(again.kind, "cancelled");
+  assert.equal(again.sound, "cancelled");
+  assert.equal(again.counter, "cancelled");
+  assert.match(again.detail ?? "", /đã quét rồi/);
+  assert.match(again.short, /đã quét rồi/);
+  assert.doesNotMatch(first.detail ?? "", /đã quét rồi/);
+});

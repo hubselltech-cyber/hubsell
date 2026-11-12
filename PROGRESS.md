@@ -5,6 +5,25 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 12/11 (mobile) — Anh gửi ảnh 7 ý khách xin cập nhật app mobile → KHẢO SÁT XONG, chưa code, chờ anh duyệt phương án
+
+- Phương án: `docs/MOBILE-GOP-Y-KHACH-DOT-2.md`.
+- Anh chốt: ý 2 (đổi chữ "Chờ đóng gói") KHÔNG làm; hành trình = của bên vận chuyển, ở cuối chi tiết đơn màn quét; "Chi phí vận hành" ngay dưới Gian hàng ở Tổng quan; lọc trạng thái ở popup Thống kê nhặt hàng (đơn mới, đang giao, thành công).
+- Đã thấy gốc 3 lỗi: nhãn chi tiết đơn không theo bước đóng gói; `PackScanScreen` đếm đơn hủy theo lượt quét; thông báo hủy ngang kiện đã bàn giao link `/warehouse/returns` không kèm mã đơn.
+- Backend cần thêm: route `GET /api/orders/:id/tracking` (Shopee + TikTok đã có hàm gọi sàn; Lazada chưa kiểm payload), `deliveredFrom/To` cho `pick-summary`, mã đơn trong link thông báo. Chi phí vận hành dùng `/api/expenses` sẵn có.
+- App đi OTA runtime 1.4.2 (toàn JS, `expo-clipboard` đã có).
+- **Anh: "Code từng phần trên local để anh xem giao diện" → ĐÃ CODE cả 6 phần trên local, CHƯA commit, CHƯA lên prod, CHƯA OTA** (docs mục 7):
+  - Backend: `services/order-tracking.ts` + `GET /api/orders/:id/tracking` (Shopee, TikTok; đệm RAM 10 phút); `pick-summary` nhận `deliveredFrom/To` (trần 31 ngày); link thông báo hủy kiện quay đầu kèm `?search=<mã>`.
+  - Mobile: `orderStatusBadge` dùng chung; `PackScanScreen` đếm theo đơn + danh sách đơn hủy; thông báo hủy mở thẳng chi tiết đơn (`?open=1`) + nút Sao chép mã; `PickSheet` 4 nhóm đơn + kỳ cho Đã giao; màn `/expenses` + ô Chi phí vận hành ở Tổng quan; `OrderTrackingSection` cuối chi tiết đơn.
+  - Web: Đối soát đơn hoàn đọc `?search=`.
+  - Anh góp ý khi xem local: ô Chi phí vận hành **cùng cỡ, thẳng hàng với ô Gian hàng**, chừa chỗ bên cạnh cho mục sau → đã sửa.
+  - Kiểm: tsc 2 nơi sạch, test mobile 62/62, backend 28 ca liên quan qua, giả lập web 390 sáng + tối. Chưa kiểm: hành trình với dữ liệu thật của sàn, máy thật, checklist DUA-APP mục 9.
+  - Launch config mới `backend-http-tracking-demo` (hành trình mẫu); tệp tạm `backend/scripts/_tmp_seed_mobile_dot2.ts` không commit.
+- **Anh xem local hỏi "chuẩn bị hàng mà chưa in đơn thì thuộc phần nào?" → popup Thống kê bản 4 nhóm bỏ sót; ĐÃ SỬA thành 6 nhóm** theo dây chuyền (thêm Chưa in phiếu, Đã đóng gói; chip đang chọn tự trượt vào tầm nhìn) — docs mục 9. Không đổi backend.
+- **Apple IAP (12/11):** anh hỏi đặt dòng "mã giảm giá trên web" trong app → không được (3.1.1(a)); em đọc phụ lục hợp đồng Apple về Việt Nam, ghi ở docs APPLE-IAP. Anh: **chưa có kế toán, phần này tạm thời chưa làm gì.**
+- **Anh thử máy thật 1.4.2: quét đóng gói lần hai vào một đơn bị đơ, đơn hủy quét lần hai báo không thấy đơn → ĐÃ SỬA trên local** (docs mục 8): viết lại `pack-scan-gate.ts` theo "lượt đưa kiện" (cờ `armed`, verdict `hold`, `resolved` trả first / alias / repeat), bỏ khoảng im 10 giây ở `PackScanScreen`; đơn hủy quét lại ghi rõ "đã quét rồi". Không chỉnh ngưỡng. Test mobile 71/71 (3 ca tái hiện lỗi đỏ trên bản cũ). Chưa thử camera + tem thật.
+
+---
 ## Phiên 12/11 (kho) — Anh: "lên phương án khảo sát phần Quản lý kho bản chuẩn quốc tế… hiển thị, thuật toán tính, phạm vi tác động tới kiểm kê, nhập/xuất" → KHẢO SÁT XONG, chưa code, chưa đo prod
 
 - Báo cáo: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md`. Ba luồng: tài liệu chính thức 9 hệ thống quốc tế, rà backend (mọi chỗ ghi / đọc sổ, mọi chỗ ghi `shippingStatus`), rà web + mobile (16 + 2 tệp, 10 nhóm câu chữ sẽ sai nghĩa).
@@ -27,6 +46,8 @@
   - ⏳ Trước khi push: chạy tay trên prod 3 lệnh ADD COLUMN + CREATE INDEX CONCURRENTLY (docs 13.9) — cần anh gật.
 - Anh bấm commit → `7e1eaa64` trên nhánh riêng `kho-chuan-quoc-te-lat-1` (không để ở master khi prod chưa chuẩn bị: push nhầm là migration tự dựng chỉ mục trên bảng đơn 500 MB).
 - **Anh: "Chuẩn bị prod" → ĐÃ LÀM ~15:05 12/11 qua Supabase SQL Editor (docs 13.10):** thêm 5 cột bằng ba giao dịch riêng có `lock_timeout 3s` (thành công ngay lần đầu); `CREATE INDEX CONCURRENTLY "Order_stock_committed_idx"` xong dưới 10 giây, hợp lệ, 8 kB; câu quét bù trên prod đi qua chỉ mục. Nhánh đã gộp vào master (fast-forward). **CHƯA push** — anh push; sau ~2 phút soi log `[stock-committed]`.
+- **Anh: "Em push luôn lên nhé" → ĐÃ PUSH `5b17d56b..6bf5eaf6` ~15:17 12/11.** `/health` đúng bản sau 120 giây; migration hoàn tất. 15:22 ngày chuyển xong 3.776 đơn; đối chiếu lần đầu: bộ đếm 520 = tính lại từ đơn 520 = theo "Chờ giao" 520, lệch 0 mã / 0 vị trí, 3.778 đơn đang giữ của 52 shop, 0 đơn đã hủy còn giữ, 0 bộ đếm âm (docs 13.11). Chưa đọc log Render, chưa thấy lượt quét bù / bàn giao thật. ⏳ soi dòng `stock-committed-check` mỗi ngày tới ~19/11 (bảng chỉ giữ lần cuối), lệch cứng 0 đủ 7 lần mới sang lát 2.
+- Anh: "Đặt lịch soi" → lịch `kho-chuan-quoc-te-soi-doi-chieu` chạy 16:00 mỗi ngày 13 → 19/11 (chỉ đọc 2 câu SELECT trên Supabase, ghi một dòng vào docs mục 13.12, báo anh; đủ 7 lần lệch 0 thì trình lát 2, không tự làm). Lịch chỉ chạy khi app Claude đang mở.
 - Thấy kèm (chỉ đọc): Supabase gắn nhãn "Exceeding usage limits" cho tổ chức — vượt hạn mức gói Pro kỳ 27/10 → 27/11, đang bật spend cap; chưa rõ mục nào vượt. ⏳ anh xem.
 
 ---

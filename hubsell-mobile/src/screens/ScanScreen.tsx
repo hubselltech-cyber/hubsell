@@ -94,6 +94,8 @@ export function ScanScreen({
   const [torch, setTorch] = useState(false);
   const [busy, setBusy] = useState(false);
   const [panel, setPanel] = useState<Panel | null>(null);
+  /** id đơn đã vuốt xuống trong hộp chi tiết → mới tải Hành trình vận chuyển (1 call sàn). */
+  const [trackingFor, setTrackingFor] = useState<string | null>(null);
   const [manual, setManual] = useState("");
   const [damageNote, setDamageNote] = useState("");
   const scanLock = useRef(false);
@@ -300,8 +302,21 @@ export function ScanScreen({
 
         {panel?.type === "order" ? (
           detail ? (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <OrderDetailPanel order={panel.order} payment={panel.payment} />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              // Vuốt xuống quá một đoạn = muốn đọc tiếp → mới hỏi sàn hành trình của đơn này.
+              scrollEventThrottle={100}
+              onScroll={(e) => {
+                if (e.nativeEvent.contentOffset.y > 24 && trackingFor !== panel.order.id) {
+                  setTrackingFor(panel.order.id);
+                }
+              }}
+            >
+              <OrderDetailPanel
+                order={panel.order}
+                payment={panel.payment}
+                loadTracking={trackingFor === panel.order.id}
+              />
               <ActionButton
                 label="Quét đơn khác"
                 icon="scan-outline"

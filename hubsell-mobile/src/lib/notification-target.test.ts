@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveNotificationTarget, type NotificationTarget } from "./notification-target";
+import { notificationOrderCode, resolveNotificationTarget, type NotificationTarget } from "./notification-target";
 
 /**
  * BẢNG RÀ: mọi link backend đang ghi vào Notification (grep `link:` / `href:`
@@ -10,7 +10,13 @@ import { resolveNotificationTarget, type NotificationTarget } from "./notificati
  *
  * Chạy (không cần RN): từ backend/  npx tsx --test ../hubsell-mobile/src/lib/notification-target.test.ts
  */
-const CASES: Array<{ name: string; type: string; link: string | null; want: NotificationTarget | null }> = [
+const CASES: Array<{
+  name: string;
+  type: string;
+  link: string | null;
+  title?: string;
+  want: NotificationTarget | null;
+}> = [
   // ── Đơn hàng (services/new-order-notify.ts, integrations/cancel-request.ts) ──
   { name: "đơn mới gom đợt", type: "order_new", link: "/orders", want: { kind: "orders" } },
   { name: "đơn hỏa tốc", type: "order_express", link: "/orders?search=2510ABC", want: { kind: "orders", search: "2510ABC" } },
@@ -19,7 +25,27 @@ const CASES: Array<{ name: string; type: string; link: string | null; want: Noti
     name: "đơn đã chuẩn bị bị hủy",
     type: "order_cancelled",
     link: "/orders?search=261023CTJDFRH4",
-    want: { kind: "orders", search: "261023CTJDFRH4" },
+    want: { kind: "orders", search: "261023CTJDFRH4", openOrder: true },
+  },
+  {
+    name: "đơn đã bàn giao bị hủy (link mới kèm mã) → mở đúng đơn, không nhảy Đơn hoàn trơn",
+    type: "order_cancelled",
+    link: "/warehouse/returns?search=261112ABCDEF",
+    want: { kind: "orders", search: "261112ABCDEF", openOrder: true },
+  },
+  {
+    name: "đơn đã bàn giao bị hủy (thông báo CŨ, link trơn) → đọc mã ở tiêu đề",
+    type: "order_cancelled",
+    link: "/warehouse/returns",
+    title: "Khách đã hủy đơn đã chuẩn bị hàng 583920174650123456",
+    want: { kind: "orders", search: "583920174650123456", openOrder: true },
+  },
+  {
+    name: "đơn bị hủy nhưng không đọc được mã → về Đơn hoàn như cũ",
+    type: "order_cancelled",
+    link: "/warehouse/returns",
+    title: "Thông báo không theo mẫu",
+    want: { kind: "warehouse", tab: "returns" },
   },
   { name: "hoàn hàng 3 sàn", type: "return", link: "/warehouse/returns", want: { kind: "warehouse", tab: "returns" } },
   {
@@ -95,7 +121,7 @@ const CASES: Array<{ name: string; type: string; link: string | null; want: Noti
 
 for (const c of CASES) {
   test(c.name, () => {
-    assert.deepEqual(resolveNotificationTarget({ type: c.type, link: c.link }), c.want);
+    assert.deepEqual(resolveNotificationTarget({ type: c.type, link: c.link, title: c.title }), c.want);
   });
 }
 
@@ -104,4 +130,18 @@ test("link có dấu / thừa và query lạ vẫn đọc được", () => {
     kind: "orders",
     search: "A1",
   });
+});
+
+test("mã đơn của thông báo: lấy từ ?search= hoặc cuối tiêu đề thông báo hủy", () => {
+  assert.equal(notificationOrderCode({ type: "order_express", link: "/orders?search=2510ABC" }), "2510ABC");
+  assert.equal(notificationOrderCode({ type: "return", link: "/warehouse/returns" }), null);
+  assert.equal(
+    notificationOrderCode({
+      type: "order_cancelled",
+      link: "/warehouse/returns",
+      title: "Sàn đã hủy đơn đã chuẩn bị hàng 2611ABCXYZ",
+    }),
+    "2611ABCXYZ"
+  );
+  assert.equal(notificationOrderCode({ type: "cancel_request", link: "/orders?cancelRequested=1" }), null);
 });

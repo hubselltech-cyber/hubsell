@@ -92,7 +92,7 @@ Vì sao không dùng hệ số: 4 con số đã báo là số làm tròn kiểu 
 ## 6. Rủi ro
 
 - **Khách cãi "đơn hủy cũng tính tiền".** Giữ được vì chi phí API như nhau và đúng định nghĩa trần, nhưng phải ghi rõ trước lúc mua (bước 4 mục 2). Anh muốn bỏ đơn hủy thì đổi một điều kiện SQL, nhưng khi đó thanh mức dùng ở trang phải đếm khác các gói khác.
-- **Hạn mức số tiền một lệnh payOS/ngân hàng chưa kiểm** — 50.000 đơn × 12 tháng ≈ 32,5 tr. Kiểm bằng giao dịch thật đầu tiên trên mức 10 tr.
+- **Hạn mức số tiền một lệnh payOS/ngân hàng** — ✅ 11/11/2026 ~22:00 anh thử trên prod: payOS TẠO ĐƯỢC mã cho **64.950.000 ₫** (Enterprise 100.000 đơn × 12 tháng, mã đơn 1794409208172704, nội dung `HS ENTERPRISE 08172704`) → phía payOS không chặn ở mức này. CHƯA kiểm: tiền thật mức lớn có chuyển lọt không — còn tùy hạn mức chuyển khoản của app ngân hàng phía khách.
 - **Apple 3.1.3(b)**: không đổi so với hôm nay (Enterprise vốn mua ngoài app). Không thêm chữ nào vào iOS.
 - **Bộ nhớ đệm 60 giây** (`getOwnerPlanState`): khách trả xong mở ngay vì `invalidatePlanState` đã gọi sau thanh toán; HQ bấm Miễn cũng phải gọi. Web nhiều máy thì chậm tối đa 60 giây — chấp nhận.
 - **Tháng có cả Enterprise lẫn gói khác** (hạ xuống Scale giữa tháng): phí vượt chỉ tính trên phần thời gian Enterprise; phần Scale theo luật trần cũ. Hiếm, chấp nhận.

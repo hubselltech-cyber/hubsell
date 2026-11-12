@@ -5,7 +5,7 @@ import { resolveNotificationTarget, type NotificationTarget } from "@/lib/notifi
 /**
  * ĐÍCH CÓ KIỂU → MÀN APP (bước 2 của luồng thông báo; bước 1 ở notification-target.ts).
  * Một chỗ duy nhất biết tên route + tên tham số của từng màn:
- *   orders          → tab Đơn hàng  ?search= ?status= ?cancelRequested=1
+ *   orders          → tab Đơn hàng  ?search= ?status= ?cancelRequested=1 ?open=1 (mở hộp chi tiết đơn)
  *   warehouse       → tab Kho       ?tab=stock|returns
  *   finance / ads   → Trang chủ     ?page=1|2 (+ platform, channelId, campaignId, needsAction cho Quảng cáo)
  *   tiktok_campaign → /tiktok-campaign ?id= ?tab=videos|history (kỳ xem màn tự mặc định 7 ngày)
@@ -35,6 +35,7 @@ export function hrefForTarget(
       if (t.search) p.search = t.search;
       if (t.status) p.status = t.status;
       if (t.cancelRequested) p.cancelRequested = "1";
+      if (t.openOrder) p.open = "1";
       return { kind: "screen", href: href("/(admin)/orders", p) };
     }
     case "warehouse":
@@ -63,7 +64,12 @@ export function hrefForTarget(
  * Thông báo (dòng chuông hoặc data của tin đẩy) → nơi cần tới. null = không có
  * màn trên app (dòng chỉ để đọc).
  */
-export function destinationFor(n: { id?: string | null; type: string; link: string | null | undefined }): NotificationDestination | null {
+export function destinationFor(n: {
+  id?: string | null;
+  type: string;
+  link: string | null | undefined;
+  title?: string | null;
+}): NotificationDestination | null {
   const target = resolveNotificationTarget(n);
   if (!target) return null;
   return hrefForTarget(target, n.id ?? undefined);

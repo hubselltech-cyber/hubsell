@@ -17,6 +17,7 @@ import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
 import { getLabelArchiveSpool, getLabelStore, loadSavedLabel, LABEL_ARCHIVE_DAYS } from "../services/label-archive";
 import { summarizePickLines } from "../lib/pick-summary";
+import { parseDateRange } from "../lib/date-range";
 import { attachItemImages } from "../services/item-images";
 import {
   CARRIER_LABEL,
@@ -49,6 +50,7 @@ import {
   splitByRunningBatches,
 } from "../services/fulfillment/confirm-skip";
 import { CancelDecideError, decideCancelRequest } from "../services/cancel-request-decide";
+import { OrderTrackingError, getOrderTrackingForOwner } from "../services/order-tracking";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -67,6 +69,9 @@ import {
 const router = Router();
 
 const VALID_STATUSES = Object.values(ShippingStatus);
+
+/** Kỳ dài nhất của thống kê sản phẩm theo ngày giao thành công (mặc định tự chọn: một tháng). */
+const PICK_DELIVERED_MAX_DAYS = 31;
 
 /** Giá trị có phải trạng thái vận chuyển hợp lệ không. */
 function isStatus(value: unknown): value is ShippingStatus {
@@ -489,9 +494,21 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
 // ĐÚNG bộ lọc đang xem trên bảng (chip Chờ đóng gói, sàn, hãng, loại đơn, từ khóa) và
 // trả ĐỦ mọi SKU. Gom bằng SQL nên số dòng về RAM chỉ bằng số SKU, không theo số đơn.
 // ============================================================
+//
+// 12/11/2026 — app mobile xem thống kê sản phẩm của cả đơn ĐÃ GIAO: thêm kỳ
+// ?deliveredFrom=&deliveredTo= (yyyy-mm-dd, giờ VN, lọc theo deliveredAt — chỉ mục
+// channelId + deliveredAt). Không có kỳ thì "Đã giao" là cả lịch sử: số vô nghĩa và
+// quét rất rộng, nên kỳ dài quá PICK_DELIVERED_MAX_DAYS bị từ chối.
 router.get("/pick-summary", async (req: AuthRequest, res, next) => {
   try {
-    const where = ordersWhere(req);
+    const delivered = parseDateRange({ from: req.query.deliveredFrom, to: req.query.deliveredTo });
+    if (delivered && delivered.lte.getTime() - delivered.gte.getTime() > PICK_DELIVERED_MAX_DAYS * 86_400_000) {
+      res.status(400).json({ error: `Chỉ xem được tối đa ${PICK_DELIVERED_MAX_DAYS} ngày một lần` });
+      return;
+    }
+    const where: Prisma.OrderWhereInput = delivered
+      ? { AND: [ordersWhere(req), { deliveredAt: delivered }] }
+      : ordersWhere(req);
     const groupKeys: ["channelSku", "productName"] = ["channelSku", "productName"];
     const [orderCount, lines, expressLines] = await Promise.all([
       prisma.order.count({ where }),
@@ -571,6 +588,27 @@ router.post("/:id/cancel-request/decide", async (req: AuthRequest, res, next) =>
     res.json(result);
   } catch (err) {
     if (err instanceof CancelDecideError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+// GET /api/orders/:id/tracking — HÀNH TRÌNH VẬN CHUYỂN của một đơn, hỏi sàn theo yêu cầu
+// (12/11/2026, cuối hộp Chi tiết đơn hàng trên app). Tiết chế số call + đệm 10 phút ở
+// services/order-tracking.ts. Sàn lỗi → 502 kèm câu để app hiện nút Thử lại.
+router.get("/:id/tracking", async (req: AuthRequest, res, next) => {
+  try {
+    res.json(
+      await getOrderTrackingForOwner({
+        ownerId: req.ownerId!,
+        allowedChannelIds: req.allowedChannelIds,
+        orderId: req.params.id,
+      })
+    );
+  } catch (err) {
+    if (err instanceof OrderTrackingError) {
       res.status(err.status).json({ error: err.message });
       return;
     }

@@ -189,7 +189,7 @@ describe("orderCancelledMessage", () => {
     expect(m.body).toContain("Lý do: Giao gói hàng thất bại.");
     expect(m.body).toContain("Chờ hàng về");
     expect(m.body).not.toContain("rút kiện khỏi lô giao");
-    expect(m.link).toBe("/warehouse/returns");
+    expect(m.link).toBe("/warehouse/returns?search=586686865006495180");
   });
 
   it("Lazada không nói ai hủy: kiện quay đầu → 'Sàn'; chưa bàn giao → 'Khách' + câu rút kiện + link đơn như cũ", () => {
