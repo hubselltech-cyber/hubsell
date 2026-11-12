@@ -1,25 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
 import { Ionicons } from "@expo/vector-icons";
 import { scanPacking } from "@/api/orders";
 import { ApiError } from "@/api/client";
-import { CameraPermissionPrompt, CircleControl, SCANNABLE } from "@/components/ScanChrome";
+import { CameraPermissionPrompt, SCANNABLE } from "@/components/ScanChrome";
+import { FLASH_STYLE, ScanFlashOverlay, vibrateScan } from "@/components/ScanFlash";
+import { ScanTopBar } from "@/components/ScanTopBar";
 import { groupVN } from "@/lib/format";
 import { PackScanGate } from "@/lib/pack-scan-gate";
-import {
-  flashOfError,
-  flashOfResponse,
-  isNetworkFailure,
-  type PackFlash,
-  type PackFlashKind,
-  type PackHaptic,
-} from "@/lib/pack-scan-feedback";
+import { flashOfError, flashOfResponse, isNetworkFailure, type PackFlash } from "@/lib/pack-scan-feedback";
 import { playScanSound } from "@/lib/scan-sounds";
 import { useKeyboardLift } from "@/lib/useKeyboardLift";
 import { TABULAR } from "@/theme/tokens";
@@ -49,32 +42,6 @@ const REQUEST_TIMEOUT_MS = 8000;
  */
 const UNKNOWN_GRACE_MS = 700;
 
-/** Màu màn báo — cố định, không theo giao diện sáng / tối (phải nhận ra từ khóe mắt). */
-const FLASH_STYLE: Record<
-  PackFlashKind,
-  { bg: string; fg: string; sub: string; icon: keyof typeof Ionicons.glyphMap; dot: string }
-> = {
-  ok: { bg: "rgba(5,150,105,0.95)", fg: "#ffffff", sub: "#d1fae5", icon: "checkmark-circle", dot: "#34d399" },
-  caution: { bg: "rgba(245,158,11,0.96)", fg: "#1c1917", sub: "#451a03", icon: "warning", dot: "#fbbf24" },
-  dup: { bg: "rgba(245,158,11,0.96)", fg: "#1c1917", sub: "#451a03", icon: "copy", dot: "#fbbf24" },
-  cancelled: { bg: "rgba(220,38,38,0.97)", fg: "#ffffff", sub: "#fee2e2", icon: "ban", dot: "#f87171" },
-  blocked: { bg: "rgba(190,18,60,0.96)", fg: "#ffffff", sub: "#ffe4e6", icon: "close-circle", dot: "#fb7185" },
-  failed: { bg: "rgba(190,18,60,0.96)", fg: "#ffffff", sub: "#ffe4e6", icon: "alert-circle", dot: "#fb7185" },
-};
-
-function vibrate(kind: PackHaptic) {
-  if (Platform.OS === "web") return;
-  const N = Haptics.NotificationFeedbackType;
-  const fire = (t: Haptics.NotificationFeedbackType) => void Haptics.notificationAsync(t).catch(() => {});
-  if (kind === "success") fire(N.Success);
-  else if (kind === "warning") fire(N.Warning);
-  else {
-    fire(N.Error);
-    // Đơn hủy: nhịp thứ hai để tay cầm máy cũng nhận ra, không lẫn với lỗi thường.
-    if (kind === "errorTwice") setTimeout(() => fire(N.Error), 350);
-  }
-}
-
 export function PackScanScreen({
   embedded = false,
   onClose,
@@ -88,7 +55,6 @@ export function PackScanScreen({
 }) {
   useKeepAwake(); // gói hàng cả ca — không để màn hình tự tắt
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const isWeb = Platform.OS === "web";
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
@@ -133,7 +99,7 @@ export function PackScanScreen({
   const announce = useCallback((f: PackFlash, orderId?: string) => {
     if (!alive.current) return;
     playScanSound(f.sound);
-    vibrate(f.haptic);
+    vibrateScan(f.haptic);
     if (f.counter) {
       const key = f.counter;
       const once = `${key}:${orderId ?? f.code}`;
@@ -244,8 +210,6 @@ export function PackScanScreen({
     }
   }
 
-  const fs = flash ? FLASH_STYLE[flash.kind] : null;
-
   return (
     <View ref={rootRef} collapsable={false} className="flex-1 bg-slate-950">
       {/* Nền: camera thật trên máy — placeholder trên web (giả lập) */}
@@ -275,124 +239,18 @@ export function PackScanScreen({
         />
       ) : null}
 
-      {/* MÀN BÁO — phủ kín vùng camera, tự tắt, không nhận chạm (không có gì để bấm). */}
-      {flash && fs ? (
-        <View
-          pointerEvents="none"
-          className="absolute inset-0 items-center justify-center px-6"
-          style={{ backgroundColor: fs.bg }}
-          accessibilityLiveRegion="assertive"
-          accessibilityLabel={`${flash.title}. ${flash.code}. ${flash.detail ?? ""}`}
-        >
-          <Ionicons name={fs.icon} size={92} color={fs.fg} />
-          <Text
-            className="mt-3 text-center text-[30px] font-extrabold leading-[36px]"
-            style={{ color: fs.fg }}
-          >
-            {flash.title}
-          </Text>
-          <Text
-            className="mt-2 text-center text-[19px] font-bold"
-            style={[TABULAR, { color: fs.fg }]}
-            numberOfLines={1}
-          >
-            {flash.code}
-          </Text>
-          {flash.meta ? (
-            <Text className="mt-1 text-center text-sm font-medium" style={{ color: fs.sub }} numberOfLines={1}>
-              {flash.meta}
-            </Text>
-          ) : null}
-          {flash.detail ? (
-            <Text
-              className="mt-3 text-center text-[17px] font-semibold leading-6"
-              style={{ color: fs.fg }}
-            >
-              {flash.detail}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
+      <ScanFlashOverlay flash={flash} />
 
-      {/* Thanh trên + công tắc + khung ngắm */}
-      <View
-        pointerEvents="box-none"
-        className="absolute inset-0"
-        style={{ paddingTop: insets.top + 12 }}
-      >
-        <View className="flex-row items-center justify-between px-4">
-          <View className="flex-1 flex-row items-center gap-2.5 pr-2">
-            {embedded && onClose ? (
-              <Pressable
-                className="active:opacity-70"
-                onPress={() => {
-                  Keyboard.dismiss();
-                  onClose();
-                }}
-                hitSlop={6}
-                accessibilityRole="button"
-                accessibilityLabel="Đóng màn quét"
-              >
-                <CircleControl>
-                  <Ionicons name="close" size={22} color="#fff" />
-                </CircleControl>
-              </Pressable>
-            ) : !embedded && router.canGoBack() ? (
-              <Pressable
-                className="active:opacity-70"
-                onPress={() => router.back()}
-                hitSlop={6}
-                accessibilityRole="button"
-                accessibilityLabel="Quay lại"
-              >
-                <CircleControl>
-                  <Ionicons name="arrow-back" size={20} color="#fff" />
-                </CircleControl>
-              </Pressable>
-            ) : null}
-            <View className="flex-1">
-              {/* Đổ bóng chữ — nền camera có thể SÁNG (tem trắng, kho đèn mạnh) */}
-              <Text
-                className="text-lg font-bold text-white"
-                style={{ textShadowColor: "rgba(0,0,0,0.6)", textShadowRadius: 4 }}
-              >
-                Quét đóng gói
-              </Text>
-              <Text
-                className="text-[11px] text-slate-200"
-                style={{ textShadowColor: "rgba(0,0,0,0.6)", textShadowRadius: 3 }}
-                numberOfLines={1}
-              >
-                Quét liên tục từng kiện đã gói — không cần bấm
-              </Text>
-            </View>
-          </View>
-          {!isWeb ? (
-            <Pressable
-              className="active:opacity-70"
-              onPress={() => setTorch((t) => !t)}
-              accessibilityRole="button"
-              accessibilityLabel={torch ? "Tắt đèn" : "Bật đèn"}
-            >
-              {torch ? (
-                <View className="h-10 w-10 items-center justify-center rounded-full bg-amber-400">
-                  <Ionicons name="flash" size={18} color="#0f172a" />
-                </View>
-              ) : (
-                <CircleControl>
-                  <Ionicons name="flash-outline" size={18} color="#fff" />
-                </CircleControl>
-              )}
-            </Pressable>
-          ) : null}
-        </View>
-        {modeSwitch}
-        {!isWeb && !flash ? (
-          <View className="flex-1 items-center justify-center" style={{ paddingBottom: 150 }}>
-            <View className="h-40 w-72 rounded-2xl border-2 border-white/80" />
-          </View>
-        ) : null}
-      </View>
+      <ScanTopBar
+        title="Quét đóng gói"
+        subtitle="Quét liên tục từng kiện đã gói — không cần bấm"
+        embedded={embedded}
+        onClose={onClose}
+        modeSwitch={modeSwitch}
+        torch={torch}
+        onToggleTorch={() => setTorch((t) => !t)}
+        showViewfinder={!flash}
+      />
 
       {/* DẢI ĐÁY cố định (không phải popup): kết quả gần nhất + ba ô đếm + ô gõ tay.
           Người gói nhìn kiện, lỡ mất màn báo thì ở đây vẫn còn dấu. */}

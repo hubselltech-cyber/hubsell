@@ -98,15 +98,16 @@ export function CameraPermissionPrompt({
 }
 
 /** Hai việc của nút QR giữa thanh tab (anh Trung chốt 05/11). */
-export type ScanTabMode = "detail" | "pack";
+export type ScanTabMode = "detail" | "batch" | "pack";
 
 const SCAN_TAB_MODES: { key: ScanTabMode; label: string }[] = [
   { key: "detail", label: "Xem đơn" },
+  { key: "batch", label: "Quét nhiều" },
   { key: "pack", label: "Đóng gói" },
 ];
 
 /**
- * Công tắc "Xem đơn · Đóng gói" nổi trên camera ở tab QR giữa. Khu nhân viên không có
+ * Công tắc "Xem đơn · Quét nhiều · Đóng gói" nổi trên camera ở tab QR giữa. Khu nhân viên không có
  * tab Đơn hàng nên đây là lối vào Quét đóng gói của người gói hàng. Nền đen mờ + chữ
  * trắng vì cảnh camera có thể sáng (tem trắng, kho đèn mạnh).
  */
@@ -141,7 +142,8 @@ export function ScanModeSwitch({
               key={active ? "on" : "off"}
               style={{
                 borderRadius: 999,
-                paddingHorizontal: 18,
+                // 14 (trước 18): ba viên phải vừa máy 320 px.
+                paddingHorizontal: 14,
                 paddingVertical: 7,
                 backgroundColor: active ? "#ffffff" : "transparent",
               }}

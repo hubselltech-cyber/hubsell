@@ -1558,6 +1558,10 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
 
     let { order, ambiguous } = await findByCode();
     let resynced = false;
+    // ?fast=1 (app mobile, chế độ Quét nhiều 12/11/2026): CHỈ đọc DB, không hỏi sàn lần nào.
+    // Quét liên tục cả xấp kiện mà tem nào cũng có mã phân tuyến (không ra đơn) — để nguyên
+    // thì mỗi mã lạ kích một lượt đồng bộ mọi gian, vừa chậm vừa tốn call sàn.
+    const fast = req.query.fast === "1";
 
     // LÁT C (29/10/2026, docs/DON-HOAN-VA-SAO-KE.md mục 8): đơn thấy nhưng trục hoàn
     // còn NONE mà kiện ĐÃ RỜI SHOP (đang giao / đã giao) → hỏi sàn đúng đơn này một
@@ -1565,7 +1569,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
     // "Không hoàn" trong khi webhook còn nằm hàng đợi / lượt quét chưa tới nhịp.
     // Chỉ cho lượt quét đơn hoàn (không phải ?detail=1 xem chi tiết).
     let askedPlatform = false;
-    if (order && !ambiguous && req.query.detail !== "1" && needsReturnRefresh(order)) {
+    if (order && !ambiguous && !fast && req.query.detail !== "1" && needsReturnRefresh(order)) {
       const channel = await prisma.channel.findUnique({ where: { id: order.channelId } });
       if (channel) {
         const r = await refreshReturnStateForOrder(channel, order);
@@ -1577,7 +1581,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
     }
 
     // 3) TỰ CHỮA LÀNH — tra trượt thì hỏi thẳng sàn rồi tra lại một lần.
-    if (!order && !ambiguous) {
+    if (!order && !ambiguous && !fast) {
       const now = Date.now();
       const last = lastLookupSyncAt.get(req.ownerId!) ?? 0;
       if (now - last > LOOKUP_SYNC_COOLDOWN_MS) {

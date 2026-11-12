@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { useFocusEffect, useRouter, type Href } from "expo-router";
 import { getItem, setItem } from "@/auth/storage";
 import { ScanModeSwitch, type ScanTabMode } from "@/components/ScanChrome";
+import { BatchScanScreen } from "@/screens/BatchScanScreen";
 import { PackScanScreen } from "@/screens/PackScanScreen";
 import { ScanScreen } from "@/screens/ScanScreen";
 
@@ -10,11 +11,13 @@ import { ScanScreen } from "@/screens/ScanScreen";
 const MODE_KEY = "scanTabMode";
 
 /**
- * Nội dung của nút QR GIỮA thanh tab — hai việc, đổi bằng công tắc nổi trên camera
- * (anh Trung chốt 05/11):
- *   Xem đơn  — quét bất kỳ đơn nào để xem CHI TIẾT ĐƠN HÀNG (04/10);
- *   Đóng gói — quét liên tục các kiện đã gói → đơn sang "Đã đóng gói". Khu nhân viên
- *              không có tab Đơn hàng nên đây là lối vào của người gói hàng.
+ * Nội dung của nút QR GIỮA thanh tab — ba việc, đổi bằng công tắc nổi trên camera
+ * (anh Trung chốt 05/11; Quét nhiều thêm 12/11):
+ *   Xem đơn    — quét bất kỳ đơn nào để xem CHI TIẾT ĐƠN HÀNG (04/10);
+ *   Quét nhiều — quét liên tục một xấp kiện rồi xem thống kê của đúng xấp đó (số kiện,
+ *                tổng hàng theo SKU, đơn hủy lẫn trong lô). Chỉ xem, không đổi đơn;
+ *   Đóng gói   — quét liên tục các kiện đã gói → đơn sang "Đã đóng gói". Khu nhân viên
+ *                không có tab Đơn hàng nên đây là lối vào của người gói hàng.
  * Vào được tab này tức là đã có quyền Đơn hàng (layout hai khu chỉ hiện nút QR khi có),
  * đúng quyền cả hai API cần.
  *
@@ -38,7 +41,7 @@ export function ScanDetailTab({ homeHref }: { homeHref: Href }) {
     let stale = false;
     getItem(MODE_KEY)
       .then((v) => {
-        if (!stale) setMode(v === "pack" ? "pack" : "detail");
+        if (!stale) setMode(v === "pack" || v === "batch" ? v : "detail");
       })
       .catch(() => {
         if (!stale) setMode("detail");
@@ -59,6 +62,8 @@ export function ScanDetailTab({ homeHref }: { homeHref: Href }) {
 
   return mode === "pack" ? (
     <PackScanScreen embedded onClose={onClose} modeSwitch={modeSwitch} />
+  ) : mode === "batch" ? (
+    <BatchScanScreen onClose={onClose} modeSwitch={modeSwitch} />
   ) : (
     <ScanScreen embedded mode="detail" onClose={onClose} modeSwitch={modeSwitch} />
   );

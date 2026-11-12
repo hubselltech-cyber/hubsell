@@ -1,6 +1,7 @@
 Bản 1.4.3:
-• Chi tiết đơn có Hành trình vận chuyển (Shopee, TikTok) và nút sao chép mã đơn, mã vận đơn.
-• Chi phí vận hành: nhập tiền đóng gói, lương, mặt bằng ngay trên app, ô mới ở Tổng quan.
-• Thống kê sản phẩm theo từng nhóm đơn: Chờ xử lý, Chưa in phiếu, Chờ đóng gói, Đã đóng gói, Đang giao, Đã giao.
-• Quét đóng gói: quét lại một kiện luôn báo đã quét; xem được danh sách đơn hủy đã quét.
-• Thông báo đơn bị hủy mở thẳng đúng đơn đó.
+• Quét nhiều (nút quét giữa): quét cả xấp kiện rồi xem tổng hàng theo sản phẩm, SKU của đúng xấp đó; đơn đã hủy lẫn trong lô báo còi.
+• Chi tiết đơn có Hành trình vận chuyển (Shopee, TikTok), nút sao chép mã đơn, mã vận đơn.
+• Chi phí vận hành: nhập tiền đóng gói, lương, mặt bằng ngay trên app.
+• Thống kê sản phẩm theo từng nhóm đơn, từ Chờ xử lý tới Đã giao.
+• Quét đóng gói: quét lại một kiện luôn báo đã quét; xem được danh sách đơn hủy.
+• Thông báo đơn hủy mở thẳng đúng đơn.

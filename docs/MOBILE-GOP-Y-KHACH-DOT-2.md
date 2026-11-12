@@ -176,3 +176,25 @@ Anh Trung: "Dọn dẹp sạch code thừa, đảm bảo cấu trúc tree chuyê
 **Vì sao là bản kho chứ không OTA:** toàn bộ thay đổi là JS nên OTA runtime 1.4.2 cũng tới được khách; anh chọn nộp kho. Hệ quả: `version` lên 1.4.3 = runtime OTA mới 1.4.3; khách còn ở 1.4.2 chỉ nhận thay đổi khi cập nhật từ kho.
 
 **Checklist mục 9 của DUA-APP — nói rõ phần bỏ qua:** ca 1–5 (Tài chính) không chạy lại, mã Tài chính không đổi; ca 6–7 chỉ soi các màn mới / sửa trên giả lập web 390 px sáng + tối, ô Tổng quan đo thêm ở 320; ca 8 (quét đóng gói) chỉ thử gõ tay trên web — **chưa thử camera + tem thật dù luật chống bắn lặp vừa viết lại**; ca 9 đối chiếu bằng tổng các nhóm (172 đơn), chưa so với popup web; ca 10 không chạy (mã Tồn kho không đổi).
+
+## 11. Quét nhiều đơn — chế độ thứ ba của tab QR giữa (12/11 khuya)
+
+**Nguồn.** Một khách đang dùng ShipXanh nhắn anh Trung: "phần xem đơn để chế độ quét nhiều đơn xong xem thống kê thì sẽ tiện hơn với các shop nhờ ship TikTok buổi trưa"; ảnh ShipXanh: tab Xem đơn → Quét nhiều → danh sách mã đã quét → "Xem hàng" cộng sản phẩm của các đơn vừa quét (công tắc Gộp SKU). Anh: "Em build gọn gàng và đẹp hơn ShipXanh cho anh".
+
+**Vì sao Phiếu nhặt hàng / popup Thống kê không thay được:** hai thứ đó cộng theo cả nhóm trạng thái; lô giao buổi trưa là một XẤP KIỆN cụ thể, chỉ quét mới khoanh đúng. Chưa hỏi lại khách dùng lúc bàn giao hay lúc nhặt hàng — hai cách dùng cần cùng một tính năng.
+
+**Đã làm**
+
+- Công tắc tab QR: **Xem đơn · Quét nhiều · Đóng gói** (`ScanChrome`, `ScanDetailTab`; nhớ chế độ dùng lần trước).
+- `screens/BatchScanScreen.tsx`: quét liên tục, CHỈ XEM (không đổi trạng thái đơn). Dải đáy: kết quả gần nhất, ba ô Kiện · Đơn hủy · Món (bấm được), nút "Xem hàng trong lô", ô gõ tay.
+- `components/BatchSheet.tsx` — hộp "Lô đã quét": ba con số (kiện, sản phẩm, SKU) + chia theo sàn / hãng; tab **Hàng** (theo sản phẩm / theo SKU, mỗi dòng có số đơn chứa món đó) và tab **Kiện** (mới nhất trước, đơn hủy lên đầu tô đỏ, chép mã, bỏ từng kiện, Xóa lô có hỏi lại).
+- **Đơn ĐÃ HỦY lẫn trong lô:** còi + màn đỏ như Quét đóng gói, nằm riêng, KHÔNG tính vào số hàng. Khách đang xin hủy: màn vàng, vẫn tính hàng, có dòng nhắc.
+- `lib/batch-scan.ts` (thuần, 8 ca test): cộng hàng cùng luật gom với Phiếu nhặt hàng; câu báo từng trường hợp. `lib/batch-scan-store.ts`: lô giữ ngoài màn hình → không mất khi đổi chế độ / rời tab; mất khi Xóa lô hoặc tắt hẳn app.
+- Dùng lại cửa chống bắn lặp `pack-scan-gate.ts`. Tách phần dùng chung của hai màn quét liên tục: `components/ScanFlash.tsx` (màn báo, màu, rung) và `components/ScanTopBar.tsx` — `PackScanScreen` nay dùng hai tệp này, hành vi không đổi.
+- Backend `GET /api/orders/lookup?fast=1`: chỉ đọc DB, bỏ hai nhánh hỏi sàn (làm mới trạng thái hoàn, tự chữa lành khi tra trượt). Không có cờ này thì mỗi mã phân tuyến trên tem kích một lượt đồng bộ mọi gian. App cũ / máy chủ cũ vẫn chạy (cờ bị bỏ qua).
+
+**Không làm:** nút "Tạo phiếu" của ShipXanh (chưa rõ là phiếu gì; biên bản bàn giao đang ở web).
+
+**Kiểm:** tsc + eslint sạch; test mobile 79/79. Giả lập web: thêm 3 kiện + 1 đơn hủy → 2 kiện / 1 đơn hủy / 3 món, hộp Lô đã quét đúng hai tab; quét lại mã đã có → "đã có trong lô", số không đổi; Quét đóng gói sau khi tách phần dùng chung vẫn báo đơn hủy.
+
+**Chưa kiểm:** camera + tem thật (cả màn này lẫn cửa chống bắn lặp vừa viết lại); máy 320 px và giao diện tối của hộp Lô đã quét; lô vài trăm kiện. Trên giả lập web, đổi chế độ hiện lỗi dev "wake lock … has not activated yet" của `expo-keep-awake` — chưa xác minh có từ trước hay không, bản web không phát hành.
