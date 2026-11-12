@@ -20,6 +20,7 @@
 import { BUSINESS_TZ_OFFSET_MS } from "../lib/date-range";
 import { isMailerConfigured, sendMail, type MailAttachment, type MailRole } from "../lib/mailer";
 import { mailHq } from "./hq-mail";
+import { AD_SPEND_BAND_LABEL, isHighAdSpend, type AdSpendBand } from "../lib/ad-spend-band";
 
 const FRONTEND_URL = (process.env.APP_FRONTEND_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 
@@ -123,6 +124,10 @@ export function sendWelcomeMail(user: {
   fullName: string;
   source: "form" | "google" | "apple";
   trialDays?: number | null;
+  /** SĐT E.164 khách để lại (form web) — in vào thư HQ để gọi / Zalo ngay. */
+  phone?: string | null;
+  /** Mức chi quảng cáo/tháng khách tự chọn (form web 12/11/2026). */
+  adSpendBand?: AdSpendBand | null;
 }): void {
   void safeSend("welcome", user.email, {
     role: "noreply",
@@ -133,9 +138,16 @@ export function sendWelcomeMail(user: {
       source: user.source,
     }),
   });
+  // Khách tự khai chi ≥10 triệu/tháng = đúng chân dung khách trả tiền → tiêu đề
+  // thư HQ đánh dấu để anh Trung nhắn Zalo trong ngày.
+  const high = isHighAdSpend(user.adSpendBand);
+  const spendLine = user.adSpendBand
+    ? `<br/>Chi quảng cáo/tháng (khách tự chọn): <b>${AD_SPEND_BAND_LABEL[user.adSpendBand]}</b>`
+    : "";
+  const phoneLine = user.phone ? `<br/>SĐT: ${escapeHtml(user.phone)}` : "";
   void mailHq({
-    subject: `[Hubsell] Khách mới: ${user.fullName}`,
-    html: `<p>Vừa có tài khoản chủ shop mới${user.source === "google" ? " (đăng ký bằng Google)" : user.source === "apple" ? " (đăng ký bằng Apple)" : ""}.</p><p>Khách: ${escapeHtml(user.fullName)} (${escapeHtml(user.email ?? "—")})<br/>Mã: ${user.id}</p><p><a href="${FRONTEND_URL}/admin/customers">Xem ở HQ</a></p>`,
+    subject: `[Hubsell] ${high ? "⭐ Chi ads ≥10tr — " : ""}Khách mới: ${user.fullName}`,
+    html: `<p>Vừa có tài khoản chủ shop mới${user.source === "google" ? " (đăng ký bằng Google)" : user.source === "apple" ? " (đăng ký bằng Apple)" : ""}.</p><p>Khách: ${escapeHtml(user.fullName)} (${escapeHtml(user.email ?? "—")})${phoneLine}${spendLine}<br/>Mã: ${user.id}</p><p><a href="${FRONTEND_URL}/admin/customers">Xem ở HQ</a></p>`,
   });
 }
 

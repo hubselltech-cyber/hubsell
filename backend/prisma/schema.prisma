@@ -201,6 +201,10 @@ model User {
   /// SĐT chuẩn E.164 (vd "+84912345678") — src/phone.ts chuẩn hoá khi đăng ký;
   /// nền cho OTP SMS/WhatsApp sau này. Nullable: user cũ/Google chưa có SĐT.
   phone                String?
+  /// Mức chi quảng cáo sàn mỗi tháng khách TỰ CHỌN ở form đăng ký web
+  /// (12/11/2026): NONE | LT_5M | M5_10 | M10_30 | GT_30M — xem
+  /// src/lib/ad-spend-band.ts. Null = đăng ký Google/Apple/app mobile/trước 12/11.
+  adSpendBand          String?
   /// Ảnh đại diện dạng data URL base64 (image/jpeg|png|webp, FE đã thu nhỏ
   /// ~256px nên chỉ vài chục KB) — lưu thẳng trong DB, khỏi dựng object storage
   /// riêng cho một tấm ảnh nhỏ. Null = chưa đặt, FE hiện icon mặc định.

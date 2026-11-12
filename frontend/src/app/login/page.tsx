@@ -28,12 +28,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { PhoneInput } from "@/components/auth/phone-input";
-import { LegalLink, SocialAuthButtons } from "@/components/auth/social-buttons";
+import {
+  InAppBrowserNotice,
+  LegalLink,
+  SocialAuthButtons,
+  useInAppBrowser,
+} from "@/components/auth/social-buttons";
+import { AD_SPEND_BAND_OPTIONS, AD_SPEND_BAND_VALUES } from "@/lib/ad-spend-band";
 import { PRIVACY_URL, QUY_CHE_URL, TERMS_URL } from "@/lib/legal";
+import { cn } from "@/lib/utils";
 import {
   login,
   register as apiRegister,
-  checkUsernameAvailable,
   fetchMe,
   forgotPassword,
   setToken,
@@ -42,7 +48,6 @@ import {
   type AuthUser,
 } from "@/lib/api";
 import { homePathFor } from "@/lib/permissions";
-import { toAsciiUsername } from "@/lib/username";
 
 // ----- Validation bằng zod -----
 
@@ -52,36 +57,31 @@ const loginSchema = z.object({
   password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
 });
 
-const registerSchema = z
-  .object({
-    fullName: z.string().trim().min(2, "Vui lòng nhập họ tên"),
-    email: z.string().trim().email("Email không hợp lệ"),
-    username: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .regex(
-        /^[a-z0-9][a-z0-9._]{2,29}$/,
-        "3-30 ký tự: chữ thường, số, dấu chấm, gạch dưới; không chứa @"
-      ),
-    country: z.string().length(2),
-    // Số thuần trong nước (PhoneInput đã lọc chỉ còn chữ số) — backend sẽ ghép
-    // mã vùng theo country và chuẩn hoá E.164 trước khi lưu.
-    phone: z
-      .string()
-      .regex(/^\d{6,15}$/, "Vui lòng nhập số điện thoại hợp lệ (6-15 chữ số)"),
-    password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
-    confirmPassword: z.string(),
-    // Click-wrap: tick = giao kết hợp đồng điện tử (Luật GDĐT 2023 Đ.34-35).
-    // Backend từ chối nếu thiếu; FE chặn sớm để báo đúng chỗ.
-    acceptTerms: z.boolean().refine((v) => v === true, {
-      message: "Bạn cần đồng ý Điều khoản dịch vụ và Chính sách bảo mật",
-    }),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Mật khẩu nhập lại không khớp",
-    path: ["confirmPassword"],
-  });
+// 12/11/2026 rút form 7 ô còn 4 ô + một câu chọn: bỏ "Tên đăng nhập" (backend tự
+// sinh từ email như khách đăng ký Google; đăng nhập bằng email vẫn được) và bỏ
+// "Nhập lại mật khẩu" (ô mật khẩu có nút xem, quên thì đặt lại qua email). Lý do:
+// khách bấm quảng cáo TikTok điền form trên điện thoại — xem
+// hubsell-marketing/chien-luoc/nghien-cuu/reports/Tệp khách và kênh lấy khách.md.
+const registerSchema = z.object({
+  fullName: z.string().trim().min(2, "Vui lòng nhập họ tên"),
+  country: z.string().length(2),
+  // Số thuần trong nước (PhoneInput đã lọc chỉ còn chữ số) — backend sẽ ghép
+  // mã vùng theo country và chuẩn hoá E.164 trước khi lưu.
+  phone: z
+    .string()
+    .regex(/^\d{6,15}$/, "Vui lòng nhập số điện thoại hợp lệ (6-15 chữ số)"),
+  email: z.string().trim().email("Email không hợp lệ"),
+  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
+  // Mức chi quảng cáo sàn/tháng — một chạm, dùng để gọi đúng khách và đo kênh.
+  adSpendBand: z.enum(AD_SPEND_BAND_VALUES, {
+    message: "Chọn mức chi quảng cáo mỗi tháng",
+  }),
+  // Click-wrap: tick = giao kết hợp đồng điện tử (Luật GDĐT 2023 Đ.34-35).
+  // Backend từ chối nếu thiếu; FE chặn sớm để báo đúng chỗ.
+  acceptTerms: z.boolean().refine((v) => v === true, {
+    message: "Bạn cần đồng ý Điều khoản dịch vụ và Chính sách bảo mật",
+  }),
+});
 
 const forgotSchema = z.object({
   email: z.string().trim().email("Email không hợp lệ"),
@@ -101,6 +101,7 @@ function LoginForm({
   onForgot: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const inApp = useInAppBrowser();
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { identifier: "", password: "" },
@@ -124,6 +125,7 @@ function LoginForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        {inApp && <InAppBrowserNotice app={inApp} />}
         <FormField
           control={form.control}
           name="identifier"
@@ -186,62 +188,30 @@ function RegisterForm({
   referralCode: string | null;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const inApp = useInAppBrowser();
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       fullName: "",
-      email: "",
-      username: "",
       country: "VN",
       phone: "",
+      email: "",
       password: "",
-      confirmPassword: "",
       acceptTerms: false,
     },
   });
   const termsAccepted = form.watch("acceptTerms");
 
-  // Kiểm tra TRÙNG TÊN ĐĂNG NHẬP ngay khi gõ (debounce 450ms) — username là
-  // unique toàn hệ thống (nền của định dạng nhân viên "chủ/nhânviên") nên báo
-  // sớm ở đây, không để người dùng điền xong cả form mới dính lỗi 409.
-  const [usernameStatus, setUsernameStatus] = useState<
-    "idle" | "checking" | "free" | "taken"
-  >("idle");
-  const usernameValue = form.watch("username");
-  useEffect(() => {
-    if (!usernameValue || usernameValue.length < 3) {
-      setUsernameStatus("idle");
-      return;
-    }
-    setUsernameStatus("checking");
-    const timer = setTimeout(async () => {
-      try {
-        const res = await checkUsernameAvailable(usernameValue);
-        // Chống đáp án trễ: chỉ nhận kết quả nếu ô nhập chưa đổi tiếp.
-        if (form.getValues("username") === usernameValue) {
-          setUsernameStatus(res.available ? "free" : "taken");
-        }
-      } catch {
-        setUsernameStatus("idle"); // mạng lỗi thì im lặng, server vẫn chặn lúc submit
-      }
-    }, 450);
-    return () => clearTimeout(timer);
-  }, [usernameValue, form]);
-
   async function onSubmit(values: RegisterValues) {
-    if (usernameStatus === "taken") {
-      toast.error("Tên đăng nhập này đã có người sử dụng — chọn tên khác nhé");
-      return;
-    }
     setSubmitting(true);
     try {
       const res = await apiRegister({
         email: values.email,
         password: values.password,
         fullName: values.fullName,
-        username: values.username,
         country: values.country,
         phoneNumber: values.phone,
+        adSpendBand: values.adSpendBand,
         referralCode: referralCode ?? undefined,
         acceptTerms: true,
       });
@@ -259,6 +229,7 @@ function RegisterForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        {inApp && <InAppBrowserNotice app={inApp} />}
         {referralCode && (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
             Bạn đăng ký qua mã giới thiệu{" "}
@@ -278,49 +249,6 @@ function RegisterForm({
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <FormControl>
-                <Input placeholder="ban@email.com" autoComplete="email" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="username"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Tên đăng nhập</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="tendangnhap"
-                  autoComplete="username"
-                  {...field}
-                  // Ép quy ước viết liền không dấu NGAY KHI GÕ (cùng luật với
-                  // ô tạo nhân viên): "Đỗ Văn Ơi" → "dovanoi".
-                  onChange={(e) => field.onChange(toAsciiUsername(e.target.value))}
-                />
-              </FormControl>
-              {usernameStatus === "taken" && (
-                <p className="text-sm font-medium text-red-500">
-                  Tên đăng nhập này đã có người sử dụng
-                </p>
-              )}
-              {usernameStatus === "free" && (
-                <p className="text-sm font-medium text-emerald-600">
-                  ✓ Tên đăng nhập dùng được
-                </p>
-              )}
-              <FormMessage />
-            </FormItem>
-          )}
-        />
         {/* Ô ghép Quốc gia + SĐT: field `phone` giữ số thuần, field `country`
             được PhoneInput set khi đổi mã vùng (validate riêng từng field). */}
         <FormField
@@ -328,7 +256,7 @@ function RegisterForm({
           name="phone"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Số điện thoại</FormLabel>
+              <FormLabel>Số điện thoại (Zalo)</FormLabel>
               <FormControl>
                 <PhoneInput
                   country={form.watch("country")}
@@ -338,6 +266,25 @@ function RegisterForm({
                   }
                   onPhoneChange={field.onChange}
                   onPhoneBlur={field.onBlur}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Email</FormLabel>
+              <FormControl>
+                <Input
+                  type="email"
+                  inputMode="email"
+                  placeholder="ban@email.com"
+                  autoComplete="email"
+                  {...field}
                 />
               </FormControl>
               <FormMessage />
@@ -363,17 +310,33 @@ function RegisterForm({
         />
         <FormField
           control={form.control}
-          name="confirmPassword"
+          name="adSpendBand"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Nhập lại mật khẩu</FormLabel>
-              <FormControl>
-                <PasswordInput
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  {...field}
-                />
-              </FormControl>
+              <FormLabel>Mỗi tháng shop chi bao nhiêu cho quảng cáo sàn?</FormLabel>
+              <div role="radiogroup" className="flex flex-wrap gap-2">
+                {AD_SPEND_BAND_OPTIONS.map((o) => {
+                  const selected = field.value === o.value;
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => field.onChange(o.value)}
+                      onBlur={field.onBlur}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm transition-colors",
+                        selected
+                          ? "border-primary bg-primary font-medium text-primary-foreground"
+                          : "border-input text-foreground hover:bg-muted"
+                      )}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
               <FormMessage />
             </FormItem>
           )}

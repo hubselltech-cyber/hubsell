@@ -38,6 +38,7 @@ import {
   type SocialLoginErrorCode,
 } from "../services/social-login";
 import { generateUsername, normalizeUsername } from "../lib/username";
+import { parseAdSpendBand } from "../lib/ad-spend-band";
 import { PRIVACY_VERSION, TERMS_VERSION, type TermsAcceptanceSource } from "../lib/legal";
 
 const router = Router();
@@ -188,7 +189,10 @@ router.post("/register", async (req, res, next) => {
       referralCode,
       acceptTerms,
       client,
+      adSpendBand,
     } = req.body ?? {};
+    // Mức chi quảng cáo/tháng (form web 12/11/2026) — sai/thiếu thì null, không chặn.
+    const spendBand = parseAdSpendBand(adSpendBand);
     const termsSource: TermsAcceptanceSource = client === "app" ? "register_app" : "register_form";
 
     // Chặn ở tầng API chứ không chỉ FE: không có đồng ý thì không có hợp đồng,
@@ -274,6 +278,7 @@ router.post("/register", async (req, res, next) => {
           fullName: fullName.trim(),
           country: normalizedCountry,
           phone: phoneE164,
+          adSpendBand: spendBand,
           role: "ADMIN",
           referredById: referrer?.id ?? null,
         },
@@ -289,7 +294,15 @@ router.post("/register", async (req, res, next) => {
     void ensureDefaultSubscription(user.id);
     // Thư chào (no-reply@) + báo HQ có khách mới — fire-and-forget.
     void getDefaultTrialDays().then((trialDays) =>
-      sendWelcomeMail({ id: user.id, email: user.email, fullName: user.fullName, source: "form", trialDays })
+      sendWelcomeMail({
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        source: "form",
+        trialDays,
+        phone: user.phone,
+        adSpendBand: spendBand,
+      })
     );
 
     // Tài khoản vừa đăng ký luôn là chủ shop thường — không thuộc khu điều hành.

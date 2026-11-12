@@ -33,6 +33,8 @@ phải bị chép. Phủ nhanh vẫn đúng, nhưng phải bằng kênh **không
 | 4 | **Máy nhân nội dung**: mỗi video anh quay → em làm bài fanpage, Reels/Shorts, 1 bài viết cho Google (nhắm "roas hòa vốn", "lãi lỗ shop shopee"…), tin Zalo | Em | 0 (chỉ duyệt) | Lượt xem, lượt tìm thấy trên Google |
 | 5 | **Một người bán hàng bán thời gian**, lương thấp + hoa hồng (Salework trả 6–10 triệu + 3–15 %): gọi khách dùng thử, trả lời Zalo, chăm đối tác | Anh tuyển | Tuần đầu kèm | Khách trả / tháng |
 
+> **Kết quả mục 3 (12/11/2026):** thử 2 lần, tổng ≈ 397 nghìn ₫ (chưa thuế) → **0 đăng ký**. (a) Traffic bài 1017 09–10/11: 423 bấm, 0 đăng ký — vướng trang đích trong trình duyệt nhúng TikTok. (b) Lead gen tin nhắn 11/11, 3 video GMV Max khác, nhắm hashtag #gmvmax/#gmv/#banhangtiktokshop: 200k → 7.686 hiển thị, 4 trò chuyện (1 affiliate, 1 người mới bán, 1 im lặng), 0 dùng thử; tỉ lệ xem đủ 6 giây chỉ 5,8 % (bài 1017: 48,6 %). Hashtag gom người học / affiliate, không lọc được chủ shop đang chi GMV Max. Sửa 12/11: bài 1017 CHÍNH LÀ video 1:08 trong đợt (b), ra 3/4 trò chuyện — chênh 6s 48,6 % vs 6,6 % là do mục tiêu tối ưu, không do video. Nút thắt là TỆP NGƯỜI, không phải video → anh hỏi nghiên cứu tệp khách bằng tài liệu nước ngoài; nháp nhắm rộng 13/11 dừng chờ. Nghiên cứu xong: `nghien-cuu/reports/Tệp khách và kênh lấy khách.md` (mục "Hubsell nên làm gì"). ⏳ anh chốt.
+
 Việc nền đi kèm, nhỏ, em làm được ngay khi anh gật:
 - **Hỏi "Bạn biết Hubsell từ đâu?"** một ô chọn khi đăng ký (TikTok / Facebook / Google / người giới thiệu / Cửa hàng ứng dụng
   TikTok / khác). Không có ô này thì mục 2–4 không đo được cái nào ra khách.

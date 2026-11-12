@@ -1335,6 +1335,8 @@ export function register(data: {
   country?: string;
   /** Số trong nước ("0912345678" hoặc "912345678") — backend chuẩn hoá E.164. */
   phoneNumber?: string;
+  /** Mức chi quảng cáo sàn/tháng khách tự chọn (lib/ad-spend-band.ts) — sai/thiếu backend bỏ qua. */
+  adSpendBand?: string;
   /** Mã giới thiệu Affiliate (?ref= trên link) — sai/thiếu không chặn đăng ký. */
   referralCode?: string;
   /** Đã tick đồng ý Điều khoản dịch vụ + Chính sách bảo mật — backend từ chối nếu không true. */
@@ -5945,6 +5947,8 @@ export interface PlatformUserRow {
   username: string | null;
   /** SĐT chuẩn E.164 (vd "+84912345678") — null với user cũ/đăng ký Google. */
   phone: string | null;
+  /** Mức chi quảng cáo/tháng khách tự chọn lúc đăng ký web (từ 12/11/2026) — null với Google/app/khách cũ. */
+  adSpendBand: string | null;
   fullName: string;
   country: string;
   createdAt: string;

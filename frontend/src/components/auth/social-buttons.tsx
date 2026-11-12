@@ -7,11 +7,73 @@
 // mắt" — nút chết trên màn hình đầu tiên là dấu hiệu sản phẩm chưa xong, và
 // GitHub không có nghĩa gì với chủ shop. Khi nào nối thật thì thêm lại nút.
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { googleAuthUrl } from "@/lib/api";
+import { detectInAppBrowser } from "@/lib/in-app-browser";
 import { PRIVACY_URL, TERMS_URL } from "@/lib/legal";
+
+/** Tên app đang nhúng trang (TikTok, Facebook…) hoặc null. Đọc sau khi mount (SSR không có navigator). */
+export function useInAppBrowser(): string | null {
+  const [app, setApp] = useState<string | null>(null);
+  useEffect(() => {
+    setApp(detectInAppBrowser(navigator.userAgent));
+  }, []);
+  return app;
+}
+
+/**
+ * Câu nhắc khi trang mở trong trình duyệt nhúng (12/11/2026): Google chặn đăng
+ * nhập ở đây nên nút Google đã ẩn — chỉ đường đăng ký bằng email, kèm nút sao
+ * chép link để ai muốn dùng Google thì mở bằng Chrome/Safari.
+ */
+export function InAppBrowserNotice({ app }: { app: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyLink() {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Một số webview chặn Clipboard API → chép kiểu cũ qua ô ẩn.
+      const el = document.createElement("textarea");
+      el.value = url;
+      el.setAttribute("readonly", "");
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(el);
+      }
+    }
+    setCopied(true);
+  }
+
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900"
+    >
+      <p>
+        Bạn đang mở Hubsell trong ứng dụng {app}. Đăng nhập Google không dùng được ở đây,
+        hãy dùng email bên dưới, hoặc mở link bằng Chrome / Safari.
+      </p>
+      <button
+        type="button"
+        onClick={copyLink}
+        className="mt-1.5 inline-flex items-center gap-1.5 font-medium text-amber-900 underline underline-offset-2"
+      >
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        {copied ? "Đã sao chép link" : "Sao chép link"}
+      </button>
+    </div>
+  );
+}
 
 function GoogleIcon() {
   return (
@@ -35,6 +97,10 @@ export function SocialAuthButtons({
   disabled?: boolean;
   onBlocked?: () => void;
 }) {
+  // Trong webview TikTok/Facebook… Google trả 403 disallowed_useragent → không
+  // hiện nút chết; câu nhắc InAppBrowserNotice ở đầu form đã nói lý do.
+  const inApp = useInAppBrowser();
+  if (inApp) return null;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">

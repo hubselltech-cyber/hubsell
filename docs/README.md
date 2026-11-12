@@ -87,6 +87,7 @@
 - [HUY-HIEU-TIN-CAY-LANDING.md](HUY-HIEU-TIN-CAY-LANDING.md) — huy hiệu tin cậy chân trang
 
 ## Landing, marketing, store
+- [DANG-KY-TU-QUANG-CAO-TIKTOK.md](DANG-KY-TU-QUANG-CAO-TIKTOK.md) — 12/11/2026 đăng ký cho khách đến từ TikTok: ẩn Google trong trình duyệt nhúng + nút sao chép link, form 7 → 4 ô, câu hỏi mức chi quảng cáo/tháng lưu `User.adSpendBand`, hiện ở HQ
 - [LANDING-KE-CHUYEN.md](LANDING-KE-CHUYEN.md) · [LANDING-NHAN-VAT-THUONG-HIEU.md](LANDING-NHAN-VAT-THUONG-HIEU.md) · `landing-persona/`
 - `marketing/` — định vị lại (DINH-VI-LAI-HUBSELL-QUANG-CAO), thư khách hiện có, quy trình video, bài Facebook
 - Việc marketing mới (từ 17/10/2026) làm ở thư mục riêng [`../hubsell-marketing/`](../hubsell-marketing/README.md): bối cảnh sản phẩm, skill marketing, SQL số khách, chiến lược

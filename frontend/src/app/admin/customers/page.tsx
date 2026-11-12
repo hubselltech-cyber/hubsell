@@ -57,6 +57,7 @@ import {
 } from "@/lib/api";
 import { formatDateTime, formatVND } from "@/lib/format";
 import { looksLikeVnPhone, phoneDigitCount } from "@/lib/phone";
+import { adSpendBandLabel, isHighAdSpend } from "@/lib/ad-spend-band";
 import { cn } from "@/lib/utils";
 import { CareDialog } from "@/components/admin/care-dialog";
 import { LeadDialog } from "@/components/admin/lead-dialog";
@@ -371,6 +372,21 @@ export default function PlatformCustomersPage() {
                                 {formatCount(u.channelCount)} gian ·{" "}
                                 {formatCount(u.productCount)} SP ·{" "}
                                 {formatCount(u.orderCount)} đơn
+                                {/* Mức chi ads/tháng khách tự chọn lúc đăng ký web
+                                    (từ 12/11/2026): ≥10 triệu = đúng chân dung khách
+                                    trả tiền → tô đậm để gọi / Zalo trước. */}
+                                {u.adSpendBand && (
+                                  <p
+                                    className={cn(
+                                      "mt-0.5 text-xs",
+                                      isHighAdSpend(u.adSpendBand)
+                                        ? "font-semibold text-emerald-700"
+                                        : "text-muted-foreground"
+                                    )}
+                                  >
+                                    Ads/tháng: {adSpendBandLabel(u.adSpendBand)}
+                                  </p>
+                                )}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {/* Nhảy theo Subscription — kế toán ghi nhận

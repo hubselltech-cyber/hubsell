@@ -5,7 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 11/11 (tối) — Khách xin cột "Giữ lại" ở Tổng kho → đọc mã + khảo sát Sapo / KiotViet / Salework (CHƯA CODE, chờ anh chốt)
+## Phiên 12/11 — Anh: "kiểm tra quảng cáo tiktok… 3 người nhắn tin hỏi nhưng không có ai dùng thử" → em lấy số Ads Manager (chỉ đọc, không đổi gì)
+
+- Lead gen tin nhắn 11/11 (Ended, hết 200k): 7.686 hiển thị, CPM 26k, 25 bấm, 4 trò chuyện, 1 lead TikTok; xem đủ 6 giây 5,8 % (bài 1017 chạy Traffic: 48,6 %). Video "…Tự động loại bỏ… và trợ lý đề xuất…" ra 3/4 trò chuyện.
+- Kết luận + đề xuất (tạm ngừng chi; nếu thử thì bài 1017 + tin nhắn, nhắm rộng) ở `hubsell-marketing/chien-luoc/PHUONG-AN-PHU-NHANH-2026-11-06.md` mục 3 + memory. CHƯA kiểm Supabase đăng ký 11–12/11, chưa kiểm số dư Billing. ⏳ anh chốt.
+- Anh chọn "Thử 1017 + tin nhắn" → em chép chiến dịch, bỏ hashtag, đặt 200k 13/11 → khi tìm bài 1017 thì phát hiện 1017 ĐÃ có trong đợt 11/11 (bài 1:08, ra 3/4 trò chuyện) → kết luận "video giữ người kém" ở trên là SAI. Nháp dừng, CHƯA publish. Anh hỏi nghiên cứu tệp khách bằng tài liệu nước ngoài → ⏳ chốt.
+- Anh: "Nghiên cứu trước" → 4 hướng song song + báo cáo `hubsell-marketing/chien-luoc/nghien-cuu/reports/Tệp khách và kênh lấy khách.md`: mọi kênh ra khách trả tiền đều có người được tin đứng giữa; quảng cáo chỉ để bám lại người xem video; sửa đăng ký trong trình duyệt nhúng TikTok + câu hỏi mức chi GMV Max trước khi chi thêm. Nháp 13/11 khuyên KHÔNG publish. ⏳ anh chốt hướng.
+- Anh: "Làm mục 2 trước" → ĐÃ CODE + SOI LOCAL, CHƯA COMMIT (chi tiết `docs/DANG-KY-TU-QUANG-CAO-TIKTOK.md`): trình duyệt nhúng TikTok/Facebook/Zalo… ẩn nút Google + hộp nhắc + "Sao chép link"; form đăng ký 7 → 4 ô (bỏ Tên đăng nhập — tự sinh từ email, bỏ Nhập lại mật khẩu); câu hỏi một chạm mức chi quảng cáo/tháng → cột `User.adSpendBand` (migration `20261112120000_user_ad_spend_band`, nullable, không chặn app/Google); thư HQ "Khách mới" có SĐT + mức chi, ≥10tr gắn ⭐; HQ Khách hàng cột Quy mô thêm "Ads/tháng". Soi local 375 px giả UA TikTok Android/iOS + tối + HQ; 9/9 UA mẫu, test 3/3, tsc + eslint sạch; tài khoản thử đã xóa. Chưa kiểm: máy thật trong app TikTok, thư HQ.
+
+---
+## Phiên 11/11 (tối) — Khách xin cột "Giữ lại" ở Tổng kho → khảo sát, rà lại, anh chốt bản 2 → cột "Chờ giao" ĐÃ PUSH `307629dd`
 
 - Gốc: đơn sàn trừ thẳng Tồn kho từ lúc Chờ lấy hàng; "giữ" chỉ cho đơn chưa thanh toán → Có thể bán ≈ Tồn kho, khách không thấy hàng đang chờ giao. Bán vượt thì Tồn kho âm (cố ý), sàn nhận 0.
 - Rủi ro thấy kèm (đọc mã, chưa thử): Kiểm kê ghi đè bằng số đếm kệ, không trừ hàng chờ giao → có thể cộng lại hàng đã bán.
@@ -19,7 +28,7 @@
   - Đo local bằng dữ liệu giả trong giao dịch rồi ROLLBACK (400.000 đơn, 8.000 chờ giao, 600.000 dòng nhật ký): có chỉ mục bán phần mới 65 ms, không có 204 ms + đọc 9.294 trang đĩa → chỉ mục là bắt buộc. Tệp thử tạm đã xóa.
   - CHƯA kiểm: số prod (đơn kẹt theo tuổi / trạng thái gian, shop dùng ô không bán, đơn hủy sau giao kiện chưa về). ⏳ 3 câu chờ anh ở mục 10.
 - ✅ Anh: "Chốt bản 2" → giữ nguyên Tồn kho, thêm cột "Chờ giao". ⛔ Đừng đề xuất lại "Tồn kho = số trong kho". Còn hỏi: công tắc Kiểm kê mặc định bật; đọc số prod.
-- **Lát 1 + 2 ĐÃ CODE + SOI LOCAL, CHƯA commit** (chi tiết + bảng đo ở docs mục 11):
+- **Lát 1 + 2 ĐÃ CODE + SOI LOCAL → ĐÃ PUSH `307629dd` ~23:25 11/11** (anh: "Em push bản này trước đi"; chi tiết + bảng đo ở docs mục 11):
   - Backend: migration chỉ mục bán phần `20261111230000_order_stock_awaiting_ship_idx`, `services/stock-awaiting-ship.ts`, `GET /products?awaiting=1` (phải xin mới tính); test DB thật, chạy kèm stock-locations + inventory-race 20/20; tsc sạch.
   - Web: `components/products/awaiting-ship.tsx`, cột "Chờ giao" sau Có thể bán, co theo khung bảng (hẹp thì thành dòng nhỏ xe tải + số dưới Có thể bán), dòng cha cộng tổng, Excel thêm cột; tsc + eslint sạch.
   - Đo JS 1280 → 1920, sáng (không vị trí) + tối (có vị trí): không ô nào của cột mới tràn. Bẫy đã dẫm: dòng nhỏ viết chữ "chờ giao 9.998" tràn cột 75px ở 1280 → đổi sang biểu tượng + số, ô Có thể bán đệm px-2.
@@ -28,6 +37,10 @@
   - ✅ Chỉ mục prod ĐÃ DỰNG 23:19 11/11 (anh: "Em chạy qua Chrome") bằng CREATE INDEX CONCURRENTLY ở Supabase SQL Editor: hợp lệ, 80 kB; bảng Order ~884.000 dòng / 503 MB.
   - Số prod 23:20 (qua chỉ mục mới): gian đang hoạt động 3.680 đơn đã trừ kho chưa giao / 62 chủ shop, KHÔNG đơn nào quá 7 ngày; bị loại 4.120 đơn (ngủ đông 3.479, mất kết nối 641) → luật chỉ tính gian đang hoạt động là cần thật. Bảng ở docs mục 11.
   - DB local: đã xóa tài khoản thử + tệp seed tạm trước khi commit.
+  - Trước push: toàn backend 2.449 qua, 6 đỏ nền cũ (ads-rows-ledger-db, channel-delete-db ×3, order-ledger-db, realized-pnl-ledger-db); tsc hai phía, eslint, next build sạch.
+  - **Sau push:** `/health` prod = `307629dd`; chạy thử câu thật trên prod cho shop nhiều đơn trong tập nhất ~20 ms; 16 chủ shop đang có hàng chờ giao thật (494 đơn, 570 sản phẩm, 323 mã). CHƯA nhìn cột trên prod bằng mắt (Chrome đang ở tài khoản điều hành, bảng rỗng) → ⏳ anh mở bằng tài khoản shop.
+  - Anh hỏi "chuẩn quốc tế thì bản nào đúng hơn" → bản 1 (100 · 98 · 2: Shopify / NetSuite / Sapo trừ tồn khi hàng rời kho); Hubsell lệch ở gốc (trừ lúc đơn chốt), muốn đúng phải đổi mô hình. Anh: "Bản chuẩn sẽ khảo sát vào một hôm khác anh sẽ nói sau" → chờ anh gọi.
+  - Ghi chép sau push này (PROGRESS + docs mục 12) CHƯA commit.
   - ✅ Anh: "kích vào hiện lên mã đơn có thực sự cần thiết không… 1.000 đơn thì cũng mệt" → "Bỏ hộp đi" → ĐÃ GỠ hộp danh sách đơn (endpoint `awaiting-orders`, `awaitingShipOrdersOf`, kiểu + hàm ở `lib/api.ts`, phần hộp trong `awaiting-ship.tsx`, 1 ca test). Số Chờ giao chỉ để xem + chú thích rê chuột. Sau gỡ: tsc hai phía + eslint sạch, test 8/8, soi lại local. ⛔ Đừng đề xuất lại hộp này.
 
 ## Phiên 11/11 (lịch 20:00) — Yêu cầu mua gói dễ thấy (3 bước) + PHÍ VƯỢT TRẦN ĐƠN "TÍNH THẲNG" cho mọi gói (anh: "vượt thì tính theo giá tiền của gói tương ứng, ví dụ 99K/300 × số đơn vượt" → "Chốt tính thẳng" → "Thêm popup") → ĐÃ CODE, dọn, commit + push theo lời anh
