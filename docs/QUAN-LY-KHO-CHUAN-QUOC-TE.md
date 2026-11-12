@@ -2,7 +2,7 @@
 
 > Anh Trung 12/11: "lên phương án khảo sát phần Quản lý kho bản chuẩn quốc tế… khảo sát kỹ cách thức hiển thị, thuật toán tính, phạm vi tác động liên quan tới kiểm kê, nhập/xuất".
 > Nối tiếp [TONG-KHO-DANG-GIU-CHO-DON.md](TONG-KHO-DANG-GIU-CHO-DON.md) (11/11: cột "Chờ giao", bản 2). Đối thủ Việt (Sapo, KiotViet, Salework) đã khảo sát ở [QUAN-LY-KHO-TAI-CAU-TRUC.md](QUAN-LY-KHO-TAI-CAU-TRUC.md) mục 11, không làm lại.
-> Trạng thái: **CHƯA CODE.** Số prod đã đo 12/11 (chỉ đọc) ở mục 11. Anh chốt 12/11: "Chia theo shop" + "Chuẩn quốc tế như thế nào thì em cứ làm như vậy" → bảng chốt ở đầu mục 9. Thiết kế lát 1 (chạy bóng) ở mục 13; **lát 1 ĐÃ CODE trên local 12/11 (mục 13.9), chưa commit, chưa lên prod.**
+> Trạng thái: **CHƯA CODE.** Số prod đã đo 12/11 (chỉ đọc) ở mục 11. Anh chốt 12/11: "Chia theo shop" + "Chuẩn quốc tế như thế nào thì em cứ làm như vậy" → bảng chốt ở đầu mục 9. Thiết kế lát 1 (chạy bóng) ở mục 13; **lát 1 ĐÃ CODE + COMMIT 12/11 (mục 13.9); prod đã thêm cột + dựng chỉ mục tay (mục 13.10); CHƯA push.**
 
 ## 0. Tóm tắt
 
@@ -550,6 +550,20 @@ Kèm số đo cho lát sau: phân bố thời gian từ `stockCommittedAt` tới
 3. Push. Migration trong repo toàn `IF NOT EXISTS` nên bỏ qua. Khoảng 2 phút sau khi worker lên, log `[stock-committed] ngày chuyển XONG: đưa N đơn…` (N kỳ vọng quanh 3.700 theo số 12/11), sau đó một dòng `đối chiếu`.
 
 Bước 1 là ghi lược đồ trên prod → cần anh gật như hôm qua với chỉ mục Chờ giao.
+
+### 13.10. Prod ĐÃ CHUẨN BỊ 12/11/2026 ~15:05 (anh: "Chuẩn bị prod") — bước 1 + 2 xong, CHƯA push
+
+Chạy qua Supabase SQL Editor trong Chrome. Trước khi chạy: Postgres 17.6, 3 phiên đang hoạt động, không giao dịch treo.
+
+- **Thêm cột:** ba giao dịch riêng, mỗi bảng một lệnh (`BEGIN; SET LOCAL lock_timeout = '3s'; ALTER TABLE … ADD COLUMN IF NOT EXISTS …; COMMIT;`), thứ tự `product_stock_levels` → `Product` → `Order`. Cả ba báo thành công ngay lần đầu, không phải thử lại. Kiểm `information_schema`: đủ 5 cột, `committedQuantity` và `committed` là `integer NOT NULL DEFAULT 0`, ba cột trên `Order` là nullable.
+- **Chỉ mục:** `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Order_stock_committed_idx" …` xong trong dưới 10 giây. Kiểm: `indisvalid = true`, `indisready = true`, cỡ 8 kB (chưa đơn nào có mốc giữ), định nghĩa đúng vị từ.
+- **Kế hoạch chạy trên prod** của câu chọn đơn quét bù: `Index Scan using "Order_stock_committed_idx"`, không quét bảng.
+- Mã đang chạy trên prod (bản cũ) không đọc các cột mới nên không bị ảnh hưởng.
+- Chưa có số nào vào bộ đếm: việc đó chỉ bắt đầu sau khi push (worker chạy ngày chuyển).
+
+**Thấy kèm trên trang Supabase (chỉ đọc, em không đổi gì):** tổ chức đang gắn nhãn "Exceeding usage limits". Trang Usage ghi: gói Pro, kỳ 27/10 → 27/11, "You have exceeded your Pro Plan quota in this billing cycle. Disable your spend cap to continue using Supabase without restrictions." Các mục em đọc được: Egress 147 / 250 GB (59 %), Disk Size 740 GB-Hrs, Small Compute 365 giờ ($7,52), Micro Compute 26 giờ ($0,35); các mục khác gần 0. Em CHƯA xác định mục nào vượt và Supabase sẽ hạn chế gì — cần anh xem.
+
+**Còn lại:** anh push master → sau ~2 phút soi log worker `[stock-committed]` (dòng "ngày chuyển XONG: đưa N đơn…", N kỳ vọng quanh 3.700; rồi dòng "đối chiếu").
 
 ## 12. Nguồn
 

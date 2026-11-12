@@ -25,6 +25,9 @@
 - **Anh: "Code lát 1" → ĐÃ CODE trên local, CHƯA commit, CHƯA lên prod** (docs mục 13.9): migration `20261112210000_stock_committed_shadow` (5 cột + chỉ mục `Order_stock_committed_idx`); `applyStockDelta { reserve }`; `shipStockTx` / `releaseCommittedTx` trong `order-stock.ts`; `services/stock-committed.ts` + `workers/stock-committed.ts` (ngày chuyển, quét bù 2 phút, đối chiếu 24 giờ); nối 3 sàn, hủy tay, nhận hoàn, Biên bản bàn giao, xóa gian. Lệch thiết kế: hủy trước khi rời kho thì XÓA mốc giữ; quét bù là một giao dịch vài câu có khóa theo thứ tự; `deductStockTx` trừ theo thứ tự mã cố định; lô 200. Tắt khẩn `STOCK_COMMITTED_OFF=1`.
   - Kiểm: tsc sạch; test mới 16 ca + 1 ca qua webhook TikTok; 12 tệp test kho cũ + app-return qua; `channel-delete-db` 3 ca đỏ CÓ TỪ TRƯỚC (đỏ y hệt khi cất thay đổi). Chưa test qua route bàn giao / hủy tay / nhận hoàn; chưa đo dữ liệu lớn.
   - ⏳ Trước khi push: chạy tay trên prod 3 lệnh ADD COLUMN + CREATE INDEX CONCURRENTLY (docs 13.9) — cần anh gật.
+- Anh bấm commit → `7e1eaa64` trên nhánh riêng `kho-chuan-quoc-te-lat-1` (không để ở master khi prod chưa chuẩn bị: push nhầm là migration tự dựng chỉ mục trên bảng đơn 500 MB).
+- **Anh: "Chuẩn bị prod" → ĐÃ LÀM ~15:05 12/11 qua Supabase SQL Editor (docs 13.10):** thêm 5 cột bằng ba giao dịch riêng có `lock_timeout 3s` (thành công ngay lần đầu); `CREATE INDEX CONCURRENTLY "Order_stock_committed_idx"` xong dưới 10 giây, hợp lệ, 8 kB; câu quét bù trên prod đi qua chỉ mục. Nhánh đã gộp vào master (fast-forward). **CHƯA push** — anh push; sau ~2 phút soi log `[stock-committed]`.
+- Thấy kèm (chỉ đọc): Supabase gắn nhãn "Exceeding usage limits" cho tổ chức — vượt hạn mức gói Pro kỳ 27/10 → 27/11, đang bật spend cap; chưa rõ mục nào vượt. ⏳ anh xem.
 
 ---
 ## Phiên 12/11 — Anh: "kiểm tra quảng cáo tiktok… 3 người nhắn tin hỏi nhưng không có ai dùng thử" → em lấy số Ads Manager (chỉ đọc, không đổi gì)
