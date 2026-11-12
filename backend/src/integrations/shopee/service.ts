@@ -30,9 +30,11 @@ import {
 import { carrierFromName } from "../../services/shipping";
 import {
   deductStockTx,
+  hasLeftWarehouse,
   holdStockTx,
   releaseStockHoldTx,
   restoreStockTx,
+  shipStockTx,
   type StockOutcome,
 } from "../order-stock";
 import { stageStockPush, type StockPushTicket } from "../inventory-push";
@@ -1060,6 +1062,10 @@ export async function processShopeeOrderEvent(
 
     if (shouldDeductShopeeStock(order.order_status)) {
       const d = await deductStockTx(tx, orderRow.id, "webhook Shopee");
+      // Sàn báo đã lấy hàng → hàng rời kho, ra khỏi bộ đếm giữ (lát 1 chạy bóng; sổ không đổi).
+      if (hasLeftWarehouse(mapShopeeStatus(order.order_status))) {
+        await shipStockTx(tx, orderRow.id, "PLATFORM");
+      }
       return { ...base, inventory: d.outcome, deducted: d.deducted, stockSync: syncFor(d.productIds) };
     }
 

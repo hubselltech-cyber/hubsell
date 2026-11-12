@@ -26,6 +26,7 @@ import {
   handoverSheetCode,
 } from "../lib/packing-scan";
 import { CARRIER_LABEL, isExpressShipping } from "../services/shipping";
+import { shipOrdersTx } from "../services/stock-committed";
 import {
   buildHandoverSheetsPdf,
   type HandoverSheetDoc,
@@ -307,6 +308,9 @@ router.post("/handover-sheets", async (req: AuthRequest, res, next) => {
           await tx.handoverSheet.delete({ where: { id } });
           return null;
         }
+        // Kho xác nhận bàn giao cho vận chuyển = hàng rời kho → ra khỏi bộ đếm "đang giữ" (lát 1
+        // chạy bóng: chỉ bộ đếm + mốc trên đơn, sổ và số đẩy sàn không đổi).
+        await shipOrdersTx(tx, claimed.map((o) => o.id), "HANDOVER");
         const lines = claimed.map(snapshotLine);
         await tx.handoverSheet.update({
           where: { id },

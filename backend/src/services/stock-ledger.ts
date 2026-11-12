@@ -37,6 +37,21 @@ export interface StockWrite {
   voucherId?: string | null;
   /** Hàng hoàn không biết về đâu → vị trí nhận hoàn mặc định, không có thì gốc. */
   useReturnDefault?: boolean;
+  /**
+   * GIỮ CHO ĐƠN (lát 1 chạy bóng 12/11/2026): bút toán TRỪ của đơn đã chốt — hàng ra khỏi tồn
+   * bán nhưng còn trong kho → cộng đúng số đó vào bộ đếm "đang giữ" (Product.committedQuantity +
+   * committed của từng vị trí bị trừ) ngay trong cùng câu ghi. Chỉ có nghĩa khi delta < 0.
+   */
+  reserve?: boolean;
+}
+
+/**
+ * Công tắc khẩn của bộ đếm "đang giữ" (lát 1 chạy bóng): STOCK_COMMITTED_OFF=1 → mọi chỗ ghi bỏ
+ * qua phần bộ đếm, sổ và số đẩy sàn chạy y như trước. Bật lại thì phải dựng lại bộ đếm
+ * (services/stock-committed.ts → rebuildCommitted).
+ */
+export function stockCommittedOn(): boolean {
+  return process.env.STOCK_COMMITTED_OFF !== "1";
 }
 
 export interface StockWriteResult {
@@ -67,13 +82,17 @@ function pickDefault(locs: LocationRow[]): LocationRow {
   return locs.find((l) => l.isDefault) ?? locs[0];
 }
 
-/** Cộng/trừ level tại một vị trí — nguyên tử, tự tạo dòng nếu chưa có. */
-async function bumpLevel(tx: Tx, productId: string, locationId: string, delta: number) {
+/**
+ * Cộng/trừ level tại một vị trí — nguyên tử, tự tạo dòng nếu chưa có. `committedDelta` (mặc
+ * định 0) cộng vào phần "đang giữ cho đơn" của vị trí trong cùng câu.
+ */
+async function bumpLevel(tx: Tx, productId: string, locationId: string, delta: number, committedDelta = 0) {
   await tx.$executeRaw`
-    INSERT INTO "product_stock_levels" ("id", "productId", "locationId", "quantity")
-    VALUES (gen_random_uuid()::text, ${productId}, ${locationId}, ${delta})
+    INSERT INTO "product_stock_levels" ("id", "productId", "locationId", "quantity", "committed")
+    VALUES (gen_random_uuid()::text, ${productId}, ${locationId}, ${delta}, ${committedDelta})
     ON CONFLICT ("productId", "locationId")
-    DO UPDATE SET "quantity" = "product_stock_levels"."quantity" + EXCLUDED."quantity"`;
+    DO UPDATE SET "quantity" = "product_stock_levels"."quantity" + EXCLUDED."quantity",
+                  "committed" = "product_stock_levels"."committed" + EXCLUDED."committed"`;
 }
 
 /** Khoá + đọc level hiện có của SKU (cho phân bổ trừ hàng). */
@@ -104,11 +123,16 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
 
   const locs = await listLocations(tx, product.userId);
   const logs: StockWriteResult["logs"] = [];
+  // Số cộng vào bộ đếm "đang giữ": đúng bằng số vừa trừ cho đơn (mọi dòng nhật ký trừ của đơn).
+  const reserved = w.reserve && w.delta < 0 && stockCommittedOn() ? -w.delta : 0;
 
   if (locs.length === 0) {
     const updated = await tx.product.update({
       where: { id: w.productId },
-      data: { quantityInStock: { increment: w.delta } },
+      data: {
+        quantityInStock: { increment: w.delta },
+        ...(reserved ? { committedQuantity: { increment: reserved } } : {}),
+      },
       select: { quantityInStock: true },
     });
     const balanceAfter = updated.quantityInStock;
@@ -163,10 +187,13 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
     return sum + (sellable ? (w.delta > 0 ? a.quantity : -a.quantity) : 0);
   }, 0);
   let balanceAfter = product.quantityInStock;
-  if (sellableDelta !== 0) {
+  if (sellableDelta !== 0 || reserved) {
     const updated = await tx.product.update({
       where: { id: w.productId },
-      data: { quantityInStock: { increment: sellableDelta } },
+      data: {
+        quantityInStock: { increment: sellableDelta },
+        ...(reserved ? { committedQuantity: { increment: reserved } } : {}),
+      },
       select: { quantityInStock: true },
     });
     balanceAfter = updated.quantityInStock;
@@ -174,7 +201,7 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
 
   for (const a of allocations) {
     const signed = w.delta > 0 ? a.quantity : -a.quantity;
-    await bumpLevel(tx, w.productId, a.locationId, signed);
+    await bumpLevel(tx, w.productId, a.locationId, signed, reserved ? a.quantity : 0);
     const log = await tx.inventoryLog.create({
       data: {
         productId: w.productId,

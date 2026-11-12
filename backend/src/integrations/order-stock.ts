@@ -8,8 +8,9 @@
 // ============================================================
 
 import type { Prisma } from "@prisma/client";
-import { InventoryLogType } from "@prisma/client";
-import { applyStockDelta } from "../services/stock-ledger";
+import { InventoryLogType, ShippingStatus } from "@prisma/client";
+import { applyStockDelta, stockCommittedOn } from "../services/stock-ledger";
+import { adjustCommittedForOrdersTx } from "../services/stock-committed";
 
 export type StockOutcome =
   | "none"
@@ -175,7 +176,10 @@ export async function deductStockTx(
   productIds.push(...rel.productIds);
 
   let deducted = 0;
-  for (const it of order.items) {
+  // Trừ theo thứ tự mã cố định: hai đơn cùng chứa A và B luôn khóa A trước B, không khóa chéo
+  // nhau (và không khóa chéo với lượt quét bù của bộ đếm giữ, cũng đi theo id tăng dần).
+  const items = [...order.items].sort((x, y) => (x.productId! < y.productId! ? -1 : x.productId! > y.productId! ? 1 : 0));
+  for (const it of items) {
     // Đợt B: sổ kho tự phân bổ theo thứ tự ưu tiên vị trí (nếu shop dùng vị trí)
     // và ghi vị trí vào nhật ký để hủy đơn trả về đúng chỗ.
     await applyStockDelta(tx, {
@@ -184,15 +188,22 @@ export async function deductStockTx(
       type: InventoryLogType.SYNC,
       reason: `Trừ kho tự động — ${sourceLabel} đơn ${order.orderCode}`,
       orderId,
+      // Lát 1 chạy bóng: hàng vừa trừ khỏi tồn bán còn nằm trong kho → vào bộ đếm "đang giữ".
+      reserve: true,
     });
     deducted += it.quantity;
     if (!productIds.includes(it.productId!)) productIds.push(it.productId!);
   }
 
   // Đánh mốc kể cả khi 0 dòng khớp SKU: coi như đã xử lý, tránh quét lại mỗi webhook.
+  // stockCommittedAt chỉ đánh khi thật sự có hàng vào bộ đếm giữ.
+  const now = new Date();
   await tx.order.update({
     where: { id: orderId },
-    data: { stockDeductedAt: new Date() },
+    data: {
+      stockDeductedAt: now,
+      ...(deducted > 0 && stockCommittedOn() ? { stockCommittedAt: now } : {}),
+    },
   });
   return { deducted, outcome: deducted > 0 ? "deducted" : "none", productIds };
 }
@@ -213,6 +224,9 @@ export async function restoreStockTx(
     select: { stockRestoredAt: true, orderCode: true },
   });
   if (!order) return { restored: 0, outcome: "none", productIds: [] };
+  // Đơn hủy khi hàng CHƯA rời kho → ra khỏi bộ đếm "đang giữ" (đã rời kho rồi thì không còn gì
+  // để nhả). Gọi trước chốt chặn stockRestoredAt: hàm tự chống lặp bằng mốc của nó.
+  await releaseCommittedTx(tx, orderId);
   if (order.stockRestoredAt) {
     return { restored: 0, outcome: "already-restored", productIds: [] };
   }
@@ -246,4 +260,71 @@ export async function restoreStockTx(
     return { restored, outcome: "restored", productIds };
   }
   return { restored: 0, outcome: "none", productIds: [] };
+}
+
+// ============================================================
+// BỘ ĐẾM "ĐANG GIỮ" + MỐC HÀNG RỜI KHO — kho chuẩn quốc tế, LÁT 1 CHẠY BÓNG (12/11/2026)
+// docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 13.
+//
+// Chuẩn quốc tế: đơn chốt chỉ GIỮ hàng, hàng rời kho mới trừ tồn. Sổ Hubsell trừ từ lúc chốt
+// (deductStockTx) và lát này KHÔNG đổi điều đó. Lát này chỉ ghi thêm hai điều sổ chưa biết:
+//   • hàng nào đang giữ cho đơn  → Product.committedQuantity (+ committed từng vị trí),
+//     cộng ngay trong bút toán trừ của deductStockTx (applyStockDelta { reserve: true });
+//   • đơn nào đã rời kho         → Order.stockShippedAt (shipStockTx trừ bộ đếm).
+// Bất biến: Product.committedQuantity = tổng các dòng nhật ký TRỪ của những đơn có
+// stockCommittedAt mà chưa có stockShippedAt. Sổ, holdQuantity, số đẩy sàn KHÔNG đổi ở đây →
+// không nơi gọi nào phải đẩy tồn sau các hàm này.
+// ============================================================
+
+export type ShipSource = "HANDOVER" | "PLATFORM" | "CHANNEL_INACTIVE";
+
+/** Trạng thái = kiện đã rời shop (đã giao cho đơn vị vận chuyển). */
+export function hasLeftWarehouse(status: ShippingStatus | null | undefined): boolean {
+  return status === ShippingStatus.SHIPPING || status === ShippingStatus.DELIVERED;
+}
+
+/**
+ * HÀNG CỦA ĐƠN ĐÃ RỜI KHO — đúng một lần. Gọi ở ba nơi, nơi nào tới trước thì thắng: lập Biên
+ * bản bàn giao, webhook sàn báo đã giao, lượt quét bù (services/stock-committed.ts làm theo lô
+ * bằng SQL, không qua hàm này). Chỉ đụng bộ đếm giữ + mốc; KHÔNG đụng sổ.
+ */
+export async function shipStockTx(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  source: ShipSource
+): Promise<{ shipped: number }> {
+  if (!stockCommittedOn()) return { shipped: 0 };
+  await lockOrderRow(tx, orderId);
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { stockCommittedAt: true, stockShippedAt: true },
+  });
+  if (!order?.stockCommittedAt || order.stockShippedAt) return { shipped: 0 };
+  const shipped = await adjustCommittedForOrdersTx(tx, [orderId], -1);
+  await tx.order.update({
+    where: { id: orderId },
+    data: { stockShippedAt: new Date(), stockShipSource: source },
+  });
+  return { shipped };
+}
+
+/**
+ * ĐƠN HỦY KHI HÀNG CHƯA RỜI KHO → ra khỏi bộ đếm giữ, đúng một lần (xóa mốc stockCommittedAt
+ * nên gọi lại không trừ nữa). Đơn đã rời kho thì không làm gì. KHÔNG cộng lại sổ — việc đó
+ * vẫn do nơi gọi làm như trước (restoreStockTx, hủy tay, nhận hàng hoàn).
+ */
+export async function releaseCommittedTx(
+  tx: Prisma.TransactionClient,
+  orderId: string
+): Promise<{ released: number }> {
+  if (!stockCommittedOn()) return { released: 0 };
+  await lockOrderRow(tx, orderId);
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { stockCommittedAt: true, stockShippedAt: true },
+  });
+  if (!order?.stockCommittedAt || order.stockShippedAt) return { released: 0 };
+  const released = await adjustCommittedForOrdersTx(tx, [orderId], -1);
+  await tx.order.update({ where: { id: orderId }, data: { stockCommittedAt: null } });
+  return { released };
 }

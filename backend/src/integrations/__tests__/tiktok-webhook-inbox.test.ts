@@ -110,6 +110,8 @@ async function waitForEvents(
   }
 }
 
+const committedNow = async () =>
+  (await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { committedQuantity: true } })).committedQuantity;
 const stockNow = async () =>
   (await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { quantityInStock: true } })).quantityInStock;
 
@@ -188,6 +190,10 @@ describe("Webhook TikTok — hộp thư đến + hàng đợi bền pg-boss", ()
     expect(order!.items[0].quantity).toBe(2);
     expect(order!.stockDeductedAt).not.toBeNull();
     expect(await stockNow()).toBe(8);
+    // Lát 1 chạy bóng (kho chuẩn quốc tế): hàng vừa trừ vào bộ đếm "đang giữ", đơn có mốc giữ.
+    expect(order!.stockCommittedAt).not.toBeNull();
+    expect(order!.stockShippedAt).toBeNull();
+    expect(await committedNow()).toBe(2);
 
     const again = await postWebhook(body);
     expect(again.json).toMatchObject({ queued: false, duplicate: true });
@@ -214,6 +220,28 @@ describe("Webhook TikTok — hộp thư đến + hàng đợi bền pg-boss", ()
     const order = await prisma.order.findFirstOrThrow({ where: { channelId, orderCode: orderId } });
     expect(order.shippingStatus).toBe("CANCELLED");
     expect(await stockNow()).toBe(10);
+    // Hủy khi hàng chưa rời kho → ra khỏi bộ đếm giữ, mốc giữ bị xóa.
+    expect(order.stockCommittedAt).toBeNull();
+    expect(await committedNow()).toBe(0);
+  });
+
+  it("đơn chốt rồi sàn báo IN_TRANSIT: hàng rời kho → ra khỏi bộ đếm giữ, đơn có mốc rời kho, sổ đứng yên", async () => {
+    const orderId = "TTKQ-1009";
+    mockOrder(orderId, "AWAITING_SHIPMENT", 2);
+    await postWebhook(orderEvent(orderId, "AWAITING_SHIPMENT", 1_700_000_050_000));
+    await waitForEvents({ shopId: SHOP_ID, entityId: orderId }, (rows) => rows.length === 1 && rows[0].status === WebhookJobStatus.SUCCESS);
+    expect(await stockNow()).toBe(8);
+    expect(await committedNow()).toBe(2);
+
+    mockOrder(orderId, "IN_TRANSIT", 2);
+    await postWebhook(orderEvent(orderId, "IN_TRANSIT", 1_700_000_060_000));
+    await waitForEvents({ shopId: SHOP_ID, entityId: orderId }, (rows) => rows.length === 2 && rows.every((x) => x.status === WebhookJobStatus.SUCCESS));
+    const order = await prisma.order.findFirstOrThrow({ where: { channelId, orderCode: orderId } });
+    expect(order.shippingStatus).toBe("SHIPPING");
+    expect(order.stockShippedAt).not.toBeNull();
+    expect(order.stockShipSource).toBe("PLATFORM");
+    expect(await stockNow()).toBe(8);
+    expect(await committedNow()).toBe(0);
   });
 
   it("sự kiện ủy quyền của shop chưa nối: evt.auth xử lý, dòng SUCCESS kèm ghi chú", async () => {

@@ -5,6 +5,28 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 12/11 (kho) — Anh: "lên phương án khảo sát phần Quản lý kho bản chuẩn quốc tế… hiển thị, thuật toán tính, phạm vi tác động tới kiểm kê, nhập/xuất" → KHẢO SÁT XONG, chưa code, chưa đo prod
+
+- Báo cáo: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md`. Ba luồng: tài liệu chính thức 9 hệ thống quốc tế, rà backend (mọi chỗ ghi / đọc sổ, mọi chỗ ghi `shippingStatus`), rà web + mobile (16 + 2 tệp, 10 nhóm câu chữ sẽ sai nghĩa).
+- Chuẩn thống nhất: Tồn kho = hàng trong kho gồm cả hàng đã có đơn; đơn chốt chỉ giữ; giao cho vận chuyển mới trừ; kiểm kê so Tồn kho và ghi chênh; hàng hoàn cộng khi nhận kiện; sàn nhận Có thể bán.
+- Hubsell lệch gốc ở 4 chỗ: trừ sổ lúc chốt; hủy sau giao cộng sổ ngay; Kiểm kê ghi đè; Nhật ký một cột.
+- Đề xuất cách A: GIỮ `quantityInStock` làm "tồn bán" (đúng kiểu Shopify lưu Available riêng), thêm ngăn Đang giữ + mốc `stockShippedAt`, Tồn kho = tồn bán + đang giữ + không bán → 23 tệp backend đọc sổ và phần đẩy sàn không đổi. Số đẩy sàn chỉ đổi ở ca hủy sau giao.
+- Lỗ có sẵn thấy kèm (chưa sửa): hủy tay + nhận hoàn không khóa dòng đơn (có thể cộng hai lần khi chạy đua webhook); Shopee / TikTok chỉ tác động kho ở đường webhook; "còn hàng" bốn nơi bốn công thức.
+- Lộ trình 6 lát, lát 1 chạy bóng (bộ đếm mới đối chiếu hằng đêm với câu Chờ giao trên prod). ⏳ 7 câu chờ anh ở mục 9 (cách A/B; hủy sau giao tồn về lúc nào; mốc rời kho; tên cột…).
+- Anh: "Đo prod trước" → **ĐÃ ĐO 12/11, chỉ đọc, Supabase SQL Editor** (docs mục 11; `Order` chỉ đi qua khóa chính / chỉ mục bán phần):
+  - Dùng kho: 37 shop có sản phẩm kho, 32 shop có đơn trừ kho; Kiểm kê 3 shop, sửa ô Tồn kho 8 shop, vị trí 2 shop, ô "không bán" 0 shop, Excel đè 0. 103 mã âm sổ / 12 shop.
+  - Hủy sau giao (14 ngày có cờ): 374 đơn / 967 sản phẩm / 16 shop đã cộng sổ mà kho chưa nhận kiện (208 đơn quá 7 ngày); chỉ 5 / 379 đơn được quét nhận; toàn hệ thống 5 shop từng quét nhận hàng hoàn.
+  - Đang giữ chưa giao ở gian hoạt động: 3.702 đơn / 54 shop, 98 đơn quá 3 ngày, 0 quá 7 ngày; 4.147 đơn kẹt ở gian ngủ đông / mất kết nối.
+  - Thấy thêm: `Order_returnStatus_idx` không còn trên prod (lọc theo returnStatus = quét cả bảng); 8.962 dòng trừ kho có đơn đã bị xóa (chưa kiểm đường xóa) → xóa đơn đang giữ phải nhả giữ.
+  - Chưa đo được: thời gian từ chốt tới lúc shipper lấy (chưa có mốc).
+- **Anh chốt câu 2: "Chia theo shop"** — đơn hủy sau giao: mỗi shop một chế độ (cộng khi nhận kiện = chuẩn / cộng khi sàn báo hủy = cách cũ + dòng nhắc "đang tính cả N sản phẩm chưa về kho"). Cách chia chi tiết em đề xuất ở docs mục 5.2.1 (không tự chuyển shop nào, mời 5 shop đã quét; anh chưa duyệt từng ý).
+- **Anh: "Chuẩn quốc tế như thế nào thì em cứ làm như vậy"** → em chốt các câu còn lại theo chuẩn (bảng đầu mục 9): cách cài A (lựa chọn kỹ thuật của em, chuẩn không quy định cột lưu); mốc rời kho = Biên bản bàn giao HOẶC sàn báo đã lấy, cái nào tới trước; tên cột "Đang giữ"; sửa ô Tồn kho = số trong kho; Giá trị tồn tính trên Tồn kho; lý do nhập / xuất theo danh sách Shopify.
+- **Thiết kế lát 1 chạy bóng ĐÃ VIẾT (docs mục 13), CHƯA CODE:** cột `Product.committedQuantity`, `product_stock_levels.committed`, `Order.stockCommittedAt / stockShippedAt / stockShipSource` + chỉ mục bán phần; hàm `shipStockTx` gọi ở ba nơi (bàn giao, webhook, quét bù một câu SQL mỗi lô); nhả giữ khi hủy trước giao và khi xóa gian (đã kiểm: `channel-delete.ts` là đường duy nhất xóa đơn); đối chiếu hằng đêm ba phép so, 7 đêm lệch 0 mới sang lát 2 (7 là em tự chọn). Không đổi màn, không đổi số đẩy sàn.
+- **Anh: "Code lát 1" → ĐÃ CODE trên local, CHƯA commit, CHƯA lên prod** (docs mục 13.9): migration `20261112210000_stock_committed_shadow` (5 cột + chỉ mục `Order_stock_committed_idx`); `applyStockDelta { reserve }`; `shipStockTx` / `releaseCommittedTx` trong `order-stock.ts`; `services/stock-committed.ts` + `workers/stock-committed.ts` (ngày chuyển, quét bù 2 phút, đối chiếu 24 giờ); nối 3 sàn, hủy tay, nhận hoàn, Biên bản bàn giao, xóa gian. Lệch thiết kế: hủy trước khi rời kho thì XÓA mốc giữ; quét bù là một giao dịch vài câu có khóa theo thứ tự; `deductStockTx` trừ theo thứ tự mã cố định; lô 200. Tắt khẩn `STOCK_COMMITTED_OFF=1`.
+  - Kiểm: tsc sạch; test mới 16 ca + 1 ca qua webhook TikTok; 12 tệp test kho cũ + app-return qua; `channel-delete-db` 3 ca đỏ CÓ TỪ TRƯỚC (đỏ y hệt khi cất thay đổi). Chưa test qua route bàn giao / hủy tay / nhận hoàn; chưa đo dữ liệu lớn.
+  - ⏳ Trước khi push: chạy tay trên prod 3 lệnh ADD COLUMN + CREATE INDEX CONCURRENTLY (docs 13.9) — cần anh gật.
+
+---
 ## Phiên 12/11 — Anh: "kiểm tra quảng cáo tiktok… 3 người nhắn tin hỏi nhưng không có ai dùng thử" → em lấy số Ads Manager (chỉ đọc, không đổi gì)
 
 - Lead gen tin nhắn 11/11 (Ended, hết 200k): 7.686 hiển thị, CPM 26k, 25 bấm, 4 trò chuyện, 1 lead TikTok; xem đủ 6 giây 5,8 % (bài 1017 chạy Traffic: 48,6 %). Video "…Tự động loại bỏ… và trợ lý đề xuất…" ra 3/4 trò chuyện.
@@ -12,6 +34,9 @@
 - Anh chọn "Thử 1017 + tin nhắn" → em chép chiến dịch, bỏ hashtag, đặt 200k 13/11 → khi tìm bài 1017 thì phát hiện 1017 ĐÃ có trong đợt 11/11 (bài 1:08, ra 3/4 trò chuyện) → kết luận "video giữ người kém" ở trên là SAI. Nháp dừng, CHƯA publish. Anh hỏi nghiên cứu tệp khách bằng tài liệu nước ngoài → ⏳ chốt.
 - Anh: "Nghiên cứu trước" → 4 hướng song song + báo cáo `hubsell-marketing/chien-luoc/nghien-cuu/reports/Tệp khách và kênh lấy khách.md`: mọi kênh ra khách trả tiền đều có người được tin đứng giữa; quảng cáo chỉ để bám lại người xem video; sửa đăng ký trong trình duyệt nhúng TikTok + câu hỏi mức chi GMV Max trước khi chi thêm. Nháp 13/11 khuyên KHÔNG publish. ⏳ anh chốt hướng.
 - Anh: "Làm mục 2 trước" → ĐÃ CODE + SOI LOCAL, CHƯA COMMIT (chi tiết `docs/DANG-KY-TU-QUANG-CAO-TIKTOK.md`): trình duyệt nhúng TikTok/Facebook/Zalo… ẩn nút Google + hộp nhắc + "Sao chép link"; form đăng ký 7 → 4 ô (bỏ Tên đăng nhập — tự sinh từ email, bỏ Nhập lại mật khẩu); câu hỏi một chạm mức chi quảng cáo/tháng → cột `User.adSpendBand` (migration `20261112120000_user_ad_spend_band`, nullable, không chặn app/Google); thư HQ "Khách mới" có SĐT + mức chi, ≥10tr gắn ⭐; HQ Khách hàng cột Quy mô thêm "Ads/tháng". Soi local 375 px giả UA TikTok Android/iOS + tối + HQ; 9/9 UA mẫu, test 3/3, tsc + eslint sạch; tài khoản thử đã xóa. Chưa kiểm: máy thật trong app TikTok, thư HQ.
+- Anh: "commit push đi em" → **ĐÃ PUSH `5b17d56b`**; prod /health = 5b17d56b, migration `adSpendBand` áp xong (bọc lock_timeout + thử lại), app.hubsell.vn/login hiện form mới. Không commit docs phiên khác, `tools/mail-digest/unflag.js`, kịch bản video nháp.
+- Anh: "test nốt quảng cáo" → privacy mục 11 không cản bám lại trên TikTok; nháp đổi mục tiêu sang Conversations (TikTok reset nhóm + quảng cáo nháp). ⛔ Tệp người xem video tự nhiên (Custom Audience → Business Account) đòi anh tự liên kết Business Account; ⏳ anh liên kết + chốt ngân sách (đề xuất trần ~2,5tr tự chọn) rồi em cài nốt, anh nạp tiền + Publish.
+- Anh: "Test nháp 200K đi em" → nháp ĐÃ CÀI, CHƯA publish: Conversations / tin nhắn TikTok, trọn đời 200k 00:00 13/11 → 00:00 14/11, chỉ bài 1017, tắt hết Automatic enhancements, mẫu tin nhắn mới "Hubsell 1017 - hoi muc chi" (câu đầu hỏi mức chi; dưới 10tr → link đăng ký ?ref=HUBSELL101, từ 10tr → xin Zalo). Số dư 203.233đ. ⏳ tệp người xem tự nhiên chờ anh Link Business Account; anh tự Publish.
 
 ---
 ## Phiên 11/11 (tối) — Khách xin cột "Giữ lại" ở Tổng kho → khảo sát, rà lại, anh chốt bản 2 → cột "Chờ giao" ĐÃ PUSH `307629dd`

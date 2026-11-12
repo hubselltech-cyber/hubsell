@@ -47,6 +47,7 @@ import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startPlanOverageCloseWorker } from "./plan-overage-close";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
 import { startProductBarcodeBackfillWorker } from "./product-barcode-backfill";
+import { startStockCommittedWorker } from "./stock-committed";
 import { startListingCopyReviewWorker } from "./listing-copy-review";
 import { startReadLanes } from "./read-lanes";
 import { startAdsLane } from "./ads-lane";
@@ -154,4 +155,8 @@ export function startAllWorkers(): void {
   // Tự điền mã vạch quản lý cho sản phẩm kho có từ trước 05/11/2026 (anh Trung: "Máy tự điền chậm") —
   // 100 dòng / 15 giây, nhớ tiến độ ở maintenance_jobs, xong là thôi; tắt PRODUCT_BARCODE_BACKFILL_OFF=1.
   startProductBarcodeBackfillWorker();
+  // Kho chuẩn quốc tế, lát 1 CHẠY BÓNG (12/11/2026): bộ đếm "đang giữ cho đơn" — ngày chuyển một lần,
+  // quét bù đơn đã giao / gian không còn hoạt động mỗi 2 phút, đối chiếu mỗi ngày. Chưa màn nào đọc,
+  // số đẩy sàn không dùng; tắt STOCK_COMMITTED_OFF=1.
+  startStockCommittedWorker();
 }

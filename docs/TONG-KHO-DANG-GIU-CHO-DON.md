@@ -2,7 +2,7 @@
 
 > Khách xin: cột "Có thể bán" phải là "giữ lại", ví dụ đơn đang ra 10 con thì hiện 10 con bị giữ.
 > Khảo sát đối thủ + lý do ở [QUAN-LY-KHO-TAI-CAU-TRUC.md](QUAN-LY-KHO-TAI-CAU-TRUC.md) mục 11.
-> Trạng thái: **anh CHỐT BẢN 2 tối 11/11** ("Chốt bản 2"). Đang làm lát 1 + 2 trên local.
+> Trạng thái: **anh CHỐT BẢN 2 tối 11/11**; lát 1 + 2 (backend + cột web) ĐÃ PUSH `307629dd` (mục 11, 12). Còn Kiểm kê + mobile.
 > **Bản 2 ĐẢO ba lựa chọn của bản 1** (anh đã "Chốt theo em" ở bản 1, sau đó hỏi "có cần khảo sát lại cho chắc không"). Lý do ở mục 2. Câu chờ anh chốt lại ở mục 10.
 
 ## 1. Hiện trạng (đọc mã 11/11)
@@ -187,3 +187,11 @@ Không ô nào của cột mới / dòng nhỏ tràn ở mọi cỡ. **Thấy k�
 **Dọn local: ĐÃ DỌN** trước khi commit — xóa 2 tài khoản thử + 2 nhân viên thử, xóa các tệp seed tạm.
 
 **✅ ĐÃ BỎ hộp danh sách đơn (11/11, anh: "Bỏ hộp đi"):** gỡ `awaitingShipOrdersOf`, endpoint `GET /products/:id/awaiting-orders`, kiểu + hàm gọi trong `lib/api.ts`, phần hộp trong `awaiting-ship.tsx` (tệp còn ~90 dòng, không còn "use client"), 1 ca test + 1 đoạn kiểm trong ca gian mất kết nối. Sau khi gỡ: tsc hai phía + eslint frontend sạch, test 8/8, soi lại local 1622 (cột) + 1440 (dòng nhỏ): số không còn bấm được, không ô nào tràn.
+
+## 12. Sau push `307629dd` (11/11/2026 ~23:25, anh: "Em push bản này trước đi")
+
+- Backend prod `/health` báo đúng bản `307629dd…` sau ~2 phút (dịch vụ khởi động được = migration chỉ mục đi qua, IF NOT EXISTS bỏ qua vì chỉ mục đã dựng tay).
+- Chạy thử trên prod (Supabase, chỉ đọc) đúng câu của `awaitingShipByProduct` cho chủ shop có NHIỀU đơn trong tập nhất, 100 mã: phần câu chính ~20 ms, đi qua `Order_stock_awaiting_ship_idx`.
+- Phần được tính (gian đang hoạt động) có nhật ký trừ kho thật: **16 chủ shop, 494 đơn, 570 sản phẩm chờ giao trên 323 mã**. Phần còn lại của 3.680 đơn là shop không dùng Tổng kho (dòng đơn chưa nối SKU) → cột hiện "—".
+- **CHƯA nhìn được cột trên prod bằng mắt:** phiên Chrome đang đăng nhập tài khoản điều hành (không có sản phẩm kho, bảng rỗng); không có `gh` để xem trạng thái deploy Vercel. Cần anh mở Tổng kho bằng một tài khoản shop có đơn chờ giao.
+- Bản "đúng chuẩn quốc tế" (đơn chốt = giữ, hàng rời kho mới trừ sổ → 100 · 98 · 2): anh nói "sẽ khảo sát vào một hôm khác anh sẽ nói sau". Chờ anh gọi, không tự mở.

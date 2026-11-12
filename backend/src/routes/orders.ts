@@ -11,6 +11,7 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { ORDER_PAYMENT_INCLUDE, orderPaymentDetail } from "../lib/order-payment-detail";
 import { applyStockDelta } from "../services/stock-ledger";
+import { releaseCommittedTx } from "../integrations/order-stock";
 import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
@@ -654,6 +655,8 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
     // Phiếu "tồn chờ đẩy" lập TRONG giao dịch dưới đây, chốt sau commit (giai đoạn 2 bước 4).
     let stockTicket: StockPushTicket | null = null;
     const result = await prisma.$transaction(async (tx) => {
+      // Hủy khi hàng chưa rời kho → ra khỏi bộ đếm "đang giữ" (lát 1 chạy bóng; tự chống lặp).
+      await releaseCommittedTx(tx, order.id);
       // Tìm các log TRỪ kho gắn với đơn này (changeQuantity < 0)
       const deductions = await tx.inventoryLog.findMany({
         where: { orderId: order.id, changeQuantity: { lt: 0 } },
@@ -1644,6 +1647,9 @@ async function restoreReturnStockTx(
     restoredQuantity: number;
     newQuantity: number;
   }[] = [];
+  // Đơn chưa từng được ghi "rời kho" mà kho đã nhận lại hàng → ra khỏi bộ đếm "đang giữ"
+  // (lát 1 chạy bóng; đơn đã rời kho thì hàm không làm gì).
+  await releaseCommittedTx(tx, order.id);
   const deductions = await tx.inventoryLog.findMany({
     where: { orderId: order.id, changeQuantity: { lt: 0 } },
     include: { product: { select: { id: true, productName: true } } },

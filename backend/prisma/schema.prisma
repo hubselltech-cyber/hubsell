@@ -1508,6 +1508,11 @@ model Product {
   /// Tồn KHẢ DỤNG (đẩy lên sàn / hiển thị) = quantityInStock − holdQuantity.
   /// KHÔNG trừ thẳng quantityInStock vì hàng vẫn nằm trong kho vật lý.
   holdQuantity Int @default(0)
+  /// ĐANG GIỮ cho đơn đã chốt, hàng CHƯA rời kho (lát 1 chạy bóng 12/11/2026 — docs/
+  /// QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 13). Đã nằm NGOÀI quantityInStock (sổ trừ từ lúc đơn chốt),
+  /// nên: hàng trong kho (bán được) = quantityInStock + committedQuantity. CHƯA màn nào đọc số này,
+  /// số đẩy sàn không dùng. Chỉ ghi qua order-stock.ts / stock-ledger.ts.
+  committedQuantity Int @default(0)
 
   /// TỒN AN TOÀN riêng của SKU này — số lượng giữ lại KHÔNG bán trên sàn (đệm
   /// chống bán vượt khi nhiều sàn nổ đơn sát nhau). NULL = dùng số mặc định
@@ -1735,6 +1740,17 @@ model Order {
   /// Có mốc = holdQuantity đã được trả lại, không nhả lần hai.
   stockHoldReleasedAt DateTime?
 
+  /// ---- KHO CHUẨN QUỐC TẾ, LÁT 1 CHẠY BÓNG (12/11/2026, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 13) ----
+  /// Đơn này ĐANG được tính trong bộ đếm "đang giữ" (Product.committedQuantity) từ lúc nào.
+  /// Mốc riêng, không dùng stockDeductedAt: đơn cũ đã trừ kho và đã giao từ trước ngày chuyển
+  /// không bao giờ vào bộ đếm. Đơn hủy khi hàng chưa rời kho → mốc bị xóa (nhả giữ).
+  stockCommittedAt DateTime?
+  /// Hàng của đơn đã RỜI KHO → đã ra khỏi bộ đếm giữ. Chống trừ bộ đếm hai lần.
+  stockShippedAt   DateTime?
+  /// Ai báo rời kho: HANDOVER (Biên bản bàn giao) · PLATFORM (sàn báo đã lấy hàng) ·
+  /// CHANNEL_INACTIVE (gian mất kết nối / ngủ đông — đơn không còn được cập nhật).
+  stockShipSource  String?
+
   /// ---- TỰ CHUẨN BỊ HÀNG (04/11/2026, docs/TU-CHUAN-BI-HANG.md) ----
   /// Lần máy thử gần nhất + số lần sàn báo "chưa sẵn sàng" (thử lại sau ≥ 30′, tối đa 6).
   autoArrangeTriedAt       DateTime?
@@ -1864,6 +1880,10 @@ model Order {
   // trong SQL migration 20261111230000_order_stock_awaiting_ship_idx:
   //   Order_stock_awaiting_ship_idx (channelId) WHERE shippingStatus IN ('PENDING','PROCESSED')
   //     AND stockRestoredAt IS NULL AND stockDeductedAt IS NOT NULL
+  // Chỉ mục MỘT PHẦN "đơn đang nằm trong bộ đếm giữ" (kho chuẩn quốc tế lát 1, 12/11/2026) chỉ có
+  // trong SQL migration 20261112210000_stock_committed_shadow:
+  //   Order_stock_committed_idx (channelId) WHERE stockCommittedAt IS NOT NULL
+  //     AND stockShippedAt IS NULL
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -2119,6 +2139,9 @@ model ProductStockLevel {
   productId  String
   locationId String
   quantity   Int    @default(0)
+  /// Đang giữ cho đơn đã chốt, hàng chưa rời vị trí này (lát 1 chạy bóng 12/11/2026). Nằm NGOÀI
+  /// quantity. Σ committed các vị trí = Product.committedQuantity khi shop dùng vị trí.
+  committed  Int    @default(0)
 
   product  Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
   location StockLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)

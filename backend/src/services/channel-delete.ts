@@ -22,6 +22,7 @@
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { releaseCommittedOfChannel } from "./stock-committed";
 
 /** Số đơn mỗi câu DELETE. 1.000 là mặc định tự chọn theo số đo trên: mỗi câu dưới ~1 giây. */
 export const CHANNEL_DELETE_BATCH = 1000;
@@ -48,6 +49,9 @@ async function run(
   opts: { batch: number; pauseMs: number }
 ): Promise<ChannelDeleteOutcome> {
   let deletedOrders = 0;
+  // Đơn bị xóa thì nhật ký kho mất orderId → phải đưa đơn đang giữ của gian ra khỏi bộ đếm
+  // "đang giữ" TRƯỚC khi xóa (lát 1 chạy bóng, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 13.2).
+  await releaseCommittedOfChannel(channelId);
   for (;;) {
     const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { status: true } });
     if (!channel) return { status: "gone", deletedOrders };

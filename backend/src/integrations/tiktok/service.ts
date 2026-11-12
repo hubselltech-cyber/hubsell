@@ -24,7 +24,13 @@ import {
   syncWriteAlways,
 } from "../order-sync-write";
 import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
-import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
+import {
+  deductStockTx,
+  hasLeftWarehouse,
+  restoreStockTx,
+  shipStockTx,
+  type StockOutcome,
+} from "../order-stock";
 import { stageStockPush, type StockPushTicket } from "../inventory-push";
 import { expireToDate } from "./config";
 import {
@@ -1432,6 +1438,11 @@ export async function processTiktokOrderEvent(
 
     if (shouldDeductStock(status)) {
       const d = await deductStockTx(tx, up.orderId, "webhook TikTok");
+      // Sàn báo đã lấy hàng → hàng rời kho, ra khỏi bộ đếm giữ (lát 1 chạy bóng; sổ không đổi).
+      // PARTIALLY_SHIPPING còn là "Đã xử lý": sổ theo cả đơn, chờ IN_TRANSIT mới coi là rời kho.
+      if (hasLeftWarehouse(mapShippingStatus(status))) {
+        await shipStockTx(tx, up.orderId, "PLATFORM");
+      }
       return {
         found: true,
         created: up.created,

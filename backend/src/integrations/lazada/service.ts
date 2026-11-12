@@ -31,9 +31,11 @@ import { assertChannelSlot } from "../../services/plan-enforcement";
 import { carrierFromName } from "../../services/shipping";
 import {
   deductStockTx,
+  hasLeftWarehouse,
   holdStockTx,
   releaseStockHoldTx,
   restoreStockTx,
+  shipStockTx,
 } from "../order-stock";
 import { finishStockPush, stageStockPush } from "../inventory-push";
 import { planSettlementWrite } from "../settlement-merge";
@@ -707,6 +709,10 @@ async function applyLazadaStockTx(
     touched = [...new Set([...rel.productIds, ...r.productIds])];
   } else if (lazadaShouldDeductStock(repStatus)) {
     touched = (await deductStockTx(tx, orderId, "đồng bộ Lazada")).productIds;
+    // Sàn báo đã lấy hàng → hàng rời kho, ra khỏi bộ đếm giữ (lát 1 chạy bóng; sổ không đổi).
+    if (hasLeftWarehouse(mapLazadaStatus(repStatus))) {
+      await shipStockTx(tx, orderId, "PLATFORM");
+    }
   } else if (lazadaShouldHoldStock(repStatus)) {
     touched = (await holdStockTx(tx, orderId)).productIds;
   }
