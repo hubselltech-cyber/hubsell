@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Dòng phụ dưới số "Bị trừ thêm": tiền lệch của MỘT đơn tách thành chiều đi · chiều về · phụ phí ·
- * sàn bồi (khảo sát 13/11/2026, docs DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md mục 8). Nhãn
+ * sàn bù (khảo sát 13/11/2026, docs DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md mục 8). Nhãn
  * nguyên nhân là một nhãn cho cả đơn nên đơn trả hàng nuốt luôn cước chiều đi; dòng này cho thấy tiền
  * thật sự nằm ở đâu. Các phần cộng lại đúng bằng số ở trên. Đơn chưa tách được (Shopee, Lazada) không in gì.
  */

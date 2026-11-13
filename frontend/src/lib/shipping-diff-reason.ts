@@ -40,7 +40,7 @@ export const SHIPPING_DIFF_REASON_META: Record<
   },
   CUSTOMER_RETURN: {
     label: "Khách trả hàng",
-    hint: "Đơn Trả hàng / Hoàn tiền: shop chịu cước cả chiều đi lẫn chiều về, trừ phần sàn bồi nếu có. Theo chính sách sàn, không khiếu nại.",
+    hint: "Đơn Trả hàng / Hoàn tiền: shop chịu cước cả chiều đi lẫn chiều về, trừ phần sàn bù lại nếu có. Theo chính sách sàn, không khiếu nại.",
     claimable: false,
   },
   SHOP_FREESHIP: {
@@ -88,7 +88,7 @@ export function shippingDiffReasonLabel(reason: ShippingDiffReason | undefined):
 // ------------------------------------------------------------
 // TÁCH TIỀN một đơn lệch + cờ "có bảo đảm, vẫn lệch" (13/11/2026) — khớp backend
 // `lib/shipping-diff-parts.ts`. Nhãn nguyên nhân là MỘT nhãn cho cả đơn; phần này nói trong số
-// tiền shop chịu có bao nhiêu là chiều đi, chiều về, phụ phí và sàn đã bồi lại bao nhiêu.
+// tiền shop chịu có bao nhiêu là chiều đi, chiều về, phụ phí và sàn đã bù lại bao nhiêu.
 // ------------------------------------------------------------
 
 /** Tiền DƯƠNG theo góc shop chịu; riêng `reimbursed` là tiền sàn trả lại. Hiện mới tách được đơn TikTok. */
@@ -104,7 +104,14 @@ const SHIP_DIFF_PART_META: { key: keyof ShipDiffParts; short: string; label: str
   { key: "outbound", short: "Chiều đi", label: "Cước chiều đi", hint: "cước giao đi sau khi trừ phần khách trả và sàn trợ" },
   { key: "returnLeg", short: "Chiều về", label: "Cước chiều về", hint: "cước kiện quay về của đơn trả hàng" },
   { key: "surcharge", short: "Phụ phí", label: "Phụ phí vận chuyển", hint: "quá cân, quá khổ, bảo hiểm, vùng xa…" },
-  { key: "reimbursed", short: "Sàn bồi", label: "Sàn bồi lại", hint: "giao thất bại, trả hàng, Bảo đảm phí vận chuyển" },
+  // "Bù", không phải "bồi": cột này gộp mọi khoản sàn ghi có lại trên phí ship, phần lớn là trợ cấp sàn TỰ trả
+  // (giao hàng không thành công), shop không mua gói Bảo đảm phí vận chuyển vẫn có (anh Trung 13/11/2026).
+  {
+    key: "reimbursed",
+    short: "Sàn bù",
+    label: "Sàn bù lại",
+    hint: "sàn tự trả lại một phần cước: trợ cấp giao hàng không thành công, trợ cấp trả hàng, hoặc tiền bồi của gói Bảo đảm phí vận chuyển nếu shop có tham gia (Hubsell chưa tách được từng loại)",
+  },
   { key: "other", short: "Khác", label: "Khoản khác", hint: "điều chỉnh phí ship hoặc khoản sàn chưa đặt tên" },
 ];
 
@@ -117,7 +124,7 @@ export interface ShipDiffPartEntry {
   amount: number;
 }
 
-/** Các phần CÓ tiền của một đơn, theo thứ tự cố định; tiền sàn bồi mang dấu âm. */
+/** Các phần CÓ tiền của một đơn, theo thứ tự cố định; tiền sàn bù mang dấu âm. */
 export function shipDiffPartEntries(parts: ShipDiffParts | null | undefined): ShipDiffPartEntry[] {
   if (!parts) return [];
   return SHIP_DIFF_PART_META.map((m) => ({
@@ -142,11 +149,11 @@ export const SHIP_GUARANTEE_GAP_LABEL = "Có bảo đảm, vẫn lệch";
 
 export const SHIP_GUARANTEE_GAP_META: Record<ShipGuaranteeGap, { label: string; hint: string }> = {
   NOT_REIMBURSED: {
-    label: "Có bảo đảm · chưa được bồi",
-    hint: "Đơn này đã trả phí Bảo đảm phí vận chuyển nhưng bản kê chưa có khoản sàn bồi nào. Nên mở chi tiết thanh toán của đơn trên sàn để kiểm tra — Hubsell chưa xác định được đơn có thuộc diện được bồi hay không.",
+    label: "Có bảo đảm · chưa được bù",
+    hint: "Đơn này đã trả phí Bảo đảm phí vận chuyển nhưng bản kê chưa có khoản sàn bù lại nào. Nên mở chi tiết thanh toán của đơn trên sàn để kiểm tra — Hubsell chưa xác định được đơn có thuộc diện được bồi hay không.",
   },
   PARTIAL: {
-    label: "Có bảo đảm · bồi chưa đủ",
-    hint: "Đơn này đã trả phí Bảo đảm phí vận chuyển và được sàn bồi một phần, shop vẫn chịu phần còn lại. Nên kiểm tra mức bồi của đơn trên sàn.",
+    label: "Có bảo đảm · bù chưa đủ",
+    hint: "Đơn này đã trả phí Bảo đảm phí vận chuyển và được sàn bù lại một phần, shop vẫn chịu phần còn lại. Khoản bù có thể là trợ cấp giao hàng không thành công chứ chưa chắc là tiền bồi của gói — nên kiểm tra chi tiết thanh toán của đơn trên sàn.",
   },
 };

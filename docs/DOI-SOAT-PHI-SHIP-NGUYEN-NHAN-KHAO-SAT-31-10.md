@@ -281,7 +281,44 @@ Kiểm local (tài khoản thử tạo riêng, 74 đơn seed đủ 8 nguyên nh�
 - Giao diện tối đã soi (tương phản đo: dòng tách tiền 6,6 · viên nhãn 8,3 · dòng hổ phách 11,8 · chip 9,0 / 14,5).
 - Bảng Theo sản phẩm sau khi đổi sang chip dùng chung: 9 chip, tổng 18.384.120 đ = thẻ.
 - tsc + eslint sạch hai phía; vitest 4 tệp 43 ca qua.
-- CHƯA làm: bấm Xuất Excel rồi mở tệp thật; soi prod (chưa push).
+- CHƯA làm: bấm Xuất Excel rồi mở tệp thật.
+
+**Prod sau khi push `9c775eef` (13/11 khuya, backend `/health` đúng commit, tài khoản chủ shop của công ty, chỉ xem, màn 1920):** bảng 6 cột có cột Nguyên nhân, không cuộn ngang, không tràn ô; chip: Tất cả 236 · Đơn hủy sau khi gửi 138 · Khách trả hàng 67 · Cước vượt mức sàn trợ 23 · Shop chịu cước 5 · Khác 2 · Chờ sao kê 1; thẻ 7.915.200 đ; 20/20 dòng trang đầu có dòng tách tiền và cộng lại đúng số "Bị trừ thêm" (ví dụ đơn trả hàng: Chiều đi 47.600 + Sàn bồi −7.600 = 40.000); bấm chip Khách trả hàng → 67 đơn, chỉ còn nhãn đó. Tài khoản này không có đơn nào trả phí bảo đảm nên chip và dòng "Có bảo đảm, vẫn lệch" KHÔNG hiện — phần cảnh báo CHƯA được nhìn thấy trên prod, mới kiểm ở local. Chưa soi giao diện tối và màn 1280 trên prod (đã đo ở local).
+
+### 8.6 "Sàn bồi" không phải gói bồi hoàn — đổi chữ thành "Sàn bù" (13/11/2026 khuya)
+
+> Anh Trung xem prod: "Sàn bồi? Ví dụ như anh có mua gói bồi hoàn của sàn đâu".
+
+Kiểm prod (chỉ đọc) trên 3 gian TikTok của tài khoản công ty, mọi đơn có `shipReimbursement > 0` (78 đơn):
+
+| Trạng thái đơn | Đơn | Cước chiều đi | Sàn bù | Shop còn chịu | Có trả phí bảo đảm |
+|---|---:|---|---|---:|---:|
+| Hủy, chưa từng giao tới, kho chưa nhận lại | 55 | 40.900 – 55.400 | 900 – 15.400 | đúng 40.000 | 0 |
+| Hủy, chưa từng giao tới, kho đã nhận lại | 16 | 40.900 – 55.400 | 900 – 15.400 | đúng 40.000 | 0 |
+| Hủy, chưa từng giao tới (đơn 16/09) | 7 | 30.000 – 141.600 | 10.000 – 121.600 | đúng 20.000 | 0 |
+
+→ Khoản này là sàn **tự** bù phần cước vượt một mức trần (40.000 đ, lô 16/09 là 20.000 đ) cho đơn giao không thành công, khớp dòng "Trợ cấp giao hàng không thành công" (`failed_delivery_subsidy_amount`) trên Seller Center. Shop không mua gói Bảo đảm phí vận chuyển vẫn có. CHƯA xác nhận được đúng khóa nào vì `shipReimbursement` gộp 9 khóa; mức trần 40.000 / 20.000 là số quan sát được, chưa có văn bản của sàn.
+
+Đã sửa: nhãn "Sàn bồi" → **"Sàn bù"**, lời giải thích nói rõ là sàn tự trả lại (trợ cấp giao không thành công, trợ cấp trả hàng, hoặc tiền bồi của gói nếu có tham gia); dòng cảnh báo → "Có bảo đảm · chưa được bù / bù chưa đủ", lời giải thích thêm "khoản bù có thể là trợ cấp giao không thành công chứ chưa chắc là tiền bồi của gói".
+
+Hệ quả cho số ở 8.2(b): cột "Được bồi" của bảng đó là mọi khoản sàn bù, KHÔNG riêng tiền bồi của gói → câu "chương trình bồi hoàn bù 96 % đơn hủy sau gửi" chưa chắc đúng; phần lớn có thể là trợ cấp sàn tự trả. Muốn tách phải làm lát 2 (cột riêng cho `shipping_fee_guarantee_reimbursement`).
+
+**Lỗi phân loại lộ ra cùng lúc (anh chốt "Sửa cả hai, push" → ĐÃ SỬA, xem cuối mục):** 67 đơn nhãn "Khách trả hàng" của tài khoản này gồm
+
+| Thực tế | Đơn | Tiền |
+|---|---:|---:|
+| Hủy, chưa từng giao tới (`deliveredAt` rỗng), không có cước chiều về, kho đã quét nhận kiện quay đầu | 35 | 1.141.200 |
+| Đã giao rồi khách trả (28 đơn có cước chiều về) | 32 | 1.717.800 |
+
+35 đơn đầu là **giao không thành công**, không phải khách trả hàng. Chúng mang nhãn "Khách trả hàng" vì luật 31/10 xếp mọi đơn có `returnStatus ≠ NONE` vào nhóm trả hàng, mà kho quét nhận kiện quay đầu cũng đặt `returnStatus = RECEIVED`. Đề xuất: đơn Hủy + chưa từng giao tới + không có cước chiều về → nhãn "Đơn hủy sau khi gửi" dù kho đã nhận kiện. Việc này đổi luật anh chốt 31/10 (test đang khẳng định "đơn CANCELLED nhưng có trục hoàn vẫn là khách trả hàng") và đổi số trên chip ở cả trang kho, nên em chưa tự sửa. Lưu ý `deliveredAt` có thể rỗng ở đơn rất cũ.
+
+**Luật mới (13/11 khuya, thay dòng 2 của bảng 2c cho TikTok):** đơn `CANCELLED` + chưa từng giao tới (`deliveredAt` rỗng) + không có cước chiều về (`shipReturn = 0`) → **"Đơn hủy sau khi gửi"**, dù `returnStatus ≠ NONE`. Đơn đã giao rồi khách trả mà bị ghi `CANCELLED` (có `deliveredAt`), hoặc có cước chiều về, vẫn là "Khách trả hàng". Đơn chưa hủy thì giữ luật cũ.
+- Mã: `classifyShippingDiff` nhận thêm `everDelivered`; `SHIP_REASON_SELECT` thêm `deliveredAt`. Test: 5 ca mới trong `shipping-diff-reason.test.ts`.
+- **Chỉ áp cho TikTok.** Shopee / Lazada giữ luật cũ: em chưa kiểm mốc `deliveredAt` của hai sàn này có đủ tin cậy không, và hai sàn chỉ có vài đơn lệch có trục hoàn.
+- Ảnh hưởng: chip / cột Nguyên nhân ở Kiểm toán phí (theo đơn + theo sản phẩm), trang Đối soát phí ship của kho, Excel. Tổng tiền và số đơn KHÔNG đổi, chỉ chuyển đơn giữa hai nhãn. Cờ "có bảo đảm, vẫn lệch" không đổi (cả hai nhãn đều thuộc phạm vi).
+- Rủi ro biết trước: đơn rất cũ đã giao rồi khách trả, bị ghi `CANCELLED`, thiếu `deliveredAt`, không có cước chiều về sẽ ra nhãn "Đơn hủy sau khi gửi".
+
+**Cùng lượt (anh: "thêm icon copy cạnh mã đơn hàng nữa"):** ô Mã đơn của cả ba bảng Kiểm toán phí có nút chép mã đơn (`CopyIconButton`). Đo lại local sau khi thêm nút, 80 đơn seed (thêm ca giao không thành công kho đã nhận + ca đã giao rồi trả bị ghi hủy): không cuộn ngang, không tràn ô ở 1280 / 1366 / 1440 / 1920; ở 1280 với cước một đơn 7 chữ số bảng vừa khít (viên nguyên nhân dài nhất gãy 3 dòng), cước thực tế 6 chữ số thì còn dư.
 
 SQL 8.2(b) (đổi điều kiện gian + bỏ `feeShipGuarantee < 0` là ra 8.2(a)):
 

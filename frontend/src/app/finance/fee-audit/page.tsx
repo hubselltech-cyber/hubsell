@@ -55,6 +55,7 @@ import { ShipDiffReasonChip } from "@/components/finance/ship-diff-reason-chip";
 import { Money } from "@/components/ui/money";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CopyIconButton } from "@/components/ui/copy-icon-button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Segmented } from "@/components/ui/segmented";
 import {
@@ -195,6 +196,8 @@ function OrderCell({
       <div className="flex items-center gap-2">
         <ChannelBadge channelName={channelName} />
         <span className="font-semibold tracking-tight">{orderCode}</span>
+        {/* -ml: nút sát mã đơn, cột không rộng thêm quá mức cần (bảng 6 cột phải vừa màn 1280) */}
+        <CopyIconButton value={orderCode} what="mã đơn hàng" className="-ml-1.5" />
       </div>
       {/* Tên gian dài không được đẩy cột rộng ra (bảng Truy thu phí ship 6 cột phải vừa màn 1280) */}
       <p className={cn(TEXT_SUB, "mt-1 max-w-[15rem] truncate max-[1500px]:max-w-[13.5rem]")} title={shop || undefined}>
@@ -412,7 +415,7 @@ export default function FeeAuditPage() {
                 value: formatNumber(shipGap.orders),
                 dot: "warn" as const,
                 title: `Đơn hủy sau khi gửi / khách trả hàng đã trả phí Bảo đảm phí vận chuyển nhưng shop vẫn chịu thêm ${formatNumber(shipGap.amount)} ₫
-${formatNumber(shipGap.notReimbursed)} đơn chưa được bồi · ${formatNumber(shipGap.partial)} đơn bồi chưa đủ
+${formatNumber(shipGap.notReimbursed)} đơn chưa được bù · ${formatNumber(shipGap.partial)} đơn bù chưa đủ
 Nên kiểm tra các đơn này trên sàn.`,
               } satisfies ShipDiffFilterChip<ShipOrderFilter>,
             ]
@@ -504,7 +507,7 @@ Nên kiểm tra các đơn này trên sàn.`,
         header: () => (
           <span className="inline-flex items-center gap-1">
             Bị trừ thêm
-            <HintIcon hint="Phần phí vận chuyển shop THỰC CHỊU sau khi trừ phần khách trả + sàn trợ giá. Gồm cả khoản theo chính sách sàn (khách trả hàng, đơn hủy sau khi gửi, vượt mức sàn trợ…) — chỉ một phần khiếu nại được. Dòng nhỏ bên dưới tách số này thành chiều đi, chiều về, phụ phí và phần sàn bồi lại (đơn TikTok)." />
+            <HintIcon hint="Phần phí vận chuyển shop THỰC CHỊU sau khi trừ phần khách trả + sàn trợ giá. Gồm cả khoản theo chính sách sàn (khách trả hàng, đơn hủy sau khi gửi, vượt mức sàn trợ…) — chỉ một phần khiếu nại được. Dòng nhỏ bên dưới tách số này thành chiều đi, chiều về, phụ phí và phần sàn bù lại (đơn TikTok)." />
           </span>
         ),
         cell: ({ row }) => (
@@ -523,7 +526,7 @@ Nên kiểm tra các đơn này trên sàn.`,
         header: "Nguyên nhân",
         cell: ({ row }) => (
           // min-w: màn hẹp cột này co lại nhưng viên nhãn không gãy quá hai dòng.
-          <div className="min-w-[7.5rem]">
+          <div className="min-w-24">
             <HintText className="block" hint={SHIPPING_DIFF_REASON_META[row.original.reason].hint}>
               <ShipDiffReasonChip reason={row.original.reason} />
             </HintText>

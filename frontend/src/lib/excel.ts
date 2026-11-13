@@ -292,7 +292,7 @@ export async function exportShipDiffAudit(filter: {
 
   const orderRows = orders.map((o) => {
     const meta = SHIPPING_DIFF_REASON_META[o.reason];
-    // Tách tiền từng đơn (mới có ở TikTok): các cột cộng lại bằng "Shop chịu thêm"; tiền sàn bồi mang dấu trừ.
+    // Tách tiền từng đơn (mới có ở TikTok): các cột cộng lại bằng "Shop chịu thêm"; tiền sàn bù mang dấu trừ.
     const partCols: Record<string, number | string> = {};
     for (const c of SHIP_DIFF_PART_COLUMNS) {
       partCols[c.label] = o.parts ? (c.key === "reimbursed" ? -o.parts.reimbursed : o.parts[c.key]) : "";

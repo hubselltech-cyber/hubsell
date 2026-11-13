@@ -26,6 +26,7 @@ const base = {
   shippingStatus: ShippingStatus.DELIVERED,
   returnStatus: ReturnStatus.NONE,
   isSettled: true,
+  everDelivered: true,
 };
 
 describe("classifyShippingDiff — TikTok theo bản kê chi tiết", () => {
@@ -62,7 +63,7 @@ describe("classifyShippingDiff — TikTok theo bản kê chi tiết", () => {
         tiktok: tk({ shipReturn: -15100 }),
       })
     ).toBe("CUSTOMER_RETURN");
-    // đơn CANCELLED nhưng có trục hoàn vẫn là khách trả hàng
+    // đơn ĐÃ GIAO rồi khách trả, bị ghi CANCELLED: có trục hoàn vẫn là khách trả hàng
     expect(
       classifyShippingDiff({
         ...base,
@@ -70,6 +71,20 @@ describe("classifyShippingDiff — TikTok theo bản kê chi tiết", () => {
         returnStatus: ReturnStatus.RECEIVED,
         tiktok: tk(),
       })
+    ).toBe("CUSTOMER_RETURN");
+  });
+
+  it("giao không thành công, kho đã quét nhận kiện quay đầu → CANCELLED_AFTER_SHIP, không phải khách trả hàng", () => {
+    // prod 13/11/2026: 35/67 đơn nhãn "Khách trả hàng" của một tài khoản là dạng này
+    const failed = { ...base, shippingStatus: ShippingStatus.CANCELLED, everDelivered: false };
+    expect(classifyShippingDiff({ ...failed, returnStatus: ReturnStatus.RECEIVED, tiktok: tk() })).toBe("CANCELLED_AFTER_SHIP");
+    expect(classifyShippingDiff({ ...failed, returnStatus: ReturnStatus.AWAITING, tiktok: tk() })).toBe("CANCELLED_AFTER_SHIP");
+    expect(classifyShippingDiff({ ...failed, returnStatus: ReturnStatus.RECEIVED, tiktok: null })).toBe("CANCELLED_AFTER_SHIP");
+    // có cước chiều về = sàn tính như đơn trả hàng → giữ nhãn khách trả hàng dù thiếu mốc đã giao
+    expect(classifyShippingDiff({ ...failed, returnStatus: ReturnStatus.RECEIVED, tiktok: tk({ shipReturn: -15100 }) })).toBe("CUSTOMER_RETURN");
+    // chưa hủy (đang giao / đang hoàn) thì chưa kết luận giao thất bại
+    expect(
+      classifyShippingDiff({ ...base, everDelivered: false, returnStatus: ReturnStatus.AWAITING, tiktok: tk() })
     ).toBe("CUSTOMER_RETURN");
   });
 

@@ -81,6 +81,8 @@ export interface ShippingDiffInput {
   shippingStatus: ShippingStatus;
   returnStatus: ReturnStatus;
   isSettled: boolean;
+  /** Kiện đã từng giao tới tay khách (Order.deliveredAt có giá trị). */
+  everDelivered: boolean;
   tiktok?: TiktokShipCols | null;
   lazada?: LazadaShipCols | null;
 }
@@ -95,7 +97,13 @@ export function classifyShippingDiff(o: ShippingDiffInput): ShippingDiffReason {
       // Chưa quyết toán hoặc bản kê chỉ là ước tính → chờ sao kê. Đã quyết
       // toán mà thiếu dòng bản kê (dữ liệu cũ) thì vẫn xếp theo trạng thái đơn.
       if (!o.isSettled || t?.estimated) return "AWAITING_STATEMENT";
-      if (cancelledNoReturn) return "CANCELLED_AFTER_SHIP";
+      // GIAO KHÔNG THÀNH CÔNG mà kho đã quét nhận kiện quay đầu (13/11/2026): kho quét cũng đặt
+      // returnStatus nên luật cũ xếp các đơn này vào "Khách trả hàng" (prod: 35/67 đơn của một tài
+      // khoản). Khách chỉ trả được hàng đã nhận → đơn hủy, chưa từng giao tới, không có cước chiều
+      // về là đơn hủy sau khi gửi. Đơn đã giao rồi mới trả mà bị ghi CANCELLED vẫn là khách trả hàng.
+      const failedDelivery =
+        o.shippingStatus === ShippingStatus.CANCELLED && !o.everDelivered && !(t && t.shipReturn < 0);
+      if (cancelledNoReturn || failedDelivery) return "CANCELLED_AFTER_SHIP";
       if (returning || (t && t.shipReturn < 0)) return "CUSTOMER_RETURN";
       if (!t) return "OTHER";
       if (t.shipOther < 0) return "LOGISTICS_SURCHARGE";

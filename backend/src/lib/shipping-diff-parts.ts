@@ -5,8 +5,8 @@ import type { ShippingDiffReason, TiktokShipCols } from "./shipping-diff-reason"
  * DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md mục 8).
  *
  * Nhãn nguyên nhân (`classifyShippingDiff`) là MỘT nhãn cho cả đơn; đơn trả hàng vì thế nuốt luôn
- * cước chiều đi, phụ phí và tiền sàn bồi vào chữ "Khách trả hàng". Hàm này trả lời câu tiếp theo:
- * trong số tiền shop chịu, bao nhiêu là chiều đi, chiều về, phụ phí, và sàn đã bồi lại bao nhiêu.
+ * cước chiều đi, phụ phí và tiền sàn bù vào chữ "Khách trả hàng". Hàm này trả lời câu tiếp theo:
+ * trong số tiền shop chịu, bao nhiêu là chiều đi, chiều về, phụ phí, và sàn đã bù lại bao nhiêu.
  *
  * Chỉ TikTok: bản kê có đủ cột có dấu (prod 13/11: Σ cột = shipping_cost_amount ở mọi nhóm đã đo).
  * Shopee chưa lưu cước chiều hoàn, Lazada chưa đối chiếu công thức trên số thật → null (một dòng như cũ).
@@ -14,7 +14,7 @@ import type { ShippingDiffReason, TiktokShipCols } from "./shipping-diff-reason"
 export interface TiktokShipPartCols extends TiktokShipCols {
   /** Phí vận chuyển thực tế chiều đi (âm = sàn trừ). */
   shipActual: number;
-  /** Sàn bồi ship: giao thất bại, trả hàng, Bảo đảm phí vận chuyển… (dương). */
+  /** Sàn bù lại trên phí ship (dương): trợ cấp giao hàng không thành công, trả hàng, tiền bồi gói Bảo đảm phí vận chuyển… — 9 khóa gộp, chưa tách. */
   shipReimbursement: number;
   /** Phí Bảo đảm phí vận chuyển shop trả cho đơn này (âm); 0 = không tham gia hoặc bản kê trước 29/10/2026. */
   feeShipGuarantee: number;
@@ -28,7 +28,7 @@ export interface ShipDiffParts {
   returnLeg: number;
   /** Phụ phí logistics (quá cân, quá khổ, bảo hiểm, vùng xa…). */
   surcharge: number;
-  /** Sàn bồi lại. */
+  /** Sàn bù lại (xem shipReimbursement) — phần lớn là trợ cấp sàn tự trả, KHÔNG riêng gói Bảo đảm. */
   reimbursed: number;
   /** Phần còn lại để tổng khớp (khoản ship chưa đặt tên, điều chỉnh phí ship). */
   other: number;
@@ -59,7 +59,7 @@ export function splitShippingDiff(diff: number, t: TiktokShipPartCols | null | u
 
 /**
  * Đơn hủy sau khi gửi / khách trả hàng mà shop ĐÃ TRẢ phí Bảo đảm phí vận chuyển nhưng vẫn lệch:
- *   NOT_REIMBURSED — sàn chưa bồi đồng nào;  PARTIAL — có bồi nhưng không đủ.
+ *   NOT_REIMBURSED — sàn chưa bù đồng nào;  PARTIAL — có bù nhưng không đủ (khoản bù có thể là trợ cấp giao thất bại, chưa chắc là tiền bồi của gói).
  * Chỉ là dấu hiệu "nên kiểm tra": Hubsell chưa biết điều khoản chương trình nên KHÔNG kết luận đòi được.
  */
 export type ShipGuaranteeGap = "NOT_REIMBURSED" | "PARTIAL";

@@ -75,6 +75,7 @@ export const SHIP_REASON_SELECT = {
   id: true,
   shippingStatus: true,
   returnStatus: true,
+  deliveredAt: true,
   isSettled: true,
   shippingFeeDiff: true,
   shippingDisputeStatus: true,
@@ -124,7 +125,7 @@ function tiktokShipCols(t: ShipReasonRow["tiktokSettlement"]): TiktokShipPartCol
 
 type ShipReasonInput = Pick<
   ShipReasonRow,
-  "shippingStatus" | "returnStatus" | "isSettled" | "channel" | "tiktokSettlement" | "lazadaSettlement"
+  "shippingStatus" | "returnStatus" | "deliveredAt" | "isSettled" | "channel" | "tiktokSettlement" | "lazadaSettlement"
 >;
 
 /** Cờ "đã trả phí Bảo đảm phí vận chuyển mà vẫn lệch" của một đơn lệch đã biết nguyên nhân. */
@@ -132,7 +133,7 @@ export function shipGuaranteeGapOf(o: ShipReasonInput, reason: ShippingDiffReaso
   return shipGuaranteeGap(reason, tiktokShipCols(o.tiktokSettlement));
 }
 
-/** Tiền lệch của một đơn tách theo chiều đi / chiều về / phụ phí / sàn bồi; null = chưa tách được. */
+/** Tiền lệch của một đơn tách theo chiều đi / chiều về / phụ phí / sàn bù; null = chưa tách được. */
 export function shipPartsOf(o: Pick<ShipReasonRow, "shippingFeeDiff" | "tiktokSettlement">): ShipDiffParts | null {
   return splitShippingDiff(Number(o.shippingFeeDiff), tiktokShipCols(o.tiktokSettlement));
 }
@@ -144,6 +145,7 @@ export function shipReasonOf(o: ShipReasonInput): ShippingDiffReason {
     shippingStatus: o.shippingStatus,
     returnStatus: o.returnStatus,
     isSettled: o.isSettled,
+    everDelivered: o.deliveredAt !== null,
     tiktok: tiktokShipCols(o.tiktokSettlement),
     lazada: l
       ? {
