@@ -52,6 +52,9 @@ import {
 import {
   loadShipDiffByProduct,
   SHIP_REASON_SELECT,
+  shipGuaranteeGapOf,
+  shipGuaranteeGapWhere,
+  shipPartsOf,
   shipDiffWhere,
   shipReasonOf,
 } from "../services/shipping-diff";
@@ -1855,6 +1858,7 @@ const CHANNEL_BY_KEY: Record<string, ChannelName> = {
 // GET /api/finance/shipping-discrepancies?page&pageSize&channel&status&reason
 //   reason: CLAIMABLE (ca khiếu nại được — mặc định trang) | POLICY (shop chịu
 //   theo chính sách sàn) | một mã ShippingDiffReason | rỗng = tất cả.
+//   guarantee=1: chỉ đơn hủy / trả hàng đã trả phí Bảo đảm phí vận chuyển mà vẫn lệch.
 router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -1863,6 +1867,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
       typeof req.query.status === "string" ? req.query.status.toUpperCase() : "";
     const reasonKey =
       typeof req.query.reason === "string" ? req.query.reason.toUpperCase() : "";
+    const guaranteeOnly = req.query.guarantee === "1";
 
     const where: Prisma.OrderWhereInput = {
       ...shipDiffWhere(channelScope(req), parseDateRange(req.query)), // chỉ đơn bị trừ thêm
@@ -1880,11 +1885,11 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
       })
     ).map((o) => {
       const reason = shipReasonOf(o);
-      return { o, reason, claimable: isClaimableReason(reason) };
+      return { o, reason, claimable: isClaimableReason(reason), guaranteeGap: shipGuaranteeGapOf(o, reason) };
     });
 
     const matchesReason = shippingDiffReasonMatcher(reasonKey);
-    const filtered = all.filter((r) => matchesReason(r.reason));
+    const filtered = all.filter((r) => matchesReason(r.reason) && (!guaranteeOnly || r.guaranteeGap !== null));
 
     // Hai thẻ tiền KHÔNG theo bộ lọc nguyên nhân: "cần đòi lại" chỉ cộng ca khiếu
     // nại được, phần còn lại là chi phí ship theo chính sách sàn — để khách thấy
@@ -1892,11 +1897,19 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
     let claimableSum = 0;
     let policySum = 0;
     const reasonCounts: Partial<Record<ShippingDiffReason, number>> = {};
+    // Đơn hủy / trả hàng đã trả phí Bảo đảm phí vận chuyển mà vẫn lệch (cũng không theo bộ lọc nguyên nhân).
+    const guaranteeGap = { orders: 0, amount: 0, notReimbursed: 0, partial: 0 };
     for (const r of all) {
       const d = Number(r.o.shippingFeeDiff);
       if (r.claimable) claimableSum += d;
       else policySum += d;
       reasonCounts[r.reason] = (reasonCounts[r.reason] ?? 0) + 1;
+      if (r.guaranteeGap) {
+        guaranteeGap.orders += 1;
+        guaranteeGap.amount += d;
+        if (r.guaranteeGap === "PARTIAL") guaranteeGap.partial += 1;
+        else guaranteeGap.notReimbursed += 1;
+      }
     }
     const pendingCount = filtered.filter(
       (r) => r.o.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
@@ -1919,6 +1932,8 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         policyDiscrepancy: -policySum, // ÂM: shop chịu theo chính sách sàn, không khiếu nại
         pendingCount, // số đơn chưa gửi khiếu nại (theo bộ lọc)
         reasonCounts, // số đơn từng nguyên nhân (không theo bộ lọc nguyên nhân)
+        allOrders: all.length, // mọi đơn lệch của bộ lọc DB, không theo bộ lọc nguyên nhân (chip "Tất cả")
+        guaranteeGap, // tiền DƯƠNG
       },
       page,
       pageSize,
@@ -1945,6 +1960,9 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
           status: o.shippingDisputeStatus,
           reason: r.reason,
           claimable: r.claimable,
+          // Tiền lệch tách theo thành phần (DƯƠNG = shop chịu; reimbursed = sàn bồi lại). null = chưa tách được.
+          parts: shipPartsOf(r.o),
+          guaranteeGap: r.guaranteeGap,
           items: itemsOf(o),
         };
       }),
@@ -2120,10 +2138,15 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
     const payoutWhere = payoutShortfallWhere(req);
     const pendingWhere = pendingSettleWhere(req);
 
-    const [shipAgg, shipOpen, payoutAgg, payoutOpen, pendingRows] =
+    const [shipAgg, shipGuaranteeAgg, shipOpen, payoutAgg, payoutOpen, pendingRows] =
       await Promise.all([
         prisma.order.aggregate({
           where: shipWhere,
+          _count: { _all: true },
+          _sum: { shippingFeeDiff: true },
+        }),
+        prisma.order.aggregate({
+          where: shipGuaranteeGapWhere(channelScope(req), parseDateRange(req.query)),
           _count: { _all: true },
           _sum: { shippingFeeDiff: true },
         }),
@@ -2154,6 +2177,11 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
         orders: shipAgg._count._all,
         totalMissing: Number(shipAgg._sum.shippingFeeDiff ?? 0),
         pendingCount: shipOpen,
+        // Đơn hủy / trả hàng đã trả phí Bảo đảm phí vận chuyển mà shop vẫn chịu thêm (nằm trong totalMissing).
+        guaranteeGap: {
+          orders: shipGuaranteeAgg._count._all,
+          amount: Number(shipGuaranteeAgg._sum.shippingFeeDiff ?? 0),
+        },
       },
       payout: {
         orders: payoutAgg._count._all,

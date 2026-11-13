@@ -7,7 +7,7 @@
 // gom theo nguyên nhân làm ở tầng ứng dụng, trên tập đơn lệch của MỘT chủ shop.
 // ============================================================
 
-import { ChannelName, Prisma, ShippingStatus } from "@prisma/client";
+import { ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { ChannelScope } from "../lib/channel-filter";
 import type { DateRangeFilter } from "../lib/date-range";
@@ -18,6 +18,13 @@ import {
   shippingDiffReasonMatcher,
   type ShippingDiffReason,
 } from "../lib/shipping-diff-reason";
+import {
+  shipGuaranteeGap,
+  splitShippingDiff,
+  type ShipDiffParts,
+  type ShipGuaranteeGap,
+  type TiktokShipPartCols,
+} from "../lib/shipping-diff-parts";
 import {
   createShipDiffProductFold,
   shipDiffAvgPerOrder,
@@ -39,7 +46,29 @@ export function shipDiffWhere(
 }
 
 /**
- * Cột nhẹ để PHÂN LOẠI NGUYÊN NHÂN: Order + vài cột ship có dấu của bản kê TikTok /
+ * Đơn hủy sau khi gửi / khách trả hàng ĐÃ TRẢ phí Bảo đảm phí vận chuyển mà vẫn lệch — cùng luật với
+ * `shipGuaranteeGap` (lib/shipping-diff-parts.ts) nhưng viết thành bộ lọc DB để thẻ "Truy thu phí ship"
+ * đếm bằng MỘT câu aggregate, không kéo cả tập đơn lệch về phân loại. Hai bên được so khớp ở
+ * shipping-diff-db.test.ts; sửa luật phân loại hủy / hoàn của TikTok thì sửa cả chỗ này.
+ */
+export function shipGuaranteeGapWhere(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined
+): Prisma.OrderWhereInput {
+  return {
+    ...shipDiffWhere(scope, range),
+    isSettled: true,
+    tiktokSettlement: { is: { estimated: false, feeShipGuarantee: { lt: 0 } } },
+    OR: [
+      { shippingStatus: ShippingStatus.CANCELLED },
+      { returnStatus: { not: ReturnStatus.NONE } },
+      { tiktokSettlement: { is: { shipReturn: { lt: 0 } } } },
+    ],
+  };
+}
+
+/**
+ * Cột nhẹ để PHÂN LOẠI NGUYÊN NHÂN + TÁCH TIỀN: Order + vài cột ship có dấu của bản kê TikTok /
  * sao kê Lazada (không gọi sàn).
  */
 export const SHIP_REASON_SELECT = {
@@ -53,12 +82,15 @@ export const SHIP_REASON_SELECT = {
   tiktokSettlement: {
     select: {
       estimated: true,
+      shipActual: true,
       shipCustomerPaid: true,
       shipPlatformDiscount: true,
       shipSubsidy: true,
       shipSellerDiscount: true,
       shipReturn: true,
       shipOther: true,
+      shipReimbursement: true,
+      feeShipGuarantee: true,
     },
   },
   lazadaSettlement: {
@@ -73,27 +105,46 @@ export const SHIP_REASON_SELECT = {
 
 type ShipReasonRow = Prisma.OrderGetPayload<{ select: typeof SHIP_REASON_SELECT }>;
 
-export function shipReasonOf(
-  o: Pick<ShipReasonRow, "shippingStatus" | "returnStatus" | "isSettled" | "channel" | "tiktokSettlement" | "lazadaSettlement">
-): ShippingDiffReason {
-  const t = o.tiktokSettlement;
+/** Cột ship có dấu của bản kê TikTok thành số; null = đơn không có bản kê TikTok. */
+function tiktokShipCols(t: ShipReasonRow["tiktokSettlement"]): TiktokShipPartCols | null {
+  if (!t) return null;
+  return {
+    estimated: t.estimated,
+    shipActual: Number(t.shipActual),
+    shipCustomerPaid: Number(t.shipCustomerPaid),
+    shipPlatformDiscount: Number(t.shipPlatformDiscount),
+    shipSubsidy: Number(t.shipSubsidy),
+    shipSellerDiscount: Number(t.shipSellerDiscount),
+    shipReturn: Number(t.shipReturn),
+    shipOther: Number(t.shipOther),
+    shipReimbursement: Number(t.shipReimbursement),
+    feeShipGuarantee: Number(t.feeShipGuarantee),
+  };
+}
+
+type ShipReasonInput = Pick<
+  ShipReasonRow,
+  "shippingStatus" | "returnStatus" | "isSettled" | "channel" | "tiktokSettlement" | "lazadaSettlement"
+>;
+
+/** Cờ "đã trả phí Bảo đảm phí vận chuyển mà vẫn lệch" của một đơn lệch đã biết nguyên nhân. */
+export function shipGuaranteeGapOf(o: ShipReasonInput, reason: ShippingDiffReason): ShipGuaranteeGap | null {
+  return shipGuaranteeGap(reason, tiktokShipCols(o.tiktokSettlement));
+}
+
+/** Tiền lệch của một đơn tách theo chiều đi / chiều về / phụ phí / sàn bồi; null = chưa tách được. */
+export function shipPartsOf(o: Pick<ShipReasonRow, "shippingFeeDiff" | "tiktokSettlement">): ShipDiffParts | null {
+  return splitShippingDiff(Number(o.shippingFeeDiff), tiktokShipCols(o.tiktokSettlement));
+}
+
+export function shipReasonOf(o: ShipReasonInput): ShippingDiffReason {
   const l = o.lazadaSettlement;
   return classifyShippingDiff({
     channelName: o.channel.channelName,
     shippingStatus: o.shippingStatus,
     returnStatus: o.returnStatus,
     isSettled: o.isSettled,
-    tiktok: t
-      ? {
-          estimated: t.estimated,
-          shipCustomerPaid: Number(t.shipCustomerPaid),
-          shipPlatformDiscount: Number(t.shipPlatformDiscount),
-          shipSubsidy: Number(t.shipSubsidy),
-          shipSellerDiscount: Number(t.shipSellerDiscount),
-          shipReturn: Number(t.shipReturn),
-          shipOther: Number(t.shipOther),
-        }
-      : null,
+    tiktok: tiktokShipCols(o.tiktokSettlement),
     lazada: l
       ? {
           shipFeeReturn: Number(l.shipFeeReturn),

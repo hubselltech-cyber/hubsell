@@ -49,6 +49,9 @@ import {
 } from "@/components/shared/channel-filter";
 import { HintIcon, HintText } from "@/components/finance/hint-icon";
 import { ShipDiffByProduct } from "@/components/finance/ship-diff-by-product";
+import { ShipDiffFilterChips, type ShipDiffFilterChip } from "@/components/finance/ship-diff-filter-chips";
+import { ShipDiffPartsLine, ShipGuaranteeGapNote } from "@/components/finance/ship-diff-parts";
+import { ShipDiffReasonChip } from "@/components/finance/ship-diff-reason-chip";
 import { Money } from "@/components/ui/money";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -77,6 +80,12 @@ import { can } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { exportShipDiffAudit } from "@/lib/excel";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import {
+  SHIP_GUARANTEE_GAP_LABEL,
+  SHIPPING_DIFF_REASON_META,
+  SHIPPING_DIFF_REASON_ORDER,
+  type ShippingDiffReason,
+} from "@/lib/shipping-diff-reason";
 import { MONEY_NEGATIVE, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -91,6 +100,13 @@ const SHIP_VIEWS: { key: ShipView; label: string }[] = [
   { key: "order", label: "Theo đơn" },
   { key: "product", label: "Theo sản phẩm" },
 ];
+
+/**
+ * Bộ lọc của bảng Theo đơn: một nguyên nhân, hoặc các đơn hủy / trả hàng đã trả phí Bảo đảm phí vận
+ * chuyển mà vẫn lệch (khảo sát 13/11/2026 — khách "mua bồi hoàn rồi vẫn mất" cần thấy đúng các đơn đó).
+ */
+const GUARANTEE_FILTER = "GUARANTEE";
+type ShipOrderFilter = "" | ShippingDiffReason | typeof GUARANTEE_FILTER;
 
 const TABS: { key: AuditTab; label: string }[] = [
   { key: "ship", label: "Truy thu phí ship" },
@@ -180,13 +196,14 @@ function OrderCell({
         <ChannelBadge channelName={channelName} />
         <span className="font-semibold tracking-tight">{orderCode}</span>
       </div>
-      <p className={cn(TEXT_SUB, "mt-1")}>
+      {/* Tên gian dài không được đẩy cột rộng ra (bảng Truy thu phí ship 6 cột phải vừa màn 1280) */}
+      <p className={cn(TEXT_SUB, "mt-1 max-w-[15rem] truncate max-[1500px]:max-w-[13.5rem]")} title={shop || undefined}>
         {subDate ? formatDateTime(subDate) : "—"}
         {shop && <> · {shop}</>}
       </p>
       {first && items && (
         <p
-          className="mt-0.5 flex max-w-[15rem] items-baseline gap-1 text-xs"
+          className="mt-0.5 flex max-w-[15rem] items-baseline gap-1 text-xs max-[1500px]:max-w-[13.5rem]"
           title={items.map(lineText).join("\n")}
         >
           {/* Tên co lại (…); phân loại, số lượng và "+N món" luôn hiện */}
@@ -264,6 +281,7 @@ export default function FeeAuditPage() {
   const [channelFilter, setChannelFilter] =
     useState<ChannelFilterValue>(ALL_CHANNELS);
   const [shipStatus, setShipStatus] = useState("");
+  const [shipReason, setShipReason] = useState<ShipOrderFilter>("");
   const [payoutStatus, setPayoutStatus] = useState("");
   /** Khoảng NGÀY ĐẶT đơn. null = toàn bộ (mặc định — sổ việc chưa xong không
    *  được giấu khoản cũ); chọn khoảng thì cả 3 thẻ KPI lẫn bảng đều theo. */
@@ -329,12 +347,16 @@ export default function FeeAuditPage() {
       status: shipStatus,
       channel: channelFilterToQuery(channelFilter),
       ...rangeKey,
+      // Không lọc nguyên nhân thì KHÔNG thêm khóa, để key trùng với prefetch hover.
+      ...(shipReason ? { reason: shipReason } : {}),
     }),
     queryFn: () =>
       fetchShippingDiscrepancies({
         page,
         pageSize,
         status: shipStatus || undefined,
+        reason: shipReason === GUARANTEE_FILTER ? undefined : shipReason || undefined,
+        guarantee: shipReason === GUARANTEE_FILTER,
         channel: channelFilter,
         range: range ?? undefined,
       }),
@@ -365,6 +387,46 @@ export default function FeeAuditPage() {
       : tab === "payout"
         ? payoutItems.length
         : pendingItems.length;
+
+  // Chip lọc của bảng Theo đơn: số ĐƠN từng nguyên nhân (nhiều trước), cuối hàng là các đơn "có bảo đảm,
+  // vẫn lệch". Số trên chip theo gian + kỳ + trạng thái, không theo chip đang chọn.
+  const shipSummary = shipQ.data?.summary;
+  const shipGap = shipSummary?.guaranteeGap;
+  const shipChips: ShipDiffFilterChip<ShipOrderFilter>[] = shipSummary
+    ? [
+        { key: "", label: "Tất cả", value: formatNumber(shipSummary.allOrders ?? shipSummary.totalOrders) },
+        ...SHIPPING_DIFF_REASON_ORDER.filter((r) => (shipSummary.reasonCounts[r] ?? 0) > 0)
+          .sort((a, b) => (shipSummary.reasonCounts[b] ?? 0) - (shipSummary.reasonCounts[a] ?? 0))
+          .map((r) => ({
+            key: r,
+            label: SHIPPING_DIFF_REASON_META[r].label,
+            value: formatNumber(shipSummary.reasonCounts[r] ?? 0),
+            dot: SHIPPING_DIFF_REASON_META[r].claimable ? ("claimable" as const) : ("policy" as const),
+            title: SHIPPING_DIFF_REASON_META[r].hint,
+          })),
+        ...(shipGap && shipGap.orders > 0
+          ? [
+              {
+                key: GUARANTEE_FILTER,
+                label: SHIP_GUARANTEE_GAP_LABEL,
+                value: formatNumber(shipGap.orders),
+                dot: "warn" as const,
+                title: `Đơn hủy sau khi gửi / khách trả hàng đã trả phí Bảo đảm phí vận chuyển nhưng shop vẫn chịu thêm ${formatNumber(shipGap.amount)} ₫
+${formatNumber(shipGap.notReimbursed)} đơn chưa được bồi · ${formatNumber(shipGap.partial)} đơn bồi chưa đủ
+Nên kiểm tra các đơn này trên sàn.`,
+              } satisfies ShipDiffFilterChip<ShipOrderFilter>,
+            ]
+          : []),
+      ]
+    : [];
+
+  /** Mở thẳng bảng Theo đơn đã lọc các đơn "có bảo đảm, vẫn lệch" (bấm từ dòng phụ trên thẻ). */
+  function showGuaranteeGap() {
+    setTab("ship");
+    setShipView("order");
+    setShipReason(GUARANTEE_FILTER);
+    setPage(1);
+  }
 
   const refreshAll = () => invalidate(["fee-audit"], ["shipping-discrepancies"]);
 
@@ -442,13 +504,31 @@ export default function FeeAuditPage() {
         header: () => (
           <span className="inline-flex items-center gap-1">
             Bị trừ thêm
-            <HintIcon hint="Phần phí vận chuyển shop THỰC CHỊU sau khi trừ phần khách trả + sàn trợ giá. Gồm cả khoản theo chính sách sàn (khách trả hàng, đơn hủy sau khi gửi, vượt mức sàn trợ…) — chỉ một phần khiếu nại được; xem nguyên nhân từng đơn ở Quản lý Kho › Đối soát phí ship." />
+            <HintIcon hint="Phần phí vận chuyển shop THỰC CHỊU sau khi trừ phần khách trả + sàn trợ giá. Gồm cả khoản theo chính sách sàn (khách trả hàng, đơn hủy sau khi gửi, vượt mức sàn trợ…) — chỉ một phần khiếu nại được. Dòng nhỏ bên dưới tách số này thành chiều đi, chiều về, phụ phí và phần sàn bồi lại (đơn TikTok)." />
           </span>
         ),
         cell: ({ row }) => (
-          <span className={cn("font-semibold", MONEY_NEGATIVE)}>
-            <Money value={row.original.discrepancy} />
-          </span>
+          <>
+            <span className={cn("font-semibold", MONEY_NEGATIVE)}>
+              <Money value={row.original.discrepancy} />
+            </span>
+            <ShipDiffPartsLine parts={row.original.parts} />
+          </>
+        ),
+      },
+      {
+        id: "reason",
+        size: 170,
+        meta: { label: "Nguyên nhân" },
+        header: "Nguyên nhân",
+        cell: ({ row }) => (
+          // min-w: màn hẹp cột này co lại nhưng viên nhãn không gãy quá hai dòng.
+          <div className="min-w-[7.5rem]">
+            <HintText className="block" hint={SHIPPING_DIFF_REASON_META[row.original.reason].hint}>
+              <ShipDiffReasonChip reason={row.original.reason} />
+            </HintText>
+            <ShipGuaranteeGapNote gap={row.original.guaranteeGap} />
+          </div>
         ),
       },
       {
@@ -458,7 +538,8 @@ export default function FeeAuditPage() {
         header: "Trạng thái",
         cell: ({ row }) => (
           <NativeSelect
-            className="w-40"
+            // Màn ≤ 1500 px ô chọn hẹp lại một nấc để bảng 6 cột vừa 1280 px (sidebar mở) không cuộn ngang.
+            className="w-40 max-[1500px]:w-[9rem]"
             aria-label="Trạng thái khiếu nại"
             value={row.original.status}
             disabled={busyId === row.original.id}
@@ -646,7 +727,22 @@ export default function FeeAuditPage() {
               </span>
             }
             value={<Money value={summary?.ship.totalMissing ?? 0} />}
-            subtitle={`${formatNumber(summary?.ship.orders ?? 0)} đơn · ${formatNumber(summary?.ship.pendingCount ?? 0)} chờ khiếu nại`}
+            subtitle={
+              <>
+                {formatNumber(summary?.ship.orders ?? 0)} đơn · {formatNumber(summary?.ship.pendingCount ?? 0)} chờ khiếu nại
+                {(summary?.ship.guaranteeGap?.orders ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={showGuaranteeGap}
+                    title="Đơn hủy sau khi gửi / khách trả hàng đã trả phí Bảo đảm phí vận chuyển nhưng shop vẫn chịu thêm phí ship. Bấm để xem các đơn này."
+                    className="mt-0.5 block cursor-pointer text-left text-amber-700 underline-offset-2 hover:underline"
+                  >
+                    {formatNumber(summary?.ship.guaranteeGap?.orders ?? 0)} đơn có bảo đảm vẫn lệch{" "}
+                    <Money value={summary?.ship.guaranteeGap?.amount ?? 0} />
+                  </button>
+                )}
+              </>
+            }
             icon={Truck}
             tone="negative"
             featured={(summary?.ship.totalMissing ?? 0) > 0}
@@ -792,6 +888,18 @@ export default function FeeAuditPage() {
 
         {byProduct && <ShipDiffByProduct channel={channelFilter} range={range} />}
 
+        {tab === "ship" && !byProduct && shipChips.length > 1 && (
+          <ShipDiffFilterChips
+            ariaLabel="Lọc đơn theo nguyên nhân"
+            chips={shipChips}
+            value={shipReason}
+            onChange={(key) => {
+              setShipReason(key);
+              setPage(1);
+            }}
+          />
+        )}
+
         {/* ── Bảng của tab đang mở ── */}
         {!byProduct && (
           <Card className="shadow-sm">
@@ -804,7 +912,9 @@ export default function FeeAuditPage() {
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   <SearchCheck className="mx-auto mb-2 size-8" />
                   {tab === "ship" &&
-                    "Không có đơn nào bị truy thu phí ship — phí vận chuyển đang được sàn trừ đúng."}
+                    (shipReason || shipStatus
+                      ? "Không có đơn nào bị truy thu phí ship khớp bộ lọc đang chọn."
+                      : "Không có đơn nào bị truy thu phí ship — phí vận chuyển đang được sàn trừ đúng.")}
                   {tab === "payout" &&
                     "Chưa phát hiện đơn nào bị trả thiếu. Hubsell bắt đầu chụp số ước tính của sàn từ khi tính năng lên sóng — đơn mới sẽ được soi tự động ở mỗi nhịp đối soát."}
                   {tab === "pending" &&
@@ -818,7 +928,7 @@ export default function FeeAuditPage() {
                       columns={shipColumns}
                       data={shipItems}
                       getRowId={(o) => o.id}
-                      toolbar={`${formatNumber(summary?.ship.orders ?? 0)} đơn bị truy thu`}
+                      toolbar={`${formatNumber(shipSummary?.totalOrders ?? 0)} đơn bị truy thu`}
                     />
                   )}
                   {tab === "payout" && (

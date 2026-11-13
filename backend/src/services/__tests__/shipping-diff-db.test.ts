@@ -9,7 +9,16 @@ import "../../integrations/__tests__/load-env";
 import { describe, expect, it } from "vitest";
 import { prisma } from "../../lib/prisma";
 import type { ChannelScope } from "../../lib/channel-filter";
-import { loadShipDiffByProduct, shipDiffWhere, type ShipDiffProductRow } from "../shipping-diff";
+import {
+  loadShipDiffByProduct,
+  SHIP_REASON_SELECT,
+  shipDiffWhere,
+  shipGuaranteeGapOf,
+  shipGuaranteeGapWhere,
+  shipPartsOf,
+  shipReasonOf,
+  type ShipDiffProductRow,
+} from "../shipping-diff";
 
 // Chủ shop có nhiều đơn lệch nhất của DB dev; undefined = không nối được DB hoặc chưa có đơn lệch.
 const owner: { userId: string } | undefined = await (async () => {
@@ -73,6 +82,21 @@ describe.skipIf(!owner)("loadShipDiffByProduct", () => {
     expect(
       cents(all.summary.reasons.filter((r) => r.claimable).reduce((s, r) => s + r.amount, 0))
     ).toBe(cents(claimable.summary.totalAmount));
+  });
+
+  it("thẻ đếm 'có bảo đảm, vẫn lệch' bằng bộ lọc DB = đếm bằng luật phân loại từng đơn", async () => {
+    const [agg, rows] = await Promise.all([
+      prisma.order.aggregate({ where: shipGuaranteeGapWhere(scope, undefined), _count: { _all: true }, _sum: { shippingFeeDiff: true } }),
+      prisma.order.findMany({ where: shipDiffWhere(scope, undefined), select: SHIP_REASON_SELECT }),
+    ]);
+    const flagged = rows.filter((o) => shipGuaranteeGapOf(o, shipReasonOf(o)) !== null);
+    expect(agg._count._all).toBe(flagged.length);
+    expect(cents(Number(agg._sum.shippingFeeDiff ?? 0))).toBe(flagged.reduce((s, o) => s + cents(Number(o.shippingFeeDiff)), 0));
+    // Tách tiền: đơn nào tách được thì các phần cộng lại đúng bằng số lệch của đơn.
+    for (const o of rows) {
+      const p = shipPartsOf(o);
+      if (p) expect(cents(p.outbound) + cents(p.returnLeg) + cents(p.surcharge) - cents(p.reimbursed) + cents(p.other), o.id).toBe(cents(Number(o.shippingFeeDiff)));
+    }
   });
 
   it("gian không thuộc chủ shop → rỗng, không lộ số của người khác", async () => {

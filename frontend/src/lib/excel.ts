@@ -28,6 +28,8 @@ import {
 import { TIKTOK_COLUMNS, toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
 import { rangeToQuery, type DateRange } from "@/lib/date-range";
 import {
+  SHIP_DIFF_PART_COLUMNS,
+  SHIP_GUARANTEE_GAP_META,
   SHIPPING_DIFF_REASON_META,
   SHIPPING_DIFF_REASON_ORDER,
   type ShippingDiffReasonFilter,
@@ -290,6 +292,11 @@ export async function exportShipDiffAudit(filter: {
 
   const orderRows = orders.map((o) => {
     const meta = SHIPPING_DIFF_REASON_META[o.reason];
+    // Tách tiền từng đơn (mới có ở TikTok): các cột cộng lại bằng "Shop chịu thêm"; tiền sàn bồi mang dấu trừ.
+    const partCols: Record<string, number | string> = {};
+    for (const c of SHIP_DIFF_PART_COLUMNS) {
+      partCols[c.label] = o.parts ? (c.key === "reimbursed" ? -o.parts.reimbursed : o.parts[c.key]) : "";
+    }
     return {
       "Mã đơn hàng": o.orderCode,
       "Mã vận đơn": o.trackingCode ?? "",
@@ -305,6 +312,8 @@ export async function exportShipDiffAudit(filter: {
       "Phí ship đã được phủ (khách trả + sàn trợ)": o.coveredFee,
       "Phí ship thực tế": o.shippingFeeActual,
       "Shop chịu thêm": -o.discrepancy,
+      ...partCols,
+      "Bảo đảm phí vận chuyển": o.guaranteeGap ? SHIP_GUARANTEE_GAP_META[o.guaranteeGap].label : "",
       "Trạng thái khiếu nại": SHIP_DISPUTE_LABEL[o.status] ?? o.status,
     };
   });
@@ -335,7 +344,11 @@ export async function exportShipDiffAudit(filter: {
   const period = from && to ? `${from}_${to}` : "toan_bo";
   downloadSheets(
     [
-      { rows: orderRows, colWidths: [22, 18, 10, 26, 18, 18, 60, 30, 24, 22, 18, 16, 18], sheetName: "Theo don" },
+      {
+        rows: orderRows,
+        colWidths: [22, 18, 10, 26, 18, 18, 60, 30, 24, 22, 18, 16, ...SHIP_DIFF_PART_COLUMNS.map(() => 18), 26, 18],
+        sheetName: "Theo don",
+      },
       {
         rows: productRows,
         colWidths: [60, 24, 10, 26, 16, 12, 18, 16, 16, 30, ...reasonCols.map(() => 22)],

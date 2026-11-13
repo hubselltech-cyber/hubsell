@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, PackageSearch } from "lucide-react";
 
 import { DataTable } from "@/components/data-table/data-table";
 import { HintIcon } from "@/components/finance/hint-icon";
+import { ShipDiffFilterChips, type ShipDiffFilterChip } from "@/components/finance/ship-diff-filter-chips";
 import { ShipDiffReasonChip } from "@/components/finance/ship-diff-reason-chip";
 import { shopOnlyName, type ChannelFilterValue } from "@/components/shared/channel-filter";
 import { Refreshing } from "@/components/shared/refreshing";
@@ -244,13 +245,13 @@ export function ShipDiffByProduct({ channel, range }: { channel: ChannelFilterVa
   // Chip lọc xếp theo TIỀN (như bảng) và in tiền rút gọn: thứ khách cần thấy là nguyên nhân nào tốn nhất;
   // số đơn nằm ở tooltip. Số trên chip không theo bộ lọc nguyên nhân đang chọn.
   const reasonTotals = summary?.reasons ?? [];
-  const chips: { key: ReasonFilter; label: string; amount: number; title?: string; claimable?: boolean }[] = [
-    { key: "", label: "Tất cả", amount: reasonTotals.reduce((s, r) => s + r.amount, 0) },
+  const chips: ShipDiffFilterChip<ReasonFilter>[] = [
+    { key: "", label: "Tất cả", value: formatCompactVND(reasonTotals.reduce((s, r) => s + r.amount, 0)) },
     ...reasonTotals.map((r) => ({
       key: r.reason,
       label: SHIPPING_DIFF_REASON_META[r.reason].label,
-      amount: r.amount,
-      claimable: r.claimable,
+      value: formatCompactVND(r.amount),
+      dot: r.claimable ? ("claimable" as const) : ("policy" as const),
       title: `${formatNumber(r.orders)} đơn · ${formatNumber(r.amount)} ₫
 ${SHIPPING_DIFF_REASON_META[r.reason].hint}`,
     })),
@@ -259,36 +260,15 @@ ${SHIPPING_DIFF_REASON_META[r.reason].hint}`,
   return (
     <div className="space-y-3">
       {chips.length > 1 && (
-        <div role="radiogroup" aria-label="Lọc theo nguyên nhân" className="flex flex-wrap items-center gap-1.5">
-          {chips.map((c) => {
-            const active = reason === c.key;
-            return (
-              <button
-                key={c.key || "all"}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                title={c.title}
-                onClick={() => {
-                  setReason(c.key);
-                  setPage(1);
-                }}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors",
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-slate-200 bg-card text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                )}
-              >
-                {c.claimable !== undefined && (
-                  <span className={cn("size-1.5 rounded-full", active ? "bg-current opacity-70" : c.claimable ? "bg-teal-500" : "bg-slate-400")} aria-hidden />
-                )}
-                {c.label}
-                <span className={cn("tabular-nums", active ? "opacity-80" : "text-slate-400")}>{formatCompactVND(c.amount)}</span>
-              </button>
-            );
-          })}
-        </div>
+        <ShipDiffFilterChips
+          ariaLabel="Lọc theo nguyên nhân"
+          chips={chips}
+          value={reason}
+          onChange={(key) => {
+            setReason(key);
+            setPage(1);
+          }}
+        />
       )}
 
       <Card className="shadow-sm">

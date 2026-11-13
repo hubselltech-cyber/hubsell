@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 13/11 khuya (kiểm toán phí › truy thu phí ship) — Anh: "đang bị trộn lẫn giữa đơn hoàn và chênh lệch vận chuyển… mua phí bồi hoàn rồi nhưng vẫn mất… Có phương án nào bóc tách hoặc cảnh báo không?" → KHẢO SÁT XONG, CHƯA SỬA MÃ, chờ anh chốt
+
+- Chi tiết + số + SQL: `docs/DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md` mục 8.
+- Gốc: bảng Theo đơn ở `/finance/fee-audit` chưa có cột Nguyên nhân; bộ phân loại gắn MỘT nhãn cho cả đơn nên đơn hoàn nuốt luôn cước chiều đi / phụ phí / tiền bồi.
+- Đã kiểm prod (chỉ đọc): bản kê TikTok tách được tiền một đơn thành chiều đi · chiều về · phụ phí · sàn bồi, cộng đúng từng đồng. Gian TikTok có trả phí Bảo đảm phí vận chuyển, 30 ngày: hủy sau gửi 990 đơn còn 39 lệch (1,40 tr); khách trả hàng 4.454 đơn còn 830 lệch (26,74 tr, phụ phí chỉ 0,46 tr, 219 đơn không được bồi); đơn giao bình thường có phụ phí 1.108 đơn lệch 39,08 tr.
+- Đề xuất: lát 1 không migration (cột Nguyên nhân + chip lọc, tách tiền theo thành phần, nhãn "Có Bảo đảm phí vận chuyển, vẫn lệch"); lát 2 một migration tách khóa quá cân / quá khổ khỏi `shipOther`.
+- Chưa biết: điều khoản chương trình bồi hoàn; "phụ phí" là khóa nào. `feeShipGuarantee` chỉ có từ bản kê sau 29/10.
+- **Anh: "Làm lát 1" → ĐÃ LÀM, ĐÃ COMMIT 13/11 khuya, chưa push** (docs mục 8.5). Bảng Theo đơn: cột Nguyên nhân + chip lọc theo số đơn + chip "Có bảo đảm, vẫn lệch"; dưới số Bị trừ thêm tách Chiều đi / Chiều về / Phụ phí / Sàn bồi / Khác (chỉ đơn TikTok); dòng hổ phách "Có bảo đảm · chưa được bồi / bồi chưa đủ"; thẻ thêm dòng bấm được; Excel thêm 6 cột. Mới: `backend/src/lib/shipping-diff-parts.ts`, `frontend/src/components/finance/ship-diff-parts.tsx`, `ship-diff-filter-chips.tsx`.
+- Kiểm local: 74 đơn seed, không cuộn ngang 1280–1920, tối OK, tsc + eslint sạch, vitest 43 ca. Chưa mở tệp Excel thật, chưa soi prod. Tài khoản thử + 74 đơn seed đã xóa khỏi DB dev (cả dòng sổ cái). Lazada chưa tách tiền (chưa đối chiếu công thức); lát 2 chờ anh.
+
 ## Phiên 13/11 tối (đối soát đơn hoàn) — Anh: "bỏ cột khách hàng đi và thay bằng cột Trạng thái vận chuyển… để biết ship đã báo hoàn thành công hay chưa" + "API mình có trong đơn hàng rồi chỉ cần gọi ra thôi" → ĐÃ COMMIT + PUSH `9b7750b2` 13/11 tối
 
 - Chi tiết: `docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md` mục 12.
@@ -17,7 +27,11 @@
 - Chưa làm (chờ anh): lưu mốc hãng trả kiện vào DB để lọc / đếm "hãng báo đã trả, kho chưa nhận" và đếm hạn khiếu nại.
 - **Anh: "Thêm mũi tên lên xuống bên cạnh để sắp xếp mới, cũ" → ĐÃ COMMIT + PUSH 13/11 tối** (docs mục 13): mũi tên ở tiêu đề cột Thời gian chờ, ↓ cũ nhất trước (mặc định) / ↑ mới nhất trước, xếp theo ngày sàn báo hoàn; `GET /api/warehouse/returns?sort=newest`. Bấm thử local đúng hai chiều; tsc + eslint sạch.
 - **Anh (ảnh prod): "2 bộ lọc anh khoanh là một, em chuyển hết về bộ lọc ở trong các khối to. Thay thế bộ lọc nhỏ bằng bộ lọc cho Trạng thái vận chuyển. Mũi tên… cần một background tròn… đỏ sắp xếp ngày cũ tới mới, xanh từ mới trước" → ĐÃ COMMIT + PUSH 13/11 tối** (docs mục 14): 5 thẻ bấm được = lọc tình trạng kho (thêm thẻ Đã nhập kho, thẻ Quá 14 ngày lọc được qua `status=OVERDUE`, thẻ hàng hỏng nay đếm cả đã đền bù / xóa sổ); hàng chip = lọc Trạng thái vận chuyển (`?ship=`, `shippingCounts`, `returnShippingWhere` + test DB 17 ca); mũi tên nền tròn đỏ / xanh. Giới hạn: kiện giao thất bại là một chip riêng, chip "Hoàn thành công" không gồm kiện hãng báo đã trả (không lưu DB). Soi local sáng + tối; tsc + eslint sạch; 153 ca test liên quan qua.
-- **Anh: "Dọn dẹp code, đảm bảo mô hình tree và commit" → ĐÃ DỌN + COMMIT 13/11 tối, CHƯA PUSH** (docs mục 15, không đổi hành vi): thẻ lọc / chip lọc / mũi tên sắp xếp tách sang `frontend/src/components/warehouse/returns-filters.tsx` (trang còn giữ state + bảng, biến `tab` → `statusFilter`); gỡ mã tương thích backend bản cũ; test `return-shipping-filter-db` dời về `lib/__tests__/`; chú thích đầu route gọn lại; README mục Hàng hoàn về kho viết lại đoạn lọc (gỡ cảnh báo "Badge tab" đã lỗi thời); chỉ mục `docs/README.md`. tsc + eslint sạch, 153 ca test liên quan qua, soi lại local. Không chạy được knip (bị chặn tải công cụ ngoài) → rà export bằng grep.
+- **Anh: "Dọn dẹp code, đảm bảo mô hình tree và commit" → ĐÃ DỌN + COMMIT `1082029d` + PUSH 13/11 tối (anh: "Push luôn")** (docs mục 15, không đổi hành vi): thẻ lọc / chip lọc / mũi tên sắp xếp tách sang `frontend/src/components/warehouse/returns-filters.tsx` (trang còn giữ state + bảng, biến `tab` → `statusFilter`); gỡ mã tương thích backend bản cũ; test `return-shipping-filter-db` dời về `lib/__tests__/`; chú thích đầu route gọn lại; README mục Hàng hoàn về kho viết lại đoạn lọc (gỡ cảnh báo "Badge tab" đã lỗi thời); chỉ mục `docs/README.md`. tsc + eslint sạch, 153 ca test liên quan qua, soi lại local. Không chạy được knip (bị chặn tải công cụ ngoài) → rà export bằng grep.
+
+## Phiên 13/11 (lịch tự soi kho chuẩn quốc tế) — đối chiếu bộ đếm "đang giữ" lần 2/7: ĐẠT
+
+- Soi 19:51 (chỉ đọc prod): lần đối chiếu 13/11 15:22 lệch cứng 0 (bộ đếm 337 = từ đơn 337 = Chờ giao 337), 1.151 đơn đang giữ, hủy còn giữ 0, bộ đếm âm 0; lúc soi đã giao chưa quét 0. Đơn đang giữ giảm mạnh so với 12/11 (3.778), chưa kiểm nguyên nhân. Ghi ở `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 13.12. Chưa commit.
 
 ## Phiên 13/11 (đối soát đơn hoàn) — Anh: "thêm nút tích ở đầu để Nhập kho, Báo hỏng, Nhận hàng… hàng loạt" + "khảo sát kỹ… các đơn hỏng phải được tính vào chi phí" → KHẢO SÁT XONG, CHƯA SỬA MÃ, chờ anh chốt 5 điểm tài chính
 

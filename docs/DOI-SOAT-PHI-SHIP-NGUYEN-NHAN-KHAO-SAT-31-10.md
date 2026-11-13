@@ -191,6 +191,120 @@ Cách đọc (`loadShipDiffByProduct`): bước 1 MỘT câu đọc đầu đơn
 - **Prod sau khi push `41107ed9` (10/11, tài khoản chủ shop của công ty, chỉ xem, màn 1920):** thẻ 7.879.700 đ = dòng tổng bảng (47 sản phẩm, 235 đơn lệch); trang đầu 20/20 dòng có ảnh + tỷ lệ; không tràn ô, không cuộn ngang. Chưa bấm Xuất Excel trên prod, chưa soi bằng tài khoản khách bán sữa.
 - **Local** (tài khoản thử tạo riêng cho lượt soi, đã xóa khỏi DB dev sau khi xong; seed ca rộng: 1.965 đơn, 475 đơn lệch 23.211.680 đ, 30 sản phẩm, đủ 9 nguyên nhân, tên 130 ký tự, tiền 8 chữ số, đơn 2 sản phẩm + quà 0 đ, đơn không dòng hàng, đơn Shopee không id sàn): thẻ = dòng tổng bảng = tổng cột Excel; lọc Tháng trước 306 đơn 14.377.466 đ khớp cả ba; tràn ô = 0 và không cuộn ngang ở 1280 / 1366 / 1440 / 1520 / 1700 / 1920; giao diện tối đã soi (chip lọc, viên nguyên nhân, ô mở); trang kho vẫn hiện viên nhãn đúng. Tệp Excel mới đọc nội dung trong trình duyệt (chặn lượt tải), chưa mở bằng Excel thật.
 
+## 8. Đơn hoàn trộn với chênh lệch cước + "đã mua bồi hoàn vẫn mất" (khảo sát 13/11/2026, CHƯA sửa mã)
+
+> Anh Trung 13/11: ở Kiểm toán phí › Truy thu phí ship "đang bị trộn lẫn giữa đơn hoàn và chênh lệch vận chuyển. Có nhiều shop mua phí bồi hoàn rồi nhưng vẫn mất phí ship chênh lệch có thể do cân nặng. Có phương án nào bóc tách hoặc cảnh báo không?"
+
+### 8.1 Gốc của việc trộn
+
+1. Bảng **Theo đơn** ở `/finance/fee-audit` không có cột Nguyên nhân (API `shipping-discrepancies` đã trả `reason` + `claimable`, trang kho và bảng Theo sản phẩm đã dùng).
+2. `classifyShippingDiff` gắn **một nhãn cho cả đơn** theo thứ tự loại trừ. Đơn hoàn có cả cước chiều đi, cước chiều về, phụ phí, tiền sàn bồi → toàn bộ số lệch mang nhãn "Khách trả hàng".
+3. Lời giải thích nhãn "Khách trả hàng" ghi "Phí ship chiều hoàn" — sai với phần lớn số tiền (xem 8.2).
+
+### 8.2 Số thật prod 13/11 (Supabase, chỉ đọc)
+
+Bản kê TikTok có đủ cột có dấu để tách TIỀN của một đơn, cộng đúng từng đồng (`shipRest` = 0 ở mọi nhóm đã đo):
+
+`Shop chịu = (cước đi − khách trả − sàn trợ) + cước chiều về + phụ phí − sàn bồi`
+
+**(a) Tài khoản chủ shop của công ty, mọi thời gian, 235 đơn đã có bản kê thật:**
+
+| Nhóm | Đơn | Shop chịu | Chiều đi | Chiều về | Phụ phí | Sàn bồi (số đơn được bồi) |
+|---|---:|---:|---:|---:|---:|---:|
+| Hủy sau khi gửi | 138 | 4.664.600 | 5.286.000 | 0 | 0 | −621.400 (62) |
+| Khách trả hàng | 67 | 2.859.000 | 2.389.700 | 546.600 | 0 | −77.300 (16) |
+| Đơn giao bình thường | 30 | 351.600 | 351.600 | 0 | 0 | 0 |
+
+→ Trong nhóm "Khách trả hàng", 84 % số tiền là cước CHIỀU ĐI, không phải chiều hoàn. Không đơn nào có phụ phí. Không đơn nào có `feeShipGuarantee` (xem hạn chế 8.4).
+
+**(b) Mọi gian TikTok, đơn đặt 30 ngày, đã quyết toán, CÓ trả phí Bảo đảm phí vận chuyển (`feeShipGuarantee < 0`):**
+
+| Nhóm | Đơn | Được bồi | Vẫn lệch | Tiền lệch | Trong các đơn lệch: chiều đi ròng · chiều về · phụ phí · sàn bồi |
+|---|---:|---:|---:|---:|---|
+| Hủy sau khi gửi | 990 | 961 (45,9 tr) | 39 | 1,40 tr | 2,08 · 0 · 0 · −0,68 tr (23/39 đơn có bồi) |
+| Khách trả hàng | 4.454 | 2.075 (81,1 tr) | 830 | 26,74 tr | 37,67 · 10,99 · 0,46 · −22,38 tr (611/830 đơn có bồi, 219 không được đồng nào) |
+| Giao bình thường, có phụ phí | 1.109 | 2 | 1.108 | 39,08 tr | 4,34 · 0 · 34,79 · −0,04 tr |
+| Giao bình thường, không phụ phí | 65.373 | 31 | 653 | 6,52 tr | (vượt mức sàn trợ / voucher ship của shop) |
+
+Đọc số:
+- Chương trình bồi hoàn làm đúng việc ở đơn **hủy sau khi gửi** (96 % đơn hết lệch).
+- Đơn **khách trả hàng**: 830 / 4.454 đơn vẫn lệch. Phụ phí chỉ 0,46 / 26,74 tr (1,7 %) → phần còn mất ở đơn hoàn KHÔNG phải do cân nặng mà do cước hai chiều lớn hơn tiền bồi, và 219 đơn không được bồi.
+- Khoản có thể do cân nặng / kích thước nằm ở đơn **giao bình thường có phụ phí**: 1.108 đơn, 34,79 tr — lớn hơn cả phần đơn hoàn, và gần như không dính bồi hoàn (2 đơn). Đây mới là chỗ shop "đã mua bồi hoàn mà vẫn mất".
+- CHƯA biết: điều khoản chương trình (vì sao 219 đơn hoàn không được bồi, mức trần bồi); "phụ phí" là khóa nào trong 13 khóa gom ở `shipOther`.
+
+### 8.3 Phương án đề xuất (chờ anh chốt)
+
+**Lát 1 — không migration, không gọi sàn:**
+1. Bảng Theo đơn thêm cột **Nguyên nhân** (viên nhãn có sẵn) + hàng chip lọc nguyên nhân như bảng Theo sản phẩm.
+2. Hàm thuần `splitShippingDiff()` cạnh `classifyShippingDiff`: tách tiền một đơn thành Chiều đi · Chiều về · Phụ phí · Sàn bồi (TikTok, Lazada; Shopee chưa lưu cột nên giữ một dòng). Bất biến có test: Σ phần = `shippingFeeDiff`. Hiện ở dòng phụ dưới số "Bị trừ thêm" và thành cột trong Excel.
+3. Nhãn cảnh báo **"Có Bảo đảm phí vận chuyển, vẫn lệch"** cho đơn hủy / hoàn có `feeShipGuarantee < 0` mà còn lệch, chia hai ca: *chưa được bồi* và *bồi không đủ*. Dòng phụ trên thẻ đếm số đơn + tiền. Chữ là "nên kiểm tra", KHÔNG ghi "đòi được" khi chưa biết điều khoản.
+4. Sửa lời giải thích nhãn "Khách trả hàng" (cước hai chiều, không chỉ chiều hoàn).
+
+**Lát 2 — một migration nhỏ, chỉ khi anh muốn gọi đúng tên "quá cân / quá khổ":** tách `non_standard_weight_fee` + `non_standard_dimension_fee` khỏi `shipOther` thành cột riêng (và `shipping_fee_guarantee_reimbursement` khỏi `shipReimbursement`). Chỉ có số cho bản kê ghi từ ngày deploy; bản kê cũ không đọc lại.
+
+### 8.4 Hạn chế biết trước
+
+- `feeShipGuarantee` chỉ có từ bản kê ghi sau 29/10/2026 (trước đó nằm trong "Phí khác") → cảnh báo mục 3 chỉ đúng cho đơn từ khoảng đó.
+- Hubsell không lưu cân nặng khai báo lẫn cân nặng hãng tính cước → không tự kết luận "sai cân" được, chỉ chỉ ra đơn / sản phẩm có phụ phí.
+- Shopee không tách được (chưa lưu `reverse_shipping_fee` / `buyer_paid_shipping_fee`); Shopee chiếm dưới 1 % tiền lệch.
+
+### 8.5 ĐÃ LÀM lát 1 (13/11/2026 khuya, anh: "Làm lát 1") — không migration, không gọi sàn
+
+Khách thấy gì ở `/finance/fee-audit` › Truy thu phí ship › **Theo đơn**:
+
+- Cột **Nguyên nhân** (viên nhãn cũ, trỏ chuột ra lời giải thích) đứng giữa "Bị trừ thêm" và "Trạng thái".
+- Hàng **chip lọc** trên bảng: Tất cả + từng nguyên nhân, in SỐ ĐƠN, nhiều trước; cuối hàng là chip chấm hổ phách **"Có bảo đảm, vẫn lệch"**. Số trên chip theo gian + kỳ + trạng thái, không theo chip đang chọn.
+- Dưới số "Bị trừ thêm" của đơn TikTok: mỗi phần một dòng — **Chiều đi · Chiều về · Phụ phí · Sàn bồi (số âm) · Khác**, chỉ in phần có tiền; trỏ chuột ra giải thích từng phần. Các dòng cộng lại đúng bằng số ở trên. Đơn Shopee / Lazada không in gì (xem phạm vi bên dưới).
+- Dưới viên nguyên nhân của đơn hủy sau gửi / trả hàng đã trả phí Bảo đảm phí vận chuyển mà còn lệch: dòng hổ phách **"Có bảo đảm · chưa được bồi"** hoặc **"Có bảo đảm · bồi chưa đủ"**; lời giải thích chỉ nói "nên kiểm tra trên sàn".
+- Thẻ "Truy thu phí ship" thêm dòng hổ phách "N đơn có bảo đảm vẫn lệch X ₫" (chỉ hiện khi N > 0) — bấm là mở bảng Theo đơn đã lọc đúng các đơn đó.
+- Excel trang "Theo don" thêm 5 cột tiền (Cước chiều đi, Cước chiều về, Phụ phí vận chuyển, Sàn bồi lại mang dấu trừ, Khoản khác — cộng lại bằng "Shop chịu thêm"; đơn chưa tách được để trống) + cột "Bảo đảm phí vận chuyển".
+- Lời giải thích nhãn "Khách trả hàng" sửa thành cước cả hai chiều trừ phần sàn bồi (trang kho dùng chung).
+- Số đơn trên đầu bảng nay theo bộ lọc đang chọn (trước lấy tổng của thẻ).
+
+| Lớp | Tệp | Việc |
+|---|---|---|
+| Phần thuần | `backend/src/lib/shipping-diff-parts.ts` + test (12 ca) | `splitShippingDiff` (tính bằng xu, phần dư dồn vào `other` nên tổng luôn khớp; null khi không có bản kê TikTok hoặc bản kê không có cột ship nào), `shipGuaranteeGap` |
+| Đọc DB | `backend/src/services/shipping-diff.ts` | `SHIP_REASON_SELECT` thêm `shipActual`, `shipReimbursement`, `feeShipGuarantee`; `shipPartsOf`, `shipGuaranteeGapOf`; `shipGuaranteeGapWhere` = cùng luật viết thành bộ lọc DB cho thẻ |
+| API | `routes/finance.ts` | `GET /shipping-discrepancies`: thêm `?guarantee=1`, mỗi dòng thêm `parts` + `guaranteeGap`, summary thêm `allOrders` + `guaranteeGap {orders, amount, notReimbursed, partial}`; `GET /fee-audit`: `summary.ship.guaranteeGap {orders, amount}` bằng một câu aggregate |
+| Test DB | `services/__tests__/shipping-diff-db.test.ts` | số của bộ lọc DB = đếm bằng luật phân loại từng đơn; đơn nào tách được thì Σ phần = số lệch |
+| Web | `app/finance/fee-audit/page.tsx`, `components/finance/ship-diff-parts.tsx` (mới), `ship-diff-filter-chips.tsx` (mới — bảng Theo sản phẩm chuyển sang dùng chung), `lib/shipping-diff-reason.ts`, `lib/excel.ts`, `lib/api.ts` | trường mới đều tùy chọn ở kiểu dữ liệu để web chạy được với backend cũ lúc hai bên deploy lệch giờ |
+
+Phạm vi + hạn chế của lát 1:
+- **Chỉ tách tiền đơn TikTok.** Lazada có cột sao kê nhưng em chưa đối chiếu công thức cộng trên số thật nên chưa bật (mục 8.3 ghi "TikTok, Lazada" là dự định ban đầu); Shopee chưa lưu cột.
+- "Phụ phí" vẫn là 13 khóa gom chung, chưa gọi tên được "quá cân / quá khổ" (lát 2).
+- Cờ bảo đảm chỉ có với bản kê ghi sau 29/10/2026.
+- Thẻ đếm bằng bộ lọc DB, danh sách đếm bằng luật từng đơn: hai chỗ cùng một luật, giữ khớp bằng test DB — sửa luật hủy / hoàn của TikTok phải sửa cả `shipGuaranteeGapWhere`.
+
+Kiểm local (tài khoản thử tạo riêng, 74 đơn seed đủ 8 nguyên nhân + đủ ca tách: đi + về + bồi, đủ 4 phần với cước 7 chữ số, có khoản khác, chiều đi âm, Shopee / Lazada không tách, tên gian 47 ký tự, tên sản phẩm 150 ký tự):
+- API: thẻ 18 đơn / 1.089.900 đ = danh sách lọc `guarantee=1` (18 đơn: 12 bồi chưa đủ + 6 chưa được bồi); 65/74 đơn có `parts`, 0 đơn lệch tổng.
+- Bề rộng bảng 74 dòng, sidebar mở: không cuộn ngang, không tràn ô ở 1280 / 1366 / 1440 / 1520 / 1700 / 1920. Ở 1280 còn dư 6 px với cước một đơn tới 7 chữ số; seed thử cước 12 triệu một đơn (8 chữ số, không có thật) thì 1280 tràn 8 px.
+- Giao diện tối đã soi (tương phản đo: dòng tách tiền 6,6 · viên nhãn 8,3 · dòng hổ phách 11,8 · chip 9,0 / 14,5).
+- Bảng Theo sản phẩm sau khi đổi sang chip dùng chung: 9 chip, tổng 18.384.120 đ = thẻ.
+- tsc + eslint sạch hai phía; vitest 4 tệp 43 ca qua.
+- CHƯA làm: bấm Xuất Excel rồi mở tệp thật; soi prod (chưa push).
+
+SQL 8.2(b) (đổi điều kiện gian + bỏ `feeShipGuarantee < 0` là ra 8.2(a)):
+
+```sql
+with l as (
+  select o."shippingStatus"::text ss, o."returnStatus"::text rs, o."shippingFeeDiff" d, t.*
+  from "Order" o join "Channel" c on c.id=o."channelId"
+  join tiktok_order_settlements t on t."orderId"=o.id
+  where c."channelName"='TIKTOK' and o."createdAt" > now() - interval '30 days'
+    and t.estimated=false and t."feeShipGuarantee"<0)
+select case when ss='CANCELLED' and rs='NONE' then '1_huy_sau_gui'
+            when rs<>'NONE' or "shipReturn"<0 then '2_khach_hoan'
+            when "shipOther"<0 then '3_phu_phi' else '4_don_thuong' end k,
+  count(*) n, count(*) filter (where d>0) nlech, sum(d) diff,
+  sum(-"shipActual") filter (where d>0) cuocdi, sum("shipCustomerPaid") filter (where d>0) khach,
+  sum("shipPlatformDiscount"+"shipSubsidy") filter (where d>0) santro,
+  sum(-"shipReturn") filter (where d>0) ve, sum(-"shipOther") filter (where d>0) pp,
+  sum("shipReimbursement") filter (where d>0) boi_lech, sum("shipReimbursement") boi_all,
+  count(*) filter (where "shipReimbursement">0) nboi,
+  count(*) filter (where d>0 and "shipReimbursement">0) nlech_coboi
+from l group by 1 order by 1;
+```
+
 ## 5. SQL đã chạy (chỉ đọc, chạy lại được)
 
 ```sql

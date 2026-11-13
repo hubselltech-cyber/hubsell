@@ -1,7 +1,12 @@
 // Lớp gọi API tới backend Hubsell (kèm token đăng nhập).
 
 import { rangeToQuery, type DateRange } from "./date-range";
-import type { ShippingDiffReason, ShippingDiffReasonFilter } from "./shipping-diff-reason";
+import type {
+  ShipDiffParts,
+  ShipGuaranteeGap,
+  ShippingDiffReason,
+  ShippingDiffReasonFilter,
+} from "./shipping-diff-reason";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const TOKEN_KEY = "hubsell_token";
@@ -2659,6 +2664,10 @@ export interface ShippingDiscrepancy {
   reason: ShippingDiffReason;
   /** true = ca khiếu nại đòi lại được; false = chi phí ship theo chính sách sàn. */
   claimable: boolean;
+  /** Tiền lệch tách theo chiều đi / chiều về / phụ phí / sàn bồi; null = chưa tách được (Shopee, Lazada). Thiếu = backend cũ. */
+  parts?: ShipDiffParts | null;
+  /** Đơn hủy / trả hàng đã trả phí Bảo đảm phí vận chuyển mà vẫn lệch. Thiếu = backend cũ. */
+  guaranteeGap?: ShipGuaranteeGap | null;
   /** Thiếu = backend cũ. */
   items?: OrderLineBrief[];
 }
@@ -2670,6 +2679,10 @@ export interface ShippingDiscrepancyResponse {
     policyDiscrepancy: number; // âm — shop chịu theo chính sách sàn
     pendingCount: number;
     reasonCounts: Partial<Record<ShippingDiffReason, number>>;
+    /** Mọi đơn lệch của gian + kỳ + trạng thái, KHÔNG theo bộ lọc nguyên nhân. Thiếu = backend cũ. */
+    allOrders?: number;
+    /** Đơn hủy / trả hàng có bảo đảm mà vẫn lệch (tiền dương), không theo bộ lọc nguyên nhân. Thiếu = backend cũ. */
+    guaranteeGap?: { orders: number; amount: number; notReimbursed: number; partial: number };
   };
   page: number;
   pageSize: number;
@@ -2683,6 +2696,8 @@ export function fetchShippingDiscrepancies(params: {
   channel?: ChannelFilterQuery;
   status?: string;
   reason?: ShippingDiffReasonFilter;
+  /** true = chỉ đơn hủy / trả hàng đã trả phí Bảo đảm phí vận chuyển mà vẫn lệch. */
+  guarantee?: boolean;
   range?: DateRange;
 }) {
   const qs = new URLSearchParams({
@@ -2693,6 +2708,7 @@ export function fetchShippingDiscrepancies(params: {
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.status) qs.set("status", params.status);
   if (params.reason) qs.set("reason", params.reason);
+  if (params.guarantee) qs.set("guarantee", "1");
   return apiFetch<ShippingDiscrepancyResponse>(
     `/api/finance/shipping-discrepancies?${qs.toString()}`
   );
@@ -2792,7 +2808,13 @@ export type FeeAuditStatus = "CHO_XU_LY" | "DANG_KHIEU_NAI" | "DA_XU_LY" | "BO_Q
 
 export interface FeeAuditSummary {
   /** Rổ #1 — truy thu phí ship (shippingFeeDiff). Số tiền trả DƯƠNG. */
-  ship: { orders: number; totalMissing: number; pendingCount: number };
+  ship: {
+    orders: number;
+    totalMissing: number;
+    pendingCount: number;
+    /** Đơn hủy / trả hàng đã trả phí Bảo đảm phí vận chuyển mà shop vẫn chịu thêm (nằm trong totalMissing). Thiếu = backend cũ. */
+    guaranteeGap?: { orders: number; amount: number };
+  };
   /** Rổ #2 — sàn trả thiếu so với số CHÍNH SÀN tự ước tính (chỉ Shopee). */
   payout: { orders: number; totalMissing: number; pendingCount: number };
   /** Rổ #3 — giao xong quá hạn sàn chưa giải ngân. */
