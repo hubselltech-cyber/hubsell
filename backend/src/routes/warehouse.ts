@@ -118,14 +118,15 @@ function agingOf(
 
 /**
  * GET /api/warehouse/returns?status=&ship=&search=&page=&pageSize=&from=&to=&sort=
- * Danh sách đơn hoàn kèm số ngày chờ và mức cảnh báo. `from`/`to` (yyyy-mm-dd,
- * 13/11/2026) lọc theo NGÀY SÀN BÁO HOÀN — danh sách, số trên tab và bốn thẻ
- * cùng theo kỳ; không gửi = toàn bộ thời gian (đơn chưa rõ mốc chỉ hiện khi đó).
- *
- * Hai bộ lọc độc lập (13/11/2026 tối, anh Trung): `status` = TÌNH TRẠNG KHO (các thẻ
- * to; thêm OVERDUE = chờ hàng về đã quá hạn), `ship` = TRẠNG THÁI VẬN CHUYỂN (hàng
- * chip, lib/return-shipping.ts). Số trên thẻ (`summary`) không đổi theo hai bộ lọc
- * này; số trên chip (`shippingCounts`) đếm trong tình trạng kho đang chọn.
+ * Danh sách đơn hoàn kèm số ngày chờ, mức cảnh báo và trạng thái vận chuyển chiều hoàn.
+ *   · `from` / `to` (yyyy-mm-dd): lọc theo NGÀY SÀN BÁO HOÀN — danh sách và mọi số đếm
+ *     cùng theo kỳ; không gửi = toàn bộ thời gian (đơn chưa rõ mốc chỉ hiện khi đó).
+ *   · `status`: TÌNH TRẠNG KHO (các thẻ to trên web) — một ReturnStatus, ISSUES, SCANNED,
+ *     hoặc OVERDUE = chờ hàng về đã quá hạn.
+ *   · `ship`: TRẠNG THÁI VẬN CHUYỂN (hàng chip) — lib/return-shipping.ts.
+ *   · `sort=newest`: sàn báo hoàn mới nhất trước; mặc định đơn chờ lâu nhất trước.
+ * Số trên thẻ (`summary`) không đổi theo `status` / `ship`; số trên chip
+ * (`shippingCounts`) đếm trong tình trạng kho đang chọn.
  */
 router.get("/returns", async (req: AuthRequest, res, next) => {
   try {
@@ -217,9 +218,8 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       prisma.order.count({ where }),
       prisma.order.findMany({
         where,
-        // Mặc định đơn chờ lâu nhất lên đầu — đó là thứ cần đi đòi trước.
-        // ?sort=newest (13/11/2026, mũi tên ở tiêu đề cột Thời gian chờ): sàn báo
-        // hoàn mới nhất trước; đơn chưa rõ mốc vẫn xếp cuối như chiều mặc định.
+        // Mặc định đơn chờ lâu nhất lên đầu — đó là thứ cần đi đòi trước. Đơn chưa rõ
+        // mốc sàn báo hoàn xếp cuối ở cả hai chiều.
         orderBy: newestFirst
           ? [{ returnRequestedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }]
           : [{ returnRequestedAt: "asc" }, { createdAt: "asc" }],
@@ -304,7 +304,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
           o.returnRequestedAt,
           o.returnStatus === ReturnStatus.AWAITING ? null : o.returnedAt
         ),
-        // Cột "Trạng thái vận chuyển" (13/11/2026): tính từ cột đã có, không gọi sàn.
+        // Cột "Trạng thái vận chuyển": tính từ cột đã có, không gọi sàn.
         returnShipping: returnShippingOf(o),
       })),
       total,

@@ -127,7 +127,7 @@ const IN_HAND_STATUSES = Object.values(ReturnStatus).filter(
 
 /**
  * Điều kiện Prisma của từng nhóm lọc — BẢN SQL của returnShippingFilterOf. Sửa một
- * bên phải sửa bên kia; integrations/__tests__/return-shipping-filter-db.test.ts
+ * bên phải sửa bên kia; lib/__tests__/return-shipping-filter-db.test.ts
  * so hai bên trên Postgres thật.
  */
 export function returnShippingWhere(filter: ReturnShippingFilter): Prisma.OrderWhereInput {

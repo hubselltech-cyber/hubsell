@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  ArrowDown,
-  ArrowUp,
   ChevronLeft,
   ChevronRight,
   Gavel,
@@ -18,15 +16,10 @@ import {
   PackageX,
   RefreshCw,
   Search,
-  Timer,
   X,
 } from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
-import {
-  DashboardCard,
-  type DashboardCardProps,
-} from "@/components/dashboard/dashboard-card";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
@@ -41,6 +34,12 @@ import {
   ReturnsBulkBar,
   isReturnBulkSelectable,
 } from "@/components/warehouse/returns-bulk-bar";
+import {
+  ReturnShippingChips,
+  ReturnSortToggle,
+  ReturnStatusCards,
+  type ReturnStatusFilter,
+} from "@/components/warehouse/returns-filters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -112,69 +111,6 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   },
 };
 
-/** Nhóm trạng thái gộp của thẻ Hàng hỏng · khiếu nại sàn — khớp filter ISSUES ở backend */
-const ISSUE_KEYS = ["DAMAGED", "CLAIM_SETTLED", "WRITTEN_OFF"] as const;
-
-/**
- * Hàng chip = bộ lọc TRẠNG THÁI VẬN CHUYỂN (anh Trung 13/11/2026 tối: "Thay thế bộ lọc
- * nhỏ bằng bộ lọc cho Trạng thái vận chuyển"). Chữ trùng với cột Trạng thái vận chuyển;
- * riêng "Giao thất bại" là nhóm kiện quay đầu kho chưa nhận — trong nhóm này từng dòng
- * mới hỏi hãng nên không tách tiếp được ở bộ lọc.
- */
-const SHIP_CHIPS: { key: ReturnShippingFilter; label: string; title?: string }[] = [
-  { key: "RETURNED", label: "Hoàn thành công" },
-  { key: "RETURNING", label: "Đang hoàn về" },
-  { key: "WAITING_BUYER", label: "Chờ khách gửi hàng" },
-  {
-    key: "FAILED_DELIVERY",
-    label: "Giao thất bại",
-    title:
-      "Kiện giao thất bại đang quay về, kho chưa nhận. Hãng đã trả kiện hay chưa được hỏi từ hãng vận chuyển cho từng dòng khi mở trang.",
-  },
-  { key: "NO_SIGNAL", label: "Chưa có tin từ hãng" },
-];
-
-const CHIP_CLASS =
-  "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors";
-const CHIP_ON = "border-primary bg-primary text-primary-foreground";
-const CHIP_OFF = "bg-background text-muted-foreground hover:bg-muted hover:text-foreground";
-
-/**
- * Thẻ số bấm được = bộ lọc TÌNH TRẠNG KHO (anh Trung 13/11/2026 tối: hàng chip tình
- * trạng trùng với các thẻ → "chuyển hết về bộ lọc ở trong các khối to"). Bấm thẻ để
- * lọc, bấm lại thẻ đang chọn để bỏ lọc. role="button" trên div vì thẻ chứa <p>/<div>.
- */
-function FilterCard({
-  active,
-  onToggle,
-  ...card
-}: DashboardCardProps & { active: boolean; onToggle: () => void }) {
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={active}
-      title={active ? "Đang lọc theo thẻ này — bấm lần nữa để bỏ lọc" : "Bấm để lọc danh sách theo thẻ này"}
-      onClick={onToggle}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onToggle();
-        }
-      }}
-      className="h-full cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <DashboardCard
-        {...card}
-        className={cn(
-          "transition-shadow hover:shadow-md",
-          active && "ring-2 ring-primary"
-        )}
-      />
-    </div>
-  );
-}
-
 /**
  * ĐỐI SOÁT ĐƠN HOÀN — nơi DUY NHẤT nhân viên kho thao tác với hàng hoàn.
  *
@@ -192,11 +128,13 @@ function FilterCard({
  *
  * BỐ CỤC (anh Trung chốt 13/11/2026): đầu trang ô quét gọn (trái) + lọc thời
  * gian, nút đồng bộ (phải) → các thẻ số, BẤM ĐƯỢC = bộ lọc tình trạng kho → dải
- * nhắc mỏng → chip lọc Trạng thái vận chuyển (trái) + lọc gian, ô tìm (phải) → bảng.
+ * nhắc mỏng → chip lọc Trạng thái vận chuyển (trái) + lọc gian, ô tìm (phải) → bảng;
+ * mũi tên sắp xếp cũ / mới ở tiêu đề cột Thời gian chờ. Ba bộ điều khiển này vẽ ở
+ * components/warehouse/returns-filters.tsx, trang chỉ giữ state.
  *
  * Ô TÍCH (13/11/2026, anh Trung): tích theo TỪNG TRANG, tích bao nhiêu tác động
  * bấy nhiêu đơn — thanh nổi đáy màn có Nhận hàng / Nhập kho / Báo hỏng cho các
- * đơn đang tích (components/warehouse/returns-bulk-bar.tsx). Đổi trang / tab /
+ * đơn đang tích (components/warehouse/returns-bulk-bar.tsx). Đổi trang / thẻ /
  * bộ lọc là bỏ chọn; không có "chọn mọi đơn khớp bộ lọc".
  *
  * ⚠️ Việc cộng tồn kho vẫn chỉ đi qua `/api/orders/*` (đơn lẻ: /:id/return,
@@ -208,18 +146,14 @@ export default function WarehouseReturnsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   /** Tình trạng kho đang lọc (thẻ to): "" = tất cả. */
-  const [tab, setTab] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ReturnStatusFilter>("");
   /** Trạng thái vận chuyển đang lọc (hàng chip): "" = tất cả. */
   const [ship, setShip] = useState<ReturnShippingFilter | "">("");
   const [channelFilter, setChannelFilter] =
     useState<ChannelFilterValue>(ALL_CHANNELS);
   /** Lọc theo ngày sàn báo hoàn; null = toàn bộ thời gian (mặc định — đơn chờ về có thể rất cũ). */
   const [range, setRange] = useState<DateRange | null>(null);
-  /**
-   * Sắp theo ngày sàn báo hoàn, bấm mũi tên ở tiêu đề cột Thời gian chờ (anh Trung
-   * 13/11/2026). false = cũ → mới (chờ lâu nhất trước, mặc định như cũ, nền ĐỎ);
-   * true = mới nhất trước (nền XANH).
-   */
+  /** Sắp theo ngày sàn báo hoàn: false = cũ → mới (chờ lâu nhất trước, mặc định). */
   const [newestFirst, setNewestFirst] = useState(false);
   const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
@@ -232,7 +166,7 @@ export default function WarehouseReturnsPage() {
   /** id đơn đang nhập kho lẻ */
   const [inboundingId, setInboundingId] = useState<string | null>(null);
   /**
-   * Đơn đang tích, gắn với ĐÚNG cảnh đang xem (tab + lọc + trang): đổi cảnh thì
+   * Đơn đang tích, gắn với ĐÚNG cảnh đang xem (thẻ + lọc + trang): đổi cảnh thì
    * `viewKey` khác → coi như chưa tích gì, khỏi phải dọn ở từng nút đổi cảnh.
    */
   const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>({
@@ -261,7 +195,7 @@ export default function WarehouseReturnsPage() {
   // đỡ gọi API vô ích đúng như setInterval + visibilitychange cũ.
   const returnsQ = useApiQuery({
     queryKey: qk.warehouseReturns({
-      status: tab || undefined,
+      status: statusFilter || undefined,
       ship: ship || undefined,
       search: debounced || undefined,
       channel: channelFilterToQuery(channelFilter),
@@ -272,7 +206,7 @@ export default function WarehouseReturnsPage() {
     }),
     queryFn: () =>
       fetchWarehouseReturns({
-        status: tab || undefined,
+        status: statusFilter || undefined,
         ship: ship || undefined,
         search: debounced || undefined,
         channel: channelFilter,
@@ -292,7 +226,7 @@ export default function WarehouseReturnsPage() {
   // Kiện giao thất bại đang chờ về: hỏi hành trình hãng theo lô, dòng hiện dần.
   const carrierById = useReturnCarrierStatus(rows);
   const viewKey = JSON.stringify([
-    tab,
+    statusFilter,
     ship,
     debounced,
     channelFilter,
@@ -333,7 +267,7 @@ export default function WarehouseReturnsPage() {
   const loading = returnsQ.loading || returnsQ.placeholder;
 
   // Sau thao tác ghi (quét nhận / nhập kho / khiếu nại) làm tươi mọi biến thể
-  // bộ lọc của trang — badge đếm các tab khác đổi theo.
+  // bộ lọc của trang — số trên các thẻ và chip khác đổi theo.
   const load = useCallback(
     () => invalidate(["warehouse-returns"]),
     [invalidate]
@@ -454,25 +388,19 @@ export default function WarehouseReturnsPage() {
     }
   }
 
-  // Đơn quá hạn dồn lên đầu bảng đã do backend sắp; ở đây chỉ đếm để cảnh báo
+  // Hai con số của dải nhắc mỏng dưới các thẻ.
   const overdue = summary.overdue ?? 0;
   const warning = summary.warning ?? 0;
-  /** Số đơn đã quét nhận, đang chờ nhập kho — theo bộ lọc đang xem (thẻ + tab) */
-  const receivedCount = summary.RECEIVED ?? 0;
 
-  const issuesCount = ISSUE_KEYS.reduce((sum, k) => sum + (summary[k] ?? 0), 0);
-  const shipCounts = returnsQ.data?.shippingCounts ?? {};
-  /** Tổng đơn trong tình trạng kho đang chọn — số trên chip "Tất cả". */
-  const shipTotal = Object.values(shipCounts).reduce((sum, n) => sum + (n ?? 0), 0);
   /** Bấm thẻ: lọc theo thẻ đó, bấm lại thì bỏ lọc; đổi thẻ là về chip "Tất cả". */
-  const toggleTab = (key: string) => {
-    setTab((cur) => (cur === key ? "" : key));
+  const toggleStatus = (key: Exclude<ReturnStatusFilter, "">) => {
+    setStatusFilter((cur) => (cur === key ? "" : key));
     setShip("");
     setPage(1);
   };
 
   const isFiltering =
-    Boolean(tab) ||
+    Boolean(statusFilter) ||
     Boolean(ship) ||
     Boolean(search.trim()) ||
     Boolean(channelFilter.channelName) ||
@@ -521,61 +449,13 @@ export default function WarehouseReturnsPage() {
           </div>
         </div>
 
-        {/* ===== CÁC THẺ SỐ = BỘ LỌC TÌNH TRẠNG KHO (bấm để lọc, bấm lại để bỏ) =====
-             Bốn thẻ cũ giữ nguyên vị trí; thêm "Đã nhập kho" ở cuối để đủ mọi lựa chọn
-             của hàng chip tình trạng đã gỡ. Năm cột từ 1400 px, hẹp hơn thì 3 / 2 cột
-             (viết 87.5rem chứ không 1400px: Tailwind xếp luật theo đơn vị, viết px thì
-             luật lg: đứng sau và thắng). */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 min-[87.5rem]:grid-cols-5">
-          <FilterCard
-            active={tab === "AWAITING"}
-            onToggle={() => toggleTab("AWAITING")}
-            title="Chờ hàng về"
-            value={formatNumber(summary.AWAITING ?? 0)}
-            icon={PackageSearch}
-            tone="warning"
-            subtitle="Sàn đã báo hoàn, kho chưa quét nhận"
-          />
-          <FilterCard
-            active={tab === "RECEIVED"}
-            onToggle={() => toggleTab("RECEIVED")}
-            title="Đã nhận · chờ nhập kho"
-            value={formatNumber(receivedCount)}
-            icon={PackageOpen}
-            tone={receivedCount > 0 ? "positive" : "neutral"}
-            subtitle="Hàng đã về tay, chờ cộng lại tồn kho"
-          />
-          <FilterCard
-            active={tab === "OVERDUE"}
-            onToggle={() => toggleTab("OVERDUE")}
-            title={`Quá ${thresholds.overdueDays} ngày chưa về`}
-            value={formatNumber(overdue)}
-            icon={Timer}
-            tone={overdue > 0 ? "negative" : "neutral"}
-            featured={overdue > 0}
-            subtitle="Căn cứ khiếu nại bưu cục"
-          />
-          <FilterCard
-            active={tab === "ISSUES"}
-            onToggle={() => toggleTab("ISSUES")}
-            title="Hàng hỏng · khiếu nại sàn"
-            value={formatNumber(issuesCount)}
-            icon={PackageX}
-            tone="negative"
-            colorValue
-            subtitle={`${formatNumber(summary.DAMAGED ?? 0)} chờ khiếu nại · ${formatNumber(
-              issuesCount - (summary.DAMAGED ?? 0)
-            )} đã chốt`}
-          />
-          <FilterCard
-            active={tab === "RECEIVED_INTACT"}
-            onToggle={() => toggleTab("RECEIVED_INTACT")}
-            title="Đã nhập kho"
-            value={formatNumber(summary.RECEIVED_INTACT ?? 0)}
-            icon={PackageCheck}
-            subtitle="Hàng nguyên vẹn, đã cộng lại tồn kho"
-          />
-        </div>
+        {/* ===== CÁC THẺ SỐ = BỘ LỌC TÌNH TRẠNG KHO (bấm để lọc, bấm lại để bỏ) ===== */}
+        <ReturnStatusCards
+          value={statusFilter}
+          onToggle={toggleStatus}
+          summary={summary}
+          overdueDays={thresholds.overdueDays}
+        />
 
         {/* Dải nhắc mỏng một dòng (anh Trung 13/11: "rải màu cam cho nhỏ lại") — con
             số chính đã có ở thẻ "Quá N ngày chưa về" ngay trên. */}
@@ -599,47 +479,16 @@ export default function WarehouseReturnsPage() {
           </p>
         )}
 
-        {/* ===== CHIP LỌC TRẠNG THÁI VẬN CHUYỂN (trái) + lọc gian + ô tìm (phải) =====
-             Số trên chip đếm trong tình trạng kho đang chọn ở thẻ. Chip 0 đơn ẩn đi
-             (trừ chip đang chọn) cho hàng lọc ngắn. */}
+        {/* ===== CHIP LỌC TRẠNG THÁI VẬN CHUYỂN (trái) + lọc gian + ô tìm (phải) ===== */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            aria-pressed={ship === ""}
-            onClick={() => {
-              setShip("");
+          <ReturnShippingChips
+            value={ship}
+            onChange={(next) => {
+              setShip(next);
               setPage(1);
             }}
-            className={cn(CHIP_CLASS, ship === "" ? CHIP_ON : CHIP_OFF)}
-          >
-            Tất cả
-            {shipTotal > 0 && (
-              <span className="tabular-nums opacity-70">{formatNumber(shipTotal)}</span>
-            )}
-          </button>
-          {SHIP_CHIPS.map((c) => {
-            const active = ship === c.key;
-            const count = shipCounts[c.key] ?? 0;
-            if (count === 0 && !active) return null;
-            return (
-              <button
-                key={c.key}
-                type="button"
-                aria-pressed={active}
-                title={c.title}
-                onClick={() => {
-                  setShip(active ? "" : c.key);
-                  setPage(1);
-                }}
-                className={cn(CHIP_CLASS, active ? CHIP_ON : CHIP_OFF)}
-              >
-                {c.label}
-                {count > 0 && (
-                  <span className="tabular-nums opacity-70">{formatNumber(count)}</span>
-                )}
-              </button>
-            );
-          })}
+            counts={returnsQ.data?.shippingCounts ?? {}}
+          />
 
           <div className="ml-auto">
             <ChannelFilter
@@ -706,35 +555,13 @@ export default function WarehouseReturnsPage() {
                       <TableHead>Sản phẩm</TableHead>
                       <TableHead>Vận chuyển</TableHead>
                       <TableHead aria-sort={newestFirst ? "ascending" : "descending"}>
-                        {/* Mũi tên trong nền tròn (anh Trung 13/11/2026): ĐỎ = ngày cũ
-                            → mới, XANH = mới nhất trước. Bấm để đổi chiều. */}
-                        <button
-                          type="button"
-                          onClick={() => {
+                        <ReturnSortToggle
+                          newestFirst={newestFirst}
+                          onToggle={() => {
                             setNewestFirst((v) => !v);
                             setPage(1);
                           }}
-                          title={
-                            newestFirst
-                              ? "Đang xếp: sàn báo hoàn mới nhất trước. Bấm để xếp từ ngày cũ tới mới."
-                              : "Đang xếp: từ ngày cũ tới mới (chờ lâu nhất trước). Bấm để xếp mới nhất trước."
-                          }
-                          className="inline-flex items-center gap-1.5 font-medium text-foreground"
-                        >
-                          Thời gian chờ
-                          <span
-                            className={cn(
-                              "flex size-5 shrink-0 items-center justify-center rounded-full text-white",
-                              newestFirst ? "bg-emerald-500" : "bg-red-500"
-                            )}
-                          >
-                            {newestFirst ? (
-                              <ArrowUp className="size-3.5" strokeWidth={2.5} />
-                            ) : (
-                              <ArrowDown className="size-3.5" strokeWidth={2.5} />
-                            )}
-                          </span>
-                        </button>
+                        />
                       </TableHead>
                       <TableHead>Tình trạng</TableHead>
                       <TableHead className="text-center">Thao tác</TableHead>
@@ -796,15 +623,6 @@ export default function WarehouseReturnsPage() {
                               {o.returnRequestedAt
                                 ? `Sàn báo hoàn ${formatDateTime(o.returnRequestedAt)}`
                                 : "Chưa rõ mốc sàn báo hoàn"}
-                              {/* "giao thất bại, kiện quay đầu" đã chuyển sang cột
-                                  Trạng thái vận chuyển; chỉ còn hiện ở đây khi backend
-                                  bản cũ chưa trả returnShipping. */}
-                              {!o.returnShipping &&
-                                o.platformReturnStatus === "CANCELLED_AFTER_SHIP" && (
-                                  <span className="ml-1 text-amber-600 dark:text-amber-400">
-                                    · giao thất bại, kiện quay đầu
-                                  </span>
-                                )}
                             </p>
                           </TableCell>
 

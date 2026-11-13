@@ -6,17 +6,17 @@
 // docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 14
 // ============================================================
 
-import "./load-env";
+import "../../integrations/__tests__/load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName, ReturnStatus } from "@prisma/client";
-import { prisma } from "../../lib/prisma";
-import { CANCELLED_AFTER_SHIP } from "../cancelled-after-ship";
+import { prisma } from "../prisma";
+import { CANCELLED_AFTER_SHIP } from "../../integrations/cancelled-after-ship";
 import {
   RETURN_SHIPPING_FILTERS,
   returnShippingFilterOf,
   returnShippingWhere,
   type ReturnShippingFilter,
-} from "../../lib/return-shipping";
+} from "../return-shipping";
 
 const dbReady: boolean = await (async () => {
   try {

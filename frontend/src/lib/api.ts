@@ -2179,8 +2179,7 @@ export interface ReturnRow extends Order {
   /** Số ngày kể từ lúc sàn báo hoàn — null khi chưa rõ mốc bắt đầu */
   daysWaiting: number | null;
   agingLevel: ReturnAging;
-  /** Thiếu khi backend còn bản cũ (trước 13/11/2026) */
-  returnShipping?: ReturnShipping;
+  returnShipping: ReturnShipping;
 }
 
 export interface WarehouseReturnsResponse {
@@ -2190,8 +2189,8 @@ export interface WarehouseReturnsResponse {
   pageSize: number;
   pageCount: number;
   summary: Record<string, number>;
-  /** Số đơn theo từng nhóm Trạng thái vận chuyển, đếm trong tình trạng kho đang lọc. Thiếu khi backend bản cũ. */
-  shippingCounts?: Partial<Record<ReturnShippingFilter, number>>;
+  /** Số đơn theo từng nhóm Trạng thái vận chuyển, đếm trong tình trạng kho đang lọc. */
+  shippingCounts: Record<ReturnShippingFilter, number>;
   /** Tổng tiền đã đòi được — dành cho module Tài chính hạch toán sau */
   totalCompensated: number;
   thresholds: { warningDays: number; overdueDays: number };

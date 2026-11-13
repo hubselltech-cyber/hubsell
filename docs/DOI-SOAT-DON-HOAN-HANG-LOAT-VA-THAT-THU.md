@@ -357,12 +357,24 @@ Anh Trung (ảnh prod khoanh hàng chip tình trạng + mũi tên chỉ lên cá
 
 **2. Hàng chip = bộ lọc TRẠNG THÁI VẬN CHUYỂN:** Tất cả · Hoàn thành công · Đang hoàn về · Chờ khách gửi hàng · Giao thất bại · Chưa có tin từ hãng. Chip 0 đơn ẩn đi (trừ chip đang chọn). Số trên chip đếm trong thẻ đang chọn; đổi thẻ thì chip về "Tất cả". Số trên thẻ không đổi theo chip.
 
-- Lọc theo đúng thứ ĐÃ LƯU trong `Order`: `returnShippingWhere` (điều kiện Prisma) là bản SQL của `returnShippingFilterOf` (hàm thuần cột đang dùng) ở `backend/src/lib/return-shipping.ts`; test `integrations/__tests__/return-shipping-filter-db.test.ts` tạo 17 ca trên Postgres thật (null, chuỗi rỗng, có / không mã vận đơn hoàn) và so hai bên — không sót, không trùng.
+- Lọc theo đúng thứ ĐÃ LƯU trong `Order`: `returnShippingWhere` (điều kiện Prisma) là bản SQL của `returnShippingFilterOf` (hàm thuần cột đang dùng) ở `backend/src/lib/return-shipping.ts`; test `lib/__tests__/return-shipping-filter-db.test.ts` tạo 17 ca trên Postgres thật (null, chuỗi rỗng, có / không mã vận đơn hoàn) và so hai bên — không sót, không trùng.
 - **Giới hạn phải biết:** kiện giao thất bại quay đầu đang chờ về là MỘT chip riêng ("Giao thất bại"). Trong chip đó từng dòng mới hỏi hãng nên vẫn hiện "Hoàn thành công" / "Đang hoàn về" / "Chưa có tin từ hãng" lẫn nhau; và chip "Hoàn thành công" KHÔNG gồm kiện giao thất bại mà hãng báo đã trả (kết quả hỏi hãng không lưu DB — mục 12). Muốn lọc được đúng ca "hãng báo đã trả, kho chưa nhận" phải lưu mốc hãng trả kiện + quét nền; chưa làm, chờ anh quyết vì tốn lượt gọi sàn.
 - Backend: `GET /api/warehouse/returns?ship=`; trả thêm `shippingCounts`. Không thêm truy vấn khi không gõ ô tìm (đọc chung lượt lấy đơn Chờ hàng về vốn có để đếm quá hạn, thêm 3 cột nhỏ); có ô tìm thì thêm 1 truy vấn. Đơn kho đã nhận lấy thẳng từ số đếm theo trạng thái.
 
-**3. Mũi tên sắp xếp** ở tiêu đề cột Thời gian chờ nằm trong nền tròn: ĐỎ + ↓ = ngày cũ → mới (mặc định, chờ lâu nhất trước); XANH + ↑ = mới nhất trước. Viết tay trong trang (không dùng `SortHeader` chung vì cần nền màu).
+**3. Mũi tên sắp xếp** ở tiêu đề cột Thời gian chờ nằm trong nền tròn: ĐỎ + ↓ = ngày cũ → mới (mặc định, chờ lâu nhất trước); XANH + ↑ = mới nhất trước. Không dùng `SortHeader` chung vì cần nền màu theo chiều.
 
 **Bề rộng:** ở 1440 (sidebar mở) hàng chip đủ cả 5 chip thì ô lọc gian + ô tìm rớt xuống dòng thứ hai; shop thường chỉ có 2–3 chip khác 0 nên thường vừa một dòng (chưa đo trên dữ liệu thật).
 
 **Đã kiểm trên local** (tài khoản reviewer@): bấm từng thẻ / chip, số trên chip = số dòng (17 = 2 + 2 + 2 + 7 + 4); thẻ Quá 14 ngày ra đúng 2 đơn 14 / 15 ngày; mũi tên đổi đỏ ↔ xanh và đổi thứ tự; giao diện tối. tsc backend + frontend, eslint sạch; vitest các tệp return / warehouse / order-tracking 153 ca qua. Cả bộ test backend trước khi đẩy: 2.502 / 2.517 qua, 7 ca trượt là các ca test DB máy dev đã trượt từ trước (`ads-rows-ledger-db`, `channel-delete-db` 3 ca, `order-ledger-db`, `realized-pnl-ledger-db`, `reviewer-demo-topup`). **Chưa kiểm:** màn hẹp dưới 1280, app mobile (API cũ của app không đổi: `status` cũ vẫn chạy như trước).
+
+## 15. Dọn mã + đặt tệp đúng cây (13/11/2026 tối, anh Trung: "Dọn dẹp code, đảm bảo mô hình tree và commit")
+
+Không đổi hành vi; chỉ xếp lại sau ba đợt sửa liền nhau (mục 12–14).
+
+- **Tách khỏi trang:** thẻ lọc, chip lọc, mũi tên sắp xếp dời sang `frontend/src/components/warehouse/returns-filters.tsx` (`ReturnStatusCards`, `ReturnShippingChips`, `ReturnSortToggle`); `app/warehouse/returns/page.tsx` chỉ còn giữ state + bảng (từ khoảng 1.000 dòng còn 850). Biến `tab` đổi tên `statusFilter` (không còn tab nào), kiểu `ReturnStatusFilter`.
+- **Gỡ mã tương thích bản cũ:** dòng "· giao thất bại, kiện quay đầu" dự phòng dưới mã đơn và nhánh "—" khi backend chưa trả `returnShipping` — backend đã lên prod cùng bản; `returnShipping` / `shippingCounts` thành trường bắt buộc trong kiểu.
+- **Test đặt cạnh mã được test:** `return-shipping-filter-db.test.ts` dời từ `integrations/__tests__/` về `lib/__tests__/` (mã được test là `lib/return-shipping.ts`).
+- **Chú thích:** đầu route `GET /api/warehouse/returns` viết lại thành danh sách tham số, bỏ câu kể lịch sử; các chỗ còn gọi "tab" trong trang đã sửa.
+- **README:** đoạn "Lọc & phân trang" của mục Hàng hoàn về kho viết lại theo giao diện mới; gỡ cảnh báo "Badge tab Tất cả" (tab đã gỡ).
+- Rà export thêm trong ba đợt bằng grep (không chạy được knip trong phiên này): hàm nào cũng có nơi dùng ngoài test; ba kiểu `ReturnShippingState`, `ReturnShipping`, `ReturnLegSummary` chỉ dùng trong chính tệp nhưng là kiểu trả về của hàm export nên giữ `export`.
+- Kiểm sau dọn: tsc backend + frontend, eslint 4 tệp web sạch; vitest các tệp return / warehouse / order-tracking 153 ca qua; soi lại local đủ thẻ, chip, mũi tên.

@@ -468,9 +468,14 @@ AWAITING ──quét, hàng nguyên vẹn──▶ RECEIVED_INTACT   (cộng l�
 
 **Tiền đền bù:** `Order.compensationAmount` — chỉ > 0 khi `CLAIM_SETTLED`, `WRITTEN_OFF` luôn 0. Backend **chặn** chốt "đã được đền bù" mà không nhập số tiền: một đơn thắng kiện mang 0 đồng nhìn như đòi được nhưng tiền về bằng không, module Tài chính đọc vào sẽ hiểu sai. `GET /returns` trả kèm `totalCompensated` để Tài chính hạch toán sau.
 
-**Lọc & phân trang:** dropdown lọc theo sàn (để xuất danh sách đối soát riêng với bưu cục từng sàn) + phân trang 20/50/100 đồng bộ với module Đơn hàng.
+**Lọc & phân trang (13/11/2026):** hai bộ lọc độc lập + dropdown lọc theo sàn + lọc ngày sàn báo hoàn + phân trang 20/50/100.
+- **Các thẻ số to = bộ lọc tình trạng kho** (bấm để lọc, bấm lại để bỏ): Chờ hàng về · Đã nhận · chờ nhập kho · Quá 14 ngày chưa về (`status=OVERDUE`) · Hàng hỏng · khiếu nại sàn (`status=ISSUES`) · Đã nhập kho. Không còn hàng tab tình trạng — đừng dựng lại.
+- **Hàng chip = bộ lọc Trạng thái vận chuyển** (`ship=`): Hoàn thành công · Đang hoàn về · Chờ khách gửi hàng · Giao thất bại · Chưa có tin từ hãng; số trên chip (`shippingCounts`) đếm trong thẻ đang chọn.
+- **Cột Trạng thái vận chuyển:** `lib/return-shipping.ts` tính từ cột `Order` có sẵn; riêng kiện giao thất bại đang chờ về hỏi hành trình hãng theo lô 10 đơn của trang đang xem (`POST /api/warehouse/returns/carrier-status` → `services/order-tracking.ts`, 1 call sàn / đơn, đệm 10 phút, không lưu DB).
+- **Sắp xếp:** mũi tên nền tròn ở tiêu đề cột Thời gian chờ — đỏ = ngày cũ → mới (mặc định), xanh = mới trước (`sort=newest`).
+- Web: `components/warehouse/returns-filters.tsx` (thẻ, chip, mũi tên) + `return-shipping-cell.tsx` (ô + hook hỏi hãng); trang chỉ giữ state. Chi tiết: `docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md` mục 12–15.
 
-⚠️ **Badge tab "Tất cả" cộng dồn từ `Object.keys(STATUS_META)`, đừng liệt kê tay.** Đã dính lỗi này: thêm trạng thái Hao hụt mà quên cộng vào tổng, tab hiện 13 trong khi bảng có 14 dòng — lệch âm thầm, không có lỗi nào báo.
+⚠️ **Điều kiện lọc `returnShippingWhere` là bản SQL của hàm thuần `returnShippingFilterOf`** (cột trên web dùng hàm thuần). Sửa một bên phải sửa bên kia; `lib/__tests__/return-shipping-filter-db.test.ts` so hai bên trên Postgres thật.
 
 **Đồng bộ từ sàn:** `POST /api/warehouse/returns/sync` — user có gian THẬT thì gọi API sàn thật: đồng bộ đơn theo trục **biến động** (`update_time` Shopee / `update_after` Lazada) 2 ngày gần nhất, upsert tự gắn cờ AWAITING + `returnRequestedAt` cho đơn sàn báo hoàn; nút chỉ là "quét ngay khỏi đợi nhịp" vì **worker nền 10'/lần cũng quét đúng trục update này** (từ 09/08 — trục `create_time` cũ bỏ sót đơn cũ vừa báo hoàn, phải đồng bộ tay). Tài khoản demo (không gian thật) giữ bản giả lập: bốc vài đơn đang giao rải mốc 2/9/17 ngày.
 

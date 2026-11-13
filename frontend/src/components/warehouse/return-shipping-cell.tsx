@@ -43,7 +43,7 @@ const CARRIER_STALE_MS = 10 * 60 * 1000;
 function needsCarrierLookup(o: ReturnRow): boolean {
   return (
     o.returnStatus === "AWAITING" &&
-    o.returnShipping?.state === "NO_SIGNAL" &&
+    o.returnShipping.state === "NO_SIGNAL" &&
     o.returnShipping.failedDelivery &&
     Boolean(o.trackingCode) &&
     (o.channel.channelName === "SHOPEE" || o.channel.channelName === "TIKTOK")
@@ -115,8 +115,6 @@ export function ReturnShippingCell({
   carrier?: ReturnCarrierStatus;
 }) {
   const s = order.returnShipping;
-  if (!s) return <span className={TEXT_SUB}>—</span>;
-
   const lookup = needsCarrierLookup(order);
   const live = carrier?.status === "ok" ? carrier : null;
   const state: ReturnShippingState = live ? live.state : s.state;
