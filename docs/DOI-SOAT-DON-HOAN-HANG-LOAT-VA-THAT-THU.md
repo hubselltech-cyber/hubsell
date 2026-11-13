@@ -334,3 +334,12 @@ Anh Trung: "bỏ cột khách hàng đi và thay bằng cột Trạng thái vậ
 **Bề rộng bảng** (đo JS, sidebar mở): cột mới 192 px; bảng tối thiểu 1.427 px → 1440: cuộn ngang trong hộp 324 px (bảng này vốn đã cuộn ở 1440), 1700: 64 px, 1920: vừa. Giao diện tối: đã soi; "Đang hoàn về" dùng thang blue vì thang indigo chưa được lật ở giao diện tối (nhãn "Đã nhận · chờ nhập kho" và dòng "Hoàn: mã" có sẵn của trang vẫn dùng indigo — chưa sửa).
 
 **Đã kiểm trên local** (`backend-http-tracking-demo` bật `ORDER_TRACKING_FAKE=1`, tài khoản reviewer@): đủ bốn nhãn + dòng đỏ "Kho chưa quét nhận"; 1 yêu cầu `carrier-status` cho cả trang, sau nhiều lượt tự làm mới không gọi thêm. tsc backend + frontend, eslint 3 tệp web sạch; vitest `return-shipping` 9 ca, `order-tracking` 10 ca qua. **Chưa kiểm:** gọi sàn thật (local dùng hành trình giả), câu chữ TikTok thật, cả bộ test backend. Dữ liệu thử: 13 đơn Chờ hàng về của reviewer@ trên DB local đã bị đổi `platformReturnStatus` / mã vận đơn để dựng ca.
+
+## 13. Mũi tên sắp xếp mới / cũ ở tiêu đề cột Thời gian chờ (13/11/2026 tối) — đã commit + push 13/11 tối
+
+Anh Trung (gửi ảnh hàng tiêu đề bảng): "Thêm mũi tên lên xuống bên cạnh để sắp xếp mới, cũ". Ảnh không khoanh cột nào → em đặt ở cột **Thời gian chờ** (cột duy nhất mang nghĩa thời gian); anh muốn cột khác thì đổi một dòng.
+
+- Bấm tiêu đề để đổi chiều: ↓ đơn cũ nhất (chờ lâu nhất) trước — mặc định như cũ; ↑ sàn báo hoàn mới nhất trước. Dùng `components/shared/sort-header.tsx` như các bảng khác; đổi chiều thì về trang 1 và bỏ các ô đang tích.
+- Xếp theo NGÀY SÀN BÁO HOÀN (`returnRequestedAt`), không theo con số ngày hiển thị: với đơn kho đã nhận, số ngày là thời gian kiện đi đường nên ở tab Tất cả cột số có thể không tăng / giảm đều. Đơn chưa rõ mốc luôn xếp cuối ở cả hai chiều.
+- Backend: `GET /api/warehouse/returns?sort=newest`; không gửi = như cũ. Web: `fetchWarehouseReturns({ newestFirst })`.
+- Đã kiểm local: bấm đổi được hai chiều, danh sách đổi đúng thứ tự ngày, yêu cầu có `sort=newest`; tsc backend + frontend, eslint sạch. Chưa có test tự động cho thứ tự.

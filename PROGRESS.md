@@ -5,7 +5,7 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 13/11 tối (đối soát đơn hoàn) — Anh: "bỏ cột khách hàng đi và thay bằng cột Trạng thái vận chuyển… để biết ship đã báo hoàn thành công hay chưa" + "API mình có trong đơn hàng rồi chỉ cần gọi ra thôi" → ĐÃ COMMIT + PUSH 13/11 tối
+## Phiên 13/11 tối (đối soát đơn hoàn) — Anh: "bỏ cột khách hàng đi và thay bằng cột Trạng thái vận chuyển… để biết ship đã báo hoàn thành công hay chưa" + "API mình có trong đơn hàng rồi chỉ cần gọi ra thôi" → ĐÃ COMMIT + PUSH `9b7750b2` 13/11 tối
 
 - Chi tiết: `docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md` mục 12.
 - Cột mới đứng đúng chỗ cột Khách hàng: Hoàn thành công / Đang hoàn về / Chờ khách gửi hàng / Chưa có tin từ hãng; đơn còn Chờ hàng về mà sàn / hãng báo đã trả thì có dòng đỏ "Kho chưa quét nhận".
@@ -15,6 +15,7 @@
 - Cả bộ test backend trước khi đẩy: 2.501 / 2.515 qua; 6 ca trượt đều là test DB trên máy dev (`ads-rows-ledger-db`, `channel-delete-db` 3 ca, `order-ledger-db`, `realized-pnl-ledger-db` thiếu chỉ mục trigram ở DB local) — không tệp nào dùng `order-tracking` / `return-shipping` / route kho; CHƯA chạy lại trên bản trước thay đổi để đối chứng.
 - **Chưa kiểm:** gọi sàn thật; mẫu chữ TikTok cho mốc "đã trả kiện" chưa đối chiếu hành trình thật (lên prod phải mở một đơn TikTok giao thất bại đã về để xem). Lazada giao thất bại: chưa có API hành trình → "Chưa có tin từ hãng".
 - Chưa làm (chờ anh): lưu mốc hãng trả kiện vào DB để lọc / đếm "hãng báo đã trả, kho chưa nhận" và đếm hạn khiếu nại.
+- **Anh: "Thêm mũi tên lên xuống bên cạnh để sắp xếp mới, cũ" → ĐÃ COMMIT + PUSH 13/11 tối** (docs mục 13): mũi tên ở tiêu đề cột Thời gian chờ, ↓ cũ nhất trước (mặc định) / ↑ mới nhất trước, xếp theo ngày sàn báo hoàn; `GET /api/warehouse/returns?sort=newest`. Bấm thử local đúng hai chiều; tsc + eslint sạch.
 
 ## Phiên 13/11 (đối soát đơn hoàn) — Anh: "thêm nút tích ở đầu để Nhập kho, Báo hỏng, Nhận hàng… hàng loạt" + "khảo sát kỹ… các đơn hỏng phải được tính vào chi phí" → KHẢO SÁT XONG, CHƯA SỬA MÃ, chờ anh chốt 5 điểm tài chính
 

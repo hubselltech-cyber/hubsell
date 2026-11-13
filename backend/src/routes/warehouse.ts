@@ -111,7 +111,7 @@ function agingOf(
 }
 
 /**
- * GET /api/warehouse/returns?status=&search=&page=&pageSize=&from=&to=
+ * GET /api/warehouse/returns?status=&search=&page=&pageSize=&from=&to=&sort=
  * Danh sách đơn hoàn kèm số ngày chờ và mức cảnh báo. `from`/`to` (yyyy-mm-dd,
  * 13/11/2026) lọc theo NGÀY SÀN BÁO HOÀN — danh sách, số trên tab và bốn thẻ
  * cùng theo kỳ; không gửi = toàn bộ thời gian (đơn chưa rõ mốc chỉ hiện khi đó).
@@ -121,6 +121,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const statusQ = typeof req.query.status === "string" ? req.query.status : "";
+    const newestFirst = req.query.sort === "newest";
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
     // Lọc theo gian hàng: shop đối soát với bưu cục của từng gian riêng
@@ -170,8 +171,12 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       prisma.order.count({ where }),
       prisma.order.findMany({
         where,
-        // Đơn chờ lâu nhất lên đầu — đó là thứ cần đi đòi trước
-        orderBy: [{ returnRequestedAt: "asc" }, { createdAt: "asc" }],
+        // Mặc định đơn chờ lâu nhất lên đầu — đó là thứ cần đi đòi trước.
+        // ?sort=newest (13/11/2026, mũi tên ở tiêu đề cột Thời gian chờ): sàn báo
+        // hoàn mới nhất trước; đơn chưa rõ mốc vẫn xếp cuối như chiều mặc định.
+        orderBy: newestFirst
+          ? [{ returnRequestedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }]
+          : [{ returnRequestedAt: "asc" }, { createdAt: "asc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         include,

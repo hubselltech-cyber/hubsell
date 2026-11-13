@@ -2190,6 +2190,8 @@ export function fetchWarehouseReturns(params: {
   channel?: ChannelFilterQuery;
   /** Lọc theo ngày sàn báo hoàn; null / bỏ trống = toàn bộ thời gian. */
   range?: DateRange | null;
+  /** true = sàn báo hoàn mới nhất trước; mặc định đơn chờ lâu nhất trước. */
+  newestFirst?: boolean;
   page?: number;
   pageSize?: number;
 }) {
@@ -2197,6 +2199,7 @@ export function fetchWarehouseReturns(params: {
     ...channelFilterToQuery(params.channel),
     ...rangeToQuery(params.range ?? undefined),
   });
+  if (params.newestFirst) qs.set("sort", "newest");
   if (params.status) qs.set("status", params.status);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.page) qs.set("page", String(params.page));

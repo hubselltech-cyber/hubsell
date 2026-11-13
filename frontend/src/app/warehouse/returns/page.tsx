@@ -27,6 +27,7 @@ import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
+import { SortHeader, type SortState } from "@/components/shared/sort-header";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
 import {
   ReturnShippingCell,
@@ -154,6 +155,13 @@ export default function WarehouseReturnsPage() {
     useState<ChannelFilterValue>(ALL_CHANNELS);
   /** Lọc theo ngày sàn báo hoàn; null = toàn bộ thời gian (mặc định — đơn chờ về có thể rất cũ). */
   const [range, setRange] = useState<DateRange | null>(null);
+  /**
+   * Sắp theo ngày sàn báo hoàn, bấm ở tiêu đề cột Thời gian chờ (anh Trung 13/11/2026:
+   * "thêm mũi tên lên xuống… để sắp xếp mới, cũ"). desc = chờ lâu nhất (cũ nhất) trước —
+   * mặc định như cũ; asc = mới nhất trước.
+   */
+  const [sort, setSort] = useState<SortState<"waiting">>({ key: "waiting", dir: "desc" });
+  const newestFirst = sort.dir === "asc";
   const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -198,6 +206,7 @@ export default function WarehouseReturnsPage() {
       search: debounced || undefined,
       channel: channelFilterToQuery(channelFilter),
       range: rangeToQuery(range ?? undefined),
+      newestFirst,
       page,
       pageSize,
     }),
@@ -207,6 +216,7 @@ export default function WarehouseReturnsPage() {
         search: debounced || undefined,
         channel: channelFilter,
         range,
+        newestFirst,
         page,
         pageSize,
       }),
@@ -225,6 +235,7 @@ export default function WarehouseReturnsPage() {
     debounced,
     channelFilter,
     rangeToQuery(range ?? undefined),
+    newestFirst,
     page,
     pageSize,
   ]);
@@ -599,7 +610,24 @@ export default function WarehouseReturnsPage() {
                       <TableHead>Trạng thái vận chuyển</TableHead>
                       <TableHead>Sản phẩm</TableHead>
                       <TableHead>Vận chuyển</TableHead>
-                      <TableHead>Thời gian chờ</TableHead>
+                      <TableHead
+                        aria-sort={newestFirst ? "ascending" : "descending"}
+                      >
+                        <SortHeader
+                          label="Thời gian chờ"
+                          sortKey="waiting"
+                          sort={sort}
+                          onSort={(next) => {
+                            setSort(next);
+                            setPage(1);
+                          }}
+                          title={
+                            newestFirst
+                              ? "Đang xếp: sàn báo hoàn mới nhất trước. Bấm để xếp đơn cũ nhất (chờ lâu nhất) trước."
+                              : "Đang xếp: đơn cũ nhất (chờ lâu nhất) trước. Bấm để xếp sàn báo hoàn mới nhất trước."
+                          }
+                        />
+                      </TableHead>
                       <TableHead>Tình trạng</TableHead>
                       <TableHead className="text-center">Thao tác</TableHead>
                     </TableRow>
