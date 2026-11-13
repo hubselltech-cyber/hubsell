@@ -91,6 +91,7 @@ import { reconcileTiktokWallet, syncTiktokPendingIncome, syncTiktokWallet } from
 import { loadOffOrderCostInputs } from "../services/off-order-costs";
 import { fillMissingSkuImages } from "../lib/sku-images";
 import { cashFlowNetProfit } from "../lib/net-profit";
+import { DAMAGED_LOSS_HINT, DAMAGED_LOSS_LABEL } from "../lib/damaged-loss";
 import {
   alignDaily,
   MARGIN_BUCKETS,
@@ -122,6 +123,7 @@ import {
 import {
   ensureLedgerFresh,
   ledgerCashFlowBreakdown,
+  ledgerDamagedLoss,
   ledgerLossOrders,
   ledgerOpenCashByChannel,
   ledgerOpenCashTotals,
@@ -731,18 +733,23 @@ router.get("/realized-pnl/insights", async (req: AuthRequest, res, next) => {
       const gd = computeGrossDeductionsFromTotals(t.active);
       const activeOrderProfit = t.settled.profitAfterTax + t.pending.profitAfterTax;
       const operatingExpense = offOrder.fixedExpenseTotal + offOrder.variableExpenseTotal;
+      // Thất thu hàng mất/hỏng của đơn không tính doanh thu: Lãi đơn hàng (tab
+      // Tất cả) ĐÃ trừ giá vốn này, Lợi nhuận ròng từ 13/11/2026 cũng trừ → không
+      // còn nằm trong phần chênh "đơn hủy + đang hoàn" (lib/damaged-loss.ts).
+      const damaged = await ledgerDamagedLoss(scope, range);
       const np = cashFlowNetProfit({
         orderProfit: activeOrderProfit,
         adsSpend: ads.total,
         operatingExpense,
         operatingIncome: offOrder.operatingIncomeTotal,
+        damagedLossOutside: damaged.outside,
         additionalTaxOf: (p) => additionalTaxOn({ grossRevenue: gd.grossValue, profit: p }, taxCfg),
       });
       bridge = {
         orderProfit: current.profit,
         // Lãi/Lỗ "Tất cả" cộng cả đơn hủy + đơn đang hoàn; Dòng tiền chỉ cộng
         // đơn tính doanh thu → phần chênh là của hai nhóm đó (thường nhỏ, có thể âm).
-        nonRevenueOrdersProfit: current.profit - activeOrderProfit,
+        nonRevenueOrdersProfit: current.profit - activeOrderProfit + damaged.outside,
         activeOrderProfit,
         adsSpend: ads.total,
         adsNotes: ads.notes,
@@ -2727,6 +2734,13 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       getShopTaxConfig(ownerId),
     ]);
     const { expenses, operatingIncomeTotal } = offOrder;
+    // THẤT THU HÀNG MẤT/HỎNG (13/11/2026, lib/damaged-loss.ts) — đọc SAU bộ tổng
+    // để sổ đã được tính nốt dòng bẩn của kỳ; chuỗi ngày 14 ngày như biểu đồ.
+    const damaged = await ledgerDamagedLoss(scope, range, {
+      byDaySince: toBusinessDateKey(
+        new Date(businessDayStart(new Date()).getTime() - 13 * 86_400_000)
+      ),
+    });
 
     // ============================================================
     // VIEW TỔNG HỢP TỪ NGUỒN SỐ GỐC — mọi con số bên dưới CHỈ là SUM() các
@@ -2763,7 +2777,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // KHÔNG còn dòng Phí sàn/Thuế sàn (đã cấn trừ trong Doanh thu, giữ lại là
     // trừ trùng — chốt chủ shop 31/07; chi tiết phí vẫn xem ở thẻ Tổng giá
     // trị SP + bảng Lãi/Lỗ). ---
-    const cogsAll = active.costSnapshot;
+    // Giá vốn hàng kho đã báo hỏng nằm ở dòng riêng "Thất thu hàng mất/hỏng" →
+    // tách phần đang lẫn trong giá vốn đơn tính doanh thu để không cộng hai lần.
+    const cogsAll = active.costSnapshot - damaged.inActive;
+    const damagedLossTotal = damaged.total;
     // Chi phí cố định/biến đổi CHỈ là khoản NHẬP TAY từ Thu chi vận hành (đã
     // qua luật lọc manualTxnScope) — tuyệt đối không gom phí sàn vào đây.
     const variableExpenseTotal = expenses
@@ -2780,7 +2797,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const adsSpendTotal = adsSpend.total;
     const adsByDay = adsSpend.byDay;
     const totalCostColumn =
-      cogsAll + variableExpenseTotal + fixedExpenseTotal + adsSpendTotal;
+      cogsAll + damagedLossTotal + variableExpenseTotal + fixedExpenseTotal + adsSpendTotal;
 
     // BÓC CHI TIẾT TỪNG KHOẢN CHI PHÍ (anh Trung 22/08 — donut Cơ cấu chi phí
     // trên app cần "chi tiết các loại"): giá vốn + Ads bóc theo SÀN, chi phí
@@ -2814,7 +2831,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           amount: v,
           percent: pct(v, parentTotal),
         }));
-    const cogsByChannel = totals.cogsByChannelName;
+    const cogsByChannel = new Map(totals.cogsByChannelName);
+    for (const [ch, v] of damaged.inActiveByChannelName) {
+      cogsByChannel.set(ch, (cogsByChannel.get(ch) ?? 0) - v);
+    }
     const adsByChannel = adsSpend.byChannel;
     const variableByCategory = new Map<string, number>();
     const fixedByCategory = new Map<string, number>();
@@ -2836,11 +2856,15 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // lib/finance-definitions.ts; 30/09 → 04/11 bị loại). Đẳng thức: Doanh thu −
     // Chi phí + Thu khác − Thuế dự phòng = LN ròng. Số đơn vẫn trả để UI nhắc nhập.
     const missingCost = missingCostApiSummary(active.missingCostCount);
+    // Thất thu hàng mất/hỏng: phần của đơn tính doanh thu đã nằm trong
+    // profitAfterTax; chỉ trừ thêm phần của đơn KHÔNG tính doanh thu (đơn hủy,
+    // đơn hỏng chờ khiếu nại) — đẳng thức Doanh thu − Chi phí + Thu khác vẫn đóng.
     const actualProfit =
       settled.profitAfterTax -
       variableExpenseTotal -
       fixedExpenseTotal -
-      adsSpendTotal;
+      adsSpendTotal -
+      damaged.outside;
     // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán.
     // Nhóm này CHƯA bị trừ phí/thuế nào (bucket = 0, chờ đối soát) — cột Chi
     // phí cũng không chứa khoản ước tính nào của nhóm.
@@ -2856,6 +2880,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       adsSpend: adsSpendTotal,
       operatingExpense: variableExpenseTotal + fixedExpenseTotal,
       operatingIncome: operatingIncomeTotal,
+      damagedLossOutside: damaged.outside,
       additionalTaxOf: (p) => additionalTaxOn({ grossRevenue: grossValue, profit: p }, taxCfg),
     });
     const provisionalProfit = netBridge.provisionalProfit;
@@ -2932,6 +2957,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         revenue: revenueByDay.get(key) ?? 0,
         cost:
           (cogsByDay.get(key) ?? 0) +
+          (damaged.outsideByDay.get(key) ?? 0) +
           (expenseByDay.get(key) ?? 0) +
           (adsByDay.get(key) ?? 0),
       });
@@ -3047,6 +3073,19 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: pct(fixedExpenseTotal, totalCostColumn),
               items: breakdownOf(fixedByCategory, categoryLabelOf, fixedExpenseTotal),
             },
+            // Dòng CUỐI cột (anh Trung 13/11: "chuyển thất thu xuống dưới cùng"); chỉ
+            // hiện khi có phát sinh — đa số shop không có đơn báo hỏng.
+            ...(damagedLossTotal > 0
+              ? [
+                  {
+                    key: "damagedLoss",
+                    label: DAMAGED_LOSS_LABEL,
+                    hint: DAMAGED_LOSS_HINT,
+                    amount: damagedLossTotal,
+                    percent: pct(damagedLossTotal, totalCostColumn),
+                  },
+                ]
+              : []),
           ],
         },
 

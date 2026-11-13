@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { channelScope } from "../lib/channel-filter";
 import { attachItemImages } from "../services/item-images";
+import { BULK_RECEIVE_FROM, RETURN_BULK_MAX, parseBulkIds } from "../lib/return-bulk";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import {
@@ -473,6 +474,53 @@ router.post("/returns/:id/receive", async (req: AuthRequest, res, next) => {
       order: updated,
       unannounced: order.returnStatus === ReturnStatus.NONE,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/warehouse/returns/bulk-receive — NHẬN HÀNG các đơn đang tích (13/11/2026).
+ * Body: { ids: string[] } — đúng các đơn tích trên một trang, tối đa 100.
+ *
+ * Chỉ đơn đang Chờ hàng về mới chuyển sang Đã nhận · chờ nhập kho; đơn ở trạng
+ * thái khác bị bỏ qua và báo số. KHÔNG đụng tồn kho (như route nhận lẻ).
+ * Một câu cập nhật theo tập id có điều kiện trạng thái — không vòng lặp từng đơn.
+ *
+ * KHÔNG ghi shippingStatus: đơn hủy hay không là theo API của sàn (anh Trung
+ * 13/11), kho chỉ ghi "đã nhận kiện". Route nhận lẻ phía trên còn ghi CANCELLED
+ * — docs/DOI-SOAT-DON-HOAN-HANG-LOAT-VA-THAT-THU.md mục 3 (G4).
+ */
+router.post("/returns/bulk-receive", async (req: AuthRequest, res, next) => {
+  try {
+    const ids = parseBulkIds(req.body?.ids);
+    if (!ids) {
+      res.status(400).json({
+        error: `Cần danh sách đơn đang tích (1–${RETURN_BULK_MAX} đơn)`,
+      });
+      return;
+    }
+    const where: Prisma.OrderWhereInput = {
+      id: { in: ids },
+      channel: { userId: req.ownerId! },
+      ...(req.allowedChannelIds ? { channelId: { in: req.allowedChannelIds } } : {}),
+      returnStatus: { in: BULK_RECEIVE_FROM },
+    };
+    const now = new Date();
+    // Hai câu trong một giao dịch: đơn thiếu mốc "sàn báo hoàn" lấy luôn giờ nhận
+    // làm mốc (như route lẻ); câu sau không khớp lại các dòng câu trước vừa đổi.
+    const [noMark, hasMark] = await prisma.$transaction([
+      prisma.order.updateMany({
+        where: { ...where, returnRequestedAt: null },
+        data: { returnStatus: ReturnStatus.RECEIVED, returnedAt: now, returnRequestedAt: now },
+      }),
+      prisma.order.updateMany({
+        where: { ...where, returnRequestedAt: { not: null } },
+        data: { returnStatus: ReturnStatus.RECEIVED, returnedAt: now },
+      }),
+    ]);
+    const processed = noMark.count + hasMark.count;
+    res.json({ processed, skipped: ids.length - processed });
   } catch (err) {
     next(err);
   }

@@ -27,6 +27,10 @@ import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { Refreshing } from "@/components/shared/refreshing";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
+import {
+  ReturnsBulkBar,
+  isReturnBulkSelectable,
+} from "@/components/warehouse/returns-bulk-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -120,6 +124,11 @@ const TABS: { key: string; label: string; countKey: string }[] = [
  *      bộ đơn RECEIVED, không cần tích chọn checkbox từng đơn. Xử lý lẻ vẫn có
  *      nút Nhập kho / Báo hỏng trên từng dòng.
  *
+ * Ô TÍCH (13/11/2026, anh Trung): tích theo TỪNG TRANG, tích bao nhiêu tác động
+ * bấy nhiêu đơn — thanh nổi đáy màn có Nhận hàng / Nhập kho / Báo hỏng cho các
+ * đơn đang tích (components/warehouse/returns-bulk-bar.tsx). Đổi trang / tab /
+ * bộ lọc là bỏ chọn; không có "chọn mọi đơn khớp bộ lọc".
+ *
  * ⚠️ Việc cộng tồn kho vẫn chỉ đi qua `/api/orders/*` (đơn lẻ: /:id/return,
  * hàng loạt: /returns/bulk-inbound) — nơi duy nhất có chốt chặn
  * `stockRestoredAt` chống cộng trùng. KHÔNG có đường cộng kho riêng ở phân hệ Kho.
@@ -142,6 +151,14 @@ export default function WarehouseReturnsPage() {
   /** id đơn đang nhập kho lẻ */
   const [inboundingId, setInboundingId] = useState<string | null>(null);
   const [bulkInbounding, setBulkInbounding] = useState(false);
+  /**
+   * Đơn đang tích, gắn với ĐÚNG cảnh đang xem (tab + lọc + trang): đổi cảnh thì
+   * `viewKey` khác → coi như chưa tích gì, khỏi phải dọn ở từng nút đổi cảnh.
+   */
+  const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>({
+    key: "",
+    ids: new Set(),
+  });
 
   // Chuông "đơn đã bàn giao bị hủy" dẫn tới đây kèm ?search=<mã đơn> (12/11/2026) → đổ sẵn
   // vào ô tìm để thấy ngay đúng đơn. Đọc sau khi mount (trang dựng sẵn không có query).
@@ -185,7 +202,30 @@ export default function WarehouseReturnsPage() {
   });
   const invalidate = useInvalidate();
 
-  const rows = returnsQ.data?.items ?? [];
+  const rows = useMemo(() => returnsQ.data?.items ?? [], [returnsQ.data]);
+  const viewKey = JSON.stringify([tab, debounced, channelFilter, page, pageSize]);
+  // Chỉ đơn ĐANG HIỆN trên trang mới được tính là đang tích (lượt tự làm mới 30
+  // giây có thể đưa một đơn ra khỏi trang).
+  const selectedRows = useMemo(
+    () =>
+      selection.key === viewKey
+        ? rows.filter((o) => selection.ids.has(o.id) && isReturnBulkSelectable(o))
+        : [],
+    [rows, selection, viewKey]
+  );
+  const selectedIds = useMemo(() => new Set(selectedRows.map((o) => o.id)), [selectedRows]);
+  const selectableRows = useMemo(() => rows.filter(isReturnBulkSelectable), [rows]);
+  const allSelected =
+    selectableRows.length > 0 && selectableRows.every((o) => selectedIds.has(o.id));
+  const setSelectedIds = (ids: Set<string>) => setSelection({ key: viewKey, ids });
+  const toggleRow = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+  const toggleAll = () =>
+    setSelectedIds(allSelected ? new Set() : new Set(selectableRows.map((o) => o.id)));
   const summary = returnsQ.data?.summary ?? {};
   const thresholds = returnsQ.data?.thresholds ?? { warningDays: 7, overdueDays: 14 };
   const total = returnsQ.data?.total ?? 0;
@@ -368,7 +408,8 @@ export default function WarehouseReturnsPage() {
 
   return (
     <AppShell>
-      <div className="space-y-5">
+      {/* pb-28: chừa chỗ cho thanh thao tác hàng loạt nổi ở đáy khỏi che dòng cuối */}
+      <div className={cn("space-y-5", selectedRows.length > 0 && "pb-28")}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
             Hai công đoạn: <b>quét mã để nhận hàng</b> về tay, rồi bấm{" "}
@@ -393,8 +434,8 @@ export default function WarehouseReturnsPage() {
           </CardContent>
         </Card>
 
-        {/* ===== CÔNG ĐOẠN 2: NHẬP KHO TẤT CẢ — nút 1 chạm cho điện thoại,
-             không có checkbox tích chọn gì hết ===== */}
+        {/* ===== CÔNG ĐOẠN 2: NHẬP KHO TẤT CẢ — nút 1 chạm cho điện thoại, gom mọi
+             đơn Đã nhận; muốn chọn từng đơn thì dùng ô tích trong bảng ===== */}
         <Button
           size="lg"
           onClick={handleBulkInbound}
@@ -558,6 +599,19 @@ export default function WarehouseReturnsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10 pr-0">
+                        <input
+                          type="checkbox"
+                          aria-label="Chọn tất cả đơn xử lý được trên trang này"
+                          checked={allSelected}
+                          disabled={selectableRows.length === 0}
+                          ref={(el) => {
+                            if (el) el.indeterminate = !allSelected && selectedRows.length > 0;
+                          }}
+                          onChange={toggleAll}
+                          className="size-4 cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-40"
+                        />
+                      </TableHead>
                       <TableHead>Mã đơn</TableHead>
                       <TableHead>Khách hàng</TableHead>
                       <TableHead>Sản phẩm</TableHead>
@@ -578,9 +632,21 @@ export default function WarehouseReturnsPage() {
                             index % 2 === 1 && "bg-muted/40",
                             // Đơn quá hạn nhuộm hồng để nhìn phát thấy ngay
                             o.agingLevel === "overdue" &&
-                              "bg-rose-50 hover:bg-rose-50"
+                              "bg-rose-50 hover:bg-rose-50",
+                            selectedIds.has(o.id) && "bg-primary/10"
                           )}
                         >
+                          <TableCell className="w-10 pr-0">
+                            <input
+                              type="checkbox"
+                              aria-label={`Chọn đơn ${o.orderCode}`}
+                              checked={selectedIds.has(o.id)}
+                              // Đơn đã nhập kho / đã báo hỏng không còn việc hàng loạt nào
+                              disabled={!isReturnBulkSelectable(o)}
+                              onChange={() => toggleRow(o.id)}
+                              className="size-4 cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-30"
+                            />
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <span
@@ -821,6 +887,12 @@ export default function WarehouseReturnsPage() {
           Hubsell · Quản lý Kho — Đối soát đơn hoàn
         </p>
       </div>
+
+      <ReturnsBulkBar
+        selected={selectedRows}
+        onClear={() => setSelectedIds(new Set())}
+        onDone={load}
+      />
 
       <ClaimDialog
         order={claiming}

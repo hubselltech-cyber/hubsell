@@ -60,6 +60,12 @@ import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { syncTiktokOrders } from "../integrations/tiktok/service";
 import { needsReturnRefresh, refreshReturnStateForOrder } from "../integrations/return-refresh";
 import {
+  BULK_PROCESS_FROM,
+  RETURN_BULK_MAX,
+  appendReturnNote,
+  parseBulkIds,
+} from "../lib/return-bulk";
+import {
   finishStockPush,
   finishStockPushes,
   stageStockPush,
@@ -1735,15 +1741,28 @@ async function restoreReturnStockTx(
  */
 router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
   try {
+    // 13/11/2026 — có `ids` = NHẬP KHO CÁC ĐƠN ĐANG TÍCH trên một trang (tối đa
+    // 100): nhận cả đơn Chờ hàng về (xử lý tắt như route lẻ). Không có `ids` =
+    // nút "Nhập kho tất cả đơn đã nhận" như cũ.
+    const hasIds = req.body?.ids !== undefined;
+    const ids = hasIds ? parseBulkIds(req.body.ids) : null;
+    if (hasIds && !ids) {
+      res.status(400).json({
+        error: `Cần danh sách đơn đang tích (1–${RETURN_BULK_MAX} đơn)`,
+      });
+      return;
+    }
     const orders = await prisma.order.findMany({
       where: {
         channel: { userId: req.ownerId! },
         ...(req.allowedChannelIds
           ? { channelId: { in: req.allowedChannelIds } }
           : {}),
-        returnStatus: ReturnStatus.RECEIVED,
+        ...(ids
+          ? { id: { in: ids }, returnStatus: { in: BULK_PROCESS_FROM } }
+          : { returnStatus: ReturnStatus.RECEIVED }),
       },
-      select: { id: true, orderCode: true, stockRestoredAt: true },
+      select: { id: true, orderCode: true, stockRestoredAt: true, returnedAt: true },
       orderBy: { returnedAt: "asc" },
     });
 
@@ -1777,7 +1796,11 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
             where: { id: order.id },
             data: {
               returnStatus: ReturnStatus.RECEIVED_INTACT,
-              shippingStatus: ShippingStatus.CANCELLED,
+              // Đơn đi tắt từ Chờ hàng về chưa có mốc "đã cầm hàng" → ghi tại đây.
+              returnedAt: order.returnedAt ?? new Date(),
+              // Lượt theo ô tích KHÔNG ghi trạng thái giao hàng: hủy hay không là
+              // theo API của sàn (anh Trung 13/11). Nút "tất cả" giữ cách cũ.
+              ...(ids ? {} : { shippingStatus: ShippingStatus.CANCELLED }),
               ...(lines.length > 0 ? { stockRestoredAt: new Date() } : {}),
             },
           });
@@ -1810,7 +1833,66 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
       ),
       orders: results,
       failed,
+      // Đơn được tích nhưng không ở trạng thái nhập kho được (đã xử lý, ngoài phạm vi).
+      skipped: ids ? ids.length - orders.length : 0,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/returns/bulk-damaged — BÁO HỎNG / MẤT các đơn đang tích (13/11/2026).
+ * Body: { ids: string[], reason?: string, note?: string } — tối đa 100 đơn.
+ *
+ * Đơn Chờ hàng về / Đã nhận → Hàng hỏng · chờ khiếu nại. KHÔNG cộng tồn kho.
+ * Giá vốn phần hàng này thành "Thất thu hàng mất/hỏng" ở báo cáo (sổ cái tự
+ * tính lại nhờ trigger đổi returnStatus). Lý do + ghi chú nối vào returnNote.
+ * Không ghi shippingStatus (hủy theo API sàn — xem bulk-receive ở routes/warehouse.ts).
+ */
+router.post("/returns/bulk-damaged", async (req: AuthRequest, res, next) => {
+  try {
+    const ids = parseBulkIds(req.body?.ids);
+    if (!ids) {
+      res.status(400).json({
+        error: `Cần danh sách đơn đang tích (1–${RETURN_BULK_MAX} đơn)`,
+      });
+      return;
+    }
+    const { reason, note } = req.body ?? {};
+    if (
+      (reason !== undefined && typeof reason !== "string") ||
+      (note !== undefined && typeof note !== "string")
+    ) {
+      res.status(400).json({ error: "Lý do và ghi chú phải là chuỗi" });
+      return;
+    }
+    const orders = await prisma.order.findMany({
+      where: {
+        id: { in: ids },
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds ? { channelId: { in: req.allowedChannelIds } } : {}),
+        returnStatus: { in: BULK_PROCESS_FROM },
+      },
+      select: { id: true, returnNote: true, returnedAt: true },
+    });
+    const now = new Date();
+    // Mỗi đơn một câu (ghi chú nối riêng từng đơn) trong MỘT giao dịch; điều kiện
+    // trạng thái lặp lại ở câu ghi để lượt bấm trùng không đè đơn vừa xử lý.
+    const written = await prisma.$transaction(
+      orders.map((o) =>
+        prisma.order.updateMany({
+          where: { id: o.id, returnStatus: { in: BULK_PROCESS_FROM } },
+          data: {
+            returnStatus: ReturnStatus.DAMAGED,
+            returnNote: appendReturnNote(o.returnNote, reason, note),
+            returnedAt: o.returnedAt ?? now,
+          },
+        })
+      )
+    );
+    const processed = written.reduce((n, w) => n + w.count, 0);
+    res.json({ processed, skipped: ids.length - processed });
   } catch (err) {
     next(err);
   }

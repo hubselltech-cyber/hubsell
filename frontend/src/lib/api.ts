@@ -1233,6 +1233,13 @@ export interface AnalyticsResponse {
   /** Chi phí vận hành CỐ ĐỊNH ngoài quảng cáo (thuê kho, lương, phần mềm…). */
   operatingFixedExpense: number;
   /**
+   * Thất thu hàng mất/hỏng (13/11/2026): giá vốn hàng hoàn kho đã báo hỏng.
+   * `damagedLossInCost` = phần đã nằm trong totalCost; phần còn lại
+   * (damagedLoss − damagedLossInCost) đã nằm trong totalOperatingExpense.
+   */
+  damagedLoss?: number;
+  damagedLossInCost?: number;
+  /**
    * Lợi nhuận ròng = LN gộp − phí sàn − chi phí vận hành − LN đơn thiếu vốn
    * + thu vận hành khác − thuế bổ sung dự phòng — CÙNG đẳng thức với thẻ
    * "Lợi nhuận ròng tạm tính" của Báo cáo dòng tiền (backend lib/net-profit.ts).
@@ -2220,7 +2227,7 @@ export function receiveWarehouseReturn(orderId: string) {
  * CÔNG ĐOẠN 2 — "NHẬP KHO TẤT CẢ ĐƠN ĐÃ NHẬN" một chạm: cộng ngược tồn kho
  * cho toàn bộ đơn đang ở trạng thái RECEIVED, không cần tích chọn từng đơn.
  */
-export function bulkInboundReturns() {
+export function bulkInboundReturns(ids?: string[]) {
   return apiFetch<{
     processed: number;
     restockedUnits: number;
@@ -2233,7 +2240,29 @@ export function bulkInboundReturns() {
       }[];
     }[];
     failed: { orderCode: string; error: string }[];
-  }>("/api/orders/returns/bulk-inbound", { method: "POST" });
+    /** Đơn được tích nhưng không còn ở trạng thái nhập kho được. */
+    skipped: number;
+  }>("/api/orders/returns/bulk-inbound", {
+    method: "POST",
+    // Có `ids` = chỉ các đơn đang tích trên trang (tối đa 100); không có = mọi đơn Đã nhận.
+    ...(ids ? { body: JSON.stringify({ ids }) } : {}),
+  });
+}
+
+/** NHẬN HÀNG các đơn đang tích (Chờ hàng về → Đã nhận · chờ nhập kho). Tối đa 100 đơn. */
+export function bulkReceiveReturns(ids: string[]) {
+  return apiFetch<{ processed: number; skipped: number }>(
+    "/api/warehouse/returns/bulk-receive",
+    { method: "POST", body: JSON.stringify({ ids }) }
+  );
+}
+
+/** BÁO HỎNG / MẤT các đơn đang tích — không cộng tồn, giá vốn thành Thất thu hàng mất/hỏng. */
+export function bulkDamagedReturns(ids: string[], reason?: string, note?: string) {
+  return apiFetch<{ processed: number; skipped: number }>(
+    "/api/orders/returns/bulk-damaged",
+    { method: "POST", body: JSON.stringify({ ids, reason, note }) }
+  );
 }
 
 /**

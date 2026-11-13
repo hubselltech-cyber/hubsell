@@ -42,6 +42,12 @@ import {
   type OrderLineLedgerRow,
 } from "../lib/order-ledger";
 import {
+  DAMAGED_LOSS_AMOUNT_SQL,
+  DAMAGED_LOSS_WHERE_SQL,
+  buildDamagedLoss,
+  type DamagedLoss,
+} from "../lib/damaged-loss";
+import {
   SHOP_GROUP,
   type LedgerMarginGroup,
   type LedgerMarginMapping,
@@ -976,6 +982,55 @@ export async function ledgerCashFlowBreakdown(
     adsChargedByChannelId: new Map(gmv.map((r) => [r.key, Number(r.v)])),
     byDay,
   };
+}
+
+// ------------------------------------------------------------
+// Thất thu hàng mất/hỏng (lib/damaged-loss.ts) — 13/11/2026
+// ------------------------------------------------------------
+
+/**
+ * Giá vốn hàng hoàn kho đã báo hỏng / mất trong phạm vi, tách phần đã nằm trong
+ * giá vốn của đơn tính doanh thu (`inActive`) và phần của đơn không tính doanh
+ * thu (`outside` — đơn hủy, đơn hỏng chờ khiếu nại). Một câu GROUP BY trên cột
+ * sổ đã có; `byDaySince` = có lấy chuỗi ngày của phần `outside` từ mốc này.
+ */
+export async function ledgerDamagedLoss(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  opts: { byDaySince?: string } = {}
+): Promise<DamagedLoss> {
+  const where = Prisma.sql`${ledgerScopeSql(scope, range)}
+      AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+      AND ${Prisma.raw(DAMAGED_LOSS_WHERE_SQL)}`;
+  const amount = Prisma.raw(DAMAGED_LOSS_AMOUNT_SQL);
+  const [groups, days] = await Promise.all([
+    prisma.$queryRaw<{ ch: string; active: boolean; n: unknown; v: unknown }[]>(Prisma.sql`
+      SELECT "channelName"::text AS ch, "countsAsRevenue" AS active, count(*) AS n,
+             COALESCE(sum(${amount}), 0) AS v
+      FROM "order_ledger" WHERE ${where}
+      GROUP BY "channelName", "countsAsRevenue"
+    `),
+    opts.byDaySince
+      ? prisma.$queryRaw<{ key: Date; v: unknown }[]>(Prisma.sql`
+          SELECT "createdDate" AS key, COALESCE(sum(${amount}), 0) AS v
+          FROM "order_ledger" WHERE ${where} AND NOT "countsAsRevenue"
+            AND "createdDate" >= ${dayParam(opts.byDaySince)}
+          GROUP BY "createdDate"
+        `)
+      : Promise.resolve([]),
+  ]);
+  return buildDamagedLoss(
+    groups.map((g) => ({
+      channelName: g.ch,
+      countsAsRevenue: g.active,
+      count: Number(g.n),
+      amount: Number(g.v),
+    })),
+    days.map((d) => ({
+      day: d.key instanceof Date ? d.key.toISOString().slice(0, 10) : String(d.key).slice(0, 10),
+      amount: Number(d.v),
+    }))
+  );
 }
 
 // ------------------------------------------------------------

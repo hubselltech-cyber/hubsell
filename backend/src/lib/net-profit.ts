@@ -39,6 +39,7 @@ export function netProfitAfterProvision(input: {
  *
  *   LN trước thuế = Σ lãi đơn tính doanh thu (đã quyết toán + chờ)
  *                   − Quảng cáo sàn − Chi phí vận hành nhập tay + Thu vận hành khác
+ *                   − Thất thu hàng mất/hỏng của đơn không tính doanh thu (13/11/2026)
  *   LN ròng       = LN trước thuế − Thuế bổ sung dự phòng(LN trước thuế)
  *
  * Khác netProfitAfterProvision (Tổng quan, đi từ LN gộp − phí sàn): ở đây lãi
@@ -50,10 +51,20 @@ export function cashFlowNetProfit(input: {
   adsSpend: number;
   operatingExpense: number;
   operatingIncome: number;
+  /**
+   * Thất thu hàng mất/hỏng của đơn KHÔNG tính doanh thu (đơn hủy, đơn hỏng chờ
+   * khiếu nại — lib/damaged-loss.ts `outside`). Phần của đơn tính doanh thu đã
+   * nằm trong `orderProfit` nên không truyền vào đây.
+   */
+  damagedLossOutside?: number;
   additionalTaxOf: (provisionalProfit: number) => number;
 }): { provisionalProfit: number; additionalTax: number; netProfit: number } {
   const provisionalProfit =
-    input.orderProfit - input.adsSpend - input.operatingExpense + input.operatingIncome;
+    input.orderProfit -
+    input.adsSpend -
+    input.operatingExpense -
+    (input.damagedLossOutside ?? 0) +
+    input.operatingIncome;
   const additionalTax = input.additionalTaxOf(provisionalProfit);
   return { provisionalProfit, additionalTax, netProfit: provisionalProfit - additionalTax };
 }

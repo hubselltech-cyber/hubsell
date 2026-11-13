@@ -108,7 +108,13 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
     .reduce((sum, e) => sum + e.amount, 0);
   // Vận hành = cố định + biến đổi (ngoài quảng cáo) — gộp 1 cột để 6 cột vừa
   // khít card 5/12; tách nhỏ hơn nữa thì nhãn trục X không còn chỗ.
-  const operatingExpense = analytics.totalOperatingExpense - adsExpense;
+  // Thất thu hàng mất/hỏng (13/11/2026) đứng bậc riêng: gỡ phần đang nằm trong
+  // giá vốn và phần backend gộp vào chi phí hoạt động (cho bản app cũ) ra khỏi
+  // hai bậc đó — tổng thác không đổi.
+  const damagedLoss = analytics.damagedLoss ?? 0;
+  const damagedInCost = analytics.damagedLossInCost ?? 0;
+  const operatingExpense =
+    analytics.totalOperatingExpense - adsExpense - (damagedLoss - damagedInCost);
 
   // KHUYẾN MÃI = voucher shop tự bỏ, tách thành bậc riêng ngay sau cột giá trị SP
   // (góp ý khách 22/10, anh Trung chốt 23/10: giữ tên chuẩn GMV / doanh thu, thác
@@ -117,7 +123,7 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
 
   const steps: WaterfallStep[] = [
     { key: "promo", label: "Khuyến mãi (voucher shop tự bỏ)", short: "Khuyến mãi", amount: promo, hue: "rose" },
-    { key: "cogs", label: "Giá vốn hàng bán (COGS)", short: "Giá vốn", amount: analytics.totalCost, hue: "rose" },
+    { key: "cogs", label: "Giá vốn hàng bán (COGS)", short: "Giá vốn", amount: analytics.totalCost - damagedInCost, hue: "rose" },
     // Sàn khấu trừ TÁCH 2 CỘT: "Chi phí" = phí dịch vụ/thanh toán/voucher/chênh
     // lệch VC… và "Thuế sàn" = GTGT + TNCN thu hộ. Cộng lại = totalPlatformFee
     // (= Giá trị đơn − "Tổng tiền" sàn báo, cùng thước đo Báo cáo dòng tiền) nên
@@ -126,6 +132,7 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN thu hộ)", short: "Thuế sàn", amount: analytics.totalPlatformTax, hue: "rose" },
     { key: "ads", label: "Chi phí quảng cáo", short: "Ads", amount: adsExpense, hue: "amber" },
     { key: "ops", label: "Chi phí vận hành (cố định + biến đổi)", short: "Vận hành", amount: operatingExpense, hue: "amber" },
+    { key: "damaged", label: "Thất thu hàng mất/hỏng (hàng hoàn kho đã báo hỏng)", short: "Thất thu", amount: damagedLoss, hue: "amber" },
     // Đơn chưa có giá vốn tính như giá vốn 0 (anh Trung chốt 02/11/2026, áp 04/11):
     // không còn bậc "Thiếu vốn" (30/09 → 04/11) — giá vốn 0 đã nằm trong bậc Giá
     // vốn nên thác tự đóng; số đơn thiếu nhắc ở phụ đề thẻ Lợi nhuận + hộp nhắc.
@@ -276,6 +283,8 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
     .filter((e) => e.category === "ADS")
     .reduce((sum, e) => sum + e.amount, 0);
   const fee = analytics.platformFeeBreakdown;
+  const damagedLoss = analytics.damagedLoss ?? 0;
+  const damagedInCost = analytics.damagedLossInCost ?? 0;
 
   const segments = [
     // ---- Sàn khấu trừ: cùng nhãn với thẻ "Tổng giá trị SP" bên Dòng tiền ----
@@ -288,10 +297,11 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "adWallet", label: "Nạp ví quảng cáo sàn", amount: fee.adWallet, color: "#6366f1" },
     { key: "feeOther", label: "Khấu trừ khác của sàn", amount: fee.other, color: "#94a3b8" },
     // ---- Ngoài sàn ----
-    { key: "cogs", label: "Giá vốn hàng bán (COGS)", amount: analytics.totalCost, color: "#3b82f6" },
+    { key: "cogs", label: "Giá vốn hàng bán (COGS)", amount: analytics.totalCost - damagedInCost, color: "#3b82f6" },
     { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense, color: "#8b5cf6" },
     { key: "varops", label: "Chi phí Biến đổi Vận hành", amount: analytics.operatingVariableExpense, color: "#10b981" },
     { key: "fixops", label: "Chi phí Cố định Vận hành", amount: analytics.operatingFixedExpense, color: "#a16207" },
+    { key: "damaged", label: "Thất thu hàng mất/hỏng", amount: damagedLoss, color: "#be123c" },
   ].filter((s) => s.amount !== 0);
   // Khoản ÂM (sàn ghi có: trợ giá, bồi hoàn, hoàn phí) không vẽ lát nhưng VẪN
   // trừ vào tổng — tâm donut khớp thẻ "Tổng Chi phí" từng đồng (16/09: trước

@@ -39,6 +39,8 @@ import {
 // RAM (docs/SO-CAI-DON.md 9.6); đường cũ đã gỡ 14/10/2026.
 import { loadLossOrders, loadOpenCashTotals } from "./finance";
 import { loadOverviewTotals } from "./analytics";
+import { ledgerDamagedLoss } from "../services/order-ledger";
+import { DAMAGED_LOSS_LABEL } from "../lib/damaged-loss";
 import { adsChargedRowsOf, type OverviewTotals } from "../lib/overview-totals";
 import { platformAdsSpend } from "../services/ads-spend";
 import {
@@ -209,12 +211,15 @@ function pctDelta(current: number, previous: number): string | null {
  * vốn 0 (anh Trung chốt 02/11/2026, áp 04/11 — lib/finance-definitions.ts), chỉ
  * đếm để nhắc nhập; không còn trừ riêng như 30/09 → 04/11.
  */
-function netOf(t: OverviewTotals, opex: number, ads: number) {
+function netOf(t: OverviewTotals, opex: number, ads: number, damagedLossOutside = 0) {
   const a = t.active;
   return {
     orders: a.count,
     revenue: a.revenueGross,
-    net: a.revenueGross - a.costSnapshot - a.platformDeduction - opex - ads,
+    // damagedLossOutside = Thất thu hàng mất/hỏng của đơn không tính doanh thu
+    // (13/11/2026, lib/damaged-loss.ts) — phần của đơn tính doanh thu đã nằm trong giá vốn.
+    net:
+      a.revenueGross - a.costSnapshot - a.platformDeduction - opex - ads - damagedLossOutside,
   };
 }
 
@@ -284,13 +289,25 @@ export async function buildPeriodReport(
   // tiền (anh Trung chốt 30/09/2026), áp cho cả kỳ trước để % so sánh cùng thước.
   const curTotals = curData.totals;
   const prevTotals = prevData.totals;
-  const [curAds, prevAds] = await Promise.all([
+  const [curAds, prevAds, curDamaged, prevDamaged] = await Promise.all([
     platformAdsSpend(scope, range, adsChargedRowsOf(curTotals)),
     platformAdsSpend(scope, prevRange, adsChargedRowsOf(prevTotals)),
+    ledgerDamagedLoss(scope, range),
+    ledgerDamagedLoss(scope, prevRange),
   ]);
 
-  const cur = netOf(curTotals, Number(opexAgg._sum.amount ?? 0), curAds.total);
-  const prev = netOf(prevTotals, Number(prevOpexAgg._sum.amount ?? 0), prevAds.total);
+  const cur = netOf(
+    curTotals,
+    Number(opexAgg._sum.amount ?? 0),
+    curAds.total,
+    curDamaged.outside
+  );
+  const prev = netOf(
+    prevTotals,
+    Number(prevOpexAgg._sum.amount ?? 0),
+    prevAds.total,
+    prevDamaged.outside
+  );
   const cancelled = curTotals.cancelledCount;
   // Dòng "Chi quảng cáo" giữ số sàn báo đầy đủ (kể cả khoản sàn đã trừ trong đơn).
   const adSpend = Number(adAgg._sum.amount ?? 0);
@@ -443,7 +460,9 @@ const INTENTS: IntentDef[] = [
       const missing = totals.active.missingCostCount;
       // Quảng cáo sàn trừ vào lợi nhuận — cùng luật Tổng quan / Báo cáo dòng tiền.
       const ads = (await platformAdsSpend(scope, period.range, adsChargedRowsOf(totals))).total;
-      const net = revenue - cost - fee - opex - ads;
+      // Thất thu hàng mất/hỏng — cùng số với Tổng quan / Báo cáo dòng tiền (13/11/2026).
+      const damaged = await ledgerDamagedLoss(scope, period.range);
+      const net = revenue - cost - fee - opex - ads - damaged.outside;
 
       let text =
         orderCount === 0
@@ -460,7 +479,10 @@ const INTENTS: IntentDef[] = [
             ? undefined
             : [
                 { label: "Doanh thu (GMV phát sinh)", value: fmtMoney(revenue) },
-                { label: "Giá vốn", value: fmtMoney(cost) },
+                { label: "Giá vốn", value: fmtMoney(cost - damaged.inActive) },
+                ...(damaged.total > 0
+                  ? [{ label: DAMAGED_LOSS_LABEL, value: fmtMoney(damaged.total) }]
+                  : []),
                 { label: "Sàn khấu trừ (phí + thuế + voucher)", value: fmtMoney(fee) },
                 { label: "Chi phí vận hành", value: fmtMoney(opex) },
                 ...(ads > 0 ? [{ label: "Quảng cáo sàn", value: fmtMoney(ads) }] : []),

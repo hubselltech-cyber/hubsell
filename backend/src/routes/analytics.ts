@@ -27,6 +27,7 @@ import {
 } from "../lib/overview-totals";
 import {
   ensureLedgerFresh,
+  ledgerDamagedLoss,
   ledgerOverviewBreakdown,
   ledgerSummary,
 } from "../services/order-ledger";
@@ -268,8 +269,19 @@ router.get("/", async (req: AuthRequest, res, next) => {
       : null;
     const platformAdsTotal = platformAds?.total ?? 0;
 
+    // THẤT THU HÀNG MẤT/HỎNG (13/11/2026, lib/damaged-loss.ts) — cùng số với
+    // Báo cáo dòng tiền. `damagedLossInCost` đã nằm trong totalCost; phần của
+    // đơn không tính doanh thu (`outside`) cộng vào totalOperatingExpense để
+    // thác nước của bản app chưa cập nhật vẫn đóng, bản mới vẽ bậc riêng.
+    const damaged = seesFinancials
+      ? await ledgerDamagedLoss(scope, range, { byDaySince: toBusinessDateKey(chartStart) })
+      : null;
+    const damagedLoss = damaged?.total ?? 0;
+    const damagedLossInCost = damaged?.inActive ?? 0;
+    const damagedLossOutside = damaged?.outside ?? 0;
+
     const totalOperatingExpense =
-      expenses.reduce((sum, e) => sum + Number(e.amount), 0) + platformAdsTotal;
+      expenses.reduce((sum, e) => sum + Number(e.amount), 0) + platformAdsTotal + damagedLossOutside;
     const expenseByCategoryMap = new Map<string, number>();
     if (platformAdsTotal > 0) expenseByCategoryMap.set("ADS", platformAdsTotal);
     for (const e of expenses) {
@@ -329,6 +341,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       }
     }
     for (const [day, amount] of platformAds?.byDay ?? []) addCost(day, amount);
+    for (const [day, amount] of damaged?.outsideByDay ?? []) addCost(day, amount);
     for (const e of expenses) {
       addCost(toBusinessDateKey(e.expenseDate), Number(e.amount));
     }
@@ -551,6 +564,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
       totalOperatingExpense,
       operatingVariableExpense,
       operatingFixedExpense,
+      // Thất thu hàng mất/hỏng: tổng dòng + phần đã nằm trong totalCost. Phần còn
+      // lại (damagedLoss − damagedLossInCost) đã nằm trong totalOperatingExpense.
+      damagedLoss,
+      damagedLossInCost,
       netProfit,
       // Hai bậc cuối của thác nước (26/10/2026): THU vận hành khác (cộng) và
       // THUẾ BỔ SUNG dự phòng (trừ) — 0 thì giao diện không vẽ bậc.
