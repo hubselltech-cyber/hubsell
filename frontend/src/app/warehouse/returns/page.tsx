@@ -29,6 +29,10 @@ import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
 import {
+  ReturnShippingCell,
+  useReturnCarrierStatus,
+} from "@/components/warehouse/return-shipping-cell";
+import {
   ReturnsBulkBar,
   isReturnBulkSelectable,
 } from "@/components/warehouse/returns-bulk-bar";
@@ -125,6 +129,9 @@ const TABS: { key: string; label: string; countKey: string }[] = [
  *      (cộng tồn kho cho đúng các đơn đang tích), hoặc nút Nhập kho / Báo hỏng
  *      trên từng dòng. Nút "Nhập kho tất cả đơn đã nhận" đã gỡ 13/11/2026.
  *
+ * CỘT "Trạng thái vận chuyển" (13/11/2026, thay cột Khách hàng): kiện hoàn đang ở
+ * đâu trên đường về, hãng đã báo trả xong chưa — components/warehouse/return-shipping-cell.tsx.
+ *
  * BỐ CỤC (anh Trung chốt 13/11/2026): đầu trang ô quét gọn (trái) + lọc thời
  * gian, nút đồng bộ (phải) → bốn thẻ số → dải nhắc mỏng → tab trạng thái (trái)
  * + lọc gian, ô tìm (phải) → bảng.
@@ -211,6 +218,8 @@ export default function WarehouseReturnsPage() {
   const invalidate = useInvalidate();
 
   const rows = useMemo(() => returnsQ.data?.items ?? [], [returnsQ.data]);
+  // Kiện giao thất bại đang chờ về: hỏi hành trình hãng theo lô, dòng hiện dần.
+  const carrierById = useReturnCarrierStatus(rows);
   const viewKey = JSON.stringify([
     tab,
     debounced,
@@ -587,7 +596,7 @@ export default function WarehouseReturnsPage() {
                         />
                       </TableHead>
                       <TableHead>Mã đơn</TableHead>
-                      <TableHead>Khách hàng</TableHead>
+                      <TableHead>Trạng thái vận chuyển</TableHead>
                       <TableHead>Sản phẩm</TableHead>
                       <TableHead>Vận chuyển</TableHead>
                       <TableHead>Thời gian chờ</TableHead>
@@ -651,19 +660,20 @@ export default function WarehouseReturnsPage() {
                               {o.returnRequestedAt
                                 ? `Sàn báo hoàn ${formatDateTime(o.returnRequestedAt)}`
                                 : "Chưa rõ mốc sàn báo hoàn"}
-                              {o.platformReturnStatus === "CANCELLED_AFTER_SHIP" && (
-                                <span className="ml-1 text-amber-600 dark:text-amber-400">
-                                  · giao thất bại, kiện quay đầu
-                                </span>
-                              )}
+                              {/* "giao thất bại, kiện quay đầu" đã chuyển sang cột
+                                  Trạng thái vận chuyển; chỉ còn hiện ở đây khi backend
+                                  bản cũ chưa trả returnShipping. */}
+                              {!o.returnShipping &&
+                                o.platformReturnStatus === "CANCELLED_AFTER_SHIP" && (
+                                  <span className="ml-1 text-amber-600 dark:text-amber-400">
+                                    · giao thất bại, kiện quay đầu
+                                  </span>
+                                )}
                             </p>
                           </TableCell>
 
                           <TableCell>
-                            <p>{o.customerName}</p>
-                            <p className={cn(TEXT_SUB, "font-mono")}>
-                              {o.customerPhone ?? "—"}
-                            </p>
+                            <ReturnShippingCell order={o} carrier={carrierById[o.id]} />
                           </TableCell>
 
                           <TableCell className="w-72 max-w-72 whitespace-normal">

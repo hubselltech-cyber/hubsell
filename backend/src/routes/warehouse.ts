@@ -6,6 +6,8 @@ import { channelScope } from "../lib/channel-filter";
 import { parseDateRange } from "../lib/date-range";
 import { attachItemImages } from "../services/item-images";
 import { BULK_RECEIVE_FROM, RETURN_BULK_MAX, parseBulkIds } from "../lib/return-bulk";
+import { returnShippingOf } from "../lib/return-shipping";
+import { RETURN_LEG_BATCH_MAX, getReturnLegForOrders } from "../services/order-tracking";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import {
@@ -227,6 +229,8 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
           o.returnRequestedAt,
           o.returnStatus === ReturnStatus.AWAITING ? null : o.returnedAt
         ),
+        // Cột "Trạng thái vận chuyển" (13/11/2026): tính từ cột đã có, không gọi sàn.
+        returnShipping: returnShippingOf(o),
       })),
       total,
       page,
@@ -238,6 +242,32 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
         warningDays: RETURN_WARNING_DAYS,
         overdueDays: RETURN_OVERDUE_DAYS,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/warehouse/returns/carrier-status — HÃNG ĐÃ TRẢ KIỆN CHƯA (13/11/2026).
+ * Body: { ids: string[] } — các đơn giao thất bại quay đầu đang Chờ hàng về của trang
+ * đang xem, tối đa RETURN_LEG_BATCH_MAX mỗi lần (web tự cắt lô). Trả
+ * { items: { [orderId]: ReturnLegResult } }; id không thuộc diện hỏi thì không có mặt.
+ * Mỗi đơn hỏi được = 1 call sàn (đệm 10 phút) — services/order-tracking.ts.
+ */
+router.post("/returns/carrier-status", async (req: AuthRequest, res, next) => {
+  try {
+    const ids = parseBulkIds(req.body?.ids);
+    if (!ids || ids.length > RETURN_LEG_BATCH_MAX) {
+      res.status(400).json({ error: `Gửi từ 1 đến ${RETURN_LEG_BATCH_MAX} đơn mỗi lần` });
+      return;
+    }
+    res.json({
+      items: await getReturnLegForOrders({
+        ownerId: req.ownerId!,
+        allowedChannelIds: req.allowedChannelIds,
+        orderIds: ids,
+      }),
     });
   } catch (err) {
     next(err);

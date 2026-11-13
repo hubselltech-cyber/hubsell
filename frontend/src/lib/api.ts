@@ -2150,10 +2150,25 @@ export function lookupOrderByCode(code: string) {
 
 export type ReturnAging = "unknown" | "ok" | "warning" | "overdue";
 
+/** Trạng thái vận chuyển chiều hoàn — backend tính ở lib/return-shipping.ts (13/11/2026). */
+export type ReturnShippingState = "RETURNED" | "RETURNING" | "WAITING_BUYER" | "NO_SIGNAL";
+
+export interface ReturnShipping {
+  state: ReturnShippingState;
+  /** Mốc kiện về tới shop — null khi chưa về hoặc nguồn không ghi giờ */
+  at: string | null;
+  /** Ai nói kiện đã về: sàn / hãng hay kho quét nhận */
+  source: "platform" | "warehouse" | null;
+  /** Kiện giao thất bại quay đầu (không phải khách trả hàng) */
+  failedDelivery: boolean;
+}
+
 export interface ReturnRow extends Order {
   /** Số ngày kể từ lúc sàn báo hoàn — null khi chưa rõ mốc bắt đầu */
   daysWaiting: number | null;
   agingLevel: ReturnAging;
+  /** Thiếu khi backend còn bản cũ (trước 13/11/2026) */
+  returnShipping?: ReturnShipping;
 }
 
 export interface WarehouseReturnsResponse {
@@ -2221,6 +2236,35 @@ export function updateReturnClaim(
  * KHÔNG cộng tồn kho; việc nhập kho là bước riêng (processOrderReturn hoặc
  * bulkInboundReturns). `unannounced` = true khi sàn chưa kịp báo hoàn đơn này.
  */
+/** Chặng hoàn của một kiện giao thất bại, đọc từ hành trình hãng vận chuyển (13/11/2026). */
+export type ReturnCarrierStatus =
+  | {
+      status: "ok";
+      /** RETURNED = hãng báo đã trả kiện về shop; NO_SIGNAL = hành trình chưa có mốc hoàn */
+      state: "RETURNED" | "RETURNING" | "NO_SIGNAL";
+      /** Mốc hãng trả kiện (chỉ khi RETURNED) */
+      at: string | null;
+      /** Mốc mới nhất của hành trình, nguyên văn hãng */
+      latest: { at: string | null; description: string } | null;
+      fetchedAt: string | null;
+    }
+  | { status: "unsupported" }
+  | { status: "error" };
+
+/** Số đơn tối đa mỗi lần hỏi hãng — khớp RETURN_LEG_BATCH_MAX ở backend. */
+export const RETURN_CARRIER_BATCH = 10;
+
+/**
+ * Hỏi hãng đã trả kiện chưa cho các đơn giao thất bại quay đầu đang chờ về (tối đa
+ * RETURN_CARRIER_BATCH đơn / lần, mỗi đơn 1 call sàn, backend đệm 10 phút).
+ */
+export function fetchReturnCarrierStatus(ids: string[]) {
+  return apiFetch<{ items: Record<string, ReturnCarrierStatus> }>(
+    "/api/warehouse/returns/carrier-status",
+    { method: "POST", body: JSON.stringify({ ids }) }
+  );
+}
+
 export function receiveWarehouseReturn(orderId: string) {
   return apiFetch<{ order: Order; unannounced: boolean }>(
     `/api/warehouse/returns/${orderId}/receive`,

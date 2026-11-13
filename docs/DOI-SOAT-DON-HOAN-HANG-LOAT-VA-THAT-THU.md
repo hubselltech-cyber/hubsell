@@ -298,3 +298,39 @@ Ba bản em tự xếp trước đó anh đều gạt — đừng làm lại:
 - **Ảnh + giọng đọc của bài hướng dẫn "Giữ tiền" bước 1–2** (`gt-returns.png`, `voice/giutien/step-1.mp3`, `step-2.mp3`) vẫn là bản cũ: ảnh còn nút xanh và khối ô quét to, giọng còn đọc "bấm Nhập kho tất cả". Phải chụp lại trên bản đang chạy và sinh lại giọng (tốn credit) — chữ trên màn đã đúng.
 - Dòng chú thích mới trên app mobile chỉ tới tay khách ở bản app / OTA sau.
 
+## 12. Cột "Trạng thái vận chuyển" thay cột Khách hàng (13/11/2026 tối) — đã commit + push 13/11 tối
+
+Anh Trung: "bỏ cột khách hàng đi và thay bằng cột Trạng thái vận chuyển, mục đích để biết ship đã báo hoàn thành công hay chưa để dễ dàng đối soát"; khi em báo kiện giao thất bại chưa có tin hãng: "API mình có trong đơn hàng rồi chỉ cần gọi ra thôi".
+
+**Cột hiện gì** (chấm màu + chữ, đúng chỗ cột Khách hàng cũ):
+
+| Nhãn | Khi nào | Dòng phụ |
+|---|---|---|
+| Hoàn thành công | sàn / hãng báo kiện đã về shop, hoặc kho đã nhận | "Sàn báo …" / "Hãng báo …" / "Kho nhận …"; đơn còn Chờ hàng về thì thêm dòng đỏ **"Kho chưa quét nhận"** (ca cần đối soát nhất) |
+| Đang hoàn về | khách đã gửi kiện (có mã vận đơn chiều hoàn), hoặc hành trình hãng có mốc hoàn | mốc mới nhất của hãng, nguyên văn (tối đa 2 dòng, rê chuột xem đủ) |
+| Chờ khách gửi hàng | có yêu cầu trả hàng, chưa có mã vận đơn chiều hoàn | — |
+| Chưa có tin từ hãng | kiện giao thất bại mà hành trình chưa có mốc hoàn; Lazada giao thất bại; đơn không có trạng thái sàn | "Giao thất bại, kiện quay đầu" hoặc mốc mới nhất của hãng |
+
+**Hai nguồn dữ liệu:**
+
+1. Cột đã có trong `Order` — hàm thuần `backend/src/lib/return-shipping.ts` `returnShippingOf` (test 9 ca), route `GET /api/warehouse/returns` trả thêm `returnShipping` cho từng dòng. Không tốn call sàn. Đọc `returnDeliveredAt` (Shopee `reverse_logistics_status = LOGISTICS_DELIVERY_DONE`, TikTok yêu cầu trả hàng sang SUCCESS / COMPLETE), `platformReturnStatus` (Lazada `RTM_RECEIVE_ITEM` = sàn ghi nhận kiện đã về, không có giờ), `returnTrackingCode`, `returnStatus`, `returnedAt`. Lưu ý: Shopee ghi `returnDeliveredAt` = giờ đồng bộ khi kho quét trước → mốc sàn chỉ được dùng khi đứng trước mốc kho nhận, còn lại ghi "Kho nhận".
+2. Kiện GIAO THẤT BẠI quay đầu đang Chờ hàng về (`platformReturnStatus = CANCELLED_AFTER_SHIP`): API hoàn của ba sàn không nói gì về chặng về → hỏi hành trình hãng bằng đúng đường của `GET /api/orders/:id/tracking` (`services/order-tracking.ts`): route mới `POST /api/warehouse/returns/carrier-status` `{ ids }`, tối đa 10 đơn / lần, 5 lệnh gọi sàn cùng lúc, đệm RAM 10 phút sẵn có. Web (`components/warehouse/return-shipping-cell.tsx`, hook `useReturnCarrierStatus`) cắt các đơn cần hỏi của TRANG ĐANG XEM thành lô 10, hỏi tuần tự, dòng hiện dần ("Đang hỏi hãng…"); lượt tự làm mới 30 giây không hỏi lại; đổi trang giữa chừng thì bỏ các lô chưa hỏi.
+
+**Số call sàn:** mỗi đơn giao thất bại đang chờ về trên trang đang xem = 1 call, nhớ 10 phút. Trang 20 dòng tối đa 20 call, trang 100 dòng tối đa 100 call cho mỗi lần mở / đổi trang. Đơn khách trả hàng, đơn kho đã nhận, đơn Lazada: 0 call. Không quét nền, không ghi DB.
+
+**Nhận mốc "hãng đã trả kiện":**
+
+- Shopee: `logistics_status = RETURNED` (enum thật đã đối chiếu đơn ANO + DarkMan ở `delivery-fail.ts`: RETURN_INITIATED → RETURN_STARTED → RETURNED).
+- TikTok: không có enum → theo mẫu chữ (`TIKTOK_RETURNED`): có chữ hoàn / trả đứng trước "thành công" (không tính "không thành công"), hoặc "returned to seller". **CHƯA đối chiếu với hành trình thật của một kiện TikTok đã hoàn xong** — viết chặt để thà sót còn hơn báo oan; ô luôn hiện nguyên văn mốc mới nhất nên sót vẫn đọc được. Lên prod phải mở một đơn TikTok giao thất bại đã về để xem câu chữ thật rồi chỉnh mẫu.
+- Lazada: chưa có API hành trình trong mã → "Chưa có tin từ hãng".
+- `TrackingEvent` thêm trường `returned?: true`, KHÔNG thêm giá trị vào `kind` (app mobile tra màu theo `kind`).
+
+**Giới hạn đã biết:**
+
+- Kết quả hỏi hãng không lưu DB → chưa lọc / đếm được "hãng báo đã trả mà kho chưa nhận", chưa đếm hạn khiếu nại 7 ngày của Shopee từ mốc này. Muốn có phải lưu mốc (cột mới hoặc `returnDeliveredAt` — cột này Lãi/Lỗ đang đọc, phải đo trước khi dùng).
+- Đơn khách trả hàng Shopee: mốc sàn báo về chỉ được hỏi tối đa 40 yêu cầu mỗi lượt quét và chỉ với yêu cầu có biến động trong cửa sổ quét → có thể còn "Đang hoàn về" dù kiện đã tới. Hành trình theo mã đơn là chặng ĐI nên không giúp được ca này.
+- Ô tìm vẫn tìm theo tên khách dù cột đã bỏ.
+
+**Bề rộng bảng** (đo JS, sidebar mở): cột mới 192 px; bảng tối thiểu 1.427 px → 1440: cuộn ngang trong hộp 324 px (bảng này vốn đã cuộn ở 1440), 1700: 64 px, 1920: vừa. Giao diện tối: đã soi; "Đang hoàn về" dùng thang blue vì thang indigo chưa được lật ở giao diện tối (nhãn "Đã nhận · chờ nhập kho" và dòng "Hoàn: mã" có sẵn của trang vẫn dùng indigo — chưa sửa).
+
+**Đã kiểm trên local** (`backend-http-tracking-demo` bật `ORDER_TRACKING_FAKE=1`, tài khoản reviewer@): đủ bốn nhãn + dòng đỏ "Kho chưa quét nhận"; 1 yêu cầu `carrier-status` cho cả trang, sau nhiều lượt tự làm mới không gọi thêm. tsc backend + frontend, eslint 3 tệp web sạch; vitest `return-shipping` 9 ca, `order-tracking` 10 ca qua. **Chưa kiểm:** gọi sàn thật (local dùng hành trình giả), câu chữ TikTok thật, cả bộ test backend. Dữ liệu thử: 13 đơn Chờ hàng về của reviewer@ trên DB local đã bị đổi `platformReturnStatus` / mã vận đơn để dựng ca.
