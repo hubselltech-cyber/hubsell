@@ -740,3 +740,24 @@ ngân sách cụ thể = max(10 × AOV, 1–5 × chi tiêu thực); C. Đo trư�
   bộ chuông. 3 route truyền `maxDeliverySince` + `roasTargetPrev`; JSON thêm `maxDeliverySince`; web in "phân phối tối đa từ dd/mm" ở bảng
   + đầu trang chiến dịch. Test: `tiktok-ads-max-delivery.test.ts` (16) + bộ chuông; tsc 2 app sạch. CHƯA kiểm bằng chiến dịch thật
   (chưa chiến dịch nào chuyển) — còn treo: chiến dịch LAI (vài SP Phân phối tối đa) báo cáo trả gì; luật loại video mặc định ROI 10.
+
+## 13. ĐƠN HOÀN / HỦY CÓ ĐƯỢC TIKTOK TRẢ LẠI TIỀN QUẢNG CÁO GMV MAX KHÔNG — kiểm 13/11/2026 (anh Trung hỏi)
+
+**Kết luận: tùy cách shop trả tiền quảng cáo.**
+
+| Cách trả | Đơn hủy / hoàn toàn bộ | Căn cứ |
+|---|---|---|
+| **Trừ theo đơn lúc quyết toán** (`gmv_max_ad_fee_amount` + `gmv_max_coupon_fee` → `feeGmvMax`) | **KHÔNG bị trừ** (hoặc trừ rồi trả lại trong cùng bản kê — Hubsell chỉ thấy số ròng). Hoàn MỘT PHẦN thì phí vẫn tính trên phần giữ lại | SQL prod dưới đây |
+| **Nạp tiền trước vào tài khoản quảng cáo** (gian ANO) | **KHÔNG trả lại.** Chi phí đã tiêu theo lượt hiển thị; doanh thu GMV Max của TikTok vẫn đếm đơn hủy (đo 05/11 Tạp Hoá Dép 668: TikTok 29,83 tr ≈ 94,7 % mọi đơn đặt, bỏ hủy thì 126,9 % — mục 8) | Không có điều khoản hoàn; đo doanh thu mục 8 |
+
+**SQL prod 13/11 (chỉ đọc, Supabase)** — các gian có ít nhất một đơn bị trừ `feeGmvMax` trong 30 ngày, chỉ bản kê đã chốt (`estimated = false`), theo ngày tạo đơn ở Hubsell:
+
+| Nhóm | Đơn | Đơn bị trừ phí GMV Max | % | Tổng phí |
+|---|---|---|---|---|
+| Hủy trước khi giao | 9.015 | 0 | 0,0 % | 0 |
+| Hủy sau giao / hoàn trả | 5.331 | 72 (71 âm, 1 dương) | 1,3 % | −604.344 |
+| Giao thành công | 47.688 | 16.706 | 35,0 % | −55.984.023 |
+
+72 đơn còn phí: 66 là **hoàn một phần** (DELIVERED, khách trả lại một phần tiền — phí giữ trên phần còn lại), 1 đơn CANCELLED/RECEIVED chưa có dòng hoàn tiền, 5 đơn hoàn toàn bộ còn −2.394 đ tổng (≈ 480 đ/đơn, nghi phần voucher GMV Max; nhỏ, không đào thêm).
+
+**Bảo vệ ROI (ROI Protection) không phải hoàn tiền đơn hủy.** Trang trợ giúp TikTok `ads.tiktok.com/help/article/about-roi-protection-for-gmv-max-campaigns`: từ 25/02/2026, ngày nào ROI chiến dịch < 90 % ROI mục tiêu + > 20 đơn/ngày + không sửa (tăng ROI mục tiêu, giảm >1 lần, tạm dừng, sửa sản phẩm, Phân phối tối đa, Tăng cường video) thì TikTok bù **tín dụng quảng cáo** (không phải tiền mặt) = chi phí − doanh thu gộp ÷ (ROI mục tiêu × 0,9). Trang không nói đơn hủy/hoàn — và vì doanh thu gộp TikTok vẫn đếm đơn hủy (mục 8), đơn hủy KHÔNG kéo ROI xuống nên không kích hoạt bù. Trang không ghi thị trường áp dụng (chưa xác nhận VN). "GMV Max Pro" (TikTok giới thiệu 30/10/2026) chưa có thông tin ngày ra mắt / thị trường VN.
