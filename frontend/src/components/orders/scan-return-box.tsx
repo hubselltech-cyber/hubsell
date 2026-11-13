@@ -14,18 +14,22 @@ import { ApiError, lookupOrderByCode, type Order } from "@/lib/api";
 export function ScanReturnBox({
   onFound,
   disabled,
+  compact,
 }: {
-  onFound: (order: Order) => void;
+  /** Trả Promise thì ô quét chờ xong mới chạy mã kế trong hàng chờ. */
+  onFound: (order: Order) => void | Promise<void>;
   disabled?: boolean;
+  /** Bản gọn một dòng cho thanh công cụ — xem ScanCodeBox. */
+  compact?: boolean;
 }) {
   const onScan = React.useCallback(
     async (code: string) => {
       try {
         const res = await lookupOrderByCode(code);
-        onFound(res.order);
+        await onFound(res.order);
       } catch (err) {
         toast.error(err instanceof ApiError ? err.message : "Không tra cứu được mã");
-        throw err; // để ô giữ nguyên mã sai cho nhân viên nhìn lại
+        throw err; // để ô quét hiện "Mã vừa lỗi" cho nhân viên nhìn lại
       }
     },
     [onFound]
@@ -34,6 +38,9 @@ export function ScanReturnBox({
     <ScanCodeBox
       onScan={onScan}
       disabled={disabled}
+      compact={compact}
+      grabTyping
+      placeholder={compact ? "Quét mã để nhận hàng hoàn…" : undefined}
       ariaLabel="Quét mã vận đơn hàng hoàn"
       hint="Máy quét barcode/2D hoạt động như bàn phím — bắn xong là tự tra, không cần bấm gì thêm. Ô nhập tự lấy lại tiêu điểm để quét liên tục cả xấp. Mã chưa có trong hệ thống sẽ được hỏi thẳng sàn — lượt đó chờ lâu hơn vài giây là bình thường."
     />

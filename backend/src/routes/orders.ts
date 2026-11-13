@@ -1727,13 +1727,12 @@ async function restoreReturnStockTx(
 }
 
 /**
- * POST /api/orders/returns/bulk-inbound — "NHẬP KHO TẤT CẢ ĐƠN ĐÃ NHẬN".
+ * POST /api/orders/returns/bulk-inbound — NHẬP KHO CÁC ĐƠN ĐANG TÍCH.
+ * Body: { ids: string[] } — các đơn tích trên một trang, tối đa 100 (13/11/2026;
+ * chế độ "mọi đơn đã nhận" không cần ids đã gỡ cùng nút "Nhập kho tất cả").
  *
- * Không cần body, không cần chọn từng đơn: quét toàn bộ đơn RECEIVED (kho đã
- * quét nhận nhưng chưa nhập kho) trong phạm vi gian hàng được phép, cộng ngược
- * tồn kho rồi chuyển RECEIVED_INTACT. Thiết kế cho thao tác 1 chạm trên điện
- * thoại — mọi đơn đã quét nhận đều là đơn kho ĐÃ cầm hàng trên tay nên gộp
- * chung một nút là an toàn.
+ * Đơn Đã nhận hoặc Chờ hàng về (xử lý tắt như route lẻ) → cộng ngược tồn kho
+ * rồi chuyển RECEIVED_INTACT. Không ghi shippingStatus (hủy theo API sàn).
  *
  * Mỗi đơn chạy trong MỘT transaction riêng: một đơn lỗi không kéo sập cả lô,
  * các đơn đã nhập xong giữ nguyên kết quả. Chốt chặn stockRestoredAt vẫn áp
@@ -1741,12 +1740,8 @@ async function restoreReturnStockTx(
  */
 router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
   try {
-    // 13/11/2026 — có `ids` = NHẬP KHO CÁC ĐƠN ĐANG TÍCH trên một trang (tối đa
-    // 100): nhận cả đơn Chờ hàng về (xử lý tắt như route lẻ). Không có `ids` =
-    // nút "Nhập kho tất cả đơn đã nhận" như cũ.
-    const hasIds = req.body?.ids !== undefined;
-    const ids = hasIds ? parseBulkIds(req.body.ids) : null;
-    if (hasIds && !ids) {
+    const ids = parseBulkIds(req.body?.ids);
+    if (!ids) {
       res.status(400).json({
         error: `Cần danh sách đơn đang tích (1–${RETURN_BULK_MAX} đơn)`,
       });
@@ -1758,9 +1753,8 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
         ...(req.allowedChannelIds
           ? { channelId: { in: req.allowedChannelIds } }
           : {}),
-        ...(ids
-          ? { id: { in: ids }, returnStatus: { in: BULK_PROCESS_FROM } }
-          : { returnStatus: ReturnStatus.RECEIVED }),
+        id: { in: ids },
+        returnStatus: { in: BULK_PROCESS_FROM },
       },
       select: { id: true, orderCode: true, stockRestoredAt: true, returnedAt: true },
       orderBy: { returnedAt: "asc" },
@@ -1788,7 +1782,7 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
               ? await restoreReturnStockTx(
                   tx,
                   order,
-                  `Nhập kho hàng hoàn (nhập kho tất cả) — đơn ${order.orderCode}`,
+                  `Nhập kho hàng hoàn (hàng loạt) — đơn ${order.orderCode}`,
                   req.userId ?? null
                 )
               : [];
@@ -1798,9 +1792,6 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
               returnStatus: ReturnStatus.RECEIVED_INTACT,
               // Đơn đi tắt từ Chờ hàng về chưa có mốc "đã cầm hàng" → ghi tại đây.
               returnedAt: order.returnedAt ?? new Date(),
-              // Lượt theo ô tích KHÔNG ghi trạng thái giao hàng: hủy hay không là
-              // theo API của sàn (anh Trung 13/11). Nút "tất cả" giữ cách cũ.
-              ...(ids ? {} : { shippingStatus: ShippingStatus.CANCELLED }),
               ...(lines.length > 0 ? { stockRestoredAt: new Date() } : {}),
             },
           });
@@ -1808,7 +1799,7 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
           const ticket = await stageStockPush(
             tx,
             lines.map((l) => l.productId),
-            { source: "nhập kho hàng hoàn (nhập kho tất cả)" }
+            { source: "nhập kho hàng hoàn (hàng loạt)" }
           );
           return { lines, ticket };
         });
@@ -1834,7 +1825,7 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
       orders: results,
       failed,
       // Đơn được tích nhưng không ở trạng thái nhập kho được (đã xử lý, ngoài phạm vi).
-      skipped: ids ? ids.length - orders.length : 0,
+      skipped: ids.length - orders.length,
     });
   } catch (err) {
     next(err);

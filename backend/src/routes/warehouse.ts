@@ -3,6 +3,7 @@ import { ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/clien
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { channelScope } from "../lib/channel-filter";
+import { parseDateRange } from "../lib/date-range";
 import { attachItemImages } from "../services/item-images";
 import { BULK_RECEIVE_FROM, RETURN_BULK_MAX, parseBulkIds } from "../lib/return-bulk";
 import { isShopeeConfigured } from "../integrations/shopee/config";
@@ -108,8 +109,10 @@ function agingOf(
 }
 
 /**
- * GET /api/warehouse/returns?status=&search=&page=&pageSize=
- * Danh sách đơn hoàn kèm số ngày chờ và mức cảnh báo.
+ * GET /api/warehouse/returns?status=&search=&page=&pageSize=&from=&to=
+ * Danh sách đơn hoàn kèm số ngày chờ và mức cảnh báo. `from`/`to` (yyyy-mm-dd,
+ * 13/11/2026) lọc theo NGÀY SÀN BÁO HOÀN — danh sách, số trên tab và bốn thẻ
+ * cùng theo kỳ; không gửi = toàn bộ thời gian (đơn chưa rõ mốc chỉ hiện khi đó).
  */
 router.get("/returns", async (req: AuthRequest, res, next) => {
   try {
@@ -119,10 +122,12 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
     // Lọc theo gian hàng: shop đối soát với bưu cục của từng gian riêng
+    const range = parseDateRange(req.query);
     const scope: Prisma.OrderWhereInput = {
       channel: channelScope(req),
       // Chỉ những đơn thật sự có phát sinh hoàn
       returnStatus: { not: ReturnStatus.NONE },
+      ...(range ? { returnRequestedAt: range } : {}),
     };
 
     const where: Prisma.OrderWhereInput = {

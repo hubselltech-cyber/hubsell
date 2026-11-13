@@ -662,7 +662,7 @@ const INTENTS: IntentDef[] = [
           ? "Không có đơn hoàn nào đang chờ xử lý. 👍"
           : `Đang có ${open} đơn hoàn cần theo dõi: ${awaiting} chờ hàng về, ${received} kiện đã nhận chưa nhập kho, ${damaged} hỏng/mất chờ khiếu nại.`;
       if (received > 0) {
-        text += ` Bấm "Nhập kho tất cả" ở trang Đối soát đơn hoàn để cộng lại tồn một chạm.`;
+        text += ` Vào trang Đối soát đơn hoàn, tích chọn các đơn đã nhận rồi bấm "Nhập kho" để cộng lại tồn.`;
       }
       return {
         outcome: "answered",

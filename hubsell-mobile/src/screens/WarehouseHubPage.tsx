@@ -407,8 +407,8 @@ export function WarehouseHubPage() {
           <View className="mt-3 rounded-2xl bg-slate-100 dark:bg-slate-800 p-4">
             <Text className="text-[11px] leading-4 text-slate-500 dark:text-slate-400">
               Luồng 2 công đoạn: quét trên điện thoại chỉ ghi nhận ĐÃ NHẬN hàng
-              về tay. Nút "Nhập kho tất cả" (cộng tồn kho) nằm trên web — Kho →
-              Đối soát đơn hoàn.
+              về tay. Nhập kho (cộng tồn kho) làm trên web — Kho → Đối soát đơn
+              hoàn: tích chọn đơn rồi bấm Nhập kho.
             </Text>
           </View>
         </>

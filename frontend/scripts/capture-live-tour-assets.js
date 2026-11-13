@@ -172,10 +172,9 @@ const pctOf = (b) => ({
 
   // ================= TOUR GIỮ TIỀN =================
   if (!ONLY || ONLY === "giutien") {
-    await goto("/warehouse/returns", "Nhập kho tất cả");
+    await goto("/warehouse/returns", "Chờ hàng về");
     await T("navReturns", () => pct(page.getByRole("link", { name: "Đối soát đơn hoàn" })));
-    await T("scanBox", () => pct(page.getByPlaceholder(/Bấm máy quét/)));
-    await T("btnBulkReceive", () => pct(page.getByRole("button", { name: /Nhập kho tất cả/ })));
+    await T("scanBox", () => pct(page.getByPlaceholder(/Quét mã để nhận hàng hoàn/)));
     await T("returnCards", () => pctUnion(cardOf("Chờ về tay"), cardOf("Chờ khiếu nại sàn")));
     await T("returnWarning", () => pct(page.getByText(/quá 14 ngày chưa về tay/).first().locator("xpath=ancestor::div[contains(@class,'rounded')][1]")));
     await T("returnTabs", () => pctUnion(page.getByRole("button", { name: /^Tất cả/ }).first(), page.getByRole("button", { name: /Hao hụt\/Khiếu nại/ })));

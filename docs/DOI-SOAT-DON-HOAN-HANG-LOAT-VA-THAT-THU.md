@@ -241,3 +241,60 @@ Không sàn nào công bố công thức mức đền bù.
 - Ca hiếm: dòng hàng sàn đã đánh "đã nhập lại kho" mà kho vẫn báo hỏng thì thất thu ra 0 (giữ luật thu hồi vốn hiện có của sổ).
 - Quảng cáo: hòa vốn / biên lãi đọc thẳng sổ cái, sổ không đổi → không ảnh hưởng (suy từ mã, chưa đo trên prod).
 
+## 11. Thu gọn đầu trang + lọc thời gian + ô quét bắn liên tục (13/11/2026, sau khi lát 1 + 2 lên prod) — đã commit + push 13/11
+
+Anh Trung gửi ảnh prod: khối ô quét "chiếm nhiều diện tích… thu nhỏ trên web và chuyển xuống dưới", "cần thêm bộ lọc thời gian để seller dễ kiểm soát"; xem bản đầu trên local: "lộn xộn, và rải màu cam cho nhỏ lại"; "test lại phần quét bằng máy mã vạch xem chuột có bị nhảy lung tung không… khách đã bắn là bắn liên tục".
+
+### 11.1 Bố cục — bản anh chốt (lượt 4)
+
+Anh gửi lại ảnh prod, khoanh hai chỗ: "Bỏ cái nút màu xanh đi và thay cái nút quét đơn vào đúng vị trí đó. Bộ lọc thời gian thì để khu vực anh khoanh đỏ là xong." Từ trên xuống:
+
+1. **Đầu trang, một dòng:** ô quét gọn ở bên trái (chỗ nút "Nhập kho tất cả" cũ) · bên phải là bộ lọc thời gian + nút đồng bộ chỉ còn biểu tượng.
+2. Bốn thẻ số.
+3. Dải nhắc quá hạn: một dòng chữ nhỏ.
+4. Tab trạng thái (trái) + lọc gian + ô tìm 256 px (phải) — như bố cục gốc.
+5. Bảng.
+
+Đoạn chữ giới thiệu và thẻ ô quét to ở đầu trang đã bỏ; chú thích ô quét nằm trong tooltip.
+
+Ở màn 1672 px (màn của anh) cả hai dòng đều nằm gọn một dòng. Ở 1440 và 1280 px ô tìm xuống dòng dưới tab — giống bản đang chạy trên prod (5 tab đã rộng 803 px), em không đổi vì anh không yêu cầu.
+
+Ba bản em tự xếp trước đó anh đều gạt — đừng làm lại:
+- Dồn ô quét + bộ lọc xuống sát bảng, ô nằm rải hai đầu ("lộn xộn").
+- Ô tìm kéo giãn hết dòng ("quá dài nên rất rối").
+- Một thanh dồn trái gom cả ô quét, gian, ngày, ô tìm ("xấu").
+
+**Nút "Nhập kho tất cả (N)" đã gỡ** ("không cần thiết vì đã có thể tích chọn và có thanh nhập kho bên dưới; vì nút này mà bố cục bị rối"), kèm mã chỉ phục vụ nó: chế độ không có `ids` của `POST /api/orders/returns/bulk-inbound` (giờ bắt buộc `ids`, gọi thiếu trả 400). Muốn nhập cả loạt: tab Đã nhận → tích cả trang → Nhập kho (tối đa 100 đơn một lượt).
+
+### 11.2 Lọc thời gian
+
+- `GET /api/warehouse/returns?from=&to=` — lọc theo **ngày sàn báo hoàn** (`returnRequestedAt`); danh sách, số trên tab và bốn thẻ cùng theo kỳ. Mặc định "Toàn bộ thời gian" (đơn chờ về có thể rất cũ); đơn chưa rõ mốc chỉ hiện khi không lọc.
+- Web dùng `DateRangePicker` chuẩn (`allowAll`).
+
+### 11.3 Ô quét: lỗi mất mã khi bắn liên tục — có thật, đã sửa
+
+**Thử trước khi sửa** (local, gõ như máy quét: mã + Enter, 4 mã liên tiếp): chỉ mã đầu được ghi nhận; 3 mã sau mất, không báo gì. `document.activeElement` vẫn là ô quét nên nhìn như con trỏ còn đó.
+
+**Gốc** (`components/shared/scan-code-box.tsx`): ô bị `disabled` trong lúc tra mã trước. Trình duyệt ngừng đưa phím vào ô đã khóa và không tự trả lại sau khi mở khóa; lệnh `focus()` gọi lúc ô còn khóa không có tác dụng. Lỗi có từ trước, không phải do đợt sửa bố cục; màn Đóng gói (`/orders/packing`) dùng chung ô này nên cũng dính.
+
+**Sửa** — một chỗ, cả hai màn:
+- Ô không bao giờ bị khóa khi đang xử lý. Mã vừa bắn vào **hàng chờ** (trần 50, mức tự chọn), ô trống ngay cho mã kế; hàng chờ chạy lần lượt.
+- Mã lỗi hiện ở dòng đỏ "Mã vừa lỗi: …" dưới ô, không nằm lại trong ô (nằm lại thì dính liền vào mã kế).
+- `grabTyping` (bật ở Đối soát đơn hoàn): gõ phím khi con trỏ đang ở nút / ô tích / nền trang thì con trỏ tự về ô quét — tránh Enter của máy quét bấm lại nút vừa bấm. Không đụng ô nhập khác, không chạy khi có hộp thoại mở.
+- Trang không còn khóa ô quét theo đơn đang nhận; `onFound` trả Promise để hàng chờ đợi đơn trước ghi xong.
+
+**Thử sau khi sửa** (local):
+- 4 mã liên tiếp (có 1 mã quét trùng): 3 đơn Đã nhận + 1 câu báo trùng, con trỏ ở ô quét suốt.
+- Tích ô chọn cả trang rồi bắn mã: con trỏ tự về ô quét, đơn được nhận, ô tích không bị đổi.
+- Bắn dồn 4 mã trong 0,27 giây: đủ 4 đơn Đã nhận, đúng thứ tự.
+
+**Chưa thử:** máy quét thật; ca mã lỗi / mã chưa có trong hệ thống (trên local sẽ gọi sàn bằng tài khoản demo nên em không bắn); màn Đóng gói mới mở lên xem (ô có, con trỏ đúng chỗ), chưa quét thật; camera.
+
+### 11.4 Dọn theo sau khi gỡ nút "Nhập kho tất cả" + việc để lại
+
+Đã sửa chữ ở mọi nơi còn nhắc nút cũ: bài hướng dẫn "Giữ tiền" (`frontend/src/lib/guide-tours.ts` hai bước đầu), lời đọc tương ứng (`frontend/scripts/generate-guide-voice.js`), mốc chờ + ô quét trong script chụp ảnh (`frontend/scripts/capture-live-tour-assets.js`), câu trả lời của Trợ lý hỏi đáp, dòng chú thích ở màn Kho của app mobile, ghi chú trong worker demo.
+
+Để lại, chưa làm:
+- **Ảnh + giọng đọc của bài hướng dẫn "Giữ tiền" bước 1–2** (`gt-returns.png`, `voice/giutien/step-1.mp3`, `step-2.mp3`) vẫn là bản cũ: ảnh còn nút xanh và khối ô quét to, giọng còn đọc "bấm Nhập kho tất cả". Phải chụp lại trên bản đang chạy và sinh lại giọng (tốn credit) — chữ trên màn đã đúng.
+- Dòng chú thích mới trên app mobile chỉ tới tay khách ở bản app / OTA sau.
+

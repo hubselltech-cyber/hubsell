@@ -25,6 +25,7 @@ import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
 import {
@@ -45,7 +46,6 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
-  bulkInboundReturns,
   channelFilterToQuery,
   fetchWarehouseReturns,
   getToken,
@@ -65,6 +65,7 @@ import {
   shopOnlyName,
   type ChannelFilterValue,
 } from "@/components/shared/channel-filter";
+import { rangeToQuery, type DateRange } from "@/lib/date-range";
 import { formatDateTime, formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -120,9 +121,13 @@ const TABS: { key: string; label: string; countKey: string }[] = [
  *   1. QUÉT NHẬN — bắn máy quét / camera vào mã vận đơn là đơn TỰ chuyển sang
  *      "Đã nhận · chờ nhập kho" (RECEIVED), không mở dialog, không hỏi gì thêm.
  *      Chỉ ghi nhận hàng đã về tay, CHƯA cộng tồn kho.
- *   2. NHẬP KHO — một nút "Nhập kho tất cả đơn đã nhận" cộng tồn kho cho toàn
- *      bộ đơn RECEIVED, không cần tích chọn checkbox từng đơn. Xử lý lẻ vẫn có
- *      nút Nhập kho / Báo hỏng trên từng dòng.
+ *   2. NHẬP KHO — tích các đơn Đã nhận rồi bấm Nhập kho ở thanh nổi đáy màn
+ *      (cộng tồn kho cho đúng các đơn đang tích), hoặc nút Nhập kho / Báo hỏng
+ *      trên từng dòng. Nút "Nhập kho tất cả đơn đã nhận" đã gỡ 13/11/2026.
+ *
+ * BỐ CỤC (anh Trung chốt 13/11/2026): đầu trang ô quét gọn (trái) + lọc thời
+ * gian, nút đồng bộ (phải) → bốn thẻ số → dải nhắc mỏng → tab trạng thái (trái)
+ * + lọc gian, ô tìm (phải) → bảng.
  *
  * Ô TÍCH (13/11/2026, anh Trung): tích theo TỪNG TRANG, tích bao nhiêu tác động
  * bấy nhiêu đơn — thanh nổi đáy màn có Nhận hàng / Nhập kho / Báo hỏng cho các
@@ -140,6 +145,8 @@ export default function WarehouseReturnsPage() {
   const [tab, setTab] = useState("");
   const [channelFilter, setChannelFilter] =
     useState<ChannelFilterValue>(ALL_CHANNELS);
+  /** Lọc theo ngày sàn báo hoàn; null = toàn bộ thời gian (mặc định — đơn chờ về có thể rất cũ). */
+  const [range, setRange] = useState<DateRange | null>(null);
   const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -150,7 +157,6 @@ export default function WarehouseReturnsPage() {
   const [receivingId, setReceivingId] = useState<string | null>(null);
   /** id đơn đang nhập kho lẻ */
   const [inboundingId, setInboundingId] = useState<string | null>(null);
-  const [bulkInbounding, setBulkInbounding] = useState(false);
   /**
    * Đơn đang tích, gắn với ĐÚNG cảnh đang xem (tab + lọc + trang): đổi cảnh thì
    * `viewKey` khác → coi như chưa tích gì, khỏi phải dọn ở từng nút đổi cảnh.
@@ -184,6 +190,7 @@ export default function WarehouseReturnsPage() {
       status: tab || undefined,
       search: debounced || undefined,
       channel: channelFilterToQuery(channelFilter),
+      range: rangeToQuery(range ?? undefined),
       page,
       pageSize,
     }),
@@ -192,6 +199,7 @@ export default function WarehouseReturnsPage() {
         status: tab || undefined,
         search: debounced || undefined,
         channel: channelFilter,
+        range,
         page,
         pageSize,
       }),
@@ -203,7 +211,14 @@ export default function WarehouseReturnsPage() {
   const invalidate = useInvalidate();
 
   const rows = useMemo(() => returnsQ.data?.items ?? [], [returnsQ.data]);
-  const viewKey = JSON.stringify([tab, debounced, channelFilter, page, pageSize]);
+  const viewKey = JSON.stringify([
+    tab,
+    debounced,
+    channelFilter,
+    rangeToQuery(range ?? undefined),
+    page,
+    pageSize,
+  ]);
   // Chỉ đơn ĐANG HIỆN trên trang mới được tính là đang tích (lượt tự làm mới 30
   // giây có thể đưa một đơn ra khỏi trang).
   const selectedRows = useMemo(
@@ -311,7 +326,7 @@ export default function WarehouseReturnsPage() {
     (order: Order) => {
       if (order.returnStatus === "RECEIVED") {
         toast.info(
-          `${order.orderCode} đã quét nhận rồi — bấm “Nhập kho” hoặc dùng nút Nhập kho tất cả`
+          `${order.orderCode} đã quét nhận rồi — bấm “Nhập kho” trên dòng, hoặc tích chọn rồi Nhập kho`
         );
         return;
       }
@@ -322,7 +337,8 @@ export default function WarehouseReturnsPage() {
         );
         return;
       }
-      handleReceive(order);
+      // Trả Promise: ô quét chạy mã kế trong hàng chờ sau khi đơn này ghi xong.
+      return handleReceive(order);
     },
     [handleReceive]
   );
@@ -356,101 +372,60 @@ export default function WarehouseReturnsPage() {
     }
   }
 
-  /**
-   * CÔNG ĐOẠN 2 hàng loạt — "NHẬP KHO TẤT CẢ ĐƠN ĐÃ NHẬN" một chạm: backend tự
-   * quét toàn bộ đơn RECEIVED và cộng kho, không cần tích chọn gì ở đây.
-   */
-  async function handleBulkInbound() {
-    setBulkInbounding(true);
-    try {
-      const res = await bulkInboundReturns();
-      if (res.processed === 0 && res.failed.length === 0) {
-        toast.info("Không có đơn nào đang chờ nhập kho");
-      } else {
-        toast.success(
-          `Đã nhập kho ${res.processed} đơn · cộng ${formatNumber(
-            res.restockedUnits
-          )} sản phẩm vào tồn kho`,
-          { duration: 8000 }
-        );
-        if (res.failed.length > 0) {
-          toast.error(
-            `${res.failed.length} đơn lỗi, chưa nhập được: ${res.failed
-              .map((f) => f.orderCode)
-              .join(", ")}`,
-            { duration: 10000 }
-          );
-        }
-      }
-      load();
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Không nhập kho hàng loạt được"
-      );
-    } finally {
-      setBulkInbounding(false);
-    }
-  }
-
   // Đơn quá hạn dồn lên đầu bảng đã do backend sắp; ở đây chỉ đếm để cảnh báo
   const overdue = summary.overdue ?? 0;
   const warning = summary.warning ?? 0;
-  /** Số đơn đã quét nhận, đang chờ nhập kho — hiện ngay trên nút bulk */
+  /** Số đơn đã quét nhận, đang chờ nhập kho — theo bộ lọc đang xem (thẻ + tab) */
   const receivedCount = summary.RECEIVED ?? 0;
 
   const isFiltering =
-    Boolean(tab) || Boolean(search.trim()) || Boolean(channelFilter.channelName);
+    Boolean(tab) ||
+    Boolean(search.trim()) ||
+    Boolean(channelFilter.channelName) ||
+    range !== null;
 
   const emptyMessage = useMemo(() => {
     if (isFiltering) return "Không có đơn hoàn nào khớp bộ lọc.";
-    return "Chưa có đơn hoàn nào. Bấm “Đồng bộ từ sàn” để kéo về danh sách sàn báo hoàn.";
+    return "Chưa có đơn hoàn nào. Đơn sàn báo hoàn sẽ tự đổ về đây.";
   }, [isFiltering]);
 
   return (
     <AppShell>
       {/* pb-28: chừa chỗ cho thanh thao tác hàng loạt nổi ở đáy khỏi che dòng cuối */}
       <div className={cn("space-y-5", selectedRows.length > 0 && "pb-28")}>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
-            Hai công đoạn: <b>quét mã để nhận hàng</b> về tay, rồi bấm{" "}
-            <b>Nhập kho tất cả</b> để cộng tồn kho một lượt. Đơn sàn báo hoàn{" "}
-            <b>tự đổ về</b> (danh sách tự làm mới mỗi 30 giây) — nút bên chỉ để
-            quét ngay khỏi đợi nhịp.
-          </p>
-          <Button
-            onClick={handleSync}
-            disabled={syncing}
-            className="bg-teal-600 text-white hover:bg-teal-700"
-          >
-            <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-            {syncing ? "Đang đồng bộ…" : "Đồng bộ từ sàn"}
-          </Button>
+        {/* ===== ĐẦU TRANG (anh Trung chốt vị trí 13/11/2026): ô quét gọn ở bên
+             trái — đúng chỗ nút "Nhập kho tất cả" cũ (nút đó đã gỡ: đã có ô tích +
+             thanh Nhập kho ở đáy); bộ lọc thời gian ở bên phải, kèm nút đồng bộ.
+             Lọc thời gian đứng TRÊN bốn thẻ vì nó đổi cả số trên thẻ lẫn danh sách. ===== */}
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="w-full sm:w-96">
+            <ScanReturnBox compact onFound={handleScanFound} />
+          </div>
+
+          <div className="flex items-center gap-2 sm:ml-auto">
+            {/* Lọc theo NGÀY SÀN BÁO HOÀN — bộ chọn kỳ chuẩn của app */}
+            <DateRangePicker
+              allowAll
+              value={range}
+              onChange={(r) => {
+                setRange(r);
+                setPage(1);
+              }}
+            />
+
+            {/* Chỉ còn biểu tượng: đơn sàn báo hoàn TỰ đổ về, nút này hiếm khi cần. */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleSync}
+              disabled={syncing}
+              aria-label="Đồng bộ từ sàn"
+              title="Đồng bộ từ sàn — đơn sàn báo hoàn tự đổ về (danh sách tự làm mới mỗi 30 giây), nút này chỉ để kéo ngay khỏi đợi nhịp."
+            >
+              <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
+            </Button>
+          </div>
         </div>
-
-        {/* ===== CÔNG ĐOẠN 1: QUÉT NHẬN — quét trúng là tự nhận, không hỏi thêm ===== */}
-        <Card className="shadow-sm">
-          <CardContent className="py-1">
-            <ScanReturnBox onFound={handleScanFound} disabled={receivingId !== null} />
-          </CardContent>
-        </Card>
-
-        {/* ===== CÔNG ĐOẠN 2: NHẬP KHO TẤT CẢ — nút 1 chạm cho điện thoại, gom mọi
-             đơn Đã nhận; muốn chọn từng đơn thì dùng ô tích trong bảng ===== */}
-        <Button
-          size="lg"
-          onClick={handleBulkInbound}
-          disabled={bulkInbounding || receivedCount === 0}
-          className="w-full bg-emerald-600 text-base font-semibold text-white shadow-sm hover:bg-emerald-700 sm:w-auto"
-        >
-          {bulkInbounding ? (
-            <Loader2 className="size-5 animate-spin" />
-          ) : (
-            <PackageOpen className="size-5" />
-          )}
-          {bulkInbounding
-            ? "Đang nhập kho…"
-            : `📦 Nhập kho tất cả đơn đã nhận (${formatNumber(receivedCount)})`}
-        </Button>
 
         {/* ===== BỐN CHỈ SỐ ĐỐI SOÁT ===== */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -466,7 +441,7 @@ export default function WarehouseReturnsPage() {
             value={formatNumber(receivedCount)}
             icon={PackageOpen}
             tone={receivedCount > 0 ? "positive" : "neutral"}
-            subtitle="Hàng đã về tay, bấm nút trên để cộng kho"
+            subtitle="Hàng đã về tay, chờ cộng lại tồn kho"
           />
           <DashboardCard
             title={`Quá ${thresholds.overdueDays} ngày chưa về`}
@@ -486,30 +461,29 @@ export default function WarehouseReturnsPage() {
           />
         </div>
 
+        {/* Dải nhắc mỏng một dòng (anh Trung 13/11: "rải màu cam cho nhỏ lại") — con
+            số chính đã có ở thẻ "Quá N ngày chưa về" ngay trên. */}
         {(overdue > 0 || warning > 0) && (
-          <Card className="border-amber-300 bg-amber-50/60 shadow-sm">
-            <CardContent className="flex items-start gap-3 py-1">
-              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
-              <p className="text-sm text-amber-900">
-                {overdue > 0 && (
-                  <>
-                    <b>{formatNumber(overdue)} đơn</b> đã quá{" "}
-                    {thresholds.overdueDays} ngày chưa về tay — nên gửi khiếu nại
-                    bưu cục.{" "}
-                  </>
-                )}
-                {warning > 0 && (
-                  <>
-                    <b>{formatNumber(warning)} đơn</b> đã quá{" "}
-                    {thresholds.warningDays} ngày, cần theo dõi sát.
-                  </>
-                )}
-              </p>
-            </CardContent>
-          </Card>
+          <p className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-1.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            <AlertTriangle className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              {overdue > 0 && (
+                <>
+                  <b>{formatNumber(overdue)} đơn</b> đã quá {thresholds.overdueDays} ngày chưa về
+                  tay — nên gửi khiếu nại bưu cục.{" "}
+                </>
+              )}
+              {warning > 0 && (
+                <>
+                  <b>{formatNumber(warning)} đơn</b> đã quá {thresholds.warningDays} ngày, cần
+                  theo dõi sát.
+                </>
+              )}
+            </span>
+          </p>
         )}
 
-        {/* ===== TAB + TÌM KIẾM ===== */}
+        {/* ===== TAB TRẠNG THÁI (trái) + lọc gian + ô tìm (phải), sát bảng ===== */}
         <div className="flex flex-wrap items-center gap-2">
           {TABS.map((t) => {
             const active = tab === t.key;
@@ -562,7 +536,7 @@ export default function WarehouseReturnsPage() {
             />
           </div>
 
-          <div className="relative min-w-64">
+          <div className="relative w-full sm:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9 pr-9"
@@ -786,9 +760,7 @@ export default function WarehouseReturnsPage() {
                               <div className="flex flex-col items-stretch gap-1.5">
                                 <Button
                                   size="sm"
-                                  disabled={
-                                    inboundingId === o.id || bulkInbounding
-                                  }
+                                  disabled={inboundingId === o.id}
                                   onClick={() => handleInbound(o)}
                                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                                 >
@@ -802,9 +774,7 @@ export default function WarehouseReturnsPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  disabled={
-                                    inboundingId === o.id || bulkInbounding
-                                  }
+                                  disabled={inboundingId === o.id}
                                   onClick={() => setProcessing(o)}
                                 >
                                   <PackageX className="size-3.5" />

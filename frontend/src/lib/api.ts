@@ -2173,10 +2173,15 @@ export function fetchWarehouseReturns(params: {
   status?: string;
   search?: string;
   channel?: ChannelFilterQuery;
+  /** Lọc theo ngày sàn báo hoàn; null / bỏ trống = toàn bộ thời gian. */
+  range?: DateRange | null;
   page?: number;
   pageSize?: number;
 }) {
-  const qs = new URLSearchParams(channelFilterToQuery(params.channel));
+  const qs = new URLSearchParams({
+    ...channelFilterToQuery(params.channel),
+    ...rangeToQuery(params.range ?? undefined),
+  });
   if (params.status) qs.set("status", params.status);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.page) qs.set("page", String(params.page));
@@ -2224,10 +2229,10 @@ export function receiveWarehouseReturn(orderId: string) {
 }
 
 /**
- * CÔNG ĐOẠN 2 — "NHẬP KHO TẤT CẢ ĐƠN ĐÃ NHẬN" một chạm: cộng ngược tồn kho
- * cho toàn bộ đơn đang ở trạng thái RECEIVED, không cần tích chọn từng đơn.
+ * CÔNG ĐOẠN 2 — NHẬP KHO CÁC ĐƠN ĐANG TÍCH trên một trang (tối đa 100): cộng
+ * ngược tồn kho cho đơn Đã nhận / Chờ hàng về trong danh sách id.
  */
-export function bulkInboundReturns(ids?: string[]) {
+export function bulkInboundReturns(ids: string[]) {
   return apiFetch<{
     processed: number;
     restockedUnits: number;
@@ -2244,8 +2249,7 @@ export function bulkInboundReturns(ids?: string[]) {
     skipped: number;
   }>("/api/orders/returns/bulk-inbound", {
     method: "POST",
-    // Có `ids` = chỉ các đơn đang tích trên trang (tối đa 100); không có = mọi đơn Đã nhận.
-    ...(ids ? { body: JSON.stringify({ ids }) } : {}),
+    body: JSON.stringify({ ids }),
   });
 }
 

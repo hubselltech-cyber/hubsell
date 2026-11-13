@@ -681,14 +681,14 @@ export const MONEY_GUARD_TOUR: GuideTour = {
     {
       img: `${GT}/gt-returns.png`,
       title: "Đối soát đơn hoàn: quét mã nhận hàng về",
-      desc: "“Quản lý Kho” → “Đối soát đơn hoàn”. Đơn sàn báo hoàn tự đổ về danh sách. Hàng về tới kho: bắn máy quét mã vận đơn vào ô (hoặc bật camera) — bắn xong tự tra, không cần bấm gì.",
+      desc: "“Quản lý Kho” → “Đối soát đơn hoàn”. Đơn sàn báo hoàn tự đổ về danh sách. Hàng về tới kho: bắn máy quét mã vận đơn vào ô ở đầu trang (hoặc bật camera) — bắn xong tự nhận, bắn liên tục cả xấp không cần bấm gì.",
       target: { x: 58.89, y: 27, w: 77.78, h: 14 },
       zoom: 1.4,
     },
     {
       img: `${GT}/gt-returns.png`,
-      title: "Bấm “Nhập kho tất cả” — cộng tồn một lượt",
-      desc: "Quét xong cả xấp, bấm “Nhập kho tất cả đơn đã nhận”: mọi kiện đã nhận cộng lại kho một lượt. Bốn thẻ đếm: chờ về tay, đã nhận chờ nhập kho, quá 14 ngày chưa về, chờ khiếu nại sàn.",
+      title: "Tích chọn rồi “Nhập kho” — cộng tồn một lượt",
+      desc: "Quét xong cả xấp, mở tab “Đã nhận”, tích ô đầu bảng để chọn cả trang rồi bấm “Nhập kho” ở thanh dưới: các kiện đã chọn cộng lại kho một lượt. Hàng hỏng thì bấm “Báo hỏng / mất”. Bốn thẻ đếm: chờ hàng về, đã nhận chờ nhập kho, quá 14 ngày chưa về, hàng hỏng chờ khiếu nại sàn.",
       target: { x: 58.89, y: 47, w: 77.78, h: 26 },
       zoom: 1.3,
     },

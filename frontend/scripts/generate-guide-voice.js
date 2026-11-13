@@ -152,8 +152,8 @@ const TOURS = {
     "Cuối cùng, Trợ lý vận hành, mục Cảnh báo và P&L Sản phẩm. Mỗi SKU một dòng: đã bán, doanh thu thuần, giá vốn, phí sàn và ship phân bổ, trần chi quảng cáo, lợi nhuận. Chip Cần xử lý ngay gom mã đang lỗ. Chip Chưa nhập giá vốn nhắc mã chưa có số để tính.",
   ],
   giutien: [
-    "Vào Quản lý Kho, chọn Đối soát đơn hoàn. Đơn sàn báo hoàn tự đổ về danh sách. Hàng về tới kho, bắn máy quét mã vận đơn vào ô, hoặc bật camera quét. Bắn xong tự tra, không cần bấm gì thêm.",
-    "Quét xong cả xấp, bấm Nhập kho tất cả đơn đã nhận. Mọi kiện đã nhận được cộng lại kho một lượt. Bốn thẻ đếm: chờ về tay, đã nhận chờ nhập kho, quá mười bốn ngày chưa về, và chờ khiếu nại sàn.",
+    "Vào Quản lý Kho, chọn Đối soát đơn hoàn. Đơn sàn báo hoàn tự đổ về danh sách. Hàng về tới kho, bắn máy quét mã vận đơn vào ô ở đầu trang, hoặc bật camera quét. Bắn xong tự nhận, bắn liên tục cả xấp không cần bấm gì thêm.",
+    "Quét xong cả xấp, mở tab Đã nhận, tích ô đầu bảng để chọn cả trang rồi bấm Nhập kho ở thanh dưới. Các kiện đã chọn được cộng lại kho một lượt. Hàng hỏng thì bấm Báo hỏng. Bốn thẻ đếm: chờ hàng về, đã nhận chờ nhập kho, quá mười bốn ngày chưa về, và hàng hỏng chờ khiếu nại sàn.",
     "Dòng đỏ là kiện quá mười bốn ngày chưa về tay, đủ căn cứ khiếu nại đơn vị vận chuyển. Cột Tình trạng theo dõi tới cùng: Chờ về tay, Đã nhập kho, hoặc Chờ khiếu nại sàn khi hàng hỏng, thiếu, rồi Đã đền bù kèm số tiền sàn trả.",
     "Sang Đối soát phí ship. Trang này so phí vận chuyển sàn báo lúc tạo đơn với phí thực trừ khi quyết toán. Chênh lệch âm là tiền shop bị trừ thêm. Thẻ trên cho tổng số đơn lệch và tổng tiền cần đòi lại.",
     "Bấm Xuất file khiếu nại sàn để lấy danh sách gửi Shopee hoặc Lazada đòi tiền. Mỗi dòng có nút chuyển trạng thái: Chờ khiếu nại, Đang khiếu nại, Đã đối soát, để không quên đơn nào.",

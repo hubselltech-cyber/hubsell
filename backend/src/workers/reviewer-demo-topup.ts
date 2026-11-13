@@ -517,7 +517,7 @@ async function ageOrders(
     const returnedAt = new Date(o.returnRequestedAt!.getTime() + hashBetween(o.id, "rettransit", RETURN_TRANSIT_DAYS[0], RETURN_TRANSIT_DAYS[1]) * DAY_MS);
     if (returnedAt > now) continue;
     const rr = hashUnit(o.id, "retoutcome");
-    // 40% dừng ở RECEIVED (đã quét nhận, chờ "Nhập kho tất cả") — để người
+    // 40% dừng ở RECEIVED (đã quét nhận, chờ nhập kho) — để người
     // duyệt có việc bấm thật trên màn Hoàn; phần còn lại đã chốt xong.
     const returnStatus =
       rr < 0.4 ? ReturnStatus.RECEIVED
