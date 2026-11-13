@@ -343,3 +343,26 @@ Anh Trung (gửi ảnh hàng tiêu đề bảng): "Thêm mũi tên lên xuống 
 - Xếp theo NGÀY SÀN BÁO HOÀN (`returnRequestedAt`), không theo con số ngày hiển thị: với đơn kho đã nhận, số ngày là thời gian kiện đi đường nên ở tab Tất cả cột số có thể không tăng / giảm đều. Đơn chưa rõ mốc luôn xếp cuối ở cả hai chiều.
 - Backend: `GET /api/warehouse/returns?sort=newest`; không gửi = như cũ. Web: `fetchWarehouseReturns({ newestFirst })`.
 - Đã kiểm local: bấm đổi được hai chiều, danh sách đổi đúng thứ tự ngày, yêu cầu có `sort=newest`; tsc backend + frontend, eslint sạch. Chưa có test tự động cho thứ tự.
+
+## 14. Thẻ to thành bộ lọc tình trạng + chip lọc Trạng thái vận chuyển + mũi tên nền tròn (13/11/2026 tối) — đã commit + push 13/11 tối
+
+Anh Trung (ảnh prod khoanh hàng chip tình trạng + mũi tên chỉ lên các thẻ, khoanh mũi tên sắp xếp): "Anh thấy 2 bộ lọc anh khoanh là một, em chuyển hết về bộ lọc ở trong các khối to. Thay thế bộ lọc nhỏ bằng bộ lọc cho Trạng thái vận chuyển. Mũi tên điều chỉnh lên xuống anh cần một background tròn bao quanh mũi tên, đỏ sẽ sắp xếp cho ngày cũ tới mới, xanh thì sắp xếp từ mới trước."
+
+**1. Thẻ to = bộ lọc TÌNH TRẠNG KHO.** Bấm thẻ để lọc (viền đậm quanh thẻ đang chọn), bấm lại để bỏ lọc. Năm thẻ: Chờ hàng về · Đã nhận · chờ nhập kho · Quá 14 ngày chưa về · Hàng hỏng · khiếu nại sàn · Đã nhập kho.
+
+- Bốn thẻ cũ giữ nguyên vị trí. Thẻ **Đã nhập kho** là thẻ MỚI ở cuối (em thêm, vì chip "Đã nhập kho" bị gỡ mà chưa có thẻ nào thay).
+- Thẻ thứ tư đổi tên từ "Hàng hỏng · chờ khiếu nại sàn" thành "Hàng hỏng · khiếu nại sàn" và đổi số: trước là riêng đơn hỏng chờ khiếu nại, nay là cả nhóm của chip "Hao hụt/Khiếu nại" cũ (hỏng + đã đền bù + xóa sổ) để số trên thẻ khớp số dòng khi bấm; dòng phụ ghi "N chờ khiếu nại · M đã chốt".
+- Thẻ "Quá 14 ngày chưa về" trước chỉ là con số, nay lọc được: backend `status=OVERDUE` (Chờ hàng về + sàn báo hoàn đã đủ 14 ngày, cùng ngưỡng `agingOf`).
+- Lưới thẻ: 5 cột từ 1400 px, hẹp hơn 3 cột, rồi 2 cột. Viết `min-[87.5rem]` chứ không `min-[1400px]` — Tailwind xếp luật theo đơn vị, viết px thì luật `lg:` đứng sau và thắng (đã dính, đo JS mới thấy).
+
+**2. Hàng chip = bộ lọc TRẠNG THÁI VẬN CHUYỂN:** Tất cả · Hoàn thành công · Đang hoàn về · Chờ khách gửi hàng · Giao thất bại · Chưa có tin từ hãng. Chip 0 đơn ẩn đi (trừ chip đang chọn). Số trên chip đếm trong thẻ đang chọn; đổi thẻ thì chip về "Tất cả". Số trên thẻ không đổi theo chip.
+
+- Lọc theo đúng thứ ĐÃ LƯU trong `Order`: `returnShippingWhere` (điều kiện Prisma) là bản SQL của `returnShippingFilterOf` (hàm thuần cột đang dùng) ở `backend/src/lib/return-shipping.ts`; test `integrations/__tests__/return-shipping-filter-db.test.ts` tạo 17 ca trên Postgres thật (null, chuỗi rỗng, có / không mã vận đơn hoàn) và so hai bên — không sót, không trùng.
+- **Giới hạn phải biết:** kiện giao thất bại quay đầu đang chờ về là MỘT chip riêng ("Giao thất bại"). Trong chip đó từng dòng mới hỏi hãng nên vẫn hiện "Hoàn thành công" / "Đang hoàn về" / "Chưa có tin từ hãng" lẫn nhau; và chip "Hoàn thành công" KHÔNG gồm kiện giao thất bại mà hãng báo đã trả (kết quả hỏi hãng không lưu DB — mục 12). Muốn lọc được đúng ca "hãng báo đã trả, kho chưa nhận" phải lưu mốc hãng trả kiện + quét nền; chưa làm, chờ anh quyết vì tốn lượt gọi sàn.
+- Backend: `GET /api/warehouse/returns?ship=`; trả thêm `shippingCounts`. Không thêm truy vấn khi không gõ ô tìm (đọc chung lượt lấy đơn Chờ hàng về vốn có để đếm quá hạn, thêm 3 cột nhỏ); có ô tìm thì thêm 1 truy vấn. Đơn kho đã nhận lấy thẳng từ số đếm theo trạng thái.
+
+**3. Mũi tên sắp xếp** ở tiêu đề cột Thời gian chờ nằm trong nền tròn: ĐỎ + ↓ = ngày cũ → mới (mặc định, chờ lâu nhất trước); XANH + ↑ = mới nhất trước. Viết tay trong trang (không dùng `SortHeader` chung vì cần nền màu).
+
+**Bề rộng:** ở 1440 (sidebar mở) hàng chip đủ cả 5 chip thì ô lọc gian + ô tìm rớt xuống dòng thứ hai; shop thường chỉ có 2–3 chip khác 0 nên thường vừa một dòng (chưa đo trên dữ liệu thật).
+
+**Đã kiểm trên local** (tài khoản reviewer@): bấm từng thẻ / chip, số trên chip = số dòng (17 = 2 + 2 + 2 + 7 + 4); thẻ Quá 14 ngày ra đúng 2 đơn 14 / 15 ngày; mũi tên đổi đỏ ↔ xanh và đổi thứ tự; giao diện tối. tsc backend + frontend, eslint sạch; vitest các tệp return / warehouse / order-tracking 153 ca qua. Cả bộ test backend trước khi đẩy: 2.502 / 2.517 qua, 7 ca trượt là các ca test DB máy dev đã trượt từ trước (`ads-rows-ledger-db`, `channel-delete-db` 3 ca, `order-ledger-db`, `realized-pnl-ledger-db`, `reviewer-demo-topup`). **Chưa kiểm:** màn hẹp dưới 1280, app mobile (API cũ của app không đổi: `status` cũ vẫn chạy như trước).

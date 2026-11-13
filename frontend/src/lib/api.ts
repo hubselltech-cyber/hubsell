@@ -2163,6 +2163,18 @@ export interface ReturnShipping {
   failedDelivery: boolean;
 }
 
+/**
+ * Nhóm lọc theo Trạng thái vận chuyển (hàng chip của Đối soát đơn hoàn) — khớp
+ * ReturnShippingFilter ở backend. FAILED_DELIVERY = kiện giao thất bại quay đầu, kho chưa
+ * nhận: hãng đã trả hay chưa chỉ biết khi hỏi hành trình lúc xem, không lọc tiếp được.
+ */
+export type ReturnShippingFilter =
+  | "RETURNED"
+  | "RETURNING"
+  | "WAITING_BUYER"
+  | "FAILED_DELIVERY"
+  | "NO_SIGNAL";
+
 export interface ReturnRow extends Order {
   /** Số ngày kể từ lúc sàn báo hoàn — null khi chưa rõ mốc bắt đầu */
   daysWaiting: number | null;
@@ -2178,6 +2190,8 @@ export interface WarehouseReturnsResponse {
   pageSize: number;
   pageCount: number;
   summary: Record<string, number>;
+  /** Số đơn theo từng nhóm Trạng thái vận chuyển, đếm trong tình trạng kho đang lọc. Thiếu khi backend bản cũ. */
+  shippingCounts?: Partial<Record<ReturnShippingFilter, number>>;
   /** Tổng tiền đã đòi được — dành cho module Tài chính hạch toán sau */
   totalCompensated: number;
   thresholds: { warningDays: number; overdueDays: number };
@@ -2185,7 +2199,10 @@ export interface WarehouseReturnsResponse {
 
 /** Danh sách đối soát đơn hoàn của kho, kèm số ngày chờ và mức cảnh báo. */
 export function fetchWarehouseReturns(params: {
+  /** Tình trạng kho (thẻ to): một ReturnStatus, ISSUES, hoặc OVERDUE = chờ về đã quá hạn. */
   status?: string;
+  /** Trạng thái vận chuyển (hàng chip). */
+  ship?: ReturnShippingFilter;
   search?: string;
   channel?: ChannelFilterQuery;
   /** Lọc theo ngày sàn báo hoàn; null / bỏ trống = toàn bộ thời gian. */
@@ -2201,6 +2218,7 @@ export function fetchWarehouseReturns(params: {
   });
   if (params.newestFirst) qs.set("sort", "newest");
   if (params.status) qs.set("status", params.status);
+  if (params.ship) qs.set("ship", params.ship);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));

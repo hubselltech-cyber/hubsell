@@ -19,7 +19,7 @@
 // che mất).
 // ============================================================
 
-import { ReturnStatus } from "@prisma/client";
+import { ReturnStatus, type Prisma } from "@prisma/client";
 import { CANCELLED_AFTER_SHIP } from "../integrations/cancelled-after-ship";
 
 export type ReturnShippingState =
@@ -86,4 +86,84 @@ export function returnShippingOf(order: {
     return { state: "RETURNING", at: null, source: null, failedDelivery: false };
   }
   return { state: "WAITING_BUYER", at: null, source: null, failedDelivery: false };
+}
+
+// ───────── BỘ LỌC theo Trạng thái vận chuyển (13/11/2026 tối) ─────────
+// Anh Trung: "Thay thế bộ lọc nhỏ bằng bộ lọc cho Trạng thái vận chuyển".
+//
+// Lọc theo đúng những gì ĐÃ LƯU trong Order (cùng luật với returnShippingOf).
+// Kiện giao thất bại đang chờ về là một nhóm riêng (FAILED_DELIVERY): hãng đã trả
+// kiện hay chưa chỉ biết khi hỏi hành trình lúc xem trang và KHÔNG lưu lại, nên
+// nhóm này không tách tiếp được thành "đang hoàn về" / "hoàn thành công" ở tầng DB.
+
+export type ReturnShippingFilter =
+  | "RETURNED"
+  | "RETURNING"
+  | "WAITING_BUYER"
+  /** Kiện giao thất bại quay đầu, kho chưa nhận, sàn chưa báo về. */
+  | "FAILED_DELIVERY"
+  /** Chờ hàng về mà đơn không có trạng thái sàn nào. */
+  | "NO_SIGNAL";
+
+export const RETURN_SHIPPING_FILTERS: ReturnShippingFilter[] = [
+  "RETURNED",
+  "RETURNING",
+  "WAITING_BUYER",
+  "FAILED_DELIVERY",
+  "NO_SIGNAL",
+];
+
+/** Nhóm lọc của một đơn — suy thẳng từ returnShippingOf để hai bên không lệch nhau. */
+export function returnShippingFilterOf(order: Parameters<typeof returnShippingOf>[0]): ReturnShippingFilter {
+  const s = returnShippingOf(order);
+  if (s.state === "NO_SIGNAL") return s.failedDelivery ? "FAILED_DELIVERY" : "NO_SIGNAL";
+  return s.state;
+}
+
+/** Trạng thái đã qua bước kho nhận kiện (mọi thứ trừ NONE / AWAITING). */
+const IN_HAND_STATUSES = Object.values(ReturnStatus).filter(
+  (s) => s !== ReturnStatus.NONE && s !== ReturnStatus.AWAITING
+);
+
+/**
+ * Điều kiện Prisma của từng nhóm lọc — BẢN SQL của returnShippingFilterOf. Sửa một
+ * bên phải sửa bên kia; integrations/__tests__/return-shipping-filter-db.test.ts
+ * so hai bên trên Postgres thật.
+ */
+export function returnShippingWhere(filter: ReturnShippingFilter): Prisma.OrderWhereInput {
+  // Kho chưa nhận và sàn chưa ghi mốc kiện về.
+  const waiting: Prisma.OrderWhereInput = {
+    returnStatus: ReturnStatus.AWAITING,
+    returnDeliveredAt: null,
+  };
+  // Còn yêu cầu trả hàng của khách đang sống (không phải giao thất bại, chưa báo về).
+  const alive: Prisma.OrderWhereInput = {
+    ...waiting,
+    platformReturnStatus: { not: null, notIn: ["", CANCELLED_AFTER_SHIP, LAZADA_RETURNED] },
+  };
+  const buyerShipped: Prisma.OrderWhereInput = {
+    OR: [
+      { returnTrackingCode: { not: null, notIn: [""] } },
+      { platformReturnStatus: { contains: "BUYER_SHIPPED" } },
+      { platformReturnStatus: { contains: "BUYER_RETURN_ITEM" } },
+    ],
+  };
+  switch (filter) {
+    case "RETURNED":
+      return {
+        OR: [
+          { returnStatus: { in: IN_HAND_STATUSES } },
+          { returnStatus: ReturnStatus.AWAITING, returnDeliveredAt: { not: null } },
+          { ...waiting, platformReturnStatus: LAZADA_RETURNED },
+        ],
+      };
+    case "FAILED_DELIVERY":
+      return { ...waiting, platformReturnStatus: CANCELLED_AFTER_SHIP };
+    case "NO_SIGNAL":
+      return { ...waiting, OR: [{ platformReturnStatus: null }, { platformReturnStatus: "" }] };
+    case "RETURNING":
+      return { AND: [alive, buyerShipped] };
+    case "WAITING_BUYER":
+      return { AND: [alive, { NOT: buyerShipped }] };
+  }
 }

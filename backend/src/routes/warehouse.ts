@@ -6,7 +6,13 @@ import { channelScope } from "../lib/channel-filter";
 import { parseDateRange } from "../lib/date-range";
 import { attachItemImages } from "../services/item-images";
 import { BULK_RECEIVE_FROM, RETURN_BULK_MAX, parseBulkIds } from "../lib/return-bulk";
-import { returnShippingOf } from "../lib/return-shipping";
+import {
+  RETURN_SHIPPING_FILTERS,
+  returnShippingFilterOf,
+  returnShippingOf,
+  returnShippingWhere,
+  type ReturnShippingFilter,
+} from "../lib/return-shipping";
 import { RETURN_LEG_BATCH_MAX, getReturnLegForOrders } from "../services/order-tracking";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
@@ -111,10 +117,15 @@ function agingOf(
 }
 
 /**
- * GET /api/warehouse/returns?status=&search=&page=&pageSize=&from=&to=&sort=
+ * GET /api/warehouse/returns?status=&ship=&search=&page=&pageSize=&from=&to=&sort=
  * Danh sách đơn hoàn kèm số ngày chờ và mức cảnh báo. `from`/`to` (yyyy-mm-dd,
  * 13/11/2026) lọc theo NGÀY SÀN BÁO HOÀN — danh sách, số trên tab và bốn thẻ
  * cùng theo kỳ; không gửi = toàn bộ thời gian (đơn chưa rõ mốc chỉ hiện khi đó).
+ *
+ * Hai bộ lọc độc lập (13/11/2026 tối, anh Trung): `status` = TÌNH TRẠNG KHO (các thẻ
+ * to; thêm OVERDUE = chờ hàng về đã quá hạn), `ship` = TRẠNG THÁI VẬN CHUYỂN (hàng
+ * chip, lib/return-shipping.ts). Số trên thẻ (`summary`) không đổi theo hai bộ lọc
+ * này; số trên chip (`shippingCounts`) đếm trong tình trạng kho đang chọn.
  */
 router.get("/returns", async (req: AuthRequest, res, next) => {
   try {
@@ -133,15 +144,9 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       ...(range ? { returnRequestedAt: range } : {}),
     };
 
-    const where: Prisma.OrderWhereInput = {
+    // Phạm vi + ô tìm — nền chung cho số trên thẻ; hai bộ lọc xếp chồng lên trên.
+    const base: Prisma.OrderWhereInput = {
       ...scope,
-      ...(statusQ === "ISSUES"
-        ? { returnStatus: { in: ISSUE_STATUSES } }
-        : statusQ === "SCANNED"
-          ? { returnStatus: { in: SCANNED_STATUSES } }
-          : (Object.values(ReturnStatus) as string[]).includes(statusQ)
-            ? { returnStatus: statusQ as ReturnStatus }
-            : {}),
       ...(search
         ? {
             OR: [
@@ -152,6 +157,47 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
           }
         : {}),
     };
+
+    // Bộ lọc TÌNH TRẠNG KHO. `statuses` = các returnStatus lọt qua (null = tất cả).
+    const overdueOnly = statusQ === "OVERDUE";
+    const statuses: ReturnStatus[] | null =
+      statusQ === "ISSUES"
+        ? ISSUE_STATUSES
+        : statusQ === "SCANNED"
+          ? SCANNED_STATUSES
+          : overdueOnly
+            ? [ReturnStatus.AWAITING]
+            : (Object.values(ReturnStatus) as string[]).includes(statusQ)
+              ? [statusQ as ReturnStatus]
+              : null;
+    const statusWhere: Prisma.OrderWhereInput = {
+      ...(statuses ? { returnStatus: { in: statuses } } : {}),
+      // Cùng ngưỡng với agingOf: đủ RETURN_OVERDUE_DAYS ngày kể từ lúc sàn báo hoàn.
+      ...(overdueOnly
+        ? {
+            returnRequestedAt: {
+              lte: new Date(Date.now() - RETURN_OVERDUE_DAYS * 24 * 60 * 60 * 1000),
+            },
+          }
+        : {}),
+    };
+
+    // Bộ lọc TRẠNG THÁI VẬN CHUYỂN.
+    const shipQ = RETURN_SHIPPING_FILTERS.find((f) => f === req.query.ship) ?? null;
+    const where: Prisma.OrderWhereInput = {
+      AND: [base, statusWhere, ...(shipQ ? [returnShippingWhere(shipQ)] : [])],
+    };
+
+    // Đơn Chờ hàng về: vừa để đếm quá hạn cho thẻ (theo `scope`), vừa để đếm số trên
+    // chip Trạng thái vận chuyển. Có ô tìm thì chip phải đếm trong kết quả tìm → một
+    // truy vấn riêng; không thì dùng chung một lượt đọc.
+    const awaitingSelect = {
+      returnRequestedAt: true,
+      platformReturnStatus: true,
+      returnDeliveredAt: true,
+      returnTrackingCode: true,
+    } as const;
+    const statusAllowsAwaiting = !statuses || statuses.includes(ReturnStatus.AWAITING);
 
     const include = {
       channel: { select: { channelName: true, shopName: true } },
@@ -167,7 +213,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       },
     };
 
-    const [total, rows, byStatus, awaiting] = await Promise.all([
+    const [total, rows, byStatus, awaiting, searchedAwaiting] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.findMany({
         where,
@@ -187,13 +233,19 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
         _count: { _all: true },
         // Tổng tiền đền bù để module Tài chính hạch toán dòng tiền thu về
         _sum: { compensationAmount: true },
-        where: { ...where, returnStatus: { not: ReturnStatus.NONE } },
+        where: base,
       }),
       // Riêng nhóm chờ nhận: cần biết bao nhiêu đơn đã quá hạn
       prisma.order.findMany({
         where: { ...scope, returnStatus: ReturnStatus.AWAITING },
-        select: { returnRequestedAt: true },
+        select: awaitingSelect,
       }),
+      search && statusAllowsAwaiting
+        ? prisma.order.findMany({
+            where: { ...base, returnStatus: ReturnStatus.AWAITING },
+            select: awaitingSelect,
+          })
+        : null,
     ]);
 
     const totalCompensated = byStatus.reduce(
@@ -225,6 +277,24 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       else if (agingLevel === "unknown") summary.unknown++;
     }
 
+    // Số trên chip Trạng thái vận chuyển, đếm trong TÌNH TRẠNG KHO đang chọn (chưa áp
+    // chính bộ lọc vận chuyển, để chip nào cũng có số). Đơn kho đã nhận luôn là
+    // "Hoàn thành công" nên lấy thẳng từ số đếm theo trạng thái, không đọc thêm dòng nào.
+    const shippingCounts = Object.fromEntries(
+      RETURN_SHIPPING_FILTERS.map((f) => [f, 0])
+    ) as Record<ReturnShippingFilter, number>;
+    shippingCounts.RETURNED = SCANNED_STATUSES.filter(
+      (s) => !statuses || statuses.includes(s)
+    ).reduce((n, s) => n + (summary[s] ?? 0), 0);
+    if (statusAllowsAwaiting) {
+      for (const a of searchedAwaiting ?? awaiting) {
+        if (overdueOnly && agingOf(a.returnRequestedAt).agingLevel !== "overdue") continue;
+        shippingCounts[
+          returnShippingFilterOf({ ...a, returnStatus: ReturnStatus.AWAITING, returnedAt: null })
+        ]++;
+      }
+    }
+
     // Gắn ảnh dòng hàng: SP kho gốc → fallback ảnh ChannelProduct
     const rowsWithImages = await attachItemImages(rows);
     res.json({
@@ -242,6 +312,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       pageSize,
       pageCount: Math.ceil(total / pageSize),
       summary,
+      shippingCounts,
       totalCompensated,
       thresholds: {
         warningDays: RETURN_WARNING_DAYS,

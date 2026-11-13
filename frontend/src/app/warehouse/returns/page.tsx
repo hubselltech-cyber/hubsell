@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   ChevronLeft,
   ChevronRight,
   Gavel,
@@ -21,13 +23,15 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
-import { DashboardCard } from "@/components/dashboard/dashboard-card";
+import {
+  DashboardCard,
+  type DashboardCardProps,
+} from "@/components/dashboard/dashboard-card";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
-import { SortHeader, type SortState } from "@/components/shared/sort-header";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
 import {
   ReturnShippingCell,
@@ -59,6 +63,7 @@ import {
   syncWarehouseReturns,
   type ChannelName,
   type Order,
+  type ReturnShippingFilter,
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
@@ -107,16 +112,68 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   },
 };
 
-/** Nhóm trạng thái gộp cho tab Hao hụt/Khiếu nại — khớp filter ISSUES ở backend */
+/** Nhóm trạng thái gộp của thẻ Hàng hỏng · khiếu nại sàn — khớp filter ISSUES ở backend */
 const ISSUE_KEYS = ["DAMAGED", "CLAIM_SETTLED", "WRITTEN_OFF"] as const;
 
-const TABS: { key: string; label: string; countKey: string }[] = [
-  { key: "", label: "Tất cả", countKey: "" },
-  { key: "AWAITING", label: "Chờ hàng về", countKey: "AWAITING" },
-  { key: "RECEIVED", label: "Đã nhận (Chờ nhập kho)", countKey: "RECEIVED" },
-  { key: "RECEIVED_INTACT", label: "Đã nhập kho", countKey: "RECEIVED_INTACT" },
-  { key: "ISSUES", label: "Hao hụt/Khiếu nại", countKey: "ISSUES" },
+/**
+ * Hàng chip = bộ lọc TRẠNG THÁI VẬN CHUYỂN (anh Trung 13/11/2026 tối: "Thay thế bộ lọc
+ * nhỏ bằng bộ lọc cho Trạng thái vận chuyển"). Chữ trùng với cột Trạng thái vận chuyển;
+ * riêng "Giao thất bại" là nhóm kiện quay đầu kho chưa nhận — trong nhóm này từng dòng
+ * mới hỏi hãng nên không tách tiếp được ở bộ lọc.
+ */
+const SHIP_CHIPS: { key: ReturnShippingFilter; label: string; title?: string }[] = [
+  { key: "RETURNED", label: "Hoàn thành công" },
+  { key: "RETURNING", label: "Đang hoàn về" },
+  { key: "WAITING_BUYER", label: "Chờ khách gửi hàng" },
+  {
+    key: "FAILED_DELIVERY",
+    label: "Giao thất bại",
+    title:
+      "Kiện giao thất bại đang quay về, kho chưa nhận. Hãng đã trả kiện hay chưa được hỏi từ hãng vận chuyển cho từng dòng khi mở trang.",
+  },
+  { key: "NO_SIGNAL", label: "Chưa có tin từ hãng" },
 ];
+
+const CHIP_CLASS =
+  "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors";
+const CHIP_ON = "border-primary bg-primary text-primary-foreground";
+const CHIP_OFF = "bg-background text-muted-foreground hover:bg-muted hover:text-foreground";
+
+/**
+ * Thẻ số bấm được = bộ lọc TÌNH TRẠNG KHO (anh Trung 13/11/2026 tối: hàng chip tình
+ * trạng trùng với các thẻ → "chuyển hết về bộ lọc ở trong các khối to"). Bấm thẻ để
+ * lọc, bấm lại thẻ đang chọn để bỏ lọc. role="button" trên div vì thẻ chứa <p>/<div>.
+ */
+function FilterCard({
+  active,
+  onToggle,
+  ...card
+}: DashboardCardProps & { active: boolean; onToggle: () => void }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      title={active ? "Đang lọc theo thẻ này — bấm lần nữa để bỏ lọc" : "Bấm để lọc danh sách theo thẻ này"}
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+      className="h-full cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <DashboardCard
+        {...card}
+        className={cn(
+          "transition-shadow hover:shadow-md",
+          active && "ring-2 ring-primary"
+        )}
+      />
+    </div>
+  );
+}
 
 /**
  * ĐỐI SOÁT ĐƠN HOÀN — nơi DUY NHẤT nhân viên kho thao tác với hàng hoàn.
@@ -134,8 +191,8 @@ const TABS: { key: string; label: string; countKey: string }[] = [
  * đâu trên đường về, hãng đã báo trả xong chưa — components/warehouse/return-shipping-cell.tsx.
  *
  * BỐ CỤC (anh Trung chốt 13/11/2026): đầu trang ô quét gọn (trái) + lọc thời
- * gian, nút đồng bộ (phải) → bốn thẻ số → dải nhắc mỏng → tab trạng thái (trái)
- * + lọc gian, ô tìm (phải) → bảng.
+ * gian, nút đồng bộ (phải) → các thẻ số, BẤM ĐƯỢC = bộ lọc tình trạng kho → dải
+ * nhắc mỏng → chip lọc Trạng thái vận chuyển (trái) + lọc gian, ô tìm (phải) → bảng.
  *
  * Ô TÍCH (13/11/2026, anh Trung): tích theo TỪNG TRANG, tích bao nhiêu tác động
  * bấy nhiêu đơn — thanh nổi đáy màn có Nhận hàng / Nhập kho / Báo hỏng cho các
@@ -150,18 +207,20 @@ export default function WarehouseReturnsPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  /** Tình trạng kho đang lọc (thẻ to): "" = tất cả. */
   const [tab, setTab] = useState("");
+  /** Trạng thái vận chuyển đang lọc (hàng chip): "" = tất cả. */
+  const [ship, setShip] = useState<ReturnShippingFilter | "">("");
   const [channelFilter, setChannelFilter] =
     useState<ChannelFilterValue>(ALL_CHANNELS);
   /** Lọc theo ngày sàn báo hoàn; null = toàn bộ thời gian (mặc định — đơn chờ về có thể rất cũ). */
   const [range, setRange] = useState<DateRange | null>(null);
   /**
-   * Sắp theo ngày sàn báo hoàn, bấm ở tiêu đề cột Thời gian chờ (anh Trung 13/11/2026:
-   * "thêm mũi tên lên xuống… để sắp xếp mới, cũ"). desc = chờ lâu nhất (cũ nhất) trước —
-   * mặc định như cũ; asc = mới nhất trước.
+   * Sắp theo ngày sàn báo hoàn, bấm mũi tên ở tiêu đề cột Thời gian chờ (anh Trung
+   * 13/11/2026). false = cũ → mới (chờ lâu nhất trước, mặc định như cũ, nền ĐỎ);
+   * true = mới nhất trước (nền XANH).
    */
-  const [sort, setSort] = useState<SortState<"waiting">>({ key: "waiting", dir: "desc" });
-  const newestFirst = sort.dir === "asc";
+  const [newestFirst, setNewestFirst] = useState(false);
   const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -203,6 +262,7 @@ export default function WarehouseReturnsPage() {
   const returnsQ = useApiQuery({
     queryKey: qk.warehouseReturns({
       status: tab || undefined,
+      ship: ship || undefined,
       search: debounced || undefined,
       channel: channelFilterToQuery(channelFilter),
       range: rangeToQuery(range ?? undefined),
@@ -213,6 +273,7 @@ export default function WarehouseReturnsPage() {
     queryFn: () =>
       fetchWarehouseReturns({
         status: tab || undefined,
+        ship: ship || undefined,
         search: debounced || undefined,
         channel: channelFilter,
         range,
@@ -232,6 +293,7 @@ export default function WarehouseReturnsPage() {
   const carrierById = useReturnCarrierStatus(rows);
   const viewKey = JSON.stringify([
     tab,
+    ship,
     debounced,
     channelFilter,
     rangeToQuery(range ?? undefined),
@@ -398,8 +460,20 @@ export default function WarehouseReturnsPage() {
   /** Số đơn đã quét nhận, đang chờ nhập kho — theo bộ lọc đang xem (thẻ + tab) */
   const receivedCount = summary.RECEIVED ?? 0;
 
+  const issuesCount = ISSUE_KEYS.reduce((sum, k) => sum + (summary[k] ?? 0), 0);
+  const shipCounts = returnsQ.data?.shippingCounts ?? {};
+  /** Tổng đơn trong tình trạng kho đang chọn — số trên chip "Tất cả". */
+  const shipTotal = Object.values(shipCounts).reduce((sum, n) => sum + (n ?? 0), 0);
+  /** Bấm thẻ: lọc theo thẻ đó, bấm lại thì bỏ lọc; đổi thẻ là về chip "Tất cả". */
+  const toggleTab = (key: string) => {
+    setTab((cur) => (cur === key ? "" : key));
+    setShip("");
+    setPage(1);
+  };
+
   const isFiltering =
     Boolean(tab) ||
+    Boolean(ship) ||
     Boolean(search.trim()) ||
     Boolean(channelFilter.channelName) ||
     range !== null;
@@ -447,23 +521,33 @@ export default function WarehouseReturnsPage() {
           </div>
         </div>
 
-        {/* ===== BỐN CHỈ SỐ ĐỐI SOÁT ===== */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <DashboardCard
+        {/* ===== CÁC THẺ SỐ = BỘ LỌC TÌNH TRẠNG KHO (bấm để lọc, bấm lại để bỏ) =====
+             Bốn thẻ cũ giữ nguyên vị trí; thêm "Đã nhập kho" ở cuối để đủ mọi lựa chọn
+             của hàng chip tình trạng đã gỡ. Năm cột từ 1400 px, hẹp hơn thì 3 / 2 cột
+             (viết 87.5rem chứ không 1400px: Tailwind xếp luật theo đơn vị, viết px thì
+             luật lg: đứng sau và thắng). */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 min-[87.5rem]:grid-cols-5">
+          <FilterCard
+            active={tab === "AWAITING"}
+            onToggle={() => toggleTab("AWAITING")}
             title="Chờ hàng về"
             value={formatNumber(summary.AWAITING ?? 0)}
             icon={PackageSearch}
             tone="warning"
             subtitle="Sàn đã báo hoàn, kho chưa quét nhận"
           />
-          <DashboardCard
+          <FilterCard
+            active={tab === "RECEIVED"}
+            onToggle={() => toggleTab("RECEIVED")}
             title="Đã nhận · chờ nhập kho"
             value={formatNumber(receivedCount)}
             icon={PackageOpen}
             tone={receivedCount > 0 ? "positive" : "neutral"}
             subtitle="Hàng đã về tay, chờ cộng lại tồn kho"
           />
-          <DashboardCard
+          <FilterCard
+            active={tab === "OVERDUE"}
+            onToggle={() => toggleTab("OVERDUE")}
             title={`Quá ${thresholds.overdueDays} ngày chưa về`}
             value={formatNumber(overdue)}
             icon={Timer}
@@ -471,13 +555,25 @@ export default function WarehouseReturnsPage() {
             featured={overdue > 0}
             subtitle="Căn cứ khiếu nại bưu cục"
           />
-          <DashboardCard
-            title="Hàng hỏng · chờ khiếu nại sàn"
-            value={formatNumber(summary.DAMAGED ?? 0)}
+          <FilterCard
+            active={tab === "ISSUES"}
+            onToggle={() => toggleTab("ISSUES")}
+            title="Hàng hỏng · khiếu nại sàn"
+            value={formatNumber(issuesCount)}
             icon={PackageX}
             tone="negative"
             colorValue
-            subtitle="Hàng hư hỏng / mất / bị tráo"
+            subtitle={`${formatNumber(summary.DAMAGED ?? 0)} chờ khiếu nại · ${formatNumber(
+              issuesCount - (summary.DAMAGED ?? 0)
+            )} đã chốt`}
+          />
+          <FilterCard
+            active={tab === "RECEIVED_INTACT"}
+            onToggle={() => toggleTab("RECEIVED_INTACT")}
+            title="Đã nhập kho"
+            value={formatNumber(summary.RECEIVED_INTACT ?? 0)}
+            icon={PackageCheck}
+            subtitle="Hàng nguyên vẹn, đã cộng lại tồn kho"
           />
         </div>
 
@@ -503,44 +599,43 @@ export default function WarehouseReturnsPage() {
           </p>
         )}
 
-        {/* ===== TAB TRẠNG THÁI (trái) + lọc gian + ô tìm (phải), sát bảng ===== */}
+        {/* ===== CHIP LỌC TRẠNG THÁI VẬN CHUYỂN (trái) + lọc gian + ô tìm (phải) =====
+             Số trên chip đếm trong tình trạng kho đang chọn ở thẻ. Chip 0 đơn ẩn đi
+             (trừ chip đang chọn) cho hàng lọc ngắn. */}
         <div className="flex flex-wrap items-center gap-2">
-          {TABS.map((t) => {
-            const active = tab === t.key;
-            // Tab "Tất cả" cộng dồn TỪ DANH SÁCH TRẠNG THÁI, không liệt kê tay
-            // — thêm trạng thái mới mà quên cộng vào đây là con số lệch âm thầm
-            // (đã dính đúng lỗi này khi thêm Hao hụt).
-            // Tab gộp Hao hụt/Khiếu nại cũng cộng từ ISSUE_KEYS cùng lý do.
-            const count =
-              t.countKey === "ISSUES"
-                ? ISSUE_KEYS.reduce((sum, k) => sum + (summary[k] ?? 0), 0)
-                : t.countKey
-                  ? summary[t.countKey]
-                  : Object.keys(STATUS_META).reduce(
-                      (sum, k) => sum + (summary[k] ?? 0),
-                      0
-                    );
+          <button
+            type="button"
+            aria-pressed={ship === ""}
+            onClick={() => {
+              setShip("");
+              setPage(1);
+            }}
+            className={cn(CHIP_CLASS, ship === "" ? CHIP_ON : CHIP_OFF)}
+          >
+            Tất cả
+            {shipTotal > 0 && (
+              <span className="tabular-nums opacity-70">{formatNumber(shipTotal)}</span>
+            )}
+          </button>
+          {SHIP_CHIPS.map((c) => {
+            const active = ship === c.key;
+            const count = shipCounts[c.key] ?? 0;
+            if (count === 0 && !active) return null;
             return (
               <button
-                key={t.key || "all"}
+                key={c.key}
                 type="button"
                 aria-pressed={active}
+                title={c.title}
                 onClick={() => {
-                  setTab(t.key);
+                  setShip(active ? "" : c.key);
                   setPage(1);
                 }}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
+                className={cn(CHIP_CLASS, active ? CHIP_ON : CHIP_OFF)}
               >
-                {t.label}
-                {count !== undefined && count > 0 && (
-                  <span className="tabular-nums opacity-70">
-                    {formatNumber(count)}
-                  </span>
+                {c.label}
+                {count > 0 && (
+                  <span className="tabular-nums opacity-70">{formatNumber(count)}</span>
                 )}
               </button>
             );
@@ -610,23 +705,36 @@ export default function WarehouseReturnsPage() {
                       <TableHead>Trạng thái vận chuyển</TableHead>
                       <TableHead>Sản phẩm</TableHead>
                       <TableHead>Vận chuyển</TableHead>
-                      <TableHead
-                        aria-sort={newestFirst ? "ascending" : "descending"}
-                      >
-                        <SortHeader
-                          label="Thời gian chờ"
-                          sortKey="waiting"
-                          sort={sort}
-                          onSort={(next) => {
-                            setSort(next);
+                      <TableHead aria-sort={newestFirst ? "ascending" : "descending"}>
+                        {/* Mũi tên trong nền tròn (anh Trung 13/11/2026): ĐỎ = ngày cũ
+                            → mới, XANH = mới nhất trước. Bấm để đổi chiều. */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewestFirst((v) => !v);
                             setPage(1);
                           }}
                           title={
                             newestFirst
-                              ? "Đang xếp: sàn báo hoàn mới nhất trước. Bấm để xếp đơn cũ nhất (chờ lâu nhất) trước."
-                              : "Đang xếp: đơn cũ nhất (chờ lâu nhất) trước. Bấm để xếp sàn báo hoàn mới nhất trước."
+                              ? "Đang xếp: sàn báo hoàn mới nhất trước. Bấm để xếp từ ngày cũ tới mới."
+                              : "Đang xếp: từ ngày cũ tới mới (chờ lâu nhất trước). Bấm để xếp mới nhất trước."
                           }
-                        />
+                          className="inline-flex items-center gap-1.5 font-medium text-foreground"
+                        >
+                          Thời gian chờ
+                          <span
+                            className={cn(
+                              "flex size-5 shrink-0 items-center justify-center rounded-full text-white",
+                              newestFirst ? "bg-emerald-500" : "bg-red-500"
+                            )}
+                          >
+                            {newestFirst ? (
+                              <ArrowUp className="size-3.5" strokeWidth={2.5} />
+                            ) : (
+                              <ArrowDown className="size-3.5" strokeWidth={2.5} />
+                            )}
+                          </span>
+                        </button>
                       </TableHead>
                       <TableHead>Tình trạng</TableHead>
                       <TableHead className="text-center">Thao tác</TableHead>
