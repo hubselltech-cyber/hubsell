@@ -1256,7 +1256,7 @@ Nguyên tắc giữ nguyên: mỗi lát giao được riêng; công tắc theo s
   (6) khóa màn hình / chuyển app thì sao; (7) tải 50 clip qua Wi-Fi và 4G: thời gian, tỷ lệ hỏng, tắt trình duyệt rồi mở lại có tải
   tiếp không; (8) bấm giờ gói 30–50 kiện thật; (9) xem lại có nhận ra món hàng, đọc được tem không; (10) in chữ mã vận đơn + giờ vào hình.
 - Xong khi: có bảng số thật thay mục 29; chốt được bậc chất lượng mặc định và đường quay.
-- Anh làm: tạo tài khoản Cloudflare + bật R2 (tên công ty); cho em biết anh có điện thoại Android, iPhone hay cả hai; một chân đứng
+- Anh làm: tạo tài khoản Cloudflare + bật R2 (~~tên công ty~~ — sửa 14/11: tên CÁ NHÂN, xem mục 56); cho em biết anh có điện thoại Android, iPhone hay cả hai; một chân đứng
   điện thoại; vài chục kiện thật có tem. Khóa R2 anh tự dán vào tệp cấu hình ở máy.
 - Rủi ro: thấp. Bucket thử xóa sau khi đo.
 
@@ -1439,7 +1439,7 @@ tua được không; tải 50 clip lên R2 miễn phí qua Wi-Fi và 4G, kể c�
 **Anh cần làm cho lát 0:**
 1. Cho em biết máy thử là Android, iPhone hay cả hai. Android: em dựng tệp cài tại máy, anh cài thẳng. iPhone: phải dựng qua Expo và
    đăng ký máy của anh vào danh sách máy thử — hạn mức dựng miễn phí của Expo tháng này còn hay hết em chưa kiểm.
-2. Tạo tài khoản Cloudflare + bật R2 (tên công ty) cho phần tải thử. Cửa 1–3 chưa cần R2, làm trước được.
+2. Tạo tài khoản Cloudflare + bật R2 (~~tên công ty~~ — sửa 14/11: tên CÁ NHÂN, xem mục 56) cho phần tải thử. Cửa 1–3 chưa cần R2, làm trước được.
 3. Một chân đứng điện thoại và vài chục kiện có tem thật.
 
 ### 37.4 Lát 1 (sau khi lát 0 qua)
@@ -2615,3 +2615,97 @@ https://seller-vn.tiktok.com/university/essay?knowledge_id=1766935302801169&defa
 https://seller-vn.tiktok.com/university/essay?knowledge_id=5104634859620098 ·
 https://www.bigseller.com/blog/articleDetails/tiktok-shop-refund-appeal-rules-philippines-2026.5071.htm ·
 https://www.bigseller.com/blog/articleDetails/tiktok-shop-malaysia-policy-update-2026.5012.htm
+
+
+## 56. Đăng ký R2 + thuế: Cloudflare KHÔNG có pháp nhân bán hàng ở Việt Nam, CHƯA đăng ký thuế Việt Nam (14/11/2026)
+
+> Anh Trung: "Khảo sát đăng ký R2, vấn đề liên quan tới thuế xem có pháp nhân ở Việt nam không."
+> Chỉ đọc trang công khai + cổng Tổng cục Thuế. Chưa tạo tài khoản, chưa nhập thẻ.
+
+### 56.1 Thuế
+
+| Câu hỏi | Kết quả | Nguồn / cách kiểm |
+|---|---|---|
+| Bên bán là ai | **Cloudflare, Inc.**, 101 Townsend St., San Francisco, Mỹ. Điều khoản tự phục vụ không nêu pháp nhân nào ở Việt Nam hay châu Á | cloudflare.com/terms mục 20 (đọc qua công cụ tóm tắt) |
+| Đã đăng ký thuế Việt Nam chưa | **Chưa.** Danh sách nhà cung cấp nước ngoài đã đăng ký: 334 tên, quét đủ 7 trang, không tên nào chứa "Cloudflare" | etaxvn.gdt.gov.vn/nccnn, em tự quét 14/11 |
+| Hóa đơn có thu VAT Việt Nam không | Không. Trang thuế của Cloudflare liệt kê Mỹ, Nga, Singapore, Đài Loan, Nhật, Canada, Malaysia, Nam Phi, Ấn Độ, Kenya — không có Việt Nam | developers.cloudflare.com/billing/understand/sales-tax (cập nhật 29/05/2026), em tự mở |
+| Có công ty con / văn phòng đại diện ở Việt Nam không | Không tìm thấy. **Chưa tra** Cổng đăng ký doanh nghiệp quốc gia (trang tra mã số thuế chặn công cụ). Có đi nữa cũng không đổi kết luận, vì bên bán trên hóa đơn là Cloudflare, Inc. | tìm web |
+
+→ Theo chính sách anh chốt 08/10 (`docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md`), Cloudflare thuộc nhóm **mua CÁ NHÂN, không khai**: tài khoản + thông tin
+thanh toán tên Nguyen Trung Hieu, ô VAT/GST **để trống**, thẻ cá nhân (không dùng Visa 5692 của công ty), không ghi sổ quỹ, không nạp Hóa đơn đầu vào.
+Câu "(tên công ty)" em viết ở mục 33 và 37.3 là SAI với chính sách này — đã sửa tại chỗ.
+
+Ba điều đi kèm:
+- Giai đoạn thử (lát 0 → lát 1 với tài khoản thử) nằm trong hạn mức miễn phí → hóa đơn 0 USD, chưa có gì để khai dù đứng tên ai. Nhưng tên trên tài
+  khoản nên đặt đúng từ đầu, vì Cloudflare không áp mã số thuế vào hóa đơn đã phát hành.
+- Khi bán giờ quay cho khách (lát 5), tiền R2 thành giá vốn của một sản phẩm có doanh thu mà lại nằm ở cá nhân anh. Trong 3 năm miễn thuế thu nhập
+  doanh nghiệp thì không thiệt gì; tới mốc anh đã ghi ("gọi vốn / doanh thu đủ lớn") mới chuyển sang công ty và khai 01/NTNN nộp thay (≈ 10,8 % theo cách
+  tính 08/10 — hôm nay em KHÔNG kiểm lại thuế suất).
+- Đường lùi nếu sau này cần hóa đơn đứng tên công ty mà không phải khai thay: trong danh sách đã đăng ký có **Amazon Web Services Inc.**
+  (9000001578) và **DigitalOcean, LLC** (9000001440), cả hai có kho tương thích S3. Mã tải lên viết theo giao thức S3 nên đổi kho được; giá của hai nơi
+  này em chưa so (cả hai có tính tiền tải xuống, R2 thì không).
+
+### 56.2 Đăng ký và bật R2
+
+1. Tạo tài khoản Cloudflare bằng email (miễn phí).
+2. Vào R2 (mục Storage & databases) → làm xong bước "checkout" để thêm gói R2 vào tài khoản. Gói tính theo mức dùng, hóa đơn mỗi tháng.
+3. **Phải có phương thức thanh toán dù chỉ dùng hạn mức miễn phí** — theo một sự cố Cloudflare ghi tháng 9/2025 ("không bật được R2 trên tài khoản chưa
+   gắn phương thức thanh toán") và các bài hướng dẫn bên thứ ba; trang tài liệu chính thức không viết rõ, em chưa thấy màn thật.
+4. Nhận thanh toán: Visa, Mastercard, American Express, Discover, PayPal, Apple Pay, Google Pay, Stripe Link, UnionPay.
+5. Tạo bucket + khóa truy cập R2 (anh tự dán khóa vào tệp cấu hình ở máy, em không cầm khóa).
+
+Giá em tự mở lại 14/11 (không đổi so với mục 16.1): lưu 0,015 USD / GB / tháng; lượt ghi 4,50 USD / triệu; lượt đọc 0,36 USD / triệu; tải xuống miễn
+phí; miễn phí mỗi tháng 10 GB + 1 triệu lượt ghi + 10 triệu lượt đọc; không có thời gian lưu tối thiểu. **Làm tròn LÊN theo đơn vị tính tiền**
+("1 triệu lẻ 1 lượt = tính 2 triệu").
+
+### 56.4 Anh đã tạo tài khoản (14/11 khuya) — màn thật em đọc được; thẻ ĐÃ gắn, R2 ĐÃ bật, bucket thử + khóa thử ĐÃ tạo, CHƯA tải thử tệp nào
+
+- Tài khoản Cloudflare đăng ký bằng `dev@hubsell.vn` (anh tự làm), tên hiển thị "Dev@hubsell.vn's Account", gói Workers Free.
+- Tạo tài khoản KHÔNG bắt thẻ. Trang R2 hiện nút "Add R2 subscription to my account", **Total Due Now 0,00 USD**, "Due Monthly 0,00 USD + additional
+  usage", "Plus applicable taxes and fees". Câu chữ trên màn: chỉ tính tiền khi vượt hạn mức tháng; gói tự gia hạn; **"Cloudflare may preauthorize your
+  payment method … to validate funds"** → có thể thấy một khoản giữ tạm trên thẻ.
+- Trang Billing: "No payment method on file". Hộp "Add a payment method" có: Apple Pay / Google Pay / PayPal / thẻ; một khối Link của Stripe (email, số
+  điện thoại, họ tên — để lưu thẻ dùng lại, không bắt buộc); **Billing address** gồm First name, Last name, Country, Address 1–2, City, State, ZIP,
+  **Organization name (optional)**, **Account type**, **VAT/GST (optional)**.
+- Theo nhóm mua cá nhân: Organization name để trống, Account type chọn mục cá nhân (em chưa mở danh sách lựa chọn), VAT/GST để trống.
+- Em không nhập thẻ, không bấm nút thêm gói — phần đó anh tự làm.
+- **Thẻ ĐÃ GẮN (anh tự nhập, 14/11 khuya):** thẻ chính đuôi 9998 (thẻ cá nhân), tên Hieu Nguyen Trung, địa chỉ thanh toán cá nhân, Account type =
+  Personal (danh sách chỉ có Business / Personal), Organization name + VAT/GST trống, thư hóa đơn về `dev@hubsell.vn`. Trang R2 nay ghi "We will use the
+  existing credit card on file (…9998)", Total Due Now vẫn 0,00 USD.
+- **GÓI R2 ĐÃ BẬT (14/11 khuya, anh: "Em bấm đi"):** sau nút "Add R2 subscription" còn một màn "Activate R2" với HAI ô phải tích — đồng ý Terms of
+  Service + Privacy Policy, và cho phép Cloudflare trừ thẻ phần dùng vượt hạn mức miễn phí mỗi tháng tới khi hủy (hủy có hiệu lực cuối kỳ). Em tích cả hai
+  và bấm Activate vì nội dung trùng với điều anh đã duyệt (0 USD, thẻ 9998, giá vượt 0,015 / 4,50 / 0,36). Kết quả: "Purchase complete", Due today
+  0 USD. Trang Billing ghi gói tên **"R2 Paid"**, gia hạn 14/12/2026; kỳ dùng 14/11 → 14/12; Billable usage 0,00 USD; chưa có bucket nào.
+  Trang R2 có nút "Add Budget Alert" (chưa đặt). Chưa xem tab Invoices; chưa biết có khoản giữ tạm trên thẻ không — anh xem app ngân hàng.
+- **BUCKET THỬ ĐÃ TẠO (14/11 khuya, anh: "Tạo bucket đi"):** tên `hubsell-video-thu` (tên bucket không đổi được), vị trí để "Automatic" → Cloudflare đặt
+  ở **Asia-Pacific (APAC)**, lớp lưu Standard, Public Access = Disabled, không tên miền riêng, không đường dẫn công khai, **chưa có CORS**, chưa đặt luật
+  vòng đời nào của mình. Địa chỉ S3: `https://<account-id>.r2.cloudflarestorage.com/hubsell-video-thu` (mã tài khoản xem ở trang R2, mục Account Details).
+  Trang tải tay của bảng điều khiển ghi "tệp lớn hơn 300 MB phải tải qua S3 API hoặc Workers".
+  → Sửa một câu cũ: mục 16.1 ghi R2 "không có vùng châu Á" — bucket này nằm ở APAC; cái không có là vùng PHÁP LÝ (jurisdiction) châu Á.
+- **KHÓA THỬ ĐÃ TẠO (14/11 khuya, anh: "Em cứ tạo khóa luôn đi vì đây là test thử, sau tạo dùng thật thì anh sẽ tạo"):** loại Account API token, tên
+  `hubsell-video-thu`, quyền Object Read & Write, **chỉ áp cho bucket `hubsell-video-thu`** (anh để "mọi bucket", em đổi lại trước khi tạo), hết hạn sau 30
+  ngày (≈ 14/12/2026), không lọc IP. Trang kết quả hiện ba ô: Token value, Access Key ID, Secret Access Key — **chỉ hiện một lần** (lúc tạo em chưa đọc giá trị; sau đó anh
+  bảo lưu, xem dòng dưới). Mất thì tạo khóa mới, xóa khóa cũ. ⛔ Khóa dùng thật anh tự tạo, em không tạo.
+  Màn tạo khóa có 4 mức quyền: Admin Read & Write / Admin Read only / Object Read & Write / Object Read only.
+- **Anh bảo lưu luôn khóa thử (14/11 khuya: "mình chỉ đang test nên em cứ chụp lại đi. Làm thật bản mới thì anh sẽ chép và cất"):** em bấm "Click to
+  copy" từng ô rồi đọc bộ nhớ tạm thẳng vào tệp **`.env.r2-thu.local`** ở gốc dự án (khớp dòng `.env*.local` của `.gitignore`, đã kiểm bằng
+  `git check-ignore`), không gõ lại bằng mắt; xong xóa bộ nhớ tạm. Tệp có `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`. Ô "Token value" (dùng cho API quản trị Cloudflare) KHÔNG lưu vì tải tệp không cần. Giá trị khóa có lọt vào ảnh chụp màn hình
+  của phiên làm việc (thư mục phiên của Claude trên máy anh) — chấp nhận vì là khóa thử, chỉ một bucket trống, hết hạn ≈ 14/12/2026.
+  Bấm thẳng vào ô khóa thì KHÔNG chép; phải bấm đúng dòng chữ "Click to copy" bên dưới.
+- **Gọi thử bằng khóa đó từ máy anh (Hà Nội, 14/11 khuya, một lượt, ký SigV4 vùng `auto`):** liệt kê 200 (598 ms) → ghi tệp chữ nhỏ 200 (951 ms) → đọc
+  lại 200, nội dung khớp (564 ms) → xóa 204 (171 ms) → bucket lại trống. Liệt kê MỌI bucket bằng khóa này bị từ chối 403 = phạm vi khóa đúng. Số mili
+  giây gồm cả lần bắt tay đầu, mỗi phép một mẫu — chưa phải số đo tốc độ. CHƯA tải tệp video, chưa tải theo mảnh, chưa thử từ điện thoại.
+- Còn thiếu để thử tải lên thật: luật CORS nếu thử tải từ trình duyệt, cảnh báo ngân sách, bài tải clip từ app trên Note8.
+
+### 56.3 Chưa kiểm
+
+- ~~Màn đăng ký thật~~ → đã xem một phần, mục 56.4. Còn chưa biết: bấm thêm gói R2 khi chưa có thẻ thì ra gì; khoản giữ tạm là bao nhiêu.
+- Cổng đăng ký doanh nghiệp quốc gia với từ khóa "Cloudflare".
+- Thuế suất nộp thay hiện hành (chỉ cần khi chuyển sang công ty mua).
+- Anh đã có tài khoản Cloudflare nào chưa (tên miền hubsell.vn ở Mắt Bão, hubsell.tech ở Hostinger — em không thấy dấu vết Cloudflare trong dự án).
+
+Nguồn: https://etaxvn.gdt.gov.vn/nccnn · https://www.cloudflare.com/terms/ · https://developers.cloudflare.com/billing/understand/sales-tax/ ·
+https://developers.cloudflare.com/r2/pricing/ · https://developers.cloudflare.com/r2/get-started/ · https://developers.cloudflare.com/billing/ ·
+https://developers.cloudflare.com/billing/get-started/update-billing-info/ ·
+https://isdown.app/status/cloudflare/incidents/443977-users-unable-to-enable-r2-on-accounts-without-attached-payment-method
