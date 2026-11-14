@@ -593,6 +593,8 @@ Bảng `maintenance_jobs` chỉ giữ lần đối chiếu cuối, nên mỗi ng
 | Ngày soi | Lần đối chiếu (giờ VN) | Lệch cứng | Bộ đếm = từ đơn | Lệch với "Chờ giao" | Đơn đang giữ | Đã hủy còn giữ | Đã giao chưa quét | Bộ đếm âm | Ghi chú |
 |---|---|---|---|---|---|---|---|---|---|
 | 12/11 | 12/11 15:22 | 0 | 520 = 520 | 0 | 3.778 | 0 | chưa đo | 0 | lần đầu, ngay sau ngày chuyển |
+| 13/11 (soi 19:51) | 13/11 15:22 | 0 | 337 = 337 | 0 | 1.151 | 0 | 0 | 0 | ĐẠT, lần 2/7. Lúc soi còn 784 đơn đang giữ, bộ đếm 162. Đơn đang giữ giảm mạnh so với 12/11 (3.778 → 1.151 cùng giờ); em đoán là hàng dồn sau đợt 11/11 đã giao hết, CHƯA kiểm nguyên nhân. Đơn giữ lâu nhất 135 giờ. |
+| 14/11 (soi 16:10) | 13/11 15:22 (chưa có lần mới) | 0 | 337 = 337 | 0 | 1.151 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 2/7: dòng đối chiếu vẫn là lần 13/11, cách 25 giờ (≤ 26 nên chưa coi là worker hỏng, nhưng lẽ ra đã có lần 14/11 ~15:22; em đoán worker khởi động lại làm lệch nhịp 24 giờ, CHƯA kiểm log). Số sống lúc soi: 732 đơn đang giữ, bộ đếm 231, bộ đếm âm 0. Mai vẫn là 13/11 → xem log Render. |
 
 Đủ 7 dòng liên tiếp lệch cứng 0 (dòng 12/11 tính là dòng 1) → trình anh lát 2. Có dòng lệch cứng khác 0 → dừng đếm, soi nguyên nhân trước, KHÔNG tự sửa số trên prod.
 

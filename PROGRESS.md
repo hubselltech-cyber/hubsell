@@ -5,6 +5,109 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 14/11 (lịch tự soi kho chuẩn quốc tế) — CHƯA có lần đối chiếu mới, chuỗi giữ 2/7
+
+- Soi 16:10 (chỉ đọc prod, 2 câu SELECT): dòng `stock-committed-check` vẫn là lần 13/11 15:22 (cách 25 giờ, lẽ ra đã có lần 14/11 ~15:22) → không tính lần 3. Số đang sống: 732 đơn đang giữ, bộ đếm 231, đã giao chưa quét 0, hủy còn giữ 0, bộ đếm âm 0. Mai soi lại; nếu vẫn 13/11 (cách > 26 giờ) thì nhờ anh xem log Render `hubsell-worker-sg`, từ khóa `stock-committed`. Ghi ở docs mục 13.12. Chưa commit.
+
+## Phiên 14/11 tối, hẹn giờ (video đóng hàng — khảo sát lần hai + phương án từng lát) — Anh 13/11: "Đặt lịch tối mai khảo sát một lần nữa. Rồi đưa ra phương án từng lát rồi mới làm." → KHẢO SÁT LẦN HAI XONG, ĐÃ VIẾT PHƯƠNG ÁN 8 LÁT, CHƯA CODE, chờ anh duyệt lát
+
+- Chi tiết: `docs/VIDEO-DONG-HANG-TU-KHIEU-NAI-KHAO-SAT.md` PHẦN 3 (mục 16 khảo sát, mục 17 các lát + 8 quyết định Q0–Q7, mục 18 nguồn).
+- **Xác nhận:** giá + hạn mức miễn phí R2; 1,40 đ/video và ≈ 42.000 đ/tháng cho shop 1.000 đơn/ngày; R2 tải thẳng từ trình duyệt được; Chrome Windows quay được MP4 H.264 và không có bộ đọc mã sẵn; đối soát không phải mốc xóa; Ship Xanh vẫn miễn phí + cloud 30 ngày, đã có quay khui hàng hoàn, điện thoại chạy web không cần app.
+- **Lần một sai (đã sửa tại chỗ, ghi "sửa 14/11"):** Shopee `upload_proof` KHÔNG có trường video (trang gốc chỉ có `photo[]` + `description`) → qua API Shopee và TikTok chỉ nhận ảnh; "máy chủ sửa vỏ tệp" không khớp với tải thẳng lên R2; trình ghi sẵn của Chrome không đặt được khoảng khung hình chính → đường quay chính đề xuất đổi sang WebCodecs + Mediabunny; "41–45 %" không phải hằng số (tháng 8: 46 / 64 %, tháng 10: 31 / 19 % và chưa khép); biên 2 ngày của luật xóa quá sát (Shopee có ca 16,2 ngày) → đề xuất giao + 20 ngày.
+- Mốc `returnRequestedAt` thiếu: chỉ ghi khi lượt đồng bộ thấy yêu cầu còn sống có hàng quay về; đơn chỉ hoàn tiền, đơn quét bù lịch sử và yêu cầu đã hủy không có mốc. Là chuyện của đơn cũ: tháng 10 phần lớn đơn đã có mốc.
+- Số prod: 2 câu SELECT qua SQL Editor, mỗi câu một phân mảnh `order_ledger` (tháng 8 và tháng 10), không ghi gì.
+- **Chưa kiểm:** R2 có bắt gắn thẻ không; cỡ vạch mã thật (dự án không có tệp vận đơn PDF nào); dung lượng + thời lượng clip thật; tab ẩn có còn quay / còn nhận mã; Android quay + đọc mã cùng lúc; expo-camera quay + quét cùng lúc; trang gốc TikTok + Lazada (Chrome đòi người bấm xác nhận, em dừng); kết quả tra web đọc qua công cụ tóm tắt, chưa đối chiếu từng chữ.
+- Các lát: 0 đo / thử → 1 quay + tải lên → 2 sổ + tìm video → 3 vòng đời xóa (chạy bóng trước) → 4 đo dùng + tính tiền → 5 khui kiện hoàn → 6a web điện thoại / 6b app → 7 nộp sàn. Database chính không migration từ lát 0 tới 6.
+- **Anh gửi 2 video TikTok: "Thử xem học được gì không em"** → đã xem (cắt khung hình + chép lời tại máy), ghi mục 19 tài liệu. Video 1 = demo donghangnhanh.vn: laptop + một webcam, giơ tem lên camera là tự quay, có tiếng "Bắt đầu", mã vận đơn + giờ in vào hình, không cần máy quét. Video 2 = chủ shop kể chuyện khách báo thiếu món đắt nhất; gói dưới sàn, không máy tính. Hệ quả đề xuất: lát 0 thử thêm đọc mã bằng webcam khi giơ tem + in chữ vào hình; lát 1 có thể nhận cả máy quét lẫn giơ tem; kéo lát điện thoại (6a) lên sớm. Chưa commit.
+- **Anh: "nên mở rộng kiểm tra… nhiều đối thủ khác, thậm chí cả các nhà cung cấp từ nước ngoài như Trung Quốc… Anh muốn khách dùng Hubsell sẽ mua được gói mở rộng để mua gói video đóng hàng này. Sau này mình cần khảo sát để bán thiết bị như camera nữa."** → ĐÃ KHẢO SÁT (4 luồng tra web, chỉ đọc trang công khai), ghi PHẦN 4 tài liệu (mục 20–27). Chưa code, chưa commit.
+  - Việt Nam: Dohana (đối thủ trong video anh gửi) 100.000–400.000 đ/tháng theo GB, tự nhận 2.000 shop, đã có đồng bộ đơn sàn + cảnh báo đơn hủy + khui hàng hoàn; thêm 7 hãng mới (Ecombox, EPack, Carrot, EcomPMS, Simple Replay, VieCam, An Thành Phát). Sapo / Pancake / KiotViet / Haravan / Nhanh chưa tự làm, để bên thứ ba cắm vào.
+  - Trung Quốc: Douyin đòi video liền một đoạn từ cho hàng vào hộp tới dán tem, video khui hàng hoàn không được quay nhiều đoạn; 4 kiểu làm; phần mềm gần như cho không, tiền nằm ở thiết bị. Quốc tế: 150–450 đ/video, gần hết tính theo số video.
+  - Đề xuất gói mở rộng (mục 24): hạn mức video/tháng theo bậc + vượt tính thẳng; thang ví dụ 39.000 → 399.000 đ là số em tự đặt; 7 câu G1–G7 chờ anh. Hệ quả: lát 4 có migration ở bảng gói của database chính.
+  - Thiết bị (mục 25, sơ bộ): bộ tự ghép 1,5–5,3 tr/bàn; camera an ninh nhập khẩu phải hợp quy từ 01/01/2026, webcam USB thì không thấy; in nhãn riêng cần 500–1.000 chiếc.
+  - **Chưa kiểm:** phần lớn số liệu đọc qua công cụ tóm tắt; em chỉ tự mở lại bảng giá Dohana, tiêu chuẩn chứng cứ Douyin, hướng dẫn UpSeller. Tin rao trên các sàn, Taobao, 1688 không mở được.
+- **Anh: "Anh nghĩ mình tính theo số đơn là lãi nhất… Anh chưa có camera chúng ta có thể test điện thoại nên làm trước… cần có phương án thiết kế tân tiến nhất để không bị chậm, quá tải việc tải video lên, tải video xuống"** + 4 điều anh hỏi được từ người dùng Ship Xanh (quay bằng điện thoại, nối camera trong nhà, tự mua camera, lưu local hoặc cloud) + bán thiết bị qua "Hubsell Shop" tính sau → ĐÃ VIẾT KẾ HOẠCH BẢN 2, PHẦN 5 tài liệu (mục 28–35), thay bảng lát mục 17 và đề xuất giá mục 24. Chưa code, chưa commit.
+  - Sửa sai: Ship Xanh CÓ thu tiền video — local 18–21 đ/phút, cloud 22–25 đ/phút, trừ ví nạp trước (ảnh anh gửi từ người dùng); trang công khai ghi "miễn phí". Đã đánh dấu sửa 4 chỗ cũ.
+  - Tính lại shop 1.000 đơn/ngày: tải lên 5,6–11 GB/ngày, cao điểm 3–6 Mbps cả shop, giá vốn lưu 1,9–3,7 đ/đơn. Băng thông không phải chỗ nghẽn; chỗ phải thiết kế là quét không được chờ tải lên.
+  - 10 nguyên tắc chống chậm / quá tải (mục 30): video không qua máy chủ Hubsell, hàng chờ trên máy, tải nền 2 luồng, xin quyền + báo xong theo lô, sổ ghi theo lô ở database riêng, xem video bằng đường dẫn ký sẵn + tải theo đoạn.
+  - Lát mới: 0 đo bằng điện thoại → 1 quay bằng điện thoại lưu cloud → 2 tìm + xem → 3 vòng đời xóa → 4 lưu local → 5 gói mở rộng tính theo đơn → 6 máy tính + webcam → 7 khui kiện hoàn → 8 app → 9 camera trong nhà → 10 khiếu nại tự động + báo cáo.
+  - Đã kiểm tài liệu: iPhone Safari không có bộ đọc mã sẵn (dùng `html5-qrcode` đang có); chọn thư mục để lưu local có ở Chrome máy tính và Chrome Android 132, iPhone không có. **Chưa kiểm:** mọi thứ trên điện thoại thật.
+  - Chờ anh: có điện thoại Android / iPhone nào để thử + tạo tài khoản R2; T1 đơn nào thì tính; T2 giá local so với cloud; T3 gói tháng hay trừ ví.
+- **Anh: "Quay bằng điện thoại mình vẫn phải thiết kế mở camera từ app mobile chứ em nhỉ. Thêm phần Quay video đóng gói trong tab Tổng quan → bên dưới Giá vốn."** → đã sửa kế hoạch, mục 36 tài liệu: quay từ APP (thay lát 0, 1, 8 của mục 33), bỏ web trên điện thoại khỏi đường chính. Chưa code.
+  - Vị trí ô: `hubsell-mobile/src/screens/OverviewPage.tsx` khối Thiết lập đang có sẵn một ô trống giữ chỗ ngay dưới Giá vốn.
+  - **Vướng kỹ thuật (đọc mã gốc `expo-camera` 57.0.3):** trên Android bộ đọc mã chỉ gắn ở chế độ chụp → đang quay không đọc được mã; iPhone nhiều khả năng đọc được (chưa chạy thử). Ba cách: A hai nhịp (quét → quay → chạm "Xong"), giữ thư viện, có thể OTA; B thêm thư viện camera khác, đúng luồng "tem kế tự cắt", phải build nộp kho; C mỗi hệ một kiểu (em không đề xuất). Em đề xuất lát 0 thử cả A và B trên máy thật.
+  - Lưu ý: tab Tổng quan chỉ chủ shop có; nhân viên vào Quét đóng gói từ tab QR giữa → khi shop bật thì màn quét phải tự quay ở mọi lối vào.
+- **Anh: "Anh cần phương án B, A thì bỏ qua luôn vì cái anh cần là tự động."** → CHỐT cách B (thư viện camera mới), bỏ cách A và C. Ghi mục 37 tài liệu. Chưa code.
+  - Đã kiểm trên trang chính thức + kho gói: `react-native-vision-camera` 5.2.4 (bản 4 ngừng bảo trì), cần 4 gói gốc mới (thêm nitro-modules, nitro-image, gói đọc mã dùng ML Kit); gắn được nhiều đầu ra cùng lúc nhưng tài liệu KHÔNG khẳng định quay + đọc mã cùng lúc chạy trên mọi máy; không ghi mức React Native tối thiểu → chưa biết có dựng được với Expo 57 không.
+  - Lát 0 bản chốt = 3 cửa theo thứ tự: dựng được không → vừa quay vừa đọc mã → cắt clip có kịp không; trượt cửa nào dừng và báo anh. Làm trên nhánh thử riêng. Lát 1 = bản app 1.5.0 nộp hai kho (thêm thư viện gốc, sửa dòng xin quyền camera); 1.4.3 phải xong trước.
+  - Chờ anh: máy thử Android / iPhone; tài khoản R2; chân đứng + kiện có tem.
+- **Anh: "Làm, Android trước" · "Em chuyển sang ổ D:\HubsellVideo" · "Em cứ cài tiếp và test xong lát 0 nhé. Mình vẫn phải làm trên local trước, anh test chán rồi mới đưa vào bán công khai nên em cứ từ từ làm."** → LÁT 0: CỬA 1 QUA, cửa 2 + 3 chờ anh cầm máy. Ghi mục 38 tài liệu.
+  - Nhánh `thu/video-dong-goi-lat-0` mở tại `D:\HubsellVideo` (git worktree), chưa commit; `master` và thư mục dự án chính không bị đụng.
+  - 4 gói camera mới cài + dựng được với Expo 57 / RN 0.86.2. Dựng lần 1 hỏng vì trình dựng hết bộ nhớ (không do camera); lần 2 nới bộ nhớ → BUILD SUCCESSFUL, tệp cài 74,9 MB.
+  - Đã cài lên Galaxy Note8 (Android 9) của anh qua cáp, app thử "Hubsell Thu Video" chạy, không sập lúc khởi động. Điện thoại đang khóa bằng mã nên em chưa nhìn thấy camera chạy.
+  - Phát hiện: thư viện mới kéo CameraX của cả app từ 1.6.0 lên 1.7.0-alpha03 → phải thử lại các màn quét cũ trước khi dùng cho bản phát hành.
+  - **Chưa kiểm:** cửa 2 (vừa quay vừa đọc mã), cửa 3 (thời gian cắt clip), cỡ tệp + chất lượng, màn quét cũ, iPhone, tải lên R2.
+  - Chờ anh: mở khóa Note8, mở app "Hubsell Thu Video", đưa 2–3 tem lần lượt vào camera rồi báo em (hoặc để máy cắm, em đọc nhật ký).
+- **Anh thử Note8, gửi ảnh: "Tem 1 thì thấy đang quay, sang tem 2 thì nó cứ đếm tiếp thôi lên tới tận 33 luôn."** → LÁT 0: CỬA 2 QUA (33 / 34 lượt đọc mã xảy ra lúc đang quay), CỬA 3 QUA với 2 mẫu (cắt clip 164 ms, 177 ms). Ghi mục 39 tài liệu.
+  - Số 33 = số LƯỢT máy đọc ra mã, không phải số tem — chữ em đặt gây hiểu nhầm, đã đổi + thêm "Số clip đã mở".
+  - Lỗi thật: 2 tem ra 3 clip, vì mã QR của tem bị coi là tem mới. Sửa trên nhánh thử: chỉ mã vạch Code 128 mới mở / cắt clip, QR chỉ ghi lại. Bản thật (lát 1) phải cắt theo ĐƠN (mã tra ra đơn khác mới cắt), chưa làm.
+  - Cỡ tệp đầu tiên: 720p · 800k · 15 khung hình/giây ≈ 5,8 MB/phút (2 mẫu, đọc từ màn hình).
+  - Bản dựng 3 (17:02) đã cài đè lên Note8: clip ghi ra `/sdcard/Android/data/vn.hubsell.thuvideo/files/thu/` để kéo về máy tính được (3 clip cũ nằm ở thư mục tạm, không lấy được). Máy đang khóa → chưa thử bản mới.
+  - Để dành lát 1: chưa có luật tự dừng clip (máy úp trên bàn vẫn quay). Pin Note8 không sạc qua cáp này (27 %). Chưa commit.
+- **Anh thử lần hai: "khi chuyển mã vận đơn nó chưa tự cắt clip. Và nó còn đếm cái gì mà 14/tổng 15 trong khi anh chỉ chuyển qua lại có 2-3 mã vận đơn."** → kéo clip về xem: 4 tem ra 1 clip. Ghi mục 40 tài liệu.
+  - Gốc: luật bản 2 (chỉ mã vạch mới cắt) SAI — tem TikTok × J&T có QR mang đúng mã vận đơn, tem 3 chỉ được đọc qua QR nên bị bỏ qua. Tem 2 và 4 không đọc được lần nào vì anh đưa ẢNH TEM TRÊN MÀN HÌNH máy tính, vạch nhòe dính nhau.
+  - Sửa: luật bản 3 cắt theo GIÁ TRỊ (trông như mã vận đơn, chưa thấy trong clip = tem mới; đường link bỏ qua). Bản dựng 5 (17:18) đã cài lên Note8. Chưa thử với tem.
+  - Tệp thật đầu tiên: 720×1280, H.264, 15 khung hình/giây, ≈ 6,2 MB/phút, khung khóa mỗi giây, chỉ mục nằm đầu tệp (tua qua mạng được).
+  - Màn thử thêm số đo: tốc độ soi mã, độ phân giải hai luồng, nút "soi vừa / soi cao" (1440×1080 / 4032×3024; cả hai 15 khung/giây lúc chưa quay).
+  - Pin Note8 còn 18 %, không sạc qua cáp máy tính. Chưa commit.
+- **Anh thử lần ba: "quay lại tem 1 thì nó không báo là đã quay rồi mà tính là quay thành video thứ 4."** → kéo nhật ký + 4 clip về. Ghi mục 41 tài liệu.
+  - Luật bản 3 cắt ĐÚNG: 3 tem ra 3 clip, cắt 147 / 153 / 166 ms. Clip thứ 4 là do màn thử chỉ nhớ clip đang quay.
+  - Sửa (bản dựng 6, 17:28, đã cài lên Note8): sổ tem đã quay xong trong phiên → tem cũ đưa vào lại thì hiện dải cam "ĐÃ QUAY RỒI", không mở clip mới, không cắt clip đang quay; thêm nút XÓA SỔ TEM. Chưa thử với tem.
+  - Số mới: mỗi tệp có ≈ 0,4 MB cố định ở đầu + ≈ 6,1 MB/phút (clip 60 giây ≈ 6,5 MB; số 5,8 MB/phút trước đó thấp hơn thật). Máy đọc QR dễ hơn mã vạch ≈ 3 lần. "Soi vừa" cho 388 lượt đọc / 99 giây.
+  - Để lát 1: "đã quay rồi" phải hỏi sổ máy chủ theo đơn; có cho quay lại đơn đã có video không; cần tiếng / rung. Chưa commit.
+  - **Anh: "Xong lần này để anh sạc máy tối làm tiếp."** → dừng ở đây; tối anh thử bản dựng 6 (pin Note8 lúc dừng 11 %).
+- **Anh: "thời gian thì còn tùy so với ngành hàng nữa... có những sản phẩm đóng gói mất 15 phút là chuyện bình thường. Lát tiếp theo là làm gì em nhỉ"** → ghi mục 42 tài liệu.
+  - Clip 15 phút ≈ 92 MB (gấp ~14 lần clip 1 phút) → thu theo đơn cần thêm trần phút mỗi đơn; luật tự dừng không được là số giây ngắn cố định; tải lên phải chia mảnh + nối lại được.
+  - Em đề xuất làm nốt lát 0 trước khi sang lát 1: thử bản dựng 6 → quay dài 15–20 phút (nhiệt, pin, tệp) → tem giấy ba sàn → màn quét cũ trên CameraX mới → tải thử R2 (cần anh tạo tài khoản) → iPhone. Chờ anh chốt.
+- **Anh: "khảo sát các ứng dụng trên thế giới họ để trần thời gian hay trần dung lượng... Trong trường hợp trần dung lượng mà khách hàng chưa đóng xong đơn thì thế nào?"** → khảo sát XONG, 45 sản phẩm, ghi PHẦN 6 (mục 43–49) tài liệu.
+  - Việt Nam bán theo GB + ngày lưu; quốc tế bán theo số đơn / video + ngày lưu; Trung Quốc lưu máy khách. Trần thời lượng một video là thiểu số và chủ yếu là chốt an toàn chủ shop chỉnh được (Dohana 5 phút, UpSeller, EPack, UniCapture 2 phút).
+  - Hết hạn mức: KHÔNG ai cắt ngang video đang quay. Sáu kiểu: quay tiếp + phí vượt (DispatchO, VuDrop) · quay tiếp + nhắc (Boxwitness) · chặn video mới (TrackVid, Dohana, PallasMark) · giữ trên máy, từ chối tải lên (EPack) · mua thêm GB (Ecombox 2.000 đ/GB/tháng) · ghi đè bản cũ (PackRight, ASC-Cloud).
+  - Douyin + Taobao cấm video cắt đoạn → không tự cắt đôi video của một đơn.
+  - Em đề xuất (anh chưa chốt): giữ thu theo đơn, không lộ GB; "lượt" = video tới N phút, dài hơn tính thêm lượt; chạm hạn mức vẫn quay + phí vượt như gói chính; trần thời lượng = nhắc rồi cho quay tiếp. Chưa commit.
+- **Anh hỏi Ship Xanh tính theo gì** → theo PHÚT video (18–25 đ / phút, ví nạp trước), không theo GB, không theo đơn.
+- **Anh nêu hướng: "Nếu bán gói theo số phút thì sao? Mình ngầm hiểu là một video khoảng 1 phút... khách thích quay bao nhiêu lâu cũng được."** → em đồng ý, ghi mục 50 tài liệu. Anh CHƯA chốt số.
+  - Chi phí chỗ chứa ≈ 2,3 đ cho một phút lưu 30 ngày; Ship Xanh bán 22–25 đ / phút cloud.
+  - Năm điều phải định cùng: tên gói là phút (không gọi "gói 100 video"); trừ theo giây; nhắc khi quay thừa (phút thừa là tiền của khách); mỗi gói một số ngày lưu; hết phút thì quay tiếp + phút vượt hay khóa.
+- **ANH CHỐT cách bán video đóng hàng: "Gói 100 giờ, 200 giờ... Phần thừa không cần nhắc... Hết thì dừng không cho quay thêm."** → ghi mục 51 tài liệu. Bỏ: thu theo đơn, "lượt N phút", nhắc quay thừa, phí vượt.
+  - Em đề xuất thêm (chưa duyệt): video đang quay dở lúc hết giờ thì quay nốt; báo sắp hết giờ bằng chuông; trừ theo giây.
+  - **Anh hỏi "upload tối đa bao nhiêu MB"** → mục 52: R2 cho 5 GiB một lần tải, gần 5 TiB theo mảnh — không phải thứ giới hạn. Video 15 phút ≈ 92 MB, 60 phút ≈ 366 MB. Em đề xuất tệp > 32 MB tải theo mảnh 8 MiB; trần kỹ thuật 60 phút một video.
+  - **Anh hỏi nguyên lý tải lên cho hàng chục nghìn shop** → mục 53: video đi thẳng điện thoại → Cloudflare; hàng chờ nằm trên từng điện thoại; quay không chờ tải; một lần gọi máy chủ mỗi video; sổ ở database riêng chia theo tuần; ngăn chia theo ngày quay để xóa rẻ. Cái khó thật ở điện thoại (tải nền, bộ nhớ, mạng shop). Chưa thử tải lên R2 lần nào.
+  - ⏳ Anh chốt: giá gói, giờ có hạn dùng không, số ngày lưu (em đề xuất cố định N ngày từ ngày quay), mất mạng lúc quét có cho quay không.
+- **ANH CHỐT cách xóa: "lưu tới qua hạn khiếu nại... hệ thống tự xóa video các đơn hàng hủy, hủy ngang, đã đối soát, hết hạn khiếu nại."** → ghi mục 54 tài liệu.
+  - Em rút đề xuất "cố định N ngày" và sửa điều em nói sai: xóa theo từng đơn KHÔNG đắt (R2: lệnh xóa miễn phí, không có thời gian lưu tối thiểu, có xóa theo lô).
+  - Luật xóa = bảng L1–L7 mục 12.2 (hủy ngang +24 giờ; hủy sau gửi chờ kho nhận kiện; giao + 20 ngày; đang khiếu nại thì giữ; trần 90 ngày).
+  - Em đề nghị "đã đối soát" KHÔNG làm mốc xóa một mình (prod: 19–64 % yêu cầu hoàn đến sau đối soát) — ⏳ chờ anh trả lời.
+  - Cách chạy: mỗi video một "hạn xóa" trong sổ, đơn đổi trạng thái thì đổi hạn, bộ dọn xóa theo lô, lưới an toàn 90 ngày bằng luật Cloudflare, chạy bóng trước.
+- Chờ anh: Q0 có làm lát 0 không + đo ở kho nào (cần tài khoản R2, webcam, máy quét); Q1 nơi chạy dịch vụ video; Q4 cách thu phí; Q5 cách xóa; Q6 bỏ ngăn `hold/`. Chưa commit, chưa bắt đầu lát nào.
+
+## Phiên 13/11 đêm (video đóng hàng + tự khiếu nại đơn hoàn) — Anh: "anh đang muốn làm phương án quay video đóng hàng… kiểm tra API của các sàn liên quan tới vấn đề trả hàng hoàn tiền xem có auto khiếu nại được không" → KHẢO SÁT XONG TRÊN TÀI LIỆU, CHƯA CODE, chờ anh chốt
+
+- Chi tiết + bảng API + nguồn: `docs/VIDEO-DONG-HANG-TU-KHIEU-NAI-KHAO-SAT.md`.
+- Tự khiếu nại vòng đầu làm được qua API cả 3 sàn: Shopee `v2.returns.dispute` + `upload_proof`; TikTok `returns/{id}/reject`; Lazada `return/update` (`refuseRefund`) + `onlyrefund/seller/decide` (`startDispute`).
+- Video chỉ nộp được ở Shopee `upload_proof` và Lazada nhánh chỉ hoàn tiền; TikTok + Lazada trả hàng chỉ nhận ảnh → bằng chứng chuẩn = ảnh cắt từ video + lời mô tả. Kháng nghị sau khi sàn phán: không thấy API.
+- Đề xuất 5 lát (mục 5): lát 0 thử lệnh ghi trên yêu cầu hoàn thật; lát 1 lưu hạn trả lời + nút Đồng ý / Khiếu nại (chưa cần video); lát 2 quay ở màn Đã đóng gói + khui kiện hoàn; lát 3 một nút Gửi hồ sơ; lát 4 tự nộp theo luật, mặc định tắt.
+- **Chưa kiểm:** không đọc được trang gốc của cả 3 sàn (nguồn là SDK công khai + trang nhà tích hợp); chưa gọi lệnh ghi nào; 5 giả thuyết ở mục 3; chi phí lưu video chưa có số thật.
+- Chờ anh: nơi lưu video, mức tự động, thứ tự lát (mục 6). Chưa commit.
+- **Anh: "Dự án này thì sớm muộn cũng phải làm… việc nộp bằng chứng để cổng sau. Thứ anh cần là việc khảo sát chuyên sâu" (6 ý) + "cứ theo giả định mỗi shop là 1000 đơn 1 ngày"** → KHẢO SÁT PHẦN 2 XONG, ghi mục 8–15 cùng tài liệu. Chưa code, chưa commit.
+  - Quét: máy tính dùng máy quét cầm tay, điện thoại / máy tính bảng để camera tự nhận; mã kế tiếp tự cắt clip. Nhiều bàn không bắt buộc nhiều máy tính.
+  - Nén: 1080p, 10 khung/giây, H.264, không tiếng ≈ 6 MB/phút (ước tính, chưa quay thử).
+  - Chi phí lưu một video ≈ 1,5–2 đ (4,5 MB, giữ 22 ngày); shop 1.000 đơn/ngày ≈ 42.000–55.000 đ/tháng. Giá kho đọc trên trang chính thức 13/11.
+  - Số prod (2 câu SQL chỉ đọc trên `order_ledger`, đơn tạo tháng 9): 41–45 % ca xin hoàn đến SAU đối soát → đối soát không phải mốc xóa; khách xin hoàn muộn nhất 15,3 ngày sau giao (TikTok). Luật xóa theo trạng thái ở mục 12.
+  - Dữ liệu: kho tệp riêng + database riêng, 5 tầng, `pack_videos` phân mảnh theo tuần (mục 13). Đối thủ + giá + quy định sàn ở mục 14.
+  - **Chưa kiểm:** chưa thử thiết bị, chưa quay thử, chưa tải thử lên kho; thời lượng 45 giây là giả định; mốc `returnRequestedAt` thiếu ở khoảng 86 % đơn có hoàn (chưa tìm vì sao).
+  - Chờ anh (mục 15): kho trong nước hay R2, cách xóa, cách thu phí, buổi đo.
+- **Anh: "anh đang tính dùng R2 cho rẻ"** → hướng kho = Cloudflare R2 Standard, thử trên hạn mức miễn phí (10 GB, 1 triệu lượt ghi, 10 triệu lượt đọc / tháng).
+- **Anh: "Đặt lịch tối mai khảo sát một lần nữa. Rồi đưa ra phương án từng lát rồi mới làm."** → đã đặt việc chạy một lần 20:00 ngày 14/11 (`hubsell-video-dong-hang-khao-sat-lan-2`); kết quả sẽ nằm ở PHẦN 3 của tài liệu. Không viết mã trước khi anh duyệt lát.
+
 ## Phiên 13/11 khuya (kiểm toán phí › truy thu phí ship) — Anh: "đang bị trộn lẫn giữa đơn hoàn và chênh lệch vận chuyển… mua phí bồi hoàn rồi nhưng vẫn mất… Có phương án nào bóc tách hoặc cảnh báo không?" → KHẢO SÁT XONG, CHƯA SỬA MÃ, chờ anh chốt
 
 - Chi tiết + số + SQL: `docs/DOI-SOAT-PHI-SHIP-NGUYEN-NHAN-KHAO-SAT-31-10.md` mục 8.
@@ -13,7 +116,8 @@
 - Đề xuất: lát 1 không migration (cột Nguyên nhân + chip lọc, tách tiền theo thành phần, nhãn "Có Bảo đảm phí vận chuyển, vẫn lệch"); lát 2 một migration tách khóa quá cân / quá khổ khỏi `shipOther`.
 - Chưa biết: điều khoản chương trình bồi hoàn; "phụ phí" là khóa nào. `feeShipGuarantee` chỉ có từ bản kê sau 29/10.
 - **Anh xem prod: "Sàn bồi? Ví dụ như anh có mua gói bồi hoàn của sàn đâu"** → kiểm prod: 78 đơn có khoản này của tài khoản công ty đều là đơn hủy chưa từng giao tới, không đơn nào trả phí bảo đảm, shop còn chịu đúng 40.000 đ (7 đơn 16/09: 20.000 đ) = sàn tự bù phần vượt trần cho đơn giao không thành công. Đã đổi chữ "Sàn bồi" → "Sàn bù" + lời giải thích + nhãn cảnh báo ("chưa được bù / bù chưa đủ"). Lộ thêm lỗi phân loại: 35/67 đơn nhãn "Khách trả hàng" thật ra là giao không thành công (kho quét nhận kiện quay đầu nên có `returnStatus`). Docs mục 8.6.
-- **Anh: "Sửa cả hai, push" + "thêm icon copy cạnh mã đơn hàng nữa"** → luật mới chỉ cho TikTok: đơn hủy + chưa từng giao tới (`deliveredAt` rỗng) + không có cước chiều về = "Đơn hủy sau khi gửi" dù kho đã nhận kiện (đổi luật 31/10; Shopee / Lazada giữ nguyên vì chưa kiểm `deliveredAt`); nút chép mã đơn ở ô Mã đơn của ba bảng Kiểm toán phí. Local 80 đơn seed: không cuộn ngang 1280–1920; vitest 4 tệp qua; tài khoản thử đã xóa.
+- **Prod OK sau push `e5cb96b1`** (13/11 khuya, `/health` đúng commit, tài khoản chủ shop công ty, màn 1920): chip Đơn hủy sau khi gửi 138 → 173, Khách trả hàng 67 → 32 (đúng 35 đơn chuyển nhãn như SQL dự tính), tổng 237 đơn không đổi; chữ "Sàn bù", không còn "Sàn bồi"; 20/20 dòng có nút chép mã đơn; dòng tách tiền cộng đúng; không cuộn ngang. Ghi chú này chưa commit.
+- **Anh: "Sửa cả hai, push" + "thêm icon copy cạnh mã đơn hàng nữa"** → ĐÃ COMMIT + PUSH `e5cb96b1`: luật mới chỉ cho TikTok: đơn hủy + chưa từng giao tới (`deliveredAt` rỗng) + không có cước chiều về = "Đơn hủy sau khi gửi" dù kho đã nhận kiện (đổi luật 31/10; Shopee / Lazada giữ nguyên vì chưa kiểm `deliveredAt`); nút chép mã đơn ở ô Mã đơn của ba bảng Kiểm toán phí. Local 80 đơn seed: không cuộn ngang 1280–1920; vitest 4 tệp qua; tài khoản thử đã xóa.
 - **Prod OK sau push `9c775eef`** (anh: "Em push lên đi"): `/health` đúng commit; tài khoản chủ shop công ty màn 1920 — 6 cột không cuộn ngang, chip 236 = 138 + 67 + 23 + 5 + 2 + 1, 20/20 dòng trang đầu tách tiền cộng đúng, lọc chip Khách trả hàng ra 67 đơn. Phần "Có bảo đảm, vẫn lệch" chưa thấy trên prod vì tài khoản này không có đơn trả phí bảo đảm. Ghi chú kiểm prod này chưa commit.
 - **Anh: "Làm lát 1" → ĐÃ LÀM, ĐÃ COMMIT + PUSH `9c775eef` 13/11 khuya** (docs mục 8.5). Bảng Theo đơn: cột Nguyên nhân + chip lọc theo số đơn + chip "Có bảo đảm, vẫn lệch"; dưới số Bị trừ thêm tách Chiều đi / Chiều về / Phụ phí / Sàn bồi / Khác (chỉ đơn TikTok); dòng hổ phách "Có bảo đảm · chưa được bồi / bồi chưa đủ"; thẻ thêm dòng bấm được; Excel thêm 6 cột. Mới: `backend/src/lib/shipping-diff-parts.ts`, `frontend/src/components/finance/ship-diff-parts.tsx`, `ship-diff-filter-chips.tsx`.
 - Kiểm local: 74 đơn seed, không cuộn ngang 1280–1920, tối OK, tsc + eslint sạch, vitest 43 ca. Chưa mở tệp Excel thật, chưa soi prod. Tài khoản thử + 74 đơn seed đã xóa khỏi DB dev (cả dòng sổ cái). Lazada chưa tách tiền (chưa đối chiếu công thức); lát 2 chờ anh.
