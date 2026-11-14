@@ -475,7 +475,7 @@ Không thấy tính năng này ở Sapo, Nhanh.vn, Pancake, KiotViet, Salework, 
 | Người bán phải trả lời trong | 2 ngày lịch, quá hạn tự hoàn tiền | duyệt yêu cầu 1 ngày; kiểm hàng hoàn 2 ngày; kháng nghị 7 ngày, chỉ một lần; bổ sung bằng chứng 24 giờ | 2 ngày; bổ sung bằng chứng 24 giờ |
 | Yêu cầu với video đóng gói | ảnh HOẶC video, thấy đủ đúng sản phẩm, **có mã vận đơn** | thấy mã đơn / mã vận đơn / QR, đúng hàng, đủ số lượng; **liên tục, rõ, không chỉnh sửa** | chỉ khuyến nghị quay |
 | Video khui kiện hoàn | mạnh nhất: có mặt tài xế, rõ 6 mặt kiện | **bắt buộc** khi kháng nghị sai hàng / thiếu hàng / đã dùng / hư hỏng; đủ 6 mặt kiện | khuyến nghị quay trước khi mở |
-| Định dạng / dung lượng video | không thấy nêu | không thấy nêu | không thấy nêu |
+| Định dạng / dung lượng video | không thấy nêu **(sửa 14/11: có số, xem mục 55.2 — người mua 100 MB / 1 phút, người bán mốc 30 MB, dài hơn thì dán đường dẫn)** | không thấy nêu (tra lại 14/11 vẫn không có) | không thấy nêu (tra lại 14/11 vẫn không có) |
 
 Hệ quả:
 - Hạn trả lời chỉ 1–2 ngày → **tìm ra đúng video trong vài giây** quan trọng hơn hình đẹp.
@@ -2111,3 +2111,507 @@ Với gói theo giờ (mục 51), xóa sớm không ảnh hưởng số giờ c�
 Lệnh xóa theo lô của R2 nhận tối đa bao nhiêu tệp một lần (trang không ghi); luật Cloudflare xóa trễ tới 24 giờ (PHẦN 3); cách báo trạng
 thái đơn sang sổ video mà không thêm tải cho database chính (thiết kế ở lát 3); tỷ lệ đơn hủy trước khi gửi trên prod (dữ liệu hiện không
 tách được "hủy trước khi gói" và "hủy sau khi gói", mục 8).
+
+
+## 55. Ba ý anh bổ sung (14/11 khuya): quay dở lúc hết giờ, có cần 720p không + sàn nhận video tối đa bao nhiêu, tính năng miễn phí chỉ bán giờ
+
+> Anh Trung: "1. Nếu hết giờ mua mà video đang quay dở thì sao? Cho quay tới khi kết thúc và trực tiếp trừ vào thời gian khi gia hạn ở tháng
+> sau. 2. Cần em khảo sát lại chất lượng video dạng này có nhất thiết phải video 720 không? Và điều quan trọng là các sàn cho tối đa video
+> bao nhiêu giây? dung lượng bao nhiêu để dùng đi khiếu nại? 3. Dự án này khả năng là mình bán thời gian quay video thì có thể coi tính năng
+> quay video là miễn phí chỉ thu tiền khi khách hàng có nhu cầu quay video thôi."
+
+### 55.1 ANH CHỐT: video đang quay dở lúc hết giờ thì quay nốt, phần lố trừ vào lần gia hạn sau
+
+Thay dòng "anh chưa duyệt" thứ nhất ở mục 51. Cách chạy em đề xuất để chốt này không có kẽ hở:
+
+- Số giờ còn lại được phép **âm**. Luật khóa (mục 53.3) chỉ chặn việc MỞ video mới khi số dư ≤ 0; video đang quay không bị đụng tới.
+- Lần mua kế: số giờ nhận = giờ của gói − phần đã lố. Màn mua giờ và lịch sử ghi rõ một dòng "đã trừ N phút quay lố kỳ trước" để khách
+  không thấy thiếu giờ mà không hiểu vì sao.
+- Phần lố bị chặn trên bởi trần kỹ thuật một video (em đề xuất 60 phút ở mục 52, anh chưa duyệt số) × số điện thoại của shop đang quay dở.
+  Không có trần này thì một máy bỏ quên lúc còn 1 giây có thể lố nhiều giờ.
+- Khách lố rồi không mua nữa: mình mất phần lố. Tiền chỗ chứa ≈ 2,3 đ / phút / 30 ngày (mục 50.3) — chấp nhận được, không đòi.
+
+**Em suy ra, chưa phải anh nói:** câu "gia hạn ở tháng sau" nghe như gói mua THEO THÁNG. Mục 51 còn để ngỏ "giờ có hạn dùng không" → ⏳ anh
+xác nhận: gói theo tháng (giờ không dùng hết thì mất hay cộng dồn sang tháng sau), hay mua đứt dùng tới khi hết.
+
+### 55.2 Sàn nhận video bằng chứng tối đa bao nhiêu — số tìm được 14/11
+
+Nhãn nguồn: **[gốc]** = trang chính thức của sàn, em đọc trực tiếp; **[phụ]** = trang bên thứ ba; **[chưa]** = không tìm ra.
+
+| Sàn | Dung lượng | Thời lượng | Nguồn |
+|---|---|---|---|
+| **Shopee VN — bài cho NGƯỜI MUA** | ảnh ≤ 5 MB, video ≤ **100 MB** | tối đa **1 phút** | **[gốc]** help.shopee.vn bài 79467. Lớn hơn: đưa lên YouTube / Google Drive để công khai rồi dán đường dẫn vào phần chú thích |
+| **Shopee VN — NGƯỜI BÁN** | Shopee Uni có sẵn câu hỏi "Video bằng chứng lớn hơn **30 MB**, làm cách nào để tải lên hệ thống?" → trả lời: đưa lên Google Drive / YouTube công khai, dán link vào phần cung cấp bằng chứng | không nêu | **[gốc]** banhang.shopee.vn/edu/article/22227 (bài cho Shopee Mall). Con số 30 MB là mốc trong câu hỏi, bài KHÔNG viết thẳng "tối đa 30 MB"; không có số giây cho người bán |
+| Shopee Singapore / Malaysia (người mua) | ảnh ≤ 10 MB, video ≤ 30 MB | 1 phút | **[gốc]** help.shopee.sg, help.shopee.com.my (đã có ở mục 16.6) |
+| Shopee Đài Loan | ảnh ≤ 10 MB, video ≤ 100 MB | 3 giây – 10 phút | help.shopee.tw, đọc qua kết quả tìm kiếm, chưa mở trang |
+| Shopee qua API | chỉ ẢNH, ≤ 10 MB mỗi ảnh | — | mục 2.1, 16.6 |
+| **TikTok Shop VN** | **[chưa]** | **[chưa]** | **[gốc]** bài "Trả hàng và Hoàn tiền" (Seller University, 19.000 ký tự) không có một con số MB / giây / định dạng nào. Chỉ có yêu cầu nội dung: liên tục, rõ, không chỉnh sửa. Hai bài **[phụ]** về đợt cập nhật 27/10/2026 (Philippines, Malaysia) cũng không có số |
+| **Lazada VN** | **[chưa]** | **[chưa]** | trang trợ giúp người bán không hiện nội dung khi đọc; ba lượt tìm không ra số. API có `video_info_list` (mục 2.3) nhưng không biết giới hạn |
+
+Cách duy nhất để có số chắc của TikTok, Lazada và ô nộp của người bán Shopee: **mở ô tải bằng chứng trên một yêu cầu hoàn thật trong
+Kênh Người Bán** (ô tải thường ghi sẵn giới hạn ngay bên dưới). Chưa làm — cần một yêu cầu hoàn đang mở.
+
+Đặt cạnh tệp của mình (mục 41.3: 0,4 MB + 6,1 MB / phút):
+
+| Mốc của sàn | Video của mình chạm mốc ở |
+|---|---|
+| 1 phút (Shopee) | chạm vì THỜI LƯỢNG, lúc đó tệp mới 6,5 MB |
+| 30 MB (mốc người bán Shopee) | ≈ 4 phút 50 giây |
+| 100 MB (Shopee người mua) | ≈ 16 phút 20 giây |
+
+Rút ra:
+1. **Với Shopee, thứ chặn là 1 phút chứ không phải MB** (nếu mốc 1 phút của bài người mua cũng áp cho người bán — chưa xác nhận). Hạ độ
+   phân giải không giúp video dài lọt qua ô tải. Video 15 phút của ngành đóng lâu (mục 42) không tải thẳng được ở bất kỳ chất lượng nào.
+2. **Đường chính thức cho video dài là DÁN ĐƯỜNG DẪN** (Shopee viết rõ, cho cả người mua lẫn người bán). → Lát 2 (tìm + xem) cần hai nút
+   cạnh mỗi video: **"Tải về"** và **"Chép đường dẫn xem"**. Đường dẫn của Hubsell thay cho việc shop tự đưa lên Google Drive.
+   **Chưa kiểm:** nhân viên Shopee có mở đường dẫn không phải Drive / YouTube không (bài chỉ nêu hai tên đó) → nút "Tải về" là đường chắc.
+3. **Không tự cắt ngắn video cho vừa 1 phút.** TikTok đòi liên tục, không chỉnh sửa; Shopee khuyên quay xuyên suốt, không cắt ghép. Cắt là
+   tự làm yếu bằng chứng.
+4. Đơn thường đóng dưới 1 phút (≈ 6,5 MB) lọt mọi mốc đã biết. Ghi chú trên màn mua giờ (anh đã muốn có ghi chú "khách tự cân thời gian mỗi
+   video", mục 51) nên thêm một câu thật: "Shopee chỉ nhận tải thẳng video tới 1 phút; dài hơn thì nộp bằng đường dẫn."
+
+### 55.3 Có nhất thiết phải 720p không
+
+**Chưa đo 480p lần nào** — phần dưới là lập luận từ số đã có, không phải kết quả thử.
+
+- **Không sàn nào nêu độ phân giải.** Cả ba chỉ đòi "rõ nét, không mờ nhòe" và thấy được mã vận đơn, đúng hàng, đủ số lượng (mục 14.3,
+  55.2). Tức 720p không phải yêu cầu của sàn.
+- **Cỡ tệp đi theo bitrate, không theo độ phân giải.** 480p ở 800k nặng đúng bằng 720p ở 800k. Câu hỏi thật là "bitrate thấp nhất mà còn
+  đọc được", rồi mới chọn độ phân giải hợp với bitrate đó.
+- **Tiền tiết kiệm được rất nhỏ.** 100 giờ ở 720p · 800k ≈ 37 GB ≈ 14.000 đ chỗ chứa (mục 51). Hạ còn một nửa bitrate tiết kiệm ≈ 7.000 đ
+  cho mỗi 100 giờ bán ra. Vì mình bán theo GIỜ, khách không được lợi gì khi tệp nhỏ đi — chỉ mình bớt được chừng đó.
+- **Cái mất có thể lớn.** Ở 720p · 800k, mã vận đơn in to đọc rõ, chữ nhỏ không đọc được (mục 40.1, đo trên ảnh tem hiện ở màn hình).
+  Luồng của mình đưa tem sát camera lúc bắt đầu nên mã vận đơn nhiều khả năng vẫn đọc được ở 480p (em đoán, chưa thử); thứ dễ mất là chi
+  tiết HÀNG lúc nằm trên bàn (màu, phân loại, số lượng món nhỏ, số sê-ri) — đúng thứ sàn soi khi tranh cãi sai hàng / thiếu hàng.
+- **Thị trường đang ở 720p:** Dohana quay 1280×720 · 30 khung hình/giây, ≈ 15–30 MB / phút (mục 20.1, 46); phần mềm Trung Quốc mặc định 720p
+  (mục 21.2). Tệp của mình đã nhỏ hơn họ 2,5–5 lần nhờ 15 khung hình/giây và khống chế bitrate.
+
+**Đề xuất của em:** giữ **720p · 800k · 15 khung hình/giây, MỘT mức duy nhất**, không cho khách chọn chất lượng (bán theo giờ thì bậc chất
+lượng không còn là thứ để bán — thay cho thang A / B / C ở mục 11.1 và câu Q2). Lý do hạ chất lượng đáng cân nhắc duy nhất là mạng shop yếu
+(0,8 Mbps mỗi máy, mục 53.4), không phải tiền lưu.
+
+Để có số thật thay cho lập luận: thêm hai nút vào màn thử của lát 0 — **480p** và **bitrate 500k** — quay cùng một tem giấy + một món nhỏ
+ở ba cấu hình (720p · 800k, 720p · 500k, 480p · 500k), kéo clip về so khung hình. Chưa làm, chờ anh gật.
+
+### 55.4 ANH NÊU: tính năng quay miễn phí, chỉ bán giờ quay
+
+Em hiểu là: không có phí "mở tính năng", không phải gói mở rộng trả hằng tháng mới thấy được màn quay; ô "Quay video đóng gói" hiện cho mọi
+shop, bấm vào thấy số giờ còn lại và nút mua giờ. Thay cách gọi "gói mở rộng mua thêm" ở PHẦN 4 / mục 24. Em đồng ý — rào thấp nhất để
+khách thử, và tiền của mình vốn nằm ở giờ quay.
+
+Năm điều kéo theo, cần anh quyết khi tới lát bán giờ (chưa điều nào chặn lát 0, 1):
+
+1. **Lưu ở máy khách (local) có trừ giờ không.** Nếu local không trừ giờ thì "miễn phí" thành miễn phí thật, không ai mua giờ. Em đề nghị:
+   trừ giờ theo thời gian QUAY, lưu ở đâu cũng trừ như nhau — khớp với chữ "bán thời gian quay" của anh. (Ship Xanh thu cả hai, local rẻ hơn
+   cloud khoảng 4 đ / phút, mục 28.)
+2. **Giờ dùng thử.** Tính năng miễn phí mà số dư bằng 0 thì khách chưa quay được video nào để biết có đáng mua. Em đề nghị tặng MỘT lần một
+   lượng nhỏ khi bật lần đầu — ví dụ 2 giờ ≈ 120 video một phút, tiền chỗ chứa ≈ 280 đ mỗi shop. Số 2 giờ là em tự đặt.
+3. **Gói Hubsell nào được mua giờ** (kể cả gói miễn phí?). Chưa có căn cứ để đề xuất; anh chốt.
+4. **Mua giờ trong app iPhone.** Giờ quay là hàng số tiêu dùng trong app → Apple đòi đi qua thanh toán của họ nếu nút mua nằm trong app iOS.
+   Anh đang tạm chưa đụng phần Apple, nên em đề nghị: bán giờ trên WEB trước; app iPhone chỉ hiện số giờ còn, không có nút mua và không có
+   chữ chỉ đường ra web. Android: chưa đọc luật Google Play cho ca này. Phải đọc lại luật hai kho lúc làm lát bán giờ — em chưa đọc hôm nay.
+5. **Hết giờ thì khóa cái gì.** Em đề nghị chỉ khóa QUAY MỚI. Xem, tải về, chép đường dẫn các video đã quay vẫn mở, và video vẫn được giữ
+   tới qua hạn khiếu nại theo mục 54 — khách đã trả tiền cho những giờ đó, và lúc cần khiếu nại là lúc họ cần video nhất.
+
+### 55.5 Chưa kiểm
+
+Giới hạn trên ô nộp bằng chứng thật của TikTok, Lazada và của người bán Shopee (cần một yêu cầu hoàn đang mở); mốc 1 phút của Shopee có áp
+cho người bán không; Shopee có nhận đường dẫn ngoài Drive / YouTube không; 480p và bitrate dưới 800k trên tem giấy; luật thanh toán trong
+app của Apple / Google cho việc bán giờ.
+
+### 55.7 Tra thêm về ĐỘ DÀI video sàn nhận (anh hỏi lại 14/11 khuya: "Cái quan trọng là sàn họ chấp nhận video dài bao nhiêu?")
+
+Tìm thêm bằng tiếng Việt, Anh, Indonesia; đọc trực tiếp trang chính thức của Shopee Philippines, TikTok Mỹ, TikTok Singapore; thử mở Kênh
+Người Bán của ba sàn trong Chrome của anh (cả ba đều chưa đăng nhập → dừng, không tự đăng nhập).
+
+| Sàn | Tải THẲNG vào ô bằng chứng | Video dài hơn thế | Mức chắc |
+|---|---|---|---|
+| **Shopee, người bán** | video **≤ 30 MB và dưới 1 phút**; ảnh ≤ 10 MB | nộp bằng đường dẫn **Google Drive hoặc YouTube** — không thấy giới hạn độ dài nào cho video nộp qua đường dẫn | **[gốc]** bài cho người bán của Shopee Philippines (seller.shopee.ph/edu/article/7826, cập nhật 03/11/2025) viết thẳng câu này. Shopee VN: bài người bán dùng đúng mốc 30 MB (22227), bài người mua ghi 1 phút (79467) → hai nguồn VN khớp với bản Philippines, nhưng CHƯA có một câu VN nào viết đủ "người bán: 30 MB, 1 phút" |
+| **TikTok Shop** | **không công bố** | không công bố | **[gốc]** đã đọc bài chính thức VN (19.000 ký tự), Singapore (17.500), Mỹ "Requirements for After-sales Dispute Escalations" (32.000): không có một con số giây / phút / MB nào. Chỉ có "liên tục, rõ, không chỉnh sửa" |
+| **Lazada** | **không tìm ra** | không tìm ra | trang trợ giúp VN không hiện nội dung; trang cộng đồng Lazada Philippines / Singapore chỉ nêu loại bằng chứng, không nêu số. Số "100 MB" thấy trong tài liệu API là cho video SẢN PHẨM, không phải bằng chứng |
+
+Ba điều mới từ bài Shopee Philippines (cùng phần mềm Kênh Người Bán, nhưng là thị trường khác — chưa có câu tương ứng ở bài VN):
+- **"Chỉ nhận đường dẫn Google Drive và YouTube."** → nút "Chép đường dẫn xem" của Hubsell (mục 55.2 điểm 2) nhiều khả năng KHÔNG được Shopee nhận.
+  Đường chắc là nút **"Tải về"**, shop tự đưa lên Drive của họ. Hạ nút "Chép đường dẫn xem" xuống mức "thử sau", không tính là cách nộp.
+- **Đường dẫn phải mở được ít nhất 15 ngày** kể từ lúc tải lên.
+- Drive phải để chế độ "ai có đường dẫn cũng xem được".
+
+Bài mẹo bằng chứng của Shopee VN cho người bán (banhang.shopee.vn/edu/article/25057, 02/06/2025): "Video cần liền mạch, rõ ràng, không có dấu
+hiệu chỉnh sửa", thấy rõ mã đơn / mã vận đơn / mã QR, đúng sản phẩm, đủ số lượng. Không có số.
+
+**Trả lời câu anh hỏi:**
+- Không sàn nào công bố "video bằng chứng dài tối đa N phút" theo nghĩa quá N phút thì bị bác. Giới hạn tìm được là giới hạn của Ô TẢI LÊN.
+- Shopee: tải thẳng được tới 1 phút / 30 MB; dài hơn vẫn nộp được, qua Drive / YouTube.
+- TikTok, Lazada: chưa có số. Chỉ còn một cách: mở ô nộp bằng chứng trên một yêu cầu hoàn thật.
+- → Em không thấy căn cứ nào để giới hạn độ dài QUAY theo sàn. Video đơn thường (dưới 1 phút, 6,5 MB) tải thẳng được ở Shopee; video dài
+  đi đường tải về + Drive.
+
+### 55.8 Anh: "Cứ lấy Shopee làm chuẩn. Nếu nó bắt dưới 1 phút thì mình làm dưới 1 phút luôn. Mà nếu dưới 1 phút sao những người khác để quay 5 phút?" (14/11 khuya) — em trả lời, ⏳ chờ anh chốt
+
+**Shopee không BẮT video bằng chứng dưới 1 phút.** 1 phút / 30 MB là cỡ của Ô TẢI THẲNG; ngay câu sau Shopee chỉ đường cho video dài hơn
+(Google Drive / YouTube). Thứ Shopee bắt là NỘI DUNG (bài 25057): liền mạch, không chỉnh sửa, thấy mã đơn / mã vận đơn, đúng sản phẩm, đủ số
+lượng, quy cách đóng gói hợp lệ.
+
+**Vì sao người khác để 5 phút** (mục 44): trần của họ là chốt chống quên tắt máy hoặc bậc của gói, không lấy từ sàn. Họ đặt ở 5 phút vì trần
+phải phủ được đơn đóng lâu — video phải đi liền một mạch từ lúc thấy hàng tới lúc tem nằm trên kiện đã dán kín. Dohana còn không cho đặt
+thấp hơn 5 phút. Dừng ở 1 phút khi chưa gói xong thì video thiếu đúng đoạn cuối, tức trượt tiêu chí nội dung của chính Shopee.
+
+**Em đề nghị hiểu "Shopee làm chuẩn" là: 1 phút là MỐC CHUẨN, không phải dao cắt.**
+- Cấu hình quay bảo đảm video 1 phút luôn dưới 30 MB. Hiện 6,5 MB — đạt, dư gần 5 lần.
+- Danh sách video gắn nhãn từng video: "Tải thẳng lên Shopee được" (dưới 1 phút và ≤ 30 MB) hoặc "Nộp qua Google Drive" (dài hơn).
+- Ghi chú ở màn mua giờ: "Gói xong trong 1 phút thì video tải thẳng lên Shopee được."
+- Đồng hồ trên màn quay có mốc 1:00 (đổi màu, không chuông, không hộp nhắc) — cần anh gật, vì anh đã bỏ "nhắc quay thừa" ở mục 51.
+- KHÔNG tự dừng ở 1 phút. Trần kỹ thuật (mục 52) vẫn chỉ là chốt chống quên máy.
+
+Nếu anh vẫn muốn dừng cứng ở 1 phút: làm được, nhưng (a) ngành đóng lâu không dùng được — chính anh nêu đơn 15 phút là bình thường (mục 42);
+(b) đơn gói chưa xong ở giây 60 ra video cụt, yếu hơn không cắt.
+
+### 55.9 Anh: "sàn họ bắt trong video phải có ngày giờ quay video nữa" (14/11 khuya) — yêu cầu mới của sản phẩm + một cửa kỹ thuật CHƯA qua
+
+**Câu chữ tìm được ở trang Shopee VN (đọc trực tiếp 14/11):**
+- Bài hỏi đáp người bán (10626), thang đánh giá bằng chứng hàng hoàn: "Mạnh: Video mở hàng có thể hiện **thời điểm mở hàng**"; "Vừa: Hình ảnh …
+  kèm mã vận đơn và **có thời điểm mở hàng**". Tức có thời điểm thì bằng chứng được xếp mạnh hơn.
+- Bài mẹo bằng chứng (25057), phần video ĐÓNG GÓI: liệt kê mã đơn / mã vận đơn / QR, đúng hàng, đủ số lượng, quy cách — **không có chữ nào về
+  ngày giờ**. Em không tìm ra câu chính thức "video đóng gói phải có ngày giờ".
+- Nguồn phụ (blog BigSeller) xếp "video không thể hiện thời điểm" vào nhóm lỗi hay làm bằng chứng bị loại. Đối thủ (Dohana, mục 19) in mã vận
+  đơn + giờ vào hình.
+
+→ Em coi đây là **yêu cầu của sản phẩm cho cả hai loại video** (đóng gói và khui kiện hoàn): trong hình luôn có **ngày giờ chạy theo từng
+giây + mã vận đơn**. Căn cứ: lời anh + thang bằng chứng của Shopee + cách đối thủ làm; không phải một câu luật của sàn cho video đóng gói.
+
+**Điều kiện kỹ thuật đi kèm:** chữ phải được in vào hình NGAY LÚC QUAY (hoặc bằng một bước không cắt ghép), vì sàn đòi "không có dấu hiệu chỉnh
+sửa" (mục 14.3 đã ghi ý này).
+
+**Hiện trạng — CHƯA làm được, chưa thử:**
+- Bản thử lát 0 trên Note8 đang quay hình trơn, không có chữ nào trong hình.
+- Em đã lục mã thư viện đang cài ở nhánh thử (`react-native-vision-camera` 5.2.4): **không có sẵn cách in chữ vào video đang quay.** Không có
+  chữ `OverlayEffect` / `CameraEffect` nào trong mã; gói `camera-effects` của CameraX không được kéo vào. Trang tài liệu `SkiaCamera` của thư
+  viện chỉ nói vẽ lên màn hình xem trước, không nói hình vẽ có vào tệp quay. Ở bản 4 thì chắc chắn KHÔNG vào (bài viết bên thứ ba + một câu
+  hỏi trên GitHub bị đóng "không làm").
+- Thư viện có ghi một câu mở đường: "có thể tự dựng bộ ghi video nhận khung hình qua `FrameRenderer`" — tức phải viết mã gốc riêng.
+
+**Ba đường, theo thứ tự em đề nghị thử (đều cần mã gốc → vẫn nằm trong bản build nộp kho của lát 1, không OTA được):**
+
+| Đường | Cách | Được | Mất / chưa biết |
+|---|---|---|---|
+| 1. In lúc quay | Android: hiệu ứng phủ của CameraX gắn vào luồng quay; iPhone: tự ghép khung hình trước khi ghi | đúng nghĩa "in lúc quay", một lần mã hóa | phải can thiệp vào phiên camera của thư viện — chưa biết có chen được không; có thể ảnh hưởng tốc độ cắt clip (đang 147–177 ms) |
+| 2. In ngay sau khi dừng, trên máy | mã hóa lại clip với lớp chữ chạy theo thời gian rồi mới tải lên | không đụng luồng quay | mã hóa hai lần: tốn pin, nóng máy, giảm nét; clip 15 phút xử lý lâu; về bản chất là tệp đã qua xử lý |
+| 3. Không in vào hình | giờ quay nằm ở sổ + thông tin tệp + trang xem video | không tốn gì | KHÔNG đạt yêu cầu anh nêu — chỉ là đường lùi nếu 1 và 2 đều trượt |
+
+Tên cụ thể của các bộ công cụ ở đường 1 và 2 em nhớ từ trước, **hôm nay chưa đọc lại tài liệu** — phải đọc khi bắt tay thử.
+
+→ Thêm **CỬA 4 vào lát 0**: "trong tệp quay ra có ngày giờ chạy từng giây + mã vận đơn, đọc rõ, mà cửa 2 và 3 không tụt". Trượt cửa này thì
+dừng và báo anh như ba cửa trước. Chưa làm, chờ anh gật.
+
+Chi tiết cần anh quyết khi làm: chữ đặt ở góc nào (không che tem / hàng); giờ lấy theo đồng hồ MÁY CHỦ lúc quét tem hay đồng hồ điện thoại
+(điện thoại chỉnh giờ tay được → em nghiêng về mốc giờ máy chủ + đếm tiếp trên máy); ~~có in thêm tên shop không~~.
+
+**ANH CHỐT (14/11 khuya): "Chỉ cần ngày giờ thôi."** → trong hình CHỈ in ngày giờ chạy từng giây. ⛔ Không in mã vận đơn, không in tên shop
+(mã vận đơn đã có trên tem nằm trong hình). Các câu "ngày giờ + mã vận đơn" ở trên và cửa 4 đọc lại theo chốt này. Lớp chữ chỉ còn một dòng
+ngắn nên nhẹ hơn cho cả đường 1 lẫn đường 2, nhưng cái khó (thư viện không có sẵn cách in vào tệp quay) vẫn nguyên.
+
+**ANH CHỐT vị trí (14/11 khuya): "Em cứ để góc nhỏ bên trái trên cùng đi."** → dòng ngày giờ nằm góc TRÁI TRÊN, cỡ nhỏ. Còn mở: nguồn giờ
+(máy chủ hay điện thoại) — bản thử lát 0 chưa có máy chủ nên dùng giờ điện thoại.
+
+### 55.10 Cửa 4 — bản dựng 7 (14/11 21:11): lớp phủ ngày giờ DỰNG ĐƯỢC, CHƯA CHẠY trên máy
+
+**Đã kiểm trên tài liệu chính thức của Android (đọc 14/11):**
+- `OverlayEffect` (gói `androidx.camera:camera-effects`, có từ 1.4.0): vẽ lớp phủ bằng `Canvas` lên từng khung hình, trộn bằng OpenGL trước
+  khi khung tới đầu ra; nhận đích `PREVIEW | VIDEO_CAPTURE`; độ sâu hàng chờ 0 dành cho lớp phủ không phụ thuộc kết quả phân tích.
+- `SessionConfig.Builder.addEffect(CameraEffect)` có từ 1.5.0.
+- Thư viện camera 5.2.4 dựng phiên quay bằng đúng `SessionConfig.Builder(...)` ở MỘT tệp (`session/ConstraintResolver.kt`, hai chỗ) → chen
+  được lớp phủ mà không đụng phần còn lại.
+
+**Bản vá (chỉ ở nhánh thử `D:\HubsellVideo`, chưa commit):**
+- Thêm gói `camera-effects` cùng bản CameraX 1.7.0-alpha03 vào `build.gradle` của thư viện.
+- Tệp mới `session/TimestampOverlay.kt`: một dòng `dd/MM/yyyy HH:mm:ss` chữ trắng trên nền đen mờ, góc trái trên, chữ cao ≈ 3,5 % cạnh ngắn
+  (≈ 25 điểm ảnh ở 720p), giờ lấy từ đồng hồ điện thoại. Chỉ gắn khi phiên có CẢ xem trước lẫn quay video — các màn chỉ quét mã không đổi.
+- Hai dòng `.apply { … addEffect(it) }` trong `ConstraintResolver.kt`.
+- Vá nằm trong `node_modules` (cài lại gói là mất) → bản sao + hai tệp khác biệt để ở `hubsell-mobile/patches-thu/vision-camera-5.2.4-ngay-gio/`;
+  tệp gốc lưu ở `.cache-thu/vc-*.orig`.
+
+**Kết quả:** `BUILD SUCCESSFUL in 1m 20s` (nhật ký `.cache-thu/build-7.log`), tệp cài 74,88 MB (bản 6: 74,87 MB, đã giữ bản sao ở
+`.cache-thu/app-release-build6.apk`). Tức là **dịch được** — mới chỉ vậy.
+
+**CHƯA cài, CHƯA chạy.** Note8 có cắm máy tính nhưng đang khóa màn hình; em không nhập mã, và không tự thay bản 6 (anh đang định thử "tem đã
+quay rồi") bằng một bản chưa chạy lần nào. Cửa 4 chỉ tính là qua khi kéo clip về thấy ngày giờ trong hình.
+
+**Phải xem khi chạy (thứ tự):**
+1. App có mở được camera không — chưa biết `isSessionConfigSupported` trả gì khi phiên có lớp phủ; nếu trả sai, thư viện sẽ hạ dần các
+   ràng buộc (số khung hình, độ phân giải) rồi mới gắn.
+2. Chữ có đứng đúng chiều, đúng góc không — em tính phép xoay theo `rotationDegrees` trên giấy; dòng nhật ký `HubsellTimestamp khung=… cat=…
+   xoay=…` in một lần để chỉnh nếu lệch.
+3. Clip kéo về có chữ không, giây có chạy không.
+4. Cửa 2 và 3 có tụt không: số lượt đọc mã lúc quay, thời gian cắt clip (đang 147–177 ms), số khung hình, cỡ tệp, nóng máy — lớp phủ thêm
+   một vòng OpenGL cho mỗi khung, và gộp xem trước với quay video vào chung một luồng.
+5. Màn quét cũ (`expo-camera`) không bị ảnh hưởng.
+
+Lùi về bản 6: `adb install -r D:\HubsellVideo\.cache-thu\app-release-build6.apk`. iPhone: chưa có gì, đường làm khác hẳn (không có CameraX).
+
+### 55.11 Cửa 4 — chạy thật trên Note8 (14/11 21:16–21:25, anh mở khóa máy: "Mở khóa rồi, cài đi"): NGÀY GIỜ NẰM TRONG TỆP QUAY
+
+Bốn bản dựng trong lượt này: **7** (lớp phủ) → **8** (dời chữ vào vùng video) → **9** (thêm nút QUAY THỬ để em tự mở clip qua adb, không cần tem)
+→ **10** (hình xem trước hiện trọn, xem cuối mục). Máy đang chạy bản 10. Pin 95 → 89 %, nhiệt pin 32,5 → 35,3 °C sau khoảng 20 phút thử ngắt quãng.
+
+| Điều phải xem (55.10) | Kết quả |
+|---|---|
+| 1. Camera có mở không | **Mở được.** Nhật ký: lớp phủ được tạo, CameraX gộp xem trước + quay vào một luồng chung 1440×1080, đầu ra video 720×1280. Luồng soi mã vẫn riêng, vẫn 15–16 khung/giây kể cả lúc đang quay |
+| 2. Chữ đúng chiều, đúng góc | **Đúng ngay lần đầu** (`xoay=90`, phép xoay tính trên giấy khớp). Một lỗi vị trí ở bản 7: luồng chung là 4:3 còn tệp video là 16:9 cắt GIỮA (`Rect(0,135–1440,945)`), lớp phủ không được biết vùng cắt → chữ sát mép trái sẽ bị cụt đầu trong tệp. Bản 8 đặt chữ trong vùng 16:9 nằm giữa |
+| 3. Clip có ngày giờ, giây có chạy | **Có.** Clip thử 74,4 giây: khung ở giây 1 ghi `14/11/2026 21:24:02`, giây 9 ghi `21:24:10`; chữ trắng trên nền đen mờ, góc trái trên, đọc rõ ở 720p |
+| 4a. Số khung hình, bitrate, cỡ tệp | **Không tụt.** 1.117 khung / 74,4 giây = 15,0 khung/giây; bitrate 805 kbps (đặt 800k); 7,89 MB ≈ 0,4 + 6,04 MB / phút — bằng số đo lúc chưa có lớp phủ (mục 41.3) |
+| 4b. Đọc mã lúc quay, thời gian cắt clip khi đổi tem | **CHƯA đo** — cần tem; anh nhận thử ("Để anh dùng tem test cho") |
+| 4c. Nóng máy | chưa đủ dài để nói: 32,5 → 32,9 °C sau 75 giây quay |
+| 5. Màn quét cũ (`expo-camera`) | chưa thử |
+
+Phát hiện phụ: bảng nút trên màn thử dịch lên ≈ 100 điểm ảnh khi có clip đang quay → cú bấm DỪNG qua adb phải lấy tọa độ từ ảnh chụp lúc đó
+(lần đầu em bấm trượt, clip chạy 74 giây thay vì 12).
+
+**Anh thử bằng tem (21:26–21:29, bản 9) — trả lời dòng 4b:**
+
+| Clip | Mã | Dài / cỡ | Ngày giờ trong tệp (khung đầu → khung cuối) | Cắt khi đổi tem |
+|---|---|---|---|---|
+| #2 | 862789236474 | 98,7 giây · 10,34 MB · 1.482 khung = 15,0 khung/giây | `21:26:11` → `21:27:47` | — (clip đầu) |
+| #3 | 862720326484 | 94,4 giây · 9,87 MB · 1.417 khung = 15,0 khung/giây | `21:27:50` → `21:29:22` | **174 ms** |
+
+- Đọc mã lúc đang quay có lớp phủ: vẫn chạy (38 lượt đọc trong lượt thử, luồng soi 15 khung/giây). Tem 2 được nhận và cắt clip đúng.
+- Thời gian cắt 174 ms nằm trong dải cũ 147–177 ms (mục 41) — **một mẫu**, chưa đủ để nói "không đổi".
+- Chữ ở khung đầu clip #3 (ngay sau khi cắt) hiện đủ, không có khung nào thiếu chữ ở đầu / cuối hai clip em đã xem (4 khung).
+
+**Anh bắt được một lỗi: "sao anh không thấy lớp phủ ngày giờ" lúc đang quay.** Tệp quay CÓ chữ; cái mất là chữ trên MÀN XEM TRƯỚC. Nguyên nhân
+(chụp màn hình trước / trong / sau khi quay): màn thử để hình xem trước kiểu "lấp đầy khung"; lúc đang quay bảng thông tin bên dưới cao lên,
+khung xem trước lùn đi, hình bị cắt thêm ở mép trên và dưới → dòng chữ nằm sát mép trên bị đẩy ra ngoài vùng nhìn thấy. Bản **10** (21:35)
+đổi hình xem trước sang kiểu "hiện trọn hình": chụp lại thấy chữ cả lúc chờ lẫn lúc ĐANG QUAY.
+
+★ Bài học cho lát 1: **khung xem trước phải đúng bằng khung của tệp video (9:16), hiện trọn, không cắt, kích thước không đổi giữa lúc chờ và
+lúc quay** — người đóng hàng phải thấy đúng cái sẽ nằm trong video (cả dòng ngày giờ lẫn mép kiện hàng).
+
+**Anh hỏi (21:36): "Cần test phần ngày giờ này trên các loại kích thước màn hình điện thoại không em?"**
+- Chữ trong TỆP không phụ thuộc cỡ màn hình: nó được vẽ lên khung hình camera, cỡ và lề tính theo % cạnh ngắn của khung video.
+- Thứ PHẢI thử trên nhiều máy là **đời máy / camera**, không phải cỡ màn hình: mỗi máy cho luồng camera khác nhau (4:3 hay 16:9, góc xoay cảm
+  biến 90 / 270, độ phân giải), và bản vá đang giả định "video là 16:9 cắt giữa". Thêm: máy yếu có chịu nổi vòng OpenGL của lớp phủ không;
+  các bản Android khác nhau.
+- Cỡ màn hình chỉ ảnh hưởng MÀN XEM TRƯỚC — xử lý bằng luật của lát 1 (khung xem trước 9:16 cố định, hiện trọn), rồi soi trên 2–3 tỷ lệ màn.
+- Bằng chứng ngay trên Note8 (em thử thêm 21:37): bấm **1080p** khi có lớp phủ thì tệp ra VẪN là **720×1280** — luồng chung chỉ 1440×1080 nên
+  video không lên được 1080p. Chữ vẫn đúng chỗ. Tức lớp phủ làm đổi cách CameraX chia luồng; trước khi có lớp phủ 1080p ra cỡ nào thì chưa
+  đo. Không vướng nếu giữ một mức 720p (mục 55.3), nhưng là điều phải biết.
+- Đề nghị cho lát 1: thử tối thiểu 3–4 máy Android khác đời (một máy rẻ đời mới, một máy màn dài 20:9, một máy Android 13+) + iPhone làm riêng.
+
+**Còn nợ của cửa 4:** (a) thêm mẫu cắt clip với tem thật (mới 1 mẫu); (b) vùng đặt chữ đang GIẢ ĐỊNH video là 16:9 cắt giữa — đúng với 720p / 1080p của bản thử, bản thật
+nên lấy vùng cắt thật hoặc ép luồng chung về 16:9; (c) chữ trên màn xem trước đè lên thanh trạng thái của máy (chỉ là hình xem trước, tệp
+quay không bị); (d) giờ đang lấy từ đồng hồ điện thoại; (e) iPhone.
+
+### 55.12 Anh hỏi (14/11 ~21:45): "Việc trên các khung hình mình có phương án nào tốt cho tỉ lệ mặc định không?" — đề xuất của em, CHƯA thử
+
+Điều đang xảy ra trên Note8 (nhật ký bản 7–10): cảm biến camera là 4:3; luồng chung xem trước + quay là 1440×1080 (4:3); tệp video 720×1280
+(9:16) là phần CẮT GIỮA của luồng đó, chỉ dùng 810 / 1080 = **75 % bề ngang** góc nhìn. Mọi rắc rối của cửa 4 (chữ cụt đầu, xem trước khác
+video) đều từ chỗ hai khung không cùng tỷ lệ.
+
+| Phương án | Khung tệp video | Được | Mất / chưa biết |
+|---|---|---|---|
+| A. Như đang chạy: 9:16 cắt giữa từ luồng 4:3 | 720×1280 | tỷ lệ quen, xem đầy màn điện thoại dọc | bỏ 25 % bề ngang góc nhìn; xem trước ≠ video; chỗ đặt chữ phải GIẢ ĐỊNH vùng cắt — máy khác có thể cắt khác |
+| **B. 3:4, đúng tỷ lệ cảm biến** | 720×960 (hoặc 768×1024 — thư viện có sẵn mức `HD_4_3`) | thấy trọn góc nhìn: bề ngang rộng hơn A **33 %** ở cùng độ cao đặt máy → thấy nhiều mặt bàn hơn; xem trước = video = luồng soi mã, không còn vùng cắt nào để đoán; hầu hết cảm biến điện thoại đều 4:3 nên máy nào cũng như nhau; ít điểm ảnh hơn A 25 % → cùng 800k thì nét hơn, hoặc hạ bitrate mà giữ nét | thư viện CỐ Ý không đặt tỷ lệ cho đầu quay (chú thích trong `HybridVideoOutput.kt`) → phải vá thêm một chỗ; chưa biết bộ mã hóa của mọi máy có nhận cỡ 4:3 không; xem lại trên điện thoại dọc có dải đen trên dưới |
+| C. 9:16, ép luồng chung về 16:9 | 720×1280 | xem trước = video, giữ tỷ lệ quen | vẫn bỏ 25 % góc nhìn như A; chưa thử ép được không |
+
+**Em nghiêng về B làm mặc định, A làm đường lùi cho máy không quay được 4:3** — bằng chứng đóng hàng cần thấy nhiều mặt bàn hơn là cần đầy màn
+hình, và B xóa luôn nguồn gốc của hai lỗi vừa gặp. Sàn không đòi tỷ lệ nào (mục 55.2, 55.3).
+
+Dù chọn phương án nào, hai luật không đổi: (1) khung xem trước = đúng khung của tệp video, hiện trọn, không đổi cỡ giữa lúc chờ và lúc quay;
+(2) chữ ngày giờ đặt theo % của KHUNG VIDEO, không theo màn hình.
+
+Chưa thử B lần nào. Thử được trên Note8 sau khi bài quay dài xong (không đụng máy lúc đang quay): vá đầu quay cho tỷ lệ 4:3, quay, kéo tệp về
+xem cỡ thật + góc nhìn + cỡ tệp. Câu kèm theo chưa bàn: khóa quay DỌC hay cho quay ngang.
+
+### 55.13 Quay liền 9 phút có lớp phủ ngày giờ (14/11 21:39:33–21:48:37, tem 862788863404, anh tự bấm dừng) — CHƯA phải bài 15–20 phút
+
+| Đo | Kết quả |
+|---|---|
+| Tệp | 544,1 giây · 54,88 MB · 720×1280 · 8.168 khung = **15,0 khung/giây** · 801 kbps |
+| Cỡ theo phút | 6,1 MB / phút đều từng phút (nhật ký mỗi phút, 9 dòng) |
+| Ngày giờ trong hình | khung giây 2: `21:39:35` · giây 270: `21:44:03` · giây 540: `21:48:33` · khung cuối: `21:48:36` → **không lệch một giây nào** so với giờ mở clip + thời gian trôi |
+| Nhiệt pin | 35,8 → 36,2 °C (gần như đứng yên) |
+| Pin (không cắm sạc) | 86 → 82 %: ≈ **0,5 % mỗi phút** ≈ 30 % mỗi giờ quay |
+| Cấu trúc tệp | `ftyp` → `moov` ở ĐẦU tệp (149 KB) → vùng trống 251 KB → `mdat`. Mở được, tua được tới giây 540 |
+| Cắt clip khi sang tem này | 226 ms (mẫu thứ hai; mẫu đầu 174 ms) |
+
+★ **Phát hiện về trần độ dài (trả lời câu (c) ở mục 52):** tệp dành sẵn 400 KB đầu tệp cho chỉ mục; 9 phút dùng hết 149 KB ≈ 274 byte mỗi giây →
+**chỗ dành sẵn đầy ở khoảng 24 phút** (tính từ một tệp, chưa quay tới đó để xem). Quá mốc này chỉ mục nhiều khả năng bị đẩy xuống CUỐI tệp
+(tệp vẫn xem được nhưng phải tải hết mới tua được) hoặc tệ hơn — chưa biết. → Trần kỹ thuật "60 phút" em đề xuất ở mục 52 CHƯA có căn cứ;
+bài quay 25–30 phút là bài phải làm trước khi chốt trần.
+
+Lưu ý cách đo: lượt này máy để ở nút "1080p" (em bấm lúc thử, quên trả về) nhưng tệp ra vẫn 720×1280 (mục 55.11) nên số trên vẫn là số của
+cấu hình 720p · 800k · 15 khung hình/giây. Anh dừng ở 9 phút 4 giây, không phải 15 phút → bài "quay dài 15–20 phút" (mục 42.3) VẪN NỢ.
+
+**Bản dựng 11 (21:47, có nút khung "3:4" — mục 55.12) ĐÃ CÀI lúc ~21:50 nhưng CHƯA chạy:** máy tự khóa màn hình ngay sau khi anh dừng video.
+
+### 55.14 Thử khung 3:4 trên Note8 (14/11 21:50–21:56, bản dựng 11 → 12): CHẠY ĐƯỢC, thấy rộng hơn đúng như tính
+
+Anh: "Đợi test đủ 15 phút cho tem này thì chúng ta thử cho tỉ lệ 3:4" + "khách hàng bắt buộc cài đặt trên camera điện thoại?" → không: tỷ lệ
+do app tự đặt lúc mở camera, cài đặt trong app Camera của máy không liên quan. Em đề nghị mặc định cố định, không nút chọn, máy không quay
+được 3:4 thì app tự lùi về 9:16.
+
+**Bản vá thêm** (cùng chỗ với bản vá ngày giờ, `hybrids/outputs/HybridVideoOutput.kt`, bản sao khác biệt ở `patches-thu/`): khi đích là khung
+4:3 thì đặt `setAspectRatio(RATIO_4_3)` cho đầu quay và báo tỷ lệ cho lớp phủ ngày giờ. Màn thử thêm nút **3:4** (đích `HD_4_3` = 768×1024).
+
+| Bản | Kết quả |
+|---|---|
+| 11 | khung 3:4 chạy, nhưng tệp ra **480×640** — bộ chọn mức chất lượng của thư viện so theo cỡ 16:9 điển hình nên đích 4:3 rơi xuống mức SD |
+| 12 | chọn mức theo CẠNH NGẮN → tệp ra **768×1024**, vùng lấy hình `Rect(0,0–1440,1080)` = **trọn luồng cảm biến**, không còn cắt giữa |
+
+Cặp clip so sánh, máy đứng yên một chỗ (21:55, bấm QUAY THỬ qua adb):
+
+| | 9:16 (đang dùng) | 3:4 (bản 12) |
+|---|---|---|
+| Khung tệp | 720×1280 | 768×1024 |
+| Vùng lấy từ luồng 1440×1080 | `Rect(0,135–1440,945)` = 75 % bề ngang | toàn bộ |
+| Số khung hình | 15,0 / giây | 15,0 / giây (184 khung / 12,26 giây) |
+| Bitrate đo | 826 kbps | 839 kbps → cỡ tệp theo phút như nhau (bitrate quyết định) |
+| Ngày giờ | góc trái trên, đủ chữ | góc trái trên, sát đúng góc khung (không còn phải lùi vào theo giả định) |
+| Màn xem trước | 4:3, rộng hơn tệp video | **đúng bằng khung tệp video** |
+
+Nhìn hai khung cạnh nhau: bản 3:4 thấy thêm một dải ở mép trái và mép phải mà bản 9:16 cắt mất (ảnh so sánh đã gửi anh, không lưu vào dự án).
+
+**Chưa thử với 3:4:** đọc tem + cắt clip khi đổi tem; quay dài; nét của chữ trên tem so với 9:16 (3:4 dàn 768 điểm ảnh trên bề ngang rộng hơn 33 %
+→ mỗi cm mặt bàn được ÍT điểm ảnh hơn 9:16 khoảng 20 %; cần xem tem ở cùng khoảng cách còn đọc được không); máy khác; đường tự lùi về 9:16
+khi máy không có mức 4:3 (chưa viết). Anh CHƯA chốt lấy 3:4 làm mặc định.
+
+Máy đang ở bản 12; mở app lên vẫn mặc định nút 720p (9:16), phải bấm 3:4 mới đổi.
+
+### 55.15 Anh thử 3 tem ở khung 3:4 (21:57, bản 12) + "còn thiếu tiếng nhạc nữa là xuất sắc" → bản 13 có âm báo
+
+| Clip | Mã | Tệp | Cắt khi đổi tem |
+|---|---|---|---|
+| #3 | 862766716144 | 768×1024 · 12,7 giây · 190 khung | — |
+| #4 | 862788863404 | 768×1024 · 12,4 giây · 186 khung | 209 ms |
+| #5 | 862720326484 | 768×1024 · 7,3 giây · 110 khung | 224 ms |
+
+- Ở khung 3:4: đọc tem lúc đang quay chạy, đổi tem cắt đúng, 15 khung/giây, ngày giờ đủ ở góc trái trên mọi khung em xem (4 khung).
+- Số vận đơn in to trên tem đọc rõ ở 3:4 (tem vẫn là ẢNH TRÊN MÀN HÌNH máy tính, chưa phải tem giấy → chưa kết luận cho chữ nhỏ).
+- **Thời gian cắt clip từ khi có lớp phủ ngày giờ: 174 · 226 · 209 · 224 ms (4 mẫu)** — cao hơn dải 147–177 ms trước lớp phủ khoảng 30–50 ms.
+  Chưa tách được do lớp phủ hay do khung 3:4 / nút 1080p của các lượt đó; vẫn dưới 1/4 giây.
+
+**Âm báo (bản dựng 13, 22:00):** dùng lại bộ âm sẵn có của các màn quét kho (`src/lib/scan-sounds.ts`, không thêm thư viện, không thêm tệp):
+- nhận tem + clip đã mở → "ting-ting" (`success`);
+- tem đã quay rồi đưa vào lại → "boop-boop" (`duplicate`), một lần cho mỗi tem.
+Video quay không thu tiếng nên âm báo không lọt vào tệp. **Đã dựng + cài, CHƯA nghe / CHƯA chạy** — máy tự khóa màn hình trước khi em kịp bấm
+thử, và tiếng thì chỉ anh nghe được. Chưa có: âm riêng cho lúc clip kết thúc; rung.
+
+**Anh thử bản 13 (22:02, khung 9:16): "Có tiếng rồi".** Nhật ký cùng lượt: 3 tem ra 3 clip (16,9 · 12,7 · 15,3 giây), cắt khi đổi tem
+**230 ms và 221 ms**; tem 862720326484 đưa vào lại lúc 22:02:52 → máy ghi "đã quay rồi (clip 1)", KHÔNG mở clip mới — tức phần báo tem đã quay
+rồi của bản 6 (mục 41.2, trước giờ chưa thử) cũng chạy.
+
+→ Thời gian cắt clip từ khi có lớp phủ ngày giờ, 6 mẫu: 174 · 226 · 209 · 224 · 230 · 221 ms. Hai mẫu cuối là khung 9:16 nút 720p, nên phần
+chậm thêm ≈ 50 ms so với dải 147–177 ms cũ là do LỚP PHỦ (xem trước và quay đi chung một luồng), không phải do khung 3:4.
+
+### 55.16 Anh: "Test sang iPhone trước. Còn phần khác sau này lên app anh sẽ kiểm nghiệm thực tế" (14/11 22:05) — đường làm, CHƯA dựng bản nào
+
+→ Thứ tự mới: **iPhone trước**. Các món nợ còn lại của Android (quay 25–30 phút, tem giấy, máy khác, màn quét cũ, rung) anh nhận kiểm khi
+tính năng đã nằm trong app thật — em không tự làm tiếp, không nhắc lại.
+
+**Đã đọc trong mã iOS của thư viện camera 5.2.4 (chưa chạy dòng nào):**
+- iPhone có HAI đường quay. Mặc định là bộ ghi sẵn của Apple (`AVCaptureMovieFileOutput`) — không có chỗ chen hình. Đường thứ hai bật bằng
+  tùy chọn `enablePersistentRecorder`: từng khung hình đi qua mã của thư viện (`HybridCameraVideoFrameOutput.swift`, hàm `onFrame`) rồi mới
+  được ghi bằng `AVAssetWriter` (`HybridFrameRecorder.swift`). **Đó là chỗ in được ngày giờ lên khung trước khi ghi** — cùng ý với Android
+  (in lúc quay, một lần mã hóa), nhưng mã hoàn toàn khác: viết bằng Swift, vẽ thẳng lên bộ đệm hình.
+- Ở đường thứ hai, thư viện tự ghi chú "TODO: hỗ trợ đặt bitrate" → mức 800k có thể KHÔNG ăn trên iPhone; cỡ tệp iPhone phải đo lại từ đầu.
+- Đọc mã lúc đang quay trên iPhone: mục 36.2 đã đoán "nhiều khả năng được"; chưa ai chạy.
+
+**Ba thứ chặn đường, theo thứ tự:**
+1. **Đưa bản thử lên iPhone.** Máy anh là Windows → không dựng iOS tại chỗ được, phải dựng trên máy chủ của Expo. Nhánh thử đang để mã định danh
+   iOS là `vn.hubsell.app` — CỦA APP THẬT (bên Android em đã đổi thành `vn.hubsell.thuvideo`, bên iOS chưa). Dựng nguyên như vậy là ra một
+   bản "Hubsell" mở thẳng vào màn thử → ⛔ không được dựng / nộp khi chưa đổi.
+2. **Cửa 1–3 trên iPhone chưa qua lần nào** (dựng được với 4 gói camera mới không; vừa quay vừa đọc mã; cắt clip).
+3. **Cửa 4 trên iPhone** = viết bản vá Swift. Em không dịch thử Swift được trên Windows: sai một dấu là hỏng cả lượt dựng trên máy chủ
+   (mỗi lượt chờ 30 phút trở lên vào buổi tối với gói Expo miễn phí, có hạn mức theo tháng — hạn mức còn lại em CHƯA xem được).
+
+**Hai cách cài lên iPhone:**
+
+| | A. App thử riêng (em đề nghị) | B. Qua TestFlight bằng mã của app thật |
+|---|---|---|
+| Trên iPhone | một app "Hubsell Thử Video" nằm CẠNH app Hubsell, như bên Android | bản thử THAY app Hubsell trên máy đó |
+| Đụng tới bản 1.4.3 đang nộp dở | không | có: chung dãy số bản dựng và chung trang TestFlight |
+| Anh phải làm | một lần: mở một đường dẫn trên iPhone để đăng ký máy; đăng nhập tài khoản Apple trong cửa sổ lệnh khi công cụ hỏi (em không gõ mật khẩu) | gần như không, chỉ mở TestFlight |
+| Tạo thêm trên tài khoản Apple | một mã app mới + hồ sơ cài cho máy đã đăng ký | không |
+
+**Em đề nghị dựng HAI lượt:** lượt 1 không có bản vá ngày giờ (qua cửa 1–3 trên iPhone, đo cỡ tệp, xem bitrate có ăn) → lượt 2 thêm ngày giờ +
+khung 3:4. Gộp một lượt thì bản vá Swift viết mù mà sai là mất luôn kết quả cửa 1–3.
+
+Cần anh: chọn A hay B; đời iPhone + bản iOS của máy thử. Chưa làm gì trên tài khoản Apple / Expo.
+
+### 55.17 ANH CHỐT cách B cho iPhone + "chỉ dựng code trước, test đợi bản 1.4.3 lên" (14/11 22:10) — mã đã viết, CHƯA dịch thử, CHƯA dựng iOS
+
+> Anh Trung: "Anh chọn phương án B, nhưng mà mình chưa test vội mà chỉ dựng code trước. Còn phần test đợi bản 1.4.3 lên mới test."
+
+→ iPhone đi **TestFlight bằng mã của app thật** (`vn.hubsell.app`). ⛔ Không dựng / không nộp bản iOS nào từ nhánh thử trước khi 1.4.3 lên kho.
+⛔ Không làm app thử riêng cho iPhone (cách A) nữa.
+
+**Đã viết ở nhánh thử `D:\HubsellVideo` (chưa commit):**
+
+| Tệp | Việc | Mức kiểm |
+|---|---|---|
+| `ios/Utils/HubsellTimestampOverlay.swift` (mới, trong thư viện camera) | vẽ `dd/MM/yyyy HH:mm:ss` chữ trắng nền đen mờ vào góc trái trên của TỪNG KHUNG trước khi ghi; vẽ thẳng lên mặt phẳng độ sáng của khung 4:2:0 8 bit (hoặc BGRA); định dạng khác (10 bit / HDR) thì bỏ qua và in một dòng nhật ký | **CHƯA dịch thử** — viết trên Windows, không có trình dịch Swift |
+| `ios/.../HybridCameraVideoFrameOutput.swift` (vá) | gọi lớp vẽ trên mỗi khung khi đang có bản ghi; tự đặt bitrate trung bình vào cấu hình nén (thư viện để ngỏ chỗ này) | **CHƯA dịch thử** |
+| `src/app/video-test.tsx` | iPhone: bật `enablePersistentRecorder`, ép H.264, hiện một đồng hồ riêng trên màn xem trước (lớp vẽ chỉ vào khung GHI, không hiện ở xem trước của iPhone) | qua kiểm kiểu TypeScript; chưa chạy trên iPhone |
+| `src/lib/video-test-flag.ts` (mới) + `src/app/index.tsx` + `src/screens/OverviewPage.tsx` | bản iPhone chạy như app thật (cổng đăng nhập khôi phục), thêm ô **"Quay video đóng gói · Bản thử"** ở Tổng quan dưới Giá vốn dẫn vào màn thử; app thử Android vẫn mở thẳng màn thử | qua kiểm kiểu; Android dựng được (bản 14) |
+| `patches/react-native-vision-camera+5.2.4.patch` + `postinstall: patch-package` | mọi bản vá thư viện (Android + iOS) thành MỘT tệp tự áp khi cài gói — bắt buộc cho dựng trên máy chủ, vì ở đó gói được cài lại từ đầu | tệp vá áp sạch lên bản gốc (`git apply --check`), công cụ báo ✔ |
+| `eas.json` | cấu hình dựng `thuVideo` với kênh cập nhật riêng `thu-video` | chưa dùng |
+
+Vì sao cần kênh riêng: bản thử mà dùng kênh `production` thì lần phát hành cập nhật từ xa kế tiếp của app thật sẽ đè mất màn thử trong bản TestFlight.
+
+Bản dựng Android **14** (22:47, cùng mã trên) dựng được và đã cài lên Note8; máy đang khóa nên CHƯA nhìn lại được màn thử có mở như cũ không.
+
+**Việc phải làm khi 1.4.3 đã lên kho (theo thứ tự; chưa làm việc nào):**
+1. Đặt phiên bản của nhánh thử CAO HƠN 1.4.3 (TestFlight không nhận bản cùng số với bản đã phát hành) — số nào do anh chốt.
+2. Trả `name` trong `app.json` về "Hubsell" cho lượt dựng iOS (nhánh thử đang để "Hubsell Thu Video" cho app Android).
+3. Dựng iOS bằng cấu hình `thuVideo` trên máy chủ Expo → **lần dịch Swift đầu tiên**. Hỏng ở bước dịch thì đọc nhật ký, sửa, dựng lại
+   (mỗi lượt tốn hạn mức dựng + chờ hàng).
+4. Đưa lên TestFlight (nội bộ), KHÔNG gửi duyệt App Store. Mọi người thử nội bộ trên TestFlight đều thấy ô "Bản thử".
+5. Thử trên iPhone theo thứ tự cửa: dựng được → vừa quay vừa đọc mã → cắt clip → ngày giờ trong tệp (đúng chiều? đúng góc?) → khung 3:4 →
+   âm báo → cỡ tệp / bitrate có ăn không.
+6. Thử xong: anh cài lại bản Hubsell từ App Store nếu muốn bỏ ô thử.
+
+**Rủi ro đã biết trước của bản iPhone:** mã Swift chưa qua trình dịch; chưa biết khung hình iPhone đưa ra có phải 4:2:0 8 bit không (không phải
+thì KHÔNG có chữ, chỉ có dòng nhật ký); chưa biết khung đã xoay đúng chiều lúc tới chỗ vẽ chưa; nút 3:4 trên iPhone chưa có gì bảo đảm ra đúng
+tỷ lệ; đường tự lùi về 9:16 chưa viết.
+
+### 55.18 ANH CHỐT đường lên app thật (14/11 ~23:00): thử xong iPhone → vào app thật, CHƯA mở tính năng, chỉ mở cho `admin@hubsell.vn`
+
+> Anh Trung: "Vậy là dựng thành app riêng à? Anh tưởng mình đẩy thẳng vào App hubsell hiện có được" → em giải thích: trên iPhone nó nằm trong
+> chính app Hubsell (TestFlight), app riêng chỉ là bản thử Android trên Note8. Anh: "Được rồi. Tạm thời như vậy. Thử xong iphone mình cho lên
+> app thật nhưng sẽ chưa mở tính năng mà chỉ mở riêng cho tài khoản admin@hubsell.vn để test thật thôi."
+
+Thứ tự anh chốt:
+1. **Tạm thời giữ nguyên:** Android = app thử riêng trên Note8; iPhone = bản TestFlight của app Hubsell, sau khi 1.4.3 lên kho (mục 55.17).
+2. **Thử xong iPhone → đưa vào app thật** (gộp vào mã chính, đi theo bản phát hành kế).
+3. **Tính năng CHƯA mở cho khách.** Chỉ tài khoản **`admin@hubsell.vn`** thấy và dùng được, để anh thử thật.
+   ⛔ Không hiện ô "Quay video đóng gói" cho tài khoản nào khác khi chưa có lệnh mở của anh.
+
+Hệ quả cho mã (CHƯA làm, làm lúc gộp vào app thật):
+- Cờ `IS_VIDEO_TEST_BUILD` (hiện ô cho MỌI tài khoản của bản dựng từ nhánh thử) chỉ dùng được cho TestFlight / app thử. Vào app thật phải
+  đổi thành **cờ theo tài khoản**.
+- Em đề nghị để cờ ở MÁY CHỦ (một công tắc theo tài khoản / shop, mặc định tắt, bật cho `admin@hubsell.vn`), app hỏi máy chủ rồi mới hiện ô —
+  không ghi cứng địa chỉ thư vào app. Lý do: mở thêm cho tài khoản thứ hai không phải nộp lại kho; và đúng với thiết kế "công tắc theo shop,
+  mặc định tắt" đã ghi từ mục 17. Anh chưa duyệt cách này.
+- Ô ở app thật lúc đó vẫn dẫn tới MÀN THỬ (quay, cắt theo tem, ngày giờ, âm báo, lưu trong máy) trừ khi lát 1 đã xong.
+- Khi nộp kho một bản có tính năng bị ẩn theo tài khoản: ghi rõ trong ghi chú gửi người duyệt của Apple / Google (em chưa đọc lại luật kho
+  hôm nay — kiểm trước khi nộp).
+- Bản vá thư viện camera + 4 gói camera mới sẽ vào app thật của MỌI khách dù tính năng ẩn → phải thử lại các màn quét cũ trước khi phát hành
+  (mục 38.3: CameraX của cả app bị kéo lên bản alpha). Đây là việc của lượt gộp, không thuộc phần "anh kiểm khi lên app".
+
+### 55.6 Nguồn (mục 55)
+
+https://docs.expo.dev/guides/setting-up-continuous-integration ·
+https://docs.expo.dev/tutorial/eas/ios-development-build-for-devices.md ·
+
+https://developer.android.com/reference/androidx/camera/effects/OverlayEffect ·
+https://developer.android.com/reference/androidx/camera/core/SessionConfig.Builder ·
+
+https://seller.shopee.ph/edu/article/7826 · https://banhang.shopee.vn/edu/article/25057 ·
+https://seller-us.tiktok.com/university/essay?knowledge_id=3985068541478658&lang=en ·
+https://seller-sg.tiktok.com/university/essay?knowledge_id=3594067754370817 ·
+
+https://help.shopee.vn/portal/4/article/79467 · https://banhang.shopee.vn/edu/article/22227 · https://banhang.shopee.vn/edu/article/10626 ·
+https://banhang.shopee.vn/edu/article/3647 ·
+https://seller-vn.tiktok.com/university/essay?knowledge_id=1766935302801169&default_language=vi-VN ·
+https://seller-vn.tiktok.com/university/essay?knowledge_id=5104634859620098 ·
+https://www.bigseller.com/blog/articleDetails/tiktok-shop-refund-appeal-rules-philippines-2026.5071.htm ·
+https://www.bigseller.com/blog/articleDetails/tiktok-shop-malaysia-policy-update-2026.5012.htm
