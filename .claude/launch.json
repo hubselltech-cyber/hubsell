@@ -2,6 +2,18 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "thu-webcam",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/thu-webcam/server.mjs",
+        "--port",
+        "4321",
+        "--out",
+        "D:/HubsellVideo/.cache-thu/webcam-out"
+      ],
+      "port": 4321
+    },
+    {
       "name": "backend",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

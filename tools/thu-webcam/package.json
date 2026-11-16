@@ -1,0 +1,15 @@
+{
+  "name": "thu-webcam",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Trang thử trình duyệt: quay video đóng hàng bằng webcam USB trên Chrome Windows (không phải mã sản phẩm)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs --port 4321"
+  },
+  "dependencies": {
+    "barcode-detector": "3.2.4",
+    "mediabunny": "1.66.0",
+    "zxing-wasm": "3.1.7"
+  }
+}

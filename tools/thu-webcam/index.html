@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="vi">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Thử quay video đóng hàng bằng webcam</title>
+	<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+	<header class="top">
+		<div>
+			<h1>Thử quay video đóng hàng bằng webcam</h1>
+			<p class="sub">Trang thử nội bộ, không phải mã sản phẩm. Năm cửa bên dưới kiểm lần lượt từng việc Chrome trên Windows phải làm được.</p>
+		</div>
+		<div class="busy" id="busy" hidden></div>
+	</header>
+
+	<section class="controls" aria-label="Cài đặt thử">
+		<label class="field wide">
+			<span>Camera</span>
+			<select id="sel-camera"></select>
+		</label>
+		<label class="field">
+			<span>Độ phân giải</span>
+			<select id="sel-resolution">
+				<option value="1280x720" selected>1280×720</option>
+				<option value="1920x1080">1920×1080</option>
+				<option value="2560x1440">2560×1440</option>
+			</select>
+		</label>
+		<label class="field">
+			<span>Khung hình/giây</span>
+			<select id="sel-fps">
+				<option value="15">15</option>
+				<option value="30" selected>30</option>
+			</select>
+		</label>
+		<label class="field">
+			<span>Bitrate video (bps)</span>
+			<input id="inp-bitrate" type="number" min="100000" max="20000000" step="50000" value="800000">
+		</label>
+		<label class="field">
+			<span>Cách lấy khung hình</span>
+			<select id="sel-pump">
+				<option value="auto" selected>Tự chọn</option>
+				<option value="mstp">MediaStreamTrackProcessor</option>
+				<option value="rvfc">requestVideoFrameCallback</option>
+			</select>
+		</label>
+		<label class="field">
+			<span>Số giây mỗi lần thử</span>
+			<input id="inp-seconds" type="number" min="2" max="600" step="1" value="10">
+		</label>
+		<label class="check">
+			<input id="chk-overlay" type="checkbox" checked>
+			<span>In ngày giờ vào hình</span>
+		</label>
+		<label class="check">
+			<input id="chk-audio" type="checkbox">
+			<span>Thu tiếng</span>
+		</label>
+	</section>
+
+	<div class="cam-banner" id="cam-banner" role="alert" hidden></div>
+
+	<section class="quick" aria-label="Quay nhanh">
+		<button type="button" id="btn-quick-start" class="quick-start">Bắt đầu quay</button>
+		<button type="button" id="btn-quick-stop" class="quick-stop" disabled>Dừng</button>
+		<span class="quick-status" id="quick-status" data-state="idle">Chưa quay</span>
+		<span class="quick-hint">Quay tay không cần tem. Đang quay mà đưa tem vào camera thì tự cắt sang clip của tem đó.</span>
+	</section>
+
+	<main class="layout">
+		<div class="col-left">
+			<div class="preview" id="preview">
+				<video id="video" autoplay muted playsinline></video>
+				<canvas id="boxes"></canvas>
+				<div class="preview-empty" id="preview-empty">Chưa mở camera</div>
+			</div>
+			<div class="live" id="live"></div>
+			<div class="notice" id="notice" hidden></div>
+
+			<section class="panel">
+				<header class="panel-head">
+					<h2>Nhật ký</h2>
+					<button type="button" class="ghost" id="btn-clear-log">Xóa nhật ký trên màn hình</button>
+				</header>
+				<div class="log" id="log" role="log" aria-live="off"></div>
+			</section>
+		</div>
+
+		<div class="col-right" id="gates">
+			<article class="gate" data-gate="1">
+				<header>
+					<span class="num">Cửa 1</span>
+					<h2>Mở camera</h2>
+					<span class="badge" data-role="badge"></span>
+				</header>
+				<p class="desc">Mở camera đúng độ phân giải và tốc độ khung đã chọn, đo tốc độ khung thật, kiểm các API trình duyệt cần dùng.</p>
+				<div class="actions">
+					<button type="button" id="btn-g1">Mở camera và đo</button>
+					<button type="button" class="ghost" id="btn-g1-measure">Đo lại tốc độ khung</button>
+					<button type="button" class="ghost" id="btn-close-camera">Tắt camera</button>
+				</div>
+				<p class="reason" data-role="reason"></p>
+				<dl class="kv" data-role="kv"></dl>
+			</article>
+
+			<article class="gate" data-gate="2">
+				<header>
+					<span class="num">Cửa 2</span>
+					<h2>Quay ra tệp, hai đường</h2>
+					<span class="badge" data-role="badge"></span>
+				</header>
+				<p class="desc">Đường A để trình duyệt tự quay (MediaRecorder). Đường B tự mã hóa H.264 (WebCodecs) rồi ghép thành MP4 có phần mục lục nằm đầu tệp.</p>
+				<div class="actions">
+					<button type="button" id="btn-g2a">Quay đường A (MediaRecorder)</button>
+					<button type="button" id="btn-g2b">Quay đường B (WebCodecs)</button>
+				</div>
+				<p class="reason" data-role="reason"></p>
+				<h3 class="sub-head">Đường A – MediaRecorder <span class="badge small" data-role="badge-a"></span></h3>
+				<dl class="kv" data-role="kv-a"></dl>
+				<h3 class="sub-head">Đường B – WebCodecs + mediabunny <span class="badge small" data-role="badge-b"></span></h3>
+				<dl class="kv" data-role="kv-b"></dl>
+			</article>
+
+			<article class="gate" data-gate="3">
+				<header>
+					<span class="num">Cửa 3</span>
+					<h2>Ngày giờ trong hình</h2>
+					<span class="badge" data-role="badge"></span>
+				</header>
+				<p class="desc">Quay hai lần liên tiếp bằng đường B, một lần có in ngày giờ ở góc trên bên trái, một lần không, để so chi phí vẽ.</p>
+				<div class="actions">
+					<button type="button" id="btn-g3">Quay so sánh có và không có ngày giờ</button>
+				</div>
+				<p class="reason" data-role="reason"></p>
+				<dl class="kv" data-role="kv"></dl>
+			</article>
+
+			<article class="gate" data-gate="4">
+				<header>
+					<span class="num">Cửa 4</span>
+					<h2>Đọc mã tem lúc đang quay</h2>
+					<span class="badge" data-role="badge"></span>
+				</header>
+				<p class="desc">Trong lúc quay, cứ 200 mili giây thử đọc mã Code 128 và QR trên khung hình đủ độ phân giải. Đưa tem ra trước camera rồi bấm nút.</p>
+				<div class="actions">
+					<button type="button" id="btn-g4">Quay và đọc mã</button>
+				</div>
+				<p class="reason" data-role="reason"></p>
+				<dl class="kv" data-role="kv"></dl>
+				<div class="table-wrap"><table class="mini" data-role="decodes"></table></div>
+			</article>
+
+			<article class="gate" data-gate="5">
+				<header>
+					<span class="num">Cửa 5</span>
+					<h2>Tự cắt clip theo tem</h2>
+					<span class="badge" data-role="badge"></span>
+				</header>
+				<p class="desc">Thấy mã vận đơn hai lần đọc liên tiếp thì bắt đầu clip mang tên mã đó. Thấy mã khác thì lưu clip cũ và quay ngay clip mới. Tem đã quay rồi thì chỉ báo, không quay lại.</p>
+				<div class="actions">
+					<button type="button" id="btn-g5-start">Bật tự cắt theo tem</button>
+					<button type="button" id="btn-g5-finish">Dừng</button>
+					<button type="button" class="ghost" id="btn-g5-stop">Tắt tự cắt</button>
+				</div>
+				<div class="fake-tools" id="fake-tools" hidden>
+					<label class="field wide">
+						<span>Mã đưa ra trước camera giả</span>
+						<input id="inp-fake-code" type="text" value="SPXVN0123456789" spellcheck="false" autocomplete="off">
+					</label>
+					<button type="button" class="ghost" id="btn-fake-show">Đưa mã ra</button>
+					<button type="button" class="ghost" id="btn-fake-hide">Cất mã</button>
+				</div>
+				<p class="reason" data-role="reason"></p>
+				<dl class="kv" data-role="kv"></dl>
+				<div class="table-wrap"><table class="mini" data-role="clips"></table></div>
+				<div class="table-wrap"><table class="mini" data-role="cuts"></table></div>
+			</article>
+		</div>
+	</main>
+
+	<script type="module" src="./app.js"></script>
+</body>
+</html>

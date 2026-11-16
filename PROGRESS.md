@@ -5,6 +5,13 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 16/11 chiều (lịch tự soi kho chuẩn quốc tế, lượt 16/11) — chỉ đọc prod, không có mã sản phẩm
+
+- Soi ~16:00: CHƯA có lần đối chiếu mới, dòng vẫn là **14/11 16:59** (cách 47 giờ, lệch cứng 0) → lượt này không tính, chuỗi giữ **3/7**. Đã biết trước (docs 13.13 + 13.14), không phải tin mới; từ lúc giãn nhịp 15/11 20:30 vẫn chưa có lần đối chiếu nào chạy được, chưa đọc log Render hôm nay.
+- Số sống: 567 đơn đang giữ, bộ đếm 428, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0.
+- Ghi ở: `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 13.12 (dòng 16/11) + memory kho chuẩn quốc tế. CHƯA commit.
+
+---
 ## Phiên 15/11 tối (lịch tự soi kho chuẩn quốc tế, lượt 15/11) — chỉ đọc prod, không có mã sản phẩm
 
 - Soi 19:48: lần đối chiếu gần nhất **14/11 16:59**, lệch cứng 0 (bộ đếm 155 = từ đơn 155 = theo "Chờ giao" 155; 672 đơn giữ; hủy còn giữ 0) → chuỗi đối chiếu sạch **3/7**.
@@ -92,6 +99,7 @@
   - Chưa kiểm / trước khi push: `next build` với trang mới; test cho `/match`; mất camera thật; tab ẩn lúc đang quay; clip > 32 MB; quay dài. Chưa commit.
   - **✅ Anh ~15:45: "giao diện OK, em push lên đi" → COMMIT + PUSH màn quay webcam.** Trước khi push đã làm nốt: test `match-db.test.ts` cho `/match` (test video backend 98 / 98), `tsc` hai phía + `eslint` sạch, `next build` qua (có `/orders/videos/record`). KHÔNG đưa vào commit: `tools/thu-webcam/` + `.claude/launch.json` (công cụ chạy máy anh — hỏi anh trước), tệp kho của phiên khác, `tools/mail-digest/*`.
   - Trên prod: màn quay chỉ `admin@hubsell.vn` thấy; bucket thử đã có luật CORS cho `app.hubsell.vn` nên tải lên từ prod chạy được với khóa thử đang đặt trên Render.
+  - **Đã push `79f1cb08`; prod kiểm ~15:55:** backend đúng bản; trang quay hiện đúng với tài khoản của anh (cổng mở, `/match` 200, tệp đọc mã `.wasm` phục vụ đúng). Chưa bật camera trên prod.
 
 ---
 ## Phiên 14/11 khuya (video đóng hàng — đăng ký R2 + thuế) — Anh: "Khảo sát đăng ký R2, vấn đề liên quan tới thuế xem có pháp nhân ở Việt nam không" → KHẢO SÁT XONG, chưa tạo tài khoản, chưa code
