@@ -34,6 +34,7 @@ import { groupChannelProducts, type ChannelGroup } from "@/components/products/c
 import { canManageShop } from "@/lib/permissions";
 import { AutoArrangeButton } from "@/components/orders/auto-arrange-dialog";
 import { LabelArchiveButton, ReprintSavedLabelButton } from "@/components/orders/label-archive-dialog";
+import { OrderVideoFlag, OrderVideoFlagsProvider } from "@/components/orders/videos/order-video-flag";
 import { PickSummaryDialog } from "@/components/orders/pick-summary-dialog";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
@@ -582,6 +583,8 @@ export default function OrdersPage() {
   const invalidate = useInvalidate();
 
   const items = ordersQ.data?.items ?? [];
+  // Id các đơn đang hiện — khóa của lượt hỏi "đơn nào có video" (components/orders/videos/order-video-flag.tsx).
+  const orderIdsOnPage = useMemo(() => (ordersQ.data?.items ?? []).map((o) => o.id), [ordersQ.data]);
   const counts = ordersQ.data?.counts ?? {};
   const total = ordersQ.data?.total ?? 0;
   const pageCount = ordersQ.data?.pageCount ?? 0;
@@ -818,6 +821,9 @@ export default function OrdersPage() {
               {/* Lưu vận đơn đã in (06/11/2026): hãng đã lấy kiện thì sàn không trả phiếu nữa —
                   đơn có bản lưu (gian bật công tắc, in chưa quá 60 ngày) in lại từ bản Hubsell giữ. */}
               <ReprintSavedLabelButton order={o} />
+              {/* Video đóng hàng (16/11/2026): đơn đã có video → dòng nhỏ mở hồ sơ video. Chỉ hiện khi
+                  tài khoản được mở tính năng; cờ đọc từ OrderVideoFlagsProvider bọc quanh bảng. */}
+              <OrderVideoFlag orderId={o.id} />
               {/* Đơn đã sắp xếp vận chuyển mà chưa in — kho nhìn là biết còn
                   việc, khỏi phải mở bộ lọc con (anh Trung 04/09) */}
               {!o.labelPrintedAt && o.shippingStatus === "PROCESSED" && (
@@ -1279,6 +1285,9 @@ export default function OrdersPage() {
               <Refreshing active={loading}>
                 {/* Bảng chuẩn ERP (Tầng 2): menu Cột (ẩn/hiện + ghim trái),
                     Chế độ xem lưu cột + bộ lọc, checkbox chọn dòng tích hợp */}
+                {/* Một lượt hỏi "đơn nào trên trang này có video" cho cả bảng — tài khoản chưa mở
+                    Video đóng hàng thì provider không gọi gì. */}
+                <OrderVideoFlagsProvider orderIds={orderIdsOnPage}>
                 <DataTable
                   tableId="orders"
                   columns={orderColumns}
@@ -1295,6 +1304,7 @@ export default function OrdersPage() {
                   toolbar={`${formatNumber(total)} đơn khớp bộ lọc`}
                   toolbarActions={toolbarActions}
                 />
+                </OrderVideoFlagsProvider>
               </Refreshing>
             )}
           </CardContent>

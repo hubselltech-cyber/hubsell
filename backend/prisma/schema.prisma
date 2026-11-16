@@ -4777,3 +4777,74 @@ model MaintenanceJob {
 
   @@map("maintenance_jobs")
 }
+
+/// SỔ VIDEO ĐÓNG HÀNG (16/11/2026 — docs/VIDEO-DONG-HANG-THIET-KE.md). Một dòng = một video đóng hàng /
+/// khui hàng hoàn; tệp nằm ở Cloudflare R2, bảng này chỉ là sổ. Bảng CHIA MẢNH theo tháng trên
+/// `recordedDate` (migration 20261116090000_pack_videos, hàm "pack_videos_ensure_partitions" — worker
+/// sổ cái gọi mỗi đêm). CỐ Ý không có quan hệ / khóa ngoại nào tới Order, Channel, User và không có
+/// trigger: ghi sổ video không được kích tính lại sổ cái. Mỗi dòng chỉ ghi 3–4 lần cả đời
+/// (PENDING → STORED → hạn giữ một lần → DELETED). Mọi truy vấn PHẢI kèm `ownerId` lấy từ phiên đăng nhập.
+model PackVideo {
+  id           String
+  /// Ngày TẠO DÒNG theo giờ VN của máy chủ — khóa chia mảnh (không tin đồng hồ điện thoại).
+  recordedDate DateTime  @db.Date
+  ownerId      String
+  /// Mã do app sinh cho MỘT video — gọi lại cùng mã trả đúng dòng cũ, không sinh dòng trùng.
+  clientId     String
+  /// Ba cột dưới trống = tem chưa khớp được đơn nào (chip "Chưa khớp đơn").
+  channelId    String?
+  orderId      String?
+  orderCode    String?
+  trackingCode String
+  /// PACK đóng hàng | UNBOX khui hàng hoàn (ràng buộc CHECK trong SQL).
+  kind         String
+  recordedById String
+  deviceName   String?
+  recordedAt   DateTime  @db.Timestamptz(3)
+  durationSec  Int
+  sizeBytes    BigInt
+  width        Int?      @db.SmallInt
+  height       Int?      @db.SmallInt
+  /// {ownerId}/{recordedDate}/{id}.mp4 — máy chủ tự dựng (lib/pack-video-key.ts).
+  objectKey    String
+  /// Lượt tải theo mảnh của R2 — chỉ có với tệp lớn hơn ngưỡng tải theo mảnh.
+  uploadId     String?
+  /// PENDING đã quay, chờ tải | STORED | DELETED | LOST (ràng buộc CHECK trong SQL).
+  status       String    @default("PENDING")
+  /// Thời lượng app báo lệch cỡ tệp quá biên — chỉ gắn cờ (lib/pack-video-rules.ts).
+  durationFlag Boolean   @default(false)
+  uploadedAt   DateTime? @db.Timestamptz(3)
+  deleteAfter  DateTime? @db.Date
+  holdReason   String?
+  deletedAt    DateTime? @db.Timestamptz(3)
+  deleteRule   String?
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@id([recordedDate, id])
+  // recordedDate đứng CUỐI: chỉ mục duy nhất này cũng là đường tra (ownerId, clientId) qua mọi mảnh.
+  @@unique([ownerId, clientId, recordedDate], map: "pack_videos_client_key")
+  @@index([ownerId, recordedAt(sort: Desc), id(sort: Desc)], map: "pack_videos_owner_recorded_idx")
+  // Ba chỉ mục nữa chỉ khai trong SQL migration (Prisma không diễn tả được lớp toán tử / điều kiện WHERE):
+  //   "pack_videos_owner_tracking_idx" ("ownerId", "trackingCode" text_pattern_ops) — tìm theo tiền tố;
+  //   "pack_videos_order_idx" ("orderId") WHERE "orderId" IS NOT NULL — nối với đơn;
+  //   "pack_videos_delete_after_idx" ("deleteAfter") WHERE status = 'STORED' — việc dọn.
+  @@map("pack_videos")
+}
+
+/// SỔ GIỜ QUAY ĐÃ MUA của Video đóng hàng (services/pack-video/hours.ts). Mỗi dòng = một lần cộng
+/// (hoặc điều chỉnh) giờ cho một chủ shop; chỉ CHÈN. Giờ còn lại = Σ seconds − Σ thời lượng video đã lưu.
+/// Không khóa ngoại, không trigger (cùng nguyên tắc với pack_videos).
+model PackHourGrant {
+  id          String   @id
+  ownerId     String
+  /// Số GIÂY: dương = cộng giờ, âm = điều chỉnh giảm (CHECK khác 0 trong SQL).
+  seconds     Int
+  /// PURCHASE khách mua | GRANT Hubsell cấp | ADJUST điều chỉnh tay (CHECK trong SQL).
+  kind        String
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([ownerId, createdAt], map: "pack_hour_grants_owner_idx")
+  @@map("pack_hour_grants")
+}

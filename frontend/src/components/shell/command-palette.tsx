@@ -80,10 +80,12 @@ export function CommandPalette({
   const entries = React.useMemo<PaletteEntry[]>(() => {
     const out: PaletteEntry[] = [];
     for (const item of items) {
-      if (item.href) {
-        out.push({ href: item.href, label: item.label, icon: item.icon });
-      } else if (item.children) {
+      // Xét `children` TRƯỚC `href`: nhóm "Đơn hàng" có cả hai (bấm tên nhóm vào thẳng
+      // /orders) — phải liệt kê từng trang con chứ không phải một dòng "Đơn hàng".
+      if (item.children) {
         for (const child of item.children) {
+          // Mục khóa (chưa mở / cổng tính năng đóng) không được nhảy tới từ đây.
+          if (child.locked) continue;
           out.push({
             href: child.href,
             label: child.label,
@@ -91,6 +93,8 @@ export function CommandPalette({
             icon: item.icon,
           });
         }
+      } else if (item.href) {
+        out.push({ href: item.href, label: item.label, icon: item.icon });
       }
     }
     return out;

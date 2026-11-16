@@ -558,6 +558,10 @@ lượt ghi = 1,62 USD ≈ **42.000 đ/tháng** — đúng. Nếu nâng biên x�
 
 **Không tìm thấy lý do nào để R2 không dùng được.** Hai điểm phải thiết kế quanh: không chặn được cỡ tệp lúc tải, và không có tên miền riêng.
 
+> **Sửa 15/11/2026 (thử thật, mục 57):** câu "không có cách chặn cỡ tệp" ở bảng trên là SAI. Ký tiêu đề `Content-Length` vào đường dẫn ký
+> sẵn thì R2 từ chối (403) mọi lượt tải có cỡ khác — chạy cả với tải một lần lẫn từng mảnh. `HeadObject` sau khi tải hạ xuống thành
+> bước xác nhận, không còn là rào duy nhất.
+
 **Đề xuất mới — bỏ ngăn `hold/` (đổi mục 13.2):** việc xóa đã do sổ của mình điều khiển, trần cứng là 90 ngày cho mọi video. Vậy chỉ cần
 MỘT tiền tố với MỘT lưới an toàn 95 ngày; "đang giữ" là một cột trong sổ, không phải chỗ nằm của tệp. Bớt được bước chép + xóa, bớt một
 loại lỗi (chép xong chưa kịp xóa). Cái giá: nếu việc dọn của mình hỏng, kho phình tới 95 ngày thay vì 60 — với shop 1.000 đơn/ngày là
@@ -2709,3 +2713,380 @@ Nguồn: https://etaxvn.gdt.gov.vn/nccnn · https://www.cloudflare.com/terms/ ·
 https://developers.cloudflare.com/r2/pricing/ · https://developers.cloudflare.com/r2/get-started/ · https://developers.cloudflare.com/billing/ ·
 https://developers.cloudflare.com/billing/get-started/update-billing-info/ ·
 https://isdown.app/status/cloudflare/incidents/443977-users-unable-to-enable-r2-on-accounts-without-attached-payment-method
+
+---
+
+## 57. Thử tải R2 thật từ máy tính (15/11/2026) — tải một lần, tải theo mảnh, nối lại, tua, các rào
+
+Anh 15/11: "Vậy thì test tải R2 trước." Thử từ máy tính của anh lên bucket thử `hubsell-video-thu` bằng khóa thử. Chưa thử từ điện thoại.
+
+**Tệp dùng để thử** — clip thật quay trên Note8 hôm 14/11 (720×1280, H.264, ≈ 800k):
+`c3` 94 giây 9,41 MB · `b9-full` 74 giây 7,52 MB · `dai` 544 giây 52,34 MB · `dai15` = `dai` ghép hai lần rồi cắt đúng 900 giây
+(chép luồng, không mã hóa lại) = **86,11 MB (90.291.111 byte)** — đại diện cho đơn đóng gói 15 phút ở mục 42.
+
+Công cụ: Node 24 + gói `aws4fetch` (ký SigV4, không phụ thuộc gì thêm). Kịch bản cất ở `D:\HubsellVideo\.cache-thu\r2-thu\`
+(`r2.mjs`, `manh-co.mjs`; ngoài cây dự án, không commit). Kịch bản không in khóa, không in đường dẫn ký sẵn.
+
+### 57.1 Kết quả
+
+| Việc thử | Kết quả |
+|---|---|
+| Tải một lần, máy chủ ký bằng tiêu đề (9,41 MB) | 200 · 3,44 giây · 22,9 Mbps · cỡ khớp · `ETag` = MD5 của tệp |
+| Tải một lần bằng ĐƯỜNG DẪN KÝ SẴN, bên tải không có khóa (7,52 MB) | 200 · 3,47 giây · 18,2 Mbps · cỡ khớp · `ETag` = MD5 |
+| Như trên với clip 9 phút (52,34 MB) | 200 · 12,7 giây · 34,6 Mbps · cỡ khớp |
+| Tải theo mảnh 8 MiB, lần lượt từng mảnh (5 mảnh đầu của tệp 15 phút) | mỗi mảnh 2,2–4,2 giây; 22,8 Mbps; `ETag` từng mảnh = MD5 của mảnh |
+| **Tắt tiến trình sau 5 mảnh, mở tiến trình mới nối lại** | `ListParts` trả đúng 5 / 11 mảnh đang giữ → tải nốt 6 mảnh (3 mảnh song song: 48,1 Mbps) → chốt tệp 0,41 giây → cỡ khớp 90.291.111 byte |
+| **Đứt giữa một mảnh** (cắt kết nối sau 0,4 giây) | R2 không giữ mảnh dở (0 mảnh); gửi lại bằng CHÍNH đường dẫn ký sẵn đó → 200 |
+| Hủy lượt tải theo mảnh bỏ dở | 204; `ListMultipartUploads` thấy được lượt treo — khóa thử đủ quyền |
+| Đọc lại tệp 15 phút bằng đường dẫn ký sẵn GET, tải trọn tệp | 200 · 7,87 giây · 91,8 Mbps · **sha256 khớp tệp gốc** → ghép mảnh không sai byte nào |
+| Tua (yêu cầu `Range` 64 KB ở đầu / giữa / cuối tệp) | 206, byte đầu tiên sau 280–660 ms; `accept-ranges: bytes` |
+| Tệp tải về mở bằng ffprobe + cắt khung hình ở phút 12 | 900,0 giây, 720×1280; khung hình rõ, ngày giờ góc trái trên còn nguyên |
+
+### 57.2 Các rào của đường dẫn ký sẵn
+
+| Thử | Kết quả |
+|---|---|
+| Ký hạn 1 giây, chờ 3 giây rồi tải | 403 `ExpiredRequest` |
+| Lấy đường dẫn của tệp A, sửa tên thành tệp B | 403 `SignatureDoesNotMatch` |
+| Lấy đường dẫn PUT đem đi GET | 403 `SignatureDoesNotMatch` |
+| KHÔNG ký cỡ tệp, tải tệp 9,41 MB vào đường dẫn | 200 — không ký thì không chặn |
+| **KÝ `Content-Length` = 1.024, tải đúng 1.024 byte** | 200 |
+| **KÝ `Content-Length` = 1.024, tải 4.096 byte** | **403 `SignatureDoesNotMatch`** |
+| Ký `Content-Length` cho MỘT MẢNH = 2.048, tải 9.000 byte | 403 |
+| Ký `Content-Type: video/mp4`, gửi `text/html` | 403; gửi đúng kiểu → 200 |
+
+**→ Sửa mục 16.1:** R2 CHẶN ĐƯỢC cỡ tệp lúc tải, miễn là máy chủ ký sẵn cỡ. Điện thoại biết cỡ tệp trước khi xin đường dẫn (clip đã
+đóng xong mới tải) nên luồng là: app báo cỡ → máy chủ đối chiếu trần → ký đúng cỡ đó → R2 chỉ nhận đúng cỡ đó. Số giờ quay để trừ gói
+không lấy từ cỡ tệp được (cùng cỡ có thể khác thời lượng) — vẫn phải có nguồn riêng, chưa thiết kế.
+
+### 57.3 Hệ quả cho thiết kế
+
+- Đường "điện thoại → R2 thẳng bằng đường dẫn ký sẵn" (mục 53) chạy đúng nguyên lý; máy chủ Hubsell không chạm byte video nào.
+- Mảnh 8 MiB: mất mạng giữa chừng thì mất tối đa một mảnh; nối lại hỏi R2 (`ListParts`) chứ không tin sổ trên máy. Số 8 MiB vẫn là số
+  em tự chọn — chạy được, chưa so với cỡ khác.
+- `ETag` = MD5 (tải một lần và từng mảnh) → app tự kiểm từng mảnh được mà không cần thêm lượt đọc. `ETag` của tệp ghép mảnh có dạng
+  `…-11`, KHÔNG phải MD5 cả tệp → muốn có mã băm cả tệp trong sổ thì app phải tự tính.
+- Lượt tải theo mảnh bỏ dở nằm lại trong bucket cho tới khi hủy → cần việc dọn (hoặc luật vòng đời hủy lượt dở — chưa đặt, chưa kiểm).
+
+### 57.4 Chưa kiểm
+
+- **Tải từ điện thoại** (Wi-Fi kho, 4G, app bị đưa xuống nền, khóa màn hình) — phần khó thật của mục 53, phải làm trong app trên Note8.
+- Tốc độ ở trên là mạng nhà anh sáng 15/11, một máy, một lượt: 18–48 Mbps lên. Không suy ra được cho kho của khách.
+- Nhiều máy tải cùng lúc; tệp > 100 MB; mảnh cỡ khác 8 MiB.
+- CORS (chỉ cần khi trình duyệt TẢI LÊN; xem video bằng thẻ `<video>` không cần). Cảnh báo ngân sách Cloudflare chưa đặt.
+- R2 có nhận tiêu đề mã băm sha256 không (dòng "Mã băm" mục 16.1) — chưa thử.
+
+Bucket thử đã dọn sạch sau khi đo: 0 tệp, 0 lượt tải treo.
+
+---
+
+## 58. Khảo sát trang web "Video đóng hàng" (15/11/2026) — ĐỀ XUẤT, anh chưa duyệt, chưa code
+
+Anh 15/11: "Trang video đóng hàng thì cần khảo sát trước khi làm. Mình còn phải thống kê thời gian sử dụng, Video đóng hàng, Video khui
+hàng, Tìm kiếm, Rồi tab các đơn bị hoàn. Tóm lại sẽ rất nhiều thứ để người dùng thuận tiện nhất có thể." Vị trí anh nêu: mục con dưới
+"Đơn hàng" trên sidebar, chỉ mở cho `admin@hubsell.vn`.
+
+Cách khảo sát: (1) đọc mã các màn web đang có; (2) đọc trang công khai của đối thủ về MÀN QUẢN LÝ video (giá và ngày lưu đã có ở phần
+4 và 6, không làm lại). Mức chắc: trang đối thủ đọc qua công cụ tóm tắt, không đọc từng chữ; KHÔNG nhìn được ảnh chụp màn hình nào,
+chỉ đọc chú thích ảnh; không đăng nhập, không đăng ký, không tải app.
+
+### 58.1 Màn web đang có — thứ trang mới phải dùng lại / phải khớp
+
+| Thứ | Hiện trạng (đã đọc mã) | Hệ quả cho trang mới |
+|---|---|---|
+| Sidebar | "Đơn hàng" là mục LÁ (`app-shell.tsx:130`), không có mục con. Cổng hiện có: `hidden`, `locked`, `adminOnly`, `platformOnly`, `perm`. KHÔNG có cổng theo email / cờ tính năng | phải thêm một cổng mới (cờ từ máy chủ); tài khoản không có cờ vẫn thấy "Đơn hàng" là đường dẫn thẳng như hôm nay; thêm `/orders/videos` vào `menusForPath` và `PAGE_TITLES` (đặt TRƯỚC `/orders`) |
+| Trang Đơn hàng | tìm theo mã đơn / tên khách / SĐT / mã vận đơn; KHÔNG có lọc ngày; KHÔNG có ngăn chi tiết đơn — chỗ đặt nút theo dòng là cột Trạng thái và cột Thao tác | nút "Xem video" ở dòng đơn đặt vào cột Trạng thái (cạnh huy hiệu Đã đóng gói) |
+| Màn Quét đóng gói | một màn, không tab; quét chỉ ghi `Order.packingDoneAt`. **Không ghi AI đóng gói** (không có cột người đóng) | "ai quay" phải do sổ video tự ghi từ tài khoản đang đăng nhập trên app |
+| Đối soát đơn hoàn | không tab; 5 thẻ to bấm được = bộ lọc tình trạng kho; hàng chip = trạng thái vận chuyển; có `DateRangePicker` (ngày sàn báo hoàn); quét kiện về là ghi `RECEIVED` ngay | việc NHẬN / NHẬP KHO / BÁO HỎNG ở nguyên trang này; trang video chỉ XEM và chuẩn bị bằng chứng, không dựng lại luồng xử lý hoàn |
+| Cột đơn hoàn trên `Order` | `returnStatus` (7 giá trị), `returnRequestedAt`, `returnedAt`, `returnTrackingCode`, `returnSolution`, `platformReturnStatus`, `returnDeliveredAt`, `compensationAmount` | đủ để dựng tab đơn hoàn mà không gọi thêm sàn |
+| Thành phần dùng chung | `PageTabs` + `PageHeaderBand`, `DataTable` (ô tích, ghim cột, lưu kiểu xem) + `bulk-bar`, `DashboardCard`, `DateRangePicker` (`allowAll`), `ChannelFilter`, `CopyIconButton`, `ScanCodeBox`, `OrderProductsCell`, `PRODUCT_NAME_CLAMP`, `sort-header`; thẻ lọc bấm được `FilterCard` CHƯA xuất ra ngoài; chưa có thành phần "màn trống" chung | dựng hoàn toàn bằng đồ có sẵn; chỉ phải xuất `FilterCard` |
+| Hạn mức gói | `UsageBar` ở `/settings/plan` (đã dùng / hạn mức, thanh xanh → cam ≥ 80 % → đỏ ≥ 100 %) | dùng lại cho "giờ quay đã dùng / đã mua" |
+| Quyền nhân viên | `"orders"` là MỘT lá quyền, không có lá con; `StaffChannel` giới hạn nhân viên theo gian | nhân viên bị giới hạn gian chỉ thấy video gian mình; có cần lá quyền riêng cho video không — câu K5 |
+
+### 58.2 Đối thủ bày màn quản lý video thế nào
+
+| Đối thủ | Điều đọc được (trang công khai) |
+|---|---|
+| **EPack** (hướng dẫn công khai đầy đủ nhất ở VN) | Sidebar: Trang chính · Đơn hàng · Thư viện video · Kiểm đơn · Thống kê. Bề mặt chính là DANH SÁCH ĐƠN, không phải danh sách video. Thẻ trạng thái có số đếm ở trên, có ngăn "Chưa khớp với sàn" cho mã quét không ra đơn. Một ô tìm cho mã đơn / mã vận đơn; lọc ngày đặt, gian, "Có video xem được". Chi tiết đơn có tab "Video đóng gói". Chia sẻ bằng đường dẫn 7 / 30 / 90 ngày, thu hồi được. Bảng video chưa tải lên: Xem · Thử lại · Tải về máy · Xóa. Thống kê chỉ chủ shop: Tổng quan · Vận hành · Trả hàng · Nhân viên, xuất CSV |
+| **Dohana** | Không có hướng dẫn giao diện công khai; chú thích ảnh trang chủ: "Màn hình tạo video đóng hàng", "Báo cáo nhân viên", "Danh sách đơn hoàn", "Truy xuất nhanh". API video có: mã đơn, loại (đóng / nhập / xuất / chuẩn bị), trạng thái, thời lượng, giờ bắt đầu, người quay, cỡ tệp, tệp camera thứ hai, đường dẫn Drive. Tìm mã đơn theo tiền tố; kỳ mặc định 30 ngày, tối đa 3 tháng. Báo cáo nhân viên: số đơn, thời gian xử lý trung bình, số ngày làm. Có chế độ quay khui hàng hoàn + "Danh sách đơn hoàn"; KHÔNG thấy nối video khui với video đóng — bài viết của họ bảo shop tự tra video đóng theo mã vận đơn |
+| **Cam Check** | Sidebar: Tổng quan · Quay Video · Danh sách Video · Kết nối sàn · Cài đặt Video · Lưu trữ Video · Tự động dọn. Tổng quan: số đơn đã quay theo ngày / tuần, chia theo người đóng |
+| **Carrot** | Lịch sử chia "Đơn đi" / "Hàng hoàn". "Tạo link hồ sơ kháng nghị"; mở lại hồ sơ để thêm bằng chứng. Thống kê sản lượng + tính lương khoán theo nhân viên |
+| **ASCAM** | Phát hai góc cạnh nhau; xuất nhiều đơn một lượt; cắt theo dòng thời gian. Giờ cao điểm, xếp hạng nhân viên, thời gian đóng trung bình, tỷ lệ đọc QR, nhật ký thao tác |
+| **Ship Xanh** | Có menu "Quay video đóng gói" và một menu hoàn / hủy riêng với số đỏ đếm kiện hoàn chưa nhận. Màn danh sách video, tìm kiếm, thống kê: KHÔNG tìm thấy công khai |
+| **Simple Replay / VieCam / CamBox** | Ba loại video (đóng hàng / giao hãng / trả hàng đồng kiểm); tìm theo mã vận đơn; CamBox lọc theo TÌNH TRẠNG KHIẾU NẠI |
+| **Realpacking** (Hàn, hướng dẫn công khai đầy đủ nhất) | Menu: Bảng điều khiển · Kiểm video (Danh sách quay + Danh sách hoàn) · Đơn · Gửi video · Phản hồi khách · Thống kê · Thành viên · Cài đặt. Lọc: ngày trước, rồi "thêm điều kiện": mã, người làm, khiếu nại chưa / đang / xong. Trang chi tiết: trình phát, ghi chú, bật-tắt tình trạng khiếu nại. Bảng điều khiển có gói / điểm / dung lượng, "5 người làm nhiều nhất hôm nay", biểu đồ 7 ngày |
+| **TrackVid** (Ấn) | Tìm theo tiền tố mã; lọc ngày, sàn, bàn, chiều đi / chiều hoàn. "Yêu thích" = giữ video khỏi tự xóa. **Video chiều đi và video chiều hoàn mở từ CÙNG một dòng đơn**; chấm Tốt / Xấu, Xấu vào hàng khiếu nại. Mô-đun: Video · Khiếu nại · Hoàn · Thanh toán (đã dùng, lịch sử điểm) · Người · Cài đặt |
+| **DispatchO** (Ấn) | Tìm theo đơn, vận đơn, hóa đơn, người đóng, ngày. Đường dẫn chia sẻ 7 / 15 / 30 ngày, thu hồi được. Nhật ký MỌI lượt xem / chia sẻ / tải. **Báo trước 3 ngày khi sắp xóa** |
+| Công cụ quản lý đơn (EasyEcom, Eshopbox, UpSeller, TOPWMS, 吉客云) | video nằm TRONG chi tiết đơn; UpSeller hiện trạng thái tải: đã lưu máy / tải xong / tải lỗi / chỉ trên cloud |
+| Mify (Shopify) | "tìm theo số đơn, chép đường dẫn, quay lại hoặc xóa trong một danh sách", mỗi dòng có NGÀY HẾT HẠN |
+
+**Rút ra:**
+
+| Mức | Tính năng |
+|---|---|
+| Gần như ai cũng có | tìm bằng mã vận đơn / mã đơn làm lối vào chính; lọc ngày; phát + tải về; đường dẫn chia sẻ; tự xóa theo hạn lưu; đếm theo nhân viên |
+| Nhiều bên có | video nằm trong chi tiết đơn; lọc theo người quay; đường dẫn có hạn + thu hồi; chế độ quay kiện hoàn riêng |
+| Một hai bên có | thẻ trạng thái có số đếm + lọc "có video" (EPack); lọc theo tình trạng khiếu nại (Realpacking, CamBox); giữ khỏi tự xóa (TrackVid, Dohana); video đóng + video hoàn trên cùng dòng đơn (TrackVid); nhật ký xem / tải (DispatchO); ngày hết hạn từng dòng (Mify), báo trước 3 ngày (DispatchO); ngăn "quét mà không ra đơn" (EPack) |
+| KHÔNG thấy ai làm | đặt video đóng và video khui CẠNH NHAU; hiện hạn giữ THEO TRẠNG THÁI ĐƠN; ảnh thu nhỏ / lưới ảnh; nút "tìm video cho đơn hoàn này"; đồng hồ "giờ đã dùng / giờ đã mua" |
+
+Hàng cuối là chỗ Hubsell có sẵn lợi thế: có dòng đơn, có trạng thái hoàn, có luật giữ theo trạng thái đơn (mục 54), bán theo giờ (mục 51).
+
+### 58.3 Bố cục đề xuất
+
+Đường dẫn `/orders/videos`. `PageHeaderBand` + `PageTabs`; ô tìm đặt trong dải đầu trang, dùng chung cho mọi tab; đồng hồ giờ quay gọn ở
+góc phải dải tab (bấm vào mở tab Thống kê).
+
+**Ô tìm (việc số một của trang).** Một ô: mã vận đơn hoặc mã đơn; nhận cả máy quét bắn vào (dùng `ScanCodeBox`); khớp theo tiền tố.
+Ra đúng một đơn thì mở thẳng trang hồ sơ video của đơn đó.
+
+**Tab 1 — Video đóng hàng (mặc định).** Một dòng = một video, mới nhất trên cùng.
+
+| Cột | Nội dung |
+|---|---|
+| Video | nút phát (bản đầu KHÔNG có ảnh thu nhỏ — xem 58.4) |
+| Mã vận đơn | mã + nút chép; dòng phụ: huy hiệu sàn · mã đơn · tên gian |
+| Sản phẩm | `OrderProductsCell`, cắt theo `PRODUCT_NAME_CLAMP` |
+| Quay lúc | ngày giờ; bấm tiêu đề để sắp xếp |
+| Thời lượng | phút:giây; sắp xếp được — đây là chỗ khách tự soát video quay lâu (anh đã chốt không nhắc quay thừa) |
+| Người quay | tên tài khoản · tên máy |
+| Đơn | Đang giao / Đã giao / Đã hủy / Có hoàn |
+| Giữ tới | "Tự xóa 03/12" hoặc "Đang giữ · có hoàn" |
+| Thao tác | Xem · Tải về |
+
+Chip một chạm có số đếm, đặt theo VIỆC CẦN LÀM: Tất cả · Đơn có hoàn · Sắp tự xóa (≤ 3 ngày) · Chưa khớp đơn · Chưa tải lên xong. Lọc:
+`DateRangePicker` (ngày quay), `ChannelFilter`, người quay. Bảng trong hộp cuộn, 20 / 50 / 100 dòng.
+
+**Tab 2 — Đơn hoàn.** Một dòng = một ĐƠN có hoàn (không phải một video). Thẻ to bấm được làm bộ lọc, theo đúng cách trang Đối soát đơn
+hoàn: Có hoàn · có video đóng / Hàng hỏng · chưa có video khui / Sắp hết hạn khiếu nại / Không có video. Cột: Mã đơn + mã vận đơn ·
+Loại hoàn (khách trả / giao thất bại) · Sàn báo hoàn lúc · Video đóng (có + thời lượng / không) · Video khui (có / chưa quay) · Tình
+trạng kho (đọc `returnStatus`) · Hạn khiếu nại còn · Mở hồ sơ. Việc nhận / nhập kho / báo hỏng KHÔNG làm ở đây — có đường dẫn sang Đối
+soát đơn hoàn.
+
+**Tab 3 — Video khui hàng.** Cùng bảng với tab 1, lọc loại = khui. Em đề nghị GỘP vào tab Đơn hoàn (câu K1): video khui nào cũng thuộc
+một đơn hoàn, và phần quay khui chưa làm nên tab này sẽ trống trong thời gian dài.
+
+**Tab 4 — Thống kê.** Chỉ gọi dữ liệu khi mở tab. Bốn ô số: Giờ còn lại · Giờ đã dùng trong kỳ · Số video · Thời lượng trung bình mỗi
+video. Biểu đồ giờ quay theo ngày (30 ngày). Bảng theo người quay: số video · tổng giờ · trung bình mỗi video · video dài nhất. Bảng
+theo gian. Danh sách 20 video dài nhất trong kỳ. Sổ giờ (mua / trừ / lố) — khi đã bán giờ.
+
+**Trang hồ sơ video của MỘT ĐƠN** (`/orders/videos/don/<id>`, trang riêng, không phải popup). Trình phát khung dọc 3:4; bên phải: mã
+vận đơn, mã đơn, gian, sản phẩm của đơn, các mốc (quay · giao · sàn báo hoàn · kho nhận), nút Tải về, hạn giữ, lịch sử xem / tải. Đơn
+có video khui thì hai trình phát CẠNH NHAU (đóng | khui). Nhãn "≤ 1 phút: tải thẳng lên Shopee được" / "> 1 phút: nộp bằng đường dẫn
+Drive / YouTube" theo mục 55.7. Đây là nơi dòng Đơn hàng và dòng Đối soát đơn hoàn trỏ tới.
+
+**Màn trống** (shop chưa quay video nào): một câu + ba bước mở app → Tổng quan → Quay video đóng gói.
+
+### 58.4 Dữ liệu trang cần mà HÔM NAY chưa có
+
+| Cần | Hôm nay | Việc phải có trước |
+|---|---|---|
+| Danh sách, lọc, đếm, tìm theo tiền tố | chưa có sổ nào; liệt kê thẳng từ R2 (em từng đề nghị cho giai đoạn thử) KHÔNG đủ cho chip có số đếm / thống kê / lọc người quay | **sổ video** (`pack_videos`, mục 13.4) ở database riêng — câu K3 |
+| Người quay | `Order` không ghi ai đóng gói | app gửi tài khoản đang đăng nhập + tên máy khi xin đường dẫn tải |
+| Thời lượng (cũng là số trừ giờ) | cỡ tệp không suy ra thời lượng | app báo số giây; máy chủ kiểm chéo với cỡ tệp (≈ 0,4 MB + 6,1 MB / phút, mục 39) — chưa thiết kế, chưa thử |
+| Sản phẩm, trạng thái đơn, dấu hiệu hoàn | nằm ở database chính | đọc theo lô đúng số dòng của trang đang xem (20–100 mã đơn, theo khóa chính), không gọi sàn |
+| "Giữ tới" | luật L1–L7 chưa chạy | cột này chỉ có số sau lát vòng đời xóa (chạy bóng trước) |
+| Giờ còn lại | chưa bán giờ | trước khi bán: chỉ hiện "đã dùng" |
+| Hạn khiếu nại | số đã tra: Shopee 2 ngày (khách trả) / 7 ngày (giao thất bại), TikTok 7 / 40 ngày; Lazada KHÔNG đọc được trang chính thức; `returnRequestedAt` thiếu ở nhiều đơn cũ | cột này sẽ có ô trống; ghi rõ "không rõ" thay vì đoán |
+| Ảnh thu nhỏ | R2 không tự cắt ảnh | bản đầu không làm; muốn có thì app phải tải kèm một ảnh JPG mỗi video (thêm một lượt ghi) |
+| Video chưa tải lên xong | chỉ điện thoại biết | app báo "đã quay, đang chờ tải" lên sổ ngay khi đóng clip → web mới hiện được chip "Chưa tải lên xong" |
+
+### 58.5 Thứ tự làm đề xuất (mỗi lát giao được riêng, tất cả chỉ mở `admin@hubsell.vn`)
+
+| Lát | Có gì | Cần trước |
+|---|---|---|
+| W1 | sổ video + mục con sidebar + tab Video đóng hàng + ô tìm + trang hồ sơ đơn (xem, tải về) | chốt K3; app trên Note8 tải lên được (hoặc nạp clip thử từ máy tính) |
+| W2 | nút "Xem video" ở dòng Đơn hàng và dòng Đối soát đơn hoàn | W1 |
+| W3 | tab Đơn hoàn | W1 |
+| W4 | tab Thống kê (giờ đã dùng, theo người quay, theo gian) | W1 + app báo thời lượng |
+| W5 | cột "Giữ tới" + chip "Sắp tự xóa" | lát vòng đời xóa đã chạy bóng |
+| W6 | video khui + hai trình phát cạnh nhau | app quay được khui kiện hoàn |
+
+Không nằm trong đợt này: đường dẫn chia sẻ ra ngoài (mục 55.7 đã hạ xuống "thử sau"), cắt ảnh bằng chứng, nộp sàn, quay trên web.
+
+### 58.6 Chờ anh
+
+- **K1.** "Video khui hàng" là tab riêng hay gộp vào tab "Đơn hoàn"? (em: gộp)
+- **K2.** Tab Video đóng hàng: một dòng = một VIDEO (em đề nghị) hay một dòng = một ĐƠN như EPack?
+- **K3.** Sổ video đặt ở database nào. Anh đã dặn "máy chủ khác, không động vào hệ thống chính"; nhà cung cấp cụ thể CHƯA khảo sát — đây
+  là việc phải xong trước W1.
+- **K4.** Có thống kê theo NGƯỜI QUAY không? Có thì mỗi người đóng gói phải đăng nhập app bằng tài khoản riêng.
+- **K5.** Nhân viên có quyền "Đơn hàng" có được xem video không, hay cần một quyền riêng?
+- **K6.** Tên: "Video đóng hàng" (web) và "Quay video đóng gói" (ô trên app) — giữ hai chữ hay thống nhất một?
+
+### 58.7 Chưa kiểm
+
+- Bố cục cột thật của bất kỳ đối thủ Việt Nam nào (Dohana chỉ suy từ API; Ship Xanh không có gì công khai).
+- Người dùng thật khen / chê gì khi tìm và quản lý video: gần như không có đánh giá công khai.
+- Trang mới ở các cỡ màn 1280–1700 + giao diện tối: chưa dựng nên chưa soi.
+
+Nguồn: epack.vn/huong-dan · epack.vn/huong-dan/tra-cuu-don-hang · epack.vn/huong-dan/ket-noi-san-va-quay-video · donghangnhanh.vn/vi ·
+docs.dohana.vn/docs/video/search-video-cursor · apps.apple.com/vn/app/dohana/id6782836857 · quayvideodongdon.com · videodonghang.io.vn ·
+ghihinh.com · shipxanh.com · atpsoftware.vn/simple-replay · docs.realpacking.com · trackvid.in · dispatcho.in · dispatcho.in/faq
+
+### 58.8 Sổ việc khảo sát: đã xong / chiều 15/11 làm tiếp
+
+Anh 15/11 trưa: "Ghi lại phần đã khảo sát và sẽ khảo sát chiều mình làm."
+
+**Đã khảo sát — đừng làm lại:**
+
+| Việc | Ở đâu | Mức chắc |
+|---|---|---|
+| Thử tải R2 thật từ máy tính: tải một lần, theo mảnh, nối lại, đứt giữa mảnh, tua, các rào đường dẫn ký sẵn | mục 57 | đã chạy thật; tốc độ chỉ đúng cho mạng nhà anh |
+| Các màn web đang có mà trang mới phải dùng lại / phải khớp (sidebar, Đơn hàng, Quét đóng gói, Đối soát đơn hoàn, thành phần dùng chung, hạn mức gói, quyền nhân viên) | 58.1 | đã đọc mã, có số dòng |
+| Màn quản lý video của khoảng 15 đối thủ | 58.2 | đọc trang công khai qua công cụ tóm tắt; không nhìn được ảnh chụp; Ship Xanh + Dohana không công khai màn danh sách |
+| Bố cục đề xuất, dữ liệu còn thiếu, 6 lát W1–W6 | 58.3–58.5 | ĐỀ XUẤT, anh chưa duyệt |
+
+**Chiều 15/11 khảo sát tiếp (thứ tự em đề nghị, anh chưa duyệt thứ tự):**
+
+| # | Việc | Vì sao cần | Xong khi |
+|---|---|---|---|
+| 1 | Nơi đặt SỔ VIDEO: database riêng ở nhà cung cấp nào | chặn lát W1; anh đã dặn "máy chủ khác, không động vào hệ thống chính" | có bảng so vài nhà cung cấp: giá, giới hạn dung lượng / kết nối, vị trí máy chủ, phân mảnh theo tuần có làm được không, đứng tên ai + thuế nhà thầu (theo `docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md`), và một đề xuất |
+| 2 | Số GIỜ QUAY lấy từ đâu để trừ gói | cỡ tệp không cho ra thời lượng (mục 57.2); đây là số tính tiền | có cách app báo thời lượng + cách máy chủ kiểm chéo (cỡ tệp ≈ 0,4 MB + 6,1 MB / phút, hay đọc phần đầu tệp MP4), kèm ca gian lận / ca lệch phải xử |
+| 3 | Cổng mở tính năng theo tài khoản | sidebar chưa có cổng theo email (58.1); app cũng cần đúng cổng này cho ô "Quay video đóng gói" | có một thiết kế cờ ở máy chủ dùng chung web + app, mặc định tắt, chỉ `admin@hubsell.vn` bật |
+| 4 | Quyền nhân viên xem video + giới hạn theo gian | `"orders"` là một lá quyền; video có tên + địa chỉ người nhận trong hình | có đề xuất: dùng quyền "Đơn hàng" hay thêm lá riêng, và nhân viên bị giới hạn gian thấy gì |
+
+**Chờ anh trả lời (em không khảo sát thay được):** K1, K2, K4, K5, K6 ở mục 58.6. K3 chính là việc số 1 ở bảng trên.
+
+**Việc làm, không phải khảo sát — sau các mục trên:** tải lên từ app trên Note8 (Wi-Fi / 4G / app xuống nền; cần anh cắm máy + mở
+khóa); viết lại bảng lát theo các điều chốt 14/11 (vẫn nợ từ mục 56).
+
+### 58.9 Sổ video đặt ở đâu — anh nêu, em đồng ý: database CHÍNH, bảng riêng (16/11/2026, chờ anh xác nhận)
+
+Anh 16/11: "Theo em sổ video mình nên đặt ở đâu thì hợp lý? Anh nghĩ phần nặng nhất là tải và lưu video thì trên R2 rồi, phần sổ không
+phải là vấn đề quá nặng cho hạ tầng. Một vấn đề nữa là sau này chúng ta cũng cần liệt kê danh sách đơn hoàn trả để khách hàng tiện
+khiếu nại."
+
+**Em đồng ý, và rút lại nguyên tắc 1 của mục 13.1 ("tách hẳn database riêng cho sổ").** Lý do bằng số:
+
+| Điểm | Số | Nguồn |
+|---|---|---|
+| Một đơn chiếm bao nhiêu ở database chính | ≈ 7,0 MB / 1.000 đơn (đơn + dòng hàng + sổ cái + chỉ mục) | ĐÃ ĐO 06/11 |
+| Một dòng sổ video | ≈ 0,7 KB kể cả chỉ mục → ≈ 0,7 MB / 1.000 video | ƯỚC từ danh sách cột mục 13.4, chưa tạo bảng nên chưa đo |
+| Tỷ lệ | sổ video ≈ 1/10 phần chính đơn đó đã chiếm | suy từ hai dòng trên |
+| Shop 1.000 đơn / ngày, dòng sống ≈ 60 ngày | ≈ 42 MB ổn định | ước |
+| Con số "1 triệu dòng / ngày" em dùng ở 13.1 | lúc đó riêng đơn đã thêm ≈ 7 GB / ngày vào database chính — sổ video không phải thứ chạm trần trước | suy |
+
+Sự cố Disk IO 28/10 và phần ghi lặp đo 06/11 không đến từ SỐ DÒNG mà từ ba kiểu ghi: trigger tính lại sổ cái, UPDATE lặp mỗi giờ trên
+dòng không đổi, và chèn-rồi-xóa hàng chục triệu lượt. Sổ video tránh được cả ba nếu giữ các điều kiện dưới.
+
+**Lý do thứ hai — danh sách đơn hoàn.** Danh sách này phải gồm cả đơn hoàn KHÔNG có video, nên luôn xuất phát từ bảng `Order`. Thẻ lọc
+có số đếm ("có hoàn · có video đóng", "hỏng · chưa có video khui") là phép đếm nối hai bảng. Hai database thì không đếm nối được; chỉ
+còn cách chép trạng thái hoàn sang bên kia hoặc thêm cột cờ vào `Order` — cả hai đều tệ hơn để chung. Chung database: một câu truy vấn,
+dùng lại điều kiện lọc của trang Đối soát đơn hoàn (`returnShippingWhere`).
+
+**Lý do phụ:** không thêm nhà cung cấp (không thêm một khoản thuế nhà thầu / hóa đơn), một lần sao lưu, một bộ RLS, một Prisma.
+
+**Điều kiện đi kèm (để sổ không lặp lại lỗi cũ và nhấc ra được sau này):**
+
+1. Bảng riêng `pack_*`; KHÔNG khóa ngoại tới `Order`, KHÔNG trigger, KHÔNG thêm cột nào vào `Order` → ghi sổ video không kích tính lại sổ cái.
+2. Mỗi dòng video chỉ ghi 2–3 lần cả đời: tạo lúc đóng clip, xác nhận lúc tải xong, đánh dấu lúc xóa. Hạn giữ TÍNH LÚC ĐỌC / lúc chạy
+   việc dọn từ trạng thái đơn, không lưu rồi cập nhật lại mỗi lần đơn đổi (sửa đề xuất "cột hạn xóa tính lại mỗi lần" ở mục 13.4).
+3. Chia mảnh theo thời gian quay; hết hạn thì BỎ NGUYÊN MẢNH, không DELETE từng dòng.
+4. `ENABLE ROW LEVEL SECURITY` ngay trong migration (luật bảng mới).
+5. Nhật ký xem / tải (`pack_video_events`) chưa làm ở bản đầu.
+6. Máy chủ chỉ ký đường dẫn và ghi sổ; byte video vẫn đi thẳng điện thoại ↔ R2 (mục 57).
+7. Mốc xem lại: khi sổ video vượt 10 % dung lượng database (số em tự chọn) thì đo và bàn chuyện tách. Vì không dính khóa ngoại nên nhấc ra là chép bảng.
+
+**Hệ quả cho sổ việc 58.8:** việc số 1 "so nhà cung cấp database riêng" KHÔNG cần làm nữa nếu anh xác nhận; thay bằng thiết kế bảng +
+migration (chưa viết). Câu Q1 mục 17.3 ("dịch vụ video chạy ở đâu") cũng đổi: các đường API video nằm trong backend chính, không dựng
+dịch vụ riêng ở bản đầu.
+
+**Chưa kiểm:** cỡ dòng thật (phải tạo bảng + nạp thử); kế hoạch truy vấn của danh sách đơn hoàn khi nối thêm bảng video trên shop có
+3.206 đơn chờ hàng về (số prod 13/11) — phải EXPLAIN trước khi giao.
+
+**Về danh sách đơn hoàn để khiếu nại:** đã có chỗ trong bố cục (tab Đơn hoàn, mục 58.3). Em đề nghị mặc định xếp theo HẠN KHIẾU NẠI còn
+ít nhất lên đầu và mở sẵn nhóm cần làm việc (hàng hỏng / mất, chưa khiếu nại), không mở "tất cả đơn hoàn" — anh chưa duyệt.
+
+### 58.10 ANH CHỐT 16/11: sổ video ở database chính + "Video đóng hàng" là mục con của "Đơn hàng"
+
+Anh 16/11: "chốt phương án này. Nhưng phần 'Video đóng hàng' Vẫn phải tách thành mục con trong 'Đơn hàng' Trên Sidebar."
+
+- **Chốt:** sổ video đặt ở database chính, bảng riêng `pack_*`, theo các điều kiện mục 58.9. ⛔ Không đề xuất lại database riêng / dịch
+  vụ riêng; việc "so nhà cung cấp database" ở 58.8 BỎ.
+- **Chốt:** trên sidebar, "Video đóng hàng" là MỤC CON của "Đơn hàng" (không gộp thành tab trong trang Đơn hàng, không đặt dưới nhóm
+  khác). Tên trên web = "Video đóng hàng" (anh dùng chữ này ba lần) → câu K6 phần web coi như xong; ô trên app vẫn "Quay video đóng gói"
+  cho tới khi anh nói khác.
+
+**Việc mục con kéo theo (đã đọc `frontend/src/components/shell/app-shell.tsx`):**
+
+| Điểm | Hiện trạng | Đề xuất |
+|---|---|---|
+| "Đơn hàng" là mục lá, bấm là vào `/orders` (dòng 130) | nhóm có mục con là NÚT XÒE, bấm không đi đâu (dòng 646–649) | khi thành nhóm phải có một mục con cho chính danh sách đơn. Em đề nghị hai mục con: **"Danh sách đơn"** (`/orders`) và **"Video đóng hàng"** (`/orders/videos`) — tên "Danh sách đơn" là em tự đặt, anh đổi được |
+| Thói quen bấm "Đơn hàng" là thấy đơn | nhóm chỉ xòe / cụp | em đề nghị riêng nhóm này: bấm tên nhóm thì VỪA xòe VỪA vào `/orders`, để không ai mất thêm một lần bấm. Đây là hành vi mới của sidebar, chưa có nhóm nào làm vậy |
+| Tài khoản chưa được mở | — | giữ nguyên mục lá như hôm nay, không thấy gì đổi |
+| Tự xòe nhóm theo đường dẫn | `menusForPath()` chưa có `/orders` | thêm `/orders` → "Đơn hàng" |
+| Tiêu đề trang | `PAGE_TITLES` lấy khớp ĐẦU TIÊN | thêm `/orders/videos` đặt trước `/orders` |
+| Tô mục con đang chọn | lấy đường dẫn khớp DÀI NHẤT | `/orders/packing` vẫn tô "Danh sách đơn", `/orders/videos/...` tô "Video đóng hàng" — đúng sẵn, không phải sửa |
+
+### 58.11 Thiết kế bảng sổ video (ĐỀ XUẤT — chưa viết migration, chưa viết mã)
+
+Theo đúng khuôn sổ cái đang chạy (`20260930230000_order_ledger`): bảng chia mảnh theo THÁNG bằng `PARTITION BY RANGE` trên một cột ngày,
+hàm tạo mảnh gọi lúc migrate + worker gọi mỗi đêm, có mảnh DEFAULT, mảnh mới cũng bật RLS. (Mục 13.4 em từng ghi "theo tuần" — đổi sang
+tháng cho khớp khuôn có sẵn.) Khác sổ cái ở ba chỗ cố ý: KHÔNG khóa ngoại tới `Order`, KHÔNG trigger, KHÔNG cột "bẩn / tính lại".
+
+**Bảng 1 — `pack_videos`** (một dòng = một video; khóa chính `(recordedDate, id)`)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `id` | TEXT | cuid, máy chủ sinh lúc app báo "đã quay xong" |
+| `recordedDate` | DATE | ngày quay theo giờ VN — khóa chia mảnh |
+| `ownerId` | TEXT | chủ shop |
+| `channelId` · `orderId` · `orderCode` | TEXT, cho phép trống | trống = tem chưa khớp đơn nào (chip "Chưa khớp đơn"); `orderId` KHÔNG phải khóa ngoại |
+| `trackingCode` | TEXT | mã đọc được từ tem |
+| `kind` | TEXT | `PACK` đóng hàng / `UNBOX` khui hàng |
+| `recordedById` · `deviceName` | TEXT | tài khoản đang đăng nhập trên app + tên máy |
+| `recordedAt` | TIMESTAMPTZ(3) | giờ bắt đầu quay |
+| `durationSec` · `sizeBytes` | INTEGER · BIGINT | app báo; `sizeBytes` máy chủ đối chiếu bằng `HeadObject` |
+| `width` · `height` | SMALLINT | 768×1024 hoặc 720×1280 |
+| `objectKey` | TEXT | đường dẫn tệp trên R2 |
+| `status` | TEXT | `PENDING` đã quay, chờ tải · `STORED` · `DELETED` · `LOST` |
+| `uploadedAt` | TIMESTAMPTZ(3) | lúc xác nhận tải xong |
+| `deleteAfter` | DATE, cho phép trống | hạn giữ; việc dọn ghi MỘT lần khi đơn tới trạng thái tính được hạn; trống = chưa tính được hoặc đang giữ |
+| `holdReason` | TEXT, cho phép trống | có hoàn / hỏng / mất → đang giữ |
+| `deletedAt` · `deleteRule` | TIMESTAMPTZ(3) · TEXT | xóa lúc nào, theo luật nào (L1–L7 mục 12.2) |
+| `createdAt` | TIMESTAMPTZ(3) | |
+
+Chỉ mục (4 cái; tên phải ≤ 63 ký tự — bài học 28/10):
+
+| Chỉ mục | Phục vụ |
+|---|---|
+| `(ownerId, recordedAt DESC)` | danh sách tab Video đóng hàng |
+| `(ownerId, trackingCode text_pattern_ops)` | ô tìm theo tiền tố mã vận đơn |
+| `(orderId) WHERE orderId IS NOT NULL` | nối với đơn: tab Đơn hoàn, nút "Xem video" ở dòng đơn |
+| `(deleteAfter) WHERE status = 'STORED'` | việc dọn lấy dòng tới hạn; chip "Sắp tự xóa" |
+
+Tìm theo MÃ ĐƠN không cần chỉ mục riêng: tra `Order` trước (trang Đơn hàng đã tìm được mã đơn), ra `orderId` rồi mới sang sổ video.
+
+**Số lần ghi một dòng trong cả đời (em sửa con số "2–3 lần" ở 58.9 thành 4 cho đúng):**
+
+| Lúc | Việc | Ghi |
+|---|---|---|
+| App đóng clip | báo máy chủ; máy chủ kiểm công tắc + số giờ, khớp tem ra đơn, trả đường dẫn ký sẵn (ký cả cỡ tệp, mục 57.2) | INSERT, `PENDING` |
+| App tải xong lên R2 | máy chủ `HeadObject` | UPDATE → `STORED` |
+| Việc dọn chạy đêm, lần đầu tính được hạn | đơn đã giao / đã hủy / có hoàn | UPDATE `deleteAfter` hoặc `holdReason` — một lần; đổi lần nữa chỉ khi đơn chuyển sang có hoàn (4–6 % đơn) |
+| Tới hạn | xóa tệp trên R2 | UPDATE → `DELETED` |
+
+Hết trần 90 ngày (luật L6) + 30 ngày để tra thì BỎ NGUYÊN MẢNH tháng — không DELETE từng dòng.
+
+**Bảng 2 — `pack_usage_daily`** (khóa chính `(ownerId, day, channelId, kind)`): số video, tổng giây, tổng byte. Gộp MỖI ĐÊM từ
+`pack_videos` cho ngày hôm qua; số của HÔM NAY cộng trực tiếp từ `pack_videos` lúc đọc (một shop một ngày, theo chỉ mục) → không có lượt
+ghi thêm nào cho mỗi video. Bảng này giữ lâu dài, là nguồn cho tab Thống kê và cho việc trừ giờ; mảnh `pack_videos` bị bỏ thì số vẫn còn.
+
+**Bảng 3 — `pack_settings`** (khóa chính `ownerId`): `enabled` (mặc định TẮT) + chỗ cho cấu hình sau này. Đây chính là CÔNG TẮC mở tính
+năng theo tài khoản: bản đầu chỉ dòng của `admin@hubsell.vn` bật; web đọc cờ này để hiện mục con, app đọc để hiện ô "Quay video đóng
+gói" → một cổng cho cả hai, đặt ở máy chủ. (Trả lời luôn việc số 3 của sổ việc 58.8.)
+
+**Chưa có trong bản đầu:** sổ mua / trừ giờ (làm ở lát bán giờ); nhật ký xem / tải; bảng bàn đóng hàng `pack_stations` (tên máy nằm
+ngay trong dòng video).
+
+**Truy vấn chính và điều phải kiểm trước khi giao:**
+
+| Truy vấn | Cách chạy | Phải kiểm |
+|---|---|---|
+| Danh sách video của shop | theo chỉ mục `(ownerId, recordedAt)`, lấy đúng một trang; sản phẩm + trạng thái đơn đọc `Order` theo khóa chính cho 20–100 dòng của trang | — |
+| Tab Đơn hoàn + số trên thẻ | đi từ `Order` với điều kiện lọc của trang Đối soát đơn hoàn (`lib/return-shipping.ts`), nối sổ video qua chỉ mục `orderId` | EXPLAIN trên shop có 3.206 đơn chờ hàng về: câu nối không có `recordedDate` nên phải dò chỉ mục ở mọi mảnh còn sống (≈ 5 mảnh) |
+| Khớp tem ra đơn lúc app báo | tra `Order` theo mã vận đơn trong phạm vi chủ shop — đường Quét đóng gói đang làm sẵn (`routes/packing.ts`) | **`schema.prisma` không khai chỉ mục nào trên `Order.trackingCode`** (em grep chỉ thấy khai báo cột); chưa đọc các migration SQL thô nên chưa biết prod có chỉ mục hay không → phải EXPLAIN đường quét hiện tại trước, không thêm chỉ mục vào `Order` khi chưa có số |
+| Số giờ đã dùng | Σ `pack_usage_daily` + phần hôm nay | — |
+
+**Còn mở sau bản thiết kế này:** thời lượng app báo được kiểm chéo thế nào (việc số 2 của 58.8); quyền nhân viên xem video (việc số 4);
+K1, K2, K4, K5 ở mục 58.6.

@@ -49,6 +49,7 @@ import {
   isAdmin,
   isPlatformWorkspace,
 } from "@/lib/permissions";
+import { featureState, type FeatureKey } from "@/lib/features";
 import { prefetchRoute } from "@/lib/prefetch";
 import { themeBaseIsSystem } from "@/lib/theme";
 import { TEXT_PAGE_TITLE } from "@/lib/typography";
@@ -90,6 +91,12 @@ interface NavChild {
    * route vẫn sống, lá quyền trong cây phân quyền giữ nguyên.
    */
   hidden?: boolean;
+  /**
+   * Trang sau CỔNG TÍNH NĂNG do máy chủ quyết (lib/features.ts): cổng chưa "open"
+   * với người đang đăng nhập thì mục được vẽ y như `locked` (mờ + ổ khóa, không
+   * bấm được, không có trong Ctrl+K). Khác `locked` ở chỗ mở theo TỪNG tài khoản.
+   */
+  feature?: FeatureKey;
 }
 export interface NavItem {
   /**
@@ -98,6 +105,11 @@ export interface NavItem {
    * trong cây phân quyền giữ nguyên để khi mở lại không phải cấp lại.
    */
   hidden?: boolean;
+  /**
+   * Đường dẫn của mục. Mục CÓ `children` mà vẫn khai `href` = nhóm bấm TÊN là vào
+   * trang đó (và nhóm xòe ra), mũi tên bên phải là nút riêng để xòe / cụp — chỉ
+   * nhóm "Đơn hàng" dùng, để khách không mất thói quen bấm "Đơn hàng" là thấy đơn.
+   */
   href?: string;
   label: string;
   /**
@@ -127,7 +139,19 @@ export interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Tổng quan", icon: "dashboard", perm: "dashboard" },
-  { href: "/orders", label: "Đơn hàng", icon: "shopping_cart", perm: "orders" },
+  {
+    // 16/11/2026 anh Trung (docs/VIDEO-DONG-HANG-THIET-KE.md): "Đơn hàng" thành NHÓM hai mục con
+    // "Xử lý đơn hàng" + "Video đóng hàng". `href` giữ lại nên bấm TÊN nhóm vẫn vào thẳng danh
+    // sách đơn như trước; "Video đóng hàng" đứng sau cổng packVideo — tài khoản chưa mở thấy MỜ.
+    href: "/orders",
+    label: "Đơn hàng",
+    icon: "shopping_cart",
+    perm: "orders",
+    children: [
+      { href: "/orders", label: "Xử lý đơn hàng" },
+      { href: "/orders/videos", label: "Video đóng hàng", feature: "packVideo" },
+    ],
+  },
   {
     label: "Quản lý Tài chính",
     // "credit_card" (thẻ ngân hàng): gọn, sang, outline và filled cùng một
@@ -356,7 +380,9 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/admin/health", title: "Sức khỏe nền tảng" },
   { prefix: "/admin", title: "Điều hành Hubsell" },
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
+  // Hai trang con đứng TRƯỚC "/orders" (match tiền tố).
   { prefix: "/orders/packing", title: "Đóng gói & bàn giao" },
+  { prefix: "/orders/videos", title: "Video đóng hàng" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   // Trang con đứng TRƯỚC "/products" (match tiền tố) — 05/11/2026 tách hub Hàng hóa.
   { prefix: "/products/marketplace", title: "Sản phẩm trên sàn" },
@@ -405,6 +431,8 @@ function getPageTitle(pathname: string): string {
 // trang con của nó (người dùng vẫn cụp tay lại được, xem openMenus bên dưới).
 function menusForPath(pathname: string): string[] {
   const labels: string[] = [];
+  // So đúng "/orders" hoặc thư mục con — không dính route khác lỡ bắt đầu bằng "/orders…".
+  if (pathname === "/orders" || pathname.startsWith("/orders/")) labels.push("Đơn hàng");
   if (pathname.startsWith("/finance")) labels.push("Quản lý Tài chính");
   if (pathname.startsWith("/invoicing")) labels.push("Hóa đơn & Thuế");
   if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
@@ -484,6 +512,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       else next.add(label);
       return next;
     });
+  }
+
+  // Bấm TÊN một nhóm có `href` (Đơn hàng): chỉ XÒE, không bao giờ cụp — cụp là
+  // việc của mũi tên. Đang đứng sẵn ở trang đó thì pathname không đổi nên effect
+  // phía trên không chạy; hàm này lo ca ấy.
+  function openMenu(label: string) {
+    setOpenMenus((prev) => (prev.has(label) ? prev : new Set(prev).add(label)));
   }
 
   const checkStatus = useCallback(async () => {
@@ -569,12 +604,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (!i.perm || can(user, i.perm));
   const visibleChildren = (i: NavItem): NavItem => {
     if (!i.children) return i;
-    const children = i.children.filter(
-      (c) =>
-        !c.hidden &&
-        (!c.adminOnly || isAdmin(user)) &&
-        (isAdmin(user) || !c.perm || can(user, c.perm))
-    );
+    const children = i.children
+      .filter(
+        (c) =>
+          !c.hidden &&
+          (!c.adminOnly || isAdmin(user)) &&
+          (isAdmin(user) || !c.perm || can(user, c.perm))
+      )
+      // Cổng tính năng chưa mở với tài khoản này → vẽ như mục khóa (mờ + ổ khóa).
+      .map((c) =>
+        c.feature && featureState(user, c.feature) !== "open" ? { ...c, locked: true } : c
+      );
     return { ...i, children };
   };
   // Không gian điều hành Hubsell → thay trọn bộ menu bằng sidebar HQ.
@@ -643,33 +683,72 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // do openMenus quyết định hoàn toàn — trước đây `|| groupActive`
       // ép nhóm chứa trang đang xem luôn mở, bấm không cụp lại được.
       const open = openMenus.has(item.label);
+      const groupHref = item.href;
       return (
         <div key={item.label}>
-          <button
-            type="button"
-            onClick={() => toggleMenu(item.label)}
-            className={cn(
-              // text-left: button mặc định canh GIỮA — nhãn dài xuống
-              // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
-              // canh giữa lộn xộn nếu không ép canh trái.
-              NAV_ITEM_BASE,
-              groupActive ? NAV_ITEM_ACTIVE_TEXT : NAV_ITEM_IDLE,
-              // Nhóm đang CỤP mà chứa trang hiện hành → nhận pill nền y
-              // như mục thường (hết cảnh active "nửa vời" chỉ đậm chữ);
-              // lúc XOÈ thì nhường pill cho mục con đang chọn bên dưới,
-              // tránh hai pill chồng nhau trong cùng một nhóm.
-              groupActive && !open && "bg-sidebar-active-bg"
-            )}
-          >
-            <NavIcon name={item.icon} filled={groupActive} />
-            <span className="min-w-0 flex-1">{item.label}</span>
-            <ChevronDown
+          {groupHref ? (
+            // Nhóm có `href` (Đơn hàng): TÊN nhóm là đường dẫn vào trang chính của
+            // nhóm, mũi tên là nút riêng xòe / cụp. Một khung chung giữ đúng kích
+            // thước, nền hover và pill của hàng nhóm thường (đệm 12px hai mép).
+            <div
               className={cn(
-                "size-4 shrink-0 transition-transform",
-                open && "rotate-180"
+                "relative flex w-full items-center rounded-lg text-sm leading-6 transition-colors",
+                groupActive ? NAV_ITEM_ACTIVE_TEXT : NAV_ITEM_IDLE,
+                groupActive && !open && "bg-sidebar-active-bg"
               )}
-            />
-          </button>
+            >
+              <Link
+                href={groupHref}
+                onClick={() => openMenu(item.label)}
+                onMouseEnter={() => prefetch(groupHref)}
+                onFocus={() => prefetch(groupHref)}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-2 pl-3 text-left"
+              >
+                <NavIcon name={item.icon} filled={groupActive} />
+                <span className="min-w-0 flex-1">{item.label}</span>
+              </Link>
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-label={open ? `Thu gọn nhóm ${item.label}` : `Mở nhóm ${item.label}`}
+                onClick={() => toggleMenu(item.label)}
+                className="flex shrink-0 items-center self-stretch rounded-lg px-3"
+              >
+                <ChevronDown
+                  className={cn(
+                    "size-4 shrink-0 transition-transform",
+                    open && "rotate-180"
+                  )}
+                />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => toggleMenu(item.label)}
+              className={cn(
+                // text-left: button mặc định canh GIỮA — nhãn dài xuống
+                // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
+                // canh giữa lộn xộn nếu không ép canh trái.
+                NAV_ITEM_BASE,
+                groupActive ? NAV_ITEM_ACTIVE_TEXT : NAV_ITEM_IDLE,
+                // Nhóm đang CỤP mà chứa trang hiện hành → nhận pill nền y
+                // như mục thường (hết cảnh active "nửa vời" chỉ đậm chữ);
+                // lúc XOÈ thì nhường pill cho mục con đang chọn bên dưới,
+                // tránh hai pill chồng nhau trong cùng một nhóm.
+                groupActive && !open && "bg-sidebar-active-bg"
+              )}
+            >
+              <NavIcon name={item.icon} filled={groupActive} />
+              <span className="min-w-0 flex-1">{item.label}</span>
+              <ChevronDown
+                className={cn(
+                  "size-4 shrink-0 transition-transform",
+                  open && "rotate-180"
+                )}
+              />
+            </button>
+          )}
           {open && (
             <div className="mt-1.5 space-y-1 border-l pl-4 ml-5">
               {item.children.map((child) => {

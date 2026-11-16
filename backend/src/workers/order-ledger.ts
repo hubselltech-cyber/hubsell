@@ -23,6 +23,7 @@ import {
   ensureLedgerPartitions,
   markFormulaVersionStale,
 } from "../services/order-ledger";
+import { ensurePackVideoPartitions } from "../services/pack-video/maintenance";
 
 const POLL_MS = Math.max(500, Number(process.env.LEDGER_POLL_MS ?? 2000) || 2000);
 /**
@@ -95,7 +96,21 @@ export async function drain(): Promise<{ processed: number }> {
   return { processed };
 }
 
+/**
+ * Mảnh tháng của sổ video đóng hàng (pack_videos) — đi nhờ lịch bảo trì của sổ cái. Lỗi ở đây
+ * KHÔNG được làm hỏng bảo trì sổ cái: thiếu mảnh thì dòng rơi vào mảnh DEFAULT, không mất.
+ */
+async function ensurePackVideoPartitionsSafe(): Promise<void> {
+  try {
+    const created = await ensurePackVideoPartitions(3);
+    if (created > 0) console.log(`[PackVideo] Tạo ${created} phân mảnh tháng mới`);
+  } catch (err) {
+    console.error("[PackVideo] Lỗi tạo phân mảnh:", (err as Error).message);
+  }
+}
+
 async function runStartupMaintenance(): Promise<void> {
+  await ensurePackVideoPartitionsSafe();
   try {
     const created = await ensureLedgerPartitions(3);
     if (created > 0) console.log(`[Ledger] Tạo ${created} phân mảnh tháng mới`);
@@ -139,6 +154,7 @@ async function nightlyTick(): Promise<void> {
 
 /** Bảo trì đêm — EXPORT để chạy tay (script / route HQ). */
 export async function runNightlyMaintenance(): Promise<void> {
+  await ensurePackVideoPartitionsSafe();
   try {
     const created = await ensureLedgerPartitions(3);
     if (created > 0) console.log(`[Ledger] Tạo ${created} phân mảnh tháng mới`);

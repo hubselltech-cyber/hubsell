@@ -30,8 +30,12 @@ export function clearToken() {
 
 // ----- Lưu thông tin người đăng nhập (để biết vai trò Admin/Staff) -----
 
+/** Sự kiện phát mỗi lần hồ sơ người đăng nhập trong trình duyệt được ghi lại (lib/use-feature.ts nghe). */
+export const STORED_USER_EVENT = "hubsell:stored-user";
+
 export function setStoredUser(user: AuthUser) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(STORED_USER_EVENT));
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -259,6 +263,11 @@ export interface AuthUser {
    * Chỉ /api/auth/me trả; object lưu từ login không có (undefined).
    */
   hasPassword?: boolean;
+  /**
+   * CỔNG TÍNH NĂNG do máy chủ quyết (login + /me) — web chỉ hiển thị theo. Vắng mặt = chưa mở.
+   * packVideo: "Video đóng hàng" (docs/VIDEO-DONG-HANG-THIET-KE.md mục 3). Đọc qua lib/features.ts.
+   */
+  features?: { packVideo?: "open" | "locked" };
 }
 
 export interface AuthResponse {
@@ -9867,4 +9876,207 @@ export function applyCopyListingTargetToBatch(batchId: string, targetId: string)
     `${COPY_LISTING_BASE}/batches/${batchId}/targets/${targetId}/apply`,
     { method: "POST" }
   );
+}
+
+// ============================================================
+// VIDEO ĐÓNG HÀNG (/api/pack-videos) — docs/VIDEO-DONG-HANG-THIET-KE.md mục 5.
+// Tài khoản chưa được mở nhận 403 FEATURE_LOCKED ở MỌI đường dưới đây; web không gọi
+// khi cổng đóng (lib/use-feature.ts). Byte video không đi qua máy chủ: đường "url" trả
+// đường dẫn ký sẵn hạn ngắn, trình duyệt đọc thẳng kho tệp.
+// ============================================================
+
+export type PackVideoKind = "PACK" | "UNBOX";
+export type PackVideoStatus = "PENDING" | "STORED" | "DELETED" | "LOST";
+/** Chip một chạm của tab Video đóng hàng. */
+export type PackVideoChip = "all" | "returns" | "unmatched" | "pending";
+/** Thẻ lọc của tab Đơn hoàn. */
+export type PackVideoReturnCard = "all" | "has_pack" | "damaged_no_unbox" | "no_video";
+
+/** Một dòng hàng của đơn, bản gọn đủ để nhận ra món hàng trong video. */
+export interface PackVideoOrderItem {
+  name: string;
+  variantName: string | null;
+  quantity: number;
+  imageUrl: string | null;
+}
+
+export interface PackVideoRow {
+  id: string;
+  kind: PackVideoKind;
+  status: PackVideoStatus;
+  trackingCode: string;
+  /** null = tem chưa khớp được đơn nào. */
+  orderId: string | null;
+  orderCode: string | null;
+  channelId: string | null;
+  channelPlatform: ChannelName | null;
+  shopName: string | null;
+  /** Giờ bắt đầu quay (ISO). */
+  recordedAt: string;
+  durationSec: number;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  recordedById: string;
+  recordedByName: string | null;
+  deviceName: string | null;
+  /** true = thời lượng app báo lệch so với cỡ tệp thật — máy chủ gắn cờ, chưa trừ giờ. */
+  durationFlag: boolean;
+  order: {
+    shippingStatus: ShippingStatus;
+    returnStatus: ReturnStatus;
+    hasReturn: boolean;
+    items: PackVideoOrderItem[];
+  } | null;
+}
+
+export interface PackVideoListParams {
+  kind?: PackVideoKind;
+  chip?: PackVideoChip;
+  /** Lọc theo ngày quay; null / bỏ trống = toàn bộ thời gian. */
+  range?: DateRange | null;
+  /** Danh sách id gian (trang đổi từ bộ lọc sàn / gian). Rỗng = mọi gian. */
+  channelIds?: string[];
+  recordedById?: string;
+  /** Mã vận đơn hoặc mã đơn, khớp theo tiền tố. */
+  q?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+function packVideoListQuery(params: PackVideoListParams, forList: boolean): string {
+  const qs = new URLSearchParams(rangeToQuery(params.range ?? undefined));
+  if (params.kind) qs.set("kind", params.kind);
+  if (params.channelIds && params.channelIds.length > 0) qs.set("channelIds", params.channelIds.join(","));
+  if (params.recordedById) qs.set("recordedById", params.recordedById);
+  if (params.q?.trim()) qs.set("q", params.q.trim());
+  if (forList) {
+    if (params.chip && params.chip !== "all") qs.set("chip", params.chip);
+    if (params.cursor) qs.set("cursor", params.cursor);
+    if (params.limit) qs.set("limit", String(params.limit));
+  }
+  return qs.toString();
+}
+
+/** Danh sách video, phân trang bằng con trỏ (nextCursor = null là hết). */
+export function fetchPackVideos(params: PackVideoListParams) {
+  return apiFetch<{ items: PackVideoRow[]; nextCursor: string | null }>(
+    `/api/pack-videos?${packVideoListQuery(params, true)}`
+  );
+}
+
+/** Số trên các chip — cùng bộ lọc với danh sách, trừ chính chip đang chọn. */
+export function fetchPackVideoSummary(params: PackVideoListParams) {
+  return apiFetch<Record<PackVideoChip, number>>(
+    `/api/pack-videos/summary?${packVideoListQuery(params, false)}`
+  );
+}
+
+export interface PackVideoOrderDossier {
+  order: {
+    id: string;
+    orderCode: string;
+    trackingCode: string | null;
+    channelPlatform: ChannelName;
+    shopName: string;
+    shippingStatus: ShippingStatus;
+    returnStatus: ReturnStatus;
+    returnRequestedAt: string | null;
+    returnedAt: string | null;
+    deliveredAt: string | null;
+    items: PackVideoOrderItem[];
+  };
+  videos: PackVideoRow[];
+}
+
+/** Mọi video (đóng + khui) của MỘT đơn — nguồn của trang hồ sơ. */
+export function fetchPackVideosByOrder(orderId: string) {
+  return apiFetch<PackVideoOrderDossier>(`/api/pack-videos/by-order/${encodeURIComponent(orderId)}`);
+}
+
+/** Đường dẫn ký sẵn để XEM (download = false) hoặc TẢI VỀ một video; hết hạn thì xin lại. */
+export function fetchPackVideoUrl(id: string, download: boolean) {
+  return apiFetch<{ url: string; expiresAt: string }>(
+    `/api/pack-videos/${encodeURIComponent(id)}/url?download=${download ? 1 : 0}`
+  );
+}
+
+/** Trong các đơn của MỘT trang danh sách, đơn nào đã có video — một lượt gọi cho cả trang. */
+export function fetchPackVideoOrderFlags(orderIds: string[]) {
+  return apiFetch<{ withVideo: string[] }>("/api/pack-videos/order-flags", {
+    method: "POST",
+    body: JSON.stringify({ orderIds }),
+  });
+}
+
+export interface PackVideoReturnRow {
+  orderId: string;
+  orderCode: string;
+  trackingCode: string | null;
+  channelPlatform: ChannelName;
+  shopName: string;
+  /** Loại hoàn do sàn báo; null = giao thất bại / sàn hủy khi kiện đang đi. */
+  returnType: string | null;
+  returnStatus: ReturnStatus;
+  returnRequestedAt: string | null;
+  packVideo: { id: string; durationSec: number } | null;
+  unboxVideo: { id: string; durationSec: number } | null;
+}
+
+export interface PackVideoReturnsResponse {
+  cards: Record<PackVideoReturnCard, number>;
+  items: PackVideoReturnRow[];
+  nextCursor: string | null;
+}
+
+/** Tab Đơn hoàn: một dòng = một đơn có hoàn, kèm video đóng / video khui nếu có. */
+export function fetchPackVideoReturns(params: { card?: PackVideoReturnCard; cursor?: string; limit?: number }) {
+  const qs = new URLSearchParams();
+  if (params.card && params.card !== "all") qs.set("card", params.card);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  if (params.limit) qs.set("limit", String(params.limit));
+  return apiFetch<PackVideoReturnsResponse>(`/api/pack-videos/returns?${qs.toString()}`);
+}
+
+export interface PackVideoStats {
+  totalVideos: number;
+  totalSeconds: number;
+  avgSeconds: number;
+  byDay: { day: string; videos: number; seconds: number }[];
+  byRecorder: {
+    recordedById: string;
+    name: string | null;
+    videos: number;
+    seconds: number;
+    avgSeconds: number;
+    maxSeconds: number;
+  }[];
+  byChannel: { channelId: string; shopName: string | null; videos: number; seconds: number }[];
+  longest: PackVideoRow[];
+}
+
+/** Tab Thống kê — chỉ gọi khi mở tab. */
+export function fetchPackVideoStats(range?: DateRange | null) {
+  const qs = new URLSearchParams(rangeToQuery(range ?? undefined));
+  return apiFetch<PackVideoStats>(`/api/pack-videos/stats?${qs.toString()}`);
+}
+
+/** Một gói giờ quay; `priceVnd` trống = giá chưa công bố. */
+export interface PackVideoHourPackage {
+  hours: number;
+  priceVnd: number | null;
+}
+
+/** Số giờ quay của chủ shop: đã mua · đã quay · còn lại (còn lại ĐƯỢC ÂM khi quay lố). */
+export interface PackVideoHours {
+  purchasedSeconds: number;
+  usedSeconds: number;
+  remainingSeconds: number;
+  /** false = chưa mở bán giờ: chỉ xem gói, chưa có bước thanh toán. */
+  salesOpen: boolean;
+  packages: PackVideoHourPackage[];
+}
+
+export function fetchPackVideoHours() {
+  return apiFetch<PackVideoHours>("/api/pack-videos/hours");
 }

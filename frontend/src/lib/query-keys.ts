@@ -104,4 +104,14 @@ export const qk = {
   productStockLevels: (productId: string) => ["product-stock-levels", productId] as const,
   warehouseReturns: (params: Record<string, unknown>) =>
     ["warehouse-returns", params] as const,
+
+  // ----- Video đóng hàng (docs/VIDEO-DONG-HANG-THIET-KE.md) -----
+  packVideos: (params: Record<string, unknown>) => ["pack-videos", "list", params] as const,
+  packVideoSummary: (params: Record<string, unknown>) => ["pack-videos", "summary", params] as const,
+  packVideoReturns: (params: Record<string, unknown>) => ["pack-videos", "returns", params] as const,
+  packVideoStats: (params: Record<string, unknown>) => ["pack-videos", "stats", params] as const,
+  packVideoHours: () => ["pack-videos", "hours"] as const,
+  packVideosByOrder: (orderId: string) => ["pack-videos", "by-order", orderId] as const,
+  /** Khóa theo đúng danh sách id của một trang đơn — id không đổi thì không gọi lại. */
+  packVideoOrderFlags: (orderIds: string[]) => ["pack-videos", "order-flags", orderIds] as const,
 };

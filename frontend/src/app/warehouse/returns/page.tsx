@@ -23,6 +23,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
+import { OrderVideoFlag, OrderVideoFlagsProvider } from "@/components/orders/videos/order-video-flag";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
@@ -223,6 +224,8 @@ export default function WarehouseReturnsPage() {
   const invalidate = useInvalidate();
 
   const rows = useMemo(() => returnsQ.data?.items ?? [], [returnsQ.data]);
+  // Id các đơn đang hiện — khóa của lượt hỏi "đơn nào có video" (chỉ chạy khi tài khoản được mở Video đóng hàng).
+  const rowIds = useMemo(() => rows.map((o) => o.id), [rows]);
   // Kiện giao thất bại đang chờ về: hỏi hành trình hãng theo lô, dòng hiện dần.
   const carrierById = useReturnCarrierStatus(rows);
   const viewKey = JSON.stringify([
@@ -534,6 +537,7 @@ export default function WarehouseReturnsPage() {
               </div>
             ) : (
               <Refreshing active={loading}>
+                <OrderVideoFlagsProvider orderIds={rowIds}>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -607,6 +611,8 @@ export default function WarehouseReturnsPage() {
                               <span className="font-semibold tracking-tight">
                                 {o.orderCode}
                               </span>
+                              {/* Đơn có video đóng hàng → biểu tượng nhỏ mở hồ sơ video (16/11/2026) */}
+                              <OrderVideoFlag orderId={o.id} variant="icon" />
                               {shopOnlyName(
                                 o.channel.channelName as ChannelName,
                                 o.channel.shopName
@@ -765,6 +771,7 @@ export default function WarehouseReturnsPage() {
                     })}
                   </TableBody>
                 </Table>
+                </OrderVideoFlagsProvider>
               </Refreshing>
             )}
           </CardContent>

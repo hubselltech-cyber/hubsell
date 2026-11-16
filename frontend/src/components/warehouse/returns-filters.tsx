@@ -38,8 +38,11 @@ export type ReturnStatusFilter =
 /** Nhóm trạng thái của thẻ Hàng hỏng · khiếu nại sàn — khớp filter ISSUES ở backend. */
 const ISSUE_KEYS = ["DAMAGED", "CLAIM_SETTLED", "WRITTEN_OFF"] as const;
 
-/** Thẻ số bấm được. role="button" trên div vì thẻ chứa <p>/<div> (không hợp lệ trong <button>). */
-function FilterCard({
+/**
+ * Thẻ số bấm được. role="button" trên div vì thẻ chứa <p>/<div> (không hợp lệ trong <button>).
+ * Xuất ra ngoài để tab Đơn hoàn của trang Video đóng hàng dùng đúng cùng một kiểu thẻ lọc.
+ */
+export function FilterCard({
   active,
   onToggle,
   ...card

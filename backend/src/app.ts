@@ -11,6 +11,7 @@ import {
   requirePlatformPermission,
   requireRole,
 } from "./middleware/auth";
+import { requirePackVideo } from "./middleware/require-pack-video";
 import adminRouter from "./routes/admin";
 import authRouter from "./routes/auth";
 import analyticsRouter from "./routes/analytics";
@@ -19,6 +20,7 @@ import dashboardRouter from "./routes/dashboard";
 import productsRouter from "./routes/products";
 import ordersRouter from "./routes/orders";
 import packingRouter from "./routes/packing";
+import packVideosRouter from "./routes/pack-videos";
 import warehouseRouter from "./routes/warehouse";
 import channelsRouter from "./routes/channels";
 import inventoryRouter from "./routes/inventory";
@@ -232,6 +234,9 @@ export function createApp() {
   // Đóng gói & bàn giao (01/11/2026) — mount TRƯỚC /api/orders vì router đơn có /:id.
   app.use("/api/orders/packing", requireAuth, requirePermission("orders"), requireChannel, packingRouter);
   app.use("/api/orders", requireAuth, requirePermission("orders"), requireChannel, ordersRouter);
+  // Video đóng hàng (16/11/2026, docs/VIDEO-DONG-HANG-THIET-KE.md) — cổng requirePackVideo chặn CẢ NHÓM:
+  // bản thí điểm chỉ một tài khoản mở, mọi tài khoản khác nhận 403 FEATURE_LOCKED.
+  app.use("/api/pack-videos", requireAuth, requirePackVideo, packVideosRouter);
   app.use("/api/inventory", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, inventoryRouter);
   // Vị trí chứa hàng (đợt B 24/09) — cùng quyền với Hàng hóa.
   app.use("/api/stock-locations", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, stockLocationsRouter);
