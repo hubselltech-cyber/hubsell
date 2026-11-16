@@ -1,21 +1,34 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Video } from "lucide-react";
 
 import { FeatureLockedCard } from "@/components/shared/feature-locked-card";
 import { AppShell } from "@/components/shell/app-shell";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
 import { getToken } from "@/lib/api";
+import { PACK_VIDEOS_PATH } from "@/lib/pack-video";
 import { useFeature } from "@/lib/use-feature";
+import { cn } from "@/lib/utils";
 
 import { HoursBalanceBar } from "./hours-balance";
 import { OrderVideoDossier } from "./order-video-dossier";
 import { ReturnsTab } from "./returns-tab";
 import { StatsTab } from "./stats-tab";
 import { VideosTab } from "./videos-tab";
+
+/**
+ * Màn quay kéo theo bộ mã hóa + thư viện ghép MP4 + bộ đọc mã — chỉ nạp khi thật sự mở màn quay, và chỉ
+ * chạy phía trình duyệt (dùng camera, WebCodecs, Worker; không có gì để dựng phía máy chủ).
+ */
+const RecordScreen = dynamic(() => import("./record/record-screen").then((m) => m.RecordScreen), {
+  ssr: false,
+  loading: () => <p className="py-10 text-center text-sm text-muted-foreground">Đang mở màn quay…</p>,
+});
 
 type TabKey = "videos" | "returns" | "stats";
 
@@ -81,8 +94,19 @@ export function PackVideosPage() {
             tabs={TABS}
             value={tab}
             onChange={setTab}
-            // Giờ còn lại + nút mua hiện ở MỌI tab (anh Trung 16/11).
-            trailing={<HoursBalanceBar />}
+            // Giờ còn lại + nút mua hiện ở MỌI tab (anh Trung 16/11); nút Quay video mở màn quay bằng webcam.
+            trailing={
+              <div className="flex items-center gap-3">
+                <Link
+                  href={`${PACK_VIDEOS_PATH}/record`}
+                  className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mb-1.5")}
+                >
+                  <Video className="size-4" />
+                  Quay video
+                </Link>
+                <HoursBalanceBar />
+              </div>
+            }
           />
         </PageHeaderBand>
 
@@ -90,6 +114,15 @@ export function PackVideosPage() {
         {tab === "returns" && <ReturnsTab />}
         {tab === "stats" && <StatsTab />}
       </div>
+    </PackVideoGate>
+  );
+}
+
+/** MÀN QUAY BẰNG WEBCAM (/orders/videos/record) — cùng cổng tính năng với trang danh sách. */
+export function PackVideoRecordPage() {
+  return (
+    <PackVideoGate>
+      <RecordScreen />
     </PackVideoGate>
   );
 }

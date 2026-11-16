@@ -13,10 +13,11 @@
 //   GET  /returns          danh sách ĐƠN hoàn + số trên thẻ
 //   GET  /stats            thống kê thời gian quay
 //   GET  /hours            giờ đã mua · đã quay · còn lại + các gói giờ
+//   GET  /match?code=      màn quay hỏi: mã trên tem này khớp đơn nào (chỉ đọc)
 //   GET  /by-order/:orderId  hồ sơ video của một đơn
 //   POST /order-flags      trong các đơn này, đơn nào đã có video
 //   GET  /:id/url          đường dẫn xem / tải về (hạn ngắn)
-// Các đường có chữ cố định (summary, returns, stats, hours, by-order, order-flags) khai TRƯỚC "/:id".
+// Các đường có chữ cố định (summary, returns, stats, hours, match, by-order, order-flags) khai TRƯỚC "/:id".
 // ============================================================
 
 import { Router, type NextFunction, type Response } from "express";
@@ -30,6 +31,7 @@ import {
   RETURN_CARDS,
   listReturnOrders,
   listVideos,
+  matchTem,
   ordersWithVideo,
   summarizeVideos,
   videoStats,
@@ -201,6 +203,18 @@ router.get(
   "/hours",
   handle(async (req, res) => {
     res.json(await getHoursOverview(req.ownerId!));
+  })
+);
+
+// Mã trên tem: cùng luật với bước tải lên (không khoảng trắng, tối đa 64 ký tự).
+router.get(
+  "/match",
+  handle(async (req, res) => {
+    const code = str(req.query.code);
+    if (!code || code.length > 64 || /\s/.test(code)) {
+      throw new PackVideoError(400, "BAD_INPUT", "Mã vận đơn không hợp lệ");
+    }
+    res.json(await matchTem(scopeOf(req), code));
   })
 );
 

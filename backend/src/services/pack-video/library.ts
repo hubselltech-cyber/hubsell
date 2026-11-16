@@ -23,6 +23,7 @@ import { loadVariantNames } from "../../lib/order-line-names";
 import { keyBelongsToOwner, packVideoDownloadName } from "../../lib/pack-video-key";
 import { escapeLikePrefix, type PackVideoKind, type PackVideoStatus } from "../../lib/pack-video-rules";
 import { prisma } from "../../lib/prisma";
+import { matchOrderByTrackingCode } from "./order-match";
 import { PackVideoError, type PackVideoDeps } from "./upload";
 
 export interface PackVideoScope {
@@ -424,6 +425,40 @@ async function orderItems(scope: PackVideoScope, orderId: string): Promise<Order
     quantity: i.quantity,
     imageUrl: i.imageUrl ?? i.product?.imageUrl ?? null,
   }));
+}
+
+export interface TemMatch {
+  orderId: string;
+  orderCode: string;
+  channelPlatform: string;
+  shopName: string | null;
+  items: OrderLineView[];
+}
+
+/**
+ * Màn QUAY hỏi trước: mã trên tem này khớp đơn nào? — để người đóng hàng thấy ngay tên gian + món hàng
+ * trong lúc đang quay (quay nhầm tem thì biết liền). CHỈ ĐỌC, dùng đúng luật khớp của bước tải lên
+ * (order-match.ts: khớp tuyệt đối, hơn một đơn thì coi như không khớp) nên hai nơi không bao giờ lệch nhau.
+ * Nhân viên bị giới hạn gian không thấy đơn của gian khác.
+ */
+export async function matchTem(scope: PackVideoScope, trackingCode: string): Promise<{ order: TemMatch | null }> {
+  const match = await matchOrderByTrackingCode(scope.ownerId, trackingCode, "PACK");
+  if (!match) return { order: null };
+  if (scope.allowedChannelIds && !scope.allowedChannelIds.includes(match.channelId)) return { order: null };
+  const channel = await prisma.channel.findFirst({
+    where: { id: match.channelId, userId: scope.ownerId },
+    select: { channelName: true, shopName: true },
+  });
+  if (!channel) return { order: null };
+  return {
+    order: {
+      orderId: match.orderId,
+      orderCode: match.orderCode,
+      channelPlatform: channel.channelName,
+      shopName: channel.shopName,
+      items: await orderItems(scope, match.orderId),
+    },
+  };
 }
 
 /** Đường dẫn xem (phát trong trình duyệt) hoặc tải về — hạn ngắn, chỉ cho video đã lên kho. */

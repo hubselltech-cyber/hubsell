@@ -1080,6 +1080,7 @@ phần mềm theo bậc** (ASCAM, VieCam, Camsight). Cấu hình lặp lại nhi
 
 1. **Camera an ninh (IP) nhập khẩu từ 01/01/2026 phải chứng nhận hợp quy** theo QCVN 135:2024 **[tra]** (quatest3.com.vn). Webcam USB
    không thấy nằm trong phạm vi quy chuẩn này. → nếu bán, bán webcam USB dễ hơn hẳn. Không phải ý kiến pháp lý; phải hỏi đơn vị chứng nhận.
+   **(Sửa 16/11/2026: QCVN 135:2024 đã được thay bằng QCVN 11:2026/BCA, hiệu lực 01/07/2026 — xem mục 59.4.)**
 2. **In nhãn riêng cần mua 500–1.000 chiếc** (số thấy trên Alibaba **[tra]**); mua mẫu 1–10 chiếc thì dễ. Webcam 1080p lấy nét tự động
    giá xưởng khoảng 20–27 USD/chiếc; thuế nhập khẩu webcam 15 % + VAT 10 % **[tra]**.
 3. **Một camera 1080p phủ cả tấm lót 50 × 35 cm khó đọc số vận đơn** (phép tính của luồng tra, khớp phép tính lần một). Đó là lý do các
@@ -3090,3 +3091,111 @@ ngay trong dòng video).
 
 **Còn mở sau bản thiết kế này:** thời lượng app báo được kiểm chéo thế nào (việc số 2 của 58.8); quyền nhân viên xem video (việc số 4);
 K1, K2, K4, K5 ở mục 58.6.
+
+---
+
+## 59. Khảo sát quay bằng WEBCAM và CAMERA AN NINH (16/11/2026)
+
+Anh 16/11: "khách sẽ dùng camera hoặc webcam là chính"; "Webcam này anh mua trên mạng nên chưa có một quy chuẩn nào nhất định, sau này
+chắc em phải khảo sát vài loại nữa hoặc mình phải đặt hàng loại chuẩn để bán cho khách luôn. Quay bằng camera cần trang thử không? Cần
+video truyền lên máy tính như các phần mềm khác không? cũng cần phải khảo sát." → rồi chốt: **"Lần này chúng ta cứ làm cho webcam trước."**
+
+Mức chắc: trang web đọc qua công cụ tóm tắt, không đọc từng chữ; **[C]** = thấy trên trang nêu, **[S]** = suy ra. Không đăng nhập, không tải gì.
+
+### 59.1 Thiết bị trên máy anh (đo thật bằng ffmpeg, chưa thử trình duyệt)
+
+| Thiết bị Windows thấy | Là gì | Kết quả |
+|---|---|---|
+| "Web Camera" (`CB07:1BCF`, có micro) — webcam USB anh mua trên mạng, cắm 14:19 | webcam chuẩn UVC | MJPEG 30 khung/giây ở 640×480 → 1280×720 → 1920×1080 → 2560×1440 → 2688×1520; kiểu không nén chỉ 5–10 khung/giây ở HD. Quay 5 giây ở 720p và 1080p đều đủ 150 khung; nén H.264 800k ≈ 5,6–6,4 MB / phút. Hình nét; ống kính GÓC RỘNG, méo cong ở mép |
+| "USB Video" (`534D:2109`) — có sẵn trên máy | đầu thu HDMI → USB (chip MS2109) | quay được 720p 30 khung/giây nhưng hình là sọc màu = không có tín hiệu HDMI vào |
+| "OBS Virtual Camera", "LSVCam" | camera ảo của phần mềm | không thử |
+
+### 59.2 Đối thủ nối camera thế nào
+
+| Sản phẩm | Nguồn quay | Khách phải cài gì | Bán thiết bị |
+|---|---|---|---|
+| Cam Check | webcam trong trình duyệt; điện thoại qua DroidCam; camera IP qua "Camera Bridge" | webcam: không. Camera IP: phần mềm cầu nối Windows miễn phí, 1 máy ≤ 9 camera, cùng mạng nội bộ | webcam 2K lấy nét tự động không tên 329.000 đ; bộ 600.000–1.165.000 đ; Imou + 1 năm 1,79 tr [C] |
+| Ship Xanh | trình duyệt điện thoại; webcam; camera an ninh bằng cách DÁN đường RTSP | không nêu; hướng dẫn chỉ dùng Smart PSS / Ezviz Studio để dò IP và đặt H.264. Không nói web đọc RTSP bằng cách nào | "mọi camera an ninh cần nâng cấp phần cứng / phần mềm" — mua của họ, không giá [C] |
+| ASCAM | camera IP, tới 8 luồng RTSP mỗi bàn; "mọi hãng" chỉ ở gói 8,5 tr / năm / máy | phần mềm Windows | bộ 2 camera 4,5 tr / bàn; camera soi tem 2 MP ống kính cố định, đọc 10–80 cm, 1,6 tr [C] |
+| EPack | webcam trong trình duyệt + "CAM 2" để soi mã; trình duyệt điện thoại | không | — |
+| Dohana | app điện thoại; web với webcam, 2 camera | trang tải chỉ có Android / iOS | có bán camera, không công bố thông số |
+| Realpacking (Hàn) | webcam USB; camera an ninh qua "IPCM module" + RTSP | phần mềm ghi cài trên Windows / Mac | OBSBOT Meet 2 (4K, lấy nét tự động), Logitech C920 + dây nối 5 m; treo ≥ 1 m [C] |
+| Dobybot (Thái) | webcam USB / Android | không nêu | webcam 1080p có VÒNG CHỈNH NÉT TAY 990 / 3.500 baht; tay 60 cm → khung 80 × 60 cm [C] |
+| UpSeller (Trung Quốc) | chỉ camera USB / camera gắn sẵn | phải cài plugin ngay cả với USB | — |
+
+Rút ra: **webcam USB chạy thẳng trong trình duyệt là đường phổ biến và không cần cài gì** (Cam Check, EPack, Dohana). **Ai nhận camera an
+ninh đều chạy một thứ gì đó trong mạng nội bộ của khách** — trừ Ship Xanh không nói rõ.
+
+### 59.3 Các đường đưa camera an ninh vào web (để dành — anh chốt làm webcam trước)
+
+| Đường | Khách cài gì | Điểm yếu | Shop nhỏ tự làm |
+|---|---|---|---|
+| 1. Phần mềm cầu nối trong mạng nội bộ (go2rtc, MediaMTX — mỗi cái một tệp chạy, mã mở) | một chương trình nhỏ trên một máy | camera H.265; IP camera đổi; lấy được tài khoản / đường RTSP là phần khó; Chrome 142+ hỏi quyền "truy cập mạng nội bộ" khi trang https gọi vào máy trong nhà [C] | vừa |
+| 2. **Windows 11 ghép camera ONVIF sẵn có** (Cài đặt › Camera): Microsoft ghi camera đã ghép "hiện như mọi camera khác" [C] | không | chỉ H.264 / MJPEG, không H.265, không tiếng, cùng lớp mạng; Windows 10 không ghép được camera có mật khẩu. **CHƯA biết Chrome có liệt kê camera này không** | dễ nếu chạy |
+| 3. Cloud của hãng (Imou, EZVIZ) | không | mỗi hãng một lần tích hợp; video tải hai lần; có phí theo GB; Xiaomi C300 không có RTSP / ONVIF | dễ cho shop, tốn cho mình |
+| 4. Lấy lại đoạn ĐÃ GHI theo giờ từ thẻ nhớ / đầu ghi | [S] vẫn cần một chương trình trong mạng nội bộ | Dahua có bản trả tệp 0 byte, định dạng riêng; tài liệu Hikvision sau cửa đối tác | khó |
+| 5. Camera ảo (OBS, SplitCam) | phần mềm nặng hơn | trễ 0,5–2 giây [S]; không phải chỗ nào cũng hiện | vừa – khó |
+| 6. Camera / đầu ghi có cổng HDMI → đầu thu USB (loại đang cắm ở máy anh) | không | mỗi đầu thu một kênh | [S] dễ |
+
+Điều chung mọi đường: camera gắn trần cao ≈ 2,5 m KHÔNG đọc được tem (Cam Check tự nói) → vẫn cần máy quét hoặc camera thứ hai soi gần.
+Hai đường không cần cài (2 và 6) đáng một buổi thử trước khi nghĩ tới viết phần mềm cầu nối.
+
+### 59.4 "Webcam chuẩn" cho bàn đóng hàng
+
+Không có chuẩn chính thức. Chuẩn làm việc:
+
+1. Chuẩn UVC, cắm là chạy.
+2. **Nét ở 30–60 cm** — lấy nét tự động hoặc có vòng chỉnh nét tay. Đây là điểm tách "dùng được" khỏi "không dùng được". Hikvision
+   DS-U02 nét cố định từ 0,5 m trở ra [C] → sát ngưỡng ở 45 cm. Cam Check: 1080p không lấy nét tự động ở 40 cm mờ hơn 720p có lấy nét.
+3. 1080p thật trở lên (2K tốt hơn), giữ 30 khung/giây qua MJPEG. Chrome không cho chọn kiểu điểm ảnh → mẫu nào cũng phải thử trong Chrome.
+4. Góc nhìn chéo ≈ 70–90°. [S] Logitech C920 (78°) ở 60 cm phủ ≈ 85 × 48 cm, ≈ 2,3 điểm ảnh / mm ở 1080p — dưới mức 2–3 điểm ảnh cho
+   mỗi vạch hẹp mà các hãng đọc mã khuyên. Vì vậy đối thủ cho giơ tem lên, thêm camera thứ hai, hoặc giữ máy quét.
+5. Đèn trắng trên bàn. 6. Dây: kèm 1,5 m; USB 2.0 thụ động tối đa 5 m. 7. Tay kẹp hoặc ren 1/4".
+
+| Mẫu | Giá (hacom.vn 16/11/2026, trừ khi ghi khác) | Thông số | Lấy nét tự động |
+|---|---|---|---|
+| Logitech C270 | 399.000 | 720p | không [S] |
+| Hikvision DS-U02 | 449.000 | 1080p, cố định 3,6 mm, ngang 86° | không [C] |
+| Rapoo C260 | 449.000 | 1080p | chưa rõ |
+| Logitech Brio 100 | 649.000 | 1080p30 | không, cố định [C] |
+| Rapoo C280 | 699.000 | 2K30, 85° | các trang bán ghi mâu thuẫn |
+| Hikvision DS-U04 | 749.000 | 2K | chưa rõ |
+| Rapoo C500AF | 1.199.000 | 4K | có, theo tên [S] |
+| Logitech C920e | ≈ 1.990.000 (lần tra trước) | 1080p30, 78° | có [C] |
+| Logitech C922 | 2.099.000 | 1080p30 | có [S] |
+| Hikvision DS-U18 | 2.199.000 | 4K | chưa rõ |
+| OBSBOT Meet 2 | 3.499.000 | 4K30 | có [C] |
+| Webcam "2K AF" không tên | 329.000 (Cam Check bán) | 2560×1440 | nhà bán ghi có |
+
+**Hợp quy — sửa mục 25.3:** QCVN 135:2024/BTTTT đã được THAY bằng **QCVN 11:2026/BCA** (Thông tư 48/2026/TT-BCA, ban hành 12/05/2026,
+hiệu lực 01/07/2026) [C] luatvietnam.vn. Phạm vi là camera "có thể kết nối qua giao thức Internet". [S] Webcam USB thuần, không mạng,
+không sóng, nằm ngoài định nghĩa đó — nhưng không nguồn nào nói thẳng; muốn bán phải hỏi đơn vị chứng nhận. Mã HS webcam 8525.89.30,
+thuế ưu đãi 15 % + VAT 10 % [C].
+
+### 59.5 Trình duyệt (cập nhật so với mục 16.2)
+
+- Bộ đọc mã sẵn của trình duyệt (BarcodeDetector) vẫn CHƯA có trên Windows — chỉ ChromeOS và macOS [C] → phải nhúng thư viện.
+- Trình ghi sẵn của Chrome ghi được MP4 từ bản 126, nhưng tệp ra dạng phân mảnh: không có thời lượng, không tua được trong Windows
+  Media Player (bài của addpipe 05/2026) → đường WebCodecs + thư viện đóng gói MP4 vẫn là đường chính, đúng dự đoán ở 16.2.
+- WebCodecs: đòi tăng tốc phần cứng mà máy không có thì cấu hình hỏng → phải hỏi trước rồi tự lùi.
+- Hai camera cùng lúc trong trình duyệt: Cam Check, EPack, Dohana đang làm [C].
+- Tab bị ẩn: đường quay đi qua canvas trên luồng chính sẽ đứng [nguồn cũ]; chạy trong worker [S] có thể ổn — phải thử trên máy.
+
+### 59.6 Trả lời hai câu của anh
+
+- **Video có cần truyền lên máy tính như phần mềm khác?** Webcam USB: KHÔNG cần gì thêm, trình duyệt tự quay và tải lên. Camera an
+  ninh: CÓ — trừ khi hai đường không cần cài (Windows 11 ghép ONVIF, đầu thu HDMI) thử thấy chạy.
+- **Quay bằng camera có cần trang thử?** Webcam: CẦN, và trang thử đồng thời là thước đo để chấm bất kỳ webcam nào (mẫu nào qua đủ cửa
+  là đạt, không tin thông số nhà bán). Camera an ninh: trang thử chưa đủ, cần một buổi thử riêng với camera thật.
+
+### 59.7 Chưa kiểm
+
+Web của Ship Xanh đọc RTSP bằng cách nào; Chrome có liệt kê camera ONVIF ghép qua Windows 11 không; cách nối camera của các WMS Trung
+Quốc; tình trạng lấy nét tự động của Rapoo C260 / C280, Hikvision DS-U04 / U18; từng mẫu webcam có giữ 1080p30 trong Chrome không; nội
+dung danh mục sản phẩm của QCVN 11:2026/BCA; điều khoản Imou / EZVIZ cho Việt Nam.
+
+Nguồn: quayvideodongdon.com/quay-video-dong-goi-bang-camera-an-ninh · quayvideodongdon.com/san-pham · shipxanh.com · ghihinh.com ·
+ghihinh.com/camera-soi-van-don · epack.vn/huong-dan · donghangnhanh.vn · docs.realpacking.com · dobybot.com/en/shop ·
+upseller.com/zh-CN/help-doc-article-3392 · github.com/AlexxIT/go2rtc · mediamtx.org · developer.chrome.com/blog/local-network-access ·
+learn.microsoft.com (network cameras) · tapo.com/vn/faq/34 · mi.com FAQ KA-515565 · support.ezviz.com · hacom.vn · luatvietnam.vn ·
+extendmax.vn

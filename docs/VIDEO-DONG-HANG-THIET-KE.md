@@ -1,6 +1,6 @@
 # Video đóng hàng — bản thiết kế (16/11/2026)
 
-> **Trạng thái 16/11/2026: W1a–W4 ĐÃ CODE TRÊN LOCAL, chưa commit, chưa push — xem mục 10.** W5 (xóa) và phần app chưa làm.
+> **Trạng thái 16/11/2026: W1a–W4 + sổ giờ ĐÃ PUSH `b0040067` (anh: "Em cứ push lên trước") — xem mục 10, 11, 12.** W5 (xóa), thanh toán mua giờ, quay từ app / webcam chưa làm.
 > Khảo sát nằm ở [VIDEO-DONG-HANG-TU-KHIEU-NAI-KHAO-SAT.md](VIDEO-DONG-HANG-TU-KHIEU-NAI-KHAO-SAT.md) (mục 57 thử tải R2, mục 58 trang
 > web). Tệp này chỉ chứa THIẾT KẾ: kiến trúc, cây tệp, sổ rủi ro, thứ tự lát. Điều gì là số em tự chọn đều ghi rõ.
 
@@ -301,3 +301,112 @@ không thì bỏ mảnh là số giờ đã quay tụt.
 
 **Local:** đã nạp 1.000 giờ thử cho `admin@hubsell.vn` (dòng `GRANT`, ghi chú "nap thu local") để soi màn theo ví dụ của anh. Prod chưa
 có dòng nào → lên prod sẽ hiện "Chưa mua giờ quay" cho tới khi cấp giờ bằng script hoặc mở bán.
+
+## 12. Đã push 16/11/2026 + việc kế
+
+Anh 16/11 chiều: "Phần giờ quay này thì khách mua bao nhiêu thì hệ thống cộng vào tài khoản của khách bấy nhiêu, mình thu trước, mỗi lần
+khách thanh toán mình cũng phải xuất hóa đơn mà. Nên cứ coi như là một giao dịch mua hàng thôi. Nên phần này mình để làm sau. Việc bây giờ
+là phải test đã. Em cứ push lên trước. Mình còn phải làm cho phần camera nữa vì khách sẽ dùng camera hoặc webcam là chính."
+
+- **Mua giờ quay = một giao dịch mua hàng trả trước** (thu trước → cộng đúng số giờ đã mua → xuất hóa đơn mỗi lần thanh toán). LÀM SAU.
+  Câu G4 mục 11 coi như đã trả lời; G1–G3 (giá, cỡ gói, hạn dùng) vẫn mở.
+- **Đã push `b0040067`.** Trước khi push: build production của web qua; test video 93 / 93; 6 test rớt đều thuộc sổ cái trên database
+  local (khóa ngoại / chỉ mục trigram), không chạm mã video — chưa chạy lại trên cây sạch.
+- **Để test được trên prod, anh cần đặt 4 biến trên Render (dịch vụ web):** `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`. Chưa đặt thì "Video đóng hàng" mờ với MỌI tài khoản, kể cả `admin@hubsell.vn`. Prod chưa có video nào và chưa
+  có dòng giờ nào (cấp giờ: `backend/scripts/pack-video-grant-hours.ts`).
+- **Còn nợ sau push:** nhìn trạng thái mờ trên prod ở một tài khoản khác; EXPLAIN chỉ đọc trên prod (khớp tem, đếm chip, đơn hoàn nối
+  video); luật vòng đời bucket + cảnh báo ngân sách; ảnh hướng dẫn `dh-orders.png`.
+- **VIỆC KẾ: quay bằng camera / webcam trên máy tính** — anh: "khách sẽ dùng camera hoặc webcam là chính". Đổi trọng tâm so với "điện
+  thoại trước" (14/11). Nền đã có ở tài liệu khảo sát: mục 16.2 (quay trong trình duyệt), mục 19 (đối thủ giơ tem lên webcam), mục 31
+  (camera trong nhà cần phần mềm cầu nối). Chưa thử thật.
+
+## 13. Trang thử webcam `tools/thu-webcam/` — kết quả với webcam thật (16/11/2026, chưa commit)
+
+Anh 16/11: "Lần này chúng ta cứ làm cho webcam trước"; "Phải có nút bắt đầu và dừng kết thúc như trên mobile chứ, nhạc nữa"; "ok em làm
+đi". Trang thử nằm NGOÀI sản phẩm, chạy bằng mục `thu-webcam` trong `.claude/launch.json` → `http://127.0.0.1:4321/`, mở trong Chrome
+thật của anh. Webcam: "Web Camera" (`CB07:1BCF`) anh mua trên mạng. Mọi con số dưới đây đo ở 1280×720, 30 khung/giây, đặt 800k.
+
+| Cửa | Kết quả | Số đo |
+|---|---|---|
+| 1. Mở camera | ĐẠT | 1280×720, đo 29,8 khung/giây |
+| 2. Quay ra MP4 — trình ghi sẵn của Chrome | chạy nhưng KHÔNG dùng | tệp phân mảnh (`ftyp moov moof mdat…`), không có số khung, khung khóa chỉ ở giây 0 và 3,5 |
+| 2. Quay ra MP4 — tự mã hóa (WebCodecs + mediabunny 1.66.0) | ĐẠT, đường chính | `ftyp moov mdat`, H.264 High, 177 khung / 6 giây, 0 khung rớt, khung khóa đúng mỗi giây |
+| 3. Ngày giờ trong hình | ĐẠT | chữ `16/11/2026 14:57:18` ở góc trái trên của tệp; vẽ 0,83 ms / khung |
+| 4. Đọc mã tem lúc đang quay | ĐẠT MỘT NỬA | 18 lần đọc được / 579 lần thử trong ≈ 110 giây; **cả 18 lần đều là mã QR, KHÔNG lần nào đọc được mã vạch**; giải mã trung bình 53 ms, lâu nhất 120 ms, chạy trong worker, không lần nào bị dồn |
+| 5. Tự cắt clip theo tem | ĐẠT | tem 1 → mở clip; tem 2 → cắt sang clip mới sau 14,6 ms; đưa lại tem 1 → báo "đã quay rồi", KHÔNG mở clip; bấm Dừng → lưu |
+
+Hai clip tự cắt (tem Shopee SPX thật, mã `SPXVN…B` nằm trong QR): 49,29 giây · 5,13 MB · 1.472 khung và 40,58 giây · 3,84 MB · 1.213 khung
+→ **≈ 5,7–6,2 MB / phút**, 29,9 khung/giây. ffprobe: `moov` đầu tệp, khung khóa cách nhau tối đa 1,01 giây, giải mã hết tệp không lỗi.
+(ffmpeg có cảnh báo vài khung mang mốc thời gian sát nhau khi đổ ra bộ ghi rỗng — chưa soi kỹ.)
+
+**Điều rút ra:**
+
+1. **Đường quay chính trên web = WebCodecs + mediabunny**, không dùng trình ghi sẵn của Chrome. Bitrate thật 793–978 kbps khi đặt 800k.
+2. **Ở 720p webcam này chỉ đọc được QR, không đọc được mã vạch** — giống hệt Note8 (máy đọc QR dễ hơn mã vạch ≈ 3 lần). Các lần đọc
+   đến thành từng chùm lúc tem được đưa lại gần camera; giữa các chùm là hàng chục giây không đọc được gì. → cắt theo tem chỉ chắc khi
+   người đóng hàng đưa tem lại gần camera, hoặc khi soi mã ở độ phân giải cao hơn độ phân giải quay (webcam lên tới 2688×1520). CHƯA
+   thử tem nằm trên mặt bàn ở khoảng cách làm việc, chưa thử soi ở 1080p / 2K.
+3. Cắt clip 14,6 ms (camera giả: 2,6–22,6 ms) — nhanh hơn Note8 (147–230 ms) vì bộ mã hóa chạy xuyên qua lần cắt.
+
+**Sự cố thật lúc thử — webcam rớt kết nối USB (14:58:35):** luồng hình kết thúc, Windows báo đổi thiết bị 4 lần liền, hình đen mà trang
+vẫn hiện "đang quay". Đã thêm vào trang thử và PHẢI có ở bản thật: tiếng báo động 3 hồi + dải đỏ "Mất camera – kiểm tra dây USB"; lưu
+ngay clip đang quay tới lúc mất hình; camera có lại thì tự mở lại và quay về chờ tem (không tự quay tiếp clip quay tay). Mới thử bằng
+giả lập (clip lưu 2,98 giây / 86 khung, mở lại sau 2,1 giây); chưa thử rút dây thật có chủ đích.
+
+**Trang thử có:** thanh quay nhanh (nút Bắt đầu quay / Dừng + đồng hồ), âm "ting-ting" mở clip, hai nốt đi xuống khi clip kết thúc,
+"boop-boop" tem đã quay rồi, báo động mất camera; camera giả để chạy không cần thiết bị; mọi kết quả đọc được ở `window.__thu`.
+Thư viện ghim trong `tools/thu-webcam/package.json`: mediabunny 1.66.0 (MPL-2.0), barcode-detector 3.2.4 + zxing-wasm 3.1.7 (MIT).
+
+**Chưa kiểm:** tem nằm trên bàn ở khoảng cách làm việc; soi mã ở 1080p / 2K trong khi quay 720p; quay dài 15–30 phút (bộ nhớ: mỗi clip
+nằm trong RAM tới khi kết thúc); tab bị ẩn / thu nhỏ cửa sổ; hai webcam; rút dây thật; webcam khác; anh có nghe đủ các âm không.
+
+**Bổ sung 16/11 ~15:10 — "Thỉnh thoảng nó hay lỗi mở camera" (anh):** tái hiện được 8 / 8 lần Chrome trả `NotReadableError`. Đo: sổ
+Windows không ghi ứng dụng nào đang giữ camera; ffmpeg mở được 3 / 3; thuộc tính thiết bị cho thấy webcam được Windows nhận LẠI lúc
+15:07:23 (đã rớt một lần 14:58:35) và nó cắm QUA BỘ CHIA USB (`067B:2586`). → gốc là webcam tự rớt rồi nối lại USB; sau mỗi lần nối lại
+Chrome chưa đọc được camera trong vài chục giây. Trang thử thêm: mở camera thử lại 6 lần cách 1,5 giây, câu lỗi chỉ thẳng "kiểm tra dây
+USB, cắm thẳng vào máy", nhật ký tự ghi ra tệp mỗi 10 giây. Chưa kiểm: cắm thẳng cổng sau máy có hết rớt không. Hệ quả cho chuẩn
+webcam: thêm bài thử độ bền kết nối 30 phút, và hướng dẫn khách không cắm qua bộ chia.
+
+**Anh chốt 16/11 ~15:12 sau lần thử hai: "Phải dơ thẳng vào cam mới nhận. Như vậy cũng OK rồi."** → cách dùng với webcam: người đóng
+hàng GIƠ TEM thẳng vào camera để máy nhận; không coi việc đọc tem nằm trên bàn là điều kiện chặn. Lần thử hai: tem 1 → clip 15,19 giây;
+tem 2 → cắt sau 25,4 ms; đưa lại tem 1 → "đã quay rồi"; 19 / 413 lần đọc, toàn QR. Tab bị ẩn 30 giây (chuyển cửa sổ): khung hình vẫn
+về 29,9 khung/giây, bộ đọc mã vẫn chạy — chưa thử ẩn tab đúng lúc đang có clip.
+
+**Điều kiện để đưa màn quay vào sản phẩm:** bucket R2 chưa có luật CORS nên trình duyệt chưa tải thẳng lên R2 được (app điện thoại
+không cần CORS, trình duyệt thì cần).
+
+**Luật CORS của bucket thử đã đặt 16/11 ~15:35** (anh: "Em đặt giúp"; đặt trong bảng điều khiển Cloudflare vì khóa thử không đủ quyền):
+nguồn `app.hubsell.vn`, `app.hubsell.tech`, `localhost:3010`, `localhost:3000` · PUT / GET / HEAD · tiêu đề `content-type` · lộ `ETag`.
+Đã thử yêu cầu dò trước: nguồn được phép trả 204, nguồn lạ trả 403. Nội dung luật: `backend/scripts/pack-video-r2-cors.ts`.
+Bucket thật sau này phải đặt đúng luật này.
+
+## 14. Màn quay bằng webcam TRONG SẢN PHẨM — đã chạy với webcam + tem thật trên local (16/11/2026, chưa commit)
+
+Anh 16/11: giao diện trang thử "hơi khó dùng, xấu và hơi khó nhìn", các nút quan trọng (Bật camera, Bật tự cắt, trạng thái đang quay, số
+video trong lượt) phải dễ nhìn → em gửi phác thảo → anh: "Được, dựng đi" + "giữ lại cả nhật ký nữa nhé. Khá cần".
+
+**Đường dẫn** `/orders/videos/record`, vào từ nút "Quay video" trên trang Video đóng hàng; chỉ mở khi cổng `packVideo` mở.
+
+**Bố cục (đúng phác thảo anh duyệt):** khung camera lớn bên trái, nhãn trạng thái to ở góc phải khung (Chưa bật camera · Sẵn sàng · giơ
+tem · Đang quay mm:ss · Mất camera); dưới khung là ô "Đang quay cho tem". Cột phải: ô Camera (công tắc + tên camera), ô Tự cắt theo tem
+(công tắc, mặc định bật), MỘT nút lớn đổi vai Bắt đầu quay ↔ Dừng, ô "Lượt quay này" (số video to + tổng thời gian + các clip gần nhất
+và trạng thái tải), dòng giờ còn lại. Bên dưới: **ô Nhật ký** luôn hiện, dòng mới nhất trên cùng, nút "Chép nhật ký", giữ nhật ký hôm
+nay trong trình duyệt khi tải lại trang.
+
+**Cây tệp:** `frontend/src/lib/pack-video-recorder/` (thuần, không React: camera, lấy khung, in ngày giờ, mã hóa + cắt clip, đọc mã trong
+Worker, máy trạng thái tem, âm báo, nhật ký, hàng chờ tải lên) · `frontend/src/components/orders/videos/record/` (hook + ba khối giao
+diện) · `frontend/src/app/orders/videos/record/page.tsx` · `frontend/public/vendor/zxing/zxing_reader-3.1.7.wasm`. Thư viện ghim trong
+`frontend/package.json`: mediabunny 1.66.0, barcode-detector 3.2.4, zxing-wasm 3.1.7; hai gói đầu chỉ nạp động ở màn quay.
+
+**Tải lên:** clip xong vào hàng chờ (không khóa việc quay) → `POST /api/pack-videos` (mỗi clip một `clientId`, giữ nguyên khi thử lại) →
+PUT thẳng lên R2 → `POST /:id/complete`. Thử lại 4 lần (nghỉ 2 / 5 / 15 giây — số tự chọn) rồi mới báo "lỗi – thử lại". Chốt tải theo
+mảnh không gửi ETag: máy chủ tự liệt kê mảnh. Backend thêm `GET /api/pack-videos/match?code=` để hiện đơn khớp với tem lúc đang quay.
+
+**Lần chạy thật 15:37–15:40** (webcam "Web Camera", tem Shopee SPX): bật camera → quay tay → giơ tem 1 (cắt clip quay tay 10 giây) →
+giơ tem 2 (cắt, clip 37 giây) → Dừng (clip 51 giây). Cả ba clip tự tải lên sau 1,3–1,5 giây; sổ `STORED`; cỡ tệp trên R2 khớp sổ
+(1,14 · 3,64 · 4,85 MB); tệp `ftyp moov`; không bị gắn cờ thời lượng.
+
+**Chưa kiểm / phải làm trước khi push:** `next build` với trang mới; test cho đường `/match`; `/match` với mã tem có đơn thật; mất
+camera thật + tự mở lại; tab ẩn đúng lúc đang quay; clip > 32 MB (tải theo mảnh từ trình duyệt, xin ký lại mảnh hết hạn); quay dài (mỗi
+clip nằm trong RAM tới khi kết thúc); soi tay giao diện tối và màn 1280.

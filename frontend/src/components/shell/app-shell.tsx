@@ -382,6 +382,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
   // Hai trang con đứng TRƯỚC "/orders" (match tiền tố).
   { prefix: "/orders/packing", title: "Đóng gói & bàn giao" },
+  { prefix: "/orders/videos/record", title: "Quay video đóng hàng" },
   { prefix: "/orders/videos", title: "Video đóng hàng" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   // Trang con đứng TRƯỚC "/products" (match tiền tố) — 05/11/2026 tách hub Hàng hóa.

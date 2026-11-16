@@ -10080,3 +10080,84 @@ export interface PackVideoHours {
 export function fetchPackVideoHours() {
   return apiFetch<PackVideoHours>("/api/pack-videos/hours");
 }
+
+// ---------- Tải video lên từ màn quay bằng webcam (components/orders/videos/record) ----------
+
+/** Thân lượt báo "đã quay xong" — `clientId` giữ nguyên khi thử lại để không sinh dòng trùng. */
+export interface PackVideoBeginPayload {
+  clientId: string;
+  trackingCode: string;
+  kind: PackVideoKind;
+  /** ISO. */
+  recordedAt: string;
+  durationSec: number;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  deviceName: string | null;
+}
+
+export interface PackVideoSignedPart {
+  partNumber: number;
+  url: string;
+}
+
+/** Cách tải do máy chủ quyết theo cỡ tệp: một lượt PUT, hoặc theo mảnh. */
+export type PackVideoUploadPlan =
+  | { mode: "single"; url: string; headers: Record<string, string>; expiresAt: string }
+  | {
+      mode: "multipart";
+      partSize: number;
+      parts: PackVideoSignedPart[];
+      /** Mảnh kho đang giữ (chỉ có khi gọi lại) — bỏ qua các mảnh này. */
+      uploadedParts?: number[];
+      expiresAt: string;
+    };
+
+export interface PackVideoBeginResponse {
+  video: { id: string; status: PackVideoStatus };
+  /** null = video này đã lên kho từ lượt trước. */
+  upload: PackVideoUploadPlan | null;
+}
+
+/** Bước 1: báo đã quay xong → dòng sổ PENDING + đường dẫn tải ký sẵn (ký cả cỡ và kiểu tệp). */
+export function beginPackVideoUpload(payload: PackVideoBeginPayload) {
+  return apiFetch<PackVideoBeginResponse>("/api/pack-videos", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Xin ký lại mảnh khi đường dẫn hết hạn. */
+export function signPackVideoParts(id: string, partNumbers: number[]) {
+  return apiFetch<{ parts: PackVideoSignedPart[]; uploadedParts: number[]; expiresAt: string }>(
+    `/api/pack-videos/${encodeURIComponent(id)}/parts`,
+    { method: "POST", body: JSON.stringify({ partNumbers }) }
+  );
+}
+
+/**
+ * Bước cuối: báo tải xong. Máy chủ tự hỏi kho cỡ thật (và tự liệt kê mảnh khi tải theo mảnh) rồi mới
+ * ghi STORED — trình duyệt không phải gửi ETag của từng mảnh.
+ */
+export function completePackVideoUpload(id: string) {
+  return apiFetch<{ video: { id: string; status: PackVideoStatus } }>(
+    `/api/pack-videos/${encodeURIComponent(id)}/complete`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** Đơn khớp với mã trên tem (màn quay hỏi trước lúc đang quay). */
+export interface PackVideoTemMatch {
+  orderId: string;
+  orderCode: string;
+  channelPlatform: ChannelName;
+  shopName: string | null;
+  items: PackVideoOrderItem[];
+}
+
+export function matchPackVideoTem(code: string) {
+  return apiFetch<{ order: PackVideoTemMatch | null }>(
+    `/api/pack-videos/match?code=${encodeURIComponent(code)}`
+  );
+}
