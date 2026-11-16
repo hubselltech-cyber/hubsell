@@ -24,6 +24,7 @@ import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { OrderVideoFlag, OrderVideoFlagsProvider } from "@/components/orders/videos/order-video-flag";
+import { UnboxRecordLink } from "@/components/orders/videos/unbox-record-link";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
@@ -428,6 +429,8 @@ export default function WarehouseReturnsPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:ml-auto">
+            {/* Lối vào màn quay ở chế độ KHUI hàng hoàn — chỉ hiện với tài khoản đã mở Video đóng hàng. */}
+            <UnboxRecordLink />
             {/* Lọc theo NGÀY SÀN BÁO HOÀN — bộ chọn kỳ chuẩn của app */}
             <DateRangePicker
               allowAll

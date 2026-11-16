@@ -100,6 +100,11 @@
   - **✅ Anh ~15:45: "giao diện OK, em push lên đi" → COMMIT + PUSH màn quay webcam.** Trước khi push đã làm nốt: test `match-db.test.ts` cho `/match` (test video backend 98 / 98), `tsc` hai phía + `eslint` sạch, `next build` qua (có `/orders/videos/record`). KHÔNG đưa vào commit: `tools/thu-webcam/` + `.claude/launch.json` (công cụ chạy máy anh — hỏi anh trước), tệp kho của phiên khác, `tools/mail-digest/*`.
   - Trên prod: màn quay chỉ `admin@hubsell.vn` thấy; bucket thử đã có luật CORS cho `app.hubsell.vn` nên tải lên từ prod chạy được với khóa thử đang đặt trên Render.
   - **Đã push `79f1cb08`; prod kiểm ~15:55:** backend đúng bản; trang quay hiện đúng với tài khoản của anh (cổng mở, `/match` 200, tệp đọc mã `.wasm` phục vụ đúng). Chưa bật camera trên prod.
+- **16/11 ~16:10–20:15 — ĐƯỜNG QUAY KHUI HÀNG HOÀN + ngày giờ trên khung xem trước (anh: "Chưa có đường quay video khui hàng, và phải làm sao để khi quay video khui hàng không bị trùng mã đơn hàng với video đóng hàng", "ok em làm đi", "Cả video khui hàng và đóng hàng đang bị thiếu hiển thị thời gian ngày giờ rồi em").** Bản thiết kế mục 15. LOCAL, chưa commit.
+  - Màn quay thêm công tắc "Đóng hàng | Khui hàng hoàn" (khui = màu tím), clip gửi đúng `kind`, sổ "tem đã quay rồi" tách theo chế độ, rào cảnh báo chọn nhầm chế độ, dòng nhắc "Quay đủ 6 mặt kiện trước khi mở", `?mode=unbox`; nút "Quay khui hàng" ở trang Đối soát đơn hoàn; `/match` trả thêm `hasReturn` / `hasPackVideo` / `hasUnboxVideo`.
+  - Ngày giờ: tệp video vẫn có (đã soi khung hình); cái thiếu là khung XEM TRƯỚC → thêm đồng hồ cùng chữ cùng góc lên khung xem trước.
+  - Chạy thật với webcam: clip khui → sổ `UNBOX`, clip đóng → `PACK`, cả hai lên kho; đã xóa hai clip thử. Test video backend 101 / 101; `tsc` + `eslint` sạch; `next build` qua.
+  - Chưa thử: dải hỏi "đơn đang hoàn" trên màn thật; tem thật ở chế độ khui; giao diện tối của màu tím; màn 1280.
 
 ---
 ## Phiên 14/11 khuya (video đóng hàng — đăng ký R2 + thuế) — Anh: "Khảo sát đăng ký R2, vấn đề liên quan tới thuế xem có pháp nhân ở Việt nam không" → KHẢO SÁT XONG, chưa tạo tài khoản, chưa code

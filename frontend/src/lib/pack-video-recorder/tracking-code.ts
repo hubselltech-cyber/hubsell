@@ -16,12 +16,15 @@ export function looksLikeTracking(raw: unknown): string | null {
   return value;
 }
 
-/** Mã của clip QUAY TAY (không có tem): QUAYTAY + giờ phút giây lúc bấm. Vẫn hợp luật mã phía máy chủ. */
-export function manualClipCode(now: Date = new Date()): string {
+/**
+ * Mã của clip QUAY TAY (không có tem): QUAYTAY (đóng hàng) hoặc KHUITAY (khui hàng hoàn) + giờ phút giây lúc bấm.
+ * Vẫn hợp luật mã phía máy chủ; không khớp đơn nào nên nằm ở "Chưa khớp đơn".
+ */
+export function manualClipCode(kind: "PACK" | "UNBOX" = "PACK", now: Date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");
-  return `QUAYTAY${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+  return `${kind === "UNBOX" ? "KHUITAY" : "QUAYTAY"}${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
 }
 
 export function isManualClipCode(code: string): boolean {
-  return /^QUAYTAY\d{6}$/.test(code);
+  return /^(QUAYTAY|KHUITAY)\d{6}$/.test(code);
 }

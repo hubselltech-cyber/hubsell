@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { addJournal, getJournal, getServerJournal, subscribeJournal } from "@/lib/pack-video-recorder/journal";
 import { INITIAL_RECORDER_STATE, PackRecorder, type RecorderState } from "@/lib/pack-video-recorder/recorder";
 import {
+  dismissReturnPrompt,
   getServerSessionClips,
   getSessionClips,
   hasUnsavedClips,
@@ -13,9 +14,12 @@ import {
   sessionClipDone,
   sessionClipStarted,
   sessionClipStopping,
+  sessionRelabelRecording,
   setSessionDeviceName,
   subscribeSession,
+  type SessionClip,
 } from "@/lib/pack-video-recorder/session";
+import type { ClipKind } from "@/lib/pack-video-recorder/types";
 
 /** Camera người dùng chọn lần trước — lần sau bật là dùng lại, khỏi chọn lại mỗi ca. */
 const CAMERA_KEY = "hubsell.packVideo.cameraId";
@@ -39,23 +43,31 @@ function saveCamera(deviceId: string): void {
 /**
  * Nối màn quay với bộ quay (lib/pack-video-recorder): một PackRecorder sống theo màn hình, còn LƯỢT QUAY
  * (danh sách clip + hàng chờ tải lên) và NHẬT KÝ sống ở cấp module nên rời màn rồi quay lại vẫn còn.
+ *
+ * `initialKind` = chế độ mở sẵn (đóng hàng, hoặc khui hàng hoàn khi vào bằng ?mode=unbox). Địa chỉ đổi lúc màn đang
+ * mở thì chế độ đổi theo — trừ khi đang có clip quay dở (bộ quay từ chối).
  */
-export function usePackRecorder() {
+export function usePackRecorder(initialKind: ClipKind = "PACK") {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const boxRef = React.useRef<HTMLCanvasElement | null>(null);
   const recorderRef = React.useRef<PackRecorder | null>(null);
-  const [state, setState] = React.useState<RecorderState>(INITIAL_RECORDER_STATE);
+  const [state, setState] = React.useState<RecorderState>(() => ({ ...INITIAL_RECORDER_STATE, kind: initialKind }));
+  const initialKindRef = React.useRef(initialKind);
   const clips = React.useSyncExternalStore(subscribeSession, getSessionClips, getServerSessionClips);
   const journal = React.useSyncExternalStore(subscribeJournal, getJournal, getServerJournal);
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
-    const recorder = new PackRecorder({
-      onState: setState,
-      log: addJournal,
-      onClipStart: sessionClipStarted,
-      onClipDone: sessionClipDone,
-    });
+    const recorder = new PackRecorder(
+      {
+        onState: setState,
+        log: addJournal,
+        onClipStart: sessionClipStarted,
+        onClipDone: sessionClipDone,
+        onClipRelabel: sessionRelabelRecording,
+      },
+      initialKindRef.current
+    );
     recorderRef.current = recorder;
     if (videoRef.current) recorder.attach(videoRef.current, boxRef.current);
     void recorder.refreshDevices();
@@ -65,6 +77,13 @@ export function usePackRecorder() {
       void recorder.dispose();
     };
   }, []);
+
+  // Địa chỉ đổi chế độ khi màn đang mở (vd. bấm lại nút "Quay khui hàng") → đổi theo nếu không có clip quay dở.
+  React.useEffect(() => {
+    if (initialKindRef.current === initialKind) return;
+    initialKindRef.current = initialKind;
+    recorderRef.current?.setKind(initialKind);
+  }, [initialKind]);
 
   // Tên camera đi kèm mỗi video tải lên (cột "Người quay · máy" ở danh sách).
   const cameraLabel = state.camera?.label ?? null;
@@ -114,6 +133,19 @@ export function usePackRecorder() {
 
   const setAutoCut = React.useCallback((on: boolean) => recorderRef.current?.setAutoCut(on), []);
 
+  /** Công tắc Đóng hàng | Khui hàng hoàn. Đang quay thì bộ quay từ chối (giao diện cũng đã khóa công tắc). */
+  const setKind = React.useCallback((kind: ClipKind) => {
+    recorderRef.current?.setKind(kind);
+  }, []);
+
+  /** "Chuyển sang khui": đổi loại của CHÍNH clip đang quay rồi chuyển luôn chế độ. */
+  const switchCurrentToUnbox = React.useCallback(() => {
+    recorderRef.current?.relabelCurrentClip("UNBOX");
+  }, []);
+
+  /** "Vẫn là đóng hàng": gạt câu hỏi, không hỏi lại cho cùng tem trong lượt này. */
+  const keepAsPack = React.useCallback((clip: SessionClip) => dismissReturnPrompt(clip.localId), []);
+
   /** Nút lớn: đang quay thì Dừng, chưa quay thì Bắt đầu quay (camera chưa bật thì bật luôn). */
   const primary = React.useCallback(async () => {
     const recorder = recorderRef.current;
@@ -126,5 +158,18 @@ export function usePackRecorder() {
     }
   }, []);
 
-  return { videoRef, boxRef, state, clips, journal, toggleCamera, selectCamera, setAutoCut, primary };
+  return {
+    videoRef,
+    boxRef,
+    state,
+    clips,
+    journal,
+    toggleCamera,
+    selectCamera,
+    setAutoCut,
+    setKind,
+    switchCurrentToUnbox,
+    keepAsPack,
+    primary,
+  };
 }

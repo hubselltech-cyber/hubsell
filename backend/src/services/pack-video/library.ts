@@ -433,6 +433,12 @@ export interface TemMatch {
   channelPlatform: string;
   shopName: string | null;
   items: OrderLineView[];
+  /** Đơn có hoàn — ĐÚNG định nghĩa của tab Đơn hoàn và trang Đối soát đơn hoàn: returnStatus ≠ NONE. */
+  hasReturn: boolean;
+  returnStatus: string;
+  /** Đơn đã có video ĐÓNG / video KHUI nằm trên kho chưa (chỉ tính STORED). */
+  hasPackVideo: boolean;
+  hasUnboxVideo: boolean;
 }
 
 /**
@@ -440,16 +446,34 @@ export interface TemMatch {
  * trong lúc đang quay (quay nhầm tem thì biết liền). CHỈ ĐỌC, dùng đúng luật khớp của bước tải lên
  * (order-match.ts: khớp tuyệt đối, hơn một đơn thì coi như không khớp) nên hai nơi không bao giờ lệch nhau.
  * Nhân viên bị giới hạn gian không thấy đơn của gian khác.
+ *
+ * `kind` = chế độ đang quay. Với UNBOX (khui hàng hoàn) luật khớp thử thêm mã vận đơn chiều hoàn.
+ * Trả kèm ba dấu hiệu để màn quay CHỐNG CHỌN NHẦM CHẾ ĐỘ (anh Trung 16/11/2026: "phải làm sao để khi quay
+ * video khui hàng không bị trùng mã đơn hàng với video đóng hàng" — kiện hoàn về vẫn dán đúng tem cũ nên
+ * camera đọc ra cùng một mã): đơn có hoàn không, đã có video đóng / video khui trên kho chưa.
+ * Hai lượt đọc thêm đều theo khóa: Order theo id, pack_videos theo chỉ mục orderId.
  */
-export async function matchTem(scope: PackVideoScope, trackingCode: string): Promise<{ order: TemMatch | null }> {
-  const match = await matchOrderByTrackingCode(scope.ownerId, trackingCode, "PACK");
+export async function matchTem(
+  scope: PackVideoScope,
+  trackingCode: string,
+  kind: PackVideoKind = "PACK"
+): Promise<{ order: TemMatch | null }> {
+  const match = await matchOrderByTrackingCode(scope.ownerId, trackingCode, kind);
   if (!match) return { order: null };
   if (scope.allowedChannelIds && !scope.allowedChannelIds.includes(match.channelId)) return { order: null };
-  const channel = await prisma.channel.findFirst({
-    where: { id: match.channelId, userId: scope.ownerId },
-    select: { channelName: true, shopName: true },
-  });
-  if (!channel) return { order: null };
+  const [channel, order, kinds] = await Promise.all([
+    prisma.channel.findFirst({
+      where: { id: match.channelId, userId: scope.ownerId },
+      select: { channelName: true, shopName: true },
+    }),
+    prisma.order.findUnique({ where: { id: match.orderId }, select: { returnStatus: true } }),
+    prisma.packVideo.findMany({
+      where: { orderId: match.orderId, ownerId: scope.ownerId, status: "STORED" },
+      select: { kind: true },
+      distinct: ["kind"],
+    }),
+  ]);
+  if (!channel || !order) return { order: null };
   return {
     order: {
       orderId: match.orderId,
@@ -457,6 +481,10 @@ export async function matchTem(scope: PackVideoScope, trackingCode: string): Pro
       channelPlatform: channel.channelName,
       shopName: channel.shopName,
       items: await orderItems(scope, match.orderId),
+      hasReturn: order.returnStatus !== ReturnStatus.NONE,
+      returnStatus: order.returnStatus,
+      hasPackVideo: kinds.some((k) => k.kind === "PACK"),
+      hasUnboxVideo: kinds.some((k) => k.kind === "UNBOX"),
     },
   };
 }

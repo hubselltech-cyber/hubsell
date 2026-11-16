@@ -1,20 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { Camera, Clock, Play, RotateCcw, Scissors, Square } from "lucide-react";
+import { Camera, Clock, Package, PackageOpen, Play, RotateCcw, Scissors, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { formatHoursBalance } from "@/lib/pack-video";
 import type { RecorderState } from "@/lib/pack-video-recorder/recorder";
 import { retrySessionClip, type SessionClip } from "@/lib/pack-video-recorder/session";
+import type { ClipKind } from "@/lib/pack-video-recorder/types";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 import { remainingLabel, usePackVideoHours } from "../hours-balance";
-import { formatElapsed, shortCode, useElapsedSeconds } from "./record-bits";
+import { KIND_ACCENT, formatElapsed, shortCode, useElapsedSeconds } from "./record-bits";
 
 function OnOffLabel({ on, onText, offText }: { on: boolean; onText: string; offText: string }) {
   return (
@@ -26,6 +28,47 @@ function OnOffLabel({ on, onText, offText }: { on: boolean; onText: string; offT
     >
       {on ? onText : offText}
     </span>
+  );
+}
+
+/**
+ * Ô CHẾ ĐỘ QUAY: Đóng hàng | Khui hàng hoàn — đứng ĐẦU cột điều khiển vì nó quyết định video thuộc loại nào.
+ * Anh Trung 16/11/2026: "Chưa có đường quay video khui hàng, và phải làm sao để khi quay video khui hàng không bị
+ * trùng mã đơn hàng với video đóng hàng." Kiện hoàn về vẫn dán tem cũ, nên thứ phân biệt hai video là chế độ này.
+ * Đang quay thì KHÓA công tắc (không biết clip dở thuộc loại nào); muốn đổi loại của clip đang quay thì dùng câu
+ * hỏi "Chuyển sang quay khui hàng?" dưới khung hình.
+ */
+function ModeCard({ state, onChange }: { state: RecorderState; onChange: (kind: ClipKind) => void }) {
+  const recording = state.phase === "recording";
+  const unbox = state.kind === "UNBOX";
+  return (
+    <Card className={cn(unbox && "border-violet-300")}>
+      <CardContent className="space-y-2 py-4">
+        <div
+          aria-disabled={recording}
+          title={recording ? "Dừng clip đang quay rồi mới đổi chế độ" : undefined}
+          className={cn(recording && "pointer-events-none opacity-60")}
+        >
+          <Segmented<ClipKind>
+            ariaLabel="Chế độ quay"
+            className="flex w-full [&>button]:flex-1 [&>button]:justify-center"
+            value={state.kind}
+            onChange={onChange}
+            items={[
+              { key: "PACK", label: "Đóng hàng", icon: <Package className="size-4" aria-hidden /> },
+              { key: "UNBOX", label: "Khui hàng hoàn", icon: <PackageOpen className="size-4" aria-hidden /> },
+            ]}
+          />
+        </div>
+        {recording ? (
+          <p className={TEXT_SUB}>Dừng clip đang quay rồi mới đổi chế độ.</p>
+        ) : unbox ? (
+          <p className={cn("text-sm font-medium", KIND_ACCENT.UNBOX.text)}>Quay đủ 6 mặt kiện trước khi mở.</p>
+        ) : (
+          <p className={TEXT_SUB}>Quay lúc đóng gói kiện gửi đi.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -136,8 +179,13 @@ function ClipLine({ clip }: { clip: SessionClip }) {
   const label = clip.manual ? "Quay tay" : shortCode(clip.code);
   return (
     <li className="flex items-center justify-between gap-2 border-t py-1.5 text-sm">
-      <span className={cn("min-w-0 truncate", !clip.manual && "font-mono")} title={clip.manual ? clip.code : clip.code}>
-        {label}
+      <span className="flex min-w-0 items-center gap-1.5">
+        {clip.kind === "UNBOX" && (
+          <span className={cn("shrink-0 rounded px-1.5 py-px text-[11px] font-medium", KIND_ACCENT.UNBOX.chip)}>Khui</span>
+        )}
+        <span className={cn("min-w-0 truncate", !clip.manual && "font-mono")} title={clip.code}>
+          {label}
+        </span>
       </span>
       <span className="flex shrink-0 items-center gap-2 tabular-nums">
         <span className="text-muted-foreground">{formatElapsed(duration)}</span>
@@ -180,6 +228,7 @@ function SessionCard({ clips }: { clips: SessionClip[] }) {
   const total = clips.reduce((sum, c) => sum + (c.durationSec ?? 0), 0) + live;
   const waiting = clips.filter((c) => c.status === "queued" || c.status === "uploading" || c.status === "saving").length;
   const failed = clips.filter((c) => c.status === "failed").length;
+  const unboxCount = clips.filter((c) => c.kind === "UNBOX").length;
   return (
     <Card>
       <CardContent className="py-4">
@@ -190,6 +239,11 @@ function SessionCard({ clips }: { clips: SessionClip[] }) {
           </p>
           <p className="text-sm text-muted-foreground tabular-nums">{formatHoursBalance(total)}</p>
         </div>
+        {unboxCount > 0 && (
+          <p className={cn("mt-1 text-xs font-medium", KIND_ACCENT.UNBOX.text)}>
+            trong đó {unboxCount.toLocaleString("vi-VN")} video khui
+          </p>
+        )}
         {(waiting > 0 || failed > 0) && (
           <p className="mt-1 text-xs">
             {waiting > 0 && <span className="text-amber-600">{waiting} clip chưa tải lên xong</span>}
@@ -225,12 +279,13 @@ function HoursLine() {
 }
 
 /**
- * CỘT ĐIỀU KHIỂN bên phải (bố cục anh Trung duyệt 16/11): Camera · Tự cắt theo tem · MỘT nút lớn đổi vai
+ * CỘT ĐIỀU KHIỂN bên phải (bố cục anh Trung duyệt 16/11): Chế độ quay · Camera · Tự cắt theo tem · MỘT nút lớn đổi vai
  * Bắt đầu quay ↔ Dừng (không bao giờ có hai nút cạnh nhau để bấm nhầm) · Lượt quay này · giờ còn lại.
  */
 export function ControlPanel({
   state,
   clips,
+  onKind,
   onToggleCamera,
   onSelectCamera,
   onAutoCut,
@@ -238,6 +293,7 @@ export function ControlPanel({
 }: {
   state: RecorderState;
   clips: SessionClip[];
+  onKind: (kind: ClipKind) => void;
   onToggleCamera: () => void;
   onSelectCamera: (deviceId: string) => void;
   onAutoCut: (on: boolean) => void;
@@ -247,6 +303,7 @@ export function ControlPanel({
   const blocked = state.phase === "opening" || state.phase === "lost";
   return (
     <div className="min-w-0 space-y-3">
+      <ModeCard state={state} onChange={onKind} />
       <CameraCard state={state} onToggle={onToggleCamera} onSelect={onSelectCamera} />
       <AutoCutCard state={state} onChange={onAutoCut} />
       <button
@@ -256,11 +313,11 @@ export function ControlPanel({
         className={cn(
           "flex h-14 w-full items-center justify-center gap-2 rounded-xl text-lg font-semibold text-white transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50",
-          recording ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
+          recording ? "bg-rose-600 hover:bg-rose-700" : KIND_ACCENT[state.kind].startButton
         )}
       >
         {recording ? <Square className="size-5 fill-current" aria-hidden /> : <Play className="size-5 fill-current" aria-hidden />}
-        {recording ? "Dừng" : "Bắt đầu quay"}
+        {recording ? "Dừng" : state.kind === "UNBOX" ? "Bắt đầu quay khui" : "Bắt đầu quay"}
       </button>
       <SessionCard clips={clips} />
       <HoursLine />

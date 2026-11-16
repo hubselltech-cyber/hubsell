@@ -2,6 +2,16 @@
 
 export type LogLevel = "info" | "warn" | "error";
 
+/**
+ * LOẠI VIDEO = chế độ quay: PACK đóng hàng · UNBOX khui hàng hoàn.
+ * Anh Trung 16/11/2026: "Chưa có đường quay video khui hàng, và phải làm sao để khi quay video khui hàng không
+ * bị trùng mã đơn hàng với video đóng hàng" — kiện hoàn về vẫn dán tem cũ nên camera đọc ra CÙNG một mã;
+ * thứ phân biệt hai video là loại này (cột `kind` của sổ video), không phải mã.
+ */
+export type ClipKind = "PACK" | "UNBOX";
+
+export const CLIP_KIND_LABEL: Record<ClipKind, string> = { PACK: "Đóng hàng", UNBOX: "Khui hàng hoàn" };
+
 /** Một dòng nhật ký bằng tiếng Việt cho NGƯỜI ĐÓNG HÀNG đọc (anh Trung 16/11: "giữ lại cả nhật ký… khá cần"). */
 export type RecorderLog = (level: LogLevel, text: string) => void;
 
@@ -15,7 +25,7 @@ export interface ScannedCode {
 
 /** Clip vừa quay xong, còn nằm trong bộ nhớ chờ tải lên. */
 export interface FinishedClip {
-  /** Mã tem, hoặc QUAYTAY… với clip quay tay. */
+  /** Mã tem, hoặc QUAYTAY… / KHUITAY… với clip quay tay. */
   code: string;
   manual: boolean;
   /** Lúc khung đầu tiên của clip vào bộ mã hóa. */

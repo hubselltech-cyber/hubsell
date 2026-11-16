@@ -13,7 +13,7 @@
 //   GET  /returns          danh sách ĐƠN hoàn + số trên thẻ
 //   GET  /stats            thống kê thời gian quay
 //   GET  /hours            giờ đã mua · đã quay · còn lại + các gói giờ
-//   GET  /match?code=      màn quay hỏi: mã trên tem này khớp đơn nào (chỉ đọc)
+//   GET  /match?code=&kind= màn quay hỏi: mã trên tem này khớp đơn nào, đơn có hoàn / đã có video chưa (chỉ đọc)
 //   GET  /by-order/:orderId  hồ sơ video của một đơn
 //   POST /order-flags      trong các đơn này, đơn nào đã có video
 //   GET  /:id/url          đường dẫn xem / tải về (hạn ngắn)
@@ -214,7 +214,9 @@ router.get(
     if (!code || code.length > 64 || /\s/.test(code)) {
       throw new PackVideoError(400, "BAD_INPUT", "Mã vận đơn không hợp lệ");
     }
-    res.json(await matchTem(scopeOf(req), code));
+    // Chế độ đang quay: PACK (mặc định) hay UNBOX — khui hàng hoàn thì thử thêm mã vận đơn chiều hoàn.
+    const kind = str(req.query.kind).toUpperCase();
+    res.json(await matchTem(scopeOf(req), code, kind === "UNBOX" ? "UNBOX" : "PACK"));
   })
 );
 

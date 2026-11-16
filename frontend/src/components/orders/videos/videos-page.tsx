@@ -122,7 +122,10 @@ export function PackVideosPage() {
 export function PackVideoRecordPage() {
   return (
     <PackVideoGate>
-      <RecordScreen />
+      {/* Màn quay đọc ?mode=unbox bằng useSearchParams → Next yêu cầu có ranh giới Suspense (tài liệu use-search-params). */}
+      <React.Suspense fallback={null}>
+        <RecordScreen />
+      </React.Suspense>
     </PackVideoGate>
   );
 }

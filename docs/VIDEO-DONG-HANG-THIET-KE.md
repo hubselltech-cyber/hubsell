@@ -410,3 +410,37 @@ giơ tem 2 (cắt, clip 37 giây) → Dừng (clip 51 giây). Cả ba clip tự 
 **Chưa kiểm / phải làm trước khi push:** `next build` với trang mới; test cho đường `/match`; `/match` với mã tem có đơn thật; mất
 camera thật + tự mở lại; tab ẩn đúng lúc đang quay; clip > 32 MB (tải theo mảnh từ trình duyệt, xin ký lại mảnh hết hạn); quay dài (mỗi
 clip nằm trong RAM tới khi kết thúc); soi tay giao diện tối và màn 1280.
+
+## 15. Đường quay video KHUI HÀNG HOÀN + ngày giờ trên khung xem trước (16/11/2026 tối, local, chưa commit)
+
+Anh 16/11: "Chưa có đường quay video khui hàng, và phải làm sao để khi quay video khui hàng không bị trùng mã đơn hàng với video đóng
+hàng" → em trình 6 điểm → "ok em làm đi". Rồi: "Cả video khui hàng và đóng hàng đang bị thiếu hiển thị thời gian ngày giờ rồi em".
+
+**Gốc của "trùng mã":** kiện hoàn về dán đúng tem cũ → camera đọc ra cùng mã vận đơn với lúc đóng.
+
+| Điểm | Làm thế nào |
+|---|---|
+| Hai chế độ quay | công tắc "Đóng hàng \| Khui hàng hoàn" ở đầu cột điều khiển; chế độ khui đổi màu nhấn sang TÍM (viền khung, nhãn trạng thái, nút lớn "Bắt đầu quay khui"); khóa công tắc khi đang có clip |
+| Cùng mã, khác loại | clip gửi lên kèm `kind` (`PACK` / `UNBOX`); sổ có sẵn cột loại nên hai video cùng mã không đè nhau; hồ sơ đơn hiện cả hai |
+| Sổ "tem đã quay rồi" | tách theo chế độ: đã quay đóng vẫn quay khui được; quay khui lần hai cùng tem mới báo |
+| Rào chống chọn nhầm (cảnh báo, không khóa) | đang Đóng mà đơn đang hoàn → "Đơn này đang hoàn về. Chuyển sang quay khui hàng?" với "Chuyển sang khui" (đổi loại của chính clip đang quay) / "Vẫn là đóng hàng" (không hỏi lại cho tem đó trong lượt); đang Khui mà đơn chưa có hoàn → nhắc một dòng |
+| Lối vào thứ hai | nút "Quay khui hàng" ở trang Đối soát đơn hoàn (đầu cụm bên phải, trước ô lọc thời gian; không đổi gì khác của trang) → `/orders/videos/record?mode=unbox` |
+| Lời nhắc khi khui | "Quay đủ 6 mặt kiện trước khi mở." |
+| Quay tay ở chế độ khui | mã `KHUITAY…`, vẫn lưu, hiện "Khui · chưa khớp đơn" |
+
+Máy chủ: `GET /api/pack-videos/match?code=&kind=` trả thêm `hasReturn` (= `returnStatus ≠ NONE`, đúng định nghĩa tab Đơn hoàn),
+`returnStatus`, `hasPackVideo`, `hasUnboxVideo` (chỉ tính video đã lên kho). Với `UNBOX` khớp cả mã vận đơn chiều hoàn.
+
+**Ngày giờ:** tệp video VẪN có ngày giờ (cắt khung hình từ clip 15:38 ra soi: `16/11/2026 15:38:35` ở góc trái trên). Cái thiếu là khung
+XEM TRƯỚC của màn quay — nó hiện hình thô của camera nên người quay không thấy ngày giờ. Đã thêm đồng hồ cùng chữ, cùng góc lên khung
+xem trước (dùng chung hàm định dạng với bộ in vào tệp), hiện ngay khi camera bật, ở cả hai chế độ.
+
+**Đã chạy thật trên local với webcam (20:07–20:11):** mở `?mode=unbox` ra đúng chế độ khui; quay tay khui 12 giây → sổ ghi `UNBOX`,
+`STORED`, cỡ trên R2 khớp; đổi sang Đóng hàng, quay tay 4 giây → `PACK`; ô "Lượt quay này" ghi "2 video · trong đó 1 video khui";
+công tắc khóa lúc đang quay; nút "Quay khui hàng" hiện đúng chỗ ở trang Đối soát đơn hoàn, trang không cuộn ngang; ngày giờ hiện trên
+khung xem trước cách mép trái và mép trên 12 px. Hai clip thử đã xóa khỏi sổ và bucket. Test video backend 101 / 101; `tsc` hai phía
++ `eslint` sạch; `next build` qua (chạy trước khi thêm đồng hồ xem trước; sau đó chỉ chạy lại `tsc` + `eslint`).
+
+**CHƯA thử:** dải hỏi "Đơn này đang hoàn về…" và nút "Chuyển sang khui" trên màn thật (cần giơ một tem của đơn đang hoàn; mới thử máy
+trạng thái bằng script và `matchTem` với đơn `OFF-0007`); tem thật ở chế độ khui; giao diện tối của màu tím; màn 1280 sau khi cột phải
+cao thêm một thẻ.

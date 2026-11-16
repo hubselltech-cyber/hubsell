@@ -7,6 +7,10 @@ import type { PackVideoKind, PackVideoStatus, ReturnStatus, ShippingStatus } fro
 
 /** Đường dẫn trang danh sách và trang hồ sơ video của một đơn. */
 export const PACK_VIDEOS_PATH = "/orders/videos";
+/** Màn quay bằng webcam; `?mode=unbox` mở sẵn chế độ khui hàng hoàn. */
+export const PACK_VIDEO_RECORD_PATH = `${PACK_VIDEOS_PATH}/record`;
+export const PACK_VIDEO_UNBOX_RECORD_PATH = `${PACK_VIDEO_RECORD_PATH}?mode=unbox`;
+
 export function packVideoOrderPath(orderId: string): string {
   return `${PACK_VIDEOS_PATH}/order/${encodeURIComponent(orderId)}`;
 }

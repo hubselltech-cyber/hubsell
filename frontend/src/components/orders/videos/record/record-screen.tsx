@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
@@ -20,9 +21,15 @@ import { usePackRecorder } from "./use-pack-recorder";
  * Không có thứ gì của người thử (độ phân giải, bitrate, năm cửa) — các số đó cố định ở lib/pack-video-recorder/config.ts.
  *
  * Tệp này chỉ được nạp phía trình duyệt (videos-page.tsx nạp động, không dựng phía máy chủ).
+ *
+ * HAI CHẾ ĐỘ QUAY (anh Trung 16/11/2026: "Chưa có đường quay video khui hàng, và phải làm sao để khi quay video khui
+ * hàng không bị trùng mã đơn hàng với video đóng hàng"): Đóng hàng | Khui hàng hoàn, chọn ở đầu cột điều khiển.
+ * `?mode=unbox` mở sẵn chế độ khui — nút "Quay khui hàng" của trang Đối soát đơn hoàn dẫn vào bằng địa chỉ này.
+ * (useSearchParams: videos-page.tsx bọc màn này trong <Suspense> theo đúng yêu cầu của Next khi build.)
  */
 export function RecordScreen() {
-  const recorder = usePackRecorder();
+  const mode = useSearchParams().get("mode");
+  const recorder = usePackRecorder(mode === "unbox" ? "UNBOX" : "PACK");
   const currentClip = recorder.clips.find((c) => c.status === "recording") ?? null;
 
   return (
@@ -39,10 +46,13 @@ export function RecordScreen() {
           videoRef={recorder.videoRef}
           boxRef={recorder.boxRef}
           onTurnOn={() => void recorder.toggleCamera()}
+          onSwitchToUnbox={recorder.switchCurrentToUnbox}
+          onKeepPack={recorder.keepAsPack}
         />
         <ControlPanel
           state={recorder.state}
           clips={recorder.clips}
+          onKind={recorder.setKind}
           onToggleCamera={() => void recorder.toggleCamera()}
           onSelectCamera={(deviceId) => void recorder.selectCamera(deviceId)}
           onAutoCut={recorder.setAutoCut}

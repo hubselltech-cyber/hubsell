@@ -18,7 +18,7 @@ import { playAlarm, playBoop, playDone, playTing, unlockAudio } from "./sound";
 import { StampCanvas } from "./stamp-canvas";
 import { TemCutter } from "./tem-cutter";
 import { manualClipCode } from "./tracking-code";
-import type { ClipOutcome, RecorderLog, ScannedCode } from "./types";
+import { CLIP_KIND_LABEL, type ClipKind, type ClipOutcome, type RecorderLog, type ScannedCode } from "./types";
 
 export type RecorderPhase = "off" | "opening" | "ready" | "recording" | "lost";
 
@@ -30,7 +30,9 @@ export interface RecorderState {
   autoCut: boolean;
   /** false = bộ đọc mã không khởi động được trên máy này → chỉ quay tay. */
   scanAvailable: boolean;
-  current: { code: string; manual: boolean; startedAtMs: number } | null;
+  /** Chế độ quay: đóng hàng hay khui hàng hoàn. Clip mở ra mang loại này. */
+  kind: ClipKind;
+  current: { code: string; manual: boolean; startedAtMs: number; kind: ClipKind } | null;
   /** Câu báo khi mất camera / không bật được camera. */
   problem: string | null;
   /** Tem vừa bị từ chối vì đã quay rồi (để màn hình nháy thông báo). */
@@ -40,8 +42,10 @@ export interface RecorderState {
 export interface RecorderEvents {
   onState(state: RecorderState): void;
   log: RecorderLog;
-  onClipStart(info: { code: string; manual: boolean; startedAtMs: number }): void;
+  onClipStart(info: { code: string; manual: boolean; startedAtMs: number; kind: ClipKind }): void;
   onClipDone(outcome: ClipOutcome): void;
+  /** Clip ĐANG QUAY vừa được đổi loại (rào "đơn này đang hoàn về"). */
+  onClipRelabel?(kind: ClipKind): void;
 }
 
 /** Trạng thái lúc chưa bật gì — cũng là trạng thái màn hình vẽ ở lượt đầu. */
@@ -51,6 +55,7 @@ export const INITIAL_RECORDER_STATE: RecorderState = {
   devices: [],
   autoCut: true,
   scanAvailable: true,
+  kind: "PACK",
   current: null,
   problem: null,
   repeat: null,
@@ -74,7 +79,13 @@ export class PackRecorder {
 
   private state: RecorderState = INITIAL_RECORDER_STATE;
 
-  constructor(private readonly events: RecorderEvents) {
+  /** `initialKind`: chế độ lúc mở màn quay (vd. vào từ nút "Quay khui hàng" của trang Đối soát đơn hoàn). */
+  constructor(
+    private readonly events: RecorderEvents,
+    initialKind: ClipKind = "PACK"
+  ) {
+    this.state = { ...INITIAL_RECORDER_STATE, kind: initialKind };
+    this.cutter.setMode(initialKind);
     if (typeof navigator !== "undefined") {
       navigator.mediaDevices?.addEventListener?.("devicechange", this.onDeviceChange);
     }
@@ -188,6 +199,39 @@ export class PackRecorder {
     }
   }
 
+  /**
+   * Đổi chế độ quay (đóng hàng ↔ khui hàng hoàn). CHỈ đổi được khi không có clip đang quay — đang quay mà đổi
+   * thì không biết clip dở thuộc loại nào. Trả false nếu bị từ chối.
+   */
+  setKind(kind: ClipKind): boolean {
+    if (this.state.kind === kind) return true;
+    if (this.state.current) return false;
+    this.cutter.setMode(kind);
+    this.patch({ kind, repeat: null });
+    this.events.log("info", `Đổi sang chế độ ${CLIP_KIND_LABEL[kind]}`);
+    return true;
+  }
+
+  /**
+   * Ngoại lệ duy nhất của luật trên: đổi loại của CHÍNH clip đang quay rồi chuyển luôn chế độ. Dùng cho rào
+   * "Đơn này đang hoàn về. Chuyển sang quay khui hàng?" — loại video chỉ được dùng lúc tải lên, nên đổi trước khi
+   * clip kết thúc là an toàn, không phải quay lại.
+   */
+  relabelCurrentClip(kind: ClipKind): boolean {
+    const current = this.state.current;
+    if (!current || current.kind === kind) return false;
+    this.cutter.relabelCurrent(kind);
+    this.patch({ kind, current: { ...current, kind }, repeat: null });
+    this.events.log(
+      "info",
+      kind === "UNBOX"
+        ? `Chuyển clip đang quay ${current.code} sang KHUI theo cảnh báo đơn đang hoàn`
+        : `Chuyển clip đang quay ${current.code} sang ĐÓNG HÀNG`
+    );
+    this.events.onClipRelabel?.(kind);
+    return true;
+  }
+
   setAutoCut(on: boolean): void {
     if (this.state.autoCut === on) return;
     this.patch({ autoCut: on });
@@ -208,15 +252,22 @@ export class PackRecorder {
     if (!this.state.autoCut || !this.pipeline) return;
     const decision = this.cutter.feed(codes);
     if (!decision) return;
+    const unbox = this.state.kind === "UNBOX";
     if (decision.type === "repeat") {
       playBoop();
-      this.events.log("warn", `Tem ${decision.code} đã quay rồi — không quay lại`);
+      this.events.log("warn", `Tem ${decision.code} đã quay ${unbox ? "khui " : ""}rồi — không quay lại`);
       this.patch({ repeat: { code: decision.code, atMs: Date.now() } });
       return;
     }
     const previous = this.state.current;
-    if (previous) this.events.log("info", `Đọc được tem ${decision.code} — cắt clip ${previous.code}, quay tiếp clip mới`);
-    else this.events.log("info", `Đọc được tem ${decision.code} — bắt đầu quay`);
+    if (previous) {
+      this.events.log(
+        "info",
+        `Đọc được tem ${decision.code} — cắt clip ${previous.code}, ${unbox ? "mở clip KHUI mới" : "quay tiếp clip mới"}`
+      );
+    } else {
+      this.events.log("info", unbox ? `Mở clip KHUI cho tem ${decision.code}` : `Đọc được tem ${decision.code} — bắt đầu quay`);
+    }
     this.beginClip(decision.code, false);
   }
 
@@ -228,8 +279,11 @@ export class PackRecorder {
       const on = await this.turnOn(this.state.camera?.deviceId ?? null);
       if (!on) return false;
     }
-    const code = manualClipCode();
-    this.events.log("info", "Bắt đầu quay tay (không cần tem)");
+    const code = manualClipCode(this.state.kind);
+    this.events.log(
+      "info",
+      this.state.kind === "UNBOX" ? "Bắt đầu quay tay KHUI hàng (không cần tem)" : "Bắt đầu quay tay (không cần tem)"
+    );
     this.beginClip(code, true);
     return true;
   }
@@ -238,11 +292,12 @@ export class PackRecorder {
     const pipeline = this.pipeline;
     if (!pipeline) return;
     const startedAtMs = Date.now();
+    const kind = this.state.kind;
     const handle = pipeline.beginClip(code, manual);
     this.cutter.started(code);
     playTing();
-    this.patch({ phase: "recording", current: { code, manual, startedAtMs }, repeat: null });
-    this.events.onClipStart({ code, manual, startedAtMs });
+    this.patch({ phase: "recording", current: { code, manual, startedAtMs, kind }, repeat: null });
+    this.events.onClipStart({ code, manual, startedAtMs, kind });
     void handle.done.then((outcome) => {
       if (!outcome.ok) this.cutter.failed(code);
       if (!this.disposed) this.events.onClipDone(outcome);
@@ -255,7 +310,7 @@ export class PackRecorder {
     if (!current || !this.pipeline) return;
     playDone();
     this.cutter.stopped();
-    this.events.log("info", `Dừng — đang lưu clip ${current.code}`);
+    this.events.log("info", `Dừng — đang lưu clip ${current.kind === "UNBOX" ? "KHUI " : ""}${current.code}`);
     this.patch({ phase: this.track?.readyState === "live" ? "ready" : this.state.phase, current: null });
     await this.pipeline.endClip().catch(() => null);
   }

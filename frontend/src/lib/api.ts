@@ -10154,10 +10154,17 @@ export interface PackVideoTemMatch {
   channelPlatform: ChannelName;
   shopName: string | null;
   items: PackVideoOrderItem[];
+  /** Đơn có hoàn (cùng định nghĩa với tab Đơn hoàn: tình trạng hoàn khác "không hoàn"). */
+  hasReturn: boolean;
+  returnStatus: ReturnStatus;
+  /** Đơn đã có video đóng / video khui nằm trên kho chưa. */
+  hasPackVideo: boolean;
+  hasUnboxVideo: boolean;
 }
 
-export function matchPackVideoTem(code: string) {
+/** `kind` = chế độ đang quay; khui hàng hoàn thì máy chủ thử thêm mã vận đơn chiều hoàn. */
+export function matchPackVideoTem(code: string, kind: PackVideoKind = "PACK") {
   return apiFetch<{ order: PackVideoTemMatch | null }>(
-    `/api/pack-videos/match?code=${encodeURIComponent(code)}`
+    `/api/pack-videos/match?code=${encodeURIComponent(code)}&kind=${kind}`
   );
 }

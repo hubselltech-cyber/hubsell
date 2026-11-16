@@ -78,6 +78,18 @@ export function playBoop(): boolean {
   ]);
 }
 
+/**
+ * Cảnh báo "đơn này đang hoàn về — có phải đang khui hàng?": ba nốt lên rồi xuống, khác hẳn "boop-boop"
+ * (tem đã quay rồi) để tai không lẫn hai tình huống.
+ */
+export function playNotice(): boolean {
+  return play([
+    { offset: 0, freq: 659, duration: 0.12, type: "triangle", peak: 0.32 },
+    { offset: 0.14, freq: 988, duration: 0.12, type: "triangle", peak: 0.32 },
+    { offset: 0.28, freq: 659, duration: 0.2, type: "triangle", peak: 0.32 },
+  ]);
+}
+
 /** Mất camera. */
 export function playAlarm(): boolean {
   return play([
