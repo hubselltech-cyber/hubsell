@@ -14,6 +14,7 @@
 - ⚠️ Phải có lát B (đối soát) trước khi Apple chuyển tiền thật cho khoản tháng 11 (≈ đầu–giữa 01/2027), nếu không thẻ giữ số cũ.
 - Anh hỏi thêm "làm sao biết khi nào Apple chuyển, HQ tự đối soát" → đã tra lịch trả tiền Apple + API báo cáo tài chính, ghi ở docs APPLE-IAP mục lát B.
 - Ghi ở: `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md` (lát A + cách tự động lát B) + memory Apple IAP.
+- ✅ Commit `d785a1ed` (cùng docs thuế nhà thầu, kho, video đóng hàng, tools/mail-digest). CHƯA push. Kịch bản nháp `hubsell-marketing/kenh/tiktok/KICH-BAN-TRUY-THU-SHIP-NGANH-NANG-2026-11-10.md` cố ý để ngoài.
 
 ---
 ## Phiên 17/11 chiều (rà thuế nhà thầu nhóm CÔNG TY trả: Anthropic, TikTok, Hostinger theo luật 01/07/2026) — RÀ XONG, chỉ đọc, không có mã sản phẩm
