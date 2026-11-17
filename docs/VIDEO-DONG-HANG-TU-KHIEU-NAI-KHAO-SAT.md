@@ -3199,3 +3199,45 @@ ghihinh.com/camera-soi-van-don · epack.vn/huong-dan · donghangnhanh.vn · docs
 upseller.com/zh-CN/help-doc-article-3392 · github.com/AlexxIT/go2rtc · mediamtx.org · developer.chrome.com/blog/local-network-access ·
 learn.microsoft.com (network cameras) · tapo.com/vn/faq/34 · mi.com FAQ KA-515565 · support.ezviz.com · hacom.vn · luatvietnam.vn ·
 extendmax.vn
+
+---
+
+## 60. Khảo sát LẠI giá các bên, quy về đ / giờ quay (16/11/2026 — anh: "Có rẻ quá không em? Thử khảo sát lại lần nữa với các bên xem sao")
+
+Bối cảnh: em đề xuất bán giờ quay 1.500 đ / giờ, tính thẳng (bản thiết kế mục 16). Cách quy đổi: 1 video = 1 phút; gói bán theo GB
+tính ở cả 6 MB / phút (cỡ tệp của mình) lẫn cỡ tệp của chính họ (12–15 MB / phút); gói theo máy / không giới hạn tính cho bàn 300 và
+1.000 kiện / ngày. "Xác nhận" = đọc được giá trên trang của họ ngày 16/11; mọi con số đ / giờ là phép tính của lượt khảo sát.
+Trang đọc qua công cụ tóm tắt.
+
+| Bên | Cách bán · giá công khai | đ / giờ quay | Giữ |
+|---|---|---|---|
+| **Ship Xanh** | trừ ví theo phút; trang công khai ghi "chỉ từ 18 đ / phút video được ghi" (ảnh người dùng: 18–21 lưu máy, 22–25 cloud); có khuyến mãi nạp ví tới +50 % (chưa rõ có áp cho video) | từ 1.080; cloud 1.320–1.500 | 30 ngày |
+| **EPack** | theo GB / tháng: miễn phí 5 GB · 125k / 50 GB · 300k / 130 GB · 500k / 250 GB; họ tự công bố 12 MB / phút | 1.440–1.800 | 30 ngày |
+| **Dohana** | 100k / 40 GB · 279k / 120 GB · 400k / 200 GB mỗi tháng | 1.800–2.250 ở 15 MB / phút (720–900 nếu tệp chỉ 6 MB) | 25 ngày |
+| **CamBox** | 129k / 50 GB · 239k / 100 GB · 339k / 200 GB | 1.526–2.322 ở 15 MB (610–929 ở 6 MB) | 25–40 ngày |
+| **BoxCam** | 89k / 1 bàn / 50 GB · 249k / 3 bàn / 150 GB · 369k / 6 bàn / 250 GB | 1.328–1.602 ở 15 MB (531–641 ở 6 MB) | 25 ngày |
+| **Ecombox** | theo năm: 1,8 tr / 50 GB → 15 tr / 1 TB | 1.125–2.700 ở 15 MB | 20–30 ngày |
+| **Cam Check** | trả 12 tháng: 49k / 50 GB · 117k / 200 GB · 242k / 500 GB mỗi tháng; giá niêm yết gạch đi 99k / 249k / 499k | 436–882 ở 15 MB (niêm yết ≈ gấp đôi) | chỉnh được |
+| **EcomPMS** | không giới hạn 300k / tháng | 2.000 (300 kiện / ngày) · 600 (1.000 kiện / ngày) | không nêu |
+| **ASCAM** | bản quyền 3–8,5 tr / máy / năm + cloud 150k / 100 GB | 500–1.667 + cloud 720–1.350 | cloud 60–365 ngày |
+| **DEUS** | theo đơn / ngày: 120k (< 20) · 160k (20–50) · 240k (≈ 100) | 4.800–12.000 | 30–40 ngày |
+| **Simple Replay** | theo video: 600k / 1.500 · 1,5 tr / 4.500 · 2,7 tr / 9.000 | 18.000–24.000 | 30 ngày |
+| Lưu máy khách (Camsight, CamViewer, bản offline) | 129–150k / bàn / tháng | 115–1.000 | thẻ nhớ / máy khách |
+
+Nước ngoài (chỉ để tham chiếu, đắt hơn hẳn): DispatchO 160–499 đ / video; Dobybot 292–438 đ / đơn; PackFlow bán THEO GIỜ như mình:
+15 USD / 40 giờ → 86 USD / 800 giờ = 2.800–9.750 đ / giờ; PackCapture 5.200–7.800 đ / giờ.
+
+**Kết luận của lượt khảo sát:** 1.500 đ / giờ KHÔNG rẻ so với thị trường Việt Nam — nằm giữa dải của các bên lưu cloud, bằng mức cao của
+Ship Xanh (bên duy nhất cũng bán theo phút), ngay dưới EPack và Dohana. Rẻ nhất có căn cứ: Cam Check trả năm (≈ 440–880 đ / giờ) và
+BoxCam. Đắt nhất: Simple Replay, DEUS. Vì tệp của mình nhỏ (6 MB / phút) nên tính theo GB mình đang bán ĐẮT hơn họ, tính theo phút thì
+ngang.
+
+**Sửa các mục cũ:** mục 14 / 28 — phí của Ship Xanh nay có xác nhận công khai ("từ 18 đ / phút") trong tệp chữ của app, trang quảng cáo
+vẫn ghi miễn phí; mục 20.2 — bảng gói EPack nay đọc được; mục 14.1 — 49k / 117k / 242k của Cam Check là giá khi trả 12 tháng.
+
+**Chưa kiểm:** các bậc 18–25 đ chính xác của Ship Xanh và khuyến mãi nạp ví có áp cho video không; cỡ tệp thật của Dohana; giá trả
+theo tháng của Cam Check; người bán nói gì về giá trong các nhóm kín.
+
+Nguồn: app.shipxanh.com (tệp chữ) · donghangnhanh.vn/vi · epack.vn/#pricing · quayvideodongdon.com/pricing · boxcam.me · cambox.vn ·
+ecombox.vn/plans · deus.vn · atpsoftware.vn/simple-replay · ghihinh.com/bang-gia · videodonghang.io.vn · ecompms.com · camzone.vn ·
+camviewer.vn · vietpos.vn

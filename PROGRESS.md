@@ -5,6 +5,40 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 17/11 trưa (Sổ quỹ HQ — lát A phải thu Apple) — Anh: "Làm lát A" → XONG local, CHƯA commit
+
+- Khoản bán gói qua App Store không còn cộng vào Tổng THU / chênh lệch Sổ quỹ (tiền chưa về); thẻ mới "Apple chưa chuyển về" (cộng dồn mọi kỳ); dòng sổ tô vàng "Chờ Apple chuyển"; Excel thêm cột riêng; biểu đồ sổ quỹ ở báo cáo nhà đầu tư cũng bỏ khoản này. Hóa đơn, hoa hồng giới thiệu, kỳ hạn gói giữ nguyên. Không migration.
+- Mã: `backend/src/services/apple-receivable.ts` (điều kiện duy nhất + hàm tổng) + test `__tests__/apple-receivable.test.ts`; `routes/admin.ts` (GET /finance/ledger + investor-report); frontend `ledger-section.tsx`, `lib/api.ts`, `lib/excel.ts`.
+- Kèm: bảng sổ quỹ cắt tên khách / người ghi / dòng email hóa đơn dài → hết cuộn ngang ở 1700; 1440 còn cuộn 244 px, 1280 còn 457 px (trước 837) — bảng 8 cột vốn rộng, chưa làm lại.
+- Kiểm: tsc frontend + backend sạch, eslint frontend sạch, vitest 24/24 (apple-receivable + hq-auto-invoice). Local seed 5 khoản App Store + khoản chuyển khoản tên dài: thẻ 9.117.000, Tổng THU không gồm khoản Apple; soi 1280/1440/1700, sáng + tối, ô tiền không tràn.
+- ⚠️ Phải có lát B (đối soát) trước khi Apple chuyển tiền thật cho khoản tháng 11 (≈ đầu–giữa 01/2027), nếu không thẻ giữ số cũ.
+- Anh hỏi thêm "làm sao biết khi nào Apple chuyển, HQ tự đối soát" → đã tra lịch trả tiền Apple + API báo cáo tài chính, ghi ở docs APPLE-IAP mục lát B.
+- Ghi ở: `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md` (lát A + cách tự động lát B) + memory Apple IAP.
+
+---
+## Phiên 17/11 chiều (rà thuế nhà thầu nhóm CÔNG TY trả: Anthropic, TikTok, Hostinger theo luật 01/07/2026) — RÀ XONG, chỉ đọc, không có mã sản phẩm
+
+- Đọc nguyên văn (trình duyệt): Thông tư 89/2026 Điều 30–32; Thông tư 90/2026 Điều 4 khoản 2 + Điều 7 khoản 6, 8; Công văn 5351/CT-CS 29/07/2026; hỏi đáp Bộ Tài chính số 166088 (ca giống hệt Hubsell, trả lời không chốt). Đọc qua bài tóm tắt: Công văn 7279/TNI-QLDN2 (Tây Ninh) + 4176/KHH-QLDN3 (Khánh Hòa) về TikTok. Đọc điều khoản Anthropic + mở lại hóa đơn K2U9SLOU-0010.
+- **Kết luận Anthropic: KHÔNG phải khai thay, mức chắc VỪA.** Phần GTGT có dòng "VAT – Vietnam (10%)" + MST 9000020034. Phần TNDN 5 % dựa vào việc nhà cung cấp tự khai thì khai cả hai thuế (Công văn 5351), CHƯA có giấy của Anthropic. Điều khoản thương mại Anthropic mục H.2 giao thuế khấu trừ cho khách → không dùng làm căn cứ miễn được.
+- Nếu bị bắt khai: 4 hóa đơn công ty đã trả (28/09 → 07/11, 14.196.746 đ) = **747.198 đ** (chỉ TNDN) tới **2.241.592 đ** (xấu nhất, nộp trùng GTGT); tiền chậm nộp tới hôm nay ≈ 3.700–11.200 đ. Thủ tục: mẫu **04.1-ĐKT** xin mã số thuế nộp thay (10 số) → tờ **01/NTNN,NCCNN** Phần II; hạn ngày thứ 10 sau ngày trả, hoặc ngày 20 tháng sau nếu đăng ký khai tháng.
+- **TikTok quảng cáo + Hostinger: công ty CHƯA trả khoản nào** (sổ quỹ HQ 01/07 → 17/11 không có) → chưa phát sinh.
+- **Phát hiện ngoài lề:** 4 tờ nhóm cá nhân (Apple, Google, Render, Supabase) vẫn nằm trên Hóa đơn đầu vào + sổ quỹ HQ, trả thẻ công ty sau 01/07/2026 → còn nằm đó là đúng diện phải nộp thay; việc dọn + hoàn tạm ứng 4.107.563 đ treo từ 09/10. Thẻ "Thuế nhà thầu" tab Lịch thuế HQ còn chữ luật cũ.
+- ⏳ Chờ anh chốt: thư hỏi Anthropic · văn bản hỏi cơ quan thuế · có chuyển Anthropic về mua cá nhân từ kỳ 07/12 không.
+- Chưa kiểm: Phụ lục I Thông tư 89 bản gốc; nguyên văn hai công văn tỉnh; console Anthropic; hóa đơn TikTok thật; cổng NCCNN hôm nay; mức phạt chậm nộp tờ khai.
+- Ghi ở: `docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md` mục "Rà lại theo luật mới — 17/11/2026" (thay cảnh báo đầu tệp) + bảng nhà cung cấp + Việc còn treo. CHƯA commit.
+
+---
+## Phiên 17/11 sáng (thuế nhà thầu trên hoa hồng Apple + cách ghi sổ HQ) — Anh: "rà soát lại luật, quy trình và trường hợp của Apple này mình có phải khai thuế thầu phụ không? Cả việc quản lý sao trên HQ, đối soát sao trên HQ cho chuẩn" → RÀ XONG, chỉ đọc, không có mã sản phẩm
+
+- Đọc nguyên văn: Công văn 1063/CT-CS 12/02/2026 (đúng ca Apple thu hộ giữ 15 %), Nghị định 252/2026 Điều 40 + 43–46 (hiệu lực 01/07/2026), bộ 37 hỏi đáp Cục Thuế (câu 34 đúng ca bán app qua App Store), trang trợ giúp Apple về thuế Việt Nam.
+- **Kết luận:** thuế nhà thầu CÓ phát sinh trên hoa hồng Apple, nhưng Hubsell KHÔNG tự khai 01/NTNN vì hợp đồng ghi Apple (MST 9000000486) tự nộp và trừ vào tiền chuyển về. Điều kiện: báo cáo Apple đầu tiên phải hiện khoản thuế đã trừ; không có thì phải khai. Hóa đơn xuất đủ giá khách trả là đúng.
+- Số thật HQ prod: 5 khoản App Store 10–14/11 = 1.656.000 đ, 5 hóa đơn đã ký; sổ quỹ ghi THU đủ trong khi tiền chưa về.
+- **Phát hiện ngoài lề:** căn cứ "không khai thay" cho nhóm công ty mua (Anthropic, TikTok) dựa trên Thông tư 80/2021 đã hết hiệu lực 01/07/2026 → cần rà lại, CHƯA rà.
+- Chưa kiểm: App Store Connect (chưa đăng nhập) — Small Business Program duyệt chưa, số Proceeds; Thông tư 89 + 90/2026 chưa đọc nguyên văn.
+- Đề xuất 3 lát HQ (tách phải thu Apple · hộp đối soát theo tháng · xử lý hoàn tiền), CHƯA code, chờ anh duyệt.
+- Ghi ở: `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md` mục "Thuế + sổ sách cho khoản Apple" + cảnh báo đầu `docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md` + memory Apple IAP + memory thuế nhà thầu. CHƯA commit.
+
+---
 ## Phiên 16/11 chiều (lịch tự soi kho chuẩn quốc tế, lượt 16/11) — chỉ đọc prod, không có mã sản phẩm
 
 - Soi ~16:00: CHƯA có lần đối chiếu mới, dòng vẫn là **14/11 16:59** (cách 47 giờ, lệch cứng 0) → lượt này không tính, chuỗi giữ **3/7**. Đã biết trước (docs 13.13 + 13.14), không phải tin mới; từ lúc giãn nhịp 15/11 20:30 vẫn chưa có lần đối chiếu nào chạy được, chưa đọc log Render hôm nay.
@@ -322,6 +356,8 @@
   - ASC: đã tạo phiên bản 1.4.3 (`217c259b`, PREPARE_FOR_SUBMISSION) + "Có gì mới" (`docs/store/whats-new-1.4.3.txt`, 492 ký tự).
   - ⏳ CÒN: build 30 lên ASC và VALID → `node scripts/asc-release.mjs attach-build 1.4.3 30` → `submit 1.4.3`; Android nộp xong → `node scripts/play-release-notes.mjs 14 ../docs/store/whats-new-1.4.3.txt` → `play-status.mjs` (KHÔNG chạy hai lệnh Play khi lượt nộp Android còn chạy).
   - **22:25 anh tắt máy ("xếp hàng thì anh tắt máy luôn"):** iOS build 30 XONG 21:56 nhưng lượt nộp `3e7ce4b1` còn IN_QUEUE trên Expo (27 phút, không lỗi); Android build còn IN_QUEUE, lượt nộp AWAITING_BUILD; status.expo.dev bình thường. Hai lượt nộp chạy trên máy chủ Expo nên vẫn tự chạy khi máy tắt (iOS tự lên TestFlight; Android tự vào kênh production). **HAI VIỆC CHƯA LÀM, phải làm ở phiên sau:** (1) App Store: `node scripts/asc-release.mjs status` thấy build 30 VALID → `attach-build 1.4.3 30` → `submit 1.4.3`; (2) Google Play: sau khi lượt nộp Android xong → `node scripts/play-release-notes.mjs 14 ../docs/store/whats-new-1.4.3.txt` → `node scripts/play-status.mjs`. Xem trạng thái lượt nộp Expo: script GraphQL ở scratchpad phiên này đã mất khi đóng phiên — viết lại bằng `~/.expo/state.json` + `submissions.byId` nếu cần.
+  - **17/11 kiểm vì sao Apple chưa duyệt:** bước attach-build + submit ở trên CHƯA chạy → chưa có yêu cầu duyệt. `asc-release.mjs status` trả 403 `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` (thỏa thuận Apple hết hạn / chưa ký) → chờ anh ký ở App Store Connect → Business, rồi em chạy lại status → attach-build 1.4.3 30 → submit 1.4.3. Google Play chưa kiểm.
+  - **17/11 ~08:53 ĐÃ NỘP iOS 1.4.3 (30) → Waiting for Review.** Anh đăng nhập Chrome, em ký Apple Developer Program License Agreement (bản 29/10/2026) ở developer.apple.com/account theo lệnh anh ("Vào chrome ký và nộp ngay"); gắn build 30 + Add for Review + Submit trên giao diện web vì API ASC vẫn trả 403 vài phút sau khi ký. **Android:** `play-status` = production 1.4.3 [vc 14] completed; đã ghi "Có gì mới" vi-VN (492 ký tự). Còn: chờ Apple duyệt (≤48 giờ); anh thử camera + tem thật.
   - **Checklist DUA-APP mục 9 — nói rõ:** ca 1–5 (Tài chính) và ca 10 (Tồn kho) KHÔNG chạy, mã không đổi; ca 6–7 chỉ soi các màn mới / sửa trên giả lập web (390 sáng + tối; ô Tổng quan và hộp Lô đã quét soi thêm 320); ca 8 chỉ gõ tay trên web — **bản 1.4.3 nộp khi CHƯA thử camera + tem thật**, dù cửa chống bắn lặp vừa viết lại và có thêm màn Quét nhiều; ca 9 đối chiếu bằng tổng các nhóm, chưa so popup web. Chưa gọi hành trình vận chuyển với đơn thật.
 - **Khách dùng ShipXanh xin "xem đơn → quét nhiều → xem thống kê"; anh: "Em build gọn gàng và đẹp hơn ShipXanh" → ĐÃ CODE chế độ Quét nhiều** (docs mục 11): công tắc tab QR ba chế độ, `BatchScanScreen` + `BatchSheet` (Hàng / Kiện, đơn hủy báo còi và không tính hàng), `lib/batch-scan*.ts`, tách `ScanFlash` + `ScanTopBar` dùng chung với Quét đóng gói, backend `lookup?fast=1` (không hỏi sàn). Test mobile 79/79, thử giả lập web. Chưa thử camera thật.
 - **Anh xem local hỏi "chuẩn bị hàng mà chưa in đơn thì thuộc phần nào?" → popup Thống kê bản 4 nhóm bỏ sót; ĐÃ SỬA thành 6 nhóm** theo dây chuyền (thêm Chưa in phiếu, Đã đóng gói; chip đang chọn tự trượt vào tầm nhìn) — docs mục 9. Không đổi backend.

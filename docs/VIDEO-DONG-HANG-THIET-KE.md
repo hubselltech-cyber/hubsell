@@ -444,3 +444,99 @@ khung xem trước cách mép trái và mép trên 12 px. Hai clip thử đã x�
 **CHƯA thử:** dải hỏi "Đơn này đang hoàn về…" và nút "Chuyển sang khui" trên màn thật (cần giơ một tem của đơn đang hoàn; mới thử máy
 trạng thái bằng script và `matchTem` với đơn `OFF-0007`); tem thật ở chế độ khui; giao diện tối của màu tím; màn 1280 sau khi cột phải
 cao thêm một thẻ.
+
+## 16. Giá vốn một giờ quay + khung giá bán (16/11/2026 — phân tích, anh CHƯA chốt giá)
+
+Anh 16/11: "Nên bán giờ quay thế nào cho hợp lý em nhỉ. Anh cần lợi nhuận từ giờ quay. Ví dụ một video dài 1 phút thì mất bao nhiêu MB,
+chiếm bao nhiêu hạ tầng từ đó nhân lên để bán giờ quay video cho hợp lý."
+
+**Số đầu vào**
+
+| Thứ | Số | Nguồn |
+|---|---|---|
+| Cỡ tệp | ≈ 6 MB / phút (đo 5,7–6,2) → ≈ 360 MB / giờ | ĐO 16/11 trên webcam (mục 13, 14); Note8 14/11 ra 6,1 MB / phút |
+| Giá lưu R2 | 0,015 USD / GB / tháng; tải xuống 0 đ; xóa 0 đ | bảng giá Cloudflare (tài liệu khảo sát mục 16.1) |
+| Giá ghi R2 | 4,5 USD / triệu lượt | như trên |
+| Tỷ giá | 26.000 đ / USD | GIẢ ĐỊNH của em |
+| Số ngày giữ trung bình | ≈ 25 ngày | ƯỚC ở mục 12.3 tài liệu khảo sát; chỉ đúng KHI luật xóa đã chạy |
+| Một dòng sổ | 768 byte | ĐO 16/11 |
+
+**Giá vốn hạ tầng**
+
+| Đơn vị | Lưu 25 ngày | Ghi | Tổng |
+|---|---|---|---|
+| Một video 1 phút (6 MB) | ≈ 1,95 đ | ≈ 0,12 đ | **≈ 2,1 đ** |
+| Một GIỜ quay (360 MB, 60 video 1 phút) | ≈ 117 đ | ≈ 7 đ | **≈ 125–150 đ** |
+| Một giờ quay nếu bị GIỮ đủ trần 90 ngày | ≈ 421 đ | ≈ 7 đ | ≈ 430 đ |
+
+Sổ video, băng thông API và lượt xem / tải về: không đáng kể (dưới 1 đ / giờ quay). R2 miễn phí 10 GB đầu mỗi tháng (≈ 28 giờ quay).
+
+⚠️ **Phép tính trên chỉ đúng khi luật xóa (lát W5) đã chạy.** Hôm nay CHƯA có gì xóa video: mỗi giờ quay tốn ≈ 140 đ MỖI THÁNG cho tới
+khi bị xóa → để một năm là ≈ 1.700 đ / giờ, vượt cả giá bán. Luật xóa là điều kiện của lợi nhuận, không phải việc làm cho gọn.
+
+**Giá thị trường (đã khảo sát, quy về đ / giờ)**
+
+| Ai | Cách bán | Quy ra |
+|---|---|---|
+| Ship Xanh | 22–25 đ / phút cloud; 18–21 đ / phút lưu máy | 1.320–1.500 đ / giờ; 1.080–1.260 đ / giờ |
+| Dohana | 100.000 / 279.000 / 400.000 đ mỗi tháng cho 40 / 120 / 200 GB, tệp ≈ 15 MB / phút | ≈ 2.250 / 2.100 / 1.800 đ / giờ |
+| Simple Replay | 300–400 đ / video | ≈ 18.000–24.000 đ / giờ nếu video 1 phút |
+
+→ Giá vốn hạ tầng của mình ≈ 1/10 giá thị trường. Bán quanh giá thị trường thì biên gộp trên hạ tầng ≈ 90 %.
+
+**Khung giá em ĐỀ XUẤT (số em tự đặt, bám dải Ship Xanh – Dohana; anh chưa chốt)**
+
+| Gói | Giá | đ / giờ | Hợp với (mỗi đơn quay ≈ 1 phút) |
+|---|---|---|---|
+| 50 giờ | 99.000 | 1.980 | ≈ 100 đơn / ngày trong một tháng |
+| 100 giờ | 179.000 | 1.790 | ≈ 200 đơn / ngày |
+| 200 giờ | 329.000 | 1.645 | ≈ 400 đơn / ngày |
+| 500 giờ | 749.000 | 1.498 | ≈ 1.000 đơn / ngày |
+| 1.000 giờ | 1.290.000 | 1.290 | ≈ 2.000 đơn / ngày |
+
+Quy ra mỗi đơn: 21–33 đ / đơn (video 1 phút). Shop 1.000 đơn / ngày: ≈ 749.000 đ / tháng, giá vốn hạ tầng ≈ 75.000 đ.
+
+**Thứ ăn vào lợi nhuận nhiều hơn hạ tầng:** VAT 10 % (giá trên đã gồm hay chưa — chờ anh); phí cổng thanh toán; nếu bán trong app iPhone
+thì Apple cắt 15–30 %; giờ dùng thử cho không; đơn có hoàn giữ lâu (tới 3,4 lần giá vốn); công hỗ trợ. Giờ mua có HẠN DÙNG thì phần
+không dùng hết là lãi thêm và mình không ôm nghĩa vụ vô thời hạn — em đề nghị hạn 12 tháng kể từ ngày mua (anh chưa chốt).
+
+**Chờ anh:** thang gói + giá; giá đã gồm VAT chưa; hạn dùng của giờ; có giờ dùng thử không (bao nhiêu).
+
+**Bổ sung 16/11 tối — anh: "Mình không mất VAT, theo như em tính thì lãi gấp 10 lần?"** Không trừ VAT trong phép tính. Giá bán gấp
+≈ 9–15 lần giá vốn HẠ TẦNG, tức lãi gộp trên hạ tầng ≈ 88–92 %; đây chưa phải lãi ròng (chưa trừ phí cổng thanh toán, thuế thu nhập
+doanh nghiệp, công làm và hỗ trợ).
+
+| Gói | Thu | Hạ tầng (giữ ≈ 25 ngày) | Hạ tầng nếu MỌI video giữ đủ 90 ngày | Lãi gộp |
+|---|---|---|---|---|
+| 100 giờ | 179.000 | ≈ 12.500–15.000 | ≈ 43.000 | ≈ 92 % (xấu nhất ≈ 76 %) |
+| 500 giờ | 749.000 | ≈ 62.000–75.000 | ≈ 215.000 | ≈ 90 % (xấu nhất ≈ 71 %) |
+| 1.000 giờ | 1.290.000 | ≈ 125.000–150.000 | ≈ 430.000 | ≈ 88 % (xấu nhất ≈ 67 %) |
+
+Không có luật xóa thì mỗi giờ quay tốn ≈ 140 đ / tháng: sau ≈ 9–14 tháng lưu là tiền lưu bằng giá bán. Giờ dùng thử gần như không tốn
+(≈ 150 đ / giờ). Tiền thật thu được phụ thuộc số shop mua giờ, không phụ thuộc biên.
+
+**Anh chốt cách bán 16/11 tối:** "Mình không thu tiền theo tháng mà chỉ thu theo giờ, khách muốn quay bao nhiêu thì quay, bao giờ hết
+thì hết… để khoảng 2-3 gói sẵn còn lại để cho khách nhập số giờ cần mua." → không thu theo tháng; giờ đã mua không hết hạn; màn mua có
+2–3 gói sẵn + ô nhập số giờ. Khung 5 gói có bậc giá ở trên BỎ.
+
+**Đề xuất của em cho đơn giá (anh chưa chốt): 1.500 đ / giờ, tính thẳng, không bậc.**
+
+| Đơn giá | Mỗi phút | Mỗi đơn (video 1 phút) | So với thị trường | Lãi gộp hạ tầng |
+|---|---|---|---|---|
+| 1.200 đ / giờ | 20 đ | 20 đ | rẻ hơn Ship Xanh (22–25 đ / phút) | ≈ 88 % |
+| **1.500 đ / giờ** | 25 đ | 25 đ | bằng mức cao của Ship Xanh, dưới Dohana | ≈ 90 % |
+| 2.000 đ / giờ | 33 đ | 33 đ | ngang Dohana (≈ 1.800–2.250 đ / giờ) | ≈ 92 % |
+
+Lý do chọn 1.500: tròn, dễ nhẩm; bằng đối thủ có cùng kiểu bán trả trước theo phút; một giá cho mọi số giờ nên ô nhập số giờ tính ra
+tiền không có "bậc" gây khó hiểu (mua 499 giờ đắt hơn mua 500 giờ). Gói sẵn 50 / 200 / 500 giờ = 75.000 / 300.000 / 750.000 đ chỉ là
+lối tắt, kèm dòng "≈ N video 1 phút" để khách đổi giờ ra số đơn. Mua tối thiểu 20 giờ = 30.000 đ (số tự chọn — mỗi lần mua kéo theo
+một hóa đơn và phí cổng thanh toán).
+
+**Hiển thị:** (1) hộp "Mua thêm giờ quay": số dư · 3 gói · ô "Số giờ khác" · dòng "n giờ × 1.500 đ" · nút "Thanh toán X đ" · hai dòng
+luật hết giờ; (2) số giờ còn lại ở hàng tab và trên màn quay, đổi vàng / đỏ khi gần hết; (3) sổ giờ trong tab Thống kê: từng lần mua
+(ngày, số giờ, số tiền, hóa đơn) và giờ đã dùng theo ngày.
+
+**✅ ANH CHỐT 16/11 tối, sau khi khảo sát lại giá (tài liệu khảo sát mục 60): "1.500 đ một giờ".** Đơn giá giờ quay = 1.500 đ / giờ,
+tính thẳng, không bậc; trả trước; không theo tháng; giờ không hết hạn; không trừ VAT. Ba gói sẵn 50 / 200 / 500 giờ và mức mua tối
+thiểu 20 giờ vẫn là đề xuất của em. Chưa sửa mã: cấu hình gói và hộp mua trên web còn bản cũ; luồng thanh toán, cộng giờ, xuất hóa đơn
+chưa làm.

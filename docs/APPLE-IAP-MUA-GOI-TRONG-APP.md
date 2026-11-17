@@ -71,10 +71,10 @@ FAQ của Apple (em CHƯA xác minh ngày hiệu lực).
 
 14:58 10/11 khách mua Business 1 tháng trong app iOS: `apple:230003797496288`, storefront VNM,
 829.000 VND, môi trường Production (các khoản trước đều sandbox, 0 đ). Gói tự kích hoạt tới 10/12.
-Lộ hai chỗ chưa ổn, ⏳ chờ kế toán của anh chốt cách hạch toán (gộp hay thuần) rồi mới sửa mã:
+Lộ hai chỗ chưa ổn (cách ghi đã rà 17/11/2026, xem mục "Thuế + sổ sách cho khoản Apple" cuối tài liệu):
 - Sổ quỹ ghi THU đủ 829.000 đ ngay ngày mua, trong khi Apple trả sau (khoảng 45 ngày sau tháng
   tài chính) và đã trừ hoa hồng → lệch sao kê; chưa có dòng chi phí hoa hồng Apple.
-- Hóa đơn 829.000 đ tự đẩy lên meinvoice chờ ký; anh CHƯA ký tới khi kế toán trả lời.
+- Hóa đơn 829.000 đ tự đẩy lên meinvoice chờ ký. (17/11: anh đã ký, số 00000017 — xuất đủ giá là đúng theo Công văn 1063/CT-CS.)
 
 ## 3. Luồng kỹ thuật
 
@@ -177,4 +177,91 @@ Hệ quả cho Hubsell (công ty trong nước):
 2. Thuế nhà thầu trên hoa hồng: Apple tự trừ vào tiền chuyển về — Hubsell không kê khai thêm (chứng từ = báo cáo tài chính Apple; kế toán xác nhận).
 3. Cần kiểm trong App Store Connect: *tax category* đang chọn (ảnh hưởng số hoa hồng).
 
-Đây là đọc hợp đồng, CHƯA phải ý kiến kế toán — cách hạch toán vẫn chờ kế toán của anh chốt.
+Đây là đọc hợp đồng, CHƯA phải ý kiến kế toán. Phần luật + cách ghi sổ đã rà ở mục dưới (17/11/2026).
+
+## Thuế + sổ sách cho khoản Apple (rà 17/11/2026)
+
+Anh Trung hỏi kế toán (14/11), kế toán nói "15% là hoa hồng, hạch toán chi phí bán hàng, có khả năng
+dính thuế nhà thầu theo luật mới 01/07/2026" nhưng không chốt được. Anh nhờ: "rà soát lại luật, quy
+trình và trường hợp của Apple này mình có phải khai thuế thầu phụ không? Cả việc quản lý sao trên HQ,
+đối soát sao trên HQ cho chuẩn".
+
+### Văn bản đã đọc nguyên văn
+
+| Văn bản | Đọc ở đâu | Nói gì |
+|---|---|---|
+| **Công văn 1063/CT-CS ngày 12/02/2026** của Cục Thuế gửi Công ty VSTV (K+) | thuvienphapluat.vn, đọc đủ toàn văn | Đúng ca Apple thu hộ và giữ 15 %. Công ty Việt Nam ghi **toàn bộ số tiền Apple thu hộ là doanh thu**, tự lập hóa đơn cho khách. Thù lao của Apple là **chi phí được trừ** nếu đủ chứng từ. Apple tự kê khai và nộp thuế GTGT + TNDN trên khoản Apple nhận. Cuối công văn: đề nghị công ty và Apple liên hệ cơ quan thuế quản lý trực tiếp để được hướng dẫn |
+| **Nghị định 252/2026/NĐ-CP** (hiệu lực 01/07/2026, thay Nghị định 126/2020) — Điều 40, 43, 44, 45, 46 | luatnguyen.vn, đọc đủ toàn văn các điều này | Khoản 3 Điều 43: tổ chức kinh doanh tại Việt Nam áp dụng phương pháp khấu trừ thuế GTGT, mua dịch vụ của nhà cung cấp nước ngoài trên nền tảng thương mại điện tử, **có trách nhiệm khấu trừ, nộp thay** thuế GTGT + TNDN, tại thời điểm thanh toán. Khoản 2 Điều 46: nhà cung cấp nước ngoài tự khai phần doanh thu **chưa được** bên Việt Nam hay nền tảng khấu trừ. Tức là thứ tự đảo so với Thông tư 80/2021 |
+| **Bộ 37 câu hỏi đáp của Cục Thuế** về thuế nhà thầu, nền tảng thương mại điện tử 2026 | bài đăng lại trên thuvienphapluat.vn (ghi nguồn Cổng thông tin Cục Thuế — em CHƯA mở bản trên cổng Cục Thuế) | **Câu 34** đúng ca doanh nghiệp phần mềm bán app qua App Store / Google Play bị giữ 15–30 %: khoản giữ lại là phí dịch vụ trả cho tổ chức nước ngoài, thuộc diện thuế nhà thầu; cấn trừ trước khi chuyển tiền không đổi bản chất; từ 01/07/2026 doanh nghiệp phương pháp khấu trừ thì khấu trừ nộp thay theo khoản 3 Điều 43 (mẫu 01/NTNN, Điều 32 Thông tư 89/2026); báo cáo thanh toán của Apple không phải chứng từ đã nộp thuế; **"trường hợp tại hợp đồng/thỏa thuận không có quy định nhà cung cấp nước ngoài tự thực hiện nghĩa vụ thuế tại Việt Nam thì doanh nghiệp Việt Nam … có trách nhiệm khấu trừ, khai, nộp thay"**. **Câu 18:** phần doanh thu nhà cung cấp nước ngoài đã trực tiếp khai nộp thì doanh nghiệp Việt Nam không khấu trừ lần nữa, nhưng phải có căn cứ. **Câu 21:** Apple Distribution International Limited có MST 9000000486. **Câu 24:** cách tính: GTGT = tiền chưa thuế × 10 %; doanh thu tính TNDN = (tiền chưa thuế + GTGT) ÷ 0,95; TNDN = × 5 %. **Câu 35** (bán gói phần mềm qua Google Play): doanh thu khách Việt Nam không chịu thuế GTGT; được lập hóa đơn chậm nhất ngày 07 tháng sau theo báo cáo đối soát; không gộp một hóa đơn tổng |
+| Trang trợ giúp App Store Connect "Provide tax information for commissions and fees…" | developer.apple.com, đọc 17/11/2026 | "If you're based in Vietnam, Apple Distribution International Limited is registered with the Vietnam tax authority (Tax ID 9000000486) and will remit Vietnam Foreign Contractor Tax on Core Technology Fee and Commission payable to Apple" |
+| Phụ lục hợp đồng Apple, bản 27/08/2026 (sau ngày luật mới có hiệu lực) | mục "Phụ lục hợp đồng Apple" ở trên | Exhibit C mục 17: Apple áp thuế nhà thầu Việt Nam trên hoa hồng và **trừ vào tiền chuyển về** |
+
+Chưa đọc được nguyên văn: Thông tư 89/2026/TT-BTC (Điều 30, 32) và Thông tư 90/2026/TT-BTC — trang đăng
+toàn văn lỗi khi tải; chỉ biết qua bài tóm tắt.
+
+### Kết luận
+
+1. **Thuế nhà thầu CÓ phát sinh** trên phần hoa hồng Apple giữ (GTGT 10 % + TNDN 5 %). Kế toán nói đúng chỗ này.
+2. **Hubsell KHÔNG tự khai 01/NTNN cho hoa hồng Apple**, vì hợp đồng với Apple ghi rõ Apple tự nộp thuế này
+   và trừ vào tiền chuyển về — đúng ngoại lệ Cục Thuế nêu ở câu 34. Điều kiện giữ kết luận: báo cáo tài chính
+   tháng của Apple phải hiện khoản thuế đã trừ (cột Withholding Tax). **Nếu báo cáo đầu tiên không có khoản
+   này thì Hubsell phải khai 01/NTNN** (khi đó cần xin MST nộp thay, mẫu 04.1-ĐK-TCT).
+3. **Hóa đơn xuất đủ giá khách trả là đúng** (Công văn 1063). Tiền về ít hơn hóa đơn là chuyện bình thường
+   của mô hình này: phần chênh = hoa hồng Apple + thuế nhà thầu Apple trừ, ghi chi phí bán hàng.
+4. Mức còn chưa chắc: câu 34 là hỏi đáp, không phải văn bản pháp quy và em mới đọc bản đăng lại. Muốn chắc
+   hẳn thì gửi văn bản hỏi cơ quan thuế quản lý (chính Công văn 1063 cũng bảo vậy), kèm báo cáo Apple đầu tiên.
+
+### Bộ hồ sơ giải trình "hóa đơn 115 mà tiền về 100"
+
+1. Hợp đồng Apple: Paid Applications Agreement + Schedule 2 + Exhibits (Apple là bên thu hộ / commissionaire,
+   mức hoa hồng, điều khoản thuế nhà thầu Việt Nam) — tải PDF, lưu theo ngày bản.
+2. Báo cáo tài chính Apple từng tháng tài chính (Payments and Financial Reports): tổng khách trả, hoa hồng,
+   thuế đã trừ, số chuyển về.
+3. Sao kê ngân hàng dòng tiền Apple chuyển về.
+4. Bảng kê hóa đơn Hubsell đã xuất, khớp từng mã giao dịch Apple (`apple:<transactionId>`).
+5. Công văn 1063/CT-CS làm căn cứ tham chiếu.
+
+### Số thật trên HQ (kéo API sổ quỹ prod 17/11/2026, chỉ đọc)
+
+5 khoản App Store từ 10/11 → 14/11: 829.000 + 119.000 + 119.000 + 470.000 + 119.000 = **1.656.000 đ**.
+Cả 5 đã có hóa đơn ký (số 17, 19, 20, 23, 25) theo đủ giá khách trả. Sổ quỹ đang ghi THU đủ 1.656.000 đ
+vào ngày mua, trong khi tiền chưa về.
+
+CHƯA kiểm được trên App Store Connect (trình duyệt chưa đăng nhập): Small Business Program đã duyệt chưa
+(chưa duyệt thì Apple giữ 30 %, không phải 15 %), tax category, số Proceeds từng khoản, lịch chuyển tiền.
+
+### Đề xuất cách quản lý + đối soát trên HQ (CHƯA code, chờ anh duyệt)
+
+- **Lát A — tách "Phải thu Apple" khỏi tiền quỹ:** ✅ LÀM 17/11/2026 (anh: "Làm lát A"), CHƯA commit.
+  Khoản mua qua App Store vẫn sinh hóa đơn đủ giá ngay ngày mua, nhưng không cộng vào Tổng THU / chênh
+  lệch của Sổ quỹ HQ; thẻ thứ 5 "Apple chưa chuyển về" (cộng dồn mọi kỳ, kèm số khoản + ngày cũ nhất);
+  dòng sổ tô vàng "Chờ Apple chuyển"; Excel thêm cột "Chờ Apple chuyển" (Tiền vào không gồm khoản này);
+  biểu đồ sổ quỹ 6 tháng ở báo cáo nhà đầu tư cũng bỏ khoản này. Điều kiện "khoản nào là phải thu Apple"
+  nằm DUY NHẤT ở `backend/src/services/apple-receivable.ts` (lát B chỉ sửa ở đó). Không migration.
+  Hóa đơn, hoa hồng giới thiệu, kỳ hạn gói không đổi. Kèm sửa bảng sổ quỹ: cắt tên khách / người ghi /
+  dòng email hóa đơn dài → hết cuộn ngang ở 1700 (trước cuộn ~37 px); 1440 còn cuộn 244 px, 1280 còn
+  457 px (trước 837 px) — bảng 8 cột vốn rộng hơn khung, chưa làm lại.
+  ⚠️ Khi Apple chuyển tiền thật (dự kiến khoảng đầu–giữa 01/2027 cho khoản tháng 11) mà lát B chưa có:
+  thẻ "Apple chưa chuyển về" vẫn giữ số cũ — phải có lát B trước mốc đó.
+- **Lát B — hộp "Đối soát Apple" theo tháng tài chính:** nhập (hoặc nạp tệp) báo cáo Apple + số tiền ngân
+  hàng nhận. Máy khớp từng mã giao dịch, đóng các khoản phải thu của tháng đó, ghi phiếu thu đúng số ngân
+  hàng nhận và hai dòng chi phí "Hoa hồng App Store" + "Thuế nhà thầu Apple đã trừ" (nhà cung cấp Apple
+  Distribution International Ltd., MST 9000000486, chứng từ = mã báo cáo). Lệch thì hiện hộp cảnh báo số
+  từng bên, không khóa. Phải có báo cáo Apple thật đầu tiên mới biết đúng các cột → làm sau khi có báo cáo.
+  **Cách tự động (anh hỏi 17/11 "làm sao biết khi nào Apple chuyển, HQ tự đối soát"):**
+  - Lịch Apple (trang trợ giúp "Overview of receiving payments", đọc 17/11): báo cáo tài chính của tháng
+    tài chính trước có trước **thứ Sáu đầu tiên** của tháng tài chính sau; tiền về **trong 45 ngày kể từ
+    ngày cuối tháng tài chính** có giao dịch; gộp một lần chuyển mỗi tháng mỗi loại tiền; phải có Paid
+    Apps Agreement + tài khoản ngân hàng + vượt ngưỡng tối thiểu (Việt Nam không có mức riêng → **40 USD**).
+    Có thư báo từ do-not-reply@apple.com nếu hồ sơ người dùng bật nhận thông báo báo cáo tài chính.
+    Tháng tài chính Apple không trùng tháng dương lịch — chưa tra lịch tháng 11/12 năm tài chính 2027.
+  - Phía Apple tự động được: App Store Connect API `/v1/financeReports` (`FINANCE_DETAIL`, vùng `Z1`,
+    `vendorNumber`, `reportDate` theo tháng tài chính), cần khóa API có quyền **Finance** (nguồn cộng
+    đồng nói phải tick lúc tạo khóa — chưa kiểm trên tài liệu Apple). Báo cáo gộp theo sản phẩm + ngày,
+    em CHƯA thấy có mã giao dịch → khớp theo mã sản phẩm + ngày + số lượng, chưa chắc khớp từng khoản.
+  - Phía ngân hàng: payOS chỉ báo các lệnh thu qua link payOS, KHÔNG thấy tiền Apple chuyển vào MB → hoặc
+    anh nhập tay số tiền về 1 lần/tháng, hoặc nối thêm dịch vụ đọc biến động số dư (chưa khảo sát).
+- **Lát C — Apple hoàn tiền cho khách (REFUND):** hiện chỉ gửi thư HQ. Cần thêm: nhắc lập hóa đơn điều
+  chỉnh giảm + bút toán đảo.
+- **Điểm cần anh quyết:** hoa hồng giới thiệu đang tính trên đủ giá App Store (`creditReferralCommission`
+  nhận `amount` = giá Apple), cao hơn giá web khoảng 18 %.

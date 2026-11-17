@@ -73,6 +73,11 @@ async function readAccount(acc, state) {
   if (!acc.user || !acc.pass) { out.errors.push(`Chưa cấu hình ${acc.key.toUpperCase()}_IMAP_USER / _PASS trong .env`); return out; }
 
   const client = new ImapFlow({ host: acc.host, port: 993, secure: true, auth: { user: acc.user, pass: acc.pass }, logger: false });
+  // May chu tu choi dang nhap roi ngat ket noi -> ImapFlow phat su kien 'error'; khong bat thi ca script sap (14/11)
+  client.on('error', (e) => {
+    const m = `Mất kết nối ${acc.label} (${acc.host}): ${e.message}${e.authenticationFailed ? ' (máy chủ từ chối đăng nhập)' : ''}`;
+    if (!out.errors.includes(m)) out.errors.push(m);
+  });
   try {
     await client.connect();
   } catch (e) {

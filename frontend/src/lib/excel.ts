@@ -537,8 +537,11 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
       ? `${e.customer.fullName}${e.customer.email ? ` (${e.customer.email})` : ""}`
       : e.vendorName ?? "",
     "MST NCC": e.vendorTaxCode ?? "",
-    "Tiền vào": e.direction === "IN" ? e.amount : "",
+    "Tiền vào": e.direction === "IN" && !e.awaitingApple ? e.amount : "",
     "Tiền ra": e.direction === "OUT" ? e.amount : "",
+    // Bán qua App Store: hóa đơn đủ giá nhưng tiền chưa về — không cộng vào
+    // Tiền vào để tổng khớp sao kê ngân hàng.
+    "Chờ Apple chuyển": e.awaitingApple ? e.amount : "",
     "Hình thức TT":
       e.direction === "OUT"
         ? e.paymentMethod === "CASH"
@@ -553,10 +556,13 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
   }));
 
   const totalIn = entries
-    .filter((e) => e.direction === "IN")
+    .filter((e) => e.direction === "IN" && !e.awaitingApple)
     .reduce((s, e) => s + e.amount, 0);
   const totalOut = entries
     .filter((e) => e.direction === "OUT")
+    .reduce((s, e) => s + e.amount, 0);
+  const totalApple = entries
+    .filter((e) => e.awaitingApple)
     .reduce((s, e) => s + e.amount, 0);
   rows.push({
     "Ngày phát sinh": "TỔNG CỘNG",
@@ -567,6 +573,7 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
     "MST NCC": "",
     "Tiền vào": totalIn,
     "Tiền ra": totalOut,
+    "Chờ Apple chuyển": totalApple || "",
     "Hình thức TT": "",
     "Hóa đơn": "",
     "Số hóa đơn": "",
@@ -591,7 +598,7 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
 
   const wb = XLSX.utils.book_new();
   const wsLedger = XLSX.utils.json_to_sheet(rows);
-  wsLedger["!cols"] = [20, 8, 30, 44, 32, 14, 14, 14, 14, 12, 16, 20].map((w) => ({ wch: w }));
+  wsLedger["!cols"] = [20, 8, 30, 44, 32, 14, 14, 14, 16, 14, 12, 16, 20].map((w) => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, wsLedger, `So quy ${month}`);
   const wsCategory = XLSX.utils.json_to_sheet(categoryRows);
   wsCategory["!cols"] = [36, 16, 14].map((w) => ({ wch: w }));

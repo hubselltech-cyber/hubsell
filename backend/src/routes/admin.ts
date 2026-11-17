@@ -11,6 +11,12 @@ import {
   WebhookJobStatus,
 } from "@prisma/client";
 import { parseLedgerPeriod } from "../lib/ledger-period";
+import {
+  APPLE_RECEIVABLE_SQL_NOT,
+  APPLE_RECEIVABLE_WHERE,
+  isAppleReceivable,
+  ledgerCashTotals,
+} from "../services/apple-receivable";
 import { prisma } from "../lib/prisma";
 import { StaleCache } from "../lib/stale-cache";
 import {
@@ -1385,11 +1391,11 @@ router.get(
   async (req, res, next) => {
     try {
       const { from, to, month, range } = parseLedgerPeriod(req.query);
-      const [entries, recurringList] = await Promise.all([
+      const [entries, recurringList, appleAll] = await Promise.all([
         prisma.platformLedgerEntry.findMany({
           where: { occurredAt: range },
           orderBy: { occurredAt: "desc" },
-          select: LEDGER_SELECT,
+          select: { ...LEDGER_SELECT, packagePayment: { select: { method: true } } },
         }),
         month
           ? prisma.platformRecurringExpense.findMany({
@@ -1397,17 +1403,24 @@ router.get(
               orderBy: [{ dayOfMonth: "asc" }, { createdAt: "asc" }],
             })
           : Promise.resolve([]),
+        // Phải thu Apple TOÀN BỘ (không theo kỳ): khoản mua cuối tháng này
+        // Apple chuyển ở tháng sau nữa — xem kỳ nào cũng phải thấy đủ.
+        prisma.platformLedgerEntry.aggregate({
+          where: APPLE_RECEIVABLE_WHERE,
+          _sum: { amount: true },
+          _count: { _all: true },
+          _min: { occurredAt: true },
+        }),
       ]);
-      let totalIn = 0;
-      let totalOut = 0;
+      const cash = ledgerCashTotals(
+        entries.map((e) => ({ direction: e.direction, amount: toNumber(e.amount), packagePayment: e.packagePayment }))
+      );
       let pendingInvoices = 0;
       // Cơ cấu CHI theo khoản mục trong tháng — để kế toán thấy tiền ra nằm ở
       // đâu (thuê VP / lương / phần mềm...) thay vì một cục "Khoản khác".
       const byCategory = new Map<string, number>();
       for (const e of entries) {
-        if (e.direction === LedgerDirection.IN) totalIn += toNumber(e.amount);
-        else {
-          totalOut += toNumber(e.amount);
+        if (e.direction === LedgerDirection.OUT) {
           const key = ledgerExpenseCategory(e);
           byCategory.set(key, (byCategory.get(key) ?? 0) + toNumber(e.amount));
         }
@@ -1440,12 +1453,28 @@ router.get(
         from,
         to,
         month,
-        totals: { in: totalIn, out: totalOut, net: totalIn - totalOut, pendingInvoices },
+        // in/out/net = tiền ĐÃ vào/ra tài khoản. Khoản App Store tách riêng.
+        totals: {
+          in: cash.in,
+          out: cash.out,
+          net: cash.net,
+          pendingInvoices,
+          appleAwaitingInPeriod: cash.appleAwaiting,
+        },
+        appleReceivable: {
+          amount: appleAll._sum.amount ? toNumber(appleAll._sum.amount) : 0,
+          count: appleAll._count._all,
+          oldestAt: appleAll._min.occurredAt,
+        },
         byCategory: [...byCategory.entries()]
           .map(([key, out]) => ({ key, out }))
           .sort((a, b) => b.out - a.out),
         recurring,
-        entries: entries.map((e) => ({ ...e, amount: toNumber(e.amount) })),
+        entries: entries.map(({ packagePayment, ...e }) => ({
+          ...e,
+          amount: toNumber(e.amount),
+          awaitingApple: isAppleReceivable({ direction: e.direction, amount: 0, packagePayment }),
+        })),
       });
     } catch (err) {
       next(err);
@@ -2916,9 +2945,10 @@ async function computeInvestorReport() {
     prisma.user.count({ where: { ownerId: null } }),
     prisma.user.count({ where: { referredById: { not: null } } }),
     prisma.$queryRaw<{ m: Date; direction: string; total: Prisma.Decimal | null }[]>`
-      SELECT date_trunc('month', "occurredAt") AS m, "direction"::text AS direction,
-             SUM(amount) AS total
-      FROM "platform_ledger_entries" WHERE "occurredAt" >= ${start6}
+      SELECT date_trunc('month', l."occurredAt") AS m, l."direction"::text AS direction,
+             SUM(l.amount) AS total
+      FROM "platform_ledger_entries" l
+      WHERE l."occurredAt" >= ${start6} AND ${Prisma.raw(APPLE_RECEIVABLE_SQL_NOT)}
       GROUP BY 1, 2`,
     // Cohort: chủ shop nào CÓ ĐƠN trong tháng nào (distinct, 6 tháng).
     prisma.$queryRaw<{ userId: string; m: Date }[]>`

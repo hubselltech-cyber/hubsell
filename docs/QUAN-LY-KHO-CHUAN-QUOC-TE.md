@@ -595,8 +595,78 @@ Bảng `maintenance_jobs` chỉ giữ lần đối chiếu cuối, nên mỗi ng
 | 12/11 | 12/11 15:22 | 0 | 520 = 520 | 0 | 3.778 | 0 | chưa đo | 0 | lần đầu, ngay sau ngày chuyển |
 | 13/11 (soi 19:51) | 13/11 15:22 | 0 | 337 = 337 | 0 | 1.151 | 0 | 0 | 0 | ĐẠT, lần 2/7. Lúc soi còn 784 đơn đang giữ, bộ đếm 162. Đơn đang giữ giảm mạnh so với 12/11 (3.778 → 1.151 cùng giờ); em đoán là hàng dồn sau đợt 11/11 đã giao hết, CHƯA kiểm nguyên nhân. Đơn giữ lâu nhất 135 giờ. |
 | 14/11 (soi 16:10) | 13/11 15:22 (chưa có lần mới) | 0 | 337 = 337 | 0 | 1.151 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 2/7: dòng đối chiếu vẫn là lần 13/11, cách 25 giờ (≤ 26 nên chưa coi là worker hỏng, nhưng lẽ ra đã có lần 14/11 ~15:22; em đoán worker khởi động lại làm lệch nhịp 24 giờ, CHƯA kiểm log). Số sống lúc soi: 732 đơn đang giữ, bộ đếm 231, bộ đếm âm 0. Mai vẫn là 13/11 → xem log Render. |
+| 15/11 (soi 19:48) | 14/11 16:59 (lần mới so với lượt soi 14/11; CHƯA có lần 15/11) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | Lần đối chiếu 14/11 16:59 sạch → chuỗi đối chiếu lệch cứng 0 là 3/7 (12/11, 13/11, 14/11). NHƯNG NHỊP TRỄ, lượt soi hôm nay KHÔNG ĐẠT tiêu chí "cách ≤ 26 giờ": dòng cách 27 giờ, lần 15/11 lẽ ra chạy ~17:01 mà 19:48 vẫn chưa có. Các lần: 12/11 15:22 → 13/11 15:22 → 14/11 16:59 (trễ 1 giờ 37 phút) → 15/11 trễ hơn 2 giờ 47 phút. Theo mã (`workers/stock-committed.ts`), nhịp 2 phút nào cũng hỏi "đủ 24 giờ chưa" nên lẽ ra chỉ trễ ≤ 2 phút; em ĐOÁN `runCommittedCheck` lỗi (quá giờ câu lệnh?) và nhịp sau thử lại, hoặc worker khởi động lại liên tục — CHƯA kiểm log. Quét bù có vẻ vẫn chạy (đã giao chưa quét 0). Số sống lúc soi: 842 đơn đang giữ, bộ đếm 639, bộ đếm âm 0. Cần anh xem log Render `hubsell-worker-sg`, từ khóa `stock-committed` (dòng `lỗi một nhịp`). Đơn giữ lâu nhất 128 giờ. |
+| 16/11 (soi ~16:00) | 14/11 16:59 (chưa có lần mới) | 0 | 155 = 155 | 0 | 672 | 0 | 0 | 0 | KHÔNG TÍNH, chuỗi giữ 3/7: dòng đối chiếu vẫn là lần 14/11, cách 47 giờ (> 26). Đã biết trước (mục 13.13 + 13.14: quét bù lỗi đứng trước bước đối chiếu; 15/11 20:30 đã giãn nhịp 1 giờ/lần bằng `STOCK_COMMITTED_SWEEP_MS`), không phải tin mới; từ lúc giãn nhịp tới giờ (~19,5 giờ) vẫn chưa có lần đối chiếu nào chạy được — CHƯA đọc log Render hôm nay. Số sống lúc soi: 567 đơn đang giữ, bộ đếm 428, bộ đếm âm 0, đã giao chưa quét 0, đã hủy còn giữ 0 → bộ đếm chưa có dấu hiệu sai. Anh đã chốt đợi hết 19/11. |
 
 Đủ 7 dòng liên tiếp lệch cứng 0 (dòng 12/11 tính là dòng 1) → trình anh lát 2. Có dòng lệch cứng khác 0 → dừng đếm, soi nguyên nhân trước, KHÔNG tự sửa số trên prod.
+
+### 13.13. Nhịp đối chiếu trễ: câu QUÉT BÙ quét cả bảng đơn (soi 15/11 ~20:00, anh: "Em xem đi") — CHƯA SỬA, chờ anh
+
+**Đã kiểm (chỉ đọc: log Render `hubsell-worker-sg`, `pg_stat_statements`, EXPLAIN trên prod):**
+
+- Log worker: `[stock-committed] lỗi một nhịp, nhịp sau làm lại` đều 2 phút một lần (thấy liên tục 18:17 → 19:55 ngày 15/11; trước 18:17 chưa cuộn xem). Lý do Prisma ghi: `Transaction already closed … The timeout for this transaction was 5000 ms, however 22625 / 25435 ms passed`.
+- Giao dịch đó là `sweepShippedBatch` (quét bù). Trong `runStockCommittedTick`, quét bù chạy TRƯỚC `checkIfDue` trong cùng một `try` → quét bù lỗi thì nhịp đó không đối chiếu. Đây là lý do lần 14/11 trễ 1 giờ 37 phút và lần 15/11 chưa có.
+- EXPLAIN câu chọn đơn của quét bù trên prod: `Index Scan using "Order_pkey"` + lọc, KHÔNG dùng `Order_stock_committed_idx`. Máy lập kế hoạch tưởng có 5.889 đơn đang giữ / 5.380 đơn cần quét (thật: 848 đang giữ, 0 cần quét) nên chọn đi dọc khóa chính theo `ORDER BY o."id" LIMIT` — không có dòng khớp thì đi hết bảng đơn. Đúng bẫy đã ghi: không `ORDER BY id LIMIT` trên bảng Order. (12/11 mục 13.10 kiểm thấy câu này đi qua chỉ mục — kế hoạch đã đổi theo thống kê bảng.)
+- `pg_stat_statements` cho đúng câu đó: **2.296 lần gọi, trung bình 9,8 giây, lâu nhất 41,8 giây, tổng 22.403 giây (≈ 6,2 giờ), 59,6 triệu khối đọc từ đĩa**. 2.296 lần ≈ mỗi 2 phút từ 12/11 → chậm từ ngày đầu, nhịp nào dưới 5 giây thì qua, trên 5 giây thì lỗi.
+- Log 7 ngày: đối chiếu chạy đúng 3 lần (12/11 15:22:02, 13/11 15:22:20, 14/11 16:59:23), cả 3 lệch 0. Quét bù có dòng ghi lần cuối 14/11 16:59:21 (16 đơn của gian không còn hoạt động).
+- Lúc soi: 848 đơn đang giữ, 0 đơn thuộc gian không hoạt động, 0 đơn đã giao chưa quét → bộ đếm CHƯA sai, nhưng quét bù đang không làm được việc khi có đơn cần quét.
+
+**Hệ quả:** (1) chuỗi 7 lần đối chiếu đứng lại ở 3/7; (2) quét bù hỏng → đơn giao qua đường không đụng kho sẽ dồn lại trong bộ đếm; (3) database chịu một lượt quét bảng đơn ~10–25 giây mỗi 2 phút — tải đọc đĩa lớn trên Supabase (liên quan sự cố Disk IO 28/10), CHƯA đo IO balance hiện tại.
+
+**Hướng sửa em đề xuất (CHƯA code) — ⚠️ mục 1 dưới đây em ĐÃ RÚT LẠI cùng tối 15/11, xem 13.14:**
+
+1. Viết lại câu chọn đơn của `sweepShippedBatch`: gom tập đơn đang giữ vào CTE `MATERIALIZED` (chỉ vị từ của chỉ mục một phần, không `ORDER BY` / `LIMIT`), rồi mới nối `Channel`, lọc, sắp xếp, cắt lô, và khóa dòng ở câu ngoài. EXPLAIN dạng này trên prod 15/11: `Index Scan using "Order_stock_committed_idx"` — đi qua chỉ mục (mới xem kế hoạch, chưa đo thời gian chạy thật).
+2. Tách `checkIfDue` ra `try` riêng để quét bù lỗi không chặn đối chiếu (và ngược lại).
+3. Xem cùng dạng `ORDER BY o."id" LIMIT … FOR UPDATE` ở `cutoverCommittedBatch` và `releaseCommittedOfChannel` (hai câu này có điều kiện khác, chưa EXPLAIN).
+4. Thêm ca test + EXPLAIN lại trên prod sau khi lên.
+
+Tạm thời không cần đổi mã: đặt `STOCK_COMMITTED_SWEEP_MS=3600000` trên Render (nhịp 1 giờ thay vì 2 phút) sẽ giảm tải quét ~30 lần, nhưng không chữa gốc. KHÔNG nên tắt `STOCK_COMMITTED_OFF=1` (bật lại phải `resetCommitted`, mất chuỗi).
+
+### 13.14. Rà soát theo mô hình shop lớn (15/11 tối, anh: "xem kế hoạch cho mô hình shop lớn có bị ảnh hưởng không, không đi vá lẻ") — ĐỀ XUẤT, anh chưa duyệt, CHƯA code
+
+**Kết luận: CÓ ảnh hưởng, và hướng sửa số 1 ở mục 13.13 (CTE MATERIALIZED) em RÚT LẠI vì chính nó là vá lẻ.** Ba lỗ ở tầng thiết kế:
+
+**Lỗ 1 — cách đánh dấu "đơn đang giữ" bằng HAI cột làm database ước lượng sai có hệ thống, và sai tăng dần theo thời gian.**
+
+- Vị từ `stockCommittedAt IS NOT NULL AND stockShippedAt IS NULL`. Máy lập kế hoạch nhân hai tỉ lệ như thể độc lập: (đơn từng được giữ) × (đơn chưa có mốc xuất). Đo prod 15/11 (`pg_stats`): 0,63 % × 99,45 % × 939.972 dòng = 5.889 — khớp đúng con số trong EXPLAIN; thật chỉ 848.
+- Đối chiếu ca thứ hai cùng công thức: tập "Chờ giao" (`Order_stock_awaiting_ship_idx`): 39,25 % × 0,87 % × 99,54 % = 3.195 — cũng khớp EXPLAIN.
+- "Đơn từng được giữ" chỉ tăng (mọi đơn có trừ kho từ 12/11 đều đi qua), nên ước lượng sẽ leo từ 0,6 % lên hàng chục % của bảng trong vài tháng, dù tập thật vẫn chỉ ~1.000 đơn. ANALYZE không chữa được (thống kê đang mới: autoanalyze 15/11 18:32).
+- Hệ quả: mọi câu dựa vào vị từ này (quét bù, đối chiếu hằng đêm, và các màn lát 2–3 sẽ đọc "đơn đang giữ") đều có ngày bị chọn kế hoạch quét cả bảng. CTE MATERIALIZED chỉ gỡ được cái bẫy `ORDER BY id LIMIT` hôm nay; khi ước lượng đủ lớn máy sẽ chọn quét tuần tự cả bảng thay cho chỉ mục một phần. Phần "khi nào lật" là em SUY từ công thức ước lượng (đã khớp 2 ca trên prod), CHƯA thử điểm lật.
+
+**Lỗ 2 — quét bù là "dò cả tập mỗi 2 phút để tìm việc hiếm".** Chi phí theo cỡ tập đang giữ (hoặc cả bảng khi kế hoạch sai), không theo số việc cần làm. Hôm nay 848 đơn; khách 12.000 đơn/ngày thêm ~12–25 nghìn; ở giả thuyết 1 triệu đơn/ngày là 1–2 triệu đơn mỗi lượt. Trái với nguyên tắc đã có ở `KIEN-TRUC-QUY-MO-TRIEU-DON.md` mục 6.3 ("webhook là đường chính, quét định kỳ là lưới an toàn") và khuôn K5.
+
+**Lỗ 3 — kiến trúc quy mô lớn chưa có hàng rào và đèn báo cho loại lỗi này.** Lỗi chạy 3 ngày, ngốn ≈ 6,2 giờ thời gian database, không dấu hiệu nào trên HQ đỏ; chỉ lộ nhờ lịch soi cho việc khác. Mục 6.9 (quan sát) không có "câu lệnh chậm" hay "worker lỗi lặp"; mục 6.10 (hàng rào) không có gì về kế hoạch câu lệnh. Luật "không `ORDER BY id LIMIT` trên Order" đã nằm trong memory từ 10/11 mà vẫn tái phạm → luật ghi nhớ không phải hàng rào.
+
+**Số đo prod 15/11 (chỉ đọc; `pg_stat_statements` tính từ 12/10):**
+
+| Mục | Số |
+|---|---|
+| Bảng `Order` | 939.972 dòng, 511 MB + 391 MB chỉ mục |
+| Câu quét bù (3,2 ngày) | 2.300 lần, TB 9,8 giây, 22.510 giây ≈ 7.000 giây/ngày |
+| Câu nặng kế tiếp (34 ngày) | 31.626 giây ≈ 930 giây/ngày → quét bù đang nặng gấp ~7 lần |
+| Đọc đĩa của quét bù | 59,8 triệu khối trong 3,2 ngày; cả hệ thống ≈ 1.445 triệu khối trong 34 ngày |
+| Câu khác TB > 1,5 giây, > 200 lần gọi | 11 câu, CHƯA soi: 3 dạng đọc `Channel` (TB 3,2–6,6 giây), đếm `Order` có OFFSET (TB 4,1 giây, max 103 giây), 2 câu gộp toàn bảng `Order` theo tháng (TB 2,0–2,4 giây), cập nhật giá vốn `OrderItem` (TB 4,3 giây), đếm `webhook_events` (TB 3,3 giây)… |
+
+**Với khách 10–12 nghìn đơn/ngày:** bảng đơn thêm ~360.000 dòng/tháng, nạp lịch sử có thể làm bảng gấp đôi ngay → mỗi lượt quét sai kế hoạch dài gấp đôi (20–50 giây mỗi 2 phút). Tức là lỗi này lớn theo đúng thứ mình sắp thêm vào.
+
+**Hướng em đề xuất (thứ tự làm):**
+
+0. **Cầm máu, không phải sửa:** giãn `STOCK_COMMITTED_SWEEP_MS=3600000` trên Render → tải quét giảm ~30 lần. Đối chiếu vẫn sẽ không chạy đều; chấp nhận, vì chuỗi 7 lần phải ĐẾM LẠI sau khi đổi thiết kế.
+1. **Sửa thiết kế lát 1** (viết thiết kế trình anh trước, có thử trên DB local):
+   - Một dấu DUY NHẤT cho "đang giữ": một cột chỉ khác NULL trong lúc giữ (đặt lúc chốt, xóa về NULL trong cùng câu UPDATE đánh mốc xuất) + chỉ mục một phần trên đúng cột đó → ước lượng lấy từ một cột nên sát thật, không thêm lệnh ghi trên đường nóng. Phương án kia: bảng nhỏ riêng chứa đơn đang giữ (chắc hơn nữa nhưng thêm 2 lệnh ghi mỗi đơn). Em nghiêng một cột; chốt sau khi thử.
+   - Nhả giữ THEO SỰ KIỆN: gian ngắt kết nối / ngủ đông → nhả đơn của gian đó ngay tại sự kiện; các đường đổi trạng thái giao không qua kho → gọi `shipStockTx` tại chỗ ghi. Quét bù lùi về lưới an toàn chạy thưa. CHƯA đếm chính xác có bao nhiêu đường ghi trạng thái giao.
+   - Đối chiếu tách khỏi quét bù (lỗi bên này không chặn bên kia).
+   - Thử trước khi code: DB local dữ liệu giả với ~50 % đơn "đã từng giữ" → chứng minh thiết kế cũ lật kế hoạch và thiết kế mới không lật.
+2. **Bổ sung hai hàng rào chung vào kiến trúc quy mô lớn** (mục 6.9 + 6.10): (a) HQ Sức khỏe thêm dấu hiệu "câu lệnh chậm" đọc từ `pg_stat_statements` và "worker lỗi lặp" (đếm ở database, không ở RAM); (b) test kế hoạch câu lệnh cho các câu worker chạy định kỳ trên bảng lớn, chạy trên dữ liệu giả có phân bố xấu.
+3. **Soi 11 câu chậm còn lại**, phân loại "lớn theo một shop" hay "lớn theo cả hệ thống", trước khi khách lớn nối gian.
+
+**Hệ quả với lộ trình kho:** lát 2 lùi lại; chuỗi 7 lần đối chiếu đếm lại từ đầu sau khi thiết kế mới lên.
+
+**Khách có bị ảnh hưởng không (anh hỏi 15/11 ~20:30; đo trang Observability → Database của Supabase, 60 phút gần nhất 19:26–20:26):** CPU database rảnh 50–85 %, phần bận lớn nhất là chờ đĩa (IOwait ~10–25 %), IOPS trung bình ~902. Database CHƯA nghẽn → lúc này không có bằng chứng khách thấy chậm. Nhịp quét bù tự nó không đổi gì ở phía khách (bản bóng: không màn nào đọc bộ đếm, số đẩy sàn không dùng); ảnh hưởng chỉ có thể là gián tiếp, qua việc ăn phần đọc đĩa dùng chung. CHƯA đo: số dư Disk IO (trang này không hiện), thời gian phản hồi các màn của khách, giờ cao điểm ban ngày.
+
+**Anh chốt 15/11 tối: "Phần kho mình vẫn đang chạy bóng hẹn 19/11. Đợi xong rồi làm."** → KHÔNG viết thiết kế, KHÔNG code lát 1 trước khi hết lịch 19/11. Lịch soi 16–19/11 vẫn chạy và ghi dòng vào 13.12. Em đã nêu với anh hai điều (anh chưa trả lời): (1) tới 19/11 chuỗi sẽ KHÔNG đủ 7/7 vì quét bù lỗi chặn đối chiếu, nên bản bóng không tự "xong" vào 19/11; (2) trong lúc đợi, câu quét bù vẫn quét bảng đơn mỗi 2 phút — việc giãn nhịp bằng `STOCK_COMMITTED_SWEEP_MS` (bước 0) là đổi cấu hình, không đụng mã, chờ anh cho phép.
+
+**✅ Bước 0 ĐÃ LÀM 15/11 20:30 (anh: "Giãn nhịp đi"):** thêm biến môi trường `STOCK_COMMITTED_SWEEP_MS=3600000` cho dịch vụ `hubsell-worker-sg` trên Render (trang Environment → "Save and deploy", không dựng lại; deploy `dep-dbsr7njl550s7398qelg` thành công sau ~15 giây, bản mã không đổi). Chỉ worker, không đụng dịch vụ web. Từ đây quét bù + bước kiểm "đã tới hạn đối chiếu chưa" chạy 1 giờ một lần (nhịp đầu ~2 phút sau mỗi lần worker khởi động). Gỡ: xóa biến này rồi deploy lại là về 2 phút. Kiểm log sau khi đổi (đọc tới 20:37:24): bản worker mới chạy nhịp đầu lúc 20:33:04 (vẫn `lỗi một nhịp`, vì câu quét bù chưa sửa), sau đó KHÔNG có nhịp 20:35 → nhịp đã giãn; nhịp kế dự kiến ~21:33 (chưa xem). Trước khi đổi, lỗi lặp đều 2 phút tới 20:29:43.
 
 ## 12. Nguồn
 

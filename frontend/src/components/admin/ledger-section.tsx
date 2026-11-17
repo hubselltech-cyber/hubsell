@@ -87,6 +87,11 @@ const SOURCE_LABEL: Record<string, string> = {
   OTHER: "Khoản khác",
 };
 
+/** "dd/mm/yyyy" cho nhãn ngắn. */
+function formatDateOnly(iso: string): string {
+  return new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 /** "yyyy-mm-dd" cho input type=date từ chuỗi ISO. */
 function toDateInput(iso: string): string {
   const d = new Date(iso);
@@ -988,11 +993,20 @@ export function LedgerSection({
       </div>
 
       {data && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div
+          className={cn(
+            "grid gap-4 sm:grid-cols-2",
+            data.appleReceivable.count > 0 ? "lg:grid-cols-3 2xl:grid-cols-5" : "xl:grid-cols-4"
+          )}
+        >
           <StatCard
             label={`Tổng THU ${phrase}`}
             value={formatMoney(data.totals.in)}
-            hint="Tiền vào trong kỳ"
+            hint={
+              data.totals.appleAwaitingInPeriod > 0
+                ? `Tiền đã vào tài khoản · chưa gồm ${formatMoney(data.totals.appleAwaitingInPeriod)} App Store`
+                : "Tiền vào trong kỳ"
+            }
           />
           <StatCard
             label={`Tổng CHI ${phrase}`}
@@ -1009,6 +1023,17 @@ export function LedgerSection({
             value={formatCount(data.totals.pendingInvoices)}
             hint="Phải bằng 0 trước khi chốt sổ"
           />
+          {data.appleReceivable.count > 0 && (
+            <StatCard
+              label="Apple chưa chuyển về"
+              value={formatMoney(data.appleReceivable.amount)}
+              hint={`${formatCount(data.appleReceivable.count)} khoản đã xuất hóa đơn${
+                data.appleReceivable.oldestAt
+                  ? ` · cũ nhất ${formatDateOnly(data.appleReceivable.oldestAt)}`
+                  : ""
+              }`}
+            />
+          )}
         </div>
       )}
 
@@ -1088,18 +1113,22 @@ export function LedgerSection({
                           : ""}
                       </p>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="max-w-[220px] text-sm">
                       {e.customer ? (
                         <>
-                          {e.customer.fullName}
-                          <p className="text-xs text-muted-foreground">
+                          <p className="truncate" title={e.customer.fullName}>
+                            {e.customer.fullName}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground" title={e.customer.email ?? undefined}>
                             {e.customer.email}
                           </p>
                         </>
                       ) : e.vendorName ? (
                         <>
-                          {e.vendorName}
-                          <p className="text-xs text-muted-foreground">
+                          <p className="truncate" title={e.vendorName}>
+                            {e.vendorName}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
                             {[
                               e.vendorTaxCode ? `MST ${e.vendorTaxCode}` : null,
                               e.inputInvoiceNo ? `HĐ ${e.inputInvoiceNo}` : null,
@@ -1115,11 +1144,23 @@ export function LedgerSection({
                     <TableCell
                       className={cn(
                         "whitespace-nowrap text-right font-semibold",
-                        e.direction === "IN" ? "text-emerald-600" : "text-rose-600"
+                        e.awaitingApple
+                          ? "text-amber-700"
+                          : e.direction === "IN"
+                            ? "text-emerald-600"
+                            : "text-rose-600"
                       )}
+                      title={
+                        e.awaitingApple
+                          ? "Khách trả qua App Store — hóa đơn đủ giá, tiền chưa về, không cộng vào Tổng THU"
+                          : undefined
+                      }
                     >
                       {e.direction === "IN" ? "+" : "−"}
                       {formatMoney(e.amount)}
+                      {e.awaitingApple && (
+                        <p className="text-xs font-normal">Chờ Apple chuyển</p>
+                      )}
                     </TableCell>
                     <TableCell>
                       {e.invoiceStatus === "NONE" ? (
@@ -1170,7 +1211,7 @@ export function LedgerSection({
                           {e.einvoiceAutoError && (
                             <p
                               className={cn(
-                                "max-w-[260px] truncate text-xs",
+                                "max-w-[200px] truncate text-xs",
                                 e.einvoiceAutoError.startsWith("Chờ ") ? "text-amber-700" : "text-rose-600"
                               )}
                               title={e.einvoiceAutoError}
@@ -1204,7 +1245,7 @@ export function LedgerSection({
                           {e.einvoiceTransactionId && e.invoiceNo && (
                             <p
                               className={cn(
-                                "max-w-[260px] truncate text-xs",
+                                "max-w-[200px] truncate text-xs",
                                 e.invoiceEmailSentAt
                                   ? "text-muted-foreground"
                                   : e.invoiceEmailError
@@ -1223,8 +1264,10 @@ export function LedgerSection({
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {e.createdByName}
+                    <TableCell className="max-w-[160px] text-sm text-muted-foreground">
+                      <p className="truncate" title={e.createdByName}>
+                        {e.createdByName}
+                      </p>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1.5">

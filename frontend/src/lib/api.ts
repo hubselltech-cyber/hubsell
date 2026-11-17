@@ -6435,6 +6435,9 @@ export interface PlatformLedgerEntry {
   paymentMethod: HqPaymentMethod | null;
   recurringExpenseId: string | null;
   customer: { id: string; email: string | null; fullName: string } | null;
+  /** Khoản mua gói qua App Store: đã xuất hóa đơn đủ giá nhưng tiền CHƯA về —
+   *  không cộng vào Tổng THU (chỉ có trong GET /finance/ledger, 17/11/2026). */
+  awaitingApple?: boolean;
 }
 
 export type HqPaymentMethod = "BANK" | "CASH";
@@ -6472,7 +6475,10 @@ export interface PlatformLedgerResponse {
   to: string;
   /** "YYYY-MM" khi kỳ là TRỌN một tháng; quý/năm/khoảng tùy chọn = null. */
   month: string | null;
-  totals: { in: number; out: number; net: number; pendingInvoices: number };
+  /** in/out/net = tiền ĐÃ vào/ra tài khoản; khoản App Store của kỳ tách ở appleAwaitingInPeriod. */
+  totals: { in: number; out: number; net: number; pendingInvoices: number; appleAwaitingInPeriod: number };
+  /** Toàn bộ khoản App Store Apple chưa chuyển về (không theo kỳ). */
+  appleReceivable: { amount: number; count: number; oldestAt: string | null };
   /** Cơ cấu CHI theo khoản mục trong kỳ, giảm dần theo tiền. */
   byCategory: { key: string; out: number }[];
   /** Checklist chi phí cố định — chỉ có khi kỳ là trọn một tháng (chỉ danh mục active). */
