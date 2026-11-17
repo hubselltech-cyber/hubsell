@@ -241,6 +241,12 @@ CHƯA kiểm được trên App Store Connect (trình duyệt chưa đăng nhậ
   Hóa đơn, hoa hồng giới thiệu, kỳ hạn gói không đổi. Kèm sửa bảng sổ quỹ: cắt tên khách / người ghi /
   dòng email hóa đơn dài → hết cuộn ngang ở 1700 (trước cuộn ~37 px); 1440 còn cuộn 244 px, 1280 còn
   457 px (trước 837 px) — bảng 8 cột vốn rộng hơn khung, chưa làm lại.
+  **Ngày dự kiến (17/11/2026, anh: "Thêm ngày dự kiến"), CHƯA commit:** thẻ hiện "Dự kiến về ~31/12/2026
+  (ước)" — nhiều đợt thì đợt gần nhất + số tiền + "thêm N đợt sau"; dòng sổ "Apple chuyển ~31/12", rê chuột
+  thấy ngày cuối tháng tài chính + hạn chót 45 ngày. Bảng ngày cuối tháng tài chính `APPLE_FISCAL_MONTH_ENDS`
+  trong `apple-receivable.ts` lấy theo aso.dev, chạy tới 25/09/2027 — ngoài bảng ghi "chưa có lịch Apple".
+  ⏳ Khi Apple công bố lịch năm tài chính 2027 (hoặc có báo cáo / lần chuyển thật đầu tiên) thì đối chiếu
+  và sửa bảng; tháng 12/2026 trở đi đang lệch giữa hai nguồn.
   ⚠️ Khi Apple chuyển tiền thật (dự kiến khoảng đầu–giữa 01/2027 cho khoản tháng 11) mà lát B chưa có:
   thẻ "Apple chưa chuyển về" vẫn giữ số cũ — phải có lát B trước mốc đó.
 - **Lát B — hộp "Đối soát Apple" theo tháng tài chính:** nhập (hoặc nạp tệp) báo cáo Apple + số tiền ngân
@@ -254,7 +260,13 @@ CHƯA kiểm được trên App Store Connect (trình duyệt chưa đăng nhậ
     ngày cuối tháng tài chính** có giao dịch; gộp một lần chuyển mỗi tháng mỗi loại tiền; phải có Paid
     Apps Agreement + tài khoản ngân hàng + vượt ngưỡng tối thiểu (Việt Nam không có mức riêng → **40 USD**).
     Có thư báo từ do-not-reply@apple.com nếu hồ sơ người dùng bật nhận thông báo báo cáo tài chính.
-    Tháng tài chính Apple không trùng tháng dương lịch — chưa tra lịch tháng 11/12 năm tài chính 2027.
+    Tháng tài chính Apple không trùng tháng dương lịch. Lịch năm tài chính 2027 (Apple không công bố lịch
+    trả; hai nguồn ngoài aso.dev + RevenueCat ước "33 ngày sau cuối tháng tài chính", đọc 17/11/2026):
+    tháng 10 = 27/09 → 31/10/2026, trả ~03/12/2026; **tháng 11 = 01/11 → 28/11/2026, trả ~31/12/2026**
+    (hạn cứng 45 ngày = 12/01/2027); tháng 12 hai nguồn LỆCH NHAU (năm 2027 có tuần thứ 53): 29/11 → 26/12
+    trả ~28/01/2027 (aso.dev) hoặc 29/11 → 02/01/2027 trả ~04/02/2027 (RevenueCat). Ngày trên là ngày
+    Apple chuyển, tiền về MB có thể chậm thêm vài ngày (chưa có lần thật để đo). 5 khoản 10–14/11/2026
+    (1.656.000 đ) thuộc tháng tài chính 11 → dự kiến ~31/12/2026, nếu tiền thực nhận vượt 40 USD.
   - Phía Apple tự động được: App Store Connect API `/v1/financeReports` (`FINANCE_DETAIL`, vùng `Z1`,
     `vendorNumber`, `reportDate` theo tháng tài chính), cần khóa API có quyền **Finance** (nguồn cộng
     đồng nói phải tick lúc tạo khóa — chưa kiểm trên tài liệu Apple). Báo cáo gộp theo sản phẩm + ngày,

@@ -14,6 +14,8 @@ import { parseLedgerPeriod } from "../lib/ledger-period";
 import {
   APPLE_RECEIVABLE_SQL_NOT,
   APPLE_RECEIVABLE_WHERE,
+  estimateApplePayout,
+  groupApplePayouts,
   isAppleReceivable,
   ledgerCashTotals,
 } from "../services/apple-receivable";
@@ -1405,13 +1407,14 @@ router.get(
           : Promise.resolve([]),
         // Phải thu Apple TOÀN BỘ (không theo kỳ): khoản mua cuối tháng này
         // Apple chuyển ở tháng sau nữa — xem kỳ nào cũng phải thấy đủ.
-        prisma.platformLedgerEntry.aggregate({
+        // Bảng sổ quỹ nhỏ (vài chục dòng/tháng) — đọc thẳng để gom theo đợt chuyển dự kiến.
+        prisma.platformLedgerEntry.findMany({
           where: APPLE_RECEIVABLE_WHERE,
-          _sum: { amount: true },
-          _count: { _all: true },
-          _min: { occurredAt: true },
+          select: { occurredAt: true, amount: true },
+          orderBy: { occurredAt: "asc" },
         }),
       ]);
+      const appleItems = appleAll.map((a) => ({ occurredAt: a.occurredAt, amount: toNumber(a.amount) }));
       const cash = ledgerCashTotals(
         entries.map((e) => ({ direction: e.direction, amount: toNumber(e.amount), packagePayment: e.packagePayment }))
       );
@@ -1462,19 +1465,25 @@ router.get(
           appleAwaitingInPeriod: cash.appleAwaiting,
         },
         appleReceivable: {
-          amount: appleAll._sum.amount ? toNumber(appleAll._sum.amount) : 0,
-          count: appleAll._count._all,
-          oldestAt: appleAll._min.occurredAt,
+          amount: appleItems.reduce((s, a) => s + a.amount, 0),
+          count: appleItems.length,
+          oldestAt: appleItems[0]?.occurredAt ?? null,
+          // Đợt Apple chuyển dự kiến (ƯỚC — services/apple-receivable.ts), sớm trước.
+          payouts: groupApplePayouts(appleItems),
         },
         byCategory: [...byCategory.entries()]
           .map(([key, out]) => ({ key, out }))
           .sort((a, b) => b.out - a.out),
         recurring,
-        entries: entries.map(({ packagePayment, ...e }) => ({
-          ...e,
-          amount: toNumber(e.amount),
-          awaitingApple: isAppleReceivable({ direction: e.direction, amount: 0, packagePayment }),
-        })),
+        entries: entries.map(({ packagePayment, ...e }) => {
+          const awaitingApple = isAppleReceivable({ direction: e.direction, amount: 0, packagePayment });
+          return {
+            ...e,
+            amount: toNumber(e.amount),
+            awaitingApple,
+            applePayout: awaitingApple ? estimateApplePayout(e.occurredAt) : null,
+          };
+        }),
       });
     } catch (err) {
       next(err);

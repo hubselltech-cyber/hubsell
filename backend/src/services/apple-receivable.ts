@@ -30,6 +30,88 @@ export const APPLE_RECEIVABLE_SQL_NOT = `NOT EXISTS (
   WHERE pp."id" = l."packagePaymentId" AND pp."method" = 'APPLE_IAP'
 )`;
 
+// ---------------- Ngày dự kiến Apple chuyển tiền (17/11/2026) ----------------
+//
+// Apple trả theo THÁNG TÀI CHÍNH riêng (không trùng tháng dương lịch), cam kết
+// "trong 45 ngày kể từ ngày cuối tháng tài chính" (trang trợ giúp App Store
+// Connect "Overview of receiving payments"). Apple KHÔNG công bố lịch trả; thực
+// tế thường trả 33 ngày sau ngày cuối tháng (ước của aso.dev + RevenueCat).
+//
+// Ngày cuối từng tháng tài chính lấy từ bảng của aso.dev (đọc 17/11/2026). Từ
+// tháng 12/2026 RevenueCat ghi khác (cho rằng năm 2027 có tuần thứ 53) — chưa có
+// lịch chính thức để chốt, nên mọi ngày ở đây chỉ là ƯỚC. Ngày mua nằm ngoài
+// bảng → không đoán (trả null), giao diện ghi "chưa có lịch".
+
+/** Ngày cuối tháng tài chính Apple (giờ Thái Bình Dương), tăng dần. */
+export const APPLE_FISCAL_MONTH_ENDS = [
+  "2026-09-26",
+  "2026-10-31",
+  "2026-11-28",
+  "2026-12-26",
+  "2027-01-30",
+  "2027-02-27",
+  "2027-03-27",
+  "2027-05-01",
+  "2027-05-29",
+  "2027-06-26",
+  "2027-07-31",
+  "2027-08-28",
+  "2027-09-25",
+] as const;
+
+/** Ngày bắt đầu bảng: ngày đầu tháng tài chính 09/2026. */
+const APPLE_FISCAL_TABLE_START = "2026-08-30";
+const TYPICAL_PAYOUT_DAYS = 33;
+const MAX_PAYOUT_DAYS = 45;
+
+function pacificDateKey(at: Date): string {
+  // en-CA cho dạng yyyy-mm-dd.
+  return at.toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+}
+
+function addDaysKey(key: string, days: number): string {
+  const d = new Date(`${key}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export interface ApplePayoutEstimate {
+  /** Ngày cuối tháng tài chính chứa giao dịch (yyyy-mm-dd). */
+  fiscalMonthEnd: string;
+  /** Ngày Apple thường chuyển (cuối tháng + 33 ngày) — ƯỚC. */
+  expected: string;
+  /** Hạn Apple cam kết (cuối tháng + 45 ngày). */
+  deadline: string;
+}
+
+export function estimateApplePayout(purchasedAt: Date): ApplePayoutEstimate | null {
+  const key = pacificDateKey(purchasedAt);
+  if (key < APPLE_FISCAL_TABLE_START) return null;
+  const end = APPLE_FISCAL_MONTH_ENDS.find((e) => key <= e);
+  if (!end) return null;
+  return {
+    fiscalMonthEnd: end,
+    expected: addDaysKey(end, TYPICAL_PAYOUT_DAYS),
+    deadline: addDaysKey(end, MAX_PAYOUT_DAYS),
+  };
+}
+
+/** Gom các khoản chờ Apple theo đợt chuyển dự kiến (sớm trước); khoản ngoài bảng gom cuối, expected null. */
+export function groupApplePayouts(items: { occurredAt: Date; amount: number }[]) {
+  const groups = new Map<string, { expected: string | null; deadline: string | null; amount: number; count: number }>();
+  for (const it of items) {
+    const est = estimateApplePayout(it.occurredAt);
+    const k = est?.expected ?? "none";
+    const g = groups.get(k) ?? { expected: est?.expected ?? null, deadline: est?.deadline ?? null, amount: 0, count: 0 };
+    g.amount += it.amount;
+    g.count += 1;
+    groups.set(k, g);
+  }
+  return [...groups.values()].sort((a, b) =>
+    a.expected === b.expected ? 0 : a.expected === null ? 1 : b.expected === null ? -1 : a.expected < b.expected ? -1 : 1
+  );
+}
+
 export interface LedgerCashInput {
   direction: LedgerDirection | "IN" | "OUT";
   amount: number;

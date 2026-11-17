@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 17/11 chiều (Sổ quỹ HQ — ngày Apple chuyển dự kiến) — Anh: "Thêm ngày dự kiến" → XONG local, CHƯA commit
+
+- Thẻ "Apple chưa chuyển về" hiện đợt chuyển dự kiến gần nhất (ước): prod hiện tại sẽ ra "Dự kiến về ~31/12/2026 (ước) · 5 khoản". Dòng sổ "Apple chuyển ~31/12", rê chuột thấy cuối tháng tài chính + hạn chót.
+- Cách tính: ngày mua (giờ Thái Bình Dương) → tháng tài chính Apple theo bảng aso.dev → +33 ngày (thường trả) / +45 ngày (hạn Apple cam kết). Bảng tới 25/09/2027; ngoài bảng không đoán. Tháng 12/2026 trở đi hai nguồn lệch → ước.
+- Mã: `backend/src/services/apple-receivable.ts` (`APPLE_FISCAL_MONTH_ENDS`, `estimateApplePayout`, `groupApplePayouts`) + 5 test mới (8/8 qua); `routes/admin.ts`; frontend `ledger-section.tsx`, `lib/api.ts`.
+- Kiểm: tsc 2 bên + eslint sạch; local seed thêm 1 khoản 02/12 → thẻ "~31/12/2026: 9.117.000₫ (ước) · thêm 1 đợt sau"; soi sáng + tối 1440, ô tiền không tràn; bảng 1440 vẫn cuộn ngang ~265 px như trước (từ trước, chưa làm lại).
+- Ghi ở: docs APPLE-IAP mục lát A + lát B, memory Apple IAP.
+
+---
 ## Phiên 17/11 trưa (Sổ quỹ HQ — lát A phải thu Apple) — Anh: "Làm lát A" → XONG local, CHƯA commit
 
 - Khoản bán gói qua App Store không còn cộng vào Tổng THU / chênh lệch Sổ quỹ (tiền chưa về); thẻ mới "Apple chưa chuyển về" (cộng dồn mọi kỳ); dòng sổ tô vàng "Chờ Apple chuyển"; Excel thêm cột riêng; biểu đồ sổ quỹ ở báo cáo nhà đầu tư cũng bỏ khoản này. Hóa đơn, hoa hồng giới thiệu, kỳ hạn gói giữ nguyên. Không migration.

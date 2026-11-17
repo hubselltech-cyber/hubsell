@@ -87,9 +87,20 @@ const SOURCE_LABEL: Record<string, string> = {
   OTHER: "Khoản khác",
 };
 
-/** "dd/mm/yyyy" cho nhãn ngắn. */
-function formatDateOnly(iso: string): string {
-  return new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+/** "yyyy-mm-dd" (ngày thuần, không giờ) → "dd/mm/yyyy". */
+function formatKeyDate(key: string): string {
+  const [y, m, d] = key.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/** Dòng phụ thẻ "Apple chưa chuyển về": đợt chuyển dự kiến gần nhất (ước) + số khoản. */
+function applePayoutHint(r: PlatformLedgerResponse["appleReceivable"]): string {
+  const next = r.payouts[0];
+  const count = `${formatCount(r.count)} khoản`;
+  if (!next) return count;
+  if (!next.expected) return `${count} · chưa có lịch Apple`;
+  if (r.payouts.length === 1) return `Dự kiến về ~${formatKeyDate(next.expected)} (ước) · ${count}`;
+  return `~${formatKeyDate(next.expected)}: ${formatMoney(next.amount)} (ước) · thêm ${formatCount(r.payouts.length - 1)} đợt sau`;
 }
 
 /** "yyyy-mm-dd" cho input type=date từ chuỗi ISO. */
@@ -1027,11 +1038,7 @@ export function LedgerSection({
             <StatCard
               label="Apple chưa chuyển về"
               value={formatMoney(data.appleReceivable.amount)}
-              hint={`${formatCount(data.appleReceivable.count)} khoản đã xuất hóa đơn${
-                data.appleReceivable.oldestAt
-                  ? ` · cũ nhất ${formatDateOnly(data.appleReceivable.oldestAt)}`
-                  : ""
-              }`}
+              hint={applePayoutHint(data.appleReceivable)}
             />
           )}
         </div>
@@ -1159,7 +1166,18 @@ export function LedgerSection({
                       {e.direction === "IN" ? "+" : "−"}
                       {formatMoney(e.amount)}
                       {e.awaitingApple && (
-                        <p className="text-xs font-normal">Chờ Apple chuyển</p>
+                        <p
+                          className="text-xs font-normal"
+                          title={
+                            e.applePayout
+                              ? `Ước tính: Apple thường chuyển 33 ngày sau cuối tháng tài chính (${formatKeyDate(e.applePayout.fiscalMonthEnd)}), hạn chót ${formatKeyDate(e.applePayout.deadline)}`
+                              : "Chưa có lịch tháng tài chính Apple cho ngày này"
+                          }
+                        >
+                          {e.applePayout
+                            ? `Apple chuyển ~${formatKeyDate(e.applePayout.expected).slice(0, 5)}`
+                            : "Chờ Apple chuyển"}
+                        </p>
                       )}
                     </TableCell>
                     <TableCell>

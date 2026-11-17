@@ -6438,6 +6438,8 @@ export interface PlatformLedgerEntry {
   /** Khoản mua gói qua App Store: đã xuất hóa đơn đủ giá nhưng tiền CHƯA về —
    *  không cộng vào Tổng THU (chỉ có trong GET /finance/ledger, 17/11/2026). */
   awaitingApple?: boolean;
+  /** Ngày Apple chuyển dự kiến (ƯỚC, yyyy-mm-dd) — null khi ngoài bảng lịch tài chính. */
+  applePayout?: { fiscalMonthEnd: string; expected: string; deadline: string } | null;
 }
 
 export type HqPaymentMethod = "BANK" | "CASH";
@@ -6478,7 +6480,13 @@ export interface PlatformLedgerResponse {
   /** in/out/net = tiền ĐÃ vào/ra tài khoản; khoản App Store của kỳ tách ở appleAwaitingInPeriod. */
   totals: { in: number; out: number; net: number; pendingInvoices: number; appleAwaitingInPeriod: number };
   /** Toàn bộ khoản App Store Apple chưa chuyển về (không theo kỳ). */
-  appleReceivable: { amount: number; count: number; oldestAt: string | null };
+  appleReceivable: {
+    amount: number;
+    count: number;
+    oldestAt: string | null;
+    /** Gom theo đợt Apple chuyển dự kiến (ƯỚC), sớm trước; expected null = ngoài bảng lịch. */
+    payouts: { expected: string | null; deadline: string | null; amount: number; count: number }[];
+  };
   /** Cơ cấu CHI theo khoản mục trong kỳ, giảm dần theo tiền. */
   byCategory: { key: string; out: number }[];
   /** Checklist chi phí cố định — chỉ có khi kỳ là trọn một tháng (chỉ danh mục active). */
