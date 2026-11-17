@@ -5,6 +5,31 @@
 > để trống ô tìm, bấm Search → **322** NCC đã đăng ký (7 trang). Danh sách này đổi liên tục
 > (mỗi tháng thêm vài chục tên) → **tra lại trước khi thêm NCC mới** hoặc mỗi đầu quý.
 
+## ★ Câu hỏi mang đi hỏi cơ quan thuế (soạn 17/11/2026)
+
+Anh Trung 17/11: "Liên quan tới thuế làm cẩn thận … Có cơ hội anh sẽ hỏi bên thuế xem thế nào." Mọi kết luận
+trong tệp này và mục thuế của `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md` là em đọc luật, CHƯA phải trả lời của cơ
+quan thuế. Hỏi cơ quan thuế quản lý trực tiếp Hubsell (MST 0111626360), xin trả lời bằng văn bản nếu được.
+
+1. **Hoa hồng Apple giữ lại.** Công ty bán gói phần mềm trong app iOS. Apple Distribution International
+   (MST 9000000486) thu tiền khách, giữ hoa hồng 15–30 %, chuyển phần còn lại sau ~45 ngày. Hợp đồng Apple
+   (Exhibit C mục 17) ghi Apple tự áp thuế nhà thầu Việt Nam trên hoa hồng và trừ vào tiền chuyển về.
+   → Công ty có phải khai 01/NTNN cho phần hoa hồng này không? Nếu không, cần lưu chứng từ gì?
+2. **Hóa đơn bán qua App Store.** Công ty đang xuất hóa đơn đủ giá khách trả, ngay ngày khách mua (theo
+   Công văn 1063/CT-CS). → Đúng chưa? Hay được lập theo báo cáo đối soát của Apple, chậm nhất ngày 07 tháng
+   sau (như hỏi đáp Cục Thuế câu 35 cho Google Play)? Phần chênh hóa đơn và tiền thực nhận ghi chi phí bán
+   hàng — đúng chưa?
+3. **Anthropic (Claude).** Hóa đơn đứng tên công ty, có dòng "VAT – Vietnam (10%)", Anthropic có MST
+   9000020034. Từ 01/07/2026 đã trả 4 hóa đơn, 14.196.746 đ. → Công ty có phải khấu trừ nộp thay thêm thuế
+   TNDN 5 % (hoặc cả GTGT) không? Nếu phải: khai bù 4 kỳ đã qua thế nào, phạt bao nhiêu?
+4. **4 khoản lỡ trả bằng thẻ công ty** cho nhà cung cấp chưa đăng ký thuế Việt Nam (Render, Supabase,
+   Google Play, Apple Developer — 27/09 → 05/10/2026, 4.107.563 đ), xử lý thành tạm ứng giám đốc và chuyển
+   hoàn. → Như vậy có còn phát sinh nghĩa vụ nộp thay không?
+
+Mang theo: hóa đơn Hubsell số 00000017 (bán qua App Store), bản PDF hợp đồng Apple (Schedule 2 + Exhibits),
+báo cáo tài chính Apple đầu tiên (khi có, ~đầu 12/2026), hóa đơn Anthropic K2U9SLOU-0010, Công văn
+1063/CT-CS. Có trả lời thì ghi ngay vào đây (ngày, người trả lời, nguyên văn).
+
 ## ★ Rà lại theo luật mới — 17/11/2026 (nhóm CÔNG TY trả tiền)
 
 Luật đổi từ 01/07/2026: Thông tư 80/2021 (Điều 79) và Nghị định 126/2020 hết hiệu lực. Thay bằng Nghị định
