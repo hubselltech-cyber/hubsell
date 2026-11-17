@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 17/11 chiều (Sổ quỹ HQ — lát B: ghi nhận đợt Apple chuyển tiền) — Anh: "Vậy làm lát B luôn" → XONG local, CHƯA commit
+
+- Thẻ "Apple chưa chuyển về" có nút "Ghi nhận Apple đã chuyển": chọn khoản + nhập ngày tiền về, số ngân hàng nhận, thuế Apple trừ, mã sổ phụ, kỳ báo cáo → máy tính hoa hồng, ghi 3 bút toán (thu tổng khách trả, chi hoa hồng, chi thuế; khoản mục mới "Hoa hồng & thuế App Store", NCC Apple Distribution International MST 9000000486). Thu − chi = đúng tiền về. Hoa hồng lạ (ngoài 10–35 %, ngưỡng tự chọn) → cảnh báo + "Vẫn ghi". Nhập sai → "Hủy đợt".
+- Migration `20261117120000_apple_settlements` (bảng mới + RLS, cột `platform_ledger_entries.appleSettlementId`). Mã: `services/apple-settlement.ts`, `apple-receivable.ts`, `routes/admin.ts`, `apple-settlement-dialog.tsx`, `ledger-section.tsx`, `api.ts`, `excel.ts`, `hq-expense-categories.ts`.
+- Kiểm: tsc 2 bên + eslint sạch, vitest 35/35 (thêm `apple-settlement.test.ts`). Local: ghi thử 5 khoản tháng 11 (tiền về 6.331.900, thuế 50.000 → hoa hồng 2.735.100 = 30 %) → THU +9.117.000, CHI +2.785.100, chênh lệch +6.331.900; hủy đợt về đúng số cũ; máy chủ chặn ghi trùng 409, tiền vượt 400, sửa số / xóa lẻ bút toán của đợt 400. Soi 1440 sáng + tối, hộp không tràn (sửa một lỗi tràn ngang trong hộp).
+- ⏳ Chưa: khớp tự động với báo cáo Apple (cần báo cáo thật + khóa API Finance).
+- Ghi ở: docs APPLE-IAP mục lát B, memory Apple IAP.
+
+---
 ## Phiên 17/11 chiều (Sổ quỹ HQ — ngày Apple chuyển dự kiến) — Anh: "Thêm ngày dự kiến" → XONG local, CHƯA commit
 
 - Thẻ "Apple chưa chuyển về" hiện đợt chuyển dự kiến gần nhất (ước): prod hiện tại sẽ ra "Dự kiến về ~31/12/2026 (ước) · 5 khoản". Dòng sổ "Apple chuyển ~31/12", rê chuột thấy cuối tháng tài chính + hạn chót.

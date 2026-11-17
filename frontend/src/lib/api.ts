@@ -6438,8 +6438,60 @@ export interface PlatformLedgerEntry {
   /** Khoản mua gói qua App Store: đã xuất hóa đơn đủ giá nhưng tiền CHƯA về —
    *  không cộng vào Tổng THU (chỉ có trong GET /finance/ledger, 17/11/2026). */
   awaitingApple?: boolean;
+  /** Khoản BÁN gói qua App Store (đã hay chưa được Apple trả) — doanh thu, không phải tiền quỹ. */
+  appleSale?: boolean;
+  /** Đợt Apple chuyển: trên khoản bán = đã được trả; trên bút toán không có packagePaymentId = bút toán của đợt. */
+  appleSettlementId?: string | null;
   /** Ngày Apple chuyển dự kiến (ƯỚC, yyyy-mm-dd) — null khi ngoài bảng lịch tài chính. */
   applePayout?: { fiscalMonthEnd: string; expected: string; deadline: string } | null;
+}
+
+/** Khoản bán qua App Store còn chờ Apple chuyển (hộp ghi nhận đợt Apple chuyển). */
+export interface AppleReceivableItem {
+  id: string;
+  amount: number;
+  occurredAt: string;
+  note: string | null;
+  invoiceNo: string | null;
+  customer: { fullName: string; email: string | null } | null;
+  applePayout: { fiscalMonthEnd: string; expected: string; deadline: string } | null;
+}
+
+export interface AppleSettlementMath {
+  gross: number;
+  bank: number;
+  tax: number;
+  commission: number;
+  commissionRate: number;
+  unusualRate: boolean;
+}
+
+export function fetchAppleReceivables() {
+  return apiFetch<{ items: AppleReceivableItem[] }>("/api/admin/finance/apple-receivables");
+}
+
+export function createAppleSettlement(data: {
+  entryIds: string[];
+  /** yyyy-mm-dd */
+  receivedOn: string;
+  bankAmount: number;
+  taxWithheldAmount: number;
+  bankRef?: string;
+  reportRef?: string;
+  note?: string;
+  dryRun?: boolean;
+}) {
+  return apiFetch<{ id?: string; math: AppleSettlementMath; saleCount?: number }>(
+    "/api/admin/finance/apple-settlements",
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+export function cancelAppleSettlement(id: string) {
+  return apiFetch<{ ok: true; removedEntries: number; reopenedSales: number }>(
+    `/api/admin/finance/apple-settlements/${id}`,
+    { method: "DELETE" }
+  );
 }
 
 export type HqPaymentMethod = "BANK" | "CASH";

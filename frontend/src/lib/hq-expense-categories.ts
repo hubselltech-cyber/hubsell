@@ -49,6 +49,12 @@ export const HQ_EXPENSE_CATEGORIES: HqExpenseCategory[] = [
     hint: "Tự sinh khi duyệt lệnh rút — không ghi tay.",
     autoOnly: true,
   },
+  {
+    key: "APP_STORE_FEE",
+    label: "Hoa hồng & thuế App Store",
+    hint: "Tự sinh khi ghi nhận đợt Apple chuyển tiền — chứng từ là báo cáo tài chính Apple + sổ phụ ngân hàng. Không ghi tay.",
+    autoOnly: true,
+  },
   { key: "OTHER_EXPENSE", label: "Chi khác" },
 ];
 

@@ -21,6 +21,7 @@ import {
   ReceiptText,
   Settings2,
   Trash2,
+  Undo2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  cancelAppleSettlement,
   createLedgerEntry,
   createRecurringExpense,
   deleteLedgerEntry,
@@ -80,6 +82,7 @@ import {
   HqIssueInvoiceDialog,
 } from "./hq-invoice";
 import { StatCard, formatCount, formatMoney } from "./shared";
+import { AppleSettlementDialog } from "./apple-settlement-dialog";
 
 const SOURCE_LABEL: Record<string, string> = {
   SUBSCRIPTION: "Thu phí gói dịch vụ",
@@ -949,6 +952,25 @@ export function LedgerSection({
   const [invoiceConfigOpen, setInvoiceConfigOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [issueEntry, setIssueEntry] = useState<PlatformLedgerEntry | null>(null);
+  const [appleOpen, setAppleOpen] = useState(false);
+  /** Bút toán phiếu thu của đợt Apple chuyển đang hỏi hủy. */
+  const [cancelApple, setCancelApple] = useState<PlatformLedgerEntry | null>(null);
+  const [cancellingApple, setCancellingApple] = useState(false);
+
+  async function handleCancelApple() {
+    if (!cancelApple?.appleSettlementId) return;
+    setCancellingApple(true);
+    try {
+      const r = await cancelAppleSettlement(cancelApple.appleSettlementId);
+      toast.success(`Đã hủy đợt Apple chuyển — ${r.reopenedSales} khoản quay về "Chờ Apple chuyển"`);
+      setCancelApple(null);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không hủy được");
+    } finally {
+      setCancellingApple(false);
+    }
+  }
 
   async function handleDelete(entry: PlatformLedgerEntry) {
     setDeletingId(entry.id);
@@ -1035,11 +1057,25 @@ export function LedgerSection({
             hint="Phải bằng 0 trước khi chốt sổ"
           />
           {data.appleReceivable.count > 0 && (
-            <StatCard
-              label="Apple chưa chuyển về"
-              value={formatMoney(data.appleReceivable.amount)}
-              hint={applePayoutHint(data.appleReceivable)}
-            />
+            <Card>
+              <CardContent className="py-5">
+                <p className="text-sm text-muted-foreground">Apple chưa chuyển về</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight">
+                  {formatMoney(data.appleReceivable.amount)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {applePayoutHint(data.appleReceivable)}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => setAppleOpen(true)}
+                >
+                  Ghi nhận Apple đã chuyển
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </div>
       )}
@@ -1153,18 +1189,25 @@ export function LedgerSection({
                         "whitespace-nowrap text-right font-semibold",
                         e.awaitingApple
                           ? "text-amber-700"
-                          : e.direction === "IN"
-                            ? "text-emerald-600"
-                            : "text-rose-600"
+                          : e.appleSale
+                            ? "text-muted-foreground"
+                            : e.direction === "IN"
+                              ? "text-emerald-600"
+                              : "text-rose-600"
                       )}
                       title={
                         e.awaitingApple
                           ? "Khách trả qua App Store — hóa đơn đủ giá, tiền chưa về, không cộng vào Tổng THU"
-                          : undefined
+                          : e.appleSale
+                            ? "Khách trả qua App Store — Apple đã chuyển; tiền vào sổ ở dòng “Apple chuyển tiền” cùng đợt"
+                            : undefined
                       }
                     >
                       {e.direction === "IN" ? "+" : "−"}
                       {formatMoney(e.amount)}
+                      {e.appleSale && !e.awaitingApple && (
+                        <p className="text-xs font-normal">Apple đã chuyển</p>
+                      )}
                       {e.awaitingApple && (
                         <p
                           className="text-xs font-normal"
@@ -1289,15 +1332,30 @@ export function LedgerSection({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="icon-sm"
-                          title="Sửa bút toán"
-                          onClick={() => setDialog({ mode: "edit", entry: e })}
-                        >
-                          <Pencil className="size-4" />
-                        </Button>
-                        {e.withdrawalRequestId === null && e.packagePaymentId === null && (
+                        {e.appleSettlementId && e.packagePaymentId === null ? (
+                          // Bút toán của đợt Apple chuyển: số khóa theo đợt — chỉ hủy cả đợt (nút ở dòng thu).
+                          e.direction === "IN" && (
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              title="Hủy đợt Apple chuyển (nhập sai)"
+                              className="text-muted-foreground hover:text-red-500"
+                              onClick={() => setCancelApple(e)}
+                            >
+                              <Undo2 className="size-4" />
+                            </Button>
+                          )
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
+                            title="Sửa bút toán"
+                            onClick={() => setDialog({ mode: "edit", entry: e })}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                        )}
+                        {e.withdrawalRequestId === null && e.packagePaymentId === null && !e.appleSettlementId && (
                           <Button
                             variant="outline"
                             size="icon-sm"
@@ -1349,6 +1407,34 @@ export function LedgerSection({
           onClose={() => setIssueEntry(null)}
           onIssued={onChanged}
         />
+      )}
+
+      {appleOpen && (
+        <AppleSettlementDialog onClose={() => setAppleOpen(false)} onSaved={onChanged} />
+      )}
+
+      {cancelApple && (
+        <Dialog open onOpenChange={(o) => !o && !cancellingApple && setCancelApple(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Hủy đợt Apple chuyển?</DialogTitle>
+              <DialogDescription>
+                Đợt tiền về ngày {new Date(cancelApple.occurredAt).toLocaleDateString("vi-VN")}, tổng khách trả{" "}
+                {formatMoney(cancelApple.amount)}. Hủy sẽ xóa phiếu thu + phiếu chi hoa hồng / thuế của
+                đợt và đưa các khoản bán về lại &ldquo;Chờ Apple chuyển&rdquo;. Hóa đơn đã xuất không đổi.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCancelApple(null)} disabled={cancellingApple}>
+                Giữ lại
+              </Button>
+              <Button variant="destructive" onClick={handleCancelApple} disabled={cancellingApple}>
+                {cancellingApple && <Loader2 className="size-4 animate-spin" />}
+                Hủy đợt
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

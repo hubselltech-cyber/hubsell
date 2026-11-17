@@ -12,13 +12,21 @@ import {
 } from "@prisma/client";
 import { parseLedgerPeriod } from "../lib/ledger-period";
 import {
-  APPLE_RECEIVABLE_SQL_NOT,
   APPLE_RECEIVABLE_WHERE,
+  APPLE_SALE_SQL_NOT,
   estimateApplePayout,
   groupApplePayouts,
   isAppleReceivable,
+  isAppleSale,
   ledgerCashTotals,
 } from "../services/apple-receivable";
+import {
+  AppleSettlementError,
+  cancelAppleSettlement,
+  computeSettlement,
+  createAppleSettlement,
+  listAppleReceivables,
+} from "../services/apple-settlement";
 import { prisma } from "../lib/prisma";
 import { StaleCache } from "../lib/stale-cache";
 import {
@@ -1356,6 +1364,7 @@ const LEDGER_SELECT = {
   inputInvoiceNo: true,
   paymentMethod: true,
   recurringExpenseId: true,
+  appleSettlementId: true,
   customer: { select: { id: true, email: true, fullName: true } },
 } as const;
 
@@ -1372,6 +1381,8 @@ const HQ_EXPENSE_CATEGORY_KEYS = [
   "TAX_FEE",
   "EQUIPMENT",
   "REFERRAL",
+  // Hoa hồng + thuế Apple trừ khi chuyển tiền bán gói App Store (tự sinh từ đợt Apple chuyển, 17/11/2026).
+  "APP_STORE_FEE",
   "OTHER_EXPENSE",
 ] as const;
 
@@ -1416,7 +1427,12 @@ router.get(
       ]);
       const appleItems = appleAll.map((a) => ({ occurredAt: a.occurredAt, amount: toNumber(a.amount) }));
       const cash = ledgerCashTotals(
-        entries.map((e) => ({ direction: e.direction, amount: toNumber(e.amount), packagePayment: e.packagePayment }))
+        entries.map((e) => ({
+          direction: e.direction,
+          amount: toNumber(e.amount),
+          packagePayment: e.packagePayment,
+          appleSettlementId: e.appleSettlementId,
+        }))
       );
       let pendingInvoices = 0;
       // Cơ cấu CHI theo khoản mục trong tháng — để kế toán thấy tiền ra nằm ở
@@ -1476,10 +1492,13 @@ router.get(
           .sort((a, b) => b.out - a.out),
         recurring,
         entries: entries.map(({ packagePayment, ...e }) => {
-          const awaitingApple = isAppleReceivable({ direction: e.direction, amount: 0, packagePayment });
+          const probe = { direction: e.direction, amount: 0, packagePayment, appleSettlementId: e.appleSettlementId };
+          const awaitingApple = isAppleReceivable(probe);
           return {
             ...e,
             amount: toNumber(e.amount),
+            // Khoản BÁN qua App Store (doanh thu + hóa đơn, không phải tiền quỹ).
+            appleSale: isAppleSale(probe),
             awaitingApple,
             applePayout: awaitingApple ? estimateApplePayout(e.occurredAt) : null,
           };
@@ -1663,10 +1682,27 @@ router.patch(
       } = req.body ?? {};
       const entry = await prisma.platformLedgerEntry.findUnique({
         where: { id: req.params.id },
-        select: { id: true, direction: true, withdrawalRequestId: true, packagePaymentId: true },
+        select: {
+          id: true,
+          direction: true,
+          withdrawalRequestId: true,
+          packagePaymentId: true,
+          appleSettlementId: true,
+        },
       });
       if (!entry) {
         res.status(404).json({ error: "Không tìm thấy bút toán" });
+        return;
+      }
+      // Bút toán do đợt Apple chuyển sinh ra: số liệu khóa theo đợt — sai thì hủy cả đợt.
+      if (
+        entry.appleSettlementId !== null &&
+        entry.packagePaymentId === null &&
+        Object.keys(req.body ?? {}).some((k) => k !== "note")
+      ) {
+        res.status(400).json({
+          error: "Bút toán tự sinh từ đợt Apple chuyển — chỉ sửa được diễn giải; nhập sai thì hủy cả đợt",
+        });
         return;
       }
       const expenseFieldTouched =
@@ -1801,6 +1837,7 @@ router.delete(
           note: true,
           withdrawalRequestId: true,
           packagePaymentId: true,
+          appleSettlementId: true,
         },
       });
       if (!entry) {
@@ -1809,6 +1846,10 @@ router.delete(
       }
       if (entry.withdrawalRequestId !== null) {
         res.status(400).json({ error: "Bút toán tự sinh từ lệnh rút — không xoá được" });
+        return;
+      }
+      if (entry.appleSettlementId !== null) {
+        res.status(400).json({ error: "Bút toán thuộc đợt Apple chuyển — hủy cả đợt thay vì xoá lẻ" });
         return;
       }
       if (entry.packagePaymentId !== null) {
@@ -1827,6 +1868,116 @@ router.delete(
       });
       res.json({ ok: true });
     } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ============================================================
+// ĐỢT APPLE CHUYỂN TIỀN (lát B phải thu Apple, 17/11/2026 — services/apple-settlement.ts)
+// ============================================================
+
+// GET /api/admin/finance/apple-receivables — khoản bán qua App Store còn chờ Apple chuyển.
+router.get(
+  "/finance/apple-receivables",
+  requirePlatformPermission("hq.finance"),
+  async (_req, res, next) => {
+    try {
+      const items = await listAppleReceivables();
+      res.json({
+        items: items.map((i) => ({ ...i, applePayout: estimateApplePayout(i.occurredAt) })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/finance/apple-settlements — ghi nhận một lần Apple chuyển tiền.
+// Body: { entryIds[], receivedOn "yyyy-mm-dd", bankAmount, taxWithheldAmount?,
+//         bankRef?, reportRef?, note?, dryRun? } — dryRun=true chỉ tính, không ghi.
+router.post(
+  "/finance/apple-settlements",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { entryIds, receivedOn, bankAmount, taxWithheldAmount, bankRef, reportRef, note, dryRun } =
+        req.body ?? {};
+      if (!Array.isArray(entryIds)) {
+        res.status(400).json({ error: "Chưa chọn khoản bán nào" });
+        return;
+      }
+      const bank = Math.round(Number(bankAmount));
+      const tax = taxWithheldAmount === undefined || taxWithheldAmount === "" ? 0 : Math.round(Number(taxWithheldAmount));
+      if (dryRun) {
+        const rows = await prisma.platformLedgerEntry.findMany({
+          where: { ...APPLE_RECEIVABLE_WHERE, id: { in: entryIds.filter((x: unknown) => typeof x === "string") } },
+          select: { amount: true },
+        });
+        res.json({ math: computeSettlement(rows.reduce((s, r) => s + toNumber(r.amount), 0), bank, tax) });
+        return;
+      }
+      const actor = await prisma.user.findUnique({ where: { id: req.userId! }, select: { fullName: true } });
+      const result = await createAppleSettlement({
+        entryIds,
+        receivedOn: String(receivedOn ?? ""),
+        bankAmount: bank,
+        taxWithheldAmount: tax,
+        bankRef,
+        reportRef,
+        note,
+        actorId: req.userId!,
+        actorName: actor?.fullName ?? "(không rõ)",
+      });
+      await writeAuditLog(req, {
+        action: "ledger.apple_settlement.create",
+        detail: {
+          settlementId: result.settlement.id,
+          receivedOn,
+          saleCount: result.saleCount,
+          gross: result.math.gross,
+          bank: result.math.bank,
+          commission: result.math.commission,
+          tax: result.math.tax,
+          bankRef: result.settlement.bankRef,
+          reportRef: result.settlement.reportRef,
+        },
+      });
+      res.status(201).json({ id: result.settlement.id, math: result.math, saleCount: result.saleCount });
+    } catch (err) {
+      if (err instanceof AppleSettlementError) {
+        res.status(err.httpStatus).json({ error: err.message });
+        return;
+      }
+      next(err);
+    }
+  }
+);
+
+// DELETE /api/admin/finance/apple-settlements/:id — hủy đợt nhập sai.
+router.delete(
+  "/finance/apple-settlements/:id",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const r = await cancelAppleSettlement(String(req.params.id));
+      await writeAuditLog(req, {
+        action: "ledger.apple_settlement.cancel",
+        detail: {
+          settlementId: r.settlement.id,
+          receivedAt: r.settlement.receivedAt.toISOString(),
+          gross: toNumber(r.settlement.grossAmount),
+          bank: toNumber(r.settlement.bankAmount),
+          removedEntries: r.removedEntries,
+          reopenedSales: r.reopenedSales,
+        },
+      });
+      res.json({ ok: true, removedEntries: r.removedEntries, reopenedSales: r.reopenedSales });
+    } catch (err) {
+      if (err instanceof AppleSettlementError) {
+        res.status(err.httpStatus).json({ error: err.message });
+        return;
+      }
       next(err);
     }
   }
@@ -2957,7 +3108,7 @@ async function computeInvestorReport() {
       SELECT date_trunc('month', l."occurredAt") AS m, l."direction"::text AS direction,
              SUM(l.amount) AS total
       FROM "platform_ledger_entries" l
-      WHERE l."occurredAt" >= ${start6} AND ${Prisma.raw(APPLE_RECEIVABLE_SQL_NOT)}
+      WHERE l."occurredAt" >= ${start6} AND ${Prisma.raw(APPLE_SALE_SQL_NOT)}
       GROUP BY 1, 2`,
     // Cohort: chủ shop nào CÓ ĐƠN trong tháng nào (distinct, 6 tháng).
     prisma.$queryRaw<{ userId: string; m: Date }[]>`

@@ -537,11 +537,12 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
       ? `${e.customer.fullName}${e.customer.email ? ` (${e.customer.email})` : ""}`
       : e.vendorName ?? "",
     "MST NCC": e.vendorTaxCode ?? "",
-    "Tiền vào": e.direction === "IN" && !e.awaitingApple ? e.amount : "",
+    // Bán qua App Store: hóa đơn đủ giá nhưng KHÔNG phải tiền quỹ — tiền vào sổ ở
+    // dòng "Apple chuyển tiền" của đợt (thu tổng − chi hoa hồng/thuế = tiền về).
+    "Tiền vào": e.direction === "IN" && !e.appleSale ? e.amount : "",
     "Tiền ra": e.direction === "OUT" ? e.amount : "",
-    // Bán qua App Store: hóa đơn đủ giá nhưng tiền chưa về — không cộng vào
-    // Tiền vào để tổng khớp sao kê ngân hàng.
     "Chờ Apple chuyển": e.awaitingApple ? e.amount : "",
+    "App Store": e.awaitingApple ? "Chờ Apple chuyển" : e.appleSale ? "Apple đã chuyển" : "",
     "Hình thức TT":
       e.direction === "OUT"
         ? e.paymentMethod === "CASH"
@@ -556,7 +557,7 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
   }));
 
   const totalIn = entries
-    .filter((e) => e.direction === "IN" && !e.awaitingApple)
+    .filter((e) => e.direction === "IN" && !e.appleSale)
     .reduce((s, e) => s + e.amount, 0);
   const totalOut = entries
     .filter((e) => e.direction === "OUT")
@@ -574,6 +575,7 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
     "Tiền vào": totalIn,
     "Tiền ra": totalOut,
     "Chờ Apple chuyển": totalApple || "",
+    "App Store": "",
     "Hình thức TT": "",
     "Hóa đơn": "",
     "Số hóa đơn": "",
@@ -598,7 +600,7 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
 
   const wb = XLSX.utils.book_new();
   const wsLedger = XLSX.utils.json_to_sheet(rows);
-  wsLedger["!cols"] = [20, 8, 30, 44, 32, 14, 14, 14, 16, 14, 12, 16, 20].map((w) => ({ wch: w }));
+  wsLedger["!cols"] = [20, 8, 30, 44, 32, 14, 14, 14, 16, 16, 14, 12, 16, 20].map((w) => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, wsLedger, `So quy ${month}`);
   const wsCategory = XLSX.utils.json_to_sheet(categoryRows);
   wsCategory["!cols"] = [36, 16, 14].map((w) => ({ wch: w }));

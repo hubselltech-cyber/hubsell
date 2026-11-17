@@ -254,6 +254,23 @@ CHƯA kiểm được trên App Store Connect (trình duyệt chưa đăng nhậ
   hàng nhận và hai dòng chi phí "Hoa hồng App Store" + "Thuế nhà thầu Apple đã trừ" (nhà cung cấp Apple
   Distribution International Ltd., MST 9000000486, chứng từ = mã báo cáo). Lệch thì hiện hộp cảnh báo số
   từng bên, không khóa. Phải có báo cáo Apple thật đầu tiên mới biết đúng các cột → làm sau khi có báo cáo.
+  ✅ **LÀM BẢN NHẬP TAY 17/11/2026 (anh: "Vậy làm lát B luôn"), CHƯA commit.** Thẻ "Apple chưa chuyển về" có nút
+  **"Ghi nhận Apple đã chuyển"** → hộp chọn các khoản (mặc định đợt dự kiến sớm nhất), nhập ngày tiền về, số
+  ngân hàng nhận, thuế Apple trừ (0 nếu báo cáo không tách), mã sổ phụ, kỳ báo cáo. Máy tính hoa hồng = tổng
+  khách trả − tiền về − thuế; ngoài dải 10–35 % (ngưỡng em tự chọn quanh 15/30 %) hiện cảnh báo + "Vẫn ghi".
+  Ghi một đợt = bảng `apple_settlements` (migration `20261117120000_apple_settlements`, bật RLS) + các khoản
+  bán mang `appleSettlementId` + 3 bút toán cùng ngày tiền về: THU tổng khách trả (không hóa đơn — đã xuất
+  từng khoản), CHI "Hoa hồng App Store", CHI "Thuế nhà thầu… Apple khấu trừ" — khoản mục mới
+  `APP_STORE_FEE` "Hoa hồng & thuế App Store", NCC Apple Distribution International Ltd., MST 9000000486,
+  số chứng từ = kỳ báo cáo. Thu − chi = đúng tiền về → khớp sổ phụ. Khoản bán qua App Store (đã hay chưa
+  trả) không bao giờ là tiền quỹ. Bút toán của đợt khóa số (chỉ sửa diễn giải, không xóa lẻ); nhập sai →
+  nút "Hủy đợt" trên dòng thu → xóa 3 bút toán, khoản bán về "Chờ Apple chuyển". Máy chủ chặn ghi trùng
+  (409) và tiền về + thuế > tổng khách trả (400). Mã: `backend/src/services/apple-settlement.ts`,
+  `routes/admin.ts` (`/finance/apple-receivables`, `/finance/apple-settlements`), frontend
+  `components/admin/apple-settlement-dialog.tsx`. Excel: "Tiền vào" không gồm khoản bán App Store, thêm
+  cột "App Store" (Chờ / Đã chuyển).
+  ⏳ **Chưa làm:** khớp với báo cáo Apple tự động (cần báo cáo thật đầu tiên + khóa API quyền Finance); tách
+  thuế chỉ đúng khi báo cáo Apple có cột thuế — chưa biết báo cáo trình bày thế nào.
   **Cách tự động (anh hỏi 17/11 "làm sao biết khi nào Apple chuyển, HQ tự đối soát"):**
   - Lịch Apple (trang trợ giúp "Overview of receiving payments", đọc 17/11): báo cáo tài chính của tháng
     tài chính trước có trước **thứ Sáu đầu tiên** của tháng tài chính sau; tiền về **trong 45 ngày kể từ

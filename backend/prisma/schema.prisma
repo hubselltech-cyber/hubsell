@@ -3105,11 +3105,40 @@ model PlatformLedgerEntry {
   createdAt             DateTime                  @default(now())
   /// Hóa đơn đầu vào sinh ra phiếu chi này (tab Hóa đơn đầu vào) — null với phiếu ghi tay.
   inputInvoice          PlatformInputInvoice?
+  /// Đợt Apple chuyển tiền (apple_settlements, 17/11/2026). Trên khoản BÁN qua
+  /// App Store = khoản đã được đợt này trả (hết "chờ Apple chuyển"); trên bút toán
+  /// KHÔNG có packagePaymentId = bút toán do đợt này sinh ra (thu tổng, chi hoa
+  /// hồng, chi thuế) — chỉ hủy được cả đợt. Không khóa ngoại.
+  appleSettlementId     String?
 
   @@index([occurredAt])
   @@index([recurringExpenseId])
   @@index([invoiceStatus, packagePaymentId])
+  @@index([appleSettlementId])
   @@map("platform_ledger_entries")
+}
+
+/// MỘT LẦN Apple chuyển tiền bán gói App Store về tài khoản công ty (lát B phải
+/// thu Apple, 17/11/2026). grossAmount = bankAmount + commissionAmount +
+/// taxWithheldAmount (CHECK trong DB). Bút toán sổ quỹ liên quan mang
+/// appleSettlementId = id này. Xem services/apple-settlement.ts.
+model AppleSettlement {
+  id                String   @id @default(cuid())
+  /// Ngày tiền về tài khoản ngân hàng (theo sổ phụ).
+  receivedAt        DateTime
+  bankAmount        Decimal  @db.Decimal(14, 2)
+  grossAmount       Decimal  @db.Decimal(14, 2)
+  commissionAmount  Decimal  @db.Decimal(14, 2)
+  taxWithheldAmount Decimal  @default(0) @db.Decimal(14, 2)
+  bankRef           String?
+  reportRef         String?
+  note              String?
+  createdById       String?
+  createdByName     String
+  createdAt         DateTime @default(now())
+
+  @@index([receivedAt], map: "apple_settlements_received_idx")
+  @@map("apple_settlements")
 }
 
 /// Chi phí CỐ ĐỊNH hàng tháng của CHÍNH công ty Hubsell (thuê VP, lương, bảo

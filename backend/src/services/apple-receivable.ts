@@ -10,22 +10,24 @@
 // mà hiện riêng thành "Apple chưa chuyển về". Hóa đơn, hoa hồng giới thiệu,
 // thời hạn gói — không đổi.
 //
-// Lát B (chưa làm, cần báo cáo tài chính Apple thật): đối soát theo tháng tài
-// chính → đóng khoản phải thu + ghi phiếu thu đúng số ngân hàng nhận + chi phí
-// hoa hồng / thuế Apple trừ. Khi đó CHỈ sửa điều kiện ở tệp này (thêm "chưa
-// đối soát") — mọi chỗ đọc đều đi qua đây.
+// Lát B (17/11): khi Apple chuyển tiền, HQ ghi nhận một ĐỢT (services/
+// apple-settlement.ts) → các khoản bán của đợt mang appleSettlementId (hết chờ),
+// sổ quỹ có phiếu thu tổng khách trả + phiếu chi hoa hồng + phiếu chi thuế Apple
+// trừ, cùng ngày tiền về. Khoản BÁN qua App Store (đã hay chưa trả) KHÔNG BAO GIỜ
+// tính là tiền quỹ — nó là doanh thu + hóa đơn; tiền quỹ đi qua bút toán của đợt.
 // ============================================================
 
 import { LedgerDirection, PackagePaymentMethod, type Prisma } from "@prisma/client";
 
-/** Lọc Prisma: bút toán THU của khoản mua qua App Store (còn chờ Apple chuyển). */
+/** Lọc Prisma: khoản BÁN qua App Store còn chờ Apple chuyển (chưa vào đợt nào). */
 export const APPLE_RECEIVABLE_WHERE: Prisma.PlatformLedgerEntryWhereInput = {
   direction: LedgerDirection.IN,
   packagePayment: { method: PackagePaymentMethod.APPLE_IAP },
+  appleSettlementId: null,
 };
 
-/** Điều kiện SQL thô tương đương, dùng với bí danh bảng sổ quỹ `l`. */
-export const APPLE_RECEIVABLE_SQL_NOT = `NOT EXISTS (
+/** Điều kiện SQL thô: KHÔNG phải khoản bán qua App Store (bí danh bảng sổ quỹ `l`). */
+export const APPLE_SALE_SQL_NOT = `NOT EXISTS (
   SELECT 1 FROM "package_payments" pp
   WHERE pp."id" = l."packagePaymentId" AND pp."method" = 'APPLE_IAP'
 )`;
@@ -116,15 +118,22 @@ export interface LedgerCashInput {
   direction: LedgerDirection | "IN" | "OUT";
   amount: number;
   packagePayment: { method: PackagePaymentMethod | string } | null;
+  appleSettlementId?: string | null;
 }
 
-export function isAppleReceivable(e: LedgerCashInput): boolean {
+/** Khoản BÁN gói qua App Store (đã hay chưa được Apple trả). */
+export function isAppleSale(e: LedgerCashInput): boolean {
   return e.direction === LedgerDirection.IN && e.packagePayment?.method === PackagePaymentMethod.APPLE_IAP;
 }
 
+/** Khoản bán qua App Store còn chờ Apple chuyển. */
+export function isAppleReceivable(e: LedgerCashInput): boolean {
+  return isAppleSale(e) && !e.appleSettlementId;
+}
+
 /**
- * Tổng tiền quỹ một kỳ: THU chỉ gồm tiền đã vào tài khoản; khoản App Store
- * tách sang `appleAwaiting` (đã xuất hóa đơn, chờ Apple chuyển).
+ * Tổng tiền quỹ một kỳ: khoản BÁN qua App Store không bao giờ là tiền quỹ (tiền
+ * đi qua bút toán của đợt Apple chuyển); khoản chưa trả gom vào `appleAwaiting`.
  */
 export function ledgerCashTotals(entries: LedgerCashInput[]) {
   let cashIn = 0;
@@ -132,9 +141,11 @@ export function ledgerCashTotals(entries: LedgerCashInput[]) {
   let appleAwaiting = 0;
   let appleAwaitingCount = 0;
   for (const e of entries) {
-    if (isAppleReceivable(e)) {
-      appleAwaiting += e.amount;
-      appleAwaitingCount += 1;
+    if (isAppleSale(e)) {
+      if (!e.appleSettlementId) {
+        appleAwaiting += e.amount;
+        appleAwaitingCount += 1;
+      }
     } else if (e.direction === LedgerDirection.IN) cashIn += e.amount;
     else cashOut += e.amount;
   }
