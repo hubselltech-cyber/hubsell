@@ -673,3 +673,51 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
 - Sửa tay ô Tồn kho và Kiểm kê nhập số TRÊN KỆ → máy trừ phần đang giữ trước khi ghi sổ (vá luôn rủi ro Kiểm kê ở trên).
 - Không làm kiểu Sapo đổi lúc trừ kho sang xuất kho vật lý — đụng toàn bộ mô hình trừ / hoàn / đối soát, rủi ro lớn.
 - Cần thiết kế + test riêng trước khi code (đụng mô hình kho): điểm tăng / giảm bộ đếm cho cả 3 sàn + đơn tại quầy, đơn hủy sau chuẩn bị hàng, đơn giao thất bại quay về.
+
+## 12. Sửa sản phẩm kho theo mẫu + thêm phân loại (18/11/2026 — ĐÃ LÀM, kiểm local; ĐÃ COMMIT + PUSH 18/11, anh: "Commit và push lên em"; chưa kiểm prod)
+
+**Anh Trung:** "Trong Tổng kho đã tạo được sản phẩm kho tuy nhiên lại không thể sửa. Khách thêm SKU vào sản phẩm thì không thêm được. Bổ sung ngay phần sửa." + ảnh khoanh ô cuối dòng cha: "thêm icon cái bút chỉnh sửa vào là hợp lý".
+
+### 12.1 Khảo sát trước khi làm (đọc mã, 18/11)
+
+- Backend ĐÃ có `PATCH /api/products/:id` nhận tên / phân loại / mã SKU / giá, nhưng web chỉ gọi nó cho mã vạch, cảnh báo — tồn an toàn và ngừng bán; mobile không gọi. Không có màn sửa nào, không có đường thêm phân loại vào mẫu đang có.
+- Sản phẩm kho = một MẪU (tên) + các phân loại, mỗi phân loại một dòng `Product`, gom bằng `groupKey` (`lib/product-group.ts`). Sửa tên LẺ một dòng (như PATCH cũ cho phép) làm dòng đó rơi khỏi mẫu → sửa phải đi theo mẫu, trọn gói một lần ghi.
+- Đổi mã SKU đụng gì: liên kết sàn, dòng đơn, nhật ký, phiếu đều trỏ theo `productId` → giữ nguyên. Đồng bộ sản phẩm từ sàn không ghi đè tên / phân loại / mã của sản phẩm kho. Phiếu kho cũ in mã lúc lập (ảnh chụp) — đúng ý. Thứ duy nhất lệch: mã kho khác mã trên gian thì Tự khớp về sau dựa theo mã mới → chỉ cảnh báo tại ô, không chặn.
+- Giá bán kho (`Product.sellingPrice`) không đẩy lên sàn — chỉ hiện ở Tổng kho và làm giá gợi ý khi Sao chép sản phẩm từ kho → sửa tự do.
+- `ListingCopyJob.sourceGroupKey` chỉ đọc lúc tạo lượt (chụp ngay thành `source`) → đổi tên mẫu không ảnh hưởng lượt chép đang chạy.
+- Ảnh: ảnh tải lên đang gắn vào lượt Sao chép sản phẩm (`ListingImageUpload.jobId`), cron dọn ảnh không gắn lượt sau 2 ngày, quyền tải lên là `operations.copy-listing` → đổi ảnh ở hộp sửa cần thiết kế gắn ảnh riêng, KHÔNG làm trong lát này.
+
+### 12.2 Thiết kế
+
+- **API** (`routes/products.ts`, logic ở `services/product-group-edit.ts`):
+  - `GET /api/products/:id/group` — mọi phân loại của mẫu chứa SKU đó (sản phẩm đơn = chính nó), xếp theo phân loại như bảng; giá vốn cắt với người không thấy tài chính.
+  - `PUT /api/products/:id/group` — body `{ productName, variants: [{ id, skuCode?, variantName?, sellingPrice? }], added: [{ skuCode, variantName, sellingPrice, costPrice?, stock? }] }`. Trường vắng = giữ nguyên; dòng không gửi = giữ nguyên. Một giao dịch: (1) tên + khóa gom cho cả mẫu, (2) dòng có đổi, (3) phân loại mới + tồn ban đầu qua sổ kho (`applyStockDelta`, lý do "Tồn ban đầu khi thêm phân loại"). Ghi cần chủ shop hoặc quyền `warehouse.products` (điểm mount còn mở cho quyền `orders` để màn đơn đọc sản phẩm).
+  - `PATCH /:id` giữ nguyên cho việc từng dòng (mã vạch, cảnh báo, ngừng bán…). Không client nào gửi tên / mã qua PATCH; đừng thêm.
+- **Luật** (thuần ở `planGroupEdit`, có test):
+  - Mẫu từ 2 dòng: dòng nào cũng phải có tên phân loại. Sản phẩm đơn muốn thêm phân loại thì phải đặt tên phân loại cho dòng gốc trước (hộp báo ngay tại ô).
+  - Trùng tên phân loại / trùng mã trong mẫu chỉ bắt ở dòng VỪA ĐỔI hoặc MỚI THÊM — dữ liệu cũ kéo từ sàn trùng sẵn không chặn việc sửa dòng khác.
+  - Mã SKU mới: chữ không dấu, số, `- _ .`, tối đa 50 ký tự, lưu chữ hoa. Sàn độ dài hạ về 1 (như Sao chép từ sàn — mã phải đặt giống mã trên gian thì mới Tự khớp); dưới 6 ký tự chỉ nhắc "không đăng được lên TikTok". Mã KHÔNG đổi thì không kiểm (mã cũ có thể chứa dấu cách / ngoặc).
+  - Mã mới không trùng mã SKU sản phẩm khác trong Tổng kho và không trùng MÃ VẠCH của sản phẩm khác (ô quét nhận cả hai loại mã). Mã trên gian KHÔNG chặn.
+  - Đổi tên trùng tên một MẪU KHÁC → **chặn hẳn (409)**, không chỉ cảnh báo: hai mẫu sẽ gộp làm một và hộp này không tách lại được (đổi tên là đổi cả khối đã gộp).
+  - Đổi chéo / nối đuôi mã giữa các phân loại trong một lần lưu: dòng đang giữ mã bị dòng khác lấy nhả ra mã tạm trước (ràng buộc duy nhất kiểm từng câu lệnh).
+  - Phân loại mới: mã vạch DB tự sinh, ảnh lấy theo mẫu, giá vốn chỉ người thấy tài chính nhập được (người khác gửi cũng về 0), tồn ban đầu 0 … 1.000.000. Tối đa 100 phân loại mỗi lần lưu (bằng trần form Tạo sản phẩm mới); mẫu trên 500 phân loại không mở ở hộp.
+- **Không sửa ở hộp này** (ghi rõ cuối hộp, có cửa riêng): tồn kho (Nhập · Xuất), giá vốn của SKU ĐANG CÓ (Cấu hình Giá vốn — đụng tài chính, đơn cũ đóng băng giá), mã vạch (⋯ › Mã vạch, cảnh báo & tồn an toàn), xóa / ngừng bán (⋯).
+- **Web** (`components/products/edit/`: `product-edit-dialog.tsx`, `variant-rows.tsx`, `draft.ts`):
+  - Cửa vào: **bút chì ở ô cuối dòng cha** (thẳng cột với nút ⋯ của dòng con) và mục **"Sửa sản phẩm"** đầu menu ⋯ của dòng con / sản phẩm đơn (thêm nút thứ tư vào hàng Nhập · Xuất · ⋯ làm bảng tràn ở 1366). Chỉ hiện với người có quyền Tổng kho.
+  - Là HỘP THOẠI, không phải trang riêng: lưu xong khách vẫn đứng đúng trang, đúng ô tìm của bảng. Hộp tự tải đủ mẫu (bảng có thể đang lọc chỉ thấy vài phân loại), tải một lần mỗi lần mở, không qua bộ đệm truy vấn để lượt làm tươi nền không đổ đè chữ đang gõ.
+  - Lỗi hiện tại ô khi gõ (dòng mới chưa gõ gì thì chưa tô đỏ); chân hộp dính đáy luôn có nút Lưu + lỗi đầu tiên; chỉ gửi dòng / trường thật sự đổi. Đang có chữ chưa lưu thì bấm ra ngoài hộp không đóng (Hủy, X, Esc vẫn đóng). Ô mã SKU hiện chữ hoa khi gõ.
+  - Đổi mã của dòng đang nối gian: dòng vàng "Đang nối N SKU sàn — liên kết giữ nguyên, nhưng mã mới sẽ khác mã trên sàn".
+
+### 12.3 Đã kiểm (local, DB dev, tài khoản admin@hubsell.vn, dữ liệu thử `SUATHU-*`)
+
+- `npx tsc --noEmit` hai phía sạch, eslint tệp sửa sạch; test mới `services/__tests__/product-group-edit.test.ts` (luật, không DB) + `product-group-edit-db.test.ts` (ghi thật: đổi tên cả mẫu, đổi chéo mã, chặn gộp mẫu, trùng mã / mã vạch, thêm phân loại qua sổ kho, không ghi dở khi lỗi) — 34 test qua.
+- Trên trình duyệt: bút chì dòng cha + mục ⋯ mở đúng hộp; đổi mã dòng đang nối gian (liên kết Offline giữ nguyên) + thêm phân loại có giá vốn, tồn 15 → bảng hiện ngay dòng mới, có mã vạch, tồn vào vị trí mặc định; sản phẩm đơn → 2 phân loại; đổi tên trùng mẫu khác → báo lý do, hộp giữ nguyên.
+- Co màn: đo 1280 / 1440 / 1700 ở giao diện tối, mẫu 25 phân loại tên dài, mã 44 ký tự: hộp không tràn ngang, ô giá đủ chỗ, chữ ô nhập 14px, nút Lưu luôn trong tầm mắt. Mã quá ~36 ký tự bị che đuôi trong ô (rê chuột hiện đủ). Khung hẹp (~650px) bảng cuộn ngang trong khung. Giao diện sáng mới soi bằng ảnh chụp ở 1440.
+
+### 12.4 Chưa làm / để sau
+
+- Đổi ảnh sản phẩm / ảnh phân loại (cần thiết kế gắn ảnh tải lên vào sản phẩm kho, xem 12.1).
+- Chuyển một phân loại sang mẫu khác; gộp hai mẫu có chủ ý.
+- Mobile (màn Kho) chưa có sửa.
+- Chưa kiểm trên prod; chưa thử bằng tài khoản nhân viên trên giao diện (luật quyền đã có ở route, chưa có test riêng cho nhánh 403).
+

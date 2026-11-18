@@ -1820,6 +1820,56 @@ export function deleteProduct(productId: string) {
   });
 }
 
+// ----- Sửa sản phẩm kho theo MẪU + thêm phân loại (18/11/2026, hộp "Sửa sản phẩm" ở Tổng kho) -----
+
+/** Một phân loại (một SKU kho) của mẫu đang sửa. */
+export interface ProductGroupVariant {
+  id: string;
+  skuCode: string;
+  barcode: string | null;
+  /** null = sản phẩm đơn chưa có phân loại. */
+  variantName: string | null;
+  sellingPrice: number;
+  /** Vắng mặt khi người đang xem không được biết giá vốn. */
+  costPrice?: number;
+  quantityInStock: number;
+  isActive: boolean;
+  imageUrl: string | null;
+  /** Số SKU sàn đang nối vào dòng này. */
+  linkedChannels: number;
+}
+
+export interface ProductGroupDetail {
+  /** Dòng đã bấm Sửa. */
+  anchorId: string;
+  productName: string;
+  imageUrl: string | null;
+  variants: ProductGroupVariant[];
+  costPriceHidden: boolean;
+  /** Số phân loại thêm tối đa trong một lần lưu. */
+  addMax: number;
+}
+
+/** Trường vắng = giữ nguyên; dòng không gửi = giữ nguyên (vẫn đổi tên theo mẫu). */
+export interface ProductGroupSavePayload {
+  productName: string;
+  variants: { id: string; skuCode?: string; variantName?: string; sellingPrice?: number }[];
+  added: { skuCode: string; variantName: string; sellingPrice: number; costPrice?: number; stock?: number }[];
+}
+
+/** Mọi phân loại của mẫu chứa SKU này (sản phẩm đơn = chính nó). */
+export function fetchProductGroup(productId: string) {
+  return apiFetch<ProductGroupDetail>(`/api/products/${productId}/group`);
+}
+
+/** Lưu trọn gói: tên mẫu, phân loại / mã SKU / giá bán từng dòng, phân loại mới. Lỗi luật → ApiError.message. */
+export function saveProductGroup(productId: string, payload: ProductGroupSavePayload) {
+  return apiFetch<ProductGroupDetail>(`/api/products/${productId}/group`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export interface ImportResult {
   created: number;
   updated: number;

@@ -1,7 +1,8 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Response } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { Prisma, InventoryLogType, Role } from "@prisma/client";
+import { hasPermission } from "../config/permission-registry";
 import { prisma } from "../lib/prisma";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import {
@@ -17,6 +18,13 @@ import {
 } from "../integrations/inventory-push";
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
+import {
+  GROUP_ADD_MAX,
+  loadProductGroup,
+  type ProductGroupDetail,
+  ProductGroupEditError,
+  saveProductGroup,
+} from "../services/product-group-edit";
 import { awaitingShipByProduct } from "../services/stock-awaiting-ship";
 import { subtreeIds } from "../lib/location-tree";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
@@ -437,7 +445,68 @@ router.get("/", async (req: AuthRequest, res, next) => {
   }
 });
 
-// PATCH /api/products/:id — Cập nhật thông tin sản phẩm (không chỉnh tồn kho ở đây)
+// ── SỬA SẢN PHẨM THEO MẪU + THÊM PHÂN LOẠI (18/11/2026) — services/product-group-edit.ts ──
+// GET  /api/products/:id/group — mọi phân loại của mẫu chứa SKU này (hộp "Sửa sản phẩm" ở Tổng kho).
+// PUT  /api/products/:id/group — lưu trọn gói: tên mẫu, phân loại / mã SKU / giá bán từng dòng, phân
+// loại mới. Mount cho cả quyền "orders" (màn đơn cần đọc sản phẩm) nên việc GHI gác thêm ở đây.
+function sendGroupEditError(res: Response, err: unknown, next: NextFunction): void {
+  if (err instanceof ProductGroupEditError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  next(err);
+}
+
+/** Mẫu trả về cho hộp sửa — giá vốn cắt khỏi dữ liệu với người không thấy tài chính. */
+function groupEditResponse(req: AuthRequest, detail: ProductGroupDetail) {
+  const seesFinancials = canSeeFinancials(req);
+  return {
+    ...detail,
+    variants: detail.variants.map((v) => hideCost(v, seesFinancials)),
+    costPriceHidden: !seesFinancials,
+    addMax: GROUP_ADD_MAX,
+  };
+}
+
+router.get("/:id/group", async (req: AuthRequest, res, next) => {
+  try {
+    const detail = await loadProductGroup(req.ownerId!, req.params.id);
+    if (!detail) {
+      res.status(404).json({ error: "Không tìm thấy sản phẩm" });
+      return;
+    }
+    res.json(groupEditResponse(req, detail));
+  } catch (err) {
+    sendGroupEditError(res, err, next);
+  }
+});
+
+router.put("/:id/group", async (req: AuthRequest, res, next) => {
+  try {
+    if (req.userRole !== Role.ADMIN && !hasPermission(req.permissions ?? [], "warehouse.products")) {
+      res.status(403).json({ error: "Tài khoản chưa có quyền sửa sản phẩm ở Tổng kho — nhờ chủ shop gán quyền ở trang Nhân viên." });
+      return;
+    }
+    const detail = await saveProductGroup({
+      ownerId: req.ownerId!,
+      actorId: req.userId!,
+      productId: req.params.id,
+      body: req.body,
+      allowCost: canSeeFinancials(req),
+    });
+    if (!detail) {
+      res.status(404).json({ error: "Không tìm thấy sản phẩm" });
+      return;
+    }
+    res.json(groupEditResponse(req, detail));
+  } catch (err) {
+    sendGroupEditError(res, err, next);
+  }
+});
+
+// PATCH /api/products/:id — Cập nhật MỘT dòng SKU: mã vạch, cảnh báo / tồn an toàn, ngừng bán, thuế,
+// thông số cho Trợ lý vận hành (không chỉnh tồn kho ở đây). Tên / phân loại / mã SKU của sản phẩm thì
+// web sửa qua PUT /:id/group ở trên — sửa lẻ tên một dòng làm dòng đó rơi khỏi mẫu cha–con.
 router.patch("/:id", async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;

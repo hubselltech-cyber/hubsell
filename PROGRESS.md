@@ -5,6 +5,16 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 18/11 tối muộn — Tổng kho: SỬA sản phẩm kho + THÊM phân loại (anh: "tạo được sản phẩm kho nhưng không sửa được, khách thêm SKU vào sản phẩm thì không thêm được… bổ sung ngay phần sửa"; "thêm icon cái bút chỉnh sửa vào là hợp lý") — ✅ ĐÃ COMMIT + PUSH 18/11 (anh: "Commit và push lên em")
+
+- Khảo sát: backend có sẵn `PATCH /api/products/:id` nhận tên / mã nhưng web không có màn nào gọi, không có đường thêm phân loại vào mẫu; sửa lẻ tên một dòng làm dòng rơi khỏi mẫu cha–con → làm đường sửa THEO MẪU.
+- Backend: `services/product-group-edit.ts` (luật thuần `planGroupEdit` + ghi một giao dịch) + `GET` / `PUT /api/products/:id/group`. Sửa tên cả mẫu, phân loại / mã SKU / giá bán từng dòng, thêm phân loại (mã vạch tự sinh, tồn ban đầu qua sổ kho). Chặn: trùng mã trong Tổng kho, trùng mã vạch sản phẩm khác, đổi tên trùng mẫu khác (gộp mẫu). Không sửa ở đây: tồn, giá vốn SKU đang có, mã vạch, ảnh.
+- Web: `components/products/edit/` (hộp thoại + bảng phân loại + lớp nháp); bút chì ở ô cuối dòng cha, mục "Sửa sản phẩm" đầu menu ⋯.
+- Kiểm: tsc 2 phía + eslint sạch; 34 test mới qua (luật + ghi DB dev); tự chạy trên trình duyệt local các ca đổi mã dòng đang nối gian, thêm phân loại, sản phẩm đơn → mẫu, đổi tên trùng mẫu khác; đo 1280 / 1440 / 1700 giao diện tối với mẫu 25 phân loại.
+- ⏳ Chưa làm: đổi ảnh, chuyển phân loại sang mẫu khác, mobile. Chưa kiểm prod, chưa thử tài khoản nhân viên trên giao diện. Dữ liệu thử `SUATHU-*` trên DB dev đã dọn. Commit chỉ gồm tệp của lát này (cây làm việc còn thay đổi của việc video đóng hàng — `api.ts` / PROGRESS tách phần).
+- Ghi ở: docs `QUAN-LY-KHO-TAI-CAU-TRUC.md` mục 12; memory `hubsell-quan-ly-kho-nang-cap-2026-11-05.md`.
+
+---
 ## Phiên 18/11 chiều (Video đóng hàng — NHIỀU BÀN + đường truyền quy mô lớn) — Anh: "đẩy sớm kế hoạch làm nhiều màn hình… phòng trước các rủi ro về đường truyền, khi có hàng chục nghìn shop đóng hàng cùng lúc" → 📝 bản thiết kế, CHƯA code
 
 - Viết `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 18: bảng số 1.000 / 10.000 / 30.000 shop (lúc nhọn ≈ 14 / 140 / 420 video / giây, 0,7–20 Gbps vào R2 — phần R2 gánh); trang giới hạn R2 đọc lại: không trần theo bucket, chỉ 1 lần ghi / giây trên CÙNG một tên tệp.

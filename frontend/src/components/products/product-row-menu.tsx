@@ -8,6 +8,7 @@ import {
   Loader2,
   MoreHorizontal,
   PauseCircle,
+  Pencil,
   PlayCircle,
   Trash2,
 } from "lucide-react";
@@ -28,6 +29,8 @@ import { cn } from "@/lib/utils";
 /**
  * MENU "⋯" của một dòng Hàng hóa (24/09): việc thỉnh thoảng mới làm gom vào
  * một nút để hàng nút chính (Nhập · Xuất) không phình.
+ *   - Sửa sản phẩm (18/11/2026, người có quyền Tổng kho) — mở hộp sửa cả mẫu: tên, phân loại,
+ *     mã SKU, giá bán, thêm phân loại. Dòng cha có nút bút chì riêng mở cùng hộp này.
  *   - Lịch sử kho (ai cũng xem được)
  *   - Cài đặt cảnh báo / tồn an toàn (chủ shop)
  *   - Ngừng kinh doanh ⇄ Bán lại (chủ shop) — ẩn khỏi bảng, giữ đơn cũ + liên kết
@@ -37,12 +40,15 @@ import { cn } from "@/lib/utils";
 export function ProductRowMenu({
   product,
   isAdmin,
+  onEdit,
   onHistory,
   onSettings,
   onChanged,
 }: {
   product: Product;
   isAdmin: boolean;
+  /** Vắng = người xem không có quyền sửa sản phẩm kho → ẩn mục. */
+  onEdit?: () => void;
   onHistory: () => void;
   onSettings: () => void;
   onChanged: () => void;
@@ -111,6 +117,19 @@ export function ProductRowMenu({
           <MoreHorizontal className="size-4" />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-56 p-1">
+          {onEdit && (
+            <button
+              type="button"
+              className={item}
+              onClick={() => {
+                setOpen(false);
+                onEdit();
+              }}
+            >
+              <Pencil className="size-4 text-slate-500" />
+              Sửa sản phẩm
+            </button>
+          )}
           <button
             type="button"
             className={item}

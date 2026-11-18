@@ -28,6 +28,7 @@ import {
   Loader2,
   MapPin,
   PackageOpen,
+  Pencil,
   Plus,
   Printer,
   RefreshCw,
@@ -66,6 +67,7 @@ import { InventoryLogTable } from "@/components/products/inventory-log-table";
 import { StockVoucherTable } from "@/components/products/stock-voucher-table";
 import { SuppliersTab } from "@/components/products/suppliers/suppliers-tab";
 import { ProductBulkBar } from "@/components/products/product-bulk-bar";
+import { ProductEditDialog, type ProductEditTarget } from "@/components/products/edit/product-edit-dialog";
 import { ProductHistoryDialog } from "@/components/products/product-history-dialog";
 import { ProductRowMenu } from "@/components/products/product-row-menu";
 import { StockLevelsCell } from "@/components/products/stock-levels-cell";
@@ -366,6 +368,9 @@ export default function ProductsHubPage() {
   } | null>(null);
   // SKU đang mở hộp cài đặt riêng (ngưỡng cảnh báo + tồn an toàn).
   const [skuSettings, setSkuSettings] = useState<Product | null>(null);
+  // Sửa sản phẩm theo mẫu (18/11/2026): SKU khách bấm Sửa; hộp tự tải đủ mọi phân loại của mẫu.
+  const [editing, setEditing] = useState<ProductEditTarget | null>(null);
+  const canEditProducts = can(getStoredUser(), "warehouse.products");
   // Cài nhanh cảnh báo + tồn an toàn cho các SKU đang tích (09/11/2026).
   const [bulkSettingsOpen, setBulkSettingsOpen] = useState(false);
 
@@ -933,6 +938,7 @@ export default function ProductsHubPage() {
             <ProductRowMenu
               product={row.original}
               isAdmin={isAdmin}
+              onEdit={canEditProducts ? () => setEditing({ productId: row.original.id, highlight: true }) : undefined}
               onHistory={() => setHistory(row.original)}
               onSettings={() => setSkuSettings(row.original)}
               onChanged={load}
@@ -942,7 +948,7 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, valueSublineShow, awaitSublineShow]
+    [seesCost, isAdmin, canEditProducts, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, valueSublineShow, awaitSublineShow]
   );
 
   const table = useReactTable({
@@ -1131,7 +1137,28 @@ export default function ProductsHubPage() {
             />
           </TableCell>
         )}
-        <TableCell className={cn(TEXT_SUB, "text-center")}>—</TableCell>
+        {canEditProducts ? (
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            {/* Bút chì SỬA CẢ MẪU (anh Trung 18/11/2026) — đứng thẳng cột với nút ⋯ của dòng con: hai ô
+                trống giữ chỗ của Nhập · Xuất. */}
+            <div className="flex justify-center gap-1">
+              <span className="size-8 shrink-0" aria-hidden />
+              <span className="size-8 shrink-0" aria-hidden />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-muted-foreground"
+                title={`Sửa sản phẩm, thêm phân loại — ${g.name}`}
+                aria-label={`Sửa sản phẩm ${g.name}`}
+                onClick={() => setEditing({ productId: rows[0].id, highlight: false })}
+              >
+                <Pencil className="size-4" />
+              </Button>
+            </div>
+          </TableCell>
+        ) : (
+          <TableCell className={cn(TEXT_SUB, "text-center")}>—</TableCell>
+        )}
       </TableRow>
     );
   }
@@ -1766,6 +1793,17 @@ export default function ProductsHubPage() {
           open={true}
           onOpenChange={(open) => {
             if (!open) setSkuSettings(null);
+          }}
+          onSaved={load}
+        />
+      )}
+
+      {/* Sửa sản phẩm theo mẫu + thêm phân loại */}
+      {canEditProducts && (
+        <ProductEditDialog
+          target={editing}
+          onOpenChange={(open) => {
+            if (!open) setEditing(null);
           }}
           onSaved={load}
         />
