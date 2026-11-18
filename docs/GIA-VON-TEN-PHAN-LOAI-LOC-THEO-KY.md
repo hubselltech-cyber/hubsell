@@ -146,3 +146,7 @@ Mỗi dòng hàng: **tên sản phẩm** (không đuôi) / **TÊN PHÂN LOẠI**
 - Trước khi đẩy OTA: cây git trong `hubsell-mobile` phải sạch (`scripts/ota-update.mjs` từ chối nếu còn tệp chưa commit) — hiện
   còn `src/lib/scan-sounds.ts` (sửa âm báo quét 18/11) chưa commit, chờ anh duyệt.
 - App cũ gặp máy chủ mới và app mới gặp máy chủ cũ đều chạy (trường mới là tùy chọn; không có thì giữ tên cũ, chỉ ẩn mã máy).
+- **Đã lên 19/11 rạng sáng:** push `4a23a173` + `dd167b09`; `/health` prod đổi sang `dd167b09` sau ~5 phút (migration qua).
+  OTA: anh bảo "Đẩy OTA 1.4.3" → update group `2b06e23a-97f2-49d6-9673-bfa54501cd96`, kênh production, runtime 1.4.3, iOS +
+  Android, từ commit `dd167b09` — bản OTA đầu tiên của runtime 1.4.3. `scan-sounds.ts` được tạm cất lúc đẩy rồi trả lại, nên
+  bản OTA không chứa sửa âm báo. Máy 1.4.2 không nhận. ❌ Chưa thấy trên máy thật; chưa mở đơn mới trên prod để nhìn dòng phân loại.
