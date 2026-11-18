@@ -540,3 +540,256 @@ luật hết giờ; (2) số giờ còn lại ở hàng tab và trên màn quay,
 tính thẳng, không bậc; trả trước; không theo tháng; giờ không hết hạn; không trừ VAT. Ba gói sẵn 50 / 200 / 500 giờ và mức mua tối
 thiểu 20 giờ vẫn là đề xuất của em. Chưa sửa mã: cấu hình gói và hộp mua trên web còn bản cũ; luồng thanh toán, cộng giờ, xuất hóa đơn
 chưa làm.
+
+## 17. Quay video trên app cho NHÂN VIÊN — phương án (18/11/2026, ĐỀ XUẤT, anh CHƯA duyệt, chưa code)
+
+> Anh Trung (thử TestFlight 1.5.0 build 34): "Phần quay video này đang ở tab tổng quan, nhưng với nhân viên kho thì lại không được cung cấp
+> quyền xem tổng quan nên cần em thiết kế phương án hợp lý".
+
+**Hiện trạng (đã đọc mã):**
+- App: ô "Quay video đóng gói" chỉ ở tab Tổng quan — chỉ CHỦ SHOP có. Nhân viên vào khu Kho; nút QR giữa chỉ hiện khi có quyền `orders`
+  (`(warehouse)/_layout.tsx`), trong đó đã có 3 chế độ Xem đơn · Quét nhiều · Đóng gói. Nhân viên chỉ có quyền `warehouse.returns` thì
+  không có nút QR, quét nhận hàng hoàn ở Kho → Đơn hoàn (`/scan-returns`).
+- Máy chủ: `services/pack-video/access.ts` mở cổng khi email người ĐĂNG NHẬP nằm trong danh sách thí điểm VÀ là chủ tài khoản →
+  **nhân viên của admin@hubsell.vn hiện bị chặn 403 FEATURE_LOCKED** (đúng chốt 16/11 "chỉ một tài khoản"), kể cả khi lối vào trên app có.
+
+**Đề xuất:**
+1. **Lối vào đóng hàng = chế độ thứ tư của nút QR giữa: Xem đơn · Quét nhiều · Đóng gói · Quay video.** Chủ shop và nhân viên cùng có
+   nút QR, người gói hàng vốn đã mở tab này cả ca; app nhớ chế độ dùng lần trước nên mở lại là vào thẳng Quay video. Ô ở Tổng quan giữ làm lối
+   tắt cho chủ shop. Tài khoản chưa mở tính năng: KHÔNG hiện chế độ này (app ẩn, giữ chốt 14/11).
+2. **Lối vào khui hàng = nút "Quay khui hàng" ở Kho → Đơn hoàn** (mở màn quay ở chế độ khui, `?mode=unbox`) — cho người đối soát hàng hoàn
+   không có nút QR; trong màn quay vẫn có công tắc Đóng hàng | Khui hàng hoàn.
+3. **Quyền: KHÔNG thêm ô quyền mới** — ai có quyền Đơn hàng (`orders`, đang gói hàng) được quay video đóng hàng; ai có quyền Đối soát đơn
+   hoàn (`warehouse.returns`) được quay khui hàng. Chủ shop không phải cài thêm gì. Xem / tải video trên web vẫn CHỈ chủ shop (như hiện tại).
+4. **Máy chủ:** cổng tính theo CHỦ SHOP — email của chủ (tra theo `ownerId`) nằm trong danh sách thí điểm thì cả nhân viên của chủ đó
+   được dùng. Các đường GHI (`POST /`, `/parts`, `/complete`, `/match`) cho nhân viên theo quyền ở mục 3 (khui = `warehouse.returns`, đóng
+   = `orders`); các đường ĐỌC (danh sách, tải về, thống kê) giữ chủ shop. `features.packVideo` trả cho nhân viên theo cùng luật. Video ghi
+   `recordedById` = nhân viên → cột "Người quay" + thống kê theo người quay chạy luôn (K4). Tra email chủ = một câu theo khóa chính mỗi
+   lượt gọi (hoặc đệm 60 giây) — không tốn đáng kể.
+5. **Về sau (không làm lượt này):** gộp quay vào chế độ Đóng gói — quét tem vừa chuyển "Đã đóng gói" vừa quay, một thao tác (đúng "khách
+   cần một nút"); phải thay camera của màn Đóng gói sang thư viện mới nên để sau khi bản thử ổn.
+
+**Đụng prod:** mục 4 là sửa máy chủ (push + deploy); mục 1–2 là app (bản TestFlight nhánh thử). Chờ anh duyệt.
+
+### 17.1 Anh đổi lối vào (18/11): "Thêm quyền nhân viên vào nút QR thì rối quá… trong phần 'Đơn hàng' trên app mình thêm một tab là 'Quay video gói hàng'"
+
+→ BỎ đề xuất "chế độ thứ tư ở nút QR". Lối vào = tab con **"Quay video gói hàng"** trong **Đơn hàng**, theo khuôn tab con sẵn có của Kho
+(`SegmentedTabs` Tồn kho | Đơn hoàn trong `screens/KhoScreen.tsx`).
+
+Vướng đã đọc mã: **chỉ CHỦ SHOP có tab Đơn hàng** (`(admin)/_layout.tsx`: Trang chủ · Đơn hàng · QR · Kho · Cấu hình). Khu nhân viên chỉ
+có Kho · QR · Cấu hình (`(warehouse)/_layout.tsx`) — nhân viên không có "Đơn hàng" nào để đặt tab con. Hai cách cho nhân viên (CHỜ ANH CHỌN):
+- **(A) Thêm tab dưới "Đơn hàng" cho nhân viên có quyền Đơn hàng** (Kho · Đơn hàng · QR · Cấu hình), bên trong cùng hai tab con như chủ shop:
+  Danh sách đơn | Quay video gói hàng. Một chỗ cho mọi người, dễ chỉ việc ("vào Đơn hàng → Quay video"); nhân viên thấy thêm danh sách đơn
+  — đúng phạm vi quyền Đơn hàng họ đã có trên web. Em nghiêng về cách này.
+- **(B) Nhân viên: thêm tab con "Quay video gói hàng" vào Kho** (Tồn kho | Đơn hoàn | Quay video), chủ shop đặt ở Đơn hàng. Ít đụng hơn
+  nhưng hai vai hai chỗ.
+Phần còn lại của mục 17 giữ: nút "Quay khui hàng" ở Kho → Đơn hoàn; quyền theo `orders` / `warehouse.returns`, không thêm ô quyền; cổng máy
+chủ tính theo chủ shop (nhân viên của chủ thí điểm được ghi video); xem / tải trên web vẫn chỉ chủ shop.
+
+## 18. NHIỀU BÀN trên một máy + đường truyền khi hàng chục nghìn shop đóng hàng cùng lúc (18/11/2026 — ĐỀ XUẤT, anh CHƯA duyệt, chưa code)
+
+> Anh Trung 18/11: "anh đang muốn đẩy sớm kế hoạch làm nhiều màn hình quay video đóng hàng như lúc trước mình đã khảo sát. Yêu cầu làm như
+> một senior thực thụ, phòng trước các rủi ro về đường truyền, khi có hàng chục nghìn shop đóng hàng cùng lúc".
+
+Nền không làm lại: khảo sát mục 53 (nguyên lý tải lên quy mô lớn), 57 (thử R2), 62 (các cách nhiều bàn + đo 2 camera / 1 tab), 63 (đối
+thủ). Mức chắc: **[C]** đo / đọc mã / trang gốc · **[S]** suy ra hoặc số em tự chọn.
+
+### 18.1 Kết luận trước
+
+1. **Phía Cloudflare R2 không phải chỗ lo.** Trang giới hạn R2 (đọc lại 18/11, developers.cloudflare.com/r2/platform/limits) không có trần
+   tốc độ đọc / ghi tệp theo bucket; trần duy nhất đụng tới mình là **ghi cùng MỘT tên tệp tối đa 1 lần / giây** (vượt → 429) [C]. Tên tệp
+   của mình dựng từ `clientId` riêng mỗi clip, lần thử lại cách nhau ≥ 2 giây → không chạm.
+2. **Chỗ vỡ thật nằm ở hai đầu: trình duyệt của shop và máy chủ Hubsell.** Mã đang chạy được viết cho MỘT bàn, MỘT tài khoản thí
+   điểm. Nhân lên nhiều bàn, nhiều shop thì có 4 chỗ sẽ vỡ (mục 18.3). Phải sửa các chỗ đó TRƯỚC khi dựng màn lưới, vì màn lưới nhân rủi ro
+   lên theo số bàn.
+3. Thứ tự đề xuất: **M0 đo → M1 hàng chờ bền → M2 máy chủ nhẹ đi → M3 màn Nhiều bàn → M4 thử chịu tải**; M5 (tách tiến trình video,
+   vé tải lên không ghi database) chỉ làm khi số của M4 đòi.
+
+### 18.2 Bài toán bằng số
+
+Giả định [S]: shop dùng video quay trung bình 200 video / ngày, 1 phút / video; 50 % video dồn vào 4 giờ cao điểm; lúc nhọn gấp đôi trung
+bình giờ cao điểm. Cỡ tệp 5,7–6,2 MB / phút, bitrate thật tới 978 kbps khi đặt 800k [C, mục 13].
+
+| | 1.000 shop | 10.000 shop | 30.000 shop |
+|---|---|---|---|
+| Video / ngày | 0,2 triệu | 2 triệu | 6 triệu |
+| Video bắt đầu tải / giây lúc nhọn | ≈ 14 | ≈ 140 | ≈ 420 |
+| Dữ liệu đổ vào R2 lúc nhọn | ≈ 0,7 Gbps | ≈ 6,7 Gbps | ≈ 20 Gbps |
+| Lượt gọi máy chủ Hubsell lúc nhọn — **mã hiện tại** (≈ 5 lượt / video, xem dưới) | ≈ 70 / giây | ≈ 700 / giây | ≈ 2.100 / giây |
+| Lượt ghi database lúc nhọn — mã hiện tại (2 lượt / video) | ≈ 28 / giây | ≈ 280 / giây | ≈ 840 / giây |
+| Lượt gọi máy chủ — **sau M2** (≈ 2,2 lượt / video) | ≈ 30 / giây | ≈ 310 / giây | ≈ 920 / giây |
+| Giao dịch ghi database — sau M2 (gộp 10 video / lượt) | ≈ 3 / giây | ≈ 28 / giây | ≈ 84 / giây |
+
+**≈ 5 lượt / video của mã hiện tại [C, đọc mã]:** `/match` lúc giơ tem · `POST /` · `POST /:id/complete` · và mỗi clip lên xong, màn quay
+làm mới CẢ nhóm truy vấn `["pack-videos"]` (`use-pack-recorder.ts:96`) → thêm danh sách + số giờ. Một tab 6 bàn = 6 lần làm mới mỗi vòng
+clip — vô ích, vì người đóng hàng không nhìn danh sách.
+
+**Phía một shop (một máy, N bàn):** đường lên cần ≈ N × 1 Mbps trong lúc mọi bàn cùng quay (6 bàn ≈ 6 Mbps) — cáp quang thường dư [S], 4G
+phát Wi-Fi thì không chắc. RAM: mỗi clip nằm trọn trong RAM tới khi kết thúc (`fastStart: "in-memory"`, `clip-pipeline.ts:350`) rồi nằm
+tiếp trong RAM tới khi lên kho → 6 bàn quay đơn 15 phút ≈ 550 MB chỉ riêng clip đang quay; mất mạng 1 giờ với 6 bàn ≈ **2,2 GB dồn trong
+RAM** → tab sập → mất hết.
+
+### 18.3 Bốn chỗ sẽ vỡ trong mã hiện tại [C, đọc mã 18/11]
+
+| # | Chỗ | Vì sao vỡ khi nhiều bàn / nhiều shop |
+|---|---|---|
+| V1 | Clip chờ tải chỉ nằm trong RAM (`lib/pack-video-recorder/session.ts`, biến cấp module) | tải lại trang, Chrome sập, máy khởi động lại → mất mọi clip chưa lên. Một bàn thì mất vài clip; 6 bàn mất cả giờ đóng hàng. Trái chốt 18/11 "bắt buộc phải lưu trên hệ thống hết" |
+| V2 | Thử 4 lần (nghỉ 2 / 5 / 15 giây) rồi BỎ, chờ người bấm "Thử lại" | máy nhiều bàn chạy không người nhìn; mạng chập 30 giây là clip nằm chết trong RAM tới cuối ca. Khoảng nghỉ lại CỐ ĐỊNH, không lệch ngẫu nhiên → sau một sự cố, mọi shop thử lại cùng nhịp (dồn sóng) |
+| V3 | ≈ 5 lượt gọi máy chủ / video, 2 lượt ghi database / video | mục 18.2: 700–2.100 lượt / giây đổ vào máy chủ web đang chung với toàn bộ app (web Render từng hết bộ nhớ 21/10, 03/11); database từng cạn Disk IO 28/10 |
+| V4 | `/match` tra `Order.trackingCode` không có chỉ mục (`services/pack-video/order-match.ts`; `Order` chỉ có chỉ mục bắt đầu bằng `channelId`) | mỗi lần giơ tem lọc qua đơn của mọi gian của shop; shop lớn × hàng trăm lượt / giây = đúng kiểu câu đã làm cạn Disk IO. Ghi chú trong mã đã dặn EXPLAIN trước khi mở cho khách |
+
+### 18.4 Sổ rủi ro đường truyền (bổ sung mục 6)
+
+| # | Rủi ro | Chặn bằng | Chứng minh bằng |
+|---|---|---|---|
+| N1 | Mất clip khi tab / máy sập (V1) | **Hàng chờ bền trên ổ đĩa của trình duyệt** (OPFS): clip ghi THẲNG xuống ổ trong lúc quay (RAM không phình theo độ dài clip), sổ hàng chờ ở IndexedDB, mở lại trang là tự tải tiếp; xin `navigator.storage.persist()` để trình duyệt không tự dọn. Lên kho xong là xóa tệp. **Đây không phải "lưu local"**: không có nút xem / giữ video trên máy, tệp chỉ là hàng đang chờ gửi | test: quay 3 clip, rút mạng, tải lại trang, cắm mạng → cả 3 lên kho, ổ trống |
+| N2 | Bỏ cuộc sau 4 lần (V2) | thử lại KHÔNG giới hạn, chờ tăng dần tới trần 5 phút [S] + lệch ngẫu nhiên toàn phần; mất mạng (`offline`) thì đứng chờ, có mạng lại (`online`) thì chạy ngay; chỉ dừng hẳn với lỗi không thể thử lại (hết quyền, tệp hỏng) | test hàm thuần: dãy thời gian chờ; test tay: rút mạng 10 phút |
+| N3 | Dồn sóng sau sự cố (mọi shop cùng thử lại) | lệch ngẫu nhiên ở N2; máy chủ trả 429 / 503 kèm `Retry-After` khi quá tải, trình duyệt tuân theo; mỗi tab chỉ 1 lượt PUT một lúc | M4: giả lập 10.000 tab cùng nối lại |
+| N4 | Mạng tải lên của shop chậm hơn tốc độ quay | đo tốc độ tải thật trong tab; dải vàng "Mạng tải lên chậm hơn tốc độ quay — đang chờ N clip (≈ M phút)"; KHÔNG dừng quay (cảnh báo, không khóa) | test tay: giới hạn mạng trong DevTools |
+| N5 | Ổ đĩa đầy vì hàng chờ dài | cảnh báo khi chỗ trống trình duyệt cho < 5 GB [S]; chỉ ngừng MỞ clip mới khi < 1 GB [S] (hết chỗ thì quay cũng không giữ được); clip đang quay luôn được quay nốt | test hàm thuần với `storage.estimate()` giả |
+| N6 | Sự cố cáp biển quốc tế (Việt Nam từng có đợt cả 5 tuyến cùng lỗi — kiến thức chung, chưa tra lại [S]) | N1 + N2 gánh được nhiều giờ dồn; dải báo "đang chờ" cho shop biết video chưa mất | chấp nhận: không có đường vòng nào rẻ |
+| N7 | Đường dẫn ký sẵn hết hạn khi hàng chờ dài | xin vé NGAY trước mỗi lượt PUT (mã hiện tại đã vậy), không xin sẵn hàng loạt | đã có |
+| N8 | Ghi cùng tên tệp > 1 lần / giây → R2 429 | tên tệp theo `clientId`; khoảng thử lại ≥ 2 giây | đã có |
+| N9 | Máy chủ bị gọi thừa (V3) | M2: bỏ làm mới danh sách sau mỗi clip (gộp, tối đa 1 lần / 30 giây [S], chỉ khi màn đang hiện); chốt tải theo LÔ (`complete-batch` tối đa 20 video [S], một câu `INSERT … ON CONFLICT DO NOTHING` / `UPDATE` gộp) | đếm lượt gọi / video trong M4 |
+| N10 | `/match` quét bảng `Order` (V4) | EXPLAIN chỉ đọc trên prod với shop lớn nhất → nếu quét rộng thì đề xuất chỉ mục riêng phần (`trackingCode` không rỗng) và **chờ anh duyệt** (không tự thêm chỉ mục vào `Order`) | số EXPLAIN trước / sau |
+| N11 | Một shop lỗi vòng lặp gọi máy chủ liên tục | hạn mức theo chủ shop trên các đường video (token bucket, số [S] chọn sau M4) → 429 | test |
+| N12 | Lưu lượng video làm sập app chính | M5, chỉ khi M4 đòi: tách các đường video sang một tiến trình riêng cùng mã nguồn | M4 |
+| N13 | Máy ngủ / khóa màn / Chrome tự đóng tab | Wake Lock giữ màn sáng khi đang có bàn bật; dải đỏ khi trang bị ẩn lúc đang quay; Chrome có tự bỏ tab đang dùng camera không — [S], thử ở M0 | M0 |
+| N14 | Máy không đủ sức mã hóa N luồng (bộ mã hóa phần cứng có trần số phiên, hết thì Chrome lùi sang mã hóa bằng CPU) [S] | M0 đo; mỗi ô hiện "phần cứng / CPU"; quá tải thì báo "máy này nên tối đa N bàn" | M0 |
+| N15 | Băng thông USB theo bộ điều khiển (mục 62.2 khảo sát) | M0 đo với webcam của anh; câu hướng dẫn cắm | M0 |
+| N16 | Một bàn mất camera kéo các bàn khác | mỗi ô một đường quay + đọc tem + hàng chờ riêng; lỗi ô nào chỉ ô đó đỏ | test tay rút một webcam |
+| N17 | Cùng tem giơ ở hai bàn / hai máy | sổ "tem đã quay rồi" dùng chung mọi ô trong tab; khác máy thì dựa `hasPackVideo` mà `/match` đã trả → báo "đã quay rồi ở chỗ khác" | test |
+
+### 18.5 Các lát
+
+| Lát | Có gì | Ai thấy | Database / prod |
+|---|---|---|---|
+| **M0 đo** (không mã sản phẩm) | trên trang thử `tools/thu-webcam/`: 3–4 webcam anh có sẵn cắm cùng máy — khung / giây từng camera, CPU, mã hóa phần cứng hay CPU, chạy 30 phút không rớt USB; ghi clip thẳng xuống ổ (OPFS) đo tốc độ + so hai cách đặt `moov` (mediabunny `fastStart: "reserve"` cần khai trước số khung tối đa → đo MB đệm thừa ở clip ngắn; hay để `moov` cuối tệp → trình phát trên web có tua được không); tắt mạng 30 phút rồi bật | không ai | không |
+| **M1 hàng chờ bền** | N1, N2, N4, N5, N7 cho màn quay HIỆN TẠI (một bàn) — có ích ngay cả khi chưa có lưới | chỉ `admin@hubsell.vn` | không |
+| **M2 máy chủ nhẹ đi** | N9, N10 (EXPLAIN + đề xuất), N11, 429 + `Retry-After` (N3) | không ai thấy khác | có thể một chỉ mục — chờ anh duyệt |
+| **M3 màn Nhiều bàn** | phác thảo mục 62.6 khảo sát: công tắc 1 bàn \| Nhiều bàn, lưới ô, camera nhớ theo ô, "Bật tất cả", âm báo theo bàn bằng tệp thu sẵn, nhật ký chung lọc theo bàn, N13, N14, N16, N17 | chỉ `admin@hubsell.vn` | không |
+| **M4 thử chịu tải** | kịch bản giả lập 1.000 → 10.000 shop gọi các đường video ở LOCAL (không gọi prod, không tải tệp thật lên R2): lượt / giây, độ trễ p95, kết nối database | không ai | không |
+| M5 (khi M4 đòi) | tách tiến trình video; vé tải lên không ghi database (ghi một lần lúc chốt) | không ai thấy khác | đổi luồng ghi sổ |
+
+Vì sao M1–M2 trước M3: lưới nhân rủi ro theo số bàn, còn M1–M2 làm màn một bàn đang chạy bền hơn ngay.
+
+**Đụng nhau với lịch 20:00 18/11** (tác vụ mua giờ + luật xóa, cùng vùng `services/pack-video/`): M1 chỉ đụng web; M2 đụng backend →
+bắt đầu sau khi tác vụ 20:00 xong để khỏi giẫm tệp.
+
+### 18.6 Chờ anh
+
+| # | Câu | Em đề nghị |
+|---|---|---|
+| N-a | Duyệt làm M0 (anh cắm 3–4 webcam có sẵn vào một máy) | có — chưa đo mà dựng lưới là đoán |
+| N-b | Hàng chờ bền trên ổ đĩa (N1) — tệp tạm tự xóa khi đã lên kho, không có nút giữ / xem trên máy — có trái chốt "bỏ lưu local" không? | không trái: nó là cách để video CHẮC CHẮN lên hệ thống |
+| N-c | Số bàn tối đa một máy hiện trong lưới | để M0 quyết; tạm 4 |
+
+### 18.7 M0 — số đo lượt 1 (18/11 ~13:00, anh: "anh đang cắm được 2 webcam thôi. Em cứ test M0 đi")
+
+Trang đo mới `tools/thu-webcam/nhieu-ban.html` (+ `nhieu-ban.js`, dùng lại khối của trang thử): mỗi camera = một bàn, in ngày giờ →
+H.264 → ghi THẲNG xuống OPFS qua `StreamTarget` của mediabunny, cắt clip mỗi N giây, clip lẻ `moov` dành chỗ trước, clip chẵn `moov` cuối
+tệp, đọc tem trong Worker 200 ms / lần; số đo tự ghi ra `m0_<giờ>.json` mỗi 10 giây. Máy anh: i5-10400F (không có GPU tích hợp) + GTX
+1650 SUPER.
+
+- **Hai webcam KHÔNG mở cùng lúc [C] — xem phép thử dứt điểm 13:20 ở dòng 13:05–13:20 dưới:** Chrome
+  thấy Web Camera (cb07:1bcf), Logi C270 (046d:0825) và đầu thu HDMI có sẵn. Trước 13:09, mở con nào trước thì con sau báo
+  `NotReadableError`, ở mọi cỡ kể cả 640×480; từng con một mình thì được. Cả hai cắm chung bộ chia `Generic USB Hub` 067B:2586.
+- **2 bàn (Web Camera + đầu thu HDMI), 3 phút, clip 30 giây [C]:** cả hai đạt 29–30 khung / giây (thấp nhất 28,9), 5.379 / 5.399 khung
+  vào = khung đã mã hóa, **0 khung bỏ**, hàng chờ bộ mã hóa lớn nhất 6, mã hóa trung bình 12–13 ms (lớn nhất ≈ 190 ms); đọc tem trung bình
+  50 ms, 0 lượt bị bỏ; bộ mã hóa nhận `prefer-hardware`; bộ đếm Windows "GPU VideoEncode" 11–16 % (= mã hóa bằng NVENC của card), CPU
+  toàn máy 11–29 %; JS heap ≈ 10 MB; Chrome tổng ≈ 1,6 GB RAM riêng (cả các tab khác của anh).
+- **Ghi thẳng xuống ổ chạy [C]:** ghi theo khúc 1 MiB, trung bình 4–5 ms / lần; chốt tệp 8–22 ms; đọc lại / xóa xong ổ về 0 tệp.
+- **⛔ `moov` dành chỗ trước (`fastStart: "reserve"`) KHÔNG dùng được [C]:** dành chỗ cho trần 60 phút độn **4.984.282 byte (≈ 4,75 MB) vào
+  MỖI clip** bất kể clip dài bao lâu → clip 30 giây 3,4 MB thành 8,4 MB. **`moov` cuối tệp (`fastStart: false`) chỉ thêm ≈ 6 KB**, tua được
+  trong Chrome (nạp thông tin 44 ms, tua giữa 92 ms, tua cuối 34 ms — trên máy, chưa qua mạng tới R2: thêm một lượt hỏi đoạn cuối tệp).
+  → hàng chờ bền M1 dùng `moov` cuối tệp, ghi dần xuống ổ.
+- **Bẫy [C]:** khai `frameRate` cho rãnh video của mediabunny làm mốc thời gian bị bắt về lưới 1/30 giây → hai khung trùng giờ. Mã sản phẩm
+  không khai (đúng); trang đo đã bỏ. Sau khi bỏ: mốc tăng đều 598 / 598 gói.
+- **Ổ trình duyệt [C]:** hạn mức Chrome cho trang = 10 GB; `navigator.storage.persist()` trả **false** (Chrome không hứa giữ, khi máy chật ổ
+  có thể tự dọn) → N1 không được coi ổ trình duyệt là chắc chắn; trên app.hubsell.vn phải thử lại (Chrome cho `persist` theo mức dùng trang).
+- Chưa đo: 2 WEBCAM thật cùng lúc trong MỘT tab; chạy 30 phút; Chrome có tự bỏ tab đang dùng camera không.
+- **13:05–13:15 kiểm thêm [C]:** trước khi cắm lại, hạ cả hai xuống 640×480 · 15 khung / giây vẫn `NotReadableError`. Anh rút ra cắm lại
+  13:09:35 (C270) và 13:10:51 (Web Camera), vẫn chung bộ chia 067B:2586. Anh: "anh thử trên chrome nick admin@hubsell.vn vẫn được mà" —
+  sổ camera của Windows ghi Chrome giữ camera từ 13:11:29 (tab của anh, Web Camera), và lúc 13:12 trang đo của em **mở được C270
+  1280×720@30 cùng lúc** → em đã vội rút kết luận "do chung bộ chia". **Phép thử dứt điểm 13:20 [C] cho thấy rút như vậy là SAI:** Chrome
+  cho nhiều tab DÙNG CHUNG một camera, nên lượt 13:12 chỉ là dùng chung C270 với tab của anh. Thử lại có kiểm soát (anh đã tắt tab quay):
+  tab 1 giữ Web Camera → tab 2 mở C270 = `NotReadableError`; tab 1 giữ C270 → tab 2 mở C270 = chạy (dùng chung), tab 2 mở Web Camera =
+  `NotReadableError`; trong một tab, thứ tự nào cũng chỉ một con chạy. → **Hai webcam này trên bộ chia 067B:2586 KHÔNG chạy cùng lúc, kể
+  cả khác tab, kể cả 640×480 · 15 khung / giây, kể cả ngoài Chrome (ffmpeg)**. Đầu thu HDMI cắm thẳng gốc thì chạy cùng Web Camera. Chưa
+  chứng minh hết được là do bộ chia hay do cặp webcam này — chỉ chắc khi tách một con sang cổng sau thùng máy.
+  Thử lại lần nữa theo lời anh ("camera đang tắt mà"), Windows xác nhận không ứng dụng nào giữ camera: Web Camera trước → C270 hỏng;
+  C270 trước → Web Camera hỏng. Kết quả không đổi.
+  **Anh xác nhận ~13:30: "Tất cả anh đều không cắm vào cây máy tính mà đều cắm vào ổ chia"** → bộ chia 067B:2586 là ổ chia USB rời của
+  anh; cả hai webcam đi chung MỘT đường lên máy. Khớp với mọi số đo trên. Đây là cách cắm khách sẽ hay làm nhất (máy ít cổng, bàn đóng hàng
+  xa máy) → hướng dẫn khách + câu báo lỗi của màn nhiều bàn phải nói thẳng "mỗi webcam cắm thẳng một cổng trên máy, không qua ổ chia".
+  Còn phải đo: một webcam cắm thẳng máy + một qua ổ chia (cách cắm tối thiểu cho 2 bàn); ổ chia USB 3.0 có gánh được 2 webcam không [S].
+  Bài học: (1) khi kiểm "có chạy cùng lúc không" phải tắt hết tab khác đang dùng camera, vì Chrome dùng chung thiết bị giữa các tab;
+  (2) màn nhiều bàn gặp `NotReadableError` ở một ô khi ô khác đang chạy → câu báo "camera này không chạy chung được với camera khác trên
+  cùng cổng — cắm sang cổng USB khác (nên là cổng phía sau máy)" + nút thử lại.
+
+### 18.8 M0 — lượt bền 30 phút, 3 bàn một tab (18/11 13:20–13:51) [C]
+
+Cách cắm: C270 cắm THẲNG máy (anh "Đã cắm thẳng"), Web Camera vẫn qua ổ chia, đầu thu HDMI cắm thẳng → cả 3 mở cùng lúc ngay (chứng minh
+ngược cho 18.7: tách khỏi ổ chia là chạy). Cấu hình: 1280×720, đặt 30 khung / giây, 800 kbps, `prefer-hardware`, cắt clip mỗi 60 giây,
+clip lẻ / chẵn hai kiểu `moov`, đọc tem 200 ms / lần mỗi bàn, ghi thẳng xuống OPFS rồi xóa sau khi "tải".
+
+| | Web Camera (qua ổ chia) | Đầu thu HDMI (không tín hiệu) | Logi C270 (cắm thẳng) |
+|---|---|---|---|
+| Khung vào = đã mã hóa | 53.810 = 53.810 | 53.989 = 53.989 | 53.404 = 53.404 |
+| Khung bỏ / lỗi bộ mã hóa | 0 / 0 | 0 / 0 | 0 / 0 |
+| Khung / giây thấp nhất · trung bình | 28,6 · 29,9 | 28,5 · 30,0 | **14,0** · 29,7 |
+| Mã hóa ms trung bình · lớn nhất | 16,8 · 382 | 18,4 · 257 | 16,8 · 216 |
+| Đọc tem: số lần · ms trung bình · bị bỏ lượt | 8.349 · 44 · 0 | 8.363 · 45 · 0 | 8.335 · 41 · 0 |
+| Clip xong / lỗi | 30 / 0 | 30 / 0 | 30 / 0 |
+| MB / phút (`moov` cuối tệp) | 5,74–5,84 | 0,36 | 5,84–7,66 |
+| Chốt tệp lớn nhất · lần ghi ổ lâu nhất | 65 ms · 41 ms | 51 ms · 38 ms | 83 ms · 47 ms |
+
+Toàn máy (mẫu 15 giây, 124 mẫu): CPU trung bình 19,8 %, lớn nhất 38,4 % (gồm cả việc khác của anh); bộ mã hóa video của card (NVENC, GTX
+1650 SUPER, driver 610.88) trung bình 16,4 %, lớn nhất 22,1 % cho 3 luồng → ≈ 5–7 % / luồng; RAM riêng của Chrome 1.925 MB đầu lượt →
+1.762 MB cuối lượt (KHÔNG phình), 1.455 MB sau khi dừng; JS heap trang 12 MB; ổ trình duyệt về 0 tệp. **Không có sự kiện rớt camera / đổi
+thiết bị nào trong 30 phút.** Tab bị ẩn / hiện 10 lần (anh chuyển cửa sổ) mà khung vẫn về đủ ≈ 99,6 % → đường lấy khung không đứng khi ẩn tab.
+
+Rút ra:
+- **Một máy tầm trung (i5-10400F + GTX 1650 SUPER) gánh 3 bàn còn dư nhiều**: card mới dùng ≈ 1/5 sức mã hóa, CPU < 40 %. Trần số bàn chưa
+  chạm; trần số phiên mã hóa phần cứng của card GeForce theo driver [S, chưa tra lại] → bài kế: 4–6 luồng (nhân đôi luồng của một camera
+  được, không cần thêm webcam).
+- **Ghi thẳng xuống ổ trình duyệt đủ nhanh và RAM phẳng** → hướng hàng chờ bền M1 (`moov` cuối tệp, ghi dần) có số đo đỡ.
+- **Đặt 800 kbps mà C270 ra tới 7,66 MB / phút (≈ 1 Mbps)** — bộ mã hóa phần cứng vượt bitrate với hình nhiều chi tiết; cỡ tệp tính tiền
+  lưu phải dùng 6–7,7 MB / phút, không phải 6.
+- **C270 tụt 14–15 khung / giây lúc đầu lượt** (trung bình vẫn 29,7) — tự hạ tốc độ khi thiếu sáng [S]; video vẫn đúng giờ, chỉ kém mượt
+  → tiêu chí "webcam chuẩn" thêm: giữ 30 khung / giây dưới đèn bàn đóng hàng.
+- Đọc tem 3 bàn cùng lúc không nghẽn (0 lượt bị bỏ). Lượt này không giơ tem nên chưa đo tem ↔ đúng bàn.
+
+Chưa đo (M0 còn lại): 4–6 luồng; giơ tem ở nhiều bàn cùng lúc; Chrome có tự bỏ tab đang quay khi máy chật RAM không; `persist()` trên
+app.hubsell.vn. Phần "tắt mạng 30 phút" chuyển sang M1 (chưa có hàng chờ bền thì chưa có gì để đo).
+
+### 18.9 M0 — 4 và 6 luồng + ổ trình duyệt trên app.hubsell.vn (18/11 13:55–14:12) [C]
+
+Máy chỉ có 3 nguồn hình nên bàn thứ 4–6 là bàn **nhân bản**: mở lại cùng thiết bị (Chrome dùng chung luồng camera), mỗi bàn vẫn có bộ in
+ngày giờ + bộ mã hóa + bộ đọc tem + tệp riêng → tải mã hóa / đọc tem / ghi ổ là thật, chỉ phần USB không nhân lên (`addClones()` trong
+`nhieu-ban.js`). Mỗi lượt 5 phút, cắt clip 60 giây.
+
+| | 4 bàn | 6 bàn |
+|---|---|---|
+| Khung bỏ / lỗi bộ mã hóa / clip lỗi | 0 / 0 / 0 | 0 / 0 / 0 |
+| Khung / giây thấp nhất | 25,9 (một lần giật cùng lúc cả 4 bàn khi em mở trang app.hubsell.vn ở tab khác) | 28,8 |
+| Mã hóa ms trung bình · lớn nhất | 12–15 · 571 (cùng lần giật trên) | 13–18 · 114 |
+| Đọc tem ms trung bình · bị bỏ lượt | 33–44 · 0 | 32–41 · 0 |
+| Phiên mã hóa phần cứng đang chạy (`nvidia-smi`) | 4 | 6 |
+| NVENC trung bình · lớn nhất | 21,6 % · 24,4 % | 27,0 % · 33,5 % |
+| CPU toàn máy trung bình · lớn nhất | 20,8 % · 25,9 % | 25,7 % · 30,2 % |
+| RAM riêng Chrome | — | 2.225 MB (cả các tab khác) |
+
+→ **6 bàn trên máy i5-10400F + GTX 1650 SUPER chạy thoải mái** (card ≈ 1/3 sức, CPU ≈ 1/4); card GeForce với driver 610.88 cho ít nhất 6
+phiên mã hóa phần cứng cùng lúc. Một trang khác nặng mở cùng lúc làm cả lưới giật ≈ 0,5 giây nhưng KHÔNG mất khung (hàng chờ bộ mã hóa
+gánh). Trần thật chưa chạm — máy không có card rời (chỉ GPU tích hợp / mã hóa bằng CPU) mới là ca phải đo tiếp, vì nhiều máy văn phòng của
+shop là loại đó [S]. Đề nghị N-c: lưới mặc định tối đa 6 bàn; ô thứ 7 trở đi chỉ mở khi máy báo mã hóa phần cứng (số tự chọn).
+
+**Ổ trình duyệt trên app.hubsell.vn (Chrome của anh):** `persist()` **= true** (Chrome đồng ý giữ, khác trang thử 127.0.0.1 = false vì ít
+dùng) → hàng chờ bền trên sản phẩm được Chrome giữ, không tự dọn khi chật ổ. Nhưng hạn mức Chrome báo **10 GB** trong khi **ổ C (nơi có hồ
+sơ Chrome) chỉ còn 2,4 GB trống** → con số `storage.estimate()` KHÔNG phản ánh chỗ trống thật. 4 bàn ≈ 30 MB / phút → mất mạng ≈ 80 phút
+là đầy ổ C của anh. → M1 (N5): không chặn theo `estimate()`; phải bắt lỗi ghi `QuotaExceededError` / lỗi ổ đầy ngay khi ghi khúc, báo đỏ
+"ổ đĩa máy sắp đầy — video đang chờ gửi", và đo chỗ trống bằng lần ghi thật chứ không bằng con số báo.
+
+**M0 xong**, trừ hai việc để sau: giơ tem ở nhiều bàn cùng lúc (cần người giơ tem; đọc tem từng bàn đã chứng minh 16/11 và không nghẽn ở
+6 bàn), và máy không có card rời.

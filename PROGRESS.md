@@ -5,6 +5,22 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 18/11 chiều (Video đóng hàng — NHIỀU BÀN + đường truyền quy mô lớn) — Anh: "đẩy sớm kế hoạch làm nhiều màn hình… phòng trước các rủi ro về đường truyền, khi có hàng chục nghìn shop đóng hàng cùng lúc" → 📝 bản thiết kế, CHƯA code
+
+- Viết `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 18: bảng số 1.000 / 10.000 / 30.000 shop (lúc nhọn ≈ 14 / 140 / 420 video / giây, 0,7–20 Gbps vào R2 — phần R2 gánh); trang giới hạn R2 đọc lại: không trần theo bucket, chỉ 1 lần ghi / giây trên CÙNG một tên tệp.
+- Đọc mã tìm 4 chỗ sẽ vỡ: V1 clip chờ tải chỉ trong RAM (tải lại trang = mất); V2 thử 4 lần rồi bỏ, nghỉ cố định không lệch ngẫu nhiên; V3 ≈ 5 lượt gọi máy chủ / video (làm mới danh sách sau MỖI clip, `use-pack-recorder.ts:96`) + 2 lượt ghi database / video; V4 `/match` tra `Order.trackingCode` không chỉ mục.
+- Sổ rủi ro N1–N17 + lát M0 đo (3–4 webcam một máy, OPFS, tắt mạng 30 phút) → M1 hàng chờ bền trên ổ (không phải "lưu local") → M2 máy chủ nhẹ đi → M3 màn Nhiều bàn → M4 thử chịu tải → M5 khi M4 đòi.
+- ⏳ Anh: duyệt M0 · hàng chờ bền có trái chốt "bỏ lưu local" không · số bàn tối đa. M2 đụng backend → làm sau tác vụ 20:00.
+- Ghi ở: docs mục 18, memory video đóng hàng.
+- **M0 đã chạy (anh: "Em cứ test M0 đi")** — trang đo `tools/thu-webcam/nhieu-ban.html` + `nhieu-ban.js`, docs mục 18.7–18.9 — commit cùng lượt (chỉ phần video, không gom tệp phiên khác):
+  - Hai webcam cắm chung ổ chia USB rời của anh → chỉ một con chạy mỗi lúc (mọi cỡ, mọi tab, cả ngoài Chrome); C270 cắm thẳng máy → chạy ngay. Em từng rút kết luận sai một lần vì Chrome cho hai tab DÙNG CHUNG một camera.
+  - 30 phút, 3 bàn một tab: 0 khung bỏ, 0 lỗi, 90 clip, không rớt USB; NVENC ≈ 16 % (3 luồng), CPU tb 20 %, RAM Chrome không phình; ghi thẳng OPFS ổn.
+  - ⛔ `moov` dành chỗ trước độn 4,75 MB / clip → dùng `moov` cuối tệp (+6 KB, tua được). C270 ra tới 7,66 MB / phút dù đặt 800k. `persist()` = false trên trang thử.
+  - 4 và 6 luồng (bàn thứ 4–6 nhân bản cùng camera), mỗi lượt 5 phút: 0 khung bỏ / 0 lỗi; 6 phiên NVENC, card ≈ 27 %, CPU ≈ 26 % → máy anh gánh 6 bàn thoải mái (docs 18.9).
+  - app.hubsell.vn: `persist()` = true, nhưng Chrome báo hạn mức 10 GB trong khi ổ C chỉ còn 2,4 GB → M1 phải bắt lỗi ổ đầy khi ghi, không tin `estimate()`.
+  - M0 XONG (để sau: giơ tem nhiều bàn cùng lúc, máy không có card rời). Anh: "M1 để tối làm… Tối cần khảo sát lại cho phù hợp với mô hình lớn nữa".
+
+---
 ## Phiên 17/11 chiều (Sổ quỹ HQ — lát B: ghi nhận đợt Apple chuyển tiền) — Anh: "Vậy làm lát B luôn" → XONG local, CHƯA commit
 
 - Thẻ "Apple chưa chuyển về" có nút "Ghi nhận Apple đã chuyển": chọn khoản + nhập ngày tiền về, số ngân hàng nhận, thuế Apple trừ, mã sổ phụ, kỳ báo cáo → máy tính hoa hồng, ghi 3 bút toán (thu tổng khách trả, chi hoa hồng, chi thuế; khoản mục mới "Hoa hồng & thuế App Store", NCC Apple Distribution International MST 9000000486). Thu − chi = đúng tiền về. Hoa hồng lạ (ngoài 10–35 %, ngưỡng tự chọn) → cảnh báo + "Vẫn ghi". Nhập sai → "Hủy đợt".
