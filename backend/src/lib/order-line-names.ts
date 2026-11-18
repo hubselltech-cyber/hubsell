@@ -10,8 +10,15 @@
 // docs/MO-HINH-CAY-SAN-PHAM-SAN.md), đơn cũ không có id thì theo (gian + mã),
 // cuối cùng là sản phẩm kho đã nối. Hai câu findMany cho CẢ TRANG đơn — không
 // hỏi từng dòng.
+//
+// 19/11/2026 — dòng đơn tạo từ hôm nay có sẵn `OrderItem.variantName` (chữ sàn in lúc
+// bán). Nơi gọi truyền vào thì dùng LUÔN chữ đó, không tra danh mục: đúng món đã bán kể
+// cả khi người bán đổi tên phân loại sau này, và có tên cả khi danh mục TikTok chưa kéo
+// được tên phân loại. Màn quét / bảng đơn dùng luật đầy đủ ở lib/order-line-display.ts
+// (services/item-images.ts); tệp này giữ cho Lãi/Lỗ, Kiểm toán phí, Video đóng hàng.
 // ============================================================
 
+import { normalizeVariantName } from "../marketplace/sku-key";
 import { prisma } from "./prisma";
 
 export interface OrderLineRef {
@@ -20,6 +27,8 @@ export interface OrderLineRef {
   channelSku: string;
   /** Product.variantName của sản phẩm kho đã nối (nếu nơi gọi đã include). */
   productVariantName?: string | null;
+  /** OrderItem.variantName — có thì thắng mọi nguồn tra (19/11/2026). */
+  variantName?: string | null;
 }
 
 const extKey = (channelId: string, externalId: string) => `${channelId}\u0000${externalId}`;
@@ -35,10 +44,12 @@ export async function loadVariantNames(
 ): Promise<(line: OrderLineRef) => string> {
   const byExt = new Map<string, string>();
   const bySku = new Map<string, string>();
-  if (lines.length > 0) {
-    const channelIds = [...new Set(lines.map((l) => l.channelId))];
-    const externalIds = [...new Set(lines.map((l) => l.externalId).filter((x): x is string => !!x))];
-    const skus = [...new Set(lines.map((l) => l.channelSku).filter(Boolean))];
+  // Dòng đã mang tên phân loại của chính nó thì không cần hỏi danh mục.
+  const need = lines.filter((l) => !normalizeVariantName(l.variantName));
+  if (need.length > 0) {
+    const channelIds = [...new Set(need.map((l) => l.channelId))];
+    const externalIds = [...new Set(need.map((l) => l.externalId).filter((x): x is string => !!x))];
+    const skus = [...new Set(need.map((l) => l.channelSku).filter(Boolean))];
     const [viaExt, viaSku] = await Promise.all([
       externalIds.length
         ? prisma.channelProduct.findMany({
@@ -62,6 +73,7 @@ export async function loadVariantNames(
     }
   }
   return (line) =>
+    normalizeVariantName(line.variantName) ??
     (line.externalId ? byExt.get(extKey(line.channelId, line.externalId)) : undefined) ??
     bySku.get(skuKey(line.channelId, line.channelSku)) ??
     line.productVariantName?.trim() ??

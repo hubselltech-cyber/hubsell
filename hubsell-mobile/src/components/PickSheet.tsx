@@ -9,6 +9,7 @@ import type { PickSummaryResponse } from "@/types/api";
 import { PickChip } from "@/components/FilterChips";
 import { rangeFor, yesterdayRange } from "@/lib/dates";
 import { groupVN } from "@/lib/format";
+import { goodsRowText } from "@/lib/order-lines";
 import { hapticTap } from "@/lib/haptics";
 import { TABULAR } from "@/theme/tokens";
 
@@ -315,19 +316,21 @@ export function PickSheet({
                   </View>
                   <View className="min-w-0 flex-1">
                     <Text className="text-[13px] font-semibold text-slate-800 dark:text-slate-200" numberOfLines={2}>
-                      {mode === "sku" && item.sku ? item.sku : item.name}
+                      {goodsRowText(item, mode === "sku").title}
                     </Text>
+                    {goodsRowText(item, mode === "sku").variant ? (
+                      <Text className="text-[12px] font-bold text-slate-900 dark:text-slate-100" numberOfLines={2}>
+                        {goodsRowText(item, mode === "sku").variant}
+                      </Text>
+                    ) : null}
                     {/* Dòng phụ: theo SKU → tên sản phẩm; theo sản phẩm → mã SKU, hoặc "N SKU"
-                        khi sản phẩm có nhiều phân loại (kho biết phải lấy mấy loại). */}
-                    <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
-                      {mode === "sku"
-                        ? item.sku
-                          ? item.name
-                          : "Không có mã SKU"
-                        : (item.skuCount ?? 1) > 1
-                          ? `${item.skuCount} SKU`
-                          : (item.sku ?? "Không có mã SKU")}
-                    </Text>
+                        khi sản phẩm có nhiều phân loại (kho biết phải lấy mấy loại). Không có mã
+                        người bán thì tiêu đề là TÊN PHÂN LOẠI, không in dãy id sàn (19/11/2026). */}
+                    {goodsRowText(item, mode === "sku").sub ? (
+                      <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
+                        {goodsRowText(item, mode === "sku").sub}
+                      </Text>
+                    ) : null}
                     {meta.picking && item.expressQty > 0 ? (
                       <Text className="text-[10px] font-bold text-red-500 dark:text-red-400" style={TABULAR}>
                         ⚡ {groupVN(item.expressQty)} món hỏa tốc

@@ -498,6 +498,8 @@ export function aggregateShopeeItems(order: ShopeeOrderDetail) {
       channelSku: string;
       externalId: string | null;
       productName: string;
+      /** model_name nguyên văn — null = sản phẩm không có phân loại (19/11/2026, lib/order-line-display). */
+      variantName: string | null;
       price: number;
       /** Giá niêm yết (model_original_price) — null khi sàn không trả. */
       originalPrice: number | null;
@@ -526,7 +528,17 @@ export function aggregateShopeeItems(order: ShopeeOrderDetail) {
     if (ex) {
       ex.quantity += qty;
       if (!ex.imageUrl && imageUrl) ex.imageUrl = imageUrl;
-    } else agg.set(key, { channelSku: sku, externalId, productName: name, price, originalPrice, quantity: qty, imageUrl });
+    } else
+      agg.set(key, {
+        channelSku: sku,
+        externalId,
+        productName: name,
+        variantName: it.model_name?.trim() || null,
+        price,
+        originalPrice,
+        quantity: qty,
+        imageUrl,
+      });
   }
   return [...agg.values()];
 }
@@ -881,6 +893,7 @@ export async function upsertShopeeOrderTx(
         // danh mục có là tra được, không phải sửa dòng (docs/MO-HINH-CAY-SAN-PHAM-SAN.md B3, 18/10/2026).
         externalId: mp?.externalId ?? line.externalId,
         productName: line.productName,
+        variantName: line.variantName,
         quantity: line.quantity,
         price: line.price,
         originalPrice: line.originalPrice,

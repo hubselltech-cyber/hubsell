@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import * as Clipboard from "expo-clipboard";
 import type { OrderDto, OrderPaymentDto } from "@/types/api";
 import {
@@ -18,6 +17,7 @@ import { useChannelColors } from "@/theme/channel-colors";
 import { TABULAR } from "@/theme/tokens";
 import { CancelRequestBar } from "@/components/CancelRequestBar";
 import { OrderTrackingSection } from "@/components/OrderTrackingSection";
+import { OrderLines } from "@/components/OrderLines";
 
 /**
  * CHI TIẾT ĐƠN HÀNG sau khi quét mã ở nút QR giữa thanh tab (anh Trung 04/10).
@@ -114,41 +114,10 @@ export function OrderDetailPanel({
       </View>
 
       <Section title="Sản phẩm và doanh thu" icon="cart-outline">
-        {order.items.map((it) => {
-          const img = it.imageUrl ?? it.product?.imageUrl;
-          return (
-            <View key={it.id} className="mb-2.5 flex-row items-start gap-3">
-              <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
-                {img ? (
-                  <Image source={{ uri: img }} style={{ width: 48, height: 48 }} contentFit="cover" />
-                ) : (
-                  <Ionicons name="cube-outline" size={18} color="#94a3b8" />
-                )}
-              </View>
-              <View className="flex-1">
-                <Text
-                  className="text-[13px] font-medium text-slate-900 dark:text-slate-100"
-                  numberOfLines={2}
-                >
-                  {it.productName}
-                </Text>
-                {it.channelSku ? (
-                  <Text className="text-[11px] text-slate-400 dark:text-slate-500">
-                    SKU: {it.channelSku}
-                  </Text>
-                ) : null}
-                <Text
-                  className="text-[13px] font-semibold text-slate-700 dark:text-slate-200"
-                  style={TABULAR}
-                >
-                  SL: {it.quantity} × {formatMoney(it.price)}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
+        {/* Tên / PHÂN LOẠI / SKU người bán, gom phân loại cùng sản phẩm (19/11/2026) */}
+        <OrderLines items={order.items} showPrice />
 
-        <View className="mt-1 border-t border-slate-200 pt-2 dark:border-slate-700">
+        <View className="mt-3 border-t border-slate-200 pt-2 dark:border-slate-700">
           {/* Dòng đậm = TỔNG TIỀN ĐƠN (totalAmount) — đúng số in trên thẻ đơn ngoài
               danh sách; tiền hàng (Σ giá × SL, chưa ship/voucher) là dòng phụ khi
               khác. Trước 26/10 dòng đậm là tiền hàng nên thẻ 250.000 / chi tiết

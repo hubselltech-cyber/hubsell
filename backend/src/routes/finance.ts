@@ -401,6 +401,7 @@ export async function loadRealizedPnl(
         externalId: it.externalId,
         channelSku: it.channelSku,
         productVariantName: it.product?.variantName,
+        variantName: it.variantName,
       }))
     )
   );
@@ -420,6 +421,7 @@ export async function loadRealizedPnl(
               externalId: it.externalId,
               channelSku: it.channelSku,
               productVariantName: it.product?.variantName,
+              variantName: it.variantName,
             }),
           }
         : line;
@@ -1818,6 +1820,7 @@ const AUDIT_ITEMS_INCLUDE = {
       productName: true,
       quantity: true,
       externalId: true,
+      variantName: true,
       product: { select: { variantName: true } },
     },
   },
@@ -1831,6 +1834,7 @@ async function auditItemsOf(orders: AuditOrder[]) {
     externalId: it.externalId,
     channelSku: it.channelSku,
     productVariantName: it.product?.variantName,
+    variantName: it.variantName,
   });
   const variantOf = await loadVariantNames(orders.flatMap((o) => o.items.map((it) => ref(o, it))));
   return (o: AuditOrder) =>

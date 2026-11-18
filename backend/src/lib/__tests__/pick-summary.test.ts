@@ -94,3 +94,40 @@ describe("summarizePickLines", () => {
     expect(r.byProduct[0].imageUrl).toBe("https://anh/ao.jpg");
   });
 });
+
+describe("summarizePickLines — chữ hiển thị (19/11/2026)", () => {
+  it("không đặt SKU: dòng mang tên phân loại, mã máy của sàn không in ra; khóa gom giữ nguyên", () => {
+    const r = summarizePickLines([
+      line({
+        channelSku: "1733668291614771234",
+        productName: "Đồ bộ tole - REN DÀI 17, Size M",
+        variantName: "REN DÀI 17, Size M",
+        externalId: "1729-1733668291614771234",
+        qty: 3,
+      }),
+      // Đơn cũ chưa có cột phân loại → tìm điểm cắt qua danh mục
+      line({
+        channelSku: "VAY01-DEN-M",
+        productName: "Váy xòe - Đen,M",
+        catalog: { productName: "Váy xòe", variantName: "Đen, M" },
+        qty: 1,
+      }),
+    ]);
+    expect(r.bySku.map((s) => [s.sku, s.baseName, s.variantName, s.sellerSku])).toEqual([
+      ["1733668291614771234", "Đồ bộ tole", "REN DÀI 17, Size M", null],
+      ["VAY01-DEN-M", "Váy xòe", "Đen, M", "VAY01-DEN-M"],
+    ]);
+    expect(r.byProduct.map((p) => [p.name, p.sellerSku])).toEqual([
+      ["Đồ bộ tole - REN DÀI 17, Size M", null],
+      ["Váy xòe - Đen,M", "VAY01-DEN-M"],
+    ]);
+  });
+
+  it("một tên mà hai mã khác nhau: dòng theo sản phẩm không in mã nào", () => {
+    const r = summarizePickLines([
+      line({ channelSku: "TUI-A", productName: "Túi đen", qty: 1 }),
+      line({ channelSku: "TUI-B", productName: "Túi đen", qty: 1 }),
+    ]);
+    expect(r.byProduct[0]).toMatchObject({ skuCount: 2, sku: null, sellerSku: null });
+  });
+});

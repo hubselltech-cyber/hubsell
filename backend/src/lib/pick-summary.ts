@@ -8,7 +8,14 @@
 // thiếu một dòng là kho thiếu hàng mà không biết.
 //
 // Đơn hỏa tốc lên đầu vì kho phải nhặt trước, cùng luật với /api/orders/stats.
+//
+// 19/11/2026 — mỗi dòng kèm chữ hiển thị theo luật chung lib/order-line-display.ts
+// (`baseName` / `variantName` / `sellerSku`): khách không đặt SKU trước đây thấy tiêu đề
+// dòng là dãy id sàn. KHÓA GOM KHÔNG ĐỔI (vẫn `channelSku`, không SKU thì theo tên) —
+// chỉ thêm chữ để giao diện in.
 // ============================================================
+
+import { lineDisplay, type LineCatalogHint } from "./order-line-display";
 
 export interface PickLineGroup {
   channelSku: string;
@@ -17,9 +24,23 @@ export interface PickLineGroup {
   /** Phần số lượng thuộc đơn hỏa tốc. */
   expressQty: number;
   imageUrl: string | null;
+  /** OrderItem.variantName / externalId của nhóm + dòng danh mục cùng mã — chỉ để dựng chữ hiển thị. */
+  variantName?: string | null;
+  externalId?: string | null;
+  catalog?: LineCatalogHint | null;
 }
 
-export interface PickSkuRow {
+/** Chữ hiển thị của một dòng (lib/order-line-display.ts). */
+export interface PickLineText {
+  /** Tên sản phẩm không đuôi phân loại. */
+  baseName: string;
+  /** Tên phân loại; null = sản phẩm đơn / không tách được. */
+  variantName: string | null;
+  /** Mã người bán tự đặt; null khi mã là mã máy của sàn (đừng in ra). */
+  sellerSku: string | null;
+}
+
+export interface PickSkuRow extends PickLineText {
   /** null = dòng đơn không có SKU, gom riêng theo tên để không dồn hàng khác nhau làm một. */
   sku: string | null;
   name: string;
@@ -28,7 +49,7 @@ export interface PickSkuRow {
   imageUrl: string | null;
 }
 
-export interface PickProductRow {
+export interface PickProductRow extends PickLineText {
   name: string;
   /** Số SKU khác nhau của sản phẩm — kho biết phải lấy mấy loại. */
   skuCount: number;
@@ -61,9 +82,14 @@ export function summarizePickLines(groups: PickLineGroup[]): PickSummary {
     // Không SKU thì tên là thứ duy nhất phân biệt được hàng; tiền tố để không đụng
     // một SKU thật trùng chữ với tên.
     const skuKey = sku ? `sku:${sku}` : `name:${g.productName}`;
+    const text = lineDisplay(
+      { productName: g.productName, channelSku: sku, externalId: g.externalId, variantName: g.variantName },
+      g.catalog
+    );
 
     const s = skus.get(skuKey) ?? {
       sku,
+      ...text,
       name: g.productName,
       qty: 0,
       expressQty: 0,
@@ -75,6 +101,7 @@ export function summarizePickLines(groups: PickLineGroup[]): PickSummary {
     skus.set(skuKey, s);
 
     const p = products.get(g.productName) ?? {
+      ...text,
       name: g.productName,
       skuCount: 0,
       sku: null,
@@ -88,6 +115,8 @@ export function summarizePickLines(groups: PickLineGroup[]): PickSummary {
     p.imageUrl ??= g.imageUrl;
     p.skuSet.add(skuKey);
     p.sku = p.skuSet.size === 1 ? sku : null;
+    // Một tên mà nhiều mã (cùng món ở hai gian đặt mã khác) → không in mã nào.
+    if (p.skuSet.size > 1) p.sellerSku = null;
     products.set(g.productName, p);
 
     totalQty += g.qty;

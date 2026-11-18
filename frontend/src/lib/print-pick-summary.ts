@@ -8,6 +8,7 @@
 
 import type { PickSummaryRow } from "./api";
 import { formatDateTime, formatNumber } from "./format";
+import { lineText } from "./order-lines";
 
 const FRAME_ID = "hubsell-pick-summary-print";
 
@@ -49,6 +50,7 @@ const STYLE = `
   tr { break-inside: avoid; }
   .sku { width: 32%; font-weight: 700; }
   .no-sku { color: #64748b; font-weight: 400; }
+  .variant { display: block; }
   .qty { width: 14%; text-align: right; }
   td.qty { font-size: 13pt; font-weight: 700; }
   .qty small { display: block; color: #b91c1c; font-size: 8.5pt; }
@@ -58,11 +60,22 @@ const STYLE = `
 export function buildPickSummaryHtml(input: PickSummaryPrintInput): string {
   const rows = input.rows
     .map((r) => {
-      const sku = r.sku
-        ? `<td class="sku">${escapeHtml(r.sku)}</td>`
+      // Mã máy của sàn không in ra; phân loại in đậm thành dòng riêng dưới tên (19/11/2026).
+      const text = lineText({
+        productName: r.name,
+        channelSku: r.sku,
+        baseName: r.baseName,
+        variantName: r.variantName,
+        sellerSku: r.sellerSku,
+      });
+      const sku = text.sellerSku
+        ? `<td class="sku">${escapeHtml(text.sellerSku)}</td>`
         : `<td class="sku no-sku">Không có SKU</td>`;
+      const name = text.variantName
+        ? `${escapeHtml(text.baseName)}<b class="variant">${escapeHtml(text.variantName)}</b>`
+        : escapeHtml(text.baseName);
       const express = r.expressQty > 0 ? `<small>Hỏa tốc ${formatNumber(r.expressQty)}</small>` : "";
-      return `<tr>${sku}<td>${escapeHtml(r.name)}</td><td class="qty">${formatNumber(r.qty)}${express}</td></tr>`;
+      return `<tr>${sku}<td>${name}</td><td class="qty">${formatNumber(r.qty)}${express}</td></tr>`;
     })
     .join("");
 

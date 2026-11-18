@@ -25,6 +25,7 @@ import type {
   ShippingStatus,
 } from "@/types/api";
 import { formatDateTime, formatMoney, groupVN } from "@/lib/format";
+import { lineText } from "@/lib/order-lines";
 import {
   CARRIER_LABEL,
   CARRIER_SHORT,
@@ -330,6 +331,8 @@ export default function OrdersScreen() {
 
   const renderItemRow = (it: OrderItemDto) => {
     const img = it.imageUrl ?? it.product?.imageUrl ?? null;
+    // Tên / PHÂN LOẠI / SKU người bán (19/11/2026) — mã máy của sàn không in ra.
+    const text = lineText(it);
     return (
       <View key={it.id} className="mt-2 flex-row items-center gap-2.5">
         <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
@@ -345,11 +348,16 @@ export default function OrdersScreen() {
         </View>
         <View className="flex-1">
           <Text className="text-xs text-slate-800 dark:text-slate-200" numberOfLines={1}>
-            {it.productName}
+            {text.baseName}
           </Text>
-          {it.channelSku ? (
+          {text.variantName ? (
+            <Text className="text-[11px] font-semibold text-slate-700 dark:text-slate-200" numberOfLines={2}>
+              {text.variantName}
+            </Text>
+          ) : null}
+          {text.sellerSku ? (
             <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
-              {it.channelSku}
+              {text.sellerSku}
             </Text>
           ) : null}
         </View>

@@ -491,7 +491,15 @@ function pickLazadaStatus(statuses?: string[]): string | undefined {
 function aggregateLazadaItems(items: LazadaOrderItem[]) {
   const agg = new Map<
     string,
-    { channelSku: string; productName: string; price: number; quantity: number; imageUrl: string | null }
+    {
+      channelSku: string;
+      productName: string;
+      /** variation nguyên văn — null = sản phẩm không có phân loại (19/11/2026, lib/order-line-display). */
+      variantName: string | null;
+      price: number;
+      quantity: number;
+      imageUrl: string | null;
+    }
   >();
   for (const it of items) {
     const sku = lazadaChannelSku({
@@ -507,7 +515,15 @@ function aggregateLazadaItems(items: LazadaOrderItem[]) {
     if (ex) {
       ex.quantity += 1;
       if (!ex.imageUrl && imageUrl) ex.imageUrl = imageUrl;
-    } else agg.set(sku, { channelSku: sku, productName: name, price, quantity: 1, imageUrl });
+    } else
+      agg.set(sku, {
+        channelSku: sku,
+        productName: name,
+        variantName: it.variation?.trim() || null,
+        price,
+        quantity: 1,
+        imageUrl,
+      });
   }
   return [...agg.values()];
 }
@@ -1017,6 +1033,7 @@ export async function upsertLazadaOrderTx(
         // externalId để NULL: dòng đơn Lazada chưa dựng được id lá (payload có product_id + shop_sku, chưa có mẫu
         // sku_id thật). Anh Trung chốt 18/10/2026: Lazada "mã trước, id khi có mẫu" — docs/MO-HINH-CAY-SAN-PHAM-SAN.md 6.2.
         productName: line.productName,
+        variantName: line.variantName,
         quantity: line.quantity,
         price: line.price,
         imageUrl: line.imageUrl,

@@ -102,6 +102,15 @@ export interface OrderItemDto {
   id: string;
   productName: string;
   channelSku: string | null;
+  /**
+   * Chữ hiển thị máy chủ tách sẵn (19/11/2026, backend lib/order-line-display.ts) — đọc qua
+   * lib/order-lines.ts `lineText`, đừng tự cắt `productName`. Máy chủ cũ không trả.
+   */
+  baseName?: string;
+  /** Tên phân loại ("Đen, M"); null = sản phẩm đơn / không tách được. */
+  variantName?: string | null;
+  /** Mã người bán tự đặt; null khi `channelSku` là mã máy của sàn (không in ra). */
+  sellerSku?: string | null;
   quantity: number;
   price: string | number;
   product: { imageUrl: string | null } | null;
@@ -473,6 +482,10 @@ export interface PickSummaryRow {
   imageUrl: string | null;
   /** Chỉ dòng theo sản phẩm: số SKU khác nhau. */
   skuCount?: number;
+  /** Chữ hiển thị (19/11/2026) — đọc qua lib/order-lines.ts `goodsRowText`. */
+  baseName?: string;
+  variantName?: string | null;
+  sellerSku?: string | null;
 }
 
 export interface PickSummaryResponse {

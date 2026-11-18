@@ -40,6 +40,16 @@ describe("loadVariantNames — tên phân loại cho dòng đơn", () => {
     expect(findMany).toHaveBeenCalledTimes(2);
   });
 
+  it("dòng đã mang tên phân loại của chính nó: dùng luôn chữ đó, không hỏi danh mục", async () => {
+    const variantOf = await loadVariantNames([
+      { channelId: "ch1", externalId: "88-1", channelSku: "LT075-HONG", variantName: "Hồng,3-5kg" },
+    ]);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(variantOf({ channelId: "ch1", externalId: "88-1", channelSku: "LT075-HONG", variantName: "Hồng,3-5kg" })).toBe(
+      "Hồng, 3-5kg"
+    );
+  });
+
   it("không có dòng nào thì không hỏi DB", async () => {
     const variantOf = await loadVariantNames([]);
     expect(findMany).not.toHaveBeenCalled();

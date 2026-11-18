@@ -14,10 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, processOrderReturn, type Order } from "@/lib/api";
+import { ApiError, processOrderReturn, type Order, type OrderItemLine } from "@/lib/api";
 import { carrierLabel } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber } from "@/lib/format";
+import { lineText } from "@/lib/order-lines";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,20 @@ import { cn } from "@/lib/utils";
  * kho" cho kiện hàng vỡ là bơm hàng ma vào kho — bán ra rồi mới biết không có
  * hàng để giao.
  */
+/** Tên / PHÂN LOẠI / SKU người bán của một dòng hàng hoàn (19/11/2026) — kho soi kiện theo phân loại. */
+function ReturnLineText({ line }: { line: OrderItemLine }) {
+  const text = lineText(line);
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-sm" title={line.productName}>
+        {text.baseName}
+      </p>
+      {text.variantName && <p className="break-words text-sm font-medium">{text.variantName}</p>}
+      {text.sellerSku && <p className={cn(TEXT_SUB, "font-mono")}>{text.sellerSku}</p>}
+    </div>
+  );
+}
+
 export function ReturnDialog({
   order,
   open,
@@ -134,10 +149,7 @@ export function ReturnDialog({
                     <ImageIcon className="size-4" />
                   </div>
                 )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm">{l.productName}</p>
-                  <p className={cn(TEXT_SUB, "font-mono")}>{l.channelSku}</p>
-                </div>
+                <ReturnLineText line={l} />
                 <span className="shrink-0 font-semibold tabular-nums">
                   ×{l.quantity}
                 </span>

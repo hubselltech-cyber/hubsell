@@ -1,4 +1,5 @@
 import type { PackFlash } from "./pack-scan-feedback";
+import { lineText } from "./order-lines";
 
 /**
  * QUÉT NHIỀU ĐƠN (12/11/2026) — phần thuần của chế độ "Quét nhiều" ở tab QR giữa: gom một
@@ -31,6 +32,10 @@ export interface BatchOrder {
   items: {
     productName: string;
     channelSku: string | null;
+    /** Chữ hiển thị máy chủ tách sẵn (19/11/2026, lib/order-lines.ts). */
+    baseName?: string;
+    variantName?: string | null;
+    sellerSku?: string | null;
     quantity: number;
     imageUrl?: string | null;
     product?: { imageUrl: string | null } | null;
@@ -47,6 +52,10 @@ export interface BatchLine {
   /** Số SKU khác nhau của sản phẩm (chỉ có nghĩa ở bảng theo sản phẩm). */
   skuCount: number;
   imageUrl: string | null;
+  /** Chữ hiển thị của dòng (lib/order-lines.ts goodsRowText) — khóa gom vẫn là `sku`. */
+  baseName: string;
+  variantName: string | null;
+  sellerSku: string | null;
 }
 
 export interface BatchSummary {
@@ -130,8 +139,10 @@ export function summarizeBatch(
       // Không SKU thì tên là thứ duy nhất phân biệt được hàng; tiền tố để không đụng SKU thật.
       const skuKey = sku ? `sku:${sku}` : `name:${it.productName}`;
       const img = imageOf(it);
+      const text = lineText(it);
       const blank = (name: string, s: string | null): Acc => ({
         sku: s,
+        ...text,
         name,
         qty: 0,
         orders: 0,
@@ -143,6 +154,8 @@ export function summarizeBatch(
       bump(skus, skuKey, () => blank(it.productName, sku), o, q, skuKey, img);
       const p = bump(products, it.productName, () => blank(it.productName, null), o, q, skuKey, img);
       p.sku = p.skuSet.size === 1 ? sku : null;
+      // Một tên mà nhiều mã (cùng món ở hai gian đặt mã khác) → không in mã nào.
+      if (p.skuSet.size > 1) p.sellerSku = null;
       qty += q;
     }
   }

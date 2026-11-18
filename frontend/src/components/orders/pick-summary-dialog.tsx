@@ -21,6 +21,7 @@ import {
 import { CARRIER_OPTIONS } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
+import { lineText } from "@/lib/order-lines";
 import { printPickSummary } from "@/lib/print-pick-summary";
 import { qk } from "@/lib/query-keys";
 import { TEXT_SUB } from "@/lib/typography";
@@ -43,9 +44,11 @@ function sortRows(rows: PickSummaryRow[], sort: Sort): PickSummaryRow[] {
   const sign = sort.dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
     if (sort.key === "qty") return sign * (a.qty - b.qty);
-    // Dòng không có mã luôn xếp cuối ở cả hai chiều
-    if (!a.sku || !b.sku) return Number(!a.sku) - Number(!b.sku);
-    return sign * a.sku.localeCompare(b.sku, "vi", { numeric: true });
+    // Dòng không có mã (kể cả mã máy của sàn — không in ra) luôn xếp cuối ở cả hai chiều
+    const sa = rowText(a).sellerSku;
+    const sb = rowText(b).sellerSku;
+    if (!sa || !sb) return Number(!sa) - Number(!sb);
+    return sign * sa.localeCompare(sb, "vi", { numeric: true });
   });
 }
 
@@ -101,12 +104,37 @@ function SortHeader({
   );
 }
 
+/** Chữ của một dòng phiếu: mã người bán (mã máy của sàn không in), tên không đuôi + phân loại (19/11/2026). */
+function rowText(row: PickSummaryRow) {
+  return lineText({
+    productName: row.name,
+    channelSku: row.sku,
+    baseName: row.baseName,
+    variantName: row.variantName,
+    sellerSku: row.sellerSku,
+  });
+}
+
+/** Tên không đuôi phân loại + dòng PHÂN LOẠI đậm, không cắt — thứ kho đọc để lấy đúng món. */
+function NameText({ row }: { row: PickSummaryRow }) {
+  const text = rowText(row);
+  return (
+    <>
+      <p className="line-clamp-2 break-words" title={row.name}>
+        {text.baseName}
+      </p>
+      {text.variantName && <p className="break-words font-semibold">{text.variantName}</p>}
+    </>
+  );
+}
+
 function SkuCell({ row }: { row: PickSummaryRow }) {
-  if (row.sku) {
+  const sku = rowText(row).sellerSku;
+  if (sku) {
     return (
       <div className="flex min-w-0 items-center gap-1">
-        <span className="min-w-0 break-all font-mono text-[13px]">{row.sku}</span>
-        <CopyIconButton value={row.sku} what="mã SKU" />
+        <span className="min-w-0 break-all font-mono text-[13px]">{sku}</span>
+        <CopyIconButton value={sku} what="mã SKU" />
       </div>
     );
   }
@@ -284,9 +312,7 @@ export function PickSummaryDialog({
                       <div className="flex min-w-0 items-center gap-2.5">
                         <Thumb row={r} />
                         <div className="min-w-0">
-                          <p className="line-clamp-2 break-words" title={r.name}>
-                            {r.name}
-                          </p>
+                          <NameText row={r} />
                           <div className="mt-0.5 sm:hidden">
                             <SkuCell row={r} />
                           </div>

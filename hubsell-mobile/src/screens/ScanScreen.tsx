@@ -17,7 +17,6 @@ import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { fetchOrders, lookupOrder, markDamaged, receiveReturn } from "@/api/orders";
 import { ApiError } from "@/api/client";
 import type { LookupAmbiguousBody, OrderDto, OrderPaymentDto } from "@/types/api";
@@ -26,6 +25,7 @@ import { playScanSound } from "@/lib/scan-sounds";
 import { Badge } from "@/components/Badge";
 import { ActionButton } from "@/components/ActionButton";
 import { OrderDetailPanel } from "@/components/OrderDetailPanel";
+import { OrderLines } from "@/components/OrderLines";
 import { CameraPermissionPrompt, CircleControl, GLASS, SCANNABLE } from "@/components/ScanChrome";
 import { useKeyboardLift } from "@/lib/useKeyboardLift";
 
@@ -462,29 +462,10 @@ export function ScanScreen({
           {order.customerName}
         </Text>
 
-        {order.items.map((it) => (
-          <View key={it.id} className="mb-2 flex-row items-center gap-3">
-            <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
-              {(it.imageUrl ?? it.product?.imageUrl) ? (
-                <Image
-                  source={{ uri: (it.imageUrl ?? it.product?.imageUrl)! }}
-                  style={{ width: 48, height: 48 }}
-                  contentFit="cover"
-                />
-              ) : (
-                <Ionicons name="cube-outline" size={18} color="#94a3b8" />
-              )}
-            </View>
-            <View className="flex-1">
-              <Text className="text-[13px] font-medium text-slate-900 dark:text-slate-100" numberOfLines={2}>
-                {it.productName}
-              </Text>
-              <Text className="text-xs text-slate-500 dark:text-slate-400">
-                {it.channelSku ? `${it.channelSku} · ` : ""}x{it.quantity}
-              </Text>
-            </View>
-          </View>
-        ))}
+        {/* Cùng danh sách hàng với màn chi tiết đơn — kho soi kiện hoàn theo PHÂN LOẠI (19/11/2026) */}
+        <View className="mb-2">
+          <OrderLines items={order.items} />
+        </View>
 
         {canDamage ? (
           <TextInput

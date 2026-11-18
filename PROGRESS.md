@@ -5,6 +5,30 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 18/11 đêm — Màn "Quét xem chi tiết đơn" (mobile): khách không đặt SKU thấy dãy id sàn, mất tên phân loại (anh: "khách muốn lấy tên phân loại như khách đang dùng bên khác… lên phương án hợp lý để thuận tiện cho cả những người có dùng SKU và những người không dùng SKU") — chỉ đọc mã + lên phương án, CHƯA code
+
+- **Gốc:** dòng đơn không có cột phân loại — cả 3 sàn ghép "Tên SP - Tên phân loại" vào `productName` lúc đồng bộ, phân loại nằm ở đuôi nên bị cắt 2 dòng (`OrderDetailPanel.tsx`); dòng "SKU:" in `channelSku`, mà khách không đặt mã thì đó là mã máy (TikTok = sku_id trần 19 số, Shopee `SPE-…`, Lazada ShopSku / `LZD-…`).
+- **Cùng lỗi ở:** thẻ đơn danh sách mobile (tên 1 dòng), phiếu quét đơn hoàn, Quét nhiều + Phiếu nhặt hàng chế độ "Theo SKU" (tiêu đề to = dãy id), cột sản phẩm bảng Đơn hàng trên web.
+- **Đề xuất:** một luật hiển thị không công tắc — tên SP / dòng PHÂN LOẠI đậm không cắt / "SKU" chỉ hiện khi là mã người bán tự đặt. Thêm cột `OrderItem.variantName` (nullable, ghi lúc đồng bộ, đơn cũ điền bù dần), đơn chưa có thì lui về `ChannelProduct.variantName` trong câu `attachItemImages` sẵn có. Lát nhanh đi trước được: app hiện đủ tên + ẩn mã máy (chỉ JS, OTA).
+- **CHƯA kiểm:** chưa đo prod bao nhiêu gian không đặt SKU; chưa nhìn payload đơn thật của khách này.
+- ⏳ Chờ anh chốt luật hiển thị + phạm vi + có làm lát nhanh trước không.
+- Ghi ở: memory `hubsell-ten-phan-loai-dong-don-2026-11-18.md`.
+
+## Phiên 19/11 rạng sáng — Tên phân loại trên dòng đơn: LÀM ĐỦ MỘT LẦN (anh: "Làm đủ một lần"; "Khảo sát cho kỹ em nhé. anh nhớ hình như phần này mình đề cập 1 lần rồi… giao diện cho khách xem phải đẹp vì có thể trong 1 đơn hàng khách có tới 20 sản phẩm sku"; sau khi xem ảnh: "Thêm phần click vào avatar của phân loại sẽ phóng to ảnh phân loại đó lên để xem. Xong phần này thì dọn dẹp, commit và push") — ĐÃ COMMIT + PUSH (backend + web + mã app); app CHƯA OTA
+
+- **Anh nhớ đúng:** 22/10 (ý 3 khách vài nghìn SKU, `d407358b`) đã có `lib/order-line-names.ts` tra tên phân loại cho Lãi/Lỗ + Kiểm toán phí; mobile hôm đó để lại. Lần này nối tiếp, không dựng hệ song song: bộ tra cũ nay ưu tiên chữ của chính dòng đơn.
+- **Backend:** cột `OrderItem.variantName` (migration `20261119090000_order_item_variant_name`), 3 sàn ghi lúc tạo đơn; `lib/order-line-display.ts` = MỘT luật tên / phân loại / SKU người bán (mã máy ẩn); `attachItemImages` + `pick-summary` trả sẵn ba trường, không thêm câu truy vấn. ⛔ KHÔNG điền bù đơn cũ (đổi so với đề xuất — sẽ mở giao dịch cho mọi đơn cũ mỗi 10 phút); đơn cũ tách tên lúc đọc qua danh mục.
+- **Mobile:** `components/OrderLines.tsx` gom phân loại cùng sản phẩm (đơn 20 dòng: tên in một lần, số lượng một cột, từ 2 món tô đỏ đặc) cho màn quét / hộp chi tiết / phiếu quét hoàn; thẻ đơn; Phiếu nhặt + Quét nhiều có dòng phân loại riêng.
+- **Web:** cột sản phẩm bảng Đơn hàng (xổ ra gom theo sản phẩm: 1.593px → 983px ở 1280), hộp hoàn, hộp phiếu nhặt + bản in.
+- **Chạm ảnh phân loại → phóng to** (anh yêu cầu sau khi xem ảnh): trong `OrderLines` nên có ở màn quét, hộp chi tiết đơn, phiếu quét hoàn; nền tối, kèm tên phân loại, chạm để đóng. Chưa làm cho thẻ đơn, phiếu nhặt, web.
+- **Đã kiểm:** tsc 3 gói sạch; test mới 31 ca xanh; migration chạy 2 lần trên DB local; soi app bản web 375 px sáng + tối và web 1280 bằng 4 đơn thử `DEMOPL-*`, gửi anh 8 ảnh; 8 ca vitest đỏ ở 5 tệp DB local đã chạy lại trên bản mã gốc (worktree HEAD `90dd28b9`) → đỏ y hệt, có từ trước.
+- **CHƯA kiểm:** camera / máy thật (kể cả hộp phóng ảnh mở từ trong hộp chi tiết — hai lớp Modal lồng nhau); phiếu quét đơn hoàn; thống kê Quét nhiều; hộp phiếu nhặt + bản in + hộp hoàn trên web; dữ liệu đơn thật của khách.
+- **App: KHÔNG cần build, chỉ cần OTA** (chỉ đổi JS, `package.json` không đổi). OTA theo `app.json` 1.4.3 chỉ tới máy đã lên 1.4.3; máy còn 1.4.2 phải cập nhật từ kho trước (1.4.2 → 1.4.3 chỉ khác dòng `version`, nên có thể đẩy thêm OTA cho runtime 1.4.2 — chưa làm). ⏳ Chờ anh: bảo đẩy OTA; trước đó phải xử lý `hubsell-mobile/src/lib/scan-sounds.ts` (sửa âm báo quét 18/11, chưa commit — script OTA đòi cây git sạch).
+- **Đã dọn:** xóa gian thử + đơn `DEMOPL-*` trên DB local, dừng 3 máy chủ local, gỡ worktree tạm; script seed để ở máy, không commit. Commit CHỈ gồm tệp của việc này (để nguyên M1 video, 4 tệp docs khác, `scan-sounds.ts`, thư mục marketing).
+- ⏳ Sau deploy: kiểm migration trên Render + mở một đơn mới trên prod xem dòng phân loại.
+- Ghi ở: docs `GIA-VON-TEN-PHAN-LOAI-LOC-THEO-KY.md` mục 5; memory `hubsell-ten-phan-loai-dong-don-2026-11-18.md`.
+
+---
 ## Phiên 18/11 21:30 (lịch anh đặt: "M1 để tối làm… Tối cần khảo sát lại cho phù hợp với mô hình lớn nữa") — Video đóng hàng: KHẢO SÁT LẠI theo mô hình lớn + lát M1 "hàng chờ bền" trên LOCAL — chỉ web, CHƯA commit, CHƯA push, không sửa backend
 
 - **Khảo sát (docs/VIDEO-DONG-HANG-THIET-KE.md mục 18.10, tra trang gốc):** đứng vững — R2 không trần ghi theo bucket, nhận ghi ở điểm biên; `moov` cuối tệp; 6 bàn / máy (GeForce nay 12 phiên mã hóa, Intel không trần). Phải sửa — Supabase cỡ Small chỉ 1.000 IOPS nền → mã hiện tại chạm trần ở ≈ 3.500–5.000 shop cùng lúc, **M2 (gộp lô) thành điều kiện để mở cho nhiều khách**; ghi một tệp dài xuống ổ trình duyệt KHÔNG bền (chỉ chốt khi đóng luồng) → M1 ghi theo mảnh; `storage.estimate()` cố ý không đo được chỗ trống (Chrome 133) → bỏ ngưỡng 5 GB / 1 GB; cáp biển 25/08/2026 lỗi 4 / 8 tuyến; thật ra ≈ 4 lượt gọi / video chứ không phải 5.

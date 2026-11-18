@@ -8,6 +8,7 @@ import { Badge } from "@/components/Badge";
 import { isCancelled, summarizeBatch, type BatchLine } from "@/lib/batch-scan";
 import { batchStore, type BatchEntry } from "@/lib/batch-scan-store";
 import { groupVN } from "@/lib/format";
+import { goodsRowText } from "@/lib/order-lines";
 import { hapticTap } from "@/lib/haptics";
 import { CARRIER_LABEL, CHANNEL_LABEL, orderStatusBadge } from "@/lib/labels";
 import { useChannelColors } from "@/theme/channel-colors";
@@ -311,15 +312,9 @@ function Empty({ icon, title, text }: { icon: keyof typeof Ionicons.glyphMap; ti
 }
 
 function GoodsRow({ line, index, bySku }: { line: BatchLine; index: number; bySku: boolean }) {
-  const title = bySku && line.sku ? line.sku : line.name;
-  // Dòng phụ: theo SKU → tên sản phẩm; theo sản phẩm → mã SKU, hoặc "N SKU" khi có nhiều phân loại.
-  const sub = bySku
-    ? line.sku
-      ? line.name
-      : "Không có mã SKU"
-    : line.skuCount > 1
-      ? `${line.skuCount} SKU`
-      : (line.sku ?? "Không có mã SKU");
+  // Theo SKU: mã người bán to, không có mã thì TÊN PHÂN LOẠI to (không in dãy id sàn — 19/11/2026);
+  // theo sản phẩm: tên to, dòng phụ là mã hoặc "N SKU" khi có nhiều phân loại.
+  const { title, variant, sub } = goodsRowText(line, bySku);
   return (
     <View className="flex-row items-center gap-2.5 border-b border-slate-100 py-2.5 dark:border-slate-800">
       <Text className="w-6 text-center text-xs font-bold text-slate-400 dark:text-slate-500" style={TABULAR}>
@@ -336,8 +331,13 @@ function GoodsRow({ line, index, bySku }: { line: BatchLine; index: number; bySk
         <Text className="text-[13px] font-semibold text-slate-800 dark:text-slate-200" numberOfLines={2}>
           {title}
         </Text>
+        {variant ? (
+          <Text className="text-[12px] font-bold text-slate-900 dark:text-slate-100" numberOfLines={2}>
+            {variant}
+          </Text>
+        ) : null}
         <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1} style={TABULAR}>
-          {sub} · {groupVN(line.orders)} đơn
+          {sub ? `${sub} · ` : ""}{groupVN(line.orders)} đơn
         </Text>
       </View>
       <Text

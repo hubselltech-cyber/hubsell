@@ -212,6 +212,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
           id: true,
           productName: true,
           channelSku: true,
+          // externalId + variantName (19/11/2026): attachItemImages tách tên / phân loại / SKU người bán.
+          externalId: true,
+          variantName: true,
           quantity: true,
           price: true,
           imageUrl: true, // ảnh chụp từ payload đơn của sàn (08/09)
@@ -522,7 +525,8 @@ router.get("/pick-summary", async (req: AuthRequest, res, next) => {
         by: groupKeys,
         where: { order: where },
         _sum: { quantity: true },
-        _max: { imageUrl: true },
+        // variantName / externalId: cùng (mã, tên) thì cùng một phân loại → MAX chỉ để lấy giá trị khác NULL.
+        _max: { imageUrl: true, variantName: true, externalId: true },
       }),
       prisma.orderItem.groupBy({
         by: groupKeys,
@@ -535,23 +539,29 @@ router.get("/pick-summary", async (req: AuthRequest, res, next) => {
       JSON.stringify([l.channelSku, l.productName]);
     const expressQty = new Map(expressLines.map((l) => [lineKey(l), l._sum.quantity ?? 0]));
 
-    // Ảnh ưu tiên lấy từ dòng đơn (đỡ một lượt truy vấn); dòng đơn cũ chưa có ảnh
-    // mới tra danh mục sàn theo SKU.
-    const missingImageSkus = [
-      ...new Set(lines.filter((l) => !l._max.imageUrl && l.channelSku).map((l) => l.channelSku)),
+    // Ảnh + tên phân loại ưu tiên lấy từ dòng đơn (đỡ một lượt truy vấn); dòng thiếu một
+    // trong hai (đơn cũ chưa có ảnh, đơn tạo trước 19/11/2026 chưa có cột phân loại) mới
+    // tra danh mục sàn theo SKU — vẫn MỘT câu cho cả phiếu.
+    const lookupSkus = [
+      ...new Set(
+        lines.filter((l) => l.channelSku && (!l._max.imageUrl || !l._max.variantName)).map((l) => l.channelSku)
+      ),
     ];
     const listingImage = new Map<string, string>();
-    if (missingImageSkus.length > 0) {
+    const listingText = new Map<string, { productName: string; variantName: string | null }>();
+    if (lookupSkus.length > 0) {
       const listings = await prisma.channelProduct.findMany({
         where: {
           channel: channelScope(req),
-          channelSku: { in: missingImageSkus },
-          imageUrl: { not: null },
+          channelSku: { in: lookupSkus },
         },
-        select: { channelSku: true, imageUrl: true },
+        select: { channelSku: true, imageUrl: true, productName: true, variantName: true },
       });
       for (const l of listings) {
         if (l.imageUrl && !listingImage.has(l.channelSku)) listingImage.set(l.channelSku, l.imageUrl);
+        if (!listingText.has(l.channelSku)) {
+          listingText.set(l.channelSku, { productName: l.productName, variantName: l.variantName });
+        }
       }
     }
 
@@ -562,6 +572,9 @@ router.get("/pick-summary", async (req: AuthRequest, res, next) => {
         qty: l._sum.quantity ?? 0,
         expressQty: expressQty.get(lineKey(l)) ?? 0,
         imageUrl: l._max.imageUrl ?? listingImage.get(l.channelSku) ?? null,
+        variantName: l._max.variantName,
+        externalId: l._max.externalId,
+        catalog: listingText.get(l.channelSku) ?? null,
       }))
     );
 
@@ -1519,6 +1532,8 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
           id: true,
           productName: true,
           channelSku: true,
+          externalId: true,
+          variantName: true,
           quantity: true,
           price: true,
           imageUrl: true,

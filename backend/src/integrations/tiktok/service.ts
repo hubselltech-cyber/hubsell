@@ -229,6 +229,8 @@ export function aggregateLineItems(order: TikTokOrder) {
       channelSku: string;
       externalId: string | null;
       productName: string;
+      /** sku_name nguyên văn — null = sản phẩm không có phân loại (19/11/2026, lib/order-line-display). */
+      variantName: string | null;
       price: number;
       /** Giá niêm yết (original_price) — null khi sàn không trả. */
       originalPrice: number | null;
@@ -256,6 +258,7 @@ export function aggregateLineItems(order: TikTokOrder) {
         channelSku: sku,
         externalId,
         productName: name,
+        variantName: li.sku_name?.trim() || null,
         price: Number(li.sale_price ?? 0) || 0,
         originalPrice: li.original_price != null ? Number(li.original_price) || 0 : null,
         quantity: qty,
@@ -727,6 +730,7 @@ async function upsertOrderTx(
         // danh mục có là tra được, không phải sửa dòng (docs/MO-HINH-CAY-SAN-PHAM-SAN.md B3, 18/10/2026).
         externalId: mp?.externalId ?? line.externalId,
         productName: line.productName,
+        variantName: line.variantName,
         quantity: line.quantity,
         price: line.price,
         originalPrice: line.originalPrice,

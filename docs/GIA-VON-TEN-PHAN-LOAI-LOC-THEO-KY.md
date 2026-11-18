@@ -61,3 +61,88 @@ Không thêm ảnh ở dòng con: sàn chỉ có ảnh cấp sản phẩm, lặp
 - ⚠️ DB dev không có gian nào vừa có đơn vừa có `variantName` → đường tra tên phân loại cho dòng đơn mới có test unit, **chưa thấy trên dữ liệu
   thật** → sau deploy soi prod bảng Lãi/Lỗ, cột Chi tiết sản phẩm, gian Shopee có phân loại.
 - Bỏ qua theo anh: mục 2 (Lợi nhuận thực tế âm), mobile (doanh thu trước/sau KM, bộ lọc Quảng cáo nhảy 7 ngày), gói miễn phí.
+
+## 5. 19/11/2026 — Dòng đơn mang tên phân loại + MỘT luật hiển thị cho màn quét, bảng đơn, phiếu nhặt
+
+> Nguồn: khách không đặt SKU trên sàn (TikTok) kêu 18/11 — màn "Quét xem chi tiết đơn" của app in "SKU: 1733668291614…"
+> (id sàn), tên phân loại bị cắt ở đuôi tên; bên khác khách đang dùng hiện phân loại thành dòng riêng. Anh Trung: "lên phương án
+> hợp lý để thuận tiện cho cả những người có dùng SKU và những người không dùng SKU"; chốt "Làm đủ một lần"; nhắc thêm "giao
+> diện cho khách xem phải đẹp vì có thể trong 1 đơn hàng khách có tới 20 sản phẩm sku".
+> Đây là phần nối tiếp mục 3 (ý 3 ngày 22/10 mới làm cho Lãi/Lỗ + Kiểm toán phí; mobile hôm đó để lại).
+
+### 5.1 Gốc
+
+- `OrderItem` không có cột phân loại; cả 3 sàn ghép "Tên sản phẩm - Tên phân loại" vào `productName` lúc đồng bộ → phân loại nằm
+  ở ĐUÔI, giao diện cắt tên 1–2 dòng là mất đúng thứ kho cần đọc.
+- `channelSku` là KHÓA khớp kho. Người bán để trống mã thì nó là mã máy: TikTok = `sku_id` trần 19 số (không có tiền tố),
+  Shopee = `SPE-item-model`, Lazada = ShopSku `…_VNAMZ-…` hoặc `LZD-…`.
+
+### 5.2 Luật hiển thị (không có công tắc cài đặt)
+
+Mỗi dòng hàng: **tên sản phẩm** (không đuôi) / **TÊN PHÂN LOẠI** đậm, không cắt / **SKU** chỉ khi là mã người bán tự đặt (mã máy
+ẩn hẳn, không in "SKU: --"). Người dùng SKU thấy cả phân loại lẫn SKU; người không dùng SKU thấy phân loại, không thấy dãy id.
+
+- Backend `lib/order-line-display.ts` (`lineDisplay`, `isMachineSku`, thuần, 17 test): trả `baseName` / `variantName` / `sellerSku`.
+  - **Bất biến:** chữ phân loại hiện ra luôn là chữ CỦA CHÍNH ĐƠN. Danh mục sàn chỉ dùng để tìm ĐIỂM CẮT cho đơn cũ, không bao
+    giờ lấy tên phân loại hiện tại của danh mục đè lên đơn (người bán đổi tên phân loại sau khi bán).
+  - ⛔ Không cắt mò theo " - " (tên sản phẩm của khách có sẵn " - "): quét mọi vị trí " - ", so đuôi sau chuẩn hóa với phân loại
+    đã biết; đơn cũ không khớp thì thử cắt theo tên sản phẩm của danh mục; vẫn không được thì giữ nguyên tên, phân loại = null.
+  - Mã máy: khuôn `SPE-/TTK-/LZD-` + ShopSku Lazada + dãy toàn số ≥ 16 chữ số; có `externalId` thì so đúng id lá. Ngưỡng 16 là
+    mặc định tự chọn (sku_id TikTok 19 số; mã vạch dài nhất thông dụng GTIN-14 là 14 số, mã vạch Tổng kho 13 số).
+  - Khóa trùng mã có đuôi product-sync thêm ("LT075-HONG (Hồng, 3-5kg) #173…") → SKU in ra là "LT075-HONG".
+- **Cột mới `OrderItem.variantName`** (migration `20261119090000_order_item_variant_name`, cột NULL, khối lấy khóa có thử lại):
+  ghi nguyên văn TikTok `sku_name` / Shopee `model_name` / Lazada `variation` lúc TẠO đơn.
+  - ⛔ **Không điền bù đơn cũ** (đổi so với đề xuất 18/11): điền bù lúc quét lại = mở giao dịch cho mọi đơn tạo trước hôm deploy
+    ở mỗi nhịp 10 phút — đúng bệnh băng thông worker đã sửa 12/10. Đơn cũ tách tên lúc ĐỌC.
+- `services/item-images.ts attachItemImages`: cùng MỘT câu `ChannelProduct` đang lấy ảnh nay trả thêm ba trường chữ; tra theo
+  `externalId` trước, mã sau (khóa bị product-sync đổi vẫn ra ảnh + điểm cắt). Dùng cho `/api/orders`, `/api/orders/lookup`,
+  danh sách đơn hoàn. `productName` + `channelSku` giữ nguyên trong phản hồi (client cũ, khóa gom).
+- `/api/orders/pick-summary` + `lib/pick-summary.ts`: mỗi dòng kèm ba trường chữ; **khóa gom không đổi**.
+- `lib/order-line-names.ts loadVariantNames` (mục 3): dòng có `OrderItem.variantName` thì dùng luôn, không hỏi danh mục — Lãi/Lỗ,
+  Kiểm toán phí, Video đóng hàng được lợi theo (danh mục TikTok hay thiếu tên phân loại).
+
+### 5.3 Giao diện cho đơn tới 20 phân loại
+
+- Mobile `components/OrderLines.tsx` (dùng chung màn quét chi tiết đơn, hộp chi tiết đơn, phiếu quét đơn hoàn) + `lib/order-lines.ts`:
+  phân loại CÙNG sản phẩm gom dưới một tên (tên dài in một lần + "12 phân loại · 17 món"), mỗi phân loại một dòng ngắn có ảnh
+  riêng, số lượng thẳng một cột bên phải; **từ 2 món tô đỏ đặc**; đầu danh sách "20 dòng hàng · 28 món". KHÔNG gấp bớt dòng.
+  Sản phẩm đơn trùng tên KHÔNG gom (quà tặng 0 đ là món khác).
+- **Chạm ảnh nhỏ → phóng to ảnh của đúng phân loại đó** (anh Trung 19/11 sau khi xem ảnh local: "click vào avatar của phân loại
+  sẽ phóng to ảnh phân loại đó lên để xem"): nền tối, ảnh `contain` (không cắt mép), dưới ảnh là tên phân loại + tên sản phẩm,
+  chạm bất kỳ đâu để đóng. Dòng không có ảnh thì không chạm được. Nằm trong `OrderLines` nên có ở cả ba màn dùng nó.
+  Chưa làm cho thẻ đơn ngoài danh sách, phiếu nhặt và web (anh chưa yêu cầu).
+- Thẻ đơn danh sách mobile: tên 1 dòng / phân loại đậm / mã người bán.
+- Phiếu nhặt hàng + thống kê Quét nhiều (`goodsRowText`): phân loại LUÔN có dòng riêng (soi local thấy tab "Sản phẩm" cắt tên 2
+  dòng làm các phân loại trông y hệt nhau); tab "SKU" không có mã người bán thì tiêu đề là tên phân loại; câu "Không có mã SKU"
+  chỉ còn ở dòng gom theo tên của tab SKU.
+- Web: `order-products-cell.tsx` (xổ ra thì gom theo sản phẩm — đơn 20 phân loại ở 1280: cao 1.593px → 983px), `return-dialog.tsx`,
+  `pick-summary-dialog.tsx` + bản in (`print-pick-summary.ts`: cột Mã SKU in mã người bán, phân loại đậm dưới tên).
+- App chạy được với máy chủ cũ (không có trường mới → giữ nguyên tên, chỉ ẩn mã máy) và máy chủ mới chạy được với app cũ.
+
+### 5.4 Kiểm & chưa kiểm
+
+- tsc backend / frontend / mobile sạch; eslint tệp mới sạch (mobile còn lỗi cũ `set-state-in-effect` không thuộc việc này).
+  Test: `order-line-display` 17, `item-images` 3, `pick-summary` +2, `order-line-names` +1 (vitest); mobile `order-lines.test.ts` 8
+  (`npx tsx --test` từ backend/). Cả bộ vitest: 2.757 xanh, 8 đỏ ở 5 tệp dùng DB local (ads-rows-ledger-db, channel-delete-db,
+  order-ledger-db, realized-pnl-ledger-db, pack-video retention-db). ✅ Đã chạy lại 5 tệp đó trên bản mã GỐC (worktree tạm ở
+  HEAD `90dd28b9`, chưa có thay đổi nào của việc này): đỏ đúng 8 ca y hệt → có từ trước, do DB local (thiếu chỉ mục / khóa ngoại
+  của sổ cái, dữ liệu thử video còn sót), không do cột mới.
+- Migration đã chạy trên DB local 2 lần (chạy lại êm).
+- Soi local bằng một gian thử + 4 đơn `DEMOPL-*` (20 dòng không SKU, có SKU, đơn cũ, một món — script seed chỉ để ở máy, không
+  commit; dữ liệu thử đã xóa): app bản web 375 px sáng + tối — thẻ đơn, chi tiết đơn 20 dòng, đơn có SKU, đơn cũ, phiếu nhặt 2 tab,
+  chạm ảnh phóng to rồi chạm đóng; web 1280 — cột sản phẩm xổ 20 dòng, không phần tử nào tràn ô.
+- ❌ Chưa nhìn: màn quét bằng camera thật / phiếu quét đơn hoàn (cùng component, chưa mở); thống kê Quét nhiều; hộp phiếu nhặt +
+  bản in + hộp hoàn trên web; máy thật iOS / Android (kể cả hộp phóng ảnh mở TỪ TRONG hộp chi tiết đơn — hai lớp Modal lồng
+  nhau, mới thấy chạy trên bản web); dữ liệu đơn thật của khách (payload `sku_name` suy từ mã, chưa đo prod).
+
+### 5.5 Lên prod + app có cần build không
+
+- 19/11 anh duyệt giao diện + bảo "dọn dẹp, commit và push". Backend (migration + API) và web lên theo lượt push.
+- **App KHÔNG cần build mới — chỉ cần OTA.** Phần app đổi toàn mã JS / giao diện, không thêm module native, plugin hay quyền
+  (`package.json` không đổi). Nhưng OTA chỉ tới máy cài bản CÙNG `version` với `app.json` lúc đẩy (runtime = `expo.version`):
+  `app.json` đang là 1.4.3 → OTA tới máy đã lên 1.4.3; máy còn ở 1.4.2 phải cập nhật app từ kho lên 1.4.3 (bản đã nộp 17/11,
+  không phải dựng lại) rồi mới nhận. Giữa 1.4.2 và 1.4.3 chỉ khác đúng dòng `version` (không đổi native) nên về kỹ thuật có thể
+  đẩy thêm một bản OTA cho runtime 1.4.2 — CHƯA làm, chờ anh quyết.
+- Trước khi đẩy OTA: cây git trong `hubsell-mobile` phải sạch (`scripts/ota-update.mjs` từ chối nếu còn tệp chưa commit) — hiện
+  còn `src/lib/scan-sounds.ts` (sửa âm báo quét 18/11) chưa commit, chờ anh duyệt.
+- App cũ gặp máy chủ mới và app mới gặp máy chủ cũ đều chạy (trường mới là tùy chọn; không có thì giữ tên cũ, chỉ ẩn mã máy).

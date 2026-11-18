@@ -1908,7 +1908,12 @@ model OrderItem {
   orderId          String
   productId        String? // sản phẩm gốc (SetNull nếu sản phẩm bị xoá)
   channelSku       String // SKU trên sàn
-  productName      String // tên sản phẩm tại thời điểm bán
+  productName      String // tên sản phẩm tại thời điểm bán ("Tên - Tên phân loại" với hàng có phân loại)
+  /// TÊN PHÂN LOẠI sàn in trên đơn lúc bán, nguyên văn (TikTok sku_name, Shopee model_name,
+  /// Lazada variation) — ghi từ 19/11/2026 để màn quét / bảng đơn hiện phân loại thành dòng
+  /// riêng mà không phải cắt mò `productName` (lib/order-line-display.ts). NULL = sản phẩm
+  /// đơn, hoặc đơn tạo trước 19/11 (KHÔNG điền bù — khi đọc tìm điểm cắt qua danh mục sàn).
+  variantName      String?
   quantity         Int
   price            Decimal  @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
   /// Giá niêm yết của dòng (Shopee model_original_price / TikTok original_price) — ghi từ 29/10/2026, null = đơn cũ.

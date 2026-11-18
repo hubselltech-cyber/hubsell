@@ -207,6 +207,9 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
           id: true,
           productName: true,
           channelSku: true,
+          // externalId + variantName (19/11/2026): attachItemImages tách tên / phân loại / SKU người bán.
+          externalId: true,
+          variantName: true,
           quantity: true,
           price: true,
           product: { select: { imageUrl: true } },
