@@ -220,6 +220,7 @@ async function hydrate(scope: PackVideoScope, raws: RawVideo[]): Promise<PackVid
               imageUrl: true,
               channelSku: true,
               externalId: true,
+              variantName: true,
               product: { select: { imageUrl: true, variantName: true } },
             },
           },
@@ -243,6 +244,7 @@ async function hydrate(scope: PackVideoScope, raws: RawVideo[]): Promise<PackVid
         externalId: i.externalId,
         channelSku: i.channelSku,
         productVariantName: i.product?.variantName ?? null,
+        variantName: i.variantName,
       }))
     )
   );
@@ -289,6 +291,7 @@ async function hydrate(scope: PackVideoScope, raws: RawVideo[]): Promise<PackVid
                   externalId: i.externalId,
                   channelSku: i.channelSku,
                   productVariantName: i.product?.variantName ?? null,
+                  variantName: i.variantName,
                 }) || null,
               quantity: i.quantity,
               imageUrl: i.imageUrl ?? i.product?.imageUrl ?? null,
@@ -426,6 +429,7 @@ async function orderItems(scope: PackVideoScope, orderId: string): Promise<Order
           imageUrl: true,
           channelSku: true,
           externalId: true,
+          variantName: true,
           product: { select: { imageUrl: true, variantName: true } },
         },
       },
@@ -437,6 +441,7 @@ async function orderItems(scope: PackVideoScope, orderId: string): Promise<Order
     externalId: i.externalId,
     channelSku: i.channelSku,
     productVariantName: i.product?.variantName ?? null,
+    variantName: i.variantName,
   }));
   const variantOf = await loadVariantNames(lines);
   return o.items.map((i, idx) => ({
