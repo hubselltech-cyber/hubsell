@@ -86,7 +86,7 @@ export function PackVideosPage() {
       <div className="space-y-5">
         <PageHeaderBand>
           <p className="text-sm text-muted-foreground">
-            Video quay lúc đóng hàng trên app, tìm lại bằng mã vận đơn khi cần bằng chứng khiếu nại.
+            Video quay lúc đóng hàng bằng webcam hoặc app điện thoại, tìm lại bằng mã vận đơn khi cần bằng chứng khiếu nại.
           </p>
           <PageTabs
             ariaLabel="Các phần của trang Video đóng hàng"

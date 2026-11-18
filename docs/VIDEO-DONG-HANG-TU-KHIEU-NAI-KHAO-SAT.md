@@ -2602,6 +2602,86 @@ Hệ quả cho mã (CHƯA làm, làm lúc gộp vào app thật):
 - Bản vá thư viện camera + 4 gói camera mới sẽ vào app thật của MỌI khách dù tính năng ẩn → phải thử lại các màn quét cũ trước khi phát hành
   (mục 38.3: CameraX của cả app bị kéo lên bản alpha). Đây là việc của lượt gộp, không thuộc phần "anh kiểm khi lên app".
 
+### 55.19 1.4.3 đã lên kho → dựng bản TestFlight 1.5.0 (31) từ nhánh thử (18/11/2026)
+
+> Anh Trung: "apple đã lên bản 1.4.3. Tiếp đến chúng ta sẽ build bản TestFlight cho tính năng quay video gói hàng"
+
+Làm theo thứ tự việc ở 55.17:
+1. **Số phiên bản = 1.5.0** (em chọn, theo kế hoạch "lát 1 = bản 1.5.0" ở mục 37; anh chưa nói số). TestFlight không nhận lại 1.4.3 vì 1.4.3
+   đã được duyệt. Bản sửa lỗi 1.4.4 từ master sau này vẫn nộp được, vì Apple chỉ so với bản ĐÃ DUYỆT, không so với bản TestFlight.
+   `runtimeVersion` theo số bản → 1.5.0, cộng kênh `thu-video` → cập nhật từ xa của app thật (runtime 1.4.3, kênh production) không chạm bản này.
+2. `name` trả về "Hubsell" (iPhone vốn hiện "Hubsell" nhờ `CFBundleDisplayName`). App thử Android nếu dựng lại cũng sẽ mang tên "Hubsell".
+3. Dòng xin quyền camera đổi thành "Hubsell cần Camera để quét mã vận đơn và quay video đóng gói hàng làm bằng chứng khi khiếu nại."
+   (dòng cũ chỉ nói quét kiện hoàn — Apple bắt dòng xin quyền phải nói đúng việc dùng).
+4. Soi tay mã Swift với mã gốc thư viện trước khi tốn lượt dựng: chữ ký `FrameDelegate.onFrame`, `WeakArray.values()`, `isRecording`,
+   `targetBitRate: Double?` đều khớp. Sửa một chỗ nhiều khả năng hỏng dịch: `CTLineCreateWithAttributedString` nhận `CFAttributedString`
+   → thêm `as CFAttributedString`. Sửa thẳng một dòng trong tệp patch (patch-package không dựng lại được vì thư mục build Android nằm
+   trong `node_modules`, đường dẫn quá dài); `git apply --check` trên gói gốc sạch: áp được cả 6 tệp.
+5. Gói gửi lên Expo kiểm bằng `build:inspect`: 203 tệp, 4 MB, có patch + màn thử, KHÔNG có khóa / `.env` / `node_modules`.
+   Dựng bằng `EAS_NO_VCS=1 EAS_PROJECT_ROOT=D:/HubsellVideo` (nhánh thử là git worktree chưa commit — chế độ git của EAS có thể lấy nhầm mã
+   master), `.easignore` ở gốc worktree lọc như repo chính.
+6. Dựng iOS `thuVideo` → build EAS **`c52e7966-bb10-44f0-9c2e-2533d9a98ad2`, 1.5.0 (31)**; lượt nộp TestFlight hẹn sẵn trên Expo
+   **`0af2bdbe-e8d4-45bf-8ee1-9910302637e7`** (chạy từ repo chính vì khóa ASC chỉ nằm ở đó). Nhóm nội bộ "Hubsell team" tự phát bản.
+   ✅ **DỰNG XONG 09:51 (≈ 7 phút), mã Swift DỊCH QUA ngay lần đầu** (cửa 1 của iPhone qua). ✅ 09:56 build 31 **VALID** trên App Store Connect
+   (TestFlight). CHƯA chạy trên iPhone.
+
+**Anh thử trên iPhone (thứ tự cửa ở 55.17 bước 5):** TestFlight → Hubsell → cài bản 1.5.0 (31) → đăng nhập như thường → Tổng quan → ô
+"Quay video đóng gói · Bản thử" (dưới Giá vốn). Bản này đè lên app Hubsell đang cài (cùng mã app) — muốn bỏ ô thử thì cài lại từ App Store.
+Clip quay lưu TRONG MÁY (màn thử chưa tải lên R2). Nếu không thấy ngày giờ trong tệp: gốc nhiều khả năng là định dạng khung hình của máy
+không phải 4:2:0 8 bit (mục 55.17 rủi ro) — cần nhật ký `[HubsellTimestamp]` để biết.
+
+**Anh thử build 31 trên iPhone (18/11 ~10:18, ảnh chụp màn hình), chưa quay clip nào:**
+- Màn báo vàng "Không đặt được H.264 trên iPhone: VideoOutput does not support the codec h264". Gốc (suy từ mã, chưa kiểm trên máy): màn
+  thử gọi `setOutputSettings({codec:"h264"})` ngay khi tạo đầu ra; thư viện kiểm codec bằng `availableVideoCodecTypesForAssetWriter`, mà
+  lúc đó đầu ra chưa nối vào phiên camera (chính `getSupportedVideoCodecs()` của thư viện từ chối chạy khi chưa nối). Hệ quả nếu để
+  nguyên: iPhone quay HEVC — Chrome Windows thường không phát được. Thêm nữa, hàm đó ghi `AVVideoCodecKey` vào `videoSettings` của
+  `AVCaptureVideoDataOutput`, chỗ Apple chỉ nhận khóa định dạng điểm ảnh.
+- Anh: **"anh nhớ là để bản mặc định tỉ lệ 3:4 rồi mà"** → màn thử vẫn mở 720p 16:9 (3:4 chỉ là một nút). Nay coi như ANH CHỐT: **3:4 là
+  mặc định**.
+- Anh: **"Anh thấy giật"** (hình xem trước) → màn chạy 15 khung/giây. iPhone nay mặc định 30 khung/giây; bitrate khóa 800k nên cỡ tệp
+  không đổi (chất lượng mỗi khung giảm nhẹ). Android giữ 15. Nếu 30 vẫn giật thì gốc khác — phải đo.
+- Anh: **"Các menu thì chiếm tới nửa màn hình"** → máy anh để cỡ chữ hệ thống lớn, chữ màn thử phóng theo. Nay: chữ màn thử không phóng
+  theo hệ thống; hàng nút chính chỉ QUAY THỬ · DỪNG · XÓA SỔ TEM · ⚙ Cài đặt (các nút độ phân giải / bitrate / khung / soi giấu sau Cài
+  đặt); khung xem trước đặt DƯỚI thanh trạng thái, đúng tỷ lệ tệp (3:4), đồng hồ ngày giờ nằm trong khung hình (trước đè lên giờ hệ thống).
+
+**Sửa → build 32 (1.5.0):** bản vá Swift ép H.264 ngay lúc tạo bộ ghi (`recommendedVideoSettings(forVideoCodecType: .h264, …)`, không
+có thì lùi về mặc định) + `getCurrentVideoCodec()` mặc định `.h264` cho metadata; bỏ lệnh `setOutputSettings` ở JS. Tệp patch dựng lại
+bằng cách chép 6 tệp đã vá đè lên gói gốc sạch rồi `git diff` (khác bản cũ đúng 2 chỗ). EAS `ea2369bd` → **ĐÃ HỦY** giữa chừng, xem dưới.
+
+**Anh: "anh quay 4 video rồi mà vào thống kê trên máy tính thấy gì đâu"** (18/11 ~10:25) → đúng thiết kế màn thử: clip iPhone chỉ lưu
+TRONG MÁY (thư mục tạm của app), màn thử không gọi máy chủ nào; trang web chỉ có video quay bằng webcam trên máy tính. Lỗ hổng thật lộ ra:
+iPhone KHÔNG kéo tệp qua cáp được như Note8 (`adb pull`) → anh không có cách nào soi ngày giờ / codec trong tệp. → hủy build 32, thêm
+`expo-sharing` (~57.0.26, gói gốc Expo, có plugin; build 33 ✅ VALID trên ASC 10:39) + nút **"Chia sẻ"** ở từng dòng clip (bảng chia sẻ iPhone: Lưu video vào Ảnh / AirDrop /
+Zalo). 4 clip quay bằng build 31 KHÔNG lấy lại được (danh sách clip chỉ nằm trong bộ nhớ màn thử). Build **33** EAS `bf35413f`, nộp hẹn
+`c3cb104c`.
+⚠️ Chữ màn trống trên web ("Video quay lúc đóng hàng trên app sẽ tự hiện ở đây… Mở app Hubsell → Tổng quan → Quay video đóng gói") hứa điều
+app CHƯA làm (app chưa tải lên) — chưa sửa, chờ anh. (Sau cập nhật dưới đây, câu này ĐÚNG với tài khoản đã mở.)
+
+**★★ ANH CHỐT 18/11 ~10:35: "Tốt nhất là mình bỏ hẳn lưu local đi. bắt buộc phải lưu trên hệ thống hết kể cả quay bằng điện thoại hay
+webcam"** (anh thử iPhone cũng "không thấy lưu vào máy"). → ⛔ BỎ lựa chọn "lưu LOCAL" (chốt 14/11 "hai lựa chọn lưu LOCAL và CLOUD" và lát
+"lưu local" của kế hoạch bản 2 — BỎ). Mọi video, điện thoại hay webcam, đều lên kho (R2) + sổ video. Tệp chỉ nằm tạm trên máy trong lúc
+chờ / đang tải; lên xong xóa. Webcam trên web đã đúng như vậy từ 16/11 (clip giữ trong RAM tới khi lên kho, không có nút lưu về máy).
+- App: `src/lib/pack-video-upload.ts` (mới, nhánh thử) — hàng chờ tải TUẦN TỰ đi đúng 3 bước của màn webcam (`POST /api/pack-videos` →
+  PUT thẳng lên R2 → `…/complete`), cùng `clientId` khi thử lại, 4 lần thử (2 / 5 / 15 giây), tệp > 32 MB theo mảnh 8 MiB (mỗi mảnh ghi ra
+  một tệp tạm đúng cỡ rồi tải), lên xong xóa tệp. Dùng `expo-file-system` (có sẵn trong bản dựng — đã soi nhật ký dựng build 31:
+  `Installing ExpoFileSystem (57.0.2)`), iOS tải kiểu "background" nên app xuống nền vẫn tải tiếp. KHÔNG cần sửa máy chủ.
+- Màn thử: mỗi dòng clip hiện "⏳ chờ tải lên / ↑ đang tải N% / ✓ đã lên hệ thống / ✗ chưa lên được" + nút "Thử lại"; ô "Đã lên hệ thống";
+  bỏ nút Chia sẻ (gói `expo-sharing` còn trong bản dựng 33, không dùng — gỡ lúc gộp); iPhone thôi thử ghi vào thư mục Android trước.
+- Đưa lên máy: **cập nhật từ xa (OTA) kênh `thu-video`, runtime 1.5.0**, nhóm `6e4c433f`, chỉ iOS (gói chỉ chứa địa chỉ backend prod, đã
+  soi). App thật kênh production 1.4.3 không nhận. Anh cài build 33 → mở app → TẮT HẲN → mở lại thì mới chạy bản tải lên.
+- Điều kiện: iPhone phải đăng nhập **`admin@hubsell.vn`** (cổng Video đóng hàng chỉ mở cho tài khoản này; tài khoản khác sẽ báo "chưa được mở").
+  Kho đang là bucket THỬ `hubsell-video-thu` (khóa thử hết hạn ≈ 14/12).
+- Chưa làm (việc của lát thật): hàng chờ bền khi app bị tắt hẳn (giờ nằm trong bộ nhớ — tắt app giữa chừng thì clip chưa lên bị bỏ lại trong
+  thư mục tạm); khớp tem với đơn ngay lúc quay (`/match`); chặn quay khi hết giờ. App thử Android (không đăng nhập) sẽ báo lỗi khi tải lên.
+- CHƯA thử trên iPhone: PUT bằng `File.upload` của expo-file-system lên đường dẫn ký sẵn (Content-Length do máy tự đặt).
+- ⚠️ Anh cài build 33, tắt mở lại: **vẫn còn nút Chia sẻ** = máy chưa chạy bản OTA. `eas update:insights` của nhóm `6e4c433f`: 0 lần chạy,
+  0 lần văng (số có thể trễ). Kênh `thu-video` / runtime 1.5.0 của build 33 đúng; OTA đẩy 03:35:59Z, sau lúc build xong. Không truy tiếp
+  gốc — dựng **build 34** (`6aa99d56`) chứa sẵn mã tải lên + gỡ `expo-sharing` (gói + plugin). Bài học: thử nhanh trên TestFlight thì dựng
+  bản chứa sẵn mã, đừng dựa OTA (phải mở / tắt / mở, khó biết máy đã nhận chưa).
+
+⚠️ Khi nộp bản App Store THẬT sau này: TestFlight sẽ có build 31, 32 mang số 1.5.0 → lúc gắn build cho phiên bản trên App Store phải chọn đúng build
+dựng từ master, đừng chọn build 31 / 33 (32 đã hủy). Hạn mức dựng iOS tháng 11 đã dùng 5 lượt tính cả lượt hủy (1.4.2, 1.4.3, 31, 32, 33).
+
 ### 55.6 Nguồn (mục 55)
 
 https://docs.expo.dev/guides/setting-up-continuous-integration ·
@@ -3241,3 +3321,215 @@ theo tháng của Cam Check; người bán nói gì về giá trong các nhóm k
 Nguồn: app.shipxanh.com (tệp chữ) · donghangnhanh.vn/vi · epack.vn/#pricing · quayvideodongdon.com/pricing · boxcam.me · cambox.vn ·
 ecombox.vn/plans · deus.vn · atpsoftware.vn/simple-replay · ghihinh.com/bang-gia · videodonghang.io.vn · ecompms.com · camzone.vn ·
 camviewer.vn · vietpos.vn
+
+---
+
+## 61. Khảo sát NGUỒN NHẬP webcam để bán kèm (17/11/2026 — anh: "khảo sát một vài dòng webcam tốt phù hợp để nhập về bán kèm... giá cả hợp lý")
+
+Khác mục 25 + 59 (giá BÁN LẺ trong nước, "thiết bị khuyên dùng"): lượt này tra GIÁ NHẬP ở Trung Quốc + chi phí về tới kho + giá bán của
+đối thủ. Mức chắc: **[C]** = thấy trên trang, **[S]** = suy ra / số em tự chọn. Giá 1688 lấy từ trang danh sách công khai (tw.1688.com,
+tải 17/11 ~20:05, không đăng nhập); trang chi tiết từng mẫu bắt đăng nhập nên CHƯA thấy giá từng bản. ⚠️ Giá trên danh sách 1688 là **giá
+bản rẻ nhất** của mẫu (thường bản 1080p), bản 2K / 4K lấy nét tự động đắt hơn. Tỷ giá dùng để tính: **3.900 đ / tệ [S]** (Vietcombank
+mua tiền mặt 3.760 đ lúc 17/11 20:05 [C] webgia.com; bán ra và tỷ giá của bên mua hộ cao hơn).
+
+### 61.1 Ba bậc hàng tìm được
+
+| Bậc | Hàng gì | Giá 1688 [C] | Quy ra đ | Đối thủ / thị trường VN bán [C] |
+|---|---|---|---|---|
+| **A. Webcam 2K lấy nét tự động không tên** | loại như webcam anh đang có, Cam Check đang bán | danh sách 13–47 ¥; bản 2K AF thật ≈ 40–60 ¥ (một mẫu 2K AF 60 ¥ đã bán 743 chiếc) | 156–234k | Cam Check 329k (gạch 545k); combo webcam + giá 1m7 600k; Chợ Tốt 299k; Rapoo C280 chính hãng 699–850k |
+| **B. Webcam 4K (8 MP) lấy nét tự động không tên** | ảnh to hơn → đọc số vận đơn từ xa tốt hơn (nếu 4K thật) | 85–130 ¥ (128,25 ¥ bán 1.597; 112,7 ¥ bán 3.914; 95 ¥ bán 1.543) | 330–510k | Rapoo C500AF 1.199k; OBSBOT Meet 2 3,5 tr |
+| **C. Camera chuyên quay đóng hàng (电商打包举证摄像头)** | nhóm hàng RIÊNG ở Trung Quốc: USB cắm là chạy, góc rộng / zoom, quảng cáo "dùng cho 聚水潭 ERP", "quay khui hàng hoàn" | 140–320 ¥ (微學視 188,7 ¥ bán 456; 銳視尚 299,25 ¥; 長沙眾簡 320 ¥); bản zoom 10× / 44–48 MP 800–1.900 ¥; máy liền cân + quét 3.000–4.000 ¥ | 0,55–1,25 tr (bản thường) | ASCAM camera soi tem 1,6 tr; Camsight 1,9 tr + 129k / tháng; EPack bộ 2 camera 1,8 tr; Cam Check combo camera IP 1,79 tr |
+| Phụ kiện | tay kẹp / cần ren 1/4", đế bàn | 3–20 ¥ (bán chạy nhất hàng chục nghìn chiếc) | 12–80k | Cam Check bán chung trong combo |
+
+Rút ra: **thị trường VN đang bán đúng loại hàng bậc A với giá 299–329k** → nhập bậc A chỉ để "có bán", lãi mỏng. **Bậc C là thứ Trung
+Quốc làm riêng cho đóng hàng** mà chưa thấy bên VN nào bán đúng loại USB này (bên VN bán camera IP / bộ 2 camera) → đáng mua mẫu nhất.
+Alibaba.com (bán ra nước ngoài) cùng loại 2K AF: 5,5–25 USD, mua từ 1–10 chiếc, in logo từ 500 chiếc [C]; đắt hơn 1688 nhưng xưởng
+làm hóa đơn xuất khẩu.
+
+### 61.2 Giá về tới kho (ước, một chiếc)
+
+| Khoản | Bậc A | Bậc B | Bậc C | Căn cứ |
+|---|---|---|---|---|
+| Giá hàng | 156–234k | 330–510k | 550k–1,25 tr | 61.1 |
+| Phí mua hộ 1–5 % + ship nội địa TQ | ≈ 8–15k | ≈ 15–30k | ≈ 25–60k | bảng phí các bên order [C]; ship nội địa [S] |
+| Cước về Hà Nội ký gửi ≈ 22–33k / kg | ≈ 7–10k (0,3 kg [S]) | ≈ 10k | ≈ 15–35k (0,5–1 kg [S]) | dathangquangchau.com, matoc.com.vn [C] |
+| **Cộng — đường ký gửi / tiểu ngạch** | **≈ 175–260k** | **≈ 355–550k** | **≈ 0,6–1,35 tr** | |
+| Thuế nhập khẩu (đường chính ngạch) | +5 % (ACFTA, có C/O mẫu E) hoặc +15 % | như A | như A | mã HS webcam 8525.89.30; ACFTA 5 % theo treayo.com, MFN 15 % theo caselaw.vn — hai nguồn lệch, CHƯA đối chiếu biểu thuế gốc |
+| VAT nhập khẩu 10 % | được khấu trừ nếu công ty kê khai → không tính vào giá vốn [S] | | | |
+| Phí khai hải quan / ủy thác nhập | tính theo LÔ, chưa có số | | | phải xin báo giá |
+
+Ví dụ lô 100 chiếc bậc A ở 50 ¥: hàng ≈ 19,5 tr + phí / cước ≈ 1,5 tr + thuế NK 1–3 tr ≈ **22–24 tr → ≈ 220–240k / chiếc** (chưa
+phí khai báo lô). Giá bán quanh 390–450k → lãi gộp ≈ 150–200k / chiếc trước bảo hành, đổi trả, giao hàng.
+
+### 61.3 Bốn điều phải biết trước khi nhập
+
+1. **Hóa đơn đầu vào.** Công ty bán thì phải có chứng từ nhập (tờ khai hải quan hoặc hóa đơn VAT của nhà nhập khẩu trong nước) mới hạch
+   toán được giá vốn. Đường ký gửi / tiểu ngạch rẻ nhưng không cho chứng từ đó → [S] chỉ dùng được cho **mua mẫu**, lô bán thật phải
+   đi chính ngạch (tự đứng tên nhập hoặc ủy thác nhập khẩu) hoặc mua lại của nhà nhập khẩu VN có hóa đơn. Kiến thức chung, chưa phải
+   ý kiến kế toán / hải quan — hỏi trước khi nhập lô.
+2. **Hợp quy.** Webcam USB thuần (không Wi-Fi, không mạng) [S] nằm ngoài QCVN 11:2026/BCA (mục 59.4). ⛔ Tránh mọi mẫu có Wi-Fi / quay
+   không cần máy tính / lưu thẻ nhớ — trong danh sách bậc C có loại này, và chúng rơi vào diện camera phải chứng nhận hợp quy.
+3. **Thông số trên 1688 không đáng tin.** Một mẫu ghi chung "1080P / 2K / 4K", "4K" nhiều khi là phóng ảnh; bản ghi "lấy nét tự động" có
+   khi chỉ ở một màu / một bản. → **trang thử `tools/thu-webcam/` là thước đo**: mẫu nào qua đủ cửa mới nhập.
+4. **Độ bền dây USB.** 16/11 webcam anh mua trên mạng tự rớt USB 2 lần trong 1 giờ (mục 59 / memory) → mọi mẫu phải qua bài chạy liền
+   30 phút không rớt, không bộ chia. Hàng không tên cần chính sách đổi 1–1; tỷ lệ lỗi chưa biết (em để dự phòng 3–5 % — số tự chọn).
+
+### 61.4 Đề xuất (anh chưa duyệt)
+
+- **Bước 1 — mua MẪU qua bên mua hộ (ký gửi), ≈ 1,5–2,5 tr, 7–10 ngày:** 6 mẫu, mỗi mẫu 1 chiếc:
+
+  | Bậc | Mẫu (mã 1688 — mở `detail.1688.com/offer/<mã>.html`) | Lý do chọn |
+  |---|---|---|
+  | A | 1044670409599 (廣東平發, 47 ¥, bán 2.504, có bản AF) | bán chạy, giá giữa |
+  | A | 843457721765 (奇目, 2K AF "camera thi cử", 58 ¥, bán 853) | camera thi cử phải soi giấy gần → hợp soi tem |
+  | B | 807618863577 (飛特, 4K 8 MP AF, 128,25 ¥, bán 1.597) | 4K ghi rõ 8 MP |
+  | B | 656855361010 (昊翰, 4K AF, 112,7 ¥, bán 3.914) | bán chạy nhất bậc B |
+  | C | 641814058013 (微學視, 4K AF quay đóng hàng / khui hàng, 188,7 ¥, bán 456) | rẻ nhất nhóm chuyên dụng có lượng bán |
+  | C | 947718025754 (銳視尚, 4K "dùng cho 聚水潭 ERP", 299,25 ¥) | xưởng làm cho phần mềm đóng hàng lớn nhất TQ |
+
+  Kèm 2 tay kẹp 1/4". Hỏi bên mua hộ chọn đúng bản 2K / 4K AF (không lấy bản rẻ nhất), ⛔ không lấy bản Wi-Fi.
+- **Bước 2 — chấm bằng trang thử:** đọc tem giấy ở 40–60 cm khi giơ lên; chữ số vận đơn trên clip đọc được bằng mắt; giữ 30 khung /
+  giây trong Chrome; quay 30 phút không rớt; cỡ tệp. Chọn 1–2 mẫu (gợi ý: một bậc A ≈ 400k, một bậc C ≈ 1,5 tr).
+- **Bước 3 — xin báo giá xưởng:** lô 100 / 500, in logo (thường từ 500 chiếc), bảo hành, C/O mẫu E; song song xin báo giá ủy thác
+  nhập khẩu chính ngạch + hỏi kế toán cách hạch toán.
+- Giá bán gợi ý (tự đặt, chờ anh): bậc A 390–450k (ngang / nhỉnh Cam Check, ăn ở "đã kiểm với Hubsell + đổi 1–1"); bậc C 1,5–1,8 tr
+  (dưới ASCAM / Camsight). Thiết bị là để giảm ma sát mua giờ quay, KHÔNG phải nguồn lãi chính: 100 chiếc bậc A ≈ 15–20 tr lãi gộp.
+- Vẫn theo chốt cũ: ⛔ không bắt khách mua thiết bị của mình; bán qua "Hubsell Shop" trong app là việc SAU.
+
+### 61.4b SỬA bậc A (17/11 tối — anh: "Loại anh đang dùng chỉ có hơn 100K nên anh nghĩ là họ nhập về còn rẻ hơn")
+
+Anh ĐÚNG; mức "40–60 ¥" của bậc A em lấy từ một đoạn trích tìm kiếm, không từ chính danh sách em đã tải. Trong danh sách 1688 tải 17/11
+[C] có hẳn tầng rẻ, bán rất nhiều: 12,64 ¥ (ghi 2K, bán 77.799) · 13,21 ¥ (2K AF, bán 12) · 18,54 ¥ (AF 2K/4K, bán 14.127) · 18,91 ¥
+(AF, bán 4.124) · 24 ¥ · 25,46 ¥ (AF, bán 6.465) = **≈ 50–100k**; về tới kho đi ký gửi ≈ 60–115k [S]. Nhà nhập theo lô lớn / theo
+container còn rẻ hơn, nên giá bán lẻ hơn 100k trên mạng là khớp. (Giá danh sách vẫn là bản rẻ nhất của mẫu; "2K / AF" ở tầng này chưa
+chắc thật.)
+
+Hệ quả, thay đề xuất 61.4 phần bậc A:
+- ⛔ BỎ "bán bậc A 390–450k" — khách so được với hàng hơn 100k trên Shopee. Bán bậc A thì chỉ còn đường giá ≈ 150–200k, lãi vài chục
+  nghìn một chiếc, lại gánh đổi trả → em đề nghị **không bán bậc A**, chỉ ghi "webcam hơn 100k đạt chuẩn trang thử là dùng được" (đúng
+  với webcam của anh: giơ tem thẳng vào là nhận, anh đã chốt "như vậy cũng OK").
+- Nếu bán thiết bị thì bán thứ khách không tự mua rẻ được: **bậc C** (camera chuyên quay đóng hàng). Bậc B để xem sau khi chấm mẫu.
+- Lô mẫu: thay 2 mẫu bậc A bằng 2 mẫu tầng rẻ (670849064665 · 945396640047) để biết loại 100k có qua trang thử không — đó cũng là câu
+  trả lời cho "khuyên khách mua gì". Tổng tiền mẫu giảm còn ≈ 1,3–2,2 tr [S].
+
+### 61.4c Bậc C nhìn bằng ảnh — KHÔNG cần (17/11 tối — anh: "anh thấy đâu cần chuyên dụng đâu?")
+
+Ảnh đại diện 4 mẫu bậc C (641814058013 · 947718025754 · 948292788568 · 1039485272936) [C]: đều là **một camera hộp USB (ghi 4K /
+"1300 万" lấy nét tự động) + tay đỡ cần gập + thường kèm máy quét mã + phần mềm Trung Quốc "miễn phí vĩnh viễn"**, 15 ngày dùng thử, bảo
+hành 5 năm; một mẫu là hai camera. → Giá 0,7–1,25 tr chủ yếu trả cho tay đỡ, máy quét và phần mềm (mình không dùng), không phải cho camera
+khác biệt. Điểm hơn thật duy nhất [S]: ảnh to hơn để treo cao phủ cả bàn mà vẫn đọc được số vận đơn, khỏi giơ tem — luồng của mình là GIƠ
+TEM vào camera (anh chốt 16/11), nên điểm này không cần.
+
+**Anh đúng → đề xuất thay mục 61.4:** ⛔ không nhập bậc C, ⛔ không nhập bậc A giá cao. Nếu bán thiết bị thì chỉ bán **combo webcam rẻ +
+tay đỡ** (tay đỡ 1/4" trên 1688 3–20 ¥) — hoặc đơn giản hơn: không bán, chỉ trang "khuyên dùng" chỉ khách loại hơn 100k + tay đỡ. Mẫu thử:
+2–3 webcam tầng rẻ + 1–2 tay đỡ, ≈ 300–500k [S], mua ngay trên Shopee / TikTok Shop VN cho nhanh (không cần đường mua hộ).
+
+### 61.5 Chưa kiểm
+
+Giá từng bản (2K / 4K AF) trên trang chi tiết 1688 (bắt đăng nhập); mẫu bậc C có phải UVC thuần, chạy trong Chrome không; cân nặng thật;
+biểu thuế gốc cho 8525.89.30 (5 % hay 0 % ACFTA, 15 % hay 22,5 % MFN); phí ủy thác / khai báo theo lô; giá Shopee / TikTok Shop VN của
+cùng loại (công cụ không mở được Shopee); đèn bàn đóng hàng (trang 1688 không có kết quả).
+
+Nguồn: tw.1688.com/item (danh sách "自動對焦 usb攝像頭", "電商打包攝像頭", "2K自動對焦攝像頭", "攝像頭支架桌面") ·
+electronics.alibaba.com/product/1440p-webcam · quayvideodongdon.com/san-pham · cellphones.com.vn (Rapoo C280) · chotot.com ·
+webgia.com/ngoai-te/cny · dathangquangchau.com · matoc.com.vn/dich-vu/van-chuyen-hang-trung-quoc · treayo.com/en/hs/vietnam/85258930 ·
+caselaw.vn/chi-tiet-ma-hs/85258930 · mục 25, 59 tài liệu này
+
+---
+
+## 62. Nhiều bàn cùng lúc mà không cần mỗi bàn một máy tính (17/11/2026 — anh: "khi dùng camera thì bắt buộc phải cắm với một máy tính. Có phương án nào khả thi hơn để dùng nhiều camera cùng lúc không?")
+
+Nền đã có, không khảo sát lại: mục 59.3 (6 đường đưa camera an ninh vào web), mục 25.2 (một máy tính cho 2–3 bàn), lát 0 Android
+(Note8 quay + đọc tem + cắt clip chạy). Mức chắc: **[C]** thấy trên trang / đo, **[S]** suy ra / số tự chọn.
+
+### 62.1 Điểm mấu chốt: luồng GIƠ TEM làm "nhiều camera một máy" dễ hơn đối thủ
+
+Đối thủ dùng máy quét cầm tay: nhiều máy quét cắm một máy tính thì đều gõ vào cùng một ô → phần mềm không biết tem của bàn nào (phải
+chuyển máy quét sang chế độ cổng COM, mục 25.1). Luồng của mình mỗi CAMERA tự đọc tem của bàn nó (anh chốt 16/11 "giơ thẳng vào cam") →
+không có bài toán ghép máy quét với bàn. [S]
+
+### 62.2 Các phương án
+
+| # | Cách | Mỗi bàn cần | Một điểm chịu tải | Mình phải làm | Rủi ro chính |
+|---|---|---|---|---|---|
+| 1 | **Một máy tính, nhiều webcam** (một trang "nhiều bàn", mỗi ô camera một bộ quay + đọc tem riêng) | webcam ≈ 100k + cáp USB nối dài có chip khuếch đại 10 m (Ugreen 10321 ≈ 329k [C] phucanh.vn) | 1 máy tính cho ≈ 3–4 bàn [S] | trang quay nhiều ô trên mã web đã có (`lib/pack-video-recorder/`) — không cài gì cho khách | băng thông USB tính THEO BỘ ĐIỀU KHIỂN, không theo cổng: 3 webcam 720p MJPEG chạy được trên một cổng USB 3.0 [C], webcam rẻ có loại xin băng thông tối đa bất kể độ phân giải [C] → thêm card USB PCIe; máy treo là dừng mọi bàn; CPU mã hóa nhiều luồng chưa đo |
+| 2 | **Điện thoại / máy tính bảng Android cũ mỗi bàn** (app Hubsell) | máy cũ + giá kẹp, không dây | không có | phát hành phần quay trong app (đã chạy trên nhánh thử Note8) | phải ra bản app (không OTA được); pin / nhiệt quay dài; máy đời khác chưa thử |
+| 3 | **Camera IP (Wi-Fi / dây mạng) + một máy "cầu nối" trong tiệm** (máy tính sẵn có hoặc mini PC, một máy gánh 8–16 camera [S]) | camera IP 2–4 MP | máy cầu nối | viết phần mềm cầu nối cài ở máy khách: kéo luồng RTSP, đọc tem, cắt clip, tải R2 (= lát 9) | khó cài nhất cho shop (lấy tài khoản / đường RTSP, H.265, IP đổi); camera IP nhập bán phải hợp quy (mục 59.4); camera treo cao không đọc được tem → camera phải sát bàn |
+| 4 | Thiết bị Trung Quốc "không cần máy tính" (máy liền camera + máy quét + lưu) | 800–4.000 ¥ / bàn [C] (mục 61) | — | không làm được: hệ đóng, phần mềm của họ | đắt, không nối Hubsell |
+| 5 | Đầu ghi / camera an ninh sẵn có, lấy lại đoạn theo giờ | không thêm gì | đầu ghi | cầu nối + đọc định dạng từng hãng (mục 59.3 đường 4) | khó nhất, không có tem trong hình → không tự khớp đơn |
+
+### 62.3 Đề xuất theo cỡ shop (anh chưa duyệt)
+
+- **1–2 bàn:** điện thoại cũ (cách 2) hoặc máy tính đang có + webcam (đang chạy).
+- **3–6 bàn:** cách 1 — rẻ nhất (≈ 430k / bàn: webcam + cáp), không cài gì, dùng lại gần hết mã web. **Đáng làm trước.**
+- **8 bàn trở lên / kho:** cách 3 — đúng hướng lâu dài nhưng là một sản phẩm phụ (phần mềm cài ở máy khách); để sau khi cách 1 có khách dùng.
+
+Bước kế nếu anh duyệt cách 1: một buổi THỬ trước khi code — mua thêm 2–3 webcam rẻ + 1 cáp 10 m, cắm cùng máy anh, đo trong Chrome: mấy
+camera mở cùng lúc được ở 720p, khung / giây từng camera, CPU, có rớt USB không (bài 30 phút). Có số rồi mới dựng trang "nhiều bàn".
+
+### 62.4 Chưa kiểm
+
+Số webcam thật trên một máy trong Chrome (chỉ có số của diễn đàn, không phải Chrome); CPU / GPU khi mã hóa 3–4 luồng WebCodecs cùng lúc;
+webcam rẻ nào xin băng thông tối đa; điện thoại Android đời khác Note8; giá camera IP, mini PC.
+
+Nguồn: phucanh.vn/cap-usb-noi-dai-ugreen-10321-10m.html · hacom.vn (cáp Ugreen 10321) · markaicode.com/troubleshoot-usb-bandwidth-multiple-cameras ·
+github.com/openpnp/openpnp/wiki/USB-Camera-Troubleshooting-FAQ · forum.videolan.org (nhiều webcam MJPEG) · mgraves.org (bốn webcam một máy) ·
+mục 25, 59, 61 tài liệu này
+
+### 62.5 Đo thật: Chrome mở 2 camera cùng lúc trong MỘT tab (17/11 ~20:40)
+
+Anh: "một máy tính hiện tại anh thấy chỉ chọn được 1 camera cùng một thời điểm... dùng nhiều chrome thì lại khó theo dõi". Màn quay hiện
+tại có MỘT ô "Chọn camera" là do mình thiết kế cho một bàn, không phải giới hạn của Chrome. Đo trên máy anh, Chrome thật, trang thử
+`127.0.0.1:4321`, chỉ đo rồi tắt, không lưu hình [C]:
+
+- Chrome thấy 4 nguồn: "Web Camera (cb07:1bcf)", "USB Video (534d:2109)" (đầu thu HDMI), 2 camera ảo.
+- Mở **cùng lúc 2 camera thật trong 1 tab**: Web Camera 1280×720 **30,0 khung / giây** + USB Video 1280×720 **30,0 khung / giây** (đếm
+  khung 3 giây, song song). → Không cần nhiều cửa sổ Chrome.
+- Máy anh KHÔNG có giọng đọc tiếng Việt trong Chrome (`speechSynthesis` 0 giọng `vi`) → báo "Bàn 2 bắt đầu" phải dùng tệp âm thanh thu
+  sẵn, không dựa vào giọng đọc của máy.
+- Chưa đo: 3–4 webcam thật (máy anh chỉ có 1 webcam), CPU khi mã hóa + đọc tem nhiều luồng.
+
+### 62.6 Phác thảo màn "Nhiều bàn" (đề xuất, anh chưa duyệt — đã gửi hình trong chat)
+
+Trên chính trang `/orders/videos/record`, thêm công tắc **1 bàn | Nhiều bàn**. Chế độ nhiều bàn = MỘT màn hình, lưới ô (2×2 cho 4 bàn):
+- Mỗi ô một bàn: tên bàn + người quay, chọn camera MỘT lần (máy nhớ), hình nhỏ có ngày giờ, trạng thái to có màu: Chờ tem / Đang quay
+  + đồng hồ + mã vận đơn / Tem đã quay rồi / Mất camera (ô đỏ, clip dở đã lưu, tự nối lại).
+- Mỗi ô một bộ quay + một bộ đọc tem riêng → giơ tem vào camera bàn nào thì bàn đó quay, tem khác thì cắt (luật như 1 bàn).
+- Một nút "Bật tất cả"; một nhật ký chung lọc theo bàn.
+- ⚠️ Người đóng hàng không nhìn màn hình → âm báo phải nói BÀN NÀO: tệp âm "Bàn 1… bắt đầu / đã quay rồi / mất camera" (số tự chọn: tối đa
+  4–6 bàn mỗi máy cho tới khi đo).
+- Một máy tính treo = mọi bàn dừng → giữ "clip dở tự lưu" + mỗi ô tải lên riêng.
+
+---
+
+## 63. Các bên có dùng được cho NHIỀU BÀN đóng hàng không (17/11/2026 — anh: "Tiện đây em thử khảo sát các bên có dùng được cho nhiều bàn đóng hàng không")
+
+Anh chốt cùng lượt: "mình chưa cần làm ngay. Mai anh sẽ quay thử đóng gói với một camera xem kết quả ra sao đã" → mục này chỉ để biết.
+Đọc trang công khai, không đăng nhập. **[C]** = thấy trên trang, **[S]** = suy ra. Hai dòng ASCAM em tự mở lại trang để kiểm.
+
+| Bên | Nhiều bàn làm thế nào | Một màn xem mọi bàn? | Tem ↔ bàn | Tính tiền | Nguồn |
+|---|---|---|---|---|---|
+| **ASCAM / ECAM** | Một PC Windows gánh nhiều bàn: "mỗi máy tính KHÔNG GIỚI HẠN số bàn đóng gói" (gói Extend) [C, đã kiểm]; mỗi bàn tới 8 camera RTSP [C]; triển khai thật "8 bàn từ 1 máy tính", "20 bàn kết nối về 4 máy tính trung tâm" [C, đã kiểm] | **Có**: "Theo dõi trực tiếp toàn bộ bàn đóng gói trên 1 màn hình" [C, đã kiểm] | camera soi vận đơn riêng mỗi bàn tự đọc mã, bỏ máy quét cầm tay [C]; nhân viên quét QR định danh để nhận bàn [C] | theo MÁY TÍNH / năm: 3 tr (1 bàn), 5 tr (Extend, từ 2 bàn), 8,5 tr [C]; phần cứng 4,5–6,5 tr / bàn [C] | ghihinh.com · /trien-khai-thuc-te/ · /bang-gia/ |
+| **Cam Check** | camera IP qua Camera Bridge trên một PC, tối đa 9 camera / máy, hơn thì thêm máy [C]; "mỗi bàn một camera, tất cả cùng đổ video về một danh sách" [C] | không thấy màn xem trực tiếp | không nêu; máy ở bàn "chỉ còn việc hiển thị và quét mã" [C] → mỗi bàn vẫn có màn [S] | theo dung lượng / số video, hồ sơ nhân viên 5 / 10 / không giới hạn [C] | quayvideodongdon.com |
+| **Ship Xanh** | camera an ninh qua RTSP; "một máy tính cho nhiều nhân viên, mỗi người một máy quét" [C] | không nhắc | máy quét chế độ cổng COM, app đọc thẳng cổng [C]; ghép COM với camera thế nào không nói | không công bố | shipxanh.com |
+| Dohana | web / app / app máy tính, tối đa 2 camera (toàn cảnh + soi mã) [C]; không nhắc nhiều bàn | không | không nhắc | theo tài khoản; gói Khởi đầu "800.000đ / vị trí / 12 tháng" ("vị trí" không định nghĩa) [C] | donghangnhanh.vn |
+| EPack, videodonghang.io.vn, CamBox | mỗi bàn một điện thoại / máy tính, tối đa 2 camera [C] | không | camera đọc mã / gõ tay / máy quét [C] | theo gói / tài khoản / người dùng | epack.vn · videodonghang.io.vn · cambox.vn |
+| EcomPMS | Windows + webcam [C] | không | không nêu | 3 tr / 12 tháng, thêm máy tính phí theo máy [C] | ecompms.com |
+| Ecombox, Camsight, DEUS, Simple Replay | không nhắc nhiều bàn; Simple Replay "số thiết bị nhân viên: không giới hạn" (điện thoại) [C] | không | camera / điện thoại đọc mã | theo đơn / gói | trang chủ |
+| EasyVMS (Ấn Độ) | "Single PC for each camera" [C] | không | mỗi camera một bộ đăng nhập [C] | không nêu | support.easyecom.io |
+| Realpacking, Dobybot | webcam + máy quét trên máy từng nhân viên, hoặc điện thoại / máy tính bảng [C] | không thấy | máy quét từng máy | — | docs.realpacking.com · dobybot.com |
+
+**Rút ra:**
+- Cách phổ biến nhất: **mỗi bàn một thiết bị** (điện thoại / máy tính + 1–2 camera), nhiều bàn thì nhân thiết bị; tính tiền theo tài khoản /
+  người dùng. Đúng như Hubsell đang có.
+- **Chỉ ASCAM** gom nhiều bàn về một PC và có màn xem mọi bàn — nhưng đi đường camera an ninh RTSP + phần mềm Windows + bán phần cứng 4,5–6,5
+  tr / bàn, tính 3–8,5 tr / máy / năm. Cam Check gom camera về máy Bridge (≤ 9) nhưng không thấy màn xem trực tiếp.
+- Hai kiểu gán tem với bàn: (1) camera mỗi bàn tự đọc mã (ASCAM, EPack, Dohana — và Hubsell); (2) máy quét cổng COM, nhiều máy quét chung một
+  PC (Ship Xanh). Kiểu (1) không cần cấu hình gì → hợp shop nhỏ.
+- **Khoảng trống:** chưa thấy bên Việt nào làm "nhiều webcam USB trên một trang web, một màn xem lưới" (không cài phần mềm, không camera an
+  ninh), cũng chưa thấy "mỗi bàn một điện thoại + chủ shop xem lưới mọi bàn trên web" [S].
+- Sửa một nhận định của luồng tra: nó cho rằng một trang trình duyệt khó chạy nhiều webcam — **đo thật 62.5 cho thấy 2 camera / 1 tab chạy
+  đủ 30 khung / giây**; giới hạn thật còn phải đo ở 3–4 webcam.
+
+**Chưa kiểm:** màn đa bàn của ASCAM trông thế nào, ghép máy quét với bàn ra sao; Cam Check màn ở bàn dùng gì; "vị trí" của Dohana; giá Ship
+Xanh; BoxCam, VieCam, Ecombox, Dobybot (trang không mở được / không nói); video YouTube / TikTok giới thiệu.

@@ -140,9 +140,9 @@ export function VideoPlayer({
                 type="button"
                 aria-label="Phát video"
                 onClick={() => void load(0)}
-                className="flex size-14 items-center justify-center rounded-full bg-white/15 transition-colors hover:bg-white/25"
+                className="flex h-12 w-[4.25rem] items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600"
               >
-                <Play className="size-6 translate-x-0.5" />
+                <Play className="size-6 translate-x-0.5 fill-current" />
               </button>
               <p className="text-xs tabular-nums opacity-70">{formatClipDuration(video.durationSec)}</p>
             </>

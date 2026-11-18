@@ -123,9 +123,11 @@ export function VideoTable({
                   onClick={() => onPlay(v)}
                   aria-label={`Xem nhanh video ${v.trackingCode}`}
                   title={playable ? "Xem nhanh" : (PACK_VIDEO_STATUS_META[v.status]?.label ?? "Chưa xem được")}
-                  className="flex size-8 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-primary hover:text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-muted disabled:hover:text-foreground"
+                  // Anh Trung 18/11: nút phát kiểu YouTube — khối bo góc màu xanh thương hiệu, tam giác trắng tô đặc.
+                  // Không theo --primary (đổi theo theme, mặc định đen). Chưa xem được → xám.
+                  className="flex h-7 w-10 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
                 >
-                  <Play className="size-4 translate-x-px" />
+                  <Play className="size-3.5 translate-x-px fill-current" />
                 </button>
               </TableCell>
 

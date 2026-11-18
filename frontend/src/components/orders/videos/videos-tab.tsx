@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Smartphone, Video } from "lucide-react";
@@ -12,6 +13,7 @@ import {
 } from "@/components/shared/channel-filter";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   fetchChannels,
@@ -22,7 +24,7 @@ import {
   type PackVideoRow,
 } from "@/lib/api";
 import { rangeToQuery, type DateRange } from "@/lib/date-range";
-import { packVideoOrderPath } from "@/lib/pack-video";
+import { PACK_VIDEOS_PATH, packVideoOrderPath } from "@/lib/pack-video";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery } from "@/lib/use-api-query";
 
@@ -188,27 +190,57 @@ export function VideosTab() {
   );
 }
 
-/** Màn trống của shop chưa quay video nào: một câu + ba bước bắt đầu trên app điện thoại. */
+/**
+ * Màn trống của shop chưa quay video nào: hai lối bắt đầu — webcam trên máy tính (một nút, vào thẳng màn quay)
+ * và app điện thoại. Anh Trung 18/11: mọi video, webcam hay điện thoại, đều lên hệ thống → cả hai cùng hiện ở đây.
+ */
 function FirstVideoGuide() {
-  const steps = ["Mở app Hubsell trên điện thoại", "Vào tab Tổng quan", "Chọn ô Quay video đóng gói"];
   return (
-    <div className="flex flex-col items-center gap-4 px-4 py-14 text-center">
-      <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-        <Smartphone className="size-5 text-muted-foreground" />
-      </span>
-      <p className="max-w-md text-sm text-slate-900">
-        Chưa có video nào. Video quay lúc đóng hàng trên app sẽ tự hiện ở đây, tìm lại được bằng mã vận đơn.
+    <div className="flex flex-col items-center gap-5 px-4 py-12 text-center">
+      <p className="max-w-lg text-sm text-foreground">
+        Chưa có video nào. Quay xong là video tự lưu lên hệ thống và hiện ở đây, tìm lại được bằng mã vận đơn.
       </p>
-      <ol className="flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
-        {steps.map((step, i) => (
-          <li key={step} className="flex items-center gap-2 rounded-full border bg-background px-3 py-1.5">
-            <span className="flex size-5 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground tabular-nums">
-              {i + 1}
-            </span>
-            {step}
-          </li>
-        ))}
-      </ol>
+      <div className="grid w-full max-w-2xl gap-3 sm:grid-cols-2">
+        <StartOption
+          icon={Video}
+          title="Webcam trên máy tính"
+          detail="Giơ tem vào camera là tự quay, đưa tem kế là tự cắt sang video mới."
+          action={
+            <Link href={`${PACK_VIDEOS_PATH}/record`} className={buttonVariants({ size: "sm" })}>
+              <Video className="size-4" />
+              Quay video
+            </Link>
+          }
+        />
+        <StartOption
+          icon={Smartphone}
+          title="App Hubsell trên điện thoại"
+          detail="Tab Tổng quan → ô Quay video đóng gói."
+        />
+      </div>
+    </div>
+  );
+}
+
+function StartOption({
+  icon: Icon,
+  title,
+  detail,
+  action,
+}: {
+  icon: typeof Video;
+  title: string;
+  detail: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-lg border bg-background p-4">
+      <span className="flex size-10 items-center justify-center rounded-full bg-muted">
+        <Icon className="size-5 text-muted-foreground" />
+      </span>
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="text-sm text-muted-foreground">{detail}</p>
+      {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );
 }
