@@ -59,17 +59,75 @@ export const PACK_VIDEO_DURATION_TOLERANCE = 0.4;
 export const PACK_VIDEO_PAGE_DEFAULT = 20;
 export const PACK_VIDEO_PAGE_MAX = 100;
 
-/**
- * GÓI GIỜ QUAY. Cỡ gói 100 và 200 giờ là số anh Trung nêu 14/11 ("gói theo giờ quay: 100 giờ,
- * 200 giờ..."). GIÁ CHƯA CHỐT → priceVnd = null, web hiện "chưa công bố" chứ không vẽ số.
- */
-export const PACK_VIDEO_HOUR_PACKAGES: readonly { hours: number; priceVnd: number | null }[] = [
-  { hours: 100, priceVnd: null },
-  { hours: 200, priceVnd: null },
-];
+// ---------- MUA GIỜ QUAY (docs/VIDEO-DONG-HANG-THIET-KE.md mục 16 + 19) ----------
 
 /**
- * Đã mở bán giờ quay chưa. false = nút "Mua thêm giờ quay" chỉ mở hộp xem gói, CHƯA có bước thanh
- * toán (chưa có giá, chưa nối cổng thanh toán). Bật khi anh chốt giá + cách thu.
+ * ĐƠN GIÁ một giờ quay: 1.500 đ, TÍNH THẲNG, không bậc — anh Trung CHỐT 16/11 tối ("1.500 đ một giờ").
+ * Trả trước, không thu theo tháng, giờ đã mua không hết hạn, không trừ VAT trong phép tính.
+ * Máy chủ TỰ tính tiền = số giờ × đơn giá (lib/pack-video-hour-pricing.ts); không tin số tiền trình duyệt gửi.
  */
-export const PACK_VIDEO_HOUR_SALES_OPEN = false;
+export const PACK_VIDEO_HOUR_PRICE_VND = 1_500;
+
+/**
+ * Ba gói sẵn — chỉ là LỐI TẮT, cùng đơn giá, không giảm giá. 50 / 200 / 500 giờ là đề xuất của em 16/11
+ * (anh không phản đối): ≈ shop 100 / 400 / 1.000 đơn một ngày trong một tháng nếu mỗi video ≈ 1 phút.
+ */
+export const PACK_VIDEO_HOUR_PRESETS: readonly number[] = [50, 200, 500];
+
+/** Mua tối thiểu 20 giờ = 30.000 đ. SỐ TỰ CHỌN (16/11): mỗi lần mua kéo theo một hóa đơn + phí cổng. */
+export const PACK_VIDEO_HOUR_MIN_PURCHASE = 20;
+
+/**
+ * Mua tối đa một lần 10.000 giờ = 15.000.000 đ. SỐ TỰ CHỌN: chặn gõ nhầm thêm số 0 (shop 1.000 đơn/ngày
+ * dùng ≈ 500 giờ/tháng → 10.000 giờ ≈ 20 tháng). Không phải trần của payOS (em chưa có số hạn mức payOS).
+ */
+export const PACK_VIDEO_HOUR_MAX_PURCHASE = 10_000;
+
+/**
+ * Đã MỞ THANH TOÁN giờ quay chưa — công tắc env `PACK_VIDEO_HOUR_SALES_OPEN=1`, mặc định TẮT.
+ * 18/11 tối anh Trung: "Làm phần mua giờ" → đã nối payOS + chứng từ + sổ quỹ + hóa đơn (mục 20 của tài
+ * liệu thiết kế). Tắt = hộp mua vẫn hiện đủ giá + phép tính, nút "Thanh toán" báo "chưa mở thanh toán" và
+ * máy chủ từ chối tạo mã. Đơn đã tạo mã từ trước mà tiền về sau khi tắt thì VẪN được cộng giờ.
+ */
+export function packVideoHourSalesOpen(): boolean {
+  return process.env.PACK_VIDEO_HOUR_SALES_OPEN === "1";
+}
+
+/**
+ * Phần MÃ trong nội dung chuyển khoản payOS của khoản mua giờ: "PAC" + số giờ → khách và kế toán nhìn
+ * sao kê thấy "HS PAC200 45678901" (tiền tố sản phẩm · PAC + số giờ · 8 số cuối mã đơn). Dài nhất
+ * "HS PAC10000 12345678" = 20 ký tự ≤ trần 25 của payOS.
+ */
+export const PACK_VIDEO_HOUR_TRANSFER_CODE = "PAC";
+
+/**
+ * Hết giờ thì DỪNG (anh chốt 14/11): không mở được video MỚI khi số dư ≤ 0. Video đang quay dở lúc hết
+ * giờ vẫn được tải lên — máy chủ nhận ra bằng giờ BẮT ĐẦU quay của clip (services/pack-video/hours.ts).
+ * Lùi giờ bắt đầu quá mức này thì không còn được coi là "đang quay dở" (60 phút trần một video + 24 giờ
+ * chờ tải khi mất mạng — SỐ TỰ CHỌN).
+ */
+export const PACK_VIDEO_OVERRUN_LOOKBACK_SEC = PACK_VIDEO_MAX_DURATION_SEC + 24 * 60 * 60;
+
+// ---------- TỰ XÓA THEO TRẠNG THÁI ĐƠN (lát W5, mục 19.4) ----------
+
+/**
+ * Công tắc XÓA THẬT trên R2. Mặc định TẮT = chạy bóng: worker chỉ ghi hạn giữ + "sẽ xóa", không xóa
+ * tệp nào. Bật bằng env PACK_VIDEO_DELETE_ENABLED=1 SAU KHI đã chạy bóng đủ một tuần và anh duyệt.
+ */
+export function packVideoDeleteEnabled(): boolean {
+  return process.env.PACK_VIDEO_DELETE_ENABLED === "1";
+}
+
+/**
+ * Công tắc DỌN VIDEO KHI CHỦ SHOP XÓA TÀI KHOẢN. Mặc định TẮT = chỉ ghi nhật ký "sẽ xóa N video".
+ * Bật bằng env PACK_VIDEO_ACCOUNT_PURGE=1 khi mở cho khách thứ hai (điều kiện 1 mục 8).
+ */
+export function packVideoAccountPurgeEnabled(): boolean {
+  return process.env.PACK_VIDEO_ACCOUNT_PURGE === "1";
+}
+
+/** Mỗi lượt worker dọn đọc tối đa ngần này video (đọc theo khóa, không quét bảng). SỐ TỰ CHỌN. */
+export const PACK_VIDEO_JANITOR_BATCH = 500;
+
+/** Một lượt dọn đi tối đa ngần này lô rồi nghỉ tới nhịp sau — không chiếm database cả giờ. SỐ TỰ CHỌN. */
+export const PACK_VIDEO_JANITOR_MAX_BATCHES = 20;

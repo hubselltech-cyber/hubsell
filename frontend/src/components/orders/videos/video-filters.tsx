@@ -19,6 +19,12 @@ const CHIPS: { key: Exclude<PackVideoChip, "all">; label: string; title: string 
   { key: "returns", label: "Đơn có hoàn", title: "Video của đơn đang có yêu cầu hoàn / trả hàng" },
   { key: "unmatched", label: "Chưa khớp đơn", title: "Tem đã quay nhưng chưa tìm ra đơn tương ứng" },
   { key: "pending", label: "Chưa tải lên xong", title: "Đã quay trên điện thoại nhưng tệp chưa lên kho" },
+  // Chỉ hiện khi có số (chip 0 video tự ẩn) — tức là khi luật tự xóa đã gán hạn cho video.
+  {
+    key: "expiring",
+    label: "Sắp tự xóa",
+    title: "Hệ thống sẽ tự xóa trong 3 ngày tới (đơn đã qua hạn khiếu nại). Cần giữ thì tải về trước.",
+  },
 ];
 
 const CHIP_CLASS =

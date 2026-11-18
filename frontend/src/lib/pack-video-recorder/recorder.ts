@@ -46,6 +46,12 @@ export interface RecorderEvents {
   onClipDone(outcome: ClipOutcome): void;
   /** Clip ĐANG QUAY vừa được đổi loại (rào "đơn này đang hoàn về"). */
   onClipRelabel?(kind: ClipKind): void;
+  /**
+   * HẾT GIỜ THÌ DỪNG (18/11/2026): hỏi trước khi mở MỘT clip MỚI. false = hết giờ quay → không mở clip mới;
+   * clip đang quay dở vẫn quay nốt (tới khi bấm Dừng / đưa tem kế). Không có = luôn được (máy chủ vẫn chặn
+   * ở bước tải lên — đây chỉ là lớp báo sớm cho người đóng hàng).
+   */
+  canOpenClip?(): boolean;
 }
 
 /** Trạng thái lúc chưa bật gì — cũng là trạng thái màn hình vẽ ở lượt đầu. */
@@ -260,6 +266,11 @@ export class PackRecorder {
       return;
     }
     const previous = this.state.current;
+    if (!this.mayOpenClip()) {
+      // Tem kế = kiện trước đã xong → lưu clip đang quay, KHÔNG mở clip mới.
+      if (previous) void this.stop();
+      return;
+    }
     if (previous) {
       this.events.log(
         "info",
@@ -279,6 +290,7 @@ export class PackRecorder {
       const on = await this.turnOn(this.state.camera?.deviceId ?? null);
       if (!on) return false;
     }
+    if (!this.mayOpenClip()) return false;
     const code = manualClipCode(this.state.kind);
     this.events.log(
       "info",
@@ -286,6 +298,14 @@ export class PackRecorder {
     );
     this.beginClip(code, true);
     return true;
+  }
+
+  /** Lớp báo sớm "hết giờ quay" — kêu + ghi nhật ký khi bị từ chối. */
+  private mayOpenClip(): boolean {
+    if (!this.events.canOpenClip || this.events.canOpenClip()) return true;
+    playBoop();
+    this.events.log("error", "Hết giờ quay — không mở được video mới. Mua thêm giờ để quay tiếp.");
+    return false;
   }
 
   private beginClip(code: string, manual: boolean): void {

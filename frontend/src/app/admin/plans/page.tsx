@@ -1324,7 +1324,9 @@ export default function PlatformPlansPage() {
                           <p className="text-xs text-muted-foreground">
                             {p.kind === "OVERAGE"
                               ? `Phí vượt — mua thêm ${(p.committedOrders ?? 0).toLocaleString("vi-VN")} đơn`
-                              : CYCLE_LABEL[p.cycle]}
+                              : p.kind === "PACK_HOURS"
+                                ? `Mua ${(p.packHours ?? 0).toLocaleString("vi-VN")} giờ quay video`
+                                : CYCLE_LABEL[p.cycle]}
                           </p>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
@@ -1334,7 +1336,7 @@ export default function PlatformPlansPage() {
                           +{formatMoney(p.amount)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {p.kind === "OVERAGE" ? "—" : formatDate(p.periodEnd)}
+                          {p.kind === "OVERAGE" || p.kind === "PACK_HOURS" ? "—" : formatDate(p.periodEnd)}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {p.confirmedByName}

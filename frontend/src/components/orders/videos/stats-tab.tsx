@@ -39,6 +39,7 @@ import { qk } from "@/lib/query-keys";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
 
+import { HourLedgerCard } from "./hour-ledger";
 import { remainingLabel, usePackVideoHours } from "./hours-balance";
 import { QuickViewDialog } from "./video-quick-view";
 import { VideoTable } from "./video-table";
@@ -99,7 +100,8 @@ function SectionCard({
  * Hệ thống không nhắc "quay lâu" (anh Trung chốt 14/11) — shop tự soát bằng các bảng
  * dưới đây: giờ quay theo ngày, theo người quay, và danh sách video dài nhất.
  *
- * CHƯA có "Giờ còn lại": giờ quay chưa mở bán, không vẽ số giả.
+ * Hàng ô số đầu tab là số giờ TỪ TRƯỚC TỚI NAY (còn lại · đã mua · đã quay) + SỔ GIỜ (từng lần mua / cấp /
+ * điều chỉnh, 18/11/2026); các khối dưới lọc theo kỳ.
  */
 export function StatsTab() {
   const [range, setRange] = React.useState<DateRange>(() => defaultRange());
@@ -154,6 +156,8 @@ export function StatsTab() {
           />
         </div>
       )}
+
+      {hours && <HourLedgerCard hours={hours} />}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">

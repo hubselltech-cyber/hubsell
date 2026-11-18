@@ -43,6 +43,7 @@ import { startProductCatalogSyncWorker } from "./product-catalog-sync";
 import { startOrderLedgerWorker } from "./order-ledger";
 import { startStockPushScheduler } from "./stock-queue";
 import { startReviewAutoReplyWorker } from "./review-auto-reply";
+import { startPackVideoJanitorWorker } from "./pack-video-janitor";
 import { startPlanHibernateWorker } from "./plan-hibernate";
 import { startPlanOverageCloseWorker } from "./plan-overage-close";
 import { startLineIdBackfillWorker } from "./order-line-id-backfill";
@@ -145,6 +146,9 @@ export function startAllWorkers(): void {
   // Sổ cái đơn (giai đoạn 1 kiến trúc quy mô): tính lại dòng trigger đánh dấu,
   // tạo phân mảnh tháng, đối soát đêm sổ ↔ đơn gốc.
   startOrderLedgerWorker();
+  // Video đóng hàng (18/11/2026): gộp giờ đã quay theo ngày + gán hạn giữ theo trạng thái đơn + video tới
+  // hạn CHẠY BÓNG (không xóa tệp) — PACK_VIDEO_DELETE_ENABLED=1 mới xóa thật; PACK_VIDEO_JANITOR_OFF=1 tắt.
+  startPackVideoJanitorWorker();
   // Tự trả lời đánh giá theo số sao — mỗi shop 1 lần/ngày (anh Trung 10/10).
   startReviewAutoReplyWorker();
   // Bù id lá sàn cho dòng đơn cũ 90 ngày (Lát 2 cây sản phẩm sàn, anh Trung 18/10) —

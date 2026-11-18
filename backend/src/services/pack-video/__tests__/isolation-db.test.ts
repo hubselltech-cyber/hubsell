@@ -21,6 +21,7 @@ import {
   videosByOrder,
   type PackVideoScope,
 } from "../library";
+import { grantHours } from "../hours";
 import { PackVideoError, beginUpload, completeUpload, signUploadParts } from "../upload";
 import { createFakeStorage } from "./fake-storage";
 
@@ -96,6 +97,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
       ).id;
     a = await mk("a");
     b = await mk("b");
+    for (const owner of [a, b]) await grantHours({ ownerId: owner, seconds: 100 * 3600, kind: "GRANT", note: TAG });
     const ch = async (userId: string, shopName: string, channelName: ChannelName) =>
       (await prisma.channel.create({ data: { userId, channelName, shopName }, select: { id: true } })).id;
     chA1 = await ch(a, `${TAG} gian 1`, ChannelName.SHOPEE);
@@ -171,6 +173,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
   afterAll(async () => {
     if (!a) return;
     await prisma.packVideo.deleteMany({ where: { ownerId: { in: [a, b] } } });
+    await prisma.packHourGrant.deleteMany({ where: { ownerId: { in: [a, b] } } });
     await prisma.order.deleteMany({ where: { channelId: { in: [chA1, chA2, chB] } } });
     await prisma.channel.deleteMany({ where: { id: { in: [chA1, chA2, chB] } } });
     await prisma.user.deleteMany({ where: { id: { in: [a, b] } } });
@@ -181,7 +184,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
   it("S1 đọc — danh sách, số trên chip, ô tìm, thống kê, đơn hoàn của B không chứa gì của A", async () => {
     const list = await listVideos(scopeB(), {}, {});
     expect(list.items.map((v) => v.id)).toEqual([videos.b]);
-    expect(await summarizeVideos(scopeB(), {})).toEqual({ all: 1, returns: 0, unmatched: 0, pending: 0 });
+    expect(await summarizeVideos(scopeB(), {})).toEqual({ all: 1, returns: 0, unmatched: 0, pending: 0, expiring: 0 });
 
     // Gõ đúng mã vận đơn / mã đơn của A vào ô tìm của B.
     expect((await listVideos(scopeB(), { q: `${TAG}-thuong` }, {})).items).toEqual([]);
@@ -280,7 +283,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — cô lập giữa hai chủ sho
   });
 
   it("chip + số trên chip khớp nhau", async () => {
-    expect(await summarizeVideos(scopeA(), {})).toEqual({ all: 8, returns: 3, unmatched: 3, pending: 1 });
+    expect(await summarizeVideos(scopeA(), {})).toEqual({ all: 8, returns: 3, unmatched: 3, pending: 1, expiring: 0 });
     const ids = async (chip: "returns" | "unmatched" | "pending") =>
       (await listVideos(scopeA(), {}, { chip })).items.map((v) => v.id);
     expect(await ids("returns")).toEqual([videos.hoanHong, videos.hoanCho, videos.hoanChoKhui]);

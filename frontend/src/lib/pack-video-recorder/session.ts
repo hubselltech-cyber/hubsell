@@ -381,5 +381,6 @@ function uploadErrorText(err: unknown): string {
     return "Kho chưa cho trình duyệt tải lên — cần bật CORS cho bucket (hoặc mạng chập chờn)";
   }
   if (err instanceof ApiError && err.code === "FEATURE_LOCKED") return "Tài khoản chưa được mở Video đóng hàng";
+  if (err instanceof ApiError && err.code === "OUT_OF_HOURS") return "Đã hết giờ quay — mua thêm giờ rồi bấm Thử lại";
   return err instanceof Error ? err.message : String(err);
 }

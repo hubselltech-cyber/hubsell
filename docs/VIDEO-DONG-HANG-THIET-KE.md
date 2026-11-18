@@ -1,6 +1,8 @@
 # Video đóng hàng — bản thiết kế (16/11/2026)
 
-> **Trạng thái 16/11/2026: W1a–W4 + sổ giờ ĐÃ PUSH `b0040067` (anh: "Em cứ push lên trước") — xem mục 10, 11, 12.** W5 (xóa), thanh toán mua giờ, quay từ app / webcam chưa làm.
+> **Trạng thái 16/11/2026: W1a–W4 + sổ giờ ĐÃ PUSH `b0040067` (anh: "Em cứ push lên trước") — xem mục 10, 11, 12.**
+> **18/11/2026 tối (mục 19, LOCAL, chưa commit):** hộp mua giờ giá 1.500 đ + chặn hết giờ + luật tự xóa CHẠY BÓNG + bảng gộp giờ theo
+> ngày + dọn video khi xóa tài khoản (sau cờ). Nối cổng thanh toán + hóa đơn cho khoản mua giờ CHỜ anh (19.8).
 > Khảo sát nằm ở [VIDEO-DONG-HANG-TU-KHIEU-NAI-KHAO-SAT.md](VIDEO-DONG-HANG-TU-KHIEU-NAI-KHAO-SAT.md) (mục 57 thử tải R2, mục 58 trang
 > web). Tệp này chỉ chứa THIẾT KẾ: kiến trúc, cây tệp, sổ rủi ro, thứ tự lát. Điều gì là số em tự chọn đều ghi rõ.
 
@@ -586,6 +588,95 @@ có Kho · QR · Cấu hình (`(warehouse)/_layout.tsx`) — nhân viên không 
 Phần còn lại của mục 17 giữ: nút "Quay khui hàng" ở Kho → Đơn hoàn; quyền theo `orders` / `warehouse.returns`, không thêm ô quyền; cổng máy
 chủ tính theo chủ shop (nhân viên của chủ thí điểm được ghi video); xem / tải trên web vẫn chỉ chủ shop.
 
+### 17.2 Khảo sát lại 18/11 21:00 (lịch anh hẹn) — CHỈ KHẢO SÁT, chưa code, chưa đụng prod
+
+**[C]** = đã mở mã đọc tận dòng · **[S]** = suy ra, chưa chạy thử. Không dựng app, không gọi máy chủ nào trong lượt này.
+
+#### a) Cách A so với cách B
+
+| | **(A) Nhân viên có thêm tab "Đơn hàng"** | **(B) Tab con "Quay video" nằm trong Kho của nhân viên** |
+|---|---|---|
+| Tệp đụng (app) | `(admin)/orders.tsx` (915 dòng) dời ruột sang `screens/OrdersScreen.tsx`, tệp cũ còn 3 dòng gọi lại; thêm `(warehouse)/orders.tsx`; `(warehouse)/_layout.tsx` thêm tab; tab con mới + màn quay | `screens/KhoScreen.tsx` thêm ô thứ ba; chủ shop vẫn phải sửa `(admin)/orders.tsx` để có tab con → hai nơi |
+| Nhân viên thấy thêm gì | danh sách đơn: mã đơn, tên khách, tên gian, món hàng, **tổng tiền đơn**, "Chưa thanh toán / Đã hoàn tiền"; bấm vào đơn ra hộp chi tiết có **phí sàn + tiền sàn trả về** | không thêm gì |
+| Có lộ lãi / lỗ, giá vốn không | **Không.** `OrderDto` của app không có trường giá vốn / lợi nhuận [C `types/api.ts:112–144`]; khối thanh toán máy chủ ghi rõ "cố ý KHÔNG có giá vốn / lợi nhuận — màn quét ai cầm máy cũng xem được" [C `routes/orders.ts:1656–1667`] | — |
+| So với hiện tại | Nhân viên quyền `orders` **đã xem được đúng các số đó** qua nút QR giữa (cùng `OrderDetailPanel`, cùng `lookup?detail=1`) [C]; trên web họ mở cả trang Đơn hàng, `orders/page.tsx` không có nhánh nào theo vai [C]. → (A) không mở thêm số tiền nào, chỉ thêm **dạng danh sách** | — |
+| Nút bấm mới rơi vào tay nhân viên | "Trả lời sàn" khi khách xin hủy (`CancelRequestBar`), "Thống kê" bốc hàng, "Đóng gói". Máy chủ gác cả ba bằng quyền `orders`, không đòi chủ shop [C `app.ts:235–236`, `orders.ts:508, 581`] → nhân viên đã làm được trên web, chỉ là chưa có trên app | không |
+| Gian bị giới hạn | `/api/orders` đi qua `requireChannel` → nhân viên chỉ thấy đơn gian được giao [C `app.ts:236`] | — |
+
+**Rủi ro cho khách đang dùng 1.4.3:**
+- Bản 1.4.3 trên máy khách **không đổi gì**: phần quay cần thư viện camera gốc mới nên chỉ có ở bản dựng 1.5.0, không vá từ xa vào 1.4.3 được. Bản 1.4.3 cũng không đọc `features.packVideo` [C: tìm cả `hubsell-mobile/src` không có chữ này] → sửa máy chủ theo mục (d) không ảnh hưởng app cũ.
+- Rủi ro thật nằm ở **bản 1.5.0 khi lên kho**: (A) thêm tab cho nhân viên của MỌI khách có quyền `orders`, không riêng tài khoản thí điểm → chạm chốt 14/11 "chưa có lệnh mở thì tài khoản khác không thấy gì". Em đề nghị: trong giai đoạn thí điểm, tab "Đơn hàng" của nhân viên **chỉ hiện khi chủ của họ đã được mở video** — nhân viên của khách khác giữ nguyên Kho · QR · Cấu hình.
+- ⚠️ Vướng bố cục em mới thấy: `AppTabBar` chia đều các ô (`flex-1`) [C] → nút QR chỉ nằm chính giữa khi số tab LẺ. Nhân viên có 4 tab thì QR lệch. Hai lối: chấp nhận "Đơn hàng · Kho · [QR] · Cấu hình" (QR lệch phải), hoặc xếp "Kho · Đơn hàng · [QR] · Cấu hình" — cả hai đều lệch; muốn giữa thì phải 3 hoặc 5 tab. Cần anh nhìn rồi chọn (câu C3).
+- Dời 915 dòng sang tệp khác là việc cơ học nhưng đụng màn chủ shop dùng hằng ngày → phải soi lại màn Đơn hàng của chủ shop (lọc, thông báo đẩy mở đúng đơn, quay về từ Quét đóng gói). Thông báo đẩy dẫn tới `/(admin)/orders` không ảnh hưởng nhân viên vì nhân viên không nhận thông báo (`/api/notifications` chỉ chủ shop [C `app.ts:341`]).
+
+**Em vẫn nghiêng (A)**, vì: một đường chỉ việc cho cả hai vai ("Đơn hàng → Quay video gói hàng"), khớp với web (Video đóng hàng nằm dưới Đơn hàng), không lộ thêm số nào. (B) rẻ hơn nhưng hướng dẫn / video hướng dẫn phải nói hai kiểu, và "quay video gói hàng" nằm trong Kho là sai chỗ so với điều anh đã nói.
+
+#### b) Nhân viên chỉ có quyền `warehouse.returns` quay KHUI ở đâu
+
+Người này không có nút QR, không có tab Đơn hàng (kể cả theo cách A), chỉ thấy Kho → Đơn hoàn (`WarehouseHubPage`, nút quét nhận hàng hoàn dẫn tới `/scan-returns`) [C `KhoScreen.tsx:27–53`, `WarehouseHubPage.tsx:242`].
+→ Đặt nút **"Quay khui hàng"** ngay cạnh nút quét nhận hàng hoàn ở Kho → Đơn hoàn, mở màn quay ở chế độ khui (`?mode=unbox` — màn thử đã nhận tham số này [C `video-test.tsx:144–146`]). Với người không có quyền `orders`, công tắc "Đóng hàng | Khui hàng hoàn" trong màn quay **ẩn đi, khóa ở Khui** (máy chủ cũng từ chối video đóng của họ, mục d). Chủ shop và nhân viên có cả hai quyền thấy cả hai lối.
+
+#### c) Đối thủ đặt màn quay cho nhân viên ở đâu (chỉ từ tài liệu khảo sát, không mở web lại)
+
+- Tài liệu **không có** dòng nào tả cây menu theo vai nhân viên của bất kỳ bên nào — các lượt khảo sát chỉ đọc trang công khai, không đăng nhập.
+- Điều có ghi: "Quay video" là **mục riêng cấp một**, không lồng trong danh sách đơn — Cam Check (Tổng quan · Quay Video · Danh sách Video…), Ship Xanh (menu "Quay video đóng gói" riêng) [mục 58.2]. EPack: bề mặt chính là danh sách đơn, **thống kê chỉ chủ shop** [mục 58.2]. ASCAM: nhân viên quét QR định danh để nhận bàn [mục 63]. Simple Replay "số thiết bị nhân viên không giới hạn"; Cam Check bán theo số hồ sơ nhân viên 5 / 10 / không giới hạn [mục 63].
+- Rút ra [S]: bên nào cũng coi người quay là nhân viên có danh tính riêng, phần xem / thống kê giữ cho chủ — trùng hướng mục (d). Không bên nào cho thấy "quay" nằm trong nút quét chung → khớp với việc anh bỏ chế độ ở nút QR.
+
+#### d) Máy chủ: sửa tối thiểu để nhân viên của chủ thí điểm GHI được video — **không cần migration**
+
+Hiện trạng [C]: `require-pack-video.ts:13–14` đưa email của **người đăng nhập** vào cổng → nhân viên trượt ngay điều 1 (email không trong danh sách), rồi trượt điều 2 (`ownerId` có giá trị). Cả nhóm `/api/pack-videos` gác bằng một cổng, không tách ghi / đọc. `requireAuth` không nạp email của chủ [C `auth.ts:67–101`].
+
+Sửa (4 tệp + test, không đụng sổ):
+1. `services/pack-video/access.ts` — cổng tính theo **email CHỦ SHOP**, trả ba khả năng thay cho một: `view` (chỉ chủ) · `recordPack` (chủ, hoặc nhân viên có `orders`) · `recordUnbox` (chủ, hoặc nhân viên có `warehouse.returns`).
+2. `middleware/require-pack-video.ts` — nhân viên thì tra email chủ (một câu theo khóa chính, chỉ trên nhóm đường này), gắn ba khả năng vào `req`.
+3. `routes/pack-videos.ts` — **đường ghi** `POST /` · `POST /:id/parts` · `POST /:id/complete` · `GET /match` kiểm theo loại video (đóng / khui); **mọi đường còn lại** (danh sách, tải về, thống kê, đơn hoàn, số giờ + sổ giờ có tiền, mua giờ) giữ chỉ chủ shop. `/:id/parts` và `/:id/complete` thêm điều kiện nhân viên chỉ chạm video **do chính mình quay** (hiện chỉ so `ownerId` [C `upload.ts:291, 333`]).
+4. `routes/auth.ts` — thêm trường MỚI `features.packVideoRecord = { pack, unbox }`; **giữ nguyên nghĩa** `features.packVideo` (nhân viên vẫn "locked") → web vẫn để mục "Video đóng hàng" mờ với nhân viên, app / web cũ không đổi hành vi [C web chỉ nhận "open" | "locked", `frontend/src/lib/api.ts:270`].
+- Sổ đã có sẵn `recordedById` = người đăng nhập [C `upload.ts:244`] → cột "Người quay" và thống kê theo người quay tự chạy khi nhân viên quay. Giờ quay trừ vào số dư của chủ (theo `ownerId`) [C].
+- Điểm phải quyết: `/match` đã ẩn đơn của gian nhân viên không được giao [C `library.ts:483`], nhưng bước tải lên khớp đơn chỉ theo chủ shop [C `upload.ts:229`] → nhân viên bị giới hạn gian quay kiện của gian khác thì video **vẫn gắn vào đơn**, chỉ là màn quay không hiện tên gian / món. Em đề nghị giữ vậy (video là bằng chứng của chủ, người đó đang cầm kiện thật) — câu C5.
+- ⚠️ Thứ tự: `routes/pack-videos.ts` đang có thay đổi CHƯA commit của mục 19 (mua giờ / hết giờ) → lát máy chủ này phải làm SAU khi mục 19 được commit, không thì hai việc dính vào nhau.
+- App iPhone bản thử chưa biết mã `OUT_OF_HOURS` (nợ mục 19) → nhân viên quay lúc hết giờ phải thấy "Hết giờ quay — báo chủ shop", không thấy số giờ / giá.
+
+#### e) Đề xuất cuối: cách (A), có rào thí điểm
+
+**Phác màn (chữ):**
+```
+Tab dưới (chủ shop):   Trang chủ · Đơn hàng · [QR] · Kho · Cấu hình      (không đổi)
+Tab dưới (nhân viên có `orders`, chủ đã mở video):  Đơn hàng · Kho · [QR] · Cấu hình
+Tab dưới (nhân viên khác):                           như hiện tại
+
+ĐƠN HÀNG
+[ Danh sách đơn | Quay video gói hàng ]        ← thanh chọn chỉ hiện khi tài khoản được quay
+— tab con "Quay video gói hàng" —
+   ┌ Nút lớn xanh:  ▶ Bắt đầu quay ┐            ← mở màn quay toàn màn hình (không nhét camera vào tab)
+   Hôm nay: 37 video · 1 giờ 12 phút
+   Đang chờ tải lên: 2 video  (mất mạng thì hiện ở đây, tự lên lại)
+   Chủ shop thêm một dòng: Còn 46 giờ quay      ← nhân viên KHÔNG thấy số giờ
+   Hết giờ:  "Hết giờ quay — báo chủ shop mua thêm"  (chủ shop: nút Mua thêm giờ)
+
+KHO → Đơn hoàn:  [ Quét nhận hàng hoàn ]  [ Quay khui hàng ]   ← nút thứ hai theo quyền `warehouse.returns`
+```
+Tab con là **trang mở đầu + hàng chờ tải lên**, không phải camera: đã bỏ lưu local thì người quay phải có chỗ thấy video nào chưa lên hệ thống.
+
+**Các lát (mỗi lát giao riêng, chưa lát nào được duyệt):**
+| Lát | Việc | Ở đâu | Ghi chú |
+|---|---|---|---|
+| N1 | Máy chủ: ba khả năng + tách đường ghi / đọc + `features.packVideoRecord` + bảng test chéo (chủ thí điểm / không thí điểm × 4 kiểu quyền × từng đường) | backend, không migration | sau khi mục 19 commit; cần push + deploy |
+| N2 | App, chủ shop: dời màn Đơn hàng sang `screens/`, thêm tab con + trang mở đầu + hàng chờ | nhánh thử, TestFlight | anh thử bằng admin@hubsell.vn trước, đúng ý anh |
+| N3 | App, nhân viên: tab "Đơn hàng" ở khu nhân viên (rào theo chủ đã mở video) | nhánh thử | cần N1 trên prod |
+| N4 | App: nút "Quay khui hàng" ở Kho → Đơn hoàn + khóa công tắc theo quyền | nhánh thử | cần N1 |
+| N5 | Thử thật bằng 4 nhân viên của admin@hubsell.vn (chỉ `orders` · chỉ `warehouse.returns` · cả hai · bị giới hạn gian) + 1 nhân viên của tài khoản KHÔNG thí điểm | TestFlight | anh cần tạo sẵn các tài khoản nhân viên này |
+
+**Anh cần chốt:**
+- **C1.** Chọn (A) hay (B). Em đề nghị (A).
+- **C2.** Giai đoạn thí điểm: tab "Đơn hàng" của nhân viên chỉ hiện cho nhân viên của chủ đã mở video (em đề nghị có). Khi mở rộng rãi thì mọi nhân viên quyền `orders` có danh sách đơn trên app — anh đồng ý không?
+- **C3.** Nhân viên 4 tab thì nút QR lệch khỏi giữa — chấp nhận, hay anh muốn cách xếp khác?
+- **C4.** Ô "Quay video đóng gói" ở Tổng quan: bỏ khi đã có tab con (em đề nghị bỏ, một lối cho dễ) hay giữ làm lối tắt?
+- **C5.** Nhân viên bị giới hạn gian quay kiện của gian khác: vẫn gắn video vào đơn (em đề nghị) hay từ chối?
+- **C6.** Nhân viên có thấy số giờ còn lại không (em đề nghị không, chỉ báo khi hết)?
+- **C7.** Nhân viên quay bằng WEBCAM trên web: mở cùng lúc theo luật này hay để sau? (N1 chỉ mở cổng máy chủ; menu web vẫn mờ với nhân viên cho tới khi anh bảo.)
+
+**Chưa kiểm:** chưa chạy thử dòng nào (lượt này chỉ đọc mã); chưa nhìn thanh 4 tab trên máy thật; `GET /api/channels` cho nhân viên em chỉ thấy có nhánh theo vai, chưa đọc ruột; phần "nhân viên làm được Trả lời sàn trên web" suy từ cổng máy chủ, chưa bấm thử bằng tài khoản nhân viên.
+
 ## 18. NHIỀU BÀN trên một máy + đường truyền khi hàng chục nghìn shop đóng hàng cùng lúc (18/11/2026 — ĐỀ XUẤT, anh CHƯA duyệt, chưa code)
 
 > Anh Trung 18/11: "anh đang muốn đẩy sớm kế hoạch làm nhiều màn hình quay video đóng hàng như lúc trước mình đã khảo sát. Yêu cầu làm như
@@ -793,3 +884,252 @@ là đầy ổ C của anh. → M1 (N5): không chặn theo `estimate()`; phải
 
 **M0 xong**, trừ hai việc để sau: giơ tem ở nhiều bàn cùng lúc (cần người giơ tem; đọc tem từng bàn đã chứng minh 16/11 và không nghẽn ở
 6 bàn), và máy không có card rời.
+
+## 19. Mua giờ quay + hết giờ thì dừng + luật tự xóa CHẠY BÓNG (18/11/2026 20:00, lịch anh đặt 16/11 — ĐÃ PUSH 18/11 ~21:25 chung commit với mục 20)
+
+> Anh 16/11: "Cả 2 việc này em đặt lịch làm 20:00 ngày 18/11 nhé." Việc 1 = luồng mua giờ quay; việc 2 = luật tự xóa video theo
+> trạng thái đơn (lát W5). Phiên tự động, không ai bấm duyệt: hai server local bị từ chối khởi động → CHƯA soi màn (mục 19.10).
+
+### 19.1 Điều đã chốt mà mục này bám
+
+1.500 đ / giờ tính thẳng, không bậc · trả trước, không theo tháng, giờ không hết hạn, không trừ VAT · khách mua bao nhiêu cộng bấy
+nhiêu, mỗi lần thu là một giao dịch mua hàng có hóa đơn · màn mua = 3 gói sẵn 50 / 200 / 500 giờ (chỉ lối tắt) + ô nhập số giờ, tối
+thiểu 20 giờ · hết giờ thì dừng, video quay dở quay nốt, số dư được âm, ⛔ không nhắc quay thừa / không phí vượt · giờ tính khi video
+đã lên kho (STORED; DELETED vẫn tính) · xóa theo trạng thái đơn L1–L7, ⛔ không "N ngày từ ngày quay", ⛔ đối soát không phải mốc
+xóa · chỉ `admin@hubsell.vn` · ⛔ không đụng thanh toán trong app iPhone.
+
+### 19.2 Đường tiền đi — THIẾT KẾ (phần nối cổng CHƯA làm, chờ anh 19.8)
+
+Dùng lại ĐÚNG luồng payOS của gói dịch vụ / phí vượt (`services/gateway-checkout.ts` → `openGatewayOrder` → webhook
+`/api/webhooks/payos` + poll tự chữa lành → `settleGatewayOrder`), không dựng luồng mới:
+
+```
+ Web hộp "Mua thêm giờ quay" ── POST /api/pack-videos/hours/checkout { hours }   (KHÔNG gửi tiền)
+        │  máy chủ: quoteHours(hours) → số tiền = giờ × 1.500; chụp số giờ + đơn giá vào đơn cổng
+        ▼
+ GatewayPaymentOrder (PENDING, hết hạn 60') ── payOS tạo QR, nội dung CK "HS PAC<n> <8 số cuối mã đơn>"
+        │  khách quét QR
+        ▼
+ payOS webhook / poll 3 giây ──▶ settleGatewayOrder: nhánh "mua giờ" — MỘT giao dịch database:
+        · PackagePayment kind PACK_HOURS (chứng từ, externalRef = "payos:<mã GD>" duy nhất)
+        · PlatformLedgerEntry THU, invoiceStatus PENDING (sổ quỹ HQ)
+        · pack_hour_grants PURCHASE (paymentRef = cùng "payos:<mã GD>", amountVnd)   ← grantPurchasedHoursTx (ĐÃ CÓ)
+        · đơn cổng → PAID
+   sau giao dịch: kickHqAutoInvoice (hóa đơn MISA → thư billing@ kèm PDF, như gói)
+```
+
+**Lúc nào cộng giờ:** chỉ khi tiền ĐÃ VỀ và đúng số. Tạo QR không cộng gì; khách quét mà không chuyển thì đơn hết hạn, không có dòng
+giờ nào. Giờ hiện ngay ở hàng tab nhờ poll (không đợi webhook).
+
+**Hóa đơn:** đi chung bước tự xuất của gói (bút toán THU có `packagePaymentId` → `hq-auto-invoice.ts`). Cần một tên dòng hóa đơn
+mới cho khoản mua giờ (`hqItemNameFor` kind PACK_HOURS) + thuế suất — đây là chỗ anh phải quyết (19.8 H1).
+
+### 19.3 Đã làm (local)
+
+| Phần | Tệp | Ghi chú |
+|---|---|---|
+| Cấu hình một nguồn | `backend/src/config/pack-video.ts` | `PACK_VIDEO_HOUR_PRICE_VND` 1.500 · `PRESETS` 50/200/500 · `MIN` 20 · `MAX` 10.000 (tự chọn: chặn gõ nhầm, = 15 tr) · `SALES_OPEN` vẫn **false** · `OVERRUN_LOOKBACK` · 2 công tắc xóa (env, mặc định tắt) · cỡ lô 500 × 20 lô (tự chọn) |
+| Tính tiền thuần | `backend/src/lib/pack-video-hour-pricing.ts` | `quoteHours` (chỉ số giờ nguyên, máy chủ tự tính) · `amountMatchesHours` (kiểm lúc tiền về) |
+| Migration 1 | `prisma/migrations/20261118200000_pack_hour_grants_purchase_ref` | CHỈ ADD trên `pack_hour_grants`: `paymentRef` + `amountVnd`, chỉ mục DUY NHẤT một phần trên `paymentRef`, CHECK "PURCHASE phải có mã khoản tiền + tiền > 0 + giây > 0" |
+| Cộng giờ chống trùng | `services/pack-video/hours.ts` `grantPurchasedHoursTx` | `INSERT … ON CONFLICT (paymentRef) DO NOTHING` — lượt thua không ném lỗi nên không làm hỏng giao dịch của cổng; mã khoản của chủ shop khác → lỗi; tiền lệch giờ → lỗi, không cộng. Script cấp giờ tay nay CHỈ ghi GRANT / ADJUST (PURCHASE chỉ do luồng thanh toán ghi) |
+| Hết giờ thì dừng | `hours.ts` `canOpenNewVideo` + `upload.ts` `beginUpload` | video MỚI khi số dư ≤ 0 → **402 `OUT_OF_HOURS`**; NGOẠI LỆ "quay nốt": clip BẮT ĐẦU lúc còn giờ (số dư lúc bắt đầu = số dư nay + giờ đã trừ từ lúc đó − giờ đã cộng từ lúc đó) vẫn lên được, kể cả nhiều bàn cùng quay; gọi lại cùng `clientId` không bao giờ bị chặn; giờ bắt đầu lùi quá 25 giờ (60 phút + 24 giờ, tự chọn) không được tính là "quay dở" |
+| `/api/pack-videos/hours` | `hours.ts` `getHoursOverview` | thêm `pricing { priceVnd, minHours, maxHours, presets }` + `ledger` (50 dòng sổ giờ mới nhất); bỏ `packages` cũ (giá trống) |
+| Web — hộp mua | `components/orders/videos/hours-balance.tsx` | đúng phác thảo: số dư · 3 gói (giá + "≈ N video 1 phút") · ô "Số giờ khác" · dòng "n giờ × 1.500 ₫" · nút "Thanh toán X ₫" (khóa, dòng "Chưa mở thanh toán giờ quay — sắp có") · hai dòng luật hết giờ. Nút mua tách thành `BuyHoursButton` dùng lại ở màn quay |
+| Web — sổ giờ | `components/orders/videos/hour-ledger.tsx` (mới) → tab Thống kê | ngày · loại (Mua giờ / Hubsell cấp / Điều chỉnh) · số giờ ± · số tiền · hóa đơn ("Chưa xuất" với dòng mua — chưa nối hóa đơn) |
+| Web — màn quay | `record/control-panel.tsx`, `record/use-pack-recorder.ts`, `lib/pack-video-recorder/recorder.ts`, `session.ts` | hết giờ: hộp đỏ "Hết giờ quay" + nút mua ngay dưới nút lớn, nút Bắt đầu khóa (đang quay thì nút Dừng vẫn bấm được); bộ quay hỏi `canOpenClip` trước khi mở clip mới — tem kế lúc hết giờ thì LƯU clip đang quay, không mở clip mới, kêu "boop" + nhật ký; tải lên bị 402 thì báo "Đã hết giờ quay — mua thêm giờ rồi bấm Thử lại" (không tự thử lại). Dòng số giờ trên cột điều khiển dời lên ngay dưới nút lớn |
+
+### 19.4 Luật tự xóa — CHẠY BÓNG (đã làm, local)
+
+- **Luật thuần** `backend/src/lib/pack-video-retention.ts` — `decideRetention(video, order, now)` trả `DELETE_AFTER` (ngày + luật) /
+  `HOLD` (lý do) / `WAIT`. Số ngày một chỗ (`RETENTION_DAYS`): L1 chưa khớp đơn = quay + 3 · L2 hủy ngang = lúc thấy hủy + 1 · L3 kiện
+  quay đầu về kho nguyên vẹn = ngày nhận + 7 · L4 đã giao không hoàn = giao + 20 (**mọi gian Lazada + 35** — sổ không có cờ LazMall nên
+  lấy mốc dài) · L5 ca hoàn đóng = max(ngày kho nhận, hôm nay) + 10 · L6 trần = quay + 90. "Lúc thấy hủy / thấy ca đóng" = hôm nay vì
+  sổ không ghi giờ hủy / giờ khiếu nại xong → luôn ≥ mốc thật, chỉ giữ LÂU hơn. L7 (tắt tính năng / hết giờ) không đổi gì.
+- **Mọi dấu hiệu hoàn chặn xóa** (9 dấu hiệu, mỗi cái một test): `returnStatus ≠ NONE`, `returnRequestedAt`, `returnedAt`,
+  `returnDeliveredAt`, `refundedAmount > 0`, `platformRefundAmount > 0`, `platformReturnStatus`, `returnSolution`, và chính video là
+  video KHUI. Video khui chưa khớp đơn → GIỮ (không áp L1). Đơn hủy mà kiện đã rời kho, chưa có dấu hiệu hoàn → GIỮ chờ kiện về.
+  Có `orderId` mà không đọc được đơn → CHỜ, không xóa.
+- **Phần áp lên sổ** `services/pack-video/retention.ts`: pha GÁN HẠN đọc 500 video STORED chưa có hạn theo khóa chính (con trỏ ở
+  `maintenance_jobs` key `pack-retention-assign`, hết sổ quay về đầu), đọc đơn theo KHÓA CHÍNH, ghi bằng HAI câu `UPDATE … FROM unnest`
+  mỗi lô; hạn ghi MỘT lần (điều kiện `deleteAfter IS NULL`). Pha TỚI HẠN đọc qua chỉ mục một phần `pack_videos_delete_after_idx`, ĐỌC
+  LẠI đơn: mới có dấu hiệu hoàn → gỡ hạn, ghi lý do giữ. Chạy bóng (mặc định): không gọi R2, không đổi trạng thái — dòng STORED có
+  `deleteAfter` đã qua CHÍNH LÀ bản ghi "sẽ xóa" để đối chiếu; xóa thật (`PACK_VIDEO_DELETE_ENABLED=1`) xóa tệp NGOÀI giao dịch rồi
+  mới đánh dấu DELETED, lỗi thì để nguyên.
+- **Worker** `backend/src/workers/pack-video-janitor.ts`, gắn vào `workers/index.ts`: mỗi 6 giờ (tự chọn), lượt đầu 10 phút sau khi bật:
+  gộp giờ theo ngày → gán hạn → tới hạn. Chỉ có cờ `started` / `running` ở cấp tệp (test `no-module-state` xanh). Tắt cả worker:
+  `PACK_VIDEO_JANITOR_OFF=1`. Nhật ký: `[pack-video-janitor] CHẠY BÓNG — tới hạn N: SẼ xóa … · chặn vì có hoàn … · bỏ qua …`.
+  ⚠️ Chạy bóng thì dòng tới hạn không biến mất nên mỗi lượt đọc lại cả tập "sẽ xóa" (trần 10.000 dòng / lượt) — ổn cho một tài khoản
+  thí điểm một tuần, không để chạy bóng lâu ở quy mô lớn.
+- **Web**: cột **"Giữ tới"** (ngày + "Còn N ngày" / vàng "Sắp tự xóa · N ngày" / "Đã tới hạn"; "Đang giữ" + lý do khi trỏ chuột)
+  chỉ vẽ khi trang có ít nhất một video đã có hạn hoặc đang giữ; chip **"Sắp tự xóa"** (hạn trong 3 ngày tới — tự chọn) tự ẩn khi bằng
+  0. API danh sách trả thêm `deleteAfter`, `holdReason`; `/summary` thêm `expiring`.
+- **Xóa tài khoản** `services/pack-video/owner-purge.ts`, gọi từ `account-deletion.ts` sau giao dịch (chỉ chủ shop): SAU CỜ
+  `PACK_VIDEO_ACCOUNT_PURGE=1`; mặc định chỉ ghi nhật ký "SẼ xóa N video". Bật cờ: hủy lượt tải dở, xóa tệp, đánh dấu DELETED
+  (`deleteRule = ACCOUNT`) — giờ đã quay vẫn giữ trong sổ.
+
+### 19.5 Sổ rủi ro (bổ sung mục 6) — chặn bằng gì, chứng minh bằng gì
+
+| # | Rủi ro | Chặn bằng | Chứng minh |
+|---|---|---|---|
+| P1 | Khách bấm thanh toán hai lần → hai QR | dùng lại `openGatewayOrder`: đơn PENDING y hệt thì trả lại, đơn khác thì hủy ở payOS | luồng gói đang chạy prod (chưa nối cho giờ) |
+| P2 | Webhook đến hai lần / poll đua webhook | `paymentRef` DUY NHẤT + `ON CONFLICT DO NOTHING`; chứng từ có `externalRef` duy nhất | `hours-db` "cùng một khoản … chỉ cộng giờ MỘT lần" (hai lượt song song + lượt ba) |
+| P3 | Webhook đến trễ / lạc | poll 3 giây của web hỏi thẳng payOS (sẵn có) | luồng gói |
+| P4 | Cộng giờ cho nhầm chủ shop | mã khoản đã dùng cho tài khoản khác → lỗi | `hours-db` "mã khoản tiền của A không cộng được giờ cho B" |
+| P5 | Số tiền không khớp số giờ | `amountMatchesHours` trước khi ghi; database CHECK PURCHASE phải có tiền > 0; cổng: tiền thiếu → MISMATCH, mail HQ (sẵn có) | `pack-video-hour-pricing` 16 test; `hours-db` "lệch tiền / dưới tối thiểu → không cộng", "CHECK chặn PURCHASE thiếu mã" |
+| P6 | Đổi giá giữa lúc tạo QR và lúc tiền về | **khi nối cổng:** kiểm theo đơn giá CHỤP trên đơn cổng, không theo cấu hình hiện hành | việc của lát nối cổng |
+| P7 | Hoàn tiền giờ quay | chưa có luồng; sổ chỉ chèn → hoàn = dòng ADJUST âm + hóa đơn điều chỉnh | chờ anh (H4) |
+| P8 | Trình duyệt gửi số tiền giả | máy chủ không đọc tiền từ trình duyệt; web chỉ hiện phép tính theo số máy chủ trả | mã `quoteHours` |
+| P9 | Hết giờ nhưng clip đang quay dở bị chặn tải lên | so số dư LÚC BẮT ĐẦU clip | `hours-db` "clip bắt đầu lúc còn giờ … vẫn được tải lên"; `upload-db` "video đã báo xong (cùng clientId) vẫn tải lên được" |
+| P10 | Khai lùi giờ bắt đầu để lách hết giờ | cửa sổ 25 giờ; mỗi clip ≤ 60 phút | `hours-db` "giờ bắt đầu lùi quá xa … không được coi là đang quay dở" |
+| X1 | Xóa nhầm video của đơn có hoàn | 9 dấu hiệu chặn; ĐỌC LẠI đơn lúc tới hạn; chạy bóng trước | `pack-video-retention` 38 test; `retention-db` "khách xin hoàn sau khi đã gán hạn → gỡ hạn" |
+| X2 | Chạy bóng mà lỡ xóa | nhánh bóng không lấy kho R2; test đếm lệnh gọi | `retention-db` "CHẠY BÓNG … không gọi lệnh xóa nào, video vẫn STORED" |
+| X3 | Hạn bị ghi đè lặp (tải ghi database) | UPDATE có điều kiện `deleteAfter IS NULL`, cả lô một câu | `retention-db` "hạn ghi MỘT lần" |
+| X4 | "Giờ đã quay" tụt khi bỏ mảnh tháng | bảng gộp `pack_usage_daily` + mốc; gộp lại 35 ngày, ngày không còn dòng thì không bị ghi 0 | `retention-db` "giờ đã quay KHÔNG tụt khi dòng sổ video … biến mất" |
+| X5 | Video chưa khớp đơn vì Shopee cấp mã vận đơn MUỘN bị L1 xóa sau 3 ngày | ⚠️ **CHƯA chặn**: chưa có bước khớp lại tem trước L1 (câu khớp đi qua `Order.trackingCode` chưa chỉ mục — chờ M2) | chạy bóng nên chưa mất gì; điều kiện trước khi bật xóa thật (19.9 X-b) |
+| X6 | Gian LazMall bị xóa sớm | sổ không có cờ LazMall → mọi gian Lazada dùng 35 ngày | test "Lazada: … mốc dài 35 ngày" |
+| X7 | Xóa tệp lỗi giữa chừng | tệp xóa NGOÀI giao dịch, lỗi thì dòng để STORED, lượt sau thử lại | mã + test bật xóa thật |
+| X8 | Video của khách đã xóa tài khoản còn trên kho | `owner-purge.ts` sau cờ | `retention-db` "xóa tài khoản: SAU CỜ chỉ đếm; bật cờ thì xóa" |
+| X9 | Test làm bẩn mốc gộp của cả database | test lưu mốc trước, trả lại sau | — |
+
+### 19.6 Bảng gộp giờ theo ngày (`pack_usage_daily`)
+
+Migration `20261118201000_pack_usage_daily` (chỉ CREATE, RLS): một dòng / (chủ shop, ngày quay): số video, giây, byte. Mã
+`services/pack-video/usage-daily.ts`: đã quay = Σ bảng gộp (ngày ≤ MỐC) + Σ `pack_videos` STORED + DELETED (ngày > MỐC); MỐC ở
+`maintenance_jobs` key `pack-usage-daily`; chỉ gộp ngày cũ hơn 7 ngày; mỗi lượt gộp lại 35 ngày trước mốc (số tự chọn); không bao giờ
+lùi mốc; gộp + dời mốc trong MỘT giao dịch. ⚠️ Việc bỏ mảnh tháng (chưa làm) PHẢI kiểm MỐC ≥ ngày cuối của mảnh định bỏ. Video tải
+lên muộn vào ngày đã gộp sẽ thiếu trong "đã quay" tới lượt gộp kế (≤ 6 giờ) — chấp nhận (sai về phía có lợi cho khách, nhỏ).
+
+### 19.7 Cây tệp mới / đổi
+
+```
+backend/prisma/migrations/20261118200000_pack_hour_grants_purchase_ref/migration.sql   # ADD trên pack_hour_grants
+backend/prisma/migrations/20261118201000_pack_usage_daily/migration.sql               # CREATE pack_usage_daily
+backend/src/lib/pack-video-hour-pricing.ts        (+ __tests__)   # thuần: tính tiền giờ quay
+backend/src/lib/pack-video-retention.ts           (+ __tests__)   # thuần: luật L1–L6
+backend/src/services/pack-video/usage-daily.ts                    # gộp giờ theo ngày + đọc "đã quay"
+backend/src/services/pack-video/retention.ts                      # áp luật lên sổ (gán hạn · tới hạn)
+backend/src/services/pack-video/owner-purge.ts                    # dọn video khi xóa tài khoản (sau cờ)
+backend/src/services/pack-video/__tests__/retention-db.test.ts
+backend/src/workers/pack-video-janitor.ts                         # nhịp 6 giờ, chỉ cờ chống chạy chồng
+frontend/src/components/orders/videos/hour-ledger.tsx             # sổ giờ ở tab Thống kê
+```
+
+### 19.8 CHỜ ANH — mua giờ (em DỪNG phần nối cổng ở đây)
+
+| # | Câu | Vì sao phải anh quyết | Em đề nghị |
+|---|---|---|---|
+| H1 | Hóa đơn khoản mua giờ: TÊN DÒNG + THUẾ SUẤT. Gói đang xuất "Phần mềm Hubsell - …" không chịu thuế (KCT) | khoản này là thời lượng LƯU video trên máy chủ — có cùng diện "phần mềm" với gói không em không tự kết luận được (thuế làm cẩn thận) | anh hỏi kế toán; em dựng sẵn hai cách, anh chọn một: (a) "Gói phần mềm Hubsell - mua thêm N giờ quay video đóng hàng" cùng thuế suất với gói; (b) dòng dịch vụ riêng theo thuế suất kế toán chỉ |
+| H2 | Cho em thêm cột vào HAI chỗ của luồng thanh toán đang có: `gateway_payment_orders` thêm `packHours`; loại chứng từ `PackagePaymentKind` thêm `PACK_HOURS` | lịch dặn migration chỉ ADD trên `pack_hour_grants` | đồng ý — cả hai là ADD (cột rỗng được + thêm giá trị loại), không khóa bảng lớn, giống cách phí vượt đã làm 11/11 |
+| H3 | Hoa hồng giới thiệu 10 % có cộng cho khoản mua giờ không | phí vượt đang cộng; giờ quay là sản phẩm khác | có, cho đồng nhất (chỉ cần anh gật) |
+| H4 | Hoàn tiền giờ quay: có hoàn không, hoàn phần giờ chưa dùng hay không hoàn | chính sách bán hàng | không hoàn tự động; ca đặc biệt HQ ghi dòng ADJUST âm + hóa đơn điều chỉnh |
+
+Khi anh trả lời H1 + H2: lát nối cổng ≈ `POST /hours/checkout` + nhánh `settleGatewayOrder` + `hqItemNameFor` + bật `SALES_OPEN` +
+test DB "tiền về → cộng giờ + chứng từ + sổ quỹ + hóa đơn" + thử bằng cổng giả lập `backend-http-payos` trên local.
+
+### 19.9 CHỜ ANH — luật xóa
+
+| # | Câu | Em đề nghị |
+|---|---|---|
+| X-a | Ca hoàn ĐANG MỞ quá 90 ngày: giữ tiếp (lịch dặn "mọi dấu hiệu hoàn đều CHẶN xóa") hay trần 90 vẫn áp (mục 54.4 tài liệu khảo sát, Shopee DPP)? Mã hiện GIỮ | giữ khi ca mở (bằng chứng đang dùng), nhưng worker báo số ca quá 90 ngày để anh xem |
+| X-b | L1 (video chưa khớp đơn, xóa sau 3 ngày): trước khi bật xóa thật phải khớp lại tem (Shopee cấp mã vận đơn muộn) — cần chỉ mục `Order.trackingCode` của M2 | bật xóa thật cho L2–L6 trước, L1 sau M2 |
+| X-c | Bật xóa thật sau bao lâu chạy bóng | một tuần như kế hoạch, đối chiếu "sẽ xóa" với đơn thật rồi anh duyệt |
+
+### 19.10 Đã kiểm / chưa kiểm
+
+- ✅ Backend `tsc` sạch. Test phần video (12 tệp) **202 / 202** xanh: luật xóa 38, tính tiền 16, sổ giờ 16, luật trên sổ thật 7, tải
+  lên (thêm ca hết giờ), cô lập, HTTP, `no-module-state`. Cả bộ backend: 2.735 đậu / **6 rớt đều ở 4 tệp sổ cái** (`ads-rows-ledger`,
+  `channel-delete`, `order-ledger`, `realized-pnl-ledger`) — đúng 6 lỗi có sẵn ghi từ 16/11, không chạm mã video.
+- ✅ Frontend `tsc` + `eslint` (phần video) sạch; `next build` qua.
+- ✅ Hai migration đã áp lên database LOCAL bằng `prisma db execute`; `prisma generate` chạy lại.
+- ❌ **CHƯA soi màn**: phiên chạy tự động, hai server local (`backend-http`, `frontend-http`) bị từ chối khởi động — em không thử lại.
+  Hộp mua, sổ giờ, cột "Giữ tới", hộp "Hết giờ quay" CHƯA nhìn ở sáng / tối, 1280 / 1440. Bảng video 1280 vốn đã cuộn ngang ≈ 176 px;
+  cột "Giữ tới" chỉ hiện khi có số nhưng sẽ làm rộng thêm — phải đo trước khi push.
+- ❌ Worker chưa chạy một lượt thật trên local (chỉ chạy qua test với phạm vi một chủ shop). Database local đang KHÔNG có mốc gộp.
+
+### 19.11 Trước khi push (theo thứ tự)
+
+1. Soi màn local (19.10) + gửi anh ảnh theo trình tự: hộp mua → màn quay hết giờ → tab Thống kê sổ giờ → cột Giữ tới.
+2. ⚠️ **Cấp giờ cho `admin@hubsell.vn` trên PROD TRƯỚC khi deploy** — prod hiện 0 giờ; bản này chặn mở video mới khi hết giờ nên
+   iPhone (build 34/35) + webcam của anh sẽ bị 402 ngay. Lệnh: `npx tsx scripts/pack-video-grant-hours.ts --email=admin@hubsell.vn
+   --hours=<anh chọn> --note="cấp thử"` (cần biến kết nối prod — anh chạy hoặc bảo em).
+3. App iPhone (nhánh thử) chưa biết mã `OUT_OF_HOURS` — sẽ hiện lỗi chung; sửa ở lần dựng sau.
+4. Hai migration tự áp khi Render deploy; worker chạy bóng tự bật ở dịch vụ worker (env xóa thật mặc định tắt).
+
+---
+
+## 20. Nối payOS cho khoản mua giờ + ô "Số giờ muốn mua" (18/11/2026 ~21:00 — ĐÃ PUSH 18/11 ~21:25, anh: "Đổi luôn và push phần này lên nhé")
+
+> Anh 18/11: "Làm phần mua giờ, nhưng anh đang muốn thêm cả việc nhập số lượng giờ quay video muốn mua nữa từ đó tính ra
+> tiền. Khách thanh toán em định đặt code trên PayOS là gì?" → làm đúng thiết kế đường tiền ở mục 19.2.
+
+### 20.1 Hộp mua
+
+Một nguồn số: ô **"Số giờ muốn mua"** (số nguyên, 20–10.000 giờ). Ba gói sẵn 50 / 200 / 500 chỉ là lối tắt điền số vào ô.
+Tiền = số giờ × 1.500 đ, đổi theo ngay khi gõ. Web chỉ gửi SỐ GIỜ; máy chủ tự tính tiền (`quoteHours`).
+
+### 20.2 Mã trên payOS
+
+| Thứ | Giá trị | Ghi chú |
+|---|---|---|
+| Nội dung chuyển khoản | `HS PAC<số giờ> <8 số cuối mã đơn>` — vd `HS PAC200 45678901` | `HS` = tiền tố sản phẩm (env), `PAC` = `PACK_VIDEO_HOUR_TRANSFER_CODE`. Dài nhất `HS PAC10000 12345678` = 20 ký tự ≤ trần 25 |
+| Khi trần chỉ 9 ký tự | `HS PAC200` nếu vừa, không vừa thì `HS PAC` | không để bị cắt thành số giờ SAI (`PAC1000` → `PAC100`) |
+| Mã đơn payOS (`orderCode`) | số 16 chữ số tự sinh | cùng hàm với mua gói / phí vượt |
+| Tên mặt hàng gửi payOS | "Mua N giờ quay video đóng hàng" | |
+
+Cùng họ với hai mã đang có: gói `HS <MÃ GÓI> …`, phí vượt `HS VUOTmmyy …`.
+
+**Anh chốt 18/11 ~21:10:** "Em để code thanh toán là HS PAC... Đi. Sau anh đặt tên là HubPac (Packing)" → mã là `PAC` (bản đầu em đặt `GIO`). Tên sản phẩm **HubPac** anh sẽ đặt sau; giao diện và tên dòng hóa đơn CHƯA đổi chữ.
+
+### 20.3 Đường tiền (đã làm)
+
+`POST /api/pack-videos/hours/checkout { hours }` (chỉ chủ shop) → `createPackHoursCheckout` → `openGatewayOrder` (đơn cổng mang
+`packHours`) → khách quét → webhook / poll → `settleGatewayOrder` nhánh `packHours` → `recordHoursPayment` — MỘT giao dịch:
+dòng `PURCHASE` trong `pack_hour_grants` + chứng từ `PackagePayment` kind `PACK_HOURS` + bút toán THU `invoiceStatus PENDING` +
+đơn cổng PAID. Sau giao dịch: `kickHqAutoInvoice`. Không gia hạn thuê bao.
+
+- Chống cộng đôi: hai chỉ mục duy nhất trên cùng mã khoản tiền (`package_payments.externalRef`, `pack_hour_grants.paymentRef`).
+- Tiền thiếu, tiền thừa, hoặc đơn giá đổi giữa lúc lấy mã và lúc trả → đơn `MISMATCH` + thư HQ; không cộng giờ, không chứng từ.
+- Trạng thái / hủy mã dùng chung `/api/subscription/checkout/:orderCode`. Một khách chỉ có một mã sống (lấy mã mới hủy mã cũ,
+  kể cả mã mua gói đang chờ — luật sẵn có của `openGatewayOrder`).
+- payOS chuyển khách về `/orders/videos?checkout=<mã đơn>`; trang tự mở lại hộp kết quả.
+
+### 20.4 Schema — chỉ ADD (migration `20261118210000_pack_hours_checkout`)
+
+`PackagePaymentKind` thêm `PACK_HOURS` · `gateway_payment_orders.packHours` · `package_payments.packHours`. Đây là câu H2 của
+mục 19.8, thêm một cột so với đề nghị cũ (`package_payments.packHours`, để tên dòng hóa đơn đọc số giờ mà không mượn cột
+`committedOrders`).
+
+### 20.5 Hóa đơn + công tắc
+
+- Tên dòng: "Gói phần mềm Hubsell - mua thêm N giờ quay video đóng hàng" (`hqItemNameFor` kind `PACK_HOURS`), đi chung đường
+  tự xuất của gói. Căn cứ: anh 16/11 "Mình không mất VAT". Mức chắc: theo lời anh, CHƯA phải ý kiến kế toán / cơ quan thuế.
+- Mở bán: env `PACK_VIDEO_HOUR_SALES_OPEN=1` + có khóa payOS. Mặc định tắt → nút báo "Chưa mở thanh toán", máy chủ từ chối tạo mã.
+  Local: cấu hình `backend-http-payos` trong `.claude/launch.json` đã bật sẵn.
+
+### 20.6 Chờ anh
+
+| # | Câu | Mã đang làm gì |
+|---|---|---|
+| H3 | Hoa hồng giới thiệu 10 % có cộng cho khoản mua giờ không | KHÔNG cộng |
+| H4 | Hoàn tiền giờ quay | chưa có đường hoàn; ca đặc biệt HQ ghi dòng ADJUST âm bằng script |
+
+### 20.7 Đã kiểm / chưa kiểm
+
+- ✅ `pack-hours-checkout.test.ts` 6 / 6 (tính tiền theo số giờ nhập, dùng lại mã, đổi số giờ hủy mã cũ, tiền về cộng đúng giờ +
+  chứng từ + sổ quỹ, bắn lặp không cộng đôi, thiếu / thừa → MISMATCH, công tắc tắt, trần ký tự). Nhóm video + cổng + hóa đơn +
+  gói: 256 / 256. `tsc` hai phía + `eslint` các tệp web đã sửa: sạch.
+- ✅ Soi local (giao diện sáng): hộp mua mở đúng, gõ 350 → "350 giờ × 1.500 ₫ = 525.000 ₫".
+- ❌ CHƯA nhìn bước QR → tiền về → số dư đổi trên trình duyệt: backend local cổng 4010 thuộc phiên chat khác, không có payOS giả
+  lập. Cần dừng nó rồi chạy `backend-http-payos`, mở `http://localhost:4099/mock/pay/<mã đơn>` để giả tiền về.
+- ❌ Chưa soi giao diện tối, chưa đo 1280 / 1700. Chưa chạy cả bộ backend. Chưa có test HTTP cho đường `/hours/checkout`.
+
+### 20.8 Trước khi push (thêm vào 19.11)
+
+5. Đặt `PACK_VIDEO_HOUR_SALES_OPEN=1` trên Render (dịch vụ web) khi anh muốn mở bán; migration tự áp lúc deploy.
+6. Thử một khoản thật số nhỏ (20 giờ = 30.000 đ) rồi xem tờ hóa đơn đầu tiên trước khi mở cho khách thứ hai.
+
+### 20.9 Sau khi push (18/11 ~21:25)
+
+- Chữ anh sửa: "Phần thời gian vượt gói sẽ khấu trừ vào lần thanh toán tiếp theo."; "Quay lố" → "Vượt gói" (hàng tab, ô số dư hộp mua, màn quay).
+- Bản đẩy gồm CẢ mục 19 (hết giờ thì dừng + luật xóa chạy bóng) vì các tệp đan nhau. Trước push: cả bộ backend 2.742 đậu / 6 rớt (6 lỗi sổ cái có sẵn), `next build` qua, worker dọn chạy một lượt bóng trên local.
+- ⚠️ Prod sau deploy: `admin@hubsell.vn` 0 giờ → không mở được video mới tới khi cấp giờ (bước 2 mục 19.11 CHƯA làm — chờ anh cho số giờ) hoặc bật `PACK_VIDEO_HOUR_SALES_OPEN=1` rồi mua.

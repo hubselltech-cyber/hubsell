@@ -395,6 +395,7 @@ router.get(
               id: true,
               kind: true,
               committedOrders: true,
+              packHours: true,
               planName: true,
               cycle: true,
               amount: true,

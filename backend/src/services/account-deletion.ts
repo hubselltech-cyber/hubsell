@@ -15,12 +15,16 @@
 // Chủ shop xóa → toàn bộ nhân viên của shop cũng bị ẩn danh + khóa (họ không
 // còn chỗ để đăng nhập vào), gian hàng chuyển DISCONNECTED để worker ngừng
 // đồng bộ, thuê bao chuyển CANCELLED. Nhân viên xóa → chỉ chính họ.
+// Video đóng hàng của chủ shop (có tên + địa chỉ người mua trong hình) được dọn
+// sau giao dịch — SAU CỜ PACK_VIDEO_ACCOUNT_PURGE=1, mặc định chỉ ghi nhật ký
+// "sẽ xóa N video" (services/pack-video/owner-purge.ts, 18/11/2026).
 // ============================================================
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
 import { DISCONNECT_REASON } from "../integrations/channel-disconnect";
 import { decryptSecret } from "../lib/secret-box";
+import { purgeOwnerPackVideos } from "./pack-video/owner-purge";
 import { revokeAppleToken } from "./social-login";
 
 /** Họ tên thay thế sau khi ẩn danh — nhật ký kho/đơn còn tên người làm thì hiện chữ này. */
@@ -126,6 +130,13 @@ export async function deleteOwnAccount(
     }
     return targets.length;
   });
+
+  if (isOwner) {
+    // Gọi R2 NGOÀI giao dịch, không chặn câu trả lời cho người dùng; lỗi chỉ ghi nhật ký (chạy lại an toàn).
+    void purgeOwnerPackVideos(user.id).catch((err) =>
+      console.error(`[account-deletion] Dọn video đóng hàng lỗi user=${user.id}:`, (err as Error).message)
+    );
+  }
 
   return { ok: true, removedUsers };
 }

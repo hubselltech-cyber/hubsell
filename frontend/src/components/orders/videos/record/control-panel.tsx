@@ -15,7 +15,7 @@ import type { ClipKind } from "@/lib/pack-video-recorder/types";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-import { remainingLabel, usePackVideoHours } from "../hours-balance";
+import { BuyHoursButton, remainingLabel, usePackVideoHours } from "../hours-balance";
 import { KIND_ACCENT, formatElapsed, shortCode, useElapsedSeconds } from "./record-bits";
 
 function OnOffLabel({ on, onText, offText }: { on: boolean; onText: string; offText: string }) {
@@ -265,10 +265,31 @@ function SessionCard({ clips }: { clips: SessionClip[] }) {
   );
 }
 
-/** Dòng nhỏ số giờ quay còn lại — cùng nguồn với trang Video đóng hàng. */
+/**
+ * Số giờ quay còn lại — cùng nguồn với trang Video đóng hàng. HẾT GIỜ (số dư ≤ 0) thì thành hộp đỏ "Hết giờ
+ * quay" kèm nút mua: không mở được video mới, video đang quay dở vẫn quay nốt (anh chốt 14/11).
+ */
 function HoursLine() {
   const hours = usePackVideoHours().data;
   if (!hours) return null;
+  if (hours.remainingSeconds <= 0) {
+    return (
+      <div role="alert" className="space-y-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-rose-700">
+          <Clock className="size-4" aria-hidden />
+          {hours.purchasedSeconds > 0 || hours.usedSeconds > 0 ? "Hết giờ quay" : "Chưa có giờ quay"}
+          {hours.remainingSeconds < 0 && (
+            <span className="font-normal">· vượt gói {formatHoursBalance(hours.remainingSeconds)}</span>
+          )}
+        </p>
+        <p className="text-sm text-rose-700">
+          Không mở được video mới. Video đang quay dở vẫn quay nốt; phần thời gian vượt gói sẽ khấu trừ vào lần
+          thanh toán tiếp theo.
+        </p>
+        <BuyHoursButton hours={hours} />
+      </div>
+    );
+  }
   return (
     <p className="flex items-center gap-1.5 px-1 text-sm text-muted-foreground">
       <Clock className="size-4" aria-hidden />
@@ -276,6 +297,11 @@ function HoursLine() {
       {hours.purchasedSeconds > 0 && <span>/ {formatHoursBalance(hours.purchasedSeconds)}</span>}
     </p>
   );
+}
+
+function useOutOfHours(): boolean {
+  const hours = usePackVideoHours().data;
+  return !!hours && hours.remainingSeconds <= 0;
 }
 
 /**
@@ -300,7 +326,9 @@ export function ControlPanel({
   onPrimary: () => void;
 }) {
   const recording = state.phase === "recording";
-  const blocked = state.phase === "opening" || state.phase === "lost";
+  const outOfHours = useOutOfHours();
+  // Hết giờ: chỉ khóa nút khi CHƯA quay — đang quay thì nút là "Dừng", luôn bấm được.
+  const blocked = state.phase === "opening" || state.phase === "lost" || (!recording && outOfHours);
   return (
     <div className="min-w-0 space-y-3">
       <ModeCard state={state} onChange={onKind} />
@@ -319,8 +347,8 @@ export function ControlPanel({
         {recording ? <Square className="size-5 fill-current" aria-hidden /> : <Play className="size-5 fill-current" aria-hidden />}
         {recording ? "Dừng" : state.kind === "UNBOX" ? "Bắt đầu quay khui" : "Bắt đầu quay"}
       </button>
-      <SessionCard clips={clips} />
       <HoursLine />
+      <SessionCard clips={clips} />
     </div>
   );
 }

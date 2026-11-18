@@ -57,6 +57,7 @@ import {
   ApiError,
   cancelMyPlanUpgradeRequest,
   createOverageCheckout,
+  createPackHoursCheckout,
   createPlanCheckout,
   fetchPlanCheckout,
   getStoredUser,
@@ -745,9 +746,11 @@ export default function SettingsPlanPage() {
               <QrCode className="size-4 shrink-0" />
               <p className="min-w-0 flex-1">
                 Bạn có mã thanh toán đang chờ cho{" "}
-                {openCheckout.overageChargeId
-                  ? `phần đơn vượt gói — mua thêm ${nf.format(openCheckout.committedOrders ?? 0)} đơn hàng`
-                  : `gói ${openCheckout.planName} — ${CYCLE_LABEL[openCheckout.cycle]}`}{" "}
+                {openCheckout.packHours != null
+                  ? `${nf.format(openCheckout.packHours)} giờ quay video đóng hàng`
+                  : openCheckout.overageChargeId
+                    ? `phần đơn vượt gói — mua thêm ${nf.format(openCheckout.committedOrders ?? 0)} đơn hàng`
+                    : `gói ${openCheckout.planName} — ${CYCLE_LABEL[openCheckout.cycle]}`}{" "}
                 (
                 <span className="tabular-nums">{nf.format(openCheckout.amount)}₫</span>).
               </p>
@@ -988,6 +991,15 @@ export default function SettingsPlanPage() {
         }}
         onRetry={(c) => {
           setCheckout(null);
+          if (c.packHours != null) {
+            // Mã mua giờ quay hết hạn → tạo lại mã cho đúng số giờ đó, không phải mua gói.
+            createPackHoursCheckout(c.packHours)
+              .then((res) => setCheckout(res.checkout))
+              .catch((err) =>
+                toast.error(err instanceof ApiError ? err.message : "Không tạo được mã thanh toán — thử lại sau.")
+              );
+            return;
+          }
           if (c.overageChargeId) {
             // Mã trả phí vượt hết hạn → tạo lại mã cho đúng phiếu đó, không phải mua gói.
             createOverageCheckout(c.overageChargeId)

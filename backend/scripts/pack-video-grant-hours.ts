@@ -4,11 +4,16 @@
 // Chỉ CHÈN một dòng vào pack_hour_grants (services/pack-video/hours.ts); in số dư trước và sau.
 //
 // Chạy: npx tsx scripts/pack-video-grant-hours.ts --email=admin@hubsell.vn --hours=1000 --note="cấp thử"
-//       thêm --kind=PURCHASE | GRANT | ADJUST (mặc định GRANT); --hours âm chỉ đi với --kind=ADJUST.
+//       thêm --kind=GRANT | ADJUST (mặc định GRANT); --hours âm chỉ đi với --kind=ADJUST.
+// ⛔ KHÔNG ghi dòng PURCHASE ở đây: dòng mua giờ chỉ do luồng thanh toán ghi (kèm mã khoản tiền, chứng từ,
+//    sổ quỹ, hóa đơn — docs/VIDEO-DONG-HANG-THIET-KE.md mục 19).
 // ============================================================
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
-import { HOUR_GRANT_KINDS, getHoursBalance, grantHours, type HourGrantKind } from "../src/services/pack-video/hours";
+import { getHoursBalance, grantHours } from "../src/services/pack-video/hours";
+
+const KINDS = ["GRANT", "ADJUST"] as const;
+type Kind = (typeof KINDS)[number];
 
 const arg = (name: string): string | undefined =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -18,11 +23,11 @@ const fmt = (sec: number): string => `${(sec / 3600).toFixed(2)} giờ`;
 async function main() {
   const email = arg("email");
   const hours = Number(arg("hours"));
-  const kind = (arg("kind") ?? "GRANT").toUpperCase() as HourGrantKind;
+  const kind = (arg("kind") ?? "GRANT").toUpperCase() as Kind;
   if (!email || !Number.isFinite(hours) || hours === 0) {
     throw new Error("Cần --email=... và --hours=<số khác 0>");
   }
-  if (!HOUR_GRANT_KINDS.includes(kind)) throw new Error(`--kind phải là một trong: ${HOUR_GRANT_KINDS.join(", ")}`);
+  if (!KINDS.includes(kind)) throw new Error(`--kind phải là một trong: ${KINDS.join(", ")} (PURCHASE chỉ do luồng thanh toán ghi)`);
   if (hours < 0 && kind !== "ADJUST") throw new Error("Số giờ âm chỉ dùng với --kind=ADJUST");
 
   const user = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } });

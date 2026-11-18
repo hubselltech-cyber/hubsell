@@ -21,6 +21,8 @@ import {
 } from "@/lib/pack-video-recorder/session";
 import type { ClipKind } from "@/lib/pack-video-recorder/types";
 
+import { usePackVideoHours } from "../hours-balance";
+
 /** Camera người dùng chọn lần trước — lần sau bật là dùng lại, khỏi chọn lại mỗi ca. */
 const CAMERA_KEY = "hubsell.packVideo.cameraId";
 
@@ -56,6 +58,12 @@ export function usePackRecorder(initialKind: ClipKind = "PACK") {
   const clips = React.useSyncExternalStore(subscribeSession, getSessionClips, getServerSessionClips);
   const journal = React.useSyncExternalStore(subscribeJournal, getJournal, getServerJournal);
   const queryClient = useQueryClient();
+  // Số giờ còn lại — bộ quay hỏi qua ref nên không phải dựng lại bộ quay mỗi lần số đổi.
+  const remaining = usePackVideoHours().data?.remainingSeconds ?? null;
+  const remainingRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    remainingRef.current = remaining;
+  }, [remaining]);
 
   React.useEffect(() => {
     const recorder = new PackRecorder(
@@ -65,6 +73,8 @@ export function usePackRecorder(initialKind: ClipKind = "PACK") {
         onClipStart: sessionClipStarted,
         onClipDone: sessionClipDone,
         onClipRelabel: sessionRelabelRecording,
+        // Chưa có số (đang tải / lỗi mạng) thì cho quay — máy chủ vẫn chặn ở bước tải lên.
+        canOpenClip: () => remainingRef.current === null || remainingRef.current > 0,
       },
       initialKindRef.current
     );

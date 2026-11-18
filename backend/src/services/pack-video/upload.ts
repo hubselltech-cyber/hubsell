@@ -12,6 +12,9 @@
 //  · D6 đồng hồ điện thoại: ngày chia mảnh + đường dẫn tệp lấy theo giờ MÁY CHỦ.
 //  · S1 / S5: đường dẫn tệp do máy chủ dựng dưới tiền tố chủ shop; ký cả cỡ và kiểu tệp.
 //  · I5: mọi lệnh gọi R2 nằm NGOÀI giao dịch database (tệp này không mở giao dịch nào).
+//  · HẾT GIỜ THÌ DỪNG (18/11, thiết kế mục 19.3): video MỚI chỉ mở khi còn giờ, hoặc khi clip bắt đầu quay
+//    lúc còn giờ (quay nốt) — hours.ts canOpenNewVideo. Gọi lại cùng clientId (dòng đã có) KHÔNG bị chặn:
+//    video đã báo xong thì luôn tải lên được.
 // Mỗi dòng ghi: INSERT lúc bắt đầu (+1 UPDATE uploadId nếu tải theo mảnh) và 1 UPDATE lúc chốt.
 // ============================================================
 
@@ -34,6 +37,7 @@ import {
   type PackVideoStatus,
 } from "../../lib/pack-video-rules";
 import { prisma } from "../../lib/prisma";
+import { canOpenNewVideo } from "./hours";
 import { matchOrderByTrackingCode } from "./order-match";
 
 /** Lỗi nghiệp vụ có mã — route đổi thẳng thành phản hồi HTTP. */
@@ -218,6 +222,10 @@ export async function beginUpload(
   let resumed = row !== null;
 
   if (!row) {
+    const allowed = await canOpenNewVideo(actor.ownerId, input.recordedAt, now);
+    if (!allowed.ok) {
+      throw new PackVideoError(402, "OUT_OF_HOURS", "Đã hết giờ quay — mua thêm giờ để quay video mới");
+    }
     const match = await matchOrderByTrackingCode(actor.ownerId, input.trackingCode, input.kind);
     const id = randomUUID().replace(/-/g, "");
     const dateKey = toBusinessDateKey(now);

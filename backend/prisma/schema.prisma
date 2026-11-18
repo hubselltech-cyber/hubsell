@@ -3644,6 +3644,10 @@ model GatewayPaymentOrder {
   /// Đơn này trả PHÍ VƯỢT của phiếu nào (plan_overage_charges.id) — khác null thì tiền về
   /// ghi khoản kind OVERAGE, không gia hạn thuê bao; planId/planCode/cycle chỉ là snapshot.
   overageChargeId   String?
+  /// Đơn này MUA GIỜ QUAY video đóng hàng (18/11/2026): số giờ khách chọn. Khác null thì tiền về ghi
+  /// khoản kind PACK_HOURS + cộng giờ vào pack_hour_grants, không gia hạn thuê bao; planId/planCode/cycle
+  /// chỉ là snapshot gói đang dùng.
+  packHours         Int?
   /// Số tiền PHẢI THU (giá niêm yết snapshot) — webhook lệch số này → MISMATCH.
   amount            Decimal            @db.Decimal(14, 2)
   status            GatewayOrderStatus @default(PENDING)
@@ -3703,6 +3707,7 @@ model PackagePayment {
   /// PLAN = mua / gia hạn gói (gia hạn thuê bao). OVERAGE = trả phí vượt trần đơn của
   /// một tháng ("mua thêm N đơn hàng", 11/11/2026) — đi chung chứng từ → sổ quỹ → HĐĐT →
   /// hoa hồng nhưng KHÔNG gia hạn thuê bao; periodStart/End khi đó là hai đầu tháng bị vượt.
+  /// PACK_HOURS = mua giờ quay video đóng hàng — cũng không gia hạn; periodStart/End = lúc thu.
   kind            PackagePaymentKind   @default(PLAN)
   /// Chụp lúc mua (kind PLAN): trần đơn/tháng của kỳ này + đơn giá vượt ₫/đơn
   /// (= giá 1 tháng ÷ trần, services/plan-overage.ts). HQ sửa bảng giá sau đó không đổi
@@ -3711,6 +3716,8 @@ model PackagePayment {
   overageUnitPrice Decimal?            @db.Decimal(10, 2)
   /// kind OVERAGE: phiếu phí vượt được trả bằng khoản này (unique = một phiếu một khoản).
   overageChargeId String?              @unique
+  /// kind PACK_HOURS: số GIỜ QUAY video đóng hàng đã mua bằng khoản này (tên dòng hóa đơn đọc số này).
+  packHours       Int?
   /// Ngày THỰC NHẬN tiền (kế toán chọn — khớp sao kê ngân hàng).
   occurredAt      DateTime             @default(now())
   /// Mã giao dịch bên ngoài (webhook cổng thanh toán sau này) — unique chống
@@ -3734,6 +3741,8 @@ model PackagePayment {
 enum PackagePaymentKind {
   PLAN
   OVERAGE
+  /// Mua giờ quay video đóng hàng (18/11/2026) — chứng từ → sổ quỹ → HĐĐT như OVERAGE, không gia hạn thuê bao.
+  PACK_HOURS
 }
 
 enum PlanOverageStatus {
@@ -4872,8 +4881,27 @@ model PackHourGrant {
   kind        String
   note        String?
   createdById String?
+  /// Mã khoản tiền đã thu (vd "payos:<mã GD>") — chỉ mục DUY NHẤT một phần (SQL migration
+  /// 20261118200000): cùng một khoản không bao giờ cộng giờ hai lần. Bắt buộc với PURCHASE (CHECK).
+  paymentRef  String?
+  /// Số tiền đã thu cho dòng PURCHASE (đồng).
+  amountVnd   Int?
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([ownerId, createdAt], map: "pack_hour_grants_owner_idx")
   @@map("pack_hour_grants")
+}
+
+/// GIỜ ĐÃ QUAY GỘP THEO NGÀY (18/11/2026 — docs/VIDEO-DONG-HANG-THIET-KE.md mục 19.6). Có TRƯỚC việc bỏ
+/// mảnh tháng của pack_videos để số "đã quay" (số tính tiền) không tụt. Chỉ worker dọn ghi.
+model PackUsageDaily {
+  ownerId    String
+  usageDate  DateTime @db.Date
+  videoCount Int
+  seconds    BigInt
+  sizeBytes  BigInt
+  updatedAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([ownerId, usageDate])
+  @@map("pack_usage_daily")
 }

@@ -14,6 +14,7 @@ import { PACK_VIDEO_PART_SIZE_BYTES } from "../../../config/pack-video";
 import { toBusinessDateKey } from "../../../lib/date-range";
 import { planParts, type BeginInput } from "../../../lib/pack-video-rules";
 import { prisma } from "../../../lib/prisma";
+import { getHoursBalance, grantHours } from "../hours";
 import { PackVideoError, beginUpload, completeUpload, signUploadParts } from "../upload";
 import { createFakeStorage } from "./fake-storage";
 
@@ -68,6 +69,8 @@ describe.skipIf(!dbReady)("Video đóng hàng — tải lên", () => {
       select: { id: true },
     });
     ownerId = user.id;
+    // Hết giờ thì dừng (18/11): chủ shop thử phải có giờ mới mở được video mới.
+    await grantHours({ ownerId, seconds: 100 * 3600, kind: "GRANT", note: TAG });
     const channel = await prisma.channel.create({
       data: { userId: ownerId, channelName: ChannelName.SHOPEE, shopName: TAG },
       select: { id: true },
@@ -95,6 +98,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — tải lên", () => {
   afterAll(async () => {
     if (!ownerId) return;
     await prisma.packVideo.deleteMany({ where: { ownerId } });
+    await prisma.packHourGrant.deleteMany({ where: { ownerId } });
     await prisma.order.deleteMany({ where: { channelId } });
     await prisma.channel.deleteMany({ where: { id: channelId } });
     await prisma.user.deleteMany({ where: { id: ownerId } });
@@ -313,5 +317,28 @@ describe.skipIf(!dbReady)("Video đóng hàng — tải lên", () => {
     const storage = createFakeStorage();
     await expectError(completeUpload(actor(), "khong-co", undefined, { storage }), 404, "NOT_FOUND");
     await expectError(signUploadParts(actor(), "khong-co", [1], { storage }), 404, "NOT_FOUND");
+  });
+  it("HẾT GIỜ: video MỚI bị chặn (402 OUT_OF_HOURS); video đã báo xong (cùng clientId) vẫn tải lên được", async () => {
+    const storage = createFakeStorage();
+    const first = await beginUpload(actor(), input({ clientId: `${TAG}-het-1`, trackingCode: `${TAG}-HET1` }), { storage });
+    // Trừ sạch giờ bằng một dòng điều chỉnh âm (sổ chỉ chèn).
+    const left = (await getHoursBalance(ownerId)).remainingSeconds;
+    await grantHours({ ownerId, seconds: -left, kind: "ADJUST", note: `${TAG} trừ sạch` });
+    expect((await getHoursBalance(ownerId)).remainingSeconds).toBe(0);
+
+    const err = await beginUpload(
+      actor(),
+      input({ clientId: `${TAG}-het-2`, trackingCode: `${TAG}-HET2`, recordedAt: new Date() }),
+      { storage }
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PackVideoError);
+    expect((err as PackVideoError).status).toBe(402);
+    expect((err as PackVideoError).code).toBe("OUT_OF_HOURS");
+    expect(await rowsOf(`${TAG}-het-2`)).toHaveLength(0);
+
+    // Gọi lại video đã có dòng → không bị chặn.
+    const again = await beginUpload(actor(), input({ clientId: `${TAG}-het-1`, trackingCode: `${TAG}-HET1` }), { storage });
+    expect(again.video.id).toBe(first.video.id);
+    await grantHours({ ownerId, seconds: left, kind: "ADJUST", note: `${TAG} trả lại` });
   });
 });

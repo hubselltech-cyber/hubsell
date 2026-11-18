@@ -32,7 +32,13 @@ export interface PackVideoScope {
   allowedChannelIds: string[] | null;
 }
 
-export const PACK_VIDEO_CHIPS = ["all", "returns", "unmatched", "pending"] as const;
+export const PACK_VIDEO_CHIPS = ["all", "returns", "unmatched", "pending", "expiring"] as const;
+
+/**
+ * Chip "Sắp tự xóa": video đã có hạn giữ rơi vào trong vòng 3 ngày tới (kể cả đã tới hạn mà worker chạy bóng
+ * chưa xóa). 3 ngày là SỐ TỰ CHỌN — đủ để khách kịp tải về nếu cần, theo luật xóa W5 (thiết kế mục 19.4).
+ */
+export const PACK_VIDEO_EXPIRING_DAYS = 3;
 export type PackVideoChip = (typeof PACK_VIDEO_CHIPS)[number];
 
 export interface PackVideoFilters {
@@ -69,6 +75,10 @@ export interface PackVideoRow {
   recordedByName: string | null;
   deviceName: string | null;
   durationFlag: boolean;
+  /** Hạn giữ "YYYY-MM-DD" (luật W5) — null = chưa có hạn (đang chờ trạng thái đơn hoặc đang giữ). */
+  deleteAfter: string | null;
+  /** Lý do đang giữ (RETURN_OPEN / RETURN_DAMAGED / UNBOX_UNMATCHED / PARCEL_RETURNING) — null = không giữ. */
+  holdReason: string | null;
   order: {
     shippingStatus: string;
     returnStatus: string;
@@ -94,12 +104,18 @@ interface RawVideo {
   recordedById: string;
   deviceName: string | null;
   durationFlag: boolean;
+  deleteAfter: Date | null;
+  holdReason: string | null;
 }
 
 const VIDEO_COLUMNS = Prisma.sql`
   v."id", v."kind", v."status", v."trackingCode", v."orderId", v."orderCode", v."channelId",
   v."recordedAt", v."durationSec", v."sizeBytes", v."width", v."height", v."recordedById",
-  v."deviceName", v."durationFlag"`;
+  v."deviceName", v."durationFlag", v."deleteAfter", v."holdReason"`;
+
+/** Hạn giữ rơi vào N ngày tới (theo ngày lịch giờ VN). */
+const EXPIRING = Prisma.sql`(v."deleteAfter" IS NOT NULL AND v."status" = 'STORED'
+  AND v."deleteAfter" <= ((now() AT TIME ZONE 'UTC') + INTERVAL '7 hours')::date + ${PACK_VIDEO_EXPIRING_DAYS}::int)`;
 
 /** Video còn "sống" với người xem: đã lưu hoặc đang chờ tải. */
 const LIVE = Prisma.sql`v."status" IN ('STORED', 'PENDING')`;
@@ -159,6 +175,7 @@ function chipCond(chip: PackVideoChip): Prisma.Sql | null {
   if (chip === "returns") return HAS_RETURN;
   if (chip === "unmatched") return Prisma.sql`v."orderId" IS NULL`;
   if (chip === "pending") return Prisma.sql`v."status" = 'PENDING'`;
+  if (chip === "expiring") return EXPIRING;
   return null;
 }
 
@@ -257,6 +274,8 @@ async function hydrate(scope: PackVideoScope, raws: RawVideo[]): Promise<PackVid
       recordedByName: u ? u.fullName || u.staffUsername || null : null,
       deviceName: r.deviceName,
       durationFlag: r.durationFlag,
+      deleteAfter: r.deleteAfter ? r.deleteAfter.toISOString().slice(0, 10) : null,
+      holdReason: r.holdReason,
       order: o
         ? {
             shippingStatus: o.shippingStatus,
@@ -313,16 +332,17 @@ export async function summarizeVideos(
   filters: PackVideoFilters
 ): Promise<Record<PackVideoChip, number>> {
   const conds = await filterConds(scope, filters);
-  const rows = await prisma.$queryRaw<{ all: number; returns: number; unmatched: number; pending: number }[]>(
+  const rows = await prisma.$queryRaw<Record<PackVideoChip, number>[]>(
     Prisma.sql`
     SELECT count(*)::int AS "all",
            count(*) FILTER (WHERE ${HAS_RETURN})::int AS "returns",
            count(*) FILTER (WHERE v."orderId" IS NULL)::int AS "unmatched",
-           count(*) FILTER (WHERE v."status" = 'PENDING')::int AS "pending"
+           count(*) FILTER (WHERE v."status" = 'PENDING')::int AS "pending",
+           count(*) FILTER (WHERE ${EXPIRING})::int AS "expiring"
     FROM "pack_videos" v
     WHERE ${and(conds)}`
   );
-  return rows[0] ?? { all: 0, returns: 0, unmatched: 0, pending: 0 };
+  return rows[0] ?? { all: 0, returns: 0, unmatched: 0, pending: 0, expiring: 0 };
 }
 
 export interface OrderDossier {

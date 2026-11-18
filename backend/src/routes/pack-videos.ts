@@ -13,6 +13,7 @@
 //   GET  /returns          danh sách ĐƠN hoàn + số trên thẻ
 //   GET  /stats            thống kê thời gian quay
 //   GET  /hours            giờ đã mua · đã quay · còn lại + các gói giờ
+//   POST /hours/checkout   { hours } → mã QR payOS mua giờ quay (máy chủ tự tính tiền)
 //   GET  /match?code=&kind= màn quay hỏi: mã trên tem này khớp đơn nào, đơn có hoàn / đã có video chưa (chỉ đọc)
 //   GET  /by-order/:orderId  hồ sơ video của một đơn
 //   POST /order-flags      trong các đơn này, đơn nào đã có video
@@ -21,8 +22,10 @@
 // ============================================================
 
 import { Router, type NextFunction, type Response } from "express";
-import type { AuthRequest } from "../middleware/auth";
+import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import { R2Error } from "../integrations/r2/client";
+import { prisma } from "../lib/prisma";
+import { CheckoutError, createPackHoursCheckout } from "../services/gateway-checkout";
 import { parseDateRange } from "../lib/date-range";
 import { PACK_VIDEO_KINDS, parseBeginInput, type PackVideoKind } from "../lib/pack-video-rules";
 import { getHoursOverview } from "../services/pack-video/hours";
@@ -205,6 +208,29 @@ router.get(
     res.json(await getHoursOverview(req.ownerId!));
   })
 );
+
+// MUA GIỜ QUAY qua payOS: trình duyệt chỉ gửi SỐ GIỜ, máy chủ tự tính tiền. Chỉ CHỦ SHOP (tiền nong của
+// chủ). Trạng thái / hủy mã dùng chung đường /api/subscription/checkout/:orderCode (cùng bảng đơn cổng).
+router.post("/hours/checkout", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const buyer = await prisma.user.findUnique({
+      where: { id: req.ownerId! },
+      select: { fullName: true, email: true, phone: true },
+    });
+    const checkout = await createPackHoursCheckout({
+      userId: req.ownerId!,
+      hours: (req.body as { hours?: unknown } | undefined)?.hours,
+      buyer: { name: buyer?.fullName, email: buyer?.email, phone: buyer?.phone },
+    });
+    res.status(201).json({ checkout });
+  } catch (err) {
+    if (err instanceof CheckoutError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
+});
 
 // Mã trên tem: cùng luật với bước tải lên (không khoảng trắng, tối đa 64 ký tự).
 router.get(

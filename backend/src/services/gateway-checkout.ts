@@ -33,6 +33,10 @@ import { CYCLE_LABEL, planPriceFor, recordPackagePayment } from "./subscription-
 import { monthLabel } from "./plan-overage";
 import { OverageChargeError, recordOveragePayment } from "./plan-overage-payment";
 import { PerOrderInputError, isPerOrderPlan, perOrderPlanPrice, validateCommittedOrders } from "./per-order-plan";
+import { PACK_VIDEO_HOUR_TRANSFER_CODE, packVideoHourSalesOpen } from "../config/pack-video";
+import { quoteHours } from "../lib/pack-video-hour-pricing";
+import { HourPurchaseError } from "./pack-video/hours";
+import { recordHoursPayment } from "./pack-video/hours-payment";
 
 /** Link sống bao lâu — quét QR là chuyện vài phút, 60' đủ rộng cho khách mở app ngân hàng. */
 const LINK_TTL_MINUTES = 60;
@@ -60,6 +64,8 @@ export interface CheckoutView {
   committedOrders: number | null;
   /** Đơn trả PHÍ VƯỢT của phiếu này (null = đơn mua gói) — FE đổi chữ trong hộp thanh toán. */
   overageChargeId: string | null;
+  /** Đơn MUA GIỜ QUAY video đóng hàng: số giờ (null = mua gói / trả phí vượt) — FE đổi chữ theo số này. */
+  packHours: number | null;
   amount: number;
   checkoutUrl: string | null;
   qrCode: string | null;
@@ -84,6 +90,7 @@ function toView(o: OrderRow): CheckoutView {
     cycle: o.cycle,
     committedOrders: o.committedOrders,
     overageChargeId: o.overageChargeId,
+    packHours: o.packHours,
     amount: Number(o.amount),
     checkoutUrl: o.checkoutUrl,
     qrCode: o.qrCode,
@@ -168,6 +175,7 @@ export async function createCheckout(input: {
     cycle: input.cycle,
     committedOrders,
     overageChargeId: null,
+    packHours: null,
     amount,
     descriptionCode: plan.code,
     itemName: `Gói ${plan.name}${committedOrders ? ` ${committedOrders.toLocaleString("vi-VN")} đơn/tháng` : ""} — ${CYCLE_LABEL[input.cycle]}`,
@@ -203,9 +211,57 @@ export async function createOverageCheckout(input: {
     cycle: BillingCycle.MONTHLY,
     committedOrders: charge.overOrders,
     overageChargeId: charge.id,
+    packHours: null,
     amount,
     descriptionCode: `VUOT${m}${y.slice(2)}`,
     itemName: `Mua thêm ${charge.overOrders.toLocaleString("vi-VN")} đơn hàng tháng ${monthLabel(charge.month)}`,
+    buyer: input.buyer,
+  });
+}
+
+/** Trang khách quay về sau khi trả tiền mua giờ (payOS chuyển hướng về đây khi mở ở tab riêng). */
+const PACK_HOURS_RETURN_PATH = "/orders/videos";
+
+/**
+ * Link thanh toán MUA GIỜ QUAY video đóng hàng (18/11/2026). Trình duyệt chỉ gửi SỐ GIỜ — máy chủ tự
+ * tính tiền = số giờ × đơn giá (lib/pack-video-hour-pricing.ts). Nội dung CK "HS PAC200 <mã đơn>".
+ * Tiền về thì settleGatewayOrder cộng giờ (không gia hạn thuê bao).
+ */
+export async function createPackHoursCheckout(input: {
+  userId: string;
+  hours: unknown;
+  buyer?: { name?: string | null; email?: string | null; phone?: string | null };
+}): Promise<CheckoutView> {
+  const cfg = getPayosConfig();
+  if (!cfg) throw new CheckoutError("Cổng thanh toán chưa được kích hoạt", 503);
+  if (!packVideoHourSalesOpen()) throw new CheckoutError("Chưa mở thanh toán giờ quay", 403);
+  const quote = quoteHours(input.hours);
+  if (!quote.ok) throw new CheckoutError(quote.error);
+  // Cột planId của đơn cổng là bắt buộc → lấy gói thuê bao hiện tại làm snapshot (như phí vượt).
+  const sub = await prisma.subscription.findUnique({
+    where: { userId: input.userId },
+    select: { planId: true, plan: { select: { code: true, name: true } } },
+  });
+  if (!sub) throw new CheckoutError("Tài khoản chưa có thuê bao");
+
+  // "PAC200" — nếu trần ký tự của cổng không chứa nổi cả số giờ (TK chưa liên kết: 9 ký tự) thì chỉ
+  // ghi "PAC": thà thiếu số còn hơn bị cắt thành một số giờ SAI trên sao kê ("PAC1000" → "PAC100").
+  const full = `${PACK_VIDEO_HOUR_TRANSFER_CODE}${quote.hours}`;
+  const descriptionCode =
+    `${cfg.transferPrefix} ${full}`.length <= cfg.descriptionMaxLen ? full : PACK_VIDEO_HOUR_TRANSFER_CODE;
+
+  return openGatewayOrder(cfg, {
+    userId: input.userId,
+    requestId: null,
+    plan: { id: sub.planId, code: sub.plan.code, name: sub.plan.name },
+    cycle: BillingCycle.MONTHLY,
+    committedOrders: null,
+    overageChargeId: null,
+    packHours: quote.hours,
+    amount: quote.amountVnd,
+    descriptionCode,
+    itemName: `Mua ${quote.hours.toLocaleString("vi-VN")} giờ quay video đóng hàng`,
+    returnPath: PACK_HOURS_RETURN_PATH,
     buyer: input.buyer,
   });
 }
@@ -226,10 +282,14 @@ async function openGatewayOrder(
     cycle: BillingCycle;
     committedOrders: number | null;
     overageChargeId: string | null;
+    /** Đơn mua giờ quay: số giờ; null với mua gói / trả phí vượt. */
+    packHours: number | null;
     amount: number;
-    /** Phần mã trong nội dung chuyển khoản (mã gói, hoặc VUOTmmyy). */
+    /** Phần mã trong nội dung chuyển khoản (mã gói, VUOTmmyy, hoặc PAC<số giờ>). */
     descriptionCode: string;
     itemName: string;
+    /** Trang payOS chuyển khách về (mặc định trang Gói dịch vụ). */
+    returnPath?: string;
     buyer?: { name?: string | null; email?: string | null; phone?: string | null };
   }
 ): Promise<CheckoutView> {
@@ -243,6 +303,7 @@ async function openGatewayOrder(
       x.cycle === o.cycle &&
       x.committedOrders === o.committedOrders &&
       x.overageChargeId === o.overageChargeId &&
+      x.packHours === o.packHours &&
       Number(x.amount) === o.amount
   );
   if (reusable) return toView(reusable);
@@ -254,6 +315,7 @@ async function openGatewayOrder(
   }
 
   const expiresAt = new Date(now.getTime() + LINK_TTL_MINUTES * 60_000);
+  const returnBase = `${FRONTEND_URL}${o.returnPath ?? "/settings/plan"}`;
 
   // orderCode unique — trúng số (cực hiếm) thì thử lại vài lần.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -278,6 +340,7 @@ async function openGatewayOrder(
           cycle: o.cycle,
           committedOrders: o.committedOrders,
           overageChargeId: o.overageChargeId,
+          packHours: o.packHours,
           amount: new Prisma.Decimal(o.amount),
           description,
           expiresAt,
@@ -288,8 +351,8 @@ async function openGatewayOrder(
           orderCode,
           amount: o.amount,
           description,
-          returnUrl: `${FRONTEND_URL}/settings/plan?checkout=${orderCode}&result=success`,
-          cancelUrl: `${FRONTEND_URL}/settings/plan?checkout=${orderCode}&result=cancel`,
+          returnUrl: `${returnBase}?checkout=${orderCode}&result=success`,
+          cancelUrl: `${returnBase}?checkout=${orderCode}&result=cancel`,
           expiredAt: Math.floor(expiresAt.getTime() / 1000),
           buyerName: o.buyer?.name ?? undefined,
           buyerEmail: o.buyer?.email ?? undefined,
@@ -442,13 +505,81 @@ export async function settleGatewayOrder(input: SettleInput): Promise<OrderRow> 
     });
     void mailHq({
       subject: `[Hubsell] ⚠️ payOS: tiền về LỆCH số — đơn ${row.orderCode}`,
-      html: `<p>Khách ${row.userId} chuyển <b>${input.paidAmount.toLocaleString("vi-VN")}₫</b> cho gói ${row.planName} (${CYCLE_LABEL[row.cycle]}) giá <b>${expected.toLocaleString("vi-VN")}₫</b>.</p><p>Gói CHƯA được mở. Mã GD ngân hàng: ${input.reference}. Vào /admin/plans ghi nhận tay sau khi liên hệ khách.</p>`,
+      html:
+        row.packHours != null
+          ? `<p>Khách ${row.userId} chuyển <b>${input.paidAmount.toLocaleString("vi-VN")}₫</b> cho đơn mua ${row.packHours.toLocaleString("vi-VN")} giờ quay video đóng hàng giá <b>${expected.toLocaleString("vi-VN")}₫</b>.</p><p>Giờ CHƯA được cộng. Mã GD ngân hàng: ${input.reference}. Liên hệ khách để chuyển bù hoặc hoàn.</p>`
+          : `<p>Khách ${row.userId} chuyển <b>${input.paidAmount.toLocaleString("vi-VN")}₫</b> cho gói ${row.planName} (${CYCLE_LABEL[row.cycle]}) giá <b>${expected.toLocaleString("vi-VN")}₫</b>.</p><p>Gói CHƯA được mở. Mã GD ngân hàng: ${input.reference}. Vào /admin/plans ghi nhận tay sau khi liên hệ khách.</p>`,
     });
     return updated;
   }
 
   const externalRef = `payos:${input.reference}`;
   let settled: OrderRow = row;
+
+  // ---- Đơn MUA GIỜ QUAY video đóng hàng: chứng từ + sổ quỹ + CỘNG GIỜ, KHÔNG gia hạn thuê bao. ----
+  if (row.packHours != null) {
+    const hours = row.packHours;
+    const paidData = {
+      gatewayReference: input.reference,
+      paidAmount: new Prisma.Decimal(input.paidAmount),
+      paidAt: input.paidAt,
+      lastWebhook: rawJson,
+    };
+    try {
+      await recordHoursPayment(
+        {
+          ownerId: row.userId,
+          hours,
+          amountVnd: Math.round(input.paidAmount),
+          method: PackagePaymentMethod.GATEWAY,
+          occurredAt: input.paidAt,
+          externalRef,
+          note: `payOS đơn ${row.orderCode}`,
+          actorName: "Hệ thống (payOS)",
+        },
+        async (tx, result) => {
+          settled = await tx.gatewayPaymentOrder.update({
+            where: { id: row.id },
+            data: { status: "PAID", packagePaymentId: result.payment.id, ...paidData },
+          });
+        }
+      );
+    } catch (err) {
+      // Khoản này đã ghi rồi (webhook + poll đua nhau) → đồng bộ đơn là xong, giờ không cộng lần hai.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const existing = await prisma.packagePayment.findUnique({ where: { externalRef } });
+        return prisma.gatewayPaymentOrder.update({
+          where: { id: row.id },
+          data: { status: "PAID", packagePaymentId: existing?.id ?? null, ...paidData },
+        });
+      }
+      // Tiền về KHÁC số giờ × đơn giá (khách chuyển tay thừa, hoặc đơn giá đổi giữa lúc lấy mã và lúc
+      // trả) → không cộng giờ, không ghi chứng từ; HQ xử lý tay.
+      if (err instanceof HourPurchaseError) {
+        const mismatched = await prisma.gatewayPaymentOrder.update({
+          where: { id: row.id },
+          data: { status: "MISMATCH", ...paidData },
+        });
+        void mailHq({
+          subject: `[Hubsell] ⚠️ payOS: tiền mua giờ quay KHÔNG khớp — đơn ${row.orderCode}`,
+          html: `<p>Khách ${row.userId} chuyển <b>${input.paidAmount.toLocaleString("vi-VN")}₫</b> cho đơn mua ${hours.toLocaleString("vi-VN")} giờ quay video đóng hàng (phải thu ${expected.toLocaleString("vi-VN")}₫).</p><p>Giờ CHƯA được cộng, chưa ghi chứng từ. Lý do: ${err.message}. Mã GD ngân hàng: ${input.reference}.</p>`,
+        });
+        return mismatched;
+      }
+      throw err;
+    }
+    void notify(row.userId, {
+      type: "subscription",
+      title: `Đã cộng ${hours.toLocaleString("vi-VN")} giờ quay video`,
+      body: `Đã nhận ${input.paidAmount.toLocaleString("vi-VN")}₫ — ${hours.toLocaleString("vi-VN")} giờ quay đã vào tài khoản, dùng được ngay. Giờ đã mua không hết hạn.`,
+      link: PACK_HOURS_RETURN_PATH,
+    });
+    void mailHq({
+      subject: `[Hubsell] 💰 payOS: +${input.paidAmount.toLocaleString("vi-VN")}₫ — mua ${hours.toLocaleString("vi-VN")} giờ quay video`,
+      html: `<p>Khách mua giờ quay video đóng hàng qua payOS, đã cộng giờ và ghi sổ quỹ (không gia hạn thuê bao).</p><p>Khách: ${row.userId}<br/>Đơn: ${row.orderCode} — mã GD: ${input.reference}</p><p><a href="${FRONTEND_URL}/admin/plans">Xem ở HQ</a></p>`,
+    });
+    return settled;
+  }
 
   // ---- Đơn trả PHÍ VƯỢT: ghi khoản "mua thêm N đơn hàng", KHÔNG gia hạn thuê bao. ----
   if (row.overageChargeId) {

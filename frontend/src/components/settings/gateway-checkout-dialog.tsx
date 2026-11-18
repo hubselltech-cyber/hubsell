@@ -197,10 +197,13 @@ export function GatewayCheckoutDialog({
     if (current?.status === "PAID" && celebrated !== current.orderCode) {
       setCelebrated(current.orderCode);
       qc.invalidateQueries({ queryKey: qk.mySubscription() });
+      if (current.packHours != null) qc.invalidateQueries({ queryKey: qk.packVideoHours() });
       toast.success(
-        current.overageChargeId
-          ? "Thanh toán thành công — đã nhận phần đơn vượt gói."
-          : `Thanh toán thành công — gói ${current.planName} đã kích hoạt.`
+        current.packHours != null
+          ? `Thanh toán thành công — đã cộng ${nf.format(current.packHours)} giờ quay.`
+          : current.overageChargeId
+            ? "Thanh toán thành công — đã nhận phần đơn vượt gói."
+            : `Thanh toán thành công — gói ${current.planName} đã kích hoạt.`
       );
     }
   }, [current, celebrated, qc]);
@@ -224,6 +227,15 @@ export function GatewayCheckoutDialog({
   // Đơn trả PHÍ VƯỢT (11/11/2026): cùng hộp, đổi chữ — khách đang "mua thêm N đơn hàng".
   const isOverage = !!current.overageChargeId;
   const overageLabel = `Mua thêm ${nf.format(current.committedOrders ?? 0)} đơn hàng`;
+  // Đơn MUA GIỜ QUAY video đóng hàng (18/11/2026): cùng hộp, đổi chữ — tiền về là giờ tự cộng.
+  const isHours = current.packHours != null;
+  const hoursLabel = `Mua ${nf.format(current.packHours ?? 0)} giờ quay video`;
+  /** Câu "tiền về thì chuyện gì xảy ra" — một chỗ cho cả khung nhúng lẫn màn QR tự vẽ. */
+  const afterPaidText = isHours
+    ? "Giờ quay tự cộng trong vài giây sau khi tiền về"
+    : isOverage
+      ? "Tự ghi nhận trong vài giây sau khi tiền về"
+      : "Gói tự mở trong vài giây sau khi tiền về";
 
   return (
     <Dialog open={checkout !== null} onOpenChange={(o) => !o && onClose()}>
@@ -253,13 +265,19 @@ export function GatewayCheckoutDialog({
               : current.status === "MISMATCH"
                 ? "Cần Hubsell kiểm tra"
                 : isPending
-                  ? isOverage
-                    ? "Thanh toán phần đơn vượt gói"
-                    : "Thanh toán gói dịch vụ"
+                  ? isHours
+                    ? "Thanh toán mua giờ quay"
+                    : isOverage
+                      ? "Thanh toán phần đơn vượt gói"
+                      : "Thanh toán gói dịch vụ"
                   : "Mã thanh toán đã đóng"}
           </DialogTitle>
           <DialogDescription>
-            {isOverage ? (
+            {isHours ? (
+              <>
+                <span className="text-foreground">{hoursLabel}</span> đóng hàng
+              </>
+            ) : isOverage ? (
               <>
                 <span className="text-foreground">{overageLabel}</span> — gói {current.planName}
               </>
@@ -299,8 +317,7 @@ export function GatewayCheckoutDialog({
             )}
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2.5 text-xs text-muted-foreground">
               <span className="hidden items-center gap-1.5 sm:flex">
-                <Loader2 className="size-3 animate-spin" />{" "}
-                {isOverage ? "Tự ghi nhận trong vài giây sau khi tiền về" : "Gói tự mở trong vài giây sau khi tiền về"}
+                <Loader2 className="size-3 animate-spin" /> {afterPaidText}
               </span>
               <span className="flex items-center gap-3">
                 <button
@@ -359,10 +376,18 @@ export function GatewayCheckoutDialog({
               <div className="flex items-baseline justify-between gap-4 border-b pb-3">
                 <div className="min-w-0">
                   <p className="text-sm">
-                    {isOverage ? overageLabel : `Gói ${current.planName} · ${CYCLE_LABEL[current.cycle]}`}
+                    {isHours
+                      ? hoursLabel
+                      : isOverage
+                        ? overageLabel
+                        : `Gói ${current.planName} · ${CYCLE_LABEL[current.cycle]}`}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {isOverage ? `Phần đơn vượt gói ${current.planName}` : "Thuê bao phần mềm Hubsell"}
+                    {isHours
+                      ? "Video đóng hàng — giờ đã mua không hết hạn"
+                      : isOverage
+                        ? `Phần đơn vượt gói ${current.planName}`
+                        : "Thuê bao phần mềm Hubsell"}
                   </p>
                 </div>
                 <p className="shrink-0 text-sm tabular-nums">{amountStr}</p>
@@ -398,10 +423,7 @@ export function GatewayCheckoutDialog({
                 <InfoRow label="Nội dung" value={current.transferContent} copy strong />
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Chuyển tay cần nhập đúng số tiền và nội dung.{" "}
-                {isOverage
-                  ? "Hubsell tự ghi nhận trong vài giây sau khi tiền về."
-                  : "Gói tự mở trong vài giây sau khi tiền về."}
+                Chuyển tay cần nhập đúng số tiền và nội dung. {afterPaidText}.
               </p>
 
               <div className="mt-auto flex items-center justify-between gap-2 pt-4">
@@ -436,7 +458,12 @@ export function GatewayCheckoutDialog({
             <CheckCircle2 className="mx-auto size-14 text-emerald-500" />
             <p className="text-sm text-muted-foreground">
               Đã nhận {amountStr},{" "}
-              {isOverage ? "phần đơn vượt gói đã được thanh toán" : `gói ${current.planName} có hiệu lực ngay`}. Chứng từ và hóa đơn được
+              {isHours
+                ? `${nf.format(current.packHours ?? 0)} giờ quay đã được cộng vào tài khoản`
+                : isOverage
+                  ? "phần đơn vượt gói đã được thanh toán"
+                  : `gói ${current.planName} có hiệu lực ngay`}
+              . Chứng từ và hóa đơn được
               chuyển sang kế toán Hubsell tự động — bạn không cần làm gì thêm.
             </p>
             <Button onClick={onClose}>Xong</Button>
@@ -448,7 +475,7 @@ export function GatewayCheckoutDialog({
             <XCircle className="mx-auto size-14 text-slate-400" />
             <p className="text-sm text-muted-foreground">
               {current.status === "EXPIRED"
-                ? "Mã QR đã hết hạn. Nếu bạn đã chuyển khoản, gói vẫn sẽ mở khi tiền về — hoặc tạo mã mới để thanh toán lại."
+                ? `Mã QR đã hết hạn. Nếu bạn đã chuyển khoản, ${isHours ? "giờ quay vẫn sẽ được cộng" : "gói vẫn sẽ mở"} khi tiền về — hoặc tạo mã mới để thanh toán lại.`
                 : "Mã thanh toán đã hủy. Bạn có thể tạo mã mới bất cứ lúc nào."}
             </p>
             <div className="flex justify-center gap-2">
@@ -466,7 +493,7 @@ export function GatewayCheckoutDialog({
           <div className="space-y-4 py-2 text-center">
             <Clock className="mx-auto size-14 text-amber-500" />
             <p className="text-sm text-muted-foreground">
-              Hubsell đã nhận tiền nhưng số tiền không khớp giá gói. Đội Hubsell sẽ liên hệ bạn để
+              Hubsell đã nhận tiền nhưng số tiền không khớp {isHours ? "số tiền của đơn mua giờ" : "giá gói"}. Đội Hubsell sẽ liên hệ bạn để
               xử lý trong thời gian sớm nhất — không cần chuyển lại. Mã đơn để đối chiếu:{" "}
               <span className="font-mono text-foreground">{current.orderCode}</span>.
             </p>

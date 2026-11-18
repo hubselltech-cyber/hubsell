@@ -135,7 +135,7 @@ describe.skipIf(!dbReady)("Video đóng hàng — cổng ở tầng HTTP", () =>
     const summary = await call(pilotId, "GET", "/api/pack-videos/summary");
     expect(summary.status).toBe(expected === "open" ? 200 : 403);
     if (expected === "open") {
-      expect(Object.keys(summary.body ?? {}).sort()).toEqual(["all", "pending", "returns", "unmatched"]);
+      expect(Object.keys(summary.body ?? {}).sort()).toEqual(["all", "expiring", "pending", "returns", "unmatched"]);
       // Thân sai → 400 có lời, không phải 500.
       const bad = await call(pilotId, "POST", "/api/pack-videos");
       expect([bad.status, bad.body?.code]).toEqual([400, "BAD_INPUT"]);

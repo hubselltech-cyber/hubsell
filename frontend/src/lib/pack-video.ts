@@ -146,3 +146,52 @@ export function evidenceUploadHint(durationSec: number): { direct: boolean; labe
       : "Dài hơn 1 phút: nộp bằng đường dẫn Drive / YouTube",
   };
 }
+
+// ---------- Mua giờ quay (docs/VIDEO-DONG-HANG-THIET-KE.md mục 19) ----------
+
+/** Báo giá HIỂN THỊ cho ô "Số giờ khác" — cùng luật với máy chủ (lib/pack-video-hour-pricing.ts). Máy chủ
+ * vẫn là nơi tính tiền thật lúc thanh toán; số ở đây chỉ để khách thấy phép tính. */
+export function quoteHoursForDisplay(
+  raw: string,
+  pricing: { priceVnd: number; minHours: number; maxHours: number }
+): { ok: true; hours: number; amountVnd: number } | { ok: false; error: string | null } {
+  const t = raw.trim().replace(/\./g, "");
+  if (t === "") return { ok: false, error: null };
+  if (!/^\d+$/.test(t)) return { ok: false, error: "Nhập số giờ là số nguyên" };
+  const hours = Number(t);
+  if (hours < pricing.minHours) return { ok: false, error: `Mua tối thiểu ${pricing.minHours.toLocaleString("vi-VN")} giờ` };
+  if (hours > pricing.maxHours) return { ok: false, error: `Mỗi lần mua tối đa ${pricing.maxHours.toLocaleString("vi-VN")} giờ` };
+  return { ok: true, hours, amountVnd: hours * pricing.priceVnd };
+}
+
+/** "≈ 3.000 video 1 phút" — đổi giờ ra số đơn cho khách dễ hình dung. */
+export function approxOneMinuteClips(hours: number): string {
+  return `≈ ${(hours * 60).toLocaleString("vi-VN")} video 1 phút`;
+}
+
+// ---------- Hạn giữ video (luật tự xóa W5) ----------
+
+/** Chip / nhãn "Sắp tự xóa": hạn giữ trong 3 ngày tới — CÙNG số với máy chủ (library.ts PACK_VIDEO_EXPIRING_DAYS). */
+export const PACK_VIDEO_EXPIRING_DAYS = 3;
+
+export type PackVideoHoldReasonKey = "RETURN_OPEN" | "RETURN_DAMAGED" | "UNBOX_UNMATCHED" | "PARCEL_RETURNING";
+
+export const HOLD_REASON_LABEL: Record<PackVideoHoldReasonKey, string> = {
+  RETURN_OPEN: "Đơn có hoàn — giữ tới khi xử lý xong",
+  RETURN_DAMAGED: "Kiện hoàn hỏng / thiếu — giữ để khiếu nại",
+  UNBOX_UNMATCHED: "Video khui chưa khớp đơn — giữ lại",
+  PARCEL_RETURNING: "Đơn hủy, kiện đang quay về — giữ tới khi nhận",
+};
+
+/** Số ngày từ hôm nay (giờ máy) tới một ngày "YYYY-MM-DD"; âm = đã qua. */
+export function daysUntil(dateKey: string, now: Date = new Date()): number {
+  const target = Date.parse(`${dateKey}T00:00:00+07:00`);
+  const today = Date.parse(`${new Date(now.getTime() + 7 * 3_600_000).toISOString().slice(0, 10)}T00:00:00+07:00`);
+  return Math.round((target - today) / 86_400_000);
+}
+
+/** "03/12/2026" từ "2026-12-03". */
+export function formatDateKey(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-");
+  return `${d}/${m}/${y}`;
+}

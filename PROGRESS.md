@@ -5,6 +5,11 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 18/11 21:00 (lịch anh hẹn) — Video đóng hàng: KHẢO SÁT LẠI lối quay cho NHÂN VIÊN trên app — chỉ khảo sát, không code, không commit
+
+- Kết quả ở `docs/VIDEO-DONG-HANG-THIET-KE.md` mục 17.2. Đề xuất: cách (A) — nhân viên quyền `orders` có tab "Đơn hàng" với tab con "Quay video gói hàng" (rào: chỉ nhân viên của chủ đã mở video); nhân viên chỉ `warehouse.returns` quay khui bằng nút "Quay khui hàng" ở Kho → Đơn hoàn. Màn Đơn hàng không lộ lãi / lỗ, giá vốn; số tiền nhân viên thấy trùng với cái họ đã xem được qua nút QR. Máy chủ: sửa 4 tệp, tách đường ghi theo quyền / đường đọc chỉ chủ, KHÔNG migration; phải làm sau khi mục 19 commit. 5 lát N1–N5, chờ anh chốt C1–C7 (đáng chú ý C3: nhân viên 4 tab thì nút QR lệch khỏi giữa).
+
+---
 ## Phiên 18/11 (tối) — Xử lý đơn hàng: nút sao chép sau mã đơn — ✅ ĐÃ COMMIT + PUSH 18/11 (anh: "Commit và push"); chưa kiểm prod
 
 - Anh Trung (kèm ảnh khoanh đỏ sau mã đơn): "Trong xử lý đơn hàng, thêm cho anh icon copy vào sau mã đơn hàng".
@@ -22,6 +27,34 @@
 - Không đổi: sidebar khu điều hành HQ, app mobile (không có menu soi gương).
 
 ---
+## Phiên 18/11 ~21:00 — Video đóng hàng: NỐI payOS CHO MUA GIỜ + ô "Số giờ muốn mua" (anh: "Làm phần mua giờ, nhưng anh đang muốn thêm cả việc nhập số lượng giờ quay video muốn mua nữa từ đó tính ra tiền. Khách thanh toán em định đặt code trên PayOS là gì?") — ✅ ĐÃ COMMIT + PUSH 18/11 ~21:25 (anh: "Đổi luôn và push phần này lên nhé"); chưa kiểm prod
+
+- Hộp mua: MỘT nguồn số là ô "Số giờ muốn mua" (20–10.000 giờ); ba gói sẵn chỉ điền số vào ô; tiền = số giờ × 1.500 đ đổi theo ngay. Nút "Thanh toán" gọi `POST /api/pack-videos/hours/checkout { hours }` (chỉ chủ shop, máy chủ tự tính tiền) → hộp QR payOS dùng chung với mua gói (đổi chữ theo `packHours`).
+- Mã trên payOS (anh chốt ~21:10: "Em để code thanh toán là HS PAC... Đi. Sau anh đặt tên là HubPac (Packing)"; tên HubPac CHƯA đưa lên giao diện): nội dung chuyển khoản `HS PAC<số giờ> <8 số cuối mã đơn>` (vd `HS PAC200 45678901`, dài nhất 20 ký tự ≤ 25); trần 9 ký tự mà không vừa thì chỉ ghi `HS PAC` (không cắt thành số giờ sai). Mã đơn payOS vẫn là số 16 chữ số tự sinh như gói.
+- Tiền về (`settleGatewayOrder`, nhánh `packHours`): MỘT giao dịch = chứng từ `PackagePayment` kind `PACK_HOURS` + bút toán THU chờ hóa đơn + dòng `PURCHASE` trong `pack_hour_grants` + đơn cổng PAID; không gia hạn thuê bao; webhook lặp / poll đua không cộng đôi; tiền thiếu hoặc thừa → MISMATCH + thư HQ, không cộng giờ. Lõi: `services/pack-video/hours-payment.ts`.
+- Schema (CHỈ ADD, migration `20261118210000_pack_hours_checkout`): enum `PackagePaymentKind` thêm `PACK_HOURS`; cột `packHours` ở `gateway_payment_orders` và `package_payments`. Đã áp local bằng `prisma db execute`.
+- Hóa đơn: tên dòng "Gói phần mềm Hubsell - mua thêm N giờ quay video đóng hàng", đi chung đường tự xuất của gói (theo lời anh 16/11 "Mình không mất VAT"; chưa phải ý kiến kế toán). Sổ giờ nay hiện số hóa đơn của dòng mua.
+- Công tắc mở bán: env `PACK_VIDEO_HOUR_SALES_OPEN=1` (mặc định TẮT, cần thêm khóa payOS). Prod chưa đặt → nút vẫn báo "Chưa mở thanh toán".
+- Chữ (anh sửa ~21:20): "Phần thời gian vượt gói sẽ khấu trừ vào lần thanh toán tiếp theo."; "Quay lố" → "Vượt gói" ở hàng tab, ô số dư hộp mua, màn quay (anh: "Đổi luôn").
+- ⚠️ SAU PUSH, prod: (1) `admin@hubsell.vn` đang 0 giờ → màn quay báo "Chưa có giờ quay", video mới bị 402 tới khi cấp giờ / mua giờ; (2) chưa đặt `PACK_VIDEO_HOUR_SALES_OPEN=1` trên Render → nút Thanh toán còn khóa; (3) worker dọn video chạy bóng tự bật ở dịch vụ worker.
+- Trước push đã chạy: cả bộ backend 2.742 đậu / 6 rớt = đúng 6 lỗi 4 tệp sổ cái có sẵn; `next build` qua; worker dọn chạy một lượt bóng trên local (đọc 9 video, "SẼ xóa 1", không xóa tệp nào).
+- ⏳ Chờ anh: cấp giờ cho admin prod (bao nhiêu giờ) hoặc bật mở bán; hoa hồng giới thiệu 10 % cho khoản mua giờ (mã đang KHÔNG cộng); chính sách hoàn tiền giờ quay.
+- Kiểm: test mới `pack-hours-checkout.test.ts` 6/6; nhóm video + cổng + hóa đơn + gói 256/256; tsc hai phía + eslint sạch. Soi local: hộp mua, gõ 350 → 525.000 đ đúng. ❌ CHƯA nhìn bước QR trên trình duyệt: backend local cổng 4010 là của phiên chat khác, không có payOS giả lập, lệnh dừng nó bị chặn. ❌ Chưa soi giao diện tối, chưa đo 1280 / 1700. Chưa chạy cả bộ backend.
+- Ghi ở: docs `VIDEO-DONG-HANG-THIET-KE.md` mục 20; memory `hubsell-y-tuong-video-dong-goi-tu-khieu-nai.md`.
+
+---
+## Phiên 18/11 20:00 (lịch anh đặt 16/11) — Video đóng hàng: MUA GIỜ QUAY + HẾT GIỜ THÌ DỪNG + LUẬT TỰ XÓA CHẠY BÓNG — ✅ ĐÃ PUSH 18/11 ~21:25 chung commit với phần nối payOS (tệp đan nhau, không tách được); chưa kiểm prod
+
+- Việc 1 (mua giờ): cấu hình một nguồn 1.500 đ / giờ, gói sẵn 50 / 200 / 500, tối thiểu 20 giờ, tối đa 10.000 (tự chọn); tính tiền thuần `lib/pack-video-hour-pricing.ts`; migration `20261118200000` CHỈ ADD trên `pack_hour_grants` (`paymentRef` duy nhất + `amountVnd` + CHECK); `grantPurchasedHoursTx` cộng giờ chống trùng bằng `ON CONFLICT`; `GET /hours` trả giá + sổ giờ. Web: hộp mua đúng phác thảo (nút Thanh toán còn khóa vì `SALES_OPEN = false`), sổ giờ ở tab Thống kê (`hour-ledger.tsx`).
+- ⛔ DỪNG phần nối payOS + chứng từ + hóa đơn: chờ anh H1 (tên dòng + thuế suất hóa đơn khoản mua giờ), H2 (cho thêm cột `packHours` vào `gateway_payment_orders` + loại chứng từ `PACK_HOURS`), H3 hoa hồng 10 %, H4 hoàn tiền — docs mục 19.8. Thiết kế đường tiền đi đã viết (19.2).
+- Hết giờ thì dừng: `beginUpload` trả 402 `OUT_OF_HOURS` cho video MỚI khi số dư ≤ 0; clip BẮT ĐẦU lúc còn giờ vẫn lên (quay nốt), gọi lại cùng `clientId` không bị chặn. Màn quay webcam: hộp đỏ "Hết giờ quay" + nút mua, khóa nút Bắt đầu, tem kế lúc hết giờ thì lưu clip đang quay và không mở clip mới.
+- Việc 2 (W5, CHẠY BÓNG): luật thuần L1–L6 `lib/pack-video-retention.ts` (mọi dấu hiệu hoàn chặn xóa; mọi gian Lazada 35 ngày vì sổ không có cờ LazMall); `services/pack-video/retention.ts` gán hạn theo lô theo khóa + đọc lại đơn lúc tới hạn; worker `workers/pack-video-janitor.ts` 6 giờ/lượt, mặc định KHÔNG xóa tệp (`PACK_VIDEO_DELETE_ENABLED=1` mới xóa). Bảng `pack_usage_daily` (migration `20261118201000`) + `usage-daily.ts` để "giờ đã quay" không tụt khi bỏ mảnh. Web: cột "Giữ tới" + chip "Sắp tự xóa" (chỉ hiện khi có số). Dọn video khi xóa tài khoản `owner-purge.ts` sau cờ `PACK_VIDEO_ACCOUNT_PURGE=1`.
+- Kiểm: backend `tsc` sạch; test video 202 / 202; cả bộ backend 2.735 đậu / 6 rớt = đúng 6 lỗi sổ cái có sẵn từ 16/11; frontend `tsc` + `eslint` sạch; `next build` qua; hai migration áp local bằng `prisma db execute`.
+- ❌ CHƯA soi màn (hai server local bị từ chối khởi động ở phiên tự động); worker chưa chạy lượt thật trên local. ⚠️ Trước khi push: cấp giờ cho `admin@hubsell.vn` trên prod (prod 0 giờ → sẽ bị chặn quay ngay); chờ anh X-a (ca hoàn mở quá 90 ngày), X-b (khớp lại tem trước L1), X-c.
+- Cây làm việc đang có thay đổi đã STAGE của phiên Tổng kho (sửa sản phẩm kho) — em không đụng chỉ mục git; tệp của em đều chưa stage.
+- Ghi ở: docs `VIDEO-DONG-HANG-THIET-KE.md` mục 19; memory `hubsell-y-tuong-video-dong-goi-tu-khieu-nai.md`.
+
+---
 ## Phiên 18/11 tối muộn — Tổng kho: SỬA sản phẩm kho + THÊM phân loại (anh: "tạo được sản phẩm kho nhưng không sửa được, khách thêm SKU vào sản phẩm thì không thêm được… bổ sung ngay phần sửa"; "thêm icon cái bút chỉnh sửa vào là hợp lý") — ✅ ĐÃ COMMIT + PUSH 18/11 (anh: "Commit và push lên em")
 
 - Khảo sát: backend có sẵn `PATCH /api/products/:id` nhận tên / mã nhưng web không có màn nào gọi, không có đường thêm phân loại vào mẫu; sửa lẻ tên một dòng làm dòng rơi khỏi mẫu cha–con → làm đường sửa THEO MẪU.
@@ -30,6 +63,26 @@
 - Kiểm: tsc 2 phía + eslint sạch; 34 test mới qua (luật + ghi DB dev); tự chạy trên trình duyệt local các ca đổi mã dòng đang nối gian, thêm phân loại, sản phẩm đơn → mẫu, đổi tên trùng mẫu khác; đo 1280 / 1440 / 1700 giao diện tối với mẫu 25 phân loại.
 - ⏳ Chưa làm: đổi ảnh, chuyển phân loại sang mẫu khác, mobile. Chưa kiểm prod, chưa thử tài khoản nhân viên trên giao diện. Dữ liệu thử `SUATHU-*` trên DB dev đã dọn. Commit chỉ gồm tệp của lát này (cây làm việc còn thay đổi của việc video đóng hàng — `api.ts` / PROGRESS tách phần).
 - Ghi ở: docs `QUAN-LY-KHO-TAI-CAU-TRUC.md` mục 12; memory `hubsell-quan-ly-kho-nang-cap-2026-11-05.md`.
+
+---
+## Phiên 18/11 khuya — Xóa cả Tổng kho nick admin@hubsell.vn trên PROD (anh: "xóa đi anh sẽ tạo lại sau") — chỉ dữ liệu, không có mã sản phẩm
+
+- Qua Supabase SQL Editor theo cách 4 bước của ca 09/11: sao lưu 7 bảng `_bak_20261118_admin_*` (product 393, inventory_log 1.044, stock_levels 191, channel_product 251, order_item_link 1.480, ledger_link 1.480, purchase_lines 3; đã bật RLS) → chép giá vốn kho xuống `ChannelProduct.costPrice` cho 250 dòng sàn chỉ có giá vốn kho (anh: giá vốn mang ở sản phẩm sàn trong Quản lý tài chính) → gỡ `order_line_ledger.productId` → `DELETE FROM "Product"`.
+- Đếm lại: còn 0 sản phẩm, 251 dòng sàn chưa nối và đều có giá vốn, 1.480 dòng đơn cũ giữ giá vốn đã chụp. Màn Tổng kho prod trống ("đang có 2.422 sản phẩm trên sàn chưa nối về"). 5 gian không gian nào bật đồng bộ tồn. 3 dòng phiếu nhập giữ nguyên, mất liên kết sản phẩm.
+- ⏳ DROP 7 bảng `_bak_20261118_admin_*` sau ~18/12 (hỏi anh). Ghi ở memory `hubsell-xoa-ca-tong-kho-theo-yeu-cau-khach-2026-11-09.md`.
+
+---
+## Phiên 18/11 (lịch tự soi kho chuẩn quốc tế, lượt 18/11) — chỉ đọc prod, không có mã sản phẩm
+
+- Soi tối 18/11: CHƯA có lần đối chiếu mới, dòng vẫn **14/11 16:59** (cách 99 giờ, lệch cứng 0) → không tính, chuỗi giữ **3/7**. Số sống: 216 đơn giữ, bộ đếm 140, âm 0, đã giao chưa quét 0, hủy còn giữ 0. Ghi ở docs 13.12 + memory kho chuẩn quốc tế. CHƯA commit.
+
+---
+## Phiên 18/11 tối — Khách hỏi trừ 1% doanh thu trả đội vận hành thuê ngoài → rà lại công thức Tổng giá trị sản phẩm
+
+- Khách thuê ngoài đội vận hành, cắt 1% Tổng giá trị SP. Không phải KOC; chi phí biến đổi nhập tay không gắn vào đơn. Anh cho khách dùng tạm Thuế bổ sung (cơ sở Doanh thu): chỉ trừ ở tổng kỳ, không vào lãi từng đơn / hòa vốn ads; Dòng tiền + Tổng quan bỏ đơn hủy + đang hoàn, trang Thuế chỉ bỏ đơn hủy.
+- Rà công thức (anh: "có lần thay đổi"): `revenueGross` không đổi từ sổ v3 29/10, định nghĩa đúng chốt. SQL chỉ đọc prod 30 ngày tìm 3 chỗ lệch, CHƯA sửa: (1) Shopee combo 340 đơn Tổng giá trị SP = 0 cả đơn (~114 tr); (2) TikTok 10,8k đơn không bản kê nào dùng sale_price thấp ~17 % (~350 tr, dồn vài gian); (3) 9,7k đơn TikTok chưa đọc price_detail (1 gian kẹt từ ~08/11, ~13 tr).
+- ⏳ Anh chốt sửa chỗ nào trước. Đề xuất tính năng "Khoản trích theo % mỗi đơn" + bảng kê vẫn chờ.
+- Ghi ở: docs `DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md` mục 15; memory `hubsell-dong-tien-tong-gia-tri-san-pham-khao-sat-2026-10-29.md` + `hubsell-hoa-hong-van-hanh-theo-don-2026-11-18.md`.
 
 ---
 ## Phiên 18/11 chiều (Video đóng hàng — NHIỀU BÀN + đường truyền quy mô lớn) — Anh: "đẩy sớm kế hoạch làm nhiều màn hình… phòng trước các rủi ro về đường truyền, khi có hàng chục nghìn shop đóng hàng cùng lúc" → 📝 bản thiết kế, CHƯA code
@@ -46,6 +99,72 @@
   - 4 và 6 luồng (bàn thứ 4–6 nhân bản cùng camera), mỗi lượt 5 phút: 0 khung bỏ / 0 lỗi; 6 phiên NVENC, card ≈ 27 %, CPU ≈ 26 % → máy anh gánh 6 bàn thoải mái (docs 18.9).
   - app.hubsell.vn: `persist()` = true, nhưng Chrome báo hạn mức 10 GB trong khi ổ C chỉ còn 2,4 GB → M1 phải bắt lỗi ổ đầy khi ghi, không tin `estimate()`.
   - M0 XONG (để sau: giơ tem nhiều bàn cùng lúc, máy không có card rời). Anh: "M1 để tối làm… Tối cần khảo sát lại cho phù hợp với mô hình lớn nữa".
+
+---
+## Phiên 18/11 (phiên con) — Âm báo quét mất tiếng xen kẽ trên iPhone, app THẬT 1.4.3 → ✅ sửa trên master, ⏳ chờ anh duyệt commit + OTA
+
+- Gốc (tìm ở phiên video đóng gói khi anh thử bản TestFlight 1.5.0): `playScanSound` gọi `seekTo(0)` rồi `play()` ngay; `seekTo` của expo-audio trả Promise (bất đồng bộ trên iPhone) → lượt 2 phát lúc player còn ở CUỐI tệp nên câm, lượt 3 lại kêu → có / mất / có. App thật dùng chung tệp → Quét đóng gói / Quét nhiều / Xem đơn đều dính.
+- Sửa `hubsell-mobile/src/lib/scan-sounds.ts`: chờ `seekTo(0)` xong mới `play()`; seek lỗi vẫn thử `play()`; giữ try/catch (âm thanh không chặn luồng quét). Chép nguyên đoạn đã viết ở nhánh thử `D:\HubsellVideo` (so `diff --strip-trailing-cr`: giống hệt). `tsc --noEmit` + eslint tệp sạch.
+- Chỉ JS → đẩy OTA được (kênh production, runtime 1.4.3). Bảng rà mục 9 docs DUA-APP: hàng 8 "mỗi kiện kêu ĐÚNG MỘT lần" chính là ca này — em không thử được trên máy thật, ⏳ anh quét liền 5–10 kiện trên iPhone sau khi nhận OTA (tắt hẳn app mở lại 2 lần, Cài đặt hiện "· cập nhật").
+- Ghi ở: memory `hubsell-mobile-app.md`.
+
+---
+## Phiên 18/11 sáng (Video đóng gói — bản TestFlight iPhone) — Anh: "apple đã lên bản 1.4.3. Tiếp đến chúng ta sẽ build bản TestFlight cho tính năng quay video gói hàng" → ✅ TestFlight 1.5.0 (31) VALID, CHƯA thử trên iPhone
+
+- Nguồn: nhánh thử `thu/video-dong-goi-lat-0` (worktree `D:\HubsellVideo`, vẫn CHƯA commit), mã app thật `vn.hubsell.app`, cấu hình `thuVideo` (kênh `thu-video`).
+- Đổi trước khi dựng: số bản 1.4.3 → **1.5.0** (em chọn theo kế hoạch lát 1; TestFlight không nhận lại 1.4.3 đã duyệt); `name` về "Hubsell"; dòng xin quyền camera nói thêm quay video đóng gói; Swift `as CFAttributedString` (sửa thẳng tệp patch, `git apply --check` sạch trên gói gốc).
+- EAS build `c52e7966` (≈ 7 phút, **mã Swift dịch qua lần đầu**) → lượt nộp hẹn trên Expo `0af2bdbe` → ASC build 31 VALID 09:56. Dựng bằng `EAS_NO_VCS=1 EAS_PROJECT_ROOT=D:/HubsellVideo` (worktree chưa commit); gói gửi đi đã soi: 203 tệp, không khóa / `.env`.
+- ⚠️ Nộp App Store thật sau này: đừng gắn build 31 (bản thử). Hạn mức dựng iOS tháng 11: đã dùng 3.
+- ⏳ Anh: TestFlight → cài Hubsell 1.5.0 (31) → Tổng quan → "Quay video đóng gói · Bản thử", thử theo cửa (đọc mã lúc quay → cắt clip → ngày giờ trong tệp → 3:4 → âm báo → cỡ tệp).
+- Ghi ở: docs VIDEO-DONG-HANG-TU-KHIEU-NAI-KHAO-SAT mục 55.19, memory video đóng hàng.
+- **Anh thử build 31 (~10:18):** báo "không đặt được H.264" + "anh nhớ là để mặc định 3:4" + "thấy giật" + "menu chiếm nửa màn hình" → build **32**: ép H.264 trong Swift lúc tạo bộ ghi (bỏ lệnh JS gọi lúc đầu ra chưa nối camera), **3:4 mặc định** (anh chốt), iPhone 30 khung/giây (bitrate khóa nên tệp không to lên), chữ màn thử không phóng theo cỡ chữ hệ thống, cài đặt giấu sau nút ⚙, khung xem trước dưới thanh trạng thái đúng 3:4. EAS `ea2369bd` → HỦY.
+- **Anh: "quay 4 video rồi mà trên máy tính thấy gì đâu"** → màn thử iPhone chỉ lưu trong máy, không tải lên (đúng thiết kế lát 0); iPhone cũng không kéo tệp qua cáp được → thêm `expo-sharing` + nút "Chia sẻ" từng clip, build **33** EAS `bf35413f`, nộp hẹn `c3cb104c`. 4 clip cũ không lấy lại được.
+- **★★ Anh chốt ~10:35: "bỏ hẳn lưu local... bắt buộc phải lưu trên hệ thống hết kể cả quay bằng điện thoại hay webcam"** → app: hàng chờ tải lên `src/lib/pack-video-upload.ts` (nhánh thử) đi đúng 3 bước của màn webcam, lên xong xóa tệp trên máy; bỏ nút Chia sẻ. Đẩy bằng OTA kênh `thu-video` runtime 1.5.0 (nhóm `6e4c433f`, gói chỉ chứa backend prod). Không sửa máy chủ. iPhone phải đăng nhập admin@hubsell.vn. CHƯA thử trên máy; hàng chờ chưa bền khi tắt hẳn app.
+- Anh: "Màn trắng em sửa luôn" → web `videos-tab.tsx` màn trống thành HAI lối bắt đầu: "Webcam trên máy tính" (nút Quay video vào thẳng màn quay) + "App Hubsell trên điện thoại"; dòng mô tả `videos-page.tsx` thêm "webcam hoặc app điện thoại"; bỏ `text-slate-900` (mất chữ nền tối). Soi local 1440 sáng + tối (giả lập danh sách rỗng trong tab soi). tsc + eslint sạch. CHƯA commit / push.
+- Anh: "nút tam giác chính giữa mang màu xanh thương hiệu... giống Youtube" → `video-table.tsx` nút xem nhanh = khối bo góc 40×28 `emerald-500` (#10b981, màu logo, KHÔNG theo `--primary` vì theme mặc định đen) + tam giác trắng tô đặc, video chưa xem được thì xám; `video-player.tsx` nút phát giữa khung cũng vậy. Soi local 1440 + 1280. ⚠️ Sẵn có, không do lượt này: bảng video ở 1280 cuộn ngang ≈ 176 px. CHƯA commit / push.
+- Anh cài build 33 vẫn thấy nút Chia sẻ (máy chưa nhận OTA, Expo ghi 0 lần chạy) → dựng **build 34** `6aa99d56` chứa sẵn mã tải lên, gỡ `expo-sharing`; ✅ VALID trên TestFlight 10:54. Web màn trống + nút phát xanh ĐÃ PUSH `f37d87a1`, prod có lúc 10:52 (soi gói JS).
+- **Anh thử build 34: "Ngon"** (clip lên hệ thống). Ba việc anh nêu: (1) điện thoại chưa có đường quay KHUI HÀNG → màn quay thêm công tắc Đóng hàng | Khui hàng hoàn (khui = TÍM, sổ tem riêng mỗi chế độ, gửi `kind=UNBOX`, mở thẳng bằng `?mode=unbox`); (2) **nhạc nhảy cóc tem 1 có / tem 2 mất** → gốc `scan-sounds.ts`: `seekTo(0)` bất đồng bộ trên iPhone, `play()` gọi ngay khi player còn ở cuối tệp → sửa chờ tua xong mới phát (⚠️ cùng tệp nằm trong app thật 1.4.3 — Quét đóng gói trên iPhone nhiều khả năng cũng bị); (3) nhân viên không có tab Tổng quan → phương án ở docs VIDEO-DONG-HANG-THIET-KE mục 17 (chế độ thứ tư "Quay video" ở nút QR giữa + nút Quay khui hàng ở Đơn hoàn + cổng máy chủ tính theo chủ shop, quyền theo `orders` / `warehouse.returns`), CHỜ ANH DUYỆT. Build **35** `896530c1` có (1)+(2), nộp TestFlight hẹn sẵn.
+
+---
+## Phiên 18/11 (vá giá vốn đơn cũ — NHÀ SÁCH KINGEDU) — Anh: "chạy lại giá vốn áp cho các đơn cũ như giá vốn hiện tại khách đang để" → ĐÃ VÁ prod bằng SQL, không có mã sản phẩm
+- **Khách:** user `cmwiyp0d4020llo3twqcjohau`, 1 gian TikTok "NHÀ SÁCH KINGEDU" `cmwiz2nep02o3lo3tmi7fm62a` (nối 16/11, 195 đơn).
+- **Gốc:** khách gõ thừa chữ số đầu rồi sửa (kiểu lần 1–4 của [sửa giá vốn không áp đơn cũ]): "99+ Bộ Đề … Thi Vào 10 Môn Toán" chụp 338.439 → nay 38.439 (70 dòng, 21/08→18/11); "Tổng Ôn Toán 9" chụp 119.633 → nay 19.633 (17 dòng, 15/09→07/11). Giá bán 139–250k nên 338k chắc chắn sai.
+- **Vá:** UPDATE thuần qua Supabase SQL Editor, khớp theo id lá + giá cũ → 87 dòng / 87 đơn. Kiểm sau: 0 dòng còn lệch giá hiện tại; 3 dòng lá chưa có giá vốn để 0 (khách chưa nhập).
+- **Sổ cái cả gian trước → sau:** giá vốn 22,89 → 3,89 tr; lãi −4,08 → +14,92 tr; đơn lỗ 102 → 44; dirty 0 (tự tính lại < 20 giây). Hòa vốn / Lãi-lỗ ước tính Trợ lý quảng cáo đổi sau ≤ 30' (đệm RAM).
+- Sao lưu + câu hoàn tác: `backend/scripts/out/kingedu-costprice-backup-2026-11-18.txt`.
+
+---
+## Phiên 17/11 tối (Số TC054 trước / sau "Tự loại thật" để làm video) — Anh: "lấy data của chiến dịch này trước và sau thời điểm bật chế độ Tự loại video thật" → ĐO XONG, chỉ SELECT prod, không mã
+
+- Mốc: anh bấm loại 4 video 17–18/09, bật Tự loại thật 18/09, **bị tắt 20/09 → 07/10** (gỡ kết nối TKQC), bật liên tục từ 07/10. Mục tiêu ROI 15 không đổi.
+- Trước (19/08–16/09) → bật liên tục (08/10–16/11): ROI 11,44 → 13,42; chi phí/đơn 21.799 → 18.432đ; đơn/ngày 10,0 → 10,9; ngày ROI < 8: 4/29 → 1/40. Đối chứng TC025 NEW 12,54 → 11,93, TC040 NEW 13,14 → 13,36. 13 video bị loại ngốn 2,19 tr ra 35 đơn (62.500đ/đơn).
+- Phải nói đúng mức: bỏ tuần đốt tiền 07/09 thì chỉ còn +7 % ROI; **TC079 bật 21/10 lại kém đi** (12,72 → 11,41).
+- Ghi ở: `hubsell-marketing/so-lieu/KET-QUA-2026-11-17-TC054-TU-LOAI-VIDEO.md` + `SQL-TC054-TRUOC-SAU-TU-LOAI-VIDEO.sql`, memory ca thực tế trợ lý ANO.
+
+---
+## Phiên 17/11 tối (Video đóng hàng — khảo sát các bên có dùng nhiều bàn không) — Anh: "chưa cần làm ngay, mai anh quay thử với một camera" + "khảo sát các bên có dùng được cho nhiều bàn" → KHẢO SÁT XONG, chỉ tài liệu
+
+- Đa số: mỗi bàn một thiết bị (điện thoại / máy tính + 1–2 camera). Chỉ ASCAM gom nhiều bàn về 1 PC + 1 màn xem mọi bàn (camera an ninh RTSP, phần mềm Windows, 3–8,5 tr / máy / năm, phần cứng 4,5–6,5 tr / bàn; "8 bàn từ 1 máy tính" đã kiểm). Cam Check: Bridge ≤ 9 camera / máy, không thấy màn xem trực tiếp. Ship Xanh: nhiều máy quét cổng COM chung một PC.
+- Khoảng trống: chưa ai làm nhiều webcam USB trên một trang web xem lưới, không cài gì.
+- Ghi ở: docs VIDEO-DONG-HANG mục 63, memory video đóng hàng.
+
+---
+## Phiên 17/11 tối (Video đóng hàng — nhiều camera không cần mỗi bàn một máy tính) — Anh hỏi phương án dùng nhiều camera cùng lúc → PHÂN TÍCH XONG, chỉ tài liệu
+
+- 5 cách (docs VIDEO-DONG-HANG mục 62): (1) một máy tính nhiều webcam + cáp USB 10 m có chip (≈ 430k / bàn), dễ vì luồng giơ tem cho mỗi camera tự đọc tem, không phải ghép máy quét với bàn; (2) điện thoại Android cũ mỗi bàn (app); (3) camera IP + máy cầu nối (lát 9, khó cài); (4) máy TQ không cần máy tính (đắt, hệ đóng); (5) đầu ghi sẵn có (khó nhất).
+- Đề xuất (chờ anh): 3–6 bàn làm cách 1 trước, nhưng THỬ trước khi code: 2–3 webcam + 1 cáp, đo số camera / khung hình / CPU / rớt USB trong Chrome.
+- Anh: màn hiện chỉ chọn 1 camera, nhiều Chrome khó theo dõi → ĐO THẬT: Chrome mở 2 camera cùng lúc trong 1 tab, mỗi cái 1280×720 30 khung/giây (webcam + đầu thu HDMI máy anh). Máy anh không có giọng đọc tiếng Việt → âm báo theo bàn dùng tệp thu sẵn. Phác thảo màn "Nhiều bàn" một màn hình lưới 2×2 (mục 62.5–62.6), chưa code.
+- Ghi ở: docs VIDEO-DONG-HANG mục 62, memory video đóng hàng.
+
+---
+## Phiên 17/11 tối (Video đóng hàng — khảo sát NGUỒN NHẬP webcam để bán kèm) — Anh: "khảo sát một vài dòng webcam tốt phù hợp để nhập về bán kèm" → KHẢO SÁT XONG, chỉ tài liệu, không mã
+
+- Ba bậc: A webcam 2K AF không tên 40–60 ¥ (≈ 175–260k về kho; Cam Check đang bán 329k); B webcam 4K AF 85–130 ¥ (≈ 355–550k); C camera chuyên quay đóng hàng của TQ (电商打包举证摄像头) 140–320 ¥ (≈ 0,6–1,35 tr; ASCAM / Camsight bán 1,6–1,9 tr). Lô 100 bậc A ≈ 220–240k / chiếc → lãi gộp ≈ 150–200k.
+- Vướng: lô bán thật phải nhập chính ngạch để có chứng từ (ký gửi chỉ để mua mẫu); tránh mẫu Wi-Fi (hợp quy); thông số 1688 không đáng tin → chấm bằng `tools/thu-webcam/`; bài 30 phút không rớt USB.
+- Đề xuất (chờ anh): mua 6 mẫu ≈ 1,5–2,5 tr → chấm → xin báo giá xưởng + ủy thác nhập.
+- SỬA cùng tối (anh: webcam anh dùng chỉ hơn 100k): 1688 có tầng 12–25 ¥ (≈ 50–100k, bán hàng chục nghìn chiếc) → bậc A không bán được giá 390k; em đề nghị KHÔNG bán bậc A, chỉ bán bậc C; mẫu bậc A đổi sang 2 mẫu tầng rẻ (mục 61.4b).
+- SỬA lần 2 (anh: "đâu cần chuyên dụng"): ảnh bậc C = camera hộp + tay đỡ + máy quét + phần mềm TQ, không có gì luồng giơ tem của mình cần → bỏ bậc C; chỉ còn combo webcam rẻ + tay đỡ hoặc chỉ khuyên dùng (mục 61.4c).
+- Ghi ở: docs VIDEO-DONG-HANG mục 61, memory video đóng hàng.
 
 ---
 ## Phiên 17/11 chiều (Sổ quỹ HQ — lát B: ghi nhận đợt Apple chuyển tiền) — Anh: "Vậy làm lát B luôn" → XONG local, CHƯA commit
@@ -99,6 +218,11 @@
 - Chưa kiểm: App Store Connect (chưa đăng nhập) — Small Business Program duyệt chưa, số Proceeds; Thông tư 89 + 90/2026 chưa đọc nguyên văn.
 - Đề xuất 3 lát HQ (tách phải thu Apple · hộp đối soát theo tháng · xử lý hoàn tiền), CHƯA code, chờ anh duyệt.
 - Ghi ở: `docs/APPLE-IAP-MUA-GOI-TRONG-APP.md` mục "Thuế + sổ sách cho khoản Apple" + cảnh báo đầu `docs/THUE-NHA-THAU-NCC-NUOC-NGOAI.md` + memory Apple IAP + memory thuế nhà thầu. CHƯA commit.
+
+---
+## Phiên 17/11 chiều (lịch tự soi kho chuẩn quốc tế, lượt 17/11) — chỉ đọc prod, không có mã sản phẩm
+
+- Soi 16:10: CHƯA có lần đối chiếu mới, dòng vẫn **14/11 16:59** (cách 71 giờ, lệch cứng 0) → không tính, chuỗi giữ **3/7**; còn 2 lượt nên 7/7 không thể đủ trong lịch. Số sống: 276 đơn giữ, bộ đếm 210, âm 0, đã giao chưa quét 0, hủy còn giữ 0. Ghi ở docs 13.12 + memory kho chuẩn quốc tế. CHƯA commit.
 
 ---
 ## Phiên 16/11 chiều (lịch tự soi kho chuẩn quốc tế, lượt 16/11) — chỉ đọc prod, không có mã sản phẩm

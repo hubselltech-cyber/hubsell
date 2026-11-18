@@ -18,9 +18,13 @@ import {
 import type { PackVideoRow } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import {
+  HOLD_REASON_LABEL,
+  PACK_VIDEO_EXPIRING_DAYS,
   PACK_VIDEO_ORDER_STATUS_META,
   PACK_VIDEO_STATUS_META,
+  daysUntil,
   formatClipDuration,
+  formatDateKey,
   isPackVideoPlayable,
   packVideoOrderPath,
 } from "@/lib/pack-video";
@@ -46,7 +50,8 @@ export type VideoSortKey = "recordedAt" | "duration";
  * tại tiêu đề cột "Quay lúc" / "Thời lượng" — xếp trong các video ĐANG HIỆN trên trang này
  * (máy chủ trả theo trang, mới nhất trước); danh sách video dài nhất cả kỳ nằm ở tab Thống kê.
  *
- * Chưa có cột "Giữ tới": luật xóa theo trạng thái đơn chưa chạy, không vẽ cột rỗng.
+ * Cột "Giữ tới" (luật tự xóa theo trạng thái đơn, 18/11/2026) CHỈ hiện khi trang có ít nhất một video đã có
+ * hạn giữ hoặc đang được giữ — chưa có số thì không vẽ cột rỗng.
  */
 export function VideoTable({
   rows,
@@ -64,6 +69,8 @@ export function VideoTable({
 }) {
   const [sort, setSort] = React.useState<SortState<VideoSortKey>>(initialSort);
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
+
+  const showRetention = React.useMemo(() => rows.some((r) => r.deleteAfter !== null || r.holdReason !== null), [rows]);
 
   const sorted = React.useMemo(() => {
     const sign = sort.dir === "asc" ? 1 : -1;
@@ -107,6 +114,7 @@ export function VideoTable({
             />
           </TableHead>
           <TableHead>Đơn</TableHead>
+          {showRetention && <TableHead>Giữ tới</TableHead>}
           <TableHead className="text-right">Thao tác</TableHead>
         </TableRow>
       </TableHeader>
@@ -196,6 +204,12 @@ export function VideoTable({
                 <MetaBadgeLine video={v} />
               </TableCell>
 
+              {showRetention && (
+                <TableCell>
+                  <RetentionCell video={v} />
+                </TableCell>
+              )}
+
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-1.5">
                   {v.orderId && (
@@ -231,6 +245,36 @@ export function VideoTable({
         })}
       </TableBody>
     </Table>
+  );
+}
+
+/**
+ * Ô "Giữ tới": ngày hệ thống sẽ tự xóa + số ngày còn lại; trong 3 ngày tới thì vàng "Sắp tự xóa".
+ * Đang giữ (đơn có hoàn, kiện hỏng…) thì ghi "Đang giữ" + lý do ở ô nhỏ khi trỏ chuột.
+ * Chưa có hạn (đơn chưa giao xong) → "—".
+ */
+function RetentionCell({ video }: { video: PackVideoRow }) {
+  if (video.status !== "STORED") return <span className={TEXT_SUB}>—</span>;
+  if (video.holdReason) {
+    return (
+      <span
+        className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700"
+        title={HOLD_REASON_LABEL[video.holdReason]}
+      >
+        Đang giữ
+      </span>
+    );
+  }
+  if (!video.deleteAfter) return <span className={TEXT_SUB} title="Chờ đơn giao xong mới tính hạn giữ">—</span>;
+  const days = daysUntil(video.deleteAfter);
+  const soon = days <= PACK_VIDEO_EXPIRING_DAYS;
+  return (
+    <div>
+      <p className={cn("tabular-nums", soon && "font-medium text-amber-700")}>{formatDateKey(video.deleteAfter)}</p>
+      <p className={cn(TEXT_SUB, soon && "text-amber-700")}>
+        {days < 0 ? "Đã tới hạn" : days === 0 ? "Hôm nay" : soon ? `Sắp tự xóa · ${days} ngày` : `Còn ${days} ngày`}
+      </p>
+    </div>
   );
 }
 

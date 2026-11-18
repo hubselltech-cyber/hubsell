@@ -7081,8 +7081,10 @@ export interface PlatformSubscription {
 export interface PlatformPackagePayment {
   id: string;
   /** OVERAGE = khoản trả phí vượt trần đơn (committedOrders = số đơn mua thêm), không gia hạn gói. */
-  kind?: "PLAN" | "OVERAGE";
+  kind?: "PLAN" | "OVERAGE" | "PACK_HOURS";
   committedOrders?: number | null;
+  /** kind PACK_HOURS: số giờ quay video đóng hàng đã mua bằng khoản này. */
+  packHours?: number | null;
   planName: string;
   cycle: BillingCycle;
   amount: number;
@@ -7567,6 +7569,8 @@ export interface GatewayCheckout {
   committedOrders: number | null;
   /** Đơn trả PHÍ VƯỢT của phiếu này (committedOrders khi đó = số đơn mua thêm); null = mua gói. */
   overageChargeId?: string | null;
+  /** Đơn MUA GIỜ QUAY video đóng hàng: số giờ; null = mua gói / trả phí vượt. */
+  packHours?: number | null;
   amount: number;
   /** Trang thanh toán hosted của payOS — dự phòng khi khách không quét được QR. */
   checkoutUrl: string | null;
@@ -7600,6 +7604,14 @@ export function createOverageCheckout(chargeId: string) {
     `/api/subscription/overage/${encodeURIComponent(chargeId)}/checkout`,
     { method: "POST" }
   );
+}
+
+/** Link + QR MUA GIỜ QUAY video đóng hàng — chỉ gửi số giờ, máy chủ tự tính tiền. */
+export function createPackHoursCheckout(hours: number) {
+  return apiFetch<{ checkout: GatewayCheckout }>("/api/pack-videos/hours/checkout", {
+    method: "POST",
+    body: JSON.stringify({ hours }),
+  });
 }
 
 /** Trạng thái đơn — poll khi QR đang mở; backend tự hỏi payOS nếu webhook lạc. */
@@ -10004,7 +10016,10 @@ export function applyCopyListingTargetToBatch(batchId: string, targetId: string)
 export type PackVideoKind = "PACK" | "UNBOX";
 export type PackVideoStatus = "PENDING" | "STORED" | "DELETED" | "LOST";
 /** Chip một chạm của tab Video đóng hàng. */
-export type PackVideoChip = "all" | "returns" | "unmatched" | "pending";
+export type PackVideoChip = "all" | "returns" | "unmatched" | "pending" | "expiring";
+
+/** Lý do đang giữ video (luật tự xóa W5, backend lib/pack-video-retention.ts). */
+export type PackVideoHoldReason = "RETURN_OPEN" | "RETURN_DAMAGED" | "UNBOX_UNMATCHED" | "PARCEL_RETURNING";
 /** Thẻ lọc của tab Đơn hoàn. */
 export type PackVideoReturnCard = "all" | "has_pack" | "damaged_no_unbox" | "no_video";
 
@@ -10038,6 +10053,9 @@ export interface PackVideoRow {
   deviceName: string | null;
   /** true = thời lượng app báo lệch so với cỡ tệp thật — máy chủ gắn cờ, chưa trừ giờ. */
   durationFlag: boolean;
+  /** Hạn giữ "YYYY-MM-DD" — null = chưa có hạn (chờ trạng thái đơn / đang giữ). */
+  deleteAfter: string | null;
+  holdReason: PackVideoHoldReason | null;
   order: {
     shippingStatus: ShippingStatus;
     returnStatus: ReturnStatus;
@@ -10177,20 +10195,28 @@ export function fetchPackVideoStats(range?: DateRange | null) {
   return apiFetch<PackVideoStats>(`/api/pack-videos/stats?${qs.toString()}`);
 }
 
-/** Một gói giờ quay; `priceVnd` trống = giá chưa công bố. */
-export interface PackVideoHourPackage {
-  hours: number;
-  priceVnd: number | null;
+/** Một dòng sổ giờ: mua / Hubsell cấp / điều chỉnh. */
+export interface PackVideoHourLedgerRow {
+  id: string;
+  kind: "PURCHASE" | "GRANT" | "ADJUST";
+  /** Dương = cộng, âm = điều chỉnh giảm. */
+  seconds: number;
+  amountVnd: number | null;
+  note: string | null;
+  createdAt: string;
+  invoiceNo: string | null;
 }
 
-/** Số giờ quay của chủ shop: đã mua · đã quay · còn lại (còn lại ĐƯỢC ÂM khi quay lố). */
+/** Số giờ quay của chủ shop: đã mua · đã quay · còn lại (còn lại ĐƯỢC ÂM khi quay lố) + giá + sổ giờ. */
 export interface PackVideoHours {
   purchasedSeconds: number;
   usedSeconds: number;
   remainingSeconds: number;
-  /** false = chưa mở bán giờ: chỉ xem gói, chưa có bước thanh toán. */
+  /** false = chưa mở thanh toán: hộp mua hiện giá + phép tính, nút thanh toán báo chưa mở. */
   salesOpen: boolean;
-  packages: PackVideoHourPackage[];
+  /** Máy chủ là nơi tính tiền; web chỉ hiện phép tính theo đúng các số này. */
+  pricing: { priceVnd: number; minHours: number; maxHours: number; presets: number[] };
+  ledger: PackVideoHourLedgerRow[];
 }
 
 export function fetchPackVideoHours() {
