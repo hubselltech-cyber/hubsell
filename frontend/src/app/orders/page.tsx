@@ -40,6 +40,7 @@ import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CopyIconButton } from "@/components/ui/copy-icon-button";
 import {
   Dialog,
   DialogContent,
@@ -648,8 +649,12 @@ export default function OrdersPage() {
                   meta={CHANNEL_META[o.channel.channelName]}
                   fallback={o.channel.channelName}
                 />
-                <span className="font-semibold tracking-tight">
-                  {o.orderCode}
+                {/* Mã đơn + nút chép đi liền nhau (gap-1), tách khỏi nhãn sàn (gap-2 của hàng). */}
+                <span className="inline-flex items-center gap-1">
+                  <span className="font-semibold tracking-tight">
+                    {o.orderCode}
+                  </span>
+                  <CopyIconButton value={o.orderCode} what="mã đơn hàng" />
                 </span>
               </div>
               <p className={cn(TEXT_SUB, "mt-1")}>

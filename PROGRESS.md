@@ -5,7 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
-## Phiên 18/11 (tối) — Sắp lại sidebar: Quản lý Kho lên ngay dưới Đơn hàng — ĐÃ COMMIT 18/11 (anh bấm Commit), CHƯA push
+## Phiên 18/11 (tối) — Xử lý đơn hàng: nút sao chép sau mã đơn — ✅ ĐÃ COMMIT + PUSH 18/11 (anh: "Commit và push"); chưa kiểm prod
+
+- Anh Trung (kèm ảnh khoanh đỏ sau mã đơn): "Trong xử lý đơn hàng, thêm cho anh icon copy vào sau mã đơn hàng".
+- `frontend/src/app/orders/page.tsx`, cột "Mã đơn": thêm `CopyIconButton` (nút dùng chung, `what="mã đơn hàng"`) ngay sau mã, bọc mã + nút trong một `inline-flex gap-1` để nút dính mã, không dính nhãn sàn. Bấm → tick xanh 1,5 giây; nút tự chặn nổi bọt nên không kích thao tác của dòng.
+- Kiểm: `tsc` + `eslint` sạch; soi local 1280: 20 / 20 dòng có nút, dòng mã vẫn một hàng (22 px), bấm ra "Đã sao chép", không mở hộp nào, trang không tràn ngang. Cột rộng thêm 24 px (mã Lazada 15 số: 258 px; giả mã TikTok 18 số + nhãn dài: 313 px, vẫn một hàng) — bảng đơn vốn đã cuộn ngang ~300 px ở 1280 từ trước. Giao diện tối: đo màu bằng JS đúng (nút xám nhạt 60 %, mã trắng); ảnh chụp bản tối không lấy được nên CHƯA nhìn bằng mắt.
+- Sáu tab của trang (Tất cả … Đơn hủy / Hoàn trả) dùng chung một bảng nên đều có nút; em chỉ soi tab Tất cả. Các trang khác có mã đơn không đụng.
+
+---
+## Phiên 18/11 (tối) — Sắp lại sidebar: Quản lý Kho lên ngay dưới Đơn hàng — ✅ ĐÃ COMMIT + PUSH `dc451159` 18/11 (anh: "Chỉ push phần side bar lên thôi"); chưa kiểm prod
 
 - Anh Trung chốt thứ tự khu làm việc: Tổng quan → Đơn hàng → Quản lý Kho → Quản lý Tài chính → Trợ lý quảng cáo → Trợ lý vận hành → Hóa đơn & Thuế → Kênh bán → Nhân viên. So với trước chỉ MỘT nhóm đổi chỗ: Quản lý Kho từ dưới Trợ lý quảng cáo lên dưới Đơn hàng. Mục con trong từng nhóm, route, khóa quyền, nhãn: giữ nguyên.
 - `frontend/src/components/shell/app-shell.tsx`: dời nguyên khối nhóm Kho trong `NAV_ITEMS`; thêm khối chú thích đầu mảng vẽ cả cây + ghi ba chỗ phải đổi cùng lúc; `menusForPath` xếp lại cùng thứ tự. Khu chân sidebar (Hướng dẫn / Cấu hình / Kiếm Tiền) không đụng.
