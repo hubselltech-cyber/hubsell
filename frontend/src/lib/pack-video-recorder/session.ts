@@ -187,12 +187,34 @@ export function sessionClipStopping(): void {
   for (const fn of listeners) fn();
 }
 
+/** Các dòng "quay tay" đã bị một tem cắt ngang: tệp ghép xong thì BỎ, không vào hàng tải lên. */
+const droppedLeadIns = new Set<string>();
+
+/**
+ * Tem vừa cắt ngang clip QUAY TAY đang quay → đánh dấu bỏ đoạn quay tay đó (anh Trung 18/11/2026: "không cần lưu và
+ * đẩy đoạn quay tay đó lên" — nó làm rối danh sách và trừ giờ của khách). Gọi trước khi clip của tem được mở.
+ */
+export function sessionDropLeadIn(): void {
+  const live = clips.find((c) => c.status === "recording" && c.manual);
+  if (live) droppedLeadIns.add(live.localId);
+}
+
 /** Đường quay vừa trả một clip (đã ghép xong tệp MP4, hoặc hỏng). */
 export function sessionClipDone(outcome: ClipOutcome): void {
   const code = outcome.ok ? outcome.clip.code : outcome.code;
   // Clip cũ nhất còn chưa có tệp của đúng mã này.
   const target = [...clips].reverse().find((c) => c.code === code && (c.status === "recording" || c.status === "saving"));
   if (!target) return;
+  if (droppedLeadIns.delete(target.localId)) {
+    // Đoạn quay tay bị tem cắt ngang: gỡ khỏi lượt quay, không lưu, không tải lên (nên không trừ giờ).
+    clips = clips.filter((c) => c.localId !== target.localId);
+    for (const fn of listeners) fn();
+    addJournal(
+      "info",
+      `Bỏ đoạn quay tay trước tem${outcome.ok ? ` (${formatSeconds(outcome.clip.durationSec)})` : ""} — không lưu, không tải lên`
+    );
+    return;
+  }
   if (!outcome.ok) {
     addJournal("error", `Clip ${code} hỏng: ${outcome.error}`);
     update(target.localId, { status: "failed", error: outcome.error });

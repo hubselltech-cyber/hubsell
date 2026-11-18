@@ -12,6 +12,7 @@ import {
   hasUnsavedClips,
   onClipStored,
   sessionClipDone,
+  sessionDropLeadIn,
   sessionClipStarted,
   sessionClipStopping,
   sessionRelabelRecording,
@@ -72,6 +73,7 @@ export function usePackRecorder(initialKind: ClipKind = "PACK") {
         log: addJournal,
         onClipStart: sessionClipStarted,
         onClipDone: sessionClipDone,
+        onLeadInDropped: sessionDropLeadIn,
         onClipRelabel: sessionRelabelRecording,
         // Chưa có số (đang tải / lỗi mạng) thì cho quay — máy chủ vẫn chặn ở bước tải lên.
         canOpenClip: () => remainingRef.current === null || remainingRef.current > 0,

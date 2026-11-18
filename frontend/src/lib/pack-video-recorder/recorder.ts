@@ -44,6 +44,11 @@ export interface RecorderEvents {
   log: RecorderLog;
   onClipStart(info: { code: string; manual: boolean; startedAtMs: number; kind: ClipKind }): void;
   onClipDone(outcome: ClipOutcome): void;
+  /**
+   * Clip QUAY TAY đang quay sắp bị một tem cắt ngang → đoạn quay tay đó BỎ, không lưu, không tải lên, không trừ giờ
+   * (anh Trung 18/11/2026: "không cần lưu và đẩy đoạn quay tay đó lên"). Gọi TRƯỚC khi clip của tem được mở.
+   */
+  onLeadInDropped?(): void;
   /** Clip ĐANG QUAY vừa được đổi loại (rào "đơn này đang hoàn về"). */
   onClipRelabel?(kind: ClipKind): void;
   /**
@@ -271,7 +276,15 @@ export class PackRecorder {
       if (previous) void this.stop();
       return;
     }
-    if (previous) {
+    if (previous?.manual) {
+      // Bấm "Bắt đầu quay" rồi mới giơ tem: đoạn trước tem chỉ là lúc chờ, không thuộc đơn nào → bỏ. Quay tay CỐ Ý
+      // (đơn không có tem) thì kết thúc bằng nút Dừng — đường đó vẫn lưu và tải lên như cũ.
+      this.events.onLeadInDropped?.();
+      this.events.log(
+        "info",
+        `Đọc được tem ${decision.code} — bỏ đoạn quay tay trước đó (không lưu), ${unbox ? "mở clip KHUI" : "bắt đầu quay"} cho tem này`
+      );
+    } else if (previous) {
       this.events.log(
         "info",
         `Đọc được tem ${decision.code} — cắt clip ${previous.code}, ${unbox ? "mở clip KHUI mới" : "quay tiếp clip mới"}`
