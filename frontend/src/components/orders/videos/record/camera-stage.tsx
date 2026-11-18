@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { RecorderState } from "@/lib/pack-video-recorder/recorder";
 import type { SessionClip } from "@/lib/pack-video-recorder/session";
-import { formatStamp } from "@/lib/pack-video-recorder/stamp-canvas";
+import { formatStamp, stampCodeLines } from "@/lib/pack-video-recorder/stamp-canvas";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -27,20 +27,36 @@ import { KIND_ACCENT, formatElapsed, useElapsedSeconds } from "./record-bits";
  * người đóng hàng không thấy → tưởng thiếu. Bài học cũ trên điện thoại (14/11): xem trước phải hiện đúng như tệp.
  * Dùng chung hàm định dạng với bộ in vào tệp (formatStamp) để hai chỗ không bao giờ lệch chữ.
  */
-function LiveStamp() {
+/**
+ * 18/11/2026 — thêm các DÒNG MÃ của clip đang quay ("Mã vận đơn: …", "Mã đơn hàng: …") ngay dưới ngày giờ, đúng
+ * chữ và đúng thứ tự in vào tệp (stampCodeLines). Anh Trung thử bản in mã: "quay xong thì đã in mã vận đơn ra
+ * rồi còn màn xem trực tiếp lúc quay thì chưa hiện ra".
+ */
+function LiveStamp({ lines }: { lines: readonly string[] }) {
   const [text, setText] = React.useState(() => formatStamp(new Date()));
   React.useEffect(() => {
     const timer = setInterval(() => setText(formatStamp(new Date())), 250);
     return () => clearInterval(timer);
   }, []);
   return (
-    <span
-      className="absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 font-mono text-sm font-semibold tabular-nums text-white"
-      title="Ngày giờ này được in vào video"
-      suppressHydrationWarning
-    >
-      {text}
-    </span>
+    <div className="pointer-events-none absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col items-start gap-1">
+      <span
+        className="rounded bg-black/60 px-2 py-0.5 font-mono text-sm font-semibold tabular-nums text-white"
+        title="Ngày giờ này được in vào video"
+        suppressHydrationWarning
+      >
+        {text}
+      </span>
+      {lines.map((line) => (
+        <span
+          key={line}
+          className="max-w-full truncate rounded bg-black/60 px-2 py-0.5 font-mono text-base font-semibold text-white"
+          title="Dòng này được in vào video"
+        >
+          {line}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -168,6 +184,11 @@ export function CameraStage({
   const unbox = kind === "UNBOX";
   const noReturnHint =
     !!currentClip && currentClip.kind === "UNBOX" && !!currentClip.order && !currentClip.order.hasReturn;
+  // Các dòng mã đang được in vào video của clip này (clip quay tay không có tem → không in mã).
+  const current = state.current;
+  const matchedOrderCode =
+    current && currentClip && currentClip.code === current.code ? (currentClip.order?.orderCode ?? null) : null;
+  const stampLines = current && !current.manual ? stampCodeLines(current.code, matchedOrderCode) : [];
 
   return (
     <div className="min-w-0 space-y-3">
@@ -189,7 +210,7 @@ export function CameraStage({
             )}
           </div>
         )}
-        {cameraOn && <LiveStamp />}
+        {cameraOn && <LiveStamp lines={stampLines} />}
         <div className="absolute right-3 top-3">
           <StatusPill state={state} />
         </div>
