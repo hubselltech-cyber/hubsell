@@ -300,6 +300,11 @@ export class PackRecorder {
     return true;
   }
 
+  /** Máy chủ đã khớp tem `code` ra đơn → in thêm mã đơn hàng lên clip đang quay của tem đó. */
+  setOrderCode(code: string, orderCode: string): void {
+    this.pipeline?.setOrderCode(code, orderCode);
+  }
+
   /** Lớp báo sớm "hết giờ quay" — kêu + ghi nhật ký khi bị từ chối. */
   private mayOpenClip(): boolean {
     if (!this.events.canOpenClip || this.events.canOpenClip()) return true;

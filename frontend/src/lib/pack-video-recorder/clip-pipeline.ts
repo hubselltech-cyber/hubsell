@@ -17,7 +17,7 @@ import type * as Mediabunny from "mediabunny";
 
 import { KEY_FRAME_INTERVAL_US, MAX_ENCODE_QUEUE } from "./config";
 import { startPump, type FramePump, type PumpMode } from "./frame-pump";
-import type { StampCanvas } from "./stamp-canvas";
+import { stampCodeLines, type StampCanvas } from "./stamp-canvas";
 import type { ClipOutcome, RecorderLog } from "./types";
 
 type Mb = typeof Mediabunny;
@@ -32,6 +32,8 @@ export interface FrameTap {
 interface Clip {
   code: string;
   manual: boolean;
+  /** Các dòng mã in lên từng khung hình của clip này (dưới ngày giờ). Clip quay tay không có tem → rỗng. */
+  labelLines: string[];
   decidedAtMs: number;
   framesFed: number;
   chunks: number;
@@ -174,6 +176,7 @@ export class ClipPipeline {
     const clip: Clip = {
       code,
       manual,
+      labelLines: manual ? [] : stampCodeLines(code, null),
       decidedAtMs: performance.now(),
       framesFed: 0,
       chunks: 0,
@@ -202,6 +205,16 @@ export class ClipPipeline {
     this.clips.push(clip);
     this.firstFrameHook.set(clip, (ms) => (firstFrameMs = ms));
     return handle;
+  }
+
+  /**
+   * Máy chủ vừa khớp ra đơn của tem `code` → in thêm dòng "Mã đơn hàng" từ khung hình kế tiếp. Chỉ áp cho clip
+   * CÒN ĐANG QUAY (hoặc đang chờ khung đầu) của đúng tem đó — câu trả lời về trễ sau khi đã đổi tem thì bỏ.
+   */
+  setOrderCode(code: string, orderCode: string): void {
+    for (const clip of [this.feedClip, this.pendingBegin]) {
+      if (clip && !clip.manual && clip.code === code) clip.labelLines = stampCodeLines(code, orderCode);
+    }
   }
 
   /** Kết thúc clip đang quay (không mở clip mới). Bộ mã hóa vẫn mở, sẵn sàng cho clip sau. */
@@ -283,7 +296,8 @@ export class ClipPipeline {
     }
     if (keyFrame) this.lastKeyTsUs = ts;
 
-    this.opts.stamp.draw(source);
+    // Chữ đi theo CLIP đang nhận khung hình: khung đầu của clip mới đã mang mã của tem mới.
+    this.opts.stamp.draw(source, undefined, this.feedClip?.labelLines);
     const frame = new VideoFrame(this.opts.stamp.canvas, { timestamp: ts, duration: this.frameDurUs, alpha: "discard" });
     try {
       encoder.encode(frame, { keyFrame });

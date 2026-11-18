@@ -88,6 +88,14 @@ export function usePackRecorder(initialKind: ClipKind = "PACK") {
     };
   }, []);
 
+  // IN MÃ ĐƠN HÀNG LÊN VIDEO (anh Trung 18/11): sổ clip hỏi máy chủ "tem này của đơn nào"; có câu trả lời lúc clip
+  // còn đang quay thì báo bộ quay in thêm dòng mã đơn hàng (mã vận đơn đã được in từ khung đầu). Gọi lặp vô hại.
+  React.useEffect(() => {
+    const live = clips.find((c) => c.status === "recording");
+    const orderCode = live?.order?.orderCode;
+    if (live && orderCode) recorderRef.current?.setOrderCode(live.code, orderCode);
+  }, [clips]);
+
   // Địa chỉ đổi chế độ khi màn đang mở (vd. bấm lại nút "Quay khui hàng") → đổi theo nếu không có clip quay dở.
   React.useEffect(() => {
     if (initialKindRef.current === initialKind) return;

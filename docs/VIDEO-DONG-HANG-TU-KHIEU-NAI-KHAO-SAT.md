@@ -3533,3 +3533,158 @@ Anh chốt cùng lượt: "mình chưa cần làm ngay. Mai anh sẽ quay thử 
 
 **Chưa kiểm:** màn đa bàn của ASCAM trông thế nào, ghép máy quét với bàn ra sao; Cam Check màn ở bàn dùng gì; "vị trí" của Dohana; giá Ship
 Xanh; BoxCam, VieCam, Ecombox, Dobybot (trang không mở được / không nói); video YouTube / TikTok giới thiệu.
+
+---
+
+## 64. Video phải NHÌN RÕ MÃ VẬN ĐƠN — sàn đòi gì, các bên làm thế nào (18/11/2026 tối — khảo sát, ĐỀ XUẤT, anh chưa duyệt, chưa code)
+
+> Anh 18/11 ~21:35: "Các video chiều nay anh test khả năng cao khó được sàn chấp nhận vì theo quy định của sàn phải nhìn rõ mã vận
+> đơn. Em kiểm tra các bên xem làm thế nào cho vấn đề này?"
+> Ký hiệu: **[gốc]** = đọc trang chính thức · **[tra]** = trang nhà cung cấp / bài bên thứ ba · **[tính]** = em tự tính · **[chưa]** = chưa kiểm.
+
+### 64.1 Sàn đòi gì
+
+| Sàn | Câu chữ | Nguồn, mức chắc |
+|---|---|---|
+| Shopee VN | "Cung cấp video quá trình đóng gói hàng trước khi Người bán bàn giao hàng cho đơn vị vận chuyển **thấy rõ** các yếu tố sau: Thông tin đơn hàng (**mã đơn hàng/mã vận đơn/mã QR...**); đóng gói đúng sản phẩm, đầy đủ số lượng…; quy cách đóng gói hợp lệ". "Video cần liền mạch, rõ ràng, không có dấu hiệu chỉnh sửa." | **[gốc]** banhang.shopee.vn/edu/article/25057, mở bằng Chrome 18/11 |
+| TikTok Shop | video đóng gói "continuous, clear and unedited", thấy món hàng, quá trình đóng, và **nhãn trên kiện ĐÃ DÁN KÍN**; bắt buộc khi kháng nghị lý do trả hàng (ví dụ gửi sai hàng); cập nhật hiệu lực 27/10/2026 | **[tra]** bài BigSeller về bản Philippines; trang chính thức VN (essay 1766935302801169) chỉ liệt kê LOẠI bằng chứng "Video hoặc hình ảnh đóng gói", không có câu mô tả → chưa có câu gốc VN |
+| Lazada | không tìm ra câu nào | **[chưa]** như mục 14.3 |
+
+Ba điều rút ra:
+- Không sàn nào nêu số (độ phân giải, cỡ chữ, bao nhiêu giây). Chuẩn thật = người duyệt ĐỌC được mã để khớp với đơn.
+- Shopee nhận **mã đơn hàng HOẶC mã vận đơn HOẶC mã QR** — ba thứ này đều in trên tem; mã in to nhất trên tem là đủ.
+- TikTok nhấn nhãn trên kiện ĐÃ DÁN KÍN → luồng của mình (quét tem lúc ĐẦU rồi mới đóng) cần thêm một cảnh CUỐI: kiện đã dán tem đưa vào khung.
+
+### 64.2 Vì sao video của mình dễ không rõ **[tính]** — chưa đo trên video chiều 18/11
+
+- Web đang quay 1280×720, bitrate đặt 800k (tệp thật 795–974 kbps), chỉ in ngày giờ; app điện thoại 720p · 800k · 15 khung/giây.
+- Chữ số mã vận đơn in trên tem cao khoảng 3–4 mm (em ước, chưa đo tem thật). Muốn đọc chắc cần chữ cao ≥ 12 điểm ảnh → ≥ 4 điểm ảnh / mm.
+- 720p ngang 1280 điểm ảnh → 4 điểm ảnh / mm chỉ khi khung hình phủ ≤ 32 cm bề ngang. Camera phủ cả mặt bàn 60 cm thì chữ 3 mm chỉ còn
+  ≈ 6 điểm ảnh: KHÔNG đọc được. 1080p phủ được ≈ 48 cm; 4K thật ≈ 96 cm.
+- Bitrate 800k thấp hơn thị trường 2,5–5 lần (Dohana ≈ 15–30 MB / phút, mục 20.1) → lúc tay và kiện chuyển động chữ nhòe thêm.
+- → Tem chỉ đọc được ở những giây nó nằm SÁT camera (lúc bộ đọc mã bắt được mã). Rời ra là hết. Đây là lập luận, phải đo lại trên clip thật.
+
+### 64.3 Các bên làm thế nào
+
+| Cách | Ai làm | Chi tiết đọc được |
+|---|---|---|
+| **1. Camera thứ hai chỉ soi tem, ghép hình trong hình vào cùng video** | Dohana, Camzone / ghihinh.com, EPack, VieCam, các bộ Trung Quốc (EC, 汇博士, 驿七 Q1) | Dohana **[tra]**: "Camera chính toàn cảnh đóng hàng, 1 camera soi mã vận đơn", tối đa hai góc trong một khung hình. ghihinh.com **[tra]**: "01 Camera toàn cảnh + 01 Camera soi rõ vận đơn", ghép kiểu hình trong hình, khoanh vùng đọc mã; camera lẻ soi vận đơn 1.600.000 đ, trọn bộ một bàn 4.500.000 đ, phần mềm 3.000.000 đ / năm / bàn. EPack **[tra]**: combo 2 camera + 2 giá đỡ 1.800.000 đ. Bài Tinhte **[tra, chỉ đọc tóm tắt]**: combo 2 góc 3–6 triệu / bàn |
+| **2. In mã đơn / mã vận đơn + giờ lên từng khung hình** | EPack, Dohana, CamBox, PutPack (mục 23.2) | EPack **[tra]**: "Mã đơn và thời gian được ghi rõ trên từng khung hình". Chữ in không thay được tem thật, nhưng người duyệt thấy mã ngay cả khi tem nhòe |
+| **3. Độ phân giải / bitrate cao hơn** | GHN khuyên, Dohana, UpSeller, bộ Hikvision 4K | GHN **[tra]**: tối thiểu 1080p, camera cao 1–1,5 m, nghiêng 45–60°, đủ sáng. UpSeller: chọn 720p / 1080p. Dohana ≈ 2–4 Mbps |
+| **4. Ảnh chụp kèm video** | UpSeller, BigSeller, EasyEcom; Shopee tự nhận "ảnh HOẶC video" | UpSeller "发货留证" **[tra]**: mỗi đơn 1 video + 3 ảnh hoặc 4 ảnh, ảnh có in giờ chụp |
+| **5. Thói quen quay** | bài hướng dẫn của GHN, BigSeller, Shopee | quay rõ mã trước khi đóng / trước khi khui; hàng hoàn quay 6 mặt + mã vận đơn |
+
+Không thấy bên nào ở Việt Nam làm: tự phóng to tem bằng phần mềm từ MỘT camera, hay chấm "tem đã rõ" ngay lúc quay **[chưa — "không thấy" trên trang công khai, chưa dùng thử sản phẩm nào]**.
+
+### 64.4 Phương án cho Hubsell (đề xuất, xếp theo thứ tự em khuyên làm)
+
+| # | Việc | Vì sao | Cái giá / điều chưa chắc |
+|---|---|---|---|
+| P0 | **ĐO trước**: lấy 3–5 video chiều 18/11 (webcam + iPhone), cắt khung, đo chữ mã vận đơn cao bao nhiêu điểm ảnh ở lúc rõ nhất và lúc nằm trên bàn; xem webcam đang dùng mở được tối đa khổ nào | mọi con số ở 64.2 là em tính, chưa đo | cần anh gửi clip hoặc cho em tải bằng nick admin |
+| P1 | **Hình trong hình bằng phần mềm**: mở camera ở khổ gốc lớn nhất (1080p / 2K / 4K), lúc bộ đọc mã bắt được tem thì cắt vùng tem từ khung gốc, vẽ PHÓNG TO vào một góc video trong vài giây; đồng thời lưu MỘT ảnh tem nét cao gắn với video | ra kết quả của "camera thứ hai" mà khách không mua thêm gì; đường quay web vốn đã ghép hình qua canvas (đang in ngày giờ) nên ghép thêm một ô là cùng chỗ; ghép lúc quay nên vẫn là video liền, không chỉnh sửa | chỉ có lợi khi webcam cho khổ gốc ≥ 1080p thật; chưa thử tốc độ ở 2K / 4K; app điện thoại phải làm riêng trong thư viện camera |
+| P2 | **Chấm "tem rõ" ngay lúc quay + cảnh cuối**: mỗi video ghi mã đọc được mấy lần, lúc to nhất chiếm bao nhiêu điểm ảnh, có thấy lại tem ở CUỐI clip (kiện đã dán kín) không; màn quay báo ngay "Tem chưa rõ — đưa tem lại gần camera"; danh sách video có nhãn "Tem rõ" / "Tem chưa rõ" | shop biết video yếu NGAY lúc đóng, không phải lúc bị khiếu nại; khớp ý TikTok "nhãn trên kiện đã dán kín" | thêm một nhịp cho người đóng hàng; ngưỡng "rõ" phải lấy từ số đo P0 |
+| P3 | **In mã vận đơn cạnh ngày giờ** | bốn đối thủ đang làm; rẻ nhất | ĐẢO quyết định của anh 14/11 ("chỉ cần ngày giờ thôi") → anh quyết; không thay được tem thật |
+| P4 | **Nâng lên 1080p, bitrate ≈ 1,5–2 Mbps** | chữ trên bàn rõ hơn, bằng mức thị trường | tệp nặng gấp ≈ 2–2,5 lần → tiền chứa mỗi giờ quay tăng tương ứng, mạng shop cần ≈ 2 Mbps mỗi bàn; phải đo lại khung rớt |
+| P5 | **Camera thứ hai thật (toàn cảnh + soi tem)** | cách của Dohana / Camzone, chắc nhất về hình | khách mua thêm webcam + chân; đụng thiết kế nhiều bàn (mục 18 tài liệu thiết kế) → để sau |
+
+Em khuyên: P0 → P1 + P2 cùng một lát → rồi mới xét P3 / P4. P5 để sau khi xong nhiều bàn.
+
+### 64.5 Chưa kiểm
+
+- CHƯA xem video chiều 18/11 (nằm trên kho prod của nick admin; clip còn trên máy không có tem). Chưa biết lỗi nằm ở webcam hay iPhone.
+- Câu gốc của TikTok Shop VN và Lazada VN về nhãn trong video. Ngưỡng "rõ" thật của người duyệt: không sàn nào công bố.
+- Sàn có coi chữ in đè / ô phóng to là "dấu hiệu chỉnh sửa" không: không có câu nào nói; các bên đang in mã + giờ công khai, chưa thấy ai kêu bị bác vì thế **[chưa]**.
+- Dohana, EPack, ghihinh bố cục hai hình cụ thể ra sao, độ phân giải camera soi tem; chưa dùng thử sản phẩm nào. Bài Tinhte trả 403.
+
+
+### 64.6 ĐO trên video thật của anh (18/11 ~22:00) — anh: "Chiều nay anh quay bằng điện thoại. Vấn đề chính bây giờ là việc không rõ mã vận đơn ấy… Nên cần phương án hiệu quả"
+
+Xem thẳng trên prod (nick admin, Chrome của anh) video `SPXVN06316825343B`, quay 15:14 18/11 bằng iPhone 13 Pro, 28 giây. Chỉ xem MỘT video,
+phóng khung hình bằng trình duyệt (không tải tệp về). Tệp: **768×1024 (3:4)**; cấu hình mặc định của màn quay là 800k, iPhone 30 khung/giây.
+
+| Lúc | Thấy gì |
+|---|---|
+| 0,0–0,3 giây | người đóng giơ tem lên, tem chiếm ≈ 30 % bề ngang khung. Đọc được: chữ "SPX", mã phân tuyến in to, ngày in trên tem; thấy mã vạch và mã QR. **Dòng "Mã vận đơn: SPXVN…" (chữ nhỏ) KHÔNG đọc được** |
+| 0,6 giây | tem đang hạ xuống → nhòe chuyển động, không đọc được chữ nào ngoài "SPX" |
+| 1,0 giây trở đi | tem rời khung; phần còn lại là thao tác bỏ hàng vào túi |
+| 22–28 giây | một tem được giơ lên ở XA camera (nhiều khả năng là tem đơn kế để cắt clip — em không chắc), không đọc được gì. Em KHÔNG thấy cảnh kiện đã dán tem đưa sát camera |
+
+Kết luận đo được:
+- Tem thật chỉ rõ trong **≈ 0,3–0,5 giây đầu**, và ngay lúc rõ nhất thì đúng dòng mã vận đơn lại là dòng chữ nhỏ nhất → không đọc được. Anh lo đúng.
+- Ba nguyên nhân cộng lại: tem chỉ chiếm 30 % khung · 768×1024 ở 800k chia cho 30 khung/giây · tem không được giữ yên.
+- Nâng độ phân giải MỘT MÌNH không đủ: 1080p chỉ thêm ≈ 1,4 lần điểm ảnh mỗi chiều, chữ nhỏ vẫn sát ngưỡng. Phải đổi cả CÁCH đưa tem.
+
+### 64.7 Phương án cho APP ĐIỆN THOẠI — ba lớp cùng lúc (đề xuất, anh chưa duyệt, chưa code)
+
+Mục tiêu: người duyệt của sàn mở video ở BẤT KỲ giây nào cũng thấy mã vận đơn, và có ít nhất một cảnh tem thật đọc được.
+
+| Lớp | Việc | Chắc tới đâu | Cái giá |
+|---|---|---|---|
+| **1. In mã vận đơn thành chữ to lên video suốt clip** (cạnh ngày giờ) | app đã ĐỌC được mã từ tem nên biết chính xác chuỗi mã; in lúc quay như ngày giờ | chắc nhất về "nhìn rõ mã": không phụ thuộc camera, khoảng cách, ánh sáng. EPack, Dohana, CamBox, PutPack đang làm | ĐẢO quyết định 14/11 của anh ("chỉ cần ngày giờ thôi"); sửa hai bản vá gốc Kotlin + Swift đang in ngày giờ → cần bản dựng mới, không vá OTA được. Chữ in là lời của phần mềm, KHÔNG thay tem thật → vẫn cần lớp 2 |
+| **2. "Cảnh tem" bắt buộc ≈ 1 giây** | app chỉ NHẬN tem (mới bắt đầu clip) khi tem chiếm từ ≈ 60 % bề ngang khung và đứng yên; có khung dẫn + tiếng bíp; đồng thời nâng mặc định lên 1080p, bitrate 1,5–3 Mbps (màn thử đã có sẵn nút 1080p và 1500k / 3000k) | tem to gấp đôi + khổ hình lớn hơn 1,4 lần → dòng mã vận đơn từ ≈ 6 lên ≈ 15–17 điểm ảnh **[tính, phải đo lại]** | người đóng thêm ≈ 1 giây mỗi đơn và phải đưa tem lại gần điện thoại; tệp nặng gấp ≈ 2–4 lần → tiền chứa mỗi giờ quay tăng tương ứng; chưa biết bộ đọc mã có trả vị trí / cỡ tem không **[chưa]**; Note8 ở 1080p chưa đo |
+| **3. Tự chụp MỘT ảnh tem nét cao lúc quét, lưu kèm video** | ảnh 12 MP thì cả dòng chữ nhỏ cũng rõ; lúc khiếu nại tải về cả video + ảnh (Shopee nhận cả ảnh lẫn video; UpSeller làm đúng kiểu 1 video + 3 ảnh) | ảnh rõ gần như chắc chắn | ảnh nằm NGOÀI video nên không tự nó đáp ứng "video thấy rõ mã"; chụp ảnh trong lúc đang quay + đang đọc mã trên cùng một camera: CHƯA thử trên máy nào **[chưa]**; thêm bảng / cột lưu ảnh |
+
+Đi kèm, rẻ: nhắc **cảnh cuối** — kiện đã dán tem đưa vào khung trước khi quét tem kế (TikTok đòi nhãn trên kiện đã dán kín); danh sách video có nhãn "Tem rõ" / "Tem chưa rõ".
+
+Lát sau (đáng làm nhưng nặng): **ghim ảnh tem nét cao vào một góc video** (hình trong hình) — video tự nó có tem đọc được ở mọi giây; phải vẽ ảnh trong hai bản vá gốc.
+
+**Việc anh thử được NGAY bằng bản đang cài, không cần em code:** mở Cài đặt trong màn quay → chọn 1080p + 3000k → quay 2–3 đơn, lúc quét đưa tem sát tới khi tem chiếm hơn nửa màn hình và giữ yên một giây. Em xem lại đúng cách vừa xem → biết lớp 2 một mình kéo dòng mã vận đơn lên đọc được chưa.
+
+**Em khuyên:** làm lớp 1 + 2 + 3 trong MỘT lát cho app điện thoại (một bản dựng), sau đó áp y hệt cho webcam (lớp 1 và 2 trên web không cần bản dựng). Riêng lớp 1 chờ anh gật vì đảo quyết định cũ.
+
+**Chưa kiểm ở mục này:** mới xem MỘT video; chưa xem video TikTok / tem khổ khác; chưa đo chữ bằng thước điểm ảnh (ước bằng mắt trên khung phóng to); sàn có coi chữ in đè là "chỉnh sửa" không — không có câu nào của sàn nói.
+
+
+### 64.8 BigSeller — anh gửi trang hướng dẫn 18/11 ~22:15 ("không biết họ dùng mấy camera và có bán kèm không")
+
+Đọc trang hướng dẫn tiếng Việt anh gửi (help.bigseller.com … 9313) và bản tiếng Anh (help.bigseller.pro … 9312) **[tra, qua công cụ đọc trang — chưa tự mở bằng Chrome, chưa dùng thử]**:
+
+| Câu hỏi | Trang nói gì |
+|---|---|
+| Mấy camera | **MỘT**: "Sau khi kết nối camera với máy tính, chọn camera muốn sử dụng". Không có chữ nào về 2 camera / hình trong hình |
+| Loại camera | "Camera USB và Camera Bluetooth", cắm vào MÁY TÍNH; phải cài "tiện ích in BigSeller". Không nói tới điện thoại, camera IP |
+| Có bán kèm thiết bị | trang KHÔNG nhắc; không khuyên mẫu camera nào. Tìm thêm cũng không thấy BigSeller bán camera → "không thấy", chưa phải "không có" |
+| Chất lượng | bốn mức: 1080p (1920×1080) · 720p · 480p · 360p |
+| In lên video | **có**: giờ tới từng giây + **mã vận đơn**, "được hiển thị dưới dạng watermark và lưu cùng video"; chưa xác định được kiện thì chưa hiện mã |
+| Lưu ở đâu | **máy tính của shop** (khuyên ổ D); không nói tới cloud |
+| Bắt đầu / kết thúc | quét SKU / số rổ / mã QR hoặc bấm tay; kết thúc khi quét sang đơn khác hoặc hết thời gian chờ |
+
+Ý nghĩa cho mình: BigSeller KHÔNG giải bài "tem thật rõ" bằng camera thứ hai — họ dựa vào **mã vận đơn in đè lên video** + cho chọn 1080p. Đây là bên thứ năm in mã lên hình (cùng EPack, Dohana, CamBox, PutPack) → thêm căn cứ cho lớp 1 ở mục 64.7.
+Nguồn: https://help.bigseller.com/vi/detailPage/hướng-dẫn-ghi-hình-trong-quá-trình-đóng-gói-và-giao-hàng-trên-bigseller.9313 · https://help.bigseller.pro/en_US/detailPage/25/1/9312/content
+
+
+### 64.9 ANH CHỐT 18/11 ~22:00 — in mã vận đơn + mã đơn hàng lên video; BỎ ý chụp ảnh tem; đã làm cho iPhone + webcam
+
+> Anh: "Việc tự chụp ảnh tem lưu ngoài không có ý nghĩa. Trước tiên cứ thử đường in thêm mã đơn hàng và mã vận đơn kèm xem sao.
+> Mà bigseller cũng xử lý khá cầu kỳ nào là phải bắn trackin, trackout" · "Em cứ build cho điện thoại trước sau đó làm cho bản
+> webcame nữa" · "Đợi nộp TestFlight xong anh sẽ test. Em làm đường cho webcam dần đi".
+
+- ⛔ **Lớp 3 (tự chụp ảnh tem lưu ngoài video) BỎ** — anh: không có ý nghĩa. Đừng đề xuất lại.
+- **Đảo quyết định 14/11** ("chỉ cần ngày giờ thôi"): dưới dòng ngày giờ in thêm **"Mã vận đơn: …"** (có từ khung hình đầu của clip) và
+  **"Mã đơn hàng: …"** (hiện khi máy chủ khớp tem ra đơn, thường sau vài phần mười giây; không khớp được thì không có dòng này — giống
+  BigSeller "chưa xác định được kiện hàng thì mã đơn hàng không hiển thị"). Chữ dòng mã cao 4,2 % cạnh ngắn (ngày giờ 3,5 %), tự thu nhỏ
+  nếu rộng hơn khung. Clip quay tay (không tem) không in mã.
+- Luồng của mình vẫn MỘT lần đưa tem: tem mới = cắt clip cũ + mở clip mới (không có bước quét vào / quét ra như BigSeller).
+
+**iPhone (nhánh thử `thu/video-dong-goi-lat-0`, worktree `D:\HubsellVideo`, chưa commit):**
+- Bản vá Swift `HubsellTimestampOverlay.swift` vẽ thêm tối đa 3 dòng chữ đọc từ `NSUserDefaults` khóa `hubsellPackOverlayLabel`;
+  màn quay ghi khóa đó bằng `Settings.set` của React Native (`src/lib/pack-video-overlay.ts`). Câu chữ nằm ở JS → đổi câu chữ vá OTA được.
+- Thứ tự chống in nhầm mã: clip cũ DỪNG xong → đặt mã mới → mở clip mới; câu trả lời "mã đơn hàng" về trễ sau khi đã đổi tem thì bỏ.
+- Màn xem trước iPhone không hiện lớp chữ của tệp → màn quay tự vẽ lại hai dòng mã dưới đồng hồ.
+- Sửa thẳng phần Swift trong `patches/react-native-vision-camera+5.2.4.patch` (282 dòng đầu không đổi; `git apply` ra đúng tệp mới).
+- **EAS build `9b364104-06b5-43a7-af22-f00717a86c63` = 1.5.0 (36), DỰNG XONG 22:17 (mã Swift mới dịch qua)**; lượt nộp TestFlight hẹn sẵn
+  `65ed0c04-cf68-4318-9f0d-3d0dd675e620`. Hạn mức dựng iOS tháng 11: thêm một lượt.
+- ❌ CHƯA chạy trên máy nào: chưa biết chữ có hiện trong tệp không, `Settings.set` có kịp trước khung đầu không, dấu tiếng Việt vẽ có đẹp không.
+- ❌ **Android CHƯA có**: bản vá Kotlin vẫn chỉ in ngày giờ (chưa có đường truyền chữ từ JS).
+
+**Webcam (repo chính — ĐÃ PUSH 18/11 ~22:45 (anh: "Bản web em push lên anh test luôn") — đẩy RIÊNG phần in mã: dựng bản sạch từ mã đang ở prod, áp phần in mã lên, tsc + eslint + test sạch trên bản đó rồi mới đưa vào commit; lát M1 (hàng chờ bền) VẪN nằm local chưa commit):** `stamp-canvas.ts` (`stampCodeLines`, `layoutCodeBoxes`, vẽ thêm hộp dưới ngày giờ) ·
+`clip-pipeline.ts` (mỗi clip mang `labelLines`, khung ĐẦU của clip mới đã mang mã mới; `setOrderCode`) · `recorder.ts` · `use-pack-recorder.ts`
+(sổ clip có mã đơn hàng thì báo bộ quay). Test `__tests__/stamp-canvas.test.ts`; cả nhóm bộ quay web 30 / 30; `tsc` + `eslint` sạch.
+- ❌ CHƯA nhìn trên webcam thật (em không có webcam trong khung trình duyệt) — anh thử trên prod.
+
+Nguồn: https://banhang.shopee.vn/edu/article/25057 ·
+https://seller-vn.tiktok.com/university/essay?knowledge_id=1766935302801169&default_language=vi-VN ·
+https://www.bigseller.com/blog/articleDetails/tiktok-shop-refund-appeal-rules-philippines-2026.5071.htm ·
+https://www.bigseller.com/blog/articleDetails/3367/cung-cap-bang-chung-khieu-nai-thanh-cong-cao.htm ·
+https://donghangnhanh.vn/vi · https://ghihinh.com/ · https://epack.vn/ ·
+https://ghn.vn/blogs/tip-ban-hang/camera-dong-hang-shopee-la-gi · https://upseller.com/zh-CN/help-doc-article-2929
