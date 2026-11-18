@@ -4,6 +4,9 @@
  * ⚠️ GIỮ ĐỒNG BỘ với bản sao phía giao diện: frontend/src/lib/permission-registry.ts
  *    (hai package riêng nên không import chéo được — sửa key/lá ở đây thì sửa cả
  *    bên kia, lệch nhau là sidebar hiện mục mà API chặn hoặc ngược lại).
+ *    THỨ TỰ nhóm + lá cũng đi theo sidebar (NAV_ITEMS ở
+ *    frontend/src/components/shell/app-shell.tsx, anh Trung chốt 18/11/2026).
+ *    Đổi thứ tự KHÔNG đụng dữ liệu: quyền được so theo khóa, không theo vị trí.
  *
  * Quy ước:
  *  - DB (User.permissions) CHỈ LƯU KHÓA LÁ (vd "finance.analytics", "orders").
@@ -33,6 +36,15 @@ export const PERMISSION_TREE: PermissionNode[] = [
   { key: "dashboard", label: "Tổng quan" },
   { key: "orders", label: "Đơn hàng" },
   {
+    key: "warehouse",
+    label: "Quản lý Kho",
+    children: [
+      { key: "warehouse.products", label: "Tổng kho & Sản phẩm trên sàn" },
+      { key: "warehouse.returns", label: "Đối soát đơn hoàn" },
+      { key: "warehouse.shipping-alerts", label: "Đối soát phí ship" },
+    ],
+  },
+  {
     key: "finance",
     label: "Quản lý Tài chính",
     children: [
@@ -44,12 +56,12 @@ export const PERMISSION_TREE: PermissionNode[] = [
     ],
   },
   {
-    key: "warehouse",
-    label: "Quản lý Kho",
+    key: "ads",
+    label: "Trợ lý quảng cáo",
     children: [
-      { key: "warehouse.products", label: "Tổng kho & Sản phẩm trên sàn" },
-      { key: "warehouse.returns", label: "Đối soát đơn hoàn" },
-      { key: "warehouse.shipping-alerts", label: "Đối soát phí ship" },
+      { key: "ads.shopee", label: "Quảng cáo Shopee" },
+      { key: "ads.lazada", label: "Quảng cáo Lazada" },
+      { key: "ads.tiktok", label: "Quảng cáo TikTok" },
     ],
   },
   {
@@ -63,15 +75,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
       // trong Phản hồi đánh giá + quyền ghi PUT /review-auto/config.
       { key: "operations.ai-rules", label: "Cấu hình tự động (đánh giá)" },
       { key: "operations.copy-listing", label: "Sao chép sản phẩm" },
-    ],
-  },
-  {
-    key: "ads",
-    label: "Trợ lý quảng cáo",
-    children: [
-      { key: "ads.tiktok", label: "Quảng cáo TikTok" },
-      { key: "ads.shopee", label: "Quảng cáo Shopee" },
-      { key: "ads.lazada", label: "Quảng cáo Lazada" },
     ],
   },
   { key: "koc", label: "Mạng lưới KOC & Marketing" },

@@ -1,9 +1,13 @@
 /**
  * PERMISSION REGISTRY (bản phía giao diện) — cây phân quyền nhân viên.
  *
- * ⚠️ GIỮ ĐỒNG BỘ với nguồn sự thật phía máy chủ: backend/src/permission-registry.ts
+ * ⚠️ GIỮ ĐỒNG BỘ với nguồn sự thật phía máy chủ: backend/src/config/permission-registry.ts
  *    (hai package riêng nên không import chéo được — sửa key/lá bên đó thì sửa
  *    cả đây, lệch nhau là sidebar hiện mục mà API chặn hoặc ngược lại).
+ *
+ * THỨ TỰ nhóm + lá đi theo đúng sidebar (NAV_ITEMS ở components/shell/app-shell.tsx,
+ * anh Trung chốt 18/11/2026) — hộp Phân quyền hiện cây này nên chủ shop phải
+ * thấy cùng một trình tự với menu bên trái.
  *
  * Đây CHỈ là lớp trải nghiệm (ẩn menu, chặn vào trang); lớp chặn thật nằm ở
  * backend (requirePermission trên từng nhóm API). DB lưu KHÓA LÁ; trạng thái
@@ -26,6 +30,15 @@ export const PERMISSION_TREE: PermissionNode[] = [
   { key: "dashboard", label: "Tổng quan" },
   { key: "orders", label: "Đơn hàng" },
   {
+    key: "warehouse",
+    label: "Quản lý Kho",
+    children: [
+      { key: "warehouse.products", label: "Tổng kho & Sản phẩm trên sàn" },
+      { key: "warehouse.returns", label: "Đối soát đơn hoàn" },
+      { key: "warehouse.shipping-alerts", label: "Đối soát phí ship" },
+    ],
+  },
+  {
     key: "finance",
     label: "Quản lý Tài chính",
     children: [
@@ -37,12 +50,12 @@ export const PERMISSION_TREE: PermissionNode[] = [
     ],
   },
   {
-    key: "warehouse",
-    label: "Quản lý Kho",
+    key: "ads",
+    label: "Trợ lý quảng cáo",
     children: [
-      { key: "warehouse.products", label: "Tổng kho & Sản phẩm trên sàn" },
-      { key: "warehouse.returns", label: "Đối soát đơn hoàn" },
-      { key: "warehouse.shipping-alerts", label: "Đối soát phí ship" },
+      { key: "ads.shopee", label: "Quảng cáo Shopee" },
+      { key: "ads.lazada", label: "Quảng cáo Lazada" },
+      { key: "ads.tiktok", label: "Quảng cáo TikTok" },
     ],
   },
   {
@@ -56,15 +69,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
       // trong Phản hồi đánh giá (+ quyền ghi cấu hình ở backend).
       { key: "operations.ai-rules", label: "Cấu hình tự động (đánh giá)" },
       { key: "operations.copy-listing", label: "Sao chép sản phẩm" },
-    ],
-  },
-  {
-    key: "ads",
-    label: "Trợ lý quảng cáo",
-    children: [
-      { key: "ads.tiktok", label: "Quảng cáo TikTok" },
-      { key: "ads.shopee", label: "Quảng cáo Shopee" },
-      { key: "ads.lazada", label: "Quảng cáo Lazada" },
     ],
   },
   { key: "koc", label: "Mạng lưới KOC & Marketing" },

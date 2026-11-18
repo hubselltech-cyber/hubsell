@@ -5,6 +5,15 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 18/11 (tối) — Sắp lại sidebar: Quản lý Kho lên ngay dưới Đơn hàng — ĐÃ COMMIT 18/11 (anh bấm Commit), CHƯA push
+
+- Anh Trung chốt thứ tự khu làm việc: Tổng quan → Đơn hàng → Quản lý Kho → Quản lý Tài chính → Trợ lý quảng cáo → Trợ lý vận hành → Hóa đơn & Thuế → Kênh bán → Nhân viên. So với trước chỉ MỘT nhóm đổi chỗ: Quản lý Kho từ dưới Trợ lý quảng cáo lên dưới Đơn hàng. Mục con trong từng nhóm, route, khóa quyền, nhãn: giữ nguyên.
+- `frontend/src/components/shell/app-shell.tsx`: dời nguyên khối nhóm Kho trong `NAV_ITEMS`; thêm khối chú thích đầu mảng vẽ cả cây + ghi ba chỗ phải đổi cùng lúc; `menusForPath` xếp lại cùng thứ tự. Khu chân sidebar (Hướng dẫn / Cấu hình / Kiếm Tiền) không đụng.
+- Cây phân quyền nhân viên xếp theo đúng sidebar ở CẢ hai bản (`frontend/src/lib/permission-registry.ts` + `backend/src/config/permission-registry.ts`): Kho → Tài chính → Quảng cáo → Vận hành; lá quảng cáo đổi thành Shopee → Lazada → TikTok như menu. Không đụng dữ liệu: quyền so theo khóa, không theo vị trí (`sanitizePermissions` chỉ đổi thứ tự mảng lưu lần sau). `HOME_PRIORITY` (trang đích sau đăng nhập của nhân viên) GIỮ — đó là luật ưu tiên, không phải thứ tự hiển thị.
+- Kiểm: `tsc` frontend + backend sạch; soi local `admin@hubsell.vn` — sidebar đúng 9 mục theo thứ tự trên, xòe đủ 6 nhóm đúng mục con; hộp Thêm nhân viên hiện cây quyền cùng thứ tự; Ctrl+K nhận thẳng mảng nên tự theo. Chưa soi giao diện tối (không đổi kiểu dáng nào), chưa chạy bộ test (không có test nào đọc thứ tự cây).
+- Không đổi: sidebar khu điều hành HQ, app mobile (không có menu soi gương).
+
+---
 ## Phiên 18/11 tối muộn — Tổng kho: SỬA sản phẩm kho + THÊM phân loại (anh: "tạo được sản phẩm kho nhưng không sửa được, khách thêm SKU vào sản phẩm thì không thêm được… bổ sung ngay phần sửa"; "thêm icon cái bút chỉnh sửa vào là hợp lý") — ✅ ĐÃ COMMIT + PUSH 18/11 (anh: "Commit và push lên em")
 
 - Khảo sát: backend có sẵn `PATCH /api/products/:id` nhận tên / mã nhưng web không có màn nào gọi, không có đường thêm phân loại vào mẫu; sửa lẻ tên một dòng làm dòng rơi khỏi mẫu cha–con → làm đường sửa THEO MẪU.

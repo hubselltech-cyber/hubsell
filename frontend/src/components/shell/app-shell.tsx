@@ -137,6 +137,25 @@ export interface NavItem {
   children?: NavChild[];
 }
 
+// ===== KHU LÀM VIỆC — thứ tự anh Trung chốt 18/11/2026 =====
+// Đi theo dòng việc một ngày của nhà bán: nhìn số → xử lý đơn → kho → tiền →
+// quảng cáo → vận hành → hóa đơn, rồi mới tới hai mục cài đặt chỉ chủ shop.
+//
+//   Tổng quan
+//   Đơn hàng            ├ Xử lý đơn hàng · Video đóng hàng
+//   Quản lý Kho         ├ Tổng kho · Sản phẩm trên sàn · Đối soát đơn hoàn · Đối soát phí ship
+//   Quản lý Tài chính   ├ Báo cáo dòng tiền · Lãi/Lỗ Thực Hiện · Kiểm toán phí sàn · Thu chi vận hành · Cấu hình Giá vốn
+//   Trợ lý quảng cáo    ├ Shopee · Lazada · TikTok
+//   Trợ lý vận hành     ├ Phản hồi đánh giá · Cảnh báo & P&L Sản phẩm · Sao chép sản phẩm
+//   Hóa đơn & Thuế      ├ Kết nối & Xuất hóa đơn · Lịch sử & Báo cáo thuế · Thuế bổ sung
+//   Kênh bán
+//   Nhân viên
+//
+// Đổi thứ tự ở đây thì đổi CÙNG LÚC ba chỗ soi gương, không là mỗi nơi một kiểu:
+//   - menusForPath (cuối tệp này);
+//   - PERMISSION_TREE ở lib/permission-registry.ts (hộp Phân quyền nhân viên);
+//   - PERMISSION_TREE ở backend/src/config/permission-registry.ts.
+// Ctrl+K nhận thẳng mảng này nên tự theo.
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Tổng quan", icon: "dashboard", perm: "dashboard" },
   {
@@ -150,38 +169,6 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { href: "/orders", label: "Xử lý đơn hàng" },
       { href: "/orders/videos", label: "Video đóng hàng", feature: "packVideo" },
-    ],
-  },
-  {
-    label: "Quản lý Tài chính",
-    // "credit_card" (thẻ ngân hàng): gọn, sang, outline và filled cùng một
-    // silhouette — "wallet" và "account_balance_wallet" đều bị chê thô
-    // (anh Trung 08/08).
-    icon: "credit_card",
-    perm: "finance",
-    children: [
-      { href: "/finance/analytics", label: "Báo cáo dòng tiền", perm: "finance.analytics" },
-      { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện", perm: "finance.realized-pnl" },
-      // Kiểm toán phí sàn (30/08): 3 rổ tiền mất sau đối soát — truy thu ship /
-      // sàn trả thiếu / quá hạn chưa trả. Đứng cạnh Lãi/Lỗ vì cùng nghiệp vụ
-      // đối soát, khác mục đích: Lãi/Lỗ trả lời "lời bao nhiêu", Kiểm toán trả
-      // lời "sàn có trừ sai/thiếu đồng nào không".
-      { href: "/finance/fee-audit", label: "Kiểm toán phí sàn", perm: "finance.fee-audit" },
-      { href: "/finance/expenses", label: "Thu chi vận hành", perm: "finance.expenses" },
-      { href: "/finance/cost-prices", label: "Cấu hình Giá vốn", perm: "finance.cost-prices" },
-    ],
-  },
-  {
-    // 15/10/2026 định vị lại "Trợ lý quảng cáo đa sàn": nhóm này lên ngay dưới
-    // Quản lý Tài chính (anh Trung chốt vị trí; trước nằm dưới Trợ lý vận hành).
-    // Route giữ /ads/* (adblock chặn /api/ads nên API đã là /api/quang-cao).
-    label: "Trợ lý quảng cáo",
-    icon: "campaign",
-    perm: "ads",
-    children: [
-      { href: "/ads/shopee", label: "Quảng cáo Shopee", perm: "ads.shopee" },
-      { href: "/ads/lazada", label: "Quảng cáo Lazada", perm: "ads.lazada" },
-      { href: "/ads/tiktok", label: "Quảng cáo TikTok", perm: "ads.tiktok" },
     ],
   },
   {
@@ -210,6 +197,38 @@ const NAV_ITEMS: NavItem[] = [
       // Điều chuyển từ nhóm Tài chính sang (nghiệp vụ đối soát vận chuyển sát
       // với kho vận); route cũ /finance/shipping-alerts vẫn redirect về đây.
       { href: "/warehouse/shipping-alerts", label: "Đối soát phí ship", perm: "warehouse.shipping-alerts" },
+    ],
+  },
+  {
+    label: "Quản lý Tài chính",
+    // "credit_card" (thẻ ngân hàng): gọn, sang, outline và filled cùng một
+    // silhouette — "wallet" và "account_balance_wallet" đều bị chê thô
+    // (anh Trung 08/08).
+    icon: "credit_card",
+    perm: "finance",
+    children: [
+      { href: "/finance/analytics", label: "Báo cáo dòng tiền", perm: "finance.analytics" },
+      { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện", perm: "finance.realized-pnl" },
+      // Kiểm toán phí sàn (30/08): 3 rổ tiền mất sau đối soát — truy thu ship /
+      // sàn trả thiếu / quá hạn chưa trả. Đứng cạnh Lãi/Lỗ vì cùng nghiệp vụ
+      // đối soát, khác mục đích: Lãi/Lỗ trả lời "lời bao nhiêu", Kiểm toán trả
+      // lời "sàn có trừ sai/thiếu đồng nào không".
+      { href: "/finance/fee-audit", label: "Kiểm toán phí sàn", perm: "finance.fee-audit" },
+      { href: "/finance/expenses", label: "Thu chi vận hành", perm: "finance.expenses" },
+      { href: "/finance/cost-prices", label: "Cấu hình Giá vốn", perm: "finance.cost-prices" },
+    ],
+  },
+  {
+    // 15/10/2026 định vị lại "Trợ lý quảng cáo đa sàn": nhóm này đứng ngay dưới
+    // Quản lý Tài chính (anh Trung chốt vị trí; 18/11 giữ nguyên, chỉ Kho lên trên Tài chính).
+    // Route giữ /ads/* (adblock chặn /api/ads nên API đã là /api/quang-cao).
+    label: "Trợ lý quảng cáo",
+    icon: "campaign",
+    perm: "ads",
+    children: [
+      { href: "/ads/shopee", label: "Quảng cáo Shopee", perm: "ads.shopee" },
+      { href: "/ads/lazada", label: "Quảng cáo Lazada", perm: "ads.lazada" },
+      { href: "/ads/tiktok", label: "Quảng cáo TikTok", perm: "ads.tiktok" },
     ],
   },
   {
@@ -434,16 +453,17 @@ function menusForPath(pathname: string): string[] {
   const labels: string[] = [];
   // So đúng "/orders" hoặc thư mục con — không dính route khác lỡ bắt đầu bằng "/orders…".
   if (pathname === "/orders" || pathname.startsWith("/orders/")) labels.push("Đơn hàng");
-  if (pathname.startsWith("/finance")) labels.push("Quản lý Tài chính");
-  if (pathname.startsWith("/invoicing")) labels.push("Hóa đơn & Thuế");
+  // Cùng thứ tự với NAV_ITEMS rồi NAV_ITEMS_BOTTOM — xem khối chú thích đầu NAV_ITEMS.
   if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
     labels.push("Quản lý Kho");
-  if (pathname.startsWith("/settings")) labels.push("Cấu hình");
+  if (pathname.startsWith("/finance")) labels.push("Quản lý Tài chính");
   if (pathname.startsWith("/ads")) labels.push("Trợ lý quảng cáo");
-  if (pathname.startsWith("/koc-marketing"))
-    labels.push("Mạng lưới KOC & Marketing");
   if (pathname.startsWith("/operations-assistant"))
     labels.push("Trợ lý vận hành");
+  if (pathname.startsWith("/koc-marketing"))
+    labels.push("Mạng lưới KOC & Marketing");
+  if (pathname.startsWith("/invoicing")) labels.push("Hóa đơn & Thuế");
+  if (pathname.startsWith("/settings")) labels.push("Cấu hình");
   return labels;
 }
 
