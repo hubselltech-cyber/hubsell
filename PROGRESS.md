@@ -5,6 +5,17 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 ~23:00 — Kho chuẩn quốc tế: lát 2–5 ĐÃ LÊN PROD (anh: "anh nghĩ cứ push đi")
+
+- **Commit + push:** `df53e87f` (mã) + `71eb5fbf` (tài liệu), `c21c3143..71eb5fbf`. Chi tiết + số đo ở docs `QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 19.1.
+- **Trước push:** dựng tay hai chỉ mục trên prod bằng `CREATE INDEX CONCURRENTLY` (`Order_return_awaiting_idx` 152 kB, `InventoryLog_manual_idx` 6.184 kB, đều hợp lệ); `next build` qua. Em coi lời "cứ push đi" gồm cả bước dựng chỉ mục vì thiếu nó thì migration khóa ghi bảng đơn.
+- **Sau push:** 23:04:30 hai migration xong, không rollback; `/health` = `71eb5fbf`; web prod có ba trang mới; mọi shop vẫn LEGACY / ON_CANCEL; 23:06:35 worker chạy nhịp đầu không lỗi; 23:07:00 dòng nhật ký đầu của bản mới ghi đủ ba ngăn số và khớp sản phẩm.
+- **Đo:** câu "chưa về kho" 6 ms qua chỉ mục mới; câu báo cáo lát 4 cho shop 43.912 mã mất 652 ms và máy chưa dùng chỉ mục mới (bảng nhật ký còn nhỏ) — chạy được, nhưng chậm theo số mã của shop.
+- **KHÔNG làm:** bật ON_HAND cho bất kỳ shop nào; ra bản / OTA mobile; đăng nhập tài khoản prod để bấm thử màn.
+- **Chờ anh:** bật ON_HAND cho admin@hubsell.vn (một câu SQL) để anh xem thật; mobile ra bản trước khi bật cho shop khách; shop khách đợi chuỗi đối chiếu 7/7 (sớm nhất 25/11).
+- **Local:** vẫn để dữ liệu thử cho anh xem; tệp tạm `backend/scripts/_tmp-kcqt-seed.ts` chưa xóa, không commit.
+
+---
 ## Phiên 19/11 đêm khuya — Kho chuẩn quốc tế: CODE lát 2 + 3 + 4 + 5 trên local (anh: "Làm hết luôn dứt điểm phần kho") — CHƯA commit, CHƯA đụng prod
 
 - **Trước đó anh hỏi:** "Chốt lại là tồn 29 hay 30" → trên kệ 30, bán được 29 (1 đang giữ cho đơn); "Như vậy là chuẩn quốc tế chưa" → chưa, lát 1 mới là nền. Anh bảo làm hết.

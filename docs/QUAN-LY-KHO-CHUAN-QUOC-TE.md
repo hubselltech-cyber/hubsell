@@ -919,7 +919,7 @@ Lần deploy thứ hai (commit `d9f34702`, chỉ có migration dọn): 21:32:05 
 - Sau khi gỡ dấu sót, thống kê bảng còn cũ: máy vẫn ước tập đang giữ 6.984 dòng (thật 181) cho tới lượt autoanalyze kế. Câu vẫn đi đúng chỉ mục; em chưa xem lại sau autoanalyze.
 - Chưa thấy trên prod: một đơn thật đi từ Chờ xử lý sang Đang giao qua quét lô / làn đọc con trỏ / đổi tay với bản mới (mới 5 phút sau deploy). Lần đối chiếu 20/11 sẽ cho biết.
 
-## 15. Lát 2 + 3 — ĐÃ CODE trên local 19/11/2026 đêm (anh: "Làm hết luôn dứt điểm phần kho") — CHƯA commit, CHƯA đụng prod
+## 15. Lát 2 + 3 — ĐÃ CODE 19/11/2026 đêm (anh: "Làm hết luôn dứt điểm phần kho"); ĐÃ LÊN PROD ~23:04, xem 19.1 — chưa shop nào bật
 
 Hai lát lên CÙNG một lượt mã, nhưng bật theo HAI công tắc riêng của từng shop, cả hai mặc định là hành vi cũ. Ngày lên bản không shop nào đổi số, không màn nào đổi.
 
@@ -962,18 +962,18 @@ Máy chủ gắn `stockModel` vào từng sản phẩm của danh sách; mọi m
 - Soi màn trên local, shop dev ở ON_HAND, có mã rộng nhất (mã 60 ký tự, tồn 11.020, giá trị trên 1 tỷ): Tổng kho 1280 / 1366 / 1440 / 1536 / 1700 không tràn; Nhật ký, Kiểm kê, Thống kê, Đối soát đơn hoàn ở 1280 + 1440, sáng + tối. Sửa trong lúc soi: ô Tồn kho tràn 7 px ở 1280; chữ dải thông báo mất trong giao diện tối; mã SKU dài đẩy bảng Kiểm kê cuộn ngang; nhãn nút "Cộng tồn…" làm thanh công cụ Đối soát rớt dòng ở 1280.
 - **Chưa kiểm:** prod (chưa đụng); một đơn thật đi hết vòng hủy sau giao → nhận kiện ở chế độ `ON_RECEIVE`; mobile chỉ kiểm kiểu, chưa chạy trên máy; Excel với tệp thật của khách; trang giới thiệu và hướng dẫn (`guide-tours.ts` không có câu nào sai nghĩa, landing chưa rà).
 
-## 16. Lát 4 — lý do theo danh sách + báo cáo "Hàng hỏng, mất & chênh kiểm kê" — ĐÃ CODE trên local 19/11/2026 đêm, CHƯA commit
+## 16. Lát 4 — lý do theo danh sách + báo cáo "Hàng hỏng, mất & chênh kiểm kê" — ĐÃ CODE 19/11/2026 đêm; ĐÃ LÊN PROD ~23:04 (19.1)
 
 - **Danh sách** (`backend/src/lib/stock-reason.ts`, bản sao ở `frontend/src/lib/` và `hubsell-mobile/src/lib/`): Nhập = Nhập hàng · Hàng hoàn nhập lại · Sửa sai số; Xuất = Bán ngoài sàn · Hỏng · Mất / thất lạc · Tặng / dùng nội bộ · Sửa sai số. Dựng theo Shopify (mục 1.5), chưa hỏi khách.
 - **Không bắt buộc.** `/adjust` và `/adjust-bulk` nhận thêm `reasonCode`; mã ghi vào `InventoryLog.kind`, câu Lý do = tên lý do, ghi chú nối sau. Không gửi mã thì ghi y như trước. Mã sai chiều bị từ chối, không ghi gì.
 - **App mobile bản cũ** gửi nguyên câu chip ("Hàng hỏng", "Bán ngoài sàn"…) không có mã → máy chủ tự suy ra mã, giữ nguyên câu. Khách chưa cập nhật app vẫn vào đúng nhóm của báo cáo.
 - **Màn:** hàng chip "Lý do" ở hộp Nhập / Xuất và trang phiếu nhiều mã (nhập chọn sẵn "Nhập hàng", xuất để trống); ô chữ cũ thành "Ghi chú". Mobile: chip theo danh sách chuẩn, thêm "Mất / thất lạc", bỏ "Kiểm lại thấy dư / thiếu" (thành "Sửa sai số").
 - **Báo cáo** `GET /api/inventory/loss-report` + hộp ở tab Nhật ký kho (nút "Hỏng, mất & kiểm kê"): kỳ 30 / 90 / 365 ngày; mỗi nhóm tách giảm và tăng; giá trị = số lượng × giá vốn HIỆN TẠI, chỉ người thấy tài chính; 20 mã giảm ròng nhiều nhất. Nhóm: Hỏng · Mất · Tặng / nội bộ · Chênh kiểm kê · Sửa số trên bảng / Excel · Sửa sai số · Điều chỉnh chưa phân loại (dòng ghi trước ngày có danh sách) · Xuất không ghi lý do. Không gồm đơn sàn, Bán ngoài sàn, Nhập hàng. Không dùng chữ "Hao hụt" (anh 13/11).
-- **Quy mô:** `InventoryLog` không có cột chủ shop. Câu báo cáo đi từ SKU của shop, mỗi SKU dò chỉ mục bán phần mới `InventoryLog_manual_idx ("productId","createdAt") WHERE "orderId" IS NULL` — dòng của đơn sàn không nằm trong chỉ mục. Trên DB local bảng nhỏ nên máy chọn quét cả bảng; ép tắt quét bảng thì câu đi đúng chỉ mục. **Chưa EXPLAIN trên prod.**
+- **Quy mô:** `InventoryLog` không có cột chủ shop. Câu báo cáo đi từ SKU của shop, mỗi SKU dò chỉ mục bán phần mới `InventoryLog_manual_idx ("productId","createdAt") WHERE "orderId" IS NULL` — dòng của đơn sàn không nằm trong chỉ mục. Trên DB local bảng nhỏ nên máy chọn quét cả bảng; ép tắt quét bảng thì câu đi đúng chỉ mục. Đã EXPLAIN trên prod (19.1): 652 ms cho shop 43.912 mã, máy chưa dùng chỉ mục mới.
 - **Test:** `stock-reasons.test.ts` 7 ca (không mã = như cũ; có mã; suy mã từ chip mobile cũ; mã sai chiều; phiếu nhiều mã; báo cáo đúng nhóm, không lẫn shop khác / đơn sàn; khoảng ngày sai).
 - **Áp cho MỌI shop** (không theo công tắc): thêm một hàng chip và một nút, không đổi số nào.
 
-## 17. Lát 5 — Kiểm kê theo phiên — ĐÃ CODE trên local 19/11/2026 đêm, CHƯA commit
+## 17. Lát 5 — Kiểm kê theo phiên — ĐÃ CODE 19/11/2026 đêm; ĐÃ LÊN PROD ~23:04 (19.1)
 
 Trang Kiểm kê nhanh giữ nguyên. Phiên là cách THÊM, vào bằng nút "Kiểm kê theo phiên" ở góc trang Kiểm kê.
 
@@ -992,7 +992,7 @@ Trang Kiểm kê nhanh giữ nguyên. Phiên là cách THÊM, vào bằng nút "
 
 Cần phiếu đặt hàng nhà cung cấp, là một phần mới (đặt → nhận một phần → nhận đủ), không phải một lát của kho hiện có. Mục 5.4 đã ghi "không làm trong đợt này". Em đề xuất tách thành việc riêng khi anh cần.
 
-## 19. Đưa lát 2 → 5 lên prod — CHỜ ANH, em chưa làm bước nào
+## 19. Đưa lát 2 → 5 lên prod — bước 1–3 ĐÃ LÀM 19/11 ~23:04 (19.1); bước 4–5 chờ anh
 
 1. **Trước khi push, chạy tay ở Supabase SQL Editor, ngoài giờ cao điểm** (bảng `Order` và `InventoryLog` lớn, `CREATE INDEX` thường sẽ chặn ghi):
    - `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Order_return_awaiting_idx" ON "Order" ("channelId") WHERE "returnStatus" = 'AWAITING';`
@@ -1003,6 +1003,32 @@ Cần phiếu đặt hàng nhà cung cấp, là một phần mới (đặt → n
 4. **Mobile:** màn kho đã sửa trên master (1.5.0). Shop bật `ON_HAND` mà nhân viên còn dùng app cũ sẽ thấy số "Tồn" theo cách cũ trên app, khác web → phải ra bản app / OTA TRƯỚC khi bật cho shop đó. OTA cho khách 1.4.3 phải dựng từ nhánh `ota/1.4.3-ten-khong-cat`, em chưa đụng.
 5. **Bật `ON_HAND`:** từng shop bằng SQL (`UPDATE shop_sync_settings SET "stockModel" = 'ON_HAND' WHERE "userId" = …`, shop chưa có dòng cài đặt thì `INSERT`). Thứ tự ở mục 8: shop công ty → 2–3 shop tình nguyện → toàn bộ. Em đề nghị shop công ty (admin@hubsell.vn) trước, shop khách đợi chuỗi đối chiếu đủ 7/7 (sớm nhất 25/11) vì Tồn kho của shop ON_HAND cộng thẳng bộ đếm "đang giữ" vào.
 6. **Tắt lại:** đặt `stockModel` về `LEGACY` là màn về như cũ ngay; sổ tồn bán không bị cách hiển thị đụng tới nên không phải chuyển dữ liệu. Riêng Kiểm kê / sửa ô / Excel đã ghi trong lúc ON_HAND thì đã là bút toán thật.
+
+### 19.1. ĐÃ LÊN PROD 19/11/2026 ~23:04 (anh: "anh nghĩ cứ push đi") — bước 1, 2, 3 xong; CHƯA bật ON_HAND cho shop nào
+
+Commit `df53e87f` (mã) + `71eb5fbf` (tài liệu), push `c21c3143..71eb5fbf`. Số dưới đây đọc trên prod bằng câu SELECT / EXPLAIN qua Supabase SQL Editor.
+
+**Trước khi push (23:00)**
+
+- Bảng đơn 932 MB, 955.610 dòng; `InventoryLog` 56 MB, 135.799 dòng, trong đó 106.902 dòng không gắn đơn. Không giao dịch nào treo quá 30 giây.
+- `CREATE INDEX CONCURRENTLY "Order_return_awaiting_idx"`: hợp lệ, 152 kB. `CREATE INDEX CONCURRENTLY "InventoryLog_manual_idx"`: hợp lệ, 6.184 kB. Không chỉ mục nào không hợp lệ trên cả database.
+- `next build` trên máy em qua (có đủ ba trang mới).
+
+**Sau khi push**
+
+- 23:04:30 hai migration ghi xong, không rollback. 23:04:45 `/health` báo `71eb5fbf`. Web prod: `/products/stocktake/sessions` và `/print/stocktake/<id>` trả 200 (trang không tồn tại trả 404).
+- Ba route mới trả 401 khi chưa đăng nhập (đã gắn). Em KHÔNG đăng nhập tài khoản nào trên prod, nên chưa bấm thử màn nào trên prod.
+- `shop_sync_settings` có 2 dòng, đều `LEGACY / ON_CANCEL`; các shop còn lại chưa có dòng nên dùng mặc định. Không shop nào đổi cách.
+- 23:06:35 worker chạy nhịp bảo trì đầu sau khi khởi động lại: quét bù 0 đơn, không lỗi. Bộ đếm không mã nào âm.
+- 23:07:00 dòng nhật ký đầu tiên do bản mới ghi (một đơn sàn trừ kho): `kind` RESERVE, đổi −1, tồn bán sau 29, đang giữ +1 → 1, hàng trong kho sau 30; khớp sản phẩm lúc đọc (sổ 29, giữ cho đơn 1, giữ tạm 0).
+- **Câu "chưa về kho"** (shop có nhiều đơn Chờ hàng về nhất): đi qua `Order_return_awaiting_idx`, 6 ms, 2.512 khối. Cả hệ thống đang có 16.952 đơn Chờ hàng về của 163 shop.
+- **Câu báo cáo lát 4** (shop nhiều mã nhất, 43.912 mã, kỳ 365 ngày): 652 ms, 172.107 khối. Máy đi từng mã rồi dò `InventoryLog_productId_idx`, KHÔNG dùng `InventoryLog_manual_idx` — bảng nhật ký còn nhỏ và phần lớn dòng không gắn đơn nên hai chỉ mục gần như nhau. Chấp nhận được cho một hộp mở theo yêu cầu, nhưng thời gian tăng theo SỐ MÃ của shop chứ không theo số dòng tay; muốn nhanh hẳn phải có cột chủ shop trên `InventoryLog`. Chưa làm.
+
+**Còn lại**
+
+- Chưa thấy trên prod: một lượt nhập / xuất có chọn lý do, một phiên kiểm kê, một lượt hủy sau giao ở `ON_RECEIVE` (chưa ai dùng; em không đăng nhập để thử).
+- Bước 4 (mobile) và 5 (bật ON_HAND từng shop) chưa làm, chờ anh.
+- Chuỗi đối chiếu lát 1 vẫn 1/7 (lần kế ~21:19 ngày 20/11).
 
 ## 12. Nguồn
 
