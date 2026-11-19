@@ -150,3 +150,12 @@ Mỗi dòng hàng: **tên sản phẩm** (không đuôi) / **TÊN PHÂN LOẠI**
   OTA: anh bảo "Đẩy OTA 1.4.3" → update group `2b06e23a-97f2-49d6-9673-bfa54501cd96`, kênh production, runtime 1.4.3, iOS +
   Android, từ commit `dd167b09` — bản OTA đầu tiên của runtime 1.4.3. `scan-sounds.ts` được tạm cất lúc đẩy rồi trả lại, nên
   bản OTA không chứa sửa âm báo. Máy 1.4.2 không nhận. ❌ Chưa thấy trên máy thật; chưa mở đơn mới trên prod để nhìn dòng phân loại.
+- **19/11 trưa — bản OTA đêm qua đang tới khách:** `eas update:insights` 13:20: iOS 12 máy, Android 5 máy, 0 lượt lỗi. 1.4.3 đã phát
+  hành cả hai kho. Máy anh chạy TestFlight 1.5.0 (37) (kênh `thu-video`, runtime 1.5.0) nên không nhận OTA 1.4.3; bản 37 có sẵn mã
+  này nhưng anh báo chưa thấy thay đổi — CHƯA tìm ra nguyên nhân, anh chốt "đơn cũ thì thôi kệ đi" (đừng soi tiếp nếu anh không gọi).
+- **Chỗ hở + bản vá (`9be874e8` trên master):** dòng KHÔNG tách được phân loại (đơn cũ, danh mục sàn không khớp) vẫn bị cắt tên 2 dòng
+  (thẻ đơn 1 dòng) → đuôi phân loại vẫn mất. Nay dòng không có phân loại riêng thì tên hiện tới 6 dòng ở chi tiết đơn, 4 dòng ở thẻ đơn.
+- **OTA lần hai cho khách 1.4.3 (19/11 ~14:20, anh: "Em đẩy OTA cho khách bản 1.4.3 nhé"):** update group
+  `949a279b-e5ab-4734-994d-d767e57b0966`, kênh production, runtime 1.4.3. ⛔ KHÔNG dựng từ master (master = 1.5.0, có Chuẩn bị hàng +
+  In phiếu cần 3 gói native bản 1.4.3 không có): dựng từ nhánh local `ota/1.4.3-ten-khong-cat` = `dd167b09` + bản vá (`16701fda`),
+  trong worktree tạm với `npm ci` theo lockfile 1.4.3. Vá tiếp cho khách 1.4.3 thì làm đúng cách này.
