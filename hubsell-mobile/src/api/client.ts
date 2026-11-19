@@ -119,6 +119,63 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   return data as T;
 }
 
+/**
+ * fetch đọc được BYTE trên máy thật: `expo/fetch` (nằm sẵn trong gói expo; trên web chính là
+ * fetch của trình duyệt). fetch mặc định của React Native không bảo đảm đọc được
+ * `arrayBuffer`. Nạp MUỘN trong try/catch — mã này có thể tới bản app cũ qua OTA, nạp hỏng
+ * thì lùi về fetch mặc định chứ không được làm app văng lúc khởi động.
+ */
+function binaryFetch(): typeof fetch {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require("expo/fetch") as { fetch?: unknown };
+    if (typeof mod.fetch === "function") return mod.fetch as typeof fetch;
+  } catch {
+    // bản app không có module — dùng fetch mặc định
+  }
+  return fetch;
+}
+
+/**
+ * Gọi API trả TỆP NHỊ PHÂN (PDF vận đơn) — cùng token, cùng luật 401 với `api`, nhưng trả
+ * byte + header thay vì JSON.
+ */
+export async function apiBinary(
+  path: string,
+  opts: { method?: "GET" | "POST"; body?: unknown } = {}
+): Promise<{ bytes: Uint8Array; header: (name: string) => string | null }> {
+  const sentToken = authToken;
+  let res: Response;
+  try {
+    res = (await binaryFetch()(`${API_BASE}${path}`, {
+      method: opts.method ?? "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sentToken ? { Authorization: `Bearer ${sentToken}` } : {}),
+      },
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    })) as unknown as Response;
+  } catch {
+    throw new ApiError("Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.", 0, null);
+  }
+  if (res.status === 401 && sentToken && sentToken === authToken) onUnauthorized?.();
+  if (!res.ok) {
+    let data: { error?: string; code?: string } | null = null;
+    try {
+      data = (await res.json()) as { error?: string; code?: string };
+    } catch {
+      // không phải JSON — giữ null
+    }
+    if (res.status === 403 && data?.code === "PLAN_LOCKED") onPlanLocked?.();
+    const message = data?.code?.startsWith("PLAN_")
+      ? "Tính năng này hiện chưa được bật cho tài khoản của bạn. Vui lòng liên hệ quản trị viên shop."
+      : (data?.error ?? `Máy chủ trả lỗi (${res.status})`);
+    throw new ApiError(message, res.status, data);
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return { bytes, header: (name) => res.headers.get(name) };
+}
+
 /** Lỗi do gói bị khóa (403 PLAN_LOCKED) — màn gọi hiện thẻ khóa thay ô lỗi. */
 export function isPlanLockedError(err: unknown): err is ApiError {
   return (

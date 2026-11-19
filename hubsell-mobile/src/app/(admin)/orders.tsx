@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -35,6 +36,7 @@ import {
   orderStatusBadge,
 } from "@/lib/labels";
 import { useChannelColors } from "@/theme/channel-colors";
+import { groupChannelsByPlatform } from "@/lib/channel-groups";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { isExpressShipping } from "@/lib/shipping";
 import { hapticTap } from "@/lib/haptics";
@@ -42,7 +44,20 @@ import { Badge } from "@/components/Badge";
 import { OrderDetailSheet } from "@/components/OrderDetailSheet";
 import { PickSheet } from "@/components/PickSheet";
 import { CancelRequestBar } from "@/components/CancelRequestBar";
-import { TABULAR } from "@/theme/tokens";
+import { ProcessSheet, type ProcessStage } from "@/components/ProcessSheet";
+import { ArrangeSheet, CheckBox } from "@/components/ArrangeSheet";
+import { PrintSheet, type PrintTarget } from "@/components/PrintSheet";
+import {
+  idsOfStage,
+  pipelineCounts,
+  selectAllStages,
+  selectionCounts,
+  workStageOf,
+  type WorkStage,
+} from "@/lib/fulfill";
+import { fetchProcessQueue } from "@/api/fulfill";
+import { printSupport } from "@/lib/print-labels";
+import { RAISED_SHADOW, TABULAR } from "@/theme/tokens";
 
 /** Số dòng hàng hiện sẵn trên card — đơn dài hơn thì bấm "Xem thêm". */
 const ITEMS_PREVIEW = 2;
@@ -75,6 +90,18 @@ const PRINTED_FILTERS: { key: PrintedFilter; label: string; countKey: string | n
   { key: "yes", label: "Chờ đóng gói", countKey: "PROCESSED_PRINTED" },
   { key: "packed", label: "Đã đóng gói", countKey: "PROCESSED_PACKED" },
 ];
+
+/**
+ * iOS không dựng được hộp trượt mới khi hộp cũ còn đang trượt xuống → chờ hộp cũ đóng hẳn
+ * rồi mới mở hộp kế (Android / web mở ngay được).
+ */
+function afterSheetClose(fn: () => void) {
+  if (Platform.OS === "ios") setTimeout(fn, 380);
+  else fn();
+}
+
+/** Lựa chọn rỗng dùng chung — giữ nguyên một tham chiếu để không dựng Map mới mỗi lần vẽ. */
+const EMPTY_SELECTION: ReadonlyMap<string, WorkStage> = new Map();
 
 /** Bộ giá trị của panel Bộ lọc — trạng thái + hãng VC + gian hàng. */
 interface FilterValue {
@@ -284,6 +311,110 @@ export default function OrdersScreen() {
     (shopId ? 1 : 0) +
     (cancelRequested ? 1 : 0);
 
+  // ── XỬ LÝ ĐƠN (19/11/2026): hộp dây chuyền → Chuẩn bị hàng / In phiếu / Quét đóng gói.
+  const [processOpen, setProcessOpen] = useState(false);
+  /**
+   * Hai hộp giữ nguyên đích khi đóng (không đổi tiêu đề trong lúc trượt xuống) và tăng `seq`
+   * mỗi lần MỞ — `seq` làm key nên mỗi lượt mở là một hộp mới, trạng thái sạch.
+   * orderIds có = chỉ làm đúng các đơn đó (mở từ chi tiết một đơn).
+   */
+  const [arrange, setArrange] = useState<{ open: boolean; seq: number; orderIds?: string[] }>({
+    open: false,
+    seq: 0,
+  });
+  const openArrange = (orderIds?: string[]) => setArrange((a) => ({ open: true, seq: a.seq + 1, orderIds }));
+  const [print, setPrint] = useState<{ open: boolean; seq: number; target: PrintTarget }>({
+    open: false,
+    seq: 0,
+    target: { kind: "queue", reprint: false },
+  });
+  const openPrint = (target: PrintTarget) => setPrint((p) => ({ open: true, seq: p.seq + 1, target }));
+  const closePrint = () => setPrint((p) => ({ ...p, open: false }));
+  const canPrint = printSupport();
+  const workCount = (() => {
+    const n = pipelineCounts(counts);
+    return n.arrange + n.print;
+  })();
+
+  // ── TÍCH ĐƠN ngay trên thẻ (anh Trung 19/11: "thêm dấu tích để tích trực tiếp vào các đơn
+  // hàng → ấn Xử lý đơn"). Có đơn tích → hộp Xử lý đơn làm đúng các đơn đó; không tích gì →
+  // làm cả nhóm đang lọc. Lựa chọn gắn với BỘ LỌC lúc tích: đổi sàn / gian / hãng / trạng thái
+  // / từ khóa là lựa chọn tự hết hiệu lực — không bao giờ làm trên đơn đang khuất mắt.
+  const scopeKey = [status, printedInUse, channel, carrier, shopId, cancelRequested ? 1 : 0, search.trim()].join("|");
+  const [selection, setSelection] = useState<{ key: string; map: Map<string, WorkStage> }>({
+    key: "",
+    map: new Map(),
+  });
+  const selected: ReadonlyMap<string, WorkStage> = selection.key === scopeKey ? selection.map : EMPTY_SELECTION;
+  const picked = selectionCounts(selected);
+  const clearSelection = () => setSelection({ key: "", map: new Map() });
+  const toggleSelect = (order: OrderDto) => {
+    const stage = workStageOf(order);
+    if (!stage) return;
+    hapticTap();
+    setSelection((prev) => {
+      const map = new Map(prev.key === scopeKey ? prev.map : []);
+      if (map.has(order.id)) map.delete(order.id);
+      else map.set(order.id, stage);
+      return { key: scopeKey, map };
+    });
+  };
+  /** "Chọn tất cả": mọi đơn còn việc trong phạm vi đang lọc (kể cả đơn chưa cuộn tới). */
+  const [selectingAll, setSelectingAll] = useState(false);
+  const [selectAllNote, setSelectAllNote] = useState("");
+  const selectAll = async () => {
+    const stages = selectAllStages(status, printedInUse);
+    if (stages.length === 0 || selectingAll) return;
+    hapticTap();
+    setSelectingAll(true);
+    setSelectAllNote("");
+    const key = scopeKey;
+    try {
+      const queues = await Promise.all(stages.map((st) => fetchProcessQueue(st, pickScope)));
+      const map = new Map<string, WorkStage>();
+      queues.forEach((q, i) => {
+        const stage: WorkStage = stages[i] === "ARRANGE" ? "arrange" : stages[i] === "PRINT" ? "print" : "reprint";
+        for (const g of q.groups) for (const c of g.carriers) for (const id of c.orderIds) map.set(id, stage);
+      });
+      setSelection({ key, map });
+      const cut = queues.find((q) => q.truncated);
+      setSelectAllNote(cut ? `Mỗi nhóm lấy tối đa ${groupVN(cut.max)} đơn, hỏa tốc và đơn cũ trước` : "");
+    } catch (err) {
+      setSelectAllNote(err instanceof ApiError ? err.message : "Chưa chọn được tất cả — thử lại");
+    } finally {
+      setSelectingAll(false);
+    }
+  };
+  const scopeLabel =
+    [
+      shopId
+        ? (channels.find((c) => c.id === shopId)?.shopName ?? "Một gian hàng")
+        : channel
+          ? `Gian ${CHANNEL_LABEL[channel]}`
+          : "Tất cả gian hàng",
+      carrier ? (CARRIER_SHORT[carrier] ?? carrier) : "",
+      search.trim() ? `"${search.trim()}"` : "",
+      cancelRequested ? "khách xin hủy" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  /** Xem danh sách đơn của một công đoạn = đặt đúng bộ lọc trạng thái + bộ lọc con. */
+  const viewStage = (stage: ProcessStage) => {
+    setProcessOpen(false);
+    if (stage === "arrange") {
+      setStatus("PENDING");
+      setPrinted("");
+    } else {
+      setStatus("PROCESSED");
+      setPrinted(stage === "print" ? "no" : stage === "pack" ? "yes" : "packed");
+    }
+  };
+  const openLabelTemplate = () => {
+    setProcessOpen(false);
+    closePrint();
+    afterSheetClose(() => router.push("/label-template"));
+  };
+
   // Mở màn Quét đóng gói (route gốc, phủ thanh tab). Quay về thì tải lại danh sách: kiện
   // vừa quét đã đổi nhóm (Chờ đóng gói → Đã đóng gói), số trên chip cũng đổi.
   const packScanOpened = useRef(false);
@@ -381,28 +512,63 @@ export default function OrdersScreen() {
       ? item.items
       : item.items.slice(0, ITEMS_PREVIEW);
     const hiddenCount = item.items.length - ITEMS_PREVIEW;
+    // Ô tích chỉ có ở đơn CÒN VIỆC (chờ chuẩn bị / chờ in / đã in chưa gói) — đơn đang giao,
+    // đã giao, đã hủy, khách chưa thanh toán không có gì để làm nên không có ô.
+    const selectable = workStageOf(item) !== null;
+    const isSelected = selected.has(item.id);
     return (
       <Pressable
-        className="mb-2.5 rounded-2xl border border-slate-900/5 bg-white p-3 active:opacity-80 dark:border-white/5 dark:bg-slate-900"
+        className={`mb-2.5 rounded-2xl border p-3 active:opacity-80 ${
+          isSelected
+            ? "border-emerald-400 bg-emerald-50/60 dark:border-emerald-500/60 dark:bg-emerald-500/10"
+            : "border-slate-900/5 bg-white dark:border-white/5 dark:bg-slate-900"
+        }`}
         style={{ elevation: 1 }}
         onPress={() => setDetailOrder(item)}
         accessibilityRole="button"
         accessibilityLabel={`Xem chi tiết đơn ${item.orderCode}`}
       >
-        <View className="flex-row items-center justify-between gap-2">
-          <Text
-            className="flex-1 pr-1 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
-            numberOfLines={1}
-          >
-            {item.orderCode}
-          </Text>
-          {/* HỎA TỐC đỏ rực — anh Trung chốt 13/08: loại đơn quan trọng nhất */}
-          {express ? (
-            <View className="rounded-full bg-red-500 px-2 py-0.5">
-              <Text className="text-[10px] font-bold text-white">⚡ Hỏa tốc</Text>
-            </View>
-          ) : null}
-          <Badge label={ship.label} bg={ship.bg} text={ship.text} />
+        {/* HÀNG ĐẦU THẺ: [ô tích + MÃ ĐƠN] ........ [Hỏa tốc] [trạng thái].
+            Luật (anh Trung 19/11: "cần phải đo độ dài của mã đơn hàng… tránh trường hợp mã đơn quá
+            dài sẽ bị chèn chữ lên phần hỏa tốc"): MÃ ĐƠN LUÔN HIỆN ĐỦ — người bán nhận đơn bằng mấy
+            ký tự cuối. Hàng cho phép XUỐNG DÒNG: không đủ chỗ thì cụm nhãn bên phải tự rơi xuống
+            dòng dưới (vẫn sát mép phải), mã đơn không bị cắt, không bao giờ đè lên nhãn. Mã đơn chỉ
+            bị cắt khi tự nó dài hơn cả bề ngang thẻ.
+            Đo 19/11 (DB local): mã Shopee 14 ký tự, Lazada 15 số, TikTok 18 số; soi thêm 16 và 19
+            số. Bản một dòng cũ: 360 px cắt mã 14 ký tự chữ rộng + mã 16 / 19 số, 320 px cắt mọi mã.
+            Bản này (đo 320 / 360 / 375 / 390 / 412 / 430 px, 8 mã, đều Hỏa tốc): 0 mã bị cắt, 0 mã
+            đè nhãn; từ 390 px trở lên mọi mã nằm một dòng, dưới đó nhãn tự xuống dòng.
+            Mã đơn KHÔNG dùng số đều cột (TABULAR): mã không cần gióng cột giữa các thẻ, mà số đều
+            cột làm chuỗi 18–19 số rộng thêm. Chi tiết: docs/MOBILE-CHUAN-BI-HANG-IN-PHIEU.md mục 2.2. */}
+        <View className="flex-row flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+          <View className="max-w-full shrink flex-row items-center gap-2">
+            {selectable ? (
+              <Pressable
+                onPress={() => toggleSelect(item)}
+                hitSlop={10}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isSelected }}
+                accessibilityLabel={`Chọn đơn ${item.orderCode}`}
+              >
+                <CheckBox checked={isSelected} />
+              </Pressable>
+            ) : null}
+            <Text
+              className="shrink text-[13px] font-semibold text-slate-900 dark:text-slate-100"
+              numberOfLines={1}
+            >
+              {item.orderCode}
+            </Text>
+          </View>
+          <View className="ml-auto flex-row items-center gap-2">
+            {/* HỎA TỐC đỏ rực — anh Trung chốt 13/08: loại đơn quan trọng nhất */}
+            {express ? (
+              <View className="rounded-full bg-red-500 px-2 py-0.5">
+                <Text className="text-[10px] font-bold text-white">⚡ Hỏa tốc</Text>
+              </View>
+            ) : null}
+            <Badge label={ship.label} bg={ship.bg} text={ship.text} />
+          </View>
         </View>
         {/* Tên SHOP thay nhãn sàn (anh Trung chốt 13/08) — nhà nhiều gian
             nhìn phát biết đơn của DarkMan hay Hi.Bé; sàn đã có chip lọc. */}
@@ -673,7 +839,8 @@ export default function OrdersScreen() {
           keyExtractor={(o) => o.id}
           renderItem={renderOrder}
           // flexGrow: danh sách rỗng / ít đơn vẫn vuốt được ở bất kỳ chỗ nào của vùng trống.
-          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingBottom: 24 }}
+          // Đáy chừa 88 px: thanh nổi Xử lý đơn không che thẻ đơn cuối.
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingBottom: 88 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -707,6 +874,88 @@ export default function OrdersScreen() {
           }
         />
       )}
+
+      {/* THANH NỔI "XỬ LÝ ĐƠN" ở đáy danh sách (19/11/2026). Vì sao không nằm ở cụm đầu trang: cụm
+          đó chia theo lưới 4 cột (ô tìm 3 + nút Đóng gói 1, bốn chip sàn, Bộ lọc 2 + Thống kê 2);
+          nhét nút thứ ba vào hàng dưới là ba nút nằm lệch khe với bốn chip phía trên — anh Trung:
+          "cụm này nó kiểu lộn xộn". Việc LÀM trên các đơn đang xem thuộc về vùng ngón cái:
+            - chưa tích đơn nào → một viên "Xử lý đơn" + số đơn đang chờ (làm cả nhóm đang lọc);
+            - đang tích đơn      → nở thành thanh đầy bề ngang: số đã chọn · Chọn tất cả · Bỏ chọn
+                                   · nút Xử lý (làm đúng các đơn đã tích).
+          Màu theo cặp đen / trắng của chip đang chọn để không tranh với nút Đóng gói xanh. */}
+      <View
+        pointerEvents="box-none"
+        style={{ position: "absolute", left: 16, right: 16, bottom: 12, alignItems: "flex-end" }}
+      >
+        {picked.total > 0 ? (
+          <View
+            className="w-full rounded-2xl bg-slate-900 px-3 py-2.5 dark:border dark:border-slate-600 dark:bg-slate-800"
+            style={RAISED_SHADOW}
+          >
+            <View className="flex-row items-center gap-2.5">
+              <Pressable
+                className="h-7 w-7 items-center justify-center rounded-full bg-white/10 active:opacity-60"
+                onPress={clearSelection}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Bỏ chọn"
+              >
+                <Ionicons name="close" size={15} color="#e2e8f0" />
+              </Pressable>
+              <Text className="min-w-0 flex-1 text-[13px] font-bold text-white" style={TABULAR} numberOfLines={1}>
+                {/* Màn dưới 360 px chỉ còn "52 đơn": con số phải luôn đọc được, không để bị cắt
+                    thành "Đã chọn …" (soi 320 px 19/11). */}
+                {winWidth >= 360 ? `Đã chọn ${groupVN(picked.total)} đơn` : `${groupVN(picked.total)} đơn`}
+              </Text>
+              {selectAllStages(status, printedInUse).length > 0 ? (
+                <Pressable onPress={() => void selectAll()} hitSlop={8} disabled={selectingAll} accessibilityRole="button">
+                  <Text className="text-xs font-semibold text-sky-300">
+                    {selectingAll ? "Đang chọn…" : "Chọn tất cả"}
+                  </Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                className="flex-row items-center gap-1 rounded-full bg-emerald-500 px-3.5 py-2 active:opacity-80"
+                onPress={() => {
+                  hapticTap();
+                  setProcessOpen(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Xử lý ${picked.total} đơn đã chọn`}
+              >
+                <Ionicons name="flash" size={13} color="#fff" />
+                <Text className="text-xs font-bold text-white">Xử lý</Text>
+              </Pressable>
+            </View>
+            {selectAllNote ? (
+              <Text className="mt-1 text-[11px] text-slate-300" numberOfLines={2}>
+                {selectAllNote}
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <Pressable
+            className="flex-row items-center gap-2 rounded-full bg-slate-900 px-4 py-3 active:opacity-80 dark:bg-slate-100"
+            style={RAISED_SHADOW}
+            onPress={() => {
+              hapticTap();
+              setProcessOpen(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Xử lý đơn"
+          >
+            <Ionicons name="flash" size={15} color="#10b981" />
+            <Text className="text-[13px] font-bold text-white dark:text-slate-900">Xử lý đơn</Text>
+            {workCount > 0 ? (
+              <View className="min-w-[20px] items-center rounded-full bg-emerald-500 px-1.5 py-0.5">
+                <Text className="text-[11px] font-bold text-white" style={TABULAR}>
+                  {workCount > 99 ? "99+" : workCount}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        )}
+      </View>
 
       <FilterSheet
         visible={filterOpen}
@@ -749,6 +998,75 @@ export default function OrdersScreen() {
           setDetailOrder(null);
           void load(1, false);
         }}
+        onArrange={(o) => {
+          setDetailOrder(null);
+          afterSheetClose(() => openArrange([o.id]));
+        }}
+        onPrint={(o) => {
+          setDetailOrder(null);
+          afterSheetClose(() => openPrint({ kind: "orders", orderIds: [o.id], waitReady: false }));
+        }}
+      />
+      <ProcessSheet
+        visible={processOpen}
+        counts={counts}
+        scopeLabel={scopeLabel}
+        selection={picked.total > 0 ? picked : null}
+        onClearSelection={clearSelection}
+        onClose={() => setProcessOpen(false)}
+        onView={viewStage}
+        onAction={(stage) => {
+          setProcessOpen(false);
+          if (stage === "pack") afterSheetClose(openPackScan);
+          else if (stage === "arrange") {
+            // Có đơn tích → đúng các đơn đã tích đang chờ xử lý; không thì cả nhóm đang lọc.
+            const ids = picked.total > 0 ? idsOfStage(selected, "arrange") : undefined;
+            afterSheetClose(() => openArrange(ids));
+          } else {
+            const ids = picked.total > 0 ? idsOfStage(selected, "print") : null;
+            afterSheetClose(() =>
+              openPrint(ids ? { kind: "orders", orderIds: ids, waitReady: false } : { kind: "queue", reprint: false })
+            );
+          }
+        }}
+        onReprint={() => {
+          setProcessOpen(false);
+          const ids = picked.reprint > 0 ? idsOfStage(selected, "reprint") : null;
+          afterSheetClose(() =>
+            openPrint(ids ? { kind: "orders", orderIds: ids, waitReady: false } : { kind: "queue", reprint: true })
+          );
+        }}
+        onLabelTemplate={openLabelTemplate}
+      />
+      <ArrangeSheet
+        key={`arrange-${arrange.seq}`}
+        visible={arrange.open}
+        scope={pickScope}
+        orderIds={arrange.orderIds}
+        canPrint={canPrint.print || canPrint.share}
+        onClose={() => setArrange((a) => ({ ...a, open: false }))}
+        onDone={() => {
+          // Đơn vừa đổi bước → ô tích cũ không còn đúng nghĩa.
+          clearSelection();
+          void load(1, false, true);
+        }}
+        onPrint={(ids) => {
+          setArrange((a) => ({ ...a, open: false }));
+          // Vừa chuẩn bị xong: sàn cấp mã vận đơn trễ vài giây → hộp In tự đợi cho đủ.
+          afterSheetClose(() => openPrint({ kind: "orders", orderIds: ids, waitReady: true }));
+        }}
+      />
+      <PrintSheet
+        key={`print-${print.seq}`}
+        visible={print.open}
+        target={print.target}
+        scope={pickScope}
+        onClose={closePrint}
+        onPrinted={() => {
+          clearSelection();
+          void load(1, false, true);
+        }}
+        onLabelTemplate={openLabelTemplate}
       />
     </View>
   );
@@ -788,6 +1106,9 @@ function FilterSheet({
   const visibleChannels = channel
     ? channels.filter((c) => c.channelName === channel)
     : channels;
+  // Cây sàn → gian: sàn theo thứ tự hàng chip ở đầu màn, gian xếp theo tên.
+  const shopGroups = groupChannelsByPlatform(visibleChannels);
+  const channelColors = useChannelColors();
 
   return (
     <Modal visible={visible} transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={onClose}>
@@ -876,24 +1197,47 @@ function FilterSheet({
                 <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
                   Gian hàng{channel ? ` ${CHANNEL_LABEL[channel]}` : ""}
                 </Text>
-                <View className="mb-3 flex-row flex-wrap gap-1.5">
-                  <PickChip
-                    label="Tất cả"
-                    active={draft.shopId === ""}
-                    onPress={() => setDraft((d) => ({ ...d, shopId: "" }))}
-                  />
-                  {visibleChannels.map((c) => (
+                {/* CÂY SÀN → GIAN (anh Trung 19/11: "sắp xếp luôn bộ lọc dạng cha-con, vẫn liệt kê
+                    hết các shop ra nhưng theo thứ tự Sàn - shop"). Trước đây gian nằm lẫn một
+                    hàng theo thứ tự nối gian, mỗi chip phải kéo đuôi "· Shopee" để phân biệt.
+                    Giờ: "Tất cả" đứng riêng, rồi mỗi sàn một dòng tên (chấm màu sàn) và các gian
+                    của sàn đó thụt vào bên dưới, xếp theo tên — chip chỉ còn tên gian.
+                    Dòng tên sàn chỉ là nhãn, KHÔNG bấm được: lọc theo sàn đã có hàng chip ở đầu
+                    màn, thêm một chỗ bấm thứ hai cho cùng một việc là hai nút tranh nhau.
+                    Đang lọc sẵn một sàn ở ngoài thì chỉ còn một nhóm → bỏ dòng tên sàn (tiêu đề
+                    mục đã ghi "Gian hàng Shopee"). */}
+                <View className="mb-3 gap-2">
+                  <View className="flex-row">
                     <PickChip
-                      key={c.id}
-                      // Đã lọc sàn thì đuôi nhãn sàn là thừa
-                      label={
-                        channel
-                          ? c.shopName
-                          : `${c.shopName} · ${CHANNEL_LABEL[c.channelName] ?? c.channelName}`
-                      }
-                      active={draft.shopId === c.id}
-                      onPress={() => setDraft((d) => ({ ...d, shopId: c.id }))}
+                      label="Tất cả"
+                      active={draft.shopId === ""}
+                      onPress={() => setDraft((d) => ({ ...d, shopId: "" }))}
                     />
+                  </View>
+                  {shopGroups.map((g) => (
+                    <View key={g.platform} className="gap-1.5">
+                      {channel ? null : (
+                        <View className="flex-row items-center gap-2">
+                          <View
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: channelColors[g.platform] ?? "#94a3b8" }}
+                          />
+                          <Text className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            {CHANNEL_LABEL[g.platform as keyof typeof CHANNEL_LABEL] ?? g.platform}
+                          </Text>
+                        </View>
+                      )}
+                      <View className={`flex-row flex-wrap gap-1.5 ${channel ? "" : "pl-4"}`}>
+                        {g.rows.map((c) => (
+                          <PickChip
+                            key={c.id}
+                            label={c.shopName}
+                            active={draft.shopId === c.id}
+                            onPress={() => setDraft((d) => ({ ...d, shopId: c.id }))}
+                          />
+                        ))}
+                      </View>
+                    </View>
                   ))}
                 </View>
               </>

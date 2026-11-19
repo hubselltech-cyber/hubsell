@@ -27,6 +27,7 @@ import type { CatalogPendingChannel, ChannelListItem } from "@/types/api";
 import { openChannelAuth, parseAuthReturn, type AuthReturn } from "@/lib/channel-auth";
 import { hapticTap } from "@/lib/haptics";
 import { CHANNEL_LABEL } from "@/lib/labels";
+import { PLATFORM_ORDER } from "@/lib/channel-groups";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { useChannelColors } from "@/theme/channel-colors";
 import { ActionButton } from "@/components/ActionButton";
@@ -49,8 +50,6 @@ const PLATFORMS: { key: OauthPlatform; label: string; hint: string }[] = [
   { key: "TIKTOK", label: "TikTok Shop", hint: "Chọn Thời hạn cấp quyền: Không giới hạn" },
   { key: "LAZADA", label: "Lazada", hint: "Lazada có thể hỏi đăng ký gói Hubsell 0đ trước" },
 ];
-
-const PLATFORM_ORDER: ChannelListItem["channelName"][] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
 
 /** Trạng thái một gian — cùng câu chữ thẻ gian trên web (channels/page.tsx). */
 function channelState(c: ChannelListItem): {

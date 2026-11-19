@@ -36,9 +36,17 @@ http
       url,
       { method: req.method, headers },
       (proxyRes) => {
+        // Header tóm tắt của tệp vận đơn (POST /api/orders/bulk/labels) — phải chuyển tiếp và
+        // cho trình duyệt đọc, không thì giả lập web không biết đơn nào thiếu vận đơn.
+        const extra = {};
+        for (const name of ["x-hubsell-labels", "x-hubsell-saved-label"]) {
+          if (proxyRes.headers[name]) extra[name] = proxyRes.headers[name];
+        }
         res.writeHead(proxyRes.statusCode ?? 502, {
           ...cors,
+          "Access-Control-Expose-Headers": "X-Hubsell-Labels, X-Hubsell-Saved-Label",
           "content-type": proxyRes.headers["content-type"] ?? "application/json",
+          ...extra,
         });
         proxyRes.pipe(res);
       }

@@ -35,14 +35,17 @@ export function PickChip({
   onPress: () => void;
 }) {
   return (
+    // max-w-full + chữ co lại một dòng: nhãn dài (tên gian 40–50 ký tự) cắt "…" trong bề ngang
+    // hộp thay vì đẩy chip tràn ra ngoài mép phải (đo 19/11 ở 320–360 px).
     <Pressable
-      className={`flex-row items-center gap-1 rounded-full px-3 py-1.5 ${
+      className={`max-w-full flex-row items-center gap-1 rounded-full px-3 py-1.5 ${
         active ? "bg-slate-900 dark:bg-slate-100" : "bg-slate-100 dark:bg-slate-800"
       }`}
       onPress={onPress}
     >
       <Text
-        className={`text-xs font-semibold ${active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"}`}
+        className={`shrink text-xs font-semibold ${active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"}`}
+        numberOfLines={1}
       >
         {label}
       </Text>
