@@ -12,7 +12,8 @@
 - **Prod sau push:** `/health` = `ecf47893` sau 120 giây; 21:19 worker gỡ 7.626 dấu sót, quét bù nhả 106 đơn của gian không còn hoạt động (0 sản phẩm), đối chiếu lệch cứng 0 (bộ đếm 203 = từ đơn 203 = "Chờ giao" 203), **chuỗi 1**; không còn dòng `lỗi một nhịp` sau 21:19 (xem tới 21:22).
 - **Tài khoản admin@hubsell.vn (đọc bằng SQL, không đăng nhập):** 12 đơn đang giữ trên 9 mã, bộ đếm từng mã khớp số tính lại từ đơn, lệch 0. Anh đối trên màn hình bằng cột "Chờ giao" ở Tổng kho.
 - **Dọn:** xóa biến `STOCK_COMMITTED_SWEEP_MS` trên Render bằng "Save only" (không khởi động lại worker).
-- **KHÔNG làm được (công cụ chặn, em không đi vòng):** (1) `DROP INDEX CONCURRENTLY "Order_stock_committed_idx"` trên prod — chỉ mục cũ còn nguyên, vô hại; anh chạy tay rồi em thêm migration DROP cho dev; (2) tắt lịch `kho-chuan-quoc-te-soi-doi-chieu` — lượt kế là 13/11/2027.
+- **Bỏ chỉ mục cũ — XONG 21:28 (anh: "Em chạy đi"):** lượt đầu công cụ chặn em ở hộp xác nhận của Supabase; anh bảo chạy thì em chạy `DROP INDEX CONCURRENTLY IF EXISTS "Order_stock_committed_idx"`. Kiểm: còn hai chỉ mục kho hợp lệ, câu đếm đơn đang giữ đi qua chỉ mục mới (253 khối, 2 ms). Thêm migration `20261120093000_drop_order_stock_committed_idx` cho các database dev (prod bỏ qua); DB local đã áp, 30 ca test bộ đếm + ghi đơn + webhook TikTok qua.
+- **KHÔNG làm được (công cụ chặn, em không đi vòng):** tắt lịch `kho-chuan-quoc-te-soi-doi-chieu` — lượt kế là 13/11/2027.
 - **Chưa kiểm:** `pg_stat_statements` sau 24 giờ; một đơn thật rời kho qua quét lô / làn đọc con trỏ / đổi tay với bản mới; chuỗi cần 7 lần, sớm nhất đủ 25/11 ~21:19.
 
 ---

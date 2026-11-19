@@ -1891,10 +1891,8 @@ model Order {
   // Chỉ mục MỘT PHẦN "đơn đang nằm trong bộ đếm giữ" (kho chuẩn quốc tế lát 1, thiết kế lại
   // 19/11/2026) chỉ có trong SQL migration 20261120090000_stock_committed_single_mark:
   //   Order_stock_held_idx (channelId, id) WHERE stockCommittedAt IS NOT NULL
-  // Chỉ mục cũ của bản hai cột (migration 20261112210000_stock_committed_shadow) KHÔNG còn câu nào
-  // dùng, chờ bỏ sau khi bản mới chạy ổn trên prod (docs mục 14.6 bước 6):
-  //   Order_stock_committed_idx (channelId) WHERE stockCommittedAt IS NOT NULL
-  //     AND stockShippedAt IS NULL
+  // (Chỉ mục cũ của bản hai cột, Order_stock_committed_idx, đã bỏ: prod bỏ tay 19/11/2026,
+  // database dev qua migration 20261120093000_drop_order_stock_committed_idx.)
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.

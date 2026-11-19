@@ -906,7 +906,7 @@ Commit `fed244e2` (mã) + `ecf47893` (tài liệu), push `7ba02958..ecf47893`. M
 | 3. Push + việc gỡ dấu một lần | Xong 21:17–21:19 |
 | 4. Xóa biến `STOCK_COMMITTED_SWEEP_MS` trên Render | Xong, lưu bằng "Save only" (không khởi động lại worker; giá trị cũ trùng mặc định mới nên hành vi không đổi). Còn 52 biến |
 | 5. Soi lần đối chiếu đầu | Xong: lệch cứng 0, chuỗi 1 |
-| 6. Bỏ chỉ mục cũ `Order_stock_committed_idx` | **CHƯA.** Công cụ chặn em ở hộp xác nhận "destructive" của Supabase, em không tìm đường vòng. Chỉ mục cũ còn nguyên, hợp lệ, không hại gì. Anh chạy tay: `DROP INDEX CONCURRENTLY IF EXISTS "Order_stock_committed_idx";` Sau đó em thêm migration `DROP INDEX IF EXISTS` cho các database dev |
+| 6. Bỏ chỉ mục cũ `Order_stock_committed_idx` | Xong 21:28 (anh: "Em chạy đi", sau khi lượt đầu bị công cụ chặn ở hộp xác nhận "destructive" của Supabase). `DROP INDEX CONCURRENTLY IF EXISTS`; kiểm sau đó: bảng đơn còn `Order_stock_awaiting_ship_idx` + `Order_stock_held_idx`, không chỉ mục nào không hợp lệ; câu đếm đơn đang giữ đi qua chỉ mục mới, 253 khối, 2 ms. Migration `20261120093000_drop_order_stock_committed_idx` (`DROP INDEX IF EXISTS`) để các database dev khớp prod; trên prod nó không tìm thấy gì nên không lấy khóa |
 | 7. EXPLAIN + `pg_stat_statements` sau 24 giờ | EXPLAIN câu chọn đã làm (trên). `pg_stat_statements` sau 24 giờ CHƯA |
 
 **Còn lại**
@@ -914,6 +914,7 @@ Commit `fed244e2` (mã) + `ecf47893` (tài liệu), push `7ba02958..ecf47893`. M
 - Chuỗi cần 7 lần liên tiếp: lần 1 là 19/11 21:19, sớm nhất đủ vào 25/11 ~21:19. Đọc bằng `SELECT cursor FROM maintenance_jobs WHERE key = 'stock-committed-check'` (trường `streak`); không cần lịch soi.
 - Dòng `stock-committed-sweep`: `processed` > 0 nghĩa là quét bù bắt được đơn "sàn đã giao", tức còn một đường ghi trạng thái chưa gọi rời kho. Lúc 21:19 là 0.
 - Lịch `kho-chuan-quoc-te-soi-doi-chieu` em không tắt được (công cụ chặn). Nó chỉ chạy ngày 13–19/11 nên lượt kế là 13/11/2027.
+- Sau khi gỡ dấu sót, thống kê bảng còn cũ: máy vẫn ước tập đang giữ 6.984 dòng (thật 181) cho tới lượt autoanalyze kế. Câu vẫn đi đúng chỉ mục; em chưa xem lại sau autoanalyze.
 - Chưa thấy trên prod: một đơn thật đi từ Chờ xử lý sang Đang giao qua quét lô / làn đọc con trỏ / đổi tay với bản mới (mới 5 phút sau deploy). Lần đối chiếu 20/11 sẽ cho biết.
 
 ## 12. Nguồn
