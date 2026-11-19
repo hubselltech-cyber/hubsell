@@ -7,6 +7,7 @@
 ---
 ## Phiên 19/11 ~15:00 — Video đóng hàng: M1 làm DỨT ĐIỂM — cứu clip đang quay dở (M1b) + gửi tiếp ở mọi trang (K-6) (anh: "anh nghĩ mình làm dứt điểm M1 đi") — ĐÃ DỰNG → COMMIT + PUSH (anh: "Commit và push")
 
+- **✅ Đã lên prod:** commit `7ec8657d`; 14:57:24 gói mã công khai của trang quay trên `app.hubsell.vn` đã chứa bản mới (chuỗi `rec-head`) — soi tệp tĩnh, không đăng nhập; chưa nhìn màn hình prod. Dòng ghi kết quả này nằm ở commit tài liệu để tại máy, đi cùng lần push sau.
 - **Ghi ở:** `docs/VIDEO-DONG-HANG-THIET-KE.md` **mục 24** (cách làm, ba rào chống sai, cây tệp, đã / chưa kiểm, M1 còn lại gì).
 - **M1b:** trong lúc quay ghi kèm SỔ CỨU CLIP cạnh các mảnh video (`rec-head` + `rec-NNNNNN` sau mỗi mảnh 1 MiB). Trang sập / bị đóng giữa clip → mở lại Hubsell là ghép các khung đã nằm trên ổ thành tệp MP4 mới hoàn chỉnh rồi gửi như clip thường; mất tối đa một khúc 1 MiB cuối (≈ 8–10 giây). Chỗ bắt đầu dữ liệu được TÌM bằng byte đầu của khung đầu, từng khung được soát cấu trúc H.264 — không đoán theo cách thư viện xếp byte. Clip đã quay xong thì gỡ `rec-head` (không bị cứu nhầm rồi gửi trùng); `clientId` của clip được cứu = tên thư mục gốc.
 - **K-6:** thẻ rỗng `PackVideoQueueResume` ở `app-shell.tsx` — tài khoản đã mở tính năng vào trang nào cũng mở lại hàng chờ sau 3 giây (mã nạp động). ⚠️ Đụng khung chung của mọi khách (chỉ thêm thẻ rỗng) → hỏi anh trước khi push.

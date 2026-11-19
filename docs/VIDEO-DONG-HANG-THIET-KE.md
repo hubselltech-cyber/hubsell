@@ -1632,3 +1632,7 @@ frontend/src/components/shell/app-shell.tsx                        SỬA  +2 dò
 Một commit: M1b + K-6 (12 tệp, chỉ mã web + tài liệu). Trước khi commit: test 52 / 52, `tsc` + `eslint` sạch, `next build` qua. Lên prod
 khi mục 24.5 CHƯA kiểm — anh thử thẳng trên prod. Thẻ `PackVideoQueueResume` nằm ở khung chung của mọi khách (rỗng, không nạp gì khi
 tài khoản chưa mở tính năng).
+
+**Sau khi push:** commit `7ec8657d` (kèm `f99f1d51` tài liệu của lần trước). 14:57:24 gói mã công khai của
+`app.hubsell.vn/orders/videos/record` đã chứa chuỗi của bản mới (`rec-head`, tệp `/_next/static/chunks/35ew8ip3u0mja.js`) — soi tệp
+tĩnh, không đăng nhập. CHƯA nhìn màn hình trên prod, chưa xem Render. Máy chủ local đã dừng.
