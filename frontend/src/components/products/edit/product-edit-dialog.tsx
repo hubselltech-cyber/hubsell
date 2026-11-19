@@ -6,10 +6,15 @@
 //
 // Sửa theo MẪU: mở từ bất kỳ phân loại nào cũng tải đủ mọi phân loại của mẫu (bảng Tổng kho có thể
 // đang lọc / phân trang chỉ thấy vài dòng). Một lần Lưu = một lần ghi trọn gói: tên áp cho cả mẫu,
-// phân loại / mã SKU / giá bán từng dòng, phân loại mới thêm. Là hộp thoại chứ không phải trang riêng
+// phân loại / mã SKU / giá bán / giá vốn từng dòng, phân loại mới thêm. Là hộp thoại chứ không phải trang riêng
 // để lưu xong khách vẫn đứng đúng trang, đúng ô tìm của bảng.
 //
-// Không sửa ở đây (có cửa riêng, ghi rõ cuối hộp): tồn kho, giá vốn của SKU đang có, mã vạch.
+// GIÁ VỐN (19/11/2026, anh Trung: "sửa sản phẩm mà không sửa được giá vốn"): ô sửa thẳng trong bảng, chỉ
+// người thấy tài chính có cột. Đây là giá MẶC ĐỊNH ở kho — máy chủ ghi qua đúng đường của trang Cấu hình
+// Giá vốn: đơn mới dùng giá mới, đơn cũ chưa có giá được tính, đơn cũ đã có giá giữ nguyên. Trước khi
+// lưu hỏi lại nếu mã đang là quà tặng mà giá cao (cùng rào với trang Cấu hình Giá vốn).
+//
+// Không sửa ở đây (có cửa riêng, ghi rõ cuối hộp): tồn kho, mã vạch.
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,6 +22,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2, Pencil, Plus } from "lucide-react";
 
+import { useGiftCostGuard } from "@/components/finance/gift-cost-guard";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -26,7 +32,7 @@ import { formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-import { blankRow, buildPayload, firstBlocker, initDraft, isDirty, rowIssues, type GroupDraft, type RowEdit } from "./draft";
+import { blankRow, buildPayload, costChangesByPrice, firstBlocker, initDraft, isDirty, rowIssues, type GroupDraft, type RowEdit } from "./draft";
 import { VariantRows } from "./variant-rows";
 
 /** Sản phẩm đang mở ở hộp sửa: một SKU bất kỳ của mẫu + có tô dòng đó không (mở từ menu ⋯ của một phân loại). */
@@ -121,6 +127,7 @@ function Loader({ productId, ...rest }: BodyProps & { productId: string }) {
 function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyProps & { detail: ProductGroupDetail }) {
   const [draft, setDraft] = useState<GroupDraft>(() => initDraft(detail));
   const [saving, setSaving] = useState(false);
+  const { confirmGiftCost, giftCostDialog } = useGiftCostGuard();
   const tableRef = useRef<HTMLDivElement>(null);
   /** Dòng vừa thêm — đưa con trỏ vào ô Phân loại của nó sau khi vẽ. */
   const focusKey = useRef<string | null>(null);
@@ -165,11 +172,18 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
     setSaving(true);
     try {
       const payload = buildPayload(draft);
+      for (const [cost, ids] of costChangesByPrice(payload)) {
+        if (!(await confirmGiftCost(ids, cost))) {
+          setSaving(false);
+          return;
+        }
+      }
       const saved = await saveProductGroup(detail.anchorId, payload);
       toast.success(
-        payload.added.length > 0
+        (payload.added.length > 0
           ? `Đã lưu ${saved.productName} — thêm ${formatNumber(payload.added.length)} phân loại, nay có ${formatNumber(saved.variants.length)} SKU`
-          : `Đã lưu ${saved.productName}`
+          : `Đã lưu ${saved.productName}`) +
+          (saved.backfilledOrderLines > 0 ? ` · tính lại ${formatNumber(saved.backfilledOrderLines)} dòng đơn cũ chưa có giá vốn` : "")
       );
       onSaved();
       onClose();
@@ -188,7 +202,7 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
           Sửa sản phẩm
         </DialogTitle>
         <DialogDescription>
-          Sửa tên, phân loại, mã SKU, giá bán và thêm phân loại mới. Các gian đang nối giữ nguyên liên kết.
+          Sửa tên, phân loại, mã SKU, giá bán{seesCost ? ", giá vốn" : ""} và thêm phân loại mới. Các gian đang nối giữ nguyên liên kết.
         </DialogDescription>
       </DialogHeader>
 
@@ -229,7 +243,8 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
         Tồn kho sửa bằng nút Nhập · Xuất trên bảng.{" "}
         {seesCost && (
           <>
-            Giá vốn của SKU đang có sửa ở{" "}
+            Giá vốn ở đây là giá mặc định của kho: đơn mới tính theo giá mới, đơn cũ đã có giá vốn giữ nguyên; gian đặt giá
+            vốn riêng thì sửa ở{" "}
             <Link href="/finance/cost-prices" className="underline underline-offset-2 hover:text-foreground">
               Cấu hình Giá vốn
             </Link>
@@ -253,6 +268,7 @@ function EditBody({ detail, highlight, onDirtyChange, onClose, onSaved }: BodyPr
           Lưu thay đổi
         </Button>
       </DialogFooter>
+      {giftCostDialog}
     </>
   );
 }

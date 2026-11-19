@@ -1,6 +1,7 @@
 // Hộp "Sửa sản phẩm" ở Tổng kho (18/11/2026) — phần ghi DB: đổi tên cả mẫu, đổi chéo mã, thêm phân
 // loại qua sổ kho, chặn gộp mẫu / trùng mã. Chạy trên DB dev, tự dọn.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ChannelName } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { productGroupKey } from "../../lib/product-group";
 import { loadProductGroup, ProductGroupEditError, saveProductGroup } from "../product-group-edit";
@@ -15,6 +16,7 @@ let idM = "";
 let idL = "";
 let idSingle = "";
 let otherBarcode = "";
+let channelId = "";
 
 async function mk(owner: string, code: string, name: string, variant: string | null, qty = 0) {
   const p = await prisma.product.create({
@@ -63,9 +65,22 @@ describe("saveProductGroup", () => {
     otherBarcode = other.barcode!;
     // Shop khác có mẫu trùng tên + mã trùng — không được ảnh hưởng, không được chặn.
     await mk(strangerId, sku("AO-XL"), NAME, "XL");
+    channelId = (
+      await prisma.channel.create({
+        data: { userId, channelName: ChannelName.SHOPEE, shopName: `TEST-SUA-${stamp}`, externalShopId: `41${stamp}`, status: "ACTIVE" },
+        select: { id: true },
+      })
+    ).id;
   });
 
   afterAll(async () => {
+    // Đơn thử của ca giá vốn: xóa đơn rồi quét luôn dòng sổ cái của chủ shop thử (sổ không có khóa ngoại tới đơn).
+    await prisma.orderItem.deleteMany({ where: { order: { channelId } } });
+    await prisma.order.deleteMany({ where: { channelId } });
+    await prisma.$executeRaw`DELETE FROM "order_line_ledger" WHERE "ownerId" = ${userId}`;
+    await prisma.$executeRaw`DELETE FROM "order_ledger" WHERE "ownerId" = ${userId}`;
+    await prisma.channelProduct.deleteMany({ where: { channelId } });
+    await prisma.channel.deleteMany({ where: { id: channelId } });
     await prisma.user.deleteMany({ where: { id: { in: [userId, strangerId] } } });
     await prisma.$disconnect();
   });
@@ -151,6 +166,60 @@ describe("saveProductGroup", () => {
     await save(idL, { productName: NAME, added: [{ skuCode: sku("AO-3XL"), variantName: "3XL", sellingPrice: 1, costPrice: 99_000 }] }, false);
     const p = await prisma.product.findUniqueOrThrow({ where: { userId_skuCode: { userId, skuCode: sku("AO-3XL") } } });
     expect(Number(p.costPrice)).toBe(0);
+  });
+
+  it("đổi giá vốn: ghi giá mặc định ở kho, vá đơn cũ còn 0, đơn cũ đã có giá giữ nguyên, dòng không đổi không bị đụng", async () => {
+    const order = (code: string, productId: string, costPriceAtSale: number) =>
+      prisma.order.create({
+        data: {
+          channelId,
+          orderCode: `TEST-SUA-${stamp}-${code}`,
+          customerName: "Khách test",
+          itemCount: 1,
+          items: { create: { channelSku: code, productId, productName: code, quantity: 1, price: 100_000, costPriceAtSale } },
+        },
+        select: { items: { select: { id: true } } },
+      });
+    const lineZero = (await order("chua-gia", idM, 0)).items[0].id;
+    const lineFrozen = (await order("da-co-gia", idM, 33_000)).items[0].id;
+    const costAtSale = async (id: string) => Number((await prisma.orderItem.findUniqueOrThrow({ where: { id } })).costPriceAtSale);
+
+    const d = await save(idM, { productName: NAME, variants: [{ id: idM, costPrice: 52_000 }] });
+    expect(d?.backfilledOrderLines).toBe(1);
+    expect(d?.variants.find((v) => v.id === idM)?.costPrice).toBe(52_000);
+    expect(Number((await prisma.product.findUniqueOrThrow({ where: { id: idM } })).costPrice)).toBe(52_000);
+    expect(Number((await prisma.product.findUniqueOrThrow({ where: { id: idL } })).costPrice)).toBe(40_000);
+    expect(await costAtSale(lineZero)).toBe(52_000);
+    expect(await costAtSale(lineFrozen)).toBe(33_000);
+
+    // Sửa giá lần nữa: dòng vừa vá đã là ảnh chụp có số → đóng băng như mọi đơn cũ khác.
+    const again = await save(idM, { productName: NAME, variants: [{ id: idM, costPrice: 60_000 }] });
+    expect(again?.backfilledOrderLines).toBe(0);
+    expect(await costAtSale(lineZero)).toBe(52_000);
+  });
+
+  it("đếm SKU sàn đang có giá vốn riêng của gian (giá riêng thắng giá kho)", async () => {
+    const mkCp = (code: string, costPrice?: number) =>
+      prisma.channelProduct.create({ data: { channelId, channelSku: `${code}-${stamp}`, productName: code, productId: idL, costPrice } });
+    await mkCp("GIA-RIENG", 45_000);
+    await mkCp("THEO-KHO");
+    const l = (await loadProductGroup(userId, idL))?.variants.find((v) => v.id === idL);
+    expect(l).toMatchObject({ linkedChannels: 2, ownCostChannels: 1 });
+  });
+
+  it("người không thấy tài chính đổi giá vốn → 403, không ghi gì (kể cả tên gửi kèm)", async () => {
+    const before = Number((await prisma.product.findUniqueOrThrow({ where: { id: idL } })).costPrice);
+    let caught: unknown = null;
+    try {
+      await save(idL, { productName: `${NAME} lén`, variants: [{ id: idL, costPrice: 1 }] }, false);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ProductGroupEditError);
+    expect((caught as ProductGroupEditError).status).toBe(403);
+    const after = await prisma.product.findUniqueOrThrow({ where: { id: idL } });
+    expect(Number(after.costPrice)).toBe(before);
+    expect(after.productName).toBe(NAME);
   });
 
   it("sản phẩm đơn → đặt phân loại + thêm phân loại thành mẫu cha–con", async () => {

@@ -12,7 +12,7 @@ const NEW_SKU_PATTERN = /^[A-Za-z0-9._-]{1,50}$/;
 const SKU_SHORT_HINT = 6;
 const STOCK_MAX = 1_000_000;
 
-/** Dòng ĐANG CÓ trong kho — sửa được phân loại, mã SKU, giá bán. */
+/** Dòng ĐANG CÓ trong kho — sửa được phân loại, mã SKU, giá bán, giá vốn (người thấy tài chính). */
 export interface ExistingRowDraft {
   kind: "existing";
   key: string;
@@ -21,6 +21,8 @@ export interface ExistingRowDraft {
   skuCode: string;
   /** Chuỗi chữ số thô ("120000") — CurrencyInput lo phần dấu chấm. */
   price: string;
+  /** Giá vốn mặc định ở kho; xóa trắng = 0. Người không thấy tài chính không có ô này nên không bao giờ đổi. */
+  cost: string;
 }
 
 /** Phân loại MỚI THÊM — có thêm giá vốn và tồn ban đầu. */
@@ -36,7 +38,7 @@ export interface NewRowDraft {
 
 export type RowDraft = ExistingRowDraft | NewRowDraft;
 
-/** Một lần gõ vào một dòng. `cost` / `stock` chỉ có nghĩa với dòng mới. */
+/** Một lần gõ vào một dòng. `stock` chỉ có nghĩa với dòng mới. */
 export type RowEdit = Partial<Pick<NewRowDraft, "variantName" | "skuCode" | "price" | "cost" | "stock">>;
 
 export interface GroupDraft {
@@ -50,6 +52,7 @@ export interface RowIssues {
   stock?: string;
   /** Nhắc nhẹ (vàng), không chặn lưu. */
   skuNote?: string;
+  costNote?: string;
 }
 
 const digitsOf = (n: number) => String(Math.max(0, Math.round(n)));
@@ -73,6 +76,7 @@ export function initDraft(detail: ProductGroupDetail): GroupDraft {
       variantName: v.variantName ?? "",
       skuCode: v.skuCode,
       price: digitsOf(v.sellingPrice),
+      cost: digitsOf(v.costPrice ?? 0),
     })),
   };
 }
@@ -96,6 +100,9 @@ function variantChanged(r: RowDraft): boolean {
 }
 function priceChanged(r: ExistingRowDraft): boolean {
   return r.price !== digitsOf(r.original.sellingPrice);
+}
+function costChanged(r: ExistingRowDraft): boolean {
+  return Number(r.cost || 0) !== Number(digitsOf(r.original.costPrice ?? 0));
 }
 
 /** Lỗi theo từng dòng (khóa = RowDraft.key). Dòng không có lỗi thì vắng mặt. */
@@ -128,6 +135,10 @@ export function rowIssues(draft: GroupDraft): Record<string, RowIssues> {
     }
 
     if (r.kind === "new" && r.stock !== "" && Number(r.stock) > STOCK_MAX) issue.stock = "Số quá lớn";
+    // Giá riêng của gian thắng giá kho — nói ngay tại ô, kẻo khách sửa xong thấy lãi lỗ gian đó không đổi.
+    if (r.kind === "existing" && costChanged(r) && r.original.ownCostChannels > 0) {
+      issue.costNote = `${r.original.ownCostChannels} SKU sàn có giá vốn riêng, không đổi theo`;
+    }
     if (Object.keys(issue).length > 0) out[r.key] = issue;
   }
   return out;
@@ -162,9 +173,22 @@ export function buildPayload(draft: GroupDraft): ProductGroupSavePayload {
     if (skuChanged(r)) patch.skuCode = r.skuCode.trim();
     if (variantChanged(r)) patch.variantName = cleanVariant(r.variantName);
     if (priceChanged(r)) patch.sellingPrice = Number(r.price || 0);
+    if (costChanged(r)) patch.costPrice = Number(r.cost || 0);
     if (Object.keys(patch).length > 1) payload.variants.push(patch);
   }
   return payload;
+}
+
+/** Các SKU đang có vừa đổi giá vốn, gom theo giá mới — để hỏi lại "mã này đang là quà tặng" trước khi lưu. */
+export function costChangesByPrice(payload: ProductGroupSavePayload): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  for (const v of payload.variants) {
+    if (v.costPrice === undefined) continue;
+    const ids = out.get(v.costPrice);
+    if (ids) ids.push(v.id);
+    else out.set(v.costPrice, [v.id]);
+  }
+  return out;
 }
 
 /** Có gì để lưu không (nút Lưu sáng / chặn lỡ tay bấm ra ngoài hộp). */

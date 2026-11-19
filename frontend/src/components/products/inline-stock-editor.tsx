@@ -16,7 +16,8 @@ interface InlineStockEditorProps {
   threshold: number;
   /** Người dùng có quyền sửa tồn không (nhân viên chỉ xem thì false). */
   editable: boolean;
-  onSaved: () => void;
+  /** Làm tươi bảng sau khi lưu. Trả Promise thì ô giữ vòng xoay tới khi bảng có số mới (xem `save`). */
+  onSaved: () => void | Promise<unknown>;
 }
 
 /**
@@ -24,6 +25,10 @@ interface InlineStockEditorProps {
  * mới thực sự là trải nghiệm tốt"). Bấm vào số → ô nhập, gõ số mới, Enter lưu,
  * Esc hủy, bấm ra ngoài cũng hủy (tránh lưu nhầm). Server tự tính chênh lệch,
  * ghi sổ kho như nhập/xuất tay, rồi đẩy Có thể bán mới lên các gian đã nối.
+ *
+ * 19/11/2026 (anh Trung: "nhập tồn rồi Enter thì bị load lại cả trang"): bảng nay làm tươi NGẦM, không
+ * gỡ ra tải lại — nên ô này tự chờ số mới về rồi mới đóng, và phải được vẽ bằng một component có danh
+ * tính cố định (StockCell ở trang Tổng kho) để ô đang gõ dở ở dòng khác không bị dựng lại giữa chừng.
  */
 export function InlineStockEditor({
   product,
@@ -67,12 +72,18 @@ export function InlineStockEditor({
       toast.success(
         `${product.skuCode}: ${formatNumber(qty)} → ${formatNumber(n)} (${r.delta > 0 ? "nhập" : "xuất"} ${formatNumber(Math.abs(r.delta))}) — đang đẩy lên các gian đã nối.`
       );
-      setEditing(false);
-      onSaved();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không lưu được tồn kho");
+      setSaving(false);
+      return;
+    }
+    // Đã lưu. Giữ ô ở trạng thái đang lưu tới khi bảng nhận số mới: đóng ngay thì viên số hiện lại số CŨ
+    // một nhịp rồi mới nhảy. Cả dòng (Có thể bán, Giá trị tồn, màu cảnh báo) đổi cùng lúc theo máy chủ.
+    try {
+      await onSaved();
     } finally {
       setSaving(false);
+      setEditing(false);
     }
   }
 

@@ -186,7 +186,7 @@ const NAV_ITEMS: NavItem[] = [
       // (/products: bảng SKU kho + Nhật ký kho; deep-link ?search= từ chuông, các trang
       // con /receive /stocktake /putaway /new vẫn thuộc đây) và "Sản phẩm trên sàn"
       // (/products/marketplace: tầng đệm ChannelProduct, chỉ chủ shop — trước là tab).
-      // Route cũ /mappings → /products/marketplace, /warehouse/sync → /products?sync=1.
+      // Route cũ /mappings → /products/marketplace, /warehouse/sync → /products/marketplace?sync=1.
       { href: "/products", label: "Tổng kho", perm: "warehouse.products" },
       {
         href: "/products/marketplace",
@@ -408,7 +408,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   // Trang con đứng TRƯỚC "/products" (match tiền tố) — 05/11/2026 tách hub Hàng hóa.
   { prefix: "/products/marketplace", title: "Sản phẩm trên sàn" },
   { prefix: "/products", title: "Tổng kho" },
-  { prefix: "/warehouse/sync", title: "Tổng kho" }, // redirect về Tổng kho — tránh nháy tiêu đề lạ
+  { prefix: "/warehouse/sync", title: "Sản phẩm trên sàn" }, // redirect về Sản phẩm trên sàn — tránh nháy tiêu đề lạ
   { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
   { prefix: "/channels", title: "Cấu hình kết nối" },
   { prefix: "/mappings", title: "Sản phẩm trên sàn" }, // redirect — tránh nháy tiêu đề lạ

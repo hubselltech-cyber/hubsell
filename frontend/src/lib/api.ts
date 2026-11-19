@@ -1846,6 +1846,8 @@ export interface ProductGroupVariant {
   imageUrl: string | null;
   /** Số SKU sàn đang nối vào dòng này. */
   linkedChannels: number;
+  /** Trong số đó, bao nhiêu SKU sàn đang có giá vốn RIÊNG của gian — đổi giá vốn ở kho không đổi giá của chúng. */
+  ownCostChannels: number;
 }
 
 export interface ProductGroupDetail {
@@ -1862,8 +1864,35 @@ export interface ProductGroupDetail {
 /** Trường vắng = giữ nguyên; dòng không gửi = giữ nguyên (vẫn đổi tên theo mẫu). */
 export interface ProductGroupSavePayload {
   productName: string;
-  variants: { id: string; skuCode?: string; variantName?: string; sellingPrice?: number }[];
+  variants: { id: string; skuCode?: string; variantName?: string; sellingPrice?: number; costPrice?: number }[];
   added: { skuCode: string; variantName: string; sellingPrice: number; costPrice?: number; stock?: number }[];
+}
+
+/** Một nhóm SKU trong hộp Thống kê Tổng kho: số SKU, tổng tồn (tồn âm tính 0), giá trị tồn theo giá vốn. */
+export interface InventoryStatsBucket {
+  skus: number;
+  quantity: number;
+  /** Vắng mặt khi người đang xem không được biết giá vốn. */
+  value?: number;
+}
+
+/** Thống kê cả Tổng kho — cùng định nghĩa với bảng (sản phẩm = mẫu hàng, hết hàng = tồn ≤ 0, giá trị = tồn × giá vốn). */
+export interface InventoryStats {
+  products: number;
+  inStock: InventoryStatsBucket;
+  outOfStock: InventoryStatsBucket;
+  inactive: InventoryStatsBucket;
+  total: InventoryStatsBucket;
+  /** SKU đang âm tồn (bán vượt) — tính 0 trong tổng. */
+  negativeSkus: number;
+  /** SKU còn hàng nhưng chưa nhập giá vốn + số lượng của chúng — chưa nằm trong giá trị tồn. */
+  noCostSkus?: number;
+  noCostQuantity?: number;
+  costPriceHidden: boolean;
+}
+
+export function fetchInventoryStats() {
+  return apiFetch<InventoryStats>("/api/products/stats");
 }
 
 /** Mọi phân loại của mẫu chứa SKU này (sản phẩm đơn = chính nó). */
@@ -1871,9 +1900,12 @@ export function fetchProductGroup(productId: string) {
   return apiFetch<ProductGroupDetail>(`/api/products/${productId}/group`);
 }
 
-/** Lưu trọn gói: tên mẫu, phân loại / mã SKU / giá bán từng dòng, phân loại mới. Lỗi luật → ApiError.message. */
+/**
+ * Lưu trọn gói: tên mẫu, phân loại / mã SKU / giá bán / giá vốn từng dòng, phân loại mới. Lỗi luật →
+ * ApiError.message. `backfilledOrderLines` = số dòng đơn cũ chưa có giá vốn vừa nhận giá mới.
+ */
 export function saveProductGroup(productId: string, payload: ProductGroupSavePayload) {
-  return apiFetch<ProductGroupDetail>(`/api/products/${productId}/group`, {
+  return apiFetch<ProductGroupDetail & { backfilledOrderLines: number }>(`/api/products/${productId}/group`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });

@@ -701,7 +701,7 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
   - Đổi tên trùng tên một MẪU KHÁC → **chặn hẳn (409)**, không chỉ cảnh báo: hai mẫu sẽ gộp làm một và hộp này không tách lại được (đổi tên là đổi cả khối đã gộp).
   - Đổi chéo / nối đuôi mã giữa các phân loại trong một lần lưu: dòng đang giữ mã bị dòng khác lấy nhả ra mã tạm trước (ràng buộc duy nhất kiểm từng câu lệnh).
   - Phân loại mới: mã vạch DB tự sinh, ảnh lấy theo mẫu, giá vốn chỉ người thấy tài chính nhập được (người khác gửi cũng về 0), tồn ban đầu 0 … 1.000.000. Tối đa 100 phân loại mỗi lần lưu (bằng trần form Tạo sản phẩm mới); mẫu trên 500 phân loại không mở ở hộp.
-- **Không sửa ở hộp này** (ghi rõ cuối hộp, có cửa riêng): tồn kho (Nhập · Xuất), giá vốn của SKU ĐANG CÓ (Cấu hình Giá vốn — đụng tài chính, đơn cũ đóng băng giá), mã vạch (⋯ › Mã vạch, cảnh báo & tồn an toàn), xóa / ngừng bán (⋯).
+- **Không sửa ở hộp này** (ghi rõ cuối hộp, có cửa riêng): tồn kho (Nhập · Xuất), ~~giá vốn của SKU ĐANG CÓ~~ (19/11 anh yêu cầu sửa được — xem mục 13.2), mã vạch (⋯ › Mã vạch, cảnh báo & tồn an toàn), xóa / ngừng bán (⋯).
 - **Web** (`components/products/edit/`: `product-edit-dialog.tsx`, `variant-rows.tsx`, `draft.ts`):
   - Cửa vào: **bút chì ở ô cuối dòng cha** (thẳng cột với nút ⋯ của dòng con) và mục **"Sửa sản phẩm"** đầu menu ⋯ của dòng con / sản phẩm đơn (thêm nút thứ tư vào hàng Nhập · Xuất · ⋯ làm bảng tràn ở 1366). Chỉ hiện với người có quyền Tổng kho.
   - Là HỘP THOẠI, không phải trang riêng: lưu xong khách vẫn đứng đúng trang, đúng ô tìm của bảng. Hộp tự tải đủ mẫu (bảng có thể đang lọc chỉ thấy vài phân loại), tải một lần mỗi lần mở, không qua bộ đệm truy vấn để lượt làm tươi nền không đổ đè chữ đang gõ.
@@ -721,3 +721,99 @@ Khách nguyenvanmanh1120@gmail.com xin (anh Trung chuyển, kèm ảnh khoanh ha
 - Mobile (màn Kho) chưa có sửa.
 - Chưa kiểm trên prod; chưa thử bằng tài khoản nhân viên trên giao diện (luật quyền đã có ở route, chưa có test riêng cho nhánh 403).
 
+## 13. Năm góp ý của anh Trung khi dùng prod (19/11/2026 — ĐÃ LÀM, kiểm local; ĐÃ COMMIT + PUSH 19/11 tối, anh: "Dọn dẹp code thừa, đảm bảo mô hình tree chuyên nghiệp, commit và push")
+
+**Anh Trung (kèm ảnh prod):** (1) "Nhập số lượng tồn kho sau đó enter thì bị load lại cả trang → tìm phương án để không phải load lại cả trang"; (2) "Sửa sản phẩm mà không sửa được giá vốn → thêm nút sửa giá vốn"; (3) "Thêm đồng bộ ở sản phẩm cha → hiện tại đang phải bật cho từng phân loại"; (4) "Khi ấn Nối kho bên sản phẩm sàn thì popup hiện lên bên trong có ghi chữ mờ 'Tìm sản phẩm kho muốn nối'"; (5) "Khi gõ ra sản phẩm gợi ý thì thêm ký hiệu thông báo gì đó để seller biết là mình đang chọn một sản phẩm trong Tổng kho".
+
+### 13.1 Sửa tồn không còn "load lại cả trang" (Tổng kho)
+
+- **Gốc (đọc mã):** `app/products/page.tsx` đặt `loading = productsQ.refreshing` (= đang gọi máy chủ, kể cả lượt làm tươi sau khi ghi) và hễ `loading` là GỠ cả bảng, thay bằng dòng "Đang tải dữ liệu…". Trang cao vài nghìn px co lại còn một dòng → trình duyệt kéo về đầu, khách mất chỗ đang đứng. Không phải tải lại trang thật; là bảng bị gỡ ra dựng lại. Mọi thao tác ghi khác của trang (Nhập · Xuất, vị trí, sửa sản phẩm, hàng loạt) cũng dính.
+- **Sửa (3 phần, cùng tệp + `inline-stock-editor.tsx`):**
+  1. Bảng chỉ bị thay bằng dòng "Đang tải" ở lần tải ĐẦU (`productsQ.loading`). Đổi trang / tìm / bấm chip → bảng cũ MỜ đi (`<Refreshing active={productsQ.placeholder}>`, cùng cách với trang Sản phẩm trên sàn). Lượt làm tươi sau khi ghi chạy NGẦM, bảng đứng yên.
+  2. Ô sửa tồn chờ số mới về rồi mới đóng (`onSaved` trả Promise, `load` trả Promise của lượt làm tươi). Đóng ngay thì viên số hiện lại số CŨ một nhịp — trước đây bị dòng "Đang tải" che. Không tự tính số phía web: cả dòng (Có thể bán, Giá trị tồn, màu cảnh báo, chip Hết hàng) đổi cùng lúc theo máy chủ.
+  3. Ô Tồn kho vẽ bằng component cố định `StockCell` (ngoài `useMemo` của `columns`), thứ nó cần từ trang đi qua `table.options.meta`. Lý do: ô viết dạng hàm mũi tên trong `columns` được tạo lại mỗi lần bảng nhận dữ liệu mới (`childIds`, `toggleAllOnPage` đổi theo dữ liệu), TanStack `flexRender` vẽ hàm đó như một component → React dựng lại ô từ đầu. Khách Enter dòng trên rồi gõ tiếp dòng dưới sẽ mất chữ đang gõ khi lượt làm tươi về. Các ô khác vẫn dựng lại như cũ (không giữ trạng thái gõ nên không sao).
+- **Đã kiểm (local, tài khoản demo, dữ liệu thử `KHOTHU-*`, đo bằng JS trong trang):** sửa dòng A 7 → 8 rồi mở ngay dòng B gõ "77": bảng vẫn là ĐÚNG nút DOM cũ, dòng "Đang tải dữ liệu…" không xuất hiện lần nào, ô dòng B vẫn là đúng ô cũ và còn nguyên "77", dòng A hiện 8 sau ~0,5 giây, thông báo "7 → 8 (nhập 1)".
+- **Chưa kiểm:** trên prod (lượt đọc danh sách trên prod chậm hơn local — vòng xoay trong ô sẽ quay lâu hơn 0,5 giây); cột Vị trí (`StockLevelsCell`) có ô sửa riêng vẫn dựng lại khi bảng làm tươi (không ai kêu, chưa đụng).
+
+### 13.2 Sửa giá vốn ngay trong hộp "Sửa sản phẩm"
+
+- Mục 12.2 ("không sửa giá vốn của SKU đang có ở hộp này") là quyết định của em hôm 18/11 — anh yêu cầu ngược lại, nay BỎ. Cột Giá vốn của dòng đang có thành ô nhập (chỉ người thấy tài chính có cột, như cũ).
+- **Giá sửa ở đây = giá MẶC ĐỊNH ở kho (`Product.costPrice`)**, ghi qua đúng đường của trang Cấu hình Giá vốn — KHÔNG có công thức tài chính mới:
+  - `lib/cost-price.ts` thêm `applyCostPricesIn` (mỗi sản phẩm một giá; ghi gộp theo từng mức giá, vá đơn cũ còn 0 bằng MỘT câu cho cả lô). `applyCostPriceIn` cũ nay gọi lại hàm này → một cài đặt duy nhất, hành vi không đổi (đã chạy lại test `cost-import-apply-db`, `cost-per-shop-db`).
+  - `services/product-group-edit.ts`: `planGroupEdit` nhận `variants[].costPrice` → `plan.costs`; `saveProductGroup` gọi `applyCostPricesIn` trong cùng giao dịch, trần giao dịch theo `COST_TX_OPTIONS` (60 giây) khi có đổi giá, xong thì `invalidateOwnerCostCaches`. Trả thêm `backfilledOrderLines`.
+  - Hệ quả giữ nguyên luật cũ: đơn MỚI dùng giá mới; đơn cũ đang giá vốn 0 được tính; đơn cũ ĐÃ có giá giữ nguyên (đóng băng — anh chốt 26/10, không có hộp áp đơn cũ); xóa về 0 không vá gì.
+- **Gian đặt giá vốn riêng thắng giá kho** (`effectiveSkuCost`, 11/10): sửa giá ở kho KHÔNG đổi lãi lỗ của gian đang có giá riêng cho SKU đó. Để khách không tưởng "sửa mà không ăn": máy chủ trả `ownCostChannels` (số SKU sàn nối vào dòng đang có giá riêng), ô vừa đổi giá hiện dòng vàng "N SKU sàn có giá vốn riêng, không đổi theo"; câu cuối hộp chỉ sang Cấu hình Giá vốn. ⏳ Anh chưa duyệt cách này — phương án khác (sửa ở kho thì ghi đè luôn giá riêng của gian) là đổi luật giá vốn theo gian, em không tự làm.
+- **Quyền:** người không thấy tài chính gửi `costPrice` → 403 cả lượt lưu (không lặng lẽ bỏ qua), không ghi gì.
+- **Rào quà tặng:** trước khi lưu, mỗi mức giá mới hỏi `checkGiftCost` (cùng `useGiftCostGuard` với trang Cấu hình Giá vốn) — mã đang là quà mà giá cao hơn doanh thu đơn thì hỏi lại "Vẫn lưu / Sửa lại".
+- **Test:** thêm 5 ca luật (`product-group-edit.test.ts`) + 3 ca ghi thật (`product-group-edit-db.test.ts`: ghi giá, vá dòng 0, dòng đã có giá đứng yên, sửa lần hai không vá lại; đếm giá riêng của gian; 403 không ghi gì). vitest `src/lib src/routes src/marketplace src/services src/workers`: 131 tệp qua, 1 tệp đỏ là `pack-video/retention-db` (đỏ sẵn trên DB dev, không liên quan).
+- **Đã kiểm trên trình duyệt:** đổi giá 2 phân loại (188.000 → 195.000, 0 → 150.000), dòng vàng hiện đúng ở phân loại có SKU sàn giá riêng, lưu xong bảng Tổng kho đổi số tại chỗ. **Chưa kiểm:** hộp hỏi lại quà tặng trên giao diện (hộp lồng trong hộp — cần đơn quà trong sổ cái mới bật), tài khoản nhân viên, prod.
+- PATCH `/api/products/:id` vẫn nhận `costPrice` và ghi thẳng KHÔNG vá đơn cũ — có từ trước, không client nào gọi; chưa đụng.
+
+### 13.3 "Đồng bộ ở sản phẩm cha" — công tắc ĐÃ CÓ từ 06/11, chỉ bị che
+
+- Kiểm prod 19/11 (chỉ xem, shop công ty, tab Đã nối): 20/20 dòng sản phẩm có công tắc ở cột Đồng bộ tồn (17 đang bật). Công tắc cấp sản phẩm bật / tắt mọi phân loại đã nối (mục 7).
+- Ảnh anh khoanh là sản phẩm CHƯA NỐI ở tab Cần nối: chỗ đó in dấu "—" nên trông như sản phẩm cha không có công tắc. Sửa: vẽ công tắc ở trạng thái khóa, rê chuột hiện "Nối kho trước. Nối xong, bật công tắc này là bật đồng bộ tồn cho mọi phân loại của sản phẩm."
+- KHÔNG làm "bật trước khi nối": công tắc bật mà chưa nối thì lúc nối sẽ ghi đè tồn sàn ngay, bỏ qua hộp xác nhận số cũ → mới. ⏳ Nếu ý anh là thế thì cần thiết kế riêng.
+
+### 13.4 Hộp "Nối kho": ô tìm trống + nhãn "Tổng kho"
+
+- **Ô tìm:** trước đây điền sẵn từ khóa mồi (mã sàn đầu tiên / 4 chữ đầu tên) nên chữ mờ không bao giờ hiện, và mồi không khớp thì hộp mở ra đã báo "Không có sản phẩm kho nào khớp" (ảnh anh: "TLN009-B"). Nay ô mở ra TRỐNG, chữ mờ "Tìm sản phẩm kho muốn nối". Từ khóa mồi vẫn chạy NGẦM khi ô còn trống (`term = debounced || seed`) → vẫn có gợi ý sẵn và vẫn tự chọn khi trùng mã; mồi không ra gì thì ghi "Gõ tên hoặc mã SKU của sản phẩm trong Tổng kho để tìm."
+- **Nhãn:** mỗi dòng gợi ý và ô sản phẩm đã chọn có viên "Tổng kho" (biểu tượng nhà kho) trước mã SKU — đối xứng với viên sàn (Shopee / TikTok) cạnh tên sản phẩm ở bảng ngoài.
+- Đã soi local sáng + tối ở 1440: không tràn ngang; ca mồi rỗng, ca gõ ra 2 gợi ý, ca mồi trùng mã tự chọn.
+- Thấy mà chưa đụng (có từ trước): mồi theo MỘT mã phân loại nên sản phẩm kho tự chọn chỉ mang các phân loại khớp từ khóa — dòng khác bấm "Đổi" sẽ không thấy đủ phân loại của mẫu.
+
+## 14. Đợt hai cùng tối 19/11: gỡ nối nhìn thấy ngay · Tổng kho bỏ nút Đồng bộ · nút "Thống kê" · dải cảnh báo một dòng (ĐÃ LÀM, kiểm local; ĐÃ COMMIT + PUSH 19/11 tối cùng mục 13)
+
+**Anh Trung (kèm ảnh khoanh nút "Đồng bộ tồn kho 0/5" ở Tổng kho):** (1) "Hiện tại đang gặp vấn đề là nối vào rồi nhưng không biết gỡ ra kiểu gì?"; (2) "Bỏ đồng bộ trong Tổng kho vì không cần thiết → khách sẽ tự kiểm kê"; (3) "Thêm và thay 'Thống kê' vào khu vực đồng bộ vừa loại bỏ → hiện popup thống kê sản phẩm, SKU, tồn và có thêm phần báo cáo tổng tồn / tổng giá trị".
+
+### 14.1 Gỡ nối (trang Sản phẩm trên sàn)
+
+- **Hiện trạng trước lượt này (đọc mã):** gỡ nối CÓ nhưng chìm — chỉ trong menu ⋯ ("Gỡ nối N phân loại", bấm là gỡ luôn, không hỏi) và trong hộp ⋯ › "Xem / đổi liên kết" (nút "Gỡ" từng dòng). Sản phẩm đã nối đủ không có nút nào ngoài ⋯.
+- **Sửa** (`channel-products-page.tsx`, `unlink-confirm-dialog.tsx` mới):
+  - Sản phẩm ĐÃ NỐI ĐỦ: chỗ của nút chính là nút **"Gỡ nối"** (cả sản phẩm).
+  - Xổ dòng: mỗi phân loại đã nối có nút **"Gỡ nối"** riêng, thẳng cột với nút của dòng sản phẩm.
+  - Sản phẩm nối dở: nút chính vẫn là "Nối nốt" (cột 160px không đủ hai nút) — gỡ từng phân loại ở dòng xổ, gỡ cả sản phẩm trong ⋯.
+  - MỌI cửa gỡ nối (kể cả mục ⋯ cũ) hỏi lại một lần: đơn mới không còn trừ Tổng kho · tồn trên sàn giữ nguyên, không còn theo kho · sản phẩm kho, tồn, giá vốn, đơn cũ không đổi (đúng với `POST /mappings/unlink`: chỉ đặt `productId` + `stockSyncEnabled` về NULL, giữ giá vốn bằng `keepCostOnDetach`). Nút "Gỡ" trong hộp Nối kho giữ như cũ (đã ở trong một hộp có chủ ý).
+- Tổng kho vẫn KHÔNG có nút nối / gỡ nối (nối một chiều, anh chốt 05/11) — không đụng.
+- **Đã kiểm local:** gỡ một phân loại của sản phẩm nối 3/3 → hộp hỏi lại → gỡ → sản phẩm sang tab Cần nối với "Nối 2/3"; ⋯ › "Gỡ nối 2 phân loại" → hộp hỏi lại → Hủy thì không đổi gì; hai nút "Gỡ nối" thẳng cột (đo JS cùng mép phải 1357px); màn 1440 không ô nào tràn, không cuộn ngang.
+
+### 14.2 Tổng kho bỏ nút "Đồng bộ tồn kho"
+
+- Gỡ nút + hộp cài đặt đồng bộ khỏi `app/products/page.tsx` (kèm state `syncOpen` / `syncState`, `loadSyncState` — Tổng kho bớt một lượt gọi `GET /inventory/sync-settings` mỗi lần mở). Đây là việc "dời nút Đồng bộ tồn kho" để ngỏ từ mục 7.2.
+- **Cửa bật / tắt đồng bộ còn lại:** trang Sản phẩm trên sàn — nút "Đồng bộ tồn theo gian" (cả gian) + công tắc từng sản phẩm / phân loại. Không gỡ gì ở đó.
+- Link cũ: `/warehouse/sync` và `/products?sync=1` → `/products/marketplace?sync=1`, trang đó mở sẵn hộp theo gian (`initialSyncOpen`). Đã thử: gõ `/products?sync=1` ra đúng hộp.
+- GIỮ (anh chỉ khoanh nút): dải cảnh báo "N SKU chưa đẩy được tồn lên sàn" (`SyncAlertBanner`) và chip màu ở cột "Bán trên" — đó là báo lỗi vận hành, không phải cửa cài đặt. Dải cảnh báo đã thu thành một dòng — xem 14.4.
+- Khối 3 bước đang tạm ẩn (`SHOW_SETUP_GUIDE`) nhận `syncState={null}`, nút bước 3 dẫn sang trang Sản phẩm trên sàn — nếu mở lại khối thì phải cấp lại số đồng bộ cho nó.
+- Mobile: câu chỉ đường ở `StockPage.tsx` đổi thành "trang Sản phẩm trên sàn, nút Đồng bộ tồn theo gian" — chỉ tới tay khách ở bản mobile kế.
+
+### 14.3 Nút + hộp "Thống kê"
+
+- **Chỗ:** đúng vị trí nút cũ trên thanh công cụ Tổng kho. Ai vào được Tổng kho cũng thấy (nút cũ chỉ chủ shop); tiền chỉ người thấy tài chính có.
+- **API:** `GET /api/products/stats` → `services/inventory-stats.ts` — MỘT câu gom trên `Product` của chủ shop, chỉ chạy khi mở hộp. Khóa truy vấn web `["products","stats"]` nằm dưới `"products"` nên mọi thao tác ghi ở Tổng kho làm tươi luôn hộp.
+- **Định nghĩa = đúng định nghĩa của bảng** (để số ở hộp khớp số trên bảng):
+  | Số | Cách tính | Khớp với |
+  |---|---|---|
+  | Sản phẩm | số mẫu hàng đang bán (phân loại chung `groupKey` là một) | nhãn "N sản phẩm" cuối bảng |
+  | SKU | SKU đang bán; ngừng bán ghi kèm | chip "Đang bán N" / "Ngừng bán N" |
+  | Hết hàng | đang bán, tồn ≤ 0 | chip "Hết hàng N" |
+  | Tổng tồn kho | Σ tồn, tồn âm tính 0, gồm cả hàng ngừng bán còn trong kho | — |
+  | Tổng giá trị tồn | Σ tồn × giá vốn mặc định ở kho, tồn âm tính 0 | cột "Giá trị tồn" (mục 10.2) |
+- **Bố cục hộp:** 3 ô số (Sản phẩm · SKU · Tổng tồn kho) + 1 ô rộng Tổng giá trị tồn → bảng "Báo cáo tồn kho" (Đang bán còn hàng · Đang bán hết hàng · Ngừng bán — chỉ hiện khi có · Tổng cộng; cột SKU · Tồn kho · Giá trị tồn) → phần CHƯA nằm trong số, mỗi ý một dòng: "N SKU còn hàng chưa nhập giá vốn (tồn q) — chưa tính vào giá trị tồn" và "N SKU đang âm tồn — tính là 0".
+- **Em tự chọn, anh chưa duyệt:** giá trị tính theo GIÁ VỐN (không theo giá bán — giá bán ở kho chỉ là giá gợi ý); tổng tồn gồm cả hàng ngừng bán; báo cáo chia theo trạng thái. Chưa làm: chia theo vị trí chứa hàng, top sản phẩm theo giá trị, xuất Excel của báo cáo, tổng "chờ giao".
+- **Test:** `inventory-stats-db.test.ts` 3 ca (đếm theo mẫu / SKU, tồn âm tính 0, giá trị, không lẫn shop khác; người không thấy tài chính không nhận trường tiền nào; kho trống).
+- **Đã kiểm local (tài khoản demo 1.500 SKU + dữ liệu thử `KHOTHU-*` có ca 300 tỷ, âm tồn, chưa giá vốn, ngừng bán):** hộp ghi 1.479 sản phẩm · 1.500 SKU · hết hàng 1.097 · ngừng bán 1 — trùng nhãn cuối bảng và ba chip của trang; "300.154.594.000 ₫" vừa ô, không ô nào bị cắt; sáng 1440 + 1280, tối 1280; thanh công cụ vẫn một hàng ở 1280, không cuộn ngang.
+- **Chưa kiểm:** prod (thời gian câu gom trên shop lớn — chưa đo), tài khoản nhân viên trên giao diện, màn điện thoại.
+
+### 14.4 Dải cảnh báo đẩy tồn thu thành MỘT dòng (19/11, anh Trung xem prod 6 cảnh báo chiếm nửa màn: "Để một dòng nhỏ mở rộng được thôi. Để cả đống ra")
+
+- `sync-alert-banner.tsx`: mặc định THU GỌN thành một dòng 34px — "N SKU chưa đẩy được tồn lên sàn — <lý do>" + chữ "Xem ▾"; bấm cả dòng mới xổ danh sách từng SKU với nút Đẩy lại / Đã xử lý và nút "Đã xử lý tất cả". Lý do dài thì cắt ở dòng thu gọn, đọc đủ khi xổ.
+- Không nhớ trạng thái: mỗi lần mở trang lại thu gọn (việc thỉnh thoảng mới xử lý, không được đẩy bảng tồn xuống). Không đổi API, không đổi cách đếm.
+- Đã kiểm local (6 cảnh báo thử trên gian demo, đã dọn): thu gọn cao 34px, xổ ra đủ 6 dòng + các nút, thu lại được; màn 1440 không tràn ngang; giao diện tối đọc rõ. Chưa kiểm prod.
+
+### 14.5 Dọn trước khi push (19/11 tối, anh: "Dọn dẹp code thừa, đảm bảo mô hình tree chuyên nghiệp, commit và push")
+
+- **Mã thừa do chính lượt này sinh ra:** hộp `SyncSettingsDialog` còn mang prop `onStateChange` + hàm `notify` (7 chỗ gọi) chỉ để nuôi viên số "0/5" trên nút đã bỏ ở Tổng kho → gỡ hết; vòng hỏi tiến độ trong hộp bớt phụ thuộc `channels`. Kiểu `SyncHeaderState` chỉ còn khối 3 bước (đang tạm ẩn) dùng → dời về `setup-guide.tsx`, cạnh nơi dùng.
+- **Cây tệp:** tệp mới đặt đúng nhóm — `backend/src/services/inventory-stats.ts` + test ở `services/__tests__/`; `frontend/src/components/products/inventory-stats-dialog.tsx`; `components/products/channel-products/unlink-confirm-dialog.tsx` (cạnh hộp xác nhận bật đồng bộ cùng trang). Không thêm điểm mount API (route mới nằm trong `/api/products`), không migration, không script để lại (script seed thử `_tmp_kho_19_11.ts` đã xóa, dữ liệu `KHOTHU-*` đã dọn).
+- **Rà bằng tay** (lệnh `npx knip` bị lớp phân quyền của phiên chặn, không vòng qua): grep từng export mới — đều có nơi dùng; `fetchSyncSettings`, `applyCostPriceIn` vẫn có nơi gọi.
+- **Không commit trong lượt này** (của phiên khác, để nguyên trên máy): hai mục PROGRESS của lịch tự chạy 19/11, `docs/ADS-TIKTOK-GMV-MAX.md`, `docs/DONG-TIEN-TONG-GIA-TRI-SAN-PHAM-KHAO-SAT-29-10.md`, `docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md`, `hubsell-mobile/src/lib/scan-sounds.ts`, thư mục `hubsell-marketing/`.
+- **Kiểm lại sau dọn:** tsc BE + FE, eslint các tệp sửa sạch; vitest các tệp của lượt (product-group-edit ×2, inventory-stats, cost-import-apply, cost-per-shop) qua.

@@ -9,6 +9,7 @@ const row = (id: string, skuCode: string, variantName: string | null, over: Part
   variantName,
   groupKey: variantName ? "áo thun" : null,
   sellingPrice: 100_000,
+  costPrice: 40_000,
   ...over,
 });
 const GROUP = [row("a", "AO-DEN-M", "Đen, M"), row("b", "AO-DEN-L", "Đen, L")];
@@ -108,6 +109,48 @@ describe("planGroupEdit — sửa từng dòng", () => {
 
   it("id lạ (mẫu đã đổi ở nơi khác) → 409", () => {
     expect(fail(GROUP, { productName: "Áo thun", variants: [{ id: "zzz", sellingPrice: 1 }] }).status).toBe(409);
+  });
+});
+
+describe("planGroupEdit — giá vốn của SKU đang có (19/11/2026)", () => {
+  it("chỉ dòng có đổi giá mới vào kế hoạch; giá vốn đi đường riêng, không lẫn vào updates", () => {
+    const p = plan(GROUP, {
+      productName: "Áo thun",
+      variants: [
+        { id: "a", costPrice: 55_000 },
+        { id: "b", costPrice: 40_000 }, // gửi lại đúng giá đang có = không đổi
+      ],
+    });
+    expect(p.costs).toEqual([{ productId: "a", cost: 55_000 }]);
+    expect(p.updates).toEqual([]);
+  });
+
+  it("xóa giá vốn về 0 là một lần đổi hợp lệ", () => {
+    expect(plan(GROUP, { productName: "Áo thun", variants: [{ id: "a", costPrice: 0 }] }).costs).toEqual([{ productId: "a", cost: 0 }]);
+  });
+
+  it("đổi giá vốn cùng lúc với giá bán: mỗi thứ về đúng chỗ", () => {
+    const p = plan(GROUP, { productName: "Áo thun", variants: [{ id: "a", sellingPrice: 120_000, costPrice: "61000" }] });
+    expect(p.updates).toEqual([{ id: "a", sellingPrice: 120_000 }]);
+    expect(p.costs).toEqual([{ productId: "a", cost: 61_000 }]);
+  });
+
+  it("người không thấy tài chính gửi giá vốn → 403, kể cả khi gửi đúng giá cũ", () => {
+    for (const costPrice of [55_000, 40_000]) {
+      let caught: unknown = null;
+      try {
+        plan(GROUP, { productName: "Áo thun", variants: [{ id: "a", costPrice }] }, false);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(ProductGroupEditError);
+      expect((caught as ProductGroupEditError).status).toBe(403);
+    }
+  });
+
+  it("giá vốn âm / không phải số → chặn", () => {
+    expect(fail(GROUP, { productName: "Áo thun", variants: [{ id: "a", costPrice: -1 }] }).message).toContain("Giá vốn của AO-DEN-M");
+    expect(fail(GROUP, { productName: "Áo thun", variants: [{ id: "a", costPrice: "abc" }] }).message).toContain("Giá vốn");
   });
 });
 

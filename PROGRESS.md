@@ -5,6 +5,30 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 tối — Quản lý kho: 5 + 3 góp ý của anh Trung khi dùng prod — ĐÃ LÀM + kiểm local, ĐÃ COMMIT + PUSH (anh: "Dọn dẹp code thừa, đảm bảo mô hình tree chuyên nghiệp, commit và push")
+
+- **Dọn trước khi push (docs 14.5):** gỡ prop `onStateChange` + hàm `notify` của hộp cài đặt đồng bộ (chỉ để nuôi viên số trên nút đã bỏ), dời kiểu `SyncHeaderState` về `setup-guide.tsx`. Hai mục PROGRESS của lịch tự chạy 19/11 + 3 docs + `scan-sounds.ts` của phiên khác KHÔNG nằm trong commit này.
+
+- **ĐỢT HAI (cùng tối, anh nhắn thêm 3 ý — docs mục 14):**
+  - **Gỡ nối:** "nối vào rồi nhưng không biết gỡ ra kiểu gì" — gỡ nối có nhưng chìm trong menu ⋯. Nay sản phẩm đã nối đủ có nút "Gỡ nối" trên dòng, mỗi phân loại đã nối có nút "Gỡ nối" riêng; mọi cửa gỡ nối hỏi lại một lần.
+  - **Tổng kho bỏ nút "Đồng bộ tồn kho"** ("không cần thiết, khách sẽ tự kiểm kê"). Bật / tắt đồng bộ chỉ còn ở trang Sản phẩm trên sàn; link cũ `?sync=1` + `/warehouse/sync` dẫn sang đó. GIỮ dải cảnh báo "SKU chưa đẩy được tồn" và chip cột Bán trên (anh chỉ khoanh nút).
+  - **Nút "Thống kê"** vào đúng chỗ nút cũ: hộp số liệu cả kho (sản phẩm, SKU, tổng tồn, tổng giá trị tồn theo giá vốn + bảng báo cáo theo trạng thái + phần chưa tính). API mới `GET /api/products/stats` (`services/inventory-stats.ts`), 3 test. Số ở hộp khớp nhãn cuối bảng và ba chip của trang (đo local).
+  - **Dải cảnh báo "N SKU chưa đẩy được tồn lên sàn"** (anh xem prod: "Để một dòng nhỏ mở rộng được thôi. Để cả đống ra"): mặc định thu thành MỘT dòng 34px, bấm mới xổ danh sách + nút (docs 14.4). Đã soi local với 6 cảnh báo thử (đã dọn).
+  - **Kiểm đợt hai:** tsc BE + FE, eslint sạch; vitest `src/services src/routes`: đỏ 2 tệp video đóng hàng (`retention-db` đỏ sẵn; `upload-db` chạy riêng thì qua — chập chờn khi chạy chung, không liên quan). Chưa kiểm prod / nhân viên / điện thoại.
+  - **Chờ anh thêm:** giá trị tồn theo giá vốn có đúng ý không (hay cần thêm theo giá bán); có cần chia theo vị trí / xuất Excel; có bỏ luôn dải cảnh báo đẩy tồn ở Tổng kho không.
+- **ĐỢT MỘT (5 ý — docs mục 13):**
+
+- **Anh yêu cầu (kèm ảnh):** sửa tồn rồi Enter bị load lại cả trang · Sửa sản phẩm không sửa được giá vốn · thêm đồng bộ ở sản phẩm cha · hộp Nối kho có chữ mờ "Tìm sản phẩm kho muốn nối" · gợi ý có dấu hiệu "Tổng kho".
+- **1 — Sửa tồn:** gốc là trang gỡ cả bảng thay bằng dòng "Đang tải dữ liệu…" mỗi lượt gọi máy chủ. Nay bảng đứng yên, làm tươi ngầm; ô sửa tồn chờ số mới rồi mới đóng; ô đang gõ dở ở dòng khác không bị dựng lại (`StockCell` + `table.options.meta`). Đo local: bảng giữ đúng nút DOM, dòng B còn nguyên chữ đang gõ.
+- **2 — Giá vốn:** ô Giá vốn trong hộp Sửa sản phẩm sửa được, ghi qua đúng đường của Cấu hình Giá vốn (`applyCostPricesIn` mới trong `lib/cost-price.ts`; đơn cũ đã có giá giữ nguyên, đơn cũ còn 0 được tính). Gian có giá vốn riêng thì ô báo vàng "không đổi theo". Người không thấy tài chính gửi giá → 403. Hỏi lại khi mã đang là quà tặng.
+- **3 — Đồng bộ ở sản phẩm cha:** công tắc ĐÃ CÓ từ 06/11 (kiểm prod chỉ xem: tab Đã nối 20/20 dòng có). Ảnh anh là sản phẩm chưa nối nên in "—" → nay vẽ công tắc khóa + chú thích "Nối kho trước".
+- **4 + 5 — Hộp Nối kho:** ô tìm mở ra trống với chữ mờ anh yêu cầu (từ khóa mồi chạy ngầm, vẫn tự chọn khi trùng mã); gợi ý + sản phẩm đã chọn có viên "Tổng kho".
+- **Kiểm:** tsc BE + FE, eslint tệp sửa sạch; test mới 5 luật + 3 ghi thật; vitest 131 tệp qua, 1 tệp đỏ sẵn (`pack-video/retention-db`). Dữ liệu thử `KHOTHU-*` trên DB dev đã dọn, script tạm đã xóa.
+- **Chưa kiểm:** prod; tài khoản nhân viên; hộp hỏi lại quà tặng trên giao diện.
+- **Chờ anh:** (a) commit + push; (b) ý 3 có phải "bật trước khi nối" không; (c) sửa giá vốn ở kho khi gian có giá riêng: giữ cách báo vàng hay muốn khác.
+- **Ghi ở:** `docs/QUAN-LY-KHO-TAI-CAU-TRUC.md` mục 13 + 14.
+
+---
 ## Phiên 19/11 ~15:00 — Video đóng hàng: M1 làm DỨT ĐIỂM — cứu clip đang quay dở (M1b) + gửi tiếp ở mọi trang (K-6) (anh: "anh nghĩ mình làm dứt điểm M1 đi") — ĐÃ DỰNG → COMMIT + PUSH (anh: "Commit và push")
 
 - **✅ Đã lên prod:** commit `7ec8657d`; 14:57:24 gói mã công khai của trang quay trên `app.hubsell.vn` đã chứa bản mới (chuỗi `rec-head`) — soi tệp tĩnh, không đăng nhập; chưa nhìn màn hình prod. Dòng ghi kết quả này nằm ở commit tài liệu để tại máy, đi cùng lần push sau.

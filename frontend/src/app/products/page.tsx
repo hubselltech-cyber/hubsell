@@ -8,10 +8,12 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type CellContext,
 } from "@tanstack/react-table";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  BarChart3,
   BellRing,
   ChevronDown,
   ChevronLeft,
@@ -31,7 +33,6 @@ import {
   Pencil,
   Plus,
   Printer,
-  RefreshCw,
   Search,
   Sparkles,
   Upload,
@@ -39,6 +40,7 @@ import {
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/shell/app-shell";
+import { Refreshing } from "@/components/shared/refreshing";
 import { Money } from "@/components/ui/money";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
@@ -76,10 +78,7 @@ import { StockTransferDialog } from "@/components/products/stock-transfer-dialog
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LocationSelect } from "@/components/products/location-select";
 import { CopyFromChannelDialog } from "@/components/products/copy-from-channel-dialog";
-import {
-  SyncSettingsDialog,
-  type SyncHeaderState,
-} from "@/components/products/sync-settings-dialog";
+import { InventoryStatsDialog } from "@/components/products/inventory-stats-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -99,7 +98,6 @@ import {
   fetchChannels,
   fetchProducts,
   fetchStockLocations,
-  fetchSyncSettings,
   getStoredUser,
   getToken,
   type Channel,
@@ -192,10 +190,10 @@ type HubTab = "inventory" | "logs" | "vouchers" | "suppliers";
  * (dải kể chuyện Shop A/B/C + 3 bước kéo SP → nối SKU → bật đồng bộ, setup-guide.tsx)
  * KHÔNG hiện nữa — anh chưa quyết xóa hẳn hay làm lại nên giữ mã, chỉ tắt cờ.
  * Ba việc của khối vẫn có cửa khác: kéo SP về + Tự khớp = trang Sản phẩm trên sàn;
- * bật đồng bộ = nút "Đồng bộ tồn kho" trên thanh công cụ (thêm cùng ngày, trước đó
- * nút này chỉ nằm trong đầu khối). Nhắc anh quyết ~19/11/2026 — xem
+ * bật đồng bộ = nút "Đồng bộ tồn theo gian" ở trang Sản phẩm trên sàn (19/11/2026 anh Trung
+ * bỏ nút "Đồng bộ tồn kho" khỏi thanh công cụ Tổng kho, chỗ đó nay là nút "Thống kê"). Nhắc anh quyết ~19/11/2026 — xem
  * docs/QUAN-LY-KHO-TAI-CAU-TRUC.md mục 2. Xóa hẳn = bỏ cờ này, setup-guide.tsx,
- * hub-story-strip.tsx, state counts/channels/syncState chỉ còn nuôi dòng trống bảng.
+ * hub-story-strip.tsx, state counts/channels chỉ còn nuôi dòng trống bảng.
  */
 const SHOW_SETUP_GUIDE: boolean = false;
 
@@ -228,6 +226,38 @@ function ProductThumb({ src, alt }: { src: string | null; alt: string }) {
     <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
       <ImageIcon className="size-4" />
     </div>
+  );
+}
+
+/** Thứ ô Tồn kho cần từ trang — đi qua `meta` của bảng chứ không qua closure của cột (xem StockCell). */
+interface StockCellMeta {
+  onStockSaved: () => Promise<unknown>;
+  seesCost: boolean;
+  /** Lớp hiện / ẩn dòng nhỏ Giá trị tồn dưới số Tồn kho theo bề rộng khung bảng. */
+  valueSublineShow: string;
+}
+
+/**
+ * Ô TỒN KHO — đứng NGOÀI useMemo của `columns` để có danh tính cố định. Ô viết dạng hàm mũi tên trong
+ * `columns` được tạo lại mỗi lần bảng nhận dữ liệu mới; React coi đó là component khác và dựng lại ô từ
+ * đầu. Với ô sửa tồn thì không được: khách Enter dòng trên xong gõ tiếp dòng dưới, lượt làm tươi ngầm
+ * về tới nơi là mất chữ đang gõ (19/11/2026).
+ */
+function StockCell({ row, table }: CellContext<Product, number>) {
+  const { onStockSaved, seesCost, valueSublineShow } = table.options.meta as StockCellMeta;
+  const product = row.original;
+  return (
+    <>
+      {/* Bấm vào số là sửa trực tiếp (Enter lưu) — màu theo ngưỡng cảnh báo của SKU. */}
+      <InlineStockEditor
+        product={product}
+        low={product.isLowStock ?? false}
+        threshold={product.lowStockThresholdEffective ?? 0}
+        editable
+        onSaved={onStockSaved}
+      />
+      {seesCost && <StockValueSubline value={stockValueOf(product)} className={valueSublineShow} />}
+    </>
   );
 }
 
@@ -286,7 +316,11 @@ function GroupCheckbox({
  * TẠM ẨN — xem SHOW_SETUP_GUIDE. NỐI MỘT CHIỀU (05/11 tối): Tổng kho không còn nút
  * nối gian nào — nối chỉ làm ở trang Sản phẩm trên sàn (sản phẩm sàn nối VÀO Tổng kho).
  *
- * Route cũ /warehouse/sync redirect về đây (?sync=1); /mappings và ?tab=links →
+ * 19/11/2026 — Tổng kho KHÔNG còn nút đồng bộ tồn (anh Trung: "không cần thiết, khách sẽ tự kiểm
+ * kê"); hộp cài đặt đồng bộ theo gian chỉ mở từ trang Sản phẩm trên sàn. Chỗ của nút đó là nút
+ * "THỐNG KÊ": hộp số liệu cả kho (sản phẩm, SKU, tổng tồn, tổng giá trị).
+ *
+ * Route cũ /warehouse/sync và ?sync=1 → /products/marketplace?sync=1; /mappings và ?tab=links →
  * /products/marketplace.
  */
 export default function ProductsHubPage() {
@@ -355,9 +389,8 @@ export default function ProductsHubPage() {
   const [excelOpen, setExcelOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  // Trạng thái đồng bộ tồn theo gian (chỉ chủ shop) — bước 3 + header khối.
-  const [syncOpen, setSyncOpen] = useState(false);
-  const [syncState, setSyncState] = useState<SyncHeaderState | null>(null);
+  // Hộp Thống kê cả kho (19/11/2026) — thay chỗ nút "Đồng bộ tồn kho".
+  const [statsOpen, setStatsOpen] = useState(false);
 
   // Hộp "In mã vạch": mở từ nút máy in cạnh mã vạch (một mã) hoặc thanh hàng loạt (nhiều mã).
   const [printing, setPrinting] = useState<Product[] | null>(null);
@@ -479,16 +512,18 @@ export default function ProductsHubPage() {
       return next;
     });
   }, [items]);
-  const loading = productsQ.refreshing;
+  // Bảng chỉ MỜ đi khi đang hiện dữ liệu của trang / bộ lọc TRƯỚC (đổi trang, tìm, bấm chip). Lượt làm
+  // tươi sau một thao tác ghi thì chạy NGẦM: bảng đứng yên, số tự đổi. Trước 19/11/2026 mọi lượt tải đều
+  // gỡ cả bảng ra thay bằng dòng "Đang tải dữ liệu…" — sửa một ô tồn là trang giật về đầu, mất chỗ đang đứng.
+  const switching = productsQ.placeholder;
   const error = productsQ.error;
 
   // Gọi sau mọi thao tác GHI (tạo SKU, nhập Excel, nối/gỡ liên kết, chỉnh
-  // tồn): làm tươi mọi trang cache.
-  const load = useCallback(() => {
-    invalidate(["products"]);
-    invalidate(["inventory-logs"]);
-    invalidate(["stock-locations"]);
-  }, [invalidate]);
+  // tồn): làm tươi mọi trang cache. Promise xong = bảng đang hiện đã có số mới.
+  const load = useCallback(
+    () => invalidate(["products"], ["inventory-logs"], ["stock-locations"]),
+    [invalidate]
+  );
 
   /** Đếm SP sàn (all/linked/unlinked) — badge tab + bước 1, 2 của khối thiết lập. */
   const loadCounts = useCallback(async () => {
@@ -501,40 +536,28 @@ export default function ProductsHubPage() {
     }
   }, [isAdmin]);
 
-  /** Trạng thái đồng bộ tồn theo gian — bước 3 + header khối thiết lập. */
-  const loadSyncState = useCallback(async () => {
-    if (!isAdmin) return;
-    try {
-      const s = await fetchSyncSettings();
-      setSyncState({
-        enabledCount: s.enabledCount,
-        totalChannels: s.channels.length,
-        pending: s.pendingJobs,
-      });
-    } catch {
-      // không có thì bước 3 hiện "Đang kiểm tra…", không chặn trang
-    }
-  }, [isAdmin]);
-
   useEffect(() => {
     if (!getToken()) router.replace("/login");
   }, [router]);
 
   useEffect(() => {
     if (isAdmin) {
-      // Tải song song ba nguồn của khối thiết lập rồi mới cho khối quyết định
+      // Tải song song các nguồn của khối thiết lập rồi mới cho khối quyết định
       // bung/thu — tránh nháy "bung rồi thu" khi seller đã xong.
       Promise.allSettled([
         loadCounts(),
-        loadSyncState(),
         fetchChannels()
           .then((cs) => setChannels(cs.filter((c) => c.status === "ACTIVE")))
           .catch(() => {}),
       ]).then(() => setGuideReady(true));
     }
-    // Route cũ redirect về kèm query: ?tab=links mở tab liên kết, ?sync=1 mở
-    // dialog cài đặt. Đọc một lần lúc mount — không cần useSearchParams.
+    // Route cũ redirect về kèm query — đọc một lần lúc mount, không cần useSearchParams.
     const params = new URLSearchParams(window.location.search);
+    // ?sync=1 = link cũ mở hộp đồng bộ tồn: hộp nay chỉ ở trang Sản phẩm trên sàn (19/11/2026).
+    if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
+      router.replace("/products/marketplace?sync=1");
+      return;
+    }
     // ?tab=links = link cũ tới tab Sản phẩm trên sàn (05/11/2026 đã thành trang riêng).
     if (params.get("tab") === "links") {
       router.replace("/products/marketplace");
@@ -543,9 +566,6 @@ export default function ProductsHubPage() {
     if (params.get("tab") === "logs") setTab("logs");
     if (params.get("tab") === "vouchers") setTab("vouchers");
     if (params.get("tab") === "suppliers") setTab("suppliers");
-    if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
-      setSyncOpen(true);
-    }
     // Deep-link từ thẻ cảnh báo sắp hết hàng / chuông: ?search=SKU mở đúng dòng.
     const q = params.get("search")?.trim();
     if (q) {
@@ -765,19 +785,7 @@ export default function ProductsHubPage() {
       }),
       columnHelper.accessor("quantityInStock", {
         header: () => <div className="text-center">Tồn kho</div>,
-        // Bấm vào số là sửa trực tiếp (Enter lưu) — màu theo ngưỡng cảnh báo của SKU.
-        cell: ({ row }) => (
-          <>
-            <InlineStockEditor
-              product={row.original}
-              low={row.original.isLowStock ?? false}
-              threshold={row.original.lowStockThresholdEffective ?? 0}
-              editable
-              onSaved={load}
-            />
-            {seesCost && <StockValueSubline value={stockValueOf(row.original)} className={valueSublineShow} />}
-          </>
-        ),
+        cell: StockCell,
       }),
       // ===== CÓ THỂ BÁN — số Hubsell đẩy lên MỌI gian đã nối (trung tâm điều
       // tiết): tồn − đang giữ − tồn an toàn. Đây là con số khách phải tin. =====
@@ -948,15 +956,20 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, canEditProducts, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, valueSublineShow, awaitSublineShow]
+    [seesCost, isAdmin, canEditProducts, locations, selected, allOnPage, toggleAllOnPage, toggleOne, childIds, awaitSublineShow]
   );
 
+  const stockCellMeta = useMemo<StockCellMeta>(
+    () => ({ onStockSaved: load, seesCost, valueSublineShow }),
+    [load, seesCost, valueSublineShow]
+  );
   const table = useReactTable({
     data: items,
     columns,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     pageCount,
+    meta: stockCellMeta,
   });
   /**
    * DÒNG CHA của một mẫu có ≥ 2 phân loại (22/10/2026, giống bảng Giá vốn): ảnh +
@@ -1223,11 +1236,11 @@ export default function ProductsHubPage() {
                 ready={guideReady && !productsQ.loading}
                 channels={channels}
                 counts={counts}
-                syncState={syncState}
+                syncState={null}
                 onSynced={loadCounts}
                 onOpenOneClick={() => setOneClickOpen(true)}
                 onOpenLinks={() => router.push("/products/marketplace")}
-                onOpenSync={() => setSyncOpen(true)}
+                onOpenSync={() => router.push("/products/marketplace?sync=1")}
               />
             </div>
             )}
@@ -1252,34 +1265,17 @@ export default function ProductsHubPage() {
                 </Button>
               </form>
               <div className="flex flex-wrap items-center gap-2">
-                {/* 05/11/2026: cửa vào hộp Đồng bộ tồn kho lên sàn — trước chỉ nằm ở đầu khối
-                    3 bước (đã tạm ẩn); chủ shop phải luôn có chỗ bật/tắt gian + đối soát. */}
-                {isAdmin && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setSyncOpen(true)}
-                    title={
-                      syncState && syncState.totalChannels > 0
-                        ? `Đang đẩy tồn lên ${syncState.enabledCount}/${syncState.totalChannels} gian — bấm để bật / tắt từng gian, đối soát`
-                        : "Bật đồng bộ tồn kho lên từng gian sau khi so số"
-                    }
-                  >
-                    <RefreshCw className="size-4" />
-                    Đồng bộ tồn kho
-                    {syncState && syncState.totalChannels > 0 && (
-                      <span
-                        className={cn(
-                          "ml-0.5 rounded-full px-1.5 text-xs tabular-nums",
-                          syncState.enabledCount === syncState.totalChannels
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-amber-100 text-amber-800"
-                        )}
-                      >
-                        {syncState.enabledCount}/{syncState.totalChannels}
-                      </span>
-                    )}
-                  </Button>
-                )}
+                {/* 19/11/2026 (anh Trung): chỗ này trước là nút "Đồng bộ tồn kho" — bỏ, bật / tắt đồng bộ chỉ còn ở
+                    trang Sản phẩm trên sàn. Thay bằng THỐNG KÊ cả kho; ai vào được Tổng kho cũng xem được
+                    (tiền chỉ người thấy tài chính có). */}
+                <Button
+                  variant="outline"
+                  onClick={() => setStatsOpen(true)}
+                  title="Cả kho có bao nhiêu sản phẩm, SKU, tổng tồn và tổng giá trị tồn"
+                >
+                  <BarChart3 className="size-4" />
+                  Thống kê
+                </Button>
                 {/* ===== Nhập – Xuất – Kiểm kê ▾ : việc kho làm theo tuần ===== */}
                 <Popover open={opsOpen} onOpenChange={setOpsOpen}>
                   <PopoverTrigger render={<Button variant="outline" />}>
@@ -1523,7 +1519,8 @@ export default function ProductsHubPage() {
               <CardContent className="@container p-0">
                 {error ? (
                   <p className="py-10 text-center text-sm text-amber-700">{error}</p>
-                ) : loading ? (
+                ) : productsQ.loading ? (
+                  // Chỉ lần tải ĐẦU (chưa có gì để hiện). Các lượt sau bảng giữ nguyên trên màn — xem `switching`.
                   <p className="py-10 text-center text-sm text-muted-foreground">
                     Đang tải dữ liệu…
                   </p>
@@ -1577,6 +1574,7 @@ export default function ProductsHubPage() {
                   // Vị trí): từ 1.000px trở lên bảng vừa khung, tên / mã tự cắt + tooltip, chip Bán trên
                   // xuống dòng. Dưới 1.000px (laptop 1280 mở sidebar + có cột Vị trí) hộp cuộn ngang
                   // thay vì để số đè lên nhau — ô số không được phép tràn. Bề rộng cột ở COL_HEAD_CLASS.
+                  <Refreshing active={switching}>
                   <Table className={cn("table-fixed", locationsEnabled ? TABLE_MIN_W.withLocations : TABLE_MIN_W.plain)}>
                     <TableHeader>
                       {table.getHeaderGroups().map((headerGroup) => (
@@ -1633,6 +1631,7 @@ export default function ProductsHubPage() {
                       })()}
                     </TableBody>
                   </Table>
+                  </Refreshing>
                 )}
               </CardContent>
             </Card>
@@ -1689,7 +1688,7 @@ export default function ProductsHubPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={page <= 1 || loading}
+                    disabled={page <= 1 || switching}
                     onClick={() => setPage((p) => p - 1)}
                   >
                     <ChevronLeft className="size-4" />
@@ -1698,7 +1697,7 @@ export default function ProductsHubPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={page >= pageCount || loading}
+                    disabled={page >= pageCount || switching}
                     onClick={() => setPage((p) => p + 1)}
                   >
                     Trang sau
@@ -1826,14 +1825,8 @@ export default function ProductsHubPage() {
         />
       )}
 
-      {/* Cài đặt đồng bộ tồn kho (chỉ chủ shop) */}
-      {isAdmin && (
-        <SyncSettingsDialog
-          open={syncOpen}
-          onOpenChange={setSyncOpen}
-          onStateChange={setSyncState}
-        />
-      )}
+      {/* Thống kê cả kho — chỉ gọi máy chủ khi mở */}
+      <InventoryStatsDialog open={statsOpen} onOpenChange={setStatsOpen} />
 
       {/* Sao chép sản phẩm từ sàn → SKU kho độc lập (docs SAO-CHEP-SAN-PHAM mục 34) */}
       {canCopyListing && <CopyFromChannelDialog open={copyOpen} onOpenChange={setCopyOpen} />}
@@ -1847,7 +1840,6 @@ export default function ProductsHubPage() {
           onDone={() => {
             load();
             loadCounts();
-            loadSyncState();
           }}
         />
       )}

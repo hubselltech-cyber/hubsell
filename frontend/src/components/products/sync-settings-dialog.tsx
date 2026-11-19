@@ -47,18 +47,9 @@ import { formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-export interface SyncHeaderState {
-  /** Số gian đang bật / tổng gian Shopee+Lazada đang hoạt động. */
-  enabledCount: number;
-  totalChannels: number;
-  pending: number;
-}
-
 interface SyncSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Báo hub cập nhật chip trạng thái + số job chờ trên header. */
-  onStateChange?: (state: SyncHeaderState) => void;
 }
 
 const INITIAL_MODE_LABEL: Record<InitialStockMode, string> = {
@@ -101,11 +92,7 @@ function fmtTime(iso: string | null | undefined) {
  * bán" sẽ đẩy để chủ shop duyệt từng SKU rồi mới bật. Kèm tồn an toàn mặc
  * định, cách gieo tồn ban đầu, nút đẩy lại toàn bộ và nhật ký.
  */
-export function SyncSettingsDialog({
-  open,
-  onOpenChange,
-  onStateChange,
-}: SyncSettingsDialogProps) {
+export function SyncSettingsDialog({ open, onOpenChange }: SyncSettingsDialogProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [channels, setChannels] = useState<SyncChannel[]>([]);
@@ -148,16 +135,6 @@ export function SyncSettingsDialog({
 
   const [logs, setLogs] = useState<InventorySyncLog[]>([]);
 
-  const notify = useCallback(
-    (chs: SyncChannel[], pend: number) =>
-      onStateChange?.({
-        enabledCount: chs.filter((c) => c.stockSyncEnabled).length,
-        totalChannels: chs.length,
-        pending: pend,
-      }),
-    [onStateChange]
-  );
-
   const loadLogs = useCallback(async () => {
     try {
       setLogs(await fetchSyncLogs(30));
@@ -175,8 +152,7 @@ export function SyncSettingsDialog({
     setSavedLowStock(s.lowStockDefault);
     setInitialMode(s.initialStockMode);
     setPending(s.pendingJobs);
-    notify(s.channels, s.pendingJobs);
-  }, [notify]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -207,7 +183,6 @@ export function SyncSettingsDialog({
       try {
         const r = await fetchSyncPending();
         setPending(r.pending);
-        notify(channels, r.pending);
         loadLogs();
       } catch {
         // lỗi mạng tạm thời — lần poll sau thử lại
@@ -216,7 +191,7 @@ export function SyncSettingsDialog({
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [open, pending, channels, loadLogs, notify]);
+  }, [open, pending, loadLogs]);
 
   // ---------- Bật / tắt theo gian ----------
 
@@ -249,7 +224,6 @@ export function SyncSettingsDialog({
       setChannels(next);
       const pend = pending + r.queued;
       setPending(pend);
-      notify(next, pend);
       toast.success(
         `Đã bật đồng bộ cho "${channel.shopName}" — ${formatNumber(r.queued)} SKU đang được đẩy về khớp Hubsell.`,
         { duration: 6000 }
@@ -270,7 +244,6 @@ export function SyncSettingsDialog({
         c.id === channel.id ? { ...c, stockSyncEnabled: false } : c
       );
       setChannels(next);
-      notify(next, pending);
       toast.success(`Đã tắt đồng bộ cho "${channel.shopName}".`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không tắt được đồng bộ");
@@ -353,7 +326,6 @@ export function SyncSettingsDialog({
       } else {
         const pend = pending + r.queued;
         setPending(pend);
-        notify(channels, pend);
         toast.warning(
           `"${channel.shopName}": ${formatNumber(r.mismatched)}/${formatNumber(r.scanned)} SKU lệch — ${
             r.queued > 0 ? "đã xếp đẩy lại số đúng." : "gian đang tắt nên không đẩy."
@@ -393,7 +365,6 @@ export function SyncSettingsDialog({
       } else {
         toast.success("Đã lưu cấu hình đồng bộ tồn kho");
       }
-      notify(channels, pend);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không lưu được cấu hình");
     } finally {
@@ -423,7 +394,6 @@ export function SyncSettingsDialog({
       } else {
         const pend = pending + r.queued;
         setPending(pend);
-        notify(channels, pend);
         toast.success(
           `Đã xếp ${formatNumber(r.queued)} SKU vào hàng đợi — tồn sẽ đẩy dần lên sàn trong ít phút.`,
           { duration: 6000 }

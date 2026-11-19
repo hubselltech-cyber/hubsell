@@ -2,8 +2,9 @@
 
 // ============================================================
 // Bảng phân loại của hộp "Sửa sản phẩm" (18/11/2026): mỗi SKU kho một dòng. Dòng đang có sửa được
-// phân loại / mã SKU / giá bán; giá vốn và tồn chỉ xem (sửa ở Cấu hình Giá vốn và Nhập · Xuất). Dòng
-// mới thêm nhập đủ cả giá vốn + tồn ban đầu và bỏ được trước khi lưu.
+// phân loại / mã SKU / giá bán / giá vốn (19/11, anh Trung: "sửa sản phẩm mà không sửa được giá vốn" —
+// cột chỉ có với người thấy tài chính); tồn chỉ xem (sửa bằng Nhập · Xuất). Dòng mới thêm nhập đủ cả
+// giá vốn + tồn ban đầu và bỏ được trước khi lưu.
 // Ô căng mép trên (align-top) để dòng lỗi dưới một ô không kéo các ô cạnh trôi xuống — cùng cách với
 // bảng phân loại của form Tạo sản phẩm mới.
 // ============================================================
@@ -14,7 +15,6 @@ import { BAD_INPUT, WARN_INPUT } from "@/components/operations/copy-listing/prim
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
-import { Money } from "@/components/ui/money";
 import { formatNumber } from "@/lib/format";
 import { TEXT_NUMBER_MUTED, TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -114,19 +114,21 @@ export function VariantRows({
                 </td>
                 {seesCost && (
                   <td className={CELL}>
-                    {isNew ? (
-                      <CurrencyInput
-                        className={cn(FIELD, "tabular-nums")}
-                        value={r.cost}
-                        placeholder="0"
-                        aria-label={`Giá vốn của ${label}`}
-                        maxLength={13}
-                        onValueChange={(v) => onEdit(r.key, { cost: v })}
-                      />
-                    ) : (
-                      <span className={READONLY}>
-                        <Money value={r.original.costPrice ?? 0} className={TEXT_NUMBER_MUTED} />
-                      </span>
+                    <CurrencyInput
+                      className={cn(FIELD, "tabular-nums", issue?.costNote && WARN_INPUT)}
+                      value={r.cost}
+                      placeholder="0"
+                      aria-label={`Giá vốn của ${label}`}
+                      maxLength={13}
+                      onValueChange={(v) => onEdit(r.key, { cost: v })}
+                    />
+                    {issue?.costNote && (
+                      <p
+                        className="mt-0.5 text-[11px] leading-snug text-amber-700"
+                        title="Gian đã đặt giá vốn riêng cho SKU này thì lãi lỗ của gian đó vẫn tính theo giá riêng. Sửa giá riêng ở trang Cấu hình Giá vốn."
+                      >
+                        {issue.costNote}
+                      </p>
                     )}
                   </td>
                 )}

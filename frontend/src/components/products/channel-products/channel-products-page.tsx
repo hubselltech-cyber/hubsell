@@ -54,6 +54,7 @@ import { LinkDrawer } from "./link-drawer";
 import { MappingHistoryDialog } from "./mapping-history-dialog";
 import { channelModelId, groupChannelProducts, isStockSyncOn, stockSyncChanges, variantLabel, type ChannelGroup } from "./shared";
 import { StockSyncConfirmDialog } from "./stock-sync-confirm-dialog";
+import { UnlinkConfirmDialog } from "./unlink-confirm-dialog";
 
 /**
  * SẢN PHẨM TRÊN SÀN — thiết kế lại 05/11/2026 (docs/SAN-PHAM-TREN-SAN-THIET-KE-LAI.md).
@@ -71,6 +72,9 @@ import { StockSyncConfirmDialog } from "./stock-sync-confirm-dialog";
  *     phân loại): cột Trạng thái (kết nối) đứng TRƯỚC cột Đồng bộ tồn — nối trước, đồng bộ sau; công tắc thật ở TỪNG PHÂN LOẠI đã nối (dòng xổ); công tắc ở dòng sản phẩm và nút "Đồng bộ tồn
  *     theo gian" là bật / tắt hàng loạt. Bật mà số sàn sẽ đổi → hộp xác nhận số cũ → số mới. Bật riêng là backend
  *     xếp việc đẩy tồn ngay; tắt riêng là rút việc đẩy tự động đang chờ (docs QUAN-LY-KHO mục 7).
+ *   · GỠ NỐI NHÌN THẤY NGAY (anh Trung 19/11: "nối vào rồi nhưng không biết gỡ ra kiểu gì" — trước chỉ nằm trong
+ *     menu ⋯): sản phẩm đã nối đủ có nút "Gỡ nối" ở chỗ của nút chính; xổ dòng thì mỗi phân loại đã nối có nút
+ *     "Gỡ nối" riêng. Mọi cửa gỡ nối hỏi lại một lần (UnlinkConfirmDialog).
  *   · MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm sàn về Tổng kho. Luồng ngược "Tổng kho › Nối gian"
  *     (dải "Đang nối thêm gian cho SKU kho X" + nút "Nối vào X") đã gỡ — đừng thêm lại.
  * Thay link-manager.tsx (bảng bung sẵn, ô gõ mã từng dòng kiểu Salework 22/10) — anh Trung 05/11: "quá rối".
@@ -87,8 +91,11 @@ const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-le
 
 export function ChannelProductsPage({
   initialSearch,
+  initialSyncOpen = false,
 }: {
   initialSearch?: string;
+  /** Mở sẵn hộp "Đồng bộ tồn theo gian" (link cũ ?sync=1). */
+  initialSyncOpen?: boolean;
 }) {
   const invalidate = useInvalidate();
   const [bucket, setBucket] = useState<ChannelProductBucket>("queue");
@@ -108,7 +115,9 @@ export function ChannelProductsPage({
   const [channels, setChannels] = useState<Channel[]>([]);
   // Đồng bộ tồn: số tổng theo gian, hộp cài đặt theo gian (nút tổng), hộp xác nhận khi bật mà số sàn đổi.
   const [syncSummary, setSyncSummary] = useState<StockSyncChannelSummary[] | null>(null);
-  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(initialSyncOpen);
+  // Các phân loại đang chờ khách xác nhận gỡ nối (một phân loại hoặc cả sản phẩm).
+  const [unlinkAsk, setUnlinkAsk] = useState<{ key: string; title: string; rows: ChannelProduct[] } | null>(null);
   const [syncBusy, setSyncBusy] = useState<string | null>(null);
   const [syncConfirm, setSyncConfirm] = useState<{ key: string; title: string; rows: ChannelProduct[] } | null>(null);
 
@@ -221,13 +230,19 @@ export function ChannelProductsPage({
       toast.error(err instanceof ApiError ? err.message : "Không cập nhật được");
     }
   }
-  async function unlinkGroup(g: ChannelGroup) {
-    const ids = g.rows.filter((r) => r.productId).map((r) => r.id);
-    if (ids.length === 0) return;
-    setBusyKey(g.key);
+  /** Mọi cửa gỡ nối (nút trên dòng, nút từng phân loại, menu ⋯) đi qua đây: hỏi lại trước, chỉ tính dòng ĐÃ nối. */
+  function askUnlink(key: string, title: string, rows: ChannelProduct[]) {
+    const linked = rows.filter((r) => r.productId);
+    if (linked.length > 0) setUnlinkAsk({ key, title, rows: linked });
+  }
+  async function confirmUnlink() {
+    if (!unlinkAsk) return;
+    const { key, title, rows } = unlinkAsk;
+    setBusyKey(key);
     try {
-      const r = await unlinkChannelProducts(ids);
-      toast.success(`Đã gỡ nối ${formatNumber(r.unlinked)} phân loại — ${g.title}`);
+      const r = await unlinkChannelProducts(rows.map((x) => x.id));
+      toast.success(`Đã gỡ nối ${formatNumber(r.unlinked)} phân loại — ${title}. Muốn nối lại thì vào tab Cần nối.`);
+      setUnlinkAsk(null);
       await refresh();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không gỡ được");
@@ -469,8 +484,25 @@ export function ChannelProductsPage({
                       syncBusy={syncBusy !== null}
                       onSyncGroup={(enabled) => requestStockSync(g.key, g.title, g.rows, enabled)}
                       onSyncVariant={(r, enabled) => requestStockSync(r.id, `${g.title} · ${variantLabel(r)}`, [r], enabled)}
+                      unlinkBusy={busyKey !== null}
+                      onUnlinkVariant={(r) => askUnlink(g.key, `${g.title} · ${variantLabel(r)}`, [r])}
                       action={
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Đã nối đủ → chỗ của nút chính là "Gỡ nối". Nối dở thì nút chính vẫn là "Nối nốt";
+                              gỡ từng phân loại ở dòng xổ, gỡ cả sản phẩm trong ⋯ (cột 160px không đủ hai nút). */}
+                          {p.kind === "none" && g.linkedCount > 0 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="min-w-0"
+                              disabled={busy}
+                              title={`Gỡ nối ${formatNumber(g.linkedCount)} phân loại của sản phẩm này khỏi Tổng kho`}
+                              onClick={() => askUnlink(g.key, g.title, g.rows)}
+                            >
+                              {busy ? <Loader2 className="size-4 animate-spin" /> : <Link2Off className="size-4" />}
+                              <span className="truncate">Gỡ nối</span>
+                            </Button>
+                          )}
                           {p.kind !== "none" && (
                             <Button
                               size="sm"
@@ -535,7 +567,7 @@ export function ChannelProductsPage({
                                     className={cn(MENU_ITEM, "text-rose-700 hover:bg-rose-50")}
                                     onClick={() => {
                                       setMenuKey(null);
-                                      void unlinkGroup(g);
+                                      askUnlink(g.key, g.title, g.rows);
                                     }}
                                   >
                                     <Link2Off className="size-4" /> Gỡ nối {formatNumber(g.linkedCount)} phân loại
@@ -615,6 +647,14 @@ export function ChannelProductsPage({
           if (syncConfirm) void applyStockSync(syncConfirm.key, syncConfirm.rows, true);
         }}
       />
+      <UnlinkConfirmDialog
+        open={unlinkAsk !== null}
+        title={unlinkAsk?.title ?? ""}
+        count={unlinkAsk?.rows.length ?? 0}
+        busy={busyKey !== null}
+        onCancel={() => setUnlinkAsk(null)}
+        onConfirm={() => void confirmUnlink()}
+      />
       <AutoMatchDialog open={autoOpen} onOpenChange={setAutoOpen} channelId={channelId || undefined} onDone={() => void refresh()} />
       <MappingHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
     </div>
@@ -652,6 +692,8 @@ function GroupRows({
   syncBusy,
   onSyncGroup,
   onSyncVariant,
+  unlinkBusy,
+  onUnlinkVariant,
   action,
 }: {
   g: ChannelGroup;
@@ -662,6 +704,8 @@ function GroupRows({
   syncBusy: boolean;
   onSyncGroup: (enabled: boolean) => void;
   onSyncVariant: (r: ChannelProduct, enabled: boolean) => void;
+  unlinkBusy: boolean;
+  onUnlinkVariant: (r: ChannelProduct) => void;
   action: React.ReactNode;
 }) {
   const meta = CHANNEL_META[g.channelName];
@@ -727,10 +771,12 @@ function GroupRows({
         </td>
         <td className="px-2 py-2.5">
           {/* Công tắc CẤP SẢN PHẨM = bật / tắt mọi phân loại ĐÃ NỐI của sản phẩm. Bật một phần → ghi "k/n",
-              bấm là bật nốt. Chưa nối phân loại nào thì không có gì để điều khiển. */}
+              bấm là bật nốt. Chưa nối phân loại nào thì chưa có gì để điều khiển — vẫn vẽ công tắc (khóa) thay
+              cho dấu "—": anh Trung 19/11 nhìn dấu gạch ở tab Cần nối tưởng sản phẩm cha KHÔNG có công tắc,
+              phải bật từng phân loại. Bọc span vì nút đang khóa không tự hiện chú thích khi rê chuột. */}
           {g.linkedCount === 0 ? (
-            <span className={TEXT_SUB} title="Chưa nối phân loại nào về Tổng kho">
-              —
+            <span className="inline-flex" title="Nối kho trước. Nối xong, bật công tắc này là bật đồng bộ tồn cho mọi phân loại của sản phẩm.">
+              <Switch checked={false} disabled aria-label={`Đồng bộ tồn của ${g.title} — nối kho trước rồi mới bật được`} />
             </span>
           ) : (
             <span className="flex items-center gap-1.5">
@@ -812,7 +858,21 @@ function GroupRows({
                 />
               )}
             </td>
-            <td />
+            {/* Gỡ nối TỪNG phân loại — thẳng cột với nút "Gỡ nối" của dòng sản phẩm: đệm phải = đệm ô 12px + nút ⋯ 32px + khe 6px. */}
+            <td className="py-1.5 pl-3 pr-[3.125rem] text-right">
+              {r.product && (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-rose-700"
+                  disabled={unlinkBusy}
+                  title={`Gỡ nối phân loại này khỏi SKU kho ${r.product.skuCode}`}
+                  onClick={() => onUnlinkVariant(r)}
+                >
+                  <Link2Off className="size-3.5" /> Gỡ nối
+                </Button>
+              )}
+            </td>
           </tr>
         ))}
     </>

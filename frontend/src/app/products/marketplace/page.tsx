@@ -20,7 +20,8 @@ import { cn } from "@/lib/utils";
  * ngăn kéo nối. Trang CHỈ NỐI, không tạo sản phẩm kho (anh Trung 05/11: sản phẩm kho quản ở Tổng kho). CHỈ CHỦ SHOP — nhân viên gõ URL thì về Tổng kho
  * (sidebar đã ẩn mục, API cũng chặn adminOnly độc lập).
  *
- * Query string: ?search= từ khoá mồi cho ô tìm. NỐI MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm
+ * Query string: ?search= từ khoá mồi cho ô tìm; ?sync=1 mở sẵn hộp "Đồng bộ tồn theo gian" (link cũ
+ * /warehouse/sync và /products?sync=1 — 19/11/2026 Tổng kho bỏ nút đồng bộ, hộp chỉ còn ở trang này). NỐI MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm
  * sàn về Tổng kho — ?target= / ?targetSku= (luồng ngược từ Tổng kho) đã gỡ.
  * Route cũ /mappings và /products?tab=links đều chuyển về đây.
  */
@@ -29,15 +30,15 @@ export default function MarketplaceProductsPage() {
   const isAdmin = canManageShop(getStoredUser());
 
   // Đọc query MỘT LẦN lúc mount (cùng cách Tổng kho — không cần useSearchParams/Suspense).
-  const [init, setInit] = useState<{ search?: string } | null>(null);
+  const [init, setInit] = useState<{ search?: string; sync: boolean } | null>(null);
 
   useEffect(() => {
     if (!isAdmin) {
       router.replace("/products");
       return;
     }
-    const search = new URLSearchParams(window.location.search).get("search")?.trim() || undefined;
-    setInit({ search });
+    const params = new URLSearchParams(window.location.search);
+    setInit({ search: params.get("search")?.trim() || undefined, sync: params.get("sync") === "1" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -58,6 +59,7 @@ export default function MarketplaceProductsPage() {
           <ChannelProductsPage
             key={init.search ?? "all"}
             initialSearch={init.search}
+            initialSyncOpen={init.sync}
           />
         )}
       </div>

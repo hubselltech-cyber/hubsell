@@ -5,18 +5,23 @@
 // thì không thêm được." Sản phẩm kho = một MẪU (tên) + các phân loại, mỗi phân loại một dòng
 // Product gom bằng groupKey (lib/product-group.ts). Sửa phải đi theo MẪU và trọn gói:
 //   · đổi tên → áp cho mọi phân loại (sửa lẻ một dòng là dòng đó rơi khỏi mẫu);
-//   · đổi phân loại / mã SKU / giá bán từng dòng;
+//   · đổi phân loại / mã SKU / giá bán / giá vốn từng dòng;
 //   · thêm phân loại mới = thêm một SKU kho vào đúng mẫu (mã vạch DB tự sinh, tồn ban đầu qua sổ kho).
 //
-// CỐ Ý KHÔNG sửa ở đây: tồn kho (Nhập · Xuất · sổ kho), giá vốn của SKU đang có (trang Cấu hình
-// Giá vốn — đụng tài chính, đơn cũ đóng băng giá), mã vạch (hộp Cài đặt SKU), ảnh (lát sau: ảnh tải
-// lên đang gắn vào lượt Sao chép sản phẩm, cron dọn ảnh mồ côi sau 2 ngày).
+// GIÁ VỐN của SKU đang có (19/11/2026, anh Trung: "sửa sản phẩm mà không sửa được giá vốn") = giá MẶC
+// ĐỊNH ở kho (Product.costPrice), ghi qua đúng đường của trang Cấu hình Giá vốn (lib/cost-price.ts):
+// đơn mới dùng giá mới, đơn cũ còn 0 được vá, đơn cũ đã có giá GIỮ NGUYÊN, gian đặt giá riêng vẫn theo
+// giá riêng. Chỉ người thấy tài chính mới sửa được.
+//
+// CỐ Ý KHÔNG sửa ở đây: tồn kho (Nhập · Xuất · sổ kho), mã vạch (hộp Cài đặt SKU), ảnh (lát sau: ảnh
+// tải lên đang gắn vào lượt Sao chép sản phẩm, cron dọn ảnh mồ côi sau 2 ngày).
 //
 // Tệp gồm phần THUẦN (planGroupEdit — đọc body, kiểm luật, ra kế hoạch ghi; test không cần DB) và
 // phần DB (loadProductGroup / saveProductGroup).
 // ============================================================
 
 import { InventoryLogType, Prisma } from "@prisma/client";
+import { applyCostPricesIn, COST_TX_OPTIONS, invalidateOwnerCostCaches } from "../lib/cost-price";
 import { prisma } from "../lib/prisma";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
 import { MANUAL_LIMITS } from "./listing-copy/manual";
@@ -57,6 +62,7 @@ export interface GroupCurrentRow {
   variantName: string | null;
   groupKey: string | null;
   sellingPrice: number;
+  costPrice: number;
 }
 
 interface RowUpdate {
@@ -82,6 +88,8 @@ export interface GroupEditPlan {
   renameAll: boolean;
   /** Chỉ dòng CÓ đổi, chỉ trường CÓ đổi. */
   updates: RowUpdate[];
+  /** Giá vốn mặc định ở kho của các dòng CÓ đổi giá — ghi riêng qua lib/cost-price (kèm vá đơn cũ còn 0). */
+  costs: { productId: string; cost: number }[];
   added: RowAdd[];
   /** Mã SKU mới (đổi + thêm) — phải kiểm trùng với phần còn lại của Tổng kho. */
   newSkuCodes: string[];
@@ -118,9 +126,10 @@ function parseVariant(raw: unknown): string | null {
 
 /**
  * Body PUT /api/products/:id/group → kế hoạch ghi. Thuần, không chạm DB. Ném ProductGroupEditError
- * khi sai luật. Body: { productName, variants: [{ id, skuCode?, variantName?, sellingPrice? }],
+ * khi sai luật. Body: { productName, variants: [{ id, skuCode?, variantName?, sellingPrice?, costPrice? }],
  * added: [{ skuCode, variantName, sellingPrice, costPrice?, stock? }] } — trường vắng = giữ nguyên;
- * dòng không gửi = giữ nguyên (vẫn đổi tên theo mẫu).
+ * dòng không gửi = giữ nguyên (vẫn đổi tên theo mẫu). `costPrice` của dòng đang có: người không thấy
+ * tài chính gửi lên thì TỪ CHỐI (403) chứ không lặng lẽ bỏ qua — họ không được biết lẫn đổi giá vốn.
  */
 export function planGroupEdit(
   current: GroupCurrentRow[],
@@ -148,6 +157,7 @@ export function planGroupEdit(
 
   // Bản SAU SỬA của các dòng đang có + phần thật sự đổi.
   const updates: RowUpdate[] = [];
+  const costs: GroupEditPlan["costs"] = [];
   const finalRows: { label: string; skuCode: string; variantName: string | null; skuChanged: boolean; variantChanged: boolean }[] = [];
   for (const c of current) {
     const p = patches.get(c.id);
@@ -172,6 +182,11 @@ export function planGroupEdit(
     if (p?.sellingPrice !== undefined) {
       const price = parsePrice(p.sellingPrice, `Giá bán của ${c.skuCode}`);
       if (price !== c.sellingPrice) u.sellingPrice = price;
+    }
+    if (p?.costPrice !== undefined) {
+      if (!opts.allowCost) throw new ProductGroupEditError("Tài khoản không được sửa giá vốn.", 403);
+      const cost = parsePrice(p.costPrice, `Giá vốn của ${c.skuCode}`);
+      if (cost !== c.costPrice) costs.push({ productId: c.id, cost });
     }
     if (u.skuCode !== undefined || u.variantName !== undefined || u.sellingPrice !== undefined) updates.push(u);
     finalRows.push({
@@ -245,6 +260,7 @@ export function planGroupEdit(
     groupKey,
     renameAll,
     updates,
+    costs,
     added,
     newSkuCodes: [...updates.flatMap((u) => (u.skuCode ? [u.skuCode] : [])), ...added.map((a) => a.skuCode)],
   };
@@ -264,6 +280,8 @@ export interface ProductGroupVariant {
   imageUrl: string | null;
   /** Số SKU sàn đang nối — đổi mã SKU của dòng này thì cảnh báo (liên kết giữ, mã lệch với sàn). */
   linkedChannels: number;
+  /** Trong số đó, bao nhiêu SKU sàn đang có giá vốn RIÊNG của gian — đổi giá vốn ở kho không đổi giá của chúng. */
+  ownCostChannels: number;
 }
 
 export interface ProductGroupDetail {
@@ -287,6 +305,8 @@ const DETAIL_SELECT = {
   isActive: true,
   imageUrl: true,
   _count: { select: { channelProducts: true } },
+  // Giá riêng của gian thắng giá kho (lib/cost-price effectiveSkuCost) — chỉ cần đếm.
+  channelProducts: { where: { costPrice: { gt: 0 } }, select: { id: true } },
 } satisfies Prisma.ProductSelect;
 
 type DetailRow = Prisma.ProductGetPayload<{ select: typeof DETAIL_SELECT }>;
@@ -331,6 +351,7 @@ function toDetail(anchorId: string, rows: DetailRow[]): ProductGroupDetail {
       isActive: r.isActive,
       imageUrl: r.imageUrl,
       linkedChannels: r._count.channelProducts,
+      ownCostChannels: r.channelProducts.length,
     })),
   };
 }
@@ -374,9 +395,14 @@ async function assertSkuCodesFree(ownerId: string, familyIds: string[], plan: Gr
   }
 }
 
+/** Mẫu sau sửa + số dòng đơn cũ (đang giá vốn 0) vừa nhận giá vốn nhờ lượt đổi giá này. */
+export interface ProductGroupSaveResult extends ProductGroupDetail {
+  backfilledOrderLines: number;
+}
+
 /**
  * Lưu trọn gói một lần sửa mẫu. Thứ tự trong giao dịch: (1) tên + khóa gom cho cả mẫu, (2) từng dòng
- * có đổi, (3) phân loại mới + tồn ban đầu qua sổ kho. Trả về mẫu sau sửa.
+ * có đổi, (3) giá vốn có đổi + vá đơn cũ còn 0, (4) phân loại mới + tồn ban đầu qua sổ kho.
  */
 export async function saveProductGroup(input: {
   ownerId: string;
@@ -384,7 +410,7 @@ export async function saveProductGroup(input: {
   productId: string;
   body: unknown;
   allowCost: boolean;
-}): Promise<ProductGroupDetail | null> {
+}): Promise<ProductGroupSaveResult | null> {
   const { ownerId, productId } = input;
   const rows = await familyRows(ownerId, productId);
   if (!rows) return null;
@@ -397,6 +423,7 @@ export async function saveProductGroup(input: {
       variantName: r.variantName,
       groupKey: r.groupKey,
       sellingPrice: Number(r.sellingPrice),
+      costPrice: Number(r.costPrice),
     })),
     input.body,
     { allowCost: input.allowCost }
@@ -428,6 +455,7 @@ export async function saveProductGroup(input: {
     (r) => wantedCodes.has(r.skuCode.toUpperCase()) && plan.updates.some((u) => u.id === r.id && u.skuCode)
   );
 
+  let backfilledOrderLines = 0;
   try {
     await prisma.$transaction(
       async (tx) => {
@@ -449,6 +477,9 @@ export async function saveProductGroup(input: {
               ...(u.sellingPrice !== undefined ? { sellingPrice: new Prisma.Decimal(u.sellingPrice) } : {}),
             },
           });
+        }
+        if (plan.costs.length > 0) {
+          backfilledOrderLines = (await applyCostPricesIn(tx, plan.costs, ownerId)).backfilledOrderLines;
         }
         for (const a of plan.added) {
           // Mã vạch quản lý: DB tự sinh (DEFAULT của cột) — không truyền.
@@ -477,7 +508,8 @@ export async function saveProductGroup(input: {
           }
         }
       },
-      { timeout: 30_000 }
+      // Có đổi giá vốn thì kèm một câu vá đơn cũ — shop nhiều đơn cần trần rộng như trang Cấu hình Giá vốn.
+      plan.costs.length > 0 ? COST_TX_OPTIONS : { timeout: 30_000 }
     );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -486,11 +518,16 @@ export async function saveProductGroup(input: {
     throw err;
   }
 
+  // Bộ đệm biên lãi của Trợ lý quảng cáo đọc giá vốn — xóa sau khi giao dịch đã chốt.
+  if (plan.costs.length > 0) await invalidateOwnerCostCaches(ownerId);
+
   console.log(
     `[product-edit] shop ${ownerId} sửa mẫu "${plan.productName}" (${familyIds.length} SKU): ` +
       `${plan.renameAll ? "đổi tên/khóa gom, " : ""}${plan.updates.length} dòng đổi` +
       `${plan.updates.some((u) => u.skuCode) ? ` (đổi mã: ${plan.updates.filter((u) => u.skuCode).map((u) => u.skuCode).join(", ")})` : ""}` +
-      `, thêm ${plan.added.length} phân loại${plan.added.length ? ` (${plan.added.map((a) => a.skuCode).join(", ")})` : ""}`
+      `, thêm ${plan.added.length} phân loại${plan.added.length ? ` (${plan.added.map((a) => a.skuCode).join(", ")})` : ""}` +
+      `${plan.costs.length ? `, đổi giá vốn ${plan.costs.length} SKU (vá ${backfilledOrderLines} dòng đơn cũ còn 0)` : ""}`
   );
-  return loadProductGroup(ownerId, productId);
+  const detail = await loadProductGroup(ownerId, productId);
+  return detail && { ...detail, backfilledOrderLines };
 }

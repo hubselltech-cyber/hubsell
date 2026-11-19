@@ -87,6 +87,8 @@ export const qk = {
 
   // ----- Kho -----
   products: (params: Record<string, unknown>) => ["products", params] as const,
+  /** Dưới tiền tố "products" để mọi thao tác ghi ở Tổng kho làm tươi luôn hộp Thống kê. */
+  inventoryStats: () => ["products", "stats"] as const,
   inventoryLogs: (params: Record<string, unknown>) => ["inventory-logs", params] as const,
   stockVouchers: (params: Record<string, unknown>) => ["stock-vouchers", params] as const,
   channelProducts: (params: Record<string, unknown>) => ["channel-products", params] as const,

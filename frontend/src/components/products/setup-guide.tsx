@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
-import type { SyncHeaderState } from "@/components/products/sync-settings-dialog";
 import { Button } from "@/components/ui/button";
 import type { Channel } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
@@ -25,6 +24,14 @@ import { cn } from "@/lib/utils";
 import { HubStoryStrip } from "./hub-story-strip";
 
 const OPEN_KEY = "hubsell_hub_guide_open";
+
+/** Trạng thái đồng bộ tồn theo gian cho bước 3 của khối. */
+export interface SyncHeaderState {
+  /** Số gian đang bật / tổng gian Shopee+Lazada đang hoạt động. */
+  enabledCount: number;
+  totalChannels: number;
+  pending: number;
+}
 
 export interface ChannelProductCounts {
   all: number;

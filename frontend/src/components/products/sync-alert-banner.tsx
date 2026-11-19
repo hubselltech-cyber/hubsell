@@ -9,6 +9,10 @@
 // thuật gập lại; hai nút: [Đẩy lại] (Hubsell đè số chuẩn lên sàn ngay) và
 // [Đã xử lý] (bỏ qua). Nhiều cảnh báo cùng nguyên nhân → [Đã xử lý tất cả].
 // Không có cảnh báo nào thì component không render gì (đường yên tĩnh).
+//
+// 19/11/2026 (anh Trung xem prod, 6 cảnh báo chiếm nửa màn: "Để một dòng nhỏ mở rộng được thôi. Để cả
+// đống ra"): mặc định THU GỌN thành MỘT dòng nhỏ — số SKU + lý do — bấm vào mới xổ danh sách và các
+// nút. Mỗi lần mở trang lại thu gọn: đây là việc thỉnh thoảng mới xử lý, không được đẩy bảng tồn xuống.
 // ============================================================
 
 import { useCallback, useEffect, useState } from "react";
@@ -36,6 +40,8 @@ export function SyncAlertBanner() {
   const [total, setTotal] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [resolvingAll, setResolvingAll] = useState(false);
+  // Thu gọn mặc định — xem chú thích đầu tệp.
+  const [expanded, setExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [detailOpen, setDetailOpen] = useState<Record<string, boolean>>({});
 
@@ -113,25 +119,36 @@ export function SyncAlertBanner() {
   const reasons = Array.from(new Set(alerts.map((a) => a.reason).filter(Boolean)));
   const singleReason = reasons.length === 1 ? reasons[0] : null;
 
+  const summary = singleReason
+    ? `${singleReason}.`
+    : "Số trên sàn có thể đang khác Hubsell. Bấm Đẩy lại, hoặc Đã xử lý để bỏ qua.";
+
   return (
-    <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-rose-800">
-        <AlertTriangle className="size-4 shrink-0" />
-        <p className="text-sm font-semibold">
-          {total === 1
-            ? "1 SKU chưa đẩy được tồn lên sàn"
-            : `${formatNumber(total)} SKU chưa đẩy được tồn lên sàn`}
-        </p>
-        <span className="text-xs text-rose-700/80">
-          {singleReason
-            ? `— ${singleReason}.`
-            : "— số trên sàn có thể đang khác Hubsell. Bấm Đẩy lại, hoặc Đã xử lý để bỏ qua."}
-        </span>
-        {alerts.length > 1 && (
+    <div className="rounded-lg border border-rose-200 bg-rose-50/70">
+      {/* MỘT dòng: bấm cả dòng để xổ / thu. Lý do dài thì cắt ở dòng này (đọc đủ khi xổ ra). */}
+      <div className="flex items-center gap-2 px-3 py-1.5">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          title={expanded ? "Thu gọn" : "Bấm để xem từng SKU và xử lý"}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left text-rose-800"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          <AlertTriangle className="size-4 shrink-0" />
+          <span className="shrink-0 text-sm font-medium">
+            {formatNumber(total)} SKU chưa đẩy được tồn lên sàn
+          </span>
+          <span className={cn("min-w-0 text-xs text-rose-700/80", !expanded && "truncate")}>— {summary}</span>
+          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-xs font-medium">
+            {expanded ? "Thu gọn" : "Xem"}
+            <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
+          </span>
+        </button>
+        {expanded && alerts.length > 1 && (
           <Button
             variant="outline"
             size="sm"
-            className="ml-auto"
+            className="shrink-0"
             onClick={() => void handleResolveAll()}
             disabled={resolvingAll}
           >
@@ -140,7 +157,9 @@ export function SyncAlertBanner() {
           </Button>
         )}
       </div>
-      <ul className="mt-3 space-y-2">
+      {expanded && (
+      <div className="px-3 pb-3">
+      <ul className="space-y-2">
         {visible.map((alert) => {
           const [plain, ...rest] = alert.message.split("\n");
           const detail = rest.join("\n").trim();
@@ -236,6 +255,8 @@ export function SyncAlertBanner() {
           Đang hiện {formatNumber(alerts.length)} cảnh báo mới nhất trên tổng{" "}
           {formatNumber(total)}. Xử lý xong sẽ tự nạp tiếp.
         </p>
+      )}
+      </div>
       )}
     </div>
   );

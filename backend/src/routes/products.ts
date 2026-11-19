@@ -25,6 +25,7 @@ import {
   ProductGroupEditError,
   saveProductGroup,
 } from "../services/product-group-edit";
+import { loadInventoryStats } from "../services/inventory-stats";
 import { awaitingShipByProduct } from "../services/stock-awaiting-ship";
 import { subtreeIds } from "../lib/location-tree";
 import { cleanVariantName, productGroupKey } from "../lib/product-group";
@@ -445,10 +446,20 @@ router.get("/", async (req: AuthRequest, res, next) => {
   }
 });
 
+// GET /api/products/stats — THỐNG KÊ cả Tổng kho (19/11/2026): số sản phẩm, SKU, tổng tồn, giá trị tồn.
+// Chỉ gọi khi khách mở hộp "Thống kê"; tiền cắt khỏi dữ liệu với người không thấy tài chính.
+router.get("/stats", async (req: AuthRequest, res, next) => {
+  try {
+    res.json(await loadInventoryStats(req.ownerId!, { seesCost: canSeeFinancials(req) }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── SỬA SẢN PHẨM THEO MẪU + THÊM PHÂN LOẠI (18/11/2026) — services/product-group-edit.ts ──
 // GET  /api/products/:id/group — mọi phân loại của mẫu chứa SKU này (hộp "Sửa sản phẩm" ở Tổng kho).
-// PUT  /api/products/:id/group — lưu trọn gói: tên mẫu, phân loại / mã SKU / giá bán từng dòng, phân
-// loại mới. Mount cho cả quyền "orders" (màn đơn cần đọc sản phẩm) nên việc GHI gác thêm ở đây.
+// PUT  /api/products/:id/group — lưu trọn gói: tên mẫu, phân loại / mã SKU / giá bán / giá vốn từng
+// dòng (giá vốn: chỉ người thấy tài chính, ghi qua lib/cost-price), phân loại mới. Mount cho cả quyền "orders" (màn đơn cần đọc sản phẩm) nên việc GHI gác thêm ở đây.
 function sendGroupEditError(res: Response, err: unknown, next: NextFunction): void {
   if (err instanceof ProductGroupEditError) {
     res.status(err.status).json({ error: err.message });

@@ -3,7 +3,8 @@
 // 17/09/2026 để tab "Mapping giá vốn" và hook tự điền khi đồng bộ dùng chung).
 //
 //   - Giá vốn RIÊNG CỦA GIAN → ChannelProduct.costPrice (applyChannelCostPrice)
-//   - Giá vốn MẶC ĐỊNH ở kho  → Product.costPrice        (applyCostPrice)
+//   - Giá vốn MẶC ĐỊNH ở kho  → Product.costPrice        (applyCostPrice; mỗi sản phẩm một giá:
+//     applyCostPricesIn — hộp "Sửa sản phẩm" ở Tổng kho, 19/11/2026)
 //
 // Cả hai đều VÁ LẠI các dòng hàng đã bán mà lúc bán chưa biết giá vốn.
 //
@@ -334,19 +335,48 @@ export async function invalidateOwnerCostCaches(ownerId: string): Promise<void> 
   }
 }
 
-/** Lõi của applyCostPrice — chạy trong transaction do bên gọi mở. */
+/**
+ * Lõi ghi giá vốn MẶC ĐỊNH ở kho, MỖI sản phẩm một giá — chạy trong transaction do bên gọi mở; xong
+ * transaction bên gọi tự gọi invalidateOwnerCostCaches. Ghi gộp theo từng mức giá (các phân loại của
+ * một mẫu thường chung giá → một câu UPDATE), rồi vá đơn cũ còn 0 bằng MỘT câu cho cả lô.
+ */
+export async function applyCostPricesIn(
+  db: Db,
+  entries: { productId: string; cost: number }[],
+  ownerId: string
+): Promise<{ products: number; backfilledOrderLines: number }> {
+  const idsByCost = new Map<number, string[]>();
+  for (const e of entries) {
+    const ids = idsByCost.get(e.cost);
+    if (ids) ids.push(e.productId);
+    else idsByCost.set(e.cost, [e.productId]);
+  }
+  let products = 0;
+  for (const [cost, ids] of idsByCost) {
+    const updated = await db.product.updateMany({
+      where: { id: { in: ids }, userId: ownerId },
+      data: { costPrice: cost },
+    });
+    products += updated.count;
+  }
+  // Giá 0 không phải giá để vá ("chưa nhập") — chỉ sản phẩm vừa có giá thật mới đi vá đơn cũ.
+  const priced = entries.filter((e) => e.cost > 0).map((e) => e.productId);
+  const backfilled = await backfillOrderLinesByProducts(db, priced, ownerId);
+  return { products, backfilledOrderLines: backfilled };
+}
+
+/** Lõi của applyCostPrice (một giá cho nhiều sản phẩm) — chạy trong transaction do bên gọi mở. */
 export async function applyCostPriceIn(
   db: Db,
   productIds: string[],
   cost: number,
   ownerId: string
 ): Promise<{ products: number; backfilledOrderLines: number }> {
-  const updated = await db.product.updateMany({
-    where: { id: { in: productIds }, userId: ownerId },
-    data: { costPrice: cost },
-  });
-  const backfilled = cost > 0 ? await backfillOrderLinesByProducts(db, productIds, ownerId) : 0;
-  return { products: updated.count, backfilledOrderLines: backfilled };
+  return applyCostPricesIn(
+    db,
+    productIds.map((productId) => ({ productId, cost })),
+    ownerId
+  );
 }
 
 /**
@@ -372,7 +402,7 @@ export async function applyCostPrice(
  * shop nhiều đơn (prod 28/09: 8s → P2028). Vá đơn cũ là UPDATE một câu, không
  * lặp, nên 60s là trần rộng chứ không phải kỳ vọng.
  */
-const COST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
+export const COST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
 
 /** Lõi của applyChannelCostPrice — chạy trong transaction do bên gọi mở. */
 export async function applyChannelCostPriceIn(

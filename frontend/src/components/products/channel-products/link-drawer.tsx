@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Check, Link2, Loader2, Search, Sparkles } from "lucide-react";
+import { Check, Link2, Loader2, Search, Sparkles, Warehouse } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -44,6 +44,14 @@ import {
  * MỘT CHIỀU (anh Trung 05/11 tối): chỉ nối từ sản phẩm sàn về Tổng kho — luồng ngược "Tổng kho › Nối gian"
  * (mở ngăn kéo với SKU kho cố định) đã gỡ; đừng thêm lại.
  * Nối trên đơn hàng: `group` dựng từ /mappings/lookup, `source="order"`.
+ *
+ * 19/11/2026 (anh Trung xem prod):
+ *   · Ô tìm mở ra TRỐNG, chữ mờ "Tìm sản phẩm kho muốn nối". Trước đó ô bị điền sẵn từ khóa mồi (mã sàn đầu
+ *     tiên / 4 chữ đầu tên) — khách không hiểu chữ đó ở đâu ra, và mồi không khớp thì hộp mở ra đã báo
+ *     "Không có sản phẩm kho nào khớp". Từ khóa mồi vẫn chạy NGẦM khi ô còn trống để có gợi ý sẵn + tự chọn
+ *     khi trùng mã; khách gõ gì thì tìm theo chữ khách gõ.
+ *   · Mỗi dòng gợi ý + sản phẩm đã chọn mang nhãn "Tổng kho" (đối xứng với nhãn sàn ở bảng ngoài) để seller
+ *     biết mình đang chọn một sản phẩm trong Tổng kho chứ không phải sản phẩm trên sàn.
  */
 type RowChoice = { kind: "keep" } | { kind: "product"; productId: string } | { kind: "none" };
 
@@ -74,13 +82,20 @@ export function LinkDrawer({
     [group]
   );
 
-  // Mở lần nào dựng lại lần đó: từ khóa mồi = mã sàn chuẩn đầu tiên, không có thì 4 chữ đầu tên.
+  // Từ khóa mồi cho lúc ô tìm còn trống: mã sàn chuẩn đầu tiên, không có thì 4 chữ đầu tên. Chạy ngầm, không điền vào ô.
+  const seed = useMemo(() => {
+    if (!group) return "";
+    const firstStd = rows.find((r) => !r.productId && isStandardSku(r.channelSku))?.channelSku;
+    return firstStd ?? group.title.trim().split(/\s+/).slice(0, 4).join(" ");
+  }, [group, rows]);
+  /** Đang tìm theo gì: chữ khách gõ, ô trống thì theo từ khóa mồi. */
+  const term = debounced || seed;
+
+  // Mở lần nào dựng lại lần đó.
   useEffect(() => {
     if (!open || !group) return;
-    const firstStd = rows.find((r) => !r.productId && isStandardSku(r.channelSku))?.channelSku;
-    const seed = firstStd ?? group.title.trim().split(/\s+/).slice(0, 4).join(" ");
-    setQuery(seed);
-    setDebounced(seed);
+    setQuery("");
+    setDebounced("");
     setChoices({});
     setPicked(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,13 +107,13 @@ export function LinkDrawer({
   }, [query]);
 
   useEffect(() => {
-    if (!open || !debounced) {
+    if (!open || !term) {
       setResults([]);
       return;
     }
     let cancelled = false;
     setSearching(true);
-    fetchProducts({ search: debounced, page: 1, pageSize: 60, view: "grouped" })
+    fetchProducts({ search: term, page: 1, pageSize: 60, view: "grouped" })
       .then((res) => {
         if (cancelled) return;
         const groups = groupWarehouseProducts(res.items);
@@ -120,7 +135,7 @@ export function LinkDrawer({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, debounced]);
+  }, [open, term]);
 
   // Đổi sản phẩm kho đã chọn → gợi ý lại toàn bộ ghép.
   useEffect(() => {
@@ -207,16 +222,14 @@ export function LinkDrawer({
         <div className="space-y-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-8" placeholder="Tìm sản phẩm kho theo tên hoặc mã SKU…" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
+            <Input className="pl-8" placeholder="Tìm sản phẩm kho muốn nối" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
           </div>
           {picked ? (
             <div className="flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
               <Check className="size-4 shrink-0 text-primary" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{picked.title}</span>
-                <span className={cn(TEXT_SUB, "block truncate font-mono")}>
-                  {picked.variants.length === 1 ? picked.variants[0].skuCode : `${picked.rootGuess || picked.variants[0].skuCode}… · ${picked.variants.length} phân loại`}
-                </span>
+                <WarehouseLine g={picked} />
               </span>
               <Button size="xs" variant="ghost" onClick={() => setPicked(null)}>
                 Chọn khác
@@ -237,7 +250,8 @@ export function LinkDrawer({
                       trước rồi quay lại nối.
                     </>
                   ) : (
-                    "Gõ tên hoặc mã để tìm."
+                    // Ô còn trống và từ khóa mồi không ra gì — chưa phải "không tìm thấy", khách chưa tìm.
+                    "Gõ tên hoặc mã SKU của sản phẩm trong Tổng kho để tìm."
                   )}
                 </p>
               ) : (
@@ -253,9 +267,7 @@ export function LinkDrawer({
                       <Thumb src={g.imageUrl} alt={g.title} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{g.title}</span>
-                        <span className={cn(TEXT_SUB, "block truncate font-mono")}>
-                          {g.variants.length === 1 ? g.variants[0].skuCode : `${g.rootGuess || g.variants[0].skuCode}… · ${g.variants.length} phân loại`}
-                        </span>
+                        <WarehouseLine g={g} />
                       </span>
                       {skuHit && (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
@@ -369,6 +381,23 @@ export function LinkDrawer({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Dòng phụ của một sản phẩm KHO: nhãn "Tổng kho" + mã SKU (mẫu nhiều phân loại: gốc mã + số phân loại).
+ * Nhãn đối xứng với nhãn sàn (Shopee / TikTok…) cạnh tên sản phẩm ở bảng ngoài — nhìn là biết bên nào là kho.
+ */
+function WarehouseLine({ g }: { g: WarehouseGroup }) {
+  return (
+    <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1.5")}>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-300 bg-slate-100 px-1.5 py-px text-[11px] font-medium text-slate-700">
+        <Warehouse className="size-3" /> Tổng kho
+      </span>
+      <span className="min-w-0 truncate font-mono">
+        {g.variants.length === 1 ? g.variants[0].skuCode : `${g.rootGuess || g.variants[0].skuCode}… · ${g.variants.length} phân loại`}
+      </span>
+    </span>
   );
 }
 

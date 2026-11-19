@@ -897,7 +897,7 @@ function StockSheet({
                   {single
                     ? linkState(single) === "unlinked"
                       ? "Sản phẩm này chưa liên kết với gian hàng nào. Số tồn chỉ đổi trong Hubsell, không đẩy lên sàn. Nối gian trên web, trang Sản phẩm trên sàn."
-                      : "Các gian đã liên kết chưa bật đồng bộ tồn. Số tồn chỉ đổi trong Hubsell, không đẩy lên sàn. Bật trên web, trang Tổng kho, nút Đồng bộ tồn kho."
+                      : "Các gian đã liên kết chưa bật đồng bộ tồn. Số tồn chỉ đổi trong Hubsell, không đẩy lên sàn. Bật trên web, trang Sản phẩm trên sàn, nút Đồng bộ tồn theo gian."
                     : `${unsynced.length}/${rows.length} phân loại chưa đẩy tồn lên sàn (chưa nối gian, hoặc gian chưa bật đồng bộ). Số tồn của các phân loại đó chỉ đổi trong Hubsell. Nối gian ở trang Sản phẩm trên sàn, bật đồng bộ ở trang Tổng kho trên web.`}
                 </Text>
               </View>
