@@ -1030,6 +1030,15 @@ Commit `df53e87f` (mã) + `71eb5fbf` (tài liệu), push `c21c3143..71eb5fbf`. S
 - Bước 4 (mobile) và 5 (bật ON_HAND từng shop) chưa làm, chờ anh.
 - Chuỗi đối chiếu lát 1 vẫn 1/7 (lần kế ~21:19 ngày 20/11).
 
+### 19.2. ĐÃ BẬT ON_HAND cho shop admin@hubsell.vn trên prod 19/11/2026 23:14 (anh: "Bật cho admin")
+
+- **Trước khi bật (đọc bằng SQL):** shop chưa có dòng `shop_sync_settings` (đang dùng mặc định); 151 mã, sổ 1.690, giữ cho đơn 19 trên 14 mã, giữ tạm 0; 3 vị trí, không ô không bán; 1 nhân viên; 0 đơn hủy sau giao chưa về kho.
+- **Câu đã chạy:** `INSERT INTO shop_sync_settings (id, "userId", "stockModel", "updatedAt") … ON CONFLICT ("userId") DO UPDATE SET "stockModel" = 'ON_HAND'`. Dòng mới: `ON_HAND / ON_CANCEL`, tồn an toàn 0, `SUM`, sắp hết 0 — ba giá trị sau trùng mặc định mã đang dùng khi shop chưa có dòng, nên chỉ có cách hiển thị đổi.
+- **Sau khi bật:** cả hệ thống 1 shop ON_HAND, 2 dòng LEGACY, còn lại chưa có dòng. Shop admin: trong kho = 1.690 + 19 = 1.709; 19 đơn đang giữ / 19 sản phẩm khớp bộ đếm 19; 105 mã có vị trí, 0 mã lệch giữa vị trí và tổng; không mã nào âm.
+- **Anh sẽ thấy:** Tổng kho có dải giải thích một lần; 14 mã có hàng đang giữ thì Tồn kho tăng đúng bằng phần giữ (vd BL003-DEN 29 → 30), Có thể bán không đổi; Nhật ký kho ba ô số (dòng ghi trước 23:07 chỉ có ô Có thể bán); Kiểm kê nhanh đổi sang ghi phần chênh.
+- **Chưa kiểm:** em không đăng nhập nên chưa NHÌN màn prod; số trên là đọc từ database. Nhân viên của shop dùng app mobile bản hiện tại sẽ thấy "Tồn" theo cách cũ (thấp hơn web đúng bằng phần đang giữ) cho tới khi app ra bản.
+- **Tắt lại:** `UPDATE shop_sync_settings SET "stockModel" = 'LEGACY' WHERE "userId" = (SELECT id FROM "User" WHERE email = 'admin@hubsell.vn')` — màn về như cũ ngay, không phải chuyển dữ liệu.
+
 ## 12. Nguồn
 
 Shopify: help.shopify.com/en/manual/products/inventory/fundamentals/inventory-states · …/inventory/managing-inventory-quantities/adjustment-history · …/inventory-and-locations/adjusting-inventory/adjusting-inventory-quantities · …/inventory-and-locations/inventory-counts/performing-and-reviewing-counts · …/fulfillment/managing-orders/canceling-orders · shopify.dev/docs/apps/build/orders-fulfillment/inventory-management-apps/manage-quantities-states

@@ -5,6 +5,14 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 ~23:15 — Kho chuẩn quốc tế: BẬT cách "hàng trong kho" cho shop admin@hubsell.vn trên prod (anh: "Bật cho admin")
+
+- **Đã chạy trên prod 23:14:** một câu `INSERT … ON CONFLICT` vào `shop_sync_settings` cho đúng shop admin@hubsell.vn (`stockModel = 'ON_HAND'`; các giá trị khác trùng mặc định). Chi tiết + câu tắt lại ở docs `QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 19.2.
+- **Kiểm bằng SQL:** 1 shop ON_HAND cả hệ thống; shop admin sổ 1.690 + giữ cho đơn 19 = 1.709 trong kho; 19 đơn đang giữ khớp bộ đếm; 0 mã lệch giữa vị trí và tổng; không mã âm.
+- **Chưa kiểm:** em không đăng nhập nên chưa nhìn màn prod. Nhân viên của shop dùng app mobile bản hiện tại thấy "Tồn" theo cách cũ cho tới khi app ra bản.
+- **Chưa làm:** shop khách (đợi anh + chuỗi đối chiếu 7/7, sớm nhất 25/11); mobile ra bản / OTA.
+
+---
 ## Phiên 19/11 ~23:00 — Kho chuẩn quốc tế: lát 2–5 ĐÃ LÊN PROD (anh: "anh nghĩ cứ push đi")
 
 - **Commit + push:** `df53e87f` (mã) + `71eb5fbf` (tài liệu), `c21c3143..71eb5fbf`. Chi tiết + số đo ở docs `QUAN-LY-KHO-CHUAN-QUOC-TE.md` mục 19.1.
