@@ -41,10 +41,32 @@ export interface ClipFile {
   durable: boolean;
 }
 
+/**
+ * Thông tin đường quay đưa cho SỔ CỨU CLIP lúc một clip mở (lát M1b — clip-recovery.ts): đủ để ghép lại tệp MP4
+ * nếu trang sập trước khi clip kết thúc.
+ */
+export interface RecoveryHead {
+  code: string;
+  manual: boolean;
+  /** Lúc khung đầu tiên của clip vào bộ mã hóa. */
+  startedAtIso: string;
+  width: number;
+  height: number;
+  /** Chuỗi codec + cấu hình giải mã (avcC) bộ mã hóa đưa ra. */
+  codec: string;
+  description: Uint8Array | null;
+  /** Vài byte đầu của khung đầu tiên — để tìm chỗ bắt đầu dữ liệu khung hình trong tệp dở. */
+  firstBytes: Uint8Array;
+}
+
 /** Chỗ nhận dữ liệu của một clip đang quay — bộ quay xin một cái cho mỗi clip. */
 export interface ClipSinkLike {
   stream(): WritableStream<{ type: "write"; data: Uint8Array; position: number }>;
   finish(): ClipFile;
+  /** M1b: báo clip vừa mở (gọi MỘT lần, trước khung đầu). Kho không hỗ trợ thì bỏ trống. */
+  recoveryBegin?(head: RecoveryHead): void;
+  /** M1b: báo một khung sắp được ghép vào tệp, đúng thứ tự ghép. */
+  recoverySample?(sizeBytes: number, timestampUs: number, durationUs: number, key: boolean): void;
 }
 
 /** Clip vừa quay xong, chờ tải lên. */

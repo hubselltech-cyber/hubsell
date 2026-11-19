@@ -17,8 +17,22 @@
 
 import { getStoredUser, matchPackVideoTem, type PackVideoTemMatch } from "@/lib/api";
 
+import {
+  RECOVERY_HEAD_NAME,
+  createPieceReader,
+  findDataStart,
+  fromBase64,
+  isRecoveryIndexName,
+  parseRecoveryHead,
+  parseRecoveryIndex,
+  planRecovery,
+  remuxRecoveredClip,
+  type RecoveryIndexFile,
+  type RecoveryOwnerInfo,
+} from "./clip-recovery";
 import { ClipFileBroken, type StoredClipMeta } from "./clip-store";
-import { openBrowserClipStore, withLock, type BrowserClipStore } from "./clip-store-opfs";
+import { WRITE_CHUNK_BYTES } from "./config";
+import { openBrowserClipStore, withLock, type BrowserClipStore, type OrphanOutcome } from "./clip-store-opfs";
 import { addJournal } from "./journal";
 import { playAlarm, playNotice } from "./sound";
 import type { ClipKind, ClipOutcome, ClipSinkLike } from "./types";
@@ -195,8 +209,20 @@ function onDiskSpill(err: unknown): void {
   setDisk("full");
 }
 
+/**
+ * Sổ cứu clip (M1b) hỏi: clip đang quay có mã `code` thuộc tài khoản nào, loại gì. Chưa đăng nhập → null (không ghi
+ * sổ cứu: không biết sau này gửi clip bằng tài khoản nào).
+ */
+function recoveryInfoFor(code: string): RecoveryOwnerInfo | null {
+  const ownerKey = getStoredUser()?.id ?? "";
+  if (!ownerKey) return null;
+  // `clips` xếp mới nhất trước → dòng đầu khớp mã là clip đang quay hiện tại.
+  const live = clips.find((c) => c.code === code && (c.status === "recording" || c.status === "saving"));
+  return { ownerKey, deviceName, kind: live?.kind ?? "PACK" };
+}
+
 function ensureStore(): Promise<BrowserClipStore> {
-  storePromise ??= openBrowserClipStore(onDiskSpill).then((opened) => {
+  storePromise ??= openBrowserClipStore(onDiskSpill, recoveryInfoFor).then((opened) => {
     if (opened.memoryReason) {
       disk = "memory";
       addJournal(
@@ -297,13 +323,6 @@ export async function resumeUploadQueue(): Promise<void> {
   const opened = await ensureStore();
   if (opened.memoryReason) return;
   const { mine, othersCount } = await opened.store.listMeta(owner);
-  const swept = await opened.sweepOrphans(() => opened.store.knownFileKeys()).catch(() => 0);
-  if (swept > 0) {
-    addJournal(
-      "warn",
-      `${swept} video đang quay dở lúc trang bị đóng lần trước không cứu được (tệp chưa hoàn chỉnh) — đã dọn`
-    );
-  }
   if (othersCount > 0) {
     addJournal("warn", `Máy này còn ${othersCount} video chờ gửi của tài khoản khác — đăng nhập lại tài khoản đó để gửi`);
   }
@@ -335,7 +354,115 @@ export async function resumeUploadQueue(): Promise<void> {
     emitQueue();
     for (const meta of fresh) queue.enqueue(meta.localId);
   }
+  // Clip ĐANG QUAY DỞ lúc trang bị đóng / sập lần trước (M1b): ghép lại rồi đưa vào hàng chờ. Chạy SAU khi các clip
+  // đã hoàn chỉnh vào hàng gửi và KHÔNG chặn chúng — ghép lại một clip dài mất vài giây.
+  void opened
+    .sweepOrphans(
+      () => opened.store.knownFileKeys(),
+      (fileKey) => rescueOrphan(opened, fileKey, owner)
+    )
+    .then(
+      (tally) => {
+        if (tally.keep > 0) {
+          addJournal("warn", `Máy này còn ${tally.keep} video đang quay dở của tài khoản khác — đăng nhập lại tài khoản đó để cứu`);
+        }
+      },
+      () => {}
+    );
   void checkDisk(false);
+}
+
+/**
+ * Xử lý MỘT thư mục clip không có dòng sổ hàng chờ (đang giữ khóa của thư mục — xem sweepOrphans):
+ *   · không có `rec-head` → rác (clip đã gửi xong mà chưa kịp xóa tệp, hoặc bản cũ trước M1b) → dọn, không báo;
+ *   · `rec-head` của tài khoản khác → để nguyên, tài khoản đó đăng nhập sẽ tự cứu;
+ *   · còn lại → ghép các khung đã nằm trên ổ thành tệp MP4 mới, ghi sổ hàng chờ, đưa vào hàng gửi.
+ * Mã chống gửi lặp (`clientId`) lấy theo TÊN THƯ MỤC gốc: lỡ trang sập giữa lúc đã ghi sổ mà chưa dọn thư mục gốc,
+ * lần sau cứu lại vẫn ra đúng một video trên hệ thống.
+ */
+async function rescueOrphan(opened: BrowserClipStore, fileKey: string, owner: string): Promise<OrphanOutcome> {
+  const { store } = opened;
+  const names = await store.listFiles(fileKey);
+  if (!names.includes(RECOVERY_HEAD_NAME)) return "garbage";
+  const head = parseRecoveryHead(new TextDecoder().decode(await store.readFile(fileKey, RECOVERY_HEAD_NAME)));
+  if (!head) return "garbage";
+  if (head.ownerKey !== owner) return "keep";
+  const label = head.manual ? "quay tay" : head.code;
+  const sink = store.openSink({ recoverable: false });
+  try {
+    const indexes: RecoveryIndexFile[] = [];
+    for (const name of names.filter(isRecoveryIndexName).sort()) {
+      const index = parseRecoveryIndex(new TextDecoder().decode(await store.readFile(fileKey, name)));
+      if (!index) break; // bản ghi sổ ghi dở lúc sập → dùng tới bản liền trước
+      indexes.push(index);
+    }
+    if (!indexes.length) throw new Error("chưa kịp ghi phần nào xuống ổ (clip mới quay vài giây)");
+    const first = await store.readFile(fileKey, indexes[0].piece.name);
+    const dataStart = findDataStart(first, fromBase64(head.firstBytesB64));
+    if (dataStart < 0) throw new Error("không tìm thấy khung hình đầu trong tệp dở");
+    const plan = planRecovery(indexes, dataStart);
+    const mb = await import("mediabunny");
+    const recovered = await remuxRecoveredClip({
+      mb,
+      head,
+      samples: plan.samples,
+      read: createPieceReader(plan.pieces, (name) => store.readFile(fileKey, name)),
+      sink,
+      chunkBytes: WRITE_CHUNK_BYTES,
+    });
+    const meta: StoredClipMeta = {
+      localId: fileKey,
+      clientId: fileKey,
+      ownerKey: head.ownerKey,
+      code: head.code,
+      manual: head.manual,
+      kind: plan.kind ?? head.kind,
+      startedAtIso: head.startedAtIso,
+      durationSec: recovered.durationSec,
+      width: head.width,
+      height: head.height,
+      deviceName: head.deviceName,
+      queuedAtMs: Date.now(),
+      file: recovered.file,
+    };
+    if (!(await store.saveMeta(meta))) throw new Error("không ghi được sổ hàng chờ");
+    if (!jobs.has(meta.localId)) {
+      jobs.set(meta.localId, { meta, persisted: true });
+      clips = [
+        ...clips,
+        {
+          localId: meta.localId,
+          code: meta.code,
+          manual: meta.manual,
+          kind: meta.kind,
+          returnPrompt: false,
+          startedAtMs: Date.parse(meta.startedAtIso),
+          durationSec: meta.durationSec,
+          sizeBytes: meta.file.sizeBytes,
+          status: "queued",
+          progress: 0,
+          error: null,
+          restored: true,
+          order: meta.manual ? null : undefined,
+        },
+      ];
+      for (const fn of listeners) fn();
+      queue.enqueue(meta.localId);
+      emitQueue();
+    }
+    addJournal(
+      "warn",
+      `Cứu được video ${kindTag(meta.kind)}${label} đang quay dở lúc trang bị đóng lần trước (${formatSeconds(recovered.durationSec)}, thiếu vài giây cuối) — đang gửi`
+    );
+    return "recovered";
+  } catch (err) {
+    await store.remove({ fileKey: sink.fileKey });
+    addJournal(
+      "warn",
+      `Video ${label} đang quay dở lúc trang bị đóng lần trước không cứu được: ${err instanceof Error ? err.message : String(err)} — đã dọn`
+    );
+    return "lost";
+  }
 }
 
 /** Một clip vừa bắt đầu quay. */

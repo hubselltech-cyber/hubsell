@@ -23,6 +23,7 @@ import { AssistantWidget } from "@/components/assistant/assistant-widget";
 import { ChannelDisconnectedBanner } from "@/components/shell/channel-disconnected-banner";
 import { MobileAppLaunchNotice } from "@/components/shell/mobile-app-launch-notice";
 import { PhoneNudgeBand, type PhoneNudgeState } from "@/components/shell/phone-nudge-band";
+import { PackVideoQueueResume } from "@/components/orders/videos/pack-video-queue-resume";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { NavIcon } from "@/components/shell/nav-icon";
 import { NotificationBell } from "@/components/shell/notification-bell";
@@ -1050,6 +1051,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
+
+      {/* Video đóng hàng: vào trang nào cũng gửi tiếp video đang chờ + cứu clip quay dở (không vẽ gì; chỉ chạy
+          khi tài khoản đã mở tính năng) */}
+      <PackVideoQueueResume />
 
       {/* Command palette Ctrl+K — nhận đúng cây menu ĐÃ lọc quyền ở trên */}
       <CommandPalette

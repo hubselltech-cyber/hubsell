@@ -5,12 +5,13 @@
 // Bố cục trên ổ:  hubsell-pack-video-queue/<fileKey>/<000001…>   — mỗi clip một thư mục, mỗi lần ghi một tệp.
 // Sổ:             IndexedDB "hubsell-pack-video" › "queue" (khóa localId).
 //
-// RÁC: thư mục clip không có dòng sổ = clip đang quay dở lúc trang bị đóng / máy sập. MP4 chưa có `moov` thì
-// không phát được nên không cứu được ở lát này → dọn đi cho khỏi chiếm ổ. Tab ĐANG ghi clip giữ một khóa
-// (Web Locks) trên thư mục đó, nên tab khác không dọn nhầm clip đang quay.
+// THƯ MỤC KHÔNG CÓ DÒNG SỔ = clip đang quay dở lúc trang bị đóng / máy sập (hoặc rác còn sót). Từ lát M1b
+// (19/11/2026) thư mục có sổ cứu clip `rec-head` được GHÉP LẠI thành clip hoàn chỉnh (clip-recovery.ts) rồi mới
+// dọn; không có sổ cứu thì dọn luôn. Tab ĐANG ghi clip giữ một khóa (Web Locks) trên thư mục đó, nên tab khác
+// không đụng nhầm clip đang quay.
 // ============================================================
 
-import { ClipStore, type MetaBackend, type PieceBackend, type StoredClipMeta } from "./clip-store";
+import { ClipStore, type MetaBackend, type PieceBackend, type RecoveryInfoLookup, type StoredClipMeta } from "./clip-store";
 
 const ROOT_DIR = "hubsell-pack-video-queue";
 const DB_NAME = "hubsell-pack-video";
@@ -47,6 +48,9 @@ export async function tryWithLock<T>(name: string, fn: () => Promise<T>): Promis
     return fn();
   });
 }
+
+/** Kết quả xử lý một thư mục clip không có dòng sổ — xem OpfsPieces.sweepOrphans. */
+export type OrphanOutcome = "recovered" | "lost" | "garbage" | "keep";
 
 class OpfsPieces implements PieceBackend {
   private readonly dirs = new Map<string, Promise<FileSystemDirectoryHandle>>();
@@ -98,12 +102,33 @@ class OpfsPieces implements PieceBackend {
     this.writing.delete(fileKey);
   }
 
+  async listPieces(fileKey: string): Promise<string[]> {
+    const dir = await this.root.getDirectoryHandle(fileKey);
+    const names: string[] = [];
+    for await (const name of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(name);
+    return names;
+  }
+
+  async removePiece(fileKey: string, name: string): Promise<void> {
+    try {
+      await (await this.root.getDirectoryHandle(fileKey)).removeEntry(name);
+    } catch (err) {
+      if ((err as DOMException)?.name !== "NotFoundError") throw err;
+    }
+  }
+
   /**
-   * Dọn thư mục clip không có dòng sổ và không tab nào đang ghi. Trả số thư mục đã dọn.
+   * Xử lý thư mục clip không có dòng sổ và không tab nào đang ghi (= clip đang quay dở lúc trang bị đóng, hoặc rác).
+   * `rescue` (lát M1b) được hỏi BÊN TRONG khóa của thư mục: "keep" = để nguyên (clip dở của tài khoản khác),
+   * còn lại thì thư mục bị dọn sau khi `rescue` xong ("recovered" = đã ghép lại thành clip mới trong hàng chờ,
+   * "lost" = có sổ cứu mà không cứu được, "garbage" = không phải clip dở). Trả số thư mục theo từng kết quả.
    * `listKnown` được hỏi LẠI bên trong khóa: một tab khác có thể vừa ghi dòng sổ cho clip này xong rồi nhả khóa.
    */
-  async sweepOrphans(listKnown: () => Promise<Set<string>>): Promise<number> {
-    let swept = 0;
+  async sweepOrphans(
+    listKnown: () => Promise<Set<string>>,
+    rescue?: (fileKey: string) => Promise<OrphanOutcome>
+  ): Promise<Record<OrphanOutcome, number>> {
+    const tally: Record<OrphanOutcome, number> = { recovered: 0, lost: 0, garbage: 0, keep: 0 };
     const names: string[] = [];
     // TypeScript chưa khai `keys()` của thư mục OPFS ở mọi bản lib → ép kiểu hẹp.
     const iterable = this.root as unknown as { keys(): AsyncIterable<string> };
@@ -116,14 +141,15 @@ class OpfsPieces implements PieceBackend {
         if (file && Date.now() - file.lastModified > STALE_PROBE_MS) await this.root.removeEntry(name).catch(() => {});
         continue;
       }
-      const result = await tryWithLock(name, async () => {
-        if ((await listKnown()).has(name)) return false;
-        await this.root.removeEntry(name, { recursive: true }).catch(() => {});
-        return true;
+      const result = await tryWithLock(name, async (): Promise<OrphanOutcome | null> => {
+        if ((await listKnown()).has(name)) return null;
+        const outcome = rescue ? await rescue(name).catch((): OrphanOutcome => "lost") : "garbage";
+        if (outcome !== "keep") await this.root.removeEntry(name, { recursive: true }).catch(() => {});
+        return outcome;
       });
-      if (result === true) swept++;
+      if (result && result !== "busy") tally[result]++;
     }
-    return swept;
+    return tally;
   }
 
   /** Ghi thử `bytes` byte rồi xóa. false = ổ không còn nhận nổi chừng đó (đo bằng lần ghi THẬT, không tin số trình duyệt báo). */
@@ -198,19 +224,25 @@ export interface BrowserClipStore {
   memoryReason: string | null;
   /** Trình duyệt có hứa giữ dữ liệu khi máy chật ổ không (navigator.storage.persist). null = không hỏi được. */
   persisted: boolean | null;
-  sweepOrphans(listKnown: () => Promise<Set<string>>): Promise<number>;
+  sweepOrphans(
+    listKnown: () => Promise<Set<string>>,
+    rescue?: (fileKey: string) => Promise<OrphanOutcome>
+  ): Promise<Record<OrphanOutcome, number>>;
   probe(bytes: number): Promise<boolean>;
   /** Chỗ trống theo con số trình duyệt báo — CHỈ để cảnh báo sớm, không dùng để chặn (Chrome báo dư, mục 18.9). */
   reportedFreeBytes(): Promise<number | null>;
 }
 
 /** Mở kho clip chờ gửi. Không dùng được ổ thì trả kho trong bộ nhớ kèm lý do — không ném lỗi. */
-export async function openBrowserClipStore(onSpill: (err: unknown) => void): Promise<BrowserClipStore> {
+export async function openBrowserClipStore(
+  onSpill: (err: unknown) => void,
+  recoveryInfo?: RecoveryInfoLookup
+): Promise<BrowserClipStore> {
   const memory = (reason: string): BrowserClipStore => ({
     store: new ClipStore(null, null, { onSpill, newKey }),
     memoryReason: reason,
     persisted: null,
-    sweepOrphans: async () => 0,
+    sweepOrphans: async () => ({ recovered: 0, lost: 0, garbage: 0, keep: 0 }),
     probe: async () => true,
     reportedFreeBytes: async () => null,
   });
@@ -229,10 +261,10 @@ export async function openBrowserClipStore(onSpill: (err: unknown) => void): Pro
       persisted = null;
     }
     return {
-      store: new ClipStore(pieces, meta, { onSpill, newKey }),
+      store: new ClipStore(pieces, meta, { onSpill, newKey, recoveryInfo }),
       memoryReason: null,
       persisted,
-      sweepOrphans: (listKnown) => pieces.sweepOrphans(listKnown),
+      sweepOrphans: (listKnown, rescue) => pieces.sweepOrphans(listKnown, rescue),
       probe: (bytes) => pieces.probe(bytes),
       reportedFreeBytes: async () => {
         try {

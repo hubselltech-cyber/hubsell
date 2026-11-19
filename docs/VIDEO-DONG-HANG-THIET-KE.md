@@ -1530,7 +1530,7 @@ biết R2 mình full hay không còn kịp gia hạn nữa."
 | # | Việc | Đang ở đâu | Chờ gì |
 |---|---|---|---|
 | 1 | **Quay cho nhân viên** (app + web) | thiết kế xong mục 17.2 (lát N1–N5), chưa code | anh chốt C1–C7 |
-| 2 | **Hàng đợi** (hàng chờ bền M1) | ĐÃ lên prod 19/11 (22.10) | anh thử webcam thật + rút mạng thật; trả lời K-1…K-7; lát kế M1b (cứu clip đang quay lúc trang sập), M2 (máy chủ gộp lô) |
+| 2 | **Hàng đợi** (hàng chờ bền M1) | M1 lên prod 19/11 (22.10); **M1b cứu clip dở + K-6 gửi tiếp ở mọi trang đã dựng LOCAL 19/11 (mục 24)** | anh bảo push; anh thử webcam thật + rút mạng thật (24.5); trả lời K-1, K-3; lát kế M2 (máy chủ gộp lô) |
 | 3 | **Nhiều camera trên một máy** (màn Nhiều bàn, M3) | đo M0 xong (18.7–18.9), chưa dựng | xem ghi chú dưới |
 | 4 | **HQ theo dõi R2** | chưa có gì | xem ghi chú dưới |
 
@@ -1547,3 +1547,88 @@ bao nhiêu tiền, so với tiền bán giờ; (2) thẻ thanh toán Cloudflare 
 điều khoản khóa sau bao lâu); (3) luật tự xóa có đang xóa thật không (đang chạy bóng). Đề xuất sơ bộ, chưa thiết kế: một thẻ ở HQ Sức
 khỏe gồm GB đang lưu + số tệp + ước tiền tháng + GB tăng mỗi ngày + GB luật xóa "lẽ ra đã xóa"; nguồn số = sổ video của mình
 (`pack_usage_daily`, không gọi thêm Cloudflare), đối chiếu định kỳ với số Cloudflare báo.
+
+---
+
+## 24. M1 làm dứt điểm: CỨU CLIP ĐANG QUAY DỞ (M1b) + GỬI TIẾP Ở MỌI TRANG (K-6) — 19/11/2026 ~15:00, dựng local → COMMIT + PUSH cùng ngày (anh: "Commit và push"; xem 24.7)
+
+Anh Trung 19/11 (sau khi M1 lên prod): "anh nghĩ mình làm dứt điểm M1 đi". Hai lỗ còn lại của M1 ghi ở 18.10 mục C3 + C5 (câu K-2, K-6)
+được làm ở lượt này; câu K-7 (nút "Bỏ video này") GIỮ như cũ — không thêm. Chỉ mã web, không backend, không migration.
+
+### 24.1 M1b — cứu clip đang quay lúc trang sập / bị đóng / máy mất điện
+
+Trước: tệp MP4 viết `moov` ở cuối → clip đang quay dở chỉ là dãy mảnh không phát được, mở lại trang là bị dọn ("không cứu được").
+
+Nay, trong lúc quay, cạnh các mảnh video (`000001`…) trong thư mục clip có thêm SỔ CỨU CLIP:
+- `rec-head` — ghi NGAY khi clip mở: tài khoản, mã tem, loại video, giờ bắt đầu, khổ hình, cấu hình giải mã, 32 byte đầu của khung đầu;
+- `rec-000001`… — sau MỖI mảnh video đã nằm chắc trên ổ: mảnh đó (tên, vị trí, cỡ) + cỡ / mốc giờ / khung khóa của các khung vừa quay,
+  kèm loại video lúc đó (bắt được cả ca đổi sang KHUI giữa clip). ≈ 2,7 KB cho mỗi 1 MiB video [C, đo 19/11].
+
+Mở lại Hubsell: thư mục clip không có dòng sổ hàng chờ mà CÓ `rec-head` của đúng tài khoản đang đăng nhập → đọc các khung nằm trọn trong
+phần đã ghi → ghép thành tệp MP4 MỚI hoàn chỉnh (cùng thư viện, cùng cách ghép) → ghi sổ hàng chờ → gửi như clip thường → dọn thư mục
+dở. Nhật ký: "Cứu được video … đang quay dở lúc trang bị đóng lần trước (m:ss, thiếu vài giây cuối) — đang gửi".
+
+Ba rào chống sai:
+- **Không tin cách thư viện xếp byte**: chỗ bắt đầu dữ liệu khung hình được TÌM bằng 32 byte đầu của khung đầu (không đoán cỡ phần đầu
+  tệp); TỪNG khung được soát cấu trúc H.264 (các khối nối nhau vừa khít cỡ khung) trước khi dùng — lệch là dừng ở khung liền trước.
+- **Không gửi trùng**: clip quay XONG và đã có dòng sổ hàng chờ thì `rec-head` bị gỡ ngay → thư mục còn sót sau khi gửi (rác) không bao
+  giờ bị "cứu" lại. Clip được cứu lấy `clientId` = tên thư mục gốc → lỡ sập lần nữa giữa lúc cứu, cứu lại vẫn ra đúng một video.
+- **Không đụng clip của người khác / tab khác**: `rec-head` của tài khoản khác → để nguyên (nhật ký báo "đăng nhập lại tài khoản đó để
+  cứu"); tab đang quay giữ khóa trên thư mục của nó → tab khác không cứu / dọn nhầm.
+
+Sổ cứu là phần THÊM: ghi sổ hỏng (ổ sắp đầy) thì chỉ thôi ghi sổ, không ảnh hưởng việc quay, không báo "ổ đầy".
+
+**Mất gì khi sập:** phần đang nằm trong bộ nhớ = tối đa một khúc 1 MiB cuối clip (≈ 8–10 giây ở cảnh thật 800 kbps [tính]; lượt thử
+bằng hình nhiễu bitrate cao mất ≈ 4 giây [C]). Clip mới quay chưa đủ 1 MiB (vài giây đầu) thì chưa có gì trên ổ → không cứu được, có
+dòng nhật ký nói rõ. Không hạ cỡ khúc xuống để bớt mất: 1 MiB là số đã đo ở M0 / M1.
+
+### 24.2 K-6 — vào trang nào cũng gửi tiếp
+
+`components/orders/videos/pack-video-queue-resume.tsx` đặt ở khung chung (`app-shell.tsx`): tài khoản ĐÃ mở tính năng Video đóng hàng,
+3 giây sau khi vào BẤT KỲ trang nào thì mở lại hàng chờ (gửi tiếp clip chưa lên kho + cứu clip dở). Không vẽ gì; mã hàng chờ nạp ĐỘNG
+nên không nằm trong gói mã chung; tài khoản chưa mở tính năng thì không nạp gì (thẻ trả về rỗng). ⚠️ Đây là thay đổi ở khung chung của
+MỌI khách (chỉ thêm một thẻ rỗng) — nêu rõ trước khi push.
+
+### 24.3 Cây tệp
+
+```
+frontend/src/lib/pack-video-recorder/
+  clip-recovery.ts            MỚI  thuần: đọc / ghi sổ cứu, tìm chỗ bắt đầu, soát khung, kế hoạch cứu, trình đọc mảnh + hàm ghép lại
+  __tests__/clip-recovery.test.ts  MỚI  14 test
+  clip-store.ts               SỬA  PieceSink ghi sổ cứu; gỡ rec-head khi clip có dòng sổ; đọc / liệt kê tệp thư mục clip
+  clip-store-opfs.ts          SỬA  liệt kê / xóa tệp; dọn thư mục mồ côi nay hỏi "cứu được không" bên trong khóa
+  session.ts                  SỬA  rescueOrphan (cứu rồi đưa vào hàng gửi), không còn chặn hàng gửi trong lúc cứu
+  clip-pipeline.ts, types.ts, config.ts  SỬA  báo từng khung cho sổ cứu; WRITE_CHUNK_BYTES về config
+frontend/src/components/orders/videos/pack-video-queue-resume.tsx  MỚI
+frontend/src/components/shell/app-shell.tsx                        SỬA  +2 dòng
+```
+
+### 24.4 Đã kiểm (19/11, local 3010 + backend 4010, trình duyệt của Claude, CAMERA GIẢ hình nhiễu 1280×720)
+
+- Test thuần **52 / 52** (14 test mới); `tsc` + `eslint` sạch; `next build` qua.
+- Đang quay 32 giây → trên ổ: 8 mảnh 1 MiB + 8 bản ghi sổ ≈ 2,6–2,8 KB + `rec-head` 430 byte.
+- **Sập giữa clip rồi mở lại màn quay** (tải lại trang ở giây ≈ 41): 1 giây sau nhật ký "Cứu được video quay tay… (0:37…)", 4 giây sau
+  "Tải lên xong"; ổ về 0 thư mục. Mở video trên danh sách: 36,7 giây, 1280×720, tua giữa / tua cuối / phát đều chạy, có ngày giờ trong hình.
+- **Sập giữa clip rồi mở TRANG KHÁC** (`/settings/general`, không mở màn quay): 18 giây sau ổ 0 thư mục, sổ hàng chờ 0 dòng, video có
+  trong danh sách (`QUAYTAY144850`).
+- **Hai tab**: tab 1 đang quay, mở tab 2 ở trang khác → tab 2 thấy khóa của tab 1 và KHÔNG đụng thư mục đang ghi (17 tệp còn nguyên);
+  bấm Dừng ở tab 1 → đúng MỘT clip 0:32, lên kho.
+
+### 24.5 CHƯA kiểm — cần máy / thiết bị thật (em không làm được từ đây)
+
+1. Webcam thật + tem thật trên bản có sổ cứu (đường quay chỉ thêm việc ghi sổ, chưa chạy với webcam).
+2. Chrome SẬP thật / tắt máy đột ngột (lượt này giả bằng tải lại trang — về mặt tệp trên ổ là như nhau, chưa thấy tận mắt).
+3. Rút mạng thật; ổ đầy thật; clip 15 phút (≈ 92 MB, cứu lại phải ghép ≈ 27.000 khung — chưa đo mất bao lâu); hàng chờ vài trăm clip.
+4. Hai TÀI KHOẢN chung một máy (mã có rào, chưa chạy thật).
+
+### 24.6 M1 còn lại gì sau lượt này
+
+- Việc của anh: thử mục 24.5 điểm 1–3 trên prod sau khi push; trả lời K-1 (hàng chờ trên ổ có trái "bỏ lưu local" không — em vẫn cho là
+  không); K-3 bật Local Uploads trong bảng điều khiển Cloudflare.
+- Không thuộc M1: gộp lô phía máy chủ + `Retry-After` + cửa sổ 25 giờ = lát M2 (điều kiện mở cho khách thứ hai).
+
+### 24.7 Commit + push 19/11/2026 (anh: "Commit và push")
+
+Một commit: M1b + K-6 (12 tệp, chỉ mã web + tài liệu). Trước khi commit: test 52 / 52, `tsc` + `eslint` sạch, `next build` qua. Lên prod
+khi mục 24.5 CHƯA kiểm — anh thử thẳng trên prod. Thẻ `PackVideoQueueResume` nằm ở khung chung của mọi khách (rỗng, không nạp gì khi
+tài khoản chưa mở tính năng).

@@ -5,6 +5,18 @@
 > Phiên 07–09/2026 (28/07 → 24/09, 36 phiên) đã tách sang [docs/archive/PROGRESS-2026-07-09.md](docs/archive/PROGRESS-2026-07-09.md) ngày 21/10/2026 — tệp này chỉ giữ từ 01/10/2026.
 
 ---
+## Phiên 19/11 ~15:00 — Video đóng hàng: M1 làm DỨT ĐIỂM — cứu clip đang quay dở (M1b) + gửi tiếp ở mọi trang (K-6) (anh: "anh nghĩ mình làm dứt điểm M1 đi") — ĐÃ DỰNG → COMMIT + PUSH (anh: "Commit và push")
+
+- **Ghi ở:** `docs/VIDEO-DONG-HANG-THIET-KE.md` **mục 24** (cách làm, ba rào chống sai, cây tệp, đã / chưa kiểm, M1 còn lại gì).
+- **M1b:** trong lúc quay ghi kèm SỔ CỨU CLIP cạnh các mảnh video (`rec-head` + `rec-NNNNNN` sau mỗi mảnh 1 MiB). Trang sập / bị đóng giữa clip → mở lại Hubsell là ghép các khung đã nằm trên ổ thành tệp MP4 mới hoàn chỉnh rồi gửi như clip thường; mất tối đa một khúc 1 MiB cuối (≈ 8–10 giây). Chỗ bắt đầu dữ liệu được TÌM bằng byte đầu của khung đầu, từng khung được soát cấu trúc H.264 — không đoán theo cách thư viện xếp byte. Clip đã quay xong thì gỡ `rec-head` (không bị cứu nhầm rồi gửi trùng); `clientId` của clip được cứu = tên thư mục gốc.
+- **K-6:** thẻ rỗng `PackVideoQueueResume` ở `app-shell.tsx` — tài khoản đã mở tính năng vào trang nào cũng mở lại hàng chờ sau 3 giây (mã nạp động). ⚠️ Đụng khung chung của mọi khách (chỉ thêm thẻ rỗng) → hỏi anh trước khi push.
+- **K-7** (nút "Bỏ video này") giữ như cũ, không thêm.
+- **Tệp:** mới `clip-recovery.ts` + `__tests__/clip-recovery.test.ts` + `pack-video-queue-resume.tsx`; sửa `clip-store.ts`, `clip-store-opfs.ts`, `session.ts`, `clip-pipeline.ts`, `types.ts`, `config.ts`, `app-shell.tsx`.
+- **Đã kiểm (camera giả, local):** test 52 / 52, `tsc` + `eslint` sạch, `next build` qua; sập giữa clip rồi mở lại màn quay → cứu được 0:37 trên ≈ 41 giây, lên kho, mở xem tua / phát chạy; sập rồi mở TRANG KHÁC → tự cứu + lên kho; hai tab → tab kia không đụng clip đang ghi.
+- **CHƯA kiểm:** webcam thật + tem thật trên bản có sổ cứu; Chrome sập thật / mất điện (mới giả bằng tải lại trang); rút mạng thật; ổ đầy thật; clip 15 phút; hai tài khoản chung máy.
+- **Chờ anh:** bảo commit + push; thử mục 24.5 trên prod; K-1 (hàng chờ trên ổ có trái "bỏ lưu local"), K-3 (bật Local Uploads ở Cloudflare).
+
+---
 ## Phiên 19/11 — Video đóng hàng: camera CẬN CẢNH soi tem ghép vào góc video toàn cảnh (anh: "thêm một cổng quay video cận cảnh… ghép vào một video… khách được phép di chuyển cài đặt 1 lần… chỉ áp dụng cho webcam. Em thử khảo sát xem nên làm thế nào hợp lý") — khảo sát → anh chốt → ĐÃ DỰNG → COMMIT + PUSH cùng lát M1 "hàng chờ bền" (anh: "Commit và push trước để anh test thêm")
 
 - **✅ Đã lên prod:** commit `fbf46c98`, đẩy ~14:28; 14:31:52 gói mã công khai của trang `app.hubsell.vn/orders/videos/record` đã chứa chuỗi của bản mới (`hubsell.packVideo.closeup`) — soi tệp tĩnh, KHÔNG đăng nhập prod, chưa nhìn màn hình trên prod, chưa xem Render. Mục ghi kết quả này (commit tài liệu kế tiếp) chỉ để ở máy, đi cùng lần push sau để khỏi làm prod dựng lại vì một dòng chữ.

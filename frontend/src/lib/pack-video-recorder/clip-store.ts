@@ -13,7 +13,15 @@
 // ============================================================
 
 import { planOverlay } from "./byte-overlay";
-import type { ClipFile, ClipKind, ClipPiece } from "./types";
+import {
+  RECOVERY_HEAD_NAME,
+  encodeRecoveryHead,
+  encodeRecoveryIndex,
+  recoveryIndexName,
+  type RecoveryOwnerInfo,
+  type RecoverySample,
+} from "./clip-recovery";
+import type { ClipFile, ClipKind, ClipPiece, RecoveryHead } from "./types";
 
 /** Một dòng của SỔ HÀNG CHỜ (IndexedDB): đủ thông tin để gửi lại clip sau khi tải lại trang / mở lại máy. */
 export interface StoredClipMeta {
@@ -43,7 +51,14 @@ export interface PieceBackend {
   removeClip(fileKey: string): Promise<void>;
   /** Clip đã có dòng sổ (hoặc đã bị bỏ) → nhả khóa "đang ghi" để tab khác biết đây không phải rác. */
   settle?(fileKey: string): void;
+  /** Tên mọi tệp trong thư mục của một clip (mảnh video + sổ cứu clip). Dùng khi cứu clip đang quay dở. */
+  listPieces?(fileKey: string): Promise<string[]>;
+  /** Xóa MỘT tệp trong thư mục clip. Không ném lỗi khi tệp không còn. */
+  removePiece?(fileKey: string, name: string): Promise<void>;
 }
+
+/** Hỏi thông tin tài khoản / loại video của clip đang quay có mã `code`; null = không ghi sổ cứu clip. */
+export type RecoveryInfoLookup = (code: string) => RecoveryOwnerInfo | null;
 
 /** Nơi giữ sổ hàng chờ. Bản trình duyệt: IndexedDB. */
 export interface MetaBackend {
@@ -68,12 +83,61 @@ export class PieceSink {
   private spilled = false;
   private closed = false;
 
+  // ----- Sổ cứu clip (M1b): ghi kèm trong lúc quay để ghép lại tệp nếu trang sập giữa chừng -----
+  /** Mã clip đang được ghi sổ cứu; null = không ghi (kho trong bộ nhớ, chưa đăng nhập, hoặc một lần ghi sổ đã hỏng). */
+  private recCode: string | null = null;
+  private recHeadWrite: Promise<void> | null = null;
+  private recSamples: RecoverySample[] = [];
+  private recIndexCount = 0;
+
   constructor(
     readonly fileKey: string,
     private readonly disk: PieceBackend | null,
     private readonly ram: Map<string, Uint8Array>,
-    private readonly onSpill: (err: unknown) => void
+    private readonly onSpill: (err: unknown) => void,
+    private readonly recoveryInfo: RecoveryInfoLookup | null = null
   ) {}
+
+  /**
+   * Clip vừa mở: ghi `rec-head` NGAY (không chờ mảnh video đầu). Sổ cứu clip là phần thêm — ghi hỏng thì chỉ thôi
+   * ghi sổ, KHÔNG ảnh hưởng việc quay và việc ghi video.
+   */
+  recoveryBegin(head: RecoveryHead): void {
+    const disk = this.disk;
+    if (!disk || this.spilled || this.closed || this.recHeadWrite) return;
+    const info = this.recoveryInfo?.(head.code) ?? null;
+    if (!info?.ownerKey) return;
+    this.recCode = head.code;
+    this.recHeadWrite = disk.writePiece(this.fileKey, RECOVERY_HEAD_NAME, encodeRecoveryHead(head, info)).catch(() => {
+      this.recCode = null;
+    });
+  }
+
+  recoverySample(sizeBytes: number, timestampUs: number, durationUs: number, key: boolean): void {
+    if (this.recCode === null) return;
+    this.recSamples.push([sizeBytes, timestampUs, durationUs, key ? 1 : 0]);
+  }
+
+  /** Sau khi một mảnh video đã nằm chắc trên ổ: ghi bản ghi sổ cho mảnh đó + các khung quay từ lần ghi sổ trước. */
+  private async flushRecovery(piece: ClipPiece): Promise<void> {
+    const disk = this.disk;
+    if (!disk || this.recCode === null) return;
+    await this.recHeadWrite;
+    const code = this.recCode;
+    if (code === null) return;
+    const kind = this.recoveryInfo?.(code)?.kind ?? "PACK";
+    const samples = this.recSamples;
+    this.recSamples = [];
+    try {
+      await disk.writePiece(
+        this.fileKey,
+        recoveryIndexName(++this.recIndexCount),
+        encodeRecoveryIndex({ v: 1, kind, piece: { name: piece.name, position: piece.position, length: piece.length }, samples })
+      );
+    } catch {
+      this.recCode = null; // sổ không ghi được nữa (ổ sắp đầy) → thôi ghi sổ, video vẫn ghi bình thường
+    }
+  }
 
   /** true = đã có mảnh không ghi được xuống ổ; phần còn lại của clip nằm trong bộ nhớ. */
   get hasSpilled(): boolean {
@@ -88,7 +152,9 @@ export class PieceSink {
     if (this.disk && !this.spilled) {
       try {
         await this.disk.writePiece(this.fileKey, name, data);
-        this.pieces.push({ position, length: data.byteLength, where: "disk", name });
+        const piece: ClipPiece = { position, length: data.byteLength, where: "disk", name };
+        this.pieces.push(piece);
+        await this.flushRecovery(piece);
         return;
       } catch (err) {
         this.spilled = true;
@@ -125,7 +191,7 @@ export class ClipStore {
   constructor(
     private readonly disk: PieceBackend | null,
     private readonly metaDb: MetaBackend | null,
-    private readonly hooks: { onSpill(err: unknown): void; newKey(): string }
+    private readonly hooks: { onSpill(err: unknown): void; newKey(): string; recoveryInfo?: RecoveryInfoLookup }
   ) {}
 
   /** true = clip chờ gửi được giữ trên ổ, sống qua tải lại trang. */
@@ -133,8 +199,21 @@ export class ClipStore {
     return !!this.disk && !!this.metaDb;
   }
 
-  openSink(): PieceSink {
-    return new PieceSink(this.hooks.newKey(), this.disk, this.ram, this.hooks.onSpill);
+  /** `recoverable: false` = clip này KHÔNG ghi sổ cứu (dùng cho tệp ghép lại từ một clip vừa được cứu). */
+  openSink(opts: { recoverable?: boolean } = {}): PieceSink {
+    const lookup = opts.recoverable === false ? null : (this.hooks.recoveryInfo ?? null);
+    return new PieceSink(this.hooks.newKey(), this.disk, this.ram, this.hooks.onSpill, lookup);
+  }
+
+  /** Tên mọi tệp trong thư mục một clip trên ổ (rỗng nếu kho không dùng ổ / thư mục không còn). */
+  async listFiles(fileKey: string): Promise<string[]> {
+    return (await this.disk?.listPieces?.(fileKey).catch(() => [])) ?? [];
+  }
+
+  /** Đọc trọn một tệp trong thư mục clip trên ổ. Ném lỗi nếu không đọc được. */
+  async readFile(fileKey: string, name: string): Promise<Uint8Array> {
+    if (!this.disk) throw new ClipFileBroken("Không đọc được ổ đĩa của trình duyệt");
+    return new Uint8Array(await (await this.disk.readPiece(fileKey, name)).arrayBuffer());
   }
 
   /** Tệp MP4 hoàn chỉnh của một clip, nối từ các mảnh (mảnh trên ổ không bị chép vào bộ nhớ). */
@@ -189,6 +268,9 @@ export class ClipStore {
     } catch {
       return false;
     }
+    // Clip đã có dòng sổ hàng chờ → gỡ `rec-head`: thư mục này từ nay KHÔNG được coi là "clip dở cần cứu" nữa.
+    // (Gửi xong mà trang đóng giữa lúc xóa sổ và xóa tệp thì thư mục còn lại là rác — cứu nhầm sẽ gửi TRÙNG video.)
+    await this.disk?.removePiece?.(meta.file.fileKey, RECOVERY_HEAD_NAME).catch(() => {});
     this.disk?.settle?.(meta.file.fileKey);
     return true;
   }

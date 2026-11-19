@@ -23,6 +23,12 @@ export const KEY_FRAME_INTERVAL_US = 1_000_000;
 /** Hàng chờ bộ mã hóa dài hơn mức này thì bỏ khung (quay thời gian thực, không để dồn). */
 export const MAX_ENCODE_QUEUE = 10;
 
+/**
+ * Bộ ghép MP4 gom dữ liệu thành khúc cỡ này rồi mới ghi xuống ổ (≈ 8 giây quay / khúc; đo M0: 4–5 ms / lần ghi).
+ * Cũng là phần tối đa bị mất ở CUỐI một clip được cứu sau khi trang sập (khúc đang nằm trong bộ nhớ).
+ */
+export const WRITE_CHUNK_BYTES = 1024 * 1024;
+
 /** Thử đọc mã mỗi 200 ms: giải mã trung bình 53 ms, lâu nhất 142 ms trong Worker — không lần nào bị dồn. */
 export const SCAN_INTERVAL_MS = 200;
 

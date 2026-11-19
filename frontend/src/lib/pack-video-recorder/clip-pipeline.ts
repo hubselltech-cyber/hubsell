@@ -18,13 +18,13 @@
 
 import type * as Mediabunny from "mediabunny";
 
-import { KEY_FRAME_INTERVAL_US, MAX_ENCODE_QUEUE } from "./config";
+import { KEY_FRAME_INTERVAL_US, MAX_ENCODE_QUEUE, WRITE_CHUNK_BYTES } from "./config";
 import { startPump, type FramePump, type PumpMode } from "./frame-pump";
 import { stampCodeLines, type PipFrame, type StampCanvas } from "./stamp-canvas";
 import type { ClipOutcome, ClipSinkLike, RecorderLog } from "./types";
 
-/** Bộ ghép MP4 gom dữ liệu thành khúc cỡ này rồi mới ghi xuống ổ (≈ 8 giây quay / khúc; đo M0: 4–5 ms / lần ghi). */
-const WRITE_CHUNK_BYTES = 1024 * 1024;
+/** Số byte đầu của khung đầu tiên ghi vào sổ cứu clip (để tìm lại chỗ bắt đầu dữ liệu khung hình trong tệp dở). */
+const RECOVERY_FIRST_BYTES = 32;
 
 type Mb = typeof Mediabunny;
 
@@ -360,11 +360,36 @@ export class ClipPipeline {
     clip.chunks++;
     clip.lastTsUs = chunk.timestamp;
     // Gói đầu của mỗi tệp phải kèm decoderConfig (có avcC) — dùng lại cái bộ mã hóa đưa lúc đầu.
-    const packetMeta = clip.chunks === 1 && this.decoderConfig ? { decoderConfig: this.decoderConfig } : undefined;
+    const first = clip.chunks === 1;
+    const packetMeta = first && this.decoderConfig ? { decoderConfig: this.decoderConfig } : undefined;
     const source = clip.source;
+    // Sổ cứu clip (M1b): báo từng khung ĐÚNG thứ tự ghép, ngay trước khi ghép — trang sập giữa chừng thì ghép lại được.
+    const tsUs = chunk.timestamp - clip.t0Us;
+    const durUs = chunk.duration ?? this.frameDurUs;
+    const isKey = chunk.type === "key";
+    const config = this.decoderConfig;
     clip.chain = clip.chain.then(async () => {
       if (clip.error) return;
       try {
+        const sink = clip.sink;
+        if (first && config && sink?.recoveryBegin) {
+          const description = config.description;
+          sink.recoveryBegin({
+            code: clip.code,
+            manual: clip.manual,
+            startedAtIso: (clip.firstFrameAt ?? new Date()).toISOString(),
+            width: this.opts.width,
+            height: this.opts.height,
+            codec: config.codec,
+            description: description
+              ? ArrayBuffer.isView(description)
+                ? new Uint8Array(description.buffer, description.byteOffset, description.byteLength).slice()
+                : new Uint8Array(description as ArrayBuffer).slice()
+              : null,
+            firstBytes: data.slice(0, RECOVERY_FIRST_BYTES),
+          });
+        }
+        sink?.recoverySample?.(data.byteLength, tsUs, durUs, isKey);
         await source.add(packet, packetMeta);
       } catch (err) {
         clip.error = `Ghép tệp MP4 lỗi: ${errText(err)}`;
