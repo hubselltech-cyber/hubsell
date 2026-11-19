@@ -27,6 +27,7 @@ const WORKERS_DIR = join(__dirname, "..");
 const ALLOWED_LET: Record<string, string> = {
   started: "cờ đã bật worker trong tiến trình này",
   running: "cờ chống chạy chồng một lượt trong tiến trình",
+  checking: "cờ chống chạy chồng lượt đối chiếu bộ đếm giữ trong tiến trình (stock-committed) — hai tiến trình cùng đối chiếu thì chuỗi vẫn đúng nhờ luật 'lần trước quá gần thì không cộng' tính từ dòng ở DB",
   stopping: "cờ đang tắt (SIGTERM)",
   draining: "cờ chống chạy chồng lượt dựng sổ",
   maintaining: "cờ chống chạy chồng lượt bảo trì sổ",

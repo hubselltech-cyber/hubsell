@@ -263,20 +263,21 @@ export async function restoreStockTx(
 }
 
 // ============================================================
-// BỘ ĐẾM "ĐANG GIỮ" + MỐC HÀNG RỜI KHO — kho chuẩn quốc tế, LÁT 1 CHẠY BÓNG (12/11/2026)
-// docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 13.
+// BỘ ĐẾM "ĐANG GIỮ" + MỐC HÀNG RỜI KHO — kho chuẩn quốc tế, LÁT 1 CHẠY BÓNG (12/11/2026;
+// thiết kế lại 19/11/2026) — docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 13 + 14.
 //
 // Chuẩn quốc tế: đơn chốt chỉ GIỮ hàng, hàng rời kho mới trừ tồn. Sổ Hubsell trừ từ lúc chốt
 // (deductStockTx) và lát này KHÔNG đổi điều đó. Lát này chỉ ghi thêm hai điều sổ chưa biết:
 //   • hàng nào đang giữ cho đơn  → Product.committedQuantity (+ committed từng vị trí),
 //     cộng ngay trong bút toán trừ của deductStockTx (applyStockDelta { reserve: true });
 //   • đơn nào đã rời kho         → Order.stockShippedAt (shipStockTx trừ bộ đếm).
-// Bất biến: Product.committedQuantity = tổng các dòng nhật ký TRỪ của những đơn có
-// stockCommittedAt mà chưa có stockShippedAt. Sổ, holdQuantity, số đẩy sàn KHÔNG đổi ở đây →
-// không nơi gọi nào phải đẩy tồn sau các hàm này.
+// MỘT DẤU DUY NHẤT cho "đang giữ": Order.stockCommittedAt khác NULL. Dấu được đặt lúc chốt và
+// bị XÓA lúc rời kho (shipStockTx) hoặc lúc hủy trước khi rời kho (releaseCommittedTx).
+// Bất biến: Product.committedQuantity = tổng các dòng nhật ký TRỪ của những đơn còn dấu.
+// Sổ, holdQuantity, số đẩy sàn KHÔNG đổi ở đây → không nơi gọi nào phải đẩy tồn sau các hàm này.
 // ============================================================
 
-export type ShipSource = "HANDOVER" | "PLATFORM" | "CHANNEL_INACTIVE";
+export type ShipSource = "HANDOVER" | "PLATFORM" | "CHANNEL_INACTIVE" | "MANUAL";
 
 /** Trạng thái = kiện đã rời shop (đã giao cho đơn vị vận chuyển). */
 export function hasLeftWarehouse(status: ShippingStatus | null | undefined): boolean {
@@ -284,9 +285,10 @@ export function hasLeftWarehouse(status: ShippingStatus | null | undefined): boo
 }
 
 /**
- * HÀNG CỦA ĐƠN ĐÃ RỜI KHO — đúng một lần. Gọi ở ba nơi, nơi nào tới trước thì thắng: lập Biên
- * bản bàn giao, webhook sàn báo đã giao, lượt quét bù (services/stock-committed.ts làm theo lô
- * bằng SQL, không qua hàm này). Chỉ đụng bộ đếm giữ + mốc; KHÔNG đụng sổ.
+ * HÀNG CỦA ĐƠN ĐÃ RỜI KHO — đúng một lần, nơi nào tới trước thì thắng: lập Biên bản bàn giao
+ * (theo lô, services/stock-committed.ts), mọi đường ghi trạng thái đơn của ba sàn (webhook, quét
+ * lô, làn đọc con trỏ — gọi trong hàm ghi đơn dùng chung), đổi trạng thái tay, và lượt quét bù
+ * làm lưới an toàn. Chỉ đụng bộ đếm giữ + mốc; KHÔNG đụng sổ.
  */
 export async function shipStockTx(
   tx: Prisma.TransactionClient,
@@ -299,11 +301,19 @@ export async function shipStockTx(
     where: { id: orderId },
     select: { stockCommittedAt: true, stockShippedAt: true },
   });
-  if (!order?.stockCommittedAt || order.stockShippedAt) return { shipped: 0 };
+  if (!order?.stockCommittedAt) return { shipped: 0 };
+  if (order.stockShippedAt) {
+    // Dấu còn sót của bản hai cột (trước 20/11/2026 rời kho không xóa dấu): bộ đếm đã trừ rồi →
+    // chỉ gỡ dấu, KHÔNG trừ lần hai.
+    await tx.order.update({ where: { id: orderId }, data: { stockCommittedAt: null } });
+    return { shipped: 0 };
+  }
   const shipped = await adjustCommittedForOrdersTx(tx, [orderId], -1);
+  // Một dấu duy nhất cho "đang giữ" (mục 14.1): ghi mốc rời kho và XÓA dấu giữ trong cùng một câu.
+  // Không mất thông tin — stockCommittedAt luôn bằng stockDeductedAt.
   await tx.order.update({
     where: { id: orderId },
-    data: { stockShippedAt: new Date(), stockShipSource: source },
+    data: { stockShippedAt: new Date(), stockShipSource: source, stockCommittedAt: null },
   });
   return { shipped };
 }
@@ -323,8 +333,9 @@ export async function releaseCommittedTx(
     where: { id: orderId },
     select: { stockCommittedAt: true, stockShippedAt: true },
   });
-  if (!order?.stockCommittedAt || order.stockShippedAt) return { released: 0 };
-  const released = await adjustCommittedForOrdersTx(tx, [orderId], -1);
+  if (!order?.stockCommittedAt) return { released: 0 };
+  // Đã có mốc rời kho mà còn dấu (sót của bản hai cột): bộ đếm đã trừ rồi → chỉ gỡ dấu.
+  const released = order.stockShippedAt ? 0 : await adjustCommittedForOrdersTx(tx, [orderId], -1);
   await tx.order.update({ where: { id: orderId }, data: { stockCommittedAt: null } });
   return { released };
 }

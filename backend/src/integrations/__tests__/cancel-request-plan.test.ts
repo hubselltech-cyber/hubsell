@@ -28,6 +28,7 @@ function shopeeExisting(over: Partial<ShopeeExistingOrder> = {}): ShopeeExisting
     returnStatus: ReturnStatus.NONE,
     returnRequestedAt: null,
     cancelRequestedAt: null,
+    stockCommittedAt: null,
     ...over,
   };
 }

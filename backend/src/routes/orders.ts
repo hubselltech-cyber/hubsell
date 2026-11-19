@@ -11,7 +11,7 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { ORDER_PAYMENT_INCLUDE, orderPaymentDetail } from "../lib/order-payment-detail";
 import { applyStockDelta } from "../services/stock-ledger";
-import { releaseCommittedTx } from "../integrations/order-stock";
+import { hasLeftWarehouse, releaseCommittedTx, shipStockTx } from "../integrations/order-stock";
 import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
@@ -795,10 +795,16 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
         };
       }
 
-      const updated = await prisma.order.update({
-        where: { id: order.id },
-        data: { shippingStatus: newStatus, ...settlementData },
-        include: { channel: { select: { channelName: true, shopName: true } } },
+      const updated = await prisma.$transaction(async (tx) => {
+        const row = await tx.order.update({
+          where: { id: order.id },
+          data: { shippingStatus: newStatus, ...settlementData },
+          include: { channel: { select: { channelName: true, shopName: true } } },
+        });
+        // Đổi tay sang Đang giao / Đã giao = hàng rời kho → ra khỏi bộ đếm "đang giữ" ngay tại đây
+        // (kho chuẩn quốc tế mục 14.4; chỉ bộ đếm + mốc trên đơn, sổ không đổi; tự chống lặp).
+        if (hasLeftWarehouse(newStatus)) await shipStockTx(tx, order.id, "MANUAL");
+        return row;
       });
       res.json({ order: updated, restored: [] });
       return;

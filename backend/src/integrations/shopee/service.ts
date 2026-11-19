@@ -704,6 +704,9 @@ export const SHOPEE_EXISTING_SELECT = {
   returnStatus: true,
   returnRequestedAt: true,
   cancelRequestedAt: true,
+  // Dấu "đang giữ cho đơn" — KHÔNG phải cột UPDATE ghi; đọc kèm để biết có phải gọi rời kho
+  // không mà khỏi tốn thêm câu đọc (kho chuẩn quốc tế mục 14.4).
+  stockCommittedAt: true,
 } satisfies Prisma.OrderSelect;
 
 export type ShopeeExistingOrder = Prisma.OrderGetPayload<{ select: typeof SHOPEE_EXISTING_SELECT }>;
@@ -840,6 +843,13 @@ export async function upsertShopeeOrderTx(
           { prevStatus: existing.shippingStatus }
         );
       }
+    }
+    // RỜI KHO THEO SỰ KIỆN (kho chuẩn quốc tế mục 14.4): sàn báo Đang giao / Đã giao mà đơn còn dấu
+    // giữ → ra khỏi bộ đếm ngay trong giao dịch ghi đơn, cho MỌI đường gọi hàm này (webhook, quét
+    // lô, làn đọc con trỏ). Chỉ đụng bộ đếm giữ + mốc trên đơn — không đụng sổ, không đẩy sàn —
+    // nên không trái quy ước "quét lô không trừ kho". shipStockTx khóa dòng đơn và tự chống lặp.
+    if (existing.stockCommittedAt && hasLeftWarehouse(shippingStatus)) {
+      await shipStockTx(tx, existing.id, "PLATFORM");
     }
     if (needsItemImageBackfill(existing.createdAt)) {
       await backfillOrderItemImagesTx(tx, existing.id, aggregateShopeeItems(order));

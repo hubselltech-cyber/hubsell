@@ -1745,13 +1745,17 @@ model Order {
   stockHoldReleasedAt DateTime?
 
   /// ---- KHO CHUẨN QUỐC TẾ, LÁT 1 CHẠY BÓNG (12/11/2026, docs/QUAN-LY-KHO-CHUAN-QUOC-TE.md mục 13) ----
-  /// Đơn này ĐANG được tính trong bộ đếm "đang giữ" (Product.committedQuantity) từ lúc nào.
-  /// Mốc riêng, không dùng stockDeductedAt: đơn cũ đã trừ kho và đã giao từ trước ngày chuyển
-  /// không bao giờ vào bộ đếm. Đơn hủy khi hàng chưa rời kho → mốc bị xóa (nhả giữ).
+  /// DẤU DUY NHẤT của "đơn đang nằm trong bộ đếm giữ" (Product.committedQuantity): khác NULL = đang
+  /// giữ. Đặt lúc đơn chốt (giá trị = stockDeductedAt), XÓA về NULL lúc hàng rời kho và lúc hủy
+  /// trước khi rời kho (thiết kế lại 19/11/2026, mục 14: một cột thì Postgres ước lượng tập đang
+  /// giữ sát thật). Cột riêng, không dùng stockDeductedAt: đơn cũ đã trừ kho và đã giao từ trước
+  /// ngày chuyển không bao giờ vào bộ đếm.
   stockCommittedAt DateTime?
-  /// Hàng của đơn đã RỜI KHO → đã ra khỏi bộ đếm giữ. Chống trừ bộ đếm hai lần.
+  /// Hàng của đơn đã RỜI KHO → đã ra khỏi bộ đếm giữ (cùng câu ghi này xóa stockCommittedAt).
+  /// Đơn đã có mốc này không bao giờ quay lại bộ đếm.
   stockShippedAt   DateTime?
   /// Ai báo rời kho: HANDOVER (Biên bản bàn giao) · PLATFORM (sàn báo đã lấy hàng) ·
+  /// MANUAL (đổi trạng thái tay trên Hubsell) ·
   /// CHANNEL_INACTIVE (gian mất kết nối / ngủ đông — đơn không còn được cập nhật).
   stockShipSource  String?
 
@@ -1884,8 +1888,11 @@ model Order {
   // trong SQL migration 20261111230000_order_stock_awaiting_ship_idx:
   //   Order_stock_awaiting_ship_idx (channelId) WHERE shippingStatus IN ('PENDING','PROCESSED')
   //     AND stockRestoredAt IS NULL AND stockDeductedAt IS NOT NULL
-  // Chỉ mục MỘT PHẦN "đơn đang nằm trong bộ đếm giữ" (kho chuẩn quốc tế lát 1, 12/11/2026) chỉ có
-  // trong SQL migration 20261112210000_stock_committed_shadow:
+  // Chỉ mục MỘT PHẦN "đơn đang nằm trong bộ đếm giữ" (kho chuẩn quốc tế lát 1, thiết kế lại
+  // 19/11/2026) chỉ có trong SQL migration 20261120090000_stock_committed_single_mark:
+  //   Order_stock_held_idx (channelId, id) WHERE stockCommittedAt IS NOT NULL
+  // Chỉ mục cũ của bản hai cột (migration 20261112210000_stock_committed_shadow) KHÔNG còn câu nào
+  // dùng, chờ bỏ sau khi bản mới chạy ổn trên prod (docs mục 14.6 bước 6):
   //   Order_stock_committed_idx (channelId) WHERE stockCommittedAt IS NOT NULL
   //     AND stockShippedAt IS NULL
 

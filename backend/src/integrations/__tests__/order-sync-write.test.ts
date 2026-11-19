@@ -62,6 +62,7 @@ function shopeeExisting(over: Partial<ShopeeExistingOrder> = {}): ShopeeExisting
     deliveredAt: null,
     returnStatus: ReturnStatus.NONE,
     returnRequestedAt: null,
+    stockCommittedAt: null,
     ...over,
   };
 }
@@ -160,6 +161,7 @@ function tiktokExisting(over: Partial<TiktokExistingOrder> = {}): TiktokExisting
     isSettled: false,
     returnStatus: ReturnStatus.NONE,
     returnRequestedAt: null,
+    stockCommittedAt: null,
     ...over,
   };
 }

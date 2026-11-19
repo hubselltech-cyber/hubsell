@@ -13,6 +13,7 @@ import { createStockFixture, type StockFixture } from "./fixtures";
 import { prismaCursorStore, readByCursor } from "../../services/cursor-reader";
 import { defaultOrderWriteDeps, WRITE_STREAM, writeOrderSpec, type OrderWriteDeps } from "../order-write-adapters";
 import type { TikTokOrder } from "../tiktok/client";
+import { deductStockTx } from "../order-stock";
 
 const ready: boolean = await (async () => {
   try {
@@ -28,6 +29,7 @@ describe.skipIf(!ready)("ghi đơn qua đường mới (TikTok, DB thật)", () 
   let fx: StockFixture;
   let channel: Channel;
   let sku: string;
+  let productId: string;
   const orders = new Map<string, TikTokOrder>();
   const nowSec = Math.floor(Date.now() / 1000);
 
@@ -59,7 +61,7 @@ describe.skipIf(!ready)("ghi đơn qua đường mới (TikTok, DB thật)", () 
   beforeAll(async () => {
     fx = await createStockFixture("owrite");
     channel = await prisma.channel.update({ where: { id: fx.channelId }, data: { channelName: "TIKTOK", externalShopId: "sh-w" } });
-    const productId = await fx.createProduct(10);
+    productId = await fx.createProduct(10);
     sku = await fx.createMapping(productId, "ext-w-1");
   });
   afterAll(async () => {
@@ -80,6 +82,11 @@ describe.skipIf(!ready)("ghi đơn qua đường mới (TikTok, DB thật)", () 
     const cur = await prisma.syncCursor.findUnique({ where: { channelId_stream: { channelId: channel.id, stream: WRITE_STREAM } } });
     expect(cur?.cursorAt.getTime()).toBe(r1.cursorAt);
 
+    // Webhook chốt đơn W1 (trừ kho + vào bộ đếm "đang giữ") — đường ghi đơn theo lô không tự trừ kho.
+    await prisma.$transaction((tx) => deductStockTx(tx, w1!.id, "test ghi đơn"));
+    const held = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { quantityInStock: true, committedQuantity: true } });
+    expect(held).toEqual({ quantityInStock: 8, committedQuantity: 2 });
+
     // Lượt 2: cùng đơn đổi update_time (sàn bump) nhưng nội dung y hệt → không ghi.
     orders.set("W1", order("W1", "AWAITING_SHIPMENT", 2, nowSec + 5));
     const run2 = writeOrderSpec(channel, deps);
@@ -95,5 +102,12 @@ describe.skipIf(!ready)("ghi đơn qua đường mới (TikTok, DB thật)", () 
     expect(run3.stats).toMatchObject({ fetched: 1, updated: 1 });
     const w1b = await prisma.order.findUnique({ where: { channelId_orderCode: { channelId: channel.id, orderCode: "W1" } } });
     expect(w1b?.shippingStatus).toBe("DELIVERED");
+    // Rời kho theo sự kiện (kho chuẩn quốc tế mục 14.4): làn đọc con trỏ ghi "Đã giao" cho đơn đang
+    // giữ → đơn ra khỏi bộ đếm ngay trong giao dịch ghi đơn, dấu giữ bị xóa, sổ không đổi.
+    expect(w1b?.stockShippedAt).not.toBeNull();
+    expect(w1b?.stockShipSource).toBe("PLATFORM");
+    expect(w1b?.stockCommittedAt).toBeNull();
+    const shipped = await prisma.product.findUniqueOrThrow({ where: { id: productId }, select: { quantityInStock: true, committedQuantity: true } });
+    expect(shipped).toEqual({ quantityInStock: 8, committedQuantity: 0 });
   });
 });
